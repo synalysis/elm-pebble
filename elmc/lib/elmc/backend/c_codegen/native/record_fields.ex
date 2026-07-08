@@ -9,7 +9,8 @@ defmodule Elmc.Backend.CCodegen.Native.RecordFields do
   @spec lookup_field_type(String.t(), String.t(), Types.compile_env()) :: String.t() | nil
   def lookup_field_type(type_name, field, env)
       when is_binary(type_name) and is_binary(field) do
-    types_map = Process.get(:elmc_record_field_types, %{})
+    types_map =
+      Map.get(env, :__record_field_types__, Process.get(:elmc_record_field_types, %{}))
     current_module = Map.get(env, :__module__, "Main")
     normalized = Host.normalize_type_name(type_name)
 

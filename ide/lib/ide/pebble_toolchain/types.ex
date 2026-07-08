@@ -184,6 +184,8 @@ defmodule Ide.PebbleToolchain.Types do
           optional(:pebble_int32) => boolean(),
           optional(:linked_binary_map) => String.t(),
           optional(:prod) => boolean(),
+          optional(:plan_ir_mode) => :off | :shadow | :primary,
+          optional(:plan_ir_strict) => boolean(),
           optional(:debug_usage_policy) => :error | :warn | :warning
         }
 
@@ -197,6 +199,8 @@ defmodule Ide.PebbleToolchain.Types do
           required(:pebble_int32) => true,
           required(:strip_dead_code) => true,
           optional(:prod) => boolean(),
+          optional(:plan_ir_mode) => :off | :shadow | :primary,
+          optional(:plan_ir_strict) => boolean(),
           optional(:debug_usage_policy) => :error | :warn | :warning
         }
   @type elmc_compile_result :: %{

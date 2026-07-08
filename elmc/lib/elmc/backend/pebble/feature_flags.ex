@@ -20,6 +20,19 @@ defmodule Elmc.Backend.Pebble.FeatureFlags do
     |> Map.merge(EventFlags.compute(targets, msg_constructors))
   end
 
+  @spec augment_from_generated_c(Types.feature_flags(), String.t()) :: Types.feature_flags()
+  def augment_from_generated_c(flags, generated_c) when is_binary(generated_c) do
+    if String.contains?(generated_c, "ELMC_RENDER_OP_TEXT_INT_WITH_FONT") do
+      flags
+      |> Map.put(:draw_text_int, true)
+      |> Map.put(:draw_text_any, true)
+    else
+      flags
+    end
+  end
+
+  def augment_from_generated_c(flags, _), do: flags
+
   @spec macros(Types.feature_flags()) :: Types.c_source()
   def macros(%{} = flags), do: MacroTable.render(flags)
 

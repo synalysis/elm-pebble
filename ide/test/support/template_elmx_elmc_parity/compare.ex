@@ -109,7 +109,7 @@ defmodule Ide.Test.TemplateElmxElmcParity.Compare do
     elmc_cmds = Snapshot.normalize_commands(Map.get(elmc, "commands"))
 
     cond do
-      elmx_cmds == [] and timer_only?(elmc_cmds) ->
+      elmx_cmds == [] and (timer_only?(elmc_cmds) or cmd_none_only?(elmc_cmds)) ->
         true
 
       health_event_refresh_steps_parity?(step_id, elmx_cmds, elmc_cmds) ->
@@ -132,6 +132,9 @@ defmodule Ide.Test.TemplateElmxElmcParity.Compare do
 
   defp timer_only?([%{"kind" => kind}]) when is_integer(kind), do: kind == 1
   defp timer_only?(_), do: false
+
+  defp cmd_none_only?([%{"kind" => 0}]), do: true
+  defp cmd_none_only?(_), do: false
 
   defp fields_equal?(field, _step_id, elmx, elmc) do
     Map.get(elmx, field) == Map.get(elmc, field)

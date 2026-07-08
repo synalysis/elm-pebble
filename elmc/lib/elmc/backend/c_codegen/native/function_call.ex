@@ -1,8 +1,8 @@
 defmodule Elmc.Backend.CCodegen.Native.FunctionCall do
   @moduledoc false
 
-  alias Elmc.Backend.CCodegen.CaseCompile
   alias Elmc.Backend.CCodegen.EnvBindings
+  alias Elmc.Backend.CCodegen.FunctionCallAbi
   alias Elmc.Backend.CCodegen.FunctionCallCompile
   alias Elmc.Backend.CCodegen.FunctionEmit
   alias Elmc.Backend.CCodegen.Fusion
@@ -13,6 +13,7 @@ defmodule Elmc.Backend.CCodegen.Native.FunctionCall do
   alias Elmc.Backend.CCodegen.Tuple2CaseTable
   alias Elmc.Backend.CCodegen.ValueSlots
   alias Elmc.Backend.CCodegen.RcRuntimeEmit
+  alias Elmc.Backend.CCodegen.PlanNativeProjection
   alias Elmc.Backend.CCodegen.RcRequired
   alias Elmc.Backend.CCodegen.Types
   alias Elmc.Backend.CCodegen.Util
@@ -200,6 +201,18 @@ defmodule Elmc.Backend.CCodegen.Native.FunctionCall do
 
     call_expr =
       cond do
+        FunctionCallAbi.primary_lowered?(decl, module_name, decl_map) ->
+          plan_primary_call_expr(
+            c_name,
+            decl,
+            module_name,
+            decl_map,
+            arg_refs,
+            return_kind,
+            out,
+            env
+          )
+
         return_kind == :boxed and native_boxed_rc_abi?(decl, module_name, decl_map) ->
           native_boxed_rc_call_expr(c_name, arg_list, out, env)
 
@@ -288,9 +301,9 @@ defmodule Elmc.Backend.CCodegen.Native.FunctionCall do
         end
 
       "Bool" ->
-        if Host.native_bool_expr?(expr || %{op: :int_literal, value: 0}, env),
-          do: :native_bool,
-          else: :boxed
+        # Any Bool helper routed through native_scalar_fn compiles via Native.Bool
+        # (including List.all bodies that fall back through Host and unbox).
+        :native_bool
 
       _other ->
         :boxed
@@ -388,16 +401,18 @@ defmodule Elmc.Backend.CCodegen.Native.FunctionCall do
     bool_rc_out? = return_kind == :native_bool and native_bool_rc_abi?(decl, module_name, decl_map)
     rc_out? = boxed_rc_out? or bool_rc_out?
 
-    params =
+    fn_arg_params = params(decl, module_name, decl_map)
+
+    signature_params =
       cond do
         boxed_rc_out? ->
-          "ElmcValue **out, #{params(decl, module_name, decl_map)}"
+          RcRuntimeEmit.native_signature_suffix("ElmcValue **out", fn_arg_params)
 
         bool_rc_out? ->
-          "bool *out, #{params(decl, module_name, decl_map)}"
+          RcRuntimeEmit.native_signature_suffix("bool *out", fn_arg_params)
 
         true ->
-          params(decl, module_name, decl_map)
+          fn_arg_params
       end
 
     return_type =
@@ -407,7 +422,7 @@ defmodule Elmc.Backend.CCodegen.Native.FunctionCall do
         true -> c_return_type(return_kind)
       end
 
-    {return_type, params}
+    {return_type, signature_params}
   end
 
   @spec arg_kinds(Types.function_declaration(), String.t(), Types.function_decl_map()) ::
@@ -508,7 +523,10 @@ defmodule Elmc.Backend.CCodegen.Native.FunctionCall do
       native_only? =
         usage.total == 0 or usage.boxed == 0 or usage.native_container >= usage.boxed
 
-      native_only? and not Host.binding_used_in_lambda?(arg, expr)
+      lambda_safe? =
+        not Host.binding_used_in_lambda?(arg, expr) or usage.boxed == 0
+
+      native_only? and lambda_safe?
     end
   end
 
@@ -560,7 +578,7 @@ defmodule Elmc.Backend.CCodegen.Native.FunctionCall do
         Map.get(env, :__native_rc_out__, false)
 
     out = ValueSlots.ensure_fresh_assign_target(out)
-    call = "#{c_name}_native(#{RcRuntimeEmit.allocator_out_arg(out)}, #{arg_list})"
+    call = "#{c_name}_native(#{RcRuntimeEmit.native_call_args(RcRuntimeEmit.allocator_out_arg(out), arg_list)})"
 
     if caller_rc? do
       unless RcRuntimeEmit.function_out_ref?(out), do: ValueSlots.track(out)
@@ -594,12 +612,116 @@ defmodule Elmc.Backend.CCodegen.Native.FunctionCall do
     end
   end
 
+  defp plan_primary_call_expr(c_name, decl, module_name, decl_map, arg_refs, return_kind, out, env) do
+    caller_rc? =
+      Map.get(env, :__rc_required__, false) or Map.get(env, :__rc_catch__, false) or
+        Map.get(env, :__native_rc_out__, false)
+
+    {argv_setup, call_args} =
+      if FunctionCallAbi.argv_abi?(decl, module_name, decl_map) do
+        {setup, args_var, argc} = FunctionCallAbi.emit_argv_setup("native", arg_refs)
+        {setup <> "\n  ", "#{args_var}, #{argc}"}
+      else
+        {"", Enum.join(arg_refs, ", ")}
+      end
+
+    rc_required? = RcRequired.rc_required?(module_name, decl.name)
+
+    cond do
+      return_kind == :native_int and
+          PlanNativeProjection.eligible?(decl, module_name, decl_map) ->
+        native_decl = "elmc_int_t #{out} = 0;\n  "
+
+        check =
+          if caller_rc? do
+            "Rc = #{c_name}_native(#{RcRuntimeEmit.native_call_args("&" <> out, call_args)});\nCHECK_RC(Rc);"
+          else
+            """
+            {
+              RC __call_rc = #{c_name}_native(#{RcRuntimeEmit.native_call_args("&" <> out, call_args)});
+              if (__call_rc != RC_SUCCESS) {
+                ELMC_RC_LOG_FAIL(__call_rc, "#{c_name}_native", "native projection failed");
+              }
+            }
+            """
+          end
+
+        argv_setup <> native_decl <> check
+
+      return_kind == :native_bool and
+          PlanNativeProjection.eligible?(decl, module_name, decl_map) ->
+        native_decl = "bool #{out} = false;\n  "
+
+        check =
+          if caller_rc? do
+            "Rc = #{c_name}_native(#{RcRuntimeEmit.native_call_args("&" <> out, call_args)});\nCHECK_RC(Rc);"
+          else
+            """
+            {
+              RC __call_rc = #{c_name}_native(#{RcRuntimeEmit.native_call_args("&" <> out, call_args)});
+              if (__call_rc != RC_SUCCESS) {
+                ELMC_RC_LOG_FAIL(__call_rc, "#{c_name}_native", "native projection failed");
+              }
+            }
+            """
+          end
+
+        argv_setup <> native_decl <> check
+
+      return_kind == :native_int ->
+        boxed_var = "plan_primary_boxed_#{out}"
+
+        call =
+          if rc_required? do
+            "Rc = #{c_name}(#{RcRuntimeEmit.allocator_out_arg(boxed_var)}, #{call_args});"
+          else
+            "#{boxed_var} = #{c_name}(#{call_args});"
+          end
+
+        extract = "const elmc_int_t #{out} = elmc_as_int(#{boxed_var});"
+        release = "elmc_release(#{boxed_var});"
+
+        check =
+          if caller_rc? and rc_required? do
+            "#{call}\nCHECK_RC(Rc);"
+          else
+            call
+          end
+
+        argv_setup <> check <> "\n  " <> extract <> "\n  " <> release
+
+      return_kind == :native_bool ->
+        boxed_var = "plan_primary_boxed_#{out}"
+
+        check =
+          if caller_rc? and rc_required? do
+            "Rc = #{c_name}(#{RcRuntimeEmit.allocator_out_arg(boxed_var)}, #{call_args});\nCHECK_RC(Rc);"
+          else
+            "#{boxed_var} = #{c_name}(#{call_args});"
+          end
+
+        argv_setup <>
+          check <>
+          "\n  const bool #{out} = elmc_as_bool(#{boxed_var});\n  elmc_release(#{boxed_var});"
+
+      return_kind == :boxed and rc_required? ->
+        boxed_call =
+          native_boxed_rc_call_expr(c_name, call_args, out, env)
+          |> String.replace("#{c_name}_native(", "#{c_name}(")
+
+        argv_setup <> boxed_call
+
+      true ->
+        argv_setup <> "#{native_call_decl(return_kind)}#{out} = #{c_name}(#{call_args});"
+    end
+  end
+
   defp native_bool_rc_call_expr(c_name, arg_list, out, env) do
     caller_rc? =
       Map.get(env, :__rc_required__, false) or Map.get(env, :__rc_catch__, false) or
         Map.get(env, :__native_rc_out__, false)
 
-    call = "#{c_name}_native(#{RcRuntimeEmit.allocator_out_arg(out)}, #{arg_list})"
+    call = "#{c_name}_native(#{RcRuntimeEmit.native_call_args(RcRuntimeEmit.allocator_out_arg(out), arg_list)})"
 
     if caller_rc? do
       "bool #{out} = false;\nRc = #{call};\nCHECK_RC(Rc);"

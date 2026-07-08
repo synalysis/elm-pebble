@@ -125,6 +125,7 @@ defmodule Elmc.Backend.CCodegen.PermuteMergeInversePipeline do
       %{expr: expr} ->
         case RowSliceAdjacentMerge.try_emit(module_name, merge_fn, expr, decl_map) do
           :error -> :error
+          {:ok, _, _, _} -> merge_fn_dims(expr, decl_map, module_name)
           {:ok, _, _} -> merge_fn_dims(expr, decl_map, module_name)
         end
 
@@ -221,6 +222,7 @@ defmodule Elmc.Backend.CCodegen.PermuteMergeInversePipeline do
     case Map.get(decl_map, {module_name, fn_name}) do
       %{expr: expr} ->
         case UnionCaseFourPerm.try_emit(module_name, fn_name, expr, decl_map) do
+          {:ok, _, _, _} -> true
           {:ok, _, _} -> true
           _ -> false
         end

@@ -63,4 +63,55 @@ defmodule Elmc.RuntimePruneCompactListTest do
 
     assert exit_code == 0, output
   end
+
+  test "pruned runtime with List.repeat compiles without list_repeat_count forward decl" do
+    out_dir = Path.expand("tmp/runtime_prune_list_repeat_out", __DIR__)
+    refs_dir = Path.join(out_dir, "refs")
+    runtime_dir = Path.join(out_dir, "runtime")
+
+    File.rm_rf!(out_dir)
+    File.mkdir_p!(refs_dir)
+
+    File.write!(Path.join(refs_dir, "elmc_generated.c"), """
+    #include "elmc_runtime.h"
+
+    RC uses_list_repeat(ElmcValue **out, ElmcValue *n, ElmcValue *value) {
+      return elmc_list_repeat(out, n, value);
+    }
+    """)
+
+    assert :ok = Elmc.Runtime.Generator.write_runtime(runtime_dir, prune_from_dir: refs_dir)
+
+    runtime = File.read!(Path.join(runtime_dir, "elmc_runtime.c"))
+
+    assert runtime =~ "static RC elmc_list_repeat_count"
+    assert runtime =~ "RC elmc_list_repeat("
+    refute runtime =~ ~r/static RC elmc_list_repeat_count\([^;]+\);\s*\n\s*RC elmc_list_repeat/
+
+    cc = System.find_executable("cc")
+    if is_nil(cc), do: flunk("cc not available")
+
+    runtime_dir = Path.join(out_dir, "runtime")
+    c_dir = Path.join(out_dir, "refs")
+    object = Path.join(out_dir, "runtime_prune_list_repeat.o")
+
+    {output, exit_code} =
+      System.cmd(cc, [
+        "-c",
+        "-std=c11",
+        "-Wall",
+        "-Wno-unused-function",
+        "-Wno-unused-variable",
+        "-I",
+        runtime_dir,
+        "-I",
+        c_dir,
+        "-DELMC_RC_TRACK=0",
+        Path.join(runtime_dir, "elmc_runtime.c"),
+        "-o",
+        object
+      ], stderr_to_stdout: true)
+
+    assert exit_code == 0, output
+  end
 end

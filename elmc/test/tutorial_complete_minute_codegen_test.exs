@@ -56,7 +56,9 @@ defmodule Elmc.TutorialCompleteMinuteCodegenTest do
     refute minute_changed =~
              ~r/ElmcValue \*tmp_(\d+) = elmc_fn_Main_CurrentLocation[\s\S]*ElmcValue \*tmp_\1 = elmc_fn_Main_RequestWeather/
 
-    assert minute_changed =~ "elmc_fn_Companion_Watch_sendWatchToPhone"
+    assert minute_changed =~ "ELMC_PEBBLE_CMD_COMPANION_SEND"
+    assert minute_changed =~ "elmc_fn_Companion_Internal_watchToPhoneTag"
+    assert minute_changed =~ "elmc_fn_Companion_Internal_watchToPhoneValue"
     assert minute_changed =~ "elmc_fn_Main_RequestWeather"
     assert minute_changed =~ "elmc_fn_Main_CurrentLocation"
   end

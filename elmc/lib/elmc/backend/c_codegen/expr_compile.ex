@@ -28,7 +28,8 @@ defmodule Elmc.Backend.CCodegen.ExprCompile do
     :bool_literal,
     :order_literal,
     :float_literal,
-    :cmd_none
+    :cmd_none,
+    :sub_none
   ]
 
   @sub_ops [:pebble_sub]

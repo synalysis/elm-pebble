@@ -265,9 +265,11 @@ defmodule Elmc.Backend.CCodegen.CallCompile do
         {:forward_ref_slot, slot} -> "elmc_forward_ref_get(#{slot})"
       end
 
+    operand_env = RcRuntimeEmit.operand_env(env)
+
     {arg_code, arg_vars, counter} =
       Enum.reduce(args, {"", [], counter}, fn arg_expr, {code_acc, vars_acc, c} ->
-        {code, var, c2} = Host.compile_expr(arg_expr, env, c)
+        {code, var, c2} = Host.compile_expr(arg_expr, operand_env, c)
         {code_acc <> "\n  " <> code, vars_acc ++ [var], c2}
       end)
 

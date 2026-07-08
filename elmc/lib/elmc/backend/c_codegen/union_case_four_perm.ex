@@ -26,7 +26,7 @@ defmodule Elmc.Backend.CCodegen.UnionCaseFourPerm do
                   {:ok, width, rows} ->
                     case ordered_branch_tags(case_branches) do
                       {:ok, tags} ->
-                        FusionSupport.ok(
+                        FusionSupport.ok_rc(
                           emit(module_name, name, cells_var, width, rows, mode, tags),
                           []
                         )
@@ -377,6 +377,7 @@ defmodule Elmc.Backend.CCodegen.UnionCaseFourPerm do
     case Map.get(decl_map, {module_name, transpose}) do
       %{expr: expr} ->
         case ListMapStaticIndexAt.try_emit(module_name, transpose, expr, decl_map) do
+          {:ok, _, _, _} -> transpose_index_count(expr) == count
           {:ok, _, _} -> transpose_index_count(expr) == count
           :error -> false
         end
@@ -406,19 +407,21 @@ defmodule Elmc.Backend.CCodegen.UnionCaseFourPerm do
     index_expr = RowMajorLayout.case_tag_perm_index_expr("case_tag", tags) |> String.trim()
 
     """
-    static ElmcValue *#{c_prefix}_native(ElmcValue *tag_arg, ElmcValue *#{cells_var}) {
-      elmc_int_t src[#{count}];
-      elmc_int_t dst[#{count}];
-      for (elmc_int_t i = 0; i < #{count}; i++) {
-        src[i] = elmc_list_nth_int_default(#{cells_var}, i, 0);
-      }
-      const int case_tag = #{tag_expr};
-      const int perm_case = #{index_expr};
-      #{RowMajorLayout.emit_apply_row_major_perm(forward_inverse_mode(mode), width, rows, "src", "dst", "perm_case", count)}
-      ElmcValue *out = NULL;
-      if (elmc_list_from_int_array(&out, dst, #{count}) != RC_SUCCESS)
-        out = elmc_list_nil();
-      return out ? out : elmc_list_nil();
+    static RC #{c_prefix}_native(ElmcValue **out, ElmcValue *tag_arg, ElmcValue *#{cells_var}) {
+      RC Rc = RC_SUCCESS;
+      CATCH_BEGIN
+        elmc_int_t src[#{count}];
+        elmc_int_t dst[#{count}];
+        for (elmc_int_t i = 0; i < #{count}; i++) {
+          src[i] = elmc_list_nth_int_default(#{cells_var}, i, 0);
+        }
+        const int case_tag = #{tag_expr};
+        const int perm_case = #{index_expr};
+        #{RowMajorLayout.emit_apply_row_major_perm(forward_inverse_mode(mode), width, rows, "src", "dst", "perm_case", count)}
+        Rc = elmc_list_from_int_array(out, dst, #{count});
+        CHECK_RC(Rc);
+      CATCH_END;
+      return Rc;
     }
     """
   end

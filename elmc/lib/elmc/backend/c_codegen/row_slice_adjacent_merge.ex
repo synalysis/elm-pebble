@@ -9,7 +9,9 @@ defmodule Elmc.Backend.CCodegen.RowSliceAdjacentMerge do
   alias Elmc.Backend.CCodegen.{FusionSupport, Util}
 
   @spec try_emit(String.t(), String.t(), map() | nil, map()) ::
-          {:ok, String.t(), [FusionSupport.callee_key()]} | :error
+          {:ok, String.t(), [FusionSupport.callee_key()]}
+          | {:ok, String.t(), [FusionSupport.callee_key()], :rc_native}
+          | :error
   def try_emit(_module_name, _name, nil, _decl_map), do: :error
 
   def try_emit(module_name, name, expr, decl_map) do
@@ -23,7 +25,7 @@ defmodule Elmc.Backend.CCodegen.RowSliceAdjacentMerge do
            collapse_row_shape(decl_map, module_name, collapse_row, width),
          true <- adjacent_pair_merge_record?(decl_map, module_name, merge, cells_field, score_field),
          {:ok, _record_type} <- result_record_type(decl_map, module_name, name) do
-      FusionSupport.ok(
+      FusionSupport.ok_rc(
         emit(module_name, name, cells_var, rows, width),
         []
       )
@@ -611,48 +613,55 @@ defmodule Elmc.Backend.CCodegen.RowSliceAdjacentMerge do
     cell_count = rows * width
 
     """
-    static ElmcValue *#{c_prefix}_native(ElmcValue *#{cells_var}) {
-      static const elmc_int_t rows = #{rows};
-      static const elmc_int_t width = #{width};
-      elmc_int_t flat[#{cell_count}];
-      elmc_int_t total_score = 0;
-      for (elmc_int_t row = 0; row < rows; row++) {
-        elmc_int_t buf[#{width}];
-        elmc_int_t n = 0;
-        for (elmc_int_t col = 0; col < width; col++) {
-          const elmc_int_t cell = elmc_list_nth_int_default(#{cells_var}, (row * width) + col, 0);
-          if (cell != 0) buf[n++] = cell;
-        }
-        elmc_int_t merged[#{width}];
-        elmc_int_t m = 0;
-        elmc_int_t row_score = 0;
-        elmc_int_t i = 0;
-        while (i < n) {
-          if (i + 1 < n && buf[i] == buf[i + 1]) {
-            const elmc_int_t v = buf[i] + buf[i + 1];
-            merged[m++] = v;
-            row_score += v;
-            i += 2;
-          } else {
-            merged[m++] = buf[i++];
+    static RC #{c_prefix}_native(ElmcValue **out, ElmcValue *#{cells_var}) {
+      RC Rc = RC_SUCCESS;
+      ElmcValue *owned[2] = {0};
+      CATCH_BEGIN
+        static const elmc_int_t rows = #{rows};
+        static const elmc_int_t width = #{width};
+        elmc_int_t flat[#{cell_count}];
+        elmc_int_t total_score = 0;
+        for (elmc_int_t row = 0; row < rows; row++) {
+          elmc_int_t buf[#{width}];
+          elmc_int_t n = 0;
+          for (elmc_int_t col = 0; col < width; col++) {
+            const elmc_int_t cell = elmc_list_nth_int_default(#{cells_var}, (row * width) + col, 0);
+            if (cell != 0) buf[n++] = cell;
+          }
+          elmc_int_t merged[#{width}];
+          elmc_int_t m = 0;
+          elmc_int_t row_score = 0;
+          elmc_int_t i = 0;
+          while (i < n) {
+            if (i + 1 < n && buf[i] == buf[i + 1]) {
+              const elmc_int_t v = buf[i] + buf[i + 1];
+              merged[m++] = v;
+              row_score += v;
+              i += 2;
+            } else {
+              merged[m++] = buf[i++];
+            }
+          }
+          while (m < width) merged[m++] = 0;
+          total_score += row_score;
+          for (elmc_int_t col = 0; col < width; col++) {
+            flat[(row * width) + col] = merged[col];
           }
         }
-        while (m < width) merged[m++] = 0;
-        total_score += row_score;
-        for (elmc_int_t col = 0; col < width; col++) {
-          flat[(row * width) + col] = merged[col];
+        Rc = elmc_list_from_int_array(&owned[0], flat, #{cell_count});
+        CHECK_RC(Rc);
+        Rc = elmc_new_int(&owned[1], total_score);
+        CHECK_RC(Rc);
+        {
+          ElmcValue *rec_values[2] = {owned[0], owned[1]};
+          Rc = elmc_record_new_values_take(out, 2, rec_values);
+          CHECK_RC(Rc);
+          owned[0] = NULL;
+          owned[1] = NULL;
         }
-      }
-      ElmcValue *cells_out = NULL;
-      if (elmc_list_from_int_array(&cells_out, flat, #{cell_count}) != RC_SUCCESS) cells_out = elmc_list_nil();
-      ElmcValue *score_out = NULL;
-      if (elmc_new_int(&score_out, total_score) != RC_SUCCESS) score_out = elmc_int_zero();
-      ElmcValue *rec_values[2] = {cells_out, score_out};
-      ElmcValue *out = NULL;
-      if (elmc_record_new_values_take(&out, 2, rec_values) != RC_SUCCESS) out = elmc_list_nil();
-      elmc_release(cells_out);
-      elmc_release(score_out);
-      return out ? out : elmc_list_nil();
+      CATCH_END;
+      elmc_release_array_lifo(owned, DIM(owned));
+      return Rc;
     }
     """
   end

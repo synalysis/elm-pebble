@@ -220,7 +220,7 @@ defmodule Elmc.Backend.CCodegen.Native.String do
       snprintf_args_line =
         Enum.map_join(snprintf_args, ", ", fn
           {:int, ref} -> "(long long)#{ref}"
-          {:boxed_int, ref} -> "(long long)elmc_as_int(#{ref})"
+          {:boxed_int, ref} -> "(long long)elmc_as_int(#{RcRuntimeEmit.value_expr(ref)})"
           {:cstr, ref} -> ref
         end)
 
@@ -294,20 +294,27 @@ defmodule Elmc.Backend.CCodegen.Native.String do
   end
 
   # Snprintf uses C-string %s semantics (stops at NUL) and a fixed stack buffer — only fuse
-  # when the estimated result fits. Long or many dynamic segments fall back to append.
+  # when the estimated result fits. Variable string operands are unbounded (loops, params);
+  # fall back to elmc_string_append so growing accumulators stay correct.
   defp fused_snprintf_buf_size(classified) do
-    format_len =
-      classified
-      |> Enum.map(fn
-        {:literal, text} -> byte_size(text)
-        {:int, _} -> 21
-        {:boxed_int, _} -> 21
-        {:cstr, _} -> 32
-        {:boxed_cstr, _} -> 32
-      end)
-      |> Enum.sum()
+    if Enum.any?(classified, fn
+         {:cstr, _} -> true
+         {:boxed_cstr, _} -> true
+         _ -> false
+       end) do
+      :error
+    else
+      format_len =
+        classified
+        |> Enum.map(fn
+          {:literal, text} -> byte_size(text)
+          {:int, _} -> 21
+          {:boxed_int, _} -> 21
+        end)
+        |> Enum.sum()
 
-    if format_len > @fused_literal_int_buf_size, do: :error, else: format_len
+      if format_len > @fused_literal_int_buf_size, do: :error, else: format_len
+    end
   end
 
   defp compile_snprintf_segment_args(classified, env, counter) do

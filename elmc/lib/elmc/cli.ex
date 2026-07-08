@@ -155,11 +155,13 @@ defmodule Elmc.CLI do
     case Keyword.get(opts, :elmc_opts) do
       %{} = elmc_opts ->
         elmc_opts
+        |> Elmc.Backend.Plan.Defaults.apply_defaults()
         |> Map.put_new(:out_dir, out_dir)
         |> Map.put_new(:strip_dead_code, Keyword.get(opts, :strip_dead_code, true))
 
       _ ->
         %{out_dir: out_dir, strip_dead_code: Keyword.get(opts, :strip_dead_code, true)}
+        |> Elmc.Backend.Plan.Defaults.apply_defaults()
     end
   end
 

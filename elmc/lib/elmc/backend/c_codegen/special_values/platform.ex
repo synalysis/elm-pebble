@@ -12,10 +12,10 @@ defmodule Elmc.Backend.CCodegen.SpecialValues.Platform do
 
 
   def special_value_from_target("Platform.Cmd.none", _args),
-    do: Helpers.command_kind_expr(:none)
+    do: %{op: :cmd_none}
 
   def special_value_from_target("Platform.Sub.none", _args),
-    do: %{op: :int_literal, value: 0}
+    do: %{op: :sub_none}
 
   def special_value_from_target("Pebble.Platform.application", _args),
     do: %{op: :int_literal, value: 0}

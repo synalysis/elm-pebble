@@ -578,10 +578,15 @@ defmodule Ide.Compiler do
   defp run_elmc_compile(project_dir, revision, opts) do
     out_dir = Path.join(project_dir, ".elmc-build")
 
-    elmc_extra_opts = %{
-      prod: Keyword.get(opts, :prod, false),
-      debug_usage_policy: Keyword.get(opts, :debug_usage_policy, :error)
-    }
+    elmc_extra_opts =
+      %{
+        prod: Keyword.get(opts, :prod, false),
+        debug_usage_policy: Keyword.get(opts, :debug_usage_policy, :error),
+        plan_ir_mode: Keyword.get(opts, :plan_ir_mode, :primary),
+        plan_ir_strict: Keyword.get(opts, :plan_ir_strict, true)
+      }
+      |> Enum.reject(fn {_k, v} -> is_nil(v) end)
+      |> Map.new()
 
     result =
       try do
@@ -633,6 +638,7 @@ defmodule Ide.Compiler do
     |> maybe_attach_debugger_contract(project_dir)
     |> maybe_attach_elmx_artifacts(project_dir, revision, opts)
     |> maybe_attach_stack_report(project_dir)
+    |> maybe_attach_bytecode_manifest(project_dir)
   end
 
   defp maybe_attach_runtime_artifacts(result, _project_dir, _revision, _opts), do: result
@@ -658,6 +664,45 @@ defmodule Ide.Compiler do
       _ -> result
     end
   end
+
+  @spec maybe_attach_bytecode_manifest(compile_result(), String.t()) :: compile_result()
+  defp maybe_attach_bytecode_manifest(result, project_dir) when is_map(result) do
+    build_dir = Path.join(project_dir, ".elmc-build")
+    summary = Elmc.Backend.Bytecode.Artifacts.read_summary(build_dir)
+
+    case summary do
+      %{available: true} = manifest ->
+        result
+        |> Map.put(:elmc_bytecode_manifest, manifest)
+        |> maybe_put_plan_coverage(manifest)
+        |> maybe_put_plan_toolchain(manifest)
+
+      _ ->
+        result
+    end
+  end
+
+  defp maybe_put_plan_coverage(result, %{plan_coverage: coverage}) when is_map(coverage) do
+    Map.put(result, :plan_coverage, coverage)
+  end
+
+  defp maybe_put_plan_coverage(result, %{"plan_coverage" => coverage}) when is_map(coverage) do
+    Map.put(result, :plan_coverage, coverage)
+  end
+
+  defp maybe_put_plan_coverage(result, _), do: result
+
+  defp maybe_put_plan_toolchain(result, %{plan_toolchain: toolchain}) when is_map(toolchain) do
+    Map.put(result, :plan_toolchain, toolchain)
+  end
+
+  defp maybe_put_plan_toolchain(result, %{"plan_toolchain" => toolchain}) when is_map(toolchain) do
+    Map.put(result, :plan_toolchain, toolchain)
+  end
+
+  defp maybe_put_plan_toolchain(result, _), do: result
+
+  defp maybe_attach_bytecode_manifest(result, _project_dir), do: result
 
   @spec maybe_attach_debugger_contract(compile_result(), String.t()) :: compile_result()
   defp maybe_attach_debugger_contract(result, project_dir)

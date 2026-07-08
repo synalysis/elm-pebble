@@ -374,6 +374,36 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
 
   def structural_expr?(_expr), do: false
 
+  @spec field_arith_expr?(Types.ir_expr()) :: boolean()
+  def field_arith_expr?(%{op: :call, name: name, args: [left, right]})
+      when name in ["__add__", "__sub__", "__mul__", "__idiv__", "modBy", "remainderBy"] do
+    record_field_var_access?(left) and native_let_operand?(right)
+  end
+
+  def field_arith_expr?(%{op: :runtime_call, function: function, args: [left, right]})
+      when function in ["elmc_basics_mod_by", "elmc_basics_remainder_by"] do
+    record_field_var_access?(left) and native_let_operand?(right)
+  end
+
+  def field_arith_expr?(_expr), do: false
+
+  @spec native_let_value_expr?(Types.ir_expr(), Types.compile_env()) :: boolean()
+  def native_let_value_expr?(expr, env) do
+    structural_expr?(expr) or field_arith_expr?(expr) or Host.native_int_expr?(expr, env) or
+      ConstantInt.native_let_value?(expr, env)
+  end
+
+  defp record_field_var_access?(%{op: :field_access, arg: %{op: :var, name: name}, field: field})
+       when (is_binary(name) or is_atom(name)) and is_binary(field),
+       do: true
+
+  defp record_field_var_access?(_expr), do: false
+
+  defp native_let_operand?(%{op: :var}), do: true
+  defp native_let_operand?(%{op: :int_literal}), do: true
+  defp native_let_operand?(%{op: :char_literal}), do: true
+  defp native_let_operand?(_expr), do: false
+
   @spec compile_boxed(Types.ir_expr(), Types.compile_env(), Types.compile_counter()) ::
           Types.native_scalar_compile_result()
   def compile_boxed(expr, env, counter) do
@@ -873,15 +903,8 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
             {code, value_ref, counter}
 
           :error ->
-            case NativeFunctionCall.compile_scalar(
-                   module_name,
-                   name,
-                   args,
-                   env,
-                   counter,
-                   :native_int
-                 ) do
-              {code, value_ref, counter} -> {code, value_ref, counter}
+            case try_compile_native_scalar_call(module_name, name, args, env, counter) do
+              {:ok, code, value_ref, counter} -> {code, value_ref, counter}
               :error -> compile_fallback(expr, env, counter)
             end
         end
@@ -942,15 +965,14 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
                         {code, value_ref, counter}
 
                       :error ->
-                        case NativeFunctionCall.compile_scalar(
+                        case try_compile_native_scalar_call(
                                target_module,
                                target_name,
                                args,
                                env,
-                               counter,
-                               :native_int
+                               counter
                              ) do
-                          {code, value_ref, counter} -> {code, value_ref, counter}
+                          {:ok, code, value_ref, counter} -> {code, value_ref, counter}
                           :error -> compile_fallback(expr, env, counter)
                         end
                     end
@@ -1703,6 +1725,15 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
   defp emitted_line_count(code) when is_binary(code),
     do: code |> String.split("\n", trim: true) |> length()
 
+  defp try_compile_native_scalar_call(module_name, name, args, env, counter) do
+    Enum.reduce_while([:native_bool, :native_int], :error, fn kind, _acc ->
+      case NativeFunctionCall.compile_scalar(module_name, name, args, env, counter, kind) do
+        {code, value_ref, counter} -> {:halt, {:ok, code, value_ref, counter}}
+        :error -> {:cont, :error}
+      end
+    end)
+  end
+
   defp format_function_target({module_name, function_name}), do: "#{module_name}.#{function_name}"
 
   @spec native_min_max_name(String.t()) :: String.t()
@@ -1771,12 +1802,7 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
     next = counter + 1
     out = "native_i_#{next}"
 
-    operand_release =
-      if ValueSlots.owned_ref?(var) and ValueSlots.epilogue_lifo?() do
-        ValueSlots.release_owned_eager(var)
-      else
-        ValueSlots.release_stmt(var)
-      end
+    operand_release = ValueSlots.release_consumed(var)
 
     result =
       {"""
@@ -1803,7 +1829,7 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
 
       {
         key_code <> dict_code,
-        "elmc_dict_get_with_default_int(#{default_ref}, #{key_ref}, #{dict_var})",
+        "elmc_dict_get_with_default_int(#{default_ref}, #{key_ref}, #{RcRuntimeEmit.value_expr(dict_var)})",
         dict_var,
         counter
       }
@@ -1812,7 +1838,7 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
 
       {
         key_code <> dict_code,
-        "elmc_dict_get_with_default_int_value(#{default_ref}, #{key_var}, #{dict_var})",
+        "elmc_dict_get_with_default_int_value(#{default_ref}, #{key_var}, #{RcRuntimeEmit.value_expr(dict_var)})",
         [key_var, dict_var],
         counter
       }

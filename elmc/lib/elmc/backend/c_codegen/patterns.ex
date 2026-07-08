@@ -888,8 +888,11 @@ defmodule Elmc.Backend.CCodegen.Patterns do
     end
   end
 
-  defp int_modes_from_plan(%StoragePlan{layout: :compact, elem: {:primitive, :int}}), do: [:int_list]
-  defp int_modes_from_plan(%StoragePlan{layout: :native_linked, elem: {:primitive, :int}}), do: [:int_spine]
+  defp int_modes_from_plan(%StoragePlan{layout: :compact, elem: {:primitive, :int}}),
+    do: [:int_list, :cons]
+
+  defp int_modes_from_plan(%StoragePlan{layout: :native_linked, elem: {:primitive, :int}}),
+    do: [:int_spine, :cons]
 
   defp int_modes_from_plan(%StoragePlan{layout: :boxed_cons, elem: {:primitive, :int}}),
     do: [:cons]

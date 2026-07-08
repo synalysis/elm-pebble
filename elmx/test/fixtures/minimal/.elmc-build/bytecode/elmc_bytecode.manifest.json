@@ -1,0 +1,34 @@
+{
+  "contract": "elmc.bytecode_manifest.v1",
+  "functions": [],
+  "plan_coverage": {
+    "all": {
+      "failed_count": 0,
+      "failed_preview": [],
+      "lowered": 0,
+      "ratio": 0.0,
+      "total": 0
+    },
+    "main": {
+      "failed_count": 0,
+      "failed_preview": [],
+      "lowered": 0,
+      "ratio": 0.0,
+      "total": 0
+    },
+    "reachable": {
+      "failed_count": 0,
+      "failed_preview": [],
+      "lowered": 0,
+      "ratio": 0.0,
+      "total": 0
+    }
+  },
+  "plan_toolchain": {
+    "mode": "primary",
+    "strict": true
+  },
+  "pruned_count": 0,
+  "skipped": [],
+  "version": 3
+}

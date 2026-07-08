@@ -554,6 +554,7 @@ defmodule Elmc.Backend.CCodegen.ConstructorTagCase do
   end
 
   @foldl_borrowed_var ~r/^list_foldl_(cursor|head|node)_\d+$/
+  @list_walk_borrowed_var ~r/^list_walk_(cursor|node)_\d+$/
   @list_case_suffix_var ~r/^list_case_suffix_\d+$/
 
   defp switch_branch_cleanup(expr_code, assignment_code, out) do
@@ -582,6 +583,7 @@ defmodule Elmc.Backend.CCodegen.ConstructorTagCase do
       name == out or
         String.starts_with?(name, "__") or
         Regex.match?(@foldl_borrowed_var, name) or
+        Regex.match?(@list_walk_borrowed_var, name) or
         Regex.match?(@list_case_suffix_var, name) or
         MapSet.member?(released, name) or
         MapSet.member?(cow_drop_skip, name) or

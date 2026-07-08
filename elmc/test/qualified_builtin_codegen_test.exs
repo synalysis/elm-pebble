@@ -511,7 +511,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
     body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_drawOuterScale")
 
     assert body =~
-             ~r/elmc_new_int\(&owned\[\d+\], \(native_polar_x_\d+ - 9\)\);\s*\n\s*CHECK_RC\(Rc\);\s*\n\s*Rc = elmc_new_int\(&owned\[\d+\], \(native_polar_y_\d+ - 8\)\);\s*\n\s*CHECK_RC\(Rc\);\s*\n\s*Rc = elmc_new_int\(&owned\[\d+\], 18\);\s*\n\s*CHECK_RC\(Rc\);\s*\n\s*Rc = elmc_new_int\(&owned\[\d+\], 12\);/,
+             ~r/elmc_new_int\(&owned\[\d+\], \(native_polar_x_\d+ - 9\)\)[\s\S]*elmc_new_int\(&owned\[\d+\], \(native_polar_y_\d+ - 8\)\)[\s\S]*elmc_new_int\(&owned\[\d+\], 18\)[\s\S]*elmc_new_int\(&owned\[\d+\], 12\)/,
              "expected Rect literal fields in x, y, w, h codegen order"
 
     assert body =~ ~r/ElmcValue \*rec_values_\d+\[4\] = \{ owned\[\d+\], owned\[\d+\], owned\[\d+\], owned\[\d+\] \};/
@@ -580,11 +580,12 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     duration_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_durationString_native")
 
-    assert duration_body =~
-             ~r/snprintf\(native_string_buf_\d+, sizeof\(native_string_buf_\d+\), "%lld:%s", \(long long\)elmc_int_idiv\(minutes, 60\), native_string_\d+\);\s+Rc = elmc_new_string\(out, native_string_buf_\d+\)/
+    assert duration_body =~ ~r/elmc_int_idiv\(minutes, 60\)/
+    assert duration_body =~ "elmc_fn_Main_pad2_native"
+    assert duration_body =~ "elmc_string_append"
     refute duration_body =~ "elmc_string_append_native"
     refute duration_body =~ "native_string_buf_5_i"
-    refute duration_body =~ "elmc_string_append("
+    refute duration_body =~ "elmc_append("
   end
 
   test "boxed String if lets avoid default initialization and nullable retain fallback" do
@@ -624,8 +625,9 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
     refute boxed_string_if_body =~ "elmc_append("
     refute boxed_string_if_body =~ "&& tmp_"
 
-    assert boxed_string_if_body =~
-             ~r/snprintf\(native_string_buf_\d+, sizeof\(native_string_buf_\d+\), .+\);\s+Rc = elmc_new_string\(out, native_string_buf_\d+\)/
+    assert boxed_string_if_body =~ "native_string_if_"
+    assert boxed_string_if_body =~ ~r/snprintf\(native_string_buf_\d+, sizeof\(native_string_buf_\d+\), "%lld", \(long long\)value\)/
+    assert boxed_string_if_body =~ "elmc_string_append"
     refute boxed_string_if_body =~ "elmc_string_append_native"
   end
 
@@ -4064,8 +4066,9 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
     view_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_view_commands_append")
 
     assert view_body =~ "ELMC_RENDER_OP_TEXT"
-    assert view_body =~ "elmc_scene_text_from_nonzero_int"
+    assert view_body =~ "ELMC_RENDER_OP_TEXT_INT_WITH_FONT"
     assert view_body =~ "scene_cmd.text[0] = '.';"
+    refute view_body =~ "elmc_scene_text_from_nonzero_int"
     refute view_body =~ "snprintf(scene_cmd.text"
     refute view_body =~ "const char *direct_text = \".\";"
     refute view_body =~ "elmc_fn_Main_drawCell_commands_append_native"

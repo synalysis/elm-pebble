@@ -11,6 +11,9 @@ defmodule Ide.PebbleToolchainElmcCompileTest do
     assert opts[:prune_native_wrappers] == true
     assert opts[:prune_direct_generic] == true
     assert opts[:direct_render_only] == false
+    assert opts[:plan_ir_mode] == :primary
+    assert opts[:plan_ir_strict] == true
+    assert opts[:prod] == true
   end
 
   test "watch_compile_opts enables direct render for color-only multi-platform apps" do

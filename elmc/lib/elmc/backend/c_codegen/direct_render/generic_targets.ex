@@ -458,7 +458,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.GenericTargets do
     MapSet.difference(peeled, required)
   end
 
-  defp direct_command_boxed_callees(direct_targets, decl_map, opts \\ %{}, entry_module \\ "Main") do
+  defp direct_command_boxed_callees(direct_targets, decl_map, opts, entry_module) do
     direct_targets = direct_targets_for_helper_analysis(direct_targets, opts, decl_map, entry_module)
 
     direct_targets
@@ -564,61 +564,6 @@ defmodule Elmc.Backend.CCodegen.DirectRender.GenericTargets do
        do: inner
 
   defp ui_node_inner_expr(_expr), do: nil
-
-  defp generic_helper_callees_from_direct_targets(direct_targets, decl_map, opts \\ %{}, entry_module \\ "Main") do
-    direct_targets = direct_targets_for_helper_analysis(direct_targets, opts, decl_map, entry_module)
-
-    direct_targets
-    |> MapSet.to_list()
-    |> Enum.flat_map(fn {module_name, _decl_name} = target ->
-      case Map.fetch(decl_map, target) do
-        {:ok, %{expr: expr}} ->
-          collect_generic_helper_callees(
-            expr,
-            module_name,
-            direct_targets,
-            decl_map,
-            MapSet.new([target])
-          )
-
-        :error ->
-          []
-      end
-    end)
-    |> Enum.reject(&render_helper_target?/1)
-    |> Enum.uniq()
-  end
-
-  defp collect_generic_helper_callees(expr, module_name, direct_targets, decl_map, seen) do
-    GenericReachability.expr_callees(expr, module_name, decl_map)
-    |> Enum.flat_map(fn callee ->
-      cond do
-        MapSet.member?(direct_targets, callee) ->
-          []
-
-        MapSet.member?(seen, callee) ->
-          []
-
-        true ->
-          case Map.fetch(decl_map, callee) do
-            {:ok, %{expr: callee_expr}} ->
-              nested =
-                collect_generic_helper_callees(
-                  callee_expr,
-                  elem(callee, 0),
-                  direct_targets,
-                  decl_map,
-                  MapSet.put(seen, callee)
-                )
-
-              [callee | nested]
-
-            :error ->
-              [callee]
-          end
-      end
-    end)
-  end
 
   defp generic_callees_from_direct_targets(direct_targets, decl_map) do
     inlined_record_helpers = inlined_record_helpers(direct_targets, decl_map)

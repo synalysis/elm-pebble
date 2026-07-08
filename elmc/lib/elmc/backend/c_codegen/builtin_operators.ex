@@ -540,19 +540,19 @@ defmodule Elmc.Backend.CCodegen.BuiltinOperators do
           end
 
         float_stmt =
-          RcRuntimeEmit.fusion_assign(
+          RcRuntimeEmit.mutually_exclusive_allocator_assign(
+            env,
             out,
             "elmc_new_float",
-            "elmc_as_float(#{left_ref}) #{operator} elmc_as_float(#{right_ref})",
-            env
+            "elmc_as_float(#{left_ref}) #{operator} elmc_as_float(#{right_ref})"
           )
 
         int_stmt =
-          RcRuntimeEmit.fusion_assign(
+          RcRuntimeEmit.mutually_exclusive_allocator_assign(
+            env,
             out,
             "elmc_new_int",
-            "elmc_as_int(#{left_ref}) #{operator} elmc_as_int(#{right_ref})",
-            env
+            "elmc_as_int(#{left_ref}) #{operator} elmc_as_int(#{right_ref})"
           )
 
         converge = ValueSlots.normalize_branch_result_slot(out)
@@ -975,11 +975,7 @@ defmodule Elmc.Backend.CCodegen.BuiltinOperators do
   defp binop_operand_release(var, out) when var == out, do: ""
 
   defp binop_operand_release(var, _out) do
-    if ValueSlots.owned_ref?(var) and ValueSlots.epilogue_lifo?() do
-      ValueSlots.release_owned_eager(var)
-    else
-      ValueSlots.release_stmt(var)
-    end
+    ValueSlots.release_consumed(var)
   end
 
   @spec retain_declared_out_operand(

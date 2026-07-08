@@ -329,7 +329,33 @@ defmodule ElmcTest do
 
     assert runtime =~ "RC elmc_closure_new"
     assert runtime =~ "elmc_malloc_impl"
+    assert runtime =~ "elmc_calloc_impl"
     assert runtime =~ "elmc_closure_cell_release"
+  end
+
+  test "runtime pruning keeps calloc impl when generated code uses elmc_calloc" do
+    out_dir = Path.expand("tmp/runtime_pruned_calloc", __DIR__)
+    refs_dir = Path.join(out_dir, "refs")
+    runtime_dir = Path.join(out_dir, "runtime")
+
+    File.rm_rf!(out_dir)
+    File.mkdir_p!(refs_dir)
+
+    File.write!(Path.join(refs_dir, "elmc_generated.c"), """
+    #include "elmc_runtime.h"
+
+    void uses_calloc(void) {
+      ElmcValue **owned = (ElmcValue **)elmc_calloc(4, sizeof(ElmcValue *), "owned_slots");
+      (void)owned;
+    }
+    """)
+
+    assert :ok = Elmc.Runtime.Generator.write_runtime(runtime_dir, prune_from_dir: refs_dir)
+
+    runtime = File.read!(Path.join(runtime_dir, "elmc_runtime.c"))
+
+    assert runtime =~ "void *elmc_calloc_impl(size_t nmemb, size_t size, const char *context, const char *file, int line)"
+    refute runtime =~ "undefined reference"
   end
 
   test "runtime stores int and bool scalars inline" do

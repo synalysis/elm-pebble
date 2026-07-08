@@ -222,9 +222,9 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompileTest do
     source = IO.iodata_to_binary(code)
 
     assert source =~
-             "ElmcValue *call_args_14[2] = { ELMC_RECORD_GET_INDEX(model, 1 /* seed */), tmp_5 }"
+             "elmc_fn_Main_spawnTileWithSeed(ELMC_RECORD_GET_INDEX(model, 1 /* seed */), tmp_5)"
 
-    refute source =~ "elmc_record_get_index(model, 1 /* seed */)"
+    refute source =~ "ElmcValue *call_args_"
     refute source =~ "elmc_release(tmp_13)"
   end
 end

@@ -13,10 +13,10 @@ defmodule Elmc.Backend.CCodegen.SpecialValues.Cmd do
 
 
   def special_value_from_target("Pebble.Cmd.none", _args),
-    do: Helpers.command_kind_expr(:none)
+    do: %{op: :cmd_none}
 
   def special_value_from_target("Elm.Kernel.PebbleWatch.none", _args),
-    do: Helpers.command_kind_expr(:none)
+    do: %{op: :cmd_none}
 
   def special_value_from_target("Pebble.Cmd.timerAfter", args),
     do: Helpers.encoded_cmd_expr(Helpers.command_kind(:timer_after_ms), args, 1)
@@ -152,6 +152,17 @@ defmodule Elmc.Backend.CCodegen.SpecialValues.Cmd do
 
   def special_value_from_target("Elm.Kernel.PebbleWatch.companionSend", args),
     do: Helpers.encoded_cmd_expr(Helpers.command_kind(:companion_send), args, 2)
+
+  def special_value_from_target("Companion.Watch.sendWatchToPhone", [msg]) do
+    Helpers.encoded_cmd_expr(
+      Helpers.command_kind(:companion_send),
+      [
+        %{op: :qualified_call, target: "Companion.Internal.watchToPhoneTag", args: [msg]},
+        %{op: :qualified_call, target: "Companion.Internal.watchToPhoneValue", args: [msg]}
+      ],
+      2
+    )
+  end
 
   def special_value_from_target("Pebble.Light.interaction", []),
     do: Helpers.encoded_cmd_expr(Helpers.command_kind(:backlight), [%{op: :int_literal, value: 0}], 1)

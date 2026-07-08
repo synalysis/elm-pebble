@@ -22,6 +22,17 @@ defmodule Elmc.Backend.CCodegen.EnvBindings do
     end)
   end
 
+  @doc false
+  @spec any_live_binding_ref?(Types.compile_env(), String.t()) :: boolean()
+  def any_live_binding_ref?(env, ref) when is_binary(ref) do
+    Enum.any?(env, fn
+      {key, ^ref} when is_binary(key) -> not String.starts_with?(key, "__")
+      _ -> false
+    end)
+  end
+
+  def any_live_binding_ref?(_env, _ref), do: false
+
   @spec put_var_type(Types.compile_env(), Types.binding_name(), String.t()) :: Types.compile_env()
   def put_var_type(env, name, type) when is_binary(name) and is_binary(type) do
     types = Map.get(env, :__var_types__, %{})
@@ -302,9 +313,15 @@ defmodule Elmc.Backend.CCodegen.EnvBindings do
 
   @spec effective_program_decls(Types.compile_env()) :: Types.function_decl_map()
   def effective_program_decls(env) do
-    case Map.get(env, :__program_decls__, %{}) do
-      map when map_size(map) > 0 -> map
-      _ -> Process.get(:elmc_program_decls, %{})
+    process_map = Process.get(:elmc_program_decls, %{})
+
+    if map_size(process_map) > 0 do
+      process_map
+    else
+      case Map.get(env, :__program_decls__) do
+        map when is_map(map) -> map
+        _ -> %{}
+      end
     end
   end
 

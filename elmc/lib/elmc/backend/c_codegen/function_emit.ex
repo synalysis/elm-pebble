@@ -18,13 +18,18 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
   alias Elmc.Backend.CCodegen.RecordCompile
   alias Elmc.Backend.CCodegen.TypeParsing
   alias Elmc.Backend.CCodegen.Fusion
+  alias Elmc.Backend.CCodegen.FunctionCallAbi
   alias Elmc.Backend.CCodegen.FunctionSplit
   alias Elmc.Backend.CCodegen.FunctionCallCompile
+  alias Elmc.Backend.CCodegen.PlanNativeProjection
   alias Elmc.Backend.CCodegen.ValueSlots
   alias Elmc.Backend.CCodegen.ImmortalStaticList
   alias Elmc.Backend.CCodegen.Tuple2CaseTable
   alias Elmc.Backend.CCodegen.Types
   alias Elmc.Backend.CCodegen.Util
+  alias Elmc.Backend.C.Lower.Function, as: CLowerFunction
+  alias Elmc.Backend.Plan
+  alias Elmc.Backend.Plan.PrimaryCoverage
 
   @c_reserved_binding_names ~w(
     args argc out_cmds max_cmds skip count emitted
@@ -49,53 +54,98 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
         decl_map,
         emit_wrapper?
       ) do
-    if NativeFunctionCall.native_scalar_fn?(decl, module_name, decl_map) do
-      emit_native_function_def(
-        decl,
-        module_name,
-        c_name,
-        function_arities,
-        decl_map,
-        emit_wrapper?
-      )
-    else
-      Process.put(:elmc_generic_helper_defs, [])
-      Process.put(:elmc_generic_helper_counter, 0)
-      direct_args? = not worker_rc_abi?(emit_wrapper?, module_name, decl.name, decl_map)
-      {immortal_prelude, body} = emit_body(decl, module_name, function_arities, decl_map, direct_args?)
-      helper_defs = generic_helper_defs()
-      Process.delete(:elmc_generic_helper_defs)
-      Process.delete(:elmc_generic_helper_counter)
+    cond do
+      plan_primary_function?(decl, module_name, decl_map) ->
+        emit_boxed_function_def(
+          decl,
+          module_name,
+          c_name,
+          function_arities,
+          decl_map,
+          emit_wrapper?
+        )
 
-      policy =
-        if direct_args? do
-          "#{Enum.join(decl.ownership, ", ")}, direct_call_abi"
-        else
-          Enum.join(decl.ownership, ", ")
-        end
+      NativeFunctionCall.native_scalar_fn?(decl, module_name, decl_map) ->
+        emit_native_function_def(
+          decl,
+          module_name,
+          c_name,
+          function_arities,
+          decl_map,
+          emit_wrapper?
+        )
 
-      rc_required? = RcRequired.rc_required?(module_name, decl.name)
-
-      signature =
-        cond do
-          rc_required? -> rc_function_params(direct_args?, decl, module_name, decl_map)
-          direct_args? -> direct_params(decl, module_name, decl_map)
-          true -> "ElmcValue ** const args, const int argc"
-        end
-
-      return_type = if rc_required?, do: "RC", else: "ElmcValue *"
-
-      linkage = function_linkage_prefix(module_name, decl.name)
-
-      """
-      #{immortal_prelude}#{if immortal_prelude == "", do: "", else: "\n"}
-      #{helper_defs}#{linkage}#{return_type} #{c_name}(#{signature}) {
-        /* Ownership policy: #{policy} */
-      #{body}
-      }
-      """
-      |> String.trim_trailing()
+      true ->
+        emit_boxed_function_def(
+          decl,
+          module_name,
+          c_name,
+          function_arities,
+          decl_map,
+          emit_wrapper?
+        )
     end
+  end
+
+  defp emit_boxed_function_def(
+         decl,
+         module_name,
+         c_name,
+         function_arities,
+         decl_map,
+         emit_wrapper?
+       ) do
+    Process.put(:elmc_generic_helper_defs, [])
+    Process.put(:elmc_generic_helper_counter, 0)
+    direct_args? =
+      FunctionCallAbi.direct_entry_abi?(decl, module_name, decl_map) or
+        not worker_rc_abi?(emit_wrapper?, module_name, decl.name, decl_map)
+    {immortal_prelude, body} = emit_body(decl, module_name, function_arities, decl_map, direct_args?)
+    helper_defs = generic_helper_defs()
+    Process.delete(:elmc_generic_helper_defs)
+    Process.delete(:elmc_generic_helper_counter)
+
+    policy =
+      if direct_args? do
+        "#{Enum.join(decl.ownership, ", ")}, direct_call_abi"
+      else
+        Enum.join(decl.ownership, ", ")
+      end
+
+    rc_required? = RcRequired.rc_required?(module_name, decl.name)
+
+    signature =
+      cond do
+        rc_required? -> rc_function_params(direct_args?, decl, module_name, decl_map)
+        direct_args? -> direct_params(decl, module_name, decl_map)
+        true -> "ElmcValue ** const args, const int argc"
+      end
+
+    return_type = if rc_required?, do: "RC", else: "ElmcValue *"
+
+    linkage = function_linkage_prefix(module_name, decl.name)
+
+    native_projection =
+      if plan_primary_body?(decl, module_name, decl_map, Process.get(:elmc_codegen_opts, [])) and
+           PlanNativeProjection.eligible?(decl, module_name, decl_map) do
+        PlanNativeProjection.emit(decl, module_name, decl_map)
+      else
+        ""
+      end
+
+    """
+    #{immortal_prelude}#{if immortal_prelude == "", do: "", else: "\n"}
+    #{helper_defs}#{linkage}#{return_type} #{c_name}(#{signature}) {
+      /* Ownership policy: #{policy} */
+    #{body}
+    }
+    #{native_projection}
+    """
+    |> String.trim_trailing()
+  end
+
+  defp plan_primary_function?(decl, module_name, decl_map) do
+    Plan.primary_lowered?(decl, module_name, decl_map)
   end
 
   defp skip_native_def?(decl, module_name, decl_map) do
@@ -113,13 +163,24 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
       not ListIntSearch.recognized?(decl, module_name, decl_map) and
       not match?({:ok, _}, ListIntReduce.recognize(decl, module_name, decl_map)) and
       NativeFunctionCall.return_kind(decl, module_name, decl_map) in [:native_int, :native_bool] and
-      native_zero_arg_literal_body?(decl)
+      native_zero_arg_literal_body?(decl, module_name, decl_map)
   end
 
-  defp native_zero_arg_literal_body?(%{expr: expr}) do
-    case expr do
-      %{op: op, value: _} when op in [:int_literal, :char_literal, :bool_literal, :c_int_expr] ->
+  defp native_zero_arg_literal_body?(decl, module_name, decl_map) do
+    case decl do
+      %{expr: %{op: op, value: _}} when op in [:int_literal, :char_literal, :bool_literal, :c_int_expr] ->
         true
+
+      %{expr: expr} when is_map(expr) ->
+        env =
+          %{}
+          |> Map.put(:__module__, module_name)
+          |> Map.put(:__program_decls__, decl_map)
+
+        case Elmc.Backend.CCodegen.ConstantInt.literal_value(expr, env) do
+          {:ok, _} -> true
+          :error -> false
+        end
 
       _ ->
         false
@@ -236,6 +297,9 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
     worker_abi? = worker_rc_abi?(emit_wrapper?, module_name, decl.name, decl_map)
 
     cond do
+      FunctionCallAbi.direct_entry_abi?(decl, module_name, decl_map) ->
+        boxed_direct_prototype(decl, c_name, module_name, decl.name, decl_map)
+
       worker_abi? and not NativeFunctionCall.native_scalar_fn?(decl, module_name, decl_map) ->
         if RcRequired.rc_required?(module_name, decl.name) do
           "RC #{c_name}(ElmcValue **out, ElmcValue ** const args, const int argc);"
@@ -288,13 +352,43 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
         direct_args? \\ false
       )
 
-  def emit_body(%{expr: nil}, _module_name, _function_arities, _decl_map, _direct_args?) do
-    {"", "(void)args; (void)argc; return elmc_int_zero();"}
+  def emit_body(%{expr: nil} = decl, module_name, _function_arities, _decl_map, _direct_args?) do
+    stub =
+      if RcRequired.rc_required?(module_name, decl.name) do
+        "(void)args; (void)argc; *out = elmc_int_zero(); return RC_SUCCESS;"
+      else
+        "(void)args; (void)argc; return elmc_int_zero();"
+      end
+
+    {"", stub}
   end
 
   def emit_body(decl, module_name, function_arities, decl_map, direct_args?) do
     rc_required? = RcRequired.rc_required?(module_name, decl.name)
+    opts = Process.get(:elmc_codegen_opts, [])
 
+    if plan_primary_body?(decl, module_name, decl_map, opts) do
+      {"", emit_boxed_body(decl, module_name, function_arities, decl_map, direct_args?)}
+    else
+      emit_body_immortal_or_boxed(
+        decl,
+        module_name,
+        function_arities,
+        decl_map,
+        direct_args?,
+        rc_required?
+      )
+    end
+  end
+
+  defp emit_body_immortal_or_boxed(
+         decl,
+         module_name,
+         function_arities,
+         decl_map,
+         direct_args?,
+         rc_required?
+       ) do
     with true <- ImmortalStaticList.zero_arg_function?(decl),
          {:ok, prelude, body} <-
            ImmortalStaticList.try_emit_function_prelude_and_body(
@@ -321,9 +415,18 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
     end
   end
 
+  defp plan_primary_body?(decl, module_name, decl_map, opts) do
+    Plan.plan_ir_mode(opts) == :primary and Plan.primary_lowered?(decl, module_name, decl_map)
+  end
+
   defp emit_boxed_body(decl, module_name, function_arities, decl_map, direct_args?) do
     rc_required? = RcRequired.rc_required?(module_name, decl.name)
-    if rc_required?, do: ValueSlots.reset(epilogue_lifo: true)
+    opts = Process.get(:elmc_codegen_opts, [])
+
+    if rc_required? and not plan_primary_body?(decl, module_name, decl_map, opts) do
+      ValueSlots.reset(epilogue_lifo: true)
+    end
+
     RecordCompile.reset_borrowed_field_refs()
 
     arg_names = decl.args || []
@@ -355,6 +458,7 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
       |> Map.put(:__direct_call_targets__, Process.get(:elmc_direct_call_targets, MapSet.new()))
       |> Map.put(:__rc_required__, rc_required?)
       |> Map.put(:__rc_catch__, false)
+      |> Map.put(:__record_field_types__, Process.get(:elmc_record_field_types, %{}))
       |> Map.put(
         :__function_analysis__,
         LetAnalysis.analyze_function_expr(
@@ -364,6 +468,124 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
         )
       )
 
+    opts = Process.get(:elmc_codegen_opts, [])
+
+    if Plan.plan_ir_mode(opts) == :primary do
+      case maybe_emit_primary_plan_body(
+             decl,
+             module_name,
+             decl_map,
+             arg_bindings,
+             arg_binding_code,
+             direct_args?,
+             rc_required?,
+             entry_probe,
+             exit_probe
+           ) do
+        {:ok, body} ->
+          body
+
+        :legacy ->
+          opts = Process.get(:elmc_codegen_opts, [])
+
+          if Plan.strict_primary?(opts) and
+               primary_fallback_reachable?(module_name, decl.name, opts) do
+            raise ArgumentError,
+                  "plan_ir_strict: cannot lower reachable function #{module_name}.#{decl.name} to Plan IR"
+          else
+            emit_primary_legacy_fallback(
+              decl,
+              module_name,
+              env,
+              arg_bindings,
+              arg_binding_code,
+              direct_args?,
+              rc_required?,
+              entry_probe,
+              exit_probe,
+              arg_kinds
+            )
+          end
+      end
+    else
+      emit_boxed_body_fusion_or_legacy(
+        module_name,
+        decl,
+        decl_map,
+        env,
+        arg_bindings,
+        direct_args?,
+        entry_probe,
+        exit_probe,
+        arg_binding_code,
+        rc_required?,
+        arg_kinds,
+        opts
+      )
+    end
+  end
+
+  defp emit_primary_legacy_fallback(
+         decl,
+         module_name,
+         env,
+         arg_bindings,
+         arg_binding_code,
+         direct_args?,
+         rc_required?,
+         entry_probe,
+         exit_probe,
+         arg_kinds
+       ) do
+    record_plan_primary_fallback(module_name, decl.name)
+
+    emit_legacy_boxed_body(
+      decl,
+      module_name,
+      env,
+      arg_bindings,
+      arg_binding_code,
+      direct_args?,
+      rc_required?,
+      entry_probe,
+      exit_probe,
+      arg_kinds
+    )
+  end
+
+  defp record_plan_primary_fallback(module_name, fun_name)
+       when is_binary(module_name) and is_binary(fun_name) do
+    key = :elmc_plan_primary_fallbacks
+
+    fallbacks =
+      Process.get(key, [])
+      |> then(fn acc ->
+        if {module_name, fun_name} in acc, do: acc, else: [{module_name, fun_name} | acc]
+      end)
+
+    Process.put(key, fallbacks)
+    :ok
+  end
+
+  defp primary_fallback_reachable?(module_name, fun_name, opts) do
+    decl_map = Process.get(:elmc_program_decls, %{})
+    PrimaryCoverage.reachable_function?(decl_map, module_name, fun_name, opts)
+  end
+
+  defp emit_boxed_body_fusion_or_legacy(
+         module_name,
+         decl,
+         decl_map,
+         env,
+         arg_bindings,
+         direct_args?,
+         entry_probe,
+         exit_probe,
+         arg_binding_code,
+         rc_required?,
+         arg_kinds,
+         opts
+       ) do
     case boxed_special_body_emit(
            module_name,
            decl,
@@ -372,76 +594,196 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
            direct_args?,
            entry_probe,
            exit_probe,
-         arg_binding_code,
-         rc_required?
-       ) do
+           arg_binding_code,
+           rc_required?
+         ) do
       {:ok, body} ->
         body
 
       :error ->
-        compile_env =
-          if rc_required?,
-            do:
-              env
-              |> Map.put(:__rc_catch__, true)
-              |> Map.put(:__function_rc_out_param__, RcRuntimeEmit.function_out_param()),
-            else: env
-
-        root_env =
-          if rc_required?, do: RcRuntimeEmit.function_tail_env(compile_env), else: compile_env
-
-        FunctionCallCompile.reset_call_args_cache!()
-        ValueSlots.reset_closure_call_arg_consumed!()
-
-        {code, result_var, _counter} =
-          case compile_tail_recursive(
-                 decl,
-                 module_name,
-                 compile_env,
-                 arg_bindings,
-                 arg_kinds,
-                 :boxed
-               ) do
-            {:ok, loop_code, tail_result} ->
-              {loop_code, tail_result, 0}
-
-            :error ->
-              Host.compile_expr(decl.expr || %{op: :int_literal, value: 0}, root_env, 0)
+        _ =
+          if Plan.plan_ir_mode(opts) == :shadow do
+            Plan.shadow_verify(decl, module_name, decl_map,
+              Keyword.merge(compile_opts_list(opts),
+                rc_required: rc_required?,
+                plan_ir_raise: plan_ir_raise?(opts)
+              )
+            )
+          else
+            :skipped
           end
 
-        unless rc_required? and RcRuntimeEmit.function_out_ref?(result_var),
-          do: ValueSlots.track(result_var)
+        case maybe_emit_primary_plan_body(
+               decl,
+               module_name,
+               decl_map,
+               arg_bindings,
+               arg_binding_code,
+               direct_args?,
+               rc_required?,
+               entry_probe,
+               exit_probe
+             ) do
+          {:ok, body} ->
+            body
 
-        result_probe = DebugProbes.result_probe(module_name, decl.name, result_var)
-
-        core_body =
-          [
-            entry_probe,
-            code,
-            exit_probe,
-            result_probe,
-            if(rc_required? and not RcRuntimeEmit.function_out_ref?(result_var),
-              do: publish_rc_function_out(result_var),
-              else: if(not rc_required?, do: "return #{result_var};", else: nil)
+          :legacy ->
+            emit_legacy_boxed_body(
+              decl,
+              module_name,
+              env,
+              arg_bindings,
+              arg_binding_code,
+              direct_args?,
+              rc_required?,
+              entry_probe,
+              exit_probe,
+              arg_kinds
             )
-          ]
-          |> Enum.reject(&is_nil/1)
-
-        if rc_required? do
-          wrap_rc_function_body(
-            arg_bindings,
-            arg_binding_code,
-            core_body,
-            direct_args?
-          )
-        else
-          unused_casts = unused_arg_casts(arg_bindings, core_body)
-
-          format_function_body(
-            [wrapper_abi_void_casts(direct_args?, arg_bindings), arg_binding_code, unused_casts |
-               core_body]
-          )
         end
+    end
+  end
+
+  defp emit_legacy_boxed_body(
+         decl,
+         module_name,
+         env,
+         arg_bindings,
+         arg_binding_code,
+         direct_args?,
+         rc_required?,
+         entry_probe,
+         exit_probe,
+         arg_kinds
+       ) do
+    compile_env =
+      if rc_required?,
+        do:
+          env
+          |> Map.put(:__rc_catch__, true)
+          |> Map.put(:__function_rc_out_param__, RcRuntimeEmit.function_out_param()),
+        else: env
+
+    root_env =
+      if rc_required?, do: RcRuntimeEmit.function_tail_env(compile_env), else: compile_env
+
+    FunctionCallCompile.reset_call_args_cache!()
+    ValueSlots.reset_closure_call_arg_consumed!()
+
+    {code, result_var, _counter} =
+      case compile_tail_recursive(
+             decl,
+             module_name,
+             compile_env,
+             arg_bindings,
+             arg_kinds,
+             :boxed
+           ) do
+        {:ok, loop_code, tail_result} ->
+          {loop_code, tail_result, 0}
+
+        :error ->
+          Host.compile_expr(decl.expr || %{op: :int_literal, value: 0}, root_env, 0)
+      end
+
+    unless rc_required? and RcRuntimeEmit.function_out_ref?(result_var),
+      do: ValueSlots.track(result_var)
+
+    result_probe = DebugProbes.result_probe(module_name, decl.name, result_var)
+
+    core_body =
+      [
+        entry_probe,
+        code,
+        exit_probe,
+        result_probe,
+        if(rc_required? and not RcRuntimeEmit.function_out_ref?(result_var),
+          do: publish_rc_function_out(result_var),
+          else: if(not rc_required?, do: "return #{result_var};", else: nil)
+        )
+      ]
+      |> Enum.reject(&is_nil/1)
+
+    if rc_required? do
+      wrap_rc_function_body(
+        arg_bindings,
+        arg_binding_code,
+        core_body,
+        direct_args?
+      )
+    else
+      unused_casts = unused_arg_casts(arg_bindings, core_body)
+
+      format_function_body(
+        [wrapper_abi_void_casts(direct_args?, arg_bindings), arg_binding_code, unused_casts |
+           core_body]
+      )
+    end
+  end
+
+  defp maybe_emit_primary_plan_body(
+         decl,
+         module_name,
+         decl_map,
+         arg_bindings,
+         arg_binding_code,
+         direct_args?,
+         rc_required?,
+         entry_probe,
+         exit_probe
+       ) do
+    opts = Process.get(:elmc_codegen_opts, [])
+
+    if Plan.plan_ir_mode(opts) != :primary do
+      :legacy
+    else
+      case Plan.lower_function(decl, module_name, decl_map, rc_required: rc_required?) do
+        {:ok, plan} ->
+          result_probe = DebugProbes.result_probe(module_name, decl.name, "*out")
+
+          plan_core =
+            plan
+            |> CLowerFunction.emit()
+            |> insert_plan_result_probe(result_probe)
+
+          body =
+            format_function_body(
+              [
+                wrapper_abi_void_casts(direct_args?, arg_bindings),
+                arg_binding_code,
+                entry_probe,
+                plan_core,
+                exit_probe
+              ]
+              |> Enum.reject(&(&1 == ""))
+            )
+
+          {:ok, body}
+
+        _ ->
+          :legacy
+      end
+    end
+  end
+
+  defp compile_opts_list(opts) when is_list(opts), do: opts
+  defp compile_opts_list(opts) when is_map(opts), do: Map.to_list(opts)
+  defp compile_opts_list(_), do: []
+
+  defp plan_ir_raise?(opts) when is_list(opts), do: Keyword.get(opts, :plan_ir_raise, false)
+  defp plan_ir_raise?(opts) when is_map(opts), do: Map.get(opts, :plan_ir_raise, false)
+  defp plan_ir_raise?(_), do: false
+
+  defp insert_plan_result_probe(body, ""), do: body
+
+  defp insert_plan_result_probe(body, probe) when is_binary(probe) and is_binary(body) do
+    case String.split(body, "\n  return Rc;", parts: 2) do
+      [prefix, suffix] ->
+        indented = probe |> String.trim() |> String.replace("\n", "\n  ")
+        prefix <> "\n  " <> indented <> "\n  return Rc;" <> suffix
+
+      _ ->
+        body
     end
   end
 
@@ -555,6 +897,34 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
   end
 
   defp boxed_special_body_emit(
+         module_name,
+         decl,
+         decl_map,
+         arg_bindings,
+         direct_args?,
+         entry_probe,
+         exit_probe,
+         arg_binding_code,
+         rc_required?
+       ) do
+    if plan_primary_body?(decl, module_name, decl_map, Process.get(:elmc_codegen_opts, [])) do
+      :error
+    else
+      boxed_special_body_emit_fusion(
+        module_name,
+        decl,
+        decl_map,
+        arg_bindings,
+        direct_args?,
+        entry_probe,
+        exit_probe,
+        arg_binding_code,
+        rc_required?
+      )
+    end
+  end
+
+  defp boxed_special_body_emit_fusion(
          module_name,
          decl,
          decl_map,
@@ -896,6 +1266,7 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
         &(&1.kind == :function and MapSet.member?(generic_targets, {mod.name, &1.name}) and
             NativeFunctionCall.native_scalar_fn?(&1, mod.name, decl_map) and
             emit_native_prototype?(&1, mod.name, decl_map) and
+            not Plan.primary_lowered?(&1, mod.name, decl_map) and
             not Fusion.rc_native_fusion?(mod.name, &1.name, &1.expr, decl_map))
       )
       |> Enum.map(fn decl ->
@@ -906,6 +1277,29 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
         "static #{return_type} #{c_name}_native(#{params});"
       end)
     end)
+    |> Enum.join("\n")
+  end
+
+  @spec generic_plan_native_projection_prototypes(
+          ElmEx.IR.t(),
+          MapSet.t(Types.function_decl_key()),
+          Types.function_decl_map()
+        ) :: String.t()
+  def generic_plan_native_projection_prototypes(ir, generic_targets, decl_map) do
+    ir.modules
+    |> Enum.flat_map(fn mod ->
+      mod.declarations
+      |> Enum.filter(fn decl ->
+        target = {mod.name, decl.name}
+
+        decl.kind == :function and MapSet.member?(generic_targets, target) and
+          PlanNativeProjection.eligible?(decl, mod.name, decl_map)
+      end)
+      |> Enum.map(fn decl ->
+        PlanNativeProjection.prototype(decl, mod.name, decl_map)
+      end)
+    end)
+    |> Enum.reject(&(&1 == ""))
     |> Enum.join("\n")
   end
 
@@ -931,7 +1325,8 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
 
         decl.kind == :function and MapSet.member?(generic_targets, target) and
           (MapSet.member?(wrapper_targets, target) or
-             not NativeFunctionCall.native_scalar_fn?(decl, mod.name, decl_map))
+             not NativeFunctionCall.native_scalar_fn?(decl, mod.name, decl_map) or
+             Plan.primary_lowered?(decl, mod.name, decl_map))
       end)
       |> Enum.map(fn decl ->
         c_name = Util.module_fn_name(mod.name, decl.name)
@@ -1406,7 +1801,8 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
 
     {return_type, signature_params} =
       if rc_abi? do
-        {"RC", "ElmcValue **out, #{NativeFunctionCall.params(decl, module_name, decl_map)}"}
+        params = NativeFunctionCall.params(decl, module_name, decl_map)
+        {"RC", RcRuntimeEmit.native_signature_suffix("ElmcValue **out", params)}
       else
         {"ElmcValue *", NativeFunctionCall.params(decl, module_name, decl_map)}
       end
@@ -1512,7 +1908,11 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
 
     needs_catch? = rc_body_needs_catch?(body_text) or owned_decls != "" or rc_abi?
 
-    signature_params = "bool *out, #{NativeFunctionCall.params(decl, module_name, decl_map)}"
+    signature_params =
+      RcRuntimeEmit.native_signature_suffix(
+        "bool *out",
+        NativeFunctionCall.params(decl, module_name, decl_map)
+      )
 
     {hoisted_decl, catch_body} =
       if needs_catch? do
@@ -1670,6 +2070,7 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
     |> Map.put(:__program_decls__, decl_map)
     |> EnvBindings.put_borrowed_arg_refs(decl, c_arg_bindings)
     |> Map.put(:__direct_call_targets__, Process.get(:elmc_direct_call_targets, MapSet.new()))
+    |> Map.put(:__record_field_types__, Process.get(:elmc_record_field_types, %{}))
     |> Map.put(
       :__function_analysis__,
       LetAnalysis.analyze_function_expr(
@@ -1856,7 +2257,7 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
           end
         end)
 
-      {hoist_code, loop_env, counter} =
+      {hoist_code, loop_env, counter, hoisted_refs} =
         hoist_tail_recursive_top_level_vars(
           recursive_args,
           let_prelude,
@@ -1864,6 +2265,11 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
           0,
           module_name
         )
+
+      loop_env =
+        Map.put(loop_env, :__tail_loop_invariant_refs__, MapSet.new(hoisted_refs))
+
+      ValueSlots.push_loop()
 
       {cond_code, cond_ref, counter} = NativeBool.compile_expr(cond_expr, loop_env, counter)
 
@@ -1913,6 +2319,8 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
         if recurse_on_truthy?,
           do: {continue_branch, base_branch},
           else: {base_branch, continue_branch}
+
+      ValueSlots.pop_loop()
 
       result_decl =
         if return_kind == :boxed,
@@ -2018,9 +2426,17 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
           EnvBindings.function_arity(env, module_name, name, []) == 0
       end)
 
-    Enum.reduce(vars, {"", env, counter}, fn name, {code_acc, env_acc, ctr} ->
+    Enum.reduce(vars, {"", env, counter, []}, fn name, {code_acc, env_acc, ctr, refs_acc} ->
       {var_code, ref, ctr2} = FunctionCallCompile.compile_var(name, env_acc, ctr)
-      {code_acc <> var_code <> "\n", Map.put(env_acc, name, ref), ctr2}
+
+      refs_acc =
+        if ValueSlots.owned_ref?(ref) do
+          [ref | refs_acc]
+        else
+          refs_acc
+        end
+
+      {code_acc <> var_code <> "\n", Map.put(env_acc, name, ref), ctr2, refs_acc}
     end)
   end
 
@@ -2108,7 +2524,7 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
         RC __box_rc = elmc_new_int(&#{box}, #{loop});
         if (__box_rc != RC_SUCCESS) {
           ELMC_RC_LOG_FAIL(__box_rc, "elmc_new_int", "allocation failed");
-          return NULL;
+          return 0;
         }
       }
       """
@@ -2250,11 +2666,13 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
   end
 
   defp rc_native_bool_delegate(c_name, native_args) do
+    call = "#{c_name}_native(#{RcRuntimeEmit.native_call_args("&native_result", native_args)})"
+
     """
     RC Rc = RC_SUCCESS;
     bool native_result = false;
     CATCH_BEGIN
-      Rc = #{c_name}_native(&native_result, #{native_args});
+      Rc = #{call};
       CHECK_RC(Rc);
       Rc = elmc_new_bool(out, native_result);
       CHECK_RC(Rc);
@@ -2265,10 +2683,11 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
   end
 
   defp rc_native_boxed_delegate(c_name, native_args) do
+    call = "#{c_name}_native(#{RcRuntimeEmit.native_call_args("out", native_args)})"
     """
     RC Rc = RC_SUCCESS;
     CATCH_BEGIN
-      Rc = #{c_name}_native(out, #{native_args});
+      Rc = #{call};
       CHECK_RC(Rc);
     CATCH_END;
     return Rc;
@@ -2277,10 +2696,12 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
   end
 
   defp rc_legacy_boxed_native_delegate(c_name, native_args) do
+    call = "#{c_name}_native(#{native_args})"
+
     """
     RC Rc = RC_SUCCESS;
     CATCH_BEGIN
-      *out = #{c_name}_native(#{native_args});
+      *out = #{call};
     CATCH_END;
     return Rc;
     """
@@ -2288,11 +2709,13 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
   end
 
   defp non_rc_wrapper_boxed_rc_native_delegate(c_name, native_args) do
+    call = "#{c_name}_native(#{RcRuntimeEmit.native_call_args("&result", native_args)})"
+
     """
     RC Rc = RC_SUCCESS;
     ElmcValue *result = NULL;
     CATCH_BEGIN
-      Rc = #{c_name}_native(&result, #{native_args});
+      Rc = #{call};
       CHECK_RC(Rc);
     CATCH_END;
     return (Rc == RC_SUCCESS) ? result : NULL;

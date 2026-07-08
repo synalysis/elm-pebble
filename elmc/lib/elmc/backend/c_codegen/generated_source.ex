@@ -87,6 +87,7 @@ defmodule Elmc.Backend.CCodegen.GeneratedSource do
     elmc_storage_plans
     elmc_schema_registry
     elmc_layout_coercion_diagnostics
+    elmc_plan_primary_fallbacks
     elmc_record_field_types
     elmc_record_alias_shapes
     elmc_record_field_macros
@@ -120,6 +121,7 @@ defmodule Elmc.Backend.CCodegen.GeneratedSource do
   defp delete_emit_probe_process_key?(_), do: false
 
   defp delete_codegen_process_key?(:elmc_layout_coercion_diagnostics), do: false
+  defp delete_codegen_process_key?(:elmc_plan_primary_fallbacks), do: false
 
   defp delete_codegen_process_key?(key) when is_atom(key) do
     key
@@ -146,10 +148,14 @@ defmodule Elmc.Backend.CCodegen.GeneratedSource do
   @spec header(ElmEx.IR.t(), Types.codegen_opts()) :: String.t()
   def header(ir, opts) do
     reset_process_state!()
+    Process.put(:elmc_codegen_opts, opts)
+    Process.put(:elmc_constructor_tags, IRQueries.constructor_tag_map(ir))
+
     direct_cmd_decls = DirectRenderRegistry.decls(ir, opts)
     decl_map = IRQueries.function_decl_map(ir)
     direct_command_targets = Host.direct_command_targets(ir, opts, decl_map)
     wrapper_targets = GenericTargets.wrapper_targets(ir, opts)
+    Process.put(:elmc_wrapper_targets, wrapper_targets)
     exported_targets = Analysis.exported_function_targets(decl_map, opts, direct_command_targets)
     _ = RcRequired.run!(decl_map, rc_required_opts(opts, direct_command_targets))
 
@@ -191,7 +197,7 @@ defmodule Elmc.Backend.CCodegen.GeneratedSource do
 
     #endif
     """
-    |> tap(fn _ -> Process.delete(:elmc_rc_required) end)
+    |> tap(fn _ -> :ok end)
   end
 
   @doc """
@@ -202,6 +208,7 @@ defmodule Elmc.Backend.CCodegen.GeneratedSource do
   def prepare_emit_session!(ir, opts) do
     reset_process_state!()
     Process.put(:elmc_lambdas, [])
+    Process.put(:elmc_plan_closure_emitted, MapSet.new())
     Process.put(:elmc_lambda_counter, 0)
     Process.put(:elmc_lambda_defs, %{})
     Process.put(:elmc_lambda_emitted_names, MapSet.new())
@@ -333,6 +340,8 @@ defmodule Elmc.Backend.CCodegen.GeneratedSource do
     )
 
     Process.put(:elmc_codegen_opts, opts)
+    Process.put(:elmc_plan_ir_mode, Map.get(opts, :plan_ir_mode, Elmc.Backend.Plan.Defaults.plan_ir_mode()))
+    Process.put(:elmc_plan_primary_fallbacks, [])
     DefRegistry.reset()
     _ = RcRequired.run!(decl_map, rc_required_opts(opts, direct_command_targets))
     :ok
@@ -403,6 +412,9 @@ defmodule Elmc.Backend.CCodegen.GeneratedSource do
 
     generic_native_prototypes =
       FunctionEmit.generic_native_function_prototypes(ir, generic_targets, decl_map)
+
+    generic_plan_projection_prototypes =
+      FunctionEmit.generic_plan_native_projection_prototypes(ir, generic_targets, decl_map)
 
     generic_function_prototypes =
       FunctionEmit.generic_function_prototypes(
@@ -504,6 +516,8 @@ defmodule Elmc.Backend.CCodegen.GeneratedSource do
 
     #{generic_native_prototypes}
 
+    #{generic_plan_projection_prototypes}
+
     #{generic_function_prototypes}
 
     #{lambda_defs}
@@ -590,5 +604,6 @@ defmodule Elmc.Backend.CCodegen.GeneratedSource do
   end
 
   defp lambda_symbol_regex,
-    do: ~r/\belmc_(?:lambda|partial_ref|top_level_ref|partial_union)_\d+\b/
+    do:
+      ~r/\belmc_(?:(?:fn_[A-Za-z0-9_]+_closure_\d+)|(?:lambda|partial_ref|top_level_ref|partial_union)_\d+)\b/
 end

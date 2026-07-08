@@ -29,6 +29,9 @@ defmodule Ide.Debugger.Types.CompileIngestAttrs do
           optional(:elmx_compile_error) => Compiler.elmx_compile_error(),
           optional(:elmx_compile_error_message) => String.t(),
           optional(:elmc_linked_binary) => Types.wire_string_map(),
+          optional(:elmc_bytecode_manifest) => Types.wire_string_map(),
+          optional(:plan_coverage) => Types.wire_string_map(),
+          optional(:plan_toolchain) => Types.wire_string_map(),
           optional(String.t()) => Types.wire_input()
         }
 

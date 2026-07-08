@@ -63,7 +63,7 @@ defmodule Elmc.Backend.CCodegen.LambdaCompile do
     native_lambda_arg? = fn name ->
       usage = Host.native_int_usage(name, body, module_name, decl_map)
 
-      usage.total > 0 and usage.boxed == 0 and usage.native_container == 0 and
+      usage.total > 0 and usage.native > 0 and usage.boxed == 0 and usage.native_container == 0 and
         not Host.binding_used_in_lambda?(name, body)
     end
 
@@ -273,15 +273,25 @@ defmodule Elmc.Backend.CCodegen.LambdaCompile do
       existing_lambdas = Process.get(:elmc_lambdas, [])
       Process.put(:elmc_lambdas, [closure_fn | existing_lambdas])
 
-      emitted =
-        Process.get(:elmc_lambda_emitted_names, MapSet.new())
-        |> MapSet.put(closure_fn_name)
+      Process.put(
+        :elmc_lambda_emitted_names,
+        MapSet.put(Process.get(:elmc_lambda_emitted_names, MapSet.new()), closure_fn_name)
+      )
 
-      Process.put(:elmc_lambda_emitted_names, emitted)
+      if rc_lambda? do
+        Process.put(
+          :elmc_rc_lambda_names,
+          MapSet.put(Process.get(:elmc_rc_lambda_names, MapSet.new()), closure_fn_name)
+        )
+      end
     end
 
     # Build the capture array and closure allocation at the call site
     capture_count = length(free_vars)
+
+    rc_closure? =
+      rc_lambda? or
+        MapSet.member?(Process.get(:elmc_rc_lambda_names, MapSet.new()), closure_fn_name)
 
     {capture_setup, capture_refs, next} =
       free_vars
@@ -294,7 +304,7 @@ defmodule Elmc.Backend.CCodegen.LambdaCompile do
 
             stmt =
               RcRuntimeEmit.take_wrapper_assign(cap_var, take_fn, call_args, env,
-                return_on_fail?: not rc_lambda?,
+                return_on_fail?: not rc_closure?,
                 declare_out?: true
               )
 
@@ -311,7 +321,9 @@ defmodule Elmc.Backend.CCodegen.LambdaCompile do
 
     {capture_array_code, capture_arg} =
       if capture_count > 0 do
-        {"ElmcValue *cap_#{next}[#{capture_count}] = { #{capture_list} };", "cap_#{next}"}
+        cap_arr = "closure_cap_#{closure_fn_name}"
+
+        {"ElmcValue *#{cap_arr}[#{capture_count}] = { #{capture_list} };", cap_arr}
       else
         {"", "NULL"}
       end
@@ -320,14 +332,36 @@ defmodule Elmc.Backend.CCodegen.LambdaCompile do
       "#{closure_fn_name}, #{length(lambda_arg_names)}, #{capture_count}, #{capture_arg}"
 
     closure_setup =
-      if rc_lambda? do
-        """
-        #{ValueSlots.boxed_null_decl(out)}
-        Rc = elmc_closure_new_rc(#{RcRuntimeEmit.allocator_out_arg(out)}, #{closure_args});
-        CHECK_RC(Rc);
-        """
-      else
-        RcRuntimeEmit.take_wrapper_assign(out, "elmc_closure_new", closure_args, env)
+      cond do
+        rc_closure? and rc_lambda? ->
+          """
+          #{ValueSlots.boxed_null_decl(out)}
+          Rc = elmc_closure_new_rc(#{RcRuntimeEmit.allocator_out_arg(out)}, #{closure_args});
+          CHECK_RC(Rc);
+          """
+
+        rc_closure? ->
+          if RcRuntimeEmit.rc_allocator_emit_mode?(env) do
+            """
+            #{ValueSlots.boxed_null_decl(out)}
+            Rc = elmc_closure_new_rc(#{RcRuntimeEmit.allocator_out_arg(out)}, #{closure_args});
+            CHECK_RC(Rc);
+            """
+          else
+            """
+            #{ValueSlots.boxed_null_decl(out)}
+            {
+              RC __closure_rc = elmc_closure_new_rc(#{RcRuntimeEmit.allocator_out_arg(out)}, #{closure_args});
+              if (__closure_rc != RC_SUCCESS) {
+                ELMC_RC_LOG_FAIL(__closure_rc, "elmc_closure_new_rc", "closure alloc failed");
+                return NULL;
+              }
+            }
+            """
+          end
+
+        true ->
+          RcRuntimeEmit.take_wrapper_assign(out, "elmc_closure_new", closure_args, env)
       end
 
     capture_setup_code =
@@ -399,33 +433,5 @@ defmodule Elmc.Backend.CCodegen.LambdaCompile do
     end
   end
 
-  defp identity_arg_release_stmts(lambda_arg_bindings, body) do
-    case lambda_arg_bindings do
-      [{arg, c_arg, 0}] ->
-        if single_arg_identity_return?(body, arg) do
-          "if (argc > 0 && #{c_arg}) elmc_release(#{c_arg});"
-        else
-          ""
-        end
-
-      _ ->
-        ""
-    end
-  end
-
-  defp single_arg_identity_return?(body, arg) do
-    case body do
-      %{op: :var, name: ^arg} ->
-        true
-
-      %{op: :call, name: name, args: [%{op: :var, name: ^arg}]} when name in ["identity"] ->
-        true
-
-      %{op: :qualified_call, target: "Basics.identity", args: [%{op: :var, name: ^arg}]} ->
-        true
-
-      _ ->
-        false
-    end
-  end
+  defp identity_arg_release_stmts(_lambda_arg_bindings, _body), do: ""
 end

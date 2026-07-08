@@ -5,11 +5,17 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Release do
 
   @spec release_var(String.t(), String.t()) :: String.t()
   def release_var(var, indent \\ "") when is_binary(var) and is_binary(indent) do
-    ValueSlots.release_stmt(var)
-    |> String.split("\n", trim: true)
-    |> case do
-      [] -> ""
-      lines -> Enum.map_join(lines, "\n", &"#{indent}#{&1}")
+    cond do
+      ValueSlots.owned_ref?(var) and ValueSlots.epilogue_lifo?() ->
+        ""
+
+      true ->
+        ValueSlots.release_stmt(var)
+        |> String.split("\n", trim: true)
+        |> case do
+          [] -> ""
+          lines -> Enum.map_join(lines, "\n", &"#{indent}#{&1}")
+        end
     end
   end
 

@@ -8,6 +8,7 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
   alias Elmc.Backend.CCodegen.EnvBindings
   alias Elmc.Backend.CCodegen.Expr
   alias Elmc.Backend.CCodegen.FunctionEmit
+  alias Elmc.Backend.CCodegen.FunctionCallAbi
   alias Elmc.Backend.CCodegen.Host
   alias Elmc.Backend.CCodegen.LayoutCoerceEmit
   alias Elmc.Backend.CCodegen.Native.FunctionCall, as: NativeFunctionCall
@@ -361,11 +362,13 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
         ) ::
           Types.compile_result()
   def compile_closure(closure_var, args, env, counter) do
+    operand_env = RcRuntimeEmit.operand_env(env)
+
     {arg_code, arg_vars, arg_passthrough, counter} =
       Enum.reduce(args, {"", [], [], counter}, fn arg_expr,
                                                   {code_acc, vars_acc, passthrough_acc, c} ->
         {code, var, c2, passthrough?} =
-          compile_call_operand_inner(arg_expr, env, c, borrow_args?: true)
+          compile_call_operand_inner(arg_expr, operand_env, c, borrow_args?: true)
 
         {code_acc <> "\n  " <> code, vars_acc ++ [var], passthrough_acc ++ [passthrough?], c2}
       end)
@@ -390,6 +393,7 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
     #{arg_code}
       ElmcValue *#{args_array}[#{max(argc, 1)}] = { #{arg_list} };
       ElmcValue *#{out} = elmc_closure_call(#{closure_var}, #{args_array}, #{argc});
+      #{ValueSlots.null_call_operands_aliasing_out(out, arg_vars, env)}
       #{releases}
     """
 
@@ -411,11 +415,21 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
           {:ok, source} when is_binary(source) ->
             # Re-read a let-bound owned slot in place. Avoid retain+duplicate pointer in
             # owned[] — epilogue lifo dedup would skip releasing the canonical slot.
-            if ValueSlots.owned_ref?(source) and not ValueSlots.transferred?(source) do
-              {"", source, counter}
-            else
-              {var, next} = CaseCompile.fresh_var(counter, env)
-              compile_var_native_or_boxed(name, env, counter, var, next)
+            cond do
+              ValueSlots.owned_ref?(source) and not ValueSlots.transferred?(source) ->
+                {"", source, counter}
+
+              Map.get(env, :__inside_lambda__, false) and Map.get(env, name) == source ->
+                {var, next} = CaseCompile.fresh_var(counter, env)
+
+                expr =
+                  "#{RcRuntimeEmit.value_expr(source)} ? elmc_retain(#{RcRuntimeEmit.value_expr(source)}) : elmc_int_zero()"
+
+                {ValueSlots.boxed_decl(var, expr, env), var, next}
+
+              true ->
+                {var, next} = CaseCompile.fresh_var(counter, env)
+                compile_var_native_or_boxed(name, env, counter, var, next)
             end
 
           _ ->
@@ -443,10 +457,10 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
             compile_native_record_box(var, name, fields, env, next)
 
           {:ok, {:forward_ref, ref}} when is_binary(ref) ->
-            {"ElmcValue *#{var} = elmc_forward_ref_get(#{ref});", var, next}
+            {ValueSlots.boxed_decl(var, "elmc_forward_ref_get(#{ref})", env), var, next}
 
           {:ok, {:forward_ref_slot, slot}} when is_binary(slot) ->
-            {"ElmcValue *#{var} = elmc_forward_ref_get(#{slot});", var, next}
+            {ValueSlots.boxed_decl(var, "elmc_forward_ref_get(#{slot})", env), var, next}
 
           {:ok, {:direct_fragment, fragment}} ->
             {frag_code, frag_var, next2} = Host.compile_expr(fragment, env, next)
@@ -495,6 +509,9 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
                                   EnvBindings.boxed_string_binding?(env, name) or
                                   EnvBindings.direct_param_ref?(env, source) ->
                                 "elmc_retain(#{c_source})"
+
+                              EnvBindings.list_suffix_ref?(env, c_source) ->
+                                "#{c_source} ? elmc_retain(#{c_source}) : elmc_list_nil()"
 
                               true ->
                                 "#{c_source} ? elmc_retain(#{c_source}) : elmc_int_zero()"
@@ -1105,7 +1122,14 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
           """
 
         true ->
-          if EnvBindings.direct_call_target?(env, module_name, name) do
+          decl_map = Map.get(env, :__program_decls__, %{})
+          decl = Map.get(decl_map, {module_name, name})
+
+          direct_call? =
+            EnvBindings.direct_call_target?(env, module_name, name) or
+              (is_map(decl) and not FunctionCallAbi.argv_abi?(decl, module_name, decl_map))
+
+          if direct_call? do
             direct_call = direct_boxed_call_expr(c_name, arg_vars, out, rc_callee?)
 
             """
@@ -1113,7 +1137,7 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
             #{arg_code}
               #{after_args_probe}
               #{rc_call_assignment(env, out, direct_call, rc_callee?, caller_rc?)}
-              #{ValueSlots.null_call_operands_aliasing_out(out, arg_vars)}
+              #{ValueSlots.null_call_operands_aliasing_out(out, arg_vars, env)}
               #{if recursive?, do: ValueSlots.abandon_owned_call_args_after_recursive(env, out, arg_vars), else: ""}
               #{after_call_probe}
               #{releases}
@@ -1136,7 +1160,7 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
               #{after_args_probe}
               #{call_args_decl}
               #{rc_call_assignment(env, out, call_expr, rc_callee?, caller_rc?)}
-              #{ValueSlots.null_call_operands_aliasing_out(out, arg_vars)}
+              #{ValueSlots.null_call_operands_aliasing_out(out, arg_vars, env)}
               #{if recursive?, do: ValueSlots.abandon_owned_call_args_after_recursive(env, out, arg_vars), else: ""}
               #{after_call_probe}
               #{releases}
@@ -1346,44 +1370,51 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
 
   defp closure_call_return_body(module_name, name, c_name, call_args_spec, env) do
     decl_map = program_decl_map(env)
-    emit_wrapper? = emit_wrapper_for_closure?(module_name, name, env)
+    decl = Map.get(decl_map, {module_name, name})
 
-    with {:ok, decl} <- Map.fetch(decl_map, {module_name, name}) do
-      cond do
-        NativeFunctionCall.native_scalar_fn?(decl, module_name, decl_map) ->
-          native_scalar_closure_return_body(c_name, call_args_spec, module_name, name, decl, env)
+    cond do
+      is_map(decl) and NativeFunctionCall.native_scalar_fn?(decl, module_name, decl_map) ->
+        native_scalar_closure_return_body(c_name, call_args_spec, module_name, name, decl, env)
 
-        RcRequired.rc_required?(module_name, name) and emit_wrapper? ->
-          rc_boxed_wrapper_closure_return_body(c_name, call_args_spec)
+      is_map(decl) and EnvBindings.direct_call_target?(env, module_name, name) ->
+        mixed_direct_closure_return_body(
+          c_name,
+          call_args_spec,
+          module_name,
+          name,
+          decl,
+          env,
+          closure_callee_rc_abi?(module_name, name, decl, decl_map)
+        )
 
-        emit_wrapper? ->
-          "return #{c_name}(#{call_args_spec});"
+      legacy_value_returning_closure_callee?(module_name, name, decl, decl_map) ->
+        "return #{c_name}(#{call_args_spec});"
 
-        EnvBindings.direct_call_target?(env, module_name, name) ->
-          mixed_direct_closure_return_body(
-            c_name,
-            call_args_spec,
-            module_name,
-            name,
-            decl,
-            env,
-            true
-          )
-
-        true ->
-          mixed_direct_closure_return_body(
-            c_name,
-            call_args_spec,
-            module_name,
-            name,
-            decl,
-            env,
-            false
-          )
-      end
-    else
-      _ -> "return #{c_name}(#{call_args_spec});"
+      true ->
+        rc_boxed_wrapper_closure_return_body(c_name, call_args_spec)
     end
+  end
+
+  defp legacy_value_returning_closure_callee?(module_name, name, decl, decl_map) do
+    is_map(decl) and
+      not closure_callee_rc_abi?(module_name, name, decl, decl_map) and
+      not RcRequired.rc_required?(module_name, name) and
+      not RcRequired.body_allocates?(decl.expr) and
+      not boxed_callee_rc_prototype?(decl, module_name, name, decl_map)
+  end
+
+  defp closure_callee_rc_abi?(module_name, name, decl, decl_map) do
+    RcRequired.rc_required?(module_name, name) or
+      boxed_callee_rc_prototype?(decl, module_name, name, decl_map) or
+      RcRequired.body_allocates?(decl.expr)
+  end
+
+  defp boxed_callee_rc_prototype?(decl, module_name, name, decl_map) do
+    emit_wrapper? = MapSet.member?(Process.get(:elmc_wrapper_targets, MapSet.new()), {module_name, name})
+
+    decl
+    |> FunctionEmit.boxed_function_prototype(module_name, "_", emit_wrapper?, decl_map)
+    |> String.starts_with?("RC ")
   end
 
   defp rc_boxed_wrapper_closure_return_body(c_name, call_args_spec) do
@@ -1399,25 +1430,15 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
     |> String.trim()
   end
 
-  defp wrapper_abi_target?(module_name, name) do
-    MapSet.member?(Process.get(:elmc_wrapper_targets, MapSet.new()), {module_name, name}) or
-      RcRequired.platform_worker_rc_abi?(module_name, name)
-  end
-
-  defp emit_wrapper_for_closure?(module_name, name, env) do
-    wrapper_abi_target?(module_name, name) or
-      (not RcRequired.rc_required?(module_name, name) and
-         not EnvBindings.direct_call_target?(env, module_name, name))
-  end
-
-  defp program_decl_map(env) do
-    Map.get(env, :__program_decls__) || Process.get(:elmc_program_decls, %{})
+  defp program_decl_map(_env) do
+    Process.get(:elmc_program_decls, %{})
   end
 
   defp closure_env(env) do
     env
     |> RcRuntimeEmit.strip_function_tail_scope()
-    |> Map.put_new(:__program_decls__, Process.get(:elmc_program_decls, %{}))
+    |> Map.put(:__program_decls__, program_decl_map(env))
+    |> Map.put(:__direct_call_targets__, EnvBindings.effective_direct_call_targets(env))
   end
 
   defp native_scalar_closure_return_body(c_name, call_args_spec, module_name, name, decl, env) do
@@ -1458,7 +1479,7 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
             RC Rc = RC_SUCCESS;
             CATCH_BEGIN
               bool native_result = false;
-              Rc = #{c_name}_native(&native_result, #{native_args});
+              Rc = #{c_name}_native(#{RcRuntimeEmit.native_call_args("&native_result", native_args)});
               CHECK_RC(Rc);
               Rc = elmc_new_bool(&out, native_result);
               CHECK_RC(Rc);
@@ -1484,7 +1505,7 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
             ElmcValue *out = NULL;
             RC Rc = RC_SUCCESS;
             CATCH_BEGIN
-              Rc = #{c_name}_native(&out, #{native_args});
+              Rc = #{c_name}_native(#{RcRuntimeEmit.native_call_args("&out", native_args)});
               CHECK_RC(Rc);
             CATCH_END
             return out;

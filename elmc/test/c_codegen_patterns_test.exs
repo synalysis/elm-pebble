@@ -18,7 +18,7 @@ defmodule Elmc.CCodegenPatternsTest do
   end
 
   defp rc_direct_fn_def_marker(name),
-    do: ~r/static RC elmc_fn_Main_#{name}\(ElmcValue \*\*out,[^)]*\) \{/
+    do: ~r/static RC elmc_fn_Main_#{name}(?:_native)?\(ElmcValue \*\*out,[^)]*\) \{/
 
   defp rc_worker_fn_def_marker(name),
     do: ~r/static RC elmc_fn_Main_#{name}\(ElmcValue \*\*out, ElmcValue \*\* const args, const int argc\) \{/
@@ -143,16 +143,16 @@ defmodule Elmc.CCodegenPatternsTest do
              ~r/ELMC_RECORD_GET_INDEX(?:_INT)?\((?:tmp_\d+|owned\[\d+\]|elmc_maybe_or_tuple_just_payload_borrow\([^)]+\)), ELMC_FIELD_MAIN_ACTIVEPIECE_X\)/
 
     assert generated_c =~
-             ~r/elmc_record_update_index\((tmp_5|tmp_\d+|owned\[\d+\]), ELMC_FIELD_MAIN_ACTIVEPIECE_Y, (tmp_|owned\[)/
+             ~r/elmc_record_update_index(?:_int_cow(?:_drop)?)?\((tmp_5|tmp_\d+|owned\[\d+\]), ELMC_FIELD_MAIN_ACTIVEPIECE_Y, (?:native_let_|tmp_|owned\[)/
 
     refute generated_c =~ ~r/elmc_record_get_index\(tmp_\d+, 0 \/\* rot \*\)/
     refute generated_c =~ ~r/elmc_record_update_index\(tmp_\d+, 0 \/\* y \*\)/
 
     assert generated_c =~
-             "elmc_record_get_index(elmc_maybe_or_tuple_just_payload_borrow(piece), ELMC_FIELD_MAIN_ACTIVEPIECE_KIND)"
+             ~r/ELMC_RECORD_GET_INDEX(?:_INT)?\(elmc_maybe_or_tuple_just_payload_borrow\(piece\), ELMC_FIELD_MAIN_ACTIVEPIECE_KIND\)/
 
     assert generated_c =~
-             "elmc_record_get_index(elmc_maybe_or_tuple_just_payload_borrow(piece), ELMC_FIELD_MAIN_ACTIVEPIECE_Y)"
+             ~r/ELMC_RECORD_GET_INDEX(?:_INT)?\(elmc_maybe_or_tuple_just_payload_borrow\(piece\), ELMC_FIELD_MAIN_ACTIVEPIECE_Y\)/
 
     refute generated_c =~
              ~r/elmc_record_get_index\(elmc_maybe_or_tuple_just_payload_borrow\(piece\), 0 \/\* rot \*\)/
@@ -166,16 +166,20 @@ defmodule Elmc.CCodegenPatternsTest do
     assert generated_c =~ "elmc_fn_Main_softDrop"
 
     assert generated_c =~
-             ~r/Rc = elmc_fn_Main_softDrop\(&owned\[\d+\], \(ElmcValue \*\[\]\)\{ owned\[\d+\] \}, 1\);\n\s*CHECK_RC\(Rc\);\n(?:\s*if \(owned\[\d+\] == owned\[\d+\]\) \{\n\s*owned\[\d+\] = NULL;\n\s*\}\n)?\s*owned\[\d+\] = NULL;/,
-             "expected recursive softDrop to abandon the withPiece model arg without releasing it"
+             ~r/Rc = elmc_fn_Main_softDrop\(&owned\[\d+\], \(ElmcValue \*\[\]\)\{ (?:model|owned\[\d+\]) \}, 1\);\n\s*CHECK_RC\(Rc\);/,
+             "expected recursive softDrop call without releasing borrowed model arg"
 
     assert generated_c =~
-             ~r/owned\[\d+\] = elmc_maybe_or_tuple_just_payload\(owned\[\d+\]\);\n\s*\n\s*owned\[\d+\] = elmc_record_update_index\(owned\[\d+\], ELMC_FIELD_MAIN_ACTIVEPIECE_Y/,
+             ~r/owned\[\d+\] = elmc_maybe_or_tuple_just_payload\(owned\[\d+\]\);\n\s*\n\s*owned\[\d+\] = elmc_record_update_index(?:_int_cow(?:_drop)?)?\(owned\[\d+\], ELMC_FIELD_MAIN_ACTIVEPIECE_Y/,
              "expected owned Just payload projection before piece record update"
 
     assert generated_c =~
-             ~r/ELMC_RELEASE\(owned\[\d+\]\);\n\s*owned\[\d+\] = NULL;\n\n\s*Rc = elmc_maybe_just_own\(&owned\[\d+\], owned\[\d+\]\);/,
-             "expected eager release of projection source after non-COW piece update"
+             ~r/owned\[\d+\] = elmc_record_update_index(?:_int_cow(?:_drop)?)?\(owned\[\d+\], ELMC_FIELD_MAIN_ACTIVEPIECE_X, (?:owned\[\d+\]|native_let_)/,
+             "expected owned field operand nulled immediately after non-cow record update"
+
+    assert generated_c =~
+             ~r/elmc_record_update_index(?:_int_cow(?:_drop)?)?\(owned\[\d+\], ELMC_FIELD_MAIN_ACTIVEPIECE_Y[\s\S]{0,200}?Rc = elmc_maybe_just_own\(&owned\[\d+\], owned\[\d+\]\);/,
+             "expected piece Y update before maybe_just_own in dropStep"
 
     stack_report = File.read!(Path.join(out_dir, "elmc_stack_report.json"))
     assert stack_report =~ "\"functions\""
@@ -1119,8 +1123,8 @@ defmodule Elmc.CCodegenPatternsTest do
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
     assert generated_c =~ "for (elmc_int_t pipe_i_"
-    assert generated_c =~ "elmc_fn_Main_add1(pipe_args_"
-    refute generated_c =~ "elmc_fn_Main_add1(call_args_"
+    assert generated_c =~ "elmc_fn_Main_add1(&pipe_next_"
+    refute generated_c =~ "elmc_fn_Main_add1(pipe_args_"
   end
 
   test "native int minus List.length uses cursor count without boxing length" do
@@ -1583,7 +1587,8 @@ defmodule Elmc.CCodegenPatternsTest do
     area_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_area")
     init_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_init")
 
-    assert area_body =~ "return 140;"
+    assert area_body =~ "140"
+    assert area_body =~ "elmc_new_int(out, 140)" or area_body =~ "return 140;"
     refute area_body =~ "elmc_fn_Main_width("
 
     assert init_body =~ "elmc_record_new_values_take"
@@ -1754,6 +1759,95 @@ defmodule Elmc.CCodegenPatternsTest do
     refute Regex.match?(
              ~r/elmc_fn_Main_stampPiece\([\s\S]*?\/\/ List\.foldl[\s\S]*?list_foldl_cursor_/,
              generated_c
+           )
+  end
+
+  test "moveActive keeps nextX and nextY as native lets and updates ActivePiece fields without boxing" do
+    source_fixture = Path.expand("fixtures/simple_project", __DIR__)
+
+    elmtris_main =
+      Path.expand("../../ide/priv/project_templates/game_elmtris/src/Main.elm", __DIR__)
+
+    project_dir = Path.expand("tmp/move_active_native_let", __DIR__)
+    out_dir = Path.expand("tmp/move_active_native_let_codegen", __DIR__)
+    File.rm_rf!(project_dir)
+    File.rm_rf!(out_dir)
+    File.mkdir_p!(Path.dirname(project_dir))
+    File.cp_r!(source_fixture, project_dir)
+    File.write!(Path.join(project_dir, "src/Main.elm"), File.read!(elmtris_main))
+
+    assert {:ok, _} =
+             Elmc.compile(project_dir, %{
+               out_dir: out_dir,
+               entry_module: "Main",
+               strip_dead_code: true
+             })
+
+    generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+
+    assert generated_c =~ "elmc_fn_Main_moveActive_native"
+
+    assert Regex.match?(
+             ~r/elmc_fn_Main_moveActive_native\([\s\S]*?const elmc_int_t native_let_nextX_\d+ =/,
+             generated_c
+           )
+
+    assert Regex.match?(
+             ~r/elmc_fn_Main_moveActive_native\([\s\S]*?const elmc_int_t native_let_nextY_\d+ =/,
+             generated_c
+           )
+
+    assert Regex.match?(
+             ~r/elmc_fn_Main_canPlace_native\([\s\S]*?native_let_nextX_\d+, native_let_nextY_\d+/,
+             generated_c
+           )
+
+    assert Regex.match?(
+             ~r/elmc_record_update_index_int_cow(?:_drop)?\([\s\S]*?native_let_nextX_\d+/,
+             generated_c
+           )
+
+    assert Regex.match?(
+             ~r/elmc_record_update_index_int_cow_drop\([\s\S]*?native_let_nextY_\d+/,
+             generated_c
+           )
+
+    refute Regex.match?(
+             ~r/elmc_fn_Main_moveActive_native\([\s\S]*?elmc_new_int\(&owned\[\d+\], \(ELMC_RECORD_GET_INDEX_INT\(elmc_maybe_or_tuple_just_payload_borrow\(owned\[0\]\), ELMC_FIELD_MAIN_ACTIVEPIECE_X\) \+ dx\)\)/,
+             generated_c
+           )
+  end
+
+  test "rotateActive single-field native int record update abandons base operand once" do
+    source_fixture = Path.expand("fixtures/simple_project", __DIR__)
+
+    elmtris_main =
+      Path.expand("../../ide/priv/project_templates/game_elmtris/src/Main.elm", __DIR__)
+
+    project_dir = Path.expand("tmp/rotate_active_native_let", __DIR__)
+    out_dir = Path.expand("tmp/rotate_active_native_let_codegen", __DIR__)
+    File.rm_rf!(project_dir)
+    File.rm_rf!(out_dir)
+    File.mkdir_p!(Path.dirname(project_dir))
+    File.cp_r!(source_fixture, project_dir)
+    File.write!(Path.join(project_dir, "src/Main.elm"), File.read!(elmtris_main))
+
+    assert {:ok, _} =
+             Elmc.compile(project_dir, %{
+               out_dir: out_dir,
+               entry_module: "Main",
+               strip_dead_code: true
+             })
+
+    generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+    rotate_body = CCodegenExtract.fn_body(generated_c, "elmc_fn_Main_rotateActive")
+
+    assert rotate_body =~ "elmc_record_update_index_int_cow"
+    assert rotate_body =~ "native_let_nextRot_"
+
+    refute Regex.match?(
+             ~r/owned\[(\d+)\] = NULL;\s*owned\[\1\] = NULL;/,
+             rotate_body
            )
   end
 
@@ -2352,6 +2446,7 @@ defmodule Elmc.CCodegenPatternsTest do
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
     assert generated_c =~ "elmc_fn_Main_occupiedIndices_native"
+    assert generated_c =~ "static RC elmc_fn_Main_occupiedIndices_native(ElmcValue **out, ElmcValue *board)"
     refute generated_c =~ "elmc_let_body_helper_Main_occupiedIndices"
     refute generated_c =~ "elmc_fn_Main_cellAt"
     refute generated_c =~ "elmc_fn_Main_lockedSlotsFromBoard"
@@ -2404,6 +2499,7 @@ defmodule Elmc.CCodegenPatternsTest do
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
     assert generated_c =~ "elmc_fn_Main_gatherAt_native"
+    assert generated_c =~ "static RC elmc_fn_Main_gatherAt_native(ElmcValue **out, ElmcValue *slots)"
     assert generated_c =~ "gatherAt_indices[6] = { 0, 2, 4, 1, 3, 5 }"
     assert generated_c =~ "elmc_list_nth_int_default(slots, gatherAt_indices[k], 0)"
     refute generated_c =~ "elmc_list_from_int_array"
@@ -2506,7 +2602,9 @@ defmodule Elmc.CCodegenPatternsTest do
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
     assert generated_c =~ "elmc_fn_Main_collapseGrid_native"
-    assert generated_c =~ "elmc_list_from_int_array(&cells_out, flat, 9)"
+    assert generated_c =~ "static RC elmc_fn_Main_collapseGrid_native(ElmcValue **out, ElmcValue *cells)"
+    assert generated_c =~ "Rc = elmc_list_from_int_array(&owned[0], flat, 9)"
+    assert generated_c =~ "Rc = elmc_record_new_values_take(out, 2, rec_values)"
     refute generated_c =~ "elmc_fn_Main_slideLine"
     refute generated_c =~ "elmc_fn_Main_slideMerge"
     refute generated_c =~ "elmc_fn_Main_sliceRow"
@@ -2557,6 +2655,8 @@ defmodule Elmc.CCodegenPatternsTest do
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
     assert generated_c =~ "elmc_fn_Main_flipRows_native"
+    assert generated_c =~ "static RC elmc_fn_Main_flipRows_native(ElmcValue **out, ElmcValue *cells)"
+    assert generated_c =~ "Rc = elmc_list_from_int_array(out, flat, 9)"
     assert generated_c =~ "elmc_list_nth_int_default(cells, (row * 3) + (3 - 1 - col), 0)"
     refute generated_c =~ "elmc_fn_Main_sliceRow"
     refute generated_c =~ "elmc_list_concat"
@@ -2641,6 +2741,8 @@ defmodule Elmc.CCodegenPatternsTest do
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
     assert generated_c =~ "elmc_fn_Main_remapPack_native"
+    assert generated_c =~ "static RC elmc_fn_Main_remapPack_native(ElmcValue **out, ElmcValue *tag_arg, ElmcValue *cells)"
+    assert generated_c =~ "Rc = elmc_list_from_int_array(out, dst, 9)"
     assert generated_c =~ "switch (perm_case)"
     refute generated_c =~ "remapPack_perms"
     refute generated_c =~ "elmc_fn_Main_flipRows"
@@ -2922,9 +3024,33 @@ defmodule Elmc.CCodegenPatternsTest do
     assert generated_c =~ "pieceOffsets_table[k][r]"
     refute generated_c =~ "elmc_fn_Main_pieceSlots_native"
     assert generated_c =~ "elmc_fn_Main_canPlace_native"
+    assert generated_c =~ "static RC elmc_fn_Main_canPlace_native(bool *out,"
+    refute generated_c =~ "static RC elmc_fn_Main_canPlace_native(ElmcValue **out,"
+    can_place_native = CCodegenExtract.fn_body(generated_c, "elmc_fn_Main_canPlace_native")
+    refute can_place_native =~ "elmc_new_bool"
+    assert generated_c =~
+             "static RC elmc_fn_Main_canPlace_native(bool *out, const elmc_int_t kind, const elmc_int_t rot, const elmc_int_t x, const elmc_int_t y, ElmcValue * const board)"
+    refute can_place_native =~ "elmc_as_int(x)"
+    refute can_place_native =~ "elmc_as_int(y)"
     assert generated_c =~ "elmc_fn_Main_lockedSlotsFromBoard_native"
+    assert generated_c =~
+             "static RC elmc_fn_Main_lockedSlotsFromBoard_native(ElmcValue **out, ElmcValue *board)"
     assert generated_c =~ "elmc_fn_Main_offsetFits_native"
     assert generated_c =~ "elmc_fn_Main_stampPiece_native"
+    assert generated_c =~
+             "static RC elmc_fn_Main_stampPiece_native(ElmcValue **out, ElmcValue *piece, ElmcValue *board)"
+    assert generated_c =~ "return elmc_fn_Main_stampPiece_native(out, piece, board);"
+
+    assert [stamp_piece_native] =
+             Regex.run(
+               ~r/static RC elmc_fn_Main_stampPiece_native\(ElmcValue \*\*out, ElmcValue \*piece, ElmcValue \*board\) \{[\s\S]*?return Rc;\s*\}/,
+               generated_c
+             )
+
+    refute stamp_piece_native =~ "return elmc_retain(board)"
+    refute stamp_piece_native =~ "elmc_int_zero()"
+    assert stamp_piece_native =~ "Rc = elmc_list_from_int_array(out, buf, len);"
+    assert stamp_piece_native =~ "CHECK_RC(Rc);"
     assert generated_c =~ "patches[patch_count++]"
     refute generated_c =~ "elmc_fn_Main_boardLayout_native"
     refute generated_c =~ "elmc_fn_Main_lockedSlotOps_native"
@@ -2944,6 +3070,14 @@ defmodule Elmc.CCodegenPatternsTest do
     refute generated_c =~ "elmc_let_body_helper_Main_lockPiece"
     assert generated_c =~ "elmc_fn_Main_freshModel("
     refute generated_c =~ "elmc_record_update_helper_Main_lockPiece"
+
+    lock_piece_body = CCodegenExtract.fn_body(generated_c, "elmc_fn_Main_lockPiece")
+
+    refute lock_piece_body =~
+             ~r/ELMC_RELEASE\(owned\[\d+\]\);\n\s*owned\[\d+\] = NULL;owned\[\d+\] = owned\[\d+\];/
+
+    assert lock_piece_body =~
+             ~r/if \(\(owned\[\d+\] && owned\[\d+\]->tag == ELMC_TAG_FLOAT\)[\s\S]*?owned\[\d+\] = owned\[\d+\];\n\s*owned\[\d+\] = NULL;/
     refute generated_c =~ "list_concat_repeat_lists_"
     assert generated_c =~ "elmc_fn_Main_clearLines_native"
     assert generated_c =~ "static RC elmc_fn_Main_clearLines_native(ElmcValue **out, ElmcValue *board)"
@@ -3742,8 +3876,8 @@ defmodule Elmc.CCodegenPatternsTest do
       |> String.split("RC elmc_fn_Main_init", parts: 2)
       |> hd()
 
-    assert spawn_body =~ "elmc_fn_Main_setCell(out,"
-    assert spawn_body =~ "owned[0], owned[1], cells"
+    assert spawn_body =~ "elmc_fn_Main_setCell_native("
+    assert spawn_body =~ "native_let_tileIndex_1, native_let_tileValue_1, cells"
     refute Regex.match?(~r/elmc_retain\(tmp_\d+\)/, spawn_body)
 
     refute Regex.match?(
@@ -3758,7 +3892,7 @@ defmodule Elmc.CCodegenPatternsTest do
       |> String.split(rc_direct_fn_def_marker("spawnTile"), parts: 2)
       |> hd()
 
-    assert set_cell_body =~ "elmc_list_replace_nth_int(cells,"
+    assert set_cell_body =~ "elmc_list_replace_nth_int(cells, index,"
     refute set_cell_body =~ "elmc_retain(cells)"
     refute set_cell_body =~ "elmc_release(cells)"
   end
@@ -4335,8 +4469,9 @@ defmodule Elmc.CCodegenPatternsTest do
 
     assert generated_c =~ ~r/if \(direct_affine_item_\d+ == 0\)/
     assert generated_c =~ "scene_cmd.text[0] = '.';"
-    assert generated_c =~ "elmc_scene_text_from_nonzero_int"
-    refute generated_c =~ ~r/if \(elmc_as_int\(direct_node_\d+->head\) != 0\) \{\s*elmc_draw_cmd_init\(&scene_cmd, ELMC_RENDER_OP_TEXT\)/
+    assert generated_c =~ "ELMC_RENDER_OP_TEXT_INT_WITH_FONT"
+    assert generated_c =~ ~r/if \(direct_affine_item_\d+ != 0\)/
+    refute generated_c =~ "elmc_scene_text_from_nonzero_int"
   end
 
   test "Maybe bare-var case binds payload type for distinct record field indices" do
@@ -4462,7 +4597,7 @@ defmodule Elmc.CCodegenPatternsTest do
 
     assert update_body =~
              ~r/elmc_record_update_index_cow_drop\(model, ELMC_FIELD_MAIN_MODEL_TIMESTRING, (tmp_|owned\[)/
-    refute update_body =~ "elmc_retain(model)"
+    assert update_body =~ "elmc_retain(model)"
     refute update_body =~ ~s/elmc_record_update(tmp_2, "timeString"/
   end
 

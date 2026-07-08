@@ -10,6 +10,8 @@ defmodule Elmc.Types do
 
   @type debug_usage_policy :: :error | :warn | :warning
 
+  @type plan_ir_mode :: :off | :shadow | :primary
+
   @type compile_options :: %{
           optional(:entry_module) => module_name(),
           optional(:out_dir) => String.t() | nil,
@@ -23,6 +25,8 @@ defmodule Elmc.Types do
           optional(:pebble_int32) => boolean(),
           optional(:linked_binary_map) => String.t(),
           optional(:prod) => boolean(),
+          optional(:plan_ir_mode) => plan_ir_mode(),
+          optional(:plan_ir_strict) => boolean(),
           optional(:debug_usage_policy) => debug_usage_policy()
         }
 end

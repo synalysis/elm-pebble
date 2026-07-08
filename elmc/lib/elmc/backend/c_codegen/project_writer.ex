@@ -20,7 +20,8 @@ defmodule Elmc.Backend.CCodegen.ProjectWriter do
          :ok <- write_stack_report(out_dir, ir, generated_source),
          :ok <- File.write(Path.join(c_dir, "host_harness.c"), BuildArtifacts.host_harness()),
          :ok <- File.write(Path.join(out_dir, "CMakeLists.txt"), BuildArtifacts.cmake()),
-         :ok <- File.write(Path.join(out_dir, "Makefile"), BuildArtifacts.makefile()) do
+         :ok <- File.write(Path.join(out_dir, "Makefile"), BuildArtifacts.makefile()),
+         :ok <- Elmc.Backend.Bytecode.ProjectWriter.maybe_write(ir, out_dir, opts) do
       :ok
     end
   end
@@ -40,7 +41,8 @@ defmodule Elmc.Backend.CCodegen.ProjectWriter do
          :ok <- File.write(Path.join(c_dir, "host_harness.c"), BuildArtifacts.host_harness()),
          :ok <- File.write(Path.join(out_dir, "CMakeLists.txt"), BuildArtifacts.cmake()),
          :ok <- File.write(Path.join(out_dir, "Makefile"), BuildArtifacts.makefile()),
-         :ok <- File.write(Path.join(out_dir, "link_manifest.json"), PerModuleArtifacts.link_manifest(ir)) do
+         :ok <- File.write(Path.join(out_dir, "link_manifest.json"), PerModuleArtifacts.link_manifest(ir)),
+         :ok <- Elmc.Backend.Bytecode.ProjectWriter.maybe_write(ir, out_dir, opts) do
       :ok
     end
   end

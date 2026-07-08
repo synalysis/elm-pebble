@@ -91,7 +91,7 @@ defmodule Elmc.ConstructorTagCaseFnOutTest do
 
     assert subs_body =~ "if (elmc_maybe_just_true(owned[0]))"
     assert subs_body =~ "Rc = elmc_sub1(&owned[1], ELMC_SUBSCRIPTION_HEALTH"
-    assert subs_body =~ "owned[1] = elmc_int_zero();"
+    assert subs_body =~ "Rc = elmc_sub0(&owned[1], 0)"
     refute subs_body =~ "*out = elmc_int_zero();"
     refute subs_body =~ "owned[1] = tmp_"
     refute subs_body =~ "ElmcValue *tmp_"

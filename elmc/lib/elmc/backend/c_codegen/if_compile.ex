@@ -157,7 +157,11 @@ defmodule Elmc.Backend.CCodegen.IfCompile do
   end
 
   defp compile_runtime_native_bool_branches(cond_expr, then_expr, else_expr, env, counter) do
-    cond_env = RcRuntimeEmit.strip_function_tail_scope(env)
+    cond_env =
+      env
+      |> RcRuntimeEmit.strip_function_tail_scope()
+      |> Map.put(:__compare_defer_operand_release__, true)
+
     {cond_code, cond_ref, counter} = Host.compile_native_bool_expr(cond_expr, cond_env, counter)
 
     case cond_ref do
@@ -189,6 +193,7 @@ defmodule Elmc.Backend.CCodegen.IfCompile do
         then_normalize = ValueSlots.normalize_branch_result_slot(out)
 
         ValueSlots.restore(slots_before)
+        ValueSlots.reset_function_out_written()
         FunctionCallCompile.reset_call_args_cache!()
 
         {else_code, else_assignment, counter} =
@@ -203,6 +208,8 @@ defmodule Elmc.Backend.CCodegen.IfCompile do
         else_body =
           maybe_extract_if_branch_helper(else_expr, else_env, out, else_code, else_assignment) <>
             "\n" <> else_normalize
+
+        {then_body, else_body} = inject_compare_operand_branch_releases(cond_code, then_body, else_body)
 
         code =
           Enum.join(
@@ -238,6 +245,7 @@ defmodule Elmc.Backend.CCodegen.IfCompile do
     then_normalize = ValueSlots.normalize_branch_result_slot(out)
 
     ValueSlots.restore(slots_before)
+    ValueSlots.reset_function_out_written()
     FunctionCallCompile.reset_call_args_cache!()
 
     {else_code, else_assignment, counter} =
@@ -294,7 +302,7 @@ defmodule Elmc.Backend.CCodegen.IfCompile do
 
     {cond_code, cond_var, counter} = Host.compile_expr(cond_expr, cond_env, counter)
 
-    case complementary_bool_branches(then_expr, else_expr) do
+    case complementary_bool_branches(then_expr, else_expr, env) do
       polarity when polarity in [:cond_true, :cond_false] ->
         {out, counter, _declare?} = if_result_out_binding(env, counter)
         flag = if(polarity == :cond_true, do: "elmc_as_int(#{cond_var})", else: "(elmc_as_int(#{cond_var}) == 0)")
@@ -335,6 +343,7 @@ defmodule Elmc.Backend.CCodegen.IfCompile do
 
     {else_code, else_assignment, counter} =
       with :ok <- ValueSlots.restore(parent_slots) do
+        ValueSlots.reset_function_out_written()
         FunctionCallCompile.reset_call_args_cache!()
         CaseCompile.branch_assignment(else_expr, out, else_env, branch_counter)
       end
@@ -369,11 +378,37 @@ defmodule Elmc.Backend.CCodegen.IfCompile do
     {code, out, counter}
   end
 
-  defp complementary_bool_branches(then_expr, else_expr) do
-    case {bool_branch_polarity(then_expr), bool_branch_polarity(else_expr)} do
-      {true, false} -> :cond_true
-      {false, true} -> :cond_false
-      _ -> nil
+  defp complementary_bool_branches(then_expr, else_expr, env) do
+    if function_returns_int?(env) and int_zero_one_branch_literals?(then_expr, else_expr) do
+      nil
+    else
+      case {bool_branch_polarity(then_expr), bool_branch_polarity(else_expr)} do
+        {true, false} -> :cond_true
+        {false, true} -> :cond_false
+        _ -> nil
+      end
+    end
+  end
+
+  defp int_zero_one_branch_literals?(
+         %{op: :int_literal, value: then_value},
+         %{op: :int_literal, value: else_value}
+       )
+       when then_value in [0, 1] and else_value in [0, 1],
+       do: true
+
+  defp int_zero_one_branch_literals?(_, _), do: false
+
+  defp function_returns_int?(env) when is_map(env) do
+    case {Map.get(env, :__module__), Map.get(env, :__function_name__)} do
+      {mod, name} when is_binary(mod) and is_binary(name) ->
+        case Map.get(Map.get(env, :__program_decls__, %{}), {mod, name}) do
+          %{type: type} -> Host.function_return_type(type) == "Int"
+          _ -> false
+        end
+
+      _ ->
+        false
     end
   end
 
@@ -555,4 +590,59 @@ defmodule Elmc.Backend.CCodegen.IfCompile do
   end
 
   defp external_vars(_expr, _bound), do: MapSet.new()
+
+  # When a native list-equality test guards an if/else, compare operands may still
+  # be needed in only one branch (for example restored cells in moveBoard's else).
+  # Release dead operands at branch entry instead of immediately after compare.
+  defp inject_compare_operand_branch_releases(cond_code, then_body, else_body) do
+    case list_equal_compare_operands(cond_code) do
+      [] ->
+        {then_body, else_body}
+
+      operands ->
+        {
+          compare_operand_branch_release_prefix(operands, then_body, true) <> then_body,
+          compare_operand_branch_release_prefix(operands, else_body, false) <> else_body
+        }
+    end
+  end
+
+  defp list_equal_compare_operands(cond_code) when is_binary(cond_code) do
+    case Regex.run(~r/elmc_list_equal_int\(([^,]+), ([^)]+)\)/, cond_code) do
+      [_, left, right] -> [String.trim(left), String.trim(right)]
+      _ -> []
+    end
+  end
+
+  defp compare_operand_branch_release_prefix(operands, branch_body, then_branch?)
+       when is_binary(branch_body) do
+    operands
+    |> operands_to_release_for_branch(branch_body, then_branch?)
+    |> Enum.map_join("\n", &compare_operand_release_stmt/1)
+    |> case do
+      "" -> ""
+      releases -> releases <> "\n"
+    end
+  end
+
+  defp operands_to_release_for_branch(operands, _branch_body, true) do
+    case operands do
+      [left, right | _] when is_binary(left) and is_binary(right) ->
+        if ValueSlots.owned_ref?(left), do: [right], else: operands
+
+      _ ->
+        operands
+    end
+  end
+
+  defp operands_to_release_for_branch(operands, branch_body, false) do
+    Enum.reject(operands, &String.contains?(branch_body, &1))
+  end
+
+  defp compare_operand_release_stmt(var) do
+    cond do
+      ValueSlots.owned_ref?(var) -> ValueSlots.release_owned_eager(var)
+      true -> ValueSlots.release_stmt(var)
+    end
+  end
 end

@@ -11,6 +11,7 @@ defmodule Elmc.Backend.CCodegen.Types do
           | :char_literal
           | :float_literal
           | :cmd_none
+          | :sub_none
 
   @type ir_cmd_op :: :pebble_cmd
   @type ir_sub_op :: :pebble_sub

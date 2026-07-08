@@ -17,6 +17,7 @@ defmodule Elmc.BackendCoverageGateTest do
                    :string_literal,
                    :char_literal,
                    :cmd_none,
+                   :sub_none,
                    :var,
                    :add_const,
                    :add_vars,

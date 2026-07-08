@@ -714,6 +714,30 @@ defmodule Ide.Mcp.ToolCatalog.Core do
       }
     },
     %{
+      name: "debugger.bytecode",
+      description:
+        "Inspect plan bytecode manifest artifacts or run a lowered function in-process (smoke test).",
+      inputSchema: %{
+        type: "object",
+        additionalProperties: JsonSchema.disallow_extra_properties(),
+        required: ["slug"],
+        properties: %{
+          slug: %{type: "string"},
+          action: %{
+            type: "string",
+            enum: ["summary", "functions", "run"],
+            description: "summary (default), functions list, or run one manifest entry."
+          },
+          module: %{type: "string", description: "Required for action=run."},
+          name: %{type: "string", description: "Required for action=run."},
+          params: %{
+            type: "array",
+            description: "Optional interpreter params for action=run."
+          }
+        }
+      }
+    },
+    %{
       name: "debugger.simulator_settings",
       description:
         "Read persisted and active debugger simulator inputs for watch device data and companion APIs.",
@@ -1647,6 +1671,7 @@ defmodule Ide.Mcp.ToolCatalog.Core do
   def authorized?("debugger.models", capabilities), do: :read in capabilities
   def authorized?("debugger.timeline", capabilities), do: :read in capabilities
   def authorized?("debugger.surface_state", capabilities), do: :read in capabilities
+  def authorized?("debugger.bytecode", capabilities), do: :read in capabilities
   def authorized?("debugger.simulator_settings", capabilities), do: :read in capabilities
   def authorized?("debugger.configuration", capabilities), do: :read in capabilities
   def authorized?("debugger.auto_fire", capabilities), do: :read in capabilities

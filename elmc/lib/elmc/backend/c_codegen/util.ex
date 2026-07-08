@@ -17,8 +17,8 @@ defmodule Elmc.Backend.CCodegen.Util do
 
   @spec module_fn_name(String.t(), String.t()) :: String.t()
   def module_fn_name(module_name, function_name) do
-    safe_module = module_name |> String.replace(".", "_")
-    safe_function = function_name |> String.replace(".", "_")
+    safe_module = module_name |> String.replace(".", "_") |> safe_c_suffix()
+    safe_function = function_name |> String.replace(".", "_") |> safe_c_suffix()
     "elmc_fn_#{safe_module}_#{safe_function}"
   end
 

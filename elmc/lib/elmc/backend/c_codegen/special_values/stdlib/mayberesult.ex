@@ -127,6 +127,65 @@ defmodule Elmc.Backend.CCodegen.SpecialValues.Stdlib.MaybeResult do
 
   def special_value_from_target("Maybe.withDefault", [
         default_val,
+        %{op: :qualified_call, target: target, args: [index, list]} = maybe_expr
+      ]) do
+    if list_at_target?(target) do
+      list_nth_maybe = %{
+        op: :runtime_call,
+        function: "elmc_list_nth_maybe",
+        args: [list, index]
+      }
+
+      if int_list_with_default_fusion?(default_val) do
+        %{
+          op: :runtime_call,
+          function: "elmc_list_nth_int_default_boxed",
+          args: [list, index, default_val]
+        }
+      else
+        %{
+          op: :runtime_call,
+          function: "elmc_maybe_with_default",
+          args: [default_val, list_nth_maybe]
+        }
+      end
+    else
+      %{
+        op: :runtime_call,
+        function: "elmc_maybe_with_default",
+        args: [default_val, maybe_expr]
+      }
+    end
+  end
+
+  def special_value_from_target("Maybe.withDefault", [
+        default_val,
+        %{op: :call, name: name, args: [index, list]}
+      ])
+      when name in ["listAt", "list_at"] do
+    list_nth_maybe = %{
+      op: :runtime_call,
+      function: "elmc_list_nth_maybe",
+      args: [list, index]
+    }
+
+    if int_list_with_default_fusion?(default_val) do
+      %{
+        op: :runtime_call,
+        function: "elmc_list_nth_int_default_boxed",
+        args: [list, index, default_val]
+      }
+    else
+      %{
+        op: :runtime_call,
+        function: "elmc_maybe_with_default",
+        args: [default_val, list_nth_maybe]
+      }
+    end
+  end
+
+  def special_value_from_target("Maybe.withDefault", [
+        default_val,
         %{op: :runtime_call, function: "elmc_list_nth_maybe", args: [list, index]} = list_nth_maybe
       ]) do
     if int_list_with_default_fusion?(default_val) do
@@ -187,4 +246,11 @@ defmodule Elmc.Backend.CCodegen.SpecialValues.Stdlib.MaybeResult do
 
   defp int_list_with_default_fusion?(%{op: :int_literal}), do: true
   defp int_list_with_default_fusion?(_), do: false
+
+  defp list_at_target?(target) when is_binary(target) do
+    String.ends_with?(target, ".listAt") or String.ends_with?(target, ".list_at") or
+      target in ["List.At", "List.at", "listAt", "list_at"]
+  end
+
+  defp list_at_target?(_), do: false
 end

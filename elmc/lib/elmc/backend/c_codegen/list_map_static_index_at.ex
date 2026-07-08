@@ -10,13 +10,15 @@ defmodule Elmc.Backend.CCodegen.ListMapStaticIndexAt do
   alias Elmc.Backend.CCodegen.{FusionSupport, Util}
 
   @spec try_emit(String.t(), String.t(), map() | nil, map()) ::
-          {:ok, String.t(), [FusionSupport.callee_key()]} | :error
+          {:ok, String.t(), [FusionSupport.callee_key()]}
+          | {:ok, String.t(), [FusionSupport.callee_key()], :rc_native}
+          | :error
   def try_emit(_module_name, _name, nil, _decl_map), do: :error
 
   def try_emit(module_name, name, expr, decl_map) do
     with {:ok, default, list_at_target, list_var, indices} <- parse(expr),
          true <- FusionSupport.indexed_list_at_reader?(decl_map, module_name, list_at_target) do
-      FusionSupport.ok(
+      FusionSupport.ok_rc(
         emit(module_name, name, list_var, default, indices),
         []
       )
@@ -112,34 +114,37 @@ defmodule Elmc.Backend.CCodegen.ListMapStaticIndexAt do
     index_values = Enum.join(indices, ", ")
 
     """
-    static ElmcValue *#{c_prefix}_native(ElmcValue *#{list_var}) {
-      static const elmc_int_t #{safe}_indices[#{count}] = { #{index_values} };
-      ElmcValue *out = NULL;
-      ElmcValue **tail_slot = NULL;
-      for (elmc_int_t k = 0; k < #{count}; k++) {
-        const elmc_int_t cell = elmc_list_nth_int_default(#{list_var}, #{safe}_indices[k], #{default});
-        ElmcValue *head = NULL;
-        if (elmc_new_int(&head, cell) != RC_SUCCESS) head = elmc_int_zero();
-        if (!head) {
-          elmc_release(out);
-          return elmc_list_nil();
+    static RC #{c_prefix}_native(ElmcValue **out, ElmcValue *#{list_var}) {
+      RC Rc = RC_SUCCESS;
+      ElmcValue *owned[2] = {0};
+      CATCH_BEGIN
+        static const elmc_int_t #{safe}_indices[#{count}] = { #{index_values} };
+        ElmcValue **tail_slot = NULL;
+        for (elmc_int_t k = 0; k < #{count}; k++) {
+          const elmc_int_t cell = elmc_list_nth_int_default(#{list_var}, #{safe}_indices[k], #{default});
+          Rc = elmc_new_int(&owned[1], cell);
+          CHECK_RC(Rc);
+          ElmcValue *cell_node = NULL;
+          Rc = elmc_list_cons(&cell_node, owned[1], elmc_list_nil());
+          owned[1] = NULL;
+          CHECK_RC(Rc);
+          if (tail_slot) {
+            elmc_release(*tail_slot);
+            *tail_slot = cell_node;
+          } else {
+            owned[0] = cell_node;
+          }
+          tail_slot = &((ElmcCons *)cell_node->payload)->tail;
         }
-        ElmcValue *cell_node = NULL;
-        if (elmc_list_cons(&cell_node, head, elmc_list_nil()) != RC_SUCCESS) cell_node = elmc_list_nil();
-        elmc_release(head);
-        if (!cell_node) {
-          elmc_release(out);
-          return elmc_list_nil();
-        }
-        if (tail_slot) {
-          elmc_release(*tail_slot);
-          *tail_slot = cell_node;
+        if (owned[0] == NULL) {
+          *out = elmc_list_nil();
         } else {
-          out = cell_node;
+          *out = owned[0];
+          owned[0] = NULL;
         }
-        tail_slot = &((ElmcCons *)cell_node->payload)->tail;
-      }
-      return out ? out : elmc_list_nil();
+      CATCH_END;
+      elmc_release_array_lifo(owned, DIM(owned));
+      return Rc;
     }
     """
   end

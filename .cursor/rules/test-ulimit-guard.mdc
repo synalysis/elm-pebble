@@ -10,6 +10,8 @@ Runaway Elixir test suites (codegen, corpus, multi-module writes, template harne
 ## Required
 
 - **Never** run bare `mix test` for `elmc`, `elmx`, `ide`, or other packages in this monorepo when executing tests as part of agent/CI work.
+- **Never** run bare `mix run` for corpus probes or codegen experiments — use `./scripts/mix-run-limited.sh` or `./scripts/corpus-probe-paths.sh` (one program per BEAM process).
+- **Never** run compiled corpus harness binaries directly — `ElmRunCorpus` wraps them with `./scripts/run-with-ulimit.sh` (default 4 GiB).
 - **Always** use the repo helper:
 
 ```bash

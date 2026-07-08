@@ -42,10 +42,13 @@ defmodule Elmc.Runtime.AllocTrack do
     #endif
 
     void *elmc_malloc_impl(size_t size, const char *context, const char *file, int line);
+    void *elmc_calloc_impl(size_t nmemb, size_t size, const char *context, const char *file, int line);
     #if ELMC_ALLOC_TRACE
     #define elmc_malloc(size, context) elmc_malloc_impl((size), (context), __FILE__, __LINE__)
+    #define elmc_calloc(nmemb, size, context) elmc_calloc_impl((nmemb), (size), (context), __FILE__, __LINE__)
     #else
     #define elmc_malloc(size, context) elmc_malloc_impl((size), (context), NULL, 0)
+    #define elmc_calloc(nmemb, size, context) elmc_calloc_impl((nmemb), (size), (context), NULL, 0)
     #endif
     """
   end

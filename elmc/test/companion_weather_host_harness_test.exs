@@ -11,7 +11,9 @@ defmodule Elmc.CompanionWeatherHostHarnessTest do
     prune_runtime: true,
     prune_native_wrappers: true,
     pebble_int32: true,
-    strip_dead_code: true
+    strip_dead_code: true,
+    plan_ir_mode: :primary,
+    plan_ir_strict: true
   ]
 
   test "companion ProvideReading dispatch updates view text without RC leak" do

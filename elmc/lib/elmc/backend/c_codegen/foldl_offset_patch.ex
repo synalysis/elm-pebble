@@ -8,7 +8,9 @@ defmodule Elmc.Backend.CCodegen.FoldlOffsetPatch do
   alias Elmc.Backend.CCodegen.{FusionSupport, Tuple2CaseTable, Util}
 
   @spec try_emit(String.t(), String.t(), map() | nil, map()) ::
-          {:ok, String.t(), [FusionSupport.callee_key()]} | :error
+          {:ok, String.t(), [FusionSupport.callee_key()]}
+          | {:ok, String.t(), [FusionSupport.callee_key()], :rc_native}
+          | :error
   def try_emit(_module_name, _name, nil, _decl_map), do: :error
 
   def try_emit(module_name, name, expr, decl_map) do
@@ -22,7 +24,7 @@ defmodule Elmc.Backend.CCodegen.FoldlOffsetPatch do
       offsets_name = FusionSupport.local_name(offsets_target)
       set_cell_name = FusionSupport.local_name(set_cell_target)
 
-      FusionSupport.ok(
+      FusionSupport.ok_rc(
         emit(module_name, name, piece_type, cols, rows, offsets_name),
         [{module_name, offsets_name}, {module_name, set_cell_name}]
       )
@@ -237,85 +239,88 @@ defmodule Elmc.Backend.CCodegen.FoldlOffsetPatch do
     y_field = field_macro(module_name, piece_type, "y")
 
     """
-    static ElmcValue *#{c_prefix}_native(ElmcValue *piece, ElmcValue *board) {
-      const elmc_int_t kind = ELMC_RECORD_GET_INDEX_INT(piece, #{kind_field});
-      const elmc_int_t rot = ELMC_RECORD_GET_INDEX_INT(piece, #{rot_field});
-      const elmc_int_t px = ELMC_RECORD_GET_INDEX_INT(piece, #{x_field});
-      const elmc_int_t py = ELMC_RECORD_GET_INDEX_INT(piece, #{y_field});
-      const elmc_int_t value = kind + 1;
-      const elmc_int_t cols = #{cols};
-      const elmc_int_t rows = #{rows};
-      elmc_int_t k = kind % 7;
-      if (k < 0) k += 7;
-      elmc_int_t r = rot % 4;
-      if (r < 0) r += 4;
-      const #{table_type} *entry = &#{table_ref}[k][r];
-      elmc_int_t patches[4];
-      int patch_count = 0;
-      for (int i = 0; i < entry->count; i++) {
-        const elmc_int_t x = px + entry->cells[i][0];
-        const elmc_int_t y = py + entry->cells[i][1];
-        if (x >= 0 && x < cols && y >= 0 && y < rows) {
-          patches[patch_count++] = (y * cols) + x;
-        }
-      }
-      const elmc_int_t total = cols * rows;
-      if (board && board->tag == ELMC_TAG_INT_LIST) {
-        ElmcIntListPayload *ilp = (ElmcIntListPayload *)board->payload;
-        const int len = ilp ? ilp->length : 0;
-        if (len != total) return elmc_retain(board);
-        elmc_int_t buf[#{cols * rows}];
-        for (int i = 0; i < len; i++) {
-          buf[i] = ilp->values[i];
-        }
-        for (int p = 0; p < patch_count; p++) {
-          const elmc_int_t patch = patches[p];
-          if (patch >= 0 && patch < len) buf[patch] = value;
-        }
-        ElmcValue *out = NULL;
-        if (elmc_list_from_int_array(&out, buf, len) != RC_SUCCESS || !out) {
-          return elmc_retain(board);
-        }
-        return out;
-      }
-      ElmcValue *out = NULL;
-      ElmcValue **tail_slot = NULL;
-      elmc_int_t idx = 0;
-      ElmcValue *cursor = board;
-      while (cursor && cursor->tag == ELMC_TAG_LIST && cursor->payload != NULL) {
-        ElmcCons *node = (ElmcCons *)cursor->payload;
-        elmc_int_t cell_value = elmc_as_int(node->head);
-        for (int p = 0; p < patch_count; p++) {
-          if (idx == patches[p]) {
-            cell_value = value;
-            break;
+    static RC #{c_prefix}_native(ElmcValue **out, ElmcValue *piece, ElmcValue *board) {
+      RC Rc = RC_SUCCESS;
+      ElmcValue *owned[2] = {0};
+      CATCH_BEGIN
+        const elmc_int_t kind = ELMC_RECORD_GET_INDEX_INT(piece, #{kind_field});
+        const elmc_int_t rot = ELMC_RECORD_GET_INDEX_INT(piece, #{rot_field});
+        const elmc_int_t px = ELMC_RECORD_GET_INDEX_INT(piece, #{x_field});
+        const elmc_int_t py = ELMC_RECORD_GET_INDEX_INT(piece, #{y_field});
+        const elmc_int_t value = kind + 1;
+        const elmc_int_t cols = #{cols};
+        const elmc_int_t rows = #{rows};
+        elmc_int_t k = kind % 7;
+        if (k < 0) k += 7;
+        elmc_int_t r = rot % 4;
+        if (r < 0) r += 4;
+        const #{table_type} *entry = &#{table_ref}[k][r];
+        elmc_int_t patches[4];
+        int patch_count = 0;
+        for (int i = 0; i < entry->count; i++) {
+          const elmc_int_t x = px + entry->cells[i][0];
+          const elmc_int_t y = py + entry->cells[i][1];
+          if (x >= 0 && x < cols && y >= 0 && y < rows) {
+            patches[patch_count++] = (y * cols) + x;
           }
         }
-        ElmcValue *head = NULL;
-        if (elmc_new_int(&head, cell_value) != RC_SUCCESS) head = elmc_int_zero();
-        if (!head) {
-          elmc_release(out);
-          return elmc_retain(board);
-        }
-        ElmcValue *cell = NULL;
-        if (elmc_list_cons(&cell, head, elmc_list_nil()) != RC_SUCCESS) cell = elmc_list_nil();
-        elmc_release(head);
-        if (!cell) {
-          elmc_release(out);
-          return elmc_retain(board);
-        }
-        if (tail_slot) {
-          elmc_release(*tail_slot);
-          *tail_slot = cell;
+        const elmc_int_t total = cols * rows;
+        if (board && board->tag == ELMC_TAG_INT_LIST) {
+          ElmcIntListPayload *ilp = (ElmcIntListPayload *)board->payload;
+          const int len = ilp ? ilp->length : 0;
+          if (len != total) {
+            *out = elmc_retain(board);
+          } else {
+            elmc_int_t buf[#{cols * rows}];
+            for (int i = 0; i < len; i++) {
+              buf[i] = ilp->values[i];
+            }
+            for (int p = 0; p < patch_count; p++) {
+              const elmc_int_t patch = patches[p];
+              if (patch >= 0 && patch < len) buf[patch] = value;
+            }
+            Rc = elmc_list_from_int_array(out, buf, len);
+            CHECK_RC(Rc);
+          }
         } else {
-          out = cell;
+          ElmcValue **tail_slot = NULL;
+          elmc_int_t idx = 0;
+          ElmcValue *cursor = board;
+          while (cursor && cursor->tag == ELMC_TAG_LIST && cursor->payload != NULL) {
+            ElmcCons *node = (ElmcCons *)cursor->payload;
+            elmc_int_t cell_value = elmc_as_int(node->head);
+            for (int p = 0; p < patch_count; p++) {
+              if (idx == patches[p]) {
+                cell_value = value;
+                break;
+              }
+            }
+            Rc = elmc_new_int(&owned[1], cell_value);
+            CHECK_RC(Rc);
+            ElmcValue *cell = NULL;
+            Rc = elmc_list_cons(&cell, owned[1], elmc_list_nil());
+            owned[1] = NULL;
+            CHECK_RC(Rc);
+            if (tail_slot) {
+              elmc_release(*tail_slot);
+              *tail_slot = cell;
+            } else {
+              owned[0] = cell;
+            }
+            tail_slot = &((ElmcCons *)cell->payload)->tail;
+            cursor = node->tail;
+            idx++;
+          }
+          if (owned[0] == NULL) {
+            *out = elmc_list_nil();
+          } else {
+            *out = owned[0];
+            owned[0] = NULL;
+          }
         }
-        tail_slot = &((ElmcCons *)cell->payload)->tail;
-        cursor = node->tail;
-        idx++;
-      }
-      if (!out) out = elmc_list_nil();
-      return out;
+      CATCH_END;
+      elmc_release_array_lifo(owned, DIM(owned));
+      return Rc;
     }
     """
   end

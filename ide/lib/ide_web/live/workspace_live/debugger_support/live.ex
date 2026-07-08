@@ -54,6 +54,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Live do
     |> Component.assign(:debugger_companion_bootstrap_progress, nil)
     |> Component.assign(:debugger_runtime_refresh_ref, nil)
     |> Component.assign(:debugger_runtime_refresh_seq, 0)
+    |> Component.assign(:debugger_bytecode_smoke, nil)
   end
 
   @spec refresh(Types.socket()) :: Types.socket()

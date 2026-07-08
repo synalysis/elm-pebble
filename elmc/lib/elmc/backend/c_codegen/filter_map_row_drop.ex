@@ -237,12 +237,11 @@ defmodule Elmc.Backend.CCodegen.FilterMapRowDrop do
 
   defp emit(module_name, name, rows, cols) do
     c_prefix = Util.module_fn_name(module_name, name)
-    bail = &RcRuntimeEmit.fusion_tuple2_take_int_out("out", &1, "cleared")
 
     """
     static RC #{c_prefix}_native(ElmcValue **out, ElmcValue *board) {
       RC Rc = RC_SUCCESS;
-      ElmcValue *owned[1] = {0};
+      ElmcValue *owned[2] = {0};
       CATCH_BEGIN
         const elmc_int_t rows = #{rows};
         const elmc_int_t cols = #{cols};
@@ -260,20 +259,16 @@ defmodule Elmc.Backend.CCodegen.FilterMapRowDrop do
         if (cleared == 0) {
           #{RcRuntimeEmit.fusion_tuple2_take_int_out("out", "elmc_retain(board)", "0")}
         } else {
-          ElmcValue *built = NULL;
           ElmcValue **tail_slot = NULL;
           for (elmc_int_t z = 0; z < (cleared * cols); z++) {
             ElmcValue *cell = NULL;
-            if (elmc_list_cons(&cell, elmc_int_zero(), elmc_list_nil()) != RC_SUCCESS) cell = elmc_list_nil();
-            if (!cell) {
-              elmc_release(built);
-              #{bail.("elmc_list_nil()")}
-            }
+            Rc = elmc_list_cons(&cell, elmc_int_zero(), elmc_list_nil());
+            CHECK_RC(Rc);
             if (tail_slot) {
               elmc_release(*tail_slot);
               *tail_slot = cell;
             } else {
-              built = cell;
+              owned[0] = cell;
             }
             tail_slot = &((ElmcCons *)cell->payload)->tail;
           }
@@ -288,31 +283,27 @@ defmodule Elmc.Backend.CCodegen.FilterMapRowDrop do
             if (!row_full) {
               for (elmc_int_t col = 0; col < cols; col++) {
                 const elmc_int_t cell_value = elmc_list_nth_int_default(board, (row * cols) + col, 0);
-                ElmcValue *head = NULL;
-                if (elmc_new_int(&head, cell_value) != RC_SUCCESS) head = elmc_int_zero();
-                if (!head) {
-                  elmc_release(built);
-                  #{bail.("elmc_list_nil()")}
-                }
+                Rc = elmc_new_int(&owned[1], cell_value);
+                CHECK_RC(Rc);
                 ElmcValue *cell = NULL;
-                if (elmc_list_cons(&cell, head, elmc_list_nil()) != RC_SUCCESS) cell = elmc_list_nil();
-                elmc_release(head);
-                if (!cell) {
-                  elmc_release(built);
-                  #{bail.("elmc_list_nil()")}
-                }
+                Rc = elmc_list_cons(&cell, owned[1], elmc_list_nil());
+                owned[1] = NULL;
+                CHECK_RC(Rc);
                 if (tail_slot) {
                   elmc_release(*tail_slot);
                   *tail_slot = cell;
                 } else {
-                  built = cell;
+                  owned[0] = cell;
                 }
                 tail_slot = &((ElmcCons *)cell->payload)->tail;
               }
             }
           }
-          if (!built) built = elmc_list_nil();
-          #{RcRuntimeEmit.fusion_tuple2_take_int_out("out", "built", "cleared")}
+          {
+            ElmcValue *built = owned[0] ? owned[0] : elmc_list_nil();
+            owned[0] = NULL;
+            #{RcRuntimeEmit.fusion_tuple2_take_int_out("out", "built", "cleared")}
+          }
         }
       CATCH_END;
       elmc_release_array_lifo(owned, DIM(owned));

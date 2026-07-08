@@ -78,6 +78,22 @@ defmodule Elmc.Backend.CCodegen.ImmortalStaticList do
     end
   end
 
+  @spec repeat_count_heritage_comment(Types.ir_expr(), Types.compile_env()) :: String.t() | nil
+  def repeat_count_heritage_comment(expr, env) do
+    case repeat_count_source(expr, env) do
+      {:ok, module, name} -> "/* #{module}.#{name} */"
+      :error -> nil
+    end
+  end
+
+  @spec format_repeat_count(integer(), Types.ir_expr(), Types.compile_env()) :: String.t()
+  def format_repeat_count(count, source_expr, env) do
+    case repeat_count_heritage_comment(source_expr, env) do
+      nil -> Integer.to_string(count)
+      comment -> "#{count} #{comment}"
+    end
+  end
+
   @spec length_heritage_comment(Types.ir_expr(), Types.compile_env()) :: String.t() | nil
   def length_heritage_comment(expr, env) do
     case static_list_length_source(expr, env) do
@@ -203,6 +219,10 @@ defmodule Elmc.Backend.CCodegen.ImmortalStaticList do
       other ->
         zero_arg_function_ref(other, env)
     end
+  end
+
+  defp repeat_count_source(expr, env) do
+    zero_arg_function_ref(expr, env)
   end
 
   defp zero_arg_function_ref(expr, env) do

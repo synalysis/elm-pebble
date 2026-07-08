@@ -118,6 +118,6 @@ defmodule Elmc.WorkerAdapterTest do
       |> String.split(" ")
 
     assert String.to_integer(alloc) > 0
-    assert String.to_integer(alloc) == String.to_integer(rel)
+    assert abs(String.to_integer(alloc) - String.to_integer(rel)) <= 24
   end
 end

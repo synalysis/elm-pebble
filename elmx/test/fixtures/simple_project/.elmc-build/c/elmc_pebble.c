@@ -22,8 +22,10 @@
 #define ELMC_PEBBLE_HEAP_LOG 0
 #endif
 #include "elmc_pebble.h"
+#include "elmc_generated.h"
 
-#if defined(ELMC_PEBBLE_APLITE_DIRECT_VIEW_SCENE) && defined(ELMC_HAVE_DIRECT_COMMANDS_MAIN_VIEW)
+#if defined(ELMC_HAVE_DIRECT_COMMANDS_MAIN_VIEW) && \
+    (defined(ELMC_PEBBLE_APLITE_DIRECT_VIEW_SCENE) || !defined(ELMC_PEBBLE_PLATFORM))
 #define ELMC_PEBBLE_DIRECT_VIEW_SCENE 1
 #endif
 
@@ -1127,8 +1129,7 @@ static int elmc_pebble_scene_decode_payload(
      payload sizes such as ELMC_SCENE_PL_ROUND_U8 (11); decode by kind first. */
 #if ELMC_PEBBLE_FEATURE_DRAW_TEXT_LABEL
   if (kind == ELMC_PEBBLE_DRAW_TEXT_LABEL_WITH_FONT &&
-      payload_len >= ELMC_SCENE_PL_TEXT_LABEL_BASE + 1 &&
-      payload_len < ELMC_SCENE_PL_TEXT_BASE) {
+      payload_len >= ELMC_SCENE_PL_TEXT_LABEL_BASE + 1) {
     out_cmd->p0 = elmc_pebble_scene_read_i32(bytes, offset, payload_end);
     out_cmd->p1 = elmc_scene_read_i16(bytes, offset, payload_end);
     out_cmd->p2 = elmc_scene_read_i16(bytes, offset, payload_end);
@@ -3724,6 +3725,95 @@ int elmc_pebble_init_with_mode(ElmcPebbleApp *app, ElmcValue *flags, int run_mod
       return rc;
     }
 
+    static int elmc_pebble_cmd_queue_index(ElmcValue *queue, int target, ElmcPebbleCmd *out_cmd) {
+      if (!out_cmd || target < 0) return -1;
+      int index = 0;
+      ElmcValue *cursor = queue;
+      while (cursor && cursor->tag == ELMC_TAG_LIST && cursor->payload) {
+        ElmcCons *node = (ElmcCons *)cursor->payload;
+        ElmcPebbleCmd cmd = {0};
+        if (node->head && elmc_cmd_from_value(node->head, &cmd) == 0 &&
+            cmd.kind != ELMC_PEBBLE_CMD_NONE) {
+          if (index == target) {
+            *out_cmd = cmd;
+            return 0;
+          }
+          index += 1;
+        }
+        cursor = node->tail;
+      }
+      if (cursor && cursor->tag != ELMC_TAG_LIST) {
+        ElmcPebbleCmd cmd = {0};
+        if (elmc_cmd_from_value(cursor, &cmd) == 0 && cmd.kind != ELMC_PEBBLE_CMD_NONE) {
+          if (index == target) {
+            *out_cmd = cmd;
+            return 0;
+          }
+        }
+      }
+      return -2;
+    }
+
+    static int elmc_pebble_cmd_queue_count_value(ElmcValue *queue) {
+      int count = 0;
+      ElmcValue *cursor = queue;
+      while (cursor && cursor->tag == ELMC_TAG_LIST && cursor->payload) {
+        ElmcCons *node = (ElmcCons *)cursor->payload;
+        ElmcPebbleCmd cmd = {0};
+        if (node->head && elmc_cmd_from_value(node->head, &cmd) == 0 &&
+            cmd.kind != ELMC_PEBBLE_CMD_NONE) {
+          count += 1;
+        }
+        cursor = node->tail;
+      }
+      if (cursor && cursor->tag != ELMC_TAG_LIST) {
+        ElmcPebbleCmd cmd = {0};
+        if (elmc_cmd_from_value(cursor, &cmd) == 0 && cmd.kind != ELMC_PEBBLE_CMD_NONE) {
+          count += 1;
+        }
+      }
+      return count;
+    }
+
+    int elmc_pebble_pending_cmd_count(ElmcPebbleApp *app) {
+      if (!app || !app->initialized) return 0;
+      ElmcValue *queue = elmc_worker_pending_cmds_borrow(&app->worker);
+      if (!queue) return 0;
+      int count = elmc_pebble_cmd_queue_count_value(queue);
+      elmc_release(queue);
+      return count;
+    }
+
+    int elmc_pebble_last_dispatch_cmd_count(ElmcPebbleApp *app) {
+      if (!app || !app->initialized) return 0;
+      return elmc_worker_last_dispatch_cmd_count(&app->worker);
+    }
+
+    int elmc_pebble_last_dispatch_cmd_at(ElmcPebbleApp *app, int index, ElmcPebbleCmd *out_cmd) {
+      if (!app || !app->initialized || !out_cmd) return -1;
+      ElmcWorkerDispatchCmd snap = {0};
+      if (elmc_worker_last_dispatch_cmd_at(&app->worker, index, &snap) != 0) return -2;
+      out_cmd->kind = snap.kind;
+      out_cmd->p0 = snap.p0;
+      out_cmd->p1 = snap.p1;
+      out_cmd->p2 = snap.p2;
+      out_cmd->p3 = snap.p3;
+      out_cmd->p4 = snap.p4;
+      out_cmd->p5 = snap.p5;
+      strncpy(out_cmd->text, snap.text, sizeof(out_cmd->text) - 1);
+      out_cmd->text[sizeof(out_cmd->text) - 1] = '\0';
+      return 0;
+    }
+
+    int elmc_pebble_pending_cmd_at(ElmcPebbleApp *app, int index, ElmcPebbleCmd *out_cmd) {
+      if (!app || !app->initialized || !out_cmd) return -1;
+      ElmcValue *queue = elmc_worker_pending_cmds_borrow(&app->worker);
+      if (!queue) return -2;
+      int rc = elmc_pebble_cmd_queue_index(queue, index, out_cmd);
+      elmc_release(queue);
+      return rc;
+    }
+
     static int elmc_pebble_view_commands_impl(ElmcPebbleApp *app, ElmcPebbleDrawCmd *out_cmds, int max_cmds, int skip, int dedupe);
     static int elmc_pebble_view_commands_raw_impl(ElmcPebbleApp *app, ElmcPebbleDrawCmd *out_cmds, int max_cmds, int skip, int dedupe, int *out_emitted_end);
 
@@ -4043,12 +4133,11 @@ static int elmc_pebble_view_commands_raw_impl(ElmcPebbleApp *app, ElmcPebbleDraw
               elmc_agent_scene_probe(model ? 0xED996181 : 0xED99618F);
               // #endregion
               if (!model) return -2;
-              ElmcValue *args[] = { model };
-              // #region agent log
+                            // #region agent log
               elmc_agent_scene_probe(0xED996190);
               // #endregion
               elmc_pebble_heap_log("view:start");
-              RC view_rc = elmc_fn_Main_view(&result, args, 1);
+              RC view_rc = elmc_fn_Main_view(&result, model);
               elmc_pebble_heap_log("view:end");
               if (view_rc != RC_SUCCESS) {
                 ELMC_RC_LOG_FAIL(view_rc, "elmc_pebble_view_commands_raw_impl", "view");

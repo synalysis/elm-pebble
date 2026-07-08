@@ -1,0 +1,552 @@
+defmodule Elmc.Backend.Plan.Lower.Expr do
+  @moduledoc """
+  Lower Elm IR expressions to verified `%FunctionPlan{}` fragments.
+  """
+
+  alias Elmc.Backend.Plan.Builder
+  alias Elmc.Backend.Plan.Context
+  alias Elmc.Backend.Plan.Lower.{Arith, Call, Case, Cmd, Compare, Constructor, If, IntCall, Lambda, List, Record, StdlibCall, Tuple}
+  alias Elmc.Backend.Plan.RuntimeBuiltins
+  alias Elmc.Backend.Plan.Types
+
+  @literal_ops [:int_literal, :c_int_expr, :bool_literal, :string_literal, :cmd_none, :sub_none, :float_literal]
+
+  @spec compile(map() | nil, Context.t(), Builder.t()) ::
+          {:ok, Types.reg() | :fn_out | :branch_out | nil, Builder.t()} | :unsupported
+  def compile(nil, _ctx, b), do: {:ok, nil, b}
+
+  def compile(%{op: op} = expr, ctx, b) when op in @literal_ops do
+    compile_literal(expr, ctx, b)
+  end
+
+  def compile(%{op: :var, name: name}, ctx, b) when is_binary(name) do
+    case Context.local_reg(ctx, name) do
+      reg when is_integer(reg) ->
+        {:ok, reg, b}
+
+      _ ->
+        case param_index(ctx, name) do
+          idx when is_integer(idx) ->
+            Builder.get_or_load_param(b, idx, name) |> then(fn {reg, b1} -> {:ok, reg, b1} end)
+
+          _ ->
+            case Builder.emit_load_local(b, name) do
+              {nil, _} ->
+                case Call.compile_top_level_ref(name, ctx, b) do
+                  {:ok, reg, b1} -> {:ok, reg, b1}
+                  :unsupported -> :unsupported
+                end
+
+              {reg, b1} ->
+                {:ok, reg, b1}
+            end
+        end
+    end
+  end
+
+  def compile(%{op: :call} = expr, ctx, b) do
+    case IntCall.compile(expr, ctx, b) do
+      {:ok, _, _} = ok ->
+        ok
+
+      :unsupported ->
+        case Lambda.compile_partial(expr, ctx, b) do
+          {:ok, _, _} = ok ->
+            ok
+
+          :unsupported ->
+            Call.compile_call(expr, ctx, b)
+        end
+    end
+  end
+
+  def compile(%{op: :qualified_call} = expr, ctx, b) do
+    case expr do
+      %{target: "Maybe.withDefault", args: args} ->
+        StdlibCall.compile_maybe_with_default(args, ctx, b)
+
+      %{target: target, args: [arg]} when target in ["String.fromInt", "String.toInt", "String.toFloat", "Basics.floor"] ->
+        compile_string_unary(target, arg, ctx, b)
+
+      %{target: target, args: [left, right]} ->
+        case IntCall.compile(%{op: :call, name: target, args: [left, right]}, ctx, b) do
+          {:ok, _, _} = ok -> ok
+          :unsupported -> Call.compile_call(expr, ctx, b)
+        end
+
+      _ ->
+        Call.compile_call(expr, ctx, b)
+    end
+  end
+
+  def compile(%{op: :runtime_call} = expr, ctx, b) do
+    compile_runtime_call(expr, ctx, b)
+  end
+
+  def compile(%{op: :let_in} = expr, ctx, b) do
+    compile_let(expr, ctx, b)
+  end
+
+  def compile(%{op: :lambda} = expr, ctx, b), do: Lambda.compile(expr, ctx, b)
+
+  def compile(%{op: op} = expr, ctx, b)
+      when op in [:tuple_first_expr, :tuple_second_expr, :tuple_first, :tuple_second],
+      do: Tuple.compile(expr, ctx, b)
+
+  def compile(%{op: :if} = expr, ctx, b), do: If.compile(expr, ctx, b)
+  def compile(%{op: :case} = expr, ctx, b), do: Case.compile(expr, ctx, b)
+  def compile(%{op: :pebble_cmd} = expr, ctx, b), do: Cmd.compile(expr, ctx, b)
+
+  def compile(%{op: :render_cmd} = expr, ctx, b),
+    do: Elmc.Backend.Plan.Lower.Platform.Pebble.compile_render_cmd(expr, ctx, b)
+
+  def compile(%{op: :pebble_sub} = expr, ctx, b),
+    do: Elmc.Backend.Plan.Lower.Platform.Pebble.compile_sub(expr, ctx, b)
+  def compile(%{op: :compare} = expr, ctx, b), do: Compare.compile(expr, ctx, b)
+  def compile(%{op: :constructor_call} = expr, ctx, b),
+    do: Constructor.compile(expr, ctx, b)
+
+  def compile(%{op: :partial_constructor, target: target, tag: tag, args: []}, ctx, b)
+      when is_binary(target) and is_integer(tag) do
+    compile_runtime_builtin(:new_int, [], ctx, b, %{literal: tag})
+  end
+
+  def compile(%{op: :partial_constructor, target: target, args: []}, ctx, b)
+      when is_binary(target) do
+    Constructor.compile(%{target: target, args: []}, ctx, b)
+  end
+
+  def compile(%{op: :msg_tag_expr, name: name}, ctx, b) when is_binary(name) do
+    Constructor.compile(%{target: name, args: []}, ctx, b)
+  end
+
+  def compile(%{op: :record_update} = expr, ctx, b), do: Record.compile_update(expr, ctx, b)
+
+  def compile(%{op: op} = expr, ctx, b) when op in [:add_const, :sub_const, :add_vars],
+    do: Arith.compile(expr, ctx, b)
+
+  def compile(%{op: :tuple2, left: left, right: right}, ctx, b) do
+    case Constructor.compile_payload_tuple2(left, right, ctx, b) do
+      {:ok, reg, b1} ->
+        {:ok, reg, b1}
+
+      :unsupported ->
+        compile_tuple2_pair(left, right, ctx, b)
+    end
+  end
+
+  def compile(%{op: :tuple2} = expr, ctx, b) do
+    with {:ok, [a, b_reg], b1} <- compile_args(Map.get(expr, :args, []), ctx, b) do
+      compile_runtime_builtin(:tuple2, [a, b_reg], ctx, b1)
+    else
+      _ -> :unsupported
+    end
+  end
+
+  def compile(%{op: :record_literal} = expr, ctx, b) do
+    fields =
+      expr
+      |> Map.get(:fields, [])
+      |> Record.canonicalize_literal_fields(ctx)
+
+    with {:ok, field_regs, b1} <- compile_field_values(fields, ctx, b) do
+      field_names = Enum.map(fields, fn f -> Map.get(f, :name) || Map.get(f, :field) end)
+
+      compile_runtime_builtin(:record_new, field_regs, ctx, b1, %{
+        shape: Map.get(expr, :type),
+        field_names: field_names
+      })
+    else
+      _ -> :unsupported
+    end
+  end
+
+  def compile(%{op: :list_literal, items: items}, ctx, b) do
+    List.compile_literal(items, ctx, b)
+  end
+
+  def compile(%{op: :field_access, arg: %{op: :record_literal, fields: fields}, field: field}, ctx, b)
+      when is_binary(field) do
+    case Enum.find(fields, fn f -> Map.get(f, :name) == field end) do
+      %{expr: expr} -> compile(expr, ctx, b)
+      _ -> :unsupported
+    end
+  end
+
+  def compile(%{op: :field_access, arg: arg, field: field}, ctx, b) when is_binary(field) do
+    with {:ok, base, b1} <- resolve_field_base(arg, ctx, b) do
+      compile_record_get(base, field, ctx, b1)
+    else
+      _ -> :unsupported
+    end
+  end
+
+  def compile(_, _, _), do: :unsupported
+
+  @spec compile_args([map()], Context.t(), Builder.t()) ::
+          {:ok, [Types.reg()], Builder.t()} | :unsupported
+  def compile_args(args, ctx, b) when is_list(args) do
+    # Call operands must not target branch_out / fn_out — only the callee result may.
+    operand_ctx = %{ctx | dest_stack: [:scratch]}
+
+    Enum.reduce_while(args, {:ok, [], b}, fn arg, {:ok, acc, b_acc} ->
+      case compile(arg, operand_ctx, b_acc) do
+        {:ok, reg, b1} when is_integer(reg) -> {:cont, {:ok, acc ++ [reg], b1}}
+        _ -> {:halt, :unsupported}
+      end
+    end)
+  end
+
+  defp compile_literal(%{op: :int_literal, union_ctor: ctor} = expr, ctx, b) when is_binary(ctor) do
+    Constructor.compile(%{target: ctor, args: [], value: Map.get(expr, :value)}, ctx, b)
+  end
+
+  defp compile_literal(%{op: :float_literal, value: value}, ctx, b) when is_number(value) do
+    compile_runtime_builtin(:new_float, [], ctx, b, %{literal: value})
+  end
+
+  defp compile_literal(%{op: :int_literal, value: value}, _ctx, b) do
+    Builder.emit_const_int(b, value) |> then(fn {reg, b1} -> {:ok, reg, b1} end)
+  end
+
+  defp compile_literal(%{op: :bool_literal, value: value}, ctx, b) do
+    int_val = if value, do: 1, else: 0
+    compile_runtime_builtin(:new_bool, [int_val], ctx, b, %{literal: int_val})
+  end
+
+  defp compile_literal(%{op: :sub_none}, ctx, b) do
+    Elmc.Backend.Plan.Lower.Platform.Pebble.compile_sub(
+      %{mask: %{op: :int_literal, value: 0}, params: []},
+      ctx,
+      b
+    )
+  end
+
+  defp compile_literal(%{op: :cmd_none}, ctx, b) do
+    kind =
+      Elmc.Backend.CCodegen.SpecialValues.Helpers.command_kind_expr(:none)
+
+    Cmd.compile(%{op: :pebble_cmd, kind: kind, params: []}, ctx, b)
+  end
+
+  defp compile_literal(%{op: :string_literal, value: value}, _ctx, b) do
+    {reg, b1} = Builder.fresh_reg(b)
+
+    {_, b2} =
+      Builder.emit(b1, :const_immortal_string, %{
+        dest: reg,
+        args: %{value: value},
+        effects: Types.owned_effects(reg)
+      })
+
+    {:ok, reg, b2}
+  end
+
+  defp compile_literal(%{op: :c_int_expr, value: value}, ctx, b) when is_binary(value) do
+    # Treat as int constant when value is numeric
+    case Integer.parse(value) do
+      {n, ""} -> Builder.emit_const_int(b, n) |> then(fn {reg, b1} -> {:ok, reg, b1} end)
+      _ -> compile_runtime_builtin(:new_int, [], ctx, b, %{c_expr: value})
+    end
+  end
+
+  defp compile_literal(_, _, _), do: :unsupported
+
+  defp param_index(ctx, name) when is_binary(name) do
+    ctx.params
+    |> Enum.find_index(&(&1 == name))
+  end
+
+  defp resolve_field_base(arg, ctx, b) when is_binary(arg),
+    do: compile(%{op: :var, name: arg}, ctx, b)
+
+  defp resolve_field_base(arg, ctx, b) when is_map(arg), do: compile(arg, ctx, b)
+  defp resolve_field_base(_, _, _), do: :unsupported
+
+  defp compile_record_get(base, field, ctx, b) when is_integer(base) do
+    {reg, b1} = Builder.fresh_reg(b)
+
+    {_, b2} =
+      Builder.emit(b1, :record_get, %{
+        dest: reg,
+        args: %{base: base, field: field, field_index: Record.field_index_for(field, ctx)},
+        effects: %{produces: {:owned, reg}, consumes: [], borrows: [base], fallible: false}
+      })
+
+    {:ok, reg, b2}
+  end
+
+  defp compile_let(%{op: :let_in, name: name, value_expr: value_expr, in_expr: in_expr}, ctx, b) do
+    if letrec_lambda?(name, value_expr) do
+      compile_letrec_lambda(name, value_expr, in_expr, ctx, b)
+    else
+      compile_let_simple(name, value_expr, in_expr, ctx, b)
+    end
+  end
+
+  defp compile_let_simple(name, value_expr, in_expr, ctx, b) do
+    case compile(value_expr, ctx, b) do
+      {:ok, reg, b1} when is_integer(reg) ->
+        ctx1 = Context.put_local(ctx, name, reg)
+        b2 = Builder.bind_local(b1, name, reg)
+        compile(in_expr, ctx1, b2)
+
+      _ ->
+        :unsupported
+    end
+  end
+
+  defp compile_letrec_lambda(name, %{op: :lambda} = value_expr, in_expr, ctx, b) do
+    {ref, b1} = Builder.declare_letrec(b, name)
+
+    ctx1 =
+      ctx
+      |> Context.put_letrec_ref(name, ref)
+      |> Map.put(:letrec_self, name)
+
+    with {:ok, closure_reg, b2} <- compile(value_expr, ctx1, b1),
+         {_, b3} <-
+           Builder.emit(b2, :forward_ref_set, %{
+             dest: nil,
+             args: %{ref: ref, value: closure_reg},
+             effects: Types.empty_effects()
+           }),
+         ctx2 = Context.put_local(ctx1, name, closure_reg),
+         b4 = Builder.bind_local(b3, name, closure_reg),
+         {:ok, reg, b5} <- compile(in_expr, ctx2, b4) do
+      {:ok, reg, b5}
+    else
+      _ -> :unsupported
+    end
+  end
+
+  defp letrec_lambda?(name, %{op: :lambda, body: body}) when is_binary(name) do
+    name in Elmc.Backend.CCodegen.VarAnalysis.used_vars(body)
+  end
+
+  defp letrec_lambda?(_, _), do: false
+
+  defp compile_string_unary("String.fromInt", arg, ctx, b) do
+    with {:ok, arg_reg, b1} <- compile(arg, ctx, b) do
+      compile_runtime_builtin(:string_from_int, [arg_reg], ctx, b1)
+    else
+      _ -> :unsupported
+    end
+  end
+
+  defp compile_string_unary("String.toInt", arg, ctx, b) do
+    with {:ok, arg_reg, b1} <- compile(arg, ctx, b) do
+      compile_runtime_builtin(:string_to_int, [arg_reg], ctx, b1)
+    else
+      _ -> :unsupported
+    end
+  end
+
+  defp compile_string_unary("String.toFloat", arg, ctx, b) do
+    with {:ok, arg_reg, b1} <- compile(arg, ctx, b) do
+      compile_runtime_builtin(:string_to_float, [arg_reg], ctx, b1)
+    else
+      _ -> :unsupported
+    end
+  end
+
+  defp compile_string_unary("Basics.floor", arg, ctx, b) do
+    with {:ok, arg_reg, b1} <- compile(arg, ctx, b) do
+      compile_runtime_builtin(:basics_floor, [arg_reg], ctx, b1)
+    else
+      _ -> :unsupported
+    end
+  end
+
+  defp compile_field_values(fields, ctx, b) do
+    Enum.reduce_while(fields, {:ok, [], b}, fn field, {:ok, acc, b_acc} ->
+      expr = Map.get(field, :expr) || Map.get(field, :value)
+
+      case compile(expr, ctx, b_acc) do
+        {:ok, reg, b1} -> {:cont, {:ok, acc ++ [reg], b1}}
+        _ -> {:halt, :unsupported}
+      end
+    end)
+  end
+
+  defp compile_runtime_call(%{function: "elmc_list_find_first", args: args}, ctx, b) do
+    with {:ok, [pred_reg, list_reg], b1} <- compile_call_args(args, ctx, b),
+         {:ok, filtered_reg, b2} <-
+           compile_runtime_builtin(:list_filter, [pred_reg, list_reg], ctx, b1),
+         {:ok, head_reg, b3} <- compile_runtime_builtin(:list_head, [filtered_reg], ctx, b2) do
+      {:ok, head_reg, b3}
+    else
+      _ -> :unsupported
+    end
+  end
+
+  defp compile_runtime_call(%{args: args} = expr, ctx, b) do
+    callee = Map.get(expr, :function) || Map.get(expr, :callee)
+
+    with callee when is_binary(callee) <- callee,
+         id when not is_nil(id) <- RuntimeBuiltins.from_c_symbol(callee),
+         {:ok, arg_regs, b1} <- compile_call_args(args, ctx, b) do
+      compile_runtime_builtin(id, arg_regs, ctx, b1)
+    else
+      _ -> :unsupported
+    end
+  end
+
+  defp compile_runtime_call(_, _, _), do: :unsupported
+
+  defp compile_call_args(args, ctx, b) when is_list(args) do
+    compile_args(args, ctx, b)
+  end
+
+  defp compile_call_args(_, _, _), do: {:ok, [], nil}
+
+  @doc false
+  def compile_runtime_builtin(id, arg_regs, ctx, b, extra \\ %{}) do
+    if id in [:union_payload, :maybe_just_payload] do
+      compile_borrow_view_builtin(id, arg_regs, ctx, b, extra)
+    else
+      compile_runtime_builtin_core(id, arg_regs, ctx, b, extra)
+    end
+  end
+
+  defp compile_borrow_view_builtin(id, arg_regs, _ctx, b, extra) do
+    {borrow_dest, b1} = Builder.fresh_reg(b)
+
+    {_, b2} =
+      Builder.emit(b1, :call_runtime, %{
+        dest: borrow_dest,
+        args: Map.merge(%{builtin: id, args: arg_regs}, extra),
+        effects: %{
+          produces: nil,
+          consumes: [],
+          borrows: arg_regs,
+          fallible: false
+        }
+      })
+
+    {owned, b3} = Builder.copy_reg_owned(b2, borrow_dest, consume_source: true)
+    {:ok, owned, b3}
+  end
+
+  defp compile_runtime_builtin_core(id, arg_regs, ctx, b, extra) do
+    {dest, b1} = dest_for_builtin(ctx, b)
+    fallible? = RuntimeBuiltins.fallible?(id)
+    wrap_catch? = fallible? and not Builder.skip_instr_catch?(b1, ctx)
+
+    b2 = if wrap_catch?, do: Builder.catch_begin(b1), else: b1
+
+    {arg_regs, b2a} =
+      if id in [:record_new, :record_new_take] do
+        Builder.dup_named_locals_for_consume(b2, arg_regs)
+      else
+        {arg_regs, b2}
+      end
+
+    {borrows, consumes} =
+      cond do
+        id in [:record_new, :record_new_take] -> {[], arg_regs}
+        id in [:cmd_batch, :sub_batch] -> {[], arg_regs}
+        id == :debug_to_string -> {[], arg_regs}
+        id in [:result_and_then, :result_map, :result_map_error, :maybe_and_then] ->
+          case arg_regs do
+            args when length(args) >= 1 ->
+              {prefix, [last]} = Enum.split(args, -1)
+              {borrows, prefix_consumes} = Builder.partition_call_args(b2a, prefix)
+              {borrows, prefix_consumes ++ [last]}
+
+            _ ->
+              Builder.partition_call_args(b2a, arg_regs)
+          end
+
+        true ->
+          Builder.partition_call_args(b2a, arg_regs)
+      end
+
+    effects =
+      if is_integer(dest) do
+        if fallible? do
+          Types.fallible_effects(dest, borrows, consumes)
+        else
+          %{produces: {:owned, dest}, consumes: consumes, borrows: borrows, fallible: false}
+        end
+      else
+        %{produces: nil, consumes: consumes, borrows: borrows, fallible: fallible?}
+      end
+
+    {_, b3} =
+      Builder.emit(b2a, :call_runtime, %{
+        dest: dest,
+        args: Map.merge(%{builtin: id, args: arg_regs}, extra),
+        effects: effects
+      })
+
+    b4 =
+      cond do
+        wrap_catch? -> Builder.catch_end(b3)
+        true -> b3
+      end
+
+    result = if is_integer(dest), do: dest, else: dest
+    {:ok, result, b4}
+  end
+
+  defp dest_for_builtin(ctx, b) do
+    case Context.dest_for_call(ctx) do
+      :fn_out -> {:fn_out, b}
+      :branch_out -> {:branch_out, b}
+      :scratch -> Builder.fresh_reg(b)
+    end
+  end
+
+  defp compile_tuple2_pair(left, right, ctx, b) do
+    shared = shared_local_names(left, right, ctx)
+    {left_ctx, b1} = duplicate_shared_locals(shared, ctx, b)
+
+    with {:ok, l, b2} <- compile(left, left_ctx, b1),
+         {:ok, r, b3} <- compile(right, ctx, b2) do
+      compile_runtime_builtin(:tuple2, [l, r], ctx, b3)
+    else
+      _ -> :unsupported
+    end
+  end
+
+  defp duplicate_shared_locals(shared, ctx, b) do
+    Enum.reduce(shared, {ctx, b}, fn name, {ctx_acc, b_acc} ->
+      case Context.local_reg(ctx_acc, name) do
+        reg when is_integer(reg) ->
+          {dup_reg, b1} = Builder.fresh_reg(b_acc)
+
+          {_, b2} =
+            Builder.emit(b1, :call_runtime, %{
+              dest: dup_reg,
+              args: %{builtin: :retain, args: [reg]},
+              effects: %{produces: {:owned, dup_reg}, consumes: [], borrows: [reg], fallible: false}
+            })
+
+          {Context.put_local(ctx_acc, name, dup_reg), b2}
+
+        _ ->
+          {ctx_acc, b_acc}
+      end
+    end)
+  end
+
+  defp shared_local_names(left, right, ctx) do
+    locals = MapSet.new(Map.keys(ctx.locals))
+
+    ir_var_names(left)
+    |> MapSet.new()
+    |> MapSet.intersection(MapSet.new(ir_var_names(right)))
+    |> MapSet.intersection(locals)
+    |> MapSet.to_list()
+  end
+
+  defp ir_var_names(%{op: :var, name: name}) when is_binary(name), do: [name]
+
+  defp ir_var_names(map) when is_map(map) do
+    map |> Map.values() |> Enum.flat_map(&ir_var_names/1)
+  end
+
+  defp ir_var_names(list) when is_list(list), do: Enum.flat_map(list, &ir_var_names/1)
+  defp ir_var_names(_), do: []
+end

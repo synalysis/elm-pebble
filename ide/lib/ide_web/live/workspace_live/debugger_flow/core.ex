@@ -4,6 +4,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerFlow.Core do
   import Phoenix.Component
   import Phoenix.LiveView
 
+  alias Ide.Debugger.BytecodeApi
   alias Ide.Emulator.QemuControl
   alias Ide.EmulatorSupport
   alias Ide.PebbleToolchain
@@ -406,6 +407,34 @@ defmodule IdeWeb.WorkspaceLive.DebuggerFlow.Core do
      socket
      |> assign(:debugger_hovered_rendered_scope, nil)
      |> assign(:debugger_hovered_rendered_path, nil)}
+  end
+
+  def handle_event("debugger-bytecode-run", %{"module" => module, "name" => name}, socket) do
+    case socket.assigns.project do
+      %Project{} = project ->
+        smoke =
+          case BytecodeApi.run_smoke(project, {module, name}) do
+            {:ok, result} ->
+              %{
+                target: {module, name},
+                status: :ok,
+                result: result,
+                text: IdeWeb.WorkspaceLive.DebuggerPage.BytecodeArtifacts.format_result(result)
+              }
+
+            {:error, reason} ->
+              %{
+                target: {module, name},
+                status: :error,
+                error: inspect(reason)
+              }
+          end
+
+        {:noreply, assign(socket, :debugger_bytecode_smoke, smoke)}
+
+      _ ->
+        {:noreply, socket}
+    end
   end
 
   def handle_event("debugger-keydown", %{"key" => "j"}, socket) do

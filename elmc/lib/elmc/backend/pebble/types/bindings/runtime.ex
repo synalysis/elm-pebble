@@ -19,7 +19,8 @@ defmodule Elmc.Backend.Pebble.Types.Bindings.Runtime do
           required(:has_view) => boolean(),
           required(:compass_dispatch_source) => Core.c_source(),
           required(:scene_writer_source) => Core.c_source(),
-          optional(:append_fallback_enabled?) => boolean()
+          optional(:append_fallback_enabled?) => boolean(),
+          optional(:entry_view_direct_abi?) => boolean()
         }
 
   @type scene_build_bindings :: %{
@@ -31,6 +32,7 @@ defmodule Elmc.Backend.Pebble.Types.Bindings.Runtime do
   @type view_command_bindings :: %{
           required(:entry_view_fn) => Core.c_symbol(),
           required(:has_view) => boolean(),
-          required(:direct_view_macro) => Core.c_macro_name()
+          required(:direct_view_macro) => Core.c_macro_name(),
+          optional(:entry_view_direct_abi?) => boolean()
         }
 end

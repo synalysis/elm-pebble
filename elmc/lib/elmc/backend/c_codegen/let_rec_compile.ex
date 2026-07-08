@@ -2,6 +2,7 @@ defmodule Elmc.Backend.CCodegen.LetRecCompile do
   @moduledoc false
 
   alias Elmc.Backend.CCodegen.Host
+  alias Elmc.Backend.CCodegen.RcRuntimeEmit
   alias Elmc.Backend.CCodegen.Types
   alias Elmc.Backend.CCodegen.Util
   alias Elmc.Backend.CCodegen.VarAnalysis
@@ -54,19 +55,32 @@ defmodule Elmc.Backend.CCodegen.LetRecCompile do
       end)
 
     {assign_code, counter} =
-      Enum.reduce(bindings, {"", group_id}, fn {name, value_expr}, {code_acc, c} ->
+      Enum.reduce(bindings, {"", forward_env, group_id}, fn {name, value_expr},
+                                                           {code_acc, fenv, c} ->
         ref = ref_for(ref_entries, name)
+        slot = "letrec_slot_#{Util.safe_c_suffix(name)}_#{group_id}"
 
-        {value_code, value_var, c2} = Host.compile_expr(value_expr, forward_env, c)
+        {value_code, value_var, c2} =
+          Host.compile_expr(value_expr, RcRuntimeEmit.strip_function_tail_scope(fenv), c)
+
+        value_ref = RcRuntimeEmit.value_expr(value_var)
+
+        release_step =
+          if RcRuntimeEmit.function_out_ref?(value_var),
+            do: "",
+            else: "elmc_release(#{value_var});"
 
         step = """
         #{value_code}
-          elmc_forward_ref_set(#{ref}, #{value_var});
-          elmc_release(#{value_var});
+          elmc_forward_ref_set(#{ref}, #{value_ref});
+          #{release_step}
+          ElmcValue *#{slot} = elmc_forward_ref_get(#{ref});
         """
 
-        {code_acc <> "\n  " <> step, c2}
+        fenv = Map.put(fenv, name, slot)
+        {code_acc <> "\n  " <> step, fenv, c2}
       end)
+      |> then(fn {code, _fenv, c} -> {code, c} end)
 
     body_env =
       Enum.reduce(ref_entries, env, fn {name, ref}, acc ->
@@ -79,13 +93,6 @@ defmodule Elmc.Backend.CCodegen.LetRecCompile do
 
     {body_code, body_var, counter} = Host.compile_expr(body_expr, body_env, counter)
 
-    slot_code =
-      ref_entries
-      |> Enum.map_join("\n  ", fn {name, ref} ->
-        slot = Map.get(body_env, name)
-        "ElmcValue *#{slot} = elmc_forward_ref_get(#{ref});"
-      end)
-
     free_code =
       ref_entries
       |> Enum.map_join("\n  ", fn {name, ref} ->
@@ -96,7 +103,6 @@ defmodule Elmc.Backend.CCodegen.LetRecCompile do
     code = """
     #{decl_code}
       #{assign_code}
-      #{slot_code}
       #{body_code}
       #{free_code}
     """

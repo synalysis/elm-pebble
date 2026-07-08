@@ -79,7 +79,20 @@ defmodule Elmc.Backend.CCodegen.CaseCompile do
   end
 
   def branch_assignment(%{op: :cmd_none}, out, env, counter) do
-    {"", RcRuntimeEmit.assign_stmt(rc_zero_assignment_target(out, env), "elmc_int_zero()"), counter}
+    if function_returns_cmd?(env) do
+      branch_assignment_rc(env, out, "elmc_cmd0", "ELMC_PEBBLE_CMD_NONE", counter)
+    else
+      {"", RcRuntimeEmit.assign_stmt(rc_zero_assignment_target(out, env), "elmc_int_zero()"), counter}
+    end
+  end
+
+  def branch_assignment(%{op: :sub_none}, out, env, counter) do
+    branch_assignment(
+      %{op: :pebble_sub, mask: %{op: :int_literal, value: 0}, params: []},
+      out,
+      env,
+      counter
+    )
   end
 
   def branch_assignment(%{op: :int_literal, value: value} = expr, out, env, counter)
@@ -101,9 +114,9 @@ defmodule Elmc.Backend.CCodegen.CaseCompile do
 
   def branch_assignment(%{op: op} = expr, out, env, counter)
       when op in [:call, :qualified_call] do
-    case branch_zero_literal_expr(expr, env) do
-      {:ok, zero_expr} ->
-        branch_assignment_int_literal(zero_expr, out, env, counter)
+    case special_branch_literal_expr(expr, env) do
+      {:ok, literal_expr} ->
+        branch_assignment(literal_expr, out, env, counter)
 
       :error ->
         {expr_code, expr_var, counter} =
@@ -171,7 +184,14 @@ defmodule Elmc.Backend.CCodegen.CaseCompile do
                   end
 
                 :error ->
-                  {expr_code, RcRuntimeEmit.transfer_assignment(out, expr_var), counter}
+                  assignment =
+                    if EnvBindings.any_live_binding_ref?(env, expr_var) do
+                      RcRuntimeEmit.retain_copy_assignment(out, expr_var)
+                    else
+                      RcRuntimeEmit.transfer_assignment(out, expr_var)
+                    end
+
+                  {expr_code, assignment, counter}
               end
           end
       end
@@ -187,7 +207,7 @@ defmodule Elmc.Backend.CCodegen.CaseCompile do
       cond do
         setup == "" -> expr_code
         expr_code == "" -> setup
-        true -> setup <> expr_code
+        true -> CSource.join_fragments([setup, expr_code])
       end
 
     assignment_code =
@@ -417,7 +437,7 @@ defmodule Elmc.Backend.CCodegen.CaseCompile do
             {:halt, {acc <> else_branch_snippet(branch_body), c2}}
 
           last_branch? and acc != "" ->
-            {:halt, {acc <> else_branch_snippet(branch_body), c2}}
+            {:halt, {acc <> terminal_branch_snippet(cond_code, branch_body), c2}}
 
           true ->
             {:cont, {acc <> if_branch_snippet(cond_code, branch_body, acc == ""), c2}}
@@ -546,6 +566,16 @@ defmodule Elmc.Backend.CCodegen.CaseCompile do
   defp else_branch_snippet(branch_body) do
     """
     } else {
+    #{format_branch_body(branch_body)}
+    }
+    """
+  end
+
+  defp terminal_branch_snippet("1", branch_body), do: else_branch_snippet(branch_body)
+
+  defp terminal_branch_snippet(cond_code, branch_body) do
+    """
+    } else if (#{cond_code}) {
     #{format_branch_body(branch_body)}
     }
     """
@@ -771,6 +801,11 @@ defmodule Elmc.Backend.CCodegen.CaseCompile do
     {"", RcRuntimeEmit.assign_stmt(rc_zero_assignment_target(out, env), "elmc_int_zero()"), counter}
   end
 
+  defp branch_assignment_int_literal(%{op: :int_literal} = expr, out, env, counter) do
+    ref = IntLiteralRef.ref(expr, env)
+    {"", RcRuntimeEmit.assign_into(env, out, "elmc_new_int", ref), counter}
+  end
+
   defp rc_zero_assignment_target(out, env) do
     if is_binary(Map.get(env, :__function_rc_out_param__)) &&
          RcRuntimeEmit.function_out_ref?(out) do
@@ -780,26 +815,27 @@ defmodule Elmc.Backend.CCodegen.CaseCompile do
     end
   end
 
-  defp branch_assignment_int_literal(%{op: :int_literal} = expr, out, env, counter) do
-    ref = IntLiteralRef.ref(expr, env)
-    {"", RcRuntimeEmit.assign_into(env, out, "elmc_new_int", ref), counter}
-  end
-
-  defp branch_zero_literal_expr(%{op: :qualified_call, target: target, args: args}, _env) do
-    case Host.special_value_from_target(Host.normalize_special_target(target), args) do
-      %{op: :int_literal, value: 0} = lit -> {:ok, lit}
+  defp special_branch_literal_expr(expr, env) do
+    with {:ok, special} <- special_value_expr(expr),
+         true <- special_branch_literal?(special, env) do
+      {:ok, special}
+    else
       _ -> :error
     end
   end
 
-  defp branch_zero_literal_expr(%{op: :call, name: name, args: args}, _env) do
-    case Host.special_value_from_target(name, args) do
-      %{op: :int_literal, value: 0} = lit -> {:ok, lit}
-      _ -> :error
-    end
-  end
+  defp special_value_expr(%{op: :qualified_call, target: target, args: args}),
+    do: {:ok, Host.special_value_from_target(Host.normalize_special_target(target), args)}
 
-  defp branch_zero_literal_expr(_expr, _env), do: :error
+  defp special_value_expr(%{op: :call, name: name, args: args}),
+    do: {:ok, Host.special_value_from_target(name, args)}
+
+  defp special_value_expr(_expr), do: :error
+
+  defp special_branch_literal?(%{op: :cmd_none}, env), do: function_returns_cmd?(env)
+  defp special_branch_literal?(%{op: :sub_none}, env), do: function_returns_sub?(env)
+  defp special_branch_literal?(%{op: :int_literal, value: 0}, _env), do: true
+  defp special_branch_literal?(_, _env), do: false
 
   defp function_returns_bool?(env) when is_map(env) do
     case {Map.get(env, :__module__), Map.get(env, :__function_name__)} do
@@ -807,6 +843,42 @@ defmodule Elmc.Backend.CCodegen.CaseCompile do
         case Map.get(Map.get(env, :__program_decls__, %{}), {mod, name}) do
           %{type: type} -> Host.function_return_type(type) == "Bool"
           _ -> false
+        end
+
+      _ ->
+        false
+    end
+  end
+
+  defp function_returns_cmd?(env) when is_map(env) do
+    case {Map.get(env, :__module__), Map.get(env, :__function_name__)} do
+      {mod, name} when is_binary(mod) and is_binary(name) ->
+        case Map.get(Map.get(env, :__program_decls__, %{}), {mod, name}) do
+          %{type: type} ->
+            type
+            |> Host.function_return_type()
+            |> then(&String.starts_with?(&1, "Cmd"))
+
+          _ ->
+            false
+        end
+
+      _ ->
+        false
+    end
+  end
+
+  defp function_returns_sub?(env) when is_map(env) do
+    case {Map.get(env, :__module__), Map.get(env, :__function_name__)} do
+      {mod, name} when is_binary(mod) and is_binary(name) ->
+        case Map.get(Map.get(env, :__program_decls__, %{}), {mod, name}) do
+          %{type: type} ->
+            type
+            |> Host.function_return_type()
+            |> then(&String.starts_with?(&1, "Sub"))
+
+          _ ->
+            false
         end
 
       _ ->

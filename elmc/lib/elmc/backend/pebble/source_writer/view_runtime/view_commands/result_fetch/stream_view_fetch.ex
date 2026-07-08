@@ -11,11 +11,13 @@ defmodule Elmc.Backend.Pebble.SourceWriter.ViewRuntime.ViewCommands.ResultFetch.
   }
 
   @spec body(Types.view_command_bindings()) :: Types.c_source()
-  def body(%{entry_view_fn: entry_view_fn}) do
+  def body(%{entry_view_fn: entry_view_fn} = bindings) do
+    direct_abi? = Map.get(bindings, :entry_view_direct_abi?, false)
+
     [
       ElseOpen.body(),
       CachedResult.body(),
-      ModelInvoke.body(entry_view_fn),
+      ModelInvoke.body(entry_view_fn, direct_abi?),
       ResultShape.body()
     ]
     |> IO.iodata_to_binary()

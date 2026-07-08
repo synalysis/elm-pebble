@@ -71,6 +71,20 @@ defmodule Elmc.Backend.CCodegen.ValueSlotsTest do
     assert ValueSlots.epilogue_cleanup() == "elmc_release_array_lifo(owned, DIM(owned));"
   end
 
+  test "heap owned slots on pebble_int32 use elmc_calloc without a null-init loop" do
+    on_exit(fn -> Process.delete(:elmc_codegen_opts) end)
+    Process.put(:elmc_codegen_opts, %{pebble_int32: true})
+    ValueSlots.reset(epilogue_lifo: true)
+
+    for _ <- 1..24, do: ValueSlots.alloc()
+
+    decl = ValueSlots.owned_declaration()
+
+    assert decl =~ "elmc_calloc(ELMC_OWNED_SLOT_COUNT, sizeof(ElmcValue *), \"owned_slots\")"
+    refute decl =~ "elmc_owned_i"
+    assert ValueSlots.epilogue_cleanup() =~ "elmc_free(owned)"
+  end
+
   test "epilogue cleanup uses array lifo when epilogue lifo mode is enabled" do
     ValueSlots.reset(epilogue_lifo: true)
     {_ref, _} = ValueSlots.alloc()
@@ -103,6 +117,50 @@ defmodule Elmc.Backend.CCodegen.ValueSlotsTest do
 
     assert ValueSlots.transfer_and_null(ref) == "owned[0] = NULL;"
     assert ValueSlots.transferred?(ref)
+  end
+
+  test "release_if_owned_written defers eager release under epilogue lifo" do
+    ValueSlots.reset(epilogue_lifo: true)
+    {ref, _} = ValueSlots.alloc()
+    ValueSlots.mark_written(ref)
+
+    assert ValueSlots.release_if_owned_written(ref) == ""
+  end
+
+  test "transfer_assignment releases overwritten owned destination under epilogue lifo" do
+    ValueSlots.reset(epilogue_lifo: true)
+    {dest, _} = ValueSlots.alloc()
+    {src, _} = ValueSlots.alloc()
+    ValueSlots.mark_written(dest)
+
+    assert RcRuntimeEmit.transfer_assignment(dest, src) ==
+             """
+             ELMC_RELEASE(owned[0]);
+             owned[0] = NULL;
+             owned[0] = owned[1];
+             owned[1] = NULL;
+             """
+             |> String.trim_trailing()
+  end
+
+  test "merge_branch_owned_slot releases overwritten dest and field retains under epilogue lifo" do
+    ValueSlots.reset(epilogue_lifo: true)
+    {root, _} = ValueSlots.alloc()
+    {field, _} = ValueSlots.alloc()
+    {current, _} = ValueSlots.alloc()
+    ValueSlots.mark_written(root)
+    ValueSlots.boxed_decl(field, "elmc_record_get_index(#{root}, 0)")
+
+    assert RcRuntimeEmit.merge_branch_owned_slot(root, current) ==
+             """
+             ELMC_RELEASE(#{field});
+             #{field} = NULL;
+             ELMC_RELEASE(#{root});
+             #{root} = NULL;
+             #{root} = #{current};
+             #{current} = NULL;
+             """
+             |> String.trim_trailing()
   end
 
   test "transfer_and_null defers owned null assignment inside branch result slots" do
@@ -214,7 +272,9 @@ defmodule Elmc.Backend.CCodegen.ValueSlotsTest do
     {ref, _} = ValueSlots.alloc()
 
     ValueSlots.push_loop()
-    assert ValueSlots.owned_reassign_prefix(ref) == ""
+
+    assert ValueSlots.owned_reassign_prefix(ref) ==
+             "ELMC_RELEASE(owned[0]);\nowned[0] = NULL;\n"
 
     ValueSlots.mark_written(ref)
 

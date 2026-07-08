@@ -602,76 +602,101 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
         fn {field, field_index},
            {code_acc, current, c, current_passthrough?, current_unique?, deferred, used_cow_drop?,
             base_released?} ->
-          {field_code, field_var, c, field_passthrough?} =
-            compile_update_operand(
-              field.expr,
+          {field_code, field_ref, c, field_passthrough?, field_kind} =
+            compile_record_field_update_operand(
+              field,
               env |> RcRuntimeEmit.strip_function_tail_scope() |> Map.delete(:__branch_out__),
-              c
+              c,
+              record_shape,
+              record_type
             )
-
-          {field_code, field_var} =
-            inline_immortal_record_field_operand(field_code, field_var)
 
           last_field? = field_index == field_count - 1
           {out, c} = record_update_result_slot(env, c, last_field?)
-          field_ref = ValueSlots.resolve_result_slot(field_var)
+          field_var = if field_kind == :boxed, do: ValueSlots.resolve_result_slot(field_ref), else: field_ref
 
           borrowed_record_operand? =
             is_binary(current) and EnvBindings.borrowed_arg_ref?(env, current)
 
           use_cow_drop? = current_unique? or borrowed_record_operand?
 
-          update_call =
-            if use_cow_drop? do
-              index_ref =
-                Expr.record_field_index_ref(field.name, record_shape, record_type, env)
+          index_ref =
+            Expr.record_field_index_ref(field.name, record_shape, record_type, env)
 
-              "elmc_record_update_index_cow_drop(#{RcRuntimeEmit.value_expr(current)}, #{index_ref}, #{RcRuntimeEmit.value_expr(field_ref)})"
-            else
-              Expr.record_update_expr(current, field.name, field_ref, record_shape,
-                env: env,
-                type: record_type,
-                cow: false
-              )
+          update_call =
+            case {field_kind, use_cow_drop?} do
+              {:native_int, true} ->
+                "elmc_record_update_index_int_cow_drop(#{RcRuntimeEmit.value_expr(current)}, #{index_ref}, #{field_ref})"
+
+              {:native_int, false} ->
+                "elmc_record_update_index_int_cow(#{RcRuntimeEmit.value_expr(current)}, #{index_ref}, #{field_ref})"
+
+              {:native_bool, true} ->
+                "elmc_record_update_index_bool_cow_drop(#{RcRuntimeEmit.value_expr(current)}, #{index_ref}, #{field_ref})"
+
+              {:native_bool, false} ->
+                "elmc_record_update_index_bool_cow(#{RcRuntimeEmit.value_expr(current)}, #{index_ref}, #{field_ref})"
+
+              {:native_float, true} ->
+                "elmc_record_update_index_float_cow_drop(#{RcRuntimeEmit.value_expr(current)}, #{index_ref}, #{field_ref})"
+
+              {:native_float, false} ->
+                "elmc_record_update_index_float_cow(#{RcRuntimeEmit.value_expr(current)}, #{index_ref}, #{field_ref})"
+
+              {:boxed, true} ->
+                "elmc_record_update_index_cow_drop(#{RcRuntimeEmit.value_expr(current)}, #{index_ref}, #{RcRuntimeEmit.value_expr(field_var)})"
+
+              {:boxed, false} ->
+                Expr.record_update_expr(current, field.name, field_var, record_shape,
+                  env: env,
+                  type: record_type,
+                  cow: false
+                )
             end
 
           field_release =
-            if defer_record_update_field_release?(field.expr, field_var, multi_use_names) do
-              {"", [field_var | deferred]}
-            else
-          release_code =
-            cond do
-              ValueSlots.owned_ref?(field_var) and use_cow_drop? ->
-                ValueSlots.release_owned_eager(field_var) <> "\n"
+            case field_kind do
+              kind when kind in [:native_int, :native_bool, :native_float] ->
+                {"", deferred}
 
-              ValueSlots.owned_ref?(field_var) ->
-                ValueSlots.release_owned_and_null(field_var) <> "\n"
+              :boxed ->
+                if defer_record_update_field_release?(field.expr, field_var, multi_use_names) do
+                  {"", [field_var | deferred]}
+                else
+                  release_code =
+                    cond do
+                      ValueSlots.owned_ref?(field_var) and use_cow_drop? ->
+                        ValueSlots.release_owned_eager(field_var) <> "\n"
 
-              true ->
-                update_operand_release(field_var, field_passthrough?)
-            end
+                      ValueSlots.owned_ref?(field_var) ->
+                        ValueSlots.abandon_stmt(field_var) <> "\n"
 
-              {release_code, deferred}
+                      true ->
+                        update_operand_release(field_var, field_passthrough?)
+                    end
+
+                  {release_code, deferred}
+                end
             end
 
           {release_code, deferred_field_vars} = field_release
 
-          current_release =
+          {current_release, base_released?} =
             cond do
               current == base_var and field_index < field_count - 1 ->
-                ""
+                {"", base_released?}
 
               current_unique? or borrowed_record_operand? ->
-                ""
+                {"", base_released?}
 
               borrowed_projection_operand?(current, code_acc) and not use_cow_drop? ->
-                ValueSlots.release_owned_eager(current) <> "\n"
+                {ValueSlots.abandon_stmt(current) <> "\n", base_released? or current == base_var}
 
               borrowed_projection_operand?(current, code_acc) ->
-                ""
+                {"", base_released?}
 
               true ->
-                update_operand_release(current, current_passthrough?)
+                {update_operand_release(current, current_passthrough?), base_released?}
             end
 
           dedupe_owned_alias =
@@ -685,21 +710,35 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
               ""
             end
 
+          borrowed_pre_retain =
+            if field_index == 0 and in_place_cow_record_base?(env, base_var) do
+              "elmc_retain(#{RcRuntimeEmit.value_expr(base_var)});\n"
+            else
+              ""
+            end
+
           {immediate_base_release, base_released?} =
             if field_index == 0 and not use_cow_drop? and not base_released? and
                  base_owned_copy_release?(env, base_var, out) do
-              {ValueSlots.release_owned_eager(base_var) <> "\n", true}
+              {ValueSlots.abandon_stmt(base_var) <> "\n", true}
             else
               {"", base_released?}
             end
 
+          flush_except =
+            case field_kind do
+              kind when kind in [:native_int, :native_bool, :native_float] -> [out]
+              :boxed -> [field_var, out]
+            end
+
           code = """
           #{field_code}
+          #{borrowed_pre_retain}
           #{ValueSlots.boxed_decl(out, update_call, env)}
           #{dedupe_owned_alias}
           #{current_release}
           #{release_code}
-          #{flush_field_expr_owned_temps([field_var, out])}
+          #{flush_field_expr_owned_temps(flush_except)}
           #{immediate_base_release}
           """
 
@@ -718,7 +757,7 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
 
     base_copy_release =
       if not base_released? and base_owned_copy_release?(env, base_var, current_var) do
-        ValueSlots.release_owned_eager(base_var) <> "\n"
+        ValueSlots.abandon_stmt(base_var) <> "\n"
       else
         ""
       end
@@ -896,11 +935,24 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
 
     case EnvBindings.lookup_binding(env, name) do
       source when is_binary(source) ->
-        if c_identifier?(source) do
-          {"", source, counter, true}
-        else
-          {code, ref, counter} = Host.compile_expr(%{op: :var, name: name}, operand_env, counter)
-          {code, ref, counter, false}
+        cond do
+          live_in_let_body?(env, name) and ValueSlots.owned_ref?(source) and
+              Map.get(env, name) == source ->
+            {var, next} = CaseCompile.fresh_var(counter, env)
+
+            stmt =
+              ValueSlots.boxed_decl(var, "elmc_retain(#{RcRuntimeEmit.value_expr(source)})")
+
+            {stmt, var, next, false}
+
+          c_identifier?(source) ->
+            {"", source, counter, true}
+
+          true ->
+            {code, ref, counter} =
+              Host.compile_expr(%{op: :var, name: name}, operand_env, counter)
+
+            {code, ref, counter, false}
         end
 
       _ ->
@@ -919,6 +971,79 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
     {code, ref, counter} = Host.compile_expr(expr, operand_env, counter)
     {code, ref, counter, false}
   end
+
+  defp live_in_let_body?(env, name) do
+    MapSet.member?(
+      Map.get(env, :__let_body_live_vars__, MapSet.new()),
+      EnvBindings.binding_key(name)
+    )
+  end
+
+  defp compile_record_field_update_operand(field, env, counter, record_shape, record_type) do
+    expr = field.expr
+
+    if record_field_is_int?(field.name, record_shape, record_type, env) and
+         Host.native_int_expr?(expr, env) and not BuiltinUnion.maybe_nothing_literal?(expr) do
+      {code, native_ref, counter} = Host.compile_native_int_expr(expr, env, counter)
+      {code, native_ref, counter, false, :native_int}
+    else
+      if record_field_is_bool?(field.name, record_shape, record_type, env) and
+           Host.native_bool_expr?(expr, env) do
+        {code, native_ref, counter} = Host.compile_native_bool_expr(expr, env, counter)
+        {code, native_ref, counter, false, :native_bool}
+      else
+        if record_field_is_float?(field.name, record_shape, record_type, env) and
+             Host.native_float_expr?(expr, env) and not Host.native_int_expr?(expr, env) do
+          {code, native_ref, counter} = Host.compile_native_float_expr(expr, env, counter)
+          {code, native_ref, counter, false, :native_float}
+        else
+          {field_code, field_var, counter, field_passthrough?} =
+            compile_update_operand(expr, env, counter)
+
+          {field_code, field_var} =
+            inline_immortal_record_field_operand(field_code, field_var)
+
+          {field_code, field_var, counter, field_passthrough?, :boxed}
+        end
+      end
+    end
+  end
+
+  defp record_field_is_int?(field_name, _record_shape, record_type, env)
+       when is_binary(field_name) and is_binary(record_type) do
+    record_field_is_scalar?(field_name, record_type, env, "Int")
+  end
+
+  defp record_field_is_int?(_field_name, _record_shape, _record_type, _env), do: false
+
+  defp record_field_is_bool?(field_name, _record_shape, record_type, env)
+       when is_binary(field_name) and is_binary(record_type) do
+    record_field_is_scalar?(field_name, record_type, env, "Bool")
+  end
+
+  defp record_field_is_bool?(_field_name, _record_shape, _record_type, _env), do: false
+
+  defp record_field_is_float?(field_name, _record_shape, record_type, env)
+       when is_binary(field_name) and is_binary(record_type) do
+    record_field_is_scalar?(field_name, record_type, env, "Float")
+  end
+
+  defp record_field_is_float?(_field_name, _record_shape, _record_type, _env), do: false
+
+  defp record_field_is_scalar?(field_name, record_type, env, scalar_type)
+       when is_binary(field_name) and is_binary(record_type) and is_binary(scalar_type) do
+    case record_field_types_for_type(record_type, env) do
+      field_types when is_map(field_types) ->
+        field_types
+        |> Map.get(field_name, Map.get(field_types, to_string(field_name)))
+        |> Host.normalize_type_name() == scalar_type
+
+      _ ->
+        false
+    end
+  end
+
+  defp record_field_is_scalar?(_field_name, _record_type, _env, _scalar_type), do: false
 
   @spec begin_field_expr_owned_temps() :: :ok
   def begin_field_expr_owned_temps do
@@ -951,7 +1076,7 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
         |> Enum.reject(&(&1 in except))
         |> Enum.reverse()
         |> Enum.uniq()
-        |> Enum.map_join("\n", &ValueSlots.release_owned_eager/1)
+        |> Enum.map_join("\n", &ValueSlots.release_consumed/1)
         |> case do
           "" -> ""
           releases -> releases <> "\n"
@@ -1571,7 +1696,21 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
 
   @spec release_compare_operand(Types.compile_env(), String.t()) :: String.t()
   def release_compare_operand(env, var) when is_binary(var) do
-    if shared_subexpr_ref?(env, var), do: "", else: release_compare_operand_var(var)
+    cond do
+      Map.get(env, :__compare_defer_operand_release__) ->
+        ""
+
+      ValueSlots.owned_ref?(var) ->
+        # Owned slots may still be used after the compare (e.g. restored cells in
+        # moveBoard's else branch). Epilogue LIFO releases them at function exit.
+        ""
+
+      shared_subexpr_ref?(env, var) ->
+        ""
+
+      true ->
+        release_compare_operand_var(var)
+    end
   end
 
   defp release_compare_operand_var(var) do
@@ -1871,13 +2010,52 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
     Expr.record_get_expr(source, field, shape, env, type)
   end
 
-  defp record_field_container_meta(%{op: :field_access, arg: arg}, env) do
-    {record_container_shape(arg, env), record_container_type(arg, env)}
+  defp record_field_container_meta(%{op: :field_access, arg: arg, field: parent_field}, env) do
+    case nested_record_container_meta(env, arg, parent_field) do
+      {shape, type} when is_list(shape) or is_binary(type) ->
+        {shape || Expr.record_shape_for_type(type, env), type}
+
+      _ ->
+        {record_container_shape(arg, env), record_container_type(arg, env)}
+    end
   end
 
   defp record_field_container_meta(arg_expr, env) do
     {Expr.record_shape(arg_expr, env), Expr.record_container_type_for_expr(arg_expr, env)}
   end
+
+  defp nested_record_container_meta(env, arg, parent_field) do
+    case RecordFields.field_type(env, arg, parent_field) do
+      inner_type when is_binary(inner_type) ->
+        {Expr.record_shape_for_type(inner_type, env), inner_type}
+
+      _ ->
+        parent_shape = record_container_shape(arg, env)
+
+        parent_type =
+          record_container_type(arg, env) ||
+            Expr.record_type_for_shape(parent_shape, env) ||
+            record_container_decl_type(arg, env)
+
+        case parent_type && RecordFields.lookup_field_type(parent_type, parent_field, env) do
+          inner_type when is_binary(inner_type) ->
+            {Expr.record_shape_for_type(inner_type, env), inner_type}
+
+          _ ->
+            nil
+        end
+    end
+  end
+
+  defp record_container_decl_type(%{op: :var, name: name}, env) when is_binary(name) do
+    Expr.record_type_for_function_return(
+      {Map.get(env, :__module__, "Main"), name},
+      env,
+      0
+    )
+  end
+
+  defp record_container_decl_type(_arg, _env), do: nil
 
   defp record_container_shape(name, env) when is_binary(name) do
     Expr.record_shape_for_var(env, name) || Expr.record_shape(name, env)
@@ -1903,16 +2081,22 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
     record_type = RecordFields.field_type(env, arg_expr, field)
 
     shape =
-      case arg_expr do
-        %{op: :field_access, arg: arg} ->
-          record_container_shape(arg, env)
+      if is_binary(record_type) do
+        Expr.record_shape_for_type(record_type, env) || Expr.record_shape(arg_expr, env)
+      else
+        case arg_expr do
+          %{op: :field_access, arg: arg, field: parent_field} ->
+            case RecordFields.field_type(env, arg, parent_field) do
+              inner_type when is_binary(inner_type) ->
+                Expr.record_shape_for_type(inner_type, env) || record_container_shape(arg, env)
 
-        _ ->
-          if is_binary(record_type) do
-            Expr.record_shape_for_type(record_type, env)
-          else
+              _ ->
+                record_container_shape(arg, env)
+            end
+
+          _ ->
             Expr.record_shape(arg_expr, env)
-          end
+        end
       end
 
     %{type: record_type, shape: shape}

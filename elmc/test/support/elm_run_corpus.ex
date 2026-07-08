@@ -534,7 +534,7 @@ defmodule Elmc.Test.ElmRunCorpus do
       harness_path = Path.join(out_dir, "c/corpus_execution_harness.c")
       binary_path = Path.join(out_dir, "corpus_execution_harness") |> Path.expand()
 
-      File.write!(harness_path, elmc_execution_harness_source(entry_module))
+      File.write!(harness_path, elmc_execution_harness_source(entry_module, out_dir))
 
       {compile_out, compile_code} =
         System.cmd(
@@ -559,7 +559,16 @@ defmodule Elmc.Test.ElmRunCorpus do
         if compile_code != 0 or not File.exists?(binary_path) do
           {:error, {:harness_compile, compile_out}}
         else
-          {run_out, run_code} = System.cmd(binary_path, [], stderr_to_stdout: true)
+          run_script = Path.expand("../../../scripts/run-with-ulimit.sh", __DIR__)
+          ulimit_kb = System.get_env("TEST_ULIMIT_V_KB", "4194304")
+
+          {run_out, run_code} =
+            System.cmd(
+              run_script,
+              [binary_path],
+              stderr_to_stdout: true,
+              env: [{"TEST_ULIMIT_V_KB", ulimit_kb}]
+            )
 
           if run_code == 0 do
             {:ok, run_out}
@@ -570,8 +579,9 @@ defmodule Elmc.Test.ElmRunCorpus do
     end
   end
 
-  defp elmc_execution_harness_source(entry_module) do
+  defp elmc_execution_harness_source(entry_module, out_dir) do
     fn_name = "elmc_fn_#{entry_module}_main"
+    main_body = corpus_main_invoke_body(out_dir, fn_name)
 
     """
     #include "elmc_generated.h"
@@ -579,7 +589,7 @@ defmodule Elmc.Test.ElmRunCorpus do
     #include <stdio.h>
 
     int main(void) {
-      ElmcValue *result = #{fn_name}(NULL, 0);
+      #{main_body}
       if (result && result->tag == ELMC_TAG_STRING && result->payload) {
         fputs((const char *)result->payload, stdout);
         fputc('\\n', stdout);
@@ -588,6 +598,33 @@ defmodule Elmc.Test.ElmRunCorpus do
       return 0;
     }
     """
+  end
+
+  defp corpus_main_invoke_body(out_dir, fn_name) do
+    gen_path = Path.join(out_dir, "c/elmc_generated.c")
+    c = if File.exists?(gen_path), do: File.read!(gen_path), else: ""
+
+    cond do
+      Regex.match?(~r/static\s+ElmcValue\s+\*\s+#{Regex.escape(fn_name)}\s*\(\s*void\s*\)/, c) ->
+        "ElmcValue *result = #{fn_name}();"
+
+      Regex.match?(~r/static\s+ElmcValue\s+\*\s+#{Regex.escape(fn_name)}\s*\(\s*\)/, c) ->
+        "ElmcValue *result = #{fn_name}();"
+
+      Regex.match?(~r/static\s+RC\s+#{Regex.escape(fn_name)}\s*\(\s*ElmcValue\s+\*\*out/, c) ->
+        """
+        ElmcValue *result = NULL;
+        RC Rc = RC_SUCCESS;
+        CATCH_BEGIN
+          Rc = #{fn_name}(&result, NULL, 0);
+          CHECK_RC(Rc);
+        CATCH_END
+        """
+        |> String.trim_trailing()
+
+      true ->
+        "ElmcValue *result = #{fn_name}(NULL, 0);"
+    end
   end
 
   defp host_module_source(target_module) do

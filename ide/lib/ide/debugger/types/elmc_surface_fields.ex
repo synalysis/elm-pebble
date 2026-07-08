@@ -42,6 +42,9 @@ defmodule Ide.Debugger.Types.ElmcSurfaceFields do
         "elmc_compile_cached" => bool_wire(cached)
       }
       |> Map.merge(linked_binary_fields(attrs))
+      |> Map.merge(bytecode_manifest_fields(attrs))
+      |> Map.merge(plan_coverage_fields(attrs))
+      |> Map.merge(plan_toolchain_fields(attrs))
 
     if is_binary(detail) and detail != "" do
       Map.put(base, "elmc_compile_detail", detail)
@@ -186,6 +189,81 @@ defmodule Ide.Debugger.Types.ElmcSurfaceFields do
 
       _ ->
         %{}
+    end
+  end
+
+  defp bytecode_manifest_fields(attrs) when is_map(attrs) do
+    manifest = field(attrs, :elmc_bytecode_manifest)
+
+    case manifest do
+      %{available: true} = map ->
+        %{
+          "elmc_bytecode_manifest" => wire_bytecode_manifest(map)
+        }
+
+      %{"available" => true} = map ->
+        %{
+          "elmc_bytecode_manifest" => wire_bytecode_manifest(map)
+        }
+
+      _ ->
+        %{}
+    end
+  end
+
+  defp wire_bytecode_manifest(map) when is_map(map) do
+    functions =
+      (Map.get(map, :functions) || Map.get(map, "functions") || [])
+      |> Enum.map(fn entry ->
+        %{
+          "module" => Map.get(entry, :module) || Map.get(entry, "module"),
+          "name" => Map.get(entry, :name) || Map.get(entry, "name")
+        }
+      end)
+
+    %{
+      "available" => true,
+      "contract" => Map.get(map, :contract) || Map.get(map, "contract"),
+      "version" => Map.get(map, :version) || Map.get(map, "version"),
+      "manifest_path" => Map.get(map, :manifest_path) || Map.get(map, "manifest_path"),
+      "function_count" => Map.get(map, :function_count) || Map.get(map, "function_count") || 0,
+      "skipped_count" => Map.get(map, :skipped_count) || Map.get(map, "skipped_count") || 0,
+      "pruned_count" => Map.get(map, :pruned_count) || Map.get(map, "pruned_count") || 0,
+      "plan_coverage" => Map.get(map, :plan_coverage) || Map.get(map, "plan_coverage"),
+      "plan_toolchain" => Map.get(map, :plan_toolchain) || Map.get(map, "plan_toolchain"),
+      "functions" => functions
+    }
+  end
+
+  defp plan_coverage_fields(attrs) when is_map(attrs) do
+    case field(attrs, :plan_coverage) do
+      %{} = coverage ->
+        %{"elmc_plan_coverage" => coverage}
+
+      _ ->
+        case bytecode_manifest_fields(attrs) do
+          %{"elmc_bytecode_manifest" => %{"plan_coverage" => coverage}} when is_map(coverage) ->
+            %{"elmc_plan_coverage" => coverage}
+
+          _ ->
+            %{}
+        end
+    end
+  end
+
+  defp plan_toolchain_fields(attrs) when is_map(attrs) do
+    case field(attrs, :plan_toolchain) do
+      %{} = toolchain ->
+        %{"elmc_plan_toolchain" => toolchain}
+
+      _ ->
+        case bytecode_manifest_fields(attrs) do
+          %{"elmc_bytecode_manifest" => %{"plan_toolchain" => toolchain}} when is_map(toolchain) ->
+            %{"elmc_plan_toolchain" => toolchain}
+
+          _ ->
+            %{}
+        end
     end
   end
 

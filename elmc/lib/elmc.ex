@@ -8,6 +8,9 @@ defmodule Elmc do
   alias Elmc.Backend.Pebble
   alias Elmc.Backend.Ports
   alias Elmc.Backend.Worker
+  alias Elmc.Backend.CCodegen.IRQueries
+  alias Elmc.Backend.Plan.{PrimaryCoverage, StrictPolicy}
+  alias Elmc.Backend.Plan
   alias ElmEx.Frontend.Bridge
   alias ElmEx.IR.DeadCode
   alias ElmEx.IR.Lowerer
@@ -38,8 +41,9 @@ defmodule Elmc do
          ir <- maybe_strip_dead_code(ir0, entry_module, opts[:strip_dead_code]),
          {:ok, ir, debug_usage_diagnostics} <- check_debug_usage(ir, opts),
          out_dir = opts[:out_dir] || "build",
+         :ok <- seed_codegen_process_state(ir, opts),
          :ok <- Ports.write_port_headers(ir, out_dir),
-         :ok <- Worker.write_worker_adapter(ir, out_dir, entry_module),
+         :ok <- Worker.write_worker_adapter(ir, out_dir, entry_module, opts),
          :ok <- CCodegen.write_project(ir, out_dir, opts),
          generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c")),
          {:ok, {opts, generated_c}} <-
@@ -61,21 +65,64 @@ defmodule Elmc do
         Process.get(:elmc_layout_coercion_diagnostics, [])
         |> Elmc.Backend.CCodegen.LayoutCoerceEmit.format_compile_warnings()
 
+      decl_map = IRQueries.function_decl_map(ir)
+
+      plan_primary_fallbacks =
+        Process.get(:elmc_plan_primary_fallbacks, [])
+        |> Enum.map(fn {mod, name} ->
+          reachable? = PrimaryCoverage.reachable_function?(decl_map, mod, name, opts)
+
+          %{
+            "source" => "elmc/plan",
+            "code" => "plan_primary_fallback",
+            "severity" => StrictPolicy.fallback_severity(opts, reachable?),
+            "message" =>
+              "Function #{mod}.#{name} fell back to legacy C codegen because Plan IR lowering is not yet supported for this body."
+          }
+        end)
+
+      bytecode_summary = Elmc.Backend.Bytecode.Artifacts.read_summary(out_dir)
+
+      plan_coverage_diagnostics =
+        Elmc.Backend.Plan.PrimaryCoverage.compile_diagnostics(bytecode_summary, opts)
+
+      plan_legacy_diagnostics = plan_legacy_codegen_diagnostics(opts)
+
+      plan_coverage =
+        case bytecode_summary do
+          %{available: true, plan_coverage: coverage} -> coverage
+          _ -> nil
+        end
+
+      plan_toolchain = plan_toolchain_summary(bytecode_summary, opts)
+
       Process.delete(:elmc_layout_coercion_diagnostics)
+      Process.delete(:elmc_plan_primary_fallbacks)
 
       {:ok,
        %{
          project: project,
          ir: ir,
          debug_usage_diagnostics: debug_usage_diagnostics,
-         layout_coercion_diagnostics: layout_coercion_diagnostics
+         layout_coercion_diagnostics:
+           layout_coercion_diagnostics ++
+             plan_primary_fallbacks ++
+             plan_legacy_diagnostics ++
+             plan_coverage_diagnostics,
+         plan_coverage: plan_coverage,
+         plan_toolchain: plan_toolchain,
+         elmc_bytecode_summary: bytecode_summary
        }}
     end
   end
 
   @spec normalize_compile_opts(compile_options() | keyword()) :: compile_options()
-  defp normalize_compile_opts(opts) when is_list(opts), do: Map.new(opts)
-  defp normalize_compile_opts(opts) when is_map(opts), do: opts
+  defp normalize_compile_opts(opts) when is_list(opts),
+    do: opts |> Map.new() |> normalize_compile_opts()
+
+  defp normalize_compile_opts(opts) when is_map(opts) do
+    Elmc.Backend.Plan.Defaults.apply_defaults(opts)
+  end
 
   @spec check_debug_usage(ElmEx.IR.t(), compile_options()) ::
           {:ok, ElmEx.IR.t(), [map()]}
@@ -96,6 +143,13 @@ defmodule Elmc do
   @spec maybe_strip_dead_code(ElmEx.IR.t(), String.t(), boolean() | nil) :: ElmEx.IR.t()
   defp maybe_strip_dead_code(ir, _entry_module, false), do: ir
   defp maybe_strip_dead_code(ir, entry_module, _), do: DeadCode.strip(ir, entry_module)
+
+  @spec seed_codegen_process_state(ElmEx.IR.t(), compile_options()) :: :ok
+  defp seed_codegen_process_state(ir, opts) do
+    Process.put(:elmc_codegen_opts, opts)
+    Process.put(:elmc_constructor_tags, IRQueries.constructor_tag_map(ir))
+    :ok
+  end
 
   @spec maybe_recompile_stream_view_fallback(
           ElmEx.IR.t(),
@@ -125,4 +179,40 @@ defmodule Elmc do
     do: {:ok, project}
 
   defp project_for_compile(project_dir, _opts), do: Bridge.load_project(project_dir)
+
+  defp plan_legacy_codegen_diagnostics(opts) when is_map(opts) do
+    if Map.get(opts, :plan_ir_mode_explicit_off) == true do
+      [
+        %{
+          "source" => "elmc/plan",
+          "code" => "plan_legacy_codegen",
+          "severity" => "info",
+          "message" =>
+            "Compiling with plan_ir_mode: :off (legacy C codegen). Use :primary for verified Plan IR emission."
+        }
+      ]
+    else
+      []
+    end
+  end
+
+  defp plan_toolchain_summary(bytecode_summary, opts) do
+    case bytecode_summary do
+      %{plan_toolchain: %{} = toolchain} -> normalize_plan_toolchain(toolchain)
+      %{"plan_toolchain" => %{} = toolchain} -> normalize_plan_toolchain(toolchain)
+      _ -> %{mode: Plan.plan_ir_mode(opts), strict: Plan.strict_primary?(opts)}
+    end
+  end
+
+  defp normalize_plan_toolchain(%{"mode" => mode, "strict" => strict}),
+    do: %{mode: normalize_plan_mode(mode), strict: strict}
+
+  defp normalize_plan_toolchain(%{mode: mode, strict: strict}),
+    do: %{mode: normalize_plan_mode(mode), strict: strict}
+
+  defp normalize_plan_mode(mode) when is_atom(mode), do: mode
+  defp normalize_plan_mode("primary"), do: :primary
+  defp normalize_plan_mode("shadow"), do: :shadow
+  defp normalize_plan_mode("off"), do: :off
+  defp normalize_plan_mode(mode) when is_binary(mode), do: String.to_existing_atom(mode)
 end

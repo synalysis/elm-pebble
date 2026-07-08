@@ -406,6 +406,8 @@ defmodule Elmc.GeneratedRcTrack2048WorkerTest do
       }
 
       static int drain_view(ElmcPebbleApp *app) {
+        app->scene.dirty = 1;
+        if (elmc_pebble_ensure_scene(app) != 0) return -1;
         ElmcPebbleDrawCmd cmds[32] = {0};
         int skip = 0;
         int total = 0;

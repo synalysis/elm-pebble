@@ -8,7 +8,9 @@ defmodule Elmc.Backend.CCodegen.ListConcatReversedRowSlices do
   alias Elmc.Backend.CCodegen.{FusionSupport, Util}
 
   @spec try_emit(String.t(), String.t(), map() | nil, map()) ::
-          {:ok, String.t(), [FusionSupport.callee_key()]} | :error
+          {:ok, String.t(), [FusionSupport.callee_key()]}
+          | {:ok, String.t(), [FusionSupport.callee_key()], :rc_native}
+          | :error
   def try_emit(_module_name, _name, nil, _decl_map), do: :error
 
   def try_emit(module_name, name, expr, decl_map) do
@@ -18,7 +20,7 @@ defmodule Elmc.Backend.CCodegen.ListConcatReversedRowSlices do
          true <- rows > 0,
          expected = Enum.to_list(0..(rows - 1)),
          true <- row_indices == expected do
-      FusionSupport.ok(emit(module_name, name, cells_var, width, rows), [])
+      FusionSupport.ok_rc(emit(module_name, name, cells_var, width, rows), [])
     else
       _ -> :error
     end
@@ -160,18 +162,20 @@ defmodule Elmc.Backend.CCodegen.ListConcatReversedRowSlices do
     count = rows * width
 
     """
-    static ElmcValue *#{c_prefix}_native(ElmcValue *#{cells_var}) {
-      elmc_int_t flat[#{count}];
-      for (elmc_int_t row = 0; row < #{rows}; row++) {
-        for (elmc_int_t col = 0; col < #{width}; col++) {
-          flat[(row * #{width}) + col] =
-            elmc_list_nth_int_default(#{cells_var}, (row * #{width}) + (#{width} - 1 - col), 0);
+    static RC #{c_prefix}_native(ElmcValue **out, ElmcValue *#{cells_var}) {
+      RC Rc = RC_SUCCESS;
+      CATCH_BEGIN
+        elmc_int_t flat[#{count}];
+        for (elmc_int_t row = 0; row < #{rows}; row++) {
+          for (elmc_int_t col = 0; col < #{width}; col++) {
+            flat[(row * #{width}) + col] =
+              elmc_list_nth_int_default(#{cells_var}, (row * #{width}) + (#{width} - 1 - col), 0);
+          }
         }
-      }
-      ElmcValue *out = NULL;
-      if (elmc_list_from_int_array(&out, flat, #{count}) != RC_SUCCESS)
-        out = elmc_list_nil();
-      return out ? out : elmc_list_nil();
+        Rc = elmc_list_from_int_array(out, flat, #{count});
+        CHECK_RC(Rc);
+      CATCH_END;
+      return Rc;
     }
     """
   end

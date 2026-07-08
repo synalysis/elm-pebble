@@ -1,5 +1,10 @@
 defmodule Elmc.Backend.CCodegen.ValueSlots do
-  @moduledoc false
+  @moduledoc """
+  RC owned-slot allocator during legacy C codegen emission.
+
+  Deprecated for functions lowered via Plan IR (`plan_ir_mode: :primary`).
+  Use `Elmc.Backend.Plan.Allocate` for slot assignment from verified plans.
+  """
 
   alias Elmc.Backend.CCodegen.EnvBindings
   alias Elmc.Backend.CCodegen.OwnershipTransfer
@@ -26,6 +31,7 @@ defmodule Elmc.Backend.CCodegen.ValueSlots do
       function_out_written: false,
       deferred_nulls: [],
       direct_param_owned: %{},
+      record_field_retains: %{},
       emit_owned_epilogue: epilogue_lifo?
     })
 
@@ -167,6 +173,14 @@ defmodule Elmc.Backend.CCodegen.ValueSlots do
     end
   end
 
+  def transfer(index) when is_integer(index) and index >= 0 do
+    slots = slots_state()
+    live = MapSet.delete(slots.live, index)
+    transferred = MapSet.put(slots.transferred, index)
+    Process.put(:elmc_value_slots, %{slots | live: live, transferred: transferred})
+    :ok
+  end
+
   @closure_call_arg_consumed_key :elmc_closure_call_arg_consumed
 
   @doc false
@@ -195,14 +209,6 @@ defmodule Elmc.Backend.CCodegen.ValueSlots do
   end
 
   def closure_call_arg_consumed?(_var), do: false
-
-  def transfer(index) when is_integer(index) and index >= 0 do
-    slots = slots_state()
-    live = MapSet.delete(slots.live, index)
-    transferred = MapSet.put(slots.transferred, index)
-    Process.put(:elmc_value_slots, %{slots | live: live, transferred: transferred})
-    :ok
-  end
 
   @type tuple_projection :: :first | :second
 
@@ -284,10 +290,91 @@ defmodule Elmc.Backend.CCodegen.ValueSlots do
   def release_if_owned_written(var) when is_binary(var) do
     if owned_ref?(var) and slot_written?(var) and not transferred?(var) do
       unmark_written(var)
-      release_owned_eager(var)
+
+      if epilogue_lifo?() and not in_c_loop?() do
+        ""
+      else
+        release_owned_eager(var)
+      end
     else
       ""
     end
+  end
+
+  @doc """
+  Eagerly release a written owned slot before an owned-to-owned transfer overwrites it.
+
+  Under epilogue lifo, `release_if_owned_written/1` intentionally defers so callers can
+  allocate a fresh slot via `ensure_fresh_assign_target/1`. Owned-to-owned transfers reuse
+  the destination index and must drop the replaced value immediately or it leaks.
+  """
+  @spec release_before_owned_transfer(String.t()) :: String.t()
+  def release_before_owned_transfer(var) when is_binary(var) do
+    if owned_ref?(var) and slot_written?(var) and not transferred?(var) do
+      unmark_written(var)
+
+      join_stmts([
+        release_record_field_retains(var),
+        release_owned_eager(var)
+      ])
+    else
+      ""
+    end
+  end
+
+  @doc false
+  @spec release_record_field_retains(String.t()) :: String.t()
+  def release_record_field_retains(var) when is_binary(var) do
+    case owned_index(var) do
+      parent when is_integer(parent) ->
+        slots = slots_state()
+        retains = Map.get(slots, :record_field_retains, %{})
+
+        retains
+        |> Map.get(parent, [])
+        |> Enum.uniq()
+        |> Enum.map(fn field_idx ->
+          field_var = ref(field_idx)
+
+          if owned_ref?(field_var) and not transferred?(field_var) do
+            unmark_written(field_var)
+            release_owned_eager(field_var)
+          else
+            ""
+          end
+        end)
+        |> Enum.reject(&(&1 == ""))
+        |> Enum.join("\n")
+
+      _ ->
+        ""
+    end
+  end
+
+  @doc false
+  @spec register_record_field_retain_from_rhs(String.t(), String.t()) :: :ok
+  def register_record_field_retain_from_rhs(field_var, rhs)
+       when is_binary(field_var) and is_binary(rhs) do
+    with [_, parent] <- Regex.run(~r/^elmc_record_get_index\(([^,]+),/, rhs),
+         parent_idx when is_integer(parent_idx) <- owned_index(parent),
+         field_idx when is_integer(field_idx) <- owned_index(field_var) do
+      slots = slots_state()
+      retains = Map.get(slots, :record_field_retains, %{})
+      fields = Map.get(retains, parent_idx, [])
+
+      if field_idx in fields do
+        :ok
+      else
+        Process.put(
+          :elmc_value_slots,
+          Map.put(slots, :record_field_retains, Map.put(retains, parent_idx, fields ++ [field_idx]))
+        )
+      end
+    else
+      _ -> :ok
+    end
+
+    :ok
   end
 
   @spec release_stmt(String.t()) :: String.t()
@@ -340,7 +427,8 @@ defmodule Elmc.Backend.CCodegen.ValueSlots do
 
           owned_ref?(var) ->
             var = ensure_fresh_assign_target(var)
-            stmt = owned_reassign_prefix(var) <> "#{var} = #{RcRuntimeEmit.value_expr(rhs)};"
+            stmt = owned_reassign_prefix(var) <> "#{RcRuntimeEmit.assignment_lhs(var)} = #{RcRuntimeEmit.value_expr(rhs)};"
+            register_record_field_retain_from_rhs(var, rhs)
             mark_written(var)
             stmt
 
@@ -354,7 +442,7 @@ defmodule Elmc.Backend.CCodegen.ValueSlots do
   def boxed_null_decl(var) when is_binary(var) do
     cond do
       RcRuntimeEmit.function_out_ref?(var) -> RcRuntimeEmit.null_assign_stmt(var)
-      owned_ref?(var) -> "#{var} = NULL;"
+      owned_ref?(var) -> "#{RcRuntimeEmit.assignment_lhs(var)} = NULL;"
       true -> "ElmcValue *#{var} = NULL;"
     end
   end
@@ -412,11 +500,8 @@ defmodule Elmc.Backend.CCodegen.ValueSlots do
 
     """
     enum { ELMC_OWNED_SLOT_COUNT = #{slot_count} };
-    ElmcValue **owned = (ElmcValue **)elmc_malloc(ELMC_OWNED_SLOT_COUNT * sizeof(ElmcValue *), "owned_slots");
+    ElmcValue **owned = (ElmcValue **)elmc_calloc(ELMC_OWNED_SLOT_COUNT, sizeof(ElmcValue *), "owned_slots");
     if (!owned) return RC_ERR_OUT_OF_MEMORY;
-    for (size_t elmc_owned_i = 0; elmc_owned_i < ELMC_OWNED_SLOT_COUNT; elmc_owned_i++) {
-      owned[elmc_owned_i] = NULL;
-    }
     """
     |> String.trim()
   end
@@ -482,12 +567,23 @@ defmodule Elmc.Backend.CCodegen.ValueSlots do
   After a direct call writes through an owned out-slot, clear owned operands that alias
   the same pointer so epilogue lifo does not release the returned value twice.
   """
-  @spec null_call_operands_aliasing_out(String.t(), [String.t()]) :: String.t()
-  def null_call_operands_aliasing_out(out, arg_vars)
+  @spec null_call_operands_aliasing_out(String.t(), [String.t()], map()) :: String.t()
+  def null_call_operands_aliasing_out(out, arg_vars, env \\ %{})
       when is_binary(out) and is_list(arg_vars) do
-    if epilogue_lifo?() and owned_ref?(out) do
+    invariant =
+      env
+      |> Map.get(:__tail_loop_invariant_refs__, MapSet.new())
+      |> case do
+        %MapSet{} = set -> set
+        list when is_list(list) -> MapSet.new(list)
+        _ -> MapSet.new()
+      end
+
+    if epilogue_lifo?() do
       arg_vars
-      |> Enum.filter(fn arg -> owned_ref?(arg) and arg != out end)
+      |> Enum.filter(fn arg ->
+        owned_ref?(arg) and arg != out and not MapSet.member?(invariant, arg)
+      end)
       |> Enum.map(fn arg ->
         """
         if (#{RcRuntimeEmit.value_expr(out)} == #{RcRuntimeEmit.value_expr(arg)}) {
@@ -691,7 +787,8 @@ defmodule Elmc.Backend.CCodegen.ValueSlots do
 
     final_normalize =
       cond do
-        RcRuntimeEmit.function_out_ref?(out) and function_out_written?() ->
+        RcRuntimeEmit.function_out_ref?(out) and function_out_written?() and
+            (not is_binary(current) or current == out) ->
           ""
 
         RcRuntimeEmit.function_out_ref?(out) and is_binary(current) and
@@ -704,7 +801,7 @@ defmodule Elmc.Backend.CCodegen.ValueSlots do
           ""
 
         true ->
-          stmt = RcRuntimeEmit.transfer_assignment(root, current)
+          stmt = RcRuntimeEmit.merge_branch_owned_slot(root, current)
           Process.put(:elmc_value_slots, Map.put(slots, :result_slot_current, root))
           stmt
       end
@@ -730,15 +827,8 @@ defmodule Elmc.Backend.CCodegen.ValueSlots do
   def owned_reassign_prefix(var) when is_binary(var) do
     with true <- owned_ref?(var),
          true <- epilogue_lifo?(),
-         true <- in_c_loop?(),
-         index when is_integer(index) <- owned_index(var) do
-      slots = slots_state()
-
-      if MapSet.member?(slots.written, index) do
-        release_owned_eager(var) <> "\n"
-      else
-        ""
-      end
+         true <- in_c_loop?() do
+      release_owned_eager(var) <> "\n"
     else
       _ -> ""
     end
@@ -833,7 +923,7 @@ defmodule Elmc.Backend.CCodegen.ValueSlots do
     save =
       if owned_ref?(body_var) do
         """
-        ElmcValue *#{return_var} = #{body_var};
+        ElmcValue *#{return_var} = #{RcRuntimeEmit.value_expr(body_var)};
         #{null_assignment(body_var)}
         """
       else
@@ -969,7 +1059,7 @@ defmodule Elmc.Backend.CCodegen.ValueSlots do
 
     if owned_ref?(var) and is_binary(root) and is_binary(current) and var == current and
          root != current do
-      stmt = RcRuntimeEmit.transfer_assignment(root, current)
+      stmt = RcRuntimeEmit.merge_branch_owned_slot(root, current)
       Process.put(:elmc_value_slots, Map.put(slots_state(), :result_slot_current, root))
       stmt
     else

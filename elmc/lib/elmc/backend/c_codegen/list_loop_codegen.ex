@@ -3,6 +3,7 @@ defmodule Elmc.Backend.CCodegen.ListLoopCodegen do
 
   alias Elmc.Backend.CCodegen.RcRuntimeEmit
   alias Elmc.Backend.CCodegen.Types
+  alias Elmc.Backend.CCodegen.Util
   alias Elmc.Backend.CCodegen.ValueSlots
 
   defp val_expr(ref) when is_binary(ref), do: RcRuntimeEmit.value_expr(ref)
@@ -156,7 +157,7 @@ defmodule Elmc.Backend.CCodegen.ListLoopCodegen do
 
     code = """
       #{runtime_source_comment_line("elmc_list_repeat", 6)}ElmcValue *#{acc} = elmc_list_nil();
-      for (elmc_int_t #{index_var} = 0; #{index_var} < #{count_ref}; #{index_var}++) {
+      for (elmc_int_t #{index_var} = 0; #{index_var} < #{repeat_count_display(count_ref, env)}; #{index_var}++) {
         #{loop_body}
       }#{post_loop}
       if (!#{acc}) #{acc} = elmc_list_nil();
@@ -256,6 +257,43 @@ defmodule Elmc.Backend.CCodegen.ListLoopCodegen do
 
   @spec emit_int_zero_repeat_from_count(String.t(), String.t(), pos_integer(), map()) :: String.t()
   def emit_int_zero_repeat_from_count(count_ref, out, loop_id, env) do
+    count_display = repeat_count_display(count_ref, env)
+
+    case Util.parse_compile_time_int_ref(count_ref) do
+      n when is_integer(n) and n <= 0 ->
+        """
+        ElmcValue *#{out} = NULL;
+        #{RcRuntimeEmit.assign_into(env, out, "elmc_list_from_int_array", "NULL, 0")}
+        """
+
+      n when is_integer(n) and n > 0 ->
+        buf = "list_repeat_zero_buf_#{loop_id}"
+
+        """
+        ElmcValue *#{out} = NULL;
+        elmc_int_t #{buf}[#{count_display}];
+        for (elmc_int_t _zi_#{loop_id} = 0; _zi_#{loop_id} < #{count_display}; _zi_#{loop_id}++) {
+          #{buf}[_zi_#{loop_id}] = 0;
+        }
+        #{RcRuntimeEmit.assign_into(env, out, "elmc_list_from_int_array", "#{buf}, #{count_display}")}
+        """
+
+      _ ->
+        emit_int_zero_repeat_from_dynamic_count(count_ref, out, loop_id, env)
+    end
+  end
+
+  defp repeat_count_display(count_ref, env) do
+    case {Util.parse_compile_time_int_ref(count_ref), Map.get(env, :__repeat_count_source__)} do
+      {n, expr} when is_integer(n) and is_map(expr) ->
+        Elmc.Backend.CCodegen.ImmortalStaticList.format_repeat_count(n, expr, env)
+
+      _ ->
+        count_ref
+    end
+  end
+
+  defp emit_int_zero_repeat_from_dynamic_count(count_ref, out, loop_id, env) do
     buf = "list_repeat_zero_buf_#{loop_id}"
 
     """
@@ -552,14 +590,20 @@ defmodule Elmc.Backend.CCodegen.ListLoopCodegen do
   end
 
   defp int_list_head_take(head_var, list_expr, env) do
-    RcRuntimeEmit.check_rc_take(head_var, "elmc_new_int", list_expr, env)
+    if RcRuntimeEmit.rc_allocator_emit_mode?(env) do
+      RcRuntimeEmit.check_rc_take(head_var, "elmc_new_int", list_expr, env, declare_out?: false)
+    else
+      RcRuntimeEmit.assign_stmt(head_var, "elmc_new_int_take(#{list_expr})")
+    end
   end
 
   defp int_spine_head_take(head_var, list_expr, env) do
     if RcRuntimeEmit.rc_allocator_emit_mode?(env) do
-      RcRuntimeEmit.check_rc_take(head_var, "elmc_int_spine_head_boxed", list_expr, env)
+      RcRuntimeEmit.check_rc_take(head_var, "elmc_int_spine_head_boxed", list_expr, env,
+        declare_out?: false
+      )
     else
-      "ElmcValue *#{head_var} = elmc_int_spine_head_boxed_take(#{list_expr});"
+      RcRuntimeEmit.assign_stmt(head_var, "elmc_int_spine_head_boxed_take(#{list_expr})")
     end
   end
 
@@ -567,6 +611,7 @@ defmodule Elmc.Backend.CCodegen.ListLoopCodegen do
     env = Keyword.get(opts, :env, %{})
     """
     if (#{val_expr(list_ref)} && #{val_expr(list_ref)}->tag == ELMC_TAG_INT_LIST) {
+      #{ValueSlots.boxed_null_decl(head_var)}
       ElmcIntListPayload *_ilp_#{loop_id} = (ElmcIntListPayload *)#{val_expr(list_ref)}->payload;
       int _ilen_#{loop_id} = _ilp_#{loop_id} ? _ilp_#{loop_id}->length : 0;
       for (int _ii_#{loop_id} = 0; _ii_#{loop_id} < _ilen_#{loop_id}; _ii_#{loop_id}++) {
@@ -600,6 +645,7 @@ defmodule Elmc.Backend.CCodegen.ListLoopCodegen do
 
     """
     if (#{val_expr(list_ref)} && #{val_expr(list_ref)}->tag == ELMC_TAG_INT_LIST) {
+      #{ValueSlots.boxed_null_decl(head_var)}
       ElmcIntListPayload *_ilp_#{loop_id} = (ElmcIntListPayload *)#{val_expr(list_ref)}->payload;
       int _ilen_#{loop_id} = _ilp_#{loop_id} ? _ilp_#{loop_id}->length : 0;
       for (int _ii_#{loop_id} = 0; _ii_#{loop_id} < _ilen_#{loop_id}; _ii_#{loop_id}++) {
@@ -610,6 +656,7 @@ defmodule Elmc.Backend.CCodegen.ListLoopCodegen do
       #{RcRuntimeEmit.loop_exit_check_rc(env)}
     } else {
       ElmcValue *#{cursor} = #{val_expr(list_ref)};
+      #{ValueSlots.boxed_null_decl(head_var)}
       while (#{cursor} && #{cursor}->tag == ELMC_TAG_INT_SPINE && #{cursor}->payload != NULL) {
         #{int_spine_head_take(head_var, cursor, env)}
     #{inner_body}
@@ -640,6 +687,7 @@ defmodule Elmc.Backend.CCodegen.ListLoopCodegen do
 
     """
     if (#{val_expr(list_ref)} && #{val_expr(list_ref)}->tag == ELMC_TAG_INT_LIST) {
+      #{ValueSlots.boxed_null_decl(head_var)}
       ElmcIntListPayload *_ilp_#{loop_id} = (ElmcIntListPayload *)#{val_expr(list_ref)}->payload;
       int _ilen_#{loop_id} = _ilp_#{loop_id} ? _ilp_#{loop_id}->length : 0;
       for (int _ii_#{loop_id} = 0; _ii_#{loop_id} < _ilen_#{loop_id}; _ii_#{loop_id}++) {

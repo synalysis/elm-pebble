@@ -3,6 +3,7 @@ defmodule Elmc.Backend.CCodegen.CollectionCompile do
 
   alias Elmc.Backend.CCodegen.CaseCompile
   alias Elmc.Backend.CCodegen.BuiltinUnion
+  alias Elmc.Backend.CCodegen.CSource
   alias Elmc.Backend.CCodegen.ConstantInt
   alias Elmc.Backend.CCodegen.DebugProbes
   alias Elmc.Backend.CCodegen.EnvBindings
@@ -155,7 +156,11 @@ defmodule Elmc.Backend.CCodegen.CollectionCompile do
         end
 
       emit_code =
-        if compile_right_first?, do: right_code <> left_code, else: left_code <> right_code
+        if compile_right_first? do
+          CSource.join_fragments([right_code, left_code])
+        else
+          CSource.join_fragments([left_code, right_code])
+        end
 
       {out, next, _declare_out?} =
         if RcRuntimeEmit.rc_allocator_emit_mode?(env) do
@@ -262,10 +267,15 @@ defmodule Elmc.Backend.CCodegen.CollectionCompile do
   defp compile_dynamic_list_literal(items, env, counter) do
     item_env = RcRuntimeEmit.strip_function_tail_scope(env)
 
-    if Enum.all?(items, &all_native_primitive_record_literal?/1) do
-      compile_record_array_list_literal(items, item_env, env, counter)
-    else
-      compile_generic_list_literal(items, item_env, env, counter)
+    cond do
+      items == [] ->
+        compile_generic_list_literal(items, item_env, env, counter)
+
+      Enum.all?(items, &all_native_primitive_record_literal?/1) ->
+        compile_record_array_list_literal(items, item_env, env, counter)
+
+      true ->
+        compile_generic_list_literal(items, item_env, env, counter)
     end
   end
 
@@ -298,7 +308,7 @@ defmodule Elmc.Backend.CCodegen.CollectionCompile do
         {acc_code <> "\n  " <> code, vars ++ [var], c1, MapSet.union(consumed, used)}
       end)
 
-    {out, next, _} = CaseCompile.result_out_binding(env, counter)
+    {out, next, _} = CaseCompile.result_out_binding(list_literal_result_out_env(env), counter)
     list_items_id = counter + 1
     count = length(item_vars)
     array_name = "list_items_#{list_items_id}"
@@ -371,7 +381,7 @@ defmodule Elmc.Backend.CCodegen.CollectionCompile do
         {acc_code <> "\n  " <> code, vars ++ [var], c1}
       end)
 
-    {out, next, _} = CaseCompile.result_out_binding(env, counter)
+    {out, next, _} = CaseCompile.result_out_binding(list_literal_result_out_env(env), counter)
     list_items_id = counter + 1
     count = length(item_vars)
     array_name = "list_record_items_#{list_items_id}"
@@ -641,5 +651,14 @@ defmodule Elmc.Backend.CCodegen.CollectionCompile do
         acc
       end
     end)
+  end
+
+  defp list_literal_result_out_env(env) do
+    if RcRuntimeEmit.function_tail_compile?(env) or
+         Map.get(env, :__into_out__) == RcRuntimeEmit.function_out_ref() do
+      env
+    else
+      RcRuntimeEmit.strip_function_tail_scope(env)
+    end
   end
 end

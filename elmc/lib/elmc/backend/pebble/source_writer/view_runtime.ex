@@ -20,7 +20,8 @@ defmodule Elmc.Backend.Pebble.SourceWriter.ViewRuntime do
     view_command_bindings = %{
       entry_view_fn: bindings.entry_view_fn,
       has_view: bindings.has_view,
-      direct_view_macro: bindings.direct_view_macro
+      direct_view_macro: bindings.direct_view_macro,
+      entry_view_direct_abi?: Map.get(bindings, :entry_view_direct_abi?, false)
     }
 
     [

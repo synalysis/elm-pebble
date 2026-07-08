@@ -164,6 +164,12 @@ defmodule Elmc.Runtime.RcMacros do
                     elmc_as_int(((ElmcTuple2 *)v->payload)->first) == tag));
     }
 
+    static inline ElmcValue *elmc_union_payload(ElmcValue *v) {
+      if (v && v->tag == ELMC_TAG_TUPLE2 && v->payload != NULL)
+        return ((ElmcTuple2 *)v->payload)->second;
+      return v;
+    }
+
     static inline elmc_int_t elmc_union_payload_int(ElmcValue *v) {
       if (!v) return 0;
       if (v->tag == ELMC_TAG_INT) return elmc_as_int(v);
@@ -180,11 +186,16 @@ defmodule Elmc.Runtime.RcMacros do
   def release_array_lifo_declaration do
     """
     static inline void elmc_release_array_lifo(ElmcValue **slots, size_t count) {
+      size_t n = count;
       while (count-- > 0) {
         ElmcValue *value = slots[count];
         if (value) {
           elmc_release(value);
-          slots[count] = NULL;
+          for (size_t i = 0; i < n; i++) {
+            if (slots[i] == value) {
+              slots[i] = NULL;
+            }
+          }
         }
       }
     }
@@ -194,6 +205,8 @@ defmodule Elmc.Runtime.RcMacros do
   @spec take_wrapper_declarations() :: String.t()
   def take_wrapper_declarations do
     """
+    ElmcValue *elmc_retain(ElmcValue *value);
+
     static inline ElmcValue *elmc_new_int_take(elmc_int_t value) {
       ElmcValue *out = NULL;
       return elmc_new_int(&out, value) == RC_SUCCESS ? out : elmc_int_zero();
@@ -879,17 +892,20 @@ defmodule Elmc.Runtime.RcMacros do
 
     static inline ElmcValue *elmc_result_map_take(ElmcValue *f, ElmcValue *result) {
       ElmcValue *out = NULL;
-      return elmc_result_map(&out, f, result) == RC_SUCCESS ? out : elmc_int_zero();
+      if (elmc_result_map(&out, f, result) != RC_SUCCESS) return elmc_int_zero();
+      return (out == result) ? elmc_retain(out) : out;
     }
 
     static inline ElmcValue *elmc_result_map_error_take(ElmcValue *f, ElmcValue *result) {
       ElmcValue *out = NULL;
-      return elmc_result_map_error(&out, f, result) == RC_SUCCESS ? out : elmc_int_zero();
+      if (elmc_result_map_error(&out, f, result) != RC_SUCCESS) return elmc_int_zero();
+      return (out == result) ? elmc_retain(out) : out;
     }
 
     static inline ElmcValue *elmc_result_and_then_take(ElmcValue *f, ElmcValue *result) {
       ElmcValue *out = NULL;
-      return elmc_result_and_then(&out, f, result) == RC_SUCCESS ? out : elmc_int_zero();
+      if (elmc_result_and_then(&out, f, result) != RC_SUCCESS) return elmc_int_zero();
+      return (out == result) ? elmc_retain(out) : out;
     }
 
     static inline ElmcValue *elmc_tuple_map_first_take(ElmcValue *f, ElmcValue *t) {

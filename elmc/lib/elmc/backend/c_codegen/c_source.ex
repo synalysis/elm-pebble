@@ -15,6 +15,7 @@ defmodule Elmc.Backend.CCodegen.CSource do
     source
     |> compact_borrowed_record_field_call_temps(borrow_arg_callees)
     |> String.split("\n", trim: false)
+    |> Enum.flat_map(&expand_compound_statement_line/1)
     |> Enum.flat_map(&expand_compact_if_assignment_line/1)
     |> remove_adjacent_retain_release()
     |> Enum.map(&compact_unit_increment/1)
@@ -52,6 +53,62 @@ defmodule Elmc.Backend.CCodegen.CSource do
   @spec collapse_extra_newlines(String.t()) :: String.t()
   def collapse_extra_newlines(text) when is_binary(text) do
     Regex.replace(~r/\n{3,}/, text, "\n\n")
+  end
+
+  @doc """
+  Join C codegen fragments so each statement starts on its own line.
+  """
+  @spec join_fragments([String.t()]) :: String.t()
+  def join_fragments(fragments) when is_list(fragments) do
+    fragments
+    |> Enum.map(&String.trim_trailing/1)
+    |> Enum.reject(&(&1 == ""))
+    |> Enum.join("\n")
+  end
+
+  @spec join_fragments(String.t(), String.t()) :: String.t()
+  def join_fragments(left, right) when is_binary(left) and is_binary(right) do
+    join_fragments([left, right])
+  end
+
+  defp expand_compound_statement_line(line) do
+    trimmed = String.trim_trailing(line)
+    content = String.trim(trimmed)
+
+    cond do
+      content == "" ->
+        [line]
+
+      String.contains?(content, "\"") ->
+        [line]
+
+      true ->
+        parts =
+          Regex.split(
+            ~r/;(?=\s*(?:owned\[|Rc\s*=|\*out\s*=|elmc_[A-Za-z_]+|ElmcValue\s+\*|CHECK_RC\(|goto\s|if\s*\(|const\s|bool\s|\}\s*else))/,
+            trimmed
+          )
+
+        case parts do
+          [_single] ->
+            [line]
+
+          parts ->
+            indent =
+              line
+              |> String.graphemes()
+              |> Enum.take_while(&(&1 == " "))
+              |> Enum.join()
+
+            parts
+            |> Enum.map(&String.trim/1)
+            |> Enum.reject(&(&1 == ""))
+            |> Enum.map(fn part ->
+              if String.ends_with?(part, ";"), do: part, else: part <> ";"
+            end)
+            |> Enum.map(&(&1 |> then(fn stmt -> indent <> stmt end)))
+        end
+    end
   end
 
   defp expand_compact_if_assignment_line(line) do

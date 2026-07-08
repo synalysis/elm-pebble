@@ -9,6 +9,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage.Core do
   alias IdeWeb.WorkspaceLive.DebuggerPage.{
     Assigns,
     BitmapHydration,
+    BytecodeArtifacts,
     CompanionConfiguration,
     Export,
     ModelMetadata,
@@ -338,6 +339,11 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage.Core do
               watch_trigger_buttons={@debugger_watch_trigger_buttons}
               disabled_subscriptions={@debugger_disabled_subscriptions}
               running={SessionState.running?(@debugger_state)}
+            />
+            <.debugger_bytecode_panel
+              runtime={@debugger_watch_runtime}
+              project={@project}
+              smoke={@debugger_bytecode_smoke}
             />
           </div>
         </div>
@@ -1449,4 +1455,78 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage.Core do
 
   @spec debugger_rendered_tree(SupportTypes.runtime_input()) :: DebuggerTypes.rendered_tree() | nil
   defp debugger_rendered_tree(runtime), do: DebuggerSupport.rendered_tree(runtime)
+
+  attr(:runtime, :map, default: nil)
+  attr(:project, :map, default: nil)
+  attr(:smoke, :map, default: nil)
+
+  @spec debugger_bytecode_panel(assigns()) :: rendered()
+  defp debugger_bytecode_panel(assigns) do
+    manifest = BytecodeArtifacts.summary(assigns.runtime)
+    headline = BytecodeArtifacts.headline(manifest)
+
+    main_functions =
+      if BytecodeArtifacts.available?(manifest) do
+        BytecodeArtifacts.main_functions(manifest)
+      else
+        []
+      end
+
+    skipped =
+      if BytecodeArtifacts.available?(manifest) do
+        BytecodeArtifacts.skipped_preview(manifest)
+      else
+        []
+      end
+    smoke_label = BytecodeArtifacts.smoke_label(assigns.smoke)
+    runnable? = match?(%Project{}, assigns.project) and BytecodeArtifacts.available?(manifest)
+
+    assigns =
+      assigns
+      |> assign(:manifest, manifest)
+      |> assign(:headline, headline)
+      |> assign(:main_functions, main_functions)
+      |> assign(:skipped, skipped)
+      |> assign(:smoke_label, smoke_label)
+      |> assign(:runnable?, runnable?)
+
+    ~H"""
+    <details
+      :if={@manifest}
+      id="debugger-bytecode-artifacts"
+      class="rounded border border-zinc-200 bg-white p-2 text-xs text-zinc-700"
+    >
+      <summary class="cursor-pointer font-semibold uppercase tracking-wide text-zinc-600">
+        Plan bytecode
+      </summary>
+      <p class="mt-2 text-[11px] text-zinc-500">{@headline}</p>
+      <p :if={@smoke_label} class="mt-2 rounded bg-zinc-100 p-2 font-mono text-[11px] text-zinc-800">
+        {@smoke_label}
+      </p>
+      <ul :if={@main_functions != []} class="mt-2 max-h-40 space-y-0.5 overflow-y-auto font-mono text-[11px]">
+        <li :for={fn_entry <- @main_functions} class="flex items-center justify-between gap-2">
+          <span>{fn_entry["module"]}.{fn_entry["name"]}</span>
+          <button
+            :if={@runnable?}
+            type="button"
+            phx-click="debugger-bytecode-run"
+            phx-value-module={fn_entry["module"]}
+            phx-value-name={fn_entry["name"]}
+            class="shrink-0 rounded border border-zinc-300 bg-white px-1.5 py-0.5 text-[10px] font-medium text-zinc-700 hover:bg-zinc-100"
+          >
+            Run
+          </button>
+        </li>
+      </ul>
+      <div :if={@skipped != []} class="mt-2">
+        <p class="text-[11px] font-medium text-amber-800">Lower failures (preview)</p>
+        <ul class="mt-1 space-y-0.5 font-mono text-[11px] text-amber-900">
+          <li :for={entry <- @skipped}>
+            {entry["module"]}.{entry["name"]}: {entry["reason"]}
+          </li>
+        </ul>
+      </div>
+    </details>
+    """
+  end
 end

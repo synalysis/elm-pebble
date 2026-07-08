@@ -13,6 +13,7 @@ defmodule Elmc.Backend.CCodegen.Native.Bool do
   alias Elmc.Backend.CCodegen.PlatformStatic
   alias Elmc.Backend.CCodegen.RecordCompile
   alias Elmc.Backend.CCodegen.RcRuntimeEmit
+  alias Elmc.Backend.CCodegen.Util
   alias Elmc.Backend.CCodegen.Types
   alias Elmc.Backend.CCodegen.TypeParsing
   alias Elmc.Backend.CCodegen.UnionMacros
@@ -358,17 +359,25 @@ defmodule Elmc.Backend.CCodegen.Native.Bool do
         {left_code, left_ref, counter} = Host.compile_native_int_expr(left, env, counter)
         {right_code, right_ref, counter} = Host.compile_native_int_expr(right, env, counter)
 
-        comparison =
-          case operator do
-            "__eq__" -> "=="
-            "__neq__" -> "!="
-            "__lt__" -> "<"
-            "__lte__" -> "<="
-            "__gt__" -> ">"
-            "__gte__" -> ">="
-          end
+        case {Util.parse_compile_time_int_ref(left_ref), Util.parse_compile_time_int_ref(right_ref)} do
+          {left_value, right_value} when is_integer(left_value) and is_integer(right_value) ->
+            result = if apply_native_compare(operator, left_value, right_value), do: "1", else: "0"
+            {CSource.join_fragments([left_code, right_code]), result, counter}
 
-        {left_code <> right_code, "(#{left_ref} #{comparison} #{right_ref})", counter}
+          _ ->
+            comparison =
+              case operator do
+                "__eq__" -> "=="
+                "__neq__" -> "!="
+                "__lt__" -> "<"
+                "__lte__" -> "<="
+                "__gt__" -> ">"
+                "__gte__" -> ">="
+              end
+
+            {CSource.join_fragments([left_code, right_code]), "(#{left_ref} #{comparison} #{right_ref})",
+             counter}
+        end
 
       boxed_int_literal_compare_safe?(operator, left, right, env) ->
         compile_boxed_int_literal_compare(left, right, operator, env, counter)
@@ -802,18 +811,33 @@ defmodule Elmc.Backend.CCodegen.Native.Bool do
       """
       #{code}
         const #{@native_bool_c_type} #{out} = #{value_expr(expr, env, var)};
-        #{ValueSlots.release_stmt_line(var)}
+        #{release_native_bool_operand(var)}
       """,
       out,
       next
     }
   end
 
+  defp release_native_bool_operand(var) do
+    if native_bool_c_ref?(var), do: "", else: ValueSlots.release_stmt_line(var)
+  end
+
   @spec value_expr(Types.ir_expr(), Types.compile_env(), String.t()) :: String.t()
   defp value_expr(expr, env, var) do
-    if TypedReturn.bool_expr?(expr, env),
-      do: "(bool)elmc_as_bool(#{var})",
-      else: "elmc_as_int(#{var}) != 0"
+    cond do
+      native_bool_c_ref?(var) ->
+        var
+
+      TypedReturn.bool_expr?(expr, env) ->
+        "(bool)elmc_as_bool(#{RcRuntimeEmit.value_expr(var)})"
+
+      true ->
+        "elmc_as_int(#{RcRuntimeEmit.value_expr(var)}) != 0"
+    end
+  end
+
+  defp native_bool_c_ref?(var) when is_binary(var) do
+    Regex.match?(~r/^(native_b_|native_bool_|list_hof_result_)\d+$/, var)
   end
 
   defp union_constructor_case?(%{op: :case, branches: branches}) do
@@ -972,4 +996,12 @@ defmodule Elmc.Backend.CCodegen.Native.Bool do
       Host.compile_expr(expr, operand_env, counter)
     end
   end
+
+  defp apply_native_compare("__eq__", left, right), do: left == right
+  defp apply_native_compare("__neq__", left, right), do: left != right
+  defp apply_native_compare("__lt__", left, right), do: left < right
+  defp apply_native_compare("__lte__", left, right), do: left <= right
+  defp apply_native_compare("__gt__", left, right), do: left > right
+  defp apply_native_compare("__gte__", left, right), do: left >= right
+  defp apply_native_compare(_, _left, _right), do: false
 end

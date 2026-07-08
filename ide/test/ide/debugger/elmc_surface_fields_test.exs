@@ -45,6 +45,57 @@ defmodule Ide.Debugger.ElmcSurfaceFieldsTest do
     assert artifacts["elmx_revision"] == "rev1"
   end
 
+  test "compile_fields surfaces bytecode manifest summary when present" do
+    fields =
+      ElmcSurfaceFields.ingest_compile_fields(%{
+        status: :ok,
+        compiled_path: "watch/.elmc-build",
+        revision: "rev1",
+        elmc_bytecode_manifest: %{
+          available: true,
+          contract: "elmc.bytecode_manifest.v1",
+          version: 2,
+          manifest_path: "watch/.elmc-build/bytecode/elmc_bytecode.manifest.json",
+          function_count: 12,
+          skipped_count: 3,
+          functions: [%{module: "Main", name: "init"}, %{module: "Main", name: "counterOf"}]
+        }
+      })
+
+    assert fields["elmc_bytecode_manifest"]["available"] == true
+    assert fields["elmc_bytecode_manifest"]["function_count"] == 12
+    assert fields["elmc_bytecode_manifest"]["contract"] == "elmc.bytecode_manifest.v1"
+    assert is_list(fields["elmc_bytecode_manifest"]["functions"])
+  end
+
+  test "compile_fields surfaces plan coverage from manifest or attrs" do
+    fields =
+      ElmcSurfaceFields.ingest_compile_fields(%{
+        status: :ok,
+        compiled_path: "watch/.elmc-build",
+        revision: "rev1",
+        plan_coverage: %{
+          "main" => %{"lowered" => 44, "total" => 44, "failed_count" => 0},
+          "reachable" => %{"lowered" => 45, "total" => 45, "failed_count" => 0}
+        }
+      })
+
+    assert fields["elmc_plan_coverage"]["reachable"]["lowered"] == 45
+    assert fields["elmc_plan_coverage"]["main"]["total"] == 44
+  end
+
+  test "compile_fields surfaces plan toolchain from manifest or attrs" do
+    fields =
+      ElmcSurfaceFields.ingest_compile_fields(%{
+        status: :ok,
+        compiled_path: "watch/.elmc-build",
+        revision: "rev1",
+        plan_toolchain: %{"mode" => "primary", "strict" => true}
+      })
+
+    assert fields["elmc_plan_toolchain"] == %{"mode" => "primary", "strict" => true}
+  end
+
   test "optional_runtime_artifacts and compile_artifact_target route by source_root" do
     artifacts =
       ElmcSurfaceFields.optional_runtime_artifacts(%{

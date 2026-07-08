@@ -3,8 +3,22 @@ defmodule Elmc.Backend.Pebble.SourceWriter.ViewRuntime.ViewCommands.ResultFetch.
 
   alias Elmc.Backend.Pebble.Types
 
-  @spec body(Types.c_symbol()) :: Types.c_source()
-  def body(entry_view_fn) do
+  @spec body(Types.c_symbol(), boolean()) :: Types.c_source()
+  def body(entry_view_fn, direct_abi?) do
+    view_call =
+      if direct_abi? do
+        "RC view_rc = #{entry_view_fn}(&result, model);"
+      else
+        "RC view_rc = #{entry_view_fn}(&result, args, 1);"
+      end
+
+    args_setup =
+      if direct_abi? do
+        ""
+      else
+        "ElmcValue *args[] = { model };\n"
+      end
+
     """
               // #region agent log
               elmc_agent_scene_probe(0xED996180);
@@ -14,12 +28,11 @@ defmodule Elmc.Backend.Pebble.SourceWriter.ViewRuntime.ViewCommands.ResultFetch.
               elmc_agent_scene_probe(model ? 0xED996181 : 0xED99618F);
               // #endregion
               if (!model) return -2;
-              ElmcValue *args[] = { model };
-              // #region agent log
+              #{args_setup}              // #region agent log
               elmc_agent_scene_probe(0xED996190);
               // #endregion
               elmc_pebble_heap_log("view:start");
-              RC view_rc = #{entry_view_fn}(&result, args, 1);
+              #{view_call}
               elmc_pebble_heap_log("view:end");
               if (view_rc != RC_SUCCESS) {
                 ELMC_RC_LOG_FAIL(view_rc, "elmc_pebble_view_commands_raw_impl", "view");

@@ -22,6 +22,8 @@ defmodule Ide.PebbleToolchain.Elmc do
       pebble_int32: true,
       strip_dead_code: true,
       prod: true,
+      plan_ir_mode: :primary,
+      plan_ir_strict: true,
       debug_usage_policy: :error
     }
     |> Map.merge(extra)
@@ -47,7 +49,7 @@ defmodule Ide.PebbleToolchain.Elmc do
     elmc_opts =
       case target_platforms_for_project_dir(project_dir) do
         nil ->
-          %{out_dir: out_dir, strip_dead_code: true}
+          %{out_dir: out_dir, strip_dead_code: true, plan_ir_mode: :primary}
           |> Map.merge(extra_opts)
 
         target_platforms ->

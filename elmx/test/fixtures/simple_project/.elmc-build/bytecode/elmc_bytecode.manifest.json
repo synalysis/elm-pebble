@@ -1,0 +1,357 @@
+{
+  "contract": "elmc.bytecode_manifest.v1",
+  "functions": [
+    {
+      "file": "Companion_Internal_encodeLocationCode.elmcbc",
+      "fn_table": [],
+      "locals": 7,
+      "module": "Companion.Internal",
+      "name": "encodeLocationCode",
+      "params": [
+        "value"
+      ]
+    },
+    {
+      "file": "Companion_Internal_watchToPhoneTag.elmcbc",
+      "fn_table": [],
+      "locals": 6,
+      "module": "Companion.Internal",
+      "name": "watchToPhoneTag",
+      "params": [
+        "message"
+      ]
+    },
+    {
+      "file": "Companion_Internal_watchToPhoneValue.elmcbc",
+      "fn_table": [
+        [
+          "Companion",
+          "Internal.encodeLocationCode"
+        ]
+      ],
+      "locals": 6,
+      "module": "Companion.Internal",
+      "name": "watchToPhoneValue",
+      "params": [
+        "message"
+      ]
+    },
+    {
+      "file": "Main_advanced.elmcbc",
+      "fn_table": [
+        [
+          "Main",
+          "helper"
+        ]
+      ],
+      "locals": 7,
+      "module": "Main",
+      "name": "advanced",
+      "params": [
+        "n"
+      ]
+    },
+    {
+      "file": "Main_counterDraw.elmcbc",
+      "fn_table": [
+        [
+          "Main",
+          "counterOf"
+        ]
+      ],
+      "locals": 7,
+      "module": "Main",
+      "name": "counterDraw",
+      "params": [
+        "model"
+      ]
+    },
+    {
+      "file": "Main_counterOf.elmcbc",
+      "fn_table": [],
+      "locals": 3,
+      "module": "Main",
+      "name": "counterOf",
+      "params": [
+        "model"
+      ]
+    },
+    {
+      "file": "Main_handleAppMsg.elmcbc",
+      "fn_table": [
+        [
+          "Main",
+          "counterOf"
+        ],
+        [
+          "Main",
+          "temperatureOf"
+        ]
+      ],
+      "locals": 58,
+      "module": "Main",
+      "name": "handleAppMsg",
+      "params": [
+        "msg",
+        "model"
+      ]
+    },
+    {
+      "file": "Main_handlePlatformMsg.elmcbc",
+      "fn_table": [
+        [
+          "Main",
+          "counterOf"
+        ],
+        [
+          "Main",
+          "advanced"
+        ],
+        [
+          "Main",
+          "temperatureOf"
+        ],
+        [
+          "Main",
+          "requestSystemInfo"
+        ],
+        [
+          "Main",
+          "requestWeather"
+        ]
+      ],
+      "locals": 50,
+      "module": "Main",
+      "name": "handlePlatformMsg",
+      "params": [
+        "msg",
+        "model"
+      ]
+    },
+    {
+      "file": "Main_helper.elmcbc",
+      "fn_table": [],
+      "locals": 3,
+      "module": "Main",
+      "name": "helper",
+      "params": [
+        "value"
+      ]
+    },
+    {
+      "file": "Main_init.elmcbc",
+      "fn_table": [
+        [
+          "Pebble",
+          "Platform.launchReasonToInt"
+        ],
+        [
+          "Main",
+          "requestSystemInfo"
+        ],
+        [
+          "Main",
+          "requestWeather"
+        ]
+      ],
+      "locals": 15,
+      "module": "Main",
+      "name": "init",
+      "params": [
+        "launchContext"
+      ]
+    },
+    {
+      "file": "Main_main.elmcbc",
+      "fn_table": [],
+      "locals": 1,
+      "module": "Main",
+      "name": "main",
+      "params": []
+    },
+    {
+      "file": "Main_requestSystemInfo.elmcbc",
+      "fn_table": [],
+      "locals": 23,
+      "module": "Main",
+      "name": "requestSystemInfo",
+      "params": []
+    },
+    {
+      "file": "Main_requestWeather.elmcbc",
+      "fn_table": [
+        [
+          "Companion",
+          "Internal.watchToPhoneTag"
+        ],
+        [
+          "Companion",
+          "Internal.watchToPhoneValue"
+        ]
+      ],
+      "locals": 19,
+      "module": "Main",
+      "name": "requestWeather",
+      "params": [
+        "location"
+      ]
+    },
+    {
+      "file": "Main_statusDraw.elmcbc",
+      "fn_table": [
+        [
+          "Main",
+          "temperatureOf"
+        ],
+        [
+          "Main",
+          "temperatureValue"
+        ]
+      ],
+      "locals": 25,
+      "module": "Main",
+      "name": "statusDraw",
+      "params": [
+        "model"
+      ]
+    },
+    {
+      "file": "Main_subscriptions.elmcbc",
+      "fn_table": [],
+      "locals": 25,
+      "module": "Main",
+      "name": "subscriptions",
+      "params": [
+        "_"
+      ]
+    },
+    {
+      "file": "Main_temperatureOf.elmcbc",
+      "fn_table": [],
+      "locals": 3,
+      "module": "Main",
+      "name": "temperatureOf",
+      "params": [
+        "model"
+      ]
+    },
+    {
+      "file": "Main_temperatureValue.elmcbc",
+      "fn_table": [],
+      "locals": 7,
+      "module": "Main",
+      "name": "temperatureValue",
+      "params": [
+        "temperature"
+      ]
+    },
+    {
+      "file": "Main_update.elmcbc",
+      "fn_table": [
+        [
+          "Main",
+          "handlePlatformMsg"
+        ],
+        [
+          "Main",
+          "handleAppMsg"
+        ]
+      ],
+      "locals": 25,
+      "module": "Main",
+      "name": "update",
+      "params": [
+        "msg",
+        "model"
+      ]
+    },
+    {
+      "file": "Main_view.elmcbc",
+      "fn_table": [
+        [
+          "Main",
+          "counterDraw"
+        ],
+        [
+          "Main",
+          "statusDraw"
+        ],
+        [
+          "Pebble",
+          "Ui.path"
+        ]
+      ],
+      "locals": 167,
+      "module": "Main",
+      "name": "view",
+      "params": [
+        "model"
+      ]
+    },
+    {
+      "file": "Pebble_Platform_launchReasonToInt.elmcbc",
+      "fn_table": [],
+      "locals": 12,
+      "module": "Pebble.Platform",
+      "name": "launchReasonToInt",
+      "params": [
+        "launchReason"
+      ]
+    },
+    {
+      "file": "Pebble_Ui_path.elmcbc",
+      "fn_table": [
+        [
+          "Pebble",
+          "Ui.rotationToPebbleAngle"
+        ]
+      ],
+      "locals": 14,
+      "module": "Pebble.Ui",
+      "name": "path",
+      "params": [
+        "points",
+        "offset",
+        "rotation"
+      ]
+    },
+    {
+      "file": "Pebble_Ui_rotationToPebbleAngle.elmcbc",
+      "fn_table": [],
+      "locals": 1,
+      "module": "Pebble.Ui",
+      "name": "rotationToPebbleAngle",
+      "params": []
+    }
+  ],
+  "plan_coverage": {
+    "all": {
+      "failed_count": 0,
+      "failed_preview": [],
+      "lowered": 22,
+      "ratio": 1.0,
+      "total": 22
+    },
+    "main": {
+      "failed_count": 0,
+      "failed_preview": [],
+      "lowered": 16,
+      "ratio": 1.0,
+      "total": 16
+    },
+    "reachable": {
+      "failed_count": 0,
+      "failed_preview": [],
+      "lowered": 22,
+      "ratio": 1.0,
+      "total": 22
+    }
+  },
+  "plan_toolchain": {
+    "mode": "primary",
+    "strict": true
+  },
+  "pruned_count": 85,
+  "skipped": [],
+  "version": 3
+}

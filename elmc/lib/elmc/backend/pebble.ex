@@ -4,8 +4,8 @@ defmodule Elmc.Backend.Pebble do
   """
 
   alias ElmEx.IR
-  alias Elmc.Backend.CCodegen.{Host, IRQueries, StackEstimate}
-  alias Elmc.Backend.Pebble.{HeaderWriter, IRAnalysis, Kinds, SourceWriter}
+  alias Elmc.Backend.CCodegen.{FunctionCallAbi, Host, IRQueries, StackEstimate}
+  alias Elmc.Backend.Pebble.{FeatureFlags, HeaderWriter, IRAnalysis, Kinds, SourceWriter}
   alias Elmc.Backend.Pebble.Types, as: PebbleTypes
   alias Elmc.Types
 
@@ -37,11 +37,17 @@ defmodule Elmc.Backend.Pebble do
           :ok | {:error, Types.file_error()}
   def write_pebble_shim(%IR{} = ir, out_dir, entry_module, opts \\ %{}) do
     c_dir = Path.join(out_dir, "c")
-    analysis = IRAnalysis.analyze(ir, entry_module)
+    generated_c = Map.get(opts, :generated_c, "")
+
+    analysis =
+      ir
+      |> IRAnalysis.analyze(entry_module)
+      |> then(fn analysis ->
+        %{analysis | feature_flags: FeatureFlags.augment_from_generated_c(analysis.feature_flags, generated_c)}
+      end)
+
     decl_map = IRQueries.function_decl_map(ir)
     direct_targets = Host.direct_command_targets(ir, opts, decl_map)
-
-    generated_c = Map.get(opts, :generated_c, "")
 
     direct_view_commands? = MapSet.member?(direct_targets, {entry_module, "view"})
 
@@ -52,6 +58,12 @@ defmodule Elmc.Backend.Pebble do
     append_fallback_enabled? =
       direct_view_commands? and
         (opts[:direct_render_only] == true or aplite_direct_view_scene?)
+
+    view_decl = Map.get(decl_map, {entry_module, "view"})
+
+    entry_view_direct_abi? =
+      is_map(view_decl) and
+        FunctionCallAbi.direct_plan_call_abi?(view_decl, entry_module, decl_map)
 
     with :ok <- File.mkdir_p(c_dir),
          :ok <-
@@ -65,7 +77,8 @@ defmodule Elmc.Backend.Pebble do
            File.write(
              Path.join(c_dir, "elmc_pebble.c"),
              SourceWriter.generate(analysis, entry_module,
-               append_fallback_enabled?: append_fallback_enabled?
+               append_fallback_enabled?: append_fallback_enabled?,
+               entry_view_direct_abi?: entry_view_direct_abi?
              )
            ) do
       :ok

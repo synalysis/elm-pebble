@@ -172,6 +172,7 @@ typedef struct ElmcMaybe {
 
 typedef struct ElmcRecord {
   int field_count;
+  uint32_t mutation_gen;
   ElmcValue **field_values;
 } ElmcRecord;
 
@@ -390,6 +391,8 @@ ElmcValue *elmc_maybe_or_tuple_just_payload(ElmcValue *maybe);
 ElmcValue *elmc_maybe_or_tuple_just_payload_borrow(ElmcValue *maybe);
 RC elmc_result_ok(ElmcValue **out, ElmcValue *value);
 RC elmc_result_err(ElmcValue **out, ElmcValue *value);
+RC elmc_result_ok_own(ElmcValue **out, ElmcValue *value);
+RC elmc_result_err_own(ElmcValue **out, ElmcValue *value);
 RC elmc_tuple2(ElmcValue **out, ElmcValue *first, ElmcValue *second);
 RC elmc_tuple2_take(ElmcValue **out, ElmcValue *first, ElmcValue *second);
 ElmcValue *elmc_build_constructor_payload(ElmcValue **values, int count);
@@ -431,6 +434,8 @@ ElmcValue *elmc_list_nth_int_default_boxed(ElmcValue *list, ElmcValue *index, El
 elmc_int_t elmc_list_head_with_default_int(elmc_int_t default_val, ElmcValue *list);
 ElmcValue *elmc_tuple_first(ElmcValue *tuple);
 ElmcValue *elmc_tuple_second(ElmcValue *tuple);
+ElmcValue *elmc_tuple_first_borrow(ElmcValue *tuple);
+ElmcValue *elmc_tuple_second_borrow(ElmcValue *tuple);
 ElmcValue *elmc_result_inc_or_zero(ElmcValue *result);
 ElmcValue *elmc_basics_max(ElmcValue *left, ElmcValue *right);
 ElmcValue *elmc_basics_min(ElmcValue *left, ElmcValue *right);
@@ -518,6 +523,7 @@ RC elmc_list_take(ElmcValue **out, ElmcValue *n, ElmcValue *list);
 RC elmc_list_take_int(ElmcValue **out, elmc_int_t count, ElmcValue *list);
 RC elmc_list_drop(ElmcValue **out, ElmcValue *n, ElmcValue *list);
 RC elmc_list_drop_int(ElmcValue **out, elmc_int_t count, ElmcValue *list);
+RC elmc_list_slice_int(ElmcValue **out, elmc_int_t drop, elmc_int_t take, ElmcValue *list);
 RC elmc_list_partition(ElmcValue **out, ElmcValue *f, ElmcValue *list);
 RC elmc_list_unzip(ElmcValue **out, ElmcValue *list);
 RC elmc_list_intersperse(ElmcValue **out, ElmcValue *sep, ElmcValue *list);
@@ -739,6 +745,8 @@ RC elmc_record_new_static_ints(ElmcValue **out, int field_count, const char * co
 RC elmc_record_new_values(ElmcValue **out, int field_count, ElmcValue **field_values);
 RC elmc_record_new_values_take(ElmcValue **out, int field_count, ElmcValue **field_values);
 RC elmc_record_new_values_ints(ElmcValue **out, int field_count, const elmc_int_t *field_values);
+
+ElmcValue *elmc_retain(ElmcValue *value);
 
 static inline ElmcValue *elmc_new_int_take(elmc_int_t value) {
   ElmcValue *out = NULL;
@@ -1425,17 +1433,20 @@ static inline ElmcValue *elmc_maybe_and_then_take(ElmcValue *f, ElmcValue *maybe
 
 static inline ElmcValue *elmc_result_map_take(ElmcValue *f, ElmcValue *result) {
   ElmcValue *out = NULL;
-  return elmc_result_map(&out, f, result) == RC_SUCCESS ? out : elmc_int_zero();
+  if (elmc_result_map(&out, f, result) != RC_SUCCESS) return elmc_int_zero();
+  return (out == result) ? elmc_retain(out) : out;
 }
 
 static inline ElmcValue *elmc_result_map_error_take(ElmcValue *f, ElmcValue *result) {
   ElmcValue *out = NULL;
-  return elmc_result_map_error(&out, f, result) == RC_SUCCESS ? out : elmc_int_zero();
+  if (elmc_result_map_error(&out, f, result) != RC_SUCCESS) return elmc_int_zero();
+  return (out == result) ? elmc_retain(out) : out;
 }
 
 static inline ElmcValue *elmc_result_and_then_take(ElmcValue *f, ElmcValue *result) {
   ElmcValue *out = NULL;
-  return elmc_result_and_then(&out, f, result) == RC_SUCCESS ? out : elmc_int_zero();
+  if (elmc_result_and_then(&out, f, result) != RC_SUCCESS) return elmc_int_zero();
+  return (out == result) ? elmc_retain(out) : out;
 }
 
 static inline ElmcValue *elmc_tuple_map_first_take(ElmcValue *f, ElmcValue *t) {
@@ -1478,9 +1489,10 @@ static inline bool elmc_maybe_is_just(ElmcValue *v) {
 }
 
 static inline bool elmc_maybe_is_nothing(ElmcValue *v) {
-  if (v && v->tag == ELMC_TAG_MAYBE)
+  if (!v) return true;
+  if (v->tag == ELMC_TAG_MAYBE)
     return !((ElmcMaybe *)v->payload)->is_just;
-  if (v && v->tag == ELMC_TAG_INT)
+  if (v->tag == ELMC_TAG_INT)
     return elmc_as_int(v) == 0;
   return false;
 }
@@ -1497,6 +1509,12 @@ static inline bool elmc_union_tag_matches(ElmcValue *v, elmc_int_t tag) {
   return v && ((v->tag == ELMC_TAG_INT && elmc_as_int(v) == tag) ||
                (v->tag == ELMC_TAG_TUPLE2 && v->payload != NULL &&
                 elmc_as_int(((ElmcTuple2 *)v->payload)->first) == tag));
+}
+
+static inline ElmcValue *elmc_union_payload(ElmcValue *v) {
+  if (v && v->tag == ELMC_TAG_TUPLE2 && v->payload != NULL)
+    return ((ElmcTuple2 *)v->payload)->second;
+  return v;
 }
 
 static inline elmc_int_t elmc_union_payload_int(ElmcValue *v) {
@@ -1522,12 +1540,17 @@ elmc_int_t elmc_record_get_index_maybe_int(ElmcValue *record, int index, elmc_in
 elmc_int_t elmc_record_get_bool(ElmcValue *record, const char *field_name);
 elmc_int_t elmc_record_get_at_bool(ElmcValue *record, int index, const char *field_name);
 elmc_int_t elmc_record_get_index_bool(ElmcValue *record, int index);
+uint32_t elmc_record_mutation_gen(ElmcValue *record);
 ElmcValue *elmc_record_update(ElmcValue *record, const char *field_name, ElmcValue *new_value);
 ElmcValue *elmc_record_update_index(ElmcValue *record, int index, ElmcValue *new_value);
 ElmcValue *elmc_record_update_index_cow(ElmcValue *record, int index, ElmcValue *new_value);
 ElmcValue *elmc_record_update_index_cow_drop(ElmcValue *record, int index, ElmcValue *new_value);
 ElmcValue *elmc_record_update_index_int_cow(ElmcValue *record, int index, elmc_int_t new_value);
 ElmcValue *elmc_record_update_index_int_cow_drop(ElmcValue *record, int index, elmc_int_t new_value);
+ElmcValue *elmc_record_update_index_bool_cow(ElmcValue *record, int index, bool new_value);
+ElmcValue *elmc_record_update_index_bool_cow_drop(ElmcValue *record, int index, bool new_value);
+ElmcValue *elmc_record_update_index_float_cow(ElmcValue *record, int index, double new_value);
+ElmcValue *elmc_record_update_index_float_cow_drop(ElmcValue *record, int index, double new_value);
 
 RC elmc_closure_new(ElmcValue **out, ElmcValue *(*fn)(ElmcValue **args, int argc, ElmcValue **captures, int capture_count), int arity, int capture_count, ElmcValue **captures);
 RC elmc_closure_new_rc(ElmcValue **out, RC (*rc_fn)(ElmcValue **out, ElmcValue **args, int argc, ElmcValue **captures, int capture_count), int arity, int capture_count, ElmcValue **captures);
@@ -1594,11 +1617,16 @@ void elmc_release_deep(ElmcValue *value);
 
 
 static inline void elmc_release_array_lifo(ElmcValue **slots, size_t count) {
+  size_t n = count;
   while (count-- > 0) {
     ElmcValue *value = slots[count];
     if (value) {
       elmc_release(value);
-      slots[count] = NULL;
+      for (size_t i = 0; i < n; i++) {
+        if (slots[i] == value) {
+          slots[i] = NULL;
+        }
+      }
     }
   }
 }
@@ -1634,10 +1662,13 @@ uint32_t elmc_alloc_track_next_alloc_id(void);
 #endif
 
 void *elmc_malloc_impl(size_t size, const char *context, const char *file, int line);
+void *elmc_calloc_impl(size_t nmemb, size_t size, const char *context, const char *file, int line);
 #if ELMC_ALLOC_TRACE
 #define elmc_malloc(size, context) elmc_malloc_impl((size), (context), __FILE__, __LINE__)
+#define elmc_calloc(nmemb, size, context) elmc_calloc_impl((nmemb), (size), (context), __FILE__, __LINE__)
 #else
 #define elmc_malloc(size, context) elmc_malloc_impl((size), (context), NULL, 0)
+#define elmc_calloc(nmemb, size, context) elmc_calloc_impl((nmemb), (size), (context), NULL, 0)
 #endif
 
 

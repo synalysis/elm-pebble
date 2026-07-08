@@ -18,7 +18,9 @@ defmodule Elmc.Backend.CCodegen.BuiltinUnion do
   }
 
   @payload_take_ctors %{
-    @maybe_just => "elmc_maybe_just_own"
+    @maybe_just => "elmc_maybe_just_own",
+    @result_ok => "elmc_result_ok_own",
+    @result_err => "elmc_result_err_own"
   }
 
   @spec union_ctor_short_name(String.t()) :: String.t()

@@ -157,7 +157,7 @@ defmodule Elmc.Runtime.IntList do
       return elmc_int_list_alloc_copy(out, payload->values + drop, take);
     }
 
-    static RC __attribute__((unused)) elmc_int_list_append_to_cons_tail(ElmcValue **tail_slot, ElmcValue *list) {
+    static RC elmc_int_list_append_to_cons_tail(ElmcValue **tail_slot, ElmcValue *list) {
       ElmcIntListPayload *payload = elmc_int_list_payload(list);
       RC rc = RC_SUCCESS;
       ElmcValue *cell = NULL;
@@ -306,6 +306,68 @@ defmodule Elmc.Runtime.IntList do
       return value && (value->tag == ELMC_TAG_INT || value->tag == ELMC_TAG_BOOL || value->tag == ELMC_TAG_CHAR);
     }
 
+    static RC elmc_int_list_filter_map(ElmcValue **out, ElmcValue *function, ElmcValue *list) {
+      ElmcIntListPayload *payload = elmc_int_list_payload(list);
+      RC rc = RC_SUCCESS;
+      elmc_int_t *kept = NULL;
+      int kept_count = 0;
+      CATCH_BEGIN
+        if (!payload) {
+          rc = RC_ERR_INVALID_ARG;
+          CHECK_RC(rc);
+        }
+        if (payload->length <= 0) {
+          rc = elmc_int_list_alloc_copy(out, NULL, 0);
+          CHECK_RC(rc);
+        } else {
+          kept = (elmc_int_t *)elmc_malloc((size_t)payload->length * sizeof(elmc_int_t), __func__);
+          if (!kept) {
+            rc = RC_ERR_OUT_OF_MEMORY;
+            CHECK_RC(rc);
+          }
+          for (int i = 0; i < payload->length; i++) {
+            ElmcValue *boxed = NULL;
+            rc = elmc_new_int(&boxed, payload->values[i]);
+            CHECK_RC(rc);
+            ElmcValue *args[1] = { boxed };
+            ElmcValue *maybe_val = NULL;
+            rc = elmc_closure_call_rc(&maybe_val, function, args, 1);
+            elmc_release(boxed);
+            CHECK_RC(rc);
+            ElmcValue *payload_val = NULL;
+            if (maybe_val && maybe_val->tag == ELMC_TAG_MAYBE && maybe_val->payload != NULL) {
+              ElmcMaybe *m = (ElmcMaybe *)maybe_val->payload;
+              if (m->is_just && m->value) payload_val = m->value;
+            } else if (maybe_val && maybe_val->tag == ELMC_TAG_TUPLE2 && maybe_val->payload != NULL) {
+              ElmcTuple2 *pair = (ElmcTuple2 *)maybe_val->payload;
+              if (pair->first && elmc_as_int(pair->first) == 1 && pair->second) payload_val = pair->second;
+            }
+            if (payload_val) {
+              if (!elmc_value_is_boxed_int(payload_val)) {
+                ElmcValue *cons = NULL;
+                elmc_release(maybe_val);
+                maybe_val = NULL;
+                rc = elmc_int_list_to_cons(&cons, list);
+                CHECK_RC(rc);
+                rc = elmc_list_filter_map(out, function, cons);
+                elmc_release(cons);
+                elmc_free(kept);
+                kept = NULL;
+                return rc;
+              }
+              kept[kept_count++] = elmc_as_int(payload_val);
+            }
+            elmc_release(maybe_val);
+            maybe_val = NULL;
+          }
+          rc = elmc_int_list_alloc_copy(out, kept, kept_count);
+          CHECK_RC(rc);
+        }
+      CATCH_END;
+      if (kept) elmc_free(kept);
+      return rc;
+    }
+
     RC elmc_int_list_to_cons(ElmcValue **out, ElmcValue *list) {
       ElmcIntListPayload *payload = elmc_int_list_payload(list);
       RC rc = RC_SUCCESS;
@@ -402,23 +464,43 @@ defmodule Elmc.Runtime.IntList do
           ElmcValue *args[2] = { boxed, result };
           rc = elmc_closure_call_rc(&next, function, args, 2);
           elmc_release(boxed);
-          elmc_release(result);
           CHECK_RC(rc);
           if (!elmc_value_is_boxed_int(next)) {
             ElmcValue *cons = NULL;
             elmc_release(next);
+            elmc_release(result);
+            result = NULL;
             rc = elmc_int_list_to_cons(&cons, list);
             CHECK_RC(rc);
             rc = elmc_list_foldl(out, function, acc, cons);
             elmc_release(cons);
             return rc;
           }
+          elmc_release(result);
           result = next;
         }
         *out = result;
         result = NULL;
       CATCH_END;
       elmc_release(result);
+      return rc;
+    }
+
+    static RC elmc_int_list_foldr(ElmcValue **out, ElmcValue *function, ElmcValue *acc, ElmcValue *list) {
+      ElmcIntListPayload *payload = elmc_int_list_payload(list);
+      RC rc = RC_SUCCESS;
+      ElmcValue *cons = NULL;
+      CATCH_BEGIN
+        if (!payload) {
+          rc = RC_ERR_INVALID_ARG;
+          CHECK_RC(rc);
+        }
+        rc = elmc_int_list_to_cons(&cons, list);
+        CHECK_RC(rc);
+        rc = elmc_list_foldr(out, function, acc, cons);
+        CHECK_RC(rc);
+      CATCH_END;
+      elmc_release(cons);
       return rc;
     }
 

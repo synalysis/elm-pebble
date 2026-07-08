@@ -121,6 +121,24 @@ defmodule Elmc.Backend.CCodegen.CSourceTest do
     """
   end
 
+  test "format splits compound owned assignments onto separate lines" do
+    input = """
+    if (elmc_maybe_is_nothing(owned[0])) {
+      owned[1] = elmc_retain(model);owned[2] = elmc_int_zero();
+      Rc = elmc_tuple2_take(out, owned[1], owned[2]);
+    }
+    
+      """
+
+    assert CSource.format(input) == """
+    if (elmc_maybe_is_nothing(owned[0])) {
+      owned[1] = elmc_retain(model);
+      owned[2] = elmc_int_zero();
+      Rc = elmc_tuple2_take(out, owned[1], owned[2]);
+    }
+    """
+  end
+
   test "format keeps compact if-break and if-return on one line" do
     input = """
     if (direct_item_i == last_ref) break;

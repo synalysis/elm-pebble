@@ -52,7 +52,7 @@ defmodule Ide.MixProject do
   # Type `mix help deps` for examples and options.
   defp deps do
     [
-      {:phoenix, "~> 1.8"},
+      {:phoenix, "~> 1.8.9"},
       {:phoenix_ecto, "~> 4.7"},
       {:ecto_sql, "~> 3.14"},
       {:ecto_sqlite3, "~> 0.24"},
@@ -72,7 +72,7 @@ defmodule Ide.MixProject do
        app: false,
        compile: false,
        depth: 1},
-      {:swoosh, "~> 1.5"},
+      {:swoosh, "~> 1.26"},
       # SMTP adapter (runtime when SMTP_RELAY is set) needs gen_smtp for :gen_smtp_client and :mimemail
       {:gen_smtp, "~> 1.0"},
       {:finch, "~> 0.23"},
@@ -92,6 +92,8 @@ defmodule Ide.MixProject do
       {:html_sanitize_ex, "~> 1.4"},
       {:dns_cluster, "~> 0.1.1"},
       {:bandit, "~> 1.11"},
+      {:hpax, "~> 1.0.4", override: true},
+      {:mint, "~> 1.9.1", override: true},
       {:dialyxir, "~> 1.4", only: [:dev], runtime: false},
       {:elmc, path: "../elmc"},
       {:elm_ex, path: "../elm_ex"},

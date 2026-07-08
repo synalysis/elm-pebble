@@ -303,6 +303,16 @@ defmodule Ide.Mcp.ToolTypes do
           optional(:render_tree) => debugger_render_tree_summary() | nil
         }
 
+  @type debugger_bytecode_result :: %{
+          required(:slug) => String.t(),
+          optional(:available) => boolean(),
+          optional(:summary) => map(),
+          optional(:functions) => [map()],
+          optional(:module) => String.t(),
+          optional(:name) => String.t(),
+          optional(:result) => term()
+        }
+
   @type compiler_recent_result :: %{
           required(:entries) => [McpTypes.compiler_history_entry()],
           required(:limit) => pos_integer(),

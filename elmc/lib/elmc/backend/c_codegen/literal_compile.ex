@@ -86,6 +86,14 @@ defmodule Elmc.Backend.CCodegen.LiteralCompile do
     Host.compile_expr(%{op: :int_literal, value: 0}, env, counter)
   end
 
+  def compile(%{op: :sub_none}, env, counter) do
+    Host.compile_expr(
+      %{op: :pebble_sub, mask: %{op: :int_literal, value: 0}, params: []},
+      env,
+      counter
+    )
+  end
+
   defp compile_int_literal(%{op: :int_literal} = expr, env, counter) do
     value = ResourceUnion.int_literal_value(expr)
     ref = IntLiteralRef.ref(expr, env)

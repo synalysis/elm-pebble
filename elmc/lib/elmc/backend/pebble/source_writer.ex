@@ -18,7 +18,10 @@ defmodule Elmc.Backend.Pebble.SourceWriter do
     bindings =
       analysis
       |> Bindings.from_analysis(entry_module)
-      |> Map.put(:append_fallback_enabled?, Keyword.get(opts, :append_fallback_enabled?, false))
+      |> Map.merge(%{
+        append_fallback_enabled?: Keyword.get(opts, :append_fallback_enabled?, false),
+        entry_view_direct_abi?: Keyword.get(opts, :entry_view_direct_abi?, false)
+      })
 
     [
       Prologue.body(bindings.direct_view_macro,

@@ -2,6 +2,7 @@ defmodule Ide.Mcp.Handlers.Debugger do
   @moduledoc false
 
   alias Ide.Debugger
+  alias Ide.Debugger.BytecodeApi
   alias Ide.Debugger.CursorSeq
   alias Ide.Debugger.RuntimeFingerprintDrift
   alias Ide.Debugger.Types, as: DebuggerTypes
@@ -36,6 +37,7 @@ defmodule Ide.Mcp.Handlers.Debugger do
           | ToolTypes.debugger_models_result()
           | ToolTypes.debugger_timeline_result()
           | ToolTypes.debugger_surface_state_result()
+          | ToolTypes.debugger_bytecode_result()
           | ToolTypes.debugger_watch_profiles_result()
           | ToolTypes.debugger_simulator_settings_result()
           | ToolTypes.debugger_configuration_result()
@@ -316,6 +318,41 @@ defmodule Ide.Mcp.Handlers.Debugger do
        )}
     else
       {:error, reason} -> {:error, "debugger surface_state failed: #{inspect(reason)}"}
+    end
+  end
+
+  def call("debugger.bytecode", %{"slug" => slug} = args) do
+    with {:ok, project} <- ToolSupport.fetch_project(slug) do
+      case Map.get(args, "action", "summary") do
+        "summary" ->
+          {:ok, debugger_bytecode_payload(slug, BytecodeApi.summary(project))}
+
+        "functions" ->
+          {:ok,
+           %{
+             slug: slug,
+             available: BytecodeApi.available?(project),
+             functions: BytecodeApi.functions(project)
+           }}
+
+        "run" ->
+          module = Map.fetch!(args, "module")
+          name = Map.fetch!(args, "name")
+          params = decode_bytecode_params(Map.get(args, "params", []))
+
+          case BytecodeApi.run(project, {module, name}, params: params) do
+            {:ok, result} ->
+              {:ok, %{slug: slug, module: module, name: name, result: result}}
+
+            {:error, reason} ->
+              {:error, "debugger bytecode run failed: #{inspect(reason)}"}
+          end
+
+        other ->
+          {:error, "debugger bytecode unknown action: #{inspect(other)}"}
+      end
+    else
+      {:error, reason} -> {:error, "debugger bytecode failed: #{inspect(reason)}"}
     end
   end
 
@@ -2062,4 +2099,17 @@ defmodule Ide.Mcp.Handlers.Debugger do
       {:error, _} -> :ok
     end
   end
+
+  @spec debugger_bytecode_payload(String.t(), map()) :: ToolTypes.debugger_bytecode_result()
+  defp debugger_bytecode_payload(slug, summary) when is_binary(slug) and is_map(summary) do
+    %{
+      slug: slug,
+      available: Map.get(summary, :available) || Map.get(summary, "available") || false,
+      summary: summary
+    }
+  end
+
+  @spec decode_bytecode_params(term()) :: [term()]
+  defp decode_bytecode_params(params) when is_list(params), do: params
+  defp decode_bytecode_params(_), do: []
 end

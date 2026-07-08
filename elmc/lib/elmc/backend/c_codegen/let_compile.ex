@@ -20,6 +20,7 @@ defmodule Elmc.Backend.CCodegen.LetCompile do
   alias Elmc.Backend.CCodegen.RecordCompile
   alias Elmc.Backend.CCodegen.Types
   alias Elmc.Backend.CCodegen.Util
+  alias Elmc.Backend.CCodegen.VarAnalysis
 
   @spec compile(
           Types.binding_name(),
@@ -53,6 +54,9 @@ defmodule Elmc.Backend.CCodegen.LetCompile do
         compile_native_float_let(name, value_expr, in_expr, env, counter)
 
       NativeUsageAnalysis.int_let?(name, value_expr, in_expr, env) ->
+        compile_native_int_let(name, value_expr, in_expr, env, counter)
+
+      LetAnalysis.classification(env, name) == :native_int ->
         compile_native_int_let(name, value_expr, in_expr, env, counter)
 
       NativeUsageAnalysis.string_let?(name, value_expr, in_expr, env) ->
@@ -339,8 +343,14 @@ defmodule Elmc.Backend.CCodegen.LetCompile do
         do: Map.put(env, :__skip_let_body_helper__, true),
         else: env
 
+    let_body_live = let_body_live_bindings(env, in_expr)
+
     {value_code, value_var, counter, native_ref} =
-      compile_boxed_let_value(value_expr, env, counter)
+      compile_boxed_let_value(
+        value_expr,
+        Map.put(env, :__let_body_live_vars__, let_body_live),
+        counter
+      )
 
     before_probe = DebugProbes.let_probe(env, name, :before)
     after_probe = DebugProbes.let_probe(env, name, :after)
@@ -596,6 +606,14 @@ defmodule Elmc.Backend.CCodegen.LetCompile do
 
   defp flatten_let_chain(body), do: {[], body}
 
+  defp let_body_live_bindings(env, in_expr) do
+    used = MapSet.new(VarAnalysis.used_vars(in_expr))
+
+    env
+    |> EnvBindings.env_resolvable_binding_keys()
+    |> MapSet.intersection(used)
+  end
+
   defp let_value_release(env, value_var, value_code, body_code, value_expr)
        when is_binary(value_var) do
     cond do
@@ -652,7 +670,7 @@ defmodule Elmc.Backend.CCodegen.LetCompile do
   defp tuple_first_second_release(var) when is_binary(var) do
     if ValueSlots.owned_ref?(var) do
       ValueSlots.transfer(var)
-      ValueSlots.release_owned_eager(var)
+      ValueSlots.release_consumed(var)
     else
       ValueSlots.release_stmt(var)
     end

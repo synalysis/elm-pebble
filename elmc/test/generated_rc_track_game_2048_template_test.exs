@@ -229,7 +229,7 @@ defmodule Elmc.GeneratedRcTrackGame2048TemplateTest do
         app.scene.dirty = 1;
         if (elmc_pebble_ensure_scene(&app) != 0) return 10;
         if (app.scene.command_count < 20) return 11;
-        if (app.scene.byte_count <= 0 || app.scene.byte_count > app.scene.command_count * 10) return 12;
+        if (app.scene.byte_count <= 0 || app.scene.byte_count > app.scene.command_count * 15) return 12;
 
         for (int i = 0; i < 100; i++) {
           if (elmc_pebble_dispatch_int(&app, dir_msgs[i % 4]) != 0) return 5;

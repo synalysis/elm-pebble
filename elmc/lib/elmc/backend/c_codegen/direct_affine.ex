@@ -523,13 +523,38 @@ defmodule Elmc.Backend.CCodegen.DirectAffine do
              env
            ),
          {:ok, label_spec} <- analyze_affine_text_label(label, item_param, bindings) do
-      {:ok,
-       %{
-         kind: :text,
-         kind_macro: Host.generated_draw_kind_macro(draw_kind(:text)),
-         params: [font_ref, x_param, y_param, w_param, h_param, options_ref],
-         label: label_spec
-       }}
+      base_params = [font_ref, x_param, y_param, w_param, h_param, options_ref]
+
+      case label_spec do
+        {:from_int, item_name, zero_label} ->
+          {:ok,
+           %{
+             commands: [
+               %{
+                 kind: :text,
+                 kind_macro: Host.generated_draw_kind_macro(draw_kind(:text)),
+                 params: base_params,
+                 label: {:literal, zero_label},
+                 text_emit_guard: {:zero, item_name}
+               },
+               %{
+                 kind: :text_int,
+                 kind_macro: Host.generated_draw_kind_macro(draw_kind(:text_int_with_font)),
+                 params: [font_ref, x_param, y_param, {:loop_item, item_name}],
+                 text_emit_guard: {:nonzero, item_name}
+               }
+             ]
+           }}
+
+        _ ->
+          {:ok,
+           %{
+             kind: :text,
+             kind_macro: Host.generated_draw_kind_macro(draw_kind(:text)),
+             params: base_params,
+             label: label_spec
+           }}
+      end
     end
   end
 
@@ -1478,38 +1503,41 @@ defmodule Elmc.Backend.CCodegen.DirectAffine do
     |> Enum.map_join("\n          ", fn command ->
       param_assignments = affine_draw_param_assignments(command.params, next, mode)
       text_copy = affine_draw_text_copy(command, next, mode)
-      fill_skip_open = affine_draw_skip_nonempty_fill_open(command, next, mode)
-      fill_skip_close = affine_draw_skip_nonempty_fill_close(fill_skip_open)
-      text_skip_open = affine_draw_skip_empty_text_open(command, next, mode)
-      text_skip_close = affine_draw_skip_empty_text_close(text_skip_open)
+      emit_guard_open = affine_draw_emit_guard_open(command, next, mode)
+      emit_guard_close = affine_draw_emit_guard_close(emit_guard_open)
 
       """
-      #{fill_skip_open}#{text_skip_open}#{Elmc.Backend.CCodegen.DirectRender.Emit.Commands.scene_emit_guard_open()}
+      #{emit_guard_open}#{Elmc.Backend.CCodegen.DirectRender.Emit.Commands.scene_emit_guard_open()}
             elmc_draw_cmd_init(&scene_cmd, #{command.kind_macro});
             #{param_assignments}
             #{text_copy}
             #{Elmc.Backend.CCodegen.DirectRender.Emit.Catch.push_cmd_check()}
-          #{Elmc.Backend.CCodegen.DirectRender.Emit.Commands.scene_emit_guard_close()}#{text_skip_close}#{fill_skip_close}
+          #{Elmc.Backend.CCodegen.DirectRender.Emit.Commands.scene_emit_guard_close()}#{emit_guard_close}
       """
       |> String.trim_trailing()
     end)
   end
 
-  defp affine_draw_skip_nonempty_fill_open(%{fill_emit_guard: {:nonzero, item_param}}, next, mode) do
+  defp affine_draw_emit_guard_open(%{text_emit_guard: {:zero, item}}, next, mode) do
+    "if (#{affine_loop_item_ref(item, next, mode)} == 0) {\n          "
+  end
+
+  defp affine_draw_emit_guard_open(%{text_emit_guard: {:nonzero, item}}, next, mode) do
+    "if (#{affine_loop_item_ref(item, next, mode)} != 0) {\n          "
+  end
+
+  defp affine_draw_emit_guard_open(%{fill_emit_guard: {:nonzero, item_param}}, next, mode) do
     item_ref = affine_loop_item_ref(item_param, next, mode)
     "if (#{item_ref} != 0) {\n          "
   end
 
-  defp affine_draw_skip_nonempty_fill_open(_command, _next, _mode), do: ""
+  defp affine_draw_emit_guard_open(_command, _next, _mode), do: ""
 
-  defp affine_draw_skip_nonempty_fill_close(""), do: ""
+  defp affine_draw_emit_guard_close(""), do: ""
 
-  defp affine_draw_skip_nonempty_fill_close(_skip_open),
-    do: "\n          }"
+  defp affine_draw_emit_guard_close(_open), do: "\n          }"
 
-  defp affine_draw_skip_empty_text_open(_command, _next, _mode), do: ""
-
-  defp affine_draw_skip_empty_text_close(_skip_open), do: ""
+  defp affine_draw_text_copy(%{kind: :text_int}, _next, _mode), do: ""
 
   defp affine_draw_text_copy(%{label: {:from_int, item_param, zero_label}}, next, mode) do
     item_ref = affine_loop_item_ref(item_param, next, mode)
@@ -1594,7 +1622,10 @@ defmodule Elmc.Backend.CCodegen.DirectAffine do
   defp affine_loop_item_ref(item_param, next, mode),
     do: affine_loop_ref(item_param, next, mode)
 
-  defp affine_draw_commands(%{commands: commands}) when is_list(commands), do: commands
+  defp affine_draw_commands(%{commands: commands}) when is_list(commands) do
+    Enum.flat_map(commands, &affine_draw_commands/1)
+  end
+
   defp affine_draw_commands(command), do: [command]
 
   defp affine_draw_param_assignments(params, next, mode) do
@@ -1611,6 +1642,9 @@ defmodule Elmc.Backend.CCodegen.DirectAffine do
   defp affine_draw_param_value({:hoist, :cell_y}, next, _mode), do: "direct_cell_y_#{next}"
 
   defp affine_draw_param_value({:hoist, :text_y}, next, _mode), do: "direct_text_y_#{next}"
+
+  defp affine_draw_param_value({:loop_item, item_name}, next, mode),
+    do: affine_loop_item_ref(item_name, next, mode)
 
   defp affine_draw_param_value({:mul, _param_name, scale}, next, :map),
     do: "(direct_item_i_#{next} * #{scale})"
@@ -1821,7 +1855,10 @@ defmodule Elmc.Backend.CCodegen.DirectAffine do
 
   defp affine_grid_coord_hoist_plan(commands) when is_list(commands) do
     rect = Enum.find(commands, &affine_rect_draw_command?/1)
-    text = Enum.find(commands, &match?(%{kind: :text}, &1))
+
+    text =
+      Enum.find(commands, &match?(%{kind: :text}, &1)) ||
+        Enum.find(commands, &match?(%{kind: :text_int}, &1))
 
     with %{params: [x_param, y_param | _]} <- rect,
          %{params: [_font, text_x, text_y | _]} <- text,
@@ -1878,6 +1915,16 @@ defmodule Elmc.Backend.CCodegen.DirectAffine do
           if affine_grid_coord_param_equal?(x, {:add_mod_mul, plan.base_x, affine_grid_mod_mul(plan)}) and
                affine_grid_coord_param_equal?(y, {:add_idiv_mul, plan.base_y, affine_grid_idiv_mul(plan)}) do
             %{command | params: [{:hoist, :cell_x}, {:hoist, :cell_y} | rest]}
+          else
+            command
+          end
+
+        match?(%{kind: :text_int}, command) ->
+          [font, x, _y, value] = command.params
+          hoisted_y = if plan.text_y_offset, do: {:hoist, :text_y}, else: {:hoist, :cell_y}
+
+          if affine_grid_coord_param_equal?(x, {:add_mod_mul, plan.base_x, affine_grid_mod_mul(plan)}) do
+            %{command | params: [font, {:hoist, :cell_x}, hoisted_y, value]}
           else
             command
           end

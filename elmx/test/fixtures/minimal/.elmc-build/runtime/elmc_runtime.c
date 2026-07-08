@@ -191,6 +191,7 @@ typedef struct {
 static ElmcProcessSlot ELMC_PROCESS_SLOTS[ELMC_PROCESS_MAX_SLOTS];
 
 void *elmc_malloc_impl(size_t size, const char *context, const char *file, int line);
+void *elmc_calloc_impl(size_t nmemb, size_t size, const char *context, const char *file, int line);
 static ElmcValue *elmc_alloc_impl(ElmcTag tag, void *payload, const char *file, int line);
 static ElmcValue *elmc_small_int(elmc_int_t value);
 static RC elmc_list_cell_alloc(ElmcValue **out, ElmcValue *head, ElmcValue *tail, int take);
@@ -215,9 +216,11 @@ static void elmc_free_impl(void *ptr, const char *context, const char *file, int
 
 #if ELMC_ALLOC_TRACE
 #define elmc_malloc(size, context) elmc_malloc_impl((size), (context), __FILE__, __LINE__)
+#define elmc_calloc(nmemb, size, context) elmc_calloc_impl((nmemb), (size), (context), __FILE__, __LINE__)
 #define elmc_alloc(tag, payload) elmc_alloc_impl((tag), (payload), __FILE__, __LINE__)
 #else
 #define elmc_malloc(size, context) elmc_malloc_impl((size), (context), NULL, 0)
+#define elmc_calloc(nmemb, size, context) elmc_calloc_impl((nmemb), (size), (context), NULL, 0)
 #define elmc_alloc(tag, payload) elmc_alloc_impl((tag), (payload), NULL, 0)
 #endif
 #define elmc_realloc(ptr, size, context) elmc_realloc_impl((ptr), (size), (context))
@@ -326,6 +329,19 @@ void *elmc_malloc_impl(size_t size, const char *context, const char *file, int l
 #if ELMC_ALLOC_TRACK
   else {
     elmc_alloc_track_register(ptr, size, context, file, line);
+  }
+#endif
+  return ptr;
+}
+
+void *elmc_calloc_impl(size_t nmemb, size_t size, const char *context, const char *file, int line) {
+  void *ptr = calloc(nmemb, size);
+  if (!ptr) {
+    elmc_log_alloc_failed(context, nmemb * size, file, line);
+  }
+#if ELMC_ALLOC_TRACK
+  else if (nmemb > 0 && size > 0) {
+    elmc_alloc_track_register(ptr, nmemb * size, context, file, line);
   }
 #endif
   return ptr;
@@ -495,6 +511,7 @@ static RC elmc_record_cell_alloc(ElmcValue **out, int field_count, const char **
 
   char *cursor = (char *)(cell + 1);
   cell->record.field_count = field_count;
+  cell->record.mutation_gen = 0;
   cell->field_names = (const char **)cursor;
   cursor += names_size;
   cell->record.field_values = (ElmcValue **)cursor;
@@ -532,6 +549,7 @@ static RC elmc_record_cell_alloc_values(ElmcValue **out, int field_count, ElmcVa
   }
 
   cell->record.field_count = field_count;
+  cell->record.mutation_gen = 0;
   cell->record.field_values = (ElmcValue **)(cell + 1);
 
   for (int i = 0; i < field_count; i++) {
@@ -648,7 +666,18 @@ static RC elmc_int_list_drop_int(ElmcValue **out, elmc_int_t count, ElmcValue *l
   return elmc_int_list_alloc_copy(out, payload->values + count, payload->length - count);
 }
 
-static RC __attribute__((unused)) elmc_int_list_append_to_cons_tail(ElmcValue **tail_slot, ElmcValue *list) {
+static RC elmc_int_list_slice_int(ElmcValue **out, elmc_int_t drop, elmc_int_t take, ElmcValue *list) {
+  ElmcIntListPayload *payload = elmc_int_list_payload(list);
+  if (!payload) return RC_ERR_INVALID_ARG;
+  if (drop < 0) drop = 0;
+  if (drop >= payload->length) return elmc_int_list_alloc_copy(out, NULL, 0);
+  elmc_int_t avail = payload->length - drop;
+  if (take < 0) take = 0;
+  if (take > avail) take = avail;
+  return elmc_int_list_alloc_copy(out, payload->values + drop, take);
+}
+
+static RC elmc_int_list_append_to_cons_tail(ElmcValue **tail_slot, ElmcValue *list) {
   ElmcIntListPayload *payload = elmc_int_list_payload(list);
   RC rc = RC_SUCCESS;
   ElmcValue *cell = NULL;
@@ -797,6 +826,68 @@ static int elmc_value_is_boxed_int(ElmcValue *value) {
   return value && (value->tag == ELMC_TAG_INT || value->tag == ELMC_TAG_BOOL || value->tag == ELMC_TAG_CHAR);
 }
 
+static RC elmc_int_list_filter_map(ElmcValue **out, ElmcValue *function, ElmcValue *list) {
+  ElmcIntListPayload *payload = elmc_int_list_payload(list);
+  RC rc = RC_SUCCESS;
+  elmc_int_t *kept = NULL;
+  int kept_count = 0;
+  CATCH_BEGIN
+    if (!payload) {
+      rc = RC_ERR_INVALID_ARG;
+      CHECK_RC(rc);
+    }
+    if (payload->length <= 0) {
+      rc = elmc_int_list_alloc_copy(out, NULL, 0);
+      CHECK_RC(rc);
+    } else {
+      kept = (elmc_int_t *)elmc_malloc((size_t)payload->length * sizeof(elmc_int_t), __func__);
+      if (!kept) {
+        rc = RC_ERR_OUT_OF_MEMORY;
+        CHECK_RC(rc);
+      }
+      for (int i = 0; i < payload->length; i++) {
+        ElmcValue *boxed = NULL;
+        rc = elmc_new_int(&boxed, payload->values[i]);
+        CHECK_RC(rc);
+        ElmcValue *args[1] = { boxed };
+        ElmcValue *maybe_val = NULL;
+        rc = elmc_closure_call_rc(&maybe_val, function, args, 1);
+        elmc_release(boxed);
+        CHECK_RC(rc);
+        ElmcValue *payload_val = NULL;
+        if (maybe_val && maybe_val->tag == ELMC_TAG_MAYBE && maybe_val->payload != NULL) {
+          ElmcMaybe *m = (ElmcMaybe *)maybe_val->payload;
+          if (m->is_just && m->value) payload_val = m->value;
+        } else if (maybe_val && maybe_val->tag == ELMC_TAG_TUPLE2 && maybe_val->payload != NULL) {
+          ElmcTuple2 *pair = (ElmcTuple2 *)maybe_val->payload;
+          if (pair->first && elmc_as_int(pair->first) == 1 && pair->second) payload_val = pair->second;
+        }
+        if (payload_val) {
+          if (!elmc_value_is_boxed_int(payload_val)) {
+            ElmcValue *cons = NULL;
+            elmc_release(maybe_val);
+            maybe_val = NULL;
+            rc = elmc_int_list_to_cons(&cons, list);
+            CHECK_RC(rc);
+            rc = elmc_list_filter_map(out, function, cons);
+            elmc_release(cons);
+            elmc_free(kept);
+            kept = NULL;
+            return rc;
+          }
+          kept[kept_count++] = elmc_as_int(payload_val);
+        }
+        elmc_release(maybe_val);
+        maybe_val = NULL;
+      }
+      rc = elmc_int_list_alloc_copy(out, kept, kept_count);
+      CHECK_RC(rc);
+    }
+  CATCH_END;
+  if (kept) elmc_free(kept);
+  return rc;
+}
+
 RC elmc_int_list_to_cons(ElmcValue **out, ElmcValue *list) {
   ElmcIntListPayload *payload = elmc_int_list_payload(list);
   RC rc = RC_SUCCESS;
@@ -893,23 +984,43 @@ static RC elmc_int_list_foldl(ElmcValue **out, ElmcValue *function, ElmcValue *a
       ElmcValue *args[2] = { boxed, result };
       rc = elmc_closure_call_rc(&next, function, args, 2);
       elmc_release(boxed);
-      elmc_release(result);
       CHECK_RC(rc);
       if (!elmc_value_is_boxed_int(next)) {
         ElmcValue *cons = NULL;
         elmc_release(next);
+        elmc_release(result);
+        result = NULL;
         rc = elmc_int_list_to_cons(&cons, list);
         CHECK_RC(rc);
         rc = elmc_list_foldl(out, function, acc, cons);
         elmc_release(cons);
         return rc;
       }
+      elmc_release(result);
       result = next;
     }
     *out = result;
     result = NULL;
   CATCH_END;
   elmc_release(result);
+  return rc;
+}
+
+static RC elmc_int_list_foldr(ElmcValue **out, ElmcValue *function, ElmcValue *acc, ElmcValue *list) {
+  ElmcIntListPayload *payload = elmc_int_list_payload(list);
+  RC rc = RC_SUCCESS;
+  ElmcValue *cons = NULL;
+  CATCH_BEGIN
+    if (!payload) {
+      rc = RC_ERR_INVALID_ARG;
+      CHECK_RC(rc);
+    }
+    rc = elmc_int_list_to_cons(&cons, list);
+    CHECK_RC(rc);
+    rc = elmc_list_foldr(out, function, acc, cons);
+    CHECK_RC(rc);
+  CATCH_END;
+  elmc_release(cons);
   return rc;
 }
 
@@ -1736,7 +1847,7 @@ ElmcValue *elmc_maybe_or_tuple_just_payload_borrow(ElmcValue *maybe) {
 
 ElmcValue *elmc_maybe_or_tuple_just_payload(ElmcValue *maybe) {
   ElmcValue *borrowed = elmc_maybe_or_tuple_just_payload_borrow(maybe);
-  if (!borrowed || borrowed->tag == ELMC_TAG_INT) return borrowed;
+  if (!borrowed) return elmc_int_zero();
   return elmc_retain(borrowed);
 }
 
@@ -1785,6 +1896,60 @@ RC elmc_result_err(ElmcValue **out, ElmcValue *value) {
     cell = NULL;
   CATCH_END;
   if (cell) elmc_release(&cell->value);
+  return rc;
+}
+
+RC elmc_result_ok_own(ElmcValue **out, ElmcValue *value) {
+  RC rc = RC_SUCCESS;
+  ElmcResultCell *cell = NULL;
+  CATCH_BEGIN
+    cell = (ElmcResultCell *)elmc_malloc(sizeof(ElmcResultCell), __func__);
+    if (!cell) {
+      rc = RC_ERR_OUT_OF_MEMORY;
+      CHECK_RC(rc);
+    }
+    cell->result.is_ok = 1;
+    cell->result.value = value;
+    cell->value.rc = 1;
+    cell->value.tag = ELMC_TAG_RESULT;
+    cell->value.payload = &cell->result;
+    cell->value.scalar = ELMC_RESULT_CELL_SCALAR;
+    ELMC_ALLOCATED += 1;
+    ELMC_RC_TRACK_REGISTER(&cell->value, __func__);
+    *out = &cell->value;
+    cell = NULL;
+  CATCH_END;
+  if (cell) {
+    elmc_release(value);
+    elmc_release(&cell->value);
+  }
+  return rc;
+}
+
+RC elmc_result_err_own(ElmcValue **out, ElmcValue *value) {
+  RC rc = RC_SUCCESS;
+  ElmcResultCell *cell = NULL;
+  CATCH_BEGIN
+    cell = (ElmcResultCell *)elmc_malloc(sizeof(ElmcResultCell), __func__);
+    if (!cell) {
+      rc = RC_ERR_OUT_OF_MEMORY;
+      CHECK_RC(rc);
+    }
+    cell->result.is_ok = 0;
+    cell->result.value = value;
+    cell->value.rc = 1;
+    cell->value.tag = ELMC_TAG_RESULT;
+    cell->value.payload = &cell->result;
+    cell->value.scalar = ELMC_RESULT_CELL_SCALAR;
+    ELMC_ALLOCATED += 1;
+    ELMC_RC_TRACK_REGISTER(&cell->value, __func__);
+    *out = &cell->value;
+    cell = NULL;
+  CATCH_END;
+  if (cell) {
+    elmc_release(value);
+    elmc_release(&cell->value);
+  }
   return rc;
 }
 
@@ -1958,8 +2123,13 @@ static int elmc_list_all_tag(ElmcValue *list, elmc_int_t tag) {
   return saw_any;
 }
 
+static int elmc_cmd_cell_is_none(ElmcValue *value) {
+  return !value || ((value->tag == ELMC_TAG_INT || value->tag == ELMC_TAG_BOOL) && elmc_as_int(value) == 0);
+}
+
 static ElmcValue *elmc_cmd_batch_push_back(ElmcValue *flat, ElmcValue *entry) {
   if (!entry) return flat;
+  if (elmc_cmd_cell_is_none(entry)) return flat;
   ElmcValue *cell = NULL;
   if (elmc_list_cons(&cell, entry, elmc_list_nil()) != RC_SUCCESS) return flat;
   if (!flat || (flat->tag == ELMC_TAG_LIST && flat->payload == NULL)) {
@@ -1983,6 +2153,7 @@ static ElmcValue *elmc_cmd_batch_push_back(ElmcValue *flat, ElmcValue *entry) {
 
 static ElmcValue *elmc_cmd_batch_append_entry(ElmcValue *flat, ElmcValue *entry) {
   if (!entry) return flat;
+  if (elmc_cmd_cell_is_none(entry)) return flat;
   if (entry->tag == ELMC_TAG_CMD) {
     return elmc_cmd_batch_push_back(flat, entry);
   }
@@ -2006,17 +2177,18 @@ ElmcValue *elmc_cmd_batch(ElmcValue *commands) {
     return next;
   }
   if (commands->tag != ELMC_TAG_LIST) {
+    ElmcValue *flat = elmc_cmd_batch_append_entry(NULL, commands);
+    if (flat) return flat;
     return elmc_platform_manager_batch(2, commands);
   }
   if (elmc_list_all_tag(commands, ELMC_TAG_CMD)) {
-    return elmc_retain(commands);
+    return elmc_platform_manager_batch(2, commands);
   }
 
   ElmcValue *flat = elmc_cmd_batch_append_entry(NULL, commands);
-  if (elmc_list_all_tag(flat, ELMC_TAG_CMD)) {
-    return flat ? flat : elmc_list_nil();
+  if (flat) {
+    return elmc_platform_manager_batch(2, flat);
   }
-  if (flat) elmc_release(flat);
   return elmc_platform_manager_batch(2, commands);
 }
 
@@ -2483,6 +2655,18 @@ ElmcValue *elmc_tuple_first(ElmcValue *tuple) {
   if (!tuple || tuple->tag != ELMC_TAG_TUPLE2 || tuple->payload == NULL) return elmc_int_zero();
   ElmcTuple2 *data = (ElmcTuple2 *)tuple->payload;
   return elmc_retain(data->first);
+}
+
+ElmcValue *elmc_tuple_second_borrow(ElmcValue *tuple) {
+  if (!tuple || tuple->tag != ELMC_TAG_TUPLE2 || tuple->payload == NULL) return elmc_int_zero();
+  ElmcTuple2 *data = (ElmcTuple2 *)tuple->payload;
+  return data->second ? data->second : elmc_int_zero();
+}
+
+ElmcValue *elmc_tuple_first_borrow(ElmcValue *tuple) {
+  if (!tuple || tuple->tag != ELMC_TAG_TUPLE2 || tuple->payload == NULL) return elmc_int_zero();
+  ElmcTuple2 *data = (ElmcTuple2 *)tuple->payload;
+  return data->first ? data->first : elmc_int_zero();
 }
 
 ElmcValue *elmc_result_inc_or_zero(ElmcValue *result) {
@@ -4397,6 +4581,11 @@ elmc_int_t elmc_record_get_index_bool(ElmcValue *record, int index) {
   return elmc_record_get_index_int(record, index) != 0;
 }
 
+uint32_t elmc_record_mutation_gen(ElmcValue *record) {
+  if (!record || record->tag != ELMC_TAG_RECORD || !record->payload) return 0;
+  return ((ElmcRecord *)record->payload)->mutation_gen;
+}
+
 ElmcValue *elmc_record_update(ElmcValue *record, const char *field_name, ElmcValue *new_value) {
   if (!record || record->tag != ELMC_TAG_RECORD || !record->payload) return elmc_retain(record);
   ElmcRecord *old = (ElmcRecord *)record->payload;
@@ -4417,13 +4606,17 @@ ElmcValue *elmc_record_update_index(ElmcValue *record, int index, ElmcValue *new
   ElmcValue **values = (ElmcValue **)elmc_malloc(sizeof(ElmcValue *) * old->field_count, __func__);
   if (!values) return elmc_retain(record);
   for (int i = 0; i < old->field_count; i++) {
-    values[i] = i == index ? new_value : old->field_values[i];
+    if (i == index) {
+      values[i] = new_value ? elmc_retain(new_value) : NULL;
+    } else {
+      values[i] = old->field_values[i] ? elmc_retain(old->field_values[i]) : NULL;
+    }
   }
   const char **field_names = elmc_record_field_names(record);
   ElmcValue *result = NULL;
   if (field_names) {
-    if (elmc_record_new(&result, old->field_count, field_names, values) != RC_SUCCESS) result = NULL;
-  } else if (elmc_record_new_values(&result, old->field_count, values) != RC_SUCCESS) {
+    if (elmc_record_new_take(&result, old->field_count, field_names, values) != RC_SUCCESS) result = NULL;
+  } else if (elmc_record_new_values_take(&result, old->field_count, values) != RC_SUCCESS) {
     result = NULL;
   }
   elmc_free(values);
@@ -4436,8 +4629,9 @@ ElmcValue *elmc_record_update_index_cow(ElmcValue *record, int index, ElmcValue 
   if (index < 0 || index >= rec->field_count) return elmc_retain(record);
   if (record->rc == 1) {
     ElmcValue *old_value = rec->field_values[index];
-    rec->field_values[index] = elmc_retain(new_value);
+    rec->field_values[index] = new_value ? elmc_retain(new_value) : NULL;
     elmc_release(old_value);
+    rec->mutation_gen += 1;
     return record;
   }
   return elmc_record_update_index(record, index, new_value);
@@ -4450,7 +4644,11 @@ ElmcValue *elmc_record_update_index_cow_drop(ElmcValue *record, int index, ElmcV
 }
 
 ElmcValue *elmc_record_update_index_int_cow(ElmcValue *record, int index, elmc_int_t new_value) {
-  ElmcValue *boxed = NULL;
+  ElmcValue *boxed = elmc_small_int(new_value);
+  if (boxed) {
+    return elmc_record_update_index_cow(record, index, boxed);
+  }
+  boxed = NULL;
   if (elmc_new_int(&boxed, new_value) != RC_SUCCESS || !boxed) return elmc_retain(record);
   ElmcValue *next = elmc_record_update_index_cow(record, index, boxed);
   elmc_release(boxed);
@@ -4459,6 +4657,34 @@ ElmcValue *elmc_record_update_index_int_cow(ElmcValue *record, int index, elmc_i
 
 ElmcValue *elmc_record_update_index_int_cow_drop(ElmcValue *record, int index, elmc_int_t new_value) {
   ElmcValue *next = elmc_record_update_index_int_cow(record, index, new_value);
+  if (next != record) elmc_release(record);
+  return next;
+}
+
+ElmcValue *elmc_record_update_index_bool_cow(ElmcValue *record, int index, bool new_value) {
+  ElmcValue *boxed = NULL;
+  if (elmc_new_bool(&boxed, new_value ? 1 : 0) != RC_SUCCESS || !boxed) return elmc_retain(record);
+  ElmcValue *next = elmc_record_update_index_cow(record, index, boxed);
+  elmc_release(boxed);
+  return next;
+}
+
+ElmcValue *elmc_record_update_index_bool_cow_drop(ElmcValue *record, int index, bool new_value) {
+  ElmcValue *next = elmc_record_update_index_bool_cow(record, index, new_value);
+  if (next != record) elmc_release(record);
+  return next;
+}
+
+ElmcValue *elmc_record_update_index_float_cow(ElmcValue *record, int index, double new_value) {
+  ElmcValue *boxed = NULL;
+  if (elmc_new_float(&boxed, new_value) != RC_SUCCESS || !boxed) return elmc_retain(record);
+  ElmcValue *next = elmc_record_update_index_cow(record, index, boxed);
+  elmc_release(boxed);
+  return next;
+}
+
+ElmcValue *elmc_record_update_index_float_cow_drop(ElmcValue *record, int index, double new_value) {
+  ElmcValue *next = elmc_record_update_index_float_cow(record, index, new_value);
   if (next != record) elmc_release(record);
   return next;
 }
@@ -4854,6 +5080,9 @@ RC elmc_list_foldl(ElmcValue **out, ElmcValue *f, ElmcValue *acc, ElmcValue *lis
 }
 
 RC elmc_list_foldr(ElmcValue **out, ElmcValue *f, ElmcValue *acc, ElmcValue *list) {
+  if (list && list->tag == ELMC_TAG_INT_LIST) {
+    return elmc_int_list_foldr(out, f, acc, list);
+  }
   RC rc = RC_SUCCESS;
   ElmcValue *reversed = NULL;
   ElmcValue *result = elmc_retain(acc);
@@ -4957,10 +5186,20 @@ RC elmc_list_append(ElmcValue **out, ElmcValue *a, ElmcValue *b) {
       cursor = node->tail;
     }
     if (!result) {
-      *out = elmc_retain(b);
+      if (b && b->tag == ELMC_TAG_INT_LIST) {
+        rc = elmc_int_list_to_cons(out, b);
+        CHECK_RC(rc);
+      } else {
+        *out = elmc_retain(b);
+      }
     } else {
       elmc_release(*tail_slot);
-      *tail_slot = elmc_retain(b);
+      if (b && b->tag == ELMC_TAG_INT_LIST) {
+        rc = elmc_int_list_append_to_cons_tail(tail_slot, b);
+        CHECK_RC(rc);
+      } else {
+        *tail_slot = elmc_retain(b);
+      }
       *out = result;
       result = NULL;
     }
@@ -5096,6 +5335,9 @@ RC elmc_list_indexed_map(ElmcValue **out, ElmcValue *f, ElmcValue *list) {
 }
 
 RC elmc_list_filter_map(ElmcValue **out, ElmcValue *f, ElmcValue *list) {
+  if (list && list->tag == ELMC_TAG_INT_LIST) {
+    return elmc_int_list_filter_map(out, f, list);
+  }
   RC rc = RC_SUCCESS;
   ElmcValue *rev = elmc_list_nil();
   ElmcValue *maybe_val = NULL;
@@ -5296,14 +5538,18 @@ static RC elmc_list_sort_with_fn(ElmcValue **out, ElmcValue *list, ElmcValue *f,
 
 RC elmc_list_sort(ElmcValue **out, ElmcValue *list) {
   RC rc = RC_SUCCESS;
+  ElmcValue *materialized = NULL;
   CATCH_BEGIN
-    if (!list || list->tag != ELMC_TAG_LIST) {
+    rc = elmc_list_materialize_cons(&materialized, list);
+    CHECK_RC(rc);
+    if (!materialized || materialized->tag != ELMC_TAG_LIST) {
       *out = elmc_list_nil();
     } else {
-      rc = elmc_list_sort_with_fn(out, list, NULL, 2);
+      rc = elmc_list_sort_with_fn(out, materialized, NULL, 2);
       CHECK_RC(rc);
     }
   CATCH_END;
+  elmc_release(materialized);
   return rc;
 }
 
@@ -5425,27 +5671,35 @@ static RC elmc_list_sort_with_fn(ElmcValue **out, ElmcValue *list, ElmcValue *f,
 
 RC elmc_list_sort_by(ElmcValue **out, ElmcValue *f, ElmcValue *list) {
   RC rc = RC_SUCCESS;
+  ElmcValue *materialized = NULL;
   CATCH_BEGIN
-    if (!list || list->tag != ELMC_TAG_LIST) {
+    rc = elmc_list_materialize_cons(&materialized, list);
+    CHECK_RC(rc);
+    if (!materialized || materialized->tag != ELMC_TAG_LIST) {
       *out = elmc_list_nil();
     } else {
-      rc = elmc_list_sort_with_fn(out, list, f, 1);
+      rc = elmc_list_sort_with_fn(out, materialized, f, 1);
       CHECK_RC(rc);
     }
   CATCH_END;
+  elmc_release(materialized);
   return rc;
 }
 
 RC elmc_list_sort_with(ElmcValue **out, ElmcValue *f, ElmcValue *list) {
   RC rc = RC_SUCCESS;
+  ElmcValue *materialized = NULL;
   CATCH_BEGIN
-    if (!list || list->tag != ELMC_TAG_LIST) {
+    rc = elmc_list_materialize_cons(&materialized, list);
+    CHECK_RC(rc);
+    if (!materialized || materialized->tag != ELMC_TAG_LIST) {
       *out = elmc_list_nil();
     } else {
-      rc = elmc_list_sort_with_fn(out, list, f, 0);
+      rc = elmc_list_sort_with_fn(out, materialized, f, 0);
       CHECK_RC(rc);
     }
   CATCH_END;
+  elmc_release(materialized);
   return rc;
 }
 
@@ -5492,12 +5746,6 @@ RC elmc_list_range(ElmcValue **out, ElmcValue *lo, ElmcValue *hi) {
   return rc;
 }
 
-static RC elmc_list_repeat_count(ElmcValue **out, elmc_int_t count, ElmcValue *value);
-
-RC elmc_list_repeat(ElmcValue **out, ElmcValue *n, ElmcValue *value) {
-  return elmc_list_repeat_count(out, (elmc_int_t)elmc_as_int(n), value);
-}
-
 static RC elmc_list_repeat_count(ElmcValue **out, elmc_int_t count, ElmcValue *value) {
   RC rc = RC_SUCCESS;
   ElmcValue *acc = elmc_list_nil();
@@ -5521,6 +5769,10 @@ static RC elmc_list_repeat_count(ElmcValue **out, elmc_int_t count, ElmcValue *v
   elmc_release(cons);
   elmc_release(acc);
   return rc;
+}
+
+RC elmc_list_repeat(ElmcValue **out, ElmcValue *n, ElmcValue *value) {
+  return elmc_list_repeat_count(out, (elmc_int_t)elmc_as_int(n), value);
 }
 
 RC elmc_list_take(ElmcValue **out, ElmcValue *n, ElmcValue *list) {
@@ -5569,6 +5821,22 @@ RC elmc_list_take_int(ElmcValue **out, elmc_int_t count, ElmcValue *list) {
 
 RC elmc_list_drop(ElmcValue **out, ElmcValue *n, ElmcValue *list) {
   return elmc_list_drop_int(out, elmc_as_int(n), list);
+}
+
+RC elmc_list_slice_int(ElmcValue **out, elmc_int_t drop, elmc_int_t take, ElmcValue *list) {
+  if (list && list->tag == ELMC_TAG_INT_LIST) {
+    return elmc_int_list_slice_int(out, drop, take, list);
+  }
+  RC rc = RC_SUCCESS;
+  ElmcValue *dropped = NULL;
+  CATCH_BEGIN
+    rc = elmc_list_drop_int(&dropped, drop, list);
+    CHECK_RC(rc);
+    rc = elmc_list_take_int(out, take, dropped);
+    CHECK_RC(rc);
+  CATCH_END;
+  elmc_release(dropped);
+  return rc;
 }
 
 RC elmc_list_drop_int(ElmcValue **out, elmc_int_t count, ElmcValue *list) {
@@ -6033,9 +6301,11 @@ RC elmc_maybe_and_then(ElmcValue **out, ElmcValue *f, ElmcValue *maybe) {
       if (!m->is_just || !m->value) {
         *out = elmc_maybe_nothing();
       } else {
-        ElmcValue *args[1] = { m->value };
+        ElmcValue *payload = elmc_retain(m->value);
+        ElmcValue *args[1] = { payload };
         rc = elmc_closure_call_rc(out, f, args, 1);
         CHECK_RC(rc);
+        elmc_release(maybe);
       }
     }
   CATCH_END;
@@ -6059,7 +6329,7 @@ RC elmc_result_map(ElmcValue **out, ElmcValue *f, ElmcValue *result) {
     } else {
       ElmcResult *r = (ElmcResult *)result->payload;
       if (!r->is_ok) {
-        *out = elmc_retain(result);
+        *out = result;
       } else {
         ElmcValue *args[1] = { r->value };
         rc = elmc_closure_call_rc(&mapped, f, args, 1);
@@ -6079,11 +6349,11 @@ RC elmc_result_map_error(ElmcValue **out, ElmcValue *f, ElmcValue *result) {
   ElmcValue *mapped = NULL;
   CATCH_BEGIN
     if (!result || result->tag != ELMC_TAG_RESULT || !result->payload) {
-      *out = elmc_retain(result);
+      *out = result;
     } else {
       ElmcResult *r = (ElmcResult *)result->payload;
       if (r->is_ok) {
-        *out = elmc_retain(result);
+        *out = result;
       } else {
         ElmcValue *args[1] = { r->value };
         rc = elmc_closure_call_rc(&mapped, f, args, 1);
@@ -6106,14 +6376,18 @@ RC elmc_result_and_then(ElmcValue **out, ElmcValue *f, ElmcValue *result) {
       CHECK_RC(rc);
       rc = elmc_result_err(out, msg);
       CHECK_RC(rc);
+      elmc_release(result);
     } else {
       ElmcResult *r = (ElmcResult *)result->payload;
       if (!r->is_ok) {
-        *out = elmc_retain(result);
+        *out = result;
       } else {
-        ElmcValue *args[1] = { r->value };
+        ElmcValue *payload = elmc_retain(r->value);
+        ElmcValue *args[1] = { payload };
         rc = elmc_closure_call_rc(out, f, args, 1);
+        elmc_release(payload);
         CHECK_RC(rc);
+        elmc_release(result);
       }
     }
   CATCH_END;
@@ -8796,8 +9070,10 @@ ElmcValue *elmc_set_is_empty(ElmcValue *set) {
 }
 
 ElmcValue *elmc_set_to_list(ElmcValue *set) {
+  ElmcValue *out = NULL;
   if (!set) return elmc_list_nil();
-  return elmc_retain(set);
+  if (elmc_list_copy(&out, set) != RC_SUCCESS) return elmc_list_nil();
+  return out;
 }
 
 RC elmc_set_union(ElmcValue **out, ElmcValue *a, ElmcValue *b) {

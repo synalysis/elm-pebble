@@ -27,11 +27,11 @@ defmodule Elmc.Backend.CCodegen.LetAnalysis do
           MapSet.member?(duplicate_names, name) ->
             :boxed
 
-          NativeInt.structural_expr?(value_expr) and usage.total > 0 and usage.boxed == 0 and
-              usage.native_container > 0 ->
+          NativeInt.native_let_value_expr?(value_expr, %{__module__: module_name, __program_decls__: decl_map}) and
+              NativeUsageAnalysis.native_int_only_usage?(usage) ->
             :native_int
 
-          NativeInt.structural_expr?(value_expr) ->
+          NativeInt.structural_expr?(value_expr) or NativeInt.field_arith_expr?(value_expr) ->
             :boxed_int
 
           true ->

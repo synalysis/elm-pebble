@@ -5,6 +5,7 @@ defmodule Elmc.Backend.CCodegen.GenericReachability do
   alias Elmc.Backend.CCodegen.Host
   alias Elmc.Backend.CCodegen.Types
   alias Elmc.Backend.CCodegen.Util
+  alias Elmc.Backend.Plan
 
   @spec reachable_targets(
           [Types.function_decl_key()],
@@ -119,12 +120,16 @@ defmodule Elmc.Backend.CCodegen.GenericReachability do
     module_name = elem(target, 0)
     name = elem(target, 1)
 
-    case FusedNativeReachability.callees(module_name, name, expr, decl_map) do
-      keys when is_list(keys) ->
-        keys
+    if plan_primary_reachability?(target, module_name, decl_map) do
+      expr_callees(expr, module_name, decl_map)
+    else
+      case FusedNativeReachability.callees(module_name, name, expr, decl_map) do
+        keys when is_list(keys) ->
+          keys
 
-      nil ->
-        expr_callees(expr, module_name, decl_map)
+        nil ->
+          expr_callees(expr, module_name, decl_map)
+      end
     end
   end
 
@@ -132,13 +137,25 @@ defmodule Elmc.Backend.CCodegen.GenericReachability do
     module_name = elem(target, 0)
     name = elem(target, 1)
 
-    case FusedNativeReachability.callees(module_name, name, expr, decl_map) do
-      keys when is_list(keys) ->
-        keys
+    if plan_primary_reachability?(target, module_name, decl_map) do
+      expr_wrapper_callees(expr, module_name, decl_map)
+    else
+      case FusedNativeReachability.callees(module_name, name, expr, decl_map) do
+        keys when is_list(keys) ->
+          keys
 
-      nil ->
-        expr_wrapper_callees(expr, module_name, decl_map)
+        nil ->
+          expr_wrapper_callees(expr, module_name, decl_map)
+      end
     end
+  end
+
+  defp plan_primary_reachability?(target, module_name, decl_map) do
+    Plan.plan_ir_mode(Process.get(:elmc_codegen_opts, [])) == :primary and
+      case Map.fetch(decl_map, target) do
+        {:ok, decl} -> Plan.primary_lowered?(decl, module_name, decl_map)
+        :error -> false
+      end
   end
 
   defp expr_wrapper_callees_list(

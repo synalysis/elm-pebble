@@ -1,8 +1,7 @@
 defmodule Elmc.Backend.CCodegen.BindingPlans do
   @moduledoc false
 
-  alias Elmc.Backend.CCodegen.ConstantInt
-  alias Elmc.Backend.CCodegen.Host
+  alias Elmc.Backend.CCodegen.Native.Int, as: NativeInt
   alias Elmc.Backend.CCodegen.Native.UsageAnalysis, as: NativeUsageAnalysis
   alias Elmc.Backend.CCodegen.SchemaRegistry
   alias Elmc.Backend.CCodegen.StoragePlan
@@ -83,10 +82,9 @@ defmodule Elmc.Backend.CCodegen.BindingPlans do
       )
 
     value_native? =
-      Host.native_int_expr?(value_expr, env) or ConstantInt.native_let_value?(value_expr, env)
+      NativeInt.native_let_value_expr?(value_expr, env)
 
-    value_native? and usage.total > 0 and usage.boxed == 0 and
-      (usage.native_container > 0 or usage.native > 0)
+    value_native? and NativeUsageAnalysis.native_int_only_usage?(usage)
   end
 
   defp native_usage_let?(:float, name, value_expr, in_expr, env) do

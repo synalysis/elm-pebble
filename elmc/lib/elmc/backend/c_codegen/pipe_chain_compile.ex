@@ -1,7 +1,7 @@
 defmodule Elmc.Backend.CCodegen.PipeChainCompile do
   @moduledoc false
 
-  alias Elmc.Backend.CCodegen.{Host, Types, Util, ValueSlots}
+  alias Elmc.Backend.CCodegen.{EnvBindings, Host, RcRequired, Types, Util, ValueSlots}
   alias ElmEx.IR.PipeChain
 
   @pipeline_flatten_threshold 16
@@ -47,17 +47,38 @@ defmodule Elmc.Backend.CCodegen.PipeChainCompile do
 
     {loop_code, acc_var, c1} =
       case direct_top_level_fn(step, env) do
-        fn_name when is_binary(fn_name) ->
+        {fn_name, module, name} when is_binary(fn_name) ->
+          callee_rc? =
+            RcRequired.rc_required?(module, name) and
+              not EnvBindings.direct_call_target?(env, module, name)
+
           code =
-            IO.iodata_to_binary([
-              "  ElmcValue *#{acc_var} = #{base_var};\n",
-              "  for (elmc_int_t pipe_i_#{loop_id} = 0; pipe_i_#{loop_id} < #{count}; pipe_i_#{loop_id}++) {\n",
-              "    ElmcValue *pipe_args_#{loop_id}[1] = { #{acc_var} };\n",
-              "    ElmcValue *pipe_next_#{loop_id} = #{fn_name}(pipe_args_#{loop_id}, 1);\n",
-              "    " <> ValueSlots.release_stmt(acc_var) <> "\n",
-              "    #{acc_var} = pipe_next_#{loop_id};\n",
-              "  }\n"
-            ])
+            if callee_rc? do
+              IO.iodata_to_binary([
+                "  ElmcValue *#{acc_var} = #{base_var};\n",
+                "  for (elmc_int_t pipe_i_#{loop_id} = 0; pipe_i_#{loop_id} < #{count}; pipe_i_#{loop_id}++) {\n",
+                "    ElmcValue *pipe_next_#{loop_id} = NULL;\n",
+                "    RC pipe_rc_#{loop_id} = #{fn_name}(&pipe_next_#{loop_id}, (ElmcValue *[]){ #{acc_var} }, 1);\n",
+                "    if (pipe_rc_#{loop_id} != RC_SUCCESS) {\n",
+                "      ELMC_RC_LOG_FAIL(pipe_rc_#{loop_id}, \"#{fn_name}\", \"pipe step failed\");\n",
+                "      #{acc_var} = NULL;\n",
+                "      break;\n",
+                "    }\n",
+                "    " <> ValueSlots.release_stmt(acc_var) <> "\n",
+                "    #{acc_var} = pipe_next_#{loop_id};\n",
+                "  }\n"
+              ])
+            else
+              IO.iodata_to_binary([
+                "  ElmcValue *#{acc_var} = #{base_var};\n",
+                "  for (elmc_int_t pipe_i_#{loop_id} = 0; pipe_i_#{loop_id} < #{count}; pipe_i_#{loop_id}++) {\n",
+                "    ElmcValue *pipe_args_#{loop_id}[1] = { #{acc_var} };\n",
+                "    ElmcValue *pipe_next_#{loop_id} = #{fn_name}(pipe_args_#{loop_id}, 1);\n",
+                "    " <> ValueSlots.release_stmt(acc_var) <> "\n",
+                "    #{acc_var} = pipe_next_#{loop_id};\n",
+                "  }\n"
+              ])
+            end
 
           {code, acc_var, loop_id}
 
@@ -104,12 +125,12 @@ defmodule Elmc.Backend.CCodegen.PipeChainCompile do
 
   defp direct_top_level_fn(%{op: :call, name: name, args: []}, env) when is_binary(name) do
     module = Map.get(env, :__module__, "Main")
-    Util.module_fn_name(module, name)
+    {Util.module_fn_name(module, name), module, name}
   end
 
   defp direct_top_level_fn(%{op: :var, name: name}, env) when is_binary(name) do
     module = Map.get(env, :__module__, "Main")
-    Util.module_fn_name(module, name)
+    {Util.module_fn_name(module, name), module, name}
   end
 
   defp direct_top_level_fn(_step, _env), do: :error

@@ -82,10 +82,10 @@ defmodule Elmc.Backend.CCodegen.SpecialValues.Stdlib.Effects do
   def special_value_from_target("Elm.Kernel.Time.every", _args),
     do: %{op: :int_literal, value: 1}
 
-  def special_value_from_target("Cmd.none", _args), do: %{op: :int_literal, value: 0}
+  def special_value_from_target("Cmd.none", _args), do: %{op: :cmd_none}
 
   def special_value_from_target("Cmd.batch", [%{op: :list_literal, items: []}]),
-    do: %{op: :int_literal, value: 0}
+    do: %{op: :cmd_none}
 
   def special_value_from_target("Cmd.batch", [%{op: :list_literal, items: [command]}]),
     do: command
@@ -96,7 +96,7 @@ defmodule Elmc.Backend.CCodegen.SpecialValues.Stdlib.Effects do
   def special_value_from_target("Cmd.map", [f, cmd]),
     do: %{op: :runtime_call, function: "elmc_cmd_map", args: [f, cmd]}
 
-  def special_value_from_target("Sub.none", _args), do: %{op: :int_literal, value: 0}
+  def special_value_from_target("Sub.none", _args), do: %{op: :sub_none}
 
   def special_value_from_target("Sub.batch", args) do
     case Subscriptions.subscription_batch_expr(args) do
@@ -110,7 +110,7 @@ defmodule Elmc.Backend.CCodegen.SpecialValues.Stdlib.Effects do
       nil ->
         case args do
           [%{op: :list_literal, items: []}] ->
-            %{op: :int_literal, value: 0}
+            %{op: :sub_none}
 
           [%{op: :list_literal, items: [single]}] ->
             single

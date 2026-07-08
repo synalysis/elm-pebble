@@ -537,7 +537,7 @@ defmodule Ide.ProjectTemplates do
   defp ensure_watch_compiler_root(workspace_path) do
     ensure_root_elm_json(
       Path.join(workspace_path, "watch"),
-      watchface_elm_json_template(),
+      watch_compiler_elm_json_template(workspace_path),
       Path.join(workspace_path, "watch/src/Main.elm")
     )
   end
@@ -580,11 +580,25 @@ defmodule Ide.ProjectTemplates do
     end
   end
 
-  @spec watchface_elm_json_template() :: TemplateTypes.elm_json()
-  defp watchface_elm_json_template do
+  @spec watch_compiler_elm_json_template(String.t()) :: TemplateTypes.elm_json()
+  defp watch_compiler_elm_json_template(workspace_path) when is_binary(workspace_path) do
+    protocol_marker = Path.join(workspace_path, "protocol/src/Companion/Types.elm")
+
+    source_directories =
+      if File.exists?(protocol_marker) do
+        watch_with_protocol_source_directories()
+      else
+        ["src"] ++ InternalPackages.watchface_elm_json_extra_source_dirs_abs()
+      end
+
+    watch_elm_json_template(source_directories)
+  end
+
+  @spec watch_elm_json_template([String.t()]) :: TemplateTypes.elm_json()
+  defp watch_elm_json_template(source_directories) when is_list(source_directories) do
     %{
       "type" => "application",
-      "source-directories" => ["src", "../protocol/src"],
+      "source-directories" => source_directories,
       "elm-version" => "0.19.1",
       "dependencies" => %{
         "direct" => %{
@@ -863,16 +877,9 @@ defmodule Ide.ProjectTemplates do
   defp seed_watch_only_workspace(workspace_path, watchface_template_dir) do
     watch_root = Path.join(workspace_path, "watch")
 
-    elm_json = %{
-      "type" => "application",
-      "source-directories" => watch_source_directories(watchface_template_dir),
-      "elm-version" => "0.19.1",
-      "dependencies" => %{
-        "direct" => watch_direct_dependencies(watchface_template_dir),
-        "indirect" => %{}
-      },
-      "test-dependencies" => %{"direct" => %{}, "indirect" => %{}}
-    }
+    elm_json =
+      watch_elm_json_template(watch_source_directories(watchface_template_dir))
+      |> put_in(["dependencies", "direct"], watch_direct_dependencies(watchface_template_dir))
 
     with :ok <- File.mkdir_p(watch_root),
          :ok <-
@@ -972,20 +979,7 @@ defmodule Ide.ProjectTemplates do
     template_root = Paths.priv_path("project_templates/starter_watch")
     watch_root = Path.join(workspace_path, "watch")
 
-    elm_json = %{
-      "type" => "application",
-      "source-directories" => watch_with_protocol_source_directories(),
-      "elm-version" => "0.19.1",
-      "dependencies" => %{
-        "direct" => %{
-          "elm/core" => "1.0.5",
-          "elm/json" => "1.1.3",
-          "elm/time" => "1.0.0"
-        },
-        "indirect" => %{}
-      },
-      "test-dependencies" => %{"direct" => %{}, "indirect" => %{}}
-    }
+    elm_json = watch_elm_json_template(watch_with_protocol_source_directories())
 
     with :ok <- File.mkdir_p(watch_root),
          :ok <-
