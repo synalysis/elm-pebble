@@ -4,7 +4,7 @@ defmodule Elmc.Backend.C.Lower.Function do
   """
 
   alias Elmc.Backend.C.Lower.{Frame, Instr, Lambda, NativeIntFold, NativeReturn, StringConcat}
-  alias Elmc.Backend.CCodegen.{FunctionCallAbi, FunctionEmit}
+  alias Elmc.Backend.CCodegen.{FunctionCallAbi, FunctionEmit, Fusion}
   alias Elmc.Backend.CCodegen.Native.FunctionCall, as: NativeFunctionCall
   alias Elmc.Backend.CCodegen.Util
   alias Elmc.Backend.Plan
@@ -42,24 +42,19 @@ defmodule Elmc.Backend.C.Lower.Function do
     decl_map = Process.get(:elmc_program_decls, %{})
     {slots, _slot_count} = Plan.allocate_slots(plan)
 
+    closure_mode = Keyword.get(opts, :closure_mode)
+
     {native_int_regs, slots} =
-      if Keyword.get(opts, :closure_mode) do
-        {%{}, slots}
-      else
-        allocate_native_int_param_slots(plan, slots, param_kinds, decl_map)
-      end
+      allocate_native_int_param_slots(plan, slots, param_kinds, decl_map, closure_mode)
 
     {borrow_param_regs, slots} =
-      if Keyword.get(opts, :closure_mode) do
-        {%{}, slots}
-      else
-        allocate_borrow_param_direct_slots(plan, slots, param_kinds, decl_map)
-      end
+      allocate_borrow_param_direct_slots(plan, slots, param_kinds, decl_map, closure_mode)
 
     tail_inline_skip_regs = build_tail_inline_skip_regs(plan)
     slots = Map.drop(slots, MapSet.to_list(tail_inline_skip_regs))
 
     const_int_regs = build_const_int_regs(plan)
+    fusion_native_literal_regs = build_fusion_native_literal_regs(plan)
     const_c_expr_regs = build_const_c_expr_regs(plan)
     native_scalar_out = Map.get(plan, :native_scalar_return)
     ret_reg = ret_source_reg(plan)
@@ -110,7 +105,7 @@ defmodule Elmc.Backend.C.Lower.Function do
       native_int_operand_regs
       |> Map.drop(Map.keys(native_int_inline))
 
-    slots = finalize_owned_slots_map(plan, slots, native_int_only_regs, native_bool_only_regs)
+    slots = finalize_owned_slots_map(plan, slots, native_int_only_regs, native_bool_only_regs, fusion_native_literal_regs)
     slot_count = owned_slot_count(slots)
 
     string_fusion =
@@ -130,6 +125,7 @@ defmodule Elmc.Backend.C.Lower.Function do
       native_int_regs: native_int_operand_regs,
       borrow_param_regs: borrow_param_regs,
       const_int_regs: const_int_regs,
+      fusion_native_literal_regs: fusion_native_literal_regs,
       native_int_only_regs: native_int_only_regs,
       native_int_mutable_regs: native_int_mutable_regs,
       native_bool_only_regs: native_bool_only_regs,
@@ -573,7 +569,7 @@ defmodule Elmc.Backend.C.Lower.Function do
       decl_map = Process.get(:elmc_program_decls, %{})
       param_kinds = param_kinds_for_plan(plan)
       {borrow_param_regs, _} =
-        allocate_borrow_param_direct_slots(plan, slots, param_kinds, decl_map)
+        allocate_borrow_param_direct_slots(plan, slots, param_kinds, decl_map, nil)
 
       plan.blocks
       |> Enum.flat_map(& &1.instrs)
@@ -631,19 +627,13 @@ defmodule Elmc.Backend.C.Lower.Function do
     decl_map = Process.get(:elmc_program_decls, %{})
     {slots, _} = Plan.allocate_slots(plan)
 
+    closure_mode = Keyword.get(opts, :closure_mode)
+
     {_native_int_regs, slots} =
-      if Keyword.get(opts, :closure_mode) do
-        {%{}, slots}
-      else
-        allocate_native_int_param_slots(plan, slots, param_kinds, decl_map)
-      end
+      allocate_native_int_param_slots(plan, slots, param_kinds, decl_map, closure_mode)
 
     {_borrow_param_regs, slots} =
-      if Keyword.get(opts, :closure_mode) do
-        {%{}, slots}
-      else
-        allocate_borrow_param_direct_slots(plan, slots, param_kinds, decl_map)
-      end
+      allocate_borrow_param_direct_slots(plan, slots, param_kinds, decl_map, closure_mode)
 
     slots = Map.drop(slots, MapSet.to_list(build_tail_inline_skip_regs(plan)))
 
@@ -799,13 +789,49 @@ defmodule Elmc.Backend.C.Lower.Function do
     end
   end
 
-  defp finalize_owned_slots_map(%FunctionPlan{} = plan, slots, native_int_only_regs, native_bool_only_regs) do
+  defp finalize_owned_slots_map(%FunctionPlan{} = plan, slots, native_int_only_regs, native_bool_only_regs, fusion_native_literal_regs \\ MapSet.new()) do
     slots
     |> then(&drop_undef_slot_regs(plan, &1))
-    |> Map.drop(MapSet.to_list(native_int_only_regs))
     |> Map.drop(MapSet.to_list(native_bool_only_regs))
+    |> Map.drop(MapSet.to_list(fusion_native_literal_regs))
     |> compact_slots()
   end
+
+  defp build_fusion_native_literal_regs(%FunctionPlan{} = plan) do
+    plan
+    |> build_const_int_regs()
+    |> Map.keys()
+    |> Enum.filter(&fusion_native_literal_reg?(plan, &1))
+    |> MapSet.new()
+  end
+
+  defp fusion_native_literal_reg?(plan, reg) do
+    decl_map = Process.get(:elmc_program_decls, %{})
+
+    consumers =
+      plan.blocks
+      |> Enum.flat_map(& &1.instrs)
+      |> Enum.reject(&(&1.op == :const_int and &1.dest == reg))
+      |> Enum.filter(fn instr ->
+        instr
+        |> instr_reg_refs(decl_map)
+        |> Enum.any?(fn {_kind, r} -> r == reg end)
+      end)
+
+    consumers != [] and Enum.all?(consumers, &fusion_native_literal_consumer?(&1, reg))
+  end
+
+  defp fusion_native_literal_consumer?(%{op: :call_fn, args: %{module: mod, name: name, args: args}}, reg) do
+    case Fusion.rc_native_fusion_arg_kinds({mod, name}) do
+      kinds when is_list(kinds) ->
+        Enum.zip(args, kinds) |> Enum.any?(fn {r, k} -> r == reg and k in [:native_int, :boxed_int_tag] end)
+
+      _ ->
+        false
+    end
+  end
+
+  defp fusion_native_literal_consumer?(_, _), do: false
 
   defp drop_undef_slot_regs(%FunctionPlan{} = plan, slots) do
     defined = MapSet.new(all_def_regs(plan))
@@ -839,9 +865,9 @@ defmodule Elmc.Backend.C.Lower.Function do
     end
   end
 
-  defp allocate_native_int_param_slots(plan, slots, param_kinds, decl_map) do
+  defp allocate_native_int_param_slots(plan, slots, param_kinds, decl_map, closure_mode \\ nil) do
     all_native_int_regs =
-      build_native_int_param_regs(plan, param_kinds, param_names(plan.params))
+      build_native_int_param_regs(plan, param_kinds, decl_map, closure_mode)
 
     boxed_uses = boxed_use_regs(plan, decl_map)
 
@@ -896,11 +922,19 @@ defmodule Elmc.Backend.C.Lower.Function do
 
   defp plan_defining_instr(_, _), do: nil
 
-  defp allocate_borrow_param_direct_slots(plan, slots, param_kinds, _decl_map) do
+  defp allocate_borrow_param_direct_slots(plan, slots, param_kinds, decl_map, closure_mode) do
+    if match?(%{capture_count: _}, closure_mode) do
+      {%{}, slots}
+    else
+      allocate_borrow_param_direct_slots_impl(plan, slots, param_kinds, decl_map)
+    end
+  end
+
+  defp allocate_borrow_param_direct_slots_impl(plan, slots, param_kinds, decl_map) do
     decl = lookup_decl(plan.module, plan.name)
 
     if borrow_param_direct_enabled?(decl || %{}) do
-      borrow_regs = build_borrow_param_regs(plan, param_kinds, param_names(plan.params))
+      borrow_regs = build_borrow_param_regs(plan, param_kinds, decl_map, nil)
       needs_owned = param_regs_needing_owned_copy(plan, Map.keys(borrow_regs))
       direct_regs = Map.drop(borrow_regs, MapSet.to_list(needs_owned))
       slots = Map.drop(slots, Map.keys(direct_regs))
@@ -937,7 +971,7 @@ defmodule Elmc.Backend.C.Lower.Function do
     |> MapSet.new()
   end
 
-  defp build_borrow_param_regs(plan, param_kinds, param_names) do
+  defp build_borrow_param_regs(plan, param_kinds, decl_map, closure_mode) do
     plan.blocks
     |> Enum.flat_map(& &1.instrs)
     |> Enum.filter(&(&1.op == :load_param))
@@ -945,11 +979,11 @@ defmodule Elmc.Backend.C.Lower.Function do
     |> Enum.uniq_by(fn {reg, _} -> reg end)
     |> Enum.filter(fn {_reg, index} -> Enum.at(param_kinds, index) == :boxed end)
     |> Map.new(fn {reg, index} ->
-      {reg, FunctionCallAbi.param_c_arg(index, param_names)}
+      {reg, plan_borrow_param_c_ref(plan, index, decl_map, closure_mode)}
     end)
   end
 
-  defp build_native_int_param_regs(plan, param_kinds, param_names) do
+  defp build_native_int_param_regs(plan, param_kinds, decl_map, closure_mode) do
     plan.blocks
     |> Enum.flat_map(& &1.instrs)
     |> Enum.filter(&(&1.op == :load_param))
@@ -957,7 +991,63 @@ defmodule Elmc.Backend.C.Lower.Function do
     |> Enum.uniq_by(fn {reg, _} -> reg end)
     |> Enum.filter(fn {_reg, index} -> Enum.at(param_kinds, index) == :native_int end)
     |> Map.new(fn {reg, index} ->
-      {reg, FunctionCallAbi.param_c_arg(index, param_names)}
+      {reg, plan_native_int_param_c_ref(plan, index, decl_map, closure_mode)}
+    end)
+  end
+
+  defp plan_borrow_param_c_ref(plan, index, decl_map, closure_mode) do
+    case closure_mode do
+      %{capture_count: cap} when is_integer(cap) ->
+        closure_param_c_ref(index, cap)
+
+      _ ->
+        plan_decl_param_c_arg(plan, index, decl_map)
+    end
+  end
+
+  defp plan_native_int_param_c_ref(plan, index, decl_map, closure_mode) do
+    case closure_mode do
+      %{capture_count: cap} when is_integer(cap) ->
+        closure_native_int_param_ref(index, cap)
+
+      _ ->
+        plan_decl_param_c_arg(plan, index, decl_map)
+    end
+  end
+
+  defp plan_decl_param_c_arg(plan, index, decl_map) do
+    case lookup_decl(plan.module, plan.name) do
+      %{args: args} when is_list(args) ->
+        FunctionCallAbi.param_c_arg(index, decl_arg_names(args))
+
+      _ ->
+        FunctionCallAbi.param_c_arg(index, param_names(plan.params))
+    end
+  end
+
+  defp closure_param_c_ref(index, capture_count) when index < capture_count do
+    "captures[#{index}]"
+  end
+
+  defp closure_param_c_ref(index, capture_count) do
+    arg_i = index - capture_count
+    "(argc > #{arg_i} ? args[#{arg_i}] : NULL)"
+  end
+
+  defp closure_native_int_param_ref(index, capture_count) when index < capture_count do
+    "elmc_as_int(captures[#{index}])"
+  end
+
+  defp closure_native_int_param_ref(index, capture_count) do
+    arg_i = index - capture_count
+    "elmc_as_int((argc > #{arg_i} ? args[#{arg_i}] : NULL))"
+  end
+
+  defp decl_arg_names(args) do
+    Enum.map(args, fn
+      %{name: name} when is_binary(name) -> name
+      name when is_binary(name) -> name
+      _ -> "_"
     end)
   end
 

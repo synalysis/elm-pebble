@@ -494,7 +494,10 @@ defmodule Elmc.Backend.CCodegen.Native.ListIntSearch do
   defp tail_var?(name, tail) when is_binary(name) and is_binary(tail), do: name == tail
   defp tail_var?(_expr, _tail), do: false
 
-  @spec var_name?(String.t(), String.t()) :: boolean()
+  @spec var_name?(Types.ir_expr() | String.t(), String.t()) :: boolean()
   defp var_name?(name, expected) when is_binary(name) and is_binary(expected), do: name == expected
+  defp var_name?(%{op: :var, name: name}, expected) when is_binary(name) and is_binary(expected),
+    do: name == expected
+
   defp var_name?(_name, _expected), do: false
 end

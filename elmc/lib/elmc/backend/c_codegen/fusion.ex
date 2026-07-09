@@ -54,10 +54,59 @@ defmodule Elmc.Backend.CCodegen.Fusion do
     end)
   end
 
+  @type compact_list_field_key :: {String.t(), String.t(), String.t()}
+
   @spec reset_caches!() :: :ok
   def reset_caches! do
     Process.put(@runtime_callees_cache_key, %{})
+    Process.put(:elmc_rc_native_fusion_arg_kinds, %{})
     :ok
+  end
+
+  @spec compact_list_field_keys(String.t(), String.t(), map() | nil, map()) ::
+          [compact_list_field_key()]
+  def compact_list_field_keys(module_name, name, expr, decl_map) do
+    expr = fusion_expr(expr)
+    PermuteMergeInversePipeline.compact_list_field_keys(module_name, name, expr, decl_map)
+  end
+
+  @spec register_rc_native_arg_kinds(String.t(), String.t(), [atom()]) :: :ok
+  def register_rc_native_arg_kinds(module, name, kinds) when is_list(kinds) do
+    cache = Process.get(:elmc_rc_native_fusion_arg_kinds, %{})
+    Process.put(:elmc_rc_native_fusion_arg_kinds, Map.put(cache, {module, name}, kinds))
+    :ok
+  end
+
+  @spec rc_native_fusion_arg_kinds({String.t(), String.t()}) :: [atom()] | nil
+  def rc_native_fusion_arg_kinds({module, name}) do
+    Process.get(:elmc_rc_native_fusion_arg_kinds, %{}) |> Map.get({module, name})
+  end
+
+  @spec infer_native_tag_fusion_arg_kinds(String.t(), map()) :: [atom()] | nil
+  def infer_native_tag_fusion_arg_kinds(c_body, decl) when is_binary(c_body) do
+    arg_count = decl |> Map.get(:args, []) |> length()
+
+    cond do
+      String.contains?(c_body, "elmc_int_t case_tag") ->
+        decl
+        |> Map.get(:args, [])
+        |> Enum.with_index()
+        |> Enum.map(fn
+          {_, 0} -> :boxed_int_tag
+          _ -> :boxed
+        end)
+
+      arg_count > 0 and native_seed_fusion?(c_body) ->
+        List.duplicate(:native_int, arg_count)
+
+      true ->
+        nil
+    end
+  end
+
+  defp native_seed_fusion?(c_body) do
+    String.match?(c_body, ~r/_native\(ElmcValue \*\*out, const elmc_int_t /) or
+      String.match?(c_body, ~r/_native\(ElmcValue \*\*out, elmc_int_t /)
   end
 
   @spec runtime_callees(String.t(), String.t(), map() | nil, map()) ::

@@ -42,13 +42,14 @@ defmodule Elmc.WorkerSubscriptionSlotsTest do
     String.to_integer(count)
   end
 
-  test "simple_project uses compact tag slots for tick and accel only" do
+  test "simple_project uses compact frame slot for four button subscriptions" do
     header = compile_worker_header!(@simple_project)
 
-    assert sub_tag_slots(header) == 2
-    assert header =~ "#define ELMC_WORKER_MAX_BUTTON_RAW_SUBS 3"
-    assert header =~ "#define ELMC_WORKER_SLOT_ACCEL_TAP"
-    assert header =~ "#define ELMC_WORKER_SLOT_SECOND_CHANGE"
+    assert sub_tag_slots(header) == 1
+    assert header =~ "#define ELMC_WORKER_MAX_BUTTON_RAW_SUBS 4"
+    assert header =~ "#define ELMC_WORKER_SLOT_FRAME 0"
+    refute header =~ "#define ELMC_WORKER_SLOT_ACCEL_TAP"
+    refute header =~ "#define ELMC_WORKER_SLOT_SECOND_CHANGE"
     refute header =~ "#define ELMC_WORKER_SUB_TAG_SLOTS 32"
   end
 
@@ -76,11 +77,11 @@ defmodule Elmc.WorkerSubscriptionSlotsTest do
     layout = Worker.subscription_analysis(ir, "Main")
 
     assert layout.compact
-    assert layout.sub_tag_slots == 2
-    assert layout.button_raw_count == 3
+    assert layout.sub_tag_slots == 1
+    assert layout.button_raw_count == 4
     refute layout.model_dependent?
-    assert Map.has_key?(layout.slot_map, "ELMC_SUBSCRIPTION_SECOND_CHANGE")
-    assert Map.has_key?(layout.slot_map, "ELMC_SUBSCRIPTION_ACCEL_TAP")
+    assert layout.frame_slot == 0
+    assert layout.slot_map == %{}
   end
 
   test "model-independent subscriptions are computed only during init" do

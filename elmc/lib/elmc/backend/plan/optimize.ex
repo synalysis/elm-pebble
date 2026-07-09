@@ -7,6 +7,8 @@ defmodule Elmc.Backend.Plan.Optimize do
 
   @spec run(FunctionPlan.t()) :: FunctionPlan.t()
   def run(%FunctionPlan{blocks: blocks} = plan) do
+    blocks = Enum.map(blocks, &coalesce_arm_publish_block/1)
+
     used = used_regs(blocks)
     phi_arm_drops =
       MapSet.union(
@@ -15,6 +17,31 @@ defmodule Elmc.Backend.Plan.Optimize do
       )
 
     %{plan | blocks: Enum.map(blocks, &optimize_block(&1, used, phi_arm_drops))}
+  end
+
+  defp coalesce_arm_publish_block(%Block{instrs: instrs} = block) do
+    %{block | instrs: coalesce_arm_publish_instrs(instrs)}
+  end
+
+  defp coalesce_arm_publish_instrs(instrs) when is_list(instrs) do
+    case Enum.split(instrs, -2) do
+      {prefix,
+       [
+         %{op: :call_fn, dest: arm_reg} = call,
+         %{
+           op: :call_runtime,
+           dest: merge_reg,
+           args: %{builtin: :retain, args: [src_reg]},
+           effects: %{consumes: consumes}
+         }
+       ]}
+      when is_integer(arm_reg) and is_integer(merge_reg) and is_integer(src_reg) and
+             arm_reg == src_reg and arm_reg != merge_reg and consumes == [arm_reg] ->
+        prefix ++ [%{call | dest: merge_reg}]
+
+      _ ->
+        instrs
+    end
   end
 
   defp optimize_block(%Block{} = block, used, phi_arm_drops) do

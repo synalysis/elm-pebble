@@ -12,6 +12,15 @@ defmodule Elmc.Backend.Pebble.HeaderWriter.SceneConfig.ConfigDefaults.SceneCache
     #define ELMC_PEBBLE_SCENE_CACHE_ENABLED 1
     #endif
 
+    #ifndef ELMC_PEBBLE_SCENE_BUILD_VERIFY
+    /* Full decode pass after scene build catches encoder bugs; skip on device builds. */
+    #if defined(ELMC_PEBBLE_PLATFORM) && !ELMC_PEBBLE_DEBUG_LOGS
+    #define ELMC_PEBBLE_SCENE_BUILD_VERIFY 0
+    #else
+    #define ELMC_PEBBLE_SCENE_BUILD_VERIFY 1
+    #endif
+    #endif
+
     """
   end
 end

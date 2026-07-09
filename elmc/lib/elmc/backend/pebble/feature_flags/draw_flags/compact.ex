@@ -1,0 +1,46 @@
+defmodule Elmc.Backend.Pebble.FeatureFlags.DrawFlags.Compact do
+  @moduledoc false
+
+  alias Elmc.Backend.Pebble.Types
+
+  @required_keys ~w(
+    draw_context
+    draw_clear
+    draw_rect
+    draw_text
+    draw_stroke_color
+    draw_text_color
+  )a
+
+  @forbidden_keys ~w(
+    draw_text_int
+    draw_text_label
+    draw_pixel
+    draw_line
+    draw_fill_rect
+    draw_circle
+    draw_fill_circle
+    draw_round_rect
+    draw_arc
+    draw_path
+    draw_fill_radial
+    draw_bitmap_in_rect
+    draw_vector_at
+    draw_vector_sequence_at
+    draw_bitmap_sequence_at
+    draw_rotated_bitmap
+    draw_stroke_width
+    draw_antialiased
+    draw_fill_color
+    draw_compositing_mode
+  )a
+
+  @spec compute(Types.draw_feature_flags()) :: %{compact_draw: boolean()}
+  def compute(%{} = flags) do
+    compact? =
+      Enum.all?(@required_keys, &Map.fetch!(flags, &1)) and
+        Enum.all?(@forbidden_keys, &(not Map.fetch!(flags, &1)))
+
+    %{compact_draw: compact?}
+  end
+end

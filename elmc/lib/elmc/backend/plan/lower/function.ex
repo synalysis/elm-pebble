@@ -43,6 +43,11 @@ defmodule Elmc.Backend.Plan.Lower.Function do
   defp register_fusion_native_cache(%{fusion_c: c, native_scalar_return: kind} = plan, module_name)
        when is_binary(c) and kind in [:native_int, :native_bool] do
     NativeReturn.cache_scalar_return(module_name, plan.name, kind)
+
+    if Map.get(plan, :native_scalar_value_return) == true do
+      NativeReturn.cache_scalar_value_return(module_name, plan.name)
+    end
+
     plan
   end
 

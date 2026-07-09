@@ -1,325 +1,550 @@
-module Main exposing (Model, Msg, headOrZero, main, update, view)
+module Main exposing (main)
 
-{-| Fixture application used by compiler and runtime tests.
--}
-
-import Companion.Types exposing (Location(..), Temperature(..), WatchToPhone(..))
-import Companion.Watch as CompanionWatch
 import Json.Decode as Decode
-import Pebble.Accel as PebbleAccel
-import Pebble.Button as PebbleButton
-import Pebble.Cmd
-import Pebble.Events as PebbleEvents
-import Pebble.Platform as PebblePlatform
-import Pebble.Storage as PebbleStorage
-import Pebble.Time as PebbleTime
-import Pebble.Ui as PebbleUi
-import Pebble.Ui.Color as PebbleColor
-import Pebble.Ui.Resources as UiResources
-import Pebble.WatchInfo as PebbleWatchInfo
+import Pebble.Button as Button
+import Pebble.Events as Events
+import Pebble.Light as Light
+import Pebble.Platform as Platform
+import Pebble.Storage as Storage
+import Pebble.Ui as Ui
+import Pebble.Ui.Color as Color
+import Pebble.Ui.Resources as Resources
+import Random
 
 
-{-| App model with counter and optional temperature.
--}
 type alias Model =
-    { value : Int, temperature : Maybe Temperature }
+    { cells : List Int
+    , score : Int
+    , best : Int
+    , seed : Int
+    , turn : Int
+    , screenW : Int
+    , screenH : Int
+    , displayShape : Platform.DisplayShape
+    }
 
 
-{-| Messages handled by the fixture update loop.
--}
+type Direction
+    = Left
+    | Right
+    | Up
+    | Down
+
+
 type Msg
-    = Increment
-    | Decrement
-    | Tick Int
+    = LeftPressed
+    | RightPressed
     | UpPressed
-    | SelectPressed
     | DownPressed
-    | AccelTap
-    | ProvideTemperature Temperature
-    | CurrentTimeString String
-    | ClockStyle24h Bool
-    | TimezoneIsSet Bool
-    | TimezoneName String
-    | WatchModelName PebbleWatchInfo.WatchModel
-    | WatchColorName PebbleWatchInfo.WatchColor
-    | FirmwareVersionString PebbleWatchInfo.FirmwareVersion
+    | BestLoaded String
+    | RandomGenerated Int
 
 
-{-| Return the first integer in a list, or `0` when empty.
--}
-headOrZero : List Int -> Int
-headOrZero list =
-    Maybe.withDefault 0 (List.head list)
-
-
-helper : Int -> Int
-helper value =
-    value + 2
-
-
-advanced : Int -> Int
-advanced n =
-    let
-        base =
-            helper n
-    in
-    if base > 10 then
-        base
-
-    else
-        base + 1
-
-
-counterOf : Model -> Int
-counterOf model =
-    model.value
-
-
-temperatureOf : Model -> Maybe Temperature
-temperatureOf model =
-    model.temperature
-
-
-requestWeather : Location -> Cmd Msg
-requestWeather location =
-    CompanionWatch.sendWatchToPhone (RequestWeather location)
-
-
-requestSystemInfo : Cmd Msg
-requestSystemInfo =
-    Cmd.batch
-        [ PebbleTime.currentTimeString CurrentTimeString
-        , PebbleTime.clockStyle24h ClockStyle24h
-        , PebbleTime.timezoneIsSet TimezoneIsSet
-        , PebbleTime.timezone TimezoneName
-        , PebbleWatchInfo.getModel WatchModelName
-        , PebbleWatchInfo.getColor WatchColorName
-        , PebbleWatchInfo.getFirmwareVersion FirmwareVersionString
+init : Platform.LaunchContext -> ( Model, Cmd Msg )
+init context =
+    ( { cells = emptyBoard
+      , score = 0
+      , best = 0
+      , seed = 0
+      , turn = 0
+      , screenW = context.screen.width
+      , screenH = context.screen.height
+      , displayShape = context.screen.shape
+      }
+    , Cmd.batch
+        [ Storage.readString 2048 BestLoaded
+        , Random.generate RandomGenerated (Random.int 1 2147483647)
+        , Light.enable
         ]
-
-
-init : PebblePlatform.LaunchContext -> ( Model, Cmd Msg )
-init launchContext =
-    let
-        initial =
-            PebblePlatform.launchReasonToInt launchContext.reason
-    in
-    ( { value = initial, temperature = Nothing }
-    , Cmd.batch [ requestWeather Berlin, requestSystemInfo ]
     )
 
 
-{-| Update the model with an incoming message.
--}
+emptyBoard : List Int
+emptyBoard =
+    List.repeat 16 0
+
+
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
-        Tick _ ->
-            handlePlatformMsg msg model
+        LeftPressed ->
+            moveBoard Left model
+
+        RightPressed ->
+            moveBoard Right model
 
         UpPressed ->
-            handlePlatformMsg msg model
-
-        SelectPressed ->
-            handlePlatformMsg msg model
+            moveBoard Up model
 
         DownPressed ->
-            handlePlatformMsg msg model
+            moveBoard Down model
 
-        AccelTap ->
-            handlePlatformMsg msg model
+        BestLoaded value ->
+            ( { model | best = Maybe.withDefault 0 (String.toInt value) }, Cmd.none )
+
+        RandomGenerated seed ->
+            let
+                ( cells, nextSeed ) =
+                    initialBoard seed
+            in
+            ( { model | cells = cells, seed = nextSeed }, Cmd.none )
+
+
+moveBoard : Direction -> Model -> ( Model, Cmd Msg )
+moveBoard direction model =
+    let
+        oriented =
+            orient direction model.cells
+
+        collapsed =
+            collapseRows oriented
+
+        restored =
+            restore direction collapsed.cells
+    in
+    if restored == model.cells then
+        ( model, Cmd.none )
+
+    else
+        let
+            ( nextCells, nextSeed ) =
+                spawnTileWithSeed model.seed restored
+
+            nextScore =
+                model.score + collapsed.score
+
+            nextBest =
+                max model.best nextScore
+
+            saveBest =
+                if nextBest > model.best then
+                    Storage.writeString 2048 (String.fromInt nextBest)
+
+                else
+                    Cmd.none
+        in
+        ( { model
+            | cells = nextCells
+            , score = nextScore
+            , best = nextBest
+            , seed = nextSeed
+            , turn = model.turn + 1
+          }
+        , saveBest
+        )
+
+
+initialBoard : Int -> ( List Int, Int )
+initialBoard seed =
+    let
+        ( firstCells, firstSeed ) =
+            spawnTileWithSeed seed emptyBoard
+    in
+    spawnTileWithSeed firstSeed firstCells
+
+
+type alias CollapseResult =
+    { cells : List Int
+    , score : Int
+    }
+
+
+collapseRows : List Int -> CollapseResult
+collapseRows cells =
+    let
+        row0 =
+            collapseRow (rowAt 0 cells)
+
+        row1 =
+            collapseRow (rowAt 1 cells)
+
+        row2 =
+            collapseRow (rowAt 2 cells)
+
+        row3 =
+            collapseRow (rowAt 3 cells)
+    in
+    { cells = row0.cells ++ row1.cells ++ row2.cells ++ row3.cells
+    , score = row0.score + row1.score + row2.score + row3.score
+    }
+
+
+collapseRow : List Int -> CollapseResult
+collapseRow row =
+    let
+        merged =
+            merge (List.filter ((/=) 0) row)
+    in
+    { cells = merged.cells ++ List.repeat (4 - List.length merged.cells) 0
+    , score = merged.score
+    }
+
+
+merge : List Int -> CollapseResult
+merge values =
+    case values of
+        a :: b :: rest ->
+            if a == b then
+                let
+                    tail =
+                        merge rest
+
+                    value =
+                        a + b
+                in
+                { cells = value :: tail.cells
+                , score = value + tail.score
+                }
+
+            else
+                let
+                    tail =
+                        merge (b :: rest)
+                in
+                { cells = a :: tail.cells
+                , score = tail.score
+                }
 
         _ ->
-            handleAppMsg msg model
+            { cells = values, score = 0 }
 
 
-handleAppMsg : Msg -> Model -> ( Model, Cmd Msg )
-handleAppMsg msg model =
-    case msg of
-        Increment ->
-            let
-                counter =
-                    counterOf model
-            in
-            ( { value = counter + 1, temperature = temperatureOf model }, Cmd.none )
-
-        Decrement ->
-            let
-                counter =
-                    counterOf model
-            in
-            ( { value = counter - 1, temperature = temperatureOf model }, Cmd.none )
-
-        ProvideTemperature temperature ->
-            ( { value = counterOf model, temperature = Just temperature }, Cmd.none )
-
-        CurrentTimeString _ ->
-            ( model, Cmd.none )
-
-        ClockStyle24h _ ->
-            ( model, Cmd.none )
-
-        TimezoneIsSet _ ->
-            ( model, Cmd.none )
-
-        TimezoneName _ ->
-            ( model, Cmd.none )
-
-        WatchModelName _ ->
-            ( model, Cmd.none )
-
-        WatchColorName _ ->
-            ( model, Cmd.none )
-
-        FirmwareVersionString _ ->
-            ( model, Cmd.none )
-
-        _ ->
-            ( model, Cmd.none )
+spawnTile : Int -> List Int -> List Int
+spawnTile seed cells =
+    Tuple.first (spawnTileWithSeed seed cells)
 
 
-handlePlatformMsg : Msg -> Model -> ( Model, Cmd Msg )
-handlePlatformMsg msg model =
-    case msg of
-        Tick _ ->
-            let
-                counter =
-                    counterOf model
-            in
-            let
-                next =
-                    advanced counter
-            in
-            ( { value = next, temperature = temperatureOf model }, Pebble.Cmd.timerAfter 1000 )
+spawnTileWithSeed : Int -> List Int -> ( List Int, Int )
+spawnTileWithSeed seed cells =
+    let
+        emptyCount =
+            countEmpty cells
 
-        UpPressed ->
-            let
-                counter =
-                    counterOf model
-            in
-            let
-                next =
-                    counter + 1
-            in
-            ( { value = next, temperature = temperatureOf model }, PebbleStorage.writeInt 1 next )
+        seedAfterChoice =
+            advanceSeed seed
 
-        SelectPressed ->
-            ( model, Cmd.batch [ requestWeather Berlin, requestSystemInfo ] )
+        seedAfterTile =
+            advanceSeed seedAfterChoice
 
-        DownPressed ->
-            let
-                counter =
-                    counterOf model
-            in
-            ( { value = counter - 1, temperature = temperatureOf model }, PebbleStorage.delete 1 )
+        tileIndex =
+            nthEmptyIndex (randomIndex emptyCount seedAfterChoice) cells
 
-        AccelTap ->
-            let
-                counter =
-                    counterOf model
-            in
-            ( { value = counter + 1, temperature = temperatureOf model }, Cmd.none )
+        tileValue =
+            if randomIndex 10 seedAfterTile == 0 then
+                4
 
-        _ ->
-            ( model, Cmd.none )
+            else
+                2
+    in
+    if emptyCount == 0 then
+        ( cells, seedAfterTile )
+
+    else
+        ( setCell tileIndex tileValue cells, seedAfterTile )
+
+
+advanceSeed : Int -> Int
+advanceSeed seed =
+    modBy 2147483647 (seed * 16807 + 11)
+
+
+randomIndex : Int -> Int -> Int
+randomIndex maxExclusive seed =
+    if maxExclusive <= 0 then
+        0
+
+    else
+        modBy maxExclusive seed
+
+
+countEmpty : List Int -> Int
+countEmpty cells =
+    case cells of
+        [] ->
+            0
+
+        value :: rest ->
+            (if value == 0 then
+                1
+
+             else
+                0
+            )
+                + countEmpty rest
+
+
+nthEmptyIndex : Int -> List Int -> Int
+nthEmptyIndex target cells =
+    nthEmptyIndexHelp target 0 cells
+
+
+nthEmptyIndexHelp : Int -> Int -> List Int -> Int
+nthEmptyIndexHelp target index cells =
+    case cells of
+        [] ->
+            -1
+
+        value :: rest ->
+            if value == 0 then
+                if target == 0 then
+                    index
+
+            else
+                nthEmptyIndexHelp (target - 1) (index + 1) rest
+
+            else
+                nthEmptyIndexHelp target (index + 1) rest
+
+
+setCell : Int -> Int -> List Int -> List Int
+setCell index newValue cells =
+    List.indexedMap
+        (\i value ->
+            if i == index then
+                newValue
+
+            else
+                value
+        )
+        cells
+
+
+orient : Direction -> List Int -> List Int
+orient direction cells =
+    case direction of
+        Left ->
+            cells
+
+        Right ->
+            reverseRows cells
+
+        Up ->
+            transpose cells
+
+        Down ->
+            reverseRows (transpose cells)
+
+
+restore : Direction -> List Int -> List Int
+restore direction cells =
+    case direction of
+        Left ->
+            cells
+
+        Right ->
+            reverseRows cells
+
+        Up ->
+            transpose cells
+
+        Down ->
+            transpose (reverseRows cells)
+
+
+rowAt : Int -> List Int -> List Int
+rowAt row cells =
+    List.take 4 (List.drop (row * 4) cells)
+
+
+reverseRows : List Int -> List Int
+reverseRows cells =
+    [ List.reverse (rowAt 0 cells)
+    , List.reverse (rowAt 1 cells)
+    , List.reverse (rowAt 2 cells)
+    , List.reverse (rowAt 3 cells)
+    ]
+        |> List.concat
+
+
+transpose : List Int -> List Int
+transpose cells =
+    List.map
+        (\i -> Maybe.withDefault 0 (listAt i cells))
+        [ 0, 4, 8, 12, 1, 5, 9, 13, 2, 6, 10, 14, 3, 7, 11, 15 ]
+
+
+listAt : Int -> List a -> Maybe a
+listAt index values =
+    if index < 0 then
+        Nothing
+
+    else
+        List.head (List.drop index values)
 
 
 subscriptions : Model -> Sub Msg
 subscriptions _ =
-    PebbleEvents.batch
-        [ PebbleEvents.onSecondChange Tick
-        , PebbleButton.onPress PebbleButton.Up UpPressed
-        , PebbleButton.onPress PebbleButton.Select SelectPressed
-        , PebbleButton.onPress PebbleButton.Down DownPressed
-        , PebbleAccel.onTap AccelTap
+    Events.batch
+        [ Button.onPress Button.Back LeftPressed
+        , Button.onPress Button.Up UpPressed
+        , Button.onPress Button.Down DownPressed
+        , Button.onPress Button.Select RightPressed
         ]
 
 
-{-| Produce the retained virtual UI tree for rendering.
--}
-view : Model -> PebbleUi.UiNode
+view : Model -> Ui.UiNode
 view model =
-    PebbleUi.windowStack
-        [ PebbleUi.window 1
-            [ PebbleUi.canvasLayer 1
-                [ PebbleUi.clear PebbleColor.white
-                , PebbleUi.group
-                    (PebbleUi.context
-                        [ PebbleUi.strokeWidth 3
-                        , PebbleUi.antialiased 1
-                        , PebbleUi.strokeColor PebbleColor.black
-                        , PebbleUi.fillColor PebbleColor.black
-                        , PebbleUi.textColor PebbleColor.black
-                        ]
-                        [ PebbleUi.roundRect { x = 6, y = 6, w = 132, h = 70 } 6 PebbleColor.black
-                        , PebbleUi.arc { x = 20, y = 16, w = 36, h = 36 } 0 45000
-                        , PebbleUi.pathOutline
-                            (PebbleUi.path
-                                [ { x = 0, y = 0 }, { x = 10, y = 4 }, { x = 16, y = 14 }, { x = 8, y = 24 }, { x = 0, y = 18 } ]
-                                { x = 86, y = 16 }
-                                (PebbleUi.rotationFromPebbleAngle 0)
-                            )
-                        , PebbleUi.pathFilled
-                            (PebbleUi.path
-                                [ { x = 0, y = 0 }, { x = 8, y = 6 }, { x = 6, y = 14 }, { x = 2, y = 20 }, { x = 0, y = 14 } ]
-                                { x = 108, y = 26 }
-                                (PebbleUi.rotationFromPebbleAngle 0)
-                            )
-                        , PebbleUi.pathOutlineOpen
-                            (PebbleUi.path
-                                [ { x = 0, y = 0 }, { x = 8, y = 4 }, { x = 16, y = 2 }, { x = 24, y = 6 } ]
-                                { x = 10, y = 78 }
-                                (PebbleUi.rotationFromPebbleAngle 0)
-                            )
-                        ]
-                    )
-                , PebbleUi.line { x = 0, y = 84 } { x = 143, y = 84 } PebbleColor.black
-                , PebbleUi.pixel { x = 72, y = 84 } PebbleColor.black
-                , statusDraw model
-                , counterDraw model
+    let
+        layout =
+            boardLayout model
+
+        diameter =
+            min model.screenW model.screenH
+
+        textOptions =
+            if Platform.displayShapeIsRound model.displayShape then
+                Ui.alignCenter Ui.defaultTextOptions
+
+            else
+                Ui.defaultTextOptions
+
+        chromeOps =
+            if Platform.displayShapeIsRound model.displayShape then
+                let
+                    topBand =
+                        diameter // 6
+
+                    bottomBand =
+                        diameter // 5
+
+                    textW =
+                        diameter * 4 // 9
+
+                    textX =
+                        (model.screenW - textW) // 2
+                in
+                [ Ui.text Resources.DefaultFont textOptions { x = textX, y = max 4 (topBand - 16), w = textW, h = 14 } "2048"
+                , Ui.text Resources.DefaultFont textOptions { x = textX, y = model.screenH - bottomBand + 6, w = textW, h = 14 } ("Best " ++ String.fromInt model.best)
                 ]
-            ]
+
+            else
+                [ Ui.text Resources.DefaultFont textOptions { x = 4, y = 4, w = 132, h = 16 } ("2048  Best " ++ String.fromInt model.best)
+                ]
+    in
+    Ui.clear Color.white
+        :: (chromeOps
+                ++ List.indexedMap (drawCell layout) model.cells
+           )
+        |> Ui.toUiNode
+
+
+type alias BoardLayout =
+    { x : Int
+    , y : Int
+    , cell : Int
+    , gap : Int
+    }
+
+
+boardLayout : Model -> BoardLayout
+boardLayout model =
+    if Platform.displayShapeIsRound model.displayShape then
+        let
+            diameter =
+                min model.screenW model.screenH
+
+            -- Round watches clip to a circle. Reserve top/bottom bands for score
+            -- chrome and cap board size by the inscribed square (diameter × √2/2
+            -- ≈ diameter × 707/1000) and the vertical gap between the bands.
+            topBand =
+                diameter // 6
+
+            bottomBand =
+                diameter // 5
+
+            gap =
+                max 1 (diameter // 90)
+
+            targetBoardSize =
+                min (diameter * 707 // 1000) (diameter - topBand - bottomBand)
+
+            cell =
+                (targetBoardSize - gap * 3) // 4
+
+            boardSize =
+                cell * 4 + gap * 3
+        in
+        { x = (model.screenW - boardSize) // 2
+        , y = topBand
+        , cell = cell
+        , gap = gap
+        }
+
+    else
+        let
+            -- Rectangular watches are always taller than wide; use the physical
+            -- panel axes so layout stays correct even if screenW/screenH are swapped.
+            panelWidth =
+                min model.screenW model.screenH
+
+            boardTop =
+                26
+
+            horizontalMargin =
+                12
+
+            bottomMargin =
+                4
+
+            -- Ui.rect (x,y,w,h) is the outer inked bounds; keep symmetric screen padding.
+            outlinePad =
+                3
+
+            gap =
+                3
+
+            availableW =
+                panelWidth - horizontalMargin * 2 - outlinePad * 2
+
+            -- Horizontal extent is the binding constraint on rect watches.
+            targetBoardSize =
+                availableW
+
+            cell =
+                (targetBoardSize - gap * 3) // 4
+
+            boardWidth =
+                cell * 4 + gap * 3
+        in
+        { x = (panelWidth - boardWidth) // 2
+        , y = boardTop
+        , cell = cell
+        , gap = gap
+        }
+
+
+drawCell : BoardLayout -> Int -> Int -> Ui.RenderOp
+drawCell layout index value =
+    let
+        x =
+            layout.x + modBy 4 index * (layout.cell + layout.gap)
+
+        y =
+            layout.y + (index // 4) * (layout.cell + layout.gap)
+
+        label =
+            if value == 0 then
+                "."
+
+            else
+                String.fromInt value
+
+        textY =
+            y + ((layout.cell - 18) // 2)
+    in
+    Ui.context
+        [ Ui.strokeColor Color.black
+        , Ui.textColor Color.black
         ]
+        [ Ui.rect { x = x, y = y, w = layout.cell, h = layout.cell } Color.black
+        , Ui.text Resources.DefaultFont (Ui.alignCenter Ui.defaultTextOptions) { x = x, y = textY, w = layout.cell, h = 18 } label
+        ]
+        |> Ui.group
 
 
-statusDraw : Model -> PebbleUi.RenderOp
-statusDraw model =
-    let
-        maybeTemp =
-            temperatureOf model
-    in
-    case maybeTemp of
-        Just temperature ->
-            PebbleUi.textInt UiResources.DefaultFont { x = 0, y = 28 } (temperatureValue temperature)
-
-        Nothing ->
-            PebbleUi.textLabel UiResources.DefaultFont { x = 0, y = 28 } PebbleUi.WaitingForCompanion
-
-
-counterDraw : Model -> PebbleUi.RenderOp
-counterDraw model =
-    let
-        counter =
-            counterOf model
-    in
-    PebbleUi.textInt UiResources.DefaultFont { x = 0, y = 56 } counter
-
-
-temperatureValue : Temperature -> Int
-temperatureValue temperature =
-    case temperature of
-        Celsius value ->
-            value
-
-        Fahrenheit value ->
-            value
-
-
-{-| Program entry point.
--}
 main : Program Decode.Value Model Msg
 main =
-    PebblePlatform.application
+    Platform.application
         { init = init
         , update = update
         , view = view

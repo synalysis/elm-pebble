@@ -274,7 +274,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.GenericTargets do
   defp direct_targets_for_helper_analysis(direct_targets, opts, decl_map, entry_module) do
     view_target = {entry_module, "view"}
 
-    if prune_generic_view?(opts, decl_map, direct_targets) and direct_render_only?(opts) do
+    if prune_generic_view?(opts, decl_map, direct_targets) do
       MapSet.delete(direct_targets, view_target)
     else
       direct_targets
@@ -286,16 +286,14 @@ defmodule Elmc.Backend.CCodegen.DirectRender.GenericTargets do
   defp pruned_generic_view_skip_callees(true, entry_module),
     do: MapSet.new([{entry_module, "view"}])
 
-  # Aplite dual-codegen drops generic `view` but still needs its helper subgraph.
-  defp pruned_streaming_view?(opts, decl_map, direct_targets) do
-    prune_generic_view?(opts, decl_map, direct_targets) and not direct_render_only?(opts)
-  end
+  # Pruned generic `view` uses direct `_scene_append`; do not re-reach the boxed UI subgraph.
+  defp pruned_streaming_view?(_opts, _decl_map, _direct_targets), do: false
 
   defp direct_targets_for_generic_runtime_roots(direct_targets, opts, decl_map) do
     entry_module = opts[:entry_module] || "Main"
     view_target = {entry_module, "view"}
 
-    if prune_generic_view?(opts, decl_map, direct_targets) and direct_render_only?(opts) do
+    if prune_generic_view?(opts, decl_map, direct_targets) do
       MapSet.delete(direct_targets, view_target)
     else
       direct_targets
@@ -371,60 +369,14 @@ defmodule Elmc.Backend.CCodegen.DirectRender.GenericTargets do
 
   defp render_helper_target?(_target), do: false
 
-  # When generic `view` is peeled to direct `_commands_append`, drop only the
-  # Elm glue that direct emit replaces — not helpers like `cornerSlots` that the
-  # fused command body still calls generically.
-  defp pruned_view_glue_targets(entry_module) when is_binary(entry_module) do
-    MapSet.new([
-      {entry_module, "faceOps"},
-      {entry_module, "faceDisplay"},
-      {"Yes.Render", "face"}
-    ])
-  end
-
-  # Direct `_commands_append` bodies call generic helpers that generic reachability
-  # would otherwise drop: boxed callees under a pruned `view`'s peeled `toUiNode`
-  # wrapper, and mixed-ABI direct targets invoked via `_native` from other direct
-  # command functions.
   defp direct_command_generic_helper_seeds(direct_targets, decl_map, opts) do
     entry_module = opts[:entry_module] || "Main"
-    view_target = {entry_module, "view"}
 
-    pruned_view_callees =
-      cond do
-        direct_render_only?(opts) ->
-          # Direct `_commands_append` inlines the view grid; do not re-seed the whole
-          # generic `view` UI subgraph (drawCell, boardLayout, closures, etc.).
-          []
-
-        prune_generic_view?(opts, decl_map, direct_targets) and
-            Map.has_key?(decl_map, view_target) ->
-          case Map.fetch(decl_map, view_target) do
-            {:ok, %{expr: expr}} ->
-              view_ui_callees =
-                generic_callees_under_ui_node(
-                  expr,
-                  entry_module,
-                  direct_targets,
-                  decl_map,
-                  MapSet.new([view_target])
-                )
-
-              view_ui_callees
-              |> MapSet.new()
-              |> MapSet.difference(pruned_view_glue_targets(entry_module))
-              |> MapSet.to_list()
-
-            :error ->
-              []
-          end
-
-        true ->
-          []
-      end
+    # Direct `_scene_append` inlines the view grid when generic `view` is pruned.
+    pruned_view_callees = []
 
     direct_only_boxed_seeds =
-      if direct_render_only?(opts) do
+      if prune_generic_view?(opts, decl_map, direct_targets) do
         direct_command_boxed_callees(direct_targets, decl_map, opts, entry_module)
         |> MapSet.to_list()
       else

@@ -32,18 +32,37 @@ defmodule Elmc.Backend.Plan.Fusion.ListIntSearch do
         with {:ok, spec} <- ListIntSearch.recognize(decl, module_name, decl_map),
              {:ok, code, result_var} <-
                ListIntSearch.compile(spec, env, :native_int, &compile_not_found_literal/4) do
-          {:ok, wrap_native_helper(module_name, decl, decl_map, code, result_var), :native_int}
+          {:ok, wrap_native_helper(module_name, decl, decl_map, code, result_var), {:native_int, :helper}}
         end
 
       match?({:ok, _}, ListIntSearch.recognize_delegate(decl, module_name, decl_map)) ->
         with {:ok, spec} <- ListIntSearch.recognize_delegate(decl, module_name, decl_map),
              {:ok, code, result_var} <- ListIntSearch.compile_delegate(spec, env) do
-          {:ok, wrap_native_helper(module_name, decl, decl_map, code, result_var), :native_int}
+          forward = delegate_help_forward_decl(spec, decl_map, module_name, decl)
+
+          {:ok,
+           forward <>
+             wrap_native_helper(module_name, decl, decl_map, code, result_var, ""),
+           {:native_int, :delegate}}
         end
 
       true ->
         :error
     end
+  end
+
+  defp maybe_mark_native_scalar(%FunctionPlan{} = plan, {:native_int, :delegate}) do
+    plan
+    |> Map.put(:native_scalar_return, :native_int)
+    |> Map.put(:native_scalar_value_return, true)
+    |> Map.put(:fusion_emit, :public_native)
+  end
+
+  defp maybe_mark_native_scalar(%FunctionPlan{} = plan, {:native_int, :helper}) do
+    plan
+    |> Map.put(:native_scalar_return, :native_int)
+    |> Map.put(:native_scalar_value_return, true)
+    |> Map.put(:fusion_emit, :helper_only)
   end
 
   defp maybe_mark_native_scalar(%FunctionPlan{} = plan, :native_int) do
@@ -76,12 +95,13 @@ defmodule Elmc.Backend.Plan.Fusion.ListIntSearch do
     end)
   end
 
-  defp wrap_native_helper(module_name, decl, decl_map, code, result_var) do
+  defp wrap_native_helper(module_name, decl, decl_map, code, result_var, name_suffix \\ "_native") do
     c_prefix = Util.module_fn_name(module_name, decl.name)
     params = native_param_decls(decl, module_name, decl_map)
+    fname = if name_suffix == "", do: c_prefix, else: "#{c_prefix}#{name_suffix}"
 
     """
-    static elmc_int_t #{c_prefix}_native(#{params}) {
+    static elmc_int_t #{fname}(#{params}) {
     #{String.trim_leading(code)}
       return #{result_var};
     }
@@ -122,4 +142,21 @@ defmodule Elmc.Backend.Plan.Fusion.ListIntSearch do
   end
 
   defp compile_not_found_literal(_, _, _, _), do: {"", "0", 0}
+
+  defp delegate_help_forward_decl(
+         %{help_module: help_module, help_name: help_name},
+         decl_map,
+         _module_name,
+         _decl
+       ) do
+    case Map.fetch(decl_map, {help_module, help_name}) do
+      {:ok, help_decl} ->
+        c_prefix = Util.module_fn_name(help_module, help_name)
+        params = native_param_decls(help_decl, help_module, decl_map)
+        "static elmc_int_t #{c_prefix}_native(#{params});\n\n"
+
+      :error ->
+        ""
+    end
+  end
 end

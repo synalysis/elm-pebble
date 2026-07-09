@@ -4467,11 +4467,10 @@ defmodule Elmc.CCodegenPatternsTest do
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
-    assert generated_c =~ ~r/if \(direct_affine_item_\d+ == 0\)/
     assert generated_c =~ "scene_cmd.text[0] = '.';"
-    assert generated_c =~ "ELMC_RENDER_OP_TEXT_INT_WITH_FONT"
-    assert generated_c =~ ~r/if \(direct_affine_item_\d+ != 0\)/
-    refute generated_c =~ "elmc_scene_text_from_nonzero_int"
+    assert generated_c =~ "elmc_scene_text_from_nonzero_int"
+    assert generated_c =~ "ELMC_RENDER_OP_TEXT"
+    refute generated_c =~ "ELMC_RENDER_OP_TEXT_INT_WITH_FONT"
   end
 
   test "Maybe bare-var case binds payload type for distinct record field indices" do

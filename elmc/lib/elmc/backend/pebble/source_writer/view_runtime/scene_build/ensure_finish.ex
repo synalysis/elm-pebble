@@ -16,7 +16,7 @@ defmodule Elmc.Backend.Pebble.SourceWriter.ViewRuntime.SceneBuild.EnsureFinish d
         }
       }
     #endif
-    #if ELMC_PEBBLE_SCENE_CACHE_ENABLED
+    #if ELMC_PEBBLE_SCENE_CACHE_ENABLED && ELMC_PEBBLE_SCENE_BUILD_VERIFY
       {
         int verify_offset = 0;
         int verify_cmds = 0;

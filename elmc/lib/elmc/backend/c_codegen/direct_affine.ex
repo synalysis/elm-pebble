@@ -529,21 +529,10 @@ defmodule Elmc.Backend.CCodegen.DirectAffine do
         {:from_int, item_name, zero_label} ->
           {:ok,
            %{
-             commands: [
-               %{
-                 kind: :text,
-                 kind_macro: Host.generated_draw_kind_macro(draw_kind(:text)),
-                 params: base_params,
-                 label: {:literal, zero_label},
-                 text_emit_guard: {:zero, item_name}
-               },
-               %{
-                 kind: :text_int,
-                 kind_macro: Host.generated_draw_kind_macro(draw_kind(:text_int_with_font)),
-                 params: [font_ref, x_param, y_param, {:loop_item, item_name}],
-                 text_emit_guard: {:nonzero, item_name}
-               }
-             ]
+             kind: :text,
+             kind_macro: Host.generated_draw_kind_macro(draw_kind(:text)),
+             params: base_params,
+             label: {:from_int, item_name, zero_label}
            }}
 
         _ ->
@@ -2114,6 +2103,29 @@ defmodule Elmc.Backend.CCodegen.DirectAffine do
         caller: caller
       )
 
-    if StoragePlan.compact_only?(plan), do: :int_list, else: :mixed
+    declared_env =
+      env
+      |> Map.put(:__program_decls__, decl_map)
+      |> Map.put(:__record_field_types__, Process.get(:elmc_record_field_types, %{}))
+
+    cond do
+      StoragePlan.compact_only?(plan) ->
+        :int_list
+
+      pebble_int32_build?() and
+          Elmc.Backend.CCodegen.ListIntRepr.declared_list_int_field_access?(
+            list_expr,
+            locals,
+            declared_env
+          ) ->
+        :int_list
+
+      true ->
+        :mixed
+    end
+  end
+
+  defp pebble_int32_build? do
+    Process.get(:elmc_codegen_opts, %{})[:pebble_int32] == true
   end
 end

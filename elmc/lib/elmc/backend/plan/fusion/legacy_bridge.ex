@@ -12,7 +12,17 @@ defmodule Elmc.Backend.Plan.Fusion.LegacyBridge do
 
     case Fusion.try_emit(module_name, name, expr, decl_map) do
       {:ok, c_body, _callees, :rc_native} ->
-        {:ok, Tuple2CaseTable.build_fusion_plan(module_name, name, decl, c_body)}
+        kinds = Fusion.infer_native_tag_fusion_arg_kinds(c_body, decl)
+
+        if kinds do
+          Fusion.register_rc_native_arg_kinds(module_name, name, kinds)
+        end
+
+        plan =
+          Tuple2CaseTable.build_fusion_plan(module_name, name, decl, c_body)
+          |> maybe_put_fusion_arg_kinds(kinds)
+
+        {:ok, plan}
 
       {:ok, c_body, _callees} ->
         {:ok, Tuple2CaseTable.build_fusion_plan(module_name, name, decl, c_body)}
@@ -21,4 +31,9 @@ defmodule Elmc.Backend.Plan.Fusion.LegacyBridge do
         :error
     end
   end
+
+  defp maybe_put_fusion_arg_kinds(plan, kinds) when is_list(kinds),
+    do: Map.put(plan, :fusion_arg_kinds, kinds)
+
+  defp maybe_put_fusion_arg_kinds(plan, _), do: plan
 end

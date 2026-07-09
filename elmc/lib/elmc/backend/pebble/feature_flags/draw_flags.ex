@@ -1,7 +1,7 @@
 defmodule Elmc.Backend.Pebble.FeatureFlags.DrawFlags do
   @moduledoc false
 
-  alias Elmc.Backend.Pebble.FeatureFlags.DrawFlags.{Context, Primitives, Text}
+  alias Elmc.Backend.Pebble.FeatureFlags.DrawFlags.{Compact, Context, Primitives, Text}
   alias Elmc.Backend.Pebble.FeatureFlags.TargetSet
   alias Elmc.Backend.Pebble.Types
 
@@ -11,9 +11,12 @@ defmodule Elmc.Backend.Pebble.FeatureFlags.DrawFlags do
       TargetSet.member?(targets, "Pebble.Ui.group") or
         TargetSet.member?(targets, "Pebble.Ui.context")
 
-    targets
-    |> Primitives.compute()
-    |> Map.merge(Context.compute(targets, context?))
-    |> Map.merge(Text.compute(targets))
+    flags =
+      targets
+      |> Primitives.compute()
+      |> Map.merge(Context.compute(targets, context?))
+      |> Map.merge(Text.compute(targets))
+
+    Map.merge(flags, Compact.compute(flags))
   end
 end

@@ -448,6 +448,9 @@ defmodule Elmc.Backend.CCodegen.GeneratedSource do
     generic_plan_projection_prototypes =
       FunctionEmit.generic_plan_native_projection_prototypes(ir, generic_targets, decl_map)
 
+    generic_rc_native_fusion_prototypes =
+      FunctionEmit.generic_rc_native_fusion_prototypes(ir, generic_targets, decl_map)
+
     generic_function_prototypes =
       FunctionEmit.generic_function_prototypes(
         ir,
@@ -549,6 +552,8 @@ defmodule Elmc.Backend.CCodegen.GeneratedSource do
     #{generic_native_prototypes}
 
     #{generic_plan_projection_prototypes}
+
+    #{generic_rc_native_fusion_prototypes}
 
     #{generic_function_prototypes}
 

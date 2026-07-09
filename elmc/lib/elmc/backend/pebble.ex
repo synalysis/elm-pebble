@@ -53,7 +53,9 @@ defmodule Elmc.Backend.Pebble do
 
     stack_safe? = direct_view_scene_stack_safe?(ir, generated_c, entry_module)
 
-    aplite_direct_view_scene? = direct_view_commands? and stack_safe?
+    aplite_direct_view_scene? =
+      direct_view_commands? and
+        (stack_safe? or prune_generic_view_for_direct_scene?(opts))
 
     append_fallback_enabled? =
       direct_view_commands? and

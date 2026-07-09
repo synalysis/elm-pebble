@@ -47,16 +47,26 @@ defmodule Elmc.DirectRenderDeadViewHelpersTest do
                direct_render_only: false,
                prune_direct_generic: true,
                plan_ir_mode: :primary,
-               pebble_int32: true
+               pebble_int32: true,
+               prod: true
              })
 
     generated = File.read!(Path.join(out, "c/elmc_generated.c"))
     pebble_c = File.read!(Path.join(out, "c/elmc_pebble.c"))
+    pebble_h = File.read!(Path.join(out, "c/elmc_pebble.h"))
+    worker_h = File.read!(Path.join(out, "c/elmc_worker.h"))
 
     assert generated =~ "elmc_fn_Main_view_commands_append"
     refute generated =~ "static RC elmc_fn_Main_view("
+    refute generated =~ "static RC elmc_fn_Main_drawCell("
+    refute generated =~ "static RC elmc_fn_Main_boardLayout("
     refute generated =~ "elmc_fn_Main_view_closure_0"
     assert pebble_c =~ "#define ELMC_PEBBLE_APPEND_FALLBACK_SCENE 1"
+    assert pebble_h =~ "#define ELMC_PEBBLE_APLITE_DIRECT_VIEW_SCENE 1"
+    assert pebble_h =~ "#define ELMC_PEBBLE_SCENE_BUILD_VERIFY 0"
+    assert pebble_h =~ "#define ELMC_PEBBLE_FEATURE_COMPACT_DRAW 1"
+    assert worker_h =~ "#define ELMC_WORKER_LAST_DISPATCH_CMD_CAP 0"
+    assert pebble_c =~ "#if ELMC_PEBBLE_SCENE_CACHE_ENABLED && ELMC_PEBBLE_SCENE_BUILD_VERIFY"
   end
 
   test "moveBoard pipeline fusion inlines row merge under plan primary", %{generated: generated} do
@@ -66,5 +76,15 @@ defmodule Elmc.DirectRenderDeadViewHelpersTest do
     refute generated =~ "static RC elmc_fn_Main_collapseRow("
     refute generated =~ "static RC elmc_fn_Main_merge("
     refute generated =~ "static RC elmc_fn_Main_orient("
+  end
+
+  test "view board loop uses int_list fast path without cons fallback", %{generated: generated} do
+    assert generated =~ "ELMC_TAG_INT_LIST"
+    refute generated =~ "direct_cursor_"
+  end
+
+  test "update calls fused initialBoard_native with native seed", %{generated: generated} do
+    assert generated =~ "elmc_fn_Main_initialBoard_native(&owned["
+    assert generated =~ "elmc_as_int(owned["
   end
 end

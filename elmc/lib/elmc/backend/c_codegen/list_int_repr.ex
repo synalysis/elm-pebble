@@ -116,6 +116,28 @@ defmodule Elmc.Backend.CCodegen.ListIntRepr do
   @spec dual_path?(repr()) :: boolean()
   def dual_path?(repr), do: !compact_repr?(repr)
 
+  @doc """
+  True when `expr` reads a record field statically typed as `List Int`.
+  Used by direct-render affine loops on pebble_int32 builds.
+  """
+  @spec declared_list_int_field_access?(Types.ir_expr(), map(), map()) :: boolean()
+  def declared_list_int_field_access?(expr, locals, env) when is_map(env) do
+    lt = list_type()
+
+    case expr do
+      %{op: :field_access, field: field} = fa when is_binary(field) ->
+        %{op: :field_access, arg: arg, field: field} = normalize_field_access(fa)
+
+        case {record_type_for_arg(arg, locals, env), field_type_for_record(arg, field, locals, env)} do
+          {_record, ^lt} -> true
+          _ -> false
+        end
+
+      _ ->
+        false
+    end
+  end
+
   @spec consolidate([repr()]) :: repr()
   def consolidate(reprs) when is_list(reprs) do
     if reprs != [] and Enum.all?(reprs, &(&1 == compact_repr())) do
@@ -160,36 +182,64 @@ defmodule Elmc.Backend.CCodegen.ListIntRepr do
   defp index_field_writes(decl_map, fields, param_ctx, field_ctx) do
     field_set = MapSet.new(fields)
 
-    Enum.reduce(decl_map, %{}, fn {{decl_mod, decl_fun}, decl}, acc ->
-      ctx = field_write_ctx(decl_mod, decl_fun, param_ctx, field_ctx)
-      env = %{__program_decls__: decl_map, __module__: decl_mod}
-
-      collect_field_writes_multi(
-        decl.expr,
-        field_set,
-        env,
-        ctx,
-        decl_map,
-        decl_mod,
-        decl_fun,
+    decl_map
+    |> Enum.reduce(%{}, fn {{decl_mod, decl_fun}, decl}, acc ->
+      if Elmc.Backend.CCodegen.Fusion.rc_native_fusion?(decl_mod, decl_fun, decl.expr, decl_map) do
         acc
+      else
+        ctx = field_write_ctx(decl_mod, decl_fun, param_ctx, field_ctx)
+        env = %{__program_decls__: decl_map, __module__: decl_mod}
+
+        collect_field_writes_multi(
+          decl.expr,
+          field_set,
+          env,
+          ctx,
+          decl_map,
+          decl_mod,
+          decl_fun,
+          acc
+        )
+      end
+    end)
+    |> merge_fusion_compact_list_field_writes(decl_map, field_set)
+  end
+
+  defp merge_fusion_compact_list_field_writes(write_index, decl_map, field_set) do
+    Enum.reduce(decl_map, write_index, fn {{mod, fun}, decl}, acc ->
+      Enum.reduce(
+        Elmc.Backend.CCodegen.Fusion.compact_list_field_keys(mod, fun, decl.expr, decl_map),
+        acc,
+        fn key, inner_acc ->
+          if MapSet.member?(field_set, key) do
+            Map.put(inner_acc, key, [:fusion_compact_list_field])
+          else
+            inner_acc
+          end
+        end
       )
     end)
   end
 
   defp field_repr_from_writes(writes, decl_map, param_ctx, field_ctx) do
-    writes
-    |> Enum.reject(&field_roundtrip_on_param?/1)
-    |> Enum.map(fn {expr, ctx} ->
-      expr_repr(expr, decl_map,
-        param_repr: param_ctx,
-        field_repr: field_ctx,
-        locals: ctx_locals(ctx),
-        caller: ctx_caller(ctx),
-        resolve_fields?: false
-      )
-    end)
-    |> consolidate()
+    writes = List.wrap(writes)
+
+    if :fusion_compact_list_field in writes do
+      compact_repr()
+    else
+      writes
+      |> Enum.reject(&field_roundtrip_on_param?/1)
+      |> Enum.map(fn {expr, ctx} ->
+        expr_repr(expr, decl_map,
+          param_repr: param_ctx,
+          field_repr: field_ctx,
+          locals: ctx_locals(ctx),
+          caller: ctx_caller(ctx),
+          resolve_fields?: false
+        )
+      end)
+      |> consolidate()
+    end
   end
 
   defp field_write_ctx(mod, fun, param_ctx, field_ctx) do
@@ -1019,7 +1069,9 @@ defmodule Elmc.Backend.CCodegen.ListIntRepr do
   defp field_type_for_record(arg, field, locals, env) do
     case record_type_for_arg(arg, locals, env) do
       type when is_binary(type) ->
-        field_types = Process.get(:elmc_record_field_types, %{})
+        field_types =
+          Map.get(env, :__record_field_types__) ||
+            Process.get(:elmc_record_field_types, %{})
 
         case Map.get(field_types, split_record_type_key(type, env)) do
           %{} = types -> Map.get(types, field) || Map.get(types, String.to_atom(field))

@@ -126,6 +126,12 @@ defmodule Elmc.Backend.C.Lower.NativeReturn do
     :ok
   end
 
+  @spec cache_scalar_value_return(String.t(), String.t()) :: :ok
+  def cache_scalar_value_return(module, name) do
+    cache_value_return(module, name)
+    :ok
+  end
+
   defp uncache_kind(module, name) do
     cache = Process.get(:elmc_plan_native_returns, %{})
     Process.put(:elmc_plan_native_returns, Map.delete(cache, {module, name}))

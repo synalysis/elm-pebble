@@ -5,6 +5,8 @@ defmodule Elmc.Backend.Plan.Lower.Case.ArmMerge do
 
   @spec publish_arm_to_merge(Builder.t(), non_neg_integer(), non_neg_integer()) ::
           {:ok, Builder.t()}
+  def publish_arm_to_merge(b, arm_reg, merge_reg) when arm_reg == merge_reg, do: {:ok, b}
+
   def publish_arm_to_merge(b, arm_reg, merge_reg) do
     {_, b1} =
       Builder.emit(b, :call_runtime, %{

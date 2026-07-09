@@ -20,6 +20,19 @@ defmodule Elmc.Backend.CCodegen.PermuteMergeInversePipeline do
 
   def try_emit(_module_name, _name, nil, _decl_map), do: :error
 
+  @spec compact_list_field_keys(String.t(), String.t(), map() | nil, map()) ::
+          [{String.t(), String.t(), String.t()}]
+  def compact_list_field_keys(_module_name, _name, nil, _decl_map), do: []
+
+  def compact_list_field_keys(module_name, name, expr, decl_map) do
+    with {:ok, pipeline} <- parse_pipeline(expr),
+         {:ok, model_type} <- model_type_name(decl_map, module_name, name) do
+      [{module_name, model_type, pipeline.cells_field}]
+    else
+      _ -> []
+    end
+  end
+
   def try_emit(module_name, name, expr, decl_map) do
     with {:ok, pipeline} <- parse_pipeline(expr),
          {:ok, width, rows} <- merge_dims(decl_map, module_name, pipeline.merge_fn),
@@ -475,7 +488,6 @@ defmodule Elmc.Backend.CCodegen.PermuteMergeInversePipeline do
       score_macro = FusionSupport.field_macro(module_name, model_type, else_info.score_field)
       best_macro = FusionSupport.field_macro(module_name, model_type, else_info.best_field)
       turn_macro = FusionSupport.field_macro(module_name, model_type, else_info.turn_field)
-      tag_expr = RowMajorLayout.union_tag_expr("tag_arg")
       perm_case_index = RowMajorLayout.case_tag_perm_index_expr("case_tag", tags) |> String.trim()
 
       if [cells_macro, seed_macro, score_macro, best_macro, turn_macro]
@@ -493,7 +505,6 @@ defmodule Elmc.Backend.CCodegen.PermuteMergeInversePipeline do
           else_info,
           width,
           rows,
-          tag_expr,
           perm_case_index,
           module_name
         )
@@ -514,13 +525,12 @@ defmodule Elmc.Backend.CCodegen.PermuteMergeInversePipeline do
          else_info,
          width,
          rows,
-         tag_expr,
          perm_case_index,
          module_name
        ) do
     """
     #{RowMajorLayout.emit_perm_src_index_fn(width)}
-    static RC #{c_prefix}_native(ElmcValue **out, ElmcValue *tag_arg, ElmcValue *model) {
+    static RC #{c_prefix}_native(ElmcValue **out, elmc_int_t case_tag, ElmcValue *model) {
       RC Rc = RC_SUCCESS;
       CATCH_BEGIN
       elmc_int_t src[#{count}];
@@ -531,7 +541,6 @@ defmodule Elmc.Backend.CCodegen.PermuteMergeInversePipeline do
       for (elmc_int_t i = 0; i < #{count}; i++) {
         src[i] = elmc_list_nth_int_default(model_cells, i, 0);
       }
-      const int case_tag = #{tag_expr};
       const int perm_case = #{perm_case_index};
       #{RowMajorLayout.emit_apply_row_major_perm_via_helper("src", "perm_buf", "perm_case", false, count)}
       elmc_int_t merge_score = 0;

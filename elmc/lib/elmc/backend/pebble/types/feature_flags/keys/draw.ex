@@ -61,7 +61,8 @@ defmodule Elmc.Backend.Pebble.Types.FeatureFlags.Keys.Draw do
     :draw_bitmap_sequence_at,
     :draw_rotated_bitmap,
     :draw_text,
-    :draw_text_any
+    :draw_text_any,
+    :compact_draw
   ]
 
   @spec keys() :: [Types.feature_flag_key()]

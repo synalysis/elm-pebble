@@ -293,7 +293,9 @@ static int64_t s_frame_elapsed_ms = 0;
 static uint32_t s_frame_interval_ms = 33;
 static bool s_frame_timer_started = false;
 #endif
+#if ELMC_PEBBLE_DEBUG_LOGS
 static bool s_logged_first_draw = false;
+#endif
 static bool s_startup_cmds_ready = false;
 
 enum {
@@ -362,7 +364,9 @@ enum {
 };
 static int64_t s_last_render_request_ms = 0;
 static int s_render_sequence = 0;
+#if !ELMC_PEBBLE_FEATURE_COMPACT_DRAW
 static int s_last_logged_draw_sequence = 0;
+#endif
 #if ELMC_PEBBLE_FEATURE_DRAW_VECTOR_AT
 #define VECTOR_IMAGE_CACHE_CAPACITY 8
 
@@ -1712,6 +1716,7 @@ static DrawStyleState draw_style_default(void) {
   return style;
 }
 
+#if !ELMC_PEBBLE_FEATURE_COMPACT_DRAW
 static void apply_draw_style(GContext *ctx, const DrawStyleState *style) {
   if (!ctx || !style) {
     return;
@@ -1723,6 +1728,7 @@ static void apply_draw_style(GContext *ctx, const DrawStyleState *style) {
   graphics_context_set_stroke_width(ctx, style->stroke_width > 0 ? style->stroke_width : 1);
   graphics_context_set_antialiased(ctx, style->antialiased);
 }
+#endif
 
 #if ELMC_PEBBLE_FEATURE_DRAW_FILL_RECT || ELMC_PEBBLE_FEATURE_DRAW_RECT || \
     ELMC_PEBBLE_FEATURE_DRAW_ROUND_RECT || ELMC_PEBBLE_FEATURE_DRAW_ARC || \
@@ -1991,7 +1997,7 @@ void elmc_pebble_after_worker_dispatch(void) {
 }
 #endif
 
-#if ELMC_PEBBLE_DEBUG_LOGS
+#if ELMC_PEBBLE_DEBUG_LOGS && !ELMC_PEBBLE_FEATURE_COMPACT_DRAW
 static const char *elmc_draw_kind_name(int32_t kind) {
   switch (kind) {
 #if ELMC_PEBBLE_FEATURE_DRAW_CLEAR
@@ -2053,8 +2059,120 @@ static void elmc_draw_trace(const char *phase, int seq, int index, const ElmcPeb
   } while (0)
 #endif
 
+#if ELMC_PEBBLE_FEATURE_COMPACT_DRAW
+static void apply_draw_style_compact(GContext *ctx, const DrawStyleState *style) {
+  if (!ctx || !style) {
+    return;
+  }
+  graphics_context_set_stroke_color(ctx, style->stroke_color);
+  graphics_context_set_text_color(ctx, style->text_color);
+  graphics_context_set_fill_color(ctx, style->fill_color);
+}
+
 static void draw_update_proc(Layer *layer, GContext *ctx) {
-  ELMC_DRAW_PATH_PROBE(ELMC_DRAW_PATH_DRAW_UPDATE_ENTER);
+  if (s_draw_update_active || !s_startup_cmds_ready) {
+    return;
+  }
+  if (!layer || !ctx) {
+    return;
+  }
+  s_draw_update_active = true;
+  GRect bounds = layer_get_bounds(layer);
+  GRect paint_rect = bounds;
+  s_draw_style_top = 0;
+  s_draw_style_stack[s_draw_style_top] = draw_style_default();
+  apply_draw_style_compact(ctx, &s_draw_style_stack[s_draw_style_top]);
+
+  enum { DRAW_COMMAND_HARD_CAP = 2048 };
+  int draw_limit = s_elm_app.scene.command_count;
+  if (draw_limit <= 0 || draw_limit > DRAW_COMMAND_HARD_CAP) {
+    draw_limit = DRAW_COMMAND_HARD_CAP;
+  }
+
+  elmc_pebble_scene_reset_draw_cursor(&s_elm_app);
+  graphics_context_set_fill_color(ctx, GColorWhite);
+  graphics_fill_rect(ctx, paint_rect, 0, GCornerNone);
+
+  for (int cmd_index = 0; cmd_index < draw_limit; cmd_index++) {
+    memset(&s_draw_cmd, 0, sizeof(s_draw_cmd));
+    if (elmc_pebble_scene_commands_next(&s_elm_app, &s_draw_cmd, 1) <= 0) {
+      break;
+    }
+    const ElmcPebbleDrawCmd *cmd = &s_draw_cmd;
+    switch (cmd->kind) {
+      case ELMC_PEBBLE_DRAW_PUSH_CONTEXT:
+        if (s_draw_style_top < ELMC_DRAW_STYLE_STACK_DEPTH - 1) {
+          s_draw_style_stack[s_draw_style_top + 1] = s_draw_style_stack[s_draw_style_top];
+          s_draw_style_top += 1;
+          apply_draw_style_compact(ctx, &s_draw_style_stack[s_draw_style_top]);
+        }
+        break;
+      case ELMC_PEBBLE_DRAW_POP_CONTEXT:
+        if (s_draw_style_top > 0) {
+          s_draw_style_top -= 1;
+          apply_draw_style_compact(ctx, &s_draw_style_stack[s_draw_style_top]);
+        }
+        break;
+      case ELMC_PEBBLE_DRAW_STROKE_COLOR:
+        s_draw_style_stack[s_draw_style_top].stroke_color = color_from_code(cmd->p0);
+        graphics_context_set_stroke_color(ctx, s_draw_style_stack[s_draw_style_top].stroke_color);
+        break;
+      case ELMC_PEBBLE_DRAW_TEXT_COLOR:
+        s_draw_style_stack[s_draw_style_top].text_color = color_from_code(cmd->p0);
+        graphics_context_set_text_color(ctx, s_draw_style_stack[s_draw_style_top].text_color);
+        break;
+      case ELMC_PEBBLE_DRAW_CLEAR:
+        graphics_context_set_fill_color(ctx, color_from_code(cmd->p0));
+        graphics_fill_rect(ctx, paint_rect, 0, GCornerNone);
+        graphics_context_set_fill_color(ctx, s_draw_style_stack[s_draw_style_top].fill_color);
+        break;
+      case ELMC_PEBBLE_DRAW_RECT: {
+        int16_t x = (int16_t)cmd->p0;
+        int16_t y = (int16_t)cmd->p1;
+        int16_t w = (int16_t)cmd->p2;
+        int16_t h = (int16_t)cmd->p3;
+        if (rect_params_are_valid(w, h)) {
+#ifndef PBL_COLOR
+          graphics_context_set_antialiased(ctx, false);
+          graphics_context_set_stroke_width(ctx, 2);
+#endif
+          graphics_context_set_stroke_color(ctx, color_from_code(cmd->p4));
+          graphics_draw_rect(ctx, stroke_outline_rect_bounds(x, y, w, h, 2));
+          graphics_context_set_stroke_color(ctx, s_draw_style_stack[s_draw_style_top].stroke_color);
+#ifndef PBL_COLOR
+          graphics_context_set_stroke_width(ctx, s_draw_style_stack[s_draw_style_top].stroke_width);
+          graphics_context_set_antialiased(ctx, s_draw_style_stack[s_draw_style_top].antialiased);
+#endif
+        }
+        break;
+      }
+      case ELMC_PEBBLE_DRAW_TEXT: {
+        bool should_unload = false;
+        GFont font = font_from_id_for_height(cmd->p0, cmd->p4, &should_unload);
+        if (!font || !rect_params_are_valid(cmd->p3, cmd->p4)) {
+          break;
+        }
+        GTextOverflowMode overflow = text_overflow_from_options(cmd->p5);
+        GTextAlignment align = text_alignment_from_options(cmd->p5);
+        GRect text_rect = rect_from_params(cmd->p1, cmd->p2, cmd->p3, cmd->p4);
+#ifndef PBL_COLOR
+        graphics_context_set_antialiased(ctx, false);
+#endif
+        graphics_draw_text(ctx, cmd->text, font, text_rect, overflow, align, NULL);
+        if (should_unload && font) {
+          fonts_unload_custom_font(font);
+        }
+        break;
+      }
+      default:
+        break;
+    }
+  }
+
+  s_draw_update_active = false;
+}
+#else
+static void draw_update_proc(Layer *layer, GContext *ctx) {
   ELMC_PEBBLE_TRACE_ENTER("draw_update_proc");
   if (s_draw_update_active) {
     APP_LOG(APP_LOG_LEVEL_WARNING, "draw skipped reentrant update seq=%d", s_render_sequence);
@@ -2087,9 +2205,11 @@ static void draw_update_proc(Layer *layer, GContext *ctx) {
   // #region agent log
   ELMC_AGENT_INIT_PROBE(0xED993010);
   // #endregion
+  #if ELMC_PEBBLE_DEBUG_LOGS
   if (!s_logged_first_draw) {
     ELMC_PEBBLE_DEBUG_LOG(APP_LOG_LEVEL_INFO, "draw begin seq=%d", s_render_sequence);
   }
+  #endif
   GRect bounds = layer_get_bounds(layer);
   {
     GRect compile = compile_display_bounds();
@@ -2141,9 +2261,11 @@ static void draw_update_proc(Layer *layer, GContext *ctx) {
   // #region agent log
   ELMC_AGENT_INIT_PROBE(0xED993030);
   // #endregion
+  #if ELMC_PEBBLE_DEBUG_LOGS
   if (!s_logged_first_draw) {
     ELMC_PEBBLE_DEBUG_LOG(APP_LOG_LEVEL_INFO, "draw style applied");
   }
+  #endif
 
   enum { DRAW_COMMAND_HARD_CAP = 2048 };
   int draw_limit = s_elm_app.scene.command_count;
@@ -2177,6 +2299,7 @@ static void draw_update_proc(Layer *layer, GContext *ctx) {
   // #region agent log
   ELMC_AGENT_INIT_PROBE(0xED993020);
   // #endregion
+  #if ELMC_PEBBLE_DEBUG_LOGS
   if (!s_logged_first_draw) {
     ELMC_PEBBLE_DEBUG_LOG(APP_LOG_LEVEL_INFO, "draw base filled x=%d y=%d w=%d h=%d full=%d",
             paint_rect.origin.x, paint_rect.origin.y, paint_rect.size.w, paint_rect.size.h, dirty_full ? 1 : 0);
@@ -2186,6 +2309,7 @@ static void draw_update_proc(Layer *layer, GContext *ctx) {
           s_render_sequence,
           s_elm_app.scene.command_count,
           s_elm_app.scene.byte_count);
+  #endif
 
   for (int cmd_index = 0; cmd_index < draw_limit; cmd_index++) {
     // #region agent log
@@ -2215,6 +2339,7 @@ static void draw_update_proc(Layer *layer, GContext *ctx) {
         schedule_scene_prep();
       }
 #endif
+      #if ELMC_PEBBLE_DEBUG_LOGS
       ELMC_PEBBLE_DEBUG_LOG(APP_LOG_LEVEL_INFO,
               "elmc-draw stream end seq=%d drawn=%d decoded=%d offset=%d",
               s_render_sequence,
@@ -2226,6 +2351,7 @@ static void draw_update_proc(Layer *layer, GContext *ctx) {
                 commands_drawn, decoded);
         s_logged_first_draw = true;
       }
+      #endif
       break;
     }
     const ElmcPebbleDrawCmd *cmd = &s_draw_cmd;
@@ -2237,6 +2363,7 @@ static void draw_update_proc(Layer *layer, GContext *ctx) {
     // #region agent log
     ELMC_AGENT_INIT_PROBE(0xED993060);
     // #endregion
+    #if ELMC_PEBBLE_DEBUG_LOGS
     if (!s_logged_first_draw && cmd_index < 12) {
       ELMC_PEBBLE_DEBUG_LOG(APP_LOG_LEVEL_INFO,
               "draw cmd index=%d kind=%lld p0=%lld p1=%lld p2=%lld p3=%lld p4=%lld",
@@ -2248,6 +2375,7 @@ static void draw_update_proc(Layer *layer, GContext *ctx) {
               (long long)cmd->p3,
               (long long)cmd->p4);
     }
+    #endif
     if (
 #if ELMC_PEBBLE_DIRTY_REGION_ENABLED
         !draw_cmd_should_execute(cmd, dirty_full, paint_rect)
@@ -2713,6 +2841,7 @@ static void draw_update_proc(Layer *layer, GContext *ctx) {
   ELMC_DRAW_PATH_PROBE(ELMC_DRAW_PATH_DRAW_UPDATE_EXIT);
   ELMC_PEBBLE_TRACE_EXIT("draw_update_proc");
 }
+#endif
 
 #if ELMC_PEBBLE_FEATURE_CMD_COMPANION_SEND || ELMC_PEBBLE_FEATURE_INBOX_EVENTS
 static void render_coalesce_callback(void *data) {

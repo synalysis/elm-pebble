@@ -618,7 +618,7 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
     {arg_regs, b2a} =
       cond do
         id in [:record_new, :record_new_take, :record_new_values_ints] ->
-          Builder.dup_regs_for_owned_consume(b2, arg_regs)
+          Builder.dup_named_locals_for_consume(b2, arg_regs)
 
         id in [:tuple2, :tuple2_take] ->
           Builder.dup_regs_for_owned_consume(b2, arg_regs)

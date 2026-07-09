@@ -27,6 +27,7 @@ defmodule Elmc.SpawnTileChainFusionTest do
     assert generated_c =~ "spawn_a_after_tile"
     assert generated_c =~ "spawn_b_after_tile"
     assert generated_c =~ "return elmc_fn_Main_initialBoard_native(out, seed);"
+    assert generated_c =~ "elmc_int_t seed = (argc > 0 && args[0]) ? elmc_as_int(args[0]) : 0;"
     refute generated_c =~ "elmc_fn_Main_initialBoard_native(ElmcValue **out, ElmcValue *seed, "
     refute generated_c =~ "ElmcValue *owned[0] = ({"
     assert generated_c =~

@@ -2,9 +2,10 @@ defmodule Elmc.Backend.C.Lower.Instr do
   @moduledoc false
 
   alias Elmc.Backend.C.Lower.{Lambda, NativeReturn}
-  alias Elmc.Backend.CCodegen.{FunctionCallAbi, FunctionEmit, RcRequired}
+  alias Elmc.Backend.CCodegen.{FunctionCallAbi, FunctionEmit, Fusion, RcRequired, RowMajorLayout}
   alias Elmc.Backend.CCodegen.Native.FunctionCall, as: NativeFunctionCall
   alias Elmc.Backend.CCodegen.Util
+  alias Elmc.Backend.Plan
   alias Elmc.Backend.Plan.RuntimeBuiltins
   alias Elmc.Backend.Plan.Types
 
@@ -65,7 +66,11 @@ defmodule Elmc.Backend.C.Lower.Instr do
 
     case op do
       :const_int ->
-        if MapSet.member?(Keyword.get(opts, :native_int_only_regs, MapSet.new()), instr.dest) do
+        skip_const? =
+          MapSet.member?(Keyword.get(opts, :native_int_only_regs, MapSet.new()), instr.dest) or
+            MapSet.member?(Keyword.get(opts, :fusion_native_literal_regs, MapSet.new()), instr.dest)
+
+        if skip_const? do
           ""
         else
           rc_assign(rc?, dest, "elmc_new_int", [Integer.to_string(instr.args.value)])
@@ -214,6 +219,10 @@ defmodule Elmc.Backend.C.Lower.Instr do
 
   @doc false
   def branch_cond_expr(reg, slots, opts) when is_integer(reg), do: branch_cond_expr_impl(reg, slots, opts)
+
+  def branch_cond_expr(dest, slots, opts) when dest in [:fn_out, :branch_out] do
+    "elmc_as_bool(#{slot_ref(dest, slots, opts)})"
+  end
 
   defp branch_cond_expr_impl(reg, slots, opts) when is_integer(reg) do
     cond do
@@ -406,6 +415,10 @@ defmodule Elmc.Backend.C.Lower.Instr do
       true ->
         "elmc_as_bool(#{slot_ref(reg, slots, opts)})"
     end
+  end
+
+  defp ternary_cond_expr(dest, slots, opts) when dest in [:fn_out, :branch_out] do
+    branch_cond_expr(dest, slots, opts)
   end
 
   defp ternary_cond_expr(reg, slots, opts) when is_integer(reg) do
@@ -775,17 +788,33 @@ defmodule Elmc.Backend.C.Lower.Instr do
     |> String.trim()
   end
 
-  defp emit_call_runtime(%{dest: dest_reg, args: %{builtin: :retain, args: [src]}}, slots, rc?, dest, opts)
+  defp emit_call_runtime(
+         %{dest: dest_reg, args: %{builtin: :retain, args: [src]}, effects: effects},
+         slots,
+         rc?,
+         dest,
+         opts
+       )
        when is_integer(src) and is_integer(dest_reg) do
     if MapSet.member?(Keyword.get(opts, :native_int_only_regs, MapSet.new()), dest_reg) do
       src_expr = int_operand_ref(src, slots, opts)
       emit_native_store(dest_reg, dest, src_expr, opts)
     else
-      sym = RuntimeBuiltins.c_symbol(:retain)
       src_s = slot_ref(src, slots, opts)
-      assign_value_return(rc?, dest, "#{sym}(#{src_s})")
+
+      if consumed_owned_transfer?(effects, src) do
+        assign_value_return(rc?, dest, src_s)
+      else
+        sym = RuntimeBuiltins.c_symbol(:retain)
+        assign_value_return(rc?, dest, "#{sym}(#{src_s})")
+      end
     end
   end
+
+  defp consumed_owned_transfer?(%{consumes: consumes}, src) when is_list(consumes),
+    do: src in consumes
+
+  defp consumed_owned_transfer?(_, _), do: false
 
   defp emit_call_runtime(%{dest: dest_reg, args: %{builtin: :string_append, args: args}}, slots, rc?, dest, opts)
        when is_integer(dest_reg) and is_list(args) do
@@ -949,9 +978,14 @@ defmodule Elmc.Backend.C.Lower.Instr do
     decl_map = Process.get(:elmc_program_decls, %{})
     decl = Map.get(decl_map, {mod, name})
     native_ret = NativeReturn.cached_kind({mod, name})
+    fusion_arg_kinds = Fusion.rc_native_fusion_arg_kinds({mod, name})
+    c_name = if fusion_arg_kinds, do: "#{c_name}_native", else: c_name
 
     {prefix, call_arg_s} =
       cond do
+        fusion_arg_kinds ->
+          {"", rc_native_fusion_call_args(args, fusion_arg_kinds, slots, opts)}
+
         native_ret in [:native_int, :native_bool] and decl ->
           kinds = NativeFunctionCall.arg_kinds(decl, mod, decl_map)
           c_args = call_arg_refs(args, slots, opts, kinds)
@@ -965,16 +999,15 @@ defmodule Elmc.Backend.C.Lower.Instr do
           c_args = Enum.map(args, &bool_operand_ref(&1, slots, opts))
           {"", Enum.join(c_args, ", ")}
 
+        decl && FunctionEmit.mixed_direct_abi?(decl, mod, decl_map) ->
+          kinds = NativeFunctionCall.arg_kinds(decl, mod, decl_map)
+          c_args = call_arg_refs(args, slots, opts, kinds)
+          {"", Enum.join(c_args, ", ")}
+
         decl && FunctionCallAbi.argv_abi?(decl, mod, decl_map) ->
           c_args = Enum.map(args, &slot_ref(&1, slots, opts))
           {setup, args_var, argc} = FunctionCallAbi.emit_argv_setup("plan", c_args)
           {setup <> "\n", "#{args_var}, #{argc}"}
-
-        decl && FunctionCallAbi.direct_plan_call_abi?(decl, mod, decl_map) &&
-            FunctionEmit.mixed_direct_abi?(decl, mod, decl_map) ->
-          kinds = NativeFunctionCall.arg_kinds(decl, mod, decl_map)
-          c_args = call_arg_refs(args, slots, opts, kinds)
-          {"", Enum.join(c_args, ", ")}
 
         true ->
           c_args = Enum.map(args, &slot_ref(&1, slots, opts))
@@ -982,7 +1015,64 @@ defmodule Elmc.Backend.C.Lower.Instr do
       end
 
     prefix <>
-      emit_fn_call(rc?, dest, dest_ref, dest_reg, c_name, call_arg_s, {mod, name}, native_ret, opts)
+      emit_fn_call(
+        rc?,
+        dest,
+        dest_ref,
+        dest_reg,
+        c_name,
+        call_arg_s,
+        {mod, name},
+        native_ret,
+        opts,
+        decl,
+        plan_rc_boxed_callee?(decl, mod, decl_map, fusion_arg_kinds, native_ret)
+      )
+  end
+
+  defp plan_boxed_direct_call_abi?(decl, module, decl_map) do
+    FunctionCallAbi.direct_plan_call_abi?(decl, module, decl_map) or
+      (Plan.plan_ir_mode(Process.get(:elmc_codegen_opts, [])) == :primary and
+         FunctionCallAbi.primary_lowered?(decl, module, decl_map) and
+         not NativeFunctionCall.native_scalar_fn?(decl, module, decl_map))
+  end
+
+  defp plan_rc_boxed_callee?(decl, module, decl_map, fusion_arg_kinds, native_ret) do
+    !!(
+      is_map(decl) and
+        is_nil(fusion_arg_kinds) and
+        native_ret not in [:native_int, :native_bool] and
+        (plan_boxed_direct_call_abi?(decl, module, decl_map) or
+           RcRequired.rc_required?(module, Map.get(decl, :name)))
+    )
+  end
+
+  defp direct_plan_boxed_callee?(decl, module, decl_map, fusion_arg_kinds, native_ret) do
+    plan_rc_boxed_callee?(decl, module, decl_map, fusion_arg_kinds, native_ret)
+  end
+
+  defp rc_native_fusion_call_args(args, kinds, slots, opts) do
+    args
+    |> Enum.zip(kinds)
+    |> Enum.map(fn {reg, kind} ->
+      case kind do
+        :boxed_int_tag ->
+          case Map.get(Keyword.get(opts, :const_int_regs, %{}), reg) do
+            value when is_integer(value) -> Integer.to_string(value)
+            _ -> RowMajorLayout.union_tag_expr(slot_ref(reg, slots, opts))
+          end
+
+        :native_int ->
+          case Map.get(Keyword.get(opts, :const_int_regs, %{}), reg) do
+            value when is_integer(value) -> Integer.to_string(value)
+            _ -> int_operand_ref(reg, slots, opts)
+          end
+
+        _ ->
+          slot_ref(reg, slots, opts)
+      end
+    end)
+    |> Enum.join(", ")
   end
 
   defp call_arg_refs(args, slots, opts, kinds) do
@@ -997,30 +1087,41 @@ defmodule Elmc.Backend.C.Lower.Instr do
     end)
   end
 
-  defp emit_fn_call(true, dest, _dest_ref, dest_reg, c_name, call_arg_s, {mod, name} = callee, native_ret, opts) do
+  defp emit_fn_call(true, dest, _dest_ref, dest_reg, c_name, call_arg_s, {mod, name} = callee, native_ret, opts, decl, _direct_plan_boxed?) do
     cond do
       native_ret in [:native_int, :native_bool] ->
         emit_native_scalar_fn_call(native_ret, true, dest, dest_reg, c_name, call_arg_s, opts, callee)
 
-      RcRequired.rc_required?(mod, name) ->
+      legacy_argv_value_callee?(decl, mod, native_ret) ->
+        "#{dest} = #{c_name}(#{call_arg_s});"
+
+      true ->
         rc_call(true, if(dest == "*out", do: "out", else: dest), c_name, call_arg_s)
+    end
+  end
+
+  defp emit_fn_call(false, dest, dest_ref, dest_reg, c_name, call_arg_s, {mod, name} = callee, native_ret, opts, decl, direct_plan_boxed?) do
+    cond do
+      native_ret in [:native_int, :native_bool] ->
+        emit_native_scalar_fn_call(native_ret, false, dest, dest_reg, c_name, call_arg_s, opts, callee)
+
+      direct_plan_boxed? == true or RcRequired.rc_required?(mod, name) ->
+        rc_callee_from_value_return(dest, dest_ref, c_name, call_arg_s)
+
+      legacy_argv_value_callee?(decl, mod, native_ret) ->
+        "#{dest} = #{c_name}(#{call_arg_s});"
 
       true ->
         "#{dest} = #{c_name}(#{call_arg_s});"
     end
   end
 
-  defp emit_fn_call(false, dest, dest_ref, dest_reg, c_name, call_arg_s, {mod, name} = callee, native_ret, opts) do
-    cond do
-      native_ret in [:native_int, :native_bool] ->
-        emit_native_scalar_fn_call(native_ret, false, dest, dest_reg, c_name, call_arg_s, opts, callee)
+  defp legacy_argv_value_callee?(decl, module, native_ret) do
+    decl_map = Process.get(:elmc_program_decls, %{})
 
-      RcRequired.rc_required?(mod, name) ->
-        rc_callee_from_value_return(dest, dest_ref, c_name, call_arg_s)
-
-      true ->
-        "#{dest} = #{c_name}(#{call_arg_s});"
-    end
+    is_map(decl) and native_ret not in [:native_int, :native_bool] and
+      FunctionCallAbi.argv_abi?(decl, module, decl_map) and
+      not RcRequired.rc_required?(module, Map.get(decl, :name))
   end
 
   defp emit_native_scalar_fn_call(:native_int, rc?, dest, dest_reg, c_name, call_arg_s, opts, callee) do
@@ -1039,7 +1140,7 @@ defmodule Elmc.Backend.C.Lower.Instr do
         "Rc = #{c_name}(&#{out}, #{call_arg_s});\nCHECK_RC(Rc);"
 
       true ->
-        emit_native_int_fn_call_boxed(rc?, dest, dest_reg, c_name, call_arg_s)
+        emit_native_int_fn_call_boxed(rc?, dest, dest_reg, c_name, call_arg_s, callee)
     end
   end
 
@@ -1059,21 +1160,29 @@ defmodule Elmc.Backend.C.Lower.Instr do
         "Rc = #{c_name}(&#{out}, #{call_arg_s});\nCHECK_RC(Rc);"
 
       true ->
-        emit_native_int_fn_call_boxed(rc?, dest, dest_reg, c_name, call_arg_s)
+        emit_native_int_fn_call_boxed(rc?, dest, dest_reg, c_name, call_arg_s, callee)
     end
   end
 
-  defp emit_native_int_fn_call_boxed(rc?, dest, dest_reg, c_name, call_arg_s) do
+  defp emit_native_int_fn_call_boxed(rc?, dest, dest_reg, c_name, call_arg_s, {mod, name} = callee) do
     tmp = "plan_call_int_#{dest_reg}"
     box_dest = if dest == "*out", do: "out", else: dest
 
-    """
-    elmc_int_t #{tmp};
-    Rc = #{c_name}(&#{tmp}, #{call_arg_s});
-    CHECK_RC(Rc);
-    #{rc_assign(rc?, box_dest, "elmc_new_int", [tmp])}
-    """
-    |> String.trim()
+    if NativeReturn.value_return?(callee) do
+      """
+      elmc_int_t #{tmp} = #{c_name}(#{call_arg_s});
+      #{rc_assign(rc?, box_dest, "elmc_new_int", [tmp])}
+      """
+      |> String.trim()
+    else
+      """
+      elmc_int_t #{tmp};
+      Rc = #{c_name}(&#{tmp}, #{call_arg_s});
+      CHECK_RC(Rc);
+      #{rc_assign(rc?, box_dest, "elmc_new_int", [tmp])}
+      """
+      |> String.trim()
+    end
   end
 
   defp emit_pebble_cmd(%{args: %{builtin: id, kind: kind, params: params}}, slots, rc?, dest, opts) do
@@ -1205,26 +1314,36 @@ defmodule Elmc.Backend.C.Lower.Instr do
   @doc false
   def int_operand_ref(reg, slots, opts) when is_integer(reg), do: int_operand_ref_impl(reg, slots, opts)
 
+  def int_operand_ref(dest, slots, opts) when dest in [:fn_out, :branch_out] do
+    "elmc_as_int(#{slot_ref(dest, slots, opts)})"
+  end
+
   defp int_operand_ref_impl(reg, slots, opts) when is_integer(reg) do
     case Map.get(Keyword.get(opts, :native_int_inline, %{}), reg) do
       expr when is_binary(expr) ->
         expr
 
       nil ->
-        case Map.get(Keyword.get(opts, :native_int_regs, %{}), reg) do
-          name when is_binary(name) ->
-            name
+        case Map.get(slots, reg) do
+          i when is_integer(i) ->
+            "elmc_as_int(owned[#{i}])"
 
           nil ->
-            case Map.get(Keyword.get(opts, :const_int_regs, %{}), reg) do
-              value when is_integer(value) ->
-                Integer.to_string(value)
+            case Map.get(Keyword.get(opts, :native_int_regs, %{}), reg) do
+              name when is_binary(name) ->
+                name
 
               nil ->
-                if MapSet.member?(Keyword.get(opts, :native_int_only_regs, MapSet.new()), reg) do
-                  "plan_native_int_#{reg}"
-                else
-                  "elmc_as_int(#{slot_ref(reg, slots, opts)})"
+                case Map.get(Keyword.get(opts, :const_int_regs, %{}), reg) do
+                  value when is_integer(value) ->
+                    Integer.to_string(value)
+
+                  nil ->
+                    if MapSet.member?(Keyword.get(opts, :native_int_only_regs, MapSet.new()), reg) do
+                      "plan_native_int_#{reg}"
+                    else
+                      "elmc_as_int(#{slot_ref(reg, slots, opts)})"
+                    end
                 end
             end
         end
@@ -1620,9 +1739,24 @@ defmodule Elmc.Backend.C.Lower.Instr do
 
       _ ->
         case Map.get(slots, reg) do
-          i when is_integer(i) -> "owned[#{i}]"
-          nil -> "arg#{reg}"
-          _ -> "tmp_#{reg}"
+          i when is_integer(i) ->
+            "owned[#{i}]"
+
+          nil ->
+            case Map.get(Keyword.get(opts, :native_int_regs, %{}), reg) do
+              name when is_binary(name) ->
+                name
+
+              _ ->
+                if MapSet.member?(Keyword.get(opts, :native_int_only_regs, MapSet.new()), reg) do
+                  "plan_native_int_#{reg}"
+                else
+                  "tmp_#{reg}"
+                end
+            end
+
+          _ ->
+            "tmp_#{reg}"
         end
     end
   end

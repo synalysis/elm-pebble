@@ -159,7 +159,7 @@ defmodule Elmc.Backend.Bytecode.Lower do
   end
 
   defp encode_terminator({:br_if, then_id, else_id, cond_reg}) do
-    <<Opcodes.opcode(:br_if)::8, cond_reg::16, then_id::16, else_id::16>>
+    <<Opcodes.opcode(:br_if)::8, encode_dest(cond_reg)::16, then_id::16, else_id::16>>
   end
 
   defp encode_terminator({:br, target_id}) do
@@ -191,6 +191,8 @@ defmodule Elmc.Backend.Bytecode.Lower do
   defp encode_dest(:fn_out), do: 0xFFFF
   defp encode_dest(:branch_out), do: 0xFFFE
   defp encode_dest(r) when is_integer(r), do: r
+
+  defp encode_reg_word(reg), do: encode_dest(reg)
 
   defp encode_args(:load_param, %{index: idx}, _fn_table), do: <<idx::16>>
 
@@ -238,10 +240,11 @@ defmodule Elmc.Backend.Bytecode.Lower do
 
     case kind do
       k when k in [:add_vars, :mul_vars, :sub_vars, :idiv_vars, :min_vars, :max_vars, :mod_vars, :rem_vars] ->
-        <<kind_n::8, lhs::16, Map.fetch!(args, :rhs)::16>>
+        rhs = Map.fetch!(args, :rhs)
+        <<kind_n::8, encode_reg_word(lhs)::16, encode_reg_word(rhs)::16>>
 
       _ ->
-        <<kind_n::8, lhs::16, Map.fetch!(args, :value)::32>>
+        <<kind_n::8, encode_reg_word(lhs)::16, Map.fetch!(args, :value)::32>>
     end
   end
 
@@ -255,7 +258,7 @@ defmodule Elmc.Backend.Bytecode.Lower do
         _ -> 0
       end
 
-    <<op_n::8, lhs::16, rhs::16>>
+    <<op_n::8, encode_reg_word(lhs)::16, encode_reg_word(rhs)::16>>
   end
 
   defp encode_args(:compare, %{kind: kind, left: l, right: r}, _fn_table) do
@@ -270,10 +273,11 @@ defmodule Elmc.Backend.Bytecode.Lower do
         _ -> 0
       end
 
-    <<kind_n::8, l::16, r::16>>
+    <<kind_n::8, encode_reg_word(l)::16, encode_reg_word(r)::16>>
   end
 
-  defp encode_args(:phi, %{then: t, else: e, cond: c}, _fn_table), do: <<t::16, e::16, c::16>>
+  defp encode_args(:phi, %{then: t, else: e, cond: c}, _fn_table),
+    do: <<encode_reg_word(t)::16, encode_reg_word(e)::16, encode_reg_word(c)::16>>
 
   defp encode_args(:record_get, args, _fn_table) do
     base = Map.fetch!(args, :base)

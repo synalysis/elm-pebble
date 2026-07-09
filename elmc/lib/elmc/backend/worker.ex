@@ -21,7 +21,7 @@ defmodule Elmc.Backend.Worker do
     analysis = subscription_analysis(ir, entry_module)
 
     with :ok <- File.mkdir_p(c_dir),
-         :ok <- File.write(Path.join(c_dir, "elmc_worker.h"), worker_header(analysis)),
+         :ok <- File.write(Path.join(c_dir, "elmc_worker.h"), worker_header(analysis, opts)),
          :ok <-
            File.write(
              Path.join(c_dir, "elmc_worker.c"),
@@ -173,8 +173,9 @@ defmodule Elmc.Backend.Worker do
     |> String.trim("_")
   end
 
-  @spec worker_header(map()) :: String.t()
-  defp worker_header(analysis) do
+  @spec worker_header(map(), keyword()) :: String.t()
+  defp worker_header(analysis, opts \\ []) do
+    last_dispatch_cmd_cap = last_dispatch_cmd_cap(opts)
     slot_defines = worker_slot_defines(analysis)
 
     """
@@ -193,7 +194,9 @@ defmodule Elmc.Backend.Worker do
       elmc_int_t msg_tag;
     } ElmcButtonRawSub;
 
-    #define ELMC_WORKER_LAST_DISPATCH_CMD_CAP 8
+    #ifndef ELMC_WORKER_LAST_DISPATCH_CMD_CAP
+    #define ELMC_WORKER_LAST_DISPATCH_CMD_CAP #{last_dispatch_cmd_cap}
+    #endif
 
     typedef struct {
       int64_t kind;
@@ -209,8 +212,10 @@ defmodule Elmc.Backend.Worker do
     typedef struct {
       ElmcValue *model;
       ElmcValue *pending_cmd;
+    #if ELMC_WORKER_LAST_DISPATCH_CMD_CAP > 0
       ElmcWorkerDispatchCmd last_dispatch_cmds[ELMC_WORKER_LAST_DISPATCH_CMD_CAP];
       int last_dispatch_cmd_count;
+    #endif
       int64_t subscriptions;
       elmc_int_t sub_msg_tags[ELMC_WORKER_SUB_TAG_SLOTS];
       ElmcButtonRawSub button_raw_subs[ELMC_WORKER_MAX_BUTTON_RAW_SUBS];
@@ -238,6 +243,16 @@ defmodule Elmc.Backend.Worker do
   end
 
   defp worker_slot_defines(%{compact: false}), do: ""
+
+  defp last_dispatch_cmd_cap(opts) do
+    opts = Map.new(opts)
+
+    if Map.get(opts, :pebble_int32) == true and Map.get(opts, :prod) == true do
+      0
+    else
+      8
+    end
+  end
 
   defp worker_slot_defines(%{slot_map: slot_map, frame_slot: frame_slot}) do
     lines =
@@ -446,6 +461,7 @@ defmodule Elmc.Backend.Worker do
       return -3;
     }
 
+    #if ELMC_WORKER_LAST_DISPATCH_CMD_CAP > 0
     static void elmc_worker_snapshot_last_dispatch_cmds(ElmcWorkerState *state, ElmcValue *queue) {
       if (!state) return;
       state->last_dispatch_cmd_count = 0;
@@ -471,6 +487,7 @@ defmodule Elmc.Backend.Worker do
         break;
       }
     }
+    #endif
 
     static RC elmc_cmd_queue_cons_take(ElmcValue **out, ElmcValue *head, ElmcValue *tail) {
       RC rc = RC_SUCCESS;
@@ -830,7 +847,9 @@ defmodule Elmc.Backend.Worker do
           elmc_release(result);
           return -2;
         }
+    #if ELMC_WORKER_LAST_DISPATCH_CMD_CAP > 0
         elmc_worker_snapshot_last_dispatch_cmds(state, pending);
+    #endif
         state->pending_cmd = pending;
       }
       elmc_release(result);
@@ -870,7 +889,9 @@ defmodule Elmc.Backend.Worker do
           elmc_release(result);
           return -2;
         }
+    #if ELMC_WORKER_LAST_DISPATCH_CMD_CAP > 0
         elmc_worker_snapshot_last_dispatch_cmds(state, next_cmd);
+    #endif
         if (!elmc_cmd_is_none(next_cmd)) {
           state->dispatch_needs_render = 1;
         }
@@ -906,13 +927,24 @@ defmodule Elmc.Backend.Worker do
 
     int elmc_worker_last_dispatch_cmd_count(ElmcWorkerState *state) {
       if (!state) return 0;
+    #if ELMC_WORKER_LAST_DISPATCH_CMD_CAP > 0
       return state->last_dispatch_cmd_count;
+    #else
+      return 0;
+    #endif
     }
 
     int elmc_worker_last_dispatch_cmd_at(ElmcWorkerState *state, int index, ElmcWorkerDispatchCmd *out_cmd) {
+    #if ELMC_WORKER_LAST_DISPATCH_CMD_CAP > 0
       if (!state || !out_cmd || index < 0 || index >= state->last_dispatch_cmd_count) return -1;
       *out_cmd = state->last_dispatch_cmds[index];
       return 0;
+    #else
+      (void)state;
+      (void)index;
+      (void)out_cmd;
+      return -1;
+    #endif
     }
 
     ElmcValue *elmc_worker_take_cmd(ElmcWorkerState *state) {
@@ -980,7 +1012,9 @@ defmodule Elmc.Backend.Worker do
         elmc_release(state->pending_cmd);
         state->pending_cmd = NULL;
       }
+    #if ELMC_WORKER_LAST_DISPATCH_CMD_CAP > 0
       state->last_dispatch_cmd_count = 0;
+    #endif
       state->subscriptions = 0;
     }
     """

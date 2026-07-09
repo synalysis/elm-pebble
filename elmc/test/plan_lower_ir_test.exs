@@ -347,7 +347,8 @@ defmodule Elmc.PlanLowerIrTest do
     c = CLowerFunction.emit(plan)
     assert c =~ "elmc_union_tag_matches"
     assert c =~ "goto elmc_plan_block_"
-    assert c =~ "elmc_retain(owned["
+    assert c =~ "owned[1] = owned[0];"
+    refute c =~ "elmc_retain(owned["
   end
 
   test "lowers int add_const for record/cmd tuple sharing" do

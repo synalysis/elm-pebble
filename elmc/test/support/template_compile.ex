@@ -38,13 +38,17 @@ defmodule Elmc.TestSupport.TemplateCompile do
 
       out_dir = Keyword.get(opts, :out_dir, Path.join(tmp, ".elmc-out"))
 
-      Elmc.compile(tmp, %{
-        out_dir: out_dir,
-        entry_module: "Main",
-        strip_dead_code: Keyword.get(opts, :strip_dead_code, true),
-        plan_ir_mode: Keyword.get(opts, :plan_ir_mode, :primary),
-        pebble_int32: Keyword.get(opts, :pebble_int32, false)
-      })
+      compile_opts =
+        %{
+          out_dir: out_dir,
+          entry_module: "Main",
+          strip_dead_code: Keyword.get(opts, :strip_dead_code, true),
+          plan_ir_mode: Keyword.get(opts, :plan_ir_mode, :primary),
+          pebble_int32: Keyword.get(opts, :pebble_int32, false)
+        }
+        |> Map.merge(Map.new(Keyword.take(opts, [:plan_ir_strict, :direct_render_only, :prune_runtime])))
+
+      Elmc.compile(tmp, compile_opts)
     after
       unless Keyword.get(opts, :keep_tmp, false), do: File.rm_rf(tmp)
     end

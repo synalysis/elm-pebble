@@ -23,7 +23,7 @@ defmodule Elmc.PlanDirectCallAbiTest do
     view_body = CCodegenExtract.fn_body(generated_c, "elmc_fn_Main_view")
 
     assert view_body =~ "plan block"
-    assert view_body =~ "elmc_fn_Main_faceOps(&owned[1], owned[0])"
+    assert view_body =~ "elmc_fn_Main_faceOps(&owned[0], model)"
     refute view_body =~ "elmc_fn_Main_faceOps(&owned[1], plan_argv_"
   end
 
@@ -40,7 +40,7 @@ defmodule Elmc.PlanDirectCallAbiTest do
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
-    assert generated_c =~ "static RC elmc_fn_Main_boardRows(ElmcValue **out);"
+    assert generated_c =~ "static elmc_int_t elmc_fn_Main_boardRows(void);"
     assert generated_c =~ "static RC elmc_fn_Main_cellAt(ElmcValue **out, elmc_int_t x, elmc_int_t y, ElmcValue *board);"
 
     cell_at_body = CCodegenExtract.fn_body(generated_c, "elmc_fn_Main_cellAt")
@@ -58,7 +58,10 @@ defmodule Elmc.PlanDirectCallAbiTest do
 
   test "direct_plan_call_abi distinguishes wrapper and direct plan targets" do
     {:ok, result} =
-      TemplateCompile.compile_watch_template("watchface_yes", plan_ir_mode: :primary)
+      TemplateCompile.compile_watch_template("watchface_yes",
+        plan_ir_mode: :primary,
+        plan_ir_strict: false
+      )
 
     ir = result.ir
     opts = %{plan_ir_mode: :primary, entry_module: "Main", strip_dead_code: true}

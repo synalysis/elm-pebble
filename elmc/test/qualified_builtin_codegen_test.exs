@@ -4066,9 +4066,9 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
     view_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_view_commands_append")
 
     assert view_body =~ "ELMC_RENDER_OP_TEXT"
-    assert view_body =~ "ELMC_RENDER_OP_TEXT_INT_WITH_FONT"
+    refute view_body =~ "ELMC_RENDER_OP_TEXT_INT_WITH_FONT"
     assert view_body =~ "scene_cmd.text[0] = '.';"
-    refute view_body =~ "elmc_scene_text_from_nonzero_int"
+    assert view_body =~ "elmc_scene_text_from_nonzero_int"
     refute view_body =~ "snprintf(scene_cmd.text"
     refute view_body =~ "const char *direct_text = \".\";"
     refute view_body =~ "elmc_fn_Main_drawCell_commands_append_native"

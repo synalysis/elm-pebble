@@ -16,6 +16,7 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
   alias Elmc.Backend.CCodegen.RcRequired
   alias Elmc.Backend.CCodegen.RcRuntimeEmit
   alias Elmc.Backend.CCodegen.RecordCompile
+  alias Elmc.Backend.CCodegen.RowMajorLayout
   alias Elmc.Backend.CCodegen.TypeParsing
   alias Elmc.Backend.CCodegen.Fusion
   alias Elmc.Backend.CCodegen.FunctionCallAbi
@@ -106,6 +107,9 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
     Process.delete(:elmc_generic_helper_defs)
     Process.delete(:elmc_generic_helper_counter)
 
+    if body == "" do
+      immortal_prelude <> helper_defs
+    else
     policy =
       if direct_args? do
         "#{Enum.join(decl.ownership, ", ")}, direct_call_abi"
@@ -160,6 +164,7 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
     #{native_projection}
     """
     |> String.trim_trailing()
+    end
   end
 
   defp plan_primary_function?(decl, module_name, decl_map) do
@@ -531,6 +536,9 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
              entry_probe,
              exit_probe
            ) do
+        {:ok, :skip_function} ->
+          ""
+
         {:ok, body} ->
           body
 
@@ -673,6 +681,9 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
                entry_probe,
                exit_probe
              ) do
+          {:ok, :skip_function} ->
+            ""
+
           {:ok, body} ->
             body
 
@@ -787,6 +798,15 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
       :legacy
     else
       case Plan.lower_function(decl, module_name, decl_map, rc_required: rc_required?) do
+           {:ok, %{fusion_c: fusion_c, fusion_emit: mode} = plan}
+           when is_binary(fusion_c) and fusion_c != "" and mode in [:helper_only, :public_native] ->
+          Process.put(
+            :elmc_generic_helper_defs,
+            [fusion_c | Process.get(:elmc_generic_helper_defs, [])]
+          )
+
+          {:ok, :skip_function}
+
         {:ok, %{fusion_c: fusion_c} = plan} when is_binary(fusion_c) and fusion_c != "" ->
           {:ok,
            emit_plan_fusion_body(
@@ -851,7 +871,8 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
           entry_probe,
           exit_probe,
           arg_binding_code,
-          rc_required?
+          rc_required?,
+          plan
         )
 
       _ ->
@@ -864,7 +885,8 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
           entry_probe,
           exit_probe,
           arg_binding_code,
-          rc_required?
+          rc_required?,
+          Map.get(plan, :fusion_arg_kinds)
         )
     end
   end
@@ -878,7 +900,8 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
          entry_probe,
          exit_probe,
          arg_binding_code,
-         rc_required?
+         rc_required?,
+         plan
        ) do
     c_name = Util.module_fn_name(module_name, decl.name)
     native = "#{c_name}_native"
@@ -890,26 +913,37 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
 
     native_args = fused_native_call_args(decl, arg_bindings, direct_args?)
 
-    core_body = [
-      entry_probe,
-      "*out = #{native}(#{native_args});",
-      "return RC_SUCCESS;",
-      exit_probe
-    ]
+    value_return? = Map.get(plan, :native_scalar_value_return) == true
 
-    if rc_required? do
-      wrap_rc_function_body(
-        arg_bindings,
-        arg_binding_code,
-        core_body,
-        direct_args?
-      )
-    else
+    core_body =
+      if value_return? do
+        [
+          entry_probe,
+          "return #{native}(#{native_args});",
+          exit_probe
+        ]
+      else
+        [
+          entry_probe,
+          "*out = #{native}(#{native_args});",
+          "return RC_SUCCESS;",
+          exit_probe
+        ]
+      end
+
+    if value_return? or not rc_required? do
       unused_casts = unused_arg_casts(arg_bindings, core_body)
 
       format_function_body(
         [wrapper_abi_void_casts(direct_args?, arg_bindings), arg_binding_code, unused_casts |
            core_body]
+      )
+    else
+      wrap_rc_function_body(
+        arg_bindings,
+        arg_binding_code,
+        core_body,
+        direct_args?
       )
     end
   end
@@ -1140,6 +1174,12 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
          )}
 
       {:ok, helper_c, _, :rc_native} ->
+        kinds = Fusion.infer_native_tag_fusion_arg_kinds(helper_c, decl)
+
+        if kinds do
+          Fusion.register_rc_native_arg_kinds(module_name, decl.name, kinds)
+        end
+
         {:ok,
          emit_rc_fused_native_wrapper_function(
            decl,
@@ -1150,7 +1190,8 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
            entry_probe,
            exit_probe,
            arg_binding_code,
-           rc_required?
+           rc_required?,
+           kinds
          )}
 
       {:ok, helper_c, _} when tuple2_table? ->
@@ -1245,10 +1286,23 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
          entry_probe,
          exit_probe,
          arg_binding_code,
-         rc_required?
+         rc_required?,
+         fusion_arg_kinds \\ nil
        ) do
     c_name = Util.module_fn_name(module_name, decl.name)
     native = "#{c_name}_native"
+
+    binding_code =
+      cond do
+        direct_args? ->
+          ""
+
+        is_list(fusion_arg_kinds) ->
+          native_wrapper_bindings(arg_bindings, fusion_arg_kinds, false)
+
+        true ->
+          arg_binding_code
+      end
 
     Process.put(
       :elmc_generic_helper_defs,
@@ -1256,9 +1310,7 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
     )
 
     fused_args =
-      arg_bindings
-      |> Enum.map(fn {_arg, c_arg, _index} -> c_arg end)
-      |> Enum.join(", ")
+      rc_native_fusion_call_args(arg_bindings, fusion_arg_kinds, not direct_args?)
 
     core_body =
       cond do
@@ -1289,9 +1341,30 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
     unused_casts = unused_arg_casts(arg_bindings, core_body)
 
     format_function_body(
-      [wrapper_abi_void_casts(direct_args?, arg_bindings), arg_binding_code, unused_casts |
+      [wrapper_abi_void_casts(direct_args?, arg_bindings), binding_code, unused_casts |
          core_body]
     )
+  end
+
+  defp rc_native_fusion_call_args(arg_bindings, kinds, unboxed_in_wrapper? \\ false)
+
+  defp rc_native_fusion_call_args(arg_bindings, kinds, unboxed_in_wrapper?) when is_list(kinds) do
+    arg_bindings
+    |> Enum.zip(kinds)
+    |> Enum.map_join(", ", fn {{_arg, c_arg, _index}, kind} ->
+      case kind do
+        :boxed_int_tag when unboxed_in_wrapper? -> c_arg
+        :boxed_int_tag -> RowMajorLayout.union_tag_expr(c_arg)
+        :native_int -> c_arg
+        _ -> c_arg
+      end
+    end)
+  end
+
+  defp rc_native_fusion_call_args(arg_bindings, _kinds, _unboxed_in_wrapper?) do
+    arg_bindings
+    |> Enum.map(fn {_arg, c_arg, _index} -> c_arg end)
+    |> Enum.join(", ")
   end
 
   defp fused_native_call_args(%{type: type}, arg_bindings, direct_args?) when is_binary(type) do
@@ -1466,6 +1539,47 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
     |> Enum.join("\n")
   end
 
+  @spec generic_rc_native_fusion_prototypes(
+          ElmEx.IR.t(),
+          MapSet.t(Types.function_decl_key()),
+          Types.function_decl_map()
+        ) :: String.t()
+  def generic_rc_native_fusion_prototypes(ir, generic_targets, decl_map) do
+    ir.modules
+    |> Enum.flat_map(fn mod ->
+      mod.declarations
+      |> Enum.filter(fn decl ->
+        target = {mod.name, decl.name}
+
+        decl.kind == :function and MapSet.member?(generic_targets, target) and
+          Fusion.rc_native_fusion_arg_kinds(target) != nil
+      end)
+      |> Enum.map(fn decl ->
+        c_name = Util.module_fn_name(mod.name, decl.name)
+        kinds = Fusion.rc_native_fusion_arg_kinds({mod.name, decl.name})
+        params = rc_native_fusion_proto_params(decl, kinds, mod.name)
+
+        "static RC #{c_name}_native(#{params});"
+      end)
+    end)
+    |> Enum.join("\n")
+  end
+
+  defp rc_native_fusion_proto_params(decl, kinds, _module_name) when is_list(kinds) do
+    arg_bindings = c_arg_bindings(Map.get(decl, :args, []))
+
+    params =
+      arg_bindings
+      |> Enum.zip(kinds)
+      |> Enum.map(fn
+        {{_arg, c_arg, _index}, :native_int} -> "elmc_int_t #{c_arg}"
+        {{_arg, c_arg, _index}, :boxed_int_tag} -> "elmc_int_t #{c_arg}"
+        {{_arg, c_arg, _index}, _} -> "ElmcValue *#{c_arg}"
+      end)
+
+    (["ElmcValue **out"] ++ params) |> Enum.join(", ")
+  end
+
   @spec generic_plan_native_projection_prototypes(
           ElmEx.IR.t(),
           MapSet.t(Types.function_decl_key()),
@@ -1535,6 +1649,7 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
         target = {mod.name, decl.name}
 
         decl.kind == :function and MapSet.member?(generic_targets, target) and
+          not helper_only_fusion_plan?(decl, mod.name, decl_map) and
           (MapSet.member?(wrapper_targets, target) or
              not NativeFunctionCall.native_scalar_fn?(decl, mod.name, decl_map) or
              Plan.primary_lowered?(decl, mod.name, decl_map))
@@ -1550,6 +1665,19 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
       end)
     end)
     |> Enum.join("\n")
+  end
+
+  defp helper_only_fusion_plan?(decl, module_name, decl_map) do
+    opts = Process.get(:elmc_codegen_opts, [])
+
+    if Plan.plan_ir_mode(opts) != :primary do
+      false
+    else
+      case Plan.lower_function(decl, module_name, decl_map, rc_required?: true) do
+        {:ok, %{fusion_emit: :helper_only}} -> true
+        _ -> false
+      end
+    end
   end
 
   @spec c_arg_bindings([String.t()]) :: [Types.c_arg_binding()]
@@ -1627,9 +1755,14 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
     arg_kinds = NativeFunctionCall.arg_kinds(decl, module_name, decl_map)
     fusion_native? = rc_native_fusion?(module_name, decl, decl_map)
     wrapper_arg_kinds =
-      if fusion_native?,
-        do: NativeFunctionCall.signature_arg_kinds(decl, module_name, decl_map),
-        else: arg_kinds
+      cond do
+        fusion_native? ->
+          Fusion.rc_native_fusion_arg_kinds({module_name, decl.name}) ||
+            NativeFunctionCall.signature_arg_kinds(decl, module_name, decl_map)
+
+        true ->
+          arg_kinds
+      end
 
     {entry_probe, exit_probe} = DebugProbes.entry_exit_probes(module_name, decl.name)
 
@@ -1724,12 +1857,12 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
               )
 
             fusion_native? and return_kind == :boxed and rc_required? ->
-              "return #{c_name}_native(out, #{rc_native_fusion_call_args(c_arg_bindings, wrapper_arg_kinds)});"
+              "return #{c_name}_native(out, #{rc_native_fusion_call_args(c_arg_bindings, wrapper_arg_kinds, true)});"
 
             fusion_native? and return_kind == :boxed ->
               """
               ElmcValue *tmp_result = NULL;
-              if (#{c_name}_native(&tmp_result, #{rc_native_fusion_call_args(c_arg_bindings, wrapper_arg_kinds)}) != RC_SUCCESS) return NULL;
+              if (#{c_name}_native(&tmp_result, #{rc_native_fusion_call_args(c_arg_bindings, wrapper_arg_kinds, true)}) != RC_SUCCESS) return NULL;
               return tmp_result;
               """
 
@@ -1797,19 +1930,6 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
     Fusion.rc_native_fusion?(module_name, decl.name, decl.expr, decl_map)
   end
 
-  defp rc_native_fusion_call_args(c_arg_bindings, arg_kinds) do
-    c_arg_bindings
-    |> Enum.zip(arg_kinds)
-    |> Enum.map(fn {{_arg, c_arg, _index}, kind} ->
-      case kind do
-        :native_int -> c_arg
-        :native_bool -> c_arg
-        :boxed -> c_arg
-      end
-    end)
-    |> Enum.join(", ")
-  end
-
   defp native_wrapper_bindings(c_arg_bindings, arg_kinds, true) do
     native_wrapper_bindings(c_arg_bindings, arg_kinds, false)
   end
@@ -1824,6 +1944,9 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
 
         :native_bool ->
           "elmc_int_t #{c_arg} = (argc > #{index} && args[#{index}]) ? elmc_as_bool(args[#{index}]) : 0;"
+
+        :boxed_int_tag ->
+          "elmc_int_t #{c_arg} = (argc > #{index} && args[#{index}]) ? #{RowMajorLayout.union_tag_expr("args[#{index}]")} : 0;"
 
         :boxed ->
           "ElmcValue *#{c_arg} = (argc > #{index}) ? args[#{index}] : NULL;"

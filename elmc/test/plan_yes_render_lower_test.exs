@@ -9,6 +9,38 @@ defmodule Elmc.PlanYesRenderLowerTest do
   @moduletag :plan_surface
   @moduletag :slow
 
+  test "watchface_yes fromScreen decl args match cdecl param names" do
+    {:ok, result} =
+      TemplateCompile.compile_watch_template("watchface_yes",
+        plan_ir_mode: :primary,
+        out_dir: Path.expand("tmp/plan_yes_from_screen_args", __DIR__)
+      )
+
+    decl_map = TemplateCompile.decl_map_from_result(result)
+    decl = Map.fetch!(decl_map, {"Yes.Layout", "fromScreen"})
+
+    assert decl.args == ["screenW", "screenH"]
+
+    {:ok, plan} = PlanLower.lower(decl, "Yes.Layout", decl_map, rc_required: true)
+
+    assert Enum.map(plan.params, & &1.name) == ["screenW", "screenH"]
+
+    load_params =
+      plan.blocks
+      |> Enum.flat_map(& &1.instrs)
+      |> Enum.filter(&(&1.op == :load_param))
+
+    assert Enum.all?(load_params, fn %{args: %{index: idx}} -> idx in [0, 1] end)
+
+    const_c_exprs =
+      plan.blocks
+      |> Enum.flat_map(& &1.instrs)
+      |> Enum.filter(&(&1.op == :const_c_expr))
+      |> Enum.map(& &1.args.value)
+
+    refute Enum.any?(const_c_exprs, &String.starts_with?(&1, "arg"))
+  end
+
   test "watchface_yes Yes.Render and Yes.Layout lower without fallbacks" do
     out_dir = Path.expand("tmp/plan_yes_render_lower", __DIR__)
     File.rm_rf!(out_dir)
@@ -27,6 +59,7 @@ defmodule Elmc.PlanYesRenderLowerTest do
 
     for {mod, name} <- [
           {"Yes.Render", "drawBottomRight"},
+          {"Yes.Render", "drawBottomRightCountdown"},
           {"Yes.Render", "pointAt"},
           {"Yes.Layout", "fromScreen"}
         ] do
@@ -55,5 +88,14 @@ defmodule Elmc.PlanYesRenderLowerTest do
     draw_br_body = CCodegenExtract.fn_body(generated_c, "elmc_fn_Yes_Render_drawBottomRight")
     assert draw_br_body =~ "elmc_render_cmd6"
     refute draw_br_body =~ "drawVectorAt_native"
+
+    init_body = CCodegenExtract.fn_body(generated_c, "elmc_fn_Main_init")
+    assert init_body =~ "Rc = elmc_fn_Yes_Layout_fromScreen(&owned["
+    refute init_body =~ "owned[5] = elmc_fn_Yes_Layout_fromScreen("
+
+    from_screen_body = CCodegenExtract.fn_body(generated_c, "elmc_fn_Yes_Layout_fromScreen")
+    refute from_screen_body =~ "elmc_as_int(arg2)"
+    refute from_screen_body =~ "elmc_as_int(arg10)"
+    assert from_screen_body =~ "screenH"
   end
 end
