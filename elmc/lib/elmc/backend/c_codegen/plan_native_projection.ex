@@ -1,6 +1,7 @@
 defmodule Elmc.Backend.CCodegen.PlanNativeProjection do
   @moduledoc false
 
+  alias Elmc.Backend.C.Lower.NativeReturn
   alias Elmc.Backend.CCodegen.{Fusion, FunctionEmit, Host, Native.FunctionCall, RcRequired, Util}
   alias Elmc.Backend.Plan
 
@@ -9,6 +10,7 @@ defmodule Elmc.Backend.CCodegen.PlanNativeProjection do
   @spec eligible?(map(), String.t(), map()) :: boolean()
   def eligible?(decl, module_name, decl_map) do
     Plan.primary_lowered?(decl, module_name, decl_map) and
+      is_nil(NativeReturn.cached_kind({module_name, decl.name})) and
       RcRequired.rc_required?(module_name, decl.name) and
       not Fusion.rc_native_fusion?(module_name, decl.name, Map.get(decl, :expr), decl_map) and
       projection_kind(decl) in [:native_int, :native_bool]

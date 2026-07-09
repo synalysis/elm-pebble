@@ -42,6 +42,22 @@ defmodule Elmc.TestSupport.BytecodeDisasm do
 
   defp insn_size(:const_immortal_string, _rest), do: {:error, "const_immortal_string truncated"}
 
+  defp insn_size(:const_static_list, <<kind::8, count::16, _rest::binary>>) do
+    size =
+      3 +
+        case kind do
+          0 -> count * 4
+          1 -> count * 8
+          2 -> count * 8
+          k when k in [3, 4] -> count * 2
+          _ -> 0
+        end
+
+    {:ok, size, "kind=#{kind} count=#{count}"}
+  end
+
+  defp insn_size(:const_static_list, _rest), do: {:error, "const_static_list truncated"}
+
   defp insn_size(:int_arith, <<kind::8, _::binary>>) do
     size = if kind in [0, 1], do: 5, else: 4
     {:ok, size, "kind=#{kind}"}

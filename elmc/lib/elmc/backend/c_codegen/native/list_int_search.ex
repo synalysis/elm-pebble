@@ -156,7 +156,8 @@ defmodule Elmc.Backend.CCodegen.Native.ListIntSearch do
           head_native,
           loop_body,
           env,
-          list_arg
+          list_arg,
+          repr: :int_list
         )
 
       code = """
@@ -357,11 +358,39 @@ defmodule Elmc.Backend.CCodegen.Native.ListIntSearch do
   defp target_arg_matches?(%{op: :sub_const, var: target, value: amount}, target, {:sub_const, amount}),
     do: true
 
+  defp target_arg_matches?(
+         %{op: :call, name: "__sub__", args: [%{op: :var, name: target}, %{op: :int_literal, value: amount}]},
+         target,
+         {:sub_const, amount}
+       ),
+       do: true
+
+  defp target_arg_matches?(
+         %{op: :call, name: "__sub__", args: [%{op: :int_literal, value: amount}, %{op: :var, name: target}]},
+         target,
+         {:sub_const, amount}
+       ),
+       do: true
+
   defp target_arg_matches?(_expr, _target, _update), do: false
 
   @spec index_arg_matches?(Types.ir_expr(), String.t(), {:add_const, integer()}) :: boolean()
   defp index_arg_matches?(%{op: :add_const, var: index, value: amount}, index, {:add_const, amount}),
     do: true
+
+  defp index_arg_matches?(
+         %{op: :call, name: "__add__", args: [%{op: :var, name: index}, %{op: :int_literal, value: amount}]},
+         index,
+         {:add_const, amount}
+       ),
+       do: true
+
+  defp index_arg_matches?(
+         %{op: :call, name: "__add__", args: [%{op: :int_literal, value: amount}, %{op: :var, name: index}]},
+         index,
+         {:add_const, amount}
+       ),
+       do: true
 
   defp index_arg_matches?(_expr, _index, _update), do: false
 

@@ -42,9 +42,11 @@ defmodule Elmc.Backend.Plan.Context do
 
   @spec new(keyword()) :: t()
   def new(opts \\ []) do
+    function_tail? = Keyword.get(opts, :function_tail, false)
+
     %__MODULE__{
-      dest_stack: [:scratch],
-      function_tail: Keyword.get(opts, :function_tail, false),
+      dest_stack: if(function_tail?, do: [:fn_out], else: [:scratch]),
+      function_tail: function_tail?,
       rc_required: Keyword.get(opts, :rc_required, false),
       fallible: Keyword.get(opts, :fallible, false),
       module: Keyword.get(opts, :module),
@@ -109,6 +111,10 @@ defmodule Elmc.Backend.Plan.Context do
 
   @spec push_branch(t()) :: t()
   def push_branch(ctx), do: %{ctx | dest_stack: [:branch_out | ctx.dest_stack]}
+
+  # Control-flow arms (if/case) must not target fn_out; merge/phi publishes the tail result.
+  @spec for_branch_arm(t()) :: t()
+  def for_branch_arm(ctx), do: %{ctx | dest_stack: [:scratch], function_tail: false}
 
   @spec pop_dest(t()) :: t()
   def pop_dest(%{dest_stack: [_ | rest]} = ctx), do: %{ctx | dest_stack: rest}

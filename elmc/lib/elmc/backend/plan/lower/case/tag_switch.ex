@@ -119,7 +119,7 @@ defmodule Elmc.Backend.Plan.Lower.Case.TagSwitch do
   defp compile_one_arm(branch, subj_reg, ctx, b) do
     pattern = Map.get(branch, :pattern, %{})
     expr = Map.get(branch, :expr)
-    branch_ctx = ctx
+    branch_ctx = Context.for_branch_arm(ctx)
 
     case pattern do
       %{kind: :wildcard} ->

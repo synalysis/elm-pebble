@@ -225,7 +225,22 @@ defmodule Elmc.Backend.CCodegen.GeneratedSource do
       |> Map.new()
 
     constructor_tags = IRQueries.constructor_tag_map(ir)
-    {_record_field_defines, record_field_macros} = RecordFieldMacros.definitions(ir)
+    decl_map = IRQueries.function_decl_map(ir)
+    generic_targets = GenericTargets.function_targets(ir, opts)
+
+    reachable_for_fields =
+      generic_targets
+      |> MapSet.union(Host.direct_command_targets(ir, opts, decl_map))
+
+    used_record_fields =
+      if opts[:strip_dead_code] == false do
+        nil
+      else
+        RecordFieldMacros.used_field_keys(decl_map, reachable_for_fields)
+      end
+
+    {_record_field_defines, record_field_macros} =
+      RecordFieldMacros.definitions(ir, used_fields: used_record_fields)
     Process.put(:elmc_constructor_tags, constructor_tags)
     Process.put(:elmc_record_field_macros, record_field_macros)
     Process.put(:elmc_vector_resource_slots, IRQueries.pebble_vector_resource_slot_map(ir))
@@ -342,6 +357,9 @@ defmodule Elmc.Backend.CCodegen.GeneratedSource do
     Process.put(:elmc_codegen_opts, opts)
     Process.put(:elmc_plan_ir_mode, Map.get(opts, :plan_ir_mode, Elmc.Backend.Plan.Defaults.plan_ir_mode()))
     Process.put(:elmc_plan_primary_fallbacks, [])
+    Process.put(:elmc_plan_primary_lowered_cache, %{})
+    Process.put(:elmc_plan_native_returns, %{})
+    Process.put(:elmc_plan_native_value_returns, MapSet.new())
     DefRegistry.reset()
     _ = RcRequired.run!(decl_map, rc_required_opts(opts, direct_command_targets))
     :ok
@@ -399,7 +417,19 @@ defmodule Elmc.Backend.CCodegen.GeneratedSource do
         |> MapSet.union(SpecialValues.compiler_folded_union_constructors())
       end
 
-    {record_field_defines, _record_field_macros} = RecordFieldMacros.definitions(ir)
+    used_record_fields =
+      if opts[:strip_dead_code] == false do
+        nil
+      else
+        RecordFieldMacros.used_field_keys(
+          decl_map,
+          generic_targets
+          |> MapSet.union(direct_command_targets)
+        )
+      end
+
+    {record_field_defines, _record_field_macros} =
+      RecordFieldMacros.definitions(ir, used_fields: used_record_fields)
 
     {union_constructor_defines, _union_constructor_macros} =
       UnionMacros.definitions(ir, used_union_ctors: used_union_ctors)
@@ -412,6 +442,8 @@ defmodule Elmc.Backend.CCodegen.GeneratedSource do
 
     generic_native_prototypes =
       FunctionEmit.generic_native_function_prototypes(ir, generic_targets, decl_map)
+
+    FunctionEmit.prelower_plan_native_returns(ir, generic_targets, decl_map)
 
     generic_plan_projection_prototypes =
       FunctionEmit.generic_plan_native_projection_prototypes(ir, generic_targets, decl_map)

@@ -171,7 +171,7 @@ defmodule Elmc.Backend.Plan.Lower.Call do
           %{produces: nil, consumes: consumes, borrows: borrows, fallible: true}
         end
 
-      wrap_catch? = (ctx.fallible or ctx.rc_required) and not Builder.skip_instr_catch?(b2, ctx)
+      wrap_catch? = Builder.wrap_fallible_instr_catch?(b2, ctx, true)
       b3 = if wrap_catch?, do: Builder.catch_begin(b2), else: b2
 
       {_, b4} =
@@ -203,8 +203,10 @@ defmodule Elmc.Backend.Plan.Lower.Call do
   end
 
   defp compile_batch_call(target, args, ctx, b) do
+    operand_ctx = Context.for_branch_arm(ctx)
+
     with [list_expr | _] <- args,
-         {:ok, list_reg, b1} <- compile_batch_list_arg(list_expr, ctx, b) do
+         {:ok, list_reg, b1} <- compile_batch_list_arg(list_expr, operand_ctx, b) do
       Expr.compile_runtime_builtin(batch_builtin_id(target), [list_reg], ctx, b1)
     else
       _ -> :unsupported
@@ -306,7 +308,7 @@ defmodule Elmc.Backend.Plan.Lower.Call do
         %{produces: nil, consumes: consumes, borrows: borrows, fallible: true}
       end
 
-    wrap_catch? = (ctx.fallible or ctx.rc_required) and not Builder.skip_instr_catch?(b0, ctx)
+    wrap_catch? = Builder.wrap_fallible_instr_catch?(b0, ctx, true)
 
     b1 =
       if wrap_catch? do

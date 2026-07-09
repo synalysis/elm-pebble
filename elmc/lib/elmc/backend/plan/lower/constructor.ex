@@ -70,8 +70,9 @@ defmodule Elmc.Backend.Plan.Lower.Constructor do
 
   def compile(_, _, _), do: :unsupported
 
-  defp compile_resource_union_index(target, ctx, b) do
-    Expr.compile_runtime_builtin(:new_int, [], ctx, b, %{literal: ResourceUnion.slot_index(target)})
+  defp compile_resource_union_index(target, _ctx, b) do
+    {reg, b1} = Builder.emit_const_int(b, ResourceUnion.slot_index(target))
+    {:ok, reg, b1}
   end
 
   defp compile_nothing(ctx, b) do
@@ -98,7 +99,7 @@ defmodule Elmc.Backend.Plan.Lower.Constructor do
          {owned_payload, b_owned} = Builder.copy_reg_owned(b1, payload_reg) do
       {dest, b2} = dest_for_ctor(ctx, b_owned)
 
-      wrap_catch? = (ctx.fallible or ctx.rc_required) and not Builder.skip_instr_catch?(b2, ctx)
+      wrap_catch? = Builder.wrap_fallible_instr_catch?(b2, ctx, true)
 
       b3 = if wrap_catch?, do: Builder.catch_begin(b2), else: b2
 
@@ -143,10 +144,10 @@ defmodule Elmc.Backend.Plan.Lower.Constructor do
     Builder.emit_const_int(b, value) |> then(fn {reg, b1} -> {:ok, reg, b1} end)
   end
 
-  defp compile_union_tag_int(target, value, ctx, b) do
+  defp compile_union_tag_int(target, value, _ctx, b) do
     case lookup_constructor_tag(target, value) do
       tag when is_integer(tag) ->
-        Expr.compile_runtime_builtin(:new_int, [], ctx, b, %{literal: tag})
+        Builder.emit_const_int(b, tag) |> then(fn {reg, b1} -> {:ok, reg, b1} end)
 
       _ ->
         :unsupported

@@ -24,6 +24,8 @@ defmodule Elmc.Backend.Plan.Types do
 
   @type opcode ::
           :const_int
+          | :const_c_expr
+          | :const_static_list
           | :const_immortal_string
           | :load_param
           | :load_local
@@ -50,6 +52,7 @@ defmodule Elmc.Backend.Plan.Types do
           | :bool_and
           | :compare
           | :record_get
+          | :record_get_int
           | :tuple_proj
           | :tuple2
           | :record_new
@@ -60,6 +63,8 @@ defmodule Elmc.Backend.Plan.Types do
           | :boxed_binop
           | :pebble_cmd
           | :render_cmd
+          | :render_text_cmd
+          | :list_cursor_map
           | :pebble_sub
           | :forward_ref_set
           | :forward_ref_load
@@ -139,7 +144,10 @@ defmodule Elmc.Backend.Plan.Types do
       :catch_depth,
       :lambdas,
       :lambda_arg_count,
-      :letrec_refs
+      :letrec_refs,
+      :fusion_c,
+      :native_scalar_return,
+      :native_scalar_value_return
     ]
 
     @type t :: %__MODULE__{
@@ -156,7 +164,10 @@ defmodule Elmc.Backend.Plan.Types do
             catch_depth: non_neg_integer(),
             lambdas: [FunctionPlan.t()],
             lambda_arg_count: non_neg_integer() | nil,
-            letrec_refs: [String.t()]
+            letrec_refs: [String.t()],
+            fusion_c: String.t() | nil,
+            native_scalar_return: :native_int | :native_bool | nil,
+            native_scalar_value_return: boolean()
           }
   end
 
@@ -166,12 +177,18 @@ defmodule Elmc.Backend.Plan.Types do
   def empty_effects, do: %{produces: nil, consumes: [], borrows: [], fallible: false}
 
   @spec owned_effects(reg()) :: effects()
-  def owned_effects(reg), do: %{produces: {:owned, reg}, consumes: [], borrows: [], fallible: false}
+  def owned_effects(reg) when is_integer(reg),
+    do: %{produces: {:owned, reg}, consumes: [], borrows: [], fallible: false}
 
-  @spec fallible_effects(reg(), [reg()], [reg()]) :: effects()
+  def owned_effects(_),
+    do: %{produces: nil, consumes: [], borrows: [], fallible: false}
+
+  @spec fallible_effects(reg() | result_slot(), [reg()], [reg()]) :: effects()
   def fallible_effects(reg, borrows \\ [], consumes \\ []) do
+    produces = if is_integer(reg), do: {:owned, reg}, else: nil
+
     %{
-      produces: {:owned, reg},
+      produces: produces,
       consumes: consumes,
       borrows: borrows,
       fallible: true

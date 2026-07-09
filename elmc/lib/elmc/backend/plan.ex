@@ -11,17 +11,50 @@ defmodule Elmc.Backend.Plan do
   @spec primary_lowered?(map(), String.t(), map(), keyword()) :: boolean()
   def primary_lowered?(decl, module_name, decl_map, opts \\ []) do
     opts = if opts == [], do: Process.get(:elmc_codegen_opts, []), else: opts
+    name = Map.get(decl, :name, "")
+    key = {module_name, name}
 
-    if plan_ir_mode(opts) == :primary do
-      rc_required? = RcRequired.rc_required?(module_name, Map.get(decl, :name, ""))
+    cond do
+      plan_ir_mode(opts) != :primary ->
+        false
 
-      match?(
-        {:ok, _},
-        lower_function(decl, module_name, decl_map, rc_required: rc_required?)
-      )
-    else
-      false
+      true ->
+        case primary_lowered_cache_get(key) do
+          {:ok, result} ->
+            result
+
+          :pending ->
+            # plan_use_refs -> callee_arg_kinds re-enters while lowering the same function.
+            true
+
+          :miss ->
+            primary_lowered_cache_put(key, :pending)
+
+            rc_required? = RcRequired.rc_required?(module_name, name)
+
+            result =
+              match?(
+                {:ok, _},
+                lower_function(decl, module_name, decl_map, rc_required: rc_required?)
+              )
+
+            primary_lowered_cache_put(key, {:ok, result})
+            result
+        end
     end
+  end
+
+  defp primary_lowered_cache_get(key) do
+    case Map.get(Process.get(:elmc_plan_primary_lowered_cache, %{}), key) do
+      {:ok, _} = hit -> hit
+      :pending -> :pending
+      _ -> :miss
+    end
+  end
+
+  defp primary_lowered_cache_put(key, value) do
+    cache = Process.get(:elmc_plan_primary_lowered_cache, %{})
+    Process.put(:elmc_plan_primary_lowered_cache, Map.put(cache, key, value))
   end
 
   defdelegate lower_function(decl, module, decl_map, opts \\ []),

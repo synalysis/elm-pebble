@@ -98,7 +98,7 @@ defmodule Elmc.Backend.Plan.Lower.Case.GuardedSwitch do
     pattern = Map.get(branch, :pattern, %{})
     expr = Map.get(branch, :expr)
 
-    with {:ok, arm_ctx, b1} <- bind_pattern(ctx, b_arm, pattern, subj_reg),
+    with {:ok, arm_ctx, b1} <- bind_pattern(Context.for_branch_arm(ctx), b_arm, pattern, subj_reg),
          {:ok, reg, b2} <- Expr.compile(expr, arm_ctx, b1),
          {:ok, b_pub} <- ArmMerge.publish_arm_to_merge(b2, reg, merge_reg),
          exit_id = b_pub.current_block.id,

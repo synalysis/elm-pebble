@@ -130,6 +130,11 @@ defmodule Elmc.Backend.Plan.Verify do
   defp apply_instr(%Types{effects: %{fallible: true}} = instr, %{in_catch: 0, rc_required: true} = st),
     do: apply_value_effects(instr, st)
 
+  # Non-RC `ElmcValue *` helpers use `_take_value` allocators (NULL on failure), not
+  # per-instruction plan catch regions or CHECK_RC.
+  defp apply_instr(%Types{effects: %{fallible: true}} = instr, %{in_catch: 0, rc_required: false} = st),
+    do: apply_value_effects(instr, st)
+
   defp apply_instr(%Types{effects: %{fallible: true}} = instr, %{in_catch: 0}),
     do: verify_fail!(:fallible_outside_catch, [op: instr.op, dest: instr.dest])
 
@@ -175,7 +180,7 @@ defmodule Elmc.Backend.Plan.Verify do
     st
   end
 
-  defp track_produces(st, {:owned, reg}, _dest) do
+  defp track_produces(st, {:owned, reg}, _dest) when is_integer(reg) do
     %{st | owned: MapSet.put(st.owned, reg)}
   end
 
@@ -191,7 +196,9 @@ defmodule Elmc.Backend.Plan.Verify do
     end)
   end
 
-  defp apply_terminator({:ret, reg}, st) when reg in [:fn_out], do: st
+  defp apply_terminator({:ret, reg}, st) when reg in [:fn_out, :branch_out] do
+    %{st | owned: MapSet.delete(st.owned, reg)}
+  end
 
   defp apply_terminator({:ret, reg}, st) when is_integer(reg) do
     if MapSet.member?(st.consumed, reg), do: verify_fail!(:ret_after_consume, reg: reg)

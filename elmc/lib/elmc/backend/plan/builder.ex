@@ -103,7 +103,7 @@ defmodule Elmc.Backend.Plan.Builder do
 
   @doc false
   @spec begin_cfg_arm_block(t(), non_neg_integer()) :: t()
-  def begin_cfg_arm_block(b, block_id), do: b |> reset_param_cache() |> begin_block(block_id)
+  def begin_cfg_arm_block(b, block_id), do: %{b | param_load_blocks: %{}} |> begin_block(block_id)
 
   @spec emit(t(), Types.opcode(), keyword() | map()) :: {Types.reg() | Types.result_slot() | nil, t()}
   def emit(b, op, opts) when is_map(opts) and not is_list(opts) do
@@ -153,7 +153,20 @@ defmodule Elmc.Backend.Plan.Builder do
     {reg, b2}
   end
 
-  @spec param_reg?(t(), Types.reg()) :: boolean()
+  @spec emit_const_c_expr(t(), String.t()) :: {Types.reg(), t()}
+  def emit_const_c_expr(b, value) when is_binary(value) do
+    {reg, b1} = fresh_reg(b)
+
+    {_, b2} =
+      emit(b1, :const_c_expr, %{
+        dest: reg,
+        args: %{value: value},
+        effects: Types.owned_effects(reg)
+      })
+
+    {reg, b2}
+  end
+
   def param_reg?(b, reg) when is_integer(reg), do: reg in Map.values(b.param_regs)
   def param_reg?(_, _), do: false
 
@@ -222,42 +235,32 @@ defmodule Elmc.Backend.Plan.Builder do
 
   @spec dup_regs_for_owned_consume(t(), [Types.reg()]) :: {[Types.reg()], t()}
   def dup_regs_for_owned_consume(b, arg_regs) when is_list(arg_regs) do
-    {regs, {b_final, _seen}} =
-      Enum.map_reduce(arg_regs, {b, MapSet.new()}, fn reg, {b_acc, seen} ->
-        cond do
-          not is_integer(reg) ->
-            {reg, {b_acc, seen}}
-
-          param_reg?(b_acc, reg) ->
-            {dup, b1} = retain_reg_copy(b_acc, reg)
-            {dup, {b1, seen}}
-
-          MapSet.member?(seen, reg) ->
-            {dup, b1} = retain_reg_copy(b_acc, reg)
-            {dup, {b1, seen}}
-
-          true ->
-            {reg, {b_acc, MapSet.put(seen, reg)}}
-        end
-      end)
-
-    {regs, b_final}
+    dup_regs_with_canonical(b, arg_regs, param_retain?: true)
   end
 
   @spec dup_regs_for_consume(t(), [Types.reg()]) :: {[Types.reg()], t()}
   def dup_regs_for_consume(b, arg_regs) when is_list(arg_regs) do
-    {regs, {b_final, _seen}} =
-      Enum.map_reduce(arg_regs, {b, MapSet.new()}, fn reg, {b_acc, seen} ->
+    dup_regs_with_canonical(b, arg_regs, param_retain?: false)
+  end
+
+  defp dup_regs_with_canonical(b, arg_regs, opts) do
+    param_retain? = Keyword.get(opts, :param_retain?, false)
+
+    {regs, {b_final, _canon}} =
+      Enum.map_reduce(arg_regs, {b, %{}}, fn reg, {b_acc, canon} ->
         cond do
           not is_integer(reg) ->
-            {reg, {b_acc, seen}}
+            {reg, {b_acc, canon}}
 
-          MapSet.member?(seen, reg) ->
+          Map.has_key?(canon, reg) ->
+            {Map.fetch!(canon, reg), {b_acc, canon}}
+
+          param_retain? and param_reg?(b_acc, reg) ->
             {dup, b1} = retain_reg_copy(b_acc, reg)
-            {dup, {b1, seen}}
+            {dup, {b1, Map.put(canon, reg, dup)}}
 
           true ->
-            {reg, {b_acc, MapSet.put(seen, reg)}}
+            {reg, {b_acc, Map.put(canon, reg, reg)}}
         end
       end)
 
@@ -268,9 +271,25 @@ defmodule Elmc.Backend.Plan.Builder do
   def dup_named_locals_for_consume(b, arg_regs) when is_list(arg_regs) do
     {regs, b1} = dup_regs_for_owned_consume(b, arg_regs)
 
-    Enum.map_reduce(regs, b1, fn reg, b_acc ->
-      dup_named_local_if_bound(b_acc, reg)
-    end)
+    {regs, {b_final, _local_canon}} =
+      Enum.map_reduce(regs, {b1, %{}}, fn reg, {b_acc, local_canon} ->
+        cond do
+          not is_integer(reg) ->
+            {reg, {b_acc, local_canon}}
+
+          Map.has_key?(local_canon, reg) ->
+            {Map.fetch!(local_canon, reg), {b_acc, local_canon}}
+
+          named_local_reg?(b_acc, reg) ->
+            {dup, b2} = retain_reg_copy(b_acc, reg)
+            {dup, {b2, Map.put(local_canon, reg, dup)}}
+
+          true ->
+            {reg, {b_acc, local_canon}}
+        end
+      end)
+
+    {regs, b_final}
   end
 
   @spec dup_named_local_if_bound(t(), Types.reg()) :: {Types.reg(), t()}
@@ -456,6 +475,17 @@ defmodule Elmc.Backend.Plan.Builder do
   @spec skip_instr_catch?(t(), Elmc.Backend.Plan.Context.t()) :: boolean()
   def skip_instr_catch?(b, ctx) do
     in_catch?(b) or (ctx.rc_required and ctx.fallible)
+  end
+
+  @doc """
+  Per-instruction `catch_begin`/`catch_end` is only for fallible ops inside RC
+  functions (where `CHECK_RC` + `break` exits the outer `CATCH_BEGIN`). Non-RC
+  `ElmcValue *` helpers use `_take_value` allocators and must not get nested
+  no-op catch regions.
+  """
+  @spec wrap_fallible_instr_catch?(t(), Elmc.Backend.Plan.Context.t(), boolean()) :: boolean()
+  def wrap_fallible_instr_catch?(b, ctx, op_fallible?) do
+    op_fallible? and ctx.rc_required and not skip_instr_catch?(b, ctx)
   end
 
   @spec catch_begin(t()) :: t()

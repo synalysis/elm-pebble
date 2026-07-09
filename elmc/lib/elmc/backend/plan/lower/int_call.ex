@@ -31,36 +31,61 @@ defmodule Elmc.Backend.Plan.Lower.IntCall do
         Arith.emit_binary(Map.fetch!(@binary_ops, name), left, right, ctx, b)
 
       name in ["__add__", "__sub__", "__mul__", "__idiv__"] ->
-        op =
-          case name do
-            "__add__" -> :add
-            "__sub__" -> :sub
-            "__mul__" -> :mul
-            "__idiv__" -> :idiv
-          end
+        kind = Map.fetch!(@binary_ops, name)
 
-        Arith.emit_boxed_binop(op, left, right, ctx, b)
+        cond do
+          float_mixture?(left, right) ->
+            op =
+              case name do
+                "__add__" -> :add
+                "__sub__" -> :sub
+                "__mul__" -> :mul
+                "__idiv__" -> :idiv
+              end
+
+            Arith.emit_boxed_binop(op, left, right, ctx, b)
+
+          int_binop_operands?(left, right) ->
+            Arith.emit_binary(kind, left, right, ctx, b)
+
+          true ->
+            with {:ok, l, b1} <- Expr.compile(left, ctx, b),
+                 {:ok, r, b2} <- Expr.compile(right, ctx, b1) do
+              Arith.emit_int_arith_regs(kind, l, r, ctx, b2)
+            end
+        end
 
       name == "__append__" ->
-        append_builtin =
-          cond do
-            list_append_operand?(left) or list_append_operand?(right) -> :list_append
-            string_append_operands?(left, right) -> :string_append
-            true -> :list_append
-          end
+        folded =
+          Elmc.Backend.CCodegen.StaticString.fold_append_literals(%{
+            op: :call,
+            name: "__append__",
+            args: [left, right]
+          })
 
-        with {:ok, arg_regs, b1} <- Expr.compile_args([left, right], ctx, b) do
-          Expr.compile_runtime_builtin(append_builtin, arg_regs, ctx, b1)
-        end
+        compile_folded_append(folded, ctx, b)
 
       Map.has_key?(@runtime_ops, name) ->
         target = Map.fetch!(@runtime_ops, name)
 
-        with {:ok, arg_regs, b1} <- Expr.compile_args([left, right], ctx, b),
-             id when not is_nil(id) <- Elmc.Backend.Plan.RuntimeBuiltins.from_c_symbol(target) do
-          Expr.compile_runtime_builtin(id, arg_regs, ctx, b1)
-        else
-          _ -> :unsupported
+        cond do
+          name in ["Basics.min", "Basics.max"] and int_binop_operands?(left, right) ->
+            kind = if name == "Basics.min", do: :min_vars, else: :max_vars
+            Arith.emit_binary(kind, left, right, ctx, b)
+
+          name in ["modBy", "Basics.modBy"] and int_binop_operands?(left, right) ->
+            Arith.emit_binary(:mod_vars, left, right, ctx, b)
+
+          name in ["remainderBy", "Basics.remainderBy"] and int_binop_operands?(left, right) ->
+            Arith.emit_binary(:rem_vars, left, right, ctx, b)
+
+          true ->
+            with {:ok, arg_regs, b1} <- Expr.compile_args([left, right], ctx, b),
+                 id when not is_nil(id) <- Elmc.Backend.Plan.RuntimeBuiltins.from_c_symbol(target) do
+              Expr.compile_runtime_builtin(id, arg_regs, ctx, b1)
+            else
+              _ -> :unsupported
+            end
         end
 
       true ->
@@ -75,7 +100,30 @@ defmodule Elmc.Backend.Plan.Lower.IntCall do
 
   def compile(_, _, _), do: :unsupported
 
+  defp compile_folded_append(%{op: :string_literal} = lit, ctx, b),
+    do: Expr.compile(lit, ctx, b)
+
+  defp compile_folded_append(%{op: :call, name: "__append__", args: [left, right]}, ctx, b) do
+    append_builtin =
+      cond do
+        list_append_operand?(left) or list_append_operand?(right) -> :list_append
+        string_append_operands?(left, right) -> :string_append
+        true -> :list_append
+      end
+
+    with {:ok, arg_regs, b1} <- Expr.compile_args([left, right], ctx, b) do
+      Expr.compile_runtime_builtin(append_builtin, arg_regs, ctx, b1)
+    end
+  end
+
+  defp compile_folded_append(expr, ctx, b), do: Expr.compile(expr, ctx, b)
+
   defp int_binop_operands?(left, right), do: int_operand?(left) and int_operand?(right)
+
+  defp float_mixture?(left, right), do: float_operand?(left) or float_operand?(right)
+
+  defp float_operand?(%{op: :float_literal}), do: true
+  defp float_operand?(_), do: false
 
   defp int_operand?(%{op: :int_literal}), do: true
   defp int_operand?(%{op: :bool_literal}), do: true
@@ -85,11 +133,28 @@ defmodule Elmc.Backend.Plan.Lower.IntCall do
   defp int_operand?(%{op: :add_vars, left: _, right: _}), do: true
 
   defp int_operand?(%{op: :call, name: name, args: [a, b]})
+       when name in ["modBy", "Basics.modBy", "remainderBy", "Basics.remainderBy", "Basics.min", "Basics.max"],
+       do: int_operand?(a) and int_operand?(b)
+
+  defp int_operand?(%{op: :call, name: name, args: [a, b]})
        when name in ["__add__", "__sub__", "__mul__", "__idiv__"],
        do: int_operand?(a) and int_operand?(b)
 
   defp int_operand?(%{op: :qualified_call, target: target, args: args}) do
     case {target, args} do
+      {t, [a, b]}
+      when t in [
+             "modBy",
+             "Basics.modBy",
+             "remainderBy",
+             "Basics.remainderBy",
+             "Basics.min",
+             "Basics.max",
+             "Basics.//",
+             "__idiv__"
+           ] ->
+        int_operand?(a) and int_operand?(b)
+
       {"Basics.floor", [arg]} -> int_operand?(arg)
       {"Basics.round", [arg]} -> int_operand?(arg)
       {"Basics.abs", [arg]} -> int_operand?(arg)

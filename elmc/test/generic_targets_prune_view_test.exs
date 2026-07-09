@@ -60,4 +60,24 @@ defmodule Elmc.GenericTargetsPruneViewTest do
     assert MapSet.member?(wrapper_targets, {"Main", "watchModelLabel"})
     assert MapSet.member?(wrapper_targets, {"Main", "maybeLabel"})
   end
+
+  test "direct_render_only drops unused Pebble.Ui streaming glue helpers", %{tmp: tmp} do
+    {:ok, project} = Bridge.load_project(tmp)
+    {:ok, ir0} = Lowerer.lower_project(project)
+    ir = DeadCode.strip(ir0, "Main")
+
+    opts = %{
+      entry_module: "Main",
+      strip_dead_code: true,
+      direct_render_only: true,
+      prune_direct_generic: true
+    }
+
+    function_targets = GenericTargets.function_targets(ir, opts)
+
+    refute MapSet.member?(function_targets, {"Pebble.Ui", "toUiNode"})
+    refute MapSet.member?(function_targets, {"Pebble.Ui", "windowStack"})
+    refute MapSet.member?(function_targets, {"Pebble.Ui", "window"})
+    refute MapSet.member?(function_targets, {"Pebble.Ui", "canvasLayer"})
+  end
 end

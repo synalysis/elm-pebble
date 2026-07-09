@@ -161,7 +161,7 @@ defmodule Elmc.Backend.Plan.Lower.Lambda do
         params: all_params,
         rc_required: parent_ctx.rc_required,
         fallible: parent_ctx.fallible,
-        function_tail: true,
+        function_tail: parent_ctx.rc_required,
         letrec_refs: parent_ctx.letrec_refs,
         letrec_in_closure: parent_ctx.letrec_self != nil
       )
@@ -247,7 +247,7 @@ defmodule Elmc.Backend.Plan.Lower.Lambda do
 
     {borrows, consumes} = Builder.partition_call_args(b1, capture_regs)
 
-    wrap_catch? = (ctx.fallible or ctx.rc_required) and not Builder.skip_instr_catch?(b1, ctx)
+    wrap_catch? = Builder.wrap_fallible_instr_catch?(b1, ctx, true)
 
     effects =
       if is_integer(dest) do

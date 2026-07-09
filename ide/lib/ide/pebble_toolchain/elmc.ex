@@ -114,10 +114,10 @@ defmodule Ide.PebbleToolchain.Elmc do
     target_platforms != [] and not Enum.member?(target_platforms, "aplite")
   end
 
-  # Multi-platform PBWs include aplite (streaming view) and newer watches (direct scene).
-  # Prune direct-scene generic bodies from the shared compile so aplite stays within flash.
+  # Aplite uses streamed direct-scene commands (`view_commands_append`); generic
+  # `Main.view` / drawCell closures are dead weight once direct emit is available.
   defp prune_direct_generic?(target_platforms) when is_list(target_platforms) do
-    Enum.member?(target_platforms, "aplite") and length(target_platforms) > 1
+    Enum.member?(target_platforms, "aplite")
   end
 
   defp reset_generated_dir(path) do

@@ -3339,9 +3339,9 @@ defmodule Elmc.CCodegenPatternsTest do
     refute init_body =~ "elmc_record_new_ints"
     refute init_body =~ "elmc_record_new_take"
 
-    assert generated_c =~ "#define ELMC_FIELD_PEBBLE_PLATFORM_LAUNCHCONTEXT_SCREEN"
-    assert generated_c =~ "#define ELMC_FIELD_PEBBLE_PLATFORM_LAUNCHSCREEN_HEIGHT"
-    assert generated_c =~ "#define ELMC_FIELD_PEBBLE_PLATFORM_LAUNCHSCREEN_WIDTH"
+    assert generated_c =~ "ELMC_FIELD_PEBBLE_PLATFORM_LAUNCHCONTEXT_SCREEN"
+    assert generated_c =~ "ELMC_FIELD_PEBBLE_PLATFORM_LAUNCHSCREEN_HEIGHT"
+    assert generated_c =~ "ELMC_FIELD_PEBBLE_PLATFORM_LAUNCHSCREEN_WIDTH"
 
     assert length(
              Regex.scan(

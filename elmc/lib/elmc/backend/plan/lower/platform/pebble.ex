@@ -17,7 +17,7 @@ defmodule Elmc.Backend.Plan.Lower.Platform.Pebble do
 
     with {:ok, param_regs, b1} <- compile_params_scratch(params, ctx, b),
          builtin <- cmd_builtin(arity) do
-      wrap_catch? = (ctx.fallible or ctx.rc_required) and not Builder.skip_instr_catch?(b1, ctx)
+      wrap_catch? = Builder.wrap_fallible_instr_catch?(b1, ctx, true)
 
       b2 = if wrap_catch?, do: Builder.catch_begin(b1), else: b1
 
@@ -74,6 +74,19 @@ defmodule Elmc.Backend.Plan.Lower.Platform.Pebble do
 
   def compile_render_cmd(_, _, _), do: :unsupported
 
+  @spec compile_render_text_cmd(map(), Context.t(), Builder.t()) ::
+          {:ok, Types.reg() | :fn_out, Builder.t()} | :unsupported
+  def compile_render_text_cmd(%{kind: kind, int_params: int_params, text: text}, ctx, b) do
+    with {:ok, param_regs, b1} <- compile_params_scratch(int_params || [], ctx, b),
+         {:ok, text_reg, b2} <- compile_text_param(text, ctx, b1) do
+      compile_native_text_cmd(:render_text_cmd, normalize_kind(kind), param_regs, text_reg, ctx, b2)
+    else
+      _ -> :unsupported
+    end
+  end
+
+  def compile_render_text_cmd(_, _, _), do: :unsupported
+
   @spec compile_sub(map(), Context.t(), Builder.t()) ::
           {:ok, Types.reg() | :fn_out, Builder.t()} | :unsupported
   def compile_sub(%{mask: mask, params: params}, ctx, b) do
@@ -84,7 +97,7 @@ defmodule Elmc.Backend.Plan.Lower.Platform.Pebble do
 
   defp compile_native_platform_op(op, kind_arg, params, ctx, b) do
     with {:ok, param_regs, b1} <- compile_params_scratch(params || [], ctx, b) do
-      wrap_catch? = (ctx.fallible or ctx.rc_required) and not Builder.skip_instr_catch?(b1, ctx)
+      wrap_catch? = Builder.wrap_fallible_instr_catch?(b1, ctx, true)
 
       b2 = if wrap_catch?, do: Builder.catch_begin(b1), else: b1
 
@@ -128,6 +141,10 @@ defmodule Elmc.Backend.Plan.Lower.Platform.Pebble do
     borrow_only_platform_effects(dest, param_regs)
   end
 
+  defp platform_op_effects(:render_text_cmd, dest, param_regs, _b) do
+    borrow_only_platform_effects(dest, param_regs)
+  end
+
   defp platform_op_effects(:pebble_sub, dest, param_regs, _b) do
     borrow_only_platform_effects(dest, param_regs)
   end
@@ -157,6 +174,59 @@ defmodule Elmc.Backend.Plan.Lower.Platform.Pebble do
     do: %{literal: value}
 
   defp normalize_kind(_), do: %{literal: 0}
+
+  defp compile_native_text_cmd(op, kind_arg, param_regs, text_reg, ctx, b) do
+    wrap_catch? = Builder.wrap_fallible_instr_catch?(b, ctx, true)
+
+    b1 = if wrap_catch?, do: Builder.catch_begin(b), else: b
+
+    {dest, b_dest} =
+      if Context.function_tail?(ctx) do
+        {:fn_out, b1}
+      else
+        Builder.fresh_reg(b1)
+      end
+
+    borrow_regs = param_regs ++ [text_reg]
+
+    effects =
+      if is_integer(dest) do
+        Types.fallible_effects(dest, borrow_regs, [])
+      else
+        %{produces: nil, consumes: [], borrows: borrow_regs, fallible: true}
+      end
+
+    {_, b2} =
+      Builder.emit(b_dest, op, %{
+        dest: dest,
+        args: %{kind: kind_arg, params: param_regs, text: text_reg},
+        effects: effects
+      })
+
+    b3 = if wrap_catch?, do: Builder.catch_end(b2), else: b2
+
+    if dest == :fn_out do
+      {_, b4} =
+        Builder.emit(b3, :publish, %{
+          dest: :fn_out,
+          args: %{},
+          effects: Types.empty_effects()
+        })
+
+      {:ok, :fn_out, b4}
+    else
+      {:ok, dest, b3}
+    end
+  end
+
+  defp compile_text_param(text, ctx, b) do
+    scratch_ctx = %{ctx | dest_stack: [:scratch], function_tail: false}
+
+    case Expr.compile(text, scratch_ctx, b) do
+      {:ok, reg, b1} when is_integer(reg) -> {:ok, reg, b1}
+      _ -> :unsupported
+    end
+  end
 
   # Companion-send pattern: param calls must use scratch regs, not fn_out.
   defp compile_params_scratch(params, ctx, b) when is_list(params) do

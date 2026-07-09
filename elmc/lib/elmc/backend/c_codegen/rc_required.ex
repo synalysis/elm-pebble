@@ -54,6 +54,8 @@ defmodule Elmc.Backend.CCodegen.RcRequired do
     "elmc_basics_compare",
     "elmc_cmd_queue_append",
     "elmc_render_cmd6",
+    "elmc_render_cmd6_take",
+    "elmc_render_text_cmd_take",
     "elmc_apply_extra",
     "elmc_forward_ref_capture"
   ])

@@ -114,7 +114,7 @@ defmodule Elmc.Backend.Plan.Lower.Case.IntSwitch do
   defp compile_one_arm(branch, ctx, b) do
     pattern = Map.get(branch, :pattern, %{})
     expr = Map.get(branch, :expr)
-    branch_ctx = ctx
+    branch_ctx = Context.for_branch_arm(ctx)
 
     case pattern do
       %{kind: :wildcard} ->

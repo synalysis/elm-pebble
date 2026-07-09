@@ -682,6 +682,8 @@ defmodule Ide.Compiler do
     end
   end
 
+  defp maybe_attach_bytecode_manifest(result, _project_dir), do: result
+
   defp maybe_put_plan_coverage(result, %{plan_coverage: coverage}) when is_map(coverage) do
     Map.put(result, :plan_coverage, coverage)
   end
@@ -701,8 +703,6 @@ defmodule Ide.Compiler do
   end
 
   defp maybe_put_plan_toolchain(result, _), do: result
-
-  defp maybe_attach_bytecode_manifest(result, _project_dir), do: result
 
   @spec maybe_attach_debugger_contract(compile_result(), String.t()) :: compile_result()
   defp maybe_attach_debugger_contract(result, project_dir)

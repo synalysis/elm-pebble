@@ -38,7 +38,7 @@ defmodule Elmc.Backend.Plan.Lower.Arith do
   @spec emit_binary(atom(), map(), map(), Context.t(), Builder.t()) ::
           {:ok, Types.reg() | :fn_out, Builder.t()} | :unsupported
   def emit_binary(kind, left, right, ctx, b)
-      when kind in [:add_vars, :mul_vars, :sub_vars, :idiv_vars] do
+      when kind in [:add_vars, :mul_vars, :sub_vars, :idiv_vars, :mod_vars, :rem_vars, :min_vars, :max_vars] do
     with {:ok, l, b1} <- Expr.compile(left, ctx, b),
          {:ok, r, b2} <- Expr.compile(right, ctx, b1) do
       emit_int_arith(kind, l, r, ctx, b2)
@@ -58,7 +58,7 @@ defmodule Elmc.Backend.Plan.Lower.Arith do
       operands = [l, r]
       {borrows, consumes} = Builder.partition_call_args(b3, operands)
 
-      wrap_catch? = (ctx.fallible or ctx.rc_required) and not Builder.skip_instr_catch?(b3, ctx)
+      wrap_catch? = Builder.wrap_fallible_instr_catch?(b3, ctx, true)
 
       b4 = if wrap_catch?, do: Builder.catch_begin(b3), else: b3
 
@@ -88,12 +88,19 @@ defmodule Elmc.Backend.Plan.Lower.Arith do
     emit_boxed_binop(Map.fetch!(@binop_atoms, kind), left, right, ctx, b)
   end
 
-  defp emit_int_arith(kind, lhs, rhs, ctx, b) when kind in [:add_vars, :mul_vars, :sub_vars, :idiv_vars] do
+  @doc false
+  def emit_int_arith_regs(kind, lhs, rhs, ctx, b)
+      when kind in [:add_vars, :mul_vars, :sub_vars, :idiv_vars, :mod_vars, :rem_vars, :min_vars, :max_vars] do
+    emit_int_arith(kind, lhs, rhs, ctx, b)
+  end
+
+  defp emit_int_arith(kind, lhs, rhs, ctx, b)
+       when kind in [:add_vars, :mul_vars, :sub_vars, :idiv_vars, :mod_vars, :rem_vars, :min_vars, :max_vars] do
     {dest, b1} = dest_for(ctx, b)
     operands = [lhs, rhs]
     {borrows, consumes} = Builder.partition_call_args(b1, operands)
 
-    wrap_catch? = (ctx.fallible or ctx.rc_required) and not Builder.skip_instr_catch?(b1, ctx)
+    wrap_catch? = Builder.wrap_fallible_instr_catch?(b1, ctx, true)
 
     b2 = if wrap_catch?, do: Builder.catch_begin(b1), else: b1
 
@@ -119,7 +126,7 @@ defmodule Elmc.Backend.Plan.Lower.Arith do
     {dest, b1} = dest_for(ctx, b)
     {borrows, consumes} = Builder.partition_call_args(b1, [lhs])
 
-    wrap_catch? = (ctx.fallible or ctx.rc_required) and not Builder.skip_instr_catch?(b1, ctx)
+    wrap_catch? = Builder.wrap_fallible_instr_catch?(b1, ctx, true)
 
     b2 = if wrap_catch?, do: Builder.catch_begin(b1), else: b1
 
@@ -143,9 +150,8 @@ defmodule Elmc.Backend.Plan.Lower.Arith do
 
   defp dest_for(ctx, b) do
     case Context.dest_for_call(ctx) do
-      :fn_out -> {:fn_out, b}
       :branch_out -> {:branch_out, b}
-      :scratch -> Builder.fresh_reg(b)
+      _ -> Builder.fresh_reg(b)
     end
   end
 end

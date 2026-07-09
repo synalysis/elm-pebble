@@ -31,7 +31,10 @@ defmodule Elmc.Backend.Bytecode.Opcodes do
     pebble_sub: 25,
     make_closure: 26,
     tuple_proj: 27,
-    boxed_binop: 28
+    boxed_binop: 28,
+    const_static_list: 29,
+    const_c_expr: 30,
+    record_get_int: 31
   }
 
   @spec opcode(atom()) :: non_neg_integer() | nil

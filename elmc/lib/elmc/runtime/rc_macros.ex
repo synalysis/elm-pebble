@@ -337,6 +337,11 @@ defmodule Elmc.Runtime.RcMacros do
       return elmc_tuple2_take(&out, first, second) == RC_SUCCESS ? out : elmc_int_zero();
     }
 
+    static inline ElmcValue *elmc_tuple2_ints_take_value(elmc_int_t first, elmc_int_t second) {
+      ElmcValue *out = NULL;
+      return elmc_tuple2_ints(&out, first, second) == RC_SUCCESS ? out : elmc_int_zero();
+    }
+
     static inline ElmcValue *elmc_record_new_take_value(
         int field_count, const char **field_names, ElmcValue **field_values) {
       ElmcValue *out = NULL;

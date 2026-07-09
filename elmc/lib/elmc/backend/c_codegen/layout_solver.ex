@@ -108,7 +108,7 @@ defmodule Elmc.Backend.CCodegen.LayoutSolver do
         Map.get(plans, {module, fun, arg_name}, StoragePlan.mixed())
 
       _ ->
-        ListIntRepr.param_repr(module, fun, arg_name) |> StoragePlan.from_legacy_repr()
+        StoragePlan.mixed()
     end
   end
 

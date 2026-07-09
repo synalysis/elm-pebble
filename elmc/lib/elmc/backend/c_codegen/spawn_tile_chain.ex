@@ -188,17 +188,13 @@ defmodule Elmc.Backend.CCodegen.SpawnTileChain do
   end
 
   defp seed_param_emit(decl_map, module_name, fn_name, seed_param) do
-    direct_call? =
-      Process.get(:elmc_direct_call_targets, MapSet.new())
-      |> MapSet.member?({module_name, fn_name})
-
     case Map.get(decl_map, {module_name, fn_name}) do
       decl when is_map(decl) ->
-        case {direct_call?, FunctionCall.arg_kinds(decl, module_name, decl_map)} do
-          {true, [:native_int | _]} ->
+        case FunctionCall.arg_kinds(decl, module_name, decl_map) do
+          [:native_int | _] ->
             {"const elmc_int_t #{seed_param}", seed_param}
 
-          {true, [:native_bool | _]} ->
+          [:native_bool | _] ->
             {"const bool #{seed_param}", "(#{seed_param} ? 1 : 0)"}
 
           _ ->

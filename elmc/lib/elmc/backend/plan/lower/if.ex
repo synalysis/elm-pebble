@@ -1,9 +1,7 @@
 defmodule Elmc.Backend.Plan.Lower.If do
   @moduledoc false
 
-  alias Elmc.Backend.Plan.Builder
-  alias Elmc.Backend.Plan.ConstantFold
-  alias Elmc.Backend.Plan.Context
+  alias Elmc.Backend.Plan.{Builder, ConstantFold, Context, IntPhiNative, TruthyNative}
   alias Elmc.Backend.Plan.Lower.Expr
   alias Elmc.Backend.Plan.Types
 
@@ -47,7 +45,7 @@ defmodule Elmc.Backend.Plan.Lower.If do
            compile_branch(else_expr, ctx, b_then_done, else_id),
          b_else_done = Builder.patch_terminator(b_else, else_exit, {:br, merge_id}),
          b_merge = Builder.begin_block(b_else_done, merge_id),
-         {:ok, merge, b_out} <- emit_phi(cond_reg, then_reg, else_reg, b_merge) do
+         {:ok, merge, b_out} <- emit_phi(cond_reg, then_reg, else_reg, then_id, else_id, b_merge) do
       {:ok, merge, %{b_out | pending_merge_block: saved_pending}}
     else
       _ -> :unsupported
@@ -56,8 +54,9 @@ defmodule Elmc.Backend.Plan.Lower.If do
 
   defp compile_branch(expr, ctx, b, block_id) do
     b_arm = Builder.begin_cfg_arm_block(b, block_id)
+    arm_ctx = Context.for_branch_arm(ctx)
 
-    case Expr.compile(expr, ctx, b_arm) do
+    case Expr.compile(expr, arm_ctx, b_arm) do
       {:ok, reg, b1} ->
         exit_id = b1.current_block.id
         {:ok, reg, exit_id, Builder.finish_block(b1, :none)}
@@ -67,16 +66,44 @@ defmodule Elmc.Backend.Plan.Lower.If do
     end
   end
 
-  defp emit_phi(cond_reg, then_reg, else_reg, b) do
+  defp emit_phi(cond_reg, then_reg, else_reg, then_arm_block, else_arm_block, b) do
     {merge, b1} = Builder.fresh_reg(b)
+    instrs = builder_instrs(b1)
+
+    {native_int_phi?, int_then_shape, int_else_shape} =
+      IntPhiNative.native_int_phi_shapes?(instrs, then_reg, else_reg)
+
+    {truthy_native?, then_shape, else_shape} =
+      if native_int_phi? do
+        {false, :unknown, :unknown}
+      else
+        TruthyNative.phi_shapes?(instrs, then_reg, else_reg)
+      end
 
     phi_consumes =
-      Builder.phi_branch_consumes(b1, [then_reg, else_reg, cond_reg])
+      cond do
+        truthy_native? or native_int_phi? ->
+          Builder.phi_branch_consumes(b1, [cond_reg])
+
+        true ->
+          Builder.phi_branch_consumes(b1, [then_reg, else_reg, cond_reg])
+      end
+
+    args =
+      %{then: then_reg, else: else_reg, cond: cond_reg}
+      |> maybe_put_truthy_native(truthy_native?, then_shape, else_shape, then_arm_block, else_arm_block)
+      |> maybe_put_native_int_phi(
+        native_int_phi?,
+        int_then_shape,
+        int_else_shape,
+        then_arm_block,
+        else_arm_block
+      )
 
     {_, b2} =
       Builder.emit(b1, :phi, %{
         dest: merge,
-        args: %{then: then_reg, else: else_reg, cond: cond_reg},
+        args: args,
         effects: %{
           produces: {:owned, merge},
           consumes: phi_consumes,
@@ -86,6 +113,35 @@ defmodule Elmc.Backend.Plan.Lower.If do
       })
 
     {:ok, merge, b2}
+  end
+
+  defp maybe_put_truthy_native(args, false, _, _, _, _), do: args
+
+  defp maybe_put_truthy_native(args, true, then_shape, else_shape, then_arm_block, else_arm_block) do
+    Map.merge(args, %{
+      truthy_native: true,
+      then_shape: then_shape,
+      else_shape: else_shape,
+      then_arm_block: then_arm_block,
+      else_arm_block: else_arm_block
+    })
+  end
+
+  defp maybe_put_native_int_phi(args, false, _, _, _, _), do: args
+
+  defp maybe_put_native_int_phi(args, true, then_shape, else_shape, then_arm_block, else_arm_block) do
+    Map.merge(args, %{
+      native_int_phi: true,
+      then_shape: then_shape,
+      else_shape: else_shape,
+      then_arm_block: then_arm_block,
+      else_arm_block: else_arm_block
+    })
+  end
+
+  defp builder_instrs(b) do
+    (Map.get(b, :blocks, []) ++ [Map.get(b, :current_block)])
+    |> Enum.flat_map(&Map.get(&1, :instrs, []))
   end
 
   defp skip_reserved(id, nil), do: id

@@ -1,0 +1,70 @@
+defmodule Elmc.DirectRenderDeadViewHelpersTest do
+  use ExUnit.Case, async: false
+
+  @source_fixture Path.expand("fixtures/simple_project", __DIR__)
+  @template_main Path.expand("../../ide/priv/project_templates/game_2048/src/Main.elm", __DIR__)
+  @project_dir Path.expand("tmp/dead_view_helpers_2048_project", __DIR__)
+  @out_dir Path.expand("tmp/dead_view_helpers_2048_codegen", __DIR__)
+
+  setup do
+    File.rm_rf!(@project_dir)
+    File.rm_rf!(@out_dir)
+    File.cp_r!(@source_fixture, @project_dir)
+    File.write!(Path.join(@project_dir, "src/Main.elm"), File.read!(@template_main))
+
+    assert {:ok, _} =
+             Elmc.compile(@project_dir, %{
+               out_dir: @out_dir,
+               entry_module: "Main",
+               strip_dead_code: true,
+               direct_render_only: true,
+               plan_ir_mode: :primary,
+               pebble_int32: true
+             })
+
+    {:ok, generated: File.read!(Path.join(@out_dir, "c/elmc_generated.c"))}
+  end
+
+  test "direct_render_only drops generic view subgraph helpers when scene path inlines grid",
+       %{generated: generated} do
+    assert generated =~ "elmc_fn_Main_view_commands_append"
+    refute generated =~ "static RC elmc_fn_Main_view("
+    refute generated =~ "static RC elmc_fn_Main_drawCell("
+    refute generated =~ "static RC elmc_fn_Main_boardLayout("
+    refute generated =~ "elmc_fn_Main_view_closure_0"
+  end
+
+  test "prune_direct_generic drops generic view like direct_render_only for aplite dual path",
+       %{generated: _generated} do
+    out = Path.expand("tmp/dead_view_helpers_2048_aplite_codegen", __DIR__)
+    File.rm_rf!(out)
+
+    assert {:ok, _} =
+             Elmc.compile(@project_dir, %{
+               out_dir: out,
+               entry_module: "Main",
+               strip_dead_code: true,
+               direct_render_only: false,
+               prune_direct_generic: true,
+               plan_ir_mode: :primary,
+               pebble_int32: true
+             })
+
+    generated = File.read!(Path.join(out, "c/elmc_generated.c"))
+    pebble_c = File.read!(Path.join(out, "c/elmc_pebble.c"))
+
+    assert generated =~ "elmc_fn_Main_view_commands_append"
+    refute generated =~ "static RC elmc_fn_Main_view("
+    refute generated =~ "elmc_fn_Main_view_closure_0"
+    assert pebble_c =~ "#define ELMC_PEBBLE_APPEND_FALLBACK_SCENE 1"
+  end
+
+  test "moveBoard pipeline fusion inlines row merge under plan primary", %{generated: generated} do
+    assert generated =~ "elmc_fn_Main_moveBoard_native"
+    assert generated =~ "row_score"
+    refute generated =~ "elmc_fn_Main_collapseRow_closure_0"
+    refute generated =~ "static RC elmc_fn_Main_collapseRow("
+    refute generated =~ "static RC elmc_fn_Main_merge("
+    refute generated =~ "static RC elmc_fn_Main_orient("
+  end
+end

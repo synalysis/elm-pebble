@@ -78,23 +78,13 @@ defmodule Elmc.Backend.CCodegen.Emit do
   def generated_render_cmd_prelude(chunks) do
     source = Enum.join(chunks, "\n")
 
-    if String.contains?(source, "elmc_render_cmd6(") do
+    if String.contains?(source, "elmc_render_cmd6") do
       """
       static inline ElmcValue *elmc_render_cmd6(
           elmc_int_t kind, elmc_int_t p0, elmc_int_t p1, elmc_int_t p2,
           elmc_int_t p3, elmc_int_t p4, elmc_int_t p5) {
-        ElmcValue *params = elmc_tuple2_take_value(
-          elmc_new_int_take(p0),
-          elmc_tuple2_take_value(
-            elmc_new_int_take(p1),
-            elmc_tuple2_take_value(
-              elmc_new_int_take(p2),
-              elmc_tuple2_take_value(
-                elmc_new_int_take(p3),
-                elmc_tuple2_take_value(
-                  elmc_new_int_take(p4),
-                  elmc_tuple2_take_value(elmc_new_int_take(p5), elmc_int_zero()))))));
-        return elmc_tuple2_take_value(elmc_new_int_take(kind), params);
+        ElmcValue *out = NULL;
+        return elmc_render_cmd6_take(&out, kind, p0, p1, p2, p3, p4, p5) == RC_SUCCESS ? out : NULL;
       }
       """
       |> String.trim()
@@ -231,6 +221,24 @@ defmodule Elmc.Backend.CCodegen.Emit do
     fixed_magic_number_lines()
     |> Enum.filter(fn {name, _} -> String.starts_with?(name, "ELMC_SUBSCRIPTION_") end)
     |> Map.new()
+  end
+
+  @spec resolve_c_int_expr(String.t()) :: {:ok, integer()} | :error
+  def resolve_c_int_expr(value) when is_binary(value) do
+    case Map.get(magic_number_literals(), value) do
+      nil -> :error
+      str -> parse_int_literal(str)
+    end
+  end
+
+  @spec magic_number_literals() :: %{String.t() => String.t()}
+  def magic_number_literals, do: Map.new(fixed_magic_number_lines())
+
+  defp parse_int_literal(str) when is_binary(str) do
+    case Integer.parse(str) do
+      {n, ""} -> {:ok, n}
+      _ -> :error
+    end
   end
 
   defp fixed_magic_number_lines do

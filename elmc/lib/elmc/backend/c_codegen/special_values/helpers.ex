@@ -148,10 +148,66 @@ defmodule Elmc.Backend.CCodegen.SpecialValues.Helpers do
   @spec encoded_text_cmd_expr(non_neg_integer(), [Types.ir_expr()]) :: Types.ir_expr()
   def encoded_text_cmd_expr(kind, args) when is_list(args) and length(args) >= 2 do
     {value, payload} = List.pop_at(args, -1)
-    %{op: :tuple2, left: draw_kind_expr(kind), right: tuple_chain(payload ++ [value])}
+
+    if render_text_cmd_eligible?(payload, value) do
+      %{
+        op: :render_text_cmd,
+        kind: draw_kind_expr(kind),
+        int_params: payload,
+        text: value
+      }
+    else
+      %{op: :tuple2, left: draw_kind_expr(kind), right: tuple_chain(payload ++ [value])}
+    end
   end
 
   def encoded_text_cmd_expr(_kind, _args), do: %{op: :unsupported}
+
+  defp render_text_cmd_eligible?(payload, text) do
+    length(payload) == 6 and
+      Enum.all?(payload, &render_text_int_param?/1) and
+      render_text_value_param?(text)
+  end
+
+  defp render_text_int_param?(%{op: op}) when op in [:int_literal, :c_int_expr, :msg_tag_expr],
+    do: true
+
+  defp render_text_int_param?(%{op: :var}), do: true
+  defp render_text_int_param?(%{op: :field_access}), do: true
+  defp render_text_int_param?(%{op: :if}), do: true
+  defp render_text_int_param?(%{op: :call}), do: true
+  defp render_text_int_param?(%{op: :runtime_call}), do: true
+  defp render_text_int_param?(%{op: :compare}), do: true
+  defp render_text_int_param?(%{op: op}) when op in [:add_const, :sub_const, :add_vars], do: true
+
+  defp render_text_int_param?(%{op: :constructor_call, args: args}) when is_list(args),
+    do: Enum.all?(args, &render_text_int_param?/1)
+
+  defp render_text_int_param?(%{op: :qualified_call, args: args}) when is_list(args),
+    do: Enum.all?(args, &render_text_int_param?/1)
+
+  defp render_text_int_param?(%{op: :record_literal, fields: fields}) when is_list(fields),
+    do: Enum.all?(fields, fn %{expr: expr} -> render_text_int_param?(expr) end)
+
+  defp render_text_int_param?(_), do: false
+
+  defp render_text_value_param?(%{op: op})
+       when op in [
+              :string_literal,
+              :var,
+              :string_append,
+              :int_literal,
+              :constructor_call,
+              :qualified_call,
+              :call,
+              :runtime_call,
+              :if,
+              :case,
+              :let_in
+            ],
+       do: true
+
+  defp render_text_value_param?(_), do: false
 
   def text_alignment_expr(:left), do: %{op: :c_int_expr, value: "ELMC_TEXT_ALIGN_LEFT"}
   def text_alignment_expr(:center), do: %{op: :c_int_expr, value: "ELMC_TEXT_ALIGN_CENTER"}

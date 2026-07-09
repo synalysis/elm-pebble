@@ -8,7 +8,9 @@ defmodule Elmc.Backend.Plan.RuntimeBuiltins do
   @native_int_arg_indices %{
     list_slice_int: [0, 1],
     list_take: [0],
-    list_drop: [0]
+    list_drop: [0],
+    string_from_int: [0],
+    tuple2_ints: [0, 1]
   }
 
   @builtins %{
@@ -33,6 +35,9 @@ defmodule Elmc.Backend.Plan.RuntimeBuiltins do
     list_reverse: "elmc_list_reverse",
     list_head: "elmc_list_head",
     list_tail: "elmc_list_tail",
+    int_list_head_boxed: "elmc_int_list_head_boxed",
+    int_list_head_int: "elmc_list_head_with_default_int",
+    int_list_tail: "elmc_int_list_tail",
     list_is_empty: "elmc_list_is_empty",
     list_nth_maybe: "elmc_list_nth_maybe",
     list_nth_int_default: "elmc_list_nth_int_default_boxed",
@@ -64,6 +69,7 @@ defmodule Elmc.Backend.Plan.RuntimeBuiltins do
     new_string: "elmc_new_string",
     tuple2: "elmc_tuple2",
     tuple2_take: "elmc_tuple2_take",
+    tuple2_ints: "elmc_tuple2_ints",
     maybe_just_own: "elmc_maybe_just_own",
     result_ok_own: "elmc_result_ok_own",
     result_err_own: "elmc_result_err_own",
@@ -73,6 +79,7 @@ defmodule Elmc.Backend.Plan.RuntimeBuiltins do
     record_get: "elmc_record_get",
     record_new: "elmc_record_new",
     record_new_take: "elmc_record_new_take",
+    record_new_values_ints: "elmc_record_new_values_ints",
     record_update_cow_drop: "elmc_record_update_index_cow_drop",
     cmd0: "elmc_cmd0",
     cmd1: "elmc_cmd1",
@@ -112,8 +119,8 @@ defmodule Elmc.Backend.Plan.RuntimeBuiltins do
     :list_filter_map,
     :list_foldl,
     :list_reverse,
-    :list_head,
-    :list_tail,
+    :int_list_head_boxed,
+    :int_list_tail,
     :list_is_empty,
     :list_nth_maybe,
     :maybe_with_default,
@@ -139,11 +146,13 @@ defmodule Elmc.Backend.Plan.RuntimeBuiltins do
     :new_string,
     :tuple2,
     :tuple2_take,
+    :tuple2_ints,
     :maybe_just_own,
     :result_ok_own,
     :result_err_own,
     :record_new,
     :record_new_take,
+    :record_new_values_ints,
     :record_update_cow_drop,
     :cmd0,
     :cmd1,
@@ -196,7 +205,7 @@ defmodule Elmc.Backend.Plan.RuntimeBuiltins do
   ])
 
   # Value-returning runtime calls that never fail with NULL from allocation.
-  # (elmc_retain returns NULL only when the input is NULL; record getters use
+  # (elmc_retain returns NULL only when the input is NULL; record/tuple getters use
   # elmc_int_zero / retain; cow_drop falls back to elmc_retain(record).)
   @direct_value_return MapSet.new([
     :retain,
@@ -206,10 +215,16 @@ defmodule Elmc.Backend.Plan.RuntimeBuiltins do
     :maybe_nothing,
     :int_zero,
     :list_nil,
+    :list_head,
+    :list_tail,
     :cmd_batch,
     :sub_batch,
     :record_get,
     :record_update_cow_drop,
+    :tuple_first,
+    :tuple_second,
+    :basics_min,
+    :basics_max,
     :unit
   ])
 
@@ -262,6 +277,7 @@ defmodule Elmc.Backend.Plan.RuntimeBuiltins do
     :new_string,
     :tuple2,
     :tuple2_take,
+    :tuple2_ints,
     :maybe_just_own,
     :result_ok_own,
     :result_err_own,
@@ -271,6 +287,7 @@ defmodule Elmc.Backend.Plan.RuntimeBuiltins do
     :record_get,
     :record_new,
     :record_new_take,
+    :record_new_values_ints,
     :record_update_cow_drop,
     :cmd0,
     :cmd1,

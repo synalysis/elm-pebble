@@ -2,7 +2,7 @@ defmodule Elmc.Backend.Plan.Lower.Case.ListSwitch do
   @moduledoc false
 
   alias Elmc.Backend.Plan.{Builder, Context}
-  alias Elmc.Backend.Plan.Lower.Expr
+  alias Elmc.Backend.Plan.Lower.{Expr, ListIntType}
   alias Elmc.Backend.Plan.Types
 
   @spec branches?(list()) :: boolean()
@@ -41,6 +41,7 @@ defmodule Elmc.Backend.Plan.Lower.Case.ListSwitch do
          b_wild_done = Builder.patch_terminator(b_wild, wild_exit, {:br, merge_id}),
          {:ok, empty_tail_reg, _peek_exit, b_peek} <-
            compile_double_cons_peek(
+             subject,
              subj_reg,
              a_name,
              b_name,
@@ -60,6 +61,7 @@ defmodule Elmc.Backend.Plan.Lower.Case.ListSwitch do
              a_name,
              b_name,
              rest_name,
+             subject,
              subj_reg,
              ctx,
              b_wild2_done,
@@ -98,6 +100,7 @@ defmodule Elmc.Backend.Plan.Lower.Case.ListSwitch do
              Map.get(cons, :expr),
              head_name,
              tail_name,
+             subject,
              subj_reg,
              ctx,
              b_empty_done,
@@ -223,8 +226,9 @@ defmodule Elmc.Backend.Plan.Lower.Case.ListSwitch do
 
   defp compile_arm(expr, ctx, b, block_id) do
     b_arm = Builder.begin_cfg_arm_block(b, block_id)
+    arm_ctx = Context.for_branch_arm(ctx)
 
-    case Expr.compile(expr, ctx, b_arm) do
+    case Expr.compile(expr, arm_ctx, b_arm) do
       {:ok, reg, b1} ->
         exit_id = b1.current_block.id
         {:ok, reg, exit_id, Builder.finish_block(b1, :none)}
@@ -234,22 +238,26 @@ defmodule Elmc.Backend.Plan.Lower.Case.ListSwitch do
     end
   end
 
-  defp compile_cons_arm(expr, head_name, tail_name, subj_reg, ctx, b, block_id) do
+  defp compile_cons_arm(expr, head_name, tail_name, subject, subj_reg, ctx, b, block_id) do
     b_arm = Builder.begin_cfg_arm_block(b, block_id)
-    # Head and tail both read the same list; dup before the second use so consume
-    # nulling after list_head does not pass NULL to list_tail.
+    arm_ctx = Context.for_branch_arm(ctx)
     {[head_arg, tail_arg], b_dup} = Builder.dup_regs_for_consume(b_arm, [subj_reg, subj_reg])
 
-    with {:ok, head_maybe, b1} <- Expr.compile_runtime_builtin(:list_head, [head_arg], ctx, b_dup),
-         {:ok, head_reg, b2} <- Expr.compile_runtime_builtin(:maybe_just_payload, [head_maybe], ctx, b1),
-         {:ok, tail_maybe, b3} <- Expr.compile_runtime_builtin(:list_tail, [tail_arg], ctx, b2),
-         {:ok, tail_reg, b4} <- Expr.compile_runtime_builtin(:maybe_just_payload, [tail_maybe], ctx, b3),
+    peel =
+      if ListIntType.list_int_subject?(ctx, subject) do
+        :int_list
+      else
+        :maybe_list
+      end
+
+    with {:ok, head_reg, tail_reg, b_bound} <-
+           peel_cons_regs(peel, head_arg, tail_arg, arm_ctx, b_dup),
          ctx1 <-
-           ctx
+           arm_ctx
            |> Context.put_local(head_name, head_reg)
            |> Context.put_local(tail_name, tail_reg),
          b5 <-
-           b4
+           b_bound
            |> Builder.bind_local(head_name, head_reg)
            |> Builder.bind_local(tail_name, tail_reg),
          {:ok, reg, b6} <- Expr.compile(expr, ctx1, b5) do
@@ -260,7 +268,26 @@ defmodule Elmc.Backend.Plan.Lower.Case.ListSwitch do
     end
   end
 
+  defp peel_cons_regs(:int_list, head_arg, tail_arg, ctx, b) do
+    with {:ok, head_reg, b1} <-
+           Expr.compile_runtime_builtin(:int_list_head_int, [head_arg], ctx, b),
+         {:ok, tail_reg, b2} <-
+           Expr.compile_runtime_builtin(:int_list_tail, [tail_arg], ctx, b1) do
+      {:ok, head_reg, tail_reg, b2}
+    end
+  end
+
+  defp peel_cons_regs(:maybe_list, head_arg, tail_arg, ctx, b) do
+    with {:ok, head_maybe, b1} <- Expr.compile_runtime_builtin(:list_head, [head_arg], ctx, b),
+         {:ok, head_reg, b2} <- Expr.compile_runtime_builtin(:maybe_just_payload, [head_maybe], ctx, b1),
+         {:ok, tail_maybe, b3} <- Expr.compile_runtime_builtin(:list_tail, [tail_arg], ctx, b2),
+         {:ok, tail_reg, b4} <- Expr.compile_runtime_builtin(:maybe_just_payload, [tail_maybe], ctx, b3) do
+      {:ok, head_reg, tail_reg, b4}
+    end
+  end
+
   defp compile_double_cons_peek(
+         subject,
          subj_reg,
          _a_name,
          _b_name,
@@ -273,47 +300,42 @@ defmodule Elmc.Backend.Plan.Lower.Case.ListSwitch do
        ) do
     b_arm = Builder.begin_cfg_arm_block(b, peek_id)
     {[head_arg, tail_arg], b_dup} = Builder.dup_regs_for_consume(b_arm, [subj_reg, subj_reg])
+    peel = if ListIntType.list_int_subject?(ctx, subject), do: :int_list, else: :maybe_list
 
-    with {:ok, head_maybe, b1} <- Expr.compile_runtime_builtin(:list_head, [head_arg], ctx, b_dup),
-         {:ok, _a_reg, b2} <-
-           Expr.compile_runtime_builtin(:maybe_just_payload, [head_maybe], ctx, b1),
-         {:ok, tail_maybe, b3} <- Expr.compile_runtime_builtin(:list_tail, [tail_arg], ctx, b2),
-         {:ok, t1_reg, b4} <-
-           Expr.compile_runtime_builtin(:maybe_just_payload, [tail_maybe], ctx, b3),
-         {:ok, empty_tail_reg, b5} <- emit_test_list_empty(t1_reg, b4) do
+    with {:ok, _head_reg, tail_reg, b_bound} <- peel_cons_regs(peel, head_arg, tail_arg, ctx, b_dup),
+         {:ok, empty_tail_reg, b5} <- emit_test_list_empty(tail_reg, b_bound) do
       exit_id = b5.current_block.id
       b6 = Builder.finish_block(b5, {:br_if, wild2_id, cons_id, empty_tail_reg})
       {:ok, empty_tail_reg, exit_id, b6}
     end
   end
 
-  defp compile_double_cons_arm(expr, a_name, b_name, rest_name, subj_reg, ctx, b, block_id) do
+  defp compile_double_cons_arm(expr, a_name, b_name, rest_name, subject, subj_reg, ctx, b, block_id) do
     b_arm = Builder.begin_cfg_arm_block(b, block_id)
+    arm_ctx = Context.for_branch_arm(ctx)
     {[subj_a, subj_b], b0} = Builder.dup_regs_for_consume(b_arm, [subj_reg, subj_reg])
+    peel = if ListIntType.list_int_subject?(ctx, subject), do: :int_list, else: :maybe_list
 
-    with {:ok, head_maybe, b1} <- Expr.compile_runtime_builtin(:list_head, [subj_a], ctx, b0),
-         {:ok, a_reg, b2} <- Expr.compile_runtime_builtin(:maybe_just_payload, [head_maybe], ctx, b1),
-         {:ok, tail_maybe, b3} <- Expr.compile_runtime_builtin(:list_tail, [subj_b], ctx, b2),
-         {:ok, t1_reg, b4} <- Expr.compile_runtime_builtin(:maybe_just_payload, [tail_maybe], ctx, b3),
-         {[t1_a, t1_b], b5} = Builder.dup_regs_for_consume(b4, [t1_reg, t1_reg]),
-         {:ok, b_head_maybe, b6} <- Expr.compile_runtime_builtin(:list_head, [t1_a], ctx, b5),
-         {:ok, b_reg, b7} <- Expr.compile_runtime_builtin(:maybe_just_payload, [b_head_maybe], ctx, b6),
-         {:ok, rest_maybe, b8} <- Expr.compile_runtime_builtin(:list_tail, [t1_b], ctx, b7),
-         {:ok, rest_reg, b9} <-
-           Expr.compile_runtime_builtin(:maybe_just_payload, [rest_maybe], ctx, b8),
-         ctx1 <-
-           ctx
-           |> Context.put_local(a_name, a_reg)
-           |> Context.put_local(b_name, b_reg)
-           |> Context.put_local(rest_name, rest_reg),
-         b10 <-
-           b9
-           |> Builder.bind_local(a_name, a_reg)
-           |> Builder.bind_local(b_name, b_reg)
-           |> Builder.bind_local(rest_name, rest_reg),
-         {:ok, reg, b11} <- Expr.compile(expr, ctx1, b10) do
-      exit_id = b11.current_block.id
-      {:ok, reg, exit_id, Builder.finish_block(b11, :none)}
+    with {:ok, a_reg, t1_reg, b1} <- peel_cons_regs(peel, subj_a, subj_b, arm_ctx, b0) do
+      {[t1_a, t1_b], b2} = Builder.dup_regs_for_consume(b1, [t1_reg, t1_reg])
+
+      with {:ok, b_reg, rest_reg, b_bound} <- peel_cons_regs(peel, t1_a, t1_b, arm_ctx, b2),
+           ctx1 <-
+             arm_ctx
+             |> Context.put_local(a_name, a_reg)
+             |> Context.put_local(b_name, b_reg)
+             |> Context.put_local(rest_name, rest_reg),
+           b6 <-
+             b_bound
+             |> Builder.bind_local(a_name, a_reg)
+             |> Builder.bind_local(b_name, b_reg)
+             |> Builder.bind_local(rest_name, rest_reg),
+           {:ok, reg, b7} <- Expr.compile(expr, ctx1, b6) do
+        exit_id = b7.current_block.id
+        {:ok, reg, exit_id, Builder.finish_block(b7, :none)}
+      else
+        _ -> :unsupported
+      end
     else
       _ -> :unsupported
     end

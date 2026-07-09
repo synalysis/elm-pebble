@@ -3,7 +3,6 @@ defmodule Elmc.Backend.C.Lower.Lambda do
 
   alias Elmc.Backend.C.Lower.{Frame, Function}
   alias Elmc.Backend.CCodegen.Util
-  alias Elmc.Backend.Plan
   alias Elmc.Backend.Plan.Types.FunctionPlan
 
   @emitted_key :elmc_plan_closure_emitted
@@ -45,7 +44,9 @@ defmodule Elmc.Backend.C.Lower.Lambda do
     lambda = Enum.at(parent.lambdas, idx)
     closure_name = closure_fn_name(parent, idx)
     capture_count = capture_count(lambda)
-    {slots, slot_count} = Plan.allocate_slots(lambda)
+    {slots, slot_count} =
+      Function.prepared_owned_slots(lambda, closure_mode: %{capture_count: capture_count})
+
     slot_indices = if slot_count > 0, do: Enum.to_list(0..(slot_count - 1)), else: []
 
     owned = Frame.owned_declaration(lambda, slots)

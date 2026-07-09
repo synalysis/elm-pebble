@@ -83,6 +83,12 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
     compile_runtime_call(expr, ctx, b)
   end
 
+  def compile(%{op: :pipe_chain} = expr, ctx, b) do
+    expr
+    |> ElmEx.IR.PipeChain.desugar()
+    |> compile(ctx, b)
+  end
+
   def compile(%{op: :let_in} = expr, ctx, b) do
     compile_let(expr, ctx, b)
   end
@@ -100,15 +106,18 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
   def compile(%{op: :render_cmd} = expr, ctx, b),
     do: Elmc.Backend.Plan.Lower.Platform.Pebble.compile_render_cmd(expr, ctx, b)
 
+  def compile(%{op: :render_text_cmd} = expr, ctx, b),
+    do: Elmc.Backend.Plan.Lower.Platform.Pebble.compile_render_text_cmd(expr, ctx, b)
+
   def compile(%{op: :pebble_sub} = expr, ctx, b),
     do: Elmc.Backend.Plan.Lower.Platform.Pebble.compile_sub(expr, ctx, b)
   def compile(%{op: :compare} = expr, ctx, b), do: Compare.compile(expr, ctx, b)
   def compile(%{op: :constructor_call} = expr, ctx, b),
     do: Constructor.compile(expr, ctx, b)
 
-  def compile(%{op: :partial_constructor, target: target, tag: tag, args: []}, ctx, b)
+  def compile(%{op: :partial_constructor, target: target, tag: tag, args: []}, _ctx, b)
       when is_binary(target) and is_integer(tag) do
-    compile_runtime_builtin(:new_int, [], ctx, b, %{literal: tag})
+    Builder.emit_const_int(b, tag) |> then(fn {reg, b1} -> {:ok, reg, b1} end)
   end
 
   def compile(%{op: :partial_constructor, target: target, args: []}, ctx, b)
@@ -116,8 +125,10 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
     Constructor.compile(%{target: target, args: []}, ctx, b)
   end
 
-  def compile(%{op: :msg_tag_expr, name: name}, ctx, b) when is_binary(name) do
-    Constructor.compile(%{target: name, args: []}, ctx, b)
+  def compile(%{op: :msg_tag_expr, name: name}, _ctx, b) when is_binary(name) do
+    macro = "ELMC_PEBBLE_MSG_#{Elmc.Backend.Pebble.Util.macro_name(name)}"
+    {reg, b1} = Builder.emit_const_c_expr(b, macro)
+    {:ok, reg, b1}
   end
 
   def compile(%{op: :record_update} = expr, ctx, b), do: Record.compile_update(expr, ctx, b)
@@ -136,7 +147,9 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
   end
 
   def compile(%{op: :tuple2} = expr, ctx, b) do
-    with {:ok, [a, b_reg], b1} <- compile_args(Map.get(expr, :args, []), ctx, b) do
+    operand_ctx = %{ctx | dest_stack: [:scratch], function_tail: false}
+
+    with {:ok, [a, b_reg], b1} <- compile_args(Map.get(expr, :args, []), operand_ctx, b) do
       compile_runtime_builtin(:tuple2, [a, b_reg], ctx, b1)
     else
       _ -> :unsupported
@@ -151,11 +164,16 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
 
     with {:ok, field_regs, b1} <- compile_field_values(fields, ctx, b) do
       field_names = Enum.map(fields, fn f -> Map.get(f, :name) || Map.get(f, :field) end)
+      extra = %{shape: Map.get(expr, :type), field_names: field_names}
 
-      compile_runtime_builtin(:record_new, field_regs, ctx, b1, %{
-        shape: Map.get(expr, :type),
-        field_names: field_names
-      })
+      id =
+        if int_record_literal_fields?(fields) or int_record_shape?(field_names) do
+          :record_new_values_ints
+        else
+          :record_new
+        end
+
+      compile_runtime_builtin(id, field_regs, ctx, b1, extra)
     else
       _ -> :unsupported
     end
@@ -187,7 +205,7 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
           {:ok, [Types.reg()], Builder.t()} | :unsupported
   def compile_args(args, ctx, b) when is_list(args) do
     # Call operands must not target branch_out / fn_out — only the callee result may.
-    operand_ctx = %{ctx | dest_stack: [:scratch]}
+    operand_ctx = Context.for_branch_arm(ctx)
 
     Enum.reduce_while(args, {:ok, [], b}, fn arg, {:ok, acc, b_acc} ->
       case compile(arg, operand_ctx, b_acc) do
@@ -205,8 +223,12 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
     compile_runtime_builtin(:new_float, [], ctx, b, %{literal: value})
   end
 
-  defp compile_literal(%{op: :int_literal, value: value}, _ctx, b) do
-    Builder.emit_const_int(b, value) |> then(fn {reg, b1} -> {:ok, reg, b1} end)
+  defp compile_literal(%{op: :int_literal, value: value}, ctx, b) do
+    if ctx.rc_required and Context.function_tail?(ctx) do
+      compile_runtime_builtin(:new_int, [], ctx, b, %{literal: value})
+    else
+      Builder.emit_const_int(b, value) |> then(fn {reg, b1} -> {:ok, reg, b1} end)
+    end
   end
 
   defp compile_literal(%{op: :bool_literal, value: value}, ctx, b) do
@@ -242,11 +264,10 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
     {:ok, reg, b2}
   end
 
-  defp compile_literal(%{op: :c_int_expr, value: value}, ctx, b) when is_binary(value) do
-    # Treat as int constant when value is numeric
+  defp compile_literal(%{op: :c_int_expr, value: value}, _ctx, b) when is_binary(value) do
     case Integer.parse(value) do
       {n, ""} -> Builder.emit_const_int(b, n) |> then(fn {reg, b1} -> {:ok, reg, b1} end)
-      _ -> compile_runtime_builtin(:new_int, [], ctx, b, %{c_expr: value})
+      _ -> Builder.emit_const_c_expr(b, value) |> then(fn {reg, b1} -> {:ok, reg, b1} end)
     end
   end
 
@@ -265,11 +286,15 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
 
   defp compile_record_get(base, field, ctx, b) when is_integer(base) do
     {reg, b1} = Builder.fresh_reg(b)
+    field_index = Record.field_index_for(field, ctx)
+    int_field? = Record.int_field?(field)
+
+    op = if int_field?, do: :record_get_int, else: :record_get
 
     {_, b2} =
-      Builder.emit(b1, :record_get, %{
+      Builder.emit(b1, op, %{
         dest: reg,
-        args: %{base: base, field: field, field_index: Record.field_index_for(field, ctx)},
+        args: %{base: base, field: field, field_index: field_index},
         effects: %{produces: {:owned, reg}, consumes: [], borrows: [base], fallible: false}
       })
 
@@ -285,7 +310,10 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
   end
 
   defp compile_let_simple(name, value_expr, in_expr, ctx, b) do
-    case compile(value_expr, ctx, b) do
+    value_expr = maybe_packed_text_options_expr(value_expr)
+    value_ctx = Context.for_branch_arm(ctx)
+
+    case compile(value_expr, value_ctx, b) do
       {:ok, reg, b1} when is_integer(reg) ->
         ctx1 = Context.put_local(ctx, name, reg)
         b2 = Builder.bind_local(b1, name, reg)
@@ -293,6 +321,30 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
 
       _ ->
         :unsupported
+    end
+  end
+
+  defp maybe_packed_text_options_expr(value_expr) do
+    alias Elmc.Backend.CCodegen.DirectRender.Emit.TextOptions
+
+    if TextOptions.packable_value?(value_expr) do
+      case TextOptions.packed_expr(value_expr) do
+        {:ok, %{op: :direct_native_if} = packed} ->
+          %{
+            op: :if,
+            cond: Map.fetch!(packed, :cond),
+            then_expr: Map.fetch!(packed, :then_expr),
+            else_expr: Map.fetch!(packed, :else_expr)
+          }
+
+        {:ok, packed} ->
+          packed
+
+        _ ->
+          value_expr
+      end
+    else
+      value_expr
     end
   end
 
@@ -369,7 +421,87 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
     end)
   end
 
-  defp compile_runtime_call(%{function: "elmc_list_find_first", args: args}, ctx, b) do
+  defp int_record_literal_fields?(fields) when is_list(fields) do
+    fields != [] and Enum.all?(fields, &int_record_field_expr?/1)
+  end
+
+  defp int_record_shape?(field_names) when is_list(field_names) do
+    field_names != [] and Enum.all?(field_names, &Record.int_field?/1)
+  end
+
+  defp int_record_field_expr?(field) do
+    int_record_expr?(Map.get(field, :expr) || Map.get(field, :value))
+  end
+
+  defp int_record_expr?(%{op: :int_literal, value: value}) when is_integer(value), do: true
+
+  defp int_record_expr?(%{op: :var, name: name}) when is_binary(name), do: true
+
+  defp int_record_expr?(%{op: :qualified_call, target: target, args: args}) when is_list(args) do
+    int_call_target?(target) and Enum.all?(args, &int_record_expr?/1)
+  end
+
+  defp int_record_expr?(%{op: :call, name: name, args: args}) when is_list(args) do
+    name in ["max", "min", "modBy", "remainderBy", "__idiv__", "__mul__", "__add__", "__sub__"] and
+      Enum.all?(args, &int_record_expr?/1)
+  end
+
+  defp int_record_expr?(%{op: op})
+       when op in [
+              :add_const,
+              :sub_const,
+              :add_vars,
+              :sub_vars,
+              :mul_vars,
+              :idiv_vars,
+              :min_vars,
+              :max_vars,
+              :mod_vars,
+              :rem_vars,
+              :record_get_int
+            ],
+       do: true
+
+  defp int_record_expr?(%{op: :field_access, arg: arg, field: field})
+       when is_binary(field) and is_map(arg),
+       do: int_record_expr?(arg)
+
+  defp int_record_expr?(_), do: false
+
+  defp int_call_target?(target) when is_binary(target) do
+    target in [
+      "Basics.max",
+      "Basics.min",
+      "Basics.modBy",
+      "Basics.remainderBy",
+      "Basics.abs",
+      "Basics.negate"
+    ] or
+      String.ends_with?(target, ".max") or
+      String.ends_with?(target, ".min") or
+      String.ends_with?(target, ".modBy")
+  end
+
+  defp compile_runtime_call(%{function: "elmc_list_repeat", args: args}, ctx, b) do
+    case fold_list_repeat_literals(args, ctx, b) do
+      {:ok, reg, b1} ->
+        {:ok, reg, b1}
+
+      :error ->
+        compile_runtime_call_default(%{function: "elmc_list_repeat", args: args}, ctx, b)
+    end
+  end
+
+  defp compile_runtime_call(%{function: "elmc_list_map"} = expr, ctx, b) do
+    case Elmc.Backend.Plan.Lower.ListCursor.try_compile_map(expr, ctx, b) do
+      {:ok, reg, b1} -> {:ok, reg, b1}
+      :unsupported -> compile_runtime_call_default(expr, ctx, b)
+    end
+  end
+
+  defp compile_runtime_call(expr, ctx, b), do: compile_runtime_call_default(expr, ctx, b)
+
+  defp compile_runtime_call_default(%{function: "elmc_list_find_first", args: args}, ctx, b) do
     with {:ok, [pred_reg, list_reg], b1} <- compile_call_args(args, ctx, b),
          {:ok, filtered_reg, b2} <-
            compile_runtime_builtin(:list_filter, [pred_reg, list_reg], ctx, b1),
@@ -380,7 +512,7 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
     end
   end
 
-  defp compile_runtime_call(%{args: args} = expr, ctx, b) do
+  defp compile_runtime_call_default(%{args: args} = expr, ctx, b) do
     callee = Map.get(expr, :function) || Map.get(expr, :callee)
 
     with callee when is_binary(callee) <- callee,
@@ -392,13 +524,61 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
     end
   end
 
-  defp compile_runtime_call(_, _, _), do: :unsupported
+  defp compile_runtime_call_default(_, _, _), do: :unsupported
 
   defp compile_call_args(args, ctx, b) when is_list(args) do
     compile_args(args, ctx, b)
   end
 
   defp compile_call_args(_, _, _), do: {:ok, [], nil}
+
+  defp fold_list_repeat_literals([%{op: :int_literal, value: count}, %{op: :int_literal, value: item}], ctx, b)
+       when is_integer(count) and count >= 4 and is_integer(item) do
+    values = for _ <- 1..count, do: item
+    compile_const_static_list({:int_array, values}, ctx, b)
+  end
+
+  defp fold_list_repeat_literals(_, _, _), do: :error
+
+  @doc false
+  def compile_const_static_list(spec, ctx, b) do
+    {dest, b1} = dest_for_builtin(ctx, b)
+    wrap_catch? = Builder.wrap_fallible_instr_catch?(b1, ctx, true)
+
+    b2 = if wrap_catch?, do: Builder.catch_begin(b1), else: b1
+    {args, effects} = static_list_instr(spec, dest)
+
+    {_, b3} =
+      Builder.emit(b2, :const_static_list, %{
+        dest: dest,
+        args: args,
+        effects: effects
+      })
+
+    b4 = if wrap_catch?, do: Builder.catch_end(b3), else: b3
+    result = if is_integer(dest), do: dest, else: dest
+    {:ok, result, b4}
+  end
+
+  defp static_list_instr({:int_array, values}, dest) do
+    {%{kind: :int_array, values: values}, Types.fallible_effects(dest)}
+  end
+
+  defp static_list_instr({:float_array, values}, dest) do
+    {%{kind: :float_array, values: values}, Types.fallible_effects(dest)}
+  end
+
+  defp static_list_instr({:tuple2_int_array, pairs}, dest) do
+    {%{kind: :tuple2_int_array, pairs: pairs}, Types.fallible_effects(dest)}
+  end
+
+  defp static_list_instr({:values, regs}, dest) when is_list(regs) do
+    {%{kind: :values, regs: regs}, Types.fallible_effects(dest, [], regs)}
+  end
+
+  defp static_list_instr({:record_array, regs}, dest) when is_list(regs) do
+    {%{kind: :record_array, regs: regs}, Types.fallible_effects(dest, [], regs)}
+  end
 
   @doc false
   def compile_runtime_builtin(id, arg_regs, ctx, b, extra \\ %{}) do
@@ -431,22 +611,28 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
   defp compile_runtime_builtin_core(id, arg_regs, ctx, b, extra) do
     {dest, b1} = dest_for_builtin(ctx, b)
     fallible? = RuntimeBuiltins.fallible?(id)
-    wrap_catch? = fallible? and not Builder.skip_instr_catch?(b1, ctx)
+    wrap_catch? = Builder.wrap_fallible_instr_catch?(b1, ctx, fallible?)
 
     b2 = if wrap_catch?, do: Builder.catch_begin(b1), else: b1
 
     {arg_regs, b2a} =
-      if id in [:record_new, :record_new_take] do
-        Builder.dup_named_locals_for_consume(b2, arg_regs)
-      else
-        {arg_regs, b2}
+      cond do
+        id in [:record_new, :record_new_take, :record_new_values_ints] ->
+          Builder.dup_regs_for_owned_consume(b2, arg_regs)
+
+        id in [:tuple2, :tuple2_take] ->
+          Builder.dup_regs_for_owned_consume(b2, arg_regs)
+
+        true ->
+          {arg_regs, b2}
       end
 
     {borrows, consumes} =
       cond do
-        id in [:record_new, :record_new_take] -> {[], arg_regs}
+        id in [:record_new, :record_new_take, :record_new_values_ints] -> {[], arg_regs}
         id in [:cmd_batch, :sub_batch] -> {[], arg_regs}
         id == :debug_to_string -> {[], arg_regs}
+        id == :tuple2_ints -> {arg_regs, []}
         id in [:result_and_then, :result_map, :result_map_error, :maybe_and_then] ->
           case arg_regs do
             args when length(args) >= 1 ->
@@ -499,54 +685,35 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
   end
 
   defp compile_tuple2_pair(left, right, ctx, b) do
-    shared = shared_local_names(left, right, ctx)
-    {left_ctx, b1} = duplicate_shared_locals(shared, ctx, b)
+    operand_ctx = %{ctx | dest_stack: [:scratch], function_tail: false}
 
-    with {:ok, l, b2} <- compile(left, left_ctx, b1),
-         {:ok, r, b3} <- compile(right, ctx, b2) do
-      compile_runtime_builtin(:tuple2, [l, r], ctx, b3)
+    with {:ok, l, b1} <- compile(left, operand_ctx, b),
+         {:ok, r, b2} <- compile(right, operand_ctx, b1) do
+      if tuple2_ints_eligible?(left, right) do
+        compile_runtime_builtin(:tuple2_ints, [l, r], ctx, b2)
+      else
+        compile_runtime_builtin(:tuple2, [l, r], ctx, b2)
+      end
     else
       _ -> :unsupported
     end
   end
 
-  defp duplicate_shared_locals(shared, ctx, b) do
-    Enum.reduce(shared, {ctx, b}, fn name, {ctx_acc, b_acc} ->
-      case Context.local_reg(ctx_acc, name) do
-        reg when is_integer(reg) ->
-          {dup_reg, b1} = Builder.fresh_reg(b_acc)
-
-          {_, b2} =
-            Builder.emit(b1, :call_runtime, %{
-              dest: dup_reg,
-              args: %{builtin: :retain, args: [reg]},
-              effects: %{produces: {:owned, dup_reg}, consumes: [], borrows: [reg], fallible: false}
-            })
-
-          {Context.put_local(ctx_acc, name, dup_reg), b2}
-
-        _ ->
-          {ctx_acc, b_acc}
-      end
-    end)
+  defp tuple2_ints_eligible?(left, right) do
+    native_int_operand_expr?(left) and native_int_operand_expr?(right)
   end
 
-  defp shared_local_names(left, right, ctx) do
-    locals = MapSet.new(Map.keys(ctx.locals))
+  defp native_int_operand_expr?(%{op: op}) when op in [:int_literal, :c_int_expr, :msg_tag_expr],
+    do: true
 
-    ir_var_names(left)
-    |> MapSet.new()
-    |> MapSet.intersection(MapSet.new(ir_var_names(right)))
-    |> MapSet.intersection(locals)
-    |> MapSet.to_list()
-  end
+  defp native_int_operand_expr?(%{op: :field_access}), do: true
+  defp native_int_operand_expr?(%{op: :var}), do: true
+  defp native_int_operand_expr?(%{op: op}) when op in [:add_const, :sub_const, :add_vars], do: true
 
-  defp ir_var_names(%{op: :var, name: name}) when is_binary(name), do: [name]
+  defp native_int_operand_expr?(%{op: :constructor_call, args: []}), do: true
 
-  defp ir_var_names(map) when is_map(map) do
-    map |> Map.values() |> Enum.flat_map(&ir_var_names/1)
-  end
+  defp native_int_operand_expr?(%{op: :if, then_expr: then_expr, else_expr: else_expr}),
+    do: native_int_operand_expr?(then_expr) and native_int_operand_expr?(else_expr)
 
-  defp ir_var_names(list) when is_list(list), do: Enum.flat_map(list, &ir_var_names/1)
-  defp ir_var_names(_), do: []
+  defp native_int_operand_expr?(_), do: false
 end

@@ -138,8 +138,9 @@ defmodule Elmc.Backend.Plan.Lower.Case do
 
   defp compile_maybe_branch(expr, ctx, b, block_id) do
     b_arm = Builder.begin_cfg_arm_block(b, block_id)
+    arm_ctx = Context.for_branch_arm(ctx)
 
-    case Expr.compile(expr, ctx, b_arm) do
+    case Expr.compile(expr, arm_ctx, b_arm) do
       {:ok, reg, b1} ->
         exit_id = b1.current_block.id
         {:ok, reg, exit_id, Builder.finish_block(b1, :none)}
@@ -151,9 +152,10 @@ defmodule Elmc.Backend.Plan.Lower.Case do
 
   defp compile_maybe_else_branch(pattern, expr, subject, ctx, b, block_id) do
     b_arm = Builder.begin_cfg_arm_block(b, block_id)
+    arm_ctx = Context.for_branch_arm(ctx)
 
-    with {:ok, subj_reg, b_subj} <- Expr.compile(subject, ctx, b_arm),
-         {:ok, _payload_reg, b1, else_ctx} <- bind_maybe_payload(ctx, pattern, subj_reg, b_subj),
+    with {:ok, subj_reg, b_subj} <- Expr.compile(subject, arm_ctx, b_arm),
+         {:ok, _payload_reg, b1, else_ctx} <- bind_maybe_payload(arm_ctx, pattern, subj_reg, b_subj),
          {:ok, reg, b2} <- Expr.compile(expr, else_ctx, b1) do
       exit_id = b2.current_block.id
       {:ok, reg, exit_id, Builder.finish_block(b2, :none)}
@@ -200,7 +202,7 @@ defmodule Elmc.Backend.Plan.Lower.Case do
   defp do_compile_linear_branches([branch | rest], subject, ctx, b) do
     with {:ok, subj_reg, b1} <- Expr.compile(subject, ctx, b) do
       pattern = Map.get(branch, :pattern)
-      branch_ctx = ctx
+      branch_ctx = Context.for_branch_arm(ctx)
       b_branch = b1
       {branch_ctx, b_branch} = bind_pattern_pair(branch_ctx, b_branch, pattern, subj_reg)
 

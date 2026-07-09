@@ -106,6 +106,24 @@ defmodule Elmc.Backend.CCodegen.DirectRender.GenericTargets do
         direct_targets
       )
     )
+    |> MapSet.difference(unused_streaming_ui_glue(opts, decl_map, direct_targets))
+  end
+
+  # `toUiNode` expands to windowStack/window/canvasLayer in Elm, but direct scene
+  # emit replaces that glue; keep generic codegen from emitting the unused helpers.
+  defp unused_streaming_ui_glue(opts, decl_map, direct_targets) do
+    if opts[:stream_view_fallback] == true do
+      MapSet.new()
+    else
+      entry_module = opts[:entry_module] || "Main"
+      view_target = {entry_module, "view"}
+
+      drop? =
+        prune_generic_view?(opts, decl_map, direct_targets) or
+          (direct_render_only?(opts) and MapSet.member?(direct_targets, view_target))
+
+      if drop?, do: MapSet.new(@stream_view_ui_helpers), else: MapSet.new()
+    end
   end
 
   # Pull generic helpers for the view subgraph. When generic `view` is omitted for aplite
@@ -373,27 +391,42 @@ defmodule Elmc.Backend.CCodegen.DirectRender.GenericTargets do
     view_target = {entry_module, "view"}
 
     pruned_view_callees =
-      if prune_generic_view?(opts, decl_map, direct_targets) and
-           Map.has_key?(decl_map, view_target) do
-        case Map.fetch(decl_map, view_target) do
-          {:ok, %{expr: expr}} ->
-            view_ui_callees =
-              generic_callees_under_ui_node(
-                expr,
-                entry_module,
-                direct_targets,
-                decl_map,
-                MapSet.new([view_target])
-              )
+      cond do
+        direct_render_only?(opts) ->
+          # Direct `_commands_append` inlines the view grid; do not re-seed the whole
+          # generic `view` UI subgraph (drawCell, boardLayout, closures, etc.).
+          []
 
-            view_ui_callees
-            |> MapSet.new()
-            |> MapSet.difference(pruned_view_glue_targets(entry_module))
-            |> MapSet.to_list()
+        prune_generic_view?(opts, decl_map, direct_targets) and
+            Map.has_key?(decl_map, view_target) ->
+          case Map.fetch(decl_map, view_target) do
+            {:ok, %{expr: expr}} ->
+              view_ui_callees =
+                generic_callees_under_ui_node(
+                  expr,
+                  entry_module,
+                  direct_targets,
+                  decl_map,
+                  MapSet.new([view_target])
+                )
 
-          :error ->
-            []
-        end
+              view_ui_callees
+              |> MapSet.new()
+              |> MapSet.difference(pruned_view_glue_targets(entry_module))
+              |> MapSet.to_list()
+
+            :error ->
+              []
+          end
+
+        true ->
+          []
+      end
+
+    direct_only_boxed_seeds =
+      if direct_render_only?(opts) do
+        direct_command_boxed_callees(direct_targets, decl_map, opts, entry_module)
+        |> MapSet.to_list()
       else
         []
       end
@@ -405,7 +438,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.GenericTargets do
     mixed_direct_boxed_callees =
       boxed_direct_callees_of_mixed_helpers(mixed_abi_helpers, direct_targets, decl_map)
 
-    (pruned_view_callees ++ mixed_abi_helpers ++ mixed_direct_boxed_callees)
+    (pruned_view_callees ++ direct_only_boxed_seeds ++ mixed_abi_helpers ++ mixed_direct_boxed_callees)
     |> Enum.reject(&MapSet.member?(view_peeled_helpers, &1))
     |> Enum.uniq()
   end

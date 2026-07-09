@@ -57,7 +57,7 @@ defmodule Elmc.Backend.Pebble do
 
     append_fallback_enabled? =
       direct_view_commands? and
-        (opts[:direct_render_only] == true or aplite_direct_view_scene?)
+        (prune_generic_view_for_direct_scene?(opts) or aplite_direct_view_scene?)
 
     view_decl = Map.get(decl_map, {entry_module, "view"})
 
@@ -89,13 +89,17 @@ defmodule Elmc.Backend.Pebble do
   @spec stream_view_fallback_needed?(IR.t(), String.t(), PebbleTypes.entry_module(), map()) ::
           boolean()
   def stream_view_fallback_needed?(ir, generated_c, entry_module, opts) do
-    # Color-only releases already commit to direct scene encoding. Recompiling with
-    # stream_view_fallback pulls generic Main.view/faceOps back in and overflows flash.
-    if opts[:direct_render_only] == true do
+    # Color-only and aplite pruned builds commit to streamed direct-scene commands.
+    # Recompiling with stream_view_fallback pulls generic Main.view back in and overflows flash.
+    if prune_generic_view_for_direct_scene?(opts) do
       false
     else
       stream_view_fallback_needed_for_dual_codegen?(ir, generated_c, entry_module, opts)
     end
+  end
+
+  defp prune_generic_view_for_direct_scene?(opts) do
+    opts[:direct_render_only] == true or opts[:prune_direct_generic] == true
   end
 
   defp stream_view_fallback_needed_for_dual_codegen?(ir, generated_c, entry_module, opts) do

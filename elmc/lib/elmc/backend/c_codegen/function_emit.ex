@@ -21,6 +21,7 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
   alias Elmc.Backend.CCodegen.FunctionCallAbi
   alias Elmc.Backend.CCodegen.FunctionSplit
   alias Elmc.Backend.CCodegen.FunctionCallCompile
+  alias Elmc.Backend.C.Lower.NativeReturn
   alias Elmc.Backend.CCodegen.PlanNativeProjection
   alias Elmc.Backend.CCodegen.ValueSlots
   alias Elmc.Backend.CCodegen.ImmortalStaticList
@@ -113,21 +114,38 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
       end
 
     rc_required? = RcRequired.rc_required?(module_name, decl.name)
+    native_ret = NativeReturn.cached_kind({module_name, decl.name})
+    value_return? = NativeReturn.value_return?({module_name, decl.name})
 
     signature =
       cond do
-        rc_required? -> rc_function_params(direct_args?, decl, module_name, decl_map)
-        direct_args? -> direct_params(decl, module_name, decl_map)
-        true -> "ElmcValue ** const args, const int argc"
+        value_return? and direct_args? ->
+          direct_params(decl, module_name, decl_map)
+
+        rc_required? and native_ret ->
+          native_rc_function_params(direct_args?, decl, module_name, decl_map, native_ret)
+
+        rc_required? ->
+          rc_function_params(direct_args?, decl, module_name, decl_map)
+
+        direct_args? ->
+          direct_params(decl, module_name, decl_map)
+
+        true ->
+          "ElmcValue ** const args, const int argc"
       end
 
-    return_type = if rc_required?, do: "RC", else: "ElmcValue *"
+    return_type =
+      cond do
+        value_return? and native_ret -> NativeReturn.c_value_type(native_ret)
+        rc_required? -> "RC"
+        true -> "ElmcValue *"
+      end
 
     linkage = function_linkage_prefix(module_name, decl.name)
 
     native_projection =
-      if plan_primary_body?(decl, module_name, decl_map, Process.get(:elmc_codegen_opts, [])) and
-           PlanNativeProjection.eligible?(decl, module_name, decl_map) do
+      if PlanNativeProjection.eligible?(decl, module_name, decl_map) do
         PlanNativeProjection.emit(decl, module_name, decl_map)
       else
         ""
@@ -220,6 +238,22 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
     end
   end
 
+  defp native_rc_function_params(direct_args?, decl, module_name, decl_map, native_ret) do
+    out = NativeReturn.c_out_type(native_ret)
+
+    params =
+      if direct_args? do
+        direct_params(decl, module_name, decl_map)
+      else
+        "ElmcValue ** const args, const int argc"
+      end
+
+    case params do
+      "void" -> out
+      other -> out <> ", " <> other
+    end
+  end
+
   @spec boxed_direct_params(Types.function_declaration()) :: String.t()
   def boxed_direct_params(decl) do
     case c_arg_bindings(decl.args || []) do
@@ -272,17 +306,32 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
         ) :: String.t()
   def boxed_direct_prototype(decl, c_name, module_name, decl_name, decl_map) do
     params = direct_params(decl, module_name, decl_map)
+    native_ret = NativeReturn.cached_kind({module_name, decl_name})
+    value_return? = NativeReturn.value_return?({module_name, decl_name})
 
-    if RcRequired.rc_required?(module_name, decl_name) do
-      case params do
-        "void" -> "RC #{c_name}(ElmcValue **out);"
-        other -> "RC #{c_name}(ElmcValue **out, #{other});"
-      end
-    else
-      case params do
-        "void" -> "ElmcValue *#{c_name}(void);"
-        other -> "ElmcValue *#{c_name}(#{other});"
-      end
+    cond do
+      value_return? and native_ret ->
+        value_type = NativeReturn.c_value_type(native_ret)
+
+        case params do
+          "void" -> "#{value_type} #{c_name}(void);"
+          other -> "#{value_type} #{c_name}(#{other});"
+        end
+
+      RcRequired.rc_required?(module_name, decl_name) ->
+        out_param =
+          if native_ret, do: NativeReturn.c_out_type(native_ret), else: "ElmcValue **out"
+
+        case params do
+          "void" -> "RC #{c_name}(#{out_param});"
+          other -> "RC #{c_name}(#{out_param}, #{other});"
+        end
+
+      true ->
+        case params do
+          "void" -> "ElmcValue *#{c_name}(void);"
+          other -> "ElmcValue *#{c_name}(#{other});"
+        end
     end
   end
 
@@ -738,6 +787,20 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
       :legacy
     else
       case Plan.lower_function(decl, module_name, decl_map, rc_required: rc_required?) do
+        {:ok, %{fusion_c: fusion_c} = plan} when is_binary(fusion_c) and fusion_c != "" ->
+          {:ok,
+           emit_plan_fusion_body(
+             decl,
+             module_name,
+             arg_bindings,
+             arg_binding_code,
+             direct_args?,
+             plan,
+             entry_probe,
+             exit_probe,
+             rc_required?
+           )}
+
         {:ok, plan} ->
           result_probe = DebugProbes.result_probe(module_name, decl.name, "*out")
 
@@ -765,6 +828,129 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
       end
     end
   end
+
+  defp emit_plan_fusion_body(
+         decl,
+         module_name,
+         arg_bindings,
+         arg_binding_code,
+         direct_args?,
+         %{fusion_c: helper_c} = plan,
+         entry_probe,
+         exit_probe,
+         rc_required?
+       ) do
+    case Map.get(plan, :native_scalar_return) do
+      :native_int ->
+        emit_fused_native_int_scalar_wrapper_function(
+          decl,
+          module_name,
+          arg_bindings,
+          direct_args?,
+          helper_c,
+          entry_probe,
+          exit_probe,
+          arg_binding_code,
+          rc_required?
+        )
+
+      _ ->
+        emit_rc_fused_native_wrapper_function(
+          decl,
+          module_name,
+          arg_bindings,
+          direct_args?,
+          helper_c,
+          entry_probe,
+          exit_probe,
+          arg_binding_code,
+          rc_required?
+        )
+    end
+  end
+
+  defp emit_fused_native_int_scalar_wrapper_function(
+         decl,
+         module_name,
+         arg_bindings,
+         direct_args?,
+         helper_c,
+         entry_probe,
+         exit_probe,
+         arg_binding_code,
+         rc_required?
+       ) do
+    c_name = Util.module_fn_name(module_name, decl.name)
+    native = "#{c_name}_native"
+
+    Process.put(
+      :elmc_generic_helper_defs,
+      [helper_c | Process.get(:elmc_generic_helper_defs, [])]
+    )
+
+    native_args = fused_native_call_args(decl, arg_bindings, direct_args?)
+
+    core_body = [
+      entry_probe,
+      "*out = #{native}(#{native_args});",
+      "return RC_SUCCESS;",
+      exit_probe
+    ]
+
+    if rc_required? do
+      wrap_rc_function_body(
+        arg_bindings,
+        arg_binding_code,
+        core_body,
+        direct_args?
+      )
+    else
+      unused_casts = unused_arg_casts(arg_bindings, core_body)
+
+      format_function_body(
+        [wrapper_abi_void_casts(direct_args?, arg_bindings), arg_binding_code, unused_casts |
+           core_body]
+      )
+    end
+  end
+
+  defp emit_plan_fusion_body(
+         decl,
+         module_name,
+         arg_bindings,
+         arg_binding_code,
+         direct_args?,
+         helper_c,
+         entry_probe,
+         exit_probe,
+         rc_required?
+       )
+       when is_binary(helper_c) do
+    emit_plan_fusion_body(
+      decl,
+      module_name,
+      arg_bindings,
+      arg_binding_code,
+      direct_args?,
+      %{fusion_c: helper_c},
+      entry_probe,
+      exit_probe,
+      rc_required?
+    )
+  end
+
+  defp emit_plan_fusion_body(
+         _decl,
+         _module_name,
+         _arg_bindings,
+         _arg_binding_code,
+         _direct_args?,
+         _plan,
+         _entry_probe,
+         _exit_probe,
+         _rc_required?
+       ),
+       do: ""
 
   defp compile_opts_list(opts) when is_list(opts), do: opts
   defp compile_opts_list(opts) when is_map(opts), do: Map.to_list(opts)
@@ -1301,6 +1487,31 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
     end)
     |> Enum.reject(&(&1 == ""))
     |> Enum.join("\n")
+  end
+
+  @spec prelower_plan_native_returns(ElmEx.IR.t(), MapSet.t(Types.function_decl_key()), Types.function_decl_map()) ::
+          :ok
+  def prelower_plan_native_returns(ir, generic_targets, decl_map) do
+    opts = Process.get(:elmc_codegen_opts, [])
+
+    if Plan.plan_ir_mode(opts) == :primary do
+      ir.modules
+      |> Enum.flat_map(fn mod ->
+        mod.declarations
+        |> Enum.filter(fn decl ->
+          decl.kind == :function and MapSet.member?(generic_targets, {mod.name, decl.name}) and
+            Plan.primary_lowered?(decl, mod.name, decl_map)
+        end)
+        |> Enum.map(fn decl ->
+          RcRequired.rc_required?(mod.name, decl.name)
+          |> then(fn rc? ->
+            Plan.lower_function(decl, mod.name, decl_map, rc_required: rc?)
+          end)
+        end)
+      end)
+    end
+
+    :ok
   end
 
   @spec generic_function_prototypes(

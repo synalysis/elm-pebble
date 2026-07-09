@@ -1,6 +1,7 @@
 defmodule Elmc.Backend.Plan.Lower.Record do
   @moduledoc false
 
+  alias Elmc.Backend.CCodegen.RecordFieldMacros
   alias Elmc.Backend.Plan.{Builder, Context}
   alias Elmc.Backend.Plan.Lower.Expr
   alias Elmc.Backend.Plan.Types
@@ -65,7 +66,7 @@ defmodule Elmc.Backend.Plan.Lower.Record do
         Types.fallible_transfer(borrows, consumes)
       end
 
-    wrap_catch? = (ctx.fallible or ctx.rc_required) and not Builder.skip_instr_catch?(b1, ctx)
+    wrap_catch? = Builder.wrap_fallible_instr_catch?(b1, ctx, true)
 
     b2 = if wrap_catch?, do: Builder.catch_begin(b1), else: b1
     field_index = field_index_ref(field_name, ctx)
@@ -103,6 +104,16 @@ defmodule Elmc.Backend.Plan.Lower.Record do
   end
 
   @doc false
+  @spec int_field?(String.t()) :: boolean()
+  def int_field?(field_name) when is_binary(field_name) do
+    Process.get(:elmc_record_field_types, %{})
+    |> Map.values()
+    |> Enum.any?(fn fields when is_map(fields) ->
+      Map.get(fields, field_name) == "Int" or Map.get(fields, to_string(field_name)) == "Int"
+    end)
+  end
+
+  @doc false
   @spec field_index_for(String.t(), Context.t() | nil) :: String.t()
   def field_index_for(field_name, ctx \\ nil) when is_binary(field_name),
     do: field_index_ref(field_name, ctx)
@@ -137,9 +148,9 @@ defmodule Elmc.Backend.Plan.Lower.Record do
   end
 
   defp field_index_ref(field_name, ctx) when is_binary(field_name) do
-    case field_index_from_shapes(field_name, ctx) do
-      idx when is_integer(idx) ->
-        Integer.to_string(idx)
+    case resolve_field_type_key(field_name, ctx) do
+      {{mod, type}, idx} when is_integer(idx) ->
+        RecordFieldMacros.format_index(idx, field_name, {mod, type})
 
       _ ->
         case Process.get(:elmc_record_field_macros, %{}) do
@@ -147,14 +158,8 @@ defmodule Elmc.Backend.Plan.Lower.Record do
             case Enum.find_value(macros, fn {{_mod, _type, name}, macro} ->
                    if name == field_name, do: macro
                  end) do
-              macro when is_binary(macro) ->
-                case Integer.parse(macro) do
-                  {idx, _} -> Integer.to_string(idx)
-                  :error -> macro
-                end
-
-              _ ->
-                "0"
+              macro when is_binary(macro) -> macro
+              _ -> "0"
             end
 
           _ ->
@@ -163,7 +168,7 @@ defmodule Elmc.Backend.Plan.Lower.Record do
     end
   end
 
-  defp field_index_from_shapes(field_name, ctx) when is_binary(field_name) do
+  defp resolve_field_type_key(field_name, ctx) when is_binary(field_name) do
     shapes = Process.get(:elmc_record_alias_shapes, %{})
 
     candidates =
@@ -175,8 +180,8 @@ defmodule Elmc.Backend.Plan.Lower.Record do
       [] ->
         nil
 
-      [{_key, idx}] ->
-        idx
+      [{key, idx}] ->
+        {key, idx}
 
       many ->
         module = ctx && Map.get(ctx, :module)
@@ -184,12 +189,12 @@ defmodule Elmc.Backend.Plan.Lower.Record do
         case module do
           mod when is_binary(mod) ->
             case Enum.find(many, fn {{m, _}, _idx} -> m == mod end) do
-              {_key, idx} -> idx
-              _ -> elem(hd(many), 1)
+              {key, idx} -> {key, idx}
+              _ -> hd(many)
             end
 
           _ ->
-            elem(hd(many), 1)
+            hd(many)
         end
     end
   end

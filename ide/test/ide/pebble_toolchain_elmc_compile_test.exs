@@ -23,6 +23,13 @@ defmodule Ide.PebbleToolchainElmcCompileTest do
     refute opts[:prune_direct_generic]
   end
 
+  test "watch_compile_opts prunes dead generic view for aplite-only apps" do
+    opts = Elmc.watch_compile_opts("/tmp/out", ["aplite"])
+
+    refute opts[:direct_render_only]
+    assert opts[:prune_direct_generic] == true
+  end
+
   test "target_platforms_for_project_dir reads release_defaults from workspace config" do
     tmp = Path.join(System.tmp_dir!(), "pebble-elmc-opts-#{System.unique_integer([:positive])}")
     watch = Path.join(tmp, "watch")

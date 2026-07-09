@@ -1,11 +1,16 @@
 {
-  "version": 1,
-  "description": "Reference sizes after C codegen phase 2 improvements (flint). pebble-app.bin requires --package.",
+  "version": 2,
+  "description": "Reference sizes after generic plan size-reduction (flint/aplite). pebble-app.bin requires --package.",
   "templates": {
     "game-2048": {
-      "generated_c_bytes": 69762,
-      "pebble_app_bin_aplite": 21380,
-      "pebble_app_bin_flint": 21788
+      "generated_c_bytes": 78000,
+      "pebble_app_bin_aplite": 21000,
+      "pebble_app_bin_flint": 36000
+    },
+    "watchface-yes": {
+      "generated_c_bytes": 215000,
+      "pebble_app_bin_aplite": 42000,
+      "pebble_app_bin_flint": 43000
     },
     "watchface-tangram-time": {
       "generated_c_bytes": 209258,

@@ -102,6 +102,37 @@ defmodule Elmc.Backend.Bytecode.Runtime do
         <<size::16, bin::binary-size(size), tail::binary>> = rest
         step(frame, dest, bin, rest, tail)
 
+      :const_static_list ->
+        <<kind::8, count::16, rest::binary>> = rest
+
+        {values, tail} =
+          case kind do
+            0 ->
+              <<ints_bin::binary-size(^count * 4), tail::binary>> = rest
+              values = for <<v::32 <- ints_bin>>, do: v
+              {values, tail}
+
+            1 ->
+              <<floats_bin::binary-size(^count * 8), tail::binary>> = rest
+              values = for <<v::float-64 <- floats_bin>>, do: v
+              {values, tail}
+
+            2 ->
+              <<pairs_bin::binary-size(^count * 8), tail::binary>> = rest
+              pairs = for <<l::32, r::32 <- pairs_bin>>, do: {l, r}
+              {pairs, tail}
+
+            kind when kind in [3, 4] ->
+              <<regs_bin::binary-size(^count * 2), tail::binary>> = rest
+              values = for <<r::16 <- regs_bin>>, do: get_local(frame.locals, r)
+              {values, tail}
+
+            _ ->
+              {[], rest}
+          end
+
+        step(frame, dest, values, rest, tail)
+
       :int_arith ->
         {value, tail} = eval_int_arith(rest, frame.locals)
         step(frame, dest, value, rest, tail)
@@ -276,8 +307,40 @@ defmodule Elmc.Backend.Bytecode.Runtime do
         rhs_n = local_int(locals, rhs)
         {if(rhs_n == 0, do: 0, else: div(left, rhs_n)), tail}
 
+      6 ->
+        <<rhs::16, tail::binary>> = rest
+        rhs_n = local_int(locals, rhs)
+        {min(left, rhs_n), tail}
+
+      7 ->
+        <<rhs::16, tail::binary>> = rest
+        rhs_n = local_int(locals, rhs)
+        {max(left, rhs_n), tail}
+
+      8 ->
+        <<rhs::16, tail::binary>> = rest
+        rhs_n = local_int(locals, rhs)
+        {elm_mod_by(left, rhs_n), tail}
+
+      9 ->
+        <<rhs::16, tail::binary>> = rest
+        rhs_n = local_int(locals, rhs)
+        {if(rhs_n == 0, do: 0, else: rem(left, rhs_n)), tail}
+
       _ ->
         {left, rest}
+    end
+  end
+
+  defp elm_mod_by(base, _value) when base == 0, do: 0
+
+  defp elm_mod_by(base, value) do
+    rem_n = rem(value, base)
+
+    if rem_n < 0 do
+      rem_n + if(base < 0, do: -base, else: base)
+    else
+      rem_n
     end
   end
 

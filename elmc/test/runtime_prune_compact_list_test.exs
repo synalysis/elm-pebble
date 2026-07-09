@@ -28,6 +28,8 @@ defmodule Elmc.RuntimePruneCompactListTest do
     refute runtime =~ "elmc_record_seq_alloc_copy"
     assert runtime =~ "elmc_float_list_cell_release"
     assert runtime =~ "elmc_record_seq_cell_release"
+    refute runtime =~ "elmc_record_seq_is_empty"
+    refute runtime =~ "elmc_record_seq_to_cons"
     refute runtime =~ "elmc_int_spine_head_native"
 
     count_empty =
@@ -84,7 +86,7 @@ defmodule Elmc.RuntimePruneCompactListTest do
 
     runtime = File.read!(Path.join(runtime_dir, "elmc_runtime.c"))
 
-    assert runtime =~ "static RC elmc_list_repeat_count"
+    assert runtime =~ "RC elmc_list_repeat_count("
     assert runtime =~ "RC elmc_list_repeat("
     refute runtime =~ ~r/static RC elmc_list_repeat_count\([^;]+\);\s*\n\s*RC elmc_list_repeat/
 

@@ -133,6 +133,24 @@ defmodule Elmc.Backend.Bytecode.Lower do
     }
   end
 
+  defp encode_instr(%{op: :const_c_expr, args: %{value: value}} = instr, fn_table) do
+    case resolve_c_expr_int(value) do
+      {:ok, n} ->
+        encode_instr(%{instr | op: :const_int, args: %{value: n}}, fn_table)
+
+      :error ->
+        opcode = Opcodes.opcode(:const_c_expr) || 0
+        dest_w = encode_dest(instr.dest)
+        bin = :erlang.iolist_to_binary(value)
+        args_bin = <<byte_size(bin)::16, bin::binary>>
+        <<opcode::8, dest_w::16, args_bin::binary>>
+    end
+  end
+
+  defp encode_instr(%{op: :record_get_int} = instr, fn_table) do
+    encode_instr(%{instr | op: :record_get}, fn_table)
+  end
+
   defp encode_instr(%{op: op, dest: dest, args: args}, fn_table) do
     opcode = Opcodes.opcode(op) || 0
     dest_w = encode_dest(dest)
@@ -202,8 +220,6 @@ defmodule Elmc.Backend.Bytecode.Lower do
     <<idx::16, byte_size(args_bin)::16, args_bin::binary>>
   end
 
-  defp encode_args(:const_int, %{value: v}, _fn_table), do: <<v::32>>
-
   defp encode_args(:int_arith, %{kind: kind, lhs: lhs} = args, _fn_table) do
     kind_n =
       case kind do
@@ -213,11 +229,15 @@ defmodule Elmc.Backend.Bytecode.Lower do
         :mul_vars -> 3
         :sub_vars -> 4
         :idiv_vars -> 5
+        :min_vars -> 6
+        :max_vars -> 7
+        :mod_vars -> 8
+        :rem_vars -> 9
         _ -> 0
       end
 
     case kind do
-      k when k in [:add_vars, :mul_vars, :sub_vars, :idiv_vars] ->
+      k when k in [:add_vars, :mul_vars, :sub_vars, :idiv_vars, :min_vars, :max_vars, :mod_vars, :rem_vars] ->
         <<kind_n::8, lhs::16, Map.fetch!(args, :rhs)::16>>
 
       _ ->
@@ -305,10 +325,71 @@ defmodule Elmc.Backend.Bytecode.Lower do
   defp encode_args(:publish, %{source: reg}, _fn_table) when is_integer(reg), do: <<reg::16>>
   defp encode_args(:publish, _, _fn_table), do: <<>>
 
+  defp encode_args(:const_int, %{value: v}, _fn_table), do: <<v::32>>
+
+  defp encode_args(:const_static_list, args, _fn_table) do
+    kind = Map.fetch!(args, :kind)
+
+    case kind do
+      :int_array ->
+        values = Map.fetch!(args, :values)
+        count = length(values)
+
+        ints =
+          Enum.reduce(values, <<0::8, count::16>>, fn v, acc ->
+            acc <> <<v::32>>
+          end)
+
+        ints
+
+      :float_array ->
+        values = Map.fetch!(args, :values)
+        count = length(values)
+
+        floats =
+          Enum.reduce(values, <<1::8, count::16>>, fn v, acc ->
+            acc <> <<static_list_float(v)::float-64>>
+          end)
+
+        floats
+
+      :tuple2_int_array ->
+        pairs = Map.fetch!(args, :pairs)
+        count = length(pairs)
+
+        Enum.reduce(pairs, <<2::8, count::16>>, fn {left, right}, acc ->
+          acc <> <<left::32, right::32>>
+        end)
+
+      :values ->
+        regs = Map.fetch!(args, :regs)
+        count = length(regs)
+
+        Enum.reduce(regs, <<3::8, count::16>>, fn reg, acc ->
+          acc <> <<reg::16>>
+        end)
+
+      :record_array ->
+        regs = Map.fetch!(args, :regs)
+        count = length(regs)
+
+        Enum.reduce(regs, <<4::8, count::16>>, fn reg, acc ->
+          acc <> <<reg::16>>
+        end)
+    end
+  end
+
   defp encode_args(:catch_begin, _, _fn_table), do: <<>>
   defp encode_args(:catch_end, _, _fn_table), do: <<>>
   defp encode_args(:release, %{reg: reg}, _fn_table), do: <<reg::16>>
   defp encode_args(_, _, _fn_table), do: <<>>
+
+  defp static_list_float(v) when is_integer(v), do: v * 1.0
+  defp static_list_float(v) when is_float(v), do: v
+
+  defp resolve_c_expr_int(value) when is_binary(value) do
+    Elmc.Backend.CCodegen.Emit.resolve_c_int_expr(value)
+  end
 
   defp encode_platform_op(kind, params) do
     kind_hash =

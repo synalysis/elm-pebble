@@ -64,7 +64,7 @@ defmodule Elmc.PlanCLowerTest do
              Elmc.Backend.Plan.Lower.Function.lower(decl, "Main", %{}, rc_required: true)
 
     c = CLowerFunction.emit(plan)
-    assert c =~ "elmc_record_new_static_take"
+    assert c =~ "elmc_record_new_values_ints"
     refute c =~ "elmc_record_new(&owned"
   end
 
@@ -122,6 +122,40 @@ defmodule Elmc.PlanCLowerTest do
     refute c =~ "RC_ERR_OUT_OF_MEMORY"
   end
 
+  test "tuple projection lowering skips OOM null checks" do
+    out_dir = Path.expand("tmp/tuple_proj_null_check_out", __DIR__)
+    project_dir = Path.expand("tmp/tuple_proj_null_check_project", __DIR__)
+    File.rm_rf!(out_dir)
+    File.rm_rf!(project_dir)
+    File.mkdir_p!(Path.join(project_dir, "src"))
+    File.cp!(Path.expand("fixtures/simple_project/elm.json", __DIR__), Path.join(project_dir, "elm.json"))
+
+    File.write!(Path.join(project_dir, "src/Main.elm"), """
+    module Main exposing (main)
+
+    main =
+        let
+            ( x, y ) =
+                ( 1, 2 )
+        in
+        x + y
+    """)
+
+    assert {:ok, _} =
+             Elmc.compile(project_dir, %{
+               out_dir: out_dir,
+               entry_module: "Main",
+               strip_dead_code: true,
+               plan_ir_mode: :primary
+             })
+
+    c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+    assert c =~ "elmc_tuple_first("
+    assert c =~ "elmc_tuple_second("
+    refute Regex.match?(~r/elmc_tuple_first\([^)]+\);\s*if \(!owned\[/, c)
+    refute Regex.match?(~r/elmc_tuple_second\([^)]+\);\s*if \(!owned\[/, c)
+  end
+
   test "record field corpus main lowers owned slots and RC callee bridge" do
     out_dir = Path.expand("tmp/record_field_main_lower", __DIR__)
     File.rm_rf!(out_dir)
@@ -171,8 +205,33 @@ defmodule Elmc.PlanCLowerTest do
              Elmc.Backend.Plan.Lower.Function.lower(decl, "Main", %{}, rc_required: true)
 
     c = CLowerFunction.emit(plan)
+    refute Regex.match?(~r/elmc_plan_block_\d+:\s*\n\s*elmc_plan_block_\d+:/, c)
+    assert c =~ "if (elmc_as_bool("
+  end
+
+  test "sequential br targets fall through without redundant goto" do
+    out_dir = Path.expand("tmp/plan_br_fallthrough_out", __DIR__)
+    project_dir = Path.expand("tmp/plan_br_fallthrough_project", __DIR__)
+    template_main = Path.expand("../../ide/priv/project_templates/game_2048/src/Main.elm", __DIR__)
+
+    File.rm_rf!(out_dir)
+    File.rm_rf!(project_dir)
+    File.mkdir_p!(Path.join(project_dir, "src"))
+    File.cp!(Path.expand("fixtures/simple_project/elm.json", __DIR__), Path.join(project_dir, "elm.json"))
+    File.write!(Path.join(project_dir, "src/Main.elm"), File.read!(template_main))
+
+    assert {:ok, _} =
+             Elmc.compile(project_dir, %{
+               out_dir: out_dir,
+               entry_module: "Main",
+               strip_dead_code: true,
+               plan_ir_mode: :primary
+             })
+
+    c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
     assert c =~ "goto elmc_plan_block_"
-    assert c =~ "if (elmc_as_int("
+    refute Regex.match?(~r/goto elmc_plan_block_(\d+);\s*\n\s*elmc_plan_block_\1:/, c)
+    assert c =~ "else if (elmc_union_tag_matches"
   end
 
   test "release_array_lifo dedupes aliased owned slots" do

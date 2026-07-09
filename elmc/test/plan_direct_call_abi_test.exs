@@ -49,7 +49,7 @@ defmodule Elmc.PlanDirectCallAbiTest do
 
     clear_lines_body = CCodegenExtract.fn_body(generated_c, "elmc_fn_Main_clearLines")
     refute clear_lines_body =~ "plan_argv"
-    assert clear_lines_body =~ ~r/elmc_fn_Main_boardRows\(&owned\[\d+\]\)/
+    assert clear_lines_body =~ "elmc_fn_Main_clearLines_native"
 
     refute generated_c =~ ~r/elmc_fn_Main_\w+\(&owned\[[0-9]+\], \)/
     refute generated_c =~ "plan_primary_boxed"
@@ -90,14 +90,12 @@ defmodule Elmc.PlanDirectCallAbiTest do
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
     for helper <- ~w(orient collapseRows restore) do
-      assert generated_c =~ "static RC elmc_fn_Main_#{helper}(ElmcValue **out"
-      assert generated_c =~ "static RC elmc_fn_Main_#{helper}(ElmcValue **out, "
+      refute generated_c =~ "static RC elmc_fn_Main_#{helper}(ElmcValue **out"
     end
 
     move_board_body = CCodegenExtract.fn_body(generated_c, "elmc_fn_Main_moveBoard")
-    assert move_board_body =~ "elmc_fn_Main_orient(&owned["
-    assert move_board_body =~ "elmc_fn_Main_collapseRows(&owned["
-    assert move_board_body =~ "elmc_fn_Main_restore(&owned["
+    assert move_board_body =~ "elmc_fn_Main_moveBoard_native"
+    refute move_board_body =~ "elmc_fn_Main_orient(&owned["
     refute move_board_body =~ "plan_argv"
   end
 

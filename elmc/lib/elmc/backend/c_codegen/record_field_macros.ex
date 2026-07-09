@@ -10,13 +10,15 @@ defmodule Elmc.Backend.CCodegen.RecordFieldMacros do
 
   @type macro_map :: %{{String.t(), String.t(), String.t()} => String.t()}
 
-  @spec definitions(IR.t()) :: {String.t(), macro_map()}
-  def definitions(%IR{} = ir) do
+  @spec definitions(IR.t(), keyword()) :: {String.t(), macro_map()}
+  def definitions(%IR{} = ir, opts \\ []) do
     shapes = IRQueries.record_alias_shape_map(ir)
+    used_fields = Keyword.get(opts, :used_fields)
 
     entries =
       for {{mod, type}, fields} <- shapes,
-          {field, index} <- Enum.with_index(fields) do
+          {field, index} <- Enum.with_index(fields),
+          used_field?(used_fields, {mod, type, field}) do
         macro = macro_name(mod, type, field)
         {{mod, type, field}, macro, index}
       end
@@ -24,7 +26,14 @@ defmodule Elmc.Backend.CCodegen.RecordFieldMacros do
     defines =
       entries
       |> Enum.sort_by(fn {{mod, type, field}, _macro, _index} -> {mod, type, field} end)
-      |> Enum.map_join("\n", fn {_key, macro, index} -> "#define #{macro} #{index}" end)
+      |> Enum.map(fn {_key, macro, index} -> "  #{macro} = #{index}" end)
+      |> case do
+        [] ->
+          ""
+
+        lines ->
+          "enum {\n" <> Enum.join(lines, ",\n") <> "\n};"
+      end
 
     macro_map = Map.new(entries, fn {key, macro, _index} -> {key, macro} end)
 
@@ -56,6 +65,51 @@ defmodule Elmc.Backend.CCodegen.RecordFieldMacros do
   def format_index(index, field, _type_key) do
     "#{index} /* #{Util.escape_c_comment(field)} */"
   end
+
+  defp used_field?(nil, {_mod, _type, _field}), do: true
+  defp used_field?(%MapSet{} = used, {_mod, _type, field}), do: MapSet.member?(used, field)
+  defp used_field?(_, _), do: true
+
+  @spec used_field_keys(Types.function_decl_map(), MapSet.t()) :: MapSet.t()
+  def used_field_keys(decl_map, reachable) when is_map(decl_map) do
+    decl_map
+    |> Enum.filter(fn {key, _} -> MapSet.member?(reachable, key) end)
+    |> Enum.reduce(MapSet.new(), fn {_key, decl}, acc ->
+      acc
+      |> MapSet.union(fields_from_expr(Map.get(decl, :expr)))
+    end)
+  end
+
+  defp fields_from_expr(nil), do: MapSet.new()
+
+  defp fields_from_expr(expr) when is_map(expr) do
+    direct =
+      case expr do
+        %{op: :field_access, field: field} when is_binary(field) ->
+          MapSet.new([field])
+
+        %{op: :record_update, fields: fields} when is_list(fields) ->
+          fields
+          |> Enum.map(&Map.get(&1, :field))
+          |> Enum.filter(&is_binary/1)
+          |> MapSet.new()
+
+        _ ->
+          MapSet.new()
+      end
+
+    nested =
+      expr
+      |> Map.values()
+      |> Enum.filter(&is_map/1)
+      |> Enum.reduce(MapSet.new(), fn child, acc ->
+        MapSet.union(acc, fields_from_expr(child))
+      end)
+
+    MapSet.union(direct, nested)
+  end
+
+  defp fields_from_expr(_), do: MapSet.new()
 
   defp resolve_shape(opts, env) do
     case Keyword.get(opts, :shape) do

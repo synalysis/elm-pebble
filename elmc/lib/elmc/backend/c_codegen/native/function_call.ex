@@ -1,6 +1,7 @@
 defmodule Elmc.Backend.CCodegen.Native.FunctionCall do
   @moduledoc false
 
+  alias Elmc.Backend.C.Lower.NativeReturn
   alias Elmc.Backend.CCodegen.EnvBindings
   alias Elmc.Backend.CCodegen.FunctionCallAbi
   alias Elmc.Backend.CCodegen.FunctionCallCompile
@@ -667,6 +668,12 @@ defmodule Elmc.Backend.CCodegen.Native.FunctionCall do
           end
 
         argv_setup <> native_decl <> check
+
+      return_kind == :native_int and NativeReturn.value_return?({module_name, decl.name}) ->
+        argv_setup <> "const elmc_int_t #{out} = #{c_name}(#{call_args});"
+
+      return_kind == :native_bool and NativeReturn.value_return?({module_name, decl.name}) ->
+        argv_setup <> "const bool #{out} = #{c_name}(#{call_args});"
 
       return_kind == :native_int ->
         boxed_var = "plan_primary_boxed_#{out}"

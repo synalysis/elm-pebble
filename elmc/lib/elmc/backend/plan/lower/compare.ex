@@ -12,8 +12,10 @@ defmodule Elmc.Backend.Plan.Lower.Compare do
   end
 
   def compile(%{kind: kind, left: left, right: right}, ctx, b) do
-    with {:ok, left_reg, left_owned?, b1} <- compile_operand(left, ctx, b),
-         {:ok, right_reg, right_owned?, b2} <- compile_operand(right, ctx, b1) do
+    operand_ctx = Context.for_branch_arm(ctx)
+
+    with {:ok, left_reg, left_owned?, b1} <- compile_operand(left, operand_ctx, b),
+         {:ok, right_reg, right_owned?, b2} <- compile_operand(right, operand_ctx, b1) do
       {reg, b3} = Builder.fresh_reg(b2)
 
       consumes =
