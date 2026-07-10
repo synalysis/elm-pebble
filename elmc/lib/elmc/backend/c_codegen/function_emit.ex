@@ -621,18 +621,34 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
        ) do
     record_plan_primary_fallback(module_name, decl.name)
 
-    emit_legacy_boxed_body(
-      decl,
-      module_name,
-      env,
-      arg_bindings,
-      arg_binding_code,
-      direct_args?,
-      rc_required?,
-      entry_probe,
-      exit_probe,
-      arg_kinds
-    )
+    case boxed_special_body_emit_fusion(
+           module_name,
+           decl,
+           Process.get(:elmc_program_decls, %{}),
+           arg_bindings,
+           direct_args?,
+           entry_probe,
+           exit_probe,
+           arg_binding_code,
+           rc_required?
+         ) do
+      {:ok, body} ->
+        body
+
+      :error ->
+        emit_legacy_boxed_body(
+          decl,
+          module_name,
+          env,
+          arg_bindings,
+          arg_binding_code,
+          direct_args?,
+          rc_required?,
+          entry_probe,
+          exit_probe,
+          arg_kinds
+        )
+    end
   end
 
   defp record_plan_primary_fallback(module_name, fun_name)

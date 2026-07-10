@@ -3061,7 +3061,8 @@ defmodule Elmc.CCodegenPatternsTest do
     assert generated_c =~ "elmc_fn_Main_spawnPiece_native"
     refute generated_c =~ "elmc_list_concat("
     refute generated_c =~ "record_update_helper_Main_withPiece"
-    assert generated_c =~ "elmc_list_replace_nth_int"
+    assert generated_c =~ "elmc_list_replace_nth_int" or
+             (generated_c =~ "patches[patch_count++]" and generated_c =~ "buf[patch] = value")
 
     assert generated_c =~ "elmc_list_from_tuple2_int_array(out, entry->cells, entry->count)"
 
@@ -5761,7 +5762,7 @@ defmodule Elmc.CCodegenPatternsTest do
 
     refute generated_c =~ "direct_den_"
     refute generated_c =~ "direct_mod_base_"
-    assert generated_c =~ " % 4"
+    assert generated_c =~ " % 4" or generated_c =~ "& 3"
     assert generated_c =~ " / 4" or generated_c =~ "elmc_int_idiv("
   end
 

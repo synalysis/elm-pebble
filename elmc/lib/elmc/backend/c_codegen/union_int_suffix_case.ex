@@ -81,7 +81,7 @@ defmodule Elmc.Backend.CCodegen.UnionIntSuffixCase do
 
   defp emit_native_suffix_switch(subject_ref, branch_specs, env) do
     tag_ref = "case_msg_tag_1"
-    payload_ref = "elmc_as_int(elmc_union_payload(#{subject_ref}))"
+    payload_ref = "elmc_union_payload_int(#{subject_ref})"
 
     branch_code =
       branch_specs
@@ -269,6 +269,13 @@ defmodule Elmc.Backend.CCodegen.UnionIntSuffixCase do
     end
   end
 
+  defp parse_maybe_union_case(%{op: :case, subject: source, branches: branches}) do
+    case parse_maybe_union_source(source) do
+      {:ok, parsed_source} -> {:ok, parsed_source, branches}
+      :error -> :error
+    end
+  end
+
   defp parse_maybe_union_case(_), do: :error
 
   defp parse_maybe_union_source(%{op: :qualified_call, target: "Maybe.map", args: [lam, src]}) do
@@ -279,6 +286,11 @@ defmodule Elmc.Backend.CCodegen.UnionIntSuffixCase do
     else
       _ -> :error
     end
+  end
+
+  defp parse_maybe_union_source(%{op: :field_access, arg: %{op: :var, name: param}, field: field})
+       when is_binary(param) and is_binary(field) do
+    {:ok, {:maybe_field, param, field}}
   end
 
   defp parse_maybe_union_source(%{op: :field_access, arg: param, field: field})

@@ -82,6 +82,12 @@ defmodule Elmc.Backend.CCodegen.RecordFieldMacros do
 
   defp fields_from_expr(nil), do: MapSet.new()
 
+  defp fields_from_expr(expr) when is_list(expr) do
+    Enum.reduce(expr, MapSet.new(), fn child, acc ->
+      MapSet.union(acc, fields_from_expr(child))
+    end)
+  end
+
   defp fields_from_expr(expr) when is_map(expr) do
     direct =
       case expr do
@@ -94,6 +100,12 @@ defmodule Elmc.Backend.CCodegen.RecordFieldMacros do
           |> Enum.filter(&is_binary/1)
           |> MapSet.new()
 
+        %{op: :record_literal, fields: fields} when is_list(fields) ->
+          fields
+          |> Enum.map(&Map.get(&1, :name) || Map.get(&1, :field))
+          |> Enum.filter(&is_binary/1)
+          |> MapSet.new()
+
         _ ->
           MapSet.new()
       end
@@ -101,9 +113,8 @@ defmodule Elmc.Backend.CCodegen.RecordFieldMacros do
     nested =
       expr
       |> Map.values()
-      |> Enum.filter(&is_map/1)
-      |> Enum.reduce(MapSet.new(), fn child, acc ->
-        MapSet.union(acc, fields_from_expr(child))
+      |> Enum.reduce(MapSet.new(), fn value, acc ->
+        MapSet.union(acc, fields_from_expr(value))
       end)
 
     MapSet.union(direct, nested)

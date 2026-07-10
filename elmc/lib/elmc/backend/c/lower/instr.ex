@@ -117,7 +117,8 @@ defmodule Elmc.Backend.C.Lower.Instr do
       :record_update ->
         base = slot_ref(instr.args.base, slots, opts)
         value = slot_ref(instr.args.value, slots, opts)
-        index = Map.get(instr.args, :field_index, "0")
+        field = Map.get(instr.args, :field)
+        index = record_get_index_ref(field, Map.get(instr.args, :field_index, "0"))
 
         assign =
           assign_value_return(
