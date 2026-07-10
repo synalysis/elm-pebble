@@ -19,9 +19,11 @@ defmodule Elmc.PrunedViewTextHelpersTest do
                strip_dead_code: true,
                direct_render_only: false,
                prune_direct_generic: true,
+               prune_native_wrappers: true,
                codegen_profile: :size,
                plan_ir_mode: :primary,
-               pebble_int32: true
+               pebble_int32: true,
+               prod: true
              })
 
     {:ok, generated: File.read!(Path.join(@out_dir, "c/elmc_generated.c"))}
@@ -31,6 +33,7 @@ defmodule Elmc.PrunedViewTextHelpersTest do
     assert generated =~ "elmc_fn_Main_view_commands_append"
     assert generated =~ "static RC elmc_fn_Main_launchLabel("
     assert generated =~ "elmc_fn_Main_launchLabel(&owned["
+    refute generated =~ "elmc_fn_Main_launchLabel(ElmcValue **out, ElmcValue ** const args"
     refute generated =~ "elmc_fn_Pebble_Wakeup_"
     assert generated =~ "ELMC_PEBBLE_CMD_WAKEUP"
   end

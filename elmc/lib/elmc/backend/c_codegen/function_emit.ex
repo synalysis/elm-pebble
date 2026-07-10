@@ -59,16 +59,6 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
     opts = Process.get(:elmc_codegen_opts, %{})
 
     cond do
-      size_fusion_native_first?(opts, module_name, decl, decl_map) ->
-        emit_native_function_def(
-          decl,
-          module_name,
-          c_name,
-          function_arities,
-          decl_map,
-          emit_wrapper?
-        )
-
       plan_primary_function?(decl, module_name, decl_map) ->
         emit_boxed_function_def(
           decl,
@@ -79,6 +69,16 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
           emit_wrapper?
         )
 
+      size_fusion_native_first?(opts, module_name, decl, decl_map) ->
+        emit_native_function_def(
+          decl,
+          module_name,
+          c_name,
+          function_arities,
+          decl_map,
+          emit_argv_wrapper?(decl, module_name, decl_map, emit_wrapper?)
+        )
+
       NativeFunctionCall.native_scalar_fn?(decl, module_name, decl_map) ->
         emit_native_function_def(
           decl,
@@ -86,7 +86,7 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
           c_name,
           function_arities,
           decl_map,
-          emit_wrapper?
+          emit_argv_wrapper?(decl, module_name, decl_map, emit_wrapper?)
         )
 
       true ->
@@ -99,6 +99,10 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
           emit_wrapper?
         )
     end
+  end
+
+  defp emit_argv_wrapper?(decl, module_name, decl_map, emit_wrapper?) do
+    emit_wrapper? and not FunctionCallAbi.direct_entry_abi?(decl, module_name, decl_map)
   end
 
   defp emit_boxed_function_def(
@@ -183,8 +187,7 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
     opts = Process.get(:elmc_codegen_opts, %{})
 
     Plan.plan_ir_mode(opts) == :primary and
-      Plan.primary_lowered?(decl, module_name, decl_map) and
-      not size_fusion_native_first?(opts, module_name, decl, decl_map)
+      Plan.primary_lowered?(decl, module_name, decl_map)
   end
 
   defp size_fusion_native_first?(opts, module_name, decl, decl_map) do
@@ -194,8 +197,7 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
 
   defp plan_primary_body?(decl, module_name, decl_map, opts) do
     Plan.plan_ir_mode(opts) == :primary and
-      Plan.primary_lowered?(decl, module_name, decl_map) and
-      not size_fusion_native_first?(opts, module_name, decl, decl_map)
+      Plan.primary_lowered?(decl, module_name, decl_map)
   end
 
   defp skip_native_def?(decl, module_name, decl_map) do

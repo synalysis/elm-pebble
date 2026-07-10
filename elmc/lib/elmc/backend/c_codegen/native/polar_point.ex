@@ -286,7 +286,7 @@ defmodule Elmc.Backend.CCodegen.Native.PolarPoint do
     end
   end
 
-  defp invalid_uses(expr, target, parent, env) when is_map(expr) do
+  defp invalid_uses(expr, target, _parent, env) when is_map(expr) do
     expr
     |> Enum.flat_map(fn
       {:args, value} when is_list(value) ->
