@@ -323,7 +323,13 @@ defmodule Elmc.Backend.CCodegen.SpecialValues.Cmd do
   def special_value_from_target("Elm.Kernel.PebbleWatch.wakeupScheduleAfterSeconds", args),
     do: Helpers.encoded_cmd_expr(Helpers.command_kind(:wakeup_schedule_after_seconds), args, 1)
 
+  def special_value_from_target("Pebble.Wakeup.scheduleAfterSeconds", args),
+    do: Helpers.encoded_cmd_expr(Helpers.command_kind(:wakeup_schedule_after_seconds), args, 1)
+
   def special_value_from_target("Elm.Kernel.PebbleWatch.wakeupCancel", args),
+    do: Helpers.encoded_cmd_expr(Helpers.command_kind(:wakeup_cancel), args, 1)
+
+  def special_value_from_target("Pebble.Wakeup.cancel", args),
     do: Helpers.encoded_cmd_expr(Helpers.command_kind(:wakeup_cancel), args, 1)
 
   def special_value_from_target("Elm.Kernel.PebbleWatch.logInfoCode", args),

@@ -733,6 +733,16 @@ defmodule Elmc.Backend.CCodegen.DirectRender.GenericTargets do
     end
   end
 
+  defp pruned_view_boxed_helper_seed?(decl) do
+    case Map.get(decl, :type) do
+      type when is_binary(type) ->
+        String.contains?(type, "String") and not String.contains?(type, "RenderOp")
+
+      _ ->
+        false
+    end
+  end
+
   defp pruned_view_helper_seed_excluded?({module_name, name}, decl_map) do
     render_op_list_return?(Map.get(decl_map, {module_name, name}, %{})) or
       name in ["view", "faceOps", "faceDisplay"]
@@ -822,7 +832,8 @@ defmodule Elmc.Backend.CCodegen.DirectRender.GenericTargets do
   end
 
   defp direct_command_boxed_callees(direct_targets, decl_map, opts, entry_module) do
-    direct_targets = direct_targets_for_helper_analysis(direct_targets, opts, decl_map, entry_module)
+    pruned_view? = prune_generic_view?(opts, decl_map, direct_targets)
+    analysis_targets = direct_targets_for_helper_analysis(direct_targets, opts, decl_map, entry_module)
 
     render_op_def_targets =
       if supersede_direct_render_op_boxed?(opts) do
@@ -831,19 +842,50 @@ defmodule Elmc.Backend.CCodegen.DirectRender.GenericTargets do
         MapSet.new()
       end
 
-    direct_targets
-    |> Enum.flat_map(fn {module_name, _name} = target ->
-      case Map.fetch(decl_map, target) do
-        {:ok, decl} ->
-          GenericReachability.expr_callees(decl.expr, module_name, decl_map)
-          |> Enum.reject(&MapSet.member?(render_op_def_targets, &1))
-          |> Enum.reject(&polar_point_boxed_callee?(&1, decl_map, opts))
+    boxed =
+      analysis_targets
+      |> Enum.flat_map(fn {module_name, _name} = target ->
+        case Map.fetch(decl_map, target) do
+          {:ok, decl} ->
+            GenericReachability.expr_callees(decl.expr, module_name, decl_map)
+            |> Enum.reject(&MapSet.member?(render_op_def_targets, &1))
+            |> Enum.reject(&polar_point_boxed_callee?(&1, decl_map, opts))
 
-        :error ->
-          []
+          :error ->
+            []
+        end
+      end)
+
+    view_boxed =
+      if pruned_view? do
+        view_target = {entry_module, "view"}
+
+        case Map.fetch(decl_map, view_target) do
+          {:ok, %{expr: expr}} ->
+            generic_callees_under_ui_node(
+              expr,
+              entry_module,
+              direct_targets,
+              decl_map,
+              MapSet.new([view_target])
+            )
+            |> Enum.filter(fn {module_name, _} = key ->
+              module_name == entry_module and
+                not MapSet.member?(direct_targets, key) and
+                case Map.fetch(decl_map, key) do
+                  {:ok, decl} -> pruned_view_boxed_helper_seed?(decl)
+                  :error -> false
+                end
+            end)
+
+          :error ->
+            []
+        end
+      else
+        []
       end
-    end)
-    |> MapSet.new()
+
+    MapSet.new(boxed ++ view_boxed)
   end
 
   defp polar_point_boxed_callee?(target, decl_map, opts) do

@@ -64,7 +64,10 @@ defmodule Elmc.Backend.CCodegen.CompanionSendFold do
 
   defp int_literal_branches?(branches) when is_list(branches) do
     length(branches) >= 1 and
-      Enum.all?(branches, fn %{expr: %{op: :int_literal, value: value}} -> is_integer(value) end)
+      Enum.all?(branches, fn
+        %{expr: %{op: :int_literal, value: value}} -> is_integer(value)
+        _ -> false
+      end)
   end
 
   defp int_literal_branches?(_), do: false

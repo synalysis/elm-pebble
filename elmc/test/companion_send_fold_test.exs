@@ -62,4 +62,38 @@ defmodule Elmc.CompanionSendFoldTest do
                args: []
              })
   end
+
+  test "fold_wire_params returns error when lookup tables are not int-literal cases" do
+    Process.put(:elmc_program_decls, %{
+      {"Companion.Internal", "watchToPhoneTag"} => %{
+        expr: %{
+          op: :case,
+          branches: [
+            %{
+              pattern: %{kind: :constructor, name: "RequestSunData", tag: 2},
+              expr: %{op: :var, name: "tag"}
+            }
+          ]
+        }
+      },
+      {"Companion.Internal", "watchToPhoneValue"} => %{
+        expr: %{
+          op: :case,
+          branches: [
+            %{
+              pattern: %{kind: :constructor, name: "RequestSunData", tag: 2},
+              expr: %{op: :int_literal, value: 0}
+            }
+          ]
+        }
+      }
+    })
+
+    assert :error =
+             CompanionSendFold.fold_wire_params(%{
+               op: :constructor_call,
+               target: "RequestSunData",
+               args: []
+             })
+  end
 end
