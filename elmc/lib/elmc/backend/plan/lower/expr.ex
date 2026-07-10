@@ -411,10 +411,12 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
   end
 
   defp compile_field_values(fields, ctx, b) do
+    operand_ctx = Context.for_branch_arm(ctx)
+
     Enum.reduce_while(fields, {:ok, [], b}, fn field, {:ok, acc, b_acc} ->
       expr = Map.get(field, :expr) || Map.get(field, :value)
 
-      case compile(expr, ctx, b_acc) do
+      case compile(expr, operand_ctx, b_acc) do
         {:ok, reg, b1} -> {:cont, {:ok, acc ++ [reg], b1}}
         _ -> {:halt, :unsupported}
       end
@@ -494,6 +496,49 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
 
   defp compile_runtime_call(%{function: "elmc_list_map"} = expr, ctx, b) do
     case Elmc.Backend.Plan.Lower.ListCursor.try_compile_map(expr, ctx, b) do
+      {:ok, reg, b1} -> {:ok, reg, b1}
+      :unsupported ->
+        case Elmc.Backend.Plan.Lower.ListRecord.try_compile_map(expr, ctx, b) do
+          {:ok, reg, b1} -> {:ok, reg, b1}
+          :unsupported -> compile_runtime_call_default(expr, ctx, b)
+        end
+    end
+  end
+
+  defp compile_runtime_call(%{function: "elmc_list_filter_map"} = expr, ctx, b) do
+    case Elmc.Backend.Plan.Lower.FilterMapIdentity.try_compile(expr, ctx, b) do
+      {:ok, reg, b1} -> {:ok, reg, b1}
+      :unsupported -> compile_runtime_call_default(expr, ctx, b)
+    end
+  end
+
+  defp compile_runtime_call(%{function: "elmc_list_filter"} = expr, ctx, b) do
+    case Elmc.Backend.Plan.Lower.ListRecord.try_compile_filter(expr, ctx, b) do
+      {:ok, reg, b1} -> {:ok, reg, b1}
+      :unsupported -> compile_runtime_call_default(expr, ctx, b)
+    end
+  end
+
+  defp compile_runtime_call(%{function: "elmc_list_find_first", args: [pred, list]}, ctx, b) do
+    case Elmc.Backend.Plan.Lower.ListRecord.try_compile_filter(
+           %{function: "elmc_list_filter", args: [pred, list]},
+           ctx,
+           b
+         ) do
+      {:ok, filtered_reg, b1} ->
+        compile_runtime_builtin(:list_head, [filtered_reg], ctx, b1)
+
+      :unsupported ->
+        compile_runtime_call_default(
+          %{function: "elmc_list_find_first", args: [pred, list]},
+          ctx,
+          b
+        )
+    end
+  end
+
+  defp compile_runtime_call(%{function: "elmc_maybe_map"} = expr, ctx, b) do
+    case Elmc.Backend.Plan.Lower.MaybeMap.try_compile(expr, ctx, b) do
       {:ok, reg, b1} -> {:ok, reg, b1}
       :unsupported -> compile_runtime_call_default(expr, ctx, b)
     end

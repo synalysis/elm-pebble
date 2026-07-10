@@ -118,6 +118,11 @@ defmodule Elmc.Backend.CCodegen.Hoist do
   defp hoisted_native_bool_arg_key(%{op: :var, name: name}) when is_binary(name) or is_atom(name),
     do: {:var, EnvBindings.binding_key(name)}
 
+  defp hoisted_native_bool_arg_key(%{op: :runtime_call, function: function, args: [inner]})
+       when function in [:retain, "retain", "elmc_retain"] and is_map(inner) do
+    hoisted_native_bool_arg_key(inner)
+  end
+
   defp hoisted_native_bool_arg_key(other), do: hoisted_native_bool_key(other)
 
   @spec hoisted_native_ints_enabled?(Types.compile_env()) :: boolean()

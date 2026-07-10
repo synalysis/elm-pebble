@@ -413,9 +413,10 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
       nil ->
         case Map.fetch(env, name) do
           {:ok, source} when is_binary(source) ->
-            # Re-read a let-bound owned slot in place. Avoid retain+duplicate pointer in
-            # owned[] — epilogue lifo dedup would skip releasing the canonical slot.
             cond do
+              direct_command_borrow_param?(env, source) ->
+                {"", source, counter}
+
               ValueSlots.owned_ref?(source) and not ValueSlots.transferred?(source) ->
                 {"", source, counter}
 
@@ -437,6 +438,12 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
             compile_var_native_or_boxed(name, env, counter, var, next)
         end
     end
+  end
+
+  defp direct_command_borrow_param?(env, source) when is_binary(source) do
+    EnvBindings.direct_param_ref?(env, source) and
+      Process.get(:elmc_hoisted_native_ints_scope, false) and
+      not ValueSlots.owned_ref?(source)
   end
 
   defp compile_var_native_or_boxed(name, env, _counter, var, next) do

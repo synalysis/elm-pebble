@@ -21,7 +21,12 @@ defmodule Elmc.Backend.CCodegen.Fusion do
     RowSliceAdjacentMerge,
     SpawnTileChain,
     Tuple2CaseTable,
-    UnionCaseFourPerm
+    UnionCaseFourPerm,
+    UnionStringCase,
+    UnionIntCase,
+    UnionIntSuffixCase,
+    MaybeIntStringCase,
+    IntStringCase
   }
 
   @runtime_callees_cache_key :elmc_fusion_runtime_callees_cache
@@ -36,7 +41,12 @@ defmodule Elmc.Backend.CCodegen.Fusion do
     {PermuteMergeInversePipeline, 4},
     {ListMapStaticIndexAt, 4},
     {ReverseFoldlOccupied, 4},
-    {Tuple2CaseTable, 3}
+    {Tuple2CaseTable, 3},
+    {UnionStringCase, 4},
+    {UnionIntCase, 4},
+    {UnionIntSuffixCase, 4},
+    {MaybeIntStringCase, 4},
+    {IntStringCase, 4}
   ]
 
   @spec try_emit(String.t(), String.t(), map() | nil, map()) ::
@@ -60,6 +70,7 @@ defmodule Elmc.Backend.CCodegen.Fusion do
   def reset_caches! do
     Process.put(@runtime_callees_cache_key, %{})
     Process.put(:elmc_rc_native_fusion_arg_kinds, %{})
+    Process.put(:elmc_union_int_fusion_luts, %{})
     :ok
   end
 
@@ -82,14 +93,32 @@ defmodule Elmc.Backend.CCodegen.Fusion do
     Process.get(:elmc_rc_native_fusion_arg_kinds, %{}) |> Map.get({module, name})
   end
 
+  @spec register_union_int_lut(String.t(), String.t(), %{optional(integer()) => integer()}) :: :ok
+  def register_union_int_lut(module, name, lut) when is_map(lut) do
+    cache = Process.get(:elmc_union_int_fusion_luts, %{})
+    Process.put(:elmc_union_int_fusion_luts, Map.put(cache, {module, name}, lut))
+    :ok
+  end
+
+  @spec union_int_lut_lookup({String.t(), String.t()}, integer()) :: {:ok, integer()} | :error
+  def union_int_lut_lookup({module, name}, union_tag) when is_integer(union_tag) do
+    case Process.get(:elmc_union_int_fusion_luts, %{}) |> Map.get({module, name}) do
+      %{^union_tag => wire} when is_integer(wire) -> {:ok, wire}
+      _ -> :error
+    end
+  end
+
   @spec infer_native_tag_fusion_arg_kinds(String.t(), map()) :: [atom()] | nil
   def infer_native_tag_fusion_arg_kinds(c_body, decl) when is_binary(c_body) do
-    arg_count = decl |> Map.get(:args, []) |> length()
+    args = Map.get(decl, :args, [])
+    arg_count = length(args)
 
     cond do
-      String.contains?(c_body, "elmc_int_t case_tag") ->
-        decl
-        |> Map.get(:args, [])
+      arg_count > 0 and native_boxed_union_param_fusion?(c_body, args) ->
+        List.duplicate(:boxed, arg_count)
+
+      String.contains?(c_body, "case_msg_tag_") or String.contains?(c_body, "elmc_int_t case_tag") ->
+        args
         |> Enum.with_index()
         |> Enum.map(fn
           {_, 0} -> :boxed_int_tag
@@ -103,6 +132,12 @@ defmodule Elmc.Backend.CCodegen.Fusion do
         nil
     end
   end
+
+  defp native_boxed_union_param_fusion?(c_body, [param | _]) when is_binary(param) do
+    String.contains?(c_body, "_native(ElmcValue **out, ElmcValue *#{param}")
+  end
+
+  defp native_boxed_union_param_fusion?(_, _), do: false
 
   defp native_seed_fusion?(c_body) do
     String.match?(c_body, ~r/_native\(ElmcValue \*\*out, const elmc_int_t /) or

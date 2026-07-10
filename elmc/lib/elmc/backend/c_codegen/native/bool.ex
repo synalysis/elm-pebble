@@ -261,8 +261,14 @@ defmodule Elmc.Backend.CCodegen.Native.Bool do
         PlatformStatic.compile_native_bool(macro, PlatformStatic.invert_polarity(polarity), counter)
 
       nil ->
-        {code, ref, counter} = compile_expr(value, env, counter)
-        {code, "!(#{ref})", counter}
+        with {:ok, left, right} <- maybe_nothing_equality?(value),
+             true <- maybe_field_vs_nothing_compare_safe?("__eq__", left, right, env) do
+          compile_maybe_field_vs_nothing_compare(left, right, "__neq__", env, counter)
+        else
+          _ ->
+            {code, ref, counter} = compile_expr(value, env, counter)
+            {code, "!(#{ref})", counter}
+        end
     end
   end
 
@@ -667,7 +673,8 @@ defmodule Elmc.Backend.CCodegen.Native.Bool do
   defp maybe_nothing_literal?(_expr), do: false
 
   defp maybe_maybe_expr?(%{op: :field_access, arg: arg, field: field}, env) do
-    maybe_type?(RecordFields.field_type(env, arg, field))
+    maybe_type?(RecordFields.field_type(env, arg, field)) or
+      (is_binary(field) and maybe_field_name_in_program?(field))
   end
 
   defp maybe_maybe_expr?(%{op: :var, name: name}, env) when is_binary(name) do
@@ -675,6 +682,25 @@ defmodule Elmc.Backend.CCodegen.Native.Bool do
   end
 
   defp maybe_maybe_expr?(_expr, _env), do: false
+
+  defp maybe_nothing_equality?(%{op: :compare, operator: "__eq__", left: left, right: right}),
+    do: {:ok, left, right}
+
+  defp maybe_nothing_equality?(%{op: :call, name: "__eq__", args: [left, right]}),
+    do: {:ok, left, right}
+
+  defp maybe_nothing_equality?(_expr), do: :error
+
+  defp maybe_field_name_in_program?(field) when is_binary(field) do
+    Process.get(:elmc_record_field_types, %{})
+    |> Map.values()
+    |> Enum.any?(fn fields ->
+      case Map.get(fields, field) do
+        "Maybe " <> _ -> true
+        _ -> false
+      end
+    end)
+  end
 
   defp maybe_type?(type) when is_binary(type), do: String.starts_with?(type, "Maybe ")
   defp maybe_type?(_), do: false

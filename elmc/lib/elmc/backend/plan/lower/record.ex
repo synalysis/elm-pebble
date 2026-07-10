@@ -118,6 +118,15 @@ defmodule Elmc.Backend.Plan.Lower.Record do
   def field_index_for(field_name, ctx \\ nil) when is_binary(field_name),
     do: field_index_ref(field_name, ctx)
 
+  @doc false
+  @spec resolve_field_index_int(String.t(), Context.t() | nil) :: {:ok, integer()} | :error
+  def resolve_field_index_int(field_name, ctx \\ nil) when is_binary(field_name) do
+    case resolve_field_type_key(field_name, ctx) do
+      {_key, idx} when is_integer(idx) -> {:ok, idx}
+      _ -> :error
+    end
+  end
+
   defp field_name(field), do: Map.get(field, :name) || Map.get(field, :field)
 
   defp canonical_shape_for_names(field_names, module) when is_list(field_names) do

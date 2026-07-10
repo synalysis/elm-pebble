@@ -231,7 +231,7 @@ defmodule Elmc.PlanCLowerTest do
     c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
     assert c =~ "goto elmc_plan_block_"
     refute Regex.match?(~r/goto elmc_plan_block_(\d+);\s*\n\s*elmc_plan_block_\1:/, c)
-    assert c =~ "else if (elmc_union_tag_matches"
+    assert c =~ "switch (" or c =~ "else if (elmc_union_tag_matches"
   end
 
   test "release_array_lifo dedupes aliased owned slots" do

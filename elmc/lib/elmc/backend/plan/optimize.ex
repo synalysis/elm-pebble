@@ -45,13 +45,95 @@ defmodule Elmc.Backend.Plan.Optimize do
   end
 
   defp optimize_block(%Block{} = block, used, phi_arm_drops) do
-    %{
-      block
-      | instrs:
-          block.instrs
-          |> Enum.reject(&dead_retain?(&1, used))
-          |> Enum.reject(&dead_phi_arm_value?(&1, phi_arm_drops))
-    }
+    instrs =
+      block.instrs
+      |> Enum.reject(&dead_retain?(&1, used))
+      |> Enum.reject(&dead_phi_arm_value?(&1, phi_arm_drops))
+      |> drop_unread_overwritten_defs(block.terminator)
+
+    %{block | instrs: instrs}
+  end
+
+  defp drop_unread_overwritten_defs(instrs, terminator) when is_list(instrs) do
+    {dead, _} = unread_overwritten_indices(instrs, terminator)
+
+    instrs
+    |> Enum.with_index()
+    |> Enum.reject(fn {_, idx} -> MapSet.member?(dead, idx) end)
+    |> Enum.map(fn {instr, _} -> instr end)
+  end
+
+  @doc false
+  @spec unread_overwritten_dest_regs([map()], term()) :: MapSet.t()
+  def unread_overwritten_dest_regs(instrs, terminator) when is_list(instrs) do
+    {dead, _} = unread_overwritten_indices(instrs, terminator)
+
+    dead
+    |> Enum.flat_map(fn idx ->
+      case Enum.at(instrs, idx) do
+        %{dest: dest} when is_integer(dest) -> [dest]
+        _ -> []
+      end
+    end)
+    |> MapSet.new()
+  end
+
+  defp unread_overwritten_indices(instrs, terminator) when is_list(instrs) do
+    final_reads = terminator |> terminator_uses() |> MapSet.new()
+
+    {dead, state} =
+      Enum.reduce(Enum.with_index(instrs), {MapSet.new(), %{}}, fn {instr, idx}, {dead, state} ->
+        state = mark_operand_reads(instr, state)
+
+        case Map.get(instr, :dest) do
+          dest when is_integer(dest) ->
+            {dead, state} =
+              case Map.get(state, dest) do
+                %{def_idx: def_idx, read: false, instr: prev} when is_map(prev) ->
+                  dead =
+                    if removable_overwritten_def?(prev),
+                      do: MapSet.put(dead, def_idx),
+                      else: dead
+
+                  {dead, Map.put(state, dest, %{def_idx: idx, read: false, instr: instr})}
+
+                _ ->
+                  {dead, Map.put(state, dest, %{def_idx: idx, read: false, instr: instr})}
+              end
+
+            {dead, state}
+
+          _ ->
+            {dead, state}
+        end
+      end)
+
+    dead =
+      Enum.reduce(final_reads, dead, fn reg, dead_acc ->
+        case Map.get(state, reg) do
+          %{def_idx: idx} -> MapSet.delete(dead_acc, idx)
+          _ -> dead_acc
+        end
+      end)
+
+    {dead, state}
+  end
+
+  defp removable_overwritten_def?(%{op: :const_int}), do: true
+
+  defp removable_overwritten_def?(%{op: :call_runtime, args: %{builtin: builtin}})
+       when builtin in [:retain, :new_int],
+       do: true
+
+  defp removable_overwritten_def?(_), do: false
+
+  defp mark_operand_reads(instr, state) do
+    Enum.reduce(operand_regs(instr), state, fn reg, acc ->
+      case Map.get(acc, reg) do
+        %{def_idx: _def_idx} = entry -> Map.put(acc, reg, %{entry | read: true})
+        _ -> acc
+      end
+    end)
   end
 
   defp dead_phi_arm_value?(%{dest: dest, block_id: block_id}, phi_arm_drops)

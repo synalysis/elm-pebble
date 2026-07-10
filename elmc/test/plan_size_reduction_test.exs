@@ -685,15 +685,16 @@ defmodule Elmc.PlanSizeReductionTest do
     assert {:ok, plan} = PlanLower.lower(decl, "Pebble.Ui", %{{"Pebble.Ui", "window"} => decl}, rc_required: false)
     c = CLowerFunction.emit(plan)
 
-    assert c =~ "return elmc_tuple2_take_value(elmc_new_int_take(1), elmc_tuple2_ints_take_value(elmc_as_int(id), elmc_as_int(layers)));"
+    assert c =~ "return elmc_tuple2_take_value(elmc_new_int_take(1), elmc_tuple2_ints_take_value(id, elmc_as_int(layers)));"
     refute c =~ "ElmcValue *owned"
     refute c =~ "return __ret"
   end
 
   test "elm_mod_by_c_expr folds known non-zero divisor" do
-    assert Instr.elm_mod_by_c_expr("2147483647", "x") =~ "x % 2147483647"
+    assert Instr.elm_mod_by_c_expr("2147483647", "x") =~ "__elmc_mod_v % 2147483647"
     refute Instr.elm_mod_by_c_expr("2147483647", "x") =~ "2147483647 == 0"
     refute Instr.elm_mod_by_c_expr("2147483647", "x") =~ "2147483647 < 0"
+    refute Instr.elm_mod_by_c_expr("2147483647", "x") =~ ~r/^\{ /
     assert Instr.elm_mod_by_c_expr("0", "x") == "0"
   end
 

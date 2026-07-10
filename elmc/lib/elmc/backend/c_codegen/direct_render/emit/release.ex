@@ -5,7 +5,12 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Release do
 
   @spec release_var(String.t(), String.t()) :: String.t()
   def release_var(var, indent \\ "") when is_binary(var) and is_binary(indent) do
+    borrowed = Process.get(:elmc_direct_borrow_refs, MapSet.new())
+
     cond do
+      MapSet.member?(borrowed, var) ->
+        ""
+
       ValueSlots.owned_ref?(var) and ValueSlots.epilogue_lifo?() ->
         ""
 

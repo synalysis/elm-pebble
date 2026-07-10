@@ -1182,6 +1182,10 @@ defmodule Elmc.Runtime.Generator do
     elmc_int_t elmc_as_int_number(ElmcValue *value);
     int elmc_value_is_unit(ElmcValue *value);
     elmc_int_t elmc_int_idiv(elmc_int_t numerator, elmc_int_t denominator);
+    static inline elmc_int_t elmc_angle_from_minute(elmc_int_t minute) {
+      elmc_int_t angle = elmc_int_idiv(((minute - (elmc_int_t)720) * (elmc_int_t)65536), (elmc_int_t)1440) % (elmc_int_t)65536;
+      return angle < 0 ? angle + (elmc_int_t)65536 : angle;
+    }
     elmc_int_t elmc_polar_point_x(elmc_int_t cx, elmc_int_t cy, elmc_int_t radius, elmc_int_t angle);
     elmc_int_t elmc_polar_point_y(elmc_int_t cx, elmc_int_t cy, elmc_int_t radius, elmc_int_t angle);
     elmc_int_t elmc_as_bool(ElmcValue *value);
@@ -1260,6 +1264,9 @@ defmodule Elmc.Runtime.Generator do
     ElmcValue *elmc_list_member(ElmcValue *value, ElmcValue *list);
     RC elmc_list_map(ElmcValue **out, ElmcValue *f, ElmcValue *list);
     RC elmc_list_filter(ElmcValue **out, ElmcValue *f, ElmcValue *list);
+    RC elmc_list_filter_record_field(ElmcValue **out, ElmcValue *list, elmc_int_t field_index);
+    RC elmc_list_filter_record_and(ElmcValue **out, ElmcValue *list, elmc_int_t field_a, elmc_int_t field_b);
+    RC elmc_list_map_record_field(ElmcValue **out, ElmcValue *list, elmc_int_t field_index);
     RC elmc_list_foldl(ElmcValue **out, ElmcValue *f, ElmcValue *acc, ElmcValue *list);
     RC elmc_list_foldr(ElmcValue **out, ElmcValue *f, ElmcValue *acc, ElmcValue *list);
     RC elmc_list_append(ElmcValue **out, ElmcValue *a, ElmcValue *b);
@@ -5704,6 +5711,115 @@ defmodule Elmc.Runtime.Generator do
       CATCH_END;
       elmc_release(owned);
       elmc_release(keep);
+      elmc_release(next);
+      elmc_release(rev);
+      return rc;
+    }
+
+    RC elmc_list_filter_record_field(ElmcValue **out, ElmcValue *list, elmc_int_t field_index) {
+      RC rc = RC_SUCCESS;
+      ElmcValue *rev = elmc_list_nil();
+      ElmcValue *next = NULL;
+      ElmcValue *owned = NULL;
+      CATCH_BEGIN
+        ElmcValue *cursor = list;
+        if (list && list->tag == ELMC_TAG_RECORD_SEQ) {
+          rc = elmc_list_materialize_cons(&cursor, list);
+          CHECK_RC(rc);
+          owned = cursor;
+        }
+        while (cursor && cursor->tag == ELMC_TAG_LIST && cursor->payload != NULL) {
+          ElmcCons *node = (ElmcCons *)cursor->payload;
+          if (elmc_record_get_index_bool(node->head, (int)field_index)) {
+            next = NULL;
+            rc = elmc_list_cons(&next, node->head, rev);
+            CHECK_RC(rc);
+            elmc_release(rev);
+            rev = next;
+            next = NULL;
+          }
+          cursor = node->tail;
+        }
+        if (rc == RC_SUCCESS) {
+          rc = elmc_list_reverse_transfer(out, &rev);
+          CHECK_RC(rc);
+        }
+      CATCH_END;
+      elmc_release(owned);
+      elmc_release(next);
+      elmc_release(rev);
+      return rc;
+    }
+
+    RC elmc_list_filter_record_and(ElmcValue **out, ElmcValue *list, elmc_int_t field_a, elmc_int_t field_b) {
+      RC rc = RC_SUCCESS;
+      ElmcValue *rev = elmc_list_nil();
+      ElmcValue *next = NULL;
+      ElmcValue *owned = NULL;
+      CATCH_BEGIN
+        ElmcValue *cursor = list;
+        if (list && list->tag == ELMC_TAG_RECORD_SEQ) {
+          rc = elmc_list_materialize_cons(&cursor, list);
+          CHECK_RC(rc);
+          owned = cursor;
+        }
+        while (cursor && cursor->tag == ELMC_TAG_LIST && cursor->payload != NULL) {
+          ElmcCons *node = (ElmcCons *)cursor->payload;
+          if (elmc_record_get_index_bool(node->head, (int)field_a) &&
+              elmc_record_get_index_bool(node->head, (int)field_b)) {
+            next = NULL;
+            rc = elmc_list_cons(&next, node->head, rev);
+            CHECK_RC(rc);
+            elmc_release(rev);
+            rev = next;
+            next = NULL;
+          }
+          cursor = node->tail;
+        }
+        if (rc == RC_SUCCESS) {
+          rc = elmc_list_reverse_transfer(out, &rev);
+          CHECK_RC(rc);
+        }
+      CATCH_END;
+      elmc_release(owned);
+      elmc_release(next);
+      elmc_release(rev);
+      return rc;
+    }
+
+    RC elmc_list_map_record_field(ElmcValue **out, ElmcValue *list, elmc_int_t field_index) {
+      RC rc = RC_SUCCESS;
+      ElmcValue *rev = elmc_list_nil();
+      ElmcValue *next = NULL;
+      ElmcValue *owned = NULL;
+      ElmcValue *mapped = NULL;
+      CATCH_BEGIN
+        ElmcValue *cursor = list;
+        if (list && list->tag == ELMC_TAG_RECORD_SEQ) {
+          rc = elmc_list_materialize_cons(&cursor, list);
+          CHECK_RC(rc);
+          owned = cursor;
+        }
+        while (cursor && cursor->tag == ELMC_TAG_LIST && cursor->payload != NULL) {
+          ElmcCons *node = (ElmcCons *)cursor->payload;
+          mapped = elmc_record_get_index(node->head, (int)field_index);
+          next = NULL;
+          rc = elmc_list_cons(&next, mapped, rev);
+          CHECK_RC(rc);
+          elmc_release(mapped);
+          mapped = NULL;
+          elmc_release(rev);
+          rev = next;
+          next = NULL;
+          cursor = node->tail;
+        }
+        if (rc == RC_SUCCESS) {
+          rc = elmc_list_reverse_transfer(out, &rev);
+          CHECK_RC(rc);
+        }
+      CATCH_END;
+      elmc_release(owned);
+      elmc_release(mapped);
       elmc_release(next);
       elmc_release(rev);
       return rc;

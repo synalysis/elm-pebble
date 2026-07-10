@@ -73,7 +73,7 @@ defmodule Elmc.Backend.C.Lower.NativeIntFold do
   def int_arith_c_expr(args, slots, opts), do: int_arith_c_expr_dispatch(args, slots, opts)
 
   defp inline_expr(plan, reg, inlines, opts) do
-    slots = %{}
+    slots = Keyword.get(opts, :slots, %{})
 
     case defining_instr(plan, reg) do
       %{op: :const_int, args: %{value: value}} ->
@@ -103,17 +103,21 @@ defmodule Elmc.Backend.C.Lower.NativeIntFold do
   end
 
   defp int_arith_c_expr_dispatch(%{kind: :mul_vars, lhs: lhs, rhs: rhs}, slots, opts) do
-    "#{Instr.int_operand_ref(lhs, slots, opts)} * #{Instr.int_operand_ref(rhs, slots, opts)}"
+    lhs_s = parenthesize_int_expr(Instr.int_operand_ref(lhs, slots, opts))
+    rhs_s = parenthesize_int_expr(Instr.int_operand_ref(rhs, slots, opts))
+    "#{lhs_s} * #{rhs_s}"
   end
 
   defp int_arith_c_expr_dispatch(%{kind: :sub_vars, lhs: lhs, rhs: rhs}, slots, opts) do
-    "#{Instr.int_operand_ref(lhs, slots, opts)} - #{Instr.int_operand_ref(rhs, slots, opts)}"
+    lhs_s = parenthesize_int_expr(Instr.int_operand_ref(lhs, slots, opts))
+    rhs_s = parenthesize_int_expr(Instr.int_operand_ref(rhs, slots, opts))
+    "#{lhs_s} - #{rhs_s}"
   end
 
   defp int_arith_c_expr_dispatch(%{kind: :idiv_vars, lhs: lhs, rhs: rhs}, slots, opts) do
-    lhs_s = Instr.int_operand_ref(lhs, slots, opts)
-    rhs_s = Instr.int_operand_ref(rhs, slots, opts)
-    "(#{rhs_s} == 0 ? 0 : #{lhs_s} / #{rhs_s})"
+    lhs_s = parenthesize_int_expr(Instr.int_operand_ref(lhs, slots, opts))
+    rhs_s = parenthesize_int_expr(Instr.int_operand_ref(rhs, slots, opts))
+    "elmc_int_idiv(#{lhs_s}, #{rhs_s})"
   end
 
   defp int_arith_c_expr_dispatch(%{kind: :mod_vars, lhs: base, rhs: value}, slots, opts) do
@@ -141,6 +145,16 @@ defmodule Elmc.Backend.C.Lower.NativeIntFold do
   end
 
   defp int_arith_c_expr_dispatch(_, _, _), do: nil
+
+  defp parenthesize_int_expr(expr) when is_binary(expr) do
+    trimmed = String.trim(expr)
+
+    if trimmed == "" or String.starts_with?(trimmed, "(") or String.starts_with?(trimmed, "elmc_int_idiv(") or
+         String.starts_with?(trimmed, "elmc_basics_") or String.match?(trimmed, ~r/^-?\d+$/) or
+         String.match?(trimmed, ~r/^plan_native_int_\d+$/) or String.match?(trimmed, ~r/^[a-zA-Z_][\w]*$/),
+       do: trimmed,
+       else: "(#{trimmed})"
+  end
 
   defp count_operand_uses(%FunctionPlan{blocks: blocks}, native_int_only, native_bool_only) do
     arith_uses =

@@ -10,7 +10,10 @@ defmodule Elmc.Backend.Plan.RuntimeBuiltins do
     list_take: [0],
     list_drop: [0],
     string_from_int: [0],
-    tuple2_ints: [0, 1]
+    tuple2_ints: [0, 1],
+    list_filter_record_field: [1],
+    list_filter_record_and: [1, 2],
+    list_map_record_field: [1]
   }
 
   @builtins %{
@@ -23,6 +26,9 @@ defmodule Elmc.Backend.Plan.RuntimeBuiltins do
     list_all: "elmc_list_all",
     list_any: "elmc_list_any",
     list_filter: "elmc_list_filter",
+    list_filter_record_field: "elmc_list_filter_record_field",
+    list_filter_record_and: "elmc_list_filter_record_and",
+    list_map_record_field: "elmc_list_map_record_field",
     list_indexed_map: "elmc_list_indexed_map",
     list_length: "elmc_list_length",
     list_concat: "elmc_list_concat",
@@ -110,6 +116,9 @@ defmodule Elmc.Backend.Plan.RuntimeBuiltins do
     :list_all,
     :list_any,
     :list_filter,
+    :list_filter_record_field,
+    :list_filter_record_and,
+    :list_map_record_field,
     :list_indexed_map,
     :list_concat,
     :list_slice_int,
@@ -178,6 +187,7 @@ defmodule Elmc.Backend.Plan.RuntimeBuiltins do
     :basics_cos,
     :basics_round,
     :list_length,
+    :list_nth_maybe,
     :string_to_int,
     :list_nth_int_default,
     :debug_to_string
@@ -238,6 +248,9 @@ defmodule Elmc.Backend.Plan.RuntimeBuiltins do
     :list_all,
     :list_any,
     :list_filter,
+    :list_filter_record_field,
+    :list_filter_record_and,
+    :list_map_record_field,
     :list_indexed_map,
     :list_length,
     :list_concat,

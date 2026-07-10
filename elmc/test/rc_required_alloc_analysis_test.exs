@@ -230,14 +230,7 @@ defmodule Elmc.RcRequiredAllocAnalysisTest do
     refute body =~ "_take_value"
     refute body =~ "elmc_new_int_take"
 
-    assert generated_c =~ "RC elmc_fn_Yes_Render_angleFromMinute("
-    refute generated_c =~ "static ElmcValue *elmc_fn_Yes_Render_angleFromMinute("
-
-    angle_body = CCodegenExtract.fn_body(generated_c, "elmc_fn_Yes_Render_angleFromMinute")
-    assert angle_body =~ "Rc = elmc_new_int(out,"
-    assert angle_body =~ "return Rc;"
-    refute angle_body =~ "CATCH_BEGIN"
-    refute angle_body =~ "return out;"
+    refute generated_c =~ "static RC elmc_fn_Yes_Render_angleFromMinute("
 
     square_body = CCodegenExtract.fn_body(generated_c, "elmc_fn_Yes_Layout_centerSquare_native")
     assert square_body =~ "ElmcValue *owned["
@@ -251,24 +244,17 @@ defmodule Elmc.RcRequiredAllocAnalysisTest do
     draw_dial_body =
       CCodegenExtract.fn_body(generated_c, "elmc_fn_Yes_Render_drawDial_commands_append")
 
+    assert draw_dial_body =~ "elmc_angle_from_minute"
     assert draw_dial_body =~ "elmc_fn_Yes_Layout_centerSquare_native(&owned["
     assert draw_dial_body =~ "elmc_maybe_with_default"
+    assert draw_dial_body =~ "elmc_polar_point_x("
 
-    hand_body =
-      CCodegenExtract.fn_body(generated_c, "elmc_fn_Yes_Render_draw24HourHand_commands_append_native")
-
-    assert hand_body =~ "elmc_fn_Yes_Render_pointAt_native(&owned["
-    assert hand_body =~ ~r/elmc_record_get_index\(owned\[\d+\], ELMC_FIELD_PEBBLE_GAME_MATH_VEC2_X\)/
-
-    scale_tick_body =
-      CCodegenExtract.fn_body(generated_c, "elmc_fn_Yes_Render_drawScaleTick_commands_append")
-
-    assert scale_tick_body =~ "elmc_fn_Yes_Render_pointAt_native(&owned["
+    refute generated_c =~ "static RC elmc_fn_Yes_Render_drawScaleTick_commands_append("
 
     show_corners_body = CCodegenExtract.fn_body(generated_c, "elmc_fn_Main_showCorners_native")
 
     refute show_corners_body =~ "!(tmp_"
-    assert show_corners_body =~ "ELMC_FIELD_MAIN_MODEL_SUN"
+    assert show_corners_body =~ "7 /* sun */"
   end
 
   test "watchface-yes allocating helpers use RC ABI with CHECK_RC allocators" do
@@ -319,7 +305,7 @@ defmodule Elmc.RcRequiredAllocAnalysisTest do
     refute body =~ "ELMC_FN_OUT"
     refute body =~ "ELMC_TAG_FLOAT"
     refute body =~ "elmc_record_get("
-    assert body =~ "ELMC_RECORD_GET_INDEX_INT(now, ELMC_FIELD_PEBBLE_TIME_CURRENTDATETIME_YEAR)"
+    assert body =~ "ELMC_RECORD_GET_INDEX_INT(now, 0 /* year */)"
     assert body =~ "* 10000"
     assert wrapper =~ "elmc_new_int(out, elmc_fn_Main_calendarDayKey_native(now))"
     refute wrapper =~ "CATCH_BEGIN"

@@ -34,7 +34,7 @@ defmodule Elmc.Backend.CCodegen.Native.PolarPoint do
     with resolved <- resolve_let_arg(value_expr, env),
          {:ok, target, args} <- call_target(resolved, env),
          true <- polar_point_call?(target, args, env),
-         true <- polar_field_only_uses?(name, in_expr) do
+         true <- polar_field_only_uses?(name, in_expr, env) do
       true
     else
       _ -> false
@@ -42,6 +42,19 @@ defmodule Elmc.Backend.CCodegen.Native.PolarPoint do
   end
 
   def polar_point_let?(_name, _value_expr, _in_expr, _env), do: false
+
+  @spec polar_point_target?(Types.function_decl_key(), Types.function_decl_map()) :: boolean()
+  def polar_point_target?({module_name, _name} = target, decl_map) when is_map(decl_map) do
+    case Map.fetch(decl_map, target) do
+      {:ok, %{args: args}} when is_list(args) and length(args) == 4 ->
+        point_return?(target, %{__module__: module_name, __program_decls__: decl_map})
+
+      _ ->
+        false
+    end
+  end
+
+  def polar_point_target?(_target, _decl_map), do: false
 
   @spec compile_polar_native_record(
           Types.ir_expr(),
@@ -121,7 +134,7 @@ defmodule Elmc.Backend.CCodegen.Native.PolarPoint do
          %{expr: y} <- Enum.find(fields, &(&1.name == "y")),
          true <- polar_coord_arg?(x, env),
          true <- polar_coord_arg?(y, env),
-         true <- polar_field_only_uses?(name, in_expr) do
+         true <- polar_field_only_uses?(name, in_expr, env) do
       true
     else
       _ -> false
@@ -248,16 +261,16 @@ defmodule Elmc.Backend.CCodegen.Native.PolarPoint do
 
   defp point_type?(_), do: false
 
-  defp polar_field_only_uses?(name, expr) do
-    invalid_uses(expr, name, nil) == []
+  defp polar_field_only_uses?(name, expr, env) do
+    invalid_uses(expr, name, nil, env) == []
   end
 
-  defp invalid_uses(%{op: :var, name: var_name}, target, parent) do
+  defp invalid_uses(%{op: :var, name: var_name}, target, parent, env) do
     cond do
       not EnvBindings.same_binding?(var_name, target) ->
         []
 
-      point_var_parent?(parent) ->
+      point_var_parent?(parent, env) ->
         []
 
       true ->
@@ -265,7 +278,7 @@ defmodule Elmc.Backend.CCodegen.Native.PolarPoint do
     end
   end
 
-  defp invalid_uses(%{op: :field_access, arg: %{op: :var, name: var_name}, field: field}, target, _parent) do
+  defp invalid_uses(%{op: :field_access, arg: %{op: :var, name: var_name}, field: field}, target, _parent, _env) do
     if EnvBindings.same_binding?(var_name, target) do
       if field in ["x", "y"], do: [], else: [:non_xy_field]
     else
@@ -273,36 +286,63 @@ defmodule Elmc.Backend.CCodegen.Native.PolarPoint do
     end
   end
 
-  defp invalid_uses(expr, target, _parent) when is_map(expr) do
+  defp invalid_uses(expr, target, parent, env) when is_map(expr) do
     expr
     |> Enum.flat_map(fn
       {:args, value} when is_list(value) ->
         Enum.with_index(value, fn arg, idx ->
-          invalid_uses(arg, target, {expr, :args, idx})
+          invalid_uses(arg, target, {expr, :args, idx}, env)
         end)
 
       {key, value} ->
-        [invalid_uses(value, target, {expr, key})]
+        [invalid_uses(value, target, {expr, key}, env)]
     end)
     |> List.flatten()
   end
 
-  defp invalid_uses(exprs, target, parent) when is_list(exprs) do
+  defp invalid_uses(exprs, target, parent, env) when is_list(exprs) do
     Enum.with_index(exprs, fn expr, idx ->
-      invalid_uses(expr, target, {parent, idx})
+      invalid_uses(expr, target, {parent, idx}, env)
     end)
     |> List.flatten()
   end
 
-  defp invalid_uses(_expr, _target, _parent), do: []
+  defp invalid_uses(_expr, _target, _parent, _env), do: []
 
-  defp point_var_parent?({%{op: :qualified_call, target: target, args: args}, :args, idx})
-       when is_binary(target) and is_list(args) do
+  defp point_var_parent?({%{op: :qualified_call, target: target, args: _args}, :args, idx}, env)
+       when is_binary(target) do
     normalized = Host.normalize_special_target(target)
-    draw_point_arg_index?(normalized, idx)
+    draw_point_arg_index?(normalized, idx) or direct_render_point_arg?(normalized, idx, env)
   end
 
-  defp point_var_parent?(_parent), do: false
+  defp point_var_parent?({%{op: :call, name: name, args: _args}, :args, idx}, env) do
+    module = Map.get(env, :__module__, "Main")
+    direct_render_point_arg?("#{module}.#{name}", idx, env)
+  end
+
+  defp point_var_parent?(_parent, _env), do: false
+
+  defp direct_render_point_arg?(target, idx, env) when is_binary(target) do
+    with {module_name, function_name} <- Host.split_qualified_function_target(target),
+         %{type: type, args: args} <-
+           Map.get(Map.get(env, :__program_decls__, %{}), {module_name, function_name}),
+         key <- {module_name, function_name},
+         true <-
+           MapSet.member?(Map.get(env, :__direct_targets__, MapSet.new()), key) or
+             MapSet.member?(Map.get(env, :__direct_pruned__, MapSet.new()), key),
+         arg_type <-
+           type
+           |> Host.function_arg_types()
+           |> Enum.at(idx)
+           |> Host.normalize_type_name(),
+         true <- point_type?(arg_type) or xy_record_return?(arg_type, {module_name, function_name}, env) do
+      is_binary(Enum.at(args || [], idx))
+    else
+      _ -> false
+    end
+  end
+
+  defp direct_render_point_arg?(_target, _idx, _env), do: false
 
   defp draw_point_arg_index?("Pebble.Ui.line", idx) when idx in [0, 1], do: true
   defp draw_point_arg_index?("Pebble.Ui.fillCircle", 0), do: true

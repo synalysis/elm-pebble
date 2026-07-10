@@ -1,6 +1,7 @@
 defmodule Elmc.DirectRenderListLoopPlansTest do
   use ExUnit.Case, async: true
 
+  alias Elmc.Backend.CCodegen.IRQueries
   alias Elmc.Backend.CCodegen.DirectRender.ListLoopPlans
   alias Elmc.Backend.CCodegen.IRQueries
   alias Elmc.Test.CCodegenExtract
@@ -199,6 +200,138 @@ defmodule Elmc.DirectRenderListLoopPlansTest do
     refute view_body =~ "elmc_list_from_int_array"
     refute view_body =~ "ELMC_TAG_LIST"
     refute view_body =~ "elmc_malloc"
+  end
+
+  test "concatMap drawScaleTick polar tick fusion inlines polar line loops" do
+    source = """
+    module Main exposing (main)
+
+    import Pebble.Platform as Platform
+    import Pebble.Ui as Ui
+    import Pebble.Ui.Color as Color
+
+    type alias Layout =
+        { cx : Int, cy : Int, outerRadius : Int }
+
+    type alias TickSpec =
+        { minute : Int, outerExtra : Int, label : Maybe String }
+
+    type alias Model =
+        {}
+
+    type Msg
+        = NoOp
+
+    main =
+        Platform.application
+            { init = init
+            , update = update
+            , subscriptions = subscriptions
+            , view = view
+            }
+
+    init _ =
+        ( {}, Platform.Cmd.none )
+
+    update _ model =
+        ( model, Platform.Cmd.none )
+
+    subscriptions _ =
+        Platform.Sub.none
+
+    view _ =
+        Ui.toUiNode <|
+            List.concatMap (drawScaleTick layout)
+                (List.map
+                    (\\hour -> { minute = hour * 60, outerExtra = 10, label = Nothing })
+                    (List.filter (\\h -> modBy 2 h == 1) (List.range 1 3))
+                )
+
+    layout =
+        { cx = 72, cy = 84, outerRadius = 60 }
+
+    angleFromMinute minute =
+        let
+            a =
+                (minute - 720) * 65536 // 1440
+        in
+        if a < 0 then
+            a + 65536
+
+        else
+            a
+
+    pointAt cx cy radius angle =
+        { x = cx + radius, y = cy + angle // 65536 }
+
+    drawScaleTick layout spec =
+        let
+            tickAngle =
+                angleFromMinute spec.minute
+
+            inner =
+                pointAt layout.cx layout.cy layout.outerRadius tickAngle
+
+            outer =
+                pointAt layout.cx layout.cy (layout.outerRadius + spec.outerExtra) tickAngle
+        in
+        case spec.label of
+            Nothing ->
+                [ Ui.line outer inner Color.white ]
+
+            Just value ->
+                [ Ui.line outer inner Color.white ]
+    """
+
+    project_dir = Path.expand("tmp/direct_polar_tick_project", __DIR__)
+    out_dir = Path.expand("tmp/direct_polar_tick_codegen", __DIR__)
+    File.rm_rf!(project_dir)
+    File.rm_rf!(out_dir)
+    File.mkdir_p!(Path.dirname(project_dir))
+    File.cp_r!(@fixture, project_dir)
+    File.write!(Path.join(project_dir, "src/Main.elm"), source)
+
+    assert {:ok, result} =
+             Elmc.compile(project_dir, %{
+               out_dir: out_dir,
+               entry_module: "Main",
+               direct_render_only: true,
+               prune_runtime: true,
+               prune_native_wrappers: true
+             })
+
+    decl_map = IRQueries.function_decl_map(result.ir)
+
+    env = %{
+      __module__: "Main",
+      __program_decls__: decl_map,
+      __record_alias_shapes__: IRQueries.record_alias_shape_map(result.ir)
+    }
+
+    list = Map.fetch!(decl_map, {"Main", "view"}).expr |> concat_map_list_expr()
+
+    case ListLoopPlans.analyze(list, env) do
+      {:ok, [plan | _]} ->
+        assert {:ok, _} =
+                 ListLoopPlans.polar_tick_fusion_debug(
+                   plan,
+                   {"Main", "drawScaleTick"},
+                   ["owned[0]"],
+                   env
+                 )
+
+      :error ->
+        flunk("ListLoopPlans.analyze failed")
+    end
+
+    generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+    view_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_view_commands_append")
+
+    assert view_body =~ "direct_tick_minute_"
+    assert view_body =~ "elmc_polar_point_x("
+    assert view_body =~ "ELMC_RENDER_OP_LINE"
+    refute view_body =~ "elmc_fn_Main_drawScaleTick_commands_append"
+    refute view_body =~ "elmc_record_new_values_take(&owned"
   end
 
   defp range_expr(first, last) do

@@ -170,6 +170,11 @@ defmodule Elmc.Backend.CCodegen.Native.String do
 
   defp compile_expr_impl(expr, env, counter), do: compile_fallback(expr, env, counter)
 
+  @doc false
+  @spec int_suffix_parts(Types.ir_expr(), Types.ir_expr(), Types.compile_env()) ::
+          {:ok, String.t(), String.t(), Types.ir_expr()} | :error
+  def int_suffix_parts(left, right, env), do: literal_int_append_parts(left, right, env)
+
   @spec try_compile_literal_int_append(
           Types.ir_expr(),
           Types.ir_expr(),

@@ -19,12 +19,20 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Env do
         __module__: module_name,
         __direct_targets__: direct_targets,
         __program_decls__: decl_map,
-        __direct_pruned__: MapSet.new()
+        __direct_pruned__: MapSet.new(),
+        __record_alias_shapes__: record_alias_shapes()
       },
       fn {source_arg, c_arg, _index}, env ->
         Map.put(env, source_arg, c_arg)
       end
     )
     |> Host.put_typed_arg_bindings(arg_bindings, decl.type)
+  end
+
+  defp record_alias_shapes do
+    case Process.get(:elmc_record_alias_shapes) do
+      shapes when is_map(shapes) -> shapes
+      _ -> %{}
+    end
   end
 end

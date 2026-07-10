@@ -1,6 +1,8 @@
 defmodule Elmc.DirectRenderGenericViewPruneTest do
   use ExUnit.Case, async: false
 
+  alias Elmc.Test.CCodegenExtract
+
   @source_template Path.expand("../../ide/priv/project_templates/watchface_yes", __DIR__)
 
   test "color-only direct render prunes generic Main.view and faceOps while keeping view_commands_append" do
@@ -52,12 +54,39 @@ defmodule Elmc.DirectRenderGenericViewPruneTest do
     assert view_body =~ "elmc_fn_Main_showCorners_native("
     assert view_body =~ "elmc_fn_Yes_Render_drawDial_commands_append"
     assert view_body =~ "owned[0]"
+    assert generated =~ "elmc_polar_point_x("
+    refute generated =~ "elmc_fn_Yes_Render_pointAt("
+
+    draw_dial_body = CCodegenExtract.fn_impl_body(generated, "elmc_fn_Yes_Render_drawDial_commands_append")
+
+    assert draw_dial_body =~ "direct_tick_minute_"
+    assert draw_dial_body =~ "direct_tick_label_"
+    assert draw_dial_body =~ "elmc_fn_Yes_Render_textAt_commands_append_native"
+    refute draw_dial_body =~ "elmc_new_float(&rec_field"
+    refute draw_dial_body =~ "drawScaleTick_commands_append"
+    refute generated =~ "static RC elmc_fn_Yes_Render_drawScaleTick_commands_append("
 
     refute generated =~ "static RC elmc_fn_Main_faceDisplay("
     refute generated =~ "static RC elmc_fn_Main_faceOps"
     refute generated =~ "static RC elmc_fn_Yes_Render_face"
+    refute generated =~ "static RC elmc_fn_Yes_Render_drawCorners"
+    refute generated =~ "static RC elmc_fn_Yes_Render_drawOuterScale("
+    refute generated =~ "drawOuterScale_closure"
+    refute generated =~ "static RC elmc_fn_Yes_Render_drawScaleTick("
+    refute generated =~ "static RC elmc_fn_Yes_Render_draw24HourHand("
+    refute generated =~ "static RC elmc_fn_Yes_Render_drawMoonPhase("
+    refute generated =~ "static RC elmc_fn_Yes_Render_drawSunWindow("
+    refute generated =~ "static RC elmc_fn_Yes_Render_pointAt("
+    refute generated =~ "elmc_fn_Yes_Render_pointAt("
     refute generated =~ "elmc_fn_Main_faceOps("
     assert generated =~ "static RC elmc_fn_Yes_Layout_centerSquare_native"
-    assert generated =~ "static RC elmc_fn_Yes_Render_pointAt_native"
+    assert generated =~ "static RC elmc_fn_Main_cornerSlots"
+    assert generated =~ "str_immortal_"
+    refute generated =~ "elmc_new_string_take(\"Jan\")"
+    refute generated =~ "elmc_new_string(&owned[0], \"N\")"
+    refute generated =~ "elmc_fn_Main_weatherSlot_closure_0"
+    refute generated =~ "elmc_fn_Main_availableWeatherModes_closure_0"
+    refute generated =~ "elmc_fn_Main_pickSlot_closure_0"
+    assert generated =~ "elmc_fn_Main_view_scene_append"
   end
 end

@@ -140,6 +140,20 @@ defmodule Elmc.Backend.CCodegen.GeneratedSource do
   defp rc_required_opts(%{} = opts, direct_command_targets),
     do: Map.put(opts, :direct_command_targets, direct_command_targets)
 
+  defp record_field_reachability_targets(generic_targets, direct_command_targets, decl_map, opts) do
+    direct_emit_targets =
+      if opts[:direct_render_only] == true do
+        {_def_targets, emit_targets, _pruned} = DirectRenderAnalysis.target_sets(decl_map, opts)
+        emit_targets
+      else
+        MapSet.new()
+      end
+
+    generic_targets
+    |> MapSet.union(direct_command_targets)
+    |> MapSet.union(direct_emit_targets)
+  end
+
   # Direct scene helpers are linked for every Pebble platform, including aplite.
   defp direct_scene_guard(content, _opts, _ir) when is_binary(content) do
     String.trim_trailing(content)
@@ -229,8 +243,7 @@ defmodule Elmc.Backend.CCodegen.GeneratedSource do
     generic_targets = GenericTargets.function_targets(ir, opts)
 
     reachable_for_fields =
-      generic_targets
-      |> MapSet.union(Host.direct_command_targets(ir, opts, decl_map))
+      record_field_reachability_targets(generic_targets, Host.direct_command_targets(ir, opts, decl_map), decl_map, opts)
 
     used_record_fields =
       if opts[:strip_dead_code] == false do
@@ -423,8 +436,7 @@ defmodule Elmc.Backend.CCodegen.GeneratedSource do
       else
         RecordFieldMacros.used_field_keys(
           decl_map,
-          generic_targets
-          |> MapSet.union(direct_command_targets)
+          record_field_reachability_targets(generic_targets, direct_command_targets, decl_map, opts)
         )
       end
 

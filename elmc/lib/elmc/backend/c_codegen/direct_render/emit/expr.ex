@@ -12,6 +12,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Expr do
   alias Elmc.Backend.CCodegen.EnvBindings
   alias Elmc.Backend.CCodegen.Host
   alias Elmc.Backend.CCodegen.Hoist
+  alias Elmc.Backend.CCodegen.Native.PolarPoint
   alias Elmc.Backend.CCodegen.Native.TypedReturn
   alias Elmc.Backend.CCodegen.Patterns
   alias Elmc.Backend.CCodegen.PlatformStatic
@@ -177,6 +178,12 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Expr do
             :error
         end
 
+      PolarPoint.polar_point_let?(name, value_expr, in_expr, env) ->
+        emit_polar_point_let(name, value_expr, in_expr, env, counter)
+
+      PolarPoint.xy_draw_center_let?(name, value_expr, in_expr, env) ->
+        emit_xy_draw_center_let(name, value_expr, in_expr, env, counter)
+
       Host.direct_native_record_helper_let?(name, value_expr, env) ->
         case Host.direct_emit_native_record_fields(name, value_expr, env, counter) do
           {:ok, field_code, body_env, counter} ->
@@ -211,25 +218,44 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Expr do
             {:ok, code, counter}
 
           :error ->
-            {value_code, value_var, counter} = Host.compile_expr(value_expr, env, counter)
+            cond do
+              Host.native_bool_expr?(value_expr, env) ->
+                {value_code, value_ref, counter} =
+                  Host.compile_native_bool_expr(value_expr, env, counter)
 
-            body_env =
-              env
-              |> Map.put(name, value_var)
-              |> EnvBindings.put_boxed_int_binding(name, Host.native_int_expr?(value_expr, env))
-              |> EnvBindings.put_record_shape(name, Host.record_shape(value_expr, env))
+                body_env =
+                  env
+                  |> EnvBindings.put_native_bool_binding(name, value_ref)
 
-            case emit_expr(in_expr, body_env, counter) do
-              {:ok, body_code, counter} ->
-                {:ok,
-                 """
-                 #{value_code}
-                   #{body_code}
-                   #{Release.release_var(value_var, "                   ")}
-                 """, counter}
+                case emit_expr(in_expr, body_env, counter) do
+                  {:ok, body_code, counter} ->
+                    {:ok, "#{value_code}\n#{body_code}", counter}
 
-              :error ->
-                :error
+                  :error ->
+                    :error
+                end
+
+              true ->
+                {value_code, value_var, counter} = Host.compile_expr(value_expr, env, counter)
+
+                body_env =
+                  env
+                  |> Map.put(name, value_var)
+                  |> EnvBindings.put_boxed_int_binding(name, Host.native_int_expr?(value_expr, env))
+                  |> EnvBindings.put_record_shape(name, Host.record_shape(value_expr, env))
+
+                case emit_expr(in_expr, body_env, counter) do
+                  {:ok, body_code, counter} ->
+                    {:ok,
+                     """
+                     #{value_code}
+                       #{body_code}
+                       #{Release.release_var(value_var, "                   ")}
+                     """, counter}
+
+                  :error ->
+                    :error
+                end
             end
         end
     end
@@ -1059,6 +1085,58 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Expr do
        counter}
     else
       _ -> :error
+    end
+  end
+
+  defp emit_polar_point_let(name, value_expr, in_expr, env, counter) do
+    case PolarPoint.compile_polar_native_record(value_expr, env, counter) do
+      {:ok, value_code, fields, counter} ->
+        body_env =
+          env
+          |> Map.delete(name)
+          |> Map.put(name, {:native_record, fields})
+          |> EnvBindings.put_let_value_expr(name, value_expr)
+          |> EnvBindings.remove_native_int_binding(name)
+          |> EnvBindings.remove_native_bool_binding(name)
+          |> EnvBindings.remove_native_float_binding(name)
+          |> EnvBindings.put_boxed_int_binding(name, false)
+
+        case emit_expr(in_expr, body_env, counter) do
+          {:ok, body_code, counter} ->
+            {:ok, value_code <> body_code, counter}
+
+          :error ->
+            :error
+        end
+
+      :error ->
+        :error
+    end
+  end
+
+  defp emit_xy_draw_center_let(name, value_expr, in_expr, env, counter) do
+    case PolarPoint.compile_xy_draw_center_native_record(value_expr, env, counter) do
+      {:ok, value_code, fields, counter} ->
+        body_env =
+          env
+          |> Map.delete(name)
+          |> Map.put(name, {:native_record, fields})
+          |> EnvBindings.put_let_value_expr(name, value_expr)
+          |> EnvBindings.remove_native_int_binding(name)
+          |> EnvBindings.remove_native_bool_binding(name)
+          |> EnvBindings.remove_native_float_binding(name)
+          |> EnvBindings.put_boxed_int_binding(name, false)
+
+        case emit_expr(in_expr, body_env, counter) do
+          {:ok, body_code, counter} ->
+            {:ok, value_code <> body_code, counter}
+
+          :error ->
+            :error
+        end
+
+      :error ->
+        :error
     end
   end
 end

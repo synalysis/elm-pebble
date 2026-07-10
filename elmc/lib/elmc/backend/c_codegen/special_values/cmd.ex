@@ -154,14 +154,24 @@ defmodule Elmc.Backend.CCodegen.SpecialValues.Cmd do
     do: Helpers.encoded_cmd_expr(Helpers.command_kind(:companion_send), args, 2)
 
   def special_value_from_target("Companion.Watch.sendWatchToPhone", [msg]) do
-    Helpers.encoded_cmd_expr(
-      Helpers.command_kind(:companion_send),
-      [
-        %{op: :qualified_call, target: "Companion.Internal.watchToPhoneTag", args: [msg]},
-        %{op: :qualified_call, target: "Companion.Internal.watchToPhoneValue", args: [msg]}
-      ],
-      2
-    )
+    case Elmc.Backend.CCodegen.CompanionSendFold.fold_wire_params(msg) do
+      {:ok, tag, val} ->
+        Helpers.encoded_cmd_expr(
+          Helpers.command_kind(:companion_send),
+          [%{op: :int_literal, value: tag}, %{op: :int_literal, value: val}],
+          2
+        )
+
+      :error ->
+        Helpers.encoded_cmd_expr(
+          Helpers.command_kind(:companion_send),
+          [
+            %{op: :qualified_call, target: "Companion.Internal.watchToPhoneTag", args: [msg]},
+            %{op: :qualified_call, target: "Companion.Internal.watchToPhoneValue", args: [msg]}
+          ],
+          2
+        )
+    end
   end
 
   def special_value_from_target("Pebble.Light.interaction", []),

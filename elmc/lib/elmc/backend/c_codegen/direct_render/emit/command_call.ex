@@ -118,14 +118,20 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.CommandCall do
                 {code_acc <> "\n  " <> code, env_acc, releases_acc ++ cleanup, c2}
 
               :boxed ->
-                case RecordViewPeel.inline_arg_binding(arg_name, arg_expr, env_acc) do
-                  {:record_peel, _source_ref, _helper_key, _helper_call} = peel_binding ->
-                    {code_acc, Map.put(env_acc, arg_name, peel_binding), releases_acc, c}
+                case inline_native_record_point_arg(arg_expr, arg_name, env_acc) do
+                  {:ok, env_acc} ->
+                    {code_acc, env_acc, releases_acc, c}
 
-                  nil ->
-                    {code, ref, c2} = Host.compile_expr(arg_expr, env, c)
-                    env_acc = Map.put(env_acc, arg_name, ref)
-                    {code_acc <> "\n  " <> code, env_acc, releases_acc ++ [ref], c2}
+                  :error ->
+                    case RecordViewPeel.inline_arg_binding(arg_name, arg_expr, env_acc) do
+                      {:record_peel, _source_ref, _helper_key, _helper_call} = peel_binding ->
+                        {code_acc, Map.put(env_acc, arg_name, peel_binding), releases_acc, c}
+
+                      nil ->
+                        {code, ref, c2} = Host.compile_expr(arg_expr, env, c)
+                        env_acc = Map.put(env_acc, arg_name, ref)
+                        {code_acc <> "\n  " <> code, env_acc, releases_acc ++ [ref], c2}
+                    end
                 end
             end
           else
@@ -142,6 +148,36 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.CommandCall do
       |> Host.put_typed_arg_bindings(c_arg_bindings, decl.type)
 
     {:ok, arg_code, inline_env, release_refs, counter}
+  end
+
+  defp inline_native_record_point_arg(%{op: :var, name: name}, arg_name, env) do
+    case native_record_point_binding(env, name) do
+      {:native_record, fields} ->
+        {:ok, Map.put(env, arg_name, {:native_record, fields})}
+
+      _ ->
+        :error
+    end
+  end
+
+  defp inline_native_record_point_arg(_, _, _), do: :error
+
+  defp native_record_point_binding(env, name) do
+    binding =
+      case Map.get(env, name) do
+        {:native_record, fields} -> {:native_record, fields}
+        _ -> EnvBindings.lookup_binding(env, name)
+      end
+
+    case binding do
+      {:native_record, fields} when is_map(fields) ->
+        if Map.has_key?(fields, "x") and Map.has_key?(fields, "y"),
+          do: {:native_record, fields},
+          else: :error
+
+      _ ->
+        :error
+    end
   end
 
   defp emit_outlined_command_call(target_key, args, env, counter) do

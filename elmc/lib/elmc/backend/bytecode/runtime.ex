@@ -673,6 +673,28 @@ defmodule Elmc.Backend.Bytecode.Runtime do
     Enum.drop(list_val, max(local_int(locals, n), 0))
   end
 
+  defp apply_builtin(:list_filter_record_field, [list, field | _], locals, _) do
+    idx = local_int(locals, field)
+
+    local_list(locals, list)
+    |> Enum.filter(&record_field_truthy?(&1, idx))
+  end
+
+  defp apply_builtin(:list_filter_record_and, [list, field_a, field_b | _], locals, _) do
+    a = local_int(locals, field_a)
+    b = local_int(locals, field_b)
+
+    local_list(locals, list)
+    |> Enum.filter(fn item -> record_field_truthy?(item, a) and record_field_truthy?(item, b) end)
+  end
+
+  defp apply_builtin(:list_map_record_field, [list, field | _], locals, _) do
+    idx = local_int(locals, field)
+
+    local_list(locals, list)
+    |> Enum.map(&record_field_at(&1, idx))
+  end
+
   defp apply_builtin(:list_length, [list | _], locals, _) do
     local_list(locals, list) |> length()
   end
@@ -830,6 +852,16 @@ defmodule Elmc.Backend.Bytecode.Runtime do
 
   defp record_field_at({:record, fields}, index) when is_list(fields), do: Enum.at(fields, index)
   defp record_field_at(value, _index), do: value
+
+  defp record_field_truthy?(value, index) do
+    case record_field_at(value, index) do
+      n when is_integer(n) -> n != 0
+      true -> true
+      false -> false
+      nil -> false
+      _ -> true
+    end
+  end
 
   defp record_set_field({:record, fields}, index, value) when is_list(fields) do
     {:record, List.replace_at(pad_record_fields(fields, index + 1), index, value)}

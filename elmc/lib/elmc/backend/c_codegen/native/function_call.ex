@@ -436,6 +436,31 @@ defmodule Elmc.Backend.CCodegen.Native.FunctionCall do
   end
 
   @doc false
+  @spec call_site_arg_kinds(Types.function_declaration(), String.t(), Types.function_decl_map()) ::
+          [Types.native_function_arg_kind()]
+  def call_site_arg_kinds(decl, module_name, decl_map) do
+    signature_kinds = signature_only_arg_kinds(decl)
+    body_kinds = arg_kinds(decl, module_name, decl_map)
+
+    if length(body_kinds) != length(signature_kinds) do
+      signature_kinds
+    else
+      Enum.zip(signature_kinds, body_kinds)
+      |> Enum.map(fn
+        {:native_int, :boxed} -> :boxed
+        {:native_bool, :boxed} -> :boxed
+        {kind, _} -> kind
+      end)
+    end
+  end
+
+  @doc false
+  @spec signature_has_native_args?(Types.function_declaration()) :: boolean()
+  def signature_has_native_args?(decl) do
+    signature_only_arg_kinds(decl)
+    |> Enum.any?(&(&1 in [:native_int, :native_bool]))
+  end
+
   @spec signature_arg_kinds(Types.function_declaration(), String.t(), Types.function_decl_map()) ::
           [Types.native_function_arg_kind()]
   def signature_arg_kinds(decl, module_name, decl_map) do

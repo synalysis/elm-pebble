@@ -175,6 +175,53 @@ defmodule Elmc.PlanRetainDedupTest do
     assert [%{dest: 2}] = retain_instrs_plan(block.instrs)
   end
 
+  test "optimize pass removes unread overwritten new_int defs" do
+    plan = %FunctionPlan{
+      module: "Main",
+      name: "overwrite",
+      params: [],
+      return_type: nil,
+      fallible: true,
+      rc_required: true,
+      reg_count: 3,
+      entry_block: 0,
+      blocks: [
+        %Block{
+          id: 0,
+          instrs: [
+            %{
+              id: 0,
+              op: :call_runtime,
+              dest: 1,
+              args: %{builtin: :new_int, literal: 0},
+              effects: %{produces: {:owned, 1}, consumes: [], borrows: [], fallible: false},
+              block_id: 0,
+              span: nil
+            },
+            %{
+              id: 1,
+              op: :call_runtime,
+              dest: 1,
+              args: %{builtin: :new_int, literal: 42},
+              effects: %{produces: {:owned, 1}, consumes: [], borrows: [], fallible: false},
+              block_id: 0,
+              span: nil
+            }
+          ],
+          terminator: {:ret, 1}
+        }
+      ],
+      lambdas: [],
+      lambda_arg_count: nil
+    }
+
+    optimized = Optimize.run(plan)
+    [block] = optimized.blocks
+    new_ints = Enum.filter(block.instrs, &match?(%{op: :call_runtime, args: %{builtin: :new_int}}, &1))
+    assert length(new_ints) == 1
+    assert hd(new_ints).args[:literal] == 42
+  end
+
   defp retain_instrs(b) do
     b.current_block.instrs
     |> Enum.filter(&match?(%{op: :call_runtime, args: %{builtin: :retain}}, &1))

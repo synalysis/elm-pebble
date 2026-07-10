@@ -9,6 +9,9 @@ defmodule Elmc.Backend.CCodegen.DirectRender.GenericTargets do
   alias Elmc.Backend.CCodegen.GenericReachability
   alias Elmc.Backend.CCodegen.Host
   alias Elmc.Backend.CCodegen.IRQueries
+  alias Elmc.Backend.CCodegen.Native.AngleMinute
+  alias Elmc.Backend.CCodegen.Native.FunctionCall, as: NativeFunctionCall
+  alias Elmc.Backend.CCodegen.Native.Int, as: NativeInt
   alias Elmc.Backend.CCodegen.Types
 
   @type target_set :: Types.function_target_set()
@@ -56,14 +59,14 @@ defmodule Elmc.Backend.CCodegen.DirectRender.GenericTargets do
         direct_render_only?(opts) ->
           roots = direct_targets_for_generic_runtime_roots(direct_targets, opts, decl_map)
 
-          generic_callees_from_direct_targets(roots, decl_map)
+          generic_callees_from_direct_targets(roots, decl_map, opts)
           |> Enum.reject(&MapSet.member?(direct_targets, &1))
 
         opts[:prune_direct_generic] == true ->
           []
 
         true ->
-          generic_callees_from_direct_targets(direct_targets, decl_map)
+          generic_callees_from_direct_targets(direct_targets, decl_map, opts)
       end
 
     direct_helper_seeds = direct_command_generic_helper_seeds(direct_targets, decl_map, opts)
@@ -96,6 +99,12 @@ defmodule Elmc.Backend.CCodegen.DirectRender.GenericTargets do
       |> MapSet.union(MapSet.new(direct_helper_seeds))
       |> MapSet.difference(droppable_view_peeled_helpers(opts, decl_map, direct_targets, entry_module))
 
+    plan_direct_boxed_callees =
+      plan_required_direct_boxed_callees(reachable_core, decl_map, direct_targets)
+
+    superseded_boxed =
+      direct_command_superseded_boxed_targets(opts, decl_map, reachable_core, direct_targets)
+
     MapSet.union(
       reachable_core,
       helper_native_targets_from_generic(
@@ -106,7 +115,185 @@ defmodule Elmc.Backend.CCodegen.DirectRender.GenericTargets do
         direct_targets
       )
     )
+    |> MapSet.union(plan_direct_boxed_callees)
+    |> MapSet.difference(superseded_boxed)
+    |> MapSet.difference(
+      native_int_inlined_superseded_targets(opts, decl_map, reachable_core, direct_targets)
+    )
     |> MapSet.difference(unused_streaming_ui_glue(opts, decl_map, direct_targets))
+  end
+
+  # Direct `_commands_append` replaces boxed `List RenderOp` bodies for the same target.
+  # Drop generic RC emit unless worker/update/init still calls the boxed ABI.
+  defp direct_command_superseded_boxed_targets(opts, decl_map, reachable_core, direct_targets) do
+    if supersede_direct_render_op_boxed?(opts) do
+      {_def_targets, emit_targets, _pruned} = Host.direct_command_target_sets(decl_map, opts)
+
+      render_op_defs =
+        emit_targets
+        |> Enum.filter(fn key ->
+          case Map.fetch(decl_map, key) do
+            {:ok, decl} -> render_op_list_return?(decl)
+            :error -> false
+          end
+        end)
+        |> MapSet.new()
+
+      required_boxed =
+        plan_required_direct_boxed_callees(reachable_core, decl_map, direct_targets)
+        |> MapSet.intersection(render_op_defs)
+
+      MapSet.difference(render_op_defs, required_boxed)
+      |> MapSet.union(polar_point_superseded_boxed(opts, decl_map, reachable_core))
+    else
+      MapSet.new()
+    end
+  end
+
+  # Native-int helpers such as angleFromMinute are inlined via elmc_angle_from_minute (or
+  # Native.Int inline) in direct `_commands_append`; drop standalone plan emit when every
+  # use site lives under direct scene targets.
+  defp native_int_inlined_superseded_targets(opts, decl_map, reachable_core, direct_targets) do
+    if supersede_direct_render_op_boxed?(opts) do
+      inlined = inlined_native_int_helpers(direct_targets, decl_map)
+
+      required =
+        plan_required_direct_boxed_callees(reachable_core, decl_map, direct_targets)
+        |> MapSet.union(
+          plan_required_native_int_callees(reachable_core, decl_map, direct_targets)
+        )
+
+      MapSet.difference(inlined, required)
+    else
+      MapSet.new()
+    end
+  end
+
+  defp plan_required_native_int_callees(targets, decl_map, direct_targets) do
+    targets
+    |> Enum.reject(&MapSet.member?(direct_targets, &1))
+    |> Enum.flat_map(fn {module_name, _name} = key ->
+      case Map.fetch(decl_map, key) do
+        {:ok, decl} ->
+          GenericReachability.expr_callees(decl.expr, module_name, decl_map)
+
+        :error ->
+          []
+      end
+    end)
+    |> Enum.filter(&native_int_inlined_superseded_target?(&1, decl_map))
+    |> MapSet.new()
+  end
+
+  defp native_int_inlined_superseded_target?({module_name, _name} = target, decl_map) do
+    case Map.get(decl_map, target) do
+      %{args: [arg_name], expr: body} when is_binary(arg_name) ->
+        decl = Map.get(decl_map, target)
+
+        NativeFunctionCall.native_scalar_fn?(decl, module_name, decl_map) and
+          NativeFunctionCall.return_kind(decl, module_name, decl_map) == :native_int and
+          (AngleMinute.body_expr?(body) or
+             NativeInt.inline_function_expr?(
+               target,
+               [%{op: :var, name: arg_name}],
+               %{__program_decls__: decl_map, __module__: module_name}
+             ))
+
+      _ ->
+        false
+    end
+  end
+
+  defp inlined_native_int_helpers(direct_targets, decl_map) do
+    direct_targets
+    |> Enum.reduce(MapSet.new(), fn {module_name, _decl_name} = target, acc ->
+      case Map.fetch(decl_map, target) do
+        {:ok, decl} ->
+          walk_inlined_native_int_helpers(decl.expr, module_name, decl_map, acc)
+
+        :error ->
+          acc
+      end
+    end)
+    |> MapSet.filter(&native_int_inlined_superseded_target?(&1, decl_map))
+  end
+
+  defp walk_inlined_native_int_helpers(expr, module_name, decl_map, acc) when is_map(expr) do
+    acc =
+      case native_int_call_target(expr, module_name) do
+        target when not is_nil(target) ->
+          if native_int_inlined_superseded_target?(target, decl_map) do
+            MapSet.put(acc, target)
+          else
+            acc
+          end
+
+        _ ->
+          acc
+      end
+
+    expr
+    |> Map.values()
+    |> Enum.reduce(acc, &walk_inlined_native_int_helpers(&1, module_name, decl_map, &2))
+  end
+
+  defp walk_inlined_native_int_helpers(values, module_name, decl_map, acc) when is_list(values) do
+    Enum.reduce(values, acc, &walk_inlined_native_int_helpers(&1, module_name, decl_map, &2))
+  end
+
+  defp walk_inlined_native_int_helpers(_value, _module_name, _decl_map, acc), do: acc
+
+  defp native_int_call_target(%{op: :call, name: name, args: [_arg]}, module_name)
+       when is_binary(name),
+       do: {module_name, name}
+
+  defp native_int_call_target(%{op: :qualified_call, target: target, args: [_arg]}, _module_name)
+       when is_binary(target) do
+    case Host.split_qualified_function_target(Host.normalize_special_target(target)) do
+      {mod, name} -> {mod, name}
+      _ -> nil
+    end
+  end
+
+  defp native_int_call_target(_, _), do: nil
+
+  # Polar helpers are inlined via elmc_polar_point_x/y in direct `_commands_append`.
+  defp polar_point_superseded_boxed(opts, decl_map, reachable_core) do
+    if supersede_direct_render_op_boxed?(opts) do
+      decl_map
+      |> Map.keys()
+      |> Enum.filter(&Elmc.Backend.CCodegen.Native.PolarPoint.polar_point_target?(&1, decl_map))
+      |> MapSet.new()
+      |> MapSet.difference(
+        plan_required_direct_boxed_callees(reachable_core, decl_map, MapSet.new())
+      )
+    else
+      MapSet.new()
+    end
+  end
+
+  defp supersede_direct_render_op_boxed?(opts) do
+    opts[:direct_render_only] == true
+  end
+
+  defp plan_required_direct_boxed_callees(targets, decl_map, direct_targets) do
+    if MapSet.size(direct_targets) == 0 do
+      MapSet.new()
+    else
+      targets
+      |> Enum.reject(&MapSet.member?(direct_targets, &1))
+      |> Enum.flat_map(fn {module_name, _name} = key ->
+        case Map.fetch(decl_map, key) do
+          {:ok, decl} ->
+            GenericReachability.expr_callees(decl.expr, module_name, decl_map)
+
+          :error ->
+            []
+        end
+      end)
+      |> MapSet.new()
+      |> MapSet.intersection(direct_targets)
+    end
   end
 
   # `toUiNode` expands to windowStack/window/canvasLayer in Elm, but direct scene
@@ -203,14 +390,14 @@ defmodule Elmc.Backend.CCodegen.DirectRender.GenericTargets do
         direct_render_only?(opts) ->
           roots = direct_targets_for_generic_runtime_roots(direct_targets, opts, decl_map)
 
-          generic_wrapper_callees_from_direct_targets(roots, decl_map)
+          generic_wrapper_callees_from_direct_targets(roots, decl_map, opts)
           |> Enum.reject(&MapSet.member?(direct_targets, &1))
 
         opts[:prune_direct_generic] == true ->
           []
 
         true ->
-          generic_wrapper_callees_from_direct_targets(direct_targets, decl_map)
+          generic_wrapper_callees_from_direct_targets(direct_targets, decl_map, opts)
       end
 
     direct_helper_seeds = direct_command_generic_helper_seeds(direct_targets, decl_map, opts)
@@ -383,6 +570,9 @@ defmodule Elmc.Backend.CCodegen.DirectRender.GenericTargets do
         []
       end
 
+    pruned_display_seeds =
+      pruned_view_display_helper_seeds(opts, decl_map, direct_targets, entry_module)
+
     view_peeled_helpers = droppable_view_peeled_helpers(opts, decl_map, direct_targets, entry_module)
 
     mixed_abi_helpers = mixed_abi_outline_helpers(direct_targets, decl_map)
@@ -390,9 +580,105 @@ defmodule Elmc.Backend.CCodegen.DirectRender.GenericTargets do
     mixed_direct_boxed_callees =
       boxed_direct_callees_of_mixed_helpers(mixed_abi_helpers, direct_targets, decl_map)
 
-    (pruned_view_callees ++ direct_only_boxed_seeds ++ mixed_abi_helpers ++ mixed_direct_boxed_callees)
+    (pruned_view_callees ++ direct_only_boxed_seeds ++ pruned_display_seeds ++ mixed_abi_helpers ++
+       mixed_direct_boxed_callees)
     |> Enum.reject(&MapSet.member?(view_peeled_helpers, &1))
     |> Enum.uniq()
+  end
+
+  # When generic `view` is pruned, direct scene emit still calls boxed helpers that
+  # build the face display record (`faceOps` → `faceDisplay` → corner/time helpers).
+  # Reach only entry-module helpers under `faceDisplay`; do not follow `Yes.Render.face`
+  # or other render-op-list callees (those are inlined via direct `_commands_append`).
+  defp pruned_view_display_helper_seeds(opts, decl_map, direct_targets, entry_module) do
+    if prune_generic_view?(opts, decl_map, direct_targets) do
+      view_target = {entry_module, "view"}
+
+      case Map.fetch(decl_map, view_target) do
+        {:ok, %{expr: view_expr}} ->
+          inner = ui_node_inner_expr(view_expr) || view_expr
+
+          glue_seeds =
+            inner
+            |> GenericReachability.expr_callees(entry_module, decl_map)
+            |> Enum.filter(fn {module_name, _} = key ->
+              module_name == entry_module and
+                case Map.fetch(decl_map, key) do
+                  {:ok, decl} -> render_op_list_return?(decl)
+                  :error -> false
+                end
+            end)
+
+          face_display_roots =
+            Enum.flat_map(glue_seeds, fn {glue_module, _name} = glue_key ->
+              case Map.fetch(decl_map, glue_key) do
+                {:ok, %{expr: expr}} ->
+                  GenericReachability.expr_callees(expr, glue_module, decl_map)
+
+                :error ->
+                  []
+              end
+            end)
+            |> Enum.filter(fn {module_name, _} -> module_name == entry_module end)
+            |> Enum.filter(&pruned_view_helper_seed_root?(&1, decl_map))
+
+          face_display_roots
+          |> expand_pruned_view_entry_helper_seeds(entry_module, decl_map, 4, MapSet.new())
+          |> Enum.reject(&pruned_view_helper_seed_excluded?(&1, decl_map))
+          |> Enum.uniq()
+
+        :error ->
+          []
+      end
+    else
+      []
+    end
+  end
+
+  defp pruned_view_helper_seed_root?(key, decl_map) do
+    case Map.fetch(decl_map, key) do
+      {:ok, decl} -> not render_op_list_return?(decl)
+      :error -> false
+    end
+  end
+
+  defp pruned_view_helper_seed_excluded?({module_name, name}, decl_map) do
+    render_op_list_return?(Map.get(decl_map, {module_name, name}, %{})) or
+      name in ["view", "faceOps", "faceDisplay"]
+  end
+
+  defp expand_pruned_view_entry_helper_seeds([], _entry_module, _decl_map, _depth, visited),
+    do: MapSet.to_list(visited)
+
+  defp expand_pruned_view_entry_helper_seeds(_frontier, _entry_module, _decl_map, 0, visited),
+    do: MapSet.to_list(visited)
+
+  defp expand_pruned_view_entry_helper_seeds(frontier, entry_module, decl_map, depth, visited) do
+    {next, visited} =
+      Enum.reduce(frontier, {[], visited}, fn {module_name, _name} = key, {pending, seen} ->
+        if MapSet.member?(seen, key) do
+          {pending, seen}
+        else
+          seen = MapSet.put(seen, key)
+
+          callees =
+            case Map.fetch(decl_map, key) do
+              {:ok, %{expr: expr}} ->
+                GenericReachability.expr_callees(expr, module_name, decl_map)
+                |> Enum.filter(fn {mod, _} -> mod == entry_module end)
+                |> Enum.filter(&pruned_view_helper_seed_root?(&1, decl_map))
+
+              :error ->
+                []
+            end
+
+          {pending ++ callees, seen}
+        end
+      end)
+
+    next = Enum.uniq(next)
+
+    expand_pruned_view_entry_helper_seeds(next, entry_module, decl_map, depth - 1, visited)
   end
 
   defp view_peeled_helper_set(opts, decl_map, direct_targets, entry_module) do
@@ -439,6 +725,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.GenericTargets do
       peeled
       |> MapSet.intersection(MapSet.new(view_callees))
       |> MapSet.union(direct_command_boxed_callees(direct_targets, decl_map, opts, entry_module))
+      |> MapSet.union(MapSet.new(pruned_view_display_helper_seeds(opts, decl_map, direct_targets, entry_module)))
 
     MapSet.difference(peeled, required)
   end
@@ -446,14 +733,31 @@ defmodule Elmc.Backend.CCodegen.DirectRender.GenericTargets do
   defp direct_command_boxed_callees(direct_targets, decl_map, opts, entry_module) do
     direct_targets = direct_targets_for_helper_analysis(direct_targets, opts, decl_map, entry_module)
 
+    render_op_def_targets =
+      if supersede_direct_render_op_boxed?(opts) do
+        direct_render_op_def_targets(decl_map, opts)
+      else
+        MapSet.new()
+      end
+
     direct_targets
     |> Enum.flat_map(fn {module_name, _name} = target ->
       case Map.fetch(decl_map, target) do
-        {:ok, decl} -> GenericReachability.expr_callees(decl.expr, module_name, decl_map)
-        :error -> []
+        {:ok, decl} ->
+          GenericReachability.expr_callees(decl.expr, module_name, decl_map)
+          |> Enum.reject(&MapSet.member?(render_op_def_targets, &1))
+          |> Enum.reject(&polar_point_boxed_callee?(&1, decl_map, opts))
+
+        :error ->
+          []
       end
     end)
     |> MapSet.new()
+  end
+
+  defp polar_point_boxed_callee?(target, decl_map, opts) do
+    supersede_direct_render_op_boxed?(opts) and
+      Elmc.Backend.CCodegen.Native.PolarPoint.polar_point_target?(target, decl_map)
   end
 
   defp mixed_abi_outline_helpers(direct_targets, decl_map) do
@@ -550,8 +854,10 @@ defmodule Elmc.Backend.CCodegen.DirectRender.GenericTargets do
 
   defp ui_node_inner_expr(_expr), do: nil
 
-  defp generic_callees_from_direct_targets(direct_targets, decl_map) do
+  defp generic_callees_from_direct_targets(direct_targets, decl_map, opts \\ []) do
     inlined_record_helpers = inlined_record_helpers(direct_targets, decl_map)
+
+    render_op_def_targets = direct_render_op_def_targets(decl_map, opts)
 
     direct_targets
     |> Enum.flat_map(fn {module_name, _decl_name} = target ->
@@ -562,10 +868,13 @@ defmodule Elmc.Backend.CCodegen.DirectRender.GenericTargets do
     end)
     |> Enum.reject(&render_helper_target?/1)
     |> Enum.reject(&MapSet.member?(inlined_record_helpers, &1))
+    |> Enum.reject(&MapSet.member?(render_op_def_targets, &1))
   end
 
-  defp generic_wrapper_callees_from_direct_targets(direct_targets, decl_map) do
+  defp generic_wrapper_callees_from_direct_targets(direct_targets, decl_map, opts \\ []) do
     inlined_record_helpers = inlined_record_helpers(direct_targets, decl_map)
+
+    render_op_def_targets = direct_render_op_def_targets(decl_map, opts)
 
     direct_targets
     |> Enum.flat_map(fn {module_name, _decl_name} = target ->
@@ -576,6 +885,24 @@ defmodule Elmc.Backend.CCodegen.DirectRender.GenericTargets do
     end)
     |> Enum.reject(&render_helper_target?/1)
     |> Enum.reject(&MapSet.member?(inlined_record_helpers, &1))
+    |> Enum.reject(&MapSet.member?(render_op_def_targets, &1))
+  end
+
+  defp direct_render_op_def_targets(decl_map, opts) do
+    if supersede_direct_render_op_boxed?(opts) do
+      {_def_targets, emit_targets, _pruned} = Host.direct_command_target_sets(decl_map, opts)
+
+      emit_targets
+      |> Enum.filter(fn key ->
+        case Map.fetch(decl_map, key) do
+          {:ok, decl} -> render_op_list_return?(decl)
+          :error -> false
+        end
+      end)
+      |> MapSet.new()
+    else
+      MapSet.new()
+    end
   end
 
   defp inlined_record_helpers(direct_targets, decl_map) do

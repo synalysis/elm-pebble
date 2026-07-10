@@ -48,7 +48,7 @@ defmodule Elmc.Backend.Plan.Lower.Call do
   defp compile_ui_to_ui_node(_, _, _), do: :unsupported
 
   defp compile_fn_call_default(_expr, target, args, ctx, b) do
-    case Elmc.Backend.CCodegen.SpecialValues.special_value_from_target(target, args) do
+    case call_rewrite(target, args) do
       %{op: :pebble_cmd} = rewritten ->
         Cmd.compile(rewritten, ctx, b)
 
@@ -56,31 +56,51 @@ defmodule Elmc.Backend.Plan.Lower.Call do
         Expr.compile(rewritten, ctx, b)
 
       _ ->
-        {module, name} = parse_target(target, ctx)
+        {module, name} = parse_target(target, ctx, ctx.decl_map)
 
-        cond do
-          oversaturated_call?(ctx, module, name, args) ->
-            compile_oversaturated_call(module, name, args, ctx, b)
+        case Elmc.Backend.CCodegen.SpecialValues.special_value_from_target(
+               "#{module}.#{name}",
+               args
+             ) do
+          %{op: :pebble_cmd} = rewritten ->
+            Cmd.compile(rewritten, ctx, b)
 
-          true ->
-            with {:ok, callee_reg, b_callee} <- closure_callee_reg(name, ctx, b),
-                 true <- args != [] do
-              compile_closure_call(callee_reg, args, ctx, b_callee)
+          %{op: op} = rewritten when is_atom(op) and op != :unsupported ->
+            Expr.compile(rewritten, ctx, b)
+
+          _ ->
+            compile_fn_call_target(module, name, args, ctx, b)
+        end
+    end
+  end
+
+  defp call_rewrite(target, args) do
+    Elmc.Backend.CCodegen.SpecialValues.special_value_from_target(target, args)
+  end
+
+  defp compile_fn_call_target(module, name, args, ctx, b) do
+    cond do
+      oversaturated_call?(ctx, module, name, args) ->
+        compile_oversaturated_call(module, name, args, ctx, b)
+
+      true ->
+        with {:ok, callee_reg, b_callee} <- closure_callee_reg(name, ctx, b),
+             true <- args != [] do
+          compile_closure_call(callee_reg, args, ctx, b_callee)
+        else
+          _ ->
+            with {:ok, decl} <- Map.fetch(ctx.decl_map, {module, name}),
+                 param_names <- Map.get(decl, :args, []),
+                 true <- length(args) > 0 and length(args) < length(param_names),
+                 {:ok, reg, b1} <- compile_curried_lambda(module, name, param_names, args, ctx, b) do
+              {:ok, reg, b1}
             else
               _ ->
-                with {:ok, decl} <- Map.fetch(ctx.decl_map, {module, name}),
-                     param_names <- Map.get(decl, :args, []),
-                     true <- length(args) > 0 and length(args) < length(param_names),
-                     {:ok, reg, b1} <- compile_curried_lambda(module, name, param_names, args, ctx, b) do
-                  {:ok, reg, b1}
+                with {:ok, arg_regs, b1} <- Expr.compile_args(args, ctx, b) do
+                  {dest, b2} = dest_for_call(ctx, b1)
+                  compile_fn_call_emit(module, name, arg_regs, dest, ctx, b2, args)
                 else
-                  _ ->
-                    with {:ok, arg_regs, b1} <- Expr.compile_args(args, ctx, b) do
-                      {dest, b2} = dest_for_call(ctx, b1)
-                      compile_fn_call_emit(module, name, arg_regs, dest, ctx, b2, args)
-                    else
-                      _ -> :unsupported
-                    end
+                  _ -> :unsupported
                 end
             end
         end
@@ -270,10 +290,25 @@ defmodule Elmc.Backend.Plan.Lower.Call do
   end
 
   @doc false
-  def parse_target(target, ctx) when is_binary(target) do
-    case String.split(target, ".", parts: 2) do
-      [mod, name] -> {mod, name}
-      [name] -> {ctx.module || "Main", name}
+  def parse_target(target, ctx, decl_map \\ nil) when is_binary(target) do
+    decl_map = decl_map || Map.get(ctx, :decl_map, %{})
+
+    case String.split(target, ".") do
+      [name] ->
+        {ctx.module || "Main", name}
+
+      parts ->
+        name = List.last(parts)
+        full_module = parts |> Enum.drop(-1) |> Enum.join(".")
+
+        if Map.has_key?(decl_map, {full_module, name}) do
+          {full_module, name}
+        else
+          case String.split(target, ".", parts: 2) do
+            [mod, rest] -> {mod, rest}
+            [single] -> {ctx.module || "Main", single}
+          end
+        end
     end
   end
 

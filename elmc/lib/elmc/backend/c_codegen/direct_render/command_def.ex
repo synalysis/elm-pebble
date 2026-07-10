@@ -3,6 +3,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.CommandDef do
 
   alias Elmc.Backend.CCodegen.DirectRender.Emit.Catch
   alias Elmc.Backend.CCodegen.DirectRender.Emit.DuplicateFieldHoists
+  alias Elmc.Backend.CCodegen.DirectRender.Emit.RecordGetHoistPass
   alias Elmc.Backend.CCodegen.DirectRender.RecordViewPeel
   alias Elmc.Backend.CCodegen.EnvBindings
   alias Elmc.Backend.CCodegen.FunctionEmit
@@ -98,7 +99,8 @@ defmodule Elmc.Backend.CCodegen.DirectRender.CommandDef do
           __direct_targets__: targets,
           __program_decls__: decl_map,
           __direct_pruned__: pruned,
-          __hoisted_native_ints_enabled__: true
+          __hoisted_native_ints_enabled__: true,
+          __record_alias_shapes__: record_alias_shapes()
         },
         fn arg, acc ->
           {source_arg, c_arg, _index} = arg
@@ -110,9 +112,15 @@ defmodule Elmc.Backend.CCodegen.DirectRender.CommandDef do
       |> Map.put(:__rc_catch__, true)
       |> Map.put(:__rc_required__, true)
 
+    borrow_refs =
+      c_arg_bindings
+      |> Enum.map(fn {_arg, c_arg, _index} -> c_arg end)
+      |> MapSet.new()
+
     Process.delete(:elmc_hoisted_native_ints)
     Process.delete(:elmc_hoisted_native_int_inits)
     Process.put(:elmc_hoisted_native_ints_scope, true)
+    Process.put(:elmc_direct_borrow_refs, borrow_refs)
     Process.put(:elmc_direct_helper_defs, [])
     ValueSlots.reset(epilogue_lifo: true)
 
@@ -125,13 +133,20 @@ defmodule Elmc.Backend.CCodegen.DirectRender.CommandDef do
             FunctionEmit.unused_arg_casts(c_arg_bindings, [body_code])
 
           helper_defs = direct_helper_defs()
-          helper_defs <> boxed_body(c_name, arg_bindings, unused_casts, Hoist.drop_unused_native_minmax_decls(field_hoist_preamble <> body_code))
+
+          body_code =
+            field_hoist_preamble <> body_code
+            |> Hoist.drop_unused_native_minmax_decls()
+            |> RecordGetHoistPass.run()
+
+          helper_defs <> boxed_body(c_name, arg_bindings, unused_casts, body_code, mod, decl)
 
         :error ->
           raise ArgumentError,
                 "direct Pebble command generation failed for #{mod.name}.#{decl.name}"
       end
     after
+      Process.delete(:elmc_direct_borrow_refs)
       Process.delete(:elmc_hoisted_native_ints_scope)
       Process.delete(:elmc_hoisted_native_ints)
       Process.delete(:elmc_hoisted_native_int_inits)
@@ -139,8 +154,8 @@ defmodule Elmc.Backend.CCodegen.DirectRender.CommandDef do
     end
   end
 
-  @spec boxed_body(String.t(), String.t(), String.t(), String.t()) :: String.t()
-  defp boxed_body(c_name, arg_bindings, unused_casts, body_code) do
+  @spec boxed_body(String.t(), String.t(), String.t(), String.t(), map(), map()) :: String.t()
+  defp boxed_body(c_name, arg_bindings, unused_casts, body_code, mod, decl) do
     """
     static RC #{c_name}_commands_append(ElmcValue ** const args, const int argc, ElmcSceneWriter * const writer) {
       #{arg_bindings}
@@ -149,10 +164,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.CommandDef do
         return RC_ERR_INVALID_ARG;
       #{Catch.function_body_prefix()}#{body_code}#{Catch.function_body_suffix()}
     }
-
-    RC #{c_name}_scene_append(ElmcValue ** const args, const int argc, ElmcSceneWriter * const writer) {
-      return #{c_name}_commands_append(args, argc, writer);
-    }
+    #{scene_append_stub(c_name, mod, decl)}
     """
   end
 
@@ -202,7 +214,8 @@ defmodule Elmc.Backend.CCodegen.DirectRender.CommandDef do
           __direct_targets__: targets,
           __program_decls__: decl_map,
           __direct_pruned__: pruned,
-          __hoisted_native_ints_enabled__: true
+          __hoisted_native_ints_enabled__: true,
+          __record_alias_shapes__: record_alias_shapes()
         },
         fn {{source_arg, c_arg, _index}, kind}, acc ->
           case kind do
@@ -217,9 +230,15 @@ defmodule Elmc.Backend.CCodegen.DirectRender.CommandDef do
       |> Map.put(:__rc_catch__, true)
       |> Map.put(:__rc_required__, true)
 
+    borrow_refs =
+      c_arg_bindings
+      |> Enum.map(fn {_arg, c_arg, _index} -> c_arg end)
+      |> MapSet.new()
+
     Process.delete(:elmc_hoisted_native_ints)
     Process.delete(:elmc_hoisted_native_int_inits)
     Process.put(:elmc_hoisted_native_ints_scope, true)
+    Process.put(:elmc_direct_borrow_refs, borrow_refs)
     Process.put(:elmc_direct_helper_defs, [])
     ValueSlots.reset(epilogue_lifo: true)
 
@@ -241,11 +260,13 @@ defmodule Elmc.Backend.CCodegen.DirectRender.CommandDef do
               c_name,
               wrapper_bindings,
               native_args,
+              mod,
               decl,
               wrapper_unused_casts,
               native_unused_casts,
               field_hoist_preamble <> body_code
               |> Hoist.drop_unused_native_minmax_decls()
+              |> RecordGetHoistPass.run()
             )
 
         :error ->
@@ -253,6 +274,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.CommandDef do
                 "direct Pebble command generation failed for #{mod.name}.#{decl.name}"
       end
     after
+      Process.delete(:elmc_direct_borrow_refs)
       Process.delete(:elmc_hoisted_native_ints_scope)
       Process.delete(:elmc_hoisted_native_ints)
       Process.delete(:elmc_hoisted_native_int_inits)
@@ -276,6 +298,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.CommandDef do
           String.t(),
           String.t(),
           map(),
+          map(),
           String.t(),
           String.t(),
           String.t()
@@ -284,6 +307,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.CommandDef do
          c_name,
          wrapper_bindings,
          native_args,
+         mod,
          decl,
          wrapper_unused_casts,
          native_unused_casts,
@@ -302,17 +326,40 @@ defmodule Elmc.Backend.CCodegen.DirectRender.CommandDef do
         return RC_ERR_INVALID_ARG;
       #{Catch.function_body_prefix()}#{body_code}#{Catch.function_body_suffix()}
     }
-
-    RC #{c_name}_scene_append(ElmcValue ** const args, const int argc, ElmcSceneWriter * const writer) {
-      return #{c_name}_commands_append(args, argc, writer);
-    }
+    #{scene_append_stub(c_name, mod, decl)}
     """
+  end
+
+  defp scene_append_stub(c_name, mod, decl) do
+    if entry_view_scene_append?(mod, decl) do
+      """
+
+      RC #{c_name}_scene_append(ElmcValue ** const args, const int argc, ElmcSceneWriter * const writer) {
+        return #{c_name}_commands_append(args, argc, writer);
+      }
+      """
+    else
+      ""
+    end
+  end
+
+  defp entry_view_scene_append?(mod, decl) do
+    opts = Process.get(:elmc_codegen_opts, [])
+    entry_module = opts[:entry_module] || "Main"
+    mod.name == entry_module and decl.name == "view"
   end
 
   defp put_boxed_param_binding(env, module_name, decl, source_arg, c_arg, decl_map) do
     case RecordViewPeel.param_env_binding({module_name, decl.name}, source_arg, c_arg, decl_map) do
       nil -> Map.put(env, source_arg, c_arg)
       peel_binding -> Map.put(env, source_arg, peel_binding)
+    end
+  end
+
+  defp record_alias_shapes do
+    case Process.get(:elmc_record_alias_shapes) do
+      shapes when is_map(shapes) -> shapes
+      _ -> %{}
     end
   end
 end

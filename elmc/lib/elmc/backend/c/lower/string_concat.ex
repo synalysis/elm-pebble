@@ -170,15 +170,21 @@ defmodule Elmc.Backend.C.Lower.StringConcat do
   end
 
   defp classify_int_operand(plan, reg, opts) when is_integer(reg) do
-    case int_operand_inline_expr(plan, reg, opts) do
-      {:ok, expr} ->
+    case Map.get(Keyword.get(opts, :native_int_inline, %{}), reg) do
+      expr when is_binary(expr) ->
         {:ok, {:int, expr}}
 
-      :error ->
-        if MapSet.member?(Keyword.get(opts, :native_int_only_regs, MapSet.new()), reg) do
-          {:ok, {:int, Instr.int_operand_ref(reg, Keyword.get(opts, :slots, %{}), opts)}}
-        else
-          :error
+      nil ->
+        case int_operand_inline_expr(plan, reg, opts) do
+          {:ok, expr} ->
+            {:ok, {:int, expr}}
+
+          :error ->
+            if MapSet.member?(Keyword.get(opts, :native_int_only_regs, MapSet.new()), reg) do
+              {:ok, {:int, Instr.int_operand_ref(reg, Keyword.get(opts, :slots, %{}), opts)}}
+            else
+              :error
+            end
         end
     end
   end
@@ -324,8 +330,8 @@ defmodule Elmc.Backend.C.Lower.StringConcat do
       %{op: :call_runtime, args: %{builtin: :string_append, args: [left, right]}} ->
         collect_chain_regs(plan, left) ++ collect_chain_regs(plan, right) ++ [reg]
 
-      %{op: :call_runtime, args: %{builtin: :string_from_int, args: [int_reg]}} ->
-        [reg, int_reg]
+      %{op: :call_runtime, args: %{builtin: :string_from_int, args: [_int_reg]}} ->
+        [reg]
 
       %{op: :const_immortal_string} ->
         [reg]

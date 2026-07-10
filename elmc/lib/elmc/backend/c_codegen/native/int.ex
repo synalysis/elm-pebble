@@ -12,6 +12,7 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
   alias Elmc.Backend.CCodegen.ImmortalStaticList
   alias Elmc.Backend.CCodegen.ListLoopCodegen
   alias Elmc.Backend.CCodegen.CaseCompile
+  alias Elmc.Backend.CCodegen.Native.AngleMinute
   alias Elmc.Backend.CCodegen.Native.FunctionCall, as: NativeFunctionCall
   alias Elmc.Backend.CCodegen.Native.IntCase, as: NativeIntCase
   alias Elmc.Backend.CCodegen.Native.MaybeIntCase, as: NativeMaybeIntCase
@@ -818,20 +819,14 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
 
   defp dispatch(%{op: :call, name: "modBy", args: [base, value]}, env, counter) do
     case static_nonzero_int_value(base, env) do
-      base_value when is_integer(base_value) ->
+      base_value when is_integer(base_value) and base_value > 0 ->
         {value_code, value_ref, counter} = compile_expr(value, env, counter)
-        next = counter + 1
-        out = "native_mod_#{next}"
-        correction = abs(base_value)
-        divisor = ImmortalStaticList.format_static_length(base_value, base, env)
 
-        code = """
-        #{value_code}
-          elmc_int_t #{out} = #{value_ref} % #{divisor};
-          if (#{out} < 0) #{out} += #{correction};
-        """
-
-        {code, out, next}
+        if power_of_two_mod_base?(base_value) do
+          emit_power_of_two_mod(value_code, value_ref, base_value, counter)
+        else
+          emit_general_mod(value_code, value_ref, base_value, base, env, counter)
+        end
 
       nil ->
         {base_code, base_ref, counter} = compile_expr(base, env, counter)
@@ -852,6 +847,37 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
 
         {code, out, next}
     end
+  end
+
+  defp power_of_two_mod_base?(base_value) when is_integer(base_value),
+    do: base_value > 0 and Bitwise.band(base_value, base_value - 1) == 0
+
+  defp emit_power_of_two_mod(value_code, value_ref, base_value, counter) do
+    next = counter + 1
+    out = "native_mod_#{next}"
+    mask = base_value - 1
+
+    code = """
+    #{value_code}
+      elmc_int_t #{out} = #{value_ref} & #{mask};
+    """
+
+    {code, out, next}
+  end
+
+  defp emit_general_mod(value_code, value_ref, base_value, base, env, counter) do
+    next = counter + 1
+    out = "native_mod_#{next}"
+    correction = abs(base_value)
+    divisor = ImmortalStaticList.format_static_length(base_value, base, env)
+
+    code = """
+    #{value_code}
+      elmc_int_t #{out} = #{value_ref} % #{divisor};
+      if (#{out} < 0) #{out} += #{correction};
+    """
+
+    {code, out, next}
   end
 
   defp dispatch(
@@ -986,11 +1012,18 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
   end
 
   defp dispatch(
-         %{op: :runtime_call, function: "elmc_basics_mod_by", args: [base, value]},
+         %{op: :runtime_call, function: "elmc_basics_mod_by", args: [base, value]} = expr,
          env,
          counter
-       ),
-       do: compile_expr(%{op: :call, name: "modBy", args: [base, value]}, env, counter)
+       ) do
+    case AngleMinute.compile_mod_by_65536(expr, env, counter) do
+      {:ok, code, value_ref, counter} ->
+        {code, value_ref, counter}
+
+      :error ->
+        compile_expr(%{op: :call, name: "modBy", args: [base, value]}, env, counter)
+    end
+  end
 
   defp dispatch(
          %{op: :runtime_call, function: "elmc_basics_remainder_by", args: [base, value]},
@@ -1692,6 +1725,17 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
     decl_map = Map.get(env, :__program_decls__, %{})
     inline_stack = Map.get(env, :__native_int_inline_stack__, MapSet.new())
 
+    with %{args: [_minute_name], expr: body} <- Map.get(decl_map, target_key),
+         [minute_arg] <- args,
+         {:ok, code, value_ref, counter} <- AngleMinute.compile_call(body, minute_arg, env, counter) do
+      code = code <> "  // inlined #{format_function_target(target_key)}\n"
+      {:ok, code, value_ref, counter}
+    else
+      _ -> inline_function_default(target_key, args, env, counter, decl_map, inline_stack)
+    end
+  end
+
+  defp inline_function_default(target_key, args, env, counter, decl_map, inline_stack) do
     with %{args: arg_names, expr: body} when is_list(arg_names) <- Map.get(decl_map, target_key),
          true <- length(arg_names) == length(args),
          false <- MapSet.member?(inline_stack, target_key),
