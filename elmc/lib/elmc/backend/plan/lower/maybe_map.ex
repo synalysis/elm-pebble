@@ -103,8 +103,6 @@ defmodule Elmc.Backend.Plan.Lower.MaybeMap do
   defp compile_record_field_map(payload_reg, field, ctx, b) do
     with {:ok, field_reg, b1} <- compile_record_get(payload_reg, field, ctx, b) do
       wrap_just_payload(field_reg, ctx, b1)
-    else
-      _ -> :unsupported
     end
   end
 

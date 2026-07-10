@@ -86,8 +86,6 @@ defmodule Elmc.Backend.Plan.Lower.FilterMapIdentity do
          b_merge = Builder.begin_block(b_else_done, merge_id),
          {:ok, merge, b_out} <- emit_merge(test_reg, then_reg, acc_reg, b_merge) do
       {:ok, merge, %{b_out | pending_merge_block: saved_pending}}
-    else
-      _ -> :unsupported
     end
   end
 

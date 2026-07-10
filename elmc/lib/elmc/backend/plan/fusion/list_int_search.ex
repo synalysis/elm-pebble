@@ -65,14 +65,6 @@ defmodule Elmc.Backend.Plan.Fusion.ListIntSearch do
     |> Map.put(:fusion_emit, :helper_only)
   end
 
-  defp maybe_mark_native_scalar(%FunctionPlan{} = plan, :native_int) do
-    plan
-    |> Map.put(:native_scalar_return, :native_int)
-    |> Map.put(:native_scalar_value_return, false)
-  end
-
-  defp maybe_mark_native_scalar(%FunctionPlan{} = plan, _), do: plan
-
   defp fusion_env(module_name, decl, decl_map) do
     args = Map.get(decl, :args, [])
 

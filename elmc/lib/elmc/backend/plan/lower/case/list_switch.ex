@@ -565,13 +565,7 @@ defmodule Elmc.Backend.Plan.Lower.Case.ListSwitch do
               :unsupported ->
                 :unsupported
             end
-
-          _ ->
-            :unsupported
         end
-
-      _ ->
-        :unsupported
     end
   end
 

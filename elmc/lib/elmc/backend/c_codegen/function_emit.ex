@@ -916,6 +916,44 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
     end
   end
 
+  defp emit_plan_fusion_body(
+         decl,
+         module_name,
+         arg_bindings,
+         arg_binding_code,
+         direct_args?,
+         helper_c,
+         entry_probe,
+         exit_probe,
+         rc_required?
+       )
+       when is_binary(helper_c) do
+    emit_plan_fusion_body(
+      decl,
+      module_name,
+      arg_bindings,
+      arg_binding_code,
+      direct_args?,
+      %{fusion_c: helper_c},
+      entry_probe,
+      exit_probe,
+      rc_required?
+    )
+  end
+
+  defp emit_plan_fusion_body(
+         _decl,
+         _module_name,
+         _arg_bindings,
+         _arg_binding_code,
+         _direct_args?,
+         _plan,
+         _entry_probe,
+         _exit_probe,
+         _rc_required?
+       ),
+       do: ""
+
   defp emit_fused_native_int_scalar_wrapper_function(
          decl,
          module_name,
@@ -972,44 +1010,6 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
       )
     end
   end
-
-  defp emit_plan_fusion_body(
-         decl,
-         module_name,
-         arg_bindings,
-         arg_binding_code,
-         direct_args?,
-         helper_c,
-         entry_probe,
-         exit_probe,
-         rc_required?
-       )
-       when is_binary(helper_c) do
-    emit_plan_fusion_body(
-      decl,
-      module_name,
-      arg_bindings,
-      arg_binding_code,
-      direct_args?,
-      %{fusion_c: helper_c},
-      entry_probe,
-      exit_probe,
-      rc_required?
-    )
-  end
-
-  defp emit_plan_fusion_body(
-         _decl,
-         _module_name,
-         _arg_bindings,
-         _arg_binding_code,
-         _direct_args?,
-         _plan,
-         _entry_probe,
-         _exit_probe,
-         _rc_required?
-       ),
-       do: ""
 
   defp compile_opts_list(opts) when is_list(opts), do: opts
   defp compile_opts_list(opts) when is_map(opts), do: Map.to_list(opts)
@@ -1312,7 +1312,7 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
          exit_probe,
          arg_binding_code,
          rc_required?,
-         fusion_arg_kinds \\ nil
+         fusion_arg_kinds
        ) do
     c_name = Util.module_fn_name(module_name, decl.name)
     native = "#{c_name}_native"
@@ -1371,7 +1371,7 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
     )
   end
 
-  defp rc_native_fusion_call_args(arg_bindings, kinds, unboxed_in_wrapper? \\ false)
+  defp rc_native_fusion_call_args(arg_bindings, kinds, unboxed_in_wrapper?)
 
   defp rc_native_fusion_call_args(arg_bindings, kinds, unboxed_in_wrapper?) when is_list(kinds) do
     arg_bindings

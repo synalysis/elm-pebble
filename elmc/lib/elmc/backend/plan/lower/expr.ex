@@ -29,31 +29,6 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
     end
   end
 
-  defp compile_root_var(name, ctx, b) when is_binary(name) do
-    case Context.local_reg(ctx, name) do
-      reg when is_integer(reg) ->
-        {:ok, reg, b}
-
-      _ ->
-        case param_index(ctx, name) do
-          idx when is_integer(idx) ->
-            Builder.get_or_load_param(b, idx, name) |> then(fn {reg, b1} -> {:ok, reg, b1} end)
-
-          _ ->
-            case Builder.emit_load_local(b, name) do
-              {nil, _} ->
-                case Call.compile_top_level_ref(name, ctx, b) do
-                  {:ok, reg, b1} -> {:ok, reg, b1}
-                  :unsupported -> :unsupported
-                end
-
-              {reg, b1} ->
-                {:ok, reg, b1}
-            end
-        end
-    end
-  end
-
   def compile(%{op: :call} = expr, ctx, b) do
     case IntCall.compile(expr, ctx, b) do
       {:ok, _, _} = ok ->
@@ -218,6 +193,31 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
   end
 
   def compile(_, _, _), do: :unsupported
+
+  defp compile_root_var(name, ctx, b) when is_binary(name) do
+    case Context.local_reg(ctx, name) do
+      reg when is_integer(reg) ->
+        {:ok, reg, b}
+
+      _ ->
+        case param_index(ctx, name) do
+          idx when is_integer(idx) ->
+            Builder.get_or_load_param(b, idx, name) |> then(fn {reg, b1} -> {:ok, reg, b1} end)
+
+          _ ->
+            case Builder.emit_load_local(b, name) do
+              {nil, _} ->
+                case Call.compile_top_level_ref(name, ctx, b) do
+                  {:ok, reg, b1} -> {:ok, reg, b1}
+                  :unsupported -> :unsupported
+                end
+
+              {reg, b1} ->
+                {:ok, reg, b1}
+            end
+        end
+    end
+  end
 
   @spec compile_args([map()], Context.t(), Builder.t()) ::
           {:ok, [Types.reg()], Builder.t()} | :unsupported

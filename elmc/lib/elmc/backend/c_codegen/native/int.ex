@@ -849,37 +849,6 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
     end
   end
 
-  defp power_of_two_mod_base?(base_value) when is_integer(base_value),
-    do: base_value > 0 and Bitwise.band(base_value, base_value - 1) == 0
-
-  defp emit_power_of_two_mod(value_code, value_ref, base_value, counter) do
-    next = counter + 1
-    out = "native_mod_#{next}"
-    mask = base_value - 1
-
-    code = """
-    #{value_code}
-      elmc_int_t #{out} = #{value_ref} & #{mask};
-    """
-
-    {code, out, next}
-  end
-
-  defp emit_general_mod(value_code, value_ref, base_value, base, env, counter) do
-    next = counter + 1
-    out = "native_mod_#{next}"
-    correction = abs(base_value)
-    divisor = ImmortalStaticList.format_static_length(base_value, base, env)
-
-    code = """
-    #{value_code}
-      elmc_int_t #{out} = #{value_ref} % #{divisor};
-      if (#{out} < 0) #{out} += #{correction};
-    """
-
-    {code, out, next}
-  end
-
   defp dispatch(
          %{op: :call, name: "remainderBy", args: [base, value]},
          env,
@@ -1285,6 +1254,37 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
 
   defp dispatch(expr, env, counter),
     do: compile_fallback(expr, env, counter)
+
+  defp power_of_two_mod_base?(base_value) when is_integer(base_value),
+    do: base_value > 0 and Bitwise.band(base_value, base_value - 1) == 0
+
+  defp emit_power_of_two_mod(value_code, value_ref, base_value, counter) do
+    next = counter + 1
+    out = "native_mod_#{next}"
+    mask = base_value - 1
+
+    code = """
+    #{value_code}
+      elmc_int_t #{out} = #{value_ref} & #{mask};
+    """
+
+    {code, out, next}
+  end
+
+  defp emit_general_mod(value_code, value_ref, base_value, base, env, counter) do
+    next = counter + 1
+    out = "native_mod_#{next}"
+    correction = abs(base_value)
+    divisor = ImmortalStaticList.format_static_length(base_value, base, env)
+
+    code = """
+    #{value_code}
+      elmc_int_t #{out} = #{value_ref} % #{divisor};
+      if (#{out} < 0) #{out} += #{correction};
+    """
+
+    {code, out, next}
+  end
 
   defp compile_native_int_if(cond_expr, then_expr, else_expr, env, counter) do
     hoisted_before = Process.get(:elmc_hoisted_native_int_inits, %{})

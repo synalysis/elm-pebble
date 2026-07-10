@@ -174,7 +174,7 @@ defmodule Elmc.Backend.Worker do
   end
 
   @spec worker_header(map(), keyword()) :: String.t()
-  defp worker_header(analysis, opts \\ []) do
+  defp worker_header(analysis, opts) do
     last_dispatch_cmd_cap = last_dispatch_cmd_cap(opts)
     slot_defines = worker_slot_defines(analysis)
 
@@ -244,16 +244,6 @@ defmodule Elmc.Backend.Worker do
 
   defp worker_slot_defines(%{compact: false}), do: ""
 
-  defp last_dispatch_cmd_cap(opts) do
-    opts = Map.new(opts)
-
-    if Map.get(opts, :pebble_int32) == true and Map.get(opts, :prod) == true do
-      0
-    else
-      8
-    end
-  end
-
   defp worker_slot_defines(%{slot_map: slot_map, frame_slot: frame_slot}) do
     lines =
       Enum.map(slot_map, fn {_mask, {name, index}} ->
@@ -273,6 +263,16 @@ defmodule Elmc.Backend.Worker do
     |> case do
       "" -> ""
       defines -> defines <> "\n"
+    end
+  end
+
+  defp last_dispatch_cmd_cap(opts) do
+    opts = Map.new(opts)
+
+    if Map.get(opts, :pebble_int32) == true and Map.get(opts, :prod) == true do
+      0
+    else
+      8
     end
   end
 

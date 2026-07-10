@@ -76,7 +76,7 @@ defmodule Elmc.Backend.CCodegen.MaybeWithDefaultPickSlot do
          true <- nothing_ctor?(nothing_name),
          {:ok, model_var, pick_mod, pick_name, slots_expr} <- parse_pick_slot_subject(subject),
          {:ok, default_tag} <- default_ctor_tag(default_expr),
-         true <- wildcard_just?(just_expr) or var_expr?(just_expr, model_var) or payload_var_just?(just_pat) do
+         true <- just_arm_acceptable?(just_expr, just_pat, model_var) do
       {:ok, model_var, default_tag, pick_mod, pick_name, slots_expr}
     else
       _ -> :error
@@ -91,14 +91,12 @@ defmodule Elmc.Backend.CCodegen.MaybeWithDefaultPickSlot do
   defp just_ctor?(name), do: short_name(name) == "Just"
   defp nothing_ctor?(name), do: short_name(name) == "Nothing"
 
-  defp wildcard_just?(%{op: :var}), do: true
-  defp wildcard_just?(_), do: false
+  defp just_arm_acceptable?(%{op: :var, name: name}, _just_pat, model_var) when name == model_var, do: true
+  defp just_arm_acceptable?(%{op: :var, name: "_"}, _just_pat, _model_var), do: true
+  defp just_arm_acceptable?(_just_expr, just_pat, _model_var), do: payload_var_just?(just_pat)
 
   defp payload_var_just?(%{arg_pattern: %{kind: :var}}), do: true
   defp payload_var_just?(_), do: false
-
-  defp var_expr?(%{op: :var, name: name}, name), do: true
-  defp var_expr?(_, _), do: false
 
   defp parse_pick_slot_call(expr), do: parse_pick_slot_subject(expr)
 

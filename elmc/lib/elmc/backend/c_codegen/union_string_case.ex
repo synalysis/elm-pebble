@@ -55,8 +55,6 @@ defmodule Elmc.Backend.CCodegen.UnionStringCase do
       end)
   end
 
-  defp union_string_case_eligible?(_), do: false
-
   defp branch_string_spec(%{expr: expr}), do: string_expr_spec(expr)
 
   defp string_expr_spec(%{op: :int_literal, value: 0}), do: :zero

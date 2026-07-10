@@ -411,21 +411,16 @@ defmodule Elmc.Backend.CCodegen.DirectRender.GenericTargets do
          decl_map,
          view_fallback,
          opts,
-         direct_targets
+         _direct_targets
        ) do
     entry_module = opts[:entry_module] || "Main"
     view_target = {entry_module, "view"}
 
     view_roots =
-      cond do
-        pruned_streaming_view?(opts, decl_map, direct_targets) ->
-          [view_target]
-
-        MapSet.size(view_fallback) > 0 ->
-          MapSet.to_list(view_fallback)
-
-        true ->
-          []
+      if MapSet.size(view_fallback) > 0 do
+        MapSet.to_list(view_fallback)
+      else
+        []
       end
 
     if view_roots == [] do
@@ -563,9 +558,6 @@ defmodule Elmc.Backend.CCodegen.DirectRender.GenericTargets do
 
   defp pruned_generic_view_skip_callees(true, entry_module),
     do: MapSet.new([{entry_module, "view"}])
-
-  # Pruned generic `view` uses direct `_scene_append`; do not re-reach the boxed UI subgraph.
-  defp pruned_streaming_view?(_opts, _decl_map, _direct_targets), do: false
 
   defp direct_targets_for_generic_runtime_roots(direct_targets, opts, decl_map) do
     entry_module = opts[:entry_module] || "Main"
@@ -987,7 +979,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.GenericTargets do
 
   defp ui_node_inner_expr(_expr), do: nil
 
-  defp generic_callees_from_direct_targets(direct_targets, decl_map, opts \\ []) do
+  defp generic_callees_from_direct_targets(direct_targets, decl_map, opts) do
     inlined_record_helpers = inlined_record_helpers(direct_targets, decl_map)
 
     render_op_def_targets = direct_render_op_def_targets(decl_map, opts)
@@ -1004,7 +996,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.GenericTargets do
     |> Enum.reject(&MapSet.member?(render_op_def_targets, &1))
   end
 
-  defp generic_wrapper_callees_from_direct_targets(direct_targets, decl_map, opts \\ []) do
+  defp generic_wrapper_callees_from_direct_targets(direct_targets, decl_map, opts) do
     inlined_record_helpers = inlined_record_helpers(direct_targets, decl_map)
 
     render_op_def_targets = direct_render_op_def_targets(decl_map, opts)

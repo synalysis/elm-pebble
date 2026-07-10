@@ -113,7 +113,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.ListLoopPlans do
                 not polar_scale_tick_target?({target_module, target_name}, decl_map) ->
                   {:error, :not_polar_scale_tick_target}
 
-                match?({:error, _}, polar_scale_tick_text_target(body_expr, Map.fetch!(tick, :label), target_module)) ->
+                polar_scale_tick_text_target(body_expr, Map.fetch!(tick, :label), target_module) == :error ->
                   {:error, :text_target}
 
                 true ->
@@ -396,6 +396,8 @@ defmodule Elmc.Backend.CCodegen.DirectRender.ListLoopPlans do
     end
   end
 
+  defp power_of_two?(n) when is_integer(n) and n > 0, do: Bitwise.band(n, n - 1) == 0
+
   defp emit_filter_guard(nil, _item_var, _first, _last, _next, _env, counter),
     do: {"", counter}
 
@@ -426,8 +428,6 @@ defmodule Elmc.Backend.CCodegen.DirectRender.ListLoopPlans do
       {code, counter}
     end
   end
-
-  defp power_of_two?(n) when is_integer(n) and n > 0, do: Bitwise.band(n, n - 1) == 0
 
   defp emit_filter_guard({:native, param, body}, item_var, _first_ref, last_ref, next, env, _counter) do
     body_env =
@@ -606,6 +606,8 @@ defmodule Elmc.Backend.CCodegen.DirectRender.ListLoopPlans do
     end
   end
 
+  defp parse_tick_spec_map(_, _, _), do: :error
+
   defp parse_tick_spec_fields(field_map, param, body_expr) do
     with {:ok, minute_scale} <- tick_minute_scale(field_map["minute"], param),
          outer_extra when is_integer(outer_extra) <- literal_int(field_map["outerExtra"]),
@@ -647,8 +649,6 @@ defmodule Elmc.Backend.CCodegen.DirectRender.ListLoopPlans do
         :error
     end
   end
-
-  defp parse_tick_spec_map(_, _, _), do: :error
 
   defp tick_minute_scale(expr, param) do
     case mul_of_param(expr, param) do
@@ -963,7 +963,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.ListLoopPlans do
     |> find_text_call_target(module_name)
   end
 
-  defp find_text_call_target(expr, module_name \\ nil)
+  defp find_text_call_target(expr, module_name)
 
   defp find_text_call_target(%{op: :case, branches: branches}, module_name)
        when is_list(branches) do
@@ -1158,16 +1158,29 @@ defmodule Elmc.Backend.CCodegen.DirectRender.ListLoopPlans do
     |> expr_contains_line_draw?()
   end
 
-  defp expr_contains_line_draw?(%{op: :qualified_call, target: target}) do
-    ui_line_target?(target)
+  defp ui_line_target?(target) do
+    Host.normalize_special_target(target) == "Pebble.Ui.line"
+  end
+
+  defp expr_contains_line_draw?(%{op: :qualified_call, target: target, args: args}) do
+    if ui_line_target?(target) do
+      true
+    else
+      case args do
+        [inner] ->
+          case Host.normalize_special_target(target) do
+            "Pebble.Ui.group" -> expr_contains_line_draw?(inner)
+            _ -> false
+          end
+
+        _ ->
+          false
+      end
+    end
   end
 
   defp expr_contains_line_draw?(%{op: :call, name: "line", args: _args}) do
     true
-  end
-
-  defp ui_line_target?(target) do
-    Host.normalize_special_target(target) == "Pebble.Ui.line"
   end
 
   defp expr_contains_line_draw?(%{op: :case, branches: branches}) when is_list(branches) do
@@ -1181,13 +1194,6 @@ defmodule Elmc.Backend.CCodegen.DirectRender.ListLoopPlans do
   end
 
   defp expr_contains_line_draw?(%{op: :let_in, in_expr: in_expr}), do: expr_contains_line_draw?(in_expr)
-
-  defp expr_contains_line_draw?(%{op: :qualified_call, target: target, args: [inner]}) do
-    case Host.normalize_special_target(target) do
-      "Pebble.Ui.group" -> expr_contains_line_draw?(inner)
-      _ -> false
-    end
-  end
 
   defp expr_contains_line_draw?(expr) when is_map(expr) do
     expr |> Map.values() |> Enum.any?(&expr_contains_line_draw?/1)

@@ -53,12 +53,12 @@ defmodule Elmc.Backend.C.Lower.Instr do
     end
   end
 
+  def emit(%Types{} = instr, slots, opts), do: emit_instr(instr, slots, opts)
+
   defp instr_skip_regs(opts) do
     Keyword.get(opts, :fused_string_skip_regs, MapSet.new())
     |> MapSet.union(Keyword.get(opts, :tail_inline_skip_regs, MapSet.new()))
   end
-
-  def emit(%Types{} = instr, slots, opts), do: emit_instr(instr, slots, opts)
 
   defp emit_instr(%Types{op: op} = instr, slots, opts) do
     rc? = Keyword.get(opts, :rc_required, true)
@@ -774,6 +774,16 @@ defmodule Elmc.Backend.C.Lower.Instr do
   defp float_literal_c(value) when is_integer(value), do: "#{value}.0"
   defp float_literal_c(value) when is_float(value), do: :erlang.float_to_binary(value, [:short])
 
+  defp consumed_owned_transfer?(%{consumes: consumes}, src) when is_list(consumes),
+    do: src in consumes
+
+  defp consumed_owned_transfer?(_, _), do: false
+
+  defp fresh_int_take_expr?(src_s) when is_binary(src_s),
+    do: String.starts_with?(src_s, "elmc_new_int_take(")
+
+  defp fresh_int_take_expr?(_), do: false
+
   defp emit_call_runtime(%{args: %{builtin: :list_repeat, args: [count, value]}}, slots, rc?, dest, opts)
        when is_integer(count) and is_integer(value) do
     value_s = slot_ref(value, slots, opts)
@@ -876,16 +886,6 @@ defmodule Elmc.Backend.C.Lower.Instr do
       end
     end
   end
-
-  defp consumed_owned_transfer?(%{consumes: consumes}, src) when is_list(consumes),
-    do: src in consumes
-
-  defp consumed_owned_transfer?(_, _), do: false
-
-  defp fresh_int_take_expr?(src_s) when is_binary(src_s),
-    do: String.starts_with?(src_s, "elmc_new_int_take(")
-
-  defp fresh_int_take_expr?(_), do: false
 
   defp emit_call_runtime(%{dest: dest_reg, args: %{builtin: :string_append, args: args}}, slots, rc?, dest, opts)
        when is_integer(dest_reg) and is_list(args) do
@@ -1204,10 +1204,6 @@ defmodule Elmc.Backend.C.Lower.Instr do
         (plan_boxed_direct_call_abi?(decl, module, decl_map) or
            RcRequired.rc_required?(module, Map.get(decl, :name)))
     )
-  end
-
-  defp direct_plan_boxed_callee?(decl, module, decl_map, fusion_arg_kinds, native_ret) do
-    plan_rc_boxed_callee?(decl, module, decl_map, fusion_arg_kinds, native_ret)
   end
 
   defp rc_native_fusion_call_args(args, kinds, slots, opts) do
@@ -2096,6 +2092,10 @@ defmodule Elmc.Backend.C.Lower.Instr do
     end
   end
 
+  defp emit_op_only(%Types{op: :catch_begin}, _slots, _opts), do: "CATCH_BEGIN"
+  defp emit_op_only(%Types{op: :catch_end}, _slots, _opts), do: "CATCH_END;"
+  defp emit_op_only(_, _slots, _opts), do: ""
+
   defp emit_load_param_copy(%Types{op: :load_param, dest: dest_reg, args: %{index: index}}, slots, opts) do
     params = Keyword.get(opts, :params, [])
     param_kinds = Keyword.get(opts, :param_kinds, [])
@@ -2146,10 +2146,6 @@ defmodule Elmc.Backend.C.Lower.Instr do
         end
     end
   end
-
-  defp emit_op_only(%Types{op: :catch_begin}, _slots, _opts), do: "CATCH_BEGIN"
-  defp emit_op_only(%Types{op: :catch_end}, _slots, _opts), do: "CATCH_END;"
-  defp emit_op_only(_, _slots, _opts), do: ""
 
   defp publish_fn_out(reg, slots, opts) do
     src = slot_ref(reg, slots, opts)
@@ -2345,7 +2341,7 @@ defmodule Elmc.Backend.C.Lower.Instr do
   defp const_int_value({value, _ctor}) when is_integer(value), do: value
   defp const_int_value(_), do: nil
 
-  defp const_int_c_ref(value, opts \\ [])
+  defp const_int_c_ref(value, opts)
 
   defp const_int_c_ref(value, _opts) when is_integer(value), do: Integer.to_string(value)
 

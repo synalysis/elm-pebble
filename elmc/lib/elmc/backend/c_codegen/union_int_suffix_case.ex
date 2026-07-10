@@ -146,8 +146,6 @@ defmodule Elmc.Backend.CCodegen.UnionIntSuffixCase do
       end)
   end
 
-  defp union_int_suffix_eligible?(_), do: false
-
   defp parse_suffix_append(expr, payload_var) do
     suffix_env =
       %{}

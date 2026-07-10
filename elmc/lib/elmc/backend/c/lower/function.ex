@@ -290,11 +290,11 @@ defmodule Elmc.Backend.C.Lower.Function do
       end
   end
 
-  defp union_switch_tag_ref(tag, ctor_name, module \\ nil) when is_integer(tag) do
+  defp union_switch_tag_ref(tag, ctor_name, module) when is_integer(tag) do
     TagRefs.union_tag_ref(tag, ctor_name, module)
   end
 
-  defp const_int_c_ref_for_inline(value, module \\ nil)
+  defp const_int_c_ref_for_inline(value, module)
 
   defp const_int_c_ref_for_inline(value, _module) when is_integer(value), do: Integer.to_string(value)
 
@@ -326,6 +326,38 @@ defmodule Elmc.Backend.C.Lower.Function do
         emit_state_union_switch(subject_s, arms, default_id, opts)
     end
   end
+
+  defp emit_state_switch_terminator({:ret, :fn_out}, _slots, _rc?, _opts) do
+    "__plan_state = -1; break;"
+  end
+
+  defp emit_state_switch_terminator({:ret, reg}, slots, _rc?, opts) when is_integer(reg) do
+    assign =
+      case Keyword.get(opts, :native_scalar_out) do
+        :native_int ->
+          ref = native_int_result_ref(reg, slots, opts)
+          "*out = #{ref};"
+
+        :native_bool ->
+          ref = native_bool_result_ref(reg, opts)
+          "*out = #{ref};"
+
+        _ ->
+          ref = slot_ref(reg, slots, opts)
+          idx = Map.get(slots, reg)
+
+          if is_integer(idx) do
+            "*out = #{ref};\nowned[#{idx}] = NULL;"
+          else
+            "*out = #{ref};"
+          end
+      end
+
+    "#{assign}\n    __plan_state = -1; break;"
+  end
+
+  defp emit_state_switch_terminator(:none, _slots, _rc?, _opts), do: "__plan_state = -1; break;"
+  defp emit_state_switch_terminator(_, _slots, _rc?, _opts), do: "__plan_state = -1; break;"
 
   defp emit_state_int_switch(subject_s, arms, default_id, opts) do
     if length(arms) >= @min_switch_arms do
@@ -426,38 +458,6 @@ defmodule Elmc.Backend.C.Lower.Function do
 
   defp state_switch_c_default_line(target_id, opts),
     do: "default: __plan_state = #{plan_state_c_ref(opts, target_id)}; break;"
-
-  defp emit_state_switch_terminator({:ret, :fn_out}, _slots, _rc?, _opts) do
-    "__plan_state = -1; break;"
-  end
-
-  defp emit_state_switch_terminator({:ret, reg}, slots, _rc?, opts) when is_integer(reg) do
-    assign =
-      case Keyword.get(opts, :native_scalar_out) do
-        :native_int ->
-          ref = native_int_result_ref(reg, slots, opts)
-          "*out = #{ref};"
-
-        :native_bool ->
-          ref = native_bool_result_ref(reg, opts)
-          "*out = #{ref};"
-
-        _ ->
-          ref = slot_ref(reg, slots, opts)
-          idx = Map.get(slots, reg)
-
-          if is_integer(idx) do
-            "*out = #{ref};\nowned[#{idx}] = NULL;"
-          else
-            "*out = #{ref};"
-          end
-      end
-
-    "#{assign}\n    __plan_state = -1; break;"
-  end
-
-  defp emit_state_switch_terminator(:none, _slots, _rc?, _opts), do: "__plan_state = -1; break;"
-  defp emit_state_switch_terminator(_, _slots, _rc?, _opts), do: "__plan_state = -1; break;"
 
   defp cleanup_cfg_lines(lines) do
     lines
@@ -757,6 +757,10 @@ defmodule Elmc.Backend.C.Lower.Function do
     end
   end
 
+  defp emit_terminator({:ret, _}, _slots, _rc?, _opts), do: ""
+  defp emit_terminator(:none, _slots, _rc?, _opts), do: ""
+  defp emit_terminator(_, _slots, _rc?, _opts), do: ""
+
   defp ctor_int_tag_switch_subject?(reg, opts) when is_integer(reg) do
     case plan_defining_instr(Keyword.get(opts, :parent_plan), reg) do
       %{op: :call_fn, args: %{module: mod, name: name}} ->
@@ -766,8 +770,6 @@ defmodule Elmc.Backend.C.Lower.Function do
         false
     end
   end
-
-  defp ctor_int_tag_switch_subject?(_, _), do: false
 
   defp ctor_int_tag_return_type?(%{type: type}) when is_binary(type) do
     return =
@@ -937,10 +939,6 @@ defmodule Elmc.Backend.C.Lower.Function do
       {pre, body} -> pre <> "{\n  " <> body <> "\n}"
     end
   end
-
-  defp emit_terminator({:ret, _}, _slots, _rc?, _opts), do: ""
-  defp emit_terminator(:none, _slots, _rc?, _opts), do: ""
-  defp emit_terminator(_, _slots, _rc?, _opts), do: ""
 
   defp emit_switch_tag_chain(subject_s, arms, default_id, opts) do
     next_id = Keyword.get(opts, :next_id)
@@ -1349,7 +1347,7 @@ defmodule Elmc.Backend.C.Lower.Function do
     end
   end
 
-  defp allocate_native_int_param_slots(plan, slots, param_kinds, decl_map, closure_mode \\ nil) do
+  defp allocate_native_int_param_slots(plan, slots, param_kinds, decl_map, closure_mode) do
     all_native_int_regs =
       build_native_int_param_regs(plan, param_kinds, decl_map, closure_mode)
 
@@ -1527,9 +1525,6 @@ defmodule Elmc.Backend.C.Lower.Function do
     end)
     |> MapSet.new()
   end
-
-  defp record_param_boxed_reg?(plan, reg, param_kinds, param_names),
-    do: boxed_param_new_int_root(plan, reg, param_kinds, param_names) != nil
 
   defp boxed_param_new_int_root(plan, reg, param_kinds, param_names) when is_integer(reg) do
     case plan_defining_instr(plan, reg) do
@@ -2096,6 +2091,38 @@ defmodule Elmc.Backend.C.Lower.Function do
     ]
   end
 
+  defp instr_use_refs(
+         %{op: :call_runtime, dest: dest, args: %{builtin: :retain, args: [src]}},
+         _decl_map,
+         native_set,
+         _plan
+       )
+       when is_integer(dest) and is_integer(src) do
+    kind = if MapSet.member?(native_set, dest), do: :native_operand, else: :boxed
+    [{kind, src}]
+  end
+
+  defp instr_use_refs(
+         %{op: :call_runtime, args: %{builtin: :tuple2, args: args}},
+         decl_map,
+         native_set,
+         plan
+       )
+       when is_list(args) do
+    Enum.map(args, fn arg_reg ->
+      kind =
+        if is_integer(arg_reg) and native_int_value_reg?(plan, arg_reg, native_set, decl_map) do
+          :native_operand
+        else
+          :boxed
+        end
+
+      {kind, arg_reg}
+    end)
+  end
+
+  defp instr_use_refs(instr, decl_map, _native_set, _plan), do: instr_reg_refs(instr, decl_map)
+
   defp phi_operand_use_kind(plan, phi_dest, phi_args, reg, native_set, decl_map) when is_integer(reg) do
     if native_phi_operand_context?(plan, phi_dest, phi_args, native_set) and
          native_int_value_reg?(plan, reg, native_set, decl_map) do
@@ -2149,38 +2176,6 @@ defmodule Elmc.Backend.C.Lower.Function do
       _ -> []
     end)
   end
-
-  defp instr_use_refs(
-         %{op: :call_runtime, dest: dest, args: %{builtin: :retain, args: [src]}},
-         _decl_map,
-         native_set,
-         _plan
-       )
-       when is_integer(dest) and is_integer(src) do
-    kind = if MapSet.member?(native_set, dest), do: :native_operand, else: :boxed
-    [{kind, src}]
-  end
-
-  defp instr_use_refs(
-         %{op: :call_runtime, args: %{builtin: :tuple2, args: args}},
-         decl_map,
-         native_set,
-         plan
-       )
-       when is_list(args) do
-    Enum.map(args, fn arg_reg ->
-      kind =
-        if is_integer(arg_reg) and native_int_value_reg?(plan, arg_reg, native_set, decl_map) do
-          :native_operand
-        else
-          :boxed
-        end
-
-      {kind, arg_reg}
-    end)
-  end
-
-  defp instr_use_refs(instr, decl_map, _native_set, _plan), do: instr_reg_refs(instr, decl_map)
 
   defp native_int_value_reg?(plan, reg, native_set, decl_map) when is_integer(reg) do
     native_int_value_reg?(plan, reg, native_set, decl_map, MapSet.new())

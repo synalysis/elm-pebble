@@ -20,19 +20,6 @@ defmodule Elmc.Backend.CCodegen.PermuteMergeInversePipeline do
 
   def try_emit(_module_name, _name, nil, _decl_map), do: :error
 
-  @spec compact_list_field_keys(String.t(), String.t(), map() | nil, map()) ::
-          [{String.t(), String.t(), String.t()}]
-  def compact_list_field_keys(_module_name, _name, nil, _decl_map), do: []
-
-  def compact_list_field_keys(module_name, name, expr, decl_map) do
-    with {:ok, pipeline} <- parse_pipeline(expr),
-         {:ok, model_type} <- model_type_name(decl_map, module_name, name) do
-      [{module_name, model_type, pipeline.cells_field}]
-    else
-      _ -> []
-    end
-  end
-
   def try_emit(module_name, name, expr, decl_map) do
     with {:ok, pipeline} <- parse_pipeline(expr),
          {:ok, width, rows} <- merge_dims(decl_map, module_name, pipeline.merge_fn),
@@ -45,6 +32,19 @@ defmodule Elmc.Backend.CCodegen.PermuteMergeInversePipeline do
       FusionSupport.ok_rc(code, [{module_name, else_info.spawn}])
     else
       _ -> :error
+    end
+  end
+
+  @spec compact_list_field_keys(String.t(), String.t(), map() | nil, map()) ::
+          [{String.t(), String.t(), String.t()}]
+  def compact_list_field_keys(_module_name, _name, nil, _decl_map), do: []
+
+  def compact_list_field_keys(module_name, name, expr, decl_map) do
+    with {:ok, pipeline} <- parse_pipeline(expr),
+         {:ok, model_type} <- model_type_name(decl_map, module_name, name) do
+      [{module_name, model_type, pipeline.cells_field}]
+    else
+      _ -> []
     end
   end
 

@@ -143,8 +143,6 @@ defmodule Elmc.Backend.CCodegen.UnionIntCase do
     int_count >= 2 and Enum.all?(branches, &int_literal_branch?/1)
   end
 
-  defp union_int_case_eligible?(_), do: false
-
   defp int_literal_branch?(%{expr: %{op: :int_literal, value: value}}) when is_integer(value), do: true
   defp int_literal_branch?(_), do: false
 

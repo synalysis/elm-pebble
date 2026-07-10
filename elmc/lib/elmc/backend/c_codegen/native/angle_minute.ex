@@ -52,8 +52,6 @@ defmodule Elmc.Backend.CCodegen.Native.AngleMinute do
     end
   end
 
-  def compile_mod_by_65536(_, _, _, _), do: :error
-
   @spec body_expr?(Types.ir_expr()) :: boolean()
   def body_expr?(expr) do
     case expr do
