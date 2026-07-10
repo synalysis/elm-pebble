@@ -431,7 +431,7 @@ defmodule Elmc.Backend.C.Lower.Function do
     "__plan_state = -1; break;"
   end
 
-  defp emit_state_switch_terminator({:ret, reg}, slots, rc?, opts) when is_integer(reg) do
+  defp emit_state_switch_terminator({:ret, reg}, slots, _rc?, opts) when is_integer(reg) do
     assign =
       case Keyword.get(opts, :native_scalar_out) do
         :native_int ->
@@ -743,7 +743,7 @@ defmodule Elmc.Backend.C.Lower.Function do
 
   defp emit_terminator({:switch_tag, subject, arms, default_id}, slots, _rc?, opts) do
     subject_s = Instr.switch_subject_ref(subject, slots, opts)
-    next_id = Keyword.get(opts, :next_id)
+    _next_id = Keyword.get(opts, :next_id)
 
     cond do
       native_int_switch_subject?(subject, opts) ->
@@ -805,7 +805,7 @@ defmodule Elmc.Backend.C.Lower.Function do
   end
 
   defp emit_int_switch(subject_s, arms, default_id, opts) do
-    next_id = Keyword.get(opts, :next_id)
+    _next_id = Keyword.get(opts, :next_id)
 
     if length(arms) >= @min_switch_arms do
       emit_int_c_switch(subject_s, arms, default_id, opts)
@@ -1733,7 +1733,7 @@ defmodule Elmc.Backend.C.Lower.Function do
     end
   end
 
-  defp plan_decl_param_c_arg(plan, index, decl_map) do
+  defp plan_decl_param_c_arg(plan, index, _decl_map) do
     case lookup_decl(plan.module, plan.name) do
       %{args: args} when is_list(args) ->
         FunctionCallAbi.param_c_arg(index, decl_arg_names(args))

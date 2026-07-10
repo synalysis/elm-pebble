@@ -823,7 +823,7 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
       :legacy
     else
       case Plan.lower_function(decl, module_name, decl_map, rc_required: rc_required?) do
-           {:ok, %{fusion_c: fusion_c, fusion_emit: mode} = plan}
+           {:ok, %{fusion_c: fusion_c, fusion_emit: mode}}
            when is_binary(fusion_c) and fusion_c != "" and mode in [:helper_only, :public_native] ->
           Process.put(
             :elmc_generic_helper_defs,
@@ -1569,7 +1569,7 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
           MapSet.t(Types.function_decl_key()),
           Types.function_decl_map()
         ) :: String.t()
-  def generic_rc_native_fusion_prototypes(ir, generic_targets, decl_map) do
+  def generic_rc_native_fusion_prototypes(ir, generic_targets, _decl_map) do
     ir.modules
     |> Enum.flat_map(fn mod ->
       mod.declarations

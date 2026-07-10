@@ -81,7 +81,7 @@ defmodule Elmc.Backend.Plan.Lower.FilterMapIdentity do
            prepend_branch(acc_reg, value_reg, ctx, b_reserved, then_id),
          b_then_done = Builder.patch_terminator(b_then, then_exit, {:br, merge_id}),
          b_else = Builder.begin_cfg_arm_block(b_then_done, else_id),
-         else_exit = b_else.current_block.id,
+         _else_exit = b_else.current_block.id,
          b_else_done = Builder.finish_block(b_else, {:br, merge_id}),
          b_merge = Builder.begin_block(b_else_done, merge_id),
          {:ok, merge, b_out} <- emit_merge(test_reg, then_reg, acc_reg, b_merge) do

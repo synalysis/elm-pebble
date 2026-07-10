@@ -88,7 +88,7 @@ defmodule Elmc.Backend.C.Lower.TagRefs do
           |> switch_arm_ctor()
           |> ctor_label()
           |> case do
-            label when is_binary(label) -> label
+            label when is_binary(label) -> "#{label}_#{target}"
             _ -> "ARM_#{target}"
           end
 
@@ -96,7 +96,7 @@ defmodule Elmc.Backend.C.Lower.TagRefs do
       end)
 
     if is_integer(default_id) do
-      Map.put_new(acc, default_id, "DEFAULT")
+      Map.put_new(acc, default_id, "DEFAULT_#{default_id}")
     else
       acc
     end
@@ -105,12 +105,12 @@ defmodule Elmc.Backend.C.Lower.TagRefs do
   defp apply_switch_arm_labels(acc, _block), do: acc
 
   defp apply_block_role_labels(acc, %Block{id: id, terminator: {:ret, _}}, _incoming) do
-    Map.put(acc, id, "RETURN")
+    Map.put(acc, id, "RETURN_#{id}")
   end
 
   defp apply_block_role_labels(acc, %Block{id: id}, incoming) do
     if Map.get(incoming, id, 0) >= 3 do
-      Map.put_new(acc, id, "MERGE")
+      Map.put_new(acc, id, "MERGE_#{id}")
     else
       acc
     end

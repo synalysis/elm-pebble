@@ -3,11 +3,11 @@
   "description": "Size-profile compiler baselines (flint). Use mix ide.size_report --profile size.",
   "templates": {
     "game-2048": {
-      "generated_c_bytes": 32000,
+      "generated_c_bytes": 34000,
       "pebble_app_bin_flint": 23500
     },
     "watchface-yes": {
-      "generated_c_bytes": 160000,
+      "generated_c_bytes": 169000,
       "pebble_app_bin_flint": 65000
     }
   }

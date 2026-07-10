@@ -1263,7 +1263,7 @@ defmodule Elmc.Backend.C.Lower.Instr do
       not FunctionCallAbi.direct_plan_call_abi?(decl, mod, decl_map)
   end
 
-  defp emit_fn_call(true, dest, _dest_ref, dest_reg, c_name, call_arg_s, {mod, name} = callee, native_ret, opts, decl, _direct_plan_boxed?) do
+  defp emit_fn_call(true, dest, _dest_ref, dest_reg, c_name, call_arg_s, {mod, _name} = callee, native_ret, opts, decl, _direct_plan_boxed?) do
     cond do
       native_ret in [:native_int, :native_bool] ->
         emit_native_scalar_fn_call(native_ret, true, dest, dest_reg, c_name, call_arg_s, opts, callee)
@@ -1373,7 +1373,7 @@ defmodule Elmc.Backend.C.Lower.Instr do
     |> String.trim()
   end
 
-  defp emit_native_int_fn_call_boxed(rc?, dest, dest_reg, c_name, call_arg_s, {mod, name} = callee) do
+  defp emit_native_int_fn_call_boxed(rc?, dest, dest_reg, c_name, call_arg_s, {_mod, _name} = callee) do
     tmp = "plan_call_int_#{dest_reg}"
     box_dest = if dest == "*out", do: "out", else: dest
 
@@ -1802,8 +1802,6 @@ defmodule Elmc.Backend.C.Lower.Instr do
       _ -> nil
     end
   end
-
-  defp peel_native_int_copy_ref(_, _, _), do: nil
 
   defp identity_int_arith_source(%{kind: :add_const, lhs: lhs, value: 0}), do: lhs
   defp identity_int_arith_source(%{kind: :sub_const, lhs: lhs, value: 0}), do: lhs

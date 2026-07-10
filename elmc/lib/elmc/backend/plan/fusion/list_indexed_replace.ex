@@ -112,8 +112,6 @@ defmodule Elmc.Backend.Plan.Fusion.ListIndexedReplace do
     end
   end
 
-  defp parse_replace_lambda_body(_, _, _, _, _), do: :error
-
   defp match_replace_target(index_param, left, right, value_expr, index_arg, value_arg) do
     if compare_is_index_replace?(left, right, index_param, index_arg) and
          match_value?(value_expr, value_arg) do

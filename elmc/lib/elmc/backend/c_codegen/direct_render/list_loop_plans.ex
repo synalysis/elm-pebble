@@ -807,7 +807,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.ListLoopPlans do
 
   defp tick_layout_coords_from_env(layout_name, env) do
     cond do
-      match?({:native_record, fields}, Map.get(env, layout_name)) ->
+      match?({:native_record, _fields}, Map.get(env, layout_name)) ->
         {:native_record, fields} = Map.get(env, layout_name)
 
         with {:ok, cx} <- Map.fetch(fields, "cx"),

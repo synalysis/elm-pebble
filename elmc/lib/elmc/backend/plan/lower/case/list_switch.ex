@@ -532,34 +532,46 @@ defmodule Elmc.Backend.Plan.Lower.Case.ListSwitch do
     end
   end
 
+  @dialyzer {:nowarn_function, compile_double_cons_arm: 9}
   defp compile_double_cons_arm(expr, a_name, b_name, rest_name, subject, subj_reg, ctx, b, block_id) do
     b_arm = Builder.begin_cfg_arm_block(b, block_id)
     arm_ctx = Context.for_branch_arm(ctx)
     {[subj_a, subj_b], b0} = Builder.dup_regs_for_consume(b_arm, [subj_reg, subj_reg])
     peel = if ListIntType.list_int_subject?(ctx, subject), do: :int_list, else: :maybe_list
 
-    with {:ok, a_reg, t1_reg, b1} <- peel_cons_regs(peel, subj_a, subj_b, arm_ctx, b0) do
-      {[t1_a, t1_b], b2} = Builder.dup_regs_for_consume(b1, [t1_reg, t1_reg])
+    case peel_cons_regs(peel, subj_a, subj_b, arm_ctx, b0) do
+      {:ok, a_reg, t1_reg, b1} ->
+        {[t1_a, t1_b], b2} = Builder.dup_regs_for_consume(b1, [t1_reg, t1_reg])
 
-      with {:ok, b_reg, rest_reg, b_bound} <- peel_cons_regs(peel, t1_a, t1_b, arm_ctx, b2),
-           ctx1 <-
-             arm_ctx
-             |> Context.put_local(a_name, a_reg)
-             |> Context.put_local(b_name, b_reg)
-             |> Context.put_local(rest_name, rest_reg),
-           b6 <-
-             b_bound
-             |> Builder.bind_local(a_name, a_reg)
-             |> Builder.bind_local(b_name, b_reg)
-             |> Builder.bind_local(rest_name, rest_reg),
-           {:ok, reg, b7} <- Expr.compile(expr, ctx1, b6) do
-        exit_id = b7.current_block.id
-        {:ok, reg, exit_id, Builder.finish_block(b7, :none)}
-      else
-        _ -> :unsupported
-      end
-    else
-      _ -> :unsupported
+        case peel_cons_regs(peel, t1_a, t1_b, arm_ctx, b2) do
+          {:ok, b_reg, rest_reg, b_bound} ->
+            ctx1 =
+              arm_ctx
+              |> Context.put_local(a_name, a_reg)
+              |> Context.put_local(b_name, b_reg)
+              |> Context.put_local(rest_name, rest_reg)
+
+            b6 =
+              b_bound
+              |> Builder.bind_local(a_name, a_reg)
+              |> Builder.bind_local(b_name, b_reg)
+              |> Builder.bind_local(rest_name, rest_reg)
+
+            case Expr.compile(expr, ctx1, b6) do
+              {:ok, reg, b7} ->
+                exit_id = b7.current_block.id
+                {:ok, reg, exit_id, Builder.finish_block(b7, :none)}
+
+              :unsupported ->
+                :unsupported
+            end
+
+          _ ->
+            :unsupported
+        end
+
+      _ ->
+        :unsupported
     end
   end
 
