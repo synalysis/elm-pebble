@@ -121,7 +121,9 @@ defmodule Elmc do
     do: opts |> Map.new() |> normalize_compile_opts()
 
   defp normalize_compile_opts(opts) when is_map(opts) do
-    Elmc.Backend.Plan.Defaults.apply_defaults(opts)
+    opts
+    |> Elmc.Backend.Plan.Defaults.apply_defaults()
+    |> Elmc.Backend.SizeProfile.apply()
   end
 
   @spec check_debug_usage(ElmEx.IR.t(), compile_options()) ::

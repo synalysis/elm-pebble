@@ -3,7 +3,7 @@ defmodule Elmc.Backend.C.Lower.Function do
   Lower verified `%FunctionPlan{}` to C function body text (RC ABI).
   """
 
-  alias Elmc.Backend.C.Lower.{Frame, Instr, Lambda, NativeIntFold, NativeReturn, StringConcat}
+  alias Elmc.Backend.C.Lower.{Frame, Instr, Lambda, NativeIntFold, NativeReturn, StringConcat, TagRefs}
   alias Elmc.Backend.CCodegen.{FunctionCallAbi, FunctionEmit, Fusion}
   alias Elmc.Backend.CCodegen.Native.FunctionCall, as: NativeFunctionCall
   alias Elmc.Backend.CCodegen.Util
@@ -11,6 +11,9 @@ defmodule Elmc.Backend.C.Lower.Function do
   alias Elmc.Backend.Plan.Optimize
   alias Elmc.Backend.Plan.RuntimeBuiltins
   alias Elmc.Backend.Plan.Types.{Block, FunctionPlan}
+  alias Elmc.Backend.SizeProfile
+
+  @min_switch_arms 3
 
   @spec emit(FunctionPlan.t(), keyword()) :: String.t()
   def emit(%FunctionPlan{} = plan, opts \\ []) do
@@ -102,7 +105,7 @@ defmodule Elmc.Backend.C.Lower.Function do
 
     native_int_operand_regs =
       native_int_regs
-      |> Map.merge(Map.new(const_int_regs, fn {reg, value} -> {reg, Integer.to_string(value)} end))
+      |> Map.merge(Map.new(const_int_regs, fn {reg, entry} -> {reg, const_int_c_ref_for_inline(entry, plan.module)} end))
       |> Map.merge(const_c_expr_regs)
       |> Map.merge(native_int_locals)
 
@@ -175,22 +178,11 @@ defmodule Elmc.Backend.C.Lower.Function do
         native_bool_mutable_decl_lines(native_bool_locals, native_bool_mutable_regs)
 
     body_lines =
-      plan.blocks
-      |> Enum.with_index()
-      |> Enum.flat_map(fn {%Block{id: id, instrs: instrs, terminator: term}, idx} ->
-        next_id =
-          case Enum.at(plan.blocks, idx + 1) do
-            %Block{id: next} -> next
-            _ -> nil
-          end
-
-        (if labeled_block?(id, explicit_targets), do: [block_label(id)], else: []) ++
-          Enum.flat_map(instrs, &emit_instr_lines(&1, slots, instr_opts)) ++
-          [emit_terminator(term, slots, rc?, Keyword.put(instr_opts, :next_id, next_id))]
-      end)
-      |> Enum.reject(&(&1 == ""))
-
-    body_lines = mutable_decls ++ body_lines
+      if state_switch_emit?(plan) do
+        emit_state_switch_body(plan, slots, instr_opts, mutable_decls)
+      else
+        emit_goto_body(plan, slots, instr_opts, mutable_decls, explicit_targets)
+      end
 
     ret_line =
       emit_return(plan, slots, native_scalar_out, emit_borrow_param_nulls(plan, slots), instr_opts)
@@ -200,6 +192,272 @@ defmodule Elmc.Backend.C.Lower.Function do
     |> cleanup_cfg_lines()
     |> Enum.join("\n")
   end
+
+  defp emit_goto_body(plan, slots, instr_opts, mutable_decls, explicit_targets) do
+    rc? = Keyword.get(instr_opts, :rc_required, true)
+
+    plan.blocks
+    |> Enum.with_index()
+    |> Enum.flat_map(fn {%Block{id: id, instrs: instrs, terminator: term}, idx} ->
+      next_id =
+        case Enum.at(plan.blocks, idx + 1) do
+          %Block{id: next} -> next
+          _ -> nil
+        end
+
+      (if labeled_block?(id, explicit_targets), do: [block_label(id)], else: []) ++
+        Enum.flat_map(instrs, &emit_instr_lines(&1, slots, instr_opts)) ++
+        [emit_terminator(term, slots, rc?, Keyword.put(instr_opts, :next_id, next_id))]
+    end)
+    |> Enum.reject(&(&1 == ""))
+    |> then(&(mutable_decls ++ &1))
+  end
+
+  defp state_switch_emit?(%FunctionPlan{} = plan) do
+    codegen_opts = Process.get(:elmc_codegen_opts, %{})
+    thresholds = SizeProfile.plan_state_switch_thresholds(codegen_opts)
+
+    SizeProfile.plan_emit_mode(codegen_opts) == :state_switch and
+      not is_binary(Map.get(plan, :fusion_c)) and
+      Map.get(plan, :native_scalar_return) not in [:native_int, :native_bool] and
+      length(plan.blocks) >= thresholds.min_blocks and
+      plan_emit_owned_slot_count(plan) <= thresholds.max_owned_slots
+  end
+
+  defp emit_state_switch_body(%FunctionPlan{blocks: blocks} = plan, slots, instr_opts, mutable_decls) do
+    rc? = Keyword.get(instr_opts, :rc_required, true)
+    state_labels = TagRefs.build_plan_state_labels(plan)
+    instr_opts = Keyword.merge(instr_opts, plan_state_labels: state_labels)
+    entry_id = blocks |> List.first() |> Map.get(:id, 0)
+    entry_ref = TagRefs.plan_state_ref(plan, entry_id, state_labels)
+
+    cases =
+      blocks
+      |> Enum.map(fn %Block{id: id, instrs: instrs, terminator: term} ->
+        state_ref = TagRefs.plan_state_ref(plan, id, state_labels)
+
+        instr_lines =
+          instrs
+          |> Enum.flat_map(&emit_instr_lines(&1, slots, instr_opts))
+          |> Enum.reject(&(&1 == ""))
+          |> Enum.map(&("    " <> &1))
+          |> Enum.join("\n")
+
+        term_line =
+          emit_state_switch_terminator(term, slots, rc?, instr_opts)
+          |> String.trim()
+          |> then(fn line -> if line == "", do: "", else: "    " <> line end)
+
+        body =
+          [instr_lines, term_line]
+          |> Enum.reject(&(&1 == ""))
+          |> Enum.join("\n")
+
+        "    case #{state_ref}:\n#{body}"
+      end)
+      |> Enum.join("\n")
+
+    enum = TagRefs.emit_plan_state_enum(plan, state_labels)
+
+    loop = """
+    #{enum}
+    elmc_int_t __plan_state = #{entry_ref};
+    for (;;) {
+      switch (__plan_state) {
+    #{cases}
+        default:
+          break;
+      }
+      if (__plan_state < 0) break;
+    }
+    """
+    |> String.trim()
+
+    mutable_decls ++ [loop]
+  end
+
+  defp plan_state_c_ref(opts, block_id) when is_integer(block_id) do
+    plan = Keyword.fetch!(opts, :parent_plan)
+    labels = Keyword.get(opts, :plan_state_labels, %{})
+    TagRefs.plan_state_ref(plan, block_id, labels)
+  end
+
+  defp plan_module_from(opts) do
+    Keyword.get(opts, :module) ||
+      case Keyword.get(opts, :parent_plan) do
+        %{module: mod} when is_binary(mod) -> mod
+        _ -> nil
+      end
+  end
+
+  defp union_switch_tag_ref(tag, ctor_name, module \\ nil) when is_integer(tag) do
+    TagRefs.union_tag_ref(tag, ctor_name, module)
+  end
+
+  defp const_int_c_ref_for_inline(value, module \\ nil)
+
+  defp const_int_c_ref_for_inline(value, _module) when is_integer(value), do: Integer.to_string(value)
+
+  defp const_int_c_ref_for_inline({value, ctor}, module) when is_integer(value),
+    do: TagRefs.const_int_ref(value, ctor, module)
+
+  defp emit_state_switch_terminator({:br, target_id}, _slots, _rc?, opts) do
+    "__plan_state = #{plan_state_c_ref(opts, target_id)}; break;"
+  end
+
+  defp emit_state_switch_terminator({:br_if, then_id, else_id, cond_reg}, slots, _rc?, opts) do
+    cond = Instr.branch_cond_expr(cond_reg, slots, opts)
+    then_ref = plan_state_c_ref(opts, then_id)
+    else_ref = plan_state_c_ref(opts, else_id)
+    "__plan_state = (#{cond}) ? #{then_ref} : #{else_ref}; break;"
+  end
+
+  defp emit_state_switch_terminator({:switch_tag, subject, arms, default_id}, slots, _rc?, opts) do
+    subject_s = Instr.switch_subject_ref(subject, slots, opts)
+
+    cond do
+      native_int_switch_subject?(subject, opts) ->
+        emit_state_int_switch(subject_s, arms, default_id, opts)
+
+      ctor_int_tag_switch_subject?(subject, opts) ->
+        emit_state_int_switch("elmc_as_int(#{subject_s})", arms, default_id, opts)
+
+      true ->
+        emit_state_union_switch(subject_s, arms, default_id, opts)
+    end
+  end
+
+  defp emit_state_int_switch(subject_s, arms, default_id, opts) do
+    if length(arms) >= @min_switch_arms do
+      emit_state_int_c_switch(subject_s, arms, default_id, opts)
+    else
+      emit_state_int_switch_chain(subject_s, arms, default_id, opts)
+    end
+  end
+
+  defp emit_state_union_switch(subject_s, arms, default_id, opts) do
+    if length(arms) >= @min_switch_arms do
+      emit_state_union_c_switch(subject_s, arms, default_id, opts)
+    else
+      emit_state_union_switch_chain(subject_s, arms, default_id, opts)
+    end
+  end
+
+  defp emit_state_int_switch_chain(subject_s, arms, default_id, opts) do
+    arm_lines =
+      Enum.map(arms, fn arm ->
+        tag = TagRefs.switch_arm_tag(arm)
+        target_id = TagRefs.switch_arm_target(arm)
+        tag_ref = union_switch_tag_ref(tag, TagRefs.switch_arm_ctor(arm), plan_module_from(opts))
+
+        "if (#{subject_s} == #{tag_ref}) { __plan_state = #{plan_state_c_ref(opts, target_id)}; break; }"
+      end)
+
+    default_line = state_switch_default_line(default_id, opts)
+
+    (arm_lines ++ List.wrap(default_line)) |> Enum.join("\n    ")
+  end
+
+  defp emit_state_union_switch_chain(subject_s, arms, default_id, opts) do
+    arm_lines =
+      Enum.map(arms, fn arm ->
+        tag = TagRefs.switch_arm_tag(arm)
+        target_id = TagRefs.switch_arm_target(arm)
+        tag_ref = union_switch_tag_ref(tag, TagRefs.switch_arm_ctor(arm), plan_module_from(opts))
+
+        "if (elmc_union_tag_matches(#{subject_s}, #{tag_ref})) { __plan_state = #{plan_state_c_ref(opts, target_id)}; break; }"
+      end)
+
+    default_line = state_switch_default_line(default_id, opts)
+
+    (arm_lines ++ List.wrap(default_line)) |> Enum.join("\n    ")
+  end
+
+  defp emit_state_int_c_switch(subject_s, arms, default_id, opts) do
+    case_lines =
+      Enum.map(arms, fn arm ->
+        tag = TagRefs.switch_arm_tag(arm)
+        target_id = TagRefs.switch_arm_target(arm)
+        tag_ref = union_switch_tag_ref(tag, TagRefs.switch_arm_ctor(arm), plan_module_from(opts))
+
+        "case #{tag_ref}: __plan_state = #{plan_state_c_ref(opts, target_id)}; break;"
+      end)
+
+    default_line = state_switch_c_default_line(default_id, opts)
+
+    """
+    switch (#{subject_s}) {
+      #{Enum.join(case_lines ++ List.wrap(default_line), "\n      ")}
+    }
+    break;
+    """
+    |> String.trim()
+  end
+
+  defp emit_state_union_c_switch(subject_s, arms, default_id, opts) do
+    tag_expr = plan_union_tag_expr(subject_s)
+
+    case_lines =
+      Enum.map(arms, fn arm ->
+        tag = TagRefs.switch_arm_tag(arm)
+        target_id = TagRefs.switch_arm_target(arm)
+        tag_ref = union_switch_tag_ref(tag, TagRefs.switch_arm_ctor(arm), plan_module_from(opts))
+
+        "case #{tag_ref}: __plan_state = #{plan_state_c_ref(opts, target_id)}; break;"
+      end)
+
+    default_line = state_switch_c_default_line(default_id, opts)
+
+    """
+    switch (#{tag_expr}) {
+      #{Enum.join(case_lines ++ List.wrap(default_line), "\n      ")}
+    }
+    break;
+    """
+    |> String.trim()
+  end
+
+  defp state_switch_default_line(nil, _opts), do: nil
+
+  defp state_switch_default_line(target_id, opts),
+    do: "__plan_state = #{plan_state_c_ref(opts, target_id)}; break;"
+
+  defp state_switch_c_default_line(nil, _opts), do: nil
+
+  defp state_switch_c_default_line(target_id, opts),
+    do: "default: __plan_state = #{plan_state_c_ref(opts, target_id)}; break;"
+
+  defp emit_state_switch_terminator({:ret, :fn_out}, _slots, _rc?, _opts) do
+    "__plan_state = -1; break;"
+  end
+
+  defp emit_state_switch_terminator({:ret, reg}, slots, rc?, opts) when is_integer(reg) do
+    assign =
+      case Keyword.get(opts, :native_scalar_out) do
+        :native_int ->
+          ref = native_int_result_ref(reg, slots, opts)
+          "*out = #{ref};"
+
+        :native_bool ->
+          ref = native_bool_result_ref(reg, opts)
+          "*out = #{ref};"
+
+        _ ->
+          ref = slot_ref(reg, slots, opts)
+          idx = Map.get(slots, reg)
+
+          if is_integer(idx) do
+            "*out = #{ref};\nowned[#{idx}] = NULL;"
+          else
+            "*out = #{ref};"
+          end
+      end
+
+    "#{assign}\n    __plan_state = -1; break;"
+  end
+
+  defp emit_state_switch_terminator(:none, _slots, _rc?, _opts), do: "__plan_state = -1; break;"
+  defp emit_state_switch_terminator(_, _slots, _rc?, _opts), do: "__plan_state = -1; break;"
 
   defp cleanup_cfg_lines(lines) do
     lines
@@ -387,7 +645,7 @@ defmodule Elmc.Backend.C.Lower.Function do
   end
 
   defp explicit_targets_from_terminator({:switch_tag, _, arms, default_id}, next_id) do
-    Enum.map(arms, fn {_, id} -> id end) ++
+    Enum.map(arms, &TagRefs.switch_arm_target/1) ++
       if(default_id != next_id, do: [default_id], else: [])
   end
 
@@ -483,17 +741,51 @@ defmodule Elmc.Backend.C.Lower.Function do
     end
   end
 
-  @min_switch_arms 3
-
   defp emit_terminator({:switch_tag, subject, arms, default_id}, slots, _rc?, opts) do
     subject_s = Instr.switch_subject_ref(subject, slots, opts)
     next_id = Keyword.get(opts, :next_id)
 
-    if native_int_switch_subject?(subject, opts) do
-      emit_int_switch(subject_s, arms, default_id, next_id)
-    else
-      emit_union_switch(subject_s, arms, default_id, next_id)
+    cond do
+      native_int_switch_subject?(subject, opts) ->
+        emit_int_switch(subject_s, arms, default_id, opts)
+
+      ctor_int_tag_switch_subject?(subject, opts) ->
+        emit_int_switch("elmc_as_int(#{subject_s})", arms, default_id, opts)
+
+      true ->
+        emit_union_switch(subject_s, arms, default_id, opts)
     end
+  end
+
+  defp ctor_int_tag_switch_subject?(reg, opts) when is_integer(reg) do
+    case plan_defining_instr(Keyword.get(opts, :parent_plan), reg) do
+      %{op: :call_fn, args: %{module: mod, name: name}} ->
+        ctor_int_tag_return_type?(lookup_decl(mod, name))
+
+      _ ->
+        false
+    end
+  end
+
+  defp ctor_int_tag_switch_subject?(_, _), do: false
+
+  defp ctor_int_tag_return_type?(%{type: type}) when is_binary(type) do
+    return =
+      type
+      |> String.replace(" ", "")
+      |> String.split("->")
+      |> List.last()
+
+    enums = Process.get(:elmc_enum_types, MapSet.new())
+
+    MapSet.member?(enums, return) or
+      MapSet.member?(enums, type_short_name(return))
+  end
+
+  defp ctor_int_tag_return_type?(_), do: false
+
+  defp type_short_name(qualified) when is_binary(qualified) do
+    qualified |> String.split(".") |> List.last()
   end
 
   defp native_int_switch_subject?(reg, opts) when is_integer(reg) do
@@ -512,26 +804,34 @@ defmodule Elmc.Backend.C.Lower.Function do
     end
   end
 
-  defp emit_int_switch(subject_s, arms, default_id, next_id) do
+  defp emit_int_switch(subject_s, arms, default_id, opts) do
+    next_id = Keyword.get(opts, :next_id)
+
     if length(arms) >= @min_switch_arms do
-      emit_int_c_switch(subject_s, arms, default_id, next_id)
+      emit_int_c_switch(subject_s, arms, default_id, opts)
     else
-      emit_int_switch_chain(subject_s, arms, default_id, next_id)
+      emit_int_switch_chain(subject_s, arms, default_id, opts)
     end
   end
 
-  defp emit_union_switch(subject_s, arms, default_id, next_id) do
+  defp emit_union_switch(subject_s, arms, default_id, opts) do
     if length(arms) >= @min_switch_arms do
-      emit_union_c_switch(subject_s, arms, default_id, next_id)
+      emit_union_c_switch(subject_s, arms, default_id, opts)
     else
-      emit_switch_tag_chain(subject_s, arms, default_id, next_id)
+      emit_switch_tag_chain(subject_s, arms, default_id, opts)
     end
   end
 
-  defp emit_int_c_switch(subject_s, arms, default_id, next_id) do
+  defp emit_int_c_switch(subject_s, arms, default_id, opts) do
+    next_id = Keyword.get(opts, :next_id)
+    module = plan_module_from(opts)
+
     case_lines =
-      Enum.map(arms, fn {tag, block_id} ->
-        "case #{tag}: goto elmc_plan_block_#{block_id};"
+      Enum.map(arms, fn arm ->
+        tag = TagRefs.switch_arm_tag(arm)
+        block_id = TagRefs.switch_arm_target(arm)
+        tag_ref = TagRefs.union_tag_ref(tag, TagRefs.switch_arm_ctor(arm), module)
+        "case #{tag_ref}: goto elmc_plan_block_#{block_id};"
       end)
 
     default_line =
@@ -551,12 +851,17 @@ defmodule Elmc.Backend.C.Lower.Function do
     |> String.trim()
   end
 
-  defp emit_union_c_switch(subject_s, arms, default_id, next_id) do
+  defp emit_union_c_switch(subject_s, arms, default_id, opts) do
+    next_id = Keyword.get(opts, :next_id)
+    module = plan_module_from(opts)
     tag_expr = plan_union_tag_expr(subject_s)
 
     case_lines =
-      Enum.map(arms, fn {tag, block_id} ->
-        "case #{tag}: goto elmc_plan_block_#{block_id};"
+      Enum.map(arms, fn arm ->
+        tag = TagRefs.switch_arm_tag(arm)
+        block_id = TagRefs.switch_arm_target(arm)
+        tag_ref = TagRefs.union_tag_ref(tag, TagRefs.switch_arm_ctor(arm), module)
+        "case #{tag_ref}: goto elmc_plan_block_#{block_id};"
       end)
 
     default_line =
@@ -582,19 +887,32 @@ defmodule Elmc.Backend.C.Lower.Function do
       "elmc_as_int(((ElmcTuple2 *)(#{subject_s})->payload)->first) : -1))"
   end
 
-  defp emit_int_switch_chain(subject_s, arms, default_id, next_id) do
+  defp emit_int_switch_chain(subject_s, arms, default_id, opts) do
+    next_id = Keyword.get(opts, :next_id)
+    module = plan_module_from(opts)
+
     {prefix, arms} =
       case arms do
-        [{tag, ^next_id} | rest] when not is_nil(next_id) ->
-          {"if (#{subject_s} != #{tag}) ", rest}
+        [arm | rest] ->
+          case {TagRefs.switch_arm_tag(arm), TagRefs.switch_arm_target(arm), next_id} do
+            {tag, ^next_id, _} when not is_nil(next_id) ->
+              tag_ref = TagRefs.union_tag_ref(tag, TagRefs.switch_arm_ctor(arm), module)
+              {"if (#{subject_s} != #{tag_ref}) ", rest}
+
+            _ ->
+              {"", arms}
+          end
 
         _ ->
           {"", arms}
       end
 
     arm_lines =
-      Enum.map(arms, fn {tag, block_id} ->
-        "if (#{subject_s} == #{tag}) goto elmc_plan_block_#{block_id};"
+      Enum.map(arms, fn arm ->
+        tag = TagRefs.switch_arm_tag(arm)
+        block_id = TagRefs.switch_arm_target(arm)
+        tag_ref = TagRefs.union_tag_ref(tag, TagRefs.switch_arm_ctor(arm), module)
+        "if (#{subject_s} == #{tag_ref}) goto elmc_plan_block_#{block_id};"
       end)
 
     default_line =
@@ -624,19 +942,32 @@ defmodule Elmc.Backend.C.Lower.Function do
   defp emit_terminator(:none, _slots, _rc?, _opts), do: ""
   defp emit_terminator(_, _slots, _rc?, _opts), do: ""
 
-  defp emit_switch_tag_chain(subject_s, arms, default_id, next_id) do
+  defp emit_switch_tag_chain(subject_s, arms, default_id, opts) do
+    next_id = Keyword.get(opts, :next_id)
+    module = plan_module_from(opts)
+
     {prefix, arms} =
       case arms do
-        [{tag, ^next_id} | rest] when not is_nil(next_id) ->
-          {"if (!elmc_union_tag_matches(#{subject_s}, #{tag})) ", rest}
+        [arm | rest] ->
+          case {TagRefs.switch_arm_tag(arm), TagRefs.switch_arm_target(arm), next_id} do
+            {tag, ^next_id, _} when not is_nil(next_id) ->
+              tag_ref = TagRefs.union_tag_ref(tag, TagRefs.switch_arm_ctor(arm), module)
+              {"if (!elmc_union_tag_matches(#{subject_s}, #{tag_ref})) ", rest}
+
+            _ ->
+              {"", arms}
+          end
 
         _ ->
           {"", arms}
       end
 
     arm_lines =
-      Enum.map(arms, fn {tag, block_id} ->
-        "if (elmc_union_tag_matches(#{subject_s}, #{tag})) goto elmc_plan_block_#{block_id};"
+      Enum.map(arms, fn arm ->
+        tag = TagRefs.switch_arm_tag(arm)
+        block_id = TagRefs.switch_arm_target(arm)
+        tag_ref = TagRefs.union_tag_ref(tag, TagRefs.switch_arm_ctor(arm), module)
+        "if (elmc_union_tag_matches(#{subject_s}, #{tag_ref})) goto elmc_plan_block_#{block_id};"
       end)
 
     default_line =
@@ -1442,12 +1773,12 @@ defmodule Elmc.Backend.C.Lower.Function do
     plan.blocks
     |> Enum.flat_map(& &1.instrs)
     |> Enum.flat_map(fn
-      %{op: :const_int, dest: reg, args: %{value: value}} ->
-        [{reg, value}]
+      %{op: :const_int, dest: reg, args: %{value: value} = args} ->
+        [{reg, {value, Map.get(args, :union_ctor)}}]
 
       %{op: :call_runtime, dest: reg, args: %{builtin: :new_int, literal: value}}
       when is_integer(value) ->
-        [{reg, value}]
+        [{reg, {value, nil}}]
 
       _ ->
         []
@@ -1521,7 +1852,7 @@ defmodule Elmc.Backend.C.Lower.Function do
       [] ->
         false
 
-      [%{op: op} | _] when op in [:const_int, :const_c_expr, :record_get_int, :int_arith] ->
+      [%{op: op} | _] when op in [:const_int, :const_c_expr, :record_get_int, :int_arith, :boxed_tag_peel] ->
         native_int_uses_only?(plan, reg, decl_map, native_set)
 
       [%{op: :call_runtime, args: %{builtin: :int_list_head_int}} | _] ->
@@ -1557,7 +1888,7 @@ defmodule Elmc.Backend.C.Lower.Function do
   defp native_source?(plan, reg, native_set) when is_integer(reg) do
     MapSet.member?(native_set, reg) or
       case defining_instr(plan, reg) do
-        %{op: op} when op in [:const_int, :const_c_expr, :record_get_int, :int_arith] ->
+        %{op: op} when op in [:const_int, :const_c_expr, :record_get_int, :int_arith, :boxed_tag_peel] ->
           true
 
         %{op: :call_runtime, args: %{builtin: :int_list_head_int}} ->
@@ -1663,7 +1994,7 @@ defmodule Elmc.Backend.C.Lower.Function do
   defp native_bool_candidate?(plan, reg, decl_map, native_bool_set) do
     case all_defining_instrs(plan, reg) do
       [%{op: op} | _]
-      when op in [:compare, :bool_and, :test_maybe_nothing, :test_list_empty, :test_ctor_tag] ->
+      when op in [:compare, :bool_and, :test_maybe_nothing, :test_list_empty, :test_ctor_tag, :test_bool] ->
         native_bool_uses_only?(plan, reg, decl_map, native_bool_set)
 
       [%{op: :phi, args: %{then: then_r, else: else_r}}] ->
@@ -1745,6 +2076,9 @@ defmodule Elmc.Backend.C.Lower.Function do
       term_refs =
         case term do
           {:br_if, _, _, cond} when cond == reg ->
+            [{:native_operand, reg}]
+
+          {:switch_tag, subject, _, _} when subject == reg ->
             [{:native_operand, reg}]
 
           _ ->
@@ -1978,7 +2312,13 @@ defmodule Elmc.Backend.C.Lower.Function do
   defp instr_reg_refs(%{op: :test_list_empty, args: %{reg: reg}}, _decl_map),
     do: [{:native_operand, reg}]
 
+  defp instr_reg_refs(%{op: :boxed_tag_peel, args: %{subject: subject}}, _decl_map),
+    do: [{:boxed, subject}]
+
   defp instr_reg_refs(%{op: :test_ctor_tag, args: %{subject: subject}}, _decl_map),
+    do: [{:native_operand, subject}]
+
+  defp instr_reg_refs(%{op: :test_bool, args: %{subject: subject}}, _decl_map),
     do: [{:native_operand, subject}]
 
   defp instr_reg_refs(%{op: :switch_ctor_tag, args: %{subject: subject}}, _decl_map),
@@ -2142,6 +2482,9 @@ defmodule Elmc.Backend.C.Lower.Function do
   defp boxed_operand_regs(%{op: :test_list_empty, args: %{reg: reg}}, _decl_map), do: [reg]
 
   defp boxed_operand_regs(%{op: :test_ctor_tag, args: %{subject: subject}}, _decl_map),
+    do: [subject]
+
+  defp boxed_operand_regs(%{op: :test_bool, args: %{subject: subject}}, _decl_map),
     do: [subject]
 
   defp boxed_operand_regs(%{op: :bool_and, args: %{left: left, right: right}}, _decl_map),

@@ -3,6 +3,7 @@ defmodule Elmc.Backend.Plan.Lower.Constructor do
 
   alias Elmc.Backend.CCodegen.ResourceUnion
   alias Elmc.Backend.Plan.{Builder, Context}
+  alias Elmc.Backend.Plan.Lower.UnionCtor
   alias Elmc.Backend.Plan.Lower.Expr
   alias Elmc.Backend.Plan.Types
 
@@ -144,10 +145,13 @@ defmodule Elmc.Backend.Plan.Lower.Constructor do
     Builder.emit_const_int(b, value) |> then(fn {reg, b1} -> {:ok, reg, b1} end)
   end
 
-  defp compile_union_tag_int(target, value, _ctx, b) do
-    case lookup_constructor_tag(target, value) do
+  defp compile_union_tag_int(target, value, ctx, b) do
+    qualified = UnionCtor.qualify(target, ctx)
+
+    case lookup_constructor_tag(qualified, value) do
       tag when is_integer(tag) ->
-        Builder.emit_const_int(b, tag) |> then(fn {reg, b1} -> {:ok, reg, b1} end)
+        Builder.emit_const_int(b, tag, union_ctor: qualified)
+        |> then(fn {reg, b1} -> {:ok, reg, b1} end)
 
       _ ->
         :unsupported

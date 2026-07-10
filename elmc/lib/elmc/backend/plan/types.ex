@@ -46,9 +46,11 @@ defmodule Elmc.Backend.Plan.Types do
           | :union_tag
           | :maybe_is_nothing
           | :switch_ctor_tag
+          | :boxed_tag_peel
           | :test_maybe_nothing
           | :test_list_empty
           | :test_ctor_tag
+          | :test_bool
           | :bool_and
           | :compare
           | :record_get

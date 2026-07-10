@@ -462,6 +462,7 @@ defmodule Ide.Mcp.Handlers.Projects do
     |> maybe_put_string_setting(map, "tags")
     |> maybe_put_string_list_setting(map, "target_platforms")
     |> maybe_put_string_list_setting(map, "capabilities")
+    |> maybe_put_boolean_setting(map, "optimize_for_size")
   end
 
   @spec safe_github_settings(ToolTypes.tool_args()) :: ProjectsTypes.github_config()

@@ -51,6 +51,9 @@ defmodule Elmc.Backend.Plan.Lower.PatternMatch do
       short_ctor(resolved || name) == "[]" ->
         test_list_empty(subject_reg, b)
 
+      bool_ctor?(resolved || name) ->
+        test_bool_ctor(resolved || name, subject_reg, b)
+
       true ->
         test_ctor_tag(pattern, subject_reg, b)
     end
@@ -207,6 +210,27 @@ defmodule Elmc.Backend.Plan.Lower.PatternMatch do
     else
       :unsupported
     end
+  end
+
+  defp bool_ctor?(name) when is_binary(name), do: short_ctor(name) in ["True", "False"]
+  defp bool_ctor?(_), do: false
+
+  defp test_bool_ctor(name, subject_reg, b) do
+    {dest, b1} = Builder.fresh_reg(b)
+
+    {_, b2} =
+      Builder.emit(b1, :test_bool, %{
+        dest: dest,
+        args: %{subject: subject_reg, want_true: short_ctor(name) == "True"},
+        effects: %{
+          produces: {:owned, dest},
+          consumes: [],
+          borrows: [subject_reg],
+          fallible: false
+        }
+      })
+
+    {:ok, dest, b2}
   end
 
   defp maybe_nothing?(resolved, name) do

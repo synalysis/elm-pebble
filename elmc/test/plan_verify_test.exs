@@ -89,4 +89,42 @@ defmodule Elmc.PlanVerifyTest do
   test "rejects double fn_out publish" do
     assert {:error, :double_fn_out_publish, _} = Verify.run(double_publish_plan())
   end
+
+  test "phi respects effects.consumes when cond local stays live after merge" do
+    b = Builder.new("Main", "init", args: [], rc_required: true, fallible: true)
+
+    {then_reg, b1} = Builder.emit_const_int(b, 1)
+    {else_reg, b2} = Builder.emit_const_int(b1, 2)
+    {cond_reg, b3} = Builder.emit_const_int(b2, 1)
+    {merge_reg, b4} = Builder.fresh_reg(b3)
+
+    {_, b5} =
+      Builder.emit(b4, :phi, %{
+        dest: merge_reg,
+        args: %{then: then_reg, else: else_reg, cond: cond_reg},
+        effects: %{
+          produces: {:owned, merge_reg},
+          consumes: [then_reg, else_reg],
+          borrows: [],
+          fallible: false
+        }
+      })
+
+    {retained, b6} =
+      Builder.emit(b5, :call_runtime, %{
+        dest: merge_reg + 1,
+        args: %{builtin: :retain, args: [cond_reg]},
+        effects: %{
+          produces: {:owned, merge_reg + 1},
+          consumes: [],
+          borrows: [cond_reg],
+          fallible: false
+        }
+      })
+
+    b7 = Builder.emit_release(b6, merge_reg)
+    plan = b7 |> Builder.emit_ret(retained) |> Builder.to_function_plan()
+
+    assert :ok = Verify.run(plan)
+  end
 end

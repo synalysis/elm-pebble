@@ -59,11 +59,18 @@ defmodule Elmc.Backend.CCodegen.StackEstimate do
       generated_c_bytes: byte_size(source),
       generated_c_lines: source |> String.split("\n") |> length(),
       generic_function_defs:
-        Regex.scan(~r/(?:^|\n)(?:static\s+)?(?:ElmcValue\s+\*|elmc_int_t)\s+elmc_fn_/, source)
+        Regex.scan(~r/(?:^|\n)(?:static\s+)?(?:RC\s+|ElmcValue\s+\*|elmc_int_t)\s+elmc_fn_/, source)
         |> length(),
       direct_command_defs:
-        Regex.scan(~r/(?:^|\n)static\s+int\s+elmc_fn_[A-Za-z0-9_]+_commands_append/, source)
+        Regex.scan(~r/(?:^|\n)static\s+RC\s+elmc_fn_[A-Za-z0-9_]+_commands_append/, source)
         |> length(),
+      commands_append_bytes: commands_append_body_bytes(source),
+      fusion_native_count:
+        Regex.scan(~r/(?:^|\n)static\s+(?:RC\s+)?elmc_fn_[A-Za-z0-9_]+_native\(/, source)
+        |> length(),
+      plan_function_count:
+        Regex.scan(~r/plan_native_int_\d+/, source) |> Enum.uniq() |> length(),
+      owned_slot_max: owned_slot_max(source),
       boxed_tmp_declarations: Regex.scan(~r/ElmcValue\s+\*tmp_/, source) |> length(),
       closure_allocations: Regex.scan(~r/elmc_closure_new\(/, source) |> length(),
       runtime_calls: runtime_call_counts(source),
@@ -73,6 +80,26 @@ defmodule Elmc.Backend.CCodegen.StackEstimate do
           "binary size is available after platform or host linking, not during C source generation"
       }
     }
+  end
+
+  defp commands_append_body_bytes(source) do
+    ~r/static RC elmc_fn_[A-Za-z0-9_]+_commands_append\([^{]*\{([\s\S]*?)\n\}/
+    |> Regex.scan(source)
+    |> Enum.map(fn [_, body] -> byte_size(body) end)
+    |> Enum.sum()
+  end
+
+  defp owned_slot_max(source) do
+    case Regex.scan(~r/owned\[(\d+)\]/, source) do
+      [] ->
+        0
+
+      matches ->
+        matches
+        |> Enum.map(fn [_, n] -> String.to_integer(n) end)
+        |> Enum.max()
+        |> Kernel.+(1)
+    end
   end
 
   @spec put_linked_binary(StackEstimateTypes.wire_map(), LinkedBinaryTypes.wire_map()) ::

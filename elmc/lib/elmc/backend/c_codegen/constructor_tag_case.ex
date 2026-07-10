@@ -54,8 +54,37 @@ defmodule Elmc.Backend.CCodegen.ConstructorTagCase do
 
   @spec switch_eligible?(Types.case_branches()) :: boolean()
   def switch_eligible?(branches) do
-    branches?(branches) and switch_branch_count(branches) >= @constructor_tag_switch_min_branches
+    branches?(branches) and switch_branch_count(branches) >= min_switch_branches(branches)
   end
+
+  @spec enum_only_switch_eligible?(Types.case_branches()) :: boolean()
+  def enum_only_switch_eligible?(branches) do
+    branches?(branches) and enum_only_branches?(branches) and
+      switch_branch_count(branches) >= 2
+  end
+
+  defp min_switch_branches(branches) do
+    if enum_only_branches?(branches), do: 2, else: @constructor_tag_switch_min_branches
+  end
+
+  defp enum_only_branches?(branches) do
+    Enum.all?(branches, fn branch ->
+      case branch.pattern do
+        %{kind: :wildcard} -> true
+        %{kind: :constructor} = pattern -> nullary_enum_pattern?(pattern)
+        _ -> false
+      end
+    end)
+  end
+
+  defp nullary_enum_pattern?(%{kind: :constructor, tag: tag, arg_pattern: nil}) when is_integer(tag),
+    do: true
+
+  defp nullary_enum_pattern?(%{kind: :constructor, tag: tag, arg_pattern: %{kind: :var}})
+       when is_integer(tag),
+       do: true
+
+  defp nullary_enum_pattern?(_), do: false
 
   @spec native_subject_switch?(Types.ir_expr(), Types.case_branches(), Types.compile_env()) ::
           boolean()

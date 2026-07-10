@@ -8,10 +8,14 @@ defmodule Ide.PebbleToolchain.Elmc do
   @type elmc_compile_result :: Types.elmc_compile_result()
   @type toolchain_error :: Types.toolchain_error()
 
+  @ide_default_codegen_profile :size
+
   @spec watch_compile_opts(String.t(), [String.t()], Types.elmc_extra_opts()) ::
           Types.watch_compile_opts()
   def watch_compile_opts(out_dir, target_platforms, extra \\ %{})
       when is_binary(out_dir) and is_list(target_platforms) and is_map(extra) do
+    profile = codegen_profile_from_extra(extra)
+
     %{
       out_dir: out_dir,
       entry_module: "Main",
@@ -24,9 +28,20 @@ defmodule Ide.PebbleToolchain.Elmc do
       prod: true,
       plan_ir_mode: :primary,
       plan_ir_strict: true,
-      debug_usage_policy: :error
+      debug_usage_policy: :error,
+      codegen_profile: profile
     }
     |> Map.merge(extra)
+  end
+
+  @spec optimize_for_size?(String.t()) :: boolean()
+  def optimize_for_size?(project_dir) when is_binary(project_dir) do
+    codegen_profile_for_project_dir(project_dir) == :size
+  end
+
+  @spec codegen_profile_for_project_dir(String.t(), map()) :: :default | :balanced | :size
+  def codegen_profile_for_project_dir(project_dir, extra_opts \\ %{}) when is_binary(project_dir) do
+    resolve_codegen_profile(extra_opts, project_dir)
   end
 
   @spec target_platforms_for_project_dir(String.t()) :: [String.t()] | nil
@@ -50,10 +65,13 @@ defmodule Ide.PebbleToolchain.Elmc do
       case target_platforms_for_project_dir(project_dir) do
         nil ->
           %{out_dir: out_dir, strip_dead_code: true, plan_ir_mode: :primary}
+          |> Map.put(:codegen_profile, codegen_profile_for_project_dir(project_dir, extra_opts))
           |> Map.merge(extra_opts)
 
         target_platforms ->
-          watch_compile_opts(out_dir, target_platforms, extra_opts)
+          extra_opts
+          |> Map.put_new(:codegen_profile, codegen_profile_for_project_dir(project_dir, extra_opts))
+          |> then(&watch_compile_opts(out_dir, target_platforms, &1))
       end
 
     Elmc.CLI.compile_project(project_dir, out_dir, elmc_opts: elmc_opts)
@@ -156,5 +174,48 @@ defmodule Ide.PebbleToolchain.Elmc do
     |> Enum.map(&String.trim/1)
     |> Enum.reject(&(&1 == ""))
     |> Enum.uniq()
+  end
+
+  defp codegen_profile_from_extra(extra) when is_map(extra) do
+    resolve_codegen_profile(extra, nil)
+  end
+
+  defp resolve_codegen_profile(extra, project_dir) when is_map(extra) do
+    cond do
+      profile = Map.get(extra, :codegen_profile) ->
+        normalize_codegen_profile(profile)
+
+      Map.get(extra, :optimize_for_size) == false ->
+        :balanced
+
+      Map.get(extra, :optimize_for_size) == true ->
+        :size
+
+      is_binary(project_dir) and release_optimize_for_size_disabled?(project_dir) ->
+        :balanced
+
+      true ->
+        @ide_default_codegen_profile
+    end
+  end
+
+  defp normalize_codegen_profile(profile) when profile in [:default, :balanced, :size], do: profile
+  defp normalize_codegen_profile("default"), do: :default
+  defp normalize_codegen_profile("balanced"), do: :balanced
+  defp normalize_codegen_profile("size"), do: :size
+  defp normalize_codegen_profile(_), do: @ide_default_codegen_profile
+
+  defp release_optimize_for_size_disabled?(project_dir) when is_binary(project_dir) do
+    with {:ok, config_dir} <- pebble_config_dir(project_dir),
+         {:ok, %{"release_defaults" => defaults}} when is_map(defaults) <-
+           read_project_json(config_dir) do
+      release_flag_false?(defaults, "optimize_for_size")
+    else
+      _ -> false
+    end
+  end
+
+  defp release_flag_false?(defaults, key) when is_map(defaults) and is_binary(key) do
+    Map.get(defaults, key) == false or Map.get(defaults, key) == "false"
   end
 end

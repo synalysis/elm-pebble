@@ -33,7 +33,7 @@ defmodule Elmc.Backend.Plan.TruthyNative do
     do: {:compare, kind || :eq, left, right}
 
   defp shape_from_instr(%{op: op, dest: dest, args: %{left: _left, right: _right}})
-       when op in [:bool_and, :test_maybe_nothing, :test_list_empty, :test_ctor_tag] and is_integer(dest),
+       when op in [:bool_and, :test_maybe_nothing, :test_list_empty, :test_ctor_tag, :test_bool] and is_integer(dest),
        do: {:reg, dest}
 
   defp shape_from_instr(%{op: :call_runtime, args: %{builtin: :new_int, literal: value}})

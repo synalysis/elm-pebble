@@ -208,7 +208,9 @@ defmodule Elmc.Backend.Plan.Lower.Record do
     end
   end
 
-  defp compile_field_expr(expr, ctx, b), do: Expr.compile(expr, ctx, b)
+  defp compile_field_expr(expr, ctx, b) do
+    Expr.compile(expr, Context.for_branch_arm(ctx), b)
+  end
 
   defp dest_for_update(ctx, b) do
     case Context.dest_for_call(ctx) do

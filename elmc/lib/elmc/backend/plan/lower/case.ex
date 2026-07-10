@@ -53,8 +53,17 @@ defmodule Elmc.Backend.Plan.Lower.Case do
 
   defp compile_dispatch(_expr, subject, branches, ctx, b) do
     cond do
+      ListSwitch.fixed_length_nil_branches?(branches) ->
+        ListSwitch.compile_fixed_length_nil(subject, branches, ctx, b)
+
+      ListSwitch.triple_branches?(branches) ->
+        ListSwitch.compile_triple(subject, branches, ctx, b)
+
       ListSwitch.double_cons_wildcard_branches?(branches) ->
         ListSwitch.compile_double_cons_wildcard(subject, branches, ctx, b)
+
+      ListSwitch.empty_var_branches?(branches) ->
+        ListSwitch.compile_empty_var(subject, branches, ctx, b)
 
       ListSwitch.branches?(branches) -> ListSwitch.compile(subject, branches, ctx, b)
       TagSwitch.branches?(branches) -> TagSwitch.compile(subject, branches, ctx, b)

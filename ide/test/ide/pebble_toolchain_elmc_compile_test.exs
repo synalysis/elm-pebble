@@ -30,6 +30,93 @@ defmodule Ide.PebbleToolchainElmcCompileTest do
     assert opts[:prune_direct_generic] == true
   end
 
+  test "watch_compile_opts defaults to size codegen profile" do
+    opts = Elmc.watch_compile_opts("/tmp/out", ["aplite", "basalt"])
+
+    assert opts[:codegen_profile] == :size
+  end
+
+  test "watch_compile_opts uses balanced profile when optimize_for_size is false" do
+    opts = Elmc.watch_compile_opts("/tmp/out", ["aplite"], %{optimize_for_size: false})
+
+    assert opts[:codegen_profile] == :balanced
+  end
+
+  test "watch_compile_opts uses size profile when optimize_for_size is set" do
+    opts = Elmc.watch_compile_opts("/tmp/out", ["aplite"], %{optimize_for_size: true})
+
+    assert opts[:codegen_profile] == :size
+  end
+
+  test "codegen_profile_for_project_dir defaults to size without release_defaults" do
+    tmp = Path.join(System.tmp_dir!(), "pebble-elmc-profile-default-#{System.unique_integer([:positive])}")
+    watch = Path.join(tmp, "watch")
+    File.mkdir_p!(watch)
+
+    File.write!(
+      Path.join(tmp, "elm-pebble.project.json"),
+      Jason.encode!(%{
+        "release_defaults" => %{
+          "target_platforms" => ["flint"]
+        }
+      })
+    )
+
+    on_exit(fn -> File.rm_rf(tmp) end)
+
+    assert Elmc.optimize_for_size?(watch)
+    assert Elmc.codegen_profile_for_project_dir(watch) == :size
+  end
+
+  test "codegen_profile_for_project_dir reads optimize_for_size from elm-pebble.project.json" do
+    tmp = Path.join(System.tmp_dir!(), "pebble-elmc-profile-#{System.unique_integer([:positive])}")
+    watch = Path.join(tmp, "watch")
+    File.mkdir_p!(watch)
+
+    File.write!(
+      Path.join(tmp, "elm-pebble.project.json"),
+      Jason.encode!(%{
+        "release_defaults" => %{
+          "optimize_for_size" => true,
+          "target_platforms" => ["flint"]
+        }
+      })
+    )
+
+    on_exit(fn -> File.rm_rf(tmp) end)
+
+    assert Elmc.optimize_for_size?(watch)
+    assert Elmc.codegen_profile_for_project_dir(watch) == :size
+
+    compile_opts =
+      %{}
+      |> Map.put_new(:codegen_profile, Elmc.codegen_profile_for_project_dir(watch, %{}))
+      |> then(&Elmc.watch_compile_opts("/tmp/out", ["flint"], &1))
+
+    assert compile_opts[:codegen_profile] == :size
+  end
+
+  test "codegen_profile_for_project_dir uses balanced when optimize_for_size is false" do
+    tmp = Path.join(System.tmp_dir!(), "pebble-elmc-profile-balanced-#{System.unique_integer([:positive])}")
+    watch = Path.join(tmp, "watch")
+    File.mkdir_p!(watch)
+
+    File.write!(
+      Path.join(tmp, "elm-pebble.project.json"),
+      Jason.encode!(%{
+        "release_defaults" => %{
+          "optimize_for_size" => false,
+          "target_platforms" => ["flint"]
+        }
+      })
+    )
+
+    on_exit(fn -> File.rm_rf(tmp) end)
+
+    refute Elmc.optimize_for_size?(watch)
+    assert Elmc.codegen_profile_for_project_dir(watch) == :balanced
+  end
+
   test "target_platforms_for_project_dir reads release_defaults from workspace config" do
     tmp = Path.join(System.tmp_dir!(), "pebble-elmc-opts-#{System.unique_integer([:positive])}")
     watch = Path.join(tmp, "watch")

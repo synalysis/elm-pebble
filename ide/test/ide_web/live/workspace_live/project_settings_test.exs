@@ -211,6 +211,7 @@ defmodule IdeWeb.WorkspaceLive.ProjectSettingsTest do
         "description" => "A small Pebble watchapp.",
         "tags" => "fitness,utility",
         "target_platforms" => ["basalt", "chalk"],
+        "optimize_for_size" => "true",
         "website_url" => "https://elm-pebble.dev",
         "source_url" => "https://github.com/elm-pebble/watch"
       }
@@ -247,6 +248,7 @@ defmodule IdeWeb.WorkspaceLive.ProjectSettingsTest do
     assert updated.release_defaults["description"] == "A small Pebble watchapp."
     assert updated.release_defaults["tags"] == "fitness,utility"
     assert updated.release_defaults["target_platforms"] == ["basalt", "chalk"]
+    assert updated.release_defaults["optimize_for_size"] == true
     assert updated.release_defaults["capabilities"] == []
     assert updated.release_defaults["generate_store_graphics"] == true
     assert updated.release_defaults["website_url"] == "https://elm-pebble.dev"

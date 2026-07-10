@@ -40,6 +40,10 @@ defmodule Elmc.Backend.CCodegen.CaseCompile do
           ConstructorTagCase.native_subject_switch?(subject_expr, branches, env) ->
         ConstructorTagCase.compile_native_subject(subject_expr, branches, env, counter)
 
+      ConstructorTagCase.enum_only_switch_eligible?(branches) and
+          ConstructorTagCase.native_subject_switch?(subject_expr, branches, env) ->
+        ConstructorTagCase.compile_native_subject(subject_expr, branches, env, counter)
+
       ConstructorTagCase.switch_eligible?(branches) ->
         ConstructorTagCase.compile(subject, branches, env, counter)
 

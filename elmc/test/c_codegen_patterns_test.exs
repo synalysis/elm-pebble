@@ -2973,7 +2973,7 @@ defmodule Elmc.CCodegenPatternsTest do
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
     assert generated_c =~ "elmc_fn_Main_slideGrid_native"
-    assert generated_c =~ "elmc_row_major_perm_src_i"
+    refute generated_c =~ "elmc_row_major_perm_src_i"
     refute generated_c =~ "slideGrid_orient_perms"
   end
 
@@ -5560,7 +5560,9 @@ defmodule Elmc.CCodegenPatternsTest do
     assert generated_h =~ "elmc_fn_Main_init("
     assert generated_h =~ "elmc_fn_Main_update("
     refute generated_h =~ "elmc_fn_Main_spawnTileWithSeed("
-    assert generated_c =~ "static RC elmc_fn_Main_spawnTileWithSeed_native(ElmcValue **out,"
+    refute generated_c =~ ~r/static RC elmc_fn_Main_spawnTileWithSeed\(ElmcValue \*\*out,/
+    refute generated_c =~ "elmc_fn_Main_spawnTileWithSeed_native("
+    assert generated_c =~ "static RC elmc_fn_Main_moveBoard_native("
     assert generated_c =~ "while (Rc == RC_SUCCESS && direct_cursor_"
     assert generated_c =~ "ELMC_RENDER_OP_RECT"
     assert generated_c =~ "scene_cmd.text[0] = '.';"

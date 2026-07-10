@@ -1,7 +1,7 @@
 defmodule Elmc.Backend.C.Lower.Instr do
   @moduledoc false
 
-  alias Elmc.Backend.C.Lower.{Lambda, NativeReturn}
+  alias Elmc.Backend.C.Lower.{Lambda, NativeReturn, TagRefs}
   alias Elmc.Backend.CCodegen.{FunctionCallAbi, FunctionEmit, Fusion, ImmortalStringLiteral, RcRequired, RowMajorLayout}
   alias Elmc.Backend.CCodegen.Native.FunctionCall, as: NativeFunctionCall
   alias Elmc.Backend.CCodegen.Util
@@ -158,7 +158,17 @@ defmodule Elmc.Backend.C.Lower.Instr do
       :test_ctor_tag ->
         emit_native_bool_test(instr, slots, rc?, dest, opts, fn subject ->
           tag = instr.args.tag
-          "elmc_union_tag_matches(#{subject}, #{tag})"
+          tag_ref = TagRefs.union_tag_ref(tag, Map.get(instr.args, :union_ctor), plan_module_from(opts))
+          "elmc_union_tag_matches(#{subject}, #{tag_ref})"
+        end)
+
+      :test_bool ->
+        emit_native_bool_test(instr, slots, rc?, dest, opts, fn subject ->
+          if Map.fetch!(instr.args, :want_true) do
+            "elmc_as_bool(#{subject})"
+          else
+            "!elmc_as_bool(#{subject})"
+          end
         end)
 
       :bool_and ->
@@ -166,6 +176,12 @@ defmodule Elmc.Backend.C.Lower.Instr do
 
       :switch_ctor_tag ->
         emit_switch_ctor_tag(instr, slots, rc?, dest, opts)
+
+      :boxed_tag_peel ->
+        subject = slot_ref(Map.fetch!(instr.args, :subject), slots, opts)
+        dest_reg = instr.dest
+        name = Map.fetch!(Keyword.get(opts, :native_int_regs, %{}), dest_reg)
+        "#{name} = elmc_as_int(#{subject});"
 
       :pebble_cmd ->
         emit_pebble_cmd(instr, slots, rc?, dest, opts)
@@ -407,7 +423,7 @@ defmodule Elmc.Backend.C.Lower.Instr do
         branch_cond_expr_impl(reg, slots, opts)
 
       Map.has_key?(const_int_regs, reg) ->
-        case Map.fetch!(const_int_regs, reg) do
+        case Map.fetch!(const_int_regs, reg) |> const_int_value() do
           0 -> "false"
           1 -> "true"
           v -> "(#{v} != 0)"
@@ -1150,7 +1166,7 @@ defmodule Elmc.Backend.C.Lower.Instr do
        when is_list(fusion_arg_kinds) do
     const_int_regs = Keyword.get(opts, :const_int_regs, %{})
 
-    case Map.get(const_int_regs, arg_reg) do
+    case Map.get(const_int_regs, arg_reg) |> const_int_value() do
       union_tag when is_integer(union_tag) ->
         case Fusion.union_int_lut_lookup({mod, name}, union_tag) do
           {:ok, wire} ->
@@ -1201,13 +1217,13 @@ defmodule Elmc.Backend.C.Lower.Instr do
       case kind do
         :boxed_int_tag ->
           case Map.get(Keyword.get(opts, :const_int_regs, %{}), reg) do
-            value when is_integer(value) -> Integer.to_string(value)
+            entry when not is_nil(entry) -> const_int_c_ref(entry, opts)
             _ -> RowMajorLayout.union_tag_expr(slot_ref(reg, slots, opts))
           end
 
         :native_int ->
           case Map.get(Keyword.get(opts, :const_int_regs, %{}), reg) do
-            value when is_integer(value) -> Integer.to_string(value)
+            entry when not is_nil(entry) -> const_int_c_ref(entry, opts)
             _ -> int_operand_ref(reg, slots, opts)
           end
 
@@ -1546,8 +1562,8 @@ defmodule Elmc.Backend.C.Lower.Instr do
 
               nil ->
                 case Map.get(Keyword.get(opts, :const_int_regs, %{}), reg) do
-                  value when is_integer(value) ->
-                    Integer.to_string(value)
+                  entry when not is_nil(entry) ->
+                    const_int_c_ref(entry, opts)
 
                   nil ->
                     case defining_plan_instr(Keyword.get(opts, :parent_plan), reg) do
@@ -1642,8 +1658,8 @@ defmodule Elmc.Backend.C.Lower.Instr do
 
       nil ->
         case Map.get(Keyword.get(opts, :const_int_regs, %{}), reg) do
-          value when is_integer(value) ->
-            "elmc_new_int_take(#{value})"
+          entry when not is_nil(entry) ->
+            "elmc_new_int_take(#{const_int_c_ref(entry, opts)})"
 
           nil ->
             case Map.get(Keyword.get(opts, :native_int_regs, %{}), reg) do
@@ -1683,8 +1699,8 @@ defmodule Elmc.Backend.C.Lower.Instr do
                   %{op: :call_runtime, args: %{builtin: :new_int, args: [inner]}}
                   when is_integer(inner) ->
                     case Map.get(Keyword.get(opts, :const_int_regs, %{}), inner) do
-                      value when is_integer(value) ->
-                        "elmc_new_int_take(#{value})"
+                      entry when not is_nil(entry) ->
+                        "elmc_new_int_take(#{const_int_c_ref(entry, opts)})"
 
                       _ ->
                         case peel_native_int_operand_ref(inner, slots, opts) do
@@ -2168,8 +2184,8 @@ defmodule Elmc.Backend.C.Lower.Instr do
 
           nil ->
             case Map.get(Keyword.get(opts, :const_int_regs, %{}), reg) do
-              value when is_integer(value) ->
-                Integer.to_string(value)
+              entry when not is_nil(entry) ->
+                const_int_c_ref(entry, opts)
 
               _ ->
                 case Map.get(Keyword.get(opts, :native_int_regs, %{}), reg) do
@@ -2278,10 +2294,15 @@ defmodule Elmc.Backend.C.Lower.Instr do
   @spec elm_mod_by_c_expr(String.t(), String.t()) :: String.t()
   def elm_mod_by_c_expr(base_s, value_s) do
     value_s = parenthesize_mod_value(value_s)
+    opts = Process.get(:elmc_codegen_opts, %{})
+    fast? = Elmc.Backend.SizeProfile.mod_by_fast?(opts)
 
     case parse_int_literal(base_s) do
       {:ok, 0} ->
         "0"
+
+      {:ok, base} when base > 0 and fast? ->
+        "(({ elmc_int_t __elmc_mod_v = (#{value_s}); ((__elmc_mod_v % #{base}) + #{base}) % #{base} }))"
 
       {:ok, base} ->
         correction = mod_abs_addend(base)
@@ -2320,5 +2341,24 @@ defmodule Elmc.Backend.C.Lower.Instr do
     else
       trimmed
     end
+  end
+
+  defp const_int_value(value) when is_integer(value), do: value
+  defp const_int_value({value, _ctor}) when is_integer(value), do: value
+  defp const_int_value(_), do: nil
+
+  defp const_int_c_ref(value, opts \\ [])
+
+  defp const_int_c_ref(value, _opts) when is_integer(value), do: Integer.to_string(value)
+
+  defp const_int_c_ref({value, ctor}, opts) when is_integer(value),
+    do: TagRefs.const_int_ref(value, ctor, plan_module_from(opts))
+
+  defp plan_module_from(opts) do
+    Keyword.get(opts, :module) ||
+      case Keyword.get(opts, :parent_plan) do
+        %{module: mod} when is_binary(mod) -> mod
+        _ -> nil
+      end
   end
 end

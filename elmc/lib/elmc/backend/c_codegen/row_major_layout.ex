@@ -151,6 +151,49 @@ defmodule Elmc.Backend.CCodegen.RowMajorLayout do
     """
   end
 
+  @spec emit_row_major_perm_tables(pos_integer(), pos_integer()) :: String.t()
+  def emit_row_major_perm_tables(width, rows) do
+    count = rows * width
+    fwd = forward_perm_table(width, rows)
+    inv = inverse_perm_table(width, rows)
+
+    """
+    static const uint8_t elmc_row_major_fwd_perm[#{length(fwd)}][#{count}] = {
+    #{compact_perm_table_rows(fwd)}
+    };
+    static const uint8_t elmc_row_major_inv_perm[#{length(inv)}][#{count}] = {
+    #{compact_perm_table_rows(inv)}
+    };
+    """
+    |> String.trim()
+  end
+
+  @spec emit_apply_row_major_perm_via_table(
+          String.t(),
+          String.t(),
+          String.t(),
+          boolean(),
+          non_neg_integer()
+        ) :: String.t()
+  def emit_apply_row_major_perm_via_table(src_buf, dst_buf, perm_case_var, inverse_branch?, count) do
+    table = if inverse_branch?, do: "elmc_row_major_inv_perm", else: "elmc_row_major_fwd_perm"
+
+    """
+    for (elmc_int_t perm_i = 0; perm_i < #{count}; perm_i++) {
+      #{dst_buf}[perm_i] = #{src_buf}[#{table}[#{perm_case_var}][perm_i]];
+    }
+    """
+  end
+
+  defp compact_perm_table_rows(perms) do
+    perms
+    |> Enum.with_index()
+    |> Enum.map_join(",\n", fn {perm, index} ->
+      values = Enum.map_join(perm, ", ", &Integer.to_string/1)
+      "  { #{values} } /* #{index} */"
+    end)
+  end
+
   defp fourth_branch_src_index(:forward, width) do
     """
     {

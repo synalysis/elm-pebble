@@ -69,6 +69,11 @@ jobs:
         working-directory: elmc
         run: mix test
 
+      - name: Run plan template strict gate
+        run: |
+          export TEST_ULIMIT_V_KB=6291456 ELIXIR_ERL_OPTIONS="+S 1:1 +MMscs 256"
+          ./scripts/mix-test-limited.sh elmc test/plan_template_strict_gate_test.exs
+
       - name: Run 2048 RC integration gates
         working-directory: elmc
         run: mix test.rc_2048
@@ -160,12 +165,23 @@ jobs:
         working-directory: ide
         run: >
           mix ide.size_report
-          --templates game-2048,watchface-tangram-time,watchface-poke-battle
+          --templates game-2048,watchface-tangram-time,watchface-yes
           --baseline-manifest priv/size_report_baselines/flint.json
           --fail-on-regression
           --max-bin-regression 512
           --max-generated-c-regression 8192
           > /tmp/size_report.json
+
+      - name: Check size profile compiler output against manifest baseline
+        working-directory: ide
+        run: >
+          mix ide.size_report
+          --profile size
+          --templates watchface-yes,game-2048
+          --baseline-manifest priv/size_report_baselines/flint-size.json
+          --fail-on-regression
+          --max-generated-c-regression 8192
+          > /tmp/size_report_profile.json
 
   ide-template-pbw-gate:
     name: IDE template PBW package gate

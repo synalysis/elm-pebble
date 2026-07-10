@@ -75,7 +75,8 @@ defmodule Ide.Mcp.ToolCatalog.Core do
       version_label: %{type: "string"},
       tags: %{type: "string"},
       target_platforms: %{type: "array", items: %{type: "string"}},
-      capabilities: %{type: "array", items: %{type: "string"}}
+      capabilities: %{type: "array", items: %{type: "string"}},
+      optimize_for_size: %{type: "boolean"}
     }
   }
 

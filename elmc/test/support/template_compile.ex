@@ -3,6 +3,17 @@ defmodule Elmc.TestSupport.TemplateCompile do
 
   @repo_root Path.expand("../../..", __DIR__)
 
+  defp shared_elm_sources do
+    bundled = Path.join(@repo_root, "ide/priv/bundled_elm/shared-elm")
+    checkout = Path.join(@repo_root, "shared/elm")
+
+    cond do
+      File.regular?(Path.join(bundled, "Companion/Internal.elm")) -> bundled
+      File.regular?(Path.join(checkout, "Companion/Internal.elm")) -> checkout
+      true -> bundled
+    end
+  end
+
   @spec compile_watch_template(String.t(), keyword()) :: {:ok, term()} | {:error, term()}
   def compile_watch_template(template_name, opts \\ []) when is_binary(template_name) do
     template_src = Path.join(@repo_root, "ide/priv/project_templates/#{template_name}")
@@ -12,20 +23,26 @@ defmodule Elmc.TestSupport.TemplateCompile do
       File.mkdir_p!(Path.join(tmp, "src"))
       File.cp_r!(Path.join(template_src, "src"), Path.join(tmp, "src"))
 
-      sources =
-        [
-          "src",
-          Path.join(@repo_root, "ide/priv/bundled_elm/pebble-watch-src"),
-          Path.join(@repo_root, "ide/priv/bundled_elm/shared-elm/shared/elm"),
-          Path.join(@repo_root, "ide/priv/internal_packages/elm-time/src")
-        ]
-        |> maybe_add_protocol_sources(template_src, tmp)
-
       deps = %{
         "elm/core" => "1.0.5",
         "elm/json" => "1.1.3",
         "elm/time" => "1.0.0"
       }
+
+      deps =
+        if template_name in ["watchface_poke_battle", "game_jump_n_run"],
+          do: Map.put(deps, "elm/random", "1.0.0"),
+          else: deps
+
+      sources =
+        [
+          "src",
+          Path.join(@repo_root, "ide/priv/bundled_elm/pebble-watch-src"),
+          shared_elm_sources(),
+          Path.join(@repo_root, "ide/priv/internal_packages/elm-time/src")
+        ]
+        |> maybe_add_protocol_sources(template_src, tmp)
+        |> maybe_add_random_sources(deps)
 
       elm_json = %{
         "type" => "application",
@@ -46,7 +63,7 @@ defmodule Elmc.TestSupport.TemplateCompile do
           plan_ir_mode: Keyword.get(opts, :plan_ir_mode, :primary),
           pebble_int32: Keyword.get(opts, :pebble_int32, false)
         }
-        |> Map.merge(Map.new(Keyword.take(opts, [:plan_ir_strict, :direct_render_only, :prune_runtime])))
+        |> Map.merge(Map.new(Keyword.take(opts, [:plan_ir_strict, :direct_render_only, :prune_runtime, :codegen_profile])))
 
       Elmc.compile(tmp, compile_opts)
     after
@@ -78,6 +95,14 @@ defmodule Elmc.TestSupport.TemplateCompile do
         )
 
       ["protocol/src" | sources]
+    else
+      sources
+    end
+  end
+
+  defp maybe_add_random_sources(sources, deps) do
+    if Map.has_key?(deps, "elm/random") do
+      sources ++ [Path.join(@repo_root, "ide/priv/internal_packages/elm-random/src")]
     else
       sources
     end

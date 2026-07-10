@@ -26,7 +26,8 @@ defmodule Elmc.Backend.CCodegen.Fusion do
     UnionIntCase,
     UnionIntSuffixCase,
     MaybeIntStringCase,
-    IntStringCase
+    IntStringCase,
+    MaybeWithDefaultPickSlot
   }
 
   @runtime_callees_cache_key :elmc_fusion_runtime_callees_cache
@@ -46,7 +47,8 @@ defmodule Elmc.Backend.CCodegen.Fusion do
     {UnionIntCase, 4},
     {UnionIntSuffixCase, 4},
     {MaybeIntStringCase, 4},
-    {IntStringCase, 4}
+    {IntStringCase, 4},
+    {MaybeWithDefaultPickSlot, 4}
   ]
 
   @spec try_emit(String.t(), String.t(), map() | nil, map()) ::

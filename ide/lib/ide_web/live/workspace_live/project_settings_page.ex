@@ -261,6 +261,28 @@ defmodule IdeWeb.WorkspaceLive.ProjectSettingsPage do
           </div>
         </fieldset>
         <fieldset class="text-xs md:col-span-2">
+          <legend class="mb-1 block font-medium text-zinc-700">Compiler size profile</legend>
+          <p class="mb-2 text-zinc-600">
+            Size optimization is enabled by default for watch builds. Uncheck to use the balanced codegen profile.
+          </p>
+          <input type="hidden" name="project_settings[optimize_for_size]" value="false" />
+          <label class="flex items-start gap-2 rounded border border-zinc-200 bg-zinc-50 p-2">
+            <input
+              type="checkbox"
+              name="project_settings[optimize_for_size]"
+              value="true"
+              checked={@project_settings_form["optimize_for_size"].value == true}
+              class="mt-0.5"
+            />
+            <span>
+              <span class="block font-medium text-zinc-800">Optimize for size</span>
+              <span class="block text-zinc-500">
+                Enables the <code class="text-[11px]">:size</code> codegen profile: enum tag switches, fusion-first native helpers, and tighter plan lowering for smaller watch binaries.
+              </span>
+            </span>
+          </label>
+        </fieldset>
+        <fieldset class="text-xs md:col-span-2">
           <legend class="mb-1 block font-medium text-zinc-700">Capabilities</legend>
           <p class="mb-2 text-zinc-600">
             Detected from Elm API usage in watch and phone sources. These appear in Pebble package metadata.

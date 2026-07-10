@@ -5,6 +5,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.GenericTargets do
   alias Elmc.Backend.CCodegen.DirectRender.Emit.NativeRecord
   alias Elmc.Backend.CCodegen.DirectRender.RecordViewPeel
   alias Elmc.Backend.CCodegen.Expr
+  alias Elmc.Backend.CCodegen.FusionSupport
   alias Elmc.Backend.CCodegen.FunctionEmit
   alias Elmc.Backend.CCodegen.GenericReachability
   alias Elmc.Backend.CCodegen.Host
@@ -120,7 +121,96 @@ defmodule Elmc.Backend.CCodegen.DirectRender.GenericTargets do
     |> MapSet.difference(
       native_int_inlined_superseded_targets(opts, decl_map, reachable_core, direct_targets)
     )
+    |> MapSet.difference(fusion_superseded_targets(reachable_core, decl_map))
     |> MapSet.difference(unused_streaming_ui_glue(opts, decl_map, direct_targets))
+  end
+
+  # Whole-function fusion (moveBoard, initialBoard, …) inlines callees listed in
+  # `Fusion.runtime_callees/4`. Drop standalone emit when every reachable caller
+  # supersedes the callee and no other reachable function still needs it.
+  defp fusion_superseded_targets(reachable_core, decl_map) do
+    callers_of = fusion_caller_map(reachable_core, decl_map)
+
+    fixed_point =
+      Stream.iterate({MapSet.new(), MapSet.new()}, fn {dropped, _} ->
+        new_dropped =
+          reachable_core
+          |> Enum.reduce(dropped, fn target, acc ->
+            if MapSet.member?(acc, target) do
+              acc
+            else
+              callers = Map.get(callers_of, target, [])
+
+              if callers != [] and
+                   Enum.all?(callers, fn caller ->
+                     MapSet.member?(acc, caller) or
+                       FusionSupport.superseded_fusion_callee?(caller, target, decl_map)
+                   end) do
+                MapSet.put(acc, target)
+              else
+                acc
+              end
+            end
+          end)
+
+        {new_dropped, dropped}
+      end)
+      |> Stream.drop(1)
+      |> Enum.find(fn {current, prev} -> MapSet.equal?(current, prev) end)
+      |> elem(0)
+
+    expand_fusion_superseded_native(fixed_point, reachable_core, decl_map, callers_of)
+  end
+
+  defp expand_fusion_superseded_native(superseded, reachable_core, decl_map, callers_of) do
+    opts = Process.get(:elmc_codegen_opts, %{})
+
+    if Elmc.Backend.SizeProfile.fusion_supersede_native?(opts) do
+      native_orphans =
+        reachable_core
+        |> Enum.filter(fn target ->
+          native_scalar_helper_target?(target, decl_map) and
+            not MapSet.member?(superseded, target) and
+            orphan_native_helper?(target, superseded, callers_of)
+        end)
+        |> MapSet.new()
+
+      MapSet.union(superseded, native_orphans)
+    else
+      superseded
+    end
+  end
+
+  defp native_scalar_helper_target?({module_name, name}, decl_map) do
+    case Map.get(decl_map, {module_name, name}) do
+      %{args: [_arg]} = decl ->
+        NativeFunctionCall.native_scalar_fn?(decl, module_name, decl_map)
+
+      _ ->
+        false
+    end
+  end
+
+  defp orphan_native_helper?(target, superseded, callers_of) do
+    callers = Map.get(callers_of, target, [])
+
+    callers != [] and Enum.all?(callers, &MapSet.member?(superseded, &1))
+  end
+
+  defp fusion_caller_map(reachable_core, decl_map) do
+    reachable_core
+    |> Enum.flat_map(fn {mod, name} = caller ->
+      case Map.fetch(decl_map, {mod, name}) do
+        {:ok, %{expr: expr}} ->
+          GenericReachability.expr_callees(expr, mod, decl_map)
+          |> Enum.map(fn callee -> {callee, caller} end)
+
+        :error ->
+          []
+      end
+    end)
+    |> Enum.group_by(fn {callee, _} -> callee end, fn {_, caller} -> caller end)
+    |> Map.new(fn {callee, callers} -> {callee, Enum.uniq(callers)} end)
   end
 
   # Direct `_commands_append` replaces boxed `List RenderOp` bodies for the same target.
@@ -273,7 +363,8 @@ defmodule Elmc.Backend.CCodegen.DirectRender.GenericTargets do
   end
 
   defp supersede_direct_render_op_boxed?(opts) do
-    opts[:direct_render_only] == true
+    opts[:direct_render_only] == true or
+      Elmc.Backend.SizeProfile.aggressive_direct_render?(opts)
   end
 
   defp plan_required_direct_boxed_callees(targets, decl_map, direct_targets) do

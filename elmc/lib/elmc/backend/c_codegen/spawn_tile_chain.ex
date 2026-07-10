@@ -168,13 +168,10 @@ defmodule Elmc.Backend.CCodegen.SpawnTileChain do
       CATCH_BEGIN
         elmc_int_t buf[#{count}];
         #{board_load}
-        elmc_int_t seed_work = #{seed_work_expr};
-        #{SpawnTileInline.emit("spawn_a", "buf", count, "seed_work")}
-        seed_work = spawn_a_after_tile;
-        #{SpawnTileInline.emit("spawn_b", "buf", count, "seed_work")}
+        #{SpawnTileInline.emit_chained(2, "buf", count, seed_work_expr)}
         Rc = elmc_list_from_int_array(&owned[0], buf, #{count});
         CHECK_RC(Rc);
-        Rc = elmc_new_int(&owned[1], spawn_b_after_tile);
+        Rc = elmc_new_int(&owned[1], seed_work);
         CHECK_RC(Rc);
         Rc = elmc_tuple2_take(out, owned[0], owned[1]);
         CHECK_RC(Rc);
@@ -221,7 +218,8 @@ defmodule Elmc.Backend.CCodegen.SpawnTileChain do
 
         """
         ElmcValue *board_src = NULL;
-        if (#{c_fn}(&board_src) != RC_SUCCESS) board_src = elmc_list_nil();
+        Rc = #{c_fn}(&board_src);
+        CHECK_RC(Rc);
         for (elmc_int_t i = 0; i < #{count}; i++) {
           buf[i] = elmc_list_nth_int_default(board_src, i, 0);
         }
@@ -233,7 +231,8 @@ defmodule Elmc.Backend.CCodegen.SpawnTileChain do
 
         """
         ElmcValue *board_src = NULL;
-        if (#{c_fn}(&board_src) != RC_SUCCESS) board_src = elmc_list_nil();
+        Rc = #{c_fn}(&board_src);
+        CHECK_RC(Rc);
         for (elmc_int_t i = 0; i < #{count}; i++) {
           buf[i] = elmc_list_nth_int_default(board_src, i, 0);
         }

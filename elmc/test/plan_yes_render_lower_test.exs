@@ -180,4 +180,32 @@ defmodule Elmc.PlanYesRenderLowerTest do
     refute draw_dial_body =~ ~r/elmc_release\(layout\)/
     refute Regex.match?(~r/ELMC_RECORD_GET_INDEX_INT\(owned\[\d+\], 2 \/\* cx \*\/\)/, draw_dial_body)
   end
+
+  test "watchface_yes size profile lowers pickBottomRight without plan fallback" do
+    out_dir = Path.expand("tmp/plan_yes_size_profile", __DIR__)
+    File.rm_rf!(out_dir)
+
+    assert {:ok, result} =
+             TemplateCompile.compile_watch_template("watchface_yes",
+               plan_ir_mode: :primary,
+               codegen_profile: :size,
+               direct_render_only: true,
+               out_dir: out_dir
+             )
+
+    refute Enum.any?(result.layout_coercion_diagnostics, &(&1["code"] == "plan_primary_fallback"))
+
+    generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+    pick_body = CCodegenExtract.fn_body(generated_c, "elmc_fn_Main_pickBottomRight")
+
+    assert pick_body =~ "pickBottomRight_native"
+
+    pick_native_body = CCodegenExtract.fn_body(generated_c, "elmc_fn_Main_pickBottomRight_native")
+    slot_body = CCodegenExtract.fn_body(generated_c, "elmc_fn_Main_bottomRightSlot")
+
+    assert pick_native_body =~ "elmc_fn_Main_bottomRightSlots"
+    assert pick_native_body =~ "elmc_maybe_with_default"
+    refute pick_native_body =~ "goto elmc_plan_block_"
+    refute slot_body =~ "goto elmc_plan_block_"
+  end
 end

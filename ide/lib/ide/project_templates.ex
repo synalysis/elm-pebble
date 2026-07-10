@@ -497,7 +497,8 @@ defmodule Ide.ProjectTemplates do
          :ok <- copy_file_if_missing(Path.join(source_dir, "Companion/Watch.elm"), protocol_watch),
          :ok <-
            CompanionProtocolGenerator.generate_elm_internal(protocol_types, protocol_internal),
-         :ok <- write_json_if_missing(Path.join(protocol_root, "elm.json"), elm_json) do
+         :ok <- write_json_if_missing(Path.join(protocol_root, "elm.json"), elm_json),
+         :ok <- write_protocol_tool_versions(protocol_root) do
       :ok
     end
   end
@@ -779,7 +780,8 @@ defmodule Ide.ProjectTemplates do
          :ok <-
            CompanionProtocolGenerator.generate_elm_internal(protocol_types, protocol_internal),
          :ok <-
-           File.write(Path.join(protocol_root, "elm.json"), Jason.encode!(elm_json, pretty: true)) do
+           File.write(Path.join(protocol_root, "elm.json"), Jason.encode!(elm_json, pretty: true)),
+         :ok <- write_protocol_tool_versions(protocol_root) do
       :ok
     end
   end
@@ -818,8 +820,19 @@ defmodule Ide.ProjectTemplates do
          :ok <-
            CompanionProtocolGenerator.generate_elm_internal(protocol_types, protocol_internal),
          :ok <-
-           File.write(Path.join(protocol_root, "elm.json"), Jason.encode!(elm_json, pretty: true)) do
+           File.write(Path.join(protocol_root, "elm.json"), Jason.encode!(elm_json, pretty: true)),
+         :ok <- write_protocol_tool_versions(protocol_root) do
       :ok
+    end
+  end
+
+  @spec write_protocol_tool_versions(String.t()) :: :ok | {:error, template_error()}
+  defp write_protocol_tool_versions(protocol_root) when is_binary(protocol_root) do
+    path = Path.join(protocol_root, ".tool-versions")
+
+    case File.write(path, "elm 0.19.1\n") do
+      :ok -> :ok
+      {:error, reason} -> {:error, {:write_failed, path, reason}}
     end
   end
 

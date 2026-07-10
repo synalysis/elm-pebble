@@ -328,6 +328,7 @@ defmodule IdeWeb.WorkspaceLive.ProjectSettingsFlow do
       "target_platforms",
       target_platforms_param(params, Map.get(defaults, "target_platforms"))
     )
+    |> Map.put("optimize_for_size", to_bool(Map.get(params, "optimize_for_size")))
     |> Map.put("capabilities", Ide.ProjectCapabilities.package_capabilities(workspace_root))
   end
 

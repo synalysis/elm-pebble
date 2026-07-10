@@ -5,6 +5,7 @@ defmodule Elmc.Backend.Plan.Lower.Case.TagSwitch do
   alias Elmc.Backend.Plan.Lower.Case.ArmMerge
   alias Elmc.Backend.Plan.Lower.{Expr, PatternBind}
   alias Elmc.Backend.Plan.Types
+  alias Elmc.Backend.SizeProfile
 
   # Ok/Err must tag-switch (linear multi-arm lowering runs every arm). Maybe uses
   # compile_maybe_nothing_case; list ctors stay excluded here.
@@ -32,10 +33,67 @@ defmodule Elmc.Backend.Plan.Lower.Case.TagSwitch do
   @spec compile(map(), list(), Context.t(), Builder.t()) ::
           {:ok, Types.reg() | :fn_out, Builder.t()} | :unsupported
   def compile(subject, branches, ctx, b) do
-    with {:ok, subj_reg, b1} <- Expr.compile(subject, ctx, b) do
-      compile_cfg(subj_reg, branches, ctx, b1)
+    with {:ok, subj_reg, b1} <- Expr.compile(subject, ctx, b),
+         {switch_reg, b_peel} <- maybe_peel_enum_tag(subject, subj_reg, b1) do
+      compile_cfg(switch_reg, branches, ctx, b_peel)
     else
       _ -> :unsupported
+    end
+  end
+
+  defp maybe_peel_enum_tag(subject, subj_reg, b) do
+    opts = Process.get(:elmc_codegen_opts, %{})
+
+    if SizeProfile.enum_tag_peel?(opts) and enum_call_subject?(subject) do
+      Builder.emit_boxed_tag_peel(b, subj_reg)
+    else
+      {subj_reg, b}
+    end
+  end
+
+  defp enum_call_subject?(%{op: :qualified_call, target: target, args: args})
+       when is_binary(target) and is_list(args) do
+    enum_return_type?(target)
+  end
+
+  defp enum_call_subject?(%{op: :call, target: {mod, name}, args: args})
+       when is_binary(mod) and is_binary(name) and is_list(args) do
+    enum_return_type?("#{mod}.#{name}")
+  end
+
+  defp enum_call_subject?(%{op: :call, name: name, args: args})
+       when is_binary(name) and is_list(args) do
+    enum_return_type?(name)
+  end
+
+  defp enum_call_subject?(_), do: false
+
+  defp enum_return_type?(target) when is_binary(target) do
+    decl = lookup_call_decl(target)
+    type = Map.get(decl || %{}, :type)
+
+    is_binary(type) and enum_type?(type)
+  end
+
+  defp enum_type?(type) when is_binary(type) do
+    return =
+      type
+      |> String.replace(" ", "")
+      |> String.split("->")
+      |> List.last()
+
+    enums = Process.get(:elmc_enum_types, MapSet.new())
+
+    MapSet.member?(enums, return) or
+      MapSet.member?(enums, short_name(return))
+  end
+
+  defp lookup_call_decl(target) do
+    decls = Process.get(:elmc_program_decls, %{})
+
+    case String.split(target, ".", parts: 2) do
+      [mod, name] -> Map.get(decls, {mod, name})
+      [name] -> Enum.find_value(decls, fn {{_mod, n}, decl} -> if n == name, do: decl end)
     end
   end
 
@@ -50,7 +108,8 @@ defmodule Elmc.Backend.Plan.Lower.Case.TagSwitch do
            compile_arm_blocks(tagged, default_br, subj_reg, ctx, b_sealed, merge_reg),
          merge_id = skip_reserved(b_arms.next_block, saved_pending),
          b_br = patch_arm_exits(b_arms, arm_exits, merge_id),
-         switch_arms = Enum.map(tagged_results, fn {tag, _reg, arm_id} -> {tag, arm_id} end),
+         switch_arms =
+           Enum.map(tagged_results, fn {tag, _reg, arm_id, ctor} -> {tag, arm_id, ctor} end),
          default_block_id = default_arm_id || merge_id,
          b_entry =
            Builder.patch_terminator(
@@ -93,7 +152,8 @@ defmodule Elmc.Backend.Plan.Lower.Case.TagSwitch do
          {:ok, b_pub} <- ArmMerge.publish_arm_to_merge(b1, reg, merge_reg),
          exit_id = b_pub.current_block.id,
          b2 = Builder.finish_block(b_pub, :none),
-         {:ok, more, exits, b3} <- compile_tagged_arms(rest, subj_reg, ctx, b2, merge_reg, [{tag, reg, arm_id} | acc]) do
+         {:ok, more, exits, b3} <-
+           compile_tagged_arms(rest, subj_reg, ctx, b2, merge_reg, [{tag, reg, arm_id, ctor_name(branch)} | acc]) do
       {:ok, more, [exit_id | exits], b3}
     else
       _ -> :unsupported
@@ -212,4 +272,13 @@ defmodule Elmc.Backend.Plan.Lower.Case.TagSwitch do
   end
 
   defp short_name(name), do: name |> String.split(".") |> List.last()
+
+  defp ctor_name(%{pattern: pattern}) when is_map(pattern), do: union_ctor_name_from_pattern(pattern)
+  defp ctor_name(_), do: nil
+
+  defp union_ctor_name_from_pattern(%{resolved_name: name}) when is_binary(name), do: name
+
+  defp union_ctor_name_from_pattern(%{name: name}) when is_binary(name), do: name
+
+  defp union_ctor_name_from_pattern(_), do: nil
 end

@@ -1,24 +1,19 @@
 {
-  "version": 2,
-  "description": "Reference sizes after generic plan size-reduction (flint/aplite). pebble-app.bin requires --package.",
+  "version": 3,
+  "description": "Balanced-profile compiler baselines (flint). pebble-app.bin from mix ide.size_report --package.",
   "templates": {
     "game-2048": {
-      "generated_c_bytes": 78000,
+      "generated_c_bytes": 32000,
       "pebble_app_bin_aplite": 21000,
-      "pebble_app_bin_flint": 36000
-    },
-    "watchface-yes": {
-      "generated_c_bytes": 215000,
-      "pebble_app_bin_aplite": 42000,
-      "pebble_app_bin_flint": 43000
+      "pebble_app_bin_flint": 23500
     },
     "watchface-tangram-time": {
-      "generated_c_bytes": 209258,
-      "pebble_app_bin_flint": 49324
+      "generated_c_bytes": 115000,
+      "pebble_app_bin_flint": 50000
     },
-    "watchface-poke-battle": {
-      "generated_c_bytes": 189422,
-      "pebble_app_bin_flint": 42808
+    "watchface-yes": {
+      "generated_c_bytes": 150000,
+      "pebble_app_bin_flint": 65000
     }
   }
 }

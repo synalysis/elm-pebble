@@ -5,7 +5,7 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
 
   alias Elmc.Backend.Plan.Builder
   alias Elmc.Backend.Plan.Context
-  alias Elmc.Backend.Plan.Lower.{Arith, Call, Case, Cmd, Compare, Constructor, If, IntCall, Lambda, List, Record, StdlibCall, Tuple}
+  alias Elmc.Backend.Plan.Lower.{Arith, Call, Case, Cmd, Compare, Constructor, If, IntCall, Lambda, List, Record, StdlibCall, Tuple, UnionCtor}
   alias Elmc.Backend.Plan.RuntimeBuiltins
   alias Elmc.Backend.Plan.Types
 
@@ -20,6 +20,16 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
   end
 
   def compile(%{op: :var, name: name}, ctx, b) when is_binary(name) do
+    case String.split(name, ".", parts: 2) do
+      [base, field] when field != "" ->
+        compile(%{op: :field_access, arg: base, field: field}, ctx, b)
+
+      _ ->
+        compile_root_var(name, ctx, b)
+    end
+  end
+
+  defp compile_root_var(name, ctx, b) when is_binary(name) do
     case Context.local_reg(ctx, name) do
       reg when is_integer(reg) ->
         {:ok, reg, b}
@@ -65,8 +75,15 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
       %{target: "Maybe.withDefault", args: args} ->
         StdlibCall.compile_maybe_with_default(args, ctx, b)
 
-      %{target: target, args: [arg]} when target in ["String.fromInt", "String.toInt", "String.toFloat", "Basics.floor"] ->
+      %{target: target, args: [low, high, value]}
+      when target in ["Basics.clamp", "clamp"] ->
+        compile_ternary_runtime(target, low, high, value, :basics_clamp, ctx, b)
+
+      %{target: target, args: [arg]} when target in ["String.fromInt", "String.toInt", "String.toFloat", "Basics.floor", "String.isEmpty"] ->
         compile_string_unary(target, arg, ctx, b)
+
+      %{target: target, args: [left, right]} when target == "String.left" ->
+        compile_string_binary(left, right, ctx, b)
 
       %{target: target, args: [left, right]} ->
         case IntCall.compile(%{op: :call, name: target, args: [left, right]}, ctx, b) do
@@ -115,9 +132,10 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
   def compile(%{op: :constructor_call} = expr, ctx, b),
     do: Constructor.compile(expr, ctx, b)
 
-  def compile(%{op: :partial_constructor, target: target, tag: tag, args: []}, _ctx, b)
+  def compile(%{op: :partial_constructor, target: target, tag: tag, args: []}, ctx, b)
       when is_binary(target) and is_integer(tag) do
-    Builder.emit_const_int(b, tag) |> then(fn {reg, b1} -> {:ok, reg, b1} end)
+    Builder.emit_const_int(b, tag, union_ctor: UnionCtor.qualify(target, ctx))
+    |> then(fn {reg, b1} -> {:ok, reg, b1} end)
   end
 
   def compile(%{op: :partial_constructor, target: target, args: []}, ctx, b)
@@ -216,7 +234,11 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
   end
 
   defp compile_literal(%{op: :int_literal, union_ctor: ctor} = expr, ctx, b) when is_binary(ctor) do
-    Constructor.compile(%{target: ctor, args: [], value: Map.get(expr, :value)}, ctx, b)
+    Constructor.compile(
+      %{target: UnionCtor.qualify(ctor, ctx), args: [], value: Map.get(expr, :value)},
+      ctx,
+      b
+    )
   end
 
   defp compile_literal(%{op: :float_literal, value: value}, ctx, b) when is_number(value) do
@@ -405,6 +427,30 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
   defp compile_string_unary("Basics.floor", arg, ctx, b) do
     with {:ok, arg_reg, b1} <- compile(arg, ctx, b) do
       compile_runtime_builtin(:basics_floor, [arg_reg], ctx, b1)
+    else
+      _ -> :unsupported
+    end
+  end
+
+  defp compile_string_unary("String.isEmpty", arg, ctx, b) do
+    with {:ok, arg_reg, b1} <- compile(arg, ctx, b) do
+      compile_runtime_builtin(:string_is_empty, [arg_reg], ctx, b1)
+    else
+      _ -> :unsupported
+    end
+  end
+
+  defp compile_string_binary(left, right, ctx, b) do
+    with {:ok, [left_reg, right_reg], b1} <- compile_args([left, right], ctx, b) do
+      compile_runtime_builtin(:string_left, [left_reg, right_reg], ctx, b1)
+    else
+      _ -> :unsupported
+    end
+  end
+
+  defp compile_ternary_runtime(_target, low, high, value, id, ctx, b) do
+    with {:ok, [low_reg, high_reg, value_reg], b1} <- compile_args([low, high, value], ctx, b) do
+      compile_runtime_builtin(id, [low_reg, high_reg, value_reg], ctx, b1)
     else
       _ -> :unsupported
     end

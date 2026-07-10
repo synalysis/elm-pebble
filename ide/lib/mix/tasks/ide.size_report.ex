@@ -7,6 +7,7 @@ defmodule Mix.Tasks.Ide.SizeReport do
       mix ide.size_report --templates watchface-yes,game-2048,starter
       mix ide.size_report --package --targets flint,gabbro
       mix ide.size_report --package --baseline tmp/map_size_report --fail-on-regression
+      mix ide.size_report --profile size --package
       mix ide.size_report --baseline-manifest priv/size_report_baselines/flint.json --fail-on-regression
   """
 
@@ -32,8 +33,11 @@ defmodule Mix.Tasks.Ide.SizeReport do
           baseline: :string,
           baseline_manifest: :string,
           fail_on_regression: :boolean,
+          profile: :string,
+          symbol_categories: :boolean,
           max_bin_regression: :integer,
-          max_generated_c_regression: :integer
+          max_generated_c_regression: :integer,
+          max_elmc_text_regression: :integer
         ],
         aliases: [p: :package]
       )
@@ -54,12 +58,15 @@ defmodule Mix.Tasks.Ide.SizeReport do
     baseline_manifest = load_baseline_manifest(opts)
     max_bin_regression = Keyword.get(opts, :max_bin_regression, 512)
     max_generated_c_regression = Keyword.get(opts, :max_generated_c_regression, 8192)
+    max_elmc_text_regression = Keyword.get(opts, :max_elmc_text_regression, 2048)
     fail_on_regression? = Keyword.get(opts, :fail_on_regression, false)
+    codegen_profile = parse_profile(Keyword.get(opts, :profile))
+    symbol_categories? = Keyword.get(opts, :symbol_categories, false)
 
     reports =
       Enum.map(templates, fn template ->
         template
-        |> report_template(out_root, package?, targets)
+        |> report_template(out_root, package?, targets, codegen_profile, symbol_categories?)
         |> case do
           {:ok, report} -> report
           {:error, reason} -> %{template: template, status: "error", reason: inspect(reason)}
@@ -72,7 +79,12 @@ defmodule Mix.Tasks.Ide.SizeReport do
       |> maybe_apply_manifest_baseline(baseline_manifest, targets)
 
     if fail_on_regression? and (baseline_root || baseline_manifest) do
-      enforce_regression_budget!(reports, max_bin_regression, max_generated_c_regression)
+      enforce_regression_budget!(
+        reports,
+        max_bin_regression,
+        max_generated_c_regression,
+        max_elmc_text_regression
+      )
     end
 
     IO.puts(Jason.encode!(%{templates: reports}, pretty: true))
@@ -124,12 +136,18 @@ defmodule Mix.Tasks.Ide.SizeReport do
     |> Enum.reject(&(&1 == ""))
   end
 
-  defp report_template(template, out_root, package?, targets) do
+  defp parse_profile(nil), do: :balanced
+  defp parse_profile("size"), do: :size
+  defp parse_profile("balanced"), do: :balanced
+  defp parse_profile("default"), do: :default
+  defp parse_profile(other), do: Mix.raise("invalid --profile #{inspect(other)} (use size|balanced|default)")
+
+  defp report_template(template, out_root, package?, targets, codegen_profile, symbol_categories?) do
     workspace_root = Path.join(out_root, template)
     compile_out = Path.join(workspace_root, ".size/elmc")
 
     with :ok <- reset_workspace(template, workspace_root),
-         :ok <- compile_template_elmc(Path.join(workspace_root, "watch"), compile_out) do
+         :ok <- compile_template_elmc(Path.join(workspace_root, "watch"), compile_out, codegen_profile) do
       package_report =
         if package? do
           package_template(template, workspace_root, targets)
@@ -141,7 +159,11 @@ defmodule Mix.Tasks.Ide.SizeReport do
        %{
          template: template,
          status: "ok",
-         compiler: compiler_report(compile_out),
+         profile: Atom.to_string(codegen_profile),
+         compiler:
+           compile_out
+           |> compiler_report(symbol_categories?)
+           |> maybe_enrich_compiler_stack_from_package(package_report),
          package: package_report
        }}
     end
@@ -155,17 +177,18 @@ defmodule Mix.Tasks.Ide.SizeReport do
     end
   end
 
-  defp compile_template_elmc(watch_dir, compile_out) do
-    compile_template_elmc(watch_dir, compile_out, direct_render_only: true)
+  defp compile_template_elmc(watch_dir, compile_out, codegen_profile) when is_atom(codegen_profile) do
+    compile_template_elmc(watch_dir, compile_out, direct_render_only: true, codegen_profile: codegen_profile)
   end
 
-  defp compile_template_elmc(watch_dir, compile_out, opts) do
+  defp compile_template_elmc(watch_dir, compile_out, opts) when is_list(opts) do
     elmc_opts = %{
       out_dir: compile_out,
       entry_module: "Main",
       direct_render_only: Keyword.get(opts, :direct_render_only, false),
       prune_runtime: true,
-      prune_native_wrappers: true
+      prune_native_wrappers: true,
+      codegen_profile: Keyword.get(opts, :codegen_profile, :balanced)
     }
 
     case Elmc.compile(watch_dir, elmc_opts) do
@@ -191,16 +214,82 @@ defmodule Mix.Tasks.Ide.SizeReport do
   defp normalize_compile_result({:ok, _result}), do: :ok
   defp normalize_compile_result({:error, reason}), do: {:error, reason}
 
-  defp compiler_report(out_dir) do
+  defp compiler_report(out_dir, symbol_categories?) do
     generated_c = Path.join(out_dir, "c/elmc_generated.c")
     pebble_c = Path.join(out_dir, "c/elmc_pebble.c")
     runtime_dir = Path.join(out_dir, "runtime")
+    stack_report_path = Path.join(out_dir, "elmc_stack_report.json")
 
-    %{
+    base = %{
       generated_c: file_report(generated_c),
       pebble_c: file_report(pebble_c),
       runtime_bytes:
         runtime_dir |> Path.join("**/*") |> Path.wildcard() |> total_regular_file_size()
+    }
+
+    base
+    |> maybe_merge_stack_report(stack_report_path)
+    |> maybe_add_symbol_categories(symbol_categories?, out_dir)
+  end
+
+  defp maybe_merge_stack_report(report, path) do
+    case File.read(path) do
+      {:ok, contents} ->
+        stack = Jason.decode!(contents)
+        Map.put(report, :stack, stack)
+
+      _ ->
+        report
+    end
+  end
+
+  defp maybe_enrich_compiler_stack_from_package(compiler, %{status: "skipped"}), do: compiler
+
+  defp maybe_enrich_compiler_stack_from_package(compiler, packages) when is_list(packages) do
+    packages
+    |> Enum.find(fn entry -> Map.get(entry, :status) == "ok" and is_binary(Map.get(entry, :app_root)) end)
+    |> case do
+      %{app_root: app_root} ->
+        stack_path = Path.join(app_root, "src/c/elmc/elmc_stack_report.json")
+
+        with {:ok, contents} <- File.read(stack_path),
+             {:ok, %{"code_size_indicators" => indicators} = stack} when is_map(indicators) <-
+               Jason.decode(contents),
+             %{"linked_binary" => %{"available" => true} = linked} <- indicators do
+          stack = put_in(stack, ["code_size_indicators", "linked_binary"], linked)
+          Map.put(compiler, :stack, stack)
+        else
+          _ -> compiler
+        end
+
+      _ ->
+        compiler
+    end
+  end
+
+  defp maybe_enrich_compiler_stack_from_package(compiler, _), do: compiler
+
+  defp maybe_add_symbol_categories(report, false, _out_dir), do: report
+
+  defp maybe_add_symbol_categories(report, true, _out_dir) do
+    categories =
+      report
+      |> get_in([:stack, "code_size_indicators"])
+      |> case do
+        %{} = indicators -> categorize_stack_indicators(indicators)
+        _ -> %{}
+      end
+
+    Map.put(report, :symbol_categories, categories)
+  end
+
+  defp categorize_stack_indicators(indicators) do
+    %{
+      fusion_native_count: Map.get(indicators, "fusion_native_count") || Map.get(indicators, :fusion_native_count),
+      plan_function_count: Map.get(indicators, "plan_function_count") || Map.get(indicators, :plan_function_count),
+      commands_append_bytes: Map.get(indicators, "commands_append_bytes") || Map.get(indicators, :commands_append_bytes),
+      owned_slot_max: Map.get(indicators, "owned_slot_max") || Map.get(indicators, :owned_slot_max),
+      direct_command_defs: Map.get(indicators, "direct_command_defs") || Map.get(indicators, :direct_command_defs)
     }
   end
 
@@ -230,6 +319,7 @@ defmodule Mix.Tasks.Ide.SizeReport do
           %{
             target: target_name(target),
             status: "ok",
+            app_root: result.app_root,
             artifact: file_report(result.artifact_path),
             app_bins: target_bin_reports(build_dir, target),
             objects: object_reports(build_dir),
@@ -442,22 +532,26 @@ defmodule Mix.Tasks.Ide.SizeReport do
 
   defp directory_baseline_compare(_report, _baseline_root, _out_root, _targets), do: %{}
 
-  defp manifest_baseline_compare(%{template: template} = report, manifest, bin_key, existing) do
+  defp manifest_baseline_compare(report, manifest, bin_key, existing) do
     status = Map.get(report, :status) || Map.get(report, "status")
     compiler = Map.get(report, :compiler) || Map.get(report, "compiler")
 
     if status in ["ok", :ok] and is_map(compiler) do
-      compare_manifest_baseline(template, compiler, manifest, bin_key, existing)
+      compare_manifest_baseline(report, compiler, manifest, bin_key, existing)
     else
       existing
     end
   end
 
-  defp compare_manifest_baseline(template, compiler, manifest, bin_key, existing) do
+  defp compare_manifest_baseline(report, compiler, manifest, bin_key, existing) do
+    template = Map.get(report, :template) || Map.get(report, "template")
     template_manifest = manifest_entry(manifest, template)
     current_generated_c = manifest_metric(compiler, :generated_c, :bytes)
     baseline_generated_c = manifest_metric_flat(template_manifest, "generated_c_bytes")
-    current_bin = current_pebble_app_bin_bytes(existing)
+
+    current_bin =
+      current_pebble_app_bin_bytes(existing) ||
+        package_pebble_app_bin_bytes(report, baseline_compare_target_from_key(bin_key))
 
     baseline_bin =
       case manifest_metric_flat(template_manifest, bin_key) do
@@ -465,10 +559,109 @@ defmodule Mix.Tasks.Ide.SizeReport do
         _ -> get_in(existing, [:pebble_app_bin, :baseline])
       end
 
+    current_elmc_text = current_elmc_text_bytes(report, compiler)
+    baseline_elmc_text = manifest_metric_flat(template_manifest, "elmc_text_bytes")
+
+    symbol_budget_compare =
+      compare_symbol_budgets(report, Map.get(template_manifest, "symbol_budgets") || %{})
+
     existing
     |> Map.put(:generated_c, metric_delta(current_generated_c, baseline_generated_c))
     |> Map.put(:pebble_app_bin, metric_delta(current_bin, baseline_bin))
+    |> Map.put(:elmc_text_bytes, metric_delta(current_elmc_text, baseline_elmc_text))
+    |> Map.put(:symbol_budgets, symbol_budget_compare)
   end
+
+  defp baseline_compare_target_from_key("pebble_app_bin_" <> target), do: target
+  defp baseline_compare_target_from_key(_), do: "flint"
+
+  defp current_elmc_text_bytes(report, compiler) do
+    package_elmc_text_bytes(report) ||
+      get_in(compiler, [:stack, "code_size_indicators", "linked_binary", "elmc_text_bytes"]) ||
+      get_in(compiler, [:stack, :code_size_indicators, :linked_binary, :elmc_text_bytes])
+  end
+
+  defp package_elmc_text_bytes(%{package: packages}) when is_list(packages) do
+    packages
+    |> Enum.flat_map(fn entry ->
+      symbols = Map.get(entry, :map_symbols) || Map.get(entry, "map_symbols") || []
+
+      Enum.filter(symbols, fn row ->
+        symbol = Map.get(row, :symbol) || Map.get(row, "symbol") || ""
+
+        String.contains?(symbol, "elmc_") or String.contains?(symbol, "Elmc")
+      end)
+    end)
+    |> Enum.map(fn row -> Map.get(row, :size) || Map.get(row, "size") end)
+    |> Enum.reject(&is_nil/1)
+    |> case do
+      [] -> nil
+      sizes -> Enum.sum(sizes)
+    end
+  end
+
+  defp package_elmc_text_bytes(_), do: nil
+
+  defp package_pebble_app_bin_bytes(%{package: packages}, target) when is_list(packages) do
+    packages
+    |> Enum.find(fn entry ->
+      (Map.get(entry, :target) || Map.get(entry, "target")) in [target, to_string(target)]
+    end)
+    |> package_bin_bytes("pebble-app.bin")
+  end
+
+  defp package_pebble_app_bin_bytes(_, _), do: nil
+
+  defp package_bin_bytes(nil, _name), do: nil
+
+  defp package_bin_bytes(entry, name) do
+    bins = Map.get(entry, :app_bins) || Map.get(entry, "app_bins") || []
+
+    bins
+    |> Enum.find(fn bin ->
+      path = Map.get(bin, :path) || Map.get(bin, "path") || ""
+
+      String.ends_with?(path, name)
+    end)
+    |> case do
+      %{bytes: bytes} when is_integer(bytes) -> bytes
+      %{"bytes" => bytes} when is_integer(bytes) -> bytes
+      _ -> nil
+    end
+  end
+
+  defp compare_symbol_budgets(report, budgets) when is_map(budgets) do
+    symbols = package_symbol_sizes(report)
+
+    budgets
+    |> Enum.map(fn {symbol, budget} ->
+      current = Map.get(symbols, symbol) || Map.get(symbols, to_string(symbol))
+      budget = if is_integer(budget), do: budget, else: nil
+
+      %{
+        symbol: symbol,
+        current: current,
+        budget: budget,
+        over: is_integer(current) and is_integer(budget) and current > budget
+      }
+    end)
+  end
+
+  defp compare_symbol_budgets(_report, _), do: []
+
+  defp package_symbol_sizes(%{package: packages}) when is_list(packages) do
+    packages
+    |> Enum.flat_map(fn entry -> Map.get(entry, :map_symbols) || Map.get(entry, "map_symbols") || [] end)
+    |> Enum.map(fn row ->
+      symbol = Map.get(row, :symbol) || Map.get(row, "symbol")
+      size = Map.get(row, :size) || Map.get(row, "size")
+      {symbol, size}
+    end)
+    |> Enum.reject(fn {symbol, size} -> is_nil(symbol) or is_nil(size) end)
+    |> Map.new()
+  end
+
+  defp package_symbol_sizes(_), do: %{}
 
   defp manifest_entry(manifest, template) when is_map(manifest) do
     Map.get(manifest, template) || Map.get(manifest, to_string(template)) || %{}
@@ -518,10 +711,22 @@ defmodule Mix.Tasks.Ide.SizeReport do
     ])
   end
 
-  defp enforce_regression_budget!(reports, max_bin_regression, max_generated_c_regression) do
+  defp enforce_regression_budget!(
+         reports,
+         max_bin_regression,
+         max_generated_c_regression,
+         max_elmc_text_regression
+       ) do
     regressions =
       reports
-      |> Enum.flat_map(&regression_messages(&1, max_bin_regression, max_generated_c_regression))
+      |> Enum.flat_map(
+        &regression_messages(
+          &1,
+          max_bin_regression,
+          max_generated_c_regression,
+          max_elmc_text_regression
+        )
+      )
 
     if regressions != [] do
       Mix.raise("size regression over budget:\n" <> Enum.join(regressions, "\n"))
@@ -530,7 +735,7 @@ defmodule Mix.Tasks.Ide.SizeReport do
     :ok
   end
 
-  defp regression_messages(report, max_bin_regression, max_generated_c_regression) do
+  defp regression_messages(report, max_bin_regression, max_generated_c_regression, max_elmc_text_regression) do
     baseline = Map.get(report, :baseline, %{})
 
     bin_msg =
@@ -556,7 +761,32 @@ defmodule Mix.Tasks.Ide.SizeReport do
           []
       end
 
-    bin_msg ++ generated_c_msg
+    elmc_text_msg =
+      case Map.get(baseline, :elmc_text_bytes) do
+        %{delta: delta} when is_integer(delta) and delta > max_elmc_text_regression ->
+          [
+            "#{report.template}: elmc text symbols grew by #{delta} bytes (budget #{max_elmc_text_regression})"
+          ]
+
+        _ ->
+          []
+      end
+
+    symbol_budget_msg =
+      baseline
+      |> Map.get(:symbol_budgets, [])
+      |> Enum.flat_map(fn
+        %{symbol: symbol, current: current, budget: budget, over: true}
+        when is_integer(current) and is_integer(budget) ->
+          [
+            "#{report.template}: symbol #{symbol} is #{current} bytes (budget #{budget})"
+          ]
+
+        _ ->
+          []
+      end)
+
+    bin_msg ++ generated_c_msg ++ elmc_text_msg ++ symbol_budget_msg
   end
 
   defp legacy_bin_regression(_template, _delta, max) when max < 0, do: []

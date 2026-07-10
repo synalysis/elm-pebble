@@ -125,3 +125,38 @@ Nested lambdas recurse through the parent plan's `lambdas` array.
 
 `Pebble.Ui.toUiNode` lowers to `retain` on the render-op list (identity for
 bytecode/C plan paths that already emit `render_cmd` values).
+
+## Size profile (`codegen_profile: :size`)
+
+`Elmc.Backend.SizeProfile` composes existing plan, fusion, and direct-render
+size levers for Pebble watch builds:
+
+- `strip_dead_code`, `prune_runtime`, `prune_native_wrappers`, `plan_ir_mode: :primary`
+- Enum tag peel in plan `TagSwitch` (`:boxed_tag_peel` → `elmc_as_int` + native `switch`)
+- Plan C state-machine emit (`plan_emit: :state_switch`) for functions with ≥8 blocks
+- Fusion-first routing (`size_fusion_native_first?`) and superseded native helper pruning
+- Aggressive direct-render superseding when `direct_render_only` is not explicitly disabled
+
+IDE watch compiles default to `codegen_profile: :size`. Use `mix ide.size_report --profile size`
+for comparable before/after metrics (`elmc_stack_report.json` merged into compiler report).
+
+## Coverage tracking
+
+See [docs/PLAN_IR_COVERAGE.md](../../../docs/PLAN_IR_COVERAGE.md) for construct-level
+coverage, strict template smoke results, and how to extend plan lowering without
+per-app shims. CI smoke: `mix test test/plan_template_strict_gate_test.exs`.
+
+## Plan bytecode tier (deferred)
+
+Phases 0–4 target expanded C and native/fusion paths. A selective **bytecode tier**
+(`.elmcbc` blobs + thin trampolines for large RC plan functions) is **not enabled**
+on watch builds by default.
+
+**Go/no-go criteria** (measure with `mix ide.size_report --profile size --package`):
+
+1. `elmc_generated.o` `.text` > 35% of `pebble-app.bin`, and
+2. ≥10 RC plan functions each > 400 B `.text` after enum/scene/state-switch wins.
+
+Until both hold on reference templates (`watchface-yes`, `game-2048`), bytecode
+remains IDE/debug smoke only (`Bytecode.Runtime`); on-watch interpretation is out
+of scope unless product explicitly requests it.

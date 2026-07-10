@@ -139,15 +139,35 @@ defmodule Elmc.Backend.Plan.Builder do
     {result_dest, %{b | current_block: current, next_instr: b.next_instr + 1}}
   end
 
-  @spec emit_const_int(t(), integer()) :: {Types.reg(), t()}
-  def emit_const_int(b, value) do
+  @spec emit_const_int(t(), integer(), keyword()) :: {Types.reg(), t()}
+  def emit_const_int(b, value, opts \\ []) do
     {reg, b1} = fresh_reg(b)
+
+    args =
+      case Keyword.get(opts, :union_ctor) do
+        ctor when is_binary(ctor) -> %{value: value, union_ctor: ctor}
+        _ -> %{value: value}
+      end
 
     {_, b2} =
       emit(b1, :const_int, %{
         dest: reg,
-        args: %{value: value},
+        args: args,
         effects: Types.owned_effects(reg)
+      })
+
+    {reg, b2}
+  end
+
+  @spec emit_boxed_tag_peel(t(), Types.reg()) :: {Types.reg(), t()}
+  def emit_boxed_tag_peel(b, subject_reg) when is_integer(subject_reg) do
+    {reg, b1} = fresh_reg(b)
+
+    {_, b2} =
+      emit(b1, :boxed_tag_peel, %{
+        dest: reg,
+        args: %{subject: subject_reg},
+        effects: Types.empty_effects()
       })
 
     {reg, b2}

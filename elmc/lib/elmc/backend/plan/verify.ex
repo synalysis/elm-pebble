@@ -103,7 +103,7 @@ defmodule Elmc.Backend.Plan.Verify do
     end)
   end
 
-  defp apply_instr(%Types{op: :phi, args: %{then: then_reg, else: else_reg, cond: cond_reg}, effects: effects, dest: dest}, st) do
+  defp apply_instr(%Types{op: :phi, args: %{then: _, else: _, cond: _}, effects: effects, dest: dest}, st) do
     merge_owned =
       case dest do
         reg when is_integer(reg) -> MapSet.new([reg])
@@ -113,7 +113,7 @@ defmodule Elmc.Backend.Plan.Verify do
     st
     |> Map.put(:consumed, MapSet.new())
     |> check_borrows_not_consumed(effects.borrows || [])
-    |> mark_consumed((effects.consumes || []) ++ [then_reg, else_reg, cond_reg])
+    |> mark_consumed(effects.consumes || [])
     |> then(&%{&1 | owned: merge_owned})
   end
 

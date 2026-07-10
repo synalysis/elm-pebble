@@ -1,6 +1,8 @@
 defmodule Elmc.DirectRenderDeadViewHelpersTest do
   use ExUnit.Case, async: false
 
+  alias Elmc.Test.CCodegenExtract
+
   @source_fixture Path.expand("fixtures/simple_project", __DIR__)
   @template_main Path.expand("../../ide/priv/project_templates/game_2048/src/Main.elm", __DIR__)
   @project_dir Path.expand("tmp/dead_view_helpers_2048_project", __DIR__)
@@ -76,6 +78,15 @@ defmodule Elmc.DirectRenderDeadViewHelpersTest do
     refute generated =~ "static RC elmc_fn_Main_collapseRow("
     refute generated =~ "static RC elmc_fn_Main_merge("
     refute generated =~ "static RC elmc_fn_Main_orient("
+
+    move_board = CCodegenExtract.fn_body(generated, "elmc_fn_Main_moveBoard_native")
+    assert move_board =~ "elmc_row_major_fwd_perm"
+    assert move_board =~ "out_buf[cmp_i] != src[cmp_i]"
+    refute move_board =~ "elmc_row_major_perm_src_i"
+    refute move_board =~ "spawn_after_choice < 0"
+    refute move_board =~ "next_cells = elmc_list_nil()"
+    assert move_board =~ "Rc = elmc_list_from_int_array_reuse(&next_cells"
+    assert move_board =~ "CHECK_RC(Rc)"
   end
 
   test "view board loop uses int_list fast path without cons fallback", %{generated: generated} do

@@ -186,7 +186,9 @@ defmodule Ide.PebbleToolchain.Types do
           optional(:prod) => boolean(),
           optional(:plan_ir_mode) => :off | :shadow | :primary,
           optional(:plan_ir_strict) => boolean(),
-          optional(:debug_usage_policy) => :error | :warn | :warning
+          optional(:debug_usage_policy) => :error | :warn | :warning,
+          optional(:codegen_profile) => :default | :balanced | :size,
+          optional(:optimize_for_size) => boolean()
         }
 
   @type watch_compile_opts :: %{
@@ -198,6 +200,7 @@ defmodule Ide.PebbleToolchain.Types do
           required(:prune_native_wrappers) => true,
           required(:pebble_int32) => true,
           required(:strip_dead_code) => true,
+          optional(:codegen_profile) => :default | :balanced | :size,
           optional(:prod) => boolean(),
           optional(:plan_ir_mode) => :off | :shadow | :primary,
           optional(:plan_ir_strict) => boolean(),

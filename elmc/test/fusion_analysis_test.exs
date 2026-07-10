@@ -61,4 +61,49 @@ defmodule Elmc.FusionAnalysisTest do
     assert Map.get(plans.param_plans, {"Main", "spawnTileWithSeed", "cells"}).layout == :compact
     assert Map.get(plans.param_plans, {"Main", "setCell", "cells"}).layout == :compact
   end
+
+  test "fusion-superseded spawn helpers are omitted from generated C for game-2048" do
+    project_dir = Path.expand("tmp/fusion_analysis_spawn_prune", __DIR__)
+    out_dir = Path.expand("tmp/fusion_analysis_spawn_prune_out", __DIR__)
+
+    File.mkdir_p!(Path.join(project_dir, "src"))
+    File.cp!(Path.expand("fixtures/simple_project/elm.json", __DIR__), Path.join(project_dir, "elm.json"))
+    File.write!(Path.join(project_dir, "src/Main.elm"), File.read!(@template_main))
+
+    assert {:ok, _} =
+             Elmc.compile(project_dir, %{
+               out_dir: out_dir,
+               entry_module: "Main",
+               direct_render_only: true,
+               strip_dead_code: true
+             })
+
+    generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+
+    assert generated_c =~ "static RC elmc_fn_Main_moveBoard_native("
+    refute generated_c =~ "spawnTileWithSeed"
+    refute generated_c =~ "advanceSeed"
+    refute generated_c =~ "randomIndex"
+  end
+
+  test "size profile enables fusion-first routing for moveBoard on game-2048" do
+    project_dir = Path.expand("tmp/fusion_analysis_size_profile", __DIR__)
+    out_dir = Path.expand("tmp/fusion_analysis_size_profile_out", __DIR__)
+
+    File.mkdir_p!(Path.join(project_dir, "src"))
+    File.cp!(Path.expand("fixtures/simple_project/elm.json", __DIR__), Path.join(project_dir, "elm.json"))
+    File.write!(Path.join(project_dir, "src/Main.elm"), File.read!(@template_main))
+
+    assert {:ok, _} =
+             Elmc.compile(project_dir, %{
+               out_dir: out_dir,
+               entry_module: "Main",
+               direct_render_only: true,
+               strip_dead_code: true,
+               codegen_profile: :size
+             })
+
+    generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+    assert generated_c =~ "static RC elmc_fn_Main_moveBoard_native("
+  end
 end

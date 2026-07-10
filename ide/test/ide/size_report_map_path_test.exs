@@ -118,7 +118,9 @@ defmodule Ide.SizeReportMapPathTest do
     assert get_in(report, ["baseline", "generated_c", "current"]) ==
              get_in(report, ["compiler", "generated_c", "bytes"])
 
-    assert get_in(report, ["baseline", "generated_c", "baseline"]) == 69_762
+    manifest_json = Jason.decode!(File.read!(manifest))
+    expected = get_in(manifest_json, ["templates", "game-2048", "generated_c_bytes"])
+    assert get_in(report, ["baseline", "generated_c", "baseline"]) == expected
   end
 
   defp extract_json!(output) do

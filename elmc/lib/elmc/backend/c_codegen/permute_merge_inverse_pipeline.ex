@@ -529,7 +529,7 @@ defmodule Elmc.Backend.CCodegen.PermuteMergeInversePipeline do
          module_name
        ) do
     """
-    #{RowMajorLayout.emit_perm_src_index_fn(width)}
+    #{RowMajorLayout.emit_row_major_perm_tables(width, rows)}
     static RC #{c_prefix}_native(ElmcValue **out, elmc_int_t case_tag, ElmcValue *model) {
       RC Rc = RC_SUCCESS;
       CATCH_BEGIN
@@ -542,13 +542,13 @@ defmodule Elmc.Backend.CCodegen.PermuteMergeInversePipeline do
         src[i] = elmc_list_nth_int_default(model_cells, i, 0);
       }
       const int perm_case = #{perm_case_index};
-      #{RowMajorLayout.emit_apply_row_major_perm_via_helper("src", "perm_buf", "perm_case", false, count)}
+      #{RowMajorLayout.emit_apply_row_major_perm_via_table("src", "perm_buf", "perm_case", false, count)}
       elmc_int_t merge_score = 0;
       #{RowMajorLayout.emit_adjacent_pair_merge_rows(width, rows, "perm_buf", "merge_buf", "merge_score")}
-      #{RowMajorLayout.emit_apply_row_major_perm_via_helper("merge_buf", "out_buf", "perm_case", true, count)}
+      #{RowMajorLayout.emit_apply_row_major_perm_via_table("merge_buf", "out_buf", "perm_case", true, count)}
       bool unchanged = true;
       for (elmc_int_t cmp_i = 0; cmp_i < #{count}; cmp_i++) {
-        if (out_buf[cmp_i] != elmc_list_nth_int_default(model_cells, cmp_i, 0)) {
+        if (out_buf[cmp_i] != src[cmp_i]) {
           unchanged = false;
           break;
         }
@@ -607,8 +607,8 @@ defmodule Elmc.Backend.CCodegen.PermuteMergeInversePipeline do
   Rc = elmc_new_int(&next_seed, spawn_after_tile);
   CHECK_RC(Rc);
   ElmcValue *next_cells = NULL;
-  if (elmc_list_from_int_array_reuse(&next_cells, model_cells, out_buf, #{count}) != RC_SUCCESS)
-    next_cells = elmc_list_nil();
+  Rc = elmc_list_from_int_array_reuse(&next_cells, model_cells, out_buf, #{count});
+  CHECK_RC(Rc);
   """
   |> String.trim()
   end

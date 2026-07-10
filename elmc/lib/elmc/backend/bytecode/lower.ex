@@ -168,7 +168,10 @@ defmodule Elmc.Backend.Bytecode.Lower do
 
   defp encode_terminator({:switch_tag, subject, arms, default_id}) do
     arms_bin =
-      Enum.map(arms, fn {tag, block_id} -> <<tag::16, block_id::16>> end)
+      Enum.map(arms, fn
+        {tag, block_id, _} -> <<tag::16, block_id::16>>
+        {tag, block_id} -> <<tag::16, block_id::16>>
+      end)
       |> IO.iodata_to_binary()
 
     <<
