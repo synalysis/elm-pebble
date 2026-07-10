@@ -1,0 +1,28 @@
+---
+description: Do not commit or push unless the user explicitly asks
+alwaysApply: true
+---
+
+# Git Commit and Push — Explicit Request Only
+
+Never create git commits or push to the remote repository unless the user **explicitly asks** in the current message or in a user rule that applies to that request.
+
+## Do Not
+
+- Commit after finishing a task, fixing CI, or cleaning up warnings “to save progress”
+- Push because CI failed, a branch is ready, or a release seems due
+- Amend, rebase, or force-push unless the user explicitly requested that operation
+- Treat prior conversation turns (“ok, go ahead”) as standing permission for all future git writes
+
+## Do
+
+- Stage, edit, and test locally; leave changes uncommitted unless asked
+- When the user asks to commit: follow their commit workflow (message style, what to include, hooks)
+- When the user asks to push: push only as instructed (branch, remote, no force unless requested)
+- If unsure whether they want a commit or push, ask — default is **no** git write
+
+## Examples
+
+- **Bad:** Task done → `git commit` + `git push` without being asked
+- **Good:** Task done → summarize changes; user says “commit and push” → then commit and push
+- **Good:** User says “ok, go ahead” on fixing tests → fix tests only; no commit unless they also asked to commit

@@ -10,6 +10,7 @@ ExUnit.configure(
     :corpus_index,
     :fixture_codegen,
     :plan_shadow,
-    :plan_parity
+    :plan_parity,
+    :plan_rc_track_exec
   ]
 )

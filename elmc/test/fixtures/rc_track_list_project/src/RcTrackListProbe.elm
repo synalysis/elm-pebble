@@ -20,6 +20,8 @@ module RcTrackListProbe exposing
     , probeMap
     , probeMap2
     , probeMap3
+    , probeMap4
+    , probeMap5
     , probeMaximum
     , probeMember
     , probeMinimum
@@ -259,6 +261,16 @@ probeMap2 =
 probeMap3 : Int
 probeMap3 =
     List.sum (List.map3 (\a b c -> a + b + c) [ 1, 2 ] [ 3, 4 ] [ 5, 6 ])
+
+
+probeMap4 : Int
+probeMap4 =
+    listChecksum (List.map4 (\a b c d -> a + b + c + d) sample sample sample sample)
+
+
+probeMap5 : Int
+probeMap5 =
+    listChecksum (List.map5 (\a b c d e -> a + b + c + d + e) sample sample sample sample sample)
 
 
 probeCons : Int

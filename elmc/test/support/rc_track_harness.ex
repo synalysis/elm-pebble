@@ -24,6 +24,25 @@ defmodule Elmc.Test.RcTrackHarness do
     end
   end
 
+  @spec assert_no_elmc_unknown!(String.t()) :: :ok
+  def assert_no_elmc_unknown!(out_dir) when is_binary(out_dir) do
+    c_path = Path.join(out_dir, "c/elmc_generated.c")
+
+    if File.regular?(c_path) do
+      count =
+        c_path
+        |> File.read!()
+        |> then(&Regex.scan(~r/elmc_unknown\b/, &1))
+        |> length()
+
+      if count != 0 do
+        flunk("expected zero elmc_unknown in #{c_path}, got #{count}")
+      end
+    end
+
+    :ok
+  end
+
   @spec cc_flags(String.t(), keyword()) :: [String.t()]
   def cc_flags(out_dir, opts \\ []) do
     rc_track_flag = if Keyword.get(opts, :rc_track, true), do: ["-DELMC_RC_TRACK=1"], else: []
@@ -316,7 +335,7 @@ defmodule Elmc.Test.RcTrackHarness do
   def generated_fn_call(out_dir, module_name, fn_name, args_expr, argc) do
     c_name = "elmc_fn_#{module_name}_#{fn_name}"
 
-    if generated_fn_rc?(out_dir, c_name) do
+    if generated_fn_full_rc?(out_dir, c_name) do
       "elmc_harness_call_rc(#{c_name}, #{args_expr}, #{argc})"
     else
       "elmc_harness_call_value(#{c_name}, #{args_expr}, #{argc})"
@@ -325,14 +344,131 @@ defmodule Elmc.Test.RcTrackHarness do
 
   @spec generated_fn_rc?(String.t(), String.t()) :: boolean()
   def generated_fn_rc?(out_dir, c_name) do
+    generated_fn_full_rc?(out_dir, c_name) or generated_fn_out_only_rc?(out_dir, c_name)
+  end
+
+  @spec generated_fn_full_rc?(String.t(), String.t()) :: boolean()
+  def generated_fn_full_rc?(out_dir, c_name) do
     generated_c_path = Path.join(out_dir, "c/elmc_generated.c")
 
     case File.read(generated_c_path) do
       {:ok, source} ->
         Enum.any?(
           [
-            "RC #{c_name}(ElmcValue **out",
-            "static RC #{c_name}(ElmcValue **out"
+            "RC #{c_name}(ElmcValue **out, ElmcValue ** const args",
+            "static RC #{c_name}(ElmcValue **out, ElmcValue ** const args",
+            "RC #{c_name}(ElmcValue **out, ElmcValue **args",
+            "static RC #{c_name}(ElmcValue **out, ElmcValue **args"
+          ],
+          &String.contains?(source, &1)
+        )
+
+      _ ->
+        false
+    end
+  end
+
+  @spec generated_fn_out_only_rc?(String.t(), String.t()) :: boolean()
+  def generated_fn_out_only_rc?(out_dir, c_name) do
+    generated_c_path = Path.join(out_dir, "c/elmc_generated.c")
+
+    case File.read(generated_c_path) do
+      {:ok, source} ->
+        Enum.any?(
+          [
+            "RC #{c_name}(ElmcValue **out)",
+            "static RC #{c_name}(ElmcValue **out)"
+          ],
+          &String.contains?(source, &1)
+        )
+
+      _ ->
+        false
+    end
+  end
+
+  @spec generated_fn_native_rc?(String.t(), String.t()) :: boolean()
+  def generated_fn_native_rc?(out_dir, c_name) do
+    native = "#{c_name}_native"
+    generated_c_path = Path.join(out_dir, "c/elmc_generated.c")
+
+    case File.read(generated_c_path) do
+      {:ok, source} ->
+        Enum.any?(
+          [
+            "RC #{native}(elmc_int_t *out)",
+            "static RC #{native}(elmc_int_t *out)"
+          ],
+          &String.contains?(source, &1)
+        )
+
+      _ ->
+        false
+    end
+  end
+
+  @spec generated_fn_native_int_void?(String.t(), String.t()) :: boolean()
+  def generated_fn_native_int_void?(out_dir, c_name) do
+    generated_c_path = Path.join(out_dir, "c/elmc_generated.c")
+
+    case File.read(generated_c_path) do
+      {:ok, source} ->
+        Enum.any?(
+          [
+            "elmc_int_t #{c_name}(void)",
+            "static elmc_int_t #{c_name}(void)"
+          ],
+          &String.contains?(source, &1)
+        )
+
+      _ ->
+        false
+    end
+  end
+
+  @spec generated_fn_scalar_int_rc?(String.t(), String.t()) :: boolean()
+  def generated_fn_scalar_int_rc?(out_dir, c_name) do
+    generated_c_path = Path.join(out_dir, "c/elmc_generated.c")
+
+    case File.read(generated_c_path) do
+      {:ok, source} ->
+        Enum.any?(
+          [
+            "RC #{c_name}(elmc_int_t *out)",
+            "static RC #{c_name}(elmc_int_t *out)"
+          ],
+          &String.contains?(source, &1)
+        )
+
+      _ ->
+        false
+    end
+  end
+
+  defp scalar_int_probe_thunk(symbol, c_name) do
+    """
+    static ElmcValue *#{symbol}_probe(void) {
+      elmc_int_t value = 0;
+      if (#{c_name}(&value) != RC_SUCCESS) return elmc_int_zero();
+      ElmcValue *out = NULL;
+      if (elmc_new_int(&out, value) != RC_SUCCESS) return elmc_int_zero();
+      return out;
+    }
+    """
+  end
+
+  @spec generated_fn_value_void?(String.t(), String.t()) :: boolean()
+  def generated_fn_value_void?(out_dir, c_name) do
+    generated_c_path = Path.join(out_dir, "c/elmc_generated.c")
+
+    case File.read(generated_c_path) do
+      {:ok, source} ->
+        Enum.any?(
+          [
+            "ElmcValue * #{c_name}(void)",
+            "ElmcValue *#{c_name}(void)",
+            "static ElmcValue * #{c_name}(void)",
+            "static ElmcValue *#{c_name}(void)"
           ],
           &String.contains?(source, &1)
         )
@@ -487,21 +623,58 @@ defmodule Elmc.Test.RcTrackHarness do
   defp probe_thunks(out_dir, module_name, probes) do
     Enum.map_join(probes, "\n", fn %{c_symbol: symbol} ->
       c_name = "elmc_fn_#{module_name}_#{symbol}"
+      probe_thunk_body(out_dir, symbol, c_name)
+    end)
+  end
 
-      if generated_fn_rc?(out_dir, c_name) do
+  defp probe_thunk_body(out_dir, symbol, c_name) do
+    cond do
+      generated_fn_native_rc?(out_dir, c_name) ->
+        scalar_int_probe_thunk(symbol, "#{c_name}_native")
+
+      generated_fn_native_int_void?(out_dir, c_name) ->
+        """
+        static ElmcValue *#{symbol}_probe(void) {
+          elmc_int_t value = #{c_name}();
+          ElmcValue *out = NULL;
+          if (elmc_new_int(&out, value) != RC_SUCCESS) return elmc_int_zero();
+          return out;
+        }
+        """
+
+      generated_fn_scalar_int_rc?(out_dir, c_name) ->
+        scalar_int_probe_thunk(symbol, c_name)
+
+      generated_fn_out_only_rc?(out_dir, c_name) ->
+        """
+        static ElmcValue *#{symbol}_probe(void) {
+          ElmcValue *out = NULL;
+          if (#{c_name}(&out) != RC_SUCCESS) return elmc_int_zero();
+          return out;
+        }
+        """
+
+      generated_fn_full_rc?(out_dir, c_name) ->
         """
         static ElmcValue *#{symbol}_probe(void) {
           return elmc_harness_call_rc(#{c_name}, NULL, 0);
         }
         """
-      else
+
+      generated_fn_value_void?(out_dir, c_name) ->
+        """
+        static ElmcValue *#{symbol}_probe(void) {
+          return #{c_name}();
+        }
+        """
+
+      true ->
         """
         static ElmcValue *#{symbol}_probe(void) {
           return elmc_harness_call_value(#{c_name}, NULL, 0);
         }
         """
-      end
-    end)
+    end
   end
 
   defp probe_case_c(%{name: name, c_symbol: symbol, release_result: release_result}) do

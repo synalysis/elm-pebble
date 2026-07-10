@@ -34,7 +34,8 @@ defmodule Elmc.Backend.Bytecode.Opcodes do
     boxed_binop: 28,
     const_static_list: 29,
     const_c_expr: 30,
-    record_get_int: 31
+    record_get_int: 31,
+    test_string_literal: 32
   }
 
   @spec opcode(atom()) :: non_neg_integer() | nil

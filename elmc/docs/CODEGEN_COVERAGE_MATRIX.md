@@ -86,6 +86,22 @@ Functions marked with (λ) also have zero-arg partial-application wrappers.
 | `Basics.remainderBy` | `elmc_basics_remainder_by` | Real |
 | `Basics.xor` | `elmc_basics_xor` | Real |
 | `Basics.compare` | `elmc_basics_compare` | Real |
+| `Basics.sqrt` (λ) | `elmc_basics_sqrt` | Real |
+| `Basics.sin` (λ) | `elmc_basics_sin` | Real |
+| `Basics.cos` (λ) | `elmc_basics_cos` | Real |
+| `Basics.tan` (λ) | `elmc_basics_tan` | Real |
+| `Basics.asin` (λ) | `elmc_basics_asin` | Real |
+| `Basics.acos` (λ) | `elmc_basics_acos` | Real |
+| `Basics.atan` (λ) | `elmc_basics_atan` | Real |
+| `Basics.atan2` | `elmc_basics_atan2` | Real |
+| `Basics.degrees` (λ) | `elmc_basics_degrees` | Real |
+| `Basics.radians` (λ) | `elmc_basics_radians` | Real |
+| `Basics.turns` (λ) | `elmc_basics_turns` | Real |
+| `Basics.logBase` | `elmc_basics_log_base` | Real |
+| `Basics.isInfinite` (λ) | `elmc_basics_is_infinite` | Real |
+| `Basics.isNaN` (λ) | `elmc_basics_is_nan` | Real |
+| `Basics.fromPolar` (λ) | `elmc_basics_from_polar` | Real |
+| `Basics.toPolar` (λ) | `elmc_basics_to_polar` | Real |
 
 ### elm/core: Bitwise
 
@@ -137,6 +153,8 @@ Functions marked with (λ) also have zero-arg partial-application wrappers.
 | `List.intersperse` | `elmc_list_intersperse` | Real |
 | `List.map2` | `elmc_list_map2` | Real |
 | `List.map3` | `elmc_list_map3` | Real |
+| `List.map4` | `elmc_list_map4` | Real |
+| `List.map5` | `elmc_list_map5` | Real |
 | `List.cons` | `elmc_list_cons` | Real |
 
 ### elm/core: Maybe

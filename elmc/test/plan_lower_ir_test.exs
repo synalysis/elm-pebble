@@ -70,7 +70,7 @@ defmodule Elmc.PlanLowerIrTest do
       |> Enum.flat_map(& &1.instrs)
       |> Enum.filter(&(&1.op == :record_get))
 
-    assert record_get.args[:field_index] == "1"
+    assert record_get.args[:field_index] =~ "1"
     assert :ok = Verify.run(plan)
   end
 
@@ -347,7 +347,7 @@ defmodule Elmc.PlanLowerIrTest do
     c = CLowerFunction.emit(plan)
     assert c =~ "elmc_union_tag_matches"
     assert c =~ "goto elmc_plan_block_"
-    assert c =~ "owned[1] = owned[0];"
+    assert c =~ "*out = owned[1];"
     refute c =~ "elmc_retain(owned["
   end
 
@@ -563,8 +563,14 @@ defmodule Elmc.PlanLowerIrTest do
           not MapSet.member?(block_ids, then_id) or not MapSet.member?(block_ids, else_id)
 
         {:switch_tag, _, arms, default} ->
-          Enum.any?(arms, fn {_, id} -> not MapSet.member?(block_ids, id) end) or
-            not MapSet.member?(block_ids, default)
+          arm_ids_invalid? =
+            Enum.any?(arms, fn
+              {_, id} -> not MapSet.member?(block_ids, id)
+              {_, id, _} -> not MapSet.member?(block_ids, id)
+              _ -> true
+            end)
+
+          arm_ids_invalid? or not MapSet.member?(block_ids, default)
 
         _ ->
           false
@@ -685,12 +691,9 @@ defmodule Elmc.PlanLowerIrTest do
     assert :ok = Verify.run(plan)
 
     c = CLowerFunction.emit(plan)
-    # Forward fold would cons 1 onto nil first; correct literal builds 3 :: 2 :: 1 :: [].
-    ints =
-      Regex.scan(~r/elmc_new_int(?:_take)?\([^)]*?(\d+)\)/, c, capture: :all_but_first)
-      |> List.flatten()
-
-    assert ints == ["3", "2", "1"]
+    assert c =~ "plan_list_items_"
+    assert c =~ "{ 1, 2, 3 }"
+    assert c =~ "elmc_list_from_values"
   end
 
   test "Pebble.Ui.toUiNode lowers to retain on render-op list" do

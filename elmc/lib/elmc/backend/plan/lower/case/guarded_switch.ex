@@ -8,7 +8,7 @@ defmodule Elmc.Backend.Plan.Lower.Case.GuardedSwitch do
 
   @spec branches?(list()) :: boolean()
   def branches?(branches) when is_list(branches) do
-    length(branches) >= 2 and
+    length(branches) >= 1 and
       Enum.all?(branches, fn branch ->
         guardable_pattern?(Map.get(branch, :pattern))
       end)
@@ -19,6 +19,8 @@ defmodule Elmc.Backend.Plan.Lower.Case.GuardedSwitch do
   @spec compile(map(), list(), Context.t(), Builder.t()) ::
           {:ok, Types.reg() | :fn_out, Builder.t()} | :unsupported
   def compile(subject, branches, ctx, b) do
+    branches = normalize_branch_patterns(branches)
+
     with {:ok, subj_reg, b1} <- Expr.compile(subject, ctx, b),
          b_sealed = seal_entry_block(b1) do
       compile_cfg(subj_reg, branches, ctx, b_sealed)
@@ -125,10 +127,22 @@ defmodule Elmc.Backend.Plan.Lower.Case.GuardedSwitch do
   end
 
   defp guardable_pattern?(%{kind: kind})
-       when kind in [:tuple, :constructor, :wildcard, :var, :int],
+       when kind in [:tuple, :constructor, :qualified_constructor, :wildcard, :var, :int, :string],
        do: true
 
   defp guardable_pattern?(_), do: false
+
+  defp normalize_branch_patterns(branches) when is_list(branches) do
+    Enum.map(branches, fn branch ->
+      case Map.get(branch, :pattern) do
+        %{kind: :qualified_constructor} = pattern ->
+          %{branch | pattern: Map.put(pattern, :kind, :constructor)}
+
+        pattern ->
+          %{branch | pattern: pattern}
+      end
+    end)
+  end
 
   defp skip_reserved(id, nil), do: id
   defp skip_reserved(id, reserved) when id == reserved, do: id + 1

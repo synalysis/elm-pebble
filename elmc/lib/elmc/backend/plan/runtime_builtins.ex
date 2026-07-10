@@ -5,6 +5,8 @@ defmodule Elmc.Backend.Plan.RuntimeBuiltins do
   C maps to `elmc_*` symbols; bytecode to opcode indices; future WASM to imports.
   """
 
+  alias Elmc.Backend.Plan.RuntimeBuiltins.Extra
+
   @native_int_arg_indices %{
     list_slice_int: [0, 1],
     list_take: [0],
@@ -16,7 +18,7 @@ defmodule Elmc.Backend.Plan.RuntimeBuiltins do
     list_map_record_field: [1]
   }
 
-  @builtins %{
+  @builtins Map.merge(%{
     list_append: "elmc_list_append",
     list_cons: "elmc_list_cons",
     list_nil: "elmc_list_nil",
@@ -75,7 +77,10 @@ defmodule Elmc.Backend.Plan.RuntimeBuiltins do
     basics_round: "elmc_basics_round",
     new_float: "elmc_new_float",
     new_int: "elmc_new_int",
+    new_order: "elmc_new_order",
     new_bool: "elmc_new_bool",
+    string_length_boxed: "elmc_string_length",
+    char_from_code: "elmc_char_from_code",
     new_string: "elmc_new_string",
     tuple2: "elmc_tuple2",
     tuple2_take: "elmc_tuple2_take",
@@ -109,7 +114,12 @@ defmodule Elmc.Backend.Plan.RuntimeBuiltins do
     result_map: "elmc_result_map",
     result_map_error: "elmc_result_map_error",
     maybe_and_then: "elmc_maybe_and_then"
-  }
+  }, Extra.builtins())
+
+  @fallible_extra MapSet.new(Extra.fallible_ids())
+  @c_value_return_extra MapSet.new(Extra.c_value_return_ids())
+  @value_return_extra MapSet.new(Extra.value_return_ids())
+  @symbol_aliases Extra.symbol_aliases()
 
   @fallible MapSet.new([
     :list_append,
@@ -158,8 +168,10 @@ defmodule Elmc.Backend.Plan.RuntimeBuiltins do
     :basics_round,
     :new_float,
     :new_int,
+    :new_order,
     :new_bool,
     :new_string,
+    :string_length_boxed,
     :tuple2,
     :tuple2_take,
     :tuple2_ints,
@@ -198,7 +210,8 @@ defmodule Elmc.Backend.Plan.RuntimeBuiltins do
     :list_nth_maybe,
     :string_to_int,
     :list_nth_int_default,
-    :debug_to_string
+    :debug_to_string,
+    :char_from_code
   ])
 
   @value_return MapSet.new([
@@ -342,16 +355,19 @@ defmodule Elmc.Backend.Plan.RuntimeBuiltins do
   def c_symbol(id) when is_atom(id), do: Map.get(@builtins, id)
 
   @spec fallible?(atom()) :: boolean()
-  def fallible?(id), do: MapSet.member?(@fallible, id)
+  def fallible?(id),
+    do: MapSet.member?(@fallible, id) or MapSet.member?(@fallible_extra, id)
 
   @spec value_return?(atom()) :: boolean()
-  def value_return?(id), do: MapSet.member?(@value_return, id)
+  def value_return?(id),
+    do: MapSet.member?(@value_return, id) or MapSet.member?(@value_return_extra, id)
 
   @spec direct_value_return?(atom()) :: boolean()
   def direct_value_return?(id), do: MapSet.member?(@direct_value_return, id)
 
   @spec c_value_return?(atom()) :: boolean()
-  def c_value_return?(id), do: MapSet.member?(@c_value_return, id)
+  def c_value_return?(id),
+    do: MapSet.member?(@c_value_return, id) or MapSet.member?(@c_value_return_extra, id)
 
   @spec native_int_arg?(atom(), non_neg_integer()) :: boolean()
   def native_int_arg?(id, index) when is_atom(id) and is_integer(index) do
@@ -359,14 +375,8 @@ defmodule Elmc.Backend.Plan.RuntimeBuiltins do
   end
 
   @spec from_c_symbol(String.t()) :: atom() | nil
-  def from_c_symbol("elmc_" <> rest) do
-    @builtins
-    |> Enum.find_value(fn {id, sym} ->
-      if sym == "elmc_" <> rest, do: id
-    end)
-  end
-
   def from_c_symbol(sym) when is_binary(sym) do
-    Enum.find_value(@builtins, fn {id, s} -> if s == sym, do: id end)
+    Map.get(@symbol_aliases, sym) ||
+      Enum.find_value(@builtins, fn {id, s} -> if s == sym, do: id end)
   end
 end

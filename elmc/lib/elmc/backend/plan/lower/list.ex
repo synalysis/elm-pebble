@@ -17,8 +17,7 @@ defmodule Elmc.Backend.Plan.Lower.List do
 
   def compile_literal(items, ctx, b) when is_list(items) do
     cond do
-      length(items) >= @min_static_list_items and
-          match?({:ok, _}, static_int_literal_values(items)) ->
+      match?({:ok, _}, static_int_literal_values(items)) ->
         {:ok, values} = static_int_literal_values(items)
         Expr.compile_const_static_list({:int_array, values}, ctx, b)
 
@@ -49,14 +48,18 @@ defmodule Elmc.Backend.Plan.Lower.List do
   end
 
   defp compile_static_record_array(items, ctx, b) do
-    with {:ok, regs, b1} <- compile_item_regs(items, ctx, b) do
-      Expr.compile_const_static_list({:record_array, regs}, ctx, b1)
+    scratch = Context.for_branch_arm(ctx)
+
+    with {:ok, regs, b1} <- compile_item_regs(items, scratch, b) do
+      Expr.compile_const_static_list({:record_array, regs}, scratch, b1)
     end
   end
 
   defp compile_static_values_array(items, ctx, b) do
-    with {:ok, regs, b1} <- compile_item_regs(items, ctx, b) do
-      Expr.compile_const_static_list({:values, regs}, ctx, b1)
+    scratch = Context.for_branch_arm(ctx)
+
+    with {:ok, regs, b1} <- compile_item_regs(items, scratch, b) do
+      Expr.compile_const_static_list({:values, regs}, scratch, b1)
     end
   end
 

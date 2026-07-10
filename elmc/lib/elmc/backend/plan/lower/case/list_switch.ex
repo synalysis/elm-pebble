@@ -490,7 +490,12 @@ defmodule Elmc.Backend.Plan.Lower.Case.ListSwitch do
 
   defp compile_nonempty_var_arm(_, _, _, _, _, _), do: :unsupported
 
-  defp peel_cons_regs(:int_list, head_arg, tail_arg, ctx, b) do
+  defp peel_cons_regs(peel, head_arg, tail_arg, ctx, b) do
+    ctx = Context.for_branch_arm(ctx)
+    peel_cons_regs_impl(peel, head_arg, tail_arg, ctx, b)
+  end
+
+  defp peel_cons_regs_impl(:int_list, head_arg, tail_arg, ctx, b) do
     with {:ok, head_reg, b1} <-
            Expr.compile_runtime_builtin(:int_list_head_int, [head_arg], ctx, b),
          {:ok, tail_reg, b2} <-
@@ -499,7 +504,7 @@ defmodule Elmc.Backend.Plan.Lower.Case.ListSwitch do
     end
   end
 
-  defp peel_cons_regs(:maybe_list, head_arg, tail_arg, ctx, b) do
+  defp peel_cons_regs_impl(:maybe_list, head_arg, tail_arg, ctx, b) do
     with {:ok, head_maybe, b1} <- Expr.compile_runtime_builtin(:list_head, [head_arg], ctx, b),
          {:ok, head_reg, b2} <- Expr.compile_runtime_builtin(:maybe_just_payload, [head_maybe], ctx, b1),
          {:ok, tail_maybe, b3} <- Expr.compile_runtime_builtin(:list_tail, [tail_arg], ctx, b2),

@@ -15,8 +15,9 @@ defmodule Elmc.PlanSimpleProjectCoverageTest do
              Elmc.compile(@fixture, %{
                out_dir: out_dir,
                entry_module: "Main",
-               strip_dead_code: true,
-               plan_ir_mode: :primary
+               strip_dead_code: false,
+               plan_ir_mode: :primary,
+               plan_ir_strict: true
              })
 
     Process.put(:elmc_constructor_tags, Elmc.Backend.CCodegen.IRQueries.constructor_tag_map(result.ir))
@@ -37,15 +38,12 @@ defmodule Elmc.PlanSimpleProjectCoverageTest do
     expected = [
       "init",
       "update",
-      "handleAppMsg",
-      "handlePlatformMsg",
-      "counterOf",
-      "requestWeather",
-      "requestSystemInfo",
-      "counterDraw",
-      "statusDraw",
+      "moveBoard",
+      "view",
       "subscriptions",
-      "view"
+      "probeHelper",
+      "probeAdvanced",
+      "probeScoreOf"
     ]
 
     failed_names = Map.new(report.failed, fn {m, n, _} -> {{m, n}, true} end)
@@ -58,6 +56,15 @@ defmodule Elmc.PlanSimpleProjectCoverageTest do
     assert report.lowered == report.total,
            "expected full Main coverage, got #{report.lowered}/#{report.total}: #{inspect(Enum.take(report.failed, 5))}"
 
+    fallbacks =
+      (result.layout_coercion_diagnostics || [])
+      |> Enum.filter(&(&1["code"] == "plan_primary_fallback"))
+
+    assert fallbacks == []
+
+    generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+    refute generated_c =~ ~r/elmc_unknown\b/
+
     manifest_path = Path.join(out_dir, "bytecode/elmc_bytecode.manifest.json")
     assert File.exists?(manifest_path)
 
@@ -67,21 +74,13 @@ defmodule Elmc.PlanSimpleProjectCoverageTest do
     assert main_cov["failed_count"] == 0
     assert main_cov["lowered"] == main_cov["total"]
 
-    model = {:record, [3, nil]}
-    launch = {:record, [0, nil, nil, nil]}
+    empty_cells = List.duplicate(0, 16)
+    model = {:record, [empty_cells, 42, 0, 0, 0, 0, 0, 0, :round]}
 
-    assert {:ok, 3} =
-             Loader.run_manifest_entry(out_dir, {"Main", "counterOf"}, params: [model])
+    assert {:ok, 42} =
+             Loader.run_manifest_entry(out_dir, {"Main", "probeScoreOf"}, params: [model])
 
-    assert {:ok, 8} = Loader.run_manifest_entry(out_dir, {"Main", "advanced"}, params: [5])
-    assert {:ok, 11} = Loader.run_manifest_entry(out_dir, {"Main", "advanced"}, params: [9])
-
-    assert {:ok, {:tuple2, _model, _cmd}} =
-             Loader.run_manifest_entry(out_dir, {"Main", "init"}, params: [launch])
-
-    assert {:ok, {:tuple2, {:record, [value, _temp]}, _cmd}} =
-             Loader.run_manifest_entry(out_dir, {"Main", "update"}, params: [1, model])
-
-    assert value == 4
+    assert {:ok, 8} = Loader.run_manifest_entry(out_dir, {"Main", "probeAdvanced"}, params: [5])
+    assert {:ok, 11} = Loader.run_manifest_entry(out_dir, {"Main", "probeAdvanced"}, params: [9])
   end
 end

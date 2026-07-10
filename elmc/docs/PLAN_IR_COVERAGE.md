@@ -23,7 +23,22 @@ See also: [CODEGEN_COVERAGE_MATRIX.md](CODEGEN_COVERAGE_MATRIX.md) (legacy C pat
 
 `mix test test/plan_template_strict_gate_test.exs` compiles watch templates with
 `plan_ir_strict: true`. Templates in `@strict_pass` must compile with **zero**
-`plan_primary_fallback` diagnostics.
+`plan_primary_fallback` diagnostics and **zero** `elmc_unknown` calls in
+`c/elmc_generated.c`.
+
+`mix test test/plan_rc_track_strict_gate_test.exs` applies the same gates to all
+13 elm/core rc_track probe fixtures.
+
+`mix test test/plan_rc_track_probe_execution_test.exs` (alias `mix test.plan_rc`) runs
+matrix coverage gates; `mix test.plan_rc_exec` additionally runs host RC balance harnesses
+on plan-emitted C (opt-in until plan/native-int ABI matches legacy for all probes).
+
+`mix test test/plan_reachable_coverage_test.exs` asserts strict reachable coverage
+for every template in `PlanStrictTemplates`.
+
+`mix test test/plan_core_builtins_test.exs` includes a registry audit: every
+quoted `elmc_*` runtime symbol in `special_values/` maps through
+`RuntimeBuiltins.from_c_symbol/1`.
 
 | Template | Strict (2026-07) | Notes |
 |----------|------------------|-------|
@@ -65,7 +80,7 @@ These landed as **generic** toolchain work (any app using the same IR):
 | `case` on `x :: y :: _` / `[only]` / `[]` | `ListSwitch.compile_triple/4` | Exactly 3 arms, fixed shapes |
 | `case` on `x :: y :: _` + wildcard | `double_cons_wildcard` | 2 arms only |
 | `record_update` field expr | `Context.for_branch_arm` for fields | Avoids `:fn_out` in `record_update` value slot |
-| Dotted var `model.field` | Split → `field_access` (1 hop) | Same as C `VarCompile`; not `a.b.c` |
+| Dotted var `model.field` / `a.b.c` | Split → chained `record_get` | Arbitrary depth via `compile_dotted_var_path` |
 | `Plan.Verify` phi | Respect `effects.consumes` only | Live locals after merge |
 
 Nothing in this table references Poke Battle modules or slugs.
@@ -82,31 +97,46 @@ Plan `case` dispatch (`Plan.Lower.Case.compile_dispatch/5`) tries, in order:
 6. `TagSwitch` — union / ctor tags
 7. `IntSwitch` — literal int arms
 8. `GuardedSwitch` — tuple / ctor / int / wildcard patterns
-9. `compile_linear_branches` — fallback (incomplete)
+9. `compile_linear_branches` — general pattern fallback (ctor / int / wildcard arms)
+
+**North-star gates (2026-07):** all 46 IDE watch templates in `@strict_pass`, all 13
+rc_track elm/core fixtures, `simple_project`, and companion worker fixtures compile
+under `plan_ir_strict: true` with zero fallbacks and zero `elmc_unknown`.
 
 **Not yet covered** (examples from other apps / future work):
 
 | Pattern | Example | Likely next work |
 |---------|---------|------------------|
-| Heavy nested `let_in` + list callbacks | large game `update` | Extend `let_in` + closure plan paths |
-| `List.map` with record update in lambda | many games | `list_map` + `record_update` in closure body |
-| Deep field path `a.b.c` | uncommon in IR today | Chain `field_access` in var lowering |
+| Heavy nested `let_in` + list callbacks | large game `update` | Covered generically; add tests as patterns land |
+| `List.map` with record update in lambda | many games | Generic `list_map` + closure body (no fusion required) |
 
-## Runtime builtins gap
+**Recently completed** (generic plan paths):
 
-Plan only lowers calls present in `Elmc.Backend.Plan.RuntimeBuiltins`. Missing
-ids → `Call.compile_call` → `:unsupported` under strict.
+| IR / API | Plan path |
+|----------|-----------|
+| `compose_left` / `compose_right` | Desugar to `lambda` in `Expr.compile/3` |
+| `String.*` / `List.*` binary stdlib | `@qualified_binary` → `call_runtime` |
+| Ternary `String.replace` / `Basics.clamp` | `@qualified_ternary` |
+| Other `Module.fn` with arity 3 | `@qualified_ternary` miss → `Call.compile_call` → `:call_fn` (guard `not is_nil(id)` — `nil` is an atom in Elixir) |
+| User / helper `Module.fn` (any arity) | `Call.compile_call` → `:call_fn` when not a stdlib map hit |
+| `Result.withDefault` | `@qualified_binary` → `:result_with_default` |
+| `Task.map` / `Task.map2` / `Task.andThen` | `runtime_call` → `:task_map` / `:task_map2` / `:task_and_then` |
+| `Cmd.map` / `Sub.map` | `runtime_call` → `:cmd_map` / `:sub_map` |
+| Bytecode VM locals sizing | `plan.reg_count` (not greedy slot count) |
+| Bytecode VM `record_get` field index | C-style macro suffix stripped in encoder |
 
-High-value stdlib still often missing (check `runtime_builtins.ex` vs C matrix):
+## Runtime builtins
 
-- More `String.*` (`contains`, `slice`, `trim`, …)
-- `List.sortBy`, `List.sortWith` (plan builtins)
-- `List.sort`, `List.partition`, `List.member`
-- `Result.*` / `Task.*` (if reachable on watch)
-- Partial application edges for native scalar returns
+Plan lowers `runtime_call` and qualified stdlib through
+`Elmc.Backend.Plan.RuntimeBuiltins`. Every quoted `elmc_*` symbol emitted by
+`special_values/` is registered (main map + `RuntimeBuiltins.Extra`). Unregistered
+symbols would emit `elmc_unknown` in generated C — gated by strict template/rc_track
+tests.
 
-Add builtins + `expr.ex` / `Call` lowering + conformance test; do not special-case
-a template function name.
+Qualified stdlib routing lives in `expr.ex` (`@qualified_unary` / `@qualified_binary`
+/ `@qualified_ternary`, plus `SpecialValues` rewrite before dispatch). User
+`Module.fn` calls lower to `:call_fn` when not a stdlib map hit (see nil-is-atom
+guard on ternary/binary maps).
 
 ## How to extend coverage
 

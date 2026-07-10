@@ -42,6 +42,9 @@ defmodule Elmc.Backend.Plan.Lower.PatternMatch do
     resolved = Map.get(pattern, :resolved_name) || name
 
     cond do
+      cons_pattern?(pattern) ->
+        test_list_nonempty(subject_reg, b)
+
       maybe_nothing?(resolved, name) ->
         test_maybe_nothing(subject_reg, b)
 
@@ -55,8 +58,45 @@ defmodule Elmc.Backend.Plan.Lower.PatternMatch do
         test_bool_ctor(resolved || name, subject_reg, b)
 
       true ->
-        test_ctor_tag(pattern, subject_reg, b)
+        match_ctor_with_arg_pattern(pattern, subject_reg, b)
     end
+  end
+
+  defp match_ctor_with_arg_pattern(%{arg_pattern: arg_pattern} = pattern, subject_reg, b)
+       when is_map(arg_pattern) do
+    with {:ok, tag_cond, b1} <- test_ctor_tag(pattern, subject_reg, b),
+         {:ok, payload_reg, b2} <- emit_union_payload_view(subject_reg, b1),
+         {:ok, arg_cond, b3} <- do_match_condition(arg_pattern, payload_reg, b2) do
+      bool_and(tag_cond, arg_cond, b3)
+    else
+      _ -> :unsupported
+    end
+  end
+
+  defp match_ctor_with_arg_pattern(pattern, subject_reg, b),
+    do: test_ctor_tag(pattern, subject_reg, b)
+
+  defp emit_union_payload_view(subject_reg, b) do
+    {dest, b1} = Builder.fresh_reg(b)
+
+    {_, b2} =
+      Builder.emit(b1, :call_runtime, %{
+        dest: dest,
+        args: %{builtin: :union_payload, args: [subject_reg]},
+        effects: %{
+          produces: nil,
+          consumes: [],
+          borrows: [subject_reg],
+          fallible: false
+        }
+      })
+
+    {:ok, dest, b2}
+  end
+
+  defp do_match_condition(%{kind: :string, value: value}, subject_reg, b)
+       when is_binary(value) do
+    test_string_literal(subject_reg, value, b)
   end
 
   defp do_match_condition(%{kind: :int, value: value}, subject_reg, b)
@@ -138,6 +178,24 @@ defmodule Elmc.Backend.Plan.Lower.PatternMatch do
           produces: {:owned, dest},
           consumes: [],
           borrows: [base_reg],
+          fallible: false
+        }
+      })
+
+    {:ok, dest, b2}
+  end
+
+  defp test_string_literal(subject_reg, literal, b) do
+    {dest, b1} = Builder.fresh_reg(b)
+
+    {_, b2} =
+      Builder.emit(b1, :test_string_literal, %{
+        dest: dest,
+        args: %{subject: subject_reg, literal: literal},
+        effects: %{
+          produces: {:owned, dest},
+          consumes: [],
+          borrows: [subject_reg],
           fallible: false
         }
       })
@@ -268,4 +326,26 @@ defmodule Elmc.Backend.Plan.Lower.PatternMatch do
 
   defp nest_tuple_elements([left | rest]),
     do: [left, %{kind: :tuple, elements: nest_tuple_elements(rest)}]
+
+  defp cons_pattern?(%{kind: :constructor, name: name, arg_pattern: %{kind: :tuple, elements: elements}})
+       when is_list(elements) and length(elements) == 2 do
+    short_ctor(name) == "::"
+  end
+
+  defp cons_pattern?(%{resolved_name: "List.::", arg_pattern: %{kind: :tuple, elements: elements}})
+       when is_list(elements) and length(elements) == 2,
+       do: true
+
+  defp cons_pattern?(%{kind: :constructor, resolved_name: "List.::", arg_pattern: %{kind: :tuple, elements: elements}})
+       when is_list(elements) and length(elements) == 2,
+       do: true
+
+  defp cons_pattern?(_), do: false
+
+  defp test_list_nonempty(subject_reg, b) do
+    with {:ok, empty_reg, b1} <- test_list_empty(subject_reg, b),
+         {:ok, zero, b2} <- const_int(0, b1) do
+      compare_eq(empty_reg, zero, b2)
+    end
+  end
 end

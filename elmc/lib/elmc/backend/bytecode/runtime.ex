@@ -165,6 +165,12 @@ defmodule Elmc.Backend.Bytecode.Runtime do
         value = if get_local(frame.locals, reg) == nil, do: 1, else: 0
         step(frame, dest, value, rest, tail)
 
+      :test_string_literal ->
+        <<subject::16, size::16, bin::binary-size(size), tail::binary>> = rest
+        subj = get_local(frame.locals, subject)
+        value = if is_binary(subj) and subj == bin, do: 1, else: 0
+        step(frame, dest, value, rest, tail)
+
       :switch_ctor_tag ->
         {value, tail} = eval_switch_ctor_tag(rest, frame.locals)
         step(frame, dest, value, rest, tail)
@@ -417,7 +423,21 @@ defmodule Elmc.Backend.Bytecode.Runtime do
                :list_filter_map,
                :list_foldl,
                :list_concat_map,
-               :maybe_map
+               :maybe_map,
+               :maybe_map2,
+               :list_map2,
+               :list_map3,
+               :list_map4,
+               :list_map5,
+               :task_map,
+               :task_map2,
+               :task_and_then,
+               :task_perform,
+               :cmd_map,
+               :sub_map,
+               :result_and_then,
+               :result_map,
+               :result_map_error
              ] ->
           apply_hof_builtin(id, arg_regs, frame)
 
@@ -522,6 +542,10 @@ defmodule Elmc.Backend.Bytecode.Runtime do
 
   defp apply_builtin(:tuple2, [a, b | _], locals, _), do: {:tuple2, get_local(locals, a), get_local(locals, b)}
   defp apply_builtin(:record_new, args, locals, _), do: {:record, Enum.map(args, &get_local(locals, &1))}
+
+  defp apply_builtin(:record_new_values_ints, args, locals, _),
+    do: {:record, Enum.map(args, &get_local(locals, &1))}
+
   defp apply_builtin(:retain, [src | _], locals, _), do: get_local(locals, src)
   defp apply_builtin(:union_payload, [subj | _], locals, _) do
     case get_local(locals, subj) do
@@ -571,6 +595,16 @@ defmodule Elmc.Backend.Bytecode.Runtime do
       other -> other
     end
   end
+
+  defp apply_builtin(:result_with_default, [default, result | _], locals, _) do
+    case get_local(locals, result) do
+      {:ok, value} -> value
+      _ -> get_local(locals, default)
+    end
+  end
+
+  defp apply_builtin(:task_succeed, [value | _], locals, _), do: {:task, :succeed, get_local(locals, value)}
+  defp apply_builtin(:task_fail, [value | _], locals, _), do: {:task, :fail, get_local(locals, value)}
 
   defp apply_builtin(:basics_min, [a, b | _], locals, _), do: min(local_int(locals, a), local_int(locals, b))
   defp apply_builtin(:basics_max, [a, b | _], locals, _), do: max(local_int(locals, a), local_int(locals, b))
@@ -823,6 +857,105 @@ defmodule Elmc.Backend.Bytecode.Runtime do
     Enum.reduce(list_val, start_acc, fn item, acc ->
       invoke_closure(fun_val, [item, acc], frame)
     end)
+  end
+
+  defp apply_hof_builtin(:list_map2, [fun, a, b | _], frame) do
+    list_a = local_list(frame.locals, a)
+    list_b = local_list(frame.locals, b)
+    fun_val = get_local(frame.locals, fun)
+
+    Enum.zip(list_a, list_b)
+    |> Enum.map(fn {x, y} -> invoke_closure(fun_val, [x, y], frame) end)
+  end
+
+  defp apply_hof_builtin(:list_map3, [fun, a, b, c | _], frame) do
+    list_a = local_list(frame.locals, a)
+    list_b = local_list(frame.locals, b)
+    list_c = local_list(frame.locals, c)
+    fun_val = get_local(frame.locals, fun)
+
+    Enum.zip([list_a, list_b, list_c])
+    |> Enum.map(fn [x, y, z] -> invoke_closure(fun_val, [x, y, z], frame) end)
+  end
+
+  defp apply_hof_builtin(:list_map4, [fun, a, b, c, d | _], frame) do
+    list_a = local_list(frame.locals, a)
+    list_b = local_list(frame.locals, b)
+    list_c = local_list(frame.locals, c)
+    list_d = local_list(frame.locals, d)
+    fun_val = get_local(frame.locals, fun)
+
+    Enum.zip([list_a, list_b, list_c, list_d])
+    |> Enum.map(fn [w, x, y, z] -> invoke_closure(fun_val, [w, x, y, z], frame) end)
+  end
+
+  defp apply_hof_builtin(:list_map5, [fun, a, b, c, d, e | _], frame) do
+    list_a = local_list(frame.locals, a)
+    list_b = local_list(frame.locals, b)
+    list_c = local_list(frame.locals, c)
+    list_d = local_list(frame.locals, d)
+    list_e = local_list(frame.locals, e)
+    fun_val = get_local(frame.locals, fun)
+
+    Enum.zip([list_a, list_b, list_c, list_d, list_e])
+    |> Enum.map(fn [v, w, x, y, z] -> invoke_closure(fun_val, [v, w, x, y, z], frame) end)
+  end
+
+  defp apply_hof_builtin(:maybe_map2, [fun, a, b | _], frame) do
+    fun_val = get_local(frame.locals, fun)
+    va = get_local(frame.locals, a)
+    vb = get_local(frame.locals, b)
+
+    case {va, vb} do
+      {{:just, xa}, {:just, xb}} -> {:just, invoke_closure(fun_val, [xa, xb], frame)}
+      _ -> nil
+    end
+  end
+
+  defp apply_hof_builtin(:task_map, [fun, task | _], frame),
+    do: {:task, :map, {get_local(frame.locals, fun), get_local(frame.locals, task)}}
+
+  defp apply_hof_builtin(:task_map2, [fun, a, b | _], frame),
+    do: {:task, :map2, {get_local(frame.locals, fun), get_local(frame.locals, a), get_local(frame.locals, b)}}
+
+  defp apply_hof_builtin(:task_and_then, [fun, task | _], frame),
+    do: {:task, :and_then, {get_local(frame.locals, fun), get_local(frame.locals, task)}}
+
+  defp apply_hof_builtin(:task_perform, [to_msg, task | _], frame),
+    do: {:task, :perform, {get_local(frame.locals, to_msg), get_local(frame.locals, task)}}
+
+  defp apply_hof_builtin(:cmd_map, [fun, cmd | _], frame),
+    do: {:cmd, :map, {get_local(frame.locals, fun), get_local(frame.locals, cmd)}}
+
+  defp apply_hof_builtin(:sub_map, [fun, sub | _], frame),
+    do: {:sub, :map, {get_local(frame.locals, fun), get_local(frame.locals, sub)}}
+
+  defp apply_hof_builtin(:result_map, [fun, result | _], frame) do
+    case get_local(frame.locals, result) do
+      {:ok, value} -> {:ok, invoke_closure(get_local(frame.locals, fun), [value], frame)}
+      other -> other
+    end
+  end
+
+  defp apply_hof_builtin(:result_map_error, [fun, result | _], frame) do
+    case get_local(frame.locals, result) do
+      {:err, value} -> {:err, invoke_closure(get_local(frame.locals, fun), [value], frame)}
+      other -> other
+    end
+  end
+
+  defp apply_hof_builtin(:result_and_then, [fun, result | _], frame) do
+    case get_local(frame.locals, result) do
+      {:ok, value} ->
+        case invoke_closure(get_local(frame.locals, fun), [value], frame) do
+          {:ok, _} = ok -> ok
+          {:err, _} = err -> err
+          other -> {:ok, other}
+        end
+
+      other ->
+        other
+    end
   end
 
   defp compare_kind(0, l, r), do: l == r

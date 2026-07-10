@@ -2,26 +2,23 @@ defmodule Elmc.PlanReachableCoverageTest do
   use ExUnit.Case, async: false
 
   alias Elmc.Backend.Plan.PrimaryCoverage
-  alias Elmc.TestSupport.TemplateCompile
+  alias Elmc.TestSupport.{PlanStrictTemplates, TemplateCompile}
 
   @moduletag :plan_surface
   @moduletag :slow
 
-  @templates ~w(
-    game_elmtris
-    game_2048
-    watchface_analog
-    watchface_digital
-    watchface_yes
-    app_minimal
-    game_tiny_bird
-  )
-
-  for template <- @templates do
+  for template <- PlanStrictTemplates.names() do
     @tag template: template
-    test "reachable plan coverage for #{template}", %{template: template} do
+
+    test "strict reachable plan coverage for #{template}", %{template: template} do
+      out_dir = Path.expand("tmp/plan_reachable_strict/#{template}", __DIR__)
+
       assert {:ok, result} =
-               TemplateCompile.compile_watch_template(template, plan_ir_mode: :primary)
+               TemplateCompile.compile_watch_template(template,
+                 plan_ir_mode: :primary,
+                 plan_ir_strict: true,
+                 out_dir: out_dir
+               )
 
       Process.put(:elmc_constructor_tags, Elmc.Backend.CCodegen.IRQueries.constructor_tag_map(result.ir))
 
@@ -36,12 +33,33 @@ defmodule Elmc.PlanReachableCoverageTest do
 
       assert reachable.lowered == reachable.total,
              "#{template} reachable #{reachable.lowered}/#{reachable.total}: #{inspect(Enum.take(reachable.failed, 8))}"
+
+      fallbacks =
+        (result.layout_coercion_diagnostics || [])
+        |> Enum.filter(&(&1["code"] == "plan_primary_fallback"))
+
+      assert fallbacks == []
+
+      c_path = Path.join(out_dir, "c/elmc_generated.c")
+
+      if File.regular?(c_path) do
+        unknown_count =
+          c_path
+          |> File.read!()
+          |> then(&Regex.scan(~r/elmc_unknown\b/, &1))
+          |> length()
+
+        assert unknown_count == 0
+      end
     end
   end
 
-  test "watchface_yes Yes modules lower completely" do
+  test "watchface_yes Yes modules lower completely under strict primary" do
     assert {:ok, result} =
-             TemplateCompile.compile_watch_template("watchface_yes", plan_ir_mode: :primary)
+             TemplateCompile.compile_watch_template("watchface_yes",
+               plan_ir_mode: :primary,
+               plan_ir_strict: true
+             )
 
     Process.put(:elmc_constructor_tags, Elmc.Backend.CCodegen.IRQueries.constructor_tag_map(result.ir))
 

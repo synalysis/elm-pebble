@@ -3,13 +3,13 @@ defmodule Elmc.Backend.Plan.Lower.Record do
 
   alias Elmc.Backend.CCodegen.RecordFieldMacros
   alias Elmc.Backend.Plan.{Builder, Context}
-  alias Elmc.Backend.Plan.Lower.Expr
+  alias Elmc.Backend.Plan.Lower.{Call, Expr}
   alias Elmc.Backend.Plan.Types
 
   @spec compile_update(map(), Context.t(), Builder.t()) ::
           {:ok, Types.reg() | :fn_out, Builder.t()} | :unsupported
   def compile_update(%{base: base, fields: fields}, ctx, b) when is_list(fields) do
-  with {:ok, base_reg, b1} <- resolve_base(base, ctx, b),
+    with {:ok, base_reg, b1} <- resolve_base(base, ctx, b),
        {:ok, b2, result_reg} <- apply_field_updates(fields, ctx, b1, base_reg) do
       {:ok, result_reg, b2}
     else
@@ -18,6 +18,47 @@ defmodule Elmc.Backend.Plan.Lower.Record do
   end
 
   def compile_update(_, _, _), do: :unsupported
+
+  @spec compile_field_call(map() | String.t(), String.t(), [map()], Context.t(), Builder.t()) ::
+          {:ok, Types.reg() | :fn_out, Builder.t()} | :unsupported
+  def compile_field_call(arg, field, args, ctx, b) when is_binary(field) do
+    args = args || []
+
+    cond do
+      args == [] ->
+        with {:ok, base, b1} <- resolve_base(arg, ctx, b) do
+          compile_record_field_get(base, field, ctx, b1)
+        end
+
+      true ->
+        with {:ok, base_reg, b1} <- resolve_base(arg, ctx, b),
+             {:ok, fn_reg, b2} <- compile_record_field_get(base_reg, field, ctx, b1) do
+          Call.compile_closure_call_from_reg(fn_reg, args, ctx, b2)
+        end
+    end
+  end
+
+  defp compile_record_field_get(base_reg, field, ctx, b) when is_integer(base_reg) do
+    {reg, b1} = Builder.fresh_reg(b)
+    field_index = field_index_ref(field, ctx)
+    int_field? = int_field?(field)
+
+    op = if int_field?, do: :record_get_int, else: :record_get
+
+    {_, b2} =
+      Builder.emit(b1, op, %{
+        dest: reg,
+        args: %{base: base_reg, field: field, field_index: field_index},
+        effects: %{
+          produces: {:owned, reg},
+          consumes: [],
+          borrows: [base_reg],
+          fallible: false
+        }
+      })
+
+    {:ok, reg, b2}
+  end
 
   defp resolve_base(%{op: :var, name: name}, ctx, b) when is_binary(name),
     do: Expr.compile(%{op: :var, name: name}, ctx, b)

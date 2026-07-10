@@ -9,7 +9,98 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
   alias Elmc.Backend.Plan.RuntimeBuiltins
   alias Elmc.Backend.Plan.Types
 
-  @literal_ops [:int_literal, :c_int_expr, :bool_literal, :string_literal, :cmd_none, :sub_none, :float_literal]
+  @literal_ops [:int_literal, :c_int_expr, :bool_literal, :string_literal, :char_literal, :cmd_none, :sub_none, :float_literal]
+
+  @qualified_unary %{
+    "Basics.abs" => :basics_abs,
+    "Basics.negate" => :basics_negate,
+    "Basics.round" => :basics_round,
+    "Basics.ceiling" => :basics_ceiling,
+    "Basics.truncate" => :basics_truncate,
+    "Basics.toFloat" => :basics_to_float,
+    "Basics.not" => :basics_not,
+    "Basics.floor" => :basics_floor,
+    "Bitwise.complement" => :bitwise_complement,
+    "String.fromInt" => :string_from_int_value,
+    "String.toInt" => :string_to_int,
+    "String.toFloat" => :string_to_float,
+    "String.isEmpty" => :string_is_empty,
+    "String.reverse" => :string_reverse,
+    "String.trim" => :string_trim,
+    "String.toUpper" => :string_to_upper,
+    "String.toLower" => :string_to_lower,
+    "String.length" => :string_length_val,
+    "String.words" => :string_words,
+    "String.lines" => :string_lines,
+    "Char.toCode" => :char_to_code,
+    "Char.fromCode" => :new_char,
+    "List.reverse" => :list_reverse,
+    "List.isEmpty" => :list_is_empty,
+    "List.length" => :list_length,
+    "List.head" => :list_head,
+    "List.tail" => :list_tail,
+    "List.sum" => :list_sum,
+    "List.product" => :list_product,
+    "List.maximum" => :list_maximum,
+    "List.minimum" => :list_minimum,
+    "List.concat" => :list_concat,
+    "List.sort" => :list_sort,
+    "Debug.toString" => :debug_to_string
+  }
+
+  @qualified_binary %{
+    "Basics.compare" => :basics_compare,
+    "Basics.xor" => :basics_xor,
+    "Bitwise.and" => :bitwise_and,
+    "Bitwise.or" => :bitwise_or,
+    "Bitwise.xor" => :bitwise_xor,
+    "Bitwise.shiftLeftBy" => :bitwise_shift_left_by,
+    "Bitwise.shiftRightBy" => :bitwise_shift_right_by,
+    "Bitwise.shiftRightZfBy" => :bitwise_shift_right_zf_by,
+    "String.left" => :string_left,
+    "String.right" => :string_right,
+    "String.contains" => :string_contains,
+    "String.cons" => :string_cons,
+    "String.slice" => :string_slice,
+    "String.split" => :string_split,
+    "String.dropLeft" => :string_drop_left,
+    "String.dropRight" => :string_drop_right,
+    "String.trimLeft" => :string_trim_left,
+    "String.trimRight" => :string_trim_right,
+    "String.repeat" => :string_repeat,
+    "List.member" => :list_member,
+    "List.partition" => :list_partition,
+    "List.sortBy" => :list_sort_by,
+    "List.sortWith" => :list_sort_with,
+    "Dict.insert" => :dict_insert,
+    "Dict.remove" => :dict_remove,
+    "Dict.member" => :dict_member,
+    "Set.insert" => :set_insert,
+    "Set.remove" => :set_remove,
+    "Set.member" => :set_member,
+    "Result.withDefault" => :result_with_default
+  }
+
+  @hof_closure_last_arg ~w(
+    list_map list_all list_any list_filter list_indexed_map list_filter_map
+    list_foldl list_concat_map maybe_map
+    result_and_then result_map result_map_error maybe_and_then maybe_map2
+    task_map task_map2 task_and_then task_perform
+    cmd_map sub_map
+    list_map2 list_map3 list_map4 list_map5 list_find_first dict_map set_map string_map array_map
+    tuple_map_first tuple_map_second tuple_map_both
+    json_decode_map json_decode_map2 json_decode_map3 json_decode_map4 json_decode_map5
+    json_decode_map6 json_decode_map7 json_decode_and_then json_decode_lazy
+    json_encode_list json_encode_array json_encode_set json_encode_dict
+  )a
+
+  @qualified_ternary %{
+    "Basics.clamp" => :basics_clamp,
+    "String.replace" => :string_replace,
+    "String.pad" => :string_pad,
+    "String.padLeft" => :string_pad_left,
+    "String.padRight" => :string_pad_right
+  }
 
   @spec compile(map() | nil, Context.t(), Builder.t()) ::
           {:ok, Types.reg() | :fn_out | :branch_out | nil, Builder.t()} | :unsupported
@@ -20,13 +111,25 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
   end
 
   def compile(%{op: :var, name: name}, ctx, b) when is_binary(name) do
-    case String.split(name, ".", parts: 2) do
-      [base, field] when field != "" ->
-        compile(%{op: :field_access, arg: base, field: field}, ctx, b)
+    case String.split(name, ".") do
+      [single] ->
+        compile_root_var(single, ctx, b)
 
-      _ ->
-        compile_root_var(name, ctx, b)
+      [root | fields] when fields != [] ->
+        compile_dotted_var_path(root, fields, ctx, b)
     end
+  end
+
+  def compile(%{op: :compose_left, f: f, g: g}, ctx, b) do
+    compile_compose(f, g, :left, ctx, b)
+  end
+
+  def compile(%{op: :compose_right, f: f, g: g}, ctx, b) do
+    compile_compose(f, g, :right, ctx, b)
+  end
+
+  def compile(%{op: :call, name: "clamp", args: [low, high, value]}, ctx, b) do
+    compile_ternary_runtime("clamp", low, high, value, :basics_clamp, ctx, b)
   end
 
   def compile(%{op: :call} = expr, ctx, b) do
@@ -50,26 +153,106 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
       %{target: "Maybe.withDefault", args: args} ->
         StdlibCall.compile_maybe_with_default(args, ctx, b)
 
+      %{target: target, args: args} ->
+        case compile_special_runtime_call(target, args, ctx, b) do
+          {:ok, _, _} = ok ->
+            ok
+
+          :unsupported ->
+            compile_qualified_call_dispatch(expr, target, ctx, b)
+        end
+    end
+  end
+
+  defp compile_qualified_call_dispatch(expr, target, ctx, b) do
+    case expr do
       %{target: target, args: [low, high, value]}
       when target in ["Basics.clamp", "clamp"] ->
         compile_ternary_runtime(target, low, high, value, :basics_clamp, ctx, b)
 
-      %{target: target, args: [arg]} when target in ["String.fromInt", "String.toInt", "String.toFloat", "Basics.floor", "String.isEmpty"] ->
+      %{target: target, args: [arg]} when target in ["String.fromInt"] ->
         compile_string_unary(target, arg, ctx, b)
 
+      %{target: target, args: [arg]}
+      when target in [
+             "Basics.abs",
+             "Basics.negate",
+             "Basics.round",
+             "Basics.ceiling",
+             "Basics.truncate",
+             "Basics.toFloat",
+             "Basics.not",
+             "Bitwise.complement",
+             "String.reverse",
+             "String.trim",
+             "String.toUpper",
+             "String.toLower",
+             "String.length",
+             "String.words",
+             "String.lines",
+             "Char.fromCode",
+             "Char.toCode",
+             "List.reverse",
+             "List.isEmpty",
+             "List.length",
+             "List.head",
+             "List.tail",
+             "List.sum",
+             "List.product",
+             "List.maximum",
+             "List.minimum",
+             "List.concat",
+             "List.sort",
+             "Debug.toString"
+           ] ->
+        compile_qualified_unary(target, arg, ctx, b)
+
       %{target: target, args: [left, right]} when target == "String.left" ->
-        compile_string_binary(left, right, ctx, b)
+        compile_qualified_binary(:string_left, left, right, ctx, b)
 
       %{target: target, args: [left, right]} ->
-        case IntCall.compile(%{op: :call, name: target, args: [left, right]}, ctx, b) do
-          {:ok, _, _} = ok -> ok
-          :unsupported -> Call.compile_call(expr, ctx, b)
+        case Map.get(@qualified_binary, target) do
+          id when is_atom(id) and not is_nil(id) ->
+            compile_qualified_binary(id, left, right, ctx, b)
+
+          _ ->
+            case IntCall.compile(%{op: :call, name: target, args: [left, right]}, ctx, b) do
+              {:ok, _, _} = ok -> ok
+              :unsupported -> Call.compile_call(expr, ctx, b)
+            end
+        end
+
+      %{target: target, args: [arg_a, arg_b, arg_c]} ->
+        case Map.get(@qualified_ternary, target) do
+          id when is_atom(id) and not is_nil(id) ->
+            compile_qualified_ternary(id, arg_a, arg_b, arg_c, ctx, b)
+
+          _ ->
+            Call.compile_call(expr, ctx, b)
         end
 
       _ ->
         Call.compile_call(expr, ctx, b)
     end
   end
+
+  defp compile_special_runtime_call(target, args, ctx, b) when is_binary(target) and is_list(args) do
+    case Elmc.Backend.CCodegen.SpecialValues.special_value_from_target(target, args) do
+      %{op: :runtime_call} = rewritten ->
+        compile(rewritten, ctx, b)
+
+      %{op: :pebble_cmd} = rewritten ->
+        Cmd.compile(rewritten, ctx, b)
+
+      %{op: op} = rewritten when is_atom(op) and op != :unsupported ->
+        compile(rewritten, ctx, b)
+
+      _ ->
+        :unsupported
+    end
+  end
+
+  defp compile_special_runtime_call(_, _, _, _), do: :unsupported
 
   def compile(%{op: :runtime_call} = expr, ctx, b) do
     compile_runtime_call(expr, ctx, b)
@@ -106,6 +289,26 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
   def compile(%{op: :compare} = expr, ctx, b), do: Compare.compile(expr, ctx, b)
   def compile(%{op: :constructor_call} = expr, ctx, b),
     do: Constructor.compile(expr, ctx, b)
+
+  def compile(%{op: :order_literal, value: value}, ctx, b) when is_integer(value) do
+    compile_runtime_builtin(:new_order, [], ctx, b, %{literal: value})
+  end
+
+  def compile(%{op: :string_length_expr, arg: arg}, ctx, b) do
+    with {:ok, arg_reg, b1} <- compile(arg, ctx, b) do
+      compile_runtime_builtin(:string_length_boxed, [arg_reg], ctx, b1)
+    else
+      _ -> :unsupported
+    end
+  end
+
+  def compile(%{op: :char_from_code_expr, arg: arg}, ctx, b) do
+    with {:ok, arg_reg, b1} <- compile(arg, ctx, b) do
+      compile_runtime_builtin(:char_from_code, [arg_reg], ctx, b1)
+    else
+      _ -> :unsupported
+    end
+  end
 
   def compile(%{op: :partial_constructor, target: target, tag: tag, args: []}, ctx, b)
       when is_binary(target) and is_integer(tag) do
@@ -184,6 +387,11 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
     end
   end
 
+  def compile(%{op: :field_call, arg: arg, field: field, args: args}, ctx, b)
+      when is_binary(field) do
+    Record.compile_field_call(arg, field, args || [], ctx, b)
+  end
+
   def compile(%{op: :field_access, arg: arg, field: field}, ctx, b) when is_binary(field) do
     with {:ok, base, b1} <- resolve_field_base(arg, ctx, b) do
       compile_record_get(base, field, ctx, b1)
@@ -194,7 +402,98 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
 
   def compile(_, _, _), do: :unsupported
 
+  defp compile_dotted_var_path(root, fields, ctx, b) when is_binary(root) and is_list(fields) do
+    with {:ok, reg, b1} <- compile_root_var(root, ctx, b) do
+      Enum.reduce_while(fields, {:ok, reg, b1}, fn field, {:ok, acc_reg, b_acc} ->
+        case compile_record_get(acc_reg, field, ctx, b_acc) do
+          {:ok, next_reg, b2} -> {:cont, {:ok, next_reg, b2}}
+          _ -> {:halt, :unsupported}
+        end
+      end)
+    end
+  end
+
+  defp compile_compose(f, g, :left, ctx, b) do
+    arg_name = "__compose_arg__"
+    inner = apply_expr_to_arg(g, arg_name)
+    body = apply_expr_to_operand(f, inner)
+    Lambda.compile(%{op: :lambda, args: [arg_name], body: body}, ctx, b)
+  end
+
+  defp compile_compose(f, g, :right, ctx, b) do
+    arg_name = "__compose_arg__"
+    inner = apply_expr_to_arg(f, arg_name)
+    body = apply_expr_to_operand(g, inner)
+    Lambda.compile(%{op: :lambda, args: [arg_name], body: body}, ctx, b)
+  end
+
+  defp apply_expr_to_arg(%{op: :qualified_call, args: args} = expr, arg_name) do
+    %{expr | args: args ++ [%{op: :var, name: arg_name}]}
+  end
+
+  defp apply_expr_to_arg(%{op: :call, args: args} = expr, arg_name) do
+    %{expr | args: args ++ [%{op: :var, name: arg_name}]}
+  end
+
+  defp apply_expr_to_arg(%{op: :constructor_call, args: args} = expr, arg_name) do
+    %{expr | args: args ++ [%{op: :var, name: arg_name}]}
+  end
+
+  defp apply_expr_to_arg(%{op: :var, name: name}, arg_name) when is_binary(name) do
+    %{op: :call, name: name, args: [%{op: :var, name: arg_name}]}
+  end
+
+  defp apply_expr_to_arg(%{op: :qualified_ref, target: target}, arg_name) do
+    %{op: :qualified_call, target: target, args: [%{op: :var, name: arg_name}]}
+  end
+
+  defp apply_expr_to_arg(%{op: :constructor_ref, target: target}, arg_name) do
+    %{op: :constructor_call, target: target, args: [%{op: :var, name: arg_name}]}
+  end
+
+  defp apply_expr_to_arg(expr, arg_name) do
+    %{op: :call, name: "__apply__", args: [expr, %{op: :var, name: arg_name}]}
+  end
+
+  defp apply_expr_to_operand(%{op: :qualified_call, args: args} = expr, operand) do
+    %{expr | args: args ++ [operand]}
+  end
+
+  defp apply_expr_to_operand(%{op: :call, args: args} = expr, operand) do
+    %{expr | args: args ++ [operand]}
+  end
+
+  defp apply_expr_to_operand(%{op: :constructor_call, args: args} = expr, operand) do
+    %{expr | args: args ++ [operand]}
+  end
+
+  defp apply_expr_to_operand(%{op: :var, name: name}, operand) when is_binary(name) do
+    %{op: :call, name: name, args: [operand]}
+  end
+
+  defp apply_expr_to_operand(%{op: :qualified_ref, target: target}, operand) do
+    %{op: :qualified_call, target: target, args: [operand]}
+  end
+
+  defp apply_expr_to_operand(%{op: :constructor_ref, target: target}, operand) do
+    %{op: :constructor_call, target: target, args: [operand]}
+  end
+
+  defp apply_expr_to_operand(expr, operand) do
+    %{op: :call, name: "__apply__", args: [expr, operand]}
+  end
+
   defp compile_root_var(name, ctx, b) when is_binary(name) do
+    cond do
+      Lambda.partial_operator_var?(name) ->
+        Lambda.compile_partial(%{op: :call, name: name, args: []}, ctx, b)
+
+      true ->
+        compile_root_var_binding(name, ctx, b)
+    end
+  end
+
+  defp compile_root_var_binding(name, ctx, b) when is_binary(name) do
     case Context.local_reg(ctx, name) do
       reg when is_integer(reg) ->
         {:ok, reg, b}
@@ -239,6 +538,10 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
       ctx,
       b
     )
+  end
+
+  defp compile_literal(%{op: :char_literal, value: value}, ctx, b) do
+    compile_runtime_builtin(:new_char, [], ctx, b, %{literal: value})
   end
 
   defp compile_literal(%{op: :float_literal, value: value}, ctx, b) when is_number(value) do
@@ -402,47 +705,37 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
 
   defp compile_string_unary("String.fromInt", arg, ctx, b) do
     with {:ok, arg_reg, b1} <- compile(arg, ctx, b) do
-      compile_runtime_builtin(:string_from_int, [arg_reg], ctx, b1)
+      compile_runtime_builtin(:string_from_int_value, [arg_reg], ctx, b1)
     else
       _ -> :unsupported
     end
   end
 
-  defp compile_string_unary("String.toInt", arg, ctx, b) do
-    with {:ok, arg_reg, b1} <- compile(arg, ctx, b) do
-      compile_runtime_builtin(:string_to_int, [arg_reg], ctx, b1)
-    else
-      _ -> :unsupported
+  defp compile_qualified_unary(target, arg, ctx, b) do
+    case Map.get(@qualified_unary, target) do
+      id when is_atom(id) and not is_nil(id) ->
+        with {:ok, arg_reg, b1} <- compile(arg, ctx, b) do
+          compile_runtime_builtin(id, [arg_reg], ctx, b1)
+        else
+          _ -> :unsupported
+        end
+
+      _ ->
+        :unsupported
     end
   end
 
-  defp compile_string_unary("String.toFloat", arg, ctx, b) do
-    with {:ok, arg_reg, b1} <- compile(arg, ctx, b) do
-      compile_runtime_builtin(:string_to_float, [arg_reg], ctx, b1)
-    else
-      _ -> :unsupported
-    end
-  end
-
-  defp compile_string_unary("Basics.floor", arg, ctx, b) do
-    with {:ok, arg_reg, b1} <- compile(arg, ctx, b) do
-      compile_runtime_builtin(:basics_floor, [arg_reg], ctx, b1)
-    else
-      _ -> :unsupported
-    end
-  end
-
-  defp compile_string_unary("String.isEmpty", arg, ctx, b) do
-    with {:ok, arg_reg, b1} <- compile(arg, ctx, b) do
-      compile_runtime_builtin(:string_is_empty, [arg_reg], ctx, b1)
-    else
-      _ -> :unsupported
-    end
-  end
-
-  defp compile_string_binary(left, right, ctx, b) do
+  defp compile_qualified_binary(id, left, right, ctx, b) do
     with {:ok, [left_reg, right_reg], b1} <- compile_args([left, right], ctx, b) do
-      compile_runtime_builtin(:string_left, [left_reg, right_reg], ctx, b1)
+      compile_runtime_builtin(id, [left_reg, right_reg], ctx, b1)
+    else
+      _ -> :unsupported
+    end
+  end
+
+  defp compile_qualified_ternary(id, a, b, c, ctx, builder) do
+    with {:ok, [a_reg, b_reg, c_reg], b1} <- compile_args([a, b, c], ctx, builder) do
+      compile_runtime_builtin(id, [a_reg, b_reg, c_reg], ctx, b1)
     else
       _ -> :unsupported
     end
@@ -672,8 +965,10 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
   end
 
   @doc false
+  @borrow_view_builtins [:union_payload, :maybe_just_payload]
+
   def compile_runtime_builtin(id, arg_regs, ctx, b, extra \\ %{}) do
-    if id in [:union_payload, :maybe_just_payload] do
+    if id in @borrow_view_builtins do
       compile_borrow_view_builtin(id, arg_regs, ctx, b, extra)
     else
       compile_runtime_builtin_core(id, arg_regs, ctx, b, extra)
@@ -681,22 +976,26 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
   end
 
   defp compile_borrow_view_builtin(id, arg_regs, _ctx, b, extra) do
-    {borrow_dest, b1} = Builder.fresh_reg(b)
+    [subject | _] = arg_regs
+    release_subject? = id in [:maybe_just_payload, :union_payload]
+    {owned, b1} = Builder.fresh_reg(b)
+
+    consumes = if(release_subject?, do: [subject], else: [])
 
     {_, b2} =
       Builder.emit(b1, :call_runtime, %{
-        dest: borrow_dest,
-        args: Map.merge(%{builtin: id, args: arg_regs}, extra),
-        effects: %{
-          produces: nil,
-          consumes: [],
-          borrows: arg_regs,
-          fallible: false
-        }
+        dest: owned,
+        args: %{
+          builtin: :retain,
+          args: [subject],
+          view_peel: id,
+          view_peel_args: arg_regs,
+          view_peel_extra: extra
+        },
+        effects: Types.fallible_effects(owned, arg_regs, consumes)
       })
 
-    {owned, b3} = Builder.copy_reg_owned(b2, borrow_dest, consume_source: true)
-    {:ok, owned, b3}
+    {:ok, owned, b2}
   end
 
   defp compile_runtime_builtin_core(id, arg_regs, ctx, b, extra) do
@@ -723,8 +1022,9 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
         id in [:record_new, :record_new_take, :record_new_values_ints] -> {[], arg_regs}
         id in [:cmd_batch, :sub_batch] -> {[], arg_regs}
         id == :debug_to_string -> {[], arg_regs}
+        id in [:char_from_code, :string_length_boxed] -> {[], arg_regs}
         id == :tuple2_ints -> {arg_regs, []}
-        id in [:result_and_then, :result_map, :result_map_error, :maybe_and_then] ->
+        id in @hof_closure_last_arg ->
           case arg_regs do
             args when length(args) >= 1 ->
               {prefix, [last]} = Enum.split(args, -1)

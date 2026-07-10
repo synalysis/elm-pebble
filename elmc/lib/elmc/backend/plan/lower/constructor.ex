@@ -9,6 +9,8 @@ defmodule Elmc.Backend.Plan.Lower.Constructor do
 
   @nothing_names ~w(Nothing Maybe.Nothing)
   @just_names ~w(Just Maybe.Just)
+  @order_names ~w(LT EQ GT Basics.LT Basics.EQ Basics.GT)
+  @order_values %{"LT" => -1, "EQ" => 0, "GT" => 1}
 
   @payload_builtins %{
     "Just" => :maybe_just_own,
@@ -60,6 +62,9 @@ defmodule Elmc.Backend.Plan.Lower.Constructor do
 
       unit_ctor?(target, short) ->
         Expr.compile_runtime_builtin(:unit, [], ctx, b)
+
+      short in @order_names or target in @order_names ->
+        compile_order_literal(short, ctx, b)
 
       true_or_false?(target) ->
         compile_bool_literal(target, ctx, b)
@@ -133,6 +138,11 @@ defmodule Elmc.Backend.Plan.Lower.Constructor do
     target in ["True", "False", "Basics.True", "Basics.False"] or
       String.ends_with?(target, ".True") or
       String.ends_with?(target, ".False")
+  end
+
+  defp compile_order_literal(short, ctx, b) do
+    value = Map.fetch!(@order_values, short_name(short))
+    Expr.compile_runtime_builtin(:new_order, [], ctx, b, %{literal: value})
   end
 
   defp compile_bool_literal(target, _ctx, b) do

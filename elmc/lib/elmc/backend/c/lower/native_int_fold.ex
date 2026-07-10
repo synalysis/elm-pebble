@@ -64,6 +64,7 @@ defmodule Elmc.Backend.C.Lower.NativeIntFold do
   defp inlineable_reg?(%FunctionPlan{} = plan, reg) do
     case defining_instr(plan, reg) do
       %{op: :int_arith} -> true
+      %{op: :const_int} -> true
       _ -> false
     end
   end

@@ -78,6 +78,12 @@ defmodule Elmc.Backend.Plan.Lower.Call do
     Elmc.Backend.CCodegen.SpecialValues.special_value_from_target(target, args)
   end
 
+  @spec compile_closure_call_from_reg(integer(), [map()], Context.t(), Builder.t()) ::
+          {:ok, Types.reg() | :fn_out, Builder.t()} | :unsupported
+  def compile_closure_call_from_reg(callee_reg, args, ctx, b) when is_integer(callee_reg) do
+    do_compile_closure_call(callee_reg, args, ctx, b)
+  end
+
   defp compile_fn_call_target(module, name, args, ctx, b) do
     cond do
       oversaturated_call?(ctx, module, name, args) ->
@@ -180,6 +186,10 @@ defmodule Elmc.Backend.Plan.Lower.Call do
   end
 
   defp compile_closure_call(callee_reg, args, ctx, b) do
+    do_compile_closure_call(callee_reg, args, ctx, b)
+  end
+
+  defp do_compile_closure_call(callee_reg, args, ctx, b) do
     with {:ok, arg_regs, b1} <- Expr.compile_args(args, ctx, b) do
       {dest, b2} = dest_for_call(ctx, b1)
       {borrows, consumes} = Builder.partition_call_args(b2, [callee_reg | arg_regs])

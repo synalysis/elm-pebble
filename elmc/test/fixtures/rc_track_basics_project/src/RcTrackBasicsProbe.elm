@@ -1,20 +1,36 @@
 module RcTrackBasicsProbe exposing
     ( probeAbs
+    , probeAcos
     , probeAlways
+    , probeAsin
+    , probeAtan
+    , probeAtan2
     , probeClamp
     , probeCeiling
     , probeCompare
+    , probeCos
+    , probeDegrees
     , probeFloor
+    , probeFromPolar
     , probeIdentity
+    , probeIsInfinite
+    , probeIsNan
+    , probeLogBase
     , probeMax
     , probeMin
     , probeModBy
     , probeNegate
     , probeNot
+    , probeRadians
     , probeRemainderBy
     , probeRound
+    , probeSin
+    , probeSqrt
+    , probeTan
     , probeToFloat
+    , probeToPolar
     , probeTruncate
+    , probeTurns
     , probeXor
     )
 
@@ -124,3 +140,99 @@ probeCompare =
     (if a == LT then 1 else 0)
         + (if b == EQ then 10 else 0)
         + (if c == GT then 100 else 0)
+
+
+probeSqrt : Int
+probeSqrt =
+    truncate (sqrt 16)
+
+
+probeSin : Int
+probeSin =
+    round (sin 0)
+
+
+probeCos : Int
+probeCos =
+    round (cos 0)
+
+
+probeTan : Int
+probeTan =
+    truncate (tan 0)
+
+
+probeAsin : Int
+probeAsin =
+    truncate (asin 0)
+
+
+probeAcos : Int
+probeAcos =
+    truncate (acos 1)
+
+
+probeAtan : Int
+probeAtan =
+    truncate (atan 1)
+
+
+probeAtan2 : Int
+probeAtan2 =
+    truncate (atan2 1 1)
+
+
+probeDegrees : Int
+probeDegrees =
+    truncate (degrees pi)
+
+
+probeRadians : Int
+probeRadians =
+    truncate (radians 180)
+
+
+probeTurns : Int
+probeTurns =
+    truncate (turns 1)
+
+
+probeLogBase : Int
+probeLogBase =
+    truncate (logBase 2 8)
+
+
+probeIsNan : Int
+probeIsNan =
+    if isNaN (0 / 0) then
+        1
+
+    else
+        0
+
+
+probeIsInfinite : Int
+probeIsInfinite =
+    if isInfinite (1 / 0) then
+        1
+
+    else
+        0
+
+
+probeFromPolar : Int
+probeFromPolar =
+    let
+        ( x, y ) =
+            fromPolar ( 5, 0 )
+    in
+    truncate x + truncate y
+
+
+probeToPolar : Int
+probeToPolar =
+    let
+        ( r, _ ) =
+            toPolar ( 3, 4 )
+    in
+    truncate r

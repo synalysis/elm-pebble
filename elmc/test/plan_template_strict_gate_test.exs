@@ -9,34 +9,13 @@ defmodule Elmc.PlanTemplateStrictGateTest do
 
   use ExUnit.Case, async: false
 
-  alias Elmc.TestSupport.TemplateCompile
+  alias Elmc.TestSupport.{PlanStrictTemplates, TemplateCompile}
 
   @moduletag :slow
 
   # Templates verified to pass strict plan-primary (zero plan_primary_fallback).
   # Add a name here only after `plan_ir_strict: true` compiles cleanly.
-  @strict_pass ~w(
-    game_2048
-    game_elmtris
-    game_basic
-    game_jump_n_run
-    game_tiny_bird
-    watchface_poke_battle
-    watchface_yes
-    watchface_analog
-    watchface_digital
-    watchface_minimal
-    watchface_weather_animated
-    watchface_tangram_time
-    watchface_color_shapes
-    watchface_smoke_screen
-    app_minimal
-    watch_demo_accel
-    watch_demo_storage
-    companion_demo_storage
-    companion_demo_weather_env
-    starter_watch
-  )
+  @strict_pass PlanStrictTemplates.names()
 
   for template <- @strict_pass do
     @tag template: template
@@ -57,6 +36,19 @@ defmodule Elmc.PlanTemplateStrictGateTest do
 
       assert fallbacks == [],
              "expected zero plan_primary_fallback, got:\n#{inspect(fallbacks, pretty: true)}"
+
+      c_path = Path.join(out_dir, "c/elmc_generated.c")
+
+      if File.regular?(c_path) do
+        unknown_count =
+          c_path
+          |> File.read!()
+          |> then(&Regex.scan(~r/elmc_unknown\b/, &1))
+          |> length()
+
+        assert unknown_count == 0,
+               "expected zero elmc_unknown in #{template}, got #{unknown_count}"
+      end
     end
   end
 end

@@ -50,12 +50,12 @@ defmodule Elmc.BytecodeTest do
     assert {:ok, 6} = Runtime.run_function(plan, params: [5])
   end
 
-  test "encodes and runs simple_project init plan" do
+  test "encodes and runs simple_project probeHelper plan" do
     {:ok, result} =
       Elmc.compile(@fixture, %{
         out_dir: Path.expand("tmp/bytecode_init_codegen", __DIR__),
         entry_module: "Main",
-        strip_dead_code: true
+        strip_dead_code: false
       })
 
     Process.put(:elmc_constructor_tags, Elmc.Backend.CCodegen.IRQueries.constructor_tag_map(result.ir))
@@ -71,13 +71,13 @@ defmodule Elmc.BytecodeTest do
       end)
       |> Map.new()
 
-    decl = Map.fetch!(decl_map, {"Main", "init"})
+    decl = Map.fetch!(decl_map, {"Main", "probeHelper"})
 
-    assert {:ok, plan} = PlanLower.lower(decl, "Main", decl_map, rc_required: true)
+    assert {:ok, plan} = PlanLower.lower(decl, "Main", decl_map, rc_required: false)
 
     section = Lower.lower(plan)
     assert byte_size(section.code) > 0
-    assert {:ok, _} = Runtime.run_function(plan, params: [0])
+    assert {:ok, 7} = Runtime.run_function(plan, params: [5])
   end
 
   test "interpreter dispatches call_fn through fn_registry" do
@@ -129,10 +129,17 @@ defmodule Elmc.BytecodeTest do
       end)
       |> Map.new()
 
-    {:ok, advanced} = PlanLower.lower(Map.fetch!(decl_map, {"Main", "advanced"}), "Main", decl_map, rc_required: false)
-    {:ok, helper} = PlanLower.lower(Map.fetch!(decl_map, {"Main", "helper"}), "Main", decl_map, rc_required: false)
+    {:ok, advanced} =
+      PlanLower.lower(Map.fetch!(decl_map, {"Main", "probeAdvanced"}), "Main", decl_map,
+        rc_required: false
+      )
 
-    plans = %{{"Main", "advanced"} => advanced, {"Main", "helper"} => helper}
+    {:ok, helper} =
+      PlanLower.lower(Map.fetch!(decl_map, {"Main", "probeHelper"}), "Main", decl_map,
+        rc_required: false
+      )
+
+    plans = %{{"Main", "probeAdvanced"} => advanced, {"Main", "probeHelper"} => helper}
 
     assert {:ok, 8} = Runtime.run_function(advanced, params: [5], plans: plans)
     assert {:ok, 11} = Runtime.run_function(advanced, params: [9], plans: plans)

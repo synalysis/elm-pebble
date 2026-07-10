@@ -51,6 +51,7 @@ defmodule Elmc.Backend.Plan.Types do
           | :test_list_empty
           | :test_ctor_tag
           | :test_bool
+          | :test_string_literal
           | :bool_and
           | :compare
           | :record_get

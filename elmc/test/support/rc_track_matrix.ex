@@ -17,6 +17,7 @@ defmodule Elmc.Test.RcTrackMatrix do
   }
 
   @matrix_probe_exceptions %{
+    "Basics" => %{"IsNan" => "Basics.isNaN"},
     "List" => %{"ReverseList" => "List.reverse"},
     "Tuple" => %{"Pair" => "Tuple.pair"},
     "Task" => %{
@@ -69,7 +70,9 @@ defmodule Elmc.Test.RcTrackMatrix do
       probes: ~w(
         probeMax probeMin probeClamp probeModBy probeIdentity probeAlways probeNot
         probeNegate probeAbs probeToFloat probeRound probeFloor probeCeiling probeTruncate
-        probeRemainderBy probeXor probeCompare
+        probeRemainderBy probeXor probeCompare probeSqrt probeSin probeCos probeTan
+        probeAsin probeAcos probeAtan probeAtan2 probeDegrees probeRadians probeTurns
+        probeLogBase probeIsNan probeIsInfinite probeFromPolar probeToPolar
       )
     },
     "Bitwise" => %{
@@ -90,7 +93,8 @@ defmodule Elmc.Test.RcTrackMatrix do
           probeConcatMap probeIndexedMap probeFilterMap probeSum probeProduct
           probeMaximum probeMinimum probeAny probeAll probeSort probeSortBy
           probeSortWith probeSingleton probeRange probeRepeat probeTake probeDrop
-          probePartition probeUnzip probeIntersperse probeMap2 probeMap3 probeCons
+          probePartition probeUnzip probeIntersperse probeMap2 probeMap3 probeMap4
+          probeMap5 probeCons
           probeReverseList probeConsChain probeAppendChain
         )
     },

@@ -52,6 +52,8 @@ defmodule Elmc.Backend.Plan.Lower.Case do
   defp subject_expr(_), do: %{op: :int_literal, value: 0}
 
   defp compile_dispatch(_expr, subject, branches, ctx, b) do
+    branches = normalize_case_branches(branches)
+
     cond do
       ListSwitch.fixed_length_nil_branches?(branches) ->
         ListSwitch.compile_fixed_length_nil(subject, branches, ctx, b)
@@ -116,9 +118,10 @@ defmodule Elmc.Backend.Plan.Lower.Case do
 
   defp compile_maybe_nothing_case(subject, nothing_br, other_br, ctx, b) do
     saved_pending = Map.get(b, :pending_merge_block)
+    subject_ctx = Context.for_branch_arm(ctx)
 
-    with {:ok, subj_reg, b1} <- Expr.compile(subject, ctx, b),
-         {:ok, cond_reg, b2} <- emit_test_maybe_nothing(subj_reg, b1),
+    with {:ok, subj_reg, b_subj} <- Expr.compile(subject, subject_ctx, b),
+         {:ok, cond_reg, b2} <- emit_test_maybe_nothing(subj_reg, b_subj),
          then_id = b2.next_block,
          else_id = then_id + 1,
          merge_id = skip_reserved(else_id + 1, saved_pending),
@@ -131,7 +134,7 @@ defmodule Elmc.Backend.Plan.Lower.Case do
            compile_maybe_else_branch(
              Map.get(other_br, :pattern),
              Map.get(other_br, :expr),
-             subject,
+             subj_reg,
              ctx,
              b_then_done,
              else_id
@@ -159,12 +162,11 @@ defmodule Elmc.Backend.Plan.Lower.Case do
     end
   end
 
-  defp compile_maybe_else_branch(pattern, expr, subject, ctx, b, block_id) do
+  defp compile_maybe_else_branch(pattern, expr, subj_reg, ctx, b, block_id) do
     b_arm = Builder.begin_cfg_arm_block(b, block_id)
     arm_ctx = Context.for_branch_arm(ctx)
 
-    with {:ok, subj_reg, b_subj} <- Expr.compile(subject, arm_ctx, b_arm),
-         {:ok, _payload_reg, b1, else_ctx} <- bind_maybe_payload(arm_ctx, pattern, subj_reg, b_subj),
+    with {:ok, _payload_reg, b1, else_ctx} <- bind_maybe_payload(arm_ctx, pattern, subj_reg, b_arm),
          {:ok, reg, b2} <- Expr.compile(expr, else_ctx, b1) do
       exit_id = b2.current_block.id
       {:ok, reg, exit_id, Builder.finish_block(b2, :none)}
@@ -198,36 +200,29 @@ defmodule Elmc.Backend.Plan.Lower.Case do
     {:ok, merge, b2}
   end
 
-  defp compile_linear_branches([], _subject, _ctx, _b), do: :unsupported
+  defp compile_linear_branches(branches, subject, ctx, b) do
+    cond do
+      tagged_constructor_branches?(branches) ->
+        TagSwitch.compile(subject, branches, ctx, b)
 
-  defp compile_linear_branches([branch | rest], subject, ctx, b) do
-    if tagged_constructor_branches?([branch | rest]) do
-      :unsupported
-    else
-      do_compile_linear_branches([branch | rest], subject, ctx, b)
+      GuardedSwitch.branches?(branches) ->
+        GuardedSwitch.compile(subject, branches, ctx, b)
+
+      true ->
+        :unsupported
     end
   end
 
-  defp do_compile_linear_branches([branch | rest], subject, ctx, b) do
-    with {:ok, subj_reg, b1} <- Expr.compile(subject, ctx, b) do
-      pattern = Map.get(branch, :pattern)
-      branch_ctx = Context.for_branch_arm(ctx)
-      b_branch = b1
-      {branch_ctx, b_branch} = bind_pattern_pair(branch_ctx, b_branch, pattern, subj_reg)
+  defp normalize_case_branches(branches) when is_list(branches) do
+    Enum.map(branches, fn branch ->
+      case Map.get(branch, :pattern) do
+        %{kind: :qualified_constructor} = pattern ->
+          %{branch | pattern: Map.put(pattern, :kind, :constructor)}
 
-      case Expr.compile(Map.get(branch, :expr), branch_ctx, b_branch) do
-        {:ok, reg, b2} ->
-          case rest do
-            [] -> {:ok, reg, b2}
-            more -> do_compile_linear_branches(more, subject, ctx, b2)
-          end
-
-        :unsupported ->
-          :unsupported
+        pattern ->
+          %{branch | pattern: pattern}
       end
-    else
-      _ -> :unsupported
-    end
+    end)
   end
 
   defp tagged_constructor_branches?(branches) when is_list(branches) do
@@ -315,6 +310,9 @@ defmodule Elmc.Backend.Plan.Lower.Case do
 
   defp bind_maybe_payload(ctx, pattern, subj_reg, b) do
     cond do
+      just_arm_pattern?(pattern) and unused_just_payload?(pattern) ->
+        {:ok, subj_reg, b, ctx}
+
       just_arm_pattern?(pattern) ->
         {:ok, payload_reg, b1} = Expr.compile_runtime_builtin(:maybe_just_payload, [subj_reg], ctx, b)
         {ctx1, b2} = bind_just_payload_pattern(ctx, b1, pattern, payload_reg)
@@ -372,6 +370,10 @@ defmodule Elmc.Backend.Plan.Lower.Case do
     do: true
 
   defp unwrap_just_pattern?(_), do: false
+
+  defp unused_just_payload?(%{kind: :constructor, arg_pattern: %{kind: :wildcard}}), do: true
+  defp unused_just_payload?(%{kind: :constructor, arg_pattern: nil, bind: nil}), do: true
+  defp unused_just_payload?(_), do: false
 
   defp nested_maybe_ctor_branches?(branches) when is_list(branches) do
     fallback_count = Enum.count(branches, &maybe_ctor_fallback_arm?/1)

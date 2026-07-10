@@ -8,8 +8,14 @@ defmodule Elmc.PlanTemplatesPrimaryAuditTest do
   @moduletag :slow
 
   defp audit_template(template, expected_counts \\ nil) do
+    out_dir = Path.expand("tmp/plan_primary_audit/#{template}", __DIR__)
+
     assert {:ok, result} =
-             TemplateCompile.compile_watch_template(template, plan_ir_mode: :primary)
+             TemplateCompile.compile_watch_template(template,
+               plan_ir_mode: :primary,
+               plan_ir_strict: true,
+               out_dir: out_dir
+             )
 
     Process.put(:elmc_constructor_tags, Elmc.Backend.CCodegen.IRQueries.constructor_tag_map(result.ir))
 
@@ -45,6 +51,18 @@ defmodule Elmc.PlanTemplatesPrimaryAuditTest do
 
     assert reachable_report.lowered == reachable_report.total,
            "#{template} reachable plan coverage #{reachable_report.lowered}/#{reachable_report.total}: #{inspect(Enum.take(reachable_report.failed, 8))}"
+
+    c_path = Path.join(out_dir, "c/elmc_generated.c")
+
+    if File.regular?(c_path) do
+      unknown_count =
+        c_path
+        |> File.read!()
+        |> then(&Regex.scan(~r/elmc_unknown\b/, &1))
+        |> length()
+
+      assert unknown_count == 0, "#{template} has #{unknown_count} elmc_unknown call(s)"
+    end
 
     {report, reachable_report}
   end

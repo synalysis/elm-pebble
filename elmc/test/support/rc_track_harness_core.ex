@@ -42,14 +42,20 @@ defmodule Elmc.Test.RcTrackCoreTest do
 
     File.rm_rf!(out_dir)
 
-    compile_opts =
+    base =
       if module_name == "Debug" do
         [entry_module: entry.module, prod: false]
       else
         [entry_module: entry.module]
       end
 
+    compile_opts = Keyword.merge(base, Keyword.get(opts, :compile_opts, []))
+
     RcTrackHarness.compile!(project_dir, out_dir, compile_opts)
+
+    if Keyword.get(opts, :assert_no_elmc_unknown, false) do
+      RcTrackHarness.assert_no_elmc_unknown!(out_dir)
+    end
 
     int_out =
       if int_probes == [] do
@@ -88,8 +94,9 @@ defmodule Elmc.Test.RcTrackCoreTest do
     int_out <> heap_out
   end
 
-  @spec assert_matrix_coverage!([String.t()], [String.t()], String.t(), map()) :: :ok
-  def assert_matrix_coverage!(probes, matrix_functions, prefix, exceptions \\ %{}) do
+  @spec assert_matrix_coverage!([String.t()], [String.t()], String.t(), map() | nil) :: :ok
+  def assert_matrix_coverage!(probes, matrix_functions, prefix, exceptions \\ nil) do
+    exceptions = exceptions || RcTrackMatrix.matrix_probe_exceptions(prefix)
     covered =
       Enum.map(probes, fn probe ->
         probe

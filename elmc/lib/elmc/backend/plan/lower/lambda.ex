@@ -22,8 +22,28 @@ defmodule Elmc.Backend.Plan.Lower.Lambda do
     "__eq__" => :eq
   }
 
+  @partial_binops ~w(__add__ __sub__ __mul__ __idiv__)
+
+  @spec partial_operator_var?(String.t()) :: boolean()
+  def partial_operator_var?(name) when is_binary(name), do: name in @partial_binops
+
   @spec compile_partial(map(), Context.t(), Builder.t()) ::
           {:ok, Types.reg() | :fn_out, Builder.t()} | :unsupported
+  def compile_partial(%{op: :call, name: name, args: []}, ctx, b)
+      when name in @partial_binops do
+    compile_lambda(
+      ["a", "b"],
+      %{
+        op: :call,
+        name: name,
+        args: [%{op: :var, name: "a"}, %{op: :var, name: "b"}]
+      },
+      [],
+      ctx,
+      b
+    )
+  end
+
   def compile_partial(%{op: :call, name: name, args: [rhs]}, ctx, b) when is_binary(name) do
     case Map.get(@partial_ops, name) do
       kind when kind in [:neq, :eq] ->
@@ -161,7 +181,7 @@ defmodule Elmc.Backend.Plan.Lower.Lambda do
         params: all_params,
         rc_required: parent_ctx.rc_required,
         fallible: parent_ctx.fallible,
-        function_tail: parent_ctx.rc_required,
+        function_tail: false,
         letrec_refs: parent_ctx.letrec_refs,
         letrec_in_closure: parent_ctx.letrec_self != nil
       )

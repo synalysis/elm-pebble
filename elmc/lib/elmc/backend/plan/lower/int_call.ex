@@ -159,6 +159,8 @@ defmodule Elmc.Backend.Plan.Lower.IntCall do
       {"Basics.round", [arg]} -> int_operand?(arg)
       {"Basics.abs", [arg]} -> int_operand?(arg)
       {"Basics.negate", [arg]} -> int_operand?(arg)
+      {"Basics.ceiling", [arg]} -> int_operand?(arg)
+      {"Basics.truncate", [arg]} -> int_operand?(arg)
       _ -> false
     end
   end
@@ -172,7 +174,11 @@ defmodule Elmc.Backend.Plan.Lower.IntCall do
              "elmc_basics_mod_by",
              "elmc_basics_remainder_by",
              "elmc_basics_min",
-             "elmc_basics_max"
+             "elmc_basics_max",
+             "elmc_basics_abs",
+             "elmc_basics_negate",
+             "elmc_basics_ceiling",
+             "elmc_basics_truncate"
            ] ->
         int_operand?(arg)
 

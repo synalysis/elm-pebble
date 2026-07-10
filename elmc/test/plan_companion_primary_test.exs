@@ -58,6 +58,7 @@ defmodule Elmc.PlanCompanionPrimaryTest do
       assert generated_c =~ "plan block"
       assert generated_c =~ "view_commands_append"
       refute generated_c =~ "plan_primary_boxed"
+      refute generated_c =~ ~r/elmc_unknown\b/
     end
   end
 end

@@ -28,9 +28,9 @@ defmodule Elmc.PlanCLowerTest do
 
     assert :ok = Verify.run(b3)
     c = CLowerFunction.emit(b3)
-    assert c =~ "CHECK_RC(Rc)"
     assert c =~ "CATCH_BEGIN"
     assert c =~ "return Rc;"
+    assert c =~ "*out ="
   end
 
   test "companion cmd pattern lowers params to owned not out" do
@@ -83,7 +83,7 @@ defmodule Elmc.PlanCLowerTest do
              Elmc.Backend.Plan.Lower.Function.lower(decl, "Main", %{}, rc_required: true)
 
     c = CLowerFunction.emit(plan)
-    assert c =~ "elmc_retain(owned[0])"
+    assert c =~ "elmc_retain(model)"
     assert c =~ "elmc_record_update_index_cow_drop("
     refute c =~ "Rc = elmc_record_update_index_cow_drop("
   end
@@ -109,7 +109,7 @@ defmodule Elmc.PlanCLowerTest do
              Elmc.Backend.Plan.Lower.Function.lower(decl, "Main", %{}, rc_required: true)
 
     c = CLowerFunction.emit(plan)
-    assert c =~ "elmc_record_get_index(owned[0], 1 /* score */)"
+    assert c =~ "elmc_record_get_index(model, 1 /* score */)"
     refute c =~ ~s/elmc_record_get(owned[0], "score")/
     refute c =~ "RC_ERR_OUT_OF_MEMORY"
   end
@@ -184,7 +184,7 @@ defmodule Elmc.PlanCLowerTest do
     assert c =~ "ElmcValue *owned["
     assert c =~ "elmc_fn_RecordFieldTest_start(&owned["
     refute c =~ "elmc_fn_RecordFieldTest_start(&owned[0], )"
-    assert c =~ "elmc_new_string_take(\"empty\")"
+    assert c =~ ~s/"empty"/
     assert c =~ "elmc_release_array_lifo(owned,"
     refute c =~ ~r/elmc_record_get_index\([^;]+\);\n\s+if \(!owned/
   end

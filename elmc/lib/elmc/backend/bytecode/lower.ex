@@ -4,7 +4,6 @@ defmodule Elmc.Backend.Bytecode.Lower do
   """
 
   alias Elmc.Backend.Bytecode.{FnTable, Opcodes}
-  alias Elmc.Backend.Plan
   alias Elmc.Backend.Plan.RuntimeBuiltins
   alias Elmc.Backend.Plan.Types.{Block, FunctionPlan}
 
@@ -27,7 +26,6 @@ defmodule Elmc.Backend.Bytecode.Lower do
   @spec lower(FunctionPlan.t()) :: section()
   def lower(%FunctionPlan{} = plan) do
     fn_table = FnTable.collect(plan)
-    {_slots, local_count} = Plan.allocate_slots(plan)
 
     {code, block_ips} = encode_blocks(plan.blocks, fn_table)
 
@@ -38,7 +36,7 @@ defmodule Elmc.Backend.Bytecode.Lower do
     %{
       magic: @magic,
       version: @version,
-      locals: local_count + length(plan.params),
+      locals: bytecode_locals(plan),
       code: code,
       block_ips: block_ips,
       fn_table: fn_table,
@@ -48,16 +46,21 @@ defmodule Elmc.Backend.Bytecode.Lower do
 
   defp lower_lambda_section(%FunctionPlan{} = plan) do
     fn_table = FnTable.collect(plan)
-    {_slots, local_count} = Plan.allocate_slots(plan)
     {code, block_ips} = encode_blocks(plan.blocks, fn_table)
 
     %{
-      locals: local_count + length(plan.params),
+      locals: bytecode_locals(plan),
       code: code,
       block_ips: block_ips,
       fn_table: fn_table,
       lambdas: []
     }
+  end
+
+  # Bytecode uses virtual register indices from the plan builder (`reg_count`), not
+  # the greedy owned-slot count from `Plan.allocate_slots/1` (that map is for C).
+  defp bytecode_locals(%FunctionPlan{reg_count: reg_count, params: params}) do
+    max(reg_count, length(params || []))
   end
 
   defp encode_blocks(blocks, fn_table) do
@@ -176,7 +179,7 @@ defmodule Elmc.Backend.Bytecode.Lower do
 
     <<
       Opcodes.opcode(:switch_tag)::8,
-      subject::16,
+      encode_dest(subject)::16,
       default_id::16,
       byte_size(arms_bin)::16,
       arms_bin::binary
@@ -199,8 +202,8 @@ defmodule Elmc.Backend.Bytecode.Lower do
 
   defp encode_args(:load_param, %{index: idx}, _fn_table), do: <<idx::16>>
 
-  defp encode_args(:load_local, %{source: source}, _fn_table) when is_integer(source),
-    do: <<source::16>>
+  defp encode_args(:load_local, %{source: source}, _fn_table),
+    do: <<encode_dest(source)::16>>
 
   defp encode_args(:const_immortal_string, %{value: value}, _fn_table) when is_binary(value) do
     bin = :erlang.iolist_to_binary(value)
@@ -285,12 +288,12 @@ defmodule Elmc.Backend.Bytecode.Lower do
   defp encode_args(:record_get, args, _fn_table) do
     base = Map.fetch!(args, :base)
     idx = field_index_word(args)
-    <<base::16, idx::16>>
+    <<encode_dest(base)::16, idx::16>>
   end
 
   defp encode_args(:record_update, %{base: base, value: value} = args, _fn_table) do
     idx = field_index_word(args)
-    <<base::16, value::16, idx::16>>
+    <<encode_dest(base)::16, encode_dest(value)::16, idx::16>>
   end
 
   defp encode_args(:pebble_cmd, %{builtin: id, kind: kind, params: params}, _fn_table) do
@@ -310,18 +313,25 @@ defmodule Elmc.Backend.Bytecode.Lower do
 
   defp encode_args(:switch_ctor_tag, %{subject: subject, arms: arms, default: default}, _fn_table) do
     arms_bin =
-      Enum.map(arms, fn %{tag: tag, reg: reg} -> <<tag::16, reg::16>> end)
+      Enum.map(arms, fn %{tag: tag, reg: reg} -> <<tag::16, encode_dest(reg)::16>> end)
       |> IO.iodata_to_binary()
 
     default_w = if is_integer(default), do: default, else: 0xFFFF
-    <<subject::16, default_w::16, byte_size(arms_bin)::16, arms_bin::binary>>
+    <<encode_dest(subject)::16, default_w::16, byte_size(arms_bin)::16, arms_bin::binary>>
   end
 
-  defp encode_args(:test_maybe_nothing, %{reg: reg}, _fn_table), do: <<reg::16>>
+  defp encode_args(:test_maybe_nothing, %{reg: reg}, _fn_table),
+    do: <<encode_dest(reg)::16>>
+
+  defp encode_args(:test_string_literal, %{subject: subject, literal: literal}, _fn_table)
+       when is_binary(literal) do
+    bin = :erlang.iolist_to_binary(literal)
+    <<encode_dest(subject)::16, byte_size(bin)::16, bin::binary>>
+  end
 
   defp encode_args(:tuple_proj, %{base: base, which: which}, _fn_table) do
     which_n = if which == :second, do: 1, else: 0
-    <<which_n::8, base::16>>
+    <<which_n::8, encode_dest(base)::16>>
   end
 
   defp encode_args(:make_closure, %{index: idx, arity: arity, captures: caps}, _fn_table) do
@@ -329,8 +339,7 @@ defmodule Elmc.Backend.Bytecode.Lower do
     <<idx::16, arity::16, byte_size(caps_bin)::16, caps_bin::binary>>
   end
 
-  defp encode_args(:publish, %{source: reg}, _fn_table) when is_integer(reg), do: <<reg::16>>
-  defp encode_args(:publish, _, _fn_table), do: <<>>
+  defp encode_args(:publish, %{source: reg}, _fn_table), do: <<encode_dest(reg)::16>>
 
   defp encode_args(:const_int, %{value: v}, _fn_table), do: <<v::32>>
 
@@ -373,7 +382,7 @@ defmodule Elmc.Backend.Bytecode.Lower do
         count = length(regs)
 
         Enum.reduce(regs, <<3::8, count::16>>, fn reg, acc ->
-          acc <> <<reg::16>>
+          acc <> encode_reg(reg)
         end)
 
       :record_array ->
@@ -381,14 +390,14 @@ defmodule Elmc.Backend.Bytecode.Lower do
         count = length(regs)
 
         Enum.reduce(regs, <<4::8, count::16>>, fn reg, acc ->
-          acc <> <<reg::16>>
+          acc <> encode_reg(reg)
         end)
     end
   end
 
   defp encode_args(:catch_begin, _, _fn_table), do: <<>>
   defp encode_args(:catch_end, _, _fn_table), do: <<>>
-  defp encode_args(:release, %{reg: reg}, _fn_table), do: <<reg::16>>
+  defp encode_args(:release, %{reg: reg}, _fn_table), do: <<encode_dest(reg)::16>>
   defp encode_args(_, _, _fn_table), do: <<>>
 
   defp static_list_float(v) when is_integer(v), do: v * 1.0
@@ -508,18 +517,29 @@ defmodule Elmc.Backend.Bytecode.Lower do
     args
     |> Map.get(:field_index)
     |> case do
-      idx when is_integer(idx) -> idx
+      idx when is_integer(idx) ->
+        idx
+
       idx when is_binary(idx) ->
-        case Integer.parse(idx) do
+        idx
+        |> String.split("/*", parts: 2)
+        |> hd()
+        |> String.trim()
+        |> Integer.parse()
+        |> case do
           {n, _} -> n
-          _ -> 0
+          _ -> field_name_hash(args)
         end
 
       _ ->
-        case Map.get(args, :field) do
-          field when is_binary(field) -> rem(:erlang.phash2(field, 65536), 256)
-          _ -> 0
-        end
+        field_name_hash(args)
+    end
+  end
+
+  defp field_name_hash(args) do
+    case Map.get(args, :field) do
+      field when is_binary(field) -> rem(:erlang.phash2(field, 65536), 256)
+      _ -> 0
     end
   end
 end

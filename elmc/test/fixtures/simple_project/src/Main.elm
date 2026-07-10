@@ -550,3 +550,27 @@ main =
         , view = view
         , subscriptions = subscriptions
         }
+
+
+-- Bytecode / plan probe helpers (not used by the game loop).
+probeHelper : Int -> Int
+probeHelper value =
+    value + 2
+
+
+probeAdvanced : Int -> Int
+probeAdvanced n =
+    let
+        base =
+            probeHelper n
+    in
+    if base > 10 then
+        base
+
+    else
+        base + 1
+
+
+probeScoreOf : Model -> Int
+probeScoreOf model =
+    model.score
