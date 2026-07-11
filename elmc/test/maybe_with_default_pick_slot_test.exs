@@ -31,6 +31,7 @@ defmodule Elmc.MaybeWithDefaultPickSlotTest do
     assert body =~ "elmc_maybe_with_default_int(2"
     assert body =~ "elmc_fn_Main_pickSlot"
     assert body =~ "elmc_fn_Main_bottomRightSlots"
+    assert body =~ "_pick_argv"
   end
 
   test "try_emit recognizes case pickSlot of Just x -> x; Nothing -> default" do

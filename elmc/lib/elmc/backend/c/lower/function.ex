@@ -120,7 +120,12 @@ defmodule Elmc.Backend.C.Lower.Function do
         native_bool_only_regs: native_bool_only_regs,
         native_int_regs: native_int_operand_regs,
         const_int_regs: const_int_regs,
-        native_ret_reg: ret_reg
+        native_ret_reg: ret_reg,
+        borrow_param_regs: borrow_param_regs,
+        closure_mode: closure_mode,
+        param_kinds: param_kinds,
+        params: param_names(plan.params),
+        parent_plan: plan
       )
 
     native_ret_deferred_regs =
@@ -797,6 +802,15 @@ defmodule Elmc.Backend.C.Lower.Function do
 
   defp transferring_consume_instr?(%{op: :call_runtime, args: %{builtin: id}}) do
     id in [:record_new_take, :record_new_values_ints, :tuple2_take]
+  end
+
+  defp transferring_consume_instr?(%{
+         op: :call_runtime,
+         args: %{builtin: :retain, args: [src]},
+         effects: %{consumes: consumes}
+       })
+       when is_integer(src) and is_list(consumes) do
+    src in consumes
   end
 
   defp transferring_consume_instr?(_), do: false
@@ -1577,9 +1591,6 @@ defmodule Elmc.Backend.C.Lower.Function do
       decl && FunctionEmit.mixed_direct_abi?(decl, plan.module, decl_map) ->
         NativeFunctionCall.arg_kinds(decl, plan.module, decl_map)
 
-      decl && NativeFunctionCall.signature_has_native_args?(decl) ->
-        NativeFunctionCall.signature_arg_kinds(decl, plan.module, decl_map)
-
       true ->
         List.duplicate(:boxed, length(plan.params))
     end
@@ -1882,31 +1893,24 @@ defmodule Elmc.Backend.C.Lower.Function do
       |> Enum.map(fn %{dest: reg, args: %{index: index}} -> {reg, index} end)
       |> Enum.uniq_by(fn {reg, _} -> reg end)
       |> Enum.filter(fn {_reg, index} ->
-        index >= cap_n and Enum.at(param_kinds, index, :boxed) == :boxed
+        Enum.at(param_kinds, index, :boxed) == :boxed
       end)
       |> Map.new(fn {reg, index} ->
-        arg_i = index - cap_n
-        {reg, "(argc > #{arg_i} ? args[#{arg_i}] : NULL)"}
+        {reg, closure_param_c_ref(index, cap_n)}
       end)
 
+    slots = Map.drop(slots, Map.keys(borrow_regs))
     {borrow_regs, slots}
   end
 
-  defp allocate_borrow_param_direct_slots(plan, slots, param_kinds, decl_map, closure_mode) do
-    if match?(%{capture_count: _}, closure_mode) do
-      {%{}, slots}
-    else
-      allocate_borrow_param_direct_slots_impl(plan, slots, param_kinds, decl_map)
-    end
+  defp allocate_borrow_param_direct_slots(plan, slots, param_kinds, decl_map, _closure_mode) do
+    allocate_borrow_param_direct_slots_impl(plan, slots, param_kinds, decl_map)
   end
 
   defp build_closure_borrow_regs(plan, %{capture_count: cap_n}) when is_integer(cap_n) do
     plan.blocks
     |> Enum.flat_map(& &1.instrs)
-    |> Enum.filter(fn
-      %{op: :load_param, args: %{index: idx}} when idx >= cap_n -> true
-      _ -> false
-    end)
+    |> Enum.filter(&(&1.op == :load_param))
     |> Enum.map(fn %{dest: reg} -> reg end)
     |> MapSet.new()
   end
@@ -2017,11 +2021,12 @@ defmodule Elmc.Backend.C.Lower.Function do
     "(argc > #{arg_i} ? args[#{arg_i}] : NULL)"
   end
 
-  defp closure_native_int_param_ref(index, capture_count) when index < capture_count do
+  @doc false
+  def closure_native_int_param_ref(index, capture_count) when index < capture_count do
     "elmc_as_int(captures[#{index}])"
   end
 
-  defp closure_native_int_param_ref(index, capture_count) do
+  def closure_native_int_param_ref(index, capture_count) do
     arg_i = index - capture_count
     "elmc_as_int((argc > #{arg_i} ? args[#{arg_i}] : NULL))"
   end

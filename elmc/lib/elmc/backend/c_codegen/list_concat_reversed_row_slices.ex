@@ -20,7 +20,10 @@ defmodule Elmc.Backend.CCodegen.ListConcatReversedRowSlices do
          true <- rows > 0,
          expected = Enum.to_list(0..(rows - 1)),
          true <- row_indices == expected do
-      FusionSupport.ok_rc(emit(module_name, name, cells_var, width, rows), [])
+      FusionSupport.ok_rc(
+        emit(module_name, name, cells_var, width, rows),
+        [FusionSupport.callee_key(module_name, row_at_target)]
+      )
     else
       _ -> :error
     end

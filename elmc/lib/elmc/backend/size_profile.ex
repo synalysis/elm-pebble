@@ -57,7 +57,11 @@ defmodule Elmc.Backend.SizeProfile do
     end)
   end
 
-  @spec plan_emit_mode(map()) :: :goto | :state_switch
+  @spec plan_emit_mode(keyword() | map()) :: :goto | :state_switch
+  def plan_emit_mode(opts) when is_list(opts) do
+    plan_emit_mode(Map.new(opts))
+  end
+
   def plan_emit_mode(opts) when is_map(opts) do
     if size?(opts) and Map.get(opts, :plan_emit) == :state_switch do
       :state_switch

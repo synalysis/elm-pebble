@@ -82,10 +82,12 @@ defmodule Elmc.CoreComplianceTest do
     if is_nil(System.find_executable("elm")) do
       IO.puts("Skipping elm make differential sanity: elm executable not found")
     else
-      project_dir = Path.expand("fixtures/simple_project", __DIR__)
+      project_dir = Path.expand("fixtures/elm_make_sanity", __DIR__)
+      out_dir = Path.expand("tmp/elm_make_sanity_out", __DIR__)
+      File.mkdir_p!(out_dir)
 
       {output, exit_code} =
-        System.cmd("bash", ["-lc", "elm make src/Main.elm --output=/tmp/elmc-diff.js"],
+        System.cmd("bash", ["-lc", "elm make src/Main.elm --output=#{out_dir}/out.js"],
           cd: project_dir,
           stderr_to_stdout: true
         )

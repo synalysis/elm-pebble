@@ -29,7 +29,10 @@ defmodule Elmc.Backend.CCodegen.PermuteMergeInversePipeline do
          true <- model_field_macros?(module_name, model_type, pipeline, else_info),
          code when is_binary(code) and code != "" <-
            emit(module_name, name, pipeline, else_info, width, rows, model_type, decl_map) do
-      FusionSupport.ok_rc(code, [{module_name, else_info.spawn}])
+      callees =
+        pipeline_callees(module_name, pipeline, else_info, decl_map)
+
+      FusionSupport.ok_rc(code, callees)
     else
       _ -> :error
     end
@@ -46,6 +49,30 @@ defmodule Elmc.Backend.CCodegen.PermuteMergeInversePipeline do
     else
       _ -> []
     end
+  end
+
+  defp pipeline_callees(module_name, pipeline, else_info, decl_map) do
+    base = [
+      {module_name, pipeline.permute_fn},
+      {module_name, pipeline.merge_fn},
+      {module_name, pipeline.inverse_fn},
+      {module_name, else_info.spawn}
+    ]
+
+    merge_extra =
+      case Map.get(decl_map, {module_name, pipeline.merge_fn}) do
+        %{expr: expr} ->
+          case RowSliceAdjacentMerge.try_emit(module_name, pipeline.merge_fn, expr, decl_map) do
+            {:ok, _, callees} -> callees
+            {:ok, _, callees, _} -> callees
+            _ -> []
+          end
+
+        _ ->
+          []
+      end
+
+    Enum.uniq(base ++ merge_extra)
   end
 
   defp parse_pipeline(expr) do

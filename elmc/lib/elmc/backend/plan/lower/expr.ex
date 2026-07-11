@@ -774,6 +774,8 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
     int_record_expr?(Map.get(field, :expr) || Map.get(field, :value))
   end
 
+  defp int_record_expr?(%{op: :int_literal, union_ctor: ctor}) when is_binary(ctor), do: false
+
   defp int_record_expr?(%{op: :int_literal, value: value}) when is_integer(value), do: true
 
   defp int_record_expr?(%{op: :var, name: name}) when is_binary(name), do: true

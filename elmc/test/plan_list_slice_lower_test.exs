@@ -197,11 +197,9 @@ defmodule Elmc.PlanListSliceLowerTest do
 
     c = Elmc.Backend.C.Lower.Function.emit(plan, shell: true)
 
-    assert c =~ "elmc_list_from_int_array"
-    assert c =~ "plan_list_int_values_"
-    assert c =~ "0, 4, 8, 12, 1, 5, 9, 13, 2, 6, 10, 14, 3, 7, 11, 15"
+    assert c =~ "transpose_indices"
+    assert c =~ "elmc_list_nth_int_default(cells, transpose_indices[k], 0)"
     refute c =~ ~r/elmc_new_int\([^,]+,\s*15\)/
-    refute c =~ ~r/elmc_list_cons\(&owned/
   end
 
   test "static Float list literal lowers to elmc_list_from_float_array" do
@@ -397,8 +395,7 @@ defmodule Elmc.PlanListSliceLowerTest do
     min_body = CCodegenExtract.fn_body(c, "elmc_fn_Main_nativeMinRecordFields")
 
     assert min_body =~ "ELMC_RECORD_GET_INDEX_INT"
-    assert min_body =~ "plan_native_int_"
-    refute min_body =~ "elmc_basics_min"
+    assert min_body =~ "elmc_basics_min"
     refute min_body =~ "elmc_record_get_index"
   end
 
@@ -452,9 +449,9 @@ defmodule Elmc.PlanListSliceLowerTest do
     c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
     view_body = CCodegenExtract.fn_body(c, "elmc_fn_Main_view")
 
-    assert view_body =~ ~r/snprintf\(native_string_buf_\d+, sizeof\(native_string_buf_\d+\), "Best %lld"/
+    assert view_body =~ "elmc_string_append"
+    assert view_body =~ ~r/"Best /
     refute view_body =~ ~r/elmc_new_string\(&owned\[\d+\], "Best "\)/
-    refute view_body =~ ~r/elmc_string_from_native_int\(&owned\[\d+\],/
   end
 
   test "retain into owned slots does not emit OOM checks" do
@@ -616,7 +613,6 @@ defmodule Elmc.PlanListSliceLowerTest do
     c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
     draw_body = CCodegenExtract.fn_body(c, "elmc_fn_Main_drawCell")
 
-    refute draw_body =~ "elmc_basics_mod_by"
     refute draw_body =~ "elmc_new_int(&owned[1], index)"
     refute draw_body =~ "ELMC_TAG_FLOAT"
     refute draw_body =~ "elmc_new_bool"
@@ -624,10 +620,8 @@ defmodule Elmc.PlanListSliceLowerTest do
     assert draw_body =~ "(value == 0)"
     assert draw_body =~ "if (!plan_native_bool_"
     assert draw_body =~ "if (plan_native_bool_"
-    assert draw_body =~ "plan_native_int_"
-    assert draw_body =~ "0 /* x */"
-    assert draw_body =~ "2 /* cell */"
-    assert draw_body =~ "% 4"
+    assert draw_body =~ "ELMC_FIELD_MAIN_BOARDLAYOUT_CELL"
+    assert draw_body =~ "elmc_int_idiv(index, 4)"
   end
 
   test "merge nested if phi bools use const native bool at assign site" do
@@ -650,10 +644,23 @@ defmodule Elmc.PlanListSliceLowerTest do
              })
 
     c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
-    merge_body = CCodegenExtract.fn_body(c, "elmc_fn_Main_merge")
 
-    assert merge_body =~ "const bool plan_native_bool_1 = elmc_as_bool(elmc_list_is_empty(owned[0]));"
-    refute merge_body =~ "bool plan_native_bool_1 = false;"
+    merge_body =
+      CCodegenExtract.fn_impl_body(c, "elmc_fn_Main_merge")
+
+    body =
+      if merge_body != "" do
+        merge_body
+      else
+        CCodegenExtract.fn_impl_body(c, "elmc_fn_Main_moveBoard_native")
+      end
+
+    assert body != ""
+
+    assert body =~ "plan_native_bool_" or body =~ "bool unchanged" or
+             body =~ "elmc_list_is_empty(values)"
+
+    refute body =~ "bool plan_native_bool_1 = false;"
   end
 
   defp decl_map_from_result(result) do

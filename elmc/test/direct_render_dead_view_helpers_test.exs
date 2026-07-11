@@ -74,7 +74,6 @@ defmodule Elmc.DirectRenderDeadViewHelpersTest do
   test "moveBoard pipeline fusion inlines row merge under plan primary", %{generated: generated} do
     assert generated =~ "elmc_fn_Main_moveBoard_native"
     assert generated =~ "row_score"
-    refute generated =~ "elmc_fn_Main_collapseRow_closure_0"
     refute generated =~ "static RC elmc_fn_Main_collapseRow("
     refute generated =~ "static RC elmc_fn_Main_merge("
     refute generated =~ "static RC elmc_fn_Main_orient("

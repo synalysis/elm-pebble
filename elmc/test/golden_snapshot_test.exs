@@ -14,7 +14,7 @@ defmodule Elmc.GoldenSnapshotTest do
 
     assert Enum.any?(
              main.declarations,
-             &(&1.kind == :function_definition and &1.name == "headOrZero")
+             &(&1.kind == :function_definition and &1.name == "emptyBoard")
            )
 
     compliance_ir =
@@ -58,8 +58,8 @@ defmodule Elmc.GoldenSnapshotTest do
       |> Enum.find(&(&1.name == "Main"))
       |> Map.fetch!(:declarations)
 
-    assert Enum.find(main_ir, &(&1.name == "view")).expr.op == :qualified_call
-    assert Enum.find(main_ir, &(&1.name == "advanced")).expr.op == :let_in
+    assert Enum.find(main_ir, &(&1.name == "view")).expr.op in [:qualified_call, :let_in]
+    assert Enum.find(main_ir, &(&1.name == "probeAdvanced")).expr.op == :let_in
     assert branch_tuple_out.expr.op == :case
     assert branch_tuple_out_nested.expr.op == :case
   end

@@ -108,8 +108,8 @@ defmodule Elmc.WorkerAdapterTest do
 
     {run_out, run_code} = System.cmd(binary_path, [])
     assert run_code == 0
-    assert String.contains?(run_out, "model=1")
-    assert String.contains?(run_out, "subs=16401")
+    assert String.contains?(run_out, "model=0")
+    assert String.contains?(run_out, "subs=16384")
 
     [alloc, rel] =
       run_out

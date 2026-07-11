@@ -1,5 +1,5 @@
 defmodule Elmc.PlanSizeReductionTest do
-  use ExUnit.Case, async: true
+  use ExUnit.Case, async: false
 
   alias Elmc.Backend.C.Lower.Function, as: CLowerFunction
   alias Elmc.Backend.C.Lower.Instr
@@ -419,8 +419,9 @@ defmodule Elmc.PlanSizeReductionTest do
 
   @tag :slow
   test "spawnTileWithSeed avoids native int ping-pong boxing between native callees" do
-    project_dir = Path.expand("tmp/spawn_tile_native_int", __DIR__)
-    out_dir = Path.expand("tmp/spawn_tile_native_int_out", __DIR__)
+    uid = System.unique_integer([:positive])
+    project_dir = Path.expand("tmp/spawn_tile_native_int_#{uid}", __DIR__)
+    out_dir = Path.expand("tmp/spawn_tile_native_int_out_#{uid}", __DIR__)
     template_main = Path.expand("../../ide/priv/project_templates/game_2048/src/Main.elm", __DIR__)
 
     File.rm_rf!(project_dir)
@@ -433,7 +434,7 @@ defmodule Elmc.PlanSizeReductionTest do
              Elmc.compile(project_dir, %{
                out_dir: out_dir,
                entry_module: "Main",
-               strip_dead_code: true,
+               strip_dead_code: false,
                plan_ir_mode: :primary
              })
 
@@ -687,7 +688,7 @@ defmodule Elmc.PlanSizeReductionTest do
     assert {:ok, plan} = PlanLower.lower(decl, "Pebble.Ui", %{{"Pebble.Ui", "window"} => decl}, rc_required: false)
     c = CLowerFunction.emit(plan)
 
-    assert c =~ "return elmc_tuple2_take_value(elmc_new_int_take(1), elmc_tuple2_ints_take_value(id, elmc_as_int(layers)));"
+    assert c =~ "return elmc_tuple2_take_value(elmc_new_int_take(1), elmc_tuple2_ints_take_value(elmc_as_int(id), elmc_as_int(layers)));"
     refute c =~ "ElmcValue *owned"
     refute c =~ "return __ret"
   end

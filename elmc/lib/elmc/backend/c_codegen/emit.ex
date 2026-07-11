@@ -226,10 +226,32 @@ defmodule Elmc.Backend.CCodegen.Emit do
   @spec resolve_c_int_expr(String.t()) :: {:ok, integer()} | :error
   def resolve_c_int_expr(value) when is_binary(value) do
     case Map.get(magic_number_literals(), value) do
-      nil -> :error
-      str -> parse_int_literal(str)
+      nil ->
+        case resolve_pebble_msg_macro(value) do
+          {:ok, n} -> {:ok, n}
+          :error -> :error
+        end
+
+      str ->
+        parse_int_literal(str)
     end
   end
+
+  defp resolve_pebble_msg_macro("ELMC_PEBBLE_MSG_" <> _ = macro) do
+    tags = Process.get(:elmc_constructor_tags, %{})
+
+    case Enum.find_value(tags, fn {name, tag} ->
+           short = name |> String.split(".") |> List.last()
+           expected = "ELMC_PEBBLE_MSG_" <> Elmc.Backend.Pebble.Util.macro_name(short)
+
+           if expected == macro, do: tag
+         end) do
+      tag when is_integer(tag) -> {:ok, tag}
+      _ -> :error
+    end
+  end
+
+  defp resolve_pebble_msg_macro(_), do: :error
 
   @spec magic_number_literals() :: %{String.t() => String.t()}
   def magic_number_literals, do: Map.new(fixed_magic_number_lines())

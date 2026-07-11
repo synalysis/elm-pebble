@@ -13,28 +13,30 @@ defmodule Elmc.BytecodePlatformOpsTest do
              Elmc.compile(@fixture, %{
                out_dir: out_dir,
                entry_module: "Main",
-               strip_dead_code: true,
+               strip_dead_code: false,
                plan_ir_mode: :primary
              })
 
     out_dir
   end
 
-  test "counterDraw returns render_cmd with counter param" do
+  defp model_record(score \\ 42) do
+    # cells, score, best, seed, turn, screenW, screenH, displayShape
+    {:record, [nil, score, nil, nil, nil, 144, 168, nil]}
+  end
+
+  test "probeScoreOf returns model score field" do
     build_dir = compile_fixture!()
-    model = {:record, [42, nil]}
 
-    assert {:ok, {:render_cmd, _kind_hash, params}} =
-             Loader.run_manifest_entry(build_dir, {"Main", "counterDraw"}, params: [model])
-
-    assert Enum.any?(params, &(&1 == 42))
+    assert {:ok, 42} =
+             Loader.run_manifest_entry(build_dir, {"Main", "probeScoreOf"}, params: [model_record()])
   end
 
   test "subscriptions returns sub_batch list of pebble_sub entries" do
     build_dir = compile_fixture!()
 
     assert {:ok, result} =
-             Loader.run_manifest_entry(build_dir, {"Main", "subscriptions"}, params: [{:record, [0, nil]}])
+             Loader.run_manifest_entry(build_dir, {"Main", "subscriptions"}, params: [model_record(0)])
 
     subs =
       case result do

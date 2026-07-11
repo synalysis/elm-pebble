@@ -57,8 +57,7 @@ defmodule Elmc.Backend.C.Lower.Lambda do
     core =
       Function.emit_core(lambda,
         shell: false,
-        closure_mode: %{capture_count: capture_count},
-        parent_plan: parent
+        closure_mode: %{capture_count: capture_count}
       )
 
     body =

@@ -1,7 +1,7 @@
 defmodule Elmc.Backend.CCodegen.MaybeWithDefaultPickSlot do
   @moduledoc false
 
-  alias Elmc.Backend.CCodegen.{CSource, FusionSupport, Util}
+  alias Elmc.Backend.CCodegen.{CSource, FusionSupport, FunctionCallAbi, Util}
 
   @pick_slot_names ~w(pickSlot)
 
@@ -13,13 +13,21 @@ defmodule Elmc.Backend.CCodegen.MaybeWithDefaultPickSlot do
     with param when is_binary(param) <- fusion_param_name(module_name, name, decl_map),
          {:ok, model_var, default_tag, pick_mod, pick_name, slots_expr} <- parse(expr, module_name),
          true <- model_var == param do
-      slots_call = emit_slots_expr(module_name, slots_expr, param)
+      {slots_mod, slots_name} = slots_callee(slots_expr, module_name)
+      slots_sym = Util.module_fn_name(slots_mod, slots_name)
       pick_callee = Util.module_fn_name(pick_mod, pick_name)
       c_prefix = Util.module_fn_name(module_name, name)
+      slots_var = "#{c_prefix}_slots"
+      {slots_setup, slots_call} =
+        emit_slots_call(slots_mod, slots_name, c_prefix, param, decl_map)
 
       core = """
-      ElmcValue *maybe_pick = NULL;
-        Rc = #{pick_callee}(&maybe_pick, #{param}, #{slots_call});
+      #{slots_setup}ElmcValue *#{slots_var} = NULL;
+        Rc = #{slots_sym}(&#{slots_var}, #{slots_call});
+        CHECK_RC(Rc);
+        ElmcValue *maybe_pick = NULL;
+        ElmcValue *#{c_prefix}_pick_argv[2] = { #{param}, #{slots_var} };
+        Rc = #{pick_callee}(&maybe_pick, #{c_prefix}_pick_argv, 2);
         CHECK_RC(Rc);
         elmc_int_t tag = elmc_maybe_with_default_int(#{default_tag}, maybe_pick);
         Rc = elmc_new_int(out, tag);
@@ -36,7 +44,7 @@ defmodule Elmc.Backend.CCodegen.MaybeWithDefaultPickSlot do
       }
       """
 
-      FusionSupport.ok_rc(body, [{pick_mod, pick_name}, slots_callee(slots_expr, module_name)])
+      FusionSupport.ok_rc(body, [{pick_mod, pick_name}])
     else
       _ -> :error
     end
@@ -182,20 +190,18 @@ defmodule Elmc.Backend.CCodegen.MaybeWithDefaultPickSlot do
 
   defp ctor_tag_literal(tag, _), do: Integer.to_string(tag)
 
-  defp emit_slots_expr(module_name, slots_expr, model_param) do
-    case slots_expr do
-      %{op: :qualified_call, target: target, args: [%{op: :var, name: ^model_param}]} ->
-        {mod, name} = callee_module_name(target)
-        "#{Util.module_fn_name(mod, name)}(#{model_param})"
-
-      %{op: :call, target: {mod, name}, args: [%{op: :var, name: ^model_param}]} ->
-        "#{Util.module_fn_name(mod, name)}(#{model_param})"
-
-      %{op: :call, name: name, args: [%{op: :var, name: ^model_param}]} ->
-        "#{Util.module_fn_name(module_name, name)}(#{model_param})"
+  defp emit_slots_call(slots_mod, slots_name, c_prefix, model_param, decl_map) do
+    case Map.get(decl_map, {slots_mod, slots_name}) do
+      decl when is_map(decl) ->
+        if FunctionCallAbi.argv_abi?(decl, slots_mod, decl_map) do
+          {setup, args_var, argc} = FunctionCallAbi.emit_argv_setup("#{c_prefix}_slots", [model_param])
+          {setup, "#{args_var}, #{argc}"}
+        else
+          {"", model_param}
+        end
 
       _ ->
-        "NULL"
+        {"", model_param}
     end
   end
 

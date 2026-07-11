@@ -23,35 +23,35 @@ defmodule Elmc.BytecodeManifestProgramTest do
   test "load_linked includes transitive callee sections" do
     build_dir = compile_fixture!(strip_dead_code: false)
 
-    assert {:ok, program} = ManifestProgram.load_linked(build_dir, {"Main", "advanced"})
-    assert Map.has_key?(program.sections, {"Main", "helper"})
-    assert Map.has_key?(program.sections, {"Main", "advanced"})
+    assert {:ok, program} = ManifestProgram.load_linked(build_dir, {"Main", "probeAdvanced"})
+    assert Map.has_key?(program.sections, {"Main", "probeHelper"})
+    assert Map.has_key?(program.sections, {"Main", "probeAdvanced"})
     refute Map.has_key?(program.sections, {"Main", "init"})
   end
 
   test "run dispatches nested call_fn through linked sections" do
     build_dir = compile_fixture!(strip_dead_code: false)
 
-    assert {:ok, program} = ManifestProgram.load_linked(build_dir, {"Main", "advanced"})
-    assert {:ok, 8} = ManifestProgram.run(program, {"Main", "advanced"}, params: [5])
-    assert {:ok, 11} = ManifestProgram.run(program, {"Main", "advanced"}, params: [9])
+    assert {:ok, program} = ManifestProgram.load_linked(build_dir, {"Main", "probeAdvanced"})
+    assert {:ok, 8} = ManifestProgram.run(program, {"Main", "probeAdvanced"}, params: [5])
+    assert {:ok, 11} = ManifestProgram.run(program, {"Main", "probeAdvanced"}, params: [9])
   end
 
-  test "run counterOf from manifest without decl_map" do
-    build_dir = compile_fixture!()
+  test "run probeScoreOf from manifest without decl_map" do
+    build_dir = compile_fixture!(strip_dead_code: false)
 
-    assert {:ok, program} = ManifestProgram.load_linked(build_dir, {"Main", "counterOf"})
-    model = {:record, [42, nil]}
-    assert {:ok, 42} = ManifestProgram.run(program, {"Main", "counterOf"}, params: [model])
+    assert {:ok, program} = ManifestProgram.load_linked(build_dir, {"Main", "probeScoreOf"})
+    model = {:record, [nil, 42, nil, nil, nil, nil, nil, nil]}
+    assert {:ok, 42} = ManifestProgram.run(program, {"Main", "probeScoreOf"}, params: [model])
   end
 
   test "function_entries lists manifest functions" do
-    build_dir = compile_fixture!()
+    build_dir = compile_fixture!(strip_dead_code: false)
 
     assert {:ok, program} = ManifestProgram.load(build_dir)
     entries = ManifestProgram.function_entries(program)
 
-    assert Enum.any?(entries, &(&1["module"] == "Main" and &1["name"] == "counterOf"))
+    assert Enum.any?(entries, &(&1["module"] == "Main" and &1["name"] == "probeScoreOf"))
     assert Enum.any?(entries, &(&1["module"] == "Main" and &1["name"] == "init"))
   end
 end

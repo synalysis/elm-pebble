@@ -119,9 +119,11 @@ defmodule Elmc.Backend.CCodegen.GenericReachability do
     module_name = elem(target, 0)
     name = elem(target, 1)
 
+    expr_keys = expr_callees(expr, module_name, decl_map)
+
     case FusedNativeReachability.callees(module_name, name, expr, decl_map) do
-      keys when is_list(keys) -> keys
-      nil -> expr_callees(expr, module_name, decl_map)
+      keys when is_list(keys) and keys != [] -> Enum.uniq(keys ++ expr_keys)
+      _ -> expr_keys
     end
   end
 
@@ -129,9 +131,11 @@ defmodule Elmc.Backend.CCodegen.GenericReachability do
     module_name = elem(target, 0)
     name = elem(target, 1)
 
+    expr_keys = expr_wrapper_callees(expr, module_name, decl_map)
+
     case FusedNativeReachability.callees(module_name, name, expr, decl_map) do
-      keys when is_list(keys) -> keys
-      nil -> expr_wrapper_callees(expr, module_name, decl_map)
+      keys when is_list(keys) and keys != [] -> Enum.uniq(keys ++ expr_keys)
+      _ -> expr_keys
     end
   end
 

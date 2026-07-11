@@ -20,7 +20,7 @@ defmodule Elmc.Backend.CCodegen.ListMapStaticIndexAt do
          true <- FusionSupport.indexed_list_at_reader?(decl_map, module_name, list_at_target) do
       FusionSupport.ok_rc(
         emit(module_name, name, list_var, default, indices),
-        []
+        [FusionSupport.callee_key(module_name, list_at_target)]
       )
     else
       _ -> :error

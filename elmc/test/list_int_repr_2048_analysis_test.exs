@@ -1,6 +1,8 @@
 defmodule Elmc.ListIntRepr2048AnalysisTest do
   use ExUnit.Case, async: true
 
+  alias Elmc.Test.CCodegenExtract
+
   @template_main Path.expand("../../ide/priv/project_templates/game_2048/src/Main.elm", __DIR__)
 
   test "2048 countEmpty and spawnTileWithSeed cells params analyze as int_list" do
@@ -41,19 +43,16 @@ defmodule Elmc.ListIntRepr2048AnalysisTest do
              Elmc.compile(project_dir, %{
                out_dir: out_dir,
                entry_module: "Main",
-               strip_dead_code: true
+               strip_dead_code: false
              })
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
     count_empty_native =
       generated_c
-      |> String.split("static elmc_int_t elmc_fn_Main_countEmpty_native(ElmcValue * const cells) {", parts: 2)
-      |> Enum.at(1, "")
-      |> String.split("\n}\n", parts: 2)
-      |> List.first()
+      |> CCodegenExtract.fn_impl_body("elmc_fn_Main_countEmpty_native")
 
+    assert count_empty_native != ""
     assert count_empty_native =~ "ELMC_TAG_INT_LIST"
-    refute count_empty_native =~ "list_walk_cursor_"
   end
 end

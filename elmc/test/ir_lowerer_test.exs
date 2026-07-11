@@ -14,8 +14,9 @@ defmodule Elmc.IRLowererTest do
 
     function_decl =
       ir.modules
-      |> Enum.flat_map(& &1.declarations)
-      |> Enum.find(&(&1.kind == :function and &1.name == "headOrZero"))
+      |> Enum.find(&(&1.name == "Main"))
+      |> Map.fetch!(:declarations)
+      |> Enum.find(&(&1.kind == :function and &1.name == "emptyBoard"))
 
     assert function_decl
     assert :retain_result in function_decl.ownership
@@ -49,22 +50,18 @@ defmodule Elmc.IRLowererTest do
   end
 
   test "lowerer preserves union payload specs for semantic phases" do
-    project_dir = Path.expand("fixtures/simple_project", __DIR__)
+    project_dir = Path.expand("fixtures/companion_weather_worker", __DIR__)
     {:ok, project} = Bridge.load_project(project_dir)
     assert {:ok, ir} = Lowerer.lower_project(project)
 
-    main_mod = Enum.find(ir.modules, &(&1.name == "Main"))
-    assert main_mod
+    types_mod = Enum.find(ir.modules, &(&1.name == "Companion.Types"))
+    assert types_mod
 
-    msg_union = main_mod.unions["Msg"]
-    assert msg_union
-    assert is_map(msg_union.payload_specs)
-    assert msg_union.payload_specs["Increment"] == nil
-    assert msg_union.payload_specs["ProvideTemperature"] == "Temperature"
-    assert msg_union.payload_specs["CurrentTimeString"] == "String"
-    assert msg_union.payload_kinds["Increment"] == :none
-    assert msg_union.payload_kinds["ProvideTemperature"] == :single
-    assert msg_union.payload_kinds["CurrentTimeString"] == :single
+    phone_union = types_mod.unions["PhoneToWatch"]
+    assert phone_union
+    assert is_map(phone_union.payload_specs)
+    assert phone_union.payload_specs["ProvideTemperature"] == "Temperature"
+    assert phone_union.payload_kinds["ProvideTemperature"] == :single
   end
 
   test "lowerer derives conservative payload kinds for unions" do

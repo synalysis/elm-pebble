@@ -12,13 +12,12 @@ defmodule Elmc.FrontendParserConstructsTest do
       |> Enum.filter(&(&1.kind == :function_definition))
       |> Map.new(&{&1.name, &1})
 
-    assert defs["advanced"].expr.op == :let_in
-    assert defs["advanced"].expr.in_expr.op == :if
-    assert defs["requestWeather"].expr.op == :qualified_call
-    assert defs["init"].expr.op == :let_in
-    assert defs["view"].expr.op == :qualified_call
-    assert defs["statusDraw"].expr.op == :let_in
-    assert defs["statusDraw"].expr.in_expr.op == :case
+    assert defs["probeAdvanced"].expr.op == :let_in
+    assert defs["probeAdvanced"].expr.in_expr.op == :if
+    assert defs["init"].expr.op == :tuple2
+    assert defs["view"].expr.op == :let_in
+    assert defs["moveBoard"].expr.op == :let_in
+    assert defs["subscriptions"].expr.op == :qualified_call
     assert defs["main"].expr.op == :qualified_call
   end
 

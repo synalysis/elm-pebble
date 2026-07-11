@@ -69,7 +69,7 @@ defmodule Elmc.ConditionalSubscriptionsCodegenTest do
 
     refute current_page_native =~ "elmc_fn_Main_pages"
     refute current_page_native =~ "list_length_cursor"
-    assert current_page_native =~ "index % 8 /* List.length Main.pages */"
+    assert current_page_native =~ "index & 7"
     assert current_page_native =~ "Main.pages[n] static table"
     assert current_page_native =~ "elmc_immortal_list_Main_pages_values"
     refute current_page_native =~ "elmc_new_int(native_mod_"
@@ -121,7 +121,7 @@ defmodule Elmc.ConditionalSubscriptionsCodegenTest do
 
     refute next_index_native =~ "elmc_fn_Main_pages"
     refute next_index_native =~ "list_length_cursor"
-    assert next_index_native =~ "% 8 /* List.length Main.pages */"
+    assert next_index_native =~ "index & 7"
 
     refute subs_body =~ "elmc_fn_Main_pages"
     assert subs_body =~ "elmc_fn_Main_currentPage_native"

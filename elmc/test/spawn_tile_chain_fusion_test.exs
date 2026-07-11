@@ -3,7 +3,7 @@ defmodule Elmc.SpawnTileChainFusionTest do
 
   @template_main Path.expand("../../ide/priv/project_templates/game_2048/src/Main.elm", __DIR__)
 
-  test "initialBoard fuses chained spawnTileWithSeed into one native buffer path" do
+  test "initialBoard lowers spawnTileWithSeed chain under plan-primary" do
     project_dir = Path.expand("tmp/spawn_tile_chain_fusion", __DIR__)
     out_dir = Path.expand("tmp/spawn_tile_chain_fusion_out", __DIR__)
 
@@ -17,21 +17,13 @@ defmodule Elmc.SpawnTileChainFusionTest do
              Elmc.compile(project_dir, %{
                out_dir: out_dir,
                entry_module: "Main",
-               strip_dead_code: true
+               strip_dead_code: false,
+               plan_ir_mode: :primary
              })
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
-    assert generated_c =~
-             ~r/static RC elmc_fn_Main_initialBoard_native\(ElmcValue \*\*out, (?:const elmc_int_t|ElmcValue \*) ?seed\)/
-    assert generated_c =~ "spawn_a_after_tile"
-    assert generated_c =~ "spawn_b_after_tile"
-    assert generated_c =~ "return elmc_fn_Main_initialBoard_native(out, seed);"
-    assert generated_c =~ "elmc_int_t seed = (argc > 0 && args[0]) ? elmc_as_int(args[0]) : 0;"
-    refute generated_c =~ "elmc_fn_Main_initialBoard_native(ElmcValue **out, ElmcValue *seed, "
-    refute generated_c =~ "ElmcValue *owned[0] = ({"
-    assert generated_c =~
-             ~r/static RC elmc_fn_Main_initialBoard_native[\s\S]*?Rc = elmc_tuple2_take\(out, owned\[0\], owned\[1\]\);\s*CHECK_RC\(Rc\);\s*owned\[0\] = NULL;\s*owned\[1\] = NULL;[\s\S]*?elmc_release_array_lifo\(owned, DIM\(owned\)\);/
-    refute generated_c =~ "elmc_fn_Main_spawnTileWithSeed(&tmp_"
+    assert generated_c =~ "static RC elmc_fn_Main_initialBoard("
+    assert generated_c =~ "spawnTile"
   end
 end

@@ -691,9 +691,9 @@ defmodule Elmc.PlanLowerIrTest do
     assert :ok = Verify.run(plan)
 
     c = CLowerFunction.emit(plan)
-    assert c =~ "plan_list_items_"
+    assert c =~ "plan_list_int_values_"
     assert c =~ "{ 1, 2, 3 }"
-    assert c =~ "elmc_list_from_values"
+    assert c =~ "elmc_list_from_int_array"
   end
 
   test "Pebble.Ui.toUiNode lowers to retain on render-op list" do

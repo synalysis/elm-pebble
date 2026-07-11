@@ -140,9 +140,10 @@ defmodule Elmc.Backend.CCodegen.DirectRender.GenericTargets do
               acc
             else
               callers = Map.get(callers_of, target, [])
+              external_callers = Enum.reject(callers, &(&1 == target))
 
-              if callers != [] and
-                   Enum.all?(callers, fn caller ->
+              if external_callers != [] and
+                   Enum.all?(external_callers, fn caller ->
                      MapSet.member?(acc, caller) or
                        FusionSupport.superseded_fusion_callee?(caller, target, decl_map)
                    end) do
@@ -193,8 +194,9 @@ defmodule Elmc.Backend.CCodegen.DirectRender.GenericTargets do
 
   defp orphan_native_helper?(target, superseded, callers_of) do
     callers = Map.get(callers_of, target, [])
+    external_callers = Enum.reject(callers, &(&1 == target))
 
-    callers != [] and Enum.all?(callers, &MapSet.member?(superseded, &1))
+    external_callers != [] and Enum.all?(external_callers, &MapSet.member?(superseded, &1))
   end
 
   defp fusion_caller_map(reachable_core, decl_map) do
@@ -725,6 +727,12 @@ defmodule Elmc.Backend.CCodegen.DirectRender.GenericTargets do
     end
   end
 
+  defp pruned_view_point_helper_seed?(%{type: type, args: args}) when is_list(args) do
+    is_binary(type) and length(args) == 2 and String.contains?(type, "Point")
+  end
+
+  defp pruned_view_point_helper_seed?(_), do: false
+
   defp pruned_view_boxed_helper_seed?(decl) do
     case Map.get(decl, :type) do
       type when is_binary(type) ->
@@ -865,8 +873,11 @@ defmodule Elmc.Backend.CCodegen.DirectRender.GenericTargets do
               module_name == entry_module and
                 not MapSet.member?(direct_targets, key) and
                 case Map.fetch(decl_map, key) do
-                  {:ok, decl} -> pruned_view_boxed_helper_seed?(decl)
-                  :error -> false
+                  {:ok, decl} ->
+                    pruned_view_boxed_helper_seed?(decl) or pruned_view_point_helper_seed?(decl)
+
+                  :error ->
+                    false
                 end
             end)
 

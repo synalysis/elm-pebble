@@ -65,7 +65,7 @@ defmodule Elmc.YesWatchfaceTickLeakTest do
     generated_c = File.read!(Path.join(@out_dir, "c/elmc_generated.c"))
     temp_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_temperatureString")
 
-    assert temp_body =~ "elmc_union_tag_matches"
+    assert temp_body =~ "case_msg_tag_"
     refute temp_body =~ "elmc_fn_Main_c10"
     refute temp_body =~ "elmc_fn_Main_f10"
 

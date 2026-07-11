@@ -143,10 +143,11 @@ defmodule Elmc.PlanMakeClosureCTest do
             },
             %Types{
               id: 4,
-              op: :call,
+              op: :call_fn,
               dest: :fn_out,
               args: %{
-                target: {"Main", "drawCell"},
+                module: "Main",
+                name: "drawCell",
                 args: [0, 1, 2]
               },
               effects: Types.fallible_effects(nil),
@@ -199,7 +200,11 @@ defmodule Elmc.PlanMakeClosureCTest do
 
     decl_map = %{
       {"Main", "view"} => %{name: "view", ownership: [:borrow_arg, :borrow_result]},
-      {"Main", "drawCell"} => %{name: "drawCell", ownership: [:borrow_arg, :borrow_result]}
+      {"Main", "drawCell"} => %{
+        name: "drawCell",
+        args: ["layout", "index", "value"],
+        ownership: [:borrow_arg, :borrow_result]
+      }
     }
 
     Process.put(:elmc_program_decls, decl_map)

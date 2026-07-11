@@ -700,6 +700,44 @@ defmodule Elmc.Backend.CCodegen.Native.FunctionCall do
       return_kind == :native_bool and NativeReturn.value_return?({module_name, decl.name}) ->
         argv_setup <> "const bool #{out} = #{c_name}(#{call_args});"
 
+      return_kind == :native_int and NativeReturn.cached_kind({module_name, decl.name}) == :native_int ->
+        native_decl = "elmc_int_t #{out} = 0;\n  "
+
+        check =
+          if caller_rc? and rc_required? do
+            "Rc = #{c_name}_native(#{RcRuntimeEmit.native_call_args("&" <> out, call_args)});\nCHECK_RC(Rc);"
+          else
+            """
+            {
+              RC __call_rc = #{c_name}_native(#{RcRuntimeEmit.native_call_args("&" <> out, call_args)});
+              if (__call_rc != RC_SUCCESS) {
+                ELMC_RC_LOG_FAIL(__call_rc, "#{c_name}_native", "native scalar call failed");
+              }
+            }
+            """
+          end
+
+        argv_setup <> native_decl <> check
+
+      return_kind == :native_bool and NativeReturn.cached_kind({module_name, decl.name}) == :native_bool ->
+        native_decl = "bool #{out} = false;\n  "
+
+        check =
+          if caller_rc? and rc_required? do
+            "Rc = #{c_name}_native(#{RcRuntimeEmit.native_call_args("&" <> out, call_args)});\nCHECK_RC(Rc);"
+          else
+            """
+            {
+              RC __call_rc = #{c_name}_native(#{RcRuntimeEmit.native_call_args("&" <> out, call_args)});
+              if (__call_rc != RC_SUCCESS) {
+                ELMC_RC_LOG_FAIL(__call_rc, "#{c_name}_native", "native scalar call failed");
+              }
+            }
+            """
+          end
+
+        argv_setup <> native_decl <> check
+
       return_kind == :native_int ->
         boxed_var = "plan_primary_boxed_#{out}"
 

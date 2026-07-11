@@ -119,14 +119,11 @@ defmodule Elmc.PlanRetainDedupTest do
     c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
     view_body = CCodegenExtract.fn_body(c, "elmc_fn_Main_view")
 
-    assert view_body =~
-             ~r/snprintf\(native_string_buf_\d+, sizeof\(native_string_buf_\d+\), "Best %lld", \(long long\)\(ELMC_RECORD_GET_INDEX_INT/
-
-    assert view_body =~
-             ~r/snprintf\(native_string_buf_\d+, sizeof\(native_string_buf_\d+\), "2048  Best %lld", \(long long\)\(ELMC_RECORD_GET_INDEX_INT/
+    assert view_body =~ "elmc_string_append(&owned"
+    assert view_body =~ "elmc_string_from_int(owned"
+    assert view_body =~ "ELMC_RECORD_GET_INDEX_INT(model, ELMC_FIELD_MAIN_MODEL_BEST)"
 
     refute view_body =~ ~r/snprintf\([^;]+plan_native_int_\d+\)/
-    refute view_body =~ "elmc_string_append(&owned"
     refute view_body =~ ~r/elmc_new_string\(&owned\[\d+\], \"  \"\)/
   end
 

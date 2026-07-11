@@ -25,9 +25,15 @@ defmodule Elmc.Backend.CCodegen.RowSliceAdjacentMerge do
            collapse_row_shape(decl_map, module_name, collapse_row, width),
          true <- adjacent_pair_merge_record?(decl_map, module_name, merge, cells_field, score_field),
          {:ok, _record_type} <- result_record_type(decl_map, module_name, name) do
+      callees = [
+        FusionSupport.callee_key(module_name, collapse_row),
+        FusionSupport.callee_key(module_name, row_at),
+        FusionSupport.callee_key(module_name, merge)
+      ]
+
       FusionSupport.ok_rc(
         emit(module_name, name, cells_var, rows, width),
-        []
+        callees
       )
     else
       _ -> :error

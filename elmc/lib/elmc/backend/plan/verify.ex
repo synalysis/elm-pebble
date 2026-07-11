@@ -30,8 +30,14 @@ defmodule Elmc.Backend.Plan.Verify do
     end
   end
 
+  defp verify_blocks_present(%{blocks: [], fusion_c: fusion}) when is_binary(fusion) and fusion != "",
+    do: :ok
+
   defp verify_blocks_present(%{blocks: []}), do: {:error, :empty_plan, []}
   defp verify_blocks_present(_), do: :ok
+
+  defp verify_entry_block(%{blocks: [], fusion_c: fusion}) when is_binary(fusion) and fusion != "",
+    do: :ok
 
   defp verify_entry_block(%{entry_block: entry, blocks: blocks}) do
     if Enum.any?(blocks, &(&1.id == entry)), do: :ok, else: {:error, :missing_entry_block, []}

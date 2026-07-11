@@ -1,7 +1,7 @@
 defmodule Elmc.Backend.C.Lower.Instr do
   @moduledoc false
 
-  alias Elmc.Backend.C.Lower.{Lambda, NativeReturn, TagRefs}
+  alias Elmc.Backend.C.Lower.{Function, Lambda, NativeReturn, TagRefs}
   alias Elmc.Backend.CCodegen.{FunctionCallAbi, FunctionEmit, Fusion, ImmortalStringLiteral, RcRequired, RowMajorLayout}
   alias Elmc.Backend.CCodegen.Native.FunctionCall, as: NativeFunctionCall
   alias Elmc.Backend.CCodegen.Util
@@ -912,7 +912,7 @@ defmodule Elmc.Backend.C.Lower.Instr do
 
       cond do
         consumed_owned_transfer?(effects, src) ->
-          assign_value_return(rc?, dest, src_s)
+          emit_owned_slot_transfer(dest_reg, src, slots, dest, src_s, rc?)
 
         fresh_int_take_expr?(src_s) ->
           assign_value_return(rc?, dest, src_s)
@@ -1631,12 +1631,22 @@ defmodule Elmc.Backend.C.Lower.Instr do
                   nil ->
                     case defining_plan_instr(Keyword.get(opts, :parent_plan), reg) do
                       %{op: :load_param, args: %{index: index}} ->
-                        case Enum.at(Keyword.get(opts, :param_kinds, []), index) do
-                          :native_int ->
-                            FunctionCallAbi.param_c_arg(index, Keyword.get(opts, :params, []))
+                        case Keyword.get(opts, :closure_mode) do
+                          %{capture_count: cap} when is_integer(cap) ->
+                            if Enum.at(Keyword.get(opts, :param_kinds, []), index) == :native_int do
+                              Function.closure_native_int_param_ref(index, cap)
+                            else
+                              :no_native_param
+                            end
 
                           _ ->
-                            :no_native_param
+                            case Enum.at(Keyword.get(opts, :param_kinds, []), index) do
+                              :native_int ->
+                                FunctionCallAbi.param_c_arg(index, Keyword.get(opts, :params, []))
+
+                              _ ->
+                                :no_native_param
+                            end
                         end
 
                       _ ->
@@ -1750,6 +1760,9 @@ defmodule Elmc.Backend.C.Lower.Instr do
                       slot_ref(reg, slots, opts)
                     end
 
+                  %{op: :call_runtime, args: %{builtin: :retain, view_peel: _} = _args} ->
+                    slot_ref(reg, slots, opts)
+
                   %{op: :call_runtime, args: %{builtin: :retain, args: [src]}}
                   when is_integer(src) ->
                     boxed_value_ref(src, slots, opts)
@@ -1803,6 +1816,9 @@ defmodule Elmc.Backend.C.Lower.Instr do
 
       %{args: %{builtin: :new_int, c_expr: expr}} when is_binary(expr) ->
         "elmc_new_int_take(#{expr})"
+
+      %{op: :call_runtime, args: %{builtin: :retain, view_peel: _} = _args} ->
+        slot_ref(reg, slots, opts)
 
       %{op: :call_runtime, args: %{builtin: :retain, args: [src]}} when is_integer(src) ->
         boxed_value_ref(src, slots, opts)
@@ -2014,6 +2030,19 @@ defmodule Elmc.Backend.C.Lower.Instr do
 
   defp value_return_allocator(fn_name) do
     if fn_name in @rc_allocators_with_take, do: "#{fn_name}_take", else: fn_name
+  end
+
+  defp emit_owned_slot_transfer(dest_reg, src_reg, slots, dest, src_s, rc?) do
+    case {Map.get(slots, dest_reg), Map.get(slots, src_reg)} do
+      {dest_idx, src_idx} when is_integer(dest_idx) and is_integer(src_idx) and dest_idx != src_idx ->
+        """
+        owned[#{dest_idx}] = owned[#{src_idx}];
+        owned[#{src_idx}] = NULL;
+        """
+
+      _ ->
+        assign_value_return(rc?, dest, src_s)
+    end
   end
 
   defp assign_value_return(false, "*out", call_expr), do: "return #{call_expr};"

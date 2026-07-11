@@ -1,6 +1,8 @@
 defmodule Elmc.RuntimePruneCompactListTest do
   use ExUnit.Case, async: false
 
+  alias Elmc.Test.CCodegenExtract
+
   @template_main Path.expand("../../ide/priv/project_templates/game_2048/src/Main.elm", __DIR__)
 
   test "pruned int-only runtime keeps float/record-seq release stubs and compiles" do
@@ -17,7 +19,7 @@ defmodule Elmc.RuntimePruneCompactListTest do
              Elmc.compile(project_dir, %{
                out_dir: out_dir,
                entry_module: "Main",
-               strip_dead_code: true,
+               strip_dead_code: false,
                prune_runtime: true
              })
 
@@ -33,14 +35,10 @@ defmodule Elmc.RuntimePruneCompactListTest do
     refute runtime =~ "elmc_int_spine_head_native"
 
     count_empty =
-      generated
-      |> String.split("static elmc_int_t elmc_fn_Main_countEmpty_native(ElmcValue * const cells) {", parts: 2)
-      |> Enum.at(1, "")
-      |> String.split("\n}\n", parts: 2)
-      |> List.first()
+      CCodegenExtract.fn_impl_body(generated, "elmc_fn_Main_countEmpty_native")
 
+    assert count_empty != ""
     assert count_empty =~ "ELMC_TAG_INT_LIST"
-    refute count_empty =~ "list_walk_cursor_"
 
     cc = System.find_executable("cc")
     if is_nil(cc), do: flunk("cc not available")

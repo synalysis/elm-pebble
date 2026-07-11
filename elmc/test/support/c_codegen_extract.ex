@@ -31,7 +31,7 @@ defmodule Elmc.Test.CCodegenExtract do
   def fn_body(source, name) when is_binary(source) and is_binary(name) do
     pattern =
       Regex.compile!(
-        "(?:static\\s+)?#{@return_type}\\s*#{Regex.escape(name)}\\s*\\([^;{]*\\)\\s*\\{"
+        "(?:static\\s+)?#{@return_type}\\s*#{Regex.escape(name)}\\s*\\((?:const\\s+)?[^;{]*\\)\\s*\\{"
       )
 
     matches =

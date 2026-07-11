@@ -47,16 +47,20 @@ defmodule Elmc.Runtime.Generator do
         |> drop_pebble_inline_runtime_symbols(opts)
 
       if MapSet.size(kept_names) > 0 do
-        pruned = prune_source(source, defs, kept_names)
+        pruned =
+          if json_runtime_referenced?(refs) do
+            source |> String.trim_trailing() |> Kernel.<>("\n")
+          else
+            prune_source(source, defs, kept_names)
+            |> String.trim_trailing()
+            |> Kernel.<>("\n\n")
+            |> Kernel.<>(RcMacros.fail_stash_source_impl())
+            |> Kernel.<>("\n\n#ifndef ELMC_PEBBLE_PLATFORM\n")
+            |> Kernel.<>(RcCodes.name_table_source())
+            |> Kernel.<>("\n#endif\n")
+          end
 
-        {header,
-         pruned
-         |> String.trim_trailing()
-         |> Kernel.<>("\n\n")
-         |> Kernel.<>(RcMacros.fail_stash_source_impl())
-         |> Kernel.<>("\n\n#ifndef ELMC_PEBBLE_PLATFORM\n")
-         |> Kernel.<>(RcCodes.name_table_source())
-         |> Kernel.<>("\n#endif\n")}
+        {header, pruned}
       else
         {header, source}
       end
@@ -383,6 +387,18 @@ defmodule Elmc.Runtime.Generator do
 
     maybe_seed_rc_prune_refs(expanded, contents)
     |> maybe_seed_speaker_serialize_refs(contents)
+    |> maybe_seed_json_runtime_refs(contents)
+  end
+
+  defp maybe_seed_json_runtime_refs(expanded, contents) do
+    _joined = Enum.join(contents, "\n")
+    expanded
+  end
+
+  defp json_runtime_referenced?(refs) when is_map(refs) do
+    refs
+    |> Map.keys()
+    |> Enum.any?(fn name -> String.starts_with?(name, "elmc_json_") end)
   end
 
   defp maybe_seed_speaker_serialize_refs(expanded, contents) do
@@ -1579,8 +1595,10 @@ defmodule Elmc.Runtime.Generator do
     #endif
     #if defined(__GNUC__)
     #define ELMC_UNUSED __attribute__((unused))
+    #define ELMC_MAYBE_UNUSED __attribute__((unused))
     #else
     #define ELMC_UNUSED
+    #define ELMC_MAYBE_UNUSED
     #endif
 
     #ifdef ELMC_PEBBLE_PLATFORM

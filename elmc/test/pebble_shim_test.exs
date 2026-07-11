@@ -1,6 +1,8 @@
 defmodule Elmc.PebbleShimTest do
   use ExUnit.Case
 
+  @companion_fixture Path.expand("fixtures/companion_project", __DIR__)
+
   test "random generate command dispatches to declared callback" do
     cc = System.find_executable("cc")
     if is_nil(cc), do: flunk("cc not available for pebble shim C test")
@@ -899,17 +901,19 @@ defmodule Elmc.PebbleShimTest do
         if (elmc_pebble_init(&app, flags) != 0) return 2;
         elmc_release(flags);
 
-        ElmcPebbleDrawCmd chunk[1] = {0};
+        ElmcPebbleDrawCmd cmds[8] = {0};
+        if (elmc_pebble_ensure_scene(&app) != 0) return 3;
+        int decoded = elmc_pebble_scene_commands_from(&app, cmds, 8, 0);
+        if (decoded <= 0) return 3;
+
         int saw_text = 0;
-        for (int skip = 0; skip < 16; skip++) {
-          chunk[0].kind = ELMC_PEBBLE_DRAW_NONE;
-          int count = elmc_pebble_view_commands_from(&app, chunk, 1, skip);
-          if (count < 0) return 3;
-          if (count == 0) break;
-          if (chunk[0].kind == ELMC_PEBBLE_DRAW_TEXT) {
+        for (int i = 0; i < decoded; i++) {
+          if (cmds[i].kind == ELMC_PEBBLE_DRAW_TEXT ||
+              cmds[i].kind == ELMC_PEBBLE_DRAW_TEXT_INT_WITH_FONT ||
+              cmds[i].kind == ELMC_PEBBLE_DRAW_TEXT_LABEL_WITH_FONT) {
             saw_text = 1;
-            if (chunk[0].p1 != 10 || chunk[0].p2 != 20 || chunk[0].p3 != 80 || chunk[0].p4 != 18) return 4;
-            if (chunk[0].text[0] != 'H' || chunk[0].text[1] != 'i') return 5;
+            if (cmds[i].p1 != 10 || cmds[i].p2 != 20 || cmds[i].p3 != 80 || cmds[i].p4 != 18) return 4;
+            if (cmds[i].text[0] != 'H' || cmds[i].text[1] != 'i') return 5;
           }
         }
 
@@ -955,7 +959,7 @@ defmodule Elmc.PebbleShimTest do
     cc = System.find_executable("cc")
     if is_nil(cc), do: flunk("cc not available for pebble shim C test")
 
-    source_fixture = Path.expand("fixtures/simple_project", __DIR__)
+    source_fixture = @companion_fixture
     project_dir = Path.expand("tmp/pebble_shim_project", __DIR__)
     out_dir = Path.expand("tmp/pebble_shim", __DIR__)
     File.rm_rf!(project_dir)
@@ -1723,7 +1727,7 @@ defmodule Elmc.PebbleShimTest do
   end
 
   test "generated draw feature flags match primitives used by different views" do
-    rich_fixture = Path.expand("fixtures/simple_project", __DIR__)
+    rich_fixture = @companion_fixture
     rich_project = Path.expand("tmp/pebble_rich_draw_flags_project", __DIR__)
     rich_out = Path.expand("tmp/pebble_rich_draw_flags", __DIR__)
     File.rm_rf!(rich_project)
@@ -1758,7 +1762,7 @@ defmodule Elmc.PebbleShimTest do
     cc = System.find_executable("cc")
     if is_nil(cc), do: flunk("cc not available for pebble shim C test")
 
-    source_fixture = Path.expand("fixtures/simple_project", __DIR__)
+    source_fixture = @companion_fixture
     project_dir = Path.expand("tmp/pebble_compact_scene_project", __DIR__)
     out_dir = Path.expand("tmp/pebble_compact_scene_codegen", __DIR__)
     File.rm_rf!(project_dir)
@@ -2231,7 +2235,7 @@ defmodule Elmc.PebbleShimTest do
     pebble_c = File.read!(Path.join(out_dir, "c/elmc_pebble.c"))
     generated = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
-    refute pebble_h =~ "ELMC_PEBBLE_APLITE_DIRECT_VIEW_SCENE"
+    assert pebble_h =~ "ELMC_PEBBLE_APLITE_DIRECT_VIEW_SCENE"
     assert pebble_c =~
              ~r/#if defined\(ELMC_HAVE_DIRECT_COMMANDS_MAIN_VIEW\) && \\\s+\(defined\(ELMC_PEBBLE_APLITE_DIRECT_VIEW_SCENE\) \|\| !defined\(ELMC_PEBBLE_PLATFORM\)\)/
     assert pebble_c =~ "#if !defined(ELMC_PEBBLE_DIRECT_VIEW_SCENE)"
@@ -3498,20 +3502,16 @@ defmodule Elmc.PebbleShimTest do
         Sub.none
 
 
-    label =
-        Ui.group
-            (Ui.context
-                [ Ui.textColor Color.black ]
-                [ Ui.text Resources.DefaultFont (Ui.alignCenter Ui.defaultTextOptions) { x = 10, y = 20, w = 80, h = 18 } "Hi" ]
-            )
-
-
     view _ =
         Ui.toUiNode
             [ Ui.clear Color.white
-            , label
+            , Ui.group
+                (Ui.context
+                    [ Ui.textColor Color.black ]
+                    [ Ui.text Resources.DefaultFont (Ui.alignCenter Ui.defaultTextOptions) { x = 10, y = 20, w = 80, h = 18 } "Hi" ]
+                )
             ]
-    
+
     """)
   end
 

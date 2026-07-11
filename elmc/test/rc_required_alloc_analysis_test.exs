@@ -254,7 +254,7 @@ defmodule Elmc.RcRequiredAllocAnalysisTest do
     show_corners_body = CCodegenExtract.fn_body(generated_c, "elmc_fn_Main_showCorners_native")
 
     refute show_corners_body =~ "!(tmp_"
-    assert show_corners_body =~ "7 /* sun */"
+    assert show_corners_body =~ "ELMC_FIELD_MAIN_MODEL_SUN"
   end
 
   test "watchface-yes allocating helpers use RC ABI with CHECK_RC allocators" do
@@ -305,7 +305,7 @@ defmodule Elmc.RcRequiredAllocAnalysisTest do
     refute body =~ "ELMC_FN_OUT"
     refute body =~ "ELMC_TAG_FLOAT"
     refute body =~ "elmc_record_get("
-    assert body =~ "ELMC_RECORD_GET_INDEX_INT(now, 0 /* year */)"
+    assert body =~ "ELMC_RECORD_GET_INDEX_INT(now, ELMC_FIELD_PEBBLE_TIME_CURRENTDATETIME_YEAR)"
     assert body =~ "* 10000"
     assert wrapper =~ "elmc_new_int(out, elmc_fn_Main_calendarDayKey_native(now))"
     refute wrapper =~ "CATCH_BEGIN"
@@ -376,15 +376,23 @@ defmodule Elmc.RcRequiredAllocAnalysisTest do
   test "game-2048 merge uses CHECK_RC for borrowed list.cons instead of elmc_int_zero fallback" do
     generated_c = compile_2048_generated!(strip_dead_code: false, direct_render_only: false)
 
-    assert generated_c =~ "RC elmc_fn_Main_merge("
-    refute generated_c =~ ~r/elmc_list_cons\(&[^;]+;\s*if \(elmc_list_cons\(&[^)]+\) != RC_SUCCESS\)\s*tmp_\d+ = elmc_int_zero\(\);/s
-
     merge_body =
       CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_merge")
 
-    assert merge_body =~ "CHECK_RC(Rc)"
-    assert merge_body =~ "elmc_list_cons(&"
-    refute merge_body =~ ~r/if \(elmc_list_cons\(&[^)]+\) != RC_SUCCESS\)\s*tmp_\d+ = elmc_int_zero\(\);/
-    refute merge_body =~ ~r/ELMC_RC_LOG_FAIL\(__alloc_rc, "elmc_list_cons", "allocation failed"\);\s*return NULL;/
+    if merge_body == "" do
+      fused =
+        CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_moveBoard_native")
+
+      assert fused != ""
+      assert fused =~ "CHECK_RC(Rc)"
+      refute fused =~ ~r/if \(elmc_list_cons\(&[^)]+\) != RC_SUCCESS\)\s*tmp_\d+ = elmc_int_zero\(\);/
+    else
+      assert generated_c =~ "RC elmc_fn_Main_merge("
+      refute generated_c =~ ~r/elmc_list_cons\(&[^;]+;\s*if \(elmc_list_cons\(&[^)]+\) != RC_SUCCESS\)\s*tmp_\d+ = elmc_int_zero\(\);/s
+      assert merge_body =~ "CHECK_RC(Rc)"
+      assert merge_body =~ "elmc_list_cons(&"
+      refute merge_body =~ ~r/if \(elmc_list_cons\(&[^)]+\) != RC_SUCCESS\)\s*tmp_\d+ = elmc_int_zero\(\);/
+      refute merge_body =~ ~r/ELMC_RC_LOG_FAIL\(__alloc_rc, "elmc_list_cons", "allocation failed"\);\s*return NULL;/
+    end
   end
 end

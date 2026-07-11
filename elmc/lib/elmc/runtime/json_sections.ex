@@ -48,21 +48,8 @@ defmodule Elmc.Runtime.JsonSections do
     ElmcValue *elmc_json_encode_object(ElmcValue *pairs);
     ElmcValue *elmc_json_encode_dict(ElmcValue *key_fn, ElmcValue *val_fn, ElmcValue *dict);
     ElmcValue *elmc_json_encode_encode(ElmcValue *indent, ElmcValue *value);
-    """
-  end
 
-  @spec runtime_source_includes() :: String.t()
-  def runtime_source_includes do
-    ""
-  end
-
-  @spec runtime_source_impl() :: String.t()
-  def runtime_source_impl do
-    ~S"""
-    /* ================================================================
-       Standard Library – Json.Decode
-       ================================================================ */
-
+    /* Internal Json parser/encoder structs (kept in header so pruned runtimes compile). */
     #define ELMC_JSON_DECODER_STRING 1
     #define ELMC_JSON_DECODER_INT 2
     #define ELMC_JSON_DECODER_FLOAT 3
@@ -82,42 +69,6 @@ defmodule Elmc.Runtime.JsonSections do
     #define ELMC_JSON_DECODER_AND_THEN 113
     #define ELMC_JSON_DECODER_MAP7 114
     #define ELMC_JSON_DECODER_KEY_VALUE_PAIRS 115
-
-    #if defined(__GNUC__) || defined(__clang__)
-    #define ELMC_MAYBE_UNUSED __attribute__((unused))
-    #else
-    #define ELMC_MAYBE_UNUSED
-    #endif
-
-    static ELMC_MAYBE_UNUSED int64_t elmc_json_decoder_tag(ElmcValue *decoder) {
-      if (!decoder) return 0;
-      if (decoder->tag == ELMC_TAG_INT || decoder->tag == ELMC_TAG_BOOL) {
-        return elmc_as_int(decoder);
-      }
-      if (decoder->tag == ELMC_TAG_TUPLE2 && decoder->payload != NULL) {
-        ElmcTuple2 *tuple = (ElmcTuple2 *)decoder->payload;
-        if (tuple->first && (tuple->first->tag == ELMC_TAG_INT || tuple->first->tag == ELMC_TAG_BOOL)) {
-          return elmc_as_int(tuple->first);
-        }
-      }
-      return 0;
-    }
-
-    static ELMC_MAYBE_UNUSED ElmcValue *elmc_json_decoder_payload(ElmcValue *decoder) {
-      if (!decoder || decoder->tag != ELMC_TAG_TUPLE2 || decoder->payload == NULL) return NULL;
-      ElmcTuple2 *tuple = (ElmcTuple2 *)decoder->payload;
-      return tuple->second;
-    }
-
-    static ElmcValue *elmc_json_decoder_wrap(int64_t tag, ElmcValue *payload) {
-      ElmcValue *tag_value = NULL;
-      if (elmc_new_int(&tag_value, tag) != RC_SUCCESS) tag_value = NULL;
-      if (!tag_value) return NULL;
-      ElmcValue *wrapped = NULL;
-      if (elmc_tuple2(&wrapped, tag_value, payload ? payload : elmc_list_nil()) != RC_SUCCESS) wrapped = NULL;
-      elmc_release(tag_value);
-      return wrapped;
-    }
 
     typedef enum {
       ELMC_JSON_NULL = 0,
@@ -151,6 +102,50 @@ defmodule Elmc.Runtime.JsonSections do
       const char *at;
       const char *error;
     } ElmcJsonParser;
+    """
+  end
+
+  @spec runtime_source_includes() :: String.t()
+  def runtime_source_includes do
+    ""
+  end
+
+  @spec runtime_source_impl() :: String.t()
+  def runtime_source_impl do
+    ~S"""
+    /* ================================================================
+       Standard Library – Json.Decode
+       ================================================================ */
+
+    static ELMC_MAYBE_UNUSED int64_t elmc_json_decoder_tag(ElmcValue *decoder) {
+      if (!decoder) return 0;
+      if (decoder->tag == ELMC_TAG_INT || decoder->tag == ELMC_TAG_BOOL) {
+        return elmc_as_int(decoder);
+      }
+      if (decoder->tag == ELMC_TAG_TUPLE2 && decoder->payload != NULL) {
+        ElmcTuple2 *tuple = (ElmcTuple2 *)decoder->payload;
+        if (tuple->first && (tuple->first->tag == ELMC_TAG_INT || tuple->first->tag == ELMC_TAG_BOOL)) {
+          return elmc_as_int(tuple->first);
+        }
+      }
+      return 0;
+    }
+
+    static ELMC_MAYBE_UNUSED ElmcValue *elmc_json_decoder_payload(ElmcValue *decoder) {
+      if (!decoder || decoder->tag != ELMC_TAG_TUPLE2 || decoder->payload == NULL) return NULL;
+      ElmcTuple2 *tuple = (ElmcTuple2 *)decoder->payload;
+      return tuple->second;
+    }
+
+    static ElmcValue *elmc_json_decoder_wrap(int64_t tag, ElmcValue *payload) {
+      ElmcValue *tag_value = NULL;
+      if (elmc_new_int(&tag_value, tag) != RC_SUCCESS) tag_value = NULL;
+      if (!tag_value) return NULL;
+      ElmcValue *wrapped = NULL;
+      if (elmc_tuple2(&wrapped, tag_value, payload ? payload : elmc_list_nil()) != RC_SUCCESS) wrapped = NULL;
+      elmc_release(tag_value);
+      return wrapped;
+    }
 
     static int elmc_json_is_ws(char c) {
       return c == ' ' || c == '\n' || c == '\r' || c == '\t';

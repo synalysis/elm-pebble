@@ -28,7 +28,10 @@ defmodule Elmc.Backend.CCodegen.UnionCaseFourPerm do
                       {:ok, tags} ->
                         FusionSupport.ok_rc(
                           emit(module_name, name, cells_var, width, rows, mode, tags),
-                          []
+                          [
+                            FusionSupport.callee_key(module_name, reverse_rows),
+                            FusionSupport.callee_key(module_name, transpose)
+                          ]
                         )
 
                       _ ->

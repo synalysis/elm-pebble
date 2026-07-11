@@ -102,36 +102,42 @@ defmodule Elmc.Backend.Bytecode.Runtime do
         <<size::16, bin::binary-size(size), tail::binary>> = rest
         step(frame, dest, bin, rest, tail)
 
+      :const_c_expr ->
+        <<size::16, bin::binary-size(size), tail::binary>> = rest
+        value = resolve_const_c_expr(bin)
+        step(frame, dest, value, rest, tail)
+
       :const_static_list ->
-        <<kind::8, count::16, rest::binary>> = rest
+        args_bin = rest
+        <<kind::8, count::16, payload::binary>> = args_bin
 
         {values, tail} =
           case kind do
             0 ->
-              <<ints_bin::binary-size(^count * 4), tail::binary>> = rest
+              <<ints_bin::binary-size(^count * 4), tail::binary>> = payload
               values = for <<v::32 <- ints_bin>>, do: v
               {values, tail}
 
             1 ->
-              <<floats_bin::binary-size(^count * 8), tail::binary>> = rest
+              <<floats_bin::binary-size(^count * 8), tail::binary>> = payload
               values = for <<v::float-64 <- floats_bin>>, do: v
               {values, tail}
 
             2 ->
-              <<pairs_bin::binary-size(^count * 8), tail::binary>> = rest
+              <<pairs_bin::binary-size(^count * 8), tail::binary>> = payload
               pairs = for <<l::32, r::32 <- pairs_bin>>, do: {l, r}
               {pairs, tail}
 
             kind when kind in [3, 4] ->
-              <<regs_bin::binary-size(^count * 2), tail::binary>> = rest
+              <<regs_bin::binary-size(^count * 2), tail::binary>> = payload
               values = for <<r::16 <- regs_bin>>, do: get_local(frame.locals, r)
               {values, tail}
 
             _ ->
-              {[], rest}
+              {[], payload}
           end
 
-        step(frame, dest, values, rest, tail)
+        step(frame, dest, values, args_bin, tail)
 
       :int_arith ->
         {value, tail} = eval_int_arith(rest, frame.locals)
@@ -982,6 +988,13 @@ defmodule Elmc.Backend.Bytecode.Runtime do
   defp to_int({:just, v}), do: to_int(v)
   defp to_int({:record, fields}), do: Enum.at(fields, 0, 0) |> to_int()
   defp to_int(_), do: 0
+
+  defp resolve_const_c_expr(expr) when is_binary(expr) do
+    case Elmc.Backend.CCodegen.Emit.resolve_c_int_expr(expr) do
+      {:ok, n} -> n
+      :error -> 0
+    end
+  end
 
   defp record_field_at({:record, fields}, index) when is_list(fields), do: Enum.at(fields, index)
   defp record_field_at(value, _index), do: value

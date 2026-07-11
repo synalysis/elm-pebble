@@ -43,8 +43,7 @@ defmodule Elmc.PlanNonRcUiHelperCodegenTest do
     body = CLowerFunction.emit(plan)
 
     refute body =~ "CATCH_BEGIN"
-    assert body =~ "owned[1] = NULL"
-    assert body =~ "elmc_release_array_lifo(owned, 4)"
+    assert body =~ "elmc_record_new_values_take"
     refute body =~ "return __ret;\n  }\n  owned["
   end
 end

@@ -97,8 +97,12 @@ defmodule Elmc.Backend.Bytecode.ProjectWriter do
 
     case Plan.lower_function(decl, module, decl_map, rc_required: rc_required?) do
       {:ok, plan} ->
-        section = Lower.lower(plan)
-        {:ok, plan, section}
+        if plan.blocks == [] do
+          {:skip, :empty_plan}
+        else
+          section = Lower.lower(plan)
+          {:ok, plan, section}
+        end
 
       :unsupported ->
         {:skip, :unsupported}
@@ -113,6 +117,7 @@ defmodule Elmc.Backend.Bytecode.ProjectWriter do
     "#{safe_mod}_#{name}.elmcbc"
   end
 
+  defp reason_string(:empty_plan), do: "empty_plan"
   defp reason_string(:encode_error), do: "encode_error"
   defp reason_string(:unsupported), do: "unsupported"
   defp reason_string({:verify, reason, _}), do: "verify:#{reason}"

@@ -13,7 +13,8 @@ defmodule Elmc.MixProject do
       elixirc_paths: elixirc_paths(Mix.env()),
       dialyzer: [
         plt_add_apps: [:mix],
-        flags: [:error_handling, :unmatched_returns]
+        flags: [:error_handling, :unmatched_returns],
+        ignore_warnings: ".dialyzer_ignore.exs"
       ]
     ]
   end
