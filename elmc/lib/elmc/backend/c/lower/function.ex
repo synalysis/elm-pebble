@@ -429,6 +429,14 @@ defmodule Elmc.Backend.C.Lower.Function do
   end
 
   defp emit_state_int_c_switch(subject_s, arms, default_id, opts) do
+    if duplicate_switch_arm_refs?(arms, plan_module_from(opts)) do
+      emit_state_int_switch_chain(subject_s, arms, default_id, opts)
+    else
+      emit_state_int_c_switch_table(subject_s, arms, default_id, opts)
+    end
+  end
+
+  defp emit_state_int_c_switch_table(subject_s, arms, default_id, opts) do
     case_lines =
       Enum.map(arms, fn arm ->
         tag = TagRefs.switch_arm_tag(arm)
@@ -450,6 +458,14 @@ defmodule Elmc.Backend.C.Lower.Function do
   end
 
   defp emit_state_union_c_switch(subject_s, arms, default_id, opts) do
+    if duplicate_switch_arm_refs?(arms, plan_module_from(opts)) do
+      emit_state_union_switch_chain(subject_s, arms, default_id, opts)
+    else
+      emit_state_union_c_switch_table(subject_s, arms, default_id, opts)
+    end
+  end
+
+  defp emit_state_union_c_switch_table(subject_s, arms, default_id, opts) do
     tag_expr = plan_union_tag_expr(subject_s)
 
     case_lines =
@@ -841,10 +857,6 @@ defmodule Elmc.Backend.C.Lower.Function do
        when kind in [:values, :record_array],
        do: true
 
-  defp transferring_consume_instr?(%{op: :call_runtime, args: %{builtin: id}}) do
-    id in [:record_new, :record_new_take, :record_new_values_ints, :tuple2_take]
-  end
-
   defp transferring_consume_instr?(%{
          op: :call_runtime,
          args: %{builtin: :retain, args: [src]},
@@ -852,6 +864,10 @@ defmodule Elmc.Backend.C.Lower.Function do
        })
        when is_integer(src) and is_list(consumes) do
     src in consumes
+  end
+
+  defp transferring_consume_instr?(%{op: :call_runtime, args: %{builtin: id}}) do
+    id in [:record_new, :record_new_take, :record_new_values_ints, :tuple2_take]
   end
 
   defp transferring_consume_instr?(_), do: false
@@ -1050,6 +1066,14 @@ defmodule Elmc.Backend.C.Lower.Function do
   end
 
   defp emit_int_c_switch(subject_s, arms, default_id, opts) do
+    if duplicate_switch_arm_refs?(arms, plan_module_from(opts)) do
+      emit_int_switch_chain(subject_s, arms, default_id, opts)
+    else
+      emit_int_c_switch_table(subject_s, arms, default_id, opts)
+    end
+  end
+
+  defp emit_int_c_switch_table(subject_s, arms, default_id, opts) do
     next_id = Keyword.get(opts, :next_id)
     module = plan_module_from(opts)
 
@@ -1079,6 +1103,14 @@ defmodule Elmc.Backend.C.Lower.Function do
   end
 
   defp emit_union_c_switch(subject_s, arms, default_id, opts) do
+    if duplicate_switch_arm_refs?(arms, plan_module_from(opts)) do
+      emit_switch_tag_chain(subject_s, arms, default_id, opts)
+    else
+      emit_union_c_switch_table(subject_s, arms, default_id, opts)
+    end
+  end
+
+  defp emit_union_c_switch_table(subject_s, arms, default_id, opts) do
     next_id = Keyword.get(opts, :next_id)
     module = plan_module_from(opts)
     tag_expr = plan_union_tag_expr(subject_s)
@@ -2907,5 +2939,18 @@ defmodule Elmc.Backend.C.Lower.Function do
     |> Enum.any?(fn fields when is_map(fields) ->
       Map.get(fields, field_name) == "Int" or Map.get(fields, to_string(field_name)) == "Int"
     end)
+  end
+
+  defp duplicate_switch_arm_refs?(arms, module) when is_list(arms) do
+    arms
+    |> Enum.map(fn arm ->
+      TagRefs.union_tag_ref(
+        TagRefs.switch_arm_tag(arm),
+        TagRefs.switch_arm_ctor(arm),
+        module
+      )
+    end)
+    |> Enum.frequencies()
+    |> Enum.any?(fn {_ref, count} -> count > 1 end)
   end
 end

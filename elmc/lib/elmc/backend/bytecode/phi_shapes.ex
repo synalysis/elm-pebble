@@ -181,8 +181,6 @@ defmodule Elmc.Backend.Bytecode.PhiShapes do
     eval_int_arith_args(args, locals)
   end
 
-  defp eval_int_shape(_, _locals, _compare_fn), do: 0
-
   defp eval_int_arith_args(%{kind: kind, lhs: lhs} = args, locals) do
     left = local_int(locals, lhs)
 

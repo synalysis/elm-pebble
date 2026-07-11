@@ -8,16 +8,15 @@ defmodule Elmc.Backend.Plan.Fusion.ListIntSearch do
 
   @spec try_plan(String.t(), map(), map(), keyword()) ::
           {:ok, FunctionPlan.t()} | :error
-  def try_plan(module_name, decl, decl_map, _opts) do
+  def try_plan(module_name, decl, decl_map, _opts)
+      when is_binary(module_name) and is_map(decl) and is_map(decl_map) do
     name = Map.get(decl, :name, "")
 
     with true <- Host.function_return_type(Map.get(decl, :type, "")) == "Int",
          {:ok, helper_c, native_scalar?} <- emit_helper(module_name, decl, decl_map) do
-      plan =
-        module_name
-        |> Tuple2CaseTable.build_fusion_plan(name, decl, helper_c)
-        |> maybe_mark_native_scalar(native_scalar?)
-        |> attach_bytecode_fusion(module_name, decl, decl_map)
+      base_plan = Tuple2CaseTable.build_fusion_plan(module_name, name, decl, helper_c)
+      marked_plan = maybe_mark_native_scalar(base_plan, native_scalar?)
+      plan = attach_list_int_search_fusion(marked_plan, module_name, decl, decl_map)
 
       {:ok, plan}
     else
@@ -53,17 +52,21 @@ defmodule Elmc.Backend.Plan.Fusion.ListIntSearch do
   end
 
   defp maybe_mark_native_scalar(%FunctionPlan{} = plan, {:native_int, :delegate}) do
-    plan
-    |> Map.put(:native_scalar_return, :native_int)
-    |> Map.put(:native_scalar_value_return, true)
-    |> Map.put(:fusion_emit, :public_native)
+    %FunctionPlan{
+      plan
+      | native_scalar_return: :native_int,
+        native_scalar_value_return: true,
+        fusion_emit: :public_native
+    }
   end
 
   defp maybe_mark_native_scalar(%FunctionPlan{} = plan, {:native_int, :helper}) do
-    plan
-    |> Map.put(:native_scalar_return, :native_int)
-    |> Map.put(:native_scalar_value_return, true)
-    |> Map.put(:fusion_emit, :helper_only)
+    %FunctionPlan{
+      plan
+      | native_scalar_return: :native_int,
+        native_scalar_value_return: true,
+        fusion_emit: :helper_only
+    }
   end
 
   defp fusion_env(module_name, decl, decl_map) do
@@ -136,7 +139,7 @@ defmodule Elmc.Backend.Plan.Fusion.ListIntSearch do
 
   defp compile_not_found_literal(_, _, _, _), do: {"", "0", 0}
 
-  defp attach_bytecode_fusion(%FunctionPlan{} = plan, module_name, decl, decl_map) do
+  defp attach_list_int_search_fusion(%FunctionPlan{} = plan, module_name, decl, decl_map) do
     case fusion_bytecode_data(module_name, decl, decl_map) do
       {:ok, data} -> Helper.attach_bytecode_fusion(plan, :list_int_search, data)
       :error -> plan

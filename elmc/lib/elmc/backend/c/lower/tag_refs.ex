@@ -60,8 +60,7 @@ defmodule Elmc.Backend.C.Lower.TagRefs do
   def emit_plan_state_enum(%{} = plan, labels) when is_map(labels) do
     blocks = Map.get(plan, :blocks, [])
     block_ids =
-      blocks
-      |> Enum.map(& &1.id)
+      (blocks |> Enum.map(& &1.id)) ++ Map.keys(labels)
       |> Enum.uniq()
       |> Enum.sort()
 
@@ -84,11 +83,8 @@ defmodule Elmc.Backend.C.Lower.TagRefs do
         target = switch_arm_target(arm)
 
         label =
-          arm
-          |> switch_arm_ctor()
-          |> ctor_label()
-          |> case do
-            label when is_binary(label) -> "#{label}_#{target}"
+          case switch_arm_ctor(arm) do
+            name when is_binary(name) -> "#{ctor_label(name)}_#{target}"
             _ -> "ARM_#{target}"
           end
 

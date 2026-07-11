@@ -27,6 +27,7 @@ export TEST_ULIMIT_V_KB=6291456 ELIXIR_ERL_OPTIONS="+S 1:1 +MMscs 256"
 
 - Do **not** run the entire `elmc/test/` tree in one unbounded process if the host has been OOM-killed before.
 - Split by file, tag, or batch; still use `mix-test-limited.sh` for **each** batch.
+- **Template strict gates** (`plan_template_strict_gate_test.exs`, `plan_reachable_coverage_test.exs`, `bytecode_opcode_audit_test.exs`, `plan_fusion_manifest_audit_test.exs`): run **one template per BEAM process** via `./scripts/mix-test-per-template.sh <test_file.exs>` or `./scripts/mix-test-strict-gate.sh`. Do not batch multiple `:slow` template compiles in one `mix test` invocation (even with ulimit).
 - Exclude known-heavy tags when doing broad sweeps: `--exclude corpus --exclude corpus_run --exclude corpus_elmx --exclude corpus_index --exclude fixture_codegen --exclude slow --exclude rc_track_2048`
 - If a run hits the ulimit (non-zero exit, `Cannot allocate`, BEAM crash), treat it as a **test-harness or codegen memory bug** to bisect — not a signal to drop the guard.
 

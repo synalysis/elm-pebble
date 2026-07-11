@@ -806,6 +806,20 @@ defmodule Elmc.Backend.C.Lower.Instr do
 
   defp fresh_int_take_expr?(_), do: false
 
+  defp runtime_builtin_sym(:list_take, [n, _list], _slots, opts) do
+    if native_int_operand_reg?(n, opts),
+      do: "elmc_list_take_int",
+      else: RuntimeBuiltins.c_symbol(:list_take)
+  end
+
+  defp runtime_builtin_sym(:list_drop, [n, _list], _slots, opts) do
+    if native_int_operand_reg?(n, opts),
+      do: "elmc_list_drop_int",
+      else: RuntimeBuiltins.c_symbol(:list_drop)
+  end
+
+  defp runtime_builtin_sym(id, _args, _slots, _opts), do: RuntimeBuiltins.c_symbol(id)
+
   defp emit_call_runtime(%{args: %{builtin: :list_repeat, args: [count, value]}}, slots, rc?, dest, opts)
        when is_integer(count) and is_integer(value) do
     value_s = slot_ref(value, slots, opts)
@@ -1029,20 +1043,6 @@ defmodule Elmc.Backend.C.Lower.Instr do
     end
   end
 
-  defp runtime_builtin_sym(:list_take, [n, _list], _slots, opts) do
-    if native_int_operand_reg?(n, opts),
-      do: "elmc_list_take_int",
-      else: RuntimeBuiltins.c_symbol(:list_take)
-  end
-
-  defp runtime_builtin_sym(:list_drop, [n, _list], _slots, opts) do
-    if native_int_operand_reg?(n, opts),
-      do: "elmc_list_drop_int",
-      else: RuntimeBuiltins.c_symbol(:list_drop)
-  end
-
-  defp runtime_builtin_sym(id, _args, _slots, _opts), do: RuntimeBuiltins.c_symbol(id)
-
   defp emit_call_runtime(%{args: %{builtin: id, args: args}} = instr, slots, rc?, dest, opts) do
     sym = runtime_builtin_sym(id, args, slots, opts) || "elmc_unknown"
     {c_args, prep_lines, cleanup_lines} = build_runtime_call_args(id, args, slots, opts)
@@ -1111,12 +1111,6 @@ defmodule Elmc.Backend.C.Lower.Instr do
       String.starts_with?(ref, "elmc_tuple2_ints_take_value(") or
       String.starts_with?(ref, "elmc_tuple2_take_value(")
   end
-
-  defp materialize_ephemeral_int_box(ref, prep, cleanup) when is_binary(ref) do
-    materialize_ephemeral_owned_box(ref, prep, cleanup)
-  end
-
-  defp ephemeral_alloc_int_box?(ref) when is_binary(ref), do: ephemeral_owned_box?(ref)
 
   defp emit_with_ephemeral_cleanup(prep_lines, call_line, cleanup_lines) do
     (prep_lines ++ List.wrap(call_line) ++ cleanup_lines)

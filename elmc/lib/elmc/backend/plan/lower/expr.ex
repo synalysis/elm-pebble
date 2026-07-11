@@ -109,6 +109,10 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
 
   def compile(%{op: :pebble_cmd} = expr, ctx, b), do: Cmd.compile(expr, ctx, b)
 
+  def compile(%{op: :runtime_call} = expr, ctx, b) do
+    compile_runtime_call(expr, ctx, b)
+  end
+
   def compile(%{op: :c_int_expr, value: "ELMC_PEBBLE_CMD_" <> _} = kind, ctx, b) do
     Cmd.compile(%{op: :pebble_cmd, kind: kind, params: []}, ctx, b)
   end
@@ -171,100 +175,6 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
     end
   end
 
-  defp compile_qualified_call_dispatch(expr, target, ctx, b) do
-    case expr do
-      %{target: target, args: [low, high, value]}
-      when target in ["Basics.clamp", "clamp"] ->
-        compile_ternary_runtime(target, low, high, value, :basics_clamp, ctx, b)
-
-      %{target: target, args: [arg]} when target in ["String.fromInt"] ->
-        compile_string_unary(target, arg, ctx, b)
-
-      %{target: target, args: [arg]}
-      when target in [
-             "Basics.abs",
-             "Basics.negate",
-             "Basics.round",
-             "Basics.ceiling",
-             "Basics.truncate",
-             "Basics.toFloat",
-             "Basics.not",
-             "Bitwise.complement",
-             "String.reverse",
-             "String.trim",
-             "String.toUpper",
-             "String.toLower",
-             "String.length",
-             "String.words",
-             "String.lines",
-             "Char.fromCode",
-             "Char.toCode",
-             "List.reverse",
-             "List.isEmpty",
-             "List.length",
-             "List.head",
-             "List.tail",
-             "List.sum",
-             "List.product",
-             "List.maximum",
-             "List.minimum",
-             "List.concat",
-             "List.sort",
-             "Debug.toString"
-           ] ->
-        compile_qualified_unary(target, arg, ctx, b)
-
-      %{target: target, args: [left, right]} when target == "String.left" ->
-        compile_qualified_binary(:string_left, left, right, ctx, b)
-
-      %{target: target, args: [left, right]} ->
-        case Map.get(@qualified_binary, target) do
-          id when is_atom(id) and not is_nil(id) ->
-            compile_qualified_binary(id, left, right, ctx, b)
-
-          _ ->
-            case IntCall.compile(%{op: :call, name: target, args: [left, right]}, ctx, b) do
-              {:ok, _, _} = ok -> ok
-              :unsupported -> Call.compile_call(expr, ctx, b)
-            end
-        end
-
-      %{target: target, args: [arg_a, arg_b, arg_c]} ->
-        case Map.get(@qualified_ternary, target) do
-          id when is_atom(id) and not is_nil(id) ->
-            compile_qualified_ternary(id, arg_a, arg_b, arg_c, ctx, b)
-
-          _ ->
-            Call.compile_call(expr, ctx, b)
-        end
-
-      _ ->
-        Call.compile_call(expr, ctx, b)
-    end
-  end
-
-  defp compile_special_runtime_call(target, args, ctx, b) when is_binary(target) and is_list(args) do
-    case SpecialValues.special_value_from_target(target, args) do
-      %{op: :runtime_call} = rewritten ->
-        compile(rewritten, ctx, b)
-
-      %{op: :pebble_cmd} = rewritten ->
-        Cmd.compile(rewritten, ctx, b)
-
-      %{op: op} = rewritten when is_atom(op) and op != :unsupported ->
-        compile(rewritten, ctx, b)
-
-      _ ->
-        :unsupported
-    end
-  end
-
-  defp compile_special_runtime_call(_, _, _, _), do: :unsupported
-
-  def compile(%{op: :runtime_call} = expr, ctx, b) do
-    compile_runtime_call(expr, ctx, b)
-  end
-
   def compile(%{op: :pipe_chain} = expr, ctx, b) do
     expr
     |> ElmEx.IR.PipeChain.desugar()
@@ -283,7 +193,6 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
 
   def compile(%{op: :if} = expr, ctx, b), do: If.compile(expr, ctx, b)
   def compile(%{op: :case} = expr, ctx, b), do: Case.compile(expr, ctx, b)
-  def compile(%{op: :pebble_cmd} = expr, ctx, b), do: Cmd.compile(expr, ctx, b)
 
   def compile(%{op: :render_cmd} = expr, ctx, b),
     do: Elmc.Backend.Plan.Lower.Platform.Pebble.compile_render_cmd(expr, ctx, b)
@@ -409,23 +318,107 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
 
   def compile(_, _, _), do: :unsupported
 
+  defp compile_qualified_call_dispatch(expr, _target, ctx, b) do
+    case expr do
+      %{target: target, args: [low, high, value]}
+      when target in ["Basics.clamp", "clamp"] ->
+        compile_ternary_runtime(target, low, high, value, :basics_clamp, ctx, b)
+
+      %{target: target, args: [arg]} when target in ["String.fromInt"] ->
+        compile_string_unary(target, arg, ctx, b)
+
+      %{target: target, args: [arg]}
+      when target in [
+             "Basics.abs",
+             "Basics.negate",
+             "Basics.round",
+             "Basics.ceiling",
+             "Basics.truncate",
+             "Basics.toFloat",
+             "Basics.not",
+             "Bitwise.complement",
+             "String.reverse",
+             "String.trim",
+             "String.toUpper",
+             "String.toLower",
+             "String.length",
+             "String.words",
+             "String.lines",
+             "Char.fromCode",
+             "Char.toCode",
+             "List.reverse",
+             "List.isEmpty",
+             "List.length",
+             "List.head",
+             "List.tail",
+             "List.sum",
+             "List.product",
+             "List.maximum",
+             "List.minimum",
+             "List.concat",
+             "List.sort",
+             "Debug.toString"
+           ] ->
+        compile_qualified_unary(target, arg, ctx, b)
+
+      %{target: target, args: [left, right]} when target == "String.left" ->
+        compile_qualified_binary(:string_left, left, right, ctx, b)
+
+      %{target: target, args: [left, right]} ->
+        case Map.get(@qualified_binary, target) do
+          id when is_atom(id) and not is_nil(id) ->
+            compile_qualified_binary(id, left, right, ctx, b)
+
+          _ ->
+            case IntCall.compile(%{op: :call, name: target, args: [left, right]}, ctx, b) do
+              {:ok, _, _} = ok -> ok
+              :unsupported -> Call.compile_call(expr, ctx, b)
+            end
+        end
+
+      %{target: target, args: [arg_a, arg_b, arg_c]} ->
+        case Map.get(@qualified_ternary, target) do
+          id when is_atom(id) and not is_nil(id) ->
+            compile_qualified_ternary(id, arg_a, arg_b, arg_c, ctx, b)
+
+          _ ->
+            Call.compile_call(expr, ctx, b)
+        end
+
+      _ ->
+        Call.compile_call(expr, ctx, b)
+    end
+  end
+
+  defp compile_special_runtime_call(target, args, ctx, b) when is_binary(target) and is_list(args) do
+    case SpecialValues.special_value_from_target(target, args) do
+      %{op: :runtime_call} = rewritten ->
+        compile(rewritten, ctx, b)
+
+      %{op: :pebble_cmd} = rewritten ->
+        Cmd.compile(rewritten, ctx, b)
+
+      %{op: op} = rewritten when is_atom(op) and op != :unsupported ->
+        compile(rewritten, ctx, b)
+
+      _ ->
+        :unsupported
+    end
+  end
+
+  defp compile_special_runtime_call(_, _, _, _), do: :unsupported
+
   defp compile_dotted_var_path(root, fields, ctx, b) when is_binary(root) and is_list(fields) do
     root_ir = %{op: :var, name: root}
 
     with {:ok, reg, b1} <- compile_root_var(root, ctx, b) do
       Enum.reduce_while(fields, {:ok, reg, b1, root_ir}, fn field, {:ok, acc_reg, b_acc, base_ir} ->
-        case compile_record_get(acc_reg, field, ctx, b_acc, base_ir) do
-          {:ok, next_reg, b2} ->
-            next_ir = %{op: :field_access, arg: base_ir, field: field}
-            {:cont, {:ok, next_reg, b2, next_ir}}
-
-          _ ->
-            {:halt, :unsupported}
-        end
+        {:ok, next_reg, b2} = compile_record_get(acc_reg, field, ctx, b_acc, base_ir)
+        next_ir = %{op: :field_access, arg: base_ir, field: field}
+        {:cont, {:ok, next_reg, b2, next_ir}}
       end)
       |> case do
         {:ok, reg, b_final, _ir} -> {:ok, reg, b_final}
-        other -> other
       end
     end
   end
@@ -632,7 +625,7 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
   defp resolve_field_base(arg, ctx, b) when is_map(arg), do: compile(arg, ctx, b)
   defp resolve_field_base(_, _, _), do: :unsupported
 
-  defp compile_record_get(base, field, ctx, b, base_expr \\ nil) when is_integer(base) do
+  defp compile_record_get(base, field, ctx, b, base_expr) when is_integer(base) do
     {reg, b1} = Builder.fresh_reg(b)
     field_index = Record.field_index_for(field, ctx, base_expr)
     int_field? = Record.int_field?(field)

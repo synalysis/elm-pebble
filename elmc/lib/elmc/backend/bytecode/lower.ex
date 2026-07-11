@@ -344,10 +344,10 @@ defmodule Elmc.Backend.Bytecode.Lower do
   defp encode_args(:list_cursor_map, args, _fn_table) do
     flags =
       (if Map.get(args, :start_literal?), do: 1, else: 0) +
-        if(Map.get(args, :"end_literal?"), do: 2, else: 0)
+        if(Map.get(args, :end_literal?), do: 2, else: 0)
 
     start_part = encode_cursor_bound(args, :start, :start_literal?)
-    end_part = encode_cursor_bound(args, :end, :"end_literal?")
+    end_part = encode_cursor_bound(args, :end, :end_literal?)
 
     <<flags::8, Map.fetch!(args, :lambda_idx)::16>> <> start_part <> end_part
   end

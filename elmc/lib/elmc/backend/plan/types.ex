@@ -152,7 +152,8 @@ defmodule Elmc.Backend.Plan.Types do
       :fusion_kind,
       :fusion_data,
       :native_scalar_return,
-      :native_scalar_value_return
+      :native_scalar_value_return,
+      :fusion_emit
     ]
 
     @type t :: %__MODULE__{
@@ -174,7 +175,8 @@ defmodule Elmc.Backend.Plan.Types do
             fusion_kind: atom() | nil,
             fusion_data: map() | nil,
             native_scalar_return: :native_int | :native_bool | nil,
-            native_scalar_value_return: boolean()
+            native_scalar_value_return: boolean(),
+            fusion_emit: :helper_only | :public_native | nil
           }
   end
 

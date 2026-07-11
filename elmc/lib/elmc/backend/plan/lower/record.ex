@@ -45,9 +45,8 @@ defmodule Elmc.Backend.Plan.Lower.Record do
 
   defp base_expr_for_field(base) when is_map(base), do: base
   defp base_expr_for_field(name) when is_binary(name), do: %{op: :var, name: name}
-  defp base_expr_for_field(_), do: nil
 
-  defp compile_record_field_get(base_reg, field, ctx, b, base_expr \\ nil)
+  defp compile_record_field_get(base_reg, field, ctx, b, base_expr)
        when is_integer(base_reg) do
     {reg, b1} = Builder.fresh_reg(b)
     field_index = field_index_ref(field, ctx, base_expr)
@@ -230,7 +229,7 @@ defmodule Elmc.Backend.Plan.Lower.Record do
     end
   end
 
-  defp resolve_field_type_key(field_name, ctx, base_expr \\ nil) when is_binary(field_name) do
+  defp resolve_field_type_key(field_name, ctx, base_expr) when is_binary(field_name) do
     shapes = Process.get(:elmc_record_alias_shapes, %{})
 
     case container_record_key(base_expr, ctx) do
@@ -332,10 +331,10 @@ defmodule Elmc.Backend.Plan.Lower.Record do
 
   defp compile_env(ctx) do
     %{
-      :"__module__" => (ctx && ctx.module) || "Main",
-      :"__var_types__" => param_var_types(ctx),
-      :"__record_field_types__" => Process.get(:elmc_record_field_types, %{}),
-      :"__record_field_kinds__" => Process.get(:elmc_record_field_kinds, %{})
+      __module__: (ctx && ctx.module) || "Main",
+      __var_types__: param_var_types(ctx),
+      __record_field_types__: Process.get(:elmc_record_field_types, %{}),
+      __record_field_kinds__: Process.get(:elmc_record_field_kinds, %{})
     }
   end
 

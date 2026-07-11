@@ -619,7 +619,7 @@ defmodule Elmc.Backend.CCodegen.UnionIntSuffixCase do
   defp wire_scaled_expr(expr, payload_var) do
     with {:ok, left, divisor} <- idiv_parts(expr),
          {:ok, offset} <- add_const_offset(left, payload_var),
-         true <- is_integer(divisor) and divisor != 0 do
+         true <- divisor != 0 do
       {:ok, %{kind: :scaled, offset: offset, divisor: divisor}}
     else
       _ -> :error
@@ -641,8 +641,6 @@ defmodule Elmc.Backend.CCodegen.UnionIntSuffixCase do
   defp idiv_parts(%{op: :qualified_call, target: target, args: [left, %{op: :int_literal, value: divisor}]})
        when target in ["Basics.fdiv", "Basics.idiv", "//"] and is_integer(divisor),
        do: {:ok, left, divisor}
-
-  defp idiv_parts(_, _), do: :error
 
   defp add_const_offset(%{op: :add_const, var: name, value: offset}, payload_var)
        when name == payload_var and is_integer(offset),

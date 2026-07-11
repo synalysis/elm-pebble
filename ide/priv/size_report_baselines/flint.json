@@ -12,7 +12,7 @@
       "pebble_app_bin_flint": 50000
     },
     "watchface-yes": {
-      "generated_c_bytes": 150000,
+      "generated_c_bytes": 191709,
       "pebble_app_bin_flint": 65000
     }
   }

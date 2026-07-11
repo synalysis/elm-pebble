@@ -129,4 +129,23 @@ defmodule Elmc.PlanDirectCallAbiTest do
     assert update_body =~ "plan block"
     refute update_body =~ "argc > 0"
   end
+
+  test "watch_demo_watch_info direct-render top_level_ref closures call plan-primary helpers with direct ABI" do
+    out_dir = Path.expand("tmp/plan_direct_call_abi_watch_info", __DIR__)
+    File.rm_rf!(out_dir)
+
+    assert {:ok, _result} =
+             TemplateCompile.compile_watch_template("watch_demo_watch_info",
+               plan_ir_mode: :primary,
+               plan_ir_strict: true,
+               out_dir: out_dir
+             )
+
+    generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+    append_body = CCodegenExtract.fn_body(generated_c, "elmc_fn_Main_view_commands_append")
+
+    assert append_body =~ "elmc_closure_new(&owned[2], elmc_top_level_ref_"
+    assert generated_c =~ "Rc = elmc_fn_Main_watchColorLabel(&out, closure_direct_arg_0);"
+    refute generated_c =~ "elmc_fn_Main_watchColorLabel(&out, args, argc)"
+  end
 end

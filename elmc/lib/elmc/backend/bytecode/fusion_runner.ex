@@ -243,9 +243,6 @@ defmodule Elmc.Backend.Bytecode.FusionRunner do
 
             {:just, n} ->
               format_maybe_int(n, map_field(data, "format"))
-
-            _ ->
-              :unsupported
           end
 
         _ ->
@@ -338,17 +335,12 @@ defmodule Elmc.Backend.Bytecode.FusionRunner do
               {:ok, string_field(data, "nothing") || ""}
 
             {:just, union_val} ->
-              with {:union, tag, payload} <- normalize_union(union_val) do
-                case suffix_branch_for_tag(data, tag) do
-                  branch when is_map(branch) -> {:ok, format_suffix_branch(branch, payload)}
-                  _ -> :unsupported
-                end
-              else
+              {:union, tag, payload} = normalize_union(union_val)
+
+              case suffix_branch_for_tag(data, tag) do
+                branch when is_map(branch) -> {:ok, format_suffix_branch(branch, payload)}
                 _ -> :unsupported
               end
-
-            _ ->
-              :unsupported
           end
         else
           _ -> :unsupported
@@ -690,9 +682,6 @@ defmodule Elmc.Backend.Bytecode.FusionRunner do
           list when is_list(list) -> normalize_board(list)
           _ -> List.duplicate(0, count)
         end
-
-      _ ->
-        List.duplicate(0, count)
     end
   end
 
@@ -869,7 +858,7 @@ defmodule Elmc.Backend.Bytecode.FusionRunner do
     {:record, List.replace_at(pad_record_fields(fields, idx + 1), idx, value)}
   end
 
-  defp record_set_field(other, idx, value) when is_integer(idx) do
+  defp record_set_field(_other, idx, value) when is_integer(idx) do
     {:record, List.replace_at(List.duplicate(nil, idx + 1), idx, value)}
   end
 

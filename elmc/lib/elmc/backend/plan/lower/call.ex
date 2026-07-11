@@ -78,8 +78,6 @@ defmodule Elmc.Backend.Plan.Lower.Call do
     end
   end
 
-  defp compile_special_rewrite(nil, _args, _ctx, _b), do: :unsupported
-
   defp compile_special_rewrite(%{op: :pebble_cmd} = rewritten, _args, ctx, b),
     do: Cmd.compile(rewritten, ctx, b)
 

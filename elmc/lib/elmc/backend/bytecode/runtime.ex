@@ -271,7 +271,7 @@ defmodule Elmc.Backend.Bytecode.Runtime do
 
       :forward_ref_set ->
         <<ref_size::16, rest2::binary>> = rest
-        <<ref_bin::binary-size(ref_size), value::16, tail::binary>> = rest2
+        <<ref_bin::binary-size(^ref_size), value::16, tail::binary>> = rest2
         ref = ref_bin
         val = get_local(frame.locals, value)
         forward_refs = Map.put(frame.forward_refs, ref, val)
@@ -1272,12 +1272,12 @@ defmodule Elmc.Backend.Bytecode.Runtime do
   end
 
   defp eval_forward_ref_load(<<ref_size::16, rest::binary>>, frame) do
-    <<ref_bin::binary-size(ref_size), tail::binary>> = rest
+    <<ref_bin::binary-size(^ref_size), tail::binary>> = rest
     {Map.get(frame.forward_refs, ref_bin), tail}
   end
 
   defp eval_forward_ref_capture(<<ref_size::16, rest::binary>>) do
-    <<ref_bin::binary-size(ref_size), tail::binary>> = rest
+    <<ref_bin::binary-size(^ref_size), tail::binary>> = rest
     {{:forward_ref, ref_bin}, tail}
   end
 

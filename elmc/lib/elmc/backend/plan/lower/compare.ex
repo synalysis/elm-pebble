@@ -147,7 +147,7 @@ defmodule Elmc.Backend.Plan.Lower.Compare do
   end
 
   defp maybe_consume_owned(b, _reg, false), do: b
-  defp maybe_consume_owned(b, reg, true), do: b
+  defp maybe_consume_owned(b, _reg, true), do: b
 
   defp compile_operand(expr, ctx, b) do
     case Expr.compile(expr, ctx, b) do

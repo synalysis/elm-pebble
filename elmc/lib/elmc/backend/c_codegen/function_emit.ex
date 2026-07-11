@@ -31,7 +31,6 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
   alias Elmc.Backend.CCodegen.Util
   alias Elmc.Backend.C.Lower.Function, as: CLowerFunction
   alias Elmc.Backend.Plan
-  alias Elmc.Backend.Plan.PrimaryCoverage
 
   @c_reserved_binding_names ~w(
     args argc out_cmds max_cmds skip count emitted
@@ -183,13 +182,6 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
     end
   end
 
-  defp plan_primary_function?(decl, module_name, decl_map) do
-    opts = Process.get(:elmc_codegen_opts, %{})
-
-    Plan.plan_ir_mode(opts) == :primary and
-      Plan.primary_lowered?(decl, module_name, decl_map)
-  end
-
   defp size_fusion_native_first?(opts, module_name, decl, decl_map) do
     Elmc.Backend.SizeProfile.size?(opts) and
       Fusion.rc_native_fusion?(module_name, decl.name, decl.expr, decl_map)
@@ -312,9 +304,10 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
   @spec direct_params(Types.function_declaration(), String.t(), Types.function_decl_map()) ::
           String.t()
   def direct_params(decl, module_name, decl_map) do
-    effective = %{decl | args: effective_decl_args(decl, module_name, decl_map)}
+    args = effective_decl_args(decl, module_name, decl_map)
+    effective = Map.put(decl, :args, args)
 
-    case c_arg_bindings(effective.args || []) do
+    case c_arg_bindings(args) do
       [] ->
         "void"
 

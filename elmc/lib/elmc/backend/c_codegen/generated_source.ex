@@ -80,6 +80,8 @@ defmodule Elmc.Backend.CCodegen.GeneratedSource do
     elmc_rc_required
     elmc_program_decls
     elmc_codegen_opts
+    elmc_plan_ir_mode
+    elmc_plan_primary_lowered_cache
     elmc_exported_targets
     elmc_wrapper_targets
     elmc_direct_call_targets

@@ -1376,14 +1376,14 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
   end
 
   defp closure_call_return_body(module_name, name, c_name, call_args_spec, env) do
-    decl_map = program_decl_map(env)
+    decl_map = EnvBindings.effective_program_decls(env)
     decl = Map.get(decl_map, {module_name, name})
 
     cond do
       is_map(decl) and NativeFunctionCall.native_scalar_fn?(decl, module_name, decl_map) ->
         native_scalar_closure_return_body(c_name, call_args_spec, module_name, name, decl, env)
 
-      is_map(decl) and EnvBindings.direct_call_target?(env, module_name, name) ->
+      is_map(decl) and direct_rc_closure_callee?(env, module_name, name, decl, decl_map) ->
         mixed_direct_closure_return_body(
           c_name,
           call_args_spec,
@@ -1391,7 +1391,7 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
           name,
           decl,
           env,
-          closure_callee_rc_abi?(module_name, name, decl, decl_map)
+          direct_rc_closure_returns_rc?(module_name, name, decl, decl_map)
         )
 
       legacy_value_returning_closure_callee?(module_name, name, decl, decl_map) ->
@@ -1400,6 +1400,17 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
       true ->
         rc_boxed_wrapper_closure_return_body(c_name, call_args_spec)
     end
+  end
+
+  defp direct_rc_closure_callee?(env, module_name, name, decl, decl_map) do
+    EnvBindings.direct_call_target?(env, module_name, name) or
+      (FunctionCallAbi.direct_plan_call_abi?(decl, module_name, decl_map) and
+         not FunctionCallAbi.argv_abi?(decl, module_name, decl_map))
+  end
+
+  defp direct_rc_closure_returns_rc?(module_name, name, decl, decl_map) do
+    closure_callee_rc_abi?(module_name, name, decl, decl_map) or
+      FunctionCallAbi.direct_plan_call_abi?(decl, module_name, decl_map)
   end
 
   defp legacy_value_returning_closure_callee?(module_name, name, decl, decl_map) do
@@ -1437,8 +1448,8 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
     |> String.trim()
   end
 
-  defp program_decl_map(_env) do
-    Process.get(:elmc_program_decls, %{})
+  defp program_decl_map(env) do
+    EnvBindings.effective_program_decls(env)
   end
 
   defp closure_env(env) do

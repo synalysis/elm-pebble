@@ -18,6 +18,18 @@ defmodule Elmc.Backend.Plan.Lower.PatternMatch do
   defp do_match_condition(%{kind: :var}, _subject_reg, b),
     do: const_true(b)
 
+  defp do_match_condition(%{kind: :string, value: value}, subject_reg, b)
+       when is_binary(value) do
+    test_string_literal(subject_reg, value, b)
+  end
+
+  defp do_match_condition(%{kind: :int, value: value}, subject_reg, b)
+       when is_integer(value) do
+    with {:ok, lit_reg, b1} <- const_int(value, b) do
+      compare_eq(subject_reg, lit_reg, b1)
+    end
+  end
+
   defp do_match_condition(%{kind: :tuple, elements: elements}, subject_reg, b)
        when is_list(elements) and length(elements) > 2 do
     do_match_condition(
@@ -62,6 +74,8 @@ defmodule Elmc.Backend.Plan.Lower.PatternMatch do
     end
   end
 
+  defp do_match_condition(_, _, _), do: :unsupported
+
   defp match_ctor_with_arg_pattern(%{arg_pattern: arg_pattern} = pattern, subject_reg, b)
        when is_map(arg_pattern) do
     with {:ok, tag_cond, b1} <- test_ctor_tag(pattern, subject_reg, b),
@@ -93,20 +107,6 @@ defmodule Elmc.Backend.Plan.Lower.PatternMatch do
 
     {:ok, dest, b2}
   end
-
-  defp do_match_condition(%{kind: :string, value: value}, subject_reg, b)
-       when is_binary(value) do
-    test_string_literal(subject_reg, value, b)
-  end
-
-  defp do_match_condition(%{kind: :int, value: value}, subject_reg, b)
-       when is_integer(value) do
-    with {:ok, lit_reg, b1} <- const_int(value, b) do
-      compare_eq(subject_reg, lit_reg, b1)
-    end
-  end
-
-  defp do_match_condition(_, _, _), do: :unsupported
 
   defp const_true(b) do
     {reg, b1} = Builder.fresh_reg(b)
