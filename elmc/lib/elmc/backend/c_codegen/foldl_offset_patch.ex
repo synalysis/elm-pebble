@@ -325,10 +325,39 @@ defmodule Elmc.Backend.CCodegen.FoldlOffsetPatch do
     """
   end
 
+  @doc false
+  @spec extract_fusion_data(String.t(), String.t(), map() | nil, map()) ::
+          {:ok, :foldl_offset_patch, map()} | :error
+  def extract_fusion_data(module_name, name, expr, decl_map) do
+    with {:ok, piece_var, piece_type} <- parse_function(decl_map, module_name, name),
+         {:ok, ^piece_var, offsets_target, set_cell_target} <- parse(expr),
+         {:ok, cols_var, rows_var} <- grid_dims_from_set_cell(decl_map, module_name, set_cell_target),
+         {:ok, cols} <- FusionSupport.resolve_int_constant(decl_map, module_name, cols_var),
+         {:ok, rows} <- FusionSupport.resolve_int_constant(decl_map, module_name, rows_var),
+         true <- flat_set_cell?(decl_map, module_name, set_cell_target, cols_var),
+         true <- piece_offsets_table?(decl_map, module_name, offsets_target),
+         kind_idx when is_integer(kind_idx) <- FusionSupport.field_index(module_name, piece_type, "kind"),
+         rot_idx when is_integer(rot_idx) <- FusionSupport.field_index(module_name, piece_type, "rot"),
+         x_idx when is_integer(x_idx) <- FusionSupport.field_index(module_name, piece_type, "x"),
+         y_idx when is_integer(y_idx) <- FusionSupport.field_index(module_name, piece_type, "y") do
+      offsets_name = FusionSupport.local_name(offsets_target)
+
+      {:ok, :foldl_offset_patch,
+       %{
+         cols: cols,
+         rows: rows,
+         offsets: {module_name, offsets_name},
+         piece_fields: %{kind: kind_idx, rot: rot_idx, x: x_idx, y: y_idx}
+       }}
+    else
+      _ -> :error
+    end
+  end
+
   defp field_macro(module_name, type_name, field) do
     case Map.get(Process.get(:elmc_record_field_macros, %{}), {module_name, type_name, field}) do
       macro when is_binary(macro) -> macro
-      _ -> "0 /* #{field} */"
+      _ -> FusionSupport.field_macro(module_name, type_name, field) || "0 /* #{field} */"
     end
   end
 end

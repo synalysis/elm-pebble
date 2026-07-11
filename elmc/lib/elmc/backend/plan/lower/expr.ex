@@ -3,9 +3,10 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
   Lower Elm IR expressions to verified `%FunctionPlan{}` fragments.
   """
 
+  alias Elmc.Backend.CCodegen.ConstantInt
   alias Elmc.Backend.Plan.Builder
   alias Elmc.Backend.Plan.Context
-  alias Elmc.Backend.Plan.Lower.{Arith, Call, Case, Cmd, Compare, Constructor, If, IntCall, Lambda, List, Record, StdlibCall, Tuple, UnionCtor}
+  alias Elmc.Backend.Plan.Lower.{Arith, Call, Case, Cmd, Compare, Constructor, If, IntCall, Lambda, List, Record, SpecialValues, StdlibCall, Tuple, UnionCtor}
   alias Elmc.Backend.Plan.RuntimeBuiltins
   alias Elmc.Backend.Plan.Types
 
@@ -105,6 +106,12 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
   @spec compile(map() | nil, Context.t(), Builder.t()) ::
           {:ok, Types.reg() | :fn_out | :branch_out | nil, Builder.t()} | :unsupported
   def compile(nil, _ctx, b), do: {:ok, nil, b}
+
+  def compile(%{op: :pebble_cmd} = expr, ctx, b), do: Cmd.compile(expr, ctx, b)
+
+  def compile(%{op: :c_int_expr, value: "ELMC_PEBBLE_CMD_" <> _} = kind, ctx, b) do
+    Cmd.compile(%{op: :pebble_cmd, kind: kind, params: []}, ctx, b)
+  end
 
   def compile(%{op: op} = expr, ctx, b) when op in @literal_ops do
     compile_literal(expr, ctx, b)
@@ -237,7 +244,7 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
   end
 
   defp compile_special_runtime_call(target, args, ctx, b) when is_binary(target) and is_list(args) do
-    case Elmc.Backend.CCodegen.SpecialValues.special_value_from_target(target, args) do
+    case SpecialValues.special_value_from_target(target, args) do
       %{op: :runtime_call} = rewritten ->
         compile(rewritten, ctx, b)
 
@@ -394,7 +401,7 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
 
   def compile(%{op: :field_access, arg: arg, field: field}, ctx, b) when is_binary(field) do
     with {:ok, base, b1} <- resolve_field_base(arg, ctx, b) do
-      compile_record_get(base, field, ctx, b1)
+      compile_record_get(base, field, ctx, b1, base_expr_for_field_access(arg))
     else
       _ -> :unsupported
     end
@@ -403,15 +410,31 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
   def compile(_, _, _), do: :unsupported
 
   defp compile_dotted_var_path(root, fields, ctx, b) when is_binary(root) and is_list(fields) do
+    root_ir = %{op: :var, name: root}
+
     with {:ok, reg, b1} <- compile_root_var(root, ctx, b) do
-      Enum.reduce_while(fields, {:ok, reg, b1}, fn field, {:ok, acc_reg, b_acc} ->
-        case compile_record_get(acc_reg, field, ctx, b_acc) do
-          {:ok, next_reg, b2} -> {:cont, {:ok, next_reg, b2}}
-          _ -> {:halt, :unsupported}
+      Enum.reduce_while(fields, {:ok, reg, b1, root_ir}, fn field, {:ok, acc_reg, b_acc, base_ir} ->
+        case compile_record_get(acc_reg, field, ctx, b_acc, base_ir) do
+          {:ok, next_reg, b2} ->
+            next_ir = %{op: :field_access, arg: base_ir, field: field}
+            {:cont, {:ok, next_reg, b2, next_ir}}
+
+          _ ->
+            {:halt, :unsupported}
         end
       end)
+      |> case do
+        {:ok, reg, b_final, _ir} -> {:ok, reg, b_final}
+        other -> other
+      end
     end
   end
+
+  defp base_expr_for_field_access(%{op: :var, name: name}) when is_binary(name),
+    do: %{op: :var, name: name}
+
+  defp base_expr_for_field_access(arg) when is_map(arg), do: arg
+  defp base_expr_for_field_access(_), do: nil
 
   defp compile_compose(f, g, :left, ctx, b) do
     arg_name = "__compose_arg__"
@@ -571,7 +594,7 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
 
   defp compile_literal(%{op: :cmd_none}, ctx, b) do
     kind =
-      Elmc.Backend.CCodegen.SpecialValues.Helpers.command_kind_expr(:none)
+      SpecialValues.command_kind_expr(:none)
 
     Cmd.compile(%{op: :pebble_cmd, kind: kind, params: []}, ctx, b)
   end
@@ -609,9 +632,9 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
   defp resolve_field_base(arg, ctx, b) when is_map(arg), do: compile(arg, ctx, b)
   defp resolve_field_base(_, _, _), do: :unsupported
 
-  defp compile_record_get(base, field, ctx, b) when is_integer(base) do
+  defp compile_record_get(base, field, ctx, b, base_expr \\ nil) when is_integer(base) do
     {reg, b1} = Builder.fresh_reg(b)
-    field_index = Record.field_index_for(field, ctx)
+    field_index = Record.field_index_for(field, ctx, base_expr)
     int_field? = Record.int_field?(field)
 
     op = if int_field?, do: :record_get_int, else: :record_get
@@ -918,13 +941,38 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
 
   defp compile_call_args(_, _, _), do: {:ok, [], nil}
 
-  defp fold_list_repeat_literals([%{op: :int_literal, value: count}, %{op: :int_literal, value: item}], ctx, b)
-       when is_integer(count) and count >= 4 and is_integer(item) do
-    values = for _ <- 1..count, do: item
-    compile_const_static_list({:int_array, values}, ctx, b)
+  defp fold_list_repeat_literals([count_expr, item_expr], ctx, b) do
+    with {:ok, count} <- fold_list_repeat_count(count_expr, ctx),
+         {:ok, item} <- fold_list_repeat_item(item_expr, ctx),
+         true <- count >= 4 do
+      values = for _ <- 1..count, do: item
+      compile_const_static_list({:int_array, values}, ctx, b)
+    else
+      _ -> :error
+    end
   end
 
-  defp fold_list_repeat_literals(_, _, _), do: :error
+  defp fold_list_repeat_count(%{op: :int_literal, value: count}, _ctx) when is_integer(count),
+    do: {:ok, count}
+
+  defp fold_list_repeat_count(expr, ctx) do
+    ConstantInt.literal_value(expr, constant_int_env(ctx))
+  end
+
+  defp fold_list_repeat_item(%{op: :int_literal, value: item}, _ctx) when is_integer(item),
+    do: {:ok, item}
+
+  defp fold_list_repeat_item(expr, ctx) do
+    ConstantInt.literal_value(expr, constant_int_env(ctx))
+  end
+
+  defp constant_int_env(%Context{module: mod, decl_map: decl_map}) do
+    %{
+      __module__: mod,
+      __program_decls__: decl_map,
+      __literal_int_bindings__: %{}
+    }
+  end
 
   @doc false
   def compile_const_static_list(spec, ctx, b) do
@@ -979,10 +1027,7 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
 
   defp compile_borrow_view_builtin(id, arg_regs, _ctx, b, extra) do
     [subject | _] = arg_regs
-    release_subject? = id in [:maybe_just_payload, :union_payload]
     {owned, b1} = Builder.fresh_reg(b)
-
-    consumes = if(release_subject?, do: [subject], else: [])
 
     {_, b2} =
       Builder.emit(b1, :call_runtime, %{
@@ -994,7 +1039,7 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
           view_peel_args: arg_regs,
           view_peel_extra: extra
         },
-        effects: Types.fallible_effects(owned, arg_regs, consumes)
+        effects: Types.fallible_effects(owned, arg_regs, [])
       })
 
     {:ok, owned, b2}
@@ -1093,8 +1138,23 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
   end
 
   defp tuple2_ints_eligible?(left, right) do
-    native_int_operand_expr?(left) and native_int_operand_expr?(right)
+    native_int_operand_expr?(left) and native_int_operand_expr?(right) and
+      not render_op_boxed_payload?(left, right)
   end
+
+  # Render-op tuples (pathFilled, pathOutline, group, …) carry boxed payloads; never
+  # lower them to tuple2_ints even when the payload is a bare var in IR.
+  defp render_op_boxed_payload?(left, right) do
+    render_op_kind_expr?(left) and boxed_payload_operand?(right)
+  end
+
+  defp render_op_kind_expr?(%{op: :c_int_expr, value: value}) when is_binary(value),
+    do: String.starts_with?(value, "ELMC_RENDER_OP_")
+
+  defp render_op_kind_expr?(_), do: false
+
+  defp boxed_payload_operand?(%{op: op}) when op in [:var, :call, :qualified_call], do: true
+  defp boxed_payload_operand?(_), do: false
 
   defp native_int_operand_expr?(%{op: op}) when op in [:int_literal, :c_int_expr, :msg_tag_expr],
     do: true

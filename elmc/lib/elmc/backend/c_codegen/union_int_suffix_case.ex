@@ -479,4 +479,186 @@ defmodule Elmc.Backend.CCodegen.UnionIntSuffixCase do
       param => param
     }
   end
+
+  @doc false
+  @spec extract_fusion_data(String.t(), String.t(), map() | nil, map()) ::
+          {:ok, :union_int_suffix, map()} | :error
+  def extract_fusion_data(module_name, name, expr, decl_map) do
+    case extract_maybe_union_data(module_name, name, expr, decl_map) do
+      {:ok, data} ->
+        {:ok, :union_int_suffix, data}
+
+      :error ->
+        case extract_direct_union_data(expr) do
+          {:ok, data} -> {:ok, :union_int_suffix, data}
+          :error -> :error
+        end
+    end
+  end
+
+  defp extract_direct_union_data(expr) do
+    with {:ok, _, branches} <- parse_case(expr),
+         true <- union_int_suffix_eligible?(branches),
+         {:ok, branch_specs} <- branch_specs(branches),
+         wired when is_list(wired) <- wire_branch_specs(branch_specs) do
+      {:ok, %{mode: :direct, branches: wired}}
+    else
+      _ -> :error
+    end
+  end
+
+  defp extract_maybe_union_data(module_name, name, expr, decl_map) do
+    with param when is_binary(param) <- fusion_param_name(module_name, name, decl_map),
+         {:ok, source, branches} <- parse_maybe_union_case(expr),
+         true <- param_matches_source?(param, source),
+         {:ok, nothing_text} <- nothing_branch_text(branches),
+         {:ok, branch_specs} <- maybe_union_branch_specs(branches),
+         wired when is_list(wired) <- wire_branch_specs(branch_specs) do
+      case source do
+        {:map_field, ^param, outer_field, inner_field} ->
+          with {:ok, model_type} <- record_param_type(module_name, name, decl_map),
+               outer_idx when is_integer(outer_idx) <-
+                 FusionSupport.field_index(module_name, model_type, outer_field),
+               {:ok, inner_type} <- nested_record_type_name(module_name, model_type, outer_field),
+               inner_idx when is_integer(inner_idx) <-
+                 FusionSupport.field_index(module_name, inner_type, inner_field) do
+            {:ok,
+             %{
+               mode: :maybe_map_field,
+               nothing: nothing_text,
+               outer_field: outer_idx,
+               inner_field: inner_idx,
+               branches: wired
+             }}
+          else
+            _ -> :error
+          end
+
+        {:maybe_field, ^param, field} ->
+          with {:ok, model_type} <- record_param_type(module_name, name, decl_map),
+               idx when is_integer(idx) <- FusionSupport.field_index(module_name, model_type, field) do
+            {:ok,
+             %{
+               mode: :maybe_field,
+               nothing: nothing_text,
+               field: idx,
+               branches: wired
+             }}
+          else
+            _ -> :error
+          end
+
+        _ ->
+          :error
+      end
+    else
+      _ -> :error
+    end
+  end
+
+  defp wire_branch_specs(specs) do
+    wired =
+      Enum.map(specs, fn spec ->
+        case wire_branch_spec(spec) do
+          {:ok, branch} -> branch
+          :error -> :error
+        end
+      end)
+
+    if Enum.all?(wired, &is_map/1), do: wired, else: :error
+  end
+
+  defp wire_branch_spec({pattern, prefix, suffix, int_expr}) do
+    with {:ok, var} <- payload_var(pattern),
+         {:ok, tag} <- union_branch_tag(pattern),
+         {:ok, expr} <- wire_int_expr(int_expr, var) do
+      {:ok, %{tag: tag, prefix: prefix, suffix: suffix, expr: expr}}
+    else
+      _ -> :error
+    end
+  end
+
+  defp union_branch_tag(%{kind: :constructor, tag: tag}) when is_integer(tag), do: {:ok, tag}
+
+  defp union_branch_tag(%{
+         kind: :constructor,
+         name: name,
+         arg_pattern: %{kind: :constructor, tag: tag}
+       })
+       when name in ["Just", "Maybe.Just"] and is_integer(tag),
+       do: {:ok, tag}
+
+  defp union_branch_tag(_), do: :error
+
+  defp wire_int_expr(expr, payload_var) do
+    cond do
+      int_expr_var?(expr, payload_var) ->
+        {:ok, %{kind: :var}}
+
+      match?({:ok, _}, wire_scaled_expr(expr, payload_var)) ->
+        wire_scaled_expr(expr, payload_var)
+
+      true ->
+        :error
+    end
+  end
+
+  defp int_expr_var?(%{op: :var, name: name}, payload_var), do: name == payload_var
+
+  defp int_expr_var?(%{op: :runtime_call, function: "elmc_string_from_int", args: [inner]}, payload_var),
+    do: int_expr_var?(inner, payload_var)
+
+  defp int_expr_var?(
+         %{op: :qualified_call, target: "String.fromInt", args: [inner]},
+         payload_var
+       ),
+       do: int_expr_var?(inner, payload_var)
+
+  defp int_expr_var?(_, _), do: false
+
+  defp wire_scaled_expr(expr, payload_var) do
+    with {:ok, left, divisor} <- idiv_parts(expr),
+         {:ok, offset} <- add_const_offset(left, payload_var),
+         true <- is_integer(divisor) and divisor != 0 do
+      {:ok, %{kind: :scaled, offset: offset, divisor: divisor}}
+    else
+      _ -> :error
+    end
+  end
+
+  defp idiv_parts(%{op: :call, name: "__idiv__", args: [left, %{op: :int_literal, value: divisor}]})
+       when is_integer(divisor),
+       do: {:ok, left, divisor}
+
+  defp idiv_parts(%{
+         op: :runtime_call,
+         function: fun,
+         args: [left, %{op: :int_literal, value: divisor}]
+       })
+       when fun in ["elmc_int_idiv", "elmc_idiv"] and is_integer(divisor),
+       do: {:ok, left, divisor}
+
+  defp idiv_parts(%{op: :qualified_call, target: target, args: [left, %{op: :int_literal, value: divisor}]})
+       when target in ["Basics.fdiv", "Basics.idiv", "//"] and is_integer(divisor),
+       do: {:ok, left, divisor}
+
+  defp idiv_parts(_, _), do: :error
+
+  defp add_const_offset(%{op: :add_const, var: name, value: offset}, payload_var)
+       when name == payload_var and is_integer(offset),
+       do: {:ok, offset}
+
+  defp add_const_offset(%{op: :sub_const, var: name, value: offset}, payload_var)
+       when name == payload_var and is_integer(offset),
+       do: {:ok, -offset}
+
+  defp add_const_offset(
+         %{op: :call, name: op, args: [%{op: :var, name: name}, %{op: :int_literal, value: offset}]},
+         payload_var
+       )
+       when name == payload_var and op in ["__add__", "__sub__"] and is_integer(offset) do
+    if op == "__add__", do: {:ok, offset}, else: {:ok, -offset}
+  end
+
+  defp add_const_offset(_, _), do: :error
 end

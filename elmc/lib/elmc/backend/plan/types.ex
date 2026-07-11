@@ -149,6 +149,8 @@ defmodule Elmc.Backend.Plan.Types do
       :lambda_arg_count,
       :letrec_refs,
       :fusion_c,
+      :fusion_kind,
+      :fusion_data,
       :native_scalar_return,
       :native_scalar_value_return
     ]
@@ -169,6 +171,8 @@ defmodule Elmc.Backend.Plan.Types do
             lambda_arg_count: non_neg_integer() | nil,
             letrec_refs: [String.t()],
             fusion_c: String.t() | nil,
+            fusion_kind: atom() | nil,
+            fusion_data: map() | nil,
             native_scalar_return: :native_int | :native_bool | nil,
             native_scalar_value_return: boolean()
           }

@@ -243,5 +243,7 @@ defmodule Elmc.Backend.Plan.Lower.Platform.Pebble do
   defp cmd_builtin(0), do: :cmd0
   defp cmd_builtin(1), do: :cmd1
   defp cmd_builtin(2), do: :cmd2
-  defp cmd_builtin(n) when n > 2, do: :cmd2
+  defp cmd_builtin(3), do: :cmd3
+  defp cmd_builtin(4), do: :cmd4
+  defp cmd_builtin(_), do: :cmd4
 end

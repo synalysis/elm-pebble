@@ -40,7 +40,7 @@ defmodule Elmc.PlanDirectCallAbiTest do
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
-    assert generated_c =~ "static RC elmc_fn_Main_boardRows(elmc_int_t *out);"
+    assert generated_c =~ "static elmc_int_t elmc_fn_Main_boardRows(void);"
     assert generated_c =~ "static RC elmc_fn_Main_cellAt(ElmcValue **out, elmc_int_t x, elmc_int_t y, ElmcValue *board);"
 
     cell_at_body = CCodegenExtract.fn_body(generated_c, "elmc_fn_Main_cellAt")

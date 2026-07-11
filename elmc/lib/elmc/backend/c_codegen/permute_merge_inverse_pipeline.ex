@@ -639,4 +639,47 @@ defmodule Elmc.Backend.CCodegen.PermuteMergeInversePipeline do
   """
   |> String.trim()
   end
+
+  @doc false
+  @spec extract_fusion_data(String.t(), String.t(), map() | nil, map()) ::
+          {:ok, :permute_merge_inverse_pipeline, map()} | :error
+  def extract_fusion_data(module_name, name, expr, decl_map) do
+    with {:ok, pipeline} <- parse_pipeline(expr),
+         {:ok, width, rows} <- merge_dims(decl_map, module_name, pipeline.merge_fn),
+         true <- permute_inverse_shape?(decl_map, module_name, pipeline.permute_fn, pipeline.inverse_fn),
+         {:ok, else_info} <- parse_else_branch(pipeline.else_expr, pipeline),
+         {:ok, model_type} <- model_type_name(decl_map, module_name, name),
+         true <- model_field_macros?(module_name, model_type, pipeline, else_info),
+         {:ok, tags} <- permute_case_tags(decl_map, module_name, pipeline.permute_fn),
+         {:ok, cells_idx} <- field_idx(module_name, model_type, pipeline.cells_field),
+         {:ok, seed_idx} <- field_idx(module_name, model_type, else_info.seed_field),
+         {:ok, score_idx} <- field_idx(module_name, model_type, else_info.score_field),
+         {:ok, best_idx} <- field_idx(module_name, model_type, else_info.best_field),
+         {:ok, turn_idx} <- field_idx(module_name, model_type, else_info.turn_field) do
+      {:ok,
+       :permute_merge_inverse_pipeline,
+       %{
+         width: width,
+         rows: rows,
+         tags: tags,
+         storage_key: else_info.storage_key,
+         fields: %{
+           cells: cells_idx,
+           seed: seed_idx,
+           score: score_idx,
+           best: best_idx,
+           turn: turn_idx
+         }
+       }}
+    else
+      _ -> :error
+    end
+  end
+
+  defp field_idx(module_name, model_type, field) do
+    case FusionSupport.field_index(module_name, model_type, field) do
+      idx when is_integer(idx) -> {:ok, idx}
+      _ -> :error
+    end
+  end
 end

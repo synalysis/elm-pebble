@@ -59,7 +59,7 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
     opts = Process.get(:elmc_codegen_opts, %{})
 
     cond do
-      plan_primary_function?(decl, module_name, decl_map) ->
+      Plan.plan_ir_mode(opts) == :primary ->
         emit_boxed_function_def(
           decl,
           module_name,
@@ -312,12 +312,14 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
   @spec direct_params(Types.function_declaration(), String.t(), Types.function_decl_map()) ::
           String.t()
   def direct_params(decl, module_name, decl_map) do
-    case c_arg_bindings(decl.args || []) do
+    effective = %{decl | args: effective_decl_args(decl, module_name, decl_map)}
+
+    case c_arg_bindings(effective.args || []) do
       [] ->
         "void"
 
       bindings ->
-        kinds = NativeFunctionCall.arg_kinds(decl, module_name, decl_map)
+        kinds = NativeFunctionCall.arg_kinds(effective, module_name, decl_map)
 
         bindings
         |> Enum.zip(kinds)
@@ -330,6 +332,45 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
         end)
     end
   end
+
+  defp native_c_params?(decl, module_name, decl_map) do
+    params = direct_params(decl, module_name, decl_map)
+
+    params != "void" and
+      (String.contains?(params, "elmc_int_t") or String.contains?(params, "bool "))
+  end
+
+  @doc false
+  @spec effective_decl_args(Types.function_declaration(), String.t(), Types.function_decl_map()) ::
+          [String.t()]
+  def effective_decl_args(decl, module_name, decl_map) do
+    case decl.args || [] do
+      args when args != [] ->
+        args
+
+      [] ->
+        delegate_param_names(decl, module_name, decl_map) || []
+    end
+  end
+
+  defp delegate_param_names(
+         %{expr: %{op: :qualified_call, target: target, args: []}},
+         module_name,
+         decl_map
+       ) do
+    ctx = %{module: module_name, decl_map: decl_map}
+
+    with {mod, name} <-
+           Elmc.Backend.Plan.Lower.Call.parse_target(target, ctx, decl_map),
+         {:ok, %{args: param_names}} <- Map.fetch(decl_map, {mod, name}),
+         true <- param_names != [] do
+      param_names
+    else
+      _ -> nil
+    end
+  end
+
+  defp delegate_param_names(_, _, _), do: nil
 
   @spec boxed_direct_prototype(
           Types.function_declaration(),
@@ -508,7 +549,15 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
 
     RecordCompile.reset_borrowed_field_refs()
 
-    arg_names = decl.args || []
+    opts = Process.get(:elmc_codegen_opts, [])
+
+    arg_names =
+      if plan_primary_body?(decl, module_name, decl_map, opts) do
+        effective_decl_args(decl, module_name, decl_map)
+      else
+        decl.args || []
+      end
+
     arg_bindings = c_arg_bindings(arg_names)
     {entry_probe, exit_probe} = DebugProbes.entry_exit_probes(module_name, decl.name)
     arg_binding_code = arg_binding_code(arg_bindings, direct_args?)
@@ -547,8 +596,6 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
         )
       )
 
-    opts = Process.get(:elmc_codegen_opts, [])
-
     if Plan.plan_ir_mode(opts) == :primary do
       case maybe_emit_primary_plan_body(
              decl,
@@ -568,26 +615,10 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
           body
 
         :legacy ->
-          opts = Process.get(:elmc_codegen_opts, [])
+          record_plan_primary_fallback(module_name, decl.name)
 
-          if Plan.strict_primary?(opts) and
-               primary_fallback_reachable?(module_name, decl.name, opts) do
-            raise ArgumentError,
-                  "plan_ir_strict: cannot lower reachable function #{module_name}.#{decl.name} to Plan IR"
-          else
-            emit_primary_legacy_fallback(
-              decl,
-              module_name,
-              env,
-              arg_bindings,
-              arg_binding_code,
-              direct_args?,
-              rc_required?,
-              entry_probe,
-              exit_probe,
-              arg_kinds
-            )
-          end
+          raise ArgumentError,
+                "plan_ir_mode: :primary cannot lower #{module_name}.#{decl.name} to Plan IR"
       end
     else
       emit_boxed_body_fusion_or_legacy(
@@ -607,50 +638,6 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
     end
   end
 
-  defp emit_primary_legacy_fallback(
-         decl,
-         module_name,
-         env,
-         arg_bindings,
-         arg_binding_code,
-         direct_args?,
-         rc_required?,
-         entry_probe,
-         exit_probe,
-         arg_kinds
-       ) do
-    record_plan_primary_fallback(module_name, decl.name)
-
-    case boxed_special_body_emit_fusion(
-           module_name,
-           decl,
-           Process.get(:elmc_program_decls, %{}),
-           arg_bindings,
-           direct_args?,
-           entry_probe,
-           exit_probe,
-           arg_binding_code,
-           rc_required?
-         ) do
-      {:ok, body} ->
-        body
-
-      :error ->
-        emit_legacy_boxed_body(
-          decl,
-          module_name,
-          env,
-          arg_bindings,
-          arg_binding_code,
-          direct_args?,
-          rc_required?,
-          entry_probe,
-          exit_probe,
-          arg_kinds
-        )
-    end
-  end
-
   defp record_plan_primary_fallback(module_name, fun_name)
        when is_binary(module_name) and is_binary(fun_name) do
     key = :elmc_plan_primary_fallbacks
@@ -663,11 +650,6 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
 
     Process.put(key, fallbacks)
     :ok
-  end
-
-  defp primary_fallback_reachable?(module_name, fun_name, opts) do
-    decl_map = Process.get(:elmc_program_decls, %{})
-    PrimaryCoverage.reachable_function?(decl_map, module_name, fun_name, opts)
   end
 
   defp emit_boxed_body_fusion_or_legacy(
@@ -870,11 +852,20 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
             |> CLowerFunction.emit()
             |> insert_plan_result_probe(result_probe)
 
+          unused_casts =
+            unused_arg_casts(arg_bindings, [
+              arg_binding_code,
+              entry_probe,
+              plan_core,
+              exit_probe
+            ])
+
           body =
             format_function_body(
               [
                 wrapper_abi_void_casts(direct_args?, arg_bindings),
                 arg_binding_code,
+                unused_casts,
                 entry_probe,
                 plan_core,
                 exit_probe
@@ -1350,8 +1341,19 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
       [helper_c | Process.get(:elmc_generic_helper_defs, [])]
     )
 
+    decl_map = Process.get(:elmc_program_decls, %{})
+
+    unboxed_native_params? =
+      direct_args? and native_c_params?(decl, module_name, decl_map)
+
     fused_args =
-      rc_native_fusion_call_args(arg_bindings, fusion_arg_kinds, not direct_args?)
+      rc_native_fusion_call_args(
+        arg_bindings,
+        fusion_arg_kinds,
+        unboxed_native_params?,
+        module_name,
+        decl.name
+      )
 
     core_body =
       cond do
@@ -1387,25 +1389,36 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
     )
   end
 
-  defp rc_native_fusion_call_args(arg_bindings, kinds, unboxed_in_wrapper?)
+  defp rc_native_fusion_call_args(arg_bindings, kinds, unboxed_in_wrapper?, module_name, fun_name)
 
-  defp rc_native_fusion_call_args(arg_bindings, kinds, unboxed_in_wrapper?) when is_list(kinds) do
+  defp rc_native_fusion_call_args(arg_bindings, kinds, unboxed_in_wrapper?, module_name, fun_name)
+       when is_list(kinds) do
+    union_lut? = union_int_fusion?(module_name, fun_name)
+
     arg_bindings
     |> Enum.zip(kinds)
     |> Enum.map_join(", ", fn {{_arg, c_arg, _index}, kind} ->
       case kind do
         :boxed_int_tag when unboxed_in_wrapper? -> c_arg
         :boxed_int_tag -> RowMajorLayout.union_tag_expr(c_arg)
-        :native_int -> c_arg
+        :native_int when unboxed_in_wrapper? -> c_arg
+        :native_int when union_lut? -> RowMajorLayout.union_tag_expr(c_arg)
+        :native_int -> "elmc_as_int(#{c_arg})"
+        :native_bool when unboxed_in_wrapper? -> c_arg
+        :native_bool -> "elmc_as_bool(#{c_arg})"
         _ -> c_arg
       end
     end)
   end
 
-  defp rc_native_fusion_call_args(arg_bindings, _kinds, _unboxed_in_wrapper?) do
+  defp rc_native_fusion_call_args(arg_bindings, _kinds, _unboxed_in_wrapper?, _module_name, _fun_name) do
     arg_bindings
     |> Enum.map(fn {_arg, c_arg, _index} -> c_arg end)
     |> Enum.join(", ")
+  end
+
+  defp union_int_fusion?(module_name, fun_name) when is_binary(module_name) and is_binary(fun_name) do
+    Process.get(:elmc_union_int_fusion_luts, %{}) |> Map.has_key?({module_name, fun_name})
   end
 
   defp fused_native_call_args(%{type: type}, arg_bindings, direct_args?) when is_binary(type) do
@@ -1898,12 +1911,12 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
               )
 
             fusion_native? and return_kind == :boxed and rc_required? ->
-              "return #{c_name}_native(out, #{rc_native_fusion_call_args(c_arg_bindings, wrapper_arg_kinds, true)});"
+              "return #{c_name}_native(out, #{rc_native_fusion_call_args(c_arg_bindings, wrapper_arg_kinds, true, module_name, decl.name)});"
 
             fusion_native? and return_kind == :boxed ->
               """
               ElmcValue *tmp_result = NULL;
-              if (#{c_name}_native(&tmp_result, #{rc_native_fusion_call_args(c_arg_bindings, wrapper_arg_kinds, true)}) != RC_SUCCESS) return NULL;
+              if (#{c_name}_native(&tmp_result, #{rc_native_fusion_call_args(c_arg_bindings, wrapper_arg_kinds, true, module_name, decl.name)}) != RC_SUCCESS) return NULL;
               return tmp_result;
               """
 

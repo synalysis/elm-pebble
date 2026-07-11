@@ -21,13 +21,25 @@ defmodule Elmc.Backend.CCodegen.MaybeWithDefaultPickSlot do
       {slots_setup, slots_call} =
         emit_slots_call(slots_mod, slots_name, c_prefix, param, decl_map)
 
+      pick_decl = Map.get(decl_map, {pick_mod, pick_name})
+
+      pick_call =
+        if is_map(pick_decl) and FunctionCallAbi.direct_plan_call_abi?(pick_decl, pick_mod, decl_map) do
+          "Rc = #{pick_callee}(&maybe_pick, #{param}, #{slots_var});"
+        else
+          """
+          ElmcValue *#{c_prefix}_pick_argv[2] = { #{param}, #{slots_var} };
+          Rc = #{pick_callee}(&maybe_pick, #{c_prefix}_pick_argv, 2);
+          """
+          |> String.trim()
+        end
+
       core = """
       #{slots_setup}ElmcValue *#{slots_var} = NULL;
         Rc = #{slots_sym}(&#{slots_var}, #{slots_call});
         CHECK_RC(Rc);
         ElmcValue *maybe_pick = NULL;
-        ElmcValue *#{c_prefix}_pick_argv[2] = { #{param}, #{slots_var} };
-        Rc = #{pick_callee}(&maybe_pick, #{c_prefix}_pick_argv, 2);
+        #{pick_call}
         CHECK_RC(Rc);
         elmc_int_t tag = elmc_maybe_with_default_int(#{default_tag}, maybe_pick);
         Rc = elmc_new_int(out, tag);
@@ -46,6 +58,35 @@ defmodule Elmc.Backend.CCodegen.MaybeWithDefaultPickSlot do
 
       FusionSupport.ok_rc(body, [{pick_mod, pick_name}])
     else
+      _ -> :error
+    end
+  end
+
+  @doc false
+  @spec extract_fusion_data(String.t(), String.t(), map() | nil, map()) ::
+          {:ok, :maybe_with_default_pick_slot, map()} | :error
+  def extract_fusion_data(module_name, name, expr, decl_map) do
+    with param when is_binary(param) <- fusion_param_name(module_name, name, decl_map),
+         {:ok, model_var, default_tag, pick_mod, pick_name, slots_expr} <- parse(expr, module_name),
+         true <- model_var == param,
+         {slots_mod, slots_name} = slots_callee(slots_expr, module_name),
+         default when is_integer(default) <- parse_default_tag(default_tag) do
+      {:ok, :maybe_with_default_pick_slot,
+       %{
+         default: default,
+         pick: {pick_mod, pick_name},
+         slots: {slots_mod, slots_name}
+       }}
+    else
+      _ -> :error
+    end
+  end
+
+  defp parse_default_tag(tag) when is_integer(tag), do: tag
+
+  defp parse_default_tag(tag) when is_binary(tag) do
+    case Integer.parse(tag) do
+      {n, ""} -> n
       _ -> :error
     end
   end

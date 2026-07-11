@@ -33,14 +33,24 @@ for `Html` / `Browser` cmds — not in core plan opcodes.
   - Fallible ops inside catch regions when not `rc_required` (per-instr catch) or covered by frame catch when `rc_required`
   - No leaked owned registers at block `ret` (`EpilogueRelease` inserts plan `:release` ops; C/bytecode backends defer to epilogue LIFO)
 
+## Fusion
+
+Plan-native fusion (`ListIndexedReplace`, `ListIntSearch`) implements `try_plan/4`
+directly. Shared IR matchers remain under `Elmc.Backend.CCodegen.*` and are wired
+through `Plan.Fusion.CEmit`, which reads the provider registry from
+`CCodegen.Fusion.providers/0`.
+
+Qualified-call rewrites for plan lowering go through `Plan.Lower.SpecialValues`
+(facade over `CCodegen.SpecialValues` until each handler migrates to plan builtins).
+
 ## Feature flag
 
 `opts[:plan_ir_mode]` — `:off` | `:shadow` | `:primary`
 
 - `:shadow` — build + verify plan alongside legacy C (tests may set `plan_ir_raise: true`)
-- `:primary` — emit C from plan via `C.Lower.Function`; legacy C fusion is skipped when plan lowering succeeds. Functions plan cannot lower yet fall back to legacy codegen and emit a `plan_primary_fallback` compile warning (error when `plan_ir_strict: true` on reachable functions). Successful primary compiles also emit an info diagnostic (`plan_primary_coverage`) with reachable/Main stats; reachable gaps emit `plan_primary_gap` (warning, or error when strict).
+- `:primary` — emit C from plan via `C.Lower.Function` only. Plan lowering failure raises at compile time (no legacy body fallback). Successful primary compiles emit an info diagnostic (`plan_primary_coverage`) with reachable/Main stats; reachable gaps emit `plan_primary_gap` (warning, or error when strict).
 
-`Elmc.Backend.Plan.Defaults` sets `default_plan_ir_mode` to `:primary` (override with `Application.put_env(:elmc, :default_plan_ir_mode, :off)`). `Elmc.compile/2` and `Elmc.CLI` apply these defaults; the test suite sets `:off` in `test/test_helper.exs` so legacy C codegen tests stay stable.
+`Elmc.Backend.Plan.Defaults` sets `default_plan_ir_mode` to `:primary`. `Elmc.compile/2` and `Elmc.CLI` apply these defaults; the test suite also defaults to `:primary` in `test/test_helper.exs`. Legacy body tests use `Elmc.TestSupport.LegacyCodegen` / `LegacyCodegenCase` with explicit `plan_ir_mode: :off`.
 
 `direct_plan_call_abi?` — plan-primary functions that are not partial-application
 wrappers emit and call with named parameters instead of `args`/`argc`.

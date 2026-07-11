@@ -97,4 +97,36 @@ defmodule Elmc.Backend.CCodegen.IntStringCase do
       param => param
     }
   end
+
+  @doc false
+  @spec extract_fusion_data(String.t(), String.t(), map() | nil, map()) ::
+          {:ok, :int_string_lut, map()} | :error
+  def extract_fusion_data(_module_name, _name, expr, _decl_map) do
+    with {:ok, branches} <- parse_int_string_case(expr),
+         int_branches = int_case_branches(branches),
+         true <- IntCase.branches?(int_branches),
+         true <- int_string_lut_eligible?(int_branches),
+         {lut, default} <- int_string_lut(int_branches) do
+      data = if default, do: %{lut: lut, default: default}, else: %{lut: lut}
+      {:ok, :int_string_lut, data}
+    else
+      _ -> :error
+    end
+  end
+
+  defp int_string_lut(branches) do
+    lut =
+      for %{pattern: %{kind: :int, value: key}, expr: %{op: :string_literal, value: text}} <- branches,
+          into: %{} do
+        {key, text}
+      end
+
+    default =
+      Enum.find_value(branches, fn
+        %{pattern: %{kind: :wildcard}, expr: %{op: :string_literal, value: text}} -> text
+        _ -> nil
+      end)
+
+    if map_size(lut) > 0, do: {lut, default}, else: :error
+  end
 end

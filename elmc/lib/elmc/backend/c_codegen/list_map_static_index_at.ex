@@ -148,4 +148,16 @@ defmodule Elmc.Backend.CCodegen.ListMapStaticIndexAt do
     }
     """
   end
+
+  @doc false
+  @spec extract_fusion_data(String.t(), String.t(), map() | nil, map()) ::
+          {:ok, :list_map_static_index_at, map()} | :error
+  def extract_fusion_data(module_name, _name, expr, decl_map) do
+    with {:ok, default, list_at_target, _list_var, indices} <- parse(expr),
+         true <- FusionSupport.indexed_list_at_reader?(decl_map, module_name, list_at_target) do
+      {:ok, :list_map_static_index_at, %{default: default, indices: indices}}
+    else
+      _ -> :error
+    end
+  end
 end

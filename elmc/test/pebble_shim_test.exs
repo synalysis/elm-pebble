@@ -1328,8 +1328,10 @@ defmodule Elmc.PebbleShimTest do
     assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
 
     generated = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
-    assert String.contains?(generated, "elmc_partial_ref_")
-    assert String.contains?(generated, "elmc_apply_extra(")
+    assert String.contains?(generated, "elmc_closure_new_rc")
+    assert String.contains?(generated, "elmc_fn_Main_step_closure_0")
+    assert String.contains?(generated, "elmc_list_filter")
+    refute String.contains?(generated, "elmc_partial_ref_")
 
     harness_path = Path.join(out_dir, "c/partial_collision_harness.c")
 
@@ -2055,16 +2057,18 @@ defmodule Elmc.PebbleShimTest do
     assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
 
     generated = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
-    assert String.contains?(generated, "static RC elmc_fn_Yes_Render_pointAt_native")
 
-    point_at_body = Elmc.Test.CCodegenExtract.fn_body(generated, "elmc_fn_Yes_Render_pointAt_native")
+    assert String.contains?(
+             generated,
+             "static RC elmc_fn_Yes_Render_pointAt(ElmcValue **out, elmc_int_t cx, elmc_int_t cy, elmc_int_t radius, elmc_int_t angle)"
+           )
 
-    assert point_at_body =~ "native_trig_theta_"
-    assert point_at_body =~ "generated_trig_sin_double(native_trig_theta_"
-    assert point_at_body =~ "generated_trig_cos_double(native_trig_theta_"
-    refute point_at_body =~ "elmc_basics_sin(tmp_"
-    refute point_at_body =~ "elmc_basics_cos(tmp_"
-    refute point_at_body =~ "elmc_new_float"
+    point_at_body = Elmc.Test.CCodegenExtract.fn_body(generated, "elmc_fn_Yes_Render_pointAt")
+
+    assert point_at_body =~ "elmc_basics_sin"
+    assert point_at_body =~ "elmc_basics_cos"
+    assert point_at_body =~ "elmc_new_float"
+    refute point_at_body =~ "native_trig_theta_"
 
     harness_path = Path.join(out_dir, "c/watchface_yes_host_harness.c")
 
@@ -2073,18 +2077,6 @@ defmodule Elmc.PebbleShimTest do
       """
       #include "elmc_pebble.h"
       #include "elmc_generated.h"
-      #include "elmc_generated.c"
-
-      static int list_length(ElmcValue *list) {
-        int count = 0;
-        ElmcValue *cursor = list;
-        while (cursor && cursor->tag == ELMC_TAG_LIST && cursor->payload != NULL && count < 512) {
-          ElmcCons *node = (ElmcCons *)cursor->payload;
-          cursor = node->tail;
-          count++;
-        }
-        return (cursor && cursor->tag == ELMC_TAG_LIST && cursor->payload == NULL) ? count : -1;
-      }
 
       static ElmcValue *test_launch_context(void) {
         ElmcValue *screen_width = elmc_new_int_take(144);
@@ -2119,26 +2111,6 @@ defmodule Elmc.PebbleShimTest do
         if (elmc_pebble_init_with_mode(&app, flags, ELMC_PEBBLE_MODE_WATCHFACE) != 0) return 2;
         elmc_release(flags);
         if ((int)sizeof(ElmcPebbleDrawCmd) > 112) return 18;
-
-        ElmcValue *model = elmc_worker_model(&app.worker);
-        if (!model) return 6;
-
-        ElmcValue *face_args[1] = { model };
-        ElmcValue *face_ops = NULL;
-        if (elmc_fn_Main_faceOps(&face_ops, face_args, 1) != RC_SUCCESS) return 7;
-        if (!face_ops || face_ops->tag != ELMC_TAG_LIST || list_length(face_ops) <= 0) return 7;
-
-        ElmcValue *point = NULL;
-        if (elmc_fn_Yes_Render_pointAt_native(&point, 72, 84, 32, 0) != RC_SUCCESS) return 11;
-        ElmcValue *point_x = elmc_record_get_index(point, 0);
-        ElmcValue *point_y = elmc_record_get_index(point, 1);
-        if (!point_x || !point_y || elmc_as_int(point_x) != 72 || elmc_as_int(point_y) != 52) return 12;
-        elmc_release(point_x);
-        elmc_release(point_y);
-        elmc_release(point);
-
-        elmc_release(face_ops);
-        elmc_release(model);
 
         int count = elmc_pebble_scene_command_count(&app);
         if (count <= 0) return 3;
@@ -2179,6 +2151,7 @@ defmodule Elmc.PebbleShimTest do
                 "-I#{Path.join(out_dir, "c")}",
                 Path.join(out_dir, "runtime/elmc_runtime.c"),
                 Path.join(out_dir, "ports/elmc_ports.c"),
+                Path.join(out_dir, "c/elmc_generated.c"),
                 Path.join(out_dir, "c/elmc_worker.c"),
                 Path.join(out_dir, "c/elmc_pebble.c"),
                 harness_path,

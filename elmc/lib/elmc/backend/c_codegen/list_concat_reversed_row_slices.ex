@@ -182,4 +182,27 @@ defmodule Elmc.Backend.CCodegen.ListConcatReversedRowSlices do
     }
     """
   end
+
+  @doc false
+  @spec extract_fusion_data(String.t(), String.t(), map() | nil, map()) ::
+          {:ok, :list_concat_reversed_row_slices, map()} | :error
+  def extract_fusion_data(module_name, _name, expr, decl_map) do
+    with {:ok, _row_at_target, _cells_var, row_indices} <- parse(expr),
+         {:ok, width} <- row_slice_width(decl_map, module_name, row_at_from_parse(expr, row_indices)),
+         rows = length(row_indices),
+         true <- rows > 0,
+         expected = Enum.to_list(0..(rows - 1)),
+         true <- row_indices == expected do
+      {:ok, :list_concat_reversed_row_slices, %{width: width, rows: rows}}
+    else
+      _ -> :error
+    end
+  end
+
+  defp row_at_from_parse(expr, _row_indices) do
+    case parse(expr) do
+      {:ok, row_at, _, _} -> row_at
+      _ -> nil
+    end
+  end
 end

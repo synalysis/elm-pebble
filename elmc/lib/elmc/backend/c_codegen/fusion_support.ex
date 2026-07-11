@@ -20,6 +20,20 @@ defmodule Elmc.Backend.CCodegen.FusionSupport do
   @spec ok_rc(String.t(), [callee_key()]) :: {:ok, String.t(), [callee_key()], :rc_native}
   def ok_rc(code, runtime_callees \\ []), do: {:ok, code, runtime_callees, :rc_native}
 
+  @spec field_index(String.t(), String.t(), String.t()) :: non_neg_integer() | nil
+  def field_index(module_name, type_name, field) do
+    case field_macro(module_name, type_name, field) do
+      idx when is_binary(idx) ->
+        case Integer.parse(idx) do
+          {n, ""} -> n
+          _ -> nil
+        end
+
+      _ ->
+        nil
+    end
+  end
+
   @spec field_macro(String.t(), String.t(), String.t()) :: String.t() | nil
   def field_macro(module_name, type_name, field) do
     case Map.get(Process.get(:elmc_record_field_macros, %{}), {module_name, type_name, field}) do

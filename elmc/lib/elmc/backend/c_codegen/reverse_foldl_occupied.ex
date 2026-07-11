@@ -159,4 +159,17 @@ defmodule Elmc.Backend.CCodegen.ReverseFoldlOccupied do
     }
     """
   end
+
+  @doc false
+  @spec extract_fusion_data(String.t(), String.t(), map() | nil, map()) ::
+          {:ok, :reverse_foldl_occupied, map()} | :error
+  def extract_fusion_data(module_name, _name, expr, decl_map) do
+    with {:ok, cell_reader, cols_var, size_var} <- parse(expr),
+         {:ok, count} <- FusionSupport.resolve_cell_count(decl_map, module_name, size_var),
+         true <- FusionSupport.flat_list_cell_reader?(decl_map, module_name, cell_reader, cols_var) do
+      {:ok, :reverse_foldl_occupied, %{count: count}}
+    else
+      _ -> :error
+    end
+  end
 end

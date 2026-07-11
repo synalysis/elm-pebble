@@ -40,6 +40,36 @@ defmodule Elmc.Backend.CCodegen.Tuple2CaseTable do
     end
   end
 
+  @doc false
+  @spec extract_table(map() | nil) :: {:ok, map()} | :error
+  def extract_table(nil), do: :error
+
+  def extract_table(expr) do
+    with {:ok, outer_mod, outer_branches} <- parse_outer_case(expr),
+         {:ok, rows} <- parse_rows(outer_branches),
+         true <- length(rows) > 0 do
+      {:ok,
+       %{
+         outer_mod: outer_mod,
+         rows:
+           Enum.map(rows, fn {kind, inner} ->
+             %{
+               kind: kind,
+               rotations:
+                 Enum.map(inner, fn {rot, pairs} ->
+                   %{
+                     rot: rot,
+                     pairs: Enum.map(pairs, fn {a, b} -> [a, b] end)
+                   }
+                 end)
+             }
+           end)
+       }}
+    else
+      _ -> :error
+    end
+  end
+
   defp parse_outer_case(%{
          op: :let_in,
          value_expr: value,

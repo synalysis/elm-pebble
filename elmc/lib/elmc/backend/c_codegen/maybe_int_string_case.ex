@@ -393,4 +393,55 @@ defmodule Elmc.Backend.CCodegen.MaybeIntStringCase do
   defp escape_snprintf_literal(literal) do
     literal |> Util.escape_c_string() |> String.replace("%", "%%")
   end
+
+  @doc false
+  @spec extract_fusion_data(String.t(), String.t(), map() | nil, map()) ::
+          {:ok, :maybe_int_string, map()} | :error
+  def extract_fusion_data(module_name, name, expr, decl_map) do
+    case extract_default_append_fusion(module_name, name, expr, decl_map) do
+      {:ok, data} ->
+        {:ok, :maybe_int_string, data}
+
+      :error ->
+        case extract_maybe_case_fusion(module_name, name, expr, decl_map) do
+          {:ok, data} -> {:ok, :maybe_int_string, data}
+          :error -> :error
+        end
+    end
+  end
+
+  defp extract_default_append_fusion(module_name, name, expr, decl_map) do
+    with param when is_binary(param) <- fusion_param_name(module_name, name, decl_map),
+         {:ok, ^param, field, default, suffix} <- parse_maybe_with_default_append(expr),
+         {:ok, model_type} <- record_param_type(module_name, name, decl_map),
+         idx when is_integer(idx) <- FusionSupport.field_index(module_name, model_type, field) do
+      {:ok, %{mode: :default_append, field: idx, default: default, suffix: suffix}}
+    else
+      _ -> :error
+    end
+  end
+
+  defp extract_maybe_case_fusion(module_name, name, expr, decl_map) do
+    with param when is_binary(param) <- fusion_param_name(module_name, name, decl_map),
+         {:ok, ^param, field, branches} <- parse_maybe_int_case(expr),
+         {:ok, nothing_text} <- nothing_branch_text(branches),
+         {:ok, _int_var, format} <- parse_just_int_format(branches),
+         {:ok, model_type} <- record_param_type(module_name, name, decl_map),
+         idx when is_integer(idx) <- FusionSupport.field_index(module_name, model_type, field) do
+      {:ok,
+       %{
+         mode: :maybe_case,
+         field: idx,
+         nothing: nothing_text,
+         format: wire_format(format)
+       }}
+    else
+      _ -> :error
+    end
+  end
+
+  defp wire_format({:plain, suffix}), do: %{kind: :plain, suffix: suffix}
+
+  defp wire_format({:threshold, threshold, divisor, suffix}),
+    do: %{kind: :threshold, threshold: threshold, divisor: divisor, suffix: suffix}
 end

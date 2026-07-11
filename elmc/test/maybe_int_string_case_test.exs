@@ -118,6 +118,112 @@ defmodule Elmc.MaybeIntStringCaseTest do
     refute body =~ "goto elmc_plan_block_"
   end
 
+  test "extract_fusion_data recognizes default append and maybe case shapes" do
+    default_expr = %{
+      op: :call,
+      name: "__append__",
+      args: [
+        %{
+          op: :qualified_call,
+          target: "String.fromInt",
+          args: [
+            %{
+              op: :qualified_call,
+              target: "Maybe.withDefault",
+              args: [
+                %{op: :int_literal, value: 0},
+                %{arg: "model", op: :field_access, field: "batteryLevel"}
+              ]
+            }
+          ]
+        },
+        %{op: :string_literal, value: "%"}
+      ]
+    }
+
+    case_expr = %{
+      name: "caseSubject",
+      op: :let_in,
+      value_expr: %{arg: "model", op: :field_access, field: "stepsToday"},
+      in_expr: %{
+        op: :case,
+        subject: "caseSubject",
+        branches: [
+          %{
+            pattern: %{kind: :constructor, name: "Nothing", tag: 0, bind: nil, arg_pattern: nil},
+            expr: %{op: :string_literal, value: "--"}
+          },
+          %{
+            pattern: %{kind: :constructor, name: "Just", tag: 1, bind: "steps", arg_pattern: nil},
+            expr: %{
+              op: :if,
+              cond: %{
+                op: :if,
+                cond: %{
+                  op: :compare,
+                  kind: :gt,
+                  left: %{op: :var, name: "steps"},
+                  right: %{op: :int_literal, value: 10_000}
+                },
+                then_expr: %{op: :constructor_call, target: "True", args: []},
+                else_expr: %{
+                  op: :compare,
+                  kind: :eq,
+                  left: %{op: :var, name: "steps"},
+                  right: %{op: :int_literal, value: 10_000}
+                }
+              },
+              then_expr: %{
+                op: :call,
+                name: "__append__",
+                args: [
+                  %{
+                    op: :qualified_call,
+                    target: "String.fromInt",
+                    args: [
+                      %{
+                        op: :call,
+                        name: "__idiv__",
+                        args: [%{op: :var, name: "steps"}, %{op: :int_literal, value: 1000}]
+                      }
+                    ]
+                  },
+                  %{op: :string_literal, value: "k"}
+                ]
+              },
+              else_expr: %{
+                op: :qualified_call,
+                target: "String.fromInt",
+                args: [%{op: :var, name: "steps"}]
+              }
+            }
+          }
+        ]
+      }
+    }
+
+    Process.put(:elmc_record_alias_shapes, %{{"Main", "Model"} => ["batteryLevel", "stepsToday"]})
+
+    on_exit(fn -> Process.delete(:elmc_record_alias_shapes) end)
+
+    decl_map = %{
+      {"Main", "batteryPercentString"} => %{args: ["model"], type: "Model -> String"},
+      {"Main", "stepsString"} => %{args: ["model"], type: "Model -> String"}
+    }
+
+    assert {:ok, :maybe_int_string, %{mode: :default_append, field: 0, default: 0, suffix: "%"}} =
+             MaybeIntStringCase.extract_fusion_data("Main", "batteryPercentString", default_expr, decl_map)
+
+    assert {:ok, :maybe_int_string,
+            %{
+              mode: :maybe_case,
+              field: 1,
+              nothing: "--",
+              format: %{kind: :threshold, threshold: 10_000, divisor: 1000, suffix: "k"}
+            }} =
+             MaybeIntStringCase.extract_fusion_data("Main", "stepsString", case_expr, decl_map)
+  end
+
   @tag :slow
   test "try_emit fuses watchface_yes batteryPercentString from template IR" do
     alias Elmc.Backend.CCodegen.IRQueries

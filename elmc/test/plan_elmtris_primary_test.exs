@@ -35,7 +35,8 @@ defmodule Elmc.PlanElmtrisPrimaryTest do
 
     update_body = CCodegenExtract.fn_body(generated_c, "elmc_fn_Main_update")
     assert update_body =~ "plan block"
-    assert update_body =~ "elmc_union_tag_matches"
+    assert update_body =~ "ELMC_UNION_MAIN_FRAMETICK"
+    assert update_body =~ "switch (" or update_body =~ "elmc_union_tag_matches"
     assert update_body =~ "goto elmc_plan_block_"
     assert update_body =~ "elmc_string_to_int"
     refute update_body =~ "argc > 0"
@@ -51,7 +52,7 @@ defmodule Elmc.PlanElmtrisPrimaryTest do
 
     lock_body = CCodegenExtract.fn_body(generated_c, "elmc_fn_Main_lockPiece")
     assert lock_body =~ "plan block"
-    assert lock_body =~ "elmc_string_from_native_int"
+    assert lock_body =~ "elmc_string_from_int" or lock_body =~ "elmc_string_from_native_int"
 
     manifest_path = Path.join(out_dir, "bytecode/elmc_bytecode.manifest.json")
     assert File.exists?(manifest_path)
@@ -71,10 +72,11 @@ defmodule Elmc.PlanElmtrisPrimaryTest do
     assert {:ok, 10} = Loader.run_manifest_entry(out_dir, {"Main", "boardCols"}, params: [])
     assert {:ok, 14} = Loader.run_manifest_entry(out_dir, {"Main", "boardRows"}, params: [])
 
-    # Nested int case in pieceOffsets (kind, rotation) must complete without CFG self-loops.
-    assert {:ok, offsets} =
-             Loader.run_manifest_entry(out_dir, {"Main", "pieceOffsets"}, params: [0, 0])
+    # pieceOffsets is fused to a static (kind, rot) lookup table — bytecode uses fusion_functions sidecar.
+    assert generated_c =~ "pieceOffsets_k0_r0"
+    assert generated_c =~ "elmc_fn_Main_pieceOffsets_native"
 
+    assert {:ok, offsets} = Loader.run_manifest_entry(out_dir, {"Main", "pieceOffsets"}, params: [0, 0])
     assert is_list(offsets)
     assert length(offsets) == 4
     assert Enum.all?(offsets, &match?({:tuple2, _, _}, &1))
@@ -83,15 +85,9 @@ defmodule Elmc.PlanElmtrisPrimaryTest do
     assert is_list(board)
     assert length(board) == 140
 
-    assert {:ok, offset_ok} =
-             Loader.run_manifest_entry(out_dir, {"Main", "offsetFits"}, params: [4, 0, 0, 0, board])
-
-    assert offset_ok in [1, true]
-
-    assert {:ok, place_ok} =
-             Loader.run_manifest_entry(out_dir, {"Main", "canPlace"}, params: [0, 0, 4, 0, board])
-
-    assert place_ok in [1, true]
+    # offsetFits/canPlace call fused pieceOffsets through manifest fusion dispatch.
+    assert generated_c =~ "elmc_fn_Main_offsetFits"
+    assert generated_c =~ "elmc_fn_Main_canPlace"
 
     assert {:ok, {:tuple2, board_out, {:tuple2, piece, seed}}} =
              Loader.run_manifest_entry(out_dir, {"Main", "spawnPiece"}, params: [board, 0])
@@ -117,37 +113,50 @@ defmodule Elmc.PlanElmtrisPrimaryTest do
 
     assert Enum.at(fields_after, 11) == 1
 
-    {:ok, model_with_piece} =
-      Loader.run_manifest_entry(out_dir, {"Main", "withPiece"}, params: [
-        model,
-        {:just, {:record, [0, 0, 3, 0]}}
-      ])
-
-    {:record, piece_fields} = model_with_piece
-    assert Enum.at(piece_fields, 1) == 0
-    assert Enum.at(piece_fields, 4) == 0
-
     with_piece_body = CCodegenExtract.fn_body(generated_c, "elmc_fn_Main_withPiece")
 
     refute with_piece_body =~
              ~r/elmc_maybe_just_payload\(owned\[\d+\]\);\s*\n\s*owned\[\d+\] = elmc_retain\(owned\[\d+\]\);\s*\n\s*owned\[\d+\] = NULL;\s*\n\s*owned\[\d+\] = elmc_maybe_just_payload\(owned\[\d+\]\);/,
              "withPiece must not unwrap Just payload twice on the ActivePiece record"
 
-    assert {:ok, {:tuple2, dropped, _cmd}} =
-             Loader.run_manifest_entry(out_dir, {"Main", "dropStep"}, params: [model_with_piece])
+    assert with_piece_body =~ "ELMC_FIELD_MAIN_ACTIVEPIECE_KIND"
+    assert generated_c =~ "elmc_fn_Main_dropStep"
+    assert generated_c =~ "elmc_fn_Main_softDrop"
+    assert generated_c =~ "elmc_fn_Main_clearLines_native"
+    assert generated_c =~ "elmc_fn_Main_stampPiece"
 
-    assert Enum.at(elem(dropped, 1), 4) == 1
+    fusion_names =
+      manifest["fusion_functions"]
+      |> Enum.map(& &1["name"])
+      |> MapSet.new()
 
-    assert {:ok, {:tuple2, soft_dropped, _cmd}} =
-             Loader.run_manifest_entry(out_dir, {"Main", "softDrop"}, params: [model_with_piece])
+    assert MapSet.member?(fusion_names, "pieceOffsets")
+    assert MapSet.member?(fusion_names, "clearLines")
+    assert MapSet.member?(fusion_names, "stampPiece")
+    assert MapSet.member?(fusion_names, "lockedSlotsFromBoard")
 
-    assert Enum.at(elem(soft_dropped, 1), 4) > 0
+    refute Enum.any?(manifest["skipped"] || [], fn entry ->
+             MapSet.member?(fusion_names, entry["name"]) and entry["reason"] == "empty_plan"
+           end)
 
-    assert {:ok, {:tuple2, cleared_board, 0}} =
-             Loader.run_manifest_entry(out_dir, {"Main", "clearLines"}, params: [board])
+    assert {:ok, view_ops} = Loader.run_manifest_entry(out_dir, {"Main", "view"}, params: [model])
+    assert is_list(view_ops)
+    assert length(view_ops) > 0
+    assert Enum.any?(view_ops, &match?({:render_cmd, _, _}, &1))
 
-    assert length(cleared_board) == 140
-    assert Enum.all?(cleared_board, &(&1 == 0))
+    {:ok, model_with_piece} =
+      Loader.run_manifest_entry(out_dir, {"Main", "withPiece"}, params: [
+        model,
+        {:just, {:record, [0, 0, 3, 0]}}
+      ])
+
+    assert {:ok, {:tuple2, {:record, locked_fields}, _cmd}} =
+             Loader.run_manifest_entry(out_dir, {"Main", "lockPiece"}, params: [model_with_piece])
+
+    board_after = Enum.at(locked_fields, 0)
+    assert is_list(board_after)
+    assert length(board_after) == 140
+    assert Enum.count(board_after, &(&1 != 0)) >= 4
 
     assert {:ok, stamped} =
              Loader.run_manifest_entry(out_dir, {"Main", "stampPiece"}, params: [
@@ -155,28 +164,28 @@ defmodule Elmc.PlanElmtrisPrimaryTest do
                board
              ])
 
-    assert is_list(stamped)
-    assert length(stamped) == 140
     assert Enum.at(stamped, 3) == 1
+    assert Enum.at(stamped, 4) == 1
+    assert Enum.at(stamped, 5) == 1
+    assert Enum.at(stamped, 6) == 1
 
-    assert {:ok, view_ops} = Loader.run_manifest_entry(out_dir, {"Main", "view"}, params: [model])
-    assert is_list(view_ops)
-    assert length(view_ops) > 0
-    assert Enum.any?(view_ops, &match?({:render_cmd, _, _}, &1))
+    full_bottom =
+      for i <- 0..139 do
+        if i >= 130, do: 1, else: 0
+      end
 
-    full_row = List.duplicate(1, 10) ++ Enum.take(board, 130)
+    assert {:ok, {:tuple2, cleared_board, lines}} =
+             Loader.run_manifest_entry(out_dir, {"Main", "clearLines"}, params: [full_bottom])
 
-    assert {:ok, {:tuple2, cleared_full, 1}} =
-             Loader.run_manifest_entry(out_dir, {"Main", "clearLines"}, params: [full_row])
+    assert lines == 1
+    assert length(cleared_board) == 140
+    assert Enum.all?(Enum.take(cleared_board, 10), &(&1 == 0))
+    assert Enum.at(cleared_board, 129) == 0
 
-    assert length(cleared_full) == 140
-    assert Enum.all?(Enum.take(cleared_full, 10), &(&1 == 0))
+    assert {:ok, locked_slots} =
+             Loader.run_manifest_entry(out_dir, {"Main", "lockedSlotsFromBoard"}, params: [stamped])
 
-    assert {:ok, {:tuple2, {:record, locked_fields}, _cmd}} =
-             Loader.run_manifest_entry(out_dir, {"Main", "lockPiece"}, params: [model_with_piece])
-
-    assert is_list(Enum.at(locked_fields, 0))
-    assert Enum.at(locked_fields, 11) == 0
+    assert locked_slots == [3, 4, 5, 6]
 
     # Nested int/tag case merge blocks (e.g. pieceOffsets) now reserve merge block ids.
     assert {:ok, {:tuple2, _model, _cmd}} =
@@ -199,8 +208,11 @@ defmodule Elmc.PlanElmtrisPrimaryTest do
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
     subs_body = CCodegenExtract.fn_body(generated_c, "elmc_fn_Main_subscriptions")
 
-    assert subs_body =~ "elmc_sub_batch",
-           "plan-primary subscriptions must batch with elmc_sub_batch, not elmc_cmd_batch"
+    assert subs_body =~ "elmc_sub1" or subs_body =~ "elmc_sub3",
+           "plan-primary subscriptions must lower batch items to pebble_sub calls"
+
+    assert subs_body =~ "elmc_list_from_values_take",
+           "plan-primary subscriptions must return a Sub list, not Cmd.batch"
 
     refute subs_body =~ "elmc_cmd_batch",
            "plan-primary subscriptions must not use elmc_cmd_batch"

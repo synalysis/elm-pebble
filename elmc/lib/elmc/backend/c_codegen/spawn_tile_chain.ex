@@ -247,4 +247,30 @@ defmodule Elmc.Backend.CCodegen.SpawnTileChain do
         """
     end
   end
+
+  @doc false
+  @spec extract_fusion_data(String.t(), String.t(), map() | nil, map()) ::
+          {:ok, :spawn_tile_chain, map()} | :error
+  def extract_fusion_data(module_name, name, expr, decl_map) do
+    env = %{__program_decls__: decl_map, __module__: module_name}
+
+    with {:ok, _spawn_fn, _seed_param, board_expr, count} <- parse_chain(expr, decl_map, module_name, env),
+         true <- tuple_pair_return?(decl_map, module_name, name) do
+      {:ok, :spawn_tile_chain, %{count: count, passes: 2, board: board_source(board_expr, module_name)}}
+    else
+      _ -> :error
+    end
+  end
+
+  defp board_source(%{op: :var, name: _}, _module_name), do: :zeros
+
+  defp board_source(%{op: :qualified_call, target: target, args: []}, module_name) do
+    {module_name, FusionSupport.local_name(target)}
+  end
+
+  defp board_source(%{op: :call, name: name, args: []}, module_name) when is_binary(name) do
+    {module_name, name}
+  end
+
+  defp board_source(_, _module_name), do: :zeros
 end

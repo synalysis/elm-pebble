@@ -86,10 +86,12 @@ defmodule Elmc.PlanConstantFoldTest do
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
     refute generated_c =~ "140 <= 0"
-    assert generated_c =~ "list_repeat_zero_buf_"
+    assert generated_c =~ "plan_list_int_values_"
+    assert generated_c =~ "[140]"
+    refute generated_c =~ "list_repeat_zero_buf_"
   end
 
-  test "List.repeat with folded top-level count annotates heritage and omits dead native helper" do
+  test "List.repeat with folded top-level count propagates into static int list" do
     source = """
     module Main exposing (boardCols, boardRows, boardSize, emptyBoard)
 
@@ -131,7 +133,17 @@ defmodule Elmc.PlanConstantFoldTest do
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
-    assert generated_c =~ "140 /* Main.boardSize */"
-    refute generated_c =~ "elmc_fn_Main_boardSize_native"
+    assert generated_c =~ "plan_list_int_values_"
+    assert generated_c =~ "[140]"
+
+    empty_board =
+      generated_c
+      |> String.split("static RC elmc_fn_Main_emptyBoard")
+      |> Enum.at(1, "")
+      |> String.split("static ", parts: 2)
+      |> hd()
+
+    refute empty_board =~ "elmc_list_repeat"
+    refute empty_board =~ "elmc_fn_Main_boardSize"
   end
 end

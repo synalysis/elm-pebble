@@ -2,7 +2,7 @@ defmodule Elmc.Backend.Plan.Lower.Intrinsics do
   @moduledoc false
 
   alias Elmc.Backend.Plan.{Builder, Context, EpilogueRelease, Verify}
-  alias Elmc.Backend.Plan.Lower.Expr
+  alias Elmc.Backend.Plan.Lower.{Call, Expr, Function}
   alias Elmc.Backend.Plan.Types.FunctionPlan
 
   @spec try_lower(map(), String.t(), map(), keyword()) ::
@@ -13,10 +13,12 @@ defmodule Elmc.Backend.Plan.Lower.Intrinsics do
         lower_color_to_int_identity(decl, module_name, param_name, decl_map, opts)
 
       %{expr: %{op: :qualified_call, target: target, args: []}} ->
-        if batch_kernel_target?(target) do
-          lower_batch_kernel_alias(decl, module_name, decl_map, opts)
-        else
-          :not_intrinsic
+        cond do
+          batch_kernel_target?(target) ->
+            lower_batch_kernel_alias(decl, module_name, decl_map, opts)
+
+          true ->
+            lower_qualified_delegate_alias(decl, module_name, target, decl_map, opts)
         end
 
       _ ->
@@ -102,4 +104,28 @@ defmodule Elmc.Backend.Plan.Lower.Intrinsics do
   end
 
   defp batch_kernel_target?(_), do: false
+
+  # Top-level `alias = Other.fn` keeps IR `args: []` while the callee expects parameters.
+  # Rebuild the declaration with the callee's parameter names and a forwarding body.
+  defp lower_qualified_delegate_alias(decl, module_name, target, decl_map, opts) do
+    with {mod, name} <-
+           Call.parse_target(target, %{module: module_name, decl_map: decl_map}, decl_map),
+         {:ok, %{args: param_names}} <- Map.fetch(decl_map, {mod, name}),
+         true <- param_names != [] do
+      body = %{
+        op: :qualified_call,
+        target: target,
+        args: Enum.map(param_names, &%{op: :var, name: &1})
+      }
+
+      forward_decl = %{decl | args: param_names, expr: body}
+
+      case Function.lower(forward_decl, module_name, decl_map, opts) do
+        {:ok, _} = ok -> ok
+        _ -> :not_intrinsic
+      end
+    else
+      _ -> :not_intrinsic
+    end
+  end
 end

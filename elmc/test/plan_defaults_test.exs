@@ -9,7 +9,13 @@ defmodule Elmc.PlanDefaultsTest do
     :ok
   end
 
-  test "test env defaults plan_ir_mode to off" do
+  test "test env defaults plan_ir_mode to primary" do
+    assert Defaults.plan_ir_mode() == :primary
+    assert Shadow.plan_ir_mode([]) == :primary
+  end
+
+  test "legacy off mode when configured" do
+    Application.put_env(:elmc, :default_plan_ir_mode, :off)
     assert Defaults.plan_ir_mode() == :off
     assert Shadow.plan_ir_mode([]) == :off
   end

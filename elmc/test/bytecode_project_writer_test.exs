@@ -58,6 +58,41 @@ defmodule Elmc.BytecodeProjectWriterTest do
              Loader.run_manifest_entry(out_dir, {"Main", "probeScoreOf"}, params: [{:record, [nil, 7, nil, nil, nil, nil, nil, nil]}])
   end
 
+  test "primary bytecode manifest runs fused watchToPhoneTag when present" do
+    out_dir = Path.expand("tmp/bytecode_loader_watch_tag", __DIR__)
+    File.rm_rf!(out_dir)
+
+    assert {:ok, _} =
+             Elmc.compile(@fixture, %{
+               out_dir: out_dir,
+               entry_module: "Main",
+               strip_dead_code: false,
+               plan_ir_mode: :primary
+             })
+
+    {:ok, manifest} = Loader.load_manifest(ProjectWriter.manifest_path(out_dir))
+
+    fusion_entry =
+      Enum.find(manifest["fusion_functions"] || [], fn entry ->
+        entry["module"] == "Companion.Internal" and entry["name"] == "watchToPhoneTag"
+      end)
+
+    if fusion_entry do
+      assert fusion_entry["fusion_kind"] == "union_int_lut"
+
+      assert {:ok, tag} =
+               Loader.run_manifest_entry(out_dir, {"Companion.Internal", "watchToPhoneTag"}, params: [1])
+
+      assert is_integer(tag)
+      assert tag > 0
+    else
+      assert {:ok, tag} =
+               Loader.run_manifest_entry(out_dir, {"Companion.Internal", "watchToPhoneTag"}, params: [1])
+
+      assert is_integer(tag)
+    end
+  end
+
   test "primary bytecode manifest prunes unreachable bundled helpers" do
     out_dir = Path.expand("tmp/bytecode_project_writer_prune", __DIR__)
     File.rm_rf!(out_dir)

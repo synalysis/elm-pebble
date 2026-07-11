@@ -178,4 +178,16 @@ defmodule Elmc.Backend.CCodegen.UnionIntCase do
       param => param
     }
   end
+
+  @doc false
+  @spec extract_fusion_data(String.t(), String.t(), map() | nil, map()) ::
+          {:ok, :union_int_lut, map()} | :error
+  def extract_fusion_data(module_name, name, expr, decl_map) do
+    with {:ok, _subject, branches} <- parse_case(expr),
+         true <- union_int_case_eligible?(branches) do
+      {:ok, :union_int_lut, %{lut: union_int_lut(branches), exhaustive: true}}
+    else
+      _ -> :error
+    end
+  end
 end

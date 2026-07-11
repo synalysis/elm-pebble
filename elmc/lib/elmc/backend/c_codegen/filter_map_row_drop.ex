@@ -311,4 +311,20 @@ defmodule Elmc.Backend.CCodegen.FilterMapRowDrop do
     }
     """
   end
+
+  @doc false
+  @spec extract_fusion_data(String.t(), String.t(), map() | nil, map()) ::
+          {:ok, :filter_map_row_drop, map()} | :error
+  def extract_fusion_data(module_name, _name, expr, decl_map) do
+    with {:ok, rows_var, cols_var, row_full, row_cells} <- parse(expr),
+         {:ok, rows} <- FusionSupport.resolve_int_constant(decl_map, module_name, rows_var),
+         {:ok, cols} <- FusionSupport.resolve_int_constant(decl_map, module_name, cols_var),
+         true <- row_full_matches?(decl_map, module_name, row_full, row_cells),
+         {:ok, cell_reader} <- row_cells_matches?(decl_map, module_name, row_cells, cols_var),
+         true <- FusionSupport.flat_list_cell_reader?(decl_map, module_name, cell_reader, cols_var) do
+      {:ok, :filter_map_row_drop, %{rows: rows, cols: cols}}
+    else
+      _ -> :error
+    end
+  end
 end

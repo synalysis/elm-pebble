@@ -35,7 +35,17 @@ defmodule Elmc.Backend.Bytecode.Opcodes do
     const_static_list: 29,
     const_c_expr: 30,
     record_get_int: 31,
-    test_string_literal: 32
+    test_string_literal: 32,
+    test_list_empty: 33,
+    test_ctor_tag: 34,
+    test_bool: 35,
+    bool_and: 36,
+    call_closure: 37,
+    list_cursor_map: 38,
+    forward_ref_set: 39,
+    forward_ref_load: 40,
+    forward_ref_capture: 41,
+    forward_ref_load_captured: 42
   }
 
   @spec opcode(atom()) :: non_neg_integer() | nil

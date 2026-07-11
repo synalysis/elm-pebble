@@ -222,8 +222,10 @@ defmodule Elmc.Backend.C.Lower.Function do
           _ -> nil
         end
 
+      block_instrs = truncate_after_non_rc_tail_fn_out(instrs, rc?)
+
       (if labeled_block?(id, explicit_targets), do: [block_label(id)], else: []) ++
-        Enum.flat_map(instrs, &emit_instr_lines(&1, slots, instr_opts)) ++
+        Enum.flat_map(block_instrs, &emit_instr_lines(&1, slots, instr_opts)) ++
         [emit_terminator(term, slots, rc?, Keyword.put(instr_opts, :next_id, next_id))]
     end)
     |> Enum.reject(&(&1 == ""))
@@ -254,11 +256,15 @@ defmodule Elmc.Backend.C.Lower.Function do
         state_ref = TagRefs.plan_state_ref(plan, id, state_labels)
 
         instr_lines =
-          instrs
-          |> Enum.flat_map(&emit_instr_lines(&1, slots, instr_opts))
-          |> Enum.reject(&(&1 == ""))
-          |> Enum.map(&("    " <> &1))
-          |> Enum.join("\n")
+          (fn ->
+             Process.put(:elmc_plan_owned_live, MapSet.new())
+
+             instrs
+             |> Enum.flat_map(&emit_instr_lines(&1, slots, instr_opts))
+             |> Enum.reject(&(&1 == ""))
+             |> Enum.map(&("    " <> &1))
+             |> Enum.join("\n")
+           end).()
 
         term_line =
           emit_state_switch_terminator(term, slots, rc?, instr_opts)
@@ -682,12 +688,30 @@ defmodule Elmc.Backend.C.Lower.Function do
         emit_null_consumed_slots(instr, slots, instr_opts)
       end
     live = update_owned_live_slots(instr, slots, instr_opts, live)
+    live = clear_record_update_cow_drop_base_live(instr, slots, live)
     Process.put(:elmc_plan_owned_live, live)
 
     [reassignment, code, nulls]
     |> List.flatten()
     |> Enum.reject(&(&1 == ""))
   end
+
+  defp clear_record_update_cow_drop_base_live(
+         %{op: :record_update, args: %{base: base_reg}, dest: dest_reg},
+         slots,
+         live
+       )
+       when is_integer(base_reg) and is_integer(dest_reg) do
+    case {Map.get(slots, base_reg), Map.get(slots, dest_reg)} do
+      {base_idx, dest_idx} when is_integer(base_idx) and is_integer(dest_idx) and base_idx != dest_idx ->
+        MapSet.delete(live, base_idx)
+
+      _ ->
+        live
+    end
+  end
+
+  defp clear_record_update_cow_drop_base_live(_instr, _slots, live), do: live
 
   defp owned_reassign_prefix(instr, slots, instr_opts, live) do
     dest = Map.get(instr, :dest)
@@ -757,10 +781,27 @@ defmodule Elmc.Backend.C.Lower.Function do
   end
 
   defp tail_fn_out_owned_cleanup_instr?(%{op: op, dest: dest})
-       when op in [:call_runtime, :call_fn, :call_closure] and dest in [:fn_out, :branch_out],
+       when op in [:call_runtime, :call_fn, :call_closure, :record_update, :pebble_cmd] and
+              dest in [:fn_out, :branch_out],
        do: true
 
   defp tail_fn_out_owned_cleanup_instr?(_), do: false
+
+  defp truncate_after_non_rc_tail_fn_out(instrs, false) do
+    case Enum.find_index(instrs, &non_rc_tail_fn_out_instr?/1) do
+      nil -> instrs
+      idx -> Enum.take(instrs, idx + 1)
+    end
+  end
+
+  defp truncate_after_non_rc_tail_fn_out(instrs, _), do: instrs
+
+  defp non_rc_tail_fn_out_instr?(%{dest: dest, op: op})
+       when dest in [:fn_out, :branch_out] and
+              op in [:call_runtime, :call_fn, :call_closure, :record_update, :pebble_cmd, :publish],
+       do: true
+
+  defp non_rc_tail_fn_out_instr?(_), do: false
 
   defp emit_null_consumed_slots(%{op: :publish}, _slots, _instr_opts), do: []
 
@@ -801,7 +842,7 @@ defmodule Elmc.Backend.C.Lower.Function do
        do: true
 
   defp transferring_consume_instr?(%{op: :call_runtime, args: %{builtin: id}}) do
-    id in [:record_new_take, :record_new_values_ints, :tuple2_take]
+    id in [:record_new, :record_new_take, :record_new_values_ints, :tuple2_take]
   end
 
   defp transferring_consume_instr?(%{
@@ -1587,9 +1628,14 @@ defmodule Elmc.Backend.C.Lower.Function do
     decl = lookup_decl(plan.module, plan.name)
     decl_map = Process.get(:elmc_program_decls, %{})
 
+    effective_decl =
+      if decl do
+        %{decl | args: FunctionEmit.effective_decl_args(decl, plan.module, decl_map)}
+      end
+
     cond do
-      decl && FunctionEmit.mixed_direct_abi?(decl, plan.module, decl_map) ->
-        NativeFunctionCall.arg_kinds(decl, plan.module, decl_map)
+      effective_decl && FunctionEmit.mixed_direct_abi?(effective_decl, plan.module, decl_map) ->
+        NativeFunctionCall.arg_kinds(effective_decl, plan.module, decl_map)
 
       true ->
         List.duplicate(:boxed, length(plan.params))
@@ -2003,13 +2049,19 @@ defmodule Elmc.Backend.C.Lower.Function do
   end
 
   defp plan_decl_param_c_arg(plan, index, _decl_map) do
-    case lookup_decl(plan.module, plan.name) do
-      %{args: args} when is_list(args) ->
-        FunctionCallAbi.param_c_arg(index, decl_arg_names(args))
+    names = param_names(plan.params)
 
-      _ ->
-        FunctionCallAbi.param_c_arg(index, param_names(plan.params))
-    end
+    names =
+      if names != [] do
+        names
+      else
+        case lookup_decl(plan.module, plan.name) do
+          %{args: args} when is_list(args) -> decl_arg_names(args)
+          _ -> []
+        end
+      end
+
+    FunctionCallAbi.param_c_arg(index, names)
   end
 
   defp closure_param_c_ref(index, capture_count) when index < capture_count do
@@ -2824,9 +2876,8 @@ defmodule Elmc.Backend.C.Lower.Function do
     end
   end
 
-  defp maybe_add_native_ret_reg(regs, plan, reg, kind)
-       when is_integer(reg) and kind in [:native_int, :native_bool] do
-    if NativeReturn.ret_reg_allows_native?(plan, reg, kind) do
+  defp maybe_add_native_ret_reg(regs, plan, reg, :native_int) do
+    if NativeReturn.ret_reg_allows_native?(plan, reg, :native_int) do
       MapSet.put(regs, reg)
     else
       regs

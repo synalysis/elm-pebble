@@ -3,7 +3,7 @@ defmodule Elmc.Backend.Plan.Lower.Call do
 
   alias Elmc.Backend.Plan.Builder
   alias Elmc.Backend.Plan.Context
-  alias Elmc.Backend.Plan.Lower.{Cmd, Expr, Lambda}
+  alias Elmc.Backend.Plan.Lower.{Cmd, Expr, Lambda, SpecialValues}
   alias Elmc.Backend.Plan.Types
 
   @spec compile_call(map(), Context.t(), Builder.t()) ::
@@ -52,30 +52,55 @@ defmodule Elmc.Backend.Plan.Lower.Call do
       %{op: :pebble_cmd} = rewritten ->
         Cmd.compile(rewritten, ctx, b)
 
-      %{op: op} = rewritten when is_atom(op) and op != :unsupported ->
-        Expr.compile(rewritten, ctx, b)
+      nil ->
+        compile_fn_call_special_or_target(target, args, ctx, b)
 
-      _ ->
-        {module, name} = parse_target(target, ctx, ctx.decl_map)
-
-        case Elmc.Backend.CCodegen.SpecialValues.special_value_from_target(
-               "#{module}.#{name}",
-               args
-             ) do
-          %{op: :pebble_cmd} = rewritten ->
-            Cmd.compile(rewritten, ctx, b)
-
-          %{op: op} = rewritten when is_atom(op) and op != :unsupported ->
-            Expr.compile(rewritten, ctx, b)
-
-          _ ->
-            compile_fn_call_target(module, name, args, ctx, b)
+      rewritten ->
+        case compile_special_rewrite(rewritten, args, ctx, b) do
+          :unsupported -> compile_fn_call_special_or_target(target, args, ctx, b)
+          other -> other
         end
     end
   end
 
+  defp compile_fn_call_special_or_target(target, args, ctx, b) do
+    {module, name} = parse_target(target, ctx, ctx.decl_map)
+
+    case SpecialValues.special_value_from_target("#{module}.#{name}", args) do
+      nil ->
+        compile_fn_call_target(module, name, args, ctx, b)
+
+      rewritten ->
+        case compile_special_rewrite(rewritten, args, ctx, b) do
+          :unsupported -> compile_fn_call_target(module, name, args, ctx, b)
+          other -> other
+        end
+    end
+  end
+
+  defp compile_special_rewrite(nil, _args, _ctx, _b), do: :unsupported
+
+  defp compile_special_rewrite(%{op: :pebble_cmd} = rewritten, _args, ctx, b),
+    do: Cmd.compile(rewritten, ctx, b)
+
+  defp compile_special_rewrite(
+         %{op: :c_int_expr, value: "ELMC_PEBBLE_CMD_" <> _} = kind,
+         args,
+         ctx,
+         b
+       )
+       when is_list(args) do
+    Cmd.compile(%{op: :pebble_cmd, kind: kind, params: args}, ctx, b)
+  end
+
+  defp compile_special_rewrite(%{op: op} = rewritten, _args, ctx, b)
+       when is_atom(op) and op != :unsupported,
+       do: Expr.compile(rewritten, ctx, b)
+
+  defp compile_special_rewrite(_rewritten, _args, _ctx, _b), do: :unsupported
+
   defp call_rewrite(target, args) do
-    Elmc.Backend.CCodegen.SpecialValues.special_value_from_target(target, args)
+    SpecialValues.special_value_from_target(target, args)
   end
 
   @spec compile_closure_call_from_reg(integer(), [map()], Context.t(), Builder.t()) ::

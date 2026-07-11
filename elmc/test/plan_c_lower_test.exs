@@ -86,6 +86,8 @@ defmodule Elmc.PlanCLowerTest do
     assert c =~ "elmc_retain(model)"
     assert c =~ "elmc_record_update_index_cow_drop("
     refute c =~ "Rc = elmc_record_update_index_cow_drop("
+    assert c =~ "owned[1] = NULL;"
+    refute c =~ ~r/owned\[1\] = NULL;\s*elmc_release\(owned\[1\]\);\s*owned\[1\] = NULL;\s*Rc = elmc_cmd0\(&owned\[1\]/
   end
 
   test "record get lowers to elmc_record_get_index" do
@@ -243,5 +245,122 @@ defmodule Elmc.PlanCLowerTest do
   test "cmd_batch is value-returning not RC allocator" do
     refute Elmc.Backend.Plan.RuntimeBuiltins.fallible?(:cmd_batch)
     assert Elmc.Backend.Plan.RuntimeBuiltins.value_return?(:cmd_batch)
+  end
+
+  test "native Int param boxes into Basics.modBy boxed operands" do
+    decl = %{
+      name: "dropIndex",
+      args: ["pages", "index"],
+      type: "List Page -> Int -> Int",
+      ownership: [:borrow_arg],
+      expr: %{
+        op: :call,
+        name: "Basics.modBy",
+        args: [
+          %{op: :call, name: "List.length", args: [%{op: :var, name: "pages"}]},
+          %{op: :var, name: "index"}
+        ]
+      }
+    }
+
+    decl_map = %{
+      {"Main", "dropIndex"} => %{
+        name: "dropIndex",
+        args: ["pages", "index"],
+        type: "List Page -> Int -> Int",
+        ownership: [:borrow_arg]
+      }
+    }
+
+    assert {:ok, plan} =
+             Elmc.Backend.Plan.Lower.Function.lower(decl, "Main", decl_map, rc_required: true)
+
+    Process.put(:elmc_program_decls, decl_map)
+    c = CLowerFunction.emit(plan)
+    assert c =~ "elmc_basics_mod_by("
+    assert c =~ "elmc_small_int(index)" or c =~ "elmc_new_int_take(index)"
+    refute c =~ "(void)index;"
+  end
+
+  test "pathFilled render op keeps boxed path payload in tuple2" do
+    triangle =
+      %{
+        op: :call,
+        name: "Pebble.Ui.path",
+        args: [
+          %{op: :list_literal, items: []},
+          %{op: :record_literal, fields: [%{name: "x", expr: %{op: :int_literal, value: 0}}]},
+          %{op: :record_literal, fields: [%{name: "y", expr: %{op: :int_literal, value: 0}}]},
+          %{op: :int_literal, value: 0}
+        ]
+      }
+
+    decl = %{
+      name: "pathCmd",
+      args: ["triangle"],
+      expr: %{
+        op: :call,
+        name: "Pebble.Ui.pathFilled",
+        args: [%{op: :var, name: "triangle"}]
+      }
+    }
+
+    decl_map = %{
+      {"Main", "pathCmd"} => %{name: "pathCmd", args: ["triangle"], ownership: [:borrow_arg]}
+    }
+
+    assert {:ok, plan} =
+             Elmc.Backend.Plan.Lower.Function.lower(
+               Map.put(decl, :expr, %{
+                 op: :call,
+                 name: "Pebble.Ui.pathFilled",
+                 args: [triangle]
+               }),
+               "Main",
+               decl_map,
+               rc_required: true
+             )
+
+    Process.put(:elmc_program_decls, decl_map)
+    c = CLowerFunction.emit(plan)
+    assert c =~ "elmc_tuple2("
+    refute c =~ "elmc_tuple2_ints(&"
+    assert c =~ "plan_ephemeral_box_"
+    assert c =~ "elmc_release(plan_ephemeral_box_"
+  end
+
+  test "result Ok lowering reads fn_out when wrapping prior tail value" do
+    out_dir = Path.expand("tmp/rc_track_result_ok_four_lower", __DIR__)
+    File.rm_rf!(out_dir)
+
+    tmp = Path.expand("tmp/rc_track_result_ok_four_probe", __DIR__)
+    src = Path.expand("fixtures/rc_track_result_project/src/RcTrackResultProbe.elm", __DIR__)
+    File.rm_rf!(tmp)
+    File.mkdir_p!(Path.join(tmp, "src"))
+    File.cp!(src, Path.join(tmp, "src/RcTrackResultProbe.elm"))
+
+    File.write!(
+      Path.join(tmp, "elm.json"),
+      Jason.encode!(
+        %{
+          "type" => "application",
+          "source-directories" => ["src"],
+          "elm-version" => "0.19.1",
+          "dependencies" => %{"direct" => %{"elm/core" => "1.0.5"}, "indirect" => %{}}
+        },
+        pretty: true
+      ) <> "\n"
+    )
+
+    assert {:ok, _} =
+             Elmc.compile(tmp, %{
+               out_dir: out_dir,
+               strip_dead_code: false,
+               entry_module: "RcTrackResultProbe",
+               plan_ir_mode: :primary
+             })
+
+    c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+    assert c =~ "elmc_result_ok_own(out, *out)"
   end
 end

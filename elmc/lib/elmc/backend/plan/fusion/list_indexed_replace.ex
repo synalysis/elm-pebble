@@ -2,7 +2,7 @@ defmodule Elmc.Backend.Plan.Fusion.ListIndexedReplace do
   @moduledoc false
 
   alias Elmc.Backend.CCodegen.{FusionSupport, Host, Util}
-  alias Elmc.Backend.Plan.Fusion.Tuple2CaseTable
+  alias Elmc.Backend.Plan.Fusion.{Helper, Tuple2CaseTable}
 
   @indexed_map_targets ~w(List.indexedMap Elm.Kernel.List.indexedMap)
 
@@ -23,7 +23,12 @@ defmodule Elmc.Backend.Plan.Fusion.ListIndexedReplace do
       )
       |> case do
         {:ok, c_body, _, :rc_native} ->
-          {:ok, Tuple2CaseTable.build_fusion_plan(module_name, name, decl, c_body)}
+          plan =
+            module_name
+            |> Tuple2CaseTable.build_fusion_plan(name, decl, c_body)
+            |> Helper.attach_bytecode_fusion(:list_indexed_replace)
+
+          {:ok, plan}
       end
     else
       _ -> :error

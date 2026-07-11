@@ -1,8 +1,10 @@
 defmodule Elmc.Backend.Plan.Lower.IntCall do
   @moduledoc false
 
+  alias Elmc.Backend.CCodegen.{FunctionCallAbi, FunctionEmit}
+  alias Elmc.Backend.CCodegen.Native.FunctionCall, as: NativeFunctionCall
   alias Elmc.Backend.Plan.Lower.{Arith, Expr}
-  alias Elmc.Backend.Plan.{Builder, Context}
+  alias Elmc.Backend.Plan.{Builder, Context, Types}
 
   @binary_ops %{
     "__add__" => :add_vars,
@@ -73,19 +75,16 @@ defmodule Elmc.Backend.Plan.Lower.IntCall do
             kind = if name == "Basics.min", do: :min_vars, else: :max_vars
             Arith.emit_binary(kind, left, right, ctx, b)
 
-          name in ["modBy", "Basics.modBy"] and int_binop_operands?(left, right) ->
+          name in ["modBy", "Basics.modBy"] and int_binop_operands?(left, right) and
+              not native_int_param_in_operands?([left, right], ctx) ->
             Arith.emit_binary(:mod_vars, left, right, ctx, b)
 
-          name in ["remainderBy", "Basics.remainderBy"] and int_binop_operands?(left, right) ->
+          name in ["remainderBy", "Basics.remainderBy"] and int_binop_operands?(left, right) and
+              not native_int_param_in_operands?([left, right], ctx) ->
             Arith.emit_binary(:rem_vars, left, right, ctx, b)
 
           true ->
-            with {:ok, arg_regs, b1} <- Expr.compile_args([left, right], ctx, b),
-                 id when not is_nil(id) <- Elmc.Backend.Plan.RuntimeBuiltins.from_c_symbol(target) do
-              Expr.compile_runtime_builtin(id, arg_regs, ctx, b1)
-            else
-              _ -> :unsupported
-            end
+            compile_runtime_binop_with_native_box(target, left, right, ctx, b)
         end
 
       true ->
@@ -117,6 +116,74 @@ defmodule Elmc.Backend.Plan.Lower.IntCall do
   end
 
   defp compile_folded_append(expr, ctx, b), do: Expr.compile(expr, ctx, b)
+
+  defp compile_runtime_binop_with_native_box(target, left, right, ctx, b) do
+    with {:ok, arg_regs, b1} <- Expr.compile_args([left, right], ctx, b),
+         {boxed_regs, b2} <- box_native_int_call_args(arg_regs, ctx, b1),
+         id when not is_nil(id) <- Elmc.Backend.Plan.RuntimeBuiltins.from_c_symbol(target) do
+      Expr.compile_runtime_builtin(id, boxed_regs, ctx, b2)
+    else
+      _ -> :unsupported
+    end
+  end
+
+  defp box_native_int_call_args(regs, ctx, b) when is_list(regs) do
+    Enum.map_reduce(regs, b, fn reg, b_acc ->
+      idx = param_reg_index(reg, ctx, b_acc)
+
+      if is_integer(idx) and native_int_param_index?(idx, ctx) do
+        box_native_int_param_reg(idx, ctx, b_acc)
+      else
+        {reg, b_acc}
+      end
+    end)
+  end
+
+  defp param_reg_index(reg, ctx, b) when is_integer(reg) do
+    Enum.find_value(Enum.with_index(ctx.params), fn {name, idx} ->
+      if Map.get(b.param_regs, name) == reg, do: idx
+    end)
+  end
+
+  defp param_reg_index(_, _, _), do: nil
+
+  defp native_int_param_index?(idx, ctx) do
+    case Map.get(ctx.decl_map, {ctx.module, ctx.function_name}) do
+      decl when is_map(decl) ->
+        decl = %{decl | args: FunctionEmit.effective_decl_args(decl, ctx.module, ctx.decl_map)}
+        Enum.at(NativeFunctionCall.arg_kinds(decl, ctx.module, ctx.decl_map), idx) == :native_int
+
+      _ ->
+        false
+    end
+  end
+
+  defp native_int_param_in_operands?([left, right], ctx) do
+    native_int_param_var?(left, ctx) or native_int_param_var?(right, ctx)
+  end
+
+  defp native_int_param_var?(%{op: :var, name: name}, ctx) when is_binary(name) do
+    case Enum.find_index(ctx.params, &(&1 == name)) do
+      idx when is_integer(idx) -> native_int_param_index?(idx, ctx)
+      _ -> false
+    end
+  end
+
+  defp native_int_param_var?(_, _), do: false
+
+  defp box_native_int_param_reg(idx, ctx, b) do
+    c_ref = FunctionCallAbi.param_c_arg(idx, ctx.params)
+    {box_reg, b1} = Builder.fresh_reg(b)
+
+    {_, b2} =
+      Builder.emit(b1, :call_runtime, %{
+        dest: box_reg,
+        args: %{builtin: :new_int, c_expr: c_ref},
+        effects: Types.fallible_effects(box_reg)
+      })
+
+    {box_reg, b2}
+  end
 
   defp int_binop_operands?(left, right), do: int_operand?(left) and int_operand?(right)
 

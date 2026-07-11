@@ -100,6 +100,8 @@ defmodule Elmc.Backend.Plan.RuntimeBuiltins do
     cmd1: "elmc_cmd1",
     cmd1_string: "elmc_cmd1_string",
     cmd2: "elmc_cmd2",
+    cmd3: "elmc_cmd3",
+    cmd4: "elmc_cmd4",
     cmd_batch: "elmc_cmd_batch",
     sub_batch: "elmc_sub_batch",
     cmd_backlight_from_maybe: "elmc_cmd_backlight_from_maybe",
@@ -186,6 +188,8 @@ defmodule Elmc.Backend.Plan.RuntimeBuiltins do
     :cmd1,
     :cmd1_string,
     :cmd2,
+    :cmd3,
+    :cmd4,
     :cmd_backlight_from_maybe,
     :result_and_then,
     :result_map,
@@ -211,7 +215,8 @@ defmodule Elmc.Backend.Plan.RuntimeBuiltins do
     :string_to_int,
     :list_nth_int_default,
     :debug_to_string,
-    :char_from_code
+    :char_from_code,
+    :cmd_backlight_from_maybe
   ])
 
   @value_return MapSet.new([
@@ -287,6 +292,9 @@ defmodule Elmc.Backend.Plan.RuntimeBuiltins do
     :list_reverse,
     :list_head,
     :list_tail,
+    :int_list_head_int,
+    :int_list_head_boxed,
+    :int_list_tail,
     :list_is_empty,
     :list_nth_maybe,
     :list_nth_int_default,
@@ -331,6 +339,8 @@ defmodule Elmc.Backend.Plan.RuntimeBuiltins do
     :cmd1,
     :cmd1_string,
     :cmd2,
+    :cmd3,
+    :cmd4,
     :cmd_batch,
     :sub_batch,
     :cmd_backlight_from_maybe,

@@ -3,7 +3,7 @@ defmodule Elmc.Backend.Bytecode.ProjectWriter do
   Emit `.elmcbc` sections and a manifest alongside C codegen when plan IR is active.
   """
 
-  alias Elmc.Backend.Bytecode.Lower
+  alias Elmc.Backend.Bytecode.{FusionRunner, Lower}
   alias Elmc.Backend.CCodegen.{IRQueries, RcRequired}
   alias Elmc.Backend.Plan
   alias Elmc.Backend.Plan.PrimaryCoverage
@@ -28,6 +28,7 @@ defmodule Elmc.Backend.Bytecode.ProjectWriter do
 
     Process.put(:elmc_constructor_tags, IRQueries.constructor_tag_map(ir))
     Process.put(:elmc_record_alias_shapes, IRQueries.record_alias_shape_map(ir))
+    Process.put(:elmc_record_field_types, IRQueries.record_alias_field_types_map(ir))
 
     try do
       decl_map = IRQueries.function_decl_map(ir)
@@ -35,10 +36,10 @@ defmodule Elmc.Backend.Bytecode.ProjectWriter do
       emit_map = emit_decl_map(decl_map, coverage_opts)
       pruned_count = map_size(decl_map) - map_size(emit_map)
 
-      {functions, skipped} =
+      {functions, fusion_functions, skipped} =
         emit_map
         |> Enum.sort()
-        |> Enum.map_reduce([], fn {{module, name}, decl}, skipped_acc ->
+        |> Enum.map_reduce({[], []}, fn {{module, name}, decl}, {fusion_acc, skipped_acc} ->
           case lower_plan(decl, module, name, decl_map) do
             {:ok, _plan, section} ->
               filename = section_filename(module, name)
@@ -56,17 +57,21 @@ defmodule Elmc.Backend.Bytecode.ProjectWriter do
                   "fn_table" => Enum.map(section.fn_table, fn {m, n} -> [m, n] end)
                 }
 
-                {entry, skipped_acc}
+                {entry, {fusion_acc, skipped_acc}}
               rescue
-                _ -> {nil, [{module, name, :encode_error} | skipped_acc]}
+                _ -> {nil, {fusion_acc, [{module, name, :encode_error} | skipped_acc]}}
               end
 
+            {:fusion, plan} ->
+              fusion_entry = fusion_manifest_entry(module, name, decl, plan)
+              {nil, {[fusion_entry | fusion_acc], skipped_acc}}
+
             {:skip, reason} ->
-              {nil, [{module, name, reason} | skipped_acc]}
+              {nil, {fusion_acc, [{module, name, reason} | skipped_acc]}}
           end
         end)
-        |> then(fn {entries, skipped} ->
-          {Enum.reject(entries, &is_nil/1), skipped}
+        |> then(fn {entries, {fusion_entries, skipped}} ->
+          {Enum.reject(entries, &is_nil/1), Enum.reverse(fusion_entries), skipped}
         end)
 
       manifest = %{
@@ -74,6 +79,7 @@ defmodule Elmc.Backend.Bytecode.ProjectWriter do
         "version" => Lower.manifest_version(),
         "plan_toolchain" => plan_toolchain_manifest(opts),
         "functions" => functions,
+        "fusion_functions" => fusion_functions,
         "pruned_count" => pruned_count,
         "skipped" => Enum.map(skipped, fn {m, n, r} -> %{"module" => m, "name" => n, "reason" => reason_string(r)} end),
         "plan_coverage" => plan_coverage_manifest(decl_map, coverage_opts, opts)
@@ -86,6 +92,7 @@ defmodule Elmc.Backend.Bytecode.ProjectWriter do
     after
       Process.delete(:elmc_constructor_tags)
       Process.delete(:elmc_record_alias_shapes)
+      Process.delete(:elmc_record_field_types)
     end
   end
 
@@ -97,11 +104,16 @@ defmodule Elmc.Backend.Bytecode.ProjectWriter do
 
     case Plan.lower_function(decl, module, decl_map, rc_required: rc_required?) do
       {:ok, plan} ->
-        if plan.blocks == [] do
-          {:skip, :empty_plan}
-        else
-          section = Lower.lower(plan)
-          {:ok, plan, section}
+        cond do
+          plan.blocks == [] and FusionRunner.runnable?(plan) ->
+            {:fusion, plan}
+
+          plan.blocks == [] ->
+            {:skip, :empty_plan}
+
+          true ->
+            section = Lower.lower(plan)
+            {:ok, plan, section}
         end
 
       :unsupported ->
@@ -122,6 +134,35 @@ defmodule Elmc.Backend.Bytecode.ProjectWriter do
   defp reason_string(:unsupported), do: "unsupported"
   defp reason_string({:verify, reason, _}), do: "verify:#{reason}"
   defp reason_string(other), do: inspect(other)
+
+  defp fusion_manifest_entry(module, name, decl, plan) do
+    %{
+      "module" => module,
+      "name" => name,
+      "params" => Map.get(decl, :args, []),
+      "fusion_kind" => plan.fusion_kind |> Atom.to_string(),
+      "fusion_data" => wire_fusion_data(plan.fusion_data)
+    }
+  end
+
+  defp wire_fusion_data(data) when is_map(data) do
+    data
+    |> Enum.map(fn
+      {k, v} when is_atom(k) -> {Atom.to_string(k), wire_fusion_value(v)}
+      {k, v} -> {k, wire_fusion_value(v)}
+    end)
+    |> Map.new()
+  end
+
+  defp wire_fusion_data(other), do: other
+
+  defp wire_fusion_value({mod, name}) when is_binary(mod) and is_binary(name),
+    do: %{"module" => mod, "name" => name}
+
+  defp wire_fusion_value(list) when is_list(list), do: Enum.map(list, &wire_fusion_value/1)
+  defp wire_fusion_value(map) when is_map(map), do: wire_fusion_data(map)
+  defp wire_fusion_value(atom) when is_atom(atom), do: Atom.to_string(atom)
+  defp wire_fusion_value(other), do: other
 
   defp coverage_opts(opts) do
     [

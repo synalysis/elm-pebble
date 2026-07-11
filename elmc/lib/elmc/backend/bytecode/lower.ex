@@ -3,7 +3,7 @@ defmodule Elmc.Backend.Bytecode.Lower do
   Lower `%FunctionPlan{}` to `.elmcbc` bytecode sections.
   """
 
-  alias Elmc.Backend.Bytecode.{FnTable, Opcodes}
+  alias Elmc.Backend.Bytecode.{FnTable, Opcodes, PhiShapes}
   alias Elmc.Backend.Plan.RuntimeBuiltins
   alias Elmc.Backend.Plan.Types.{Block, FunctionPlan}
 
@@ -60,7 +60,7 @@ defmodule Elmc.Backend.Bytecode.Lower do
   # Bytecode uses virtual register indices from the plan builder (`reg_count`), not
   # the greedy owned-slot count from `Plan.allocate_slots/1` (that map is for C).
   defp bytecode_locals(%FunctionPlan{reg_count: reg_count, params: params}) do
-    max(reg_count, length(params || []))
+    max(max(reg_count, length(params || [])), 1)
   end
 
   defp encode_blocks(blocks, fn_table) do
@@ -282,8 +282,7 @@ defmodule Elmc.Backend.Bytecode.Lower do
     <<kind_n::8, encode_reg_word(l)::16, encode_reg_word(r)::16>>
   end
 
-  defp encode_args(:phi, %{then: t, else: e, cond: c}, _fn_table),
-    do: <<encode_reg_word(t)::16, encode_reg_word(e)::16, encode_reg_word(c)::16>>
+  defp encode_args(:phi, args, _fn_table), do: PhiShapes.encode_phi_args(args)
 
   defp encode_args(:record_get, args, _fn_table) do
     base = Map.fetch!(args, :base)
@@ -322,6 +321,47 @@ defmodule Elmc.Backend.Bytecode.Lower do
 
   defp encode_args(:test_maybe_nothing, %{reg: reg}, _fn_table),
     do: <<encode_dest(reg)::16>>
+
+  defp encode_args(:test_list_empty, %{reg: reg}, _fn_table),
+    do: <<encode_dest(reg)::16>>
+
+  defp encode_args(:test_ctor_tag, %{subject: subject, tag: tag}, _fn_table),
+    do: <<encode_dest(subject)::16, tag::16>>
+
+  defp encode_args(:test_bool, %{subject: subject, want_true: want_true}, _fn_table) do
+    flag = if want_true, do: 1, else: 0
+    <<encode_dest(subject)::16, flag::8>>
+  end
+
+  defp encode_args(:bool_and, %{left: left, right: right}, _fn_table),
+    do: <<encode_dest(left)::16, encode_dest(right)::16>>
+
+  defp encode_args(:call_closure, %{callee: callee, args: args}, _fn_table) do
+    args = args || []
+    <<encode_dest(callee)::16, length(args)::16, encode_reg_list(args)::binary>>
+  end
+
+  defp encode_args(:list_cursor_map, args, _fn_table) do
+    flags =
+      (if Map.get(args, :start_literal?), do: 1, else: 0) +
+        if(Map.get(args, :"end_literal?"), do: 2, else: 0)
+
+    start_part = encode_cursor_bound(args, :start, :start_literal?)
+    end_part = encode_cursor_bound(args, :end, :"end_literal?")
+
+    <<flags::8, Map.fetch!(args, :lambda_idx)::16>> <> start_part <> end_part
+  end
+
+  defp encode_args(:forward_ref_set, %{ref: ref, value: value}, _fn_table) do
+    ref_bin = encode_ref_name(ref)
+    <<byte_size(ref_bin)::16, ref_bin::binary, encode_dest(value)::16>>
+  end
+
+  defp encode_args(op, %{ref: ref}, _fn_table)
+       when op in [:forward_ref_load, :forward_ref_capture, :forward_ref_load_captured] do
+    ref_bin = encode_ref_name(ref)
+    <<byte_size(ref_bin)::16, ref_bin::binary>>
+  end
 
   defp encode_args(:test_string_literal, %{subject: subject, literal: literal}, _fn_table)
        when is_binary(literal) do
@@ -508,6 +548,16 @@ defmodule Elmc.Backend.Bytecode.Lower do
   defp encode_reg(:fn_out), do: <<0xFFFF::16>>
   defp encode_reg(:branch_out), do: <<0xFFFE::16>>
   defp encode_reg(nil), do: <<0xFFFD::16>>
+
+  defp encode_ref_name(ref) when is_binary(ref), do: ref
+
+  defp encode_cursor_bound(args, key, literal_key) do
+    if Map.get(args, literal_key) do
+      <<Map.fetch!(args, key)::32>>
+    else
+      encode_reg(Map.fetch!(args, key))
+    end
+  end
 
   defp encode_runtime_literal(value) when is_float(value), do: <<2::8, value::float-32>>
   defp encode_runtime_literal(value) when is_integer(value), do: <<1::8, value::signed-32>>

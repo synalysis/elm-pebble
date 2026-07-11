@@ -128,10 +128,12 @@ defmodule Elmc.Backend.Plan.Lower.Lambda do
   def compile_lambda(_, _, _, _, _), do: :unsupported
 
   defp compile_captures(vars, ctx, b) do
+    capture_ctx = %{ctx | dest_stack: [:scratch], function_tail: false}
+
     Enum.reduce_while(vars, {:ok, [], b}, fn name, {:ok, acc, b_acc} ->
-      case Expr.compile(%{op: :var, name: name}, ctx, b_acc) do
+      case Expr.compile(%{op: :var, name: name}, capture_ctx, b_acc) do
         {:ok, reg, b1} when is_integer(reg) ->
-          {:ok, owned, b2} = Expr.compile_runtime_builtin(:retain, [reg], ctx, b1)
+          {:ok, owned, b2} = Expr.compile_runtime_builtin(:retain, [reg], capture_ctx, b1)
           {:cont, {:ok, acc ++ [owned], b2}}
 
         _ ->

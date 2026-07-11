@@ -87,4 +87,34 @@ defmodule Elmc.Backend.CCodegen.UnionStringCase do
       param => param
     }
   end
+
+  @doc false
+  @spec extract_fusion_data(String.t(), String.t(), map() | nil, map()) ::
+          {:ok, :union_string_lut, map()} | :error
+  def extract_fusion_data(_module_name, _name, expr, _decl_map) do
+    with {:ok, _subject, branches} <- parse_case(expr),
+         true <- union_string_case_eligible?(branches),
+         lut when map_size(lut) > 0 <- union_string_lut(branches) do
+      {:ok, :union_string_lut, %{lut: lut}}
+    else
+      _ -> :error
+    end
+  end
+
+  defp union_string_lut(branches) do
+    Map.new(branches, fn branch ->
+      tag = Map.get(branch.pattern, :tag)
+
+      value =
+        case branch_string_spec(branch) do
+          {:string, text} -> text
+          :zero -> ""
+          _ -> nil
+        end
+
+      {tag, value}
+    end)
+    |> Enum.reject(fn {_tag, value} -> is_nil(value) end)
+    |> Map.new()
+  end
 end

@@ -3,7 +3,7 @@ defmodule Elmc.Backend.Plan.Fusion.ListIntSearch do
 
   alias Elmc.Backend.CCodegen.{EnvBindings, Host, Util}
   alias Elmc.Backend.CCodegen.Native.ListIntSearch
-  alias Elmc.Backend.Plan.Fusion.Tuple2CaseTable
+  alias Elmc.Backend.Plan.Fusion.{Helper, Tuple2CaseTable}
   alias Elmc.Backend.Plan.Types.FunctionPlan
 
   @spec try_plan(String.t(), map(), map(), keyword()) ::
@@ -17,6 +17,7 @@ defmodule Elmc.Backend.Plan.Fusion.ListIntSearch do
         module_name
         |> Tuple2CaseTable.build_fusion_plan(name, decl, helper_c)
         |> maybe_mark_native_scalar(native_scalar?)
+        |> attach_bytecode_fusion(module_name, decl, decl_map)
 
       {:ok, plan}
     else
@@ -134,6 +135,33 @@ defmodule Elmc.Backend.Plan.Fusion.ListIntSearch do
   end
 
   defp compile_not_found_literal(_, _, _, _), do: {"", "0", 0}
+
+  defp attach_bytecode_fusion(%FunctionPlan{} = plan, module_name, decl, decl_map) do
+    case fusion_bytecode_data(module_name, decl, decl_map) do
+      {:ok, data} -> Helper.attach_bytecode_fusion(plan, :list_int_search, data)
+      :error -> plan
+    end
+  end
+
+  defp fusion_bytecode_data(module_name, decl, decl_map) do
+    case ListIntSearch.recognize(decl, module_name, decl_map) do
+      {:ok, spec} ->
+        {:ok, %{mode: :help, not_found: not_found_literal(spec.not_found)}}
+
+      :error ->
+        case ListIntSearch.recognize_delegate(decl, module_name, decl_map) do
+          {:ok, spec} ->
+            {:ok, %{mode: :delegate, help: {spec.help_module, spec.help_name}}}
+
+          :error ->
+            :error
+        end
+    end
+  end
+
+  defp not_found_literal(%{op: :int_literal, value: value}) when is_integer(value), do: value
+  defp not_found_literal(%{op: :c_int_expr, value: value}) when is_binary(value), do: String.to_integer(value)
+  defp not_found_literal(_), do: -1
 
   defp delegate_help_forward_decl(
          %{help_module: help_module, help_name: help_name},

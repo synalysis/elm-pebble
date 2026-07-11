@@ -31,7 +31,7 @@ defmodule Elmc.MaybeWithDefaultPickSlotTest do
     assert body =~ "elmc_maybe_with_default_int(2"
     assert body =~ "elmc_fn_Main_pickSlot"
     assert body =~ "elmc_fn_Main_bottomRightSlots"
-    assert body =~ "_pick_argv"
+    assert body =~ "elmc_fn_Main_pickSlot(&maybe_pick, model"
   end
 
   test "try_emit recognizes case pickSlot of Just x -> x; Nothing -> default" do
@@ -59,5 +59,41 @@ defmodule Elmc.MaybeWithDefaultPickSlotTest do
 
     assert body =~ "elmc_maybe_with_default_int(9"
     assert body =~ "elmc_fn_Corner_pickSlot"
+  end
+
+  test "extract_fusion_data recognizes withDefault pickSlot wrapper" do
+    expr = %{
+      op: :qualified_call,
+      target: "Maybe.withDefault",
+      args: [
+        %{op: :int_literal, value: 2, union_ctor: "SunCorner"},
+        %{
+          op: :qualified_call,
+          target: "Main.pickSlot",
+          args: [
+            %{op: :var, name: "model"},
+            %{op: :qualified_call, target: "Main.bottomRightSlots", args: [%{op: :var, name: "model"}]}
+          ]
+        }
+      ]
+    }
+
+    decl_map = %{
+      {"Main", "pickBottomRight"} => %{name: "pickBottomRight", args: ["model"], expr: expr},
+      {"Main", "pickSlot"} => %{name: "pickSlot", args: ["model", "slots"], expr: %{}},
+      {"Main", "bottomRightSlots"} => %{name: "bottomRightSlots", args: ["model"], expr: %{}}
+    }
+
+    Process.put(:elmc_constructor_tags, %{"SunCorner" => 2})
+
+    on_exit(fn -> Process.delete(:elmc_constructor_tags) end)
+
+    assert {:ok, :maybe_with_default_pick_slot,
+            %{
+              default: 2,
+              pick: {"Main", "pickSlot"},
+              slots: {"Main", "bottomRightSlots"}
+            }} =
+             MaybeWithDefaultPickSlot.extract_fusion_data("Main", "pickBottomRight", expr, decl_map)
   end
 end

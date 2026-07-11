@@ -289,6 +289,26 @@ defmodule Elmc.PlanLowerIrTest do
     assert c =~ "elmc_maybe_just_own"
   end
 
+  test "lowers Maybe value compared to Nothing with maybe_is_nothing" do
+    decl = %{
+      name: "hasValue",
+      args: ["maybe"],
+      expr: %{
+        op: :compare,
+        kind: :neq,
+        left: %{op: :var, name: "maybe"},
+        right: %{op: :constructor_call, target: "Maybe.Nothing", args: []}
+      }
+    }
+
+    assert {:ok, plan} = Function.lower(decl, "Main", %{}, rc_required: true)
+    assert :ok = Verify.run(plan)
+
+    c = CLowerFunction.emit(plan)
+    assert c =~ "elmc_maybe_is_nothing"
+    refute c =~ "elmc_as_int(maybe) == elmc_as_int"
+  end
+
   test "deduplicates param load_param per name" do
     decl = %{
       name: "addTwice",
@@ -756,5 +776,56 @@ defmodule Elmc.PlanLowerIrTest do
 
     c = CLowerFunction.emit(plan)
     assert c =~ "elmc_sub0"
+  end
+
+  test "nested record field access resolves width on container record, not global alias" do
+    Process.put(:elmc_record_alias_shapes, %{
+      {"Pebble.Platform", "LaunchContext"} => ["reason", "watchModel", "watchProfileId", "screen", "hasMicrophone", "hasCompass", "supportsHealth"],
+      {"Pebble.Platform", "LaunchScreen"} => ["width", "height", "shape", "colorMode"],
+      {"Pebble.Ui.Resources", "AnimatedBitmapInfo"} => ["name", "resourceId", "width", "height"]
+    })
+
+    Process.put(:elmc_record_field_types, %{
+      {"Pebble.Platform", "LaunchContext"} => %{
+        "screen" => "LaunchScreen"
+      },
+      {"Pebble.Platform", "LaunchScreen"} => %{
+        "width" => "Int",
+        "height" => "Int"
+      }
+    })
+
+    on_exit(fn ->
+      Process.delete(:elmc_record_alias_shapes)
+      Process.delete(:elmc_record_field_types)
+    end)
+
+    decl_map = %{
+      {"Main", "init"} => %{
+        name: "init",
+        type: "Pebble.Platform.LaunchContext -> ( Main.Model, Cmd Msg )",
+        args: ["context"],
+        expr: %{
+          op: :field_access,
+          arg: %{
+            op: :field_access,
+            arg: %{op: :var, name: "context"},
+            field: "screen"
+          },
+          field: "width"
+        }
+      }
+    }
+
+    assert {:ok, plan} = Function.lower(Map.fetch!(decl_map, {"Main", "init"}), "Main", decl_map, rc_required: true)
+
+    [record_get_int] =
+      plan.blocks
+      |> Enum.flat_map(& &1.instrs)
+      |> Enum.filter(&(&1.op == :record_get_int))
+
+    assert record_get_int.args[:field_index] =~ "0"
+    refute record_get_int.args[:field_index] =~ "2"
+    assert :ok = Verify.run(plan)
   end
 end

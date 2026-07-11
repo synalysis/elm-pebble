@@ -18,7 +18,7 @@ defmodule Elmc.Backend.CCodegen.UnionCaseFourPerm do
   def try_emit(module_name, name, expr, decl_map) do
     case expr do
       %{op: :case, branches: case_branches} ->
-        case parse(expr) do
+        case parse(expr, module_name) do
           {:ok, cells_var, branches, mode} ->
             case callee_targets(branches, module_name) do
               {:ok, reverse_rows, transpose} ->
@@ -55,6 +55,33 @@ defmodule Elmc.Backend.CCodegen.UnionCaseFourPerm do
     end
   end
 
+  @doc false
+  @spec extract_fusion_data(String.t(), String.t(), map() | nil, map()) ::
+          {:ok, :union_case_four_perm, map()} | :error
+  def extract_fusion_data(module_name, _name, expr, decl_map) do
+    case extract_metadata(module_name, expr, decl_map) do
+      {:ok, data} -> {:ok, :union_case_four_perm, data}
+      :error -> :error
+    end
+  end
+
+  defp extract_metadata(module_name, expr, decl_map) do
+    case expr do
+      %{op: :case, branches: case_branches} ->
+        with {:ok, _cells_var, branches, mode} <- parse(expr, module_name),
+             {:ok, reverse_rows, transpose} <- callee_targets(branches, module_name),
+             {:ok, width, rows} <- row_major_dims(decl_map, module_name, reverse_rows, transpose),
+             {:ok, tags} <- ordered_branch_tags(case_branches) do
+          {:ok, %{width: width, rows: rows, mode: forward_inverse_mode(mode), tags: tags}}
+        else
+          _ -> :error
+        end
+
+      _ ->
+        :error
+    end
+  end
+
   @spec ordered_branch_tags([map()]) :: {:ok, [integer()]} | :error
   def ordered_branch_tags(branches) when is_list(branches) and length(branches) == 4 do
     tags =
@@ -67,21 +94,42 @@ defmodule Elmc.Backend.CCodegen.UnionCaseFourPerm do
 
   def ordered_branch_tags(_), do: :error
 
-  defp parse(%{op: :case, subject: subject, branches: branches})
+  defp parse(%{op: :case, subject: subject, branches: branches}, module_name)
        when is_list(branches) and length(branches) == 4 do
     with true <- case_subject?(subject),
          [b0, b1, b2, b3] <- branches,
          {:ok, cells_var} <- identity_cells_var(b0.expr),
          true <- cells_call?(b1.expr, cells_var),
          true <- cells_call?(b2.expr, cells_var),
-         {:ok, mode} <- fourth_branch_mode(b3.expr, cells_var) do
+         {:ok, reverse_rows_target, transpose_target} <- branch_unary_targets(b1, b2, module_name),
+         {:ok, mode} <- fourth_branch_mode(b3.expr, cells_var, reverse_rows_target, transpose_target) do
       {:ok, cells_var, [b0.expr, b1.expr, b2.expr, b3.expr], mode}
     else
       _ -> :error
     end
   end
 
-  defp parse(_), do: :error
+  defp parse(_, _), do: :error
+
+  defp branch_unary_targets(b1, b2, module_name) do
+    with {:ok, reverse_rows_target} <- unary_call_target(b1.expr, module_name),
+         {:ok, transpose_target} <- unary_call_target(b2.expr, module_name) do
+      {:ok, reverse_rows_target, transpose_target}
+    end
+  end
+
+  defp unary_call_target(%{op: :qualified_call, target: target, args: [_]}, _module_name)
+       when is_binary(target),
+       do: {:ok, FusionSupport.local_name(target)}
+
+  defp unary_call_target(%{op: :call, target: {_, name}, args: [_]}, _module_name)
+       when is_binary(name),
+       do: {:ok, name}
+
+  defp unary_call_target(%{op: :call, name: name, args: [_]}, _module_name) when is_binary(name),
+    do: {:ok, name}
+
+  defp unary_call_target(_, _), do: :error
 
   defp case_subject?(%{op: :var, name: _}), do: true
   defp case_subject?(name) when is_binary(name), do: true
@@ -108,55 +156,41 @@ defmodule Elmc.Backend.CCodegen.UnionCaseFourPerm do
 
   defp cells_call?(_, _), do: false
 
-  defp fourth_branch_mode(
-         %{
-           op: :qualified_call,
-           target: reverse_rows,
-           args: [%{op: :qualified_call, target: transpose, args: [%{op: :var, name: cells}]}]
-         },
-         cells_var
-       )
-       when is_binary(reverse_rows) and is_binary(transpose) and cells == cells_var do
-    {:ok, {:forward, reverse_rows, transpose}}
+  defp fourth_branch_mode(expr, cells_var, reverse_rows_target, transpose_target) do
+    cond do
+      nested_compose?(expr, cells_var, reverse_rows_target, transpose_target) ->
+        {:ok, {:forward, reverse_rows_target, transpose_target}}
+
+      nested_compose?(expr, cells_var, transpose_target, reverse_rows_target) ->
+        {:ok, {:inverse, reverse_rows_target, transpose_target}}
+
+      true ->
+        :error
+    end
   end
 
-  defp fourth_branch_mode(
-         %{
-           op: :qualified_call,
-           target: transpose,
-           args: [%{op: :qualified_call, target: reverse_rows, args: [%{op: :var, name: cells}]}]
-         },
-         cells_var
-       )
-       when is_binary(reverse_rows) and is_binary(transpose) and cells == cells_var do
-    {:ok, {:inverse, reverse_rows, transpose}}
-  end
+  defp nested_compose?(expr, cells_var, outer_target, inner_target) do
+    case expr do
+      %{
+        op: :qualified_call,
+        target: outer,
+        args: [%{op: :qualified_call, target: inner, args: [%{op: :var, name: cells}]}]
+      } ->
+        cells == cells_var and targets_match?(outer, outer_target) and
+          targets_match?(inner, inner_target)
 
-  defp fourth_branch_mode(
-         %{
-           op: :call,
-           target: {_, reverse_rows},
-           args: [%{op: :call, target: {_, transpose}, args: [%{op: :var, name: cells}]}]
-         },
-         cells_var
-       )
-       when is_binary(reverse_rows) and is_binary(transpose) and cells == cells_var do
-    {:ok, {:forward, reverse_rows, transpose}}
-  end
+      %{
+        op: :call,
+        target: {_, outer},
+        args: [%{op: :call, target: {_, inner}, args: [%{op: :var, name: cells}]}]
+      } ->
+        cells == cells_var and targets_match?(outer, outer_target) and
+          targets_match?(inner, inner_target)
 
-  defp fourth_branch_mode(
-         %{
-           op: :call,
-           target: {_, transpose},
-           args: [%{op: :call, target: {_, reverse_rows}, args: [%{op: :var, name: cells}]}]
-         },
-         cells_var
-       )
-       when is_binary(reverse_rows) and is_binary(transpose) and cells == cells_var do
-    {:ok, {:inverse, reverse_rows, transpose}}
+      _ ->
+        false
+    end
   end
-
-  defp fourth_branch_mode(_, _), do: :error
 
   defp callee_targets(branches, module_name) do
     with [_, right, up, down] <- branches,

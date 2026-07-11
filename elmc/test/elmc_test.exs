@@ -91,12 +91,15 @@ defmodule ElmcTest do
     File.cp!(Path.expand("fixtures/simple_project/elm.json", __DIR__), Path.join(project_dir, "elm.json"))
 
     assert {:ok, result} =
-             Elmc.compile(project_dir, %{
-               out_dir: out_dir,
-               entry_module: "Main",
-               pebble_int32: true,
-               strip_dead_code: false
-             })
+             Elmc.compile(
+               project_dir,
+               Elmc.TestSupport.LegacyCodegen.compile_opts(%{
+                 out_dir: out_dir,
+                 entry_module: "Main",
+                 pebble_int32: true,
+                 strip_dead_code: false
+               })
+             )
 
     decl =
       result.ir.modules

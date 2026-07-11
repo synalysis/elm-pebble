@@ -6,7 +6,7 @@ defmodule Elmc.Backend.Bytecode.Runtime do
   logical runtime builtin table.
   """
 
-  alias Elmc.Backend.Bytecode.{Lower, Opcodes}
+  alias Elmc.Backend.Bytecode.{FusionRunner, Lower, Opcodes, PhiShapes}
   alias Elmc.Backend.Plan.RuntimeBuiltins
   alias Elmc.Backend.Plan.Types.FunctionPlan
 
@@ -17,6 +17,7 @@ defmodule Elmc.Backend.Bytecode.Runtime do
           | nil
           | {:tuple2, value(), value()}
           | {:closure, non_neg_integer(), [value()], {String.t(), String.t()}}
+          | {:forward_ref, String.t()}
           | {:render_cmd, non_neg_integer(), [value()]}
           | {:pebble_sub, non_neg_integer(), [value()]}
           | {:pebble_cmd, atom(), non_neg_integer(), [value()]}
@@ -31,11 +32,23 @@ defmodule Elmc.Backend.Bytecode.Runtime do
           fn_table: Elmc.Backend.Bytecode.FnTable.t(),
           fn_registry: map(),
           plans: %{optional({String.t(), String.t()}) => FunctionPlan.t()},
-          plan_key: {String.t(), String.t()}
+          plan_key: {String.t(), String.t()},
+          forward_refs: %{String.t() => value()}
         }
 
   @spec run_function(FunctionPlan.t(), keyword()) :: {:ok, value()} | {:error, term()}
   def run_function(%FunctionPlan{} = plan, opts \\ []) do
+    if FusionRunner.runnable?(plan) do
+      case FusionRunner.run(plan, opts) do
+        {:ok, value} -> {:ok, value}
+        :unsupported -> run_function_section(plan, opts)
+      end
+    else
+      run_function_section(plan, opts)
+    end
+  end
+
+  defp run_function_section(%FunctionPlan{} = plan, opts) do
     section = Lower.lower(plan)
 
     merged_plans =
@@ -47,6 +60,11 @@ defmodule Elmc.Backend.Bytecode.Runtime do
       opts
       |> Keyword.put(:plans, merged_plans)
       |> Keyword.put(:plan_key, {plan.module, plan.name})
+      |> Keyword.put_new_lazy(:forward_refs, fn ->
+        (plan.letrec_refs || [])
+        |> Enum.map(&{&1, nil})
+        |> Map.new()
+      end)
 
     run_section(section, opts)
   end
@@ -57,6 +75,8 @@ defmodule Elmc.Backend.Bytecode.Runtime do
     fn_registry = Keyword.get(opts, :fn_registry, %{})
     plans = Keyword.get(opts, :plans, %{})
     plan_key = Keyword.get(opts, :plan_key, {:Main, "anon"})
+
+    forward_refs = Keyword.get(opts, :forward_refs, %{})
 
     locals = List.duplicate(nil, section.locals)
 
@@ -69,7 +89,8 @@ defmodule Elmc.Backend.Bytecode.Runtime do
       fn_table: Map.get(section, :fn_table, []),
       fn_registry: fn_registry,
       plans: plans,
-      plan_key: plan_key
+      plan_key: plan_key,
+      forward_refs: forward_refs
     })
   end
 
@@ -162,9 +183,8 @@ defmodule Elmc.Backend.Bytecode.Runtime do
         step(frame, dest, if(compare_kind(kind, lv, rv), do: 1, else: 0), rest, tail)
 
       :phi ->
-        <<then_reg::16, else_reg::16, cond::16, tail::binary>> = rest
-        chosen = if local_int(frame.locals, cond) != 0, do: then_reg, else: else_reg
-        step(frame, dest, get_local(frame.locals, chosen), rest, tail)
+        {value, tail} = PhiShapes.eval_phi(rest, frame.locals, &compare_kind/3)
+        step(frame, dest, value, rest, tail)
 
       :test_maybe_nothing ->
         <<reg::16, tail::binary>> = rest
@@ -175,6 +195,31 @@ defmodule Elmc.Backend.Bytecode.Runtime do
         <<subject::16, size::16, bin::binary-size(size), tail::binary>> = rest
         subj = get_local(frame.locals, subject)
         value = if is_binary(subj) and subj == bin, do: 1, else: 0
+        step(frame, dest, value, rest, tail)
+
+      :test_list_empty ->
+        <<reg::16, tail::binary>> = rest
+        value = if list_empty?(get_local(frame.locals, reg)), do: 1, else: 0
+        step(frame, dest, value, rest, tail)
+
+      :test_ctor_tag ->
+        <<subject::16, tag::16, tail::binary>> = rest
+        value = if ctor_tag_matches?(get_local(frame.locals, subject), tag), do: 1, else: 0
+        step(frame, dest, value, rest, tail)
+
+      :test_bool ->
+        <<subject::16, want_true::8, tail::binary>> = rest
+        truthy = bool_truthy?(get_local(frame.locals, subject))
+        value = if (want_true == 1) == truthy, do: 1, else: 0
+        step(frame, dest, value, rest, tail)
+
+      :bool_and ->
+        <<left::16, right::16, tail::binary>> = rest
+        value =
+          if local_int(frame.locals, left) != 0 and local_int(frame.locals, right) != 0,
+            do: 1,
+            else: 0
+
         step(frame, dest, value, rest, tail)
 
       :switch_ctor_tag ->
@@ -211,6 +256,43 @@ defmodule Elmc.Backend.Bytecode.Runtime do
         <<caps_bin::binary-size(^cap_size), tail::binary>> = rest2
         caps = decode_reg_list(caps_bin) |> Enum.map(&get_local(frame.locals, &1))
         step(frame, dest, {:closure, idx, caps, frame.plan_key}, rest, tail)
+
+      :call_closure ->
+        <<callee::16, argc::16, rest2::binary>> = rest
+        <<args_bin::binary-size(^argc * 2), tail::binary>> = rest2
+        call_args = decode_reg_list(args_bin) |> Enum.map(&get_local(frame.locals, &1))
+        closure = get_local(frame.locals, callee)
+        value = invoke_closure(closure, call_args, frame)
+        step(frame, dest, value, rest, tail)
+
+      :list_cursor_map ->
+        {values, tail} = eval_list_cursor_map(rest, frame)
+        step(frame, dest, values, rest, tail)
+
+      :forward_ref_set ->
+        <<ref_size::16, rest2::binary>> = rest
+        <<ref_bin::binary-size(ref_size), value::16, tail::binary>> = rest2
+        ref = ref_bin
+        val = get_local(frame.locals, value)
+        forward_refs = Map.put(frame.forward_refs, ref, val)
+
+        execute_loop(%{
+          frame
+          | forward_refs: forward_refs,
+            ip: advance_ip(ip, rest, tail)
+        })
+
+      :forward_ref_load ->
+        {value, tail} = eval_forward_ref_load(rest, frame)
+        step(frame, dest, value, rest, tail)
+
+      :forward_ref_capture ->
+        {value, tail} = eval_forward_ref_capture(rest)
+        step(frame, dest, value, rest, tail)
+
+      :forward_ref_load_captured ->
+        {value, tail} = eval_forward_ref_load(rest, frame)
+        step(frame, dest, value, rest, tail)
 
       :record_update ->
         <<base::16, value::16, field_index::16, tail::binary>> = rest
@@ -529,7 +611,8 @@ defmodule Elmc.Backend.Bytecode.Runtime do
 
   defp parse_switch_arms(_, acc), do: Enum.reverse(acc)
 
-  defp union_tag(v), do: v
+  defp union_tag({:union, tag, _}), do: to_int(tag)
+  defp union_tag(v), do: to_int(v)
 
   defp apply_builtin(:new_int, _args, _locals, literal) when is_integer(literal), do: literal
   defp apply_builtin(:new_int, _args, _locals, _), do: 0
@@ -547,6 +630,9 @@ defmodule Elmc.Backend.Bytecode.Runtime do
   end
 
   defp apply_builtin(:tuple2, [a, b | _], locals, _), do: {:tuple2, get_local(locals, a), get_local(locals, b)}
+
+  defp apply_builtin(:tuple2_ints, [a, b | _], locals, _),
+    do: {:tuple2, local_int(locals, a), local_int(locals, b)}
   defp apply_builtin(:record_new, args, locals, _), do: {:record, Enum.map(args, &get_local(locals, &1))}
 
   defp apply_builtin(:record_new_values_ints, args, locals, _),
@@ -737,6 +823,45 @@ defmodule Elmc.Backend.Bytecode.Runtime do
 
   defp apply_builtin(:list_length, [list | _], locals, _) do
     local_list(locals, list) |> length()
+  end
+
+  defp apply_builtin(:list_is_empty, [list | _], locals, _) do
+    if list_empty?(get_local(locals, list)), do: 1, else: 0
+  end
+
+  defp apply_builtin(:list_head, [list | _], locals, _) do
+    case local_list(locals, list) do
+      [h | _] -> {:just, h}
+      _ -> nil
+    end
+  end
+
+  defp apply_builtin(:list_tail, [list | _], locals, _) do
+    case local_list(locals, list) do
+      [_ | t] -> t
+      _ -> []
+    end
+  end
+
+  defp apply_builtin(:int_list_head_int, [list | _], locals, _) do
+    case local_list(locals, list) do
+      [h | _] -> to_int(h)
+      _ -> 0
+    end
+  end
+
+  defp apply_builtin(:int_list_head_boxed, [list | _], locals, _) do
+    case local_list(locals, list) do
+      [h | _] -> to_int(h)
+      _ -> 0
+    end
+  end
+
+  defp apply_builtin(:int_list_tail, [list | _], locals, _) do
+    case local_list(locals, list) do
+      [_ | t] -> t
+      _ -> []
+    end
   end
 
   defp apply_builtin(:list_concat, [lists | _], locals, _) do
@@ -981,6 +1106,18 @@ defmodule Elmc.Backend.Bytecode.Runtime do
     end
   end
 
+  defp list_empty?(list) when list == [], do: true
+  defp list_empty?(_), do: false
+
+  defp ctor_tag_matches?({:union, tag, _}, wanted), do: to_int(tag) == to_int(wanted)
+  defp ctor_tag_matches?(subject, wanted), do: to_int(subject) == to_int(wanted)
+
+  defp bool_truthy?(true), do: true
+  defp bool_truthy?(false), do: false
+  defp bool_truthy?(n) when is_integer(n), do: n != 0
+  defp bool_truthy?({:just, v}), do: bool_truthy?(v)
+  defp bool_truthy?(_), do: false
+
   defp to_int(n) when is_integer(n), do: n
   defp to_int(n) when is_float(n), do: trunc(n)
   defp to_int(true), do: 1
@@ -1055,7 +1192,8 @@ defmodule Elmc.Backend.Bytecode.Runtime do
             case run_function(lambda,
                    params: caps ++ call_args,
                    plans: frame.plans,
-                   plan_key: {lambda.module, lambda.name}
+                   plan_key: {lambda.module, lambda.name},
+                   forward_refs: frame.forward_refs
                  ) do
               {:ok, val} -> val
               _ -> 0
@@ -1072,7 +1210,8 @@ defmodule Elmc.Backend.Bytecode.Runtime do
                    lambda_section,
                    params: caps ++ call_args,
                    plans: frame.plans,
-                   plan_key: parent_key
+                   plan_key: parent_key,
+                   forward_refs: frame.forward_refs
                  ) do
               {:ok, val} -> val
               _ -> 0
@@ -1088,7 +1227,8 @@ defmodule Elmc.Backend.Bytecode.Runtime do
             case run_function(lambda,
                    params: caps ++ call_args,
                    plans: frame.plans,
-                   plan_key: {lambda.module, lambda.name}
+                   plan_key: {lambda.module, lambda.name},
+                   forward_refs: frame.forward_refs
                  ) do
               {:ok, val} -> val
               _ -> 0
@@ -1104,6 +1244,42 @@ defmodule Elmc.Backend.Bytecode.Runtime do
   end
 
   defp invoke_closure(_, _, _), do: 0
+
+  defp eval_list_cursor_map(<<flags::8, lambda_idx::16, rest::binary>>, frame) do
+    {start_val, rest1} = cursor_map_bound(flags, 0, rest, frame.locals)
+    {end_val, rest2} = cursor_map_bound(flags, 1, rest1, frame.locals)
+    closure = {:closure, lambda_idx, [], frame.plan_key}
+
+    values =
+      for idx <- start_val..end_val,
+          reduce: [] do
+        acc ->
+          item = invoke_closure(closure, [idx], frame)
+          acc ++ [item]
+      end
+
+    {values, rest2}
+  end
+
+  defp cursor_map_bound(flags, bit, <<payload::binary>>, locals) do
+    if Bitwise.band(flags, Bitwise.bsl(1, bit)) != 0 do
+      <<value::32, tail::binary>> = payload
+      {value, tail}
+    else
+      <<reg::16, tail::binary>> = payload
+      {local_int(locals, reg), tail}
+    end
+  end
+
+  defp eval_forward_ref_load(<<ref_size::16, rest::binary>>, frame) do
+    <<ref_bin::binary-size(ref_size), tail::binary>> = rest
+    {Map.get(frame.forward_refs, ref_bin), tail}
+  end
+
+  defp eval_forward_ref_capture(<<ref_size::16, rest::binary>>) do
+    <<ref_bin::binary-size(ref_size), tail::binary>> = rest
+    {{:forward_ref, ref_bin}, tail}
+  end
 
   defp truthy?(v) when v in [false, 0, nil], do: false
   defp truthy?({:just, inner}), do: truthy?(inner)

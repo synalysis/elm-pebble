@@ -24,6 +24,11 @@ defmodule Elmc.FusionAnalysisTest do
       Elmc.Backend.CCodegen.IRQueries.record_alias_field_types_map(result.ir)
     )
 
+    Process.put(
+      :elmc_record_alias_shapes,
+      Elmc.Backend.CCodegen.IRQueries.record_alias_shape_map(result.ir)
+    )
+
     decl = Map.get(decl_map, {"Main", "moveBoard"})
 
     assert match?({:ok, _, _, :rc_native},
@@ -33,6 +38,21 @@ defmodule Elmc.FusionAnalysisTest do
                decl.expr,
                decl_map
              ))
+
+    assert {:ok, :permute_merge_inverse_pipeline, data} =
+             Elmc.Backend.CCodegen.PermuteMergeInversePipeline.extract_fusion_data(
+               "Main",
+               "moveBoard",
+               decl.expr,
+               decl_map
+             )
+
+    assert data.width == 4
+    assert data.rows == 4
+    assert data.tags == [1, 2, 3, 4]
+    assert data.storage_key == 2048
+    assert data.fields.cells == 0
+    assert data.fields.seed == 3
   end
 
   test "fused callers are excluded from spawnTileWithSeed cells repr sites" do

@@ -671,4 +671,18 @@ defmodule Elmc.Backend.CCodegen.RowSliceAdjacentMerge do
     }
     """
   end
+
+  @doc false
+  @spec extract_fusion_data(String.t(), String.t(), map() | nil, map()) ::
+          {:ok, :row_slice_adjacent_merge, map()} | :error
+  def extract_fusion_data(module_name, _name, expr, decl_map) do
+    with {:ok, row_calls, _cells_field, _score_field, _cells_var} <- parse_collapse_rows(expr),
+         {:ok, width} <- row_width_from_calls(decl_map, module_name, row_calls),
+         rows = length(row_calls),
+         true <- rows > 0 do
+      {:ok, :row_slice_adjacent_merge, %{width: width, rows: rows}}
+    else
+      _ -> :error
+    end
+  end
 end

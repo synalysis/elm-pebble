@@ -8,6 +8,7 @@ defmodule Elmc.Backend.Bytecode.ManifestProgram do
   """
 
   alias Elmc.Backend.Bytecode.{FnTable, Loader, Lower, Runtime}
+  alias Elmc.Backend.Plan.Types.FunctionPlan
 
   @type entry :: {String.t(), String.t()}
 
@@ -16,7 +17,8 @@ defmodule Elmc.Backend.Bytecode.ManifestProgram do
   @type t :: %{
           build_dir: String.t(),
           manifest: map(),
-          sections: section_map()
+          sections: section_map(),
+          fusion_plans: %{entry() => FunctionPlan.t()}
         }
 
   @spec load(String.t()) :: {:ok, t()} | {:error, term()}
@@ -25,7 +27,8 @@ defmodule Elmc.Backend.Bytecode.ManifestProgram do
 
     with {:ok, manifest} <- Loader.load_manifest(manifest_path),
          {:ok, sections} <- load_all_sections(build_dir, manifest) do
-      {:ok, %{build_dir: build_dir, manifest: manifest, sections: sections}}
+      fusion_plans = load_fusion_plans(manifest)
+      {:ok, %{build_dir: build_dir, manifest: manifest, sections: sections, fusion_plans: fusion_plans}}
     end
   end
 
@@ -37,16 +40,21 @@ defmodule Elmc.Backend.Bytecode.ManifestProgram do
   end
 
   @spec run(t(), entry(), keyword()) :: {:ok, Runtime.value()} | {:error, term()}
-  def run(%{sections: sections}, {module, name}, opts \\ []) do
+  def run(%{sections: sections, fusion_plans: fusion_plans}, {module, name}, opts \\ []) do
+    plans = Map.merge(fusion_plans, sections)
+
     case Map.fetch(sections, {module, name}) do
       {:ok, section} ->
         Runtime.run_section(
           section,
-          Keyword.merge(opts, plans: sections, plan_key: {module, name})
+          Keyword.merge(opts, plans: plans, plan_key: {module, name})
         )
 
       :error ->
-        {:error, :missing_manifest_entry}
+        case Map.fetch(fusion_plans, {module, name}) do
+          {:ok, plan} -> Runtime.run_function(plan, Keyword.merge(opts, plans: plans))
+          :error -> {:error, :missing_manifest_entry}
+        end
     end
   end
 
@@ -71,6 +79,67 @@ defmodule Elmc.Backend.Bytecode.ManifestProgram do
   end
 
   defp load_all_sections(_, _), do: {:error, :invalid_manifest}
+
+  defp load_fusion_plans(%{"fusion_functions" => functions}) when is_list(functions) do
+    functions
+    |> Enum.map(&fusion_entry_to_plan/1)
+    |> Map.new()
+  end
+
+  defp load_fusion_plans(_), do: %{}
+
+  @fusion_kinds %{
+    "tuple2_case_table" => :tuple2_case_table,
+    "filter_map_row_drop" => :filter_map_row_drop,
+    "foldl_offset_patch" => :foldl_offset_patch,
+    "reverse_foldl_occupied" => :reverse_foldl_occupied,
+    "list_indexed_replace" => :list_indexed_replace,
+    "list_int_search" => :list_int_search,
+    "spawn_tile_chain" => :spawn_tile_chain,
+    "union_int_lut" => :union_int_lut,
+    "union_string_lut" => :union_string_lut,
+    "int_string_lut" => :int_string_lut,
+    "list_map_static_index_at" => :list_map_static_index_at,
+    "maybe_int_string" => :maybe_int_string,
+    "maybe_with_default_pick_slot" => :maybe_with_default_pick_slot,
+    "union_case_four_perm" => :union_case_four_perm,
+    "union_int_suffix" => :union_int_suffix,
+    "row_slice_adjacent_merge" => :row_slice_adjacent_merge,
+    "list_concat_reversed_row_slices" => :list_concat_reversed_row_slices,
+    "permute_merge_inverse_pipeline" => :permute_merge_inverse_pipeline
+  }
+
+  defp fusion_entry_to_plan(%{"module" => module, "name" => name} = entry) do
+    params =
+      (entry["params"] || [])
+      |> Enum.with_index(fn arg, idx ->
+        %Elmc.Backend.Plan.Types.Param{name: arg, type: nil, index: idx}
+      end)
+
+    kind = Map.fetch!(@fusion_kinds, entry["fusion_kind"])
+
+    plan = %FunctionPlan{
+      module: module,
+      name: name,
+      params: params,
+      return_type: nil,
+      fallible: true,
+      rc_required: true,
+      blocks: [],
+      entry_block: 0,
+      locals: %{},
+      reg_count: 0,
+      catch_depth: 0,
+      lambdas: [],
+      lambda_arg_count: nil,
+      letrec_refs: [],
+      fusion_c: nil,
+      fusion_kind: kind,
+      fusion_data: entry["fusion_data"]
+    }
+
+    {{module, name}, plan}
+  end
 
   defp link_sections(sections, root) do
     link_sections(sections, [root], %{})

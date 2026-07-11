@@ -2,7 +2,7 @@ defmodule Elmc.Backend.CCodegen.EnvBindings do
   @moduledoc false
 
   alias Elmc.Backend.CCodegen.Native.TypedReturn
-  alias Elmc.Backend.CCodegen.Types
+  alias Elmc.Backend.CCodegen.{FunctionCallAbi, Types}
 
   @spec same_binding?(Types.binding_name(), Types.binding_name()) :: boolean()
   def same_binding?(left, right), do: binding_key(left) == binding_key(right)
@@ -336,8 +336,20 @@ defmodule Elmc.Backend.CCodegen.EnvBindings do
   @spec direct_call_target?(Types.compile_env(), String.t(), String.t()) :: boolean()
   def direct_call_target?(env, module_name, name)
       when is_binary(module_name) and is_binary(name) do
-    effective_direct_call_targets(env)
-    |> MapSet.member?({module_name, name})
+    key = {module_name, name}
+
+    if MapSet.member?(effective_direct_call_targets(env), key) do
+      true
+    else
+      case Map.get(effective_program_decls(env), key) do
+        decl when is_map(decl) ->
+          decl_map = effective_program_decls(env)
+          FunctionCallAbi.direct_plan_call_abi?(decl, module_name, decl_map)
+
+        _ ->
+          false
+      end
+    end
   end
 
   def direct_call_target?(_env, _module_name, _name), do: false

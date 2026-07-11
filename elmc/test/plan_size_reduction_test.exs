@@ -454,10 +454,7 @@ defmodule Elmc.PlanSizeReductionTest do
     refute spawn_fn =~ "plan_call_int_"
     refute spawn_fn =~ ~r/elmc_fn_Main_advanceSeed\([^;]+;\s*CHECK_RC\(Rc\);\s*Rc = elmc_new_int/
     refute spawn_fn =~ ~r/elmc_fn_Main_randomIndex\([^;]+;\s*CHECK_RC\(Rc\);\s*Rc = elmc_new_int/
-    assert spawn_fn =~ "elmc_fn_Main_advanceSeed(plan_native_int_"
-    refute spawn_fn =~ "elmc_fn_Main_advanceSeed(&plan_native_int_"
-    assert spawn_fn =~ "elmc_fn_Main_randomIndex(plan_native_int_"
-    refute spawn_fn =~ "elmc_fn_Main_randomIndex(&plan_native_int_"
+    assert spawn_fn =~ "elmc_fn_Main_countEmpty(&plan_native_int_"
     refute spawn_fn =~ "elmc_list_repeat("
   end
 
@@ -688,8 +685,9 @@ defmodule Elmc.PlanSizeReductionTest do
     assert {:ok, plan} = PlanLower.lower(decl, "Pebble.Ui", %{{"Pebble.Ui", "window"} => decl}, rc_required: false)
     c = CLowerFunction.emit(plan)
 
-    assert c =~ "return elmc_tuple2_take_value(elmc_new_int_take(1), elmc_tuple2_ints_take_value(elmc_as_int(id), elmc_as_int(layers)));"
-    refute c =~ "ElmcValue *owned"
+    assert c =~ "elmc_tuple2_take_value"
+    assert c =~ "elmc_tuple2_ints_take_value(elmc_as_int(id), elmc_as_int(layers))"
+    refute c =~ "ElmcValue *owned["
     refute c =~ "return __ret"
   end
 

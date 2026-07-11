@@ -26,6 +26,18 @@ See also: [CODEGEN_COVERAGE_MATRIX.md](CODEGEN_COVERAGE_MATRIX.md) (legacy C pat
 `plan_primary_fallback` diagnostics and **zero** `elmc_unknown` calls in
 `c/elmc_generated.c`.
 
+**Do not** run the full strict gate, reachable coverage, or opcode audit files in
+one `mix test` invocation — many template compiles in one BEAM process can exceed
+ulimit. Use one template per process:
+
+```bash
+export TEST_ULIMIT_V_KB=6291456 ELIXIR_ERL_OPTIONS="+S 1:1 +MMscs 256"
+./scripts/mix-test-strict-gate.sh                    # all strict gate templates
+./scripts/mix-test-per-template.sh test/plan_reachable_coverage_test.exs
+./scripts/mix-test-per-template.sh test/bytecode_opcode_audit_test.exs
+./scripts/mix-test-per-template.sh test/plan_fusion_manifest_audit_test.exs
+```
+
 `mix test test/plan_rc_track_strict_gate_test.exs` applies the same gates to all
 13 elm/core rc_track probe fixtures.
 
@@ -35,6 +47,17 @@ on plan-emitted C (opt-in until plan/native-int ABI matches legacy for all probe
 
 `mix test test/plan_reachable_coverage_test.exs` asserts strict reachable coverage
 for every template in `PlanStrictTemplates`.
+
+`mix test test/bytecode_opcode_audit_test.exs` scans emitted `.elmcbc` sections for
+every strict template (`--include slow`) and fails if any opcode byte is unknown or
+maps to a plan op not yet implemented in `Bytecode.Runtime`. Quick gate (5 templates)
+runs by default; full 46-template sweep is tagged `:slow`.
+
+`mix test test/plan_manifest_execution_smoke_test.exs` runs `Main.init` / `Main.update`
+from the bytecode manifest on templates that exercise guarded patterns and list recursion.
+
+`mix test test/plan_yes_bytecode_test.exs` runs fused string helpers and `Main.view`
+from the watchface_yes manifest.
 
 `mix test test/plan_core_builtins_test.exs` includes a registry audit: every
 quoted `elmc_*` runtime symbol in `special_values/` maps through
@@ -122,8 +145,53 @@ under `plan_ir_strict: true` with zero fallbacks and zero `elmc_unknown`.
 | `Result.withDefault` | `@qualified_binary` → `:result_with_default` |
 | `Task.map` / `Task.map2` / `Task.andThen` | `runtime_call` → `:task_map` / `:task_map2` / `:task_and_then` |
 | `Cmd.map` / `Sub.map` | `runtime_call` → `:cmd_map` / `:sub_map` |
-| Bytecode VM locals sizing | `plan.reg_count` (not greedy slot count) |
+| `List.repeat` with literal or foldable count | `fold_list_repeat_literals` → `:const_static_list` when count ≥ 4 and item is a literal int (`ConstantInt` resolves top-level decl refs like `boardSize`) |
+| Bytecode VM locals sizing | `max(plan.reg_count, param_count, 1)` — always reserve the `:fn_out` slot |
 | Bytecode VM `record_get` field index | C-style macro suffix stripped in encoder |
+| Bytecode VM `test_list_empty` / `test_ctor_tag` / `test_bool` | Opcodes 33–35; list `case` branches in manifest execution |
+| Bytecode VM `bool_and` | Opcode 36; tuple/ctor guarded pattern conditions |
+| Bytecode VM int-list peel | `int_list_head_int`, `int_list_tail`, `list_head`, `list_tail`, `list_is_empty` builtins |
+| Bytecode VM opcode audit | 36 opcodes (1–36); all 46 strict templates pass (`bytecode_opcode_audit_test.exs --include slow`) |
+| Plan ops not yet in bytecode VM | none for strict templates; `:call_closure`, `:list_cursor_map`, `:forward_ref_*` implemented as opcodes 37–42 |
+
+## Fusion bytecode sidecars
+
+When plan-primary fusion matches (`Plan.Fusion.CEmit`), the C body is emitted as
+`fusion_c` and a parallel **bytecode runner** sidecar is attached when the fusion
+module implements `extract_fusion_data/4` (or `Tuple2CaseTable.extract_table/1`).
+`Bytecode.ProjectWriter` writes these to `fusion_functions` in
+`bytecode/elmc_bytecode.manifest.json`; `FusionRunner` interprets them at runtime.
+
+`mix test test/plan_fusion_manifest_audit_test.exs` checks key templates
+(`game_2048`, `game_elmtris`, `watchface_yes`) for expected fusion kinds and
+regression-tests that every manifest fusion kind has a `FusionRunner` clause.
+
+`mix test test/plan_manifest_execution_smoke_test.exs` runs `Main.init` (and
+poke-battle `update`) from bytecode manifests with timeouts — catches missing
+VM opcodes (`test_list_empty`, `bool_and`, etc.) that would hang execution.
+
+| Fusion kind | Typical IR / use |
+|-------------|------------------|
+| `tuple2_case_table` | `(kind, rot)` → list of offset pairs |
+| `filter_map_row_drop` | Drop full board rows |
+| `foldl_offset_patch` | Stamp piece cells on board |
+| `reverse_foldl_occupied` | Locked slot indices from board |
+| `list_indexed_replace` | Flat list cell update |
+| `list_int_search` | Nth empty cell index |
+| `spawn_tile_chain` | Chained `spawnTileWithSeed` on static board |
+| `permute_merge_inverse_pipeline` | orient → collapseRows → restore + spawn + model update |
+| `list_map_static_index_at` | Static index-at map (transpose) |
+| `union_int_lut` / `union_string_lut` / `int_string_lut` | Case-on-tag/string tables |
+| `maybe_int_string` / `union_int_suffix` | Maybe-field string formatting |
+| `maybe_with_default_pick_slot` | Maybe pick with default |
+| `union_case_four_perm` | Four-way direction permute |
+| `row_slice_adjacent_merge` | Per-row 2048 merge |
+| `list_concat_reversed_row_slices` | Reverse each row slice |
+
+Fused functions must not appear in manifest `skipped` with reason `empty_plan`
+(wire metadata missing). `moveBoard` on `game_2048` uses
+`permute_merge_inverse_pipeline` (inline spawn; no separate `spawnTileWithSeed`
+fusion sidecar).
 
 ## Runtime builtins
 
@@ -168,7 +236,7 @@ compile results (`layout_coercion_diagnostics`).
 - **Strict pass on a template** = all reachable functions in *that* app plan-lower.
 - **Full Elm** = strict pass on every valid app — requires completing the matrices
   above, not more template tuning.
-- Legacy C codegen remains the backstop when `plan_ir_strict: false`.
+- Legacy C body codegen remains available only with explicit `plan_ir_mode: :off` (tests via `Elmc.TestSupport.LegacyCodegen`).
 
 IDE production builds use `plan_ir_mode: :primary` and default `plan_ir_strict: true`
 (`SizeProfile`, `Ide.PebbleToolchain.Elmc`). Apps that hit gaps need either
