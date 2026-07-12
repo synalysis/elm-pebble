@@ -115,9 +115,7 @@
     "update:FromPhone (ProvideTheme Dark Metric)",
     "update:FromWatch (Ok RequestStoredValues)",
     "update:GotPreference (Ok (\"units\"))",
-    "update:GotPreference (Ok (\"units\",{ $args = [{ $args = [{ $opaque = True }], $call = \"unitsToString\" }], $call = \"Encode.string\" }))",
-    "update:GotStorage (Ok \"Storage key not found\")",
-    "update:GotStorage (Ok (JsonValue { $args = [{ $opaque = True }], $call = \"themeToString\" }))"
+    "update:GotStorage (Ok \"Storage key not found\")"
   ],
   "view_tree_type": "windowStack",
   "watch_model": {

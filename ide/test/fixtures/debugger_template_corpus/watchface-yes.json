@@ -34,53 +34,39 @@
     },
     {
       "antialiased": true,
-      "compositing_mode": 0,
-      "end_angle": 65536,
-      "fill_color": 199,
-      "h": 100,
-      "kind": "fill_radial",
-      "start_angle": 51882,
-      "stroke_color": 199,
-      "stroke_width": 1,
-      "w": 100,
-      "x": 22,
-      "y": 34
-    },
-    {
-      "antialiased": true,
-      "compositing_mode": 0,
-      "end_angle": 21845,
-      "fill_color": 199,
-      "h": 100,
-      "kind": "fill_radial",
-      "start_angle": 0,
-      "stroke_color": 199,
-      "stroke_width": 1,
-      "w": 100,
-      "x": 22,
-      "y": 34
-    },
-    {
-      "antialiased": true,
       "color": 192,
       "compositing_mode": 0,
       "cx": 72,
       "cy": 84,
-      "fill_color": 199,
+      "fill_color": 192,
       "kind": "fill_circle",
       "r": 45,
-      "stroke_color": 199,
+      "stroke_color": 192,
       "stroke_width": 1
     },
     {
       "antialiased": true,
       "compositing_mode": 0,
-      "end_angle": 21845,
-      "fill_color": 199,
+      "end_angle": 65536,
+      "fill_color": 248,
       "h": 90,
       "kind": "fill_radial",
-      "start_angle": 51882,
-      "stroke_color": 199,
+      "start_angle": 49152,
+      "stroke_color": 248,
+      "stroke_width": 1,
+      "w": 90,
+      "x": 27,
+      "y": 39
+    },
+    {
+      "antialiased": true,
+      "compositing_mode": 0,
+      "end_angle": 16384,
+      "fill_color": 248,
+      "h": 90,
+      "kind": "fill_radial",
+      "start_angle": 0,
+      "stroke_color": 248,
       "stroke_width": 1,
       "w": 90,
       "x": 27,
@@ -94,7 +80,7 @@
       "cy": 84,
       "kind": "circle",
       "r": 50,
-      "stroke_color": 199,
+      "stroke_color": 248,
       "stroke_width": 1
     },
     {
@@ -105,7 +91,7 @@
       "cy": 84,
       "kind": "circle",
       "r": 45,
-      "stroke_color": 199,
+      "stroke_color": 248,
       "stroke_width": 1
     },
     {
@@ -113,7 +99,151 @@
       "color": 255,
       "compositing_mode": 0,
       "kind": "line",
-      "stroke_color": 199,
+      "stroke_color": 248,
+      "stroke_width": 1,
+      "x1": 56,
+      "x2": 59,
+      "y1": 142,
+      "y2": 132
+    },
+    {
+      "antialiased": true,
+      "color": 255,
+      "compositing_mode": 0,
+      "kind": "line",
+      "stroke_color": 248,
+      "stroke_width": 1,
+      "x1": 30,
+      "x2": 37,
+      "y1": 126,
+      "y2": 119
+    },
+    {
+      "antialiased": true,
+      "color": 255,
+      "compositing_mode": 0,
+      "kind": "line",
+      "stroke_color": 248,
+      "stroke_width": 1,
+      "x1": 14,
+      "x2": 24,
+      "y1": 100,
+      "y2": 97
+    },
+    {
+      "antialiased": true,
+      "color": 255,
+      "compositing_mode": 0,
+      "kind": "line",
+      "stroke_color": 248,
+      "stroke_width": 1,
+      "x1": 14,
+      "x2": 24,
+      "y1": 68,
+      "y2": 71
+    },
+    {
+      "antialiased": true,
+      "color": 255,
+      "compositing_mode": 0,
+      "kind": "line",
+      "stroke_color": 248,
+      "stroke_width": 1,
+      "x1": 30,
+      "x2": 37,
+      "y1": 42,
+      "y2": 49
+    },
+    {
+      "antialiased": true,
+      "color": 255,
+      "compositing_mode": 0,
+      "kind": "line",
+      "stroke_color": 248,
+      "stroke_width": 1,
+      "x1": 56,
+      "x2": 59,
+      "y1": 26,
+      "y2": 36
+    },
+    {
+      "antialiased": true,
+      "color": 255,
+      "compositing_mode": 0,
+      "kind": "line",
+      "stroke_color": 248,
+      "stroke_width": 1,
+      "x1": 88,
+      "x2": 85,
+      "y1": 26,
+      "y2": 36
+    },
+    {
+      "antialiased": true,
+      "color": 255,
+      "compositing_mode": 0,
+      "kind": "line",
+      "stroke_color": 248,
+      "stroke_width": 1,
+      "x1": 114,
+      "x2": 107,
+      "y1": 42,
+      "y2": 49
+    },
+    {
+      "antialiased": true,
+      "color": 255,
+      "compositing_mode": 0,
+      "kind": "line",
+      "stroke_color": 248,
+      "stroke_width": 1,
+      "x1": 130,
+      "x2": 120,
+      "y1": 68,
+      "y2": 71
+    },
+    {
+      "antialiased": true,
+      "color": 255,
+      "compositing_mode": 0,
+      "kind": "line",
+      "stroke_color": 248,
+      "stroke_width": 1,
+      "x1": 130,
+      "x2": 120,
+      "y1": 100,
+      "y2": 97
+    },
+    {
+      "antialiased": true,
+      "color": 255,
+      "compositing_mode": 0,
+      "kind": "line",
+      "stroke_color": 248,
+      "stroke_width": 1,
+      "x1": 114,
+      "x2": 107,
+      "y1": 126,
+      "y2": 119
+    },
+    {
+      "antialiased": true,
+      "color": 255,
+      "compositing_mode": 0,
+      "kind": "line",
+      "stroke_color": 248,
+      "stroke_width": 1,
+      "x1": 88,
+      "x2": 85,
+      "y1": 142,
+      "y2": 132
+    },
+    {
+      "antialiased": true,
+      "color": 255,
+      "compositing_mode": 0,
+      "kind": "line",
+      "stroke_color": 248,
       "stroke_width": 1,
       "x1": 72,
       "x2": 72,
@@ -122,10 +252,24 @@
     },
     {
       "antialiased": true,
+      "compositing_mode": 0,
+      "font_size": 12,
+      "h": 12,
+      "kind": "text_label",
+      "text": "0",
+      "text_align": "center",
+      "text_color": 255,
+      "text_overflow": "word_wrap",
+      "w": 18,
+      "x": 63,
+      "y": 134
+    },
+    {
+      "antialiased": true,
       "color": 255,
       "compositing_mode": 0,
       "kind": "line",
-      "stroke_color": 199,
+      "stroke_color": 248,
       "stroke_width": 1,
       "x1": 44,
       "x2": 47,
@@ -134,10 +278,24 @@
     },
     {
       "antialiased": true,
+      "compositing_mode": 0,
+      "font_size": 12,
+      "h": 12,
+      "kind": "text_label",
+      "text": "2",
+      "text_align": "center",
+      "text_color": 255,
+      "text_overflow": "word_wrap",
+      "w": 18,
+      "x": 31,
+      "y": 125
+    },
+    {
+      "antialiased": true,
       "color": 255,
       "compositing_mode": 0,
       "kind": "line",
-      "stroke_color": 199,
+      "stroke_color": 248,
       "stroke_width": 1,
       "x1": 24,
       "x2": 29,
@@ -146,10 +304,24 @@
     },
     {
       "antialiased": true,
+      "compositing_mode": 0,
+      "font_size": 12,
+      "h": 12,
+      "kind": "text_label",
+      "text": "4",
+      "text_align": "center",
+      "text_color": 255,
+      "text_overflow": "word_wrap",
+      "w": 18,
+      "x": 8,
+      "y": 102
+    },
+    {
+      "antialiased": true,
       "color": 255,
       "compositing_mode": 0,
       "kind": "line",
-      "stroke_color": 199,
+      "stroke_color": 248,
       "stroke_width": 1,
       "x1": 16,
       "x2": 22,
@@ -158,10 +330,24 @@
     },
     {
       "antialiased": true,
+      "compositing_mode": 0,
+      "font_size": 12,
+      "h": 12,
+      "kind": "text_label",
+      "text": "6",
+      "text_align": "center",
+      "text_color": 255,
+      "text_overflow": "word_wrap",
+      "w": 18,
+      "x": -1,
+      "y": 70
+    },
+    {
+      "antialiased": true,
       "color": 255,
       "compositing_mode": 0,
       "kind": "line",
-      "stroke_color": 199,
+      "stroke_color": 248,
       "stroke_width": 1,
       "x1": 24,
       "x2": 29,
@@ -170,10 +356,24 @@
     },
     {
       "antialiased": true,
+      "compositing_mode": 0,
+      "font_size": 12,
+      "h": 12,
+      "kind": "text_label",
+      "text": "8",
+      "text_align": "center",
+      "text_color": 255,
+      "text_overflow": "word_wrap",
+      "w": 18,
+      "x": 8,
+      "y": 38
+    },
+    {
+      "antialiased": true,
       "color": 255,
       "compositing_mode": 0,
       "kind": "line",
-      "stroke_color": 199,
+      "stroke_color": 248,
       "stroke_width": 1,
       "x1": 44,
       "x2": 47,
@@ -182,10 +382,24 @@
     },
     {
       "antialiased": true,
+      "compositing_mode": 0,
+      "font_size": 12,
+      "h": 12,
+      "kind": "text_label",
+      "text": "10",
+      "text_align": "center",
+      "text_color": 255,
+      "text_overflow": "word_wrap",
+      "w": 18,
+      "x": 31,
+      "y": 15
+    },
+    {
+      "antialiased": true,
       "color": 255,
       "compositing_mode": 0,
       "kind": "line",
-      "stroke_color": 199,
+      "stroke_color": 248,
       "stroke_width": 1,
       "x1": 72,
       "x2": 72,
@@ -194,10 +408,24 @@
     },
     {
       "antialiased": true,
+      "compositing_mode": 0,
+      "font_size": 12,
+      "h": 12,
+      "kind": "text_label",
+      "text": "12",
+      "text_align": "center",
+      "text_color": 255,
+      "text_overflow": "word_wrap",
+      "w": 18,
+      "x": 63,
+      "y": 6
+    },
+    {
+      "antialiased": true,
       "color": 255,
       "compositing_mode": 0,
       "kind": "line",
-      "stroke_color": 199,
+      "stroke_color": 248,
       "stroke_width": 1,
       "x1": 100,
       "x2": 97,
@@ -206,10 +434,24 @@
     },
     {
       "antialiased": true,
+      "compositing_mode": 0,
+      "font_size": 12,
+      "h": 12,
+      "kind": "text_label",
+      "text": "14",
+      "text_align": "center",
+      "text_color": 255,
+      "text_overflow": "word_wrap",
+      "w": 18,
+      "x": 95,
+      "y": 15
+    },
+    {
+      "antialiased": true,
       "color": 255,
       "compositing_mode": 0,
       "kind": "line",
-      "stroke_color": 199,
+      "stroke_color": 248,
       "stroke_width": 1,
       "x1": 120,
       "x2": 115,
@@ -218,10 +460,24 @@
     },
     {
       "antialiased": true,
+      "compositing_mode": 0,
+      "font_size": 12,
+      "h": 12,
+      "kind": "text_label",
+      "text": "16",
+      "text_align": "center",
+      "text_color": 255,
+      "text_overflow": "word_wrap",
+      "w": 18,
+      "x": 118,
+      "y": 38
+    },
+    {
+      "antialiased": true,
       "color": 255,
       "compositing_mode": 0,
       "kind": "line",
-      "stroke_color": 199,
+      "stroke_color": 248,
       "stroke_width": 1,
       "x1": 128,
       "x2": 122,
@@ -230,10 +486,24 @@
     },
     {
       "antialiased": true,
+      "compositing_mode": 0,
+      "font_size": 12,
+      "h": 12,
+      "kind": "text_label",
+      "text": "18",
+      "text_align": "center",
+      "text_color": 255,
+      "text_overflow": "word_wrap",
+      "w": 18,
+      "x": 127,
+      "y": 70
+    },
+    {
+      "antialiased": true,
       "color": 255,
       "compositing_mode": 0,
       "kind": "line",
-      "stroke_color": 199,
+      "stroke_color": 248,
       "stroke_width": 1,
       "x1": 120,
       "x2": 115,
@@ -242,10 +512,24 @@
     },
     {
       "antialiased": true,
+      "compositing_mode": 0,
+      "font_size": 12,
+      "h": 12,
+      "kind": "text_label",
+      "text": "20",
+      "text_align": "center",
+      "text_color": 255,
+      "text_overflow": "word_wrap",
+      "w": 18,
+      "x": 118,
+      "y": 102
+    },
+    {
+      "antialiased": true,
       "color": 255,
       "compositing_mode": 0,
       "kind": "line",
-      "stroke_color": 199,
+      "stroke_color": 248,
       "stroke_width": 1,
       "x1": 100,
       "x2": 97,
@@ -254,14 +538,28 @@
     },
     {
       "antialiased": true,
-      "color": 234,
+      "compositing_mode": 0,
+      "font_size": 12,
+      "h": 12,
+      "kind": "text_label",
+      "text": "22",
+      "text_align": "center",
+      "text_color": 255,
+      "text_overflow": "word_wrap",
+      "w": 18,
+      "x": 95,
+      "y": 125
+    },
+    {
+      "antialiased": true,
+      "color": 192,
       "compositing_mode": 0,
       "cx": 72,
       "cy": 112,
-      "fill_color": 199,
+      "fill_color": 248,
       "kind": "fill_circle",
       "r": 10,
-      "stroke_color": 199,
+      "stroke_color": 248,
       "stroke_width": 1
     },
     {
@@ -272,99 +570,65 @@
       "cy": 112,
       "kind": "circle",
       "r": 10,
-      "stroke_color": 199,
+      "stroke_color": 248,
+      "stroke_width": 1
+    },
+    {
+      "antialiased": true,
+      "color": 255,
+      "compositing_mode": 0,
+      "kind": "line",
+      "stroke_color": 248,
+      "stroke_width": 1,
+      "x1": 72,
+      "x2": 49,
+      "y1": 84,
+      "y2": 62
+    },
+    {
+      "antialiased": true,
+      "color": 192,
+      "compositing_mode": 0,
+      "cx": 72,
+      "cy": 84,
+      "fill_color": 248,
+      "kind": "fill_circle",
+      "r": 6,
+      "stroke_color": 248,
+      "stroke_width": 1
+    },
+    {
+      "antialiased": true,
+      "color": 255,
+      "compositing_mode": 0,
+      "cx": 72,
+      "cy": 84,
+      "kind": "circle",
+      "r": 6,
+      "stroke_color": 248,
       "stroke_width": 1
     },
     {
       "antialiased": true,
       "compositing_mode": 0,
-      "font_size": 16,
-      "h": 16,
+      "font_size": 28,
+      "h": 28,
       "kind": "text_label",
-      "text": "88%",
+      "text": "08:53",
       "text_align": "center",
       "text_color": 255,
       "text_overflow": "word_wrap",
-      "w": 40,
-      "x": 4,
-      "y": 4
-    },
-    {
-      "antialiased": true,
-      "compositing_mode": 0,
-      "font_size": 12,
-      "h": 12,
-      "kind": "text_label",
-      "text": "Battery",
-      "text_align": "center",
-      "text_color": 213,
-      "text_overflow": "word_wrap",
-      "w": 44,
-      "x": 4,
-      "y": 20
-    },
-    {
-      "antialiased": true,
-      "compositing_mode": 0,
-      "font_size": 14,
-      "h": 14,
-      "kind": "text_label",
-      "text": "May 27",
-      "text_align": "center",
-      "text_color": 255,
-      "text_overflow": "word_wrap",
-      "w": 48,
-      "x": 92,
-      "y": 4
-    },
-    {
-      "antialiased": true,
-      "compositing_mode": 0,
-      "font_size": 14,
-      "h": 14,
-      "kind": "text_label",
-      "text": "21C",
-      "text_align": "center",
-      "text_color": 255,
-      "text_overflow": "word_wrap",
-      "w": 68,
-      "x": 4,
-      "y": 150
-    },
-    {
-      "antialiased": true,
-      "compositing_mode": 0,
-      "font_size": 12,
-      "h": 12,
-      "kind": "text_label",
-      "text": "SS",
-      "text_align": "center",
-      "text_color": 234,
-      "text_overflow": "word_wrap",
-      "w": 62,
-      "x": 80,
-      "y": 136
-    },
-    {
-      "antialiased": true,
-      "compositing_mode": 0,
-      "font_size": 14,
-      "h": 14,
-      "kind": "text_label",
-      "text": "10:07",
-      "text_align": "center",
-      "text_color": 255,
-      "text_overflow": "word_wrap",
-      "w": 62,
-      "x": 80,
-      "y": 149
+      "w": 144,
+      "x": 0,
+      "y": 45
     }
   ],
-  "preview_ops_sha256": "6afbc700edb8fbf418d15f00ffd038679d31eeb6a99aef8b229aef75aeab3d7d",
+  "preview_ops_sha256": "1f5e00b14e40f282daf95885f9a8d85b895cecbab67f1155f1b326f039e873bb",
   "render_tree": {
-    "node_count": 47,
+    "node_count": 69,
     "node_types": [
       "canvasLayer",
+      "circle",
       "circle",
       "circle",
       "circle",
@@ -372,25 +636,9 @@
       "fillCircle",
       "fillCircle",
       "fillCircle",
+      "fillCircle",
       "fillRadial",
       "fillRadial",
-      "fillRadial",
-      "group",
-      "group",
-      "group",
-      "group",
-      "group",
-      "group",
-      "group",
-      "group",
-      "group",
-      "group",
-      "group",
-      "group",
-      "group",
-      "group",
-      "group",
-      "group",
       "line",
       "line",
       "line",
@@ -403,6 +651,43 @@
       "line",
       "line",
       "line",
+      "line",
+      "line",
+      "line",
+      "line",
+      "line",
+      "line",
+      "line",
+      "line",
+      "line",
+      "line",
+      "line",
+      "line",
+      "line",
+      "style",
+      "style",
+      "style",
+      "style",
+      "style",
+      "style",
+      "style",
+      "style",
+      "style",
+      "style",
+      "style",
+      "style",
+      "style",
+      "style",
+      "style",
+      "style",
+      "style",
+      "text",
+      "text",
+      "text",
+      "text",
+      "text",
+      "text",
+      "text",
       "text",
       "text",
       "text",
@@ -443,24 +728,93 @@
       ],
       "ctor": "Just"
     },
-    "homeTzOffsetMin": 60,
-    "moonPhaseE6": {
+    "homeTzOffsetMin": 0,
+    "lastSunFetchDayKey": {
       "args": [
-        500000
+        20260527
       ],
       "ctor": "Just"
+    },
+    "lastWeatherFetchHourKey": {
+      "args": [
+        2026052708
+      ],
+      "ctor": "Just"
+    },
+    "layout": {
+      "bottomLeftWeather": {
+        "h": 14,
+        "w": 68,
+        "x": 4,
+        "y": 150
+      },
+      "bottomRight": {
+        "bottom": 164,
+        "countdownLabelH": 12,
+        "countdownTimeH": 14,
+        "lineH": 14,
+        "singleLine": {
+          "h": 14,
+          "w": 60,
+          "x": 80,
+          "y": 150
+        },
+        "textW": 62,
+        "vector": {
+          "x": 83,
+          "y": 126
+        },
+        "x": 80
+      },
+      "cx": 72,
+      "cy": 84,
+      "handLen": 32,
+      "hubR": 6,
+      "innerRadius": 45,
+      "minDim": 144,
+      "moonPhaseRadius": 10,
+      "moonRingR": 10,
+      "moonY": 112,
+      "outerRadius": 50,
+      "pad": 4,
+      "screenH": 168,
+      "screenW": 144,
+      "timeTextBand": {
+        "h": 28,
+        "w": 144,
+        "x": 0,
+        "y": 45
+      },
+      "topLeftLabel": {
+        "h": 12,
+        "w": 44,
+        "x": 4,
+        "y": 20
+      },
+      "topLeftTitle": {
+        "h": 16,
+        "w": 40,
+        "x": 4,
+        "y": 4
+      },
+      "topRightDate": {
+        "h": 14,
+        "w": 48,
+        "x": 92,
+        "y": 4
+      }
+    },
+    "moonPhaseE6": {
+      "args": [],
+      "ctor": "Nothing"
     },
     "moonriseMin": {
-      "args": [
-        900
-      ],
-      "ctor": "Just"
+      "args": [],
+      "ctor": "Nothing"
     },
     "moonsetMin": {
-      "args": [
-        300
-      ],
-      "ctor": "Just"
+      "args": [],
+      "ctor": "Nothing"
     },
     "now": {
       "args": [
@@ -481,24 +835,13 @@
       "ctor": "Just"
     },
     "runtime_view_output": [],
-    "screenH": 168,
-    "screenW": 144,
     "stepsToday": {
       "args": [],
       "ctor": "Nothing"
     },
     "sun": {
-      "args": [
-        {
-          "mode": {
-            "args": [],
-            "ctor": "SunCycle"
-          },
-          "sunriseMin": 420,
-          "sunsetMin": 1200
-        }
-      ],
-      "ctor": "Just"
+      "args": [],
+      "ctor": "Nothing"
     },
     "tide": {
       "args": [],
@@ -550,20 +893,11 @@
     "update:ConnectionChanged True",
     "update:CurrentDateTime { day = 27, dayOfWeek = Wednesday, hour = 8, minute = 53, month = 5, second = 0, utcOffsetMinutes = 0, year = 2026 }",
     "update:CurrentPosition (Ok {accuracy=25,latitude=48,longitude=10})",
-    "update:CurrentTime { accuracy = 25, latitude = 48, longitude = 10 } <posix>",
-    "update:FromPhone (ClearTide)",
-    "update:FromPhone (ProvideMoon 0 0 360252)",
-    "update:FromPhone (ProvideMoon 900 300 500000)",
-    "update:FromPhone (ProvideMoonPhase 360252)",
-    "update:FromPhone (ProvideMoonPhase 500000)",
-    "update:FromPhone (ProvideSun 0 0 PolarNight)",
-    "update:FromPhone (ProvideSun 420 1200 SunCycle)",
-    "update:FromPhone (ProvideTimezone 60)",
     "update:FromPhone (ProvideWeather (Celsius 210) Clear 0 0 1013)",
     "update:FromPhone (ProvideWind North (MetersPerSecond 2))",
     "update:FromPhone (SetCornerUpdateInterval 5)",
-    "update:FromWatch (Ok RequestUpdate)",
-    "update:GotEnvironment (Ok {moon=Just { moonriseMin = Just 900,moonsetmin=Just 300,phasee6=500000,sun=Just { polarDay = False,sunrisemin=420,sunsetmin=1200,tide=Nothing})",
+    "update:FromWatch (Ok RequestSunData)",
+    "update:FromWatch (Ok RequestWeather)",
     "update:GotHealthSupported True",
     "update:GotWeather (Ok (Current { condition = Clear, humidityPercent = Just 50, pressureHpa = Just 1013, temperatureC = 21, windDirectionDeg = Just 0, windKph = Just 8 }))"
   ],
@@ -571,9 +905,9 @@
   "watch_model": {
     "debugger_init_complete": true,
     "protocol_last_inbound_from": "companion",
-    "protocol_last_inbound_message": "ClearTide",
+    "protocol_last_inbound_message": "ProvideWind North (MetersPerSecond 2)",
     "protocol_last_trigger": "companion_bridge_command",
-    "protocol_last_view_message": "ClearTide",
+    "protocol_last_view_message": "ProvideWind North MetersPerSecond 2",
     "runtime_model": {
       "altitude": {
         "args": [],
@@ -603,24 +937,93 @@
         ],
         "ctor": "Just"
       },
-      "homeTzOffsetMin": 60,
-      "moonPhaseE6": {
+      "homeTzOffsetMin": 0,
+      "lastSunFetchDayKey": {
         "args": [
-          500000
+          20260527
         ],
         "ctor": "Just"
+      },
+      "lastWeatherFetchHourKey": {
+        "args": [
+          2026052708
+        ],
+        "ctor": "Just"
+      },
+      "layout": {
+        "bottomLeftWeather": {
+          "h": 14,
+          "w": 68,
+          "x": 4,
+          "y": 150
+        },
+        "bottomRight": {
+          "bottom": 164,
+          "countdownLabelH": 12,
+          "countdownTimeH": 14,
+          "lineH": 14,
+          "singleLine": {
+            "h": 14,
+            "w": 60,
+            "x": 80,
+            "y": 150
+          },
+          "textW": 62,
+          "vector": {
+            "x": 83,
+            "y": 126
+          },
+          "x": 80
+        },
+        "cx": 72,
+        "cy": 84,
+        "handLen": 32,
+        "hubR": 6,
+        "innerRadius": 45,
+        "minDim": 144,
+        "moonPhaseRadius": 10,
+        "moonRingR": 10,
+        "moonY": 112,
+        "outerRadius": 50,
+        "pad": 4,
+        "screenH": 168,
+        "screenW": 144,
+        "timeTextBand": {
+          "h": 28,
+          "w": 144,
+          "x": 0,
+          "y": 45
+        },
+        "topLeftLabel": {
+          "h": 12,
+          "w": 44,
+          "x": 4,
+          "y": 20
+        },
+        "topLeftTitle": {
+          "h": 16,
+          "w": 40,
+          "x": 4,
+          "y": 4
+        },
+        "topRightDate": {
+          "h": 14,
+          "w": 48,
+          "x": 92,
+          "y": 4
+        }
+      },
+      "moonPhaseE6": {
+        "args": [],
+        "ctor": "Nothing"
       },
       "moonriseMin": {
-        "args": [
-          900
-        ],
-        "ctor": "Just"
+        "args": [],
+        "ctor": "Nothing"
       },
       "moonsetMin": {
-        "args": [
-          300
-        ],
-        "ctor": "Just"
+        "args": [],
+        "ctor": "Nothing"
       },
       "now": {
         "args": [
@@ -640,24 +1043,13 @@
         ],
         "ctor": "Just"
       },
-      "screenH": 168,
-      "screenW": 144,
       "stepsToday": {
         "args": [],
         "ctor": "Nothing"
       },
       "sun": {
-        "args": [
-          {
-            "mode": {
-              "args": [],
-              "ctor": "SunCycle"
-            },
-            "sunriseMin": 420,
-            "sunsetMin": 1200
-          }
-        ],
-        "ctor": "Just"
+        "args": [],
+        "ctor": "Nothing"
       },
       "tide": {
         "args": [],

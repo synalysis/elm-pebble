@@ -3546,6 +3546,8 @@ defmodule Elmc.PebbleShimTest do
     assert worker_c =~ "dispatch_needs_render"
     assert worker_c =~ "if (model_changed)"
     assert worker_c =~ "if (!elmc_cmd_is_none(next_cmd))"
+    assert worker_c =~ "ELMC_TAG_CMD"
+    assert worker_c =~ "cmd->kind == 0"
     assert pebble_c =~ "elmc_worker_dispatch_needs_render"
     assert pebble_c =~ "elmc_pebble_invalidate_scene_for_dispatch"
     refute pebble_c =~ "elmc_pebble_prepare_dispatch(ElmcPebbleApp *app) {\n      if (!app) return;\n      elmc_pebble_heap_log(\"dispatch:prepare:before\");\n      elmc_pebble_clear_view_cache(app);"

@@ -43,17 +43,25 @@ defmodule Elmc.Backend.C.Lower.TagRefs do
       |> apply_switch_arm_labels(block)
       |> apply_block_role_labels(block, incoming)
     end)
+    |> then(fn labeled ->
+      Enum.reduce(blocks, labeled, fn %Block{id: id}, acc ->
+        Map.put_new(acc, id, "BLOCK_#{id}")
+      end)
+    end)
   end
 
   @spec plan_state_ref(map(), non_neg_integer(), map()) :: String.t()
   def plan_state_ref(%{module: module, name: name}, block_id, labels) when is_integer(block_id) do
-    case Map.get(labels, block_id) do
-      label when is_binary(label) ->
-        plan_state_macro(module, name, label)
+    label =
+      case Map.get(labels, block_id) do
+        label when is_binary(label) ->
+          label
 
-      _ ->
-        Integer.to_string(block_id)
-    end
+        _ ->
+          "BLOCK_#{block_id}"
+      end
+
+    plan_state_macro(module, name, label)
   end
 
   @spec emit_plan_state_enum(map(), map()) :: String.t()

@@ -1,5 +1,5 @@
 defmodule Elmc.PlanParityTest do
-  use ExUnit.Case, async: true
+  use ExUnit.Case, async: false
 
   @moduletag :plan_parity
 
@@ -44,55 +44,29 @@ defmodule Elmc.PlanParityTest do
     primary_c = compile_fixture!(%{plan_ir_mode: :primary, strip_dead_code: true})
 
     assert primary_c =~ "elmc_fn_Main_update"
-    assert primary_c =~ "elmc_union_tag_matches"
     assert primary_c =~ "goto elmc_plan_block_"
-    assert primary_c =~ "elmc_fn_Main_handlePlatformMsg"
+    assert primary_c =~ "elmc_fn_Main_moveBoard"
     assert primary_c =~ "CHECK_RC(Rc)"
   end
 
-  test "primary lowers requestWeather via companion send cmd" do
-    primary_c =
-      compile_fixture!(%{plan_ir_mode: :primary, strip_dead_code: true})
-
-    assert primary_c =~ "elmc_fn_Main_requestWeather"
-    assert primary_c =~ "ELMC_PEBBLE_CMD_COMPANION_SEND"
-    refute primary_c =~ "watchToPhoneTag(out"
-    assert primary_c =~ "CHECK_RC(Rc)"
-  end
-
-  test "primary lowers handleAppMsg with CFG and int_arith" do
+  test "primary lowers moveBoard via direct native ABI wrapper" do
     primary_c = compile_fixture!(%{plan_ir_mode: :primary, strip_dead_code: true})
 
-    body = CCodegenExtract.fn_body(primary_c, "elmc_fn_Main_handleAppMsg")
-    assert body =~ "goto elmc_plan_block_"
-    assert body =~ "elmc_union_tag_matches"
-    assert body =~ "int_arith" or body =~ "elmc_new_int"
+    body = CCodegenExtract.fn_body(primary_c, "elmc_fn_Main_moveBoard")
+    assert body =~ "elmc_fn_Main_moveBoard_native"
+    assert body =~ "direct_call_abi"
+  end
+
+  test "primary lowers drawCell with render ops" do
+    primary_c = compile_fixture!(%{plan_ir_mode: :primary, strip_dead_code: true})
+
+    body = CCodegenExtract.fn_body(primary_c, "elmc_fn_Main_drawCell")
+    assert body =~ "elmc_render_cmd" or body =~ "goto elmc_plan_block_"
     assert body =~ "CHECK_RC(Rc)"
   end
 
-  test "primary lowers handlePlatformMsg with pebble cmds" do
+  test "primary lowers subscriptions via plan path" do
     primary_c = compile_fixture!(%{plan_ir_mode: :primary, strip_dead_code: true})
-
-    body = CCodegenExtract.fn_body(primary_c, "elmc_fn_Main_handlePlatformMsg")
-    assert body =~ "goto elmc_plan_block_"
-    assert body =~ "elmc_cmd" or body =~ "elmc_pebble"
-    assert body =~ "CHECK_RC(Rc)"
-  end
-
-  test "primary lowers requestSystemInfo as cmd batch" do
-    primary_c = compile_fixture!(%{plan_ir_mode: :primary, strip_dead_code: true})
-
-    assert primary_c =~ "elmc_fn_Main_requestSystemInfo"
-    body = CCodegenExtract.fn_body(primary_c, "elmc_fn_Main_requestSystemInfo")
-    assert body =~ "cmd_batch" or body =~ "elmc_cmd"
-    assert body =~ "CHECK_RC(Rc)"
-  end
-
-  test "primary lowers counterDraw and subscriptions via plan path" do
-    primary_c = compile_fixture!(%{plan_ir_mode: :primary, strip_dead_code: true})
-
-    counter_body = CCodegenExtract.fn_body(primary_c, "elmc_fn_Main_counterDraw")
-    assert counter_body =~ "elmc_render_cmd6"
 
     subs_body = CCodegenExtract.fn_body(primary_c, "elmc_fn_Main_subscriptions")
     assert subs_body =~ "elmc_sub"
@@ -130,19 +104,16 @@ defmodule Elmc.PlanParityTest do
     assert report.lowered >= 12
   end
 
-  test "legacy and primary both compile simple_project update" do
-    legacy_c = compile_fixture!(%{plan_ir_mode: :off, strip_dead_code: true})
+  test "primary compiles simple_project update with plan blocks" do
     primary_c = compile_fixture!(%{plan_ir_mode: :primary, strip_dead_code: true})
 
-    for c <- [legacy_c, primary_c] do
-      assert c =~ "elmc_fn_Main_update"
-      assert c =~ "elmc_fn_Main_handlePlatformMsg"
-      assert c =~ "CHECK_RC(Rc)"
-    end
+    assert primary_c =~ "elmc_fn_Main_update"
+    assert primary_c =~ "elmc_fn_Main_moveBoard"
+    assert primary_c =~ "CHECK_RC(Rc)"
 
     primary_update = CCodegenExtract.fn_body(primary_c, "elmc_fn_Main_update")
     assert primary_update =~ "goto elmc_plan_block_"
-    assert primary_update =~ "elmc_union_tag_matches"
+    assert primary_update =~ "switch"
   end
 
   defp compile_fixture!(opts) do

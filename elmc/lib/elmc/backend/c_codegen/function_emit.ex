@@ -58,7 +58,7 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
     opts = Process.get(:elmc_codegen_opts, %{})
 
     cond do
-      Plan.plan_ir_mode(opts) == :primary ->
+      plan_primary_emit_mode?(opts) ->
         emit_boxed_function_def(
           decl,
           module_name,
@@ -187,8 +187,12 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
       Fusion.rc_native_fusion?(module_name, decl.name, decl.expr, decl_map)
   end
 
+  defp plan_primary_emit_mode?(opts) do
+    Plan.plan_ir_mode(opts) in [:primary, :shadow]
+  end
+
   defp plan_primary_body?(decl, module_name, decl_map, opts) do
-    Plan.plan_ir_mode(opts) == :primary and
+    plan_primary_emit_mode?(opts) and
       Plan.primary_lowered?(decl, module_name, decl_map)
   end
 
@@ -324,13 +328,6 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
           end
         end)
     end
-  end
-
-  defp native_c_params?(decl, module_name, decl_map) do
-    params = direct_params(decl, module_name, decl_map)
-
-    params != "void" and
-      (String.contains?(params, "elmc_int_t") or String.contains?(params, "bool "))
   end
 
   @doc false
@@ -642,7 +639,19 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
         )
       )
 
-    if Plan.plan_ir_mode(opts) == :primary do
+    mode = Plan.plan_ir_mode(opts)
+
+    if mode in [:primary, :shadow] do
+      if mode == :shadow do
+        _ =
+          Plan.shadow_verify(decl, module_name, decl_map,
+            Keyword.merge(compile_opts_list(opts),
+              rc_required: rc_required?,
+              plan_ir_raise: plan_ir_raise?(opts)
+            )
+          )
+      end
+
       case maybe_emit_primary_plan_body(
              decl,
              module_name,
@@ -664,10 +673,10 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
           record_plan_primary_fallback(module_name, decl.name)
 
           raise ArgumentError,
-                "plan_ir_mode: :primary cannot lower #{module_name}.#{decl.name} to Plan IR"
+                "plan_ir_mode: #{inspect(mode)} cannot lower #{module_name}.#{decl.name} to Plan IR"
       end
     else
-      emit_boxed_body_fusion_or_legacy(
+      emit_legacy_codegen_body(
         module_name,
         decl,
         decl_map,
@@ -678,8 +687,7 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
         exit_probe,
         arg_binding_code,
         rc_required?,
-        arg_kinds,
-        opts
+        arg_kinds
       )
     end
   end
@@ -698,7 +706,7 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
     :ok
   end
 
-  defp emit_boxed_body_fusion_or_legacy(
+  defp emit_legacy_codegen_body(
          module_name,
          decl,
          decl_map,
@@ -709,8 +717,7 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
          exit_probe,
          arg_binding_code,
          rc_required?,
-         arg_kinds,
-         opts
+         arg_kinds
        ) do
     case boxed_special_body_emit(
            module_name,
@@ -727,49 +734,18 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
         body
 
       :error ->
-        _ =
-          if Plan.plan_ir_mode(opts) == :shadow do
-            Plan.shadow_verify(decl, module_name, decl_map,
-              Keyword.merge(compile_opts_list(opts),
-                rc_required: rc_required?,
-                plan_ir_raise: plan_ir_raise?(opts)
-              )
-            )
-          else
-            :skipped
-          end
-
-        case maybe_emit_primary_plan_body(
-               decl,
-               module_name,
-               decl_map,
-               arg_bindings,
-               arg_binding_code,
-               direct_args?,
-               rc_required?,
-               entry_probe,
-               exit_probe
-             ) do
-          {:ok, :skip_function} ->
-            ""
-
-          {:ok, body} ->
-            body
-
-          :legacy ->
-            emit_legacy_boxed_body(
-              decl,
-              module_name,
-              env,
-              arg_bindings,
-              arg_binding_code,
-              direct_args?,
-              rc_required?,
-              entry_probe,
-              exit_probe,
-              arg_kinds
-            )
-        end
+        emit_legacy_boxed_body(
+          decl,
+          module_name,
+          env,
+          arg_bindings,
+          arg_binding_code,
+          direct_args?,
+          rc_required?,
+          entry_probe,
+          exit_probe,
+          arg_kinds
+        )
     end
   end
 
@@ -863,9 +839,7 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
        ) do
     opts = Process.get(:elmc_codegen_opts, [])
 
-    if Plan.plan_ir_mode(opts) != :primary do
-      :legacy
-    else
+    if plan_primary_emit_mode?(opts) do
       case Plan.lower_function(decl, module_name, decl_map, rc_required: rc_required?) do
            {:ok, %{fusion_c: fusion_c, fusion_emit: mode}}
            when is_binary(fusion_c) and fusion_c != "" and mode in [:helper_only, :public_native] ->
@@ -924,6 +898,8 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
         _ ->
           :legacy
       end
+    else
+      :legacy
     end
   end
 
@@ -1420,11 +1396,6 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
 
     wrapper_args_unboxed? = direct_args? or binding_code != ""
 
-    unboxed_native_params? =
-      wrapper_args_unboxed? and
-        is_list(fusion_kinds) and
-        Enum.all?(fusion_kinds, &(&1 in [:native_int, :native_bool]))
-
     fused_args =
       rc_native_fusion_call_args(
         arg_bindings,
@@ -1475,8 +1446,6 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
     )
   end
 
-  defp rc_native_fusion_call_args(arg_bindings, kinds, unboxed_in_wrapper?, module_name, fun_name, decl, decl_map)
-
   defp rc_native_fusion_call_args(arg_bindings, kinds, unboxed_in_wrapper?, module_name, _fun_name, decl, decl_map)
        when is_list(kinds) do
     direct_kinds =
@@ -1506,6 +1475,12 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
     end)
   end
 
+  defp rc_native_fusion_call_args(arg_bindings, _kinds, _unboxed_in_wrapper?, _module_name, _fun_name, _decl, _decl_map) do
+    arg_bindings
+    |> Enum.map(fn {_arg, c_arg, _index} -> c_arg end)
+    |> Enum.join(", ")
+  end
+
   defp fusion_native_call_arg(c_arg, kind, direct_native?) do
     case kind do
       :boxed_int_tag when direct_native? -> c_arg
@@ -1527,16 +1502,6 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
   defp fusion_wrapper_unboxed_in_wrapper?(decl, module_name, decl_map, wrapper_arg_kinds) do
     fusion_wrapper_native_args?(wrapper_arg_kinds) and
       not FunctionCallAbi.direct_entry_abi?(decl, module_name, decl_map)
-  end
-
-  defp rc_native_fusion_call_args(arg_bindings, _kinds, _unboxed_in_wrapper?, _module_name, _fun_name, _decl, _decl_map) do
-    arg_bindings
-    |> Enum.map(fn {_arg, c_arg, _index} -> c_arg end)
-    |> Enum.join(", ")
-  end
-
-  defp union_int_fusion?(module_name, fun_name) when is_binary(module_name) and is_binary(fun_name) do
-    Process.get(:elmc_union_int_fusion_luts, %{}) |> Map.has_key?({module_name, fun_name})
   end
 
   defp fused_native_call_args(%{type: type}, arg_bindings, direct_args?) when is_binary(type) do
@@ -1795,7 +1760,7 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
   def prelower_plan_native_returns(ir, generic_targets, decl_map) do
     opts = Process.get(:elmc_codegen_opts, [])
 
-    if Plan.plan_ir_mode(opts) == :primary do
+    if plan_primary_emit_mode?(opts) do
       ir.modules
       |> Enum.flat_map(fn mod ->
         mod.declarations
@@ -1857,7 +1822,7 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
   defp helper_only_fusion_plan?(decl, module_name, decl_map) do
     opts = Process.get(:elmc_codegen_opts, [])
 
-    if Plan.plan_ir_mode(opts) != :primary do
+    if not plan_primary_emit_mode?(opts) do
       false
     else
       case Plan.lower_function(decl, module_name, decl_map, rc_required?: true) do

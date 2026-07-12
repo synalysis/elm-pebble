@@ -1010,6 +1010,7 @@ defmodule Elmc.PlanSizeReductionTest do
     refute Regex.match?(~r/\bmsg\s*==\s*\d+/, c)
     assert c =~ "ELMC_UNION_" or c =~ "ELMC_TAG_TUPLE2"
     refute Regex.match?(~r/switch \([^)]+\) \{\s*case \d+: __plan_state = \d+; break;\s*\}\s*case \d+:/s, c)
+    refute Regex.match?(~r/enum \{\s*\d+\s*=\s*\d+,/m, c)
     refute c =~ "goto elmc_plan_block_"
   end
 

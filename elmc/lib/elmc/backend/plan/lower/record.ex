@@ -219,7 +219,7 @@ defmodule Elmc.Backend.Plan.Lower.Record do
     end
   end
 
-  defp field_index_ref(field_name, ctx, base_expr \\ nil) when is_binary(field_name) do
+  defp field_index_ref(field_name, ctx, base_expr) when is_binary(field_name) do
     case resolve_field_type_key(field_name, ctx, base_expr) do
       {{mod, type}, idx} when is_integer(idx) ->
         RecordFieldMacros.format_index(idx, field_name, {mod, type})

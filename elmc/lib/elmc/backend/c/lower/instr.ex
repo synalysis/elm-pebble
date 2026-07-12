@@ -661,14 +661,6 @@ defmodule Elmc.Backend.C.Lower.Instr do
     end
   end
 
-  defp compare_c_expr(:eq, left, right), do: "(#{left} == #{right}) ? 1 : 0"
-  defp compare_c_expr(:neq, left, right), do: "(#{left} != #{right}) ? 1 : 0"
-  defp compare_c_expr(:gt, left, right), do: "(#{left} > #{right}) ? 1 : 0"
-  defp compare_c_expr(:gte, left, right), do: "(#{left} >= #{right}) ? 1 : 0"
-  defp compare_c_expr(:lt, left, right), do: "(#{left} < #{right}) ? 1 : 0"
-  defp compare_c_expr(:lte, left, right), do: "(#{left} <= #{right}) ? 1 : 0"
-  defp compare_c_expr(_, left, right), do: "(#{left} == #{right}) ? 1 : 0"
-
   defp emit_switch_ctor_tag(%{dest: dest_reg, args: args}, slots, rc?, merge, opts) do
     subject = switch_subject_ref(args.subject, slots, opts)
     native? = MapSet.member?(Keyword.get(opts, :native_int_only_regs, MapSet.new()), dest_reg)
@@ -2367,7 +2359,7 @@ defmodule Elmc.Backend.C.Lower.Instr do
       regs
       |> Enum.with_index()
       |> Enum.map_join(", ", fn {reg, idx} ->
-        ref = slot_ref(reg, slots, opts)
+        ref = boxed_value_ref(reg, slots, opts)
         prior = Enum.take(regs, idx)
         if reg in prior, do: "elmc_retain(#{ref})", else: ref
       end)
@@ -2572,7 +2564,7 @@ defmodule Elmc.Backend.C.Lower.Instr do
     "#{dest_ref} = #{fn_name}(#{args});"
   end
 
-  defp rc_callee_from_value_return(dest, _dest_ref, fn_name, args, opts \\ []) do
+  defp rc_callee_from_value_return(dest, _dest_ref, fn_name, args, opts) do
     tail? = dest == "*out"
     tmp = rc_call_tmp_var(dest, opts)
 

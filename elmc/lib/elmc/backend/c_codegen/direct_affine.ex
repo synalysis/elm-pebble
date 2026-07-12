@@ -4,8 +4,6 @@ defmodule Elmc.Backend.CCodegen.DirectAffine do
   alias Elmc.Backend.CCodegen.DirectRender.Emit.Release
   alias Elmc.Backend.CCodegen.Host
   alias Elmc.Backend.CCodegen.CSource
-  alias Elmc.Backend.CCodegen.LayoutSolver
-  alias Elmc.Backend.CCodegen.StoragePlan
   alias Elmc.Backend.CCodegen.Types
   alias Elmc.Backend.CCodegen.Util
 
@@ -2028,72 +2026,5 @@ defmodule Elmc.Backend.CCodegen.DirectAffine do
       }
     }
     """
-  end
-
-  defp affine_list_repr(list_expr, env) do
-    decl_map = Map.get(env, :__program_decls__, Process.get(:elmc_program_decls, %{}))
-
-    locals =
-      case {Map.get(env, :__module__), Map.get(env, :__function_name__)} do
-        {mod, fun} when is_binary(mod) and is_binary(fun) ->
-          case Map.get(decl_map, {mod, fun}) do
-            %{type: type, args: args} when is_binary(type) ->
-              type
-              |> Elmc.Backend.CCodegen.TypeParsing.function_arg_types()
-              |> Enum.with_index()
-              |> Enum.reduce(%{}, fn {arg_type, idx}, acc ->
-                case Enum.at(args || [], idx) do
-                  name when is_binary(name) ->
-                    Map.put(acc, name, Elmc.Backend.CCodegen.Host.normalize_type_name(arg_type))
-
-                  _ ->
-                    acc
-                end
-              end)
-
-            _ ->
-              %{}
-          end
-
-        _ ->
-          %{}
-      end
-
-    caller =
-      case {Map.get(env, :__module__), Map.get(env, :__function_name__)} do
-        {mod, fun} when is_binary(mod) and is_binary(fun) -> {mod, fun}
-        _ -> nil
-      end
-
-    plan =
-      LayoutSolver.expr_plan(list_expr, decl_map,
-        locals: locals,
-        caller: caller
-      )
-
-    declared_env =
-      env
-      |> Map.put(:__program_decls__, decl_map)
-      |> Map.put(:__record_field_types__, Process.get(:elmc_record_field_types, %{}))
-
-    cond do
-      StoragePlan.compact_only?(plan) ->
-        :int_list
-
-      pebble_int32_build?() and
-          Elmc.Backend.CCodegen.ListIntRepr.declared_list_int_field_access?(
-            list_expr,
-            locals,
-            declared_env
-          ) ->
-        :int_list
-
-      true ->
-        :mixed
-    end
-  end
-
-  defp pebble_int32_build? do
-    Process.get(:elmc_codegen_opts, %{})[:pebble_int32] == true
   end
 end

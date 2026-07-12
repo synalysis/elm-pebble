@@ -35,7 +35,7 @@ defmodule Elmc.PlanShadowIntegrationTest do
              )
   end
 
-  test "shadow verify passes for counterOf from simple_project IR" do
+  test "shadow verify passes for init from simple_project IR" do
     project_dir = Path.expand("tmp/plan_shadow_ir_project", __DIR__)
     out_dir = Path.expand("tmp/plan_shadow_ir_codegen", __DIR__)
     File.rm_rf!(project_dir)
@@ -55,10 +55,10 @@ defmodule Elmc.PlanShadowIntegrationTest do
     ir = result.ir
     decl_map = decl_map_from_ir(ir)
 
-    counter_decl = Map.fetch!(decl_map, {"Main", "counterOf"})
+    init_decl = Map.fetch!(decl_map, {"Main", "init"})
 
     assert :ok =
-             Elmc.Backend.Plan.shadow_verify(counter_decl, "Main", decl_map,
+             Elmc.Backend.Plan.shadow_verify(init_decl, "Main", decl_map,
                plan_ir_mode: :shadow,
                rc_required: false
              )

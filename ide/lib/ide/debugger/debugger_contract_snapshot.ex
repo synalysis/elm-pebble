@@ -5,6 +5,7 @@ defmodule Ide.Debugger.DebuggerContractSnapshot do
   alias Ide.Debugger.CompileContract
   alias ElmEx.DebuggerContract
   alias Ide.Debugger.ProtocolRx
+  alias Ide.Debugger.RuntimeFollowups
   alias Ide.Debugger.SurfaceCompileArtifacts
   alias Ide.Debugger.RuntimeArtifacts
   alias Ide.Debugger.RuntimeExecutor
@@ -327,6 +328,13 @@ defmodule Ide.Debugger.DebuggerContractSnapshot do
         _ -> Map.get(execution, "protocol_events", [])
       end
       |> StepExecution.normalize_protocol_events()
+
+    followups =
+      if protocol_events != [] do
+        Enum.reject(followups, &RuntimeFollowups.protocol_events_followup?/1)
+      else
+        followups
+      end
 
     state
     |> ctx.append_event.(

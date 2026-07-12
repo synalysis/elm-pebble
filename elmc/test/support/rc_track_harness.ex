@@ -316,6 +316,10 @@ defmodule Elmc.Test.RcTrackHarness do
     """
     #{harness_rc_helpers()}
 
+    static ElmcValue *elmc_harness_call_value_void(ElmcValue *(*fn)(void)) {
+      return fn();
+    }
+
     static ElmcValue *elmc_harness_call_value(
         ElmcValue *(*fn)(ElmcValue ** const args, const int argc),
         ElmcValue **args,

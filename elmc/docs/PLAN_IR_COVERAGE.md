@@ -238,6 +238,8 @@ compile results (`layout_coercion_diagnostics`).
   above, not more template tuning.
 - Legacy C body codegen remains available only with explicit `plan_ir_mode: :off` (tests via `Elmc.TestSupport.LegacyCodegen`).
 
+See [C_CODEGEN_LAYER_AUDIT.md](C_CODEGEN_LAYER_AUDIT.md) for which `CCodegen` modules are legacy-body-only vs still required under plan-primary.
+
 IDE production builds use `plan_ir_mode: :primary` and default `plan_ir_strict: true`
 (`SizeProfile`, `Ide.PebbleToolchain.Elmc`). Apps that hit gaps need either
 toolchain extension or temporary `plan_ir_strict: false` in compile opts (not

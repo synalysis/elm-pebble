@@ -404,8 +404,8 @@ defmodule Ide.Mcp.DebuggerTemplateCorpusCompiledElixirTest do
   @tag timeout: 180_000
   test "watchface-yes compiles and executes init when enabled" do
     corpus_init_execute!("watchface-yes", "corpus-yes-init-", fn model ->
-      assert is_integer(model["screenW"])
-      assert model["screenW"] == 144
+      assert get_in(model, ["layout", "screenW"]) == 144
+      assert get_in(model, ["layout", "screenH"]) == 168
     end)
   end
 
