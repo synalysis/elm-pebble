@@ -201,6 +201,15 @@ defmodule Elmc.Backend.C.Lower.NativeIntFold do
     Enum.filter([left, right], &MapSet.member?(native_int_only, &1))
   end
 
+  defp operand_regs(
+         %{op: :call_runtime, args: %{builtin: builtin, args: args}},
+         native_int_only,
+         _
+       )
+       when builtin in [:record_new, :record_new_take, :record_new_values_ints] and is_list(args) do
+    Enum.filter(args, &MapSet.member?(native_int_only, &1))
+  end
+
   defp operand_regs(_, _, _), do: []
 
   defp maybe_reg(regs, args, key, native_set) do

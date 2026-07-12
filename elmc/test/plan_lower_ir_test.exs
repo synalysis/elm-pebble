@@ -289,6 +289,40 @@ defmodule Elmc.PlanLowerIrTest do
     assert c =~ "elmc_maybe_just_own"
   end
 
+  test "maybe_just_own passes retain copy when payload is still used later" do
+    decl = %{
+      name: "pairJustWithPayload",
+      args: ["payload"],
+      expr: %{
+        op: :tuple2,
+        left: %{
+          op: :constructor_call,
+          target: "Maybe.Just",
+          args: [%{op: :var, name: "payload"}]
+        },
+        right: %{op: :var, name: "payload"}
+      }
+    }
+
+    assert {:ok, plan} = Function.lower(decl, "Main", %{}, rc_required: true)
+    c = CLowerFunction.emit(plan)
+
+    assert [_full, _dest_slot, arg_slot] =
+             Regex.run(~r/Rc = elmc_maybe_just_own\(&owned\[(\d+)\], owned\[(\d+)\]\)/, c)
+
+    retain_slots =
+      Regex.scan(~r/owned\[(\d+)\] = elmc_retain\(payload\)/, c)
+      |> Enum.map(fn [_, slot] -> String.to_integer(slot) end)
+
+    assert retain_slots != []
+    assert String.to_integer(arg_slot) in retain_slots,
+           "expected maybe_just_own to take ownership via retain copy, not alias payload:\n#{c}"
+
+    refute c =~
+             ~r/elmc_maybe_just_own\(&owned\[\d+\], owned\[#{arg_slot}\]\);\s*\n\s*CHECK_RC\(Rc\);\s*\n\s*elmc_release\(owned\[#{arg_slot}\]\)/,
+           "maybe_just_own transfer must null consumed slot without releasing payload"
+  end
+
   test "lowers Maybe value compared to Nothing with maybe_is_nothing" do
     decl = %{
       name: "hasValue",

@@ -183,7 +183,7 @@ defmodule Elmc.Backend.Plan.Lower.Case do
     {merge, b1} = Builder.fresh_reg(b)
 
     phi_consumes =
-      Builder.phi_branch_consumes(b, [then_reg, else_reg, cond_reg])
+      Builder.phi_branch_consumes(b, [cond_reg])
 
     {_, b2} =
       Builder.emit(b1, :phi, %{

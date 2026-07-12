@@ -37,7 +37,9 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
              Elmc.compile(project_dir, %{
                out_dir: out_dir,
                entry_module: "Main",
-               strip_dead_code: false
+               strip_dead_code: false,
+               plan_ir_mode: :primary,
+               plan_ir_strict: true
              })
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))

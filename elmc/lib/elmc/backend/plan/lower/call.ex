@@ -1,6 +1,7 @@
 defmodule Elmc.Backend.Plan.Lower.Call do
   @moduledoc false
 
+  alias Elmc.Backend.CCodegen.FunctionEmit
   alias Elmc.Backend.Plan.Builder
   alias Elmc.Backend.Plan.Context
   alias Elmc.Backend.Plan.Lower.{Cmd, Expr, Lambda, SpecialValues}
@@ -108,6 +109,8 @@ defmodule Elmc.Backend.Plan.Lower.Call do
   end
 
   defp compile_fn_call_target(module, name, args, ctx, b) do
+    {module, name} = resolve_delegate_call_target(module, name, args, ctx.decl_map)
+
     cond do
       oversaturated_call?(ctx, module, name, args) ->
         compile_oversaturated_call(module, name, args, ctx, b)
@@ -119,7 +122,7 @@ defmodule Elmc.Backend.Plan.Lower.Call do
         else
           _ ->
             with {:ok, decl} <- Map.fetch(ctx.decl_map, {module, name}),
-                 param_names <- Map.get(decl, :args, []),
+                 param_names <- FunctionEmit.effective_decl_args(decl, module, ctx.decl_map),
                  true <- length(args) > 0 and length(args) < length(param_names),
                  {:ok, reg, b1} <- compile_curried_lambda(module, name, param_names, args, ctx, b) do
               {:ok, reg, b1}
@@ -136,10 +139,25 @@ defmodule Elmc.Backend.Plan.Lower.Call do
     end
   end
 
+  defp resolve_delegate_call_target(module, name, args, decl_map) when is_list(args) do
+    decl = Map.get(decl_map, {module, name})
+
+    if args != [] and is_map(decl) and
+         length(args) > length(Map.get(decl, :args, [])) do
+      case FunctionEmit.delegate_call_target(decl, module, decl_map) do
+        {dmod, dname} -> {dmod, dname}
+        nil -> {module, name}
+      end
+    else
+      {module, name}
+    end
+  end
+
   defp oversaturated_call?(ctx, module, name, args) when is_list(args) do
     case Map.fetch(ctx.decl_map, {module, name}) do
-      {:ok, %{args: param_names}} when is_list(param_names) and length(param_names) > 0 ->
-        length(args) > length(param_names)
+      {:ok, decl} ->
+        param_names = FunctionEmit.effective_decl_args(decl, module, ctx.decl_map)
+        length(param_names) > 0 and length(args) > length(param_names)
 
       _ ->
         false

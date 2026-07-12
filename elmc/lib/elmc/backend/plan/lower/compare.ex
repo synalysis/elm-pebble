@@ -1,6 +1,8 @@
 defmodule Elmc.Backend.Plan.Lower.Compare do
   @moduledoc false
 
+  alias Elmc.Backend.CCodegen.{Host, TypeParsing}
+  alias Elmc.Backend.CCodegen.Native.TypedReturn
   alias Elmc.Backend.Plan.{Builder, Context}
   alias Elmc.Backend.Plan.Lower.Expr
   alias Elmc.Backend.Plan.Types
@@ -40,14 +42,23 @@ defmodule Elmc.Backend.Plan.Lower.Compare do
           _ -> []
         end)
 
+      borrows =
+        [left_reg, right_reg]
+        |> Enum.reject(&(&1 in consumes))
+
       {_, b4} =
         Builder.emit(b3, :compare, %{
           dest: reg,
-          args: %{kind: kind || :eq, left: left_reg, right: right_reg},
+          args: %{
+            kind: kind || :eq,
+            left: left_reg,
+            right: right_reg,
+            mode: compare_equality_mode(left, right, ctx)
+          },
           effects: %{
             produces: {:owned, reg},
             consumes: consumes,
-            borrows: [left_reg, right_reg],
+            borrows: borrows,
             fallible: false
           }
         })
@@ -134,7 +145,7 @@ defmodule Elmc.Backend.Plan.Lower.Compare do
     {_, b2} =
       Builder.emit(b1, :compare, %{
         dest: reg,
-        args: %{kind: :eq, left: left, right: right},
+        args: %{kind: :eq, left: left, right: right, mode: :int_boxed},
         effects: %{
           produces: {:owned, reg},
           consumes: [],
@@ -156,6 +167,8 @@ defmodule Elmc.Backend.Plan.Lower.Compare do
     end
   end
 
+  defp operand_owned?(%{op: :field_access}), do: true
+
   defp operand_owned?(%{op: op})
        when op in [:int_literal, :bool_literal, :string_literal, :cmd_none, :sub_none],
        do: true
@@ -165,4 +178,63 @@ defmodule Elmc.Backend.Plan.Lower.Compare do
   defp short_ctor_name(name) when is_binary(name) do
     name |> String.split(".") |> List.last()
   end
+
+  defp compare_equality_mode(left, right, ctx) do
+    env = type_env(ctx)
+
+    cond do
+      TypedReturn.list_int_expr?(left, env) and TypedReturn.list_int_expr?(right, env) ->
+        :list_int
+
+      int_equality_operand?(left, env) and int_equality_operand?(right, env) ->
+        :int_boxed
+
+      true ->
+        :pointer
+    end
+  end
+
+  defp int_equality_operand?(%{op: :int_literal}, _env), do: true
+
+  defp int_equality_operand?(expr, env) do
+    case TypedReturn.expr_type(expr, env) do
+      "Int" -> true
+      _ -> false
+    end
+  end
+
+  defp type_env(%Context{} = ctx) do
+    %{
+      __module__: ctx.module || "Main",
+      __var_types__:
+        param_var_types(ctx)
+        |> Map.merge(ctx.local_types),
+      __program_decls__: ctx.decl_map,
+      __record_field_types__: Process.get(:elmc_record_field_types, %{}),
+      __record_field_kinds__: Process.get(:elmc_record_field_kinds, %{})
+    }
+  end
+
+  defp param_var_types(%Context{decl_map: decl_map, module: module, params: params, function_name: fun})
+       when is_binary(module) and is_binary(fun) and is_list(params) do
+    with decl when is_map(decl) <- Map.get(decl_map, {module, fun}, %{}),
+         type when is_binary(type) <- Map.get(decl, :type),
+         arg_types when is_list(arg_types) <- TypeParsing.function_arg_types(type) do
+      params
+      |> Enum.with_index()
+      |> Enum.reduce(%{}, fn {name, idx}, acc ->
+        case Enum.at(arg_types, idx) do
+          arg_type when is_binary(arg_type) ->
+            Map.put(acc, name, Host.normalize_type_name(arg_type))
+
+          _ ->
+            acc
+        end
+      end)
+    else
+      _ -> %{}
+    end
+  end
+
+  defp param_var_types(_), do: %{}
 end

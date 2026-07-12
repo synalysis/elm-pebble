@@ -50,7 +50,7 @@ Qualified-call rewrites for plan lowering go through `Plan.Lower.SpecialValues`
 - `:shadow` — build + verify plan alongside legacy C (tests may set `plan_ir_raise: true`)
 - `:primary` — emit C from plan via `C.Lower.Function` only. Plan lowering failure raises at compile time (no legacy body fallback). Successful primary compiles emit an info diagnostic (`plan_primary_coverage`) with reachable/Main stats; reachable gaps emit `plan_primary_gap` (warning, or error when strict).
 
-`Elmc.Backend.Plan.Defaults` sets `default_plan_ir_mode` to `:primary`. `Elmc.compile/2` and `Elmc.CLI` apply these defaults; the test suite also defaults to `:primary` in `test/test_helper.exs`. Legacy body tests use `Elmc.TestSupport.LegacyCodegen` / `LegacyCodegenCase` with explicit `plan_ir_mode: :off`.
+`Elmc.Backend.Plan.Defaults` sets `default_plan_ir_mode` to `:primary`. `Elmc.compile/2` and `Elmc.CLI` apply these defaults. Legacy body tests use `Elmc.TestSupport.LegacyCodegen` / `LegacyCodegenCase` with explicit `plan_ir_mode: :off`.
 
 `direct_plan_call_abi?` — plan-primary functions that are not partial-application
 wrappers emit and call with named parameters instead of `args`/`argc`.

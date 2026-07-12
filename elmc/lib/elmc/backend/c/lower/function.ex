@@ -38,6 +38,7 @@ defmodule Elmc.Backend.C.Lower.Function do
 
   def emit_core(%FunctionPlan{} = plan, opts) do
     Process.put(:elmc_plan_rec_values_suffix, 0)
+    Process.put(:elmc_rc_call_tmp_counter, 0)
     unless Keyword.get(opts, :closure_mode) do
       Lambda.ensure_emitted!(plan)
     end
@@ -207,7 +208,29 @@ defmodule Elmc.Backend.C.Lower.Function do
     (body_lines ++ List.wrap(ret_line) ++ List.wrap(deferred_cleanup))
     |> Enum.reject(&(&1 == ""))
     |> cleanup_cfg_lines()
+    |> then(fn lines ->
+      missing_native_int_decl_lines(lines, native_int_locals) ++ lines
+    end)
     |> Enum.join("\n")
+  end
+
+  defp missing_native_int_decl_lines(lines, _native_int_locals) do
+    body = Enum.join(lines, "\n")
+
+    ~r/\bplan_native_int_(\d+)\b/
+    |> Regex.scan(body)
+    |> Enum.map(fn [_, reg] -> String.to_integer(reg) end)
+    |> Enum.uniq()
+    |> Enum.reject(fn reg ->
+      name = "plan_native_int_#{reg}"
+
+      Enum.any?(lines, fn line ->
+        String.contains?(line, "elmc_int_t #{name}") or
+          String.contains?(line, "const elmc_int_t #{name}")
+      end)
+    end)
+    |> Enum.sort()
+    |> Enum.map(fn reg -> "elmc_int_t plan_native_int_#{reg};" end)
   end
 
   defp emit_goto_body(plan, slots, instr_opts, mutable_decls, explicit_targets) do
@@ -867,7 +890,8 @@ defmodule Elmc.Backend.C.Lower.Function do
   end
 
   defp transferring_consume_instr?(%{op: :call_runtime, args: %{builtin: id}}) do
-    id in [:record_new, :record_new_take, :record_new_values_ints, :tuple2_take]
+    id in [:record_new, :record_new_take, :record_new_values_ints, :tuple2_take] or
+      RuntimeBuiltins.ownership_transfer?(id)
   end
 
   defp transferring_consume_instr?(_), do: false
@@ -1662,7 +1686,7 @@ defmodule Elmc.Backend.C.Lower.Function do
 
     effective_decl =
       if decl do
-        %{decl | args: FunctionEmit.effective_decl_args(decl, plan.module, decl_map)}
+        Map.put(decl, :args, FunctionEmit.effective_decl_args(decl, plan.module, decl_map))
       end
 
     cond do
@@ -1740,11 +1764,16 @@ defmodule Elmc.Backend.C.Lower.Function do
         true
 
       %{op: :int_arith, args: args} ->
-        native_int_identity_source(args) != nil
+        native_int_identity_source(args) != nil or int_arith_record_copy_only?(plan, reg)
 
       _ ->
         false
     end
+  end
+
+  defp int_arith_record_copy_only?(plan, reg) do
+    sites = native_int_reg_use_sites(plan, reg)
+    sites != [] and Enum.all?(sites, &boxed_record_tuple_builtin_instr?/1)
   end
 
   defp native_int_identity_source(%{kind: :add_const, lhs: lhs, value: 0}), do: lhs
@@ -2223,6 +2252,10 @@ defmodule Elmc.Backend.C.Lower.Function do
         native_source?(plan, then_r, native_set) and native_source?(plan, else_r, native_set) and
           native_int_uses_only?(plan, reg, decl_map, native_set)
 
+      [%{op: :load_param, args: %{index: index}} | _] ->
+        Enum.at(param_kinds_for_plan(plan), index) == :native_int and
+          native_int_uses_only?(plan, reg, decl_map, native_set)
+
       retains when is_list(retains) ->
         retain_defs?(retains) and
           Enum.all?(retains, fn %{args: %{args: [src]}} ->
@@ -2242,6 +2275,9 @@ defmodule Elmc.Backend.C.Lower.Function do
   defp native_source?(plan, reg, native_set) when is_integer(reg) do
     MapSet.member?(native_set, reg) or
       case defining_instr(plan, reg) do
+        %{op: :load_param, args: %{index: index}} ->
+          Enum.at(param_kinds_for_plan(plan), index) == :native_int
+
         %{op: op} when op in [:const_int, :const_c_expr, :record_get_int, :int_arith, :boxed_tag_peel] ->
           true
 

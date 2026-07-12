@@ -29,6 +29,21 @@ defmodule Elmc.Backend.Plan.Lower.Lambda do
 
   @spec compile_partial(map(), Context.t(), Builder.t()) ::
           {:ok, Types.reg() | :fn_out, Builder.t()} | :unsupported
+  def compile_partial(%{op: :call, name: name, args: [bound]}, ctx, b)
+      when name in @partial_binops do
+    compile_lambda(
+      ["x"],
+      %{
+        op: :call,
+        name: name,
+        args: [bound, %{op: :var, name: "x"}]
+      },
+      [],
+      ctx,
+      b
+    )
+  end
+
   def compile_partial(%{op: :call, name: name, args: []}, ctx, b)
       when name in @partial_binops do
     compile_lambda(

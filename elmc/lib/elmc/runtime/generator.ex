@@ -57,6 +57,7 @@ defmodule Elmc.Runtime.Generator do
           source
           |> prune_source(defs, kept_names, macros)
           |> String.trim_trailing()
+          |> maybe_inject_pruned_c_coercion_decls(direct_refs)
           |> maybe_stub_int_only_float_coercions(direct_refs)
           |> Kernel.<>("\n\n")
           |> Kernel.<>(RcMacros.fail_stash_source_impl())
@@ -228,11 +229,14 @@ defmodule Elmc.Runtime.Generator do
     "elmc_basics_tan_double"
   ])
 
-  @header_float_take_wrapper_names ~w(
-    elmc_new_float_take
+  @header_float_list_take_wrapper_names ~w(
     elmc_list_from_float_array_take
     elmc_float_list_head_boxed_take
     elmc_float_list_tail_take
+  )
+
+  @header_float_take_wrapper_names ~w(
+    elmc_new_float_take
     elmc_string_from_float_take
   )
 
@@ -312,6 +316,28 @@ defmodule Elmc.Runtime.Generator do
     end
   end
 
+  @spec maybe_inject_pruned_c_coercion_decls(Types.runtime_source(), MapSet.t(String.t())) ::
+          Types.runtime_source()
+  defp maybe_inject_pruned_c_coercion_decls(source, direct_refs) do
+    if int_only_float_coercions?(direct_refs) and String.contains?(source, "elmc_as_float(") do
+      inject_after_runtime_include(
+        source,
+        "double elmc_as_float(ElmcValue *value);\n"
+      )
+    else
+      source
+    end
+  end
+
+  @spec inject_after_runtime_include(Types.runtime_source(), Types.runtime_source()) ::
+          Types.runtime_source()
+  defp inject_after_runtime_include(source, decls) do
+    case String.split(source, "#include \"elmc_runtime.h\"\n", parts: 2) do
+      [before, rest] -> before <> "#include \"elmc_runtime.h\"\n" <> decls <> rest
+      _ -> source
+    end
+  end
+
   defp int_only_float_coercions?(direct_refs) do
     MapSet.disjoint?(direct_refs, @float_alloc_refs)
   end
@@ -377,6 +403,7 @@ defmodule Elmc.Runtime.Generator do
       |> drop_header_lines(~r/^RC elmc_float_list_head_boxed\(/)
       |> drop_header_lines(~r/^RC elmc_float_list_tail\(/)
       |> drop_header_lines(~r/^RC elmc_list_from_float_array\(/)
+      |> drop_header_static_inlines(@header_float_list_take_wrapper_names)
     end
   end
 
@@ -665,6 +692,32 @@ defmodule Elmc.Runtime.Generator do
     maybe_seed_rc_prune_refs(expanded, contents)
     |> maybe_seed_speaker_serialize_refs(contents)
     |> maybe_seed_json_runtime_refs(contents)
+    |> maybe_seed_compact_list_release_stub_refs(contents)
+    |> maybe_seed_float_runtime_refs(contents)
+  end
+
+  defp maybe_seed_float_runtime_refs(expanded, contents) do
+    joined = Enum.join(contents, "\n")
+
+    if String.contains?(joined, "elmc_new_float_take") or String.contains?(joined, "elmc_as_float") or
+         String.contains?(joined, "elmc_basics_round") do
+      (expanded ++ ["elmc_new_float", "elmc_as_float"]) |> Enum.uniq()
+    else
+      expanded
+    end
+  end
+
+  defp maybe_seed_compact_list_release_stub_refs(expanded, contents) do
+    joined = Enum.join(contents, "\n")
+
+    expanded
+    |> then(fn acc ->
+      if compact_float_list_used?(joined), do: acc, else: ["elmc_float_list_cell_release" | acc]
+    end)
+    |> then(fn acc ->
+      if compact_record_seq_used?(joined), do: acc, else: ["elmc_record_seq_cell_release" | acc]
+    end)
+    |> Enum.uniq()
   end
 
   defp maybe_seed_json_runtime_refs(expanded, contents) do
@@ -701,6 +754,8 @@ defmodule Elmc.Runtime.Generator do
       |> maybe_seed_rc_ref(joined, "ELMC_WORKER_LOG_RC_FAIL", "elmc_rc_name")
       |> maybe_seed_rc_ref(joined, "elmc_malloc(", "elmc_malloc_impl")
       |> maybe_seed_rc_ref(joined, "elmc_calloc(", "elmc_calloc_impl")
+      |> maybe_seed_rc_ref(joined, "elmc_release(", "elmc_release_impl")
+      |> maybe_seed_rc_ref(joined, "elmc_retain(", "elmc_retain_impl")
 
     (expanded ++ extras) |> Enum.uniq()
   end
@@ -934,8 +989,21 @@ defmodule Elmc.Runtime.Generator do
         end
       end)
       |> Enum.reverse()
+      |> dedupe_function_defs()
 
     {:ok, defs}
+  end
+
+  @spec dedupe_function_defs([Types.function_def()]) :: [Types.function_def()]
+  defp dedupe_function_defs(defs) do
+    defs
+    |> Enum.reduce(%{}, fn def, acc ->
+      Map.update(acc, def.name, def, fn existing ->
+        if byte_size(def.body) >= byte_size(existing.body), do: def, else: existing
+      end)
+    end)
+    |> Map.values()
+    |> Enum.sort_by(& &1.start_idx)
   end
 
   @spec line_start_offsets(Types.runtime_source()) :: Types.line_offsets()
@@ -1017,7 +1085,7 @@ defmodule Elmc.Runtime.Generator do
 
   @spec find_matching_brace(Types.runtime_source(), non_neg_integer()) :: Types.brace_result()
   defp find_matching_brace(source, open_idx) do
-    do_find_matching_brace(source, open_idx, byte_size(source), 0)
+    do_find_matching_brace(source, open_idx + 1, byte_size(source), 1)
   end
 
   @spec do_find_matching_brace(
@@ -1034,17 +1102,111 @@ defmodule Elmc.Runtime.Generator do
     ch = :binary.at(source, idx)
 
     cond do
+      ch == ?" ->
+        case skip_c_string(source, idx + 1, source_size) do
+          {:ok, next} -> do_find_matching_brace(source, next, source_size, depth)
+          :error -> {:error, :unbalanced_braces}
+        end
+
+      ch == ?' ->
+        case skip_c_char_literal(source, idx + 1, source_size) do
+          {:ok, next} -> do_find_matching_brace(source, next, source_size, depth)
+          :error -> {:error, :unbalanced_braces}
+        end
+
+      ch == ?/ and idx + 1 < source_size ->
+        case :binary.at(source, idx + 1) do
+          ?/ ->
+            do_find_matching_brace(source, skip_line_comment(source, idx + 2, source_size), source_size, depth)
+
+          ?* ->
+            case skip_block_comment(source, idx + 2, source_size) do
+              {:ok, next} -> do_find_matching_brace(source, next, source_size, depth)
+              :error -> {:error, :unbalanced_braces}
+            end
+
+          _ ->
+            scan_brace_token(source, idx, source_size, depth)
+        end
+
+      true ->
+        scan_brace_token(source, idx, source_size, depth)
+    end
+  end
+
+  defp scan_brace_token(source, idx, source_size, depth) do
+    ch = :binary.at(source, idx)
+
+    cond do
       ch == ?{ ->
         do_find_matching_brace(source, idx + 1, source_size, depth + 1)
 
       ch == ?} and depth == 1 ->
         {:ok, idx}
 
-      ch == ?} and depth > 0 ->
+      ch == ?} ->
         do_find_matching_brace(source, idx + 1, source_size, depth - 1)
 
       true ->
         do_find_matching_brace(source, idx + 1, source_size, depth)
+    end
+  end
+
+  @spec skip_c_string(Types.runtime_source(), non_neg_integer(), non_neg_integer()) ::
+          {:ok, non_neg_integer()} | :error
+  defp skip_c_string(_source, idx, source_size) when idx >= source_size, do: :error
+
+  defp skip_c_string(source, idx, source_size) do
+    ch = :binary.at(source, idx)
+
+    cond do
+      ch == ?" ->
+        {:ok, idx + 1}
+
+      ch == ?\\ and idx + 1 < source_size ->
+        skip_c_string(source, idx + 2, source_size)
+
+      true ->
+        skip_c_string(source, idx + 1, source_size)
+    end
+  end
+
+  @spec skip_c_char_literal(Types.runtime_source(), non_neg_integer(), non_neg_integer()) ::
+          {:ok, non_neg_integer()} | :error
+  defp skip_c_char_literal(_source, idx, source_size) when idx >= source_size, do: :error
+
+  defp skip_c_char_literal(source, idx, source_size) do
+    ch = :binary.at(source, idx)
+
+    cond do
+      ch == ?' ->
+        {:ok, idx + 1}
+
+      ch == ?\\ and idx + 1 < source_size ->
+        skip_c_char_literal(source, idx + 2, source_size)
+
+      true ->
+        skip_c_char_literal(source, idx + 1, source_size)
+    end
+  end
+
+  @spec skip_line_comment(Types.runtime_source(), non_neg_integer(), non_neg_integer()) ::
+          non_neg_integer()
+  defp skip_line_comment(source, idx, source_size) do
+    case :binary.match(source, "\n", [{:scope, {idx, source_size - idx}}]) do
+      {rel, _} -> rel + 1
+      :nomatch -> source_size
+    end
+  end
+
+  @spec skip_block_comment(Types.runtime_source(), non_neg_integer(), non_neg_integer()) ::
+          {:ok, non_neg_integer()} | :error
+  defp skip_block_comment(_source, idx, source_size) when idx >= source_size, do: :error
+
+  defp skip_block_comment(source, idx, source_size) do
+    case :binary.match(source, "*/", [{:scope, {idx, source_size - idx}}]) do
+      {rel, len} -> {:ok, rel + len}
+      :nomatch -> :error
     end
   end
 
@@ -1117,6 +1279,12 @@ defmodule Elmc.Runtime.Generator do
   defp runtime_call_dependencies("elmc_closure_new_rc"),
     do: ["elmc_closure_new_rc", "elmc_closure_cell_init", "elmc_malloc", "elmc_retain"]
 
+  defp runtime_call_dependencies("elmc_release"),
+    do: ["elmc_release", "elmc_release_impl"]
+
+  defp runtime_call_dependencies("elmc_retain"),
+    do: ["elmc_retain", "elmc_retain_impl"]
+
   defp runtime_call_dependencies(name) do
     [name | runtime_take_dependency(name)]
   end
@@ -1155,8 +1323,8 @@ defmodule Elmc.Runtime.Generator do
 
     first_start =
       case defs do
-        [%{start_idx: idx} | _] -> idx
-        _ -> byte_size(source)
+        [] -> byte_size(source)
+        defs -> defs |> Enum.map(& &1.start_idx) |> Enum.min()
       end
 
     preamble =
@@ -1166,9 +1334,15 @@ defmodule Elmc.Runtime.Generator do
       |> maybe_drop_unit_global(kept_names)
       |> maybe_drop_unused_forward_decls(kept_names, defs)
 
-    kept_bodies =
+    kept_defs =
       defs
       |> Enum.filter(&MapSet.member?(kept_names, &1.name))
+      |> Enum.sort_by(& &1.start_idx)
+
+    preamble = inject_kept_static_forward_decls_from_bodies(preamble, kept_defs)
+
+    kept_bodies =
+      kept_defs
       |> Enum.map(fn %{start_idx: s, end_idx: e} ->
         source
         |> binary_part(s, e - s + 1)
@@ -1183,19 +1357,60 @@ defmodule Elmc.Runtime.Generator do
           Types.function_def()
         ]) :: Types.runtime_source()
   defp maybe_drop_unused_forward_decls(preamble, kept_names, defs) do
-    pruned_names =
-      defs
-      |> Enum.map(& &1.name)
-      |> MapSet.new()
-      |> MapSet.difference(kept_names)
+    all_names = defs |> Enum.map(& &1.name) |> MapSet.new()
 
-    Enum.reduce(pruned_names, preamble, fn name, acc ->
+    drop_names =
+      all_names
+      |> MapSet.difference(kept_names)
+      |> MapSet.union(kept_names)
+
+    Enum.reduce(drop_names, preamble, fn name, acc ->
       Regex.replace(
         ~r/^\s*static\s+.*\b#{Regex.escape(name)}\b\s*\([^;]*\)\s*;\s*$/m,
         acc,
         ""
       )
     end)
+  end
+
+  defp inject_kept_static_forward_decls_from_bodies(preamble, kept_defs) do
+    order = kept_defs |> Enum.with_index() |> Map.new(fn {def, idx} -> {def.name, idx} end)
+
+    decls =
+      kept_defs
+      |> Enum.flat_map(fn %{name: callee_name, body: body} ->
+        callee_idx = Map.fetch!(order, callee_name)
+
+        needs_forward_decl? =
+          Enum.any?(kept_defs, fn %{name: caller_name, body: caller_body} ->
+            Map.fetch!(order, caller_name) < callee_idx and
+              String.contains?(caller_body, "#{callee_name}(")
+          end)
+
+        if needs_forward_decl? do
+          case static_forward_decl_line(body) do
+            nil -> []
+            decl -> [decl]
+          end
+        else
+          []
+        end
+      end)
+      |> Enum.uniq()
+      |> Enum.reject(fn decl -> String.contains?(preamble, String.trim(decl)) end)
+
+    if decls == [] do
+      preamble
+    else
+      preamble <> "\n" <> Enum.join(decls, "\n") <> "\n"
+    end
+  end
+
+  defp static_forward_decl_line(body) when is_binary(body) do
+    case Regex.run(~r/^(\s*static\s+[\s\S]*?\))\s*\{/m, body, capture: :all_but_first) do
+      [header] -> header <> ";"
+      _ -> nil
+    end
   end
 
   @spec maybe_drop_process_globals(Types.runtime_source(), Types.keep_set()) ::

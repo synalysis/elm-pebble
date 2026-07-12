@@ -1,5 +1,5 @@
 defmodule Elmc.PlanMakeClosureCTest do
-  use ExUnit.Case, async: true
+  use Elmc.TestSupport.PrimaryCodegenCase, async: true
 
   alias Elmc.Backend.C.Lower.Function, as: CLowerFunction
   alias Elmc.Backend.Plan.Types

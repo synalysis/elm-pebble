@@ -1,5 +1,5 @@
 defmodule Elmc.GeneratedRcTrack2048Test do
-  use ExUnit.Case, async: false
+  use Elmc.TestSupport.PrimaryCodegenCase, async: false
 
   alias Elmc.Test.RcTrackHarness
 
@@ -252,7 +252,7 @@ defmodule Elmc.GeneratedRcTrack2048Test do
 end
 
 defmodule Elmc.GeneratedRcTrack2048WorkerTest do
-  use ExUnit.Case, async: false
+  use Elmc.TestSupport.PrimaryCodegenCase, async: false
 
   alias Elmc.Test.RcTrackHarness
 

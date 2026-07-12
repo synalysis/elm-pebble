@@ -4,6 +4,8 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
   """
 
   alias Elmc.Backend.CCodegen.ConstantInt
+  alias Elmc.Backend.CCodegen.{Host, TypeParsing}
+  alias Elmc.Backend.CCodegen.Native.TypedReturn
   alias Elmc.Backend.Plan.Builder
   alias Elmc.Backend.Plan.Context
   alias Elmc.Backend.Plan.Lower.{Arith, Call, Case, Cmd, Compare, Constructor, If, IntCall, Lambda, List, Record, SpecialValues, StdlibCall, Tuple, UnionCtor}
@@ -656,7 +658,11 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
 
     case compile(value_expr, value_ctx, b) do
       {:ok, reg, b1} when is_integer(reg) ->
-        ctx1 = Context.put_local(ctx, name, reg)
+        ctx1 =
+          ctx
+          |> Context.put_local(name, reg)
+          |> maybe_put_local_type(name, value_expr, ctx)
+
         b2 = Builder.bind_local(b1, name, reg)
         compile(in_expr, ctx1, b2)
 
@@ -688,6 +694,48 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
       value_expr
     end
   end
+
+  defp maybe_put_local_type(ctx, name, value_expr, parent_ctx) do
+    case TypedReturn.expr_type(value_expr, let_type_env(parent_ctx)) do
+      type when is_binary(type) -> Context.put_local_type(ctx, name, type)
+      _ -> ctx
+    end
+  end
+
+  defp let_type_env(%Context{} = ctx) do
+    %{
+      __module__: ctx.module || "Main",
+      __var_types__:
+        let_param_var_types(ctx)
+        |> Map.merge(ctx.local_types),
+      __program_decls__: ctx.decl_map,
+      __record_field_types__: Process.get(:elmc_record_field_types, %{}),
+      __record_field_kinds__: Process.get(:elmc_record_field_kinds, %{})
+    }
+  end
+
+  defp let_param_var_types(%Context{decl_map: decl_map, module: module, params: params, function_name: fun})
+       when is_binary(module) and is_binary(fun) and is_list(params) do
+    with decl when is_map(decl) <- Map.get(decl_map, {module, fun}, %{}),
+         type when is_binary(type) <- Map.get(decl, :type),
+         arg_types when is_list(arg_types) <- TypeParsing.function_arg_types(type) do
+      params
+      |> Enum.with_index()
+      |> Enum.reduce(%{}, fn {name, idx}, acc ->
+        case Enum.at(arg_types, idx) do
+          arg_type when is_binary(arg_type) ->
+            Map.put(acc, name, Host.normalize_type_name(arg_type))
+
+          _ ->
+            acc
+        end
+      end)
+    else
+      _ -> %{}
+    end
+  end
+
+  defp let_param_var_types(_), do: %{}
 
   defp compile_letrec_lambda(name, %{op: :lambda} = value_expr, in_expr, ctx, b) do
     {ref, b1} = Builder.declare_letrec(b, name)
@@ -1015,6 +1063,14 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
   @doc false
   @borrow_view_builtins [:union_payload, :maybe_just_payload]
 
+  @borrow_list_view_builtins [
+    :list_head,
+    :int_list_head_int,
+    :int_list_head_boxed,
+    :list_is_empty,
+    :list_length
+  ]
+
   def compile_runtime_builtin(id, arg_regs, ctx, b, extra \\ %{}) do
     if id in @borrow_view_builtins do
       compile_borrow_view_builtin(id, arg_regs, ctx, b, extra)
@@ -1064,6 +1120,9 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
 
     {borrows, consumes} =
       cond do
+        id in @borrow_list_view_builtins and length(arg_regs) == 1 ->
+          {arg_regs, []}
+
         id in [:record_new, :record_new_take, :record_new_values_ints] -> {[], arg_regs}
         id in [:cmd_batch, :sub_batch] -> {[], arg_regs}
         id == :debug_to_string -> {[], arg_regs}

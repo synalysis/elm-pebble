@@ -64,8 +64,8 @@ defmodule Elmc.PlanCLowerTest do
              Elmc.Backend.Plan.Lower.Function.lower(decl, "Main", %{}, rc_required: true)
 
     c = CLowerFunction.emit(plan)
-    assert c =~ "elmc_record_new_values_ints"
-    refute c =~ "elmc_record_new(&owned"
+    assert c =~ "elmc_record_new_values_take"
+    refute c =~ "elmc_record_new_values_ints"
   end
 
   test "record update uses value-returning C calls" do

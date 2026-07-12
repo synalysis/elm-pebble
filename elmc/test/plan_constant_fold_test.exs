@@ -1,5 +1,5 @@
 defmodule Elmc.PlanConstantFoldTest do
-  use ExUnit.Case, async: true
+  use Elmc.TestSupport.PrimaryCodegenCase, async: true
 
   alias Elmc.Backend.Plan.Lower.If, as: PlanIf
   alias Elmc.Backend.Plan.{Builder, ConstantFold, Context}

@@ -1,5 +1,5 @@
 defmodule Elmc.MaybeWithDefaultPickSlotTest do
-  use ExUnit.Case, async: true
+  use Elmc.TestSupport.PrimaryCodegenCase, async: true
 
   alias Elmc.Backend.CCodegen.MaybeWithDefaultPickSlot
 

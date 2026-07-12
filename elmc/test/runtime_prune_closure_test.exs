@@ -1,5 +1,5 @@
 defmodule Elmc.RuntimePruneClosureTest do
-  use ExUnit.Case, async: false
+  use Elmc.TestSupport.PrimaryCodegenCase, async: false
 
   @source_fixture Path.expand("fixtures/simple_project", __DIR__)
   @project_dir Path.expand("tmp/runtime_prune_closure_project", __DIR__)
@@ -66,8 +66,8 @@ defmodule Elmc.RuntimePruneClosureTest do
     runtime = File.read!(runtime_path)
     generated = File.read!(Path.join(@out_dir, "c/elmc_generated.c"))
 
-    assert String.contains?(generated, "elmc_closure_new"),
-           "fixture must reference elmc_closure_new so pruning keeps closure helpers"
+    assert String.contains?(generated, "elmc_closure_new_rc"),
+           "fixture must reference elmc_closure_new_rc so pruning keeps closure helpers"
 
     assert String.contains?(runtime, "elmc_closure_cell_init("),
            "expected elmc_closure_cell_init definition in pruned runtime"
@@ -88,7 +88,7 @@ defmodule Elmc.RuntimePruneClosureTest do
       int main(void) {
         ElmcValue *captures[1] = {elmc_int_zero()};
         ElmcValue *closure = NULL;
-        if (elmc_closure_new(&closure, NULL, 0, 1, captures) != RC_SUCCESS) return 1;
+        if (elmc_closure_new_rc(&closure, NULL, 0, 1, captures) != RC_SUCCESS) return 1;
         elmc_release(closure);
         return 0;
       }
@@ -101,6 +101,7 @@ defmodule Elmc.RuntimePruneClosureTest do
         "-Wall",
         "-Wextra",
         "-Werror=implicit-function-declaration",
+        "-include", Path.expand("support/elmc_host_stubs.h", __DIR__),
         "-I#{Path.join(@out_dir, "runtime")}",
         "-I#{Path.join(@out_dir, "ports")}",
         "-I#{Path.join(@out_dir, "c")}",

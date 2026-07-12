@@ -2,7 +2,7 @@ defmodule Elmc.Backend.CCodegen.PlanNativeProjection do
   @moduledoc false
 
   alias Elmc.Backend.C.Lower.NativeReturn
-  alias Elmc.Backend.CCodegen.{Fusion, FunctionEmit, Host, Native.FunctionCall, RcRequired, Util}
+  alias Elmc.Backend.CCodegen.{Fusion, FunctionCallAbi, FunctionEmit, Host, Native.FunctionCall, RcRequired, Util}
   alias Elmc.Backend.Plan
 
   @type projection_kind :: :native_int | :native_bool
@@ -12,7 +12,13 @@ defmodule Elmc.Backend.CCodegen.PlanNativeProjection do
     Plan.primary_lowered?(decl, module_name, decl_map) and
       is_nil(NativeReturn.cached_kind({module_name, decl.name})) and
       RcRequired.rc_required?(module_name, decl.name) and
+      not direct_plan_native_scalar_return?(decl, module_name, decl_map) and
       not Fusion.rc_native_fusion?(module_name, decl.name, Map.get(decl, :expr), decl_map) and
+      projection_kind(decl) in [:native_int, :native_bool]
+  end
+
+  defp direct_plan_native_scalar_return?(decl, module_name, decl_map) do
+    FunctionCallAbi.direct_plan_call_abi?(decl, module_name, decl_map) and
       projection_kind(decl) in [:native_int, :native_bool]
   end
 

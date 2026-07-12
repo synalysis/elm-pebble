@@ -17,6 +17,7 @@ defmodule Elmc.Backend.Plan.Context do
     :function_name,
     :decl_map,
     :locals,
+    :local_types,
     :params,
     :letrec_refs,
     :letrec_self,
@@ -32,6 +33,7 @@ defmodule Elmc.Backend.Plan.Context do
           function_name: String.t() | nil,
           decl_map: map(),
           locals: %{String.t() => Types.reg()},
+          local_types: %{String.t() => String.t()},
           params: [String.t()],
           letrec_refs: %{String.t() => String.t()},
           letrec_self: String.t() | nil,
@@ -53,6 +55,7 @@ defmodule Elmc.Backend.Plan.Context do
       function_name: Keyword.get(opts, :function_name),
       decl_map: Keyword.get(opts, :decl_map, %{}),
       locals: Keyword.get(opts, :locals, %{}),
+      local_types: Keyword.get(opts, :local_types, %{}),
       params: Keyword.get(opts, :params, []),
       letrec_refs: Keyword.get(opts, :letrec_refs, %{}),
       letrec_self: Keyword.get(opts, :letrec_self),
@@ -75,6 +78,7 @@ defmodule Elmc.Backend.Plan.Context do
       function_name: Map.get(env, :__function_name__),
       decl_map: Map.get(env, :__program_decls__, %{}),
       locals: locals_from_env(env),
+      local_types: %{},
       params: params_from_env(env)
     }
   end
@@ -148,8 +152,16 @@ defmodule Elmc.Backend.Plan.Context do
   @spec local_reg(t(), String.t()) :: Types.reg() | nil
   def local_reg(ctx, name) when is_binary(name), do: Map.get(ctx.locals, name)
 
+  @spec put_local_type(t(), String.t(), String.t()) :: t()
+  def put_local_type(ctx, name, type) when is_binary(name) and is_binary(type) do
+    %{ctx | local_types: Map.put(ctx.local_types || %{}, name, type)}
+  end
+
+  @spec local_type(t(), String.t()) :: String.t() | nil
+  def local_type(ctx, name) when is_binary(name), do: Map.get(ctx.local_types || %{}, name)
+
   @spec fresh_locals(t()) :: t()
-  def fresh_locals(ctx), do: %{ctx | locals: %{}}
+  def fresh_locals(ctx), do: %{ctx | locals: %{}, local_types: %{}}
 
   @spec put_letrec_ref(t(), String.t(), String.t()) :: t()
   def put_letrec_ref(ctx, name, ref) when is_binary(name) and is_binary(ref) do

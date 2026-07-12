@@ -86,7 +86,7 @@ defmodule Elmc.Backend.Plan.Lower.If do
           Builder.phi_branch_consumes(b1, [cond_reg])
 
         true ->
-          Builder.phi_branch_consumes(b1, [then_reg, else_reg, cond_reg])
+          Builder.phi_branch_consumes(b1, [cond_reg])
       end
 
     args =

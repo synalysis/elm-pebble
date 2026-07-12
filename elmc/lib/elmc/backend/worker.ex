@@ -416,7 +416,15 @@ defmodule Elmc.Backend.Worker do
     }
 
     static int elmc_cmd_is_none(ElmcValue *value) {
-      return !value || ((value->tag == ELMC_TAG_INT || value->tag == ELMC_TAG_BOOL) && elmc_as_int(value) == 0);
+      if (!value) return 1;
+      if ((value->tag == ELMC_TAG_INT || value->tag == ELMC_TAG_BOOL) && elmc_as_int(value) == 0) {
+        return 1;
+      }
+      if (value->tag == ELMC_TAG_CMD && value->payload != NULL) {
+        ElmcCmdPayload *cmd = (ElmcCmdPayload *)value->payload;
+        return cmd->kind == 0;
+      }
+      return 0;
     }
 
     static ElmcValue *elmc_cmd_none(void) {

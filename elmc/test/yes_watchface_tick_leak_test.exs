@@ -1,5 +1,5 @@
 defmodule Elmc.YesWatchfaceTickLeakTest do
-  use ExUnit.Case, async: false
+  use Elmc.TestSupport.PrimaryCodegenCase, async: false
 
   alias Elmc.Test.{CCodegenExtract, RcTrackHarness}
 
@@ -75,12 +75,13 @@ defmodule Elmc.YesWatchfaceTickLeakTest do
 
     top_left_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_topLeftSlots")
     refute top_left_body =~ "elmc_new_bool(&tmp_"
-    assert top_left_body =~ "elmc_new_bool(&owned["
+    assert top_left_body =~ "elmc_record_new_values_take"
+    assert top_left_body =~ "topLeftBatteryAvailable"
 
-    next_event_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_nextEventParts_native")
+    next_event_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_nextEventParts")
     refute next_event_body =~ "ELMC_RELEASE(owned["
     refute next_event_body =~ "__cmp_bool_"
-    assert next_event_body =~ "Rc = elmc_basics_compare(&owned["
+    assert next_event_body =~ "plan_native_bool_"
 
     write_trig_stubs!(@out_dir)
     harness_path = Path.join(@out_dir, "c/yes_watchface_tick_leak_harness.c")

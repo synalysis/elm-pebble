@@ -112,8 +112,8 @@ defmodule Elmc.DirectRenderDeadViewHelpersTest do
     assert generated =~ "direct_cursor_"
   end
 
-  test "update calls fused initialBoard_native with native seed", %{generated: generated} do
-    assert generated =~ "elmc_fn_Main_initialBoard_native(&owned["
+  test "update calls initialBoard with native seed operand", %{generated: generated} do
+    assert generated =~ "elmc_fn_Main_initialBoard(&owned["
     assert generated =~ "elmc_as_int(owned["
   end
 end

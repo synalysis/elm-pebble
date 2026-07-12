@@ -5547,7 +5547,9 @@ defmodule Elmc.CCodegenPatternsTest do
                out_dir: out_dir,
                entry_module: "Main",
                direct_render_only: true,
-               strip_dead_code: true
+               strip_dead_code: true,
+               plan_ir_mode: :primary,
+               plan_ir_strict: true
              })
 
     generated_h = File.read!(Path.join(out_dir, "c/elmc_generated.h"))

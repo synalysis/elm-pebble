@@ -21,6 +21,23 @@ defmodule Elmc.Backend.Plan.Fusion.CEmit do
       {:ok, c_body, _callees, :rc_native} ->
         kinds = Registry.infer_native_tag_fusion_arg_kinds(c_body, decl)
 
+        kinds =
+          case kinds do
+            kinds when is_list(kinds) ->
+              kinds
+              |> Enum.with_index()
+              |> Enum.map(fn {kind, idx} ->
+                if kind == :native_int and boxed_direct_plan_param?(decl, idx) do
+                  :boxed_int_tag
+                else
+                  kind
+                end
+              end)
+
+            other ->
+              other
+          end
+
         if kinds do
           Registry.register_rc_native_arg_kinds(module_name, name, kinds)
         end
@@ -51,6 +68,28 @@ defmodule Elmc.Backend.Plan.Fusion.CEmit do
 
   defp fusion_expr(%{op: :pipe_chain} = expr), do: ElmEx.IR.PipeChain.desugar(expr)
   defp fusion_expr(expr), do: expr
+
+  defp boxed_direct_plan_param?(decl, index) do
+    case Enum.at(Map.get(decl, :args, []), index) do
+      arg when is_binary(arg) ->
+        case Map.get(decl, :type) do
+          type when is_binary(type) ->
+            type
+            |> Elmc.Backend.CCodegen.Host.function_arg_types()
+            |> Enum.at(index)
+            |> then(fn
+              nil -> true
+              arg_type -> Elmc.Backend.CCodegen.Host.normalize_type_name(arg_type) not in ["Int", "Bool"]
+            end)
+
+          _ ->
+            true
+        end
+
+      _ ->
+        false
+    end
+  end
 
   defp attach_fusion_bytecode(plan, emit_mod, module_name, name, expr, decl_map) do
     cond do

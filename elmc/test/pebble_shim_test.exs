@@ -1,5 +1,5 @@
 defmodule Elmc.PebbleShimTest do
-  use ExUnit.Case
+  use Elmc.TestSupport.PrimaryCodegenCase
 
   @companion_fixture Path.expand("fixtures/companion_project", __DIR__)
 
@@ -86,6 +86,7 @@ defmodule Elmc.PebbleShimTest do
         "-std=c11",
         "-Wall",
         "-Wextra",
+        "-include", Path.expand("support/elmc_host_stubs.h", __DIR__),
         "-I#{Path.join(out_dir, "runtime")}",
         "-I#{Path.join(out_dir, "ports")}",
         "-I#{Path.join(out_dir, "c")}",
@@ -157,6 +158,7 @@ defmodule Elmc.PebbleShimTest do
         "-std=c11",
         "-Wall",
         "-Wextra",
+        "-include", Path.expand("support/elmc_host_stubs.h", __DIR__),
         "-I#{Path.join(out_dir, "runtime")}",
         "-I#{Path.join(out_dir, "ports")}",
         "-I#{Path.join(out_dir, "c")}",
@@ -225,6 +227,7 @@ defmodule Elmc.PebbleShimTest do
         "-std=c11",
         "-Wall",
         "-Wextra",
+        "-include", Path.expand("support/elmc_host_stubs.h", __DIR__),
         "-I#{Path.join(out_dir, "runtime")}",
         "-I#{Path.join(out_dir, "ports")}",
         "-I#{Path.join(out_dir, "c")}",
@@ -300,6 +303,7 @@ defmodule Elmc.PebbleShimTest do
         "-std=c11",
         "-Wall",
         "-Wextra",
+        "-include", Path.expand("support/elmc_host_stubs.h", __DIR__),
         "-I#{Path.join(out_dir, "runtime")}",
         "-I#{Path.join(out_dir, "ports")}",
         "-I#{Path.join(out_dir, "c")}",
@@ -373,6 +377,7 @@ defmodule Elmc.PebbleShimTest do
         "-std=c11",
         "-Wall",
         "-Wextra",
+        "-include", Path.expand("support/elmc_host_stubs.h", __DIR__),
         "-I#{Path.join(out_dir, "runtime")}",
         "-I#{Path.join(out_dir, "ports")}",
         "-I#{Path.join(out_dir, "c")}",
@@ -446,6 +451,7 @@ defmodule Elmc.PebbleShimTest do
         "-std=c11",
         "-Wall",
         "-Wextra",
+        "-include", Path.expand("support/elmc_host_stubs.h", __DIR__),
         "-I#{Path.join(out_dir, "runtime")}",
         "-I#{Path.join(out_dir, "ports")}",
         "-I#{Path.join(out_dir, "c")}",
@@ -524,6 +530,7 @@ defmodule Elmc.PebbleShimTest do
         "-std=c11",
         "-Wall",
         "-Wextra",
+        "-include", Path.expand("support/elmc_host_stubs.h", __DIR__),
         "-I#{Path.join(out_dir, "runtime")}",
         "-I#{Path.join(out_dir, "ports")}",
         "-I#{Path.join(out_dir, "c")}",
@@ -600,6 +607,7 @@ defmodule Elmc.PebbleShimTest do
         "-std=c11",
         "-Wall",
         "-Wextra",
+        "-include", Path.expand("support/elmc_host_stubs.h", __DIR__),
         "-I#{Path.join(out_dir, "runtime")}",
         "-I#{Path.join(out_dir, "ports")}",
         "-I#{Path.join(out_dir, "c")}",
@@ -683,6 +691,7 @@ defmodule Elmc.PebbleShimTest do
         "-std=c11",
         "-Wall",
         "-Wextra",
+        "-include", Path.expand("support/elmc_host_stubs.h", __DIR__),
         "-I#{Path.join(out_dir, "runtime")}",
         "-I#{Path.join(out_dir, "ports")}",
         "-I#{Path.join(out_dir, "c")}",
@@ -768,6 +777,7 @@ defmodule Elmc.PebbleShimTest do
         "-std=c11",
         "-Wall",
         "-Wextra",
+        "-include", Path.expand("support/elmc_host_stubs.h", __DIR__),
         "-I#{Path.join(out_dir, "runtime")}",
         "-I#{Path.join(out_dir, "ports")}",
         "-I#{Path.join(out_dir, "c")}",
@@ -854,6 +864,7 @@ defmodule Elmc.PebbleShimTest do
         "-std=c11",
         "-Wall",
         "-Wextra",
+        "-include", Path.expand("support/elmc_host_stubs.h", __DIR__),
         "-I#{Path.join(out_dir, "runtime")}",
         "-I#{Path.join(out_dir, "ports")}",
         "-I#{Path.join(out_dir, "c")}",
@@ -935,6 +946,7 @@ defmodule Elmc.PebbleShimTest do
         "-Wall",
         "-Wextra",
         "-Werror",
+        "-include", Path.expand("support/elmc_host_stubs.h", __DIR__),
         "-I#{Path.join(out_dir, "runtime")}",
         "-I#{Path.join(out_dir, "ports")}",
         "-I#{Path.join(out_dir, "c")}",
@@ -1045,6 +1057,7 @@ defmodule Elmc.PebbleShimTest do
         "-std=c11",
         "-Wall",
         "-Wextra",
+        "-include", Path.expand("support/elmc_host_stubs.h", __DIR__),
         "-I#{Path.join(out_dir, "runtime")}",
         "-I#{Path.join(out_dir, "ports")}",
         "-I#{Path.join(out_dir, "c")}",
@@ -1132,9 +1145,10 @@ defmodule Elmc.PebbleShimTest do
         System.cmd(cc, [
           "-std=c11",
           "-Wall",
-          "-Wextra",
-          "-Werror",
-          "-I#{Path.join(out_dir, "runtime")}",
+        "-Wextra",
+        "-Werror",
+        "-include", Path.expand("support/elmc_host_stubs.h", __DIR__),
+        "-I#{Path.join(out_dir, "runtime")}",
           "-I#{Path.join(out_dir, "ports")}",
           "-I#{Path.join(out_dir, "c")}",
           Path.join(out_dir, "runtime/elmc_runtime.c"),
@@ -1211,6 +1225,7 @@ defmodule Elmc.PebbleShimTest do
         "-std=c11",
         "-Wall",
         "-Wextra",
+        "-include", Path.expand("support/elmc_host_stubs.h", __DIR__),
         "-I#{Path.join(out_dir, "runtime")}",
         "-I#{Path.join(out_dir, "ports")}",
         "-I#{Path.join(out_dir, "c")}",
@@ -1293,6 +1308,7 @@ defmodule Elmc.PebbleShimTest do
         "-Wall",
         "-Wextra",
         "-Werror",
+        "-include", Path.expand("support/elmc_host_stubs.h", __DIR__),
         "-I#{Path.join(out_dir, "runtime")}",
         "-I#{Path.join(out_dir, "ports")}",
         "-I#{Path.join(out_dir, "c")}",
@@ -1392,6 +1408,7 @@ defmodule Elmc.PebbleShimTest do
         "-Wall",
         "-Wextra",
         "-Werror",
+        "-include", Path.expand("support/elmc_host_stubs.h", __DIR__),
         "-I#{Path.join(out_dir, "runtime")}",
         "-I#{Path.join(out_dir, "ports")}",
         "-I#{Path.join(out_dir, "c")}",
@@ -1461,7 +1478,8 @@ defmodule Elmc.PebbleShimTest do
              })
 
     generated = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
-    assert String.contains?(generated, "elmc_fn_Main_landedOnTile_native")
+    assert String.contains?(generated, "static RC elmc_fn_Main_landedOnTile(")
+    assert String.contains?(generated, "plan_native_bool")
 
     harness_path = Path.join(out_dir, "c/game_jump_n_run_harness.c")
 
@@ -1497,6 +1515,7 @@ defmodule Elmc.PebbleShimTest do
         "-Wall",
         "-Wextra",
         "-Werror",
+        "-include", Path.expand("support/elmc_host_stubs.h", __DIR__),
         "-I#{Path.join(out_dir, "runtime")}",
         "-I#{Path.join(out_dir, "ports")}",
         "-I#{Path.join(out_dir, "c")}",
@@ -1680,6 +1699,7 @@ defmodule Elmc.PebbleShimTest do
         "-std=c11",
         "-Wall",
         "-Wextra",
+        "-include", Path.expand("support/elmc_host_stubs.h", __DIR__),
         "-I#{Path.join(out_dir, "runtime")}",
         "-I#{Path.join(out_dir, "ports")}",
         "-I#{Path.join(out_dir, "c")}",
@@ -1706,6 +1726,7 @@ defmodule Elmc.PebbleShimTest do
         "-std=c11",
         "-Wall",
         "-Wextra",
+        "-include", Path.expand("support/elmc_host_stubs.h", __DIR__),
         "-I#{Path.join(out_dir, "runtime")}",
         "-I#{Path.join(out_dir, "ports")}",
         "-I#{Path.join(out_dir, "c")}",
@@ -1836,6 +1857,7 @@ defmodule Elmc.PebbleShimTest do
         "-Wall",
         "-Wextra",
         "-Werror",
+        "-include", Path.expand("support/elmc_host_stubs.h", __DIR__),
         "-I#{Path.join(out_dir, "runtime")}",
         "-I#{Path.join(out_dir, "ports")}",
         "-I#{Path.join(out_dir, "c")}",
@@ -1916,6 +1938,7 @@ defmodule Elmc.PebbleShimTest do
         "-Wall",
         "-Wextra",
         "-Werror",
+        "-include", Path.expand("support/elmc_host_stubs.h", __DIR__),
         "-I#{Path.join(out_dir, "runtime")}",
         "-I#{Path.join(out_dir, "ports")}",
         "-I#{Path.join(out_dir, "c")}",
@@ -1994,6 +2017,7 @@ defmodule Elmc.PebbleShimTest do
         "-Wall",
         "-Wextra",
         "-Werror",
+        "-include", Path.expand("support/elmc_host_stubs.h", __DIR__),
         "-I#{Path.join(out_dir, "runtime")}",
         "-I#{Path.join(out_dir, "ports")}",
         "-I#{Path.join(out_dir, "c")}",
@@ -2144,7 +2168,8 @@ defmodule Elmc.PebbleShimTest do
           "-Wall",
           "-Wextra",
           "-Werror"
-          | extra_flags ++
+          | ["-include", Path.expand("support/elmc_host_stubs.h", __DIR__)] ++
+              extra_flags ++
               [
                 "-I#{Path.join(out_dir, "runtime")}",
                 "-I#{Path.join(out_dir, "ports")}",

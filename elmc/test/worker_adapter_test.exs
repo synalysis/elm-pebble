@@ -1,5 +1,5 @@
 defmodule Elmc.WorkerAdapterTest do
-  use ExUnit.Case
+  use Elmc.TestSupport.PrimaryCodegenCase
 
   test "generated worker adapter runs init and update loop" do
     cc = System.find_executable("cc")

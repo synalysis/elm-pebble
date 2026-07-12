@@ -73,7 +73,8 @@ defmodule Elmc.PlanSurfaceCoverageTest do
 
     view_append_body = Elmc.Test.CCodegenExtract.fn_body(generated_c, "elmc_fn_Main_view_commands_append")
     assert view_append_body =~ "parseHourFromTimeString"
-    assert view_append_body =~ "elmc_fn_Main_parseHourFromTimeString_native("
+    assert view_append_body =~ "elmc_fn_Main_parseHourFromTimeString("
+    refute view_append_body =~ "elmc_fn_Main_parseHourFromTimeString_native("
 
     refute Enum.any?(result.layout_coercion_diagnostics, &(&1["code"] == "plan_primary_fallback"))
   end

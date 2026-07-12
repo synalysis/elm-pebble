@@ -1,5 +1,5 @@
 defmodule Elmc.GeneratedRcTrackGame2048TemplateTest do
-  use ExUnit.Case, async: false
+  use Elmc.TestSupport.PrimaryCodegenCase, async: false
 
   alias Elmc.Test.RcTrackHarness
 

@@ -1,5 +1,5 @@
 defmodule Elmc.RuntimePruneCompactListTest do
-  use ExUnit.Case, async: false
+  use Elmc.TestSupport.PrimaryCodegenCase, async: false
 
   alias Elmc.Test.CCodegenExtract
 
@@ -35,10 +35,13 @@ defmodule Elmc.RuntimePruneCompactListTest do
     refute runtime =~ "elmc_int_spine_head_native"
 
     count_empty =
-      CCodegenExtract.fn_impl_body(generated, "elmc_fn_Main_countEmpty_native")
+      case CCodegenExtract.fn_impl_body(generated, "elmc_fn_Main_countEmpty_native") do
+        "" -> CCodegenExtract.fn_impl_body(generated, "elmc_fn_Main_countEmpty")
+        body -> body
+      end
 
     assert count_empty != ""
-    assert count_empty =~ "ELMC_TAG_INT_LIST"
+    assert count_empty =~ "elmc_int_list_tail" or count_empty =~ "ELMC_TAG_INT_LIST"
 
     cc = System.find_executable("cc")
     if is_nil(cc), do: flunk("cc not available")
@@ -51,6 +54,8 @@ defmodule Elmc.RuntimePruneCompactListTest do
       System.cmd(cc, [
         "-c",
         "-std=c99",
+        "-include",
+        Path.expand("support/elmc_host_stubs.h", __DIR__),
         "-I",
         runtime_dir,
         "-I",
@@ -102,6 +107,8 @@ defmodule Elmc.RuntimePruneCompactListTest do
         "-Wall",
         "-Wno-unused-function",
         "-Wno-unused-variable",
+        "-include",
+        Path.expand("support/elmc_host_stubs.h", __DIR__),
         "-I",
         runtime_dir,
         "-I",

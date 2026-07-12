@@ -1,5 +1,5 @@
 defmodule Elmc.PortsRoundtripTest do
-  use ExUnit.Case
+  use Elmc.TestSupport.PrimaryCodegenCase
 
   test "host harness receives outgoing callback" do
     cc = System.find_executable("cc")

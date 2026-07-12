@@ -1,6 +1,6 @@
 ExUnit.start()
 
-Application.put_env(:elmc, :default_plan_ir_mode, :primary)
+Application.put_env(:elmc, :default_plan_ir_mode, :off)
 
 ExUnit.configure(
   exclude: [

@@ -1,10 +1,5 @@
-#include "elmc_runtime.h"
-#include <stdarg.h>
-
-const char *elmc_debug_union_ctor_name(elmc_int_t tag) {
-  (void)tag;
-  return NULL;
-}
+#ifndef ELMC_HOST_STUBS_H
+#define ELMC_HOST_STUBS_H
 
 #ifndef APP_LOG_LEVEL_ERROR
 #define APP_LOG_LEVEL_ERROR 200
@@ -21,4 +16,6 @@ const char *elmc_debug_union_ctor_name(elmc_int_t tag) {
 
 #ifndef APP_LOG
 #define APP_LOG(level, ...) ((void)(level))
+#endif
+
 #endif

@@ -1,5 +1,5 @@
 defmodule Elmc.CoreComplianceTest do
-  use ExUnit.Case
+  use Elmc.TestSupport.PrimaryCodegenCase
 
   @required_functions [
     "CoreCompliance_foldSum",
@@ -103,7 +103,12 @@ defmodule Elmc.CoreComplianceTest do
     project_dir = Path.expand("fixtures/simple_project", __DIR__)
     out_dir = Path.expand("tmp/compliance_behavior", __DIR__)
     File.rm_rf!(out_dir)
-    assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, strip_dead_code: false})
+    assert {:ok, _} =
+             Elmc.compile(project_dir, %{
+               out_dir: out_dir,
+               strip_dead_code: false,
+               plan_ir_mode: :off
+             })
 
     harness_path = Path.join(out_dir, "c/core_behavior_harness.c")
 

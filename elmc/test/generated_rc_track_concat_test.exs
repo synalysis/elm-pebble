@@ -35,7 +35,7 @@ defmodule Elmc.GeneratedRcTrackConcatTest do
 
         elmc_rc_track_reset();
         ElmcValue *args[] = { outer };
-        ElmcValue *out = elmc_harness_call_rc(elmc_fn_RcTrackProbe_concatRows, args, 1);
+        ElmcValue *out = #{RcTrackHarness.generated_fn_call(out_dir, "RcTrackProbe", "concatRows", "args", 1)};
         elmc_release(outer);
         elmc_release(out);
 

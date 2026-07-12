@@ -8,14 +8,16 @@ defmodule Elmc.Backend.Plan.Lower.Case.ArmMerge do
   def publish_arm_to_merge(b, arm_reg, merge_reg) when arm_reg == merge_reg, do: {:ok, b}
 
   def publish_arm_to_merge(b, arm_reg, merge_reg) do
+    consume? = not Builder.borrow_arg?(b, arm_reg)
+
     {_, b1} =
       Builder.emit(b, :call_runtime, %{
         dest: merge_reg,
         args: %{builtin: :retain, args: [arm_reg]},
         effects: %{
           produces: {:owned, merge_reg},
-          consumes: [arm_reg],
-          borrows: [],
+          consumes: if(consume?, do: [arm_reg], else: []),
+          borrows: if(consume?, do: [], else: [arm_reg]),
           fallible: false
         }
       })

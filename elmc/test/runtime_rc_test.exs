@@ -1,5 +1,5 @@
 defmodule Elmc.RuntimeRCTest do
-  use ExUnit.Case
+  use Elmc.TestSupport.PrimaryCodegenCase
 
   alias Elmc.Test.RcTrackHarness
 
@@ -359,6 +359,9 @@ defmodule Elmc.RuntimeRCTest do
     File.rm_rf!(out_dir)
     {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, strip_dead_code: false})
 
+    branch_call =
+      RcTrackHarness.generated_fn_call(out_dir, "CoreCompliance", "branchTupleOut", "args", 1)
+
     harness_path = Path.join(out_dir, "c/rc_branch_harness.c")
 
     File.write!(
@@ -367,6 +370,8 @@ defmodule Elmc.RuntimeRCTest do
       #include "elmc_generated.h"
       #include "elmc_generated.c"
       #include <stdio.h>
+
+      #{RcTrackHarness.harness_prelude()}
 
       int main(void) {
         ElmcValue *n = elmc_new_int_take(4);
@@ -381,7 +386,7 @@ defmodule Elmc.RuntimeRCTest do
         elmc_release(just);
 
         ElmcValue *args[] = { pair };
-        ElmcValue *out = elmc_fn_CoreCompliance_branchTupleOut(args, 1);
+        ElmcValue *out = #{branch_call};
         elmc_release(out);
         elmc_release(pair);
 

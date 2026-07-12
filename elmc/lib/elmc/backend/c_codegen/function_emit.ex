@@ -337,7 +337,7 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
   @spec effective_decl_args(Types.function_declaration(), String.t(), Types.function_decl_map()) ::
           [String.t()]
   def effective_decl_args(decl, module_name, decl_map) do
-    case decl.args || [] do
+    case Map.get(decl, :args, []) do
       args when args != [] ->
         args
 
@@ -363,7 +363,60 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
     end
   end
 
+  defp delegate_param_names(%{expr: %{op: :var, name: name}}, module_name, decl_map)
+       when is_binary(name) do
+    delegate_var_param_names(module_name, name, decl_map)
+  end
+
+  defp delegate_param_names(%{expr: %{op: :call, name: name, args: []}}, module_name, decl_map)
+       when is_binary(name) do
+    delegate_var_param_names(module_name, name, decl_map)
+  end
+
   defp delegate_param_names(_, _, _), do: nil
+
+  defp delegate_var_param_names(module_name, name, decl_map) do
+    case Map.fetch(decl_map, {module_name, name}) do
+      {:ok, %{args: param_names}} when is_list(param_names) and param_names != [] ->
+        param_names
+
+      _ ->
+        nil
+    end
+  end
+
+  @doc false
+  @spec delegate_call_target(Types.function_declaration(), String.t(), Types.function_decl_map()) ::
+          {String.t(), String.t()} | nil
+  def delegate_call_target(decl, module_name, decl_map) when is_map(decl) do
+    with names when names != [] <- effective_decl_args(decl, module_name, decl_map),
+         {mod, name} <- delegate_expr_target(decl, module_name, decl_map) do
+      {mod, name}
+    else
+      _ -> nil
+    end
+  end
+
+  def delegate_call_target(_, _, _), do: nil
+
+  defp delegate_expr_target(%{expr: %{op: :qualified_call, target: target, args: []}}, module_name, decl_map) do
+    ctx = %{module: module_name, decl_map: decl_map}
+
+    case Elmc.Backend.Plan.Lower.Call.parse_target(target, ctx, decl_map) do
+      {mod, name} when is_binary(mod) and is_binary(name) -> {mod, name}
+      _ -> nil
+    end
+  end
+
+  defp delegate_expr_target(%{expr: %{op: :var, name: name}}, module_name, _decl_map)
+       when is_binary(name),
+       do: {module_name, name}
+
+  defp delegate_expr_target(%{expr: %{op: :call, name: name, args: []}}, module_name, _decl_map)
+       when is_binary(name),
+       do: {module_name, name}
+
+  defp delegate_expr_target(_, _, _), do: nil
 
   @spec boxed_direct_prototype(
           Types.function_declaration(),
@@ -1184,6 +1237,9 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
 
     case Fusion.try_emit(module_name, decl.name, decl.expr, decl_map) do
       {:ok, helper_c, _, :rc_native} when tuple2_table? ->
+        kinds = List.duplicate(:native_int, length(decl.args || []))
+        Fusion.register_rc_native_arg_kinds(module_name, decl.name, kinds)
+
         {:ok,
          emit_rc_tuple2_table_function(
            decl,
@@ -1274,7 +1330,27 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
       [helper_c | Process.get(:elmc_generic_helper_defs, [])]
     )
 
-    native_args = fused_native_call_args(decl, arg_bindings, direct_args?)
+    decl_map = Process.get(:elmc_program_decls, %{})
+
+    fusion_kinds =
+      Fusion.rc_native_fusion_arg_kinds({module_name, decl.name}) ||
+        NativeFunctionCall.signature_arg_kinds(decl, module_name, decl_map)
+
+    unboxed_native_params? =
+      direct_args? and
+        is_list(fusion_kinds) and
+        Enum.all?(fusion_kinds, &(&1 in [:native_int, :native_bool]))
+
+    native_args =
+      rc_native_fusion_call_args(
+        arg_bindings,
+        fusion_kinds,
+        unboxed_native_params?,
+        module_name,
+        decl.name,
+        decl,
+        decl_map
+      )
 
     core_body = [
       entry_probe,
@@ -1317,35 +1393,47 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
     c_name = Util.module_fn_name(module_name, decl.name)
     native = "#{c_name}_native"
 
+    decl_map = Process.get(:elmc_program_decls, %{})
+
+    fusion_kinds =
+      fusion_arg_kinds ||
+        Fusion.rc_native_fusion_arg_kinds({module_name, decl.name}) ||
+        Fusion.infer_native_tag_fusion_arg_kinds(helper_c, decl) ||
+        NativeFunctionCall.signature_arg_kinds(decl, module_name, decl_map)
+
+    if is_list(fusion_kinds) do
+      Fusion.register_rc_native_arg_kinds(module_name, decl.name, fusion_kinds)
+    end
+
     binding_code =
       cond do
         direct_args? ->
           ""
 
-        is_list(fusion_arg_kinds) ->
-          native_wrapper_bindings(arg_bindings, fusion_arg_kinds, false)
+        is_list(fusion_kinds) and
+            Enum.all?(fusion_kinds, &(&1 in [:native_int, :native_bool, :boxed_int_tag, :boxed])) ->
+          native_wrapper_bindings(arg_bindings, fusion_kinds, false)
 
         true ->
           arg_binding_code
       end
 
-    Process.put(
-      :elmc_generic_helper_defs,
-      [helper_c | Process.get(:elmc_generic_helper_defs, [])]
-    )
-
-    decl_map = Process.get(:elmc_program_decls, %{})
+    wrapper_args_unboxed? = direct_args? or binding_code != ""
 
     unboxed_native_params? =
-      direct_args? and native_c_params?(decl, module_name, decl_map)
+      wrapper_args_unboxed? and
+        is_list(fusion_kinds) and
+        Enum.all?(fusion_kinds, &(&1 in [:native_int, :native_bool]))
 
     fused_args =
       rc_native_fusion_call_args(
         arg_bindings,
-        fusion_arg_kinds,
-        unboxed_native_params?,
+        fusion_kinds,
+        wrapper_args_unboxed?,
         module_name,
-        decl.name
+        decl.name,
+        decl,
+        decl_map
       )
 
     core_body =
@@ -1374,6 +1462,11 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
           ]
       end
 
+    Process.put(
+      :elmc_generic_helper_defs,
+      [helper_c | Process.get(:elmc_generic_helper_defs, [])]
+    )
+
     unused_casts = unused_arg_casts(arg_bindings, core_body)
 
     format_function_body(
@@ -1382,29 +1475,61 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
     )
   end
 
-  defp rc_native_fusion_call_args(arg_bindings, kinds, unboxed_in_wrapper?, module_name, fun_name)
+  defp rc_native_fusion_call_args(arg_bindings, kinds, unboxed_in_wrapper?, module_name, fun_name, decl, decl_map)
 
-  defp rc_native_fusion_call_args(arg_bindings, kinds, unboxed_in_wrapper?, module_name, fun_name)
+  defp rc_native_fusion_call_args(arg_bindings, kinds, unboxed_in_wrapper?, module_name, _fun_name, decl, decl_map)
        when is_list(kinds) do
-    union_lut? = union_int_fusion?(module_name, fun_name)
+    direct_kinds =
+      if is_map(decl) do
+        NativeFunctionCall.arg_kinds(decl, module_name, decl_map)
+      else
+        []
+      end
+
+    direct_entry? =
+      is_map(decl) and FunctionCallAbi.direct_entry_abi?(decl, module_name, decl_map)
 
     arg_bindings
     |> Enum.zip(kinds)
-    |> Enum.map_join(", ", fn {{_arg, c_arg, _index}, kind} ->
-      case kind do
-        :boxed_int_tag when unboxed_in_wrapper? -> c_arg
-        :boxed_int_tag -> RowMajorLayout.union_tag_expr(c_arg)
-        :native_int when unboxed_in_wrapper? -> c_arg
-        :native_int when union_lut? -> RowMajorLayout.union_tag_expr(c_arg)
-        :native_int -> "elmc_as_int(#{c_arg})"
-        :native_bool when unboxed_in_wrapper? -> c_arg
-        :native_bool -> "elmc_as_bool(#{c_arg})"
-        _ -> c_arg
-      end
+    |> Enum.map_join(", ", fn {{_arg, c_arg, index}, kind} ->
+      direct_native? =
+        case kind do
+          :boxed_int_tag ->
+            unboxed_in_wrapper? and not direct_entry?
+
+          _ ->
+            unboxed_in_wrapper? or
+              (direct_entry? and Enum.at(direct_kinds, index) in [:native_int, :native_bool])
+        end
+
+      fusion_native_call_arg(c_arg, kind, direct_native?)
     end)
   end
 
-  defp rc_native_fusion_call_args(arg_bindings, _kinds, _unboxed_in_wrapper?, _module_name, _fun_name) do
+  defp fusion_native_call_arg(c_arg, kind, direct_native?) do
+    case kind do
+      :boxed_int_tag when direct_native? -> c_arg
+      :boxed_int_tag -> RowMajorLayout.union_tag_expr(c_arg)
+      :native_int when direct_native? -> c_arg
+      :native_int -> "elmc_as_int(#{c_arg})"
+      :native_bool when direct_native? -> c_arg
+      :native_bool -> "elmc_as_bool(#{c_arg})"
+      _ -> c_arg
+    end
+  end
+
+  defp fusion_wrapper_native_args?(kinds) when is_list(kinds) do
+    Enum.all?(kinds, &(&1 in [:native_int, :native_bool, :boxed_int_tag]))
+  end
+
+  defp fusion_wrapper_native_args?(_), do: false
+
+  defp fusion_wrapper_unboxed_in_wrapper?(decl, module_name, decl_map, wrapper_arg_kinds) do
+    fusion_wrapper_native_args?(wrapper_arg_kinds) and
+      not FunctionCallAbi.direct_entry_abi?(decl, module_name, decl_map)
+  end
+
+  defp rc_native_fusion_call_args(arg_bindings, _kinds, _unboxed_in_wrapper?, _module_name, _fun_name, _decl, _decl_map) do
     arg_bindings
     |> Enum.map(fn {_arg, c_arg, _index} -> c_arg end)
     |> Enum.join(", ")
@@ -1467,13 +1592,28 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
        ) do
     c_name = Util.module_fn_name(module_name, decl.name)
     native = "#{c_name}_native"
+    fusion_kinds = List.duplicate(:native_int, length(decl.args || []))
+
+    binding_code =
+      if direct_args? do
+        arg_binding_code
+      else
+        native_wrapper_bindings(arg_bindings, fusion_kinds, false)
+      end
+
+    native_int_args =
+      tuple2_table_native_args(
+        decl,
+        module_name,
+        decl_map,
+        arg_bindings,
+        direct_args? or binding_code != arg_binding_code
+      )
 
     Process.put(
       :elmc_generic_helper_defs,
       [helper_c | Process.get(:elmc_generic_helper_defs, [])]
     )
-
-    native_int_args = tuple2_table_native_args(decl, module_name, decl_map, arg_bindings, direct_args?)
 
     core_body =
       cond do
@@ -1497,7 +1637,7 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
     if rc_required? do
       wrap_rc_function_body(
         arg_bindings,
-        arg_binding_code,
+        binding_code,
         core_body,
         direct_args?
       )
@@ -1505,7 +1645,7 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
       unused_casts = unused_arg_casts(arg_bindings, core_body)
 
       format_function_body(
-        [wrapper_abi_void_casts(direct_args?, arg_bindings), arg_binding_code, unused_casts |
+        [wrapper_abi_void_casts(direct_args?, arg_bindings), binding_code, unused_casts |
            core_body]
       )
     end
@@ -1531,7 +1671,7 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
       [helper_c | Process.get(:elmc_generic_helper_defs, [])]
     )
 
-    native_args = tuple2_table_native_args(decl, module_name, decl_map, arg_bindings, direct_args?)
+    native_args = tuple2_table_native_args(decl, module_name, decl_map, arg_bindings, true)
 
     core_body = [
       entry_probe,
@@ -1801,8 +1941,13 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
     c_arg_bindings = c_arg_bindings(arg_names)
     arg_kinds = NativeFunctionCall.arg_kinds(decl, module_name, decl_map)
     fusion_native? = rc_native_fusion?(module_name, decl, decl_map)
+    tuple2_table? = fusion_native? and Tuple2CaseTable.recognized?(module_name, decl.name, decl.expr)
+
     wrapper_arg_kinds =
       cond do
+        tuple2_table? ->
+          List.duplicate(:native_int, length(arg_names))
+
         fusion_native? ->
           Fusion.rc_native_fusion_arg_kinds({module_name, decl.name}) ||
             NativeFunctionCall.signature_arg_kinds(decl, module_name, decl_map)
@@ -1810,6 +1955,10 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
         true ->
           arg_kinds
       end
+
+    if tuple2_table? do
+      Fusion.register_rc_native_arg_kinds(module_name, decl.name, wrapper_arg_kinds)
+    end
 
     {entry_probe, exit_probe} = DebugProbes.entry_exit_probes(module_name, decl.name)
 
@@ -1904,12 +2053,34 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
               )
 
             fusion_native? and return_kind == :boxed and rc_required? ->
-              "return #{c_name}_native(out, #{rc_native_fusion_call_args(c_arg_bindings, wrapper_arg_kinds, true, module_name, decl.name)});"
+              fusion_wrapper_args =
+                rc_native_fusion_call_args(
+                  c_arg_bindings,
+                  wrapper_arg_kinds,
+                  fusion_wrapper_unboxed_in_wrapper?(decl, module_name, decl_map, wrapper_arg_kinds),
+                  module_name,
+                  decl.name,
+                  decl,
+                  decl_map
+                )
+
+              "return #{c_name}_native(out, #{fusion_wrapper_args});"
 
             fusion_native? and return_kind == :boxed ->
+              fusion_wrapper_args =
+                rc_native_fusion_call_args(
+                  c_arg_bindings,
+                  wrapper_arg_kinds,
+                  fusion_wrapper_unboxed_in_wrapper?(decl, module_name, decl_map, wrapper_arg_kinds),
+                  module_name,
+                  decl.name,
+                  decl,
+                  decl_map
+                )
+
               """
               ElmcValue *tmp_result = NULL;
-              if (#{c_name}_native(&tmp_result, #{rc_native_fusion_call_args(c_arg_bindings, wrapper_arg_kinds, true, module_name, decl.name)}) != RC_SUCCESS) return NULL;
+              if (#{c_name}_native(&tmp_result, #{fusion_wrapper_args}) != RC_SUCCESS) return NULL;
               return tmp_result;
               """
 

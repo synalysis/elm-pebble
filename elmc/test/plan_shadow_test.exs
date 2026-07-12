@@ -3,8 +3,8 @@ defmodule Elmc.PlanShadowTest do
 
   alias Elmc.Backend.Plan.Shadow
 
-  test "plan_ir_mode defaults to primary" do
-    assert Shadow.plan_ir_mode([]) == :primary
+  test "plan_ir_mode defaults to off in test env" do
+    assert Shadow.plan_ir_mode([]) == :off
   end
 
   test "shadow mode is recognized from opts" do

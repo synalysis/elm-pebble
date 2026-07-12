@@ -5,6 +5,8 @@ defmodule Elmc.Backend.Plan do
   See `plan/README.md` for the cross-target runtime builtin registry.
   """
 
+  alias Elmc.Backend.C.Lower.NativeReturn
+  alias Elmc.Backend.CCodegen.Native.FunctionCall, as: NativeFunctionCall
   alias Elmc.Backend.CCodegen.RcRequired
   alias Elmc.Backend.Plan.Types.FunctionPlan
 
@@ -21,6 +23,7 @@ defmodule Elmc.Backend.Plan do
       true ->
         case primary_lowered_cache_get(key) do
           {:ok, result} ->
+            maybe_refresh_native_scalar_metadata(decl, module_name, decl_map)
             result
 
           :pending ->
@@ -55,6 +58,31 @@ defmodule Elmc.Backend.Plan do
   defp primary_lowered_cache_put(key, value) do
     cache = Process.get(:elmc_plan_primary_lowered_cache, %{})
     Process.put(:elmc_plan_primary_lowered_cache, Map.put(cache, key, value))
+  end
+
+  # An early primary_lowered? probe can succeed before record field types are installed,
+  # leaving native return metadata uncached even though the function value-returns.
+  defp maybe_refresh_native_scalar_metadata(decl, module_name, decl_map) when is_map(decl) do
+    name = Map.get(decl, :name, "")
+    key = {module_name, name}
+
+    refresh? =
+      NativeFunctionCall.native_scalar_fn?(decl, module_name, decl_map) and
+        not NativeReturn.value_return?(key) and
+        is_nil(NativeReturn.cached_kind(key))
+
+    if refresh? do
+      case lower_function(
+             decl,
+             module_name,
+             decl_map,
+             rc_required: RcRequired.rc_required?(module_name, name)
+           ) do
+        _ -> :ok
+      end
+    else
+      :ok
+    end
   end
 
   defdelegate lower_function(decl, module, decl_map, opts \\ []),

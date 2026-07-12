@@ -1,5 +1,5 @@
 defmodule Elmc.ClosureCalleeDebugTest do
-  use ExUnit.Case, async: false
+  use Elmc.TestSupport.PrimaryCodegenCase, async: false
 
   alias Elmc.Test.ElmRunCorpus
 
@@ -29,8 +29,11 @@ defmodule Elmc.ClosureCalleeDebugTest do
     assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "ListFilterMap"})
     c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
-    assert c =~ "Rc = elmc_fn_ListFilterMap_toPositive(&out, args, argc)",
-           "expected RC wrapper in top_level_ref, got:\n#{Enum.find(String.split(c, "\n"), &String.contains?(&1, "top_level_ref"))}"
+    assert c =~ "static RC elmc_fn_ListFilterMap_toPositive(ElmcValue **out, ElmcValue *x)",
+           "expected direct RC callee for plan-primary filterMap closure"
+
+    assert c =~ "elmc_fn_ListFilterMap_toPositive(&",
+           "expected filterMap closure to call direct RC callee"
   end
 
   test "top_level_ref for RC callee in multi-binding let uses wrapper" do
@@ -65,8 +68,11 @@ defmodule Elmc.ClosureCalleeDebugTest do
     assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "ListFilterMap"})
     c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
-    assert c =~ "Rc = elmc_fn_ListFilterMap_toPositive(&out, args, argc)",
-           "expected RC wrapper in top_level_ref for let-chain filterMap"
+    assert c =~ "static RC elmc_fn_ListFilterMap_toPositive(ElmcValue **out, ElmcValue *x)",
+           "expected direct RC callee for plan-primary let-chain filterMap"
+
+    assert c =~ "elmc_fn_ListFilterMap_toPositive(&",
+           "expected let-chain filterMap closure to call direct RC callee"
   end
 
   test "corpus ListFilterMap host compile uses RC top_level_ref wrapper" do
@@ -86,8 +92,8 @@ defmodule Elmc.ClosureCalleeDebugTest do
 
       c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
-      assert c =~ "Rc = elmc_fn_ListFilterMap_toPositive(&out, args, argc)",
-             "got: #{Enum.find(String.split(c, "\n"), &String.contains?(&1, "top_level_ref"))}"
+      assert c =~ "static RC elmc_fn_ListFilterMap_toPositive(ElmcValue **out, ElmcValue *x)"
+      assert c =~ "elmc_fn_ListFilterMap_toPositive(&"
     end
   end
 end

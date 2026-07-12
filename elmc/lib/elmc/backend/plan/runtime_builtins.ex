@@ -384,6 +384,23 @@ defmodule Elmc.Backend.Plan.RuntimeBuiltins do
     index in Map.get(@native_int_arg_indices, id, [])
   end
 
+  @ownership_transfer MapSet.new([
+    :maybe_just_own,
+    :result_ok_own,
+    :result_err_own
+  ])
+
+  @spec ownership_transfer_arg?(atom(), non_neg_integer()) :: boolean()
+  def ownership_transfer_arg?(id, index)
+      when is_atom(id) and is_integer(index) and index == 0 do
+    MapSet.member?(@ownership_transfer, id)
+  end
+
+  def ownership_transfer_arg?(_, _), do: false
+
+  @spec ownership_transfer?(atom()) :: boolean()
+  def ownership_transfer?(id), do: MapSet.member?(@ownership_transfer, id)
+
   @spec from_c_symbol(String.t()) :: atom() | nil
   def from_c_symbol(sym) when is_binary(sym) do
     Map.get(@symbol_aliases, sym) ||

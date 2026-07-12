@@ -14,7 +14,7 @@ defmodule Elmc.Test.RcTrackHarness do
   def compile!(project_dir, out_dir, opts \\ []) do
     compile_opts =
       Keyword.merge(
-        [out_dir: out_dir, strip_dead_code: false],
+        [out_dir: out_dir, strip_dead_code: false, plan_ir_mode: :primary, plan_ir_strict: true],
         opts
       )
 
@@ -58,6 +58,8 @@ defmodule Elmc.Test.RcTrackHarness do
       "-Wall",
       "-Wextra"
     ] ++ rc_track_flag ++ alloc_track_flag ++ alloc_probe_flag ++ [
+      "-include",
+      Path.expand("elmc_host_stubs.h", __DIR__),
       "-I#{Path.join(out_dir, "runtime")}",
       "-I#{Path.join(out_dir, "ports")}",
       "-I#{Path.join(out_dir, "c")}"
@@ -328,6 +330,66 @@ defmodule Elmc.Test.RcTrackHarness do
       ElmcValue *out = NULL;
       return fn(&out, args, argc) == RC_SUCCESS ? out : elmc_int_zero();
     }
+
+    static ElmcValue *elmc_harness_direct_rc_1_int(
+        RC (*fn)(ElmcValue **out, elmc_int_t),
+        elmc_int_t a0) {
+      ElmcValue *out = NULL;
+      return fn(&out, a0) == RC_SUCCESS ? out : elmc_int_zero();
+    }
+
+    static ElmcValue *elmc_harness_direct_rc_1_box(
+        RC (*fn)(ElmcValue **out, ElmcValue *),
+        ElmcValue *a0) {
+      ElmcValue *out = NULL;
+      return fn(&out, a0) == RC_SUCCESS ? out : elmc_int_zero();
+    }
+
+    static ElmcValue *elmc_harness_direct_rc_int_box(
+        RC (*fn)(ElmcValue **out, elmc_int_t, ElmcValue *),
+        elmc_int_t a0,
+        ElmcValue *a1) {
+      ElmcValue *out = NULL;
+      return fn(&out, a0, a1) == RC_SUCCESS ? out : elmc_int_zero();
+    }
+
+    static ElmcValue *elmc_harness_direct_rc_2_box(
+        RC (*fn)(ElmcValue **out, ElmcValue *, ElmcValue *),
+        ElmcValue *a0,
+        ElmcValue *a1) {
+      ElmcValue *out = NULL;
+      return fn(&out, a0, a1) == RC_SUCCESS ? out : elmc_int_zero();
+    }
+
+    static ElmcValue *elmc_harness_direct_rc_out_only(
+        RC (*fn)(ElmcValue **out)) {
+      ElmcValue *out = NULL;
+      return fn(&out) == RC_SUCCESS ? out : elmc_int_zero();
+    }
+
+    static ElmcValue *elmc_harness_direct_value_void(
+        ElmcValue *(*fn)(void)) {
+      return fn();
+    }
+
+    static ElmcValue *elmc_harness_direct_value_1_box(
+        ElmcValue *(*fn)(ElmcValue *),
+        ElmcValue *a0) {
+      return fn(a0);
+    }
+
+    static ElmcValue *elmc_harness_direct_value_int_box(
+        ElmcValue *(*fn)(elmc_int_t, ElmcValue *),
+        elmc_int_t a0,
+        ElmcValue *a1) {
+      return fn(a0, a1);
+    }
+
+    static ElmcValue *elmc_harness_native_int_to_boxed(
+        elmc_int_t (*fn)(ElmcValue *),
+        ElmcValue *a0) {
+      return elmc_harness_new_int(fn(a0));
+    }
     """
   end
 
@@ -335,12 +397,122 @@ defmodule Elmc.Test.RcTrackHarness do
   def generated_fn_call(out_dir, module_name, fn_name, args_expr, argc) do
     c_name = "elmc_fn_#{module_name}_#{fn_name}"
 
-    if generated_fn_full_rc?(out_dir, c_name) do
-      "elmc_harness_call_rc(#{c_name}, #{args_expr}, #{argc})"
-    else
-      "elmc_harness_call_value(#{c_name}, #{args_expr}, #{argc})"
+    case generated_fn_signature(out_dir, c_name) do
+      {:rc, :argv} ->
+        "elmc_harness_call_rc(#{c_name}, #{args_expr}, #{argc})"
+
+      {:rc, [:boxed, :boxed], 2} ->
+        "elmc_harness_direct_rc_2_box(#{c_name}, #{args_expr}[0], #{args_expr}[1])"
+
+      {:rc, [:native_int], 1} ->
+        "elmc_harness_direct_rc_1_int(#{c_name}, elmc_as_int(#{args_expr}[0]))"
+
+      {:rc, [:boxed], 1} ->
+        "elmc_harness_direct_rc_1_box(#{c_name}, #{args_expr}[0])"
+
+      {:rc, [:native_int, :boxed], 2} ->
+        "elmc_harness_direct_rc_int_box(#{c_name}, elmc_as_int(#{args_expr}[0]), #{args_expr}[1])"
+
+      {:rc, [], 0} ->
+        "elmc_harness_direct_rc_out_only(#{c_name})"
+
+      {:value, [], 0} ->
+        "elmc_harness_direct_value_void(#{c_name})"
+
+      {:value, [:boxed], 1} ->
+        "elmc_harness_direct_value_1_box(#{c_name}, #{args_expr}[0])"
+
+      {:value, [:native_int, :boxed], 2} ->
+        "elmc_harness_direct_value_int_box(#{c_name}, elmc_as_int(#{args_expr}[0]), #{args_expr}[1])"
+
+      {:native_int, [:boxed], 1} ->
+        "elmc_harness_native_int_to_boxed(#{c_name}, #{args_expr}[0])"
+
+      _ ->
+        "elmc_harness_call_value(#{c_name}, #{args_expr}, #{argc})"
     end
   end
+
+  defp generated_fn_signature(out_dir, c_name) do
+    generated_c_path = Path.join(out_dir, "c/elmc_generated.c")
+
+    with {:ok, source} <- File.read(generated_c_path),
+         {:ok, match} <- generated_fn_signature_match(source, c_name) do
+      match
+    else
+      _ -> :unknown
+    end
+  end
+
+  defp generated_fn_signature_match(source, c_name) do
+    patterns = [
+      {~r/(?:static\s+)?RC\s+#{Regex.escape(c_name)}\(ElmcValue \*\*out,\s*ElmcValue \*\* const args,\s*const int argc\)/,
+       {:rc, :argv}},
+      {~r/(?:static\s+)?RC\s+#{Regex.escape(c_name)}\(ElmcValue \*\*out,\s*ElmcValue \*\*args,\s*const int argc\)/,
+       {:rc, :argv}},
+      {~r/(?:static\s+)?RC\s+#{Regex.escape(c_name)}\(ElmcValue \*\*out,\s*ElmcValue \*\*args,\s*int argc\)/,
+       {:rc, :argv}},
+      {~r/(?:static\s+)?RC\s+#{Regex.escape(c_name)}\(ElmcValue \*\*out\)/, {:rc, [], 0}},
+      {~r/(?:static\s+)?RC\s+#{Regex.escape(c_name)}\(ElmcValue \*\*out,\s*([^)]*)\)/, :rc_params},
+      {~r/(?:static\s+)?ElmcValue \*\s*#{Regex.escape(c_name)}\(([^)]*)\)/, :value_params},
+      {~r/(?:static\s+)?elmc_int_t\s+#{Regex.escape(c_name)}\(([^)]*)\)/, :native_int_params}
+    ]
+
+    Enum.find_value(patterns, fn
+      {pattern, {:rc, :argv}} ->
+        if Regex.match?(pattern, source), do: {:ok, {:rc, :argv}}
+
+      {pattern, {:rc, [], 0}} ->
+        if Regex.match?(pattern, source), do: {:ok, {:rc, [], 0}}
+
+      {pattern, tag} ->
+        case Regex.run(pattern, source) do
+          [_, params] when tag in [:rc_params, :value_params, :native_int_params] ->
+            kinds = parse_param_kinds(params)
+
+            ret =
+              case tag do
+                :rc_params -> :rc
+                :value_params -> :value
+                :native_int_params -> :native_int
+              end
+
+            {:ok, {ret, kinds, length(kinds)}}
+
+          [_, ""] ->
+            ret =
+              case tag do
+                :rc_params -> :rc
+                :value_params -> :value
+                :native_int_params -> :native_int
+              end
+
+            {:ok, {ret, [], 0}}
+
+          _ ->
+            nil
+        end
+
+      _ ->
+        nil
+    end) || :error
+  end
+
+  defp parse_param_kinds(params) when is_binary(params) do
+    params
+    |> String.split(",")
+    |> Enum.map(&String.trim/1)
+    |> Enum.reject(&(&1 == ""))
+    |> Enum.map(&direct_plan_param_kind/1)
+    |> Enum.reject(&(&1 == :unknown))
+  end
+
+  defp parse_param_kinds(_), do: []
+
+  defp direct_plan_param_kind("elmc_int_t" <> _), do: :native_int
+  defp direct_plan_param_kind("bool" <> _), do: :native_bool
+  defp direct_plan_param_kind("ElmcValue *" <> _), do: :boxed
+  defp direct_plan_param_kind(_), do: :unknown
 
   @spec generated_fn_rc?(String.t(), String.t()) :: boolean()
   def generated_fn_rc?(out_dir, c_name) do
@@ -628,6 +800,34 @@ defmodule Elmc.Test.RcTrackHarness do
   end
 
   defp probe_thunk_body(out_dir, symbol, c_name) do
+    case generated_fn_signature(out_dir, c_name) do
+      {:rc, :argv} ->
+        """
+        static ElmcValue *#{symbol}_probe(void) {
+          return elmc_harness_call_rc(#{c_name}, NULL, 0);
+        }
+        """
+
+      {:rc, [], 0} ->
+        """
+        static ElmcValue *#{symbol}_probe(void) {
+          return elmc_harness_direct_rc_out_only(#{c_name});
+        }
+        """
+
+      {:value, [], 0} ->
+        """
+        static ElmcValue *#{symbol}_probe(void) {
+          return #{c_name}();
+        }
+        """
+
+      _ ->
+        legacy_probe_thunk_body(out_dir, symbol, c_name)
+    end
+  end
+
+  defp legacy_probe_thunk_body(out_dir, symbol, c_name) do
     cond do
       generated_fn_native_rc?(out_dir, c_name) ->
         scalar_int_probe_thunk(symbol, "#{c_name}_native")

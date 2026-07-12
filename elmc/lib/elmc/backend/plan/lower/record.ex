@@ -10,8 +10,10 @@ defmodule Elmc.Backend.Plan.Lower.Record do
   @spec compile_update(map(), Context.t(), Builder.t()) ::
           {:ok, Types.reg() | :fn_out, Builder.t()} | :unsupported
   def compile_update(%{base: base, fields: fields}, ctx, b) when is_list(fields) do
+    base_expr = base_expr_for_field(base)
+
     with {:ok, base_reg, b1} <- resolve_base(base, ctx, b),
-       {:ok, b2, result_reg} <- apply_field_updates(fields, ctx, b1, base_reg) do
+         {:ok, b2, result_reg} <- apply_field_updates(fields, ctx, b1, base_reg, base_expr) do
       {:ok, result_reg, b2}
     else
       _ -> :unsupported
@@ -78,31 +80,34 @@ defmodule Elmc.Backend.Plan.Lower.Record do
 
   defp resolve_base(_, _, _), do: :unsupported
 
-  defp apply_field_updates([field | rest], ctx, b, current_reg) do
+  defp apply_field_updates([field | rest], ctx, b, current_reg, base_expr) do
     field_name = Map.get(field, :field) || Map.get(field, :name)
     field_expr = Map.get(field, :expr) || Map.get(field, :value)
 
     with {:ok, value_reg, b1} <- compile_field_expr(field_expr, ctx, b),
-         {:ok, updated_reg, b2} <- cow_drop_update(current_reg, field_name, value_reg, ctx, b1) do
+         {:ok, updated_reg, b2} <-
+           cow_drop_update(current_reg, field_name, value_reg, ctx, b1, base_expr) do
       case rest do
         [] -> {:ok, b2, updated_reg}
-        more -> apply_field_updates(more, ctx, b2, updated_reg)
+        more -> apply_field_updates(more, ctx, b2, updated_reg, base_expr)
       end
     else
       _ -> :unsupported
     end
   end
 
-  defp apply_field_updates([], _ctx, b, current_reg), do: {:ok, b, current_reg}
+  defp apply_field_updates([], _ctx, b, current_reg, _base_expr), do: {:ok, b, current_reg}
 
-  defp cow_drop_update(base_reg, field_name, value_reg, ctx, b) when is_binary(field_name) do
+  defp cow_drop_update(base_reg, field_name, value_reg, ctx, b, base_expr)
+       when is_binary(field_name) do
     {value_reg, b0} = Builder.dup_named_local_if_bound(b, value_reg)
 
-    {update_base_reg, b_base} =
+    {update_base_reg, b_base, retain_copy?} =
       if Builder.borrow_arg?(b0, base_reg) do
-        Builder.copy_reg_owned(b0, base_reg)
+        {dup, b_copy} = Builder.copy_reg_owned(b0, base_reg)
+        {dup, b_copy, true}
       else
-        {base_reg, b0}
+        {base_reg, b0, false}
       end
 
     {dest, b1} = dest_for_update(ctx, b_base)
@@ -119,12 +124,18 @@ defmodule Elmc.Backend.Plan.Lower.Record do
     wrap_catch? = Builder.wrap_fallible_instr_catch?(b1, ctx, true)
 
     b2 = if wrap_catch?, do: Builder.catch_begin(b1), else: b1
-    field_index = field_index_ref(field_name, ctx)
+    field_index = field_index_ref(field_name, ctx, base_expr)
 
     {_, b3} =
       Builder.emit(b2, :record_update, %{
         dest: dest,
-        args: %{base: update_base_reg, field: field_name, field_index: field_index, value: value_reg},
+        args: %{
+          base: update_base_reg,
+          field: field_name,
+          field_index: field_index,
+          value: value_reg,
+          retain_copy: retain_copy?
+        },
         effects: effects
       })
 

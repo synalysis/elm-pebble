@@ -221,7 +221,20 @@ defmodule Elmc.Backend.CCodegen.Native.FunctionCall do
           native_bool_rc_call_expr(c_name, arg_list, out, env)
 
         true ->
-          "#{native_call_decl(return_kind)}#{out} = #{c_name}_native(#{arg_list});"
+          cond do
+            return_kind in [:native_int, :native_bool] and
+                not RcRequired.rc_required?(module_name, decl.name) and
+                Host.function_return_type(decl.type) in ["Int", "Bool"] ->
+              "#{native_call_decl(return_kind)}#{out} = #{c_name}(#{arg_list});"
+
+            return_kind in [:native_int, :native_bool] and
+                not RcRequired.rc_required?(module_name, decl.name) and
+                NativeReturn.cached_kind({module_name, decl.name}) in [:native_int, :native_bool] ->
+              "#{native_call_decl(return_kind)}#{out} = #{c_name}(#{arg_list});"
+
+            true ->
+              "#{native_call_decl(return_kind)}#{out} = #{c_name}_native(#{arg_list});"
+          end
       end
 
     code = """
@@ -443,7 +456,13 @@ defmodule Elmc.Backend.CCodegen.Native.FunctionCall do
     body_kinds = arg_kinds(decl, module_name, decl_map)
 
     if length(body_kinds) != length(signature_kinds) do
-      signature_kinds
+      cond do
+        signature_kinds == [] and body_kinds != [] ->
+          body_kinds
+
+        true ->
+          signature_kinds
+      end
     else
       Enum.zip(signature_kinds, body_kinds)
       |> Enum.map(fn
@@ -655,6 +674,24 @@ defmodule Elmc.Backend.CCodegen.Native.FunctionCall do
 
     cond do
       return_kind == :native_int and
+          NativeReturn.value_return?({module_name, decl.name}) ->
+        argv_setup <> "const elmc_int_t #{out} = #{c_name}(#{call_args});"
+
+      return_kind == :native_bool and
+          NativeReturn.value_return?({module_name, decl.name}) ->
+        argv_setup <> "const bool #{out} = #{c_name}(#{call_args});"
+
+      return_kind == :native_int and
+          not rc_required? and
+          Host.function_return_type(decl.type) == "Int" ->
+        argv_setup <> "const elmc_int_t #{out} = #{c_name}(#{call_args});"
+
+      return_kind == :native_bool and
+          not rc_required? and
+          Host.function_return_type(decl.type) == "Bool" ->
+        argv_setup <> "const bool #{out} = #{c_name}(#{call_args});"
+
+      return_kind == :native_int and
           PlanNativeProjection.eligible?(decl, module_name, decl_map) ->
         native_decl = "elmc_int_t #{out} = 0;\n  "
 
@@ -694,49 +731,27 @@ defmodule Elmc.Backend.CCodegen.Native.FunctionCall do
 
         argv_setup <> native_decl <> check
 
-      return_kind == :native_int and NativeReturn.value_return?({module_name, decl.name}) ->
+      return_kind == :native_int and
+          not rc_required? and
+          (NativeReturn.value_return?({module_name, decl.name}) or
+             FunctionCallAbi.direct_plan_call_abi?(decl, module_name, decl_map)) ->
         argv_setup <> "const elmc_int_t #{out} = #{c_name}(#{call_args});"
 
-      return_kind == :native_bool and NativeReturn.value_return?({module_name, decl.name}) ->
+      return_kind == :native_bool and
+          not rc_required? and
+          (NativeReturn.value_return?({module_name, decl.name}) or
+             FunctionCallAbi.direct_plan_call_abi?(decl, module_name, decl_map)) ->
         argv_setup <> "const bool #{out} = #{c_name}(#{call_args});"
 
-      return_kind == :native_int and NativeReturn.cached_kind({module_name, decl.name}) == :native_int ->
-        native_decl = "elmc_int_t #{out} = 0;\n  "
+      return_kind == :native_int and
+          not rc_required? and
+          NativeReturn.cached_kind({module_name, decl.name}) == :native_int ->
+        argv_setup <> "const elmc_int_t #{out} = #{c_name}(#{call_args});"
 
-        check =
-          if caller_rc? and rc_required? do
-            "Rc = #{c_name}_native(#{RcRuntimeEmit.native_call_args("&" <> out, call_args)});\nCHECK_RC(Rc);"
-          else
-            """
-            {
-              RC __call_rc = #{c_name}_native(#{RcRuntimeEmit.native_call_args("&" <> out, call_args)});
-              if (__call_rc != RC_SUCCESS) {
-                ELMC_RC_LOG_FAIL(__call_rc, "#{c_name}_native", "native scalar call failed");
-              }
-            }
-            """
-          end
-
-        argv_setup <> native_decl <> check
-
-      return_kind == :native_bool and NativeReturn.cached_kind({module_name, decl.name}) == :native_bool ->
-        native_decl = "bool #{out} = false;\n  "
-
-        check =
-          if caller_rc? and rc_required? do
-            "Rc = #{c_name}_native(#{RcRuntimeEmit.native_call_args("&" <> out, call_args)});\nCHECK_RC(Rc);"
-          else
-            """
-            {
-              RC __call_rc = #{c_name}_native(#{RcRuntimeEmit.native_call_args("&" <> out, call_args)});
-              if (__call_rc != RC_SUCCESS) {
-                ELMC_RC_LOG_FAIL(__call_rc, "#{c_name}_native", "native scalar call failed");
-              }
-            }
-            """
-          end
-
-        argv_setup <> native_decl <> check
+      return_kind == :native_bool and
+          not rc_required? and
+          NativeReturn.cached_kind({module_name, decl.name}) == :native_bool ->
+        argv_setup <> "const bool #{out} = #{c_name}(#{call_args});"
 
       return_kind == :native_int ->
         boxed_var = "plan_primary_boxed_#{out}"
@@ -751,6 +766,9 @@ defmodule Elmc.Backend.CCodegen.Native.FunctionCall do
         extract = "const elmc_int_t #{out} = elmc_as_int(#{boxed_var});"
         release = "elmc_release(#{boxed_var});"
 
+        boxed_decl =
+          if rc_required?, do: "ElmcValue *#{boxed_var} = NULL;\n  ", else: ""
+
         check =
           if caller_rc? and rc_required? do
             "#{call}\nCHECK_RC(Rc);"
@@ -758,16 +776,16 @@ defmodule Elmc.Backend.CCodegen.Native.FunctionCall do
             call
           end
 
-        argv_setup <> check <> "\n  " <> extract <> "\n  " <> release
+        argv_setup <> boxed_decl <> check <> "\n  " <> extract <> "\n  " <> release
 
       return_kind == :native_bool ->
         boxed_var = "plan_primary_boxed_#{out}"
 
         check =
           if caller_rc? and rc_required? do
-            "Rc = #{c_name}(#{RcRuntimeEmit.allocator_out_arg(boxed_var)}, #{call_args});\nCHECK_RC(Rc);"
+            "ElmcValue *#{boxed_var} = NULL;\n  Rc = #{c_name}(#{RcRuntimeEmit.allocator_out_arg(boxed_var)}, #{call_args});\nCHECK_RC(Rc);"
           else
-            "#{boxed_var} = #{c_name}(#{call_args});"
+            "ElmcValue *#{boxed_var} = #{c_name}(#{call_args});"
           end
 
         argv_setup <>

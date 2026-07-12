@@ -21,6 +21,9 @@ defmodule Elmc.Backend.Plan.Lower.Intrinsics do
             lower_qualified_delegate_alias(decl, module_name, target, decl_map, opts)
         end
 
+      %{expr: %{op: :var, name: target}} = decl when is_binary(target) ->
+        lower_var_delegate_alias(decl, module_name, target, decl_map, opts)
+
       _ ->
         :not_intrinsic
     end
@@ -128,4 +131,32 @@ defmodule Elmc.Backend.Plan.Lower.Intrinsics do
       _ -> :not_intrinsic
     end
   end
+
+  defp lower_same_module_delegate_alias(decl, module_name, target, decl_map, opts) do
+    lower_qualified_delegate_alias(
+      decl,
+      module_name,
+      "#{module_name}.#{target}",
+      decl_map,
+      opts
+    )
+  end
+
+  defp lower_var_delegate_alias(decl, module_name, target, decl_map, opts) do
+    with {:ok, %{args: param_names}} <- Map.fetch(decl_map, {module_name, target}),
+         true <- param_names != [],
+         true <- var_alias_decl_args?(decl, param_names) do
+      lower_same_module_delegate_alias(decl, module_name, target, decl_map, opts)
+    else
+      _ -> :not_intrinsic
+    end
+  end
+
+  defp var_alias_decl_args?(%{args: []}, _param_names), do: true
+
+  defp var_alias_decl_args?(%{args: decl_args}, param_names) when is_list(decl_args) do
+    decl_args == param_names
+  end
+
+  defp var_alias_decl_args?(_, _), do: false
 end
