@@ -293,7 +293,7 @@ static int64_t s_frame_elapsed_ms = 0;
 static uint32_t s_frame_interval_ms = 33;
 static bool s_frame_timer_started = false;
 #endif
-#if ELMC_PEBBLE_DEBUG_LOGS
+#if ELMC_PEBBLE_DEBUG_LOGS && !ELMC_PEBBLE_FEATURE_COMPACT_DRAW
 static bool s_logged_first_draw = false;
 #endif
 static bool s_startup_cmds_ready = false;

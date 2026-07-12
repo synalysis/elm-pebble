@@ -15,6 +15,13 @@ defmodule Elmx.Backend.CompileTimeCall do
     qualified_rewrite?(target) or pebble_rewrite_handled?(target)
   end
 
+  @bundled_emit_modules ~w(Pebble.Ui Pebble.Speaker.Resources)
+
+  @doc false
+  @spec bundled_emit_module?(String.t()) :: boolean()
+  def bundled_emit_module?(module) when module in @bundled_emit_modules, do: true
+  def bundled_emit_module?(_module), do: false
+
   @spec emit_function?(String.t(), String.t(), MapSet.t(), keyword()) :: boolean()
   def emit_function?(module, name, reachable, opts)
       when is_binary(module) and is_binary(name) do
@@ -30,7 +37,7 @@ defmodule Elmx.Backend.CompileTimeCall do
         module in Keyword.get(opts, :user_module_names, []) ->
           true
 
-        module == "Pebble.Ui" ->
+        bundled_emit_module?(module) ->
           not handled?(key)
 
         true ->

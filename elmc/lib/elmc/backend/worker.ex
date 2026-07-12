@@ -431,6 +431,7 @@ defmodule Elmc.Backend.Worker do
       return elmc_int_zero();
     }
 
+    #if ELMC_WORKER_LAST_DISPATCH_CMD_CAP > 0
     static void elmc_worker_dispatch_cmd_clear(ElmcWorkerDispatchCmd *out) {
       if (!out) return;
       out->kind = 0;
@@ -468,8 +469,6 @@ defmodule Elmc.Backend.Worker do
       }
       return -3;
     }
-
-    #if ELMC_WORKER_LAST_DISPATCH_CMD_CAP > 0
     static void elmc_worker_snapshot_last_dispatch_cmds(ElmcWorkerState *state, ElmcValue *queue) {
       if (!state) return;
       state->last_dispatch_cmd_count = 0;

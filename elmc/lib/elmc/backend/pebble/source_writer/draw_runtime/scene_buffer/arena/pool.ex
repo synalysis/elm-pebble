@@ -63,11 +63,6 @@ defmodule Elmc.Backend.Pebble.SourceWriter.DrawRuntime.SceneBuffer.Arena.Pool do
       }
     }
     #else
-    static int elmc_pebble_scene_using_pool(const ElmcPebbleSceneBuffer *scene) {
-      (void)scene;
-      return 0;
-    }
-
     static void elmc_pebble_scene_pool_free_all(void) {
     }
     #endif

@@ -6,6 +6,8 @@ defmodule Elmx.Backend.ReachableModules do
   alias Elmx.Backend.CompileTimeCall
   alias Elmx.Backend.MainProgram
 
+  alias Elmx.Backend.CompileTimeCall
+
   @spec modules_for_emit(IR.t(), String.t(), keyword()) :: [map()]
   def modules_for_emit(%IR{} = ir, entry_module, opts \\ []) when is_binary(entry_module) do
     roots = MainProgram.dead_code_roots(ir, entry_module)
@@ -46,7 +48,7 @@ defmodule Elmx.Backend.ReachableModules do
   defp emit_module?(mod, opts) do
     if Keyword.has_key?(opts, :user_module_names) do
       user_names = Keyword.get(opts, :user_module_names, [])
-      mod.name in user_names or mod.name == "Pebble.Ui"
+      mod.name in user_names or CompileTimeCall.bundled_emit_module?(mod.name)
     else
       true
     end
