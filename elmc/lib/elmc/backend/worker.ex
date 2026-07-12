@@ -396,10 +396,10 @@ defmodule Elmc.Backend.Worker do
 
     /* Transfer ownership from (model, cmd) tuple without retaining or double-freeing. */
     static ElmcValue *extract_model_take(ElmcValue *value) {
-      if (!value) return elmc_int_zero();
+      if (!value) return NULL;
       if (value->tag != ELMC_TAG_TUPLE2 || value->payload == NULL) return elmc_retain(value);
       ElmcTuple2 *pair = (ElmcTuple2 *)value->payload;
-      if (!pair->first) return elmc_int_zero();
+      if (!pair->first) return NULL;
       ElmcValue *model = pair->first;
       pair->first = NULL;
       return model;

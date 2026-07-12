@@ -9,9 +9,9 @@ defmodule Elmc.Backend.Pebble.SourceWriter.ViewRuntime.SceneQuery do
     SceneDecodeFrom
   }
 
-  @spec body() :: Types.c_source()
-  def body do
-    [CommandCount.body(), DirtyRect.body(), SceneDecodeFrom.body()]
+  @spec body(Types.c_symbol()) :: Types.c_source()
+  def body(entry_view_scene_append) do
+    [CommandCount.body(entry_view_scene_append), DirtyRect.body(), SceneDecodeFrom.body()]
     |> IO.iodata_to_binary()
   end
 end

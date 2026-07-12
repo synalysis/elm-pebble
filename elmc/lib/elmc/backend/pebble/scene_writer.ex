@@ -7,6 +7,9 @@ defmodule Elmc.Backend.Pebble.SceneWriter do
   @spec header_early_declarations() :: Types.c_source()
   def header_early_declarations, do: HeaderEarly.body()
 
+  @spec header_struct_decl() :: Types.c_source()
+  def header_struct_decl, do: HeaderEarly.struct_decl()
+
   @spec header_late_declarations() :: Types.c_source()
   def header_late_declarations, do: HeaderLate.body()
 

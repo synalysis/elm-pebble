@@ -214,8 +214,8 @@ defmodule Elmc.GeneratedRcTrackGame2048TemplateTest do
         if (elmc_pebble_init(&app, context) != 0) return 2;
         elmc_release(context);
 
-        if (model_cells_len(&app) != 16) return 8;
         if (drain_init_cmds(&app) != 0) return 16;
+        if (model_cells_len(&app) != 16) return 8;
         if (model_nonzero_cells(&app) != 2) return 17;
         app.scene.dirty = 1;
         if (elmc_pebble_ensure_scene(&app) != 0) return 13;

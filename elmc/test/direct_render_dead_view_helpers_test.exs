@@ -65,6 +65,8 @@ defmodule Elmc.DirectRenderDeadViewHelpersTest do
     refute generated =~ "elmc_fn_Main_view_closure_0"
     assert pebble_c =~ "#define ELMC_PEBBLE_APPEND_FALLBACK_SCENE 1"
     assert pebble_h =~ "#define ELMC_PEBBLE_APLITE_DIRECT_VIEW_SCENE 1"
+    assert pebble_h =~ "#define ELMC_PEBBLE_APLITE_DIRECT_VIEW_ACTIVE 0"
+    assert pebble_h =~ "#define ELMC_PEBBLE_SCENE_CACHE_ENABLED 1"
     assert pebble_h =~ "#define ELMC_PEBBLE_SCENE_BUILD_VERIFY 0"
     assert pebble_h =~ "#define ELMC_PEBBLE_FEATURE_COMPACT_DRAW 1"
     assert worker_h =~ "#define ELMC_WORKER_LAST_DISPATCH_CMD_CAP 0"
@@ -88,9 +90,26 @@ defmodule Elmc.DirectRenderDeadViewHelpersTest do
     assert move_board =~ "CHECK_RC(Rc)"
   end
 
-  test "view board loop uses int_list fast path without cons fallback", %{generated: generated} do
+  test "view board loop keeps cons fallback for worker model cells on pebble_int32 builds",
+       %{generated: _generated} do
+    out = Path.expand("tmp/dead_view_helpers_2048_aplite_codegen", __DIR__)
+    File.rm_rf!(out)
+
+    assert {:ok, _} =
+             Elmc.compile(@project_dir, %{
+               out_dir: out,
+               entry_module: "Main",
+               strip_dead_code: true,
+               direct_render_only: false,
+               prune_direct_generic: true,
+               plan_ir_mode: :primary,
+               pebble_int32: true,
+               prod: true
+             })
+
+    generated = File.read!(Path.join(out, "c/elmc_generated.c"))
     assert generated =~ "ELMC_TAG_INT_LIST"
-    refute generated =~ "direct_cursor_"
+    assert generated =~ "direct_cursor_"
   end
 
   test "update calls fused initialBoard_native with native seed", %{generated: generated} do

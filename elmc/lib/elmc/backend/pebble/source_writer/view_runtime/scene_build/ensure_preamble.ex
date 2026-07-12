@@ -14,8 +14,10 @@ defmodule Elmc.Backend.Pebble.SourceWriter.ViewRuntime.SceneBuild.EnsurePreamble
         ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_ensure_scene", -1);
       }
     #if !ELMC_PEBBLE_SCENE_CACHE_ENABLED
+    #if !ELMC_PEBBLE_APLITE_DIRECT_VIEW_ACTIVE
       ELMC_DRAW_PATH_PROBE(ELMC_DRAW_PATH_ENSURE_SCENE_EXIT);
       ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_ensure_scene", -2);
+    #endif
     #endif
       if (!app->scene.dirty) {
         ELMC_PEBBLE_SCENE_LOG("elmc-scene ensure skip clean cmds=%d bytes=%d",

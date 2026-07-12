@@ -1,6 +1,7 @@
 defmodule Elmc.Backend.Pebble.HeaderWriter.AppTypes.DrawCmdDecl do
   @moduledoc false
 
+  alias Elmc.Backend.Pebble.SceneWriter
   alias Elmc.Backend.Pebble.Types
 
   @spec body(Types.header_bindings()) :: Types.c_source()
@@ -28,6 +29,8 @@ defmodule Elmc.Backend.Pebble.HeaderWriter.AppTypes.DrawCmdDecl do
     #endif
       };
     } ElmcPebbleDrawCmd;
+
+    #{SceneWriter.header_struct_decl()}
 
     #{scene_writer_late}
 

@@ -6,6 +6,11 @@
       "generated_c_bytes": 34000,
       "pebble_app_bin_flint": 23500
     },
+    "watchface-smoke-screen": {
+      "generated_c_bytes": 7906,
+      "pebble_app_bin_flint": 11936,
+      "pebble_app_bin_aplite": 11936
+    },
     "watchface-yes": {
       "generated_c_bytes": 169000,
       "pebble_app_bin_flint": 65000

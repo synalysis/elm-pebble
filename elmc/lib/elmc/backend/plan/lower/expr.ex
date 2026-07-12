@@ -779,7 +779,12 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
   end
 
   defp int_record_literal_fields?(fields) when is_list(fields) do
-    fields != [] and Enum.all?(fields, &int_record_field_expr?/1)
+    fields != [] and
+      Enum.all?(fields, fn field ->
+        name = Map.get(field, :name) || Map.get(field, :field)
+
+        is_binary(name) and Record.int_field?(name) and int_record_field_expr?(field)
+      end)
   end
 
   defp int_record_shape?(field_names) when is_list(field_names) do
@@ -794,7 +799,7 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
 
   defp int_record_expr?(%{op: :int_literal, value: value}) when is_integer(value), do: true
 
-  defp int_record_expr?(%{op: :var, name: name}) when is_binary(name), do: true
+  defp int_record_expr?(%{op: :var, name: _name}), do: false
 
   defp int_record_expr?(%{op: :qualified_call, target: target, args: args}) when is_list(args) do
     int_call_target?(target) and Enum.all?(args, &int_record_expr?/1)

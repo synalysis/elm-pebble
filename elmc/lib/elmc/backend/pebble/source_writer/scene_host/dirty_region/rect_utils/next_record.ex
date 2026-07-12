@@ -6,6 +6,7 @@ defmodule Elmc.Backend.Pebble.SourceWriter.SceneHost.DirtyRegion.RectUtils.NextR
   @spec body() :: Types.c_source()
   def body do
     """
+    #if !ELMC_PEBBLE_SCENE_STREAM_CMDS
     static int elmc_pebble_scene_next_record(
         const unsigned char *bytes,
         int byte_count,
@@ -28,6 +29,7 @@ defmodule Elmc.Backend.Pebble.SourceWriter.SceneHost.DirtyRegion.RectUtils.NextR
       *offset = start + record_len;
       return 0;
     }
+    #endif
 
     """
   end

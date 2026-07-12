@@ -637,6 +637,68 @@ defmodule Elmc.PlanLowerIrTest do
     end
   end
 
+  test "tag_switch merge block branches to ret for state_switch emit" do
+    decl = %{
+      name: "update",
+      args: ["msg", "model"],
+      expr: %{
+        op: :case,
+        subject: %{op: :var, name: "msg"},
+        branches: [
+          %{
+            pattern: %{kind: :constructor, name: "Left", tag: 1, arg_pattern: nil},
+            expr: %{op: :int_literal, value: 10}
+          },
+          %{
+            pattern: %{kind: :constructor, name: "Right", tag: 2, arg_pattern: nil},
+            expr: %{op: :int_literal, value: 20}
+          },
+          %{
+            pattern: %{kind: :constructor, name: "Up", tag: 3, arg_pattern: nil},
+            expr: %{op: :int_literal, value: 30}
+          },
+          %{
+            pattern: %{kind: :constructor, name: "Down", tag: 4, arg_pattern: nil},
+            expr: %{op: :int_literal, value: 40}
+          },
+          %{
+            pattern: %{kind: :constructor, name: "Tick", tag: 5, arg_pattern: nil},
+            expr: %{op: :int_literal, value: 50}
+          },
+          %{
+            pattern: %{kind: :wildcard},
+            expr: %{op: :tuple2, left: %{op: :var, name: "model"}, right: %{op: :int_literal, value: 0}}
+          }
+        ]
+      }
+    }
+
+    Process.put(:elmc_codegen_opts, %{codegen_profile: :size, plan_emit: :state_switch})
+
+    on_exit(fn -> Process.delete(:elmc_codegen_opts) end)
+
+    assert {:ok, plan} = Function.lower(decl, "Main", %{}, rc_required: true)
+    refute Enum.any?(plan.blocks, &match?(%{terminator: :none}, &1))
+
+    blocks_by_id = Map.new(plan.blocks, &{&1.id, &1})
+
+    br_to_ret? =
+      Enum.any?(plan.blocks, fn
+        %{terminator: {:br, target}} ->
+          match?(%{terminator: {:ret, _}}, Map.get(blocks_by_id, target))
+
+        _ ->
+          false
+      end)
+
+    assert br_to_ret?, "expected tag_switch merge to branch into a ret block"
+
+    c = CLowerFunction.emit(plan)
+    assert c =~ "switch (__plan_state)"
+    assert c =~ "*out ="
+    refute Regex.match?(~r/case ELMC_PLAN_STATE[^\n]+:\s*__plan_state = -1; break;\s*case ELMC_PLAN_STATE[^\n]+RETURN/s, c)
+  end
+
   test "foldl tuple-arg lambda flattens to tupleArg + acc with dx/dy prelude" do
     decl = %{
       name: "patch",

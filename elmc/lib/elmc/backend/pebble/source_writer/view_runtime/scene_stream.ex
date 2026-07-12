@@ -7,14 +7,16 @@ defmodule Elmc.Backend.Pebble.SourceWriter.ViewRuntime.SceneStream do
     CommandsFrom,
     CommandsNext,
     ResetCursor,
+    StreamViewCmds,
     ViewCommandsImpl
   }
 
-  @spec body() :: Types.c_source()
-  def body do
+  @spec body(Types.c_symbol()) :: Types.c_source()
+  def body(entry_view_scene_append) do
     [
+      StreamViewCmds.body(entry_view_scene_append),
       ResetCursor.body(),
-      CommandsNext.body(),
+      CommandsNext.body(entry_view_scene_append),
       CommandsFrom.body(),
       ViewCommandsImpl.body()
     ]

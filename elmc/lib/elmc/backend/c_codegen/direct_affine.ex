@@ -1979,87 +1979,55 @@ defmodule Elmc.Backend.CCodegen.DirectAffine do
     "((#{field_ref} - #{subtrahend}) / #{divisor})"
   end
 
-  defp emit_affine_indexed_list_walk(list_var, next, loop_body, list_expr, env)
+  defp emit_affine_indexed_list_walk(list_var, next, loop_body, _list_expr, _env)
        when is_binary(list_var) and is_binary(loop_body) do
-    repr = affine_list_repr(list_expr, env)
-
-    case repr do
-      :int_list ->
-        """
-        elmc_int_t direct_index_#{next} = 0;
-        if (#{list_var} && #{list_var}->tag == ELMC_TAG_INT_LIST) {
-          ElmcIntListPayload *direct_ilp_#{next} = (ElmcIntListPayload *)#{list_var}->payload;
-          int direct_ilen_#{next} = direct_ilp_#{next} ? direct_ilp_#{next}->length : 0;
-          for (int direct_ii_#{next} = 0; Rc == RC_SUCCESS && direct_ii_#{next} < direct_ilen_#{next}; direct_ii_#{next}++) {
-            const elmc_int_t direct_affine_item_#{next} = direct_ilp_#{next}->values[direct_ii_#{next}];
-        #{loop_body}
-            direct_index_#{next}++;
-          }
-        }
-        """
-
-      _ ->
-        """
-        elmc_int_t direct_index_#{next} = 0;
-        if (#{list_var} && #{list_var}->tag == ELMC_TAG_INT_LIST) {
-          ElmcIntListPayload *direct_ilp_#{next} = (ElmcIntListPayload *)#{list_var}->payload;
-          int direct_ilen_#{next} = direct_ilp_#{next} ? direct_ilp_#{next}->length : 0;
-          for (int direct_ii_#{next} = 0; Rc == RC_SUCCESS && direct_ii_#{next} < direct_ilen_#{next}; direct_ii_#{next}++) {
-            const elmc_int_t direct_affine_item_#{next} = direct_ilp_#{next}->values[direct_ii_#{next}];
-        #{loop_body}
-            direct_index_#{next}++;
-          }
-        } else {
-          ElmcValue *direct_cursor_#{next} = #{list_var};
-          while (Rc == RC_SUCCESS && direct_cursor_#{next} && direct_cursor_#{next}->tag == ELMC_TAG_LIST && direct_cursor_#{next}->payload != NULL) {
-            ElmcCons *direct_node_#{next} = (ElmcCons *)direct_cursor_#{next}->payload;
-            const elmc_int_t direct_affine_item_#{next} = elmc_as_int(direct_node_#{next}->head);
-        #{loop_body}
-            direct_index_#{next}++;
-            direct_cursor_#{next} = direct_node_#{next}->tail;
-          }
-        }
-        """
-    end
+    # Always keep the cons-list walk: pebble_int32 builds usually store List Int as
+    # ELMC_TAG_INT_LIST, but worker model fields can still be ELMC_TAG_LIST at runtime
+    # (for example before the first update path materializes a compact list). Skipping
+    # the fallback leaves a partial scene (chrome only) on watch targets.
+    """
+    elmc_int_t direct_index_#{next} = 0;
+    if (#{list_var} && #{list_var}->tag == ELMC_TAG_INT_LIST) {
+      ElmcIntListPayload *direct_ilp_#{next} = (ElmcIntListPayload *)#{list_var}->payload;
+      int direct_ilen_#{next} = direct_ilp_#{next} ? direct_ilp_#{next}->length : 0;
+      for (int direct_ii_#{next} = 0; Rc == RC_SUCCESS && direct_ii_#{next} < direct_ilen_#{next}; direct_ii_#{next}++) {
+        const elmc_int_t direct_affine_item_#{next} = direct_ilp_#{next}->values[direct_ii_#{next}];
+    #{loop_body}
+        direct_index_#{next}++;
+      }
+    } else {
+      ElmcValue *direct_cursor_#{next} = #{list_var};
+      while (Rc == RC_SUCCESS && direct_cursor_#{next} && direct_cursor_#{next}->tag == ELMC_TAG_LIST && direct_cursor_#{next}->payload != NULL) {
+        ElmcCons *direct_node_#{next} = (ElmcCons *)direct_cursor_#{next}->payload;
+        const elmc_int_t direct_affine_item_#{next} = elmc_as_int(direct_node_#{next}->head);
+    #{loop_body}
+        direct_index_#{next}++;
+        direct_cursor_#{next} = direct_node_#{next}->tail;
+      }
+    }
+    """
   end
 
-  defp emit_affine_map_list_walk(list_var, next, loop_body, list_expr, env)
+  defp emit_affine_map_list_walk(list_var, next, loop_body, _list_expr, _env)
        when is_binary(list_var) and is_binary(loop_body) do
-    repr = affine_list_repr(list_expr, env)
-
-    case repr do
-      :int_list ->
-        """
-        if (#{list_var} && #{list_var}->tag == ELMC_TAG_INT_LIST) {
-          ElmcIntListPayload *direct_ilp_#{next} = (ElmcIntListPayload *)#{list_var}->payload;
-          int direct_ilen_#{next} = direct_ilp_#{next} ? direct_ilp_#{next}->length : 0;
-          for (int direct_ii_#{next} = 0; Rc == RC_SUCCESS && direct_ii_#{next} < direct_ilen_#{next}; direct_ii_#{next}++) {
-            const elmc_int_t direct_affine_item_#{next} = direct_ilp_#{next}->values[direct_ii_#{next}];
-        #{loop_body}
-          }
-        }
-        """
-
-      _ ->
-        """
-        if (#{list_var} && #{list_var}->tag == ELMC_TAG_INT_LIST) {
-          ElmcIntListPayload *direct_ilp_#{next} = (ElmcIntListPayload *)#{list_var}->payload;
-          int direct_ilen_#{next} = direct_ilp_#{next} ? direct_ilp_#{next}->length : 0;
-          for (int direct_ii_#{next} = 0; Rc == RC_SUCCESS && direct_ii_#{next} < direct_ilen_#{next}; direct_ii_#{next}++) {
-            const elmc_int_t direct_affine_item_#{next} = direct_ilp_#{next}->values[direct_ii_#{next}];
-        #{loop_body}
-          }
-        } else {
-          ElmcValue *direct_cursor_#{next} = #{list_var};
-          while (Rc == RC_SUCCESS && direct_cursor_#{next} && direct_cursor_#{next}->tag == ELMC_TAG_LIST && direct_cursor_#{next}->payload != NULL) {
-            ElmcCons *direct_node_#{next} = (ElmcCons *)direct_cursor_#{next}->payload;
-            const elmc_int_t direct_affine_item_#{next} = elmc_as_int(direct_node_#{next}->head);
-        #{loop_body}
-            direct_cursor_#{next} = direct_node_#{next}->tail;
-          }
-        }
-        """
-    end
+    """
+    if (#{list_var} && #{list_var}->tag == ELMC_TAG_INT_LIST) {
+      ElmcIntListPayload *direct_ilp_#{next} = (ElmcIntListPayload *)#{list_var}->payload;
+      int direct_ilen_#{next} = direct_ilp_#{next} ? direct_ilp_#{next}->length : 0;
+      for (int direct_ii_#{next} = 0; Rc == RC_SUCCESS && direct_ii_#{next} < direct_ilen_#{next}; direct_ii_#{next}++) {
+        const elmc_int_t direct_affine_item_#{next} = direct_ilp_#{next}->values[direct_ii_#{next}];
+    #{loop_body}
+      }
+    } else {
+      ElmcValue *direct_cursor_#{next} = #{list_var};
+      while (Rc == RC_SUCCESS && direct_cursor_#{next} && direct_cursor_#{next}->tag == ELMC_TAG_LIST && direct_cursor_#{next}->payload != NULL) {
+        ElmcCons *direct_node_#{next} = (ElmcCons *)direct_cursor_#{next}->payload;
+        const elmc_int_t direct_affine_item_#{next} = elmc_as_int(direct_node_#{next}->head);
+    #{loop_body}
+        direct_cursor_#{next} = direct_node_#{next}->tail;
+      }
+    }
+    """
   end
 
   defp affine_list_repr(list_expr, env) do

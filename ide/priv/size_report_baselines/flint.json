@@ -4,7 +4,7 @@
   "templates": {
     "game-2048": {
       "generated_c_bytes": 32000,
-      "pebble_app_bin_aplite": 21000,
+      "pebble_app_bin_aplite": 21528,
       "pebble_app_bin_flint": 23500
     },
     "watchface-tangram-time": {

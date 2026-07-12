@@ -16,7 +16,7 @@ defmodule Elmc.Backend.Pebble.HeaderWriter.SceneConfig.StructDecls.AppStruct do
       uint64_t prev_ops_hash;
       ElmcValue *stream_view_result;
       ElmcPebbleSceneBuffer scene;
-    #if ELMC_PEBBLE_SCENE_CACHE_ENABLED
+    #if ELMC_PEBBLE_SCENE_CACHE_ENABLED || ELMC_PEBBLE_APLITE_DIRECT_VIEW_ACTIVE
       int scene_draw_byte_offset;
     #endif
     #if ELMC_PEBBLE_DIRTY_REGION_ENABLED

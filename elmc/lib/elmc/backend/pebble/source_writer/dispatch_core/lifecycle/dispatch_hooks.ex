@@ -24,7 +24,7 @@ defmodule Elmc.Backend.Pebble.SourceWriter.DispatchCore.Lifecycle.DispatchHooks 
     #endif
     #endif
       elmc_pebble_mark_scene_dirty(app);
-    #if ELMC_PEBBLE_SCENE_CACHE_ENABLED
+    #if ELMC_PEBBLE_SCENE_CACHE_ENABLED || ELMC_PEBBLE_APLITE_DIRECT_VIEW_ACTIVE
       app->scene_draw_byte_offset = 0;
     #endif
     }

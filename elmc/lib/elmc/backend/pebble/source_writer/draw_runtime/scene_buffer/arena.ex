@@ -6,14 +6,15 @@ defmodule Elmc.Backend.Pebble.SourceWriter.DrawRuntime.SceneBuffer.Arena do
 
   @spec body() :: Types.c_source()
   def body do
-    [
-      Pool.body(),
-      StaticCapacity.body(),
-      Chunks.body(),
-      Lifecycle.body(),
-      ReservePut.body(),
-      ValueHelpers.body()
-    ]
-    |> IO.iodata_to_binary()
+    """
+    #{Pool.body()}
+    #if !ELMC_PEBBLE_SCENE_STREAM_CMDS
+    #{StaticCapacity.body()}
+    #{Chunks.body()}
+    #{ReservePut.body()}
+    #{ValueHelpers.body()}
+    #endif
+    #{Lifecycle.body()}
+    """
   end
 end

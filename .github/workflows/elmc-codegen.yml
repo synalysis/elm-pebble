@@ -177,7 +177,7 @@ jobs:
         run: >
           mix ide.size_report
           --profile size
-          --templates watchface-yes,game-2048
+          --templates watchface-yes,game-2048,watchface-smoke-screen
           --baseline-manifest priv/size_report_baselines/flint-size.json
           --fail-on-regression
           --max-generated-c-regression 8192

@@ -3,6 +3,7 @@ defmodule Elmc.Runtime.Generator do
   Emits the reference-counted C runtime used by generated code.
   """
 
+  alias Elmc.Runtime.FloatList
   alias Elmc.Runtime.JsonSections
   alias Elmc.Runtime.Generator.Types
   alias Elmc.Runtime.RcCodes
@@ -32,34 +33,38 @@ defmodule Elmc.Runtime.Generator do
           Types.prune_pair()
   defp maybe_prune_runtime(header, source, prune_from_dir, opts) when is_binary(prune_from_dir) do
     contents = collect_prune_contents(prune_from_dir)
+    direct_refs = collect_direct_runtime_references(prune_from_dir)
 
     source =
       source
       |> maybe_drop_unused_compact_list_runtime(contents)
 
     with refs when map_size(refs) > 0 <- collect_runtime_references(prune_from_dir),
+         source <- maybe_disable_json_float_numbers(source, refs),
+         source <- maybe_stub_int_only_float_coercions(source, direct_refs),
          source <- maybe_drop_float_runtime(source, refs),
          {:ok, defs} <- parse_function_defs(source),
          true <- defs != [] do
+      macros = preprocessor_bool_macros(source)
+
       kept_names =
         defs
-        |> transitive_keep_set(refs)
+        |> transitive_keep_set(refs, macros)
         |> drop_pebble_inline_runtime_symbols(opts)
 
       if MapSet.size(kept_names) > 0 do
         pruned =
-          if json_runtime_referenced?(refs) do
-            source |> String.trim_trailing() |> Kernel.<>("\n")
-          else
-            prune_source(source, defs, kept_names)
-            |> String.trim_trailing()
-            |> Kernel.<>("\n\n")
-            |> Kernel.<>(RcMacros.fail_stash_source_impl())
-            |> Kernel.<>("\n\n#ifndef ELMC_PEBBLE_PLATFORM\n")
-            |> Kernel.<>(RcCodes.name_table_source())
-            |> Kernel.<>("\n#endif\n")
-          end
+          source
+          |> prune_source(defs, kept_names, macros)
+          |> String.trim_trailing()
+          |> maybe_stub_int_only_float_coercions(direct_refs)
+          |> Kernel.<>("\n\n")
+          |> Kernel.<>(RcMacros.fail_stash_source_impl())
+          |> Kernel.<>("\n\n#ifndef ELMC_PEBBLE_PLATFORM\n")
+          |> Kernel.<>(RcCodes.name_table_source())
+          |> Kernel.<>("\n#endif\n")
 
+        header = maybe_prune_runtime_header(header, pruned, direct_refs, refs, contents)
         {header, pruned}
       else
         {header, source}
@@ -98,41 +103,167 @@ defmodule Elmc.Runtime.Generator do
     ]
   end
 
-  defp maybe_drop_float_runtime(source, refs) when is_map(refs) do
-    float_refs =
-      MapSet.new([
-        "elmc_new_float",
-        "elmc_as_float",
-        "elmc_string_from_float",
-        "elmc_string_to_float",
-        "elmc_basics_to_float",
-        "elmc_basics_sqrt",
-        "elmc_basics_log_base",
-        "elmc_basics_sin",
-        "elmc_basics_cos",
-        "elmc_basics_tan",
-        "elmc_basics_acos",
-        "elmc_basics_asin",
-        "elmc_basics_atan",
-        "elmc_basics_atan2",
-        "elmc_basics_degrees",
-        "elmc_basics_radians",
-        "elmc_basics_turns",
-        "elmc_basics_is_nan",
-        "elmc_basics_is_infinite",
-        "elmc_basics_round",
-        "elmc_basics_floor",
-        "elmc_basics_ceiling",
-        "elmc_basics_truncate",
-        "elmc_basics_sqrt_double",
-        "elmc_basics_sin_double",
-        "elmc_basics_cos_double",
-        "elmc_basics_tan_double"
-      ])
+  @elmc_as_float_impl """
+      if (!value) return 0.0;
+      if (value->tag == ELMC_TAG_FLOAT) return *((double *)value->payload);
+      if (value->tag == ELMC_TAG_INT || value->tag == ELMC_TAG_BOOL) return (double)elmc_as_int(value);
+      return 0.0;
+  """
 
+  @elmc_as_float_stub """
+      (void)value;
+      return 0.0;
+  """
+
+  @elmc_as_int_number_impl """
+      if (!value) return 0;
+      if (value->tag == ELMC_TAG_FLOAT) return (elmc_int_t)elmc_as_float(value);
+      return elmc_as_int(value);
+  """
+
+  @elmc_as_int_number_stub """
+      return elmc_as_int(value);
+  """
+
+  @elmc_as_float_fn_impl """
+      double elmc_as_float(ElmcValue *value) {
+        if (!value) return 0.0;
+        if (value->tag == ELMC_TAG_FLOAT) return *((double *)value->payload);
+        if (value->tag == ELMC_TAG_INT || value->tag == ELMC_TAG_BOOL) return (double)elmc_as_int(value);
+        return 0.0;
+      }
+  """
+
+  @elmc_as_float_fn_stub """
+      double elmc_as_float(ElmcValue *value) {
+        (void)value;
+        return 0.0;
+      }
+  """
+
+  @elmc_as_float_fn_impl_unindented """
+  double elmc_as_float(ElmcValue *value) {
+    if (!value) return 0.0;
+    if (value->tag == ELMC_TAG_FLOAT) return *((double *)value->payload);
+    if (value->tag == ELMC_TAG_INT || value->tag == ELMC_TAG_BOOL) return (double)elmc_as_int(value);
+    return 0.0;
+  }
+  """
+
+  @elmc_as_float_fn_stub_unindented """
+  double elmc_as_float(ElmcValue *value) {
+    (void)value;
+    return 0.0;
+  }
+  """
+
+  @elmc_as_int_number_fn_impl """
+      elmc_int_t elmc_as_int_number(ElmcValue *value) {
+        if (!value) return 0;
+        if (value->tag == ELMC_TAG_FLOAT) return (elmc_int_t)elmc_as_float(value);
+        return elmc_as_int(value);
+      }
+  """
+
+  @elmc_as_int_number_fn_stub """
+      elmc_int_t elmc_as_int_number(ElmcValue *value) {
+        return elmc_as_int(value);
+      }
+  """
+
+  @elmc_as_int_number_fn_impl_unindented """
+  elmc_int_t elmc_as_int_number(ElmcValue *value) {
+    if (!value) return 0;
+    if (value->tag == ELMC_TAG_FLOAT) return (elmc_int_t)elmc_as_float(value);
+    return elmc_as_int(value);
+  }
+  """
+
+  @elmc_as_int_number_fn_stub_unindented """
+  elmc_int_t elmc_as_int_number(ElmcValue *value) {
+    return elmc_as_int(value);
+  }
+  """
+
+  @float_alloc_refs MapSet.new([
+    "elmc_new_float",
+    "elmc_string_from_float",
+    "elmc_json_decode_float_decoder",
+    "elmc_json_encode_float",
+    "elmc_basics_to_float",
+    "elmc_basics_sqrt",
+    "elmc_basics_sin",
+    "elmc_basics_cos",
+    "elmc_basics_tan"
+  ])
+
+  @float_runtime_refs MapSet.new([
+    "elmc_new_float",
+    "elmc_string_from_float",
+    "elmc_string_to_float",
+    "elmc_basics_to_float",
+    "elmc_json_decode_float_decoder",
+    "elmc_json_encode_float",
+    "elmc_basics_sqrt",
+    "elmc_basics_log_base",
+    "elmc_basics_sin",
+    "elmc_basics_cos",
+    "elmc_basics_tan",
+    "elmc_basics_acos",
+    "elmc_basics_asin",
+    "elmc_basics_atan",
+    "elmc_basics_atan2",
+    "elmc_basics_degrees",
+    "elmc_basics_radians",
+    "elmc_basics_turns",
+    "elmc_basics_is_nan",
+    "elmc_basics_is_infinite",
+    "elmc_basics_round",
+    "elmc_basics_floor",
+    "elmc_basics_ceiling",
+    "elmc_basics_truncate",
+    "elmc_basics_sqrt_double",
+    "elmc_basics_sin_double",
+    "elmc_basics_cos_double",
+    "elmc_basics_tan_double"
+  ])
+
+  @header_float_take_wrapper_names ~w(
+    elmc_new_float_take
+    elmc_list_from_float_array_take
+    elmc_float_list_head_boxed_take
+    elmc_float_list_tail_take
+    elmc_string_from_float_take
+  )
+
+  @header_float_basics_names ~w(
+    elmc_basics_to_float
+    elmc_basics_sqrt
+    elmc_basics_log_base
+    elmc_basics_sin
+    elmc_basics_cos
+    elmc_basics_tan
+    elmc_basics_acos
+    elmc_basics_asin
+    elmc_basics_atan
+    elmc_basics_atan2
+    elmc_basics_degrees
+    elmc_basics_radians
+    elmc_basics_turns
+    elmc_basics_from_polar
+    elmc_basics_to_polar
+    elmc_basics_is_nan
+    elmc_basics_is_infinite
+    elmc_basics_round
+    elmc_basics_floor
+    elmc_basics_ceiling
+    elmc_basics_truncate
+  )
+
+  defp maybe_drop_float_runtime(source, refs) when is_map(refs) do
     referenced = refs |> Map.keys() |> MapSet.new()
 
-    if MapSet.disjoint?(referenced, float_refs) do
+    if MapSet.disjoint?(referenced, @float_runtime_refs) do
       source
       |> String.replace(
         """
@@ -165,6 +296,152 @@ defmodule Elmc.Runtime.Generator do
     else
       source
     end
+  end
+
+  defp maybe_stub_int_only_float_coercions(source, direct_refs) do
+    if int_only_float_coercions?(direct_refs) do
+      source
+      |> String.replace(@elmc_as_float_impl, @elmc_as_float_stub)
+      |> String.replace(@elmc_as_int_number_impl, @elmc_as_int_number_stub)
+      |> String.replace(@elmc_as_float_fn_impl, @elmc_as_float_fn_stub)
+      |> String.replace(@elmc_as_float_fn_impl_unindented, @elmc_as_float_fn_stub_unindented)
+      |> String.replace(@elmc_as_int_number_fn_impl, @elmc_as_int_number_fn_stub)
+      |> String.replace(@elmc_as_int_number_fn_impl_unindented, @elmc_as_int_number_fn_stub_unindented)
+    else
+      source
+    end
+  end
+
+  defp int_only_float_coercions?(direct_refs) do
+    MapSet.disjoint?(direct_refs, @float_alloc_refs)
+  end
+
+  defp json_float_disabled?(source) when is_binary(source) do
+    String.contains?(source, "#define ELMC_JSON_FLOAT_NUMBERS 0")
+  end
+
+  defp maybe_prune_runtime_header(header, source, direct_refs, refs, contents)
+       when is_binary(header) and is_binary(source) and is_list(contents) do
+    referenced = refs |> Map.keys() |> MapSet.new()
+    joined = Enum.join(contents, "\n")
+
+    header
+    |> maybe_prune_header_json_float(source)
+    |> maybe_prune_header_float_coercions(direct_refs)
+    |> maybe_prune_header_unused_float(referenced)
+    |> maybe_prune_header_float_list(joined)
+  end
+
+  defp maybe_prune_header_json_float(header, source) do
+    if json_float_disabled?(source) do
+      header
+      |> drop_header_lines(~r/elmc_json_decode_float_decoder/)
+      |> drop_header_lines(~r/elmc_json_encode_float\(/)
+    else
+      header
+    end
+  end
+
+  defp maybe_prune_header_float_coercions(header, direct_refs) do
+    if int_only_float_coercions?(direct_refs) do
+      header
+      |> drop_header_macro("ELMC_RECORD_GET_INDEX_FLOAT")
+      |> drop_header_lines(~r/^RC elmc_new_float\(/)
+      |> drop_header_lines(~r/^double elmc_as_float\(/)
+      |> drop_header_lines(~r/^double elmc_basics_(sqrt|sin|cos|tan)_double\(/)
+      |> drop_header_static_inlines(@header_float_take_wrapper_names)
+    else
+      header
+    end
+  end
+
+  defp maybe_prune_header_unused_float(header, referenced) do
+    if MapSet.disjoint?(referenced, @float_runtime_refs) do
+      header
+      |> drop_header_lines(~r/^RC elmc_string_from_float\(/)
+      |> drop_header_lines(~r/^ElmcValue \*elmc_string_to_float\(/)
+      |> drop_header_named_lines("ElmcValue *", @header_float_basics_names)
+      |> drop_header_static_inlines(["elmc_string_from_float_take"])
+    else
+      header
+    end
+  end
+
+  defp maybe_prune_header_float_list(header, joined) do
+    if compact_float_list_used?(joined) do
+      header
+    else
+      header
+      |> String.replace(FloatList.header_types(), "")
+      |> drop_header_lines(~r/^int elmc_float_list_is_empty\(/)
+      |> drop_header_lines(~r/^RC elmc_float_list_head_boxed\(/)
+      |> drop_header_lines(~r/^RC elmc_float_list_tail\(/)
+      |> drop_header_lines(~r/^RC elmc_list_from_float_array\(/)
+    end
+  end
+
+  defp drop_header_lines(header, pattern) do
+    header
+    |> String.split("\n")
+    |> Enum.reject(&Regex.match?(pattern, &1))
+    |> Enum.join("\n")
+  end
+
+  defp drop_header_named_lines(header, prefix, names) do
+    header
+    |> String.split("\n")
+    |> Enum.reject(fn line ->
+      Enum.any?(names, fn name -> String.starts_with?(line, "#{prefix}#{name}(") end)
+    end)
+    |> Enum.join("\n")
+  end
+
+  defp drop_header_macro(header, macro_name) do
+    Regex.replace(
+      ~r/#define #{macro_name}\([^\)]*\) \\\n(?:.*\n)*?(?=^#define|\z)/m,
+      header,
+      ""
+    )
+  end
+
+  defp drop_header_static_inlines(header, names) do
+    Enum.reduce(names, header, fn name, acc ->
+      Regex.replace(
+        ~r/static inline ElmcValue \*#{Regex.escape(name)}\([^\)]*\) \{\n[\s\S]*?\n\}\n/s,
+        acc,
+        ""
+      )
+    end)
+  end
+
+  defp collect_direct_runtime_references(dir) do
+    dir
+    |> collect_prune_contents()
+    |> Enum.reduce(MapSet.new(), fn content, acc ->
+      content
+      |> runtime_reference_names()
+      |> Enum.reduce(acc, &MapSet.put(&2, &1))
+    end)
+  end
+
+  defp maybe_disable_json_float_numbers(source, refs) when is_binary(source) and is_map(refs) do
+    json_float_refs =
+      MapSet.new([
+        "elmc_json_decode_float_decoder",
+        "elmc_json_encode_float"
+      ])
+
+    referenced = refs |> Map.keys() |> MapSet.new()
+
+    if MapSet.disjoint?(referenced, json_float_refs) do
+      disable_json_float_numbers(source)
+    else
+      source
+    end
+  end
+
+  defp disable_json_float_numbers(source) when is_binary(source) do
+    String.replace(source, JsonSections.json_float_numbers_config(), "#define ELMC_JSON_FLOAT_NUMBERS 0\n")
   end
 
   @spec collect_runtime_references(String.t()) :: Types.runtime_ref_map()
@@ -393,12 +670,6 @@ defmodule Elmc.Runtime.Generator do
   defp maybe_seed_json_runtime_refs(expanded, contents) do
     _joined = Enum.join(contents, "\n")
     expanded
-  end
-
-  defp json_runtime_referenced?(refs) when is_map(refs) do
-    refs
-    |> Map.keys()
-    |> Enum.any?(fn name -> String.starts_with?(name, "elmc_json_") end)
   end
 
   defp maybe_seed_speaker_serialize_refs(expanded, contents) do
@@ -777,9 +1048,13 @@ defmodule Elmc.Runtime.Generator do
     end
   end
 
-  @spec transitive_keep_set([Types.function_def()], Types.runtime_ref_map()) :: Types.keep_set()
-  defp transitive_keep_set(defs, refs) do
-    def_map = Map.new(defs, &{&1.name, &1.body})
+  @spec transitive_keep_set([Types.function_def()], Types.runtime_ref_map(), %{String.t() => boolean()}) ::
+          Types.keep_set()
+  defp transitive_keep_set(defs, refs, macros) do
+    def_map =
+      Map.new(defs, fn def ->
+        {def.name, drop_inactive_preprocessor_blocks(def.body, macros)}
+      end)
     def_names = Map.keys(def_map) |> MapSet.new()
 
     seed =
@@ -870,9 +1145,9 @@ defmodule Elmc.Runtime.Generator do
     end
   end
 
-  @spec prune_source(Types.runtime_source(), [Types.function_def()], Types.keep_set()) ::
+  @spec prune_source(Types.runtime_source(), [Types.function_def()], Types.keep_set(), %{String.t() => boolean()}) ::
           Types.runtime_source()
-  defp prune_source(source, defs, kept_names) do
+  defp prune_source(source, defs, kept_names, macros) do
     kept_names =
       MapSet.reject(kept_names, fn name ->
         String.starts_with?(name, "elmc_rc_track_")
@@ -895,7 +1170,9 @@ defmodule Elmc.Runtime.Generator do
       defs
       |> Enum.filter(&MapSet.member?(kept_names, &1.name))
       |> Enum.map(fn %{start_idx: s, end_idx: e} ->
-        binary_part(source, s, e - s + 1)
+        source
+        |> binary_part(s, e - s + 1)
+        |> drop_inactive_preprocessor_blocks(macros)
       end)
       |> Enum.join("\n\n")
 
@@ -1586,6 +1863,7 @@ defmodule Elmc.Runtime.Generator do
     #include <stdio.h>
     #include <time.h>
     #include <math.h>
+    #{JsonSections.json_float_numbers_config()}
     #{JsonSections.runtime_source_includes()}
     #if defined(PBL_PLATFORM_APLITE) || defined(PBL_PLATFORM_BASALT) || defined(PBL_PLATFORM_CHALK) || defined(PBL_PLATFORM_DIORITE) || defined(PBL_PLATFORM_EMERY) || defined(PBL_PLATFORM_FLINT) || defined(PBL_PLATFORM_GABBRO)
     #define ELMC_PEBBLE_PLATFORM 1

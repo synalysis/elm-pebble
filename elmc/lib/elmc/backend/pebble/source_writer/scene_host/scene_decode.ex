@@ -6,7 +6,14 @@ defmodule Elmc.Backend.Pebble.SourceWriter.SceneHost.SceneDecode do
   @spec body() :: Types.c_source()
   def body do
     """
+    #if !ELMC_PEBBLE_SCENE_STREAM_CMDS
+    #{body_without_guard()}
+    #endif
+    """
+  end
 
+  defp body_without_guard do
+    """
     int elmc_pebble_scene_decode_record(
         const unsigned char *bytes,
         int byte_count,
@@ -24,7 +31,6 @@ defmodule Elmc.Backend.Pebble.SourceWriter.SceneHost.SceneDecode do
       *offset = payload_end;
       return 0;
     }
-
-"""
+    """
   end
 end

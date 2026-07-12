@@ -6,7 +6,12 @@ defmodule Elmc.Backend.Pebble.SceneWriter.Encode do
 
   @spec body() :: Types.c_source()
   def body do
-    [Helpers.body(), EncodePayload.body(), WriterPush.body()]
-    |> IO.iodata_to_binary()
+    """
+    #{Helpers.body()}
+    #if !ELMC_PEBBLE_SCENE_STREAM_CMDS
+    #{EncodePayload.body()}
+    #endif
+    #{WriterPush.body()}
+    """
   end
 end

@@ -2060,6 +2060,51 @@ static void elmc_draw_trace(const char *phase, int seq, int index, const ElmcPeb
 #endif
 
 #if ELMC_PEBBLE_FEATURE_COMPACT_DRAW
+#if ELMC_PEBBLE_FEATURE_DRAW_CLEAR && ELMC_PEBBLE_FEATURE_DRAW_FILL_RECT && \
+    !ELMC_PEBBLE_FEATURE_DRAW_CONTEXT && !ELMC_PEBBLE_FEATURE_DRAW_TEXT && \
+    !ELMC_PEBBLE_FEATURE_DRAW_RECT && !ELMC_PEBBLE_FEATURE_DRAW_STROKE_COLOR && \
+    !ELMC_PEBBLE_FEATURE_DRAW_TEXT_COLOR && !ELMC_PEBBLE_FEATURE_DRAW_FILL_COLOR
+static void draw_update_proc(Layer *layer, GContext *ctx) {
+  if (s_draw_update_active || !s_startup_cmds_ready || !layer || !ctx) {
+    return;
+  }
+  s_draw_update_active = true;
+  GRect paint_rect = layer_get_bounds(layer);
+  enum { DRAW_COMMAND_HARD_CAP = 2048 };
+  int draw_limit = s_elm_app.scene.command_count;
+  if (draw_limit <= 0 || draw_limit > DRAW_COMMAND_HARD_CAP) {
+    draw_limit = DRAW_COMMAND_HARD_CAP;
+  }
+  elmc_pebble_scene_reset_draw_cursor(&s_elm_app);
+  for (int cmd_index = 0; cmd_index < draw_limit; cmd_index++) {
+    memset(&s_draw_cmd, 0, sizeof(s_draw_cmd));
+    if (elmc_pebble_scene_commands_next(&s_elm_app, &s_draw_cmd, 1) <= 0) {
+      break;
+    }
+    const ElmcPebbleDrawCmd *cmd = &s_draw_cmd;
+    switch (cmd->kind) {
+      case ELMC_PEBBLE_DRAW_CLEAR:
+        graphics_context_set_fill_color(ctx, color_from_code(cmd->p0));
+        graphics_fill_rect(ctx, paint_rect, 0, GCornerNone);
+        break;
+      case ELMC_PEBBLE_DRAW_FILL_RECT: {
+        int16_t x = (int16_t)cmd->p0;
+        int16_t y = (int16_t)cmd->p1;
+        int16_t w = (int16_t)cmd->p2;
+        int16_t h = (int16_t)cmd->p3;
+        if (rect_params_are_valid(w, h)) {
+          graphics_context_set_fill_color(ctx, color_from_code(cmd->p4));
+          graphics_fill_rect(ctx, GRect(x, y, w, h), 0, GCornerNone);
+        }
+        break;
+      }
+      default:
+        break;
+    }
+  }
+  s_draw_update_active = false;
+}
+#else
 static void apply_draw_style_compact(GContext *ctx, const DrawStyleState *style) {
   if (!ctx || !style) {
     return;
@@ -2067,6 +2112,7 @@ static void apply_draw_style_compact(GContext *ctx, const DrawStyleState *style)
   graphics_context_set_stroke_color(ctx, style->stroke_color);
   graphics_context_set_text_color(ctx, style->text_color);
   graphics_context_set_fill_color(ctx, style->fill_color);
+  graphics_context_set_stroke_width(ctx, style->stroke_width > 0 ? style->stroke_width : 1);
 }
 
 static void draw_update_proc(Layer *layer, GContext *ctx) {
@@ -2132,15 +2178,17 @@ static void draw_update_proc(Layer *layer, GContext *ctx) {
         int16_t w = (int16_t)cmd->p2;
         int16_t h = (int16_t)cmd->p3;
         if (rect_params_are_valid(w, h)) {
+          uint8_t rect_sw = 2;
 #ifndef PBL_COLOR
           graphics_context_set_antialiased(ctx, false);
-          graphics_context_set_stroke_width(ctx, 2);
 #endif
+          graphics_context_set_stroke_width(ctx, rect_sw);
           graphics_context_set_stroke_color(ctx, color_from_code(cmd->p4));
-          graphics_draw_rect(ctx, stroke_outline_rect_bounds(x, y, w, h, 2));
+          graphics_draw_rect(ctx, stroke_outline_rect_bounds(x, y, w, h, rect_sw));
           graphics_context_set_stroke_color(ctx, s_draw_style_stack[s_draw_style_top].stroke_color);
+          graphics_context_set_stroke_width(ctx, s_draw_style_stack[s_draw_style_top].stroke_width > 0
+              ? s_draw_style_stack[s_draw_style_top].stroke_width : 1);
 #ifndef PBL_COLOR
-          graphics_context_set_stroke_width(ctx, s_draw_style_stack[s_draw_style_top].stroke_width);
           graphics_context_set_antialiased(ctx, s_draw_style_stack[s_draw_style_top].antialiased);
 #endif
         }
@@ -2171,6 +2219,7 @@ static void draw_update_proc(Layer *layer, GContext *ctx) {
 
   s_draw_update_active = false;
 }
+#endif
 #else
 static void draw_update_proc(Layer *layer, GContext *ctx) {
   ELMC_PEBBLE_TRACE_ENTER("draw_update_proc");
@@ -2500,13 +2549,14 @@ static void draw_update_proc(Layer *layer, GContext *ctx) {
 #ifndef PBL_COLOR
           graphics_context_set_antialiased(ctx, false);
           rect_sw = 2;
-          graphics_context_set_stroke_width(ctx, rect_sw);
 #endif
+          graphics_context_set_stroke_width(ctx, rect_sw);
           graphics_context_set_stroke_color(ctx, color_from_code(cmd->p4));
           graphics_draw_rect(ctx, stroke_outline_rect_bounds(x, y, w, h, rect_sw));
           graphics_context_set_stroke_color(ctx, s_draw_style_stack[s_draw_style_top].stroke_color);
+          graphics_context_set_stroke_width(ctx, s_draw_style_stack[s_draw_style_top].stroke_width > 0
+              ? s_draw_style_stack[s_draw_style_top].stroke_width : 1);
 #ifndef PBL_COLOR
-          graphics_context_set_stroke_width(ctx, s_draw_style_stack[s_draw_style_top].stroke_width);
           graphics_context_set_antialiased(ctx, s_draw_style_stack[s_draw_style_top].antialiased);
 #endif
         }

@@ -373,6 +373,15 @@ defmodule Elmc.RcRequiredAllocAnalysisTest do
     refute init_body =~ "({ ElmcValue *__z"
   end
 
+  test "game-2048 init builds Model with record_new_values_take so cells stays a list" do
+    generated_c = compile_2048_generated!()
+    init_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_init")
+
+    refute init_body =~ "elmc_record_new_values_ints"
+    assert init_body =~ "elmc_record_new_values_take"
+    refute init_body =~ ~r/elmc_as_int\(owned\[\d+\]\)/
+  end
+
   test "game-2048 merge uses CHECK_RC for borrowed list.cons instead of elmc_int_zero fallback" do
     generated_c = compile_2048_generated!(strip_dead_code: false, direct_render_only: false)
 

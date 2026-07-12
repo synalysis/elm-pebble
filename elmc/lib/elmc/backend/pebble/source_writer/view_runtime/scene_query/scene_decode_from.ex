@@ -14,6 +14,9 @@ defmodule Elmc.Backend.Pebble.SourceWriter.ViewRuntime.SceneQuery.SceneDecodeFro
         int max_cmds,
         int skip,
         int *out_emitted_end) {
+    #if ELMC_PEBBLE_SCENE_STREAM_CMDS
+      return elmc_pebble_stream_view_cmds(app, out_cmds, max_cmds, skip, out_emitted_end);
+    #else
       int byte_offset = 0;
       int emitted = 0;
       int count = 0;
@@ -30,6 +33,7 @@ defmodule Elmc.Backend.Pebble.SourceWriter.ViewRuntime.SceneQuery.SceneDecodeFro
       }
       if (out_emitted_end) *out_emitted_end = emitted;
       return count;
+    #endif
     }
 
     """

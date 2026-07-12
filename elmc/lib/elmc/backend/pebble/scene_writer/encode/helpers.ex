@@ -12,7 +12,15 @@ defmodule Elmc.Backend.Pebble.SceneWriter.Encode.Helpers do
 
   @spec body() :: Types.c_source()
   def body do
-    [WriterPut.body(), TextWrite.body(), CoordsFull.body(), PathWrite.body()]
-    |> IO.iodata_to_binary()
+    """
+    #if ELMC_PEBBLE_SCENE_STREAM_CMDS
+    #{WriterPut.stream_body()}
+    #else
+    #{WriterPut.body()}
+    #{TextWrite.body()}
+    #{CoordsFull.body()}
+    #{PathWrite.body()}
+    #endif
+    """
   end
 end

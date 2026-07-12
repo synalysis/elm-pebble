@@ -4,6 +4,7 @@ defmodule Elmc.Backend.Pebble.HeaderWriter.SceneConfig.ConfigDefaults do
   alias Elmc.Backend.Pebble.Types
 
   alias Elmc.Backend.Pebble.HeaderWriter.SceneConfig.ConfigDefaults.{
+    ApliteDirectActive,
     ArenaSizing,
     DirtyRegionDefault,
     SceneCacheDefault
@@ -11,7 +12,7 @@ defmodule Elmc.Backend.Pebble.HeaderWriter.SceneConfig.ConfigDefaults do
 
   @spec body() :: Types.c_source()
   def body do
-    [DirtyRegionDefault.body(), SceneCacheDefault.body(), ArenaSizing.body()]
+    [ApliteDirectActive.body(), SceneCacheDefault.body(), DirtyRegionDefault.body(), ArenaSizing.body()]
     |> IO.iodata_to_binary()
   end
 end

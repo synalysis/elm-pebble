@@ -5557,6 +5557,7 @@ defmodule Elmc.CCodegenPatternsTest do
     assert pebble_h =~ "#define ELMC_PEBBLE_SCENE_POOL_SLOTS 10"
     assert pebble_h =~ "#define ELMC_PEBBLE_SCENE_STATIC_CAPACITY 0"
     assert pebble_h =~ "#define ELMC_PEBBLE_SCENE_CHUNK_SIZE 0"
+    assert pebble_h =~ "#define ELMC_PEBBLE_SCENE_CACHE_ENABLED 0"
 
     assert generated_h =~ "elmc_fn_Main_init("
     assert generated_h =~ "elmc_fn_Main_update("

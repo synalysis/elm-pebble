@@ -6,7 +6,11 @@ defmodule Elmc.Backend.Pebble.SourceWriter.DrawRuntime.SceneBuffer do
 
   @spec body() :: Types.c_source()
   def body do
-    [Arena.body(), PayloadCodec.body()]
-    |> IO.iodata_to_binary()
+    """
+    #{Arena.body()}
+    #if !ELMC_PEBBLE_SCENE_STREAM_CMDS
+    #{PayloadCodec.body()}
+    #endif
+    """
   end
 end

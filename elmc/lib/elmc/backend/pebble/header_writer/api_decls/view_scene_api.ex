@@ -25,6 +25,14 @@ defmodule Elmc.Backend.Pebble.HeaderWriter.ApiDecls.ViewSceneApi do
     int elmc_pebble_scene_commands_next(ElmcPebbleApp *app, ElmcPebbleDrawCmd *out_cmds, int max_cmds);
     int elmc_pebble_ensure_scene(ElmcPebbleApp *app);
     int elmc_pebble_scene_command_count(ElmcPebbleApp *app);
+    #if ELMC_PEBBLE_SCENE_STREAM_CMDS
+    int elmc_pebble_stream_view_cmds(
+        ElmcPebbleApp *app,
+        ElmcPebbleDrawCmd *out_cmds,
+        int max_cmds,
+        int skip,
+        int *out_emitted_end);
+    #endif
     int elmc_pebble_scene_dirty_rect(ElmcPebbleApp *app, ElmcPebbleRect *out_rect, int *out_full);
     void elmc_pebble_invalidate_scene(ElmcPebbleApp *app);
     void elmc_pebble_scene_report_decode_failure(ElmcPebbleApp *app, int rc, int offset);

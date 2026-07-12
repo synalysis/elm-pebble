@@ -110,6 +110,15 @@ defmodule Elmc.Runtime.JsonSections do
     ""
   end
 
+  @json_float_numbers_config """
+  #ifndef ELMC_JSON_FLOAT_NUMBERS
+  #define ELMC_JSON_FLOAT_NUMBERS 1
+  #endif
+  """
+
+  @spec json_float_numbers_config() :: String.t()
+  def json_float_numbers_config, do: @json_float_numbers_config
+
   @spec runtime_source_impl() :: String.t()
   def runtime_source_impl do
     ~S"""
@@ -328,6 +337,7 @@ defmodule Elmc.Runtime.JsonSections do
         return NULL;
       }
       int64_t int_part = 0;
+      #if ELMC_JSON_FLOAT_NUMBERS
       double number = 0.0;
       if (*p == '0') {
         p++;
@@ -385,6 +395,32 @@ defmodule Elmc.Runtime.JsonSections do
       value->int_value = sign < 0 ? -int_part : int_part;
       value->float_value = (sign < 0 ? -number : number);
       return value;
+      #else
+      if (*p == '0') {
+        p++;
+        if (*p >= '0' && *p <= '9') {
+          parser->error = "Invalid leading zero";
+          return NULL;
+        }
+      } else {
+        while (*p >= '0' && *p <= '9') {
+          int digit = *p++ - '0';
+          int_part = int_part * 10 + digit;
+        }
+      }
+      if (*p == '.' || *p == 'e' || *p == 'E') {
+        parser->error = "Float number not supported";
+        return NULL;
+      }
+      parser->at = p;
+      ElmcJsonValue *value = elmc_json_new_value(ELMC_JSON_INT);
+      if (!value) {
+        parser->error = "Out of memory";
+        return NULL;
+      }
+      value->int_value = sign < 0 ? -int_part : int_part;
+      return value;
+      #endif
     }
 
     static int elmc_json_match_literal(ElmcJsonParser *parser, const char *literal) {
@@ -593,9 +629,11 @@ defmodule Elmc.Runtime.JsonSections do
         case ELMC_JSON_INT:
           snprintf(number, sizeof(number), "%lld", (long long)value->int_value);
           return elmc_json_buf_append_cstr(buf, number);
+        #if ELMC_JSON_FLOAT_NUMBERS
         case ELMC_JSON_FLOAT:
           snprintf(number, sizeof(number), "%.17g", value->float_value);
           return elmc_json_buf_append_cstr(buf, number);
+        #endif
         case ELMC_JSON_STRING:
           return elmc_json_encode_string_to_buffer(value->string_value, buf);
         case ELMC_JSON_ARRAY: {
@@ -648,9 +686,11 @@ defmodule Elmc.Runtime.JsonSections do
         case ELMC_JSON_INT:
           snprintf(number, sizeof(number), "%lld", (long long)value->int_value);
           return elmc_json_buf_append_cstr(buf, number);
+        #if ELMC_JSON_FLOAT_NUMBERS
         case ELMC_JSON_FLOAT:
           snprintf(number, sizeof(number), "%.17g", value->float_value);
           return elmc_json_buf_append_cstr(buf, number);
+        #endif
         case ELMC_JSON_STRING:
           return elmc_json_encode_string_to_buffer(value->string_value, buf);
         case ELMC_JSON_ARRAY: {
@@ -880,12 +920,14 @@ defmodule Elmc.Runtime.JsonSections do
             if (elmc_new_int(&_elmc_rc_out, node->int_value) != RC_SUCCESS) return NULL;
             return _elmc_rc_out;
           }
+        #if ELMC_JSON_FLOAT_NUMBERS
         case ELMC_JSON_DECODER_FLOAT:
           if (!node || (node->kind != ELMC_JSON_INT && node->kind != ELMC_JSON_FLOAT)) {
             if (error_out) *error_out = "Expected FLOAT";
             return NULL;
           }
           return elmc_new_float_take(node->kind == ELMC_JSON_INT ? (double)node->int_value : node->float_value);
+        #endif
         case ELMC_JSON_DECODER_BOOL:
           if (!node || node->kind != ELMC_JSON_BOOL) {
             if (error_out) *error_out = "Expected BOOL";
@@ -1101,6 +1143,7 @@ defmodule Elmc.Runtime.JsonSections do
       }
     }
 
+    #if ELMC_JSON_FLOAT_NUMBERS
     ElmcValue *elmc_json_decode_float_decoder(void) {
       {
         ElmcValue *_elmc_rc_out = NULL;
@@ -1108,6 +1151,7 @@ defmodule Elmc.Runtime.JsonSections do
         return _elmc_rc_out;
       }
     }
+    #endif
 
     ElmcValue *elmc_json_decode_bool_decoder(void) {
       {
@@ -1344,11 +1388,13 @@ defmodule Elmc.Runtime.JsonSections do
         snprintf(number, sizeof(number), "%lld", (long long)elmc_as_int(value));
         return elmc_json_buf_append_cstr(buf, number);
       }
+      #if ELMC_JSON_FLOAT_NUMBERS
       if (value->tag == ELMC_TAG_FLOAT) {
         char number[48];
         snprintf(number, sizeof(number), "%.17g", elmc_as_float(value));
         return elmc_json_buf_append_cstr(buf, number);
       }
+      #endif
       if (value->tag == ELMC_TAG_BOOL) return elmc_json_buf_append_cstr(buf, elmc_as_int(value) ? "true" : "false");
       if (value->tag == ELMC_TAG_LIST) {
         if (!elmc_json_buf_append_char(buf, '[')) return 0;
@@ -1385,9 +1431,11 @@ defmodule Elmc.Runtime.JsonSections do
       return elmc_string_from_int(n);
     }
 
+    #if ELMC_JSON_FLOAT_NUMBERS
     ElmcValue *elmc_json_encode_float(ElmcValue *f) {
       return elmc_string_from_float_take(f);
     }
+    #endif
 
     ElmcValue *elmc_json_encode_bool(ElmcValue *b) {
       {

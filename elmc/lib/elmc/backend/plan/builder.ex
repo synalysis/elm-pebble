@@ -440,6 +440,10 @@ defmodule Elmc.Backend.Plan.Builder do
     %{b | current_block: current}
   end
 
+  @doc false
+  @spec reserved_next_block_id(t()) :: non_neg_integer()
+  def reserved_next_block_id(b), do: skip_reserved(b.next_block, b.pending_merge_block)
+
   @spec finish_block(t(), Block.terminator()) :: t()
   def finish_block(b, terminator) do
     finished = %{b.current_block | terminator: terminator}

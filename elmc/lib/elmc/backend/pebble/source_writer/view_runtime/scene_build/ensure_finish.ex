@@ -44,7 +44,7 @@ defmodule Elmc.Backend.Pebble.SourceWriter.ViewRuntime.SceneBuild.EnsureFinish d
     #endif
       elmc_pebble_clear_view_cache(app);
       app->scene.dirty = 0;
-    #if ELMC_PEBBLE_SCENE_CACHE_ENABLED
+    #if ELMC_PEBBLE_SCENE_CACHE_ENABLED || ELMC_PEBBLE_APLITE_DIRECT_VIEW_ACTIVE
       app->scene_draw_byte_offset = 0;
     #endif
     #if ELMC_PEBBLE_DIRTY_REGION_ENABLED

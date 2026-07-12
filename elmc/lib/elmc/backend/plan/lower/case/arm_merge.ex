@@ -27,6 +27,7 @@ defmodule Elmc.Backend.Plan.Lower.Case.ArmMerge do
           {:ok, non_neg_integer(), Builder.t()}
   def finish_merge(b, merge_reg, merge_id) do
     b_tagged = %{b | tag_switch_merge_block: merge_id}
-    {:ok, merge_reg, Builder.finish_block(b_tagged, :none)}
+    return_id = Builder.reserved_next_block_id(b_tagged)
+    {:ok, merge_reg, Builder.finish_block(b_tagged, {:br, return_id})}
   end
 end

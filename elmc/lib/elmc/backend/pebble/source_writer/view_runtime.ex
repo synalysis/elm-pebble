@@ -26,8 +26,8 @@ defmodule Elmc.Backend.Pebble.SourceWriter.ViewRuntime do
 
     [
       SceneBuild.body(scene_build_bindings),
-      SceneQuery.body(),
-      SceneStream.body(),
+      SceneQuery.body(bindings.entry_view_scene_append),
+      SceneStream.body(bindings.entry_view_scene_append),
       ViewCommands.body(view_command_bindings)
     ]
     |> IO.iodata_to_binary()
