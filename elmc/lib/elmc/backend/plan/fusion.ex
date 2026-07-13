@@ -7,6 +7,7 @@ defmodule Elmc.Backend.Plan.Fusion do
   """
 
   alias Elmc.Backend.Plan.Fusion.{CEmit, ListIndexedReplace, ListIntSearch}
+  alias Elmc.Backend.Plan.Types
   alias Elmc.Backend.Plan.Types.FunctionPlan
 
   @type provider :: module()
@@ -16,7 +17,8 @@ defmodule Elmc.Backend.Plan.Fusion do
     ListIntSearch
   ]
 
-  @spec try_plan(String.t(), map(), map(), keyword()) :: {:ok, FunctionPlan.t()} | :error
+  @spec try_plan(String.t(), Types.function_decl(), Types.function_decl_map(), keyword()) ::
+          {:ok, FunctionPlan.t()} | :error
   def try_plan(module_name, decl, decl_map, opts \\ []) do
     case try_plan_modules(@plan_providers, module_name, decl, decl_map, opts) do
       {:ok, _} = ok ->

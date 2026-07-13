@@ -8,7 +8,9 @@ defmodule ElmEx.DebuggerContract do
 
   @dialyzer :no_match
 
+  alias ElmEx.Frontend.AstContract.Types, as: AstTypes
   alias ElmEx.Frontend.Bridge
+  alias ElmEx.Frontend.Bridge.Types, as: BridgeTypes
   alias ElmEx.Frontend.GeneratedParser
   alias ElmEx.Frontend.Module
   alias ElmEx.Frontend.Project
@@ -56,7 +58,7 @@ defmodule ElmEx.DebuggerContract do
   @doc """
   Unwraps a shell map or bare contract to the inner `elm_introspect` payload map.
   """
-  @spec unwrap_shell(Types.introspect_snapshot() | map()) :: Types.elm_introspect() | nil
+  @spec unwrap_shell(Types.introspect_snapshot() | Types.introspect_payload()) :: Types.elm_introspect() | nil
   def unwrap_shell(shell) when is_map(shell) do
     case Map.get(shell, "debugger_contract") || Map.get(shell, :debugger_contract) do
       contract when is_map(contract) -> contract
@@ -80,7 +82,7 @@ defmodule ElmEx.DebuggerContract do
   Builds a contract snapshot from an already-loaded `Bridge.load_project/1` result (no re-parse).
   """
   @spec from_project(Project.t(), keyword()) ::
-          {:ok, Types.introspect_snapshot()} | {:error, :entry_not_found | term()}
+          {:ok, Types.introspect_snapshot()} | {:error, :entry_not_found}
   def from_project(%Project{} = project, opts \\ []) do
     opts =
       Keyword.put_new(
@@ -102,7 +104,8 @@ defmodule ElmEx.DebuggerContract do
   Loads a project directory and builds a contract snapshot from parsed modules (single parse via Bridge).
   """
   @spec from_project_dir(String.t(), keyword()) ::
-          {:ok, Types.introspect_snapshot()} | {:error, :entry_not_found | term()}
+          {:ok, Types.introspect_snapshot()}
+          | {:error, :entry_not_found | BridgeTypes.bridge_error()}
   def from_project_dir(project_dir, opts \\ []) when is_binary(project_dir) do
     extra = Keyword.get(opts, :extra_source_roots, [])
 
@@ -139,7 +142,7 @@ defmodule ElmEx.DebuggerContract do
     end
   end
 
-  @spec import_entry_summary(Types.import_entry() | map()) :: String.t()
+  @spec import_entry_summary(Types.import_entry() | AstTypes.invalid_input()) :: String.t()
   def import_entry_summary(%{} = e) do
     m = first_non_nil([Map.get(e, "module"), Map.get(e, :module), "?"])
     a = first_non_nil([Map.get(e, "as"), Map.get(e, :as)])

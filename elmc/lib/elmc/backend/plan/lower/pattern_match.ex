@@ -1,10 +1,11 @@
 defmodule Elmc.Backend.Plan.Lower.PatternMatch do
   @moduledoc false
 
+  alias Elmc.Backend.Plan.Types
   alias Elmc.Backend.Plan.Builder
 
-  @spec match_condition(map(), non_neg_integer(), Builder.t()) ::
-          {:ok, non_neg_integer(), Builder.t()} | :unsupported
+  @spec match_condition(Types.pattern(), non_neg_integer(), Builder.t()) ::
+          Types.match_condition_result()
   def match_condition(pattern, subject_reg, b)
       when is_map(pattern) and is_integer(subject_reg) do
     do_match_condition(pattern, subject_reg, b)

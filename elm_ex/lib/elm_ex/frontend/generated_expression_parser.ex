@@ -734,7 +734,7 @@ defmodule ElmEx.Frontend.GeneratedExpressionParser do
     end
   end
 
-  @spec recover_source_for_reason(source(), Types.parse_error_reason()) :: source() | nil
+  @spec recover_source_for_reason(source(), Types.expr_yecc_error()) :: source() | nil
   defp recover_source_for_reason(source, {line, :elm_ex_expr_parser, [_msg, token]})
        when is_integer(line) do
     case token do

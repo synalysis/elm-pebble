@@ -1,6 +1,8 @@
 defmodule Elmc.Test.ElmRunCorpus do
   @moduledoc false
 
+  alias Elmc.TestSupport.Types, as: SupportTypes
+
   @corpus_dir Path.expand("../../../vendor/elm-run-test_corpus", __DIR__)
   @index_path Path.expand("../fixtures/elm_run_corpus_index.json", __DIR__)
 
@@ -94,7 +96,7 @@ defmodule Elmc.Test.ElmRunCorpus do
           module: String.t(),
           tier: tier(),
           skip_reason: String.t() | nil,
-          metadata: map(),
+          metadata: SupportTypes.corpus_metadata_row(),
           has_expected: boolean(),
           imports: [String.t()]
         }
@@ -148,7 +150,7 @@ defmodule Elmc.Test.ElmRunCorpus do
     |> Enum.sort()
   end
 
-  @spec load_metadata() :: %{String.t() => map()}
+  @spec load_metadata() :: SupportTypes.corpus_metadata_index()
   def load_metadata do
     metadata_path = Path.join(corpus_dir(), "test_metadata.txt")
 
@@ -175,7 +177,7 @@ defmodule Elmc.Test.ElmRunCorpus do
     end)
   end
 
-  @spec build_index() :: map()
+  @spec build_index() :: SupportTypes.corpus_index()
   def build_index do
     metadata = load_metadata()
     siblings_by_category = build_siblings_index()
@@ -197,7 +199,7 @@ defmodule Elmc.Test.ElmRunCorpus do
     }
   end
 
-  @spec write_index!(map() | nil) :: String.t()
+  @spec write_index!(SupportTypes.corpus_index() | nil) :: String.t()
   def write_index!(index \\ nil) do
     index = index || build_index()
     File.mkdir_p!(Path.dirname(@index_path))
@@ -205,20 +207,20 @@ defmodule Elmc.Test.ElmRunCorpus do
     @index_path
   end
 
-  @spec read_index() :: map()
+  @spec read_index() :: SupportTypes.corpus_index()
   def read_index do
     @index_path
     |> File.read!()
     |> Jason.decode!()
   end
 
-  @spec compile_candidates(map()) :: [map()]
+  @spec compile_candidates(SupportTypes.corpus_index()) :: [entry()]
   def compile_candidates(index) do
     index["entries"]
     |> Enum.filter(&(&1["tier"] == "compile_candidate"))
   end
 
-  @spec compile_eligible(map()) :: [map()]
+  @spec compile_eligible(SupportTypes.corpus_index()) :: [entry()]
   def compile_eligible(index) do
     eligible_tiers = MapSet.new(~w(compile_candidate run_scalar run_structured))
 
@@ -226,13 +228,13 @@ defmodule Elmc.Test.ElmRunCorpus do
     |> Enum.filter(&(MapSet.member?(eligible_tiers, &1["tier"])))
   end
 
-  @spec compile_eligible_paths(map()) :: [String.t()]
+  @spec compile_eligible_paths(SupportTypes.corpus_index()) :: [String.t()]
   def compile_eligible_paths(index) do
     compile_eligible(index)
     |> Enum.map(& &1["path"])
   end
 
-  @spec run_eligible(map()) :: [map()]
+  @spec run_eligible(SupportTypes.corpus_index()) :: [entry()]
   def run_eligible(index) do
     run_tiers = MapSet.new(~w(run_scalar run_structured))
 
@@ -240,7 +242,7 @@ defmodule Elmc.Test.ElmRunCorpus do
     |> Enum.filter(&(MapSet.member?(run_tiers, &1["tier"])))
   end
 
-  @spec run_eligible_paths(map()) :: [String.t()]
+  @spec run_eligible_paths(SupportTypes.corpus_index()) :: [String.t()]
   def run_eligible_paths(index) do
     metadata = load_metadata()
 
@@ -295,7 +297,7 @@ defmodule Elmc.Test.ElmRunCorpus do
   end
 
   @spec run_elmc_execution!(String.t(), String.t(), keyword()) ::
-          {:ok, String.t()} | {:error, term()}
+          {:ok, String.t()} | {:error, SupportTypes.corpus_execution_error()}
   def run_elmc_execution!(rel_path, tmp_root, opts \\ []) do
     timeout_ms = Keyword.get(opts, :timeout_ms, 30_000)
     {project_dir, entry_module} = write_execution_project!(rel_path, tmp_root)
@@ -325,7 +327,7 @@ defmodule Elmc.Test.ElmRunCorpus do
   end
 
   @spec run_elmx_execution!(String.t(), String.t(), keyword()) ::
-          {:ok, String.t()} | {:error, term()}
+          {:ok, String.t()} | {:error, SupportTypes.corpus_execution_error()}
   def run_elmx_execution!(rel_path, tmp_root, opts \\ []) do
     timeout_ms = Keyword.get(opts, :timeout_ms, 30_000)
     {project_dir, entry_module} = write_execution_project!(rel_path, tmp_root)
@@ -364,7 +366,7 @@ defmodule Elmc.Test.ElmRunCorpus do
   end
 
   @spec run_execution_probe!(atom(), String.t(), String.t(), keyword()) ::
-          {:ok, String.t()} | {:error, term()}
+          {:ok, String.t()} | {:error, SupportTypes.corpus_execution_error()}
   def run_execution_probe!(backend, rel_path, tmp_root, opts \\ []) do
     case backend do
       :elmc -> run_elmc_execution!(rel_path, tmp_root, opts)
@@ -372,7 +374,7 @@ defmodule Elmc.Test.ElmRunCorpus do
     end
   end
 
-  @spec run_execution_gate!(keyword()) :: map()
+  @spec run_execution_gate!(keyword()) :: SupportTypes.corpus_scorecard()
   def run_execution_gate!(opts \\ []) do
     index = Keyword.get_lazy(opts, :index, &build_index/0)
     backend = Keyword.get(opts, :backend, :elmc)
@@ -441,7 +443,7 @@ defmodule Elmc.Test.ElmRunCorpus do
     }
   end
 
-  @spec write_execution_scorecard!(map(), String.t()) :: String.t()
+  @spec write_execution_scorecard!(SupportTypes.corpus_scorecard(), String.t()) :: String.t()
   def write_execution_scorecard!(scorecard, out_dir) do
     File.mkdir_p!(out_dir)
 
@@ -476,7 +478,7 @@ defmodule Elmc.Test.ElmRunCorpus do
 
   defp json_safe_text_field(value), do: value
 
-  @spec render_execution_scorecard_md(map()) :: String.t()
+  @spec render_execution_scorecard_md(SupportTypes.corpus_scorecard()) :: String.t()
   def render_execution_scorecard_md(scorecard) do
     summary = scorecard["summary"]
 
@@ -660,7 +662,8 @@ defmodule Elmc.Test.ElmRunCorpus do
     }
   end
 
-  @spec compile_probe!(String.t(), String.t(), keyword()) :: :ok | {:error, term()}
+  @spec compile_probe!(String.t(), String.t(), keyword()) ::
+          :ok | {:error, SupportTypes.corpus_compile_probe_error()}
   def compile_probe!(rel_path, tmp_root, opts \\ []) do
     timeout_ms = Keyword.get(opts, :timeout_ms, 30_000)
 
@@ -678,7 +681,8 @@ defmodule Elmc.Test.ElmRunCorpus do
     end
   end
 
-  @spec elmx_compile_probe!(String.t(), String.t(), keyword()) :: :ok | {:error, term()}
+  @spec elmx_compile_probe!(String.t(), String.t(), keyword()) ::
+          :ok | {:error, SupportTypes.corpus_compile_probe_error()}
   def elmx_compile_probe!(rel_path, tmp_root, opts \\ []) do
     timeout_ms = Keyword.get(opts, :timeout_ms, 30_000)
 
@@ -753,7 +757,7 @@ defmodule Elmc.Test.ElmRunCorpus do
     end
   end
 
-  @spec run_compile_gate!(keyword()) :: map()
+  @spec run_compile_gate!(keyword()) :: SupportTypes.corpus_scorecard()
   def run_compile_gate!(opts \\ []) do
     index = Keyword.get_lazy(opts, :index, &build_index/0)
     tmp_root = Keyword.get(opts, :tmp_root, Path.expand("../tmp/elm_run_corpus_compile", __DIR__)) |> Path.expand()
@@ -806,7 +810,7 @@ defmodule Elmc.Test.ElmRunCorpus do
     }
   end
 
-  @spec run_elmx_compile_gate!(keyword()) :: map()
+  @spec run_elmx_compile_gate!(keyword()) :: SupportTypes.corpus_scorecard()
   def run_elmx_compile_gate!(opts \\ []) do
     index = Keyword.get_lazy(opts, :index, &build_index/0)
     tmp_root =
@@ -863,7 +867,7 @@ defmodule Elmc.Test.ElmRunCorpus do
     }
   end
 
-  @spec write_scorecard!(map(), String.t()) :: String.t()
+  @spec write_scorecard!(SupportTypes.corpus_scorecard(), String.t()) :: String.t()
   def write_scorecard!(scorecard, out_dir) do
     File.mkdir_p!(out_dir)
 
@@ -876,7 +880,7 @@ defmodule Elmc.Test.ElmRunCorpus do
     json_path
   end
 
-  @spec render_scorecard_md(map()) :: String.t()
+  @spec render_scorecard_md(SupportTypes.corpus_scorecard()) :: String.t()
   def render_scorecard_md(scorecard) do
     summary = scorecard["summary"]
 

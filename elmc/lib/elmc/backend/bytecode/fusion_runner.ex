@@ -9,7 +9,9 @@ defmodule Elmc.Backend.Bytecode.FusionRunner do
   def runnable?(%FunctionPlan{blocks: [], fusion_kind: kind}) when not is_nil(kind), do: true
   def runnable?(_), do: false
 
-  @spec run(FunctionPlan.t(), keyword()) :: {:ok, term()} | :unsupported
+  alias Elmc.Backend.Bytecode.Runtime
+
+  @spec run(FunctionPlan.t(), keyword()) :: {:ok, Runtime.value()} | :unsupported
   def run(%FunctionPlan{fusion_kind: :tuple2_case_table, fusion_data: data}, opts) do
     params = Keyword.get(opts, :params, [])
 

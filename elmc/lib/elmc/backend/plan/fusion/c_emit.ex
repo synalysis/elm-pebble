@@ -3,6 +3,7 @@ defmodule Elmc.Backend.Plan.Fusion.CEmit do
 
   alias Elmc.Backend.Plan.Fusion.Registry
   alias Elmc.Backend.Plan.Fusion.Helper
+  alias Elmc.Backend.Plan.Types
   alias Elmc.Backend.Plan.Types.FunctionPlan
   alias Elmc.Backend.CCodegen.Tuple2CaseTable
 
@@ -11,7 +12,7 @@ defmodule Elmc.Backend.Plan.Fusion.CEmit do
   @spec providers() :: [emit_provider()]
   def providers, do: Registry.providers()
 
-  @spec try_plan(String.t(), map(), map(), keyword(), emit_provider()) ::
+  @spec try_plan(String.t(), Types.function_decl(), Types.function_decl_map(), keyword(), emit_provider()) ::
           {:ok, FunctionPlan.t()} | :error
   def try_plan(module_name, decl, decl_map, _opts, {emit_mod, emit_arity}) do
     name = Map.get(decl, :name, "")

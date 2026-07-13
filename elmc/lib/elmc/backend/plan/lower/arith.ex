@@ -5,8 +5,7 @@ defmodule Elmc.Backend.Plan.Lower.Arith do
   alias Elmc.Backend.Plan.Lower.Expr
   alias Elmc.Backend.Plan.Types
 
-  @spec compile(map(), Context.t(), Builder.t()) ::
-          {:ok, Types.reg() | :fn_out, Builder.t()} | :unsupported
+  @spec compile(Types.ir_expr(), Context.t(), Builder.t()) :: Types.compile_result_required()
   def compile(%{op: :add_const, var: name, value: value}, ctx, b) when is_binary(name) and is_integer(value) do
     with {:ok, lhs, b1} <- Expr.compile(%{op: :var, name: name}, ctx, b) do
       emit_int_arith(:add_const, lhs, value, ctx, b1)
@@ -35,7 +34,7 @@ defmodule Elmc.Backend.Plan.Lower.Arith do
 
   def compile(_, _, _), do: :unsupported
 
-  @spec emit_binary(atom(), map(), map(), Context.t(), Builder.t()) ::
+  @spec emit_binary(atom(), Types.ir_expr(), Types.ir_expr(), Context.t(), Builder.t()) ::
           {:ok, Types.reg() | :fn_out, Builder.t()} | :unsupported
   def emit_binary(kind, left, right, ctx, b)
       when kind in [:add_vars, :mul_vars, :sub_vars, :idiv_vars, :mod_vars, :rem_vars, :min_vars, :max_vars] do
@@ -49,7 +48,7 @@ defmodule Elmc.Backend.Plan.Lower.Arith do
 
   @binop_atoms %{add_vars: :add, sub_vars: :sub, mul_vars: :mul, fdiv_vars: :fdiv}
 
-  @spec emit_boxed_binop(atom(), map(), map(), Context.t(), Builder.t()) ::
+  @spec emit_boxed_binop(atom(), Types.ir_expr(), Types.ir_expr(), Context.t(), Builder.t()) ::
           {:ok, Types.reg() | :fn_out, Builder.t()} | :unsupported
   def emit_boxed_binop(kind, left, right, ctx, b) when kind in [:add, :sub, :mul, :idiv, :fdiv] do
     with {:ok, l, b1} <- Expr.compile(left, ctx, b),

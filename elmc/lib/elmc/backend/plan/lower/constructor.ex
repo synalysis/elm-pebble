@@ -18,10 +18,10 @@ defmodule Elmc.Backend.Plan.Lower.Constructor do
     "Err" => :result_err_own
   }
 
-  @spec compile(map(), Context.t(), Builder.t()) ::
-          {:ok, Types.reg() | :fn_out, Builder.t()} | :unsupported
+  @spec compile(Types.constructor_target_input() | Types.ir_expr(), Context.t(), Builder.t()) ::
+          Types.compile_result_required()
 
-  @spec compile_payload_tuple2(map(), map(), Context.t(), Builder.t()) ::
+  @spec compile_payload_tuple2(Types.ir_expr(), Types.ir_expr(), Context.t(), Builder.t()) ::
           {:ok, Types.reg() | :fn_out, Builder.t()} | :unsupported
   def compile_payload_tuple2(
         %{op: :int_literal, union_ctor: ctor},

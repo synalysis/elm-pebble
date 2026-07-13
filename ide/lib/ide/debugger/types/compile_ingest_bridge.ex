@@ -54,6 +54,8 @@ defmodule Ide.Debugger.Types.CompileIngestBridge do
           optional(String.t()) => Types.wire_input()
         }
 
+  @type ingest_builder_map :: %{optional(atom() | String.t()) => Types.wire_input()}
+
   @spec from_compiler_check_result(
           check_result() | Compiler.check_result() | compile_result() | manifest_result()
         ) ::
@@ -156,7 +158,7 @@ defmodule Ide.Debugger.Types.CompileIngestBridge do
     end
   end
 
-  @spec drop_nil_fields(map()) :: CompileIngestAttrs.t()
+  @spec drop_nil_fields(ingest_builder_map()) :: CompileIngestAttrs.t()
   defp drop_nil_fields(map) when is_map(map) do
     Map.reject(map, fn {_key, value} -> is_nil(value) end)
   end

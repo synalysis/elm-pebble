@@ -3,6 +3,7 @@ defmodule Ide.Mcp.Handlers.Debugger do
 
   alias Ide.Debugger
   alias Ide.Debugger.BytecodeApi
+  alias Ide.Debugger.BytecodeTypes
   alias Ide.Debugger.CursorSeq
   alias Ide.Debugger.RuntimeFingerprintDrift
   alias Ide.Debugger.Types, as: DebuggerTypes
@@ -2100,7 +2101,7 @@ defmodule Ide.Mcp.Handlers.Debugger do
     end
   end
 
-  @spec debugger_bytecode_payload(String.t(), map()) :: ToolTypes.debugger_bytecode_result()
+  @spec debugger_bytecode_payload(String.t(), BytecodeTypes.summary()) :: ToolTypes.debugger_bytecode_result()
   defp debugger_bytecode_payload(slug, summary) when is_binary(slug) and is_map(summary) do
     %{
       slug: slug,
@@ -2109,7 +2110,7 @@ defmodule Ide.Mcp.Handlers.Debugger do
     }
   end
 
-  @spec decode_bytecode_params(term()) :: [term()]
+  @spec decode_bytecode_params(list()) :: [BytecodeTypes.smoke_param()]
   defp decode_bytecode_params(params) when is_list(params), do: params
   defp decode_bytecode_params(_), do: []
 end

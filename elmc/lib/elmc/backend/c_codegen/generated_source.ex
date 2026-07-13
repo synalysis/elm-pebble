@@ -53,7 +53,7 @@ defmodule Elmc.Backend.CCodegen.GeneratedSource do
     :ok
   end
 
-  @spec capture_lambda_emit_state!() :: map()
+  @spec capture_lambda_emit_state!() :: Types.lambda_emit_state()
   def capture_lambda_emit_state! do
     %{
       lambdas: Process.get(:elmc_lambdas, []),
@@ -63,7 +63,7 @@ defmodule Elmc.Backend.CCodegen.GeneratedSource do
     }
   end
 
-  @spec restore_lambda_emit_state!(map()) :: :ok
+  @spec restore_lambda_emit_state!(Types.lambda_emit_state()) :: :ok
   def restore_lambda_emit_state!(state) do
     Process.put(:elmc_lambdas, Map.get(state, :lambdas, []))
     Process.put(:elmc_lambda_defs, Map.get(state, :defs, %{}))
@@ -380,7 +380,7 @@ defmodule Elmc.Backend.CCodegen.GeneratedSource do
     :ok
   end
 
-  @spec with_emit_session(ElmEx.IR.t(), Types.codegen_opts(), (-> term())) :: term()
+  @spec with_emit_session(ElmEx.IR.t(), Types.codegen_opts(), (-> result)) :: result when result: var
   def with_emit_session(ir, opts, fun) when is_function(fun, 0) do
     prepare_emit_session!(ir, opts)
 

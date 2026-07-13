@@ -94,7 +94,7 @@ defmodule Elmc.Test.RcTrackCoreTest do
     int_out <> heap_out
   end
 
-  @spec assert_matrix_coverage!([String.t()], [String.t()], String.t(), map() | nil) :: :ok
+  @spec assert_matrix_coverage!([String.t()], [String.t()], String.t(), Elmc.TestSupport.Types.rc_probe_exceptions() | nil) :: :ok
   def assert_matrix_coverage!(probes, matrix_functions, prefix, exceptions \\ nil) do
     exceptions = exceptions || RcTrackMatrix.matrix_probe_exceptions(prefix)
     covered =

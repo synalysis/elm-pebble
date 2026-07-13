@@ -2,13 +2,13 @@ defmodule Elmc.Backend.Plan.ConstantFold do
   @moduledoc false
 
   alias Elmc.Backend.CCodegen.{ConstantInt, Host}
-  alias Elmc.Backend.Plan.Context
+  alias Elmc.Backend.Plan.{Context, Types}
 
   @compare_ops ~w(__eq__ __neq__ __lt__ __lte__ __gt__ __gte__)
   @and_targets ~w(Basics.and && and)
   @or_targets ~w(Basics.or || or)
 
-  @spec bool_value(map(), Context.t() | map()) :: :unknown | boolean()
+  @spec bool_value(Types.ir_expr(), Context.t() | Types.compile_env()) :: :unknown | boolean()
   def bool_value(expr, %Context{} = ctx), do: bool_value(expr, fold_env(ctx))
 
   def bool_value(expr, env) when is_map(env) do

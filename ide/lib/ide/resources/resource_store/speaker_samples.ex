@@ -21,7 +21,7 @@ defmodule Ide.Resources.ResourceStore.SpeakerSamples do
   end
 
   @spec import_sample(Project.t(), String.t(), String.t(), keyword()) ::
-          {:ok, Types.speaker_sample_import_ok()} | {:error, term()}
+          {:ok, Types.speaker_sample_import_ok()} | {:error, Types.resource_error()}
   def import_sample(%Project{} = project, upload_path, original_name, opts \\ [])
       when is_binary(upload_path) and is_binary(original_name) do
     workspace = Projects.project_workspace_path(project)

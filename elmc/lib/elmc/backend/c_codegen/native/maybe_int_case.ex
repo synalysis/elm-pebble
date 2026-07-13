@@ -99,7 +99,7 @@ defmodule Elmc.Backend.CCodegen.Native.MaybeIntCase do
     {code, out, next}
   end
 
-  @spec classify(list()) :: {:ok, map(), map()} | :error
+  @spec classify(Types.case_branches()) :: {:ok, Types.case_branch(), Types.case_branch()} | :error
   defp classify(branches) do
     cond do
       Patterns.maybe_unwrap_just_case?(branches) ->

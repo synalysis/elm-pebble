@@ -109,7 +109,8 @@ defmodule Ide.Formatter.Semantics.Parse do
         }
 
   @spec parse_metadata_values(String.t()) ::
-          {:ok, list(), list()} | {:error, parse_metadata_error()}
+          {:ok, [HeaderMetadata.header_parser_value()], [HeaderMetadata.lexer_token()]}
+          | {:error, parse_metadata_error()}
   defp parse_metadata_values(source) do
     metadata_source = ElmEx.Frontend.GeneratedParser.normalize_source_for_metadata(source)
 

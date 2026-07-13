@@ -1,7 +1,9 @@
 defmodule Elmc.Backend.CCodegen.CompanionSendFold do
   @moduledoc false
 
-  @spec fold_wire_params(map()) :: {:ok, integer(), integer()} | :error
+  alias Elmc.Backend.CCodegen.Types
+
+  @spec fold_wire_params(Types.ir_expr()) :: {:ok, integer(), integer()} | :error
   def fold_wire_params(msg) do
     decl_map = Process.get(:elmc_program_decls, %{})
 

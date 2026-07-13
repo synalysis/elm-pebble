@@ -344,7 +344,7 @@ defmodule Ide.Debugger.RuntimeArtifacts do
   def merge_shell_artifacts(base, _shell) when is_map(base), do: base
   def merge_shell_artifacts(_base, _shell), do: %{}
 
-  @type request_attrs :: ArtifactTypes.t() | map()
+  @type request_attrs :: ArtifactTypes.t() | Types.elmx_executor_request()
 
   @spec put_vector_resource_indices_on_request(request_attrs(), Types.execution_model()) ::
           request_attrs()

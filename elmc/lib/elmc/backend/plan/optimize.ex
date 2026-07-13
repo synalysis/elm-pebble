@@ -64,7 +64,7 @@ defmodule Elmc.Backend.Plan.Optimize do
   end
 
   @doc false
-  @spec unread_overwritten_dest_regs([map()], term()) :: MapSet.t()
+  @spec unread_overwritten_dest_regs(Types.instr_list(), Block.terminator()) :: MapSet.t()
   def unread_overwritten_dest_regs(instrs, terminator) when is_list(instrs) do
     {dead, _} = unread_overwritten_indices(instrs, terminator)
 

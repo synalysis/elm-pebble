@@ -1,6 +1,8 @@
 defmodule IdeWeb.EmulatorProxy.Types do
   @moduledoc false
 
+  @type ws_connect_info :: WebSockex.Conn.t()
+
   @type tcp_error_reason :: :econnrefused | :etimedout | :nxdomain | :closed | atom()
 
   @type ws_start_error :: :already_started | atom()

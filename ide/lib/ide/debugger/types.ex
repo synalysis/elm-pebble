@@ -236,7 +236,18 @@ defmodule Ide.Debugger.Types do
 
   @type protocol_field :: Schema.field()
 
-  @type protocol_error :: atom() | String.t() | tuple()
+  @type protocol_error_atom ::
+          :invalid_trace
+          | :invalid_json
+          | :slug_mismatch
+          | :missing_project_protocol
+          | :repo_unavailable
+          | :invalid_http_command
+
+  @type protocol_error ::
+          protocol_error_atom()
+          | String.t()
+          | {:bad_body, String.t()}
 
   @type protocol_wire_type :: Schema.wire_type()
 
@@ -253,8 +264,14 @@ defmodule Ide.Debugger.Types do
 
   @type protocol_wire_scalar :: String.t() | integer() | float() | boolean()
 
+  @type protocol_tag_tuple :: {atom() | String.t(), [protocol_wire_arg()]}
+
   @type protocol_wire_arg ::
-          protocol_ctor_value() | protocol_wire_scalar() | tuple() | wire_string_map() | nil
+          protocol_ctor_value()
+          | protocol_wire_scalar()
+          | protocol_tag_tuple()
+          | wire_string_map()
+          | nil
 
   @type protocol_wire_normalize_input :: protocol_wire_arg()
 
@@ -288,6 +305,11 @@ defmodule Ide.Debugger.Types do
 
   @typedoc "String-keyed wire map (JSON export, protocol payloads, corpus snapshots)."
   @type wire_string_map :: %{optional(String.t()) => wire_input()}
+
+  @typedoc "Companion environment snapshot (`sun`, `moon`, `tide` wire unions)."
+  @type environment_info_map :: %{
+          optional(String.t()) => wire_input()
+        }
 
   @typedoc """
   Generic debugger wire map for runtime payloads with mixed atom/string keys.
@@ -465,7 +487,8 @@ defmodule Ide.Debugger.Types do
           optional(String.t()) => String.t() | wire_string_map() | list() | nil
         }
 
-  @type subscription_payload :: wire_string_map() | protocol_ctor_value() | wire_scalar()
+  @type subscription_payload ::
+          wire_string_map() | protocol_ctor_value() | wire_scalar() | [wire_input()]
 
   @type view_output_row :: Elmx.Types.view_output_row()
 
@@ -560,6 +583,8 @@ defmodule Ide.Debugger.Types do
 
   @type json_decoder_spec :: Elmx.Types.json_decoder_spec()
 
+  @type json_primitive :: Elmx.Types.json_primitive()
+
   @type json_decoder :: Elmx.Types.json_decoder()
 
   @type compile_failure_detail :: Elmx.Types.compile_failure_detail()
@@ -614,7 +639,13 @@ defmodule Ide.Debugger.Types do
           | :geolocation
           | :companion_bridge
 
-  @type execution_fallback_reason :: atom() | String.t() | tuple()
+  @type execution_fallback_reason ::
+          atom()
+          | String.t()
+          | module()
+          | {:elmx_module_not_registered, String.t()}
+          | {:external_executor_not_loaded, module()}
+          | {:bad_body, String.t()}
 
   @type execution_error ::
           :invalid_execution_input

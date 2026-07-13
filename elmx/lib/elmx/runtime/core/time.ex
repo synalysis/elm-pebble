@@ -30,7 +30,7 @@ defmodule Elmx.Runtime.Core.Time do
   @spec zone_offset_minutes() :: integer()
   def zone_offset_minutes, do: div(DateTime.utc_now().utc_offset, 60)
 
-  @spec custom_zone(integer(), list()) :: tuple()
+  @spec custom_zone(integer(), list()) :: Types.time_zone()
   def custom_zone(offset_minutes, eras) when is_integer(offset_minutes) and is_list(eras) do
     {:Zone, offset_minutes, eras}
   end
@@ -45,25 +45,25 @@ defmodule Elmx.Runtime.Core.Time do
   def millis_to_posix(millis) when is_integer(millis), do: millis
   def millis_to_posix(_), do: 0
 
-  @spec to_year(term(), integer()) :: integer()
+  @spec to_year(Types.time_zone(), integer()) :: integer()
   def to_year(zone, millis), do: adjusted_datetime(zone, millis).year
 
-  @spec to_month(term(), integer()) :: atom()
+  @spec to_month(Types.time_zone(), integer()) :: atom()
   def to_month(zone, millis) do
     ~w(Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec)a
     |> Enum.at(adjusted_datetime(zone, millis).month - 1, :Dec)
   end
 
-  @spec to_day(term(), integer()) :: integer()
+  @spec to_day(Types.time_zone(), integer()) :: integer()
   def to_day(zone, millis), do: adjusted_datetime(zone, millis).day
 
-  @spec to_hour(term(), integer()) :: integer()
+  @spec to_hour(Types.time_zone(), integer()) :: integer()
   def to_hour(zone, millis), do: adjusted_datetime(zone, millis).hour
 
-  @spec to_minute(term(), integer()) :: integer()
+  @spec to_minute(Types.time_zone(), integer()) :: integer()
   def to_minute(zone, millis), do: adjusted_datetime(zone, millis).minute
 
-  @spec to_second(term(), integer()) :: integer()
+  @spec to_second(Types.time_zone(), integer()) :: integer()
   def to_second(_zone, millis) when is_integer(millis) do
     millis
     |> div(1000)
@@ -72,11 +72,11 @@ defmodule Elmx.Runtime.Core.Time do
 
   def to_second(_zone, _millis), do: 0
 
-  @spec to_millis(term(), integer()) :: integer()
+  @spec to_millis(Types.time_zone(), integer()) :: integer()
   def to_millis(_zone, millis) when is_integer(millis), do: Integer.mod(millis, 1000)
   def to_millis(_zone, _millis), do: 0
 
-  @spec adjusted_datetime(term(), integer()) :: DateTime.t()
+  @spec adjusted_datetime(Types.time_zone(), integer()) :: DateTime.t()
   defp adjusted_datetime(zone, millis) when is_integer(millis) do
     offset_minutes = zone_offset(zone, div(millis, 60_000))
 

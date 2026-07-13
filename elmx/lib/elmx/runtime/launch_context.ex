@@ -25,7 +25,7 @@ defmodule Elmx.Runtime.LaunchContext do
     "QuickLaunchUnknown" => -1
   }
 
-  @spec normalize(Types.wire_map() | map()) :: Types.launch_context()
+  @spec normalize(Types.wire_map()) :: Types.launch_context()
   def normalize(context) when is_map(context) do
     reason =
       case map_value(context, :reason) do

@@ -8,7 +8,7 @@ defmodule Elmx.Backend.ReachableModules do
 
   alias Elmx.Backend.CompileTimeCall
 
-  @spec modules_for_emit(IR.t(), String.t(), keyword()) :: [map()]
+  @spec modules_for_emit(IR.t(), String.t(), keyword()) :: [ElmEx.IR.Module.t()]
   def modules_for_emit(%IR{} = ir, entry_module, opts \\ []) when is_binary(entry_module) do
     roots = MainProgram.dead_code_roots(ir, entry_module)
     reachable = DeadCode.reachable_keys(ir, entry_module, roots: roots)

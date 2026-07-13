@@ -4,6 +4,7 @@ defmodule ElmEx.CoreIR do
   """
 
   alias ElmEx.IR
+  alias ElmEx.IR.Types.Expr
   alias ElmEx.IR.Validation
   alias ElmEx.CoreIR.Types
   alias ElmEx.CoreIR.Validate
@@ -85,7 +86,7 @@ defmodule ElmEx.CoreIR do
     }
   end
 
-  @spec normalize_unions(ElmEx.IR.Types.Module.unions() | map() | list() | atom() | nil) ::
+  @spec normalize_unions(ElmEx.IR.Types.Module.unions() | Types.wire_map() | list() | atom() | nil) ::
           %{String.t() => Types.normalized_value()}
   defp normalize_unions(unions) when is_map(unions) do
     unions
@@ -98,7 +99,7 @@ defmodule ElmEx.CoreIR do
 
   defp normalize_unions(_), do: %{}
 
-  @spec normalize_constructors(map() | list() | atom() | String.t() | number() | boolean() | nil) ::
+  @spec normalize_constructors(Types.wire_map() | list() | atom() | String.t() | number() | boolean() | nil) ::
           Types.normalized_value()
   defp normalize_constructors(constructors) when is_map(constructors) do
     constructors
@@ -123,7 +124,7 @@ defmodule ElmEx.CoreIR do
     }
   end
 
-  @spec normalize_expr(map() | nil) :: Types.expr() | Types.normalized_value() | nil
+  @spec normalize_expr(Expr.t() | nil) :: Types.expr() | Types.normalized_value() | nil
   defp normalize_expr(nil), do: nil
 
   defp normalize_expr(expr) when is_map(expr) do
@@ -146,7 +147,7 @@ defmodule ElmEx.CoreIR do
   defp normalize_value(value) when is_list(value), do: Enum.map(value, &normalize_value/1)
   defp normalize_value(value), do: value
 
-  @spec normalize_diagnostic(ElmEx.IR.Types.Diagnostic.t() | map()) :: Types.Diagnostic.wire_t()
+  @spec normalize_diagnostic(ElmEx.IR.Types.Diagnostic.t() | Types.wire_map()) :: Types.Diagnostic.wire_t()
   defp normalize_diagnostic(diagnostic) when is_map(diagnostic) do
     %{
       "severity" => to_string(Map.get(diagnostic, :severity, :warning)),

@@ -12,7 +12,7 @@ defmodule Elmc.MixProject do
       aliases: aliases(),
       elixirc_paths: elixirc_paths(Mix.env()),
       dialyzer: [
-        plt_add_apps: [:mix],
+        plt_add_apps: [:mix, :elm_ex],
         flags: [:error_handling, :unmatched_returns],
         ignore_warnings: ".dialyzer_ignore.exs"
       ]

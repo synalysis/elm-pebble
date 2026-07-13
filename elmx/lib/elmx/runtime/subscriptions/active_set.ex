@@ -8,7 +8,7 @@ defmodule Elmx.Runtime.Subscriptions.ActiveSet do
 
   @register_kind "cmd.subscription.register"
 
-  @spec from_value(term()) :: [Types.wire_cmd()]
+  @spec from_value(Types.sub_input()) :: [Types.wire_cmd()]
   def from_value(nil), do: []
   def from_value(0), do: []
   def from_value(value) when is_integer(value) and value <= 0, do: []
@@ -29,7 +29,7 @@ defmodule Elmx.Runtime.Subscriptions.ActiveSet do
   def from_value(items) when is_list(items), do: Enum.flat_map(items, &from_value/1)
   def from_value(_), do: []
 
-  @spec register_commands(Types.wire_cmd() | map()) :: [Types.wire_cmd()]
+  @spec register_commands(Types.wire_cmd()) :: [Types.wire_cmd()]
   defp register_commands(command) do
     Flatten.flatten(command)
     |> Enum.filter(&register_command?/1)
@@ -49,12 +49,12 @@ defmodule Elmx.Runtime.Subscriptions.ActiveSet do
     |> Map.update("target", "", &wire_string/1)
   end
 
-  @spec stringify_keys(map()) :: map()
+  @spec stringify_keys(Types.wire_cmd_input()) :: Types.wire_map()
   defp stringify_keys(map) when is_map(map) do
     Map.new(map, fn {k, v} -> {to_string(k), v} end)
   end
 
-  @spec wire_string(term()) :: String.t()
+  @spec wire_string(Types.wire_value() | atom()) :: String.t()
   defp wire_string(value) when is_binary(value), do: value
   defp wire_string(value) when is_atom(value), do: Atom.to_string(value)
   defp wire_string(value), do: to_string(value)

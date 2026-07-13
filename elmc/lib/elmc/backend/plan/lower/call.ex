@@ -7,7 +7,7 @@ defmodule Elmc.Backend.Plan.Lower.Call do
   alias Elmc.Backend.Plan.Lower.{Cmd, Expr, Lambda, SpecialValues}
   alias Elmc.Backend.Plan.Types
 
-  @spec compile_call(map(), Context.t(), Builder.t()) ::
+  @spec compile_call(Types.ir_expr(), Context.t(), Builder.t()) ::
           {:ok, Types.reg() | nil, Builder.t()} | :unsupported
   def compile_call(%{op: op} = expr, ctx, b)
       when op in [:qualified_call, :call] do
@@ -102,7 +102,7 @@ defmodule Elmc.Backend.Plan.Lower.Call do
     SpecialValues.special_value_from_target(target, args)
   end
 
-  @spec compile_closure_call_from_reg(integer(), [map()], Context.t(), Builder.t()) ::
+  @spec compile_closure_call_from_reg(integer(), [Types.ir_expr()], Context.t(), Builder.t()) ::
           {:ok, Types.reg() | :fn_out, Builder.t()} | :unsupported
   def compile_closure_call_from_reg(callee_reg, args, ctx, b) when is_integer(callee_reg) do
     do_compile_closure_call(callee_reg, args, ctx, b)

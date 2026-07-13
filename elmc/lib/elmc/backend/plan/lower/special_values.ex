@@ -6,7 +6,10 @@ defmodule Elmc.Backend.Plan.Lower.SpecialValues do
   handler is migrated to plan builtins or platform lowerers.
   """
 
-  @spec special_value_from_target(String.t(), [map()]) :: map() | nil
+  alias Elmc.Backend.Plan.Types
+
+  @spec special_value_from_target(String.t(), Types.special_value_args()) ::
+          Types.special_value_expr()
   defdelegate special_value_from_target(target, args),
     to: Elmc.Backend.CCodegen.SpecialValues
 

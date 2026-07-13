@@ -99,7 +99,7 @@ defmodule Elmc.Backend.CCodegen.ListLoopCodegen do
     {code, count}
   end
 
-  @spec emit_repeat_inline_loop(String.t(), String.t(), pos_integer(), map()) ::
+  @spec emit_repeat_inline_loop(String.t(), String.t(), pos_integer(), Types.compile_env()) ::
           {String.t(), String.t()}
   def emit_repeat_inline_loop(count_ref, value_ref, loop_id, env \\ %{}) do
     acc = "list_repeat_acc_#{loop_id}"
@@ -255,7 +255,7 @@ defmodule Elmc.Backend.CCodegen.ListLoopCodegen do
     """
   end
 
-  @spec emit_int_zero_repeat_from_count(String.t(), String.t(), pos_integer(), map()) :: String.t()
+  @spec emit_int_zero_repeat_from_count(String.t(), String.t(), pos_integer(), Types.compile_env()) :: String.t()
   def emit_int_zero_repeat_from_count(count_ref, out, loop_id, env) do
     count_display = repeat_count_display(count_ref, env)
 
@@ -313,7 +313,7 @@ defmodule Elmc.Backend.CCodegen.ListLoopCodegen do
   @spec forward_head_name(pos_integer()) :: String.t()
   def forward_head_name(loop_id), do: forward_head(loop_id)
 
-  @spec emit_forward_list_init(pos_integer(), map()) :: {String.t(), String.t()}
+  @spec emit_forward_list_init(pos_integer(), Types.compile_env()) :: {String.t(), String.t()}
   def emit_forward_list_init(loop_id, env \\ %{}) do
     if RcRuntimeEmit.rc_allocator_emit_mode?(env) do
       {head_ref, _} = ValueSlots.alloc()

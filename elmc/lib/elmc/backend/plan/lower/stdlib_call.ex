@@ -1,11 +1,13 @@
 defmodule Elmc.Backend.Plan.Lower.StdlibCall do
   @moduledoc false
 
+  alias Elmc.Backend.Plan.Types
   alias Elmc.Backend.Plan.Lower.Expr
+  alias Elmc.Backend.Plan.Lower.Types, as: LowerTypes
   alias Elmc.Backend.Plan.{Builder, Context}
 
-  @spec compile_maybe_with_default([map()], Context.t(), Builder.t()) ::
-          {:ok, term(), Builder.t()} | :unsupported
+  @spec compile_maybe_with_default(Types.case_branches(), Context.t(), Builder.t()) ::
+          LowerTypes.compile_result() | :unsupported
   def compile_maybe_with_default([default_val, second], ctx, b) do
     case list_at_index_list(second) do
       {:ok, index, list} ->

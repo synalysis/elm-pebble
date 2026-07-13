@@ -1006,9 +1006,10 @@ defmodule Elmc.PlanSizeReductionTest do
     assert {:ok, plan} = PlanLower.lower(decl, "Main", %{}, rc_required: true)
     c = CLowerFunction.emit(plan)
     assert c =~ "switch (__plan_state)"
-    assert c =~ "ELMC_PLAN_STATE_MAIN_UPDATE"
+    refute c =~ "ELMC_PLAN_STATE_"
+    assert c =~ "case 0:"
     refute Regex.match?(~r/\bmsg\s*==\s*\d+/, c)
-    assert c =~ "ELMC_UNION_" or c =~ "ELMC_TAG_TUPLE2"
+    assert c =~ "elmc_union_tag_as_int(" or c =~ "ELMC_UNION_" or c =~ "ELMC_TAG_TUPLE2"
     refute Regex.match?(~r/switch \([^)]+\) \{\s*case \d+: __plan_state = \d+; break;\s*\}\s*case \d+:/s, c)
     refute Regex.match?(~r/enum \{\s*\d+\s*=\s*\d+,/m, c)
     refute c =~ "goto elmc_plan_block_"
@@ -1038,6 +1039,55 @@ defmodule Elmc.PlanSizeReductionTest do
     assert c =~ "ELMC_UNION_MAIN_DOWN"
     refute c =~ "moveBoard_native(&owned[3], 3, model)"
     refute c =~ "moveBoard_native(&owned[3], 4, model)"
+  end
+
+  test "size profile state_switch uses compact numeric plan states" do
+    decl = %{
+      name: "branchy",
+      args: ["n"],
+      expr: %{
+        op: :if,
+        cond: %{op: :compare, kind: :lt, left: %{op: :var, name: "n"}, right: %{op: :int_literal, value: 10}},
+        then_expr: %{op: :int_literal, value: 1},
+        else_expr: %{
+          op: :if,
+          cond: %{op: :compare, kind: :lt, left: %{op: :var, name: "n"}, right: %{op: :int_literal, value: 20}},
+          then_expr: %{op: :int_literal, value: 2},
+          else_expr: %{
+            op: :if,
+            cond: %{op: :compare, kind: :lt, left: %{op: :var, name: "n"}, right: %{op: :int_literal, value: 30}},
+            then_expr: %{op: :int_literal, value: 3},
+            else_expr: %{
+              op: :if,
+              cond: %{op: :compare, kind: :lt, left: %{op: :var, name: "n"}, right: %{op: :int_literal, value: 40}},
+              then_expr: %{op: :int_literal, value: 4},
+              else_expr: %{
+                op: :if,
+                cond: %{op: :compare, kind: :lt, left: %{op: :var, name: "n"}, right: %{op: :int_literal, value: 50}},
+                then_expr: %{op: :int_literal, value: 5},
+                else_expr: %{
+                  op: :if,
+                  cond: %{op: :compare, kind: :lt, left: %{op: :var, name: "n"}, right: %{op: :int_literal, value: 60}},
+                  then_expr: %{op: :int_literal, value: 6},
+                  else_expr: %{op: :int_literal, value: 7}
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+
+    Process.put(:elmc_codegen_opts, %{codegen_profile: :size, plan_emit: :state_switch})
+
+    on_exit(fn -> Process.delete(:elmc_codegen_opts) end)
+
+    assert {:ok, plan} = PlanLower.lower(decl, "Main", %{{"Main", "branchy"} => decl}, rc_required: true)
+    c = CLowerFunction.emit(plan)
+    assert c =~ "switch (__plan_state)"
+    refute c =~ "ELMC_PLAN_STATE_"
+    refute c =~ "enum {"
+    assert c =~ "case 0:"
   end
 
   test "fused native plan bodies skip state-switch emit" do

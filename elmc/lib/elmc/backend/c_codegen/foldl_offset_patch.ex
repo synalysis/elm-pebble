@@ -5,9 +5,11 @@ defmodule Elmc.Backend.CCodegen.FoldlOffsetPatch do
   Offsets table and setter targets are resolved from IR/`decl_map`, not by name.
   """
 
+  alias Elmc.Backend.CCodegen.Types
+
   alias Elmc.Backend.CCodegen.{FusionSupport, Tuple2CaseTable, Util}
 
-  @spec try_emit(String.t(), String.t(), map() | nil, map()) ::
+  @spec try_emit(String.t(), String.t(), Types.ir_expr() | nil, Types.function_decl_map()) ::
           {:ok, String.t(), [FusionSupport.callee_key()]}
           | {:ok, String.t(), [FusionSupport.callee_key()], :rc_native}
           | :error
@@ -326,8 +328,8 @@ defmodule Elmc.Backend.CCodegen.FoldlOffsetPatch do
   end
 
   @doc false
-  @spec extract_fusion_data(String.t(), String.t(), map() | nil, map()) ::
-          {:ok, :foldl_offset_patch, map()} | :error
+  @spec extract_fusion_data(String.t(), String.t(), Types.ir_expr() | nil, Types.function_decl_map()) ::
+          {:ok, :foldl_offset_patch, Types.fusion_metadata()} | :error
   def extract_fusion_data(module_name, name, expr, decl_map) do
     with {:ok, piece_var, piece_type} <- parse_function(decl_map, module_name, name),
          {:ok, ^piece_var, offsets_target, set_cell_target} <- parse(expr),

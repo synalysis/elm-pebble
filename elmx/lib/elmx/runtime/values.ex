@@ -18,24 +18,24 @@ defmodule Elmx.Runtime.Values do
     end
   end
 
-  @spec cmd_map(term(), Types.wire_cmd_input()) :: Types.wire_cmd()
+  @spec cmd_map(Types.elm_hof(), Types.wire_cmd_input()) :: Types.wire_cmd()
   def cmd_map(fun, cmd), do: Manager.map(fun, manager_value(cmd))
 
   def cmd_map(fun), do: fn cmd -> cmd_map(fun, cmd) end
 
-  @spec sub_batch([term()]) :: term()
+  @spec sub_batch([Types.wire_cmd_input()]) :: Types.wire_cmd()
   def sub_batch(subs) when is_list(subs), do: Manager.batch(Enum.map(subs, &manager_value/1))
 
-  @spec sub_map(term(), term()) :: term()
+  @spec sub_map(Types.elm_hof(), Types.wire_cmd_input()) :: Types.wire_cmd()
   def sub_map(fun, sub), do: Manager.map(fun, manager_value(sub))
 
   def sub_map(fun), do: fn sub -> sub_map(fun, sub) end
 
-  @spec port_outgoing(String.t(), term()) :: Types.wire_cmd()
+  @spec port_outgoing(String.t(), Types.wire_value()) :: Types.wire_cmd()
   def port_outgoing(port_key, payload) when is_binary(port_key),
     do: Manager.port(port_key, payload)
 
-  @spec port_incoming_sub(String.t(), term()) :: term()
+  @spec port_incoming_sub(String.t(), Types.elm_msg()) :: Types.wire_cmd()
   def port_incoming_sub(port_key, callback) when is_binary(port_key),
     do: Manager.port(port_key, callback)
 
@@ -57,7 +57,7 @@ defmodule Elmx.Runtime.Values do
     %{"ctor" => name, "args" => Enum.map(args, &wire_value/1)}
   end
 
-  @spec field_call(Types.wire_map() | map(), String.t(), Types.registry_args()) ::
+  @spec field_call(Types.wire_map(), String.t(), Types.registry_args()) ::
           Types.wire_value() | Types.elm_value()
   def field_call(target, field, args) when is_map(target) and is_binary(field) and is_list(args) do
     fun = Map.get(target, field) || Map.get(target, String.to_atom(field))
@@ -107,14 +107,14 @@ defmodule Elmx.Runtime.Values do
 
   def wire_value(value), do: value
 
-  @spec model_to_runtime_map(map() | Types.wire_input()) :: Types.runtime_model()
+  @spec model_to_runtime_map(Types.wire_input()) :: Types.runtime_model()
   def model_to_runtime_map(model) when is_map(model) do
     wire_value(model)
   end
 
   def model_to_runtime_map(model), do: %{"value" => wire_value(model)}
 
-  @spec tuple_result_to_model_cmd({map() | Types.wire_input(), Types.wire_cmd_input()} | map() | Types.wire_input()) ::
+  @spec tuple_result_to_model_cmd({Types.wire_input(), Types.wire_cmd_input()} | Types.wire_input()) ::
           {Types.runtime_model(), Types.wire_cmd()}
   def tuple_result_to_model_cmd({model, cmd}) when is_map(model) do
     {model_to_runtime_map(model), wire_cmd(cmd)}

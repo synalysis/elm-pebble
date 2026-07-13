@@ -5,7 +5,17 @@ defmodule Ide.Test.TemplateElmxElmcParity.ElmcHostHarness do
   @harness_name "template_parity_harness"
   @default_run_timeout_sec 120
 
-  @spec compile!(String.t(), String.t(), keyword()) :: :ok | {:error, term()}
+  alias Elmc.CLI.Types, as: ElmcCliTypes
+
+  @type compile_error :: {:elmc_compile_failed, ElmcCliTypes.compile_error()}
+
+  @type run_capture_error ::
+          :cc_not_available
+          | {:harness_compile_failed, String.t()}
+          | {:harness_timeout, non_neg_integer(), String.t()}
+          | {:harness_run_failed, integer(), String.t()}
+
+  @spec compile!(String.t(), String.t(), keyword()) :: :ok | {:error, compile_error()}
   def compile!(project_dir, out_dir, opts \\ []) do
     compile_opts = Keyword.merge([out_dir: out_dir, strip_dead_code: false], opts)
 
@@ -16,7 +26,7 @@ defmodule Ide.Test.TemplateElmxElmcParity.ElmcHostHarness do
   end
 
   @spec run_capture(String.t(), String.t(), String.t(), keyword()) ::
-          {:ok, String.t()} | {:error, term()}
+          {:ok, String.t()} | {:error, run_capture_error()}
   def run_capture(out_dir, harness_path, binary_name, opts \\ []) do
     cc = System.find_executable("cc")
 

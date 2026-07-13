@@ -30,5 +30,10 @@ defmodule ElmEx.IR.Types.Diagnostic do
           optional(String.t()) => Types.wire_input()
         }
 
-  @type wire_map :: t() | map()
+  @type wire_map_alias :: %{
+          optional(atom()) => Types.wire_input(),
+          optional(String.t()) => Types.wire_input()
+        }
+
+  @type wire_map :: t() | wire_map_alias()
 end

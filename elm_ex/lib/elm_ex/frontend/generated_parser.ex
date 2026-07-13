@@ -29,28 +29,41 @@ defmodule ElmEx.Frontend.GeneratedParser do
 
   alias ElmEx.Frontend.GeneratedContractBuilder
   alias ElmEx.Frontend.AstContract
+  alias ElmEx.Frontend.AstContract.Types, as: AstTypes
   alias ElmEx.Frontend.Types.ImportEntry
+  alias ElmEx.Frontend.Bridge.Types, as: BridgeTypes
   alias ElmEx.Types
 
-  @typep token() :: tuple()
+  @typep token() :: Types.lexer_token()
   @typep tokens() :: [token()]
 
-  @spec parse_file(String.t()) :: {:ok, ElmEx.Frontend.Module.t()} | {:error, map()}
+  @type parser_metadata :: %{
+          required(:module) => String.t(),
+          required(:imports) => [String.t()],
+          required(:module_exposing) => Types.module_exposing(),
+          required(:import_entries) => [ImportEntry.t()],
+          required(:port_module) => boolean(),
+          required(:ports) => [String.t()]
+        }
+
+  @type parser_error :: BridgeTypes.parse_error() | AstTypes.ast_contract_error()
+
+  @spec parse_file(String.t()) :: {:ok, ElmEx.Frontend.Module.t()} | {:error, parser_error()}
   def parse_file(path) do
     with {:ok, source} <- File.read(path) do
       parse_source(path, source)
     end
   end
 
-  @spec parse_source(String.t(), String.t()) :: {:ok, ElmEx.Frontend.Module.t()} | {:error, map()}
+  @spec parse_source(String.t(), String.t()) :: {:ok, ElmEx.Frontend.Module.t()} | {:error, parser_error()}
   def parse_source(path, source) when is_binary(path) and is_binary(source) do
     with {:ok, metadata} <- parse_metadata(source, path) do
       module_from_source(path, source, metadata)
     end
   end
 
-  @spec module_from_source(String.t(), String.t(), map()) ::
-          {:ok, ElmEx.Frontend.Module.t()} | {:error, map()}
+  @spec module_from_source(String.t(), String.t(), parser_metadata()) ::
+          {:ok, ElmEx.Frontend.Module.t()} | {:error, AstTypes.ast_contract_error()}
   defp module_from_source(path, source, metadata)
        when is_binary(path) and is_binary(source) and is_map(metadata) do
     module_name = metadata.module
@@ -70,7 +83,7 @@ defmodule ElmEx.Frontend.GeneratedParser do
     end
   end
 
-  @spec parse_metadata(String.t(), String.t()) :: {:ok, map()} | {:error, map()}
+  @spec parse_metadata(String.t(), String.t()) :: {:ok, parser_metadata()} | {:error, parser_error()}
   defp parse_metadata(source, path) when is_binary(source) and is_binary(path) do
     metadata_source = normalize_source_for_metadata(source)
 
@@ -326,7 +339,7 @@ defmodule ElmEx.Frontend.GeneratedParser do
 
   @spec extract_header_metadata(tokens()) :: %{
           module_exposing: Types.module_exposing(),
-          import_entries: [map()],
+          import_entries: [ImportEntry.t()],
           port_module: boolean(),
           ports: [String.t()]
         }

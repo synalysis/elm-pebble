@@ -6,13 +6,14 @@ defmodule Elmc.Backend.CCodegen.Emit do
   alias Elmc.Backend.CCodegen.Types
   alias Elmc.Backend.Pebble.Kinds
   alias Elmc.Backend.Pebble.Util
+  alias Elmc.Types, as: ElmcTypes
 
   @spec generated_magic_number_defines() :: String.t()
   def generated_magic_number_defines do
     all_magic_number_defines()
   end
 
-  @spec generated_magic_number_defines([String.t()], keyword() | map()) :: String.t()
+  @spec generated_magic_number_defines([String.t()], keyword() | ElmcTypes.compile_options()) :: String.t()
   def generated_magic_number_defines(chunks, opts) do
     if opts[:strip_dead_code] == false do
       all_magic_number_defines()
@@ -184,7 +185,8 @@ defmodule Elmc.Backend.CCodegen.Emit do
     |> Enum.map_join("\n", fn {macro, value} -> "#define #{macro} #{value}" end)
   end
 
-  @spec generated_resource_slot_defines([String.t()], keyword() | map(), ElmEx.IR.t()) :: String.t()
+  @spec generated_resource_slot_defines([String.t()], keyword() | ElmcTypes.compile_options(), ElmEx.IR.t()) ::
+          String.t()
   def generated_resource_slot_defines(chunks, opts, %ElmEx.IR{} = ir) do
     lines = Elmc.Backend.CCodegen.ResourceSlotMacros.define_lines(ir)
 

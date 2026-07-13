@@ -39,9 +39,11 @@ defmodule ElmEx.IR.Types.FunctionCallCheck do
 
   @type occurrence_counts :: %{String.t() => non_neg_integer()}
 
+  alias ElmEx.Frontend.AstContract.Types, as: AstTypes
+
   @type function_decl_context ::
           AstDeclaration.function_definition()
-          | %{optional(atom()) => term(), optional(String.t()) => term()}
+          | %{optional(atom()) => AstTypes.invalid_input(), optional(String.t()) => AstTypes.invalid_input()}
 
   @type call_context :: %{
           required(:module_name) => String.t(),
@@ -56,8 +58,8 @@ defmodule ElmEx.IR.Types.FunctionCallCheck do
   @type call_context_wire :: call_context() | call_context_partial()
 
   @type call_context_partial :: %{
-          optional(atom()) => term(),
-          optional(String.t()) => term()
+          optional(atom()) => String.t() | integer() | boolean() | nil | MapSet.t(String.t()) | Lookup.name_map() | AstDeclaration.t(),
+          optional(String.t()) => String.t() | integer() | boolean() | nil | MapSet.t(String.t()) | Lookup.name_map() | AstDeclaration.t()
         }
 
   @type diagnostics_result :: {[Diagnostic.t()], call_context_wire()}

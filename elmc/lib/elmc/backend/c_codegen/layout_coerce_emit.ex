@@ -20,8 +20,10 @@ defmodule Elmc.Backend.CCodegen.LayoutCoerceEmit do
           required(:to) => StoragePlan.layout()
         }
 
+  @type param_plan_map :: %{optional({String.t(), String.t(), String.t()}) => StoragePlan.t()}
+
   @spec maybe_coerce_expr(String.t(), StoragePlan.t(), StoragePlan.t(), keyword()) ::
-          {String.t(), StoragePlan.t(), map() | nil}
+          {String.t(), StoragePlan.t(), Types.layout_diagnostic() | nil}
   def maybe_coerce_expr(var, from_plan, to_plan, _opts \\ [])
       when is_binary(var) do
     {_code, coerced_var, _counter, _copied?} = emit_layout_copy(var, from_plan, to_plan, 0)
@@ -65,7 +67,7 @@ defmodule Elmc.Backend.CCodegen.LayoutCoerceEmit do
     end
   end
 
-  @spec diagnostic(StoragePlan.t(), StoragePlan.t()) :: map() | nil
+  @spec diagnostic(StoragePlan.t(), StoragePlan.t()) :: Types.layout_diagnostic() | nil
   def diagnostic(from_plan, to_plan) do
     cond do
       from_plan.layout == to_plan.layout ->
@@ -92,7 +94,7 @@ defmodule Elmc.Backend.CCodegen.LayoutCoerceEmit do
     end
   end
 
-  @spec collect_call_warnings(Types.function_decl_map(), map()) :: [warning()]
+  @spec collect_call_warnings(Types.function_decl_map(), param_plan_map()) :: [warning()]
   def collect_call_warnings(decl_map, param_plans) when is_map(decl_map) and is_map(param_plans) do
     decl_map
     |> Enum.flat_map(fn {{caller_mod, caller_fun}, decl} ->
@@ -103,7 +105,7 @@ defmodule Elmc.Backend.CCodegen.LayoutCoerceEmit do
     |> Enum.uniq_by(&warning_key/1)
   end
 
-  @spec format_compile_warnings([warning()]) :: [map()]
+  @spec format_compile_warnings([warning()]) :: [Types.compile_warning_json()]
   def format_compile_warnings(warnings) when is_list(warnings) do
     Enum.map(warnings, fn warning ->
       %{

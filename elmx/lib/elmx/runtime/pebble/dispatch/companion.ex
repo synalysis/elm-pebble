@@ -104,7 +104,7 @@ defmodule Elmx.Runtime.Pebble.Dispatch.Companion do
 
   def websocket_send_cmd(_), do: Cmd.none()
 
-  @spec bridge_from_envelope(Types.elm_msg(), Types.wire_value() | map()) :: Types.wire_cmd()
+  @spec bridge_from_envelope(Types.elm_msg(), Types.wire_value()) :: Types.wire_cmd()
   def bridge_from_envelope(callback, request) do
     case command_envelope(request) do
       %{"api" => api, "op" => op} = envelope when is_binary(api) and is_binary(op) ->
@@ -119,7 +119,7 @@ defmodule Elmx.Runtime.Pebble.Dispatch.Companion do
     end
   end
 
-  @spec command_envelope(Types.wire_value() | map()) :: Types.wire_map()
+  @spec command_envelope(Types.wire_value()) :: Types.wire_map()
   def command_envelope({:Request, envelope, _}), do: normalize_command_envelope(envelope)
 
   def command_envelope(%{"ctor" => "Request", "args" => [envelope | _]}),
@@ -127,7 +127,7 @@ defmodule Elmx.Runtime.Pebble.Dispatch.Companion do
 
   def command_envelope(envelope), do: normalize_command_envelope(envelope)
 
-  @spec normalize_command_envelope(Types.wire_value() | map()) :: Types.wire_map()
+  @spec normalize_command_envelope(Types.wire_value()) :: Types.wire_map()
   defp normalize_command_envelope(envelope) when is_map(envelope) do
     %{
       "id" => envelope_field(envelope, "id"),

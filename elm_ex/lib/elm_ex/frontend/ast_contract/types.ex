@@ -20,6 +20,30 @@ defmodule ElmEx.Frontend.AstContract.Types do
   @type compare_kind :: :eq | :neq | :gt | :gte | :lt | :lte
   @type compose_expr :: %{optional(atom()) => String.t()}
 
+  @type invalid_map :: %{optional(atom() | String.t() | integer()) => invalid_input()}
+
+  @type invalid_tuple :: {invalid_input(), invalid_input()}
+
   @type invalid_input ::
-          map() | list() | atom() | String.t() | number() | boolean() | nil | tuple()
+          invalid_map()
+          | list()
+          | atom()
+          | String.t()
+          | number()
+          | boolean()
+          | nil
+          | invalid_tuple()
+
+  @type ast_contract_error :: %{
+          required(:kind) => :ast_contract_error,
+          required(:reason) => atom(),
+          optional(:declaration_index) => non_neg_integer()
+        }
+
+  @type declaration_error :: atom() | %{optional(atom()) => invalid_input()}
+
+  @type pipe_chain_expr :: %{
+          required(:steps) => list(),
+          required(:base) => expr()
+        }
 end

@@ -6,7 +6,7 @@ defmodule Elmx.Runtime.ViewOutput.Draw.Text do
 
   @type opts :: Types.view_output_opts()
 
-  @spec row(map(), opts()) :: Types.view_output_row() | nil
+  @spec row(Types.view_draw_node(), opts()) :: Types.view_output_row() | nil
   def row(%{"type" => "text"} = node, _opts) do
     {x, y, w, h} = Geometry.rect_bounds(node, "bounds")
 

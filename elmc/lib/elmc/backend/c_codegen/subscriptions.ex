@@ -24,7 +24,7 @@ defmodule Elmc.Backend.CCodegen.Subscriptions do
 
   @type subscription_tree_expr ::
           Types.ir_expr()
-          | %{optional(atom()) => term()}
+          | %{optional(atom()) => Types.ir_field_value()}
           | [subscription_tree_expr()]
           | nil
 
@@ -387,7 +387,7 @@ defmodule Elmc.Backend.CCodegen.Subscriptions do
         }
 
   @spec model_dependent?(
-          %{optional(:args) => [String.t()], optional(:expr) => term(), optional(atom()) => term()}
+          %{optional(:args) => [String.t()], optional(:expr) => Types.ir_expr(), optional(atom()) => Types.ir_field_value()}
           | nil
         ) :: boolean()
   def model_dependent?(nil), do: false

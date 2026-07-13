@@ -4,6 +4,8 @@ defmodule Elmx.TestSupport.CoverageGate do
   alias ElmEx.Frontend.Bridge
   alias ElmEx.IR.Lowerer
 
+  alias ElmEx.CoreIR.Types.Expr, as: CoreIRExpr
+
   @supported_ops MapSet.new([
                    :int_literal,
                    :float_literal,
@@ -46,7 +48,7 @@ defmodule Elmx.TestSupport.CoverageGate do
   @spec supported_ops() :: MapSet.t()
   def supported_ops, do: @supported_ops
 
-  @spec collect_unsupported_ops(term()) :: [atom()]
+  @spec collect_unsupported_ops(CoreIRExpr.t() | CoreIRExpr.wire_expr()) :: [atom()]
   def collect_unsupported_ops(expr) when is_map(expr) do
     op = Map.get(expr, :op)
 

@@ -5,6 +5,7 @@ defmodule ElmEx.DebuggerContract.Types do
   alias ElmEx.Frontend.Module
   alias ElmEx.DebuggerContract.Payload
   alias ElmEx.DebuggerContract.Types.{EffectFields, MsgTagIndex, ProgramOutline, SourceLocation, ViewTree}
+  alias ElmEx.Types, as: ElmExTypes
 
   @type effect_fields :: EffectFields.t()
   @type msg_tag_index :: MsgTagIndex.t()
@@ -34,7 +35,11 @@ defmodule ElmEx.DebuggerContract.Types do
   @type function_cmd_calls_map :: Payload.function_cmd_calls()
   @type module_ref :: Module.t()
   @type exposing_value :: String.t() | [String.t()] | nil
-  @type parse_error :: atom() | String.t() | map() | tuple()
+  @type parse_error ::
+          atom()
+          | String.t()
+          | %{optional(atom() | String.t()) => json_value() | atom() | String.t()}
+          | ElmExTypes.parse_token()
   @type json_value :: Payload.json_value()
   @type param_list :: [String.t()]
   @type binding_map :: %{optional(atom()) => json_value(), optional(String.t()) => json_value()}
@@ -76,6 +81,7 @@ defmodule ElmEx.DebuggerContract.Types do
           optional(:module) => String.t(),
           optional(:module_ref) => Module.t() | nil,
           optional(:function_types) => function_types_index(),
-          optional(atom()) => term()
+          optional(atom()) => json_value() | Module.t() | nil,
+          optional(String.t()) => json_value() | String.t() | nil
         }
 end

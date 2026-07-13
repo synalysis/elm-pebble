@@ -31,7 +31,7 @@ defmodule Elmc.Backend.CCodegen.Hoist do
     |> Map.get(hoisted_native_bool_key(expr))
   end
 
-  @spec hoisted_native_bool_key(Types.ir_expr() | term()) :: hoisted_native_bool_key()
+  @spec hoisted_native_bool_key(Types.ir_expr()) :: hoisted_native_bool_key()
   defp hoisted_native_bool_key(%{op: :case, subject: subject} = expr) do
     {:case, Map.get(expr, :platform_static_macro), hoisted_native_bool_key(subject)}
   end
@@ -231,7 +231,7 @@ defmodule Elmc.Backend.CCodegen.Hoist do
     Regex.match?(~r/^native_maybe_(case|default)_\d+$/, ref)
   end
 
-  @spec hoisted_native_int_branch_preamble(map(), keyword()) :: String.t()
+  @spec hoisted_native_int_branch_preamble(Types.compile_env(), keyword()) :: String.t()
   def hoisted_native_int_branch_preamble(before_inits, opts \\ []) do
     allow_record_getters? = Keyword.get(opts, :allow_record_getters, false)
 
@@ -346,7 +346,7 @@ defmodule Elmc.Backend.CCodegen.Hoist do
     |> Enum.uniq()
   end
 
-  @spec minmax_cross_form_keys(Types.ir_expr()) :: [term()]
+  @spec minmax_cross_form_keys(Types.ir_expr()) :: [hoisted_native_bool_key()]
   defp minmax_cross_form_keys(expr) when is_map(expr) do
     case Map.get(expr, :op) do
       :call ->
@@ -403,7 +403,7 @@ defmodule Elmc.Backend.CCodegen.Hoist do
     end
   end
 
-  @spec lookup_key(Types.ir_expr()) :: term()
+  @spec lookup_key(Types.ir_expr()) :: hoisted_native_bool_key()
   def lookup_key(expr), do: hoisted_native_int_key(expr)
 
   @spec hoisted_native_int_lookup(Types.compile_env(), Types.ir_expr()) ::

@@ -1,10 +1,11 @@
 defmodule Elmc.Backend.Plan.Lower.MaybeMap do
   @moduledoc false
 
+  alias Elmc.Backend.Plan.Types
   alias Elmc.Backend.Plan.Lower.{Call, Expr, Record}
   alias Elmc.Backend.Plan.{Builder, Context, Types}
 
-  @spec try_compile(map(), Context.t(), Builder.t()) ::
+  @spec try_compile(Types.ir_expr(), Context.t(), Builder.t()) ::
           {:ok, Types.reg() | :fn_out, Builder.t()} | :unsupported
   def try_compile(%{function: "elmc_maybe_map", args: [fun, maybe]}, ctx, b) do
     case field_accessor_lambda(fun) do

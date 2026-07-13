@@ -5,11 +5,12 @@ defmodule Elmc.Backend.Plan.Shadow do
 
   alias Elmc.Backend.Plan.Lower.Function
 
-  alias Elmc.Backend.Plan.Defaults
+  alias Elmc.Backend.Plan.{Defaults, Types}
 
   @stats_key :elmc_plan_shadow_stats
 
-  @spec maybe_verify_function(map(), String.t(), map(), keyword()) :: :ok | :skipped | {:error, term()}
+  @spec maybe_verify_function(Types.function_decl(), String.t(), Types.function_decl_map(), keyword()) ::
+          :ok | :skipped | {:error, Types.lower_error()}
   def maybe_verify_function(decl, module_name, decl_map, opts) do
     case plan_ir_mode(opts) do
       :off ->
@@ -66,7 +67,7 @@ defmodule Elmc.Backend.Plan.Shadow do
     Process.put(@stats_key, Map.put(updated, :last, {module, name, result}))
   end
 
-  @spec plan_ir_mode(keyword() | map()) :: :off | :shadow | :primary
+  @spec plan_ir_mode(keyword() | Types.compile_env()) :: :off | :shadow | :primary
   def plan_ir_mode(opts) do
     mode =
       cond do

@@ -3,6 +3,8 @@ defmodule Elmx.CompileResult do
   In-memory compile output for IDE hot-reload and optional disk export.
   """
 
+  alias Elmx.Types
+
   @type compiled_module :: %{
           required(:name) => String.t(),
           required(:source) => String.t(),
@@ -10,8 +12,14 @@ defmodule Elmx.CompileResult do
           optional(:module) => module()
         }
 
-  @type manifest :: %{
-          optional(String.t()) => String.t() | integer() | boolean() | list() | map()
+  @type manifest_value ::
+          String.t() | integer() | boolean() | list() | Types.wire_map()
+
+  @type manifest :: %{optional(String.t()) => manifest_value()}
+
+  @type diagnostic_row :: %{
+          optional(String.t()) => manifest_value(),
+          optional(atom()) => manifest_value()
         }
 
   @type t :: %__MODULE__{
@@ -21,7 +29,7 @@ defmodule Elmx.CompileResult do
           modules: [compiled_module()],
           manifest: manifest(),
           ir: ElmEx.IR.t() | nil,
-          diagnostics: [map()]
+          diagnostics: [diagnostic_row()]
         }
 
   defstruct [

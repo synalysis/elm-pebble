@@ -13,5 +13,10 @@ defmodule ElmEx.Frontend.Types.ImportEntry do
           optional(String.t()) => String.t() | integer() | boolean() | list() | nil
         }
 
-  @type wire_map :: t() | map()
+  @type wire_map_alias :: %{
+          optional(atom()) => String.t() | integer() | boolean() | exposing() | list() | nil,
+          optional(String.t()) => String.t() | integer() | boolean() | exposing() | list() | nil
+        }
+
+  @type wire_map :: t() | wire_map_alias()
 end

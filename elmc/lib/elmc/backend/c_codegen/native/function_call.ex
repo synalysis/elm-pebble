@@ -800,7 +800,16 @@ defmodule Elmc.Backend.CCodegen.Native.FunctionCall do
         argv_setup <> boxed_call
 
       true ->
-        argv_setup <> "#{native_call_decl(return_kind)}#{out} = #{c_name}(#{call_args});"
+        rhs = "#{c_name}(#{call_args})"
+
+        assign =
+          if ValueSlots.owned_ref?(out) or RcRuntimeEmit.function_out_ref?(out) do
+            ValueSlots.boxed_decl(out, rhs, env)
+          else
+            "#{native_call_decl(return_kind)}#{out} = #{rhs};"
+          end
+
+        argv_setup <> assign
     end
   end
 

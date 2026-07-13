@@ -28,11 +28,14 @@ defmodule Elmc.TestSupport.PrimaryCodegen do
 
   @primary_compile_opts %{plan_ir_mode: :primary, plan_ir_strict: true}
 
-  @spec compile(String.t(), map()) :: {:ok, term()} | {:error, term()}
+  alias Elmc.CLI.Types, as: ElmcCliTypes
+
+  @spec compile(String.t(), Elmc.TestSupport.Types.compile_opts()) ::
+          {:ok, ElmcCliTypes.compile_result()} | {:error, ElmcCliTypes.compile_error()}
   def compile(project_dir, opts \\ %{}) when is_map(opts) do
     Elmc.compile(project_dir, Map.merge(@primary_compile_opts, opts))
   end
 
-  @spec compile_opts(map()) :: map()
+  @spec compile_opts(Elmc.TestSupport.Types.compile_opts()) :: Elmc.TestSupport.Types.compile_opts()
   def compile_opts(extra \\ %{}) when is_map(extra), do: Map.merge(@primary_compile_opts, extra)
 end

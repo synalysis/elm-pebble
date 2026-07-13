@@ -8,7 +8,7 @@ defmodule Elmx.MixProject do
       elixir: "~> 1.20",
       start_permanent: Mix.env() == :prod,
       dialyzer: [
-        plt_add_apps: [:mix],
+        plt_add_apps: [:mix, :elm_ex],
         ignore_warnings: ".dialyzer_ignore.exs"
       ],
       deps: deps(),

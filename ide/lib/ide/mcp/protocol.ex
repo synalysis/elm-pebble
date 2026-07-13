@@ -28,7 +28,16 @@ defmodule Ide.Mcp.Protocol do
 
   @type json_safe_datetime :: Date.t() | Time.t() | NaiveDateTime.t() | DateTime.t()
 
-  @type json_safe_opaque :: pid() | reference() | function() | port() | tuple()
+  @type json_safe_opaque ::
+          pid()
+          | reference()
+          | function()
+          | port()
+          | {json_safe_input(), json_safe_input()}
+          | {json_safe_input(), json_safe_input(), json_safe_input()}
+          | {json_safe_input(), json_safe_input(), json_safe_input(), json_safe_input()}
+
+  @type json_safe_wire_map :: %{optional(atom() | String.t()) => json_safe_input()}
 
   @typedoc "Values accepted by MCP JSON encoding (tool payloads, datetimes, opaque terms)."
   @type json_safe_input ::
@@ -36,7 +45,7 @@ defmodule Ide.Mcp.Protocol do
           | atom()
           | json_safe_datetime()
           | json_safe_opaque()
-          | map()
+          | json_safe_wire_map()
 
   @doc """
   Handles an MCP JSON-RPC request body.

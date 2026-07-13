@@ -15,6 +15,14 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.NativeRecord do
   alias Elmc.Backend.CCodegen.Util
   alias Elmc.Backend.CCodegen.VarAnalysis
 
+  @type branch_span_mul_result :: {:ok, String.t(), integer()} | :error
+
+  @type branch_span_key_result ::
+          {:ok,
+           {String.t(), integer(), String.t(), integer()}, String.t(), integer(), String.t(),
+            integer()}
+          | :error
+
   @spec helper_let?(Types.binding_name(), Types.ir_expr(), Types.compile_env()) :: boolean()
   def helper_let?(_name, value_expr, env) do
     if TextOptions.packable_value?(value_expr) do
@@ -724,12 +732,20 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.NativeRecord do
     do: {code_acc, expr, span_hoists, counter}
 
   @doc false
-  @spec debug_branch_span_mul_field(Types.ir_expr(), map(), map()) :: term()
+  @spec debug_branch_span_mul_field(
+          Types.ir_expr(),
+          Types.branch_field_refs(),
+          Types.branch_field_sources()
+        ) :: branch_span_mul_result()
   def debug_branch_span_mul_field(expr, refs_acc, field_sources),
     do: branch_span_mul_field(expr, refs_acc, field_sources)
 
   @doc false
-  @spec debug_branch_span_key(Types.ir_expr(), map(), map()) :: term()
+  @spec debug_branch_span_key(
+          Types.ir_expr(),
+          Types.branch_field_refs(),
+          Types.branch_field_sources()
+        ) :: branch_span_key_result()
   def debug_branch_span_key(expr, refs_acc, field_sources),
     do: branch_span_key(expr, refs_acc, field_sources)
 

@@ -1,6 +1,8 @@
 defmodule ElmEx.Test.TreeSitterCorpus do
   @moduledoc false
 
+  alias ElmEx.TestSupport.Types, as: SupportTypes
+
   alias ElmEx.Frontend.GeneratedParser
 
   @corpus_dir Path.expand("../../../vendor/tree-sitter-elm-test-corpus", __DIR__)
@@ -91,7 +93,7 @@ defmodule ElmEx.Test.TreeSitterCorpus do
     end)
   end
 
-  @spec run_parse_gate!(keyword()) :: map()
+  @spec run_parse_gate!(keyword()) :: SupportTypes.corpus_scorecard()
   def run_parse_gate!(opts \\ []) do
     paths = Keyword.get(opts, :paths, eligible_paths())
     timeout_ms = Keyword.get(opts, :timeout_ms, timeout_ms())
@@ -160,7 +162,7 @@ defmodule ElmEx.Test.TreeSitterCorpus do
     }
   end
 
-  @spec write_scorecard!(map(), String.t()) :: String.t()
+  @spec write_scorecard!(SupportTypes.corpus_scorecard(), String.t()) :: String.t()
   def write_scorecard!(scorecard, out_dir) do
     File.mkdir_p!(out_dir)
 
@@ -173,7 +175,7 @@ defmodule ElmEx.Test.TreeSitterCorpus do
     json_path
   end
 
-  @spec render_scorecard_md(map()) :: String.t()
+  @spec render_scorecard_md(SupportTypes.corpus_scorecard()) :: String.t()
   def render_scorecard_md(scorecard) do
     summary = scorecard["summary"]
 

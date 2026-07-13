@@ -165,11 +165,12 @@ jobs:
         working-directory: ide
         run: >
           mix ide.size_report
+          --package
+          --targets flint
           --templates game-2048,watchface-tangram-time,watchface-yes
           --baseline-manifest priv/size_report_baselines/flint.json
           --fail-on-regression
           --max-bin-regression 512
-          --max-generated-c-regression 8192
           > /tmp/size_report.json
 
       - name: Check size profile compiler output against manifest baseline
@@ -177,10 +178,13 @@ jobs:
         run: >
           mix ide.size_report
           --profile size
+          --package
+          --targets flint
           --templates watchface-yes,game-2048,watchface-smoke-screen
           --baseline-manifest priv/size_report_baselines/flint-size.json
           --fail-on-regression
-          --max-generated-c-regression 8192
+          --max-bin-regression 512
+          --max-elmc-text-regression 512
           > /tmp/size_report_profile.json
 
   ide-template-pbw-gate:

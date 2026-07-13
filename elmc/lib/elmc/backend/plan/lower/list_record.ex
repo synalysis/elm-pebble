@@ -4,7 +4,7 @@ defmodule Elmc.Backend.Plan.Lower.ListRecord do
   alias Elmc.Backend.Plan.Lower.{Expr, Record}
   alias Elmc.Backend.Plan.{Builder, Context, Types}
 
-  @spec try_compile_filter(map(), Context.t(), Builder.t()) ::
+  @spec try_compile_filter(Types.runtime_call_input() | Types.ir_expr(), Context.t(), Builder.t()) ::
           {:ok, Types.reg() | :fn_out, Builder.t()} | :unsupported
   def try_compile_filter(%{function: "elmc_list_filter", args: [pred, list]}, ctx, b) do
     operand_ctx = Context.for_branch_arm(ctx)
@@ -19,7 +19,7 @@ defmodule Elmc.Backend.Plan.Lower.ListRecord do
 
   def try_compile_filter(_, _, _), do: :unsupported
 
-  @spec try_compile_map(map(), Context.t(), Builder.t()) ::
+  @spec try_compile_map(Types.runtime_call_input() | Types.ir_expr(), Context.t(), Builder.t()) ::
           {:ok, Types.reg() | :fn_out, Builder.t()} | :unsupported
   def try_compile_map(%{function: "elmc_list_map", args: [fun, list]}, ctx, b) do
     with {:ok, field} <- field_accessor_lambda(fun),

@@ -25,6 +25,10 @@ defmodule ElmEx.DebuggerContract.Payload do
   @type function_types :: %{optional(String.t()) => String.t()}
   @type view_source_locations :: %{optional(String.t()) => [SourceLocation.t()]}
 
+  @type msg_constructor_arities :: %{optional(String.t()) => non_neg_integer()}
+  @type msg_constructor_arg_types :: %{optional(String.t()) => String.t() | nil}
+  @type view_tree_payload :: %{optional(String.t()) => json_value(), optional(atom()) => json_value()}
+
   @type t :: %{
           optional(:source) => String.t(),
           optional(:source_byte_size) => non_neg_integer(),
@@ -44,8 +48,8 @@ defmodule ElmEx.DebuggerContract.Payload do
           optional(:init_cmd_calls) => [cmd_op_row()],
           optional(:init_params) => [String.t()],
           optional(:msg_constructors) => [String.t()],
-          optional(:msg_constructor_arities) => map(),
-          optional(:msg_constructor_arg_types) => map(),
+          optional(:msg_constructor_arities) => msg_constructor_arities(),
+          optional(:msg_constructor_arg_types) => msg_constructor_arg_types(),
           optional(:update_case_branches) => [String.t()],
           optional(:update_case_subject) => String.t() | nil,
           optional(:update_ctor_model_fields) => %{
@@ -65,7 +69,7 @@ defmodule ElmEx.DebuggerContract.Payload do
           optional(:main_program) => json_value(),
           optional(:ports) => [String.t()],
           optional(:port_module) => String.t() | nil,
-          optional(:view_tree) => map(),
+          optional(:view_tree) => view_tree_payload(),
           optional(:view_source_locations) => view_source_locations(),
           optional(:view_return_type) => String.t() | nil,
           optional(:function_types) => function_types(),

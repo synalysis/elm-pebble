@@ -18,7 +18,7 @@ defmodule Ide.Acp do
   Starts an agent, initializes ACP, and creates a session with IDE MCP tools.
   """
   @spec start_ide_session(keyword(), String.t(), keyword()) ::
-          {:ok, pid(), AcpTypes.json_rpc_result()} | {:error, atom() | String.t() | tuple()}
+          {:ok, pid(), AcpTypes.json_rpc_result()} | {:error, AcpTypes.acp_error()}
   def start_ide_session(agent_opts, cwd, session_opts \\ []) do
     with {:ok, client} <- start_agent(agent_opts),
          {:ok, _initialize} <-

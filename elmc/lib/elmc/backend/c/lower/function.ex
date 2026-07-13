@@ -10,6 +10,7 @@ defmodule Elmc.Backend.C.Lower.Function do
   alias Elmc.Backend.Plan
   alias Elmc.Backend.Plan.Optimize
   alias Elmc.Backend.Plan.RuntimeBuiltins
+  alias Elmc.Backend.Plan.Types
   alias Elmc.Backend.Plan.Types.{Block, FunctionPlan}
   alias Elmc.Backend.SizeProfile
 
@@ -414,10 +415,15 @@ defmodule Elmc.Backend.C.Lower.Function do
   end
 
   defp emit_state_union_switch(subject_s, arms, default_id, opts) do
-    if length(arms) >= @min_switch_arms do
-      emit_state_union_c_switch(subject_s, arms, default_id, opts)
-    else
-      emit_state_union_switch_chain(subject_s, arms, default_id, opts)
+    cond do
+      union_tag_int_switch?(arms) ->
+        emit_state_int_switch(union_tag_int_expr(subject_s), arms, default_id, opts)
+
+      length(arms) >= @min_switch_arms ->
+        emit_state_union_c_switch(subject_s, arms, default_id, opts)
+
+      true ->
+        emit_state_union_switch_chain(subject_s, arms, default_id, opts)
     end
   end
 
@@ -1082,10 +1088,15 @@ defmodule Elmc.Backend.C.Lower.Function do
   end
 
   defp emit_union_switch(subject_s, arms, default_id, opts) do
-    if length(arms) >= @min_switch_arms do
-      emit_union_c_switch(subject_s, arms, default_id, opts)
-    else
-      emit_switch_tag_chain(subject_s, arms, default_id, opts)
+    cond do
+      union_tag_int_switch?(arms) ->
+        emit_int_switch(union_tag_int_expr(subject_s), arms, default_id, opts)
+
+      length(arms) >= @min_switch_arms ->
+        emit_union_c_switch(subject_s, arms, default_id, opts)
+
+      true ->
+        emit_switch_tag_chain(subject_s, arms, default_id, opts)
     end
   end
 
@@ -1164,10 +1175,13 @@ defmodule Elmc.Backend.C.Lower.Function do
     |> String.trim()
   end
 
-  defp plan_union_tag_expr(subject_s) do
-    "(#{subject_s} && (#{subject_s})->tag == ELMC_TAG_INT ? elmc_as_int(#{subject_s}) : " <>
-      "(#{subject_s} && (#{subject_s})->tag == ELMC_TAG_TUPLE2 && (#{subject_s})->payload != NULL ? " <>
-      "elmc_as_int(((ElmcTuple2 *)(#{subject_s})->payload)->first) : -1))"
+  defp plan_union_tag_expr(subject_s), do: union_tag_int_expr(subject_s)
+
+  defp union_tag_int_expr(subject_s), do: "elmc_union_tag_as_int(#{subject_s})"
+
+  defp union_tag_int_switch?(arms) when is_list(arms) do
+    length(arms) >= @min_switch_arms and
+      SizeProfile.enum_tag_peel?(Process.get(:elmc_codegen_opts, %{}))
   end
 
   defp emit_int_switch_chain(subject_s, arms, default_id, opts) do
@@ -1365,7 +1379,7 @@ defmodule Elmc.Backend.C.Lower.Function do
   end
 
   @doc false
-  @spec prepared_owned_slots(FunctionPlan.t(), keyword()) :: {map(), non_neg_integer()}
+  @spec prepared_owned_slots(FunctionPlan.t(), keyword()) :: {Types.slot_map(), non_neg_integer()}
   def prepared_owned_slots(%FunctionPlan{} = plan, opts \\ []) do
     slots = prepare_owned_slots_map(plan, opts)
     {slots, owned_slot_count(slots)}
@@ -2296,7 +2310,7 @@ defmodule Elmc.Backend.C.Lower.Function do
   end
 
   @doc false
-  @spec all_defining_instrs(FunctionPlan.t(), non_neg_integer()) :: [map()]
+  @spec all_defining_instrs(FunctionPlan.t(), non_neg_integer()) :: Types.instr_list()
   def all_defining_instrs(%FunctionPlan{blocks: blocks}, reg) when is_integer(reg) do
     blocks
     |> Enum.flat_map(& &1.instrs)
@@ -2452,7 +2466,7 @@ defmodule Elmc.Backend.C.Lower.Function do
   end
 
   @doc false
-  @spec plan_use_refs(FunctionPlan.t(), non_neg_integer(), map(), MapSet.t()) :: [
+  @spec plan_use_refs(FunctionPlan.t(), non_neg_integer(), Types.function_decl_map(), MapSet.t()) :: [
           {:native_int_call | :native_operand | :boxed | :publish_fn_out, non_neg_integer()}
         ]
   def plan_use_refs(%FunctionPlan{} = plan, reg, decl_map, native_set) do

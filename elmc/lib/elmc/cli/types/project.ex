@@ -1,17 +1,9 @@
 defmodule Elmc.CLI.Types.Project do
   @moduledoc """
-  Minimal frontend project shape consumed by CLI manifest generation.
+  Frontend project shape consumed by CLI manifest generation.
   """
 
-  @type module_entry :: %{
-          required(:name) => String.t(),
-          optional(atom()) => term(),
-          optional(String.t()) => term()
-        }
+  alias ElmEx.Frontend.Project, as: FrontendProject
 
-  @type t :: %{
-          required(:modules) => [module_entry()],
-          optional(atom()) => term(),
-          optional(String.t()) => term()
-        }
+  @type t :: FrontendProject.t()
 end

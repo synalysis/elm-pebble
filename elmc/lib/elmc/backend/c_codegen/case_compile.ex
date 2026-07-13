@@ -274,7 +274,7 @@ defmodule Elmc.Backend.CCodegen.CaseCompile do
 
   defp fold_result_binding(_expr_code, _expr_var, _out), do: :error
 
-  @spec fold_rc_allocator_binding(String.t(), String.t(), String.t(), map()) ::
+  @spec fold_rc_allocator_binding(String.t(), String.t(), String.t(), Types.compile_env()) ::
           {:ok, String.t()} | :error
   defp fold_rc_allocator_binding(expr_code, expr_var, out, env) do
     if RcRuntimeEmit.rc_allocator_emit_mode?(env) do
@@ -794,7 +794,7 @@ defmodule Elmc.Backend.CCodegen.CaseCompile do
 
   defp external_vars(_expr, _bound), do: MapSet.new()
 
-  @spec battery_alert_case_probe(Types.compile_env(), term(), atom()) :: String.t()
+  @spec battery_alert_case_probe(Types.compile_env(), non_neg_integer() | :case, atom()) :: String.t()
   defp battery_alert_case_probe(_env, _branch_index, _position), do: ""
 
   defp branch_assignment_rc(env, out, function, call_args, counter) do

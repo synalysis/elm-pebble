@@ -3,11 +3,12 @@ defmodule Elmc.Backend.Plan.Fusion.ListIndexedReplace do
 
   alias Elmc.Backend.CCodegen.{FusionSupport, Host, Util}
   alias Elmc.Backend.Plan.Fusion.{Helper, Registry, Tuple2CaseTable}
+  alias Elmc.Backend.Plan.Types
 
   @indexed_map_targets ~w(List.indexedMap Elm.Kernel.List.indexedMap)
 
-  @spec try_plan(String.t(), map(), map(), keyword()) ::
-          {:ok, Elmc.Backend.Plan.Types.FunctionPlan.t()} | :error
+  @spec try_plan(String.t(), Types.function_decl(), Types.function_decl_map(), keyword()) ::
+          {:ok, Types.FunctionPlan.t()} | :error
   def try_plan(module_name, decl, _decl_map, _opts) do
     name = Map.get(decl, :name, "")
 

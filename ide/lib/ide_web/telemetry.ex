@@ -2,13 +2,13 @@ defmodule IdeWeb.Telemetry do
   use Supervisor
   import Telemetry.Metrics
 
-  @spec start_link(any()) :: Supervisor.on_start()
+  @spec start_link(term()) :: Supervisor.on_start()
   def start_link(arg) do
     Supervisor.start_link(__MODULE__, arg, name: __MODULE__)
   end
 
   @impl true
-  @spec init(any()) :: {:ok, tuple()} | :ignore
+  @spec init(term()) :: {:ok, {Supervisor.sup_flags(), [Supervisor.child_spec()]}} | :ignore
   def init(_arg) do
     children = [
       # Telemetry poller will execute the given period measurements

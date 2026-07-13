@@ -10,10 +10,13 @@ defmodule Elmc.Backend.Bytecode.Runtime do
   alias Elmc.Backend.Plan.RuntimeBuiltins
   alias Elmc.Backend.Plan.Types.FunctionPlan
 
+  @type value_key :: atom() | integer() | String.t()
+  @type value_map :: %{optional(value_key()) => value()}
+
   @type value ::
           integer()
           | list()
-          | map()
+          | value_map()
           | nil
           | {:tuple2, value(), value()}
           | {:closure, non_neg_integer(), [value()], {String.t(), String.t()}}
@@ -23,6 +26,8 @@ defmodule Elmc.Backend.Bytecode.Runtime do
           | {:pebble_cmd, atom(), non_neg_integer(), [value()]}
           | {:just, value()}
           | {:record, [value()]}
+  @type fn_registry :: %{optional({String.t(), String.t()}) => ([value()] -> value())}
+
   @type frame :: %{
           locals: [value()],
           params: [value()],
@@ -30,13 +35,13 @@ defmodule Elmc.Backend.Bytecode.Runtime do
           code: binary(),
           block_ips: %{non_neg_integer() => non_neg_integer()},
           fn_table: Elmc.Backend.Bytecode.FnTable.t(),
-          fn_registry: map(),
+          fn_registry: fn_registry(),
           plans: %{optional({String.t(), String.t()}) => FunctionPlan.t()},
           plan_key: {String.t(), String.t()},
           forward_refs: %{String.t() => value()}
         }
 
-  @spec run_function(FunctionPlan.t(), keyword()) :: {:ok, value()} | {:error, term()}
+  @spec run_function(FunctionPlan.t(), keyword()) :: {:ok, value()}
   def run_function(%FunctionPlan{} = plan, opts \\ []) do
     if FusionRunner.runnable?(plan) do
       case FusionRunner.run(plan, opts) do
@@ -69,7 +74,7 @@ defmodule Elmc.Backend.Bytecode.Runtime do
     run_section(section, opts)
   end
 
-  @spec run_section(Lower.section(), keyword()) :: {:ok, value()} | {:error, term()}
+  @spec run_section(Lower.section(), keyword()) :: {:ok, value()}
   def run_section(section, opts \\ []) do
     param_values = Keyword.get(opts, :params, [])
     fn_registry = Keyword.get(opts, :fn_registry, %{})

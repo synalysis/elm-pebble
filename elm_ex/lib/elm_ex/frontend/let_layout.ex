@@ -7,6 +7,8 @@ defmodule ElmEx.Frontend.LetLayout do
   body following on the next). Call `validate/1` on source before lexing/parsing.
   """
 
+  alias ElmEx.Types
+
   @inline_let_in_line ~r/\blet\s+.+\s+in(\s+|$)/u
 
   @doc """
@@ -37,7 +39,7 @@ defmodule ElmEx.Frontend.LetLayout do
   end
 
   @doc false
-  @spec parse_error(pos_integer()) :: {pos_integer(), :elm_ex_expr_parser, [String.t() | char()]}
+  @spec parse_error(pos_integer()) :: Types.expr_yecc_error()
   def parse_error(line) when is_integer(line) and line > 0 do
     {line, :elm_ex_expr_parser,
      [

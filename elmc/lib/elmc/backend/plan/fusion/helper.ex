@@ -1,9 +1,10 @@
 defmodule Elmc.Backend.Plan.Fusion.Helper do
   @moduledoc false
 
+  alias Elmc.Backend.Plan.Types
   alias Elmc.Backend.Plan.Types.FunctionPlan
 
-  @spec build_fusion_plan(String.t(), String.t(), map(), String.t()) :: FunctionPlan.t()
+  @spec build_fusion_plan(String.t(), String.t(), Types.function_decl(), String.t()) :: FunctionPlan.t()
   def build_fusion_plan(module_name, name, decl, c_body) when is_binary(c_body) do
     %FunctionPlan{
       module: module_name,
@@ -33,7 +34,7 @@ defmodule Elmc.Backend.Plan.Fusion.Helper do
 
   def maybe_put_fusion_arg_kinds(plan, _), do: plan
 
-  @spec attach_bytecode_fusion(FunctionPlan.t(), atom(), map()) :: FunctionPlan.t()
+  @spec attach_bytecode_fusion(FunctionPlan.t(), atom(), Types.fusion_data()) :: FunctionPlan.t()
   def attach_bytecode_fusion(plan, kind, data \\ %{}) when is_atom(kind) and is_map(data) do
     %{plan | fusion_kind: kind, fusion_data: data}
   end

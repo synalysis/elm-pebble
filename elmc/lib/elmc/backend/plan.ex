@@ -8,9 +8,11 @@ defmodule Elmc.Backend.Plan do
   alias Elmc.Backend.C.Lower.NativeReturn
   alias Elmc.Backend.CCodegen.Native.FunctionCall, as: NativeFunctionCall
   alias Elmc.Backend.CCodegen.RcRequired
+  alias Elmc.Backend.Plan.Types
   alias Elmc.Backend.Plan.Types.FunctionPlan
 
-  @spec primary_lowered?(map(), String.t(), map(), keyword()) :: boolean()
+  @spec primary_lowered?(Types.function_decl(), String.t(), Types.function_decl_map(), keyword()) ::
+          boolean()
   def primary_lowered?(decl, module_name, decl_map, opts \\ []) do
     opts = if opts == [], do: Process.get(:elmc_codegen_opts, []), else: opts
     name = Map.get(decl, :name, "")
@@ -98,6 +100,6 @@ defmodule Elmc.Backend.Plan do
   defdelegate shadow_stats(), to: Elmc.Backend.Plan.Shadow, as: :shadow_stats
   defdelegate reset_shadow_stats(), to: Elmc.Backend.Plan.Shadow, as: :reset_stats
 
-  @spec allocate_slots(FunctionPlan.t()) :: {map(), non_neg_integer()}
+  @spec allocate_slots(FunctionPlan.t()) :: {Types.slot_map(), non_neg_integer()}
   def allocate_slots(plan), do: Elmc.Backend.Plan.Allocate.run(plan)
 end

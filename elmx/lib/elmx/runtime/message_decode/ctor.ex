@@ -3,7 +3,7 @@ defmodule Elmx.Runtime.MessageDecode.Ctor do
 
   alias Elmx.Types
 
-  @spec build(String.t(), [term()]) :: Types.elm_msg()
+  @spec build(String.t(), [Types.elm_value()]) :: Types.elm_msg()
   def build(ctor, args) when is_binary(ctor) and is_list(args) do
     atom = String.to_atom(ctor)
 
@@ -23,7 +23,7 @@ defmodule Elmx.Runtime.MessageDecode.Ctor do
     Regex.match?(~r/^[A-Z][a-zA-Z0-9]*$/, token)
   end
 
-  @spec parse_scalar_token(String.t()) :: term()
+  @spec parse_scalar_token(String.t()) :: Types.scalar_token()
   def parse_scalar_token(token) do
     cond do
       token == "true" ->

@@ -13,7 +13,13 @@ defmodule IdeWeb.WorkspaceLive.PublishFlow do
 
   @type wire_input :: String.t() | integer() | boolean() | nil
   @type project_type :: :watchface | :watchapp
-  @type prepare_release_error :: PebbleToolchain.toolchain_error() | atom() | tuple()
+  @type prepare_release_tagged ::
+          {:missing_screenshot_path, String.t()}
+          | {:screenshot_not_found, String.t()}
+          | {:screenshot_copy_failed, String.t(), File.posix() | atom()}
+
+  @type prepare_release_error ::
+          PebbleToolchain.toolchain_error() | atom() | prepare_release_tagged()
   @type release_summary :: ProjectsTypes.release_defaults()
   @type publish_check :: PublishReadiness.readiness_check()
   @type screenshot_readiness :: PublishReadiness.screenshot_readiness()

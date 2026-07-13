@@ -3,10 +3,10 @@ defmodule Elmc.Backend.Plan.Lower.Intrinsics do
 
   alias Elmc.Backend.Plan.{Builder, Context, EpilogueRelease, Verify}
   alias Elmc.Backend.Plan.Lower.{Call, Expr, Function}
-  alias Elmc.Backend.Plan.Types.FunctionPlan
+  alias Elmc.Backend.Plan.Types
 
-  @spec try_lower(map(), String.t(), map(), keyword()) ::
-          {:ok, FunctionPlan.t()} | :not_intrinsic | {:error, term()}
+  @spec try_lower(Types.function_decl(), String.t(), Types.function_decl_map(), keyword()) ::
+          Types.lower_result() | :not_intrinsic
   def try_lower(decl, module_name, decl_map, opts) do
     case decl do
       %{name: "toInt", args: [param_name], expr: %{op: :case}} ->

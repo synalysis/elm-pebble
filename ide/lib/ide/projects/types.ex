@@ -4,7 +4,12 @@ defmodule Ide.Projects.Types do
   """
 
   alias Ide.Debugger.Types, as: DebuggerTypes
+  alias Ide.GitHub.Types, as: GitHubTypes
+  alias Ide.ProjectBundle
+  alias Ide.ProjectImport
+  alias Ide.Projects.BootstrapError
   alias Ide.Projects.FileTypes
+  alias Ide.Resources.Types, as: ResourceTypes
 
   @type wire_input :: DebuggerTypes.wire_input()
 
@@ -91,7 +96,17 @@ defmodule Ide.Projects.Types do
   @type project_attrs :: %{
           optional(String.t()) => String.t() | [String.t()] | boolean() | release_defaults() | github_config() | nil
         }
-  @type project_error :: atom() | String.t() | tuple() | Ecto.Changeset.t()
+  @type project_error ::
+          BootstrapError.bootstrap_reason()
+          | Ecto.Changeset.t()
+          | atom()
+          | String.t()
+          | File.posix()
+          | ProjectImport.import_error()
+          | ProjectBundle.bundle_error()
+          | ProjectBundle.import_source_error()
+          | GitHubTypes.clone_error()
+          | ResourceTypes.resource_error()
 
   @type create_result :: {:ok, Ide.Projects.Project.t()} | {:error, project_error()}
   @type update_result :: {:ok, Ide.Projects.Project.t()} | {:error, project_error()}

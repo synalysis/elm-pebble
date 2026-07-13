@@ -6,7 +6,7 @@ defmodule Elmx.Runtime.ViewOutput.Draw.Shapes do
 
   @type opts :: Types.view_output_opts()
 
-  @spec row(map(), opts()) :: Types.view_output_row() | nil
+  @spec row(Types.view_draw_node(), opts()) :: Types.view_output_row() | nil
   def row(%{"type" => "clear"} = node, _opts),
     do: %{"kind" => "clear", "color" => Geometry.int_field(node, "color", 0xC0)}
 

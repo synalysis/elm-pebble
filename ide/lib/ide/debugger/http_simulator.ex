@@ -4,9 +4,12 @@ defmodule Ide.Debugger.HttpSimulator do
   alias Ide.Debugger.Types
   alias Ide.Debugger.Types.SimulatorSettings
 
-  @type json_decoder_node :: tuple() | atom() | [json_decoder_node()]
-
-  @type json_decoder :: {:json_decoder, json_decoder_node()} | atom() | [json_decoder_node()]
+  @type json_decoder_input ::
+          Types.json_decoder()
+          | Types.json_decoder_spec()
+          | Types.json_primitive()
+          | nil
+          | function()
 
   @type json_leaf :: Types.wire_scalar() | Types.wire_map() | [json_leaf()]
 
@@ -32,7 +35,7 @@ defmodule Ide.Debugger.HttpSimulator do
 
   def simulated_response(_command, _weather), do: :skip
 
-  @spec simulate_json_body(json_decoder() | function() | nil, weather_map()) ::
+  @spec simulate_json_body(json_decoder_input(), weather_map()) ::
           {:ok, Types.http_simulated_response()} | :skip
   defp simulate_json_body(decoder, weather) when is_map(weather) do
     body = json_body_from_decoder(decoder, weather)
@@ -88,7 +91,7 @@ defmodule Ide.Debugger.HttpSimulator do
 
   @type json_object :: %{optional(String.t()) => json_leaf()}
 
-  @spec build_json_body(json_decoder(), weather_map()) :: json_object()
+  @spec build_json_body(Types.json_decoder(), weather_map()) :: json_object()
   def build_json_body(decoder, weather) when is_map(weather) do
     decoder_object(decoder, weather)
   end

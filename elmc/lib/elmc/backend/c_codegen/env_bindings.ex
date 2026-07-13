@@ -7,7 +7,7 @@ defmodule Elmc.Backend.CCodegen.EnvBindings do
   @spec same_binding?(Types.binding_name(), Types.binding_name()) :: boolean()
   def same_binding?(left, right), do: binding_key(left) == binding_key(right)
 
-  @spec binding_key(Types.binding_name()) :: String.t() | term()
+  @spec binding_key(Types.binding_name()) :: String.t() | Types.binding_name()
   def binding_key(value) when is_atom(value), do: Atom.to_string(value)
   def binding_key(value) when is_binary(value), do: value
   def binding_key(%{op: :var, name: name}), do: binding_key(name)
@@ -15,7 +15,7 @@ defmodule Elmc.Backend.CCodegen.EnvBindings do
   def binding_key(%{"op" => "var", "name" => name}), do: binding_key(name)
   def binding_key(value), do: value
 
-  @spec lookup_binding(Types.compile_env(), Types.binding_name()) :: term() | nil
+  @spec lookup_binding(Types.compile_env(), Types.binding_name()) :: Types.env_binding_value() | nil
   def lookup_binding(env, name) do
     Enum.find_value(env, fn {key, value} ->
       if same_binding?(key, name), do: value

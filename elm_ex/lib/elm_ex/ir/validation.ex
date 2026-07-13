@@ -154,7 +154,7 @@ defmodule ElmEx.IR.Validation do
   end
 
   # Helper: collect all nodes matching a given op
-  @spec collect_ops(Expr.t() | map(), Expr.op()) :: [Expr.t()]
+  @spec collect_ops(Expr.t(), Expr.op()) :: [Expr.t()]
   defp collect_ops(%{op: target_op} = expr, target_op) do
     [expr | collect_ops_children(expr, target_op)]
   end
@@ -165,7 +165,7 @@ defmodule ElmEx.IR.Validation do
 
   defp collect_ops(_, _), do: []
 
-  @spec collect_ops_children(Expr.t() | map(), Expr.op()) :: [Expr.t()]
+  @spec collect_ops_children(Expr.t(), Expr.op()) :: [Expr.t()]
   defp collect_ops_children(expr, target_op) when is_map(expr) do
     expr
     |> Map.values()
@@ -184,13 +184,13 @@ defmodule ElmEx.IR.Validation do
     end)
   end
 
-  @spec count_ops(Expr.t() | map(), Expr.op()) :: non_neg_integer()
+  @spec count_ops(Expr.t(), Expr.op()) :: non_neg_integer()
   defp count_ops(expr, target_op) do
     length(collect_ops(expr, target_op))
   end
 
   # Collect qualified function call targets
-  @spec collect_function_calls(Expr.t() | map(), String.t(), bound_names()) :: [function_key()]
+  @spec collect_function_calls(Expr.t(), String.t(), bound_names()) :: [function_key()]
   defp collect_function_calls(
          %{op: :qualified_call, target: target, args: args},
          module,

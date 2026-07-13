@@ -50,7 +50,11 @@ defmodule Ide.DataCase do
   @doc """
   Sets up the sandbox based on the test tags.
   """
-  @spec setup_sandbox(map()) :: :ok
+  @type test_tags :: %{
+          optional(atom()) => boolean() | integer() | atom() | String.t() | pos_integer() | nil
+        }
+
+  @spec setup_sandbox(test_tags()) :: :ok
   def setup_sandbox(tags) do
     sandbox_opts = [
       shared: not tags[:async],

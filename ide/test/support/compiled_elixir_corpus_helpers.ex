@@ -9,6 +9,12 @@ defmodule Ide.Debugger.CompiledElixirCorpusHelpers do
   @type launch_context :: DebuggerTypes.launch_context()
   @type wire_message :: DebuggerTypes.wire_map()
 
+  @type corpus_compile_error ::
+          ElmEx.Frontend.Bridge.Types.bridge_error()
+          | Elmx.Types.compile_error()
+          | String.t()
+          | atom()
+
   @spec corpus_enabled?() :: boolean()
   def corpus_enabled? do
     System.get_env("ELMX_TEMPLATE_CORPUS") in ["1", "true", "TRUE"]
@@ -26,13 +32,13 @@ defmodule Ide.Debugger.CompiledElixirCorpusHelpers do
 
   Kept only so old call sites can be migrated; always returns `false`.
   """
-  @spec corpus_compile_smoke_failure?(term()) :: boolean()
+  @spec corpus_compile_smoke_failure?(Elmx.Types.compile_error() | atom()) :: boolean()
   def corpus_compile_smoke_failure?(_reason), do: false
 
   @doc """
   Fails the test when elmx compile/codegen did not succeed (zero-gap debugger policy).
   """
-  @spec refute_compile_gap!(term()) :: no_return()
+  @spec refute_compile_gap!(Elmx.Types.compile_error() | atom() | String.t()) :: no_return()
   def refute_compile_gap!(reason) do
     raise ExUnit.AssertionError,
       message: "elmx compile gap (zero-gap policy): #{inspect(reason)}"
@@ -90,7 +96,7 @@ defmodule Ide.Debugger.CompiledElixirCorpusHelpers do
   @doc """
   Wire `Just` wrapper for optional companion bridge record fields.
   """
-  @spec companion_wire_just(term()) :: wire_message()
+  @spec companion_wire_just(DebuggerTypes.wire_input()) :: wire_message()
   def companion_wire_just(value), do: %{"ctor" => "Just", "args" => [value]}
 
   @doc """
@@ -490,7 +496,8 @@ defmodule Ide.Debugger.CompiledElixirCorpusHelpers do
   end
 
   @spec corpus_phone_init_execute!(String.t(), keyword()) ::
-          {:ok, map(), map()} | {:compile_error, term()}
+          {:ok, DebuggerTypes.elmx_manifest(), DebuggerTypes.wire_string_map()}
+          | {:compile_error, corpus_compile_error()}
   def corpus_phone_init_execute!(phone_workspace, opts \\ []) when is_binary(phone_workspace) do
     revision =
       Keyword.get(
@@ -549,7 +556,8 @@ defmodule Ide.Debugger.CompiledElixirCorpusHelpers do
   end
 
   @spec corpus_phone_step_execute!(String.t(), String.t(), keyword()) ::
-          {:ok, map(), map()} | {:compile_error, term()}
+          {:ok, DebuggerTypes.elmx_manifest(), DebuggerTypes.wire_string_map()}
+          | {:compile_error, corpus_compile_error()}
   def corpus_phone_step_execute!(phone_workspace, message, opts \\ [])
       when is_binary(phone_workspace) and is_binary(message) do
     revision =
@@ -611,7 +619,8 @@ defmodule Ide.Debugger.CompiledElixirCorpusHelpers do
   end
 
   @spec corpus_compile_and_execute_init!(String.t(), keyword()) ::
-          {:ok, map(), map()} | {:compile_error, term()}
+          {:ok, DebuggerTypes.elmx_manifest(), DebuggerTypes.wire_string_map()}
+          | {:compile_error, corpus_compile_error()}
   def corpus_compile_and_execute_init!(workspace, opts \\ []) when is_binary(workspace) do
     revision =
       Keyword.get(
@@ -654,7 +663,8 @@ defmodule Ide.Debugger.CompiledElixirCorpusHelpers do
   end
 
   @spec corpus_compile_and_execute_step!(String.t(), String.t(), keyword()) ::
-          {:ok, map(), map()} | {:compile_error, term()}
+          {:ok, DebuggerTypes.elmx_manifest(), DebuggerTypes.wire_string_map()}
+          | {:compile_error, corpus_compile_error()}
   def corpus_compile_and_execute_step!(workspace, message, opts \\ [])
       when is_binary(workspace) and is_binary(message) do
     revision =
@@ -716,7 +726,8 @@ defmodule Ide.Debugger.CompiledElixirCorpusHelpers do
   end
 
   @spec corpus_compile_and_execute_steps!(String.t(), [String.t()], keyword()) ::
-          {:ok, map(), map()} | {:compile_error, term()}
+          {:ok, DebuggerTypes.elmx_manifest(), DebuggerTypes.wire_string_map()}
+          | {:compile_error, corpus_compile_error()}
   def corpus_compile_and_execute_steps!(workspace, messages, opts \\ [])
       when is_binary(workspace) and is_list(messages) do
     revision =
@@ -829,7 +840,7 @@ defmodule Ide.Debugger.CompiledElixirCorpusHelpers do
     end)
   end
 
-  @spec companion_bridge_followup_step(wire_message(), DebuggerSimulatorSettings.t() | map()) ::
+  @spec companion_bridge_followup_step(wire_message(), DebuggerSimulatorSettings.wire_map()) ::
           {String.t(), wire_message()} | nil
   defp companion_bridge_followup_step(row, settings) when is_map(row) and is_map(settings) do
     source = Map.get(row, "source") || Map.get(row, :source)
@@ -859,8 +870,8 @@ defmodule Ide.Debugger.CompiledElixirCorpusHelpers do
   @spec companion_bridge_message_value(
           String.t(),
           wire_message(),
-          term(),
-          DebuggerSimulatorSettings.t() | map()
+          DebuggerTypes.wire_input() | nil,
+          DebuggerSimulatorSettings.wire_map()
         ) :: {:ok, wire_message()} | :error
   defp companion_bridge_message_value(callback, command, _existing_value, settings)
        when is_binary(callback) and is_map(command) and is_map(settings) do
@@ -874,8 +885,8 @@ defmodule Ide.Debugger.CompiledElixirCorpusHelpers do
     end
   end
 
-  @spec companion_bridge_callback_result(wire_message(), DebuggerSimulatorSettings.t() | map()) ::
-          {:ok, {:ok, term()} | {:error, String.t()}} | :error
+  @spec companion_bridge_callback_result(wire_message(), DebuggerSimulatorSettings.wire_map()) ::
+          {:ok, {:ok, DebuggerTypes.wire_value()} | {:error, String.t()}} | :error
   defp companion_bridge_callback_result(command, settings)
        when is_map(command) and is_map(settings) do
     api = Map.get(command, "api") || Map.get(command, :api)

@@ -14,7 +14,10 @@ defmodule Elmc.TestSupport.TemplateCompile do
     end
   end
 
-  @spec compile_watch_template(String.t(), keyword()) :: {:ok, term()} | {:error, term()}
+  alias Elmc.CLI.Types, as: ElmcCliTypes
+
+  @spec compile_watch_template(String.t(), keyword()) ::
+          {:ok, ElmcCliTypes.compile_result()} | {:error, ElmcCliTypes.compile_error()}
   def compile_watch_template(template_name, opts \\ []) when is_binary(template_name) do
     template_src = Path.join(@repo_root, "ide/priv/project_templates/#{template_name}")
     tmp = Path.join(System.tmp_dir!(), "elmc-template-#{template_name}-#{System.unique_integer([:positive])}")
@@ -82,21 +85,42 @@ defmodule Elmc.TestSupport.TemplateCompile do
       internal_path = Path.join(tmp, "protocol/src/Companion/Internal.elm")
       ide_dir = Path.join(@repo_root, "ide")
 
-      {_, 0} =
-        System.cmd(
-          "mix",
-          [
-            "run",
-            "-e",
-            "Ide.CompanionProtocolGenerator.generate_elm_internal(\"#{generated_types}\", \"#{internal_path}\")"
-          ],
-          cd: ide_dir,
-          stderr_to_stdout: true
-        )
+      with :ok <- ensure_ide_deps(ide_dir),
+           {_, 0} <-
+             System.cmd(
+               "mix",
+               [
+                 "run",
+                 "--no-start",
+                 "-e",
+                 "case Ide.CompanionProtocolGenerator.generate_elm_internal(\"#{generated_types}\", \"#{internal_path}\") do :ok -> :ok; err -> IO.inspect(err); System.halt(1) end"
+               ],
+               cd: ide_dir,
+               stderr_to_stdout: true
+             ) do
+        :ok
+      else
+        {:error, reason} ->
+          raise "failed to prepare ide deps for Companion/Internal.elm generation: #{reason}"
+
+        {output, _} ->
+          raise "failed to generate Companion/Internal.elm via ide mix run:\n#{output}"
+      end
 
       ["protocol/src" | sources]
     else
       sources
+    end
+  end
+
+  defp ensure_ide_deps(ide_dir) do
+    if File.regular?(Path.join(ide_dir, "deps/phoenix/mix.exs")) do
+      :ok
+    else
+      case System.cmd("mix", ["deps.get"], cd: ide_dir, stderr_to_stdout: true) do
+        {_, 0} -> :ok
+        {output, _} -> {:error, String.slice(output, -2000, 2000)}
+      end
     end
   end
 
@@ -108,7 +132,11 @@ defmodule Elmc.TestSupport.TemplateCompile do
     end
   end
 
-  @spec decl_map_from_result(map()) :: map()
+  alias Elmc.CLI.Types, as: CliTypes
+
+  @spec decl_map_from_result(CliTypes.compile_result()) :: %{
+          optional({String.t(), String.t()}) => ElmEx.IR.Declaration.t()
+        }
   def decl_map_from_result(%{ir: ir}) do
     ir.modules
     |> Enum.flat_map(fn mod ->

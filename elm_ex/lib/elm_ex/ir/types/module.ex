@@ -3,7 +3,7 @@ defmodule ElmEx.IR.Types.Module do
 
   alias ElmEx.IR.Types.{Declaration, UnionEntry}
 
-  @type unions :: %{String.t() => UnionEntry.t() | map()}
+  @type unions :: %{String.t() => UnionEntry.t() | UnionEntry.wire_union_entry()}
 
   @type struct_t :: %ElmEx.IR.Module{
           name: String.t(),

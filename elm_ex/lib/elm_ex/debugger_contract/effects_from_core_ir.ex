@@ -35,7 +35,7 @@ defmodule ElmEx.DebuggerContract.EffectsFromCoreIR do
     end
   end
 
-  @spec modules_list(CoreIRTypes.wire_core_ir() | map()) :: [CoreIRTypes.Module.wire_t()]
+  @spec modules_list(CoreIRTypes.wire_core_ir()) :: [CoreIRTypes.Module.wire_t()]
   def modules_list(%{"modules" => modules}) when is_list(modules), do: modules
   def modules_list(%{modules: modules}) when is_list(modules), do: modules
   def modules_list(_), do: []
@@ -109,7 +109,7 @@ defmodule ElmEx.DebuggerContract.EffectsFromCoreIR do
     }
   end
 
-  @spec declaration_to_frontend(CoreIRTypes.Module.wire_declaration() | map()) ::
+  @spec declaration_to_frontend(CoreIRTypes.Module.wire_declaration() | CoreIRTypes.wire_map()) ::
           AstTypes.declaration() | nil
   defp declaration_to_frontend(%{"kind" => "function", "name" => name} = decl)
        when is_binary(name) do

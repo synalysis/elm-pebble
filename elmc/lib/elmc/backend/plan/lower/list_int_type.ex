@@ -1,10 +1,11 @@
 defmodule Elmc.Backend.Plan.Lower.ListIntType do
   @moduledoc false
 
+  alias Elmc.Backend.Plan.Types
   alias Elmc.Backend.CCodegen.TypeParsing
   alias Elmc.Backend.Plan.Context
 
-  @spec list_int_subject?(Context.t(), map()) :: boolean()
+  @spec list_int_subject?(Context.t(), Types.ir_expr()) :: boolean()
   def list_int_subject?(%Context{} = ctx, %{op: :var, name: name}) when is_binary(name),
     do: list_int_var?(ctx, name)
 

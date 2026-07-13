@@ -5,11 +5,13 @@ defmodule Elmc.Backend.CCodegen.FilterMapRowDrop do
   Matches when row-full and row-slice helpers are verified from `decl_map`, not by name.
   """
 
+  alias Elmc.Backend.CCodegen.Types
+
   alias Elmc.Backend.CCodegen.FusionSupport
   alias Elmc.Backend.CCodegen.RcRuntimeEmit
   alias Elmc.Backend.CCodegen.Util
 
-  @spec try_emit(String.t(), String.t(), map() | nil, map()) ::
+  @spec try_emit(String.t(), String.t(), Types.ir_expr() | nil, Types.function_decl_map()) ::
           {:ok, String.t(), [FusionSupport.callee_key()]}
           | {:ok, String.t(), [FusionSupport.callee_key()], :rc_native}
           | :error
@@ -313,8 +315,8 @@ defmodule Elmc.Backend.CCodegen.FilterMapRowDrop do
   end
 
   @doc false
-  @spec extract_fusion_data(String.t(), String.t(), map() | nil, map()) ::
-          {:ok, :filter_map_row_drop, map()} | :error
+  @spec extract_fusion_data(String.t(), String.t(), Types.ir_expr() | nil, Types.function_decl_map()) ::
+          {:ok, :filter_map_row_drop, Types.fusion_metadata()} | :error
   def extract_fusion_data(module_name, _name, expr, decl_map) do
     with {:ok, rows_var, cols_var, row_full, row_cells} <- parse(expr),
          {:ok, rows} <- FusionSupport.resolve_int_constant(decl_map, module_name, rows_var),

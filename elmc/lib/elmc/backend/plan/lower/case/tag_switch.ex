@@ -11,7 +11,7 @@ defmodule Elmc.Backend.Plan.Lower.Case.TagSwitch do
   # compile_maybe_nothing_case; list ctors stay excluded here.
   @excluded_names MapSet.new(["Just", "Nothing", "::", "[]"])
 
-  @spec branches?(list()) :: boolean()
+  @spec branches?(Types.case_branches()) :: boolean()
   def branches?(branches) when is_list(branches) do
     tagged? =
       Enum.any?(branches, fn branch ->
@@ -30,8 +30,8 @@ defmodule Elmc.Backend.Plan.Lower.Case.TagSwitch do
 
   def branches?(_), do: false
 
-  @spec compile(map(), list(), Context.t(), Builder.t()) ::
-          {:ok, Types.reg() | :fn_out, Builder.t()} | :unsupported
+  @spec compile(Types.ir_expr(), Types.case_branches(), Context.t(), Builder.t()) ::
+          Types.compile_result_required()
   def compile(subject, branches, ctx, b) do
     with {:ok, subj_reg, b1} <- Expr.compile(subject, ctx, b),
          {switch_reg, b_peel} <- maybe_peel_enum_tag(subject, subj_reg, b1) do

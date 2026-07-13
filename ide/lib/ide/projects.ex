@@ -21,7 +21,7 @@ defmodule Ide.Projects do
   alias Ide.ProjectTemplates
   alias Ide.Projects.BootstrapError
 
-  @type workspace_error :: atom() | File.posix() | tuple() | String.t()
+  @type workspace_error :: ProjectTemplates.template_error()
   alias Ide.PebblePreferences
   alias Ide.Repo
 
@@ -89,9 +89,6 @@ defmodule Ide.Projects do
               maybe_activate_first(bootstrapped)
               get_project!(bootstrapped.id)
 
-            {:error, %Ecto.Changeset{} = changeset} ->
-              rollback_bootstrap(project, :create, changeset, template: template_key(attrs))
-
             {:error, reason} ->
               rollback_bootstrap(project, :create, reason, template: template_key(attrs))
           end
@@ -131,9 +128,6 @@ defmodule Ide.Projects do
               {:ok, bootstrapped} ->
                 maybe_activate_first(bootstrapped)
                 get_project!(bootstrapped.id)
-
-              {:error, %Ecto.Changeset{} = changeset} ->
-                rollback_bootstrap(project, :import, changeset, source_path: source_path)
 
               {:error, reason} ->
                 rollback_bootstrap(project, :import, reason, source_path: source_path)

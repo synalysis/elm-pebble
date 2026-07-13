@@ -7,8 +7,8 @@ defmodule ElmEx.CoreIR.Types.CoreIR do
 
   @type t :: %ElmEx.CoreIR{
           version: String.t(),
-          modules: [Module.t() | map()],
-          diagnostics: [Diagnostic.t() | map()],
+          modules: [Module.t() | Module.wire_t()],
+          diagnostics: [Diagnostic.t() | Diagnostic.wire_t()],
           deterministic_sha256: String.t()
         }
 end

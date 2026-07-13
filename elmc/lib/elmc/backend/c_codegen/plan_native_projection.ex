@@ -2,12 +2,12 @@ defmodule Elmc.Backend.CCodegen.PlanNativeProjection do
   @moduledoc false
 
   alias Elmc.Backend.C.Lower.NativeReturn
-  alias Elmc.Backend.CCodegen.{Fusion, FunctionCallAbi, FunctionEmit, Host, Native.FunctionCall, RcRequired, Util}
+  alias Elmc.Backend.CCodegen.{Fusion, FunctionCallAbi, FunctionEmit, Host, Native.FunctionCall, RcRequired, Types, Util}
   alias Elmc.Backend.Plan
 
   @type projection_kind :: :native_int | :native_bool
 
-  @spec eligible?(map(), String.t(), map()) :: boolean()
+  @spec eligible?(Types.function_decl(), String.t(), Types.function_decl_map()) :: boolean()
   def eligible?(decl, module_name, decl_map) do
     Plan.primary_lowered?(decl, module_name, decl_map) and
       is_nil(NativeReturn.cached_kind({module_name, decl.name})) and
@@ -22,7 +22,7 @@ defmodule Elmc.Backend.CCodegen.PlanNativeProjection do
       projection_kind(decl) in [:native_int, :native_bool]
   end
 
-  @spec projection_kind(map()) :: projection_kind | :boxed
+  @spec projection_kind(Types.function_decl()) :: projection_kind | :boxed
   def projection_kind(%{type: type}) when is_binary(type) do
     case Host.function_return_type(type) do
       "Int" -> :native_int
@@ -33,7 +33,7 @@ defmodule Elmc.Backend.CCodegen.PlanNativeProjection do
 
   def projection_kind(_), do: :boxed
 
-  @spec emit(map(), String.t(), map()) :: String.t()
+  @spec emit(Types.function_decl(), String.t(), Types.function_decl_map()) :: String.t()
   def emit(decl, module_name, decl_map) do
     c_name = Util.module_fn_name(module_name, decl.name)
     kind = projection_kind(decl)
@@ -55,7 +55,7 @@ defmodule Elmc.Backend.CCodegen.PlanNativeProjection do
     |> String.trim()
   end
 
-  @spec prototype(map(), String.t(), map()) :: String.t()
+  @spec prototype(Types.function_decl(), String.t(), Types.function_decl_map()) :: String.t()
   def prototype(decl, module_name, decl_map) do
     c_name = Util.module_fn_name(module_name, decl.name)
     kind = projection_kind(decl)

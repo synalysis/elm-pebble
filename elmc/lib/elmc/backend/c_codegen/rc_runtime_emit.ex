@@ -8,6 +8,7 @@ defmodule Elmc.Backend.CCodegen.RcRuntimeEmit do
 
   alias Elmc.Backend.CCodegen.CaseCompile
   alias Elmc.Backend.CCodegen.ListLoopCodegen
+  alias Elmc.Backend.CCodegen.Types
   alias Elmc.Backend.CCodegen.ValueSlots
 
   @rc_allocators MapSet.new([
@@ -558,11 +559,11 @@ defmodule Elmc.Backend.CCodegen.RcRuntimeEmit do
     end
   end
 
-  @spec compare_order_slot(map(), non_neg_integer()) :: {String.t(), non_neg_integer()}
+  @spec compare_order_slot(Types.compile_env(), non_neg_integer()) :: {String.t(), non_neg_integer()}
   def compare_order_slot(env, counter), do: CaseCompile.fresh_var(counter, env)
 
   @doc false
-  @spec fn_out_alloc_target(map()) :: String.t() | nil
+  @spec fn_out_alloc_target(Types.compile_env()) :: String.t() | nil
   def fn_out_alloc_target(env) do
     cond do
       function_tail_compile?(env) and
@@ -581,12 +582,12 @@ defmodule Elmc.Backend.CCodegen.RcRuntimeEmit do
   @doc """
   Compile env for binop/call/compare operands. Never allocate into `*out` mid-body.
   """
-  @spec operand_env(map()) :: map()
+  @spec operand_env(Types.compile_env()) :: Types.compile_env()
   def operand_env(env),
     do: env |> Map.delete(:__allow_fn_out_slot__) |> Map.delete(:__branch_out__)
 
   @doc "Result slot for a runtime-call expression: branch/owned out, or a fresh owned slot."
-  @spec compile_result_slot(map(), non_neg_integer()) :: {String.t(), non_neg_integer()}
+  @spec compile_result_slot(Types.compile_env(), non_neg_integer()) :: {String.t(), non_neg_integer()}
   def compile_result_slot(env, counter) do
     if Map.get(env, :__transfer_operand__, false) do
       CaseCompile.fresh_var(counter, env)
@@ -614,7 +615,7 @@ defmodule Elmc.Backend.CCodegen.RcRuntimeEmit do
   end
 
   @doc "Out slot for RC function calls."
-  @spec compile_call_result_slot(map(), non_neg_integer()) :: {String.t(), non_neg_integer()}
+  @spec compile_call_result_slot(Types.compile_env(), non_neg_integer()) :: {String.t(), non_neg_integer()}
   def compile_call_result_slot(env, counter), do: compile_result_slot(env, counter)
 
   defp branch_out_slot?(env, out) do
@@ -623,7 +624,7 @@ defmodule Elmc.Backend.CCodegen.RcRuntimeEmit do
   end
 
   @doc "Out slot for string/append fusion: branch out or nested into_out."
-  @spec append_out_target(map()) :: String.t() | nil
+  @spec append_out_target(Types.compile_env()) :: String.t() | nil
   def append_out_target(env) do
     fn_out_alloc_target(env) || Map.get(env, :__branch_out__) || nested_out_target(env)
   end
@@ -632,7 +633,7 @@ defmodule Elmc.Backend.CCodegen.RcRuntimeEmit do
   Result slot for list/string append: scratch for call operands, fresh branch slot for tails.
   Returned reg must match the slot `assign_call/4` writes (via `ensure_fresh_assign_target/1`).
   """
-  @spec append_result_slot(map(), non_neg_integer()) :: {String.t(), non_neg_integer()}
+  @spec append_result_slot(Types.compile_env(), non_neg_integer()) :: {String.t(), non_neg_integer()}
   def append_result_slot(env, counter) do
     cond do
       Map.get(env, :__transfer_operand__, false) ->
@@ -646,11 +647,11 @@ defmodule Elmc.Backend.CCodegen.RcRuntimeEmit do
     end
   end
 
-  @spec with_function_out_target(map()) :: map()
+  @spec with_function_out_target(Types.compile_env()) :: Types.compile_env()
   def with_function_out_target(env), do: Map.put(env, :__into_out__, function_out_ref())
 
   @doc "Compile env for the function's root tail expression only."
-  @spec function_tail_env(map()) :: map()
+  @spec function_tail_env(Types.compile_env()) :: Types.compile_env()
   def function_tail_env(env) do
     env
     |> Map.put(:__function_tail_compile__, true)
@@ -658,11 +659,11 @@ defmodule Elmc.Backend.CCodegen.RcRuntimeEmit do
     |> Map.put(:__allow_fn_out_slot__, true)
   end
 
-  @spec function_tail_compile?(map()) :: boolean()
+  @spec function_tail_compile?(Types.compile_env()) :: boolean()
   def function_tail_compile?(env), do: Map.get(env, :__function_tail_compile__, false)
 
   @doc "Strip tail-only out targeting from let values, operands, and nested scopes."
-  @spec strip_function_tail_scope(map()) :: map()
+  @spec strip_function_tail_scope(Types.compile_env()) :: Types.compile_env()
   def strip_function_tail_scope(env) do
     env
     |> Map.delete(:__function_tail_compile__)
@@ -674,7 +675,7 @@ defmodule Elmc.Backend.CCodegen.RcRuntimeEmit do
   @doc """
   `__into_out__` when safe for nested subexpressions (never the function tail slot).
   """
-  @spec nested_out_target(map()) :: String.t() | nil
+  @spec nested_out_target(Types.compile_env()) :: String.t() | nil
   def nested_out_target(env) do
     case Map.get(env, :__into_out__) do
       @function_out_marker -> nil
@@ -684,7 +685,7 @@ defmodule Elmc.Backend.CCodegen.RcRuntimeEmit do
   end
 
   @doc "Out slot for a direct tail call (`forward x = callee x x`)."
-  @spec tail_call_out_target(map()) :: String.t() | nil
+  @spec tail_call_out_target(Types.compile_env()) :: String.t() | nil
   def tail_call_out_target(env) do
     case Map.get(env, :__into_out__) do
       @function_out_marker ->
@@ -769,7 +770,7 @@ defmodule Elmc.Backend.CCodegen.RcRuntimeEmit do
   def take_wrapper_call?(rhs), do: allocator_call?(rhs)
 
   @doc false
-  @spec take_wrapper_assign(String.t(), String.t(), String.t(), map(), keyword()) :: String.t()
+  @spec take_wrapper_assign(String.t(), String.t(), String.t(), Types.compile_env(), keyword()) :: String.t()
   def take_wrapper_assign(out, alloc_fn, call_args, env \\ %{}, opts \\ []) do
     opts = Keyword.merge([env: env, return_on_fail?: not rc_allocator_emit_mode?(env)], opts)
 
@@ -800,11 +801,11 @@ defmodule Elmc.Backend.CCodegen.RcRuntimeEmit do
 
   def rc_allocator?(_), do: false
 
-  @spec rc_mode?(map()) :: boolean()
+  @spec rc_mode?(Types.compile_env()) :: boolean()
   def rc_mode?(env),
     do: Map.get(env, :__rc_required__, false) and Map.get(env, :__rc_catch__, false)
 
-  @spec rc_allocator_emit_mode?(map()) :: boolean()
+  @spec rc_allocator_emit_mode?(Types.compile_env()) :: boolean()
   def rc_allocator_emit_mode?(env) when is_map(env) do
     Map.get(env, :__rc_required__, false) or Map.get(env, :__rc_catch__, false) or
       Map.get(env, :__native_rc_out__, false) or
@@ -813,7 +814,7 @@ defmodule Elmc.Backend.CCodegen.RcRuntimeEmit do
 
   def rc_allocator_emit_mode?(_), do: false
 
-  @spec rc_catch_env(map()) :: map()
+  @spec rc_catch_env(Types.compile_env()) :: Types.compile_env()
   def rc_catch_env(env), do: Map.put(env, :__rc_catch__, true)
 
   @spec rc_style_codegen_body?(String.t()) :: boolean()
@@ -821,7 +822,7 @@ defmodule Elmc.Backend.CCodegen.RcRuntimeEmit do
     body =~ "CHECK_RC(" or body =~ ~r/\bRc\s*=/ or body =~ "owned[" or body =~ "CATCH_BEGIN"
   end
 
-  @spec generic_helper_extraction_allowed?(map(), String.t()) :: boolean()
+  @spec generic_helper_extraction_allowed?(Types.compile_env(), String.t()) :: boolean()
   def generic_helper_extraction_allowed?(env, body) when is_binary(body) do
     not Map.get(env, :__rc_catch__, false) and
       not Map.get(env, :__rc_required__, false) and
@@ -831,7 +832,7 @@ defmodule Elmc.Backend.CCodegen.RcRuntimeEmit do
   end
 
   @doc false
-  @spec allocator_assign(map(), String.t(), String.t(), String.t(), keyword()) :: String.t()
+  @spec allocator_assign(Types.compile_env(), String.t(), String.t(), String.t(), keyword()) :: String.t()
   def allocator_assign(env, out, function, call_args, opts \\ []) do
     opts = Keyword.put_new(opts, :env, env)
 
@@ -842,7 +843,7 @@ defmodule Elmc.Backend.CCodegen.RcRuntimeEmit do
     end
   end
 
-  @spec assign_call(map(), String.t(), String.t(), String.t()) :: String.t()
+  @spec assign_call(Types.compile_env(), String.t(), String.t(), String.t()) :: String.t()
   def assign_call(env, out, function, call_args) do
     cond do
       function == "elmc_append" and rc_allocator_emit_mode?(env) ->
@@ -877,7 +878,7 @@ defmodule Elmc.Backend.CCodegen.RcRuntimeEmit do
   `out` slot. Restores ValueSlots marks between codegen passes so
   `ensure_fresh_assign_target/1` does not drift to a different owned index per branch.
   """
-  @spec mutually_exclusive_assign_into(map(), String.t(), String.t(), String.t()) :: String.t()
+  @spec mutually_exclusive_assign_into(Types.compile_env(), String.t(), String.t(), String.t()) :: String.t()
   def mutually_exclusive_assign_into(env, out, function, call_args) do
     parent = ValueSlots.snapshot()
     ValueSlots.restore(parent)
@@ -889,7 +890,7 @@ defmodule Elmc.Backend.CCodegen.RcRuntimeEmit do
   @doc """
   Like `allocator_assign/5`, but safe when emitting mutually exclusive branches to one out slot.
   """
-  @spec mutually_exclusive_allocator_assign(map(), String.t(), String.t(), String.t(), keyword()) ::
+  @spec mutually_exclusive_allocator_assign(Types.compile_env(), String.t(), String.t(), String.t(), keyword()) ::
           String.t()
   def mutually_exclusive_allocator_assign(env, out, function, call_args, opts \\ []) do
     parent = ValueSlots.snapshot()
@@ -902,7 +903,7 @@ defmodule Elmc.Backend.CCodegen.RcRuntimeEmit do
   @doc """
   Assign into a pre-declared slot (for example `owned[3]` in if-branches).
   """
-  @spec assign_into(map(), String.t(), String.t(), String.t()) :: String.t()
+  @spec assign_into(Types.compile_env(), String.t(), String.t(), String.t()) :: String.t()
   def assign_into(env, out, function, call_args) do
     branch_final_assign_into(env, out, function, call_args, fresh_out?: true)
   end
@@ -913,7 +914,7 @@ defmodule Elmc.Backend.CCodegen.RcRuntimeEmit do
   When `out` is the function tail slot (`ELMC_FN_OUT`), never reroute through a fresh
   owned slot — only the branch's last statement may publish to `*out`.
   """
-  @spec branch_final_assign_into(map(), String.t(), String.t(), String.t(), keyword()) :: String.t()
+  @spec branch_final_assign_into(Types.compile_env(), String.t(), String.t(), String.t(), keyword()) :: String.t()
   def branch_final_assign_into(env, out, function, call_args, opts \\ []) do
     fresh_out? = Keyword.get(opts, :fresh_out?, false)
 
@@ -963,7 +964,7 @@ defmodule Elmc.Backend.CCodegen.RcRuntimeEmit do
   end
 
   @doc "List.cons with retain semantics for borrowed head/tail operands."
-  @spec list_cons_retain_assign(String.t(), String.t(), map(), keyword()) :: String.t()
+  @spec list_cons_retain_assign(String.t(), String.t(), Types.compile_env(), keyword()) :: String.t()
   def list_cons_retain_assign(out, call_args, env \\ %{}, opts \\ []) do
     if rc_allocator_emit_mode?(env) do
       int_list_cons_assign(env, out, call_args, opts)
@@ -997,7 +998,7 @@ defmodule Elmc.Backend.CCodegen.RcRuntimeEmit do
   end
 
   @doc "RC assign in catch blocks; take wrapper otherwise."
-  @spec assign_or_fusion(map(), String.t(), String.t(), String.t()) :: String.t()
+  @spec assign_or_fusion(Types.compile_env(), String.t(), String.t(), String.t()) :: String.t()
   def assign_or_fusion(env, out, function, call_args) do
     if rc_allocator_emit_mode?(env) do
       allocator_assign(env, out, function, call_args)
@@ -1010,7 +1011,7 @@ defmodule Elmc.Backend.CCodegen.RcRuntimeEmit do
   def take_wrapper_for(function) when is_binary(function), do: Map.get(@take_wrappers, function)
 
   @doc "RC allocator assign for fused/native C snippets (never uses break)."
-  @spec fusion_assign(String.t(), String.t(), String.t(), map(), keyword()) :: String.t()
+  @spec fusion_assign(String.t(), String.t(), String.t(), Types.compile_env(), keyword()) :: String.t()
   def fusion_assign(out, function, call_args, env \\ %{}, opts \\ []) do
     cond do
       rc_allocator_emit_mode?(env) ->
@@ -1033,7 +1034,7 @@ defmodule Elmc.Backend.CCodegen.RcRuntimeEmit do
   end
 
   @doc "RC allocator return for fused C snippets."
-  @spec fusion_return(String.t(), String.t(), String.t(), map()) :: String.t()
+  @spec fusion_return(String.t(), String.t(), String.t(), Types.compile_env()) :: String.t()
   def fusion_return(_out, function, call_args, env \\ %{}) do
     cond do
       rc_allocator_emit_mode?(env) ->
@@ -1140,7 +1141,7 @@ defmodule Elmc.Backend.CCodegen.RcRuntimeEmit do
   end
 
   @doc "Emit allocator assign: CHECK_RC in RC/catch bodies, take wrapper or legacy block otherwise."
-  @spec check_rc_take(String.t(), String.t(), String.t(), map(), keyword()) :: String.t()
+  @spec check_rc_take(String.t(), String.t(), String.t(), Types.compile_env(), keyword()) :: String.t()
   def check_rc_take(out, function, call_args, env \\ %{}, opts \\ []) do
     if rc_allocator_emit_mode?(env) do
       rc_allocator_stmt(env, out, function, call_args, opts)
@@ -1150,7 +1151,7 @@ defmodule Elmc.Backend.CCodegen.RcRuntimeEmit do
   end
 
   @doc "After a loop that may set Rc via CHECK_RC, break out of CATCH_BEGIN when failed."
-  @spec loop_exit_check_rc(map()) :: String.t()
+  @spec loop_exit_check_rc(Types.compile_env()) :: String.t()
   def loop_exit_check_rc(env \\ %{}) do
     if rc_allocator_emit_mode?(env), do: "CHECK_RC(Rc);", else: ""
   end
@@ -1179,7 +1180,7 @@ defmodule Elmc.Backend.CCodegen.RcRuntimeEmit do
 
   Uses the same owned-slot convention as `fusion_tuple2_take_int_out/4`.
   """
-  @spec fusion_tuple2_take_int_return(String.t(), String.t(), String.t(), map(), String.t()) ::
+  @spec fusion_tuple2_take_int_return(String.t(), String.t(), String.t(), Types.compile_env(), String.t()) ::
           String.t()
   def fusion_tuple2_take_int_return(_out, left, int_expr, env \\ %{}, owned_slot \\ "owned[0]") do
     failure = failure_return(env)
@@ -1224,7 +1225,7 @@ defmodule Elmc.Backend.CCodegen.RcRuntimeEmit do
   defp rc_owned_slot?(out), do: ValueSlots.owned_ref?(out)
 
   @doc false
-  @spec rc_allocator_stmt(map(), String.t(), String.t(), String.t(), keyword()) :: String.t()
+  @spec rc_allocator_stmt(Types.compile_env(), String.t(), String.t(), String.t(), keyword()) :: String.t()
   def rc_allocator_stmt(env, out, function, call_args, opts \\ []) do
     out =
       if function_out_ref?(out) or not Keyword.get(opts, :fresh_out?, true) do

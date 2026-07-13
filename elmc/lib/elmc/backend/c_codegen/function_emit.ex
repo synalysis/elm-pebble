@@ -843,6 +843,10 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
       case Plan.lower_function(decl, module_name, decl_map, rc_required: rc_required?) do
            {:ok, %{fusion_c: fusion_c, fusion_emit: mode}}
            when is_binary(fusion_c) and fusion_c != "" and mode in [:helper_only, :public_native] ->
+          if mode == :helper_only do
+            Fusion.register_rc_native_only(module_name, decl.name)
+          end
+
           Process.put(
             :elmc_generic_helper_defs,
             [fusion_c | Process.get(:elmc_generic_helper_defs, [])]
@@ -3315,7 +3319,7 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
   defp native_return_prefix(return_kind), do: "#{NativeFunctionCall.c_return_type(return_kind)} "
 
   @doc false
-  @spec unused_arg_casts([{term(), String.t(), non_neg_integer()}], iolist()) :: String.t()
+  @spec unused_arg_casts([{String.t(), String.t(), non_neg_integer()}], iolist()) :: String.t()
   def unused_arg_casts(arg_bindings, body_parts) do
     body_text = body_parts |> List.flatten() |> Enum.join("\n")
 

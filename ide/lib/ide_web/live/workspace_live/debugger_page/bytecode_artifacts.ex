@@ -1,11 +1,21 @@
 defmodule IdeWeb.WorkspaceLive.DebuggerPage.BytecodeArtifacts do
   @moduledoc false
 
+  alias Ide.Debugger.BytecodeTypes
   alias IdeWeb.WorkspaceLive.DebuggerPage.ModelMetadata
   alias IdeWeb.WorkspaceLive.DebuggerSupport.Types, as: SupportTypes
 
   @type runtime :: SupportTypes.execution_model() | nil
-  @type summary :: map() | nil
+  @type summary :: BytecodeTypes.summary() | nil
+  @type function_row :: BytecodeTypes.function_row()
+  @type smoke_status :: %{
+          optional(:target) => {String.t(), String.t()},
+          optional(:status) => :ok | :error,
+          optional(:text) => String.t(),
+          optional(:error) => String.t()
+        }
+
+  @type coverage_preview_row :: BytecodeTypes.failed_preview_row()
 
   @spec summary(runtime()) :: summary()
   def summary(runtime) do
@@ -57,7 +67,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage.BytecodeArtifacts do
 
   def headline(_), do: nil
 
-  @spec main_functions(summary()) :: [map()]
+  @spec main_functions(summary()) :: [function_row()]
   def main_functions(manifest) when is_map(manifest) do
     manifest
     |> Map.get("functions", [])
@@ -69,13 +79,13 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage.BytecodeArtifacts do
 
   def main_functions(_), do: []
 
-  @spec format_result(term()) :: String.t()
+  @spec format_result(BytecodeTypes.smoke_param()) :: String.t()
   def format_result(result) do
     result
     |> inspect(limit: 8, printable_limit: 240, width: 80)
   end
 
-  @spec smoke_label(map() | nil) :: String.t() | nil
+  @spec smoke_label(smoke_status() | nil) :: String.t() | nil
   def smoke_label(nil), do: nil
 
   def smoke_label(%{target: {module, name}, status: :ok, text: text}) when is_binary(text) do
@@ -88,7 +98,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage.BytecodeArtifacts do
 
   def smoke_label(_), do: nil
 
-  @spec skipped_preview(summary()) :: [map()]
+  @spec skipped_preview(summary()) :: [coverage_preview_row()]
   def skipped_preview(manifest) when is_map(manifest) do
     manifest
     |> Map.get("plan_coverage")

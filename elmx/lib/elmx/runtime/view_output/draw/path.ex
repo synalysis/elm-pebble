@@ -8,7 +8,7 @@ defmodule Elmx.Runtime.ViewOutput.Draw.Path do
 
   @path_types ~w(pathFilled pathOutline pathOutlineOpen)
 
-  @spec row(map(), opts()) :: Types.view_output_row() | nil
+  @spec row(Types.view_draw_node(), opts()) :: Types.view_output_row() | nil
   def row(%{"type" => type} = node, _opts) when type in @path_types do
     path = Map.get(node, "path") || Map.get(node, :path) || node
 

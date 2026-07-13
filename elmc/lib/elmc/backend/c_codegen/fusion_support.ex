@@ -11,7 +11,7 @@ defmodule Elmc.Backend.CCodegen.FusionSupport do
 
   @type fusion_tree_expr ::
           Types.ir_expr()
-          | %{optional(atom()) => term()}
+          | %{optional(atom()) => Types.ir_field_value()}
           | [fusion_tree_expr()]
 
   @spec ok(String.t(), [callee_key()]) :: {:ok, String.t(), [callee_key()]}
@@ -82,7 +82,8 @@ defmodule Elmc.Backend.CCodegen.FusionSupport do
     end
   end
 
-  @spec superseded_fusion_callee?({String.t(), String.t()}, {String.t(), String.t()}, map()) :: boolean()
+  @spec superseded_fusion_callee?({String.t(), String.t()}, {String.t(), String.t()}, Types.function_decl_map()) ::
+          boolean()
   def superseded_fusion_callee?({caller_mod, caller_fun}, {callee_mod, callee_fun}, decl_map) do
     with %{expr: expr} <- Map.get(decl_map, {caller_mod, caller_fun}),
          callees when is_list(callees) <-
@@ -101,7 +102,7 @@ defmodule Elmc.Backend.CCodegen.FusionSupport do
     end
   end
 
-  @spec callee_key(String.t(), String.t() | map()) :: callee_key()
+  @spec callee_key(String.t(), String.t() | Types.ir_expr()) :: callee_key()
   def callee_key(module_name, target) when is_binary(target) do
     case String.split(target, ".", parts: 2) do
       [^module_name, name] -> {module_name, name}
@@ -115,7 +116,7 @@ defmodule Elmc.Backend.CCodegen.FusionSupport do
 
   def callee_key(module_name, %{op: :call, name: name}), do: {module_name, name}
 
-  @spec resolve_int_constant(map(), String.t(), String.t()) :: {:ok, integer()} | :error
+  @spec resolve_int_constant(Types.function_decl_map(), String.t(), String.t()) :: {:ok, integer()} | :error
   def resolve_int_constant(decl_map, module_name, var_name) when is_binary(var_name) do
     case Map.get(decl_map, {module_name, var_name}) do
       %{expr: %{op: :int_literal, value: value}} when is_integer(value) -> {:ok, value}
@@ -123,7 +124,7 @@ defmodule Elmc.Backend.CCodegen.FusionSupport do
     end
   end
 
-  @spec resolve_cell_count(map(), String.t(), String.t()) :: {:ok, integer()} | :error
+  @spec resolve_cell_count(Types.function_decl_map(), String.t(), String.t()) :: {:ok, integer()} | :error
   def resolve_cell_count(decl_map, module_name, size_var) when is_binary(size_var) do
     case Map.get(decl_map, {module_name, size_var}) do
       %{expr: %{op: :int_literal, value: value}} when is_integer(value) ->
@@ -147,7 +148,7 @@ defmodule Elmc.Backend.CCodegen.FusionSupport do
     end
   end
 
-  @spec resolve_product(map(), String.t(), String.t(), String.t()) :: {:ok, integer()} | :error
+  @spec resolve_product(Types.function_decl_map(), String.t(), String.t(), String.t()) :: {:ok, integer()} | :error
   defp resolve_product(decl_map, module_name, a, b) do
     with {:ok, ac} <- resolve_int_constant(decl_map, module_name, a),
          {:ok, bc} <- resolve_int_constant(decl_map, module_name, b) do
@@ -157,7 +158,7 @@ defmodule Elmc.Backend.CCodegen.FusionSupport do
     end
   end
 
-  @spec flat_list_cell_reader?(map(), String.t(), String.t(), String.t()) :: boolean()
+  @spec flat_list_cell_reader?(Types.function_decl_map(), String.t(), String.t(), String.t()) :: boolean()
   def flat_list_cell_reader?(decl_map, module_name, cell_reader, cols_var) do
     case Map.get(decl_map, callee_key(module_name, cell_reader)) do
       %{expr: %{op: :if, else_expr: else_expr}} ->
@@ -168,7 +169,7 @@ defmodule Elmc.Backend.CCodegen.FusionSupport do
     end
   end
 
-  @spec flat_list_index_uses_cols?(Types.ir_expr() | map(), String.t()) :: boolean()
+  @spec flat_list_index_uses_cols?(Types.ir_expr(), String.t()) :: boolean()
   defp flat_list_index_uses_cols?(expr, cols_var) do
     case expr do
       %{op: :qualified_call, target: "Maybe.withDefault", args: [_default, index_expr]} ->
@@ -186,7 +187,7 @@ defmodule Elmc.Backend.CCodegen.FusionSupport do
     end
   end
 
-  @spec indexed_list_at_reader?(map(), String.t(), String.t()) :: boolean()
+  @spec indexed_list_at_reader?(Types.function_decl_map(), String.t(), String.t()) :: boolean()
   def indexed_list_at_reader?(decl_map, module_name, list_at_target) do
     case Map.get(decl_map, callee_key(module_name, list_at_target)) do
       %{expr: %{op: :if, cond: cond, then_expr: then_expr, else_expr: else_expr}} ->
@@ -197,7 +198,7 @@ defmodule Elmc.Backend.CCodegen.FusionSupport do
     end
   end
 
-  @spec index_lt_zero?(Types.ir_expr() | map()) :: boolean()
+  @spec index_lt_zero?(Types.ir_expr()) :: boolean()
   defp index_lt_zero?(%{
          op: :compare,
          left: %{op: :var, name: "index"},
@@ -220,12 +221,12 @@ defmodule Elmc.Backend.CCodegen.FusionSupport do
 
   defp index_lt_zero?(_), do: false
 
-  @spec maybe_nothing?(Types.ir_expr() | map()) :: boolean()
+  @spec maybe_nothing?(Types.ir_expr()) :: boolean()
   defp maybe_nothing?(%{union_ctor: "Maybe.Nothing"}), do: true
   defp maybe_nothing?(%{op: :int_literal, union_ctor: "Maybe.Nothing"}), do: true
   defp maybe_nothing?(_), do: false
 
-  @spec nth_maybe_body?(Types.ir_expr() | map()) :: boolean()
+  @spec nth_maybe_body?(Types.ir_expr()) :: boolean()
   defp nth_maybe_body?(%{
          op: :runtime_call,
          function: "elmc_list_nth_maybe",
@@ -238,7 +239,7 @@ defmodule Elmc.Backend.CCodegen.FusionSupport do
 
   defp nth_maybe_body?(_), do: false
 
-  @spec list_drop_index_values?(Types.ir_expr() | map()) :: boolean()
+  @spec list_drop_index_values?(Types.ir_expr()) :: boolean()
   defp list_drop_index_values?(%{
          op: :qualified_call,
          target: target,
@@ -256,7 +257,7 @@ defmodule Elmc.Backend.CCodegen.FusionSupport do
 
   defp list_drop_index_values?(_), do: false
 
-  @spec int_constant_c(map(), String.t(), String.t()) :: String.t()
+  @spec int_constant_c(Types.function_decl_map(), String.t(), String.t()) :: String.t()
   def int_constant_c(decl_map, module_name, var_name) do
     case resolve_int_constant(decl_map, module_name, var_name) do
       {:ok, value} -> "#{value} /* #{Util.escape_c_comment(var_name)} */"
@@ -264,7 +265,7 @@ defmodule Elmc.Backend.CCodegen.FusionSupport do
     end
   end
 
-  @spec find_tuple2_table(map(), String.t()) :: {:ok, String.t()} | :error
+  @spec find_tuple2_table(Types.function_decl_map(), String.t()) :: {:ok, String.t()} | :error
   def find_tuple2_table(decl_map, module_name) do
     decl_map
     |> Enum.find_value(fn
@@ -293,7 +294,7 @@ defmodule Elmc.Backend.CCodegen.FusionSupport do
   @spec table_ref(String.t()) :: String.t()
   def table_ref(fn_name), do: "#{table_suffix(fn_name)}_table"
 
-  @spec cols_from_y_mul_plus_x(map()) :: {:ok, String.t()} | :error
+  @spec cols_from_y_mul_plus_x(Types.ir_expr()) :: {:ok, String.t()} | :error
   def cols_from_y_mul_plus_x(%{
         op: :call,
         name: mul,
@@ -322,7 +323,7 @@ defmodule Elmc.Backend.CCodegen.FusionSupport do
   @add_ops ["__add__", "__iadd__", "+", "Basics.add"]
   @mul_ops ["__mul__", "__imul__", "*", "Basics.mul"]
 
-  @spec cols_from_row_mul_plus_col(map()) :: {:ok, String.t()} | :error
+  @spec cols_from_row_mul_plus_col(Types.ir_expr()) :: {:ok, String.t()} | :error
   def cols_from_row_mul_plus_col(%{op: :call, name: add, args: [mul_expr, _right]})
       when add in @add_ops,
       do: cols_from_mul_cols_var(mul_expr)
@@ -337,7 +338,7 @@ defmodule Elmc.Backend.CCodegen.FusionSupport do
 
   def cols_from_row_mul_plus_col(_), do: :error
 
-  @spec cols_from_mul_cols_var(Types.ir_expr() | map()) :: {:ok, String.t()} | :error
+  @spec cols_from_mul_cols_var(Types.ir_expr()) :: {:ok, String.t()} | :error
   defp cols_from_mul_cols_var(%{op: :call, name: mul, args: [_row, %{op: :var, name: cols_var}]})
        when mul in @mul_ops and is_binary(cols_var),
        do: {:ok, cols_var}
@@ -352,17 +353,17 @@ defmodule Elmc.Backend.CCodegen.FusionSupport do
 
   defp cols_from_mul_cols_var(_), do: :error
 
-  @spec rows_from_sub_one(map()) :: {:ok, String.t()} | :error
+  @spec rows_from_sub_one(Types.ir_expr()) :: {:ok, String.t()} | :error
   def rows_from_sub_one(%{op: :sub_const, var: var, value: 1}) when is_binary(var), do: {:ok, var}
   def rows_from_sub_one(%{op: :add_const, var: var, value: -1}) when is_binary(var), do: {:ok, var}
   def rows_from_sub_one(_), do: :error
 
-  @spec cols_from_sub_one(map()) :: {:ok, String.t()} | :error
+  @spec cols_from_sub_one(Types.ir_expr()) :: {:ok, String.t()} | :error
   def cols_from_sub_one(%{op: :sub_const, var: var, value: 1}) when is_binary(var), do: {:ok, var}
   def cols_from_sub_one(%{op: :add_const, var: var, value: -1}) when is_binary(var), do: :error
   def cols_from_sub_one(_), do: :error
 
-  @spec board_size_expr(map(), String.t(), String.t(), String.t(), String.t()) :: String.t()
+  @spec board_size_expr(Types.function_decl_map(), String.t(), String.t(), String.t(), String.t()) :: String.t()
   def board_size_expr(decl_map, module_name, size_var, cols_var, rows_var) do
     case Map.get(decl_map, {module_name, size_var}) do
       %{expr: %{op: :int_literal, value: value}} when is_integer(value) ->
@@ -382,7 +383,7 @@ defmodule Elmc.Backend.CCodegen.FusionSupport do
     end
   end
 
-  @spec five_arg_xy_board_call?(map()) :: boolean()
+  @spec five_arg_xy_board_call?(Types.ir_expr()) :: boolean()
   def five_arg_xy_board_call?(%{op: :qualified_call, args: [x, y, _dx, _dy, board]}) do
     match?(%{op: :var, name: "x"}, x) and match?(%{op: :var, name: "y"}, y) and
       match?(%{op: :var, name: "board"}, board)
@@ -395,7 +396,7 @@ defmodule Elmc.Backend.CCodegen.FusionSupport do
 
   def five_arg_xy_board_call?(_), do: false
 
-  @spec two_arg_row_board_call?(map(), String.t()) :: boolean()
+  @spec two_arg_row_board_call?(Types.ir_expr(), String.t()) :: boolean()
   def two_arg_row_board_call?(%{op: :qualified_call, args: [row, board]}, board_var) do
     match?(%{op: :var, name: "row"}, row) and board_var?(board, board_var)
   end
@@ -406,11 +407,12 @@ defmodule Elmc.Backend.CCodegen.FusionSupport do
 
   def two_arg_row_board_call?(_, _), do: false
 
-  @spec board_var?(Types.ir_expr() | map(), String.t()) :: boolean()
+  @spec board_var?(Types.ir_expr(), String.t()) :: boolean()
   defp board_var?(%{op: :var, name: name}, board_var), do: name == board_var
   defp board_var?(_, _), do: false
 
-  @spec dim_vars_from_comparisons(map(), map(), String.t()) :: {String.t() | nil, String.t() | nil}
+  @spec dim_vars_from_comparisons(fusion_tree_expr(), Types.function_decl_map(), String.t()) ::
+          {String.t() | nil, String.t() | nil}
   def dim_vars_from_comparisons(expr, decl_map, module_name) do
     int_constants =
       expr
@@ -452,7 +454,7 @@ defmodule Elmc.Backend.CCodegen.FusionSupport do
 
   defp sub_one_dim_vars(_other, acc), do: acc
 
-  @spec grid_dim_constants(fusion_tree_expr(), map(), String.t()) ::
+  @spec grid_dim_constants(fusion_tree_expr(), Types.function_decl_map(), String.t()) ::
           {:ok, String.t(), String.t()} | :error
   def grid_dim_constants(expr, decl_map, module_name) do
     int_dims =
@@ -490,12 +492,12 @@ defmodule Elmc.Backend.CCodegen.FusionSupport do
 
   defp expr_var_names(_other, acc), do: acc
 
-  @spec call_name(map()) :: String.t() | nil
+  @spec call_name(Types.ir_expr()) :: String.t() | nil
   def call_name(%{op: :qualified_call, target: target}), do: local_name(target)
   def call_name(%{op: :call, name: name}), do: name
   def call_name(_), do: nil
 
-  @spec same_module_callees(map() | list() | any(), String.t()) :: [callee_key()]
+  @spec same_module_callees(fusion_tree_expr(), String.t()) :: [callee_key()]
   def same_module_callees(expr, module_name) do
     expr
     |> collect_call_keys(module_name, MapSet.new())

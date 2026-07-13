@@ -40,7 +40,8 @@ defmodule Elmc.Backend.CCodegen.Native.BindingAnalysis do
 
   defp used_in_lambda_node?(_name, _expr), do: false
 
-  @spec reference_count_node(Types.binding_name(), term()) :: non_neg_integer()
+  @spec reference_count_node(Types.binding_name(), Types.ir_expr() | [Types.ir_expr()]) ::
+          non_neg_integer()
   defp reference_count_node(name, %{op: :var, name: var_name}),
     do: if(EnvBindings.same_binding?(name, var_name), do: 1, else: 0)
 
@@ -75,8 +76,10 @@ defmodule Elmc.Backend.CCodegen.Native.BindingAnalysis do
 
   defp reference_count_node(_name, _expr), do: 0
 
-  @spec pebble_angle_optimized_reference_count_node(Types.binding_name(), term()) ::
-          non_neg_integer()
+  @spec pebble_angle_optimized_reference_count_node(
+          Types.binding_name(),
+          Types.ir_expr() | [Types.ir_expr()]
+        ) :: non_neg_integer()
   defp pebble_angle_optimized_reference_count_node(name, expr) do
     cond do
       pebble_trig_round_expr?(expr, name) ->

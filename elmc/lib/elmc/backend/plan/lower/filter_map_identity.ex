@@ -1,6 +1,7 @@
 defmodule Elmc.Backend.Plan.Lower.FilterMapIdentity do
   @moduledoc false
 
+  alias Elmc.Backend.Plan.Types
   alias Elmc.Backend.CCodegen.ListHofResolve
   alias Elmc.Backend.Plan.Lower.Expr
   alias Elmc.Backend.Plan.{Builder, Context, Types}
@@ -8,7 +9,7 @@ defmodule Elmc.Backend.Plan.Lower.FilterMapIdentity do
   @nothing_names ~w(Nothing Maybe.Nothing)
   @just_names ~w(Just Maybe.Just)
 
-  @spec try_compile(map(), Context.t(), Builder.t()) ::
+  @spec try_compile(Types.ir_expr(), Context.t(), Builder.t()) ::
           {:ok, Types.reg() | :fn_out, Builder.t()} | :unsupported
   def try_compile(%{function: "elmc_list_filter_map", args: [fun, list]}, ctx, b) do
     if ListHofResolve.filter_map_identity?(fun) do

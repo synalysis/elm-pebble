@@ -5,8 +5,8 @@ defmodule Elmc.Application do
 
   use Application
 
-  @spec start(Application.start_type(), any()) ::
-          {:ok, pid()} | {:error, {:already_started, pid()} | atom() | String.t() | tuple()}
+  @spec start(Application.start_type(), term()) ::
+          {:ok, pid()} | {:error, {:already_started, pid()} | atom() | String.t() | {term(), term()}}
   @impl true
   def start(_type, _args) do
     children = [

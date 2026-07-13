@@ -2,12 +2,23 @@ defmodule Ide.TestSupport.EmulatorProxyHandshake do
   @moduledoc false
 
   alias Ide.Emulator.VncReady
+  alias IdeWeb.EmulatorProxy.Types, as: ProxyTypes
   alias IdeWeb.EmulatorProxySocket
 
   @client_version "RFB 003.008\n"
 
+  @type ws_send_failure ::
+          {:stop, ProxyTypes.stop_reason(), EmulatorProxySocket.proxy_state()}
+
+  @type proxy_error ::
+          :banner_timeout
+          | :tcp_response_timeout
+          | :server_init_timeout
+          | {:incomplete_banner, String.t()}
+          | {:ws_send_failed, ws_send_failure()}
+
   @spec through_proxy(pos_integer(), timeout()) ::
-          {:ok, {non_neg_integer(), non_neg_integer()}} | {:error, term()}
+          {:ok, {non_neg_integer(), non_neg_integer()}} | {:error, proxy_error()}
   def through_proxy(port, timeout \\ 5_000) when is_integer(port) and port > 0 do
     {:ok, state} = EmulatorProxySocket.init(%{target: {:tcp, "127.0.0.1", port}})
 

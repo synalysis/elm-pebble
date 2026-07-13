@@ -32,7 +32,7 @@ defmodule ElmEx.CoreIR.Validate do
 
   def validate_shape(_), do: {:error, [error(:root, "expected Core IR map or struct", [])]}
 
-  @spec validate_envelope(map(), [String.t() | integer()]) :: [shape_error()]
+  @spec validate_envelope(Types.wire_map(), [String.t() | integer()]) :: [shape_error()]
   defp validate_envelope(core_ir, path) do
     []
     |> maybe_add(validate_version(core_ir, path))
@@ -130,7 +130,7 @@ defmodule ElmEx.CoreIR.Validate do
   defp validate_diagnostic(_, path),
     do: [error(:diagnostic, "expected diagnostic map", path)]
 
-  @spec validate_expr(map(), [String.t() | integer()]) :: [shape_error()]
+  @spec validate_expr(Types.wire_map(), [String.t() | integer()]) :: [shape_error()]
   defp validate_expr(expr, path) when is_map(expr) do
     expr = stringify_keys(expr)
 

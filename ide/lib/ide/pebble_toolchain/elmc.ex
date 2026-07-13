@@ -1,6 +1,7 @@
 defmodule Ide.PebbleToolchain.Elmc do
   @moduledoc false
 
+  alias Elmc.CLI
   alias Elmc.Runtime.Generator, as: RuntimeGenerator
   alias Ide.PebbleToolchain.Types
 
@@ -15,6 +16,10 @@ defmodule Ide.PebbleToolchain.Elmc do
   def watch_compile_opts(out_dir, target_platforms, extra \\ %{})
       when is_binary(out_dir) and is_list(target_platforms) and is_map(extra) do
     profile = codegen_profile_from_extra(extra)
+    prod = Map.get(extra, :prod, true)
+    debug_usage_policy = Map.get(extra, :debug_usage_policy, :error)
+    plan_ir_mode = Map.get(extra, :plan_ir_mode, :primary)
+    plan_ir_strict = Map.get(extra, :plan_ir_strict, true)
 
     %{
       out_dir: out_dir,
@@ -25,10 +30,10 @@ defmodule Ide.PebbleToolchain.Elmc do
       prune_native_wrappers: true,
       pebble_int32: true,
       strip_dead_code: true,
-      prod: true,
-      plan_ir_mode: :primary,
-      plan_ir_strict: true,
-      debug_usage_policy: :error,
+      prod: prod,
+      plan_ir_mode: plan_ir_mode,
+      plan_ir_strict: plan_ir_strict,
+      debug_usage_policy: debug_usage_policy,
       codegen_profile: profile
     }
     |> Map.merge(extra)
@@ -39,7 +44,7 @@ defmodule Ide.PebbleToolchain.Elmc do
     codegen_profile_for_project_dir(project_dir) == :size
   end
 
-  @spec codegen_profile_for_project_dir(String.t(), map()) :: :default | :balanced | :size
+  @spec codegen_profile_for_project_dir(String.t(), Types.elmc_extra_opts()) :: :default | :balanced | :size
   def codegen_profile_for_project_dir(project_dir, extra_opts \\ %{}) when is_binary(project_dir) do
     resolve_codegen_profile(extra_opts, project_dir)
   end
@@ -92,12 +97,12 @@ defmodule Ide.PebbleToolchain.Elmc do
 
     with :ok <- reset_generated_dir(compile_out_dir),
          :ok <- reset_generated_dir(stage_out_dir),
-         {:ok, _} <- Elmc.CLI.compile_with_opts(project_root, compile_opts),
+         {:ok, _} <- map_compile_failure(compile_project_artifacts(project_root, compile_opts)),
          :ok <- File.mkdir_p(Path.dirname(stage_out_dir)),
          {:ok, _copied} <- File.cp_r(compile_out_dir, stage_out_dir) do
       :ok
     else
-      {:error, reason} -> {:error, {:elmc_compile_failed, reason}}
+      {:error, reason} -> {:error, reason}
     end
   end
 
@@ -121,10 +126,67 @@ defmodule Ide.PebbleToolchain.Elmc do
   @spec compile_watch_project(String.t(), elmc_compile_opts()) ::
           {:ok, elmc_compile_result()} | {:error, toolchain_error()}
   def compile_watch_project(project_root, opts) do
-    case Elmc.CLI.compile_with_opts(project_root, opts) do
-      {:ok, result} -> {:ok, result}
-      {:error, reason} -> {:error, {:elmc_compile_failed, reason}}
-    end
+    map_compile_failure(compile_project_with_opts(project_root, opts))
+  end
+
+  @spec compile_project_with_opts(String.t(), elmc_compile_opts()) ::
+          {:ok, elmc_compile_result()} | {:error, Types.elmc_failure_reason()}
+  def compile_project_with_opts(project_root, opts) when is_binary(project_root) and is_map(opts) do
+    compile_with_rescue(&compile_project_with_opts/2, &CLI.compile_with_opts_impl/2, project_root, opts)
+  end
+
+  @spec compile_project_artifacts(String.t(), elmc_compile_opts()) ::
+          {:ok, elmc_compile_result()} | {:error, Types.elmc_failure_reason()}
+  def compile_project_artifacts(project_root, opts) when is_binary(project_root) and is_map(opts) do
+    compile_with_rescue(
+      &compile_project_artifacts/2,
+      &CLI.compile_artifacts_with_opts_impl/2,
+      project_root,
+      opts
+    )
+  end
+
+  @type compile_runner ::
+          (String.t(), elmc_compile_opts() ->
+             {:ok, elmc_compile_result()} | {:error, Types.elmc_failure_reason()})
+
+  @spec compile_with_rescue(
+          compile_runner(),
+          compile_runner(),
+          String.t(),
+          elmc_compile_opts()
+        ) :: {:ok, elmc_compile_result()} | {:error, Types.elmc_failure_reason()}
+  defp compile_with_rescue(retry_fun, runner, project_root, opts)
+       when is_function(retry_fun, 2) and is_function(runner, 2) and is_binary(project_root) and
+              is_map(opts) do
+    runner.(project_root, opts)
+  rescue
+    exception in ArgumentError ->
+      if direct_render_only_view_error?(exception, opts) do
+        retry_fun.(project_root, Map.put(opts, :direct_render_only, false))
+      else
+        {:error, {:compiler_exception, exception.__struct__, Exception.message(exception)}}
+      end
+
+    exception ->
+      {:error, {:compiler_exception, exception.__struct__, Exception.message(exception)}}
+  catch
+    kind, reason ->
+      {:error, {:compiler_exception, kind, reason}}
+  end
+
+  @spec map_compile_failure(
+          {:ok, elmc_compile_result()} | {:error, Types.elmc_failure_reason()}
+        ) :: {:ok, elmc_compile_result()} | {:error, toolchain_error()}
+  defp map_compile_failure({:ok, _} = ok), do: ok
+  defp map_compile_failure({:error, reason}), do: {:error, {:elmc_compile_failed, reason}}
+
+  defp direct_render_only_view_error?(%ArgumentError{} = exception, opts) do
+    Map.get(opts, :direct_render_only) == true and
+      String.contains?(
+        Exception.message(exception),
+        "direct_render_only requires"
+      )
   end
 
   # Color watches share direct-scene rendering; aplite needs the streaming/boxed path.

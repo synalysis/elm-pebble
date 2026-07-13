@@ -3,6 +3,7 @@ defmodule Elmc.Backend.CCodegen.SchemaRegistry do
 
   alias Elmc.Backend.CCodegen.Host
   alias Elmc.Backend.CCodegen.IRQueries
+  alias Elmc.Backend.CCodegen.Types
   alias ElmEx.IR
 
   @type field_type :: String.t()
@@ -58,7 +59,7 @@ defmodule Elmc.Backend.CCodegen.SchemaRegistry do
     %__MODULE__{records: records, union_modules: union_names}
   end
 
-  @spec build_from_field_types(map(), MapSet.t()) :: t()
+  @spec build_from_field_types(Types.record_field_types_map(), MapSet.t(String.t())) :: t()
   def build_from_field_types(field_types, union_names \\ MapSet.new()) when is_map(field_types) do
     records =
       Map.new(field_types, fn {{mod, name}, fields} ->

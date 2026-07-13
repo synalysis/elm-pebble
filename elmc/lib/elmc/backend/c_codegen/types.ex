@@ -51,38 +51,38 @@ defmodule Elmc.Backend.CCodegen.Types do
 
   @type ir_expr :: %{
           required(:op) => ir_op(),
-          optional(atom()) => term()
+          optional(atom()) => ir_field_value()
         }
 
   @type ir_literal_expr :: %{
           required(:op) => ir_literal_op(),
-          optional(atom()) => term()
+          optional(atom()) => ir_field_value()
         }
 
   @type ir_var_arith_expr :: %{
           required(:op) => ir_var_arith_op(),
-          optional(atom()) => term()
+          optional(atom()) => ir_field_value()
         }
 
   @type ir_collection_expr :: %{
           required(:op) => ir_collection_op(),
-          optional(atom()) => term()
+          optional(atom()) => ir_field_value()
         }
 
   @type ir_call_expr :: %{
           required(:op) => ir_call_op(),
-          optional(atom()) => term()
+          optional(atom()) => ir_field_value()
         }
 
   @type ir_record_expr :: %{
           required(:op) => ir_record_op(),
-          optional(atom()) => term()
+          optional(atom()) => ir_field_value()
         }
 
   @type ir_var_expr :: %{
           required(:op) => :var,
           required(:name) => String.t(),
-          optional(atom()) => term()
+          optional(atom()) => ir_field_value()
         }
 
   @type ir_if_expr :: %{
@@ -90,14 +90,14 @@ defmodule Elmc.Backend.CCodegen.Types do
           required(:cond) => ir_expr(),
           required(:then_expr) => ir_expr(),
           required(:else_expr) => ir_expr(),
-          optional(atom()) => term()
+          optional(atom()) => ir_field_value()
         }
 
   @type ir_runtime_call_expr :: %{
           required(:op) => :runtime_call,
           required(:function) => String.t(),
           required(:args) => [ir_expr()],
-          optional(atom()) => term()
+          optional(atom()) => ir_field_value()
         }
 
   @type ir_let_in_expr :: %{
@@ -105,40 +105,40 @@ defmodule Elmc.Backend.CCodegen.Types do
           required(:name) => binding_name(),
           required(:value_expr) => ir_expr(),
           required(:in_expr) => ir_expr(),
-          optional(atom()) => term()
+          optional(atom()) => ir_field_value()
         }
 
   @type ir_case_expr :: %{
           required(:op) => :case,
           required(:subject) => case_subject(),
           required(:branches) => case_branches(),
-          optional(atom()) => term()
+          optional(atom()) => ir_field_value()
         }
 
   @type ir_lambda_expr :: %{
           required(:op) => :lambda,
           required(:args) => [String.t()] | nil,
           required(:body) => ir_expr(),
-          optional(atom()) => term()
+          optional(atom()) => ir_field_value()
         }
 
   @type ir_qualified_call_expr :: %{
           required(:op) => :qualified_call,
           required(:target) => String.t(),
           required(:args) => [ir_expr()],
-          optional(atom()) => term()
+          optional(atom()) => ir_field_value()
         }
 
   @type ir_list_literal_expr :: %{
           required(:op) => :list_literal,
           required(:items) => [ir_expr()],
-          optional(atom()) => term()
+          optional(atom()) => ir_field_value()
         }
 
   @type ir_record_literal_expr :: %{
           required(:op) => :record_literal,
           required(:fields) => ir_record_fields(),
-          optional(atom()) => term()
+          optional(atom()) => ir_field_value()
         }
 
   @type native_ref :: String.t()
@@ -176,7 +176,33 @@ defmodule Elmc.Backend.CCodegen.Types do
           optional(:__hoisted_native_ints_enabled__) => boolean(),
           optional(:__affine_prefix_params__) => %{String.t() => non_neg_integer()},
           optional(:__affine_prefix_shapes__) => [record_shape()],
-          optional(atom()) => term()
+          optional(:__function_name__) => String.t(),
+          optional(:__function_tail_compile__) => boolean(),
+          optional(:__allow_fn_out_slot__) => boolean(),
+          optional(:__branch_out__) => String.t(),
+          optional(:__into_out__) => String.t(),
+          optional(:__transfer_operand__) => boolean(),
+          optional(:__rc_required__) => boolean(),
+          optional(:__rc_catch__) => boolean(),
+          optional(:__native_rc_out__) => boolean(),
+          optional(:__inside_lambda__) => boolean(),
+          optional(:__native_return_kind__) => :native_int | :native_bool | :boxed | atom(),
+          optional(:__declared_outs__) => MapSet.t(String.t()),
+          optional(:__subexpr_cache__) => subexpr_cache_map(),
+          optional(:__subexpr_cache_key__) => cache_process_key(),
+          optional(:__record_subexpr_cache_key__) => cache_process_key(),
+          optional(:__owned_list_result__) => boolean(),
+          optional(:__record_field_types__) => record_field_types_map(),
+          optional(:__let_body_live_vars__) => MapSet.t(String.t()),
+          optional(:__record_update_field_expr__) => boolean(),
+          optional(:__compare_defer_operand_release__) => boolean(),
+          optional(:__var_types__) => %{String.t() => String.t()},
+          optional(:__case_subject_payload_type__) => String.t(),
+          optional(:__pattern_bind_setup__) => String.t(),
+          optional(:__pattern_bind_cleanup__) => String.t(),
+          optional(:__bind_counter__) => non_neg_integer(),
+          optional(:__letrec_forward_refs__) => %{String.t() => String.t()},
+          optional(atom()) => ir_field_value()
         }
 
   @type compile_counter :: non_neg_integer()
@@ -250,7 +276,7 @@ defmodule Elmc.Backend.CCodegen.Types do
           optional(:tag) => integer(),
           optional(:bind) => String.t() | nil,
           optional(:fields) => [String.t()],
-          optional(atom()) => term()
+          optional(atom()) => ir_field_value()
         }
 
   @type int_case_pattern :: %{required(:kind) => :int, required(:value) => integer()} | %{required(:kind) => :wildcard}
@@ -260,6 +286,50 @@ defmodule Elmc.Backend.CCodegen.Types do
   @type case_branch :: %{required(:pattern) => pattern(), required(:expr) => ir_expr()}
   @type case_branches :: [case_branch()]
   @type case_subject :: String.t() | ir_expr()
+
+  @type compare_kind :: :eq | :neq | :gt | :gte | :lt | :lte
+
+  @type ir_literal_value :: integer() | float() | boolean() | String.t() | atom() | nil
+
+  @type ir_call_target :: {String.t(), String.t()}
+
+  @type ir_field_tuple :: {ir_expr(), ir_expr()} | {ir_expr(), ir_expr(), ir_expr()}
+
+  @type ir_field_value ::
+          ir_expr()
+          | ir_literal_value()
+          | [ir_expr()]
+          | [String.t()]
+          | case_branches()
+          | pattern()
+          | ir_record_fields()
+          | compare_kind()
+          | ir_call_target()
+          | ir_field_tuple()
+
+  @type subexpr_cache_key ::
+          {:var, String.t()}
+          | {:int, integer()}
+          | {:field_access, subexpr_cache_key(), String.t()}
+          | {:map, atom(), [{atom(), subexpr_cache_key() | ir_literal_value()}]}
+          | ir_expr()
+          | ir_literal_value()
+
+  @type subexpr_cache_entry :: {String.t()}
+  @type subexpr_cache_map :: %{optional(subexpr_cache_key()) => subexpr_cache_entry()}
+  @type cache_process_key :: reference()
+
+  @type fusion_json_scalar :: integer() | float() | boolean() | String.t() | atom() | nil
+
+  @type fusion_json ::
+          fusion_json_scalar()
+          | [fusion_json()]
+          | %{optional(atom() | String.t()) => fusion_json()}
+
+  @type fusion_metadata :: %{optional(atom()) => fusion_json()}
+
+  @type lambda_closure_name :: String.t()
+  @type lambda_closure_signature :: String.t() | integer()
 
   @type native_int_usage_stats :: %{
           required(:total) => non_neg_integer(),
@@ -316,16 +386,22 @@ defmodule Elmc.Backend.CCodegen.Types do
 
   @type ir_record_field :: %{required(:name) => String.t(), required(:expr) => ir_expr()}
   @type ir_record_fields :: [ir_record_field()]
-  @type compare_kind :: :eq | :neq | :gt | :gte | :lt | :lte
 
   @type ir_compare_expr :: %{
           required(:op) => :compare,
           required(:kind) => compare_kind(),
           required(:left) => ir_expr(),
           required(:right) => ir_expr(),
-          optional(atom()) => term()
+          optional(atom()) => ir_field_value()
         }
-  @type native_record_binding :: {:native_record, %{String.t() => native_ref()}}
+  @type native_record_fields_map :: %{
+          optional(String.t()) => native_ref(),
+          optional(atom()) => native_ref()
+        }
+
+  @type native_record_binding :: {:native_record, native_record_fields_map()}
+
+  @type affine_native_prefix_fields :: native_record_fields_map() | nil
 
   @type record_peel_binding ::
           {:record_peel, String.t(), function_decl_key(), ir_expr()}
@@ -336,14 +412,20 @@ defmodule Elmc.Backend.CCodegen.Types do
   @type record_shape :: record_field_names() | nil
   @type record_alias_shape_map :: %{{String.t(), String.t()} => record_field_names()}
   @type let_substitutions :: %{optional(atom() | String.t()) => ir_expr()}
-  @type binding_name :: atom() | String.t() | ir_expr() | term()
+  @type env_binding_value ::
+          String.t()
+          | native_record_binding()
+          | record_peel_binding()
+          | boolean()
+
+  @type binding_name :: atom() | String.t() | ir_expr()
 
   @type affine_label_spec :: {:literal, String.t()} | {:from_int, String.t(), String.t()}
 
   @type affine_draw_command :: %{
           required(:kind) => atom(),
           required(:kind_macro) => String.t(),
-          required(:params) => [term()],
+          required(:params) => [ir_expr() | String.t() | integer()],
           optional(:label) => affine_label_spec(),
           optional(:setup) => String.t()
         }
@@ -390,4 +472,53 @@ defmodule Elmc.Backend.CCodegen.Types do
 
   @typedoc "Argument list passed to `SpecialValues.special_value_from_target/2`."
   @type special_value_args :: [ir_expr()]
+
+  @typedoc "Fusion provider metadata attached to bytecode plans."
+
+  @type fusion_callee_key :: {String.t(), String.t()}
+
+  @type fusion_emit_result ::
+          {:ok, String.t(), [fusion_callee_key()]}
+          | {:ok, String.t(), [fusion_callee_key()], :rc_native}
+          | :error
+
+  @type fusion_extract_result :: {:ok, atom(), fusion_metadata()} | :error
+
+  @type layout_diagnostic :: %{
+          optional(:source) => String.t(),
+          optional(:code) => String.t(),
+          optional(:from) => String.t() | atom(),
+          optional(:to) => String.t() | atom(),
+          optional(atom()) => ir_field_value()
+        }
+
+  @type compile_warning_json :: %{required(String.t()) => String.t()}
+
+  @type seq_config :: %{
+          required(:list_type) => String.t(),
+          required(:compact) => :int_list | :float_list
+        }
+
+  @type subexpr_record_meta :: %{
+          optional(:type) => String.t() | nil,
+          optional(:shape) => record_shape(),
+          optional(atom()) => ir_field_value()
+        }
+
+  @type record_field_types_map :: %{
+          optional({String.t(), String.t()}) => %{String.t() => String.t()}
+        }
+
+  @type lambda_emit_state :: %{
+          required(:lambdas) => [lambda_closure_name()],
+          required(:defs) => %{optional(lambda_closure_signature()) => lambda_closure_name()},
+          required(:counter) => non_neg_integer(),
+          required(:emitted) => MapSet.t(lambda_closure_name())
+        }
+
+  @type branch_field_refs :: %{String.t() => String.t()}
+  @type branch_field_sources :: %{String.t() => ir_expr()}
+
+  @type function_param ::
+          String.t() | %{required(:name) => String.t(), optional(:ownership) => [atom()]}
 end

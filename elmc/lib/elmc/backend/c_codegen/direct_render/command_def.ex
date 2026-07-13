@@ -76,8 +76,8 @@ defmodule Elmc.Backend.CCodegen.DirectRender.CommandDef do
   def arg_kinds(_decl), do: []
 
   @spec boxed_def(
-          map(),
-          map(),
+          ElmEx.IR.Module.t(),
+          Types.function_declaration(),
           MapSet.t(Types.function_decl_key()),
           MapSet.t(Types.function_decl_key()),
           Types.function_decl_map(),
@@ -154,7 +154,14 @@ defmodule Elmc.Backend.CCodegen.DirectRender.CommandDef do
     end
   end
 
-  @spec boxed_body(String.t(), String.t(), String.t(), String.t(), map(), map()) :: String.t()
+  @spec boxed_body(
+          String.t(),
+          String.t(),
+          String.t(),
+          String.t(),
+          ElmEx.IR.Module.t(),
+          Types.function_declaration()
+        ) :: String.t()
   defp boxed_body(c_name, arg_bindings, unused_casts, body_code, mod, decl) do
     """
     static RC #{c_name}_commands_append(ElmcValue ** const args, const int argc, ElmcSceneWriter * const writer) {
@@ -169,8 +176,8 @@ defmodule Elmc.Backend.CCodegen.DirectRender.CommandDef do
   end
 
   @spec native_def(
-          map(),
-          map(),
+          ElmEx.IR.Module.t(),
+          Types.function_declaration(),
           MapSet.t(Types.function_decl_key()),
           MapSet.t(Types.function_decl_key()),
           Types.function_decl_map(),
@@ -297,8 +304,8 @@ defmodule Elmc.Backend.CCodegen.DirectRender.CommandDef do
           String.t(),
           String.t(),
           String.t(),
-          map(),
-          map(),
+          ElmEx.IR.Module.t(),
+          Types.function_declaration(),
           String.t(),
           String.t(),
           String.t()

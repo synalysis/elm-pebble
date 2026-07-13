@@ -119,7 +119,7 @@ defmodule Elmc.Backend.CCodegen.Native.ListIntReduce do
 
   defp case_subject?(_subject, _list_arg), do: false
 
-  @spec empty_branch([map()]) :: {:ok, Types.ir_expr()} | :error
+  @spec empty_branch(Types.case_branches()) :: {:ok, Types.ir_expr()} | :error
   defp empty_branch(branches) do
     case Enum.find(branches, &empty_pattern?/1) do
       %{expr: expr} -> {:ok, expr}
@@ -127,12 +127,12 @@ defmodule Elmc.Backend.CCodegen.Native.ListIntReduce do
     end
   end
 
-  @spec empty_pattern?(map()) :: boolean()
+  @spec empty_pattern?(Types.case_branch()) :: boolean()
   defp empty_pattern?(%{pattern: %{resolved_name: "[]"}}), do: true
   defp empty_pattern?(%{pattern: %{name: "[]", kind: :constructor}}), do: true
   defp empty_pattern?(_branch), do: false
 
-  @spec cons_add_branch([map()], String.t(), String.t()) ::
+  @spec cons_add_branch(Types.case_branches(), String.t(), String.t()) ::
           {:ok, String.t(), String.t(), Types.ir_expr()} | :error
   defp cons_add_branch(branches, module_name, fn_name) do
     case Enum.find(branches, &cons_pattern?/1) do
@@ -149,12 +149,12 @@ defmodule Elmc.Backend.CCodegen.Native.ListIntReduce do
     end
   end
 
-  @spec cons_pattern?(map()) :: boolean()
+  @spec cons_pattern?(Types.case_branch()) :: boolean()
   defp cons_pattern?(%{pattern: %{resolved_name: "List.::"}}), do: true
   defp cons_pattern?(%{pattern: %{name: "::", kind: :constructor}}), do: true
   defp cons_pattern?(_branch), do: false
 
-  @spec cons_bind_names(map()) :: {:ok, String.t(), String.t()} | :error
+  @spec cons_bind_names(Types.pattern()) :: {:ok, String.t(), String.t()} | :error
   defp cons_bind_names(%{
          arg_pattern: %{kind: :tuple, elements: [head_pat, tail_pat]}
        }) do

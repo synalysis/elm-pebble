@@ -7,6 +7,9 @@ defmodule Elmx.Types do
   * `wire_value`, `wire_map`, `wire_ctor`, `wire_cmd`, `wire_input`, `wire_cmd_input`
   * `elm_value`, `elm_msg`, `maybe_like`, `result_like`, `elm_hof`, `fold_acc`
 
+  `elm_value` stays `term()` on purpose: it is the opaque runtime box for partially
+  lowered Elm values that still carry host terms (closures, thunks, opaque refs).
+
   ## Collections and JSON
 
   * `elm_list`, `elm_dict`, `elm_set`, `elm_array`, `json_value`, `json_decoder_spec`
@@ -25,10 +28,50 @@ defmodule Elmx.Types do
   """
 
   @typedoc "Lowered Elm expression node from `ElmEx.IR` (must include `:op`)."
+  @type ir_literal_value :: integer() | float() | boolean() | String.t() | atom() | nil
+
+  @type ir_call_target :: {String.t(), String.t()}
+
+  @type ir_field_tuple :: {ir_expr(), ir_expr()} | {ir_expr(), ir_expr(), ir_expr()}
+
+  @type ir_field_value ::
+          ir_expr()
+          | ir_literal_value()
+          | [ir_expr()]
+          | ir_pattern()
+          | ir_call_target()
+          | ir_field_tuple()
+
   @type ir_expr :: %{
           required(:op) => atom(),
-          optional(atom()) => term()
+          optional(atom()) => ir_field_value()
         }
+
+  @typedoc "Case-branch or constructor pattern from lowered IR."
+  @type ir_pattern :: ElmEx.IR.Types.Pattern.t()
+
+  @typedoc "Single `case` branch (`pattern` + `expr`)."
+  @type ir_case_branch :: %{
+          required(:pattern) => ir_pattern(),
+          required(:expr) => ir_expr(),
+          optional(atom()) => ir_field_value()
+        }
+
+  @type ir_case_branches :: [ir_case_branch()]
+
+  @typedoc "Branch wrapper or bare pattern root passed to `branch_pattern/2`."
+  @type ir_branch_pattern_input :: ir_case_branch() | %{required(:pattern) => ir_pattern()}
+
+  @type ir_tree_pair :: {ir_tree(), ir_tree()}
+
+  @typedoc "IR subtree walked for binding-name discovery."
+  @type ir_tree :: ir_expr() | ir_pattern() | [ir_tree()] | ir_tree_pair()
+
+  @typedoc "Normalized Pebble draw node before row lowering (atom or string keys)."
+  @type view_draw_node :: ui_node() | wire_map()
+
+  @typedoc "Context-setting row inside Elm `TextOptions`."
+  @type ui_text_setting :: wire_map()
 
   @typedoc "IR node lowered to a runtime intrinsic call."
   @type runtime_call_ir :: %{
@@ -37,8 +80,11 @@ defmodule Elmx.Types do
           required(:args) => [ir_expr()]
         }
 
+  @typedoc "IR literal embedded in a qualified-call argument list."
+  @type ir_literal :: integer() | float() | boolean() | String.t() | atom() | nil
+
   @typedoc "Qualified-call rewrite argument list (IR subtrees or literals)."
-  @type ir_arg_list :: [ir_expr() | term()]
+  @type ir_arg_list :: [ir_expr() | ir_literal()]
 
   @typedoc "Comma-separated argument string passed to `Stdlib.Qualified.call/2`."
   @type qualified_arg_code :: String.t()
@@ -100,8 +146,8 @@ defmodule Elmx.Types do
   @type companion_bridge_opts :: [
           {:callback, elm_msg()}
           | {:key, String.t()}
-          | {:bridge_id, term()}
-          | {:payload, term()}
+          | {:bridge_id, wire_input()}
+          | {:payload, wire_input()}
           | {:value, wire_value()}
         ]
 
@@ -111,11 +157,13 @@ defmodule Elmx.Types do
           | {:interval_ms, non_neg_integer()}
         ]
 
+  @type effect_extra_map :: %{optional(atom() | String.t()) => wire_value()}
+
   @typedoc "Options for `Cmd.effect/2` (vibes, light, etc.)."
   @type effect_cmd_opts :: [
           {:variant, String.t() | atom()}
-          | {:pattern, term()}
-          | {:extra, map()}
+          | {:pattern, wire_input()}
+          | {:extra, effect_extra_map()}
         ]
 
   @typedoc "Options for `Followups.from_commands/2`."
@@ -127,11 +175,32 @@ defmodule Elmx.Types do
   @typedoc "Opaque Elm runtime cell (list element, dict value, set member, etc.)."
   @type elm_value :: term()
 
+  @typedoc "Time zone value from Elm `Time.customZone` / `Time.utc`."
+  @type time_zone :: {:Zone, integer(), list()}
+
+  @typedoc "Decoded scalar from message protocol tokens."
+  @type scalar_token :: boolean() | integer() | atom() | String.t()
+
+  @typedoc "Subscription batch item before `ActiveSet.from_value/1` flattening."
+  @type sub_input ::
+          wire_cmd_input()
+          | wire_cmd()
+          | integer()
+          | nil
+          | [sub_input()]
+
   @typedoc "Elm function passed to higher-order runtime helpers (callback or curried partial)."
-  @type elm_hof :: (elm_value() -> elm_value()) | term()
+  @type elm_hof ::
+          (elm_value() -> elm_value())
+          | (elm_value(), elm_value() -> elm_value())
+          | (elm_value(), elm_value(), elm_value() -> elm_value())
+          | (elm_value(), elm_value(), elm_value(), elm_value() -> elm_value())
+          | (elm_value(), elm_value(), elm_value(), elm_value(), elm_value() -> elm_value())
+          | (elm_value(), elm_value(), elm_value(), elm_value(), elm_value(), elm_value() -> elm_value())
+          | (elm_value(), elm_value(), elm_value(), elm_value(), elm_value(), elm_value(), elm_value() -> elm_value())
 
   @typedoc "Elm `Dict` runtime representation (map-backed, ordered on export)."
-  @type elm_dict :: {:elmx_dict, %{term() => elm_value()}}
+  @type elm_dict :: {:elmx_dict, %{(comparable() | elm_char() | atom()) => elm_value()}}
 
   @typedoc "Elm `Set` runtime representation."
   @type elm_set :: {:elmx_set, [elm_value()]} | [elm_value()]
@@ -166,18 +235,20 @@ defmodule Elmx.Types do
   @typedoc "Values accepted by Elm `Basics.max` / `Basics.min` / `Basics.clamp` in the runtime."
   @type comparable :: number() | String.t()
 
+  @type elm_tuple3 :: {elm_value(), elm_value(), elm_value()}
+
   @typedoc "Elm 2-tuple in native or wire form."
-  @type elm_tuple2 :: {term(), term()} | tuple()
+  @type elm_tuple2 :: {elm_value(), elm_value()} | elm_tuple3()
 
   @typedoc "Tuple-like value for `Core.Tuple` accessors (native, wire, or list)."
-  @type elm_tuple_like :: elm_tuple2() | wire_ctor() | tuple() | list()
+  @type elm_tuple_like :: elm_tuple2() | wire_ctor() | list()
 
   @typedoc "Association-list entry before `dict_from_list/1` normalization."
   @type dict_entry_input ::
           {integer() | ui_coord(), elm_value()}
-          | [term()]
+          | [integer() | ui_coord() | elm_value()]
           | wire_ctor()
-          | map()
+          | wire_map()
 
   @typedoc "Scalar or structured value in debugger wire models."
   @type wire_value ::
@@ -212,31 +283,35 @@ defmodule Elmx.Types do
   @type ui_coord :: number() | String.t()
 
   @typedoc "2D point accepted by `Pebble.Ui` geometry helpers (tuple, record, or wire map)."
-  @type ui_point :: {ui_coord(), ui_coord()} | %{optional(String.t()) => ui_coord()} | map()
+  @type ui_coord_map :: %{optional(atom() | String.t()) => ui_coord()}
+
+  @type ui_point :: {ui_coord(), ui_coord()} | %{optional(String.t()) => ui_coord()} | ui_coord_map()
 
   @typedoc "Rectangle bounds (x, y, w, h) from IR or wire. Four-element lists are accepted at runtime."
   @type ui_bounds ::
           {ui_coord(), ui_coord(), ui_coord(), ui_coord()}
           | %{optional(String.t()) => ui_coord()}
-          | map()
+          | ui_coord_map()
 
   @typedoc "Color literal for Pebble canvas ops (named atom, packed int, or wire union)."
   @type ui_color :: integer() | atom() | String.t() | wire_ctor()
 
   @typedoc "Font descriptor from codegen (GFont id, record, or wire union)."
-  @type ui_font :: atom() | String.t() | map() | wire_ctor() | term()
+  @type ui_font :: atom() | String.t() | integer() | wire_map() | wire_ctor()
 
   @typedoc "Text/font/options records passed into Pebble UI draw helpers."
-  @type ui_text_options :: map() | wire_map() | list()
+  @type ui_text_options_map :: wire_map() | %{optional(atom()) => wire_value()}
+
+  @type ui_text_options :: ui_text_options_map() | list()
 
   @typedoc "Window id or layer index from codegen."
-  @type ui_layer_id :: integer() | String.t() | term()
+  @type ui_layer_id :: integer() | String.t()
 
   @typedoc "Draw-op label for `textLabel` (atom ctor or string)."
   @type ui_label :: atom() | String.t()
 
   @typedoc "Bitmap/vector resource reference from codegen."
-  @type ui_resource :: atom() | integer() | String.t() | map() | wire_ctor()
+  @type ui_resource :: atom() | integer() | String.t() | wire_map() | wire_ctor()
 
   @typedoc "Path definition from `Pebble.Ui.path/3`, passed to outline/filled helpers."
   @type ui_path :: ui_node()
@@ -277,19 +352,22 @@ defmodule Elmx.Types do
           :Color
           | String.t()
           | wire_ctor()
-          | {atom(), term()}
+          | {atom(), list()}
 
+
+  @typedoc "Exception map from `Code.compile_string/2` rescue path."
+  @type compile_failure_map :: %{
+          optional(:message) => String.t(),
+          optional(:file) => String.t() | nil,
+          optional(:line) => integer() | nil,
+          optional(:description) => String.t() | nil
+        }
+
+  @typedoc "Unexpected `Code.compile_string/2` return when not `{module, binary}`."
+  @type compile_failure_unexpected :: [{module(), binary()}]
 
   @typedoc "BEAM compile failure detail from `Elmx.Runtime.Loader`."
-  @type compile_failure_detail ::
-          %{
-            optional(:message) => String.t(),
-            optional(:file) => String.t() | nil,
-            optional(:line) => integer() | nil,
-            optional(:description) => String.t() | nil
-          }
-          | list()
-          | term()
+  @type compile_failure_detail :: compile_failure_map() | compile_failure_unexpected()
 
   @typedoc "Debugger view tree (string-keyed nodes, aligned with IDE `Types.view_output_tree`)."
   @type view_output_tree :: wire_map()
@@ -301,8 +379,7 @@ defmodule Elmx.Types do
           | wire_ctor()
           | wire_map()
           | {atom(), list()}
-          | {integer(), term()}
-          | tuple()
+          | {integer(), elm_value()}
           | ui_color()
           | ui_coord()
           | atom()
@@ -340,24 +417,29 @@ defmodule Elmx.Types do
   @type wire_cmd :: wire_map()
 
   @typedoc "Command map before `Cmd.normalize/1` or inside `batch/1`."
-  @type wire_cmd_input :: wire_cmd() | wire_map() | map()
+  @type wire_cmd_atom_map :: %{optional(atom()) => wire_value()}
+
+  @type wire_cmd_input :: wire_cmd() | wire_map() | wire_cmd_atom_map()
 
   @typedoc "Runtime value accepted by `Values.wire_value/1`."
   @type wire_input ::
           wire_value()
           | wire_ctor()
-          | map()
+          | wire_map()
+          | wire_cmd_atom_map()
+          | elm_result_msg()
+          | elm_msg_ctor()
+          | elm_function_ref()
           | {atom(), list()}
           | atom()
-          | tuple()
-          | list()
+          | [wire_input()]
 
   @typedoc "Pebble data-log tag from Elm `Tag` or a raw integer id."
   @type data_log_tag ::
           integer()
           | {:Tag, integer()}
           | %{optional(String.t()) => String.t() | integer() | [integer()]}
-          | %{optional(atom()) => term()}
+          | %{optional(atom()) => wire_value() | integer() | String.t()}
 
   @typedoc "Elm `Random.Generator` value passed to `random_int/1`."
   @type random_generator :: %{required(:low) => integer(), required(:high) => integer()}
@@ -390,11 +472,11 @@ defmodule Elmx.Types do
           | {:maybe, json_decoder()}
           | {:null, json_value()}
           | {:fail, String.t()}
-          | {:and_then, (term() -> json_decoder()), json_decoder()}
+          | {:and_then, (elm_value() -> json_decoder()), json_decoder()}
           | {:lazy, (-> json_decoder())}
           | {:dict, json_decoder()}
           | {:key_value_pairs, json_decoder()}
-          | {:map, (term() -> term()), json_decoder()}
+          | {:map, (elm_value() -> elm_value()), json_decoder()}
           | {:map_n, function(), [json_decoder()]}
           | {:succeed, json_value()}
           | {:one_of, [json_decoder()]}
@@ -403,7 +485,7 @@ defmodule Elmx.Types do
   @type json_object_pair :: {String.t(), json_value()}
 
   @typedoc "Companion storage value before `storage_value_wire/1` normalization."
-  @type storage_value_input :: wire_value() | wire_ctor() | {atom(), term()}
+  @type storage_value_input :: wire_value() | wire_ctor() | {atom(), elm_value()}
 
   @typedoc """
   Debugger model container passed as `current_model` on executor requests.
@@ -434,9 +516,17 @@ defmodule Elmx.Types do
           optional(:vector_resource_indices) => executor_resource_indices(),
           optional(:bitmap_resource_indices) => executor_resource_indices(),
           optional(:animation_resource_indices) => executor_resource_indices(),
-          optional(atom()) => term(),
-          optional(String.t()) => term()
+          optional(atom()) => wire_input(),
+          optional(String.t()) => wire_input()
         }
+
+  @type elm_result_msg :: {:Ok, elm_value()} | {:Err, elm_value()}
+
+  @type elm_msg_ctor :: {atom() | String.t(), [elm_value()] | elm_value()}
+
+  @type elm_function_ref ::
+          {:function_ref, String.t()}
+          | {:function_ref, module(), String.t()}
 
   @typedoc "Decoded debugger step message for generated `update/2`."
   @type elm_msg ::
@@ -444,8 +534,11 @@ defmodule Elmx.Types do
           | String.t()
           | boolean()
           | number()
-          | tuple()
-          | map()
+          | elm_result_msg()
+          | elm_msg_ctor()
+          | elm_function_ref()
+          | wire_map()
+          | wire_ctor()
           | list()
 
   @typedoc "Default payload for synthetic `FrameTick` messages."
@@ -464,7 +557,7 @@ defmodule Elmx.Types do
           | number()
           | boolean()
           | list()
-          | map()
+          | wire_map()
           | result_like()
 
   @typedoc "Debugger follow-up row derived from init/step commands."
@@ -485,15 +578,25 @@ defmodule Elmx.Types do
   @typedoc "Result of `Emit.compile_expr/3`."
   @type compile_expr_result :: {iodata(), emit_env(), emit_counter()}
 
+  @type function_arity_map :: %{optional(String.t()) => non_neg_integer()}
+  @type cross_module_arity_key :: {String.t(), String.t()}
+  @type cross_module_arity_entry :: %{
+          required(:explicit) => non_neg_integer(),
+          required(:callable) => non_neg_integer()
+        }
+  @type cross_module_arity_map :: %{optional(cross_module_arity_key()) => cross_module_arity_entry()}
+  @type record_field_types_map :: %{optional(String.t()) => %{optional(String.t()) => String.t()}}
+
   @typedoc "Codegen environment passed through `Emit.compile_expr/3`."
   @type emit_env :: %{
           optional(:module) => String.t(),
           optional(:emit_mode) => :library | :ide_runtime,
-          optional(:constructor_lookup) => map(),
-          optional(:record_field_types) => map(),
+          optional(:constructor_lookup) => Elmx.Backend.ConstructorLookup.lookup_input(),
+          optional(:record_field_types) => record_field_types_map(),
           optional(:zero_arity_fns) => MapSet.t(String.t()),
-          optional(:function_arities) => map(),
-          optional(:cross_module_arities) => map(),
+          optional(:function_arities) => function_arity_map(),
+          optional(:explicit_function_arities) => function_arity_map(),
+          optional(:cross_module_arities) => cross_module_arity_map(),
           optional(:emit_module_names) => [String.t()],
           optional(:emit_partial_value) => boolean(),
           optional(:uses_bitwise) => boolean(),
@@ -504,6 +607,19 @@ defmodule Elmx.Types do
   @type emit_error ::
           {:unsupported_op, atom(), String.t()}
           | {:emit_failed, String.t()}
+
+  @typedoc "Failure from `Elmx.compile/2`, `Elmx.compile_in_memory/2`, or loader."
+  @type compile_error ::
+          ElmEx.Frontend.Bridge.Types.bridge_error()
+          | emit_error()
+          | {:compile_failed, String.t(), compile_failure_detail()}
+          | {:missing_module_source, String.t()}
+
+  @typedoc "Platform manager wire node or nested subscription/cmd leaf."
+  @type manager_batch_item :: manager() | wire_cmd_input() | elm_msg()
+
+  @typedoc "Opaque platform manager encoding (`{\"$\" => tag, ...}`)."
+  @type manager :: wire_map()
 
   @typedoc "Options for `Elmx.Backend.ElixirCodegen.emit_project/2`."
   @type emit_options :: %{

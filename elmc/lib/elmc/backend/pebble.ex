@@ -33,7 +33,7 @@ defmodule Elmc.Backend.Pebble do
   @spec ui_node_kind_id!(Kinds.ui_node_kind()) :: non_neg_integer()
   defdelegate ui_node_kind_id!(kind), to: Kinds
 
-  @spec write_pebble_shim(IR.t(), String.t(), PebbleTypes.entry_module(), map()) ::
+  @spec write_pebble_shim(IR.t(), String.t(), PebbleTypes.entry_module(), Types.compile_options()) ::
           :ok | {:error, Types.file_error()}
   def write_pebble_shim(%IR{} = ir, out_dir, entry_module, opts \\ %{}) do
     c_dir = Path.join(out_dir, "c")
@@ -88,7 +88,7 @@ defmodule Elmc.Backend.Pebble do
   end
 
   @doc false
-  @spec stream_view_fallback_needed?(IR.t(), String.t(), PebbleTypes.entry_module(), map()) ::
+  @spec stream_view_fallback_needed?(IR.t(), String.t(), PebbleTypes.entry_module(), Types.compile_options()) ::
           boolean()
   def stream_view_fallback_needed?(ir, generated_c, entry_module, opts) do
     # Color-only and aplite pruned builds commit to streamed direct-scene commands.

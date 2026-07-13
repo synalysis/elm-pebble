@@ -27,5 +27,5 @@ defmodule Elmc.Runtime.Executor.Types.ExecutionResult do
           optional(String.t()) => WireJson.t()
         }
 
-  @type wire_map :: t() | %{optional(atom()) => term(), optional(String.t()) => term()}
+  @type wire_map :: t() | %{optional(atom()) => WireJson.t(), optional(String.t()) => WireJson.t()}
 end

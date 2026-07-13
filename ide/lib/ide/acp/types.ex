@@ -18,7 +18,7 @@ defmodule Ide.Acp.Types do
 
   @type json_rpc_result :: wire_message() | [WireTypes.json_value()] | nil
 
-  @type acp_error :: String.t() | wire_message() | atom() | tuple()
+  @type acp_error :: atom() | String.t() | wire_message()
 
   @type prompt_content_block :: %{
           optional(:type) => String.t(),

@@ -3,14 +3,24 @@ defmodule Ide.Test.TemplateElmxElmcParity.Compare do
 
   alias Ide.Test.TemplateElmxElmcParity.Snapshot
 
+  alias Ide.Test.TemplateElmxElmcParity.Types, as: ParityTypes
+
   @type mismatch :: %{
           required(:step_id) => String.t(),
           required(:field) => String.t(),
-          required(:elmx) => term(),
-          required(:elmc) => term()
+          required(:elmx) => mismatch_value(),
+          required(:elmc) => mismatch_value()
         }
 
-  @spec diff([map()], [map()]) :: [mismatch()]
+  @type mismatch_value ::
+          ParityTypes.wire_json_map()
+          | String.t()
+          | integer()
+          | boolean()
+          | atom()
+          | nil
+
+  @spec diff([Ide.Test.TemplateElmxElmcParity.Types.parity_step()], [Ide.Test.TemplateElmxElmcParity.Types.parity_step()]) :: [mismatch()]
   def diff(elmx_steps, elmc_steps) when is_list(elmx_steps) and is_list(elmc_steps) do
     elmx_by_id = Map.new(elmx_steps, &{&1["step_id"], &1})
     elmc_by_id = Map.new(elmc_steps, &{&1["step_id"], &1})

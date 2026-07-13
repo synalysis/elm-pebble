@@ -1,6 +1,7 @@
 defmodule Elmc.Backend.Plan.Lower.List do
   @moduledoc false
 
+  alias Elmc.Backend.Plan.Types
   alias Elmc.Backend.Plan.Lower.Expr
   alias Elmc.Backend.Plan.{Builder, Context}
 
@@ -9,7 +10,7 @@ defmodule Elmc.Backend.Plan.Lower.List do
 
   @simple_literal_ops [:int_literal, :float_literal, :bool_literal, :string_literal, :char_literal]
 
-  @spec compile_literal(list(), Context.t(), Builder.t()) ::
+  @spec compile_literal([Types.ir_expr()], Context.t(), Builder.t()) ::
           {:ok, non_neg_integer(), Builder.t()} | :unsupported
   def compile_literal([], ctx, b) do
     Expr.compile_runtime_builtin(:list_nil, [], ctx, b)

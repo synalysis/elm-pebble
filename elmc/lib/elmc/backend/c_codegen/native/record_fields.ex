@@ -69,7 +69,9 @@ defmodule Elmc.Backend.CCodegen.Native.RecordFields do
     end
   end
 
-  @spec field_type(Types.compile_env(), term(), String.t()) :: String.t() | nil
+  @type record_field_arg :: String.t() | Types.ir_expr()
+
+  @spec field_type(Types.compile_env(), record_field_arg(), String.t()) :: String.t() | nil
   def field_type(env, arg, field) when is_binary(arg) and is_binary(field) do
     case field_kind_from_env(env, arg, field) do
       kind when is_binary(kind) ->
@@ -99,7 +101,7 @@ defmodule Elmc.Backend.CCodegen.Native.RecordFields do
 
   def field_type(_env, _arg, _field), do: nil
 
-  @spec int_field?(Types.compile_env(), term(), String.t()) :: boolean()
+  @spec int_field?(Types.compile_env(), record_field_arg(), String.t()) :: boolean()
   def int_field?(env, %{op: :var, name: name}, field) do
     case Map.get(env, name) do
       {:native_record, fields} -> Map.has_key?(fields, field)
@@ -129,7 +131,7 @@ defmodule Elmc.Backend.CCodegen.Native.RecordFields do
     end
   end
 
-  @spec union_tag_field?(Types.compile_env(), term(), String.t()) :: boolean()
+  @spec union_tag_field?(Types.compile_env(), record_field_arg(), String.t()) :: boolean()
   def union_tag_field?(env, arg, field) do
     case field_type(env, arg, field) do
       type when is_binary(type) -> union_tag_field_type?(type)
@@ -144,7 +146,7 @@ defmodule Elmc.Backend.CCodegen.Native.RecordFields do
     MapSet.member?(types, normalized) or MapSet.member?(types, type)
   end
 
-  @spec float_field?(Types.compile_env(), term(), String.t()) :: boolean()
+  @spec float_field?(Types.compile_env(), record_field_arg(), String.t()) :: boolean()
   def float_field?(env, arg, field) do
     case field_type(env, arg, field) do
       "Float" -> true
@@ -152,7 +154,7 @@ defmodule Elmc.Backend.CCodegen.Native.RecordFields do
     end
   end
 
-  @spec bool_field?(Types.compile_env(), term(), String.t()) :: boolean()
+  @spec bool_field?(Types.compile_env(), record_field_arg(), String.t()) :: boolean()
   def bool_field?(env, arg, field) do
     case field_type(env, arg, field) do
       "Bool" -> true

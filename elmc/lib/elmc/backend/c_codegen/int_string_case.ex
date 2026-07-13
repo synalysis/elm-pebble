@@ -1,6 +1,8 @@
 defmodule Elmc.Backend.CCodegen.IntStringCase do
   @moduledoc false
 
+  alias Elmc.Backend.CCodegen.Types
+
   alias Elmc.Backend.CCodegen.{
     CSource,
     EnvBindings,
@@ -10,7 +12,7 @@ defmodule Elmc.Backend.CCodegen.IntStringCase do
     Util
   }
 
-  @spec try_emit(String.t(), String.t(), map() | nil, map()) ::
+  @spec try_emit(String.t(), String.t(), Types.ir_expr() | nil, Types.function_decl_map()) ::
           {:ok, String.t(), [FusionSupport.callee_key()], :rc_native} | :error
   def try_emit(_module_name, _name, nil, _decl_map), do: :error
 
@@ -99,8 +101,8 @@ defmodule Elmc.Backend.CCodegen.IntStringCase do
   end
 
   @doc false
-  @spec extract_fusion_data(String.t(), String.t(), map() | nil, map()) ::
-          {:ok, :int_string_lut, map()} | :error
+  @spec extract_fusion_data(String.t(), String.t(), Types.ir_expr() | nil, Types.function_decl_map()) ::
+          {:ok, :int_string_lut, Types.fusion_metadata()} | :error
   def extract_fusion_data(_module_name, _name, expr, _decl_map) do
     with {:ok, branches} <- parse_int_string_case(expr),
          int_branches = int_case_branches(branches),

@@ -1,9 +1,10 @@
 defmodule Elmc.Backend.CCodegen.PebbleMsgTag do
   @moduledoc false
 
+  alias Elmc.Backend.CCodegen.Types
   alias Elmc.Backend.Pebble.Util
 
-  @spec tag_expr(map()) :: String.t()
+  @spec tag_expr(Types.pattern()) :: String.t()
   def tag_expr(%{tag: tag} = pattern) when is_integer(tag) do
     case constructor_short_name(pattern) do
       name when is_binary(name) ->

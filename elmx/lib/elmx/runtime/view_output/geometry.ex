@@ -1,6 +1,8 @@
 defmodule Elmx.Runtime.ViewOutput.Geometry do
   @moduledoc false
 
+  alias Elmx.Types
+
   def path_output_kind("pathFilled"), do: "path_filled"
   def path_output_kind("pathOutline"), do: "path_outline"
   def path_output_kind("pathOutlineOpen"), do: "path_outline_open"
@@ -217,7 +219,7 @@ defmodule Elmx.Runtime.ViewOutput.Geometry do
   def screen_key_fallback(:screen_w), do: "screenW"
   def screen_key_fallback(:screen_h), do: "screenH"
 
-  @spec int_field(map(), String.t(), integer() | nil) :: integer() | nil
+  @spec int_field(Types.wire_map(), String.t(), integer() | nil) :: integer() | nil
   def int_field(node, key, default) when is_map(node) do
     case Map.get(node, key) || Map.get(node, String.to_atom(key)) do
       value when is_integer(value) -> value

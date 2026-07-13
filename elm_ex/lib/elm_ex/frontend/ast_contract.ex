@@ -6,7 +6,7 @@ defmodule ElmEx.Frontend.AstContract do
   alias ElmEx.Frontend.Module
   alias ElmEx.Frontend.AstContract.Types
 
-  @spec validate_module(Module.t()) :: :ok | {:error, map()}
+  @spec validate_module(Module.t()) :: :ok | {:error, Types.ast_contract_error()}
   def validate_module(%Module{} = module) do
     with :ok <- validate_module_name(module.name),
          :ok <- validate_imports(module.imports),
@@ -33,7 +33,7 @@ defmodule ElmEx.Frontend.AstContract do
   defp validate_imports(_), do: {:error, %{kind: :ast_contract_error, reason: :invalid_imports}}
 
   @spec validate_declarations([Types.declaration()] | Types.invalid_input()) ::
-          :ok | {:error, map()}
+          :ok | {:error, Types.ast_contract_error()}
   defp validate_declarations(declarations) when is_list(declarations) do
     declarations
     |> Enum.with_index()
@@ -52,7 +52,8 @@ defmodule ElmEx.Frontend.AstContract do
   defp validate_declarations(_),
     do: {:error, %{kind: :ast_contract_error, reason: :declarations_must_be_list}}
 
-  @spec validate_declaration(map()) :: :ok | {:error, atom() | map()}
+  @spec validate_declaration(Types.declaration() | Types.invalid_input()) ::
+          :ok | {:error, Types.declaration_error()}
   defp validate_declaration(%{
          kind: :function_definition,
          name: name,
@@ -344,7 +345,7 @@ defmodule ElmEx.Frontend.AstContract do
 
   defp validate_field_call(_), do: {:error, :invalid_field_call_expr}
 
-  @spec validate_pipe_chain(map()) :: :ok | {:error, atom()}
+  @spec validate_pipe_chain(Types.pipe_chain_expr() | Types.invalid_input()) :: :ok | {:error, atom()}
   defp validate_pipe_chain(%{steps: steps, base: base}) when is_list(steps) do
     with :ok <- validate_expr(base),
          :ok <- validate_expr_list(steps, :invalid_pipe_chain_expr) do

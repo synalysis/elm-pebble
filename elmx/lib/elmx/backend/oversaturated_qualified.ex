@@ -2,8 +2,9 @@ defmodule Elmx.Backend.OversaturatedQualified do
   @moduledoc false
 
   alias Elmx.Backend.QualifiedSaturatedArity
+  alias Elmx.Types
 
-  @spec normalize(map()) :: map()
+  @spec normalize(Types.ir_expr()) :: Types.ir_expr()
   def normalize(%{op: :qualified_call, target: target, args: args}) when is_binary(target) and is_list(args) do
     case QualifiedSaturatedArity.saturated(target) do
       {:ok, arity} when length(args) > arity ->

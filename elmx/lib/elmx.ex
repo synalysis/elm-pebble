@@ -19,15 +19,15 @@ defmodule Elmx do
   @doc """
   Typechecks and loads an Elm project via `elm_ex` bridge.
   """
-  @spec check(String.t()) :: {:ok, map()} | {:error, map()}
+  @spec check(String.t()) :: {:ok, ElmEx.Frontend.Project.t()} | {:error, ElmEx.Frontend.Bridge.Types.bridge_error()}
   def check(project_dir), do: Bridge.load_project(project_dir)
 
   @doc """
   Compiles IR to Elixir on disk under `out_dir/elixir/`.
   """
   @spec compile(String.t(), compile_options()) ::
-          {:ok, %{project: map(), ir: ElmEx.IR.t(), out_dir: String.t()}}
-          | {:error, term()}
+          {:ok, %{project: ElmEx.Frontend.Project.t(), ir: ElmEx.IR.t(), out_dir: String.t()}}
+          | {:error, Types.compile_error()}
   def compile(project_dir, opts \\ %{}) do
     entry_module = opts[:entry_module] || "Main"
     out_dir = opts[:out_dir] || "build"
@@ -56,7 +56,8 @@ defmodule Elmx do
   @doc """
   Compiles Elm → Elixir → BEAM entirely in memory for IDE hot-reload.
   """
-  @spec compile_in_memory(String.t(), compile_options()) :: {:ok, CompileResult.t()} | {:error, term()}
+  @spec compile_in_memory(String.t(), compile_options()) ::
+          {:ok, CompileResult.t()} | {:error, Types.compile_error()}
   def compile_in_memory(project_dir, opts \\ %{}) when is_binary(project_dir) do
     _ = Application.ensure_all_started(:elmx)
     entry_module = opts[:entry_module] || "Main"
@@ -112,7 +113,7 @@ defmodule Elmx do
 
   @spec maybe_strip_dead_code(ElmEx.IR.t(), String.t(), boolean() | nil) :: ElmEx.IR.t()
   @doc false
-  @spec user_module_names(map()) :: [String.t()]
+  @spec user_module_names(ElmEx.Frontend.Project.t()) :: [String.t()]
   def user_module_names(%{project_dir: project_dir, modules: modules}) do
     src_root = Path.expand(Path.join(project_dir, "src"))
 
@@ -151,8 +152,8 @@ defmodule Elmx do
   defp ir_revision_key(_project_dir, %{revision: rev}) when is_binary(rev) and rev != "", do: rev
   defp ir_revision_key(project_dir, _opts), do: "project:" <> project_dir
 
-  @spec project_for_compile(String.t(), map(), compile_options()) ::
-          {:ok, ElmEx.Frontend.Project.t()} | {:error, term()}
+  @spec project_for_compile(String.t(), %{optional(String.t()) => String.t()}, compile_options()) ::
+          {:ok, ElmEx.Frontend.Project.t()} | {:error, ElmEx.Frontend.Bridge.Types.bridge_error()}
   defp project_for_compile(_project_dir, _source_overrides, %{project: %ElmEx.Frontend.Project{} = project}),
     do: {:ok, project}
 

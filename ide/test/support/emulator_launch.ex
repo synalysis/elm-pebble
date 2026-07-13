@@ -9,7 +9,7 @@ defmodule Ide.TestSupport.EmulatorLaunch do
 
   @type launch_error :: Types.emulator_error() | {:exit, Types.exit_reason()}
 
-  @spec launch(Ide.Emulator.launch_opts()) :: {:ok, map()} | {:error, launch_error()}
+  @spec launch(Ide.Emulator.launch_opts()) :: {:ok, EmulatorTypes.session_info()} | {:error, launch_error()}
   def launch(opts) when is_list(opts) do
     do_launch(opts, @max_attempts, @initial_delay_ms)
   end

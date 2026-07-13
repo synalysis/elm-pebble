@@ -5,14 +5,13 @@ defmodule Elmc.Backend.CCodegen.CSourceTest do
 
   test "format indents brace blocks consistently" do
     input = """
-    ElmcValue *foo(void) {
-    (void)0;
-      if (x) {
-          y = 1;
+      ElmcValue *foo(void) {
+      (void)0;
+        if (x) {
+            y = 1;
+        }
+      return y;
       }
-    return y;
-    }
-    
       """
 
     assert CSource.format(input) == """
@@ -36,8 +35,7 @@ defmodule Elmc.Backend.CCodegen.CSourceTest do
         x = 0;
       break;
     }
-    
-      """
+    """
 
     assert CSource.format(input) == """
     switch (tag) {
@@ -61,8 +59,7 @@ defmodule Elmc.Backend.CCodegen.CSourceTest do
         }
       }
     }
-    
-      """
+    """
 
     assert CSource.format(input) == """
     static ElmcValue *restore(ElmcValue *direction) {
@@ -81,8 +78,7 @@ defmodule Elmc.Backend.CCodegen.CSourceTest do
     #if defined(__GNUC__)
     #pragma GCC diagnostic ignored "-Wunused-function"
     #endif
-    
-      """
+    """
 
     assert CSource.format(input) == """
     #if defined(__GNUC__)
@@ -107,10 +103,9 @@ defmodule Elmc.Backend.CCodegen.CSourceTest do
     input = """
     if (native_mod_2 != 0) {
       native_mod_2 = seed % native_mod_base_2;
-      if (native_mod_2 < 0) native_mod_2 += (native_mod_base_2 < 0 ? -native_mod_base_2 : native_mod_base_2);
+      if (native_mod_2 < 0)         native_mod_2 += (native_mod_base_2 < 0 ? -native_mod_base_2 : native_mod_base_2);
     }
-    
-      """
+    """
 
     assert CSource.format(input) == """
     if (native_mod_2 != 0) {
@@ -127,8 +122,7 @@ defmodule Elmc.Backend.CCodegen.CSourceTest do
       owned[1] = elmc_retain(model);owned[2] = elmc_int_zero();
       Rc = elmc_tuple2_take(out, owned[1], owned[2]);
     }
-    
-      """
+    """
 
     assert CSource.format(input) == """
     if (elmc_maybe_is_nothing(owned[0])) {
@@ -143,8 +137,7 @@ defmodule Elmc.Backend.CCodegen.CSourceTest do
     input = """
     if (direct_item_i == last_ref) break;
     if (!writer) return -1;
-    
-      """
+    """
 
     assert CSource.format(input) == """
     if (direct_item_i == last_ref) break;
@@ -159,8 +152,7 @@ defmodule Elmc.Backend.CCodegen.CSourceTest do
       elmc_release(tmp_1);
       return elmc_retain(model);
     }
-    
-      """
+    """
 
     assert CSource.format(input) == """
     ElmcValue *foo(ElmcValue *model) {
@@ -176,8 +168,7 @@ defmodule Elmc.Backend.CCodegen.CSourceTest do
       list_search_index_67 += 1;
       direct_item_i += direct_step;
     }
-    
-      """
+    """
 
     assert CSource.format(input) == """
     void step(void) {
@@ -206,8 +197,7 @@ defmodule Elmc.Backend.CCodegen.CSourceTest do
       elmc_release(tmp_13);
       return tmp_14;
     }
-    
-      """
+    """
 
     formatted = CSource.format(input)
 
@@ -233,8 +223,7 @@ defmodule Elmc.Backend.CCodegen.CSourceTest do
       elmc_release(tmp_13);
       return tmp_14;
     }
-    
-      """
+    """
 
     formatted = CSource.format(input)
 
@@ -247,18 +236,16 @@ defmodule Elmc.Backend.CCodegen.CSourceTest do
 
   test "format indents CATCH_BEGIN body and brace-wrapped CATCH_BREAK" do
     input = """
-    static int foo(void) {
-    int direct_rc = 0;
-    x = 1;
-    if (elmc_scene_writer_push_cmd(writer, &scene_cmd) != 0) {
-    CATCH_BREAK;
-    }
+      static int foo(void) {
+      int direct_rc = 0;
+      x = 1;
+      if (elmc_scene_writer_push_cmd(writer, &scene_cmd) != 0) {
+      CATCH_BREAK;
+      }
 
-    return direct_rc;
-    CATCH_END;
-    }
-    
-      
+      return direct_rc;
+      CATCH_END;
+      }
       """
 
     assert CSource.format(input) == """

@@ -12,6 +12,7 @@ defmodule IdeWeb.WorkspaceLive.ProjectSettingsFlow do
   alias Ide.AppStore.Listing, as: AppStoreListing
   alias Ide.Auth
   alias Ide.GitHub.Push, as: GitHubPush
+  alias Ide.GitHub.Types, as: GitHubTypes
   alias Ide.GitHub.Repositories, as: GitHubRepositories
   alias Ide.Projects
   alias Ide.Projects.Project
@@ -621,7 +622,7 @@ defmodule IdeWeb.WorkspaceLive.ProjectSettingsFlow do
     end
   end
 
-  @spec format_github_push_error(atom() | tuple() | String.t()) :: String.t()
+  @spec format_github_push_error(GitHubTypes.push_error()) :: String.t()
   def format_github_push_error({:missing_repo_field, field}),
     do: "Missing repository field: #{field}"
 

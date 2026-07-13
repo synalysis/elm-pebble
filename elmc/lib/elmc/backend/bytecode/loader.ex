@@ -5,11 +5,13 @@ defmodule Elmc.Backend.Bytecode.Loader do
 
   alias Elmc.Backend.Bytecode.{Lower, ManifestProgram, Program, Runtime}
 
-  @type manifest :: %{
-          optional(String.t()) => term()
-        }
+  alias Elmc.Backend.Bytecode.Artifacts.Types, as: ArtifactTypes
+  alias Elmc.Backend.CCodegen.Types
 
-  @spec load_manifest(String.t()) :: {:ok, manifest()} | {:error, term()}
+  @type manifest :: ArtifactTypes.wire_manifest()
+  @type load_error :: ArtifactTypes.bytecode_load_error()
+
+  @spec load_manifest(String.t()) :: {:ok, manifest()} | {:error, load_error()}
   def load_manifest(path) when is_binary(path) do
     with {:ok, bin} <- File.read(path),
          {:ok, decoded} <- Jason.decode(bin) do
@@ -18,7 +20,7 @@ defmodule Elmc.Backend.Bytecode.Loader do
   end
 
   @spec run_manifest_entry(String.t(), {String.t(), String.t()}, keyword()) ::
-          {:ok, Runtime.value()} | {:error, term()}
+          {:ok, Runtime.value()} | {:error, load_error()}
   def run_manifest_entry(build_dir, {_module, _name} = target, opts \\ []) when is_binary(build_dir) do
     if Keyword.get(opts, :linked, true) do
       with {:ok, program} <- ManifestProgram.load_linked(build_dir, target) do
@@ -40,8 +42,10 @@ defmodule Elmc.Backend.Bytecode.Loader do
     end
   end
 
-  @spec link_and_run(map(), {String.t(), String.t()}, keyword()) ::
-          {:ok, Runtime.value()} | {:error, term()}
+  alias Elmc.Backend.Plan.Types, as: PlanTypes
+
+  @spec link_and_run(Types.function_decl_map(), {String.t(), String.t()}, keyword()) ::
+          {:ok, Runtime.value()} | {:error, load_error()} | PlanTypes.lower_result()
   def link_and_run(decl_map, {_module, _name} = root, opts \\ []) when is_map(decl_map) do
     case Program.link(decl_map, root, opts) do
       {:ok, program} -> Program.run(program, opts)
@@ -56,7 +60,8 @@ defmodule Elmc.Backend.Bytecode.Loader do
     end
   end
 
-  @spec load_section(String.t(), map()) :: {:ok, Lower.section()} | {:error, term()}
+  @spec load_section(String.t(), ArtifactTypes.manifest_function_entry()) ::
+          {:ok, Lower.section()} | {:error, load_error()}
   def load_section(build_dir, %{"file" => file} = entry) do
     path = Path.join([build_dir, "bytecode", file])
 

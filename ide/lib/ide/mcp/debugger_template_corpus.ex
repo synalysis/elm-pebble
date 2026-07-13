@@ -1189,7 +1189,10 @@ defmodule Ide.Mcp.DebuggerTemplateCorpus do
     :ok
   end
 
-  @spec with_corpus_debugger_sync((-> term())) :: term()
+  @type corpus_http_executor_saved :: nil | keyword()
+  @type corpus_async_env_saved :: boolean() | nil
+
+  @spec with_corpus_debugger_sync((-> result)) :: result when result: var
   defp with_corpus_debugger_sync(fun) when is_function(fun, 0) do
     previous_http = Application.get_env(:ide, :debugger_async_http_followups)
     previous_protocol = Application.get_env(:ide, :debugger_async_protocol_delivery)
@@ -1213,7 +1216,7 @@ defmodule Ide.Mcp.DebuggerTemplateCorpus do
     end
   end
 
-  @spec install_corpus_http_executor!(term()) :: :ok
+  @spec install_corpus_http_executor!(corpus_http_executor_saved()) :: :ok
   defp install_corpus_http_executor!(previous_executor) do
     previous_kw = if is_list(previous_executor), do: previous_executor, else: []
     previous_fun = Keyword.get(previous_kw, :request_fun)
@@ -1236,7 +1239,7 @@ defmodule Ide.Mcp.DebuggerTemplateCorpus do
     :ok
   end
 
-  @spec restore_corpus_http_executor!(term()) :: :ok
+  @spec restore_corpus_http_executor!(corpus_http_executor_saved()) :: :ok
   defp restore_corpus_http_executor!(nil) do
     Application.delete_env(:ide, HttpExecutor)
     :ok
@@ -1247,7 +1250,10 @@ defmodule Ide.Mcp.DebuggerTemplateCorpus do
     :ok
   end
 
-  @spec corpus_http_stub_response(map()) :: {:ok, map()} | :pass
+  @type corpus_http_response :: CorpusTypes.corpus_http_response()
+
+  @spec corpus_http_stub_response(DebuggerTypes.wire_map()) ::
+          {:ok, corpus_http_response()} | :pass
   defp corpus_http_stub_response(command) when is_map(command) do
     url = Map.get(command, "url") || Map.get(command, :url) || ""
 
@@ -1263,7 +1269,7 @@ defmodule Ide.Mcp.DebuggerTemplateCorpus do
     end
   end
 
-  @spec restore_corpus_debugger_async_env!(atom(), term()) :: :ok
+  @spec restore_corpus_debugger_async_env!(atom(), corpus_async_env_saved()) :: :ok
   defp restore_corpus_debugger_async_env!(key, nil) when is_atom(key) do
     Application.delete_env(:ide, key)
     :ok

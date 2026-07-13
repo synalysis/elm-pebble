@@ -19,7 +19,7 @@ defmodule Elmx.Runtime.Followups.Flatten do
   def flatten(commands) when is_list(commands), do: Enum.flat_map(commands, &flatten/1)
   def flatten(_), do: []
 
-  @spec stringify_keys(map()) :: Types.wire_cmd()
+  @spec stringify_keys(Types.wire_cmd_input()) :: Types.wire_cmd()
   def stringify_keys(map) when is_map(map) do
     Map.new(map, fn {k, v} -> {to_string(k), v} end)
   end

@@ -7,7 +7,7 @@ defmodule ElmEx.IR.Types.Pattern do
 
   @type t :: %{
           required(:kind) => kind(),
-          optional(atom()) => term()
+          optional(atom()) => ElmEx.IR.Types.FieldValue.t()
         }
 
   @type wire_pattern :: t()

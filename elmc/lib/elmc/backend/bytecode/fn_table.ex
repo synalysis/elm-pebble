@@ -1,6 +1,7 @@
 defmodule Elmc.Backend.Bytecode.FnTable do
   @moduledoc false
 
+  alias Elmc.Backend.Bytecode.Lower
   alias Elmc.Backend.Plan.Types.{Block, FunctionPlan}
 
   @type entry :: {String.t(), String.t()}
@@ -17,7 +18,7 @@ defmodule Elmc.Backend.Bytecode.FnTable do
     Enum.uniq(direct ++ nested)
   end
 
-  @spec collect_section(map()) :: t()
+  @spec collect_section(Lower.section()) :: t()
   def collect_section(section) when is_map(section) do
     direct = Map.get(section, :fn_table, [])
 

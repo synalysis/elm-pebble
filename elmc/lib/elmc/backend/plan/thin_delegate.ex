@@ -2,6 +2,7 @@ defmodule Elmc.Backend.Plan.ThinDelegate do
   @moduledoc false
 
   alias Elmc.Backend.CCodegen.Host
+  alias Elmc.Backend.Plan.Types
 
   @kernel_call_names ~w(
     modBy
@@ -17,7 +18,7 @@ defmodule Elmc.Backend.Plan.ThinDelegate do
     __ge__
   )
 
-  @spec thin_delegate?(map(), String.t(), map()) :: boolean()
+  @spec thin_delegate?(Types.function_decl(), String.t(), Types.function_decl_map()) :: boolean()
   def thin_delegate?(decl, module_name, decl_map) when is_map(decl) do
     case Host.function_return_type(Map.get(decl, :type)) do
       ret when ret in ["Int", "Bool"] ->
@@ -30,7 +31,7 @@ defmodule Elmc.Backend.Plan.ThinDelegate do
 
   def thin_delegate?(_, _, _), do: false
 
-  @spec thin_delegate_expr?(map() | nil, String.t(), map()) :: boolean()
+  @spec thin_delegate_expr?(Types.ir_expr() | nil, String.t(), Types.function_decl_map()) :: boolean()
   def thin_delegate_expr?(expr, module_name, decl_map) do
     case expr do
       %{op: :qualified_call, target: target, args: args} when is_list(args) ->

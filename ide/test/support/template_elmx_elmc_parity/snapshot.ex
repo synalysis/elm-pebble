@@ -3,9 +3,11 @@ defmodule Ide.Test.TemplateElmxElmcParity.Snapshot do
 
   alias Ide.Mcp.DebuggerTemplateCorpus
 
+  alias Ide.Test.TemplateElmxElmcParity.Types, as: ParityTypes
+
   @double_quote 34
 
-  @spec from_elmx_step(map()) :: map()
+  @spec from_elmx_step(Ide.Test.TemplateElmxElmcParity.Types.parity_step()) :: Ide.Test.TemplateElmxElmcParity.Types.parity_step()
   def from_elmx_step(%{} = step) do
     step
     |> Map.take(["step_id", "op", "message", "backend", "error"])
@@ -16,14 +18,15 @@ defmodule Ide.Test.TemplateElmxElmcParity.Snapshot do
     |> Map.put("commands", normalize_commands(Map.get(step, "commands")))
   end
 
-  @spec from_elmc_step(map()) :: map()
+  @spec from_elmc_step(Ide.Test.TemplateElmxElmcParity.Types.parity_step()) :: Ide.Test.TemplateElmxElmcParity.Types.parity_step()
   def from_elmc_step(%{} = step) do
     step
     |> Map.update("view_output", [], &normalize_elmc_view_output/1)
     |> from_elmx_step()
   end
 
-  @spec normalize_model(term()) :: map() | String.t() | nil
+  @spec normalize_model(ParityTypes.wire_json_map() | String.t() | nil) ::
+          ParityTypes.normalized_model()
   def normalize_model(model) when is_map(model) do
     model
     |> drop_volatile_keys()
@@ -41,7 +44,7 @@ defmodule Ide.Test.TemplateElmxElmcParity.Snapshot do
   end
   def normalize_model(_), do: nil
 
-  @spec normalize_view_output(term()) :: [map()]
+  @spec normalize_view_output(list() | nil) :: [ParityTypes.normalized_view_row()]
   def normalize_view_output(rows) when is_list(rows) do
     rows
     |> Enum.map(&canonical_preview_op/1)
@@ -52,7 +55,7 @@ defmodule Ide.Test.TemplateElmxElmcParity.Snapshot do
 
   def normalize_view_output(_), do: []
 
-  @spec normalize_render_tree(term()) :: map()
+  @spec normalize_render_tree(ParityTypes.wire_json_map() | nil) :: ParityTypes.wire_json_map()
   def normalize_render_tree(tree) when is_map(tree) do
     tree
     |> Map.take(["root_type", "node_count", "node_types"])
@@ -63,7 +66,7 @@ defmodule Ide.Test.TemplateElmxElmcParity.Snapshot do
 
   def normalize_render_tree(_), do: %{}
 
-  @spec normalize_subscriptions(term()) :: [String.t()]
+  @spec normalize_subscriptions(list() | integer() | nil) :: [String.t()]
   def normalize_subscriptions(subs) when is_list(subs) do
     subs
     |> Enum.map(&normalize_subscription_entry/1)
@@ -78,7 +81,7 @@ defmodule Ide.Test.TemplateElmxElmcParity.Snapshot do
 
   def normalize_subscriptions(_), do: []
 
-  @spec normalize_commands(term()) :: [map()]
+  @spec normalize_commands(list() | nil) :: [ParityTypes.wire_json_map()]
   def normalize_commands(cmds) when is_list(cmds) do
     cmds
     |> Enum.map(&normalize_command/1)
@@ -88,7 +91,7 @@ defmodule Ide.Test.TemplateElmxElmcParity.Snapshot do
 
   def normalize_commands(_), do: []
 
-  @spec normalize_elmc_view_output([map()]) :: [map()]
+  @spec normalize_elmc_view_output([Ide.Test.TemplateElmxElmcParity.Types.normalized_view_row()]) :: [Ide.Test.TemplateElmxElmcParity.Types.normalized_view_row()]
   def normalize_elmc_view_output(rows) when is_list(rows) do
     rows
     |> Enum.map(&normalize_elmc_view_row/1)
@@ -124,7 +127,7 @@ defmodule Ide.Test.TemplateElmxElmcParity.Snapshot do
 
   defp infer_elmc_text_label_text(row), do: row
 
-  @spec corpus_normalize(map()) :: map()
+  @spec corpus_normalize(Ide.Test.TemplateElmxElmcParity.Types.wire_json_map()) :: Ide.Test.TemplateElmxElmcParity.Types.wire_json_map()
   def corpus_normalize(snapshot) when is_map(snapshot) do
     DebuggerTemplateCorpus.normalize_snapshot(snapshot)
   end
@@ -202,7 +205,8 @@ defmodule Ide.Test.TemplateElmxElmcParity.Snapshot do
     |> String.trim()
   end
 
-  @spec model_value_list(term()) :: [term()]
+  @spec model_value_list(ParityTypes.wire_json_map() | String.t() | nil) ::
+          [ParityTypes.wire_json_map() | String.t() | number() | boolean()]
   def model_value_list(%{"_values" => values}) when is_list(values), do: values
 
   def model_value_list(%{} = map) do

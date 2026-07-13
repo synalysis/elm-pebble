@@ -19,7 +19,7 @@ defmodule Elmx.Runtime.Pebble.TextOptions do
     }
   end
 
-  @spec collect_settings(Types.ui_text_options() | nil) :: [map()]
+  @spec collect_settings(Types.ui_text_options() | nil) :: [Types.ui_text_setting()]
   defp collect_settings(nil), do: []
   defp collect_settings([]), do: []
 
@@ -41,7 +41,7 @@ defmodule Elmx.Runtime.Pebble.TextOptions do
     to_string(type || "") == "contextSetting"
   end
 
-  @spec alignment_from_settings([map()], Types.ui_text_options() | nil) :: alignment()
+  @spec alignment_from_settings([Types.ui_text_setting()], Types.ui_text_options() | nil) :: alignment()
   defp alignment_from_settings(settings, options) do
     keys = Enum.map(settings, &setting_key/1)
 
@@ -53,7 +53,7 @@ defmodule Elmx.Runtime.Pebble.TextOptions do
     end
   end
 
-  @spec overflow_from_settings([map()], Types.ui_text_options() | nil) :: overflow()
+  @spec overflow_from_settings([Types.ui_text_setting()], Types.ui_text_options() | nil) :: overflow()
   defp overflow_from_settings(settings, options) do
     keys = Enum.map(settings, &setting_key/1)
 
@@ -73,7 +73,7 @@ defmodule Elmx.Runtime.Pebble.TextOptions do
   defp overflow_from_map(%{overflow: value}), do: overflow_name(value)
   defp overflow_from_map(_), do: "word_wrap"
 
-  @spec setting_key(map()) :: String.t()
+  @spec setting_key(Types.ui_text_setting()) :: String.t()
   defp setting_key(setting) do
     to_string(Map.get(setting, "key") || Map.get(setting, :key) || "")
   end

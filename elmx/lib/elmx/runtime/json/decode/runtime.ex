@@ -6,7 +6,7 @@ defmodule Elmx.Runtime.Json.Decode.Runtime do
   @type decoder :: Types.json_decoder()
   @type decode_result :: Types.result_native()
 
-  @spec normalize_input(term()) :: {:ok, Types.json_value()} | {:Err, String.t()}
+  @spec normalize_input(Types.json_value() | String.t()) :: {:ok, Types.json_value()} | {:Err, String.t()}
   def normalize_input(value) when is_binary(value) do
     case Jason.decode(value) do
       {:ok, decoded} -> {:ok, decoded}
@@ -20,7 +20,7 @@ defmodule Elmx.Runtime.Json.Decode.Runtime do
   def normalize_input(nil), do: {:ok, nil}
   def normalize_input(_), do: {:Err, "expected JSON value"}
 
-  @spec apply_decoder(decoder(), term()) :: decode_result()
+  @spec apply_decoder(decoder(), Types.json_value()) :: decode_result()
   def apply_decoder({:json_decoder, :string}, value) when is_binary(value), do: {:Ok, value}
 
   def apply_decoder({:json_decoder, :string}, value) when is_map(value) do

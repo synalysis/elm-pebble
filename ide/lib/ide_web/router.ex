@@ -17,6 +17,12 @@ defmodule IdeWeb.Router do
     plug IdeWeb.Plugs.FetchCurrentUser
   end
 
+  pipeline :mcp_http do
+    plug IdeWeb.Plugs.McpAccepts
+    plug :fetch_session
+    plug IdeWeb.Plugs.FetchCurrentUser
+  end
+
   pipeline :authenticated_browser do
     plug IdeWeb.Plugs.RequireAuth
   end
@@ -85,15 +91,14 @@ defmodule IdeWeb.Router do
   end
 
   scope "/api", IdeWeb do
-    pipe_through :api
+    pipe_through [:mcp_http, :authenticated_api]
 
     get "/mcp", McpController, :show
+    post "/mcp", McpController, :create
   end
 
   scope "/api", IdeWeb do
     pipe_through [:api, :authenticated_api]
-
-    post "/mcp", McpController, :create
     post "/tokenize", TokenizerController, :create
     post "/emulator/launch", EmulatorController, :launch
     post "/emulator/projects/:slug/screenshot", EmulatorController, :screenshot

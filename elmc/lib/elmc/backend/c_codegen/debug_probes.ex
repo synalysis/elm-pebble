@@ -99,7 +99,9 @@ defmodule Elmc.Backend.CCodegen.DebugProbes do
     end
   end
 
-  @spec field_probe(Types.compile_env(), term(), String.t(), probe_position()) :: String.t()
+  @type probe_subject :: String.t() | nil
+
+  @spec field_probe(Types.compile_env(), probe_subject(), String.t(), probe_position()) :: String.t()
   def field_probe(_env, _arg, _field, _position), do: ""
 
   @spec call_probe(Types.compile_env(), String.t(), String.t(), probe_position()) :: String.t()

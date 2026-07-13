@@ -41,6 +41,8 @@ defmodule Ide.Debugger.Types.RuntimeState do
           required(:debugger_timeline) => [debugger_event()],
           required(:debugger_seq) => non_neg_integer(),
           required(:seq) => non_neg_integer(),
+          optional(:debugger_defer_init_surface_effects) => boolean(),
+          optional(:debugger_skip_blocking_compile) => boolean(),
           optional(String.t()) => Types.wire_input()
         }
 

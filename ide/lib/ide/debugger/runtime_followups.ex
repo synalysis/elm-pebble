@@ -317,7 +317,7 @@ defmodule Ide.Debugger.RuntimeFollowups do
           ProtocolRx.inbound_app_message("FromPhone", message, message_value) ||
             {message, message_value}
 
-        target in [:companion, :phone] and direction in ["watch_to_phone", :watch_to_phone] and
+        target == :companion and direction in ["watch_to_phone", :watch_to_phone] and
             is_binary(message) and message != "" ->
           case Map.get(ctx, :protocol_rx_ctx) do
             rx_ctx when is_function(rx_ctx, 0) ->
@@ -365,7 +365,7 @@ defmodule Ide.Debugger.RuntimeFollowups do
         "message_source" => "runtime_followup"
       })
     else
-      if target in [:companion, :phone] and direction in ["watch_to_phone", :watch_to_phone] and
+      if target == :companion and direction in ["watch_to_phone", :watch_to_phone] and
            is_binary(message) and message != "" do
         from = Map.get(command, "from") || Map.get(command, :from) || "watch"
         to = Map.get(command, "to") || Map.get(command, :to) || Atom.to_string(target)
@@ -531,7 +531,7 @@ defmodule Ide.Debugger.RuntimeFollowups do
          message_value,
          ctx
        )
-       when target in [:companion, :phone] and is_map(state) and is_map(ctx) do
+       when target == :companion and is_map(state) and is_map(ctx) do
     with true <- weather_received_message?(response_message, message_value),
          settings when is_map(settings) <- ctx.simulator_settings.(state) do
       weather = Map.get(settings, "weather") || %{}
@@ -839,7 +839,7 @@ defmodule Ide.Debugger.RuntimeFollowups do
   defp device_command_wire_value(_state, _target, _parent_message, _followup_message, _row),
     do: nil
 
-  @spec followup_command_kind(Types.cmd_call() | map() | nil) :: String.t() | nil
+  @spec followup_command_kind(Types.cmd_call() | nil) :: String.t() | nil
   defp followup_command_kind(command) when is_map(command) do
     case Map.get(command, "kind") || Map.get(command, :kind) do
       kind when is_binary(kind) -> kind

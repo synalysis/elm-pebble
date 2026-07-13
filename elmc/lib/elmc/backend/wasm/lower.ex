@@ -5,6 +5,8 @@ defmodule Elmc.Backend.Wasm.Lower do
   Not implemented in this project. See `plan/README.md`.
   """
 
-  @spec lower(term()) :: {:error, :not_implemented}
+  alias Elmc.Backend.Plan.Types.FunctionPlan
+
+  @spec lower(FunctionPlan.t()) :: {:error, :not_implemented}
   def lower(_plan), do: {:error, :not_implemented}
 end

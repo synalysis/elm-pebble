@@ -2,6 +2,7 @@ defmodule Elmc.Backend.CCodegen.IRQueries do
   @moduledoc false
 
   alias ElmEx.IR
+  alias ElmEx.IR.Types.{Module, UnionEntry}
   alias Elmc.Backend.CCodegen.Types
 
   @bundled_union_constructor_tags %{
@@ -79,9 +80,7 @@ defmodule Elmc.Backend.CCodegen.IRQueries do
     |> Map.new()
   end
 
-  @spec record_alias_field_types_map(IR.t()) :: %{
-          optional({String.t(), String.t()}) => map()
-        }
+  @spec record_alias_field_types_map(IR.t()) :: Types.record_field_types_map()
   def record_alias_field_types_map(%IR{} = ir) do
     ir.modules
     |> Enum.flat_map(fn mod ->
@@ -207,7 +206,7 @@ defmodule Elmc.Backend.CCodegen.IRQueries do
     MapSet.new(qualified ++ unqualified)
   end
 
-  @spec union_ctor_names(map(), String.t()) :: [String.t()]
+  @spec union_ctor_names(Module.t(), String.t()) :: [String.t()]
   defp union_ctor_names(mod, union_name) when is_map(mod) and is_binary(union_name) do
     case Map.get(mod.unions, union_name) do
       %{tags: tags} when is_map(tags) ->
@@ -223,7 +222,7 @@ defmodule Elmc.Backend.CCodegen.IRQueries do
   @spec no_resource_ctor?(String.t()) :: boolean()
   defp no_resource_ctor?(name) when is_binary(name), do: String.starts_with?(name, "No")
 
-  @spec enum_union?(map()) :: boolean()
+  @spec enum_union?(UnionEntry.t()) :: boolean()
   defp enum_union?(%{payload_kinds: payload_kinds}) when is_map(payload_kinds) do
     payload_kinds != %{} and Enum.all?(Map.values(payload_kinds), &(&1 == :none))
   end

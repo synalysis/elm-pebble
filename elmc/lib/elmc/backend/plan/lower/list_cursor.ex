@@ -1,12 +1,13 @@
 defmodule Elmc.Backend.Plan.Lower.ListCursor do
   @moduledoc false
 
+  alias Elmc.Backend.Plan.Types
   alias Elmc.Backend.Plan.Lower.Lambda
   alias Elmc.Backend.Plan.{Builder, Context, Types}
 
   @list_range_targets ~w(List.range Elm.Kernel.List.range)
 
-  @spec try_compile_map(map(), Context.t(), Builder.t()) ::
+  @spec try_compile_map(Types.ir_expr(), Context.t(), Builder.t()) ::
           {:ok, Types.reg() | :fn_out, Builder.t()} | :unsupported
   def try_compile_map(%{function: "elmc_list_map", args: [fun, list]}, ctx, b) do
     with {:ok, _start, _end_val, range_regs} <- parse_range(list),

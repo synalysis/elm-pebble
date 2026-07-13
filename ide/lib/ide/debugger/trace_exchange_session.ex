@@ -9,7 +9,8 @@ defmodule Ide.Debugger.TraceExchangeSession do
   alias Ide.Debugger.TraceExchange
   alias Ide.Debugger.Types
 
-  @type snapshot_fn :: (String.t(), keyword() -> {:ok, Types.runtime_state()})
+  @type snapshot_fn ::
+          (String.t(), keyword() -> {:ok, Types.runtime_state()} | {:error, Types.protocol_error()})
 
   @type human_slug_fn :: (String.t() -> String.t())
 
@@ -31,7 +32,7 @@ defmodule Ide.Debugger.TraceExchangeSession do
         }
 
   @spec export(String.t(), Types.export_trace_opts(), export_host()) ::
-          {:ok, Types.export_trace_result()} | {:error, term()}
+          {:ok, Types.export_trace_result()} | {:error, Types.protocol_error()}
   def export(project_slug, opts, host)
       when is_binary(project_slug) and is_list(opts) and is_map(host) do
     limit = Keyword.get(opts, :event_limit, host.history_limit)

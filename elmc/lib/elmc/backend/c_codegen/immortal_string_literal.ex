@@ -2,6 +2,7 @@ defmodule Elmc.Backend.CCodegen.ImmortalStringLiteral do
   @moduledoc false
 
   alias Elmc.Backend.CCodegen.RcRuntimeEmit
+  alias Elmc.Backend.CCodegen.Types
   alias Elmc.Backend.CCodegen.Util
 
   @spec value_init(String.t()) :: String.t()
@@ -30,7 +31,7 @@ defmodule Elmc.Backend.CCodegen.ImmortalStringLiteral do
     "static ElmcValue #{name} = #{value_init(value)};"
   end
 
-  @spec assign_ref(map(), String.t(), String.t()) :: String.t()
+  @spec assign_ref(Types.compile_env(), String.t(), String.t()) :: String.t()
   def assign_ref(env, out, value_ref) when is_binary(out) and is_binary(value_ref) do
     if RcRuntimeEmit.rc_allocator_emit_mode?(env) do
       """

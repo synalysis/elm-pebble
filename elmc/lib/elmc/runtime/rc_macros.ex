@@ -158,6 +158,14 @@ defmodule Elmc.Runtime.RcMacros do
       return elmc_value_is_false(elmc_maybe_just_payload(v));
     }
 
+    static inline elmc_int_t elmc_union_tag_as_int(ElmcValue *v) {
+      if (!v) return -1;
+      if (v->tag == ELMC_TAG_INT) return elmc_as_int(v);
+      if (v->tag == ELMC_TAG_TUPLE2 && v->payload != NULL)
+        return elmc_as_int(((ElmcTuple2 *)v->payload)->first);
+      return -1;
+    }
+
     static inline bool elmc_union_tag_matches(ElmcValue *v, elmc_int_t tag) {
       return v && ((v->tag == ELMC_TAG_INT && elmc_as_int(v) == tag) ||
                    (v->tag == ELMC_TAG_TUPLE2 && v->payload != NULL &&

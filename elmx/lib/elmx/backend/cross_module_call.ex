@@ -2,6 +2,7 @@ defmodule Elmx.Backend.CrossModuleCall do
   @moduledoc false
 
   alias Elmx.Backend.ElixirCodegen.Emit.Helpers
+  alias Elmx.Types
 
   @spec split_target(String.t()) :: {String.t(), String.t()} | nil
   def split_target(target) when is_binary(target) do
@@ -21,8 +22,8 @@ defmodule Elmx.Backend.CrossModuleCall do
     "elmx_fn_#{safe_module(module)}_#{name}"
   end
 
-  @spec compile_call(String.t(), list(), map(), non_neg_integer(), function()) ::
-          {:ok, iodata(), map(), non_neg_integer()} | :error
+  @spec compile_call(String.t(), list(), Types.emit_env(), non_neg_integer(), function()) ::
+          {:ok, iodata(), Types.emit_env(), non_neg_integer()} | :error
   def compile_call(target, args, env, counter, compile_arg_parts)
       when is_binary(target) and is_function(compile_arg_parts, 3) do
     case split_target(target) do

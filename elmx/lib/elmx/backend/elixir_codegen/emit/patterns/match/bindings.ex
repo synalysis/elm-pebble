@@ -5,7 +5,7 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Patterns.Match.Bindings do
 
   @type env :: Types.emit_env()
 
-  @spec branch_env(map(), env()) :: env()
+  @spec branch_env(Types.ir_case_branch(), env()) :: env()
   def branch_env(branch, env) do
     branch
     |> branch_pattern_root()
@@ -13,11 +13,11 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Patterns.Match.Bindings do
     |> Enum.reduce(env, fn name, acc -> Map.put(acc, String.to_atom(name), true) end)
   end
 
-  @spec branch_pattern_root(map()) :: map()
+  @spec branch_pattern_root(Types.ir_pattern()) :: Types.ir_pattern()
   def branch_pattern_root(%{pattern: pattern}), do: pattern
   def branch_pattern_root(pattern), do: pattern
 
-  @spec pattern_binding_names(map()) :: [String.t()]
+  @spec pattern_binding_names(Types.ir_pattern()) :: [String.t()]
   def pattern_binding_names(%{kind: :var, name: name}) when is_binary(name), do: [name]
 
   def pattern_binding_names(%{kind: :constructor, bind: bind, arg_pattern: pattern})

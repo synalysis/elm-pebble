@@ -7,6 +7,8 @@ defmodule Ide.Test.TemplateElmxElmcParity.ElmcRunner do
   alias Ide.Test.TemplateElmxElmcParity.ExecutionPlan
   alias Ide.WatchModels
 
+  alias Ide.Test.TemplateElmxElmcParity.Types, as: ParityTypes
+
   @trig_stubs_dir Path.expand(__DIR__)
   @trig_stubs_h Path.join(@trig_stubs_dir, "pebble_trig_host_stubs.h")
   @trig_stubs_c Path.join(@trig_stubs_dir, "pebble_trig_host_stubs.c")
@@ -20,7 +22,8 @@ defmodule Ide.Test.TemplateElmxElmcParity.ElmcRunner do
     prod: false
   ]
 
-  @spec run!(ExecutionPlan.t(), keyword()) :: {:ok, [map()]} | {:error, term()}
+  @spec run!(ExecutionPlan.t(), keyword()) ::
+          {:ok, [ParityTypes.parity_step()]} | {:error, ParityTypes.elmc_runner_error()}
   def run!(plan, opts \\ []) do
     if is_nil(System.find_executable("cc")) do
       {:error, :cc_not_available}
@@ -50,7 +53,8 @@ defmodule Ide.Test.TemplateElmxElmcParity.ElmcRunner do
   end
 
   @doc false
-  @spec run_harness!(ExecutionPlan.t(), String.t(), map()) :: {:ok, [map()]} | {:error, term()}
+  @spec run_harness!(ExecutionPlan.t(), String.t(), ParityTypes.wire_json_map()) ::
+          {:ok, [ParityTypes.parity_step()]} | {:error, ParityTypes.elmc_runner_error()}
   def run_harness!(plan, out_dir, tags) do
     with harness_path <- write_harness!(out_dir, plan, tags),
          {:ok, output} <-
@@ -89,7 +93,7 @@ defmodule Ide.Test.TemplateElmxElmcParity.ElmcRunner do
     end
   end
 
-  @spec parse_msg_tags(String.t()) :: {:ok, map()} | {:error, term()}
+  @spec parse_msg_tags(String.t()) :: {:ok, ParityTypes.msg_tag_index()}
   def parse_msg_tags(header_path) when is_binary(header_path) do
     source = File.read!(header_path)
 

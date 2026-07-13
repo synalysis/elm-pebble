@@ -7,6 +7,7 @@ defmodule Elmc.Backend.CCodegen.Host do
   alias Elmc.Backend.CCodegen.Subscriptions
   alias Elmc.Backend.CCodegen.Expr
   alias Elmc.Backend.CCodegen.Hoist
+  alias Elmc.Backend.CCodegen.DebugProbes
   alias Elmc.Backend.CCodegen.DirectRender.Analysis
   alias Elmc.Backend.CCodegen.DirectRender.CommandDef
   alias Elmc.Backend.CCodegen.DirectRender.Emit.CommandCall, as: EmitCommandCall
@@ -50,13 +51,14 @@ defmodule Elmc.Backend.CCodegen.Host do
               to: CaseCompile,
               as: :branch_assignment
 
-  @spec binding_key(Types.binding_name()) :: String.t() | term()
+  @spec binding_key(Types.binding_name()) :: String.t() | Types.binding_name()
   defdelegate binding_key(value), to: EnvBindings
 
   @spec unwrap_affine_bindings(Types.ir_expr()) :: Types.ir_expr()
   defdelegate unwrap_affine_bindings(expr), to: Elmc.Backend.CCodegen.DirectAffine, as: :unwrap_bindings
 
-  @spec substitute_expr(term(), Types.let_substitutions()) :: term()
+  @spec substitute_expr(Types.ir_expr() | [Types.ir_expr()], Types.let_substitutions()) ::
+          Types.ir_expr() | [Types.ir_expr()]
   defdelegate substitute_expr(expr, substitutions), to: Expr
 
   @spec inline_record_field_expr(Types.ir_expr(), String.t(), Types.compile_env()) ::
@@ -82,7 +84,8 @@ defmodule Elmc.Backend.CCodegen.Host do
   @spec record_shape_for_type(String.t(), Types.compile_env()) :: Types.record_shape()
   defdelegate record_shape_for_type(type, env), to: Expr, as: :record_shape_for_type
 
-  @spec battery_alert_field_probe(Types.compile_env(), term(), String.t(), atom()) :: String.t()
+  @spec battery_alert_field_probe(Types.compile_env(), DebugProbes.probe_subject(), String.t(), atom()) ::
+          String.t()
   defdelegate battery_alert_field_probe(env, arg, field, position),
               to: Elmc.Backend.CCodegen.DebugProbes,
               as: :field_probe
@@ -379,7 +382,7 @@ defmodule Elmc.Backend.CCodegen.Host do
   defdelegate put_typed_arg_bindings(env, arg_bindings, type), to: FunctionEmit
 
   @spec direct_emit_check_env(
-          map(),
+          Types.function_declaration(),
           String.t(),
           MapSet.t(Types.function_decl_key()),
           Types.function_decl_map()
@@ -500,7 +503,7 @@ defmodule Elmc.Backend.CCodegen.Host do
           String.t(),
           String.t(),
           [String.t()],
-          map() | nil,
+          Types.affine_native_prefix_fields(),
           String.t(),
           [Types.ir_expr()],
           non_neg_integer(),
@@ -529,7 +532,7 @@ defmodule Elmc.Backend.CCodegen.Host do
           String.t(),
           String.t(),
           [String.t()],
-          map() | nil,
+          Types.affine_native_prefix_fields(),
           String.t(),
           String.t(),
           String.t(),
@@ -562,7 +565,7 @@ defmodule Elmc.Backend.CCodegen.Host do
           String.t(),
           String.t(),
           [String.t()],
-          map() | nil,
+          Types.affine_native_prefix_fields(),
           String.t(),
           Types.ir_expr(),
           Types.compile_env(),
@@ -782,8 +785,8 @@ defmodule Elmc.Backend.CCodegen.Host do
     as: :single_call_prune_targets
 
   @spec direct_command_def(
-          map(),
-          map(),
+          ElmEx.IR.Module.t(),
+          Types.function_declaration(),
           MapSet.t(Types.function_decl_key()),
           MapSet.t(Types.function_decl_key()),
           Types.function_decl_map()

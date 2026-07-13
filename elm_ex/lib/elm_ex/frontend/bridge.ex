@@ -203,7 +203,7 @@ defmodule ElmEx.Frontend.Bridge do
     end
   end
 
-  @spec dependency_names(Types.dependency_sections() | map() | list() | nil) :: [String.t()]
+  @spec dependency_names(Types.dependency_sections() | Types.elm_json() | list() | nil) :: [String.t()]
   defp dependency_names(%{"direct" => direct, "indirect" => indirect}) do
     dependency_names(direct) ++ dependency_names(indirect)
   end

@@ -38,11 +38,27 @@ defmodule Ide.Compiler do
         }
   @typedoc "Local mirror of `Elmx.Types.emit_error/0` plus other in-memory elmx failures."
   @type elmx_compile_error ::
-          {:unsupported_op, atom(), String.t()}
-          | {:emit_failed, String.t()}
+          Elmx.Types.emit_error()
           | atom()
           | String.t()
-          | tuple()
+
+  @type compiler_check_failed :: {:compiler_check_failed, String.t(), check_result()}
+
+  @type compiler_exit_reason ::
+          atom()
+          | {:shutdown, atom() | String.t()}
+          | reference()
+
+  @type compiler_exit :: {:compile_exit, compiler_exit_reason()}
+
+  @type compiler_error ::
+          atom()
+          | String.t()
+          | File.posix()
+          | Jason.DecodeError.t()
+          | Exception.t()
+          | compiler_check_failed()
+          | compiler_exit()
 
   @type compile_result :: %{
           required(:status) => :ok | :error,
@@ -98,8 +114,6 @@ defmodule Ide.Compiler do
           optional(String.t()) =>
             list() | PackageTypes.json_wire_object() | String.t() | integer() | boolean() | nil
         }
-
-  @type compiler_error :: atom() | String.t() | tuple()
 
   # Shared companion Elm packages validated by upstream `elm make` (phone + protocol).
   @elm_make_source_roots ~w(phone protocol)
@@ -682,23 +696,13 @@ defmodule Ide.Compiler do
     end
   end
 
-  defp maybe_attach_bytecode_manifest(result, _project_dir), do: result
-
   defp maybe_put_plan_coverage(result, %{plan_coverage: coverage}) when is_map(coverage) do
-    Map.put(result, :plan_coverage, coverage)
-  end
-
-  defp maybe_put_plan_coverage(result, %{"plan_coverage" => coverage}) when is_map(coverage) do
     Map.put(result, :plan_coverage, coverage)
   end
 
   defp maybe_put_plan_coverage(result, _), do: result
 
   defp maybe_put_plan_toolchain(result, %{plan_toolchain: toolchain}) when is_map(toolchain) do
-    Map.put(result, :plan_toolchain, toolchain)
-  end
-
-  defp maybe_put_plan_toolchain(result, %{"plan_toolchain" => toolchain}) when is_map(toolchain) do
     Map.put(result, :plan_toolchain, toolchain)
   end
 
@@ -754,11 +758,8 @@ defmodule Ide.Compiler do
     }
   end
 
-  defp elmx_compile_error_message({:unsupported_op, op, detail}) when is_binary(detail),
-    do: "elmx unsupported op #{inspect(op)}: #{detail}"
-
-  defp elmx_compile_error_message({:unsupported_op, op, detail}),
-    do: "elmx unsupported op #{inspect(op)}: #{inspect(detail)}"
+  defp elmx_compile_error_message({:emit_failed, message}) when is_binary(message),
+    do: "elmx emit failed: #{message}"
 
   defp elmx_compile_error_message(reason), do: "elmx compile failed: #{inspect(reason)}"
 

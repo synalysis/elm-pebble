@@ -159,8 +159,8 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Helpers do
     end
   end
 
-  @spec compile_record_alias_constructor_reference(String.t(), map(), non_neg_integer()) ::
-          {:ok, iodata(), map(), non_neg_integer()} | :error
+  @spec compile_record_alias_constructor_reference(String.t(), Types.emit_env(), non_neg_integer()) ::
+          {:ok, iodata(), Types.emit_env(), non_neg_integer()} | :error
   def compile_record_alias_constructor_reference(name, env, counter) when is_binary(name) do
     case record_alias_constructor_code(name, env) do
       {:ok, code} -> {:ok, code, env, counter}
@@ -168,7 +168,7 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Helpers do
     end
   end
 
-  @spec record_alias_constructor_code(String.t(), map()) :: {:ok, iodata()} | :error
+  @spec record_alias_constructor_code(String.t(), Types.emit_env()) :: {:ok, iodata()} | :error
   def record_alias_constructor_code(name, env) when is_binary(name) do
     case Map.get(env, :record_field_types, %{}) |> Map.get(name) do
       fields when is_map(fields) and map_size(fields) > 0 ->
@@ -297,8 +297,12 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Helpers do
   def pipe_slot_name(index) when is_integer(index) and index >= 0,
     do: let_emit_name("__pipe_slot_#{index}")
 
-  @spec compile_pipe_iife(iodata(), list(), (term(), String.t(), non_neg_integer() -> {iodata(), non_neg_integer()}), non_neg_integer()) ::
-          {iodata(), String.t(), non_neg_integer()}
+  @spec compile_pipe_iife(
+          iodata(),
+          [Types.ir_expr()],
+          (Types.ir_expr(), String.t(), non_neg_integer() -> {iodata(), non_neg_integer()}),
+          non_neg_integer()
+        ) :: {iodata(), String.t(), non_neg_integer()}
   def compile_pipe_iife(base_code, steps, compile_step, counter) when is_function(compile_step, 3) do
     slot0 = pipe_slot_name(0)
 
@@ -314,7 +318,7 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Helpers do
     {code, final_slot, c}
   end
 
-  @spec param_var_name(String.t(), map()) :: String.t()
+  @spec param_var_name(String.t(), Types.emit_env()) :: String.t()
   def param_var_name(name, _env) when is_binary(name), do: let_emit_name(name)
 
   def binding_ref(name, env) when is_binary(name) do
@@ -343,7 +347,7 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Helpers do
   @spec record_pattern_key(String.t() | atom()) :: String.t()
   def record_pattern_key(name) when is_binary(name) or is_atom(name), do: inspect(name)
 
-  @spec param_name(Types.ir_expr() | atom() | String.t() | map()) :: String.t()
+  @spec param_name(Types.ir_expr() | Types.ir_pattern() | atom() | String.t()) :: String.t()
   def param_name(arg) when is_binary(arg), do: arg
   def param_name(arg) when is_atom(arg), do: Atom.to_string(arg)
   def param_name(%{name: name}), do: to_string(name)

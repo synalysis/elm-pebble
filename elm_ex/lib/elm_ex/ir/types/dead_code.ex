@@ -7,7 +7,7 @@ defmodule ElmEx.IR.Types.DeadCode do
 
   @type function_key :: String.t()
 
-  @type function_entry :: {String.t(), String.t(), Expr.t() | map()}
+  @type function_entry :: {String.t(), String.t(), Expr.t() | Expr.wire_expr()}
 
   @type function_map :: %{function_key() => function_entry()}
 end

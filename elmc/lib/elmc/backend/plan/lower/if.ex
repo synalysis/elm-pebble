@@ -5,8 +5,7 @@ defmodule Elmc.Backend.Plan.Lower.If do
   alias Elmc.Backend.Plan.Lower.Expr
   alias Elmc.Backend.Plan.Types
 
-  @spec compile(map(), Context.t(), Builder.t()) ::
-          {:ok, Types.reg() | :fn_out | nil, Builder.t()} | :unsupported
+  @spec compile(Types.ir_expr(), Context.t(), Builder.t()) :: Types.compile_result()
   def compile(%{op: :if, cond: cond, then_expr: then_expr, else_expr: else_expr}, ctx, b) do
     compile_branches(cond, then_expr, else_expr, ctx, b)
   end

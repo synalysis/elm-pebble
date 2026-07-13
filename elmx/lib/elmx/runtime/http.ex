@@ -218,7 +218,10 @@ defmodule Elmx.Runtime.Http do
 
   # Apps occasionally pass `(toMsg, decoder)` instead of `(decoder, toMsg)`; pick the
   # json decoder term when only one side carries `{:json_decoder, _}`.
-  @spec normalize_expect_json_args(term(), term()) :: {term(), term()}
+  @type http_expect_arg :: Types.json_decoder() | Types.elm_msg() | Types.elm_value()
+
+  @spec normalize_expect_json_args(http_expect_arg(), http_expect_arg()) ::
+          {http_expect_arg(), http_expect_arg()}
   defp normalize_expect_json_args(first, second) do
     cond do
       json_decoder_term?(first) -> {first, second}
@@ -227,7 +230,7 @@ defmodule Elmx.Runtime.Http do
     end
   end
 
-  @spec json_decoder_term?(term()) :: boolean()
+  @spec json_decoder_term?(Types.json_decoder() | Types.wire_map()) :: boolean()
   defp json_decoder_term?({:json_decoder, _}), do: true
 
   defp json_decoder_term?(value) when is_map(value) do

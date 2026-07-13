@@ -155,7 +155,7 @@ defmodule Elmc.Backend.CCodegen.LayoutSolver do
   @doc """
   Loop representation for boxed list walks from IR (params, literals, call results).
   """
-  @spec list_loop_repr_from_expr(Types.ir_expr(), map()) ::
+  @spec list_loop_repr_from_expr(Types.ir_expr(), Types.compile_env()) ::
           :int_list | :float_list | :record_seq | :native_linked | :cons | :dual
   def list_loop_repr_from_expr(expr, env) do
     decl_map = Map.get(env, :__program_decls__, %{})

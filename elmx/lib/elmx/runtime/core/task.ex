@@ -56,7 +56,7 @@ defmodule Elmx.Runtime.Core.Task do
   Synchronously resolve opaque task values for `case`/`perform` paths.
   Non-task values pass through unchanged.
   """
-  @spec force(Types.result_like() | term()) :: Types.result_native() | term()
+  @spec force(Types.result_like()) :: Types.result_native() | Types.elm_value()
   def force({:elmx_task, :spawn, _inner}), do: {:Ok, Elmx.Runtime.Core.Process.spawn_pid()}
 
   def force({:elmx_task, :succeed, value}), do: {:Ok, value}

@@ -3,6 +3,7 @@ defmodule Elmc.Backend.C.Lower.NativeReturn do
 
   alias Elmc.Backend.C.Lower.Function, as: CLowerFunction
   alias Elmc.Backend.CCodegen.Host
+  alias Elmc.Backend.CCodegen.Types
   alias Elmc.Backend.Plan.Types.{Block, FunctionPlan}
 
   @type scalar_kind :: :native_int | :native_bool
@@ -32,7 +33,7 @@ defmodule Elmc.Backend.C.Lower.NativeReturn do
                                 :catch_end
                               ])
 
-  @spec annotate(FunctionPlan.t(), map()) :: FunctionPlan.t()
+  @spec annotate(FunctionPlan.t(), Types.function_decl()) :: FunctionPlan.t()
   def annotate(%FunctionPlan{} = plan, decl) do
     case scalar_return_kind(decl) do
       nil ->

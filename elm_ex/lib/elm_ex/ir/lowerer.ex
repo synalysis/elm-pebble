@@ -19,6 +19,7 @@ defmodule ElmEx.IR.Lowerer do
 
   @typep name() :: String.t() | nil
   @typep payload_kind() :: Lookup.payload_kind()
+  @typep preferences_alias_fields :: %{optional(String.t()) => [String.t()]}
 
   @pebble_ui_window_stack_tag 1000
   @pebble_ui_window_node_tag 1001
@@ -944,7 +945,7 @@ defmodule ElmEx.IR.Lowerer do
 
   defp build_project_module_exports(_), do: %{}
 
-  @spec collect_module_exports(FrontendModule.t() | map()) :: ModuleExports.module_export()
+  @spec collect_module_exports(FrontendModule.t()) :: ModuleExports.module_export()
   defp collect_module_exports(frontend_module) when is_map(frontend_module) do
     exposing = Map.get(frontend_module, :module_exposing)
     union_constructors = module_union_constructors(frontend_module)
@@ -1016,7 +1017,7 @@ defmodule ElmEx.IR.Lowerer do
 
   defp exposed_type_names(_exposing, _type_names), do: []
 
-  @spec module_union_constructors(FrontendModule.t() | map()) :: ModuleExports.union_constructors()
+  @spec module_union_constructors(FrontendModule.t()) :: ModuleExports.union_constructors()
   defp module_union_constructors(frontend_module) when is_map(frontend_module) do
     frontend_module
     |> Map.get(:declarations, [])
@@ -1529,7 +1530,7 @@ defmodule ElmEx.IR.Lowerer do
     end)
   end
 
-  @spec collect_preferences_schema_field_order_diagnostics([map()]) :: [Diagnostic.t()]
+  @spec collect_preferences_schema_field_order_diagnostics([FrontendModule.t()]) :: [Diagnostic.t()]
   defp collect_preferences_schema_field_order_diagnostics(frontend_modules)
        when is_list(frontend_modules) do
     Enum.flat_map(frontend_modules, fn frontend_module ->
@@ -1566,7 +1567,7 @@ defmodule ElmEx.IR.Lowerer do
 
   @spec expr_preferences_schema_field_order_diagnostics(
           Expr.t(),
-          map(),
+          preferences_alias_fields(),
           name() | nil,
           name() | nil,
           integer() | nil
@@ -1624,8 +1625,8 @@ defmodule ElmEx.IR.Lowerer do
        do: []
 
   @spec nested_preferences_schema_field_order_diagnostics(
-          map(),
-          map(),
+          Expr.t(),
+          preferences_alias_fields(),
           name() | nil,
           name() | nil,
           integer() | nil

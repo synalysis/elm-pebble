@@ -12,6 +12,8 @@ defmodule Elmc.CLI do
   @type run_status :: Types.run_status()
   @type project_run :: Types.project_run()
   @type manifest_run :: Types.manifest_run()
+  @type compile_result :: Types.compile_result()
+  @type compile_error :: Types.compile_error()
   @type warning_dedupe_key ::
           {String.t(), String.t() | nil, String.t(), String.t() | nil, String.t() | nil,
            integer() | nil, String.t() | nil, String.t() | nil, boolean() | nil, String.t() | nil}
@@ -75,7 +77,7 @@ defmodule Elmc.CLI do
     end
   end
 
-  @spec check_output(run_status(), map(), [map()]) :: String.t()
+  @spec check_output(run_status(), Types.manifest_project(), [cli_diagnostic()]) :: String.t()
   defp check_output(:ok, project, warnings) do
     [
       "check: ok",
@@ -124,8 +126,16 @@ defmodule Elmc.CLI do
   end
 
   @doc false
-  @spec compile_with_opts(String.t(), map()) :: {:ok, map()} | {:error, term()}
+  @spec compile_with_opts(String.t(), Elmc.Types.compile_options()) ::
+          {:ok, compile_result()} | {:error, compile_error()}
   def compile_with_opts(project_dir, opts) when is_binary(project_dir) and is_map(opts) do
+    compile_with_rescue(&compile_with_opts/2, &compile_with_opts_impl/2, project_dir, opts)
+  end
+
+  @doc false
+  @spec compile_with_opts_impl(String.t(), Elmc.Types.compile_options()) ::
+          {:ok, compile_result()} | {:error, compile_error()}
+  def compile_with_opts_impl(project_dir, opts) when is_binary(project_dir) and is_map(opts) do
     case Elmc.compile(project_dir, opts) do
       {:ok, result} ->
         case validate_compile_result(result) do
@@ -136,10 +146,52 @@ defmodule Elmc.CLI do
       {:error, reason} ->
         {:error, reason}
     end
+  end
+
+  @doc """
+  Compiles like `compile_with_opts_impl/2` but does not reject `{:ok, result}` when
+  `validate_compile_result/1` would fail.
+
+  Use when generated artifacts are required and post-compile diagnostics are handled
+  separately (for example Pebble template staging).
+  """
+  @spec compile_artifacts_with_opts(String.t(), Elmc.Types.compile_options()) ::
+          {:ok, compile_result()} | {:error, compile_error()}
+  def compile_artifacts_with_opts(project_dir, opts) when is_binary(project_dir) and is_map(opts) do
+    compile_with_rescue(
+      &compile_artifacts_with_opts/2,
+      &compile_artifacts_with_opts_impl/2,
+      project_dir,
+      opts
+    )
+  end
+
+  @doc false
+  @spec compile_artifacts_with_opts_impl(String.t(), Elmc.Types.compile_options()) ::
+          {:ok, compile_result()} | {:error, compile_error()}
+  def compile_artifacts_with_opts_impl(project_dir, opts)
+      when is_binary(project_dir) and is_map(opts) do
+    Elmc.compile(project_dir, opts)
+  end
+
+  @type compile_runner ::
+          (String.t(), Elmc.Types.compile_options() ->
+             {:ok, compile_result()} | {:error, compile_error()})
+
+  @spec compile_with_rescue(
+          compile_runner(),
+          compile_runner(),
+          String.t(),
+          Elmc.Types.compile_options()
+        ) :: {:ok, compile_result()} | {:error, compile_error()}
+  defp compile_with_rescue(retry_fun, runner, project_dir, opts)
+       when is_function(retry_fun, 2) and is_function(runner, 2) and is_binary(project_dir) and
+              is_map(opts) do
+    runner.(project_dir, opts)
   rescue
     exception in ArgumentError ->
       if direct_render_only_view_error?(exception, opts) do
-        compile_with_opts(project_dir, Map.put(opts, :direct_render_only, false))
+        retry_fun.(project_dir, Map.put(opts, :direct_render_only, false))
       else
         {:error, {:compiler_exception, exception.__struct__, Exception.message(exception)}}
       end
@@ -176,19 +228,64 @@ defmodule Elmc.CLI do
   @doc """
   Returns `:ok` when a compile result has no error-severity diagnostics.
   """
-  @spec validate_compile_result(any()) :: :ok | {:error, [map()]}
+  @spec validate_compile_result(compile_result()) :: :ok | {:error, [cli_diagnostic()]}
   def validate_compile_result(%{project: _, ir: _} = result) do
-    warnings = result |> compile_warnings() |> dedupe_warnings()
+    result
+    |> compile_blocking_diagnostics()
+    |> validate_blocking_list()
+  end
 
-    if error_diagnostics?(warnings) do
-      {:error, warnings}
-    else
-      :ok
+  @spec validate_blocking_list([cli_diagnostic()]) :: :ok | {:error, [cli_diagnostic()]}
+  defp validate_blocking_list([]), do: :ok
+  defp validate_blocking_list(blocking) when is_list(blocking), do: {:error, blocking}
+
+  @spec compile_blocking_diagnostics(compile_result()) :: [cli_diagnostic()]
+  defp compile_blocking_diagnostics(result) do
+    case Map.get(result, :blocking_diagnostics) do
+      blocking when is_list(blocking) ->
+        blocking
+        |> Enum.concat(project_and_ir_blocking(result))
+        |> dedupe_warnings()
+
+      _ ->
+        result
+        |> compile_warnings()
+        |> dedupe_warnings()
+        |> Elmc.Diagnostics.errors_only()
     end
   end
 
+  @spec project_and_ir_blocking(compile_result()) :: [cli_diagnostic()]
+  defp project_and_ir_blocking(%{project: project, ir: ir}) do
+    project_warnings = Map.get(project, :diagnostics, [])
+
+    ir_warnings =
+      ir
+      |> Map.get(:diagnostics, [])
+      |> Enum.map(fn warning ->
+        %{
+          "type" => "lowerer-warning",
+          "source" => Map.get(warning, :source, "lowerer"),
+          "code" => Map.get(warning, :code),
+          "module" => Map.get(warning, :module),
+          "function" => Map.get(warning, :function),
+          "file" => Map.get(warning, :file),
+          "line" => Map.get(warning, :line),
+          "column" => Map.get(warning, :column),
+          "constructor" => Map.get(warning, :constructor),
+          "expected_kind" => Map.get(warning, :expected_kind),
+          "has_arg_pattern" => Map.get(warning, :has_arg_pattern),
+          "message" => Map.get(warning, :message, inspect(warning)),
+          "severity" => Map.get(warning, :severity, "warning")
+        }
+      end)
+
+    Elmc.Diagnostics.errors_only(project_warnings ++ ir_warnings)
+  end
+
   @doc false
-  @spec project_run_from_compile({:ok, map()} | {:error, term()}, String.t()) :: project_run()
+  @spec project_run_from_compile({:ok, compile_result()} | {:error, compile_error()}, String.t()) ::
+          project_run()
   def project_run_from_compile({:ok, result}, out_dir), do: compile_project_result(result, out_dir)
 
   def project_run_from_compile({:error, {:compile_diagnostics, warnings}}, out_dir) do
@@ -207,7 +304,7 @@ defmodule Elmc.CLI do
     }
   end
 
-  @spec compile_project_result(%{project: map(), ir: map()}, String.t()) :: project_run()
+  @spec compile_project_result(compile_result(), String.t()) :: project_run()
   defp compile_project_result(result, out_dir) do
     warnings = result |> compile_warnings() |> dedupe_warnings()
     status = if error_diagnostics?(warnings), do: :error, else: :ok
@@ -219,7 +316,7 @@ defmodule Elmc.CLI do
     }
   end
 
-  @spec compile_output(run_status(), String.t(), [map()]) :: String.t()
+  @spec compile_output(run_status(), String.t(), [cli_diagnostic()]) :: String.t()
   defp compile_output(:ok, out_dir, warnings) do
     [
       "compile: ok",
@@ -305,7 +402,7 @@ defmodule Elmc.CLI do
     }
   end
 
-  @spec warnings_output([map()]) :: String.t()
+  @spec warnings_output([cli_diagnostic()]) :: String.t()
   defp warnings_output(warnings) when is_list(warnings) do
     rendered = DiagnosticFormatter.format_warnings(warnings)
 
@@ -332,7 +429,7 @@ defmodule Elmc.CLI do
     """)
   end
 
-  @spec compile_warnings(map()) :: [map()]
+  @spec compile_warnings(compile_result()) :: [cli_diagnostic()]
   defp compile_warnings(%{project: project, ir: ir} = result) do
     project_warnings = Map.get(project, :diagnostics, [])
 
@@ -363,22 +460,12 @@ defmodule Elmc.CLI do
     dedupe_warnings(project_warnings ++ ir_warnings ++ debug_usage_warnings ++ layout_warnings)
   end
 
-  @spec error_diagnostics?([map()]) :: boolean()
+  @spec error_diagnostics?([cli_diagnostic()]) :: boolean()
   defp error_diagnostics?(diagnostics) when is_list(diagnostics) do
-    Enum.any?(diagnostics, &(diagnostic_severity(&1) == "error"))
+    Enum.any?(diagnostics, &Elmc.Diagnostics.error?/1)
   end
 
-  @spec diagnostic_severity(cli_diagnostic()) :: String.t()
-  defp diagnostic_severity(diagnostic) when is_map(diagnostic) do
-    diagnostic
-    |> Map.get("severity", Map.get(diagnostic, :severity, "warning"))
-    |> to_string()
-    |> String.downcase()
-  end
-
-  defp diagnostic_severity(_diagnostic), do: "warning"
-
-  @spec dedupe_warnings([map()]) :: [map()]
+  @spec dedupe_warnings([cli_diagnostic()]) :: [cli_diagnostic()]
   defp dedupe_warnings(warnings) do
     warnings
     |> Enum.reduce({MapSet.new(), []}, fn warning, {seen, acc} ->
@@ -394,7 +481,7 @@ defmodule Elmc.CLI do
     |> Enum.reverse()
   end
 
-  @spec warning_dedupe_key(cli_diagnostic() | map() | String.t() | atom()) :: warning_dedupe_key()
+  @spec warning_dedupe_key(cli_diagnostic() | String.t() | atom()) :: warning_dedupe_key()
   defp warning_dedupe_key(warning) when is_map(warning) do
     {
       Map.get(warning, "type", Map.get(warning, :type, "warning")),
@@ -428,7 +515,7 @@ defmodule Elmc.CLI do
     end
   end
 
-  @spec dependency_keys(map()) :: [String.t()]
+  @spec dependency_keys(Types.manifest_project()) :: [String.t()]
   defp dependency_keys(map) when is_map(map), do: Map.keys(map)
   defp dependency_keys(_), do: []
 

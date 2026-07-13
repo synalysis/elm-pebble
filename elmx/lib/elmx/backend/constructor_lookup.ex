@@ -20,6 +20,12 @@ defmodule Elmx.Backend.ConstructorLookup do
           by_unqualified: %{String.t() => entry()}
         }
 
+  @typedoc "Lookup table or partial map with optional index fields (empty env uses `%{}`)."
+  @type lookup_input :: t() | %{
+          optional(:by_qualified) => %{optional(String.t()) => entry()},
+          optional(:by_unqualified) => %{optional(String.t()) => entry()}
+        }
+
   @spec from_ir(IR.t()) :: t()
   def from_ir(%IR{modules: modules}) do
     entries =
@@ -59,7 +65,7 @@ defmodule Elmx.Backend.ConstructorLookup do
     }
   end
 
-  @spec resolve(t() | map(), String.t(), String.t() | nil) :: entry() | nil
+  @spec resolve(lookup_input(), String.t(), String.t() | nil) :: entry() | nil
   def resolve(lookup, name, current_module) when is_binary(name) and is_map(lookup) do
     by_qualified = Map.get(lookup, :by_qualified, %{})
     by_unqualified = Map.get(lookup, :by_unqualified, %{})
@@ -90,7 +96,7 @@ defmodule Elmx.Backend.ConstructorLookup do
 
   defp pick_unqualified_entry([entry | _]), do: entry
 
-  @spec payload_kind(t() | map() | nil, String.t(), String.t() | nil) ::
+  @spec payload_kind(lookup_input() | nil, String.t(), String.t() | nil) ::
           :none | :single | :multi | :function_like | nil
   def payload_kind(nil, _name, _module), do: nil
 
@@ -105,7 +111,7 @@ defmodule Elmx.Backend.ConstructorLookup do
   True when a constructor's declared payload is a single value but IR supplies
   multiple expressions (parenthesized tuple application), so emit wraps them.
   """
-  @spec wrap_flattened_payload?(t() | map(), String.t(), String.t() | nil, pos_integer()) :: boolean()
+  @spec wrap_flattened_payload?(lookup_input(), String.t(), String.t() | nil, pos_integer()) :: boolean()
   def wrap_flattened_payload?(_lookup, ctor, _module, arg_count)
       when ctor in ["Ok", "Err", "Just"] and arg_count > 1,
       do: true

@@ -5,14 +5,14 @@ defmodule Elmc.Backend.Plan.Lower.Case.ListSwitch do
   alias Elmc.Backend.Plan.Lower.{Expr, ListIntType}
   alias Elmc.Backend.Plan.Types
 
-  @spec branches?(list()) :: boolean()
+  @spec branches?(Types.case_branches()) :: boolean()
   def branches?(branches) when is_list(branches) do
     length(branches) == 2 and cons_branch(branches) != nil and empty_branch(branches) != nil
   end
 
   def branches?(_), do: false
 
-  @spec empty_var_branches?(list()) :: boolean()
+  @spec empty_var_branches?(Types.case_branches()) :: boolean()
   def empty_var_branches?(branches) when is_list(branches) do
     length(branches) == 2 and empty_branch(branches) != nil and
       (var_branch(branches) != nil or wildcard_branch(branches) != nil)
@@ -20,7 +20,7 @@ defmodule Elmc.Backend.Plan.Lower.Case.ListSwitch do
 
   def empty_var_branches?(_), do: false
 
-  @spec compile_empty_var(map(), list(), Context.t(), Builder.t()) ::
+  @spec compile_empty_var(Types.ir_expr(), Types.case_branches(), Context.t(), Builder.t()) ::
           {:ok, Types.reg() | :fn_out, Builder.t()} | :unsupported
   def compile_empty_var(subject, branches, ctx, b) do
     empty = empty_branch(branches)
@@ -48,14 +48,14 @@ defmodule Elmc.Backend.Plan.Lower.Case.ListSwitch do
     end
   end
 
-  @spec double_cons_wildcard_branches?(list()) :: boolean()
+  @spec double_cons_wildcard_branches?(Types.case_branches()) :: boolean()
   def double_cons_wildcard_branches?(branches) when is_list(branches) do
     length(branches) == 2 and double_cons_branch(branches) != nil and wildcard_branch(branches) != nil
   end
 
   def double_cons_wildcard_branches?(_), do: false
 
-  @spec compile_double_cons_wildcard(map(), list(), Context.t(), Builder.t()) ::
+  @spec compile_double_cons_wildcard(Types.ir_expr(), Types.case_branches(), Context.t(), Builder.t()) ::
           {:ok, Types.reg() | :fn_out, Builder.t()} | :unsupported
   def compile_double_cons_wildcard(subject, branches, ctx, b) do
     cons = double_cons_branch(branches)
@@ -113,7 +113,7 @@ defmodule Elmc.Backend.Plan.Lower.Case.ListSwitch do
     end
   end
 
-  @spec triple_branches?(list()) :: boolean()
+  @spec triple_branches?(Types.case_branches()) :: boolean()
   def triple_branches?(branches) when is_list(branches) do
     length(branches) == 3 and
       empty_branch(branches) != nil and
@@ -123,7 +123,7 @@ defmodule Elmc.Backend.Plan.Lower.Case.ListSwitch do
 
   def triple_branches?(_), do: false
 
-  @spec fixed_length_nil_branches?(list()) :: boolean()
+  @spec fixed_length_nil_branches?(Types.case_branches()) :: boolean()
   def fixed_length_nil_branches?(branches) when is_list(branches) and length(branches) >= 2 do
     {fixed, default} = split_fixed_nil_and_default(branches)
 
@@ -135,7 +135,7 @@ defmodule Elmc.Backend.Plan.Lower.Case.ListSwitch do
 
   def fixed_length_nil_branches?(_), do: false
 
-  @spec compile_fixed_length_nil(map(), list(), Context.t(), Builder.t()) ::
+  @spec compile_fixed_length_nil(Types.ir_expr(), Types.case_branches(), Context.t(), Builder.t()) ::
           {:ok, Types.reg() | :fn_out, Builder.t()} | :unsupported
   def compile_fixed_length_nil(subject, branches, ctx, b) do
     {fixed_branches, default_branch} = split_fixed_nil_and_default(branches)
@@ -176,7 +176,7 @@ defmodule Elmc.Backend.Plan.Lower.Case.ListSwitch do
     end
   end
 
-  @spec compile_triple(map(), list(), Context.t(), Builder.t()) ::
+  @spec compile_triple(Types.ir_expr(), Types.case_branches(), Context.t(), Builder.t()) ::
           {:ok, Types.reg() | :fn_out, Builder.t()} | :unsupported
   def compile_triple(subject, branches, ctx, b) do
     empty = empty_branch(branches)
@@ -227,8 +227,8 @@ defmodule Elmc.Backend.Plan.Lower.Case.ListSwitch do
     end
   end
 
-  @spec compile(map(), list(), Context.t(), Builder.t()) ::
-          {:ok, Types.reg() | :fn_out, Builder.t()} | :unsupported
+  @spec compile(Types.ir_expr(), Types.case_branches(), Context.t(), Builder.t()) ::
+          Types.compile_result_required()
   def compile(subject, branches, ctx, b) do
     cons = cons_branch(branches)
     empty = empty_branch(branches)

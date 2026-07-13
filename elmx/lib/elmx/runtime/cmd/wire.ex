@@ -11,7 +11,7 @@ defmodule Elmx.Runtime.Cmd.Wire do
   def data_log_tag_id(tag) when is_integer(tag), do: {:ok, tag}
   def data_log_tag_id(_), do: :error
 
-  @spec normalize(Types.wire_cmd() | map()) :: Types.wire_cmd()
+  @spec normalize(Types.wire_cmd()) :: Types.wire_cmd()
   def normalize(%{"kind" => _} = cmd), do: cmd
   def normalize(%{kind: kind} = cmd), do: Map.new(cmd, fn {k, v} -> {to_string(k), v} end) |> Map.put("kind", to_string(kind))
   def normalize(cmd) when is_map(cmd), do: cmd
@@ -61,7 +61,7 @@ defmodule Elmx.Runtime.Cmd.Wire do
   Resolves the Msg constructor name from a curried callback (`fn arg -> {:Ctor, arg} end`)
   emitted by elmx ide_runtime partial constructors.
   """
-  @spec callback_ctor_name((term() -> term())) :: String.t() | nil
+  @spec callback_ctor_name((Types.elm_msg() -> Types.elm_msg())) :: String.t() | nil
   def callback_ctor_name(fun) when is_function(fun, 1) do
     case fun.(@callback_ctor_probe) do
       {ctor, _} when is_atom(ctor) -> Atom.to_string(ctor)
@@ -76,7 +76,7 @@ defmodule Elmx.Runtime.Cmd.Wire do
 
   def callback_ctor_name(_), do: nil
 
-  @spec unknown_message_wire(term()) :: {String.t(), Types.wire_map()}
+  @spec unknown_message_wire(Types.elm_value()) :: {String.t(), Types.wire_map()}
   defp unknown_message_wire(other),
     do: {"Unknown", %{"ctor" => "Unknown", "args" => [Values.wire_value(other)]}}
 

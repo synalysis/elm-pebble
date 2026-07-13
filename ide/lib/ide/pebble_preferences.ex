@@ -7,6 +7,7 @@ defmodule Ide.PebblePreferences do
   """
 
   alias ElmEx.Frontend.Bridge
+  alias ElmEx.Frontend.Bridge.Types, as: BridgeTypes
   alias ElmEx.IR.Lowerer
 
   @generated_bridge_rel_path "src/Companion/GeneratedPreferences.elm"
@@ -48,7 +49,7 @@ defmodule Ide.PebblePreferences do
         }
 
   @type preferences_error ::
-          {:preferences_project_load_failed, term()}
+          {:preferences_project_load_failed, BridgeTypes.bridge_error()}
           | File.posix()
 
   @doc """

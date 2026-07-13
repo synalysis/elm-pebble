@@ -1,21 +1,34 @@
 defmodule Elmc.Backend.Plan.PrimaryCoverage do
   @moduledoc false
 
+  alias Elmc.Backend.CCodegen.Types, as: CCodegenTypes
   alias Elmc.Backend.CCodegen.{DirectRender.Analysis, GenericReachability, RcRequired}
   alias Elmc.Backend.Plan.Lower.Function, as: PlanLower
   alias Elmc.Backend.Plan.StrictPolicy
+  alias Elmc.Backend.Plan.Types, as: PlanTypes
+  alias Elmc.Types
+
+  @type function_decl_map :: CCodegenTypes.function_decl_map()
+  @type compile_options :: Types.compile_options()
+
+  @type lower_failure :: :unsupported | PlanTypes.lower_error()
 
   @type report :: %{
           total: non_neg_integer(),
           lowered: non_neg_integer(),
-          failed: [{String.t(), String.t(), term()}]
+          failed: [{String.t(), String.t(), lower_failure()}]
+        }
+
+  @type failed_preview_row :: %{
+          optional(String.t()) => String.t()
         }
 
   @type wire_summary :: %{
-          optional(String.t()) => term()
+          optional(String.t()) =>
+            non_neg_integer() | float() | [failed_preview_row()]
         }
 
-  @spec report(map(), keyword() | map()) :: report()
+  @spec report(function_decl_map(), keyword() | compile_options()) :: report()
   def report(decl_map, opts \\ []) when is_map(decl_map) do
     with_constructor_tags!(opts)
 
@@ -36,7 +49,7 @@ defmodule Elmc.Backend.Plan.PrimaryCoverage do
     end)
   end
 
-  @spec main_functions_report(map(), keyword() | map()) :: report()
+  @spec main_functions_report(function_decl_map(), keyword() | compile_options()) :: report()
   def main_functions_report(decl_map, opts \\ []) do
     decl_map
     |> Enum.filter(fn {{mod, _name}, _} -> mod == "Main" end)
@@ -50,14 +63,14 @@ defmodule Elmc.Backend.Plan.PrimaryCoverage do
   Dead bundled helpers (for example phone-only `Pebble.Platform` JSON decoders)
   are excluded so audits reflect watch codegen obligations.
   """
-  @spec reachable_report(map(), keyword() | map()) :: report()
+  @spec reachable_report(function_decl_map(), keyword() | compile_options()) :: report()
   def reachable_report(decl_map, opts \\ []) when is_map(decl_map) do
     decl_map
     |> filter_reachable(opts)
     |> report(opts)
   end
 
-  @spec module_prefix_report(map(), String.t(), keyword()) :: report()
+  @spec module_prefix_report(function_decl_map(), String.t(), keyword()) :: report()
   def module_prefix_report(decl_map, prefix, opts \\ []) when is_binary(prefix) do
     decl_map
     |> Enum.filter(fn {{mod, _name}, _} -> String.starts_with?(mod, prefix) end)
@@ -65,7 +78,7 @@ defmodule Elmc.Backend.Plan.PrimaryCoverage do
     |> report(opts)
   end
 
-  @spec filter_reachable(map(), keyword() | map()) :: map()
+  @spec filter_reachable(function_decl_map(), keyword() | compile_options()) :: function_decl_map()
   def filter_reachable(decl_map, opts \\ []) when is_map(decl_map) do
     codegen_opts = codegen_opts(opts)
     roots = Analysis.entry_roots(decl_map, codegen_opts)
@@ -78,7 +91,12 @@ defmodule Elmc.Backend.Plan.PrimaryCoverage do
     |> Map.new()
   end
 
-  @spec reachable_function?(map(), String.t(), String.t(), keyword() | map()) :: boolean()
+  @spec reachable_function?(
+          function_decl_map(),
+          String.t(),
+          String.t(),
+          keyword() | compile_options()
+        ) :: boolean()
   def reachable_function?(decl_map, module_name, fun_name, opts \\ []) do
     decl_map
     |> filter_reachable(opts)
@@ -133,7 +151,11 @@ defmodule Elmc.Backend.Plan.PrimaryCoverage do
   In `:primary` mode, unreachable bundled helpers are omitted from bytecode and
   do not appear in `reachable` stats — only gaps on the watch codegen path are reported.
   """
-  @spec compile_diagnostics(map() | nil, keyword()) :: [map()]
+  alias Elmc.Backend.Bytecode.Artifacts.Types, as: ArtifactTypes
+  alias Elmc.CLI.Types, as: CliTypes
+
+  @spec compile_diagnostics(ArtifactTypes.summary() | nil, keyword() | compile_options()) ::
+          [CliTypes.cli_diagnostic()]
   def compile_diagnostics(bytecode_summary, opts \\ [])
 
   def compile_diagnostics(%{available: true, plan_coverage: coverage} = bytecode_summary, opts)
@@ -155,34 +177,34 @@ defmodule Elmc.Backend.Plan.PrimaryCoverage do
   def compile_diagnostics(_, _), do: []
 
   defp gap_warnings(reachable, opts) when is_map(reachable) do
-    failed = int_field(reachable, "failed_count", 0)
+    case int_field(reachable, "failed_count", 0) do
+      failed when is_integer(failed) and failed > 0 ->
+        preview =
+          (Map.get(reachable, "failed_preview") || Map.get(reachable, :failed_preview) || [])
+          |> Enum.map(fn
+            %{"module" => mod, "name" => name, "reason" => reason} ->
+              "#{mod}.#{name} (#{reason})"
 
-    if failed > 0 do
-      preview =
-        (Map.get(reachable, "failed_preview") || Map.get(reachable, :failed_preview) || [])
-        |> Enum.map(fn
-          %{"module" => mod, "name" => name, "reason" => reason} ->
-            "#{mod}.#{name} (#{reason})"
+            %{module: mod, name: name, reason: reason} ->
+              "#{mod}.#{name} (#{reason})"
+          end)
+          |> Enum.take(6)
+          |> Enum.join(", ")
 
-          %{module: mod, name: name, reason: reason} ->
-            "#{mod}.#{name} (#{reason})"
-        end)
-        |> Enum.take(6)
-        |> Enum.join(", ")
+        severity = StrictPolicy.gap_severity(opts)
 
-      severity = StrictPolicy.gap_severity(opts)
+        [
+          %{
+            "source" => "elmc/plan",
+            "code" => "plan_primary_gap",
+            "severity" => severity,
+            "message" =>
+              "Plan IR could not lower #{failed} reachable function(s): #{preview}"
+          }
+        ]
 
-      [
-        %{
-          "source" => "elmc/plan",
-          "code" => "plan_primary_gap",
-          "severity" => severity,
-          "message" =>
-            "Plan IR could not lower #{failed} reachable function(s): #{preview}"
-        }
-      ]
-    else
-      []
+      _ ->
+        []
     end
   end
 

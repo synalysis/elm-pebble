@@ -260,10 +260,21 @@ defmodule Ide.Emulator.Types do
           required(:cookie) => non_neg_integer()
         }
 
+  @type gen_tcp_error :: atom() | {:posix, File.posix()}
+
+  @type router_frame_summary :: %{
+          optional(:endpoint) => atom() | integer() | nil,
+          optional(:payload_bytes) => non_neg_integer(),
+          optional(:payload_prefix) => String.t()
+        }
+
+  @type protocol_timeout_detail ::
+          :timeout | {:timeout, [router_frame_summary()] | non_neg_integer()}
+
   @type vnc_error ::
           :vnc_banner_timeout
-          | {:vnc_connect_failed, term()}
-          | {:vnc_probe_recv_failed, term()}
+          | {:vnc_connect_failed, gen_tcp_error()}
+          | {:vnc_probe_recv_failed, gen_tcp_error()}
 
   @type session_atom_error ::
           :emulator_session_unresponsive
@@ -383,20 +394,24 @@ defmodule Ide.Emulator.Types do
           | packet_decode_error()
           | :timeout
           | {:putbytes_failed, putbytes_phase_meta(),
-             packet_decode_error() | :timeout | {:timeout, [term()] | non_neg_integer()}}
+             packet_decode_error() | protocol_timeout_detail()}
           | {:blob_insert_failed, non_neg_integer()}
           | {:wrong_blob_token, non_neg_integer(), non_neg_integer()}
           | {:wrong_app_fetch_uuid, String.t(), String.t()}
 
   @type router_error :: :timeout | :busy | :superseded
 
+  @type exit_signal ::
+          atom()
+          | String.t()
+          | reference()
+          | {atom(), atom() | String.t() | integer()}
+
   @type exit_reason ::
           :normal
           | :shutdown
-          | {:shutdown, atom() | String.t()}
-          | atom()
-          | tuple()
-          | String.t()
+          | {:shutdown, exit_signal()}
+          | exit_signal()
 
   @type session_error ::
           session_atom_error() | session_tuple_error() | exit_reason()

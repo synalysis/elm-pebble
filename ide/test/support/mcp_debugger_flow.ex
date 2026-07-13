@@ -3,8 +3,11 @@ defmodule Ide.TestSupport.McpDebuggerFlow do
 
   import ExUnit.Assertions
 
+  alias Ide.Debugger.Types, as: DebuggerTypes
   alias Ide.Mcp.Tools
   alias Ide.Projects
+
+  @type project_attrs :: %{optional(String.t()) => String.t()}
 
   @watch_source """
   module Main exposing (..)
@@ -57,7 +60,7 @@ defmodule Ide.TestSupport.McpDebuggerFlow do
       Ui.root []
   """
 
-  @spec create_project!(map()) :: Projects.project()
+  @spec create_project!(project_attrs()) :: Projects.project()
   def create_project!(attrs \\ %{}) when is_map(attrs) do
     defaults = %{
       "name" => "McpDebugger",
@@ -69,13 +72,16 @@ defmodule Ide.TestSupport.McpDebuggerFlow do
     project
   end
 
-  @spec start_session!(Projects.project()) :: map()
+  @spec start_session!(Projects.project()) :: DebuggerTypes.runtime_state()
   def start_session!(project) do
     {:ok, %{state: started}} = Tools.call("debugger.start", %{"slug" => project.slug}, [:edit])
     started
   end
 
-  @spec reload_watch_and_phone!(Projects.project()) :: %{after_reload: map(), phone_reload: map()}
+  @spec reload_watch_and_phone!(Projects.project()) :: %{
+          after_reload: DebuggerTypes.runtime_state(),
+          phone_reload: DebuggerTypes.runtime_state()
+        }
   def reload_watch_and_phone!(project) do
     {:ok, %{state: after_reload}} =
       Tools.call(
@@ -104,7 +110,10 @@ defmodule Ide.TestSupport.McpDebuggerFlow do
     %{after_reload: after_reload, phone_reload: phone_reload}
   end
 
-  @spec step_watch_and_tick!(Projects.project()) :: %{stepped: map(), ticked: map()}
+  @spec step_watch_and_tick!(Projects.project()) :: %{
+          stepped: DebuggerTypes.runtime_state(),
+          ticked: DebuggerTypes.runtime_state()
+        }
   def step_watch_and_tick!(project) do
     {:ok, %{state: stepped}} =
       Tools.call(
@@ -124,11 +133,11 @@ defmodule Ide.TestSupport.McpDebuggerFlow do
   end
 
   @spec bootstrap_stepped!(Projects.project()) :: %{
-          started: map(),
-          after_reload: map(),
-          phone_reload: map(),
-          stepped: map(),
-          ticked: map()
+          started: DebuggerTypes.runtime_state(),
+          after_reload: DebuggerTypes.runtime_state(),
+          phone_reload: DebuggerTypes.runtime_state(),
+          stepped: DebuggerTypes.runtime_state(),
+          ticked: DebuggerTypes.runtime_state()
         }
   def bootstrap_stepped!(project) do
     started = start_session!(project)
@@ -146,7 +155,7 @@ defmodule Ide.TestSupport.McpDebuggerFlow do
     }
   end
 
-  @spec reload_introspect_snapshot!(Projects.project()) :: map()
+  @spec reload_introspect_snapshot!(Projects.project()) :: DebuggerTypes.runtime_state()
   def reload_introspect_snapshot!(project) do
     {:ok, %{state: intro_reload}} =
       Tools.call(

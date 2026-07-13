@@ -6,6 +6,7 @@ defmodule Ide.Projects.BootstrapError do
   alias Ide.Packages.Types, as: PackageTypes
   alias Ide.Paths
   alias Ide.Projects.Project
+  alias Ide.ProjectTemplates
 
   @type operation :: :create | :import
   @type context :: %{
@@ -16,9 +17,8 @@ defmodule Ide.Projects.BootstrapError do
         }
 
   @type bootstrap_reason ::
-          atom()
+          ProjectTemplates.template_error()
           | File.posix()
-          | tuple()
           | String.t()
           | PackageTypes.json_wire_object()
 

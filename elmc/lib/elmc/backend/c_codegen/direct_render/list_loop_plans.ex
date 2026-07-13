@@ -98,9 +98,28 @@ defmodule Elmc.Backend.CCodegen.DirectRender.ListLoopPlans do
     end
   end
 
+  @type tick_label :: :nothing | {:from_int, integer()}
+
+  @type tick_label_box :: %{optional(atom()) => integer() | String.t()}
+
+  @type polar_tick_spec :: %{
+          required(:minute_scale) => integer(),
+          required(:outer_extra) => integer(),
+          required(:label) => tick_label(),
+          optional(:label_radius_extra) => integer(),
+          optional(:label_box) => tick_label_box()
+        }
+
+  @type polar_tick_fusion_result :: %{
+          required(:tick) => polar_tick_spec(),
+          required(:cx_ref) => String.t(),
+          required(:cy_ref) => String.t(),
+          required(:outer_ref) => String.t()
+        }
+
   @doc false
   @spec polar_tick_fusion_debug(plan(), Types.function_decl_key(), [String.t()], Types.compile_env()) ::
-          {:ok, map()} | {:error, atom()}
+          {:ok, polar_tick_fusion_result()} | {:error, atom()}
   def polar_tick_fusion_debug(plan, {target_module, target_name} = target, prefix_vars, env) do
     decl_map = Map.get(env, :__program_decls__, %{})
 

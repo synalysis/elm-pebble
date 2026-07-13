@@ -11,9 +11,11 @@ defmodule ElmEx.Frontend.Bridge.Types do
           optional(String.t()) => String.t() | integer() | boolean() | nil
         }
 
+  @type config_reason :: :missing_elm_json | File.posix() | Jason.DecodeError.t()
+
   @type config_error :: %{
           required(:kind) => :config_error,
-          required(:reason) => atom() | term(),
+          required(:reason) => config_reason(),
           optional(:path) => String.t()
         }
 
@@ -30,7 +32,12 @@ defmodule ElmEx.Frontend.Bridge.Types do
           required(:raw) => String.t()
         }
 
-  @type bridge_error :: config_error() | parse_error() | elm_check_failed() | map()
+  @type bridge_error_wire :: %{
+          optional(atom()) => Types.detail_value(),
+          optional(String.t()) => Types.detail_value()
+        }
+
+  @type bridge_error :: config_error() | parse_error() | elm_check_failed() | bridge_error_wire()
 
   @type lowerer_warning :: lowerer_diagnostic() | %{
           required(:source) => String.t(),

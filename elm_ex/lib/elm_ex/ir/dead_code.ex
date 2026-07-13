@@ -74,14 +74,14 @@ defmodule ElmEx.IR.DeadCode do
     walk_reachable(function_map, seen, rest ++ next_calls)
   end
 
-  @spec collect_calls(Expr.t() | map() | nil, String.t()) :: [DeadCode.function_key()]
+  @spec collect_calls(Expr.t() | nil, String.t()) :: [DeadCode.function_key()]
   defp collect_calls(nil, _mod), do: []
 
   defp collect_calls(%{} = expr, mod) do
     call_reference_targets(expr, mod) ++ collect_calls_from_children(expr, mod)
   end
 
-  @spec call_reference_targets(Expr.t() | map(), String.t()) :: [DeadCode.function_key()]
+  @spec call_reference_targets(Expr.t(), String.t()) :: [DeadCode.function_key()]
   defp call_reference_targets(%{op: :qualified_call, target: target}, _mod)
        when is_binary(target),
        do: [target]
@@ -121,7 +121,7 @@ defmodule ElmEx.IR.DeadCode do
     end
   end
 
-  @spec collect_calls_from_children(Expr.t() | map(), String.t()) :: [DeadCode.function_key()]
+  @spec collect_calls_from_children(Expr.t(), String.t()) :: [DeadCode.function_key()]
   defp collect_calls_from_children(expr, mod) when is_map(expr) do
     Enum.flat_map(expr, fn
       {_key, child} when is_map(child) ->

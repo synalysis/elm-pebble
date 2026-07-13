@@ -2,6 +2,8 @@ defmodule Elmc.Backend.DebugUsage do
   @moduledoc false
 
   alias ElmEx.IR
+  alias Elmc.Backend.CCodegen.Types, as: CCodegenTypes
+  alias Elmc.Types
 
   @debug_targets MapSet.new(["Debug.log", "Debug.todo", "Debug.toString"])
 
@@ -11,7 +13,7 @@ defmodule Elmc.Backend.DebugUsage do
           required(:function) => String.t()
         }
 
-  @type policy :: :error | :warn
+  @type policy :: :error | :warn | :warning
 
   @spec collect(IR.t()) :: [usage()]
   def collect(%IR{} = ir) do
@@ -26,10 +28,11 @@ defmodule Elmc.Backend.DebugUsage do
     |> Enum.uniq()
   end
 
-  @spec diagnostics([usage()], policy()) :: [map()]
-  def diagnostics(usages, policy) when is_list(usages) and policy in [:error, :warn] do
-    severity = if policy == :error, do: "error", else: "warning"
-    code = if policy == :error, do: "debug_usage_not_allowed", else: "debug_usage_in_build"
+  @spec diagnostics([usage()], policy()) :: [CCodegenTypes.compile_warning_json()]
+  def diagnostics(usages, policy) when is_list(usages) and policy in [:error, :warn, :warning] do
+    normalized = if policy == :error, do: :error, else: :warn
+    severity = if normalized == :error, do: "error", else: "warning"
+    code = if normalized == :error, do: "debug_usage_not_allowed", else: "debug_usage_in_build"
 
     Enum.map(usages, fn %{target: target, module: module, function: function} ->
       %{
@@ -50,40 +53,39 @@ defmodule Elmc.Backend.DebugUsage do
     end)
   end
 
-  @spec check(IR.t(), map()) :: :ok | {:warn, [map()]} | {:error, [map()]}
+  @spec check(IR.t(), Types.compile_options()) ::
+          :ok | {:warn, [CCodegenTypes.compile_warning_json()]} | {:error, [CCodegenTypes.compile_warning_json()]}
   def check(%IR{} = ir, opts) when is_map(opts) do
-    if prod?(opts) do
-      usages = collect(ir)
+    usages = collect(ir)
 
-      case usages do
-        [] ->
-          :ok
+    cond do
+      not prod?(opts) ->
+        :ok
 
-        usages ->
-          policy = debug_usage_policy(opts)
-          diagnostics = diagnostics(usages, policy)
+      usages == [] ->
+        :ok
 
-          case policy do
-            :warn -> {:warn, diagnostics}
-            :error -> {:error, diagnostics}
-          end
-      end
-    else
-      :ok
+      debug_usage_policy(opts) in [:warn, :warning] ->
+        {:warn, diagnostics(usages, :warn)}
+
+      true ->
+        {:error, diagnostics(usages, :error)}
     end
   end
 
-  @spec prod?(map()) :: boolean()
+  @spec prod?(Types.compile_options()) :: boolean()
   def prod?(opts) when is_map(opts), do: Map.get(opts, :prod, false) == true
 
-  @spec debug_usage_policy(map()) :: policy()
+  @spec debug_usage_policy(Types.compile_options()) :: policy()
   def debug_usage_policy(opts) when is_map(opts) do
-    case Map.get(opts, :debug_usage_policy, :error) do
-      :warn -> :warn
-      :warning -> :warn
-      "warn" -> :warn
-      "warning" -> :warn
-      _ -> :error
+    case Map.fetch(opts, :debug_usage_policy) do
+      {:ok, :warn} -> :warn
+      {:ok, :warning} -> :warning
+      {:ok, "warn"} -> :warn
+      {:ok, "warning"} -> :warning
+      {:ok, :error} -> :error
+      {:ok, "error"} -> :error
+      :error -> :error
     end
   end
 

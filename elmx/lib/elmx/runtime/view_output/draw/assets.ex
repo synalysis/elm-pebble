@@ -7,7 +7,7 @@ defmodule Elmx.Runtime.ViewOutput.Draw.Assets do
 
   @type opts :: Types.view_output_opts()
 
-  @spec row(map(), opts()) :: Types.view_output_row() | nil
+  @spec row(Types.view_draw_node(), opts()) :: Types.view_output_row() | nil
   def row(%{"type" => "drawBitmapInRect"} = node, opts) do
     {x, y, w, h} = Geometry.rect_fields(node, "bounds") |> Geometry.sanitize_rect(node, opts)
     resource = Map.get(node, "resource") || Map.get(node, :resource)

@@ -35,5 +35,10 @@ defmodule ElmEx.DebuggerContract.CmdCall do
           optional(atom()) => json_value()
         }
 
-  @type wire_map :: t() | map()
+  @type wire_map_alias :: %{
+          optional(atom()) => json_value(),
+          optional(String.t()) => json_value()
+        }
+
+  @type wire_map :: t() | wire_map_alias()
 end

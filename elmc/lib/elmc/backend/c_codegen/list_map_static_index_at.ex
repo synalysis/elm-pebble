@@ -7,9 +7,11 @@ defmodule Elmc.Backend.CCodegen.ListMapStaticIndexAt do
   `elmc_list_nth_maybe`). Indices and helper names come from IR, not app names.
   """
 
+  alias Elmc.Backend.CCodegen.Types
+
   alias Elmc.Backend.CCodegen.{FusionSupport, Util}
 
-  @spec try_emit(String.t(), String.t(), map() | nil, map()) ::
+  @spec try_emit(String.t(), String.t(), Types.ir_expr() | nil, Types.function_decl_map()) ::
           {:ok, String.t(), [FusionSupport.callee_key()]}
           | {:ok, String.t(), [FusionSupport.callee_key()], :rc_native}
           | :error
@@ -150,8 +152,8 @@ defmodule Elmc.Backend.CCodegen.ListMapStaticIndexAt do
   end
 
   @doc false
-  @spec extract_fusion_data(String.t(), String.t(), map() | nil, map()) ::
-          {:ok, :list_map_static_index_at, map()} | :error
+  @spec extract_fusion_data(String.t(), String.t(), Types.ir_expr() | nil, Types.function_decl_map()) ::
+          {:ok, :list_map_static_index_at, Types.fusion_metadata()} | :error
   def extract_fusion_data(module_name, _name, expr, decl_map) do
     with {:ok, default, list_at_target, _list_var, indices} <- parse(expr),
          true <- FusionSupport.indexed_list_at_reader?(decl_map, module_name, list_at_target) do

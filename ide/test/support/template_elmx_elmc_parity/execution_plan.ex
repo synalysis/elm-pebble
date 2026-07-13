@@ -6,20 +6,21 @@ defmodule Ide.Test.TemplateElmxElmcParity.ExecutionPlan do
   alias Ide.Debugger.SubscriptionTriggerWire
   alias Ide.Debugger.TriggerCandidates
   alias Ide.Test.TemplateElmxElmcParity.Scaffold
+  alias Ide.Test.TemplateElmxElmcParity.Types, as: ParityTypes
 
   @type step_op :: :init | :update | :view | :subscriptions
   @type step :: %{
           required(:id) => String.t(),
           required(:op) => step_op(),
           optional(:message) => String.t() | nil,
-          optional(:message_value) => map() | nil,
+          optional(:message_value) => ParityTypes.wire_json_map() | nil,
           optional(:source) => String.t()
         }
 
   @type t :: %{
           required(:template_key) => String.t(),
           required(:watch_profile_id) => String.t(),
-          required(:contract) => map(),
+          required(:contract) => CompileContract.contract(),
           required(:steps) => [step()]
         }
 
@@ -337,7 +338,7 @@ defmodule Ide.Test.TemplateElmxElmcParity.ExecutionPlan.TimelineMessageValue do
 
   alias Ide.Debugger.CompiledElixirCorpusHelpers, as: Corpus
 
-  @spec sample_for_ctor(String.t()) :: map() | nil
+  @spec sample_for_ctor(String.t()) :: Ide.Test.TemplateElmxElmcParity.Types.timeline_sample()
   def sample_for_ctor("CurrentDateTime") do
     %{
       "year" => 2026,
@@ -370,7 +371,7 @@ defmodule Ide.Test.TemplateElmxElmcParity.ExecutionPlan.TimelineMessageValue do
   def sample_for_ctor("ButtonSelect"), do: nil
   def sample_for_ctor(_), do: nil
 
-  @spec sample_for_message(String.t()) :: map() | nil
+  @spec sample_for_message(String.t()) :: Ide.Test.TemplateElmxElmcParity.Types.timeline_sample()
   def sample_for_message(message) when is_binary(message) do
     ctor =
       message

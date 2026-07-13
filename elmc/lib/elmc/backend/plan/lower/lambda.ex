@@ -8,8 +8,7 @@ defmodule Elmc.Backend.Plan.Lower.Lambda do
 
   @type tuple_binding :: {String.t(), :first | :second, String.t()}
 
-  @spec compile(map(), Context.t(), Builder.t()) ::
-          {:ok, Types.reg() | :fn_out, Builder.t()} | :unsupported
+  @spec compile(Types.ir_expr(), Context.t(), Builder.t()) :: Types.compile_result_required()
   def compile(%{op: :lambda, args: lambda_args, body: body}, ctx, b) do
     {args, flat_body, tuple_prelude} = flatten_curried(lambda_args || [], body, [])
     compile_lambda(args, flat_body, tuple_prelude, ctx, b)
@@ -27,7 +26,7 @@ defmodule Elmc.Backend.Plan.Lower.Lambda do
   @spec partial_operator_var?(String.t()) :: boolean()
   def partial_operator_var?(name) when is_binary(name), do: name in @partial_binops
 
-  @spec compile_partial(map(), Context.t(), Builder.t()) ::
+  @spec compile_partial(Types.ir_expr(), Context.t(), Builder.t()) ::
           {:ok, Types.reg() | :fn_out, Builder.t()} | :unsupported
   def compile_partial(%{op: :call, name: name, args: [bound]}, ctx, b)
       when name in @partial_binops do
@@ -113,7 +112,7 @@ defmodule Elmc.Backend.Plan.Lower.Lambda do
     end
   end
 
-  @spec compile_lambda([String.t()], map(), [tuple_binding()], Context.t(), Builder.t()) ::
+  @spec compile_lambda([String.t()], Types.ir_expr(), [tuple_binding()], Context.t(), Builder.t()) ::
           {:ok, Types.reg() | :fn_out, Builder.t()} | :unsupported
   def compile_lambda(lambda_args, body, tuple_prelude, ctx, b)
       when is_list(lambda_args) and is_map(body) and is_list(tuple_prelude) do

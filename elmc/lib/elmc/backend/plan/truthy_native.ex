@@ -1,13 +1,15 @@
 defmodule Elmc.Backend.Plan.TruthyNative do
   @moduledoc false
 
+  alias Elmc.Backend.Plan.Types
+
   @type arm_shape ::
           :unknown
           | {:const_int, 0 | 1}
           | {:compare, atom(), non_neg_integer(), non_neg_integer()}
           | {:reg, non_neg_integer()}
 
-  @spec arm_shape([map()], non_neg_integer()) :: arm_shape()
+  @spec arm_shape(Types.instr_list(), non_neg_integer()) :: arm_shape()
   def arm_shape(instrs, reg) when is_list(instrs) and is_integer(reg) do
     case Enum.find(instrs, &(&1.dest == reg)) do
       nil ->
@@ -51,7 +53,7 @@ defmodule Elmc.Backend.Plan.TruthyNative do
   defp truthy_bool_phi_shape?({:reg, _}), do: true
   defp truthy_bool_phi_shape?(_), do: false
 
-  @spec phi_shapes?([map()], non_neg_integer(), non_neg_integer()) ::
+  @spec phi_shapes?(Types.instr_list(), non_neg_integer(), non_neg_integer()) ::
           {boolean(), arm_shape(), arm_shape()}
   def phi_shapes?(instrs, then_reg, else_reg) do
     then_shape = arm_shape(instrs, then_reg)
@@ -61,7 +63,7 @@ defmodule Elmc.Backend.Plan.TruthyNative do
     {truthy?, then_shape, else_shape}
   end
 
-  @spec phi_arm_drop_instrs([map()]) :: MapSet.t({non_neg_integer(), non_neg_integer()})
+  @spec phi_arm_drop_instrs(Types.block_list()) :: MapSet.t({non_neg_integer(), non_neg_integer()})
   def phi_arm_drop_instrs(blocks) when is_list(blocks) do
     blocks
     |> Enum.flat_map(& &1.instrs)
@@ -76,7 +78,7 @@ defmodule Elmc.Backend.Plan.TruthyNative do
   end
 
   @doc false
-  @spec phi_arm_drop_regs([map()]) :: MapSet.t(non_neg_integer())
+  @spec phi_arm_drop_regs(Types.block_list()) :: MapSet.t(non_neg_integer())
   def phi_arm_drop_regs(blocks) when is_list(blocks) do
     blocks
     |> phi_arm_drop_instrs()
@@ -84,7 +86,7 @@ defmodule Elmc.Backend.Plan.TruthyNative do
     |> MapSet.new()
   end
 
-  @spec truthy_native_arm?(map(), non_neg_integer()) :: boolean()
+  @spec truthy_native_arm?(Types.FunctionPlan.t(), non_neg_integer()) :: boolean()
   def truthy_native_arm?(plan, reg) when is_map(plan) and is_integer(reg) do
     instrs = plan |> Map.get(:blocks, []) |> Enum.flat_map(& &1.instrs)
     instrs |> arm_shape(reg) |> truthy_bool_phi_shape?()

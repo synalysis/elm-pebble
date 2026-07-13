@@ -51,6 +51,29 @@ defmodule ElmEx.CoreIR.Types.Expr do
 
   @type wire_expr :: CoreIRTypes.wire_map()
 
+  @typedoc "Child expression before or after Core IR key normalization."
+  @type expr_child :: t() | wire_expr()
+
+  @type expr_child_or_name :: expr_child() | String.t()
+
+  @type arg_list :: [expr_child()]
+
+  @type record_field_pair :: {String.t(), expr_child()}
+  @type record_field_row :: record_field_pair() | wire_expr()
+  @type record_fields :: [record_field_row()] | wire_expr()
+
+  @type case_branch :: %{
+          optional(:pattern) => wire_expr(),
+          optional(:expr) => expr_child(),
+          optional(atom()) => CoreIRTypes.wire_input(),
+          optional(String.t()) => CoreIRTypes.wire_input()
+        }
+
+  @type field_name_list :: [String.t()]
+  @type field_names :: field_name_list() | %{optional(String.t()) => String.t()}
+
+  @type field_types_map :: %{optional(String.t()) => String.t()}
+
   @type int_literal :: %{required(:op) => op_name(), required(:value) => integer()}
   @type float_literal :: %{required(:op) => op_name(), required(:value) => float()}
   @type bool_literal :: %{required(:op) => op_name(), required(:value) => boolean()}
@@ -59,13 +82,13 @@ defmodule ElmEx.CoreIR.Types.Expr do
 
   @type expr_wrapper :: %{
           required(:op) => op_name(),
-          optional(:expr) => t() | map(),
-          optional(:value_expr) => t() | map(),
-          optional(:in_expr) => t() | map()
+          optional(:expr) => expr_child(),
+          optional(:value_expr) => expr_child(),
+          optional(:in_expr) => expr_child()
         }
 
   @type var_expr :: %{required(:op) => op_name(), required(:name) => String.t()}
-  @type var_resolved :: %{required(:op) => op_name(), required(:value_expr) => t() | map()}
+  @type var_resolved :: %{required(:op) => op_name(), required(:value_expr) => expr_child()}
 
   @type add_const :: %{
           required(:op) => op_name(),
@@ -86,109 +109,105 @@ defmodule ElmEx.CoreIR.Types.Expr do
   @type compare :: %{
           required(:op) => op_name(),
           required(:kind) => String.t(),
-          required(:left) => t() | map(),
-          required(:right) => t() | map()
+          required(:left) => expr_child(),
+          required(:right) => expr_child()
         }
 
   @type field_access :: %{
           required(:op) => op_name(),
-          required(:arg) => t() | map() | String.t(),
+          required(:arg) => expr_child_or_name(),
           required(:field) => String.t()
         }
 
   @type field_call :: %{
           required(:op) => op_name(),
-          required(:arg) => t() | map() | String.t(),
+          required(:arg) => expr_child_or_name(),
           required(:field) => String.t(),
-          optional(:args) => [t() | map()]
+          optional(:args) => arg_list()
         }
-
-  @type record_fields :: [{String.t(), t() | map()} | map()] | map()
 
   @type record_literal :: %{required(:op) => op_name(), required(:fields) => record_fields()}
   @type record_update :: %{
           required(:op) => op_name(),
-          required(:base) => t() | map(),
+          required(:base) => expr_child(),
           required(:fields) => record_fields()
         }
 
   @type list_literal :: %{
           required(:op) => op_name(),
-          optional(:items) => [t() | map()],
-          optional(:elements) => [t() | map()]
+          optional(:items) => arg_list(),
+          optional(:elements) => arg_list()
         }
 
   @type tuple2 :: %{
           required(:op) => op_name(),
-          required(:left) => t() | map(),
-          required(:right) => t() | map()
+          required(:left) => expr_child(),
+          required(:right) => expr_child()
         }
-  @type tuple_expr :: %{required(:op) => op_name(), optional(:elements) => [t() | map()]}
+  @type tuple_expr :: %{required(:op) => op_name(), optional(:elements) => arg_list()}
 
-  @type tuple_first_expr :: %{required(:op) => op_name(), required(:arg) => t() | map()}
-  @type tuple_second_expr :: %{required(:op) => op_name(), required(:arg) => t() | map()}
-  @type tuple_first :: %{required(:op) => op_name(), required(:arg) => t() | map()}
-  @type tuple_second :: %{required(:op) => op_name(), required(:arg) => t() | map()}
-  @type string_length_expr :: %{required(:op) => op_name(), required(:arg) => t() | map()}
-  @type char_from_code_expr :: %{required(:op) => op_name(), required(:arg) => t() | map()}
+  @type tuple_first_expr :: %{required(:op) => op_name(), required(:arg) => expr_child()}
+  @type tuple_second_expr :: %{required(:op) => op_name(), required(:arg) => expr_child()}
+  @type tuple_first :: %{required(:op) => op_name(), required(:arg) => expr_child()}
+  @type tuple_second :: %{required(:op) => op_name(), required(:arg) => expr_child()}
+  @type string_length_expr :: %{required(:op) => op_name(), required(:arg) => expr_child()}
+  @type char_from_code_expr :: %{required(:op) => op_name(), required(:arg) => expr_child()}
 
   @type let_in :: %{
           required(:op) => op_name(),
           required(:name) => String.t(),
-          required(:value_expr) => t() | map(),
-          required(:in_expr) => t() | map()
+          required(:value_expr) => expr_child(),
+          required(:in_expr) => expr_child()
         }
 
   @type if_expr :: %{
           required(:op) => op_name(),
-          required(:cond) => t() | map(),
-          required(:then_expr) => t() | map(),
-          required(:else_expr) => t() | map()
+          required(:cond) => expr_child(),
+          required(:then_expr) => expr_child(),
+          required(:else_expr) => expr_child()
         }
-
-  @type case_branch :: CoreIRTypes.wire_map()
 
   @type case_expr :: %{
           required(:op) => op_name(),
-          required(:subject) => t() | map() | String.t(),
+          required(:subject) => expr_child_or_name(),
           required(:branches) => [case_branch()]
         }
 
   @type constructor_call :: %{
           required(:op) => op_name(),
           required(:target) => String.t(),
-          optional(:args) => [t() | map()]
+          optional(:args) => arg_list()
         }
 
   @type lambda :: %{
           required(:op) => op_name(),
           optional(:params) => [String.t()],
           optional(:args) => [String.t()],
-          required(:body) => t() | map()
+          required(:body) => expr_child()
         }
 
   @type qualified_call :: %{
           required(:op) => op_name(),
           required(:target) => String.t(),
-          optional(:args) => [t() | map()]
+          optional(:args) => arg_list()
         }
 
   @type qualified_call1 :: %{
           required(:op) => op_name(),
           required(:target) => String.t(),
-          optional(:args) => [t() | map()]
+          optional(:args) => arg_list()
         }
 
   @type call :: %{
           required(:op) => op_name(),
           required(:name) => String.t(),
-          optional(:args) => [t() | map()]
+          optional(:args) => arg_list()
         }
 
   @type record_alias :: %{
           required(:op) => op_name(),
-          required(:fields) => [String.t()] | map(),
-          optional(:field_types) => map()
+          required(:fields) => field_names(),
+          optional(:field_types) => field_types_map()
         }
 
   @type unsupported :: %{required(:op) => op_name(), optional(:source) => normalized_value()}

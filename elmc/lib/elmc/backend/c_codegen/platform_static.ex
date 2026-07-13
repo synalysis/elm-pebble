@@ -19,14 +19,14 @@ defmodule Elmc.Backend.CCodegen.PlatformStatic do
     "Platform.colorCapabilityIsColor"
   ])
 
-  @spec platform_static_branch(Types.ir_expr() | term()) :: branch() | nil
+  @spec platform_static_branch(Types.ir_expr()) :: branch() | nil
   def platform_static_branch(expr) do
     expr
     |> normalize_platform_static_expr()
     |> platform_static_form()
   end
 
-  @spec platform_static_and_if(Types.ir_expr() | term()) ::
+  @spec platform_static_and_if(Types.ir_expr()) ::
           {:and, String.t(), polarity(), Types.ir_expr()} | nil
   def platform_static_and_if(expr) do
     expr
@@ -112,7 +112,7 @@ defmodule Elmc.Backend.CCodegen.PlatformStatic do
 
   defp normalize_platform_static_expr(expr), do: expr
 
-  @spec platform_static_macro(Types.ir_expr() | term()) :: String.t() | nil
+  @spec platform_static_macro(Types.ir_expr()) :: String.t() | nil
   def platform_static_macro(expr) do
     case platform_static_branch(expr) do
       {macro, _} -> macro
@@ -120,7 +120,7 @@ defmodule Elmc.Backend.CCodegen.PlatformStatic do
     end
   end
 
-  @spec platform_static?(Types.ir_expr() | term()) :: boolean()
+  @spec platform_static?(Types.ir_expr()) :: boolean()
   def platform_static?(expr), do: platform_static_branch(expr) != nil
 
   @spec ifdef_guard(String.t(), polarity()) :: String.t()

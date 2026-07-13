@@ -82,7 +82,7 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Patterns.Case do
   end
 
   # Elm `case maybe of Nothing -> ...; value -> ...` binds the Just payload, not the wrapper.
-  @spec maybe_unwrap_just_env([map()], env()) :: env()
+  @spec maybe_unwrap_just_env(Types.ir_case_branches(), env()) :: env()
   defp maybe_unwrap_just_env(branches, env) when is_list(branches) do
     if maybe_unwrap_just_case?(branches) do
       Map.put(env, :maybe_unwrap_just, true)
@@ -91,14 +91,14 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Patterns.Case do
     end
   end
 
-  @spec maybe_unwrap_just_case?([map()]) :: boolean()
+  @spec maybe_unwrap_just_case?(Types.ir_case_branches()) :: boolean()
   defp maybe_unwrap_just_case?(branches) when is_list(branches) do
     Enum.any?(branches, &nothing_branch?/1) and
       Enum.any?(branches, &var_branch?/1) and
       Enum.all?(branches, fn branch -> nothing_branch?(branch) or var_branch?(branch) end)
   end
 
-  @spec nothing_branch?(map()) :: boolean()
+  @spec nothing_branch?(Types.ir_case_branch()) :: boolean()
   defp nothing_branch?(branch) do
     case Match.branch_pattern_root(branch) do
       %{kind: :constructor, name: name} when name in ["Nothing", "Maybe.Nothing"] -> true
@@ -106,7 +106,7 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Patterns.Case do
     end
   end
 
-  @spec var_branch?(map()) :: boolean()
+  @spec var_branch?(Types.ir_case_branch()) :: boolean()
   defp var_branch?(branch) do
     case Match.branch_pattern_root(branch) do
       %{kind: :var, name: name} when is_binary(name) and name not in ["_", ""] -> true

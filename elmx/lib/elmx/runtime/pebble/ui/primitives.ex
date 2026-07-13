@@ -15,11 +15,12 @@ defmodule Elmx.Runtime.Pebble.Ui.Primitives do
   @spec named_color(String.t()) :: integer()
   def named_color(name) when is_binary(name), do: Colors.named(name)
 
-  @spec fill_rect(term(), term()) :: map()
+  @spec fill_rect(Types.ui_bounds(), Types.ui_color()) :: Types.ui_node()
   def fill_rect(bounds, color),
     do: %{type: "fillRect", label: "fillRect", bounds: bounds, color: Helpers.color_value(color)}
 
-  @spec text(term(), term(), term(), term()) :: map()
+  @spec text(Types.ui_font(), Types.ui_text_options(), Types.ui_bounds(), Types.string_like()) ::
+          Types.ui_node()
   def text(font, options, bounds, value) do
     {text_align, text_overflow} = TextOptions.fields(options)
 
@@ -35,7 +36,7 @@ defmodule Elmx.Runtime.Pebble.Ui.Primitives do
     }
   end
 
-  @spec text_int(term(), term(), term()) :: map()
+  @spec text_int(Types.ui_font(), Types.ui_point(), Types.ui_coord()) :: Types.ui_node()
   def text_int(font, pos, value) do
     {x, y} = Helpers.point_xy(pos)
     text = Integer.to_string(Helpers.int_value(value))
@@ -52,7 +53,7 @@ defmodule Elmx.Runtime.Pebble.Ui.Primitives do
     }
   end
 
-  @spec text_label(term(), term(), term()) :: map()
+  @spec text_label(Types.ui_font(), Types.ui_point(), Types.ui_label()) :: Types.ui_node()
   def text_label(font, pos, label) do
     {x, y} = Helpers.point_xy(pos)
     text = Helpers.label_display_text(label)
@@ -68,10 +69,10 @@ defmodule Elmx.Runtime.Pebble.Ui.Primitives do
     }
   end
 
-  @spec rect(term(), term()) :: map()
+  @spec rect(Types.ui_bounds(), Types.ui_color()) :: Types.ui_node()
   def rect(bounds, color), do: %{type: "rect", label: "rect", bounds: bounds, color: Helpers.color_value(color)}
 
-  @spec line(term(), term(), term()) :: map()
+  @spec line(Types.ui_point(), Types.ui_point(), Types.ui_color()) :: Types.ui_node()
   def line(from, to, color \\ :black) do
     {x1, y1} = Helpers.point_xy(from)
     {x2, y2} = Helpers.point_xy(to)
@@ -87,7 +88,7 @@ defmodule Elmx.Runtime.Pebble.Ui.Primitives do
     }
   end
 
-  @spec circle(term(), term(), term()) :: map()
+  @spec circle(Types.ui_point(), Types.ui_coord(), Types.ui_color()) :: Types.ui_node()
   def circle(center, radius, color) do
     {cx, cy} = Helpers.point_xy(center)
 
@@ -103,7 +104,7 @@ defmodule Elmx.Runtime.Pebble.Ui.Primitives do
 
   def circle(center, radius), do: circle(center, radius, :black)
 
-  @spec fill_circle(term(), term(), term()) :: map()
+  @spec fill_circle(Types.ui_point(), Types.ui_coord(), Types.ui_color()) :: Types.ui_node()
   def fill_circle(center, radius, color) do
     {cx, cy} = Helpers.point_xy(center)
 
@@ -120,7 +121,7 @@ defmodule Elmx.Runtime.Pebble.Ui.Primitives do
   def fill_circle(center, color),
     do: fill_circle(center, 0, color)
 
-  @spec fill_radial(term(), term(), term()) :: map()
+  @spec fill_radial(Types.ui_bounds(), Types.ui_coord(), Types.ui_coord()) :: Types.ui_node()
   def fill_radial(bounds, start_angle, end_angle),
     do: %{
       type: "fillRadial",
@@ -130,20 +131,20 @@ defmodule Elmx.Runtime.Pebble.Ui.Primitives do
       end_angle: end_angle
     }
 
-  @spec pixel(term(), term()) :: map()
+  @spec pixel(Types.ui_point(), Types.ui_color()) :: Types.ui_node()
   def pixel(pos, color) do
     {x, y} = Helpers.point_xy(pos)
 
     %{type: "pixel", label: "pixel", x: x, y: y, color: Helpers.color_value(color)}
   end
 
-  @spec context_setting(String.t(), term()) :: map()
+  @spec context_setting(String.t(), Types.ui_color() | Types.ui_coord()) :: Types.ui_node()
   def context_setting(key, value) when key in @color_context_keys,
     do: %{type: "contextSetting", key: key, value: Helpers.color_value(value)}
 
   def context_setting(key, value), do: %{type: "contextSetting", key: key, value: value}
 
-  @spec round_rect(term(), term(), term()) :: map()
+  @spec round_rect(Types.ui_bounds(), Types.ui_coord(), Types.ui_color()) :: Types.ui_node()
   def round_rect(bounds, radius, color) do
     {x, y, w, h} = Helpers.bounds_xywh(bounds)
 
@@ -159,19 +160,19 @@ defmodule Elmx.Runtime.Pebble.Ui.Primitives do
     }
   end
 
-  @spec arc(term(), term(), term()) :: map()
+  @spec arc(Types.ui_bounds(), Types.ui_coord(), Types.ui_coord()) :: Types.ui_node()
   def arc(bounds, _start, _end), do: %{type: "arc", label: "arc", bounds: bounds}
 
-  @spec path(list(), term(), term()) :: map()
+  @spec path(list(), Types.ui_point(), Types.ui_coord()) :: Types.ui_node()
   def path(points, origin, _rotation), do: %{type: "path", label: "path", points: points, origin: origin}
 
-  @spec path_outline(term()) :: map()
+  @spec path_outline(Types.ui_path()) :: Types.ui_node()
   def path_outline(path), do: %{type: "pathOutline", label: "pathOutline", path: path}
 
-  @spec path_filled(term()) :: map()
+  @spec path_filled(Types.ui_path()) :: Types.ui_node()
   def path_filled(path), do: %{type: "pathFilled", label: "pathFilled", path: path}
 
-  @spec path_outline_open(term()) :: map()
+  @spec path_outline_open(Types.ui_path()) :: Types.ui_node()
   def path_outline_open(path), do: %{type: "pathOutlineOpen", label: "pathOutlineOpen", path: path}
 
   @spec compositing_mode(Types.ui_compositing_mode()) :: Types.ui_node()

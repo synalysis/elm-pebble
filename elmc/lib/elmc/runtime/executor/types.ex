@@ -8,7 +8,7 @@ defmodule Elmc.Runtime.Executor.Types do
   alias ElmEx.DebuggerContract.Payload, as: IntrospectPayload
   alias Elmc.Runtime.Executor.Types.{ExecutionResult, ViewTree, WireJson}
 
-  @type core_ir :: CoreIR.t() | CoreIRTypes.wire_map() | map() | nil
+  @type core_ir :: CoreIR.t() | CoreIRTypes.wire_map() | nil
   @type execution_result :: ExecutionResult.t()
   @type execution_wire_result :: ExecutionResult.wire_map()
   @type core_ir_expr :: CoreIRTypes.Expr.t() | CoreIRTypes.Expr.wire_expr()
@@ -16,7 +16,7 @@ defmodule Elmc.Runtime.Executor.Types do
   @type view_tree :: ViewTree.t()
   @type view_output :: [ViewTree.t()]
 
-  @type dynamic_value :: WireJson.t() | term()
+  @type dynamic_value :: WireJson.t() | atom()
   @type introspect :: IntrospectPayload.wire_payload()
   @type operation :: :set | :inc | :dec | :toggle | :enable | :disable | :reset | :tick
   @type set_payload_type :: :int | :bool | nil
@@ -35,8 +35,7 @@ defmodule Elmc.Runtime.Executor.Types do
           optional(:rel_path) => String.t() | nil,
           optional(:source) => String.t() | nil,
           optional(:introspect) => introspect() | nil,
-          optional(:current_model) => %{optional(atom()) => term(), optional(String.t()) => term()}
-          | nil,
+          optional(:current_model) => runtime_model() | nil,
           optional(:current_view_tree) => view_tree() | nil,
           optional(:message) => String.t() | nil,
           optional(:update_branches) => [String.t()] | nil
@@ -46,5 +45,5 @@ defmodule Elmc.Runtime.Executor.Types do
   @type view_tree_source_label :: String.t()
   @type char_code :: non_neg_integer()
   @type closer_stack :: [char_code() | nil]
-  @type hash_input :: term()
+  @type hash_input :: WireJson.t() | String.t() | integer() | [hash_input()]
 end

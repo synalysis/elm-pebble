@@ -10,10 +10,10 @@ defmodule Elmx.Runtime.Pebble.Ui do
   @spec window(Types.ui_layer_id(), Types.registry_args()) :: Types.ui_node()
   defdelegate window(id, layers), to: Structure
 
-  @spec canvas_layer(Types.ui_layer_id(), [Types.ui_node() | map()]) :: Types.ui_node()
+  @spec canvas_layer(Types.ui_layer_id(), [Types.ui_node()]) :: Types.ui_node()
   defdelegate canvas_layer(z, ops), to: Structure
 
-  @spec group(Types.wire_map() | map()) :: Types.ui_node()
+  @spec group(Types.wire_map()) :: Types.ui_node()
   def group(arg), do: Structure.group(arg)
 
   @spec context(Types.registry_args(), Types.registry_args()) :: Types.ui_node()

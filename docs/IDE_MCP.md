@@ -18,10 +18,23 @@ The server speaks JSON-RPC over stdio using `Content-Length` framing.
 
 ## HTTP Endpoint
 
-The Phoenix app also exposes the same MCP dispatcher over HTTP:
+The Phoenix app exposes the same MCP dispatcher over Streamable HTTP at:
 
 ```text
-POST /api/mcp
+GET /api/mcp   (SSE listener stream when Accept includes text/event-stream)
+POST /api/mcp  (JSON-RPC requests and notifications)
+```
+
+Cursor and other Streamable HTTP clients should point at the MCP URL:
+
+```json
+{
+  "mcpServers": {
+    "elm-pebble-ide": {
+      "url": "http://localhost:4000/api/mcp"
+    }
+  }
+}
 ```
 
 Example Zed remote MCP configuration:

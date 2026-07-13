@@ -4,9 +4,10 @@ defmodule Elmc.Backend.Plan.Fusion.ListIntSearch do
   alias Elmc.Backend.CCodegen.{EnvBindings, Host, Util}
   alias Elmc.Backend.CCodegen.Native.ListIntSearch
   alias Elmc.Backend.Plan.Fusion.{Helper, Tuple2CaseTable}
+  alias Elmc.Backend.Plan.Types
   alias Elmc.Backend.Plan.Types.FunctionPlan
 
-  @spec try_plan(String.t(), map(), map(), keyword()) ::
+  @spec try_plan(String.t(), Types.function_decl(), Types.function_decl_map(), keyword()) ::
           {:ok, FunctionPlan.t()} | :error
   def try_plan(module_name, decl, decl_map, _opts)
       when is_binary(module_name) and is_map(decl) and is_map(decl_map) do

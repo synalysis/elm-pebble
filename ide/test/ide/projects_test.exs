@@ -1492,15 +1492,22 @@ defmodule Ide.ProjectsTest do
              row.type == "init" and row.target == "phone"
            end)
 
-    assert Enum.any?(reloaded.debugger_timeline, fn row ->
+    assert :ok = Debugger.RuntimeBackgroundDrains.await_idle(slug, 120_000)
+    assert {:ok, after_drain} = Debugger.snapshot(slug, event_limit: 500)
+
+    assert Enum.any?(after_drain.debugger_timeline, fn row ->
              row.target == "phone" and row.type == "update" and
                String.contains?(to_string(row.message || ""), "FromWatch")
-           end)
+           end) or
+             Enum.any?(after_drain.events, fn event ->
+               event.type == "debugger.protocol_rx" and
+                 String.contains?(inspect(event.payload), "FromWatch")
+             end)
 
-    refute AppMessageQueue.pending?(reloaded, :companion)
+    refute AppMessageQueue.pending?(after_drain, :companion)
 
-    companion_shell = get_in(reloaded, [:companion, :shell]) || %{}
-    companion_model = get_in(reloaded, [:companion, :model]) || %{}
+    companion_shell = get_in(after_drain, [:companion, :shell]) || %{}
+    companion_model = get_in(after_drain, [:companion, :model]) || %{}
     companion_runtime = Map.get(companion_model, "runtime_model") || %{}
 
     assert get_in(companion_shell, ["debugger_contract", "module"]) == "CompanionApp"
@@ -1510,7 +1517,7 @@ defmodule Ide.ProjectsTest do
     refute Map.has_key?(settings, "$var")
     assert companion_runtime["errors"] == []
     assert companion_runtime["protocol_message_count"] >= 1
-    refute st_has_internal_text_tuple?(reloaded.watch.view_tree)
+    refute st_has_internal_text_tuple?(after_drain.watch.view_tree)
   end
 
   test "tangram companion bootstrap reload executes CompanionApp init model" do

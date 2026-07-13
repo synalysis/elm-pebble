@@ -37,8 +37,8 @@ defmodule Ide.Mcp.ToolTypes do
   @typedoc "JSON-serializable nested tool payload object (string keys on the wire)."
   @type tool_wire_map :: %{optional(String.t()) => tool_payload_value()}
 
-  @type tool_result :: {:ok, map()} | {:error, String.t()}
-  @type tool_persist_error :: atom() | String.t() | Ecto.Changeset.t() | map()
+  @type tool_result :: {:ok, tool_wire_map()} | {:error, String.t()}
+  @type tool_persist_error :: atom() | String.t() | Ecto.Changeset.t() | tool_wire_map()
   @type tool_args :: %{optional(String.t()) => json_value()}
   @type tool_audit_args :: tool_args()
 
@@ -306,11 +306,11 @@ defmodule Ide.Mcp.ToolTypes do
   @type debugger_bytecode_result :: %{
           required(:slug) => String.t(),
           optional(:available) => boolean(),
-          optional(:summary) => map(),
-          optional(:functions) => [map()],
+          optional(:summary) => Ide.Debugger.BytecodeTypes.summary(),
+          optional(:functions) => [Ide.Debugger.BytecodeTypes.function_row()],
           optional(:module) => String.t(),
           optional(:name) => String.t(),
-          optional(:result) => term()
+          optional(:result) => Ide.Debugger.BytecodeTypes.runtime_value()
         }
 
   @type compiler_recent_result :: %{

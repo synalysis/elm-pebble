@@ -3,6 +3,10 @@ defmodule Elmc.Types do
   Shared types used across elmc packages.
   """
 
+  alias ElmEx.Frontend.Project, as: FrontendProject
+  alias ElmEx.IR
+  alias ElmEx.Types, as: ElmExTypes
+
   @type file_error :: File.posix()
 
   @type module_name :: String.t()
@@ -39,4 +43,145 @@ defmodule Elmc.Types do
           optional(:size_aggressive_direct_render) => boolean(),
           optional(:debug_usage_policy) => debug_usage_policy()
         }
+
+  @type cli_diagnostic :: %{
+          optional(:severity) => String.t(),
+          optional(:message) => String.t(),
+          optional(:source) => String.t(),
+          optional(:file) => String.t() | nil,
+          optional(:line) => integer() | nil,
+          optional(:column) => integer() | nil,
+          optional(:warning_type) => atom() | String.t() | nil,
+          optional(:warning_code) => atom() | String.t() | nil,
+          optional(:warning_constructor) => String.t() | nil,
+          optional(:warning_expected_kind) => atom() | String.t() | nil,
+          optional(:warning_has_arg_pattern) => boolean() | nil,
+          optional(String.t()) => String.t() | integer() | boolean() | nil
+        }
+
+  @type coverage_stat :: integer() | float() | boolean() | String.t() | nil
+
+  @type coverage_bucket :: %{
+          optional(String.t()) => coverage_stat() | coverage_bucket(),
+          optional(atom()) => coverage_stat()
+        }
+
+  @type plan_coverage :: %{
+          optional(String.t()) => coverage_bucket(),
+          optional(atom()) => coverage_stat()
+        }
+
+  @type plan_toolchain :: %{
+          optional(:mode) => :off | :shadow | :primary | String.t(),
+          optional(:strict) => boolean(),
+          optional(String.t()) => coverage_stat(),
+          optional(atom()) => coverage_stat()
+        }
+
+  @type bytecode_function_row :: %{
+          required(:module) => String.t(),
+          required(:name) => String.t(),
+          optional(:file) => String.t() | nil,
+          optional(:params) => [String.t()]
+        }
+
+  @type bytecode_skipped_row :: %{
+          optional(:module) => String.t() | nil,
+          optional(:name) => String.t() | nil,
+          optional(:reason) => atom() | String.t() | nil
+        }
+
+  @type bytecode_summary_available :: %{
+          required(:available) => true,
+          optional(:contract) => String.t() | nil,
+          optional(:version) => String.t() | nil,
+          optional(:manifest_path) => String.t(),
+          optional(:function_count) => non_neg_integer(),
+          optional(:skipped_count) => non_neg_integer(),
+          optional(:pruned_count) => non_neg_integer(),
+          optional(:plan_toolchain) => plan_toolchain() | nil,
+          optional(:plan_coverage) => plan_coverage() | nil,
+          optional(:functions) => [bytecode_function_row()],
+          optional(:skipped) => [bytecode_skipped_row()]
+        }
+
+  @type bytecode_summary_unavailable :: %{
+          required(:available) => false,
+          optional(:reason) => String.t()
+        }
+
+  @type bytecode_summary :: bytecode_summary_available() | bytecode_summary_unavailable()
+
+  @type compiler_catch_scalar :: atom() | String.t() | integer() | float() | boolean() | nil
+
+  @type compiler_catch_reason ::
+          compiler_catch_scalar()
+          | [compiler_catch_reason()]
+          | %{optional(String.t()) => compiler_catch_reason()}
+
+  @type frontend_config_error :: %{
+          required(:kind) => :config_error,
+          required(:reason) => :missing_elm_json | File.posix() | Jason.DecodeError.t(),
+          optional(:path) => String.t()
+        }
+
+  @type frontend_parse_error :: %{
+          required(:kind) => :parse_error,
+          required(:path) => String.t(),
+          optional(:line) => integer() | String.t() | nil,
+          optional(:reason) => ElmExTypes.parse_reason()
+        }
+
+  @type frontend_elm_check_failed :: %{
+          required(:kind) => :elm_check_failed,
+          required(:diagnostics) => [cli_diagnostic()],
+          required(:raw) => String.t()
+        }
+
+  @type frontend_bridge_error ::
+          frontend_config_error()
+          | frontend_parse_error()
+          | frontend_elm_check_failed()
+          | %{
+              optional(atom()) => String.t() | integer() | boolean() | nil,
+              optional(String.t()) => String.t() | integer() | boolean() | nil
+            }
+
+  @type compile_error ::
+          frontend_bridge_error()
+          | {:compile_diagnostics, [cli_diagnostic()]}
+          | {:compiler_exception, module(), String.t()}
+          | {:compiler_exception, atom(), compiler_catch_reason()}
+
+  @type compile_result :: %{
+          required(:project) => FrontendProject.t(),
+          required(:ir) => IR.t(),
+          optional(:debug_usage_diagnostics) => [cli_diagnostic()],
+          optional(:layout_coercion_diagnostics) => [cli_diagnostic()],
+          optional(:blocking_diagnostics) => [cli_diagnostic()],
+          optional(:informational_diagnostics) => [cli_diagnostic()],
+          optional(:plan_coverage) => plan_coverage() | nil,
+          optional(:plan_toolchain) => plan_toolchain() | nil,
+          optional(:elmc_bytecode_summary) => bytecode_summary()
+        }
+
+  @type object_text_source_row :: %{
+          required(String.t()) => String.t() | non_neg_integer()
+        }
+
+  @type object_text_estimate_unavailable :: %{
+          required(String.t()) => boolean() | String.t()
+        }
+
+  @type object_text_estimate_available :: %{
+          required(String.t()) => boolean() | non_neg_integer() | nil | [object_text_source_row()],
+          required(:available) => true,
+          required(:elmc_app_text) => non_neg_integer(),
+          required(:elmc_stack_text) => non_neg_integer(),
+          optional(:generated_text) => non_neg_integer() | nil,
+          required(:sources) => [object_text_source_row()]
+        }
+
+  @type object_text_estimate ::
+          object_text_estimate_unavailable() | object_text_estimate_available()
 end

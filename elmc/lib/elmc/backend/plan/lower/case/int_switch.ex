@@ -6,7 +6,7 @@ defmodule Elmc.Backend.Plan.Lower.Case.IntSwitch do
   alias Elmc.Backend.Plan.Lower.Expr
   alias Elmc.Backend.Plan.Types
 
-  @spec branches?(list()) :: boolean()
+  @spec branches?(Types.case_branches()) :: boolean()
   def branches?(branches) when is_list(branches) do
     tagged? =
       Enum.any?(branches, fn branch ->
@@ -25,8 +25,8 @@ defmodule Elmc.Backend.Plan.Lower.Case.IntSwitch do
 
   def branches?(_), do: false
 
-  @spec compile(map(), list(), Context.t(), Builder.t()) ::
-          {:ok, Types.reg() | :fn_out, Builder.t()} | :unsupported
+  @spec compile(Types.ir_expr(), Types.case_branches(), Context.t(), Builder.t()) ::
+          Types.compile_result_required()
   def compile(subject, branches, ctx, b) do
     with {:ok, subj_reg, b1} <- Expr.compile(subject, ctx, b) do
       compile_cfg(subj_reg, branches, ctx, b1)

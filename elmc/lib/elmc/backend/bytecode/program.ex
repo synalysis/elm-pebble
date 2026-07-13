@@ -8,7 +8,9 @@ defmodule Elmc.Backend.Bytecode.Program do
 
   alias Elmc.Backend.Bytecode.{FnTable, Runtime}
   alias Elmc.Backend.CCodegen.RcRequired
+  alias Elmc.Backend.CCodegen.Types, as: CCodegenTypes
   alias Elmc.Backend.Plan.Lower.Function, as: PlanLower
+  alias Elmc.Backend.Plan.Types, as: PlanTypes
   alias Elmc.Backend.Plan.Types.FunctionPlan
 
   @type entry :: {String.t(), String.t()}
@@ -18,7 +20,8 @@ defmodule Elmc.Backend.Bytecode.Program do
           entry: entry()
         }
 
-  @spec link(map(), entry(), keyword()) :: {:ok, t()} | :unsupported | {:error, term()}
+  @spec link(CCodegenTypes.function_decl_map(), entry(), keyword()) ::
+          {:ok, t()} | PlanTypes.lower_result()
   def link(decl_map, {module, name} = root, opts \\ []) when is_map(decl_map) do
     with {:ok, root_plan} <- lower_decl(decl_map, module, name, opts) do
       plans = link_callees(decl_map, %{root => root_plan}, opts)
@@ -26,7 +29,7 @@ defmodule Elmc.Backend.Bytecode.Program do
     end
   end
 
-  @spec run(t(), keyword()) :: {:ok, Runtime.value()} | {:error, term()}
+  @spec run(t(), keyword()) :: {:ok, Runtime.value()}
   def run(%{plans: plans, entry: entry}, opts \\ []) do
     plan = Map.fetch!(plans, entry)
     Runtime.run_function(plan, Keyword.merge(opts, plans: plans))

@@ -3,10 +3,11 @@ defmodule Elmx.Backend.Worker do
 
   alias Elmx.Backend.MainProgram
   alias Elmx.Runtime.CodegenRefs
+  alias Elmx.Types
 
   @executor_callbacks ~w(init update view subscriptions)
 
-  @spec render(String.t(), String.t(), ElmEx.IR.t(), map()) :: String.t()
+  @spec render(String.t(), String.t(), ElmEx.IR.t(), Types.compile_options()) :: String.t()
   def render(_generated_module, entry_module, ir, _opts) do
     callbacks =
       ir

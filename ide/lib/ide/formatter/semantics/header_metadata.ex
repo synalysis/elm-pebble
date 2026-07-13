@@ -2,11 +2,24 @@ defmodule Ide.Formatter.Semantics.HeaderMetadata do
   @moduledoc false
 
   alias ElmEx.Frontend.Types.ImportEntry
+  alias ElmEx.Types, as: ElmExTypes
 
   @type header_lines :: %{module: integer() | nil, imports: [integer()]}
-  @type lexer_token :: tuple()
+
+  @type lexer_token :: ElmExTypes.lexer_token()
+
   @type token_line :: [lexer_token()]
   @type exposing_clause :: String.t() | [String.t()]
+
+  @type import_tail_map :: %{
+          required(:as) => String.t() | nil,
+          required(:exposing) => exposing_clause() | nil
+        }
+
+  @type header_parser_value ::
+          {:module, String.t(), exposing_clause() | nil}
+          | {:import, String.t(), import_tail_map()}
+
   @type metadata :: %{
           module: String.t() | nil,
           imports: [String.t()],
@@ -17,7 +30,7 @@ defmodule Ide.Formatter.Semantics.HeaderMetadata do
           header_lines: header_lines()
         }
 
-  @spec from_values_and_tokens(String.t(), [tuple()], [tuple()]) :: metadata()
+  @spec from_values_and_tokens(String.t(), [header_parser_value()], [lexer_token()]) :: metadata()
   def from_values_and_tokens(source, values, tokens)
       when is_binary(source) and is_list(values) and is_list(tokens) do
     lines = split_token_lines(tokens)

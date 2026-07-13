@@ -1,6 +1,8 @@
 defmodule Elmx.TestSupport.TemplateProject do
   @moduledoc false
 
+  alias Elmx.TestSupport.Types, as: SupportTypes
+
   @repo_root Path.expand("../../..", __DIR__)
 
   @representative_watch_templates ~w(
@@ -80,7 +82,10 @@ defmodule Elmx.TestSupport.TemplateProject do
   @spec repo_root() :: String.t()
   def repo_root, do: @repo_root
 
-  @spec scaffold_template(String.t(), keyword()) :: {:ok, String.t()} | {:error, term()}
+  alias Elmx.TestSupport.Types, as: SupportTypes
+
+  @spec scaffold_template(String.t(), keyword()) ::
+          {:ok, String.t()} | {:error, SupportTypes.scaffold_error()}
   def scaffold_template(template_key, opts \\ []) when is_binary(template_key) do
     tmp =
       Keyword.get(opts, :tmpdir) ||
@@ -110,7 +115,8 @@ defmodule Elmx.TestSupport.TemplateProject do
     end
   end
 
-  @spec scaffold_phone(String.t(), keyword()) :: {:ok, String.t()} | {:error, term()}
+  @spec scaffold_phone(String.t(), keyword()) ::
+          {:ok, String.t()} | {:error, SupportTypes.scaffold_error()}
   def scaffold_phone(template_key, opts \\ []) when is_binary(template_key) do
     tmp =
       Keyword.get(opts, :tmpdir) ||

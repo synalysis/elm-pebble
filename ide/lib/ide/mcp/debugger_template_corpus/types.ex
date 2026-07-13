@@ -55,4 +55,6 @@ defmodule Ide.Mcp.DebuggerTemplateCorpus.Types do
   @type background_drain_error :: {:background_drain_timeout, String.t()}
 
   @type corpus_error :: String.t() | File.posix() | background_drain_error()
+
+  @type corpus_http_response :: DebuggerTypes.HttpSimulatedResponse.wire_map()
 end

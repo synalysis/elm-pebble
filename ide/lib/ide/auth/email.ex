@@ -118,7 +118,9 @@ defmodule Ide.Auth.Email do
 
   def user_exists?(_), do: false
 
-  @spec issue_token(String.t()) :: {:ok, String.t()} | {:error, term()}
+  @type token_error :: Ecto.Changeset.t() | atom()
+
+  @spec issue_token(String.t()) :: {:ok, String.t()} | {:error, token_error()}
   defp issue_token(email) when is_binary(email) do
     email_hash = EmailHash.hash(email)
     {raw, hash} = LoginLink.generate()

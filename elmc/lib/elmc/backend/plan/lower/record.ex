@@ -7,7 +7,7 @@ defmodule Elmc.Backend.Plan.Lower.Record do
   alias Elmc.Backend.Plan.Lower.{Call, Expr}
   alias Elmc.Backend.Plan.Types
 
-  @spec compile_update(map(), Context.t(), Builder.t()) ::
+  @spec compile_update(Types.ir_expr(), Context.t(), Builder.t()) ::
           {:ok, Types.reg() | :fn_out, Builder.t()} | :unsupported
   def compile_update(%{base: base, fields: fields}, ctx, b) when is_list(fields) do
     base_expr = base_expr_for_field(base)
@@ -22,7 +22,7 @@ defmodule Elmc.Backend.Plan.Lower.Record do
 
   def compile_update(_, _, _), do: :unsupported
 
-  @spec compile_field_call(map() | String.t(), String.t(), [map()], Context.t(), Builder.t()) ::
+  @spec compile_field_call(Types.ir_expr() | String.t(), String.t(), [Types.ir_expr()], Context.t(), Builder.t()) ::
           {:ok, Types.reg() | :fn_out, Builder.t()} | :unsupported
   def compile_field_call(arg, field, args, ctx, b) when is_binary(field) do
     args = args || []
@@ -146,7 +146,7 @@ defmodule Elmc.Backend.Plan.Lower.Record do
   end
 
   @doc false
-  @spec canonicalize_literal_fields([map()], Context.t()) :: [map()]
+  @spec canonicalize_literal_fields([Types.ir_record_field()], Context.t()) :: [Types.ir_record_field()]
   def canonicalize_literal_fields(fields, ctx) when is_list(fields) do
     names = Enum.map(fields, &field_name/1)
 
@@ -175,12 +175,12 @@ defmodule Elmc.Backend.Plan.Lower.Record do
   end
 
   @doc false
-  @spec field_index_for(String.t(), Context.t() | nil, term()) :: String.t()
+  @spec field_index_for(String.t(), Context.t() | nil, Types.ir_expr() | nil) :: String.t()
   def field_index_for(field_name, ctx \\ nil, base_expr \\ nil) when is_binary(field_name),
     do: field_index_ref(field_name, ctx, base_expr)
 
   @doc false
-  @spec resolve_field_index_int(String.t(), Context.t() | nil, term()) ::
+  @spec resolve_field_index_int(String.t(), Context.t() | nil, Types.ir_expr() | nil) ::
           {:ok, integer()} | :error
   def resolve_field_index_int(field_name, ctx \\ nil, base_expr \\ nil)
       when is_binary(field_name) do

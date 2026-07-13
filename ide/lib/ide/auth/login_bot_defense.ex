@@ -6,10 +6,12 @@ defmodule Ide.Auth.LoginBotDefense do
   @honeypot_field "organization"
   @turnstile_verify_url "https://challenges.cloudflare.com/turnstile/v0/siteverify"
 
+  @type login_form_params :: %{optional(String.t()) => String.t() | boolean() | nil}
+
   @spec honeypot_field() :: String.t()
   def honeypot_field, do: @honeypot_field
 
-  @spec bot_request?(map()) :: boolean()
+  @spec bot_request?(login_form_params()) :: boolean()
   def bot_request?(params) when is_map(params) do
     params
     |> Map.get(@honeypot_field, "")
@@ -34,7 +36,7 @@ defmodule Ide.Auth.LoginBotDefense do
     |> normalize_key()
   end
 
-  @spec turnstile_ok?(Plug.Conn.t(), map()) :: boolean()
+  @spec turnstile_ok?(Plug.Conn.t(), login_form_params()) :: boolean()
   def turnstile_ok?(conn, params) when is_map(params) do
     if turnstile_configured?() do
       token =

@@ -15,7 +15,7 @@ defmodule ElmEx.CoreIR.Types do
 
   @type wire_scalar :: String.t() | integer() | float() | boolean() | nil
 
-  @type wire_input :: wire_scalar() | list() | map()
+  @type wire_input :: wire_scalar() | list() | wire_map()
 
   @type wire_map :: %{optional(String.t()) => wire_input(), optional(atom()) => wire_input()}
 

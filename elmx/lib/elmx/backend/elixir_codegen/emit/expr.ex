@@ -352,7 +352,7 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Expr do
     end)
   end
 
-  @spec referenced_binding_names(Types.ir_expr() | map() | list() | tuple()) :: MapSet.t(String.t())
+  @spec referenced_binding_names(Types.ir_tree()) :: MapSet.t(String.t())
   def referenced_binding_names({:apply_saturated, call, _arity}) when is_map(call),
     do: referenced_binding_names(call)
 

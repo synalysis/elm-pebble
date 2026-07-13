@@ -22,8 +22,7 @@ defmodule Elmc.Backend.CCodegen.Types.StackEstimate do
 
   @type runtime_call_counts :: %{String.t() => non_neg_integer()}
 
-  @type linked_binary_slot ::
-          Elmc.Backend.CCodegen.Types.LinkedBinary.wire_map() | map()
+  @type linked_binary_slot :: Elmc.Backend.CCodegen.Types.LinkedBinary.wire_map()
 
   @type code_size_indicators :: %{
           required(:generated_c_bytes) => non_neg_integer(),
@@ -36,6 +35,13 @@ defmodule Elmc.Backend.CCodegen.Types.StackEstimate do
           required(:linked_binary) => linked_binary_slot()
         }
 
+  @type report_scalar :: integer() | boolean() | String.t() | nil
+
+  @type report_value ::
+          report_scalar()
+          | [report_value()]
+          | %{optional(String.t()) => report_value(), optional(atom()) => report_value()}
+
   @type function_entry :: %{
           required(:function) => String.t(),
           required(:score) => non_neg_integer(),
@@ -43,8 +49,8 @@ defmodule Elmc.Backend.CCodegen.Types.StackEstimate do
           required(:level) => risk_level(),
           optional(:c_tmp_max) => non_neg_integer(),
           optional(:c_boxed_locals) => non_neg_integer(),
-          optional(atom()) => term(),
-          optional(String.t()) => term()
+          optional(atom()) => report_scalar(),
+          optional(String.t()) => report_scalar()
         }
 
   @type t :: %{
@@ -53,5 +59,5 @@ defmodule Elmc.Backend.CCodegen.Types.StackEstimate do
           required(:functions) => [function_entry()]
         }
 
-  @type wire_map :: t() | %{optional(String.t()) => term(), optional(atom()) => term()}
+  @type wire_map :: t() | %{optional(String.t()) => report_value(), optional(atom()) => report_value()}
 end

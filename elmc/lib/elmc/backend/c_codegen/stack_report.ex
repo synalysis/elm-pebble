@@ -5,7 +5,11 @@ defmodule Elmc.Backend.CCodegen.StackReport do
   alias Elmc.Backend.CCodegen.StackEstimate
   alias Elmc.Backend.CCodegen.Types.LinkedBinary, as: LinkedBinaryTypes
 
-  @spec enrich_file(String.t(), String.t(), keyword()) :: :ok | {:error, term()}
+  @type enrich_error ::
+          LinkedBinaryTypes.load_error()
+          | Jason.DecodeError.t()
+
+  @spec enrich_file(String.t(), String.t(), keyword()) :: :ok | {:error, enrich_error()}
   def enrich_file(stack_report_path, app_root, opts \\ []) when is_binary(stack_report_path) do
     with {:ok, contents} <- File.read(stack_report_path),
          {:ok, report} <- Jason.decode(contents),
@@ -20,7 +24,7 @@ defmodule Elmc.Backend.CCodegen.StackReport do
     end
   end
 
-  @spec enrich_from_pebble_build(String.t(), keyword()) :: :ok | {:error, term()}
+  @spec enrich_from_pebble_build(String.t(), keyword()) :: :ok | {:error, enrich_error()}
   def enrich_from_pebble_build(app_root, opts \\ []) when is_binary(app_root) do
     stack_report_path = Path.join(app_root, "src/c/elmc/elmc_stack_report.json")
 

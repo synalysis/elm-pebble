@@ -31,7 +31,7 @@ defmodule Elmc.Backend.Plan.Context do
           fallible: boolean(),
           module: String.t() | nil,
           function_name: String.t() | nil,
-          decl_map: map(),
+          decl_map: Types.function_decl_map(),
           locals: %{String.t() => Types.reg()},
           local_types: %{String.t() => String.t()},
           params: [String.t()],
@@ -63,7 +63,7 @@ defmodule Elmc.Backend.Plan.Context do
     }
   end
 
-  @spec from_compile_env(map()) :: t()
+  @spec from_compile_env(Types.compile_env()) :: t()
   def from_compile_env(env) when is_map(env) do
     function_tail =
       Map.get(env, :__function_tail_compile__, false) or

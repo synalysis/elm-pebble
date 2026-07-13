@@ -4,8 +4,15 @@ defmodule Elmc.Backend.Bytecode.Artifacts do
   """
 
   alias Elmc.Backend.Bytecode.{Loader, ProjectWriter}
+  alias Elmc.Backend.Bytecode.Artifacts.Types, as: ArtifactTypes
 
-  @spec read_summary(String.t()) :: map()
+  @type summary :: ArtifactTypes.summary()
+  @type function_row :: ArtifactTypes.function_row()
+  @type skipped_row :: ArtifactTypes.skipped_row()
+  @type manifest_function_entry :: ArtifactTypes.manifest_function_entry()
+  @type wire_manifest :: ArtifactTypes.wire_manifest()
+
+  @spec read_summary(String.t()) :: summary()
   def read_summary(build_dir) when is_binary(build_dir) do
     path = ProjectWriter.manifest_path(build_dir)
 
@@ -19,7 +26,7 @@ defmodule Elmc.Backend.Bytecode.Artifacts do
     end
   end
 
-  @spec summary_from_manifest(map(), String.t()) :: map()
+  @spec summary_from_manifest(ArtifactTypes.wire_manifest(), String.t()) :: summary()
   def summary_from_manifest(manifest, path) when is_map(manifest) do
     functions = Map.get(manifest, "functions", [])
     skipped = Map.get(manifest, "skipped", [])

@@ -9,10 +9,10 @@ defmodule Elmc.Backend.Plan.Lower.Function do
   alias Elmc.Backend.Plan.Fusion
   alias Elmc.Backend.Plan.{Builder, Context, EpilogueRelease, Optimize, ThinDelegate, Verify}
   alias Elmc.Backend.Plan.Lower.{Expr, Intrinsics}
-  alias Elmc.Backend.Plan.Types.FunctionPlan
+  alias Elmc.Backend.Plan.Types
 
-  @spec lower(map(), String.t(), map(), keyword()) ::
-          {:ok, FunctionPlan.t()} | :unsupported | {:error, term()}
+  @spec lower(Types.function_decl(), String.t(), Types.function_decl_map(), keyword()) ::
+          Types.lower_result()
   def lower(decl, module_name, decl_map, opts \\ []) do
     try do
       do_lower(decl, module_name, decl_map, opts)

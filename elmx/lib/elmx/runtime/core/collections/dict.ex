@@ -44,10 +44,10 @@ defmodule Elmx.Runtime.Core.Collections.Dict do
     |> wrap()
   end
 
-  @spec dict_insert(term(), term(), dict()) :: dict()
+  @spec dict_insert(Types.elm_value(), Types.elm_value(), dict()) :: dict()
   def dict_insert(key, value, dict), do: wrap(Map.put(unwrap(dict), key, value))
 
-  @spec dict_get(term(), dict()) :: term()
+  @spec dict_get(Types.elm_value(), dict()) :: Types.maybe_native()
   def dict_get(key, dict) do
     case Map.fetch(unwrap(dict), key) do
       {:ok, value} -> {:Just, value}
@@ -55,7 +55,7 @@ defmodule Elmx.Runtime.Core.Collections.Dict do
     end
   end
 
-  @spec dict_get_with_default_int(integer(), term(), dict()) :: integer()
+  @spec dict_get_with_default_int(integer(), Types.elm_value(), dict()) :: integer()
   def dict_get_with_default_int(default, key, dict) when is_integer(default) do
     case dict_get(key, dict) do
       {:Just, value} -> Pairs.to_int(value, default)
@@ -63,19 +63,19 @@ defmodule Elmx.Runtime.Core.Collections.Dict do
     end
   end
 
-  @spec dict_member(term(), dict()) :: boolean()
+  @spec dict_member(Types.elm_value(), dict()) :: boolean()
   def dict_member(key, dict), do: Map.has_key?(unwrap(dict), key)
 
   @spec dict_size(dict()) :: integer()
   def dict_size(dict), do: map_size(unwrap(dict))
 
-  @spec dict_remove(term(), dict()) :: dict()
+  @spec dict_remove(Types.elm_value(), dict()) :: dict()
   def dict_remove(key, dict), do: wrap(Map.delete(unwrap(dict), key))
 
   @spec dict_is_empty(dict()) :: boolean()
   def dict_is_empty(dict), do: unwrap(dict) == %{}
 
-  @spec dict_singleton(term(), term()) :: dict()
+  @spec dict_singleton(Types.elm_value(), Types.elm_value()) :: dict()
   def dict_singleton(key, value), do: wrap(%{key => value})
 
   @spec dict_keys(dict()) :: list()
@@ -95,7 +95,7 @@ defmodule Elmx.Runtime.Core.Collections.Dict do
   @spec dict_to_list(dict()) :: list()
   def dict_to_list(dict), do: sorted_pairs(dict)
 
-  @spec dict_map(term(), dict()) :: dict()
+  @spec dict_map(Types.elm_hof(), dict()) :: dict()
   def dict_map(fun, dict) do
     dict
     |> sorted_pairs()
@@ -104,12 +104,12 @@ defmodule Elmx.Runtime.Core.Collections.Dict do
     |> wrap()
   end
 
-  @spec dict_foldl(term(), term(), dict()) :: term()
+  @spec dict_foldl(Types.elm_hof(), Types.fold_acc(), dict()) :: Types.fold_acc()
   def dict_foldl(fun, acc, dict) do
     Enum.reduce(sorted_pairs(dict), acc, fn {k, v}, acc0 -> Core.apply3(fun, k, v, acc0) end)
   end
 
-  @spec dict_foldr(term(), term(), dict()) :: term()
+  @spec dict_foldr(Types.elm_hof(), Types.fold_acc(), dict()) :: Types.fold_acc()
   def dict_foldr(fun, acc, dict) do
     dict
     |> sorted_pairs()
@@ -117,7 +117,7 @@ defmodule Elmx.Runtime.Core.Collections.Dict do
     |> Enum.reduce(acc, fn {k, v}, acc0 -> Core.apply3(fun, k, v, acc0) end)
   end
 
-  @spec dict_filter(term(), dict()) :: dict()
+  @spec dict_filter(Types.elm_hof(), dict()) :: dict()
   def dict_filter(fun, dict) do
     dict
     |> sorted_pairs()
@@ -126,7 +126,7 @@ defmodule Elmx.Runtime.Core.Collections.Dict do
     |> wrap()
   end
 
-  @spec dict_partition(term(), dict()) :: {dict(), dict()}
+  @spec dict_partition(Types.elm_hof(), dict()) :: {dict(), dict()}
   def dict_partition(fun, dict) do
     {yes, no} = Enum.split_with(sorted_pairs(dict), fn {k, v} -> Core.apply2(fun, k, v) end)
     {wrap(Map.new(yes)), wrap(Map.new(no))}
@@ -160,7 +160,14 @@ defmodule Elmx.Runtime.Core.Collections.Dict do
     |> wrap()
   end
 
-  @spec dict_merge(term(), term(), term(), dict(), dict(), term()) :: term()
+  @spec dict_merge(
+          Types.elm_hof(),
+          Types.elm_hof(),
+          Types.elm_hof(),
+          dict(),
+          dict(),
+          Types.fold_acc()
+        ) :: Types.fold_acc()
   def dict_merge(left_step, both_step, right_step, left, right, result) do
     keys =
       (dict_keys(left) ++ dict_keys(right))
@@ -190,12 +197,12 @@ defmodule Elmx.Runtime.Core.Collections.Dict do
     end)
   end
 
-  @spec dict_merge(term(), term(), term(), dict(), dict()) :: term()
+  @spec dict_merge(Types.elm_hof(), Types.elm_hof(), Types.elm_hof(), dict(), dict()) :: dict()
   def dict_merge(left_step, both_step, right_step, left, right) do
     dict_merge(left_step, both_step, right_step, left, right, wrap(%{}))
   end
 
-  @spec dict_update(term(), term(), dict()) :: dict()
+  @spec dict_update(Types.elm_value(), Types.elm_hof(), dict()) :: dict()
   def dict_update(key, alter, dict) do
     current =
       case dict_get(key, dict) do

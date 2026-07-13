@@ -99,7 +99,26 @@ defmodule Ide.Tokenizer.Types do
   @typedoc "Opaque term maps from lexer/parser Erlang interop."
   @type wire_map :: elmc_value_map()
 
-  @type parser_reason :: atom() | String.t() | tuple() | wire_map()
+  @type wire_scalar :: String.t() | atom() | number() | boolean() | nil
+  @type wire_value :: wire_scalar() | charlist() | [wire_value()] | wire_map()
+
+  @type parser_yecc_error :: {integer(), module(), elmc_raw_token()} | {integer(), elmc_value()}
+
+  @type parser_lex_error :: %{
+          optional(:line) => integer() | nil,
+          required(:reason) => String.t() | elmc_value(),
+          optional(:diagnostics) => [diagnostic()],
+          optional(:parser_payload) => parser_payload() | nil,
+          optional(atom()) => elmc_value(),
+          optional(String.t()) => elmc_value()
+        }
+
+  @type parser_reason ::
+          atom()
+          | String.t()
+          | parser_yecc_error()
+          | parser_lex_error()
+          | elmc_value_map()
 
   @type parser_diagnostic_map :: %{
           required(:source) => String.t(),

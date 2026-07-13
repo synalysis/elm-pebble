@@ -1,6 +1,7 @@
 defmodule ElmEx.DebuggerContract.SourceIndex do
   @moduledoc false
 
+  alias ElmEx.Frontend.AstContract.Types, as: AstTypes
   alias ElmEx.Frontend.GeneratedParser
   alias ElmEx.Frontend.Module
   alias ElmEx.DebuggerContract.Types
@@ -207,7 +208,7 @@ defmodule ElmEx.DebuggerContract.SourceIndex do
     module_name |> String.split(".") |> List.last()
   end
 
-  @spec function_param_names(Types.ast_declaration() | map()) :: [String.t()]
+  @spec function_param_names(Types.ast_declaration() | AstTypes.invalid_input()) :: [String.t()]
   defp function_param_names(%{args: args}) when is_list(args), do: args
   defp function_param_names(_), do: []
 end

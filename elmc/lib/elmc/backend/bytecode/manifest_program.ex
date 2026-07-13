@@ -10,18 +10,22 @@ defmodule Elmc.Backend.Bytecode.ManifestProgram do
   alias Elmc.Backend.Bytecode.{FnTable, Loader, Lower, Runtime}
   alias Elmc.Backend.Plan.Types.FunctionPlan
 
+  alias Elmc.Backend.Bytecode.Artifacts.Types, as: ArtifactTypes
+
   @type entry :: {String.t(), String.t()}
 
   @type section_map :: %{entry() => Lower.section()}
 
   @type t :: %{
           build_dir: String.t(),
-          manifest: map(),
+          manifest: ArtifactTypes.wire_manifest(),
           sections: section_map(),
           fusion_plans: %{entry() => FunctionPlan.t()}
         }
 
-  @spec load(String.t()) :: {:ok, t()} | {:error, term()}
+  @type load_error :: ArtifactTypes.bytecode_load_error()
+
+  @spec load(String.t()) :: {:ok, t()} | {:error, load_error()}
   def load(build_dir) when is_binary(build_dir) do
     manifest_path = Path.join(build_dir, "bytecode/elmc_bytecode.manifest.json")
 
@@ -32,14 +36,14 @@ defmodule Elmc.Backend.Bytecode.ManifestProgram do
     end
   end
 
-  @spec load_linked(String.t(), entry()) :: {:ok, t()} | {:error, term()}
+  @spec load_linked(String.t(), entry()) :: {:ok, t()} | {:error, load_error()}
   def load_linked(build_dir, root) when is_binary(build_dir) do
     with {:ok, program} <- load(build_dir) do
       {:ok, %{program | sections: link_sections(program.sections, root)}}
     end
   end
 
-  @spec run(t(), entry(), keyword()) :: {:ok, Runtime.value()} | {:error, term()}
+  @spec run(t(), entry(), keyword()) :: {:ok, Runtime.value()}
   def run(%{sections: sections, fusion_plans: fusion_plans}, {module, name}, opts \\ []) do
     plans = Map.merge(fusion_plans, sections)
 
@@ -58,7 +62,7 @@ defmodule Elmc.Backend.Bytecode.ManifestProgram do
     end
   end
 
-  @spec function_entries(t()) :: [map()]
+  @spec function_entries(t()) :: [ArtifactTypes.manifest_function_entry()]
   def function_entries(%{manifest: %{"functions" => functions}}) when is_list(functions),
     do: functions
 

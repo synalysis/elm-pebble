@@ -4,6 +4,8 @@ defmodule Elmc do
   """
 
   alias Elmc.Backend.CCodegen
+  alias Elmc.Backend.CCodegen.ObjectTextEstimate
+  alias Elmc.Backend.CCodegen.Types, as: CCodegenTypes
   alias Elmc.Backend.DebugUsage
   alias Elmc.Backend.Pebble
   alias Elmc.Backend.Ports
@@ -17,12 +19,26 @@ defmodule Elmc do
   alias ElmEx.IR.PipeChain
   alias Elmc.Runtime.Generator
 
-  @type compile_options :: Elmc.Types.compile_options()
+  alias Elmc.Types, as: RootTypes
+
+  @type compile_options :: RootTypes.compile_options()
+  @type compile_result :: RootTypes.compile_result()
+  @type compile_error :: RootTypes.compile_error()
+  @type object_text_estimate :: RootTypes.object_text_estimate()
+
+  @doc """
+  Estimates `.text` bytes for generated C objects under `out_dir` using the Pebble ARM toolchain.
+  """
+  @spec object_text_estimate(String.t(), keyword()) :: object_text_estimate()
+  def object_text_estimate(out_dir, opts \\ []) when is_binary(out_dir) do
+    ObjectTextEstimate.estimate(out_dir, opts)
+  end
 
   @doc """
   Typechecks and extracts frontend metadata for an Elm project.
   """
-  @spec check(String.t()) :: {:ok, map()} | {:error, map()}
+  @spec check(String.t()) ::
+          {:ok, ElmEx.Frontend.Project.t()} | {:error, RootTypes.frontend_bridge_error()}
   def check(project_dir) do
     Bridge.load_project(project_dir)
   end
@@ -30,7 +46,8 @@ defmodule Elmc do
   @doc """
   Compiles a supported Elm subset into C artifacts.
   """
-  @spec compile(String.t(), compile_options()) :: {:ok, map()} | {:error, term()}
+  @spec compile(String.t(), compile_options()) ::
+          {:ok, compile_result()} | {:error, compile_error()}
   def compile(project_dir, opts \\ %{}) do
     opts = normalize_compile_opts(opts)
     entry_module = opts[:entry_module] || "Main"
@@ -88,6 +105,22 @@ defmodule Elmc do
 
       plan_legacy_diagnostics = plan_legacy_codegen_diagnostics(opts)
 
+      layout_and_plan_diagnostics =
+        layout_coercion_diagnostics ++
+          plan_primary_fallbacks ++
+          plan_legacy_diagnostics ++
+          plan_coverage_diagnostics
+
+      blocking_diagnostics =
+        Elmc.Diagnostics.blocking_from_sources(
+          debug_usage: debug_usage_diagnostics,
+          layout_and_plan: layout_and_plan_diagnostics
+        )
+
+      informational_diagnostics =
+        (debug_usage_diagnostics ++ layout_and_plan_diagnostics)
+        |> Enum.reject(&Elmc.Diagnostics.error?/1)
+
       plan_coverage =
         case bytecode_summary do
           %{available: true, plan_coverage: coverage} -> coverage
@@ -104,11 +137,9 @@ defmodule Elmc do
          project: project,
          ir: ir,
          debug_usage_diagnostics: debug_usage_diagnostics,
-         layout_coercion_diagnostics:
-           layout_coercion_diagnostics ++
-             plan_primary_fallbacks ++
-             plan_legacy_diagnostics ++
-             plan_coverage_diagnostics,
+         layout_coercion_diagnostics: layout_and_plan_diagnostics,
+         blocking_diagnostics: blocking_diagnostics,
+         informational_diagnostics: informational_diagnostics,
          plan_coverage: plan_coverage,
          plan_toolchain: plan_toolchain,
          elmc_bytecode_summary: bytecode_summary
@@ -127,8 +158,8 @@ defmodule Elmc do
   end
 
   @spec check_debug_usage(ElmEx.IR.t(), compile_options()) ::
-          {:ok, ElmEx.IR.t(), [map()]}
-          | {:error, {:compile_diagnostics, [map()]}}
+          {:ok, ElmEx.IR.t(), [CCodegenTypes.compile_warning_json()]}
+          | {:error, {:compile_diagnostics, [CCodegenTypes.compile_warning_json()]}}
   defp check_debug_usage(ir, opts) do
     case DebugUsage.check(ir, opts) do
       :ok ->
@@ -153,13 +184,15 @@ defmodule Elmc do
     :ok
   end
 
+  alias Elmc.Backend.CCodegen.Types, as: CCodegenTypes
+
   @spec maybe_recompile_stream_view_fallback(
           ElmEx.IR.t(),
           String.t(),
           String.t(),
           compile_options(),
           String.t()
-        ) :: {:ok, {compile_options(), String.t()}} | {:error, term()}
+        ) :: {:ok, {compile_options(), String.t()}} | {:error, CCodegenTypes.file_error()}
   defp maybe_recompile_stream_view_fallback(ir, out_dir, entry_module, opts, generated_c) do
     if Pebble.stream_view_fallback_needed?(ir, generated_c, entry_module, opts) do
       fallback_opts = Map.put(opts, :stream_view_fallback, true)
@@ -173,7 +206,7 @@ defmodule Elmc do
   end
 
   @spec project_for_compile(String.t(), compile_options()) ::
-          {:ok, ElmEx.Frontend.Project.t()} | {:error, term()}
+          {:ok, ElmEx.Frontend.Project.t()} | {:error, RootTypes.frontend_bridge_error()}
   defp project_for_compile(_project_dir, %{project: %ElmEx.Frontend.Project{} = project}),
     do: {:ok, project}
 

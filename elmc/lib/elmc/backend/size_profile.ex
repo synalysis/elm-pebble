@@ -1,9 +1,12 @@
 defmodule Elmc.Backend.SizeProfile do
   @moduledoc false
 
-  @type profile :: :default | :balanced | :size
+  alias Elmc.Types
 
-  @spec apply(map()) :: map()
+  @type profile :: :default | :balanced | :size
+  @type compile_options :: Types.compile_options()
+
+  @spec apply(compile_options()) :: compile_options()
   def apply(opts) when is_map(opts) do
     opts
     |> Map.get(:codegen_profile, :default)
@@ -11,12 +14,12 @@ defmodule Elmc.Backend.SizeProfile do
     |> then(&apply_profile(&1, opts))
   end
 
-  @spec profile?(map(), profile()) :: boolean()
+  @spec profile?(compile_options(), profile()) :: boolean()
   def profile?(opts, profile) when is_map(opts) and profile in [:default, :balanced, :size] do
     normalize_profile(Map.get(opts, :codegen_profile, :default)) == profile
   end
 
-  @spec size?(map()) :: boolean()
+  @spec size?(compile_options()) :: boolean()
   def size?(opts) when is_map(opts), do: profile?(opts, :size)
 
   defp normalize_profile(:size), do: :size
@@ -57,7 +60,7 @@ defmodule Elmc.Backend.SizeProfile do
     end)
   end
 
-  @spec plan_emit_mode(keyword() | map()) :: :goto | :state_switch
+  @spec plan_emit_mode(keyword() | compile_options()) :: :goto | :state_switch
   def plan_emit_mode(opts) when is_list(opts) do
     plan_emit_mode(Map.new(opts))
   end
@@ -70,37 +73,38 @@ defmodule Elmc.Backend.SizeProfile do
     end
   end
 
-  @spec enum_tag_peel?(map()) :: boolean()
+  @spec enum_tag_peel?(compile_options()) :: boolean()
   def enum_tag_peel?(opts) when is_map(opts) do
     size?(opts) and Map.get(opts, :enum_tag_peel, false) == true
   end
 
-  @spec mod_by_fast?(map()) :: boolean()
+  @spec mod_by_fast?(compile_options()) :: boolean()
   def mod_by_fast?(opts) when is_map(opts) do
     size?(opts) and Map.get(opts, :size_mod_by_fast, false) == true
   end
 
-  @spec native_compare?(map()) :: boolean()
+  @spec native_compare?(compile_options()) :: boolean()
   def native_compare?(opts) when is_map(opts) do
     size?(opts) and Map.get(opts, :size_native_compare, false) == true
   end
 
-  @spec fusion_supersede_native?(map()) :: boolean()
+  @spec fusion_supersede_native?(compile_options()) :: boolean()
   def fusion_supersede_native?(opts) when is_map(opts) do
     size?(opts) and Map.get(opts, :fusion_supersede_native, false) == true
   end
 
-  @spec aggressive_direct_render?(map()) :: boolean()
+  @spec aggressive_direct_render?(compile_options()) :: boolean()
   def aggressive_direct_render?(opts) when is_map(opts) do
     size?(opts) and Map.get(opts, :size_aggressive_direct_render, false) == true
   end
 
-  @spec prune_capabilities?(map()) :: boolean()
+  @spec prune_capabilities?(compile_options()) :: boolean()
   def prune_capabilities?(opts) when is_map(opts) do
     size?(opts) and Map.get(opts, :size_prune_capabilities, false) == true
   end
 
-  @spec plan_state_switch_thresholds(map()) :: %{min_blocks: pos_integer(), max_owned_slots: pos_integer()}
+  @spec plan_state_switch_thresholds(compile_options()) ::
+          %{min_blocks: pos_integer(), max_owned_slots: pos_integer()}
   def plan_state_switch_thresholds(_opts) do
     %{min_blocks: 8, max_owned_slots: 12}
   end

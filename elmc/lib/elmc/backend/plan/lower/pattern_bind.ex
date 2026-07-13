@@ -1,10 +1,11 @@
 defmodule Elmc.Backend.Plan.Lower.PatternBind do
   @moduledoc false
 
+  alias Elmc.Backend.Plan.Types
   alias Elmc.Backend.Plan.{Builder, Context}
   alias Elmc.Backend.Plan.Lower.Expr
 
-  @spec bind(map(), Context.t(), Builder.t(), integer()) ::
+  @spec bind(Types.pattern(), Context.t(), Builder.t(), integer()) ::
           {:ok, Context.t(), Builder.t()} | :unsupported
   def bind(pattern, ctx, b, subject_reg) when is_map(pattern) and is_integer(subject_reg) do
     do_bind(pattern, ctx, b, subject_reg)

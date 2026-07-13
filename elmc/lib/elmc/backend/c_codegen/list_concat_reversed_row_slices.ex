@@ -5,9 +5,11 @@ defmodule Elmc.Backend.CCodegen.ListConcatReversedRowSlices do
   Verifies `rowAt` as `List.take w (List.drop (row * w) board)` from `decl_map`.
   """
 
+  alias Elmc.Backend.CCodegen.Types
+
   alias Elmc.Backend.CCodegen.{FusionSupport, Util}
 
-  @spec try_emit(String.t(), String.t(), map() | nil, map()) ::
+  @spec try_emit(String.t(), String.t(), Types.ir_expr() | nil, Types.function_decl_map()) ::
           {:ok, String.t(), [FusionSupport.callee_key()]}
           | {:ok, String.t(), [FusionSupport.callee_key()], :rc_native}
           | :error
@@ -184,8 +186,8 @@ defmodule Elmc.Backend.CCodegen.ListConcatReversedRowSlices do
   end
 
   @doc false
-  @spec extract_fusion_data(String.t(), String.t(), map() | nil, map()) ::
-          {:ok, :list_concat_reversed_row_slices, map()} | :error
+  @spec extract_fusion_data(String.t(), String.t(), Types.ir_expr() | nil, Types.function_decl_map()) ::
+          {:ok, :list_concat_reversed_row_slices, Types.fusion_metadata()} | :error
   def extract_fusion_data(module_name, _name, expr, decl_map) do
     with {:ok, _row_at_target, _cells_var, row_indices} <- parse(expr),
          {:ok, width} <- row_slice_width(decl_map, module_name, row_at_from_parse(expr, row_indices)),

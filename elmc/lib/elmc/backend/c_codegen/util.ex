@@ -89,7 +89,7 @@ defmodule Elmc.Backend.CCodegen.Util do
     |> String.replace("\r", " ")
   end
 
-  @spec safe_c_suffix(term()) :: String.t()
+  @spec safe_c_suffix(atom() | String.t() | integer() | float()) :: String.t()
   def safe_c_suffix(value) when is_binary(value) do
     String.replace(value, ~r/[^A-Za-z0-9_]/, "_")
   end

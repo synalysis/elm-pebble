@@ -2,7 +2,10 @@ defmodule ElmEx.DebuggerContract.EffectNormalize do
   @moduledoc false
 
   alias ElmEx.DebuggerContract.CmdCall
+  alias ElmEx.DebuggerContract.Types, as: DebuggerTypes
   alias ElmEx.DebuggerContract.Types.MsgTagIndex
+  alias ElmEx.CoreIR.Types, as: CoreIRTypes
+  alias ElmEx.Frontend.AstContract.Types, as: AstTypes
 
   @spec normalize_subscription_calls(
           [CmdCall.wire_map()],
@@ -104,7 +107,8 @@ defmodule ElmEx.DebuggerContract.EffectNormalize do
   defp callback_from_row_args(%{"arg_snippets" => [_ | _]}, _msg_tag_index), do: nil
   defp callback_from_row_args(_, _), do: nil
 
-  @spec msg_ctor_from_value(term(), MsgTagIndex.t()) :: String.t() | nil
+  @spec msg_ctor_from_value(DebuggerTypes.json_value() | AstTypes.expr(), MsgTagIndex.t()) ::
+          String.t() | nil
   defp msg_ctor_from_value(%{"op" => "int_literal", "value" => v}, msg_tag_index),
     do: Map.get(msg_tag_index, to_string(v)) || Map.get(msg_tag_index, v)
 
@@ -132,7 +136,8 @@ defmodule ElmEx.DebuggerContract.EffectNormalize do
     end
   end
 
-  @spec msg_tag_index_from_unions(ElmEx.CoreIR.Types.Module.wire_t() | map()) :: MsgTagIndex.t()
+  @spec msg_tag_index_from_unions(ElmEx.CoreIR.Types.Module.wire_t() | CoreIRTypes.wire_map()) ::
+          MsgTagIndex.t()
   def msg_tag_index_from_unions(%{"unions" => unions}) when is_map(unions),
     do: msg_tag_index_from_unions_map(unions)
 
@@ -141,7 +146,7 @@ defmodule ElmEx.DebuggerContract.EffectNormalize do
 
   def msg_tag_index_from_unions(_), do: %{}
 
-  @spec msg_tag_index_from_unions_map(map()) :: MsgTagIndex.t()
+  @spec msg_tag_index_from_unions_map(CoreIRTypes.wire_map()) :: MsgTagIndex.t()
   defp msg_tag_index_from_unions_map(unions) when is_map(unions) do
     case Map.get(unions, "Msg") || Map.get(unions, :Msg) do
       %{} = msg_union -> build_msg_tag_index(msg_union)
@@ -149,7 +154,7 @@ defmodule ElmEx.DebuggerContract.EffectNormalize do
     end
   end
 
-  @spec build_msg_tag_index(map()) :: MsgTagIndex.t()
+  @spec build_msg_tag_index(CoreIRTypes.wire_map()) :: MsgTagIndex.t()
   defp build_msg_tag_index(msg_union) when is_map(msg_union) do
     tags = Map.get(msg_union, "tags") || Map.get(msg_union, :tags) || %{}
 

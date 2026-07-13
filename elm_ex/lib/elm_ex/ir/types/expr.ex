@@ -54,7 +54,7 @@ defmodule ElmEx.IR.Types.Expr do
 
   @type t :: %{
           required(:op) => op(),
-          optional(atom()) => term()
+          optional(atom()) => ElmEx.IR.Types.FieldValue.t()
         }
 
   @type wire_expr :: t()

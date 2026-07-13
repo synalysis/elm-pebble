@@ -100,7 +100,11 @@ defmodule Ide.PackageDocs.Exporter do
       :ok
     else
       {:error, _} = error ->
-        _ = restore_backup(backup_root, output_root)
+        if File.exists?(backup_root) do
+          _ = File.rm_rf(output_root)
+          _ = File.rename(backup_root, output_root)
+        end
+
         _ = File.rm_rf(staging_root)
         error
     end
@@ -134,16 +138,6 @@ defmodule Ide.PackageDocs.Exporter do
       {:ok, _} -> :ok
       _ -> :ok
     end
-  end
-
-  @spec restore_backup(String.t(), String.t()) :: :ok
-  defp restore_backup(backup_root, output_root) do
-    if File.exists?(backup_root) do
-      _ = File.rm_rf(output_root)
-      _ = File.rename(backup_root, output_root)
-    end
-
-    :ok
   end
 
   @spec write_package(String.t(), String.t(), Types.elm_json(), [Types.module_doc()]) ::

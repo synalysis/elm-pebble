@@ -83,7 +83,7 @@ defmodule Elmx.Runtime.Core.Math do
 
   def log_base(_base, _value), do: 0.0
 
-  @spec is_infinite(Types.float_marker() | term()) :: boolean()
+  @spec is_infinite(Types.float_marker() | number()) :: boolean()
   def is_infinite(:infinity), do: true
   def is_infinite(:negative_infinity), do: true
   def is_infinite(n) when is_float(n) do
@@ -95,7 +95,7 @@ defmodule Elmx.Runtime.Core.Math do
   end
   def is_infinite(_), do: false
 
-  @spec is_nan(float() | term()) :: boolean()
+  @spec is_nan(float() | number()) :: boolean()
   def is_nan(:nan), do: true
   def is_nan(n) when is_float(n), do: n != n
   def is_nan(_), do: false

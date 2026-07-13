@@ -59,6 +59,6 @@ defmodule Elmc.Backend.Pebble.Types.Core do
 
   @type random_callback_candidate :: msg_constructor_name() | {:tag, msg_tag()}
 
-  @type ir_walk_node :: CCodegenTypes.ir_expr() | map() | list()
+  @type ir_walk_node :: CCodegenTypes.ir_expr() | ir_map_node() | [ir_walk_node()]
   @type ir_map_node :: %{optional(atom()) => ir_walk_node()}
 end

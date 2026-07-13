@@ -5,7 +5,8 @@ defmodule Elmc.Backend.CCodegen.LinkedBinaryReport do
 
   alias Elmc.Backend.CCodegen.Types.LinkedBinary, as: LinkedBinaryTypes
 
-  @spec from_app_build(String.t(), keyword()) :: {:ok, LinkedBinaryTypes.wire_map()} | {:error, term()}
+  @spec from_app_build(String.t(), keyword()) ::
+          {:ok, LinkedBinaryTypes.wire_map()} | {:error, LinkedBinaryTypes.load_error()}
   def from_app_build(app_root, opts \\ []) when is_binary(app_root) do
     build_dir = Path.join(app_root, "build")
     platform = Keyword.get(opts, :platform)

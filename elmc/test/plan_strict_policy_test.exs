@@ -25,6 +25,27 @@ defmodule Elmc.PlanStrictPolicyTest do
   end
 
   test "validate_compile_result fails on strict plan_primary_gap" do
+    layout = [
+      %{
+        "source" => "elmc/plan",
+        "code" => "plan_primary_gap",
+        "severity" => "error",
+        "message" => "Plan IR could not lower 1 reachable function(s): Main.broken (unsupported)"
+      }
+    ]
+
+    result = %{
+      project: %{diagnostics: []},
+      ir: %{diagnostics: []},
+      debug_usage_diagnostics: [],
+      layout_coercion_diagnostics: layout,
+      blocking_diagnostics: layout
+    }
+
+    assert {:error, [_ | _]} = CLI.validate_compile_result(result)
+  end
+
+  test "validate_compile_result passes when only informational plan diagnostics are present" do
     result = %{
       project: %{diagnostics: []},
       ir: %{diagnostics: []},
@@ -32,13 +53,22 @@ defmodule Elmc.PlanStrictPolicyTest do
       layout_coercion_diagnostics: [
         %{
           "source" => "elmc/plan",
-          "code" => "plan_primary_gap",
-          "severity" => "error",
-          "message" => "Plan IR could not lower 1 reachable function(s): Main.broken (unsupported)"
+          "code" => "plan_primary_coverage",
+          "severity" => "info",
+          "message" => "Plan IR coverage ok"
+        }
+      ],
+      blocking_diagnostics: [],
+      informational_diagnostics: [
+        %{
+          "source" => "elmc/plan",
+          "code" => "plan_primary_coverage",
+          "severity" => "info",
+          "message" => "Plan IR coverage ok"
         }
       ]
     }
 
-    assert {:error, [_ | _]} = CLI.validate_compile_result(result)
+    assert :ok = CLI.validate_compile_result(result)
   end
 end

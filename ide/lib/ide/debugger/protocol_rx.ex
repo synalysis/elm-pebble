@@ -133,10 +133,22 @@ defmodule Ide.Debugger.ProtocolRx do
       if event.type == "debugger.protocol_rx" and is_map(event.payload) do
         payload = event.payload
 
+        recipient =
+          payload
+          |> Map.get(:to)
+          |> case do
+            nil -> Map.get(payload, "to")
+            value -> value
+          end
+          |> protocol_surface_key()
+
         cond do
-          defer_init_cmd_delivery?(payload) ->
-            recipient = protocol_surface_key(Map.get(payload, :to) || Map.get(payload, "to"))
-            PendingProtocolDelivery.enqueue(acc, recipient, payload)
+          defer_init_cmd_delivery?(payload) and recipient in [:watch, :companion, :phone] ->
+            if rx_ctx.runtime_ready_for_delivery?.(acc, recipient) do
+              PendingProtocolDelivery.enqueue(acc, recipient, payload)
+            else
+              AppMessageQueue.enqueue(acc, recipient, payload)
+            end
 
           inline_step_delivery?(payload) ->
             enqueue_inline_protocol_delivery(acc, payload)

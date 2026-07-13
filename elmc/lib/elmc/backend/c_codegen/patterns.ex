@@ -635,14 +635,14 @@ defmodule Elmc.Backend.CCodegen.Patterns do
 
   defp put_just_bind_var_type(env, _subject_ref, _bind), do: env
 
-  @spec nothing_branch?(map()) :: boolean()
+  @spec nothing_branch?(Types.case_branch()) :: boolean()
   defp nothing_branch?(%{pattern: %{kind: :constructor, name: name}})
        when name in ["Nothing", "Maybe.Nothing"],
        do: true
 
   defp nothing_branch?(_), do: false
 
-  @spec var_branch?(map()) :: boolean()
+  @spec var_branch?(Types.case_branch()) :: boolean()
   defp var_branch?(%{pattern: %{kind: :var, name: name}})
        when is_binary(name) and name not in ["_", ""],
        do: true
@@ -950,7 +950,7 @@ defmodule Elmc.Backend.CCodegen.Patterns do
   @spec put_pattern_field_record_shape(
           Types.compile_env(),
           String.t(),
-          Types.record_field_names() | term()
+          Types.record_field_names() | nil
         ) :: Types.compile_env()
   defp put_pattern_field_record_shape(env, name, shape) when is_list(shape) do
     shapes = Map.get(env, :__record_shapes__, %{})
@@ -959,7 +959,7 @@ defmodule Elmc.Backend.CCodegen.Patterns do
 
   defp put_pattern_field_record_shape(env, _name, _shape), do: env
 
-  @spec bool_constructor_name(Types.pattern() | map()) :: String.t() | nil
+  @spec bool_constructor_name(Types.pattern()) :: String.t() | nil
   defp bool_constructor_name(%{resolved_name: name}) when name in ["True", "False"], do: name
   defp bool_constructor_name(%{name: name}) when name in ["True", "False"], do: name
   defp bool_constructor_name(_), do: nil
@@ -971,7 +971,7 @@ defmodule Elmc.Backend.CCodegen.Patterns do
   defp bare_just_pattern?(%{kind: :var}), do: true
   defp bare_just_pattern?(_), do: false
 
-  @spec order_constructor_name(Types.pattern() | map()) :: String.t() | nil
+  @spec order_constructor_name(Types.pattern()) :: String.t() | nil
   defp order_constructor_name(%{resolved_name: name}) when name in ["LT", "EQ", "GT"], do: name
   defp order_constructor_name(%{name: name}) when name in ["LT", "EQ", "GT"], do: name
   defp order_constructor_name(_), do: nil

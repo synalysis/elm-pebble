@@ -10,7 +10,7 @@ defmodule Elmx.Runtime.Executor.Model do
 
   def merge_runtime_model(_previous, model), do: model
 
-  @spec runtime_model_from_elm(Types.runtime_model() | map()) :: Types.runtime_model()
+  @spec runtime_model_from_elm(Types.runtime_model()) :: Types.runtime_model()
   def runtime_model_from_elm(model) when is_map(model) do
     Map.new(model, fn
       {k, %{"ctor" => _, "args" => _} = value} ->
@@ -23,7 +23,7 @@ defmodule Elmx.Runtime.Executor.Model do
 
   def runtime_model_from_elm(model), do: model
 
-  @spec from_elm_value(Types.wire_value() | term()) :: term()
+  @spec from_elm_value(Types.wire_value() | Types.elm_msg()) :: Types.elm_msg()
   def from_elm_value(%{"ctor" => "True", "args" => []}), do: true
   def from_elm_value(%{"ctor" => "False", "args" => []}), do: false
 

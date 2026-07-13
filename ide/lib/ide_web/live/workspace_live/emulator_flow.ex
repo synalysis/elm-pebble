@@ -738,7 +738,7 @@ defmodule IdeWeb.WorkspaceLive.EmulatorFlow do
   @type screenshot_identity ::
           {:path, String.t()} | {:filename, String.t()} | {:fallback, String.t()}
   @type screenshot_sort_key :: integer() | String.t()
-  @type install_error :: atom() | tuple() | String.t()
+  @type install_error :: PebbleToolchain.toolchain_error()
 
   @spec render_capture_all_progress(capture_progress()) :: String.t()
   def render_capture_all_progress({:phase, message}) when is_binary(message), do: message

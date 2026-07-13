@@ -5,8 +5,7 @@ defmodule Elmc.Backend.Plan.Lower.Tuple do
   alias Elmc.Backend.Plan.Lower.Expr
   alias Elmc.Backend.Plan.Types
 
-  @spec compile(map(), Context.t(), Builder.t()) ::
-          {:ok, Types.reg() | :fn_out, Builder.t()} | :unsupported
+  @spec compile(Types.ir_expr(), Context.t(), Builder.t()) :: Types.compile_result_required()
   def compile(%{op: :tuple_first_expr, arg: arg}, ctx, b),
     do: compile_proj(:first, arg, ctx, b)
 

@@ -14,12 +14,13 @@ defmodule ElmEx do
   """
 
   alias ElmEx.Frontend.Bridge
+  alias ElmEx.Frontend.Bridge.Types, as: BridgeTypes
   alias ElmEx.IR.Lowerer
 
   @doc """
   Parses and lowers an Elm project, returning the IR.
   """
-  @spec parse_and_lower(String.t()) :: {:ok, ElmEx.IR.t()} | {:error, map()}
+  @spec parse_and_lower(String.t()) :: {:ok, ElmEx.IR.t()} | {:error, BridgeTypes.bridge_error()}
   def parse_and_lower(project_dir) do
     with {:ok, project} <- Bridge.load_project(project_dir),
          {:ok, ir} <- Lowerer.lower_project(project) do

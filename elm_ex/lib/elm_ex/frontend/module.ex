@@ -7,15 +7,19 @@ defmodule ElmEx.Frontend.Module do
   alias ElmEx.Frontend.Types.ImportEntry
   alias ElmEx.Types
 
+  alias ElmEx.Frontend.AstContract.Types, as: AstTypes
+
+  @type declaration_wire :: %{required(:kind) => atom(), optional(atom()) => AstTypes.invalid_input()}
+
   @type t() :: %__MODULE__{
           name: String.t(),
           path: String.t(),
           imports: [String.t()],
-          declarations: [Declaration.t() | map()],
+          declarations: [Declaration.t() | declaration_wire()],
           module_exposing: Types.module_exposing(),
           import_entries: [ImportEntry.t() | ImportEntry.wire_map()],
           port_module: boolean(),
-          ports: [map()]
+          ports: [String.t()]
         }
 
   @enforce_keys [:name, :path, :imports, :declarations]

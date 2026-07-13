@@ -1,10 +1,12 @@
 defmodule Elmc.Backend.CCodegen.Tuple2CaseTable do
   @moduledoc false
 
+  alias Elmc.Backend.CCodegen.Types
+
   alias Elmc.Backend.CCodegen.FusionSupport
   alias Elmc.Backend.CCodegen.Util
 
-  @spec try_emit(String.t(), String.t(), map() | nil) ::
+  @spec try_emit(String.t(), String.t(), Types.ir_expr() | nil) ::
           {:ok, String.t(), [FusionSupport.callee_key()]} | {:ok, String.t(), [FusionSupport.callee_key()], :rc_native} | :error
   def try_emit(_module_name, _name, nil), do: :error
 
@@ -18,7 +20,7 @@ defmodule Elmc.Backend.CCodegen.Tuple2CaseTable do
     end
   end
 
-  @spec recognized?(String.t(), String.t(), map() | nil) :: boolean()
+  @spec recognized?(String.t(), String.t(), Types.ir_expr() | nil) :: boolean()
   def recognized?(module_name, name, expr) do
     case try_emit(module_name, name, expr) do
       {:ok, _, _, _} -> true
@@ -26,7 +28,7 @@ defmodule Elmc.Backend.CCodegen.Tuple2CaseTable do
     end
   end
 
-  @spec table_shape(map() | nil) :: {:ok, integer(), integer()} | :error
+  @spec table_shape(Types.ir_expr() | nil) :: {:ok, integer(), integer()} | :error
   def table_shape(nil), do: :error
 
   def table_shape(expr) do
@@ -41,7 +43,7 @@ defmodule Elmc.Backend.CCodegen.Tuple2CaseTable do
   end
 
   @doc false
-  @spec extract_table(map() | nil) :: {:ok, map()} | :error
+  @spec extract_table(Types.ir_expr() | nil) :: {:ok, Types.fusion_metadata()} | :error
   def extract_table(nil), do: :error
 
   def extract_table(expr) do

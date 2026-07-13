@@ -15,6 +15,8 @@ defmodule Elmc.Backend.CCodegen.ListIntRepr do
 
   @type repr :: :int_list | :float_list | :mixed
 
+  @type local_repr_map :: %{optional(String.t()) => repr()}
+
   @int_list_runtime_ops ~w(
     elmc_list_from_int_array
     elmc_list_replace_nth_int
@@ -67,8 +69,8 @@ defmodule Elmc.Backend.CCodegen.ListIntRepr do
   end
 
   @spec analyze_float(Types.function_decl_map()) :: %{
-          param_repr: map(),
-          field_repr: map()
+          param_repr: %{{String.t(), String.t(), String.t()} => repr()},
+          field_repr: %{{String.t(), String.t(), String.t()} => repr()}
         }
   def analyze_float(decl_map) when is_map(decl_map) do
     with_seq_config(%{list_type: "List Float", compact: :float_list}, fn ->
@@ -76,7 +78,12 @@ defmodule Elmc.Backend.CCodegen.ListIntRepr do
     end)
   end
 
-  @spec with_seq_config(map(), (-> term())) :: term()
+  @type analyze_result :: %{
+          param_repr: %{{String.t(), String.t(), String.t()} => repr()},
+          field_repr: %{{String.t(), String.t(), String.t()} => repr()}
+        }
+
+  @spec with_seq_config(Types.seq_config(), (-> analyze_result())) :: analyze_result()
   def with_seq_config(config, fun) when is_map(config) and is_function(fun, 0) do
     prev = Process.get(:elmc_list_seq_config)
 
@@ -120,7 +127,8 @@ defmodule Elmc.Backend.CCodegen.ListIntRepr do
   True when `expr` reads a record field statically typed as `List Int`.
   Used by direct-render affine loops on pebble_int32 builds.
   """
-  @spec declared_list_int_field_access?(Types.ir_expr(), map(), map()) :: boolean()
+  @spec declared_list_int_field_access?(Types.ir_expr(), local_repr_map(), Types.compile_env()) ::
+          boolean()
   def declared_list_int_field_access?(expr, locals, env) when is_map(env) do
     lt = list_type()
 

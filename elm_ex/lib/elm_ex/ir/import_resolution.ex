@@ -65,7 +65,7 @@ defmodule ElmEx.IR.ImportResolution do
   @doc """
   Walks an IR expression tree and rewrites call targets to fully qualified names.
   """
-  @spec normalize_expr(Expr.t() | term(), lookup()) :: Expr.t() | term()
+  @spec normalize_expr(Expr.t() | Expr.wire_expr(), lookup()) :: Expr.t()
   def normalize_expr(nil, _lookup), do: nil
 
   def normalize_expr(%{op: :qualified_call, target: target, args: args} = expr, lookup) do
@@ -104,7 +104,7 @@ defmodule ElmEx.IR.ImportResolution do
 
   def normalize_expr(other, _lookup), do: other
 
-  @spec normalize_list([Expr.t() | term()] | nil, lookup()) :: [Expr.t() | term()] | nil
+  @spec normalize_list([Expr.t() | Expr.wire_expr()] | nil, lookup()) :: [Expr.t()] | nil
   defp normalize_list(nil, _lookup), do: nil
 
   defp normalize_list(items, lookup) when is_list(items) do

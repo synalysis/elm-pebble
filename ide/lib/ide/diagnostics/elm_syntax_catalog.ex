@@ -8,8 +8,7 @@ defmodule Ide.Diagnostics.ElmSyntaxCatalog do
 
   alias Ide.Tokenizer.Types, as: TokenizerTypes
 
-  @type detail_wire_value ::
-          String.t() | atom() | list() | number() | boolean() | tuple() | TokenizerTypes.wire_map()
+  @type detail_wire_value :: TokenizerTypes.wire_value()
 
   @type span_semantics :: :start_to_eof | :token | :opening_to_eof | :inferred
 

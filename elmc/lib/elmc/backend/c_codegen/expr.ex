@@ -747,7 +747,7 @@ defmodule Elmc.Backend.CCodegen.Expr do
     :unsupported -> nil
   end
 
-  @spec put_subexpr_record_meta(String.t(), map()) :: :ok
+  @spec put_subexpr_record_meta(String.t(), Types.subexpr_record_meta()) :: :ok
   def put_subexpr_record_meta(var, meta) when is_binary(var) and is_map(meta) do
     Process.put(
       :elmc_subexpr_record_meta,

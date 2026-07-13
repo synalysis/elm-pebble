@@ -11,8 +11,10 @@ defmodule Ide.Test.TemplateElmxElmcParity.ElmxRunner do
   alias Elmx.Runtime.LaunchContext
   alias Ide.Debugger.RuntimeSurfaces
   alias Ide.Test.TemplateElmxElmcParity.ExecutionPlan
+  alias Ide.Test.TemplateElmxElmcParity.Types, as: ParityTypes
 
-  @spec run!(ExecutionPlan.t(), keyword()) :: {:ok, [map()]} | {:error, term()}
+  @spec run!(ExecutionPlan.t(), keyword()) ::
+          {:ok, [ParityTypes.parity_step()]} | {:error, ParityTypes.elmx_runner_error()}
   def run!(plan, opts \\ []) do
     with {:ok, module} <- resolve_module(opts, plan.template_key),
          {:ok, steps} <- run_plan(module, plan) do

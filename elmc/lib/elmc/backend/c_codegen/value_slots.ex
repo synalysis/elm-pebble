@@ -9,6 +9,7 @@ defmodule Elmc.Backend.CCodegen.ValueSlots do
   alias Elmc.Backend.CCodegen.EnvBindings
   alias Elmc.Backend.CCodegen.OwnershipTransfer
   alias Elmc.Backend.CCodegen.RcRuntimeEmit
+  alias Elmc.Backend.CCodegen.Types
 
   @owned_ref ~r/^owned\[(\d+)\]$/
   @heap_owned_slot_threshold 24
@@ -70,12 +71,16 @@ defmodule Elmc.Backend.CCodegen.ValueSlots do
     Map.get(slots_state().direct_param_owned, source)
   end
 
+  @type tuple_projection_entry :: {non_neg_integer(), :first | :second}
+  @type tuple_projections_map :: %{optional(non_neg_integer()) => tuple_projection_entry()}
+  @type direct_param_owned_map :: %{optional(String.t()) => String.t()}
+
   @type snapshot :: %{
           transferred: MapSet.t(),
-          tuple_projections: map(),
+          tuple_projections: tuple_projections_map(),
           live: MapSet.t(),
           written: MapSet.t(),
-          direct_param_owned: map()
+          direct_param_owned: direct_param_owned_map()
         }
 
   @doc "Capture transfer/projection marks before a divergent branch (not slot indices)."
@@ -414,7 +419,7 @@ defmodule Elmc.Backend.CCodegen.ValueSlots do
 
   def null_assignment(index) when is_integer(index), do: null_assignment(ref(index))
 
-  @spec boxed_decl(String.t(), String.t(), map()) :: String.t()
+  @spec boxed_decl(String.t(), String.t(), Types.compile_env()) :: String.t()
   def boxed_decl(var, rhs, env \\ %{}) when is_binary(var) and is_binary(rhs) do
     case RcRuntimeEmit.parse_allocator_call(rhs) do
       {:ok, alloc_fn, call_args} ->
@@ -567,7 +572,7 @@ defmodule Elmc.Backend.CCodegen.ValueSlots do
   After a direct call writes through an owned out-slot, clear owned operands that alias
   the same pointer so epilogue lifo does not release the returned value twice.
   """
-  @spec null_call_operands_aliasing_out(String.t(), [String.t()], map()) :: String.t()
+  @spec null_call_operands_aliasing_out(String.t(), [String.t()], Types.compile_env()) :: String.t()
   def null_call_operands_aliasing_out(out, arg_vars, env \\ %{})
       when is_binary(out) and is_list(arg_vars) do
     invariant =
@@ -606,7 +611,7 @@ defmodule Elmc.Backend.CCodegen.ValueSlots do
   The result in `out` retains shared record fields; releasing the arg would drop refs
   still reachable through the result (for example `withPiece` COW on the model param).
   """
-  @spec abandon_owned_call_args_after_recursive(map(), String.t(), [String.t()]) :: String.t()
+  @spec abandon_owned_call_args_after_recursive(Types.compile_env(), String.t(), [String.t()]) :: String.t()
   def abandon_owned_call_args_after_recursive(env, out, arg_vars)
       when is_map(env) and is_binary(out) and is_list(arg_vars) do
     if epilogue_lifo?() do

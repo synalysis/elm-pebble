@@ -87,7 +87,7 @@ defmodule Ide.Debugger.RuntimeHub do
           String.t() | nil,
           String.t() | nil,
           String.t()
-        ) :: any()
+        ) :: Types.runtime_state()
   def apply_step_once(config, state, target, requested_message, source_override, trigger)
       when target in [:watch, :companion, :phone] do
     apply_step_once(config, state, target, requested_message, nil, source_override, trigger, [])
@@ -102,7 +102,7 @@ defmodule Ide.Debugger.RuntimeHub do
           String.t() | nil,
           String.t(),
           keyword()
-        ) :: any()
+        ) :: Types.runtime_state()
   def apply_step_once(
         config,
         state,
@@ -137,7 +137,7 @@ defmodule Ide.Debugger.RuntimeHub do
           String.t(),
           keyword(),
           RuntimeContexts.t()
-        ) :: any()
+        ) :: Types.runtime_state()
   def apply_step_once(
         _config,
         state,

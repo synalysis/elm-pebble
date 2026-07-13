@@ -8,6 +8,7 @@ defmodule Ide.Test.TemplateElmxElmcParity.Prepare do
   alias Ide.Test.TemplateElmxElmcParity.ElmcRunner
   alias Ide.Test.TemplateElmxElmcParity.ExecutionPlan
   alias Ide.Test.TemplateElmxElmcParity.Scaffold
+  alias Ide.Test.TemplateElmxElmcParity.Types, as: ParityTypes
 
   @cache_key {__MODULE__, :prepared}
 
@@ -15,17 +16,10 @@ defmodule Ide.Test.TemplateElmxElmcParity.Prepare do
           required(:template_key) => String.t(),
           required(:project_dir) => String.t(),
           optional(:project) => Project.t() | nil,
-          optional(:contract) => map() | nil,
+          optional(:contract) => CompileContract.contract() | nil,
           required(:plan) => ExecutionPlan.t(),
-          required(:elmx) => %{
-            required(:manifest) => map(),
-            required(:revision) => String.t(),
-            required(:module) => module()
-          },
-          required(:elmc) => %{
-            required(:out_dir) => String.t(),
-            required(:tags) => map()
-          }
+          required(:elmx) => ParityTypes.elmx_compile_bundle(),
+          required(:elmc) => ParityTypes.elmc_compile_bundle()
         }
 
   @spec fetch(String.t()) :: t() | nil
@@ -67,7 +61,7 @@ defmodule Ide.Test.TemplateElmxElmcParity.Prepare do
     :ok
   end
 
-  @spec prepare!(String.t(), keyword()) :: {:ok, t()} | {:error, term()}
+  @spec prepare!(String.t(), keyword()) :: {:ok, t()} | {:error, ParityTypes.prepare_error()}
   def prepare!(template_key, opts \\ []) when is_binary(template_key) do
     case fetch(template_key) do
       %{} = prepared ->

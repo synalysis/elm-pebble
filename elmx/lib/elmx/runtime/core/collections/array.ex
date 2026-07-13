@@ -15,7 +15,7 @@ defmodule Elmx.Runtime.Core.Collections.Array do
   @spec array_length(list()) :: integer()
   def array_length(array) when is_list(array), do: length(array)
 
-  @spec array_get(integer(), list()) :: term()
+  @spec array_get(integer(), list()) :: Types.maybe_native()
   def array_get(index, _array) when is_integer(index) and index < 0, do: :Nothing
 
   def array_get(index, array) when is_integer(index) and is_list(array) do
@@ -34,7 +34,7 @@ defmodule Elmx.Runtime.Core.Collections.Array do
     end
   end
 
-  @spec array_set(integer(), term(), list()) :: list()
+  @spec array_set(integer(), Types.elm_value(), list()) :: list()
   def array_set(index, value, array) when is_integer(index) and is_list(array) do
     if index < 0 or index >= length(array) do
       array
@@ -43,13 +43,13 @@ defmodule Elmx.Runtime.Core.Collections.Array do
     end
   end
 
-  @spec array_push(term(), list()) :: list()
+  @spec array_push(Types.elm_value(), list()) :: list()
   def array_push(value, array) when is_list(array), do: array ++ [value]
 
-  @spec array_repeat(integer(), term()) :: list()
+  @spec array_repeat(integer(), Types.elm_value()) :: list()
   def array_repeat(n, value) when is_integer(n), do: List.duplicate(value, max(n, 0))
 
-  @spec array_initialize(integer(), term()) :: list()
+  @spec array_initialize(integer(), Types.elm_hof()) :: list()
   def array_initialize(n, _fun) when is_integer(n) and n <= 0, do: []
 
   def array_initialize(n, fun) when is_integer(n) and is_function(fun, 1) do
@@ -67,19 +67,19 @@ defmodule Elmx.Runtime.Core.Collections.Array do
   @spec array_to_indexed_list(list()) :: list()
   def array_to_indexed_list(array), do: Enum.with_index(array)
 
-  @spec array_map(term(), list()) :: list()
+  @spec array_map(Types.elm_hof(), list()) :: list()
   def array_map(fun, array), do: Core.map(fun, array)
 
-  @spec array_indexed_map(term(), list()) :: list()
+  @spec array_indexed_map(Types.elm_hof(), list()) :: list()
   def array_indexed_map(fun, array), do: Core.indexed_map(fun, array)
 
-  @spec array_foldl(term(), term(), list()) :: term()
+  @spec array_foldl(Types.elm_hof(), Types.fold_acc(), list()) :: Types.fold_acc()
   def array_foldl(fun, acc, array), do: Core.foldl(fun, acc, array)
 
-  @spec array_foldr(term(), term(), list()) :: term()
+  @spec array_foldr(Types.elm_hof(), Types.fold_acc(), list()) :: Types.fold_acc()
   def array_foldr(fun, acc, array), do: Core.foldr(fun, acc, array)
 
-  @spec array_filter(term(), list()) :: list()
+  @spec array_filter(Types.elm_hof(), list()) :: list()
   def array_filter(fun, array), do: Core.filter(fun, array)
 
   @spec array_append(list(), list()) :: list()

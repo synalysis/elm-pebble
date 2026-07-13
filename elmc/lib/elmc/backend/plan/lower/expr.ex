@@ -105,8 +105,7 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
     "String.padRight" => :string_pad_right
   }
 
-  @spec compile(map() | nil, Context.t(), Builder.t()) ::
-          {:ok, Types.reg() | :fn_out | :branch_out | nil, Builder.t()} | :unsupported
+  @spec compile(Types.ir_expr() | nil, Context.t(), Builder.t()) :: Types.compile_result()
   def compile(nil, _ctx, b), do: {:ok, nil, b}
 
   def compile(%{op: :pebble_cmd} = expr, ctx, b), do: Cmd.compile(expr, ctx, b)
@@ -536,7 +535,7 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
     end
   end
 
-  @spec compile_args([map()], Context.t(), Builder.t()) ::
+  @spec compile_args([Types.ir_expr()], Context.t(), Builder.t()) ::
           {:ok, [Types.reg()], Builder.t()} | :unsupported
   def compile_args(args, ctx, b) when is_list(args) do
     # Call operands must not target branch_out / fn_out — only the callee result may.

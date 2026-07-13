@@ -2,6 +2,7 @@ defmodule Elmc.Backend.C.Lower.NativeIntFold do
   @moduledoc false
 
   alias Elmc.Backend.C.Lower.Instr
+  alias Elmc.Backend.Plan.Types
   alias Elmc.Backend.Plan.Types.FunctionPlan
 
   @spec inline_exprs(FunctionPlan.t(), keyword()) :: %{non_neg_integer() => String.t()}
@@ -70,7 +71,7 @@ defmodule Elmc.Backend.C.Lower.NativeIntFold do
   end
 
   @doc false
-  @spec int_arith_c_expr(map(), map(), keyword()) :: String.t() | nil
+  @spec int_arith_c_expr(Types.instr_args(), Types.slot_map(), keyword()) :: String.t() | nil
   def int_arith_c_expr(args, slots, opts), do: int_arith_c_expr_dispatch(args, slots, opts)
 
   defp inline_expr(plan, reg, inlines, opts) do

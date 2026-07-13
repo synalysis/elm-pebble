@@ -7,6 +7,88 @@ defmodule Elmc.Backend.Plan.Types do
   `%FunctionPlan{}` to their target representation.
   """
 
+  alias Elmc.Backend.CCodegen.Types, as: CCodegenTypes
+  alias Elmc.Backend.Plan.Builder
+
+  @type ir_expr :: CCodegenTypes.ir_expr()
+  @type ir_case_expr :: CCodegenTypes.ir_case_expr()
+  @type pattern :: CCodegenTypes.pattern()
+  @type case_branch :: CCodegenTypes.case_branch()
+  @type case_branches :: CCodegenTypes.case_branches()
+  @type ir_record_field :: CCodegenTypes.ir_record_field()
+  @type ir_record_fields :: CCodegenTypes.ir_record_fields()
+  @type compare_kind :: CCodegenTypes.compare_kind()
+  @type ir_compare_expr :: CCodegenTypes.ir_compare_expr()
+  @type function_decl :: CCodegenTypes.function_decl()
+  @type function_decl_map :: CCodegenTypes.function_decl_map()
+
+  @type lower_verify_meta ::
+          String.t()
+          | [String.t() | integer() | atom() | lower_verify_meta()]
+          | %{optional(atom()) => String.t() | integer() | boolean() | nil}
+
+  @type lower_error :: {:verify, atom() | String.t(), lower_verify_meta()}
+
+  @type compile_env :: CCodegenTypes.compile_env()
+  @type special_value_args :: CCodegenTypes.special_value_args()
+  @type special_value_expr :: CCodegenTypes.ir_expr() | nil
+
+  @type ir_field_value :: CCodegenTypes.ir_field_value()
+  @type plan_span :: %{optional(atom()) => integer() | String.t()} | nil
+
+  @type constructor_target_input :: %{
+          required(:target) => String.t(),
+          optional(:args) => [ir_expr()],
+          optional(:value) => ir_field_value(),
+          optional(atom()) => ir_field_value()
+        }
+
+  @type compare_input ::
+          ir_compare_expr()
+          | %{
+              required(:kind) => compare_kind(),
+              required(:left) => ir_expr(),
+              required(:right) => ir_expr()
+            }
+
+  @type runtime_call_input :: %{
+          required(:function) => String.t(),
+          required(:args) => [ir_expr()],
+          optional(atom()) => ir_field_value()
+        }
+
+  @type pebble_sub_input :: %{
+          required(:mask) => ir_expr(),
+          required(:params) => [ir_expr()],
+          optional(atom()) => ir_field_value()
+        }
+
+  @type lower_result_slot :: reg() | :fn_out | :branch_out | nil
+  @type compile_result :: {:ok, lower_result_slot(), Builder.t()} | :unsupported
+  @type compile_result_required :: {:ok, reg() | :fn_out, Builder.t()} | :unsupported
+  @type compile_reg_result :: {:ok, reg(), Builder.t()} | :unsupported
+  @type match_condition_result :: {:ok, non_neg_integer(), Builder.t()} | :unsupported
+
+  @type instr_scalar :: integer() | boolean() | String.t() | atom()
+  @type instr_arg_value ::
+          instr_scalar()
+          | [reg() | result_slot()]
+          | reg()
+          | result_slot()
+          | ir_expr()
+          | instr_args()
+  @type instr_args :: %{optional(atom()) => instr_arg_value()}
+  @type instr_list :: [t()]
+  @type emit_opts_map :: %{
+          optional(:dest) => reg() | result_slot() | nil,
+          optional(:args) => instr_args(),
+          optional(:effects) => effects(),
+          optional(:span) => plan_span()
+        }
+  @type emit_opts :: keyword() | emit_opts_map()
+  @type fusion_data :: Elmc.Backend.CCodegen.Types.fusion_metadata()
+  @type slot_map :: %{reg() => non_neg_integer()}
+
   @typedoc "SSA virtual register index."
   @type reg :: non_neg_integer()
 
@@ -88,10 +170,10 @@ defmodule Elmc.Backend.Plan.Types do
           id: non_neg_integer(),
           op: opcode(),
           dest: reg() | result_slot() | nil,
-          args: map(),
+          args: instr_args(),
           effects: effects(),
           block_id: non_neg_integer(),
-          span: term()
+          span: plan_span()
         }
 
   defmodule Block do
@@ -113,6 +195,8 @@ defmodule Elmc.Backend.Plan.Types do
             terminator: terminator()
           }
   end
+
+  @type block_list :: [Block.t()]
 
   defmodule Param do
     @moduledoc false
@@ -173,7 +257,7 @@ defmodule Elmc.Backend.Plan.Types do
             letrec_refs: [String.t()],
             fusion_c: String.t() | nil,
             fusion_kind: atom() | nil,
-            fusion_data: map() | nil,
+            fusion_data: Elmc.Backend.Plan.Types.fusion_data() | nil,
             native_scalar_return: :native_int | :native_bool | nil,
             native_scalar_value_return: boolean(),
             fusion_emit: :helper_only | :public_native | nil
@@ -181,6 +265,8 @@ defmodule Elmc.Backend.Plan.Types do
   end
 
   @type function_plan :: FunctionPlan.t()
+
+  @type lower_result :: {:ok, function_plan()} | :unsupported | {:error, lower_error()}
 
   @spec empty_effects() :: effects()
   def empty_effects, do: %{produces: nil, consumes: [], borrows: [], fallible: false}

@@ -40,4 +40,7 @@ defmodule Ide.Mcp.WireTypes do
   @type debugger_setting_value :: json_value()
 
   @type map_value_result :: json_value()
+
+  @typedoc "JSON object pushed over MCP Streamable HTTP SSE (`data:` field)."
+  @type sse_message :: json_value()
 end

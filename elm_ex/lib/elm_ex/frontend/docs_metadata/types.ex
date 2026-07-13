@@ -23,9 +23,11 @@ defmodule ElmEx.Frontend.DocsMetadata.Types do
 
   @type tokenize_error :: %{
           required(:kind) => :tokenize_error,
-          required(:reason) => term(),
-          required(:line) => term()
+          required(:reason) => atom() | String.t(),
+          required(:line) => pos_integer() | String.t() | nil
         }
 
-  @type parse_error :: tokenize_error() | %{optional(atom()) => term(), optional(String.t()) => term()}
+  @type parse_error ::
+          tokenize_error()
+          | %{optional(atom()) => String.t() | integer() | boolean() | nil, optional(String.t()) => String.t() | integer() | boolean() | nil}
 end

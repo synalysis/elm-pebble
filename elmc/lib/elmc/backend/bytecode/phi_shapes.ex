@@ -1,6 +1,8 @@
 defmodule Elmc.Backend.Bytecode.PhiShapes do
   @moduledoc false
 
+  alias Elmc.Backend.Plan.Types
+
   @truthy_const0 0
   @truthy_const1 1
   @truthy_compare 2
@@ -12,7 +14,7 @@ defmodule Elmc.Backend.Bytecode.PhiShapes do
   @int_arith 10
   @int_new 11
 
-  @spec encode_phi_args(map()) :: binary()
+  @spec encode_phi_args(Types.instr_args()) :: binary()
   def encode_phi_args(args) do
     base =
       <<
@@ -37,8 +39,10 @@ defmodule Elmc.Backend.Bytecode.PhiShapes do
     end
   end
 
-  @spec eval_phi(binary(), [term()], (atom(), integer(), integer() -> boolean())) ::
-          {term(), binary()}
+  alias Elmc.Backend.Bytecode.Runtime
+
+  @spec eval_phi(binary(), [Runtime.value()], (atom(), integer(), integer() -> boolean())) ::
+          {Runtime.value(), binary()}
   def eval_phi(bin, locals, compare_fn) do
     <<then_reg::16, else_reg::16, cond::16, flags::8, rest::binary>> = bin
     cond_val = local_int(locals, cond) != 0

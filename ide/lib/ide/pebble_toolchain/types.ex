@@ -1,11 +1,10 @@
 defmodule Ide.PebbleToolchain.Types do
   @moduledoc false
 
-  alias ElmEx.Frontend.Project, as: FrontendProject
-  alias ElmEx.IR
   alias ElmEx.CoreIR.Types, as: CoreIRTypes
-  alias Elmc.CLI.Types, as: ElmcCliTypes
   alias Ide.CompanionProtocol.WireSchema
+
+  @type cli_diagnostic :: Elmc.Types.cli_diagnostic()
 
   @type project_slug :: String.t()
   @type opts :: pebble_opts()
@@ -80,13 +79,15 @@ defmodule Ide.PebbleToolchain.Types do
           {:compiler_exception, module(), String.t()}
           | {:compiler_exception, atom(), compiler_catch_reason()}
 
+  @type elmc_compile_result :: Elmc.Types.compile_result()
+
   @typedoc "Local mirror of ElmEx bridge/load failures surfaced through `Elmc.compile/2`."
   @type elm_bridge_error :: %{
           optional(:kind) => :config_error | :parse_error | :elm_check_failed | atom(),
           optional(:reason) => atom() | String.t(),
           optional(:path) => String.t(),
           optional(:line) => integer() | String.t() | nil,
-          optional(:diagnostics) => [ElmcCliTypes.cli_diagnostic()],
+          optional(:diagnostics) => [cli_diagnostic()],
           optional(:raw) => String.t(),
           optional(String.t()) => wire_input()
         }
@@ -94,9 +95,7 @@ defmodule Ide.PebbleToolchain.Types do
   @type runtime_reprune_failure :: file_posix() | :unbalanced_braces
 
   @type elmc_failure_reason ::
-          {:compile_diagnostics, [ElmcCliTypes.cli_diagnostic()]}
-          | compiler_exception()
-          | elm_bridge_error()
+          Elmc.Types.compile_error()
           | file_posix()
           | atom()
           | String.t()
@@ -191,26 +190,7 @@ defmodule Ide.PebbleToolchain.Types do
           optional(:optimize_for_size) => boolean()
         }
 
-  @type watch_compile_opts :: %{
-          required(:out_dir) => String.t(),
-          required(:entry_module) => String.t(),
-          required(:direct_render_only) => boolean(),
-          required(:prune_direct_generic) => boolean(),
-          required(:prune_runtime) => true,
-          required(:prune_native_wrappers) => true,
-          required(:pebble_int32) => true,
-          required(:strip_dead_code) => true,
-          optional(:codegen_profile) => :default | :balanced | :size,
-          optional(:prod) => boolean(),
-          optional(:plan_ir_mode) => :off | :shadow | :primary,
-          optional(:plan_ir_strict) => boolean(),
-          optional(:debug_usage_policy) => :error | :warn | :warning
-        }
-  @type elmc_compile_result :: %{
-          required(:project) => FrontendProject.t(),
-          required(:ir) => IR.t(),
-          required(:debug_usage_diagnostics) => [ElmcCliTypes.cli_diagnostic()]
-        }
+  @type watch_compile_opts :: Elmc.Types.compile_options()
 
   @type emulator_control_params :: %{
           required(String.t()) => wire_input(),

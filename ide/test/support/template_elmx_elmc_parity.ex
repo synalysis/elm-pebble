@@ -12,6 +12,7 @@ defmodule Ide.Test.TemplateElmxElmcParity do
   alias Ide.Test.TemplateElmxElmcParity.ElmxRunner
   alias Ide.Test.TemplateElmxElmcParity.ExecutionPlan
   alias Ide.Test.TemplateElmxElmcParity.Prepare
+  alias Ide.Test.TemplateElmxElmcParity.Types, as: ParityTypes
 
   @representative_templates ~w(
     watchface-minimal
@@ -47,12 +48,12 @@ defmodule Ide.Test.TemplateElmxElmcParity do
           template_key: String.t(),
           watch_profile_id: String.t(),
           plan: ExecutionPlan.t(),
-          elmx_steps: [map()],
-          elmc_steps: [map()],
+          elmx_steps: [ParityTypes.parity_step()],
+          elmc_steps: [ParityTypes.parity_step()],
           mismatches: [Compare.mismatch()]
         }
 
-  @spec prepare!(String.t(), keyword()) :: {:ok, Prepare.t()} | {:error, term()}
+  @spec prepare!(String.t(), keyword()) :: {:ok, Prepare.t()} | {:error, ParityTypes.prepare_error()}
   def prepare!(template_key, opts \\ []), do: Prepare.prepare!(template_key, opts)
 
   @spec release!(String.t()) :: :ok
@@ -63,7 +64,7 @@ defmodule Ide.Test.TemplateElmxElmcParity do
 
   @spec compare!(String.t(), String.t(), keyword()) ::
           {:ok, compare_result()}
-          | {:error, term()}
+          | {:error, ParityTypes.runner_error()}
           | {:mismatch, compare_result()}
   def compare!(template_key, watch_profile_id, opts \\ [])
       when is_binary(template_key) and is_binary(watch_profile_id) do

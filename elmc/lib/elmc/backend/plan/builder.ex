@@ -105,7 +105,7 @@ defmodule Elmc.Backend.Plan.Builder do
   @spec begin_cfg_arm_block(t(), non_neg_integer()) :: t()
   def begin_cfg_arm_block(b, block_id), do: %{b | param_load_blocks: %{}} |> begin_block(block_id)
 
-  @spec emit(t(), Types.opcode(), keyword() | map()) :: {Types.reg() | Types.result_slot() | nil, t()}
+  @spec emit(t(), Types.opcode(), Types.emit_opts()) :: {Types.reg() | Types.result_slot() | nil, t()}
   def emit(b, op, opts) when is_map(opts) and not is_list(opts) do
     emit(b, op, Map.to_list(opts))
   end
@@ -364,7 +364,7 @@ defmodule Elmc.Backend.Plan.Builder do
   end
 
   @doc false
-  @spec reload_stale_param_args(t(), [String.t()], [Types.reg()], [map()]) ::
+  @spec reload_stale_param_args(t(), [String.t()], [Types.reg()], [Types.ir_expr()]) ::
           {[Types.reg()], t()}
   def reload_stale_param_args(b, param_names, arg_regs, arg_exprs)
       when is_list(arg_regs) and is_list(arg_exprs) do

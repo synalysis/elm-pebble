@@ -2,6 +2,7 @@ defmodule Elmc.Backend.CCodegen.LayoutTransfer do
   @moduledoc false
 
   alias Elmc.Backend.CCodegen.StoragePlan
+  alias Elmc.Backend.CCodegen.Types
 
   @filter_targets ~w(
     List.filter
@@ -20,7 +21,8 @@ defmodule Elmc.Backend.CCodegen.LayoutTransfer do
   @array_repeat ~w(Array.repeat Elm.Kernel.Array.repeat)
   @array_initialize ~w(Array.initialize Elm.Kernel.Array.initialize)
 
-  @spec output_plan(String.t(), [term()], StoragePlan.t() | nil, keyword()) :: StoragePlan.t()
+  @spec output_plan(String.t(), [Types.ir_expr()], StoragePlan.t() | nil, keyword()) ::
+          StoragePlan.t()
   def output_plan(target, args, input_plan, opts \\ [])
 
   def output_plan(target, args, input_plan, opts) when is_binary(target) do

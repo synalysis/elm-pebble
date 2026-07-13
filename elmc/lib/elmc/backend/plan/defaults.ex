@@ -1,6 +1,10 @@
 defmodule Elmc.Backend.Plan.Defaults do
   @moduledoc false
 
+  alias Elmc.Types
+
+  @type compile_options :: Types.compile_options()
+
   @spec plan_ir_mode() :: :off | :shadow | :primary
   def plan_ir_mode do
     Application.get_env(:elmc, :default_plan_ir_mode, :primary)
@@ -12,7 +16,7 @@ defmodule Elmc.Backend.Plan.Defaults do
     mode == :primary
   end
 
-  @spec apply_defaults(map()) :: map()
+  @spec apply_defaults(compile_options()) :: compile_options()
   def apply_defaults(opts) when is_map(opts) do
     explicit_mode = Map.get(opts, :plan_ir_mode)
     mode = explicit_mode || plan_ir_mode()

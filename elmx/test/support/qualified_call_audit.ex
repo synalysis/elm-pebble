@@ -7,17 +7,23 @@ defmodule Elmx.TestSupport.QualifiedCallAudit do
     ~r/raise "unsupported elmx runtime call/
   ]
 
+  @type audit_hit :: %{
+          required(:pattern) => String.t(),
+          required(:line) => pos_integer(),
+          required(:excerpt) => String.t()
+        }
+
   @doc """
   Scans generated Elixir module sources for runtime stdlib fallbacks that may raise at runtime.
   """
-  @spec scan_sources([String.t()]) :: [map()]
+  @spec scan_sources([String.t()]) :: [audit_hit()]
   def scan_sources(sources) when is_list(sources) do
     sources
     |> Enum.flat_map(&scan_source/1)
     |> Enum.uniq()
   end
 
-  @spec scan_compile_result(Elmx.CompileResult.t()) :: [map()]
+  @spec scan_compile_result(Elmx.CompileResult.t()) :: [audit_hit()]
   def scan_compile_result(%Elmx.CompileResult{modules: modules}) do
     modules
     |> Enum.map(& &1.source)

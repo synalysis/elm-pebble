@@ -10,9 +10,15 @@ defmodule ElmEx.Types.ElmReport do
           optional(String.t()) => integer() | String.t() | nil
         }
 
+  @type problem_field_value ::
+          String.t()
+          | [problem_field_value()]
+          | %{optional(atom()) => problem_field_value(), optional(String.t()) => problem_field_value()}
+          | nil
+
   @type problem :: %{
-          optional(atom()) => String.t() | [term()] | map() | nil,
-          optional(String.t()) => String.t() | [term()] | map() | nil
+          optional(atom()) => problem_field_value(),
+          optional(String.t()) => problem_field_value()
         }
 
   @typedoc "Per-file error bundle inside `\"type\": \"compile-errors\"` reports."
@@ -29,8 +35,8 @@ defmodule ElmEx.Types.ElmReport do
 
   @typedoc "Single-title `error` report."
   @type compile_error :: %{
-          optional(atom()) => String.t() | [term()],
-          optional(String.t()) => String.t() | [term()]
+          optional(atom()) => problem_field_value(),
+          optional(String.t()) => problem_field_value()
         }
 
   @type t :: compile_errors() | compile_error() | file_errors() | problem()

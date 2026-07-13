@@ -2,6 +2,7 @@ defmodule Ide.Test.TemplateElmxElmcParity.ElmcRunner.PayloadCodegen do
   @moduledoc false
 
   alias Ide.Test.TemplateElmxElmcParity.ExecutionPlan.TimelineMessageValue
+  alias Ide.Test.TemplateElmxElmcParity.Types, as: ParityTypes
 
   @phone_to_watch_tags %{
     "ProvideWeather" => 1,
@@ -47,7 +48,7 @@ defmodule Ide.Test.TemplateElmxElmcParity.ElmcRunner.PayloadCodegen do
     "Round" => 1
   }
 
-  @spec dispatch_expr(String.t() | nil, map() | nil, map()) :: {String.t(), String.t() | nil}
+  @spec dispatch_expr(String.t() | nil, Ide.Test.TemplateElmxElmcParity.Types.wire_json_map() | nil, Ide.Test.TemplateElmxElmcParity.Types.wire_json_map()) :: {String.t(), String.t() | nil}
   def dispatch_expr(message, message_value, tags) when is_map(tags) do
     ctor =
       message
@@ -120,7 +121,8 @@ defmodule Ide.Test.TemplateElmxElmcParity.ElmcRunner.PayloadCodegen do
 
   def dispatch_expr(_message, _message_value, _tags), do: {"0", "invalid_message"}
 
-  @spec wire_value_expr(term()) :: {String.t(), String.t() | nil}
+  @spec wire_value_expr(ParityTypes.wire_json_map() | integer() | boolean() | String.t()) ::
+          {String.t(), String.t() | nil}
   def wire_value_expr(value) when is_integer(value), do: {"harness_int(#{value})", nil}
   def wire_value_expr(value) when is_boolean(value), do: {"harness_bool(#{if value, do: 1, else: 0})", nil}
 

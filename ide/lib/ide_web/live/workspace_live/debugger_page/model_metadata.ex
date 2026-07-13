@@ -130,8 +130,6 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage.ModelMetadata do
     end
   end
 
-  defp drop_undeclared_screen_fields(model, _runtime), do: model
-
   @spec declared_init_model_keys(runtime_input() | nil) :: MapSet.t()
   defp declared_init_model_keys(%{} = runtime) do
     runtime

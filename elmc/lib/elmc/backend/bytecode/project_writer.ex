@@ -12,7 +12,7 @@ defmodule Elmc.Backend.Bytecode.ProjectWriter do
   @manifest_name "elmc_bytecode.manifest.json"
   @manifest_contract "elmc.bytecode_manifest.v1"
 
-  @spec maybe_write(IR.t(), String.t(), map()) :: :ok | {:error, term()}
+  @spec maybe_write(IR.t(), String.t(), Elmc.Types.compile_options()) :: :ok
   def maybe_write(%IR{} = ir, out_dir, opts) when is_map(opts) do
     if Plan.plan_ir_mode(opts) in [:shadow, :primary] do
       write(ir, out_dir, opts)
@@ -21,7 +21,7 @@ defmodule Elmc.Backend.Bytecode.ProjectWriter do
     end
   end
 
-  @spec write(IR.t(), String.t(), map()) :: :ok | {:error, term()}
+  @spec write(IR.t(), String.t(), Elmc.Types.compile_options()) :: :ok
   def write(%IR{} = ir, out_dir, opts \\ %{}) do
     bc_dir = Path.join(out_dir, "bytecode")
     File.mkdir_p!(bc_dir)

@@ -1,6 +1,8 @@
 defmodule Elmc.Backend.CCodegen.UnionIntSuffixCase do
   @moduledoc false
 
+  alias Elmc.Backend.CCodegen.Types
+
   alias Elmc.Backend.CCodegen.{
     ConstructorTagCase,
     CSource,
@@ -17,7 +19,7 @@ defmodule Elmc.Backend.CCodegen.UnionIntSuffixCase do
 
   @buf_size 22
 
-  @spec try_emit(String.t(), String.t(), map() | nil, map()) ::
+  @spec try_emit(String.t(), String.t(), Types.ir_expr() | nil, Types.function_decl_map()) ::
           {:ok, String.t(), [FusionSupport.callee_key()], :rc_native} | :error
   def try_emit(_module_name, _name, nil, _decl_map), do: :error
 
@@ -481,8 +483,8 @@ defmodule Elmc.Backend.CCodegen.UnionIntSuffixCase do
   end
 
   @doc false
-  @spec extract_fusion_data(String.t(), String.t(), map() | nil, map()) ::
-          {:ok, :union_int_suffix, map()} | :error
+  @spec extract_fusion_data(String.t(), String.t(), Types.ir_expr() | nil, Types.function_decl_map()) ::
+          {:ok, :union_int_suffix, Types.fusion_metadata()} | :error
   def extract_fusion_data(module_name, name, expr, decl_map) do
     case extract_maybe_union_data(module_name, name, expr, decl_map) do
       {:ok, data} ->

@@ -3,7 +3,11 @@ defmodule Elmc.Backend.Plan.StrictPolicy do
 
   alias Elmc.Backend.Plan.Shadow
 
-  @type opts :: keyword() | map()
+  alias Elmc.Types
+
+  @type opts_map :: Types.compile_options()
+
+  @type opts :: keyword() | opts_map()
 
   @doc """
   When true, reachable Plan IR gaps and legacy fallbacks are compile errors.

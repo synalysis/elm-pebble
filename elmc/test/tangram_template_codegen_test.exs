@@ -4,6 +4,24 @@ defmodule Elmc.TangramTemplateCodegenTest do
   alias Elmc.Test.RcTrackHarness
   alias Elmc.TestSupport.TangramTemplate
 
+  test "tangram watchface plan-primary direct render does not declare owned slots with call initializers" do
+    project_dir = TangramTemplate.scaffold_project()
+    out_dir = Path.join(System.tmp_dir!(), "tangram-primary-#{System.unique_integer([:positive])}")
+    File.rm_rf!(out_dir)
+
+    assert {:ok, _result} =
+             Elmc.compile(project_dir, %{
+               out_dir: out_dir,
+               entry_module: "Main",
+               strip_dead_code: true,
+               plan_ir_mode: :primary
+             })
+
+    generated = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+
+    refute generated =~ ~r/ElmcValue \*owned\[\d+\] = elmc_fn_/
+  end
+
   test "tangram watchface view codegen does not reference phantom Main.start helpers" do
     project_dir = TangramTemplate.scaffold_project()
     out_dir = Path.join(System.tmp_dir!(), "tangram-codegen-#{System.unique_integer([:positive])}")

@@ -12,7 +12,7 @@ defmodule Ide.Debugger.AutoTickWorkers do
           required(:count) => non_neg_integer()
         }
 
-  @type tick_fn :: (String.t(), tick_payload() -> {:ok, Types.runtime_state()} | any())
+  @type tick_fn :: (String.t(), tick_payload() -> {:ok, Types.runtime_state()})
   @type update_fn :: (String.t(), (Types.runtime_state() -> Types.runtime_state()) ->
                         {:ok, Types.runtime_state()})
 

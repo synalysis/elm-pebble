@@ -5,6 +5,7 @@ defmodule ElmEx.IR.Types.Declaration do
   Lowered from frontend `AstContract` declarations; `expr` remains parser AST until Core IR.
   """
 
+  alias ElmEx.Frontend.AstContract.Types, as: AstTypes
   alias ElmEx.Frontend.AstContract.Types.Expr
 
   @type kind :: :function | :type_alias | :union
@@ -18,13 +19,15 @@ defmodule ElmEx.IR.Types.Declaration do
 
   @type span :: %{optional(:start_line) => pos_integer(), optional(:end_line) => pos_integer()}
 
+  @type span_wire :: %{optional(atom()) => pos_integer()}
+
   @type struct_t :: %ElmEx.IR.Declaration{
           kind: kind(),
           name: String.t(),
           type: String.t() | nil,
           args: [String.t()] | nil,
-          expr: Expr.t() | map() | nil,
-          span: span() | map() | nil,
+          expr: Expr.t() | AstTypes.invalid_input() | nil,
+          span: span() | span_wire() | nil,
           ownership: [ownership()]
         }
 

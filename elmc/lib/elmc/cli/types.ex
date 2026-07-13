@@ -4,21 +4,9 @@ defmodule Elmc.CLI.Types do
   """
 
   alias Elmc.CLI.Types.{Manifest, Project}
+  alias Elmc.Types, as: RootTypes
 
-  @type cli_diagnostic :: %{
-          optional(:severity) => String.t(),
-          optional(:message) => String.t(),
-          optional(:source) => String.t(),
-          optional(:file) => String.t() | nil,
-          optional(:line) => integer() | nil,
-          optional(:column) => integer() | nil,
-          optional(:warning_type) => atom() | String.t() | nil,
-          optional(:warning_code) => atom() | String.t() | nil,
-          optional(:warning_constructor) => String.t() | nil,
-          optional(:warning_expected_kind) => atom() | String.t() | nil,
-          optional(:warning_has_arg_pattern) => boolean() | nil,
-          optional(String.t()) => String.t() | integer() | boolean() | nil
-        }
+  @type cli_diagnostic :: RootTypes.cli_diagnostic()
 
   @type run_status :: :ok | :error
 
@@ -38,4 +26,10 @@ defmodule Elmc.CLI.Types do
   @type project_manifest :: Manifest.t()
   @type dependency_compatibility_row :: Manifest.dependency_compatibility_row()
   @type manifest_project :: Project.t()
+
+  @type frontend_bridge_error :: RootTypes.frontend_bridge_error()
+
+  @type compile_error :: RootTypes.compile_error()
+
+  @type compile_result :: RootTypes.compile_result()
 end

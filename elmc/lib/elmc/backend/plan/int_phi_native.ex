@@ -1,13 +1,15 @@
 defmodule Elmc.Backend.Plan.IntPhiNative do
   @moduledoc false
 
+  alias Elmc.Backend.Plan.Types
+
   @type arm_shape ::
           :unknown
           | {:const_int, integer()}
-          | {:int_arith, map()}
+          | {:int_arith, Types.instr_args()}
           | {:new_int, integer() | String.t()}
 
-  @spec arm_shape([map()], non_neg_integer()) :: arm_shape()
+  @spec arm_shape(Types.instr_list(), non_neg_integer()) :: arm_shape()
   def arm_shape(instrs, reg) when is_list(instrs) and is_integer(reg) do
     case Enum.find(instrs, &(&1.dest == reg)) do
       nil ->
@@ -30,7 +32,7 @@ defmodule Elmc.Backend.Plan.IntPhiNative do
 
   defp shape_from_instr(_), do: :unknown
 
-  @spec native_int_phi_shapes?([map()], non_neg_integer(), non_neg_integer()) ::
+  @spec native_int_phi_shapes?(Types.instr_list(), non_neg_integer(), non_neg_integer()) ::
           {boolean(), arm_shape(), arm_shape()}
   def native_int_phi_shapes?(instrs, then_reg, else_reg) do
     then_shape = arm_shape(instrs, then_reg)
@@ -43,7 +45,7 @@ defmodule Elmc.Backend.Plan.IntPhiNative do
   defp native_int_shape?({:new_int, _}), do: true
   defp native_int_shape?(_), do: false
 
-  @spec phi_arm_drop_instrs([map()]) :: MapSet.t({non_neg_integer(), non_neg_integer()})
+  @spec phi_arm_drop_instrs(Types.block_list()) :: MapSet.t({non_neg_integer(), non_neg_integer()})
   def phi_arm_drop_instrs(blocks) when is_list(blocks) do
     blocks
     |> Enum.flat_map(& &1.instrs)

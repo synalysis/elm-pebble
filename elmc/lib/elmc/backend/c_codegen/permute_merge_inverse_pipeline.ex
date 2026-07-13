@@ -6,6 +6,8 @@ defmodule Elmc.Backend.CCodegen.PermuteMergeInversePipeline do
   record updates from IR — not from app-specific function names.
   """
 
+  alias Elmc.Backend.CCodegen.Types
+
   alias Elmc.Backend.CCodegen.{
     FusionSupport,
     RowMajorLayout,
@@ -15,7 +17,7 @@ defmodule Elmc.Backend.CCodegen.PermuteMergeInversePipeline do
     Util
   }
 
-  @spec try_emit(String.t(), String.t(), map() | nil, map()) ::
+  @spec try_emit(String.t(), String.t(), Types.ir_expr() | nil, Types.function_decl_map()) ::
           {:ok, String.t(), [FusionSupport.callee_key()]} | {:ok, String.t(), [FusionSupport.callee_key()], :rc_native} | :error
 
   def try_emit(_module_name, _name, nil, _decl_map), do: :error
@@ -38,7 +40,7 @@ defmodule Elmc.Backend.CCodegen.PermuteMergeInversePipeline do
     end
   end
 
-  @spec compact_list_field_keys(String.t(), String.t(), map() | nil, map()) ::
+  @spec compact_list_field_keys(String.t(), String.t(), Types.ir_expr() | nil, Types.function_decl_map()) ::
           [{String.t(), String.t(), String.t()}]
   def compact_list_field_keys(_module_name, _name, nil, _decl_map), do: []
 
@@ -641,8 +643,8 @@ defmodule Elmc.Backend.CCodegen.PermuteMergeInversePipeline do
   end
 
   @doc false
-  @spec extract_fusion_data(String.t(), String.t(), map() | nil, map()) ::
-          {:ok, :permute_merge_inverse_pipeline, map()} | :error
+  @spec extract_fusion_data(String.t(), String.t(), Types.ir_expr() | nil, Types.function_decl_map()) ::
+          {:ok, :permute_merge_inverse_pipeline, Types.fusion_metadata()} | :error
   def extract_fusion_data(module_name, name, expr, decl_map) do
     with {:ok, pipeline} <- parse_pipeline(expr),
          {:ok, width, rows} <- merge_dims(decl_map, module_name, pipeline.merge_fn),

@@ -9,8 +9,7 @@ defmodule Elmc.Backend.Plan.Lower.Compare do
 
   @nothing_names ~w(Nothing Maybe.Nothing)
 
-  @spec compile(map(), Context.t(), Builder.t()) ::
-          {:ok, Types.reg(), Builder.t()} | :unsupported
+  @spec compile(Types.compare_input(), Context.t(), Builder.t()) :: Types.compile_reg_result()
   def compile(%{op: :compare, kind: kind, left: left, right: right}, ctx, b) do
     compile(%{kind: kind, left: left, right: right}, ctx, b)
   end

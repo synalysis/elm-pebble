@@ -1,11 +1,13 @@
 defmodule Elmc.Backend.CCodegen.MaybeWithDefaultPickSlot do
   @moduledoc false
 
+  alias Elmc.Backend.CCodegen.Types
+
   alias Elmc.Backend.CCodegen.{CSource, FusionSupport, FunctionCallAbi, Util}
 
   @pick_slot_names ~w(pickSlot)
 
-  @spec try_emit(String.t(), String.t(), map() | nil, map()) ::
+  @spec try_emit(String.t(), String.t(), Types.ir_expr() | nil, Types.function_decl_map()) ::
           {:ok, String.t(), [FusionSupport.callee_key()], :rc_native} | :error
   def try_emit(_module_name, _name, nil, _decl_map), do: :error
 
@@ -63,8 +65,8 @@ defmodule Elmc.Backend.CCodegen.MaybeWithDefaultPickSlot do
   end
 
   @doc false
-  @spec extract_fusion_data(String.t(), String.t(), map() | nil, map()) ::
-          {:ok, :maybe_with_default_pick_slot, map()} | :error
+  @spec extract_fusion_data(String.t(), String.t(), Types.ir_expr() | nil, Types.function_decl_map()) ::
+          {:ok, :maybe_with_default_pick_slot, Types.fusion_metadata()} | :error
   def extract_fusion_data(module_name, name, expr, decl_map) do
     with param when is_binary(param) <- fusion_param_name(module_name, name, decl_map),
          {:ok, model_var, default_tag, pick_mod, pick_name, slots_expr} <- parse(expr, module_name),

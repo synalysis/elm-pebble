@@ -2,19 +2,23 @@ defmodule Elmc.Backend.C.Lower.TagRefs do
   @moduledoc false
 
   alias Elmc.Backend.CCodegen.Util
-  alias Elmc.Backend.Plan.Types.Block
+  alias Elmc.Backend.Plan.Types.{Block, FunctionPlan}
+  alias Elmc.Backend.SizeProfile
 
-  @spec switch_arm_tag(term()) :: integer() | nil
+  @type switch_arm ::
+          {integer(), non_neg_integer()} | {integer(), non_neg_integer(), String.t()}
+
+  @spec switch_arm_tag(switch_arm()) :: integer() | nil
   def switch_arm_tag({tag, _target}) when is_integer(tag), do: tag
   def switch_arm_tag({tag, _target, _ctor}) when is_integer(tag), do: tag
   def switch_arm_tag(_), do: nil
 
-  @spec switch_arm_target(term()) :: non_neg_integer() | nil
+  @spec switch_arm_target(switch_arm()) :: non_neg_integer() | nil
   def switch_arm_target({_tag, target}) when is_integer(target), do: target
   def switch_arm_target({_tag, target, _ctor}) when is_integer(target), do: target
   def switch_arm_target(_), do: nil
 
-  @spec switch_arm_ctor(term()) :: String.t() | nil
+  @spec switch_arm_ctor(switch_arm()) :: String.t() | nil
   def switch_arm_ctor({_tag, _target, ctor}) when is_binary(ctor), do: ctor
   def switch_arm_ctor(_), do: nil
 
@@ -43,46 +47,57 @@ defmodule Elmc.Backend.C.Lower.TagRefs do
       |> apply_switch_arm_labels(block)
       |> apply_block_role_labels(block, incoming)
     end)
-    |> then(fn labeled ->
-      Enum.reduce(blocks, labeled, fn %Block{id: id}, acc ->
-        Map.put_new(acc, id, "BLOCK_#{id}")
-      end)
-    end)
   end
 
-  @spec plan_state_ref(map(), non_neg_integer(), map()) :: String.t()
-  def plan_state_ref(%{module: module, name: name}, block_id, labels) when is_integer(block_id) do
-    label =
+  @spec compact_plan_state_emit?(Elmc.Types.compile_options() | keyword() | nil) :: boolean()
+  def compact_plan_state_emit?(opts \\ nil) do
+    opts = opts || Process.get(:elmc_codegen_opts, %{})
+
+    SizeProfile.size?(opts) and SizeProfile.plan_emit_mode(opts) == :state_switch
+  end
+
+  @type state_label_map :: %{non_neg_integer() => String.t()}
+
+  @spec plan_state_ref(FunctionPlan.t(), non_neg_integer(), state_label_map()) :: String.t()
+  def plan_state_ref(%{module: module, name: name} = _plan, block_id, labels)
+      when is_integer(block_id) do
+    if compact_plan_state_emit?() do
+      Integer.to_string(block_id)
+    else
       case Map.get(labels, block_id) do
         label when is_binary(label) ->
-          label
+          plan_state_macro(module, name, label)
 
         _ ->
-          "BLOCK_#{block_id}"
+          Integer.to_string(block_id)
       end
-
-    plan_state_macro(module, name, label)
+    end
   end
 
-  @spec emit_plan_state_enum(map(), map()) :: String.t()
+  @spec emit_plan_state_enum(FunctionPlan.t(), state_label_map()) :: String.t()
   def emit_plan_state_enum(%{} = plan, labels) when is_map(labels) do
-    blocks = Map.get(plan, :blocks, [])
-    block_ids =
-      (blocks |> Enum.map(& &1.id)) ++ Map.keys(labels)
-      |> Enum.uniq()
-      |> Enum.sort()
+    if compact_plan_state_emit?() do
+      ""
+    else
+      blocks = Map.get(plan, :blocks, [])
 
-    lines =
-      Enum.map(block_ids, fn id ->
-        "#{plan_state_ref(plan, id, labels)} = #{id}"
-      end)
+      block_ids =
+        (blocks |> Enum.map(& &1.id)) ++ Map.keys(labels)
+        |> Enum.uniq()
+        |> Enum.sort()
 
-    """
-    enum {
-      #{Enum.join(lines, ",\n  ")}
-    };
-    """
-    |> String.trim()
+      lines =
+        Enum.map(block_ids, fn id ->
+          "#{plan_state_ref(plan, id, labels)} = #{id}"
+        end)
+
+      """
+      enum {
+        #{Enum.join(lines, ",\n  ")}
+      };
+      """
+      |> String.trim()
+    end
   end
 
   defp apply_switch_arm_labels(acc, %Block{terminator: {:switch_tag, _, arms, default_id}}) do

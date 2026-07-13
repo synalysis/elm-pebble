@@ -17,7 +17,7 @@ defmodule IdeWeb.WorkspaceLive.Types do
   alias IdeWeb.WorkspaceLive.PublishFlow
   alias Ide.Emulator.Types, as: EmulatorTypes
 
-  @type async_exit_reason :: async_error() | atom() | tuple() | String.t()
+  @type async_exit_reason :: async_error() | atom() | String.t()
 
   @type file_error :: File.posix() | atom() | String.t()
 
@@ -40,7 +40,6 @@ defmodule IdeWeb.WorkspaceLive.Types do
           | Screenshots.screenshot_error()
           | file_error()
           | unstructured_error()
-          | tuple()
 
   alias IdeWeb.WorkspaceLive.EditorSupport.Types, as: EditorTabTypes
   alias IdeWeb.WorkspaceLive.DebuggerBootstrapFlow

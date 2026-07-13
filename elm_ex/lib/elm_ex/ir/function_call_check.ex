@@ -1093,7 +1093,7 @@ defmodule ElmEx.IR.FunctionCallCheck do
   defp alias_field_names(fields) when is_list(fields), do: Enum.sort(fields)
   defp alias_field_names(_), do: []
 
-  @spec alias_field_types(FCC.type_alias_spec() | map()) :: FCC.field_types_map()
+  @spec alias_field_types(FCC.type_alias_spec()) :: FCC.field_types_map()
   defp alias_field_types(%{field_types: field_types}) when is_map(field_types), do: field_types
   defp alias_field_types(_), do: %{}
 

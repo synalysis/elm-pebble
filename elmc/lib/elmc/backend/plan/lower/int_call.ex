@@ -22,8 +22,8 @@ defmodule Elmc.Backend.Plan.Lower.IntCall do
     "Basics.max" => "elmc_basics_max"
   }
 
-  @spec compile(map(), Context.t(), Builder.t()) ::
-          {:ok, term(), Builder.t()} | :unsupported
+  @spec compile(Types.ir_expr(), Context.t(), Builder.t()) ::
+          Types.compile_result_required()
   def compile(%{op: :call, name: name, args: [left, right]}, ctx, b) when is_binary(name) do
     cond do
       name == "__fdiv__" ->

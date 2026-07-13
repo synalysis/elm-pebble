@@ -3,7 +3,7 @@ defmodule Elmc.Backend.Plan.Lower.UnionCtor do
 
   alias Elmc.Backend.Plan.Context
 
-  @spec qualify(String.t(), Context.t() | map() | nil) :: String.t()
+  @spec qualify(String.t(), Context.t() | nil) :: String.t()
   def qualify(name, ctx) when is_binary(name) do
     if String.contains?(name, ".") do
       name

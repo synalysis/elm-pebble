@@ -7,6 +7,6 @@ defmodule ElmEx.Frontend.ModuleParser do
 
   alias ElmEx.Frontend.GeneratedParser
 
-  @spec parse_file(String.t()) :: {:ok, ElmEx.Frontend.Module.t()} | {:error, map()}
+  @spec parse_file(String.t()) :: {:ok, ElmEx.Frontend.Module.t()} | {:error, GeneratedParser.parser_error()}
   def parse_file(path), do: GeneratedParser.parse_file(path)
 end

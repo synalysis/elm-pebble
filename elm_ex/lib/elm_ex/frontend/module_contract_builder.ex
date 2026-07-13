@@ -10,7 +10,7 @@ defmodule ElmEx.Frontend.GeneratedContractBuilder do
   alias ElmEx.Frontend.GeneratedExpressionParser
   alias ElmEx.Frontend.Module
 
-  @typep union_constructor :: %{required(:name) => String.t(), required(:arg) => String.t() | term()}
+  @typep union_constructor :: %{required(:name) => String.t(), required(:arg) => String.t() | nil}
 
   @typep union_builder :: %{
           required(:name) => String.t(),
@@ -76,7 +76,7 @@ defmodule ElmEx.Frontend.GeneratedContractBuilder do
         if String.trim(line) == "" do
           line
         else
-          String.slice(line, min_indent..-1//1) || ""
+          String.slice(line, min_indent..-1//1)
         end
       end)
       |> Enum.join("\n")

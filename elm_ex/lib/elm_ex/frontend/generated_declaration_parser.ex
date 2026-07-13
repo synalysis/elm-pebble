@@ -5,17 +5,19 @@ defmodule ElmEx.Frontend.GeneratedDeclarationParser do
 
   alias ElmEx.Types
 
+  @type decl_result :: {:ok, Types.decl_parser_output()} | :none
+
   @type scanned_line :: %{
           line_no: pos_integer(),
           raw_line: String.t(),
           trimmed: String.t(),
           indented?: boolean(),
-          decl: {:ok, tuple()} | :none,
+          decl: decl_result(),
           function_header:
             {:ok, %{name: String.t(), args: [String.t()], body: String.t()}} | :none
         }
 
-  @spec parse_line(String.t()) :: {:ok, tuple()} | {:error, Types.parse_error_reason()}
+  @spec parse_line(String.t()) :: {:ok, Types.decl_parser_output()} | {:error, Types.parse_error_reason()}
   def parse_line(source) when is_binary(source) do
     with {:ok, tokens, _line} <- :elm_ex_decl_lexer.string(String.to_charlist(source)),
          {:ok, decl} <- :elm_ex_decl_parser.parse(tokens) do

@@ -107,7 +107,7 @@ defmodule Elmx.Runtime.Cmd do
   @spec unobstructed_bounds_peek(Types.elm_msg()) :: Types.wire_cmd()
   defdelegate unobstructed_bounds_peek(callback), to: Device
 
-  @spec normalize(Types.wire_cmd() | map()) :: Types.wire_cmd()
+  @spec normalize(Types.wire_cmd()) :: Types.wire_cmd()
   defdelegate normalize(cmd), to: Wire
 
   @spec message_wire(Types.elm_msg()) :: {String.t(), Types.wire_value() | Types.wire_map()}

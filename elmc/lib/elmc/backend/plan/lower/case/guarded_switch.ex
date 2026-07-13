@@ -6,7 +6,7 @@ defmodule Elmc.Backend.Plan.Lower.Case.GuardedSwitch do
   alias Elmc.Backend.Plan.Lower.{Expr, PatternBind, PatternMatch}
   alias Elmc.Backend.Plan.Types
 
-  @spec branches?(list()) :: boolean()
+  @spec branches?(Types.case_branches()) :: boolean()
   def branches?(branches) when is_list(branches) do
     length(branches) >= 1 and
       Enum.all?(branches, fn branch ->
@@ -16,8 +16,8 @@ defmodule Elmc.Backend.Plan.Lower.Case.GuardedSwitch do
 
   def branches?(_), do: false
 
-  @spec compile(map(), list(), Context.t(), Builder.t()) ::
-          {:ok, Types.reg() | :fn_out, Builder.t()} | :unsupported
+  @spec compile(Types.ir_expr(), Types.case_branches(), Context.t(), Builder.t()) ::
+          Types.compile_result_required()
   def compile(subject, branches, ctx, b) do
     branches = normalize_branch_patterns(branches)
 

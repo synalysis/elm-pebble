@@ -35,7 +35,25 @@ defmodule Ide.Screenshots do
             {:ok, PebbleToolchain.command_result()} | {:error, screenshot_error()} | nil
         }
 
-  @type screenshot_error :: atom() | String.t() | tuple()
+  @type screenshot_io_failure :: File.posix() | atom()
+
+  @type screenshot_tagged_error ::
+          {:write_failed, screenshot_io_failure()}
+          | {:delete_failed, screenshot_io_failure()}
+          | {:delete_target_failed, screenshot_io_failure()}
+          | {:list_failed, screenshot_io_failure()}
+          | {:metadata_encode_failed, Jason.EncodeError.t()}
+          | {:screenshot_file_missing_or_invalid, PebbleToolchain.command_result()}
+          | {:screenshot_read_failed, screenshot_io_failure(), PebbleToolchain.command_result()}
+          | {:pebble_screenshot_failed, PebbleToolchain.command_result()}
+          | {:task_exit, atom() | {:shutdown, atom() | String.t()} | reference()}
+          | {:unexpected_step_result, capture_result() | PebbleToolchain.command_result()}
+
+  @type screenshot_error ::
+          atom()
+          | String.t()
+          | screenshot_tagged_error()
+          | PebbleToolchain.toolchain_error()
 
   @type file_metadata :: %{
           optional(:schema_version) => integer(),

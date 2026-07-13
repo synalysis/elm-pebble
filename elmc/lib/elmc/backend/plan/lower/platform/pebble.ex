@@ -9,8 +9,8 @@ defmodule Elmc.Backend.Plan.Lower.Platform.Pebble do
   alias Elmc.Backend.Plan.{Builder, Context, Types}
   alias Elmc.Backend.Plan.Lower.Expr
 
-  @spec compile_cmd(map(), Context.t(), Builder.t()) ::
-          {:ok, Types.reg() | :fn_out, Builder.t()} | :unsupported
+  @spec compile_cmd(Types.ir_expr(), Context.t(), Builder.t()) ::
+          Types.compile_result_required()
   def compile_cmd(%{op: :pebble_cmd, params: params} = expr, ctx, b) do
     kind = Map.get(expr, :kind)
     arity = length(params || [])
@@ -66,7 +66,7 @@ defmodule Elmc.Backend.Plan.Lower.Platform.Pebble do
 
   def compile_cmd(_, _, _), do: :unsupported
 
-  @spec compile_render_cmd(map(), Context.t(), Builder.t()) ::
+  @spec compile_render_cmd(Types.ir_expr(), Context.t(), Builder.t()) ::
           {:ok, Types.reg() | :fn_out, Builder.t()} | :unsupported
   def compile_render_cmd(%{kind: kind, params: params}, ctx, b) do
     compile_native_platform_op(:render_cmd, normalize_kind(kind), params, ctx, b)
@@ -74,7 +74,7 @@ defmodule Elmc.Backend.Plan.Lower.Platform.Pebble do
 
   def compile_render_cmd(_, _, _), do: :unsupported
 
-  @spec compile_render_text_cmd(map(), Context.t(), Builder.t()) ::
+  @spec compile_render_text_cmd(Types.ir_expr(), Context.t(), Builder.t()) ::
           {:ok, Types.reg() | :fn_out, Builder.t()} | :unsupported
   def compile_render_text_cmd(%{kind: kind, int_params: int_params, text: text}, ctx, b) do
     with {:ok, param_regs, b1} <- compile_params_scratch(int_params || [], ctx, b),
@@ -87,7 +87,7 @@ defmodule Elmc.Backend.Plan.Lower.Platform.Pebble do
 
   def compile_render_text_cmd(_, _, _), do: :unsupported
 
-  @spec compile_sub(map(), Context.t(), Builder.t()) ::
+  @spec compile_sub(Types.pebble_sub_input() | Types.ir_expr(), Context.t(), Builder.t()) ::
           {:ok, Types.reg() | :fn_out, Builder.t()} | :unsupported
   def compile_sub(%{mask: mask, params: params}, ctx, b) do
     compile_native_platform_op(:pebble_sub, normalize_kind(mask), params, ctx, b)

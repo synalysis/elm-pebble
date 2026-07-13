@@ -8,7 +8,7 @@ defmodule Elmx.Runtime.CompanionPreferences do
 
   @spec decode_response(
           Elmx.Runtime.Json.Decode.decoder(),
-          Types.maybe_like() | Types.wire_value() | String.t() | map()
+          Types.maybe_like() | Types.wire_value() | String.t() | Types.wire_map()
         ) :: Types.result_like()
   def decode_response(_schema, response) do
     case normalize_response(response) do

@@ -3,7 +3,9 @@ defmodule Elmx.Backend.QualifiedRewrite do
   Rewrites `qualified_call` IR to expression nodes (mirrors `elmc` `special_value_from_target/2`).
   """
 
-  @spec rewrite(String.t(), list()) :: {:ok, map()} | :error
+  alias Elmx.Types
+
+  @spec rewrite(String.t(), list()) :: Types.rewrite_result()
   def rewrite(target, args) when is_binary(target) and is_list(args) do
     target =
       target

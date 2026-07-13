@@ -1,7 +1,11 @@
 defmodule Ide.ZipArchive do
   @moduledoc false
 
-  @type zip_dir_entry :: tuple()
+  @type zip_entry_info :: :file.file_info()
+  @type zip_entry_comment :: charlist() | binary() | String.t()
+  @type zip_dir_entry ::
+          {:zip_file, charlist(), zip_entry_info(), zip_entry_comment(), non_neg_integer(),
+           non_neg_integer()}
   @type zip_memory_entry :: {charlist(), binary()}
   @type zip_read_error :: {:entry_not_found, String.t()}
   @type zip_error :: zip_read_error() | :bad_file | :badarg | atom()

@@ -3,9 +3,9 @@ defmodule ElmEx.CoreIR.Types.Module do
 
   alias ElmEx.CoreIR.Types, as: CoreIRTypes
   alias ElmEx.CoreIR.Types.Declaration
-  alias ElmEx.IR.Types.UnionEntry
+  alias ElmEx.CoreIR.Types.UnionEntry
 
-  @type unions :: %{String.t() => UnionEntry.t() | map()}
+  @type unions :: %{String.t() => UnionEntry.t() | UnionEntry.wire_map()}
 
   @typedoc """
   Normalized module map from `ElmEx.CoreIR.normalize_module/1` (string keys at runtime).
@@ -21,7 +21,7 @@ defmodule ElmEx.CoreIR.Types.Module do
           required(:name) => String.t(),
           required(:imports) => [String.t()],
           required(:unions) => unions(),
-          required(:declarations) => [Declaration.t() | map()],
+          required(:declarations) => [Declaration.t() | wire_declaration()],
           optional(:ports) => [String.t()],
           optional(:port_module) => boolean()
         }

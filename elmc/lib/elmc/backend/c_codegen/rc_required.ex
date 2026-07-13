@@ -171,7 +171,7 @@ defmodule Elmc.Backend.CCodegen.RcRequired do
   @spec worker_callback?(String.t()) :: boolean()
   def worker_callback?(name), do: worker_entry_point?(name)
 
-  @spec lambda_body_rc_required?(term(), String.t(), Types.function_decl_map()) :: boolean()
+  @spec lambda_body_rc_required?(Types.ir_expr(), String.t(), Types.function_decl_map()) :: boolean()
   def lambda_body_rc_required?(expr, module_name, decl_map) do
     required = Process.get(:elmc_rc_required, MapSet.new())
 

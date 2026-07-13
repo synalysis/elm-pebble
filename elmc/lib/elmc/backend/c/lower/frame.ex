@@ -1,11 +1,12 @@
 defmodule Elmc.Backend.C.Lower.Frame do
   @moduledoc false
 
+  alias Elmc.Backend.Plan.Types
   alias Elmc.Backend.Plan.Types.FunctionPlan
 
   @heap_owned_slot_threshold 23
 
-  @spec owned_declaration(FunctionPlan.t(), map()) :: String.t()
+  @spec owned_declaration(FunctionPlan.t(), Types.slot_map()) :: String.t()
   def owned_declaration(%FunctionPlan{} = plan, slots) do
     count = owned_slot_count(slots)
 

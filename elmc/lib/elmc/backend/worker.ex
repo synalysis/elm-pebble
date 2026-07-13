@@ -173,7 +173,8 @@ defmodule Elmc.Backend.Worker do
     |> String.trim("_")
   end
 
-  @spec worker_header(map(), keyword()) :: String.t()
+  @spec worker_header(Subscriptions.worker_subscription_layout(), keyword() | Types.compile_options()) ::
+          String.t()
   defp worker_header(analysis, opts) do
     last_dispatch_cmd_cap = last_dispatch_cmd_cap(opts)
     slot_defines = worker_slot_defines(analysis)
@@ -276,7 +277,12 @@ defmodule Elmc.Backend.Worker do
     end
   end
 
-  @spec worker_source(ElmEx.IR.t(), String.t(), map(), keyword()) :: String.t()
+  @spec worker_source(
+          ElmEx.IR.t(),
+          String.t(),
+          Subscriptions.worker_subscription_layout(),
+          keyword() | Types.compile_options()
+        ) :: String.t()
   defp worker_source(ir, entry_module, analysis, opts) do
     module =
       Enum.find(ir.modules, fn mod ->

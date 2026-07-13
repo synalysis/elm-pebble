@@ -3,7 +3,9 @@ defmodule Elmx.Backend.QualifiedPartials do
   Partial-application rewrites for `qualified_call` (mirrors `elmc` `c_codegen` zero/low-arity clauses).
   """
 
-  @spec rewrite(String.t(), list()) :: {:ok, map()} | :error
+  alias Elmx.Types
+
+  @spec rewrite(String.t(), list()) :: Types.rewrite_result()
   def rewrite(target, args) when is_binary(target) and is_list(args) do
     case {target, args} do
       # --- List (0-arg references) ---

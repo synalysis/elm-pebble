@@ -37,7 +37,7 @@ defmodule Elmc.Backend.CCodegen.FunctionCallAbi do
     end
   end
 
-  @spec param_c_arg(non_neg_integer(), [String.t() | map()]) :: String.t()
+  @spec param_c_arg(non_neg_integer(), [Types.function_param()]) :: String.t()
   def param_c_arg(index, params) when is_integer(index) and is_list(params) do
     names =
       Enum.map(params, fn

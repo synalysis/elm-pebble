@@ -530,7 +530,7 @@ defmodule Ide.Debugger.SurfaceCompileArtifacts do
   end
 
   @spec safe_compiler_compile(String.t(), keyword()) ::
-          {:ok, Ide.Compiler.compile_result()} | {:error, term()}
+          {:ok, Compiler.compile_result()} | {:error, Compiler.compiler_error()}
   defp safe_compiler_compile(cache_key, opts) when is_binary(cache_key) and is_list(opts) do
     Compiler.compile(cache_key, opts)
   rescue

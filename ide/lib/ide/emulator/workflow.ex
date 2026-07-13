@@ -24,7 +24,8 @@ defmodule Ide.Emulator.Workflow do
           | :compile_project_root_not_found
           | {:embedded_emulator_unavailable, [String.t()]}
 
-  @type install_error_input :: EmulatorTypes.install_error() | atom() | String.t() | tuple()
+  @type install_error_input ::
+          EmulatorTypes.install_error() | ToolchainTypes.toolchain_error()
 
   @spec launch_project(Projects.Project.t(), String.t() | nil) ::
           {:ok, launch_result()} | {:error, launch_error()}

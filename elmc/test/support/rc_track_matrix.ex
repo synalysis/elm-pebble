@@ -193,10 +193,10 @@ defmodule Elmc.Test.RcTrackMatrix do
   @spec core_modules() :: [String.t()]
   def core_modules, do: Map.keys(@registry)
 
-  @spec registry() :: map()
+  @spec registry() :: Elmc.TestSupport.Types.rc_registry()
   def registry, do: @registry
 
-  @spec registry_entry(String.t()) :: map() | nil
+  @spec registry_entry(String.t()) :: Elmc.TestSupport.Types.rc_registry_entry() | nil
   def registry_entry(module_name), do: Map.get(@registry, module_name)
 
   @spec stress_probes() :: [{String.t(), String.t(), String.t()}]
@@ -244,7 +244,7 @@ defmodule Elmc.Test.RcTrackMatrix do
     Map.get(@probe_exceptions, qualified) || default_probe_name(qualified)
   end
 
-  @spec matrix_probe_exceptions(String.t()) :: map()
+  @spec matrix_probe_exceptions(String.t()) :: Elmc.TestSupport.Types.rc_probe_exceptions()
   def matrix_probe_exceptions(module_name) do
     Map.get(@matrix_probe_exceptions, module_name, %{})
   end

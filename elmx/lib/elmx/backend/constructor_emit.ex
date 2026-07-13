@@ -7,8 +7,9 @@ defmodule Elmx.Backend.ConstructorEmit do
   """
 
   alias Elmx.Runtime.Pebble.SpecialValues
+  alias Elmx.Types
 
-  @spec rewrite(Elmx.Backend.ConstructorLookup.entry()) :: {:ok, map()} | :error
+  @spec rewrite(Elmx.Backend.ConstructorLookup.entry()) :: Types.rewrite_result()
   def rewrite(%{payload_kind: :none} = entry), do: rewrite_none(entry)
 
   def rewrite(%{payload_kind: :single, constructor: name}) do
@@ -22,7 +23,7 @@ defmodule Elmx.Backend.ConstructorEmit do
 
   def rewrite(_), do: :error
 
-  @spec rewrite_none(Elmx.Backend.ConstructorLookup.entry()) :: {:ok, map()} | :error
+  @spec rewrite_none(Elmx.Backend.ConstructorLookup.entry()) :: Types.rewrite_result()
   defp rewrite_none(entry) do
     case SpecialValues.rewrite(entry.qualified, []) do
       {:ok, %{op: :runtime_call} = node} ->
@@ -36,7 +37,7 @@ defmodule Elmx.Backend.ConstructorEmit do
     end
   end
 
-  @spec rewrite_string_special(Elmx.Backend.ConstructorLookup.entry()) :: {:ok, map()}
+  @spec rewrite_string_special(Elmx.Backend.ConstructorLookup.entry()) :: {:ok, Types.ir_expr()}
   defp rewrite_string_special(entry) do
     if label_union?(entry) do
       {:ok, %{op: :string_literal, value: entry.constructor}}
@@ -45,7 +46,7 @@ defmodule Elmx.Backend.ConstructorEmit do
     end
   end
 
-  @spec rewrite_plain_none(Elmx.Backend.ConstructorLookup.entry()) :: {:ok, map()}
+  @spec rewrite_plain_none(Elmx.Backend.ConstructorLookup.entry()) :: {:ok, Types.ir_expr()}
   defp rewrite_plain_none(entry) do
     cond do
       label_union?(entry) ->

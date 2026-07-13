@@ -35,7 +35,7 @@ defmodule ElmEx.IR.PipeChain do
 
   def desugar_expr(other), do: other
 
-  @spec desugar_project(map()) :: map()
+  @spec desugar_project(ElmEx.IR.t()) :: ElmEx.IR.t()
   def desugar_project(%{modules: modules} = ir) when is_list(modules) do
     %{ir | modules: Enum.map(modules, &desugar_module/1)}
   end

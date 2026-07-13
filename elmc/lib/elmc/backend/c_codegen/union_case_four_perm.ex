@@ -7,9 +7,11 @@ defmodule Elmc.Backend.CCodegen.UnionCaseFourPerm do
   (`transpose (reverseRows cells)`). Callee targets come from IR, not app names.
   """
 
+  alias Elmc.Backend.CCodegen.Types
+
   alias Elmc.Backend.CCodegen.{FusionSupport, ListMapStaticIndexAt, RowMajorLayout, Util}
 
-  @spec try_emit(String.t(), String.t(), map() | nil, map()) ::
+  @spec try_emit(String.t(), String.t(), Types.ir_expr() | nil, Types.function_decl_map()) ::
           {:ok, String.t(), [FusionSupport.callee_key()]}
           | {:ok, String.t(), [FusionSupport.callee_key()], :rc_native}
           | :error
@@ -56,8 +58,8 @@ defmodule Elmc.Backend.CCodegen.UnionCaseFourPerm do
   end
 
   @doc false
-  @spec extract_fusion_data(String.t(), String.t(), map() | nil, map()) ::
-          {:ok, :union_case_four_perm, map()} | :error
+  @spec extract_fusion_data(String.t(), String.t(), Types.ir_expr() | nil, Types.function_decl_map()) ::
+          {:ok, :union_case_four_perm, Types.fusion_metadata()} | :error
   def extract_fusion_data(module_name, _name, expr, decl_map) do
     case extract_metadata(module_name, expr, decl_map) do
       {:ok, data} -> {:ok, :union_case_four_perm, data}
@@ -82,7 +84,7 @@ defmodule Elmc.Backend.CCodegen.UnionCaseFourPerm do
     end
   end
 
-  @spec ordered_branch_tags([map()]) :: {:ok, [integer()]} | :error
+  @spec ordered_branch_tags(Types.case_branches()) :: {:ok, [integer()]} | :error
   def ordered_branch_tags(branches) when is_list(branches) and length(branches) == 4 do
     tags =
       Enum.map(branches, fn %{pattern: pattern} ->
