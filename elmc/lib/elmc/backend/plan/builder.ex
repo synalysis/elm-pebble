@@ -314,10 +314,95 @@ defmodule Elmc.Backend.Plan.Builder do
 
   @spec dup_named_local_if_bound(t(), Types.reg()) :: {Types.reg(), t()}
   def dup_named_local_if_bound(b, reg) when is_integer(reg) do
-    if named_local_reg?(b, reg), do: retain_reg_copy(b, reg), else: {reg, b}
+    if named_local_reg?(b, reg) do
+      {dup, b1} = fresh_reg(b)
+
+      case retarget_view_peel_retain_dest(b1, reg, dup) do
+        {:ok, b2} -> {dup, b2}
+        :no -> copy_reg_owned_to(b1, reg, dup)
+      end
+    else
+      {reg, b}
+    end
   end
 
   def dup_named_local_if_bound(b, reg), do: {reg, b}
+
+  @doc false
+  @spec retarget_view_peel_retain_dest(t(), Types.reg(), Types.reg()) :: {:ok, t()} | :no
+  def retarget_view_peel_retain_dest(b, src_reg, dest_reg)
+      when is_integer(src_reg) and is_integer(dest_reg) do
+    case find_view_peel_retain_instr(b, src_reg) do
+      {:ok, idx} ->
+        b1 = replace_current_block_instr_dest(b, idx, dest_reg)
+        {:ok, retarget_locals(b1, src_reg, dest_reg)}
+
+      :no ->
+        :no
+    end
+  end
+
+  defp find_view_peel_retain_instr(b, src_reg) do
+    b.current_block.instrs
+    |> Enum.with_index()
+    |> Enum.reverse()
+    |> Enum.find_value(fn
+      {%{
+         op: :call_runtime,
+         dest: ^src_reg,
+         args: %{builtin: :retain, view_peel: peel}
+       }, idx}
+      when not is_nil(peel) ->
+        {:ok, idx}
+
+      _ ->
+        nil
+    end)
+    |> case do
+      {:ok, _} = found -> found
+      _ -> :no
+    end
+  end
+
+  defp replace_current_block_instr_dest(b, idx, dest_reg) do
+    instrs =
+      Enum.map(Enum.with_index(b.current_block.instrs), fn {instr, i} ->
+        if i == idx do
+          effects =
+            case Map.get(instr, :effects) do
+              %{produces: _} = effects -> %{effects | produces: {:owned, dest_reg}}
+              effects when is_map(effects) -> Map.put(effects, :produces, {:owned, dest_reg})
+              _ -> Map.get(instr, :effects)
+            end
+
+          %{instr | dest: dest_reg, effects: effects}
+        else
+          instr
+        end
+      end)
+
+    %{b | current_block: %{b.current_block | instrs: instrs}}
+  end
+
+  defp retarget_locals(b, src_reg, dest_reg) do
+    locals =
+      Map.new(b.locals, fn {name, reg} ->
+        {name, if(reg == src_reg, do: dest_reg, else: reg)}
+      end)
+
+    %{b | locals: locals}
+  end
+
+  defp copy_reg_owned_to(b, reg, dup) do
+    {_, b2} =
+      emit(b, :call_runtime, %{
+        dest: dup,
+        args: %{builtin: :retain, args: [reg]},
+        effects: Types.fallible_effects(dup, [reg], [])
+      })
+
+    {dup, b2}
+  end
 
   defp named_local_reg?(b, reg) when is_integer(reg), do: reg in Map.values(b.locals)
 

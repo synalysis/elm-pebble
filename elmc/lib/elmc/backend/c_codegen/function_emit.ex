@@ -30,6 +30,8 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
   alias Elmc.Backend.CCodegen.Types
   alias Elmc.Backend.CCodegen.Util
   alias Elmc.Backend.C.Lower.Function, as: CLowerFunction
+  alias Elmc.Backend.CCodegen.DirectRender.Emit.RecordGetHoistPass
+  alias Elmc.Backend.SizeProfile
   alias Elmc.Backend.Plan
 
   @c_reserved_binding_names ~w(
@@ -883,6 +885,7 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
           plan_core =
             plan
             |> CLowerFunction.emit()
+            |> maybe_hoist_record_gets()
             |> insert_plan_result_probe(result_probe)
 
           unused_casts =
@@ -1060,6 +1063,16 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
   defp plan_ir_raise?(opts) when is_list(opts), do: Keyword.get(opts, :plan_ir_raise, false)
   defp plan_ir_raise?(opts) when is_map(opts), do: Map.get(opts, :plan_ir_raise, false)
   defp plan_ir_raise?(_), do: false
+
+  defp maybe_hoist_record_gets(body) when is_binary(body) do
+    opts = Process.get(:elmc_codegen_opts, %{})
+
+    if SizeProfile.size?(opts) do
+      RecordGetHoistPass.run(body)
+    else
+      body
+    end
+  end
 
   defp insert_plan_result_probe(body, ""), do: body
 

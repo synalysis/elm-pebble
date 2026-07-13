@@ -1416,7 +1416,7 @@ defmodule Elmc.Backend.C.Lower.Instr do
       name in ["logInfoCode", "logWarnCode", "logErrorCode"] and length(args) == 1
   end
 
-  defp emit_missing_decl_kernel_log_cmd(dest_reg, name, args, slots, rc?, dest, opts, instr) do
+  defp emit_missing_decl_kernel_log_cmd(_dest_reg, name, args, slots, rc?, dest, opts, instr) do
     borrows =
       instr
       |> Map.get(:effects, %{})

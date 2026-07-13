@@ -119,12 +119,12 @@ defmodule Elmc.Runtime.RcMacros do
   def maybe_pattern_helpers do
     """
     static inline bool elmc_value_is_true(ElmcValue *v) {
-      return v && ((v->tag == ELMC_TAG_BOOL && elmc_as_bool(v)) ||
+      return v && ((v->tag == ELMC_TAG_BOOL && elmc_as_int(v) != 0) ||
                    (v->tag == ELMC_TAG_INT && elmc_as_int(v) == 1));
     }
 
     static inline bool elmc_value_is_false(ElmcValue *v) {
-      return v && ((v->tag == ELMC_TAG_BOOL && !elmc_as_bool(v)) ||
+      return v && ((v->tag == ELMC_TAG_BOOL && elmc_as_int(v) == 0) ||
                    (v->tag == ELMC_TAG_INT && elmc_as_int(v) == 0));
     }
 

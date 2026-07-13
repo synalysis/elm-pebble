@@ -694,6 +694,22 @@ defmodule Elmc.Runtime.Generator do
     |> maybe_seed_json_runtime_refs(contents)
     |> maybe_seed_compact_list_release_stub_refs(contents)
     |> maybe_seed_float_runtime_refs(contents)
+    |> maybe_seed_header_pattern_helper_refs(contents)
+  end
+
+  defp maybe_seed_header_pattern_helper_refs(expanded, contents) do
+    joined = Enum.join(contents, "\n")
+
+    helpers = [
+      "elmc_as_bool(",
+      "ELMC_RECORD_GET_INDEX_BOOL"
+    ]
+
+    if Enum.any?(helpers, &String.contains?(joined, &1)) do
+      (expanded ++ ["elmc_as_bool", "elmc_as_int"]) |> Enum.uniq()
+    else
+      expanded
+    end
   end
 
   defp maybe_seed_float_runtime_refs(expanded, contents) do
@@ -937,7 +953,7 @@ defmodule Elmc.Runtime.Generator do
 
     macro_derived =
       [
-        {"ELMC_RECORD_GET_INDEX_BOOL", "elmc_as_bool"},
+        {"ELMC_RECORD_GET_INDEX_BOOL", "elmc_as_int"},
         {"ELMC_RECORD_GET_INDEX_FLOAT", "elmc_as_float"},
         {"ELMC_RECORD_GET_INDEX_INT", "elmc_as_int_number"}
       ]
@@ -1598,7 +1614,7 @@ defmodule Elmc.Runtime.Generator do
     #define ELMC_RECORD_GET_INDEX_BOOL(record, index) \\
       (((record) && (record)->tag == ELMC_TAG_RECORD && (record)->payload && \\
         (index) >= 0 && (index) < ((ElmcRecord *)(record)->payload)->field_count) ? \\
-       elmc_as_bool(((ElmcRecord *)(record)->payload)->field_values[(index)]) : 0)
+       (elmc_as_int(((ElmcRecord *)(record)->payload)->field_values[(index)]) != 0) : 0)
 
     typedef void (*ElmcPortCallback)(ElmcValue *value, void *context);
 
