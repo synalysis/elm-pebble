@@ -22,6 +22,29 @@ defmodule Elmc.Backend.CCodegen.PlanNativeProjection do
     eligible?(decl, module_name, decl_map) and match?({:ok, _}, direct_native_body(decl, module_name, decl_map))
   end
 
+  @spec native_callee_only?(Types.function_decl(), String.t(), Types.function_decl_map()) :: boolean()
+  def native_callee_only?(decl, module_name, decl_map) do
+    supersedes_boxed_emit?(decl, module_name, decl_map) or
+      (projection_kind(decl) in [:native_int, :native_bool] and
+         match?({:ok, _}, direct_native_body(decl, module_name, decl_map)))
+  end
+
+  @spec native_call_return_kind(Types.function_decl(), String.t(), Types.function_decl_map()) ::
+          :native_int | :native_bool | :boxed
+  def native_call_return_kind(decl, module_name, decl_map) do
+    case projection_kind(decl) do
+      kind when kind in [:native_int, :native_bool] ->
+        kind
+
+      _ ->
+        if match?({:ok, _}, direct_native_body(decl, module_name, decl_map)) do
+          :native_int
+        else
+          :boxed
+        end
+    end
+  end
+
   @spec projection_kind(Types.function_decl()) :: projection_kind | :boxed
   def projection_kind(%{type: type}) when is_binary(type) do
     case Host.function_return_type(type) do

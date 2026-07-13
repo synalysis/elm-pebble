@@ -478,6 +478,7 @@ defmodule Elmc.Runtime.Generator do
     macros =
       contents
       |> Enum.reduce(%{}, fn content, acc -> Map.merge(acc, preprocessor_bool_macros(content)) end)
+      |> Map.merge(collect_prune_header_macros(dir))
 
     refs =
       Enum.reduce(contents, %{}, fn content, acc ->
@@ -489,6 +490,19 @@ defmodule Elmc.Runtime.Generator do
     refs
     |> expand_runtime_prune_refs(contents)
     |> Map.new(fn name -> {name, true} end)
+  end
+
+  defp collect_prune_header_macros(dir) do
+    dir
+    |> Path.join("**/*.h")
+    |> Path.wildcard(match_dot: true)
+    |> Enum.reject(&String.contains?(&1, "/runtime/"))
+    |> Enum.reduce(%{}, fn path, acc ->
+      case File.read(path) do
+        {:ok, content} -> Map.merge(acc, preprocessor_bool_macros(content))
+        _ -> acc
+      end
+    end)
   end
 
   defp collect_prune_contents(dir) do
@@ -744,14 +758,16 @@ defmodule Elmc.Runtime.Generator do
   defp maybe_seed_speaker_serialize_refs(expanded, contents) do
     joined = Enum.join(contents, "\n")
 
-    if String.contains?(joined, "elmc_serialize_speaker_note") do
+    if String.contains?(joined, "elmc_serialize_speaker_note") or
+         String.contains?(joined, "elmc_speaker_sample_index_from_maybe") do
       (expanded ++
          [
            "elmc_record_get",
            "elmc_record_get_at",
            "elmc_record_get_int",
            "elmc_record_get_at_int",
-           "elmc_as_int"
+           "elmc_as_int",
+           "elmc_maybe_or_tuple_just_payload_borrow"
          ])
       |> Enum.uniq()
     else

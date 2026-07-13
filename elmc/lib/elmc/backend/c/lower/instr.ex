@@ -2,7 +2,7 @@ defmodule Elmc.Backend.C.Lower.Instr do
   @moduledoc false
 
   alias Elmc.Backend.C.Lower.{Function, Lambda, NativeReturn, NativeIntFold, TagRefs}
-  alias Elmc.Backend.CCodegen.{FunctionCallAbi, FunctionEmit, Fusion, ImmortalStringLiteral, RcRequired, RcRuntimeEmit, RowMajorLayout}
+  alias Elmc.Backend.CCodegen.{FunctionCallAbi, FunctionEmit, Fusion, ImmortalStringLiteral, PlanNativeProjection, RcRequired, RcRuntimeEmit, RowMajorLayout}
   alias Elmc.Backend.CCodegen.Native.FunctionCall, as: NativeFunctionCall
   alias Elmc.Backend.CCodegen.Util
   alias Elmc.Backend.Plan
@@ -1508,7 +1508,16 @@ defmodule Elmc.Backend.C.Lower.Instr do
       resolve_plan_call_target(mod, name, decl, decl_map, args)
 
     dest_ref = if dest == "*out", do: "out", else: dest
-    native_ret = NativeReturn.cached_kind({mod, name})
+
+    supersedes_native? =
+      is_map(decl) and PlanNativeProjection.native_callee_only?(decl, mod, decl_map)
+
+    native_ret =
+      cond do
+        supersedes_native? -> PlanNativeProjection.native_call_return_kind(decl, mod, decl_map)
+        true -> NativeReturn.cached_kind({mod, name})
+      end
+
     direct_plan_call? =
       is_map(decl) and FunctionCallAbi.direct_plan_call_abi?(decl, mod, decl_map)
 
@@ -1516,10 +1525,15 @@ defmodule Elmc.Backend.C.Lower.Instr do
       if direct_plan_call?, do: nil, else: Fusion.rc_native_fusion_arg_kinds({mod, name})
 
     c_name =
-      if plan_call_uses_native_fusion?(fusion_arg_kinds, rc?, native_ret, mod, name) do
-        "#{c_name}_native"
-      else
-        c_name
+      cond do
+        plan_call_uses_native_fusion?(fusion_arg_kinds, rc?, native_ret, mod, name) ->
+          "#{c_name}_native"
+
+        supersedes_native? ->
+          "#{c_name}_native"
+
+        true ->
+          c_name
       end
 
     {prefix, call_arg_s} =
@@ -1789,8 +1803,8 @@ defmodule Elmc.Backend.C.Lower.Instr do
       not FunctionCallAbi.direct_plan_call_abi?(decl, mod, decl_map)
   end
 
-  defp fusion_native_rc_callee?(c_name, _fusion_arg_kinds),
-    do: String.ends_with?(c_name, "_native")
+  defp fusion_native_rc_callee?(c_name, fusion_arg_kinds),
+    do: not is_nil(fusion_arg_kinds) and String.ends_with?(c_name, "_native")
 
   defp plan_call_uses_native_fusion?(fusion_arg_kinds, rc?, native_ret, mod, name) do
     not is_nil(fusion_arg_kinds) and

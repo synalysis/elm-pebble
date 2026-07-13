@@ -236,7 +236,7 @@ defmodule Elmc.Backend.C.Lower.Function do
       end)
     end)
     |> Enum.sort()
-    |> Enum.map(fn reg -> "elmc_int_t plan_native_int_#{reg};" end)
+    |> Enum.map(fn reg -> "elmc_int_t plan_native_int_#{reg} = 0;" end)
   end
 
   defp emit_goto_body(plan, slots, instr_opts, mutable_decls, explicit_targets) do

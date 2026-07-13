@@ -13,6 +13,7 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
   alias Elmc.Backend.CCodegen.LayoutCoerceEmit
   alias Elmc.Backend.CCodegen.Native.FunctionCall, as: NativeFunctionCall
   alias Elmc.Backend.CCodegen.Native.RecordFields
+  alias Elmc.Backend.Plan
   alias Elmc.Backend.CCodegen.OwnershipCompile
   alias Elmc.Backend.CCodegen.RcRequired
   alias Elmc.Backend.CCodegen.RcRuntimeEmit
@@ -599,21 +600,22 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
     {out, next} = CaseCompile.fresh_var(counter, env)
     c_name = Util.module_fn_name(module_name, name)
     signature = {:top_level_ref, module_name, name, arity}
-    {closure_fn_name, new?} = closure_function_name(signature, "elmc_top_level_ref")
+    {closure_fn_name, _new?} = closure_function_name(signature, "elmc_top_level_ref")
 
-    if new? or not closure_reference_emitted?(closure_fn_name) do
-      closure_fn = """
-      static ElmcValue *#{closure_fn_name}(ElmcValue **args, int argc, ElmcValue **captures, int capture_count) {
-        (void)captures;
-        (void)capture_count;
-        #{rc_closure_return_body(module_name, name, c_name, "args, argc", env)}
-      }
-      """
+    closure_fn = """
+    static ElmcValue *#{closure_fn_name}(ElmcValue **args, int argc, ElmcValue **captures, int capture_count) {
+      (void)captures;
+      (void)capture_count;
+      #{rc_closure_return_body(module_name, name, c_name, "args, argc", env)}
+    }
+    """
 
-      existing_lambdas = Process.get(:elmc_lambdas, [])
-      Process.put(:elmc_lambdas, [closure_fn | existing_lambdas])
-      mark_closure_emitted!(closure_fn_name)
-    end
+    existing_lambdas =
+      Process.get(:elmc_lambdas, [])
+      |> Enum.reject(fn defn -> String.contains?(defn, " #{closure_fn_name}(") end)
+
+    Process.put(:elmc_lambdas, [closure_fn | existing_lambdas])
+    mark_closure_emitted!(closure_fn_name)
 
     code = """
     ElmcValue *cap_#{next}[1] = { NULL };
@@ -1403,19 +1405,42 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
   end
 
   defp direct_rc_closure_callee?(env, module_name, name, decl, decl_map) do
-    EnvBindings.direct_call_target?(env, module_name, name) or
-      (FunctionCallAbi.direct_plan_call_abi?(decl, module_name, decl_map) and
-         not FunctionCallAbi.argv_abi?(decl, module_name, decl_map))
+    plan_direct? =
+      FunctionCallAbi.direct_plan_call_abi?(decl, module_name, decl_map) or
+        plan_primary_direct_rc_closure?(decl, module_name, name, decl_map)
+
+    (EnvBindings.direct_call_target?(env, module_name, name) or plan_direct?) and
+      not FunctionCallAbi.argv_abi?(decl, module_name, decl_map)
+  end
+
+  defp plan_primary_direct_rc_closure?(decl, module_name, name, decl_map) do
+    is_map(decl) and
+      not FunctionCallAbi.argv_abi?(decl, module_name, decl_map) and
+      plan_primary_lowerable?(decl, module_name, name, decl_map)
+  end
+
+  defp plan_primary_lowerable?(decl, module_name, name, decl_map) do
+    case Plan.lower_function(
+           decl,
+           module_name,
+           decl_map,
+           rc_required: RcRequired.rc_required?(module_name, name)
+         ) do
+      {:ok, _} -> true
+      _ -> false
+    end
   end
 
   defp direct_rc_closure_returns_rc?(module_name, name, decl, decl_map) do
     closure_callee_rc_abi?(module_name, name, decl, decl_map) or
-      FunctionCallAbi.direct_plan_call_abi?(decl, module_name, decl_map)
+      FunctionCallAbi.direct_plan_call_abi?(decl, module_name, decl_map) or
+      plan_primary_direct_rc_closure?(decl, module_name, name, decl_map)
   end
 
   defp legacy_value_returning_closure_callee?(module_name, name, decl, decl_map) do
     is_map(decl) and
       not closure_callee_rc_abi?(module_name, name, decl, decl_map) and
+      not plan_primary_direct_rc_closure?(decl, module_name, name, decl_map) and
       not RcRequired.rc_required?(module_name, name) and
       not RcRequired.body_allocates?(decl.expr) and
       not boxed_callee_rc_prototype?(decl, module_name, name, decl_map)
@@ -1427,11 +1452,9 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
       RcRequired.body_allocates?(decl.expr)
   end
 
-  defp boxed_callee_rc_prototype?(decl, module_name, name, decl_map) do
-    emit_wrapper? = MapSet.member?(Process.get(:elmc_wrapper_targets, MapSet.new()), {module_name, name})
-
+  defp boxed_callee_rc_prototype?(decl, module_name, _name, decl_map) do
     decl
-    |> FunctionEmit.boxed_function_prototype(module_name, "_", emit_wrapper?, decl_map)
+    |> FunctionEmit.boxed_function_prototype(module_name, "_", false, decl_map)
     |> String.starts_with?("RC ")
   end
 
