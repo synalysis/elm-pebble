@@ -68,6 +68,29 @@ defmodule Elmc.PlanCLowerTest do
     refute c =~ "elmc_record_new_values_ints"
   end
 
+  test "record_new nulls each consumed owned slot once" do
+    decl = %{
+      name: "pair",
+      args: ["left", "right"],
+      expr: %{
+        op: :record_literal,
+        fields: [
+          %{name: "x", expr: %{op: :var, name: "left"}},
+          %{name: "y", expr: %{op: :var, name: "right"}}
+        ]
+      }
+    }
+
+    assert {:ok, plan} =
+             Elmc.Backend.Plan.Lower.Function.lower(decl, "Main", %{}, rc_required: true)
+
+    c = CLowerFunction.emit(plan)
+
+    refute c =~
+             ~r/elmc_record_new_values_take\(&owned\[\d+\], 2, rec_values_\d+\);\n\s*CHECK_RC\(Rc\);\n\s*owned\[\d+\] = NULL;\n\s*owned\[\d+\] = NULL;\n\s*owned\[\d+\] = NULL;/
+    refute c =~ ~r/owned\[\d+\] = owned\[\d+\];\n\s*owned\[\d+\] = NULL;\n\s*\n\s*owned\[\d+\] = NULL;/
+  end
+
   test "record update uses value-returning C calls" do
     decl = %{
       name: "bump",
@@ -328,6 +351,21 @@ defmodule Elmc.PlanCLowerTest do
     refute c =~ "elmc_tuple2_ints(&"
     assert c =~ "plan_ephemeral_box_"
     assert c =~ "elmc_release(plan_ephemeral_box_"
+  end
+
+  test "record_get args make kernel log cmds pebble_cmd eligible" do
+    arg = %{
+      op: :record_get,
+      base: %{op: :var, name: "model"},
+      field: "code",
+      field_index: 0
+    }
+
+    assert %{op: :pebble_cmd} =
+             Elmc.Backend.CCodegen.SpecialValues.special_value_from_target(
+               "Elm.Kernel.PebbleWatch.logInfoCode",
+               [arg]
+             )
   end
 
   test "result Ok lowering reads fn_out when wrapping prior tail value" do

@@ -52,6 +52,9 @@ defmodule Elmc.DirectRenderGenericViewPruneTest do
 
     refute view_body =~ "elmc_fn_Main_faceDisplay("
     assert view_body =~ "elmc_fn_Main_showCorners_native("
+    refute view_body =~ "plan_primary_boxed_native_bool"
+    refute view_body =~ ~r/if \(elmc_maybe_is_nothing\(owned\[\d+\]\)\) \{\s*\}/
+    assert view_body =~ "elmc_maybe_is_just(owned["
     assert view_body =~ "elmc_fn_Yes_Render_drawDial_commands_append"
     assert view_body =~ "owned[0]"
     assert generated =~ "elmc_polar_point_x("

@@ -428,6 +428,9 @@ defmodule Elmc.Backend.CCodegen.CaseCompile do
         branch_body = branch_body <> "\n" <> ValueSlots.normalize_branch_result_slot(out)
 
         cond do
+          Patterns.skip_empty_nothing_branch?(branch, branch_body) ->
+            {:cont, {acc, c2}}
+
           cond_code == "0" ->
             {:cont, {acc, c2}}
 

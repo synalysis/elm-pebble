@@ -108,4 +108,9 @@ defmodule Elmc.Backend.SizeProfile do
   def plan_state_switch_thresholds(_opts) do
     %{min_blocks: 8, max_owned_slots: 12}
   end
+
+  @spec plan_union_tag_switch_min_arms(compile_options()) :: pos_integer()
+  def plan_union_tag_switch_min_arms(opts) when is_map(opts) do
+    if size?(opts), do: 2, else: 3
+  end
 end

@@ -6,6 +6,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.GenericTargets do
   alias Elmc.Backend.CCodegen.DirectRender.RecordViewPeel
   alias Elmc.Backend.CCodegen.Expr
   alias Elmc.Backend.CCodegen.FusionSupport
+  alias Elmc.Backend.CCodegen.FunctionCallAbi
   alias Elmc.Backend.CCodegen.FunctionEmit
   alias Elmc.Backend.CCodegen.GenericReachability
   alias Elmc.Backend.CCodegen.Host
@@ -123,6 +124,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.GenericTargets do
     )
     |> MapSet.difference(fusion_superseded_targets(reachable_core, decl_map))
     |> MapSet.difference(unused_streaming_ui_glue(opts, decl_map, direct_targets))
+    |> MapSet.union(direct_render_outlined_native_int_callees(opts, direct_targets, decl_map))
   end
 
   # Whole-function fusion (moveBoard, initialBoard, …) inlines callees listed in
@@ -348,6 +350,120 @@ defmodule Elmc.Backend.CCodegen.DirectRender.GenericTargets do
   end
 
   defp native_int_call_target(_, _), do: nil
+
+  # Direct `_commands_append` inlines native-int helpers when `NativeInt.inline_function_expr?/3`
+  # succeeds at each call site. When a call site falls back to `NativeFunctionCall.compile_scalar/6`,
+  # the callee must still be emitted even though it is not reachable from generic entry roots.
+  defp direct_render_outlined_native_int_callees(opts, direct_targets, decl_map) do
+    if supersede_direct_render_op_boxed?(opts) and MapSet.size(direct_targets) > 0 do
+      direct_targets
+      |> Enum.reduce(MapSet.new(), fn {module_name, _decl_name} = direct_key, acc ->
+        case Map.fetch(decl_map, direct_key) do
+          {:ok, decl} ->
+            walk_direct_render_outlined_calls(decl.expr, module_name, decl_map, acc)
+
+          :error ->
+            acc
+        end
+      end)
+      |> expand_outlined_native_int_dependencies(decl_map)
+    else
+      MapSet.new()
+    end
+  end
+
+  defp walk_direct_render_outlined_calls(expr, module_name, decl_map, acc) when is_map(expr) do
+    acc =
+      case call_target_from_expr(expr, module_name) do
+        target when is_tuple(target) ->
+          args = call_args_from_expr(expr)
+
+          if direct_render_outlined_native_call?(target, args, module_name, decl_map) do
+            MapSet.put(acc, target)
+          else
+            acc
+          end
+
+        _ ->
+          acc
+      end
+
+    expr
+    |> Map.values()
+    |> Enum.reduce(acc, &walk_direct_render_outlined_calls(&1, module_name, decl_map, &2))
+  end
+
+  defp walk_direct_render_outlined_calls(values, module_name, decl_map, acc) when is_list(values) do
+    Enum.reduce(values, acc, &walk_direct_render_outlined_calls(&1, module_name, decl_map, &2))
+  end
+
+  defp walk_direct_render_outlined_calls(_value, _module_name, _decl_map, acc), do: acc
+
+  defp direct_render_outlined_native_call?(target_key, args, module_name, decl_map) do
+    case Map.get(decl_map, target_key) do
+      decl when is_map(decl) ->
+        {mod, _} = target_key
+
+        NativeFunctionCall.native_scalar_fn?(decl, mod, decl_map) and
+          FunctionCallAbi.primary_lowered?(decl, mod, decl_map) and
+          NativeFunctionCall.return_kind(decl, mod, decl_map) in [:native_int, :native_bool] and
+          not NativeInt.inline_function_expr?(
+            target_key,
+            args,
+            %{__program_decls__: decl_map, __module__: module_name}
+          )
+
+      _ ->
+        false
+    end
+  end
+
+  defp expand_outlined_native_int_dependencies(outlined, decl_map) do
+    Enum.reduce(outlined, outlined, fn target, acc ->
+      case Map.get(decl_map, target) do
+        %{expr: expr} ->
+          {mod, _} = target
+
+          callees =
+            GenericReachability.expr_callees(expr, mod, decl_map)
+            |> Enum.filter(fn callee ->
+              case Map.get(decl_map, callee) do
+                decl when is_map(decl) ->
+                  {callee_mod, _} = callee
+
+                  NativeFunctionCall.native_scalar_fn?(decl, callee_mod, decl_map) and
+                    FunctionCallAbi.primary_lowered?(decl, callee_mod, decl_map)
+
+                _ ->
+                  false
+              end
+            end)
+            |> MapSet.new()
+
+          MapSet.union(acc, callees)
+
+        _ ->
+          acc
+      end
+    end)
+  end
+
+  defp call_target_from_expr(%{op: :call, name: name, args: _args}, module_name)
+       when is_binary(name),
+       do: {module_name, name}
+
+  defp call_target_from_expr(%{op: :qualified_call, target: target, args: _args}, _module_name)
+       when is_binary(target) do
+    case Host.split_qualified_function_target(Host.normalize_special_target(target)) do
+      {mod, name} -> {mod, name}
+      _ -> nil
+    end
+  end
+
+  defp call_target_from_expr(_, _), do: nil
+
+  defp call_args_from_expr(%{op: :call, args: args}), do: args
+  defp call_args_from_expr(%{op: :qualified_call, args: args}), do: args
 
   # Polar helpers are inlined via elmc_polar_point_x/y in direct `_commands_append`.
   defp polar_point_superseded_boxed(opts, decl_map, reachable_core) do

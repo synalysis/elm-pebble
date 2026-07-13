@@ -19,6 +19,24 @@ defmodule Elmc.RecordGetHoistPassTest do
     assert out =~ "ELMC_RECORD_GET_INDEX_INT(layout, 3 /* cy */);"
   end
 
+  test "hoists repeated ELMC_RECORD_GET_INDEX_INT with macro field indices" do
+    code = """
+    scene_cmd.p0 = ELMC_RECORD_GET_INDEX_INT(layout, ELMC_FIELD_YES_LAYOUT_LAYOUT_CX);
+    scene_cmd.p1 = ELMC_RECORD_GET_INDEX_INT(layout, ELMC_FIELD_YES_LAYOUT_LAYOUT_CY);
+    scene_cmd.p2 = ELMC_RECORD_GET_INDEX_INT(layout, ELMC_FIELD_YES_LAYOUT_LAYOUT_CX);
+    scene_cmd.p3 = ELMC_RECORD_GET_INDEX_INT(layout, ELMC_FIELD_YES_LAYOUT_LAYOUT_CX);
+    """
+
+    out = RecordGetHoistPass.run(code)
+
+    assert out =~
+             "const elmc_int_t direct_hoisted_rec_1 = ELMC_RECORD_GET_INDEX_INT(layout, ELMC_FIELD_YES_LAYOUT_LAYOUT_CX);"
+
+    assert :binary.matches(out, "direct_hoisted_rec_1") |> length() == 4
+    refute out =~ "scene_cmd.p0 = ELMC_RECORD_GET_INDEX_INT(layout, ELMC_FIELD_YES_LAYOUT_LAYOUT_CX);"
+    assert out =~ "ELMC_RECORD_GET_INDEX_INT(layout, ELMC_FIELD_YES_LAYOUT_LAYOUT_CY);"
+  end
+
   test "leaves single-use record getters unchanged" do
     code = "scene_cmd.p0 = ELMC_RECORD_GET_INDEX_INT(layout, 2 /* cx */);"
     assert RecordGetHoistPass.run(code) == code

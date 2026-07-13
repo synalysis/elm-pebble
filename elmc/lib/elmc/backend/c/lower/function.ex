@@ -89,7 +89,12 @@ defmodule Elmc.Backend.C.Lower.Function do
       |> MapSet.difference(native_int_only_regs)
       |> maybe_add_native_scalar_ret_bool_reg(ret_reg, native_scalar_out)
 
-    native_bool_mutable_regs = native_bool_mutable_regs(plan, native_bool_only_regs)
+    native_bool_mutable_regs =
+      if length(plan.blocks) > 1 do
+        native_bool_only_regs
+      else
+        native_bool_mutable_regs(plan, native_bool_only_regs)
+      end
 
     native_int_locals =
       native_int_only_regs
@@ -378,29 +383,33 @@ defmodule Elmc.Backend.C.Lower.Function do
     "__plan_state = -1; break;"
   end
 
-  defp emit_state_switch_terminator({:ret, reg}, slots, _rc?, opts) when is_integer(reg) do
-    assign =
-      case Keyword.get(opts, :native_scalar_out) do
-        :native_int ->
-          ref = native_int_result_ref(reg, slots, opts)
-          "*out = #{ref};"
-
-        :native_bool ->
-          ref = native_bool_result_ref(reg, opts)
-          "*out = #{ref};"
-
-        _ ->
-          ref = slot_ref(reg, slots, opts)
-          idx = Map.get(slots, reg)
-
-          if is_integer(idx) do
-            "*out = #{ref};\nowned[#{idx}] = NULL;"
-          else
+  defp emit_state_switch_terminator({:ret, reg}, slots, rc?, opts) when is_integer(reg) do
+    if rc? do
+      assign =
+        case Keyword.get(opts, :native_scalar_out) do
+          :native_int ->
+            ref = native_int_result_ref(reg, slots, opts)
             "*out = #{ref};"
-          end
-      end
 
-    "#{assign}\n    __plan_state = -1; break;"
+          :native_bool ->
+            ref = native_bool_result_ref(reg, opts)
+            "*out = #{ref};"
+
+          _ ->
+            ref = slot_ref(reg, slots, opts)
+            idx = Map.get(slots, reg)
+
+            if is_integer(idx) do
+              "*out = #{ref};\nowned[#{idx}] = NULL;"
+            else
+              "*out = #{ref};"
+            end
+        end
+
+      "#{assign}\n    __plan_state = -1; break;"
+    else
+      "__plan_state = -1; break;"
+    end
   end
 
   defp emit_state_switch_terminator(:none, _slots, _rc?, _opts), do: "__plan_state = -1; break;"
@@ -702,29 +711,22 @@ defmodule Elmc.Backend.C.Lower.Function do
     |> MapSet.new()
   end
 
-  defp explicit_targets_from_terminator({:br, target_id}, next_id) do
-    if target_id == next_id, do: [], else: [target_id]
+  defp explicit_targets_from_terminator({:br, target_id}, _next_id), do: [target_id]
+
+  defp explicit_targets_from_terminator({:br_if, then_id, else_id, _}, _next_id) do
+    Enum.uniq([then_id, else_id])
   end
 
-  defp explicit_targets_from_terminator({:br_if, then_id, else_id, _}, next_id) do
-    []
-    |> maybe_add_target(then_id, then_id != next_id)
-    |> maybe_add_target(else_id, else_id != next_id)
-  end
-
-  defp explicit_targets_from_terminator({:switch_tag, _, arms, default_id}, next_id) do
-    Enum.map(arms, &TagRefs.switch_arm_target/1) ++
-      if(default_id != next_id, do: [default_id], else: [])
+  defp explicit_targets_from_terminator({:switch_tag, _, arms, default_id}, _next_id) do
+    Enum.map(arms, &TagRefs.switch_arm_target/1) ++ List.wrap(default_id)
   end
 
   defp explicit_targets_from_terminator(_, _), do: []
 
-  defp maybe_add_target(list, _id, false), do: list
-  defp maybe_add_target(list, id, true), do: [id | list]
-
   defp emit_instr_lines(instr, slots, instr_opts) do
     live = Process.get(:elmc_plan_owned_live, MapSet.new())
     {reassignment, live} = owned_reassign_prefix(instr, slots, instr_opts, live)
+    Process.put(:elmc_plan_owned_live, live)
     code = Instr.emit(instr, slots, instr_opts)
     nulls =
       if tail_fn_out_owned_cleanup_instr?(instr) do
@@ -852,13 +854,30 @@ defmodule Elmc.Backend.C.Lower.Function do
 
   defp emit_null_consumed_slots(%{op: :release}, _slots, _instr_opts), do: []
 
+  defp emit_null_consumed_slots(%{op: :phi, dest: dest} = instr, slots, instr_opts)
+       when is_integer(dest) do
+    if phi_dead_owned_slot_transfer?(dest, slots, instr_opts) do
+      []
+    else
+      emit_null_consumed_slots_from_effects(instr, slots, instr_opts)
+    end
+  end
+
   defp emit_null_consumed_slots(%{effects: %{consumes: consumes}} = instr, slots, instr_opts)
+       when is_list(consumes) do
+    emit_null_consumed_slots_from_effects(instr, slots, instr_opts)
+  end
+
+  defp emit_null_consumed_slots(_, _slots, _instr_opts), do: []
+
+  defp emit_null_consumed_slots_from_effects(%{effects: %{consumes: consumes}} = instr, slots, instr_opts)
        when is_list(consumes) do
     deferred = Keyword.get(instr_opts, :native_ret_deferred_regs, MapSet.new())
     transfer? = transferring_consume_instr?(instr)
 
     consumes
     |> Enum.filter(&is_integer/1)
+    |> Enum.reject(&retain_owned_transfer_null?(instr, &1))
     |> Enum.reject(&MapSet.member?(Keyword.get(instr_opts, :native_int_only_regs, MapSet.new()), &1))
     |> Enum.reject(&MapSet.member?(Keyword.get(instr_opts, :native_bool_only_regs, MapSet.new()), &1))
     |> Enum.reject(&MapSet.member?(Keyword.get(instr_opts, :tail_inline_skip_regs, MapSet.new()), &1))
@@ -880,7 +899,25 @@ defmodule Elmc.Backend.C.Lower.Function do
     |> Enum.reject(&is_nil/1)
   end
 
-  defp emit_null_consumed_slots(_, _slots, _instr_opts), do: []
+  defp phi_dead_owned_slot_transfer?(dest, slots, instr_opts) do
+    case boxed_owned_index(dest, slots, instr_opts) do
+      idx when is_integer(idx) ->
+        live = Process.get(:elmc_plan_owned_live, MapSet.new())
+        not MapSet.member?(live, idx)
+
+      _ ->
+        false
+    end
+  end
+
+  defp retain_owned_transfer_null?(
+         %{op: :call_runtime, args: %{builtin: :retain, args: [src]}, effects: %{consumes: consumes}},
+         reg
+       )
+       when is_integer(src) and is_list(consumes),
+       do: reg == src and src in consumes
+
+  defp retain_owned_transfer_null?(_, _), do: false
 
   defp transferring_consume_instr?(%{op: :const_static_list, args: %{kind: kind}})
        when kind in [:values, :record_array],
@@ -1180,8 +1217,10 @@ defmodule Elmc.Backend.C.Lower.Function do
   defp union_tag_int_expr(subject_s), do: "elmc_union_tag_as_int(#{subject_s})"
 
   defp union_tag_int_switch?(arms) when is_list(arms) do
-    length(arms) >= @min_switch_arms and
-      SizeProfile.enum_tag_peel?(Process.get(:elmc_codegen_opts, %{}))
+    opts = Process.get(:elmc_codegen_opts, %{})
+    min_arms = SizeProfile.plan_union_tag_switch_min_arms(opts)
+
+    length(arms) >= min_arms and SizeProfile.enum_tag_peel?(opts)
   end
 
   defp emit_int_switch_chain(subject_s, arms, default_id, opts) do
@@ -2041,15 +2080,19 @@ defmodule Elmc.Backend.C.Lower.Function do
   defp allocate_borrow_param_direct_slots_impl(plan, slots, param_kinds, decl_map) do
     decl = lookup_decl(plan.module, plan.name)
 
-    if borrow_param_direct_enabled?(decl || %{}) do
+    if borrow_param_direct_enabled?(decl || %{}) or retain_arg_borrow_direct_enabled?(decl || %{}) do
       borrow_regs = build_borrow_param_regs(plan, param_kinds, decl_map, nil)
-      needs_owned = param_regs_needing_owned_copy(plan, Map.keys(borrow_regs))
+      needs_owned = param_regs_needing_owned_retain(plan, Map.keys(borrow_regs))
       direct_regs = Map.drop(borrow_regs, MapSet.to_list(needs_owned))
       slots = Map.drop(slots, Map.keys(direct_regs))
       {direct_regs, slots}
     else
       {%{}, slots}
     end
+  end
+
+  defp retain_arg_borrow_direct_enabled?(decl) do
+    :retain_arg in List.wrap(Map.get(decl, :ownership, []))
   end
 
   defp borrow_param_direct_enabled?(decl) do
@@ -2077,6 +2120,24 @@ defmodule Elmc.Backend.C.Lower.Function do
         []
     end)
     |> MapSet.new()
+  end
+
+  defp param_regs_needing_owned_retain(plan, param_regs) when is_list(param_regs) do
+    param_set = MapSet.new(param_regs)
+
+    consumed =
+      plan.blocks
+      |> Enum.flat_map(& &1.instrs)
+      |> Enum.flat_map(fn
+        %{effects: %{consumes: consumes}} when is_list(consumes) ->
+          Enum.filter(consumes, &MapSet.member?(param_set, &1))
+
+        _ ->
+          []
+      end)
+      |> MapSet.new()
+
+    MapSet.union(consumed, param_regs_needing_owned_copy(plan, param_regs))
   end
 
   defp build_borrow_param_regs(plan, param_kinds, decl_map, closure_mode) do
@@ -2240,7 +2301,7 @@ defmodule Elmc.Backend.C.Lower.Function do
     |> Enum.filter(&Map.has_key?(native_int_locals, &1))
     |> Enum.map(fn reg ->
       name = Map.fetch!(native_int_locals, reg)
-      "elmc_int_t #{name};"
+      "elmc_int_t #{name} = 0;"
     end)
   end
 
@@ -2371,7 +2432,7 @@ defmodule Elmc.Backend.C.Lower.Function do
     |> Enum.sort()
     |> Enum.map(fn reg ->
       name = Map.fetch!(native_bool_locals, reg)
-      "bool #{name};"
+      "bool #{name} = false;"
     end)
   end
 

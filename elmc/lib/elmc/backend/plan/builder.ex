@@ -378,7 +378,7 @@ defmodule Elmc.Backend.Plan.Builder do
             idx when is_integer(idx) ->
               case param_reg_block(b_acc, name) do
                 ^current -> {reg, b_acc}
-                _ -> load_param_named(b_acc, idx, name)
+                _ -> {Map.fetch!(b_acc.param_regs, name), b_acc}
               end
 
             _ ->

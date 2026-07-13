@@ -376,26 +376,31 @@ defmodule Elmc.Backend.C.Lower.Instr do
   defp phi_boxed_arm_assign(rc?, merge, src, opts \\ []) do
     borrow_retain? = Keyword.get(opts, :borrow_retain?, false)
 
-    cond do
-      rc? and String.contains?(src, "_take(") ->
-        phi_owned_merge_assign(true, merge, src)
+    retain? =
+      cond do
+        rc? and String.contains?(src, "_take(") -> false
+        rc? -> true
+        borrow_retain? -> true
+        true -> false
+      end
 
-      rc? ->
-        phi_owned_merge_assign(true, merge, src, retain: true)
-
-      borrow_retain? ->
-        phi_owned_merge_assign(false, merge, src, retain: true)
-
-      true ->
-        phi_owned_merge_assign(false, merge, src)
-    end
+    phi_owned_merge_assign(rc?, merge, src, retain: retain?, borrow_retain?: borrow_retain?)
   end
 
-  defp phi_owned_merge_assign(rc?, merge, src, opts \\ []) do
+  defp phi_owned_merge_assign(rc?, merge, src, opts) do
     retain? = Keyword.get(opts, :retain, false)
+    borrow_retain? = Keyword.get(opts, :borrow_retain?, false)
+    src_owned? = assignable_owned_slot_ref?(src)
+    merge_dead? = phi_merge_dest_dead?(merge)
+
+    use_transfer? =
+      merge_dead? and src_owned? and retain? and not borrow_retain? and merge != src
 
     assign =
       cond do
+        use_transfer? ->
+          "#{merge} = #{src};"
+
         rc? and String.contains?(src, "_take(") ->
           "#{merge} = #{src};"
 
@@ -407,20 +412,37 @@ defmodule Elmc.Backend.C.Lower.Instr do
       end
 
     null_src =
-      if not retain? and merge != src and assignable_owned_slot_ref?(src) do
+      if use_transfer? or (not retain? and merge != src and src_owned?) do
         "\n    #{src} = NULL;"
       else
         ""
       end
 
     """
-    if (#{merge} && #{merge} != #{src}) {
-      elmc_release(#{merge});
-    }
     #{assign}#{null_src}
     """
     |> String.trim()
   end
+
+  defp phi_merge_dest_dead?(merge) do
+    case owned_slot_index(merge) do
+      idx when is_integer(idx) ->
+        live = Process.get(:elmc_plan_owned_live, MapSet.new())
+        not MapSet.member?(live, idx)
+
+      _ ->
+        false
+    end
+  end
+
+  defp owned_slot_index("owned[" <> rest) do
+    case Integer.parse(rest) do
+      {idx, "]"} -> idx
+      _ -> nil
+    end
+  end
+
+  defp owned_slot_index(_), do: nil
 
   defp truthy_shape_boxed_c_expr({:const_int, value}, _slots, _opts) when is_integer(value) do
     "elmc_new_int_take(#{value})"
@@ -1012,9 +1034,9 @@ defmodule Elmc.Backend.C.Lower.Instr do
     end
   end
 
-  defp emit_call_runtime(%{dest: dest_reg, args: %{builtin: :record_new_values_ints, args: args}}, slots, rc?, dest, opts)
+  defp emit_call_runtime(%{dest: dest_reg, id: instr_id, args: %{builtin: :record_new_values_ints, args: args}}, slots, rc?, dest, opts)
        when is_list(args) do
-    suffix = record_new_suffix(dest_reg)
+    suffix = record_new_suffix(dest_reg, instr_id)
     count = length(args)
 
     values_s =
@@ -1030,7 +1052,7 @@ defmodule Elmc.Backend.C.Lower.Instr do
     |> String.trim()
   end
 
-  defp emit_call_runtime(%{dest: dest_reg, args: %{builtin: id, args: args} = args_map}, slots, rc?, dest, opts)
+  defp emit_call_runtime(%{dest: dest_reg, id: instr_id, args: %{builtin: id, args: args} = args_map}, slots, rc?, dest, opts)
        when id in [:record_new, :record_new_take] and is_list(args) do
     shape = Map.get(args_map, :shape)
     module = Keyword.get(opts, :module)
@@ -1043,7 +1065,7 @@ defmodule Elmc.Backend.C.Lower.Instr do
         _ ->
           resolve_record_field_names(shape, length(args), module)
       end
-    suffix = record_new_suffix(dest_reg)
+    suffix = record_new_suffix(dest_reg, instr_id)
     count = length(args)
     values_array = record_values_array(args, slots, opts)
     values_decl = "ElmcValue *rec_values_#{suffix}[#{max(count, 1)}] = { #{values_array} };"
@@ -1066,22 +1088,10 @@ defmodule Elmc.Backend.C.Lower.Instr do
         {"", "elmc_record_new_values_take", ["#{count}", "rec_values_#{suffix}"]}
       end
 
-    transfer_nulls =
-      args
-      |> Enum.filter(&is_integer/1)
-      |> Enum.uniq()
-      |> Enum.flat_map(fn reg ->
-        case Map.get(slots, reg) do
-          i when is_integer(i) -> ["owned[#{i}] = NULL;"]
-          _ -> []
-        end
-      end)
-
     """
     #{names_decl}
     #{values_decl}
     #{rc_assign(rc?, dest, sym, call_args)}
-    #{Enum.join(transfer_nulls, "\n")}
     """
     |> String.trim()
   end
@@ -1378,11 +1388,86 @@ defmodule Elmc.Backend.C.Lower.Instr do
     |> String.trim()
   end
 
-  defp emit_call_fn(%{dest: dest_reg, args: %{module: mod, name: name, args: args} = call_args}, slots, rc?, dest, opts) do
-    if {mod, name} == {"Main", "clamp"} and length(args) == 3 do
-      emit_basics_clamp_call(dest_reg, args, slots, rc?, dest, opts)
+  defp emit_call_fn(%{dest: dest_reg, args: %{module: mod, name: name, args: args} = call_args} = instr, slots, rc?, dest, opts) do
+    decl_map = Process.get(:elmc_program_decls, %{})
+
+    cond do
+      {mod, name} == {"Main", "clamp"} and length(args) == 3 ->
+        emit_basics_clamp_call(dest_reg, args, slots, rc?, dest, opts)
+
+      missing_decl_kernel_log_cmd?(mod, name, args, decl_map) ->
+        emit_missing_decl_kernel_log_cmd(dest_reg, name, args, slots, rc?, dest, opts, instr)
+
+      missing_decl_int_builtin?(mod, name, args, decl_map) ->
+        emit_missing_decl_int_builtin(dest_reg, name, args, slots, rc?, dest, opts, instr)
+
+      true ->
+        emit_call_fn_impl(dest_reg, call_args, slots, rc?, dest, opts, instr)
+    end
+  end
+
+  defp missing_decl_int_builtin?(mod, name, args, decl_map) do
+    is_nil(Map.get(decl_map, {mod, name})) and mod in ["Main", "Basics"] and
+      ((name in ["max", "min"] and length(args) == 2) or (name == "not" and length(args) == 1))
+  end
+
+  defp missing_decl_kernel_log_cmd?(mod, name, args, decl_map) do
+    is_nil(Map.get(decl_map, {mod, name})) and mod == "Elm.Kernel.PebbleWatch" and
+      name in ["logInfoCode", "logWarnCode", "logErrorCode"] and length(args) == 1
+  end
+
+  defp emit_missing_decl_kernel_log_cmd(dest_reg, name, args, slots, rc?, dest, opts, instr) do
+    borrows =
+      instr
+      |> Map.get(:effects, %{})
+      |> Map.get(:borrows, [])
+
+    [arg] = args
+    code_ref = "elmc_as_int(#{call_site_slot_ref(arg, slots, opts, borrows)})"
+
+    kind =
+      case name do
+        "logInfoCode" -> "ELMC_PEBBLE_CMD_LOG_INFO_CODE"
+        "logWarnCode" -> "ELMC_PEBBLE_CMD_LOG_WARN_CODE"
+        "logErrorCode" -> "ELMC_PEBBLE_CMD_LOG_ERROR_CODE"
+      end
+
+    out = if dest == "*out", do: "out", else: dest
+
+    if rc? do
+      rc_call(true, out, "elmc_cmd1", [kind, code_ref])
     else
-      emit_call_fn_impl(dest_reg, call_args, slots, rc?, dest, opts)
+      assign_value_return(false, dest, "elmc_cmd1_take(#{kind}, #{code_ref})")
+    end
+  end
+
+  defp emit_missing_decl_int_builtin(dest_reg, name, args, slots, rc?, dest, opts, instr) do
+    borrows =
+      instr
+      |> Map.get(:effects, %{})
+      |> Map.get(:borrows, [])
+
+    out = if dest == "*out", do: "out", else: dest
+
+    case name do
+      n when n in ["max", "min"] ->
+        [left, right] = args
+        lhs = "elmc_as_int(#{call_site_slot_ref(left, slots, opts, borrows)})"
+        rhs = "elmc_as_int(#{call_site_slot_ref(right, slots, opts, borrows)})"
+
+        expr =
+          if n == "max" do
+            "(#{lhs} >= #{rhs}) ? #{lhs} : #{rhs}"
+          else
+            "(#{lhs} <= #{rhs}) ? #{lhs} : #{rhs}"
+          end
+
+        emit_int_result_assign(dest_reg, out, rc?, expr, opts)
+
+      "not" ->
+        [arg] = args
+        ref = "elmc_as_bool(#{call_site_slot_ref(arg, slots, opts, borrows)})"
+        rc_assign(rc?, out, "elmc_new_bool", ["(!#{ref}) ? 1 : 0"])
     end
   end
 
@@ -1410,9 +1495,14 @@ defmodule Elmc.Backend.C.Lower.Instr do
     end
   end
 
-  defp emit_call_fn_impl(dest_reg, %{module: mod, name: name, args: args}, slots, rc?, dest, opts) do
+  defp emit_call_fn_impl(dest_reg, %{module: mod, name: name, args: args}, slots, rc?, dest, opts, instr) do
     decl_map = Process.get(:elmc_program_decls, %{})
     decl = Map.get(decl_map, {mod, name})
+
+    borrows =
+      instr
+      |> Map.get(:effects, %{})
+      |> Map.get(:borrows, [])
 
     {mod, name, decl, c_name} =
       resolve_plan_call_target(mod, name, decl, decl_map, args)
@@ -1435,11 +1525,11 @@ defmodule Elmc.Backend.C.Lower.Instr do
     {prefix, call_arg_s} =
       cond do
         fusion_arg_kinds ->
-          {"", rc_native_fusion_call_args(args, fusion_arg_kinds, slots, opts)}
+          {"", rc_native_fusion_call_args(args, fusion_arg_kinds, slots, opts, borrows)}
 
         native_ret in [:native_int, :native_bool] and decl ->
           kinds = NativeFunctionCall.arg_kinds(decl, mod, decl_map)
-          c_args = call_arg_refs(args, slots, opts, kinds)
+          c_args = call_arg_refs(args, slots, opts, kinds, borrows)
           {"", Enum.join(c_args, ", ")}
 
         native_ret == :native_int ->
@@ -1460,18 +1550,18 @@ defmodule Elmc.Backend.C.Lower.Instr do
             args
             |> Enum.zip(kinds)
             |> Enum.map(fn {arg_reg, kind} ->
-              plan_rc_call_arg_ref(arg_reg, kind, box_native_int?, slots, opts)
+              plan_call_site_arg_ref(arg_reg, kind, box_native_int?, slots, opts, borrows)
             end)
 
           {"", Enum.join(c_args, ", ")}
 
         decl && FunctionEmit.mixed_direct_abi?(decl, mod, decl_map) ->
           kinds = NativeFunctionCall.arg_kinds(decl, mod, decl_map)
-          c_args = call_arg_refs(args, slots, opts, kinds)
+          c_args = call_arg_refs(args, slots, opts, kinds, borrows)
           {"", Enum.join(c_args, ", ")}
 
         decl && FunctionCallAbi.argv_abi?(decl, mod, decl_map) ->
-          c_args = Enum.map(args, &slot_ref(&1, slots, opts))
+          c_args = Enum.map(args, &call_site_slot_ref(&1, slots, opts, borrows))
           {setup, args_var, argc} = FunctionCallAbi.emit_argv_setup("plan", c_args)
           {setup <> "\n", "#{args_var}, #{argc}"}
 
@@ -1487,10 +1577,10 @@ defmodule Elmc.Backend.C.Lower.Instr do
               args
               |> Enum.zip(kinds)
               |> Enum.map(fn {arg_reg, kind} ->
-                plan_rc_call_arg_ref(arg_reg, kind, box_native_int?, slots, opts)
+                plan_call_site_arg_ref(arg_reg, kind, box_native_int?, slots, opts, borrows)
               end)
             else
-              Enum.map(args, &slot_ref(&1, slots, opts))
+              Enum.map(args, &call_site_slot_ref(&1, slots, opts, borrows))
             end
 
           {"", Enum.join(c_args, ", ")}
@@ -1574,7 +1664,7 @@ defmodule Elmc.Backend.C.Lower.Instr do
     )
   end
 
-  defp rc_native_fusion_call_args(args, kinds, slots, opts) do
+  defp rc_native_fusion_call_args(args, kinds, slots, opts, borrows) do
     args
     |> Enum.zip(kinds)
     |> Enum.map(fn {reg, kind} ->
@@ -1582,7 +1672,7 @@ defmodule Elmc.Backend.C.Lower.Instr do
         :boxed_int_tag ->
           case Map.get(Keyword.get(opts, :const_int_regs, %{}), reg) do
             entry when not is_nil(entry) -> const_int_c_ref(entry, opts)
-            _ -> RowMajorLayout.union_tag_expr(slot_ref(reg, slots, opts))
+            _ -> RowMajorLayout.union_tag_expr(call_site_slot_ref(reg, slots, opts, borrows))
           end
 
         :native_int ->
@@ -1595,29 +1685,88 @@ defmodule Elmc.Backend.C.Lower.Instr do
               native_only = Keyword.get(opts, :native_int_only_regs, MapSet.new())
 
               if Map.has_key?(native_int_regs, reg) or MapSet.member?(native_only, reg) do
-                int_operand_ref(reg, slots, opts)
+                int_call_site_ref(reg, slots, opts, borrows)
               else
-                "elmc_as_int(#{slot_ref(reg, slots, opts)})"
+                "elmc_as_int(#{call_site_slot_ref(reg, slots, opts, borrows)})"
               end
           end
 
         _ ->
-          slot_ref(reg, slots, opts)
+          call_site_slot_ref(reg, slots, opts, borrows)
       end
     end)
     |> Enum.join(", ")
   end
 
-  defp call_arg_refs(args, slots, opts, kinds) do
+  defp call_site_slot_ref(reg, slots, opts, borrows) do
+    case borrow_call_param_c_ref(reg, borrows, opts) do
+      c_arg when is_binary(c_arg) -> c_arg
+      _ -> slot_ref(reg, slots, opts)
+    end
+  end
+
+  defp call_arg_refs(args, slots, opts, kinds, borrows) do
     args
     |> Enum.zip(kinds)
     |> Enum.map(fn {arg_reg, kind} ->
       case kind do
-        :native_int -> int_operand_ref(arg_reg, slots, opts)
-        :native_bool -> bool_operand_ref(arg_reg, slots, opts)
-        _ -> slot_ref(arg_reg, slots, opts)
+        :native_int -> int_call_site_ref(arg_reg, slots, opts, borrows)
+        :native_bool -> bool_call_site_ref(arg_reg, slots, opts, borrows)
+        _ -> plan_call_site_arg_ref(arg_reg, :boxed, false, slots, opts, borrows)
       end
     end)
+  end
+
+  defp plan_call_site_arg_ref(reg, kind, box_native_int?, slots, opts, borrows) do
+    case borrow_call_param_c_ref(reg, borrows, opts) do
+      c_arg when is_binary(c_arg) ->
+        case {kind, box_native_int?} do
+          {:native_int, true} -> "elmc_new_int_take(#{c_arg})"
+          _ -> c_arg
+        end
+
+      _ ->
+        plan_rc_call_arg_ref(reg, kind, box_native_int?, slots, opts)
+    end
+  end
+
+  defp borrow_call_param_c_ref(reg, borrows, opts)
+       when is_integer(reg) and is_list(borrows) do
+    if Keyword.get(opts, :closure_mode) do
+      nil
+    else
+      borrow_call_param_c_ref_impl(reg, borrows, opts)
+    end
+  end
+
+  defp borrow_call_param_c_ref(_, _, _), do: nil
+
+  defp borrow_call_param_c_ref_impl(reg, borrows, opts) do
+    if reg in borrows do
+      case defining_plan_instr(Keyword.get(opts, :parent_plan), reg) do
+        %{op: :load_param, args: %{index: index}} ->
+          FunctionCallAbi.param_c_arg(index, Keyword.get(opts, :params, []))
+
+        _ ->
+          nil
+      end
+    else
+      nil
+    end
+  end
+
+  defp int_call_site_ref(reg, slots, opts, borrows) do
+    case borrow_call_param_c_ref(reg, borrows, opts) do
+      c_arg when is_binary(c_arg) -> c_arg
+      _ -> int_operand_ref(reg, slots, opts)
+    end
+  end
+
+  defp bool_call_site_ref(reg, slots, opts, borrows) do
+    case borrow_call_param_c_ref(reg, borrows, opts) do
+      c_arg when is_binary(c_arg) -> c_arg
+      _ -> bool_operand_ref(reg, slots, opts)
+    end
   end
 
   defp plan_rc_call_arg_ref(reg, :native_int, true, slots, opts),
@@ -2991,15 +3140,18 @@ defmodule Elmc.Backend.C.Lower.Instr do
   defp slot_ref(:fn_out, _slots, _opts), do: "*out"
   defp slot_ref(:branch_out, _slots, _opts), do: "*out"
 
-  defp record_new_suffix(dest_reg) when is_integer(dest_reg), do: Integer.to_string(dest_reg)
+  defp record_new_suffix(dest_reg, instr_id) do
+    base =
+      cond do
+        is_integer(instr_id) -> instr_id
+        is_integer(dest_reg) -> dest_reg
+        dest_reg in [:fn_out, :branch_out] -> 0
+        true -> 0
+      end
 
-  defp record_new_suffix(dest_reg) when dest_reg in [:fn_out, :branch_out] do
-    id = Process.get(:elmc_plan_rec_values_suffix, 0) + 1
-    Process.put(:elmc_plan_rec_values_suffix, id)
-    "tail_#{id}"
+    seq = System.unique_integer([:monotonic, :positive])
+    "#{base}_#{seq}"
   end
-
-  defp record_new_suffix(_), do: "0"
 
   defp record_values_array(field_regs, slots, opts) do
     field_regs

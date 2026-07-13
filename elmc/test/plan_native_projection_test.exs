@@ -33,4 +33,44 @@ defmodule Elmc.PlanNativeProjectionTest do
     assert c =~ "elmc_fn_Main_hasPiece_native(bool *out"
     assert c =~ "elmc_as_bool(boxed)"
   end
+
+  test "angleFromMinute projection inlines elmc_angle_from_minute without boxed shim" do
+    decl = %{
+      name: "angleFromMinute",
+      args: ["minute"],
+      type: "Int -> Int",
+      ownership: [:borrow_arg, :retain_result],
+      expr: %{
+        op: :call,
+        name: "modBy",
+        args: [
+          %{op: :int_literal, value: 65_536},
+          %{
+            op: :call,
+            name: "__idiv__",
+            args: [
+              %{
+                op: :call,
+                name: "__mul__",
+                args: [
+                  %{
+                    op: :call,
+                    name: "__sub__",
+                    args: [%{op: :var, name: "minute"}, %{op: :int_literal, value: 720}]
+                  },
+                  %{op: :int_literal, value: 65_536}
+                ]
+              },
+              %{op: :int_literal, value: 1440}
+            ]
+          }
+        ]
+      }
+    }
+
+    c = PlanNativeProjection.emit(decl, "Yes.Render", %{})
+
+    assert c =~ "elmc_angle_from_minute(minute)"
+    refute c =~ "ElmcValue *boxed"
+  end
 end

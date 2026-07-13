@@ -107,6 +107,8 @@ defmodule Elmc.Backend.CCodegen.SpecialValues.Helpers do
   defp pebble_cmd_param?(%{op: :call}), do: true
   defp pebble_cmd_param?(%{op: :runtime_call}), do: true
   defp pebble_cmd_param?(%{op: :field_access}), do: true
+  defp pebble_cmd_param?(%{op: :record_get}), do: true
+  defp pebble_cmd_param?(%{op: :record_get_int}), do: true
   defp pebble_cmd_param?(%{op: :if}), do: true
   defp pebble_cmd_param?(%{op: :case}), do: true
   defp pebble_cmd_param?(%{op: :let_in}), do: true

@@ -125,6 +125,25 @@ defmodule Elmc.PlanSizeReductionTest do
     refute c =~ "elmc_as_bool(owned"
   end
 
+  test "phi merge into dead owned slot transfers without retain or release guard" do
+    decl = %{
+      name: "pick",
+      args: ["flag"],
+      expr: %{
+        op: :if,
+        cond: %{op: :var, name: "flag"},
+        then_expr: %{op: :int_literal, value: 1},
+        else_expr: %{op: :int_literal, value: 2}
+      }
+    }
+
+    assert {:ok, plan} = PlanLower.lower(decl, "Main", %{}, rc_required: true)
+    c = CLowerFunction.emit(plan)
+
+    refute c =~ ~r/if \(owned\[\d+\] && owned\[\d+\] != owned\[\d+\]\)/
+    refute c =~ ~r/owned\[\d+\] = elmc_retain\(owned\[\d+\]\);\n\s*elmc_plan_block_/
+  end
+
   test "List.range |> List.map uses list_cursor_map loop" do
     decl = %{
       name: "rows",
@@ -226,10 +245,10 @@ defmodule Elmc.PlanSizeReductionTest do
     assert c =~ "plan_native_bool_"
     assert c =~ "return "
     refute c =~ "*out = "
-    refute c =~ "elmc_plan_block_"
+    refute c =~ "elmc_plan_block_2"
     refute c =~ "ElmcValue *owned"
-    refute c =~ "= false"
-    assert c =~ "const bool plan_native_bool_"
+    refute c =~ "owned[0] ="
+    assert c =~ "plan_native_bool_3"
   end
 
   test "Program-return main tails literal int into out without owned slot" do
@@ -1088,6 +1107,100 @@ defmodule Elmc.PlanSizeReductionTest do
     refute c =~ "ELMC_PLAN_STATE_"
     refute c =~ "enum {"
     assert c =~ "case 0:"
+  end
+
+  test "read-only retain_arg params pass C argument without retain copy" do
+    score_of = %{
+      name: "scoreOf",
+      args: ["model"],
+      ownership: [:borrow_arg],
+      expr: %{
+        op: :field_access,
+        arg: %{op: :var, name: "model"},
+        field: "score"
+      }
+    }
+
+    decl = %{
+      name: "view",
+      args: ["model"],
+      ownership: [:retain_arg, :retain_result],
+      expr: %{
+        op: :call,
+        name: "scoreOf",
+        args: [%{op: :var, name: "model"}]
+      }
+    }
+
+    decl_map = %{
+      {"Main", "scoreOf"} => score_of,
+      {"Main", "view"} => decl
+    }
+
+    assert {:ok, plan} = PlanLower.lower(decl, "Main", decl_map, rc_required: true)
+    c = CLowerFunction.emit(plan)
+    assert c =~ "elmc_fn_Main_scoreOf(out, model)"
+    refute c =~ "elmc_retain(model)"
+  end
+
+  test "cross-block borrow param calls pass C argument without duplicate retain" do
+    score_of = %{
+      name: "scoreOf",
+      args: ["model"],
+      ownership: [:borrow_arg],
+      expr: %{
+        op: :field_access,
+        arg: %{op: :var, name: "model"},
+        field: "score"
+      }
+    }
+
+    decl = %{
+      name: "view",
+      args: ["model"],
+      ownership: [:borrow_arg],
+      expr: %{
+        op: :if,
+        cond: %{
+          op: :compare,
+          kind: :eq,
+          left: %{
+            op: :field_access,
+            arg: %{op: :var, name: "model"},
+            field: "score"
+          },
+          right: %{op: :int_literal, value: 0}
+        },
+        then_expr: %{
+          op: :call,
+          name: "scoreOf",
+          args: [%{op: :var, name: "model"}]
+        },
+        else_expr: %{
+          op: :call,
+          name: "scoreOf",
+          args: [%{op: :var, name: "model"}]
+        }
+      }
+    }
+
+    decl_map = %{
+      {"Main", "scoreOf"} => score_of,
+      {"Main", "view"} => decl
+    }
+
+    Process.put(:elmc_program_decls, decl_map)
+    Process.put(:elmc_record_alias_shapes, %{{"Main", "Model"} => ["score"]})
+
+    on_exit(fn ->
+      Process.delete(:elmc_program_decls)
+      Process.delete(:elmc_record_alias_shapes)
+    end)
+
+    assert {:ok, plan} = PlanLower.lower(decl, "Main", decl_map, rc_required: true)
+    c = CLowerFunction.emit(plan)
+    assert length(Regex.scan(~r/elmc_fn_Main_scoreOf\([^)]*model\)/, c)) >= 2
+    refute c =~ "elmc_retain(model)"
   end
 
   test "fused native plan bodies skip state-switch emit" do

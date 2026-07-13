@@ -16,7 +16,12 @@ defmodule Elmc.Backend.Plan.Optimize do
         IntPhiNative.phi_arm_drop_instrs(blocks)
       )
 
-    %{plan | blocks: Enum.map(blocks, &optimize_block(&1, used, phi_arm_drops))}
+    blocks =
+      blocks
+      |> Enum.map(&optimize_block(&1, used, phi_arm_drops))
+      |> simplify_branch_targets()
+
+    %{plan | blocks: blocks}
   end
 
   defp coalesce_arm_publish_block(%Block{instrs: instrs} = block) do
@@ -38,6 +43,21 @@ defmodule Elmc.Backend.Plan.Optimize do
       when is_integer(arm_reg) and is_integer(merge_reg) and is_integer(src_reg) and
              arm_reg == src_reg and arm_reg != merge_reg and consumes == [arm_reg] ->
         prefix ++ [%{call | dest: merge_reg}]
+
+      {prefix,
+       [
+         %{op: :call_runtime, dest: arm_reg, args: %{builtin: builtin}} = record,
+         %{
+           op: :call_runtime,
+           dest: merge_reg,
+           args: %{builtin: :retain, args: [src_reg]},
+           effects: %{consumes: consumes}
+         }
+       ]}
+      when builtin in [:record_new, :record_new_take] and is_integer(arm_reg) and
+             is_integer(merge_reg) and is_integer(src_reg) and arm_reg == src_reg and
+             arm_reg != merge_reg and consumes == [arm_reg] ->
+        prefix ++ [%{record | dest: merge_reg}]
 
       _ ->
         instrs
@@ -198,4 +218,52 @@ defmodule Elmc.Backend.Plan.Optimize do
   defp operand_regs(%{args: %{regs: regs}}) when is_list(regs), do: regs
   defp operand_regs(%{args: %{params: params}}) when is_list(params), do: params
   defp operand_regs(_), do: []
+
+  defp simplify_branch_targets(blocks) when is_list(blocks) do
+    by_id = Map.new(blocks, &{&1.id, &1})
+
+    Enum.map(blocks, fn block ->
+      case block.terminator do
+        {:br_if, then_id, else_id, cond} ->
+          then_target = resolve_br_target(by_id, then_id)
+          else_target = resolve_br_target(by_id, else_id)
+
+          cond do
+            then_target == else_target ->
+              %{block | terminator: {:br, then_target}}
+
+            then_target != then_id or else_target != else_id ->
+              %{block | terminator: {:br_if, then_target, else_target, cond}}
+
+            true ->
+              block
+          end
+
+        {:br, target_id} ->
+          resolved = resolve_br_target(by_id, target_id)
+
+          if resolved != target_id do
+            %{block | terminator: {:br, resolved}}
+          else
+            block
+          end
+
+        _ ->
+          block
+      end
+    end)
+  end
+
+  defp resolve_br_target(by_id, id) when is_integer(id) do
+    case Map.get(by_id, id) do
+      %Block{instrs: [], terminator: {:br, target}} when is_integer(target) ->
+        resolve_br_target(by_id, target)
+
+      %Block{id: ^id} ->
+        id
+
+      _ ->
+        id
+    end
+  end
 end

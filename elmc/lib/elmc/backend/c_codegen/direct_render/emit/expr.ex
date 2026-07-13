@@ -322,6 +322,9 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Expr do
               """
 
             cond do
+              Patterns.skip_empty_nothing_branch?(branch, branch_body) ->
+                {:cont, {:ok, acc, c2}}
+
               cond_code == "0" ->
                 {:cont, {:ok, acc, c2}}
 

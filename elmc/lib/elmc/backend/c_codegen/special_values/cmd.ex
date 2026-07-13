@@ -335,10 +335,19 @@ defmodule Elmc.Backend.CCodegen.SpecialValues.Cmd do
   def special_value_from_target("Elm.Kernel.PebbleWatch.logInfoCode", args),
     do: Helpers.encoded_cmd_expr(Helpers.command_kind(:log_info_code), args, 1)
 
+  def special_value_from_target("Pebble.Log.infoCode", args),
+    do: Helpers.encoded_cmd_expr(Helpers.command_kind(:log_info_code), args, 1)
+
   def special_value_from_target("Elm.Kernel.PebbleWatch.logWarnCode", args),
     do: Helpers.encoded_cmd_expr(Helpers.command_kind(:log_warn_code), args, 1)
 
+  def special_value_from_target("Pebble.Log.warnCode", args),
+    do: Helpers.encoded_cmd_expr(Helpers.command_kind(:log_warn_code), args, 1)
+
   def special_value_from_target("Elm.Kernel.PebbleWatch.logErrorCode", args),
+    do: Helpers.encoded_cmd_expr(Helpers.command_kind(:log_error_code), args, 1)
+
+  def special_value_from_target("Pebble.Log.errorCode", args),
     do: Helpers.encoded_cmd_expr(Helpers.command_kind(:log_error_code), args, 1)
 
   def special_value_from_target("Pebble.Cmd.vibesCancel", _args),

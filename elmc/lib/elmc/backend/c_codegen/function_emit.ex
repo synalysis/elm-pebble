@@ -122,9 +122,17 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
     Process.delete(:elmc_generic_helper_defs)
     Process.delete(:elmc_generic_helper_counter)
 
-    if body == "" do
-      immortal_prelude <> helper_defs
+    if PlanNativeProjection.supersedes_boxed_emit?(decl, module_name, decl_map) do
+      native_projection = PlanNativeProjection.emit(decl, module_name, decl_map)
+
+      """
+      #{immortal_prelude}#{if immortal_prelude == "", do: "", else: "\n"}#{helper_defs}#{native_projection}
+      """
+      |> String.trim_trailing()
     else
+      if body == "" do
+        immortal_prelude <> helper_defs
+      else
     policy =
       if direct_args? do
         "#{Enum.join(decl.ownership, ", ")}, direct_call_abi"
@@ -179,6 +187,7 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
     #{native_projection}
     """
     |> String.trim_trailing()
+      end
     end
   end
 
@@ -1806,6 +1815,7 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
 
         decl.kind == :function and MapSet.member?(generic_targets, target) and
           not helper_only_fusion_plan?(decl, mod.name, decl_map) and
+          not PlanNativeProjection.supersedes_boxed_emit?(decl, mod.name, decl_map) and
           (MapSet.member?(wrapper_targets, target) or
              not NativeFunctionCall.native_scalar_fn?(decl, mod.name, decl_map) or
              Plan.primary_lowered?(decl, mod.name, decl_map))

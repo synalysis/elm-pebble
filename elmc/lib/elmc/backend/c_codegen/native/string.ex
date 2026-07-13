@@ -563,11 +563,13 @@ defmodule Elmc.Backend.CCodegen.Native.String do
   @spec value_code(Types.ir_expr(), Types.compile_env(), String.t(), String.t()) ::
           {String.t(), [String.t()]}
   defp value_code(expr, env, var, out) do
+    value_ref = RcRuntimeEmit.value_expr(var)
+
     cond do
       native_string_call_expr?(expr, env) ->
         {
           """
-            const char *#{out} = (const char *)#{RcRuntimeEmit.value_expr(var)}->payload;
+            const char *#{out} = (const char *)#{value_ref}->payload;
           """,
           []
         }
@@ -578,11 +580,12 @@ defmodule Elmc.Backend.CCodegen.Native.String do
         {
           """
             ElmcValue *#{boxed} = NULL;
+            ElmcValue *#{out}_src = #{value_ref};
             const char *#{out} = "";
-            if (#{RcRuntimeEmit.value_expr(var)} && #{RcRuntimeEmit.value_expr(var)}->tag == ELMC_TAG_STRING && #{RcRuntimeEmit.value_expr(var)}->payload) {
-              #{out} = (const char *)#{RcRuntimeEmit.value_expr(var)}->payload;
-            } else if (#{RcRuntimeEmit.value_expr(var)} && #{RcRuntimeEmit.value_expr(var)}->tag == ELMC_TAG_LIST) {
-              #{RcRuntimeEmit.check_rc_take(boxed, "elmc_string_from_list", RcRuntimeEmit.value_expr(var))}
+            if (#{out}_src && #{out}_src->tag == ELMC_TAG_STRING && #{out}_src->payload) {
+              #{out} = (const char *)#{out}_src->payload;
+            } else if (#{out}_src && #{out}_src->tag == ELMC_TAG_LIST) {
+              #{RcRuntimeEmit.check_rc_take(boxed, "elmc_string_from_list", "#{out}_src")}
               #{out} = (#{boxed} && #{boxed}->payload) ? (const char *)#{boxed}->payload : "";
             }
           """,
@@ -592,9 +595,10 @@ defmodule Elmc.Backend.CCodegen.Native.String do
       true ->
         {
           """
+            ElmcValue *#{out}_src = #{value_ref};
             const char *#{out} =
-              (#{RcRuntimeEmit.value_expr(var)} && #{RcRuntimeEmit.value_expr(var)}->tag == ELMC_TAG_STRING && #{RcRuntimeEmit.value_expr(var)}->payload)
-                ? (const char *)#{RcRuntimeEmit.value_expr(var)}->payload
+              (#{out}_src && #{out}_src->tag == ELMC_TAG_STRING && #{out}_src->payload)
+                ? (const char *)#{out}_src->payload
                 : "";
           """,
           []

@@ -70,6 +70,7 @@ defmodule Elmc.PokeBattlePlanGapsTest do
 
   test "Render.dialog lowers", %{decl_map: decl_map} do
     decl = Map.fetch!(decl_map, {"Render", "dialog"})
-    assert {:ok, _plan} = Function.lower(decl, "Render", decl_map, rc_required: true)
+    assert {:ok, plan} = Function.lower(decl, "Render", decl_map, rc_required: true)
+    assert Enum.any?(plan.blocks, &(&1.id == 3))
   end
 end

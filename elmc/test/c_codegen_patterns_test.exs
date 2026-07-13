@@ -44,6 +44,14 @@ defmodule Elmc.CCodegenPatternsTest do
     refute Patterns.maybe_unwrap_just_case?([%{pattern: %{kind: :var, name: "piece"}}])
   end
 
+  test "skip_empty_nothing_branch ignores whitespace-only Nothing arms" do
+    branch = %{pattern: %{kind: :constructor, name: "Nothing"}}
+
+    assert Patterns.skip_empty_nothing_branch?(branch, "")
+    assert Patterns.skip_empty_nothing_branch?(branch, "   \n")
+    refute Patterns.skip_empty_nothing_branch?(branch, "do_something();")
+  end
+
   test "bind_pattern unwraps bare var in Nothing + var Maybe cases" do
     env = Map.put(%{}, :maybe_unwrap_just, true)
 

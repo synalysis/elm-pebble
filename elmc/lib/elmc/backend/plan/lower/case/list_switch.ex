@@ -831,7 +831,7 @@ defmodule Elmc.Backend.Plan.Lower.Case.ListSwitch do
            |> Builder.bind_local(a_name, a_reg)
            |> Builder.bind_local(only_name, a_reg),
          b_branch = Builder.finish_block(b_locals, {:br_if, single_id, double_id, t1_empty_cond}),
-         {:ok, single_reg, single_exit, _b_single} <-
+         {:ok, single_reg, single_exit, b_single} <-
            compile_arm(single_expr, arm_ctx, b_branch, single_id),
          {:ok, double_reg, double_exit, b_double} <-
            compile_double_cons_tail_arm(
@@ -843,7 +843,7 @@ defmodule Elmc.Backend.Plan.Lower.Case.ListSwitch do
              t1_reg,
              subject,
              arm_ctx,
-             b_branch,
+             b_single,
              double_id
            ) do
       {:ok, t1_empty_cond, single_reg, single_exit, double_reg, double_exit, b_double}

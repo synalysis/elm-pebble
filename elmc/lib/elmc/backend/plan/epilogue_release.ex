@@ -52,9 +52,17 @@ defmodule Elmc.Backend.Plan.EpilogueRelease do
 
   defp live_owned(instrs) do
     Enum.reduce(instrs, MapSet.new(), fn instr, owned ->
-      owned
-      |> track_produces(instr)
-      |> mark_consumed(instr.effects.consumes || [])
+      case instr do
+        %{op: :phi, dest: dest} when is_integer(dest) ->
+          owned
+          |> mark_consumed(instr.effects.consumes || [])
+          |> then(fn _ -> MapSet.new([dest]) end)
+
+        _ ->
+          owned
+          |> track_produces(instr)
+          |> mark_consumed(instr.effects.consumes || [])
+      end
     end)
   end
 

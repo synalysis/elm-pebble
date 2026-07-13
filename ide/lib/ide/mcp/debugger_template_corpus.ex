@@ -34,6 +34,7 @@ defmodule Ide.Mcp.DebuggerTemplateCorpus do
     watchface-weather-animated
     watchface-tutorial-complete
     companion-demo-phone-status
+    companion-demo-protocol-matrix
     companion-demo-weather-env
     companion-demo-calendar
     companion-demo-geolocation

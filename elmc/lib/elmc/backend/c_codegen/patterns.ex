@@ -636,11 +636,16 @@ defmodule Elmc.Backend.CCodegen.Patterns do
   defp put_just_bind_var_type(env, _subject_ref, _bind), do: env
 
   @spec nothing_branch?(Types.case_branch()) :: boolean()
-  defp nothing_branch?(%{pattern: %{kind: :constructor, name: name}})
-       when name in ["Nothing", "Maybe.Nothing"],
-       do: true
+  def nothing_branch?(%{pattern: %{kind: :constructor, name: name}})
+      when name in ["Nothing", "Maybe.Nothing"],
+      do: true
 
-  defp nothing_branch?(_), do: false
+  def nothing_branch?(_), do: false
+
+  @spec skip_empty_nothing_branch?(Types.case_branch(), String.t()) :: boolean()
+  def skip_empty_nothing_branch?(branch, branch_body) do
+    nothing_branch?(branch) and String.trim(branch_body) == ""
+  end
 
   @spec var_branch?(Types.case_branch()) :: boolean()
   defp var_branch?(%{pattern: %{kind: :var, name: name}})
