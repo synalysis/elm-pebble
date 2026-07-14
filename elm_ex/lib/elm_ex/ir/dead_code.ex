@@ -83,12 +83,14 @@ defmodule ElmEx.IR.DeadCode do
 
   @spec call_reference_targets(Expr.t(), String.t()) :: [DeadCode.function_key()]
   defp call_reference_targets(%{op: :qualified_call, target: target}, _mod)
-       when is_binary(target),
-       do: [target]
+       when is_binary(target) do
+    [target | qualified_field_binding_refs(target)] |> Enum.uniq()
+  end
 
   defp call_reference_targets(%{op: :qualified_call1, target: target}, _mod)
-       when is_binary(target),
-       do: [target]
+       when is_binary(target) do
+    [target | qualified_field_binding_refs(target)] |> Enum.uniq()
+  end
 
   defp call_reference_targets(%{op: :call, name: name}, mod) when is_binary(name) do
     [local_call_target(name, mod)]
@@ -111,6 +113,24 @@ defmodule ElmEx.IR.DeadCode do
   end
 
   defp call_reference_targets(_expr, _mod), do: []
+
+  @spec qualified_field_binding_refs(String.t()) :: [DeadCode.function_key()]
+  defp qualified_field_binding_refs(target) when is_binary(target) do
+    parts = String.split(target, ".", trim: true)
+    count = length(parts)
+
+    if count < 3 do
+      []
+    else
+      for idx <- (count - 2)..1//-1,
+          fields = Enum.drop(parts, idx + 1),
+          fields != [] do
+        module = parts |> Enum.take(idx) |> Enum.join(".")
+        binding = Enum.at(parts, idx)
+        "#{module}.#{binding}"
+      end
+    end
+  end
 
   @spec local_call_target(String.t(), String.t()) :: DeadCode.function_key()
   defp local_call_target(name, mod) do

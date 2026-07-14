@@ -4,7 +4,8 @@
   "scripts": {
     "gen:tailwind": "elm-tailwind-classes gen",
     "start": "npm run gen:tailwind && elm-pages dev",
-    "build": "npm run gen:tailwind && elm-pages build"
+    "build": "npm run gen:tailwind && elm-pages build",
+    "build:wasm": "bash ../scripts/build-elm-pebble-dev-wasm.sh"
   },
   "devDependencies": {
     "@tailwindcss/cli": "^4.2.2",

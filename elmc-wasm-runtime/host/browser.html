@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>elmc WASM</title>
+    <style>
+      body {
+        margin: 0;
+        font-family: system-ui, sans-serif;
+      }
+      #app {
+        padding: 1rem;
+      }
+      #boot-error {
+        color: #b00020;
+        white-space: pre-wrap;
+        font-family: ui-monospace, monospace;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app"></div>
+    <pre id="boot-error" hidden></pre>
+    <script type="module" src="./boot.js"></script>
+  </body>
+</html>

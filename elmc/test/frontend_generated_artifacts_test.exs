@@ -311,6 +311,26 @@ defmodule Elmc.FrontendGeneratedArtifactsTest do
     assert expr10e[:op] == :var
     assert expr10e[:name] == "<|"
 
+    assert {:ok, expr10f} =
+             ElmEx.Frontend.GeneratedExpressionParser.parse("(++)")
+
+    assert expr10f[:op] == :var
+    assert expr10f[:name] == "__append__"
+
+    assert {:ok, expr10g} =
+             ElmEx.Frontend.GeneratedExpressionParser.parse(
+               "name |> String.split \"(\" |> List.head"
+             )
+
+    assert expr10g[:op] == :pipe_chain
+
+    assert {:ok, expr10h} =
+             ElmEx.Frontend.GeneratedExpressionParser.parse(
+               "value |> String.fromInt |> (++) \"Q\""
+             )
+
+    assert expr10h[:op] == :pipe_chain
+
     assert {:ok, expr11} =
              ElmEx.Frontend.GeneratedExpressionParser.parse(
                "{ model | value = model.value + 1, values = model.values }"

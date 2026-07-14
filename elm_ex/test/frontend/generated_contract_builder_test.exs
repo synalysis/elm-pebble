@@ -64,4 +64,60 @@ defmodule ElmEx.Frontend.GeneratedContractBuilderTest do
     assert {:ok, %{op: :compose_left, f: %{target: "GotWeather"}, g: %{op: :qualified_call}}} =
              GeneratedExpressionParser.parse("GotWeather << Result.map Weather.Current")
   end
+
+  test "nested case inside outer case arm keeps Err and wildcard branches" do
+    source = """
+    module Main exposing (update)
+
+    update msg =
+        case msg of
+            OuterTag value ->
+                case ( value, pending, pageData ) of
+                    ( Just bytes, Just url, Ok prev ) ->
+                        prev
+
+                    ( Just bytes, Just _, Err _ ) ->
+                        bytes
+
+                    _ ->
+                        0
+
+            _ ->
+                0
+    """
+
+    update =
+      "Main.elm"
+      |> GeneratedContractBuilder.build(source, "Main", [])
+      |> Map.get(:declarations)
+      |> Enum.find(&(&1.kind == :function_definition and &1.name == "update"))
+
+    find_tuple_case = fn find_tuple_case, node ->
+      case node do
+        %{op: :case, branches: branches} when length(branches) == 3 ->
+          if Enum.any?(branches, fn br -> br.pattern[:kind] == :tuple end),
+            do: node,
+            else: Enum.find_value(branches, fn br -> find_tuple_case.(find_tuple_case, br.expr) end)
+
+        %{op: :case, branches: branches} ->
+          Enum.find_value(branches, fn br -> find_tuple_case.(find_tuple_case, br.expr) end)
+
+        %{in_expr: in_expr} ->
+          find_tuple_case.(find_tuple_case, in_expr)
+
+        map when is_map(map) ->
+          Enum.find_value(map, fn {_k, v} -> find_tuple_case.(find_tuple_case, v) end)
+
+        list when is_list(list) ->
+          Enum.find_value(list, &find_tuple_case.(find_tuple_case, &1))
+
+        _ ->
+          nil
+      end
+    end
+
+    tuple_case = find_tuple_case.(find_tuple_case, update.expr)
+    assert tuple_case
+    assert length(tuple_case.branches) == 3
+  end
 end

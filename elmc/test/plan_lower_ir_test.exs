@@ -924,4 +924,144 @@ defmodule Elmc.PlanLowerIrTest do
     refute record_get_int.args[:field_index] =~ "2"
     assert :ok = Verify.run(plan)
   end
+
+  test "extensible record field access uses max index among known shapes" do
+    Process.put(:elmc_record_alias_shapes, %{
+      {"Elm", "File"} => ["path", "contents", "warnings"],
+      {"Url", "Url"} => ["protocol", "host", "port_", "path", "query", "fragment"]
+    })
+
+    on_exit(fn -> Process.delete(:elmc_record_alias_shapes) end)
+
+    decl_map = %{
+      {"Route", "urlToRoute"} => %{
+        name: "urlToRoute",
+        type: "{url | path : String} -> Maybe Route",
+        args: ["url"],
+        expr: %{
+          op: :field_access,
+          arg: %{op: :var, name: "url"},
+          field: "path"
+        }
+      }
+    }
+
+    assert {:ok, plan} =
+             Function.lower(Map.fetch!(decl_map, {"Route", "urlToRoute"}), "Route", decl_map,
+               rc_required: true
+             )
+
+    [record_get] =
+      plan.blocks
+      |> Enum.flat_map(& &1.instrs)
+      |> Enum.filter(&(&1.op == :record_get))
+
+    assert record_get.args[:field_index] =~ "3"
+    refute record_get.args[:field_index] =~ ~r/\b0\b/
+    assert :ok = Verify.run(plan)
+  end
+
+  test "string inequality compare uses string mode not pointer equality" do
+    decl_map = %{
+      {"Route", "nonEmptySegment"} => %{
+        name: "nonEmptySegment",
+        type: "String -> Bool",
+        args: ["item"],
+        expr: %{
+          op: :compare,
+          kind: :neq,
+          left: %{op: :var, name: "item"},
+          right: %{op: :string_literal, value: ""}
+        }
+      }
+    }
+
+    assert {:ok, plan} =
+             Function.lower(
+               Map.fetch!(decl_map, {"Route", "nonEmptySegment"}),
+               "Route",
+               decl_map,
+               rc_required: true
+             )
+
+    compare =
+      plan.blocks
+      |> Enum.flat_map(& &1.instrs)
+      |> Enum.find(&(&1.op == :compare))
+
+    assert compare.args[:mode] == :string
+    assert compare.args[:kind] == :neq
+    assert :ok = Verify.run(plan)
+  end
+
+  test "maybe_map field access uses typed Maybe payload record field index" do
+    decl_map = %{
+      {"Main", "usePath"} => %{
+        name: "usePath",
+        type: "Maybe { metadata : Int, pageUrl : Int, path : Int } -> Maybe Int",
+        args: ["maybePagePath"],
+        expr: %{
+          op: :runtime_call,
+          function: "elmc_maybe_map",
+          args: [
+            %{
+              op: :lambda,
+              args: ["x"],
+              body: %{op: :field_access, arg: %{op: :var, name: "x"}, field: "path"}
+            },
+            %{op: :var, name: "maybePagePath"}
+          ]
+        }
+      }
+    }
+
+    assert {:ok, plan} =
+             Function.lower(Map.fetch!(decl_map, {"Main", "usePath"}), "Main", decl_map,
+               rc_required: true
+             )
+
+    [record_get] =
+      plan.blocks
+      |> Enum.flat_map(& &1.instrs)
+      |> Enum.filter(&(&1.op == :record_get))
+
+    assert record_get.args[:field_index] =~ "2"
+    refute record_get.args[:field_index] =~ ~r/\b0\b/
+    assert :ok = Verify.run(plan)
+  end
+
+  test "maybe_and_then field access uses typed Maybe payload record field index" do
+    decl_map = %{
+      {"Main", "useMetadata"} => %{
+        name: "useMetadata",
+        type: "Maybe { metadata : Int, pageUrl : Int, path : Int } -> Maybe Int",
+        args: ["maybePagePath"],
+        expr: %{
+          op: :runtime_call,
+          function: "elmc_maybe_and_then",
+          args: [
+            %{
+              op: :lambda,
+              args: ["x"],
+              body: %{op: :field_access, arg: %{op: :var, name: "x"}, field: "metadata"}
+            },
+            %{op: :var, name: "maybePagePath"}
+          ]
+        }
+      }
+    }
+
+    assert {:ok, plan} =
+             Function.lower(Map.fetch!(decl_map, {"Main", "useMetadata"}), "Main", decl_map,
+               rc_required: true
+             )
+
+    [record_get] =
+      plan.blocks
+      |> Enum.flat_map(& &1.instrs)
+      |> Enum.filter(&(&1.op == :record_get))
+
+    assert record_get.args[:field_index] =~ "0"
+    assert :ok = Verify.run(plan)
+  end
 end

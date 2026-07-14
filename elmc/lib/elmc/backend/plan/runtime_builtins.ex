@@ -9,6 +9,7 @@ defmodule Elmc.Backend.Plan.RuntimeBuiltins do
 
   @native_int_arg_indices %{
     list_slice_int: [0, 1],
+    list_replace_nth_int: [1, 2],
     list_take: [0],
     list_drop: [0],
     string_from_int: [0],
@@ -51,6 +52,7 @@ defmodule Elmc.Backend.Plan.RuntimeBuiltins do
     list_is_empty: "elmc_list_is_empty",
     list_nth_maybe: "elmc_list_nth_maybe",
     list_nth_int_default: "elmc_list_nth_int_default_boxed",
+    list_replace_nth_int: "elmc_list_replace_nth_int",
     maybe_with_default: "elmc_maybe_with_default",
     maybe_map: "elmc_maybe_map",
     basics_min: "elmc_basics_min",
@@ -150,6 +152,7 @@ defmodule Elmc.Backend.Plan.RuntimeBuiltins do
     :int_list_tail,
     :list_is_empty,
     :list_nth_maybe,
+    :list_replace_nth_int,
     :maybe_with_default,
     :maybe_map,
     :basics_min,
@@ -298,6 +301,7 @@ defmodule Elmc.Backend.Plan.RuntimeBuiltins do
     :list_is_empty,
     :list_nth_maybe,
     :list_nth_int_default,
+    :list_replace_nth_int,
     :maybe_with_default,
     :maybe_map,
     :basics_min,

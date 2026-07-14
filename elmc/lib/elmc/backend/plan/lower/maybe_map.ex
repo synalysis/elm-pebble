@@ -27,6 +27,7 @@ defmodule Elmc.Backend.Plan.Lower.MaybeMap do
 
   defp compile_field_map(field, maybe, ctx, b) when is_binary(field) do
     maybe_ctx = Context.for_branch_arm(ctx)
+    payload_ctx = Elmc.Backend.Plan.Lower.MaybePayload.ctx_for_payload(maybe, maybe_ctx)
 
     with {:ok, maybe_reg, b1} <- Expr.compile(maybe, maybe_ctx, b) do
       compile_maybe_branch_map(
@@ -34,7 +35,7 @@ defmodule Elmc.Backend.Plan.Lower.MaybeMap do
         fn payload_reg, arm_ctx, b_arm ->
           compile_record_field_map(payload_reg, field, arm_ctx, b_arm)
         end,
-        ctx,
+        payload_ctx,
         b1
       )
     else
@@ -109,7 +110,8 @@ defmodule Elmc.Backend.Plan.Lower.MaybeMap do
 
   defp compile_record_get(base_reg, field, ctx, b) when is_integer(base_reg) do
     {reg, b1} = Builder.fresh_reg(b)
-    field_index = Record.field_index_for(field, ctx)
+    base_expr = Elmc.Backend.Plan.Lower.MaybePayload.payload_base_expr(ctx)
+    field_index = Record.field_index_for(field, ctx, base_expr)
     int_field? = Record.int_field?(field)
     op = if int_field?, do: :record_get_int, else: :record_get
 
@@ -235,11 +237,12 @@ defmodule Elmc.Backend.Plan.Lower.MaybeMap do
     end
   end
 
-  defp field_accessor_lambda(%{op: :lambda, args: [arg], body: %{op: :field_access, arg: arg_name, field: field}})
+  @doc false
+  def field_accessor_lambda(%{op: :lambda, args: [arg], body: %{op: :field_access, arg: arg_name, field: field}})
        when is_binary(arg) and is_binary(field) and arg == arg_name,
        do: {:ok, field}
 
-  defp field_accessor_lambda(%{
+  def field_accessor_lambda(%{
          op: :lambda,
          args: [arg],
          body: %{op: :field_access, arg: %{op: :var, name: arg_name}, field: field}
@@ -247,5 +250,5 @@ defmodule Elmc.Backend.Plan.Lower.MaybeMap do
        when is_binary(arg) and is_binary(field) and arg == arg_name,
        do: {:ok, field}
 
-  defp field_accessor_lambda(_), do: :error
+  def field_accessor_lambda(_), do: :error
 end

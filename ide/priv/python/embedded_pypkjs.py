@@ -16,7 +16,8 @@ from pypkjs.runner import PebbleManager, Runner
 from pypkjs.runner.websocket import run_tool, WebsocketRunner
 
 
-DEBUG_LOG_PATH = "/home/ape/projects/elm-pebble/.cursor/debug-edf96a.log"
+_REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
+DEBUG_LOG_PATH = os.path.join(_REPO_ROOT, ".cursor", "debug-edf96a.log")
 MAX_EARLY_APPMESSAGES = 20
 MAX_PENDING_INBOUND_APPMESSAGES = 32
 DEBUG_SIMULATOR_KEY_WEATHER_TEMPERATURE_C = 0x454C4D12

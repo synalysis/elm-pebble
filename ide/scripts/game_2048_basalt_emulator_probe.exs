@@ -11,7 +11,7 @@ unless Emulator.runtime_status("basalt").missing == [] do
   System.halt(1)
 end
 
-workspace = "/home/ape/projects/elm-pebble/ide/workspace_projects/2048"
+workspace = Path.expand("../workspace_projects/2048", __DIR__)
 
 {:ok, pkg} =
   PebbleToolchain.package("2048",

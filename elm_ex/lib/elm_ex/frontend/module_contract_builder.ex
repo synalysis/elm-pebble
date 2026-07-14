@@ -147,7 +147,9 @@ defmodule ElmEx.Frontend.GeneratedContractBuilder do
 
   @spec multiline_union_start?(scanned_line()) :: boolean()
   defp multiline_union_start?(line_info) do
-    match?({:ok, {:union_start, _, :none}}, line_info.decl)
+    match?({:ok, {:union_start, _, :none}}, line_info.decl) or
+      (line_info.decl == :none and not line_info.indented? and
+         Regex.match?(~r/^type\s+[A-Z][A-Za-z0-9_']*(?:\s+[a-z][A-Za-z0-9_']*)*\s*=\s*$/u, line_info.trimmed))
   end
 
   @spec multiline_continuation_line?(scanned_line()) :: boolean()
@@ -207,6 +209,8 @@ defmodule ElmEx.Frontend.GeneratedContractBuilder do
       continuation
       |> Enum.filter(&(not (&1.trimmed == "" or String.starts_with?(&1.trimmed, "--"))))
       |> Enum.map(& &1.trimmed)
+      |> Enum.map(&strip_union_line_comment/1)
+      |> Enum.reject(&(&1 == ""))
       |> Enum.join(" ")
 
     candidate =
@@ -493,7 +497,17 @@ defmodule ElmEx.Frontend.GeneratedContractBuilder do
     body = String.trim(body)
     generated_expr = maybe_generated_expr(body)
 
-    generated_expr || %{op: :unsupported, source: body}
+    generated_expr || unsupported_expr(body)
+  end
+
+  defp unsupported_expr(body) when is_binary(body) do
+    case GeneratedExpressionParser.parse(body) do
+      {:error, reason} ->
+        %{op: :unsupported, source: body, reason: inspect(reason)}
+
+      _ ->
+        %{op: :unsupported, source: body}
+    end
   end
 
   @spec maybe_generated_expr(String.t()) :: expr()
@@ -884,6 +898,15 @@ defmodule ElmEx.Frontend.GeneratedContractBuilder do
   @spec union_trivia_line?(scanned_line()) :: boolean()
   defp union_trivia_line?(line_info) do
     line_info.trimmed == "" or String.starts_with?(line_info.trimmed, "--")
+  end
+
+  @spec strip_union_line_comment(String.t()) :: String.t()
+  defp strip_union_line_comment(line) when is_binary(line) do
+    line
+    |> String.split(~r/\s+--\s/u, parts: 2)
+    |> List.first()
+    |> to_string()
+    |> String.trim()
   end
 
   @spec flush_union([decl()], union_builder() | nil) :: [decl()]

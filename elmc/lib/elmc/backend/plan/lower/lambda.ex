@@ -127,15 +127,24 @@ defmodule Elmc.Backend.Plan.Lower.Lambda do
       |> MapSet.to_list()
       |> Enum.sort()
 
-    with {:ok, capture_regs, b1} <- compile_captures(free_vars, ctx, b),
-         {:ok, capture_regs, b1a} <- prepend_letrec_capture(ctx, b1, capture_regs),
-         {:ok, child_plan, b2} <-
-           lower_lambda_plan(free_vars, lambda_args, body, tuple_prelude, ctx, b1a),
-         idx = length(b2.lambdas),
-         b3 = %{b2 | lambdas: b2.lambdas ++ [child_plan]} do
-      emit_closure(idx, capture_regs, lambda_args, ctx, b3)
-    else
-      _ -> :unsupported
+    case compile_captures(free_vars, ctx, b) do
+      {:ok, capture_regs, b1} ->
+        {:ok, capture_regs2, b1a} = prepend_letrec_capture(ctx, b1, capture_regs)
+
+        case lower_lambda_plan(free_vars, lambda_args, body, tuple_prelude, ctx, b1a) do
+          {:ok, child_plan, b2} ->
+            idx = length(b2.lambdas)
+            b3 = %{b2 | lambdas: b2.lambdas ++ [child_plan]}
+            emit_closure(idx, capture_regs2, lambda_args, ctx, b3)
+
+          _ ->
+            record_lambda_unsupported(ctx, :lower_lambda_plan)
+            :unsupported
+        end
+
+      _ ->
+        record_lambda_unsupported(ctx, :compile_captures)
+        :unsupported
     end
   end
 
@@ -199,7 +208,8 @@ defmodule Elmc.Backend.Plan.Lower.Lambda do
         fallible: parent_ctx.fallible,
         function_tail: false,
         letrec_refs: parent_ctx.letrec_refs,
-        letrec_in_closure: parent_ctx.letrec_self != nil
+        letrec_in_closure: parent_ctx.letrec_self != nil,
+        local_types: parent_ctx.local_types || %{}
       )
 
     child_b =
@@ -217,20 +227,27 @@ defmodule Elmc.Backend.Plan.Lower.Lambda do
       end
 
     with {:ok, child_ctx1, child_b1} <-
-           bind_tuple_prelude(tuple_prelude, free_vars, lambda_args, child_ctx, child_b),
-         {:ok, result_reg, b1} <- Expr.compile(body, child_ctx1, child_b1) do
-        {b2, ret_reg} = finalize_lambda_result(b1, result_reg, parent_ctx.rc_required)
-        b3 = if parent_ctx.rc_required, do: Builder.catch_end(b2), else: b2
-        b4 = Builder.emit_ret(b3, ret_reg)
+           bind_tuple_prelude(tuple_prelude, free_vars, lambda_args, child_ctx, child_b) do
+      case Expr.compile(body, child_ctx1, child_b1) do
+        {:ok, result_reg, b1} ->
+          {b2, ret_reg} = finalize_lambda_result(b1, result_reg, parent_ctx.rc_required)
+          b3 = if parent_ctx.rc_required, do: Builder.catch_end(b2), else: b2
+          b4 = Builder.emit_ret(b3, ret_reg)
 
-        child_plan =
-          Builder.to_function_plan(b4)
-          |> Map.put(:lambda_arg_count, length(lambda_args))
+          child_plan =
+            Builder.to_function_plan(b4)
+            |> Map.put(:lambda_arg_count, length(lambda_args))
 
-        {:ok, child_plan, b}
+          {:ok, child_plan, b}
 
+        _ ->
+          record_lambda_body_unsupported(child_ctx1, body)
+          :unsupported
+      end
     else
-      _ -> :unsupported
+      _ ->
+        record_lambda_body_unsupported(child_ctx, body)
+        :unsupported
     end
   end
 
@@ -309,4 +326,33 @@ defmodule Elmc.Backend.Plan.Lower.Lambda do
   defp resolvable_keys(ctx) do
     MapSet.new(ctx.params ++ Map.keys(ctx.locals))
   end
+
+  defp record_lambda_unsupported(ctx, step) when is_map(ctx) do
+    key = {Map.get(ctx, :module), Map.get(ctx, :function_name)}
+
+    reason = %{
+      op: :lambda,
+      target: nil,
+      kind: step
+    }
+
+    cache = Process.get(:elmc_plan_unsupported_reasons, %{})
+    Process.put(:elmc_plan_unsupported_reasons, Map.put_new(cache, key, reason))
+  end
+
+  defp record_lambda_body_unsupported(ctx, body) when is_map(ctx) and is_map(body) do
+    key = {Map.get(ctx, :module), Map.get(ctx, :function_name)}
+
+    reason = %{
+      op: Map.get(body, :op) || :unknown,
+      target: Map.get(body, :target) || Map.get(body, :name),
+      kind: :lambda_body
+    }
+
+    cache = Process.get(:elmc_plan_unsupported_reasons, %{})
+    Process.put(:elmc_plan_unsupported_reasons, Map.put_new(cache, key, reason))
+  end
+
+  defp record_lambda_body_unsupported(_ctx, _body), do: :ok
+
 end

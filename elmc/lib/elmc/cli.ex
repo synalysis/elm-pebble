@@ -25,19 +25,38 @@ defmodule Elmc.CLI do
       ["check", project_dir] ->
         run_check(project_dir)
 
-      ["compile", project_dir, "--out-dir", out_dir] ->
-        run_compile(project_dir, out_dir, true)
+      ["compile", project_dir, "--out-dir", out_dir | rest] ->
+        {strip_dead_code, compile_opts} = parse_compile_flags(rest)
+        run_compile(project_dir, out_dir, strip_dead_code, compile_opts)
 
-      ["compile", project_dir, "--out-dir", out_dir, "--no-strip-dead-code"] ->
-        run_compile(project_dir, out_dir, false)
-
-      ["manifest", project_dir] ->
-        run_manifest(project_dir)
+      ["manifest", project_dir | rest] ->
+        run_manifest(project_dir, rest)
 
       _ ->
         print_help()
     end
   end
+
+  defp parse_compile_flags(flags) do
+    parse_compile_flags(flags, true, %{})
+  end
+
+  defp parse_compile_flags([], strip, opts), do: {strip, opts}
+
+  defp parse_compile_flags(["--no-strip-dead-code" | rest], _strip, opts),
+    do: parse_compile_flags(rest, false, opts)
+
+  defp parse_compile_flags(["--target", target | rest], strip, opts),
+    do: parse_compile_flags(rest, strip, Map.put(opts, :target, target))
+
+  defp parse_compile_flags(["--target=" <> target | rest], strip, opts),
+    do: parse_compile_flags(rest, strip, Map.put(opts, :target, target))
+
+  defp parse_compile_flags(["--web" | rest], strip, opts),
+    do: parse_compile_flags(rest, strip, Map.put(opts, :web, true))
+
+  defp parse_compile_flags([_unknown | rest], strip, opts),
+    do: parse_compile_flags(rest, strip, opts)
 
   @spec run_check(String.t()) :: :ok
   defp run_check(project_dir) do
@@ -98,9 +117,9 @@ defmodule Elmc.CLI do
     |> Enum.join("\n")
   end
 
-  @spec run_compile(String.t(), String.t() | nil, boolean()) :: :ok
-  defp run_compile(project_dir, out_dir, strip_dead_code) do
-    case compile_project(project_dir, out_dir, strip_dead_code: strip_dead_code) do
+  @spec run_compile(String.t(), String.t() | nil, boolean(), map()) :: :ok
+  defp run_compile(project_dir, out_dir, strip_dead_code, compile_opts) do
+    case compile_project(project_dir, out_dir, strip_dead_code: strip_dead_code, compile_opts: compile_opts) do
       %{status: :ok, output: output} ->
         IO.write(output)
         :ok
@@ -204,17 +223,19 @@ defmodule Elmc.CLI do
   end
 
   defp elmc_opts_from_cli(out_dir, opts) do
-    case Keyword.get(opts, :elmc_opts) do
-      %{} = elmc_opts ->
-        elmc_opts
-        |> Elmc.Backend.Plan.Defaults.apply_defaults()
-        |> Map.put_new(:out_dir, out_dir)
-        |> Map.put_new(:strip_dead_code, Keyword.get(opts, :strip_dead_code, true))
+    base =
+      case Keyword.get(opts, :elmc_opts) do
+        %{} = elmc_opts -> elmc_opts
+        _ -> %{}
+      end
 
-      _ ->
-        %{out_dir: out_dir, strip_dead_code: Keyword.get(opts, :strip_dead_code, true)}
-        |> Elmc.Backend.Plan.Defaults.apply_defaults()
-    end
+    compile_flags = Keyword.get(opts, :compile_opts, %{})
+
+    base
+    |> Map.merge(compile_flags)
+    |> Elmc.Backend.Plan.Defaults.apply_defaults()
+    |> Map.put_new(:out_dir, out_dir)
+    |> Map.put_new(:strip_dead_code, Keyword.get(opts, :strip_dead_code, true))
   end
 
   defp direct_render_only_view_error?(%ArgumentError{} = exception, opts) do
@@ -337,9 +358,11 @@ defmodule Elmc.CLI do
     |> Enum.join("\n")
   end
 
-  @spec run_manifest(String.t()) :: :ok
-  defp run_manifest(project_dir) do
-    case manifest_project(project_dir) do
+  @spec run_manifest(String.t(), [String.t()]) :: :ok
+  defp run_manifest(project_dir, argv) do
+    web? = "--web" in (argv || [])
+
+    case manifest_project(project_dir, web?: web?) do
       %{status: :ok, output: output} ->
         IO.write(output)
         :ok
@@ -353,11 +376,11 @@ defmodule Elmc.CLI do
   @doc """
   Runs `elmc manifest` in-process and returns CLI-compatible output for IDE integration.
   """
-  @spec manifest_project(String.t()) :: manifest_run()
-  def manifest_project(project_dir) do
+  @spec manifest_project(String.t(), keyword()) :: manifest_run()
+  def manifest_project(project_dir, opts \\ []) do
     case Elmc.check(project_dir) do
       {:ok, project} ->
-        manifest = build_manifest(project_dir, project)
+        manifest = build_manifest(project_dir, project, opts)
         output = Jason.encode!(manifest, pretty: true)
 
         %{
@@ -377,10 +400,10 @@ defmodule Elmc.CLI do
     end
   end
 
-  @spec build_manifest(String.t(), Types.manifest_project()) :: Types.project_manifest()
-  defp build_manifest(project_dir, project) do
+  @spec build_manifest(String.t(), Types.manifest_project(), keyword()) :: Types.project_manifest()
+  defp build_manifest(project_dir, project, opts) do
     dependencies = load_declared_dependencies(project_dir)
-    compatibility = dependency_compatibility_rows(dependencies)
+    compatibility = dependency_compatibility_rows(dependencies, opts)
 
     {supported_packages, excluded_packages} =
       compatibility
@@ -423,9 +446,8 @@ defmodule Elmc.CLI do
     IO.puts("""
     elmc usage:
       elmc check <project_dir>
-      elmc compile <project_dir> --out-dir <dir>
-      elmc compile <project_dir> --out-dir <dir> --no-strip-dead-code
-      elmc manifest <project_dir>
+      elmc compile <project_dir> --out-dir <dir> [--target wasm|c,c,wasm] [--web] [--no-strip-dead-code]
+      elmc manifest <project_dir> [--web]
     """)
   end
 
@@ -519,13 +541,15 @@ defmodule Elmc.CLI do
   defp dependency_keys(map) when is_map(map), do: Map.keys(map)
   defp dependency_keys(_), do: []
 
-  @spec dependency_compatibility_rows([String.t()]) :: [Types.dependency_compatibility_row()]
-  defp dependency_compatibility_rows(packages) when is_list(packages) do
+  @spec dependency_compatibility_rows([String.t()], keyword()) :: [Types.dependency_compatibility_row()]
+  defp dependency_compatibility_rows(packages, opts) when is_list(packages) do
+    web? = Keyword.get(opts, :web?, false) == true
+
     packages
     |> Enum.filter(&is_binary/1)
     |> Enum.sort()
     |> Enum.map(fn package ->
-      if package in @blocked_package_families do
+      if (not web?) and package in @blocked_package_families do
         %{
           "package" => package,
           "status" => "blocked",

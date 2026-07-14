@@ -38,6 +38,7 @@ defmodule ElmEx.Frontend.Bridge do
          modules: modules,
          diagnostics: diagnostics
        }
+       |> attach_missing_import_diagnostics()
        |> attach_lowerer_diagnostics()}
     end
   end
@@ -140,7 +141,9 @@ defmodule ElmEx.Frontend.Bridge do
           {:ok, [String.t()]} | {:error, BridgeTypes.bridge_error()}
   defp discover_module_paths(project_dir, elm_json) do
     source_dirs =
-      Map.get(elm_json, "source-directories", ["src"]) ++ builtin_source_dirs(elm_json)
+      Map.get(elm_json, "source-directories", ["src"]) ++
+        builtin_source_dirs(elm_json) ++
+        dependency_package_source_dirs(project_dir, elm_json)
 
     module_paths =
       source_dirs
@@ -162,6 +165,39 @@ defmodule ElmEx.Frontend.Bridge do
 
     {:ok, module_paths}
   end
+
+  defp dependency_package_source_dirs(project_dir, elm_json)
+       when is_binary(project_dir) and is_map(elm_json) do
+    deps =
+      elm_json
+      |> Map.get("dependencies", %{})
+      |> dependency_version_pairs()
+
+    Enum.flat_map(deps, fn {pkg, ver} ->
+      case String.split(pkg, "/", parts: 2) do
+        [author, name] ->
+          [
+            Path.join([project_dir, "elm-stuff", "packages", author, name, ver, "src"]),
+            Path.join([System.user_home!(), ".elm", "0.19.1", "packages", author, name, ver, "src"])
+          ]
+          |> Enum.map(&Path.expand/1)
+          |> Enum.filter(&File.dir?/1)
+
+        _ ->
+          []
+      end
+    end)
+  end
+
+  defp dependency_package_source_dirs(_project_dir, _elm_json), do: []
+
+  defp dependency_version_pairs(%{"direct" => direct, "indirect" => indirect})
+       when is_map(direct) and is_map(indirect) do
+    Map.merge(indirect, direct)
+    |> Enum.filter(fn {k, v} -> is_binary(k) and is_binary(v) end)
+  end
+
+  defp dependency_version_pairs(_), do: []
 
   @spec unique_module_paths_by_source_order([{String.t(), String.t()}]) :: [String.t()]
   defp unique_module_paths_by_source_order(source_paths) do
@@ -257,6 +293,57 @@ defmodule ElmEx.Frontend.Bridge do
         Application.get_env(:elm_ex, :enable_elm_make_check, false)
     end
   end
+
+  defp attach_missing_import_diagnostics(%Project{} = project) do
+    available =
+      project.modules
+      |> Enum.map(& &1.name)
+      |> MapSet.new()
+
+    missing =
+      project.modules
+      |> Enum.filter(fn mod ->
+        path = Map.get(mod, :path)
+        is_binary(path) and String.starts_with?(path, project.project_dir <> "/")
+      end)
+      |> Enum.flat_map(fn mod ->
+        (mod.imports || [])
+        |> Enum.filter(&missing_import?/1)
+        |> Enum.reject(&MapSet.member?(available, &1))
+        |> Enum.map(fn imported ->
+          %{
+            "type" => "missing-import",
+            "severity" => "error",
+            "module" => mod.name,
+            "import" => imported,
+            "message" =>
+              "Module #{mod.name} imports #{imported}, but it was not found in loaded sources. Add the dependency (or source directory) that provides #{imported}."
+          }
+        end)
+      end)
+
+    %{project | diagnostics: project.diagnostics ++ missing}
+  end
+
+  defp missing_import?(name) when is_binary(name) do
+    name != "" and
+      not String.starts_with?(name, "Elm.Kernel.") and
+      not String.starts_with?(name, "Basics") and
+      not String.starts_with?(name, "Debug") and
+      not String.starts_with?(name, "List") and
+      not String.starts_with?(name, "Maybe") and
+      not String.starts_with?(name, "Result") and
+      not String.starts_with?(name, "String") and
+      not String.starts_with?(name, "Char") and
+      not String.starts_with?(name, "Tuple") and
+      not String.starts_with?(name, "Platform") and
+      not String.starts_with?(name, "Dict") and
+      not String.starts_with?(name, "Set") and
+      not String.starts_with?(name, "Array") and
+      not String.starts_with?(name, "Bitwise")
+  end
+
+  defp missing_import?(_), do: false
 
   @spec attach_lowerer_diagnostics(ElmEx.Frontend.Project.t()) :: ElmEx.Frontend.Project.t()
   defp attach_lowerer_diagnostics(%Project{} = project) do

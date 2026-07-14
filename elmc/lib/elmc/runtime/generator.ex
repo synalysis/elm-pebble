@@ -481,7 +481,7 @@ defmodule Elmc.Runtime.Generator do
       |> Map.merge(collect_prune_header_macros(dir))
 
     refs =
-      Enum.reduce(contents, %{}, fn content, acc ->
+      Enum.reduce(contents, wasm_manifest_runtime_refs(dir), fn content, acc ->
         content
         |> runtime_reference_names(macros)
         |> Enum.reduce(acc, fn name, map -> Map.put(map, name, true) end)
@@ -490,6 +490,50 @@ defmodule Elmc.Runtime.Generator do
     refs
     |> expand_runtime_prune_refs(contents)
     |> Map.new(fn name -> {name, true} end)
+  end
+
+  defp wasm_manifest_runtime_refs(dir) when is_binary(dir) do
+    path = Path.join(dir, "wasm/elmc_wasm.manifest.json")
+
+    with true <- File.regular?(path),
+         {:ok, json} <- File.read(path),
+         {:ok, %{"imports" => imports}} <- Jason.decode(json),
+         true <- is_list(imports) do
+      imports
+      |> Enum.reduce(%{}, fn import_name, acc ->
+        case wasm_import_to_c_symbol(import_name) do
+          nil -> acc
+          sym -> Map.put(acc, sym, true)
+        end
+      end)
+      |> Map.put("elmc_rc_track_reset", true)
+      |> Map.put("elmc_rc_track_check_balanced", true)
+      |> Map.put("elmc_process_release_all_slots", true)
+    else
+      _ -> %{}
+    end
+  end
+
+  defp wasm_import_to_c_symbol("runtime." <> suffix) do
+    suffix = String.replace(suffix, ".", "_")
+
+    with {:ok, atom} <- safe_existing_atom(suffix),
+         sym when is_binary(sym) <- Elmc.Backend.Plan.RuntimeBuiltins.c_symbol(atom) do
+      sym
+    else
+      _ -> "elmc_" <> suffix
+    end
+  end
+
+  defp wasm_import_to_c_symbol("runtime.retain"), do: "elmc_retain"
+  defp wasm_import_to_c_symbol("runtime.release"), do: "elmc_release"
+  defp wasm_import_to_c_symbol("runtime.release_array_lifo"), do: "elmc_release_array_lifo"
+  defp wasm_import_to_c_symbol(_), do: nil
+
+  defp safe_existing_atom(name) do
+    {:ok, String.to_existing_atom(name)}
+  rescue
+    ArgumentError -> :error
   end
 
   defp collect_prune_header_macros(dir) do

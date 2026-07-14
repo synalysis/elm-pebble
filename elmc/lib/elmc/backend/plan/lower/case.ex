@@ -3,7 +3,7 @@ defmodule Elmc.Backend.Plan.Lower.Case do
 
   alias Elmc.Backend.Plan.Builder
   alias Elmc.Backend.Plan.Context
-  alias Elmc.Backend.Plan.Lower.Case.{GuardedSwitch, IntSwitch, ListSwitch, TagSwitch}
+  alias Elmc.Backend.Plan.Lower.Case.{CharSwitch, GuardedSwitch, IntSwitch, ListSwitch, TagSwitch}
   alias Elmc.Backend.Plan.Lower.{Expr, PatternBind}
   alias Elmc.Backend.Plan.Types
 
@@ -67,6 +67,7 @@ defmodule Elmc.Backend.Plan.Lower.Case do
         ListSwitch.compile_empty_var(subject, branches, ctx, b)
 
       ListSwitch.branches?(branches) -> ListSwitch.compile(subject, branches, ctx, b)
+      CharSwitch.branches?(branches) -> CharSwitch.compile(subject, branches, ctx, b)
       TagSwitch.branches?(branches) -> TagSwitch.compile(subject, branches, ctx, b)
       IntSwitch.branches?(branches) -> IntSwitch.compile(subject, branches, ctx, b)
       GuardedSwitch.branches?(branches) -> GuardedSwitch.compile(subject, branches, ctx, b)
@@ -115,7 +116,8 @@ defmodule Elmc.Backend.Plan.Lower.Case do
     end
   end
 
-  defp compile_maybe_nothing_case(subject, nothing_br, other_br, ctx, b) do
+  defp compile_maybe_nothing_case(subject, arm_a, arm_b, ctx, b) do
+    {nothing_br, other_br} = normalize_maybe_nothing_arms(arm_a, arm_b)
     saved_pending = Map.get(b, :pending_merge_block)
     subject_ctx = Context.for_branch_arm(ctx)
 
@@ -204,6 +206,9 @@ defmodule Elmc.Backend.Plan.Lower.Case do
       tagged_constructor_branches?(branches) ->
         TagSwitch.compile(subject, branches, ctx, b)
 
+      record_pattern_branches?(branches) ->
+        compile_record_pattern_case(subject, branches, ctx, b)
+
       GuardedSwitch.branches?(branches) ->
         GuardedSwitch.compile(subject, branches, ctx, b)
 
@@ -211,6 +216,35 @@ defmodule Elmc.Backend.Plan.Lower.Case do
         :unsupported
     end
   end
+
+  defp record_pattern_branches?(branches) when is_list(branches) do
+    branches != [] and
+      Enum.all?(branches, fn branch ->
+        match?(%{pattern: %{kind: :record, fields: fields}} when is_list(fields), branch)
+      end)
+  end
+
+  defp compile_record_pattern_case(subject, branches, ctx, b) do
+    with {:ok, subj_reg, b1} <- Expr.compile(subject_expr(subject), ctx, b),
+         {:ok, reg, b2} <- compile_record_pattern_branches(branches, subj_reg, ctx, b1) do
+      {:ok, reg, b2}
+    else
+      _ -> :unsupported
+    end
+  end
+
+  defp compile_record_pattern_branches([%{pattern: pattern, expr: expr}], subj_reg, ctx, b) do
+    arm_ctx = Context.for_branch_arm(ctx)
+
+    with {:ok, ctx1, b1} <- PatternBind.bind(pattern, arm_ctx, b, subj_reg),
+         {:ok, reg, b2} <- Expr.compile(expr, ctx1, b1) do
+      {:ok, reg, b2}
+    else
+      _ -> :unsupported
+    end
+  end
+
+  defp compile_record_pattern_branches(_, _, _, _), do: :unsupported
 
   defp normalize_case_branches(branches) when is_list(branches) do
     Enum.map(branches, fn branch ->
@@ -265,6 +299,14 @@ defmodule Elmc.Backend.Plan.Lower.Case do
 
   defp nothing_arm?(_), do: false
 
+  defp normalize_maybe_nothing_arms(arm_a, arm_b) do
+    cond do
+      nothing_arm?(arm_a) -> {arm_a, arm_b}
+      nothing_arm?(arm_b) -> {arm_b, arm_a}
+      true -> {arm_a, arm_b}
+    end
+  end
+
   defp catch_all_arm?(%{pattern: %{kind: :var}}), do: true
   defp catch_all_arm?(%{pattern: %{kind: :wildcard}}), do: true
 
@@ -301,7 +343,10 @@ defmodule Elmc.Backend.Plan.Lower.Case do
   end
 
   defp bind_pattern_pair(ctx, b, %{kind: :var, name: name}, subj_reg) when is_binary(name) do
-    {Context.put_local(ctx, name, subj_reg), Builder.bind_local(b, name, subj_reg)}
+    case PatternBind.bind(%{kind: :var, name: name}, ctx, b, subj_reg) do
+      {:ok, ctx1, b1} -> {ctx1, b1}
+      :unsupported -> {Context.put_local(ctx, name, subj_reg), Builder.bind_local(b, name, subj_reg)}
+    end
   end
 
   defp bind_pattern_pair(ctx, b, %{kind: :wildcard}, _subj_reg), do: {ctx, b}
@@ -338,7 +383,10 @@ defmodule Elmc.Backend.Plan.Lower.Case do
 
   defp bind_just_payload_pattern(ctx, b, %{kind: :constructor, bind: bind}, payload_reg)
        when is_binary(bind) do
-    {Context.put_local(ctx, bind, payload_reg), Builder.bind_local(b, bind, payload_reg)}
+    case PatternBind.bind(%{kind: :var, name: bind}, ctx, b, payload_reg) do
+      {:ok, ctx1, b1} -> {ctx1, b1}
+      :unsupported -> {Context.put_local(ctx, bind, payload_reg), Builder.bind_local(b, bind, payload_reg)}
+    end
   end
 
   defp bind_just_payload_pattern(ctx, b, _pattern, payload_reg) do

@@ -72,6 +72,27 @@ defmodule Elmc.PlanSizeReductionTest do
     refute c =~ "elmc_tuple2("
   end
 
+  test "tuple2 of non-int local vars uses elmc_tuple2 not tuple2_ints" do
+    decl = %{
+      name: "bundle",
+      args: ["pageData", "sharedData"],
+      type: "pageData -> sharedData -> ( pageData, sharedData )",
+      expr: %{
+        op: :tuple2,
+        left: %{op: :var, name: "pageData"},
+        right: %{op: :var, name: "sharedData"}
+      }
+    }
+
+    Process.put(:elmc_program_decls, %{{"Main", "bundle"} => decl})
+    Process.put(:elmc_codegen_opts, %{plan_ir_mode: :primary})
+
+    assert {:ok, plan} = PlanLower.lower(decl, "Main", %{{"Main", "bundle"} => decl}, rc_required: true)
+    c = CLowerFunction.emit(plan)
+    refute c =~ "elmc_tuple2_ints"
+    assert c =~ "elmc_tuple2("
+  end
+
   test "tuple2_ints in non-RC functions uses take_value wrapper" do
     decl = %{
       name: "pair",

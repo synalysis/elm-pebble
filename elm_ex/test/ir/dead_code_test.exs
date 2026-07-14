@@ -149,4 +149,58 @@ defmodule ElmEx.IR.DeadCodeTest do
     assert MapSet.member?(platform_decls, "displayShapeIsRound")
     refute MapSet.member?(platform_decls, "orphan")
   end
+
+  test "keeps module bindings referenced through qualified field calls" do
+    ir = %IR{
+      modules: [
+        %{
+          name: "Main",
+          declarations: [
+            %{
+              kind: :function,
+              name: "main",
+              expr: %{
+                op: :qualified_call,
+                target: "Route.Articles.Example.route.data",
+                args: [%{op: :string_literal, value: "ok"}]
+              }
+            }
+          ]
+        },
+        %{
+          name: "Route.Articles.Example",
+          declarations: [
+            %{
+              kind: :function,
+              name: "route",
+              expr: %{
+                op: :record_literal,
+                fields: [
+                  %{
+                    name: "data",
+                    expr: %{op: :qualified_call, target: "Basics.identity", args: []}
+                  }
+                ]
+              }
+            },
+            %{kind: :function, name: "orphan", expr: %{op: :int_literal, value: 0}}
+          ]
+        }
+      ],
+      diagnostics: []
+    }
+
+    stripped = DeadCode.strip(ir, "Main")
+
+    route_decls =
+      stripped.modules
+      |> Enum.find(&(&1.name == "Route.Articles.Example"))
+      |> Map.fetch!(:declarations)
+      |> Enum.filter(&(&1.kind == :function))
+      |> Enum.map(& &1.name)
+      |> MapSet.new()
+
+    assert MapSet.member?(route_decls, "route")
+    refute MapSet.member?(route_decls, "orphan")
+  end
 end

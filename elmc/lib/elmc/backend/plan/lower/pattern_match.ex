@@ -24,6 +24,14 @@ defmodule Elmc.Backend.Plan.Lower.PatternMatch do
     test_string_literal(subject_reg, value, b)
   end
 
+  defp do_match_condition(%{kind: :char, value: value}, subject_reg, b)
+       when is_integer(value) do
+    with {:ok, code_reg, b1} <- emit_char_code(subject_reg, b),
+         {:ok, lit_reg, b2} <- const_int(value, b1) do
+      compare_eq(code_reg, lit_reg, b2)
+    end
+  end
+
   defp do_match_condition(%{kind: :int, value: value}, subject_reg, b)
        when is_integer(value) do
     with {:ok, lit_reg, b1} <- const_int(value, b) do
@@ -98,6 +106,24 @@ defmodule Elmc.Backend.Plan.Lower.PatternMatch do
       Builder.emit(b1, :call_runtime, %{
         dest: dest,
         args: %{builtin: :union_payload, args: [subject_reg]},
+        effects: %{
+          produces: nil,
+          consumes: [],
+          borrows: [subject_reg],
+          fallible: false
+        }
+      })
+
+    {:ok, dest, b2}
+  end
+
+  defp emit_char_code(subject_reg, b) do
+    {dest, b1} = Builder.fresh_reg(b)
+
+    {_, b2} =
+      Builder.emit(b1, :call_runtime, %{
+        dest: dest,
+        args: %{builtin: :char_to_code, args: [subject_reg]},
         effects: %{
           produces: nil,
           consumes: [],

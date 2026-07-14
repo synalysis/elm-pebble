@@ -282,6 +282,64 @@ defmodule ElmEx.Frontend.LetLayoutTest do
             }} = GeneratedExpressionParser.parse(source)
   end
 
+  test "parses outer case branches after UrlChanged record update fields" do
+    source = """
+    case appMsg of
+        UrlChanged url ->
+            case model.pendingData of
+                Just ( newPageData, newSharedData, newActionData ) ->
+                    loadDataAndUpdateUrl
+                        ( newPageData, newSharedData, newActionData )
+                        Nothing
+                        url
+                        url
+                        False
+                        config
+                        model
+
+                Nothing ->
+                    if model.url.path == url.path && model.url.query == url.query then
+                        if url.fragment == Nothing then
+                            ( { model
+                                | url = url
+                              }
+                            , ScrollToTop
+                            )
+
+                        else
+                            ( { model
+                                | url = url
+                              }
+                            , NoEffect
+                            )
+
+                    else
+                        ( model
+                        , NoEffect
+                        )
+                            |> startNewGetLoad url
+
+        FetcherComplete _ fetcherKey _ userMsgResult ->
+            ( model, Cmd.none )
+
+        UserMsg userMsg_ ->
+            case userMsg_ of
+                Pages.Internal.Msg.UserMsg userMsg ->
+                    ( model, Cmd.none )
+
+                _ ->
+                    ( model, Cmd.none )
+    """
+
+    assert {:ok, %{op: :case, branches: branches}} = GeneratedExpressionParser.parse(source)
+
+    assert Enum.map(branches, & &1.pattern.name) == [
+             "UrlChanged",
+             "FetcherComplete",
+             "UserMsg"
+           ]
+  end
+
   test "parses nested case expression as outer case branch body" do
     source = """
     case msg of

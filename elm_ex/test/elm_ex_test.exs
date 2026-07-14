@@ -491,10 +491,10 @@ defmodule ElmExTest do
     {:ok, %IR{modules: [mod]}} = Lowerer.lower_project(project)
     func = Enum.find(mod.declarations, &(&1.name == "mk" and &1.kind == :function))
     assert func.expr.op == :record_literal
-    assert Enum.map(func.expr.fields, & &1.name) == ["temperature", "value"]
+    assert Enum.map(func.expr.fields, & &1.name) == ["value", "temperature"]
   end
 
-  test "lowerer preserves generic record_literal for non-value/temperature fields" do
+  test "lowerer preserves generic record_literal field source order" do
     project =
       synthetic_project([
         sig("mk", "{ x : Int, y : Int }"),
@@ -510,10 +510,7 @@ defmodule ElmExTest do
     {:ok, %IR{modules: [mod]}} = Lowerer.lower_project(project)
     func = Enum.find(mod.declarations, &(&1.name == "mk" and &1.kind == :function))
     assert func.expr.op == :record_literal
-    # Fields should be sorted alphabetically
-    [f1, f2] = func.expr.fields
-    assert f1.name == "x"
-    assert f2.name == "y"
+    assert Enum.map(func.expr.fields, & &1.name) == ["x", "y"]
   end
 
   # ---------------------------------------------------------------------------

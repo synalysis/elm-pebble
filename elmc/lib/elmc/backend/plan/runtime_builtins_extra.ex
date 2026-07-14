@@ -2,6 +2,8 @@ defmodule Elmc.Backend.Plan.RuntimeBuiltins.Extra do
   @moduledoc false
 
   @extra_builtins %{
+    port_outgoing: "elmc_port_outgoing",
+    port_incoming_sub: "elmc_port_incoming_sub",
     array_append: "elmc_array_append",
     array_empty: "elmc_array_empty",
     array_filter: "elmc_array_filter",
@@ -125,6 +127,7 @@ defmodule Elmc.Backend.Plan.RuntimeBuiltins.Extra do
     list_drop_int: "elmc_list_drop_int",
     list_find_first: "elmc_list_find_first",
     list_foldr: "elmc_list_foldr",
+    list_from_values: "elmc_list_from_values_take",
     list_intersperse: "elmc_list_intersperse",
     list_map2: "elmc_list_map2",
     list_map3: "elmc_list_map3",
@@ -189,6 +192,8 @@ defmodule Elmc.Backend.Plan.RuntimeBuiltins.Extra do
     string_right: "elmc_string_right",
     string_slice: "elmc_string_slice",
     string_split: "elmc_string_split",
+    string_equals: "elmc_string_equals",
+    string_equals_literal: "elmc_string_equals_cstr",
     string_to_list: "elmc_string_to_list",
     string_to_lower: "elmc_string_to_lower",
     string_to_upper: "elmc_string_to_upper",
@@ -221,7 +226,7 @@ defmodule Elmc.Backend.Plan.RuntimeBuiltins.Extra do
     dict_diff dict_filter dict_foldl dict_foldr dict_from_list dict_insert
     dict_intersect dict_keys dict_map dict_merge dict_partition dict_remove dict_union
     dict_update dict_values
-    list_drop_int list_find_first list_foldr list_intersperse list_map2 list_map3 list_map4
+    list_drop_int list_find_first list_foldr list_from_values list_intersperse list_map2 list_map3 list_map4
     list_map5 list_partition list_singleton list_sort list_unzip maybe_map2
     process_kill process_sleep process_spawn
     set_diff set_filter set_foldl set_foldr set_from_list set_insert set_intersect set_map

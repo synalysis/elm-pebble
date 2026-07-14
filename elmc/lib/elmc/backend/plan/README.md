@@ -7,7 +7,7 @@ Elm IR and backends:
 |---------|--------|--------|
 | Pebble C | `Elmc.Backend.C.Lower.Function` | `elmc_generated.c` RC functions |
 | Bytecode | `Elmc.Backend.Bytecode.Lower` | `.elmcbc` sections |
-| WASM (future) | `Elmc.Backend.Wasm.Lower` | `.wasm` modules |
+| WASM | `Elmc.Backend.Wasm.Lower` | `wasm/elmc_generated.wat` + manifest |
 
 ## Runtime builtin registry
 
@@ -16,7 +16,7 @@ Plan `call_runtime` ops use **logical ids** (`:list_append`, `:cmd2`, …) from
 
 - **C:** `RuntimeBuiltins.c_symbol/1` → `elmc_*` C functions
 - **Bytecode:** opcode index in `Bytecode.Opcodes`
-- **WASM (future):** `Wasm.RuntimeImports.import_name/1` → `runtime.list_append` etc.
+- **WASM:** `Wasm.RuntimeImports.import_name/1` → `runtime.list_append` etc.; emit via `Wasm.ProjectWriter` when `targets` includes `:wasm`
 
 ## Platform extensions
 

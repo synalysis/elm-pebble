@@ -14,6 +14,7 @@ defmodule ElmEx.IR.Lowerer do
   alias ElmEx.IR.ImportResolution
   alias ElmEx.IR.Module
   alias ElmEx.IR.PipeChain
+  alias ElmEx.IR.Wire3HelperResolution
 
   alias ElmEx.IR.Types.{Diagnostic, Expr, Lookup, ModuleExports, Pattern}
 
@@ -125,6 +126,40 @@ defmodule ElmEx.IR.Lowerer do
       end)
       |> Map.new()
 
+    global_record_alias_field_lookup =
+      project.modules
+      |> Enum.flat_map(fn frontend_module ->
+        frontend_module.declarations
+        |> Enum.filter(&(&1.kind == :type_alias))
+        |> Enum.flat_map(fn decl ->
+          case Map.get(decl, :fields) do
+            fields when is_list(fields) and fields != [] ->
+              [{decl.name, Enum.map(fields, &to_string/1)}]
+
+            _ ->
+              []
+          end
+        end)
+      end)
+      |> Map.new()
+
+    global_qualified_record_alias_field_lookup =
+      project.modules
+      |> Enum.flat_map(fn frontend_module ->
+        frontend_module.declarations
+        |> Enum.filter(&(&1.kind == :type_alias))
+        |> Enum.flat_map(fn decl ->
+          case Map.get(decl, :fields) do
+            fields when is_list(fields) and fields != [] ->
+              [{"#{frontend_module.name}.#{decl.name}", Enum.map(fields, &to_string/1)}]
+
+            _ ->
+              []
+          end
+        end)
+      end)
+      |> Map.new()
+
     project_module_exports = build_project_module_exports(project.modules)
 
     modules =
@@ -170,10 +205,16 @@ defmodule ElmEx.IR.Lowerer do
         definition_decls =
           others
           |> Enum.filter(&(&1.kind == :function_definition))
+          |> then(
+            &Wire3HelperResolution.augment_function_definitions(
+              frontend_module.name,
+              &1,
+              Wire3HelperResolution.union_meta_from_lowerer(unions)
+            )
+          )
 
         {definitions, rewrite_lookup} =
-          others
-          |> Enum.filter(&(&1.kind == :function_definition))
+          definition_decls
           |> then(fn defs ->
             local_constructor_lookup =
               unions
@@ -213,7 +254,10 @@ defmodule ElmEx.IR.Lowerer do
               import_unqualified_map: import_unqualified_map,
               type_unqualified_map: type_unqualified_map,
               wildcard_import_modules: wildcard_import_modules,
-              local_call_names: MapSet.new(Enum.map(defs, & &1.name))
+              local_call_names: MapSet.new(Enum.map(defs, & &1.name)),
+              record_alias_fields_local: local_record_alias_field_lookup(frontend_module),
+              record_alias_fields_unqualified: global_record_alias_field_lookup,
+              record_alias_fields_qualified: global_qualified_record_alias_field_lookup
             }
 
             {defs, rewrite_lookup}
@@ -275,12 +319,20 @@ defmodule ElmEx.IR.Lowerer do
           |> elem(0)
           |> Enum.reverse()
 
+        wire3_extra_names =
+          definition_decls
+          |> Enum.map(& &1.name)
+          |> Enum.reject(&(&1 in ordered_function_names))
+
         ordered_declarations =
           type_alias_declarations ++
             (ordered_function_names
              |> Enum.map(fn name ->
                Map.get(signature_by_name, name) || Map.get(definition_only_by_name, name)
              end)
+             |> Enum.reject(&is_nil/1)) ++
+            (wire3_extra_names
+             |> Enum.map(&Map.get(definition_only_by_name, &1))
              |> Enum.reject(&is_nil/1))
           |> Enum.map(fn decl ->
             case Map.get(decl, :expr) do
@@ -318,7 +370,33 @@ defmodule ElmEx.IR.Lowerer do
         ) ++
         collect_preferences_schema_field_order_diagnostics(project.modules)
 
+    modules = Wire3HelperResolution.augment_cross_module_wire3(modules, Wire3HelperResolution.union_meta_from_lowerer(unions_from_modules(modules)))
+
     {:ok, %IR{modules: modules, diagnostics: diagnostics}}
+  end
+
+  defp unions_from_modules(modules) do
+    modules
+    |> Enum.flat_map(fn mod ->
+      mod.declarations
+      |> Enum.filter(&(&1.kind == :union))
+      |> Enum.map(fn union ->
+        constructors = Map.get(union, :constructors, [])
+
+        {union.name,
+         %{
+           constructors: constructors,
+           tags:
+             constructors
+             |> Enum.with_index(1)
+             |> Enum.map(fn {ctor, idx} -> {ctor.name, idx} end)
+             |> Map.new(),
+           payload_specs: %{},
+           payload_kinds: %{}
+         }}
+      end)
+    end)
+    |> Map.new()
   end
 
   @spec lower_declaration(AstDeclaration.t(), AstDeclaration.t() | nil, Lookup.t()) ::
@@ -456,6 +534,23 @@ defmodule ElmEx.IR.Lowerer do
     %{expr | target: resolved_target}
   end
 
+  defp rewrite_expr(%{op: :qualified_ref, target: target} = expr, lookup) when is_binary(target) do
+    resolved_target = resolve_alias(target, lookup)
+
+    case resolved_target do
+      "Tuple.first" ->
+        arg = "__tuple_ref_arg__"
+        %{op: :lambda, args: [arg], body: %{op: :tuple_first_expr, arg: %{op: :var, name: arg}}}
+
+      "Tuple.second" ->
+        arg = "__tuple_ref_arg__"
+        %{op: :lambda, args: [arg], body: %{op: :tuple_second_expr, arg: %{op: :var, name: arg}}}
+
+      _ ->
+        %{expr | target: resolved_target}
+    end
+  end
+
   defp rewrite_expr(%{op: :pipe_chain, steps: steps, base: base} = expr, lookup) do
     %{
       expr
@@ -542,14 +637,13 @@ defmodule ElmEx.IR.Lowerer do
       fields
       |> Enum.map(fn field -> %{field | expr: rewrite_expr(field.expr, lookup)} end)
 
-    %{op: :record_literal, fields: Enum.sort_by(rewritten_fields, & &1.name)}
+    %{op: :record_literal, fields: rewritten_fields}
   end
 
   defp rewrite_expr(%{op: :record_update, base: base, fields: fields}, lookup) do
     rewritten_fields =
       fields
       |> Enum.map(fn field -> %{field | expr: rewrite_expr(field.expr, lookup)} end)
-      |> Enum.sort_by(& &1.name)
 
     %{op: :record_update, base: rewrite_expr(base, lookup), fields: rewritten_fields}
   end
@@ -633,17 +727,31 @@ defmodule ElmEx.IR.Lowerer do
 
   defp rewrite_expr(%{op: :var, name: name} = expr, lookup) when is_binary(name) do
     local_call_names = Map.get(lookup, :local_call_names, MapSet.new())
+    let_bound = Map.get(lookup, :let_bound_names, MapSet.new())
 
     cond do
       MapSet.member?(local_call_names, name) ->
+        expr
+
+      MapSet.member?(let_bound, name) ->
         expr
 
       imported_value_reference?(name, lookup) ->
         %{op: :qualified_call, target: resolve_alias(name, lookup), args: []}
 
       true ->
-        expr
+        resolved = resolve_alias(name, lookup)
+
+        if resolved != name and String.contains?(resolved, ".") do
+          %{op: :qualified_ref, target: resolved}
+        else
+          expr
+        end
     end
+  end
+
+  defp rewrite_expr(%{op: :var, target: target}, lookup) when is_binary(target) do
+    rewrite_expr(%{op: :var, name: target}, lookup)
   end
 
   defp rewrite_expr(expr, _lookup), do: expr
@@ -1292,6 +1400,8 @@ defmodule ElmEx.IR.Lowerer do
        when is_binary(resolved_target) and is_list(rewritten_args) do
     case rewrite_virtual_ui_constructor(resolved_target, rewritten_args, lookup) do
       nil ->
+        case rewrite_record_alias_constructor(resolved_target, rewritten_args, lookup) do
+          nil ->
         tag = resolve_constructor_tag(resolved_target, lookup)
 
         if is_integer(tag) do
@@ -1311,9 +1421,97 @@ defmodule ElmEx.IR.Lowerer do
           end
         end
 
+          rewritten ->
+            rewritten
+        end
+
       rewritten ->
         rewritten
     end
+  end
+
+  defp rewrite_record_alias_constructor(resolved_target, rewritten_args, lookup)
+       when is_binary(resolved_target) and is_list(rewritten_args) do
+    qualified = qualify_constructor_target(resolved_target, lookup)
+    expected_fields = resolve_record_alias_fields(qualified, resolved_target, lookup)
+
+    case expected_fields do
+      fields when is_list(fields) and fields != [] ->
+        arity = length(fields)
+        bound = length(rewritten_args)
+
+        cond do
+          bound > arity ->
+            nil
+
+          bound == arity ->
+            record_alias_record_literal(qualified, fields, rewritten_args)
+
+          true ->
+            remaining = Enum.drop(fields, bound)
+            arg_names = Enum.map(remaining, fn f -> "__record_ctor__" <> f end)
+
+            applied_args =
+              rewritten_args ++ Enum.map(arg_names, fn n -> %{op: :var, name: n} end)
+
+            %{
+              op: :lambda,
+              args: arg_names,
+              body: record_alias_record_literal(qualified, fields, applied_args)
+            }
+        end
+
+      _ ->
+        nil
+    end
+  end
+
+  defp record_alias_record_literal(qualified, fields, arg_exprs)
+       when is_binary(qualified) and is_list(fields) and is_list(arg_exprs) do
+    %{
+      op: :record_literal,
+      type: qualified,
+      fields:
+        fields
+        |> Enum.zip(arg_exprs)
+        |> Enum.map(fn {field, expr} -> %{name: to_string(field), expr: expr} end)
+    }
+  end
+
+  defp resolve_record_alias_fields(qualified, resolved_target, lookup)
+       when is_binary(qualified) and is_binary(resolved_target) do
+    local = Map.get(lookup, :record_alias_fields_local, %{})
+    unqualified = Map.get(lookup, :record_alias_fields_unqualified, %{})
+    qualified_map = Map.get(lookup, :record_alias_fields_qualified, %{})
+
+    cond do
+      Map.has_key?(qualified_map, qualified) ->
+        Map.get(qualified_map, qualified)
+
+      Map.has_key?(local, resolved_target) ->
+        Map.get(local, resolved_target)
+
+      Map.has_key?(unqualified, resolved_target) ->
+        Map.get(unqualified, resolved_target)
+
+      true ->
+        nil
+    end
+  end
+
+  defp local_record_alias_field_lookup(%FrontendModule{} = frontend_module) do
+    frontend_module.declarations
+    |> Enum.filter(&(&1.kind == :type_alias))
+    |> Enum.flat_map(fn decl ->
+      case Map.get(decl, :fields) do
+        fields when is_list(fields) and fields != [] ->
+          [{decl.name, Enum.map(fields, &to_string/1)}]
+
+        _ ->
+          []
+      end
+    end)
+    |> Map.new()
   end
 
   @spec rewrite_virtual_ui_constructor(String.t(), [Expr.t()], Lookup.t()) :: Expr.t() | nil

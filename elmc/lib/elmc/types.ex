@@ -41,7 +41,12 @@ defmodule Elmc.Types do
           optional(:size_native_compare) => boolean(),
           optional(:size_prune_capabilities) => boolean(),
           optional(:size_aggressive_direct_render) => boolean(),
-          optional(:debug_usage_policy) => debug_usage_policy()
+          optional(:debug_usage_policy) => debug_usage_policy(),
+          optional(:targets) => [:c | :wasm],
+          optional(:target) => String.t() | :c | :wasm,
+          optional(:web) => boolean(),
+          optional(:wasm_strict) => boolean(),
+          optional(:wasm_binary) => boolean()
         }
 
   @type cli_diagnostic :: %{
@@ -153,6 +158,29 @@ defmodule Elmc.Types do
           | {:compiler_exception, module(), String.t()}
           | {:compiler_exception, atom(), compiler_catch_reason()}
 
+  @type wasm_summary_available :: %{
+          required(:available) => true,
+          optional(:contract) => String.t() | nil,
+          optional(:version) => integer() | nil,
+          optional(:manifest_path) => String.t(),
+          optional(:wat_path) => String.t() | nil,
+          optional(:function_count) => non_neg_integer(),
+          optional(:skipped_count) => non_neg_integer(),
+          optional(:pruned_count) => non_neg_integer(),
+          optional(:imports) => [String.t()],
+          optional(:plan_toolchain) => plan_toolchain() | nil,
+          optional(:plan_coverage) => plan_coverage() | nil,
+          optional(:functions) => [map()],
+          optional(:skipped) => [map()]
+        }
+
+  @type wasm_summary_unavailable :: %{
+          required(:available) => false,
+          optional(:reason) => String.t()
+        }
+
+  @type wasm_summary :: wasm_summary_available() | wasm_summary_unavailable()
+
   @type compile_result :: %{
           required(:project) => FrontendProject.t(),
           required(:ir) => IR.t(),
@@ -162,7 +190,8 @@ defmodule Elmc.Types do
           optional(:informational_diagnostics) => [cli_diagnostic()],
           optional(:plan_coverage) => plan_coverage() | nil,
           optional(:plan_toolchain) => plan_toolchain() | nil,
-          optional(:elmc_bytecode_summary) => bytecode_summary()
+          optional(:elmc_bytecode_summary) => bytecode_summary(),
+          optional(:elmc_wasm_summary) => wasm_summary()
         }
 
   @type object_text_source_row :: %{

@@ -138,6 +138,21 @@ defmodule Elmc.Backend.CCodegen.IRQueries do
     Map.merge(@bundled_union_constructor_tags, Map.new(qualified ++ unqualified))
   end
 
+  @spec module_ports_map(IR.t()) :: %{optional(String.t()) => [String.t()]}
+  def module_ports_map(%IR{} = ir) do
+    ir.modules
+    |> Enum.map(fn mod ->
+      ports =
+        case Map.get(mod, :ports) do
+          list when is_list(list) -> Enum.filter(list, &is_binary/1)
+          _ -> []
+        end
+
+      {mod.name, ports}
+    end)
+    |> Map.new()
+  end
+
   @spec pebble_vector_resource_slot_map(IR.t()) :: %{String.t() => pos_integer()}
   def pebble_vector_resource_slot_map(%IR{} = ir) do
     pebble_resource_union_slot_map(ir, ["StaticVector", "AnimatedVector"])

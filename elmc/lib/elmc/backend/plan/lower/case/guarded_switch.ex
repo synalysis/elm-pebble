@@ -61,8 +61,25 @@ defmodule Elmc.Backend.Plan.Lower.Case.GuardedSwitch do
   defp split_branches([only]), do: {[], only}
 
   defp split_branches(branches) do
-    {Enum.drop(branches, -1), List.last(branches)}
+    {catch_alls, specific} =
+      Enum.split_with(branches, fn branch ->
+        catch_all_pattern?(Map.get(branch, :pattern))
+      end)
+
+    cond do
+      catch_alls == [] ->
+        {Enum.drop(branches, -1), List.last(branches)}
+
+      specific == [] ->
+        {[], List.last(catch_alls)}
+
+      true ->
+        {specific, List.last(catch_alls)}
+    end
   end
+
+  defp catch_all_pattern?(%{kind: kind}) when kind in [:wildcard, :var], do: true
+  defp catch_all_pattern?(_), do: false
 
   defp compile_test_chain([], _subj, _ctx, b, _merge, default_id),
     do: {:ok, [], default_id, b}
@@ -114,7 +131,7 @@ defmodule Elmc.Backend.Plan.Lower.Case.GuardedSwitch do
   defp bind_pattern(ctx, b, pattern, subj_reg) do
     case PatternBind.bind(pattern, ctx, b, subj_reg) do
       {:ok, ctx1, b1} -> {:ok, ctx1, b1}
-      :unsupported -> {:ok, ctx, b}
+      :unsupported -> :unsupported
     end
   end
 
@@ -127,7 +144,7 @@ defmodule Elmc.Backend.Plan.Lower.Case.GuardedSwitch do
   end
 
   defp guardable_pattern?(%{kind: kind})
-       when kind in [:tuple, :constructor, :qualified_constructor, :wildcard, :var, :int, :string],
+       when kind in [:tuple, :constructor, :qualified_constructor, :wildcard, :var, :int, :string, :char],
        do: true
 
   defp guardable_pattern?(_), do: false

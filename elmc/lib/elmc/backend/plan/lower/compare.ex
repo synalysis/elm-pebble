@@ -185,11 +185,40 @@ defmodule Elmc.Backend.Plan.Lower.Compare do
       TypedReturn.list_int_expr?(left, env) and TypedReturn.list_int_expr?(right, env) ->
         :list_int
 
+      string_compare_pair?(left, right, env) ->
+        :string
+
       int_equality_operand?(left, env) and int_equality_operand?(right, env) ->
         :int_boxed
 
       true ->
         :pointer
+    end
+  end
+
+  defp string_compare_pair?(left, right, env) do
+    left_kind = string_operand_kind(left, env)
+    right_kind = string_operand_kind(right, env)
+
+    (left_kind == :string and right_kind != :non_string) or
+      (right_kind == :string and left_kind != :non_string)
+  end
+
+  defp string_operand_kind(%{op: :string_literal}, _env), do: :string
+
+  defp string_operand_kind(%{op: :runtime_call, function: function}, _env)
+       when function in ["new_immortal_string", "elmc_new_immortal_string"],
+       do: :string
+
+  defp string_operand_kind(%{op: :call, name: name}, _env)
+       when name in ["toString", "String.fromInt"],
+       do: :string
+
+  defp string_operand_kind(expr, env) do
+    case TypedReturn.expr_type(expr, env) do
+      "String" -> :string
+      "Int" -> :non_string
+      _ -> :unknown
     end
   end
 

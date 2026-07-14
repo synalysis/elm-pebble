@@ -12,9 +12,20 @@
 mix escript.build
 ./elmc check /path/to/elm-project
 ./elmc compile /path/to/elm-project --out-dir build
+./elmc compile /path/to/elm-project --out-dir build --target wasm
+./elmc compile /path/to/elm-project --out-dir build --target c,wasm
 ./elmc compile /path/to/elm-project --out-dir build --no-strip-dead-code
 ./elmc manifest /path/to/elm-project
 ```
+
+WASM output (with `--target wasm` or `--target c,wasm` and `plan_ir_mode` `:shadow`/`:primary`):
+
+- `build/wasm/elmc_generated.wat` — linked WASM text module
+- `build/wasm/elmc_wasm.manifest.json` — function table, imports, coverage
+
+Optional CI tool: [wabt](https://github.com/WebAssembly/wabt) (`wat2wasm`, `wasm-validate`).
+
+Runtime package: [`elmc-wasm-runtime/`](../elmc-wasm-runtime/) (C RC runtime + JS host).
 
 By default, `compile` strips dead (unreachable) functions from generated C using entry-module reachability (`init`, `update`, `view`, `subscriptions`, `main` roots).
 

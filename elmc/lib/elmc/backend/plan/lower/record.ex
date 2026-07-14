@@ -6,6 +6,7 @@ defmodule Elmc.Backend.Plan.Lower.Record do
   alias Elmc.Backend.Plan.{Builder, Context}
   alias Elmc.Backend.Plan.Lower.{Call, Expr}
   alias Elmc.Backend.Plan.Types
+  alias ElmEx.IR.TypeSignature
 
   @spec compile_update(Types.ir_expr(), Context.t(), Builder.t()) ::
           {:ok, Types.reg() | :fn_out, Builder.t()} | :unsupported
@@ -47,6 +48,14 @@ defmodule Elmc.Backend.Plan.Lower.Record do
 
   defp base_expr_for_field(base) when is_map(base), do: base
   defp base_expr_for_field(name) when is_binary(name), do: %{op: :var, name: name}
+
+  @doc false
+  @spec emit_record_field_get(integer(), String.t(), Context.t(), Builder.t(), Types.ir_expr() | nil) ::
+          {:ok, Types.reg(), Builder.t()} | :unsupported
+  def emit_record_field_get(base_reg, field, ctx, b, base_expr \\ nil)
+      when is_integer(base_reg) and is_binary(field) do
+    compile_record_field_get(base_reg, field, ctx, b, base_expr)
+  end
 
   defp compile_record_field_get(base_reg, field, ctx, b, base_expr)
        when is_integer(base_reg) do
@@ -221,26 +230,83 @@ defmodule Elmc.Backend.Plan.Lower.Record do
 
   defp field_index_ref(field_name, ctx, base_expr) when is_binary(field_name) do
     case resolve_field_type_key(field_name, ctx, base_expr) do
+      {:inline, idx} ->
+        RecordFieldMacros.format_index(idx, field_name, nil)
+
       {{mod, type}, idx} when is_integer(idx) ->
         RecordFieldMacros.format_index(idx, field_name, {mod, type})
 
       _ ->
-        case Process.get(:elmc_record_field_macros, %{}) do
-          macros when is_map(macros) ->
-            case Enum.find_value(macros, fn {{_mod, _type, name}, macro} ->
-                   if name == field_name, do: macro
-                 end) do
-              macro when is_binary(macro) -> macro
-              _ -> "0"
-            end
+        case max_field_index_among_shapes(field_name, Process.get(:elmc_record_alias_shapes, %{})) do
+          {{mod, type}, idx} when is_integer(idx) ->
+            RecordFieldMacros.format_index(idx, field_name, {mod, type})
 
           _ ->
-            "0"
+            case Process.get(:elmc_record_field_macros, %{}) do
+              macros when is_map(macros) ->
+                case Enum.find_value(macros, fn {{_mod, _type, name}, macro} ->
+                       if name == field_name, do: macro
+                     end) do
+                  macro when is_binary(macro) -> macro
+                  _ -> "0"
+                end
+
+              _ ->
+                "0"
+            end
         end
     end
   end
 
   defp resolve_field_type_key(field_name, ctx, base_expr) when is_binary(field_name) do
+    case inline_field_index_from_base(field_name, ctx, base_expr) do
+      {:inline, idx} -> {:inline, idx}
+      {{_mod, _type} = key, idx} when is_integer(idx) -> {key, idx}
+      :error -> resolve_field_type_key_from_shapes(field_name, ctx, base_expr)
+    end
+  end
+
+  defp inline_field_index_from_base(field_name, ctx, %{op: :var, name: name})
+       when is_binary(field_name) and is_binary(name) do
+    env = compile_env(ctx)
+
+    with type when is_binary(type) <- Map.get(env, :__var_types__, %{}) |> Map.get(name),
+         true <- TypeSignature.extensible_record_type?(type),
+         ext_fields when is_list(ext_fields) <- TypeSignature.extensible_record_field_names(type),
+         true <- field_name in ext_fields,
+         {key, idx} when is_integer(idx) <-
+           max_field_index_among_shapes(field_name, Process.get(:elmc_record_alias_shapes, %{})) do
+      {key, idx}
+    else
+      _ ->
+        inline_field_index_from_concrete_var(field_name, ctx, name)
+    end
+  end
+
+  defp inline_field_index_from_base(_field_name, _ctx, _base_expr), do: :error
+
+  defp inline_field_index_from_concrete_var(field_name, ctx, name)
+       when is_binary(field_name) and is_binary(name) do
+    env = compile_env(ctx)
+
+    with type when is_binary(type) <- Map.get(env, :__var_types__, %{}) |> Map.get(name),
+         fields when is_list(fields) and fields != [] <- inline_record_sorted_field_names(type),
+         idx when is_integer(idx) <- Enum.find_index(fields, &(&1 == field_name)) do
+      {:inline, idx}
+    else
+      _ -> :error
+    end
+  end
+
+  defp inline_record_sorted_field_names(type) when is_binary(type) do
+    if TypeSignature.record_type?(type) do
+      type |> TypeSignature.record_field_names() |> Enum.sort()
+    else
+      nil
+    end
+  end
+
+  defp resolve_field_type_key_from_shapes(field_name, ctx, base_expr) when is_binary(field_name) do
     shapes = Process.get(:elmc_record_alias_shapes, %{})
 
     case container_record_key(base_expr, ctx) do
@@ -249,19 +315,19 @@ defmodule Elmc.Backend.Plan.Lower.Record do
           fields when is_list(fields) ->
             case Enum.find_index(fields, &(&1 == field_name)) do
               idx when is_integer(idx) -> {key, idx}
-              _ -> ambiguous_field_type_key(field_name, ctx, shapes)
+              _ -> ambiguous_field_type_key(field_name, ctx, shapes, base_expr)
             end
 
           _ ->
-            ambiguous_field_type_key(field_name, ctx, shapes)
+            ambiguous_field_type_key(field_name, ctx, shapes, base_expr)
         end
 
       _ ->
-        ambiguous_field_type_key(field_name, ctx, shapes)
+        ambiguous_field_type_key(field_name, ctx, shapes, base_expr)
     end
   end
 
-  defp ambiguous_field_type_key(field_name, ctx, shapes) do
+  defp ambiguous_field_type_key(field_name, ctx, shapes, base_expr) do
     candidates =
       shapes
       |> Enum.filter(fn {_key, fields} -> field_name in fields end)
@@ -275,18 +341,44 @@ defmodule Elmc.Backend.Plan.Lower.Record do
         {key, idx}
 
       many ->
-        module = ctx && Map.get(ctx, :module)
+        if extensible_param_type?(ctx, base_expr) do
+          Enum.max_by(many, fn {_key, idx} -> idx end)
+        else
+          module = ctx && Map.get(ctx, :module)
 
-        case module do
-          mod when is_binary(mod) ->
-            case Enum.find(many, fn {{m, _}, _idx} -> m == mod end) do
-              {key, idx} -> {key, idx}
-              _ -> hd(many)
-            end
+          case module do
+            mod when is_binary(mod) ->
+              case Enum.find(many, fn {{m, _}, _idx} -> m == mod end) do
+                {key, idx} -> {key, idx}
+                _ -> hd(many)
+              end
 
-          _ ->
-            hd(many)
+            _ ->
+              hd(many)
+          end
         end
+    end
+  end
+
+  defp extensible_param_type?(ctx, %{op: :var, name: name}) when is_binary(name) do
+    env = compile_env(ctx)
+
+    case Map.get(env, :__var_types__, %{}) |> Map.get(name) do
+      type when is_binary(type) -> TypeSignature.extensible_record_type?(type)
+      _ -> false
+    end
+  end
+
+  defp extensible_param_type?(_ctx, _base_expr), do: false
+
+  defp max_field_index_among_shapes(field_name, shapes) when is_binary(field_name) do
+    shapes
+    |> Enum.filter(fn {_key, fields} -> field_name in fields end)
+    |> Enum.map(fn {key, fields} -> {key, Enum.find_index(fields, &(&1 == field_name))} end)
+    |> Enum.filter(fn {_key, idx} -> is_integer(idx) end)
+    |> case do
+      [] -> nil
+      candidates -> Enum.max_by(candidates, fn {_key, idx} -> idx end)
     end
   end
 
@@ -341,13 +433,21 @@ defmodule Elmc.Backend.Plan.Lower.Record do
   end
 
   defp compile_env(ctx) do
+    var_types =
+      ctx
+      |> param_var_types()
+      |> Map.merge(local_param_types(ctx))
+
     %{
       __module__: (ctx && ctx.module) || "Main",
-      __var_types__: param_var_types(ctx),
+      __var_types__: var_types,
       __record_field_types__: Process.get(:elmc_record_field_types, %{}),
       __record_field_kinds__: Process.get(:elmc_record_field_kinds, %{})
     }
   end
+
+  defp local_param_types(%Context{local_types: types}) when is_map(types), do: types
+  defp local_param_types(_), do: %{}
 
   defp param_var_types(ctx) do
     with %Context{decl_map: decl_map, module: module, params: params} <- ctx,

@@ -99,6 +99,13 @@ defmodule Elmc.Backend.CCodegen.VarAnalysis do
     MapSet.put(branch_vars, subject)
   end
 
+  def used_vars(%{op: op, params: params})
+      when op in [:bytes_cmd, :html_cmd, :dom_sub, :browser_cmd, :json_cmd] and is_list(params) do
+    Enum.reduce(params, MapSet.new(), fn param, acc ->
+      MapSet.union(acc, used_vars(param))
+    end)
+  end
+
   def used_vars(_), do: MapSet.new()
 
   @spec field_arg_vars(Types.ir_expr() | String.t()) :: Types.var_name_set()

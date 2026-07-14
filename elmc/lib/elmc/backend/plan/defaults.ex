@@ -24,6 +24,7 @@ defmodule Elmc.Backend.Plan.Defaults do
     opts
     |> Map.put_new(:plan_ir_mode, mode)
     |> Map.put_new(:plan_ir_strict, plan_ir_strict(mode))
+    |> Map.put_new(:targets, [:c])
     |> then(fn normalized ->
       if explicit_mode == :off do
         Map.put(normalized, :plan_ir_mode_explicit_off, true)

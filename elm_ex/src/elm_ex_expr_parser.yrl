@@ -60,6 +60,8 @@ let_bindings -> let_binding : ['$1'].
 let_binding -> lower_qid eq pipe_right_expr : {token_value('$1'), '$3'}.
 let_binding -> wildcard eq pipe_right_expr : {discard_bind, '$3'}.
 let_binding -> lower_qid lambda_args eq pipe_right_expr : {token_value('$1'), build_lambda_args('$2', '$4')}.
+let_binding -> lbrace pattern_record_fields rbrace eq pipe_right_expr :
+  {pattern_bind, build_pattern_record('$2'), '$5'}.
 let_binding -> lparen wildcard comma lower_qid rparen eq pipe_right_expr :
   {pattern_bind, build_pattern_tuple(#{kind => wildcard}, build_pattern_var(token_value('$4'))), '$7'}.
 let_binding -> lparen lower_qid comma wildcard rparen eq pipe_right_expr :
@@ -155,6 +157,10 @@ lambda_arg -> lower_qid : token_value('$1').
 lambda_arg -> wildcard : <<"_">>.
 lambda_arg -> lparen rparen : <<"unitArg">>.
 lambda_arg -> lbrace pattern_record_fields rbrace : {record, '$2'}.
+lambda_arg -> lparen wildcard comma pattern rparen :
+  {pattern, build_pattern_tuple(#{kind => wildcard}, '$4')}.
+lambda_arg -> lparen pattern comma wildcard rparen :
+  {pattern, build_pattern_tuple('$2', #{kind => wildcard})}.
 lambda_arg -> lparen lower_qid comma wildcard rparen : {tuple2_wild_right, token_value('$2')}.
 lambda_arg -> lparen wildcard comma lower_qid rparen : {tuple2_wild_left, token_value('$4')}.
 lambda_arg -> lparen lower_qid comma lower_qid rparen : {tuple2, token_value('$2'), token_value('$4')}.
@@ -168,6 +174,10 @@ lambda_arg -> lparen lower_qid comma lower_qid comma wildcard rparen :
   {tuple3_wild_right, token_value('$2'), token_value('$4')}.
 lambda_arg -> lparen lower_qid comma wildcard comma wildcard rparen :
   {tuple3_wild_only_first, token_value('$2')}.
+lambda_arg -> lparen pattern comma pattern rparen :
+  {pattern, build_pattern_tuple('$2', '$4')}.
+lambda_arg -> lparen pattern comma pattern comma pattern rparen :
+  {pattern, build_pattern_tuple('$2', build_pattern_tuple('$4', '$6'))}.
 lambda_arg -> lparen pattern rparen : {pattern, '$2'}.
 
 compare_expr -> cons_expr compare_op cons_expr : build_compare('$1', '$2', '$3').
@@ -223,6 +233,7 @@ primary -> lparen gte rparen : build_operator_section(gte).
 primary -> lparen shl rparen : build_operator_section(shl).
 primary -> lparen shr rparen : build_operator_section(shr).
 primary -> lparen cons rparen : build_operator_section(cons).
+primary -> lparen append rparen : build_operator_section(append).
 primary -> lparen apply_left rparen : build_operator_section(apply_left).
 primary -> lparen pipe_right rparen : build_operator_section(pipe_right).
 primary -> lparen pipe_dot rparen : build_operator_section(pipe_dot).
@@ -230,6 +241,16 @@ primary -> lparen pipe_eq rparen : build_operator_section(pipe_eq).
 primary -> lparen rparen : #{op => constructor_ref, target => <<"()">>}.
 primary -> lparen apply_left_expr shl apply_left_expr rparen : build_compose_left('$2', '$4').
 primary -> lparen apply_left_expr shr apply_left_expr rparen : build_compose_right('$2', '$4').
+
+%% Allow these expressions in operator/argument position without extra parens.
+%% (Elm syntax allows e.g. `x ++ case y of ...`.)
+primary -> let_expr : '$1'.
+primary -> if_expr : '$1'.
+primary -> case_expr : '$1'.
+primary -> lambda_expr : '$1'.
+
+%% Parenthesized expression (needed for lambdas passed as args, etc.)
+primary -> lparen pipe_right_expr rparen : '$2'.
 
 primary -> lparen tuple_items rparen : build_tuple('$2').
 primary -> list_expr : '$1'.
@@ -795,6 +816,8 @@ build_operator_section(shr) ->
   #{op => var, name => <<">>">>};
 build_operator_section(cons) ->
   #{op => qualified_ref, target => <<"List.cons">>};
+build_operator_section(append) ->
+  #{op => var, name => <<"__append__">>};
 build_operator_section(apply_left) ->
   #{op => var, name => <<"<|">>};
 build_operator_section(pipe_right) ->

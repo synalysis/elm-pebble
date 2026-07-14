@@ -54,7 +54,7 @@ defmodule Elmc.Backend.Plan.Builder do
 
   @spec new(String.t(), String.t(), keyword()) :: t()
   def new(module, name, opts \\ []) do
-    arg_names = Keyword.get(opts, :args, [])
+    arg_names = Keyword.get(opts, :args, []) |> List.wrap()
     params = Enum.with_index(arg_names, fn arg, i -> %Param{name: arg, type: nil, index: i} end)
     entry = %Block{id: 0, instrs: [], terminator: :none}
 
@@ -203,11 +203,19 @@ defmodule Elmc.Backend.Plan.Builder do
   def get_or_load_param(b, index, name) when is_binary(name) do
     case Map.get(b.param_regs, name) do
       reg when is_integer(reg) ->
-        {reg, b}
+        if param_loaded_in_current_block?(b, name) do
+          {reg, b}
+        else
+          load_param_named(b, index, name)
+        end
 
       _ ->
         load_param_named(b, index, name)
     end
+  end
+
+  defp param_loaded_in_current_block?(b, name) when is_binary(name) do
+    param_reg_block(b, name) == b.current_block.id
   end
 
   defp load_param_named(b, index, name) do
@@ -462,8 +470,12 @@ defmodule Elmc.Backend.Plan.Builder do
           case Enum.find_index(param_names, &(&1 == name)) do
             idx when is_integer(idx) ->
               case param_reg_block(b_acc, name) do
-                ^current -> {reg, b_acc}
-                _ -> {Map.fetch!(b_acc.param_regs, name), b_acc}
+                ^current ->
+                  {reg, b_acc}
+
+                _ ->
+                  {fresh_reg, b_reloaded} = load_param_named(b_acc, idx, name)
+                  {fresh_reg, b_reloaded}
               end
 
             _ ->

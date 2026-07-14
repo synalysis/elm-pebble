@@ -688,14 +688,14 @@ defmodule Elmc.Backend.Plan.Lower.Case.ListSwitch do
            subject,
            subj_reg,
            ctx,
-           b_branch,
+           b_match,
            continue_id,
            default_id,
            depth,
            next_tail,
            bound_at_depth
          ) do
-    {:ok, match_results ++ cont_results, max(b_cont, b_match)}
+    {:ok, match_results ++ cont_results, b_cont}
   else
     _ -> :unsupported
   end

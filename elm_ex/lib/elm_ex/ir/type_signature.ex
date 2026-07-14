@@ -70,6 +70,26 @@ defmodule ElmEx.IR.TypeSignature do
     String.starts_with?(String.trim(type), "{") and String.ends_with?(String.trim(type), "}")
   end
 
+  @spec extensible_record_type?(String.t()) :: boolean()
+  def extensible_record_type?(type) when is_binary(type) do
+    record_type?(type) and String.contains?(String.trim(type), "|")
+  end
+
+  @spec extensible_record_field_names(String.t()) :: [String.t()]
+  def extensible_record_field_names(type) when is_binary(type) do
+    if extensible_record_type?(type) do
+      type
+      |> String.trim()
+      |> String.trim_leading("{")
+      |> String.trim_trailing("}")
+      |> String.trim()
+      |> strip_extensible_record_base()
+      |> record_field_names()
+    else
+      []
+    end
+  end
+
   @spec tuple_type?(String.t()) :: boolean()
   def tuple_type?(type) when is_binary(type) do
     trimmed = String.trim(type)
@@ -175,5 +195,13 @@ defmodule ElmEx.IR.TypeSignature do
       end
 
     acc |> Enum.reverse()
+  end
+
+  @spec strip_extensible_record_base(String.t()) :: String.t()
+  defp strip_extensible_record_base(source) do
+    case split_top_level(source, "|", []) do
+      [_base, fields] -> String.trim(fields)
+      _ -> source
+    end
   end
 end

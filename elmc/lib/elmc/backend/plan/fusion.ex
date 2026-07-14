@@ -25,12 +25,16 @@ defmodule Elmc.Backend.Plan.Fusion do
         ok
 
       :error ->
-        Enum.find_value(CEmit.providers(), :error, fn provider ->
-          case CEmit.try_plan(module_name, decl, decl_map, opts, provider) do
-            {:ok, _} = ok -> ok
-            :error -> nil
-          end
-        end)
+        if Keyword.get(opts, :skip_c_fusion, false) do
+          :error
+        else
+          Enum.find_value(CEmit.providers(), :error, fn provider ->
+            case CEmit.try_plan(module_name, decl, decl_map, opts, provider) do
+              {:ok, _} = ok -> ok
+              :error -> nil
+            end
+          end)
+        end
     end
   end
 

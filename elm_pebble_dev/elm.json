@@ -56,6 +56,7 @@
             "elm-explorations/test": "2.2.1",
             "elmcraft/core-extra": "2.3.0",
             "fredcy/elm-parseint": "2.0.1",
+            "lamdera/codecs": "1.0.0",
             "mdgriffith/style-elements": "5.0.2",
             "mgold/elm-nonempty-list": "4.2.0",
             "miniBill/elm-unicode": "1.1.1",

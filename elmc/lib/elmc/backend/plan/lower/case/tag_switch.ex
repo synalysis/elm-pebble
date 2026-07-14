@@ -146,7 +146,7 @@ defmodule Elmc.Backend.Plan.Lower.Case.TagSwitch do
 
   defp compile_tagged_arms([branch | rest], subj_reg, ctx, b, merge_reg, acc) do
     arm_id = b.next_block
-    b_arm = Builder.begin_block(b, arm_id)
+    b_arm = Builder.begin_cfg_arm_block(b, arm_id)
 
     with {:ok, reg, tag, b1} <- compile_one_arm(branch, subj_reg, ctx, b_arm),
          {:ok, b_pub} <- ArmMerge.publish_arm_to_merge(b1, reg, merge_reg),
@@ -164,7 +164,7 @@ defmodule Elmc.Backend.Plan.Lower.Case.TagSwitch do
 
   defp compile_default_arm(branch, subj_reg, ctx, b, merge_reg) do
     arm_id = b.next_block
-    b_arm = Builder.begin_block(b, arm_id)
+    b_arm = Builder.begin_cfg_arm_block(b, arm_id)
 
     with {:ok, reg, _tag, b1} <- compile_one_arm(branch, subj_reg, ctx, b_arm),
          {:ok, b_pub} <- ArmMerge.publish_arm_to_merge(b1, reg, merge_reg),
@@ -185,7 +185,9 @@ defmodule Elmc.Backend.Plan.Lower.Case.TagSwitch do
       %{kind: :wildcard} ->
         case Expr.compile(expr, branch_ctx, b) do
           {:ok, reg, b1} -> {:ok, reg, nil, b1}
-          :unsupported -> :unsupported
+          :unsupported ->
+            record_case_arm_unsupported(ctx, pattern, expr, :wildcard_arm)
+            :unsupported
         end
 
       %{kind: :constructor} = ctor_pattern ->
@@ -196,7 +198,9 @@ defmodule Elmc.Backend.Plan.Lower.Case.TagSwitch do
                {:ok, reg, b2} <- Expr.compile(expr, arm_ctx, b1) do
             {:ok, reg, tag, b2}
           else
-            _ -> :unsupported
+            _ ->
+              record_case_arm_unsupported(ctx, ctor_pattern, expr, :ctor_arm)
+              :unsupported
           end
         else
           :unsupported
@@ -206,6 +210,66 @@ defmodule Elmc.Backend.Plan.Lower.Case.TagSwitch do
         :unsupported
     end
   end
+
+  defp record_case_arm_unsupported(ctx, pattern, expr, kind) when is_map(ctx) do
+    key = {Map.get(ctx, :module), Map.get(ctx, :function_name)}
+
+    ctor =
+      case pattern do
+        %{kind: :constructor, resolved_name: name} when is_binary(name) -> name
+        %{kind: :constructor, name: name} when is_binary(name) -> name
+        _ -> nil
+      end
+
+    inner = deepest_unsupported_reason(expr, ctx)
+
+    reason =
+      case inner do
+        %{op: inner_op} = inner_reason ->
+          %{
+            op: :case_arm,
+            target: ctor,
+            kind: kind,
+            inner_op: inner_op,
+            inner_target: Map.get(inner_reason, :target) || Map.get(inner_reason, :name)
+          }
+
+        _ ->
+          %{
+            op: :case_arm,
+            target: ctor,
+            kind: kind,
+            inner_op: (is_map(expr) && Map.get(expr, :op)) || nil,
+            inner_target: (is_map(expr) && (Map.get(expr, :target) || Map.get(expr, :name))) || nil
+          }
+      end
+
+    cache = Process.get(:elmc_plan_unsupported_reasons, %{})
+    Process.put(:elmc_plan_unsupported_reasons, Map.put_new(cache, key, reason))
+  end
+
+  defp deepest_unsupported_reason(expr, ctx) when is_map(expr) and is_map(ctx) do
+    Process.delete(:elmc_plan_unsupported_reasons)
+
+    b =
+      Builder.new(Map.get(ctx, :module) || "Main", Map.get(ctx, :function_name) || "probe",
+        args: [],
+        rc_required: false,
+        fallible: true
+      )
+
+    case Expr.compile(expr, Context.for_branch_arm(ctx), b) do
+      {:ok, _, _} ->
+        nil
+
+      :unsupported ->
+        Process.get(:elmc_plan_unsupported_reasons, %{})
+        |> Enum.find_value(fn {_key, reason} -> reason end)
+    end
+  end
+
+  defp deepest_unsupported_reason(_, _), do: nil
+
 
   defp patch_arm_exits(b, exit_ids, merge_id) when is_list(exit_ids) do
     Enum.reduce(exit_ids, b, fn exit_id, b_acc ->
@@ -218,13 +282,51 @@ defmodule Elmc.Backend.Plan.Lower.Case.TagSwitch do
   defp skip_reserved(id, _), do: id
 
   defp branch_ctx_for_pattern(ctx, %{bind: bind} = pattern, subj_reg, b) when is_binary(bind) do
-    if payload_bind?(pattern) do
-      case PatternBind.bind(%{kind: :constructor, bind: bind, arg_pattern: nil, name: Map.get(pattern, :name)}, ctx, b, subj_reg) do
-        {:ok, ctx1, b1} -> {:ok, ctx1, b1}
-        _ -> :unsupported
-      end
-    else
-      {:ok, Context.put_local(ctx, bind, subj_reg), Builder.bind_local(b, bind, subj_reg)}
+    case Map.get(pattern, :arg_pattern) do
+      arg_pattern when is_map(arg_pattern) ->
+        if payload_bind?(pattern) do
+          case PatternBind.bind(
+                 %{kind: :constructor, bind: bind, arg_pattern: nil, name: Map.get(pattern, :name)},
+                 ctx,
+                 b,
+                 subj_reg
+               ) do
+            {:ok, ctx1, b1} -> {:ok, ctx1, b1}
+            _ -> :unsupported
+          end
+        else
+          PatternBind.bind(
+            %{
+              kind: :constructor,
+              bind: bind,
+              arg_pattern: arg_pattern,
+              name: Map.get(pattern, :name),
+              resolved_name: Map.get(pattern, :resolved_name),
+              tag: Map.get(pattern, :tag)
+            },
+            ctx,
+            b,
+            subj_reg
+          )
+        end
+
+      _ ->
+        if payload_bind?(pattern) do
+          case PatternBind.bind(
+                 %{kind: :constructor, bind: bind, arg_pattern: nil, name: Map.get(pattern, :name)},
+                 ctx,
+                 b,
+                 subj_reg
+               ) do
+            {:ok, ctx1, b1} -> {:ok, ctx1, b1}
+            _ -> :unsupported
+          end
+        else
+          case PatternBind.bind(%{kind: :var, name: bind}, ctx, b, subj_reg) do
+            {:ok, ctx1, b1} -> {:ok, ctx1, b1}
+            :unsupported -> {:ok, Context.put_local(ctx, bind, subj_reg), Builder.bind_local(b, bind, subj_reg)}
+          end
+        end
     end
   end
 

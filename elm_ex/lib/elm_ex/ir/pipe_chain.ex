@@ -73,9 +73,19 @@ defmodule ElmEx.IR.PipeChain do
     %{op: :qualified_call, target: target, args: args ++ [acc]}
   end
 
+  def append_pipe_arg(%{op: :qualified_call, target: target, args: nil}, acc)
+       when is_binary(target) do
+    %{op: :qualified_call, target: target, args: [acc]}
+  end
+
   def append_pipe_arg(%{op: :call, name: name, args: args}, acc)
        when is_binary(name) and is_list(args) do
     %{op: :call, name: name, args: args ++ [acc]}
+  end
+
+  def append_pipe_arg(%{op: :call, name: name, args: nil}, acc)
+       when is_binary(name) do
+    %{op: :call, name: name, args: [acc]}
   end
 
   def append_pipe_arg(%{op: :var, name: name}, acc) when is_binary(name) do

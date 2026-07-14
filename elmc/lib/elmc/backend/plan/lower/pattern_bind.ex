@@ -3,12 +3,21 @@ defmodule Elmc.Backend.Plan.Lower.PatternBind do
 
   alias Elmc.Backend.Plan.Types
   alias Elmc.Backend.Plan.{Builder, Context}
-  alias Elmc.Backend.Plan.Lower.Expr
+  alias Elmc.Backend.Plan.Lower.{Expr, Record}
 
   @spec bind(Types.pattern(), Context.t(), Builder.t(), integer()) ::
           {:ok, Context.t(), Builder.t()} | :unsupported
   def bind(pattern, ctx, b, subject_reg) when is_map(pattern) and is_integer(subject_reg) do
     do_bind(pattern, ctx, b, subject_reg)
+  end
+
+  defp do_bind(%{kind: :qualified_constructor} = pattern, ctx, b, subject_reg) do
+    normalized =
+      pattern
+      |> Map.put(:kind, :constructor)
+      |> Map.put_new(:resolved_name, Map.get(pattern, :name))
+
+    do_bind(normalized, ctx, b, subject_reg)
   end
 
   defp do_bind(%{kind: :wildcard}, ctx, b, _subject_reg), do: {:ok, ctx, b}
@@ -17,8 +26,26 @@ defmodule Elmc.Backend.Plan.Lower.PatternBind do
 
   defp do_bind(%{kind: :string}, ctx, b, _subject_reg), do: {:ok, ctx, b}
 
+  defp do_bind(%{kind: :char}, ctx, b, _subject_reg), do: {:ok, ctx, b}
+
   defp do_bind(%{kind: :var, name: name}, ctx, b, subject_reg) when is_binary(name) do
-    {:ok, Context.put_local(ctx, name, subject_reg), Builder.bind_local(b, name, subject_reg)}
+    ctx1 = Context.put_local(ctx, name, subject_reg)
+    b1 = Builder.bind_local(b, name, subject_reg)
+
+    case Context.letrec_ref(ctx, name) do
+      ref when is_binary(ref) ->
+        {_, b2} =
+          Builder.emit(b1, :forward_ref_set, %{
+            dest: nil,
+            args: %{ref: ref, value: subject_reg},
+            effects: Types.empty_effects()
+          })
+
+        {:ok, ctx1, b2}
+
+      _ ->
+        {:ok, ctx1, b1}
+    end
   end
 
   defp do_bind(%{kind: :tuple, elements: elements}, ctx, b, subject_reg)
@@ -35,6 +62,32 @@ defmodule Elmc.Backend.Plan.Lower.PatternBind do
     end
   end
 
+  defp do_bind(%{kind: :record, fields: fields} = pattern, ctx, b, subject_reg)
+       when is_list(fields) do
+    bind = Map.get(pattern, :bind)
+
+    {ctx0, b0} =
+      if is_binary(bind) do
+        {Context.put_local(ctx, bind, subject_reg), Builder.bind_local(b, bind, subject_reg)}
+      else
+        {ctx, b}
+      end
+
+    base_expr = if is_binary(bind), do: %{op: :var, name: bind}, else: nil
+
+    Enum.reduce_while(fields, {:ok, ctx0, b0}, fn field_name, {:ok, ctx_acc, b_acc} when is_binary(field_name) ->
+      case Record.emit_record_field_get(subject_reg, field_name, ctx_acc, b_acc, base_expr) do
+        {:ok, field_reg, b1} ->
+          ctx1 = Context.put_local(ctx_acc, field_name, field_reg)
+          b2 = Builder.bind_local(b1, field_name, field_reg)
+          {:cont, {:ok, ctx1, b2}}
+
+        _ ->
+          {:halt, :unsupported}
+      end
+    end)
+  end
+
   defp do_bind(
          %{kind: :constructor, name: name, arg_pattern: %{kind: :tuple, elements: [head, tail]}} =
            pattern,
@@ -43,6 +96,15 @@ defmodule Elmc.Backend.Plan.Lower.PatternBind do
          subject_reg
        )
        when is_binary(name) do
+    {ctx, b} =
+      case Map.get(pattern, :bind) do
+        bind when is_binary(bind) ->
+          {Context.put_local(ctx, bind, subject_reg), Builder.bind_local(b, bind, subject_reg)}
+
+        _ ->
+          {ctx, b}
+      end
+
     if cons_pattern?(pattern) do
       bind_cons_pattern(head, tail, subject_reg, ctx, b)
     else
@@ -64,15 +126,24 @@ defmodule Elmc.Backend.Plan.Lower.PatternBind do
     {:ok, ctx, b}
   end
 
-  defp do_bind(%{kind: :constructor, bind: bind, arg_pattern: nil} = pattern, ctx, b, subject_reg)
-       when is_binary(bind) do
-    {:ok, payload_reg, b1} = emit_ctor_payload(pattern, subject_reg, ctx, b)
-    {:ok, Context.put_local(ctx, bind, payload_reg), Builder.bind_local(b1, bind, payload_reg)}
-  end
-
   defp do_bind(%{kind: :constructor, bind: bind, arg_pattern: %{kind: :var, name: name}} = pattern, ctx, b, subject_reg)
        when is_binary(bind) do
     do_bind(Map.put(pattern, :arg_pattern, %{kind: :var, name: name}) |> Map.put(:bind, bind), ctx, b, subject_reg)
+  end
+
+  defp do_bind(%{kind: :constructor, bind: bind, arg_pattern: arg_pattern} = pattern, ctx, b, subject_reg)
+       when is_binary(bind) and is_map(arg_pattern) do
+    # Pattern like `Ctor ... as x` (or nested constructor bind slots) must bind
+    # the full matched value, not only the payload.
+    ctx1 = Context.put_local(ctx, bind, subject_reg)
+    b1 = Builder.bind_local(b, bind, subject_reg)
+
+    with {:ok, payload_reg, b2} <- emit_ctor_payload(pattern, subject_reg, ctx1, b1),
+         {:ok, ctx2, b3} <- do_bind(arg_pattern, ctx1, b2, payload_reg) do
+      {:ok, ctx2, b3}
+    else
+      _ -> :unsupported
+    end
   end
 
   defp do_bind(%{kind: :constructor, arg_pattern: arg_pattern} = pattern, ctx, b, subject_reg)
@@ -85,8 +156,14 @@ defmodule Elmc.Backend.Plan.Lower.PatternBind do
     end
   end
 
-  defp do_bind(%{kind: :constructor, bind: bind}, ctx, b, subject_reg) when is_binary(bind) do
-    {:ok, Context.put_local(ctx, bind, subject_reg), Builder.bind_local(b, bind, subject_reg)}
+  defp do_bind(%{kind: :constructor, bind: bind} = pattern, ctx, b, subject_reg)
+       when is_binary(bind) do
+    if is_nil(Map.get(pattern, :arg_pattern)) do
+      {:ok, payload_reg, b1} = emit_ctor_payload(pattern, subject_reg, ctx, b)
+      {:ok, Context.put_local(ctx, bind, payload_reg), Builder.bind_local(b1, bind, payload_reg)}
+    else
+      {:ok, Context.put_local(ctx, bind, subject_reg), Builder.bind_local(b, bind, subject_reg)}
+    end
   end
 
   defp do_bind(_, _ctx, _b, _subject_reg), do: :unsupported

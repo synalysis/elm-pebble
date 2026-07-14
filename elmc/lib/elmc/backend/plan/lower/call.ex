@@ -4,7 +4,7 @@ defmodule Elmc.Backend.Plan.Lower.Call do
   alias Elmc.Backend.CCodegen.FunctionEmit
   alias Elmc.Backend.Plan.Builder
   alias Elmc.Backend.Plan.Context
-  alias Elmc.Backend.Plan.Lower.{Cmd, Expr, Lambda, SpecialValues}
+  alias Elmc.Backend.Plan.Lower.{Cmd, Expr, Lambda, Platform.Web, Port, SpecialValues}
   alias Elmc.Backend.Plan.Types
 
   @spec compile_call(Types.ir_expr(), Context.t(), Builder.t()) ::
@@ -27,6 +27,9 @@ defmodule Elmc.Backend.Plan.Lower.Call do
 
   defp compile_fn_call(expr, target, args, ctx, b) do
     cond do
+      target == "__apply__" ->
+        compile_apply_call(args, ctx, b)
+
       ui_to_ui_node?(target) ->
         compile_ui_to_ui_node(args, ctx, b)
 
@@ -48,6 +51,20 @@ defmodule Elmc.Backend.Plan.Lower.Call do
 
   defp compile_ui_to_ui_node(_, _, _), do: :unsupported
 
+  # Generic function application for value-level call targets.
+  # Used by lowerer rewrites (compose, partials, etc) when applying a computed function value.
+  defp compile_apply_call([fn_expr, arg_expr], ctx, b) do
+    scratch_ctx = %{ctx | dest_stack: [:scratch], function_tail: false}
+
+    with {:ok, fn_reg, b1} when is_integer(fn_reg) <- Expr.compile(fn_expr, scratch_ctx, b) do
+      compile_closure_call_from_reg(fn_reg, [arg_expr], ctx, b1)
+    else
+      _ -> :unsupported
+    end
+  end
+
+  defp compile_apply_call(_, _ctx, _b), do: :unsupported
+
   defp compile_fn_call_default(_expr, target, args, ctx, b) do
     case call_rewrite(target, args) do
       %{op: :pebble_cmd} = rewritten ->
@@ -65,17 +82,73 @@ defmodule Elmc.Backend.Plan.Lower.Call do
   end
 
   defp compile_fn_call_special_or_target(target, args, ctx, b) do
-    {module, name} = parse_target(target, ctx, ctx.decl_map)
+    case try_compile_qualified_field_call(target, args, ctx, b) do
+      {:ok, dest, b1} ->
+        {:ok, dest, b1}
 
-    case SpecialValues.special_value_from_target("#{module}.#{name}", args) do
-      nil ->
-        compile_fn_call_target(module, name, args, ctx, b)
+      :unsupported ->
+        {module, name} = parse_target(target, ctx, ctx.decl_map)
 
-      rewritten ->
-        case compile_special_rewrite(rewritten, args, ctx, b) do
-          :unsupported -> compile_fn_call_target(module, name, args, ctx, b)
-          other -> other
+        case SpecialValues.special_value_from_target("#{module}.#{name}", args) do
+          nil ->
+            compile_fn_call_target(module, name, args, ctx, b)
+
+          rewritten ->
+            case compile_special_rewrite(rewritten, args, ctx, b) do
+              :unsupported -> compile_fn_call_target(module, name, args, ctx, b)
+              other -> other
+            end
         end
+    end
+  end
+
+  defp try_compile_qualified_field_call(target, args, ctx, b)
+       when is_binary(target) and is_list(args) do
+    parts = String.split(target, ".", trim: true)
+    decl_map = ctx.decl_map
+    n = length(parts)
+
+    if n < 3 do
+      :unsupported
+    else
+      Enum.reduce_while(n - 2..1//-1, :unsupported, fn j, _acc ->
+        module = parts |> Enum.take(j) |> Enum.join(".")
+        binding = Enum.at(parts, j)
+        fields = Enum.drop(parts, j + 1)
+
+        if fields != [] and Map.has_key?(decl_map, {module, binding}) do
+          case compile_module_binding_field_call(module, binding, fields, args, ctx, b) do
+            {:ok, _, _} = ok -> {:halt, ok}
+            _ -> {:cont, :unsupported}
+          end
+        else
+          {:cont, :unsupported}
+        end
+      end)
+      |> case do
+        :unsupported -> :unsupported
+        other -> other
+      end
+    end
+  end
+
+  defp try_compile_qualified_field_call(_, _, _, _), do: :unsupported
+
+  defp compile_module_binding_field_call(module, binding, fields, args, ctx, b)
+       when is_binary(module) and is_binary(binding) and is_list(fields) and is_list(args) do
+    field_ir =
+      Enum.reduce(fields, %{op: :qualified_ref, target: "#{module}.#{binding}"}, fn field, acc ->
+        %{op: :field_access, arg: acc, field: field}
+      end)
+
+    with {:ok, callee_reg, b1} <- Expr.compile(field_ir, ctx, b) do
+      if args == [] do
+        {:ok, callee_reg, b1}
+      else
+        compile_closure_call_from_reg(callee_reg, args, ctx, b1)
+      end
+    else
+      _ -> :unsupported
     end
   end
 
@@ -109,10 +182,36 @@ defmodule Elmc.Backend.Plan.Lower.Call do
   end
 
   defp compile_fn_call_target(module, name, args, ctx, b) do
+    case Web.compile_html_call(module, name, args, ctx, b) do
+      {:ok, dest, b1} ->
+        {:ok, dest, b1}
+
+      :unsupported ->
+        case Web.compile_kernel_call(module, name, args, ctx, b) do
+          {:ok, dest, b1} -> {:ok, dest, b1}
+          :unsupported -> do_compile_fn_call_target(module, name, args, ctx, b)
+        end
+    end
+  end
+
+  defp do_compile_fn_call_target(module, name, args, ctx, b) do
     {module, name} = resolve_delegate_call_target(module, name, args, ctx.decl_map)
 
+    case Port.compile_call(module, name, args, ctx, b) do
+      {:ok, dest, b1} ->
+        {:ok, dest, b1}
+
+      :unsupported ->
+        do_compile_fn_call_target_after_ports(module, name, args, ctx, b)
+    end
+  end
+
+  defp do_compile_fn_call_target_after_ports(module, name, args, ctx, b) do
     cond do
       oversaturated_call?(ctx, module, name, args) ->
+        compile_oversaturated_call(module, name, args, ctx, b)
+
+      zero_arity_thunk_call?(ctx, module, name, args) ->
         compile_oversaturated_call(module, name, args, ctx, b)
 
       true ->
@@ -121,29 +220,63 @@ defmodule Elmc.Backend.Plan.Lower.Call do
           compile_closure_call(callee_reg, args, ctx, b_callee)
         else
           _ ->
-            with {:ok, decl} <- Map.fetch(ctx.decl_map, {module, name}),
-                 param_names <- FunctionEmit.effective_decl_args(decl, module, ctx.decl_map),
-                 true <- length(args) > 0 and length(args) < length(param_names),
-                 {:ok, reg, b1} <- compile_curried_lambda(module, name, param_names, args, ctx, b) do
-              {:ok, reg, b1}
-            else
-              _ ->
-                with {:ok, arg_regs, b1} <- Expr.compile_args(args, ctx, b) do
-                  {dest, b2} = dest_for_call(ctx, b1)
-                  compile_fn_call_emit(module, name, arg_regs, dest, ctx, b2, args)
+            case Map.fetch(ctx.decl_map, {module, name}) do
+              {:ok, decl} ->
+                param_names = FunctionEmit.effective_decl_args(decl, module, ctx.decl_map) |> List.wrap()
+
+                if length(param_names) > 0 and length(args) < length(param_names) do
+                  compile_curried_lambda(module, name, param_names, args, ctx, b)
                 else
-                  _ -> :unsupported
+                  with {:ok, arg_regs, b1} <- Expr.compile_args(args, ctx, b) do
+                    {dest, b2} = dest_for_call(ctx, b1)
+                    compile_fn_call_emit(module, name, arg_regs, dest, ctx, b2, args)
+                  else
+                    _ -> :unsupported
+                  end
+                end
+
+              :error ->
+                cond do
+                  args == [] and kernel_qualified_target?(module) ->
+                    compile_kernel_fn_ref(module, name, ctx, b)
+
+                  true ->
+                    with {:ok, arg_regs, b1} <- Expr.compile_args(args, ctx, b) do
+                      {dest, b2} = dest_for_call(ctx, b1)
+                      compile_fn_call_emit(module, name, arg_regs, dest, ctx, b2, args)
+                    else
+                      _ -> :unsupported
+                    end
                 end
             end
         end
     end
   end
 
+  defp compile_kernel_fn_ref(module, name, ctx, b) do
+    arg = "__kernel_fn_ref__"
+    qualified = "#{module}.#{name}"
+
+    Lambda.compile(
+      %{
+        op: :lambda,
+        args: [arg],
+        body: %{
+          op: :qualified_call,
+          target: qualified,
+          args: [%{op: :var, name: arg}]
+        }
+      },
+      ctx,
+      b
+    )
+  end
+
   defp resolve_delegate_call_target(module, name, args, decl_map) when is_list(args) do
     decl = Map.get(decl_map, {module, name})
 
     if args != [] and is_map(decl) and
-         length(args) > length(Map.get(decl, :args, [])) do
+         length(args) > length(Map.get(decl, :args, []) |> List.wrap()) do
       case FunctionEmit.delegate_call_target(decl, module, decl_map) do
         {dmod, dname} -> {dmod, dname}
         nil -> {module, name}
@@ -156,7 +289,7 @@ defmodule Elmc.Backend.Plan.Lower.Call do
   defp oversaturated_call?(ctx, module, name, args) when is_list(args) do
     case Map.fetch(ctx.decl_map, {module, name}) do
       {:ok, decl} ->
-        param_names = FunctionEmit.effective_decl_args(decl, module, ctx.decl_map)
+        param_names = FunctionEmit.effective_decl_args(decl, module, ctx.decl_map) |> List.wrap()
         length(param_names) > 0 and length(args) > length(param_names)
 
       _ ->
@@ -164,28 +297,83 @@ defmodule Elmc.Backend.Plan.Lower.Call do
     end
   end
 
+  defp zero_arity_thunk_call?(ctx, module, name, args) when is_list(args) do
+    case Map.fetch(ctx.decl_map, {module, name}) do
+      {:ok, decl} ->
+        param_names = FunctionEmit.effective_decl_args(decl, module, ctx.decl_map) |> List.wrap()
+        length(param_names) == 0 and length(args) > 0 and closure_thunk_decl?(decl)
+
+      _ ->
+        false
+    end
+  end
+
+  defp closure_thunk_decl?(decl) when is_map(decl) do
+    closure_thunk_expr?(Map.get(decl, :expr))
+  end
+
+  defp closure_thunk_expr?(%{op: :lambda}), do: true
+
+  defp closure_thunk_expr?(%{op: op, body: body}) when op in [:let, :letrec] do
+    closure_thunk_expr?(body)
+  end
+
+  defp closure_thunk_expr?(_), do: false
+
   defp compile_oversaturated_call(module, name, args, ctx, b) do
-    {:ok, %{args: param_names}} = Map.fetch(ctx.decl_map, {module, name})
+    {:ok, decl} = Map.fetch(ctx.decl_map, {module, name})
+    param_names = Map.get(decl, :args, []) |> List.wrap()
     arity = length(param_names)
     {prefix, suffix} = Enum.split(args, arity)
 
     with {:ok, prefix_regs, b1} <- Expr.compile_args(prefix, ctx, b),
-         {dest, b2} = dest_for_call(ctx, b1),
+         {dest, b2} = Builder.fresh_reg(b1),
          {:ok, callee_reg, b3} when is_integer(callee_reg) <-
            compile_fn_call_emit(module, name, prefix_regs, dest, ctx, b2, prefix) do
-      compile_closure_call(callee_reg, suffix, ctx, b3)
+      apply_oversaturated_suffix(callee_reg, suffix, arity, ctx, b3)
+    else
+      _ -> :unsupported
+    end
+  end
+
+  defp apply_oversaturated_suffix(callee_reg, suffix, 0, ctx, b) do
+    apply_closure_args_sequential(callee_reg, suffix, ctx, b)
+  end
+
+  defp apply_oversaturated_suffix(callee_reg, suffix, _arity, ctx, b) do
+    compile_closure_call(callee_reg, suffix, ctx, b)
+  end
+
+  defp apply_closure_args_sequential(callee_reg, [], _ctx, b), do: {:ok, callee_reg, b}
+
+  defp apply_closure_args_sequential(callee_reg, [arg], ctx, b) do
+    compile_closure_call(callee_reg, [arg], ctx, b)
+  end
+
+  defp apply_closure_args_sequential(callee_reg, [arg | rest], ctx, b) do
+    scratch_ctx = %{ctx | dest_stack: [:scratch], function_tail: false}
+
+    with {:ok, next_reg, b1} <- compile_closure_call(callee_reg, [arg], scratch_ctx, b),
+         next when is_integer(next) <- next_reg do
+      apply_closure_args_sequential(next, rest, ctx, b1)
     else
       _ -> :unsupported
     end
   end
 
   defp closure_callee_reg(name, ctx, b) when is_binary(name) do
-    case Context.letrec_ref(ctx, name) do
-      ref when is_binary(ref) ->
-        compile_forward_ref_load(ref, ctx, b)
+    case Context.local_reg(ctx, name) do
+      reg when is_integer(reg) ->
+        {:ok, reg, b}
 
       _ ->
-        closure_callee_reg_local(name, ctx, b)
+        case Context.letrec_ref(ctx, name) do
+          ref when is_binary(ref) ->
+            compile_forward_ref_load(ref, ctx, b)
+
+          _ ->
+            closure_callee_reg_local(name, ctx, b)
+        end
     end
   end
 
@@ -324,7 +512,20 @@ defmodule Elmc.Backend.Plan.Lower.Call do
         compile_top_level_closure(module, name, param_names, ctx, b)
 
       :error ->
-        :unsupported
+        # Many common names are implicitly imported from `Basics` (and friends) in Elm.
+        # Lowering operates on unqualified `:var` nodes, so we provide a small, generic
+        # fallback lookup here when the current module doesn't define the name.
+        case Map.fetch(ctx.decl_map, {"Basics", name}) do
+          {:ok, %{args: []}} ->
+            {dest, b1} = dest_for_call(ctx, b)
+            compile_fn_call_emit("Basics", name, [], dest, ctx, b1)
+
+          {:ok, %{args: param_names}} when is_list(param_names) and param_names != [] ->
+            compile_top_level_closure("Basics", name, param_names, ctx, b)
+
+          _ ->
+            :unsupported
+        end
     end
   end
 
@@ -352,15 +553,24 @@ defmodule Elmc.Backend.Plan.Lower.Call do
         name = List.last(parts)
         full_module = parts |> Enum.drop(-1) |> Enum.join(".")
 
-        if Map.has_key?(decl_map, {full_module, name}) do
-          {full_module, name}
-        else
-          case String.split(target, ".", parts: 2) do
-            [mod, rest] -> {mod, rest}
-            [single] -> {ctx.module || "Main", single}
-          end
+        cond do
+          Map.has_key?(decl_map, {full_module, name}) ->
+            {full_module, name}
+
+          kernel_qualified_target?(full_module) ->
+            {full_module, name}
+
+          true ->
+            case String.split(target, ".", parts: 2) do
+              [mod, rest] -> {mod, rest}
+              [single] -> {ctx.module || "Main", single}
+            end
         end
     end
+  end
+
+  defp kernel_qualified_target?(module_name) when is_binary(module_name) do
+    module_name == "Elm.Kernel" or String.starts_with?(module_name, "Elm.Kernel.")
   end
 
   defp dest_for_call(ctx, b) do
