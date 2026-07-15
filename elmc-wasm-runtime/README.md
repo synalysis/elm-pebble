@@ -6,7 +6,11 @@ WASM RC runtime and JS host for elmc web targets.
 
 - `runtime/` — C runtime sources (generated/pruned by `elmc compile --target wasm`)
 - `host/loader.js` — instantiate app modules with `runtime.*` imports
-- `host/rc_runtime.js` — minimal JS RC heap for Phase 1 execution harness tests
+- `host/boot.js` — browser entry; loads wasm and delivers `pageDataFromJs` from elm-pages HTML
+- `host/page_bytes.js` — shared route-bytes extraction from `__ELM_PAGES_BYTES_DATA__`
+- `host/rc_runtime.js` — JS RC heap + browser/html/platform helpers
+- `host/json_runtime.js` — Json.Decode/Encode imports for WASM
+- `host/bytes_runtime.js` — Elm.Kernel.Bytes imports for WASM
 
 ## Build
 

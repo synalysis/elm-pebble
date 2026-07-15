@@ -223,6 +223,7 @@ defmodule Elmc.Backend.Wasm.ProjectWriter do
 
   defp collect_immortal_strings(plans) do
     plans
+    |> flatten_plans_with_lambdas()
     |> Enum.flat_map(fn plan ->
       plan.blocks
       |> Enum.flat_map(& &1.instrs)
@@ -232,6 +233,12 @@ defmodule Elmc.Backend.Wasm.ProjectWriter do
     |> Enum.uniq()
     |> Map.new(fn value ->
       {Integer.to_string(:erlang.phash2(value, 1_000_000)), value}
+    end)
+  end
+
+  defp flatten_plans_with_lambdas(plans) when is_list(plans) do
+    Enum.flat_map(plans, fn plan ->
+      [plan | flatten_plans_with_lambdas(Map.get(plan, :lambdas, []) || [])]
     end)
   end
 

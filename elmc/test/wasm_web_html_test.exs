@@ -66,6 +66,42 @@ defmodule Elmc.WasmWebHtmlTest do
   end
 
   @tag :wasm_execute
+  test "web wasm List.map (Html.map f) renders mapped body items" do
+    run_html_fixture_probe(
+      "wasm_web_map_list_project",
+      "elmc_fn_Main_main",
+      "headermainfooter",
+      fn wat ->
+        assert wat =~ "html_cmd"
+        assert wat =~ "list_map"
+      end
+    )
+  end
+
+  @tag :wasm_execute
+  test "web wasm preserves hyphenated and breakpoint tailwind class strings" do
+    run_html_fixture_probe(
+      "wasm_web_tailwind_string_project",
+      "elmc_fn_Main_main",
+      "ok",
+      fn wat -> assert wat =~ "html_cmd" end,
+      fn output ->
+        assert output =~ ~s/"value":"shrink-0 px-3 md:px-3 dark:text-gray-700"/
+        refute output =~ "shrink - 0"
+        refute output =~ ~s/"value":"px-3 px-3/
+        refute output =~ ~s/text-gray-50/
+      end,
+      fn manifest ->
+        values = Map.values(manifest["immortal_strings"] || %{})
+        assert "shrink-0" in values
+        assert "md:" in values
+        assert "dark:" in values
+        refute "shrink - 0" in values
+      end
+    )
+  end
+
+  @tag :wasm_execute
   test "web wasm copies browser host entry for manual smoke" do
     cond do
       not execution_tools_available?() ->
@@ -86,6 +122,15 @@ defmodule Elmc.WasmWebHtmlTest do
 
         assert File.regular?(Path.join(out_dir, "host/browser.html"))
         assert File.regular?(Path.join(out_dir, "host/boot.js"))
+        assert File.regular?(Path.join(out_dir, "host/page_bytes.js"))
+        assert File.regular?(Path.join(out_dir, "host/page_styles.js"))
+        assert File.regular?(Path.join(out_dir, "host/json_runtime.js"))
+        assert File.regular?(Path.join(out_dir, "host/bytes_runtime.js"))
+        assert File.regular?(Path.join(out_dir, "host/rc_runtime.js"))
+
+        boot_js = File.read!(Path.join(out_dir, "host/boot.js"))
+        assert boot_js =~ "pageDataFromJs"
+        assert boot_js =~ "page_bytes.js"
     end
   end
 
@@ -99,7 +144,14 @@ defmodule Elmc.WasmWebHtmlTest do
     )
   end
 
-  defp run_html_fixture_probe(fixture, export, expected_text, wat_assert, output_assert \\ fn _ -> :ok end) do
+  defp run_html_fixture_probe(
+         fixture,
+         export,
+         expected_text,
+         wat_assert,
+         output_assert \\ fn _ -> :ok end,
+         manifest_assert \\ fn _ -> :ok end
+       ) do
     cond do
       not execution_tools_available?() ->
         :ok
@@ -119,6 +171,7 @@ defmodule Elmc.WasmWebHtmlTest do
                  })
 
         manifest = out_dir |> ProjectWriter.manifest_path() |> File.read!() |> Jason.decode!()
+        manifest_assert.(manifest)
 
         refute Enum.any?(manifest["stub_functions"] || [], fn stub ->
                  stub["module"] == "Elm.Kernel.VirtualDom" and stub["name"] in ["text", "node"]

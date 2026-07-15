@@ -4,12 +4,15 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 APP="$ROOT/elm_pebble_dev"
 OUT="${1:-$APP/dist/wasm-web}"
+if [[ "$OUT" != /* ]]; then
+  OUT="$ROOT/$OUT"
+fi
 
 cd "$ROOT/elmc"
 mix run -e "
-out = Path.expand(\"$OUT\")
+out = \"$OUT\"
 File.rm_rf!(out)
-case Elmc.compile(Path.expand(\"../elm_pebble_dev\", __DIR__), %{
+case Elmc.compile(\"$APP\", %{
   out_dir: out,
   targets: [:wasm],
   web: true,

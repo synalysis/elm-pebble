@@ -5,7 +5,11 @@
     "gen:tailwind": "elm-tailwind-classes gen",
     "start": "npm run gen:tailwind && elm-pages dev",
     "build": "npm run gen:tailwind && elm-pages build",
-    "build:wasm": "bash ../scripts/build-elm-pebble-dev-wasm.sh"
+    "build:wasm": "bash ../scripts/build-elm-pebble-dev-wasm.sh",
+    "verify:wasm": "node ../elmc/test/support/wasm_browser_page_data_probe_runner.mjs dist/wasm-web",
+    "serve:wasm": "bash ../scripts/serve-elm-pebble-dev-wasm.sh",
+    "serve:wasm:only": "python -m http.server 8080 --directory dist",
+    "preview:wasm": "bash ../scripts/serve-elm-pebble-dev-wasm.sh"
   },
   "devDependencies": {
     "@tailwindcss/cli": "^4.2.2",

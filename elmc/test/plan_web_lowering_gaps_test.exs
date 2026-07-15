@@ -1,8 +1,7 @@
 defmodule Elmc.PlanWebLoweringGapsTest do
   use ExUnit.Case, async: true
 
-  alias Elmc.Backend.Plan.Builder
-  alias Elmc.Backend.Plan.Context
+  alias Elmc.Backend.Plan.{Builder, Context, Verify}
   alias Elmc.Backend.Plan.Lower.Case.TagSwitch
   alias Elmc.Backend.Plan.Lower.{Call, Function}
 
@@ -315,5 +314,70 @@ defmodule Elmc.PlanWebLoweringGapsTest do
              "update",
              "subscriptions"
            ]
+  end
+
+  test "web rewrite gives Html.map alias two wasm params and html_cmd body" do
+    Process.put(:elmc_codegen_opts, %{web: true, targets: [:wasm]})
+
+    on_exit(fn ->
+      Process.delete(:elmc_codegen_opts)
+    end)
+
+    html_map = %{
+      name: "map",
+      args: [],
+      expr: %{op: :qualified_call, target: "VirtualDom.map", args: []}
+    }
+
+    rewritten =
+      Elmc.Backend.Plan.Lower.Platform.Web.rewrite_html_map_function_decl(
+        "Html",
+        html_map,
+        %{web: true, targets: [:wasm]}
+      )
+
+    assert rewritten.args == ["func", "node"]
+    assert %{op: :html_cmd, kind: %{value: 3}} = rewritten.expr
+
+    assert {:ok, plan} =
+             Function.lower(rewritten, "Html", %{{"Html", "map"} => rewritten}, rc_required: false)
+
+    assert :ok = Verify.run(plan)
+
+    html_cmd =
+      plan.blocks
+      |> Enum.flat_map(& &1.instrs)
+      |> Enum.find(&(&1.op == :html_cmd))
+
+    assert html_cmd
+    assert length(Map.get(html_cmd.args, :params, [])) == 2
+  end
+
+  test "web rewrite eta-expands partial Html.map bindings" do
+    Process.put(:elmc_codegen_opts, %{web: true, targets: [:wasm]})
+
+    on_exit(fn ->
+      Process.delete(:elmc_codegen_opts)
+    end)
+
+    wrap = %{
+      name: "wrap",
+      args: [],
+      expr: %{
+        op: :qualified_call,
+        target: "Html.map",
+        args: [%{op: :var, name: "identity"}]
+      }
+    }
+
+    rewritten =
+      Elmc.Backend.Plan.Lower.Platform.Web.rewrite_partial_html_map_function_decl(
+        "Main",
+        wrap,
+        %{web: true, targets: [:wasm]}
+      )
+
+    assert rewritten.args == ["html"]
+    assert %{op: :html_cmd, kind: %{value: 3}} = rewritten.expr
   end
 end

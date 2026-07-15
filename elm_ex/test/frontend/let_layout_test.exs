@@ -236,6 +236,24 @@ defmodule ElmEx.Frontend.LetLayoutTest do
     assert {:ok, %{op: :float_literal}} = GeneratedExpressionParser.parse("1.0e-300")
   end
 
+  test "preserves hyphenated string literals during numeric minus normalization" do
+    assert {:ok, %{op: :string_literal, value: "shrink-0"}} =
+             GeneratedExpressionParser.parse(~s/"shrink-0"/)
+
+    assert {:ok,
+            %{
+              op: :constructor_call,
+              target: "Tailwind",
+              args: [%{op: :string_literal, value: "top-0 z-50"}]
+            }} =
+             GeneratedExpressionParser.parse(~s/Tailwind "top-0 z-50"/)
+  end
+
+  test "still normalizes numeric subtraction outside string literals" do
+    assert {:ok, %{op: :sub_const, var: "width", value: 1}} =
+             GeneratedExpressionParser.parse("width-1")
+  end
+
   test "parses leading-zero decimal float literals" do
     assert {:ok, %{op: :float_literal, value: 0.9856}} =
              GeneratedExpressionParser.parse("0.9856")

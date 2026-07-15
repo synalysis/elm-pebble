@@ -161,25 +161,69 @@ defmodule Elmc.Backend.Plan.Lower.Platform.Web do
 
   def rewrite_html_tag_function_decl(_module, decl, _opts), do: decl
 
+  @html_map_modules MapSet.new(["Html", "VirtualDom", "Elm.Kernel.VirtualDom"])
+  @html_map_param_names ["func", "node"]
+
   @spec rewrite_html_map_function_decl(String.t(), map(), keyword() | map()) :: map()
   def rewrite_html_map_function_decl(module, decl, opts \\ [])
 
-  def rewrite_html_map_function_decl("Html", %{expr: expr} = decl, opts) do
+  def rewrite_html_map_function_decl(module, %{name: "map"} = decl, opts) do
+    cond do
+      web_target?(opts) and MapSet.member?(@html_map_modules, module) and html_map_alias_decl?(decl) ->
+        rewrite_html_map_two_arg_decl(decl)
+
+      web_target?(opts) and match?([_, _], Map.get(decl, :args, [])) and
+          MapSet.member?(@html_map_modules, module) ->
+        rewrite_html_map_two_arg_decl(decl)
+
+      true ->
+        decl
+    end
+  end
+
+  def rewrite_html_map_function_decl(_module, decl, _opts), do: decl
+
+  @spec rewrite_partial_html_map_function_decl(String.t(), map(), keyword() | map()) :: map()
+  def rewrite_partial_html_map_function_decl(_module, decl, opts \\ [])
+
+  def rewrite_partial_html_map_function_decl(_module, decl, opts) do
     with true <- web_target?(opts),
-         {:ok, mapper, html_var} <- html_map_partial(expr) do
+         {:ok, mapper, html_var} <- html_map_partial(Map.get(decl, :expr)) do
       decl
       |> Map.put(:args, [html_var])
-      |> Map.put(:expr, %{
-        op: :html_cmd,
-        kind: %{op: :int_literal, value: 3},
-        params: [mapper, %{op: :var, name: html_var}]
-      })
+      |> Map.put(:expr, html_map_cmd_expr(mapper, html_var))
     else
       _ -> decl
     end
   end
 
-  def rewrite_html_map_function_decl(_module, decl, _opts), do: decl
+  defp rewrite_html_map_two_arg_decl(decl) do
+    param_names =
+      case Map.get(decl, :args, []) do
+        [fn_name, node_name] -> [fn_name, node_name]
+        _ -> @html_map_param_names
+      end
+
+    [fn_name, node_name] = param_names
+
+    decl
+    |> Map.put(:args, param_names)
+    |> Map.put(:expr, html_map_cmd_expr(%{op: :var, name: fn_name}, node_name))
+  end
+
+  defp html_map_cmd_expr(mapper_expr, html_name) when is_binary(html_name) do
+    %{
+      op: :html_cmd,
+      kind: %{op: :int_literal, value: 3},
+      params: [mapper_expr, %{op: :var, name: html_name}]
+    }
+  end
+
+  defp html_map_alias_decl?(%{expr: %{op: :qualified_call, target: target, args: []}})
+       when target in ["VirtualDom.map", "Elm.Kernel.VirtualDom.map"],
+       do: true
+
+  defp html_map_alias_decl?(_), do: false
 
   @spec rewrite_html_lazy_function_decl(String.t(), map(), keyword() | map()) :: map()
   def rewrite_html_lazy_function_decl(module, decl, opts \\ [])
@@ -272,6 +316,10 @@ defmodule Elmc.Backend.Plan.Lower.Platform.Web do
           ctx,
           b
         )
+
+      web_target?(opts) and module in ["Html", "VirtualDom", "Elm.Kernel.VirtualDom"] and name == "map" and
+          length(args) < 2 ->
+        :unsupported
 
       true ->
         with true <- web_target?(opts),

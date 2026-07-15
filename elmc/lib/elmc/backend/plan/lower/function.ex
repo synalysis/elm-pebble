@@ -36,9 +36,18 @@ defmodule Elmc.Backend.Plan.Lower.Function do
     end
   end
 
+  defp codegen_opts(opts) do
+    Process.get(:elmc_codegen_opts, %{})
+    |> Map.merge(Map.new(List.wrap(opts)))
+    |> Map.to_list()
+  end
+
   defp do_lower(decl, module_name, decl_map, opts) do
+    opts = codegen_opts(opts)
+
     decl = Web.rewrite_html_tag_function_decl(module_name, decl, opts)
     decl = Web.rewrite_html_map_function_decl(module_name, decl, opts)
+    decl = Web.rewrite_partial_html_map_function_decl(module_name, decl, opts)
     decl = Web.rewrite_html_lazy_function_decl(module_name, decl, opts)
 
     case Fusion.try_plan(module_name, decl, decl_map, opts) do

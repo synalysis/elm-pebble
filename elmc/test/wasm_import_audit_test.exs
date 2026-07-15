@@ -25,12 +25,14 @@ defmodule Elmc.WasmImportAuditTest do
                entry_module: "Main",
                strip_dead_code: false,
                plan_ir_mode: :primary,
-               targets: [:wasm]
+               targets: [:wasm],
+               wasm_strict: false
              })
 
     {:ok, json} = File.read(ProjectWriter.manifest_path(out_dir)) |> then(&Jason.decode(elem(&1, 1)))
     imports = Map.get(json, "imports", [])
     assert is_list(imports)
-    assert "runtime.list_append" in imports or length(imports) > 0
+    assert "runtime.list_append" in imports
+    refute Enum.any?(imports, &String.contains?(&1, "json"))
   end
 end

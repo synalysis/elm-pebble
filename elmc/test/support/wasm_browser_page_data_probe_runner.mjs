@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadElmcWasm, RC_SUCCESS } from "../../../elmc-wasm-runtime/host/loader.js";
+import { decodePageBytesFromHtml } from "../../../elmc-wasm-runtime/host/page_bytes.js";
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "../../..");
 
@@ -34,16 +35,19 @@ if (!bytesSource) {
     process.env.ELM_PAGES_INDEX_HTML ??
     join(repoRoot, "elm_pebble_dev/dist/index.html");
   const html = readFileSync(htmlPath, "utf8");
-  const match = html.match(/id="__ELM_PAGES_BYTES_DATA__"[^>]*>([^<]+)</);
-  if (!match) {
+  pageBytesSource = decodePageBytesFromHtml(html);
+  if (!pageBytesSource) {
     console.error("probe failed: could not find __ELM_PAGES_BYTES_DATA__ in index.html");
     process.exit(1);
   }
-  pageBytesSource = Buffer.from(match[1], "base64");
 } else if (/^[A-Za-z0-9+/=]+$/.test(bytesSource) && bytesSource.length <= 256) {
   pageBytesSource = Buffer.from(bytesSource, "base64");
 } else {
-  pageBytesSource = readFileSync(bytesSource);
+  const html = readFileSync(bytesSource, "utf8");
+  pageBytesSource = decodePageBytesFromHtml(html);
+  if (!pageBytesSource) {
+    pageBytesSource = readFileSync(bytesSource);
+  }
 }
 
 const { rc, value: programHandle } = callExport("elmc_fn_Main_main", []);

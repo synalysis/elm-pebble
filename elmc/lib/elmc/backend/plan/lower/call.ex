@@ -462,16 +462,44 @@ defmodule Elmc.Backend.Plan.Lower.Call do
 
   defp compile_curried_lambda(module, name, param_names, partial_args, ctx, b) do
     remaining = Enum.drop(param_names, length(partial_args))
-    qualified = "#{module}.#{name}"
 
-    body = %{
-      op: :qualified_call,
-      target: qualified,
-      args: partial_args ++ Enum.map(remaining, &%{op: :var, name: &1})
-    }
+    body =
+      case html_map_curried_body(module, name, partial_args, remaining) do
+        {:ok, expr} ->
+          expr
+
+        :error ->
+          qualified = "#{module}.#{name}"
+
+          %{
+            op: :qualified_call,
+            target: qualified,
+            args: partial_args ++ Enum.map(remaining, &%{op: :var, name: &1})
+          }
+      end
 
     Lambda.compile_lambda(remaining, body, [], ctx, b)
   end
+
+  defp html_map_curried_body(module, "map", partial_args, remaining) do
+    opts = Process.get(:elmc_codegen_opts, %{})
+
+    with true <- Elmc.Backend.Plan.Lower.Platform.Web.web_target?(opts),
+         true <- module in ["Html", "VirtualDom", "Elm.Kernel.VirtualDom"],
+         [mapper | _] <- partial_args,
+         [html_name | _] <- remaining do
+      {:ok,
+       %{
+         op: :html_cmd,
+         kind: %{op: :int_literal, value: 3},
+         params: [mapper, %{op: :var, name: html_name}]
+       }}
+    else
+      _ -> :error
+    end
+  end
+
+  defp html_map_curried_body(_module, _name, _partial_args, _remaining), do: :error
 
   defp compile_batch_call(target, args, ctx, b) do
     operand_ctx = Context.for_branch_arm(ctx)

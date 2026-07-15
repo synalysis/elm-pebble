@@ -355,7 +355,7 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
   end
 
   defp delegate_param_names(
-         %{expr: %{op: :qualified_call, target: target, args: []}},
+         %{expr: %{op: :qualified_call, target: target, args: []}} = decl,
          module_name,
          decl_map
        ) do
@@ -363,13 +363,28 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
 
     with {mod, name} <-
            Elmc.Backend.Plan.Lower.Call.parse_target(target, ctx, decl_map),
-         {:ok, %{args: param_names}} <- Map.fetch(decl_map, {mod, name}),
-         true <- param_names != [] do
-      param_names
+         {:ok, callee_decl} <- Map.fetch(decl_map, {mod, name}) do
+      case Map.get(callee_decl, :args, []) do
+        param_names when param_names != [] ->
+          param_names
+
+        [] ->
+          delegate_param_names(callee_decl, mod, decl_map) ||
+            html_map_delegate_param_names(name, callee_decl)
+      end
     else
-      _ -> nil
+      _ -> html_map_delegate_param_names(Map.get(decl, :name), decl)
     end
   end
+
+  defp html_map_delegate_param_names("map", %{expr: %{op: :qualified_call, target: target, args: []}})
+       when target in ["VirtualDom.map", "Elm.Kernel.VirtualDom.map"],
+       do: ["func", "node"]
+
+  defp html_map_delegate_param_names("map", %{expr: %{op: :html_cmd, kind: %{value: 3}}}),
+       do: ["func", "node"]
+
+  defp html_map_delegate_param_names(_, _), do: nil
 
   defp delegate_param_names(%{expr: %{op: :var, name: name}}, module_name, decl_map)
        when is_binary(name) do

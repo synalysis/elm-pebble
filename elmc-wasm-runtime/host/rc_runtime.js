@@ -210,6 +210,16 @@ export function createRcRuntime({ immortalStrings = {} } = {}) {
     const payload = readHandle(ptr);
     if (!payload) return ptr;
     if (payload.tag === TAG_VDOM) return ptr;
+    if (payload.tag === TAG_TUPLE2) {
+      const kindPayload = readHandle(payload.first);
+      if (kindPayload?.tag === TAG_INT) {
+        const kind = kindPayload.value | 0;
+        const childPtr = payload.second | 0;
+        if (kind === HTML_KIND_MAP) {
+          return resolveHtml(asHandle(childPtr), depth + 1);
+        }
+      }
+    }
     if (payload.tag === TAG_CLOSURE) {
       const { rc, value } = invokeClosure(ptr, []);
       if (rc !== RC_SUCCESS || !value) return ptr;
@@ -591,7 +601,7 @@ export function createRcRuntime({ immortalStrings = {} } = {}) {
     if (payload?.tag === TAG_RECORD && (payload.fields?.length ?? 0) >= 2) {
       const { bodyPtr } = viewTitleAndBodyFields(payload);
       return listItems(bodyPtr)
-        .map((child) => vdomInnerText(asHandle(child)))
+        .map((child) => vdomInnerText(resolveHtml(asHandle(child))))
         .join("");
     }
     return vdomInnerText(viewPtr);
@@ -926,7 +936,8 @@ export function createRcRuntime({ immortalStrings = {} } = {}) {
     });
 
   const inspectVdom = (ptr) => {
-    const payload = readHandle(ptr);
+    const resolved = resolveHtml(asHandle(ptr));
+    const payload = readHandle(resolved);
     if (!payload || payload.tag !== TAG_VDOM) return null;
     if (payload.kind === "text") return { kind: "text", text: payload.text };
     if (payload.kind === "node") {
@@ -934,7 +945,7 @@ export function createRcRuntime({ immortalStrings = {} } = {}) {
         kind: "node",
         tagName: payload.tagName,
         childCount: (payload.children ?? []).length,
-        innerText: vdomInnerText(ptr),
+        innerText: vdomInnerText(resolveHtml(asHandle(ptr))),
         attrs: vdomAttrs(payload.attrs),
       };
     }
@@ -3815,7 +3826,12 @@ export function createRcRuntime({ immortalStrings = {} } = {}) {
       }
 
       if (kind === HTML_KIND_MAP) {
+        const mapperPtr = params[0] | 0;
         const childPtr = params[1] | 0;
+        if (!childPtr) {
+          writeOut(outPtr, asHandle(mapperPtr));
+          return RC_SUCCESS;
+        }
         const resolved = resolveHtml(asHandle(childPtr));
         writeOut(outPtr, cloneVdom(resolved));
         return RC_SUCCESS;

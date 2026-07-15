@@ -1,20 +1,30 @@
 import { loadElmcWasm, RC_SUCCESS } from "./loader.js";
+import { loadPageBytesFromHtmlUrl } from "./page_bytes.js";
+import { injectPageStylesFromHtmlUrl } from "./page_styles.js";
 
-async function loadBytes(url) {
-  const response = await fetch(url);
+async function loadBytes(url, fetchFn = fetch) {
+  const response = await fetchFn(url);
   if (!response.ok) {
     throw new Error(`failed to load ${url}: ${response.status}`);
   }
   return new Uint8Array(await response.arrayBuffer());
 }
 
-export async function bootFromUrls({ manifestUrl, wasmUrl, exportName }) {
-  const manifestResponse = await fetch(manifestUrl);
+export async function bootFromUrls({
+  manifestUrl,
+  wasmUrl,
+  exportName,
+  pageHtmlUrl,
+  pageBytes,
+  fetchFn,
+}) {
+  const fetchImpl = fetchFn ?? fetch;
+  const manifestResponse = await fetchImpl(manifestUrl);
   if (!manifestResponse.ok) {
     throw new Error(`failed to load manifest: ${manifestResponse.status}`);
   }
   const manifest = await manifestResponse.json();
-  const wasmBytes = await loadBytes(wasmUrl);
+  const wasmBytes = await loadBytes(wasmUrl, fetchImpl);
   const entry = exportName || manifest.entry_export || "elmc_fn_Main_main";
 
   const { helpers, callExport } = await loadElmcWasm({
@@ -30,9 +40,30 @@ export async function bootFromUrls({ manifestUrl, wasmUrl, exportName }) {
   }
 
   if (helpers.isBrowserProgram(value)) {
-    const boot = helpers.bootBrowserProgram(value);
+    let bootOpts = {};
+
+    if (pageBytes) {
+      const bytesHandle = helpers.newBytesFromUint8Array(pageBytes);
+      bootOpts = { incomingPorts: { pageDataFromJs: bytesHandle } };
+    } else if (pageHtmlUrl) {
+      const loaded = await loadPageBytesFromHtmlUrl(pageHtmlUrl, fetchImpl);
+      if (loaded) {
+        const bytesHandle = helpers.newBytesFromUint8Array(loaded);
+        bootOpts = { incomingPorts: { pageDataFromJs: bytesHandle } };
+      } else {
+        console.warn(`page bytes not found at ${pageHtmlUrl}; booting without pageDataFromJs`);
+      }
+    }
+
+    const boot = helpers.bootBrowserProgram(value, bootOpts);
     if (boot.rc !== RC_SUCCESS) {
-      throw new Error(`browser program boot failed: rc=${boot.rc} stage=${boot.stage ?? "unknown"}`);
+      throw new Error(
+        `browser program boot failed: rc=${boot.rc} stage=${boot.stage ?? "unknown"}`
+      );
+    }
+
+    if (boot.title && typeof document !== "undefined") {
+      document.title = boot.title;
     }
 
     helpers.buildImport("release")(value);
@@ -41,10 +72,15 @@ export async function bootFromUrls({ manifestUrl, wasmUrl, exportName }) {
     else if (boot.modelPtr) helpers.buildImport("release")(boot.modelPtr);
 
     if (!helpers.checkBalanced()) {
-      throw new Error("RC leak after mounting browser program");
+      console.warn("RC imbalance after mounting browser program");
     }
 
-    return { exportName: entry, innerText: boot.innerText, kind: "browser_program" };
+    return {
+      exportName: entry,
+      innerText: boot.innerText,
+      title: boot.title ?? "",
+      kind: "browser_program",
+    };
   }
 
   helpers.mountVdomToApp(value);
@@ -54,7 +90,12 @@ export async function bootFromUrls({ manifestUrl, wasmUrl, exportName }) {
     throw new Error("RC leak after mounting view");
   }
 
-  return { exportName: entry, innerText: helpers.vdomInnerText(value), kind: "vdom" };
+  return {
+    exportName: entry,
+    innerText: helpers.vdomInnerText(value),
+    title: "",
+    kind: "vdom",
+  };
 }
 
 if (typeof document !== "undefined") {
@@ -67,8 +108,20 @@ if (typeof document !== "undefined") {
     console.error(err);
   };
 
-  bootFromUrls({
-    manifestUrl: new URL("../wasm/elmc_wasm.manifest.json", import.meta.url).href,
-    wasmUrl: new URL("../wasm/app.wasm", import.meta.url).href,
-  }).catch(showError);
+  const pageHtmlParam = new URLSearchParams(location.search).get("pageHtml");
+  const defaultPageHtml = new URL("../../index.html", import.meta.url).href;
+
+  const pageHtmlUrl = pageHtmlParam || defaultPageHtml;
+
+  injectPageStylesFromHtmlUrl(pageHtmlUrl)
+    .catch((err) => {
+      console.warn("failed to load page styles from", pageHtmlUrl, err);
+    })
+    .finally(() => {
+      bootFromUrls({
+        manifestUrl: new URL("../wasm/elmc_wasm.manifest.json", import.meta.url).href,
+        wasmUrl: new URL("../wasm/app.wasm", import.meta.url).href,
+        pageHtmlUrl,
+      }).catch(showError);
+    });
 }

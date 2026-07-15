@@ -1237,11 +1237,39 @@ defmodule ElmEx.Frontend.GeneratedExpressionParser do
 
   @spec normalize_minus_numeric_source(source()) :: source()
   defp normalize_minus_numeric_source(source) when is_binary(source) do
-    source
+    {masked, literals} = mask_string_and_char_literals(source)
+
+    masked
     |> normalize_leading_negative_hex()
     |> normalize_leading_unary_minus()
     |> normalize_contextual_unary_minus()
     |> normalize_inline_numeric_subtraction()
+    |> restore_masked_string_and_char_literals(literals)
+  end
+
+  @string_or_char_literal ~r/"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'/u
+  @masked_literal_prefix "\u{E0000}"
+  @masked_literal_suffix "\u{E0001}"
+
+  @spec mask_string_and_char_literals(source()) :: {source(), [source()]}
+  defp mask_string_and_char_literals(source) when is_binary(source) do
+    literals = Regex.scan(@string_or_char_literal, source, return: :binary) |> List.flatten()
+
+    masked =
+      Enum.reduce(Enum.with_index(literals), source, fn {literal, index}, acc ->
+        placeholder = "#{@masked_literal_prefix}#{index}#{@masked_literal_suffix}"
+        String.replace(acc, literal, placeholder, global: false)
+      end)
+
+    {masked, literals}
+  end
+
+  @spec restore_masked_string_and_char_literals(source(), [source()]) :: source()
+  defp restore_masked_string_and_char_literals(source, literals) when is_list(literals) do
+    Enum.reduce(Enum.with_index(literals), source, fn {literal, index}, acc ->
+      placeholder = "#{@masked_literal_prefix}#{index}#{@masked_literal_suffix}"
+      String.replace(acc, placeholder, literal)
+    end)
   end
 
   @spec normalize_leading_negative_hex(source()) :: source()

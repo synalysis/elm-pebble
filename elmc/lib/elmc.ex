@@ -388,15 +388,29 @@ defmodule Elmc do
       host_src = Path.expand("../../elmc-wasm-runtime/host", __DIR__)
       host_dst = Path.join(out_dir, "host")
 
+      js_files =
+        host_src
+        |> Path.join("*.js")
+        |> Path.wildcard()
+        |> Enum.sort()
+
       with :ok <- File.mkdir_p(host_dst),
-           :ok <- File.cp(Path.join(host_src, "loader.js"), Path.join(host_dst, "loader.js")),
-           :ok <- File.cp(Path.join(host_src, "rc_runtime.js"), Path.join(host_dst, "rc_runtime.js")),
-           :ok <- File.cp(Path.join(host_src, "browser.html"), Path.join(host_dst, "browser.html")),
-           :ok <- File.cp(Path.join(host_src, "boot.js"), Path.join(host_dst, "boot.js")) do
+           :ok <- copy_host_files(js_files, host_dst),
+           :ok <- File.cp(Path.join(host_src, "browser.html"), Path.join(host_dst, "browser.html")) do
         :ok
       end
     else
       :ok
+    end
+  end
+
+  defp copy_host_files([], _host_dst), do: :ok
+
+  defp copy_host_files([src | rest], host_dst) do
+    dst = Path.join(host_dst, Path.basename(src))
+
+    with :ok <- File.cp(src, dst) do
+      copy_host_files(rest, host_dst)
     end
   end
 

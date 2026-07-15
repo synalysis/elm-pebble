@@ -1197,29 +1197,32 @@ defmodule Elmc.Backend.Wasm.Lower.Instr do
   end
 
   defp boxed_runtime_arg_wat(reg, slots, opts) when is_integer(reg) do
-    if Map.has_key?(slots.slot_map, reg) do
-      {Slots.reg_name(slots, reg), []}
+    # const_int / native ints live in i32 locals, but runtime builtins expect
+    # boxed handles. Always box before tuple2/union use — even when the reg
+    # already has a slot (previously we passed the raw tag i32 as a handle id).
+    case defining_plan_instr(Keyword.get(opts, :parent_plan), reg) do
+      %{op: :const_int, args: %{value: value}} when is_integer(value) ->
+        box_const_int_arg(value, reg, slots)
+
+      %{op: :call_runtime, args: %{builtin: :new_int, literal: value}} when is_integer(value) ->
+        box_const_int_arg(value, reg, slots)
+
+      %{op: :call_runtime, args: %{builtin: :new_int, c_expr: expr}} when is_binary(expr) ->
+        case resolve_c_expr_int(expr) do
+          {:ok, value} -> box_const_int_arg(value, reg, slots)
+          :error -> box_native_or_passthrough(reg, slots, opts)
+        end
+
+      _ ->
+        box_native_or_passthrough(reg, slots, opts)
+    end
+  end
+
+  defp box_native_or_passthrough(reg, slots, opts) do
+    if native_int_reg?(opts, reg) do
+      box_native_int_arg(reg, slots)
     else
-      case defining_plan_instr(Keyword.get(opts, :parent_plan), reg) do
-        %{op: :const_int, args: %{value: value}} when is_integer(value) ->
-          box_const_int_arg(value, reg, slots)
-
-        %{op: :call_runtime, args: %{builtin: :new_int, literal: value}} when is_integer(value) ->
-          box_const_int_arg(value, reg, slots)
-
-        %{op: :call_runtime, args: %{builtin: :new_int, c_expr: expr}} when is_binary(expr) ->
-          case resolve_c_expr_int(expr) do
-            {:ok, value} -> box_const_int_arg(value, reg, slots)
-            :error -> {Slots.reg_name(slots, reg), []}
-          end
-
-        _ ->
-          if native_int_reg?(opts, reg) do
-            box_native_int_arg(reg, slots)
-          else
-            {Slots.reg_name(slots, reg), []}
-          end
-      end
+      {Slots.reg_name(slots, reg), []}
     end
   end
 
