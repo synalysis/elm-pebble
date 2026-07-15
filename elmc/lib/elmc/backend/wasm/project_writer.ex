@@ -34,6 +34,7 @@ defmodule Elmc.Backend.Wasm.ProjectWriter do
     Process.put(:elmc_codegen_opts, opts)
     Process.put(:elmc_constructor_tags, IRQueries.constructor_tag_map(ir))
     Process.put(:elmc_record_alias_shapes, IRQueries.record_alias_shape_map(ir))
+    Process.put(:elmc_inline_record_literal_shapes, IRQueries.inline_record_literal_shape_map(ir))
     Process.put(:elmc_record_field_types, IRQueries.record_alias_field_types_map(ir))
 
     try do
@@ -138,6 +139,7 @@ defmodule Elmc.Backend.Wasm.ProjectWriter do
       Process.delete(:elmc_codegen_opts)
       Process.delete(:elmc_constructor_tags)
       Process.delete(:elmc_record_alias_shapes)
+      Process.delete(:elmc_inline_record_literal_shapes)
       Process.delete(:elmc_record_field_types)
     end
   end

@@ -65,8 +65,22 @@ if (boot.rc !== RC_SUCCESS) {
   process.exit(1);
 }
 
+const EXPECTED_TITLE = "Elm Pebble | Watch faces & apps in Elm";
+
 if (boot.title === "Page Data Error") {
   console.error(`title still error page: ${JSON.stringify(boot.title)}`);
+  process.exit(1);
+}
+
+if (boot.title === "Model mismatch" || boot.title === "Page not found") {
+  console.error(`title still error page: ${JSON.stringify(boot.title)}`);
+  process.exit(1);
+}
+
+if (boot.title !== EXPECTED_TITLE) {
+  console.error(
+    `title mismatch: got ${JSON.stringify(boot.title)}, expected ${JSON.stringify(EXPECTED_TITLE)}`
+  );
   process.exit(1);
 }
 

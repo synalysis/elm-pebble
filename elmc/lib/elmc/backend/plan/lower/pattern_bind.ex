@@ -75,8 +75,17 @@ defmodule Elmc.Backend.Plan.Lower.PatternBind do
 
     base_expr = if is_binary(bind), do: %{op: :var, name: bind}, else: nil
 
-    Enum.reduce_while(fields, {:ok, ctx0, b0}, fn field_name, {:ok, ctx_acc, b_acc} when is_binary(field_name) ->
-      case Record.emit_record_field_get(subject_reg, field_name, ctx_acc, b_acc, base_expr) do
+    Enum.with_index(fields)
+    |> Enum.reduce_while({:ok, ctx0, b0}, fn {field_name, field_index}, {:ok, ctx_acc, b_acc}
+                                            when is_binary(field_name) ->
+      opts =
+        if base_expr == nil do
+          [index_override: field_index]
+        else
+          []
+        end
+
+      case Record.emit_record_field_get(subject_reg, field_name, ctx_acc, b_acc, base_expr, opts) do
         {:ok, field_reg, b1} ->
           ctx1 = Context.put_local(ctx_acc, field_name, field_reg)
           b2 = Builder.bind_local(b1, field_name, field_reg)

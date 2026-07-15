@@ -4,7 +4,7 @@ defmodule Elmc.Backend.Plan.Lower.Call do
   alias Elmc.Backend.CCodegen.FunctionEmit
   alias Elmc.Backend.Plan.Builder
   alias Elmc.Backend.Plan.Context
-  alias Elmc.Backend.Plan.Lower.{Cmd, Expr, Lambda, Platform.Web, Port, SpecialValues}
+  alias Elmc.Backend.Plan.Lower.{Cmd, Expr, Lambda, MaybeMap, Platform.Web, Port, Record, SpecialValues}
   alias Elmc.Backend.Plan.Types
 
   @spec compile_call(Types.ir_expr(), Context.t(), Builder.t()) ::
@@ -54,12 +54,24 @@ defmodule Elmc.Backend.Plan.Lower.Call do
   # Generic function application for value-level call targets.
   # Used by lowerer rewrites (compose, partials, etc) when applying a computed function value.
   defp compile_apply_call([fn_expr, arg_expr], ctx, b) do
-    scratch_ctx = %{ctx | dest_stack: [:scratch], function_tail: false}
+    case MaybeMap.field_accessor_lambda(fn_expr) do
+      {:ok, field} ->
+        with {:ok, arg_reg, b1} <- Expr.compile(arg_expr, ctx, b),
+             {:ok, field_reg, b2} <-
+               Record.emit_record_field_get(arg_reg, field, ctx, b1, arg_expr) do
+          {:ok, field_reg, b2}
+        else
+          _ -> :unsupported
+        end
 
-    with {:ok, fn_reg, b1} when is_integer(fn_reg) <- Expr.compile(fn_expr, scratch_ctx, b) do
-      compile_closure_call_from_reg(fn_reg, [arg_expr], ctx, b1)
-    else
-      _ -> :unsupported
+      :error ->
+        scratch_ctx = %{ctx | dest_stack: [:scratch], function_tail: false}
+
+        with {:ok, fn_reg, b1} when is_integer(fn_reg) <- Expr.compile(fn_expr, scratch_ctx, b) do
+          compile_closure_call_from_reg(fn_reg, [arg_expr], ctx, b1)
+        else
+          _ -> :unsupported
+        end
     end
   end
 
@@ -531,14 +543,15 @@ defmodule Elmc.Backend.Plan.Lower.Call do
 
   defp compile_top_level_closure(module, name, param_names, ctx, b) do
     qualified = "#{module}.#{name}"
+    unique_names = Context.unique_param_names(param_names)
 
     body = %{
       op: :qualified_call,
       target: qualified,
-      args: Enum.map(param_names, &%{op: :var, name: &1})
+      args: Enum.map(unique_names, &%{op: :var, name: &1})
     }
 
-    Lambda.compile_lambda(param_names, body, [], ctx, b)
+    Lambda.compile_lambda(unique_names, body, [], ctx, b)
   end
 
   @doc false

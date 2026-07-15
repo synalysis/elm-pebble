@@ -1064,4 +1064,48 @@ defmodule Elmc.PlanLowerIrTest do
     assert record_get.args[:field_index] =~ "0"
     assert :ok = Verify.run(plan)
   end
+
+  test "__apply__ field accessor uses applied value type for record field index" do
+    Process.put(:elmc_record_alias_shapes, %{
+      {"Main", "App"} => ["view", "head"],
+      {"Pages.ProgramConfig", "ProgramConfig"} => ["init", "update", "view", "subscriptions"]
+    })
+
+    on_exit(fn -> Process.delete(:elmc_record_alias_shapes) end)
+
+    decl_map = %{
+      {"Main", "pickView"} => %{
+        name: "pickView",
+        type: "Main.App -> (Main.Model -> View.View msg)",
+        args: ["app"],
+        expr: %{
+          op: :call,
+          name: "__apply__",
+          args: [
+            %{
+              op: :lambda,
+              args: ["record"],
+              body: %{op: :field_access, arg: %{op: :var, name: "record"}, field: "view"}
+            },
+            %{op: :var, name: "app"}
+          ]
+        }
+      }
+    }
+
+    assert {:ok, plan} =
+             Function.lower(Map.fetch!(decl_map, {"Main", "pickView"}), "Main", decl_map,
+               rc_required: false
+             )
+
+    view_gets =
+      plan.blocks
+      |> Enum.flat_map(& &1.instrs)
+      |> Enum.filter(&(&1.op == :record_get and Map.get(&1.args, :field) == "view"))
+
+    assert view_gets != []
+    assert Enum.all?(view_gets, fn instr -> String.starts_with?(instr.args[:field_index], "0") end)
+    refute Enum.any?(view_gets, fn instr -> String.contains?(instr.args[:field_index], "3") end)
+    assert :ok = Verify.run(plan)
+  end
 end

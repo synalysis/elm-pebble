@@ -1,6 +1,7 @@
 defmodule Elmc.Backend.Plan.Lower.Lambda do
   @moduledoc false
 
+  alias Elmc.Backend.CCodegen.{Host, TypeParsing}
   alias Elmc.Backend.CCodegen.VarAnalysis
   alias Elmc.Backend.Plan.{Builder, Context}
   alias Elmc.Backend.Plan.Lower.{Expr, Tuple}
@@ -198,6 +199,8 @@ defmodule Elmc.Backend.Plan.Lower.Lambda do
     lam_idx = length(b.lambdas)
     lam_name = "#{parent_ctx.function_name || "anon"}_lam_#{lam_idx}"
 
+    lambda_param_types = lambda_param_types(parent_ctx, lambda_args)
+
     child_ctx =
       Context.new(
         module: parent_ctx.module,
@@ -209,7 +212,8 @@ defmodule Elmc.Backend.Plan.Lower.Lambda do
         function_tail: false,
         letrec_refs: parent_ctx.letrec_refs,
         letrec_in_closure: parent_ctx.letrec_self != nil,
-        local_types: parent_ctx.local_types || %{}
+        local_types: Map.merge(parent_ctx.local_types || %{}, lambda_param_types),
+        curried_type_offset: (parent_ctx.curried_type_offset || 0) + length(lambda_args)
       )
 
     child_b =
@@ -325,6 +329,28 @@ defmodule Elmc.Backend.Plan.Lower.Lambda do
 
   defp resolvable_keys(ctx) do
     MapSet.new(ctx.params ++ Map.keys(ctx.locals))
+  end
+
+  defp lambda_param_types(parent_ctx, lambda_args) when is_list(lambda_args) do
+    with module when is_binary(module) <- parent_ctx.module,
+         root when is_binary(root) <- Context.root_function_name(parent_ctx),
+         %{type: type} <- Map.get(parent_ctx.decl_map, {module, root}, %{}),
+         arg_types when is_list(arg_types) <- TypeParsing.function_arg_types(type),
+         offset when is_integer(offset) <- parent_ctx.curried_type_offset || 0 do
+      lambda_args
+      |> Enum.with_index()
+      |> Enum.reduce(%{}, fn {arg, idx}, acc ->
+        case Enum.at(arg_types, offset + idx) do
+          arg_type when is_binary(arg_type) ->
+            Map.put(acc, arg, Host.normalize_type_name(arg_type))
+
+          _ ->
+            acc
+        end
+      end)
+    else
+      _ -> %{}
+    end
   end
 
   defp record_lambda_unsupported(ctx, step) when is_map(ctx) do

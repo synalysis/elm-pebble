@@ -261,6 +261,19 @@ defmodule Elmc.Backend.Plan.Builder do
     end)
   end
 
+  @spec dup_all_regs_for_record_new_consume(t(), [Types.reg()]) :: {[Types.reg()], t()}
+  def dup_all_regs_for_record_new_consume(b, arg_regs) when is_list(arg_regs) do
+    {regs, b1} = dup_regs_for_owned_consume(b, arg_regs)
+
+    Enum.map_reduce(regs, b1, fn reg, b_acc ->
+      if is_integer(reg) do
+        retain_reg_copy(b_acc, reg)
+      else
+        {reg, b_acc}
+      end
+    end)
+  end
+
   @spec dup_regs_for_owned_consume(t(), [Types.reg()]) :: {[Types.reg()], t()}
   def dup_regs_for_owned_consume(b, arg_regs) when is_list(arg_regs) do
     dup_regs_with_canonical(b, arg_regs, param_retain?: true)
@@ -440,7 +453,8 @@ defmodule Elmc.Backend.Plan.Builder do
 
   def copy_reg_owned(b, reg, _opts), do: {reg, b}
 
-  defp retain_reg_copy(b, reg), do: copy_reg_owned(b, reg)
+  @spec retain_reg_copy(t(), Types.reg()) :: {Types.reg(), t()}
+  def retain_reg_copy(b, reg), do: copy_reg_owned(b, reg)
 
   @spec emit_load_param(t(), non_neg_integer()) :: {Types.reg(), t()}
   def emit_load_param(b, index) do

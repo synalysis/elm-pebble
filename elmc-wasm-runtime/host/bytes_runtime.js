@@ -451,9 +451,6 @@ export function createBytesRuntime(deps) {
 
         release(value);
         const justRc = maybeJustOwn(outPtr, decoded);
-        if (typeof process !== "undefined" && process.env.ELMC_WASM_DECODE_TRACE) {
-          console.error(`[bytes_decode] offset ${startOffset}->${newOffset} ok`);
-        }
         return justRc;
       } finally {
         release(offsetHandle);

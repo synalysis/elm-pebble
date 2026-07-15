@@ -86,14 +86,14 @@ view :
     -> Model
     -> (Msg -> msg)
     -> View msg
-    -> { body : List (Html msg), title : String }
+    -> { title : String, body : List (Html msg) }
 view _ page _ _ pageView =
-    { body =
+    { title = pageView.title
+    , body =
         [ siteHeader page.route
         , main_ [] pageView.body
         , siteFooter
         ]
-    , title = pageView.title
     }
 
 

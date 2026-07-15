@@ -7,6 +7,7 @@ defmodule Elmc.Backend.CCodegen.Expr do
   alias Elmc.Backend.CCodegen.Native.RecordFields
   alias Elmc.Backend.CCodegen.RcRuntimeEmit
   alias Elmc.Backend.CCodegen.RecordFieldMacros
+  alias Elmc.Backend.CCodegen.TypeParsing
   alias Elmc.Backend.CCodegen.Types
   alias Elmc.Backend.CCodegen.Util
 
@@ -1194,6 +1195,26 @@ defmodule Elmc.Backend.CCodegen.Expr do
 
   def record_container_type_for_expr(%{op: :field_access, arg: arg, field: field}, env) do
     RecordFields.field_type(env, arg, field)
+  end
+
+  def record_container_type_for_expr(
+        %{op: :field_call, arg: arg, field: field, args: args},
+        env
+      ) do
+    case RecordFields.field_type(env, arg, field) do
+      fn_type when is_binary(fn_type) ->
+        arg_types = TypeParsing.function_arg_types(fn_type)
+        call_args = args || []
+
+        if length(arg_types) <= length(call_args) do
+          TypeParsing.function_return_type(fn_type)
+        else
+          nil
+        end
+
+      _ ->
+        nil
+    end
   end
 
   def record_container_type_for_expr(%{op: :call, name: name, args: args}, env)

@@ -2,6 +2,7 @@ defmodule Elmc.Backend.CCodegen.IRQueries do
   @moduledoc false
 
   alias ElmEx.IR
+  alias ElmEx.IR.TypeSignature
   alias ElmEx.IR.Types.{Module, UnionEntry}
   alias Elmc.Backend.CCodegen.Types
 
@@ -62,23 +63,110 @@ defmodule Elmc.Backend.CCodegen.IRQueries do
 
   @spec record_alias_shape_map(IR.t()) :: %{optional({String.t(), String.t()}) => [String.t()]}
   def record_alias_shape_map(%IR{} = ir) do
+    named_shapes =
+      ir.modules
+      |> Enum.flat_map(fn mod ->
+        mod.declarations
+        |> Enum.filter(&(&1.kind == :type_alias))
+        |> Enum.flat_map(fn decl ->
+          case Map.get(decl, :expr) do
+            %{op: :record_alias, fields: fields} when is_list(fields) ->
+              shape = fields |> Enum.map(&to_string/1)
+              [{{mod.name, decl.name}, shape}]
+
+            _ ->
+              []
+          end
+        end)
+      end)
+
+    named_shapes
+    |> Map.new()
+  end
+
+  @spec inline_record_literal_shape_map(IR.t()) :: %{optional({String.t(), String.t()}) => [String.t()]}
+  def inline_record_literal_shape_map(%IR{} = ir) do
+    inline_record_shapes_from_type_aliases(ir)
+    |> Map.new()
+  end
+
+  @spec inline_record_shapes_from_type_aliases(IR.t()) :: [{{String.t(), String.t()}, [String.t()]}]
+  def inline_record_shapes_from_type_aliases(%IR{} = ir) do
     ir.modules
     |> Enum.flat_map(fn mod ->
       mod.declarations
       |> Enum.filter(&(&1.kind == :type_alias))
       |> Enum.flat_map(fn decl ->
-        case Map.get(decl, :expr) do
-          %{op: :record_alias, fields: fields} when is_list(fields) ->
-            shape = fields |> Enum.map(&to_string/1)
-            [{{mod.name, decl.name}, shape}]
+        field_types =
+          case Map.get(decl, :expr) do
+            %{field_types: types} when is_map(types) -> types
+            _ -> %{}
+          end
 
-          _ ->
-            []
-        end
+        field_types
+        |> Enum.flat_map(fn {field_name, type_str} when is_binary(field_name) and is_binary(type_str) ->
+          type_str
+          |> embedded_record_types()
+          |> Enum.map(fn shape ->
+            key = {mod.name, "#{decl.name}_#{field_name}"}
+            {key, shape}
+          end)
+        end)
       end)
     end)
-    |> Map.new()
   end
+
+  defp embedded_record_types(type) when is_binary(type) do
+    type
+    |> brace_record_fragments([])
+    |> Enum.flat_map(fn fragment ->
+      trimmed = String.trim(fragment)
+
+      if TypeSignature.record_type?(trimmed) do
+        names = TypeSignature.record_field_names(trimmed)
+
+        if names != [] do
+          [names]
+        else
+          []
+        end
+      else
+        []
+      end
+    end)
+    |> Enum.uniq()
+  end
+
+  defp brace_record_fragments(<<>>, acc), do: Enum.reverse(acc)
+
+  defp brace_record_fragments(<<char, rest::binary>>, acc) when char in [?\s, ?\t, ?\n, ?\r] do
+    brace_record_fragments(rest, acc)
+  end
+
+  defp brace_record_fragments(<<?{, rest::binary>>, acc) do
+    case take_brace_record(rest, 1, "{") do
+      {record, after_record} -> brace_record_fragments(after_record, [record | acc])
+      :error -> brace_record_fragments(rest, acc)
+    end
+  end
+
+  defp brace_record_fragments(<<_char, rest::binary>>, acc), do: brace_record_fragments(rest, acc)
+
+  defp take_brace_record(_rest, 0, acc), do: {acc, ""}
+
+  defp take_brace_record(<<>>, _depth, _acc), do: :error
+
+  defp take_brace_record(<<?{, rest::binary>>, depth, acc),
+    do: take_brace_record(rest, depth + 1, acc <> "{")
+
+  defp take_brace_record(<<?}, rest::binary>>, 1, acc),
+    do: {acc <> "}", rest}
+
+  defp take_brace_record(<<?}, rest::binary>>, depth, acc) when depth > 1,
+    do: take_brace_record(rest, depth - 1, acc <> "}")
+
+  defp take_brace_record(<<char, rest::binary>>, depth, acc),
+    do: take_brace_record(rest, depth, acc <> <<char>>)
 
   @spec record_alias_field_types_map(IR.t()) :: Types.record_field_types_map()
   def record_alias_field_types_map(%IR{} = ir) do

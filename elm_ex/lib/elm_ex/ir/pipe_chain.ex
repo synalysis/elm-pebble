@@ -100,6 +100,14 @@ defmodule ElmEx.IR.PipeChain do
     %{op: :constructor_call, target: target, args: [acc]}
   end
 
+  def append_pipe_arg(%{op: :field_call, args: args} = step, acc) when is_list(args) do
+    %{step | args: args ++ [acc]}
+  end
+
+  def append_pipe_arg(%{op: :field_call, args: nil} = step, acc) do
+    %{step | args: [acc]}
+  end
+
   def append_pipe_arg(step, acc) do
     %{op: :call, name: "__apply__", args: [step, acc]}
   end

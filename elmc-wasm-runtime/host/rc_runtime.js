@@ -167,7 +167,9 @@ export function createRcRuntime({ immortalStrings = {} } = {}) {
   };
 
   const unionTagMatches = (outPtr, handlePtr, tagPtr) => {
-    const want = intValue(tagPtr);
+    // WASM/C codegen pass constructor tags as raw i32 immediates (elmc_int_t),
+    // not boxed handles — never resolve tagPtr through the handle table.
+    const want = tagPtr | 0;
     return newInt(outPtr, unionTagAsInt(handlePtr) === want ? 1 : 0);
   };
 
@@ -235,11 +237,31 @@ export function createRcRuntime({ immortalStrings = {} } = {}) {
     return { rc: RC_SUCCESS, value: resolved };
   };
 
+  const viewTitleAndBodyFields = (payload) => {
+    const fields = payload?.fields ?? [];
+    if (fields.length < 2) return { titlePtr: fields[0] ?? 0, bodyPtr: fields[1] ?? 0 };
+
+    let titlePtr = fields[0];
+    let bodyPtr = fields[1];
+    const first = readHandle(fields[0]);
+    const second = readHandle(fields[1]);
+
+    // Shared.template.view returns { body, title }; Browser.Document uses { title, body }.
+    if (first?.tag === TAG_LIST && second?.tag === TAG_STRING) {
+      titlePtr = fields[1];
+      bodyPtr = fields[0];
+    } else if (first?.tag === TAG_STRING && second?.tag === TAG_LIST) {
+      titlePtr = fields[0];
+      bodyPtr = fields[1];
+    }
+
+    return { titlePtr, bodyPtr };
+  };
+
   const mountViewHandle = (viewPtr) => {
     const payload = readHandle(viewPtr);
     if (payload?.tag === TAG_RECORD && (payload.fields?.length ?? 0) >= 2) {
-      const titlePtr = payload.fields[0];
-      const bodyPtr = payload.fields[1];
+      const { titlePtr, bodyPtr } = viewTitleAndBodyFields(payload);
       if (typeof document !== "undefined") {
         const title = stringValue(titlePtr);
         if (title) document.title = title;
@@ -558,7 +580,8 @@ export function createRcRuntime({ immortalStrings = {} } = {}) {
   const viewTitleFromView = (viewPtr) => {
     const payload = readHandle(viewPtr);
     if (payload?.tag === TAG_RECORD && (payload.fields?.length ?? 0) >= 1) {
-      return stringValue(payload.fields[0]);
+      const { titlePtr } = viewTitleAndBodyFields(payload);
+      return stringValue(titlePtr);
     }
     return "";
   };
@@ -566,7 +589,8 @@ export function createRcRuntime({ immortalStrings = {} } = {}) {
   const vdomInnerTextFromView = (viewPtr) => {
     const payload = readHandle(viewPtr);
     if (payload?.tag === TAG_RECORD && (payload.fields?.length ?? 0) >= 2) {
-      return listItems(payload.fields[1])
+      const { bodyPtr } = viewTitleAndBodyFields(payload);
+      return listItems(bodyPtr)
         .map((child) => vdomInnerText(asHandle(child)))
         .join("");
     }
@@ -608,6 +632,11 @@ export function createRcRuntime({ immortalStrings = {} } = {}) {
         if (payload?.tag === TAG_INT) {
           writeOut(outPtr, newIntHandle(payload.value));
         } else {
+          // Mirror C elmc_retain: an out-slot alias shares ownership and must bump rc.
+          if (!payload?.immortal) {
+            payload.rc = (payload.rc ?? 1) + 1;
+            retainCount += 1;
+          }
           writeOut(outPtr, handlePtr);
         }
       }
@@ -1164,8 +1193,13 @@ export function createRcRuntime({ immortalStrings = {} } = {}) {
   const compareInts = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
 
   const isMaybeNothing = (ptr) => {
-    const payload = readHandle(ptr);
-    return payload?.tag === TAG_MAYBE && payload.value == null;
+    const handle = ptr | 0;
+    if (!handle) return true;
+    const payload = readHandle(handle);
+    if (!payload) return true;
+    if (payload.tag === TAG_MAYBE) return payload.value == null;
+    if (payload.tag === TAG_INT) return intValue(handle) === 0;
+    return false;
   };
 
   // Some WASM paths return a bare union `(tag, payload)` tuple where Elm expects
@@ -1193,7 +1227,7 @@ export function createRcRuntime({ immortalStrings = {} } = {}) {
       retain(null, value);
       return RC_SUCCESS;
     }
-    const rc = maybeJustOwn(outPtr, value);
+    const rc = maybeJust(outPtr, value);
     if (handles.has(value)) release(value);
     return rc;
   };
@@ -1341,6 +1375,12 @@ export function createRcRuntime({ immortalStrings = {} } = {}) {
     return RC_SUCCESS;
   };
 
+  // Mirror C elmc_maybe_just: retain payload, then caller balances with release.
+  const maybeJust = (outPtr, payloadHandle, tagPtr) => {
+    retain(null, payloadHandle);
+    return maybeJustOwn(outPtr, payloadHandle, tagPtr);
+  };
+
   const maybeJustPayload = (outPtr, maybePtr) => {
     const payload = readHandle(maybePtr);
     if (payload?.tag === TAG_MAYBE && payload.value != null) {
@@ -1363,12 +1403,7 @@ export function createRcRuntime({ immortalStrings = {} } = {}) {
   };
 
   const maybeIsNothing = (outPtr, maybePtr) => {
-    const payload = readHandle(maybePtr);
-    if (!payload || payload.tag !== TAG_MAYBE) {
-      if (outPtr) view().setUint32(outPtr, 0, true);
-      return RC_SUCCESS;
-    }
-    const isNothing = payload.value == null;
+    const isNothing = isMaybeNothing(maybePtr);
     if (outPtr) view().setUint32(outPtr, isNothing ? 1 : 0, true);
     return RC_SUCCESS;
   };
@@ -1383,11 +1418,11 @@ export function createRcRuntime({ immortalStrings = {} } = {}) {
   };
 
   const maybeMap = (outPtr, closurePtr, maybePtr) => {
-    if (isMaybeNothing(maybePtr)) return maybeNothing(outPtr);
-    const justValue = readHandle(maybePtr).value;
+    const justValue = maybePayloadHandle(maybePtr);
+    if (justValue == null) return maybeNothing(outPtr);
     const { rc, value } = invokeClosure(closurePtr, [asHandle(justValue)]);
     if (rc !== RC_SUCCESS) return rc;
-    const mapRc = maybeJustOwn(outPtr, value);
+    const mapRc = maybeJust(outPtr, value);
     release(value);
     return mapRc;
   };
@@ -1401,15 +1436,15 @@ export function createRcRuntime({ immortalStrings = {} } = {}) {
       asHandle(bValue),
     ]);
     if (rc !== RC_SUCCESS) return rc;
-    const mapRc = maybeJustOwn(outPtr, value);
+    const mapRc = maybeJust(outPtr, value);
     release(value);
     return mapRc;
   };
 
   const maybeAndThen = (outPtr, closurePtr, maybePtr) => {
-    const payload = readHandle(maybePtr);
-    if (!payload || payload.value == null) return maybeNothing(outPtr);
-    const { rc, value } = invokeClosure(closurePtr, [asHandle(payload.value)]);
+    const justValue = maybePayloadHandle(maybePtr);
+    if (justValue == null) return maybeNothing(outPtr);
+    const { rc, value } = invokeClosure(closurePtr, [asHandle(justValue)]);
     if (rc !== RC_SUCCESS) return rc;
     return writeMaybeFromValue(outPtr, value);
   };
@@ -1591,9 +1626,23 @@ export function createRcRuntime({ immortalStrings = {} } = {}) {
       writeOut(outPtr, newCharHandle(fieldPayload.value));
     } else {
       writeOut(outPtr, fieldPtr);
+      if (fieldPtr) retain(null, fieldPtr);
     }
     return RC_SUCCESS;
   };
+
+  const tupleFieldAccess = (outPtr, tuplePtr, index) => {
+    const payload = readHandle(tuplePtr);
+    if (!payload || payload.tag !== TAG_TUPLE2) {
+      writeOut(outPtr, newIntHandle(0));
+      return RC_SUCCESS;
+    }
+    const field = index === 1 ? payload.second : payload.first;
+    return writeTupleProjField(outPtr, field);
+  };
+
+  const runtimeTupleFirst = (outPtr, tuplePtr) => tupleFieldAccess(outPtr, tuplePtr, 0);
+  const runtimeTupleSecond = (outPtr, tuplePtr) => tupleFieldAccess(outPtr, tuplePtr, 1);
 
   const tupleProj = (outPtr, tuplePtr, indexPtr) => {
     const index = wasmScalarArg(indexPtr);
@@ -1608,6 +1657,23 @@ export function createRcRuntime({ immortalStrings = {} } = {}) {
     if (payload?.tag === TAG_TUPLE2) {
       const field = index === 1 ? payload.second : payload.first;
       return writeTupleProjField(outPtr, field);
+    }
+
+    if (payload?.tag === TAG_RESULT) {
+      if (index === 1) {
+        if (payload.value != null) {
+          writeOut(outPtr, payload.value);
+          retain(null, payload.value);
+          return RC_SUCCESS;
+        }
+        writeOut(outPtr, newIntHandle(0));
+        return RC_SUCCESS;
+      }
+      if (index === 0) {
+        const tag =
+          payload.ctorTag != null ? payload.ctorTag | 0 : payload.isOk ? 1 : 2;
+        return newInt(outPtr, tag);
+      }
     }
 
     if (payload?.tag === TAG_BYTES) {
@@ -2377,8 +2443,25 @@ export function createRcRuntime({ immortalStrings = {} } = {}) {
   const processSleep = (outPtr, _msPtr) => writeTaggedResult(outPtr, true, newIntHandle(0));
   const processKill = (outPtr, _pidPtr) => writeTaggedResult(outPtr, true, newIntHandle(0));
 
-  const normalizeFieldHandle = (ptr) =>
-    handles.has(ptr) ? ptr : newIntHandle(wasmScalarArg(ptr));
+  const normalizeFieldHandle = (ptr) => {
+    const p = ptr | 0;
+    if (!handles.has(p)) {
+      return newIntHandle(wasmScalarArg(p));
+    }
+    const payload = readHandle(p);
+    // WASM tuple2 often passes constructor tags as raw i32.const N. Those collide
+    // with early immortal handles (UNIT is handle 1 = Int 0), which would make
+    // union_tag_as_int read tag 0 instead of N.
+    if (
+      payload?.tag === TAG_INT &&
+      payload.immortal &&
+      p <= 255 &&
+      (payload.value | 0) !== p
+    ) {
+      return newIntHandle(p);
+    }
+    return p;
+  };
 
   const storeRecordField = (ptr) => {
     const field = normalizeFieldHandle(ptr);
@@ -2388,24 +2471,32 @@ export function createRcRuntime({ immortalStrings = {} } = {}) {
     return field;
   };
 
-  const recordNewValuesInts = (outPtr, ...fieldPtrs) => {
+  const recordFieldsFromWasmArgs = (fieldPtrs, storeField) => {
     let end = fieldPtrs.length;
     while (end > 0 && (fieldPtrs[end - 1] | 0) === 0) {
       end -= 1;
     }
 
-    const fields = fieldPtrs.slice(0, end).map((ptr) => newIntHandle(wasmScalarArg(ptr)));
+    const fields = [];
+    for (let i = 0; i < end; i += 1) {
+      const ptr = fieldPtrs[i] | 0;
+      if (ptr !== 0) {
+        fields[i] = storeField(ptr);
+      }
+    }
+    return fields;
+  };
+
+  const recordNewValuesInts = (outPtr, ...fieldPtrs) => {
+    const fields = recordFieldsFromWasmArgs(fieldPtrs, (ptr) =>
+      newIntHandle(wasmScalarArg(ptr))
+    );
     writeOut(outPtr, allocHandle({ tag: TAG_RECORD, fields }));
     return RC_SUCCESS;
   };
 
   const recordNew = (outPtr, ...fieldPtrs) => {
-    let end = fieldPtrs.length;
-    while (end > 0 && (fieldPtrs[end - 1] | 0) === 0) {
-      end -= 1;
-    }
-
-    const fields = fieldPtrs.slice(0, end).map(storeRecordField);
+    const fields = recordFieldsFromWasmArgs(fieldPtrs, storeRecordField);
     writeOut(outPtr, allocHandle({ tag: TAG_RECORD, fields }));
     return RC_SUCCESS;
   };
@@ -3486,6 +3577,8 @@ export function createRcRuntime({ immortalStrings = {} } = {}) {
     int_list_head_int: intListHeadInt,
     int_list_tail: intListTail,
     tuple2_ints: tuple2Ints,
+    tuple_first: runtimeTupleFirst,
+    tuple_second: runtimeTupleSecond,
     tuple_proj: tupleProj,
     tuple_map_first: tupleMapFirst,
     tuple_map_second: tupleMapSecond,

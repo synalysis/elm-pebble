@@ -21,7 +21,8 @@ defmodule Elmc.Backend.Plan.Context do
     :params,
     :letrec_refs,
     :letrec_self,
-    :letrec_in_closure
+    :letrec_in_closure,
+    :curried_type_offset
   ]
 
   @type t :: %__MODULE__{
@@ -37,7 +38,8 @@ defmodule Elmc.Backend.Plan.Context do
           params: [String.t()],
           letrec_refs: %{String.t() => String.t()},
           letrec_self: String.t() | nil,
-          letrec_in_closure: boolean()
+          letrec_in_closure: boolean(),
+          curried_type_offset: non_neg_integer()
         }
 
   @type dest :: :scratch | :fn_out | :branch_out
@@ -59,7 +61,8 @@ defmodule Elmc.Backend.Plan.Context do
       params: Keyword.get(opts, :params, []),
       letrec_refs: Keyword.get(opts, :letrec_refs, %{}),
       letrec_self: Keyword.get(opts, :letrec_self),
-      letrec_in_closure: Keyword.get(opts, :letrec_in_closure, false)
+      letrec_in_closure: Keyword.get(opts, :letrec_in_closure, false),
+      curried_type_offset: Keyword.get(opts, :curried_type_offset, 0)
     }
   end
 
@@ -168,6 +171,53 @@ defmodule Elmc.Backend.Plan.Context do
     %{ctx | letrec_refs: Map.put(ctx.letrec_refs || %{}, name, ref)}
   end
 
+  @spec advance_curried_type_offset(t(), non_neg_integer()) :: t()
+  def advance_curried_type_offset(ctx, count) when is_integer(count) and count >= 0 do
+    %{ctx | curried_type_offset: (ctx.curried_type_offset || 0) + count}
+  end
+
+  @spec root_function_name(t()) :: String.t() | nil
+  def root_function_name(%{function_name: name}) when is_binary(name) do
+    name
+    |> String.replace(~r/_lam_\d+$/, "")
+    |> String.replace(~r/_closure_\d+$/, "")
+  end
+
+  def root_function_name(_), do: nil
+
   @spec letrec_ref(t(), String.t()) :: String.t() | nil
   def letrec_ref(ctx, name) when is_binary(name), do: Map.get(ctx.letrec_refs || %{}, name)
+
+  @doc """
+  Assigns distinct parameter names when a declaration repeats the same binder
+  (common for Elm `_` placeholders). Plan lowering resolves `:var` nodes by name,
+  so duplicate binders must not share a single param slot.
+  """
+  @spec unique_param_names([String.t()]) :: [String.t()]
+  def unique_param_names(names) when is_list(names) do
+    names
+    |> Enum.with_index()
+    |> Enum.map(fn {name, idx} ->
+      if name == "_" do
+        "__param_#{idx}__"
+      else
+        name
+      end
+    end)
+    |> disambiguate_duplicate_names()
+  end
+
+  defp disambiguate_duplicate_names(names) do
+    counts = Enum.frequencies(names)
+
+    names
+    |> Enum.with_index()
+    |> Enum.map(fn {name, idx} ->
+      if Map.fetch!(counts, name) > 1 do
+        "#{name}__#{idx}"
+      else
+        name
+      end
+    end)
+  end
 end

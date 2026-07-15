@@ -201,6 +201,7 @@ defmodule Elmc do
     Process.put(:elmc_constructor_tags, IRQueries.constructor_tag_map(ir))
     Process.put(:elmc_module_ports, IRQueries.module_ports_map(ir))
     Process.put(:elmc_record_alias_shapes, IRQueries.record_alias_shape_map(ir))
+    Process.put(:elmc_inline_record_literal_shapes, IRQueries.inline_record_literal_shape_map(ir))
     Process.put(:elmc_record_field_types, IRQueries.record_alias_field_types_map(ir))
     :ok
   end

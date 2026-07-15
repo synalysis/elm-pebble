@@ -29,8 +29,29 @@ defmodule Elmc.Backend.CCodegen.Native.RecordFields do
         end
 
       true ->
-        lookup_field_type_by_suffix(types_map, normalized, field)
+        lookup_field_type_by_suffix(types_map, normalized, field) ||
+          lookup_field_type_by_suffix(types_map, type_constructor_name(normalized), field)
     end
+  end
+
+  defp type_constructor_name(type) when is_binary(type) do
+    type
+    |> String.trim()
+    |> then(fn trimmed ->
+      cond do
+        String.starts_with?(trimmed, "{") ->
+          trimmed
+
+        String.contains?(trimmed, ".") ->
+          trimmed |> String.split(".") |> List.last()
+
+        true ->
+          case String.split(trimmed, ~r/\s+/, parts: 2) do
+            [base, _rest] -> base
+            [base] -> base
+          end
+      end
+    end)
   end
 
   defp lookup_field_type_by_suffix(types_map, type_name, field) do

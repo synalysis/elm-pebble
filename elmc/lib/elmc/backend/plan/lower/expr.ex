@@ -1219,11 +1219,31 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
         :unsupported
 
       let_bindings_need_recursion?(bindings, tail_expr) ->
-        compile_let_block_letrec(bindings, tail_expr, ctx, b)
+        compile_let_block_letrec_or_sequential(bindings, tail_expr, ctx, b)
 
       true ->
         compile_let_block_sequential(bindings, tail_expr, ctx, b)
     end
+  end
+
+  defp compile_let_block_letrec_or_sequential(bindings, tail_expr, ctx, b) do
+    if letrec_sequential_reorder_eligible?(bindings) do
+      case reorder_letrec_bindings(bindings) do
+        {:ok, sorted} ->
+          compile_let_block_sequential(sorted, tail_expr, ctx, b)
+
+        :cycle ->
+          compile_let_block_letrec(bindings, tail_expr, ctx, b)
+      end
+    else
+      compile_let_block_letrec(bindings, tail_expr, ctx, b)
+    end
+  end
+
+  defp letrec_sequential_reorder_eligible?(bindings) when is_list(bindings) do
+    Enum.all?(bindings, fn {_, value_expr} ->
+      not match?(%{op: :lambda}, value_expr)
+    end)
   end
 
   defp collect_let_bindings(%{name: name, value_expr: value_expr, in_expr: in_expr})
@@ -1240,15 +1260,8 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
     {acc, tail_expr}
   end
 
-  defp let_bindings_need_recursion?(bindings, tail_expr) when is_list(bindings) do
+  defp let_bindings_need_recursion?(bindings, _tail_expr) when is_list(bindings) do
     names = Enum.map(bindings, fn {n, _} -> n end)
-
-    pattern_vars =
-      (bound_vars_in_expr_patterns(tail_expr) ++
-         Enum.flat_map(bindings, fn {_, value_expr} ->
-           bound_vars_in_expr_patterns(value_expr)
-         end))
-      |> MapSet.new()
 
     Enum.reduce_while(Enum.with_index(bindings), false, fn {{name, value_expr}, idx}, _acc ->
       used =
@@ -1261,7 +1274,10 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
           {:halt, true}
 
         true ->
-          later = Enum.drop(names, idx + 1) |> MapSet.new() |> MapSet.union(pattern_vars)
+          # Only sibling let bindings declared later in the same block can force
+          # letrec. Case-pattern locals (for example pageData in a Platform
+          # FrozenViewsReady arm) must not be treated as "later bindings".
+          later = Enum.drop(names, idx + 1) |> MapSet.new()
 
           if MapSet.size(MapSet.intersection(used, later)) > 0 do
             {:halt, true}
@@ -1300,6 +1316,95 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
 
     (binding_names ++ binding_pattern_names ++ letrec_outer_local_names(bindings, tail_expr, ctx))
     |> Enum.uniq()
+  end
+
+  defp reorder_letrec_bindings(bindings) when is_list(bindings) do
+    indexed = Enum.with_index(bindings)
+    names = Enum.map(bindings, fn {name, _} -> name end)
+    name_to_binding = Map.new(bindings)
+
+    var_to_def =
+      Enum.reduce(indexed, %{}, fn {{name, value_expr}, idx}, acc ->
+        letrec_binding_defined_vars(name, value_expr)
+        |> Enum.reduce(acc, fn var, acc2 ->
+          Map.put_new(acc2, var, {name, idx})
+        end)
+      end)
+
+    deps =
+      indexed
+      |> Enum.flat_map(fn {{name, value_expr}, idx} ->
+        value_expr
+        |> Elmc.Backend.CCodegen.VarAnalysis.used_vars()
+        |> Enum.filter(&Map.has_key?(var_to_def, &1))
+        |> Enum.flat_map(fn var ->
+          {_dep_name, dep_idx} = Map.fetch!(var_to_def, var)
+
+          if dep_idx > idx do
+            [{Map.fetch!(var_to_def, var) |> elem(0), name}]
+          else
+            []
+          end
+        end)
+      end)
+
+    case topo_sort_dependency_order(names, deps) do
+      {:ok, sorted_names} ->
+        {:ok, Enum.map(sorted_names, fn name -> {name, Map.fetch!(name_to_binding, name)} end)}
+
+      :cycle ->
+        :cycle
+    end
+  end
+
+  defp letrec_binding_defined_vars(name, value_expr) when is_binary(name) do
+    [name | bound_vars_in_expr_patterns(value_expr)] |> Enum.uniq()
+  end
+
+  defp topo_sort_dependency_order(names, deps) when is_list(names) and is_list(deps) do
+    edges =
+      Enum.reduce(deps, %{}, fn {before, after_name}, acc ->
+        Map.update(acc, before, [after_name], &[after_name | &1])
+      end)
+
+    in_count =
+      names
+      |> Map.new(fn name -> {name, 0} end)
+      |> then(fn counts ->
+        Enum.reduce(deps, counts, fn {_before, after_name}, acc ->
+          Map.update!(acc, after_name, &(&1 + 1))
+        end)
+      end)
+
+    sorted = topo_sort_kahn(names, edges, in_count, [])
+
+    if length(sorted) == length(names) do
+      {:ok, sorted}
+    else
+      :cycle
+    end
+  end
+
+  defp topo_sort_kahn([], _edges, _in_count, acc), do: Enum.reverse(acc)
+
+  defp topo_sort_kahn(remaining, edges, in_count, acc) do
+    ready = Enum.filter(remaining, fn name -> Map.fetch!(in_count, name) == 0 end)
+
+    if ready == [] do
+      []
+    else
+      {next, rest} =
+        case ready do
+          [first | _] -> {first, remaining -- [first]}
+        end
+
+      in_count2 =
+        Enum.reduce(Map.get(edges, next, []), in_count, fn child, acc_in ->
+          Map.update!(acc_in, child, &(&1 - 1))
+        end)
+
+      topo_sort_kahn(rest, edges, in_count2, [next | acc])
+    end
   end
 
   defp letrec_outer_local_names(bindings, tail_expr, ctx) when is_list(bindings) do
@@ -1594,8 +1699,18 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
       expr = Map.get(field, :expr) || Map.get(field, :value)
 
       case compile(expr, operand_ctx, b_acc) do
-        {:ok, reg, b1} -> {:cont, {:ok, acc ++ [reg], b1}}
-        _ -> {:halt, :unsupported}
+        {:ok, reg, b1} ->
+          {kept, b2} =
+            if is_integer(reg) do
+              Builder.retain_reg_copy(b1, reg)
+            else
+              {reg, b1}
+            end
+
+          {:cont, {:ok, acc ++ [kept], b2}}
+
+        _ ->
+          {:halt, :unsupported}
       end
     end)
   end
@@ -1907,7 +2022,7 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
     {arg_regs, b2a} =
       cond do
         id in [:record_new, :record_new_take, :record_new_values_ints] ->
-          Builder.dup_named_locals_for_consume(b2, arg_regs)
+          Builder.dup_all_regs_for_record_new_consume(b2, arg_regs)
 
         id in [:tuple2, :tuple2_take] ->
           Builder.dup_regs_for_owned_consume(b2, arg_regs)

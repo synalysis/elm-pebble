@@ -51,4 +51,37 @@ defmodule ElmEx.IR.PipeChainTest do
              args: [%{op: :var, name: "f"}, %{op: :var, name: "tuple"}]
            } = PipeChain.desugar(chain)
   end
+
+  test "desugar appends piped value as last field_call argument" do
+    chain = %{
+      op: :pipe_chain,
+      steps: [
+        %{
+          op: :field_call,
+          arg: "config",
+          field: "init",
+          args: [
+            %{op: :var, name: "flags"},
+            %{op: :var, name: "shared"},
+            %{op: :var, name: "page"},
+            %{op: :var, name: "action"}
+          ]
+        }
+      ],
+      base: %{op: :int_literal, value: 99}
+    }
+
+    assert %{
+             op: :field_call,
+             arg: "config",
+             field: "init",
+             args: [
+               %{op: :var, name: "flags"},
+               %{op: :var, name: "shared"},
+               %{op: :var, name: "page"},
+               %{op: :var, name: "action"},
+               %{op: :int_literal, value: 99}
+             ]
+           } = PipeChain.desugar(chain)
+  end
 end

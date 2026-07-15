@@ -126,6 +126,43 @@ defmodule Elmc.PlanLetrecPatternSyncTest do
            end)
   end
 
+  test "acyclic letrec bindings reorder so producers compile before consumers" do
+    decl = %{
+      name: "go",
+      args: [],
+      expr: %{
+        op: :let_in,
+        name: "bundle",
+        value_expr: %{
+          op: :tuple2,
+          left: %{op: :var, name: "x"},
+          right: %{op: :int_literal, value: 0}
+        },
+        in_expr: %{
+          op: :let_in,
+          name: "x",
+          value_expr: %{op: :int_literal, value: 42},
+          in_expr: %{op: :var, name: "bundle"}
+        }
+      }
+    }
+
+    assert {:ok, plan} = Function.lower(decl, "Main", %{}, rc_required: false)
+
+    instrs =
+      plan.blocks
+      |> Enum.flat_map(& &1.instrs)
+
+    ref_loads =
+      instrs
+      |> Enum.filter(&(&1.op == :forward_ref_load))
+      |> Enum.map(&Map.get(&1.args, :ref))
+
+    refute Enum.any?(ref_loads, fn ref ->
+             is_binary(ref) and String.contains?(ref, "x")
+           end)
+  end
+
   test "let binding case subject uses local reg not undeclared tail pattern forward ref" do
     decl = %{
       name: "go",
@@ -168,19 +205,10 @@ defmodule Elmc.PlanLetrecPatternSyncTest do
       plan.blocks
       |> Enum.flat_map(& &1.instrs)
 
-    ref_sets =
-      instrs
-      |> Enum.filter(&(&1.op == :forward_ref_set))
-      |> Enum.map(&Map.get(&1.args, :ref))
-
     ref_loads =
       instrs
       |> Enum.filter(&(&1.op == :forward_ref_load))
       |> Enum.map(&Map.get(&1.args, :ref))
-
-    assert Enum.any?(ref_sets, fn ref ->
-             is_binary(ref) and String.contains?(ref, "pageDataResult")
-           end)
 
     refute Enum.any?(ref_loads, fn ref ->
              is_binary(ref) and String.contains?(ref, "sharedData")
