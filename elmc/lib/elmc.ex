@@ -17,6 +17,7 @@ defmodule Elmc do
   alias ElmEx.IR.Lowerer
   alias ElmEx.IR.PipeChain
   alias Elmc.Backend.Wasm.Targets
+  alias Elmc.Backend.Wasm.WebKernelDiagnostics
   alias Elmc.Runtime.Generator
 
   alias Elmc.Types, as: RootTypes
@@ -91,11 +92,14 @@ defmodule Elmc do
 
       plan_legacy_diagnostics = plan_legacy_codegen_diagnostics(opts)
 
+      web_kernel_diagnostics = WebKernelDiagnostics.compile_diagnostics()
+
       layout_and_plan_diagnostics =
         layout_coercion_diagnostics ++
           plan_primary_fallbacks ++
           plan_legacy_diagnostics ++
-          plan_coverage_diagnostics
+          plan_coverage_diagnostics ++
+          web_kernel_diagnostics
 
       wasm_empty_export_diagnostics = wasm_empty_export_diagnostics(wasm_summary, opts)
 
@@ -123,6 +127,7 @@ defmodule Elmc do
 
       Process.delete(:elmc_layout_coercion_diagnostics)
       Process.delete(:elmc_plan_primary_fallbacks)
+      Process.delete(:elmc_web_kernel_diagnostics)
 
       {:ok,
        %{

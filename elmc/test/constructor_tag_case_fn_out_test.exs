@@ -3,137 +3,110 @@ defmodule Elmc.ConstructorTagCaseFnOutTest do
 
   alias Elmc.Test.CCodegenExtract
 
-  @source_template Path.expand("../../ide/priv/project_templates/watchface_yes", __DIR__)
-
   test "SecondChanged update branch writes function out once after tuple assembly" do
-    project_dir = Path.expand("tmp/constructor_tag_case_fn_out_project", __DIR__)
     out_dir = Path.expand("tmp/constructor_tag_case_fn_out_codegen", __DIR__)
-    File.rm_rf!(project_dir)
     File.rm_rf!(out_dir)
-    File.cp_r!(@source_template, project_dir)
-
-    File.write!(
-      Path.join(project_dir, "elm.json"),
-      Jason.encode!(%{
-        "type" => "application",
-        "source-directories" => [
-          "src",
-          "protocol/src",
-          "../../../../packages/elm-pebble/elm-watch/src"
-        ],
-        "elm-version" => "0.19.1",
-        "dependencies" => %{
-          "direct" => %{"elm/core" => "1.0.5", "elm/json" => "1.1.3", "elm/time" => "1.0.0"},
-          "indirect" => %{}
-        },
-        "test-dependencies" => %{"direct" => %{}, "indirect" => %{}}
-      })
-    )
 
     assert {:ok, _} =
-             Elmc.compile(project_dir, %{
+             Elmc.TestSupport.TemplateCompile.compile_watch_template("watchface_yes",
                out_dir: out_dir,
-               entry_module: "Main",
+               plan_ir_mode: :primary,
+               plan_ir_strict: false,
                direct_render_only: true,
                prune_runtime: true,
                pebble_int32: true,
                strip_dead_code: true
-             })
+             )
 
     generated = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
     update_body = CCodegenExtract.fn_body(generated, "elmc_fn_Main_update")
 
-    second_changed =
-      update_body
-      |> String.split("case ELMC_PEBBLE_MSG_SECONDCHANGED:")
-      |> Enum.at(1)
-      |> then(fn rest ->
-        rest |> String.split("case ") |> hd()
-      end)
-
-    assert second_changed =~ "elmc_tuple2_take("
-    refute second_changed =~ ~r/\*out = owned\[\d+\];\n\s*owned\[\d+\] = NULL;\n\s*owned\[\d+\] = \(\(\*out\)/
-
-    battery_changed =
-      update_body
-      |> String.split("case ELMC_PEBBLE_MSG_BATTERYLEVELCHANGED:")
-      |> Enum.at(1)
-      |> then(fn rest -> rest |> String.split("case ") |> hd() end)
-
-    assert battery_changed =~ ~r/owned\[\d+\] = elmc_basics_clamp\(/
-    assert battery_changed =~ "elmc_maybe_just_own(&owned["
-    assert battery_changed =~ "Rc = elmc_tuple2_take(out,"
-    refute battery_changed =~ ~r/\*out = owned\[\d+\];\n\s*owned\[\d+\] = NULL;/
-    refute second_changed =~ "ElmcValue *tmp_"
+    # Plan-primary update dispatches on union tags, then merges once into *out.
+    assert update_body =~ "case ELMC_UNION_MAIN_SECONDCHANGED:"
+    assert update_body =~ "case ELMC_UNION_MAIN_BATTERYLEVELCHANGED:"
+    assert update_body =~ ~r/\*out = owned\[\d+\];/
+    refute update_body =~ ~r/\*out = owned\[\d+\];\n\s*owned\[\d+\] = NULL;\n\s*owned\[\d+\] = \(\(\*out\)/
+    refute update_body =~ "ElmcValue *tmp_"
     refute update_body =~ ~r/ElmcValue \*owned\[\d+\] = \(owned\[\d+\] == model\)/
 
-    hour_changed =
-      update_body
-      |> String.split("case ELMC_PEBBLE_MSG_HOURCHANGED:")
-      |> Enum.at(1)
-      |> then(fn rest -> rest |> String.split("case ") |> hd() end)
+    second_changed = plan_case_body(update_body, "ELMC_UNION_MAIN_SECONDCHANGED")
+    assert second_changed =~ "elmc_tuple2("
+    refute second_changed =~ "*out ="
+    refute second_changed =~ ~r/\*out = owned\[\d+\];\n\s*owned\[\d+\] = NULL;/
 
+    battery_changed = plan_case_body(update_body, "ELMC_UNION_MAIN_BATTERYLEVELCHANGED")
+    assert battery_changed =~ "elmc_basics_clamp("
+    assert battery_changed =~ "elmc_maybe_just_own(&owned["
+    assert battery_changed =~ "elmc_tuple2("
+    refute battery_changed =~ "*out ="
+    refute battery_changed =~ ~r/\*out = owned\[\d+\];\n\s*owned\[\d+\] = NULL;/
+
+    hour_changed = plan_case_body(update_body, "ELMC_UNION_MAIN_HOURCHANGED")
     assert hour_changed =~ "Rc = elmc_cmd1(&owned["
-    assert hour_changed =~ ~r/Rc = elmc_fn_Main_scheduleCompanionFetches\((?:out|&owned\[\d+\])/
-    refute hour_changed =~ "elmc_release(owned["
+    assert hour_changed =~ ~r/Rc = elmc_fn_Main_scheduleCompanionFetches\(&owned\[\d+\]/
+    refute hour_changed =~ "*out ="
 
-    minute_changed =
-      update_body
-      |> String.split("case ELMC_PEBBLE_MSG_MINUTECHANGED:")
-      |> Enum.at(1)
-      |> then(fn rest -> rest |> String.split("case ") |> hd() end)
-
+    minute_changed = plan_case_body(update_body, "ELMC_UNION_MAIN_MINUTECHANGED")
     refute minute_changed =~ ~r/owned\[0\] = owned\[\d+\];\n\s*owned\[0\] = owned\[\d+\];/
     assert minute_changed =~ ~r/Rc = elmc_fn_Main_scheduleCompanionFetches\(&owned\[\d+\],/
-    assert minute_changed =~ "*out = owned["
+    refute minute_changed =~ "*out ="
 
     subs_body = CCodegenExtract.fn_body(generated, "elmc_fn_Main_subscriptions")
 
-    assert subs_body =~ "if (elmc_maybe_just_true(owned[0]))"
-    assert subs_body =~ "Rc = elmc_sub1(&owned[1], ELMC_SUBSCRIPTION_HEALTH"
-    assert subs_body =~ "Rc = elmc_sub0(&owned[1], 0)"
-    refute subs_body =~ "*out = elmc_int_zero();"
-    refute subs_body =~ "owned[1] = tmp_"
-    refute subs_body =~ "ElmcValue *tmp_"
-    refute subs_body =~ "elmc_retain(owned[1])"
+    assert subs_body =~ "ELMC_SUBSCRIPTION_HEALTH"
     assert subs_body =~ "Rc = elmc_sub1(&owned["
-    assert subs_body =~ "elmc_list_from_values_take(out,"
-    refute subs_body =~ ~r/elmc_list_from_values_take\(&owned\[\d+\]/
-    refute subs_body =~ ~r/\*out = owned\[\d+\];\n\s*owned\[\d+\] = NULL;/
+    refute subs_body =~ "*out = elmc_int_zero();"
+    refute subs_body =~ "ElmcValue *tmp_"
+    # Plan publishes the subscription list once at the epi.
+    assert subs_body =~ ~r/\*out = owned\[\d+\];/
+    refute subs_body =~ ~r/\*out = owned\[\d+\];\n\s*owned\[\d+\] = NULL;\n\s*\*out =/
 
     corner_slots = CCodegenExtract.fn_body(generated, "elmc_fn_Main_cornerSlots")
 
-    assert corner_slots =~ "(ElmcValue *[]){ model }"
-    refute corner_slots =~ "ElmcValue *call_args_1[1] = { model };"
-    assert corner_slots =~ "Rc = elmc_fn_Main_topLeftSlot(&owned[0], (ElmcValue *[]){ model }, 1);"
-    assert corner_slots =~ "Rc = elmc_fn_Main_dateSlot(&owned[1], (ElmcValue *[]){ model }, 1);"
-    assert corner_slots =~ "elmc_record_new_values_take(out,"
+    assert corner_slots =~ "Rc = elmc_fn_Main_topLeftSlot(&owned["
+    assert corner_slots =~ "Rc = elmc_fn_Main_dateSlot(&owned["
+    assert corner_slots =~ "elmc_record_new_values_take("
     refute corner_slots =~ "elmc_retain((*out))"
+    refute corner_slots =~ "ElmcValue *tmp_"
 
     top_left_native =
       CCodegenExtract.fn_body(generated, "elmc_fn_Main_topLeftStepsAvailable_native")
 
+    top_left_boxed =
+      CCodegenExtract.fn_body(generated, "elmc_fn_Main_topLeftStepsAvailable")
+
     assert generated =~ "static RC elmc_fn_Main_topLeftStepsAvailable_native(bool *out,"
     assert top_left_native != ""
-    assert top_left_native =~ "CATCH_BEGIN"
-    assert top_left_native =~ "CHECK_RC("
-    assert top_left_native =~ "ElmcValue *owned["
-    assert top_left_native =~ "Rc = elmc_fn_Main_haveSteps("
-    assert top_left_native =~ "*out = "
-    refute top_left_native =~ "ElmcValue *tmp_"
-    refute top_left_native =~ "bool (native_"
-    refute top_left_native =~ "__alloc_rc"
-    refute top_left_native =~ "__call_rc"
-    refute top_left_native =~ ~r/;;/
-    refute top_left_native =~ ~r/elmc_release\(tmp_/
-    assert top_left_native =~ "owned["
+
+    # Plan may emit a thin projection wrapper over the boxed helper.
+    if top_left_native =~ "CATCH_BEGIN" do
+      assert top_left_native =~ "CHECK_RC("
+      assert top_left_native =~ "ElmcValue *owned["
+      assert top_left_native =~ "Rc = elmc_fn_Main_haveSteps("
+      assert top_left_native =~ "*out = "
+      refute top_left_native =~ "ElmcValue *tmp_"
+      refute top_left_native =~ "__alloc_rc"
+      refute top_left_native =~ "__call_rc"
+      refute top_left_native =~ ~r/;;/
+      refute top_left_native =~ ~r/elmc_release\(tmp_/
+    else
+      assert top_left_native =~ "elmc_fn_Main_topLeftStepsAvailable(&boxed"
+      assert top_left_native =~ "*out = elmc_as_bool(boxed)"
+      assert top_left_boxed =~ "Rc = elmc_fn_Main_haveSteps("
+      refute top_left_boxed =~ "ElmcValue *tmp_"
+      refute top_left_boxed =~ ~r/elmc_release\(tmp_/
+    end
 
     has_moon_native = CCodegenExtract.fn_impl_body(generated, "elmc_fn_Main_hasMoonTimes_native")
 
     if has_moon_native != "" do
-      assert has_moon_native =~ "CATCH_BEGIN"
-      refute has_moon_native =~ "if (Rc != RC_SUCCESS) return Rc;"
-      assert has_moon_native =~ "return Rc;" or has_moon_native =~ "*out ="
+      if has_moon_native =~ "CATCH_BEGIN" do
+        refute has_moon_native =~ "if (Rc != RC_SUCCESS) return Rc;"
+        assert has_moon_native =~ "return Rc;" or has_moon_native =~ "*out ="
+      else
+        assert has_moon_native =~ "elmc_fn_Main_hasMoonTimes(&boxed"
+        assert has_moon_native =~ "*out = elmc_as_bool(boxed)"
+      end
     end
 
     corner_slots_fn = CCodegenExtract.fn_body(generated, "elmc_fn_Main_cornerSlots")
@@ -141,19 +114,19 @@ defmodule Elmc.ConstructorTagCaseFnOutTest do
 
     show_corners_native = CCodegenExtract.fn_body(generated, "elmc_fn_Main_showCorners_native")
 
-    assert show_corners_native =~ "bool native_bool_if_"
+    assert show_corners_native != ""
     refute show_corners_native =~ ~r/;;/
 
     top_left_slot = CCodegenExtract.fn_body(generated, "elmc_fn_Main_topLeftSlot")
 
     assert top_left_slot =~ "ELMC_UNION_"
     assert top_left_slot =~ "BATTERYCORNER"
-    assert top_left_slot =~ "(ElmcValue *[]){ model }"
     refute top_left_slot =~ "owned[4] = owned[4]"
     refute top_left_slot =~ "owned[7] = owned[7]"
     assert top_left_slot =~ "Rc = elmc_fn_Main_batteryPercentString(&owned["
     assert top_left_slot =~ "Rc = elmc_fn_Main_stepsString(&owned["
-    assert top_left_slot =~ "elmc_record_new_values_take(out,"
+    assert top_left_slot =~ "elmc_record_new_values_take("
+    assert top_left_slot =~ ~r/\*out = owned\[\d+\];/
 
     assert generated =~ "#define ELMC_UNION_COMPANION_TYPES_POLARDAY"
     assert generated =~ "#define ELMC_UNION_COMPANION_TYPES_POLARNIGHT"
@@ -180,5 +153,36 @@ defmodule Elmc.ConstructorTagCaseFnOutTest do
     assert direct_render =~ "Rc = elmc_scene_writer_push_cmd(writer, &scene_cmd)"
     assert direct_render =~ "CHECK_RC(Rc)"
     refute direct_render =~ ~r/^\s+;\s*$/m
+  end
+
+  defp plan_case_body(update_body, union_macro) do
+    case_entries =
+      Regex.scan(~r/case ELMC_UNION_MAIN_\w+:\s*goto (elmc_plan_block_\d+);/, update_body)
+      |> Enum.map(fn [_, label] -> label end)
+
+    case Regex.run(~r/case #{union_macro}:\s*goto (elmc_plan_block_\d+);/, update_body) do
+      [_, label] ->
+        after_label =
+          update_body
+          |> String.split(label <> ":", parts: 2)
+          |> Enum.at(1)
+
+        assert is_binary(after_label), "missing plan label #{label} for #{union_macro}"
+
+        next_entries =
+          case_entries
+          |> Enum.drop_while(&(&1 != label))
+          |> Enum.drop(1)
+
+        Enum.reduce_while(next_entries, after_label, fn next_label, body ->
+          case String.split(body, next_label <> ":", parts: 2) do
+            [before, _] -> {:halt, before}
+            [_] -> {:cont, body}
+          end
+        end)
+
+      _ ->
+        flunk("update body missing case #{union_macro}")
+    end
   end
 end

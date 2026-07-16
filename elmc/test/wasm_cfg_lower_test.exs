@@ -32,4 +32,27 @@ defmodule Elmc.WasmCfgLowerTest do
     assert body =~ "(local.set $plan_state (i32.const 3))"
     assert length(Regex.scan(~r/local\.set \$plan_state \(i32\.const -1\)/, body)) == 1
   end
+
+  test "CFG ret nulls owned after moving boxed result into fn_out" do
+    decl = %{
+      name: "pickString",
+      args: ["flag"],
+      expr: %{
+        op: :if,
+        cond: %{op: :var, name: "flag"},
+        then_expr: %{op: :string_literal, value: "a"},
+        else_expr: %{op: :string_literal, value: "b"}
+      }
+    }
+
+    assert {:ok, plan} = PlanFn.lower(decl, "Main", %{}, rc_required: true)
+    assert length(plan.blocks) > 1
+
+    body = WasmFn.lower(plan).body
+
+    assert body =~ "$plan_loop"
+    assert body =~ ~r/local\.set \$fn_out \(local\.get \$reg\d+\)/
+    assert body =~ ~r/local\.set \$owned\d+ \(i32\.const 0\)/
+    assert body =~ ~r/\(drop\s+\(call \$runtime_release \(local\.get \$owned/
+  end
 end

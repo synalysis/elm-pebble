@@ -4,6 +4,7 @@ defmodule Elmc.Backend.CCodegen.SpecialValues.Cmd do
   alias Elmc.Backend.CCodegen.SpecialValues.Helpers
   alias Elmc.Backend.CCodegen.SpecialValues.Stdlib.Effects
   alias Elmc.Backend.CCodegen.Types
+  alias Elmc.Backend.Plan.Lower.Platform.Web, as: PlatformWeb
 
   @behaviour Elmc.Backend.CCodegen.SpecialValues.Handler
 
@@ -141,11 +142,21 @@ defmodule Elmc.Backend.CCodegen.SpecialValues.Cmd do
   def special_value_from_target("Elm.Kernel.PebbleWatch.speakerStreamClose", _args),
     do: Helpers.command_kind_expr(:speaker_stream_close)
 
-  def special_value_from_target("Random.generate", [to_msg, _generator]),
-    do: Helpers.encoded_cmd_expr(Helpers.command_kind(:random_generate), [Helpers.constructor_tag_expr(to_msg)], 1)
+  def special_value_from_target("Random.generate", [to_msg, _generator]) do
+    if PlatformWeb.web_target?(Process.get(:elmc_codegen_opts, %{})) do
+      nil
+    else
+      Helpers.encoded_cmd_expr(Helpers.command_kind(:random_generate), [Helpers.constructor_tag_expr(to_msg)], 1)
+    end
+  end
 
-  def special_value_from_target("Elm.Kernel.Random.generate", [to_msg, _generator]),
-    do: Helpers.encoded_cmd_expr(Helpers.command_kind(:random_generate), [Helpers.constructor_tag_expr(to_msg)], 1)
+  def special_value_from_target("Elm.Kernel.Random.generate", [to_msg, _generator]) do
+    if PlatformWeb.web_target?(Process.get(:elmc_codegen_opts, %{})) do
+      nil
+    else
+      Helpers.encoded_cmd_expr(Helpers.command_kind(:random_generate), [Helpers.constructor_tag_expr(to_msg)], 1)
+    end
+  end
 
   def special_value_from_target("Pebble.Internal.Companion.companionSend", args),
     do: Helpers.encoded_cmd_expr(Helpers.command_kind(:companion_send), args, 2)

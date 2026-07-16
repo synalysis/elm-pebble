@@ -202,11 +202,41 @@ defmodule Elmc.Backend.Plan.RuntimeBuiltins.Extra do
     string_trim_right: "elmc_string_trim_right",
     string_uncons: "elmc_string_uncons",
     string_words: "elmc_string_words",
+    string_chop_end: "elmc_string_chop_end",
+    string_chop_start: "elmc_string_chop_start",
+    string_chop_forward_slashes: "elmc_string_chop_forward_slashes",
+    url_percent_encode: "elmc_url_percent_encode",
+    url_percent_decode: "elmc_url_percent_decode",
+    url_from_string: "elmc_url_from_string",
+    http_empty_body: "elmc_http_empty_body",
+    http_pair: "elmc_http_pair",
+    http_to_data_view: "elmc_http_to_data_view",
+    http_expect: "elmc_http_expect",
+    http_command: "elmc_http_command",
+    http_cancel: "elmc_http_cancel",
+    backend_task_http_get_json: "elmc_backend_task_http_get_json",
+    backend_task_http_get: "elmc_backend_task_http_get",
+    backend_task_http_get_with_options: "elmc_backend_task_http_get_with_options",
+    backend_task_http_expect_json: "elmc_backend_task_http_expect_json",
+    backend_task_http_expect_string: "elmc_backend_task_http_expect_string",
+    backend_task_http_expect_whatever: "elmc_backend_task_http_expect_whatever",
+    backend_task_http_expect_bytes: "elmc_backend_task_http_expect_bytes",
+    backend_task_http_with_metadata: "elmc_backend_task_http_with_metadata",
+    backend_task_http_empty_body: "elmc_backend_task_http_empty_body",
+    backend_task_http_string_body: "elmc_backend_task_http_string_body",
+    backend_task_http_json_body: "elmc_backend_task_http_json_body",
+    backend_task_http_bytes_body: "elmc_backend_task_http_bytes_body",
+    backend_task_http_request: "elmc_backend_task_http_request",
+    backend_task_http_post: "elmc_backend_task_http_post",
+    file_download_task: "elmc_file_download_task",
+    file_select: "elmc_file_select",
+    file_download: "elmc_file_download",
     task_fail: "elmc_task_fail",
     task_succeed: "elmc_task_succeed",
     task_map: "elmc_task_map",
     task_map2: "elmc_task_map2",
     task_and_then: "elmc_task_and_then",
+    task_on_error: "elmc_task_on_error",
     task_perform: "elmc_task_perform",
     cmd_map: "elmc_cmd_map",
     sub_map: "elmc_sub_map",
@@ -214,7 +244,14 @@ defmodule Elmc.Backend.Plan.RuntimeBuiltins.Extra do
     tuple_map_first: "elmc_tuple_map_first",
     tuple_map_second: "elmc_tuple_map_second",
     time_now_millis: "elmc_time_now_millis",
-    time_zone_offset_minutes: "elmc_time_zone_offset_minutes"
+    time_zone_offset_minutes: "elmc_time_zone_offset_minutes",
+    time_here: "elmc_time_here",
+    browser_get_viewport: "elmc_browser_get_viewport",
+    random_generate: "elmc_random_generate",
+    regex_from_string: "elmc_regex_from_string",
+    regex_find: "elmc_regex_find",
+    regex_contains: "elmc_regex_contains",
+    regex_replace: "elmc_regex_replace"
   }
 
   @symbol_aliases %{
@@ -228,7 +265,7 @@ defmodule Elmc.Backend.Plan.RuntimeBuiltins.Extra do
     dict_update dict_values
     list_drop_int list_find_first list_foldr list_from_values list_intersperse list_map2 list_map3 list_map4
     list_map5 list_partition list_singleton list_sort list_unzip maybe_map2
-    process_kill process_sleep process_spawn
+    process_kill process_sleep process_spawn task_on_error
     set_diff set_filter set_foldl set_foldr set_from_list set_insert set_intersect set_map
     set_partition set_remove set_union
     string_all string_any string_filter string_foldl string_foldr string_from_char string_from_float
@@ -263,8 +300,19 @@ defmodule Elmc.Backend.Plan.RuntimeBuiltins.Extra do
     result_with_default set_singleton set_to_list
     string_cons string_contains string_drop_left string_drop_right string_from_int_value
     string_left string_lines string_pad string_right string_to_float string_words
-    task_and_then task_fail task_map task_map2 task_perform task_succeed
-    time_now_millis time_zone_offset_minutes
+    string_chop_end string_chop_start string_chop_forward_slashes
+    url_percent_encode url_percent_decode url_from_string
+    http_command http_cancel http_empty_body http_expect http_pair http_to_data_view
+    backend_task_http_get_json backend_task_http_get backend_task_http_get_with_options
+    backend_task_http_expect_json backend_task_http_expect_string backend_task_http_expect_whatever
+    backend_task_http_expect_bytes backend_task_http_with_metadata
+    backend_task_http_empty_body backend_task_http_string_body backend_task_http_json_body
+    backend_task_http_bytes_body
+    backend_task_http_request backend_task_http_post
+    file_download file_download_task file_select
+    task_and_then task_fail task_map task_map2 task_on_error task_perform task_succeed
+    random_generate regex_contains regex_find regex_from_string regex_replace
+    time_now_millis time_zone_offset_minutes time_here browser_get_viewport
   )a
 
   @extra_value_return ~w(

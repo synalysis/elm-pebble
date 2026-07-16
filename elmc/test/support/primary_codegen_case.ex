@@ -1,6 +1,9 @@
 defmodule Elmc.TestSupport.PrimaryCodegenCase do
   @moduledoc """
   Tests that compile through the production plan-primary pipeline.
+
+  Uses a process-local plan mode (not Application env) so async tests that
+  rely on `test_helper`'s `:off` default are not poisoned.
   """
 
   use ExUnit.CaseTemplate
@@ -12,11 +15,15 @@ defmodule Elmc.TestSupport.PrimaryCodegenCase do
   end
 
   setup _tags do
-    prev_mode = Application.get_env(:elmc, :default_plan_ir_mode)
-    Application.put_env(:elmc, :default_plan_ir_mode, :primary)
+    prev = Process.get(:elmc_plan_ir_mode)
+    Process.put(:elmc_plan_ir_mode, :primary)
 
     on_exit(fn ->
-      Application.put_env(:elmc, :default_plan_ir_mode, prev_mode)
+      if is_nil(prev) do
+        Process.delete(:elmc_plan_ir_mode)
+      else
+        Process.put(:elmc_plan_ir_mode, prev)
+      end
     end)
 
     :ok

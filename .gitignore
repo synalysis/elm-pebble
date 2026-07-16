@@ -61,3 +61,11 @@ ide/workspace_projects/**
 elmc/elmc
 elm_executor/elm_executor
 start-ide-public_custom.sh
+
+# Local binaryen wasm-opt (fetched by build-elm-pebble-dev-wasm.sh)
+tools/wasm-opt
+tools/wasm-opt.*
+
+# Python
+**/__pycache__/
+*.py[cod]

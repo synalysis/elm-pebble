@@ -37,6 +37,7 @@ defmodule Elmx.Runtime.Json.Decode do
   defdelegate map5(fun, d1, d2, d3, d4, d5), to: Build
   defdelegate map6(fun, d1, d2, d3, d4, d5, d6), to: Build
   defdelegate map7(fun, d1, d2, d3, d4, d5, d6, d7), to: Build
+  defdelegate map8(fun, d1, d2, d3, d4, d5, d6, d7, d8), to: Build
   defdelegate succeed(value), to: Build
   defdelegate one_of(decoders), to: Build
   defdelegate apply_decoder(decoder, value), to: Runtime

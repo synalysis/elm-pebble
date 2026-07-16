@@ -23,7 +23,9 @@ const { helpers, callExport } = await loadElmcWasm({
   wasmBytes,
   manifestImports: manifest.imports || [],
   manifestClosures: manifest.closures || [],
+  closureCount: manifest.closure_count ?? null,
   immortalStrings: manifest.immortal_strings || {},
+  constructorTags: manifest.constructor_tags || {},
 });
 
 const { rc, value: programHandle } = callExport(exportName, []);

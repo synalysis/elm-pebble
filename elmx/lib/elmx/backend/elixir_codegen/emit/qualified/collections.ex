@@ -59,6 +59,10 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Qualified.Collections do
     {:ok, "#{CodegenRefs.core_collections()}.dict_empty()", env, counter}
   end
 
+  def compile("Array.empty", [], env, counter) do
+    {:ok, "#{CodegenRefs.core_collections()}.array_empty()", env, counter}
+  end
+
   def compile("Set.remove", [], env, counter) do
     {:ok, "&#{CodegenRefs.core_collections()}.set_remove/2", env, counter}
   end

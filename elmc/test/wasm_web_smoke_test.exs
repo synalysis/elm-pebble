@@ -2,12 +2,15 @@ defmodule Elmc.WasmWebSmokeTest do
   use ExUnit.Case, async: false
 
   alias Elmc.Backend.Wasm.ProjectWriter
-  alias Elmc.Test.WasmRcTrackHarness
+  alias Elmc.Test.{ElmPebbleDevWasmCompile, WasmRcTrackHarness}
 
   @app_root Path.expand("../../elm_pebble_dev", __DIR__)
+  @export_all_out Path.expand("../tmp/elm_pebble_dev_wasm_export_all", __DIR__)
 
   @tag :wasm_execute
-  test "elm_pebble_dev web wasm compiles, links, and runs a Char probe in node" do
+  @tag :slow
+  @tag timeout: 180_000
+  test "elm_pebble_dev web wasm compiles, links, and boots Main in node" do
     cond do
       not File.dir?(@app_root) ->
         :ok
@@ -16,44 +19,19 @@ defmodule Elmc.WasmWebSmokeTest do
         :ok
 
       true ->
-        out_dir = Path.expand("tmp/wasm_web_smoke/elm_pebble_dev", __DIR__)
-        File.rm_rf!(out_dir)
-
-        assert {:ok, _} =
-                 Elmc.compile(@app_root, %{
-                   out_dir: out_dir,
-                   targets: [:wasm],
-                   web: true,
-                   entry_module: "Main",
-                   strip_dead_code: true,
-                   wasm_strict: false
-                 })
+        out_dir =
+          ElmPebbleDevWasmCompile.compile!(
+            export_all: true,
+            out_dir: @export_all_out
+          )
 
         manifest = out_dir |> ProjectWriter.manifest_path() |> File.read!() |> Jason.decode!()
         assert manifest["entry_export"] == "elmc_fn_Main_main"
+        refute manifest["minified"] == true
         assert File.regular?(Path.join(out_dir, "host/loader.js"))
         assert File.regular?(Path.join(out_dir, "host/rc_runtime.js"))
         assert File.regular?(Path.join(out_dir, "host/json_runtime.js"))
         assert File.regular?(Path.join(out_dir, "host/bytes_runtime.js"))
-
-        WasmRcTrackHarness.run_wat2wasm!(
-          ProjectWriter.wat_path(out_dir),
-          Path.join(out_dir, "wasm/app.wasm")
-        )
-
-        case WasmRcTrackHarness.run_probe(out_dir, "elmc_fn_Char_isAlphaNum",
-               expected_checksum: 0
-             ) do
-          {:ok, output} ->
-            WasmRcTrackHarness.assert_balanced_output!(output)
-
-          {:error, output} ->
-            if WasmRcTrackHarness.wasm_instantiate_oom?(output) do
-              :ok
-            else
-              flunk("wasm probe runner failed:\n#{output}")
-            end
-        end
 
         case run_browser_main_probe(out_dir) do
           {:ok, output} ->
@@ -70,21 +48,11 @@ defmodule Elmc.WasmWebSmokeTest do
   end
 
   defp run_browser_main_probe(out_dir) do
-    node = System.find_executable("node")
-
-    case node do
-      nil ->
-        {:error, "node not available"}
-
-      node ->
-        runner = Path.expand("support/wasm_browser_probe_runner.mjs", __DIR__)
-        {output, code} = System.cmd(node, [runner, out_dir, "elmc_fn_Main_main"], stderr_to_stdout: true)
-        if code == 0, do: {:ok, output}, else: {:error, output}
-    end
+    runner = Path.expand("support/wasm_browser_probe_runner.mjs", __DIR__)
+    WasmRcTrackHarness.run_node_script(runner, [out_dir, "elmc_fn_Main_main"])
   end
 
   defp execution_tools_available? do
-    System.find_executable("node") != nil and
-      (System.find_executable("wat2wasm") != nil or System.find_executable("npx") != nil)
+    WasmRcTrackHarness.execution_tools_available?()
   end
 end

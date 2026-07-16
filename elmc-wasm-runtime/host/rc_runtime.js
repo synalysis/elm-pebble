@@ -7,6 +7,17 @@
 
 import { createJsonRuntime } from "./json_runtime.js";
 import { createBytesRuntime } from "./bytes_runtime.js";
+import { createParserRuntime } from "./parser_runtime.js";
+import { createHttpRuntime } from "./http_runtime.js";
+import { createTaskRuntime } from "./task_runtime.js";
+import { createFileRuntime } from "./file_runtime.js";
+import { createRandomRuntime } from "./random_runtime.js";
+import { createRegexRuntime } from "./regex_runtime.js";
+import { createUrlRuntime } from "./url_runtime.js";
+import { createRouteBytesRuntime } from "./route_bytes.js";
+import { createNavigationRuntime } from "./navigation_runtime.js";
+import { createVdomPatchRuntime } from "./vdom_patch.js";
+import { createDomEventRuntime } from "./dom_event_runtime.js";
 
 export const RC_SUCCESS = 0;
 export const RC_ERR_UNIMPLEMENTED = 100;
@@ -35,6 +46,14 @@ const HTML_KIND_MAP = 3;
 const HTML_KIND_ATTR = 4;
 const HTML_KIND_STYLE = 5;
 const HTML_KIND_LAZY = 6;
+const HTML_KIND_NODE_NS = 7;
+const HTML_KIND_EVENT = 8;
+const HTML_KIND_PROPERTY = 14;
+const HTML_KIND_KEYED = 9;
+const HTML_KIND_KEYED_NS = 10;
+const HTML_KIND_LAZY2 = 11;
+const HTML_KIND_LAZY3 = 12;
+const HTML_KIND_LAZY4 = 13;
 const HTML_KIND_CMD_NONE = 0;
 
 const BROWSER_KIND_APPLICATION = 1;
@@ -44,21 +63,54 @@ const BROWSER_KIND_REPLACE_URL = 4;
 const BROWSER_KIND_SET_VIEWPORT = 5;
 const BROWSER_KIND_ELEMENT = 6;
 const BROWSER_KIND_DOCUMENT = 7;
+const BROWSER_KIND_WORKER = 8;
+const BROWSER_KIND_FOCUS = 9;
+const BROWSER_KIND_BACK = 10;
+const BROWSER_KIND_FORWARD = 11;
+const BROWSER_KIND_SET_TITLE = 12;
+const BROWSER_KIND_GET_VIEWPORT = 13;
 
-export function createRcRuntime({ immortalStrings = {} } = {}) {
+const DOM_SUB_NONE = 0;
+const DOM_SUB_TIME_EVERY = 1;
+const DOM_SUB_ON_RESIZE = 2;
+const DOM_SUB_ON_VISIBILITY = 3;
+const DOM_SUB_ON_ANIMATION_FRAME = 4;
+const DOM_SUB_ON_MOUSE_MOVE = 5;
+const DOM_SUB_ON_CLICK = 6;
+const DOM_SUB_ON_KEY_DOWN = 7;
+const DOM_SUB_ON_KEY_UP = 8;
+const DOM_SUB_HTTP_TRACK = 9;
+
+export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } = {}) {
   let memory = null;
   let nextHandle = 2;
   const handles = new Map();
   const orderHandles = new Map();
   let retainCount = 0;
   let invokeClosureExport = null;
-  let literalStrings = { ...immortalStrings };
+  let literalStrings = Array.isArray(immortalStrings) ? immortalStrings : { ...immortalStrings };
+  /** Interned immortal string handles keyed by dense literal id. */
+  const immortalStringHandles = new Map();
   /** @type {number[][]} */
   const callRootStack = [];
+  /** @type {(msgPtr: number) => void} */
+  let dispatchPlatformMsgRef = () => {};
   /** @type {Map<string, number>} */
   const incomingPortHandlers = new Map();
+  /** @type {Map<number, { dispose: () => void }>} */
+  const activeDomSubs = new Map();
+  /** @type {Map<string, number>} */
+  const lazyHtmlCache = new Map();
+  let nextDomSubId = 1;
   /** @type {{ port: string, payload: number }[]} */
   const outgoingPortQueue = [];
+
+  const lookupImmortalString = (literalId) => {
+    if (Array.isArray(literalStrings)) {
+      return literalStrings[literalId | 0] ?? "";
+    }
+    return literalStrings[String(literalId)] ?? "";
+  };
 
   const UNIT_HANDLE = 1;
   handles.set(UNIT_HANDLE, { tag: TAG_INT, value: 0, immortal: true });
@@ -68,7 +120,8 @@ export function createRcRuntime({ immortalStrings = {} } = {}) {
   };
 
   const setImmortalStrings = (table) => {
-    literalStrings = { ...table };
+    literalStrings = Array.isArray(table) ? table : { ...table };
+    immortalStringHandles.clear();
   };
 
   const setMemory = (mem) => {
@@ -146,24 +199,23 @@ export function createRcRuntime({ immortalStrings = {} } = {}) {
     }
   };
 
-  // Platform.application Sub.map taggers emit full Platform.Msg values (including
-  // FrozenViewsReady tag 11 from pageDataFromJs and HotReloadCompleteNew tag 9).
-  const PLATFORM_MSG_TAGS = new Set([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
+  // Sub/port taggers emit full Platform.Msg values (FrozenViewsReady tag 11,
+  // HotReloadCompleteNew tag 9, Platform.UrlChanged tag 2, etc.). onUrlRequest
+  // and DOM decoders emit app-level Msg values that must be wrapped as
+  // Platform.UserMsg (tag 3) before Platform.update.
+  const PLATFORM_OUTER_MSG_TAGS = new Set([2, 3, 9, 10, 11, 12]);
 
-  // Bare Pages.Internal.Msg values (tags 1–4 only) from route port taggers need the
-  // outer Platform UserMsg (tag 3) wrapper before Platform.update.
+  const isElmPagesPlatformProgram = () => incomingPortHandlers.has("pageDataFromJs");
+
   const wrapIncomingPlatformMsg = (msgPtr) => {
-    if (!msgPtr) return msgPtr;
+    if (!msgPtr || !isElmPagesPlatformProgram()) return msgPtr;
     const tag = unionTagAsInt(msgPtr);
-    if (PLATFORM_MSG_TAGS.has(tag)) return msgPtr;
-    if (tag >= 1 && tag <= 4) {
-      return allocHandle({
-        tag: TAG_TUPLE2,
-        first: newIntHandle(3),
-        second: msgPtr | 0,
-      });
-    }
-    return msgPtr;
+    if (PLATFORM_OUTER_MSG_TAGS.has(tag)) return msgPtr;
+    return allocHandle({
+      tag: TAG_TUPLE2,
+      first: newIntHandle(3),
+      second: msgPtr | 0,
+    });
   };
 
   const unionTagMatches = (outPtr, handlePtr, tagPtr) => {
@@ -181,6 +233,15 @@ export function createRcRuntime({ immortalStrings = {} } = {}) {
   };
 
   let browserProgram = null;
+  /** @type {{ implPtr: number, modelPtr: number, updateFn: number, viewFn: number, lastVdomPtr?: number, mountedRoot?: Node | null } | null} */
+  let liveBrowser = null;
+  let urlRuntimeApi = null;
+  let routeBytesRuntime = null;
+  let navigationRuntime = null;
+  let vdomPatchRuntime = null;
+  let domEventRuntime = null;
+  /** @type {((portName: string, payload: Uint8Array | number) => Promise<unknown>) | null} */
+  let deliverIncomingPortFn = null;
   const forwardRefs = new Map();
 
   const getForwardRefValue = (refKey) => {
@@ -204,19 +265,22 @@ export function createRcRuntime({ immortalStrings = {} } = {}) {
   };
 
   const tupleFirst = (tuplePtr) => readHandle(tuplePtr)?.first ?? 0;
+  const tupleSecond = (tuplePtr) => readHandle(tuplePtr)?.second ?? 0;
 
   const resolveHtml = (ptr, depth = 0) => {
     if (!ptr || depth > 8) return ptr;
     const payload = readHandle(ptr);
     if (!payload) return ptr;
-    if (payload.tag === TAG_VDOM) return ptr;
+    if (payload.tag === TAG_VDOM) {
+      return ptr;
+    }
     if (payload.tag === TAG_TUPLE2) {
       const kindPayload = readHandle(payload.first);
       if (kindPayload?.tag === TAG_INT) {
         const kind = kindPayload.value | 0;
         const childPtr = payload.second | 0;
         if (kind === HTML_KIND_MAP) {
-          return resolveHtml(asHandle(childPtr), depth + 1);
+          return ptr;
         }
       }
     }
@@ -230,20 +294,36 @@ export function createRcRuntime({ immortalStrings = {} } = {}) {
     return ptr;
   };
 
-  const forceLazyHtml = (fnPtr, argPtr) => {
-    const fnHandle = fnPtr | 0;
-    const argHandle = asHandle(argPtr);
+  const forceLazyHtml = (fnPtr, argPtrs) => {
+    let fnHandle = fnPtr | 0;
+    let args = Array.isArray(argPtrs) ? argPtrs : argPtrs != null ? [argPtrs] : [];
+    const lazyPayload = readHandle(fnHandle);
+    if (lazyPayload?.tag === TAG_VDOM && lazyPayload.kind === "lazy") {
+      fnHandle = lazyPayload.fn | 0;
+      args = lazyPayload.args ?? [];
+    }
+    const cacheKey = `${fnHandle}|${args.map((a) => a | 0).join(",")}`;
+    const cached = lazyHtmlCache.get(cacheKey);
+    if (cached && handles.has(cached)) {
+      retain(null, cached);
+      return { rc: RC_SUCCESS, value: cached };
+    }
+
     const payload = readHandle(fnHandle);
     if (payload?.tag !== TAG_CLOSURE) {
       return { rc: RC_SUCCESS, value: asHandle(fnHandle) };
     }
 
-    const { rc, value } = invokeClosure(fnHandle, [argHandle]);
+    const { rc, value } = invokeClosure(
+      fnHandle,
+      args.map((a) => asHandle(a | 0))
+    );
     if (rc !== RC_SUCCESS) return { rc, value: 0 };
     const resolved = resolveHtml(value);
     if (!readHandle(resolved) || readHandle(resolved).tag !== TAG_VDOM) {
       return { rc: RC_ERR_UNIMPLEMENTED, value: 0 };
     }
+    lazyHtmlCache.set(cacheKey, resolved);
     return { rc: RC_SUCCESS, value: resolved };
   };
 
@@ -277,19 +357,54 @@ export function createRcRuntime({ immortalStrings = {} } = {}) {
         if (title) document.title = title;
       }
       const root = ensureAppRoot();
-      if (root) {
-        root.replaceChildren();
-        const wrapper = typeof document !== "undefined" ? document.createElement("div") : null;
-        for (const child of listItems(bodyPtr)) {
-          const dom = vdomToDom(resolveHtml(asHandle(child)));
-          if (dom && wrapper) wrapper.appendChild(dom);
+      if (root && typeof document !== "undefined") {
+        let wrapper = root.firstElementChild;
+        if (!wrapper) {
+          wrapper = document.createElement("div");
+          root.replaceChildren(wrapper);
         }
-        if (wrapper) root.appendChild(wrapper);
+        const bodyChild = listItems(bodyPtr)[0];
+        if (bodyChild && vdomPatchRuntime && liveBrowser?.mountedRoot) {
+          const patched = vdomPatchRuntime.patch(
+            liveBrowser.lastVdomPtr ?? 0,
+            asHandle(bodyChild),
+            liveBrowser.mountedRoot
+          );
+          liveBrowser.mountedRoot = patched;
+          liveBrowser.lastVdomPtr = asHandle(bodyChild);
+        } else {
+          const fragment = document.createDocumentFragment();
+          for (const child of listItems(bodyPtr)) {
+            const dom = vdomToDom(resolveHtml(asHandle(child)));
+            if (dom) fragment.appendChild(dom);
+          }
+          wrapper.replaceChildren(fragment);
+          if (liveBrowser) {
+            liveBrowser.mountedRoot = wrapper.firstChild;
+            liveBrowser.lastVdomPtr = asHandle(listItems(bodyPtr)[0] ?? 0);
+          }
+        }
       }
       return RC_SUCCESS;
     }
 
+    if (vdomPatchRuntime && liveBrowser?.mountedRoot) {
+      const patched = vdomPatchRuntime.patch(
+        liveBrowser.lastVdomPtr ?? 0,
+        viewPtr | 0,
+        liveBrowser.mountedRoot
+      );
+      liveBrowser.mountedRoot = patched;
+      liveBrowser.lastVdomPtr = viewPtr | 0;
+      return RC_SUCCESS;
+    }
+
     mountVdomToApp(viewPtr);
+    if (liveBrowser && typeof document !== "undefined") {
+      const root = ensureAppRoot();
+      liveBrowser.mountedRoot = root?.firstElementChild?.firstChild ?? root?.firstChild ?? null;
+      liveBrowser.lastVdomPtr = viewPtr | 0;
+    }
     return RC_SUCCESS;
   };
 
@@ -300,7 +415,8 @@ export function createRcRuntime({ immortalStrings = {} } = {}) {
     const fields = impl?.fields ?? [];
     const fieldCount = fields.length;
 
-    // Browser.application / elm-pages: init, view, update, subscriptions, onUrlRequest, onUrlChange
+    // Browser.application: init, view, update, subscriptions, then onUrlRequest /
+    // onUrlChange in record source order (elm-pages swaps these — navigation_runtime probes).
     if (fieldCount >= 6) {
       return fields[1] | 0;
     }
@@ -334,19 +450,19 @@ export function createRcRuntime({ immortalStrings = {} } = {}) {
   const platformManagerPort = (keyPtr, leafPtr) =>
     allocHandle({
       tag: TAG_RECORD,
-      fields: [platformManagerTag(1), normalizeFieldHandle(keyPtr), normalizeFieldHandle(leafPtr)],
+      fields: [platformManagerTag(1), storeRecordField(keyPtr), storeRecordField(leafPtr)],
     });
 
   const platformManagerBatch = (itemsPtr) =>
     allocHandle({
       tag: TAG_RECORD,
-      fields: [platformManagerTag(2), normalizeFieldHandle(itemsPtr)],
+      fields: [platformManagerTag(2), storeRecordField(itemsPtr)],
     });
 
   const platformManagerMap = (fnPtr, innerPtr) =>
     allocHandle({
       tag: TAG_RECORD,
-      fields: [platformManagerTag(3), normalizeFieldHandle(fnPtr), normalizeFieldHandle(innerPtr)],
+      fields: [platformManagerTag(3), storeRecordField(fnPtr), storeRecordField(innerPtr)],
     });
 
   const listAllTag = (listPtr, tag) => {
@@ -380,13 +496,132 @@ export function createRcRuntime({ immortalStrings = {} } = {}) {
     return { rc: RC_SUCCESS, value };
   };
 
-  const resolveIncomingHandlers = (nodePtr, taggers = []) => {
+  const clearDomSubs = () => {
+    for (const sub of activeDomSubs.values()) sub.dispose();
+    activeDomSubs.clear();
+  };
+
+  const dispatchTaggedMsg = (toMsgPtr, valuePtr, taggers) => {
+    let value = valuePtr | 0;
+    for (const taggerPtr of [...taggers].reverse()) {
+      const next = invokeClosure(taggerPtr, [asHandle(value)]);
+      if (value !== valuePtr && handles.has(value) && !valueReaches(next.value, value)) {
+        release(value);
+      }
+      if (next.rc !== RC_SUCCESS) return next;
+      value = next.value;
+    }
+    if (value) dispatchPlatformMsgRef(value);
+    return { rc: RC_SUCCESS, value };
+  };
+
+  const installDomSub = (payload, taggers = []) => {
+    const kind = payload.domKind | 0;
+    const params = payload.params ?? [];
+    const id = nextDomSubId++;
+    let dispose = () => {};
+
+    if (typeof window === "undefined") {
+      activeDomSubs.set(id, { dispose });
+      return;
+    }
+
+    if (kind === DOM_SUB_TIME_EVERY) {
+      const interval = Math.max(1, intValue(params[0] | 0));
+      const toMsgPtr = params[1] | 0;
+      const tick = () => {
+        dispatchTaggedMsg(toMsgPtr, newIntHandle(Date.now()), taggers);
+      };
+      const timer = setInterval(tick, interval);
+      dispose = () => clearInterval(timer);
+    } else if (kind === DOM_SUB_ON_RESIZE) {
+      const toMsgPtr = params[0] | 0;
+      const handler = () => {
+        const pair = tuple2(0, newIntHandle(window.innerWidth), newIntHandle(window.innerHeight));
+        dispatchTaggedMsg(toMsgPtr, pair, taggers);
+      };
+      window.addEventListener("resize", handler);
+      handler();
+      dispose = () => window.removeEventListener("resize", handler);
+    } else if (kind === DOM_SUB_ON_VISIBILITY) {
+      const toMsgPtr = params[0] | 0;
+      const handler = () => {
+        const visible = document.visibilityState === "visible" ? 1 : 0;
+        dispatchTaggedMsg(toMsgPtr, newIntHandle(visible), taggers);
+      };
+      document.addEventListener("visibilitychange", handler);
+      handler();
+      dispose = () => document.removeEventListener("visibilitychange", handler);
+    } else if (kind === DOM_SUB_ON_ANIMATION_FRAME) {
+      const toMsgPtr = params[0] | 0;
+      let frame = 0;
+      const step = (time) => {
+        frame = requestAnimationFrame(step);
+        dispatchTaggedMsg(toMsgPtr, newIntHandle(time | 0), taggers);
+      };
+      frame = requestAnimationFrame(step);
+      dispose = () => cancelAnimationFrame(frame);
+    } else if (kind === DOM_SUB_ON_MOUSE_MOVE) {
+      const toMsgPtr = params[0] | 0;
+      const handler = (event) => {
+        const payload = domEventRuntime?.mouseRecord(event) ?? newIntHandle(0);
+        dispatchTaggedMsg(toMsgPtr, payload, taggers);
+      };
+      document.addEventListener("mousemove", handler);
+      dispose = () => document.removeEventListener("mousemove", handler);
+    } else if (kind === DOM_SUB_ON_CLICK) {
+      const toMsgPtr = params[0] | 0;
+      const handler = (event) => {
+        const payload = domEventRuntime?.mouseRecord(event) ?? newIntHandle(0);
+        dispatchTaggedMsg(toMsgPtr, payload, taggers);
+      };
+      document.addEventListener("click", handler);
+      dispose = () => document.removeEventListener("click", handler);
+    } else if (kind === DOM_SUB_ON_KEY_DOWN) {
+      const toMsgPtr = params[0] | 0;
+      const handler = (event) => {
+        const payload = domEventRuntime?.keyboardRecord(event) ?? newIntHandle(0);
+        dispatchTaggedMsg(toMsgPtr, payload, taggers);
+      };
+      document.addEventListener("keydown", handler);
+      dispose = () => document.removeEventListener("keydown", handler);
+    } else if (kind === DOM_SUB_ON_KEY_UP) {
+      const toMsgPtr = params[0] | 0;
+      const handler = (event) => {
+        const payload = domEventRuntime?.keyboardRecord(event) ?? newIntHandle(0);
+        dispatchTaggedMsg(toMsgPtr, payload, taggers);
+      };
+      document.addEventListener("keyup", handler);
+      dispose = () => document.removeEventListener("keyup", handler);
+    } else if (kind === DOM_SUB_HTTP_TRACK) {
+      const tracker = stringValue(params[0] | 0);
+      const toMsgPtr = params[1] | 0;
+      http.registerProgressListener(tracker, toMsgPtr, taggers);
+      dispose = () => http.unregisterProgressListener(tracker);
+    }
+
+    activeDomSubs.set(id, { dispose });
+  };
+
+  const resolveSubscriptionTree = (nodePtr, taggers = []) => {
     if (!nodePtr) return;
 
     const payload = readHandle(nodePtr);
     if (!payload) return;
 
     if (payload.tag === TAG_INT && payload.value === 0) return;
+
+    if (payload.tag === TAG_LIST) {
+      for (const item of listItems(nodePtr)) {
+        resolveSubscriptionTree(item, taggers);
+      }
+      return;
+    }
+
+    if (payload.tag === TAG_SUB) {
+      installDomSub(payload, taggers);
+      return;
+    }
 
     if (payload.tag !== TAG_RECORD) return;
 
@@ -402,14 +637,14 @@ export function createRcRuntime({ immortalStrings = {} } = {}) {
 
     if (tag === 2) {
       for (const item of listItems(payload.fields[1])) {
-        resolveIncomingHandlers(item, taggers);
+        resolveSubscriptionTree(item, taggers);
       }
       return;
     }
 
     if (tag === 3) {
       const fnPtr = payload.fields[1] | 0;
-      resolveIncomingHandlers(payload.fields[2], [fnPtr, ...taggers]);
+      resolveSubscriptionTree(payload.fields[2], [fnPtr, ...taggers]);
     }
   };
 
@@ -427,15 +662,12 @@ export function createRcRuntime({ immortalStrings = {} } = {}) {
     }
 
     incomingPortHandlers.clear();
-
-    const initPayload = readHandle(initFn);
-    const config = initPayload?.captures?.[0] | 0;
-    const fields = readHandle(implPtr)?.fields ?? [];
+    clearDomSubs();
 
     const result = invokeClosure(subFn, [modelPtr]);
 
     if (result.rc === RC_SUCCESS && result.value) {
-      resolveIncomingHandlers(result.value);
+      resolveSubscriptionTree(result.value);
     }
 
     return result;
@@ -450,7 +682,50 @@ export function createRcRuntime({ immortalStrings = {} } = {}) {
     return 0;
   };
 
-  const applyIncomingPorts = (implPtr, initFn, modelPtr, incomingPorts) => {
+  const isPlatformRecordModel = (payload) =>
+    payload?.tag === TAG_RECORD && (payload.fields?.length ?? 0) >= 10;
+
+  const readPlatformUpdateTuple = (updatePayload) => {
+    if (updatePayload?.tag !== TAG_TUPLE2) {
+      return { modelPtr: 0, sideEffectPtr: 0 };
+    }
+    const first = readHandle(updatePayload.first);
+    const second = readHandle(updatePayload.second);
+    const firstFields = first?.tag === TAG_RECORD ? first.fields?.length ?? 0 : -1;
+    const secondFields = second?.tag === TAG_RECORD ? second.fields?.length ?? 0 : -1;
+    if (firstFields >= 0 && secondFields >= 0) {
+      if (firstFields >= secondFields) {
+        return { modelPtr: updatePayload.first | 0, sideEffectPtr: updatePayload.second | 0 };
+      }
+      return { modelPtr: updatePayload.second | 0, sideEffectPtr: updatePayload.first | 0 };
+    }
+    if (firstFields >= 0) {
+      return { modelPtr: updatePayload.first | 0, sideEffectPtr: updatePayload.second | 0 };
+    }
+    if (secondFields >= 0) {
+      return { modelPtr: updatePayload.second | 0, sideEffectPtr: updatePayload.first | 0 };
+    }
+    return { modelPtr: updatePayload.first | 0, sideEffectPtr: updatePayload.second | 0 };
+  };
+
+  const drainPlatformSideEffect = async (effectPtr) => {
+    const ptr = effectPtr | 0;
+    if (!ptr) return;
+    const payload = readHandle(ptr);
+    if (!payload) return;
+
+    if (payload.tag === TAG_INT) {
+      const kind = payload.value | 0;
+      if (kind === 1 && typeof window !== "undefined") {
+        window.scroll(0, 0);
+      }
+      return;
+    }
+
+    await drainPlatformCommands(ptr);
+  };
+
+  const applyIncomingPorts = (implPtr, initFn, modelPtr, incomingPorts, portOpts = {}) => {
     let model = modelPtr | 0;
     const initPayload = readHandle(initFn);
     const config = initPayload?.captures?.[0] | 0;
@@ -479,7 +754,7 @@ export function createRcRuntime({ immortalStrings = {} } = {}) {
       const updateResult = invokeClosure(updateFn, [platformMsg, model]);
       if (updateResult.rc !== RC_SUCCESS) {
         if (stablePayload !== payloadPtr) release(stablePayload);
-        if (wrappedPlatformMsg && !valueReaches(model, platformMsg)) {
+        if (wrappedPlatformMsg) {
           release(platformMsg);
         }
         return { rc: updateResult.rc, modelPtr: model };
@@ -487,14 +762,20 @@ export function createRcRuntime({ immortalStrings = {} } = {}) {
 
       const updatePayload = readHandle(updateResult.value);
       if (updatePayload?.tag === TAG_TUPLE2) {
-        model = updatePayload.first | 0;
+        const { modelPtr: nextModelPtr, sideEffectPtr } = readPlatformUpdateTuple(updatePayload);
+        model = nextModelPtr | 0;
+        void drainPlatformSideEffect(sideEffectPtr);
       }
 
-      if (stablePayload !== payloadPtr && !valueReaches(model, stablePayload)) {
-        release(stablePayload);
-      }
-      if (wrappedPlatformMsg && !valueReaches(model, platformMsg)) {
-        release(platformMsg);
+      // Deep valueReaches after each port update can be O(model). Browser first
+      // paint skips it (`omitPortRcWalk`); Node probes keep the walk by default.
+      if (!portOpts.omitPortRcWalk) {
+        if (stablePayload !== payloadPtr && !valueReaches(model, stablePayload)) {
+          release(stablePayload);
+        }
+        if (wrappedPlatformMsg && !valueReaches(model, platformMsg)) {
+          release(platformMsg);
+        }
       }
     }
 
@@ -502,15 +783,21 @@ export function createRcRuntime({ immortalStrings = {} } = {}) {
   };
 
   const bootBrowserProgram = (programPtr, opts = {}) => {
+    const phases = {};
+    const mark = (name, start) => {
+      phases[name] = +(performance.now() - start).toFixed(2);
+    };
+
+    let t = performance.now();
     const program = readHandle(programPtr);
     if (program?.tag !== TAG_BROWSER_PROGRAM) {
-      return { rc: RC_ERR_UNIMPLEMENTED, value: 0, innerText: "", stage: "program" };
+      return { rc: RC_ERR_UNIMPLEMENTED, value: 0, innerText: "", stage: "program", phases };
     }
 
     const implPtr = program.impl | 0;
     const impl = readHandle(implPtr);
     if (impl?.tag !== TAG_RECORD) {
-      return { rc: RC_ERR_UNIMPLEMENTED, value: 0, innerText: "", stage: "impl" };
+      return { rc: RC_ERR_UNIMPLEMENTED, value: 0, innerText: "", stage: "impl", phases };
     }
 
     const fieldCount = impl.fields?.length ?? 0;
@@ -520,39 +807,100 @@ export function createRcRuntime({ immortalStrings = {} } = {}) {
     const flags = opts.flags ?? defaults.flags;
     const url = opts.url ?? defaults.url;
     const key = opts.key ?? defaults.key;
+    mark("setup", t);
 
+    t = performance.now();
     const initArgs = fieldCount >= 6 ? [flags, url, key] : [flags];
     const initResult = invokeClosure(initFn, initArgs);
+    mark("init", t);
     if (initResult.rc !== RC_SUCCESS) {
-      return { rc: initResult.rc, value: 0, innerText: "", stage: "init" };
+      return { rc: initResult.rc, value: 0, innerText: "", stage: "init", phases };
     }
 
     const initPayload = readHandle(initResult.value);
     let modelPtr =
       initPayload?.tag === TAG_TUPLE2 ? initPayload.first | 0 : initResult.value | 0;
+    const initCmdPtr =
+      initPayload?.tag === TAG_TUPLE2 ? initPayload.second | 0 : 0;
 
+    t = performance.now();
     const subResult = registerSubscriptions(implPtr, initFn, modelPtr);
+    mark("subscriptions", t);
     if (subResult.rc !== RC_SUCCESS) {
-      return { rc: subResult.rc, value: 0, innerText: "", stage: "subscriptions" };
+      return { rc: subResult.rc, value: 0, innerText: "", stage: "subscriptions", phases };
     }
 
     if (opts.incomingPorts) {
-      const applied = applyIncomingPorts(implPtr, initFn, modelPtr, opts.incomingPorts);
+      t = performance.now();
+      const applied = applyIncomingPorts(implPtr, initFn, modelPtr, opts.incomingPorts, {
+        omitPortRcWalk: opts.omitPortRcWalk === true,
+      });
+      mark("incoming_port", t);
       if (applied.rc !== RC_SUCCESS) {
-        return { rc: applied.rc, value: 0, innerText: "", stage: "incoming_port" };
+        return { rc: applied.rc, value: 0, innerText: "", stage: "incoming_port", phases };
       }
       modelPtr = applied.modelPtr | 0;
+
+      // elm-pages registers pageDataFromJs on the Err branch; after the boot port
+      // promotes pageData to Ok, re-resolve subscriptions so app subs + ports match.
+      if (isElmPagesPlatformProgram()) {
+        t = performance.now();
+        const subAfterPort = registerSubscriptions(implPtr, initFn, modelPtr);
+        mark("subscriptions_after_port", t);
+        if (subAfterPort.rc !== RC_SUCCESS) {
+          return {
+            rc: subAfterPort.rc,
+            value: 0,
+            innerText: "",
+            stage: "subscriptions_after_port",
+            phases,
+          };
+        }
+      }
+    } else {
+      phases.incoming_port = 0;
+      phases.subscriptions_after_port = 0;
     }
 
+    t = performance.now();
     const modelForView = cloneHandleForProgram(modelPtr);
+    mark("clone_model", t);
+
+    t = performance.now();
     const viewResult = invokeClosure(viewFn, [modelForView]);
+    mark("view", t);
     if (viewResult.rc !== RC_SUCCESS) {
-      return { rc: viewResult.rc, value: 0, innerText: "", stage: "view" };
+      return { rc: viewResult.rc, value: 0, innerText: "", stage: "view", phases };
     }
 
+    t = performance.now();
     mountViewHandle(viewResult.value);
-    const innerText = vdomInnerTextFromView(viewResult.value);
+    mark("mount", t);
+
+    liveBrowser = {
+      implPtr,
+      modelPtr: modelForView | 0,
+      updateFn: browserUpdateFn(implPtr),
+      viewFn,
+      mountedRoot: null,
+      lastVdomPtr: 0,
+    };
+
+    if (fieldCount >= 6 && navigationRuntime) {
+      navigationRuntime.installApplicationNavigation(implPtr);
+    }
+
+    void drainPlatformCommands(initCmdPtr);
+
+    t = performance.now();
+    const skipInnerText = opts.skipInnerText === true;
+    const innerText = skipInnerText ? "" : vdomInnerTextFromView(viewResult.value);
+    mark("inner_text", t);
+
+    t = performance.now();
     const title = viewTitleFromView(viewResult.value);
+    mark("title", t);
+
     return {
       rc: RC_SUCCESS,
       value: viewResult.value,
@@ -562,6 +910,7 @@ export function createRcRuntime({ immortalStrings = {} } = {}) {
       modelPtr: modelForView,
       outgoingPorts: [...outgoingPortQueue],
       stage: "ok",
+      phases,
     };
   };
 
@@ -620,7 +969,14 @@ export function createRcRuntime({ immortalStrings = {} } = {}) {
   const wasmScalarArg = (ptr) => {
     if (!handles.has(ptr)) return ptr | 0;
     const payload = handles.get(ptr);
-    if (payload?.tag === TAG_INT && payload.value !== ptr) {
+    // WASM may pass constructor tags / browser_cmd kinds as raw i32.const N that
+    // collide with early immortal Int handles (UNIT is handle 1 = Int 0).
+    if (
+      payload?.tag === TAG_INT &&
+      payload.immortal &&
+      ptr <= 255 &&
+      (payload.value | 0) !== ptr
+    ) {
       return ptr | 0;
     }
     return intValue(ptr);
@@ -691,6 +1047,9 @@ export function createRcRuntime({ immortalStrings = {} } = {}) {
         if (payload.kind === "node") {
           return (payload.children ?? []).some((child) => valueReaches(child | 0, target, visited));
         }
+        if (payload.kind === "map") {
+          return valueReaches(payload.child | 0, target, visited);
+        }
         return false;
       case TAG_BROWSER_PROGRAM:
         return payload.impl != null && valueReaches(payload.impl | 0, target, visited);
@@ -702,16 +1061,123 @@ export function createRcRuntime({ immortalStrings = {} } = {}) {
   const currentCallRoots = () =>
     callRootStack.length > 0 ? callRootStack[callRootStack.length - 1] : [];
 
+  // Epilogue calls `release_unless_reachable_from_roots` once per owned slot with the
+  // same root list. Mark-by-generation once per fingerprint turns O(n·|graph|) into
+  // O(|graph| + n) without allocating a Set on every epilogue.
+  let reachableCache = {
+    fingerprint: null,
+    gen: 0,
+  };
+  let reachGen = 1;
+
+  const invalidateReachableCache = () => {
+    reachableCache.fingerprint = null;
+    reachableCache.gen = 0;
+  };
+
   const pushCallRoots = (...roots) => {
     const normalized = roots
       .flat()
       .map((ptr) => ptr | 0)
       .filter((ptr) => ptr !== 0 && handles.has(ptr));
     callRootStack.push(normalized);
+    invalidateReachableCache();
   };
 
   const popCallRoots = () => {
     callRootStack.pop();
+    invalidateReachableCache();
+  };
+
+  const markReachable = (rootPtr, gen) => {
+    const stack = [rootPtr | 0];
+    while (stack.length > 0) {
+      const root = stack.pop() | 0;
+      if (!root) continue;
+      const payload = handles.get(root);
+      if (!payload || payload._rg === gen) continue;
+      payload._rg = gen;
+      switch (payload.tag) {
+        case TAG_TUPLE2:
+          stack.push(payload.first | 0, payload.second | 0);
+          break;
+        case TAG_RECORD:
+          for (const field of payload.fields ?? []) stack.push(field | 0);
+          break;
+        case TAG_LIST:
+          for (const item of payload.items ?? []) stack.push(item | 0);
+          break;
+        case TAG_MAYBE:
+        case TAG_RESULT:
+          if (payload.value != null) stack.push(payload.value | 0);
+          break;
+        case TAG_CLOSURE:
+          for (const capture of payload.captures ?? []) stack.push(capture | 0);
+          for (const applied of payload.applied ?? []) stack.push(applied | 0);
+          break;
+        case TAG_VDOM:
+          if (payload.kind === "node") {
+            for (const child of payload.children ?? []) stack.push(child | 0);
+          } else if (payload.kind === "map") {
+            stack.push(payload.child | 0);
+          }
+          break;
+        case TAG_BROWSER_PROGRAM:
+          if (payload.impl != null) stack.push(payload.impl | 0);
+          break;
+        default:
+          break;
+      }
+    }
+  };
+
+  const rootsFingerprint = (rootsPtr, count) => {
+    let h = (count | 0) ^ ((callRootStack.length | 0) << 16);
+    const total = count | 0;
+    const base = rootsPtr | 0;
+    if (memory && total > 0 && base) {
+      for (let i = 0; i < total; i++) {
+        h = (Math.imul(h, 31) + (view().getUint32(base + i * 4, true) | 0)) | 0;
+      }
+    }
+    for (const callRoot of currentCallRoots()) {
+      h = (Math.imul(h, 31) + (callRoot | 0)) | 0;
+    }
+    return h;
+  };
+
+  let reachCacheHits = 0;
+  let reachCacheMisses = 0;
+
+  const ensureReachableGen = (rootsPtr, count) => {
+    const fingerprint = rootsFingerprint(rootsPtr, count);
+    if (reachableCache.gen && reachableCache.fingerprint === fingerprint) {
+      reachCacheHits += 1;
+      return reachableCache.gen;
+    }
+    reachCacheMisses += 1;
+
+    reachGen += 1;
+    if (reachGen > 1_000_000_000) {
+      reachGen = 1;
+      for (const payload of handles.values()) {
+        if (payload) payload._rg = 0;
+      }
+    }
+    const gen = reachGen;
+    const total = count | 0;
+    const base = rootsPtr | 0;
+    if (memory && total > 0 && base) {
+      for (let i = 0; i < total; i++) {
+        markReachable(view().getUint32(base + i * 4, true) | 0, gen);
+      }
+    }
+    for (const callRoot of currentCallRoots()) {
+      markReachable(callRoot, gen);
+    }
+
+    reachableCache = { fingerprint, gen };
+    return gen;
   };
 
   const isReachableFromRoots = (handle, rootPtr) => {
@@ -730,23 +1196,25 @@ export function createRcRuntime({ immortalStrings = {} } = {}) {
   };
 
   const isReachableFromRootList = (handle, rootsPtr, count) => {
+    const h = handle | 0;
     const total = count | 0;
     const base = rootsPtr | 0;
-
-    for (let i = 0; i < total; i++) {
-      const root = view().getUint32(base + i * 4, true) | 0;
-      if (root && valueReaches(root, handle)) {
-        return true;
+    // Fast path: owned slot often aliases *out / a param handle directly.
+    if (memory && total > 0 && base) {
+      for (let i = 0; i < total; i++) {
+        if ((view().getUint32(base + i * 4, true) | 0) === h) {
+          return true;
+        }
       }
     }
-
     for (const callRoot of currentCallRoots()) {
-      if (valueReaches(callRoot, handle)) {
+      if (callRoot === h) {
         return true;
       }
     }
-
-    return false;
+    const gen = ensureReachableGen(rootsPtr, count);
+    const payload = handles.get(h);
+    return Boolean(payload && payload._rg === gen);
   };
 
   const releaseUnlessReachableFromRoots = (ptr, rootsPtr, count) => {
@@ -755,22 +1223,29 @@ export function createRcRuntime({ immortalStrings = {} } = {}) {
       return RC_SUCCESS;
     }
 
+    const payload = handles.get(handle);
+    if (payload?.immortal) {
+      return RC_SUCCESS;
+    }
+
     if (isReachableFromRootList(handle, rootsPtr, count)) {
       return RC_SUCCESS;
     }
 
-    const fallbackRoot = view().getUint32(rootsPtr | 0, true) | 0;
+    const fallbackRoot = memory ? view().getUint32(rootsPtr | 0, true) | 0 : 0;
     releaseValue(handle, fallbackRoot);
     return RC_SUCCESS;
   };
+
+  const SINGLE_ROOT_SCRATCH = 16384;
 
   const releaseUnlessReachable = (ptr, rootPtr) => {
     if (!memory) {
       return releaseUnlessReachableFromRoots(ptr, 0, 0);
     }
-
-    view().setUint32(4096, rootPtr | 0, true);
-    return releaseUnlessReachableFromRoots(ptr, 4096, 1);
+    // Do not write into 4096 — that scratch holds the multi-root epilogue list.
+    view().setUint32(SINGLE_ROOT_SCRATCH, rootPtr | 0, true);
+    return releaseUnlessReachableFromRoots(ptr, SINGLE_ROOT_SCRATCH, 1);
   };
 
   const releaseChild = (childPtr, rootPtr) => {
@@ -780,6 +1255,16 @@ export function createRcRuntime({ immortalStrings = {} } = {}) {
     }
 
     if (rootPtr) {
+      // Prefer O(1) against the epilogue reach generation so cascading frees don't
+      // re-walk the graph (and don't clobber the multi-root scratch at 4096).
+      if (reachableCache.gen) {
+        const payload = handles.get(child);
+        if (payload && payload._rg === reachableCache.gen) {
+          return;
+        }
+        release(child);
+        return;
+      }
       releaseUnlessReachable(child, rootPtr);
     } else {
       release(child);
@@ -837,6 +1322,10 @@ export function createRcRuntime({ immortalStrings = {} } = {}) {
       for (const child of payload.children ?? []) {
         releaseChild(child, rootPtr);
       }
+    }
+
+    if (payload?.tag === TAG_VDOM && payload.kind === "map") {
+      releaseChild(payload.child, rootPtr);
     }
 
     if (payload?.tag === TAG_VDOM && payload.kind === "text") {
@@ -901,8 +1390,55 @@ export function createRcRuntime({ immortalStrings = {} } = {}) {
     return view.getUint32(0, true) | 0;
   };
 
+  const applyDomAttr = (el, attr, mapperPtr = 0) => {
+    if (!el || !attr) return;
+    if (attr.kind === "event") {
+      attachDomEvent(el, attr, mapperPtr);
+      return;
+    }
+    if (attr.kind === "property") {
+      const prop = attr.name;
+      if (prop === "value" || prop === "checked" || prop === "selected" || prop === "disabled") {
+        el[prop] = attr.value;
+      } else {
+        el[prop] = attr.value;
+      }
+      return;
+    }
+    if (attr.name === "style") {
+      el.setAttribute("style", attr.value);
+    } else if (attr.name === "class") {
+      el.className = attr.value;
+    } else if (attr.name) {
+      el.setAttribute(attr.name, attr.value);
+    }
+  };
+
   const newVdomAttr = (name, value) =>
     allocHandle({ tag: TAG_VDOM, kind: "attr", name: String(name), value: String(value) });
+
+  const newVdomProperty = (name, value) =>
+    allocHandle({ tag: TAG_VDOM, kind: "property", name: String(name), value: String(value) });
+
+  const newVdomEvent = (eventName, handlerPtr, decoderPtr = 0) =>
+    allocHandle({
+      tag: TAG_VDOM,
+      kind: "event",
+      event: String(eventName),
+      handler: handlerPtr | 0,
+      decoder: decoderPtr | 0,
+    });
+
+  const newVdomNode = (tagName, attrs, children, namespace = null, keyedChildren = null) =>
+    allocHandle({
+      tag: TAG_VDOM,
+      kind: "node",
+      tagName: String(tagName),
+      namespace: namespace ? String(namespace) : null,
+      attrs: attrs ?? [],
+      children: children ?? [],
+      keyedChildren: keyedChildren ?? null,
+    });
 
   const vdomAttrs = (attrs) =>
     (attrs ?? [])
@@ -913,6 +1449,17 @@ export function createRcRuntime({ immortalStrings = {} } = {}) {
       })
       .filter(Boolean);
 
+  const keyedChildrenFromList = (keyedPtr) =>
+    listItems(keyedPtr)
+      .map((entryPtr) => {
+        const pair = readHandle(entryPtr);
+        if (pair?.tag === TAG_TUPLE2) {
+          return { key: stringValue(pair.first | 0), child: adoptVdom(pair.second | 0) };
+        }
+        return { key: "", child: adoptVdom(entryPtr) };
+      })
+      .filter((entry) => entry.child);
+
   const attrsFromList = (listPtr) =>
     listItems(listPtr)
       .map((item) => {
@@ -920,20 +1467,22 @@ export function createRcRuntime({ immortalStrings = {} } = {}) {
         if (payload?.tag === TAG_VDOM && payload.kind === "attr") {
           return { name: payload.name, value: payload.value };
         }
+        if (payload?.tag === TAG_VDOM && payload.kind === "property") {
+          return { kind: "property", name: payload.name, value: payload.value };
+        }
+        if (payload?.tag === TAG_VDOM && payload.kind === "event") {
+          return {
+            kind: "event",
+            event: payload.event,
+            handler: payload.handler,
+            decoder: payload.decoder,
+          };
+        }
         return null;
       })
       .filter(Boolean);
 
   const newVdomText = (text) => allocHandle({ tag: TAG_VDOM, kind: "text", text: String(text) });
-
-  const newVdomNode = (tagName, attrs, children) =>
-    allocHandle({
-      tag: TAG_VDOM,
-      kind: "node",
-      tagName: String(tagName),
-      attrs: attrs ?? [],
-      children: children ?? [],
-    });
 
   const inspectVdom = (ptr) => {
     const resolved = resolveHtml(asHandle(ptr));
@@ -973,6 +1522,10 @@ export function createRcRuntime({ immortalStrings = {} } = {}) {
       return ptr;
     }
 
+    if (payload.kind === "map") {
+      return cloneVdom(payload.child | 0);
+    }
+
     if (payload.kind === "text") {
       return newVdomText(payload.text);
     }
@@ -992,6 +1545,18 @@ export function createRcRuntime({ immortalStrings = {} } = {}) {
     return ptr;
   };
 
+  /** Prefer share+retain over deep clone when adopting VDOM into a parent. */
+  const adoptVdom = (ptr) => {
+    const resolved = resolveHtml(asHandle(ptr));
+    if (!resolved || !handles.has(resolved)) return resolved | 0;
+    const payload = readHandle(resolved);
+    if (payload?.tag === TAG_VDOM) {
+      retain(null, resolved);
+      return resolved | 0;
+    }
+    return resolved | 0;
+  };
+
   const ensureAppRoot = () => {
     if (typeof document === "undefined") {
       return null;
@@ -1006,7 +1571,28 @@ export function createRcRuntime({ immortalStrings = {} } = {}) {
     return root;
   };
 
-  const vdomToDom = (ptr) => {
+  const dispatchPlatformMsg = (msgPtr) => {
+    if (!liveBrowser || !msgPtr) return;
+    const { implPtr, modelPtr, updateFn, viewFn } = liveBrowser;
+    const platformMsg = wrapIncomingPlatformMsg(msgPtr | 0);
+    const updateResult = invokeClosure(updateFn, [platformMsg, modelPtr | 0]);
+    if (updateResult.rc !== RC_SUCCESS) {
+      return;
+    }
+    const updatePayload = readHandle(updateResult.value);
+    if (updatePayload?.tag === TAG_TUPLE2) {
+      const { modelPtr: nextModelPtr, sideEffectPtr } = readPlatformUpdateTuple(updatePayload);
+      liveBrowser.modelPtr = nextModelPtr | 0;
+      void drainPlatformSideEffect(sideEffectPtr);
+    }
+    const viewResult = invokeClosure(viewFn, [liveBrowser.modelPtr | 0]);
+    if (viewResult.rc === RC_SUCCESS) {
+      mountViewHandle(viewResult.value);
+    }
+  };
+  dispatchPlatformMsgRef = dispatchPlatformMsg;
+
+  const vdomToDom = (ptr, mapperPtr = 0) => {
     const payload = readHandle(resolveHtml(ptr));
     if (!payload || payload.tag !== TAG_VDOM) {
       return typeof document !== "undefined" ? document.createTextNode("") : null;
@@ -1016,27 +1602,72 @@ export function createRcRuntime({ immortalStrings = {} } = {}) {
       return typeof document !== "undefined" ? document.createTextNode(payload.text) : null;
     }
 
+    if (payload.kind === "map" && typeof document !== "undefined") {
+      return vdomToDom(payload.child | 0, payload.mapper | 0);
+    }
+
     if (payload.kind === "node" && typeof document !== "undefined") {
-      const el = document.createElement(payload.tagName || "div");
+      const el = payload.namespace
+        ? document.createElementNS(payload.namespace, payload.tagName || "div")
+        : document.createElement(payload.tagName || "div");
       let styleText = "";
-      for (const attr of vdomAttrs(payload.attrs)) {
-        if (attr.name === "style") {
+      for (const attr of payload.attrs ?? []) {
+        applyDomAttr(el, attr, mapperPtr);
+        if (attr?.name === "style" && attr.kind !== "event" && attr.kind !== "property") {
           styleText += attr.value;
-        } else if (attr.name === "class") {
-          el.className = attr.value;
-        } else {
-          el.setAttribute(attr.name, attr.value);
         }
       }
       if (styleText) el.setAttribute("style", styleText);
-      for (const child of payload.children ?? []) {
-        const childDom = vdomToDom(child);
-        if (childDom) el.appendChild(childDom);
+      if (payload.keyedChildren?.length) {
+        for (const { key, child } of payload.keyedChildren) {
+          const childDom = vdomToDom(child, mapperPtr);
+          if (childDom) {
+            childDom.__vdomKey = String(key);
+            el.appendChild(childDom);
+          }
+        }
+      } else {
+        for (const child of payload.children ?? []) {
+          const childDom = vdomToDom(child, mapperPtr);
+          if (childDom) el.appendChild(childDom);
+        }
       }
       return el;
     }
 
     return typeof document !== "undefined" ? document.createTextNode("") : null;
+  };
+
+  const attachDomEvent = (el, eventAttr, mapperPtr = 0) => {
+    const eventName = eventAttr.event || "click";
+    const handlerPtr = eventAttr.handler | 0;
+    const decoderPtr = eventAttr.decoder | 0;
+    const listener = (domEvent) => {
+      if (eventName === "submit" && typeof domEvent.preventDefault === "function") {
+        domEvent.preventDefault();
+      }
+      let msgPtr = 0;
+      if (decoderPtr) {
+        const eventValue = domEventRuntime
+          ? domEventRuntime.buildDecoderArg(domEvent, eventName)
+          : newIntHandle(domEvent?.target?.value ? 1 : 0);
+        const decoded = invokeClosure(decoderPtr, [eventValue]);
+        if (decoded.rc !== RC_SUCCESS) return;
+        msgPtr = decoded.value | 0;
+      } else if (handlerPtr) {
+        const invoked = invokeClosure(handlerPtr, []);
+        if (invoked.rc !== RC_SUCCESS) return;
+        msgPtr = invoked.value | 0;
+      }
+      if (mapperPtr) {
+        const mapped = invokeClosure(mapperPtr, [asHandle(msgPtr)]);
+        if (mapped.rc !== RC_SUCCESS) return;
+        msgPtr = mapped.value | 0;
+      }
+      if (msgPtr) dispatchPlatformMsg(msgPtr);
+    };
+    el.addEventListener(eventName, listener);
+    return listener;
   };
 
   const mountVdomToApp = (ptr) => {
@@ -1048,7 +1679,32 @@ export function createRcRuntime({ immortalStrings = {} } = {}) {
     if (dom) root.appendChild(dom);
   };
 
-  const listItems = (ptr) => readHandle(ptr)?.items ?? [];
+  const listItems = (ptr) => {
+    if (!ptr) return [];
+    const payload = readHandle(ptr);
+    if (!payload) return [];
+    if (payload.tag === TAG_LIST) return payload.items ?? [];
+    if (payload.tag === TAG_TUPLE2) {
+      const items = [];
+      let cur = ptr | 0;
+      while (cur) {
+        const cell = readHandle(cur);
+        if (cell?.tag !== TAG_TUPLE2) break;
+        items.push(cell.first | 0);
+        cur = cell.second | 0;
+      }
+      return items;
+    }
+    return [];
+  };
+
+  const listItemsForAppend = (ptr) => {
+    if (!ptr) return [];
+    const payload = readHandle(ptr);
+    if (!payload) return [];
+    if (payload.tag === TAG_STRING) return [ptr | 0];
+    return listItems(ptr);
+  };
 
   const newInt = (outPtr, value) => {
     writeOut(outPtr, allocHandle({ tag: TAG_INT, value: value | 0 }));
@@ -1088,8 +1744,8 @@ export function createRcRuntime({ immortalStrings = {} } = {}) {
 
   const cloneForList = (ptr) => {
     if (!ptr || !handles.has(ptr)) return ptr;
-    const payload = readHandle(ptr);
-    if (payload?.tag === TAG_VDOM) return cloneVdom(ptr);
+    // Take ownership share of list elements so epilogue can release builders safely.
+    retain(null, ptr);
     return ptr;
   };
 
@@ -1115,15 +1771,21 @@ export function createRcRuntime({ immortalStrings = {} } = {}) {
     return newInt(outPtr, product);
   };
 
-  const listReverse = (outPtr, listPtr) => writeList(outPtr, [...listItems(listPtr)].reverse());
+  const listReverse = (outPtr, listPtr) =>
+    writeList(outPtr, [...listItems(listPtr)].reverse().map(cloneForList));
 
   const listAppend = (outPtr, leftPtr, rightPtr) =>
-    writeList(outPtr, [...listItems(leftPtr), ...listItems(rightPtr)]);
+    writeList(outPtr, [
+      ...listItemsForAppend(leftPtr).map(cloneForList),
+      ...listItemsForAppend(rightPtr).map(cloneForList),
+    ]);
 
   const listConcat = (outPtr, listsPtr) => {
     const items = [];
     for (const innerHandle of listItems(listsPtr)) {
-      items.push(...listItems(innerHandle));
+      for (const item of listItems(innerHandle)) {
+        items.push(cloneForList(item));
+      }
     }
     return writeList(outPtr, items);
   };
@@ -1172,10 +1834,19 @@ export function createRcRuntime({ immortalStrings = {} } = {}) {
     return writeList(outPtr, Array.from({ length: count }, () => value));
   };
 
-  const listSingleton = (outPtr, valuePtr) => writeList(outPtr, [intValue(valuePtr)]);
+  const listSingleton = (outPtr, valuePtr) => {
+    if (handles.has(valuePtr | 0)) {
+      return writeList(outPtr, [cloneForList(valuePtr)]);
+    }
+    return writeList(outPtr, [intValue(valuePtr)]);
+  };
 
-  const listCons = (outPtr, headPtr, tailPtr) =>
-    writeList(outPtr, [intValue(headPtr), ...listItems(tailPtr)]);
+  // Match C elmc_list_cons(take=0): retain spine elements so callers can release consumed args.
+  const listCons = (outPtr, headPtr, tailPtr) => {
+    const head = handles.has(headPtr | 0) ? cloneForList(headPtr) : intValue(headPtr);
+    const tail = listItems(tailPtr).map(cloneForList);
+    return writeList(outPtr, [head, ...tail]);
+  };
 
   const listMaximum = (outPtr, listPtr) => {
     const items = listItems(listPtr);
@@ -1593,8 +2264,8 @@ export function createRcRuntime({ immortalStrings = {} } = {}) {
       outPtr,
       allocHandle({
         tag: TAG_TUPLE2,
-        first: normalizeFieldHandle(firstPtr),
-        second: normalizeFieldHandle(secondPtr),
+        first: storeRecordField(firstPtr),
+        second: storeRecordField(secondPtr),
       })
     );
     return RC_SUCCESS;
@@ -1720,14 +2391,74 @@ export function createRcRuntime({ immortalStrings = {} } = {}) {
     return RC_SUCCESS;
   };
 
+  const normalizePushUrl = (url) => {
+    if (!url || typeof url !== "string") return url;
+    return url.replace(/^(https?:\/\/[^/?#]+)([^/?#].*)$/, (match, origin, rest) => {
+      if (!rest || rest.startsWith("/") || rest.startsWith("?") || rest.startsWith("#")) {
+        return match;
+      }
+      return `${origin}/${rest}`;
+    });
+  };
+
   const stringValue = (ptr) => {
     if (!ptr) return "";
     const payload = handles.get(ptr);
     if (payload?.tag === TAG_STRING) return payload.value;
+    const items = listItems(ptr);
+    if (items.length > 0) {
+      const parts = items.map((item) => {
+        const part = readHandle(item);
+        return part?.tag === TAG_STRING ? part.value : "";
+      });
+      if (parts.some(Boolean)) return parts.join("");
+    }
     return "";
   };
 
   const newStringHandle = (text) => allocHandle({ tag: TAG_STRING, value: String(text) });
+
+  domEventRuntime = createDomEventRuntime({
+    allocHandle,
+    newStringHandle,
+    newIntHandle,
+    tuple2,
+    TAG_RECORD,
+    TAG_TUPLE2,
+    TAG_STRING,
+    TAG_INT,
+    TAG_MAYBE,
+  });
+
+  urlRuntimeApi = createUrlRuntime({
+    allocHandle,
+    newStringHandle,
+    newIntHandle,
+    stringValue,
+    TAG_RECORD,
+    TAG_MAYBE,
+    TAG_TUPLE2,
+    TAG_INT,
+    constructorTags,
+  });
+
+  routeBytesRuntime = createRouteBytesRuntime();
+  routeBytesRuntime.setRuntimeFetcher(routeBytesRuntime.defaultRuntimeFetcher);
+
+  vdomPatchRuntime = createVdomPatchRuntime({
+    readHandle,
+    resolveHtml,
+    stringValue,
+    listItems,
+    retain,
+    release,
+    TAG_VDOM,
+    TAG_RECORD,
+    TAG_TUPLE2,
+    TAG_INT,
+    attachDomEvent,
+    forceLazyHtml,
+  });
 
   cloneHandleForProgram = (handlePtr) => {
     const ptr = handlePtr | 0;
@@ -1971,11 +2702,7 @@ export function createRcRuntime({ immortalStrings = {} } = {}) {
     return maybeJustOwn(outPtr, newIntHandle(parsed));
   };
 
-  const floatFromHandle = (ptr) => {
-    const payload = readHandle(ptr);
-    if (payload?.tag === TAG_FLOAT) return payload.value;
-    return wasmScalarArg(ptr);
-  };
+  const floatFromHandle = (ptr) => floatNumber(ptr);
 
   const formatStringFromFloat = (value) => {
     const whole = Math.trunc(value);
@@ -2046,7 +2773,7 @@ export function createRcRuntime({ immortalStrings = {} } = {}) {
     newInt(outPtr, stringValue(leftPtr) === stringValue(rightPtr) ? 1 : 0);
 
   const stringEqualsLiteral = (outPtr, strPtr, literalId) => {
-    const literal = literalStrings[String(literalId)] ?? "";
+    const literal = lookupImmortalString(literalId);
     return newInt(outPtr, stringValue(strPtr) === literal ? 1 : 0);
   };
 
@@ -2520,17 +3247,24 @@ export function createRcRuntime({ immortalStrings = {} } = {}) {
       writeOut(outPtr, newIntHandle(0));
     } else {
       writeOut(outPtr, field);
+      if (handles.has(field | 0)) retain(null, field);
     }
     return RC_SUCCESS;
   };
 
+  // Match C elmc_record_update_index_cow_drop: clone+retain fields, then release
+  // the old record when a fresh handle is published so caller can null owned[base].
   const recordUpdate = (outPtr, recordPtr, valuePtr, indexPtr) => {
     const index = wasmScalarArg(indexPtr);
     const fields = (readHandle(recordPtr)?.fields ?? []).map(storeRecordField);
     if (index >= 0 && index < fields.length) {
       fields[index] = storeRecordField(valuePtr);
     }
-    writeOut(outPtr, allocHandle({ tag: TAG_RECORD, fields }));
+    const next = allocHandle({ tag: TAG_RECORD, fields });
+    writeOut(outPtr, next);
+    if ((next | 0) !== (recordPtr | 0)) {
+      release(recordPtr);
+    }
     return RC_SUCCESS;
   };
 
@@ -2538,7 +3272,7 @@ export function createRcRuntime({ immortalStrings = {} } = {}) {
     const index = wasmScalarArg(indexPtr);
     const items = listItems(listPtr);
     if (index < 0 || index >= items.length) return maybeNothing(outPtr);
-    return maybeJustOwn(outPtr, asHandle(items[index]));
+    return maybeJust(outPtr, asHandle(items[index]));
   };
 
   const listNthIntDefault = (outPtr, listPtr, indexPtr, defaultPtr) => {
@@ -2575,21 +3309,131 @@ export function createRcRuntime({ immortalStrings = {} } = {}) {
     return writeList(outPtr, items.slice(1));
   };
 
-  const valuesEqual = (leftPtr, rightPtr) => {
+  const valuesEqualDeep = (leftPtr, rightPtr, seen) => {
+    if (leftPtr === rightPtr) return true;
+    const pairKey = `${leftPtr}|${rightPtr}`;
+    if (seen.has(pairKey)) return true;
+    seen.add(pairKey);
+
     const left = readHandle(leftPtr);
     const right = readHandle(rightPtr);
-    if (left?.tag === TAG_STRING && right?.tag === TAG_STRING) return left.value === right.value;
-    return intValue(leftPtr) === intValue(rightPtr);
+    if (!left || !right) return !left && !right;
+    if (left.tag !== right.tag) return false;
+
+    switch (left.tag) {
+      case TAG_INT:
+        return (left.value | 0) === (right.value | 0);
+      case TAG_FLOAT:
+        return left.value === right.value;
+      case TAG_CHAR:
+        return left.value === right.value;
+      case TAG_STRING:
+        return left.value === right.value;
+      case TAG_ORDER:
+        return (left.value | 0) === (right.value | 0);
+      case TAG_TUPLE2:
+        return (
+          valuesEqualDeep(left.first | 0, right.first | 0, seen) &&
+          valuesEqualDeep(left.second | 0, right.second | 0, seen)
+        );
+      case TAG_LIST: {
+        const leftItems = listItems(leftPtr);
+        const rightItems = listItems(rightPtr);
+        if (leftItems.length !== rightItems.length) return false;
+        for (let i = 0; i < leftItems.length; i++) {
+          if (!valuesEqualDeep(leftItems[i], rightItems[i], seen)) return false;
+        }
+        return true;
+      }
+      case TAG_MAYBE:
+        if ((left.value == null) !== (right.value == null)) return false;
+        return left.value == null || valuesEqualDeep(left.value | 0, right.value | 0, seen);
+      case TAG_RESULT:
+        if (left.isOk !== right.isOk) return false;
+        return valuesEqualDeep(left.value | 0, right.value | 0, seen);
+      case TAG_RECORD: {
+        const lf = left.fields ?? [];
+        const rf = right.fields ?? [];
+        if (lf.length !== rf.length) return false;
+        for (let i = 0; i < lf.length; i++) {
+          if (!valuesEqualDeep(lf[i] | 0, rf[i] | 0, seen)) return false;
+        }
+        return true;
+      }
+      case TAG_CLOSURE:
+        return leftPtr === rightPtr;
+      default:
+        return intValue(leftPtr) === intValue(rightPtr);
+    }
   };
 
-  const compareValues = (leftPtr, rightPtr) => {
+  const valuesEqual = (leftPtr, rightPtr) => valuesEqualDeep(leftPtr, rightPtr, new Set());
+
+  const compareValuesDeep = (leftPtr, rightPtr, seen) => {
+    if (leftPtr === rightPtr) return 0;
+    const pairKey = `${leftPtr}|${rightPtr}`;
+    if (seen.has(pairKey)) return 0;
+    seen.add(pairKey);
+
     const left = readHandle(leftPtr);
     const right = readHandle(rightPtr);
-    if (left?.tag === TAG_STRING && right?.tag === TAG_STRING) {
-      return left.value < right.value ? -1 : left.value > right.value ? 1 : 0;
+    if (!left || !right) return left ? 1 : right ? -1 : 0;
+    if (left.tag !== right.tag) return left.tag < right.tag ? -1 : 1;
+
+    switch (left.tag) {
+      case TAG_INT:
+        return compareInts(left.value | 0, right.value | 0);
+      case TAG_FLOAT:
+        return left.value < right.value ? -1 : left.value > right.value ? 1 : 0;
+      case TAG_CHAR:
+        return compareInts(left.value | 0, right.value | 0);
+      case TAG_STRING:
+        return left.value < right.value ? -1 : left.value > right.value ? 1 : 0;
+      case TAG_ORDER:
+        return compareInts(left.value | 0, right.value | 0);
+      case TAG_TUPLE2: {
+        const firstCmp = compareValuesDeep(left.first | 0, right.first | 0, seen);
+        if (firstCmp !== 0) return firstCmp;
+        return compareValuesDeep(left.second | 0, right.second | 0, seen);
+      }
+      case TAG_LIST: {
+        const leftItems = listItems(leftPtr);
+        const rightItems = listItems(rightPtr);
+        const len = Math.max(leftItems.length, rightItems.length);
+        for (let i = 0; i < len; i++) {
+          const cmp = compareValuesDeep(leftItems[i] ?? 0, rightItems[i] ?? 0, seen);
+          if (cmp !== 0) return cmp;
+        }
+        return 0;
+      }
+      case TAG_MAYBE: {
+        if ((left.value == null) !== (right.value == null)) {
+          return left.value == null ? -1 : 1;
+        }
+        return left.value == null
+          ? 0
+          : compareValuesDeep(left.value | 0, right.value | 0, seen);
+      }
+      case TAG_RESULT: {
+        if (left.isOk !== right.isOk) return left.isOk ? 1 : -1;
+        return compareValuesDeep(left.value | 0, right.value | 0, seen);
+      }
+      case TAG_RECORD: {
+        const lf = left.fields ?? [];
+        const rf = right.fields ?? [];
+        const len = Math.max(lf.length, rf.length);
+        for (let i = 0; i < len; i++) {
+          const cmp = compareValuesDeep(lf[i] ?? 0, rf[i] ?? 0, seen);
+          if (cmp !== 0) return cmp;
+        }
+        return 0;
+      }
+      default:
+        return compareInts(intValue(leftPtr), intValue(rightPtr));
     }
-    return compareInts(intValue(leftPtr), intValue(rightPtr));
   };
+
+  const compareValues = (leftPtr, rightPtr) => compareValuesDeep(leftPtr, rightPtr, new Set());
 
   const dictPairKey = (entryPtr) => readHandle(entryPtr)?.first ?? 0;
   const dictPairValue = (entryPtr) => readHandle(entryPtr)?.second ?? 0;
@@ -3193,19 +4037,32 @@ export function createRcRuntime({ immortalStrings = {} } = {}) {
   };
 
   const newImmortalString = (outPtr, literalId) => {
-    const text = literalStrings[String(literalId)] ?? "";
-    writeOut(outPtr, newStringHandle(text));
+    const id = literalId | 0;
+    let handle = immortalStringHandles.get(id);
+    if (!handle) {
+      const text = lookupImmortalString(id);
+      handle = allocHandle({ tag: TAG_STRING, value: text, immortal: true, literalId: id });
+      immortalStringHandles.set(id, handle);
+    }
+    writeOut(outPtr, handle);
     return RC_SUCCESS;
   };
 
   const makeClosure = (outPtr, fnIndex, arity, ...captures) => {
+    const captured = [];
+    for (const raw of captures) {
+      if ((raw | 0) === 0) continue;
+      const handle = normalizeFieldHandle(raw);
+      if (handles.has(handle | 0)) retain(null, handle);
+      captured.push(handle);
+    }
     writeOut(
       outPtr,
       allocHandle({
         tag: TAG_CLOSURE,
         fnIndex: fnIndex | 0,
         arity: arity | 0,
-        captures: captures.filter((handle) => handle !== 0),
+        captures: captured,
       })
     );
     return RC_SUCCESS;
@@ -3338,6 +4195,7 @@ export function createRcRuntime({ immortalStrings = {} } = {}) {
     TAG_STRING,
     TAG_LIST,
     TAG_TUPLE2,
+    constructorTags,
   });
 
   const bytes = createBytesRuntime({
@@ -3360,9 +4218,184 @@ export function createRcRuntime({ immortalStrings = {} } = {}) {
     TAG_TUPLE2,
     TAG_INT,
     TAG_FLOAT,
+    TAG_STRING,
     TAG_CLOSURE,
     stringValue,
   });
+
+  const parser = createParserRuntime({
+    RC_SUCCESS,
+    RC_ERR_UNIMPLEMENTED,
+    writeOut,
+    intValue,
+    newIntHandle,
+    newCharHandle,
+    invokeClosure,
+    tuple2,
+    stringValue,
+  });
+
+  const taskRuntime = createTaskRuntime({
+    RC_SUCCESS,
+    RC_ERR_UNIMPLEMENTED,
+    allocHandle,
+    readHandle,
+    writeOut,
+    intValue,
+    stringValue,
+    invokeClosure,
+    tuple2,
+    tupleFirst,
+    tupleSecond,
+    newIntHandle,
+    newStringHandle,
+    cmdNoneHandle,
+    TAG_TUPLE2,
+    TAG_INT,
+    TAG_RESULT,
+    TAG_CMD,
+    TAG_RECORD,
+    TAG_LIST,
+    TAG_MAYBE,
+    dispatchPlatformMsg,
+    jsonDecodeRunString: json.jsonDecodeRunString,
+    readOutSlot: (slot) => readHandle(view().getUint32(slot, true)),
+    jsonBodyTextFromValue: (valuePtr) => JSON.stringify(json.unwrapJsonValue(valuePtr)),
+    bytesDecodeRun: (outPtr, decoderPtr, bytesPtr) =>
+      bytes.bytesDecode(outPtr, decoderPtr, bytesPtr),
+    newBytesFromView: (view) => bytes.newBytesHandle(view),
+    bytesView: (ptr) => bytes.bytesView(ptr),
+    fetchFn: typeof fetch !== "undefined" ? fetch.bind(globalThis) : null,
+    newList,
+    unitHandle: UNIT_HANDLE,
+    constructorTags,
+    jsonDecodeErrorToString: json.decodeErrorToString,
+  });
+
+  const http = createHttpRuntime({
+    RC_SUCCESS,
+    RC_ERR_UNIMPLEMENTED,
+    allocHandle,
+    readHandle,
+    writeOut,
+    intValue,
+    stringValue,
+    listItems,
+    tuple2,
+    newIntHandle,
+    newStringHandle,
+    newList,
+    invokeClosure,
+    retain,
+    release,
+    unitHandle: UNIT_HANDLE,
+    TAG_RECORD,
+    TAG_LIST,
+    TAG_STRING,
+    TAG_INT,
+    TAG_CMD,
+    TAG_RESULT,
+    TAG_TUPLE2,
+    taskSucceed: taskRuntime.taskSucceed,
+    taskFail: taskRuntime.taskFail,
+    cmdNoneHandle,
+  });
+
+  const fileRuntime = createFileRuntime({
+    RC_SUCCESS,
+    allocHandle,
+    readHandle,
+    writeOut,
+    stringValue,
+    newList,
+    newStringHandle,
+    cmdNoneHandle,
+    writeTaskSucceed: taskRuntime.taskSucceed,
+    unitValue: () => newIntHandle(0),
+    TAG_RECORD,
+    TAG_STRING,
+    TAG_CMD,
+    invokeClosure,
+    dispatchPlatformMsg,
+  });
+
+  const resultOkHandle = (valueHandle) =>
+    allocHandle({ tag: TAG_RESULT, isOk: true, value: valueHandle | 0 });
+
+  const resultErrHandle = (valueHandle) =>
+    allocHandle({ tag: TAG_RESULT, isOk: false, value: valueHandle | 0 });
+
+  const randomRuntime = createRandomRuntime({
+    RC_SUCCESS,
+    allocHandle,
+    readHandle,
+    writeOut,
+    intValue,
+    invokeClosure,
+    cmdNoneHandle,
+    TAG_CMD,
+    TAG_RESULT,
+    TAG_CLOSURE,
+    newIntHandle,
+    dispatchPlatformMsg,
+  });
+
+  const regexRuntime = createRegexRuntime({
+    RC_SUCCESS,
+    writeOut,
+    stringValue,
+    maybeJustOwn,
+    maybeNothing,
+    newStringHandle,
+    newIntHandle,
+    readHandle,
+    newList,
+    resultOk: resultOkHandle,
+    resultErr: resultErrHandle,
+    TAG_STRING,
+    TAG_RECORD,
+    allocHandle,
+  });
+
+  http.setDispatchMsg(dispatchPlatformMsg);
+
+  const drainPlatformCommands = async (cmdPtr) => {
+    const ptr = cmdPtr | 0;
+    if (!ptr || cmdCellIsNone(ptr)) return;
+
+    const payload = readHandle(ptr);
+    if (!payload) return;
+
+    if (payload.tag === TAG_CMD) {
+      if (payload.kind === "http") {
+        await http.drainHttpCommands(ptr, bytes);
+        return;
+      }
+      if (payload.kind === "task") {
+        await taskRuntime.drainTaskCmd(ptr);
+        return;
+      }
+      if (payload.kind === "random_generate") {
+        randomRuntime.drainRandomCommands(ptr);
+        return;
+      }
+      fileRuntime.drainFileCommands(ptr);
+      return;
+    }
+
+    if (payload.tag === TAG_RECORD) {
+      const tag = intValue(payload.fields[0]);
+      if (tag === 2) {
+        for (const item of listItems(payload.fields[1] | 0)) {
+          await drainPlatformCommands(item);
+        }
+        return;
+      }
+      if (tag === 3) {
+        await drainPlatformCommands(payload.fields[2] | 0);
+      }
+    }
+  };
 
   cloneIncomingPortPayload = (payloadPtr) => {
     const ptr = payloadPtr | 0;
@@ -3379,29 +4412,65 @@ export function createRcRuntime({ immortalStrings = {} } = {}) {
     return cloneHandleForProgram(ptr);
   };
 
-  const newBootUrl = () => {
-    const path = newStringHandle("/");
-    const host = newStringHandle("localhost");
-    const protocol = newIntHandle(1);
-    const nothing = allocHandle({ tag: TAG_MAYBE, value: null });
-    // Elm Url record: protocol, host, port_, path, query, fragment (path at index 3).
-    return allocHandle({
-      tag: TAG_RECORD,
-      fields: [protocol, host, nothing, path, nothing, nothing],
+  deliverIncomingPortFn = async (portName, payloadInput) => {
+    if (!liveBrowser) return { rc: RC_ERR_UNIMPLEMENTED, modelPtr: 0 };
+    let payloadPtr = payloadInput | 0;
+    if (payloadInput instanceof Uint8Array) {
+      payloadPtr = bytes.newBytesHandle(
+        new DataView(payloadInput.buffer, payloadInput.byteOffset, payloadInput.byteLength)
+      );
+    }
+    const initFn = recordField(liveBrowser.implPtr, 0);
+    const applied = applyIncomingPorts(liveBrowser.implPtr, initFn, liveBrowser.modelPtr, {
+      [portName]: payloadPtr,
+    });
+    if (applied.rc !== RC_SUCCESS) return applied;
+    liveBrowser.modelPtr = applied.modelPtr | 0;
+    const viewResult = invokeClosure(liveBrowser.viewFn, [liveBrowser.modelPtr]);
+    if (viewResult.rc === RC_SUCCESS) {
+      mountViewHandle(viewResult.value);
+    }
+    return applied;
+  };
+
+  navigationRuntime = createNavigationRuntime({
+    RC_SUCCESS,
+    invokeClosure,
+    dispatchPlatformMsg,
+    newIntHandle,
+    readHandle,
+    unionTagAsInt,
+    urlRuntime: urlRuntimeApi,
+    routeBytes: routeBytesRuntime,
+    deliverIncomingPort: deliverIncomingPortFn,
+  });
+
+  const bootUrlFromEnvironment = () => {
+    if (typeof window !== "undefined" && urlRuntimeApi) {
+      return urlRuntimeApi.urlFromLocation(window.location);
+    }
+    return urlRuntimeApi.urlFromParts({
+      protocol: "http:",
+      host: "localhost",
+      port: "",
+      pathname: "/",
+      search: "",
+      hash: "",
     });
   };
 
   const BOOT_INPUT_SCRATCH = 8192;
   createDefaultBootInputs = () => {
-    const url = newBootUrl();
+    const url = bootUrlFromEnvironment();
+    const key = navigationRuntime ? navigationRuntime.newNavigationKey() : newIntHandle(1);
 
     if (!memory) {
-      return { flags: 0, url, key: 0 };
+      return { flags: 0, url, key };
     }
 
     json.jsonCmd(BOOT_INPUT_SCRATCH, 7);
     const flags = view().getUint32(BOOT_INPUT_SCRATCH, true);
-    return { flags, url, key: 0 };
+    return { flags, url, key };
   };
 
   const implementations = {
@@ -3572,11 +4641,116 @@ export function createRcRuntime({ immortalStrings = {} } = {}) {
     array_slice: arraySlice,
     array_to_indexed_list: arrayToIndexedList,
     array_to_list: arrayToList,
-    task_succeed: taskSucceed,
-    task_fail: taskFail,
-    process_spawn: processSpawn,
-    process_sleep: processSleep,
-    process_kill: processKill,
+    task_succeed: taskRuntime.taskSucceed,
+    task_fail: taskRuntime.taskFail,
+    task_map: taskRuntime.taskMap,
+    task_map2: taskRuntime.taskMap2,
+    task_and_then: taskRuntime.taskAndThen,
+    task_on_error: taskRuntime.taskOnError,
+    task_perform: taskRuntime.taskPerform,
+    backend_task_http_get_json: taskRuntime.backendTaskHttpGetJson,
+    backend_task_http_get: taskRuntime.backendTaskHttpGet,
+    backend_task_http_expect_json: taskRuntime.backendTaskHttpExpectJson,
+    backend_task_http_expect_string: taskRuntime.backendTaskHttpExpectString,
+    backend_task_http_expect_whatever: taskRuntime.backendTaskHttpExpectWhatever,
+    backend_task_http_expect_bytes: taskRuntime.backendTaskHttpExpectBytes,
+    backend_task_http_with_metadata: taskRuntime.backendTaskHttpWithMetadata,
+    backend_task_http_empty_body: taskRuntime.backendTaskHttpEmptyBody,
+    backend_task_http_string_body: taskRuntime.backendTaskHttpStringBody,
+    backend_task_http_json_body: taskRuntime.backendTaskHttpJsonBody,
+    backend_task_http_bytes_body: taskRuntime.backendTaskHttpBytesBody,
+    backend_task_http_request: taskRuntime.backendTaskHttpRequest,
+    backend_task_http_post: taskRuntime.backendTaskHttpPost,
+    backend_task_http_get_with_options: taskRuntime.backendTaskHttpGetWithOptions,
+    time_now_millis: taskRuntime.timeNowMillis,
+    time_zone_offset_minutes: (outPtr) => {
+      const jsOffset = typeof Date !== "undefined" ? new Date().getTimezoneOffset() : 0;
+      writeOut(outPtr, newIntHandle(-jsOffset));
+      return RC_SUCCESS;
+    },
+    time_here: (outPtr) => {
+      const jsOffset = typeof Date !== "undefined" ? new Date().getTimezoneOffset() : 0;
+      const zone = allocHandle({
+        tag: TAG_RECORD,
+        fields: [newStringHandle("here"), newIntHandle(-jsOffset)],
+      });
+      writeOut(outPtr, zone);
+      return RC_SUCCESS;
+    },
+    browser_get_viewport: (outPtr) => {
+      const w = typeof window !== "undefined" ? window.innerWidth | 0 : 0;
+      const h = typeof window !== "undefined" ? window.innerHeight | 0 : 0;
+      const scene = allocHandle({
+        tag: TAG_RECORD,
+        fields: [newIntHandle(w), newIntHandle(h)],
+      });
+      const viewport = allocHandle({
+        tag: TAG_RECORD,
+        fields: [newIntHandle(0), newIntHandle(0), newIntHandle(w), newIntHandle(h)],
+      });
+      const domViewport = allocHandle({ tag: TAG_RECORD, fields: [scene, viewport] });
+      return taskRuntime.taskSucceed(outPtr, domViewport);
+    },
+    url_from_string: (outPtr, urlPtr) => {
+      const parsed = urlRuntimeApi.urlFromString(stringValue(urlPtr | 0));
+      writeOut(outPtr, parsed);
+      return RC_SUCCESS;
+    },
+    process_spawn: taskRuntime.processSpawn,
+    process_sleep: taskRuntime.processSleep,
+    process_kill: taskRuntime.processKill,
+    url_percent_encode: (outPtr, segmentPtr) => {
+      const encoded = encodeURIComponent(stringValue(segmentPtr));
+      writeOut(outPtr, newStringHandle(encoded));
+      return RC_SUCCESS;
+    },
+    url_percent_decode: (outPtr, segmentPtr) => {
+      try {
+        const decoded = decodeURIComponent(stringValue(segmentPtr));
+        writeOut(outPtr, newStringHandle(decoded));
+        return RC_SUCCESS;
+      } catch (_err) {
+        writeOut(outPtr, segmentPtr | 0);
+        retain(null, segmentPtr | 0);
+        return RC_SUCCESS;
+      }
+    },
+    http_empty_body: http.httpEmptyBody,
+    http_pair: http.httpPair,
+    http_to_data_view: http.httpToDataView,
+    http_expect: http.httpExpect,
+    http_command: http.httpCommand,
+    http_cancel: http.httpCancel,
+    file_select: fileRuntime.fileSelect,
+    file_download: fileRuntime.fileDownload,
+    file_download_task: fileRuntime.fileDownloadTask,
+    random_generate: randomRuntime.randomGenerate,
+    regex_from_string: regexRuntime.regexFromString,
+    regex_find: regexRuntime.regexFind,
+    regex_contains: regexRuntime.regexContains,
+    regex_replace: regexRuntime.regexReplace,
+    // WASM call_runtime emits (out, prefix/suffix, str) for these imports — opposite of
+    // the elmc_string_chop_* C symbol parameter order in special_values.
+    string_chop_end: (outPtr, suffixPtr, strPtr) => {
+      const str = stringValue(strPtr);
+      const suffix = stringValue(suffixPtr);
+      const out =
+        suffix && str.endsWith(suffix) ? str.slice(0, str.length - suffix.length) : str;
+      writeOut(outPtr, newStringHandle(out));
+      return RC_SUCCESS;
+    },
+    string_chop_start: (outPtr, prefixPtr, strPtr) => {
+      const str = stringValue(strPtr);
+      const prefix = stringValue(prefixPtr);
+      const out = prefix && str.startsWith(prefix) ? str.slice(prefix.length) : str;
+      writeOut(outPtr, newStringHandle(out));
+      return RC_SUCCESS;
+    },
+    string_chop_forward_slashes: (outPtr, strPtr) => {
+      const out = stringValue(strPtr).replace(/\\/g, "/").replace(/\/+/g, "/");
+      writeOut(outPtr, newStringHandle(out));
+      return RC_SUCCESS;
+    },
     record_new: recordNew,
     record_new_values_ints: recordNewValuesInts,
     record_get: recordGet,
@@ -3817,6 +4991,14 @@ export function createRcRuntime({ immortalStrings = {} } = {}) {
         return RC_SUCCESS;
       }
 
+      if (kind === HTML_KIND_PROPERTY) {
+        const keyPtr = params[0] | 0;
+        const valuePtr = params[1] | 0;
+        const handle = newVdomProperty(stringValue(keyPtr), stringValue(valuePtr));
+        writeOut(outPtr, handle);
+        return RC_SUCCESS;
+      }
+
       if (kind === HTML_KIND_STYLE) {
         const propPtr = params[0] | 0;
         const valPtr = params[1] | 0;
@@ -3832,20 +5014,73 @@ export function createRcRuntime({ immortalStrings = {} } = {}) {
           writeOut(outPtr, asHandle(mapperPtr));
           return RC_SUCCESS;
         }
-        const resolved = resolveHtml(asHandle(childPtr));
-        writeOut(outPtr, cloneVdom(resolved));
+        const child = asHandle(childPtr);
+        const mapper = asHandle(mapperPtr);
+        // Nesting builders must retain every nested handle — caller's owned
+        // shadows may be transfer-nulled / released at epilogue.
+        if (handles.has(child)) retain(null, child);
+        if (handles.has(mapper)) retain(null, mapper);
+        writeOut(
+          outPtr,
+          allocHandle({
+            tag: TAG_VDOM,
+            kind: "map",
+            mapper: mapper | 0,
+            child,
+          })
+        );
         return RC_SUCCESS;
       }
 
       if (kind === HTML_KIND_LAZY) {
         const fnPtr = params[0] | 0;
         const argPtr = params[1] | 0;
-        const forced = forceLazyHtml(fnPtr, argPtr);
-        if (forced.rc !== RC_SUCCESS) {
-          writeOut(outPtr, 0);
-          return forced.rc;
-        }
-        writeOut(outPtr, forced.value);
+        writeOut(
+          outPtr,
+          allocHandle({ tag: TAG_VDOM, kind: "lazy", fn: fnPtr, args: [argPtr | 0] })
+        );
+        return RC_SUCCESS;
+      }
+
+      if (kind === HTML_KIND_LAZY2 || kind === HTML_KIND_LAZY3 || kind === HTML_KIND_LAZY4) {
+        const fnPtr = params[0] | 0;
+        const argCount = kind - HTML_KIND_LAZY + 1;
+        const argPtrs = params.slice(1, 1 + argCount).map((p) => p | 0);
+        writeOut(
+          outPtr,
+          allocHandle({ tag: TAG_VDOM, kind: "lazy", fn: fnPtr, args: argPtrs })
+        );
+        return RC_SUCCESS;
+      }
+
+      if (kind === HTML_KIND_KEYED) {
+        const tagPtr = params[0] | 0;
+        const keyedPtr = params[1] | 0;
+        const keyedChildren = keyedChildrenFromList(keyedPtr);
+        const handle = newVdomNode(
+          stringValue(tagPtr),
+          [],
+          keyedChildren.map((entry) => entry.child),
+          null,
+          keyedChildren
+        );
+        writeOut(outPtr, handle);
+        return RC_SUCCESS;
+      }
+
+      if (kind === HTML_KIND_KEYED_NS) {
+        const nsPtr = params[0] | 0;
+        const tagPtr = params[1] | 0;
+        const keyedPtr = params[2] | 0;
+        const keyedChildren = keyedChildrenFromList(keyedPtr);
+        const handle = newVdomNode(
+          stringValue(tagPtr),
+          [],
+          keyedChildren.map((entry) => entry.child),
+          stringValue(nsPtr),
+          keyedChildren
+        );
+        writeOut(outPtr, handle);
         return RC_SUCCESS;
       }
 
@@ -3854,9 +5089,38 @@ export function createRcRuntime({ immortalStrings = {} } = {}) {
         const attrsPtr = params[1] | 0;
         const childrenPtr = params[2] | 0;
         const attrs = attrsFromList(attrsPtr);
-        const children = listItems(childrenPtr).map((item) => cloneVdom(asHandle(item)));
+        const children = listItems(childrenPtr).map((item) => adoptVdom(item));
         const handle = newVdomNode(stringValue(tagPtr), attrs, children);
         writeOut(outPtr, handle);
+        return RC_SUCCESS;
+      }
+
+      if (kind === HTML_KIND_NODE_NS) {
+        const nsPtr = params[0] | 0;
+        const tagPtr = params[1] | 0;
+        const attrsPtr = params[2] | 0;
+        const childrenPtr = params[3] | 0;
+        const attrs = attrsFromList(attrsPtr);
+        const children = listItems(childrenPtr).map((item) => adoptVdom(item));
+        const handle = newVdomNode(
+          stringValue(tagPtr),
+          attrs,
+          children,
+          stringValue(nsPtr)
+        );
+        writeOut(outPtr, handle);
+        return RC_SUCCESS;
+      }
+
+      if (kind === HTML_KIND_EVENT) {
+        const aPtr = params[0] | 0;
+        const bPtr = params[1] | 0;
+        const cPtr = params[2] | 0;
+        if (cPtr) {
+          writeOut(outPtr, newVdomEvent(stringValue(aPtr), cPtr | 0, bPtr | 0));
+        } else {
+          writeOut(outPtr, newVdomEvent(stringValue(aPtr), bPtr | 0, 0));
+        }
         return RC_SUCCESS;
       }
 
@@ -3867,7 +5131,7 @@ export function createRcRuntime({ immortalStrings = {} } = {}) {
     browser_cmd: (outPtr, kindPtr, ...params) => {
       const kind = wasmScalarArg(kindPtr);
 
-      if (kind === BROWSER_KIND_APPLICATION || kind === BROWSER_KIND_ELEMENT || kind === BROWSER_KIND_DOCUMENT) {
+      if (kind === BROWSER_KIND_APPLICATION || kind === BROWSER_KIND_ELEMENT || kind === BROWSER_KIND_DOCUMENT || kind === BROWSER_KIND_WORKER) {
         const implPtr = cloneRecordHandle(params[0] | 0);
         writeOut(outPtr, newBrowserProgram(implPtr));
         return RC_SUCCESS;
@@ -3889,12 +5153,30 @@ export function createRcRuntime({ immortalStrings = {} } = {}) {
       if (kind === BROWSER_KIND_PUSH_URL || kind === BROWSER_KIND_REPLACE_URL) {
         const urlPtr = (params[1] ?? params[0]) | 0;
         if (typeof window !== "undefined" && urlPtr) {
-          const url = stringValue(urlPtr);
+          const pending = navigationRuntime?.consumePendingPushUrl?.();
+          let url = pending || normalizePushUrl(stringValue(urlPtr));
           if (kind === BROWSER_KIND_PUSH_URL) {
             window.history.pushState({}, "", url);
           } else {
             window.history.replaceState({}, "", url);
           }
+          navigationRuntime?.notifyUrlChangeAfterPush?.();
+        }
+        writeOut(outPtr, cmdNoneHandle());
+        return RC_SUCCESS;
+      }
+
+      if (kind === BROWSER_KIND_BACK) {
+        if (typeof window !== "undefined") {
+          window.history.back();
+        }
+        writeOut(outPtr, cmdNoneHandle());
+        return RC_SUCCESS;
+      }
+
+      if (kind === BROWSER_KIND_FORWARD) {
+        if (typeof window !== "undefined") {
+          window.history.forward();
         }
         writeOut(outPtr, cmdNoneHandle());
         return RC_SUCCESS;
@@ -3910,22 +5192,46 @@ export function createRcRuntime({ immortalStrings = {} } = {}) {
         return RC_SUCCESS;
       }
 
+      if (kind === BROWSER_KIND_FOCUS) {
+        const idPtr = params[0] | 0;
+        if (typeof document !== "undefined" && idPtr) {
+          const el = document.getElementById(stringValue(idPtr));
+          if (el && typeof el.focus === "function") el.focus();
+        }
+        writeOut(outPtr, cmdNoneHandle());
+        return RC_SUCCESS;
+      }
+
+      if (kind === BROWSER_KIND_SET_TITLE) {
+        const titlePtr = params[0] | 0;
+        if (typeof document !== "undefined" && titlePtr) {
+          document.title = stringValue(titlePtr);
+        }
+        writeOut(outPtr, cmdNoneHandle());
+        return RC_SUCCESS;
+      }
+
       console.warn("[elmc-wasm-runtime] browser_cmd unimplemented kind", kind, { params });
       writeOut(outPtr, cmdNoneHandle());
       return RC_SUCCESS;
     },
     dom_sub: (outPtr, kindPtr, ...params) => {
       const kind = wasmScalarArg(kindPtr);
-      if (kind === 0) {
+      if (kind === DOM_SUB_NONE) {
         writeOut(outPtr, newIntHandle(0));
         return RC_SUCCESS;
       }
-      console.warn("[elmc-wasm-runtime] dom_sub unimplemented", { kindPtr, params });
-      writeOut(outPtr, 0);
-      return RC_ERR_UNIMPLEMENTED;
+      const subHandle = allocHandle({
+        tag: TAG_SUB,
+        domKind: kind | 0,
+        params: params.map((p) => p | 0),
+      });
+      writeOut(outPtr, subHandle);
+      return RC_SUCCESS;
     },
     json_cmd: (outPtr, kindPtr, ...params) => json.jsonCmd(outPtr, wasmScalarArg(kindPtr), ...params),
     bytes_cmd: (outPtr, kindPtr, ...params) => bytes.bytesCmd(outPtr, wasmScalarArg(kindPtr), ...params),
+    parser_cmd: (outPtr, kindPtr, ...params) => parser.parserCmd(outPtr, wasmScalarArg(kindPtr), ...params),
     bytes_from_list: (outPtr, listPtr) => bytes.bytesFromList(outPtr, listPtr),
     json_decode_value: (outPtr, decoderPtr, valuePtr) =>
       json.jsonDecodeRun(outPtr, decoderPtr, valuePtr),
@@ -4053,7 +5359,7 @@ export function createRcRuntime({ immortalStrings = {} } = {}) {
       return RC_SUCCESS;
     },
     json_decode_error_to_string: (outPtr, errPtr) => {
-      writeOut(outPtr, newStringHandle(stringValue(errPtr)));
+      writeOut(outPtr, newStringHandle(json.decodeErrorToString(errPtr)));
       return RC_SUCCESS;
     },
     json_encode_string: (outPtr, stringPtr) => {
@@ -4212,6 +5518,7 @@ export function createRcRuntime({ immortalStrings = {} } = {}) {
     pushCallRoots,
     popCallRoots,
     buildImport,
+    reachCacheStats: () => ({ hits: reachCacheHits, misses: reachCacheMisses }),
     unboxInt,
     checkBalanced,
     debugRcState,
@@ -4225,6 +5532,16 @@ export function createRcRuntime({ immortalStrings = {} } = {}) {
     mountViewHandle,
     drainOutgoingPorts,
     sendIncomingPort,
+    deliverIncomingPort: (portName, payload) => deliverIncomingPortFn?.(portName, payload),
+    dispatchPlatformMsg: (msgPtr) => dispatchPlatformMsg(msgPtr | 0),
+    registerRouteBytes: (path, routeBytes) => routeBytesRuntime?.registerRoute(path, routeBytes),
+    loadRouteBytesManifest: (url) => routeBytesRuntime?.loadManifest(url),
+    setRouteBytesSiteRoot: (pageHtmlUrl) =>
+      routeBytesRuntime?.setSiteRootFromPageHtml(pageHtmlUrl),
+    urlFromLocation: (location) => urlRuntimeApi?.urlFromLocation(location) ?? 0,
+    stringValue,
+    newBytesFromUint8Array: (arr) =>
+      bytes.newBytesHandle(new DataView(arr.buffer, arr.byteOffset, arr.byteLength)),
     bytesFromList: (list) => {
       const scratch = 8192;
       const listHandle = newList(list);
@@ -4233,7 +5550,5 @@ export function createRcRuntime({ immortalStrings = {} } = {}) {
       if (rc !== RC_SUCCESS) return 0;
       return view().getUint32(scratch, true);
     },
-    newBytesFromUint8Array: (arr) =>
-      bytes.newBytesHandle(new DataView(arr.buffer, arr.byteOffset, arr.byteLength)),
   };
 }

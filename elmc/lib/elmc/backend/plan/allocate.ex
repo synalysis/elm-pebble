@@ -29,6 +29,7 @@ defmodule Elmc.Backend.Plan.Allocate do
 
   defp terminator_instr({:br_if, _then_id, _else_id, cond}), do: %{terminator: true, uses: [cond]}
   defp terminator_instr({:switch_tag, subject, _arms, _default}), do: %{terminator: true, uses: [subject]}
+  defp terminator_instr({:ret, reg}) when is_integer(reg), do: %{terminator: true, uses: [reg]}
   defp terminator_instr(_), do: nil
 
   defp live_intervals(instrs, reg_count) do

@@ -1,8 +1,9 @@
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { loadElmcWasm, RC_SUCCESS } from "../../../elmc-wasm-runtime/host/loader.js";
+import { RC_SUCCESS } from "../../../elmc-wasm-runtime/host/loader.js";
 import { decodePageBytesFromHtml } from "../../../elmc-wasm-runtime/host/page_bytes.js";
+import { loadWasmFromBuildDir } from "./wasm_probe_manifest.js";
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "../../..");
 
@@ -15,18 +16,7 @@ if (!buildDir) {
   process.exit(2);
 }
 
-const manifest = JSON.parse(
-  readFileSync(`${buildDir}/wasm/elmc_wasm.manifest.json`, "utf8")
-);
-
-const wasmBytes = readFileSync(`${buildDir}/wasm/app.wasm`);
-
-const { helpers, callExport } = await loadElmcWasm({
-  wasmBytes,
-  manifestImports: manifest.imports || [],
-  manifestClosures: manifest.closures || [],
-  immortalStrings: manifest.immortal_strings || {},
-});
+const { helpers, callExport } = await loadWasmFromBuildDir(buildDir);
 
 let pageBytesSource;
 
@@ -58,7 +48,9 @@ if (rc !== RC_SUCCESS) {
 }
 
 // Allocate page bytes after main so init epilogue cannot release the handle.
-const bytesHandle = helpers.newBytesFromUint8Array(new Uint8Array(pageBytesSource));
+const pageBytes = new Uint8Array(pageBytesSource);
+helpers.registerRouteBytes?.("/", pageBytes);
+const bytesHandle = helpers.newBytesFromUint8Array(pageBytes);
 
 const boot = helpers.bootBrowserProgram(programHandle, {
   incomingPorts: { pageDataFromJs: bytesHandle },
@@ -72,7 +64,9 @@ if (boot.rc !== RC_SUCCESS) {
 const EXPECTED_TITLE = "Elm Pebble | Watch faces & apps in Elm";
 
 if (boot.title === "Page Data Error") {
-  console.error(`title still error page: ${JSON.stringify(boot.title)}`);
+  console.error(
+    "pageData still Err after pageDataFromJs (likely ResponseSketch wire3 decode failed in WASM)"
+  );
   process.exit(1);
 }
 

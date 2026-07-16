@@ -46,6 +46,8 @@ defmodule Elmc.Runtime.JsonSections do
     ElmcValue *elmc_json_encode_array(ElmcValue *f, ElmcValue *items);
     ElmcValue *elmc_json_encode_set(ElmcValue *f, ElmcValue *items);
     ElmcValue *elmc_json_encode_object(ElmcValue *pairs);
+    ElmcValue *elmc_json_encode_add_field(ElmcValue *key, ElmcValue *value, ElmcValue *obj);
+    ElmcValue *elmc_json_encode_add_entry(ElmcValue *func, ElmcValue *value, ElmcValue *arr);
     ElmcValue *elmc_json_encode_dict(ElmcValue *key_fn, ElmcValue *val_fn, ElmcValue *dict);
     ElmcValue *elmc_json_encode_encode(ElmcValue *indent, ElmcValue *value);
 
@@ -1515,6 +1517,24 @@ defmodule Elmc.Runtime.JsonSections do
       }
       elmc_json_buf_append_char(&buf, '}');
       return elmc_json_buf_to_string(&buf);
+    }
+
+    ElmcValue *elmc_json_encode_add_field(ElmcValue *key, ElmcValue *value, ElmcValue *obj) {
+      ElmcValue *pair = NULL;
+      if (elmc_tuple2(&pair, key, value) != RC_SUCCESS) pair = NULL;
+      ElmcValue *out = NULL;
+      if (elmc_list_cons(&out, pair, obj) != RC_SUCCESS) out = NULL;
+      if (pair) elmc_release(pair);
+      return out;
+    }
+
+    ElmcValue *elmc_json_encode_add_entry(ElmcValue *func, ElmcValue *value, ElmcValue *arr) {
+      ElmcValue *args[] = { value };
+      ElmcValue *encoded = elmc_closure_call(func, args, 1);
+      ElmcValue *out = NULL;
+      if (elmc_list_cons(&out, encoded, arr) != RC_SUCCESS) out = NULL;
+      if (encoded) elmc_release(encoded);
+      return out;
     }
 
     ElmcValue *elmc_json_encode_dict(ElmcValue *key_fn, ElmcValue *val_fn, ElmcValue *dict) {

@@ -33,7 +33,8 @@ defmodule Elmc.PlanDefaultsTest do
 
     assert Defaults.apply_defaults(%{plan_ir_mode: :shadow, plan_ir_strict: false}) == %{
              plan_ir_mode: :shadow,
-             plan_ir_strict: false
+             plan_ir_strict: false,
+             targets: [:c]
            }
   end
 

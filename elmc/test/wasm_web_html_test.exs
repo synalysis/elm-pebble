@@ -30,7 +30,8 @@ defmodule Elmc.WasmWebHtmlTest do
       "ok",
       fn wat ->
         assert wat =~ "html_cmd"
-        assert wat =~ "(func $elmc_fn_Html_code"
+        # `tag = code` forwards as Main.tag(attrs, children) → html_cmd "code"
+        assert wat =~ "(func $elmc_fn_Main_tag"
         assert wat =~ "(param $param0 i32) (param $param1 i32)"
       end
     )
@@ -92,7 +93,12 @@ defmodule Elmc.WasmWebHtmlTest do
         refute output =~ ~s/text-gray-50/
       end,
       fn manifest ->
-        values = Map.values(manifest["immortal_strings"] || %{})
+        values =
+          case manifest["immortal_strings"] do
+            list when is_list(list) -> list
+            map when is_map(map) -> Map.values(map)
+            _ -> []
+          end
         assert "shrink-0" in values
         assert "md:" in values
         assert "dark:" in values
@@ -173,7 +179,7 @@ defmodule Elmc.WasmWebHtmlTest do
         manifest = out_dir |> ProjectWriter.manifest_path() |> File.read!() |> Jason.decode!()
         manifest_assert.(manifest)
 
-        refute Enum.any?(manifest["stub_functions"] || [], fn stub ->
+        refute Enum.any?(ProjectWriter.stub_functions(out_dir), fn stub ->
                  stub["module"] == "Elm.Kernel.VirtualDom" and stub["name"] in ["text", "node"]
                end)
 

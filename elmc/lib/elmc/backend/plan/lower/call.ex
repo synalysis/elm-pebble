@@ -1,11 +1,26 @@
 defmodule Elmc.Backend.Plan.Lower.Call do
   @moduledoc false
 
-  alias Elmc.Backend.CCodegen.FunctionEmit
+  alias Elmc.Backend.CCodegen.{FunctionEmit, Util}
   alias Elmc.Backend.Plan.Builder
   alias Elmc.Backend.Plan.Context
   alias Elmc.Backend.Plan.Lower.{Cmd, Expr, Lambda, MaybeMap, Platform.Web, Port, Record, SpecialValues}
   alias Elmc.Backend.Plan.Types
+
+  @browser_cmd_kind_names %{
+    1 => "application",
+    2 => "load",
+    3 => "pushUrl",
+    4 => "replaceUrl",
+    5 => "setViewport",
+    6 => "element",
+    7 => "document",
+    8 => "worker",
+    9 => "focus",
+    10 => "back",
+    11 => "forward",
+    12 => "setTitle"
+  }
 
   @spec compile_call(Types.ir_expr(), Context.t(), Builder.t()) ::
           {:ok, Types.reg() | nil, Builder.t()} | :unsupported
@@ -167,6 +182,33 @@ defmodule Elmc.Backend.Plan.Lower.Call do
   defp compile_special_rewrite(%{op: :pebble_cmd} = rewritten, _args, ctx, b),
     do: Cmd.compile(rewritten, ctx, b)
 
+  defp compile_special_rewrite(%{op: :browser_cmd} = rewritten, _args, ctx, b) do
+    kind = Map.get(rewritten, :kind)
+    params = Map.get(rewritten, :params, [])
+
+    kind_int =
+      case kind do
+        value when is_integer(value) -> value
+        %{op: :int_literal, value: value} when is_integer(value) -> value
+        %{value: value} when is_integer(value) -> value
+        _ -> nil
+      end
+
+    kind_name = kind_int && Map.get(@browser_cmd_kind_names, kind_int)
+
+    if kind_name do
+      Web.compile_browser_cmd(kind_name, params, ctx, b)
+    else
+      :unsupported
+    end
+  end
+
+  defp compile_special_rewrite(%{op: :html_cmd} = rewritten, _args, ctx, b),
+    do: Web.compile_html_cmd(rewritten, ctx, b)
+
+  defp compile_special_rewrite(%{op: :dom_sub} = rewritten, _args, ctx, b),
+    do: Web.compile_dom_sub(rewritten, ctx, b)
+
   defp compile_special_rewrite(
          %{op: :c_int_expr, value: "ELMC_PEBBLE_CMD_" <> _} = kind,
          args,
@@ -194,6 +236,8 @@ defmodule Elmc.Backend.Plan.Lower.Call do
   end
 
   defp compile_fn_call_target(module, name, args, ctx, b) do
+    {module, name} = rewrite_web_call_target(module, name)
+
     case Web.compile_html_call(module, name, args, ctx, b) do
       {:ok, dest, b1} ->
         {:ok, dest, b1}
@@ -249,7 +293,10 @@ defmodule Elmc.Backend.Plan.Lower.Call do
 
               :error ->
                 cond do
-                  args == [] and kernel_qualified_target?(module) ->
+                  html_element_partial?(module, name, args) ->
+                    compile_curried_lambda(module, name, ["attrs", "children"], args, ctx, b)
+
+                  args == [] and zero_arg_fn_ref?(module) ->
                     compile_kernel_fn_ref(module, name, ctx, b)
 
                   true ->
@@ -265,9 +312,38 @@ defmodule Elmc.Backend.Plan.Lower.Call do
     end
   end
 
+  defp html_element_partial?(module, name, args)
+       when is_binary(module) and is_binary(name) and is_list(args) do
+    opts = Process.get(:elmc_codegen_opts, %{})
+
+    Elmc.Backend.Plan.Lower.Platform.Web.web_target?(opts) and
+      module == "Html" and
+      Elmc.Backend.Plan.Lower.Platform.Web.html_element_tag?(name) and
+      length(args) < 2
+  end
+
+  defp html_element_partial?(_, _, _), do: false
+
+  # Do not special-value 0-arg Kernel refs into multi-arg `runtime_fn_lambda`s here:
+  # those lambdas can be eta-folded into the enclosing Json.* wrapper and keep
+  # placeholder names (`__f`, `__decoder`) instead of the wrapper's params.
+  # Applied Kernel calls still hit SpecialValues via the normal call path; stubs
+  # cover remaining missing `elmc_fn_Elm_Kernel_*` symbols.
   defp compile_kernel_fn_ref(module, name, ctx, b) do
-    arg = "__kernel_fn_ref__"
     qualified = "#{module}.#{name}"
+
+    case SpecialValues.special_value_from_target(qualified, []) do
+      %{op: op} = rewritten when op != :unsupported ->
+        compile_special_rewrite(rewritten, [], ctx, b)
+
+      _ ->
+        compile_kernel_fn_ref_lambda(module, name, ctx, b)
+    end
+  end
+
+  defp compile_kernel_fn_ref_lambda(module, name, ctx, b) do
+    qualified = "#{module}.#{name}"
+    arg = "__kernel_fn_ref__"
 
     Lambda.compile(
       %{
@@ -284,11 +360,28 @@ defmodule Elmc.Backend.Plan.Lower.Call do
     )
   end
 
+  # Package shims: elm-pages internal modules that are aliases of elm/browser / elm/core.
+  defp rewrite_web_call_target("Pages.Internal.String", name), do: {"String", name}
+  defp rewrite_web_call_target("Pages", "Internal.String." <> rest), do: {"String", rest}
+  defp rewrite_web_call_target(module, name), do: {module, name}
+
   defp resolve_delegate_call_target(module, name, args, decl_map) when is_list(args) do
     decl = Map.get(decl_map, {module, name})
 
-    if args != [] and is_map(decl) and
-         length(args) > length(Map.get(decl, :args, []) |> List.wrap()) do
+    # Compare against *effective* arity (type/delegate), not raw IR `args: []` on
+    # elm/core aliases — otherwise `String.slice 1` looks oversaturated vs [] and
+    # incorrectly jumps to the Kernel callee with a partial arg list.
+    effective_arity =
+      if is_map(decl) do
+        decl
+        |> FunctionEmit.effective_decl_args(module, decl_map)
+        |> List.wrap()
+        |> length()
+      else
+        0
+      end
+
+    if args != [] and is_map(decl) and length(args) > effective_arity do
       case FunctionEmit.delegate_call_target(decl, module, decl_map) do
         {dmod, dname} -> {dmod, dname}
         nil -> {module, name}
@@ -407,23 +500,7 @@ defmodule Elmc.Backend.Plan.Lower.Call do
   end
 
   defp compile_forward_ref_load(ref, ctx, b) when is_binary(ref) do
-    {dest, b1} = Builder.fresh_reg(b)
-
-    op =
-      if Map.get(ctx, :letrec_in_closure) do
-        :forward_ref_load_captured
-      else
-        :forward_ref_load
-      end
-
-    {_, b2} =
-      Builder.emit(b1, op, %{
-        dest: dest,
-        args: %{ref: ref},
-        effects: Types.owned_effects(dest)
-      })
-
-    {:ok, dest, b2}
+    Expr.compile_forward_ref_load(ref, ctx, b)
   end
 
   defp compile_closure_call(callee_reg, args, ctx, b) do
@@ -543,29 +620,35 @@ defmodule Elmc.Backend.Plan.Lower.Call do
   def compile_top_level_ref(name, ctx, b) when is_binary(name) do
     module = ctx.module || "Main"
 
-    case Map.fetch(ctx.decl_map, {module, name}) do
-      {:ok, %{args: []}} ->
-        {dest, b1} = dest_for_call(ctx, b)
-        compile_fn_call_emit(module, name, [], dest, ctx, b1)
+    case compile_top_level_ref_in(module, name, ctx, b) do
+      {:ok, _, _} = ok ->
+        ok
 
-      {:ok, %{args: param_names}} when is_list(param_names) and param_names != [] ->
-        compile_top_level_closure(module, name, param_names, ctx, b)
-
-      :error ->
+      :unsupported ->
         # Many common names are implicitly imported from `Basics` (and friends) in Elm.
         # Lowering operates on unqualified `:var` nodes, so we provide a small, generic
         # fallback lookup here when the current module doesn't define the name.
-        case Map.fetch(ctx.decl_map, {"Basics", name}) do
-          {:ok, %{args: []}} ->
+        compile_top_level_ref_in("Basics", name, ctx, b)
+    end
+  end
+
+  defp compile_top_level_ref_in(module, name, ctx, b)
+       when is_binary(module) and is_binary(name) do
+    case Map.fetch(ctx.decl_map, {module, name}) do
+      {:ok, decl} ->
+        # elm/core aliases keep IR `args: []`; use type/delegate arity so `cons` /
+        # `slice` as first-class values become closures, not zero-arg calls.
+        case FunctionEmit.effective_decl_args(decl, module, ctx.decl_map) |> List.wrap() do
+          [] ->
             {dest, b1} = dest_for_call(ctx, b)
-            compile_fn_call_emit("Basics", name, [], dest, ctx, b1)
+            compile_fn_call_emit(module, name, [], dest, ctx, b1)
 
-          {:ok, %{args: param_names}} when is_list(param_names) and param_names != [] ->
-            compile_top_level_closure("Basics", name, param_names, ctx, b)
-
-          _ ->
-            :unsupported
+          param_names ->
+            compile_top_level_closure(module, name, param_names, ctx, b)
         end
+
+      :error ->
+        :unsupported
     end
   end
 
@@ -586,25 +669,28 @@ defmodule Elmc.Backend.Plan.Lower.Call do
   def parse_target(target, ctx, decl_map \\ nil) when is_binary(target) do
     decl_map = decl_map || Map.get(ctx, :decl_map, %{})
 
-    case String.split(target, ".") do
-      [name] ->
-        {ctx.module || "Main", name}
+    case Util.resolve_decl_key(target, decl_map) do
+      {module, name} ->
+        {module, name}
 
-      parts ->
-        name = List.last(parts)
-        full_module = parts |> Enum.drop(-1) |> Enum.join(".")
+      nil ->
+        case String.split(target, ".") do
+          [name] ->
+            {ctx.module || "Main", name}
 
-        cond do
-          Map.has_key?(decl_map, {full_module, name}) ->
-            {full_module, name}
+          parts ->
+            name = List.last(parts)
+            full_module = parts |> Enum.drop(-1) |> Enum.join(".")
 
-          kernel_qualified_target?(full_module) ->
-            {full_module, name}
+            cond do
+              kernel_qualified_target?(full_module) ->
+                {full_module, name}
 
-          true ->
-            case String.split(target, ".", parts: 2) do
-              [mod, rest] -> {mod, rest}
-              [single] -> {ctx.module || "Main", single}
+              true ->
+                case String.split(target, ".", parts: 2) do
+                  [mod, rest] -> {mod, rest}
+                  [single] -> {ctx.module || "Main", single}
+                end
             end
         end
     end
@@ -612,6 +698,10 @@ defmodule Elmc.Backend.Plan.Lower.Call do
 
   defp kernel_qualified_target?(module_name) when is_binary(module_name) do
     module_name == "Elm.Kernel" or String.starts_with?(module_name, "Elm.Kernel.")
+  end
+
+  defp zero_arg_fn_ref?(module_name) when is_binary(module_name) do
+    kernel_qualified_target?(module_name) or module_name == "Elm.JsArray"
   end
 
   defp dest_for_call(ctx, b) do
@@ -629,6 +719,23 @@ defmodule Elmc.Backend.Plan.Lower.Call do
 
   @doc false
   def compile_fn_call_emit(module, name, arg_regs, dest, ctx, b, arg_exprs \\ []) do
+    {module, name} = rewrite_web_call_target(module, name)
+    qualified = "#{module}.#{name}"
+    arg_exprs = List.wrap(arg_exprs)
+
+    case SpecialValues.special_value_from_target(qualified, arg_exprs) do
+      %{op: op} = rewritten when op in [:runtime_call, :call, :lambda, :browser_cmd, :html_cmd, :bytes_cmd, :json_cmd, :dom_sub, :parser_cmd] ->
+        case compile_special_rewrite(rewritten, arg_exprs, ctx, b) do
+          :unsupported -> do_compile_fn_call_emit(module, name, arg_regs, dest, ctx, b, arg_exprs)
+          other -> other
+        end
+
+      _ ->
+        do_compile_fn_call_emit(module, name, arg_regs, dest, ctx, b, arg_exprs)
+    end
+  end
+
+  defp do_compile_fn_call_emit(module, name, arg_regs, dest, ctx, b, arg_exprs) do
     {arg_regs, b0} =
       if is_list(arg_exprs) and arg_exprs != [] do
         Builder.reload_stale_param_args(b, ctx.params, arg_regs, arg_exprs)

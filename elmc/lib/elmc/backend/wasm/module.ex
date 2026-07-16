@@ -14,8 +14,17 @@ defmodule Elmc.Backend.Wasm.Module do
           wat: binary()
         }
 
+  @type build_opts :: [
+          export_all: boolean(),
+          entry_exports: [String.t()]
+        ]
+
   @spec build([Elmc.Backend.Plan.Types.FunctionPlan.t()]) :: t()
-  def build(plans) when is_list(plans) do
+  @spec build([Elmc.Backend.Plan.Types.FunctionPlan.t()], build_opts()) :: t()
+  def build(plans, opts \\ []) when is_list(plans) do
+    export_all? = Keyword.get(opts, :export_all, true)
+    entry_exports = opts |> Keyword.get(:entry_exports, []) |> MapSet.new()
+
     plans = FunctionOrder.sort(plans)
     closure_registry = ClosureRegistry.build(plans)
 
@@ -43,6 +52,13 @@ defmodule Elmc.Backend.Wasm.Module do
       end)
 
     functions = Enum.map(plans, &Function.lower/1) ++ closure_functions
+
+    {functions, closures} =
+      if export_all? do
+        {functions, detailed_closures(closure_registry)}
+      else
+        short_export_closures(functions, closure_registry)
+      end
 
     stub_entries = StubFunctions.missing_callees(plans)
 
@@ -94,21 +110,7 @@ defmodule Elmc.Backend.Wasm.Module do
 
     Process.put(:elmc_wasm_import_arities, import_arities)
 
-    wat = render_module(functions, imports, import_arities)
-
-    closures =
-      Enum.map(closure_registry.entries, fn entry ->
-        %{
-          "index" => entry.index,
-          "export" => entry.export,
-          "parent_module" => entry.parent_module,
-          "parent_name" => entry.parent_name,
-          "lambda_index" => entry.lambda_index,
-          "arity" => entry.arity,
-          "capture_count" => entry.capture_count,
-          "rc_required" => entry.rc_required
-        }
-      end)
+    wat = render_module(functions, imports, import_arities, export_all?, entry_exports)
 
     %{
       functions: functions,
@@ -155,14 +157,17 @@ defmodule Elmc.Backend.Wasm.Module do
     end)
   end
 
-  defp render_module(functions, imports, import_arities) do
+  defp render_module(functions, imports, import_arities, export_all?, entry_exports) do
     import_lines =
       imports
       |> MapSet.to_list()
       |> Enum.sort()
       |> Enum.map(&import_line(&1, import_arities))
 
-    func_lines = Enum.map(functions, &render_function/1)
+    func_lines =
+      Enum.map(functions, fn fun ->
+        render_function(fun, export_function?(fun, export_all?, entry_exports))
+      end)
 
     """
     (module
@@ -193,20 +198,83 @@ defmodule Elmc.Backend.Wasm.Module do
   defp import_suffix("runtime." <> rest), do: rest
   defp import_suffix(name), do: name
 
-  defp render_function(%{export_name: export, params: params, body: body}) do
+  defp export_function?(_fun, true, _entry_exports), do: true
+
+  defp export_function?(%{export_name: export} = fun, false, entry_exports) do
+    name = strip_dollar(export)
+    wasm_export = Map.get(fun, :wasm_export)
+
+    MapSet.member?(entry_exports, name) or String.contains?(name, "_closure_") or
+      (is_binary(wasm_export) and String.match?(wasm_export, ~r/^c\d+$/))
+  end
+
+  defp render_function(%{export_name: export, params: params, body: body} = fun, export?) do
     param_decls =
       Enum.with_index(params, fn _name, idx ->
         "(param $param#{idx} i32)"
       end)
 
     result = ImportSignatures.function_result_sexpr()
+    export_label = Map.get(fun, :wasm_export) || strip_dollar(export)
+    export_clause = if export?, do: ~s| (export "#{export_label}")|, else: ""
 
     """
-    (func #{export} (export "#{strip_dollar(export)}") #{Enum.join(param_decls, " ")} #{result}
+    (func #{export}#{export_clause} #{Enum.join(param_decls, " ")} #{result}
     #{indent_binary(body, 1)}
     )
     """
     |> String.trim()
+  end
+
+  defp detailed_closures(closure_registry) do
+    Enum.map(closure_registry.entries, fn entry ->
+      %{
+        "index" => entry.index,
+        "export" => entry.export,
+        "parent_module" => entry.parent_module,
+        "parent_name" => entry.parent_name,
+        "lambda_index" => entry.lambda_index,
+        "arity" => entry.arity,
+        "capture_count" => entry.capture_count,
+        "rc_required" => entry.rc_required
+      }
+    end)
+  end
+
+  # Keep internal $func ids descriptive (call sites), but export short `cN`
+  # names so the wasm export section stays tiny.
+  defp short_export_closures(functions, closure_registry) do
+    by_long_export =
+      Map.new(closure_registry.entries, fn entry ->
+        {entry.export, entry.index}
+      end)
+
+    functions =
+      Enum.map(functions, fn fun ->
+        long = strip_dollar(fun.export_name)
+
+        case Map.fetch(by_long_export, long) do
+          {:ok, idx} -> Map.put(fun, :wasm_export, "c#{idx}")
+          :error -> fun
+        end
+      end)
+
+    closures =
+      Enum.map(closure_registry.entries, fn entry ->
+        %{
+          "index" => entry.index,
+          "export" => "c#{entry.index}",
+          "debug_export" => entry.export,
+          "parent_module" => entry.parent_module,
+          "parent_name" => entry.parent_name,
+          "lambda_index" => entry.lambda_index,
+          "arity" => entry.arity,
+          "capture_count" => entry.capture_count,
+          "rc_required" => entry.rc_required
+        }
+      end)
+
+    {functions, closures}
   end
 
   defp indent_lines(lines) do

@@ -13,12 +13,6 @@ defmodule ElmEx.Frontend.GeneratedExpressionParser do
   @typep expr() :: AstTypes.expr()
   @typep normalized_value() :: AstTypes.expr() | list() | String.t() | number() | boolean() | nil | atom()
 
-  @typep let_rewrite_block :: %{
-          index: non_neg_integer(),
-          bindings: [String.t()],
-          in_lines: lines()
-        }
-
   @spec parse(String.t()) :: {:ok, expr()} | {:error, Types.parse_error_reason()}
   def parse(source) when is_binary(source) do
     source_for_parse =
@@ -345,9 +339,15 @@ defmodule ElmEx.Frontend.GeneratedExpressionParser do
   defp normalize_let_source(source, passes) when passes >= 20, do: source
 
   defp normalize_let_source(source, passes) do
+    normalize_let_source(source, passes, MapSet.new())
+  end
+
+  defp normalize_let_source(source, passes, _excluded) when passes >= 20, do: source
+
+  defp normalize_let_source(source, passes, excluded) do
     lines = String.split(source, "\n")
 
-    case find_rewritable_let_block(lines) do
+    case find_rewritable_let_block(lines, excluded) do
       nil ->
         source
 
@@ -360,7 +360,14 @@ defmodule ElmEx.Frontend.GeneratedExpressionParser do
               Enum.join(in_lines, "\n")
             ]
 
-        normalize_let_source(Enum.join(rewritten, "\n"), passes + 1)
+        joined = Enum.join(rewritten, "\n")
+
+        if joined == Enum.join(lines, "\n") do
+          # Already normalized; keep searching for other lets (e.g. outer bare `let`).
+          normalize_let_source(source, passes + 1, MapSet.put(excluded, index))
+        else
+          normalize_let_source(joined, passes + 1, MapSet.new())
+        end
     end
   end
 
@@ -443,16 +450,32 @@ defmodule ElmEx.Frontend.GeneratedExpressionParser do
     trimmed = String.trim(line)
 
     if Regex.match?(@inline_let_in_line, trimmed) do
-      case split_rightmost_inline_let_in(trimmed) do
-        {:ok, before, in_expr} ->
-          split_line_inline_let_in(before) ++ ["in" | split_line_inline_let_in(in_expr)]
+      # Case flattening can put `pat -> let … in body` on one line. Splitting `in`
+      # out would detach the body from the branch; keep it inline (LetLayout allows
+      # this form when `let` follows `->`).
+      if case_branch_inline_let?(trimmed) do
+        [line]
+      else
+        case split_rightmost_inline_let_in(trimmed) do
+          {:ok, before, in_expr} ->
+            split_line_inline_let_in(before) ++ ["in" | split_line_inline_let_in(in_expr)]
 
-        :error ->
-          [line]
+          :error ->
+            [line]
+        end
       end
     else
       [line]
     end
+  end
+
+  defp case_branch_inline_let?(line) when is_binary(line) do
+    trimmed = String.trim(line)
+
+    # Top-level `let … in …` can contain nested `case` branches with `->` after
+    # layout normalization; only preserve inline let/in for `pat -> let … in …`.
+    not String.starts_with?(trimmed, "let ") and String.contains?(trimmed, "->") and
+      String.contains?(trimmed, "let ")
   end
 
   @spec split_rightmost_inline_let_in(source()) :: {:ok, source(), source()} | :error
@@ -518,38 +541,46 @@ defmodule ElmEx.Frontend.GeneratedExpressionParser do
     end
   end
 
-  @spec find_rewritable_let_block(lines()) :: let_rewrite_block() | nil
-  defp find_rewritable_let_block(lines) when is_list(lines) do
+  defp find_rewritable_let_block(lines, excluded) when is_list(lines) do
+    # Prefer innermost lets first. If the outermost `let` is rewritten first, later
+    # passes keep rematching that same outer block (`let name = ...`) and nested
+    # multi-binding lets never receive `;` separators — case flattening then crushes
+    # `let a = … b = …` onto one line and yecc fails.
     lines
     |> Enum.with_index()
+    |> Enum.reverse()
     |> Enum.find_value(fn {line, index} ->
-      cond do
-        String.trim(line) == "let" ->
-          rest = Enum.drop(lines, index + 1)
-          {binding_lines, in_lines} = split_let_lines(rest, [], 1)
-          bindings = collect_let_bindings(binding_lines)
+      if MapSet.member?(excluded, index) do
+        nil
+      else
+        cond do
+          String.trim(line) == "let" ->
+            rest = Enum.drop(lines, index + 1)
+            {binding_lines, in_lines} = split_let_lines(rest, [], 1)
+            bindings = collect_let_bindings(binding_lines)
 
-          if in_lines != [] and length(bindings) > 1 do
-            %{index: index, bindings: bindings, in_lines: in_lines}
-          else
+            if in_lines != [] and length(bindings) > 1 do
+              %{index: index, bindings: bindings, in_lines: in_lines}
+            else
+              nil
+            end
+
+          Regex.match?(~r/^\s*let\s+[a-z][A-Za-z0-9_']*\s*=\s+.+/u, line) ->
+            rest = Enum.drop(lines, index + 1)
+            first_line_rest = line |> String.trim() |> String.replace_prefix("let ", "")
+            first_line = align_first_let_binding_indent(first_line_rest, rest)
+            {binding_lines, in_lines} = split_let_lines(rest, [first_line], 1)
+            bindings = collect_let_bindings(binding_lines)
+
+            if in_lines != [] and length(bindings) > 1 do
+              %{index: index, bindings: bindings, in_lines: in_lines}
+            else
+              nil
+            end
+
+          true ->
             nil
-          end
-
-        Regex.match?(~r/^\s*let\s+[a-z][A-Za-z0-9_']*\s*=\s+.+/u, line) ->
-          rest = Enum.drop(lines, index + 1)
-          first_line_rest = line |> String.trim() |> String.replace_prefix("let ", "")
-          first_line = align_first_let_binding_indent(first_line_rest, rest)
-          {binding_lines, in_lines} = split_let_lines(rest, [first_line], 1)
-          bindings = collect_let_bindings(binding_lines)
-
-          if in_lines != [] and length(bindings) > 1 do
-            %{index: index, bindings: bindings, in_lines: in_lines}
-          else
-            nil
-          end
-
-        true ->
-          nil
+        end
       end
     end)
   end
@@ -617,7 +648,21 @@ defmodule ElmEx.Frontend.GeneratedExpressionParser do
 
   @spec expand_top_level_semicolon_lines(lines()) :: lines()
   defp expand_top_level_semicolon_lines(lines) when is_list(lines) do
-    Enum.flat_map(lines, &split_line_top_level_semicolons/1)
+    {expanded, _let_depth} =
+      Enum.map_reduce(lines, 0, fn line, let_depth ->
+        # Semicolons from nested `let a = … ; b = …` must not be treated as outer
+        # binding separators when collecting an enclosing let.
+        segments =
+          if let_depth > 0 do
+            [line]
+          else
+            split_line_top_level_semicolons(line)
+          end
+
+        {segments, next_let_depth(let_depth, line)}
+      end)
+
+    List.flatten(expanded)
   end
 
   @spec split_line_top_level_semicolons(line()) :: lines()
@@ -666,20 +711,29 @@ defmodule ElmEx.Frontend.GeneratedExpressionParser do
   @spec let_binding_start_line?(line()) :: boolean()
   defp let_binding_start_line?(line) when is_binary(line) do
     trimmed = String.trim(line)
-    binding_name = "(?:_|[a-z][A-Za-z0-9_]*)"
 
-    Regex.match?(
-      ~r/^[a-z][A-Za-z0-9_']*(?:\s+[a-z][A-Za-z0-9_']*|\s+_|\s+\([^\)]*\))*\s*=(?!=)/u,
-      trimmed
-    ) or
+    # `let crossed = …` matches the generic `name args =` shape unless we exclude the
+    # `let` / `in` keywords — otherwise outer `collect_let_bindings` treats nested let
+    # headers as sibling bindings and emits `-> ; let crossed = …`.
+    if trimmed in ["let", "in"] or String.starts_with?(trimmed, "let ") or
+         String.starts_with?(trimmed, "in ") do
+      false
+    else
+      binding_name = "(?:_|[a-z][A-Za-z0-9_]*)"
+
       Regex.match?(
-        ~r/^\(\s*#{binding_name}(?:\s*,\s*#{binding_name}){1,2}\s*\)\s*=(?!=)/u,
+        ~r/^[a-z][A-Za-z0-9_']*(?:\s+[a-z][A-Za-z0-9_']*|\s+_|\s+\([^\)]*\))*\s*=(?!=)/u,
         trimmed
       ) or
-      Regex.match?(
-        ~r/^\(\s*[A-Z][A-Za-z0-9_]*(?:\s+[^=()]+)?\s*\)\s*=(?!=)/u,
-        trimmed
-      )
+        Regex.match?(
+          ~r/^\(\s*#{binding_name}(?:\s*,\s*#{binding_name}){1,2}\s*\)\s*=(?!=)/u,
+          trimmed
+        ) or
+        Regex.match?(
+          ~r/^\(\s*[A-Z][A-Za-z0-9_]*(?:\s+[^=()]+)?\s*\)\s*=(?!=)/u,
+          trimmed
+        )
+    end
   end
 
   @spec normalize(normalized_value()) :: normalized_value()
@@ -794,8 +848,6 @@ defmodule ElmEx.Frontend.GeneratedExpressionParser do
       end
     end
   end
-
-  defp split_case_header_lines([]), do: {[], []}
 
   @spec normalize_case_branches(lines()) :: {source(), lines()}
   defp normalize_case_branches(lines) when is_list(lines) do
@@ -1032,7 +1084,8 @@ defmodule ElmEx.Frontend.GeneratedExpressionParser do
         )
 
       is_binary(current) and let_depth == 0 and case_branch_terminator_line?(line) and
-          (is_nil(branch_indent) or indent <= branch_indent) ->
+          (is_nil(branch_indent) or indent <= branch_indent) and
+          not (Regex.match?(~r/^in\b/u, String.trim(line)) and branch_has_open_let?(current)) ->
         {acc, current, branch_indent, let_depth, [line | rest]}
 
       is_binary(current) and current != "" ->
@@ -1071,6 +1124,14 @@ defmodule ElmEx.Frontend.GeneratedExpressionParser do
 
     (let_binding_start_line?(line) and not String.starts_with?(trimmed, "let ")) or
       Regex.match?(~r/^in\b/u, trimmed)
+  end
+
+  # True when an `in` line closes a let that is already open in the branch so far.
+  defp branch_has_open_let?(branch_text) when is_binary(branch_text) do
+    sanitized = strip_quoted_literals_for_keywords(branch_text)
+    lets = Regex.scan(~r/\blet\b/u, sanitized) |> length()
+    ins = Regex.scan(~r/\bin\b/u, sanitized) |> length()
+    lets > ins
   end
 
   @spec normalize_binding_for_separator(source()) :: source()

@@ -26,15 +26,16 @@ defmodule Elmc.WasmWebJsonTest do
                    strip_dead_code: true
                  })
 
-        manifest = out_dir |> ProjectWriter.manifest_path() |> File.read!() |> Jason.decode!()
-
-        refute Enum.any?(manifest["stub_functions"] || [], fn stub ->
+        refute Enum.any?(ProjectWriter.stub_functions(out_dir), fn stub ->
                  stub["module"] == "Elm.Kernel.Json"
                end)
 
         wat = File.read!(ProjectWriter.wat_path(out_dir))
-        assert wat =~ "json_cmd"
-        assert wat =~ "runtime_json_cmd"
+        assert wat =~ "json_decode_int_decoder"
+        assert wat =~ "json_decode_string"
+        assert wat =~ "json_encode_object"
+        assert wat =~ "json_encode_encode"
+        refute wat =~ "runtime_json_cmd"
 
         WasmRcTrackHarness.run_wat2wasm!(
           ProjectWriter.wat_path(out_dir),

@@ -52,10 +52,36 @@ defmodule ElmEx.IR.ImportResolutionTest do
              ImportResolution.normalize_expr(expr, @lookup)
   end
 
-  test "normalize_expr/2 promotes resolved unqualified calls to qualified_call" do
-    expr = %{op: :call, name: "watchface", args: []}
+  test "resolve/2 picks the aliased module that exports the member" do
+    lookup = %{
+      alias_map: %{"Svg" => "Internal.Svg.Config"},
+      alias_member_map: %{
+        "Svg" => %{
+          "smallViewport" => "Internal.Svg",
+          "default" => "Internal.Svg.Config",
+          "layoutToSvgWithConfig" => "Internal.Cartesian.Layout.Svg"
+        },
+        "Layout" => %{
+          "boundOf" => "Internal.Cartesian.Layout",
+          "default" => "Diagram.Layout.Config"
+        },
+        "Arrow" => %{
+          "arrow" => "Internal.Svg.Arrow",
+          "safeTo" => "Internal.Arrow"
+        }
+      }
+    }
 
-    assert %{op: :qualified_call, target: "Pebble.Platform.watchface", args: []} =
-             ImportResolution.normalize_expr(expr, @lookup)
+    assert ImportResolution.resolve("Layout.boundOf", lookup) ==
+             "Internal.Cartesian.Layout.boundOf"
+
+    assert ImportResolution.resolve("Svg.smallViewport", lookup) ==
+             "Internal.Svg.smallViewport"
+
+    assert ImportResolution.resolve("Svg.default", lookup) ==
+             "Internal.Svg.Config.default"
+
+    assert ImportResolution.resolve("Arrow.arrow", lookup) ==
+             "Internal.Svg.Arrow.arrow"
   end
 end

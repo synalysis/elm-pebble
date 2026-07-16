@@ -104,6 +104,26 @@ defmodule Elmx.Runtime.Json.Decode.Build do
     )
   end
 
+  @spec map8(
+          Types.elm_hof(),
+          decoder(),
+          decoder(),
+          decoder(),
+          decoder(),
+          decoder(),
+          decoder(),
+          decoder(),
+          decoder()
+        ) :: decoder()
+  def map8(fun, d1, d2, d3, d4, d5, d6, d7, d8) do
+    map_n(
+      fn a, b, c, d, e, f, g, h ->
+        Core.apply1(Core.apply7(fun, a, b, c, d, e, f, g), h)
+      end,
+      [d1, d2, d3, d4, d5, d6, d7, d8]
+    )
+  end
+
   @spec succeed(Types.json_value()) :: decoder()
   def succeed(value), do: {:json_decoder, {:succeed, value}}
 

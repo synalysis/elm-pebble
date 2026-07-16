@@ -2,6 +2,29 @@ defmodule Elmc.PebbleShimTest do
   use Elmc.TestSupport.PrimaryCodegenCase
 
   @companion_fixture Path.expand("fixtures/companion_project", __DIR__)
+  @ide_dir Path.expand("../../ide", __DIR__)
+
+  defp generate_companion_internal!(project_dir) do
+    types_path = Path.join(project_dir, "protocol/src/Companion/Types.elm")
+    internal_path = Path.join(project_dir, "protocol/src/Companion/Internal.elm")
+
+    if File.regular?(types_path) do
+      {gen_out, gen_code} =
+        System.cmd(
+          "mix",
+          [
+            "run",
+            "-e",
+            "Ide.CompanionProtocolGenerator.generate_elm_internal(\"#{types_path}\", \"#{internal_path}\")"
+          ],
+          cd: @ide_dir,
+          stderr_to_stdout: true
+        )
+
+      assert gen_code == 0, "companion Internal generation failed:\n#{gen_out}"
+      assert File.exists?(internal_path)
+    end
+  end
 
   test "random generate command dispatches to declared callback" do
     cc = System.find_executable("cc")
@@ -1540,8 +1563,10 @@ defmodule Elmc.PebbleShimTest do
     cc = System.find_executable("cc")
     if is_nil(cc), do: flunk("cc not available for pebble shim C test")
 
+    repo_root = Path.expand("../..", __DIR__)
+
     source_template =
-      Path.expand("../../ide/priv/project_templates/watch_demo_drawing_showcase", __DIR__)
+      Path.join(repo_root, "ide/priv/project_templates/watch_demo_drawing_showcase")
 
     project_dir = Path.expand("tmp/drawing_paths_project", __DIR__)
     out_dir = Path.expand("tmp/drawing_paths_codegen", __DIR__)
@@ -1555,7 +1580,8 @@ defmodule Elmc.PebbleShimTest do
         "type" => "application",
         "source-directories" => [
           "src",
-          "../../../../packages/elm-pebble/elm-watch/src"
+          Path.join(repo_root, "ide/priv/bundled_elm/pebble-watch-src"),
+          Path.join(repo_root, "packages/elm-pebble/elm-watch/src")
         ],
         "elm-version" => "0.19.1",
         "dependencies" => %{
@@ -1570,7 +1596,7 @@ defmodule Elmc.PebbleShimTest do
              Elmc.compile(project_dir, %{
                out_dir: out_dir,
                entry_module: "Main",
-               strip_dead_code: false
+               strip_dead_code: true
              })
 
     harness_path = Path.join(out_dir, "c/drawing_paths_harness.c")
@@ -2078,6 +2104,8 @@ defmodule Elmc.PebbleShimTest do
       })
     )
 
+    generate_companion_internal!(project_dir)
+
     assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
 
     generated = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
@@ -2218,6 +2246,8 @@ defmodule Elmc.PebbleShimTest do
         "test-dependencies" => %{"direct" => %{}, "indirect" => %{}}
       })
     )
+
+    generate_companion_internal!(project_dir)
 
     assert {:ok, _} =
              Elmc.compile(project_dir, %{

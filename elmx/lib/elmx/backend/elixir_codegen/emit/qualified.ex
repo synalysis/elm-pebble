@@ -84,6 +84,8 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Qualified do
   end
 
   defp do_compile_qualified_call(%{target: target, args: args}, env, counter) do
+    target = QualifiedRewrite.normalize_target(target)
+
     case QualifiedRewrite.rewrite(target, args) do
       {:ok, rewritten} ->
         Elmx.Backend.ElixirCodegen.Emit.compile_expr(rewritten, env, counter)

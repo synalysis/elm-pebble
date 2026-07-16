@@ -41,4 +41,23 @@ defmodule Elmx.Runtime.Pebble.Dispatch.Json do
 
   def encode_dict([_key_fn, _val_fn, dict]) when is_map(dict), do: dict
   def encode_dict(_), do: %{}
+
+  @spec encode_add_field(Types.registry_args()) :: Types.json_object_value()
+  def encode_add_field([key, value, {:elmx_json_object, pairs}]) when is_binary(key) and is_list(pairs) do
+    {:elmx_json_object, pairs ++ [{key, value}]}
+  end
+
+  def encode_add_field([key, value, pairs]) when is_binary(key) and is_list(pairs) do
+    Encode.object(pairs ++ [{key, value}])
+  end
+
+  def encode_add_field(_), do: Encode.object([])
+
+  @spec encode_add_entry(Types.registry_args()) :: [Types.json_value()]
+  def encode_add_entry([func, value, arr]) when is_function(func, 1) and is_list(arr) do
+    arr ++ [func.(value)]
+  end
+
+  def encode_add_entry([_func, value, arr]) when is_list(arr), do: arr ++ [value]
+  def encode_add_entry(_), do: []
 end

@@ -1,8 +1,10 @@
 defmodule Elmc.Backend.Plan.Lower.Intrinsics do
   @moduledoc false
 
+  alias Elmc.Backend.CCodegen.{FunctionEmit, TypeParsing}
+  alias Elmc.Backend.CCodegen.SpecialValues.Core, as: SpecialCore
   alias Elmc.Backend.Plan.{Builder, Context, EpilogueRelease, Verify}
-  alias Elmc.Backend.Plan.Lower.{Call, Expr, Function}
+  alias Elmc.Backend.Plan.Lower.{Call, Expr, Function, SpecialValues}
   alias Elmc.Backend.Plan.Types
 
   @spec try_lower(Types.function_decl(), String.t(), Types.function_decl_map(), keyword()) ::
@@ -18,7 +20,10 @@ defmodule Elmc.Backend.Plan.Lower.Intrinsics do
             lower_batch_kernel_alias(decl, module_name, decl_map, opts)
 
           true ->
-            lower_qualified_delegate_alias(decl, module_name, target, decl_map, opts)
+            case try_special_value_alias(decl, module_name, decl_map, opts) do
+              {:ok, _} = ok -> ok
+              :not_intrinsic -> lower_qualified_delegate_alias(decl, module_name, target, decl_map, opts)
+            end
         end
 
       %{expr: %{op: :var, name: target}} = decl when is_binary(target) ->
@@ -108,20 +113,55 @@ defmodule Elmc.Backend.Plan.Lower.Intrinsics do
 
   defp batch_kernel_target?(_), do: false
 
+  # Public specials for value aliases (`String.fromInt` → unary lambda over runtime).
+  # Only when the IR body is already a 0-arg alias to this same public name (or a
+  # Kernel synonym that denormalizes to it). Never replace unrelated bodies such as
+  # `Json.Encode.int = Elm.Kernel.Json.wrap` with `Json.Encode.int []` specials.
+  defp try_special_value_alias(decl, module_name, decl_map, opts) do
+    name = Map.get(decl, :name)
+    qualified = "#{module_name}.#{name}"
+
+    if is_binary(name) and alias_body_matches_special?(Map.get(decl, :expr), qualified) do
+      case SpecialValues.special_value_from_target(qualified, []) do
+        %{op: :lambda, args: params, body: body}
+        when is_list(params) and params != [] and is_map(body) ->
+          forward_decl = put_decl_fields(decl, params, body)
+
+          case Function.lower(forward_decl, module_name, decl_map, opts) do
+            {:ok, _} = ok -> ok
+            _ -> :not_intrinsic
+          end
+
+        _ ->
+          :not_intrinsic
+      end
+    else
+      :not_intrinsic
+    end
+  end
+
+  defp alias_body_matches_special?(%{op: :qualified_call, target: target, args: []}, qualified)
+       when is_binary(target) and is_binary(qualified) do
+    SpecialCore.normalize_special_target(target) == qualified
+  end
+
+  defp alias_body_matches_special?(_, _), do: false
+
   # Top-level `alias = Other.fn` keeps IR `args: []` while the callee expects parameters.
   # Rebuild the declaration with the callee's parameter names and a forwarding body.
   defp lower_qualified_delegate_alias(decl, module_name, target, decl_map, opts) do
     with {mod, name} <-
            Call.parse_target(target, %{module: module_name, decl_map: decl_map}, decl_map),
-         {:ok, %{args: param_names}} <- Map.fetch(decl_map, {mod, name}),
-         true <- param_names != [] do
+         param_names when is_list(param_names) and param_names != [] <-
+           delegate_alias_param_names(mod, name, decl_map, opts) ||
+             type_param_names(Map.get(decl, :type)) do
       body = %{
         op: :qualified_call,
         target: target,
         args: Enum.map(param_names, &%{op: :var, name: &1})
       }
 
-      forward_decl = %{decl | args: param_names, expr: body}
+      forward_decl = put_decl_fields(decl, param_names, body)
 
       case Function.lower(forward_decl, module_name, decl_map, opts) do
         {:ok, _} = ok -> ok
@@ -131,6 +171,49 @@ defmodule Elmc.Backend.Plan.Lower.Intrinsics do
       _ -> :not_intrinsic
     end
   end
+
+  defp put_decl_fields(%{__struct__: _} = decl, args, expr), do: %{decl | args: args, expr: expr}
+  defp put_decl_fields(decl, args, expr) when is_map(decl), do: Map.merge(decl, %{args: args, expr: expr})
+
+  defp delegate_alias_param_names(mod, name, decl_map, opts) do
+    case Map.fetch(decl_map, {mod, name}) do
+      {:ok, callee_decl} ->
+        case FunctionEmit.effective_decl_args(callee_decl, mod, decl_map) do
+          param_names when is_list(param_names) and param_names != [] ->
+            param_names
+
+          _ ->
+            web_html_param_names(mod, name, opts)
+        end
+
+      :error ->
+        web_html_param_names(mod, name, opts)
+    end
+  end
+
+  defp web_html_param_names(mod, name, opts) do
+    web = Elmc.Backend.Plan.Lower.Platform.Web
+
+    if web.web_target?(opts) do
+      web.html_element_param_names(mod, name)
+    else
+      nil
+    end
+  end
+
+  defp type_param_names(type) when is_binary(type) do
+    case TypeParsing.function_arg_types(type) do
+      [_ | _] = arg_types ->
+        # Match FunctionEmit.type_param_names/1 (`__eff_arg_N__`) so plan params
+        # align with the C ABI names chosen for `args: []` aliases.
+        Enum.with_index(arg_types, fn _ty, idx -> "__eff_arg_#{idx}__" end)
+
+      _ ->
+        nil
+    end
+  end
+
+  defp type_param_names(_), do: nil
 
   defp lower_same_module_delegate_alias(decl, module_name, target, decl_map, opts) do
     lower_qualified_delegate_alias(
@@ -143,8 +226,9 @@ defmodule Elmc.Backend.Plan.Lower.Intrinsics do
   end
 
   defp lower_var_delegate_alias(decl, module_name, target, decl_map, opts) do
-    with {:ok, %{args: param_names}} <- Map.fetch(decl_map, {module_name, target}),
-         true <- param_names != [],
+    with {:ok, callee_decl} <- Map.fetch(decl_map, {module_name, target}),
+         param_names when param_names != [] <-
+           FunctionEmit.effective_decl_args(callee_decl, module_name, decl_map),
          true <- var_alias_decl_args?(decl, param_names) do
       lower_same_module_delegate_alias(decl, module_name, target, decl_map, opts)
     else

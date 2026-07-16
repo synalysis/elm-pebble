@@ -91,6 +91,27 @@ defmodule Elmc.PlanCLowerTest do
     refute c =~ ~r/owned\[\d+\] = owned\[\d+\];\n\s*owned\[\d+\] = NULL;\n\s*\n\s*owned\[\d+\] = NULL;/
   end
 
+  test "record_new retains when the same owned slot appears twice in values" do
+    decl = %{
+      name: "dupField",
+      args: ["x"],
+      expr: %{
+        op: :record_literal,
+        fields: [
+          %{name: "a", expr: %{op: :var, name: "x"}},
+          %{name: "b", expr: %{op: :var, name: "x"}}
+        ]
+      }
+    }
+
+    assert {:ok, plan} =
+             Elmc.Backend.Plan.Lower.Function.lower(decl, "Main", %{}, rc_required: true)
+
+    c = CLowerFunction.emit(plan)
+    assert c =~ "elmc_record_new_values_take"
+    assert c =~ ~r/elmc_retain\(owned\[\d+\]\)/
+  end
+
   test "record update uses value-returning C calls" do
     decl = %{
       name: "bump",

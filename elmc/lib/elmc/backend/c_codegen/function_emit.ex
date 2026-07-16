@@ -345,14 +345,47 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
   @spec effective_decl_args(Types.function_declaration(), String.t(), Types.function_decl_map()) ::
           [String.t()]
   def effective_decl_args(decl, module_name, decl_map) do
-    case Map.get(decl, :args, []) do
-      args when args != [] ->
+    case List.wrap(Map.get(decl, :args)) do
+      [_ | _] = args ->
         args
 
       [] ->
-        delegate_param_names(decl, module_name, decl_map) || []
+        # elm/core aliases keep IR `args: []` while pointing at missing Kernel
+        # callees. Prefer callee/delegate names, then (for alias `f = Other.g`
+        # bodies only) the alias type arity so under-application curries.
+        #
+        # Do **not** invent params from the type when the body is already a
+        # `:lambda` / thunk — those compile to 0-param make_closure values and
+        # applications must go through `zero_arity_thunk_call?`.
+        case delegate_param_names(decl, module_name, decl_map) do
+          names when is_list(names) and names != [] ->
+            names
+
+          _ ->
+            if lambda_or_thunk_body?(Map.get(decl, :expr)) do
+              []
+            else
+              type_param_names(Map.get(decl, :type)) || []
+            end
+        end
     end
   end
+
+  defp lambda_or_thunk_body?(%{op: :lambda}), do: true
+  defp lambda_or_thunk_body?(%{op: op, body: body}) when op in [:let, :letrec], do: lambda_or_thunk_body?(body)
+  defp lambda_or_thunk_body?(_), do: false
+
+  defp type_param_names(type) when is_binary(type) do
+    case TypeParsing.function_arg_types(type) do
+      [_ | _] = arg_types ->
+        Enum.with_index(arg_types, fn _ty, idx -> "__eff_arg_#{idx}__" end)
+
+      _ ->
+        nil
+    end
+  end
+
+  defp type_param_names(_), do: nil
 
   defp delegate_param_names(
          %{expr: %{op: :qualified_call, target: target, args: []}} = decl,
@@ -360,31 +393,26 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
          decl_map
        ) do
     ctx = %{module: module_name, decl_map: decl_map}
+    {mod, name} = Elmc.Backend.Plan.Lower.Call.parse_target(target, ctx, decl_map)
 
-    with {mod, name} <-
-           Elmc.Backend.Plan.Lower.Call.parse_target(target, ctx, decl_map),
-         {:ok, callee_decl} <- Map.fetch(decl_map, {mod, name}) do
-      case Map.get(callee_decl, :args, []) do
-        param_names when param_names != [] ->
-          param_names
+    case Map.fetch(decl_map, {mod, name}) do
+      {:ok, callee_decl} ->
+        case Map.get(callee_decl, :args, []) do
+          param_names when param_names != [] ->
+            param_names
 
-        [] ->
-          delegate_param_names(callee_decl, mod, decl_map) ||
-            html_map_delegate_param_names(name, callee_decl)
-      end
-    else
-      _ -> html_map_delegate_param_names(Map.get(decl, :name), decl)
+          [] ->
+            delegate_param_names(callee_decl, mod, decl_map) ||
+              html_map_delegate_param_names(name, callee_decl) ||
+              Elmc.Backend.Plan.Lower.Platform.Web.html_element_param_names(mod, name) ||
+              type_param_names(Map.get(callee_decl, :type))
+        end
+
+      :error ->
+        html_map_delegate_param_names(Map.get(decl, :name), decl) ||
+          Elmc.Backend.Plan.Lower.Platform.Web.html_element_param_names(mod, name)
     end
   end
-
-  defp html_map_delegate_param_names("map", %{expr: %{op: :qualified_call, target: target, args: []}})
-       when target in ["VirtualDom.map", "Elm.Kernel.VirtualDom.map"],
-       do: ["func", "node"]
-
-  defp html_map_delegate_param_names("map", %{expr: %{op: :html_cmd, kind: %{value: 3}}}),
-       do: ["func", "node"]
-
-  defp html_map_delegate_param_names(_, _), do: nil
 
   defp delegate_param_names(%{expr: %{op: :var, name: name}}, module_name, decl_map)
        when is_binary(name) do
@@ -397,6 +425,15 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
   end
 
   defp delegate_param_names(_, _, _), do: nil
+
+  defp html_map_delegate_param_names("map", %{expr: %{op: :qualified_call, target: target, args: []}})
+       when target in ["VirtualDom.map", "Elm.Kernel.VirtualDom.map", "Html.map"],
+       do: ["func", "node"]
+
+  defp html_map_delegate_param_names("map", %{expr: %{op: :html_cmd, kind: %{value: 3}}}),
+       do: ["func", "node"]
+
+  defp html_map_delegate_param_names(_, _), do: nil
 
   defp delegate_var_param_names(module_name, name, decl_map) do
     case Map.fetch(decl_map, {module_name, name}) do
@@ -698,8 +735,19 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
         :legacy ->
           record_plan_primary_fallback(module_name, decl.name)
 
-          raise ArgumentError,
-                "plan_ir_mode: #{inspect(mode)} cannot lower #{module_name}.#{decl.name} to Plan IR"
+          emit_legacy_codegen_body(
+            module_name,
+            decl,
+            decl_map,
+            env,
+            arg_bindings,
+            direct_args?,
+            entry_probe,
+            exit_probe,
+            arg_binding_code,
+            rc_required?,
+            arg_kinds
+          )
       end
     else
       emit_legacy_codegen_body(

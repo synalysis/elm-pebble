@@ -86,6 +86,28 @@ defmodule ElmEx.Frontend.LetLayoutTest do
     assert {:ok, %{op: :let_in, name: "appended"}} = GeneratedExpressionParser.parse(source)
   end
 
+  test "parses top-level let with typed bindings and nested case branches" do
+    source = """
+    let
+        cancelIfStale : Effect msg
+        cancelIfStale =
+            case model.transition of
+                Just ( transitionKey, Pages.Navigation.Loading _ _ ) ->
+                    CancelRequest transitionKey
+
+                _ ->
+                    NoEffect
+
+        fetchEffect : Effect msg
+        fetchEffect =
+            FetchFrozenViews { path = urlToGet.path, query = urlToGet.query, body = Nothing }
+    in
+    ( model, Batch [ fetchEffect, cancelIfStale, effect ] )
+    """
+
+    assert {:ok, %{op: :let_in, name: "cancelIfStale"}} = GeneratedExpressionParser.parse(source)
+  end
+
   test "parses tangram companion update with nested case in branch" do
     source = """
     case msg of
@@ -356,6 +378,76 @@ defmodule ElmEx.Frontend.LetLayoutTest do
              "FetcherComplete",
              "UserMsg"
            ]
+  end
+
+  test "parses nested let with /= rhs and a following binding" do
+    source = """
+    case scan.prevAbove of
+        Nothing ->
+            scan
+
+        Just previousAbove ->
+            let
+                crossed =
+                    above /= previousAbove
+
+                rise =
+                    1
+            in
+            { scan | rise = rise, prevAbove = Just above }
+    """
+
+    assert {:ok, tree} = GeneratedExpressionParser.parse(source)
+    # yecc lowers `case` to a synthetic let_in binding the subject as caseSubject
+    assert tree.op in [:case, :let_in]
+  end
+
+  test "parses scanMoonEvents-style nested let inside outer let/case" do
+    source = """
+    if minute > 1440 then
+        scan
+    else
+        let
+            sampleMinute =
+                if minute == 1440 then
+                    1439
+                else
+                    minute
+
+            above =
+                moonAltitudeRad (Time.millisToPosix (baseUtcMillis + (sampleMinute * 60000))) location > degrees -0.3
+
+            nextScan =
+                case scan.prevAbove of
+                    Nothing ->
+                        { scan
+                            | prevAbove = Just above
+                            , aboveSamples = countAbove above scan.aboveSamples
+                            , totalSamples = scan.totalSamples + 1
+                        }
+
+                    Just previousAbove ->
+                        let
+                            crossed =
+                                above /= previousAbove
+
+                            rise =
+                                if crossed && not previousAbove && above && scan.rise == Nothing then
+                                    Just 1
+                                else
+                                    scan.rise
+                        in
+                        { scan
+                            | rise = rise
+                            , prevAbove = Just above
+                            , aboveSamples = countAbove above scan.aboveSamples
+                            , totalSamples = scan.totalSamples + 1
+                        }
+        in
+        scanMoonEvents location baseUtcMillis stepMin (minute + stepMin) nextScan
+    """
+
+    assert {:ok, _} = GeneratedExpressionParser.parse(source)
   end
 
   test "parses nested case expression as outer case branch body" do

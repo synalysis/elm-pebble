@@ -22,6 +22,16 @@ defmodule Elmc.Backend.CCodegen.BuiltinOperators do
     abs negate not xor compare max min clamp
   )a
 
+  @utils_operator_names %{
+    "equal" => "__eq__",
+    "notEqual" => "__neq__",
+    "lt" => "__lt__",
+    "le" => "__lte__",
+    "gt" => "__gt__",
+    "ge" => "__gte__",
+    "append" => "__append__"
+  }
+
   @spec qualified_operator_name(String.t()) :: String.t() | nil
   def qualified_operator_name(target) when is_binary(target) do
     normalized = SpecialValues.normalize_special_target(target)
@@ -29,6 +39,9 @@ defmodule Elmc.Backend.CCodegen.BuiltinOperators do
     case String.split(normalized, ".") do
       ["Basics", name] when is_binary(name) ->
         if Enum.member?(@basics_operator_names, name), do: name, else: nil
+
+      ["Utils", name] when is_binary(name) ->
+        Map.get(@utils_operator_names, name)
 
       _ ->
         nil

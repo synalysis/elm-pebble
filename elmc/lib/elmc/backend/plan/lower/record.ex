@@ -391,8 +391,31 @@ defmodule Elmc.Backend.Plan.Lower.Record do
             RecordFieldMacros.format_index(idx, field_name, nil)
 
           _ ->
-            field_index_ref_from_type(field_name, ctx, base_expr)
+            case param_or_typed_var_field_index(field_name, ctx, base_expr) do
+              {key, idx} when is_integer(idx) ->
+                RecordFieldMacros.format_index(idx, field_name, key)
+
+              _ ->
+                field_index_ref_from_type(field_name, ctx, base_expr)
+            end
         end
+    end
+  end
+
+  defp param_or_typed_var_field_index(field_name, ctx, base_expr) when is_binary(field_name) do
+    if param_var_base?(base_expr, ctx) do
+      case inline_field_index_from_base(field_name, ctx, base_expr) do
+        {:inline, idx} when is_integer(idx) ->
+          {nil, idx}
+
+        {key, idx} when is_integer(idx) ->
+          {key, idx}
+
+        :error ->
+          nil
+      end
+    else
+      nil
     end
   end
 
@@ -430,7 +453,7 @@ defmodule Elmc.Backend.Plan.Lower.Record do
                 RecordFieldMacros.format_index(idx, field_name, key)
 
               _ ->
-                case max_field_index_among_shapes(field_name, shapes) do
+                case min_field_index_among_shapes(field_name, shapes) do
                   {{mod, type}, idx} when is_integer(idx) ->
                     RecordFieldMacros.format_index(idx, field_name, {mod, type})
 
@@ -529,15 +552,41 @@ defmodule Elmc.Backend.Plan.Lower.Record do
 
   defp inline_field_index_from_concrete_var(field_name, ctx, name)
        when is_binary(field_name) and is_binary(name) do
-    env = compile_env(ctx)
+    case inline_field_index_from_inferred_param(field_name, ctx, name) do
+      {:inline, idx} ->
+        {:inline, idx}
 
-    with type when is_binary(type) <- Map.get(env, :__var_types__, %{}) |> Map.get(name),
-         false <- extensible_record_type?(type),
-         fields when is_list(fields) and fields != [] <- TypeSignature.record_field_names(type),
-         idx when is_integer(idx) <- Enum.find_index(fields, &(&1 == field_name)) do
-      {:inline, idx}
-    else
-      _ -> :error
+      :error ->
+        env = compile_env(ctx)
+
+        with type when is_binary(type) <- Map.get(env, :__var_types__, %{}) |> Map.get(name),
+             false <- extensible_record_type?(type),
+             fields when is_list(fields) and fields != [] <- TypeSignature.record_field_names(type),
+             idx when is_integer(idx) <- Enum.find_index(fields, &(&1 == field_name)) do
+          {:inline, idx}
+        else
+          _ -> :error
+        end
+    end
+  end
+
+  defp inline_field_index_from_inferred_param(field_name, ctx, name)
+       when is_binary(field_name) and is_binary(name) do
+    fields =
+      case ctx do
+        %{inferred_param_fields: inferred} when is_map(inferred) -> Map.get(inferred, name)
+        _ -> nil
+      end
+
+    case fields do
+      list when is_list(list) ->
+        case Enum.find_index(list, &(&1 == field_name)) do
+          idx when is_integer(idx) -> {:inline, idx}
+          _ -> :error
+        end
+
+      _ ->
+        :error
     end
   end
 
@@ -591,7 +640,16 @@ defmodule Elmc.Backend.Plan.Lower.Record do
 
       _ ->
         if param_var_base?(base_expr, ctx) do
-          nil
+          case inline_field_index_from_base(field_name, ctx, base_expr) do
+            {:inline, idx} when is_integer(idx) ->
+              {nil, idx}
+
+            {key, idx} when is_integer(idx) ->
+              {key, idx}
+
+            :error ->
+              prefer_inline_shape_when_container_unknown(field_name, shapes, inline_shapes)
+          end
         else
           prefer_inline_shape_when_container_unknown(field_name, shapes, inline_shapes)
         end
@@ -680,14 +738,26 @@ defmodule Elmc.Backend.Plan.Lower.Record do
   end
 
   defp max_field_index_among_shapes(field_name, shapes) when is_binary(field_name) do
-    shapes
-    |> Enum.filter(fn {_key, fields} -> field_name in fields end)
-    |> Enum.map(fn {key, fields} -> {key, Enum.find_index(fields, &(&1 == field_name))} end)
-    |> Enum.filter(fn {_key, idx} -> is_integer(idx) end)
+    shape_field_index_candidates(field_name, shapes)
     |> case do
       [] -> nil
       candidates -> Enum.max_by(candidates, fn {_key, idx} -> idx end)
     end
+  end
+
+  defp min_field_index_among_shapes(field_name, shapes) when is_binary(field_name) do
+    shape_field_index_candidates(field_name, shapes)
+    |> case do
+      [] -> nil
+      candidates -> Enum.min_by(candidates, fn {_key, idx} -> idx end)
+    end
+  end
+
+  defp shape_field_index_candidates(field_name, shapes) when is_binary(field_name) do
+    shapes
+    |> Enum.filter(fn {_key, fields} -> field_name in fields end)
+    |> Enum.map(fn {key, fields} -> {key, Enum.find_index(fields, &(&1 == field_name))} end)
+    |> Enum.filter(fn {_key, idx} -> is_integer(idx) end)
   end
 
   defp container_record_key(base_expr, ctx) do

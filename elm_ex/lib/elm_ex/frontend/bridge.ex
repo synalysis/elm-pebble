@@ -31,6 +31,8 @@ defmodule ElmEx.Frontend.Bridge do
          {:ok, diagnostics} <- run_elm_check(project_dir, module_paths),
          {:ok, modules} <- load_modules(module_paths),
          {:ok, modules} <- apply_source_overrides(project_dir, modules, source_overrides) do
+      modules = disambiguate_package_module_collisions(modules)
+
       {:ok,
        %Project{
          project_dir: project_dir,
@@ -204,16 +206,162 @@ defmodule ElmEx.Frontend.Bridge do
     {_seen, paths} =
       Enum.reduce(source_paths, {MapSet.new(), []}, fn {source_root, path}, {seen, acc} ->
         module_name = module_name_from_source_path(source_root, path)
+        # Official Elm resolves unexposed modules package-locally, so the same
+        # Elm module name may exist in multiple packages (e.g. Pattern in
+        # justinmimbs/date and dillonkearns/elm-pages). Key by package + name.
+        # App source-directories still share one package id so overlays keep
+        # first-wins behavior.
+        key = {package_id_from_source_root(source_root), module_name}
 
-        if MapSet.member?(seen, module_name) do
+        if MapSet.member?(seen, key) do
           {seen, acc}
         else
-          {MapSet.put(seen, module_name), [path | acc]}
+          {MapSet.put(seen, key), [path | acc]}
         end
       end)
 
     Enum.reverse(paths)
   end
+
+  @doc false
+  @spec package_id_from_source_root(String.t()) :: String.t()
+  def package_id_from_source_root(source_root) when is_binary(source_root) do
+    parts = Path.split(Path.expand(source_root))
+
+    case Enum.find_index(parts, &(&1 == "packages")) do
+      nil ->
+        "app"
+
+      idx ->
+        case Enum.drop(parts, idx + 1) do
+          [author, name, version | _]
+          when is_binary(author) and is_binary(name) and is_binary(version) ->
+            "#{author}/#{name}@#{version}"
+
+          _ ->
+            "app"
+        end
+    end
+  end
+
+  def package_id_from_source_root(_), do: "app"
+
+  @doc false
+  @spec package_id_from_path(String.t() | nil) :: String.t()
+  def package_id_from_path(path) when is_binary(path) do
+    parts = Path.split(Path.expand(path))
+
+    case Enum.find_index(parts, &(&1 == "packages")) do
+      nil ->
+        "app"
+
+      idx ->
+        case Enum.drop(parts, idx + 1) do
+          [author, name, version | _]
+          when is_binary(author) and is_binary(name) and is_binary(version) ->
+            "#{author}/#{name}@#{version}"
+
+          _ ->
+            "app"
+        end
+    end
+  end
+
+  def package_id_from_path(_), do: "app"
+
+  # When multiple packages ship the same Elm module name, keep all of them under
+  # stable IR names and rewrite same-package imports to the mangled target.
+  @spec disambiguate_package_module_collisions([ElmEx.Frontend.Module.t()]) ::
+          [ElmEx.Frontend.Module.t()]
+  defp disambiguate_package_module_collisions(modules) when is_list(modules) do
+    by_name = Enum.group_by(modules, & &1.name)
+
+    collisions =
+      by_name
+      |> Enum.filter(fn {_name, group} -> length(group) > 1 end)
+      |> Map.new(fn {name, group} ->
+        by_pkg =
+          Map.new(group, fn mod ->
+            {package_id_from_path(mod.path), mangle_package_module_name(package_id_from_path(mod.path), name)}
+          end)
+
+        {name, by_pkg}
+      end)
+
+    if map_size(collisions) == 0 do
+      modules
+    else
+      path_to_mangled =
+        Enum.reduce(collisions, %{}, fn {elm_name, by_pkg}, acc ->
+          Enum.reduce(by_pkg, acc, fn {pkg, mangled}, acc2 ->
+            case Enum.find(modules, fn m -> m.name == elm_name and package_id_from_path(m.path) == pkg end) do
+              %{path: path} -> Map.put(acc2, path, mangled)
+              _ -> acc2
+            end
+          end)
+        end)
+
+      Enum.map(modules, fn mod ->
+        elm_name = mod.name
+        pkg = package_id_from_path(mod.path)
+        new_name = Map.get(path_to_mangled, mod.path, elm_name)
+
+        import_entries =
+          Enum.map(mod.import_entries || [], fn entry ->
+            rewrite_collision_import_entry(entry, pkg, collisions)
+          end)
+
+        imports =
+          (mod.imports || [])
+          |> Enum.map(fn imported ->
+            case Map.get(collisions, imported) do
+              %{^pkg => mangled} -> mangled
+              _ -> imported
+            end
+          end)
+
+        %{mod | name: new_name, imports: imports, import_entries: import_entries}
+      end)
+    end
+  end
+
+  defp disambiguate_package_module_collisions(modules), do: modules
+
+  defp rewrite_collision_import_entry(entry, importer_pkg, collisions) when is_map(entry) do
+    module_name = Map.get(entry, "module") || Map.get(entry, :module)
+
+    case is_binary(module_name) and Map.get(collisions, module_name) do
+      %{^importer_pkg => mangled} ->
+        as_name = Map.get(entry, "as") || Map.get(entry, :as) || module_name
+
+        entry
+        |> Map.put("module", mangled)
+        |> Map.put("as", as_name)
+        |> Map.delete(:module)
+        |> Map.delete(:as)
+
+      _ ->
+        entry
+    end
+  end
+
+  defp rewrite_collision_import_entry(entry, _importer_pkg, _collisions), do: entry
+
+  @doc false
+  @spec mangle_package_module_name(String.t(), String.t()) :: String.t()
+  def mangle_package_module_name(package_id, elm_name)
+      when is_binary(package_id) and is_binary(elm_name) do
+    pkg_part =
+      package_id
+      |> String.replace("@", "_")
+      |> String.replace("/", "_")
+      |> String.replace("-", "_")
+      |> String.replace(".", "_")
+
+    "Pkg." <> pkg_part <> "." <> elm_name
+  end
+
+  def mangle_package_module_name(_, elm_name) when is_binary(elm_name), do: elm_name
 
   @spec module_name_from_source_path(String.t(), String.t()) :: String.t()
   defp module_name_from_source_path(source_root, path) do

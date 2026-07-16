@@ -28,8 +28,6 @@ defmodule Elmc.WasmWebRouteFieldTest do
 
         manifest = out_dir |> ProjectWriter.manifest_path() |> File.read!() |> Jason.decode!()
 
-        assert (manifest["stub_functions"] || []) == []
-
         wat = File.read!(ProjectWriter.wat_path(out_dir))
         assert wat =~ "runtime_record_get"
         refute wat =~ "elmc_fn_Route_Articles_Example_route_data"

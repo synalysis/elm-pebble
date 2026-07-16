@@ -85,15 +85,12 @@ defmodule Elmc.Backend.Plan.Lower.PatternBind do
           []
         end
 
-      case Record.emit_record_field_get(subject_reg, field_name, ctx_acc, b_acc, base_expr, opts) do
-        {:ok, field_reg, b1} ->
-          ctx1 = Context.put_local(ctx_acc, field_name, field_reg)
-          b2 = Builder.bind_local(b1, field_name, field_reg)
-          {:cont, {:ok, ctx1, b2}}
+      {:ok, field_reg, b1} =
+        Record.emit_record_field_get(subject_reg, field_name, ctx_acc, b_acc, base_expr, opts)
 
-        _ ->
-          {:halt, :unsupported}
-      end
+      ctx1 = Context.put_local(ctx_acc, field_name, field_reg)
+      b2 = Builder.bind_local(b1, field_name, field_reg)
+      {:cont, {:ok, ctx1, b2}}
     end)
   end
 

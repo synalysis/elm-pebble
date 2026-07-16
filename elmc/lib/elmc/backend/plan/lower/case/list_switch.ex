@@ -2,7 +2,7 @@ defmodule Elmc.Backend.Plan.Lower.Case.ListSwitch do
   @moduledoc false
 
   alias Elmc.Backend.Plan.{Builder, Context}
-  alias Elmc.Backend.Plan.Lower.{Expr, ListIntType}
+  alias Elmc.Backend.Plan.Lower.{Expr, ListIntType, PatternBind}
   alias Elmc.Backend.Plan.Types
 
   @spec branches?(Types.case_branches()) :: boolean()
@@ -234,7 +234,6 @@ defmodule Elmc.Backend.Plan.Lower.Case.ListSwitch do
     empty = empty_branch(branches)
 
     with {:ok, subj_reg, b1} <- Expr.compile(subject, ctx, b),
-         {head_name, tail_name} <- cons_names(cons),
          saved_pending = Map.get(b1, :pending_merge_block),
          {:ok, cond_reg, b2} <- emit_test_list_empty(subj_reg, b1),
          then_id = b2.next_block,
@@ -248,8 +247,7 @@ defmodule Elmc.Backend.Plan.Lower.Case.ListSwitch do
          {:ok, cons_reg, cons_exit, b_cons} <-
            compile_cons_arm(
              Map.get(cons, :expr),
-             head_name,
-             tail_name,
+             Map.get(cons, :pattern),
              subject,
              subj_reg,
              ctx,
@@ -410,10 +408,6 @@ defmodule Elmc.Backend.Plan.Lower.Case.ListSwitch do
     name |> String.split(".") |> List.last()
   end
 
-  defp cons_names(%{pattern: %{arg_pattern: %{elements: [head, tail]}}}) do
-    {var_name(head), var_name(tail)}
-  end
-
   defp var_name(%{kind: :var, name: name}) when is_binary(name), do: name
   defp var_name(%{kind: :wildcard}), do: "_"
   defp var_name(_), do: "head"
@@ -432,7 +426,7 @@ defmodule Elmc.Backend.Plan.Lower.Case.ListSwitch do
     end
   end
 
-  defp compile_cons_arm(expr, head_name, tail_name, subject, subj_reg, ctx, b, block_id) do
+  defp compile_cons_arm(expr, pattern, subject, subj_reg, ctx, b, block_id) do
     b_arm = Builder.begin_cfg_arm_block(b, block_id)
     arm_ctx = Context.for_branch_arm(ctx)
     {[head_arg, tail_arg], b_dup} = Builder.dup_regs_for_consume(b_arm, [subj_reg, subj_reg])
@@ -444,23 +438,26 @@ defmodule Elmc.Backend.Plan.Lower.Case.ListSwitch do
         :maybe_list
       end
 
-    with {:ok, head_reg, tail_reg, b_bound} <-
+    with {:ok, head_pat, tail_pat} <- cons_element_patterns(pattern),
+         {:ok, head_reg, tail_reg, b_bound} <-
            peel_cons_regs(peel, head_arg, tail_arg, arm_ctx, b_dup),
-         ctx1 <-
-           arm_ctx
-           |> Context.put_local(head_name, head_reg)
-           |> Context.put_local(tail_name, tail_reg),
-         b5 <-
-           b_bound
-           |> Builder.bind_local(head_name, head_reg)
-           |> Builder.bind_local(tail_name, tail_reg),
-         {:ok, reg, b6} <- Expr.compile(expr, ctx1, b5) do
-      exit_id = b6.current_block.id
-      {:ok, reg, exit_id, Builder.finish_block(b6, :none)}
+         {:ok, ctx1, b5} <- PatternBind.bind(head_pat, arm_ctx, b_bound, head_reg),
+         {:ok, ctx2, b6} <- PatternBind.bind(tail_pat, ctx1, b5, tail_reg),
+         {:ok, reg, b7} <- Expr.compile(expr, ctx2, b6) do
+      exit_id = b7.current_block.id
+      {:ok, reg, exit_id, Builder.finish_block(b7, :none)}
     else
       _ -> :unsupported
     end
   end
+
+  defp cons_element_patterns(%{arg_pattern: %{kind: :tuple, elements: [head, tail]}}),
+    do: {:ok, head, tail}
+
+  defp cons_element_patterns(%{arg_pattern: %{elements: [head, tail]}}),
+    do: {:ok, head, tail}
+
+  defp cons_element_patterns(_), do: :error
 
   defp compile_nonempty_var_arm(%{pattern: pattern, expr: expr}, subj_reg, ctx, b, block_id) do
     compile_nonempty_var_arm(pattern, expr, subj_reg, ctx, b, block_id)

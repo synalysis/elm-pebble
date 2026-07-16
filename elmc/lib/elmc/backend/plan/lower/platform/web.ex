@@ -43,10 +43,33 @@ defmodule Elmc.Backend.Plan.Lower.Platform.Web do
     "map" => 3,
     "attribute" => 4,
     "style" => 5,
-    "lazy" => 6
+    "lazy" => 6,
+    "nodeNS" => 7,
+    "event" => 8,
+    "keyedNode" => 9,
+    "keyedNodeNS" => 10,
+    "lazy2" => 11,
+    "lazy3" => 12,
+    "lazy4" => 13
   }
 
   @html_special_fns ~w(text map node)
+
+  @html_event_targets %{
+    {"Html.Events", "onClick"} => "click",
+    {"Html.Events", "onInput"} => "input",
+    {"Html.Events", "onSubmit"} => "submit",
+    {"Html.Events", "onCheck"} => "change",
+    {"Html.Events", "onFocus"} => "focus",
+    {"Html.Events", "onBlur"} => "blur",
+    {"Html.Events", "onMouseDown"} => "mousedown",
+    {"Html.Events", "onMouseUp"} => "mouseup",
+    {"Html.Events", "onMouseMove"} => "mousemove",
+    {"Html.Events", "onKeyDown"} => "keydown",
+    {"Html.Events", "onKeyUp"} => "keyup",
+    {"Html.Events", "onDoubleClick"} => "dblclick",
+    {"VirtualDom", "on"} => "custom"
+  }
 
   @html_call_targets %{
     {"Html", "text"} => 1,
@@ -57,9 +80,19 @@ defmodule Elmc.Backend.Plan.Lower.Platform.Web do
     {"Elm.Kernel.VirtualDom", "node"} => 2,
     {"Html", "map"} => 3,
     {"VirtualDom", "map"} => 3,
-    {"Elm.Kernel.VirtualDom", "map"} => 3,
+    {"Elm.Kernel.VirtualDom", "nodeNS"} => 7,
     {"Html.Lazy", "lazy"} => 6,
-    {"VirtualDom", "lazy"} => 6
+    {"VirtualDom", "lazy"} => 6,
+    {"Html.Lazy", "lazy2"} => 11,
+    {"VirtualDom", "lazy2"} => 11,
+    {"Html.Lazy", "lazy3"} => 12,
+    {"VirtualDom", "lazy3"} => 12,
+    {"Html.Lazy", "lazy4"} => 13,
+    {"VirtualDom", "lazy4"} => 13,
+    {"Html.Keyed", "node"} => 9,
+    {"VirtualDom", "keyedNode"} => 9,
+    {"Elm.Kernel.VirtualDom", "keyedNode"} => 9,
+    {"Elm.Kernel.VirtualDom", "keyedNodeNS"} => 10
   }
 
   @kernel_modules MapSet.new(["Elm.Kernel.VirtualDom", "VirtualDom"])
@@ -71,7 +104,12 @@ defmodule Elmc.Backend.Plan.Lower.Platform.Web do
     "replaceUrl" => 4,
     "setViewport" => 5,
     "element" => 6,
-    "document" => 7
+    "document" => 7,
+    "worker" => 8,
+    "focus" => 9,
+    "back" => 10,
+    "forward" => 11,
+    "setTitle" => 12
   }
 
   @bytes_kernel_kinds %{
@@ -81,13 +119,15 @@ defmodule Elmc.Backend.Plan.Lower.Platform.Web do
     "read_bytes" => 4,
     "decode" => 5,
     "decodeFailure" => 6,
-    "encode" => 8
+    "encode" => 8,
+    "read_f64" => 9,
+    "read_string" => 10
   }
 
   # Elm.Kernel.Bytes read_* and decodeFailure are decoder step functions:
   # `Bytes -> Int -> (Int, a)`. They must not run `bytes_cmd` when the decoder
   # is constructed — only when invoked during `Bytes.Decode.decode`.
-  @bytes_read_step_kinds MapSet.new([2, 3, 4, 6])
+  @bytes_read_step_kinds MapSet.new([2, 3, 4, 6, 9, 10])
 
   @json_kernel_kinds %{
     "wrap" => 1,
@@ -276,12 +316,25 @@ defmodule Elmc.Backend.Plan.Lower.Platform.Web do
       web_target?(opts) and module == "Browser" and Map.has_key?(@browser_kinds, name) and is_list(args) ->
         compile_browser_cmd(name, args, ctx, b)
 
+      web_target?(opts) and match?([_], args) and Map.has_key?(@html_event_targets, {module, name}) ->
+        [msg] = args
+        event_name = Map.fetch!(@html_event_targets, {module, name})
+        compile_html_event(event_name, msg, ctx, b)
+
+      web_target?(opts) and module == "VirtualDom" and name == "on" and match?([_, _, _], args) ->
+        [event, decoder, handler] = args
+        compile_html_event_expr(event, decoder, handler, ctx, b)
+
       web_target?(opts) and match?([_], args) and Map.has_key?(@html_attr_aliases, {module, name}) ->
         [value] = args
         key = Map.fetch!(@html_attr_aliases, {module, name})
         compile_html_attr([%{op: :string_literal, value: key}, value], ctx, b)
 
-      web_target?(opts) and module == "Html.Attributes" and name in ["stringProperty", "attribute"] and
+      web_target?(opts) and module == "Html.Attributes" and name == "stringProperty" and
+          match?([_, _], args) ->
+        compile_html_property(args, ctx, b)
+
+      web_target?(opts) and module == "Html.Attributes" and name == "attribute" and
           match?([_, _], args) ->
         compile_html_attr(args, ctx, b)
 
@@ -297,6 +350,39 @@ defmodule Elmc.Backend.Plan.Lower.Platform.Web do
             kind: %{op: :int_literal, value: 2},
             params: [
               %{op: :string_literal, value: html_element_tag(name)},
+              attrs,
+              children
+            ]
+          },
+          ctx,
+          b
+        )
+
+      web_target?(opts) and String.starts_with?(module, "Internal.Svg") and match?([_], args) ->
+        [value] = args
+        compile_html_attr([%{op: :string_literal, value: name}, value], ctx, b)
+
+      web_target?(opts) and module == "Svg.Attributes" and match?([_], args) ->
+        [value] = args
+        compile_html_attr([%{op: :string_literal, value: name}, value], ctx, b)
+
+      # Unqualified Svg.Attributes helpers sometimes keep the caller module after
+      # incomplete import resolution. If Svg.Attributes declares the same name and
+      # this module does not, lower as an SVG attribute.
+      web_target?(opts) and match?([_], args) and svg_attribute_call?(module, name, ctx) ->
+        [value] = args
+        compile_html_attr([%{op: :string_literal, value: name}, value], ctx, b)
+
+      web_target?(opts) and module == "Svg" and svg_element_tag?(name) and match?([_, _], args) ->
+        [attrs, children] = args
+
+        compile_html_cmd(
+          %{
+            op: :html_cmd,
+            kind: %{op: :int_literal, value: 7},
+            params: [
+              %{op: :string_literal, value: "http://www.w3.org/2000/svg"},
+              %{op: :string_literal, value: name},
               attrs,
               children
             ]
@@ -347,10 +433,22 @@ defmodule Elmc.Backend.Plan.Lower.Platform.Web do
 
     cond do
       web_target?(opts) and module == "Elm.Kernel.VirtualDom" and
-          name in ["noJavaScriptUri", "noJavaScriptOrHtmlUri", "noOnOrFormAction"] and
+          name in ["noJavaScriptUri", "noJavaScriptOrHtmlUri", "noOnOrFormAction", "noScript"] and
           match?([_], args) ->
         [arg] = args
         Expr.compile(arg, ctx, b)
+
+      web_target?(opts) and module in ["VirtualDom", "Elm.Kernel.VirtualDom"] and name == "nodeNS" and
+          match?([_, _, _], args) ->
+        compile_html_cmd(
+          %{
+            op: :html_cmd,
+            kind: %{op: :int_literal, value: 7},
+            params: args
+          },
+          ctx,
+          b
+        )
 
       web_target?(opts) and module == "Elm.Kernel.VirtualDom" and name == "property" and
           match?([_, _], args) ->
@@ -368,6 +466,9 @@ defmodule Elmc.Backend.Plan.Lower.Platform.Web do
 
       web_target?(opts) and module == "Elm.Kernel.Bytes" and is_list(args) ->
         compile_bytes_kernel_call(name, args, ctx, b)
+
+      web_target?(opts) and module == "Elm.Kernel.Parser" and is_list(args) ->
+        compile_parser_kernel_call(name, args, ctx, b)
 
       true ->
         with true <- web_target?(opts),
@@ -389,11 +490,37 @@ defmodule Elmc.Backend.Plan.Lower.Platform.Web do
     end
   end
 
-  defp html_element_tag?(name) when is_binary(name) do
+  @doc false
+  @spec html_element_tag?(String.t()) :: boolean()
+  def html_element_tag?(name) when is_binary(name) do
     name != "" and name not in @html_special_fns and Regex.match?(~r/^[a-z][a-z0-9_]*$/, name)
   end
 
-  defp html_element_tag?(_name), do: false
+  def html_element_tag?(_name), do: false
+
+  defp svg_element_tag?(name) when is_binary(name) do
+    name != "" and Regex.match?(~r/^[a-z][a-z0-9]*$/, name)
+  end
+
+  defp svg_element_tag?(_), do: false
+
+  defp svg_attribute_call?(module, name, ctx)
+       when is_binary(module) and is_binary(name) and is_map(ctx) do
+    decl_map = Map.get(ctx, :decl_map, %{})
+
+    Map.has_key?(decl_map, {"Svg.Attributes", name}) and
+      not Map.has_key?(decl_map, {module, name})
+  end
+
+  defp svg_attribute_call?(_, _, _), do: false
+
+  @doc false
+  @spec html_element_param_names(String.t(), String.t()) :: [String.t()] | nil
+  def html_element_param_names("Html", name) when is_binary(name) do
+    if html_element_tag?(name), do: ["attrs", "children"], else: nil
+  end
+
+  def html_element_param_names(_module, _name), do: nil
 
   defp html_element_tag(name) when is_binary(name), do: String.trim_trailing(name, "_")
 
@@ -421,7 +548,45 @@ defmodule Elmc.Backend.Plan.Lower.Platform.Web do
     )
   end
 
-  defp compile_browser_cmd(name, params, ctx, b) when is_binary(name) and is_list(params) do
+  defp compile_html_property(params, ctx, b) when is_list(params) do
+    compile_html_cmd(
+      %{
+        op: :html_cmd,
+        kind: %{op: :int_literal, value: 14},
+        params: params
+      },
+      ctx,
+      b
+    )
+  end
+
+  defp compile_html_event(event_name, msg, ctx, b) when is_binary(event_name) do
+    compile_html_cmd(
+      %{
+        op: :html_cmd,
+        kind: %{op: :int_literal, value: 8},
+        params: [%{op: :string_literal, value: event_name}, msg]
+      },
+      ctx,
+      b
+    )
+  end
+
+  defp compile_html_event_expr(event, decoder, handler, ctx, b) do
+    compile_html_cmd(
+      %{
+        op: :html_cmd,
+        kind: %{op: :int_literal, value: 8},
+        params: [event, decoder, handler]
+      },
+      ctx,
+      b
+    )
+  end
+
+  @spec compile_browser_cmd(String.t(), [Types.ir_expr()], Context.t(), Builder.t()) ::
+          {:ok, Types.reg() | :fn_out, Builder.t()} | :unsupported
+  def compile_browser_cmd(name, params, ctx, b) when is_binary(name) and is_list(params) do
     with kind when is_integer(kind) <- Map.get(@browser_kinds, name),
          {:ok, param_regs, b1} <- compile_params_scratch(params, ctx, b) do
       compile_platform_op(:browser_cmd, %{op: :int_literal, value: kind}, param_regs, ctx, b1)
@@ -444,6 +609,31 @@ defmodule Elmc.Backend.Plan.Lower.Platform.Web do
   def compile_bytes_cmd(%{params: params} = expr, ctx, b) do
     with {:ok, param_regs, b1} <- compile_params_scratch(params, ctx, b) do
       compile_platform_op(:bytes_cmd, Map.get(expr, :kind), param_regs, ctx, b1)
+    else
+      _ -> :unsupported
+    end
+  end
+
+  @parser_kernel_kinds %{
+    "isSubString" => 1,
+    "isSubChar" => 2
+  }
+
+  @spec compile_parser_cmd(Types.ir_expr(), Context.t(), Builder.t()) ::
+          Types.compile_result_required()
+  def compile_parser_cmd(%{params: params} = expr, ctx, b) do
+    with {:ok, param_regs, b1} <- compile_params_scratch(params, ctx, b) do
+      compile_platform_op(:parser_cmd, Map.get(expr, :kind), param_regs, ctx, b1)
+    else
+      _ -> :unsupported
+    end
+  end
+
+  defp compile_parser_kernel_call(name, params, ctx, b) when is_binary(name) and is_list(params) do
+    with kind when is_integer(kind) <- Map.get(@parser_kernel_kinds, name) do
+      with {:ok, param_regs, b1} <- compile_params_scratch(params, ctx, b) do
+        compile_platform_op(:parser_cmd, %{op: :int_literal, value: kind}, param_regs, ctx, b1)
+      end
     else
       _ -> :unsupported
     end

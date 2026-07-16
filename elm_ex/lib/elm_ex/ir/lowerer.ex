@@ -226,7 +226,8 @@ defmodule ElmEx.IR.Lowerer do
               end)
               |> Map.new()
 
-            {alias_map, import_unqualified_map, wildcard_import_modules, type_unqualified_map} =
+            {alias_map, alias_member_map, import_unqualified_map, wildcard_import_modules,
+             type_unqualified_map} =
               build_import_resolution(
                 Map.get(frontend_module, :import_entries) || [],
                 project_module_exports
@@ -251,6 +252,7 @@ defmodule ElmEx.IR.Lowerer do
               payload_arity_qualified: global_qualified_payload_arity_lookup,
               current_module: frontend_module.name,
               alias_map: alias_map,
+              alias_member_map: alias_member_map,
               import_unqualified_map: import_unqualified_map,
               type_unqualified_map: type_unqualified_map,
               wildcard_import_modules: wildcard_import_modules,
@@ -517,15 +519,30 @@ defmodule ElmEx.IR.Lowerer do
   end
 
   defp rewrite_expr(%{op: :qualified_call, target: target, args: args} = expr, lookup) do
-    resolved_target = resolve_alias(target, lookup)
-    rewritten_args = Enum.map(args || [], &rewrite_expr(&1, lookup))
+    cond do
+      target == "|." ->
+        rewrite_expr(
+          %{op: :qualified_call, target: "Parser.Advanced.ignorer", args: args || []},
+          lookup
+        )
 
-    case rewrite_constructor_value(resolved_target, rewritten_args, lookup) do
-      nil ->
-        %{expr | target: resolved_target, args: rewritten_args}
+      target == "|=" ->
+        rewrite_expr(
+          %{op: :qualified_call, target: "Parser.Advanced.keeper", args: args || []},
+          lookup
+        )
 
-      rewritten ->
-        rewritten
+      true ->
+        resolved_target = resolve_alias(target, lookup)
+        rewritten_args = Enum.map(args || [], &rewrite_expr(&1, lookup))
+
+        case rewrite_constructor_value(resolved_target, rewritten_args, lookup) do
+          nil ->
+            %{expr | target: resolved_target, args: rewritten_args}
+
+          rewritten ->
+            rewritten
+        end
     end
   end
 
@@ -561,12 +578,46 @@ defmodule ElmEx.IR.Lowerer do
 
   defp rewrite_expr(%{op: :call, name: name, args: args}, lookup) when is_binary(name) do
     rewritten_args = Enum.map(args || [], &rewrite_expr(&1, lookup))
-    resolved_name = resolve_alias(name, lookup)
+    let_bound = Map.get(lookup, :let_bound_names, MapSet.new())
 
-    if String.contains?(resolved_name, ".") do
-      %{op: :qualified_call, target: resolved_name, args: rewritten_args}
-    else
-      %{op: :call, name: resolved_name, args: rewritten_args}
+    cond do
+      name == "|=" ->
+        rewrite_expr(
+          %{op: :qualified_call, target: "Parser.Advanced.keeper", args: rewritten_args},
+          lookup
+        )
+
+      name == "|." ->
+        rewrite_expr(
+          %{op: :qualified_call, target: "Parser.Advanced.ignorer", args: rewritten_args},
+          lookup
+        )
+
+      name == "<|" ->
+        rewrite_expr(
+          %{
+            op: :call,
+            name: "__apply__",
+            args: rewritten_args
+          },
+          lookup
+        )
+
+      MapSet.member?(let_bound, name) and rewritten_args != [] ->
+        # Pattern/let-bound function values must apply as closures, not as
+        # `Module.name` callees (e.g. `run (Parser parse) src` → `parse state`).
+        Enum.reduce(rewritten_args, %{op: :var, name: name}, fn arg, acc ->
+          %{op: :call, name: "__apply__", args: [acc, arg]}
+        end)
+
+      true ->
+        resolved_name = resolve_alias(name, lookup)
+
+        if String.contains?(resolved_name, ".") do
+          %{op: :qualified_call, target: resolved_name, args: rewritten_args}
+        else
+          %{op: :call, name: resolved_name, args: rewritten_args}
+        end
     end
   end
 
@@ -730,6 +781,35 @@ defmodule ElmEx.IR.Lowerer do
     let_bound = Map.get(lookup, :let_bound_names, MapSet.new())
 
     cond do
+      name == "<|" ->
+        # Basics.(<|) / apL as a first-class value: \f x -> f x
+        rewrite_expr(
+          %{
+            op: :lambda,
+            args: ["__apL_f", "__apL_x"],
+            body: %{
+              op: :call,
+              name: "__apply__",
+              args: [%{op: :var, name: "__apL_f"}, %{op: :var, name: "__apL_x"}]
+            }
+          },
+          lookup
+        )
+
+      name == "|>" ->
+        rewrite_expr(
+          %{
+            op: :lambda,
+            args: ["__apR_x", "__apR_f"],
+            body: %{
+              op: :call,
+              name: "__apply__",
+              args: [%{op: :var, name: "__apR_f"}, %{op: :var, name: "__apR_x"}]
+            }
+          },
+          lookup
+        )
+
       MapSet.member?(local_call_names, name) ->
         expr
 
@@ -976,66 +1056,106 @@ defmodule ElmEx.IR.Lowerer do
        when is_list(import_entries) and is_map(project_module_exports) do
     entries = ensure_default_import_entries(import_entries)
 
-    Enum.reduce(entries, {%{}, %{}, [], %{}}, fn entry,
-                                                 {alias_acc, unqualified_acc, wildcard_acc,
-                                                  type_acc} ->
-      module_name = Map.get(entry, "module")
-      as_name = Map.get(entry, "as")
-      exposing = Map.get(entry, "exposing")
+    {alias_map, alias_modules, unqualified_acc, wildcard_acc, type_acc} =
+      Enum.reduce(entries, {%{}, %{}, %{}, [], %{}}, fn entry,
+                                                       {alias_acc, alias_modules_acc, unqualified_acc,
+                                                        wildcard_acc, type_acc} ->
+        module_name = Map.get(entry, "module")
+        as_name = Map.get(entry, "as")
+        exposing = Map.get(entry, "exposing")
 
-      if is_binary(module_name) and module_name != "" do
-        segments = String.split(module_name, ".", trim: true)
-        compact_name = Enum.join(segments, "")
+        if is_binary(module_name) and module_name != "" do
+          segments = String.split(module_name, ".", trim: true)
+          compact_name = Enum.join(segments, "")
 
-        alias_acc =
-          alias_acc
-          |> maybe_put_alias(as_name, module_name)
-          |> maybe_put_alias(compact_name, module_name)
+          {alias_acc, alias_modules_acc} =
+            {alias_acc, alias_modules_acc}
+            |> put_alias_binding(as_name, module_name)
+            |> put_alias_binding(compact_name, module_name)
 
-        {unqualified_acc, wildcard_acc, type_acc} =
-          case exposing do
-            ".." ->
-              {
-                register_wildcard_exports(unqualified_acc, module_name, project_module_exports),
-                add_unique_string(wildcard_acc, module_name),
-                register_wildcard_type_exports(type_acc, module_name, project_module_exports)
-              }
+          {unqualified_acc, wildcard_acc, type_acc} =
+            case exposing do
+              ".." ->
+                {
+                  register_wildcard_exports(unqualified_acc, module_name, project_module_exports),
+                  add_unique_string(wildcard_acc, module_name),
+                  register_wildcard_type_exports(type_acc, module_name, project_module_exports)
+                }
 
-            names when is_list(names) ->
-              expanded_names =
-                expand_import_exposing_names(names, module_name, project_module_exports)
+              names when is_list(names) ->
+                expanded_names =
+                  expand_import_exposing_names(names, module_name, project_module_exports)
 
-              exposed_types =
-                expand_import_exposing_type_names(names, module_name, project_module_exports)
+                exposed_types =
+                  expand_import_exposing_type_names(names, module_name, project_module_exports)
 
-              mapped =
-                expanded_names
-                |> Enum.filter(&is_binary/1)
-                |> Enum.reduce(unqualified_acc, fn name, acc ->
-                  put_unqualified_name(acc, name, module_name)
-                end)
+                mapped =
+                  expanded_names
+                  |> Enum.filter(&is_binary/1)
+                  |> Enum.reduce(unqualified_acc, fn name, acc ->
+                    put_unqualified_name(acc, name, module_name)
+                  end)
 
-              type_mapped =
-                exposed_types
-                |> Enum.filter(&is_binary/1)
-                |> Enum.reduce(type_acc, fn name, acc ->
-                  put_unqualified_name(acc, name, module_name)
-                end)
+                type_mapped =
+                  exposed_types
+                  |> Enum.filter(&is_binary/1)
+                  |> Enum.reduce(type_acc, fn name, acc ->
+                    put_unqualified_name(acc, name, module_name)
+                  end)
 
-              {mapped, wildcard_acc, type_mapped}
+                {mapped, wildcard_acc, type_mapped}
 
-            _ ->
-              {unqualified_acc, wildcard_acc, type_acc}
-          end
+              _ ->
+                {unqualified_acc, wildcard_acc, type_acc}
+            end
 
-        {alias_acc, unqualified_acc, wildcard_acc, type_acc}
-      else
-        {alias_acc, unqualified_acc, wildcard_acc, type_acc}
-      end
+          {alias_acc, alias_modules_acc, unqualified_acc, wildcard_acc, type_acc}
+        else
+          {alias_acc, alias_modules_acc, unqualified_acc, wildcard_acc, type_acc}
+        end
+      end)
+
+    alias_member_map = build_alias_member_map(alias_modules, project_module_exports)
+    {alias_map, alias_member_map, unqualified_acc, wildcard_acc, type_acc}
+  end
+
+  defp build_import_resolution(_import_entries, _project_module_exports),
+    do: {%{}, %{}, %{}, [], %{}}
+
+  defp put_alias_binding({alias_acc, alias_modules_acc}, alias_name, module_name)
+       when is_binary(alias_name) and alias_name != "" and is_binary(module_name) do
+    {
+      # Last import wins for bare alias fallback (types / unknown members).
+      Map.put(alias_acc, alias_name, module_name),
+      Map.update(alias_modules_acc, alias_name, [module_name], fn modules ->
+        if module_name in modules, do: modules, else: modules ++ [module_name]
+      end)
+    }
+  end
+
+  defp put_alias_binding(acc, _alias_name, _module_name), do: acc
+
+  defp build_alias_member_map(alias_modules, project_module_exports)
+       when is_map(alias_modules) and is_map(project_module_exports) do
+    Enum.reduce(alias_modules, %{}, fn {alias_name, modules}, acc ->
+      members =
+        modules
+        # Later imports shadow earlier ones for the same exported name.
+        |> Enum.reverse()
+        |> Enum.reduce(%{}, fn module_name, member_acc ->
+          export = Map.get(project_module_exports, module_name, %{})
+          names = Map.get(export, :names, []) || []
+
+          Enum.reduce(names, member_acc, fn name, inner ->
+            if is_binary(name), do: Map.put_new(inner, name, module_name), else: inner
+          end)
+        end)
+
+      if members == %{}, do: acc, else: Map.put(acc, alias_name, members)
     end)
   end
 
-  defp build_import_resolution(_import_entries, _project_module_exports), do: {%{}, %{}, [], %{}}
+  defp build_alias_member_map(_, _), do: %{}
 
   @spec build_project_module_exports([FrontendModule.t()]) :: ModuleExports.project_exports()
   defp build_project_module_exports(frontend_modules) when is_list(frontend_modules) do
@@ -1239,15 +1359,6 @@ defmodule ElmEx.IR.Lowerer do
     import_entries ++ default_entries
   end
 
-  @spec maybe_put_alias(Lookup.name_map(), String.t(), String.t()) :: Lookup.name_map()
-  defp maybe_put_alias(map, alias_name, module_name)
-       when is_map(map) and is_binary(alias_name) and alias_name != "" and is_binary(module_name) do
-    Map.put_new(map, alias_name, module_name)
-  end
-
-  defp maybe_put_alias(map, _alias_name, _module_name), do: map
-
-  @spec add_unique_string([String.t()], String.t()) :: [String.t()]
   defp add_unique_string(values, value) when is_list(values) and is_binary(value) do
     if value in values, do: values, else: values ++ [value]
   end

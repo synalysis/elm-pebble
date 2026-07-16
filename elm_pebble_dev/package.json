@@ -7,8 +7,11 @@
     "build": "npm run gen:tailwind && elm-pages build",
     "build:wasm": "bash ../scripts/build-elm-pebble-dev-wasm.sh",
     "verify:wasm": "node ../elmc/test/support/wasm_browser_page_data_probe_runner.mjs dist/wasm-web",
+    "verify:wasm:browser": "node ../elmc/test/support/wasm_browser_playwright_probe_runner.mjs dist",
+    "bench:wasm": "bash ../scripts/benchmark-elm-pebble-dev-wasm.sh",
+    "bench:wasm:browser": "node ../scripts/benchmark-elm-pebble-dev-wasm-browser.mjs",
     "serve:wasm": "bash ../scripts/serve-elm-pebble-dev-wasm.sh",
-    "serve:wasm:only": "python -m http.server 8080 --directory dist",
+    "serve:wasm:only": "python3 ../scripts/serve-static-brotli.py dist --port 8080 --bind 0.0.0.0",
     "preview:wasm": "bash ../scripts/serve-elm-pebble-dev-wasm.sh"
   },
   "devDependencies": {
@@ -21,6 +24,7 @@
     "elm-review": "^2.13.5",
     "elm-tailwind-classes": "^0.6.2",
     "lamdera": "^0.19.1-1.4.0",
+    "playwright": "^1.52.0",
     "tailwindcss": "^4.2.2",
     "vite": "^7.3.1"
   },

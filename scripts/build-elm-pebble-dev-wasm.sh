@@ -8,8 +8,50 @@ if [[ "$OUT" != /* ]]; then
   OUT="$ROOT/$OUT"
 fi
 
-cd "$ROOT/elmc"
-mix run -e "
+KEEP_WAT="${KEEP_WAT:-0}"
+SKIP_WASM_OPT="${SKIP_WASM_OPT:-0}"
+SKIP_VERIFY="${SKIP_VERIFY:-0}"
+
+find_wasm_opt() {
+  if [[ -n "${WASM_OPT:-}" && -x "${WASM_OPT}" ]]; then
+    echo "$WASM_OPT"
+    return 0
+  fi
+  if command -v wasm-opt >/dev/null 2>&1; then
+    command -v wasm-opt
+    return 0
+  fi
+  if [[ -x "$ROOT/tools/wasm-opt" ]]; then
+    echo "$ROOT/tools/wasm-opt"
+    return 0
+  fi
+  return 1
+}
+
+ensure_wasm_opt() {
+  if find_wasm_opt >/dev/null; then
+    find_wasm_opt
+    return 0
+  fi
+
+  echo "==> fetching wasm-opt (binaryen) into tools/"
+  mkdir -p "$ROOT/tools"
+  local tmp
+  tmp="$(mktemp -d)"
+  # Pin to a known release; keep out of git (.gitignore tools/wasm-opt*).
+  (cd "$tmp" && npm pack binaryen@130.0.0 >/dev/null && tar -xzf binaryen-*.tgz)
+  cp "$tmp/package/bin/wasm-opt" "$ROOT/tools/wasm-opt"
+  chmod +x "$ROOT/tools/wasm-opt"
+  rm -rf "$tmp"
+  echo "$ROOT/tools/wasm-opt"
+}
+
+# Guard the BEAM compile the same way as mix-test-limited / mix-run-limited.
+# Full elmc recompile + wasm emit often needs more than 6 GiB virtual; 10 GiB
+# matches mix-test-limited's default ceiling and still prevents unbounded OOM.
+export TEST_ULIMIT_V_KB="${TEST_ULIMIT_V_KB:-10485760}"
+export ELIXIR_ERL_OPTIONS="${ELIXIR_ERL_OPTIONS:-+S 1:1 +MMscs 256}"
+"$ROOT/scripts/mix-run-limited.sh" elmc -e "
 out = \"$OUT\"
 File.rm_rf!(out)
 case Elmc.compile(\"$APP\", %{
@@ -31,7 +73,88 @@ case Elmc.compile(\"$APP\", %{
 end
 "
 
-if command -v wat2wasm >/dev/null 2>&1; then
-  wat2wasm "$OUT/wasm/elmc_generated.wat" -o "$OUT/wasm/app.wasm"
-  echo "Linked: $OUT/wasm/app.wasm"
+WAT="$OUT/wasm/elmc_generated.wat"
+WASM="$OUT/wasm/app.wasm"
+
+if ! command -v wat2wasm >/dev/null 2>&1; then
+  echo "error: wat2wasm not found (install wabt)" >&2
+  exit 1
+fi
+
+wat2wasm "$WAT" -o "$WASM"
+bytes="$(wc -c < "$WASM" | tr -d ' ')"
+echo "Linked: $WASM (${bytes} bytes)"
+
+if [[ "$SKIP_WASM_OPT" != "1" ]]; then
+  OPT_BIN="$(ensure_wasm_opt)"
+  # -Oz shrinks raw; --converge squeezes a bit more. Multivalue is required for
+  # elmc RC (result i32 i32) exports/calls.
+  WASM_OPT_LEVEL="${WASM_OPT_LEVEL:--Oz}"
+  "$OPT_BIN" "$WASM_OPT_LEVEL" --converge --enable-multivalue "$WASM" -o "$WASM"
+  bytes="$(wc -c < "$WASM" | tr -d ' ')"
+  echo "Optimized: $WASM (${bytes} bytes) via $OPT_BIN $WASM_OPT_LEVEL --converge"
+fi
+
+if [[ "$KEEP_WAT" != "1" ]]; then
+  rm -f "$WAT"
+  echo "Removed WAT (set KEEP_WAT=1 to keep)"
+fi
+
+echo "==> wasm compile gate (stubs/skips/constructor_tags)"
+ELMC_OUT_DIR="$OUT" "$ROOT/scripts/mix-run-limited.sh" elmc test/support/validate_elm_pebble_dev_wasm.exs
+
+if [[ "$SKIP_VERIFY" != "1" && -f "$APP/dist/index.html" ]]; then
+  echo "==> wasm page-data probe (Node)"
+  node "$ROOT/elmc/test/support/wasm_browser_page_data_probe_runner.mjs" "$OUT"
+fi
+
+# Precompress large transfer targets before optional host minify refreshes .br.
+python3 - <<PY
+from pathlib import Path
+import json
+
+try:
+    import brotli
+except ImportError as exc:  # pragma: no cover
+    raise SystemExit("python brotli package required for precompress") from exc
+
+out = Path("$OUT")
+manifest = out / "wasm" / "elmc_wasm.manifest.json"
+data = json.loads(manifest.read_text())
+print(
+    "Manifest:",
+    manifest.stat().st_size,
+    "bytes;",
+    "minified=",
+    data.get("minified"),
+    "closure_count=",
+    data.get("closure_count") or len(data.get("closures") or []),
+    "immortal_strings=",
+    (
+        len(data["immortal_strings"])
+        if isinstance(data.get("immortal_strings"), (list, dict))
+        else 0
+    ),
+)
+
+precompress = [
+    out / "wasm" / "app.wasm",
+    manifest,
+]
+precompress += sorted((out / "host").glob("*.js"))
+for path in precompress:
+    if not path.is_file():
+        continue
+    raw = path.read_bytes()
+    br_path = path.with_name(path.name + ".br")
+    br_path.write_bytes(brotli.compress(raw, quality=11))
+    print(f"Brotli: {br_path.name} ({br_path.stat().st_size} bytes, from {len(raw)})")
+PY
+
+# Minify host JS in dist (sources under elmc-wasm-runtime stay readable).
+bash "$ROOT/scripts/minify-wasm-host.sh" "$OUT"
+
+# Debug manifesto is for local tooling; omit from transfer directory unless kept.
+if [[ "${KEEP_WASM_DEBUG_MANIFEST:-0}" != "1" ]]; then
+  rm -f "$OUT/wasm/elmc_wasm.manifest.debug.json"
 fi

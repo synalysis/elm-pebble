@@ -15,8 +15,51 @@ defmodule Elmc.Backend.CCodegen.Util do
     end
   end
 
+  @doc """
+  Resolve a qualified call target to a `decl_map` key.
+
+  Matches `Elmc.Backend.Plan.Lower.Call.parse_target/3` so reachability follows
+  the same nested-module flattening as plan lowering (`Route.Greet.foo` →
+  `{Route, \"Greet.foo\"}`).
+  """
+  @spec resolve_decl_key(String.t(), map()) :: {String.t(), String.t()} | nil
+  def resolve_decl_key(target, decl_map) when is_binary(target) and is_map(decl_map) do
+    case String.split(target, ".") do
+      [_single] ->
+        nil
+
+      parts ->
+        name = List.last(parts)
+        full_module = parts |> Enum.drop(-1) |> Enum.join(".")
+
+        candidates =
+          [
+            {full_module, name},
+            case String.split(target, ".", parts: 2) do
+              [mod, rest] -> {mod, rest}
+              _ -> nil
+            end,
+            case split_qualified_function_target(target) do
+              nil -> nil
+              key -> key
+            end
+          ]
+          |> Enum.reject(&is_nil/1)
+          |> Enum.uniq()
+
+        Enum.find(candidates, fn key -> Map.has_key?(decl_map, key) end) ||
+          if kernel_module?(full_module), do: {full_module, name}, else: nil
+    end
+  end
+
+  defp kernel_module?(module) do
+    module == "Elm.Kernel" or String.starts_with?(module, "Elm.Kernel.")
+  end
+
   @spec module_fn_name(String.t(), String.t()) :: String.t()
   def module_fn_name(module_name, function_name) do
+    # Preserve `Elm.Kernel.*` in the C symbol. Denormalizing onto public modules
+    # collapses Kernel callees into elm/core wrappers (self-calls / missing stubs).
     safe_module = module_name |> String.replace(".", "_") |> safe_c_suffix()
     safe_function = function_name |> String.replace(".", "_") |> safe_c_suffix()
     "elmc_fn_#{safe_module}_#{safe_function}"

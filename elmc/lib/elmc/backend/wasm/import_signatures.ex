@@ -4,7 +4,8 @@ defmodule Elmc.Backend.Wasm.ImportSignatures do
   alias Elmc.Backend.Wasm.Types, as: WasmTypes
 
   @core_arities %{
-    "runtime.retain" => 1,
+    # outPtr + handle (matches host retain(outPtr, handlePtr)).
+    "runtime.retain" => 2,
     "runtime.release" => 1,
     "runtime.release_unless_reachable" => 2,
     "runtime.release_unless_reachable_from_roots" => 3,
@@ -31,7 +32,7 @@ defmodule Elmc.Backend.Wasm.ImportSignatures do
     int_zero: 1,
     unit: 1,
     release: 1,
-    retain: 1,
+    retain: 2,
     maybe_just_payload: 2
   }
 

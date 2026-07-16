@@ -3,6 +3,13 @@ defmodule Elmc.Backend.CCodegen.VarAnalysis do
 
   alias Elmc.Backend.CCodegen.Types
 
+  @call_operator_names ~w(
+    __add__ __sub__ __mul__ __idiv__ __fdiv__ __pow__
+    __eq__ __neq__ __lt__ __lte__ __gt__ __gte__ __append__
+    __apply__
+    max min modBy remainderBy
+  )
+
   @spec used_vars(Types.ir_expr() | nil) :: Types.var_name_set()
   def used_vars(nil), do: MapSet.new()
 
@@ -40,9 +47,15 @@ defmodule Elmc.Backend.CCodegen.VarAnalysis do
     Enum.reduce(items, MapSet.new(), fn item, acc -> MapSet.union(acc, used_vars(item)) end)
   end
 
+  def used_vars(%{op: :call, name: "__apply__", args: args}) when is_list(args) do
+    Enum.reduce(args, MapSet.new(), fn arg, acc -> MapSet.union(acc, used_vars(arg)) end)
+  end
+
   def used_vars(%{op: :call, name: name, args: args}) when is_binary(name) do
-    Enum.reduce(args, MapSet.new([name]), fn arg, acc ->
-      MapSet.union(acc, used_vars(arg))
+    acc = if call_name_is_var_ref?(name), do: MapSet.new([name]), else: MapSet.new()
+
+    Enum.reduce(args, acc, fn arg, acc2 ->
+      MapSet.union(acc2, used_vars(arg))
     end)
   end
 
@@ -100,13 +113,239 @@ defmodule Elmc.Backend.CCodegen.VarAnalysis do
   end
 
   def used_vars(%{op: op, params: params})
-      when op in [:bytes_cmd, :html_cmd, :dom_sub, :browser_cmd, :json_cmd] and is_list(params) do
+      when op in [:bytes_cmd, :html_cmd, :dom_sub, :browser_cmd, :json_cmd, :parser_cmd] and is_list(params) do
     Enum.reduce(params, MapSet.new(), fn param, acc ->
       MapSet.union(acc, used_vars(param))
     end)
   end
 
   def used_vars(_), do: MapSet.new()
+
+  @doc """
+  Free variables referenced by `body` that must be captured when lowering a
+  lambda with parameters `lambda_args`.
+
+  Unlike `used_vars/1`, respects nested-lambda boundaries (inner closures capture
+  their own free vars) and case/let pattern bindings.
+  """
+  @spec lambda_capture_free_vars(Types.ir_expr() | nil, [String.t()]) :: Types.var_name_set()
+  def lambda_capture_free_vars(body, lambda_args) do
+    free_vars(body, MapSet.new(lambda_args || []), true)
+  end
+
+  @spec free_vars(Types.ir_expr() | nil, Types.var_name_set(), boolean()) :: Types.var_name_set()
+  defp free_vars(nil, _bound, _stop_at_nested?), do: MapSet.new()
+
+  defp free_vars(%{op: :var, name: name}, bound, _stop_at_nested?) do
+    if MapSet.member?(bound, name), do: MapSet.new(), else: MapSet.new([name])
+  end
+
+  # Nested closure definitions in the current lambda body capture on their own.
+  # Peel curried `\a -> \b -> …` chains so let-bound locals referenced only in
+  # the innermost body are still captured, but do not descend into lambdas nested
+  # inside the peeled tail (if branches, call-arg closures, etc.).
+  defp free_vars(%{op: :lambda, args: args, body: body}, bound, true) do
+    inner_bound = MapSet.union(bound, MapSet.new(args || []))
+    free_vars_peel_curried_lambda(body, inner_bound)
+  end
+
+  defp free_vars(%{op: :lambda, args: args, body: body}, bound, stop_at_nested?) do
+    inner_bound = MapSet.union(bound, MapSet.new(args || []))
+    free_vars(body, inner_bound, stop_at_nested?)
+  end
+
+  defp free_vars(%{op: :add_const, var: name}, bound, _stop_at_nested?) do
+    if MapSet.member?(bound, name), do: MapSet.new(), else: MapSet.new([name])
+  end
+
+  defp free_vars(%{op: :sub_const, var: name}, bound, _stop_at_nested?) do
+    if MapSet.member?(bound, name), do: MapSet.new(), else: MapSet.new([name])
+  end
+
+  defp free_vars(%{op: :add_vars, left: left, right: right}, bound, _stop_at_nested?) do
+    MapSet.new([left, right])
+    |> MapSet.reject(&MapSet.member?(bound, &1))
+  end
+
+  defp free_vars(%{op: :let_in, name: name, value_expr: value_expr, in_expr: in_expr}, bound, stop_at_nested?) do
+    MapSet.union(
+      free_vars(value_expr, bound, stop_at_nested?),
+      free_vars(in_expr, MapSet.put(bound, name), stop_at_nested?)
+    )
+  end
+
+  defp free_vars(%{op: :case, subject: subject, branches: branches}, bound, stop_at_nested?) do
+    subject_free = free_vars_subject(subject, bound, stop_at_nested?)
+
+    branch_free =
+      Enum.reduce(branches, MapSet.new(), fn branch, acc ->
+        pattern = Map.get(branch, :pattern, %{})
+        arm_bound = MapSet.union(bound, MapSet.new(pattern_bound_names(pattern)))
+        MapSet.union(acc, free_vars(Map.get(branch, :expr), arm_bound, stop_at_nested?))
+      end)
+
+    MapSet.union(subject_free, branch_free)
+  end
+
+  defp free_vars(%{op: :field_access, arg: arg}, bound, stop_at_nested?) do
+    free_vars_value(arg, bound, stop_at_nested?)
+  end
+
+  defp free_vars(%{op: :qualified_call, args: args}, bound, stop_at_nested?) when is_list(args) do
+    free_vars_args(args, bound, stop_at_nested?)
+  end
+
+  defp free_vars(%{op: :constructor_call, args: args}, bound, stop_at_nested?) when is_list(args) do
+    free_vars_args(args, bound, stop_at_nested?)
+  end
+
+  defp free_vars(%{op: :partial_constructor, args: args}, bound, stop_at_nested?) when is_list(args) do
+    free_vars_args(args, bound, stop_at_nested?)
+  end
+
+  defp free_vars(%{op: :runtime_call, args: args}, bound, stop_at_nested?) when is_list(args) do
+    free_vars_args(args, bound, stop_at_nested?)
+  end
+
+  defp free_vars(%{op: :list_literal, items: items}, bound, stop_at_nested?) when is_list(items) do
+    free_vars_args(items, bound, stop_at_nested?)
+  end
+
+  defp free_vars(%{op: :call, name: name, args: args}, bound, stop_at_nested?)
+       when is_binary(name) and is_list(args) do
+    name_free =
+      if call_name_is_var_ref?(name) do
+        free_vars_subject(name, bound, stop_at_nested?)
+      else
+        MapSet.new()
+      end
+
+    MapSet.union(name_free, free_vars_args(args, bound, stop_at_nested?))
+  end
+
+  defp free_vars(%{op: :call, args: args}, bound, stop_at_nested?) when is_list(args) do
+    free_vars_args(args, bound, stop_at_nested?)
+  end
+
+  defp free_vars(%{op: :field_call, arg: arg, args: args}, bound, stop_at_nested?) when is_list(args) do
+    MapSet.union(free_vars_value(arg, bound, stop_at_nested?), free_vars_args(args, bound, stop_at_nested?))
+  end
+
+  defp free_vars(%{op: :record_literal, fields: fields}, bound, stop_at_nested?) when is_list(fields) do
+    Enum.reduce(fields, MapSet.new(), fn
+      %{expr: expr}, acc -> MapSet.union(acc, free_vars(expr, bound, stop_at_nested?))
+      _other, acc -> acc
+    end)
+  end
+
+  defp free_vars(%{op: :record_update, base: base, fields: fields}, bound, stop_at_nested?) do
+    Enum.reduce(fields || [], free_vars_value(base, bound, stop_at_nested?), fn
+      %{expr: expr}, acc -> MapSet.union(acc, free_vars(expr, bound, stop_at_nested?))
+      _other, acc -> acc
+    end)
+  end
+
+  defp free_vars(%{op: :if, cond: cond_expr, then_expr: then_expr, else_expr: else_expr}, bound, stop_at_nested?) do
+    free_vars(cond_expr, bound, stop_at_nested?)
+    |> MapSet.union(free_vars(then_expr, bound, stop_at_nested?))
+    |> MapSet.union(free_vars(else_expr, bound, stop_at_nested?))
+  end
+
+  defp free_vars(%{op: :compare, left: left, right: right}, bound, stop_at_nested?) do
+    MapSet.union(free_vars(left, bound, stop_at_nested?), free_vars(right, bound, stop_at_nested?))
+  end
+
+  defp free_vars(%{op: :tuple2, left: left, right: right}, bound, stop_at_nested?) do
+    MapSet.union(free_vars(left, bound, stop_at_nested?), free_vars(right, bound, stop_at_nested?))
+  end
+
+  defp free_vars(%{op: op, params: params}, bound, stop_at_nested?)
+       when op in [:bytes_cmd, :html_cmd, :dom_sub, :browser_cmd, :json_cmd, :parser_cmd] and
+              is_list(params) do
+    free_vars_args(params, bound, stop_at_nested?)
+  end
+
+  defp free_vars(%{op: _op}, _bound, _stop_at_nested?), do: MapSet.new()
+
+  defp free_vars(expr, bound, stop_at_nested?) when is_map(expr) do
+    expr
+    |> Map.values()
+    |> Enum.reduce(MapSet.new(), fn value, acc ->
+      MapSet.union(acc, free_vars_value(value, bound, stop_at_nested?))
+    end)
+  end
+
+  defp free_vars(_, _bound, _stop_at_nested?), do: MapSet.new()
+
+  defp free_vars_subject(name, bound, _stop_at_nested?) when is_binary(name) do
+    if MapSet.member?(bound, name), do: MapSet.new(), else: MapSet.new([name])
+  end
+
+  defp free_vars_subject(expr, bound, stop_at_nested?) when is_map(expr),
+    do: free_vars(expr, bound, stop_at_nested?)
+
+  defp free_vars_subject(_, _, _stop_at_nested?), do: MapSet.new()
+
+  defp free_vars_value(value, bound, stop_at_nested?) when is_map(value),
+    do: free_vars(value, bound, stop_at_nested?)
+
+  defp free_vars_value(value, bound, stop_at_nested?) when is_binary(value),
+    do: free_vars_subject(value, bound, stop_at_nested?)
+
+  defp free_vars_value(values, bound, stop_at_nested?) when is_list(values) do
+    Enum.reduce(values, MapSet.new(), fn value, acc ->
+      MapSet.union(acc, free_vars_value(value, bound, stop_at_nested?))
+    end)
+  end
+
+  defp free_vars_value(_, _, _stop_at_nested?), do: MapSet.new()
+
+  defp free_vars_args(args, bound, stop_at_nested?) when is_list(args) do
+    free_vars_call_args(args, bound, stop_at_nested?)
+  end
+
+  defp free_vars_call_args(args, bound, stop_at_nested?) when is_list(args) do
+    Enum.reduce(args, MapSet.new(), fn arg, acc ->
+      MapSet.union(acc, free_vars_call_arg(arg, bound, stop_at_nested?))
+    end)
+  end
+
+  defp free_vars_call_arg(%{op: :lambda, args: inner_args, body: body}, bound, _stop_at_nested?) do
+    inner_bound = MapSet.union(bound, MapSet.new(inner_args || []))
+    free_vars(body, inner_bound, true)
+  end
+
+  defp free_vars_call_arg(expr, bound, stop_at_nested?) do
+    free_vars(expr, bound, stop_at_nested?)
+  end
+
+  defp free_vars_peel_curried_lambda(%{op: :lambda, args: args, body: body}, bound) do
+    inner_bound = MapSet.union(bound, MapSet.new(args || []))
+    free_vars_peel_curried_lambda(body, inner_bound)
+  end
+
+  defp free_vars_peel_curried_lambda(expr, bound) when is_map(expr) do
+    free_vars(expr, bound, true)
+  end
+
+  defp free_vars_peel_curried_lambda(_, _bound), do: MapSet.new()
+
+  defp pattern_bound_names(%{kind: :var, name: name}) when is_binary(name), do: [name]
+
+  defp pattern_bound_names(%{kind: :constructor, bind: bind}) when is_binary(bind), do: [bind]
+
+  defp pattern_bound_names(%{kind: :constructor, arg_pattern: arg_pattern}) when is_map(arg_pattern),
+    do: pattern_bound_names(arg_pattern)
+
+  defp pattern_bound_names(%{kind: :tuple, elements: elements}) when is_list(elements),
+    do: Enum.flat_map(elements, &pattern_bound_names/1)
+
+  defp pattern_bound_names(%{kind: :record, fields: fields, bind: bind}) when is_list(fields) do
+    field_names = Enum.flat_map(fields, &pattern_bound_names/1)
+    if is_binary(bind), do: [bind | field_names], else: field_names
+  end
+
+  defp pattern_bound_names(_), do: []
 
   @spec field_arg_vars(Types.ir_expr() | String.t()) :: Types.var_name_set()
   defp field_arg_vars(arg) when is_binary(arg), do: MapSet.new([arg])
@@ -123,4 +362,8 @@ defmodule Elmc.Backend.CCodegen.VarAnalysis do
   defp compose_side_vars(name) when is_binary(name), do: MapSet.new([name])
   defp compose_side_vars(expr) when is_map(expr), do: used_vars(expr)
   defp compose_side_vars(_), do: MapSet.new()
+
+  defp call_name_is_var_ref?(name) when is_binary(name) do
+    name not in @call_operator_names and not String.starts_with?(name, "__")
+  end
 end

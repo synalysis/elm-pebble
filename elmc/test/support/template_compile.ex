@@ -33,7 +33,13 @@ defmodule Elmc.TestSupport.TemplateCompile do
       }
 
       deps =
-        if template_name in ["watchface_poke_battle", "game_jump_n_run"],
+        if template_name in [
+             "watchface_poke_battle",
+             "game_jump_n_run",
+             "game_2048",
+             "game_elmtris",
+             "game_tiny_bird"
+           ],
           do: Map.put(deps, "elm/random", "1.0.0"),
           else: deps
 

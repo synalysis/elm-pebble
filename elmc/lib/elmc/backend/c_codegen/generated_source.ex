@@ -1,6 +1,7 @@
 defmodule Elmc.Backend.CCodegen.GeneratedSource do
   @moduledoc false
 
+  alias Elmc.Backend.C.StubFunctions
   alias Elmc.Backend.CCodegen.CSource
   alias Elmc.Backend.CCodegen.DirectRender.Analysis, as: DirectRenderAnalysis
   alias Elmc.Backend.CCodegen.DirectRender.Analysis
@@ -517,6 +518,18 @@ defmodule Elmc.Backend.CCodegen.GeneratedSource do
       |> prune_unreferenced_lambda_defs([function_defs, direct_command_defs])
       |> Enum.join("\n")
 
+    stub_scan_chunks = [lambda_defs, function_defs, direct_command_defs]
+
+    stub_decl_chunks = [
+      generic_native_prototypes,
+      generic_plan_projection_prototypes,
+      generic_rc_native_fusion_prototypes,
+      generic_function_prototypes
+    ]
+
+    %{prototypes: stub_prototypes, definitions: stub_definitions} =
+      StubFunctions.missing_callee_stubs(stub_scan_chunks, stub_decl_chunks)
+
     trig_fallback_prelude =
       Emit.generated_trig_fallback_prelude([lambda_defs, function_defs, direct_command_defs])
 
@@ -572,9 +585,13 @@ defmodule Elmc.Backend.CCodegen.GeneratedSource do
 
     #{generic_function_prototypes}
 
+    #{stub_prototypes}
+
     #{lambda_defs}
 
     #{function_defs}
+
+    #{stub_definitions}
 
     #{direct_scene_guard(direct_command_defs, opts, ir)}
     """

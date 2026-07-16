@@ -7,7 +7,7 @@ defmodule Elmc.Backend.Plan.Lower.Function do
   alias Elmc.Backend.C.Lower.NativeReturn
   alias Elmc.Backend.CCodegen.Host
   alias Elmc.Backend.Plan.Fusion
-  alias Elmc.Backend.Plan.{Builder, Context, EpilogueRelease, Optimize, ThinDelegate, Verify}
+  alias Elmc.Backend.Plan.{Builder, Context, EpilogueRelease, Optimize, ParamFieldInference, ThinDelegate, Verify}
   alias Elmc.Backend.Plan.Lower.{Expr, Intrinsics, Platform.Web}
   alias Elmc.Backend.Plan.Types
 
@@ -98,6 +98,7 @@ defmodule Elmc.Backend.Plan.Lower.Function do
         function_tail: function_tail_compile?(decl, module_name, decl_map, rc_required?)
       )
       |> seed_param_types(decl)
+      |> seed_inferred_param_fields(decl)
 
     b = Builder.new(module_name, name,
       args: args,
@@ -166,6 +167,15 @@ defmodule Elmc.Backend.Plan.Lower.Function do
   end
 
   defp seed_param_types(ctx, _), do: ctx
+
+  defp seed_inferred_param_fields(%Context{} = ctx, decl) when is_map(decl) do
+    case ParamFieldInference.infer(decl) do
+      fields when map_size(fields) > 0 -> %{ctx | inferred_param_fields: fields}
+      _ -> ctx
+    end
+  end
+
+  defp seed_inferred_param_fields(ctx, _), do: ctx
 
   defp finalize_result(b, :fn_out, true), do: {b, :fn_out}
   defp finalize_result(b, :fn_out, false), do: {b, :fn_out}

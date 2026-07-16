@@ -46,6 +46,7 @@ defmodule Elmx.Runtime.Stdlib.Qualified do
       "a, b, c, d, e, f",
       "a, b, c, d, e, f, g",
       "a, b, c, d, e, f, g, h",
+      "a, b, c, d, e, f, g, h, i",
       "0, 1, s",
       "decoder, value",
       "decoders",
@@ -261,6 +262,7 @@ defmodule Elmx.Runtime.Stdlib.Qualified do
   def call("Json.Decode.map5", arg_code), do: Helpers.json_map_n(Elmx.Runtime.Json.Decode, "map5", arg_code, 6)
   def call("Json.Decode.map6", arg_code), do: Helpers.json_map_n(Elmx.Runtime.Json.Decode, "map6", arg_code, 7)
   def call("Json.Decode.map7", arg_code), do: Helpers.json_map_n(Elmx.Runtime.Json.Decode, "map7", arg_code, 8)
+  def call("Json.Decode.map8", arg_code), do: Helpers.json_map_n(Elmx.Runtime.Json.Decode, "map8", arg_code, 9)
 
   def call("Json.Decode.succeed", arg_code), do: Helpers.wrapped_runtime_unary(Elmx.Runtime.Json.Decode, "succeed", arg_code)
   def call("Json.Decode.oneOf", arg_code), do: Helpers.wrapped_runtime_unary(Elmx.Runtime.Json.Decode, "one_of", arg_code)

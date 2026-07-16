@@ -19,7 +19,9 @@ defmodule Elmx.Runtime.Pebble.Registry.Json do
       "elmx_json_encode_dict" => {Dispatch, :json_encode_dict},
       "elmx_json_encode_null" => {Dispatch, :json_encode_null},
       "elmx_json_encode_float" => {Dispatch, :json_encode_float},
-      "elmx_json_encode_encode" => {Dispatch, :json_encode_encode}
+      "elmx_json_encode_encode" => {Dispatch, :json_encode_encode},
+      "elmx_json_encode_add_field" => {Dispatch, :json_encode_add_field},
+      "elmx_json_encode_add_entry" => {Dispatch, :json_encode_add_entry}
     }
   end
 end

@@ -15,18 +15,19 @@ defmodule Elmc.Backend.CCodegen.SpecialValues.Dispatcher do
     Stdlib.Json,
     Stdlib.List,
     Stdlib.MaybeResult,
-    Stdlib.Set
+    Stdlib.Set,
+    Stdlib.WebKernel
   }
 
   alias Elmc.Backend.CCodegen.SpecialValues.Stdlib.String, as: StdlibString
   alias Elmc.Backend.CCodegen.Types
+  alias Elmc.Backend.Plan.Lower.Platform.Web, as: PlatformWeb
 
-  @handlers [
-    Draw,
-    Cmd,
-    Events,
-    Phone,
+  @pebble_only_handlers [Draw, Cmd, Events, Phone]
+
+  @shared_handlers [
     Platform,
+    WebKernel,
     List,
     Dict,
     Set,
@@ -39,6 +40,8 @@ defmodule Elmc.Backend.CCodegen.SpecialValues.Dispatcher do
     Core
   ]
 
+  @handlers @pebble_only_handlers ++ @shared_handlers
+
   @spec special_value_from_target(String.t(), Types.special_value_args() | nil) ::
           Types.special_value_result()
   def special_value_from_target(target, args \\ [])
@@ -47,18 +50,11 @@ defmodule Elmc.Backend.CCodegen.SpecialValues.Dispatcher do
     do: special_value_from_target(target, [])
 
   def special_value_from_target(target, args) when is_binary(target) and is_list(args) do
-    case dispatch_handlers(target, args) do
-      nil ->
-        normalized = Core.normalize_special_target(target)
+    normalized = Core.normalize_special_target(target)
 
-        if normalized == target do
-          nil
-        else
-          special_value_from_target(normalized, args)
-        end
-
-      expr ->
-        expr
+    case Core.operator_call_rewrite(normalized, args) do
+      nil -> dispatch_handlers(normalized, args)
+      expr -> expr
     end
   end
 
@@ -66,12 +62,23 @@ defmodule Elmc.Backend.CCodegen.SpecialValues.Dispatcher do
 
   @spec dispatch_handlers(String.t(), Types.special_value_args()) :: Types.special_value_result()
   defp dispatch_handlers(target, args) do
-    Enum.find_value(@handlers, fn handler ->
+    opts = Process.get(:elmc_codegen_opts, %{})
+
+    handlers_for(opts)
+    |> Enum.find_value(fn handler ->
       case handler.special_value_from_target(target, args) do
         nil -> nil
         expr -> expr
       end
     end)
+  end
+
+  defp handlers_for(opts) do
+    if PlatformWeb.web_target?(opts) do
+      @shared_handlers
+    else
+      @handlers
+    end
   end
 
   @spec handlers() :: [module()]

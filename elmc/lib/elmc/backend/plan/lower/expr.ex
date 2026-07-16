@@ -3,7 +3,7 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
   Lower Elm IR expressions to verified `%FunctionPlan{}` fragments.
   """
 
-  alias Elmc.Backend.CCodegen.ConstantInt
+  alias Elmc.Backend.CCodegen.{ConstantInt, VarAnalysis}
   alias Elmc.Backend.CCodegen.{FunctionEmit, Host, TypeParsing}
   alias Elmc.Backend.CCodegen.Native.{FunctionCall, TypedReturn}
   alias Elmc.Backend.Plan.Builder
@@ -109,11 +109,19 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
   @spec compile(Types.ir_expr() | nil, Context.t(), Builder.t()) :: Types.compile_result()
   def compile(nil, _ctx, b), do: {:ok, nil, b}
 
-  def compile(%{op: :pebble_cmd} = expr, ctx, b), do: Cmd.compile(expr, ctx, b)
+  def compile(%{op: :pebble_cmd} = expr, ctx, b) do
+    if PlatformWeb.web_target?(Process.get(:elmc_codegen_opts, %{})) do
+      record_unsupported(expr, ctx)
+      :unsupported
+    else
+      Cmd.compile(expr, ctx, b)
+    end
+  end
 
   def compile(%{op: :html_cmd} = expr, ctx, b), do: PlatformWeb.compile_html_cmd(expr, ctx, b)
 
   def compile(%{op: :bytes_cmd} = expr, ctx, b), do: PlatformWeb.compile_bytes_cmd(expr, ctx, b)
+  def compile(%{op: :parser_cmd} = expr, ctx, b), do: PlatformWeb.compile_parser_cmd(expr, ctx, b)
 
   def compile(%{op: :dom_sub} = expr, ctx, b), do: PlatformWeb.compile_dom_sub(expr, ctx, b)
 
@@ -134,7 +142,12 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
   end
 
   def compile(%{op: :c_int_expr, value: "ELMC_PEBBLE_CMD_" <> _} = kind, ctx, b) do
-    Cmd.compile(%{op: :pebble_cmd, kind: kind, params: []}, ctx, b)
+    if PlatformWeb.web_target?(Process.get(:elmc_codegen_opts, %{})) do
+      record_unsupported(%{op: :pebble_cmd, kind: kind, params: []}, ctx)
+      :unsupported
+    else
+      Cmd.compile(%{op: :pebble_cmd, kind: kind, params: []}, ctx, b)
+    end
   end
 
   def compile(%{op: op} = expr, ctx, b) when op in @literal_ops do
@@ -165,6 +178,19 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
 
   def compile(%{op: :call, name: "clamp", args: [low, high, value]}, ctx, b) do
     compile_ternary_runtime("clamp", low, high, value, :basics_clamp, ctx, b)
+  end
+
+  # Binary `(==)` / `(/=)` / order ops parse as bare `__eq__` etc. Partial
+  # application (1-arg) is handled by Lambda; saturated 2-arg calls must become
+  # `:compare` — otherwise Call scopes the name to the current module and emits
+  # a missing `Module.__eq__` callee stub.
+  def compile(%{op: :call, name: name, args: [left, right]}, ctx, b)
+      when name in ~w(__eq__ __neq__ __lt__ __lte__ __gt__ __gte__) do
+    Compare.compile(
+      %{op: :compare, kind: compare_op_kind(name), left: left, right: right},
+      ctx,
+      b
+    )
   end
 
   def compile(%{op: :call} = expr, ctx, b) do
@@ -218,14 +244,32 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
   def compile(%{op: :if} = expr, ctx, b), do: If.compile(expr, ctx, b)
   def compile(%{op: :case} = expr, ctx, b), do: Case.compile(expr, ctx, b)
 
-  def compile(%{op: :render_cmd} = expr, ctx, b),
-    do: Elmc.Backend.Plan.Lower.Platform.Pebble.compile_render_cmd(expr, ctx, b)
+  def compile(%{op: :render_cmd} = expr, ctx, b) do
+    if PlatformWeb.web_target?(Process.get(:elmc_codegen_opts, %{})) do
+      record_unsupported(expr, ctx)
+      :unsupported
+    else
+      Elmc.Backend.Plan.Lower.Platform.Pebble.compile_render_cmd(expr, ctx, b)
+    end
+  end
 
-  def compile(%{op: :render_text_cmd} = expr, ctx, b),
-    do: Elmc.Backend.Plan.Lower.Platform.Pebble.compile_render_text_cmd(expr, ctx, b)
+  def compile(%{op: :render_text_cmd} = expr, ctx, b) do
+    if PlatformWeb.web_target?(Process.get(:elmc_codegen_opts, %{})) do
+      record_unsupported(expr, ctx)
+      :unsupported
+    else
+      Elmc.Backend.Plan.Lower.Platform.Pebble.compile_render_text_cmd(expr, ctx, b)
+    end
+  end
 
-  def compile(%{op: :pebble_sub} = expr, ctx, b),
-    do: Elmc.Backend.Plan.Lower.Platform.Pebble.compile_sub(expr, ctx, b)
+  def compile(%{op: :pebble_sub} = expr, ctx, b) do
+    if PlatformWeb.web_target?(Process.get(:elmc_codegen_opts, %{})) do
+      record_unsupported(expr, ctx)
+      :unsupported
+    else
+      Elmc.Backend.Plan.Lower.Platform.Pebble.compile_sub(expr, ctx, b)
+    end
+  end
   def compile(%{op: :compare} = expr, ctx, b), do: Compare.compile(expr, ctx, b)
   def compile(%{op: :constructor_call} = expr, ctx, b),
     do: Constructor.compile(expr, ctx, b)
@@ -1005,7 +1049,9 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
     end
   end
 
-  defp compile_forward_ref_load(ref, ctx, b) when is_binary(ref) do
+  @spec compile_forward_ref_load(String.t(), Context.t(), Builder.t()) ::
+          {:ok, Types.reg(), Builder.t()}
+  def compile_forward_ref_load(ref, ctx, b) when is_binary(ref) do
     {dest, b1} = Builder.fresh_reg(b)
 
     op =
@@ -1015,10 +1061,12 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
         :forward_ref_load
       end
 
+    capture_index = Map.get(ctx.letrec_capture_indices || %{}, ref, 0)
+
     {_, b2} =
       Builder.emit(b1, op, %{
         dest: dest,
-        args: %{ref: ref},
+        args: %{ref: ref, capture_index: capture_index},
         effects: Types.owned_effects(dest)
       })
 
@@ -1173,7 +1221,10 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
       record_unsupported(%{op: :qualified_ref, target: target}, ctx)
       :unsupported
     else
-      arg_names = decl |> Map.get(:args, []) |> Elixir.List.wrap()
+      arg_names =
+        decl
+        |> Elmc.Backend.CCodegen.FunctionEmit.effective_decl_args(mod, ctx.decl_map)
+        |> Elixir.List.wrap()
 
       case length(arg_names) do
         0 ->
@@ -1218,12 +1269,138 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
       bindings == [] ->
         :unsupported
 
-      let_bindings_need_recursion?(bindings, tail_expr) ->
-        compile_let_block_letrec_or_sequential(bindings, tail_expr, ctx, b)
-
       true ->
-        compile_let_block_sequential(bindings, tail_expr, ctx, b)
+        case split_pattern_bind_reorder(bindings, tail_expr) do
+          {:ok, bind_name, bind_value, pattern, deferred, case_tail, prefix_bindings} ->
+            compile_pattern_bind_reordered(
+              prefix_bindings,
+              bind_name,
+              bind_value,
+              pattern,
+              deferred,
+              case_tail,
+              ctx,
+              b
+            )
+
+          :error ->
+            if let_bindings_need_recursion?(bindings, tail_expr) do
+              compile_let_block_letrec_or_sequential(bindings, tail_expr, ctx, b)
+            else
+              compile_let_block_sequential(bindings, tail_expr, ctx, b)
+            end
+        end
     end
+  end
+
+  defp split_pattern_bind_reorder(bindings, tail_expr) do
+    with [%{pattern: pattern, expr: case_tail} | _] <- case_branches(tail_expr),
+         subject when is_binary(subject) <- case_subject_name(tail_expr),
+         bind_idx when is_integer(bind_idx) <-
+           Enum.find_index(bindings, fn {name, _} -> name == subject end),
+         {bind_name, bind_value} <- Enum.at(bindings, bind_idx) do
+      pattern_vars = bound_vars_in_pattern(pattern, MapSet.new())
+
+      deferred =
+        bindings
+        |> Enum.with_index()
+        |> Enum.filter(fn {{_name, value}, idx} ->
+          idx != bind_idx and
+            MapSet.intersection(VarAnalysis.used_vars(value), pattern_vars) |> MapSet.size() > 0
+        end)
+        |> Enum.map(fn {pair, _} -> pair end)
+
+      prefix_bindings =
+        bindings
+        |> Enum.with_index()
+        |> Enum.reject(fn {{name, value}, idx} ->
+          idx == bind_idx or {name, value} in deferred or
+            MapSet.intersection(VarAnalysis.used_vars(value), pattern_vars) |> MapSet.size() > 0
+        end)
+        |> Enum.map(fn {pair, _} -> pair end)
+
+      if deferred == [] do
+        :error
+      else
+        {:ok, bind_name, bind_value, pattern, deferred, case_tail, prefix_bindings}
+      end
+    else
+      _ -> :error
+    end
+  end
+
+  defp case_branches(%{op: :case, branches: branches}) when is_list(branches), do: branches
+  defp case_branches(_), do: :error
+
+  defp case_subject_name(%{op: :case, subject: subject}) when is_binary(subject), do: subject
+  defp case_subject_name(%{op: :case, subject: %{op: :var, name: name}}), do: name
+  defp case_subject_name(_), do: :error
+
+  defp compile_pattern_bind_reordered(
+         prefix_bindings,
+         bind_name,
+         bind_value,
+         pattern,
+         deferred_bindings,
+         case_tail,
+         ctx,
+         b
+       ) do
+    with {:ok, ctx1, b1} <- compile_prefix_bindings(prefix_bindings, ctx, b),
+         {:ok, ctx2, b2} <- compile_single_binding(bind_name, bind_value, ctx1, b1),
+         deferred_expr <- nest_deferred_lets(deferred_bindings, case_tail),
+         case_expr <- %{
+           op: :case,
+           subject: bind_name,
+           branches: [%{pattern: pattern, expr: deferred_expr}]
+         },
+         {:ok, reg, b3} <- Case.compile(case_expr, ctx2, b2) do
+      {:ok, reg, b3}
+    else
+      _ -> :unsupported
+    end
+  end
+
+  defp compile_prefix_bindings([], ctx, b), do: {:ok, ctx, b}
+
+  defp compile_prefix_bindings([{name, value_expr} | rest], ctx, b) do
+    with {:ok, ctx1, b1} <- compile_single_binding(name, value_expr, ctx, b),
+         {:ok, ctx2, b2} <- compile_prefix_bindings(rest, ctx1, b1) do
+      {:ok, ctx2, b2}
+    else
+      _ -> :unsupported
+    end
+  end
+
+  defp compile_single_binding(name, value_expr, ctx, b) do
+    value_expr = maybe_packed_text_options_expr(value_expr)
+    value_ctx = Context.for_branch_arm(ctx)
+
+    case compile(value_expr, value_ctx, b) do
+      {:ok, reg, b1} when is_integer(reg) ->
+        ctx1 =
+          ctx
+          |> Context.put_local(name, reg)
+          |> maybe_put_local_type(name, value_expr, ctx)
+
+        b2 = Builder.bind_local(b1, name, reg)
+        b3 = sync_letrec_forward_ref(name, ctx1, reg, b2)
+        {:ok, ctx1, b3}
+
+      _ ->
+        :unsupported
+    end
+  end
+
+  defp nest_deferred_lets([], tail_expr), do: tail_expr
+
+  defp nest_deferred_lets([{name, value_expr} | rest], tail_expr) do
+    %{
+      op: :let_in,
+      name: name,
+      value_expr: value_expr,
+      in_expr: nest_deferred_lets(rest, tail_expr)
+    }
   end
 
   defp compile_let_block_letrec_or_sequential(bindings, tail_expr, ctx, b) do
@@ -1295,8 +1472,13 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
     ctx0 = drop_locals(ctx, binding_names)
     all_names = letrec_scope_names(bindings, tail_expr, ctx0)
     outer_locals = letrec_outer_local_names(bindings, tail_expr, ctx0)
+    outer_local_regs =
+      Map.new(outer_locals, fn name ->
+        {name, Context.local_reg(ctx0, name)}
+      end)
+
     {ctx1, b1} = declare_letrec_refs(all_names, ctx0, b)
-    b1a = sync_letrec_locals(outer_locals, ctx1, b1)
+    b1a = sync_letrec_outer_regs(outer_local_regs, ctx1, b1)
 
     with {:ok, ctx2, b2} <- compile_letrec_value_bindings(bindings, ctx1, b1a),
          {:ok, reg, b3} <- compile(tail_expr, ctx2, b2) do
@@ -1435,10 +1617,10 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
     end)
   end
 
-  defp sync_letrec_locals(names, ctx, b) when is_list(names) do
-    Enum.reduce(names, b, fn name, b_acc ->
-      with reg when is_integer(reg) <- Context.local_reg(ctx, name),
-           ref when is_binary(ref) <- Context.letrec_ref(ctx, name) do
+  defp sync_letrec_outer_regs(reg_map, ctx, b) when is_map(reg_map) do
+    Enum.reduce(reg_map, b, fn {name, reg}, b_acc ->
+      with ref when is_binary(ref) <- Context.letrec_ref(ctx, name),
+           reg when is_integer(reg) <- reg do
         {_, b2} =
           Builder.emit(b_acc, :forward_ref_set, %{
             dest: nil,
@@ -1918,7 +2100,11 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
 
   @doc false
   def compile_const_static_list(spec, ctx, b) do
-    {dest, b1} = dest_for_builtin(ctx, b)
+    # List builders take ownership of element regs. Retain-dup first so values that
+    # are still live after the list (e.g. Nonempty extentA [extentB] then use
+    # extentA/extentB again) do not verify as read_after_consume.
+    {spec, b0} = prepare_static_list_consume(spec, b)
+    {dest, b1} = dest_for_builtin(ctx, b0)
     wrap_catch? = Builder.wrap_fallible_instr_catch?(b1, ctx, true)
 
     b2 = if wrap_catch?, do: Builder.catch_begin(b1), else: b1
@@ -1935,6 +2121,18 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
     result = if is_integer(dest), do: dest, else: dest
     {:ok, result, b4}
   end
+
+  defp prepare_static_list_consume({:values, regs}, b) when is_list(regs) do
+    {regs2, b1} = Builder.dup_all_regs_for_record_new_consume(b, regs)
+    {{:values, regs2}, b1}
+  end
+
+  defp prepare_static_list_consume({:record_array, regs}, b) when is_list(regs) do
+    {regs2, b1} = Builder.dup_all_regs_for_record_new_consume(b, regs)
+    {{:record_array, regs2}, b1}
+  end
+
+  defp prepare_static_list_consume(spec, b), do: {spec, b}
 
   defp static_list_instr({:int_array, values}, dest) do
     {%{kind: :int_array, values: values}, Types.fallible_effects(dest)}
@@ -2024,8 +2222,11 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
         id in [:record_new, :record_new_take, :record_new_values_ints] ->
           Builder.dup_all_regs_for_record_new_consume(b2, arg_regs)
 
-        id in [:tuple2, :tuple2_take] ->
-          Builder.dup_regs_for_owned_consume(b2, arg_regs)
+        id in [:tuple2, :tuple2_take, :list_cons, :list_append, :cmd_batch, :sub_batch] ->
+          # Named locals from pattern_bind (record_get / tuple_proj) would otherwise
+          # stay as borrows — EpilogueRelease then frees them while they are nested
+          # under the published result. Retain-dup named locals, then consume all args.
+          Builder.dup_named_locals_for_consume(b2, arg_regs)
 
         true ->
           {arg_regs, b2}
@@ -2037,6 +2238,8 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
           {arg_regs, []}
 
         id in [:record_new, :record_new_take, :record_new_values_ints] -> {[], arg_regs}
+        id in [:tuple2, :tuple2_take] -> {[], arg_regs}
+        id in [:list_cons, :list_append] -> {[], arg_regs}
         id in [:cmd_batch, :sub_batch] -> {[], arg_regs}
         id == :debug_to_string -> {[], arg_regs}
         id in [:char_from_code] -> {[], arg_regs}
@@ -2182,4 +2385,11 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
       _ -> nil
     end
   end
+
+  defp compare_op_kind("__eq__"), do: :eq
+  defp compare_op_kind("__neq__"), do: :neq
+  defp compare_op_kind("__lt__"), do: :lt
+  defp compare_op_kind("__lte__"), do: :lte
+  defp compare_op_kind("__gt__"), do: :gt
+  defp compare_op_kind("__gte__"), do: :gte
 end

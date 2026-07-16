@@ -29,7 +29,8 @@ defmodule ElmEx.Frontend.LetLayout do
         String.starts_with?(trimmed, "--") ->
           {:cont, :ok}
 
-        Regex.match?(@inline_let_in_line, trimmed) ->
+        Regex.match?(@inline_let_in_line, trimmed) and
+            not Regex.match?(~r/->\s*.*\blet\b/su, trimmed) ->
           {:halt, {:error, {:inline_let_in, line_no}}}
 
         true ->

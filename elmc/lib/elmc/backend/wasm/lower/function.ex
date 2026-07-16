@@ -309,26 +309,36 @@ defmodule Elmc.Backend.Wasm.Lower.Function do
     ]
   end
 
-  defp emit_state_switch_terminator({:ret, reg}, slots, _instr_opts) when is_integer(reg) do
+  defp emit_state_switch_terminator({:ret, reg}, slots, instr_opts) when is_integer(reg) do
     plan_state = slots.plan_state_local
+    rc? = Keyword.get(instr_opts, :rc_required, true)
 
-    [
-      WasmTypes.line(
-        WasmTypes.sexpr("local.set", [
-          slots.fn_out_local,
-          " ",
-          WasmTypes.sexpr("local.get", [Slots.reg_name(slots, reg)])
-        ])
-      ),
-      WasmTypes.line(
-        WasmTypes.sexpr("local.set", [
-          plan_state,
-          " ",
-          WasmTypes.sexpr("i32.const", [-1])
-        ])
-      ),
-      WasmTypes.line(WasmTypes.sexpr("br", [" ", @plan_switch_done]))
-    ]
+    publish =
+      if rc? do
+        Slots.publish_reg_to_fn_out(slots, reg)
+      else
+        [
+          WasmTypes.line(
+            WasmTypes.sexpr("local.set", [
+              slots.fn_out_local,
+              " ",
+              WasmTypes.sexpr("local.get", [Slots.reg_name(slots, reg)])
+            ])
+          )
+        ]
+      end
+
+    publish ++
+      [
+        WasmTypes.line(
+          WasmTypes.sexpr("local.set", [
+            plan_state,
+            " ",
+            WasmTypes.sexpr("i32.const", [-1])
+          ])
+        ),
+        WasmTypes.line(WasmTypes.sexpr("br", [" ", @plan_switch_done]))
+      ]
   end
 
   defp emit_state_switch_terminator(:none, slots, _instr_opts) do

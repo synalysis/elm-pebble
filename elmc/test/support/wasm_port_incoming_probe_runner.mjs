@@ -18,6 +18,8 @@ const { helpers, callExport, memory } = await loadElmcWasm({
   wasmBytes,
   manifestImports: manifest.imports || [],
   manifestClosures: manifest.closures || [],
+    closureCount: manifest.closure_count ?? null,
+    closureCount: manifest.closure_count ?? null,
   immortalStrings: manifest.immortal_strings || {},
 });
 

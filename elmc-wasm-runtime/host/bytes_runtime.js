@@ -14,6 +14,8 @@ const BYTES_CMD_DECODE = 5;
 const BYTES_CMD_DECODE_FAILURE = 6;
 const BYTES_CMD_FROM_LIST = 7;
 const BYTES_CMD_ENCODE = 8;
+const BYTES_CMD_READ_F64 = 9;
+const BYTES_CMD_READ_STRING = 10;
 
 const ENC_I8 = 1;
 const ENC_I16 = 2;
@@ -47,8 +49,15 @@ export function createBytesRuntime(deps) {
     detachTupleSecond,
     TAG_TUPLE2,
     TAG_INT,
+    TAG_FLOAT,
+    TAG_STRING,
     TAG_CLOSURE,
+    stringValue,
   } = deps;
+
+  const newStringHandle = (text) => allocHandle({ tag: TAG_STRING, value: String(text) });
+
+  const newFloatHandle = (value) => allocHandle({ tag: TAG_FLOAT, value: Number(value) });
 
   /** @type {number} */
   let activeDecodeBytesPtr = 0;
@@ -398,6 +407,67 @@ export function createBytesRuntime(deps) {
     return tuple2(outPtr, newIntHandle(offset + len), newBytesHandle(slice));
   };
 
+  const bytesReadF64 = (outPtr, ...params) => {
+    let isLE = true;
+    let rest = params;
+
+    if (params.length >= 1) {
+      const head = params[0] | 0;
+      const headPayload = readHandle(head);
+      if (headPayload?.tag === TAG_INT) {
+        isLE = intValue(head) !== 0;
+        rest = params.slice(1);
+      }
+    }
+
+    const resolved = resolveBytesAndOffset(rest);
+    if (!resolved) {
+      writeReadFailure(outPtr);
+      return RC_SUCCESS;
+    }
+
+    const view = bytesView(resolved.bytesPtr);
+    const offset = resolved.offset;
+    if (!view || offset < 0 || offset + 8 > view.byteLength) {
+      writeReadFailure(outPtr);
+      return RC_SUCCESS;
+    }
+
+    const value = view.getFloat64(offset, isLE);
+    return tuple2(outPtr, newIntHandle(offset + 8), newFloatHandle(value));
+  };
+
+  const bytesReadString = (outPtr, ...params) => {
+    let len = 0;
+    let rest = params;
+
+    if (params.length >= 1) {
+      const head = params[0] | 0;
+      const headPayload = readHandle(head);
+      if (headPayload?.tag === TAG_INT) {
+        len = intValue(head) | 0;
+        rest = params.slice(1);
+      }
+    }
+
+    const resolved = resolveBytesAndOffset(rest);
+    if (!resolved) {
+      writeReadFailure(outPtr);
+      return RC_SUCCESS;
+    }
+
+    const view = bytesView(resolved.bytesPtr);
+    const offset = resolved.offset;
+    if (!view || len < 0 || offset < 0 || offset + len > view.byteLength) {
+      writeReadFailure(outPtr);
+      return RC_SUCCESS;
+    }
+
+    const bytes = new Uint8Array(view.buffer, view.byteOffset + offset, len);
+    const text = new TextDecoder("utf-8").decode(bytes);
+    return tuple2(outPtr, newIntHandle(offset + len), newStringHandle(text));
+  };
+
   const bytesDecodeFailure = (outPtr) => {
     writeReadFailure(outPtr);
     return RC_SUCCESS;
@@ -491,6 +561,12 @@ export function createBytesRuntime(deps) {
       case BYTES_CMD_ENCODE:
         return bytesEncode(outPtr, params[0] | 0);
 
+      case BYTES_CMD_READ_F64:
+        return bytesReadF64(outPtr, ...params);
+
+      case BYTES_CMD_READ_STRING:
+        return bytesReadString(outPtr, ...params);
+
       default:
         console.warn("[elmc-wasm-runtime] bytes_cmd unimplemented kind", kind, { params });
         writeOut(outPtr, 0);
@@ -501,6 +577,7 @@ export function createBytesRuntime(deps) {
   return {
     bytesCmd,
     bytesFromList,
+    bytesDecode,
     newBytesHandle,
     bytesView,
     TAG_BYTES,

@@ -1,6 +1,7 @@
 defmodule Elmc.PlanWebLoweringGapsTest do
   use ExUnit.Case, async: true
 
+  alias Elmc.Backend.CCodegen.VarAnalysis
   alias Elmc.Backend.Plan.{Builder, Context, Verify}
   alias Elmc.Backend.Plan.Lower.Case.TagSwitch
   alias Elmc.Backend.Plan.Lower.{Call, Function}
@@ -351,6 +352,228 @@ defmodule Elmc.PlanWebLoweringGapsTest do
 
     assert html_cmd
     assert length(Map.get(html_cmd.args, :params, [])) == 2
+  end
+
+  test "lambda capture free vars ignore call targets and union ctor metadata" do
+    body = %{
+      op: :let_in,
+      name: "fetcherState",
+      value_expr: %{op: :tuple_second_expr, arg: %{op: :var, name: "tupleArg"}},
+      in_expr: %{
+        op: :record_update,
+        base: %{op: :var, name: "fetcherState"},
+        fields: [
+          %{
+            name: "status",
+            expr: %{
+              op: :qualified_call,
+              target: "Maybe.withDefault",
+              args: [
+                %{value: 1, op: :int_literal, union_ctor: "Pages.ConcurrentSubmission.Submitting"},
+                %{
+                  op: :qualified_call,
+                  target: "Maybe.map",
+                  args: [
+                    %{
+                      op: :partial_constructor,
+                      target: "Pages.ConcurrentSubmission.Reloading",
+                      args: [],
+                      arity: 1
+                    },
+                    %{op: :var, name: "maybeFetcherDoneActionData"}
+                  ]
+                }
+              ]
+            }
+          }
+        ]
+      }
+    }
+
+    assert VarAnalysis.lambda_capture_free_vars(body, ["tupleArg"]) ==
+             MapSet.new(["maybeFetcherDoneActionData"])
+  end
+
+  test "lambda capture free vars include call-argument closures but not nested body closures" do
+    body = %{
+      op: :qualified_call,
+      target: "Maybe.map",
+      args: [
+        %{
+          op: :lambda,
+          args: ["tupleArg"],
+          body: %{
+            op: :qualified_call,
+            target: "Maybe.map",
+            args: [
+              %{op: :partial_constructor, target: "Pages.ConcurrentSubmission.Reloading", args: [], arity: 1},
+              %{op: :var, name: "maybeFetcherDoneActionData"}
+            ]
+          }
+        },
+        %{op: :var, name: "items"}
+      ]
+    }
+
+    assert VarAnalysis.lambda_capture_free_vars(body, ["items"]) ==
+             MapSet.new(["maybeFetcherDoneActionData"])
+  end
+
+  test "nested lambda capture ignores case pattern locals from inner closures" do
+    decl_map = %{}
+
+    ctx =
+      Context.new(
+        module: "Pages.Internal.Platform",
+        function_name: "loadDataAndUpdateUrl",
+        params: ["tupleArg"],
+        decl_map: decl_map
+      )
+
+    b0 = Builder.new("Pages.Internal.Platform", "loadDataAndUpdateUrl", args: ["tupleArg"])
+
+    body = %{
+      op: :lambda,
+      args: ["maybeUserMsg"],
+      body: %{
+        op: :lambda,
+        args: ["model"],
+        body: %{
+          op: :case,
+          subject: "caseSubject",
+          branches: [
+            %{
+              pattern: %{
+                kind: :tuple,
+                elements: [
+                  %{kind: :var, name: "userModel"},
+                  %{kind: :wildcard}
+                ]
+              },
+              expr: %{
+                op: :record_literal,
+                fields: [
+                  %{name: "userModel", expr: %{op: :var, name: "userModel"}},
+                  %{name: "pageData", expr: %{op: :var, name: "model"}}
+                ]
+              }
+            },
+            %{
+              pattern: %{kind: :wildcard},
+              expr: %{op: :var, name: "model"}
+            }
+          ]
+        }
+      }
+    }
+
+    assert MapSet.disjoint?(
+             VarAnalysis.lambda_capture_free_vars(body, ["tupleArg"]),
+             MapSet.new(["userModel"])
+           )
+
+    assert MapSet.disjoint?(
+             VarAnalysis.lambda_capture_free_vars(
+               body.body,
+               ["maybeUserMsg"]
+             ),
+             MapSet.new(["userModel"])
+           )
+
+    assert {:ok, _reg, _b1} =
+             Elmc.Backend.Plan.Lower.Lambda.compile(
+               body,
+               %{ctx | params: ["tupleArg", "caseSubject"]},
+               b0
+             )
+  end
+
+  test "lambda capture free vars ignore operator call names" do
+    body = %{
+      op: :call,
+      name: "__add__",
+      args: [
+        %{
+          op: :call,
+          name: "__mul__",
+          args: [
+            %{op: :sub_const, var: "n0", value: 216},
+            %{op: :int_literal, value: 256}
+          ]
+        },
+        %{op: :var, name: "b0"}
+      ]
+    }
+
+    assert VarAnalysis.lambda_capture_free_vars(body, ["b0"]) == MapSet.new(["n0"])
+  end
+
+  test "lambda capture free vars peel curried lambda chains for let-bound locals" do
+    body = %{
+      op: :lambda,
+      args: ["a"],
+      body: %{
+        op: :lambda,
+        args: ["b"],
+        body: %{op: :var, name: "view"}
+      }
+    }
+
+    assert VarAnalysis.lambda_capture_free_vars(body, ["a"]) == MapSet.new(["view"])
+  end
+
+  test "let block reorders pattern bind before bindings that use case pattern locals" do
+    ctx =
+      Context.new(
+        module: "Pages.Internal.Platform",
+        function_name: "loadDataAndUpdateUrl_case_probe",
+        params: ["caseSubject"],
+        decl_map: %{}
+      )
+
+    b0 =
+      Builder.new("Pages.Internal.Platform", "loadDataAndUpdateUrl_case_probe",
+        args: ["caseSubject"]
+      )
+
+    expr = %{
+      op: :let_in,
+      name: "updatedPageData",
+      value_expr: %{
+        op: :record_literal,
+        fields: [
+          %{name: "userModel", expr: %{op: :var, name: "userModel"}},
+          %{name: "pageData", expr: %{op: :int_literal, value: 1}}
+        ]
+      },
+      in_expr: %{
+        op: :let_in,
+        name: "__patternBind_1",
+        value_expr: %{op: :var, name: "caseSubject"},
+        in_expr: %{
+          op: :case,
+          subject: "__patternBind_1",
+          branches: [
+            %{
+              pattern: %{
+                kind: :tuple,
+                elements: [
+                  %{kind: :var, name: "userModel"},
+                  %{kind: :wildcard}
+                ]
+              },
+              expr: %{op: :var, name: "updatedPageData"}
+            },
+            %{
+              pattern: %{kind: :wildcard},
+              expr: %{op: :int_literal, value: 0}
+            }
+          ]
+        }
+      }
+    }
+
+    assert {:ok, _reg, _b1} = Elmc.Backend.Plan.Lower.Expr.compile(expr, ctx, b0)
   end
 
   test "web rewrite eta-expands partial Html.map bindings" do

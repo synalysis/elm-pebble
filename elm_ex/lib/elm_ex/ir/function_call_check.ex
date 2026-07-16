@@ -174,7 +174,7 @@ defmodule ElmEx.IR.FunctionCallCheck do
       |> Map.get(:import_entries, [])
       |> ensure_default_import_entries()
 
-    {alias_map, import_unqualified_map, _wildcard_modules, type_unqualified_map} =
+    {alias_map, alias_member_map, import_unqualified_map, _wildcard_modules, type_unqualified_map} =
       build_import_resolution(import_entries, project_module_exports)
 
     local_call_names =
@@ -186,6 +186,7 @@ defmodule ElmEx.IR.FunctionCallCheck do
 
     %{
       alias_map: alias_map,
+      alias_member_map: alias_member_map,
       import_unqualified_map: import_unqualified_map,
       type_unqualified_map: type_unqualified_map,
       local_call_names: local_call_names,
@@ -1000,7 +1001,7 @@ defmodule ElmEx.IR.FunctionCallCheck do
 
     case Map.get(signature_lookup, resolved) do
       type when is_binary(type) ->
-        TypeSignature.return_type(type)
+        applied_or_value_type(type, args)
 
       _ ->
         infer_expr_type(
@@ -1015,12 +1016,18 @@ defmodule ElmEx.IR.FunctionCallCheck do
 
   defp infer_expr_type(%{op: op, target: target}, import_lookup, signature_lookup, _, _)
        when op in [:qualified_call1, :qualified_call] and is_binary(target) do
-    value_type(Map.get(signature_lookup, ImportResolution.resolve(target, import_lookup)))
+    case Map.get(signature_lookup, ImportResolution.resolve(target, import_lookup)) do
+      type when is_binary(type) -> String.trim(type)
+      _ -> nil
+    end
   end
 
   defp infer_expr_type(%{op: :call1, name: name}, import_lookup, signature_lookup, _, _)
        when is_binary(name) do
-    value_type(Map.get(signature_lookup, ImportResolution.resolve(name, import_lookup)))
+    case Map.get(signature_lookup, ImportResolution.resolve(name, import_lookup)) do
+      type when is_binary(type) -> String.trim(type)
+      _ -> nil
+    end
   end
 
   defp infer_expr_type(
@@ -1035,7 +1042,7 @@ defmodule ElmEx.IR.FunctionCallCheck do
 
     case Map.get(signature_lookup, target) do
       type when is_binary(type) ->
-        TypeSignature.return_type(type)
+        applied_or_value_type(type, args)
 
       _ ->
         infer_expr_type(
@@ -1050,15 +1057,13 @@ defmodule ElmEx.IR.FunctionCallCheck do
 
   defp infer_expr_type(_, _, _, _, _), do: nil
 
-  @spec value_type(String.t() | nil) :: String.t() | nil
-  defp value_type(type) when is_binary(type) do
-    case TypeSignature.param_types(type) do
-      [] -> String.trim(type)
-      _ -> TypeSignature.return_type(type)
-    end
-  end
+  # Bare references (`Tuple.pair`, `List.map`) keep the full function type so HOFs like
+  # `Decode.map2` accept them. Applied calls report the result type.
+  defp applied_or_value_type(type, []) when is_binary(type), do: String.trim(type)
 
-  defp value_type(_), do: nil
+  defp applied_or_value_type(type, args) when is_binary(type) and is_list(args) do
+    TypeSignature.return_type(type)
+  end
 
   @spec find_matching_alias(
           [String.t()],
@@ -1457,76 +1462,105 @@ defmodule ElmEx.IR.FunctionCallCheck do
           FCC.import_resolution_maps()
   defp build_import_resolution(import_entries, project_module_exports)
        when is_list(import_entries) and is_map(project_module_exports) do
-    Enum.reduce(import_entries, {%{}, %{}, [], %{}}, fn entry,
-                                                        {alias_acc, unqualified_acc, wildcard_acc,
-                                                         type_acc} ->
-      module_name = Map.get(entry, "module")
-      as_name = Map.get(entry, "as")
-      exposing = Map.get(entry, "exposing")
+    {alias_map, alias_modules, unqualified_acc, wildcard_acc, type_acc} =
+      Enum.reduce(import_entries, {%{}, %{}, %{}, [], %{}}, fn entry,
+                                                              {alias_acc, alias_modules_acc,
+                                                               unqualified_acc, wildcard_acc,
+                                                               type_acc} ->
+        module_name = Map.get(entry, "module")
+        as_name = Map.get(entry, "as")
+        exposing = Map.get(entry, "exposing")
 
-      if is_binary(module_name) and module_name != "" do
-        segments = String.split(module_name, ".", trim: true)
-        compact_name = Enum.join(segments, "")
+        if is_binary(module_name) and module_name != "" do
+          segments = String.split(module_name, ".", trim: true)
+          compact_name = Enum.join(segments, "")
 
-        alias_acc =
-          alias_acc
-          |> maybe_put_alias(as_name, module_name)
-          |> maybe_put_alias(compact_name, module_name)
+          {alias_acc, alias_modules_acc} =
+            {alias_acc, alias_modules_acc}
+            |> put_alias_binding(as_name, module_name)
+            |> put_alias_binding(compact_name, module_name)
 
-        {unqualified_acc, wildcard_acc, type_acc} =
-          case exposing do
-            ".." ->
-              {
-                register_wildcard_exports(unqualified_acc, module_name, project_module_exports),
-                add_unique_string(wildcard_acc, module_name),
-                register_wildcard_type_exports(type_acc, module_name, project_module_exports)
-              }
+          {unqualified_acc, wildcard_acc, type_acc} =
+            case exposing do
+              ".." ->
+                {
+                  register_wildcard_exports(unqualified_acc, module_name, project_module_exports),
+                  add_unique_string(wildcard_acc, module_name),
+                  register_wildcard_type_exports(type_acc, module_name, project_module_exports)
+                }
 
-            names when is_list(names) ->
-              expanded_names =
-                expand_import_exposing_names(names, module_name, project_module_exports)
+              names when is_list(names) ->
+                expanded_names =
+                  expand_import_exposing_names(names, module_name, project_module_exports)
 
-              exposed_types =
-                expand_import_exposing_type_names(names, module_name, project_module_exports)
+                exposed_types =
+                  expand_import_exposing_type_names(names, module_name, project_module_exports)
 
-              mapped =
-                expanded_names
-                |> Enum.filter(&is_binary/1)
-                |> Enum.reduce(unqualified_acc, fn name, acc ->
-                  put_unqualified_name(acc, name, module_name)
-                end)
+                mapped =
+                  expanded_names
+                  |> Enum.filter(&is_binary/1)
+                  |> Enum.reduce(unqualified_acc, fn name, acc ->
+                    put_unqualified_name(acc, name, module_name)
+                  end)
 
-              type_mapped =
-                exposed_types
-                |> Enum.filter(&is_binary/1)
-                |> Enum.reduce(type_acc, fn name, acc ->
-                  put_unqualified_name(acc, name, module_name)
-                end)
+                type_mapped =
+                  exposed_types
+                  |> Enum.filter(&is_binary/1)
+                  |> Enum.reduce(type_acc, fn name, acc ->
+                    put_unqualified_name(acc, name, module_name)
+                  end)
 
-              {mapped, wildcard_acc, type_mapped}
+                {mapped, wildcard_acc, type_mapped}
 
-            _ ->
-              {unqualified_acc, wildcard_acc, type_acc}
-          end
+              _ ->
+                {unqualified_acc, wildcard_acc, type_acc}
+            end
 
-        {alias_acc, unqualified_acc, wildcard_acc, type_acc}
-      else
-        {alias_acc, unqualified_acc, wildcard_acc, type_acc}
-      end
+          {alias_acc, alias_modules_acc, unqualified_acc, wildcard_acc, type_acc}
+        else
+          {alias_acc, alias_modules_acc, unqualified_acc, wildcard_acc, type_acc}
+        end
+      end)
+
+    alias_member_map = build_alias_member_map(alias_modules, project_module_exports)
+    {alias_map, alias_member_map, unqualified_acc, wildcard_acc, type_acc}
+  end
+
+  defp build_import_resolution(_import_entries, _project_module_exports),
+    do: {%{}, %{}, %{}, [], %{}}
+
+  defp put_alias_binding({alias_acc, alias_modules_acc}, alias_name, module_name)
+       when is_binary(alias_name) and alias_name != "" and is_binary(module_name) do
+    {
+      Map.put(alias_acc, alias_name, module_name),
+      Map.update(alias_modules_acc, alias_name, [module_name], fn modules ->
+        if module_name in modules, do: modules, else: modules ++ [module_name]
+      end)
+    }
+  end
+
+  defp put_alias_binding(acc, _alias_name, _module_name), do: acc
+
+  defp build_alias_member_map(alias_modules, project_module_exports)
+       when is_map(alias_modules) and is_map(project_module_exports) do
+    Enum.reduce(alias_modules, %{}, fn {alias_name, modules}, acc ->
+      members =
+        modules
+        |> Enum.reverse()
+        |> Enum.reduce(%{}, fn module_name, member_acc ->
+          export = Map.get(project_module_exports, module_name, %{})
+          names = Map.get(export, :names, []) || []
+
+          Enum.reduce(names, member_acc, fn name, inner ->
+            if is_binary(name), do: Map.put_new(inner, name, module_name), else: inner
+          end)
+        end)
+
+      if members == %{}, do: acc, else: Map.put(acc, alias_name, members)
     end)
   end
 
-  defp build_import_resolution(_import_entries, _project_module_exports), do: {%{}, %{}, [], %{}}
-
-  @spec maybe_put_alias(FCC.name_map(), String.t() | nil, String.t()) :: FCC.name_map()
-  defp maybe_put_alias(acc, alias_name, module_name)
-       when is_map(acc) and is_binary(module_name) do
-    if is_binary(alias_name) and alias_name != "" do
-      Map.put(acc, alias_name, module_name)
-    else
-      acc
-    end
-  end
+  defp build_alias_member_map(_, _), do: %{}
 
   @spec put_unqualified_name(FCC.name_map(), String.t(), String.t()) :: FCC.name_map()
   defp put_unqualified_name(acc, name, module_name)

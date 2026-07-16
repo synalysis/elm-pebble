@@ -56,6 +56,73 @@ defmodule ElmEx.IR.FunctionCallCheckTest do
     refute Enum.any?(ir.diagnostics, &(&1.code == "function_call_type"))
   end
 
+  test "bare function refs keep full type so Decode.map2 accepts Tuple.pair" do
+    project = %Project{
+      project_dir: "/tmp",
+      elm_json: %{"source-directories" => ["src"]},
+      modules: [
+        %FrontendModule{
+          name: "Json.Decode",
+          path: "/tmp/src/Json/Decode.elm",
+          imports: [],
+          import_entries: [],
+          module_exposing: "all",
+          declarations: [
+            %{
+              kind: :function_signature,
+              name: "map2",
+              type: "(a -> b -> value) -> Decoder a -> Decoder b -> Decoder value",
+              span: %{start_line: 1, end_line: 1}
+            },
+            %{
+              kind: :function_signature,
+              name: "string",
+              type: "Decoder String",
+              span: %{start_line: 2, end_line: 2}
+            },
+            %{
+              kind: :function_signature,
+              name: "int",
+              type: "Decoder Int",
+              span: %{start_line: 3, end_line: 3}
+            }
+          ]
+        },
+        %FrontendModule{
+          name: "Tuple",
+          path: "/tmp/src/Tuple.elm",
+          imports: [],
+          import_entries: [],
+          module_exposing: "all",
+          declarations: [
+            %{
+              kind: :function_signature,
+              name: "pair",
+              type: "a -> b -> (a, b)",
+              span: %{start_line: 1, end_line: 1}
+            }
+          ]
+        },
+        main_module(%{
+          op: :qualified_call,
+          target: "Json.Decode.map2",
+          args: [
+            %{op: :qualified_call, target: "Tuple.pair", args: []},
+            %{op: :qualified_call, target: "Json.Decode.string", args: []},
+            %{op: :qualified_call, target: "Json.Decode.int", args: []}
+          ]
+        })
+      ]
+    }
+
+    assert {:ok, ir} = Lowerer.lower_project(project)
+
+    refute Enum.any?(
+             ir.diagnostics,
+             &(&1.code == "function_call_type" and String.contains?(&1.message || "", "map2"))
+           )
+  end
+
   test "still rejects Int variables passed to Float parameters" do
     diagnostics =
       FunctionCallCheck.collect_project_diagnostics(

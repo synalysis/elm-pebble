@@ -89,12 +89,7 @@ defmodule Elmc.Backend.C.Lower.Function do
       |> MapSet.difference(native_int_only_regs)
       |> maybe_add_native_scalar_ret_bool_reg(ret_reg, native_scalar_out)
 
-    native_bool_mutable_regs =
-      if length(plan.blocks) > 1 do
-        native_bool_only_regs
-      else
-        native_bool_mutable_regs(plan, native_bool_only_regs)
-      end
+    native_bool_mutable_regs = native_bool_mutable_regs(plan, native_bool_only_regs)
 
     native_int_locals =
       native_int_only_regs
@@ -729,7 +724,10 @@ defmodule Elmc.Backend.C.Lower.Function do
     Process.put(:elmc_plan_owned_live, live)
     code = Instr.emit(instr, slots, instr_opts)
     nulls =
-      if tail_fn_out_owned_cleanup_instr?(instr) do
+      if tail_fn_out_owned_cleanup_instr?(instr) and not transferring_consume_instr?(instr) do
+        # Tail writes into *out / branch out; skip cleanup that would release the published
+        # value. Transferring consumes (e.g. record_new_values_take into out) still must null
+        # the moved owned[] slots so LIFO / later :release ops do not double-free fields.
         []
       else
         emit_null_consumed_slots(instr, slots, instr_opts)
@@ -933,7 +931,8 @@ defmodule Elmc.Backend.C.Lower.Function do
   end
 
   defp transferring_consume_instr?(%{op: :call_runtime, args: %{builtin: id}}) do
-    id in [:record_new, :record_new_take, :record_new_values_ints, :tuple2_take] or
+    # record_new_values_ints copies scalar ints; it does not take ownership of boxed args.
+    id in [:record_new, :record_new_take, :tuple2_take] or
       RuntimeBuiltins.ownership_transfer?(id)
   end
 
@@ -2416,6 +2415,9 @@ defmodule Elmc.Backend.C.Lower.Function do
 
       length(defs) > 1 or
         Enum.any?(defs, fn
+          %{op: :phi} ->
+            true
+
           %{op: :call_fn, args: %{module: mod, name: name}} ->
             NativeReturn.cached_kind({mod, name}) == :native_bool
 

@@ -2,7 +2,7 @@ defmodule Elmc.WasmWebPageDataTest do
   use ExUnit.Case, async: false
 
   alias Elmc.Backend.Wasm.ProjectWriter
-  alias Elmc.Test.WasmRcTrackHarness
+  alias Elmc.Test.{ElmPebbleDevWasmCompile, WasmRcTrackHarness}
 
   @app_root Path.expand("../../elm_pebble_dev", __DIR__)
   @index_html Path.expand("../../elm_pebble_dev/dist/index.html", __DIR__)
@@ -11,6 +11,7 @@ defmodule Elmc.WasmWebPageDataTest do
 
   @tag :wasm_execute
   @tag :slow
+  @tag timeout: 180_000
   test "elm_pebble_dev web wasm boots pageDataFromJs with the index route title" do
     cond do
       not File.dir?(@app_root) ->
@@ -23,28 +24,14 @@ defmodule Elmc.WasmWebPageDataTest do
         :ok
 
       true ->
-        out_dir = Path.expand("tmp/wasm_web_page_data/elm_pebble_dev", __DIR__)
-        File.rm_rf!(out_dir)
-
-        assert {:ok, _} =
-                 Elmc.compile(@app_root, %{
-                   out_dir: out_dir,
-                   targets: [:wasm],
-                   web: true,
-                   entry_module: "Main",
-                   strip_dead_code: true,
-                   wasm_strict: false
-                 })
+        out_dir = ElmPebbleDevWasmCompile.compile!(check: true)
 
         manifest = out_dir |> ProjectWriter.manifest_path() |> File.read!() |> Jason.decode!()
         assert manifest["entry_export"] == "elmc_fn_Main_main"
 
-        WasmRcTrackHarness.run_wat2wasm!(
-          ProjectWriter.wat_path(out_dir),
-          Path.join(out_dir, "wasm/app.wasm")
-        )
+        env = %{"ELM_PAGES_INDEX_HTML" => @index_html}
 
-        case run_page_data_probe(out_dir) do
+        case WasmRcTrackHarness.run_node_script(@page_data_runner, [out_dir], env: env) do
           {:ok, output} ->
             assert output =~ "rc_ok"
             assert output =~ @expected_title
@@ -59,28 +46,7 @@ defmodule Elmc.WasmWebPageDataTest do
     end
   end
 
-  defp run_page_data_probe(out_dir) do
-    node = System.find_executable("node")
-
-    case node do
-      nil ->
-        {:error, "node not available"}
-
-      node ->
-        env =
-          System.get_env()
-          |> Map.put("ELM_PAGES_INDEX_HTML", @index_html)
-          |> Enum.to_list()
-
-        {output, code} =
-          System.cmd(node, [@page_data_runner, out_dir], stderr_to_stdout: true, env: env)
-
-        if code == 0, do: {:ok, output}, else: {:error, output}
-    end
-  end
-
   defp execution_tools_available? do
-    System.find_executable("node") != nil and
-      (System.find_executable("wat2wasm") != nil or System.find_executable("npx") != nil)
+    WasmRcTrackHarness.execution_tools_available?()
   end
 end

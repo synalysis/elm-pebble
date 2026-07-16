@@ -342,36 +342,46 @@ defmodule Elmc.Backend.C.Lower.Instr do
         |> String.trim()
 
       true ->
-        then_s = slot_ref(then_reg, slots, opts)
-        else_s = slot_ref(else_reg, slots, opts)
-
-        if rc? do
-          """
-          if (#{cond_expr}) {
-            #{retain_into_owned(merge, then_s)}
-          } else {
-            #{retain_into_owned(merge, else_s)}
-          }
-          """
-          |> String.trim()
-        else
-          """
-          if (#{cond_expr}) {
-            #{phi_arm_assign(false, merge, then_reg, slots, opts)}
-          } else {
-            #{phi_arm_assign(false, merge, else_reg, slots, opts)}
-          }
-          """
-          |> String.trim()
-        end
+        """
+        if (#{cond_expr}) {
+          #{phi_arm_assign(rc?, merge, then_reg, slots, opts)}
+        } else {
+          #{phi_arm_assign(rc?, merge, else_reg, slots, opts)}
+        }
+        """
+        |> String.trim()
     end
   end
 
   defp phi_arm_assign(rc?, merge, reg, slots, opts) do
-    src = slot_ref(reg, slots, opts)
+    src = phi_boxed_arm_source(reg, slots, opts)
     borrow_retain? = Map.has_key?(Keyword.get(opts, :borrow_param_regs, %{}), reg)
     phi_boxed_arm_assign(rc?, merge, src, borrow_retain?: borrow_retain?)
   end
+
+  # Native-int params / locals must be boxed when merging into an owned slot — never `elmc_retain`
+  # on an `elmc_int_t` C value.
+  defp phi_boxed_arm_source(reg, slots, opts) when is_integer(reg) do
+    native_int_regs = Keyword.get(opts, :native_int_regs, %{})
+    native_int_only = Keyword.get(opts, :native_int_only_regs, MapSet.new())
+    const_int_regs = Keyword.get(opts, :const_int_regs, %{})
+
+    cond do
+      MapSet.member?(native_int_only, reg) ->
+        boxed_value_ref(reg, slots, opts)
+
+      Map.has_key?(native_int_regs, reg) ->
+        boxed_value_ref(reg, slots, opts)
+
+      Map.has_key?(const_int_regs, reg) ->
+        boxed_value_ref(reg, slots, opts)
+
+      true ->
+        slot_ref(reg, slots, opts)
+    end
+  end
+
+  defp phi_boxed_arm_source(reg, slots, opts), do: slot_ref(reg, slots, opts)
 
   defp phi_boxed_arm_assign(rc?, merge, src, opts \\ []) do
     borrow_retain? = Keyword.get(opts, :borrow_retain?, false)
@@ -1007,17 +1017,11 @@ defmodule Elmc.Backend.C.Lower.Instr do
 
   defp record_int_operand_ref(other, _slots, _opts), do: to_string(other)
 
-  defp runtime_builtin_sym(:list_take, [n, _list], _slots, opts) do
-    if native_int_operand_reg?(n, opts),
-      do: "elmc_list_take_int",
-      else: RuntimeBuiltins.c_symbol(:list_take)
-  end
+  # Arg 0 is always native-int via RuntimeBuiltins.native_int_arg?/2 → int_operand_ref/3.
+  # Keep the callee symbol on the *_int ABI or C gets elmc_as_int(...) into ElmcValue*.
+  defp runtime_builtin_sym(:list_take, _args, _slots, _opts), do: "elmc_list_take_int"
 
-  defp runtime_builtin_sym(:list_drop, [n, _list], _slots, opts) do
-    if native_int_operand_reg?(n, opts),
-      do: "elmc_list_drop_int",
-      else: RuntimeBuiltins.c_symbol(:list_drop)
-  end
+  defp runtime_builtin_sym(:list_drop, _args, _slots, _opts), do: "elmc_list_drop_int"
 
   defp runtime_builtin_sym(id, _args, _slots, _opts), do: RuntimeBuiltins.c_symbol(id)
 
@@ -1092,6 +1096,7 @@ defmodule Elmc.Backend.C.Lower.Instr do
     #{names_decl}
     #{values_decl}
     #{rc_assign(rc?, dest, sym, call_args)}
+    #{null_owned_slots_named_in_values_array(values_array)}
     """
     |> String.trim()
   end
@@ -1294,6 +1299,29 @@ defmodule Elmc.Backend.C.Lower.Instr do
         end
     end
   end
+
+  # After record_new_values_take moves field pointers into *out, any bare `owned[i]` named as an
+  # array element must be nulled. Do not null operands of `elmc_retain(owned[i])` — those are
+  # borrows; the take owns the retained temporary, not the named slot.
+  defp null_owned_slots_named_in_values_array(values_array) when is_binary(values_array) do
+    values_array
+    |> String.split(",")
+    |> Enum.map(&String.trim/1)
+    |> Enum.flat_map(fn
+      "owned[" <> rest ->
+        case Integer.parse(rest) do
+          {idx, "]"} -> [idx]
+          _ -> []
+        end
+
+      _ ->
+        []
+    end)
+    |> Enum.uniq()
+    |> Enum.map_join("\n", fn idx -> "owned[#{idx}] = NULL;" end)
+  end
+
+  defp null_owned_slots_named_in_values_array(_), do: ""
 
   defp build_runtime_call_args(id, args, slots, opts, call_opts \\ []) do
     consume_args? = Keyword.get(call_opts, :consume_args, false)
@@ -1735,8 +1763,17 @@ defmodule Elmc.Backend.C.Lower.Instr do
     case borrow_call_param_c_ref(reg, borrows, opts) do
       c_arg when is_binary(c_arg) ->
         case {kind, box_native_int?} do
-          {:native_int, true} -> "elmc_new_int_take(#{c_arg})"
-          _ -> c_arg
+          {:native_int, true} ->
+            "elmc_new_int_take(#{int_operand_ref(reg, slots, opts)})"
+
+          {:native_int, false} ->
+            int_operand_ref(reg, slots, opts)
+
+          {:native_bool, _} ->
+            bool_operand_ref(reg, slots, opts)
+
+          _ ->
+            c_arg
         end
 
       _ ->
@@ -1769,19 +1806,14 @@ defmodule Elmc.Backend.C.Lower.Instr do
     end
   end
 
-  defp int_call_site_ref(reg, slots, opts, borrows) do
-    case borrow_call_param_c_ref(reg, borrows, opts) do
-      c_arg when is_binary(c_arg) -> c_arg
-      _ -> int_operand_ref(reg, slots, opts)
-    end
-  end
+  # Always go through int/bool operand refs so a boxed borrow param (`ElmcValue *`)
+  # is coerced with `elmc_as_int` / `elmc_as_bool` when the callee wants a native scalar.
+  # A bare borrow short-circuit would pass the pointer name into an `elmc_int_t` slot.
+  defp int_call_site_ref(reg, slots, opts, _borrows),
+    do: int_operand_ref(reg, slots, opts)
 
-  defp bool_call_site_ref(reg, slots, opts, borrows) do
-    case borrow_call_param_c_ref(reg, borrows, opts) do
-      c_arg when is_binary(c_arg) -> c_arg
-      _ -> bool_operand_ref(reg, slots, opts)
-    end
-  end
+  defp bool_call_site_ref(reg, slots, opts, _borrows),
+    do: bool_operand_ref(reg, slots, opts)
 
   defp plan_rc_call_arg_ref(reg, :native_int, true, slots, opts),
     do: "elmc_new_int_take(#{int_operand_ref(reg, slots, opts)})"
@@ -2752,11 +2784,13 @@ defmodule Elmc.Backend.C.Lower.Instr do
     assign_owned(rc?, dest, "elmc_forward_ref_capture(#{ref})")
   end
 
-  defp emit_forward_ref_load_captured(_instr, _slots, rc?, dest) do
+  defp emit_forward_ref_load_captured(%{args: args}, _slots, rc?, dest) do
+    idx = Map.get(args || %{}, :capture_index, 0)
+
     assign_owned(
       rc?,
       dest,
-      "elmc_forward_ref_get((capture_count > 0 && captures[0] && captures[0]->tag == ELMC_TAG_FORWARD_REF && captures[0]->payload) ? *((ElmcForwardRef **)captures[0]->payload) : NULL)"
+      "elmc_forward_ref_get((capture_count > #{idx} && captures[#{idx}] && captures[#{idx}]->tag == ELMC_TAG_FORWARD_REF && captures[#{idx}]->payload) ? *((ElmcForwardRef **)captures[#{idx}]->payload) : NULL)"
     )
   end
 
@@ -3168,17 +3202,37 @@ defmodule Elmc.Backend.C.Lower.Instr do
   end
 
   defp record_values_array(field_regs, slots, opts) do
-    field_regs
-    |> Enum.with_index()
-    |> Enum.map_join(", ", fn {reg, idx} ->
-      ref = record_field_value_ref(reg, slots, opts)
-      prior = Enum.take(field_regs, idx)
-      if reg in prior, do: "elmc_retain(#{ref})", else: ref
-    end)
+    {entries, _} =
+      Enum.map_reduce(field_regs, [], fn reg, prior_refs ->
+        ref = record_field_value_ref(reg, slots, opts)
+
+        # Deduplicate by C ref (owned slot), not only by plan reg — slot packing can map
+        # two field regs onto the same owned[i]; take must not steal one pointer twice.
+        entry =
+          if is_binary(ref) and ref in prior_refs do
+            "elmc_retain(#{ref})"
+          else
+            ref
+          end
+
+        {entry, [ref | prior_refs]}
+      end)
+
+    Enum.join(entries, ", ")
   end
 
-  defp record_field_value_ref(reg, slots, opts) when is_integer(reg),
-    do: boxed_value_ref(reg, slots, opts)
+  defp record_field_value_ref(reg, slots, opts) when is_integer(reg) do
+    # Do not peel through retain copies here: record_new_values_take consumes `reg` and the
+    # values array must name that same owned slot. Peeling to the retain source would take the
+    # source while emit_null only clears the dest → double-free.
+    case Map.get(slots, reg) do
+      i when is_integer(i) ->
+        "owned[#{i}]"
+
+      _ ->
+        boxed_value_ref(reg, slots, opts)
+    end
+  end
 
   defp record_field_value_ref(reg, slots, opts),
     do: slot_ref(reg, slots, opts)

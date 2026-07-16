@@ -49,9 +49,10 @@ defmodule Elmc.Backend.CCodegen.FilterMapRowDrop do
 
   defp parse_filter_map_rows(%{
          op: :qualified_call,
-         target: "List.filterMap",
+         target: target,
          args: [lambda, range_call]
-       }) do
+       })
+       when target in ["List.filterMap", "Elm.Kernel.List.filterMap"] do
     with {:ok, row_full, row_cells} <- parse_filter_lambda(lambda),
          {:ok, rows_var} <- parse_range_zero_to_rows_minus_one(range_call) do
       {:ok, rows_var, row_full, row_cells}
@@ -89,18 +90,18 @@ defmodule Elmc.Backend.CCodegen.FilterMapRowDrop do
 
   defp parse_range_zero_to_rows_minus_one(%{
          op: :qualified_call,
-         target: "List.range",
+         target: target,
          args: [%{op: :int_literal, value: 0}, %{op: :sub_const, var: rows_var, value: 1}]
        })
-       when is_binary(rows_var),
+       when target in ["List.range", "Elm.Kernel.List.range"] and is_binary(rows_var),
        do: {:ok, rows_var}
 
   defp parse_range_zero_to_rows_minus_one(%{
          op: :qualified_call,
-         target: "List.range",
+         target: target,
          args: [%{op: :int_literal, value: 0}, %{op: :add_const, var: rows_var, value: -1}]
        })
-       when is_binary(rows_var),
+       when target in ["List.range", "Elm.Kernel.List.range"] and is_binary(rows_var),
        do: {:ok, rows_var}
 
   defp parse_range_zero_to_rows_minus_one(_), do: :error
@@ -113,7 +114,7 @@ defmodule Elmc.Backend.CCodegen.FilterMapRowDrop do
            name: "__sub__",
            args: [
              %{op: :var, name: rows_var},
-             %{op: :qualified_call, target: "List.length", args: [%{op: :var, name: "kept"}]}
+             %{op: :qualified_call, target: length_target, args: [%{op: :var, name: "kept"}]}
            ]
          },
          in_expr: %{
@@ -122,7 +123,7 @@ defmodule Elmc.Backend.CCodegen.FilterMapRowDrop do
            right: %{op: :var, name: "cleared"}
          }
        })
-       when is_binary(rows_var) do
+       when length_target in ["List.length", "Elm.Kernel.List.length"] and is_binary(rows_var) do
     with {:ok, cols_var} <- parse_concat_repeat_zero_rows(concat_expr) do
       {:ok, cols_var}
     end
@@ -132,7 +133,7 @@ defmodule Elmc.Backend.CCodegen.FilterMapRowDrop do
 
   defp parse_concat_repeat_zero_rows(%{
          op: :qualified_call,
-         target: "List.concat",
+         target: concat_target,
          args: [
            %{
              op: :call,
@@ -140,14 +141,16 @@ defmodule Elmc.Backend.CCodegen.FilterMapRowDrop do
              args: [
                %{
                  op: :qualified_call,
-                 target: "List.repeat",
+                 target: repeat_target,
                  args: [%{op: :var, name: "cleared"}, zero_row_repeat]
                },
                %{op: :var, name: "kept"}
              ]
            }
          ]
-       }) do
+       })
+       when concat_target in ["List.concat", "Elm.Kernel.List.concat"] and
+              repeat_target in ["List.repeat", "Elm.Kernel.List.repeat"] do
     parse_zero_row_repeat(zero_row_repeat)
   end
 
@@ -155,10 +158,10 @@ defmodule Elmc.Backend.CCodegen.FilterMapRowDrop do
 
   defp parse_zero_row_repeat(%{
          op: :qualified_call,
-         target: "List.repeat",
+         target: target,
          args: [%{op: :var, name: cols_var}, %{op: :int_literal, value: 0}]
        })
-       when is_binary(cols_var),
+       when target in ["List.repeat", "Elm.Kernel.List.repeat"] and is_binary(cols_var),
        do: {:ok, cols_var}
 
   defp parse_zero_row_repeat(_), do: :error
@@ -168,7 +171,7 @@ defmodule Elmc.Backend.CCodegen.FilterMapRowDrop do
       %{
         expr: %{
           op: :qualified_call,
-          target: "List.all",
+          target: all_target,
           args: [
             %{op: :call, name: "__neq__", args: [%{op: :int_literal, value: 0}]},
             %{
@@ -178,7 +181,7 @@ defmodule Elmc.Backend.CCodegen.FilterMapRowDrop do
             }
           ]
         }
-      } ->
+      } when all_target in ["List.all", "Elm.Kernel.List.all"] ->
         true
 
       _ ->
@@ -191,7 +194,7 @@ defmodule Elmc.Backend.CCodegen.FilterMapRowDrop do
       %{
         expr: %{
           op: :qualified_call,
-          target: "List.map",
+          target: map_target,
           args: [
             %{
               op: :lambda,
@@ -209,7 +212,7 @@ defmodule Elmc.Backend.CCodegen.FilterMapRowDrop do
             range_expr
           ]
         }
-      } ->
+      } when map_target in ["List.map", "Elm.Kernel.List.map"] ->
         if range_zero_to_cols_minus_one?(range_expr, cols_var),
           do: {:ok, cell_reader},
           else: :error
@@ -221,18 +224,18 @@ defmodule Elmc.Backend.CCodegen.FilterMapRowDrop do
 
   defp range_zero_to_cols_minus_one?(%{
          op: :qualified_call,
-         target: "List.range",
+         target: target,
          args: [%{op: :int_literal, value: 0}, %{op: :sub_const, var: cols_var, value: 1}]
        }, cols_var)
-       when is_binary(cols_var),
+       when target in ["List.range", "Elm.Kernel.List.range"] and is_binary(cols_var),
        do: true
 
   defp range_zero_to_cols_minus_one?(%{
          op: :qualified_call,
-         target: "List.range",
+         target: target,
          args: [%{op: :int_literal, value: 0}, %{op: :add_const, var: cols_var, value: -1}]
        }, cols_var)
-       when is_binary(cols_var),
+       when target in ["List.range", "Elm.Kernel.List.range"] and is_binary(cols_var),
        do: true
 
   defp range_zero_to_cols_minus_one?(_, _), do: false

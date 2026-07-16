@@ -120,6 +120,87 @@ defmodule Elmc.Backend.Wasm.Slots do
 
   def sync_owned_slot(_slots, _dest_reg, _src_local), do: []
 
+  @doc """
+  Move a boxed reg into `$fn_out` and null its owned shadow (publish / CFG ret).
+  """
+  @spec publish_reg_to_fn_out(t(), non_neg_integer()) :: [binary()]
+  def publish_reg_to_fn_out(slots, reg) when is_integer(reg) do
+    src = reg_name(slots, reg)
+
+    [
+      WasmTypes.line(
+        WasmTypes.sexpr("local.set", [
+          slots.fn_out_local,
+          " ",
+          WasmTypes.sexpr("local.get", [src])
+        ])
+      )
+    ] ++ clear_owned_slot(slots, reg)
+  end
+
+  @doc false
+  @spec clear_owned_slot(t(), non_neg_integer() | :fn_out | :branch_out | nil) :: [binary()]
+  def clear_owned_slot(%{slot_map: slot_map} = slots, reg) when is_integer(reg) do
+    case Map.get(slot_map, reg) do
+      idx when is_integer(idx) ->
+        owned = owned_local(slots, idx)
+        reg_local = reg_name(slots, reg)
+
+        [
+          WasmTypes.line(
+            WasmTypes.sexpr("local.set", [
+              owned,
+              " ",
+              WasmTypes.sexpr("i32.const", [0])
+            ])
+          ),
+          # Keep reg in sync with C owned[] — consumed regs must not keep dangling handles.
+          WasmTypes.line(
+            WasmTypes.sexpr("local.set", [
+              reg_local,
+              " ",
+              WasmTypes.sexpr("i32.const", [0])
+            ])
+          )
+        ]
+
+      _ ->
+        []
+    end
+  end
+
+  def clear_owned_slot(_slots, _reg), do: []
+
+  @doc false
+  @spec release_owned_slot(t(), non_neg_integer()) :: [binary()]
+  def release_owned_slot(%{slot_map: slot_map} = slots, reg) when is_integer(reg) do
+    case Map.get(slot_map, reg) do
+      idx when is_integer(idx) ->
+        # Prefer the working reg local — owned shadow can lag after set_reg.
+        _ = idx
+        reg_local = reg_name(slots, reg)
+        release = WasmTypes.import_ident("runtime.release")
+
+        [
+          WasmTypes.line(
+            WasmTypes.sexpr("drop", [
+              " ",
+              WasmTypes.sexpr("call", [
+                release,
+                " ",
+                WasmTypes.sexpr("local.get", [reg_local])
+              ])
+            ])
+          )
+        ] ++ clear_owned_slot(slots, reg)
+
+      _ ->
+        []
+    end
+  end
+
+  def release_owned_slot(_slots, _reg), do: []
+
   @spec owned_local(t(), non_neg_integer()) :: String.t()
   def owned_local(%{owned_base: base}, index), do: WasmTypes.ident("owned#{base + index}")
 

@@ -500,71 +500,37 @@ defmodule ElmEx.IR.Wire3HelperResolution do
     %{kind: :function, name: name, args: args || [], type: nil, expr: expr}
   end
 
-  defp trivial_wire3_decl(mod, "w3_decode_" <> type_name) do
-    case wire3_type_alias_shape(mod, type_name) do
-      :empty_record ->
-        [
-          %{
-            kind: :function,
-            name: "w3_decode_" <> type_name,
-            args: [],
-            type: nil,
-            expr:
-              qualified_call("Bytes.Decode.succeed", [
-                %{op: :record_literal, fields: []}
-              ])
-          }
-        ]
-
-      :non_empty_record ->
-        []
-
-      _ ->
-        []
-    end
+  defp trivial_wire3_decl(_mod, "w3_decode_" <> type_name) do
+    [
+      %{
+        kind: :function,
+        name: "w3_decode_" <> type_name,
+        args: [],
+        type: nil,
+        expr:
+          qualified_call("Bytes.Decode.succeed", [
+            %{op: :record_literal, fields: []}
+          ])
+      }
+    ]
   end
 
-  defp trivial_wire3_decl(mod, "w3_encode_" <> type_name) do
-    case wire3_type_alias_shape(mod, type_name) do
-      :empty_record ->
-        [
-          %{
-            kind: :function,
-            name: "w3_encode_" <> type_name,
-            args: ["value"],
-            type: nil,
-            expr:
-              qualified_call("Lamdera.Wire3.encodeSequenceWithoutLength", [
-                %{op: :list_literal, items: []}
-              ])
-          }
-        ]
-
-      _ ->
-        []
-    end
+  defp trivial_wire3_decl(_mod, "w3_encode_" <> type_name) do
+    [
+      %{
+        kind: :function,
+        name: "w3_encode_" <> type_name,
+        args: ["value"],
+        type: nil,
+        expr:
+          qualified_call("Lamdera.Wire3.encodeSequenceWithoutLength", [
+            %{op: :list_literal, items: []}
+          ])
+      }
+    ]
   end
 
   defp trivial_wire3_decl(_mod, _helper_name), do: []
-
-  defp wire3_type_alias_shape(mod, type_name) when is_binary(type_name) do
-    case Enum.find(mod.declarations, &(&1.kind == :type_alias and &1.name == type_name)) do
-      %{expr: nil} ->
-        :empty_record
-
-      %{expr: %{op: :record_alias, fields: []}} ->
-        :empty_record
-
-      %{expr: %{op: :tuple_alias, arity: 0}} ->
-        :empty_record
-
-      %{expr: %{op: :record_alias, fields: fields}} when is_list(fields) and fields != [] ->
-        :non_empty_record
-
-      _ ->
-        :unknown
-    end
-  end
 
   defp response_sketch_wire3_decode(helper_name, union_meta) do
     data = var("w3_x_c_data")

@@ -55,4 +55,57 @@ defmodule Elmc.PlanAllocateTest do
     assert Map.get(slots, 1) == 0
     assert count == 1
   end
+
+  test "ret terminator keeps result register live through exit" do
+    plan = %FunctionPlan{
+      module: "Main",
+      name: "ret_live",
+      params: [],
+      return_type: nil,
+      fallible: true,
+      rc_required: true,
+      reg_count: 2,
+      blocks: [
+        %Block{
+          id: 0,
+          instrs: [
+            %{
+              op: :const_int,
+              dest: 0,
+              args: %{value: 1},
+              effects: %{produces: {:owned, 0}, consumes: [], borrows: [], fallible: false}
+            }
+          ],
+          terminator: {:ret, 0}
+        },
+        %Block{
+          id: 1,
+          instrs: [
+            %{
+              op: :const_int,
+              dest: 1,
+              args: %{value: 2},
+              effects: %{produces: {:owned, 1}, consumes: [], borrows: [], fallible: false}
+            }
+          ],
+          terminator: {:ret, 1}
+        }
+      ],
+      entry_block: 0,
+      locals: %{},
+      catch_depth: 0,
+      lambdas: [],
+      lambda_arg_count: nil,
+      letrec_refs: [],
+      fusion_c: nil
+    }
+
+    {slots, count} = Allocate.run(plan)
+
+    # Both ret sources must be slotted — greedy reuse across exclusive arms is
+    # fine, but neither reg may be omitted from the map.
+    assert Map.has_key?(slots, 0)
+    assert Map.has_key?(slots, 1)
+    assert count >= 1
+  end
 end

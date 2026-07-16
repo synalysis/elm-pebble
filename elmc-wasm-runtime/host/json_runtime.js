@@ -77,7 +77,92 @@ export function createJsonRuntime(deps) {
     TAG_STRING,
     TAG_LIST,
     TAG_TUPLE2,
+    constructorTags = {},
   } = deps;
+
+  const decodeErrorTag = (name) => {
+    const qualified = `Json.Decode.${name}`;
+    if (constructorTags[qualified] != null) return constructorTags[qualified] | 0;
+    if (constructorTags[name] != null) return constructorTags[name] | 0;
+    return null;
+  };
+
+  const makeDecodeUnion = (name, payloadPtr) => {
+    const tag = decodeErrorTag(name);
+    if (tag == null) return null;
+    return allocHandle({
+      tag: TAG_TUPLE2,
+      first: newIntHandle(tag),
+      second: payloadPtr | 0,
+    });
+  };
+
+  const decodeErrorToString = (errPtr) => {
+    const payload = readHandle(errPtr);
+    if (!payload) return "Json.Decode.Error";
+    if (payload.tag === TAG_STRING) return payload.value;
+
+    if (payload.tag !== TAG_TUPLE2) {
+      return stringValue(errPtr) || "Json.Decode.Error";
+    }
+
+    const tag = intValue(payload.first | 0);
+    const secondPtr = payload.second | 0;
+    const failureTag = decodeErrorTag("Failure");
+    const fieldTag = decodeErrorTag("Field");
+    const indexTag = decodeErrorTag("Index");
+    const oneOfTag = decodeErrorTag("OneOf");
+
+    if (failureTag != null && tag === failureTag) {
+      return stringValue(secondPtr);
+    }
+
+    if (fieldTag != null && tag === fieldTag) {
+      const pair = readHandle(secondPtr);
+      if (pair?.tag === TAG_TUPLE2) {
+        const name = stringValue(pair.first | 0);
+        return `Expecting something at field \`${name}\` but instead got:\n    ${decodeErrorToString(pair.second | 0)}`;
+      }
+    }
+
+    if (indexTag != null && tag === indexTag) {
+      const pair = readHandle(secondPtr);
+      if (pair?.tag === TAG_TUPLE2) {
+        const index = intValue(pair.first | 0);
+        return `Expecting something at index ${index} but instead got:\n    ${decodeErrorToString(pair.second | 0)}`;
+      }
+    }
+
+    if (oneOfTag != null && tag === oneOfTag) {
+      const list = readHandle(secondPtr);
+      const items = list?.tag === TAG_LIST ? list.items ?? [] : [];
+      const body = items.map((item) => decodeErrorToString(item | 0)).join("\n\n");
+      return body ? `One of:\n\n    ${body.replace(/\n/g, "\n    ")}` : "One of:\n\n    unknown decode error";
+    }
+
+    return stringValue(errPtr) || "Json.Decode.Error";
+  };
+
+  const makeFailure = (message) => {
+    const union = makeDecodeUnion("Failure", newStringHandle(message));
+    return union ?? newStringHandle(message);
+  };
+
+  const wrapFieldError = (field, nestedPtr) => {
+    const union = makeDecodeUnion("Field", tuple2(0, newStringHandle(field), nestedPtr | 0));
+    return union ?? newStringHandle(`Field ${field}: ${decodeErrorToString(nestedPtr)}`);
+  };
+
+  const wrapIndexError = (index, nestedPtr) => {
+    const union = makeDecodeUnion("Index", tuple2(0, newIntHandle(index | 0), nestedPtr | 0));
+    return union ?? newStringHandle(`Index ${index}: ${decodeErrorToString(nestedPtr)}`);
+  };
+
+  const makeOneOfError = (errorPtrs) => {
+    const items = errorPtrs.map((ptr) => ptr | 0);
+    const union = makeDecodeUnion("OneOf", newList(items));
+    return union ?? newStringHandle(items.map((ptr) => decodeErrorToString(ptr)).join(" > "));
+  };
 
   const newDecoder = (payload) => allocHandle({ tag: TAG_JSON_DECODER, ...payload });
   const newJsonValue = (value) => allocHandle({ tag: TAG_JSON_VALUE, value });
@@ -136,11 +221,8 @@ export function createJsonRuntime(deps) {
 
   const expecting = (type, value) => ({
     ok: false,
-    error: failureError(`Expecting ${type}`, value),
+    error: makeFailure(`Expecting ${type}` + (value === undefined ? "" : ` (${typeof value})`)),
   });
-
-  const failureError = (message, value) =>
-    newStringHandle(`${message}` + (value === undefined ? "" : ` (${typeof value})`));
 
   const primDecoders = {
     string(value) {
@@ -175,7 +257,7 @@ export function createJsonRuntime(deps) {
 
   const runDecoderHelp = (decoderPtr, value) => {
     const decoder = decoderPayload(decoderPtr);
-    if (!decoder) return { ok: false, error: failureError("bad decoder", value) };
+    if (!decoder) return { ok: false, error: makeFailure("bad decoder") };
 
     switch (decoder.kind) {
       case DEC_PRIM: {
@@ -187,7 +269,7 @@ export function createJsonRuntime(deps) {
         return { ok: true, handle: asHandle(decoder.msg) };
 
       case DEC_FAIL:
-        return { ok: false, error: failureError(stringValue(decoder.msg), value) };
+        return { ok: false, error: makeFailure(stringValue(decoder.msg)) };
 
       case DEC_NULL:
         return value === null
@@ -199,7 +281,7 @@ export function createJsonRuntime(deps) {
         const items = [];
         for (let i = 0; i < value.length; i++) {
           const step = runDecoderHelp(decoder.decoder, value[i]);
-          if (!step.ok) return { ok: false, error: step.error, index: i };
+          if (!step.ok) return { ok: false, error: wrapIndexError(i, step.error) };
           items.push(asHandle(step.handle));
         }
         return { ok: true, handle: newList(items) };
@@ -210,7 +292,7 @@ export function createJsonRuntime(deps) {
         const items = [];
         for (let i = 0; i < value.length; i++) {
           const step = runDecoderHelp(decoder.decoder, value[i]);
-          if (!step.ok) return { ok: false, error: step.error, index: i };
+          if (!step.ok) return { ok: false, error: wrapIndexError(i, step.error) };
           items.push(asHandle(step.handle));
         }
         return { ok: true, handle: newList(items) };
@@ -218,23 +300,28 @@ export function createJsonRuntime(deps) {
 
       case DEC_FIELD: {
         if (typeof value !== "object" || value === null || !(decoder.field in value)) {
-          return expecting(`an OBJECT with a field named \`${decoder.field}\``, value);
+          return {
+            ok: false,
+            error: makeFailure(`Expecting an OBJECT with a field named \`${decoder.field}\``),
+          };
         }
         const step = runDecoderHelp(decoder.decoder, value[decoder.field]);
-        if (!step.ok) return { ok: false, error: step.error, field: decoder.field };
+        if (!step.ok) return { ok: false, error: wrapFieldError(decoder.field, step.error) };
         return step;
       }
 
       case DEC_INDEX: {
         if (!isArray(value)) return expecting("an ARRAY", value);
         if (decoder.index >= value.length) {
-          return expecting(
-            `a LONGER array. Need index ${decoder.index} but only see ${value.length} entries`,
-            value
-          );
+          return {
+            ok: false,
+            error: makeFailure(
+              `Expecting a LONGER array. Need index ${decoder.index} but only see ${value.length} entries`
+            ),
+          };
         }
         const step = runDecoderHelp(decoder.decoder, value[decoder.index]);
-        if (!step.ok) return { ok: false, error: step.error, index: decoder.index };
+        if (!step.ok) return { ok: false, error: wrapIndexError(decoder.index, step.error) };
         return step;
       }
 
@@ -246,7 +333,7 @@ export function createJsonRuntime(deps) {
         for (const key of Object.keys(value)) {
           if (!Object.prototype.hasOwnProperty.call(value, key)) continue;
           const step = runDecoderHelp(decoder.decoder, value[key]);
-          if (!step.ok) return { ok: false, error: step.error, field: key };
+          if (!step.ok) return { ok: false, error: wrapFieldError(key, step.error) };
           const keyHandle = newStringHandle(key);
           const pairHandle = allocHandle({
             tag: TAG_TUPLE2,
@@ -264,7 +351,9 @@ export function createJsonRuntime(deps) {
           const step = runDecoderHelp(subDecoder, value);
           if (!step.ok) return step;
           const invoked = invokeClosure(callee, [asHandle(step.handle)]);
-          if (invoked.rc !== RC_SUCCESS) return { ok: false, error: failureError("map callback failed", value) };
+          if (invoked.rc !== RC_SUCCESS) {
+            return { ok: false, error: makeFailure("map callback failed") };
+          }
           callee = asHandle(invoked.value);
           release(invoked.value);
         }
@@ -275,7 +364,9 @@ export function createJsonRuntime(deps) {
         const step = runDecoderHelp(decoder.decoder, value);
         if (!step.ok) return step;
         const next = invokeClosure(decoder.callback, [asHandle(step.handle)]);
-        if (next.rc !== RC_SUCCESS) return { ok: false, error: failureError("andThen callback failed", value) };
+        if (next.rc !== RC_SUCCESS) {
+          return { ok: false, error: makeFailure("andThen callback failed") };
+        }
         const result = runDecoderHelp(asHandle(next.value), value);
         release(next.value);
         return result;
@@ -288,11 +379,11 @@ export function createJsonRuntime(deps) {
           if (step.ok) return step;
           errors.unshift(step.error);
         }
-        return { ok: false, error: errors[0] ?? failureError("oneOf failed", value) };
+        return { ok: false, error: makeOneOfError(errors) };
       }
 
       default:
-        return { ok: false, error: failureError("unknown decoder", value) };
+        return { ok: false, error: makeFailure("unknown decoder") };
     }
   };
 
@@ -385,7 +476,7 @@ export function createJsonRuntime(deps) {
         } catch (err) {
           return resultErrOwn(
             outPtr,
-            newStringHandle(`This is not valid JSON! ${err?.message ?? err}`)
+            asHandle(makeFailure(`This is not valid JSON! ${err?.message ?? err}`))
           );
         }
       }
@@ -547,7 +638,7 @@ export function createJsonRuntime(deps) {
     } catch (err) {
       return resultErrOwn(
         outPtr,
-        newStringHandle(`This is not valid JSON! ${err?.message ?? err}`)
+        asHandle(makeFailure(`This is not valid JSON! ${err?.message ?? err}`))
       );
     }
   };
@@ -592,6 +683,7 @@ export function createJsonRuntime(deps) {
     newJsonValue,
     unwrapJsonValue,
     runDecoderToResult,
+    decodeErrorToString,
     DEC_LIST,
     DEC_ARRAY,
     DEC_FIELD,

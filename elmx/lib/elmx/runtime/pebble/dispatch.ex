@@ -40,6 +40,8 @@ defmodule Elmx.Runtime.Pebble.Dispatch do
   defdelegate json_encode_float(args), to: DispatchJson, as: :encode_float
   defdelegate json_encode_encode(args), to: DispatchJson, as: :encode_encode
   defdelegate json_encode_dict(args), to: DispatchJson, as: :encode_dict
+  defdelegate json_encode_add_field(args), to: DispatchJson, as: :encode_add_field
+  defdelegate json_encode_add_entry(args), to: DispatchJson, as: :encode_add_entry
 
   # Effects / subscriptions
   defdelegate events_batch(args), to: Effects

@@ -18,10 +18,12 @@ defmodule Elmc.Backend.Plan.Context do
     :decl_map,
     :locals,
     :local_types,
+    :inferred_param_fields,
     :params,
     :letrec_refs,
     :letrec_self,
     :letrec_in_closure,
+    :letrec_capture_indices,
     :curried_type_offset
   ]
 
@@ -35,10 +37,12 @@ defmodule Elmc.Backend.Plan.Context do
           decl_map: Types.function_decl_map(),
           locals: %{String.t() => Types.reg()},
           local_types: %{String.t() => String.t()},
+          inferred_param_fields: %{String.t() => [String.t()]},
           params: [String.t()],
           letrec_refs: %{String.t() => String.t()},
           letrec_self: String.t() | nil,
           letrec_in_closure: boolean(),
+          letrec_capture_indices: %{String.t() => non_neg_integer()},
           curried_type_offset: non_neg_integer()
         }
 
@@ -58,10 +62,12 @@ defmodule Elmc.Backend.Plan.Context do
       decl_map: Keyword.get(opts, :decl_map, %{}),
       locals: Keyword.get(opts, :locals, %{}),
       local_types: Keyword.get(opts, :local_types, %{}),
+      inferred_param_fields: Keyword.get(opts, :inferred_param_fields, %{}),
       params: Keyword.get(opts, :params, []),
       letrec_refs: Keyword.get(opts, :letrec_refs, %{}),
       letrec_self: Keyword.get(opts, :letrec_self),
       letrec_in_closure: Keyword.get(opts, :letrec_in_closure, false),
+      letrec_capture_indices: Keyword.get(opts, :letrec_capture_indices, %{}),
       curried_type_offset: Keyword.get(opts, :curried_type_offset, 0)
     }
   end

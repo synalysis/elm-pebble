@@ -154,6 +154,11 @@ defmodule Elmc.Backend.Wasm.ImportCollect do
     put_import(imports, arities, "runtime.bytes_cmd", 2 + argc)
   end
 
+  defp collect_instr(%{op: :parser_cmd, args: %{params: params}}, {imports, arities}) do
+    argc = params |> List.wrap() |> length()
+    put_import(imports, arities, "runtime.parser_cmd", 2 + argc)
+  end
+
   defp collect_instr(%{op: :dom_sub, args: %{params: params}}, {imports, arities}) do
     argc = params |> List.wrap() |> length()
     # (out_ptr, kind, ...params)
@@ -173,21 +178,28 @@ defmodule Elmc.Backend.Wasm.ImportCollect do
   defp collect_instr(%{op: :boxed_binop, args: %{op: op}}, acc) do
     acc = put_import_elem(acc, "runtime.as_int", 1)
 
-    if op == :fdiv do
+    if op in [:fdiv, :idiv] do
       acc
       |> put_import_elem("runtime.as_float", 1)
       |> put_import_elem("runtime.float_div_bits", 2)
       |> put_import_elem(RuntimeImports.import_name(:new_float), 2)
     else
-      put_import_elem(acc, RuntimeImports.import_name(:new_int), 2)
+      acc
+      |> put_import_elem("runtime.as_float", 1)
+      |> put_import_elem(RuntimeImports.import_name(:new_float), 2)
+      |> put_import_elem(RuntimeImports.import_name(:new_int), 2)
     end
   end
 
   defp collect_instr(%{op: :load_local, dest: dest}, acc) when dest in [:fn_out, :branch_out],
     do: put_import_elem(acc, RuntimeImports.import_name(:new_int), 2)
 
-  defp collect_instr(%{op: :int_arith}, acc),
-    do: put_import_elem(acc, "runtime.as_int", 1)
+  defp collect_instr(%{op: :int_arith}, acc) do
+    acc
+    |> put_import_elem("runtime.as_int", 1)
+    |> put_import_elem("runtime.as_float", 1)
+    |> put_import_elem(RuntimeImports.import_name(:new_float), 2)
+  end
 
   defp collect_instr(%{op: :publish, dest: :fn_out}, acc),
     do: put_import_elem(acc, RuntimeImports.import_name(:new_int), 2)

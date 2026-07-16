@@ -26,12 +26,11 @@ if [[ "$SKIP_BUILD" != "1" ]]; then
   echo "==> elm-pages build"
   npm run build
 
-  echo "==> WASM web build"
-  npm run build:wasm
+  echo "==> WASM web build (includes page-data probe when dist/index.html exists)"
+  SKIP_VERIFY="${SKIP_VERIFY:-0}" npm run build:wasm
 
-  if [[ "$SKIP_VERIFY" != "1" ]]; then
-    echo "==> WASM page-data probe"
-    npm run verify:wasm
+  if [[ "$SKIP_VERIFY" == "1" ]]; then
+    echo "==> SKIP_VERIFY=1 (page-data probe skipped during build)"
   fi
 else
   echo "==> SKIP_BUILD=1 (serving existing dist/)"
@@ -47,29 +46,36 @@ if [[ ! -f dist/wasm-web/host/browser.html ]]; then
   exit 1
 fi
 
-for host_file in json_runtime.js bytes_runtime.js rc_runtime.js boot.js loader.js page_bytes.js page_styles.js; do
-  if [[ ! -f "dist/wasm-web/host/$host_file" ]]; then
-    echo "error: dist/wasm-web/host/$host_file missing — rebuild with npm run build:wasm" >&2
-    exit 1
-  fi
-done
-
 # Keep served host JS in sync with elmc-wasm-runtime (avoids stale rc_runtime after host-only edits).
 echo "==> sync WASM host runtime from elmc-wasm-runtime"
 HOST_SRC="$ROOT/elmc-wasm-runtime/host"
 HOST_DST="$APP/dist/wasm-web/host"
 mkdir -p "$HOST_DST"
-for host_file in loader.js rc_runtime.js json_runtime.js bytes_runtime.js boot.js page_bytes.js page_styles.js browser.html; do
-  cp "$HOST_SRC/$host_file" "$HOST_DST/$host_file"
+shopt -s nullglob
+for host_file in "$HOST_SRC"/*.js; do
+  cp "$host_file" "$HOST_DST/$(basename "$host_file")"
 done
+cp "$HOST_SRC/browser.html" "$HOST_DST/browser.html"
+
+echo "==> minify/bundle synced host JS for transfer"
+bash "$ROOT/scripts/minify-wasm-host.sh" "$APP/dist/wasm-web"
+
+if [[ ! -f dist/wasm-web/host/boot.js ]]; then
+  echo "error: dist/wasm-web/host/boot.js missing after minify" >&2
+  exit 1
+fi
+
+if [[ "${KEEP_WASM_DEBUG_MANIFEST:-0}" != "1" ]]; then
+  rm -f dist/wasm-web/wasm/elmc_wasm.manifest.debug.json
+fi
 
 URL="http://localhost:${PORT}/wasm-web/host/browser.html"
 echo ""
-echo "Serving $APP/dist on port ${PORT}"
+echo "Serving $APP/dist on port ${PORT} (Brotli negotiation for .br sidecars)"
 echo "  WASM browser: ${URL}"
 echo "  elm-pages:    http://localhost:${PORT}/"
 echo ""
 echo "Press Ctrl+C to stop."
 echo ""
 
-exec python -m http.server "$PORT" --directory dist
+exec python3 "$ROOT/scripts/serve-static-brotli.py" dist --port "$PORT" --bind 0.0.0.0

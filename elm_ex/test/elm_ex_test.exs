@@ -165,6 +165,94 @@ defmodule ElmExTest do
     assert Enum.any?(project.modules, &(&1.name == "Companion.Watch"))
   end
 
+  test "frontend bridge keeps package-private modules with colliding Elm names" do
+    root = Path.join(System.tmp_dir!(), "elm-ex-pkg-collision-#{System.unique_integer([:positive])}")
+    src = Path.join(root, "src")
+    date_src = Path.join(root, "elm-stuff/packages/justinmimbs/date/4.1.0/src")
+    pages_src = Path.join(root, "elm-stuff/packages/dillonkearns/elm-pages/12.1.2/src")
+
+    File.mkdir_p!(src)
+    File.mkdir_p!(date_src)
+    File.mkdir_p!(pages_src)
+
+    File.write!(
+      Path.join(root, "elm.json"),
+      Jason.encode!(%{
+        "type" => "application",
+        "source-directories" => ["src"],
+        "elm-version" => "0.19.1",
+        "dependencies" => %{
+          "direct" => %{
+            "justinmimbs/date" => "4.1.0",
+            "dillonkearns/elm-pages" => "12.1.2"
+          },
+          "indirect" => %{}
+        },
+        "test-dependencies" => %{"direct" => %{}, "indirect" => %{}}
+      })
+    )
+
+    File.write!(Path.join(src, "Main.elm"), """
+    module Main exposing (main)
+
+    import Date
+
+    main =
+        Date.format "yyyy" (Date.fromOrdinalDate 1970 1)
+    """)
+
+    File.write!(Path.join(date_src, "Date.elm"), """
+    module Date exposing (format, fromOrdinalDate)
+
+    import Pattern
+
+    fromOrdinalDate y d =
+        y + d
+
+    format pattern date =
+        Pattern.fromString pattern
+    """)
+
+    File.write!(Path.join(date_src, "Pattern.elm"), """
+    module Pattern exposing (fromString)
+
+    fromString str =
+        str
+    """)
+
+    File.write!(Path.join(pages_src, "Pattern.elm"), """
+    module Pattern exposing (empty)
+
+    empty =
+        0
+    """)
+
+    on_exit(fn -> File.rm_rf(root) end)
+
+    assert {:ok, project} = Bridge.load_project(root)
+
+    pattern_modules = Enum.filter(project.modules, &String.ends_with?(&1.name, ".Pattern"))
+    assert length(pattern_modules) == 2
+
+    date_pattern =
+      Enum.find(pattern_modules, &String.contains?(&1.path, "justinmimbs/date"))
+
+    pages_pattern =
+      Enum.find(pattern_modules, &String.contains?(&1.path, "dillonkearns/elm-pages"))
+
+    assert date_pattern
+    assert pages_pattern
+    assert date_pattern.name != pages_pattern.name
+    assert date_pattern.name == Bridge.mangle_package_module_name("justinmimbs/date@4.1.0", "Pattern")
+
+    date_mod = Enum.find(project.modules, &(&1.name == "Date"))
+    assert date_mod
+
+    assert Enum.any?(date_mod.import_entries, fn entry ->
+             (Map.get(entry, "module") || Map.get(entry, :module)) == date_pattern.name
+           end)
+  end
+
   test "generated frontend keeps outer update branches after nested case expression" do
     root =
       Path.join(System.tmp_dir!(), "elm-ex-nested-case-#{System.unique_integer([:positive])}")

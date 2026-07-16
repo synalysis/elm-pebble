@@ -256,6 +256,9 @@ defmodule Elmc.Backend.CCodegen.SpecialValues.Stdlib.List do
     %{op: :runtime_call, function: "elmc_list_filter_map", args: [f, list]}
   end
 
+  def special_value_from_target("Elm.Kernel.List.filterMap", args),
+    do: special_value_from_target("List.filterMap", args)
+
   def special_value_from_target("List.sum", [list]),
     do: %{op: :runtime_call, function: "elmc_list_sum", args: [list]}
 
@@ -289,8 +292,14 @@ defmodule Elmc.Backend.CCodegen.SpecialValues.Stdlib.List do
   def special_value_from_target("List.range", [lo, hi]),
     do: %{op: :runtime_call, function: "elmc_list_range", args: [lo, hi]}
 
+  def special_value_from_target("Elm.Kernel.List.range", args),
+    do: special_value_from_target("List.range", args)
+
   def special_value_from_target("List.repeat", [n, value]),
     do: %{op: :runtime_call, function: "elmc_list_repeat", args: [n, value]}
+
+  def special_value_from_target("Elm.Kernel.List.repeat", args),
+    do: special_value_from_target("List.repeat", args)
 
   def special_value_from_target("List.take", [take_n, %{op: :runtime_call, function: drop_fn, args: [drop_n, list]}])
       when drop_fn in ["elmc_list_drop", "elmc_list_drop_int"] do

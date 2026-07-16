@@ -1,69 +1,44 @@
 repo_root = Path.expand("../../..", __DIR__)
 elmc_root = Path.join(repo_root, "elmc")
-app_root = Path.join(repo_root, "elm_pebble_dev")
-out = Path.join(elmc_root, "tmp/elm_pebble_dev_wasm")
 
-File.rm_rf!(out)
+{out, _} = Code.eval_file(Path.join(__DIR__, "compile_elm_pebble_dev_wasm.exs"))
 
-case Elmc.compile(app_root, %{
-       out_dir: out,
-       targets: [:wasm],
-       web: true,
-       entry_module: "Main",
-       strip_dead_code: true,
-       wasm_strict: false
-     }) do
-  {:ok, _} ->
-    :ok
+System.put_env("ELMC_OUT_DIR", out)
 
-  {:error, reason} ->
-    IO.inspect(reason, label: "compile failed")
-    System.halt(1)
-end
+{_, _} = Code.eval_file(Path.join(__DIR__, "validate_elm_pebble_dev_wasm.exs"))
+
+alias Elmc.Backend.Wasm.ProjectWriter
 
 manifest =
   out
-  |> Path.join("wasm/elmc_wasm.manifest.json")
+  |> ProjectWriter.manifest_path()
   |> File.read!()
   |> Jason.decode!()
 
 imports = manifest["imports"] || []
-functions = manifest["functions"] || []
 closures = manifest["closures"] || []
-skipped = manifest["skipped"] || []
+stub_functions = ProjectWriter.stub_functions(out)
+
+debug_skipped =
+  case File.read(ProjectWriter.debug_manifest_path(out)) do
+    {:ok, body} -> body |> Jason.decode!() |> Map.get("skipped", [])
+    _ -> []
+  end
 
 IO.puts("elm_pebble_dev wasm build: #{out}")
 IO.puts("  entry_export: #{manifest["entry_export"]}")
-IO.puts("  functions: #{length(functions)} closures: #{length(closures)} skipped: #{length(skipped)}")
+IO.puts("  closures: #{length(closures)} skipped: #{length(debug_skipped)}")
+IO.puts("  stub_functions: #{length(stub_functions)}")
 IO.puts("  imports: #{length(imports)}")
+IO.puts("  constructor_tags: #{map_size(manifest["constructor_tags"] || %{})}")
 IO.puts("  runtime bytes: #{File.read!(Path.join(out, "runtime/elmc_runtime.c")) |> byte_size()}")
 
-IO.inspect(Enum.take(imports, 20), label: "imports (first 20)")
-
-json_imports = Enum.filter(imports, &String.contains?(&1, "json"))
-IO.puts("  json imports: #{length(json_imports)}")
-
-web_imports = Enum.filter(imports, &String.starts_with?(&1, "web."))
-IO.puts("  web imports: #{length(web_imports)}")
-IO.inspect(web_imports, label: "web imports")
-
-list_imports = Enum.filter(imports, &String.contains?(&1, "list"))
-IO.puts("  list imports: #{length(list_imports)}")
-
-wat_path = Path.join(out, "wasm/elmc_generated.wat")
 wasm_path = Path.join(out, "wasm/app.wasm")
 
-if System.find_executable("wat2wasm") do
-  {output, code} = System.cmd("wat2wasm", [wat_path, "-o", wasm_path], stderr_to_stdout: true)
-
-  if code == 0 do
-    IO.puts("  linked wasm: #{wasm_path} (#{File.stat!(wasm_path).size} bytes)")
-  else
-    IO.puts("wat2wasm failed:\n#{output}")
-    System.halt(1)
-  end
+if File.regular?(wasm_path) do
+  IO.puts("  linked wasm: #{wasm_path} (#{File.stat!(wasm_path).size} bytes)")
 else
-  IO.puts("  wat2wasm not found; skipped app.wasm link")
+  IO.puts("  linked wasm: (missing — wat2wasm not run or not found)")
 end
 
 IO.puts("")

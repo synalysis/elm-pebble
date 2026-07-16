@@ -1,8 +1,7 @@
 defmodule Elmc.WasmWebBootTest do
   use ExUnit.Case, async: false
 
-  alias Elmc.Backend.Wasm.ProjectWriter
-  alias Elmc.Test.WasmRcTrackHarness
+  alias Elmc.Test.{ElmPebbleDevWasmCompile, WasmRcTrackHarness}
 
   @app_root Path.expand("../../elm_pebble_dev", __DIR__)
   @index_html Path.expand("../../elm_pebble_dev/dist/index.html", __DIR__)
@@ -11,6 +10,7 @@ defmodule Elmc.WasmWebBootTest do
 
   @tag :wasm_execute
   @tag :slow
+  @tag timeout: 180_000
   test "bootFromUrls boots elm_pebble_dev with page bytes like browser.html" do
     cond do
       not File.dir?(@app_root) ->
@@ -23,23 +23,7 @@ defmodule Elmc.WasmWebBootTest do
         :ok
 
       true ->
-        out_dir = Path.expand("tmp/wasm_web_boot/elm_pebble_dev", __DIR__)
-        File.rm_rf!(out_dir)
-
-        assert {:ok, _} =
-                 Elmc.compile(@app_root, %{
-                   out_dir: out_dir,
-                   targets: [:wasm],
-                   web: true,
-                   entry_module: "Main",
-                   strip_dead_code: true,
-                   wasm_strict: false
-                 })
-
-        WasmRcTrackHarness.run_wat2wasm!(
-          ProjectWriter.wat_path(out_dir),
-          Path.join(out_dir, "wasm/app.wasm")
-        )
+        out_dir = ElmPebbleDevWasmCompile.compile!(check: true)
 
         boot_js = File.read!(Path.join(out_dir, "host/boot.js"))
         assert boot_js =~ "bootFromUrls"
@@ -76,7 +60,6 @@ defmodule Elmc.WasmWebBootTest do
   end
 
   defp execution_tools_available? do
-    System.find_executable("node") != nil and
-      (System.find_executable("wat2wasm") != nil or System.find_executable("npx") != nil)
+    WasmRcTrackHarness.execution_tools_available?()
   end
 end

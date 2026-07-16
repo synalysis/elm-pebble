@@ -71,7 +71,7 @@ defmodule Elmc.Test.WasmRcTrackHarness do
       {:error, message} ->
         {:error, message}
 
-      node ->
+      _node ->
         args =
           [out_dir, export_name] ++
             case Keyword.get(opts, :expected_checksum) do
@@ -79,11 +79,40 @@ defmodule Elmc.Test.WasmRcTrackHarness do
               n when is_integer(n) -> [Integer.to_string(n)]
             end
 
-        {output, code} =
-          run_without_ulimit(node, [@runner_script | args])
+        run_node_script(@runner_script, args)
+    end
+  end
 
+  @spec run_node_script(String.t(), [String.t()], keyword()) ::
+          {:ok, String.t()} | {:error, String.t()}
+  def run_node_script(script_path, args, opts \\ []) when is_binary(script_path) and is_list(args) do
+    node = System.find_executable("node")
+
+    case node do
+      nil ->
+        {:error, "node not available"}
+
+      node ->
+        env =
+          System.get_env()
+          |> Map.merge(Map.new(Keyword.get(opts, :env, %{})))
+          |> Enum.to_list()
+
+        {output, code} = run_without_ulimit(node, [script_path | args], env: env)
         if code == 0, do: {:ok, output}, else: {:error, output}
     end
+  end
+
+  @spec probe_skipped_under_ulimit?(String.t()) :: boolean()
+  def probe_skipped_under_ulimit?(output) when is_binary(output) do
+    wasm_instantiate_oom?(output) or
+      String.contains?(output, "prlimit: failed to set the AS resource limit")
+  end
+
+  @spec execution_tools_available?() :: boolean()
+  def execution_tools_available? do
+    System.find_executable("node") != nil and
+      (System.find_executable("wat2wasm") != nil or npx_available?())
   end
 
   @spec wasm_instantiate_oom?(String.t()) :: boolean()
@@ -118,12 +147,12 @@ defmodule Elmc.Test.WasmRcTrackHarness do
     end
   end
 
-  defp run_without_ulimit(cmd, args) do
+  defp run_without_ulimit(cmd, args, opts \\ []) do
     shell_cmd =
       ("ulimit -v unlimited 2>/dev/null || true; " <>
          Enum.map_join([cmd | args], " ", &quote_shell/1))
 
-    System.cmd("bash", ["-c", shell_cmd], stderr_to_stdout: true)
+    System.cmd("bash", ["-c", shell_cmd], Keyword.merge([stderr_to_stdout: true], opts))
   end
 
   defp quote_shell(str), do: "'" <> String.replace(str, "'", "'\\''") <> "'"

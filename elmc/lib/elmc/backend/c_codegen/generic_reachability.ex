@@ -182,6 +182,14 @@ defmodule Elmc.Backend.CCodegen.GenericReachability do
   defp expr_wrapper_callees_list(_value, _module_name, _decl_map), do: []
 
   defp expr_callees_list(
+         %{op: :qualified_ref, target: target},
+         _module_name,
+         decl_map
+       ) do
+    qualified_callees(target, decl_map)
+  end
+
+  defp expr_callees_list(
          %{op: :qualified_call, target: target, args: args},
          module_name,
          decl_map
@@ -239,7 +247,7 @@ defmodule Elmc.Backend.CCodegen.GenericReachability do
 
   defp qualified_wrapper_callees(target, args, module_name, decl_map) do
     own =
-      case Util.split_qualified_function_target(Host.normalize_special_target(target)) do
+      case Util.resolve_decl_key(Host.normalize_special_target(target), decl_map) do
         nil -> []
         target_key -> wrapper_callee_target(target_key, args, decl_map)
       end
@@ -252,10 +260,26 @@ defmodule Elmc.Backend.CCodegen.GenericReachability do
   end
 
   defp qualified_callees(target, decl_map) do
-    case Util.split_qualified_function_target(Host.normalize_special_target(target)) do
-      nil -> []
-      target_key -> if Map.has_key?(decl_map, target_key), do: [target_key], else: []
-    end
+    parts = String.split(target, ".")
+
+    prefix_keys =
+      if length(parts) <= 2 do
+        []
+      else
+        1..(length(parts) - 1)//1
+        |> Enum.map(fn n ->
+          parts |> Enum.take(n) |> Enum.join(".") |> Util.resolve_decl_key(decl_map)
+        end)
+        |> Enum.reject(&is_nil/1)
+      end
+
+    own =
+      case Util.resolve_decl_key(target, decl_map) do
+        nil -> []
+        key -> if Map.has_key?(decl_map, key), do: [key], else: []
+      end
+
+    Enum.uniq(prefix_keys ++ own)
   end
 
   defp wrapper_callee_target(target, args, decl_map) do

@@ -114,6 +114,31 @@ jobs:
         timeout-minutes: 30
         run: mix test.ts_corpus
 
+      - name: Run wasm web fixture smoke (ulimit)
+        run: |
+          export TEST_ULIMIT_V_KB=6291456 ELIXIR_ERL_OPTIONS="+S 1:1 +MMscs 256"
+          ./scripts/mix-test-limited.sh elmc \
+            test/wasm_web_coverage_test.exs \
+            test/wasm_web_wire3_synthetic_test.exs \
+            test/wasm_web_route_fetch_test.exs \
+            test/wasm_web_strict_sandbox_test.exs \
+            test/wasm_web_events_test.exs \
+            test/wasm_web_http_test.exs \
+            test/wasm_web_multi_route_bytes_test.exs \
+            test/wasm_web_elm_pages_nav_test.exs \
+            test/plan_web_lowering_gaps_test.exs \
+            --include wasm_execute --include wasm_elm_pages_corpus
+
+      - name: Run elm_pebble_dev wasm compile gate (ulimit)
+        run: |
+          export TEST_ULIMIT_V_KB=6291456 ELIXIR_ERL_OPTIONS="+S 1:1 +MMscs 256"
+          ./scripts/mix-test-limited.sh elmc test/wasm_elm_pebble_dev_gate_test.exs
+
+      - name: Run elm_ex let layout tests
+        run: |
+          export TEST_ULIMIT_V_KB=6291456 ELIXIR_ERL_OPTIONS="+S 1:1 +MMscs 256"
+          ./scripts/mix-test-limited.sh elm_ex test/frontend/let_layout_test.exs
+
       - name: Run elmc Dialyzer
         working-directory: elmc
         run: mix dialyzer

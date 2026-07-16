@@ -343,6 +343,30 @@ defmodule Elmc.PlanLowerIrTest do
     refute c =~ "elmc_as_int(maybe) == elmc_as_int"
   end
 
+  test "saturated binary __eq__ lowers to compare, not Module.__eq__ call_fn" do
+    decl = %{
+      name: "sameName",
+      args: ["left", "right"],
+      expr: %{
+        op: :call,
+        name: "__eq__",
+        args: [%{op: :var, name: "left"}, %{op: :var, name: "right"}]
+      }
+    }
+
+    assert {:ok, plan} = Function.lower(decl, "Route.Packages.Author_.Name_.Version_.ModuleName_", %{}, rc_required: true)
+    assert :ok = Verify.run(plan)
+
+    ops = for b <- plan.blocks, i <- b.instrs, do: i.op
+    assert :compare in ops
+    refute Enum.any?(plan.blocks, fn block ->
+             Enum.any?(block.instrs, fn
+               %{op: :call_fn, args: %{name: "__eq__"}} -> true
+               _ -> false
+             end)
+           end)
+  end
+
   test "deduplicates param load_param per name" do
     decl = %{
       name: "addTwice",

@@ -117,22 +117,21 @@ defmodule Elmc.Backend.Plan.Lower.Lambda do
           {:ok, Types.reg() | :fn_out, Builder.t()} | :unsupported
   def compile_lambda(lambda_args, body, tuple_prelude, ctx, b)
       when is_list(lambda_args) and is_map(body) and is_list(tuple_prelude) do
-    lambda_arg_set = MapSet.new(lambda_args)
-
     free_vars =
       body
-      |> VarAnalysis.used_vars()
-      |> MapSet.difference(lambda_arg_set)
+      |> VarAnalysis.lambda_capture_free_vars(lambda_args)
       |> MapSet.intersection(resolvable_keys(ctx))
       |> MapSet.difference(MapSet.new(Map.keys(ctx.letrec_refs || %{})))
       |> MapSet.to_list()
       |> Enum.sort()
 
+    used_letrec_refs = used_letrec_ref_names(body, ctx)
+
     case compile_captures(free_vars, ctx, b) do
       {:ok, capture_regs, b1} ->
-        {:ok, capture_regs2, b1a} = prepend_letrec_capture(ctx, b1, capture_regs)
+        {:ok, capture_regs2, b1a} = prepend_letrec_captures(ctx, b1, capture_regs, used_letrec_refs)
 
-        case lower_lambda_plan(free_vars, lambda_args, body, tuple_prelude, ctx, b1a) do
+        case lower_lambda_plan(free_vars, lambda_args, body, tuple_prelude, used_letrec_refs, ctx, b1a) do
           {:ok, child_plan, b2} ->
             idx = length(b2.lambdas)
             b3 = %{b2 | lambdas: b2.lambdas ++ [child_plan]}
@@ -166,40 +165,91 @@ defmodule Elmc.Backend.Plan.Lower.Lambda do
     end)
   end
 
-  defp prepend_letrec_capture(%{letrec_self: name} = ctx, b, capture_regs)
-       when is_binary(name) do
-    case Context.letrec_ref(ctx, name) do
-      ref when is_binary(ref) ->
-        {dest, b1} = Builder.fresh_reg(b)
+  defp used_letrec_ref_names(body, ctx) do
+    letrec_names = Map.keys(ctx.letrec_refs || %{})
 
-        {_, b2} =
-          Builder.emit(b1, :forward_ref_capture, %{
-            dest: dest,
-            args: %{ref: ref},
-            effects: Types.owned_effects(dest)
-          })
-
-        {:ok, [dest | capture_regs], b2}
-
-      _ ->
-        {:ok, capture_regs, b}
-    end
+    body
+    |> VarAnalysis.used_vars()
+    |> MapSet.intersection(MapSet.new(letrec_names))
+    |> MapSet.to_list()
+    |> order_letrec_capture_names(ctx)
   end
 
-  defp prepend_letrec_capture(_ctx, b, capture_regs), do: {:ok, capture_regs, b}
+  defp order_letrec_capture_names(names, ctx) when is_list(names) do
+  self = ctx.letrec_self
 
-  defp lower_lambda_plan(free_vars, lambda_args, body, tuple_prelude, parent_ctx, b) do
-    all_params =
-      if is_binary(parent_ctx.letrec_self) do
-        ["__letrec_ref__" | free_vars ++ lambda_args]
+    names
+    |> Enum.sort()
+    |> then(fn sorted ->
+      if is_binary(self) and self in sorted do
+        [self | List.delete(sorted, self)]
       else
-        free_vars ++ lambda_args
+        sorted
       end
+    end)
+  end
+
+  defp prepend_letrec_captures(ctx, b, capture_regs, used_names) when is_list(used_names) do
+    Enum.reduce(used_names, {:ok, capture_regs, b}, fn name, {:ok, acc, b_acc} ->
+      case Context.letrec_ref(ctx, name) do
+        ref when is_binary(ref) ->
+          {:ok, loaded, b_next} = capture_letrec_ref(ref, ctx, b_acc)
+          {:ok, [loaded | acc], b_next}
+
+        _ ->
+          {:ok, acc, b_acc}
+      end
+    end)
+  end
+
+  defp capture_letrec_ref(ref, %{letrec_in_closure: true} = ctx, b) when is_binary(ref) do
+    capture_ctx = %{ctx | dest_stack: [:scratch], function_tail: false}
+
+    {:ok, loaded_reg, b1} = Expr.compile_forward_ref_load(ref, capture_ctx, b)
+    {:ok, owned, b2} = Expr.compile_runtime_builtin(:retain, [loaded_reg], capture_ctx, b1)
+    {:ok, owned, b2}
+  end
+
+  defp capture_letrec_ref(ref, _ctx, b) when is_binary(ref) do
+    {dest, b1} = Builder.fresh_reg(b)
+
+    {_, b2} =
+      Builder.emit(b1, :forward_ref_capture, %{
+        dest: dest,
+        args: %{ref: ref},
+        effects: Types.owned_effects(dest)
+      })
+
+    {:ok, dest, b2}
+  end
+
+  defp lower_lambda_plan(free_vars, lambda_args, body, tuple_prelude, used_letrec_refs, parent_ctx, b) do
+    letrec_cap_params =
+      used_letrec_refs
+      |> Enum.with_index()
+      |> Enum.map(fn {_, idx} -> "__letrec_cap_#{idx}__" end)
+
+    all_params = letrec_cap_params ++ free_vars ++ lambda_args
+
+    letrec_capture_indices =
+      used_letrec_refs
+      |> Enum.with_index()
+      |> Enum.reduce(%{}, fn {name, idx}, acc ->
+        case Context.letrec_ref(parent_ctx, name) do
+          ref when is_binary(ref) -> Map.put(acc, ref, idx)
+          _ -> acc
+        end
+      end)
 
     lam_idx = length(b.lambdas)
     lam_name = "#{parent_ctx.function_name || "anon"}_lam_#{lam_idx}"
 
     lambda_param_types = lambda_param_types(parent_ctx, lambda_args)
+
+    letrec_in_closure? =
+      parent_ctx.letrec_in_closure or
+        map_size(letrec_capture_indices) > 0 or
+        is_binary(parent_ctx.letrec_self)
 
     child_ctx =
       Context.new(
@@ -211,7 +261,8 @@ defmodule Elmc.Backend.Plan.Lower.Lambda do
         fallible: parent_ctx.fallible,
         function_tail: false,
         letrec_refs: parent_ctx.letrec_refs,
-        letrec_in_closure: parent_ctx.letrec_self != nil,
+        letrec_in_closure: letrec_in_closure?,
+        letrec_capture_indices: letrec_capture_indices,
         local_types: Map.merge(parent_ctx.local_types || %{}, lambda_param_types),
         curried_type_offset: (parent_ctx.curried_type_offset || 0) + length(lambda_args)
       )
@@ -231,7 +282,7 @@ defmodule Elmc.Backend.Plan.Lower.Lambda do
       end
 
     with {:ok, child_ctx1, child_b1} <-
-           bind_tuple_prelude(tuple_prelude, free_vars, lambda_args, child_ctx, child_b) do
+           bind_tuple_prelude(tuple_prelude, letrec_cap_params ++ free_vars, lambda_args, child_ctx, child_b) do
       case Expr.compile(body, child_ctx1, child_b1) do
         {:ok, result_reg, b1} ->
           {b2, ret_reg} = finalize_lambda_result(b1, result_reg, parent_ctx.rc_required)
@@ -255,14 +306,15 @@ defmodule Elmc.Backend.Plan.Lower.Lambda do
     end
   end
 
-  defp bind_tuple_prelude([], _free_vars, _lambda_args, ctx, b), do: {:ok, ctx, b}
+  defp bind_tuple_prelude([], _capture_prefix, _lambda_args, ctx, b), do: {:ok, ctx, b}
 
-  defp bind_tuple_prelude(prelude, free_vars, lambda_args, ctx, b) do
+  defp bind_tuple_prelude(prelude, capture_prefix, lambda_args, ctx, b) do
     Enum.reduce_while(prelude, {:ok, ctx, b}, fn {name, which, tuple_var},
                                                  {:ok, ctx_acc, b_acc} ->
       case Enum.find_index(lambda_args, &(&1 == tuple_var)) do
         idx when is_integer(idx) ->
-          {tuple_reg, b1} = Builder.get_or_load_param(b_acc, length(free_vars) + idx, tuple_var)
+          {tuple_reg, b1} =
+            Builder.get_or_load_param(b_acc, length(capture_prefix) + idx, tuple_var)
           ctx1 = Context.put_local(ctx_acc, tuple_var, tuple_reg)
           b2 = Builder.bind_local(b1, tuple_var, tuple_reg)
 
@@ -302,9 +354,12 @@ defmodule Elmc.Backend.Plan.Lower.Lambda do
         :scratch -> Builder.fresh_reg(b)
       end
 
-    {borrows, consumes} = Builder.partition_call_args(b1, capture_regs)
+    # Named locals nested into the closure must be retain-dup'd then consumed —
+    # otherwise they stay borrows and epilogue frees them under the closure/`fn_out`.
+    {capture_regs, b1a} = Builder.dup_named_locals_for_consume(b1, capture_regs)
+    {borrows, consumes} = {[], capture_regs}
 
-    wrap_catch? = Builder.wrap_fallible_instr_catch?(b1, ctx, true)
+    wrap_catch? = Builder.wrap_fallible_instr_catch?(b1a, ctx, true)
 
     effects =
       if is_integer(dest) do
@@ -313,7 +368,7 @@ defmodule Elmc.Backend.Plan.Lower.Lambda do
         %{produces: nil, consumes: consumes, borrows: borrows, fallible: ctx.fallible or ctx.rc_required}
       end
 
-    b2 = if wrap_catch?, do: Builder.catch_begin(b1), else: b1
+    b2 = if wrap_catch?, do: Builder.catch_begin(b1a), else: b1a
 
     {_, b3} =
       Builder.emit(b2, :make_closure, %{

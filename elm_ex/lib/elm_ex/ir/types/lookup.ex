@@ -7,11 +7,13 @@ defmodule ElmEx.IR.Types.Lookup do
   @type payload_kind :: :none | :single | :multi | :function_like
 
   @type name_map :: %{String.t() => String.t()}
+  @type alias_member_map :: %{String.t() => %{String.t() => String.t()}}
   @type unqualified_target :: String.t() | :ambiguous
   @type import_unqualified_map :: %{String.t() => unqualified_target()}
 
   @type import_resolution_t :: %{
           optional(:alias_map) => name_map(),
+          optional(:alias_member_map) => alias_member_map(),
           optional(:import_unqualified_map) => import_unqualified_map(),
           optional(:local_call_names) => MapSet.t(String.t()),
           optional(:current_module) => String.t(),
@@ -45,6 +47,7 @@ defmodule ElmEx.IR.Types.Lookup do
           optional(:payload_arity_qualified) => arity_map(),
           optional(:current_module) => String.t(),
           optional(:alias_map) => name_map(),
+          optional(:alias_member_map) => alias_member_map(),
           optional(:import_unqualified_map) => import_unqualified_map(),
           optional(:type_unqualified_map) => name_map(),
           optional(:wildcard_import_modules) => [String.t()] | list(),
@@ -56,6 +59,7 @@ defmodule ElmEx.IR.Types.Lookup do
 
   @type import_resolution_bundle :: {
           name_map(),
+          alias_member_map(),
           import_unqualified_map(),
           [String.t()],
           name_map()

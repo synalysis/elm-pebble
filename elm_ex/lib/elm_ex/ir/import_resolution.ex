@@ -15,28 +15,35 @@ defmodule ElmEx.IR.ImportResolution do
   """
   @spec resolve(String.t(), lookup()) :: String.t()
   def resolve(target, lookup) when is_binary(target) do
+    # Infix operators like `|.` contain a dot but are not module paths.
+    if String.starts_with?(target, "|") do
+      target
+    else
+      resolve_module_path(target, lookup)
+    end
+  end
+
+  defp resolve_module_path(target, lookup) when is_binary(target) do
     alias_map = Map.get(lookup, :alias_map, %{})
+    alias_member_map = Map.get(lookup, :alias_member_map, %{})
     import_unqualified_map = Map.get(lookup, :import_unqualified_map, %{})
     local_call_names = Map.get(lookup, :local_call_names, MapSet.new())
     current_module = Map.get(lookup, :current_module)
 
     case String.split(target, ".", parts: 2) do
       [prefix, rest] ->
-        case Map.get(alias_map, prefix) do
-          nil ->
-            target
-
-          real_module ->
-            # Only expand import aliases for `Alias.member` calls. Targets like
-            # `Companion.Internal.watchToPhoneTag` are already fully qualified module
-            # paths and must not treat the first segment as an alias (e.g. `Companion`
-            # aliased to `Pebble.Internal.Companion` would otherwise become
-            # `Pebble.Internal.Companion.Internal.watchToPhoneTag`).
-            if String.contains?(rest, ".") do
-              target
-            else
-              "#{real_module}.#{rest}"
-            end
+        # Only expand import aliases for `Alias.member` calls. Targets like
+        # `Companion.Internal.watchToPhoneTag` are already fully qualified module
+        # paths and must not treat the first segment as an alias (e.g. `Companion`
+        # aliased to `Pebble.Internal.Companion` would otherwise become
+        # `Pebble.Internal.Companion.Internal.watchToPhoneTag`).
+        if String.contains?(rest, ".") do
+          target
+        else
+          case resolve_aliased_member(prefix, rest, alias_member_map, alias_map) do
+            nil -> target
+            real_module -> "#{real_module}.#{rest}"
+          end
         end
 
       [single] ->
@@ -59,6 +66,17 @@ defmodule ElmEx.IR.ImportResolution do
 
       _other ->
         target
+    end
+  end
+
+  defp resolve_aliased_member(prefix, member, alias_member_map, alias_map)
+       when is_binary(prefix) and is_binary(member) do
+    case Map.get(alias_member_map, prefix) do
+      %{} = members ->
+        Map.get(members, member) || Map.get(alias_map, prefix)
+
+      _ ->
+        Map.get(alias_map, prefix)
     end
   end
 

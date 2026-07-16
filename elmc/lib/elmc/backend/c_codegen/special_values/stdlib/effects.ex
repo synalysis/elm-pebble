@@ -3,6 +3,7 @@ defmodule Elmc.Backend.CCodegen.SpecialValues.Stdlib.Effects do
 
   alias Elmc.Backend.CCodegen.Subscriptions
   alias Elmc.Backend.CCodegen.Types
+  alias Elmc.Backend.Plan.Lower.Platform.Web, as: PlatformWeb
 
   @behaviour Elmc.Backend.CCodegen.SpecialValues.Handler
 
@@ -73,14 +74,248 @@ defmodule Elmc.Backend.CCodegen.SpecialValues.Stdlib.Effects do
   def special_value_from_target("Process.kill", [pid]),
     do: %{op: :runtime_call, function: "elmc_process_kill", args: [pid]}
 
+  def special_value_from_target("Elm.Kernel.Scheduler.succeed", []),
+    do: %{
+      op: :lambda,
+      args: ["__value"],
+      body: %{
+        op: :runtime_call,
+        function: "elmc_task_succeed",
+        args: [%{op: :var, name: "__value"}]
+      }
+    }
+
+  def special_value_from_target("Elm.Kernel.Scheduler.succeed", [value]),
+    do: %{op: :runtime_call, function: "elmc_task_succeed", args: [value]}
+
+  def special_value_from_target("Elm.Kernel.Scheduler.fail", []),
+    do: %{
+      op: :lambda,
+      args: ["__error"],
+      body: %{
+        op: :runtime_call,
+        function: "elmc_task_fail",
+        args: [%{op: :var, name: "__error"}]
+      }
+    }
+
+  def special_value_from_target("Elm.Kernel.Scheduler.fail", [error]),
+    do: %{op: :runtime_call, function: "elmc_task_fail", args: [error]}
+
+  def special_value_from_target("Elm.Kernel.Scheduler.andThen", []),
+    do: %{
+      op: :lambda,
+      args: ["__callback", "__task"],
+      body: %{
+        op: :runtime_call,
+        function: "elmc_task_and_then",
+        args: [%{op: :var, name: "__callback"}, %{op: :var, name: "__task"}]
+      }
+    }
+
+  def special_value_from_target("Elm.Kernel.Scheduler.andThen", [callback]),
+    do: %{
+      op: :lambda,
+      args: ["__task"],
+      body: %{
+        op: :runtime_call,
+        function: "elmc_task_and_then",
+        args: [callback, %{op: :var, name: "__task"}]
+      }
+    }
+
+  def special_value_from_target("Elm.Kernel.Scheduler.andThen", [callback, task]),
+    do: %{op: :runtime_call, function: "elmc_task_and_then", args: [callback, task]}
+
+  def special_value_from_target("Elm.Kernel.Scheduler.onError", []),
+    do: %{
+      op: :lambda,
+      args: ["__callback", "__task"],
+      body: %{
+        op: :runtime_call,
+        function: "elmc_task_on_error",
+        args: [%{op: :var, name: "__callback"}, %{op: :var, name: "__task"}]
+      }
+    }
+
+  def special_value_from_target("Elm.Kernel.Scheduler.onError", [callback]),
+    do: %{
+      op: :lambda,
+      args: ["__task"],
+      body: %{
+        op: :runtime_call,
+        function: "elmc_task_on_error",
+        args: [callback, %{op: :var, name: "__task"}]
+      }
+    }
+
+  def special_value_from_target("Elm.Kernel.Scheduler.onError", [callback, task]),
+    do: %{op: :runtime_call, function: "elmc_task_on_error", args: [callback, task]}
+
+  def special_value_from_target("Elm.Kernel.Scheduler.spawn", []),
+    do: %{
+      op: :lambda,
+      args: ["__task"],
+      body: %{op: :runtime_call, function: "elmc_process_spawn", args: [%{op: :var, name: "__task"}]}
+    }
+
+  def special_value_from_target("Elm.Kernel.Scheduler.spawn", [task]),
+    do: %{op: :runtime_call, function: "elmc_process_spawn", args: [task]}
+
+  def special_value_from_target("Elm.Kernel.Scheduler.kill", []),
+    do: %{
+      op: :lambda,
+      args: ["__id"],
+      body: %{op: :runtime_call, function: "elmc_process_kill", args: [%{op: :var, name: "__id"}]}
+    }
+
+  def special_value_from_target("Elm.Kernel.Scheduler.kill", [id]),
+    do: %{op: :runtime_call, function: "elmc_process_kill", args: [id]}
+
   def special_value_from_target("Elm.Kernel.Time.nowMillis", [_unit]),
     do: %{op: :runtime_call, function: "elmc_time_now_millis", args: []}
 
   def special_value_from_target("Elm.Kernel.Time.zoneOffsetMinutes", [_unit]),
     do: %{op: :runtime_call, function: "elmc_time_zone_offset_minutes", args: []}
 
-  def special_value_from_target("Elm.Kernel.Time.every", _args),
-    do: %{op: :int_literal, value: 1}
+  def special_value_from_target("Time.here", _args),
+    do: %{op: :runtime_call, function: "elmc_time_here", args: []}
+
+  def special_value_from_target("Elm.Kernel.Time.every", [interval, to_msg]) do
+    if PlatformWeb.web_target?(Process.get(:elmc_codegen_opts, %{})) do
+      %{
+        op: :dom_sub,
+        kind: %{op: :int_literal, value: 1},
+        params: [interval, to_msg]
+      }
+    else
+      %{op: :int_literal, value: 1}
+    end
+  end
+
+  def special_value_from_target("Time.every", [interval, to_msg]) do
+    special_value_from_target("Elm.Kernel.Time.every", [interval, to_msg])
+  end
+
+  def special_value_from_target("Browser.Events.onResize", [to_msg]) do
+    if PlatformWeb.web_target?(Process.get(:elmc_codegen_opts, %{})) do
+      %{op: :dom_sub, kind: %{op: :int_literal, value: 2}, params: [to_msg]}
+    else
+      nil
+    end
+  end
+
+  def special_value_from_target("Browser.Events.onVisibilityChange", [to_msg]) do
+    if PlatformWeb.web_target?(Process.get(:elmc_codegen_opts, %{})) do
+      %{op: :dom_sub, kind: %{op: :int_literal, value: 3}, params: [to_msg]}
+    else
+      nil
+    end
+  end
+
+  def special_value_from_target("Browser.Events.onAnimationFrame", [to_msg]) do
+    if PlatformWeb.web_target?(Process.get(:elmc_codegen_opts, %{})) do
+      %{op: :dom_sub, kind: %{op: :int_literal, value: 4}, params: [to_msg]}
+    else
+      nil
+    end
+  end
+
+  def special_value_from_target("Browser.Events.onMouseMove", [to_msg]) do
+    if PlatformWeb.web_target?(Process.get(:elmc_codegen_opts, %{})) do
+      %{op: :dom_sub, kind: %{op: :int_literal, value: 5}, params: [to_msg]}
+    else
+      nil
+    end
+  end
+
+  def special_value_from_target("Browser.Events.onClick", [to_msg]) do
+    if PlatformWeb.web_target?(Process.get(:elmc_codegen_opts, %{})) do
+      %{op: :dom_sub, kind: %{op: :int_literal, value: 6}, params: [to_msg]}
+    else
+      nil
+    end
+  end
+
+  def special_value_from_target("Browser.Events.onKeyDown", [to_msg]) do
+    if PlatformWeb.web_target?(Process.get(:elmc_codegen_opts, %{})) do
+      %{op: :dom_sub, kind: %{op: :int_literal, value: 7}, params: [to_msg]}
+    else
+      nil
+    end
+  end
+
+  def special_value_from_target("Browser.Events.onKeyUp", [to_msg]) do
+    if PlatformWeb.web_target?(Process.get(:elmc_codegen_opts, %{})) do
+      %{op: :dom_sub, kind: %{op: :int_literal, value: 8}, params: [to_msg]}
+    else
+      nil
+    end
+  end
+
+  def special_value_from_target("Browser.Dom.focus", [id]) do
+    if PlatformWeb.web_target?(Process.get(:elmc_codegen_opts, %{})) do
+      %{op: :browser_cmd, kind: %{op: :int_literal, value: 9}, params: [id]}
+    else
+      nil
+    end
+  end
+
+  def special_value_from_target("Browser.Dom.setTitle", [title]) do
+    if PlatformWeb.web_target?(Process.get(:elmc_codegen_opts, %{})) do
+      %{op: :browser_cmd, kind: %{op: :int_literal, value: 12}, params: [title]}
+    else
+      nil
+    end
+  end
+
+  def special_value_from_target("Browser.Dom.getViewport", _args) do
+    if PlatformWeb.web_target?(Process.get(:elmc_codegen_opts, %{})) do
+      %{op: :runtime_call, function: "elmc_browser_get_viewport", args: []}
+    else
+      nil
+    end
+  end
+
+  def special_value_from_target("Browser.Navigation.pushUrl", [key, url]) do
+    if PlatformWeb.web_target?(Process.get(:elmc_codegen_opts, %{})) do
+      %{op: :browser_cmd, kind: %{op: :int_literal, value: 3}, params: [key, url]}
+    else
+      nil
+    end
+  end
+
+  def special_value_from_target("Browser.Navigation.replaceUrl", [key, url]) do
+    if PlatformWeb.web_target?(Process.get(:elmc_codegen_opts, %{})) do
+      %{op: :browser_cmd, kind: %{op: :int_literal, value: 4}, params: [key, url]}
+    else
+      nil
+    end
+  end
+
+  def special_value_from_target("Browser.Navigation.load", [url]) do
+    if PlatformWeb.web_target?(Process.get(:elmc_codegen_opts, %{})) do
+      %{op: :browser_cmd, kind: %{op: :int_literal, value: 2}, params: [url]}
+    else
+      nil
+    end
+  end
+
+  def special_value_from_target("Browser.Navigation.back", [_key]) do
+    if PlatformWeb.web_target?(Process.get(:elmc_codegen_opts, %{})) do
+      %{op: :browser_cmd, kind: %{op: :int_literal, value: 10}, params: []}
+    else
+      nil
+    end
+  end
+
+  def special_value_from_target("Browser.Navigation.forward", [_key]) do
+    if PlatformWeb.web_target?(Process.get(:elmc_codegen_opts, %{})) do
+      %{op: :browser_cmd, kind: %{op: :int_literal, value: 11}, params: []}
+    else
+      nil
+    end
+  end
 
   def special_value_from_target("Cmd.none", _args), do: %{op: :cmd_none}
 

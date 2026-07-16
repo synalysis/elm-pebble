@@ -7,7 +7,7 @@ defmodule Elmc.Backend.Plan.Defaults do
 
   @spec plan_ir_mode() :: :off | :shadow | :primary
   def plan_ir_mode do
-    Application.get_env(:elmc, :default_plan_ir_mode, :primary)
+    (Process.get(:elmc_plan_ir_mode) || Application.get_env(:elmc, :default_plan_ir_mode, :primary))
     |> normalize()
   end
 

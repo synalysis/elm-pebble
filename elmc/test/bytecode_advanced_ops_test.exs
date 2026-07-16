@@ -180,6 +180,48 @@ defmodule Elmc.BytecodeAdvancedOpsTest do
     assert :forward_ref_capture in letrec_ops or :forward_ref_load in letrec_ops
   end
 
+  test "lambda in letrec in-expr captures forward ref and loads via captured slot" do
+    decl = %{
+      name: "wrap",
+      args: [],
+      expr: %{
+        op: :let_in,
+        name: "helper",
+        value_expr: %{
+          op: :lambda,
+          args: ["x"],
+          body: %{
+            op: :call,
+            name: "helper",
+            args: [%{op: :var, name: "x"}]
+          }
+        },
+        in_expr: %{
+          op: :lambda,
+          args: ["y"],
+          body: %{
+            op: :call,
+            name: "helper",
+            args: [%{op: :var, name: "y"}]
+          }
+        }
+      }
+    }
+
+    assert {:ok, plan} = PlanLower.lower(decl, "Main", %{}, rc_required: true)
+
+    assert :forward_ref_capture in plan_ops(plan)
+
+    in_expr_lambda =
+      Enum.find(plan.lambdas, fn lambda ->
+        :forward_ref_load_captured in plan_ops(lambda) and
+          :forward_ref_load not in plan_ops(lambda)
+      end)
+
+    assert in_expr_lambda
+    assert length(plan.lambdas) == 2
+  end
+
   defp identity_lambda_plan(module, name) do
     %FunctionPlan{
       module: module,
