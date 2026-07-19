@@ -2250,39 +2250,23 @@ defmodule ElmEx.IR.Lowerer do
 
   @spec resolve_constructor_arity(String.t(), Lookup.constructor_t()) :: non_neg_integer() | nil
   defp resolve_constructor_arity(target, lookup) when is_binary(target) do
-    segments = String.split(target, ".")
-    unqualified_name = List.last(segments)
+    unqualified_name = target |> String.split(".") |> List.last()
 
-    case segments do
-      [_single] ->
-        lookup.local[unqualified_name] ||
-          lookup.unqualified[unqualified_name] ||
-          builtin_constructor_arity(unqualified_name)
-
-      _many ->
-        lookup.qualified[target] ||
-          lookup.unqualified[unqualified_name] ||
-          builtin_constructor_arity(unqualified_name)
-    end
+    lookup.local[unqualified_name] ||
+      lookup.qualified[target] ||
+      lookup.unqualified[unqualified_name] ||
+      builtin_constructor_arity(unqualified_name)
   end
 
   @spec resolve_constructor_payload_kind(String.t(), Lookup.constructor_t()) ::
           payload_kind() | nil
   defp resolve_constructor_payload_kind(target, lookup) when is_binary(target) do
-    segments = String.split(target, ".")
-    unqualified_name = List.last(segments)
+    unqualified_name = target |> String.split(".") |> List.last()
 
-    case segments do
-      [_single] ->
-        lookup.local[unqualified_name] ||
-          lookup.unqualified[unqualified_name] ||
-          builtin_constructor_payload_kind(unqualified_name)
-
-      _many ->
-        lookup.qualified[target] ||
-          lookup.unqualified[unqualified_name] ||
-          builtin_constructor_payload_kind(unqualified_name)
-    end
+    lookup.local[unqualified_name] ||
+      lookup.qualified[target] ||
+      lookup.unqualified[unqualified_name] ||
+      builtin_constructor_payload_kind(unqualified_name)
   end
 
   @spec expr_constructor_arity_diagnostics(

@@ -796,6 +796,84 @@ defmodule Elmc.IRLowererTest do
            )
   end
 
+  test "lowerer prefers local union constructors over imported type constructors with same name" do
+    project = %Project{
+      project_dir: "/tmp",
+      elm_json: %{},
+      modules: [
+        %FrontendModule{
+          name: "Bytes",
+          path: "/tmp/Bytes.elm",
+          imports: [],
+          module_exposing: ["Bytes"],
+          declarations: [
+            %{
+              kind: :union,
+              name: "Bytes",
+              constructors: [%{name: "Bytes", arg: nil}],
+              span: %{start_line: 1, end_line: 2}
+            }
+          ]
+        },
+        %FrontendModule{
+          name: "Bytes.Encode",
+          path: "/tmp/Bytes/Encode.elm",
+          imports: ["Bytes"],
+          import_entries: [
+            %{"module" => "Bytes", "exposing" => ["Bytes", "Endianness(..)"]}
+          ],
+          module_exposing: ["Encoder(..)"],
+          declarations: [
+            %{
+              kind: :union,
+              name: "Encoder",
+              constructors: [
+                %{name: "U8", arg: "Int"},
+                %{name: "Bytes", arg: "Bytes"}
+              ],
+              span: %{start_line: 1, end_line: 4}
+            },
+            %{
+              kind: :function_signature,
+              name: "getWidth",
+              type: "Encoder -> Int",
+              span: %{start_line: 6, end_line: 6}
+            },
+            %{
+              kind: :function_definition,
+              name: "getWidth",
+              args: ["builder"],
+              body: "case builder of Bytes bs -> 0",
+              span: %{start_line: 7, end_line: 8},
+              expr: %{
+                op: :case,
+                subject: "builder",
+                branches: [
+                  %{
+                    pattern: %{
+                      kind: :constructor,
+                      name: "Bytes",
+                      arg_pattern: %{kind: :var, name: "bs"}
+                    },
+                    expr: %{op: :int_literal, value: 0}
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+
+    assert {:ok, ir} = Lowerer.lower_project(project)
+
+    refute Enum.any?(
+             ir.diagnostics,
+             &(&1.code == "constructor_payload_arity" and
+                 &1.module == "Bytes.Encode" and &1.function == "getWidth")
+           )
+  end
+
   test "lowerer resolves tags for qualified and local constructors in fixture flow" do
     project_dir = Path.expand("fixtures/qualified_constructor_project", __DIR__)
     {:ok, project} = Bridge.load_project(project_dir)
