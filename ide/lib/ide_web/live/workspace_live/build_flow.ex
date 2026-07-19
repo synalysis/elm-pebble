@@ -600,7 +600,10 @@ defmodule IdeWeb.WorkspaceLive.BuildFlow do
            target_type: project.target_type,
            project_name: project.name,
            target_platforms: targets,
-           source_roots: project.source_roots
+           source_roots: project.source_roots,
+           prod: true,
+           plan_ir_mode: :primary,
+           plan_ir_strict: true
          ) do
       {:ok, package} ->
         %{

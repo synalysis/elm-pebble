@@ -59,7 +59,11 @@ defmodule Ide.PebbleToolchain.Prepare do
          :ok <- Companion.generate_protocol_elm_internal(protocol_elm),
          :ok <-
            ToolchainElmc.generate_sources(compile_project_root, app_root, workspace_root,
-             target_platforms: target_platforms
+             target_platforms: target_platforms,
+             prod: Keyword.get(opts, :prod, true),
+             debug_usage_policy: Keyword.get(opts, :debug_usage_policy, :error),
+             plan_ir_mode: Keyword.get(opts, :plan_ir_mode, :primary),
+             plan_ir_strict: Keyword.get(opts, :plan_ir_strict, true)
            ),
          :ok <- Companion.generate_protocol(protocol_elm, app_root, compile_project_root),
          :ok <- ToolchainElmc.reprune_staged_runtime(app_root),

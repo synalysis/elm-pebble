@@ -59,18 +59,38 @@ defmodule Ide.PebbleToolchain.Elmc do
          {:ok, %{"release_defaults" => defaults}} when is_map(defaults) <-
            read_project_json(config_dir),
          platforms when is_list(platforms) <- Map.get(defaults, "target_platforms"),
-         normalized when normalized != [] <- normalize_target_platforms(platforms) do
+         normalized when normalized != [] <- normalize_stamp_platforms(platforms) do
       normalized
     else
       _ -> nil
     end
   end
 
+  @doc false
+  @spec watch_target_platforms(String.t(), [String.t()]) :: [String.t()]
+  def watch_target_platforms(project_dir, fallback \\ []) when is_binary(project_dir) do
+    case target_platforms_for_project_dir(project_dir) do
+      platforms when is_list(platforms) and platforms != [] -> platforms
+      _ -> normalize_stamp_platforms(fallback)
+    end
+  end
+
+  @doc false
+  @spec normalize_stamp_platforms([String.t()]) :: [String.t()]
+  def normalize_stamp_platforms(platforms) when is_list(platforms) do
+    platforms
+    |> Enum.filter(&is_binary/1)
+    |> Enum.map(&String.downcase(String.trim(&1)))
+    |> Enum.reject(&(&1 == ""))
+    |> Enum.uniq()
+    |> Enum.sort()
+  end
+
   @spec compile_for_project_dir(String.t(), String.t(), Types.elmc_extra_opts()) ::
           Elmc.CLI.project_run()
   def compile_for_project_dir(project_dir, out_dir, extra_opts \\ %{})
       when is_binary(project_dir) and is_binary(out_dir) and is_map(extra_opts) do
-    target_platforms = target_platforms_for_project_dir(project_dir) || []
+    target_platforms = watch_target_platforms(project_dir, Map.get(extra_opts, :target_platforms, []))
 
     elmc_opts =
       extra_opts
@@ -89,14 +109,17 @@ defmodule Ide.PebbleToolchain.Elmc do
   def generate_sources(project_root, app_root, _workspace_root, opts \\ []) do
     compile_out_dir = Path.join(project_root, ".elmc-build")
     stage_out_dir = Path.join(app_root, "src/c/elmc")
-    target_platforms = Keyword.get(opts, :target_platforms, [])
+    target_platforms = watch_target_platforms(project_root, Keyword.get(opts, :target_platforms, []))
 
-    compile_opts =
-      watch_compile_opts(compile_out_dir, target_platforms, %{
-        prod: Keyword.get(opts, :prod, true),
-        debug_usage_policy: Keyword.get(opts, :debug_usage_policy, :error),
-        codegen_profile: codegen_profile_for_project_dir(project_root, %{})
-      })
+    compile_extra = %{
+      prod: Keyword.get(opts, :prod, true),
+      debug_usage_policy: Keyword.get(opts, :debug_usage_policy, :error),
+      plan_ir_mode: Keyword.get(opts, :plan_ir_mode, :primary),
+      plan_ir_strict: Keyword.get(opts, :plan_ir_strict, true),
+      codegen_profile: codegen_profile_for_project_dir(project_root, %{})
+    }
+
+    compile_opts = watch_compile_opts(compile_out_dir, target_platforms, compile_extra)
 
     with :ok <- reset_generated_dir(stage_out_dir),
          :ok <- ensure_staged_elmc_sources(project_root, compile_out_dir, stage_out_dir, compile_opts, target_platforms) do
@@ -144,7 +167,7 @@ defmodule Ide.PebbleToolchain.Elmc do
   defp compile_stamp_payload(project_root, compile_opts, target_platforms) do
     Jason.encode!(%{
       revision: Compiler.compile_source_revision(project_root),
-      target_platforms: target_platforms,
+      target_platforms: normalize_stamp_platforms(target_platforms),
       codegen: codegen_stamp(compile_opts)
     })
   end
@@ -298,13 +321,8 @@ defmodule Ide.PebbleToolchain.Elmc do
     end
   end
 
-  defp normalize_target_platforms(platforms) when is_list(platforms) do
-    platforms
-    |> Enum.filter(&is_binary/1)
-    |> Enum.map(&String.trim/1)
-    |> Enum.reject(&(&1 == ""))
-    |> Enum.uniq()
-  end
+  defp normalize_target_platforms(platforms) when is_list(platforms),
+    do: normalize_stamp_platforms(platforms)
 
   defp codegen_profile_from_extra(extra) when is_map(extra) do
     resolve_codegen_profile(extra, nil)

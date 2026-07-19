@@ -136,4 +136,28 @@ defmodule Ide.PebbleToolchainElmcCompileTest do
     assert Elmc.target_platforms_for_project_dir(watch) == ["aplite", "basalt", "chalk"]
     refute Elmc.target_platforms_for_project_dir("/tmp/no-elm-pebble-project-dir")
   end
+
+  test "watch_target_platforms normalizes project json platform order" do
+    tmp = Path.join(System.tmp_dir!(), "pebble-elmc-platforms-#{System.unique_integer([:positive])}")
+    watch = Path.join(tmp, "watch")
+    File.mkdir_p!(watch)
+
+    File.write!(
+      Path.join(tmp, "elm-pebble.project.json"),
+      Jason.encode!(%{
+        "release_defaults" => %{
+          "target_platforms" => ["Chalk", "basalt", "aplite"]
+        }
+      })
+    )
+
+    on_exit(fn -> File.rm_rf(tmp) end)
+
+    assert Elmc.watch_target_platforms(watch, ["gabbro"]) == ["aplite", "basalt", "chalk"]
+  end
+
+  test "normalize_stamp_platforms sorts and downcases" do
+    assert Elmc.normalize_stamp_platforms(["Chalk", " basalt ", "aplite", "chalk"]) ==
+             ["aplite", "basalt", "chalk"]
+  end
 end
