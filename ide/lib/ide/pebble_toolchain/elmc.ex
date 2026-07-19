@@ -321,9 +321,6 @@ defmodule Ide.PebbleToolchain.Elmc do
     end
   end
 
-  defp normalize_target_platforms(platforms) when is_list(platforms),
-    do: normalize_stamp_platforms(platforms)
-
   defp codegen_profile_from_extra(extra) when is_map(extra) do
     resolve_codegen_profile(extra, nil)
   end

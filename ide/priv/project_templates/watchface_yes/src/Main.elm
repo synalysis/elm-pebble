@@ -748,7 +748,7 @@ batteryAlert model =
         Just level ->
             level <= 25
 
-                Nothing ->
+        Nothing ->
             False
 
 

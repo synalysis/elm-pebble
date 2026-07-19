@@ -503,4 +503,56 @@ defmodule ElmEx.Frontend.LayoutLexerCoverageTest do
     assert {:error, {1, :elm_ex_expr_parser, _}} =
              GeneratedExpressionParser.parse_with_layout_lexer(source)
   end
+
+  test "default parse falls back to legacy normalize when layout lexer rejects multiline &&" do
+    source = """
+    not (Platform.displayShapeIsRound model.displayShape)
+        && model.sun
+        /= Nothing
+    """
+
+    previous = Application.get_env(:elm_ex, :expr_layout_lexer)
+
+    try do
+      Application.put_env(:elm_ex, :expr_layout_lexer, true)
+
+      assert {:error, {1, :elm_ex_expr_parser, _}} =
+               GeneratedExpressionParser.parse_with_layout_lexer(source)
+
+      assert {:ok, %{op: :bool_and}} = GeneratedExpressionParser.parse(source)
+    after
+      case previous do
+        nil -> Application.delete_env(:elm_ex, :expr_layout_lexer)
+        value -> Application.put_env(:elm_ex, :expr_layout_lexer, value)
+      end
+    end
+  end
+
+  test "default parse falls back to legacy normalize for multiline int case arms" do
+    source = """
+    case month of
+        1 ->
+            "Jan"
+
+        2 ->
+            "Feb"
+    """
+
+    previous = Application.get_env(:elm_ex, :expr_layout_lexer)
+
+    try do
+      Application.put_env(:elm_ex, :expr_layout_lexer, true)
+
+      assert {:error, {1, :elm_ex_expr_parser, _}} =
+               GeneratedExpressionParser.parse_with_layout_lexer(source)
+
+      assert {:ok, %{op: :case, branches: branches}} = GeneratedExpressionParser.parse(source)
+      assert length(branches) == 2
+    after
+      case previous do
+        nil -> Application.delete_env(:elm_ex, :expr_layout_lexer)
+        value -> Application.put_env(:elm_ex, :expr_layout_lexer, value)
+      end
+    end
+  end
 end

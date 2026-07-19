@@ -12,7 +12,7 @@ defmodule ElmEx.Frontend.GeneratedExpressionParser do
 
   alias ElmEx.Frontend.AstContract.Types, as: AstTypes
   alias ElmEx.Frontend.ExprLayoutLexer
-  alias ElmEx.Frontend.{Layout, LetLayout}
+  alias ElmEx.Frontend.{ExprLayout, Layout, LetLayout}
   alias ElmEx.Types
 
   @typep source() :: String.t()
@@ -361,16 +361,40 @@ defmodule ElmEx.Frontend.GeneratedExpressionParser do
 
   @spec parse_once(source()) :: {:ok, expr()} | {:error, Types.parse_error_reason()}
   defp parse_once(source) when is_binary(source) do
-    parse_prepared(prepare_source(source))
+    prepared = prepare_source(source)
+
+    case parse_prepared(prepared) do
+      {:ok, _} = ok ->
+        ok
+
+      {:error, reason} ->
+        case legacy_layout_fallback(prepared) do
+          {:ok, _} = ok -> ok
+          _ -> {:error, reason}
+        end
+    end
+  end
+
+  @spec legacy_layout_fallback(source()) :: {:ok, expr()} | nil
+  defp legacy_layout_fallback(prepared) when is_binary(prepared) do
+    if layout_lexer_enabled?() and layout_lexer_eligible?(prepared) do
+      prepared
+      |> ExprLayout.normalize()
+      |> parse_prepared(legacy_lexer: true)
+      |> case do
+        {:ok, _} = ok -> ok
+        _ -> nil
+      end
+    else
+      nil
+    end
   end
 
   @spec parse_prepared(source(), keyword()) :: {:ok, expr()} | {:error, Types.parse_error_reason()}
   defp parse_prepared(prepared, opts \\ []) do
-    force_layout? = Keyword.get(opts, :force_layout_lexer, false)
-
     with :ok <- LetLayout.validate(prepared),
          :ok <- validate_source_compat(prepared),
-         {:ok, tokens, _line} <- tokenize_prepared(prepared, force_layout?),
+         {:ok, tokens, _line} <- tokenize_prepared(prepared, opts),
          {:ok, expr} <- :elm_ex_expr_parser.parse(tokens) do
       {:ok, normalize(expr)}
     else
@@ -380,11 +404,20 @@ defmodule ElmEx.Frontend.GeneratedExpressionParser do
     end
   end
 
-  @spec tokenize_prepared(source(), boolean()) ::
+  @spec tokenize_prepared(source(), keyword()) ::
           {:ok, [term()], pos_integer()} | {:error, term()}
-  defp tokenize_prepared(prepared, true), do: ExprLayoutLexer.tokenize(prepared)
+  defp tokenize_prepared(prepared, opts) when is_list(opts) do
+    cond do
+      Keyword.get(opts, :force_layout_lexer, false) ->
+        ExprLayoutLexer.tokenize(prepared)
 
-  defp tokenize_prepared(prepared, false), do: tokenize_for_parser(prepared)
+      Keyword.get(opts, :legacy_lexer, false) ->
+        :elm_ex_expr_lexer.string(String.to_charlist(prepared))
+
+      true ->
+        tokenize_for_parser(prepared)
+    end
+  end
 
   # Multiline sources without legacy `;;` arm separators use the layout lexer.
   # Normalized `;;` fragments and single-line sources keep the whitespace-skipping Leex path.

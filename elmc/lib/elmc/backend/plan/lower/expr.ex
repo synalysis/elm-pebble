@@ -274,6 +274,10 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
   def compile(%{op: :constructor_call} = expr, ctx, b),
     do: Constructor.compile(expr, ctx, b)
 
+  def compile(%{op: :constructor_ref, target: target}, ctx, b) when is_binary(target) do
+    Constructor.compile(%{target: target, args: []}, ctx, b)
+  end
+
   def compile(%{op: :order_literal, value: value}, ctx, b) when is_integer(value) do
     compile_runtime_builtin(:new_order, [], ctx, b, %{literal: value})
   end
@@ -1181,6 +1185,22 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
   defp resolve_field_base(_, _, _), do: :unsupported
 
   defp compile_qualified_ref(%{target: target}, ctx, b) when is_binary(target) do
+    case String.split(target, ".") do
+      [_root, _field | _rest] = parts ->
+        root = hd(parts)
+
+        if dotted_var_root?(root, ctx) do
+          compile_dotted_var_path(root, tl(parts), ctx, b)
+        else
+          compile_qualified_ref_target(target, ctx, b)
+        end
+
+      _ ->
+        compile_qualified_ref_target(target, ctx, b)
+    end
+  end
+
+  defp compile_qualified_ref_target(target, ctx, b) when is_binary(target) do
     case target do
       "Json.Decode.string" ->
         compile_runtime_builtin(:json_decode_string_decoder, [], ctx, b)
@@ -1206,6 +1226,12 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
             compile_qualified_ref_decl(target, ctx, b)
         end
     end
+  end
+
+  defp dotted_var_root?(root, ctx) when is_binary(root) and is_map(ctx) do
+    is_integer(Context.local_reg(ctx, root)) or
+      is_integer(param_index(ctx, root)) or
+      is_binary(Context.letrec_ref(ctx, root))
   end
 
   defp compile_qualified_ref_decl(target, ctx, b) when is_binary(target) do
