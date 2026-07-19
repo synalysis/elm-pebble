@@ -2,6 +2,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage.SessionState do
   @moduledoc false
 
   alias Ide.Debugger.Types, as: DebuggerTypes
+  alias IdeWeb.WorkspaceLive.DebuggerBootstrapFlow
 
   @type bootstrap_status :: atom()
   @type debugger_state :: DebuggerTypes.runtime_state() | nil
@@ -9,6 +10,27 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage.SessionState do
   @spec bootstrap_busy?(bootstrap_status()) :: boolean()
   def bootstrap_busy?(:running), do: true
   def bootstrap_busy?(_), do: false
+
+  @spec bootstrap_step_count() :: pos_integer()
+  def bootstrap_step_count, do: DebuggerBootstrapFlow.bootstrap_step_count()
+
+  @spec bootstrap_step_segments(pos_integer() | nil, pos_integer() | nil) :: [
+          %{index: pos_integer(), status: :pending | :active | :done}
+        ]
+  def bootstrap_step_segments(step, total) when is_integer(step) and is_integer(total) and total > 0 do
+    Enum.map(1..total, fn index ->
+      status =
+        cond do
+          index < step -> :done
+          index == step -> :active
+          true -> :pending
+        end
+
+      %{index: index, status: status}
+    end)
+  end
+
+  def bootstrap_step_segments(_step, _total), do: []
 
   @spec companion_bootstrap_busy?(bootstrap_status()) :: boolean()
   def companion_bootstrap_busy?(:running), do: true

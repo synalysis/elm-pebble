@@ -888,7 +888,7 @@ defmodule Ide.Packages do
   @spec imported_modules(Project.t(), String.t()) :: [String.t()]
   defp imported_modules(project, source_root) when is_map(project) and is_binary(source_root) do
     project
-    |> Projects.list_source_tree()
+    |> Projects.list_source_tree(ensure_side_effects: false)
     |> Enum.find(&(&1.source_root == source_root))
     |> case do
       %{nodes: nodes} -> elm_rel_paths(nodes)

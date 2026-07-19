@@ -27,7 +27,6 @@ defmodule IdeWeb.WorkspaceLive do
   alias IdeWeb.WorkspaceLive.ResourcesFlow
   alias IdeWeb.WorkspaceLive.PackagesFlow
   alias Ide.Debugger.RuntimeBackgroundNotify
-  alias IdeWeb.WorkspaceLive.DebuggerSupport
   alias IdeWeb.WorkspaceLive.DebuggerFlow
   alias IdeWeb.WorkspaceLive.DebuggerPage
   alias IdeWeb.WorkspaceLive.State
@@ -100,10 +99,13 @@ defmodule IdeWeb.WorkspaceLive do
             {:noreply,
              socket
              |> State.assign_pane_switch(project, previous_pane)
+             |> maybe_upgrade_from_debugger_lightweight_load(project, previous_pane)
              |> EditorSupport.maybe_open_editor_default_file(project, previous_pane)
+             |> EditorSupport.refresh_editor_dependencies()
              |> maybe_refresh_debugger()
              |> EmulatorFlow.maybe_check_emulator_installation()
-             |> DebuggerFlow.maybe_schedule_debugger_auto_fire_refresh()}
+             |> DebuggerFlow.maybe_schedule_debugger_auto_fire_refresh()
+             |> ProjectSettingsFlow.refresh_github_repo_status()}
 
           true ->
             {:noreply, load_workspace_project(socket, project, previous_pane)}
@@ -123,6 +125,47 @@ defmodule IdeWeb.WorkspaceLive do
 
   @spec load_workspace_project(socket(), Projects.Project.t(), pane() | nil) :: socket()
   defp load_workspace_project(socket, project, previous_pane) do
+    if socket.assigns.live_action == :debugger do
+      load_debugger_workspace_project(socket, project)
+    else
+      load_full_workspace_project(socket, project, previous_pane)
+    end
+  end
+
+  @spec load_debugger_workspace_project(socket(), Projects.Project.t()) :: socket()
+  defp load_debugger_workspace_project(socket, project) do
+    settings = Settings.current()
+    speaker_samples = ResourcesFlow.load_speaker_samples(project)
+
+    project_data = %{
+      tree: [],
+      bitmap_resources: [],
+      bitmap_resources_error: nil,
+      vector_resources: [],
+      animation_resources: [],
+      speaker_samples: speaker_samples,
+      font_sources: [],
+      font_resources: [],
+      screenshots: [],
+      screenshot_groups: [],
+      publish_readiness: PublishFlow.publish_readiness(project, []),
+      selected_emulator_target: EmulatorFlow.project_emulator_target(project),
+      emulator_mode: EmulatorFlow.project_emulator_mode(project),
+      emulator_production_build: EmulatorFlow.project_emulator_production_build(project),
+      packages_target_root: EditorSupport.preferred_packages_target_root(socket, project),
+      debugger_timeline_mode: DebuggerFlow.project_debugger_timeline_mode(project),
+      companion_app_present: Projects.companion_app_present?(project)
+    }
+
+    socket
+    |> State.assign_project(project, settings, project_data)
+    |> subscribe_debugger_runtime_updates(project)
+    |> EditorSupport.maybe_initialize_forms(project)
+    |> maybe_refresh_debugger()
+  end
+
+  @spec load_full_workspace_project(socket(), Projects.Project.t(), pane() | nil) :: socket()
+  defp load_full_workspace_project(socket, project, previous_pane) do
     settings = Settings.current()
     _ = Projects.ensure_bitmap_generated(project)
 
@@ -172,6 +215,25 @@ defmodule IdeWeb.WorkspaceLive do
     |> EmulatorFlow.maybe_check_emulator_installation()
     |> DebuggerFlow.maybe_schedule_debugger_auto_fire_refresh()
     |> ProjectSettingsFlow.refresh_github_repo_status()
+  end
+
+  @spec maybe_upgrade_from_debugger_lightweight_load(
+          socket(),
+          Projects.Project.t(),
+          pane() | nil
+        ) :: socket()
+  defp maybe_upgrade_from_debugger_lightweight_load(socket, project, previous_pane) do
+    if previous_pane == :debugger and socket.assigns.live_action != :debugger and
+         lightweight_workspace_load?(socket) do
+      load_full_workspace_project(socket, project, previous_pane)
+    else
+      socket
+    end
+  end
+
+  @spec lightweight_workspace_load?(socket()) :: boolean()
+  defp lightweight_workspace_load?(socket) do
+    socket.assigns[:tree] == [] and socket.assigns[:bitmap_resources] == []
   end
 
   @spec subscribe_debugger_runtime_updates(socket(), Project.t()) :: socket()
@@ -238,6 +300,9 @@ defmodule IdeWeb.WorkspaceLive do
   def handle_async(:debugger_bootstrap, result, socket),
     do: DebuggerFlow.handle_async(:debugger_bootstrap, result, socket)
 
+  def handle_async(:debugger_compile_prewarm, result, socket),
+    do: DebuggerFlow.handle_async(:debugger_compile_prewarm, result, socket)
+
   def handle_async(async, result, socket) when async in @build_flow_asyncs do
     BuildFlow.handle_async(async, result, socket)
   end
@@ -276,6 +341,9 @@ defmodule IdeWeb.WorkspaceLive do
   defp route_info({:debugger_bootstrap_progress, _, _} = msg, socket),
     do: DebuggerFlow.handle_info(msg, socket)
 
+  defp route_info({:build_progress, _, _} = msg, socket),
+    do: BuildFlow.handle_info(msg, socket)
+
   defp route_info({:debugger_companion_bootstrap_progress, message} = msg, socket)
        when is_binary(message),
        do: DebuggerFlow.handle_info(msg, socket)
@@ -287,6 +355,9 @@ defmodule IdeWeb.WorkspaceLive do
     do: DebuggerFlow.handle_info(msg, socket)
 
   defp route_info({:debugger_auto_fire_refresh, _} = msg, socket),
+    do: DebuggerFlow.handle_info(msg, socket)
+
+  defp route_info({:debugger_deferred_prewarm, _} = msg, socket),
     do: DebuggerFlow.handle_info(msg, socket)
 
   defp route_info({:capture_all_progress, _, _} = msg, socket),
@@ -360,19 +431,15 @@ defmodule IdeWeb.WorkspaceLive do
         </.link>
       </header>
 
-      {EditorPage.render(assigns)}
-
-      {ResourcesPage.render(assigns)}
-
-      {PackagesPage.render(assigns)}
-
-      {BuildPage.render(assigns)}
-      {PublishPage.render(assigns)}
-      {ProjectSettingsPage.render(assigns)}
-
-      {DebuggerPage.render(assigns)}
-
-      {EmulatorPage.render(assigns)}
+      <%= if @pane == :editor, do: EditorPage.render(assigns) %>
+      <%= if @pane == :resources, do: ResourcesPage.render(assigns) %>
+      <%= if @pane == :packages, do: PackagesPage.render(assigns) %>
+      <%= if @pane == :build, do: BuildPage.render(assigns) %>
+      <%= if @pane == :publish, do: PublishPage.render(assigns) %>
+      <%= if @pane == :settings or @pane == :settings_store or @pane == :settings_github,
+        do: ProjectSettingsPage.render(assigns) %>
+      <%= if @pane == :debugger, do: DebuggerPage.render(assigns) %>
+      <%= if @pane == :emulator, do: EmulatorPage.render(assigns) %>
     </div>
     """
   end
@@ -391,9 +458,11 @@ defmodule IdeWeb.WorkspaceLive do
         |> DebuggerFlow.maybe_ensure_companion_bootstrapped()
 
       if Phoenix.LiveView.connected?(socket) do
-        DebuggerFlow.schedule_debugger_runtime_refresh(socket)
+        socket
+        |> DebuggerFlow.schedule_debugger_runtime_refresh()
+        |> DebuggerFlow.schedule_deferred_compile_prewarm()
       else
-        DebuggerSupport.refresh(socket)
+        socket
       end
     else
       socket

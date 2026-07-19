@@ -49,6 +49,8 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Live do
     |> Component.assign(:debugger_watch_view_runtime, nil)
     |> Component.assign(:debugger_bootstrap_status, :idle)
     |> Component.assign(:debugger_bootstrap_progress, nil)
+    |> Component.assign(:debugger_bootstrap_step, nil)
+    |> Component.assign(:debugger_bootstrap_step_total, nil)
     |> Component.assign(:debugger_bootstrap_token, nil)
     |> Component.assign(:debugger_companion_bootstrap_status, :idle)
     |> Component.assign(:debugger_companion_bootstrap_progress, nil)

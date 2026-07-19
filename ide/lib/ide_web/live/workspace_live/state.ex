@@ -65,6 +65,10 @@ defmodule IdeWeb.WorkspaceLive.State do
     |> assign(:build_status, :idle)
     |> assign(:build_output, nil)
     |> assign(:build_issues, [])
+    |> assign(:build_progress_token, nil)
+    |> assign(:build_progress_step, nil)
+    |> assign(:build_progress_total, nil)
+    |> assign(:build_progress_message, nil)
     |> assign(:manifest_strict_mode, false)
     |> assign(:format_status, :idle)
     |> assign(:format_output, nil)
@@ -290,6 +294,16 @@ defmodule IdeWeb.WorkspaceLive.State do
     |> maybe_reset_debugger_auto_fire_schedule(previous_pane, pane)
   end
 
+  @spec cancel_debugger_compile_prewarm_timer(Phoenix.LiveView.Socket.t()) ::
+          Phoenix.LiveView.Socket.t()
+  defp cancel_debugger_compile_prewarm_timer(socket) do
+    if ref = socket.assigns[:debugger_compile_prewarm_ref] do
+      Process.cancel_timer(ref)
+    end
+
+    assign(socket, :debugger_compile_prewarm_ref, nil)
+  end
+
   @spec maybe_reset_debugger_auto_fire_schedule(socket(), atom() | nil, atom()) :: socket()
   defp maybe_reset_debugger_auto_fire_schedule(socket, previous, current)
        when previous == current do
@@ -301,7 +315,11 @@ defmodule IdeWeb.WorkspaceLive.State do
   end
 
   defp maybe_reset_debugger_auto_fire_schedule(socket, :debugger, _current) do
-    assign(socket, :debugger_auto_fire_refresh_scheduled, false)
+    socket
+    |> assign(:debugger_auto_fire_refresh_scheduled, false)
+    |> assign(:debugger_compile_prewarm_slug, nil)
+    |> assign(:debugger_compile_prewarm_scheduled, nil)
+    |> cancel_debugger_compile_prewarm_timer()
   end
 
   defp maybe_reset_debugger_auto_fire_schedule(socket, _previous, _current), do: socket

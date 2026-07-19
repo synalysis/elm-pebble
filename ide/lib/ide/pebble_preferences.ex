@@ -2,15 +2,15 @@ defmodule Ide.PebblePreferences do
   @moduledoc """
   Extracts typed Elm preference schemas and renders Pebble configuration pages.
 
-  The extractor recognizes the public `Pebble.Companion.Preferences` builder
-  contract. It does not infer behavior from labels or application-specific names.
+  Schema extraction parses companion Elm with `ElmEx.Frontend.GeneratedParser` and
+  walks the `Pebble.Companion.Preferences` builder AST. It does not infer behavior
+  from labels or application-specific names.
   """
 
-  alias ElmEx.Frontend.Bridge
-  alias ElmEx.Frontend.Bridge.Types, as: BridgeTypes
-  alias ElmEx.IR.Lowerer
+  alias Ide.PebblePreferences.AstExtract
 
   @generated_bridge_rel_path "src/Companion/GeneratedPreferences.elm"
+  @preferences_stamp_name ".elmc-preferences.stamp"
 
   @type schema :: %{
           required(:title) => String.t(),
@@ -49,8 +49,7 @@ defmodule Ide.PebblePreferences do
         }
 
   @type preferences_error ::
-          {:preferences_project_load_failed, BridgeTypes.bridge_error()}
-          | File.posix()
+          File.posix() | {:parse_failed, term()}
 
   @doc """
   Extracts a preferences schema from an Elm application root.
@@ -59,9 +58,9 @@ defmodule Ide.PebblePreferences do
   """
   @spec extract(String.t()) :: {:ok, schema() | nil} | {:error, preferences_error()}
   def extract(project_root) when is_binary(project_root) do
-    with :ok <- validate_elm_project(project_root),
-         {:ok, files} <- preference_source_files(project_root) do
+    with {:ok, files} <- preference_source_files(project_root) do
       files
+      |> sort_schema_candidates()
       |> Enum.reduce_while({:ok, nil}, fn file, {:ok, nil} ->
         case extract_file(file) do
           {:ok, nil} -> {:cont, {:ok, nil}}
@@ -74,19 +73,7 @@ defmodule Ide.PebblePreferences do
 
   @doc false
   @spec extract_file(String.t()) :: {:ok, schema() | nil} | {:error, preferences_error()}
-  def extract_file(path) when is_binary(path) do
-    with {:ok, source} <- File.read(path) do
-      if preference_source?(source) do
-        source
-        |> parse_source()
-        |> case do
-          {:ok, schema} -> {:ok, schema}
-        end
-      else
-        {:ok, nil}
-      end
-    end
-  end
+  def extract_file(path) when is_binary(path), do: AstExtract.extract_file(path)
 
   @doc false
   @spec render_html(schema()) :: String.t()
@@ -223,6 +210,20 @@ defmodule Ide.PebblePreferences do
   @doc false
   @spec ensure_generated_bridge(String.t()) :: :ok | {:error, preferences_error()}
   def ensure_generated_bridge(phone_root) when is_binary(phone_root) do
+    if preferences_inputs_unchanged?(phone_root) do
+      :ok
+    else
+      phone_root
+      |> do_ensure_generated_bridge()
+      |> tap(fn
+        :ok -> write_preferences_stamp(phone_root)
+        {:error, _} -> :ok
+      end)
+    end
+  end
+
+  @spec do_ensure_generated_bridge(String.t()) :: :ok | {:error, preferences_error()}
+  defp do_ensure_generated_bridge(phone_root) do
     with {:ok, schema} <- extract(phone_root),
          source when is_binary(source) <- generated_bridge_source(schema) do
       path = Path.join(phone_root, @generated_bridge_rel_path)
@@ -383,19 +384,6 @@ defmodule Ide.PebblePreferences do
 
   def generated_bridge_source(_schema), do: nil
 
-  @spec validate_elm_project(String.t()) :: :ok | {:error, preferences_error()}
-  defp validate_elm_project(project_root) do
-    case Bridge.load_project(project_root) do
-      {:ok, project} ->
-        case Lowerer.lower_project(project) do
-          {:ok, _ir} -> :ok
-        end
-
-      {:error, reason} ->
-        {:error, {:preferences_project_load_failed, reason}}
-    end
-  end
-
   @spec preference_source_files(String.t()) :: {:ok, [String.t()]} | {:error, preferences_error()}
   defp preference_source_files(project_root) do
     src = Path.join(project_root, "src")
@@ -407,171 +395,62 @@ defmodule Ide.PebblePreferences do
     end
   end
 
-  @spec preference_source?(String.t()) :: boolean()
-  defp preference_source?(source) do
-    String.contains?(source, "Pebble.Companion.Preferences") and
-      String.contains?(source, "Preferences.schema")
+  @spec sort_schema_candidates([String.t()]) :: [String.t()]
+  defp sort_schema_candidates(files) when is_list(files) do
+    Enum.sort_by(files, fn path ->
+      base = Path.basename(path)
+
+      cond do
+        base == "CompanionPreferences.elm" -> {0, path}
+        String.contains?(base, "Preferences") -> {1, path}
+        true -> {2, path}
+      end
+    end)
   end
 
-  @spec parse_source(String.t()) :: {:ok, schema()}
-  defp parse_source(source) do
-    module_name = module_name(source)
-    value_name = schema_value_name(source)
+  @spec preferences_inputs_unchanged?(String.t()) :: boolean()
+  defp preferences_inputs_unchanged?(phone_root) do
+    stamp_path = Path.join(phone_root, @preferences_stamp_name)
 
-    title =
-      case Regex.run(~r/Preferences\.schema\s+"([^"]+)"/, source) do
-        [_, value] -> unescape_elm_string(value)
-        _ -> "Preferences"
+    with {:ok, stamp_mtime} <- file_mtime(stamp_path),
+         input_mtime when is_integer(input_mtime) <- preferences_inputs_mtime(phone_root) do
+      stamp_mtime >= input_mtime
+    else
+      _ -> false
+    end
+  end
+
+  @spec preferences_inputs_mtime(String.t()) :: non_neg_integer() | nil
+  defp preferences_inputs_mtime(phone_root) do
+    paths =
+      case preference_source_files(phone_root) do
+        {:ok, files} -> [Path.join(phone_root, "elm.json") | files]
+        _ -> [Path.join(phone_root, "elm.json")]
       end
 
-    lines = String.split(source, "\n")
-
-    {sections, _current} =
-      lines
-      |> Enum.with_index()
-      |> Enum.reduce({[], nil}, fn {line, index}, {sections, current_section} ->
-        cond do
-          section_title = capture(line, ~r/Preferences\.section\s+"([^"]+)"/) ->
-            title = unescape_elm_string(section_title)
-            {sections ++ [%{title: title, fields: []}], title}
-
-          field_id = capture(line, ~r/Preferences\.field\s+"([^"]+)"/) ->
-            field = parse_field(field_id, field_source_window(lines, index))
-            {append_field(sections, current_section, field), current_section}
-
-          true ->
-            {sections, current_section}
-        end
-      end)
-
-    {:ok, %{title: title, sections: sections, module: module_name, value: value_name}}
+    paths
+    |> Enum.reduce(0, fn path, max_mtime ->
+      case file_mtime(path) do
+        {:ok, mtime} -> max(max_mtime, mtime)
+        _ -> max_mtime
+      end
+    end)
   end
 
-  @spec module_name(String.t()) :: String.t()
-  defp module_name(source) do
-    case Regex.run(~r/^module\s+([A-Z][A-Za-z0-9_.]*)\s+exposing\b/m, source) do
-      [_, name] -> name
-      _ -> "CompanionPreferences"
+  @spec write_preferences_stamp(String.t()) :: :ok
+  defp write_preferences_stamp(phone_root) do
+    stamp_path = Path.join(phone_root, @preferences_stamp_name)
+    File.write!(stamp_path, Integer.to_string(preferences_inputs_mtime(phone_root) || 0))
+    :ok
+  end
+
+  @spec file_mtime(String.t()) :: {:ok, non_neg_integer()} | :error
+  defp file_mtime(path) do
+    case File.stat(path, time: :posix) do
+      {:ok, %{mtime: mtime}} -> {:ok, mtime}
+      _ -> :error
     end
   end
-
-  @spec schema_value_name(String.t()) :: String.t()
-  defp schema_value_name(source) do
-    case Regex.run(
-           ~r/^([a-z][A-Za-z0-9_]*)\s*:\s*Preferences\.Schema\b[\s\S]*?\n\1\s*=\s*\n\s+Preferences\.schema\b/m,
-           source
-         ) do
-      [_, name] ->
-        name
-
-      _ ->
-        case Regex.run(~r/^([a-z][A-Za-z0-9_]*)\s*=\s*\n\s+Preferences\.schema\b/m, source) do
-          [_, name] -> name
-          _ -> "settings"
-        end
-    end
-  end
-
-  @spec parse_field(String.t(), String.t()) :: field()
-  defp parse_field(id, source) do
-    send_to_watch = capture(source, ~r/Preferences\.sendToWatch\s+"([^"]+)"/)
-
-    cond do
-      match = Regex.run(~r/Preferences\.toggle\s+"([^"]+)"\s+(True|False)/, source) ->
-        [_, label, default] = match
-
-        field(
-          id,
-          label,
-          with_send_to_watch(%{type: "toggle", default: default == "True"}, send_to_watch)
-        )
-
-      match = Regex.run(~r/Preferences\.text\s+"([^"]+)"\s+"([^"]*)"/, source) ->
-        [_, label, default] = match
-
-        field(
-          id,
-          label,
-          with_send_to_watch(
-            %{type: "text", default: unescape_elm_string(default)},
-            send_to_watch
-          )
-        )
-
-      match = Regex.run(~r/Preferences\.number\s+"([^"]+)"\s+(-?\d+(?:\.\d+)?)/, source) ->
-        [_, label, default] = match
-
-        field(
-          id,
-          label,
-          with_send_to_watch(%{type: "number", default: parse_float(default)}, send_to_watch)
-        )
-
-      match = Regex.run(~r/Preferences\.slider\s+"([^"]+)"/, source) ->
-        [_, label] = match
-
-        field(
-          id,
-          label,
-          with_send_to_watch(
-            %{
-              type: "slider",
-              min: source_number(source, "min", 0),
-              max: source_number(source, "max", 100),
-              step: source_number(source, "step", 1),
-              default: source_number(source, "default", 0)
-            },
-            send_to_watch
-          )
-        )
-
-      match = Regex.run(~r/Preferences\.color\s+"([^"]+)"\s+([^\s\)]+)/, source) ->
-        [_, label, default] = match
-
-        field(
-          id,
-          label,
-          with_send_to_watch(%{type: "color", default: color_value(default)}, send_to_watch)
-        )
-
-      match = Regex.run(~r/Preferences\.choice\s+"([^"]+)"/, source) ->
-        [_, label] = match
-
-        options =
-          ~r/Preferences\.choiceOption\s+[A-Z][A-Za-z0-9_\.]*\s+"([^"]+)"\s+"([^"]+)"/
-          |> Regex.scan(source)
-          |> Enum.map(fn [full, value, option_label] ->
-            %{
-              value: unescape_elm_string(value),
-              label: unescape_elm_string(option_label),
-              constructor: choice_constructor(full)
-            }
-          end)
-
-        default =
-          case List.first(options) do
-            nil -> nil
-            option -> option.value
-          end
-
-        field(
-          id,
-          label,
-          with_send_to_watch(%{type: "choice", default: default, options: options}, send_to_watch)
-        )
-
-      true ->
-        field(id, id, with_send_to_watch(%{type: "text", default: ""}, send_to_watch))
-    end
-  end
-
-  @spec with_send_to_watch(field_control(), String.t() | nil) :: field_control()
-  defp with_send_to_watch(control, constructor)
-       when is_binary(constructor) and constructor != "" do
-    Map.put(control, :send_to_watch, unescape_elm_string(constructor))
-  end
-
-  defp with_send_to_watch(control, _constructor), do: control
 
   @spec enrich_schema_with_companion_mappings(schema(), [String.t()]) :: schema()
   defp enrich_schema_with_companion_mappings(schema, files)
@@ -580,8 +459,15 @@ defmodule Ide.PebblePreferences do
       files
       |> Enum.flat_map(fn file ->
         case File.read(file) do
-          {:ok, source} -> companion_setting_mappings(source)
-          _ -> []
+          {:ok, source} ->
+            if companion_mapping_source?(source) do
+              AstExtract.companion_setting_mappings(source, file)
+            else
+              []
+            end
+
+          _ ->
+            []
         end
       end)
       |> Map.new()
@@ -597,13 +483,9 @@ defmodule Ide.PebblePreferences do
 
   defp enrich_schema_with_companion_mappings(schema, _files), do: schema
 
-  @spec companion_setting_mappings(String.t()) :: [{String.t(), String.t()}]
-  defp companion_setting_mappings(source) when is_binary(source) do
-    ~r/\b([A-Z][A-Za-z0-9_\.]*)\s+settings\.([a-z][A-Za-z0-9_]*)\b/
-    |> Regex.scan(source)
-    |> Enum.map(fn [_, constructor, field_id] ->
-      {field_id, constructor |> String.split(".") |> List.last()}
-    end)
+  @spec companion_mapping_source?(String.t()) :: boolean()
+  defp companion_mapping_source?(source) when is_binary(source) do
+    String.contains?(source, "sendSettings")
   end
 
   @spec enrich_section_fields(section(), companion_field_mappings()) :: section()
@@ -629,94 +511,6 @@ defmodule Ide.PebblePreferences do
   end
 
   defp enrich_field_control(field, _mappings), do: field
-
-  @spec choice_constructor(String.t()) :: String.t() | nil
-  defp choice_constructor(source) do
-    case Regex.run(~r/Preferences\.choiceOption\s+([A-Z][A-Za-z0-9_\.]*)/, source) do
-      [_, constructor] -> constructor |> String.split(".") |> List.last()
-      _ -> nil
-    end
-  end
-
-  @spec field_source_window([String.t()], non_neg_integer()) :: String.t()
-  defp field_source_window(lines, index) do
-    lines
-    |> Enum.drop(index)
-    |> Enum.take(14)
-    |> Enum.reduce_while([], fn line, acc ->
-      if acc != [] and String.contains?(line, "Preferences.field") do
-        {:halt, acc}
-      else
-        {:cont, [line | acc]}
-      end
-    end)
-    |> Enum.reverse()
-    |> Enum.join("\n")
-  end
-
-  @spec field(String.t(), String.t(), field_control()) :: field()
-  defp field(id, label, control) do
-    %{id: unescape_elm_string(id), label: unescape_elm_string(label), control: control}
-  end
-
-  @spec append_field([section()], String.t() | nil, field()) :: [section()]
-  defp append_field([], nil, field), do: [%{title: "", fields: [field]}]
-  defp append_field([], title, field), do: [%{title: title || "", fields: [field]}]
-
-  defp append_field(sections, current, field) do
-    {last, rest} = List.pop_at(sections, -1)
-
-    cond do
-      is_nil(last) ->
-        append_field([], current, field)
-
-      last.title == (current || "") ->
-        rest ++ [%{last | fields: last.fields ++ [field]}]
-
-      true ->
-        sections ++ [%{title: current || "", fields: [field]}]
-    end
-  end
-
-  @spec capture(String.t(), Regex.t()) :: String.t() | nil
-  defp capture(source, regex) do
-    case Regex.run(regex, source) do
-      [_, value] -> value
-      _ -> nil
-    end
-  end
-
-  @spec source_number(String.t(), String.t(), number()) :: float()
-  defp source_number(source, key, default) do
-    case Regex.run(~r/#{key}\s*=\s*(-?\d+(?:\.\d+)?)/, source) do
-      [_, value] -> parse_float(value)
-      _ -> default * 1.0
-    end
-  end
-
-  @spec parse_float(String.t()) :: float()
-  defp parse_float(value) do
-    case Float.parse(value) do
-      {parsed, _} -> parsed
-      :error -> 0.0
-    end
-  end
-
-  @spec color_value(String.t()) :: String.t()
-  defp color_value("\"" <> rest), do: rest |> String.trim_trailing("\"") |> unescape_elm_string()
-  defp color_value("Preferences.black"), do: "#000000"
-  defp color_value("Preferences.white"), do: "#FFFFFF"
-  defp color_value("Preferences.green"), do: "#55AA55"
-  defp color_value("Preferences.blue"), do: "#5555FF"
-  defp color_value("Preferences.yellow"), do: "#FFFF55"
-  defp color_value(_), do: "#000000"
-
-  @spec unescape_elm_string(String.t()) :: String.t()
-  defp unescape_elm_string(value) do
-    value
-    |> String.replace(~S{\"}, ~S{"})
-    |> String.replace("\\\\", "\\")
-  end
 
   @spec escape_html(String.t()) :: String.t()
   defp escape_html(value) do

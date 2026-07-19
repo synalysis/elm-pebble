@@ -1,5 +1,6 @@
 defmodule Ide.Compiler do
   alias Ide.Compiler.Cache
+  alias Ide.Compiler.DebuggerRuntimeCache
   alias Ide.Compiler.Diagnostics
   alias Ide.CompanionProtocolGenerator
   alias Ide.Debugger.Types.ElmcCliIngestBridge
@@ -138,6 +139,8 @@ defmodule Ide.Compiler do
 
   @callback check(project_slug(), opts()) :: {:ok, check_result()} | {:error, compiler_error()}
   @callback compile(project_slug(), opts()) ::
+              {:ok, compile_result()} | {:error, compiler_error()}
+  @callback compile_debugger_runtime(project_slug(), opts()) ::
               {:ok, compile_result()} | {:error, compiler_error()}
   @callback manifest(project_slug(), opts()) ::
               {:ok, manifest_result()} | {:error, compiler_error()}
@@ -375,6 +378,63 @@ defmodule Ide.Compiler do
           {:error, :not_found} ->
             {:ok, result} = run_elmc_compile(project_dir, revision, opts)
             :ok = Cache.put(project_slug, revision, result)
+            {:ok, result}
+        end
+    end
+  end
+
+  @doc """
+  Builds debugger runtime artifacts (contract + in-memory elmx) without elmc C codegen.
+
+  Used by debugger Start/bootstrap so the UI does not pay full PBW compile cost.
+  Results are cached separately from `compile/2` so elmx is not re-emitted on every hit.
+  """
+  @spec compile_debugger_runtime(project_slug(), opts()) ::
+          {:ok, compile_result()} | {:error, compiler_error()}
+  def compile_debugger_runtime(project_slug, opts) do
+    workspace_root = Keyword.fetch!(opts, :workspace_root)
+    source_roots = Keyword.get(opts, :source_roots)
+    compile_path = detect_check_path(workspace_root, source_roots)
+
+    case compile_path do
+      nil ->
+        diagnostics =
+          Diagnostics.normalize_list([
+            %{
+              severity: "error",
+              source: "elmx",
+              message: missing_elm_json_message(workspace_root, source_roots),
+              file: nil,
+              line: nil,
+              column: nil
+            }
+          ])
+
+        counts = Diagnostics.summary(diagnostics)
+
+        {:ok,
+         %{
+           status: :error,
+           compiled_path: workspace_root,
+           revision: "none",
+           cached?: false,
+           output: "No elm.json found in workspace roots.",
+           diagnostics: diagnostics,
+           error_count: counts.error_count,
+           warning_count: counts.warning_count
+         }}
+
+      project_dir ->
+        revision =
+          workspace_revision(project_dir) <> pebble_compile_revision_suffix(project_dir)
+
+        case DebuggerRuntimeCache.get(project_slug, revision) do
+          {:ok, entry} ->
+            {:ok, Map.merge(entry.result, %{cached?: true, revision: revision})}
+
+          {:error, :not_found} ->
+            result = build_debugger_runtime_result(project_dir, revision, opts)
+            :ok = DebuggerRuntimeCache.put(project_slug, revision, result)
             {:ok, result}
         end
     end
@@ -679,6 +739,46 @@ defmodule Ide.Compiler do
   end
 
   defp maybe_attach_runtime_artifacts(result, _project_dir, _revision, _opts), do: result
+
+  @spec build_debugger_runtime_result(String.t(), String.t(), opts()) :: compile_result()
+  defp build_debugger_runtime_result(project_dir, revision, opts)
+       when is_binary(project_dir) and is_binary(revision) do
+    base = %{
+      status: :ok,
+      compiled_path: project_dir,
+      revision: revision,
+      cached?: false,
+      output: "debugger runtime: ok",
+      diagnostics: [],
+      error_count: 0,
+      warning_count: 0
+    }
+
+    with_contract = maybe_attach_debugger_contract(base, project_dir)
+
+    elmx_opts =
+      [revision: revision]
+      |> maybe_put_elmx_entry_module(Keyword.get(opts, :entry_module))
+
+    case build_elmx_artifacts_in_memory(project_dir, elmx_opts) do
+      {:ok, fields} ->
+        Map.merge(with_contract, fields)
+
+      {:error, reason} ->
+        counts =
+          elmx_compile_failure_fields(reason)
+          |> Map.get(:diagnostics, [])
+          |> Diagnostics.summary()
+
+        with_contract
+        |> Map.merge(elmx_compile_failure_fields(reason))
+        |> record_elmx_compile_gap()
+        |> Map.put(:status, :error)
+        |> Map.put(:error_count, counts.error_count)
+        |> Map.put(:warning_count, counts.warning_count)
+        |> Map.put(:output, Map.get(with_contract, :output, "debugger runtime failed"))
+    end
+  end
 
   @spec maybe_attach_stack_report(compile_result(), String.t()) :: compile_result()
   defp maybe_attach_stack_report(result, project_dir) when is_map(result) do

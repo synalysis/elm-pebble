@@ -74,9 +74,21 @@ defmodule Ide.Debugger.SurfaceCompileArtifacts do
           Types.elm_introspect() | nil
   def debugger_contract_for_reload(state, target, ctx)
       when is_map(state) and target in [:watch, :companion, :phone] and is_map(ctx) do
-    state
-    |> artifacts_for_source_root(ctx.source_root_for_target.(target), ctx)
-    |> CompileContract.from_artifacts()
+    surface = Map.get(state, target, %{})
+    execution_model = RuntimeArtifacts.execution_model(surface)
+
+    cond do
+      RuntimeArtifacts.versioned_elmx_artifacts?(execution_model) ->
+        RuntimeArtifacts.introspect(surface) ||
+          (state
+           |> surface_stored_runtime_artifacts(ctx.source_root_for_target.(target))
+           |> CompileContract.from_artifacts())
+
+      true ->
+        state
+        |> artifacts_for_source_root(ctx.source_root_for_target.(target), ctx)
+        |> CompileContract.from_artifacts()
+    end
   end
 
   def debugger_contract_for_reload(_state, _target, _ctx), do: nil
@@ -85,6 +97,21 @@ defmodule Ide.Debugger.SurfaceCompileArtifacts do
           Types.runtime_artifacts()
   def artifacts_for_source_root(state, source_root, ctx)
       when is_map(state) and is_binary(source_root) and is_map(ctx) do
+    stored_artifacts = surface_stored_runtime_artifacts(state, source_root)
+
+    cond do
+      versioned_runtime_artifacts?(stored_artifacts) ->
+        stored_artifacts
+
+      true ->
+        resolve_artifacts_for_source_root(state, source_root, ctx)
+    end
+  end
+
+  @spec resolve_artifacts_for_source_root(Types.runtime_state(), String.t(), attach_ctx()) ::
+          Types.runtime_artifacts()
+  defp resolve_artifacts_for_source_root(state, source_root, ctx)
+       when is_map(state) and is_binary(source_root) and is_map(ctx) do
     inline_present? = inline_source_present?(state, source_root)
 
     inline_artifacts =
@@ -114,6 +141,22 @@ defmodule Ide.Debugger.SurfaceCompileArtifacts do
           true ->
             inline_artifacts
         end
+    end
+  end
+
+  @spec surface_stored_runtime_artifacts(Types.runtime_state(), String.t()) ::
+          Types.runtime_artifacts()
+  defp surface_stored_runtime_artifacts(state, source_root)
+       when is_map(state) and is_binary(source_root) do
+    target = surface_target_for_source_root(source_root)
+    execution_model = state |> Map.get(target, %{}) |> RuntimeArtifacts.execution_model()
+
+    if RuntimeArtifacts.versioned_elmx_artifacts?(execution_model) do
+      execution_model
+      |> RuntimeArtifacts.execution_artifacts()
+      |> Map.merge(debugger_contract_artifacts_only(execution_model))
+    else
+      %{}
     end
   end
 
@@ -282,19 +325,37 @@ defmodule Ide.Debugger.SurfaceCompileArtifacts do
         precompiled
 
       _ ->
-        target = surface_target_for_source_root(source_root)
-        model = get_in(state, [target, :model]) || %{}
+        stored = surface_stored_runtime_artifacts(state, source_root)
 
-        source = Map.get(model, "last_source")
-        rel_path = Map.get(model, "last_path")
+        cond do
+          versioned_runtime_artifacts?(stored) ->
+            stored
 
-        with true <- is_binary(source) and String.trim(source) != "",
-             true <- is_binary(rel_path) and String.trim(rel_path) != "",
-             session_key when is_binary(session_key) <- ctx.session_key_from_state.(state) do
-          ephemeral_entrypoint_artifacts(session_key, source, rel_path, source_root)
-        else
-          _ -> %{}
+          CompanionPhoneCompile.skip_blocking_compile?(state) ->
+            %{}
+
+          true ->
+            inline_ephemeral_entrypoint_artifacts(state, source_root, ctx)
         end
+    end
+  end
+
+  @spec inline_ephemeral_entrypoint_artifacts(Types.runtime_state(), String.t(), attach_ctx()) ::
+          Types.runtime_artifacts()
+  defp inline_ephemeral_entrypoint_artifacts(state, source_root, ctx)
+       when is_map(state) and is_binary(source_root) and is_map(ctx) do
+    target = surface_target_for_source_root(source_root)
+    model = get_in(state, [target, :model]) || %{}
+
+    source = Map.get(model, "last_source")
+    rel_path = Map.get(model, "last_path")
+
+    with true <- is_binary(source) and String.trim(source) != "",
+         true <- is_binary(rel_path) and String.trim(rel_path) != "",
+         session_key when is_binary(session_key) <- ctx.session_key_from_state.(state) do
+      ephemeral_entrypoint_artifacts(session_key, source, rel_path, source_root)
+    else
+      _ -> %{}
     end
   end
 

@@ -576,7 +576,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerFlow.Core do
      }}
   end
 
-  @type debugger_async_name :: :debugger_bootstrap
+  @type debugger_async_name :: :debugger_bootstrap | :debugger_compile_prewarm
 
   @spec handle_async(debugger_async_name(), Types.async_result(), socket()) :: lv_noreply()
   def handle_async(:debugger_bootstrap, {:ok, {:ok, result}}, socket) do
@@ -596,6 +596,73 @@ defmodule IdeWeb.WorkspaceLive.DebuggerFlow.Core do
      socket
      |> clear_debugger_bootstrap_busy()
      |> put_flash(:error, "Debugger start failed: #{inspect(reason)}")}
+  end
+
+  def handle_async(:debugger_compile_prewarm, _result, socket) do
+    {:noreply, assign(socket, :debugger_compile_prewarm_running, false)}
+  end
+
+  @spec schedule_deferred_compile_prewarm(socket()) :: socket()
+  def schedule_deferred_compile_prewarm(socket) do
+    project = socket.assigns[:project]
+
+    cond do
+      not match?(%Project{}, project) ->
+        socket
+
+      socket.assigns[:debugger_compile_prewarm_scheduled] == project.slug ->
+        socket
+
+      true ->
+        ref =
+          Process.send_after(
+            self(),
+            {:debugger_deferred_prewarm, project.slug},
+            debugger_compile_prewarm_delay_ms()
+          )
+
+        socket
+        |> assign(:debugger_compile_prewarm_scheduled, project.slug)
+        |> assign(:debugger_compile_prewarm_ref, ref)
+    end
+  end
+
+  @spec maybe_schedule_compile_prewarm(socket()) :: socket()
+  def maybe_schedule_compile_prewarm(socket) do
+    project = socket.assigns[:project]
+
+    cond do
+      not match?(%Project{}, project) ->
+        socket
+
+      socket.assigns[:debugger_compile_prewarm_running] == true ->
+        socket
+
+      socket.assigns[:debugger_bootstrap_status] == :running ->
+        socket
+
+      socket.assigns[:debugger_compile_prewarm_slug] == project.slug ->
+        socket
+
+      true ->
+        skip_roots =
+          if Projects.companion_app_present?(project), do: ["phone"], else: []
+
+        start_async(
+          socket
+          |> assign(:debugger_compile_prewarm_running, true)
+          |> assign(:debugger_compile_prewarm_slug, project.slug),
+          :debugger_compile_prewarm,
+          fn ->
+            BuildFlow.warm_debugger_compile_context_work(project, skip_roots: skip_roots)
+          end
+        )
+    end
+  end
+
+  @spec debugger_compile_prewarm_delay_ms() :: pos_integer()
+  defp debugger_compile_prewarm_delay_ms do
+    Application.get_env(:ide, :debugger_compile_prewarm_delay_ms, 5_000)
   end
 
   @spec handle_info(Types.info_message() | Types.liveview_system_message(), socket()) ::
@@ -631,7 +698,21 @@ defmodule IdeWeb.WorkspaceLive.DebuggerFlow.Core do
     end
   end
 
-  def handle_info({:debugger_bootstrap_progress, token, message}, socket) do
+  def handle_info({:debugger_bootstrap_progress, token, {step, total, message}}, socket)
+      when is_integer(step) and is_integer(total) and is_binary(message) do
+    if socket.assigns[:debugger_bootstrap_token] == token do
+      {:noreply,
+       socket
+       |> assign(:debugger_bootstrap_progress, message)
+       |> assign(:debugger_bootstrap_step, step)
+       |> assign(:debugger_bootstrap_step_total, total)}
+    else
+      {:noreply, socket}
+    end
+  end
+
+  def handle_info({:debugger_bootstrap_progress, token, message}, socket)
+      when is_binary(message) do
     if socket.assigns[:debugger_bootstrap_token] == token do
       {:noreply, assign(socket, :debugger_bootstrap_progress, message)}
     else
@@ -692,6 +773,16 @@ defmodule IdeWeb.WorkspaceLive.DebuggerFlow.Core do
     end
   end
 
+  def handle_info({:debugger_deferred_prewarm, slug}, socket) when is_binary(slug) do
+    socket = assign(socket, :debugger_compile_prewarm_ref, nil)
+
+    if match?(%Project{slug: ^slug}, socket.assigns[:project]) do
+      {:noreply, maybe_schedule_compile_prewarm(socket)}
+    else
+      {:noreply, socket}
+    end
+  end
+
   @spec debugger_session_active?(socket()) :: boolean()
   def debugger_session_active?(socket) do
     debugger_state_running?(socket.assigns[:debugger_state])
@@ -711,11 +802,13 @@ defmodule IdeWeb.WorkspaceLive.DebuggerFlow.Core do
     socket =
       socket
       |> assign(:debugger_bootstrap_status, :running)
-      |> assign(:debugger_bootstrap_progress, "Starting debugger...")
+      |> assign(:debugger_bootstrap_progress, "Starting debugger…")
+      |> assign(:debugger_bootstrap_step, 1)
+      |> assign(:debugger_bootstrap_step_total, DebuggerBootstrapFlow.bootstrap_step_count())
       |> assign(:debugger_bootstrap_token, token)
 
     run_opts = [
-      progress: fn msg -> send(lv, {:debugger_bootstrap_progress, token, msg}) end,
+      progress: fn event -> send(lv, {:debugger_bootstrap_progress, token, event}) end,
       bootstrap_tab: bootstrap_tab,
       watch_profile_id: watch_profile_id
     ]
@@ -788,6 +881,8 @@ defmodule IdeWeb.WorkspaceLive.DebuggerFlow.Core do
     socket
     |> assign(:debugger_bootstrap_status, :idle)
     |> assign(:debugger_bootstrap_progress, nil)
+    |> assign(:debugger_bootstrap_step, nil)
+    |> assign(:debugger_bootstrap_step_total, nil)
     |> assign(:debugger_bootstrap_token, nil)
   end
 

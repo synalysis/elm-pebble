@@ -106,6 +106,18 @@ defmodule Elmc.Backend.CCodegen.SpecialValues.Core do
     |> normalize_bare_special_target()
     |> denormalize_kernel_shorthand()
     |> denormalize_utils_alias()
+    |> normalize_pebble_cmd_targets()
+  end
+
+  @pebble_cmd_suffix_targets %{
+    ".Random.generate" => "Random.generate"
+  }
+
+  @spec normalize_pebble_cmd_targets(String.t()) :: String.t()
+  defp normalize_pebble_cmd_targets(target) when is_binary(target) do
+    Enum.reduce(@pebble_cmd_suffix_targets, target, fn {suffix, canonical}, acc ->
+      if String.ends_with?(acc, suffix), do: canonical, else: acc
+    end)
   end
 
   @spec operator_call_rewrite(String.t(), Types.special_value_args()) ::

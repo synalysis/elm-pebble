@@ -25,7 +25,13 @@ defmodule IdeWeb.WorkspaceLive.DebuggerBootstrapFlow do
             optional(:source_root) => String.t()
           }
           | nil
-  @type progress :: (String.t() -> :ok)
+  @bootstrap_step_count 5
+
+  @type progress_event :: {pos_integer(), pos_integer(), String.t()}
+  @type progress :: (progress_event() -> :ok)
+
+  @spec bootstrap_step_count() :: pos_integer()
+  def bootstrap_step_count, do: @bootstrap_step_count
   @type compile_results :: [
           {String.t(), {:ok, Compiler.compile_result()} | {:error, Compiler.compiler_error()}}
         ]
@@ -338,9 +344,14 @@ defmodule IdeWeb.WorkspaceLive.DebuggerBootstrapFlow do
       Application.get_env(:ide, :debugger_companion_reload_await_idle, false)
   end
 
+  @spec emit_progress(progress(), pos_integer(), String.t()) :: :ok
+  defp emit_progress(progress, step, message) when is_function(progress, 1) do
+    progress.({step, @bootstrap_step_count, message})
+  end
+
   @spec start_session(Project.t(), String.t(), progress()) :: :ok | {:error, String.t()}
   defp start_session(project, watch_profile_id, progress) do
-    progress.("Starting debugger session...")
+    emit_progress(progress, 1, "Starting debugger session...")
 
     case Ide.Debugger.start_session(Projects.scope_key(project), %{
            watch_profile_id: watch_profile_id
@@ -353,13 +364,27 @@ defmodule IdeWeb.WorkspaceLive.DebuggerBootstrapFlow do
   @spec warm_compile(Project.t(), progress()) ::
           {:ok, BuildFlow.warm_compile_results(), BuildFlow.warm_compile_primary()}
   defp warm_compile(project, progress) do
-    progress.("Preparing compiler workspace...")
-    progress.("Compiling Elm sources...")
+    emit_progress(progress, 2, "Preparing compiler workspace...")
 
     skip_roots =
       if companion_bootstrap_async?(), do: ["phone"], else: []
 
-    BuildFlow.warm_debugger_compile_context_work(project, skip_roots: skip_roots)
+    compile_progress = fn label, event ->
+      message =
+        case event do
+          :started -> "Compiling #{label} runtime..."
+          {:cached, _} -> "Using cached #{label} runtime"
+          {:fresh, _} -> "Compiled #{label} runtime"
+          {:error, _} -> "Compile failed for #{label}"
+        end
+
+      emit_progress(progress, 3, message)
+    end
+
+    BuildFlow.warm_debugger_compile_context_work(project,
+      skip_roots: skip_roots,
+      progress: compile_progress
+    )
   end
 
   @spec compile_and_ingest_phone(Project.t(), String.t(), progress()) ::
@@ -387,7 +412,8 @@ defmodule IdeWeb.WorkspaceLive.DebuggerBootstrapFlow do
           ingest_phone_compile(scope_key, result)
 
           if Map.get(result, :status) == :error do
-            {:error, "Companion compile failed: #{Map.get(result, :output, "elmc error")}"}
+            {:error,
+             "Companion runtime compile failed: #{Map.get(result, :output, "elmx error")}"}
           else
             :ok
           end
@@ -402,7 +428,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerBootstrapFlow do
 
     case Enum.find(roots, fn {label, _path} -> label == "phone" end) do
       {label, root_path} ->
-        Compiler.compile(Projects.compiler_cache_key(project, label),
+        Compiler.compile_debugger_runtime(Projects.compiler_cache_key(project, label),
           workspace_root: root_path,
           source_roots: project.source_roots
         )
@@ -415,7 +441,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerBootstrapFlow do
   @spec ingest_warm_compile_results(String.t(), compile_results(), progress()) :: :ok
   defp ingest_warm_compile_results(scope_key, compile_results, progress)
        when is_binary(scope_key) and is_list(compile_results) do
-    progress.("Attaching runtime artifacts...")
+    emit_progress(progress, 4, "Attaching runtime artifacts...")
 
     Enum.each(compile_results, fn
       {label, {:ok, result}} ->
@@ -454,16 +480,23 @@ defmodule IdeWeb.WorkspaceLive.DebuggerBootstrapFlow do
   @spec bootstrap_watch_preview(Project.t(), bootstrap_tab(), progress()) ::
           {:ok, String.t()} | {:error, String.t()}
   defp bootstrap_watch_preview(project, bootstrap_tab, progress) do
-    progress.("Loading watch preview...")
+    emit_progress(progress, 5, "Loading watch preview...")
+    scope_key = Projects.scope_key(project)
 
     case debugger_bootstrap_elm_source(project, bootstrap_tab) do
       {:ok, rel_path, content, source_root} ->
-        case Ide.Debugger.reload(Projects.scope_key(project), %{
-               rel_path: rel_path,
-               source: content,
-               reason: "debugger_bootstrap",
-               source_root: source_root
-             }) do
+        reload =
+          with_skip_blocking_compile(scope_key, fn ->
+            Ide.Debugger.reload(scope_key, %{
+              rel_path: rel_path,
+              source: content,
+              reason: "debugger_bootstrap",
+              source_root: source_root,
+              skip_precompile: true
+            })
+          end)
+
+        case reload do
           {:ok, _} ->
             {:ok,
              "Debugger started. Loaded #{display_path(rel_path)}; watch preview uses parser snapshots when the view outline parses."}

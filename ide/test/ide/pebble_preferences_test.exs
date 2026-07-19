@@ -249,6 +249,81 @@ defmodule Ide.PebblePreferencesTest do
     assert background.control.send_to_watch == "SetBackgroundColor"
   end
 
+  test "extracts preference schemas with comments and qualified Preferences calls", %{root: root} do
+    write_module(root, """
+    module CompanionPreferences exposing (settings)
+
+    import Pebble.Companion.Preferences as Preferences
+
+    type alias Settings =
+        { note : String
+        }
+
+    settings : Pebble.Companion.Preferences.Schema Settings
+    settings =
+        Pebble.Companion.Preferences.schema
+            "Commented"
+            Settings
+            -- add one section after the title
+            |> Pebble.Companion.Preferences.section
+                "Notes"
+                (\\noteSchema ->
+                    noteSchema
+                        |> Pebble.Companion.Preferences.field
+                            "note"
+                            (Pebble.Companion.Preferences.text "Note" "hello")
+                )
+    """)
+
+    assert {:ok, schema} = PebblePreferences.extract(root)
+    assert schema.title == "Commented"
+    assert [%{title: "Notes", fields: [field]}] = schema.sections
+    assert field.id == "note"
+    assert field.control == %{type: "text", default: "hello"}
+  end
+
+  test "caches generated bridge work when phone sources are unchanged", %{root: root} do
+    write_module(root, """
+    module CompanionPreferences exposing (settings)
+
+    import Pebble.Companion.Preferences as Preferences
+
+    type alias Settings =
+        { enabled : Bool
+        }
+
+    settings : Preferences.Schema Settings
+    settings =
+        Preferences.schema "Cached" Settings
+            |> Preferences.section "General"
+                (\\s ->
+                    s
+                        |> Preferences.field "enabled" (Preferences.toggle "Enabled" True)
+                )
+    """)
+
+    assert :ok = PebblePreferences.ensure_generated_bridge(root)
+
+    bridge_path = Path.join([root, "src", "Companion", "GeneratedPreferences.elm"])
+    bridge = File.read!(bridge_path)
+
+    {micros, :ok} = :timer.tc(fn -> PebblePreferences.ensure_generated_bridge(root) end)
+    assert div(micros, 1000) < 100
+    assert File.read!(bridge_path) == bridge
+  end
+
+  test "returns nil without loading the Elm project when no preference schema exists", %{root: root} do
+    File.write!(Path.join([root, "src", "CompanionApp.elm"]), """
+    module CompanionApp exposing (main)
+
+    main =
+        ()
+    """)
+
+    assert {:ok, nil} = PebblePreferences.extract(root)
+    assert :ok = PebblePreferences.ensure_generated_bridge(root)
+  end
+
   defp write_module(root, source) do
     File.write!(Path.join([root, "src", "CompanionPreferences.elm"]), source)
   end

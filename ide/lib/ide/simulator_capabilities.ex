@@ -55,7 +55,9 @@ defmodule Ide.SimulatorCapabilities do
           Types.runtime_state() | nil,
           :watch | :phone | :companion
         ) :: Types.elm_introspect() | nil
-  defp introspect_for(%Project{} = project, debugger_state, surface) do
+  defp introspect_for(%Project{} = _project, nil, _surface), do: nil
+
+  defp introspect_for(%Project{} = project, debugger_state, surface) when is_map(debugger_state) do
     case runtime_introspect(debugger_state, surface) do
       %{} = introspect ->
         introspect
@@ -117,6 +119,25 @@ defmodule Ide.SimulatorCapabilities do
   defp workspace_introspect(nil, _surface), do: nil
 
   defp workspace_introspect(workspace_root, surface) do
+    key = {:ide, :simulator_capabilities, workspace_root, surface, workspace_elm_revision(workspace_root, surface)}
+
+    case :persistent_term.get(key, :missing) do
+      :missing ->
+        result = workspace_introspect_uncached(workspace_root, surface)
+        :persistent_term.put(key, result)
+        result
+
+      result ->
+        result
+    end
+  rescue
+    ArgumentError ->
+      workspace_introspect_uncached(workspace_root, surface)
+  end
+
+  @spec workspace_introspect_uncached(String.t(), :watch | :phone | :companion) ::
+          Types.elm_introspect() | nil
+  defp workspace_introspect_uncached(workspace_root, surface) do
     source_root =
       case surface do
         :watch -> "watch"
@@ -135,6 +156,27 @@ defmodule Ide.SimulatorCapabilities do
         merge_introspect(acc, introspect, surface)
       else
         _ -> acc
+      end
+    end)
+  end
+
+  @spec workspace_elm_revision(String.t(), :watch | :phone | :companion) :: non_neg_integer()
+  defp workspace_elm_revision(workspace_root, surface) do
+    source_root =
+      case surface do
+        :watch -> "watch"
+        :phone -> "phone"
+        :companion -> "phone"
+      end
+
+    workspace_root
+    |> Path.join(source_root)
+    |> Path.join("**/*.elm")
+    |> Path.wildcard()
+    |> Enum.reduce(0, fn path, max ->
+      case File.stat(path, time: :posix) do
+        {:ok, %{mtime: mtime}} when mtime > max -> mtime
+        _ -> max
       end
     end)
   end

@@ -227,7 +227,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.GenericTargets do
         emit_targets
         |> Enum.filter(fn key ->
           case Map.fetch(decl_map, key) do
-            {:ok, decl} -> render_op_list_return?(decl)
+            {:ok, decl} -> direct_render_op_return?(decl)
             :error -> false
           end
         end)
@@ -1022,12 +1022,17 @@ defmodule Elmc.Backend.CCodegen.DirectRender.GenericTargets do
       case Map.fetch(decl_map, target) do
         {:ok, decl} ->
           FunctionEmit.mixed_direct_abi?(decl, module_name, decl_map) and
-            (MapSet.member?(direct_targets, target) or MapSet.member?(inlined, target))
+            (MapSet.member?(direct_targets, target) or MapSet.member?(inlined, target)) and
+            not superseded_direct_render_op_helper?(target, decl, direct_targets)
 
         :error ->
           false
       end
     end)
+  end
+
+  defp superseded_direct_render_op_helper?(target, decl, direct_targets) do
+    MapSet.member?(direct_targets, target) and direct_render_op_return?(decl)
   end
 
   # Mixed-ABI direct `_native` bodies (for example `downloadedTangram`) call other direct
@@ -1100,6 +1105,18 @@ defmodule Elmc.Backend.CCodegen.DirectRender.GenericTargets do
 
   defp render_op_list_return?(_decl), do: false
 
+  defp direct_render_op_return?(%{type: type} = decl) when is_binary(type) do
+    render_op_list_return?(decl) or single_render_op_return?(decl)
+  end
+
+  defp direct_render_op_return?(_decl), do: false
+
+  defp single_render_op_return?(%{type: type}) when is_binary(type) do
+    String.contains?(type, "RenderOp") and not String.contains?(type, "List")
+  end
+
+  defp single_render_op_return?(_decl), do: false
+
   defp ui_node_inner_expr(%{op: :qualified_call, target: target, args: [inner]})
        when target in ["Pebble.Ui.toUiNode"],
        do: inner
@@ -1147,7 +1164,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.GenericTargets do
       emit_targets
       |> Enum.filter(fn key ->
         case Map.fetch(decl_map, key) do
-          {:ok, decl} -> render_op_list_return?(decl)
+          {:ok, decl} -> direct_render_op_return?(decl)
           :error -> false
         end
       end)

@@ -478,11 +478,17 @@ defmodule Ide.Projects do
   @doc """
   Lists nested file tree nodes for each project source root.
   """
-  @spec list_source_tree(Project.t()) :: Types.source_tree()
-  def list_source_tree(%Project{} = project) do
+  @spec list_source_tree(Project.t(), keyword()) :: Types.source_tree()
+  def list_source_tree(%Project{} = project, opts \\ []) do
+    ensure_side_effects? = Keyword.get(opts, :ensure_side_effects, true)
+
     FileStore.ensure_roots(project, projects_root())
-    ensure_generated_phone_preferences(project)
-    ensure_protocol_for_phone_companion(project)
+
+    if ensure_side_effects? do
+      ensure_generated_phone_preferences(project)
+      ensure_protocol_for_phone_companion(project)
+    end
+
     FileStore.list_tree(project, projects_root())
   end
 

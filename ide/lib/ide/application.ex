@@ -25,6 +25,7 @@ defmodule Ide.Application do
       IdeWeb.Telemetry,
       repo,
       Ide.Compiler.Cache,
+      Ide.Compiler.DebuggerRuntimeCache,
       Ide.Compiler.ManifestCache,
       Ide.Mcp.CheckCache,
       Ide.Mcp.HttpSessions,

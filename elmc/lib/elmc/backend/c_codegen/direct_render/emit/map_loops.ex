@@ -51,6 +51,17 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.MapLoops do
         )
       end
 
+    {prefix_code, prefix_refs, prefix_releases, counter} =
+      maybe_materialize_native_prefix_refs(
+        prefix_code,
+        prefix_refs,
+        prefix_releases,
+        native_prefix_fields,
+        prefix_args,
+        env,
+        counter
+      )
+
     prefix_release_code = Release.release_vars(prefix_releases, "        ")
 
     case Host.direct_static_list_items(list_expr) do
@@ -730,6 +741,83 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.MapLoops do
 
           {prefix_code, prefix_refs, [], nil, counter}
         end
+    end
+  end
+
+  defp maybe_materialize_native_prefix_refs(
+         prefix_code,
+         prefix_refs,
+         prefix_releases,
+         native_fields,
+         prefix_args,
+         env,
+         counter
+       )
+       when is_binary(prefix_code) and is_list(prefix_refs) and is_list(prefix_releases) and
+              is_list(prefix_args) and is_map(env) and is_integer(counter) do
+    cond do
+      prefix_refs != [] ->
+        {prefix_code, prefix_refs, prefix_releases, counter}
+
+      not is_map(native_fields) or map_size(native_fields) == 0 ->
+        {prefix_code, prefix_refs, prefix_releases, counter}
+
+      true ->
+        materialize_native_prefix_refs(
+          prefix_code,
+          prefix_releases,
+          native_fields,
+          prefix_args,
+          env,
+          counter
+        )
+    end
+  end
+
+  defp materialize_native_prefix_refs(
+         prefix_code,
+         prefix_releases,
+         native_fields,
+         prefix_args,
+         env,
+         counter
+       ) do
+    layout_name = prefix_layout_binding_name(prefix_args)
+    field_names = native_prefix_field_names(layout_name, native_fields, env)
+    layout_var = "direct_prefix_layout_#{counter + 1}"
+    next = counter + 1
+    rec_suffix = Elmc.Backend.CCodegen.RecordCompile.fresh_rec_values_suffix()
+    count = length(field_names)
+
+    values_array =
+      field_names
+      |> Enum.map_join(", ", fn field -> Map.fetch!(native_fields, field) end)
+
+    code = """
+    #{prefix_code}
+    elmc_int_t rec_values_#{rec_suffix}[#{count}] = { #{values_array} };
+    #{ValueSlots.boxed_decl(layout_var, "elmc_record_new_values_ints(#{count}, rec_values_#{rec_suffix})", env)}
+    """
+
+    {code, [layout_var], prefix_releases ++ [layout_var], next}
+  end
+
+  defp prefix_layout_binding_name([%{op: :var, name: name} | _]) when not is_nil(name),
+    do: EnvBindings.binding_key(name)
+
+  defp prefix_layout_binding_name(_prefix_args), do: "layout"
+
+  defp native_prefix_field_names(layout_name, native_fields, env) do
+    shapes = Map.get(env, :__record_shapes__, %{})
+
+    case Map.get(shapes, layout_name) do
+      names when is_list(names) ->
+        Enum.filter(names, &Map.has_key?(native_fields, &1))
+
+      _ ->
+        native_fields
+        |> Map.keys()
+        |> Enum.map(&to_string/1)
     end
   end
 

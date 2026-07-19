@@ -134,7 +134,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerBootstrapFlowTest do
     assert {:ok, _result} =
              DebuggerBootstrapFlow.run(project,
                watch_profile_id: "basalt",
-               progress: fn _ -> :ok end
+               progress: fn {_step, _total, _message} -> :ok end
              )
 
     state = AgentStore.fetch(scope_key)

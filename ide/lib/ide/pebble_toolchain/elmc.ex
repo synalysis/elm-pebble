@@ -1,6 +1,8 @@
 defmodule Ide.PebbleToolchain.Elmc do
   @moduledoc false
 
+  require Logger
+
   alias Elmc.CLI
   alias Elmc.Runtime.Generator, as: RuntimeGenerator
   alias Ide.Compiler
@@ -122,7 +124,15 @@ defmodule Ide.PebbleToolchain.Elmc do
     compile_opts = watch_compile_opts(compile_out_dir, target_platforms, compile_extra)
 
     with :ok <- reset_generated_dir(stage_out_dir),
-         :ok <- ensure_staged_elmc_sources(project_root, compile_out_dir, stage_out_dir, compile_opts, target_platforms) do
+         :ok <-
+           ensure_staged_elmc_sources(
+             project_root,
+             compile_out_dir,
+             stage_out_dir,
+             compile_opts,
+             target_platforms,
+             opts
+           ) do
       :ok
     else
       {:error, reason} -> {:error, reason}
@@ -131,17 +141,60 @@ defmodule Ide.PebbleToolchain.Elmc do
 
   @spec ensure_staged_elmc_sources(String.t(), String.t(), String.t(), Types.watch_compile_opts(), [
           String.t()
-        ]) :: :ok | {:error, term()}
-  defp ensure_staged_elmc_sources(project_root, compile_out_dir, stage_out_dir, compile_opts, target_platforms) do
-    if reuse_cached_compile?(project_root, compile_out_dir, compile_opts, target_platforms) do
-      copy_compile_tree!(compile_out_dir, stage_out_dir)
-    else
-      with :ok <- reset_generated_dir(compile_out_dir),
-           {:ok, _} <- map_compile_failure(compile_project_artifacts(project_root, compile_opts)),
-           :ok <- write_compile_stamp(project_root, compile_out_dir, compile_opts, target_platforms),
-           :ok <- copy_compile_tree!(compile_out_dir, stage_out_dir) do
-        :ok
-      end
+        ], keyword()) :: :ok | {:error, term()}
+  defp ensure_staged_elmc_sources(
+         project_root,
+         compile_out_dir,
+         stage_out_dir,
+         compile_opts,
+         target_platforms,
+         opts
+       ) do
+    cond do
+      reuse_cached_compile?(project_root, compile_out_dir, compile_opts, target_platforms) ->
+        Logger.debug(
+          "[elmc] reusing cached compile tree for #{project_root} (stamp match)"
+        )
+
+        copy_compile_tree!(compile_out_dir, stage_out_dir)
+
+      reuse_fresh_build?(project_root, compile_out_dir, opts) ->
+        Logger.info(
+          "[elmc] reusing fresh .elmc-build from #{project_root} for PBW packaging (revision match)"
+        )
+
+        copy_compile_tree!(compile_out_dir, stage_out_dir)
+
+      true ->
+        with :ok <- reset_generated_dir(compile_out_dir),
+             {:ok, _} <- map_compile_failure(compile_project_artifacts(project_root, compile_opts)),
+             :ok <- write_compile_stamp(project_root, compile_out_dir, compile_opts, target_platforms),
+             :ok <- copy_compile_tree!(compile_out_dir, stage_out_dir) do
+          :ok
+        end
+    end
+  end
+
+  @spec reuse_fresh_build?(String.t(), String.t(), keyword()) :: boolean()
+  defp reuse_fresh_build?(project_root, compile_out_dir, opts) when is_binary(project_root) do
+    Keyword.get(opts, :reuse_elmc_build, false) and
+      File.regular?(Path.join(compile_out_dir, "c/elmc_generated.c")) and
+      revision_stamp_matches?(project_root, compile_out_dir)
+  end
+
+  @spec revision_stamp_matches?(String.t(), String.t()) :: boolean()
+  defp revision_stamp_matches?(project_root, compile_out_dir) do
+    case File.read(compile_stamp_path(compile_out_dir)) do
+      {:ok, body} ->
+        with {:ok, %{"revision" => revision}} <- Jason.decode(body),
+             true <- is_binary(revision) do
+          revision == Compiler.compile_source_revision(project_root)
+        else
+          _ -> false
+        end
+
+      _ ->
+        false
     end
   end
 

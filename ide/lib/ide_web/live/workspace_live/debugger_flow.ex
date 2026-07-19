@@ -18,5 +18,6 @@ defmodule IdeWeb.WorkspaceLive.DebuggerFlow do
   defdelegate normalize_debugger_watch_profile_id(value), to: Core
   defdelegate maybe_schedule_debugger_auto_fire_refresh(socket), to: Core
   defdelegate maybe_ensure_companion_bootstrapped(socket), to: Core
+  defdelegate schedule_deferred_compile_prewarm(socket), to: Core
   defdelegate schedule_debugger_runtime_refresh(socket), to: Core
 end

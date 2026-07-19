@@ -58,7 +58,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage.Core do
         </div>
         <div class="flex shrink-0 flex-col items-end gap-2 sm:flex-row sm:items-center">
           <.debugger_copy_button
-            :if={@debug_mode}
+            :if={@debug_mode and @debugger_state}
             id="debugger-copy-agent-state"
             text={Export.agent_state_clipboard_text(assigns, @project)}
             label="Copy for agent"
@@ -128,11 +128,24 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage.Core do
           {@debugger_bootstrap_progress || "Starting debugger…"}
         </p>
         <div
-          class="mt-1 h-1.5 overflow-hidden rounded-full bg-zinc-200"
+          class="mt-1 flex gap-1"
           role="progressbar"
+          aria-valuemin="1"
+          aria-valuemax={@debugger_bootstrap_step_total || SessionState.bootstrap_step_count()}
+          aria-valuenow={@debugger_bootstrap_step || 1}
           aria-busy="true"
         >
-          <div class="h-full w-1/3 animate-pulse rounded-full bg-zinc-600" />
+          <div
+            :for={segment <- SessionState.bootstrap_step_segments(@debugger_bootstrap_step, @debugger_bootstrap_step_total)}
+            class={[
+              "h-1.5 flex-1 rounded-full",
+              segment.status == :done && "bg-zinc-600",
+              segment.status == :active && "bg-zinc-600 animate-pulse",
+              segment.status == :pending && "bg-zinc-200"
+            ]}
+            data-testid={"debugger-bootstrap-step-#{segment.index}"}
+            data-step-status={segment.status}
+          />
         </div>
       </div>
       <div

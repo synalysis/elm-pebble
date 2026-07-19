@@ -138,6 +138,12 @@ defmodule Elmc.Backend.CCodegen.DirectAffine do
 
   defp unwrap_direct_render_shell(expr) do
     case expr do
+      %{op: :pipe_chain, base: base, steps: steps} when is_list(steps) and steps != [] ->
+        case desugar_pipe_chain_to_call(base, steps) do
+          {:ok, call_expr} -> unwrap_direct_render_shell(call_expr)
+          :error -> {:single, expr}
+        end
+
       %{op: :qualified_call, target: target, args: [inner]} ->
         case Host.normalize_special_target(target) do
           "Pebble.Ui.group" -> unwrap_direct_render_shell(inner)
@@ -163,6 +169,21 @@ defmodule Elmc.Backend.CCodegen.DirectAffine do
       _ ->
         {:single, expr}
     end
+  end
+
+  defp desugar_pipe_chain_to_call(base, steps) do
+    Enum.reduce_while(steps, {:ok, base}, fn step, {:ok, acc} ->
+      case step do
+        %{op: :qualified_ref, target: target} when is_binary(target) ->
+          {:cont, {:ok, %{op: :qualified_call, target: target, args: [acc]}}}
+
+        %{op: :qualified_call, target: target, args: args} when is_binary(target) and is_list(args) ->
+          {:cont, {:ok, %{op: :qualified_call, target: target, args: [acc | args]}}}
+
+        _ ->
+          {:halt, :error}
+      end
+    end)
   end
 
   defp analyze_affine_draw_target(expr, analyze_one) do
@@ -1128,6 +1149,36 @@ defmodule Elmc.Backend.CCodegen.DirectAffine do
           %{op: :c_int_expr, value: value} when is_binary(value) -> {:ok, value}
           _ -> :error
         end
+    end
+  end
+
+  defp direct_must_literal_int(%{op: :qualified_ref, target: target}, _env) when is_binary(target) do
+    cond do
+      Host.resource_union_constructor?(target, []) ->
+        {:ok, "#{Host.pebble_resource_slot_index(target)}"}
+
+      true ->
+        case Host.special_value_from_target(target, []) do
+          %{op: :int_literal, value: value} -> {:ok, "#{value}"}
+          %{op: :c_int_expr, value: value} when is_binary(value) -> {:ok, value}
+          _ -> :error
+        end
+    end
+  end
+
+  defp direct_must_literal_int(%{op: :qualified_var, target: target}, _env) when is_binary(target) do
+    if Host.resource_union_constructor?(target, []) do
+      {:ok, "#{Host.pebble_resource_slot_index(target)}"}
+    else
+      :error
+    end
+  end
+
+  defp direct_must_literal_int(%{op: :constructor_ref, target: target}, _env) when is_binary(target) do
+    if Host.resource_union_constructor?(target, []) do
+      {:ok, "#{Host.pebble_resource_slot_index(target)}"}
+    else
+      :error
     end
   end
 

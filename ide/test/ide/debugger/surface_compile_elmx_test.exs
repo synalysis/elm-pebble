@@ -2,13 +2,15 @@ defmodule Ide.Debugger.SurfaceCompileElmxTest do
   use ExUnit.Case, async: false
 
   alias Ide.Compiler
+  alias Ide.Debugger.CompileContract
   alias Ide.Debugger.RuntimeArtifacts
   alias Ide.Debugger.RuntimeExecutor
   alias Ide.Debugger.RuntimeExecutor.Request
   alias Ide.Debugger.RuntimeSurfaces
   alias Ide.Debugger.StepInput
   alias Ide.Debugger.StepExecution
-  alias Ide.Debugger.Surface
+  alias Ide.Debugger.SurfaceCompileArtifacts
+  alias Ide.Debugger.SurfaceCompileArtifactsContext
   alias Ide.Debugger.Types.ElmcSurfaceFields
 
   setup do
@@ -21,6 +23,52 @@ defmodule Ide.Debugger.SurfaceCompileElmxTest do
     Application.put_env(:ide, Ide.Debugger.RuntimeExecutor, execution_backend: :compiled_elixir)
     _ = Application.ensure_all_started(:elmx)
     :ok
+  end
+
+  test "compile_debugger_runtime skips elmc and caches elmx" do
+    workspace = Path.expand("../../../../elmx/test/fixtures/minimal", __DIR__)
+    slug = "debugger-runtime-" <> Integer.to_string(:erlang.unique_integer([:positive]))
+    build_dir = Path.join(workspace, ".elmc-build")
+    File.rm_rf(build_dir)
+
+    assert {:ok, fresh} = Compiler.compile_debugger_runtime(slug, workspace_root: workspace)
+    assert fresh.status == :ok
+    assert fresh.cached? == false
+    assert is_map(fresh.elmx_manifest)
+    assert is_binary(fresh.elmx_revision)
+    refute File.exists?(build_dir)
+
+    assert {:ok, cached} = Compiler.compile_debugger_runtime(slug, workspace_root: workspace)
+    assert cached.cached? == true
+    assert cached.elmx_revision == fresh.elmx_revision
+    refute File.exists?(build_dir)
+  end
+
+  test "artifacts_for_source_root reuses ingested elmx instead of inline elmc compile" do
+    workspace = Path.expand("../../../../elmx/test/fixtures/minimal", __DIR__)
+    slug = "elmx-inline-skip-" <> Integer.to_string(:erlang.unique_integer([:positive]))
+
+    assert {:ok, compile_result} = Compiler.compile_debugger_runtime(slug, workspace_root: workspace)
+    artifacts = ElmcSurfaceFields.optional_runtime_artifacts(compile_result)
+
+    state =
+      %{watch: %{model: %{}, shell: %{}}, running: true, session_key: slug}
+      |> Ide.Debugger.RuntimeArtifactMerge.maybe_merge(:watch, artifacts)
+      |> put_in([:watch, :model, "last_source"], "module Main where\n\nmain = 1\n")
+      |> put_in([:watch, :model, "last_path"], "src/Main.elm")
+
+    ctx =
+      SurfaceCompileArtifactsContext.build(%{
+        session_key_from_state: fn _ -> slug end,
+        source_root_for_target: fn :watch -> "watch" end,
+        merge_runtime_artifacts: &Ide.Debugger.RuntimeArtifactMerge.maybe_merge/3
+      })
+
+    got = SurfaceCompileArtifacts.artifacts_for_source_root(state, "watch", ctx)
+
+    assert RuntimeArtifacts.versioned_elmx_artifacts?(got)
+    assert got["elmx_revision"] == compile_result.elmx_revision
+    assert is_map(CompileContract.from_artifacts(got))
   end
 
   test "Compiler.compile attaches elmx artifacts including on cache hit" do

@@ -124,6 +124,8 @@ defmodule IdeWeb.WorkspaceLive.SocketAssigns do
           optional(:debugger_timeline_mode) => String.t(),
           optional(:debugger_bootstrap_status) => bootstrap_status(),
           optional(:debugger_bootstrap_progress) => String.t() | nil,
+          optional(:debugger_bootstrap_step) => pos_integer() | nil,
+          optional(:debugger_bootstrap_step_total) => pos_integer() | nil,
           optional(:debugger_bootstrap_token) => pos_integer() | nil,
           optional(:debugger_companion_bootstrap_status) => bootstrap_status(),
           optional(:debugger_companion_bootstrap_progress) => String.t() | nil,

@@ -153,25 +153,35 @@ defmodule IdeWeb.WorkspaceLive.EditorSupport do
         socket
 
       project ->
-        root = PackagesFlow.sanitize_target_root(project, socket.assigns.packages_target_root)
-
-        socket =
-          if root != socket.assigns.packages_target_root do
-            assign(socket, :packages_target_root, root)
-          else
-            socket
-          end
-
-        packages_root = root
-        doc_root = doc_catalog_source_root(socket)
-        token = System.unique_integer([:positive])
-
-        socket
-        |> assign_dependency_lists(
-          EditorDependencies.read_dependency_lists(project, packages_root)
-        )
-        |> maybe_start_editor_dependencies_refresh(project, packages_root, doc_root, token)
+        if socket.assigns[:pane] in [:editor, :packages] do
+          refresh_editor_dependencies_for_project(socket, project)
+        else
+          socket
+        end
     end
+  end
+
+  @spec refresh_editor_dependencies_for_project(EditorTypes.socket(), Project.t()) ::
+          EditorTypes.socket()
+  defp refresh_editor_dependencies_for_project(socket, project) do
+    root = PackagesFlow.sanitize_target_root(project, socket.assigns.packages_target_root)
+
+    socket =
+      if root != socket.assigns.packages_target_root do
+        assign(socket, :packages_target_root, root)
+      else
+        socket
+      end
+
+    packages_root = root
+    doc_root = doc_catalog_source_root(socket)
+    token = System.unique_integer([:positive])
+
+    socket
+    |> assign_dependency_lists(
+      EditorDependencies.read_dependency_lists(project, packages_root)
+    )
+    |> maybe_start_editor_dependencies_refresh(project, packages_root, doc_root, token)
   end
 
   @spec maybe_start_editor_dependencies_refresh(

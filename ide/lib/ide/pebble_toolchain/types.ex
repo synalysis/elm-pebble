@@ -52,6 +52,8 @@ defmodule Ide.PebbleToolchain.Types do
           | {:emulator_debug_logs, boolean()}
           | {:prod, boolean()}
           | {:debug_usage_policy, :error | :warn | :warning}
+          | {:skip_workspace_check, boolean()}
+          | {:reuse_elmc_build, boolean()}
           | {:capabilities, [String.t()] | String.t()}
         ]
 

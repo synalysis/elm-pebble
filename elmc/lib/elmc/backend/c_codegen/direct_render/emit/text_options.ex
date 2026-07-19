@@ -64,6 +64,10 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.TextOptions do
     end
   end
 
+  def expr(%{op: :qualified_ref, target: target}) when is_binary(target) do
+    expr(%{op: :qualified_call, target: target, args: []})
+  end
+
   def expr(%{op: :call, name: name, args: args}) when is_binary(name) do
     expr(%{op: :qualified_call, target: name, args: args})
   end
@@ -71,6 +75,8 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.TextOptions do
   def expr(%{op: :record_literal} = options), do: expr_from_static_record(options)
   def expr(%{op: :record_update} = options), do: expr_from_static_record(options)
   def expr(%{op: :var} = options), do: options
+  def expr(%{op: :unsupported}), do: %{op: :unsupported}
+  def expr(_options), do: %{op: :unsupported}
 
   @spec arg(Types.ir_expr(), Types.compile_env(), Types.compile_counter()) :: Types.ir_expr()
   def arg(%{op: :var, name: name}, env, _counter) do
@@ -121,6 +127,10 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.TextOptions do
       _ ->
         false
     end
+  end
+
+  defp value_shape?(%{op: :qualified_ref, target: target}) when is_binary(target) do
+    value_shape?(%{op: :qualified_call, target: target, args: []})
   end
 
   defp value_shape?(%{op: :call, name: name, args: args}) when is_binary(name) do

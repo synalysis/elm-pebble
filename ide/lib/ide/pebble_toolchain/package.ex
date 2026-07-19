@@ -49,11 +49,7 @@ defmodule Ide.PebbleToolchain.Package do
     project_name = Keyword.get(opts, :project_name, project_slug)
 
     with {:ok, workspace_root} <- Prepare.normalize_workspace_root(workspace_root),
-         :ok <-
-           Compiler.check_workspace(project_slug,
-             workspace_root: workspace_root,
-             source_roots: Keyword.get(opts, :source_roots)
-           ),
+         :ok <- maybe_check_workspace(project_slug, opts),
          {:ok, app_root, resolved_target_type} <-
            Prepare.prepare_project_build_app(
              project_slug,
@@ -249,6 +245,18 @@ defmodule Ide.PebbleToolchain.Package do
     case File.stat(path) do
       {:ok, stat} -> stat.mtime
       _ -> {{1970, 1, 1}, {0, 0, 0}}
+    end
+  end
+
+  @spec maybe_check_workspace(project_slug(), opts()) :: :ok | {:error, toolchain_error()}
+  defp maybe_check_workspace(project_slug, opts) when is_binary(project_slug) do
+    if Keyword.get(opts, :skip_workspace_check, false) do
+      :ok
+    else
+      Compiler.check_workspace(project_slug,
+        workspace_root: Keyword.fetch!(opts, :workspace_root),
+        source_roots: Keyword.get(opts, :source_roots)
+      )
     end
   end
 end

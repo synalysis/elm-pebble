@@ -151,9 +151,11 @@ defmodule IdeWeb.WorkspaceLive.Types do
   @type info_message ::
           :debugger_runtime_updated
           | {:debugger_auto_fire_refresh, String.t()}
-          | {:debugger_bootstrap_progress, pos_integer(), String.t()}
+          | {:debugger_bootstrap_progress, pos_integer(),
+             DebuggerBootstrapFlow.progress_event() | String.t()}
           | {:debugger_companion_bootstrap_progress, String.t()}
           | {:debugger_runtime_refresh, integer()}
+          | {:debugger_deferred_prewarm, String.t()}
           | {:companion_debugger_bootstrapped, String.t(),
              {:ok, DebuggerBootstrapFlow.companion_bootstrap_result()} | {:error, String.t()}}
           | {:capture_all_progress, pos_integer(), Screenshots.progress_payload()}

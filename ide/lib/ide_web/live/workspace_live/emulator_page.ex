@@ -19,7 +19,10 @@ defmodule IdeWeb.WorkspaceLive.EmulatorPage do
   @type installation_status :: Assigns.installation_status()
 
   @spec render(assigns()) :: rendered()
-  def render(assigns) do
+  def render(%{pane: :emulator} = assigns), do: render_emulator(assigns)
+
+  @spec render_emulator(assigns()) :: rendered()
+  defp render_emulator(assigns) do
     assigns =
       assigns
       |> assign_new(:debug_mode, fn -> false end)

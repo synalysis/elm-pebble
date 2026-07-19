@@ -3,6 +3,7 @@ defmodule IdeWeb.WorkspaceLive.BuildPage do
   use IdeWeb, :html
 
   alias IdeWeb.WorkspaceLive.BuildPage.Assigns
+  alias IdeWeb.WorkspaceLive.BuildPipelineProgress
   alias Phoenix.LiveView.Rendered
 
   @type assigns :: Assigns.t()
@@ -40,6 +41,33 @@ defmodule IdeWeb.WorkspaceLive.BuildPage do
         </label>
         <span class="text-xs text-zinc-600">Build: {check_status_label(@build_status)}</span>
       </.form>
+      <div
+        :if={@build_status == :running}
+        class="mt-3 w-full max-w-xl"
+        data-testid="build-progress"
+      >
+        <p class="text-xs text-zinc-600">{@build_progress_message || "Building…"}</p>
+        <div
+          class="mt-1 flex gap-1"
+          role="progressbar"
+          aria-valuemin="1"
+          aria-valuemax={@build_progress_total || BuildPipelineProgress.step_count()}
+          aria-valuenow={@build_progress_step || 1}
+          aria-busy="true"
+        >
+          <div
+            :for={segment <- BuildPipelineProgress.step_segments(@build_progress_step, @build_progress_total)}
+            class={[
+              "h-1.5 flex-1 rounded-full",
+              segment.status == :done && "bg-zinc-600",
+              segment.status == :active && "bg-zinc-600 animate-pulse",
+              segment.status == :pending && "bg-zinc-200"
+            ]}
+            data-testid={"build-step-#{segment.index}"}
+            data-step-status={segment.status}
+          />
+        </div>
+      </div>
       <p class="mt-2 text-sm text-zinc-600">
         Runs `elmc check`, `elmc compile`, and `elmc manifest` for each project root, then packages the PBW with the configured target platforms.
       </p>

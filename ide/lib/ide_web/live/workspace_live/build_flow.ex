@@ -9,6 +9,7 @@ defmodule IdeWeb.WorkspaceLive.BuildFlow do
   alias Ide.Projects
   alias Ide.Projects.Project
   alias IdeWeb.WorkspaceLive.DebuggerBridge
+  alias IdeWeb.WorkspaceLive.BuildPipelineProgress
   alias IdeWeb.WorkspaceLive.PublishFlow
   alias IdeWeb.WorkspaceLive.ToolchainPresenter
   alias IdeWeb.WorkspaceLive.Types
@@ -92,17 +93,27 @@ defmodule IdeWeb.WorkspaceLive.BuildFlow do
     project = socket.assigns.project
     workspace_root = Projects.project_workspace_path(project)
     strict? = manifest_strict_from_params(params, socket.assigns.manifest_strict_mode)
+    token = System.unique_integer()
+    parent = self()
+
+    progress = fn event ->
+      send(parent, {:build_progress, token, event})
+    end
 
     {:noreply,
      socket
      |> assign(:manifest_strict_mode, strict?)
      |> assign(:build_status, :running)
      |> assign(:build_issues, [])
+     |> assign(:build_progress_token, token)
+     |> assign(:build_progress_step, 1)
+     |> assign(:build_progress_total, BuildPipelineProgress.step_count())
+     |> assign(:build_progress_message, "Starting build…")
      |> assign(:check_status, :running)
      |> assign(:compile_status, :running)
      |> assign(:manifest_status, :running)
      |> start_async(:run_build, fn ->
-       run_build_pipeline(project, workspace_root, strict?)
+       run_build_pipeline(project, workspace_root, strict?, progress: progress)
      end)}
   end
 
@@ -160,6 +171,30 @@ defmodule IdeWeb.WorkspaceLive.BuildFlow do
   end
 
   defp manifest_strict_from_params(_params, default), do: default == true
+
+  @spec handle_info({:build_progress, reference(), BuildPipelineProgress.progress_event()}, socket()) ::
+          lv_noreply()
+  def handle_info({:build_progress, token, {step, _total, message}}, socket)
+      when is_integer(step) and is_binary(message) do
+    if socket.assigns[:build_progress_token] == token do
+      {:noreply,
+       socket
+       |> assign(:build_progress_step, step)
+       |> assign(:build_progress_message, message)}
+    else
+      {:noreply, socket}
+    end
+  end
+
+  def handle_info({:build_progress, token, message}, socket) when is_binary(message) do
+    if socket.assigns[:build_progress_token] == token do
+      {:noreply, assign(socket, :build_progress_message, message)}
+    else
+      {:noreply, socket}
+    end
+  end
+
+  def handle_info({:build_progress, _token, _event}, socket), do: {:noreply, socket}
 
   def handle_async(:run_check, {:ok, {:ok, result}}, socket) do
     socket =
@@ -433,10 +468,14 @@ defmodule IdeWeb.WorkspaceLive.BuildFlow do
           {String.t(), {:ok, Compiler.compile_result()} | {:error, Compiler.compiler_error()}}
           | nil
 
+  @type warm_compile_progress_event :: :started | {:cached, term()} | {:fresh, term()} | {:error, term()}
+  @type warm_compile_progress :: (String.t(), warm_compile_progress_event() -> :ok)
+
   @spec warm_debugger_compile_context_work(Project.t(), keyword()) ::
           {:ok, warm_compile_results(), warm_compile_primary()}
   def warm_debugger_compile_context_work(project, opts \\ []) do
     skip_roots = MapSet.new(Keyword.get(opts, :skip_roots, []))
+    progress = Keyword.get(opts, :progress, fn _label, _event -> :ok end)
 
     :ok = Projects.ensure_compiler_workspace(project)
     workspace_root = Projects.project_workspace_path(project)
@@ -446,11 +485,16 @@ defmodule IdeWeb.WorkspaceLive.BuildFlow do
       |> build_roots(project.source_roots || [])
       |> Enum.reject(fn {label, _root_path} -> MapSet.member?(skip_roots, label) end)
       |> Enum.map(fn {label, root_path} ->
-        {label,
-         Compiler.compile(Projects.compiler_cache_key(project, label),
-           workspace_root: root_path,
-           source_roots: project.source_roots
-         )}
+        progress.(label, :started)
+
+        result =
+          Compiler.compile_debugger_runtime(Projects.compiler_cache_key(project, label),
+            workspace_root: root_path,
+            source_roots: project.source_roots
+          )
+
+        progress.(label, warm_compile_progress_event(result))
+        {label, result}
       end)
 
     primary =
@@ -458,6 +502,18 @@ defmodule IdeWeb.WorkspaceLive.BuildFlow do
         List.first(results)
 
     {:ok, results, primary}
+  end
+
+  @spec warm_compile_progress_event({:ok, Compiler.compile_result()}) ::
+          warm_compile_progress_event()
+  defp warm_compile_progress_event({:ok, %{status: :error} = result}), do: {:error, result}
+
+  defp warm_compile_progress_event({:ok, result}) when is_map(result) do
+    if Map.get(result, :cached?) == true do
+      {:cached, result}
+    else
+      {:fresh, result}
+    end
   end
 
   @spec apply_warm_compile_results(socket(), warm_compile_results(), warm_compile_primary(), keyword()) ::
@@ -500,16 +556,23 @@ defmodule IdeWeb.WorkspaceLive.BuildFlow do
     apply_warm_compile_results(socket, results, primary)
   end
 
-  @spec run_build_pipeline(Project.t(), String.t(), boolean()) ::
+  @spec run_build_pipeline(Project.t(), String.t(), boolean(), keyword()) ::
           {:ok, build_pipeline_result()}
-  def run_build_pipeline(project, workspace_root, strict?) do
+  def run_build_pipeline(project, workspace_root, strict?, opts \\ []) do
+    progress = Keyword.get(opts, :progress, fn _ -> :ok end)
     roots = build_roots(workspace_root, project.source_roots || [])
+
+    BuildPipelineProgress.emit(progress, 1, "Checking Elm sources…")
 
     root_results =
       roots
       |> Enum.map(fn {label, root_path} ->
+        BuildPipelineProgress.emit(progress, 1, "Checking #{label}…")
+
         {:ok, single} =
-          run_build_pipeline_for_root(Projects.scope_key(project), label, root_path, strict?)
+          run_build_pipeline_for_root(Projects.scope_key(project), label, root_path, strict?,
+            progress: progress
+          )
 
         single
       end)
@@ -519,6 +582,8 @@ defmodule IdeWeb.WorkspaceLive.BuildFlow do
         List.first(root_results)
 
     roots_ok? = Enum.all?(root_results, fn result -> result.status == :ok end)
+
+    BuildPipelineProgress.emit(progress, 4, "Packaging PBW artifact…")
     package_result = run_package_validation(project, workspace_root, roots_ok?)
     issues = build_issues(root_results, package_result)
 
@@ -539,6 +604,12 @@ defmodule IdeWeb.WorkspaceLive.BuildFlow do
       |> Kernel.++([render_package_validation_output(package_result)])
       |> Enum.join("\n\n")
       |> String.trim()
+
+    BuildPipelineProgress.emit(
+      progress,
+      5,
+      if(status == :ok, do: "Build complete", else: "Build finished with errors")
+    )
 
     {:ok,
      %{
@@ -602,8 +673,11 @@ defmodule IdeWeb.WorkspaceLive.BuildFlow do
            target_platforms: targets,
            source_roots: project.source_roots,
            prod: true,
+           debug_usage_policy: :error,
            plan_ir_mode: :primary,
-           plan_ir_strict: true
+           plan_ir_strict: true,
+           skip_workspace_check: true,
+           reuse_elmc_build: true
          ) do
       {:ok, package} ->
         %{
@@ -674,15 +748,25 @@ defmodule IdeWeb.WorkspaceLive.BuildFlow do
     Ide.PebbleToolchain.BuildDiagnostics.package_hint(output, targets)
   end
 
-  @spec run_build_pipeline_for_root(String.t(), String.t(), String.t(), boolean()) ::
+  @spec run_build_pipeline_for_root(String.t(), String.t(), String.t(), boolean(), keyword()) ::
           {:ok, root_build_result()}
-  def run_build_pipeline_for_root(scope_key, label, root_path, strict?) do
+  def run_build_pipeline_for_root(scope_key, label, root_path, strict?, opts \\ []) do
+    progress = Keyword.get(opts, :progress, fn _ -> :ok end)
     scoped_slug = Projects.compiler_cache_key(scope_key, label)
 
     with {:ok, check_result} <-
            Compiler.check_build_root(label, scoped_slug, workspace_root: root_path) do
       if check_result.status == :ok do
+        if label == "watch" do
+          BuildPipelineProgress.emit(progress, 2, "Compiling watch runtime…")
+        end
+
         compile_result = compile_result_for_build_root(label, scoped_slug, root_path)
+
+        if label == "watch" do
+          BuildPipelineProgress.emit(progress, 3, "Validating manifest…")
+        end
+
         manifest_result = manifest_result_for_build_root(label, scoped_slug, root_path, strict?)
 
         {:ok,
@@ -730,7 +814,7 @@ defmodule IdeWeb.WorkspaceLive.BuildFlow do
     {:ok, result} =
       Compiler.compile(
         scoped_slug,
-        Compiler.build_page_compile_opts(workspace_root: root_path)
+        Compiler.production_compile_opts(workspace_root: root_path)
       )
 
     result
