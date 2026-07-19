@@ -200,7 +200,8 @@ defmodule Elmc.PlanElmtrisPrimaryTest do
              TemplateCompile.compile_watch_template(@template,
                out_dir: out_dir,
                plan_ir_mode: :primary,
-               pebble_int32: true
+               pebble_int32: true,
+               emit_bytecode: true
              )
 
     refute Enum.any?(result.layout_coercion_diagnostics || [], &(&1["code"] == "plan_primary_fallback"))

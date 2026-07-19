@@ -676,29 +676,25 @@ defmodule IdeWeb.WorkspaceLive.BuildFlow do
   def run_build_pipeline_for_root(scope_key, label, root_path, strict?) do
     scoped_slug = Projects.compiler_cache_key(scope_key, label)
 
-    with {:ok, check_result} <- Compiler.check(scoped_slug, workspace_root: root_path) do
+    with {:ok, check_result} <-
+           Compiler.check_build_root(label, scoped_slug, workspace_root: root_path) do
       if check_result.status == :ok do
-        with {:ok, compile_result} <-
-               Compiler.compile(
-                 scoped_slug,
-                 Compiler.build_page_compile_opts(workspace_root: root_path)
-               ),
-             {:ok, manifest_result} <-
-               Compiler.manifest(scoped_slug, workspace_root: root_path, strict: strict?) do
-          {:ok,
-           %{
-             label: label,
-             root_path: root_path,
-             status:
-               if(compile_result.status == :ok and manifest_result.status == :ok,
-                 do: :ok,
-                 else: :error
-               ),
-             check: check_result,
-             compile: compile_result,
-             manifest: manifest_result
-           }}
-        end
+        compile_result = compile_result_for_build_root(label, scoped_slug, root_path)
+        manifest_result = manifest_result_for_build_root(label, scoped_slug, root_path, strict?)
+
+        {:ok,
+         %{
+           label: label,
+           root_path: root_path,
+           status:
+             if(compile_result.status == :ok and manifest_result.status == :ok,
+               do: :ok,
+               else: :error
+             ),
+           check: check_result,
+           compile: compile_result,
+           manifest: manifest_result
+         }}
       else
         compile_result = skipped_compile_result(root_path, "Compile skipped: check failed.")
 
@@ -716,6 +712,73 @@ defmodule IdeWeb.WorkspaceLive.BuildFlow do
          }}
       end
     end
+  end
+
+  @spec compile_result_for_build_root(String.t(), String.t(), String.t()) ::
+          Compiler.compile_result()
+  defp compile_result_for_build_root("protocol", _scoped_slug, root_path) do
+    ok_skipped_compile_result(
+      root_path,
+      "Companion protocol validated with elm make; elmc compile applies to watch/phone only."
+    )
+  end
+
+  defp compile_result_for_build_root(_label, scoped_slug, root_path) do
+    {:ok, result} =
+      Compiler.compile(
+        scoped_slug,
+        Compiler.build_page_compile_opts(workspace_root: root_path)
+      )
+
+    result
+  end
+
+  @spec manifest_result_for_build_root(String.t(), String.t(), String.t(), boolean()) ::
+          Compiler.manifest_result()
+  defp manifest_result_for_build_root("protocol", _scoped_slug, root_path, strict?) do
+    ok_skipped_manifest_result(
+      root_path,
+      strict?,
+      "Companion protocol has no elmc manifest; PBW packaging uses watch elmc + protocol generator."
+    )
+  end
+
+  defp manifest_result_for_build_root(_label, scoped_slug, root_path, strict?) do
+    {:ok, result} =
+      Compiler.manifest(scoped_slug, workspace_root: root_path, strict: strict?)
+
+    result
+  end
+
+  @spec ok_skipped_compile_result(String.t(), String.t()) :: Compiler.compile_result()
+  defp ok_skipped_compile_result(workspace_root, message) do
+    %{
+      status: :ok,
+      compiled_path: workspace_root,
+      revision: "skipped",
+      cached?: false,
+      output: message,
+      diagnostics: [],
+      error_count: 0,
+      warning_count: 0
+    }
+  end
+
+  @spec ok_skipped_manifest_result(String.t(), boolean(), String.t()) ::
+          Compiler.manifest_result()
+  defp ok_skipped_manifest_result(workspace_root, strict?, message) do
+    %{
+      status: :ok,
+      manifest_path: workspace_root,
+      revision: "skipped",
+      cached?: false,
+      strict?: strict?,
+      manifest: nil,
+      output: message,
+      diagnostics: [],
+      error_count: 0,
+      warning_count: 0
+    }
   end
 
   @spec run_emulator_install_flow(Project.t(), String.t(), String.t(), String.t() | nil) ::

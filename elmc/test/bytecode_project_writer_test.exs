@@ -123,6 +123,13 @@ defmodule Elmc.BytecodeProjectWriterTest do
     assert length(manifest["functions"]) > 0
   end
 
+  test "emit_bytecode? skips pebble_int32 primary C-only builds" do
+    refute ProjectWriter.emit_bytecode?(%{plan_ir_mode: :primary, pebble_int32: true, targets: [:c]})
+    assert ProjectWriter.emit_bytecode?(%{plan_ir_mode: :shadow, pebble_int32: true, targets: [:c]})
+    assert ProjectWriter.emit_bytecode?(%{plan_ir_mode: :primary, targets: [:wasm]})
+    assert ProjectWriter.emit_bytecode?(%{plan_ir_mode: :primary, pebble_int32: true, targets: [:c], emit_bytecode: true})
+  end
+
   test "does not emit bytecode artifacts when plan_ir_mode is off" do
     out_dir = Path.expand("tmp/bytecode_project_writer_off", __DIR__)
     File.rm_rf!(out_dir)

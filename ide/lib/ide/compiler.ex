@@ -118,6 +118,10 @@ defmodule Ide.Compiler do
   # Shared companion Elm packages validated by upstream `elm make` (phone + protocol).
   @elm_make_source_roots ~w(phone protocol)
 
+  @doc false
+  @spec elm_make_check_root?(String.t()) :: boolean()
+  def elm_make_check_root?(label) when is_binary(label), do: label in @elm_make_source_roots
+
   @type manifest_result :: %{
           required(:status) => :ok | :error,
           required(:diagnostics) => [diagnostic()],
@@ -246,6 +250,25 @@ defmodule Ide.Compiler do
 
       found ->
         found
+    end
+  end
+
+  @doc """
+  Runs the Build page check for one workspace root.
+
+  Companion `phone` and shared `protocol` packages use upstream `elm make` so
+  watch-only glue such as `Companion.Watch` / `Pebble.Internal.Companion` is not
+  validated here. Watch-side roots use elmc.
+  """
+  @spec check_build_root(String.t(), project_slug(), opts()) ::
+          {:ok, check_result()} | {:error, compiler_error()}
+  def check_build_root(label, project_slug, opts) do
+    root_path = Keyword.fetch!(opts, :workspace_root)
+
+    if elm_make_check_root?(label) do
+      run_elm_check(root_path)
+    else
+      check(project_slug, workspace_root: root_path, source_roots: nil)
     end
   end
 
@@ -1101,6 +1124,11 @@ defmodule Ide.Compiler do
       |> empty_fallback("unknown locations")
 
     "Could not run compiler: no elm.json found. Checked: #{tried}."
+  end
+
+  @spec compile_source_revision(String.t()) :: String.t()
+  def compile_source_revision(project_dir) when is_binary(project_dir) do
+    workspace_revision(project_dir) <> pebble_compile_revision_suffix(project_dir)
   end
 
   @spec workspace_revision(String.t()) :: String.t()

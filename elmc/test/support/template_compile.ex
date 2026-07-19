@@ -72,7 +72,7 @@ defmodule Elmc.TestSupport.TemplateCompile do
           plan_ir_mode: Keyword.get(opts, :plan_ir_mode, :primary),
           pebble_int32: Keyword.get(opts, :pebble_int32, false)
         }
-        |> Map.merge(Map.new(Keyword.take(opts, [:plan_ir_strict, :direct_render_only, :prune_runtime, :codegen_profile])))
+        |> Map.merge(Map.new(Keyword.take(opts, [:plan_ir_strict, :direct_render_only, :prune_runtime, :codegen_profile, :emit_bytecode])))
 
       Elmc.compile(tmp, compile_opts)
     after

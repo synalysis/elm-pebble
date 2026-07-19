@@ -58,10 +58,7 @@ defmodule Elmc do
 
     with {:ok, project} <- project_for_compile(project_dir, opts),
          :ok <- check_missing_imports(project, opts),
-         :ok <-
-           compile_log(
-             "lowering IR (large elm-pages apps often take 20–40 minutes with no further output)…"
-           ),
+         :ok <- compile_log(lowering_ir_log_message(opts)),
          {:ok, ir0} <- Lowerer.lower_project(project),
          :ok <- compile_log("IR lower complete (#{length(ir0.modules)} modules); emitting artifacts…"),
          ir0 = PipeChain.desugar_project(ir0),
@@ -212,6 +209,15 @@ defmodule Elmc do
   defp compile_log(message) when is_binary(message) do
     IO.puts(:stderr, "[elmc] #{message}")
     :ok
+  end
+
+  @spec lowering_ir_log_message(compile_options()) :: String.t()
+  defp lowering_ir_log_message(opts) do
+    if Targets.emit_wasm?(opts) do
+      "lowering IR (large elm-pages apps often take 20–40 minutes with no further output)…"
+    else
+      "lowering IR…"
+    end
   end
 
   @spec seed_codegen_process_state(ElmEx.IR.t(), compile_options()) :: :ok

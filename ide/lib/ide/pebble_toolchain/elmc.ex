@@ -3,7 +3,11 @@ defmodule Ide.PebbleToolchain.Elmc do
 
   alias Elmc.CLI
   alias Elmc.Runtime.Generator, as: RuntimeGenerator
+  alias Ide.Compiler
   alias Ide.PebbleToolchain.Types
+
+  @compile_stamp_file ".elmc_compile_stamp.json"
+  @codegen_stamp_keys ~w(entry_module strip_dead_code pebble_int32 prune_runtime prune_native_wrappers prune_direct_generic direct_render_only codegen_profile plan_ir_mode plan_ir_strict prod emit_bytecode)a
 
   @type elmc_compile_opts :: Types.elmc_compile_opts()
   @type elmc_compile_result :: Types.elmc_compile_result()
@@ -66,20 +70,18 @@ defmodule Ide.PebbleToolchain.Elmc do
           Elmc.CLI.project_run()
   def compile_for_project_dir(project_dir, out_dir, extra_opts \\ %{})
       when is_binary(project_dir) and is_binary(out_dir) and is_map(extra_opts) do
-    elmc_opts =
-      case target_platforms_for_project_dir(project_dir) do
-        nil ->
-          %{out_dir: out_dir, strip_dead_code: true, plan_ir_mode: :primary}
-          |> Map.put(:codegen_profile, codegen_profile_for_project_dir(project_dir, extra_opts))
-          |> Map.merge(extra_opts)
+    target_platforms = target_platforms_for_project_dir(project_dir) || []
 
-        target_platforms ->
-          extra_opts
-          |> Map.put_new(:codegen_profile, codegen_profile_for_project_dir(project_dir, extra_opts))
-          |> then(&watch_compile_opts(out_dir, target_platforms, &1))
-      end
+    elmc_opts =
+      extra_opts
+      |> Map.put_new(:codegen_profile, codegen_profile_for_project_dir(project_dir, extra_opts))
+      |> then(&watch_compile_opts(out_dir, target_platforms, &1))
 
     Elmc.CLI.compile_project(project_dir, out_dir, elmc_opts: elmc_opts)
+    |> tap(fn
+      {:ok, _} -> :ok = write_compile_stamp(project_dir, out_dir, elmc_opts, target_platforms)
+      _ -> :ok
+    end)
   end
 
   @spec generate_sources(String.t(), String.t(), String.t(), keyword()) ::
@@ -92,17 +94,83 @@ defmodule Ide.PebbleToolchain.Elmc do
     compile_opts =
       watch_compile_opts(compile_out_dir, target_platforms, %{
         prod: Keyword.get(opts, :prod, true),
-        debug_usage_policy: Keyword.get(opts, :debug_usage_policy, :error)
+        debug_usage_policy: Keyword.get(opts, :debug_usage_policy, :error),
+        codegen_profile: codegen_profile_for_project_dir(project_root, %{})
       })
 
-    with :ok <- reset_generated_dir(compile_out_dir),
-         :ok <- reset_generated_dir(stage_out_dir),
-         {:ok, _} <- map_compile_failure(compile_project_artifacts(project_root, compile_opts)),
-         :ok <- File.mkdir_p(Path.dirname(stage_out_dir)),
-         {:ok, _copied} <- File.cp_r(compile_out_dir, stage_out_dir) do
+    with :ok <- reset_generated_dir(stage_out_dir),
+         :ok <- ensure_staged_elmc_sources(project_root, compile_out_dir, stage_out_dir, compile_opts, target_platforms) do
       :ok
     else
       {:error, reason} -> {:error, reason}
+    end
+  end
+
+  @spec ensure_staged_elmc_sources(String.t(), String.t(), String.t(), Types.watch_compile_opts(), [
+          String.t()
+        ]) :: :ok | {:error, term()}
+  defp ensure_staged_elmc_sources(project_root, compile_out_dir, stage_out_dir, compile_opts, target_platforms) do
+    if reuse_cached_compile?(project_root, compile_out_dir, compile_opts, target_platforms) do
+      copy_compile_tree!(compile_out_dir, stage_out_dir)
+    else
+      with :ok <- reset_generated_dir(compile_out_dir),
+           {:ok, _} <- map_compile_failure(compile_project_artifacts(project_root, compile_opts)),
+           :ok <- write_compile_stamp(project_root, compile_out_dir, compile_opts, target_platforms),
+           :ok <- copy_compile_tree!(compile_out_dir, stage_out_dir) do
+        :ok
+      end
+    end
+  end
+
+  @spec reuse_cached_compile?(String.t(), String.t(), map(), [String.t()]) :: boolean()
+  defp reuse_cached_compile?(project_root, compile_out_dir, compile_opts, target_platforms) do
+    generated_c = Path.join(compile_out_dir, "c/elmc_generated.c")
+    stamp_path = compile_stamp_path(compile_out_dir)
+
+    File.regular?(generated_c) and stamp_path |> File.read() |> stamp_matches?(project_root, compile_opts, target_platforms)
+  end
+
+  @spec compile_stamp_path(String.t()) :: String.t()
+  defp compile_stamp_path(out_dir), do: Path.join(out_dir, @compile_stamp_file)
+
+  @spec write_compile_stamp(String.t(), String.t(), map(), [String.t()]) :: :ok
+  defp write_compile_stamp(project_root, out_dir, compile_opts, target_platforms) do
+    payload = compile_stamp_payload(project_root, compile_opts, target_platforms)
+    File.mkdir_p!(out_dir)
+    File.write!(compile_stamp_path(out_dir), payload)
+  end
+
+  @spec compile_stamp_payload(String.t(), map(), [String.t()]) :: String.t()
+  defp compile_stamp_payload(project_root, compile_opts, target_platforms) do
+    Jason.encode!(%{
+      revision: Compiler.compile_source_revision(project_root),
+      target_platforms: target_platforms,
+      codegen: codegen_stamp(compile_opts)
+    })
+  end
+
+  @spec codegen_stamp(map()) :: map()
+  defp codegen_stamp(compile_opts) when is_map(compile_opts) do
+    compile_opts
+    |> Map.take(@codegen_stamp_keys)
+    |> Map.new(fn {key, value} -> {to_string(key), value} end)
+  end
+
+  @spec stamp_matches?({:ok, String.t()} | {:error, term()}, String.t(), map(), [String.t()]) :: boolean()
+  defp stamp_matches?({:ok, body}, project_root, compile_opts, target_platforms) do
+    expected = compile_stamp_payload(project_root, compile_opts, target_platforms)
+    body == expected
+  end
+
+  defp stamp_matches?({:error, _}, _project_root, _compile_opts, _target_platforms), do: false
+
+  @spec copy_compile_tree!(String.t(), String.t()) :: :ok
+  defp copy_compile_tree!(compile_out_dir, stage_out_dir) do
+    File.mkdir_p!(Path.dirname(stage_out_dir))
+
+    case File.cp_r(compile_out_dir, stage_out_dir) do
+      {:ok, _} -> :ok
+      {:error, reason, _file} -> {:error, reason}
     end
   end
 

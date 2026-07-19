@@ -3,6 +3,24 @@ defmodule IdeWeb.WorkspaceLive.BuildFlowTest do
 
   alias IdeWeb.WorkspaceLive.BuildFlow
 
+  test "run_build_pipeline_for_root skips elmc compile for protocol after elm check" do
+    workspace = tmp_protocol_workspace!()
+
+    assert {:ok, result} =
+             BuildFlow.run_build_pipeline_for_root(
+               "yes",
+               "protocol",
+               Path.join(workspace, "protocol"),
+               false
+             )
+
+    assert result.status == :ok
+    assert result.check.status == :ok
+    assert result.compile.status == :ok
+    assert result.compile.output =~ "elm make"
+    assert result.manifest.status == :ok
+  end
+
   test "package failure explains Aplite memory overflow" do
     reason =
       {:pebble_build_failed,
@@ -96,5 +114,62 @@ defmodule IdeWeb.WorkspaceLive.BuildFlowTest do
            ] = BuildFlow.package_output_issues(output)
 
     assert message =~ "BadLogo.png"
+  end
+
+  defp tmp_protocol_workspace! do
+    workspace =
+      Path.join(
+        System.tmp_dir!(),
+        "build_flow_protocol_#{System.unique_integer([:positive])}"
+      )
+
+    protocol_root = Path.join(workspace, "protocol")
+    File.mkdir_p!(Path.join(protocol_root, "src/Companion"))
+
+    File.write!(
+      Path.join(protocol_root, "elm.json"),
+      Jason.encode!(%{
+        "type" => "application",
+        "source-directories" => ["src"],
+        "elm-version" => "0.19.1",
+        "dependencies" => %{
+          "direct" => %{"elm/core" => "1.0.5", "elm/json" => "1.1.3"},
+          "indirect" => %{}
+        },
+        "test-dependencies" => %{"direct" => %{}, "indirect" => %{}}
+      })
+    )
+
+    File.write!(
+      Path.join(protocol_root, "src/Companion/Types.elm"),
+      """
+      module Companion.Types exposing (PhoneToWatch(..), WatchToPhone(..))
+
+      type WatchToPhone
+          = Ping
+
+      type PhoneToWatch
+          = Pong
+      """
+    )
+
+    File.write!(
+      Path.join(protocol_root, "src/Companion/Watch.elm"),
+      """
+      module Companion.Watch exposing (onPhoneToWatch, sendWatchToPhone)
+
+      import Companion.Types exposing (PhoneToWatch, WatchToPhone)
+      import Pebble.Internal.Companion as Companion
+
+      onPhoneToWatch _ =
+          Sub.none
+
+      sendWatchToPhone _ =
+          Cmd.none
+      """
+    )
+
+    on_exit(fn -> File.rm_rf(workspace) end)
+    workspace
   end
 end

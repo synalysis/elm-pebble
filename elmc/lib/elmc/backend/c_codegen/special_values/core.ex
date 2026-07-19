@@ -127,6 +127,9 @@ defmodule Elmc.Backend.CCodegen.SpecialValues.Core do
       {name, [left, right]} when name in ~w(__eq__ __neq__ __lt__ __lte__ __gt__ __gte__) ->
         %{op: :compare, kind: compare_op_kind(name), left: left, right: right}
 
+      {name, _} when target == name ->
+        nil
+
       {name, _} ->
         %{op: :call, name: name, args: args}
     end

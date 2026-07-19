@@ -49,6 +49,23 @@ defmodule Ide.CompilerElmProtocolCheckTest do
            end)
   end
 
+  test "check_build_root on protocol ignores watch-only Companion.Watch glue" do
+    workspace = tmp_workspace_with_watch_glue!()
+    protocol_root = Path.join(workspace, "protocol")
+
+    assert {:ok, %{status: :ok, diagnostics: diagnostics}} =
+             Compiler.check_build_root(
+               "protocol",
+               "protocol-build-glue-#{System.unique_integer([:positive])}",
+               workspace_root: protocol_root
+             )
+
+    refute Enum.any?(diagnostics, fn diag ->
+             message = Map.get(diag, :message) || ""
+             String.contains?(message, "Pebble.Internal.Companion")
+           end)
+  end
+
   defp tmp_workspace_with_composite_watch_to_phone! do
     workspace = tmp_workspace!()
 

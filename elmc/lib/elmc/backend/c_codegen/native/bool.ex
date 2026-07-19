@@ -640,16 +640,18 @@ defmodule Elmc.Backend.CCodegen.Native.Bool do
   defp expr?(expr, env, :normalized),
     do: structural_expr?(expr) or TypedReturn.bool_expr?(expr, env)
 
-  defp normalize_bool_expr(%{op: :qualified_call, target: target, args: args}) do
+  defp normalize_bool_expr(%{op: :qualified_call, target: target, args: args} = expr) do
     case Host.special_value_from_target(Host.normalize_special_target(target), args) do
-      nil -> %{op: :qualified_call, target: target, args: args}
+      nil -> expr
+      ^expr -> expr
       rewritten -> normalize_bool_expr(rewritten)
     end
   end
 
-  defp normalize_bool_expr(%{op: :call, name: name, args: args}) when is_binary(name) do
+  defp normalize_bool_expr(%{op: :call, name: name, args: args} = expr) when is_binary(name) do
     case Host.special_value_from_target(name, args) do
-      nil -> %{op: :call, name: name, args: args}
+      nil -> expr
+      ^expr -> expr
       rewritten -> normalize_bool_expr(rewritten)
     end
   end

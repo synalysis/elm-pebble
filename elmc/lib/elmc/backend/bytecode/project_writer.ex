@@ -7,6 +7,7 @@ defmodule Elmc.Backend.Bytecode.ProjectWriter do
   alias Elmc.Backend.CCodegen.{IRQueries, RcRequired}
   alias Elmc.Backend.Plan
   alias Elmc.Backend.Plan.PrimaryCoverage
+  alias Elmc.Backend.Wasm.Targets
   alias ElmEx.IR
 
   @manifest_name "elmc_bytecode.manifest.json"
@@ -14,11 +15,24 @@ defmodule Elmc.Backend.Bytecode.ProjectWriter do
 
   @spec maybe_write(IR.t(), String.t(), Elmc.Types.compile_options()) :: :ok
   def maybe_write(%IR{} = ir, out_dir, opts) when is_map(opts) do
-    if Plan.plan_ir_mode(opts) in [:shadow, :primary] do
+    if emit_bytecode?(opts) do
       write(ir, out_dir, opts)
     else
       :ok
     end
+  end
+
+  @doc false
+  @spec emit_bytecode?(Elmc.Types.compile_options()) :: boolean()
+  def emit_bytecode?(opts) when is_map(opts) do
+    Plan.plan_ir_mode(opts) in [:shadow, :primary] and not skip_pebble_bytecode?(opts)
+  end
+
+  # Pebble watch PBW builds already lower Plan IR to C; emitting bytecode sections
+  # duplicates the full plan-lowering pass. Keep bytecode for WASM/shadow/audits.
+  defp skip_pebble_bytecode?(opts) do
+    Plan.plan_ir_mode(opts) == :primary and Targets.emit_c?(opts) and not Targets.emit_wasm?(opts) and
+      Map.get(opts, :pebble_int32, false) == true and Map.get(opts, :emit_bytecode, false) != true
   end
 
   @spec write(IR.t(), String.t(), Elmc.Types.compile_options()) :: :ok
