@@ -6,6 +6,31 @@ defmodule Elmc.IRQueriesRecordShapesTest do
   alias Elmc.Backend.Plan.Context
   alias ElmEx.IR
 
+  test "union constructor record shapes preserve declaration order not alphabetical sort" do
+    ir = %IR{
+      modules: [
+        %{
+          name: "Internal.Cartesian.Layout",
+          declarations: [],
+          unions: %{
+            "Layout" => %{
+              payload_specs: %{
+                "Leaf" => "{ value : a, extent : Extent }"
+              }
+            }
+          }
+        }
+      ]
+    }
+
+    assert IRQueries.union_constructor_record_shapes(ir) == [
+             {{"Internal.Cartesian.Layout", "Leaf"}, ["value", "extent"]}
+           ]
+
+    inline = IRQueries.inline_record_literal_shape_map(ir)
+    assert inline[{"Internal.Cartesian.Layout", "Leaf"}] == ["value", "extent"]
+  end
+
   test "inline record shapes preserve declaration order from nested type alias fields" do
     ir = %IR{
       modules: [
@@ -154,7 +179,19 @@ defmodule Elmc.IRQueriesRecordShapesTest do
     assert Record.resolve_field_index_int("pageData", model_ctx, %{op: :var, name: "model"}) ==
              {:ok, 4}
 
-    param_ctx = %{ctx | params: ["model"], local_types: %{}}
+    param_ctx =
+      %{
+        ctx
+        | params: ["model"],
+          local_types: %{},
+          decl_map: %{
+            {"Pages.Internal.Platform", "mainView"} => %{
+              args: ["model"],
+              type:
+                "Pages.Internal.Platform.Model userModel pageData actionData sharedData -> {title : String, body : List (Html msg)}"
+            }
+          }
+      }
 
     assert Record.resolve_field_index_int("pageData", param_ctx, %{op: :var, name: "model"}) ==
              {:ok, 4}
@@ -297,5 +334,22 @@ defmodule Elmc.IRQueriesRecordShapesTest do
     base = %{op: :var, name: "recordArg"}
 
     assert Record.resolve_field_index_int("view", ctx, base) == {:ok, 0}
+  end
+
+  test "Browser.sandbox impl param resolves view at alphabetical index 2" do
+    ctx = %Context{
+      module: "Browser",
+      function_name: "sandbox",
+      decl_map: %{},
+      local_types: %{
+        "impl" => "{init : model, view : model -> Html msg, update : msg -> model -> model}"
+      }
+    }
+
+    base = %{op: :var, name: "impl"}
+
+    assert Record.resolve_field_index_int("init", ctx, base) == {:ok, 0}
+    assert Record.resolve_field_index_int("update", ctx, base) == {:ok, 1}
+    assert Record.resolve_field_index_int("view", ctx, base) == {:ok, 2}
   end
 end

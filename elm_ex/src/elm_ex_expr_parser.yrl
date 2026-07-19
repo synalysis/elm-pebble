@@ -1,10 +1,10 @@
-Nonterminals let_expr let_bindings let_binding if_expr case_expr case_after_of case_branches case_branch pattern pattern_arg ctor_pattern_args
+Nonterminals let_expr let_bindings let_binding if_expr case_expr case_after_of case_after_branches case_branches case_branch pattern pattern_arg ctor_pattern_args
              lambda_expr lambda_args lambda_arg pipe_right_expr plain_pipe_expr apply_left_expr bool_or_expr bool_and_expr compare_expr compare_op cons_expr append_expr add_expr mul_expr pow_expr app_expr primary opt_field_accessor list_expr
              list_items tuple_items record_expr record_fields record_field pattern_record_fields pattern_list_items.
 Terminals lparen rparen lbracket rbracket lbrace rbrace comma semicolon cons append plus minus shl shr pipe_right pipe apply_left eq eqeq gt lt gte lte neq bslash arrow
          times pow int_div divide pipe_dot pipe_eq
           andand oror let_kw in_kw if_kw then_kw else_kw case_kw of_kw as_kw wildcard
-         int_lit float_lit string_lit char_lit field_accessor lower_qid upper_qid case_sep.
+         int_lit float_lit string_lit char_lit field_accessor lower_qid upper_qid case_sep indent dedent newline.
 
 %% Operator precedence (lowest number = loosest binding). Rule precedence is taken
 %% from the rightmost terminal on each production unless a nonterminal carries Unary.
@@ -21,11 +21,15 @@ Left 190 apply_left.
 Left 200 pipe_right pipe_dot pipe_eq.
 Unary 210 primary.
 Left 220 case_sep.
+Left 221 newline.
+Left 222 indent.
+Left 223 dedent.
 Left 225 field_accessor.
 
 Rootsymbol pipe_right_expr.
 %% Shift/reduce ambiguities (pipes, composition, field access, case) are resolved
 %% by the precedence declarations above.
+Expect 11.
 
 pipe_right_expr -> let_expr : '$1'.
 pipe_right_expr -> if_expr : '$1'.
@@ -34,13 +38,19 @@ pipe_right_expr -> lambda_expr : '$1'.
 pipe_right_expr -> plain_pipe_expr : '$1'.
 
 plain_pipe_expr -> plain_pipe_expr pipe_right apply_left_expr : build_pipe_right('$1', '$3').
+plain_pipe_expr -> plain_pipe_expr newline indent pipe_right apply_left_expr : build_pipe_right('$1', '$5').
+plain_pipe_expr -> plain_pipe_expr newline pipe_right apply_left_expr : build_pipe_right('$1', '$4').
 plain_pipe_expr -> plain_pipe_expr pipe_dot apply_left_expr : build_pipe_dot('$1', '$3').
 plain_pipe_expr -> plain_pipe_expr pipe_eq apply_left_expr : build_pipe_eq('$1', '$3').
 plain_pipe_expr -> apply_left_expr : '$1'.
 
 apply_left_expr -> apply_left_expr shr apply_left_expr : build_compose_right('$1', '$3').
+apply_left_expr -> apply_left_expr shr newline indent apply_left_expr : build_compose_right('$1', '$5').
 apply_left_expr -> apply_left_expr shl apply_left_expr : build_compose_left('$1', '$3').
+apply_left_expr -> apply_left_expr shl newline indent apply_left_expr : build_compose_left('$1', '$5').
 apply_left_expr -> bool_or_expr apply_left pipe_right_expr : build_apply_left('$1', '$3').
+apply_left_expr -> bool_or_expr apply_left newline indent pipe_right_expr : build_apply_left('$1', '$5').
+apply_left_expr -> bool_or_expr apply_left newline pipe_right_expr : build_apply_left('$1', '$4').
 apply_left_expr -> bool_or_expr : '$1'.
 
 bool_or_expr -> bool_and_expr oror bool_or_expr : build_or('$1', '$3').
@@ -52,14 +62,44 @@ bool_and_expr -> compare_expr : '$1'.
 %% Token-level let/in is accepted here; Elm layout (`in` on its own line) is enforced by
 %% `ElmEx.Frontend.LetLayout.validate/1` before this parser is invoked.
 let_expr -> let_kw let_bindings in_kw pipe_right_expr :
-  build_let_bindings('$2', '$4').
+  build_let_bindings('$2', '$4', inline_first).
+let_expr -> let_kw let_bindings in_kw newline pipe_right_expr :
+  build_let_bindings('$2', '$5', inline_first).
+let_expr -> let_kw let_bindings in_kw newline indent pipe_right_expr dedent :
+  build_let_bindings('$2', '$6', inline_first).
+let_expr -> let_kw let_bindings in_kw newline indent pipe_right_expr :
+  build_let_bindings('$2', '$6', inline_first).
+let_expr -> let_kw newline indent let_bindings dedent in_kw pipe_right_expr :
+  build_let_bindings('$4', '$7', block).
+let_expr -> let_kw newline indent let_bindings newline dedent in_kw pipe_right_expr :
+  build_let_bindings('$4', '$8', block).
+let_expr -> let_kw newline indent let_bindings dedent in_kw newline pipe_right_expr :
+  build_let_bindings('$4', '$8', block).
+let_expr -> let_kw newline indent let_bindings newline dedent in_kw newline pipe_right_expr :
+  build_let_bindings('$4', '$9', block).
+let_expr -> let_kw newline indent let_bindings dedent in_kw newline indent pipe_right_expr dedent :
+  build_let_bindings('$4', '$9', block).
+let_expr -> let_kw newline indent let_bindings dedent in_kw newline indent pipe_right_expr :
+  build_let_bindings('$4', '$9', block).
+let_expr -> let_kw newline indent let_bindings newline dedent in_kw newline indent pipe_right_expr dedent :
+  build_let_bindings('$4', '$10', block).
+let_expr -> let_kw newline indent let_bindings newline dedent in_kw newline indent pipe_right_expr :
+  build_let_bindings('$4', '$10', block).
 
 let_bindings -> let_binding semicolon let_bindings : ['$1' | '$3'].
 let_bindings -> let_binding : ['$1'].
 
 let_binding -> lower_qid eq pipe_right_expr : {token_value('$1'), '$3'}.
+let_binding -> lower_qid eq newline pipe_right_expr : {token_value('$1'), '$4'}.
+let_binding -> lower_qid eq newline indent pipe_right_expr dedent : {token_value('$1'), '$5'}.
 let_binding -> wildcard eq pipe_right_expr : {discard_bind, '$3'}.
+let_binding -> wildcard eq newline pipe_right_expr : {discard_bind, '$4'}.
+let_binding -> wildcard eq newline indent pipe_right_expr dedent : {discard_bind, '$5'}.
 let_binding -> lower_qid lambda_args eq pipe_right_expr : {token_value('$1'), build_lambda_args('$2', '$4')}.
+let_binding -> lower_qid lambda_args eq newline pipe_right_expr :
+  {token_value('$1'), build_lambda_args('$2', '$5')}.
+let_binding -> lower_qid lambda_args eq newline indent pipe_right_expr dedent :
+  {token_value('$1'), build_lambda_args('$2', '$6')}.
 let_binding -> lbrace pattern_record_fields rbrace eq pipe_right_expr :
   {pattern_bind, build_pattern_record('$2'), '$5'}.
 let_binding -> lparen wildcard comma lower_qid rparen eq pipe_right_expr :
@@ -77,22 +117,46 @@ let_binding -> lparen wildcard comma wildcard comma lower_qid rparen eq pipe_rig
 let_binding -> lparen pattern rparen eq pipe_right_expr : {pattern_bind, '$2', '$5'}.
 let_binding -> lparen lower_qid comma lower_qid rparen eq pipe_right_expr :
   {tuple2_bind, token_value('$2'), token_value('$4'), '$7'}.
+let_binding -> lparen lower_qid comma lower_qid rparen eq newline pipe_right_expr :
+  {tuple2_bind, token_value('$2'), token_value('$4'), '$8'}.
+let_binding -> lparen lower_qid comma lower_qid rparen eq newline indent pipe_right_expr dedent :
+  {tuple2_bind, token_value('$2'), token_value('$4'), '$9'}.
 let_binding -> lparen lower_qid comma lower_qid comma lower_qid rparen eq pipe_right_expr :
   {tuple3_bind, token_value('$2'), token_value('$4'), token_value('$6'), '$9'}.
+let_binding -> lparen lower_qid comma lower_qid comma lower_qid rparen eq newline pipe_right_expr :
+  {tuple3_bind, token_value('$2'), token_value('$4'), token_value('$6'), '$10'}.
+let_binding -> lparen lower_qid comma lower_qid comma lower_qid rparen eq newline indent pipe_right_expr dedent :
+  {tuple3_bind, token_value('$2'), token_value('$4'), token_value('$6'), '$11'}.
+let_binding -> lparen pattern rparen eq newline indent pipe_right_expr dedent : {pattern_bind, '$2', '$7'}.
+let_binding -> lparen pattern rparen eq newline pipe_right_expr : {pattern_bind, '$2', '$6'}.
 
 if_expr -> if_kw pipe_right_expr then_kw pipe_right_expr else_kw pipe_right_expr :
   build_if('$2', '$4', '$6').
+if_expr -> if_kw pipe_right_expr then_kw newline indent pipe_right_expr dedent else_kw pipe_right_expr :
+  build_if('$2', '$6', '$9').
+if_expr -> if_kw pipe_right_expr then_kw newline indent pipe_right_expr dedent else_kw newline indent pipe_right_expr dedent :
+  build_if('$2', '$6', '$11').
 
-case_expr -> case_kw pipe_right_expr of_kw case_after_of case_branches :
+case_expr -> case_kw pipe_right_expr of_kw case_after_of case_branches case_after_branches :
   build_case('$2', '$5').
 
 case_after_of -> semicolon : ok.
+case_after_of -> newline indent : ok.
+case_after_of -> indent : ok.
 case_after_of -> '$empty' : ok.
 
+case_after_branches -> dedent : ok.
+case_after_branches -> '$empty' : ok.
+
 case_branches -> case_branches case_sep case_branch : '$1' ++ ['$3'].
+case_branches -> case_branches newline case_branch : '$1' ++ ['$3'].
 case_branches -> case_branch : ['$1'].
+case_branches -> newline indent case_branches : '$3'.
+case_branches -> indent case_branches : '$2'.
 
 case_branch -> pattern arrow pipe_right_expr : #{pattern => '$1', expr => '$3'}.
+case_branch -> pattern arrow newline pipe_right_expr : #{pattern => '$1', expr => '$4'}.
+case_branch -> pattern arrow newline indent pipe_right_expr dedent : #{pattern => '$1', expr => '$5'}.
 
 pattern -> wildcard : #{kind => wildcard}.
 pattern -> lower_qid : build_pattern_var(token_value('$1')).
@@ -149,6 +213,9 @@ pattern_arg -> lparen pattern comma pattern comma pattern rparen :
 pattern_arg -> lparen pattern comma pattern rparen : build_pattern_tuple('$2', '$4').
 
 lambda_expr -> bslash lambda_args arrow pipe_right_expr : build_lambda_args('$2', '$4').
+lambda_expr -> bslash lambda_args arrow newline pipe_right_expr : build_lambda_args('$2', '$5').
+lambda_expr -> bslash lambda_args arrow newline indent pipe_right_expr dedent :
+  build_lambda_args('$2', '$6').
 
 lambda_args -> lambda_arg lambda_args : ['$1' | '$2'].
 lambda_args -> lambda_arg : ['$1'].
@@ -187,9 +254,13 @@ compare_expr -> cons_expr neq cons_expr : build_neq('$1', '$3').
 compare_expr -> cons_expr : '$1'.
 
 cons_expr -> append_expr cons cons_expr : build_cons_expr('$1', '$3').
+cons_expr -> append_expr newline cons cons_expr : build_cons_expr('$1', '$4').
+cons_expr -> append_expr newline indent cons cons_expr : build_cons_expr('$1', '$5').
 cons_expr -> append_expr : '$1'.
 
 append_expr -> add_expr append append_expr : build_append_expr('$1', '$3').
+append_expr -> add_expr newline append append_expr : build_append_expr('$1', '$4').
+append_expr -> add_expr newline indent append append_expr : build_append_expr('$1', '$5').
 append_expr -> add_expr : '$1'.
 
 compare_op -> eqeq : eq.
@@ -365,93 +436,40 @@ build_let(Name, ValueExpr, InExpr) ->
     _ -> #{op => unsupported, source => Name}
   end.
 
-build_let_bindings([], InExpr) ->
+build_let_bindings([], InExpr, _Layout) ->
   InExpr;
-build_let_bindings([{tuple2_bind, Left, Right, ValueExpr}], InExpr) ->
-  TmpName = make_tuple_bind_name([Left, Right]),
-  TmpVar = #{op => var, name => TmpName},
-  FirstExpr = #{op => qualified_call, target => <<"Tuple.first">>, args => [TmpVar]},
-  SecondExpr = #{op => qualified_call, target => <<"Tuple.second">>, args => [TmpVar]},
-  build_let(TmpName, ValueExpr, build_let(Left, FirstExpr, build_let(Right, SecondExpr, InExpr)));
-build_let_bindings([{tuple3_bind, Left, Middle, Right, ValueExpr}], InExpr) ->
-  TmpName = make_tuple_bind_name([Left, Middle, Right]),
-  TmpVar = #{op => var, name => TmpName},
-  FirstExpr = #{op => qualified_call, target => <<"Tuple.first">>, args => [TmpVar]},
-  TailExpr = #{op => qualified_call, target => <<"Tuple.second">>, args => [TmpVar]},
-  MiddleExpr = #{op => qualified_call, target => <<"Tuple.first">>, args => [TailExpr]},
-  RightExpr = #{op => qualified_call, target => <<"Tuple.second">>, args => [TailExpr]},
-  build_let(
-    TmpName,
-    ValueExpr,
-    build_let(Left, FirstExpr, build_let(Middle, MiddleExpr, build_let(Right, RightExpr, InExpr)))
-  );
-build_let_bindings([{pattern_bind, Pattern, ValueExpr}], InExpr) ->
-  TmpName = make_pattern_bind_name(Pattern),
-  CaseExpr = #{op => 'case', subject => #{op => var, name => TmpName}, branches => [#{pattern => Pattern, expr => InExpr}]},
-  build_let(TmpName, ValueExpr, CaseExpr);
-build_let_bindings([{discard_bind, ValueExpr}], InExpr) ->
-  build_let(<<"_">>, ValueExpr, InExpr);
-build_let_bindings([{Name, ValueExpr}], InExpr) ->
-  build_let(Name, ValueExpr, InExpr);
-build_let_bindings([{discard_bind, ValueExpr} | Rest], InExpr) ->
-  build_let(<<"_">>, ValueExpr, build_let_bindings(Rest, InExpr));
-build_let_bindings([{tuple2_bind, Left, Right, ValueExpr} | Rest], InExpr) ->
-  TmpName = make_tuple_bind_name([Left, Right]),
-  TmpVar = #{op => var, name => TmpName},
-  FirstExpr = #{op => qualified_call, target => <<"Tuple.first">>, args => [TmpVar]},
-  SecondExpr = #{op => qualified_call, target => <<"Tuple.second">>, args => [TmpVar]},
-  build_let(
-    TmpName,
-    ValueExpr,
-    build_let(Left, FirstExpr, build_let(Right, SecondExpr, build_let_bindings(Rest, InExpr)))
-  );
-build_let_bindings([{tuple3_bind, Left, Middle, Right, ValueExpr} | Rest], InExpr) ->
-  TmpName = make_tuple_bind_name([Left, Middle, Right]),
-  TmpVar = #{op => var, name => TmpName},
-  FirstExpr = #{op => qualified_call, target => <<"Tuple.first">>, args => [TmpVar]},
-  TailExpr = #{op => qualified_call, target => <<"Tuple.second">>, args => [TmpVar]},
-  MiddleExpr = #{op => qualified_call, target => <<"Tuple.first">>, args => [TailExpr]},
-  RightExpr = #{op => qualified_call, target => <<"Tuple.second">>, args => [TailExpr]},
-  build_let(
-    TmpName,
-    ValueExpr,
-    build_let(
-      Left,
-      FirstExpr,
-      build_let(Middle, MiddleExpr, build_let(Right, RightExpr, build_let_bindings(Rest, InExpr)))
-    )
-  );
-build_let_bindings([{pattern_bind, Pattern, ValueExpr} | Rest], InExpr) ->
-  TmpName = make_pattern_bind_name(Pattern),
-  CaseExpr = #{
-    op => 'case',
-    subject => #{op => var, name => TmpName},
-    branches => [#{pattern => Pattern, expr => build_let_bindings(Rest, InExpr)}]
-  },
-  build_let(TmpName, ValueExpr, CaseExpr);
-build_let_bindings([{Name, ValueExpr} | Rest], InExpr) ->
-  build_let(Name, ValueExpr, build_let_bindings(Rest, InExpr)).
+build_let_bindings(Bindings, InExpr, inline_first) ->
+  #{op => let_bindings, layout => inline_first, bindings => let_binding_entries(Bindings), in_expr => InExpr};
+build_let_bindings(Bindings, InExpr, _Layout) ->
+  #{op => let_bindings, bindings => let_binding_entries(Bindings), in_expr => InExpr}.
 
-make_tuple_bind_name(Names) ->
-  NameLists = lists:map(fun binary_to_list/1, Names),
-  Suffix = lists:join("_", NameLists),
-  list_to_binary("__tupleBind_" ++ Suffix).
+let_binding_entries([]) ->
+  [];
+let_binding_entries([Binding | Rest]) ->
+  [let_binding_entry(Binding) | let_binding_entries(Rest)].
 
-make_pattern_bind_name(Pattern) ->
-  Hash = integer_to_list(erlang:phash2(Pattern)),
-  list_to_binary("__patternBind_" ++ Hash).
+let_binding_entry({Name, ValueExpr}) when is_binary(Name) ->
+  #{kind => name, name => Name, value => ValueExpr};
+let_binding_entry({discard_bind, ValueExpr}) ->
+  #{kind => discard, value => ValueExpr};
+let_binding_entry({tuple2_bind, Left, Right, ValueExpr}) ->
+  #{kind => tuple2, names => [Left, Right], value => ValueExpr};
+let_binding_entry({tuple3_bind, Left, Middle, Right, ValueExpr}) ->
+  #{kind => tuple3, names => [Left, Middle, Right], value => ValueExpr};
+let_binding_entry({pattern_bind, Pattern, ValueExpr}) ->
+  #{kind => pattern, pattern => Pattern, value => ValueExpr}.
 
 build_if(CondExpr, ThenExpr, ElseExpr) ->
   #{op => 'if', 'cond' => CondExpr, then_expr => ThenExpr, else_expr => ElseExpr}.
 
 build_or(Left, Right) ->
-  #{op => 'if', 'cond' => Left, then_expr => #{op => constructor_ref, target => <<"True">>}, else_expr => Right}.
+  #{op => bool_or, left => Left, right => Right}.
 
 build_and(Left, Right) ->
-  #{op => 'if', 'cond' => Left, then_expr => Right, else_expr => #{op => constructor_ref, target => <<"False">>}}.
+  #{op => bool_and, left => Left, right => Right}.
 
 build_apply_left(FnExpr, ArgExpr) ->
-  build_app(FnExpr, [ArgExpr]).
+  #{op => apply_left, fn_expr => FnExpr, arg => ArgExpr}.
 
 build_pipe_right(ArgExpr, FnExpr) ->
   case ArgExpr of

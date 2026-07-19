@@ -74,6 +74,21 @@ defmodule ElmEx.Frontend.AstContract.Types.Expr do
           required(:f) => String.t() | t(),
           required(:g) => String.t() | t()
         }
+  @type apply_left :: %{
+          required(:op) => :apply_left,
+          required(:fn_expr) => t(),
+          required(:arg) => t()
+        }
+  @type bool_and :: %{
+          required(:op) => :bool_and,
+          required(:left) => t(),
+          required(:right) => t()
+        }
+  @type bool_or :: %{
+          required(:op) => :bool_or,
+          required(:left) => t(),
+          required(:right) => t()
+        }
   @type lambda :: %{
           required(:op) => :lambda,
           required(:args) => [String.t()],
@@ -85,6 +100,21 @@ defmodule ElmEx.Frontend.AstContract.Types.Expr do
           required(:value_expr) => t(),
           required(:in_expr) => t()
         }
+  @type let_bindings :: %{
+          required(:op) => :let_bindings,
+          required(:bindings) => [let_binding_entry()],
+          required(:in_expr) => t(),
+          optional(:layout) => :inline_first | :block
+        }
+  @type let_binding_entry ::
+          %{required(:kind) => :name, required(:name) => String.t(), required(:value) => t()}
+          | %{required(:kind) => :discard, required(:value) => t()}
+          | %{required(:kind) => :tuple2 | :tuple3, required(:names) => [String.t()], required(:value) => t()}
+          | %{
+              required(:kind) => :pattern,
+              required(:pattern) => AstTypes.pattern(),
+              required(:value) => t()
+            }
   @type if_expr :: %{
           required(:op) => :if,
           required(:cond) => t(),
@@ -131,8 +161,12 @@ defmodule ElmEx.Frontend.AstContract.Types.Expr do
           | field_call()
           | compose_left()
           | compose_right()
+          | apply_left()
+          | bool_and()
+          | bool_or()
           | lambda()
           | let_in()
+          | let_bindings()
           | if_expr()
           | case_expr()
           | record_literal()

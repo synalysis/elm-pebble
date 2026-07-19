@@ -1301,23 +1301,26 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
          {bind_name, bind_value} <- Enum.at(bindings, bind_idx) do
       pattern_vars = bound_vars_in_pattern(pattern, MapSet.new())
 
+      uses_pattern_var? = fn value ->
+        value
+        |> VarAnalysis.used_vars()
+        |> MapSet.intersection(pattern_vars)
+        |> MapSet.size() > 0
+      end
+
       deferred =
         bindings
         |> Enum.with_index()
         |> Enum.filter(fn {{_name, value}, idx} ->
-          idx != bind_idx and
-            MapSet.intersection(VarAnalysis.used_vars(value), pattern_vars) |> MapSet.size() > 0
+          idx != bind_idx and uses_pattern_var?.(value)
         end)
         |> Enum.map(fn {pair, _} -> pair end)
 
       prefix_bindings =
         bindings
-        |> Enum.with_index()
-        |> Enum.reject(fn {{name, value}, idx} ->
-          idx == bind_idx or {name, value} in deferred or
-            MapSet.intersection(VarAnalysis.used_vars(value), pattern_vars) |> MapSet.size() > 0
+        |> Enum.reject(fn {name, value} ->
+          {name, bind_value} == {bind_name, bind_value} or {name, value} in deferred
         end)
-        |> Enum.map(fn {pair, _} -> pair end)
 
       if deferred == [] do
         :error

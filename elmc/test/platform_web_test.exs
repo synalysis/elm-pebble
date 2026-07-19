@@ -137,6 +137,7 @@ defmodule Elmc.PlatformWebTest do
       end)
 
     assert view_gets != []
-    assert Enum.all?(view_gets, fn instr -> String.starts_with?(instr.args[:field_index], "1") end)
+  # Sandbox impl `{init, view, update}` is stored alphabetically: init, update, view.
+    assert Enum.all?(view_gets, fn instr -> String.starts_with?(instr.args[:field_index], "2") end)
   end
 end

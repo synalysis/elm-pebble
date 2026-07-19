@@ -46,4 +46,9 @@ defmodule ElmEx.Frontend.AstContract.Types do
           required(:steps) => list(),
           required(:base) => expr()
         }
+
+  @type apply_left_expr :: %{
+          required(:fn_expr) => expr(),
+          required(:arg) => expr()
+        }
 end

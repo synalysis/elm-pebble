@@ -2,6 +2,7 @@ defmodule ElmEx.DebuggerContract.EffectAnalysis.Subscriptions do
   @moduledoc false
 
   alias ElmEx.Frontend.Module
+  alias ElmEx.Frontend.LetBindings
   alias ElmEx.DebuggerContract.Types
 
   alias ElmEx.DebuggerContract.EffectAnalysis.CmdCalls
@@ -133,6 +134,23 @@ defmodule ElmEx.DebuggerContract.EffectAnalysis.Subscriptions do
     extract_subscription_calls(
       inner,
       Map.put(bindings, name, value_expr),
+      guards,
+      subscriptions_params,
+      mod
+    )
+  end
+
+  def extract_subscription_calls(
+        %{op: :let_bindings} = expr,
+        bindings,
+        guards,
+        subscriptions_params,
+        mod
+      )
+      when is_map(bindings) and is_list(guards) and is_list(subscriptions_params) do
+    extract_subscription_calls(
+      LetBindings.expand(expr),
+      bindings,
       guards,
       subscriptions_params,
       mod

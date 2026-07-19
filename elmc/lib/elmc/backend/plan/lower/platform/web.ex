@@ -358,10 +358,6 @@ defmodule Elmc.Backend.Plan.Lower.Platform.Web do
           b
         )
 
-      web_target?(opts) and String.starts_with?(module, "Internal.Svg") and match?([_], args) ->
-        [value] = args
-        compile_html_attr([%{op: :string_literal, value: name}, value], ctx, b)
-
       web_target?(opts) and module == "Svg.Attributes" and match?([_], args) ->
         [value] = args
         compile_html_attr([%{op: :string_literal, value: name}, value], ctx, b)
@@ -382,7 +378,7 @@ defmodule Elmc.Backend.Plan.Lower.Platform.Web do
             kind: %{op: :int_literal, value: 7},
             params: [
               %{op: :string_literal, value: "http://www.w3.org/2000/svg"},
-              %{op: :string_literal, value: name},
+              %{op: :string_literal, value: svg_element_tag_name(name)},
               attrs,
               children
             ]
@@ -499,17 +495,24 @@ defmodule Elmc.Backend.Plan.Lower.Platform.Web do
   def html_element_tag?(_name), do: false
 
   defp svg_element_tag?(name) when is_binary(name) do
-    name != "" and Regex.match?(~r/^[a-z][a-z0-9]*$/, name)
+    tag = svg_element_tag_name(name)
+    tag != "" and Regex.match?(~r/^[a-z][a-z0-9]*$/, tag)
   end
 
   defp svg_element_tag?(_), do: false
 
+  defp svg_element_tag_name(name) when is_binary(name) do
+    name
+    |> String.trim_trailing("_")
+  end
+
   defp svg_attribute_call?(module, name, ctx)
        when is_binary(module) and is_binary(name) and is_map(ctx) do
     decl_map = Map.get(ctx, :decl_map, %{})
+    svg_names = Process.get(:elmc_svg_attribute_names, MapSet.new())
 
-    Map.has_key?(decl_map, {"Svg.Attributes", name}) and
-      not Map.has_key?(decl_map, {module, name})
+    not Map.has_key?(decl_map, {module, name}) and
+      (Map.has_key?(decl_map, {"Svg.Attributes", name}) or MapSet.member?(svg_names, name))
   end
 
   defp svg_attribute_call?(_, _, _), do: false

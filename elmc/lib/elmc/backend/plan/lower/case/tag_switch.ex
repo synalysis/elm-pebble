@@ -142,21 +142,200 @@ defmodule Elmc.Backend.Plan.Lower.Case.TagSwitch do
     end
   end
 
-  defp compile_tagged_arms([], _subj, _ctx, b, _merge_reg, acc), do: {:ok, Enum.reverse(acc), [], b}
+  defp compile_tagged_arms(tagged, subj_reg, ctx, b, merge_reg, acc) when is_list(tagged) do
+    tagged
+    |> group_branches_by_tag()
+    |> Enum.sort_by(fn {tag, _} -> tag end)
+    |> compile_tag_groups(subj_reg, ctx, b, merge_reg, acc)
+  end
 
-  defp compile_tagged_arms([branch | rest], subj_reg, ctx, b, merge_reg, acc) do
+  defp group_branches_by_tag(tagged) do
+    tagged
+    |> Enum.group_by(fn branch -> pattern_tag(branch.pattern) end)
+    |> Enum.map(fn {tag, branches} -> {tag, branches} end)
+  end
+
+  defp compile_tag_groups([], _subj, _ctx, b, _merge_reg, acc), do: {:ok, Enum.reverse(acc), [], b}
+
+  defp compile_tag_groups([{tag, [branch]} | rest], subj_reg, ctx, b, merge_reg, acc) do
     arm_id = b.next_block
     b_arm = Builder.begin_cfg_arm_block(b, arm_id)
 
-    with {:ok, reg, tag, b1} <- compile_one_arm(branch, subj_reg, ctx, b_arm),
+    with {:ok, reg, ^tag, b1} <- compile_one_arm(branch, subj_reg, ctx, b_arm),
          {:ok, b_pub} <- ArmMerge.publish_arm_to_merge(b1, reg, merge_reg),
          exit_id = b_pub.current_block.id,
          b2 = Builder.finish_block(b_pub, :none),
          {:ok, more, exits, b3} <-
-           compile_tagged_arms(rest, subj_reg, ctx, b2, merge_reg, [{tag, reg, arm_id, ctor_name(branch)} | acc]) do
+           compile_tag_groups(rest, subj_reg, ctx, b2, merge_reg, [{tag, reg, arm_id, ctor_name(branch)} | acc]) do
       {:ok, more, [exit_id | exits], b3}
     else
       _ -> :unsupported
+    end
+  end
+
+  defp compile_tag_groups([{tag, branches} | rest], subj_reg, ctx, b, merge_reg, acc)
+       when length(branches) > 1 do
+    arm_id = b.next_block
+    b_arm = Builder.begin_cfg_arm_block(b, arm_id)
+
+    with {:ok, reg, ^tag, b1} <- compile_nested_duplicate_tag_arm(branches, subj_reg, ctx, b_arm),
+         {:ok, b_pub} <- ArmMerge.publish_arm_to_merge(b1, reg, merge_reg),
+         exit_id = b_pub.current_block.id,
+         b2 = Builder.finish_block(b_pub, :none),
+         {:ok, more, exits, b3} <-
+           compile_tag_groups(rest, subj_reg, ctx, b2, merge_reg, [
+             {tag, reg, arm_id, ctor_name(hd(branches))} | acc
+           ]) do
+      {:ok, more, [exit_id | exits], b3}
+    else
+      _ -> :unsupported
+    end
+  end
+
+  defp compile_nested_duplicate_tag_arm(branches, subj_reg, ctx, b) do
+    branch_ctx = Context.for_branch_arm(ctx)
+    representative = hd(branches)
+    tag = pattern_tag(representative.pattern)
+
+    outer_pattern = %{
+      kind: :constructor,
+      name: Map.get(representative.pattern, :name),
+      resolved_name: Map.get(representative.pattern, :resolved_name),
+      tag: tag,
+      arg_pattern: outer_bind_arg_pattern(branches)
+    }
+
+    with {:ok, bind_ctx, b1} <- branch_ctx_for_pattern(branch_ctx, outer_pattern, subj_reg, b),
+         inner_name = inner_switch_subject_name(),
+         inner_reg when is_integer(inner_reg) <- Context.local_reg(bind_ctx, inner_name),
+         inner_branches = inner_branches_from_duplicates(branches),
+         {:ok, reg, b2} <-
+           compile_inner_branches_switch(inner_branches, inner_reg, inner_name, bind_ctx, b1) do
+      {:ok, reg, tag, b2}
+    else
+      _ -> :unsupported
+    end
+  end
+
+  defp compile_inner_branches_switch(branches, inner_reg, inner_name, ctx, b) do
+    inner_subject = %{op: :var, name: inner_name}
+
+    {ctx1, b1} =
+      Enum.reduce(branches, {ctx, b}, fn branch, {c, bb} ->
+        case Map.get(branch, :catch_all_var) do
+          name when is_binary(name) ->
+            c1 = Context.put_local(c, name, inner_reg)
+            {c1, Builder.bind_local(bb, name, inner_reg)}
+
+          _ ->
+            {c, bb}
+        end
+      end)
+
+    branches_clean = Enum.map(branches, &Map.drop(&1, [:catch_all_var]))
+    compile(inner_subject, branches_clean, ctx1, b1)
+  end
+
+  defp outer_bind_arg_pattern(branches) do
+    lists =
+      branches
+      |> Enum.map(&tuple_elements_from_ctor_pattern/1)
+      |> Enum.reject(&is_nil/1)
+
+    case lists do
+      [] ->
+        nil
+
+      [first | _] = lists ->
+        width = length(first)
+        discriminant_idx = tuple_discriminant_index(lists)
+
+        elements =
+          for idx <- 0..(width - 1) do
+            column = Enum.map(lists, &Enum.at(&1, idx))
+            merge_tuple_column(column, idx, discriminant_idx)
+          end
+
+        %{kind: :tuple, elements: elements}
+    end
+  end
+
+  defp tuple_elements_from_ctor_pattern(%{pattern: %{arg_pattern: %{kind: :tuple, elements: elements}}})
+       when is_list(elements),
+       do: elements
+
+  defp tuple_elements_from_ctor_pattern(_), do: nil
+
+  defp tuple_discriminant_index(lists) do
+    width = lists |> hd() |> length()
+
+    Enum.find_value(0..(width - 1), fn idx ->
+      kinds =
+        lists
+        |> Enum.map(fn elements -> Enum.at(elements, idx) |> Map.get(:kind) end)
+        |> Enum.uniq()
+
+      if :constructor in kinds and (:var in kinds or :wildcard in kinds), do: idx
+    end) || max(width - 1, 0)
+  end
+
+  defp merge_tuple_column(column, idx, discriminant_idx) do
+    if idx == discriminant_idx do
+      %{kind: :var, name: inner_switch_subject_name()}
+    else
+      case Enum.find(column, &match?(%{kind: :var, name: name} when is_binary(name), &1)) do
+        %{kind: :var, name: name} -> %{kind: :var, name: name}
+        _ -> %{kind: :wildcard}
+      end
+    end
+  end
+
+  defp inner_switch_subject_name, do: "__inner_switch_subject__"
+
+  defp inner_branches_from_duplicates(branches) do
+    discriminant_idx =
+      branches
+      |> Enum.map(&tuple_elements_from_ctor_pattern/1)
+      |> Enum.reject(&is_nil/1)
+      |> then(fn lists ->
+        if lists == [], do: 0, else: tuple_discriminant_index(lists)
+      end)
+
+    {ctor_branches, default_branches} =
+      Enum.split_with(branches, fn branch ->
+        match?(%{kind: :constructor}, inner_discriminant_pattern(branch, discriminant_idx))
+      end)
+
+    ctor_arms =
+      Enum.map(ctor_branches, fn branch ->
+        %{branch | pattern: inner_discriminant_pattern(branch, discriminant_idx)}
+      end)
+
+    default_arms =
+      Enum.map(default_branches, fn branch ->
+        var_name = inner_discriminant_var_name(branch, discriminant_idx)
+
+        branch
+        |> Map.put(:pattern, %{kind: :wildcard})
+        |> then(fn b -> if var_name, do: Map.put(b, :catch_all_var, var_name), else: b end)
+      end)
+
+    ctor_arms ++ default_arms
+  end
+
+  defp inner_discriminant_pattern(branch, idx) do
+    branch
+    |> tuple_elements_from_ctor_pattern()
+    |> case do
+      elements when is_list(elements) -> Enum.at(elements, idx)
+      _ -> %{kind: :wildcard}
+    end
+  end
+
+  defp inner_discriminant_var_name(branch, idx) do
+    case inner_discriminant_pattern(branch, idx) do
+      %{kind: :var, name: name} when is_binary(name) -> name
+      _ -> nil
     end
   end
 
@@ -281,6 +460,10 @@ defmodule Elmc.Backend.Plan.Lower.Case.TagSwitch do
   defp skip_reserved(id, reserved) when id == reserved, do: id + 1
   defp skip_reserved(id, _), do: id
 
+  defp branch_ctx_for_pattern(ctx, %{kind: :constructor} = pattern, subj_reg, b) do
+    PatternBind.bind(pattern, ctx, b, subj_reg)
+  end
+
   defp branch_ctx_for_pattern(ctx, %{bind: bind} = pattern, subj_reg, b) when is_binary(bind) do
     case Map.get(pattern, :arg_pattern) do
       arg_pattern when is_map(arg_pattern) ->
@@ -340,7 +523,7 @@ defmodule Elmc.Backend.Plan.Lower.Case.TagSwitch do
     PatternBind.bind(%{kind: :constructor, arg_pattern: arg_pattern, name: Map.get(pattern, :name)}, ctx, b, subj_reg)
   end
 
-  defp branch_ctx_for_pattern(ctx, _pattern, _subj_reg, b), do: {:ok, ctx, b}
+  defp branch_ctx_for_pattern(_ctx, _pattern, _subj_reg, _b), do: :unsupported
 
   defp payload_bind?(%{arg_pattern: nil}), do: true
   defp payload_bind?(%{arg_pattern: %{kind: :var}}), do: true

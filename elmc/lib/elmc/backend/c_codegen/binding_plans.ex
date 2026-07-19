@@ -15,11 +15,17 @@ defmodule Elmc.Backend.CCodegen.BindingPlans do
           binding_key() => StoragePlan.t()
         }
   def analyze(decl_map, _registry \\ nil) when is_map(decl_map) do
-    decl_map
-    |> Enum.flat_map(fn {{mod, fun}, decl} ->
-      analyze_function_bindings(mod, fun, decl.expr, decl_map)
-    end)
-    |> Map.new()
+    Process.put(:elmc_binding_plans_active, true)
+
+    try do
+      decl_map
+      |> Enum.flat_map(fn {{mod, fun}, decl} ->
+        analyze_function_bindings(mod, fun, decl.expr, decl_map)
+      end)
+      |> Map.new()
+    after
+      Process.delete(:elmc_binding_plans_active)
+    end
   end
 
   defp analyze_function_bindings(mod, fun, expr, decl_map) do

@@ -40,7 +40,7 @@ defmodule ElmEx.IR.ImportResolution do
         if String.contains?(rest, ".") do
           target
         else
-          case resolve_aliased_member(prefix, rest, alias_member_map, alias_map) do
+          case resolve_aliased_member(prefix, rest, alias_member_map, alias_map, import_unqualified_map) do
             nil -> target
             real_module -> "#{real_module}.#{rest}"
           end
@@ -69,11 +69,28 @@ defmodule ElmEx.IR.ImportResolution do
     end
   end
 
-  defp resolve_aliased_member(prefix, member, alias_member_map, alias_map)
+  defp resolve_aliased_member(prefix, member, alias_member_map, alias_map, import_unqualified_map)
        when is_binary(prefix) and is_binary(member) do
     case Map.get(alias_member_map, prefix) do
       %{} = members ->
-        Map.get(members, member) || Map.get(alias_map, prefix)
+        Map.get(members, member) || resolve_alias_module(prefix, member, alias_map, import_unqualified_map)
+
+      _ ->
+        resolve_alias_module(prefix, member, alias_map, import_unqualified_map)
+    end
+  end
+
+  # When `import Foo exposing (bar)` and `import Other as Foo` coexist, `Foo.bar`
+  # must stay on the home module that exposed `bar`, not the conflicting alias.
+  defp resolve_alias_module(prefix, member, alias_map, import_unqualified_map)
+       when is_binary(prefix) and is_binary(member) and is_map(alias_map) and is_map(import_unqualified_map) do
+    case {Map.get(import_unqualified_map, member), Map.get(alias_map, prefix)} do
+      {home_module, aliased_module}
+      when is_binary(home_module) and is_binary(aliased_module) and home_module != aliased_module ->
+        home_module
+
+      {_home_module, aliased_module} when is_binary(aliased_module) ->
+        aliased_module
 
       _ ->
         Map.get(alias_map, prefix)

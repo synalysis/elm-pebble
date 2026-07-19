@@ -84,4 +84,25 @@ defmodule ElmEx.IR.ImportResolutionTest do
     assert ImportResolution.resolve("Arrow.arrow", lookup) ==
              "Internal.Svg.Arrow.arrow"
   end
+
+  test "normalize_expr/2 qualifies imported union constructors" do
+    lookup = %{import_unqualified_map: %{"M" => "Svg.PathD", "L" => "Svg.PathD"}}
+
+    assert %{op: :constructor_call, target: "Svg.PathD.M"} =
+             ImportResolution.normalize_expr(
+               %{op: :constructor_call, target: "M", args: [%{op: :var, name: "p"}]},
+               lookup
+             )
+  end
+
+  test "resolve/2 keeps exposed Svg node helpers when Svg.Attributes uses the Svg alias" do
+    lookup = %{
+      alias_map: %{"Svg" => "Svg.Attributes"},
+      import_unqualified_map: %{"g" => "Svg"}
+    }
+
+    assert ImportResolution.resolve("g", lookup) == "Svg.g"
+    assert ImportResolution.resolve("Svg.g", lookup) == "Svg.g"
+    assert ImportResolution.resolve("Svg.fill", lookup) == "Svg.Attributes.fill"
+  end
 end

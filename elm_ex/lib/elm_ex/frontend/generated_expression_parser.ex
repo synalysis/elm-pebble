@@ -1,15 +1,22 @@
 defmodule ElmEx.Frontend.GeneratedExpressionParser do
   @moduledoc """
   Generated expression parser adapter based on leex/yecc artifacts.
+
+  Multiline Elm layout is tokenized by `ElmEx.Frontend.ExprLayoutLexer` when the
+  source has physical newlines and no legacy `;;` case-arm separators (default).
+  Set `Application.put_env(:elm_ex, :expr_layout_lexer, false)` to use the
+  whitespace-skipping Leex path with `ExprLayout.normalize/1` instead.
+
+  See `docs/expr_layout_lexer.md` for architecture and token semantics.
   """
 
   alias ElmEx.Frontend.AstContract.Types, as: AstTypes
-  alias ElmEx.Frontend.LetLayout
+  alias ElmEx.Frontend.ExprLayoutLexer
+  alias ElmEx.Frontend.{Layout, LetLayout}
   alias ElmEx.Types
 
   @typep source() :: String.t()
   @typep line() :: String.t()
-  @typep lines() :: [line()]
   @typep expr() :: AstTypes.expr()
   @typep normalized_value() :: AstTypes.expr() | list() | String.t() | number() | boolean() | nil | atom()
 
@@ -43,185 +50,53 @@ defmodule ElmEx.Frontend.GeneratedExpressionParser do
   def prepare_for_debug(source) when is_binary(source), do: prepare_source(source)
 
   @spec prepare_source(source()) :: source()
-  defp prepare_source(source) do
+  defp prepare_source(source) when is_binary(source) do
     source
-    |> String.trim()
+    |> prepare_source_core()
+    |> maybe_normalize_for_parser()
+  end
+
+  @spec maybe_normalize_for_parser(source()) :: source()
+  defp maybe_normalize_for_parser(prepared) do
+    if layout_lexer_enabled?() and layout_lexer_eligible?(prepared) do
+      prepared
+    else
+      ElmEx.Frontend.ExprLayout.normalize(prepared)
+    end
+  end
+
+  @spec prepare_source_core(source()) :: source()
+  defp prepare_source_core(source) when is_binary(source) do
+    source
+    |> trim_prepared_source()
     |> normalize_multiline_strings()
     |> strip_block_comments()
     |> strip_line_comments()
     |> collapse_standalone_record_update_bars()
-    |> collapse_binding_rhs_starts()
     |> strip_local_type_annotations()
     |> strip_trailing_semicolons()
     |> normalize_nested_compose_sections()
     |> normalize_compose_source()
-    |> normalize_let_source()
-    |> normalize_case_source()
     |> fix_record_update_bar_paren_glitch()
-    |> fix_inline_let_multiple_bindings()
-    |> normalize_inline_case_branch_separators()
-    |> String.replace(~r/\bof\s*;;\s*/u, "of ")
     |> normalize_minus_numeric_source()
     |> normalize_trailing_commas()
     |> close_unbalanced_brackets_before_final_pipe()
     |> close_unbalanced_parens()
-    |> split_inline_let_in_lines()
   end
 
-  @spec collapse_binding_rhs_starts(source()) :: source()
-  defp collapse_binding_rhs_starts(source) when is_binary(source) do
-    # Many Elm bindings are written as:
-    #   name =
-    #     case ... of
-    # Normalize to:
-    #   name = case ... of
-    source
-    |> then(&Regex.replace(~r/=\s*\n\s*(case\b|if\b|\\)/u, &1, "= \\1"))
-    |> collapse_case_branch_rhs_starts()
-  end
-
-  @spec collapse_case_branch_rhs_starts(source()) :: source()
-  defp collapse_case_branch_rhs_starts(source) when is_binary(source) do
-    # Case branches commonly continue with a nested `case` on the next line:
-    #   Just x ->
-    #     case ... of
-    # The layout lexer treats the newline as a branch boundary; keep the nested
-    # case on the same line so yecc can parse the branch body.
-    Regex.replace(~r/->\s*\n\s*(case\b)/u, source, "-> \\1")
-  end
-
-  @spec close_unbalanced_parens(source()) :: source()
-  defp close_unbalanced_parens(source) when is_binary(source) do
-    # Layout normalization sometimes wraps large branches in parentheses; when a rewrite
-    # drops a closing paren near the end, yecc reports an EOF parse error. Recover by
-    # appending up to a small number of ')' to restore balance.
-    diff = paren_balance_outside_string_literals(source)
-
-    if diff > 0 and diff <= 3 do
-      source <> String.duplicate(")", diff)
-    else
+  # Multiline snippets (heredocs, pasted blocks) must keep uniform relative indent.
+  # `String.trim/1` only strips leading whitespace from the first line and breaks `in`
+  # alignment; blank-line trim + uniform dedent preserves Elm layout.
+  @spec trim_prepared_source(source()) :: source()
+  defp trim_prepared_source(source) when is_binary(source) do
+    if String.contains?(source, "\n") do
       source
-    end
-  end
-
-  @spec paren_balance_outside_string_literals(source()) :: integer()
-  defp paren_balance_outside_string_literals(source) when is_binary(source) do
-    source
-    |> String.to_charlist()
-    |> count_paren_balance(:code, 0)
-  end
-
-  defp count_paren_balance([], _state, acc), do: acc
-
-  defp count_paren_balance([?( | rest], :code, acc),
-    do: count_paren_balance(rest, :code, acc + 1)
-
-  defp count_paren_balance([?) | rest], :code, acc),
-    do: count_paren_balance(rest, :code, acc - 1)
-
-  defp count_paren_balance([?" | rest], :code, acc),
-    do: count_paren_balance(rest, :string, acc)
-
-  defp count_paren_balance([?" | rest], :string, acc),
-    do: count_paren_balance(rest, :code, acc)
-
-  defp count_paren_balance([?' | rest], :code, acc),
-    do: count_paren_balance(rest, :char, acc)
-
-  defp count_paren_balance([?' | rest], :char, acc),
-    do: count_paren_balance(rest, :code, acc)
-
-  defp count_paren_balance([?\\, _ | rest], :string, acc),
-    do: count_paren_balance(rest, :string, acc)
-
-  defp count_paren_balance([?\\, _ | rest], :char, acc),
-    do: count_paren_balance(rest, :char, acc)
-
-  defp count_paren_balance([_ | rest], state, acc),
-    do: count_paren_balance(rest, state, acc)
-
-  @spec fix_record_update_bar_paren_glitch(source()) :: source()
-  defp fix_record_update_bar_paren_glitch(source) when is_binary(source) do
-    # After aggressive case/layout normalization, a record-update bar line that used
-    # to be `| -- comment` can end up as `|) field = ...` (the `)` belongs to an
-    # outer tuple paren, not the record update). This rewrite is conservative:
-    # only fix the exact `|)` sequence when it is immediately followed by a field.
-    Regex.replace(~r/\|\)\s*([a-z][A-Za-z0-9_']*\s*=)/u, source, "| \\1")
-  end
-
-  @spec fix_inline_let_multiple_bindings(source()) :: source()
-  defp fix_inline_let_multiple_bindings(source) when is_binary(source) do
-    # The token parser requires `;` between let bindings. After layout/case normalization
-    # we sometimes end up with multiple bindings on one line:
-    #   let starter = (case ...) introduction = ...
-    # Recover by inserting `;` before the second binding.
-    source
-    |> String.split("\n")
-    |> Enum.map(fn line ->
-      trimmed = String.trim(line)
-
-      if String.contains?(trimmed, "let ") and String.contains?(trimmed, " in") do
-        Regex.replace(~r/\)\s+([a-z][A-Za-z0-9_']*)\s*=/u, line, ") ; \\1 =")
-      else
-        line
-      end
-    end)
-    |> Enum.join("\n")
-  end
-
-  @spec collapse_standalone_record_update_bars(source()) :: source()
-  defp collapse_standalone_record_update_bars(source) when is_binary(source) do
-    source
-    |> String.split("\n")
-    |> do_collapse_standalone_record_update_bars([])
-    |> Enum.reverse()
-    |> Enum.join("\n")
-  end
-
-  defp do_collapse_standalone_record_update_bars([], acc), do: acc
-
-  defp do_collapse_standalone_record_update_bars([line | rest], []) do
-    do_collapse_standalone_record_update_bars(rest, [line])
-  end
-
-  defp do_collapse_standalone_record_update_bars([line | rest], [prev | acc_tail] = acc) do
-    if String.trim(line) == "|" do
-      do_collapse_standalone_record_update_bars(rest, [prev <> " |" | acc_tail])
+      |> String.trim_trailing()
+      |> String.replace(~r/^\s*\n/u, "")
+      |> Layout.dedent_uniform_leading_whitespace()
     else
-      do_collapse_standalone_record_update_bars(rest, [line | acc])
+      String.trim(source)
     end
-  end
-
-  @spec normalize_case_source(source()) :: source()
-  defp normalize_case_source(source) when is_binary(source) do
-    normalize_case_source(source, 0)
-  end
-
-  @spec normalize_case_source(source(), non_neg_integer()) :: source()
-  defp normalize_case_source(source, passes) when passes >= 20, do: source
-
-  defp normalize_case_source(source, passes) do
-    normalized =
-      if String.contains?(source, " of\n") and String.contains?(source, "->") do
-        source
-        |> String.split("\n")
-        |> Enum.map(&String.trim_trailing/1)
-        |> Enum.reject(&(String.trim(&1) == ""))
-        |> normalize_embedded_case()
-      else
-        source
-      end
-
-    if normalized == source do
-      normalized
-    else
-      normalize_case_source(normalized, passes + 1)
-    end
-  end
-
-  @spec expand_case_of_to_newline(source()) :: source()
-  defp expand_case_of_to_newline(source) when is_binary(source) do
-    String.replace(source, ~r/\sof\s+(?=[(\[]|_|'|\"|[A-Z]|[a-z])/u, " of\n")
   end
 
   @spec normalize_multiline_strings(source()) :: source()
@@ -276,7 +151,6 @@ defmodule ElmEx.Frontend.GeneratedExpressionParser do
       String.trim(line) == "" ->
         drop_local_type_annotation_lines(rest, [line | acc], :keep)
 
-      # Stop dropping once we hit a binding line (very permissive: any '=' in the line).
       String.contains?(line, "=") ->
         drop_local_type_annotation_lines(rest, [line | acc], :keep)
 
@@ -287,11 +161,9 @@ defmodule ElmEx.Frontend.GeneratedExpressionParser do
 
   defp drop_local_type_annotation_lines([line | rest], acc, :keep) do
     cond do
-      # Single-line annotation: `name : Type`
       Regex.match?(~r/^\s*[a-z][A-Za-z0-9_']*\s*:(?!:)\s*.+$/u, line) ->
         drop_local_type_annotation_lines(rest, acc, :keep)
 
-      # Multi-line annotation start: `name :` (no rhs on same line)
       Regex.match?(~r/^\s*[a-z][A-Za-z0-9_']*\s*:(?!:)\s*$/u, line) ->
         drop_local_type_annotation_lines(rest, acc, :dropping)
 
@@ -303,8 +175,6 @@ defmodule ElmEx.Frontend.GeneratedExpressionParser do
   @spec normalize_compose_source(source()) :: source()
   defp normalize_compose_source(source) when is_binary(source) do
     Regex.replace(
-      # Do not parenthesize when the RHS continues with a qualified segment (for example
-      # `GotWeather << Result.map` must not become `(GotWeather << Result).map`).
       ~r/(?<![A-Za-z0-9_.])([A-Za-z_][A-Za-z0-9_]*)\s*(<<|>>)\s*([A-Za-z_][A-Za-z0-9_]*)\b(?![A-Za-z0-9_.])/u,
       source,
       "(\\1 \\2 \\3)"
@@ -330,76 +200,60 @@ defmodule ElmEx.Frontend.GeneratedExpressionParser do
     end)
   end
 
-  @spec normalize_let_source(source()) :: source()
-  defp normalize_let_source(source) when is_binary(source) do
-    normalize_let_source(source, 0)
-  end
+  @spec close_unbalanced_parens(source()) :: source()
+  defp close_unbalanced_parens(source) when is_binary(source) do
+    # Layout normalization sometimes wraps large branches in parentheses; when a rewrite
+    # drops a closing paren near the end, yecc reports an EOF parse error. Recover by
+    # appending up to a small number of ')' to restore balance.
+    diff = paren_balance_outside_string_literals(source)
 
-  @spec normalize_let_source(source(), non_neg_integer()) :: source()
-  defp normalize_let_source(source, passes) when passes >= 20, do: source
+    cond do
+      diff > 0 and diff <= 3 ->
+        source <> String.duplicate(")", diff)
 
-  defp normalize_let_source(source, passes) do
-    normalize_let_source(source, passes, MapSet.new())
-  end
+      diff < 0 and diff >= -3 ->
+        String.slice(source, 0, byte_size(source) + diff)
 
-  defp normalize_let_source(source, passes, _excluded) when passes >= 20, do: source
-
-  defp normalize_let_source(source, passes, excluded) do
-    lines = String.split(source, "\n")
-
-    case find_rewritable_let_block(lines, excluded) do
-      nil ->
+      true ->
         source
-
-      %{index: index, bindings: bindings, in_lines: in_lines} ->
-        rewritten =
-          Enum.take(lines, index) ++
-            [
-              "let " <> Enum.join(bindings, " ;\n"),
-              "in",
-              Enum.join(in_lines, "\n")
-            ]
-
-        joined = Enum.join(rewritten, "\n")
-
-        if joined == Enum.join(lines, "\n") do
-          # Already normalized; keep searching for other lets (e.g. outer bare `let`).
-          normalize_let_source(source, passes + 1, MapSet.put(excluded, index))
-        else
-          normalize_let_source(joined, passes + 1, MapSet.new())
-        end
     end
   end
 
-  @inline_let_in_line ~r/\blet\s+.+\s+in(\s+|$)/u
-
-  @spec close_unbalanced_brackets_before_final_pipe(source()) :: source()
-  defp close_unbalanced_brackets_before_final_pipe(source) when is_binary(source) do
-    if list_bracket_depth(source) > 0 do
-      lines =
-        source
-        |> String.split("\n")
-        |> Enum.reject(&(String.trim(&1) == ""))
-
-      case List.last(lines) do
-        line when is_binary(line) ->
-          trimmed = String.trim(line)
-
-          if String.starts_with?(trimmed, "|>") do
-            indent = String.duplicate(" ", leading_indent_count(line))
-            prefix = Enum.drop(lines, -1)
-            Enum.join(prefix ++ [indent <> "]", line], "\n")
-          else
-            source
-          end
-
-        _ ->
-          source
-      end
-    else
-      source
-    end
+  @spec paren_balance_outside_string_literals(source()) :: integer()
+  defp paren_balance_outside_string_literals(source) when is_binary(source) do
+    source
+    |> String.to_charlist()
+    |> count_paren_balance(:code, 0)
   end
+
+  defp count_paren_balance([], _state, acc), do: acc
+
+  defp count_paren_balance([?( | rest], :code, acc),
+    do: count_paren_balance(rest, :code, acc + 1)
+
+  defp count_paren_balance([?) | rest], :code, acc),
+    do: count_paren_balance(rest, :code, acc - 1)
+
+  defp count_paren_balance([?" | rest], :code, acc),
+    do: count_paren_balance(rest, :string, acc)
+
+  defp count_paren_balance([?" | rest], :string, acc),
+    do: count_paren_balance(rest, :code, acc)
+
+  defp count_paren_balance([?' | rest], :code, acc),
+    do: count_paren_balance(rest, :char, acc)
+
+  defp count_paren_balance([?' | rest], :char, acc),
+    do: count_paren_balance(rest, :code, acc)
+
+  defp count_paren_balance([?\\, _ | rest], :string, acc),
+    do: count_paren_balance(rest, :string, acc)
+
+  defp count_paren_balance([?\\, _ | rest], :char, acc),
+    do: count_paren_balance(rest, :char, acc)
+
+  defp count_paren_balance([_ | rest], state, acc),
+    do: count_paren_balance(rest, state, acc)
 
   @spec list_bracket_depth(source()) :: integer()
   defp list_bracket_depth(source) when is_binary(source) do
@@ -437,668 +291,6 @@ defmodule ElmEx.Frontend.GeneratedExpressionParser do
   defp count_bracket_balance([_ | rest], state, acc),
     do: count_bracket_balance(rest, state, acc)
 
-  @spec split_inline_let_in_lines(source()) :: source()
-  defp split_inline_let_in_lines(source) when is_binary(source) do
-    source
-    |> String.split("\n")
-    |> Enum.flat_map(&split_line_inline_let_in/1)
-    |> Enum.join("\n")
-  end
-
-  @spec split_line_inline_let_in(line()) :: lines()
-  defp split_line_inline_let_in(line) when is_binary(line) do
-    trimmed = String.trim(line)
-
-    if Regex.match?(@inline_let_in_line, trimmed) do
-      # Case flattening can put `pat -> let … in body` on one line. Splitting `in`
-      # out would detach the body from the branch; keep it inline (LetLayout allows
-      # this form when `let` follows `->`).
-      if case_branch_inline_let?(trimmed) do
-        [line]
-      else
-        case split_rightmost_inline_let_in(trimmed) do
-          {:ok, before, in_expr} ->
-            split_line_inline_let_in(before) ++ ["in" | split_line_inline_let_in(in_expr)]
-
-          :error ->
-            [line]
-        end
-      end
-    else
-      [line]
-    end
-  end
-
-  defp case_branch_inline_let?(line) when is_binary(line) do
-    trimmed = String.trim(line)
-
-    # Top-level `let … in …` can contain nested `case` branches with `->` after
-    # layout normalization; only preserve inline let/in for `pat -> let … in …`.
-    not String.starts_with?(trimmed, "let ") and String.contains?(trimmed, "->") and
-      String.contains?(trimmed, "let ")
-  end
-
-  @spec split_rightmost_inline_let_in(source()) :: {:ok, source(), source()} | :error
-  defp split_rightmost_inline_let_in(line) when is_binary(line) do
-    trimmed = String.trim_trailing(line)
-
-    cond do
-      String.ends_with?(trimmed, " in") ->
-        before = trimmed |> String.slice(0, String.length(trimmed) - 3) |> String.trim_trailing()
-
-        if String.contains?(before, "let ") do
-          {:ok, before, ""}
-        else
-          :error
-        end
-
-      true ->
-        case :binary.matches(trimmed, " in ") do
-          [] ->
-            :error
-
-          matches ->
-            {pos, len} = List.last(matches)
-            before = trimmed |> String.slice(0, pos) |> String.trim_trailing()
-
-            rest_len = String.length(trimmed) - pos - len
-
-            if rest_len < 0 do
-              :error
-            else
-              in_expr =
-                trimmed
-                |> String.slice(pos + len, rest_len)
-                |> String.trim_leading()
-
-              if String.contains?(before, "let ") do
-                {:ok, before, in_expr}
-              else
-                :error
-              end
-            end
-        end
-    end
-  end
-
-  @spec split_let_lines(lines(), lines(), non_neg_integer()) :: {lines(), lines()}
-  defp split_let_lines([], acc, _depth), do: {Enum.reverse(acc), []}
-
-  defp split_let_lines([line | rest], acc, depth) do
-    trimmed = String.trim(line)
-
-    cond do
-      depth == 1 and trimmed == "in" ->
-        {Enum.reverse(acc), rest}
-
-      depth == 1 and String.starts_with?(trimmed, "in ") ->
-        in_expr = String.trim_leading(String.slice(trimmed, 2..-1//1))
-        {Enum.reverse(acc), [in_expr | rest]}
-
-      true ->
-        next_depth = next_let_depth(depth, line)
-        split_let_lines(rest, [line | acc], next_depth)
-    end
-  end
-
-  defp find_rewritable_let_block(lines, excluded) when is_list(lines) do
-    # Prefer innermost lets first. If the outermost `let` is rewritten first, later
-    # passes keep rematching that same outer block (`let name = ...`) and nested
-    # multi-binding lets never receive `;` separators — case flattening then crushes
-    # `let a = … b = …` onto one line and yecc fails.
-    lines
-    |> Enum.with_index()
-    |> Enum.reverse()
-    |> Enum.find_value(fn {line, index} ->
-      if MapSet.member?(excluded, index) do
-        nil
-      else
-        cond do
-          String.trim(line) == "let" ->
-            rest = Enum.drop(lines, index + 1)
-            {binding_lines, in_lines} = split_let_lines(rest, [], 1)
-            bindings = collect_let_bindings(binding_lines)
-
-            if in_lines != [] and length(bindings) > 1 do
-              %{index: index, bindings: bindings, in_lines: in_lines}
-            else
-              nil
-            end
-
-          Regex.match?(~r/^\s*let\s+[a-z][A-Za-z0-9_']*\s*=\s+.+/u, line) ->
-            rest = Enum.drop(lines, index + 1)
-            first_line_rest = line |> String.trim() |> String.replace_prefix("let ", "")
-            first_line = align_first_let_binding_indent(first_line_rest, rest)
-            {binding_lines, in_lines} = split_let_lines(rest, [first_line], 1)
-            bindings = collect_let_bindings(binding_lines)
-
-            if in_lines != [] and length(bindings) > 1 do
-              %{index: index, bindings: bindings, in_lines: in_lines}
-            else
-              nil
-            end
-
-          true ->
-            nil
-        end
-      end
-    end)
-  end
-
-  @spec align_first_let_binding_indent(String.t(), lines()) :: String.t()
-  defp align_first_let_binding_indent(first_line_rest, binding_lines) do
-    case infer_let_binding_indent(binding_lines) do
-      indent when is_integer(indent) and indent > 0 ->
-        String.duplicate(" ", indent) <> first_line_rest
-
-      _ ->
-        first_line_rest
-    end
-  end
-
-  @spec infer_let_binding_indent(lines()) :: non_neg_integer() | nil
-  defp infer_let_binding_indent(lines) do
-    Enum.find_value(lines, fn line ->
-      if let_binding_start_line?(line), do: leading_indent_count(line)
-    end)
-  end
-
-  @spec collect_let_bindings(lines()) :: [String.t()]
-  defp collect_let_bindings(lines) do
-    expanded_lines = expand_top_level_semicolon_lines(lines)
-
-    {bindings, current, _let_depth, _base_indent} =
-      Enum.reduce(expanded_lines, {[], nil, 0, nil}, fn line,
-                                                        {acc, current, let_depth, base_indent} ->
-        trimmed = String.trim(line)
-        indent = leading_indent_count(line)
-        binding_start = let_binding_start_line?(line)
-
-        starts_binding =
-          let_depth == 0 and binding_start and (is_nil(base_indent) or indent == base_indent)
-
-        cond do
-          trimmed == "" ->
-            {acc, current, let_depth, base_indent}
-
-          starts_binding ->
-            flushed =
-              if is_binary(current),
-                do: acc ++ [normalize_binding_for_separator(current)],
-                else: acc
-
-            new_depth = next_let_depth(let_depth, line)
-            {flushed, trimmed, new_depth, base_indent || indent}
-
-          is_binary(current) ->
-            new_depth = next_let_depth(let_depth, line)
-            continuation = String.trim_trailing(line)
-            {acc, current <> "\n" <> continuation, new_depth, base_indent}
-
-          true ->
-            new_depth = next_let_depth(let_depth, line)
-            {acc, trimmed, new_depth, base_indent}
-        end
-      end)
-
-    if is_binary(current),
-      do: bindings ++ [normalize_binding_for_separator(current)],
-      else: bindings
-  end
-
-  @spec expand_top_level_semicolon_lines(lines()) :: lines()
-  defp expand_top_level_semicolon_lines(lines) when is_list(lines) do
-    {expanded, _let_depth} =
-      Enum.map_reduce(lines, 0, fn line, let_depth ->
-        # Semicolons from nested `let a = … ; b = …` must not be treated as outer
-        # binding separators when collecting an enclosing let.
-        segments =
-          if let_depth > 0 do
-            [line]
-          else
-            split_line_top_level_semicolons(line)
-          end
-
-        {segments, next_let_depth(let_depth, line)}
-      end)
-
-    List.flatten(expanded)
-  end
-
-  @spec split_line_top_level_semicolons(line()) :: lines()
-  defp split_line_top_level_semicolons(line) when is_binary(line) do
-    {segments, current, _depth, _mode, _escaped} =
-      line
-      |> String.graphemes()
-      |> Enum.reduce({[], "", 0, :code, false}, fn ch,
-                                                   {segments, current, depth, mode, escaped} ->
-        cond do
-          mode == :string ->
-            next_mode = if not escaped and ch == "\"", do: :code, else: :string
-            next_escaped = ch == "\\" and not escaped
-            {segments, current <> ch, depth, next_mode, next_escaped}
-
-          mode == :char ->
-            next_mode = if not escaped and ch == "'", do: :code, else: :char
-            next_escaped = ch == "\\" and not escaped
-            {segments, current <> ch, depth, next_mode, next_escaped}
-
-          ch == "\"" ->
-            {segments, current <> ch, depth, :string, false}
-
-          ch == "'" ->
-            {segments, current <> ch, depth, :char, false}
-
-          ch in ["(", "[", "{"] ->
-            {segments, current <> ch, depth + 1, :code, false}
-
-          ch in [")", "]", "}"] ->
-            {segments, current <> ch, max(depth - 1, 0), :code, false}
-
-          ch == ";" and depth == 0 ->
-            {segments ++ [current], "", depth, :code, false}
-
-          true ->
-            {segments, current <> ch, depth, :code, false}
-        end
-      end)
-
-    (segments ++ [current])
-    |> Enum.map(&String.trim_trailing/1)
-    |> Enum.reject(&(String.trim(&1) == ""))
-  end
-
-  @spec let_binding_start_line?(line()) :: boolean()
-  defp let_binding_start_line?(line) when is_binary(line) do
-    trimmed = String.trim(line)
-
-    # `let crossed = …` matches the generic `name args =` shape unless we exclude the
-    # `let` / `in` keywords — otherwise outer `collect_let_bindings` treats nested let
-    # headers as sibling bindings and emits `-> ; let crossed = …`.
-    if trimmed in ["let", "in"] or String.starts_with?(trimmed, "let ") or
-         String.starts_with?(trimmed, "in ") do
-      false
-    else
-      binding_name = "(?:_|[a-z][A-Za-z0-9_]*)"
-
-      Regex.match?(
-        ~r/^[a-z][A-Za-z0-9_']*(?:\s+[a-z][A-Za-z0-9_']*|\s+_|\s+\([^\)]*\))*\s*=(?!=)/u,
-        trimmed
-      ) or
-        Regex.match?(
-          ~r/^\(\s*#{binding_name}(?:\s*,\s*#{binding_name}){1,2}\s*\)\s*=(?!=)/u,
-          trimmed
-        ) or
-        Regex.match?(
-          ~r/^\(\s*[A-Z][A-Za-z0-9_]*(?:\s+[^=()]+)?\s*\)\s*=(?!=)/u,
-          trimmed
-        )
-    end
-  end
-
-  @spec normalize(normalized_value()) :: normalized_value()
-  defp normalize(value) when is_map(value) do
-    value
-    |> Enum.map(fn {k, v} -> {k, normalize(v)} end)
-    |> Enum.into(%{})
-  end
-
-  defp normalize(value) when is_list(value) do
-    cond do
-      value == [] ->
-        []
-
-      Enum.all?(value, &is_integer/1) ->
-        List.to_string(value)
-
-      true ->
-        Enum.map(value, &normalize/1)
-    end
-  end
-
-  defp normalize(value), do: value
-
-  @spec normalize_embedded_case(lines()) :: source()
-  defp normalize_embedded_case(lines) do
-    case find_embedded_case_start(lines) do
-      nil ->
-        Enum.join(lines, "\n")
-
-      idx ->
-        {before, case_and_after} = Enum.split(lines, idx)
-
-        case case_and_after do
-          case_lines when is_list(case_lines) and case_lines != [] ->
-            {case_header_lines, branches} = split_case_header_lines(case_lines)
-
-            prefix =
-              before
-              |> Enum.join("\n")
-              |> String.trim()
-
-            {branches_text, remaining_lines} = normalize_case_branches(branches)
-            case_expr = build_embedded_case_expr(Enum.join(case_header_lines, "\n"), branches_text)
-            trailing = Enum.join(remaining_lines, "\n") |> String.trim()
-
-            combined =
-              if prefix == "" do
-                case_expr
-              else
-                prefix <> "\n" <> case_expr
-              end
-
-            if trailing == "" do
-              combined
-            else
-              combined <> "\n" <> trailing
-            end
-
-          _ ->
-            Enum.join(lines, "\n")
-        end
-    end
-  end
-
-  @spec find_embedded_case_start(lines()) :: non_neg_integer() | nil
-  defp find_embedded_case_start(lines) when is_list(lines) do
-    Enum.find_value(Enum.with_index(lines), fn {line, idx} ->
-      trimmed = String.trim(line)
-
-      cond do
-        case_header_line?(trimmed) and String.contains?(trimmed, " of") ->
-          idx
-
-        case_header_line?(trimmed) ->
-          rest = Enum.slice(lines, idx + 1, 40)
-
-          if Enum.any?(rest, fn next_line ->
-               t = String.trim(next_line)
-               t == "of" or Regex.match?(~r/^of\b/u, t)
-             end) do
-            idx
-          end
-
-        true ->
-          nil
-      end
-    end)
-  end
-
-  defp case_header_line?(trimmed) when is_binary(trimmed) do
-    String.contains?(trimmed, "case ") or String.contains?(trimmed, "(case") or
-      Regex.match?(~r/\bcase\b/u, trimmed)
-  end
-
-  @spec split_case_header_lines(lines()) :: {lines(), lines()}
-  defp split_case_header_lines([first | rest]) do
-    trimmed = String.trim(first)
-
-    if String.contains?(trimmed, " of") do
-      {[first], rest}
-    else
-      case Enum.split_while(rest, fn line ->
-             t = String.trim(line)
-             t != "of" and not Regex.match?(~r/^of\b/u, t)
-           end) do
-        {prefix, [of_line | branches]} ->
-          {[first | prefix] ++ [of_line], branches}
-
-        {prefix, []} ->
-          {[first | prefix], []}
-      end
-    end
-  end
-
-  @spec normalize_case_branches(lines()) :: {source(), lines()}
-  defp normalize_case_branches(lines) when is_list(lines) do
-    {items, current, _branch_indent, _let_depth, rest} =
-      consume_case_branches(lines, [], nil, nil, 0)
-
-    normalized_items =
-      if is_binary(current), do: items ++ [String.trim(current)], else: items
-
-    normalized_items =
-      normalized_items
-      |> Enum.map(&wrap_branch_case_expression/1)
-      |> Enum.map(&normalize_nested_case_in_branch/1)
-      |> Enum.map(&wrap_branch_case_expression/1)
-
-    {Enum.join(normalized_items, ";;"), rest}
-  end
-
-  # Outer case normalization leaves nested `case ... of` bodies as raw multiline
-  # text inside a branch RHS. Re-run case normalization so sibling arms like
-  # `( Just _, Err _ )` survive when embedded under a large outer arm body.
-  @spec normalize_nested_case_in_branch(source()) :: source()
-  defp normalize_nested_case_in_branch(branch) when is_binary(branch) do
-    case String.split(branch, "->", parts: 2) do
-      [pattern, expr] ->
-        trimmed = String.trim(expr)
-        reflowed = reflow_inline_case_arms(trimmed)
-
-        normalized =
-          if reflowed != trimmed do
-            # reflow already expanded ` of\n`, split sibling 3-tuple arms, and
-            # parenthesized leaking bodies — re-running normalize_case_source would
-            # collapse those arms back onto one line.
-            reflowed
-          else
-            normalize_case_source(trimmed)
-          end
-
-        String.trim(pattern) <> " -> " <> normalized
-
-      _ ->
-        branch
-    end
-  end
-
-  @spec reflow_inline_case_arms(source()) :: source()
-  defp reflow_inline_case_arms(source) when is_binary(source) do
-    if String.contains?(source, ";;") and not String.contains?(source, " of\n") do
-      source
-      |> expand_case_of_to_newline()
-      |> split_triple_case_sibling_arms()
-      |> Enum.map(&wrap_triple_case_reflow_fragment/1)
-      |> Enum.join("\n")
-    else
-      source
-    end
-  end
-
-  @spec split_triple_case_sibling_arms(source()) :: [source()]
-  defp split_triple_case_sibling_arms(source) when is_binary(source) do
-    source
-    |> String.split(~r/;;\s*(?=\(\s*[^,()]+\s*,\s*[^,()]+\s*,\s*[^)]+\)\s*->)/u)
-    |> Enum.map(&String.trim/1)
-    |> Enum.reject(&(&1 == ""))
-    |> Enum.flat_map(&split_triple_case_wildcard_tail/1)
-  end
-
-  # Parenthesize 3-tuple case arm bodies that still contain `;;` so sibling arms
-  # are not swallowed by yecc. Only touch triple-case headers/arms — never generic
-  # `pattern -> body` lines (nested 2-arm cases must keep their `;;` separators).
-  @spec wrap_triple_case_reflow_fragment(source()) :: source()
-  defp wrap_triple_case_reflow_fragment(fragment) when is_binary(fragment) do
-    fragment
-    |> wrap_triple_case_header_first_arm()
-    |> wrap_triple_tuple_arm_if_leaking()
-  end
-
-  @spec wrap_triple_case_header_first_arm(source()) :: source()
-  defp wrap_triple_case_header_first_arm(fragment) when is_binary(fragment) do
-    case Regex.run(
-           ~r/^(?<prefix>\(?\s*case\s+\(\s*[^)]+\)\s+of\s+)(\(\s*[^,()]+\s*,\s*[^,()]+\s*,\s*[^)]+\)\s*->)\s*(?<body>.*)$/su,
-           fragment
-         ) do
-      [_, prefix, first_arm, body] ->
-        prefix <> first_arm <> " " <> wrap_arm_body_if_leaking(body)
-
-      _ ->
-        fragment
-    end
-  end
-
-  @spec wrap_triple_tuple_arm_if_leaking(source()) :: source()
-  defp wrap_triple_tuple_arm_if_leaking(fragment) when is_binary(fragment) do
-    case Regex.run(
-           ~r/^(\(\s*[^,()]+\s*,\s*[^,()]+\s*,\s*[^)]+\)\s*->)\s*(.*)$/su,
-           String.trim(fragment)
-         ) do
-      [_, pattern, body] ->
-        pattern <> " " <> wrap_arm_body_if_leaking(body)
-
-      _ ->
-        fragment
-    end
-  end
-
-  @spec wrap_arm_body_if_leaking(source()) :: source()
-  defp wrap_arm_body_if_leaking(body) when is_binary(body) do
-    trimmed = String.trim(body)
-
-    if arm_body_needs_wrap?(trimmed) do
-      "(" <> trimmed <> ")"
-    else
-      trimmed
-    end
-  end
-
-  @spec arm_body_needs_wrap?(source()) :: boolean()
-  defp arm_body_needs_wrap?(body) when is_binary(body) do
-    String.contains?(body, ";;") and
-      not (String.starts_with?(body, "(") and paren_balance_outside_string_literals(body) == 0)
-  end
-
-  # Pull the triple-case wildcard `_ -> …` off an Err arm fragment. Inner nested
-  # cases may also contain `_ ->` arms, so split at the last `;; _ ->` separator.
-  @spec split_triple_case_wildcard_tail(source()) :: [source()]
-  defp split_triple_case_wildcard_tail(part) when is_binary(part) do
-    trimmed = String.trim(part)
-
-    if Regex.match?(~r/^\(\s*[^,()]+\s*,\s*[^,()]+\s*,\s*Err\s+_\s*\)\s*->/u, trimmed) do
-      case :binary.matches(part, ";; _ ->") do
-        [] ->
-          [part]
-
-        matches ->
-          {pos, _} = List.last(matches)
-          err_part = part |> String.slice(0, pos) |> String.trim()
-          wildcard = part |> String.slice(pos + 2, String.length(part)) |> String.trim_leading()
-          [err_part, wildcard]
-      end
-    else
-      [part]
-    end
-  end
-
-  @spec wrap_branch_case_expression(source()) :: source()
-  defp wrap_branch_case_expression(branch) when is_binary(branch) do
-    case String.split(branch, "->", parts: 2) do
-      [pattern, expr] ->
-        trimmed_expr = String.trim(expr)
-
-        if String.starts_with?(trimmed_expr, "case ") and String.contains?(trimmed_expr, " of ") do
-          String.trim(pattern) <> " -> (" <> trimmed_expr <> ")"
-        else
-          branch
-        end
-
-      _ ->
-        branch
-    end
-  end
-
-  @spec build_embedded_case_expr(source(), source()) :: source()
-  defp build_embedded_case_expr(case_header, branches_text)
-       when is_binary(case_header) and is_binary(branches_text) do
-    branches =
-      branches_text
-      |> String.trim_leading()
-      |> String.replace(~r/^;;\s*/, "")
-
-    header = String.trim_trailing(case_header)
-
-    if String.contains?(header, "++ case ") do
-      case String.split(header, "++ case ", parts: 2) do
-        [before_append, case_rest] ->
-          before_append <> "++ (case " <> case_rest <> " " <> branches <> ")"
-
-        _ ->
-          header <> " " <> branches
-      end
-    else
-      header <> " " <> branches
-    end
-  end
-
-  @spec consume_case_branches(
-          lines(),
-          [source()],
-          source() | nil,
-          non_neg_integer() | nil,
-          non_neg_integer()
-        ) ::
-          {[source()], source() | nil, non_neg_integer() | nil, non_neg_integer(), lines()}
-  defp consume_case_branches([], acc, current, branch_indent, let_depth),
-    do: {acc, current, branch_indent, let_depth, []}
-
-  defp consume_case_branches([line | rest], acc, current, branch_indent, let_depth) do
-    indent = leading_indent_count(line)
-
-    starts_branch =
-      case_branch_start_line?(line) and (is_nil(branch_indent) or indent == branch_indent)
-
-    cond do
-      is_binary(current) and is_integer(branch_indent) and indent < branch_indent and
-          String.starts_with?(String.trim(line), ",") ->
-        {acc, current, branch_indent, let_depth, [line | rest]}
-
-      is_binary(current) and is_integer(branch_indent) and case_branch_start_line?(line) and
-          indent < branch_indent ->
-        {acc, current, branch_indent, let_depth, [line | rest]}
-
-      is_binary(current) and is_integer(branch_indent) and case_branch_start_line?(line) and
-          indent > branch_indent ->
-        separator =
-          if String.ends_with?(String.trim(current), " of") do
-            " "
-          else
-            " ;; "
-          end
-
-        updated = current <> separator <> String.trim(line)
-        next_depth = next_let_depth(let_depth, line)
-        consume_case_branches(rest, acc, updated, branch_indent, next_depth)
-
-      starts_branch ->
-        flushed = if is_binary(current), do: acc ++ [String.trim(current)], else: acc
-        next_depth = next_let_depth(0, line)
-
-        consume_case_branches(
-          rest,
-          flushed,
-          String.trim(line),
-          branch_indent || indent,
-          next_depth
-        )
-
-      is_binary(current) and let_depth == 0 and case_branch_terminator_line?(line) and
-          (is_nil(branch_indent) or indent <= branch_indent) and
-          not (Regex.match?(~r/^in\b/u, String.trim(line)) and branch_has_open_let?(current)) ->
-        {acc, current, branch_indent, let_depth, [line | rest]}
-
-      is_binary(current) and current != "" ->
-        updated = current <> " " <> String.trim(line)
-        next_depth = next_let_depth(let_depth, line)
-        consume_case_branches(rest, acc, updated, branch_indent, next_depth)
-
-      true ->
-        next_depth = next_let_depth(let_depth, line)
-        consume_case_branches(rest, acc, String.trim(line), branch_indent, next_depth)
-    end
-  end
-
   @spec leading_indent_count(line()) :: non_neg_integer()
   defp leading_indent_count(line) when is_binary(line) do
     line
@@ -1107,61 +299,78 @@ defmodule ElmEx.Frontend.GeneratedExpressionParser do
     |> length()
   end
 
-  @spec case_branch_start_line?(line()) :: boolean()
-  defp case_branch_start_line?(line) when is_binary(line) do
-    case String.split(line, "->", parts: 2) do
-      [before_arrow, _after_arrow] ->
-        String.contains?(line, "->") and not String.contains?(before_arrow, "\\")
+  @spec fix_record_update_bar_paren_glitch(source()) :: source()
+  defp fix_record_update_bar_paren_glitch(source) when is_binary(source) do
+    # After aggressive case/layout normalization, a record-update bar line that used
+    # to be `| -- comment` can end up as `|) field = ...` (the `)` belongs to an
+    # outer tuple paren, not the record update). This rewrite is conservative:
+    # only fix the exact `|)` sequence when it is immediately followed by a field.
+    Regex.replace(~r/\|\)\s*([a-z][A-Za-z0-9_']*\s*=)/u, source, "| \\1")
+  end
 
-      _ ->
-        false
+  @spec collapse_standalone_record_update_bars(source()) :: source()
+  defp collapse_standalone_record_update_bars(source) when is_binary(source) do
+    source
+    |> String.split("\n")
+    |> do_collapse_standalone_record_update_bars([])
+    |> Enum.reverse()
+    |> Enum.join("\n")
+  end
+
+  defp do_collapse_standalone_record_update_bars([], acc), do: acc
+
+  defp do_collapse_standalone_record_update_bars([line | rest], []) do
+    do_collapse_standalone_record_update_bars(rest, [line])
+  end
+
+  defp do_collapse_standalone_record_update_bars([line | rest], [prev | acc_tail] = acc) do
+    if String.trim(line) == "|" do
+      do_collapse_standalone_record_update_bars(rest, [prev <> " |" | acc_tail])
+    else
+      do_collapse_standalone_record_update_bars(rest, [line | acc])
     end
   end
 
-  @spec case_branch_terminator_line?(line()) :: boolean()
-  defp case_branch_terminator_line?(line) when is_binary(line) do
-    trimmed = String.trim(line)
+  @spec close_unbalanced_brackets_before_final_pipe(source()) :: source()
+  defp close_unbalanced_brackets_before_final_pipe(source) when is_binary(source) do
+    if list_bracket_depth(source) > 0 do
+      lines =
+        source
+        |> String.split("\n")
+        |> Enum.reject(&(String.trim(&1) == ""))
 
-    (let_binding_start_line?(line) and not String.starts_with?(trimmed, "let ")) or
-      Regex.match?(~r/^in\b/u, trimmed)
-  end
+      case List.last(lines) do
+        line when is_binary(line) ->
+          trimmed = String.trim(line)
 
-  # True when an `in` line closes a let that is already open in the branch so far.
-  defp branch_has_open_let?(branch_text) when is_binary(branch_text) do
-    sanitized = strip_quoted_literals_for_keywords(branch_text)
-    lets = Regex.scan(~r/\blet\b/u, sanitized) |> length()
-    ins = Regex.scan(~r/\bin\b/u, sanitized) |> length()
-    lets > ins
-  end
-
-  @spec normalize_binding_for_separator(source()) :: source()
-  defp normalize_binding_for_separator(binding) when is_binary(binding) do
-    if Regex.match?(~r/=\s*case\b/su, binding) and not Regex.match?(~r/=\s*\(case\b/su, binding) do
-      case String.split(binding, "=", parts: 2) do
-        [lhs, rhs] ->
-          String.trim_trailing(lhs) <> "= (" <> String.trim_leading(rhs) <> ")"
+          if String.starts_with?(trimmed, "|>") do
+            indent = String.duplicate(" ", leading_indent_count(line))
+            prefix = Enum.drop(lines, -1)
+            Enum.join(prefix ++ [indent <> "]", line], "\n")
+          else
+            source
+          end
 
         _ ->
-          binding
+          source
       end
     else
-      binding
+      source
     end
-  end
-
-  @spec maybe_fallback_unsupported(source(), Types.parse_error_reason()) ::
-          {:ok, expr()} | {:error, Types.parse_error_reason()}
-  defp maybe_fallback_unsupported(source, reason) when is_binary(source) do
-    {:error, reason}
   end
 
   @spec parse_once(source()) :: {:ok, expr()} | {:error, Types.parse_error_reason()}
   defp parse_once(source) when is_binary(source) do
-    prepared = prepare_source(source)
+    parse_prepared(prepare_source(source))
+  end
+
+  @spec parse_prepared(source(), keyword()) :: {:ok, expr()} | {:error, Types.parse_error_reason()}
+  defp parse_prepared(prepared, opts \\ []) do
+    force_layout? = Keyword.get(opts, :force_layout_lexer, false)
 
     with :ok <- LetLayout.validate(prepared),
          :ok <- validate_source_compat(prepared),
-         {:ok, tokens, _line} <- :elm_ex_expr_lexer.string(String.to_charlist(prepared)),
+         {:ok, tokens, _line} <- tokenize_prepared(prepared, force_layout?),
          {:ok, expr} <- :elm_ex_expr_parser.parse(tokens) do
       {:ok, normalize(expr)}
     else
@@ -1169,6 +378,46 @@ defmodule ElmEx.Frontend.GeneratedExpressionParser do
       {:error, reason} -> {:error, reason}
       {:error, reason, _line} -> {:error, reason}
     end
+  end
+
+  @spec tokenize_prepared(source(), boolean()) ::
+          {:ok, [term()], pos_integer()} | {:error, term()}
+  defp tokenize_prepared(prepared, true), do: ExprLayoutLexer.tokenize(prepared)
+
+  defp tokenize_prepared(prepared, false), do: tokenize_for_parser(prepared)
+
+  # Multiline sources without legacy `;;` arm separators use the layout lexer.
+  # Normalized `;;` fragments and single-line sources keep the whitespace-skipping Leex path.
+  @spec tokenize_for_parser(source()) :: {:ok, [term()], pos_integer()} | {:error, term()}
+  defp tokenize_for_parser(prepared) do
+    if layout_lexer_enabled?() and layout_lexer_eligible?(prepared) do
+      ExprLayoutLexer.tokenize(prepared)
+    else
+      :elm_ex_expr_lexer.string(String.to_charlist(prepared))
+    end
+  end
+
+  defp layout_lexer_enabled? do
+    Application.get_env(:elm_ex, :expr_layout_lexer, true)
+  end
+
+  defp layout_lexer_eligible?(prepared) do
+    String.contains?(prepared, "\n") and not String.contains?(prepared, ";;") and
+      LetLayout.validate(prepared) == :ok
+  end
+
+  @doc """
+  Parse expression source using the layout lexer directly (no `ExprLayout.normalize/1`).
+
+  Prefer `parse/1` for normal use — it selects layout lexing or normalize automatically.
+  This entry point always tokenizes with `ExprLayoutLexer` and is kept for tests and
+  tools that must bypass the legacy normalize path.
+  """
+  @spec parse_with_layout_lexer(String.t()) :: {:ok, expr()} | {:error, Types.parse_error_reason()}
+  def parse_with_layout_lexer(source) when is_binary(source) do
+    source
+    |> prepare_source_core()
+    |> parse_prepared(force_layout_lexer: true)
   end
 
   @spec recover_source_for_reason(source(), Types.expr_yecc_error()) :: source() | nil
@@ -1253,40 +502,10 @@ defmodule ElmEx.Frontend.GeneratedExpressionParser do
     do_strip_line_comment(rest, next_mode, next_escaped, [char | acc])
   end
 
-  @spec next_let_depth(non_neg_integer(), line()) :: non_neg_integer()
-  defp next_let_depth(current_depth, line) when is_binary(line) do
-    sanitized = strip_quoted_literals_for_keywords(line)
-    lets = Regex.scan(~r/\blet\b/u, sanitized) |> length()
-    ins = Regex.scan(~r/\bin\b/u, sanitized) |> length()
-    max(current_depth + lets - ins, 0)
-  end
-
-  @spec strip_quoted_literals_for_keywords(source()) :: source()
-  defp strip_quoted_literals_for_keywords(line) when is_binary(line) do
-    line
-    |> String.replace(~r/\"\"\".*?\"\"\"/u, "\"\"")
-    |> String.replace(~r/"(?:[^"\\]|\\.)*"/u, "\"\"")
-    |> String.replace(~r/'(?:[^'\\]|\\.)*'/u, "''")
-  end
-
   @spec unbalanced_multiline_string_delimiter?(source()) :: boolean()
   defp unbalanced_multiline_string_delimiter?(source) when is_binary(source) do
     occurrences = Regex.scan(~r/\"\"\"/u, source) |> length()
     rem(occurrences, 2) == 1
-  end
-
-  @spec normalize_inline_case_branch_separators(source()) :: source()
-  defp normalize_inline_case_branch_separators(source) when is_binary(source) do
-    if String.contains?(source, "case ") and String.contains?(source, " of") and
-         not String.contains?(source, " of\n") do
-      Regex.replace(
-        ~r/(?<!;)(?<!of);\s*(?=(?:True|False|_|'[^']*'|\"[^\"]*\"|0x[0-9A-Fa-f]+|[0-9]+|\(\)|\[\]|\([^)]+\)|\{[^}]+\}|[A-Z][A-Za-z0-9_.']*|[a-z][A-Za-z0-9_']*)\s*->)/u,
-        source,
-        ";; "
-      )
-    else
-      source
-    end
   end
 
   @spec normalize_trailing_commas(source()) :: source()
@@ -1437,4 +656,30 @@ defmodule ElmEx.Frontend.GeneratedExpressionParser do
   defp scrub_scientific_float_literals(source) when is_binary(source) do
     Regex.replace(~r/\b[0-9]+(?:\.[0-9]+)?[eE][+\-]?[0-9]+\b/u, source, "0.0")
   end
+
+  @spec normalize(normalized_value()) :: normalized_value()
+  defp normalize(value) when is_map(value) do
+    value
+    |> Enum.map(fn {k, v} -> {k, normalize(v)} end)
+    |> Enum.into(%{})
+  end
+
+  defp normalize(value) when is_list(value) do
+    cond do
+      value == [] ->
+        []
+
+      Enum.all?(value, &is_integer/1) ->
+        List.to_string(value)
+
+      true ->
+        Enum.map(value, &normalize/1)
+    end
+  end
+
+  defp normalize(value), do: value
+
+  @spec maybe_fallback_unsupported(source(), Types.parse_error_reason()) ::
+          {:ok, expr()} | {:error, Types.parse_error_reason()}
+  defp maybe_fallback_unsupported(_source, reason), do: {:error, reason}
 end

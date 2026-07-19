@@ -54,15 +54,24 @@ defmodule Elmc do
     entry_module = opts[:entry_module] || "Main"
     wasm_only? = Targets.wasm_only?(opts)
 
+    compile_log("compile starting (#{Path.basename(project_dir)}, entry=#{entry_module})")
+
     with {:ok, project} <- project_for_compile(project_dir, opts),
          :ok <- check_missing_imports(project, opts),
+         :ok <-
+           compile_log(
+             "lowering IR (large elm-pages apps often take 20–40 minutes with no further output)…"
+           ),
          {:ok, ir0} <- Lowerer.lower_project(project),
+         :ok <- compile_log("IR lower complete (#{length(ir0.modules)} modules); emitting artifacts…"),
          ir0 = PipeChain.desugar_project(ir0),
          ir <- maybe_strip_dead_code(ir0, entry_module, opts[:strip_dead_code]),
          {:ok, ir, debug_usage_diagnostics} <- check_debug_usage(ir, opts),
+         opts = Map.put(opts, :svg_attribute_names, IRQueries.svg_attribute_names(ir0)),
          out_dir = opts[:out_dir] || "build",
          :ok <- seed_codegen_process_state(ir, opts),
          :ok <- maybe_write_c_artifacts(ir, out_dir, entry_module, opts, wasm_only?) do
+      compile_log("artifact emit complete")
       layout_coercion_diagnostics =
         Process.get(:elmc_layout_coercion_diagnostics, [])
         |> Elmc.Backend.CCodegen.LayoutCoerceEmit.format_compile_warnings()
@@ -200,9 +209,15 @@ defmodule Elmc do
   defp maybe_strip_dead_code(ir, _entry_module, false), do: ir
   defp maybe_strip_dead_code(ir, entry_module, _), do: ElmEx.IR.DeadCode.strip(ir, entry_module)
 
+  defp compile_log(message) when is_binary(message) do
+    IO.puts(:stderr, "[elmc] #{message}")
+    :ok
+  end
+
   @spec seed_codegen_process_state(ElmEx.IR.t(), compile_options()) :: :ok
   defp seed_codegen_process_state(ir, opts) do
     Process.put(:elmc_codegen_opts, opts)
+    Process.put(:elmc_svg_attribute_names, Map.get(opts, :svg_attribute_names, MapSet.new()))
     Process.put(:elmc_constructor_tags, IRQueries.constructor_tag_map(ir))
     Process.put(:elmc_module_ports, IRQueries.module_ports_map(ir))
     Process.put(:elmc_record_alias_shapes, IRQueries.record_alias_shape_map(ir))

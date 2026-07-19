@@ -29,6 +29,9 @@ defmodule Elmc.Backend.Plan.Lower.IntCall do
       name == "__fdiv__" ->
         Arith.emit_boxed_binop(:fdiv, left, right, ctx, b)
 
+      name == "__pow__" ->
+        compile_runtime_binop_with_native_box("elmc_basics_pow", left, right, ctx, b)
+
       Map.has_key?(@binary_ops, name) and int_binop_operands?(left, right) ->
         Arith.emit_binary(Map.fetch!(@binary_ops, name), left, right, ctx, b)
 

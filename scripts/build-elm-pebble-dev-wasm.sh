@@ -51,6 +51,8 @@ ensure_wasm_opt() {
 # matches mix-test-limited's default ceiling and still prevents unbounded OOM.
 export TEST_ULIMIT_V_KB="${TEST_ULIMIT_V_KB:-10485760}"
 export ELIXIR_ERL_OPTIONS="${ELIXIR_ERL_OPTIONS:-+S 1:1 +MMscs 256}"
+echo "==> elmc compile (IR lower + WASM emit; often 20–40 min for elm_pebble_dev)"
+echo "    Progress lines are prefixed with [elmc] on stderr."
 "$ROOT/scripts/mix-run-limited.sh" elmc -e "
 out = \"$OUT\"
 File.rm_rf!(out)

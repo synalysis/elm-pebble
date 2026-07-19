@@ -72,9 +72,22 @@ defmodule Elmc.Backend.Plan.Lower.Compare do
     operand_ctx = Context.for_branch_arm(ctx)
 
     with {:ok, subj_reg, subj_owned?, b1} <- compile_operand(maybe_expr, operand_ctx, b),
-         {:ok, reg, b2} <- emit_test_maybe_nothing(subj_reg, b1) do
-      b3 = maybe_consume_owned(b2, subj_reg, subj_owned?)
-      {:ok, reg, b3}
+         {:ok, nothing_reg, b2} <- emit_test_maybe_nothing(subj_reg, b1),
+         {reg, b3} = Builder.fresh_reg(b2) do
+      {_, b4} =
+        Builder.emit(b3, :test_bool, %{
+          dest: reg,
+          args: %{subject: nothing_reg, want_true: true},
+          effects: %{
+            produces: {:owned, reg},
+            consumes: [nothing_reg],
+            borrows: [],
+            fallible: false
+          }
+        })
+
+      b5 = maybe_consume_owned(b4, subj_reg, subj_owned?)
+      {:ok, reg, b5}
     else
       _ -> :unsupported
     end
@@ -85,8 +98,19 @@ defmodule Elmc.Backend.Plan.Lower.Compare do
 
     with {:ok, subj_reg, subj_owned?, b1} <- compile_operand(maybe_expr, operand_ctx, b),
          {:ok, nothing_reg, b2} <- emit_test_maybe_nothing(subj_reg, b1),
-         {:ok, zero_reg, b3} <- emit_const_int(0, b2),
-         {:ok, reg, b4} <- emit_compare_eq(nothing_reg, zero_reg, b3) do
+         {reg, b3} = Builder.fresh_reg(b2) do
+      {_, b4} =
+        Builder.emit(b3, :test_bool, %{
+          dest: reg,
+          args: %{subject: nothing_reg, want_true: false},
+          effects: %{
+            produces: {:owned, reg},
+            consumes: [nothing_reg],
+            borrows: [],
+            fallible: false
+          }
+        })
+
       b5 = maybe_consume_owned(b4, subj_reg, subj_owned?)
       {:ok, reg, b5}
     else
@@ -133,29 +157,6 @@ defmodule Elmc.Backend.Plan.Lower.Compare do
     {:ok, reg, b2}
   end
 
-  defp emit_const_int(value, b) do
-    {reg, b1} = Builder.emit_const_int(b, value)
-    {:ok, reg, b1}
-  end
-
-  defp emit_compare_eq(left, right, b) do
-    {reg, b1} = Builder.fresh_reg(b)
-
-    {_, b2} =
-      Builder.emit(b1, :compare, %{
-        dest: reg,
-        args: %{kind: :eq, left: left, right: right, mode: :int_boxed},
-        effects: %{
-          produces: {:owned, reg},
-          consumes: [],
-          borrows: [left, right],
-          fallible: false
-        }
-      })
-
-    {:ok, reg, b2}
-  end
-
   defp maybe_consume_owned(b, _reg, false), do: b
   defp maybe_consume_owned(b, _reg, true), do: b
 
@@ -182,6 +183,9 @@ defmodule Elmc.Backend.Plan.Lower.Compare do
     env = type_env(ctx)
 
     cond do
+      boxed_bool_test_expr?(left) or boxed_bool_test_expr?(right) ->
+        :bool_scalar
+
       TypedReturn.list_int_expr?(left, env) and TypedReturn.list_int_expr?(right, env) ->
         :list_int
 
@@ -195,6 +199,25 @@ defmodule Elmc.Backend.Plan.Lower.Compare do
         :pointer
     end
   end
+
+  defp boxed_bool_test_expr?(%{op: :runtime_call, function: function}) when is_binary(function) do
+    function in [
+      "elmc_maybe_is_nothing",
+      "elmc_list_is_empty",
+      "maybe_is_nothing",
+      "list_is_empty"
+    ]
+  end
+
+  defp boxed_bool_test_expr?(%{op: :qualified_call, target: target}) when is_binary(target) do
+    target in ["List.isEmpty", "Maybe.isNothing"]
+  end
+
+  defp boxed_bool_test_expr?(%{op: :call, name: name}) when is_binary(name) do
+    name in ["isEmpty", "isNothing"]
+  end
+
+  defp boxed_bool_test_expr?(_expr), do: false
 
   defp string_compare_pair?(left, right, env) do
     left_kind = string_operand_kind(left, env)
@@ -223,6 +246,21 @@ defmodule Elmc.Backend.Plan.Lower.Compare do
   end
 
   defp int_equality_operand?(%{op: :int_literal}, _env), do: true
+
+  defp int_equality_operand?(%{op: :string_length_expr}, _env), do: true
+
+  defp int_equality_operand?(%{op: :runtime_call, function: function}, _env)
+       when function in [
+              "elmc_string_length",
+              "elmc_string_length_val",
+              "elmc_string_length_boxed",
+              "string_length_boxed"
+            ],
+       do: true
+
+  defp int_equality_operand?(%{op: :qualified_call, target: target}, _env)
+       when target in ["String.length", "Basics.String.length"],
+       do: true
 
   defp int_equality_operand?(expr, env) do
     case TypedReturn.expr_type(expr, env) do

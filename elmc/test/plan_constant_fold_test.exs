@@ -1,8 +1,54 @@
 defmodule Elmc.PlanConstantFoldTest do
   use Elmc.TestSupport.PrimaryCodegenCase, async: true
 
+  alias Elmc.Backend.C.Lower.Function, as: CLowerFunction
+  alias Elmc.Backend.CCodegen.IRQueries
+  alias Elmc.Backend.Plan.Lower.Function, as: PlanLower
   alias Elmc.Backend.Plan.Lower.If, as: PlanIf
   alias Elmc.Backend.Plan.{Builder, ConstantFold, Context}
+  alias ElmEx.Frontend.Bridge
+  alias ElmEx.IR.Lowerer
+
+  @minimal_elm_json Jason.encode!(%{
+                        "type" => "application",
+                        "source-directories" => ["src"],
+                        "elm-version" => "0.19.1",
+                        "dependencies" => %{"direct" => %{"elm/core" => "1.0.5"}, "indirect" => %{}}
+                      })
+
+  defp write_minimal_project!(project_dir, source) do
+    File.rm_rf!(project_dir)
+    File.mkdir_p!(Path.join(project_dir, "src"))
+    File.write!(Path.join(project_dir, "src/Main.elm"), source)
+    File.write!(Path.join(project_dir, "elm.json"), @minimal_elm_json <> "\n")
+  end
+
+  defp lower_main!(source, fun_name) do
+    project_dir = Path.expand("tmp/plan_fold_#{fun_name}", __DIR__)
+    write_minimal_project!(project_dir, source)
+    {:ok, project} = Bridge.load_project(project_dir)
+    {:ok, ir} = Lowerer.lower_project(project)
+    decl_map = IRQueries.function_decl_map(ir)
+
+    case Map.get(decl_map, {"Main", fun_name}) do
+      nil -> flunk("Main.#{fun_name} not found in lowered IR")
+      decl -> {decl, decl_map}
+    end
+  end
+
+  defp emit_main_c!(source, fun_name, opts \\ []) do
+    {decl, decl_map} = lower_main!(source, fun_name)
+
+    assert {:ok, plan} =
+             PlanLower.lower(
+               decl,
+               "Main",
+               decl_map,
+               Keyword.merge([rc_required: true], opts)
+             )
+
+    CLowerFunction.emit(plan)
+  end
 
   test "constant fold evaluates literal comparisons" do
     ctx = Context.new(module: "Main")
@@ -64,31 +110,12 @@ defmodule Elmc.PlanConstantFoldTest do
         List.length board
     """
 
-    project_dir = Path.expand("tmp/plan_fold_list_repeat", __DIR__)
-    out_dir = Path.expand("tmp/plan_fold_list_repeat_codegen", __DIR__)
-    File.rm_rf!(project_dir)
-    File.rm_rf!(out_dir)
-    File.mkdir_p!(Path.join(project_dir, "src"))
-    File.write!(Path.join(project_dir, "src/Main.elm"), source)
+    c = emit_main_c!(source, "board")
 
-    File.write!(
-      Path.join(project_dir, "elm.json"),
-      File.read!(Path.expand("fixtures/simple_project/elm.json", __DIR__))
-    )
-
-    assert {:ok, _} =
-             Elmc.compile(project_dir, %{
-               out_dir: out_dir,
-               entry_module: "Main",
-               strip_dead_code: false
-             })
-
-    generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
-
-    refute generated_c =~ "140 <= 0"
-    assert generated_c =~ "plan_list_int_values_"
-    assert generated_c =~ "[140]"
-    refute generated_c =~ "list_repeat_zero_buf_"
+    refute c =~ "140 <= 0"
+    assert c =~ "plan_list_int_values_"
+    assert c =~ "[140]"
+    refute c =~ "list_repeat_zero_buf_"
   end
 
   test "List.repeat with folded top-level count propagates into static int list" do
@@ -112,38 +139,11 @@ defmodule Elmc.PlanConstantFoldTest do
         List.repeat boardSize 0
     """
 
-    project_dir = Path.expand("tmp/plan_fold_list_repeat_heritage", __DIR__)
-    out_dir = Path.expand("tmp/plan_fold_list_repeat_heritage_codegen", __DIR__)
-    File.rm_rf!(project_dir)
-    File.rm_rf!(out_dir)
-    File.mkdir_p!(Path.join(project_dir, "src"))
-    File.write!(Path.join(project_dir, "src/Main.elm"), source)
+    c = emit_main_c!(source, "emptyBoard")
 
-    File.write!(
-      Path.join(project_dir, "elm.json"),
-      File.read!(Path.expand("fixtures/simple_project/elm.json", __DIR__))
-    )
-
-    assert {:ok, _} =
-             Elmc.compile(project_dir, %{
-               out_dir: out_dir,
-               entry_module: "Main",
-               strip_dead_code: false
-             })
-
-    generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
-
-    assert generated_c =~ "plan_list_int_values_"
-    assert generated_c =~ "[140]"
-
-    empty_board =
-      generated_c
-      |> String.split("static RC elmc_fn_Main_emptyBoard")
-      |> Enum.at(1, "")
-      |> String.split("static ", parts: 2)
-      |> hd()
-
-    refute empty_board =~ "elmc_list_repeat"
-    refute empty_board =~ "elmc_fn_Main_boardSize"
+    assert c =~ "plan_list_int_values_"
+    assert c =~ "[140]"
+    refute c =~ "elmc_list_repeat"
+    refute c =~ "elmc_fn_Main_boardSize"
   end
 end

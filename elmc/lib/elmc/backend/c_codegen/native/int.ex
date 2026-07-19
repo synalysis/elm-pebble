@@ -191,37 +191,41 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
   end
 
   def expr?(%{op: :qualified_call, target: target, args: args}, env) do
-    case Host.special_value_from_target(target, args) do
-      %{op: op} when op in [:int_literal, :char_literal] ->
-        true
+    if Process.get(:elmc_binding_plans_active) do
+      structural_expr?(%{op: :qualified_call, target: target, args: args})
+    else
+      case Host.special_value_from_target(target, args) do
+        %{op: op} when op in [:int_literal, :char_literal] ->
+          true
 
-      nil ->
-        cond do
-          Host.qualified_builtin_operator_member?(target, [
-            "__add__",
-            "__sub__",
-            "__mul__",
-            "__idiv__",
-            "modBy",
-            "remainderBy",
-            "min",
-            "max"
-          ]) and length(args) == 2 ->
-            Enum.all?(args, &expr?(&1, env))
+        nil ->
+          cond do
+            Host.qualified_builtin_operator_member?(target, [
+              "__add__",
+              "__sub__",
+              "__mul__",
+              "__idiv__",
+              "modBy",
+              "remainderBy",
+              "min",
+              "max"
+            ]) and length(args) == 2 ->
+              Enum.all?(args, &expr?(&1, env))
 
-          Host.qualified_builtin_operator_member?(target, ["abs", "negate"]) and length(args) == 1 ->
-            Enum.all?(args, &expr?(&1, env))
+            Host.qualified_builtin_operator_member?(target, ["abs", "negate"]) and length(args) == 1 ->
+              Enum.all?(args, &expr?(&1, env))
 
-          target_key = Host.split_qualified_function_target(Host.normalize_special_target(target)) ->
-            inline_function_expr?(target_key, args, env) or
-              typed_expr?(%{op: :qualified_call, target: target, args: args}, env)
+            target_key = Host.split_qualified_function_target(Host.normalize_special_target(target)) ->
+              inline_function_expr?(target_key, args, env) or
+                typed_expr?(%{op: :qualified_call, target: target, args: args}, env)
 
-          true ->
-            false
-        end
+            true ->
+              false
+          end
 
-      expr ->
-        expr?(expr, env)
+        expr ->
+          expr?(expr, env)
+      end
     end
   end
 
@@ -326,6 +330,20 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
     end
   end
 
+  defp structural_qualified_call_expr?(target, args) do
+    (Host.qualified_builtin_operator_member?(target, [
+       "__add__",
+       "__sub__",
+       "__mul__",
+       "__idiv__",
+       "modBy",
+       "remainderBy"
+     ]) and length(args) == 2 and Enum.all?(args, &structural_expr?/1)) or
+      (Host.qualified_builtin_operator_member?(target, ["abs", "negate"]) and
+         length(args) == 1 and
+         Enum.all?(args, &structural_expr?/1))
+  end
+
   @spec structural_expr?(Types.ir_expr()) :: boolean()
   def structural_expr?(%{op: :int_literal, union_ctor: ctor}) when is_binary(ctor), do: false
 
@@ -351,25 +369,19 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
       do: Enum.all?(args, &structural_expr?/1)
 
   def structural_expr?(%{op: :qualified_call, target: target, args: args}) do
-    case Host.special_value_from_target(target, args) do
-      %{op: op} when op in [:int_literal, :char_literal] ->
-        true
+    if Process.get(:elmc_binding_plans_active) do
+      structural_qualified_call_expr?(target, args)
+    else
+      case Host.special_value_from_target(target, args) do
+        %{op: op} when op in [:int_literal, :char_literal] ->
+          true
 
-      nil ->
-        (Host.qualified_builtin_operator_member?(target, [
-           "__add__",
-           "__sub__",
-           "__mul__",
-           "__idiv__",
-           "modBy",
-           "remainderBy"
-         ]) and length(args) == 2 and Enum.all?(args, &structural_expr?/1)) or
-          (Host.qualified_builtin_operator_member?(target, ["abs", "negate"]) and
-             length(args) == 1 and
-             Enum.all?(args, &structural_expr?/1))
+        nil ->
+          structural_qualified_call_expr?(target, args)
 
-      expr ->
-        structural_expr?(expr)
+        expr ->
+          structural_expr?(expr)
+      end
     end
   end
 
@@ -390,8 +402,12 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
 
   @spec native_let_value_expr?(Types.ir_expr(), Types.compile_env()) :: boolean()
   def native_let_value_expr?(expr, env) do
-    structural_expr?(expr) or field_arith_expr?(expr) or Host.native_int_expr?(expr, env) or
-      ConstantInt.native_let_value?(expr, env)
+    if Process.get(:elmc_binding_plans_active) do
+      structural_expr?(expr) or field_arith_expr?(expr)
+    else
+      structural_expr?(expr) or field_arith_expr?(expr) or Host.native_int_expr?(expr, env) or
+        ConstantInt.native_let_value?(expr, env)
+    end
   end
 
   defp record_field_var_access?(%{op: :field_access, arg: %{op: :var, name: name}, field: field})

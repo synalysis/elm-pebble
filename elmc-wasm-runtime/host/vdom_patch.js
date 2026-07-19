@@ -149,7 +149,7 @@ export function createVdomPatchRuntime(deps) {
 
     const payload = readHandle(resolved);
     const tag = payload?.tagName ?? "div";
-    const ns = payload?.ns ?? null;
+    const ns = payload?.namespace ?? payload?.ns ?? null;
     const el = createElementDom(tag, ns);
     if (!el) return null;
 

@@ -204,19 +204,30 @@ defmodule Elmc.Backend.CCodegen.RcRequired do
   def body_allocates?(expr), do: expr_allocates?(expr || %{op: :int_literal, value: 0})
 
   defp callee_closure(required, decl_map) do
+    required = MapSet.filter(required, &Map.has_key?(decl_map, &1))
+
     expanded =
       Enum.reduce(required, required, fn {mod, name}, acc ->
-        decl = Map.fetch!(decl_map, {mod, name})
+        case Map.fetch(decl_map, {mod, name}) do
+          {:ok, decl} ->
+            decl.expr
+            |> GenericReachability.expr_callees(mod, decl_map)
+            |> Enum.reduce(acc, fn callee, acc2 ->
+              cond do
+                not Map.has_key?(decl_map, callee) ->
+                  acc2
 
-        decl.expr
-        |> GenericReachability.expr_callees(mod, decl_map)
-        |> Enum.reduce(acc, fn callee, acc2 ->
-          if native_scalar_callee?(callee, decl_map) do
-            acc2
-          else
-            MapSet.put(acc2, callee)
-          end
-        end)
+                native_scalar_callee?(callee, decl_map) ->
+                  acc2
+
+                true ->
+                  MapSet.put(acc2, callee)
+              end
+            end)
+
+          :error ->
+            acc
+        end
       end)
 
     if MapSet.equal?(expanded, required) do

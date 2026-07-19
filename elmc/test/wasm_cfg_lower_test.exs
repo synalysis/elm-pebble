@@ -53,6 +53,6 @@ defmodule Elmc.WasmCfgLowerTest do
     assert body =~ "$plan_loop"
     assert body =~ ~r/local\.set \$fn_out \(local\.get \$reg\d+\)/
     assert body =~ ~r/local\.set \$owned\d+ \(i32\.const 0\)/
-    assert body =~ ~r/\(drop\s+\(call \$runtime_release \(local\.get \$owned/
+    assert body =~ ~r/\(drop\s+\(call \$runtime_release_unless_reachable_from_roots \(local\.get \$owned/
   end
 end

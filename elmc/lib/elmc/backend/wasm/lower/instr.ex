@@ -72,7 +72,7 @@ defmodule Elmc.Backend.Wasm.Lower.Instr do
         emit_int_arith(instr, slots, rc?, opts)
 
       :compare ->
-        emit_compare(instr, slots)
+        emit_compare(instr, slots, opts)
 
       :boxed_binop ->
         emit_boxed_binop(instr, slots, rc?, opts)
@@ -96,7 +96,7 @@ defmodule Elmc.Backend.Wasm.Lower.Instr do
         emit_record_get(instr, slots, rc?)
 
       :record_update ->
-        emit_record_update(instr, slots, rc?)
+        emit_record_update(instr, slots, rc?, opts)
 
       :tuple_proj ->
         emit_tuple_proj(instr, slots, rc?)
@@ -216,13 +216,13 @@ defmodule Elmc.Backend.Wasm.Lower.Instr do
         emit_switch_tag(subject, arms, default_id, slots, rc?)
 
       {:ret, reg} ->
-        emit_ret(reg, slots, rc?)
+        emit_ret(reg, slots, rc?, opts)
 
       :none ->
         []
 
       _ ->
-        emit_ret(0, slots, rc?)
+        emit_ret(0, slots, rc?, opts)
     end
   end
 
@@ -233,7 +233,7 @@ defmodule Elmc.Backend.Wasm.Lower.Instr do
     if rc? and not native? do
       Slots.publish_reg_to_fn_out(slots, reg)
     else
-      emit_runtime_call(:new_int, [int_operand_wat(reg, slots)], :fn_out, slots, rc?, opts)
+      emit_runtime_call(:new_int, [int_operand_wat(reg, slots, opts)], :fn_out, slots, rc?, opts)
     end
   end
 
@@ -385,10 +385,10 @@ defmodule Elmc.Backend.Wasm.Lower.Instr do
 
     cond do
       kind in [:add_vars, :sub_vars, :mul_vars] and is_integer(rhs) and
-          not native_int_binop_operands?(lhs, rhs, opts) ->
+          not native_int_binop_operands?(lhs, rhs, opts, MapSet.new()) ->
         emit_float_binop(float_op_for_kind(kind), lhs, rhs, dest_reg, slots, rc?, opts)
 
-      kind in [:add_const, :sub_const] and not native_int_reg?(opts, lhs) ->
+      kind in [:add_const, :sub_const] and not native_int_reg?(opts, lhs, MapSet.new()) ->
         emit_float_binop(
           float_op_for_kind(kind),
           lhs,
@@ -405,34 +405,34 @@ defmodule Elmc.Backend.Wasm.Lower.Instr do
         expr =
           case kind do
             :add_const ->
-              binop("i32.add", int_operand_wat(lhs, slots), int_const(Map.fetch!(args, :value)))
+              binop("i32.add", int_operand_wat(lhs, slots, opts), int_const(Map.fetch!(args, :value)))
 
             :sub_const ->
-              binop("i32.sub", int_operand_wat(lhs, slots), int_const(Map.fetch!(args, :value)))
+              binop("i32.sub", int_operand_wat(lhs, slots, opts), int_const(Map.fetch!(args, :value)))
 
             :add_vars ->
-              binop("i32.add", int_operand_wat(lhs, slots), int_operand_wat(rhs, slots))
+              binop("i32.add", int_operand_wat(lhs, slots, opts), int_operand_wat(rhs, slots, opts))
 
             :sub_vars ->
-              binop("i32.sub", int_operand_wat(lhs, slots), int_operand_wat(rhs, slots))
+              binop("i32.sub", int_operand_wat(lhs, slots, opts), int_operand_wat(rhs, slots, opts))
 
             :mul_vars ->
-              binop("i32.mul", int_operand_wat(lhs, slots), int_operand_wat(rhs, slots))
+              binop("i32.mul", int_operand_wat(lhs, slots, opts), int_operand_wat(rhs, slots, opts))
 
             :idiv_vars ->
-              binop("i32.div_s", int_operand_wat(lhs, slots), int_operand_wat(rhs, slots))
+              binop("i32.div_s", int_operand_wat(lhs, slots, opts), int_operand_wat(rhs, slots, opts))
 
             :mod_vars ->
-              binop("i32.rem_s", int_operand_wat(lhs, slots), int_operand_wat(rhs, slots))
+              binop("i32.rem_s", int_operand_wat(lhs, slots, opts), int_operand_wat(rhs, slots, opts))
 
             :rem_vars ->
-              binop("i32.rem_s", int_operand_wat(lhs, slots), int_operand_wat(rhs, slots))
+              binop("i32.rem_s", int_operand_wat(lhs, slots, opts), int_operand_wat(rhs, slots, opts))
 
             :min_vars ->
-              binop("i32.min_s", int_operand_wat(lhs, slots), int_operand_wat(rhs, slots))
+              binop("i32.min_s", int_operand_wat(lhs, slots, opts), int_operand_wat(rhs, slots, opts))
 
             :max_vars ->
-              binop("i32.max_s", int_operand_wat(lhs, slots), int_operand_wat(rhs, slots))
+              binop("i32.max_s", int_operand_wat(lhs, slots, opts), int_operand_wat(rhs, slots, opts))
 
             _ ->
               int_const(0)
@@ -447,21 +447,28 @@ defmodule Elmc.Backend.Wasm.Lower.Instr do
   defp float_op_for_kind(:sub_vars), do: :sub
   defp float_op_for_kind(:sub_const), do: :sub
   defp float_op_for_kind(:mul_vars), do: :mul
-  defp float_op_for_kind(_), do: :add
 
-  defp int_operand_wat(reg, slots) do
-    WasmTypes.sexpr("call", [
-      WasmTypes.import_ident("runtime.as_int"),
-      " ",
-      WasmTypes.sexpr("local.get", [Slots.reg_name(slots, reg)])
-    ])
+  defp int_operand_wat(reg, slots, opts) do
+    reg_expr = WasmTypes.sexpr("local.get", [Slots.reg_name(slots, reg)])
+
+    if raw_scalar_int_operand?(opts, reg, MapSet.new()) do
+      reg_expr
+    else
+      WasmTypes.sexpr("call", [
+        WasmTypes.import_ident("runtime.as_int"),
+        " ",
+        reg_expr
+      ])
+    end
   end
 
-  defp emit_compare(%{dest: dest_reg, args: args}, slots) do
-    left = Slots.reg_name(slots, Map.fetch!(args, :left))
-    right = Slots.reg_name(slots, Map.fetch!(args, :right))
+  defp emit_compare(%{dest: dest_reg, args: args}, slots, opts) do
+    left_reg = Map.fetch!(args, :left)
+    right_reg = Map.fetch!(args, :right)
+    left = Slots.reg_name(slots, left_reg)
+    right = Slots.reg_name(slots, right_reg)
     kind = Map.fetch!(args, :kind)
-    mode = Map.get(args, :mode, :pointer)
+    mode = effective_compare_mode(args, opts)
 
     case {mode, kind} do
       {:string, :eq} ->
@@ -489,6 +496,34 @@ defmodule Elmc.Backend.Wasm.Lower.Instr do
             false
           )
 
+      {:int_boxed, _} ->
+        pred =
+          case kind do
+            :eq -> "i32.eq"
+            :neq -> "i32.ne"
+            :gt -> "i32.gt_s"
+            :gte -> "i32.ge_s"
+            :lt -> "i32.lt_s"
+            :lte -> "i32.le_s"
+            _ -> "i32.eq"
+          end
+
+        left_wat = int_operand_wat(left_reg, slots, opts)
+        right_wat = int_operand_wat(right_reg, slots, opts)
+        [set_reg(dest_reg, binop(pred, left_wat, right_wat), slots)]
+
+      {:bool_scalar, _} ->
+        pred =
+          case kind do
+            :eq -> "i32.eq"
+            :neq -> "i32.ne"
+            _ -> "i32.eq"
+          end
+
+        left_wat = bool_scalar_operand_wat(left_reg, slots, opts)
+        right_wat = bool_scalar_operand_wat(right_reg, slots, opts)
+        [set_reg(dest_reg, binop(pred, left_wat, right_wat), slots)]
+
       _ ->
         pred =
           case kind do
@@ -507,14 +542,14 @@ defmodule Elmc.Backend.Wasm.Lower.Instr do
 
   defp emit_boxed_binop(%{dest: dest_reg, args: %{op: op, lhs: lhs, rhs: rhs}}, slots, rc?, opts) do
     cond do
-      op in [:fdiv, :idiv] and not native_int_binop_operands?(lhs, rhs, opts) ->
+      op in [:fdiv, :idiv] and not native_int_binop_operands?(lhs, rhs, opts, MapSet.new()) ->
         emit_fdiv_binop(lhs, rhs, dest_reg, slots, rc?, opts)
 
-      op in [:add, :sub, :mul] and not native_int_binop_operands?(lhs, rhs, opts) ->
+      op in [:add, :sub, :mul] and not native_int_binop_operands?(lhs, rhs, opts, MapSet.new()) ->
         emit_float_binop(op, lhs, rhs, dest_reg, slots, rc?, opts)
 
-      native_int_binop_operands?(lhs, rhs, opts) ->
-        [emit_native_int_binop(op, lhs, rhs, dest_reg, slots)]
+      native_int_binop_operands?(lhs, rhs, opts, MapSet.new()) ->
+        [emit_native_int_binop(op, lhs, rhs, dest_reg, slots, opts)]
 
       true ->
         emit_comment("boxed_binop dynamic #{op}", %{dest: dest_reg}, slots)
@@ -567,9 +602,9 @@ defmodule Elmc.Backend.Wasm.Lower.Instr do
     prep_left ++ prep_right ++ emit_runtime_call(:new_float, [result_bits], dest_reg, slots, rc?, opts)
   end
 
-  defp emit_native_int_binop(op, lhs, rhs, dest_reg, slots) do
-    left = int_operand_wat(lhs, slots)
-    right = int_operand_wat(rhs, slots)
+  defp emit_native_int_binop(op, lhs, rhs, dest_reg, slots, opts) do
+    left = int_operand_wat(lhs, slots, opts)
+    right = int_operand_wat(rhs, slots, opts)
 
     expr =
       case op do
@@ -583,12 +618,31 @@ defmodule Elmc.Backend.Wasm.Lower.Instr do
     set_reg(dest_reg, expr, slots)
   end
 
-  defp native_int_binop_operands?(lhs, rhs, opts, visited \\ MapSet.new())
+  defp native_int_binop_operands?(lhs, rhs, opts, visited)
        when is_integer(lhs) and is_integer(rhs) do
     native_int_reg?(opts, lhs, visited) and native_int_reg?(opts, rhs, visited)
   end
 
   defp native_int_binop_operands?(_, _, _, _), do: false
+
+  defp emit_call_runtime(%{dest: dest_reg, args: %{builtin: :native_int_to_float, args: [reg]}}, slots, rc?, _opts)
+       when is_integer(reg) do
+    scalar = WasmTypes.sexpr("local.get", [Slots.reg_name(slots, reg)])
+
+    f32 =
+      WasmTypes.sexpr("f32.convert_i32_s", [
+        " ",
+        format_operand(scalar)
+      ])
+
+    bits =
+      WasmTypes.sexpr("i32.reinterpret_f32", [
+        " ",
+        format_operand(f32)
+      ])
+
+    emit_runtime_call(:new_float, [bits], dest_reg, slots, rc?, [])
+  end
 
   defp emit_call_runtime(%{dest: dest_reg, args: %{builtin: :new_float, literal: value}}, slots, rc?, opts)
        when is_number(value) do
@@ -731,20 +785,24 @@ defmodule Elmc.Backend.Wasm.Lower.Instr do
     )
   end
 
-  defp emit_record_update(%{dest: dest_reg, args: args}, slots, rc?) do
+  defp emit_record_update(%{dest: dest_reg, args: args}, slots, rc?, opts) do
     base_reg = Map.fetch!(args, :base)
+    value_reg = Map.fetch!(args, :value)
+    {value_expr, prep} = boxed_runtime_arg_wat(value_reg, slots, opts)
 
-    emit_runtime_call(
-      :record_update,
-      [
-        Slots.reg_name(slots, base_reg),
-        Slots.reg_name(slots, Map.fetch!(args, :value)),
-        int_const(field_index(args))
-      ],
-      dest_reg,
-      slots,
-      rc?
-    ) ++ cow_drop_alias_null(dest_reg, base_reg, slots)
+    prep ++
+      emit_runtime_call(
+        :record_update,
+        [
+          Slots.reg_name(slots, base_reg),
+          value_expr,
+          int_const(field_index(args))
+        ],
+        dest_reg,
+        slots,
+        rc?,
+        opts
+      ) ++ cow_drop_alias_null(dest_reg, base_reg, slots)
   end
 
   # Match C cow_drop_alias_null: host cow_drop already released the old record;
@@ -996,7 +1054,7 @@ defmodule Elmc.Backend.Wasm.Lower.Instr do
     emit_comment("unsupported platform op #{op}", %{dest: dest_reg}, slots)
   end
 
-  defp emit_ret(reg, slots, rc?) do
+  defp emit_ret(reg, slots, rc?, opts) do
     cond do
       reg == :fn_out ->
         []
@@ -1005,7 +1063,7 @@ defmodule Elmc.Backend.Wasm.Lower.Instr do
         Slots.publish_reg_to_fn_out(slots, reg)
 
       rc? ->
-        emit_runtime_call(:new_int, [int_operand_wat(reg, slots)], :fn_out, slots, rc?)
+        emit_runtime_call(:new_int, [int_operand_wat(reg, slots, opts)], :fn_out, slots, rc?, opts)
 
       true ->
         [
@@ -1320,6 +1378,57 @@ defmodule Elmc.Backend.Wasm.Lower.Instr do
     ])
   end
 
+  defp bool_scalar_operand_wat(reg, slots, opts) when is_integer(reg) do
+    case defining_plan_instr(Keyword.get(opts, :parent_plan), reg) do
+      %{op: :const_int, args: %{value: value}} when value in [0, 1] ->
+        int_const(value)
+
+      %{op: :call_runtime, args: %{builtin: :new_int, literal: value}} when value in [0, 1] ->
+        int_const(value)
+
+      %{op: :call_runtime, args: %{builtin: :new_bool, literal: value}} when value in [0, 1] ->
+        int_const(value)
+
+      _ ->
+        bool_cond_wat(Slots.reg_name(slots, reg))
+    end
+  end
+
+  defp bool_scalar_operand_wat(reg, slots, _opts) do
+    bool_cond_wat(Slots.reg_name(slots, reg))
+  end
+
+  defp effective_compare_mode(args, opts) do
+    mode = Map.get(args, :mode, :pointer)
+    kind = Map.get(args, :kind, :eq)
+
+    if mode == :pointer and kind in [:eq, :neq] and boxed_bool_test_compare_reg?(args, opts) do
+      :bool_scalar
+    else
+      mode
+    end
+  end
+
+  defp boxed_bool_test_compare_reg?(%{left: left, right: right}, opts) do
+    boxed_bool_test_plan_reg?(left, opts) or boxed_bool_test_plan_reg?(right, opts)
+  end
+
+  defp boxed_bool_test_plan_reg?(reg, opts) when is_integer(reg) do
+    case defining_plan_instr(Keyword.get(opts, :parent_plan), reg) do
+      %{op: op} when op in [:test_list_empty, :test_maybe_nothing] ->
+        true
+
+      %{op: :call_runtime, args: %{builtin: builtin}}
+      when builtin in [:list_is_empty, :maybe_is_nothing, :string_length_boxed] ->
+        true
+
+      _ ->
+        false
+    end
+  end
+
+  defp boxed_bool_test_plan_reg?(_, _), do: false
+
   defp call_import(name, args) do
     padded = pad_direct_import_args(name, args)
 
@@ -1458,7 +1567,7 @@ defmodule Elmc.Backend.Wasm.Lower.Instr do
       {expr, prep_add} =
         cond do
           RuntimeBuiltins.native_int_arg?(id, index) ->
-            {int_operand_wat(reg, slots), []}
+            {int_operand_wat(reg, slots, opts), []}
 
           true ->
             boxed_runtime_arg_wat(reg, slots, opts)
@@ -1496,8 +1605,8 @@ defmodule Elmc.Backend.Wasm.Lower.Instr do
   end
 
   defp box_native_or_passthrough(reg, slots, opts) do
-    if native_int_reg?(opts, reg) do
-      box_native_int_arg(reg, slots)
+    if native_int_reg?(opts, reg, MapSet.new()) do
+      box_native_int_arg(reg, slots, opts)
     else
       {Slots.reg_name(slots, reg), []}
     end
@@ -1509,9 +1618,9 @@ defmodule Elmc.Backend.Wasm.Lower.Instr do
     {boxed_handle_at_offset(offset), prep}
   end
 
-  defp box_native_int_arg(reg, slots) do
+  defp box_native_int_arg(reg, slots, opts) do
     offset = Map.fetch!(slots.reg_mem, reg)
-    prep = box_native_int_prep(reg, slots, offset)
+    prep = box_native_int_prep(reg, slots, offset, opts)
     {boxed_handle_at_offset(offset), prep}
   end
 
@@ -1529,7 +1638,7 @@ defmodule Elmc.Backend.Wasm.Lower.Instr do
     ]
   end
 
-  defp box_native_int_prep(reg, slots, offset) do
+  defp box_native_int_prep(reg, slots, offset, opts) do
     [
       WasmTypes.line(
         WasmTypes.sexpr("call", [
@@ -1537,17 +1646,51 @@ defmodule Elmc.Backend.Wasm.Lower.Instr do
           " ",
           int_const(offset),
           " ",
-          int_operand_wat(reg, slots)
+          int_operand_wat(reg, slots, opts)
         ])
       )
     ]
+  end
+
+  defp raw_scalar_int_operand?(opts, reg, visited) do
+    cond do
+      not is_integer(reg) ->
+        false
+
+      MapSet.member?(visited, reg) ->
+        false
+
+      true ->
+        visited = MapSet.put(visited, reg)
+
+        case defining_plan_instr(Keyword.get(opts, :parent_plan), reg) do
+          %{op: :const_int} ->
+            true
+
+          %{op: :int_arith, args: args} ->
+            native_int_arith_result?(args, opts, visited)
+
+          %{op: :compare} ->
+            true
+
+          %{op: :phi, args: %{native_int_phi: true}} ->
+            true
+
+          %{op: :load_param, args: %{index: index}} ->
+            param_kinds = Keyword.get(opts, :param_kinds, [])
+            Enum.at(param_kinds, index, :boxed) == :native_int
+
+          _ ->
+            false
+        end
+    end
   end
 
   defp boxed_handle_at_offset(offset) do
     WasmTypes.i32_load_offset(offset)
   end
 
-  defp native_int_arith_result?(args, opts, visited \\ MapSet.new()) do
+  defp native_int_arith_result?(args, opts, visited) do
     kind = Map.fetch!(args, :kind)
     lhs = Map.fetch!(args, :lhs)
     rhs = Map.get(args, :rhs)
@@ -1567,7 +1710,7 @@ defmodule Elmc.Backend.Wasm.Lower.Instr do
     end
   end
 
-  defp native_int_reg?(opts, reg, visited \\ MapSet.new()) do
+  defp native_int_reg?(opts, reg, visited) do
     cond do
       not is_integer(reg) ->
         false

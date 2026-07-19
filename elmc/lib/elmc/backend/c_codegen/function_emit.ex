@@ -387,6 +387,15 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
 
   defp type_param_names(_), do: nil
 
+  @doc false
+  @spec function_type_arity(Types.function_declaration()) :: non_neg_integer()
+  def function_type_arity(decl) when is_map(decl) do
+    case type_param_names(Map.get(decl, :type)) do
+      names when is_list(names) -> length(names)
+      _ -> 0
+    end
+  end
+
   defp delegate_param_names(
          %{expr: %{op: :qualified_call, target: target, args: []}} = decl,
          module_name,
@@ -1854,15 +1863,17 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
       |> Enum.flat_map(fn mod ->
         mod.declarations
         |> Enum.filter(fn decl ->
-          decl.kind == :function and MapSet.member?(generic_targets, {mod.name, decl.name}) and
-            Plan.primary_lowered?(decl, mod.name, decl_map)
+          decl.kind == :function and MapSet.member?(generic_targets, {mod.name, decl.name})
         end)
-        |> Enum.map(fn decl ->
-          RcRequired.rc_required?(mod.name, decl.name)
-          |> then(fn rc? ->
-            Plan.lower_function(decl, mod.name, decl_map, rc_required: rc?)
-          end)
+        |> Enum.map(&{mod, &1})
+      end)
+      |> Enum.chunk_every(16)
+      |> Enum.each(fn batch ->
+        Enum.each(batch, fn {mod, decl} ->
+          Plan.primary_lowered?(decl, mod.name, decl_map)
         end)
+
+        :erlang.garbage_collect()
       end)
     end
 

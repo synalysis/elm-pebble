@@ -300,6 +300,7 @@ defmodule IdeWeb.WorkspaceLive.EditorPage do
                 data-rel-path={active.rel_path}
                 data-editor-mode={Atom.to_string(@editor_mode)}
                 data-editor-readonly={to_string(editor_read_only?(active))}
+                data-semantic-edit-ops={to_string(IdeWeb.WorkspaceLive.EditorSupport.semantic_edit_ops_enabled?())}
                 data-editor-theme={Atom.to_string(@editor_theme)}
                 data-editor-line-numbers={to_string(@editor_line_numbers)}
                 data-editor-active-line-highlight={to_string(@editor_active_line_highlight)}

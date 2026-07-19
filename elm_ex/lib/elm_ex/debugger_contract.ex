@@ -593,6 +593,9 @@ defmodule ElmEx.DebuggerContract do
     peel_lets_with_bindings(inner, Map.put(bindings, name, resolved_value))
   end
 
+  def peel_lets_with_bindings(%{op: :let_bindings} = expr, bindings),
+    do: peel_lets_with_bindings(ElmEx.Frontend.LetBindings.expand(expr), bindings)
+
   def peel_lets_with_bindings(%{op: :let_in, in_expr: inner}, bindings),
     do: peel_lets_with_bindings(inner, bindings)
 

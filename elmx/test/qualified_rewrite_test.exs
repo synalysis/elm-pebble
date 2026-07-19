@@ -3,6 +3,11 @@ defmodule Elmx.QualifiedRewriteTest do
 
   alias Elmx.Backend.QualifiedRewrite
 
+  test "Pkg mangled targets normalize to Elm module names" do
+    assert {:ok, %{op: :runtime_call, function: "elmx_time_now", args: []}} =
+             QualifiedRewrite.rewrite("Pkg.app.Time.now", [])
+  end
+
   test "Maybe.withDefault curried form rewrites to lambda" do
     assert {:ok, %{op: :lambda, body: %{op: :runtime_call, function: "elmx_core_maybe_with_default"}}} =
              QualifiedRewrite.rewrite("Maybe.withDefault", [%{op: :int_literal, value: 0}])

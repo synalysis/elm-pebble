@@ -63,9 +63,8 @@ defmodule Elmc.WasmLowerTest do
     assert {:ok, module_map} = Lower.lower(plan)
     wat = Lower.render_wat(module_map)
 
-    # Plain LIFO once projection nests consume+null field owned temps.
-    assert wat =~ ~r/\(drop\s+\(call \$runtime_release \(local\.get \$owned/
-    refute wat =~ ~r/call \$runtime_release_unless_reachable/
+    # RC epilogue releases surviving owned slots via reachability-aware helper.
+    assert wat =~ ~r/call \$runtime_release_unless_reachable/
     # Owned slot nulled after move into $fn_out.
     assert wat =~ ~r/local\.set \$owned\d+ \(i32\.const 0\)/
   end
@@ -213,5 +212,45 @@ defmodule Elmc.WasmLowerTest do
     assert wat =~ "f32.sub"
     assert wat =~ "f32.add"
     refute wat =~ "i32.add"
+  end
+
+  test "boxed Int compare unboxes operands before i32.gt_s" do
+    plan =
+      Builder.new("Test", "int_boxed_compare", args: [], rc_required: false)
+      |> then(fn b ->
+        {len_reg, b1} = Builder.fresh_reg(b)
+        {right_reg, b2} = Builder.fresh_reg(b1)
+        {dest, b3} = Builder.fresh_reg(b2)
+
+        {_, b4} =
+          Builder.emit(b3, :call_runtime, %{
+            dest: len_reg,
+            args: %{builtin: :new_int, args: [], literal: 1},
+            effects: Elmc.Backend.Plan.Types.empty_effects()
+          })
+
+        {_, b5} =
+          Builder.emit(b4, :call_runtime, %{
+            dest: right_reg,
+            args: %{builtin: :new_int, args: [], literal: 16},
+            effects: Elmc.Backend.Plan.Types.empty_effects()
+          })
+
+        {_, b6} =
+          Builder.emit(b5, :compare, %{
+            dest: dest,
+            args: %{kind: :gt, left: len_reg, right: right_reg, mode: :int_boxed},
+            effects: Elmc.Backend.Plan.Types.empty_effects()
+          })
+
+        Builder.to_function_plan(Builder.emit_ret(b6, 0))
+      end)
+
+    assert {:ok, module_map} = Lower.lower(plan)
+    wat = Lower.render_wat(module_map)
+
+    assert wat =~ "runtime_as_int"
+    assert wat =~ "i32.gt_s"
+    refute wat =~ ~r/local\.get \$reg\d+\)\s*\n\s*\(i32\.gt_s\s+\(local\.get \$reg/
   end
 end

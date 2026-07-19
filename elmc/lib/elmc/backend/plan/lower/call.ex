@@ -4,7 +4,7 @@ defmodule Elmc.Backend.Plan.Lower.Call do
   alias Elmc.Backend.CCodegen.{FunctionEmit, Util}
   alias Elmc.Backend.Plan.Builder
   alias Elmc.Backend.Plan.Context
-  alias Elmc.Backend.Plan.Lower.{Cmd, Expr, Lambda, MaybeMap, Platform.Web, Port, Record, SpecialValues}
+  alias Elmc.Backend.Plan.Lower.{CallCoerce, Cmd, Expr, Lambda, MaybeMap, Platform.Web, Port, Record, SpecialValues}
   alias Elmc.Backend.Plan.Types
 
   @browser_cmd_kind_names %{
@@ -226,7 +226,10 @@ defmodule Elmc.Backend.Plan.Lower.Call do
   defp compile_special_rewrite(_rewritten, _args, _ctx, _b), do: :unsupported
 
   defp call_rewrite(target, args) do
-    SpecialValues.special_value_from_target(target, args)
+    case SpecialValues.special_value_from_target(target, args) do
+      %{op: :call, name: ^target, args: ^args} -> nil
+      other -> other
+    end
   end
 
   @spec compile_closure_call_from_reg(integer(), [Types.ir_expr()], Context.t(), Builder.t()) ::
@@ -406,7 +409,9 @@ defmodule Elmc.Backend.Plan.Lower.Call do
     case Map.fetch(ctx.decl_map, {module, name}) do
       {:ok, decl} ->
         param_names = FunctionEmit.effective_decl_args(decl, module, ctx.decl_map) |> List.wrap()
-        length(param_names) == 0 and length(args) > 0 and closure_thunk_decl?(decl)
+
+        length(param_names) == 0 and length(args) > 0 and closure_thunk_decl?(decl) and
+          FunctionEmit.function_type_arity(decl) > 0
 
       _ ->
         false
@@ -743,7 +748,14 @@ defmodule Elmc.Backend.Plan.Lower.Call do
         {arg_regs, b}
       end
 
-    {borrows, consumes} = Builder.partition_call_args(b0, arg_regs)
+    {arg_regs, b0a} =
+      if is_list(arg_exprs) and arg_exprs != [] do
+        CallCoerce.coerce_fn_call_args(module, name, arg_regs, arg_exprs, ctx, b0)
+      else
+        {arg_regs, b0}
+      end
+
+    {borrows, consumes} = Builder.partition_call_args(b0a, arg_regs)
 
     effects =
       if is_integer(dest) do
@@ -752,13 +764,13 @@ defmodule Elmc.Backend.Plan.Lower.Call do
         %{produces: nil, consumes: consumes, borrows: borrows, fallible: true}
       end
 
-    wrap_catch? = Builder.wrap_fallible_instr_catch?(b0, ctx, true)
+    wrap_catch? = Builder.wrap_fallible_instr_catch?(b0a, ctx, true)
 
     b1 =
       if wrap_catch? do
-        Builder.catch_begin(b0)
+        Builder.catch_begin(b0a)
       else
-        b0
+        b0a
       end
 
     {_, b2} =

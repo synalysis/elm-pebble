@@ -51,6 +51,8 @@ ide/priv/pebble_app_template/src/pkjs/companion-protocol.js
 
 # Keep only source snapshots in tests, ignore generated tmp harness output
 elmc/test/tmp*/
+# Ad-hoc parser/layout probes in elm_ex (use test/frontend instead)
+elm_ex/tmp_*
 # Local compile scratch (e.g. mix run -o x)
 elmc/x/
 

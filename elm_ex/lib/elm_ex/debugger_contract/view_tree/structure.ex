@@ -106,6 +106,9 @@ defmodule ElmEx.DebuggerContract.ViewTree.Structure do
       %{op: :expr, expr: inner} ->
         infer_expr_return_kind(inner, api_metadata)
 
+      %{op: :let_bindings, in_expr: inner} ->
+        infer_expr_return_kind(inner, api_metadata)
+
       %{op: :let_in, in_expr: inner} ->
         infer_expr_return_kind(inner, api_metadata)
 

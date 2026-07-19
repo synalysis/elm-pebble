@@ -3,6 +3,7 @@ defmodule ElmEx.Frontend.GeneratedContractBuilderTest do
 
   alias ElmEx.Frontend.GeneratedContractBuilder
   alias ElmEx.Frontend.GeneratedExpressionParser
+  alias ElmEx.Test.LetExprHelpers
 
   test "unindented line comments inside a function body do not truncate the definition" do
     source = """
@@ -29,7 +30,7 @@ defmodule ElmEx.Frontend.GeneratedContractBuilderTest do
       |> Map.get(:declarations)
       |> Enum.find(&(&1.kind == :function_definition and &1.name == "view"))
 
-    assert view.expr[:op] == :let_in
+    assert LetExprHelpers.let_expr?(view.expr)
     assert String.contains?(view.body, "]")
     refute match?(%{op: :unsupported}, view.expr)
   end
@@ -117,6 +118,75 @@ defmodule ElmEx.Frontend.GeneratedContractBuilderTest do
     end
 
     tuple_case = find_tuple_case.(find_tuple_case, update.expr)
+    assert tuple_case
+    assert length(tuple_case.branches) == 3
+  end
+
+  test "triple case separates trailing wildcard arm after nested Err branch" do
+    source = """
+    module Main exposing (probe)
+
+    probe a b c =
+        case ( a, b, c ) of
+            ( Just bytes, Just url, Ok prev ) ->
+                case decoder bytes of
+                    Just decoded ->
+                        case decoded of
+                            A ->
+                                prev
+
+                            _ ->
+                                prev
+
+                    Nothing ->
+                        prev
+
+            ( Just bytes, Just _, Err _ ) ->
+                case pageDataResult of
+                    Just (OkPage shared page action) ->
+                        page
+
+                    Just (NotFound info) ->
+                        info
+
+                    _ ->
+                        0
+
+            _ ->
+                0
+    """
+
+    probe =
+      "Main.elm"
+      |> GeneratedContractBuilder.build(source, "Main", [])
+      |> Map.get(:declarations)
+      |> Enum.find(&(&1.kind == :function_definition and &1.name == "probe"))
+
+    find_tuple_case = fn find_tuple_case, node ->
+      case node do
+        %{op: :case, branches: branches} when length(branches) == 3 ->
+          if Enum.any?(branches, fn br -> br.pattern[:kind] == :tuple end),
+            do: node,
+            else: Enum.find_value(branches, fn br -> find_tuple_case.(find_tuple_case, br.expr) end)
+
+        %{op: :case, branches: branches} ->
+          Enum.find_value(branches, fn br -> find_tuple_case.(find_tuple_case, br.expr) end)
+
+        %{in_expr: in_expr} ->
+          find_tuple_case.(find_tuple_case, in_expr)
+
+        map when is_map(map) ->
+          Enum.find_value(map, fn {_k, v} -> find_tuple_case.(find_tuple_case, v) end)
+
+        list when is_list(list) ->
+          Enum.find_value(list, &find_tuple_case.(find_tuple_case, &1))
+
+        _ ->
+          nil
+      end
+    end
+
+    tuple_case = find_tuple_case.(find_tuple_case, probe.expr)
     assert tuple_case
     assert length(tuple_case.branches) == 3
   end

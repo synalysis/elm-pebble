@@ -4,6 +4,7 @@ defmodule Elmc.Backend.Plan.Lower.PatternBind do
   alias Elmc.Backend.Plan.Types
   alias Elmc.Backend.Plan.{Builder, Context}
   alias Elmc.Backend.Plan.Lower.{Expr, Record}
+  alias ElmEx.IR.TypeSignature
 
   @spec bind(Types.pattern(), Context.t(), Builder.t(), integer()) ::
           {:ok, Context.t(), Builder.t()} | :unsupported
@@ -105,7 +106,8 @@ defmodule Elmc.Backend.Plan.Lower.PatternBind do
     {ctx, b} =
       case Map.get(pattern, :bind) do
         bind when is_binary(bind) ->
-          {Context.put_local(ctx, bind, subject_reg), Builder.bind_local(b, bind, subject_reg)}
+          ctx1 = enrich_constructor_bind_ctx(ctx, bind, pattern)
+          {Context.put_local(ctx1, bind, subject_reg), Builder.bind_local(b, bind, subject_reg)}
 
         _ ->
           {ctx, b}
@@ -141,7 +143,7 @@ defmodule Elmc.Backend.Plan.Lower.PatternBind do
        when is_binary(bind) and is_map(arg_pattern) do
     # Pattern like `Ctor ... as x` (or nested constructor bind slots) must bind
     # the full matched value, not only the payload.
-    ctx1 = Context.put_local(ctx, bind, subject_reg)
+    ctx1 = enrich_constructor_bind_ctx(ctx, bind, pattern)
     b1 = Builder.bind_local(b, bind, subject_reg)
 
     with {:ok, payload_reg, b2} <- emit_ctor_payload(pattern, subject_reg, ctx1, b1),
@@ -166,7 +168,9 @@ defmodule Elmc.Backend.Plan.Lower.PatternBind do
        when is_binary(bind) do
     if is_nil(Map.get(pattern, :arg_pattern)) do
       {:ok, payload_reg, b1} = emit_ctor_payload(pattern, subject_reg, ctx, b)
-      {:ok, Context.put_local(ctx, bind, payload_reg), Builder.bind_local(b1, bind, payload_reg)}
+      ctx1 = enrich_constructor_bind_ctx(ctx, bind, pattern)
+
+      {:ok, Context.put_local(ctx1, bind, payload_reg), Builder.bind_local(b1, bind, payload_reg)}
     else
       {:ok, Context.put_local(ctx, bind, subject_reg), Builder.bind_local(b, bind, subject_reg)}
     end
@@ -235,11 +239,13 @@ defmodule Elmc.Backend.Plan.Lower.PatternBind do
   defp cons_pattern?(_), do: false
 
   defp bind_cons_pattern(head, tail, subject_reg, ctx, b) do
-    with {:ok, head_reg, b1} <- Expr.compile_runtime_builtin(:list_head, [subject_reg], ctx, b),
-         {:ok, tail_reg, b2} <- Expr.compile_runtime_builtin(:list_tail, [subject_reg], ctx, b1),
-         {:ok, ctx1, b3} <- do_bind(head, ctx, b2, head_reg),
-         {:ok, ctx2, b4} <- do_bind(tail, ctx1, b3, tail_reg) do
-      {:ok, ctx2, b4}
+    with {:ok, head_maybe, b1} <- Expr.compile_runtime_builtin(:list_head, [subject_reg], ctx, b),
+         {:ok, head_reg, b2} <- Expr.compile_runtime_builtin(:maybe_just_payload, [head_maybe], ctx, b1),
+         {:ok, tail_maybe, b3} <- Expr.compile_runtime_builtin(:list_tail, [subject_reg], ctx, b2),
+         {:ok, tail_reg, b4} <- Expr.compile_runtime_builtin(:maybe_just_payload, [tail_maybe], ctx, b3),
+         {:ok, ctx1, b5} <- do_bind(head, ctx, b4, head_reg),
+         {:ok, ctx2, b6} <- do_bind(tail, ctx1, b5, tail_reg) do
+      {:ok, ctx2, b6}
     else
       _ -> :unsupported
     end
@@ -249,4 +255,44 @@ defmodule Elmc.Backend.Plan.Lower.PatternBind do
 
   defp nest_tuple_elements([left | rest]),
     do: [left, %{kind: :tuple, elements: nest_tuple_elements(rest)}]
+
+  defp enrich_constructor_bind_ctx(ctx, bind, pattern) when is_binary(bind) do
+    case constructor_payload_spec(pattern, ctx) do
+      spec when is_binary(spec) ->
+        ctx
+        |> Context.put_local_type(bind, spec)
+        |> maybe_put_inferred_param_fields(bind, spec)
+
+      _ ->
+        ctx
+    end
+  end
+
+  defp maybe_put_inferred_param_fields(ctx, bind, spec) when is_binary(bind) and is_binary(spec) do
+    if TypeSignature.record_type?(spec) do
+      fields =
+        spec
+        |> TypeSignature.record_field_names()
+        |> Enum.map(&to_string/1)
+        |> Enum.sort()
+
+      %{ctx | inferred_param_fields: Map.put(ctx.inferred_param_fields || %{}, bind, fields)}
+    else
+      ctx
+    end
+  end
+
+  defp constructor_payload_spec(pattern, ctx) do
+    specs = Process.get(:elmc_union_constructor_payload_specs, %{})
+    mod = ctx.module
+
+    [Map.get(pattern, :resolved_name), Map.get(pattern, :name)]
+    |> Enum.reject(&is_nil/1)
+    |> Enum.flat_map(fn name ->
+      short = short_name(name)
+      [{mod, name}, {mod, short}]
+    end)
+    |> Enum.uniq()
+    |> Enum.find_value(fn key -> Map.get(specs, key) end)
+  end
 end

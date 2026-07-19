@@ -131,6 +131,11 @@ defmodule Elmc.Backend.CCodegen.Native.Float do
     }
   end
 
+  defp structural_float_operand?(%{op: op}) when op in [:float_literal, :int_literal, :char_literal, :var],
+    do: true
+
+  defp structural_float_operand?(_expr), do: false
+
   @spec expr?(Types.ir_expr(), Types.compile_env()) :: boolean()
   def expr?(%{op: :float_literal}, _env), do: true
   def expr?(%{op: op}, _env) when op in [:int_literal, :char_literal], do: true
@@ -167,17 +172,23 @@ defmodule Elmc.Backend.CCodegen.Native.Float do
   end
 
   def expr?(%{op: :qualified_call, target: target, args: args}, env) do
-    case Host.special_value_from_target(target, args) do
-      %{op: op} when op in [:float_literal, :int_literal, :char_literal] ->
-        true
+    if Process.get(:elmc_binding_plans_active) do
+      Host.qualified_builtin_operator_member?(target, ["__add__", "__sub__", "__mul__", "__fdiv__"]) and
+        length(args) == 2 and
+        Enum.all?(args, &structural_float_operand?/1)
+    else
+      case Host.special_value_from_target(target, args) do
+        %{op: op} when op in [:float_literal, :int_literal, :char_literal] ->
+          true
 
-      nil ->
-        Host.qualified_builtin_operator_member?(target, ["__add__", "__sub__", "__mul__", "__fdiv__"]) and
-          length(args) == 2 and
-          Enum.all?(args, &expr?(&1, env))
+        nil ->
+          Host.qualified_builtin_operator_member?(target, ["__add__", "__sub__", "__mul__", "__fdiv__"]) and
+            length(args) == 2 and
+            Enum.all?(args, &expr?(&1, env))
 
-      expr ->
-        expr?(expr, env)
+        expr ->
+          expr?(expr, env)
+      end
     end
   end
 

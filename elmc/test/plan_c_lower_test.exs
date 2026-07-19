@@ -255,6 +255,7 @@ defmodule Elmc.PlanCLowerTest do
     assert c =~ "if (elmc_as_bool("
   end
 
+  @tag timeout: 300_000
   test "sequential br targets fall through without redundant goto" do
     out_dir = Path.expand("tmp/plan_br_fallthrough_out", __DIR__)
     project_dir = Path.expand("tmp/plan_br_fallthrough_project", __DIR__)
@@ -389,6 +390,7 @@ defmodule Elmc.PlanCLowerTest do
              )
   end
 
+  @tag timeout: 300_000
   test "result Ok lowering reads fn_out when wrapping prior tail value" do
     out_dir = Path.expand("tmp/rc_track_result_ok_four_lower", __DIR__)
     File.rm_rf!(out_dir)

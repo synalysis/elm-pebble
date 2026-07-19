@@ -147,6 +147,42 @@ defmodule Elmc.PlanLinearCaseTest do
     refute text =~ "dest: :fn_out"
   end
 
+  test "guarded cons case unwraps Maybe from list_head for cons bind" do
+    decl = %{
+      name: "headWord",
+      args: ["words"],
+      expr: %{
+        op: :case,
+        subject: %{op: :var, name: "words"},
+        branches: [
+          %{
+            pattern: %{
+              kind: :constructor,
+              name: "::",
+              resolved_name: "List.::",
+              arg_pattern: %{
+                kind: :tuple,
+                elements: [
+                  %{kind: :var, name: "first"},
+                  %{kind: :var, name: "rest"}
+                ]
+              }
+            },
+            expr: %{op: :var, name: "first"}
+          },
+          %{pattern: %{kind: :wildcard}, expr: %{op: :string_literal, value: ""}}
+        ]
+      }
+    }
+
+    decl_map = %{{"Probe", "headWord"} => decl}
+
+    assert {:ok, plan} = Function.lower(decl, "Probe", decl_map, rc_required: true)
+    text = inspect(plan.blocks)
+    assert text =~ "list_head"
+    assert text =~ "maybe_just_payload"
+  end
+
   test "constructor case with string payload pattern lowers" do
     Process.put(:elmc_constructor_tags, %{"Companion.Types.PushString" => 7})
 

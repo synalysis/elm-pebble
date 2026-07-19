@@ -24,10 +24,20 @@ defmodule Elmx.Backend.QualifiedRewrite do
   @spec normalize_target(String.t()) :: String.t()
   def normalize_target(target) when is_binary(target) do
     target
+    |> strip_pkg_mangle_prefix()
     |> Elmx.Runtime.Pebble.SpecialValues.canonical_target()
     |> denormalize_kernel_shorthand()
     |> denormalize_utils_alias()
   end
+
+  defp strip_pkg_mangle_prefix("Pkg." <> rest) do
+    case String.split(rest, ".", parts: 2) do
+      [_pkg, module_target] -> module_target
+      _ -> rest
+    end
+  end
+
+  defp strip_pkg_mangle_prefix(target), do: target
 
   defp rewrite_qualified(target, args) do
     case {target, args} do

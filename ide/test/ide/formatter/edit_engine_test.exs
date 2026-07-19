@@ -14,6 +14,14 @@ defmodule Ide.Formatter.EditEngineTest do
     assert result.cursor_end == result.cursor_start
   end
 
+  test "tab inside let block snaps blank binding line to layout indent" do
+    source = "let\n\n"
+    cursor = String.length(source)
+    result = EditEngine.compute_tab_edit(source, cursor, cursor, false)
+
+    assert result.next_content == "let\n\n    "
+  end
+
   test "shift-tab removes indentation from selected block" do
     source = "value =\n    one\n    two\n"
     start = String.length("value =\n")
@@ -38,6 +46,26 @@ defmodule Ide.Formatter.EditEngineTest do
     result = EditEngine.compute_enter_edit(source, cursor, cursor)
 
     assert result.next_content == "value =\n    "
+  end
+
+  test "enter after let keyword uses layout rules indent" do
+    source = "let"
+    cursor = String.length(source)
+    result = EditEngine.compute_enter_edit(source, cursor, cursor)
+
+    assert result.next_content == "let\n    "
+  end
+
+  test "enter inside let block aligns sibling binding" do
+    source = """
+    let
+        a = 1
+    """
+
+    cursor = String.length(source)
+    result = EditEngine.compute_enter_edit(source, cursor, cursor)
+
+    assert String.ends_with?(result.next_content, "    ")
   end
 
   test "enter indents one level after union type declaration head" do

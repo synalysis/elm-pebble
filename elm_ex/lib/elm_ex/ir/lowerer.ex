@@ -26,6 +26,22 @@ defmodule ElmEx.IR.Lowerer do
   @pebble_ui_window_node_tag 1001
   @pebble_ui_canvas_layer_tag 1002
 
+  # Union constructors from common Elm package dependencies. These modules are
+  # not always loaded into the frontend project graph, but apps import their
+  # types with exposing (Type(..)) and reference constructors unqualified.
+  @known_dependency_union_constructors %{
+    "List.Nonempty" => %{"Nonempty" => ["Nonempty"]},
+    "Svg.PathD" => %{
+      "Segment" => ~w(M L H V Z C S Q T A Md Ld Hd Vd Zd Cd Sd Qd Td Ad)
+    }
+  }
+
+  @internal_diagram_peer_redirects %{
+    "Internal.Vec2.init" => "Diagram.Vec2.init",
+    "Internal.Svg.Config.withCellAttributesFunction" =>
+      "Diagram.Svg.Config.withCellAttributesFunction"
+  }
+
   @spec lower_project(Project.t()) :: {:ok, IR.t()}
   def lower_project(%Project{} = project) do
     global_constructor_lookup =
@@ -533,7 +549,10 @@ defmodule ElmEx.IR.Lowerer do
         )
 
       true ->
-        resolved_target = resolve_alias(target, lookup)
+        resolved_target =
+          target
+          |> resolve_alias(lookup)
+          |> redirect_diagram_init_peer()
         rewritten_args = Enum.map(args || [], &rewrite_expr(&1, lookup))
 
         case rewrite_constructor_value(resolved_target, rewritten_args, lookup) do
@@ -574,6 +593,18 @@ defmodule ElmEx.IR.Lowerer do
       | steps: Enum.map(steps || [], &rewrite_expr(&1, lookup)),
         base: rewrite_expr(base, lookup)
     }
+  end
+
+  defp rewrite_expr(%{op: :apply_left} = expr, lookup) do
+    expr
+    |> ElmEx.Frontend.ApplyLeft.expand()
+    |> rewrite_expr(lookup)
+  end
+
+  defp rewrite_expr(%{op: op} = expr, lookup) when op in [:bool_and, :bool_or] do
+    expr
+    |> ElmEx.Frontend.BoolOps.expand()
+    |> rewrite_expr(lookup)
   end
 
   defp rewrite_expr(%{op: :call, name: name, args: args}, lookup) when is_binary(name) do
@@ -623,6 +654,14 @@ defmodule ElmEx.IR.Lowerer do
 
   defp rewrite_expr(%{op: :call, args: args} = expr, lookup) do
     %{expr | args: Enum.map(args || [], &rewrite_expr(&1, lookup))}
+  end
+
+  alias ElmEx.Frontend.LetBindings
+
+  defp rewrite_expr(%{op: :let_bindings} = expr, lookup) do
+    expr
+    |> LetBindings.expand()
+    |> rewrite_expr(lookup)
   end
 
   defp rewrite_expr(%{op: :let_in, name: name, value_expr: value_expr, in_expr: in_expr} = expr, lookup) do
@@ -1048,6 +1087,10 @@ defmodule ElmEx.IR.Lowerer do
 
   defp resolve_alias(target, _lookup), do: target
 
+  defp redirect_diagram_init_peer(target) when is_binary(target) do
+    Map.get(@internal_diagram_peer_redirects, target, target)
+  end
+
   @spec build_import_resolution(
           [ImportEntry.wire_map()],
           ModuleExports.project_exports()
@@ -1301,7 +1344,10 @@ defmodule ElmEx.IR.Lowerer do
     module_exports =
       Map.get(project_module_exports, module_name, %{names: [], union_constructors: %{}})
 
-    union_constructors = Map.get(module_exports, :union_constructors, %{})
+    union_constructors =
+      module_exports
+      |> Map.get(:union_constructors, %{})
+      |> Map.merge(Map.get(@known_dependency_union_constructors, module_name, %{}))
 
     names
     |> Enum.flat_map(fn name ->
@@ -1468,7 +1514,9 @@ defmodule ElmEx.IR.Lowerer do
   @spec rewrite_pattern(Pattern.t() | nil, Lookup.t()) :: Pattern.t() | nil
   defp rewrite_pattern(%{kind: :constructor, name: name} = pattern, lookup) do
     resolved_name = resolve_alias(name, lookup)
-    tag = resolve_constructor_tag(resolved_name, lookup)
+
+    tag =
+      Map.get(lookup.local, name) || resolve_constructor_tag(resolved_name, lookup)
 
     arg_pattern =
       case pattern[:arg_pattern] do
@@ -1511,29 +1559,38 @@ defmodule ElmEx.IR.Lowerer do
        when is_binary(resolved_target) and is_list(rewritten_args) do
     case rewrite_virtual_ui_constructor(resolved_target, rewritten_args, lookup) do
       nil ->
-        case rewrite_record_alias_constructor(resolved_target, rewritten_args, lookup) do
-          nil ->
         tag = resolve_constructor_tag(resolved_target, lookup)
 
-        if is_integer(tag) do
-          expected_arity = resolve_payload_arity(resolved_target, lookup)
-          bound = length(rewritten_args)
-
-          if is_integer(expected_arity) and bound < expected_arity do
-            %{
-              op: :partial_constructor,
-              target: resolved_target,
-              tag: tag,
-              args: rewritten_args,
-              arity: expected_arity
-            }
+        record_alias_rewrite =
+          if is_integer(tag) do
+            nil
           else
-            tagged_constructor_value(tag, rewritten_args, resolved_target)
+            rewrite_record_alias_constructor(resolved_target, rewritten_args, lookup)
           end
-        end
 
-          rewritten ->
+        case record_alias_rewrite do
+          nil when is_integer(tag) ->
+            expected_arity = resolve_payload_arity(resolved_target, lookup)
+            bound = length(rewritten_args)
+
+            if is_integer(expected_arity) and bound < expected_arity do
+              %{
+                op: :partial_constructor,
+                target: resolved_target,
+                tag: tag,
+                args: rewritten_args,
+                arity: expected_arity
+              }
+            else
+              qualified = qualify_constructor_target(resolved_target, lookup)
+              tagged_constructor_value(tag, rewritten_args, qualified)
+            end
+
+          rewritten when is_map(rewritten) ->
             rewritten
+
+          _ ->
+            nil
         end
 
       rewritten ->

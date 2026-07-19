@@ -33,9 +33,11 @@ defmodule Elmc.Backend.Wasm.ProjectWriter do
     File.mkdir_p!(wasm_dir)
 
     Process.put(:elmc_codegen_opts, opts)
+    Process.put(:elmc_svg_attribute_names, Map.get(opts, :svg_attribute_names, IRQueries.svg_attribute_names(ir)))
     Process.put(:elmc_constructor_tags, IRQueries.constructor_tag_map(ir))
     Process.put(:elmc_record_alias_shapes, IRQueries.record_alias_shape_map(ir))
     Process.put(:elmc_inline_record_literal_shapes, IRQueries.inline_record_literal_shape_map(ir))
+    Process.put(:elmc_union_constructor_payload_specs, IRQueries.union_constructor_payload_specs_map(ir))
     Process.put(:elmc_record_field_types, IRQueries.record_alias_field_types_map(ir))
 
     shapes = IRQueries.record_alias_shape_map(ir)
@@ -203,6 +205,7 @@ defmodule Elmc.Backend.Wasm.ProjectWriter do
       Process.delete(:elmc_constructor_tags)
       Process.delete(:elmc_record_alias_shapes)
       Process.delete(:elmc_inline_record_literal_shapes)
+      Process.delete(:elmc_union_constructor_payload_specs)
       Process.delete(:elmc_record_field_types)
       Process.delete(:elmc_record_field_macros)
       Process.delete(:elmc_wasm_record_field_macro_indices)

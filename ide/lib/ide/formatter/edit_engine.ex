@@ -65,7 +65,7 @@ defmodule Ide.Formatter.EditEngine do
               leading_whitespace
             )
           else
-            enter_indent(leading_whitespace, current_line, prefix, start_offset, line_end)
+            ElmEx.Frontend.LayoutEnter.indent_string(content, start_offset)
           end
 
         patched_content =
@@ -97,17 +97,13 @@ defmodule Ide.Formatter.EditEngine do
       next_pos = start_offset - removable
       %{next_content: next_content, cursor_start: next_pos, cursor_end: next_pos}
     else
-      column = start_offset - line_start
-      indent_width = Rules.indent_width()
-      remainder = rem(column, indent_width)
-      spaces = if remainder == 0, do: indent_width, else: indent_width - remainder
-      indent = String.duplicate(" ", spaces)
+      indent = ElmEx.Frontend.LayoutEnter.tab_insert_string(content, start_offset)
 
       next_content =
         slice_range(content, 0, start_offset) <>
           indent <> slice_range(content, start_offset, String.length(content))
 
-      next_pos = start_offset + spaces
+      next_pos = start_offset + String.length(indent)
       %{next_content: next_content, cursor_start: next_pos, cursor_end: next_pos}
     end
   end
@@ -198,30 +194,6 @@ defmodule Ide.Formatter.EditEngine do
     (Regex.run(~r/^[ \t]*/, value) || [""]) |> hd()
   end
 
-  @spec enter_indent(String.t(), String.t(), String.t(), non_neg_integer(), non_neg_integer()) ::
-          String.t()
-  defp enter_indent(base_indent, current_line, prefix, start_offset, line_end) do
-    next_char = char_at(current_line, String.length(prefix))
-    trimmed_prefix = String.trim_trailing(prefix)
-    trimmed_line = String.trim(current_line)
-
-    type_equals_split? =
-      next_char == "=" and
-        type_declaration_head_line?(trimmed_prefix) and
-        String.contains?(trimmed_line, "=")
-
-    should_increase? =
-      type_equals_split? or
-        (line_tail_blank?(prefix, start_offset, line_end) and
-           continuation_indent_trigger?(current_line, prefix))
-
-    if should_increase? do
-      base_indent <> String.duplicate(" ", Rules.indent_width())
-    else
-      base_indent
-    end
-  end
-
   @spec type_equals_split_edit(String.t(), integer(), String.t()) :: Types.enter_split()
   defp type_equals_split_edit(current_line, cursor_in_line, leading_whitespace) do
     case :binary.match(current_line, "=") do
@@ -249,24 +221,6 @@ defmodule Ide.Formatter.EditEngine do
       :nomatch ->
         :error
     end
-  end
-
-  @spec line_tail_blank?(String.t(), non_neg_integer(), non_neg_integer()) :: boolean()
-  defp line_tail_blank?(prefix, start_offset, line_end)
-       when is_integer(start_offset) and is_integer(line_end) do
-    _ = prefix
-    start_offset >= line_end
-  end
-
-  @spec continuation_indent_trigger?(String.t(), String.t()) :: boolean()
-  defp continuation_indent_trigger?(current_line, prefix) do
-    trimmed_prefix = String.trim_trailing(prefix)
-    trimmed_line = String.trim(current_line)
-
-    String.ends_with?(trimmed_prefix, "=") or
-      String.ends_with?(trimmed_prefix, "->") or
-      Regex.match?(~r/\b(?:of|let|then|else|where)\s*$/, trimmed_prefix) or
-      type_declaration_head_line?(trimmed_line)
   end
 
   @spec type_declaration_head_line?(String.t()) :: boolean()

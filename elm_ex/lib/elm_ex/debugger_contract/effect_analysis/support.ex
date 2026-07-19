@@ -66,6 +66,7 @@ defmodule ElmEx.DebuggerContract.EffectAnalysis.Support do
     end
   end
 
+  def peel_lets(%{op: :let_bindings, in_expr: inner}), do: peel_lets(inner)
   def peel_lets(%{op: :let_in, in_expr: inner}), do: peel_lets(inner)
   def peel_lets(other), do: other
   def inline_let_bindings(expr, _bindings, _seen, depth) when depth > 12, do: expr
@@ -215,6 +216,7 @@ defmodule ElmEx.DebuggerContract.EffectAnalysis.Support do
   def expr_to_json_value(%{op: op}, _, _, _), do: %{"$opaque" => true, "op" => to_string(op)}
 
   def expr_to_json_value(_, _, _, _), do: %{"$opaque" => true}
+  def peel_update_outer(%{op: :let_bindings, in_expr: inner}), do: peel_update_outer(inner)
   def peel_update_outer(%{op: :let_in, in_expr: inner}), do: peel_update_outer(inner)
   def peel_update_outer(other), do: other
   @spec pattern_constructor_name(Types.ast_expr()) :: String.t() | nil

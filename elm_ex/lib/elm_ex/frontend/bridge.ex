@@ -170,36 +170,124 @@ defmodule ElmEx.Frontend.Bridge do
 
   defp dependency_package_source_dirs(project_dir, elm_json)
        when is_binary(project_dir) and is_map(elm_json) do
-    deps =
-      elm_json
-      |> Map.get("dependencies", %{})
-      |> dependency_version_pairs()
+    {_visited, deps} = collect_dependency_version_pairs(project_dir, elm_json)
+    deps = Map.merge(deps, application_dependency_pins(elm_json))
 
     Enum.flat_map(deps, fn {pkg, ver} ->
-      case String.split(pkg, "/", parts: 2) do
-        [author, name] ->
-          [
-            Path.join([project_dir, "elm-stuff", "packages", author, name, ver, "src"]),
-            Path.join([System.user_home!(), ".elm", "0.19.1", "packages", author, name, ver, "src"])
-          ]
-          |> Enum.map(&Path.expand/1)
-          |> Enum.filter(&File.dir?/1)
-
-        _ ->
-          []
-      end
+      dependency_package_src_dirs(project_dir, pkg, ver)
     end)
   end
 
   defp dependency_package_source_dirs(_project_dir, _elm_json), do: []
 
+  defp dependency_package_src_dirs(project_dir, pkg, ver) do
+    case String.split(pkg, "/", parts: 2) do
+      [author, name] ->
+        [
+          Path.join([project_dir, "elm-stuff", "packages", author, name, ver, "src"]),
+          Path.join([System.user_home!(), ".elm", "0.19.1", "packages", author, name, ver, "src"])
+        ]
+        |> Enum.map(&Path.expand/1)
+        |> Enum.filter(&File.dir?/1)
+
+      _ ->
+        []
+    end
+  end
+
+  defp collect_dependency_version_pairs(project_dir, elm_json, visited \\ MapSet.new()) do
+    elm_json
+    |> Map.get("dependencies", %{})
+    |> dependency_version_pairs()
+    |> Enum.reduce({visited, %{}}, fn {pkg, ver} = dep, {seen_acc, deps_acc} ->
+      if MapSet.member?(seen_acc, dep) do
+        {seen_acc, deps_acc}
+      else
+        seen_acc = MapSet.put(seen_acc, dep)
+        deps_acc = Map.put(deps_acc, pkg, ver)
+
+        case package_elm_json(project_dir, pkg, ver) do
+          {:ok, pkg_json} ->
+            {seen_nested, deps_nested} =
+              collect_dependency_version_pairs(project_dir, pkg_json, seen_acc)
+
+            {seen_nested, Map.merge(deps_acc, deps_nested)}
+
+          _ ->
+            {seen_acc, deps_acc}
+        end
+      end
+    end)
+  end
+
+  defp package_elm_json(project_dir, pkg, ver) do
+    case String.split(pkg, "/", parts: 2) do
+      [author, name] ->
+        candidates = [
+          Path.join([project_dir, "elm-stuff", "packages", author, name, ver, "elm.json"]),
+          Path.join([System.user_home!(), ".elm", "0.19.1", "packages", author, name, ver, "elm.json"])
+        ]
+
+        candidates
+        |> Enum.find_value(fn path ->
+          expanded = Path.expand(path)
+
+          if File.regular?(expanded) do
+            case File.read(expanded) do
+              {:ok, body} ->
+                case Jason.decode(body) do
+                  {:ok, json} -> json
+                  _ -> nil
+                end
+
+              _ ->
+                nil
+            end
+          end
+        end)
+        |> case do
+          json when is_map(json) -> {:ok, json}
+          _ -> :error
+        end
+
+      _ ->
+        :error
+    end
+  end
+
   defp dependency_version_pairs(%{"direct" => direct, "indirect" => indirect})
        when is_map(direct) and is_map(indirect) do
     Map.merge(indirect, direct)
     |> Enum.filter(fn {k, v} -> is_binary(k) and is_binary(v) end)
+    |> Enum.map(fn {pkg, range} -> {pkg, dependency_exact_version(range)} end)
+  end
+
+  defp dependency_version_pairs(deps) when is_map(deps) do
+    deps
+    |> Enum.filter(fn {k, v} -> is_binary(k) and is_binary(v) end)
+    |> Enum.map(fn {pkg, range} -> {pkg, dependency_exact_version(range)} end)
   end
 
   defp dependency_version_pairs(_), do: []
+
+  defp application_dependency_pins(elm_json) do
+    case elm_json do
+      %{} = json ->
+        json
+        |> Map.get("dependencies", %{})
+        |> dependency_version_pairs()
+        |> Map.new()
+
+      _ ->
+        %{}
+    end
+  end
+
+  defp dependency_exact_version(range) when is_binary(range) do
+    range |> String.split() |> List.first()
+  end
+
+  defp dependency_exact_version(_), do: nil
 
   @spec unique_module_paths_by_source_order([{String.t(), String.t()}]) :: [String.t()]
   defp unique_module_paths_by_source_order(source_paths) do

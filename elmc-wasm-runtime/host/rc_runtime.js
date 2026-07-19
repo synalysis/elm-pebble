@@ -153,6 +153,15 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
     return payload?.tag === TAG_INT ? payload.value | 0 : ptr | 0;
   };
 
+  const asIntNumber = (ptr) => {
+    if (!ptr) return 0;
+    const payload = readHandle(ptr);
+    if (!payload) return ptr | 0;
+    if (payload.tag === TAG_FLOAT) return payload.value | 0;
+    if (payload.tag === TAG_INT) return payload.value | 0;
+    return intValue(ptr);
+  };
+
   const asBoolForWasm = (ptr) => {
     const p = ptr | 0;
     const payload = readHandle(p);
@@ -1606,6 +1615,14 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
       return vdomToDom(payload.child | 0, payload.mapper | 0);
     }
 
+    if (payload.kind === "lazy") {
+      const forced = forceLazyHtml(ptr);
+      if (forced.rc === RC_SUCCESS && forced.value) {
+        return vdomToDom(forced.value, mapperPtr);
+      }
+      return typeof document !== "undefined" ? document.createTextNode("") : null;
+    }
+
     if (payload.kind === "node" && typeof document !== "undefined") {
       const el = payload.namespace
         ? document.createElementNS(payload.namespace, payload.tagName || "div")
@@ -1801,7 +1818,11 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
   const listHead = (outPtr, listPtr) => {
     const items = listItems(listPtr);
     if (items.length === 0) return maybeNothing(outPtr);
-    return maybeJustOwn(outPtr, newIntHandle(items[0]));
+    const first = items[0] | 0;
+    if (handles.has(first)) {
+      return maybeJust(outPtr, first);
+    }
+    return maybeJustOwn(outPtr, newIntHandle(first));
   };
 
   const listTail = (outPtr, listPtr) => {
@@ -1821,10 +1842,11 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
   };
 
   const listRange = (outPtr, startPtr, endPtr) => {
-    const start = intValue(startPtr);
-    const end = intValue(endPtr);
+    const low = asIntNumber(startPtr);
+    const high = asIntNumber(endPtr);
     const items = [];
-    for (let i = start; i < end; i++) items.push(i);
+    // Match C elmc_list_range / Elm List.range: inclusive on both ends, high -> low.
+    for (let i = high; i >= low; i--) items.push(i);
     return writeList(outPtr, items);
   };
 
@@ -5525,6 +5547,7 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
     readHandle,
     writeOut,
     inspectVdom,
+    forceLazyHtml: (lazyPtr, argPtrs) => forceLazyHtml(lazyPtr, argPtrs),
     vdomInnerText,
     mountVdomToApp,
     isBrowserProgram,

@@ -1,6 +1,8 @@
 defmodule Elmc.Backend.CCodegen.GeneratedSource do
   @moduledoc false
 
+  @function_emit_batch_size 16
+
   alias Elmc.Backend.C.StubFunctions
   alias Elmc.Backend.CCodegen.CSource
   alias Elmc.Backend.CCodegen.DirectRender.Analysis, as: DirectRenderAnalysis
@@ -267,6 +269,7 @@ defmodule Elmc.Backend.CCodegen.GeneratedSource do
     Process.put(:elmc_enum_types, IRQueries.enum_type_set(ir))
     Process.put(:elmc_record_alias_shapes, IRQueries.record_alias_shape_map(ir))
     Process.put(:elmc_inline_record_literal_shapes, IRQueries.inline_record_literal_shape_map(ir))
+    Process.put(:elmc_union_constructor_payload_specs, IRQueries.union_constructor_payload_specs_map(ir))
     Process.put(:elmc_record_field_types, IRQueries.record_alias_field_types_map(ir))
     Process.put(:elmc_union_type_names, IRQueries.union_type_name_set(ir))
 
@@ -404,6 +407,18 @@ defmodule Elmc.Backend.CCodegen.GeneratedSource do
     end
   end
 
+  @spec write_source!(String.t(), ElmEx.IR.t(), Types.codegen_opts()) :: :ok
+  def write_source!(path, ir, opts) when is_binary(path) do
+    prepare_emit_session!(ir, opts)
+
+    try do
+      :ok = File.write!(path, source_without_session_setup(ir, opts))
+      :ok
+    after
+      reset_process_state!()
+    end
+  end
+
   defp source_without_session_setup(ir, opts) do
     generic_targets = GenericTargets.function_targets(ir, opts)
     decl_map = IRQueries.function_decl_map(ir)
@@ -477,34 +492,13 @@ defmodule Elmc.Backend.CCodegen.GeneratedSource do
       )
 
     function_defs =
-      ir.modules
-      |> Enum.flat_map(fn mod ->
-        mod.declarations
-        |> Enum.filter(
-          &(&1.kind == :function && MapSet.member?(generic_targets, {mod.name, &1.name}))
-        )
-        |> Enum.sort_by(fn decl ->
-          if Tuple2CaseTable.recognized?(mod.name, decl.name, decl.expr),
-            do: 0,
-            else: 1
-        end)
-        |> Enum.map(fn decl ->
-          c_name = Util.module_fn_name(mod.name, decl.name)
-          emit_wrapper? = MapSet.member?(wrapper_targets, {mod.name, decl.name})
-
-          FunctionEmit.emit_function_def(
-            decl,
-            mod.name,
-            c_name,
-            function_arities,
-            decl_map,
-            emit_wrapper?
-          )
-        end)
-      end)
-      |> Enum.map(&String.trim_trailing/1)
-      |> Enum.reject(&(&1 == ""))
-      |> Enum.join("\n\n")
+      emit_function_defs_batched(
+        ir,
+        generic_targets,
+        function_arities,
+        wrapper_targets,
+        decl_map
+      )
 
     direct_command_defs = DirectRenderRegistry.defs(ir, opts)
 
@@ -596,6 +590,48 @@ defmodule Elmc.Backend.CCodegen.GeneratedSource do
     #{direct_scene_guard(direct_command_defs, opts, ir)}
     """
     |> finalize_source()
+  end
+
+  defp emit_function_defs_batched(ir, generic_targets, function_arities, wrapper_targets, decl_map) do
+    sorted_function_decls(ir, generic_targets)
+    |> Enum.chunk_every(@function_emit_batch_size)
+    |> Enum.map(fn batch ->
+      batch
+      |> Enum.map(fn {mod, decl} ->
+        c_name = Util.module_fn_name(mod.name, decl.name)
+        emit_wrapper? = MapSet.member?(wrapper_targets, {mod.name, decl.name})
+
+        FunctionEmit.emit_function_def(
+          decl,
+          mod.name,
+          c_name,
+          function_arities,
+          decl_map,
+          emit_wrapper?
+        )
+      end)
+      |> Enum.map(&String.trim_trailing/1)
+      |> Enum.reject(&(&1 == ""))
+      |> Enum.join("\n\n")
+      |> tap(fn _ -> :erlang.garbage_collect() end)
+    end)
+    |> Enum.reject(&(&1 == ""))
+    |> Enum.intersperse("\n\n")
+    |> IO.iodata_to_binary()
+  end
+
+  defp sorted_function_decls(ir, generic_targets) do
+    ir.modules
+    |> Enum.flat_map(fn mod ->
+      mod.declarations
+      |> Enum.filter(
+        &(&1.kind == :function && MapSet.member?(generic_targets, {mod.name, &1.name}))
+      )
+      |> Enum.map(&{mod, &1})
+    end)
+    |> Enum.sort_by(fn {mod, decl} ->
+      if Tuple2CaseTable.recognized?(mod.name, decl.name, decl.expr), do: 0, else: 1
+    end)
   end
 
   defp dedupe_lambda_defs_by_name(lambda_defs) when is_list(lambda_defs) do

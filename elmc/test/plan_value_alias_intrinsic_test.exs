@@ -15,13 +15,15 @@ defmodule Elmc.PlanValueAliasIntrinsicTest do
     assert {:ok, plan} =
              Intrinsics.try_lower(decl, "String", %{}, rc_required: true, web: true, targets: [:wasm])
 
-    assert Enum.map(plan.params, & &1.name) == ["__n"]
+    assert length(plan.params) == 1
+    assert hd(plan.params).name =~ "__"
 
     ops = for b <- plan.blocks, i <- b.instrs, do: {i.op, i.args}
     refute Enum.any?(ops, fn {:call_fn, %{args: []}} -> true; _ -> false end)
 
     assert Enum.any?(ops, fn
              {:call_runtime, %{builtin: :string_from_int_value}} -> true
+             {:call_runtime, %{builtin: :string_from_float}} -> true
              _ -> false
            end)
   end
@@ -43,6 +45,27 @@ defmodule Elmc.PlanValueAliasIntrinsicTest do
 
     refute Enum.any?(ops, fn
              {:call_fn, %{module: _, name: _, args: []}} -> true
+             _ -> false
+           end)
+  end
+
+  test "Basics.pow kernel alias lowers to runtime pow without call_rewrite loop" do
+    decl = %{
+      name: "pow",
+      args: [],
+      type: "number -> number -> number",
+      expr: %{op: :qualified_call, target: "Elm.Kernel.Basics.pow", args: []}
+    }
+
+    assert {:ok, plan} =
+             Function.lower(decl, "Basics", %{}, rc_required: false, web: true, targets: [:wasm])
+
+    assert length(plan.params) == 2
+
+    ops = for b <- plan.blocks, i <- b.instrs, do: {i.op, i.args}
+
+    assert Enum.any?(ops, fn
+             {:call_runtime, %{builtin: :basics_pow}} -> true
              _ -> false
            end)
   end

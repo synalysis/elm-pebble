@@ -2,6 +2,7 @@ defmodule ElmEx.DebuggerContract.EffectAnalysis.CmdCalls do
   @moduledoc false
 
   alias ElmEx.Frontend.Module
+  alias ElmEx.Frontend.LetBindings
   alias ElmEx.DebuggerContract.Types
   alias ElmEx.DebuggerContract.EffectAnalysis.Subscriptions
   alias ElmEx.DebuggerContract.EffectAnalysis.Support
@@ -298,6 +299,9 @@ defmodule ElmEx.DebuggerContract.EffectAnalysis.CmdCalls do
     extract_cmd_calls(inner, Map.put(bindings, name, value_expr))
   end
 
+  def extract_cmd_calls(%{op: :let_bindings} = expr, bindings) when is_map(bindings),
+    do: extract_cmd_calls(LetBindings.expand(expr), bindings)
+
   def extract_cmd_calls(%{op: :let_in, in_expr: inner}, bindings) when is_map(bindings),
     do: extract_cmd_calls(inner, bindings)
 
@@ -510,6 +514,11 @@ defmodule ElmEx.DebuggerContract.EffectAnalysis.CmdCalls do
       when is_binary(name) and is_map(bindings) do
     next_bindings = Map.put(bindings, name, value_expr)
     callback_constructor_from_expr(inner, next_bindings, seen, depth + 1)
+  end
+
+  def callback_constructor_from_expr(%{op: :let_bindings} = expr, bindings, seen, depth)
+      when is_map(bindings) do
+    callback_constructor_from_expr(LetBindings.expand(expr), bindings, seen, depth)
   end
 
   def callback_constructor_from_expr(

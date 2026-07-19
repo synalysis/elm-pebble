@@ -527,10 +527,37 @@ defmodule ElmEx.Frontend.GeneratedParser do
 
     case find_exposing_open(line) do
       nil ->
-        nil
+        if line_has_kind?(line, :exposing_kw) do
+          parse_exposing_across_lines(rest_lines, 0)
+        else
+          nil
+        end
 
       after_open ->
         parse_exposing_from_open(after_open, rest_lines, 0)
+    end
+  end
+
+  @spec parse_exposing_across_lines([tokens()], non_neg_integer()) :: Types.module_exposing()
+  defp parse_exposing_across_lines(_lines, used_lines) when used_lines >= 120, do: nil
+
+  defp parse_exposing_across_lines([], _used_lines), do: nil
+
+  defp parse_exposing_across_lines([line | rest], used_lines) do
+    case find_lparen_open(line) do
+      nil ->
+        parse_exposing_across_lines(rest, used_lines + 1)
+
+      after_open ->
+        parse_exposing_from_open(after_open, rest, used_lines + 1)
+    end
+  end
+
+  @spec find_lparen_open(tokens()) :: tokens() | nil
+  defp find_lparen_open(tokens) do
+    case Enum.drop_while(tokens, &(token_kind(&1) != :lparen)) do
+      [{:lparen, _} | after_open] -> after_open
+      _ -> nil
     end
   end
 

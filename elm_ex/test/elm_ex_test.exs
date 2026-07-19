@@ -253,6 +253,79 @@ defmodule ElmExTest do
            end)
   end
 
+  test "frontend bridge keeps app-pinned package versions over nested dependency ranges" do
+    root = Path.join(System.tmp_dir!(), "elm-ex-dep-pin-#{System.unique_integer([:positive])}")
+    src = Path.join(root, "src")
+    bytes_src = Path.join(root, "elm-stuff/packages/elm/bytes/1.0.8/src")
+    pages_src = Path.join(root, "elm-stuff/packages/dillonkearns/elm-pages/99.0.0/src")
+
+    File.mkdir_p!(src)
+    File.mkdir_p!(bytes_src)
+    File.mkdir_p!(pages_src)
+
+    File.write!(
+      Path.join(root, "elm.json"),
+      Jason.encode!(%{
+        "type" => "application",
+        "source-directories" => ["src"],
+        "elm-version" => "0.19.1",
+        "dependencies" => %{
+          "direct" => %{
+            "elm/bytes" => "1.0.8",
+            "dillonkearns/elm-pages" => "99.0.0"
+          },
+          "indirect" => %{}
+        },
+        "test-dependencies" => %{"direct" => %{}, "indirect" => %{}}
+      })
+    )
+
+    File.write!(Path.join(bytes_src, "Bytes.elm"), """
+    module Bytes exposing (..)
+
+    type alias Bytes =
+        String
+    """)
+
+    File.write!(Path.join(bytes_src, "elm.json"), """
+    {"type":"package","name":"elm/bytes","version":"1.0.8","dependencies":{"elm/core":"1.0.5"},"test-dependencies":{}}
+    """)
+
+    File.write!(Path.join(pages_src, "Pages.elm"), """
+    module Pages exposing (..)
+
+    import Bytes
+
+    marker =
+        Bytes
+    """)
+
+    File.write!(Path.join(pages_src, "elm.json"), """
+    {"type":"package","name":"dillonkearns/elm-pages","version":"99.0.0","dependencies":{"elm/bytes":"1.0.0 <= v < 2.0.0","elm/core":"1.0.5"},"test-dependencies":{}}
+    """)
+
+    File.write!(Path.join(src, "Main.elm"), """
+    module Main exposing (main)
+
+    import Pages
+
+    main =
+        Pages.marker
+    """)
+
+    on_exit(fn -> File.rm_rf(root) end)
+
+    assert {:ok, project} = Bridge.load_project(root)
+
+    assert Enum.any?(project.modules, fn mod ->
+             mod.name == "Bytes" and String.contains?(mod.path, "bytes/1.0.8")
+           end)
+
+    refute Enum.any?(project.diagnostics, fn d ->
+             d["type"] == "missing-import" and d["import"] == "Bytes"
+           end)
+  end
+
   test "generated frontend keeps outer update branches after nested case expression" do
     root =
       Path.join(System.tmp_dir!(), "elm-ex-nested-case-#{System.unique_integer([:positive])}")
@@ -446,6 +519,93 @@ defmodule ElmExTest do
     func = Enum.find(mod.declarations, &(&1.name == "wrap" and &1.kind == :function))
     assert func.expr.op == :tuple2
     assert func.expr.left.op == :int_literal
+  end
+
+  test "lowerer prefers local union constructor over global record alias name clash" do
+    layout_config_module =
+      %FrontendModule{
+        name: "Internal.Layout.Config",
+        path: "/tmp/synthetic/src/Internal/Layout/Config.elm",
+        imports: [],
+        declarations: [
+          %{
+            kind: :union,
+            name: "Config",
+            constructors: [
+              %{
+                name: "Config",
+                arg: "{spacing : Vec2, arrowLabler : ArrowLabler a, leafExtent : a -> Bound}"
+              }
+            ],
+            span: %{start_line: 1, end_line: 1}
+          },
+          sig("setLeafExtent", "(a -> Bound) -> Config a -> Config a"),
+          defn("setLeafExtent", ["v", "c"], %{
+            op: :case,
+            subject: %{op: :var, name: "c"},
+            branches: [
+              %{
+                pattern: %{
+                  kind: :constructor,
+                  name: "Config",
+                  tag: 1,
+                  bind: "cfg",
+                  resolved_name: "Internal.Layout.Config.Config"
+                },
+                expr: %{
+                  op: :constructor_call,
+                  target: "Config",
+                  args: [
+                    %{
+                      op: :record_update,
+                      base: %{op: :var, name: "cfg"},
+                      fields: [%{name: "leafExtent", expr: %{op: :var, name: "v"}}]
+                    }
+                  ]
+                }
+              }
+            ]
+          })
+        ]
+      }
+
+    arrow_module =
+      %FrontendModule{
+        name: "Internal.Arrow",
+        path: "/tmp/synthetic/src/Internal/Arrow.elm",
+        imports: [],
+        declarations: [
+          %{
+            kind: :type_alias,
+            name: "Config",
+            fields: ["headLength"],
+            span: %{start_line: 1, end_line: 1}
+          }
+        ]
+      }
+
+    project = %ElmEx.Frontend.Project{
+      project_dir: "/tmp/synthetic",
+      elm_json: %{"source-directories" => ["src"]},
+      modules: [layout_config_module, arrow_module]
+    }
+
+    assert {:ok, %IR{modules: modules}} = Lowerer.lower_project(project)
+    mod = Enum.find(modules, &(&1.name == "Internal.Layout.Config"))
+    func = Enum.find(mod.declarations, &(&1.name == "setLeafExtent" and &1.kind == :function))
+
+    assert %{
+             op: :case,
+             branches: [
+               %{
+                 expr: %{
+                   op: :tuple2,
+                   left: %{op: :int_literal, value: 1, union_ctor: "Internal.Layout.Config.Config"},
+                   right: %{op: :record_update, fields: [%{name: "leafExtent"}]}
+                 }
+               }
+             ]
+           } = func.expr
   end
 
   test "lowerer gives Pebble virtual UI constructors stable semantic tags" do

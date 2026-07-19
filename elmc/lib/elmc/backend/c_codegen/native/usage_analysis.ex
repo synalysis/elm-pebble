@@ -9,6 +9,46 @@ defmodule Elmc.Backend.CCodegen.Native.UsageAnalysis do
   alias Elmc.Backend.CCodegen.Native.IntCase, as: NativeIntCase
   alias Elmc.Backend.CCodegen.Types
 
+  @list_unary_container_runtime_functions ~w(
+    elmc_list_length
+    elmc_list_is_empty
+    elmc_list_reverse
+    elmc_list_head
+    elmc_list_tail
+    elmc_list_sum
+    elmc_list_product
+    elmc_list_maximum
+    elmc_list_minimum
+    elmc_list_sort
+    elmc_list_concat
+  )
+
+  @list_hof_list_arg_index %{
+    "elmc_list_foldl" => 2,
+    "elmc_list_foldr" => 2,
+    "elmc_list_map" => 1,
+    "elmc_list_filter" => 1,
+    "elmc_list_filter_map" => 1,
+    "elmc_list_find_first" => 1,
+    "elmc_list_all" => 1,
+    "elmc_list_any" => 1,
+    "elmc_list_concat_map" => 1,
+    "elmc_list_indexed_map" => 1,
+    "elmc_list_sort_by" => 1,
+    "elmc_list_sort_with" => 1,
+    "elmc_list_partition" => 1,
+    "elmc_list_take" => 1,
+    "elmc_list_drop" => 1,
+    "elmc_list_intersperse" => 1,
+    "elmc_list_slice_int" => 2,
+    "elmc_list_member" => 1,
+    "elmc_list_unzip" => 0
+  }
+
+  @list_binary_container_runtime_functions ~w(elmc_list_append)
+
+  @list_hof_runtime_functions Map.keys(@list_hof_list_arg_index)
+
   @spec int_usage(
           Types.binding_name(),
           Types.ir_expr(),
@@ -17,13 +57,17 @@ defmodule Elmc.Backend.CCodegen.Native.UsageAnalysis do
         ) :: Types.native_int_usage_stats()
   def int_usage(name, expr, module_name, decl_map) do
     base_contexts = collect_var_contexts(name, expr, :boxed)
-    native_arg_contexts = collect_native_function_arg_contexts(name, expr, module_name, decl_map)
 
-    call_site_native_arg_contexts =
-      collect_call_site_signature_native_int_arg_contexts(name, expr, module_name, decl_map)
-
-    record_update_contexts =
-      collect_record_update_int_field_contexts(name, expr, module_name, decl_map)
+    {native_arg_contexts, call_site_native_arg_contexts, record_update_contexts} =
+      if Process.get(:elmc_binding_plans_active) do
+        {[], [], []}
+      else
+        {
+          collect_native_function_arg_contexts(name, expr, module_name, decl_map),
+          collect_call_site_signature_native_int_arg_contexts(name, expr, module_name, decl_map),
+          collect_record_update_int_field_contexts(name, expr, module_name, decl_map)
+        }
+      end
 
     usage =
       base_contexts
@@ -358,18 +402,23 @@ defmodule Elmc.Backend.CCodegen.Native.UsageAnalysis do
   def float_usage(name, expr, module_name, decl_map) do
     base_contexts = collect_float_contexts(name, expr, :boxed)
 
-    native_arg_contexts =
-      if is_binary(module_name) do
-        collect_native_float_function_arg_contexts(name, expr, module_name, decl_map)
+    {native_arg_contexts, call_site_native_arg_contexts, record_update_contexts} =
+      if Process.get(:elmc_binding_plans_active) do
+        {[], [], []}
       else
-        []
+        native_arg_contexts =
+          if is_binary(module_name) do
+            collect_native_float_function_arg_contexts(name, expr, module_name, decl_map)
+          else
+            []
+          end
+
+        {
+          native_arg_contexts,
+          collect_call_site_signature_native_float_arg_contexts(name, expr, module_name, decl_map),
+          collect_record_update_float_field_contexts(name, expr, module_name, decl_map)
+        }
       end
-
-    call_site_native_arg_contexts =
-      collect_call_site_signature_native_float_arg_contexts(name, expr, module_name, decl_map)
-
-    record_update_contexts =
-      collect_record_update_float_field_contexts(name, expr, module_name, decl_map)
 
     usage =
       base_contexts
@@ -581,11 +630,16 @@ defmodule Elmc.Backend.CCodegen.Native.UsageAnalysis do
   def float_let?(_name, _value_expr, _in_expr, _env), do: false
 
   defp float_let_without_guard?(name, value_expr, in_expr, env) do
-    usage = float_usage(name, in_expr, Map.get(env, :__module__), Map.get(env, :__program_decls__, %{}))
+    if Process.get(:elmc_binding_plans_active) do
+      false
+    else
+      usage =
+        float_usage(name, in_expr, Map.get(env, :__module__), Map.get(env, :__program_decls__, %{}))
 
-    Host.native_float_expr?(value_expr, env) and not Host.native_int_expr?(value_expr, env) and
-      native_float_only_usage?(usage) and
-      not Host.binding_used_in_lambda?(name, in_expr)
+      Host.native_float_expr?(value_expr, env) and not Host.native_int_expr?(value_expr, env) and
+        native_float_only_usage?(usage) and
+        not Host.binding_used_in_lambda?(name, in_expr)
+    end
   end
 
   @spec string_let?(Types.binding_name(), Types.ir_expr(), Types.ir_expr(), Types.compile_env()) ::
@@ -751,14 +805,16 @@ defmodule Elmc.Backend.CCodegen.Native.UsageAnalysis do
   def bool_usage(name, expr, module_name, decl_map) do
     base_contexts = collect_bool_contexts(name, expr, :boxed)
 
-    native_arg_contexts =
-      collect_native_bool_function_arg_contexts(name, expr, module_name, decl_map)
-
-    call_site_native_arg_contexts =
-      collect_call_site_signature_native_bool_arg_contexts(name, expr, module_name, decl_map)
-
-    record_update_contexts =
-      collect_record_update_bool_field_contexts(name, expr, module_name, decl_map)
+    {native_arg_contexts, call_site_native_arg_contexts, record_update_contexts} =
+      if Process.get(:elmc_binding_plans_active) do
+        {[], [], []}
+      else
+        {
+          collect_native_bool_function_arg_contexts(name, expr, module_name, decl_map),
+          collect_call_site_signature_native_bool_arg_contexts(name, expr, module_name, decl_map),
+          collect_record_update_bool_field_contexts(name, expr, module_name, decl_map)
+        }
+      end
 
     usage =
       base_contexts
@@ -797,16 +853,20 @@ defmodule Elmc.Backend.CCodegen.Native.UsageAnalysis do
   def bool_let?(_name, _value_expr, _in_expr, _env), do: false
 
   defp bool_let_without_guard?(name, value_expr, in_expr, env) do
-    usage =
-      bool_usage(
-        name,
-        in_expr,
-        Map.get(env, :__module__),
-        Map.get(env, :__program_decls__, %{})
-      )
+    if Process.get(:elmc_binding_plans_active) do
+      false
+    else
+      usage =
+        bool_usage(
+          name,
+          in_expr,
+          Map.get(env, :__module__),
+          Map.get(env, :__program_decls__, %{})
+        )
 
-    Host.native_bool_expr?(value_expr, env) and native_bool_only_usage?(usage) and
-      not Host.binding_used_in_lambda?(name, in_expr)
+      Host.native_bool_expr?(value_expr, env) and native_bool_only_usage?(usage) and
+        not Host.binding_used_in_lambda?(name, in_expr)
+    end
   end
 
   @spec native_bool_only_usage?(Types.native_bool_usage_stats()) :: boolean()
@@ -1047,6 +1107,35 @@ defmodule Elmc.Backend.CCodegen.Native.UsageAnalysis do
     |> Enum.flat_map(&collect_bool_contexts(name, &1, context))
   end
 
+  defp collect_qualified_call_var_contexts(name, target, args, expr, context) do
+    normalized = Host.normalize_special_target(target)
+
+    case text_command_var_contexts(name, normalized, args, context) do
+      :skip ->
+        case Host.special_value_from_target(target, args) do
+          nil ->
+            if Host.qualified_builtin_operator_member?(target, [
+                 "__add__",
+                 "__sub__",
+                 "__mul__",
+                 "__idiv__",
+                 "modBy",
+                 "remainderBy"
+               ]) do
+              Enum.flat_map(args, &collect_var_contexts(name, &1, :native))
+            else
+              collect_var_contexts_from_map(name, expr, context)
+            end
+
+          rewritten ->
+            collect_var_contexts(name, rewritten, context)
+        end
+
+      contexts ->
+        contexts
+    end
+  end
+
   defp collect_var_contexts(name, %{op: :var, name: var_name}, context) do
     if EnvBindings.same_binding?(name, var_name), do: [context], else: []
   end
@@ -1114,46 +1203,6 @@ defmodule Elmc.Backend.CCodegen.Native.UsageAnalysis do
     collect_var_contexts(name, value, :native)
   end
 
-  @list_unary_container_runtime_functions ~w(
-    elmc_list_length
-    elmc_list_is_empty
-    elmc_list_reverse
-    elmc_list_head
-    elmc_list_tail
-    elmc_list_sum
-    elmc_list_product
-    elmc_list_maximum
-    elmc_list_minimum
-    elmc_list_sort
-    elmc_list_concat
-  )
-
-  @list_hof_list_arg_index %{
-    "elmc_list_foldl" => 2,
-    "elmc_list_foldr" => 2,
-    "elmc_list_map" => 1,
-    "elmc_list_filter" => 1,
-    "elmc_list_filter_map" => 1,
-    "elmc_list_find_first" => 1,
-    "elmc_list_all" => 1,
-    "elmc_list_any" => 1,
-    "elmc_list_concat_map" => 1,
-    "elmc_list_indexed_map" => 1,
-    "elmc_list_sort_by" => 1,
-    "elmc_list_sort_with" => 1,
-    "elmc_list_partition" => 1,
-    "elmc_list_take" => 1,
-    "elmc_list_drop" => 1,
-    "elmc_list_intersperse" => 1,
-    "elmc_list_slice_int" => 2,
-    "elmc_list_member" => 1,
-    "elmc_list_unzip" => 0
-  }
-
-  @list_binary_container_runtime_functions ~w(elmc_list_append)
-
-  @list_hof_runtime_functions Map.keys(@list_hof_list_arg_index)
-
   defp collect_var_contexts(
          name,
          %{op: :runtime_call, function: function, args: [arg]},
@@ -1191,31 +1240,10 @@ defmodule Elmc.Backend.CCodegen.Native.UsageAnalysis do
          %{op: :qualified_call, target: target, args: args} = expr,
          context
        ) do
-    normalized = Host.normalize_special_target(target)
-
-    case text_command_var_contexts(name, normalized, args, context) do
-      :skip ->
-        case Host.special_value_from_target(target, args) do
-          nil ->
-            if Host.qualified_builtin_operator_member?(target, [
-                 "__add__",
-                 "__sub__",
-                 "__mul__",
-                 "__idiv__",
-                 "modBy",
-                 "remainderBy"
-               ]) do
-              Enum.flat_map(args, &collect_var_contexts(name, &1, :native))
-            else
-              collect_var_contexts_from_map(name, expr, context)
-            end
-
-          rewritten ->
-            collect_var_contexts(name, rewritten, context)
-        end
-
-      contexts ->
-        contexts
+    if Process.get(:elmc_binding_plans_active) do
+      collect_var_contexts_from_map(name, expr, context)
+    else
+      collect_qualified_call_var_contexts(name, target, args, expr, context)
     end
   end
 
@@ -1394,28 +1422,32 @@ defmodule Elmc.Backend.CCodegen.Native.UsageAnalysis do
          %{op: :qualified_call, target: target, args: args} = expr,
          context
        ) do
-    case Host.special_value_from_target(target, args) do
-      nil ->
-        if Host.qualified_builtin_operator_member?(target, [
-             "__add__",
-             "__sub__",
-             "__mul__",
-             "__fdiv__",
-             "toFloat",
-             "round",
-             "floor",
-             "ceiling",
-             "truncate",
-             "abs",
-             "negate"
-           ]) do
-          Enum.flat_map(args, &collect_float_contexts(name, &1, :native))
-        else
-          collect_float_contexts_from_map(name, expr, context)
-        end
+    if Process.get(:elmc_binding_plans_active) do
+      collect_float_contexts_from_map(name, expr, context)
+    else
+      case Host.special_value_from_target(target, args) do
+        nil ->
+          if Host.qualified_builtin_operator_member?(target, [
+               "__add__",
+               "__sub__",
+               "__mul__",
+               "__fdiv__",
+               "toFloat",
+               "round",
+               "floor",
+               "ceiling",
+               "truncate",
+               "abs",
+               "negate"
+             ]) do
+            Enum.flat_map(args, &collect_float_contexts(name, &1, :native))
+          else
+            collect_float_contexts_from_map(name, expr, context)
+          end
 
-      rewritten ->
-        collect_float_contexts(name, rewritten, context)
+        rewritten ->
+          collect_float_contexts(name, rewritten, context)
+      end
     end
   end
 
@@ -1505,6 +1537,16 @@ defmodule Elmc.Backend.CCodegen.Native.UsageAnalysis do
   end
 
   def int_candidate_for_analysis?(name, %{op: :qualified_call, target: target, args: args}) do
+    if Process.get(:elmc_binding_plans_active) do
+      NativeInt.structural_expr?(%{op: :qualified_call, target: target, args: args || []})
+    else
+      int_candidate_for_analysis_from_qualified_call(name, target, args)
+    end
+  end
+
+  def int_candidate_for_analysis?(_name, expr), do: NativeInt.structural_expr?(expr)
+
+  defp int_candidate_for_analysis_from_qualified_call(name, target, args) do
     case Host.special_value_from_target(Host.normalize_special_target(target), args || []) do
       nil ->
         builtin = Host.qualified_builtin_operator_name(Host.normalize_special_target(target))
@@ -1514,8 +1556,6 @@ defmodule Elmc.Backend.CCodegen.Native.UsageAnalysis do
         int_candidate_for_analysis?(name, rewritten)
     end
   end
-
-  def int_candidate_for_analysis?(_name, expr), do: NativeInt.structural_expr?(expr)
 
   defp equality_operand_context(other) do
     if non_int_equality_operand?(other), do: :boxed, else: :native

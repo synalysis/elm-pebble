@@ -345,6 +345,7 @@ export class CodeMirrorEditorHost {
   editorLineNumbers: boolean
   editorActiveLineHighlight: boolean
   readOnly: boolean
+  semanticEditOps: boolean
   idleEvent: string | undefined
   focusNextEvent: string | undefined
   focusPrevEvent: string | undefined
@@ -395,6 +396,7 @@ export class CodeMirrorEditorHost {
       true
     )
     this.readOnly = this.el.dataset.editorReadonly === "true"
+    this.semanticEditOps = parseBooleanDataset(this.el.dataset.semanticEditOps, true)
 
     this.idleEvent = this.el.dataset.tokenizeIdleEvent
     this.focusNextEvent = this.el.dataset.focusNextEvent
@@ -804,8 +806,15 @@ export class CodeMirrorEditorHost {
       keymap.of([
         {
           key: "Tab",
-          run: view => this.runTabIndent(view, false),
-          shift: view => this.runTabIndent(view, true)
+          run: view => {
+            if (acceptCompletion(view)) return true
+            if (this.semanticEditOps) return this.requestSemanticEdit("tab", false)
+            return this.runTabIndent(view, false)
+          },
+          shift: view => {
+            if (this.semanticEditOps) return this.requestSemanticEdit("tab", true)
+            return this.runTabIndent(view, true)
+          }
         },
         {
           key: "Shift-Alt-f",
@@ -1416,14 +1425,32 @@ export class CodeMirrorEditorHost {
   }
 
   handleKeydown(event: KeyboardEvent): void {
-    if (event.key === "Enter" && !event.metaKey && !event.ctrlKey && !event.altKey && !event.isComposing) {
+    if (
+      !this.semanticEditOps &&
+      event.key === "Enter" &&
+      !event.metaKey &&
+      !event.ctrlKey &&
+      !event.altKey &&
+      !event.isComposing
+    ) {
       this.pendingEnterIndent = true
     }
   }
 
   handleSemanticDomKeydown(event: KeyboardEvent): boolean {
-    if (this.readOnly || event.defaultPrevented) return false
+    if (this.readOnly || !this.semanticEditOps || event.defaultPrevented) return false
     if (event.metaKey || event.ctrlKey || event.altKey || event.isComposing) return false
+
+    if (event.key === "Enter") {
+      event.preventDefault()
+      this.pendingEnterIndent = false
+      return this.requestSemanticEdit("enter", event.shiftKey)
+    }
+
+    if (event.key === "Tab") {
+      event.preventDefault()
+      return this.requestSemanticEdit("tab", event.shiftKey)
+    }
 
     return false
   }

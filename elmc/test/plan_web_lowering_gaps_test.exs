@@ -1,7 +1,8 @@
 defmodule Elmc.PlanWebLoweringGapsTest do
   use ExUnit.Case, async: true
 
-  alias Elmc.Backend.CCodegen.VarAnalysis
+  alias Elmc.Backend.CCodegen.{IRQueries, VarAnalysis}
+  alias Elmc.Backend.Plan
   alias Elmc.Backend.Plan.{Builder, Context, Verify}
   alias Elmc.Backend.Plan.Lower.Case.TagSwitch
   alias Elmc.Backend.Plan.Lower.{Call, Function}
@@ -62,6 +63,222 @@ defmodule Elmc.PlanWebLoweringGapsTest do
     subject = %{op: :var, name: "patternArg2"}
 
     assert {:ok, _reg, _b1} = TagSwitch.compile(subject, branches, ctx, b0)
+  end
+
+  test "Internal.Svg.Config.withBoxAttributes is not lowered as Svg attribute html_cmd" do
+    Process.put(:elmc_codegen_opts, %{web: true, targets: [:wasm]})
+
+    on_exit(fn ->
+      Process.delete(:elmc_codegen_opts)
+    end)
+
+    decl_map = %{
+      {"Internal.Svg.Config", "withBoxAttributes"} => %{
+        name: "withBoxAttributes",
+        args: ["func", "config"],
+        expr: %{
+          op: :lambda,
+          args: ["func", "config"],
+          body: %{
+            op: :record_update,
+            base: %{op: :var, name: "config"},
+            fields: [%{name: "toBoxAttributes", expr: %{op: :var, name: "func"}}]
+          }
+        }
+      },
+      {"Diagram.Svg.Config", "withCellAttributesFunction"} => %{
+        name: "withCellAttributesFunction",
+        args: ["func"],
+        expr: %{
+          op: :qualified_call,
+          target: "Internal.Svg.Config.withBoxAttributes",
+          args: [%{op: :var, name: "func"}]
+        }
+      }
+    }
+
+    decl = Map.fetch!(decl_map, {"Diagram.Svg.Config", "withCellAttributesFunction"})
+
+    assert {:ok, plan} =
+             Function.lower(decl, "Diagram.Svg.Config", decl_map, rc_required: false)
+
+    instrs = plan.blocks |> Enum.flat_map(& &1.instrs)
+
+    refute Enum.any?(instrs, fn
+             %{op: :html_cmd} -> true
+             _ -> false
+           end)
+
+    assert Enum.any?(instrs, fn
+             %{op: :call_fn, args: %{module: "Internal.Svg.Config", name: "withBoxAttributes"}} ->
+               true
+
+             %{op: :make_closure} ->
+               true
+
+             _ ->
+               false
+           end)
+  end
+
+  test "Internal.Svg.Arrow.arrow lowers strokeOpacity as html_cmd attr from full wiring IR" do
+    alias Elmc.Backend.CCodegen.IRQueries
+
+    Process.put(:elmc_codegen_opts, %{web: true, targets: [:wasm]})
+
+    on_exit(fn ->
+      Process.delete(:elmc_codegen_opts)
+    end)
+
+    root = Path.expand("fixtures/wasm_web_wiring_diagram_project", __DIR__)
+    {:ok, project} = ElmEx.Frontend.Bridge.load_project(root)
+    {:ok, ir} = ElmEx.IR.Lowerer.lower_project(project)
+    mod = Enum.find(ir.modules, &(&1.name == "Internal.Svg.Arrow"))
+    decl = Enum.find(mod.declarations, &(&1.name == "arrow"))
+    decl_map = IRQueries.function_decl_map(ir)
+
+    Process.put(:elmc_constructor_tags, IRQueries.constructor_tag_map(ir))
+    Process.put(:elmc_program_decls, decl_map)
+
+    rc_required? = Elmc.Backend.CCodegen.RcRequired.rc_required?(mod.name, "arrow")
+
+    assert {:ok, plan} =
+             Plan.lower_function(decl, mod.name, decl_map, rc_required: rc_required?)
+
+    instrs = plan.blocks |> Enum.flat_map(& &1.instrs)
+
+    calls =
+      Enum.filter(instrs, fn
+        %{op: :call_fn, args: args} -> Map.get(args, :name) in ["strokeOpacity", "stroke", "fill", "d"]
+        _ -> false
+      end)
+
+    assert calls == [],
+           "call_fn attrs=#{inspect(calls)} html_cmd=#{Enum.count(instrs, &(&1.op == :html_cmd))} all_call_fn=#{inspect(Enum.filter(instrs, &match?(%{op: :call_fn}, &1)))}"
+
+    wasm_unit = Elmc.Backend.Wasm.Lower.Function.lower(plan)
+    refute IO.iodata_to_binary(wasm_unit.body) =~ "elmc_fn_Internal_Svg_Arrow_strokeOpacity"
+
+    assert Enum.any?(instrs, &(&1.op == :html_cmd))
+  end
+
+  test "svg attribute calls survive dead-code strip of Svg.Attributes decls" do
+    alias Elmc.Backend.CCodegen.IRQueries
+
+    Process.put(:elmc_codegen_opts, %{web: true, targets: [:wasm]})
+
+    on_exit(fn ->
+      Process.delete(:elmc_codegen_opts)
+      Process.delete(:elmc_svg_attribute_names)
+    end)
+
+    root = Path.expand("fixtures/wasm_web_wiring_diagram_project", __DIR__)
+    {:ok, project} = ElmEx.Frontend.Bridge.load_project(root)
+    {:ok, ir0} = ElmEx.IR.Lowerer.lower_project(project)
+    ir = ElmEx.IR.DeadCode.strip(ir0, "Main")
+    Process.put(:elmc_svg_attribute_names, IRQueries.svg_attribute_names(ir0))
+    Process.put(:elmc_constructor_tags, IRQueries.constructor_tag_map(ir))
+
+    mod = Enum.find(ir.modules, &(&1.name == "Internal.Svg.Arrow"))
+    decl = Enum.find(mod.declarations, &(&1.name == "arrow"))
+    decl_map = IRQueries.function_decl_map(ir)
+
+    refute Map.has_key?(decl_map, {"Svg.Attributes", "strokeOpacity"})
+
+    rc_required? = Elmc.Backend.CCodegen.RcRequired.rc_required?(mod.name, "arrow")
+
+    assert {:ok, plan} =
+             Plan.lower_function(decl, mod.name, decl_map, rc_required: rc_required?)
+
+    instrs = plan.blocks |> Enum.flat_map(& &1.instrs)
+
+    calls =
+      Enum.filter(instrs, fn
+        %{op: :call_fn, args: args} -> Map.get(args, :name) in ["strokeOpacity", "stroke", "fill", "d"]
+        _ -> false
+      end)
+
+    assert calls == []
+    assert Enum.any?(instrs, &(&1.op == :html_cmd))
+  end
+
+  test "Internal.Svg.box call keeps svgConfig and boxy args" do
+    alias Elmc.Backend.CCodegen.IRQueries
+
+    Process.put(:elmc_codegen_opts, %{web: true, targets: [:wasm]})
+
+    on_exit(fn ->
+      Process.delete(:elmc_codegen_opts)
+      Process.delete(:elmc_svg_attribute_names)
+    end)
+
+    root = Path.expand("fixtures/wasm_web_wiring_diagram_project", __DIR__)
+    {:ok, project} = ElmEx.Frontend.Bridge.load_project(root)
+    {:ok, ir0} = ElmEx.IR.Lowerer.lower_project(project)
+    ir = ElmEx.IR.DeadCode.strip(ir0, "Main")
+    Process.put(:elmc_svg_attribute_names, IRQueries.svg_attribute_names(ir0))
+    Process.put(:elmc_constructor_tags, IRQueries.constructor_tag_map(ir))
+
+    mod = Enum.find(ir.modules, &(&1.name == "Internal.Cartesian.Layout.Svg"))
+    decl = Enum.find(mod.declarations, &(&1.name == "layoutToSvgWithConfig"))
+    decl_map = IRQueries.function_decl_map(ir)
+
+    assert {:ok, plan} =
+             Plan.lower_function(decl, mod.name, decl_map, rc_required: false)
+
+    box_call =
+      plan.blocks
+      |> Enum.flat_map(& &1.instrs)
+      |> Enum.find(fn instr ->
+        instr.op == :call_fn and match?(%{module: "Internal.Svg", name: "box"}, instr.args)
+      end)
+
+    assert box_call
+    assert box_call.args.args == []
+
+    assert Enum.any?(plan.blocks |> Enum.flat_map(& &1.instrs), &(&1.op == :call_closure))
+  end
+
+  test "unqualified Svg.Attributes call in Internal.Svg.Arrow lowers to html_cmd attr" do
+    Process.put(:elmc_codegen_opts, %{web: true, targets: [:wasm]})
+
+    on_exit(fn ->
+      Process.delete(:elmc_codegen_opts)
+    end)
+
+    decl_map = %{
+      {"Svg.Attributes", "strokeOpacity"} => %{
+        name: "strokeOpacity",
+        args: ["value"],
+        expr: %{op: :int_literal, value: 0}
+      }
+    }
+
+    expr = %{
+      op: :call,
+      name: "strokeOpacity",
+      args: [%{op: :string_literal, value: "0.5"}]
+    }
+
+    ctx =
+      Context.new(
+        module: "Internal.Svg.Arrow",
+        function_name: "arrow",
+        params: ["arr"],
+        decl_map: decl_map
+      )
+
+    b0 = Builder.new("Internal.Svg.Arrow", "arrow", args: ["arr"])
+
+    assert {:ok, _reg, b1} = Call.compile_call(expr, ctx, b0)
+
+    html_cmd =
+      (b1.blocks ++ [b1.current_block])
+      |> Enum.flat_map(& &1.instrs)
+      |> Enum.find(&(&1.op == :html_cmd))
+
+    assert html_cmd
+    assert Map.get(html_cmd.args, :kind) == %{value: 4}
   end
 
   test "oversaturated qualified call uses scratch dest under RC function tail" do
@@ -533,6 +750,60 @@ defmodule Elmc.PlanWebLoweringGapsTest do
 
     b0 =
       Builder.new("Pages.Internal.Platform", "loadDataAndUpdateUrl_case_probe",
+        args: ["caseSubject"]
+      )
+
+    expr = %{
+      op: :let_in,
+      name: "updatedPageData",
+      value_expr: %{
+        op: :record_literal,
+        fields: [
+          %{name: "userModel", expr: %{op: :var, name: "userModel"}},
+          %{name: "pageData", expr: %{op: :int_literal, value: 1}}
+        ]
+      },
+      in_expr: %{
+        op: :let_in,
+        name: "__patternBind_1",
+        value_expr: %{op: :var, name: "caseSubject"},
+        in_expr: %{
+          op: :case,
+          subject: "__patternBind_1",
+          branches: [
+            %{
+              pattern: %{
+                kind: :tuple,
+                elements: [
+                  %{kind: :var, name: "userModel"},
+                  %{kind: :wildcard}
+                ]
+              },
+              expr: %{op: :var, name: "updatedPageData"}
+            },
+            %{
+              pattern: %{kind: :wildcard},
+              expr: %{op: :int_literal, value: 0}
+            }
+          ]
+        }
+      }
+    }
+
+    assert {:ok, _reg, _b1} = Elmc.Backend.Plan.Lower.Expr.compile(expr, ctx, b0)
+  end
+
+  test "let block reorders pattern bind before earlier bindings that use case pattern locals" do
+    ctx =
+      Context.new(
+        module: "Pages.Internal.Platform",
+        function_name: "loadDataAndUpdateUrl_early_user_probe",
+        params: ["caseSubject"],
+        decl_map: %{}
+      )
+
+    b0 =
+      Builder.new("Pages.Internal.Platform", "loadDataAndUpdateUrl_early_user_probe",
         args: ["caseSubject"]
       )
 

@@ -246,8 +246,8 @@ defmodule ElmEx.Frontend.GeneratedContractBuilder do
                                                         union_current} ->
         case line_info.decl do
           {:ok, {:type_alias, name}} ->
-            field_specs =
-              type_alias_record_field_specs(
+            record_info =
+              type_alias_record_info(
                 Map.get(line_info, :type_alias_source) || line_info.trimmed
               )
 
@@ -256,8 +256,10 @@ defmodule ElmEx.Frontend.GeneratedContractBuilder do
                 %{
                   kind: :type_alias,
                   name: name,
-                  fields: Enum.map(field_specs, & &1.name),
-                  field_types: Map.new(field_specs, &{&1.name, &1.type}),
+                  fields: Enum.map(record_info.fields, & &1.name),
+                  field_types: Map.new(record_info.fields, &{&1.name, &1.type}),
+                  extensible_base: record_info.extensible_base,
+                  alias_type: Map.get(record_info, :alias_type),
                   span: %{start_line: line_info.line_no, end_line: line_info.line_no}
                 }
                 | aliases_acc
@@ -304,20 +306,38 @@ defmodule ElmEx.Frontend.GeneratedContractBuilder do
     }
   end
 
-  @spec type_alias_record_field_specs(String.t()) :: [%{name: String.t(), type: String.t()}]
-  defp type_alias_record_field_specs(source) when is_binary(source) do
+  @typep type_alias_record_info :: %{
+          required(:fields) => [%{name: String.t(), type: String.t()}],
+          required(:extensible_base) => String.t() | nil,
+          optional(:alias_type) => String.t() | nil
+        }
+
+  @spec type_alias_record_info(String.t()) :: type_alias_record_info()
+  defp type_alias_record_info(source) when is_binary(source) do
     with {:ok, rhs} <- split_type_alias_rhs(source),
          {:ok, inner} <- record_type_body(rhs) do
-      inner
-      |> strip_extensible_record_base()
-      |> split_top_level(",", [])
-      |> Enum.flat_map(&record_field_spec/1)
+      {extensible_base, fields_source} =
+        case split_top_level(inner, "|", []) do
+          [base, fields] -> {String.trim(base), String.trim(fields)}
+          _ -> {nil, inner}
+        end
+
+      field_specs =
+        fields_source
+        |> split_top_level(",", [])
+        |> Enum.flat_map(&record_field_spec/1)
+
+      %{fields: field_specs, extensible_base: extensible_base, alias_type: nil}
     else
-      _ -> []
+      _ ->
+        case split_type_alias_rhs(source) do
+          {:ok, rhs} -> %{fields: [], extensible_base: nil, alias_type: String.trim(rhs)}
+          :error -> %{fields: [], extensible_base: nil, alias_type: nil}
+        end
     end
   end
 
-  defp type_alias_record_field_specs(_source), do: []
+  defp type_alias_record_info(_source), do: %{fields: [], extensible_base: nil, alias_type: nil}
 
   @spec split_type_alias_rhs(String.t()) :: {:ok, String.t()} | :error
   defp split_type_alias_rhs(source) do
@@ -335,14 +355,6 @@ defmodule ElmEx.Frontend.GeneratedContractBuilder do
       {:ok, trimmed |> String.slice(1, String.length(trimmed) - 2) |> String.trim()}
     else
       :error
-    end
-  end
-
-  @spec strip_extensible_record_base(String.t()) :: String.t()
-  defp strip_extensible_record_base(source) do
-    case split_top_level(source, "|", []) do
-      [_base, fields] -> String.trim(fields)
-      _ -> source
     end
   end
 
@@ -584,6 +596,30 @@ defmodule ElmEx.Frontend.GeneratedContractBuilder do
     }
   end
 
+  defp normalize_generated_expr(%{op: :apply_left, fn_expr: fn_expr, arg: arg}) do
+    %{
+      op: :apply_left,
+      fn_expr: normalize_generated_expr(fn_expr),
+      arg: normalize_generated_expr(arg)
+    }
+  end
+
+  defp normalize_generated_expr(%{op: :bool_and, left: left, right: right}) do
+    %{
+      op: :bool_and,
+      left: normalize_generated_expr(left),
+      right: normalize_generated_expr(right)
+    }
+  end
+
+  defp normalize_generated_expr(%{op: :bool_or, left: left, right: right}) do
+    %{
+      op: :bool_or,
+      left: normalize_generated_expr(left),
+      right: normalize_generated_expr(right)
+    }
+  end
+
   defp normalize_generated_expr(%{op: :constructor_call, target: target, args: args}) do
     %{op: :constructor_call, target: target, args: Enum.map(args, &normalize_generated_expr/1)}
   end
@@ -730,6 +766,18 @@ defmodule ElmEx.Frontend.GeneratedContractBuilder do
     allow_generated_expr?(base) and Enum.all?(steps, &allow_generated_expr?/1)
   end
 
+  defp allow_generated_expr?(%{op: :apply_left, fn_expr: fn_expr, arg: arg}) do
+    allow_generated_expr?(fn_expr) and allow_generated_expr?(arg)
+  end
+
+  defp allow_generated_expr?(%{op: :bool_and, left: left, right: right}) do
+    allow_generated_expr?(left) and allow_generated_expr?(right)
+  end
+
+  defp allow_generated_expr?(%{op: :bool_or, left: left, right: right}) do
+    allow_generated_expr?(left) and allow_generated_expr?(right)
+  end
+
   defp allow_generated_expr?(%{op: :constructor_call, args: args}) do
     Enum.all?(args, &allow_generated_expr?/1)
   end
@@ -760,6 +808,13 @@ defmodule ElmEx.Frontend.GeneratedContractBuilder do
 
   defp allow_generated_expr?(%{op: :let_in, value_expr: value_expr, in_expr: in_expr}) do
     allow_generated_expr?(value_expr) and allow_generated_expr?(in_expr)
+  end
+
+  defp allow_generated_expr?(%{op: :let_bindings, bindings: bindings, in_expr: in_expr}) do
+    Enum.all?(bindings, fn
+      %{value: value} -> allow_generated_expr?(value)
+      _ -> false
+    end) and allow_generated_expr?(in_expr)
   end
 
   defp allow_generated_expr?(%{

@@ -295,6 +295,7 @@ defmodule ElmEx.Test.TreeSitterCorpus do
   defp timeout_ms_for_file(path, default_timeout_ms) do
     case File.stat(path) do
       {:ok, %{size: size}} when size > 200_000 -> max(default_timeout_ms, 30_000)
+      {:ok, %{size: size}} when size > 4_000 -> max(default_timeout_ms, 20_000)
       _ -> default_timeout_ms
     end
   end

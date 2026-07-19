@@ -3,6 +3,7 @@ defmodule ElmEx.DebuggerContract.ViewTree.Operators do
 
   alias ElmEx.DebuggerContract.ViewTree
   alias ElmEx.DebuggerContract.ViewTree.Structure
+  alias ElmEx.Frontend.LetBindings
   alias ElmEx.DebuggerContract.ViewTree.Support
   alias ElmEx.DebuggerContract.Types
 
@@ -122,6 +123,44 @@ defmodule ElmEx.DebuggerContract.ViewTree.Operators do
 
   def expr_to_view_tree(%{op: :lambda, body: body}, d, max, api_metadata) when d < max do
     expr_to_view_tree(body, d + 1, max, api_metadata)
+  end
+
+  def expr_to_view_tree(
+        %{op: :let_bindings, bindings: bindings, in_expr: inner},
+        d,
+        max,
+        api_metadata
+      )
+      when d < max and is_list(bindings) do
+    %{
+      "type" => "let",
+      "label" => "",
+      "children" =>
+        Enum.map(bindings, fn
+          %{kind: :name, name: name, value: value} ->
+            %{
+              "type" => "let_binding",
+              "label" => name,
+              "children" => [expr_to_view_tree(value, d + 1, max, api_metadata)]
+            }
+
+          %{kind: :discard, value: value} ->
+            %{
+              "type" => "let_binding",
+              "label" => "_",
+              "children" => [expr_to_view_tree(value, d + 1, max, api_metadata)]
+            }
+
+          binding ->
+            %{
+              "type" => "let_binding",
+              "label" => to_string(Map.get(binding, :kind, "binding")),
+              "children" => [
+                expr_to_view_tree(Map.get(binding, :value, binding), d + 1, max, api_metadata)
+              ]
+            }
+        end) ++ [expr_to_view_tree(inner, d + 1, max, api_metadata)]
+    }
   end
 
   def expr_to_view_tree(
@@ -368,6 +407,10 @@ defmodule ElmEx.DebuggerContract.ViewTree.Operators do
        when is_binary(name) and is_map(bindings) do
     resolved_value = inline_view_lets(value_expr, bindings, seen)
     inline_view_lets(inner, Map.put(bindings, name, resolved_value), seen)
+  end
+
+  defp inline_view_lets(%{op: :let_bindings} = expr, bindings, seen) when is_map(bindings) do
+    inline_view_lets(LetBindings.expand(expr), bindings, seen)
   end
 
   defp inline_view_lets(%{op: :var, name: name} = var, bindings, seen)

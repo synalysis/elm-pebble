@@ -213,11 +213,23 @@ defmodule ElmEx.Frontend.AstContract do
       :compose_right ->
         validate_compose(expr, :invalid_compose_right_expr)
 
+      :apply_left ->
+        validate_apply_left(expr)
+
+      :bool_and ->
+        validate_bool_and(expr)
+
+      :bool_or ->
+        validate_bool_or(expr)
+
       :lambda ->
         validate_lambda(expr)
 
       :let_in ->
         validate_let_in(expr)
+
+      :let_bindings ->
+        validate_let_bindings(expr)
 
       :if ->
         validate_if_expr(expr)
@@ -355,6 +367,36 @@ defmodule ElmEx.Frontend.AstContract do
 
   defp validate_pipe_chain(_), do: {:error, :invalid_pipe_chain_expr}
 
+  @spec validate_apply_left(Types.expr() | Types.invalid_input()) :: :ok | {:error, atom()}
+  defp validate_apply_left(%{fn_expr: fn_expr, arg: arg}) do
+    with :ok <- validate_expr(fn_expr),
+         :ok <- validate_expr(arg) do
+      :ok
+    end
+  end
+
+  defp validate_apply_left(_), do: {:error, :invalid_apply_left_expr}
+
+  @spec validate_bool_and(Types.expr() | Types.invalid_input()) :: :ok | {:error, atom()}
+  defp validate_bool_and(%{left: left, right: right}) do
+    with :ok <- validate_expr(left),
+         :ok <- validate_expr(right) do
+      :ok
+    end
+  end
+
+  defp validate_bool_and(_), do: {:error, :invalid_bool_and_expr}
+
+  @spec validate_bool_or(Types.expr() | Types.invalid_input()) :: :ok | {:error, atom()}
+  defp validate_bool_or(%{left: left, right: right}) do
+    with :ok <- validate_expr(left),
+         :ok <- validate_expr(right) do
+      :ok
+    end
+  end
+
+  defp validate_bool_or(_), do: {:error, :invalid_bool_or_expr}
+
   @spec validate_compose(Types.compose_expr() | Types.invalid_input(), atom()) ::
           :ok | {:error, atom()}
   defp validate_compose(%{f: f, g: g}, _reason)
@@ -396,6 +438,47 @@ defmodule ElmEx.Frontend.AstContract do
   end
 
   defp validate_let_in(_), do: {:error, :invalid_let_expr}
+
+  @spec validate_let_bindings(Types.expr() | Types.invalid_input()) :: :ok | {:error, atom()}
+  defp validate_let_bindings(%{bindings: bindings, in_expr: in_expr} = expr) when is_list(bindings) do
+    with :ok <- validate_let_layout(expr),
+         :ok <- validate_let_binding_entries(bindings),
+         :ok <- validate_expr(in_expr) do
+      :ok
+    end
+  end
+
+  defp validate_let_bindings(_), do: {:error, :invalid_let_bindings_expr}
+
+  defp validate_let_layout(%{layout: layout}) when layout in [:inline_first, :block], do: :ok
+  defp validate_let_layout(%{}), do: :ok
+
+  defp validate_let_binding_entries(bindings) when is_list(bindings) do
+    if Enum.all?(bindings, &valid_let_binding_entry?/1) do
+      :ok
+    else
+      {:error, :invalid_let_binding_entry}
+    end
+  end
+
+  defp valid_let_binding_entry?(%{kind: :name, name: name, value: value}) when is_binary(name) do
+    validate_expr(value) == :ok
+  end
+
+  defp valid_let_binding_entry?(%{kind: :discard, value: value}) do
+    validate_expr(value) == :ok
+  end
+
+  defp valid_let_binding_entry?(%{kind: kind, names: names, value: value})
+       when kind in [:tuple2, :tuple3] and is_list(names) do
+    validate_expr(value) == :ok
+  end
+
+  defp valid_let_binding_entry?(%{kind: :pattern, pattern: pattern, value: value}) do
+    validate_pattern(pattern) == :ok and validate_expr(value) == :ok
+  end
+
+  defp valid_let_binding_entry?(_), do: false
 
   @spec validate_if_expr(Types.expr() | Types.invalid_input()) :: :ok | {:error, atom()}
   defp validate_if_expr(%{cond: cond_expr, then_expr: then_expr, else_expr: else_expr}) do

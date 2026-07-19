@@ -16,7 +16,8 @@ defmodule Elmc.Backend.Plan.RuntimeBuiltins do
     tuple2_ints: [0, 1],
     list_filter_record_field: [1],
     list_filter_record_and: [1, 2],
-    list_map_record_field: [1]
+    list_map_record_field: [1],
+    native_int_to_float: [0]
   }
 
   @builtins Map.merge(%{
@@ -57,6 +58,7 @@ defmodule Elmc.Backend.Plan.RuntimeBuiltins do
     maybe_map: "elmc_maybe_map",
     basics_min: "elmc_basics_min",
     basics_max: "elmc_basics_max",
+    basics_pow: "elmc_basics_pow",
     basics_mod_by: "elmc_basics_mod_by",
     basics_remainder_by: "elmc_basics_remainder_by",
     basics_not: "elmc_basics_not",
@@ -74,6 +76,7 @@ defmodule Elmc.Backend.Plan.RuntimeBuiltins do
     tuple_second: "elmc_tuple_second",
     basics_floor: "elmc_basics_floor",
     basics_to_float: "elmc_basics_to_float",
+    native_int_to_float: "elmc_native_int_to_float",
     basics_sin: "elmc_basics_sin",
     basics_cos: "elmc_basics_cos",
     basics_round: "elmc_basics_round",
@@ -157,6 +160,7 @@ defmodule Elmc.Backend.Plan.RuntimeBuiltins do
     :maybe_map,
     :basics_min,
     :basics_max,
+    :basics_pow,
     :basics_mod_by,
     :basics_remainder_by,
     :basics_not,
@@ -168,6 +172,7 @@ defmodule Elmc.Backend.Plan.RuntimeBuiltins do
     :string_join,
     :basics_floor,
     :basics_to_float,
+    :native_int_to_float,
     :basics_sin,
     :basics_cos,
     :basics_round,
@@ -204,6 +209,7 @@ defmodule Elmc.Backend.Plan.RuntimeBuiltins do
   @c_value_return MapSet.new([
     :basics_min,
     :basics_max,
+    :basics_pow,
     :basics_mod_by,
     :basics_remainder_by,
     :basics_not,
@@ -265,6 +271,7 @@ defmodule Elmc.Backend.Plan.RuntimeBuiltins do
     :tuple_second,
     :basics_min,
     :basics_max,
+    :basics_pow,
     :unit
   ])
 
@@ -306,6 +313,7 @@ defmodule Elmc.Backend.Plan.RuntimeBuiltins do
     :maybe_map,
     :basics_min,
     :basics_max,
+    :basics_pow,
     :basics_mod_by,
     :basics_remainder_by,
     :basics_not,
@@ -318,6 +326,7 @@ defmodule Elmc.Backend.Plan.RuntimeBuiltins do
     :string_join,
     :basics_floor,
     :basics_to_float,
+    :native_int_to_float,
     :basics_sin,
     :basics_cos,
     :basics_round,

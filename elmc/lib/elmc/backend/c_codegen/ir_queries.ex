@@ -30,7 +30,30 @@ defmodule Elmc.Backend.CCodegen.IRQueries do
     "Pebble.Health.HeartRateBPM" => 8,
     "Pebble.Health.SignificantUpdate" => 1,
     "Pebble.Health.MovementUpdate" => 2,
-    "Pebble.Health.SleepUpdate" => 3
+    "Pebble.Health.SleepUpdate" => 3,
+    # elm-nonempty-list (dependency unions are not always present in IR metadata)
+    "List.Nonempty.Nonempty" => 1,
+    # Spaxe/svg-pathd Segment(..) constructors (tag order from Svg.PathD.elm)
+    "Svg.PathD.M" => 1,
+    "Svg.PathD.L" => 2,
+    "Svg.PathD.H" => 3,
+    "Svg.PathD.V" => 4,
+    "Svg.PathD.Z" => 5,
+    "Svg.PathD.C" => 6,
+    "Svg.PathD.S" => 7,
+    "Svg.PathD.Q" => 8,
+    "Svg.PathD.T" => 9,
+    "Svg.PathD.A" => 10,
+    "Svg.PathD.Md" => 11,
+    "Svg.PathD.Ld" => 12,
+    "Svg.PathD.Hd" => 13,
+    "Svg.PathD.Vd" => 14,
+    "Svg.PathD.Zd" => 15,
+    "Svg.PathD.Cd" => 16,
+    "Svg.PathD.Sd" => 17,
+    "Svg.PathD.Qd" => 18,
+    "Svg.PathD.Td" => 19,
+    "Svg.PathD.Ad" => 20
   }
 
   @bundled_health_metric_kernel_values %{
@@ -61,6 +84,15 @@ defmodule Elmc.Backend.CCodegen.IRQueries do
     |> Map.new()
   end
 
+  @spec svg_attribute_names(IR.t()) :: MapSet.t(String.t())
+  def svg_attribute_names(%IR{} = ir) do
+    ir
+    |> function_decl_map()
+    |> Enum.filter(fn {{module, _name}, _decl} -> module == "Svg.Attributes" end)
+    |> Enum.map(fn {{_module, name}, _decl} -> name end)
+    |> MapSet.new()
+  end
+
   @spec record_alias_shape_map(IR.t()) :: %{optional({String.t(), String.t()}) => [String.t()]}
   def record_alias_shape_map(%IR{} = ir) do
     named_shapes =
@@ -87,7 +119,56 @@ defmodule Elmc.Backend.CCodegen.IRQueries do
   @spec inline_record_literal_shape_map(IR.t()) :: %{optional({String.t(), String.t()}) => [String.t()]}
   def inline_record_literal_shape_map(%IR{} = ir) do
     inline_record_shapes_from_type_aliases(ir)
+    |> Kernel.++(union_constructor_record_shapes(ir))
     |> Map.new()
+  end
+
+  @spec union_constructor_payload_specs_map(IR.t()) :: %{{String.t(), String.t()} => String.t()}
+  def union_constructor_payload_specs_map(%IR{} = ir) do
+    ir.modules
+    |> Enum.flat_map(fn %{name: mod, unions: unions} ->
+      unions
+      |> Enum.flat_map(fn {_union_name, entry} ->
+        entry
+        |> Map.get(:payload_specs, %{})
+        |> Enum.flat_map(fn {ctor_name, spec} ->
+          if is_binary(spec) and spec != "" do
+            [{{mod, to_string(ctor_name)}, spec}]
+          else
+            []
+          end
+        end)
+      end)
+    end)
+    |> Map.new()
+  end
+
+  @spec union_constructor_record_shapes(IR.t()) :: [{{String.t(), String.t()}, [String.t()]}]
+  def union_constructor_record_shapes(%IR{} = ir) do
+    ir.modules
+    |> Enum.flat_map(fn %{name: mod, unions: unions} ->
+      unions
+      |> Enum.flat_map(fn {_union_name, entry} ->
+        entry
+        |> Map.get(:payload_specs, %{})
+        |> Enum.flat_map(fn {ctor_name, spec} ->
+          if is_binary(spec) and TypeSignature.record_type?(spec) do
+            fields =
+              spec
+              |> TypeSignature.record_field_names()
+              |> Enum.map(&to_string/1)
+
+            if fields != [] do
+              [{{mod, to_string(ctor_name)}, fields}]
+            else
+              []
+            end
+          else
+            []
+          end
+        end)
+      end)
+    end)
   end
 
   @spec inline_record_shapes_from_type_aliases(IR.t()) :: [{{String.t(), String.t()}, [String.t()]}]

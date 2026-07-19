@@ -19,7 +19,7 @@ Both **elmc** and **elmx** share this frontend; parse gates run against `elm_ex`
 - **Parse only** — files are not lowered or codegen'd (third-party packages lack `elm.json` deps).
 - Import-first files without a `module` header infer a module name from the path (under `src/`, `examples/`, etc.).
 - Files larger than **512 KiB** are skipped (generated test vectors, icon tables, etc.).
-- Per-file timeout defaults to **10s** to avoid pathological hangs.
+- Per-file timeout defaults to **10s**; files over **4 KiB** get **20s**; files over **200 KiB** get **30s** (some real-world modules need ~13s on cold BEAM).
 
 ## Commands
 
