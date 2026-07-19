@@ -300,6 +300,12 @@ defmodule Elmc.Backend.CCodegen.SpecialValues.Helpers do
       else: %{op: :int_literal, value: 0}
   end
 
+  def constructor_tag_expr(%{op: :constructor_ref, target: target}) when is_binary(target) do
+    if msg_constructor_name?(target),
+      do: msg_tag_expr(target),
+      else: %{op: :int_literal, value: 0}
+  end
+
   def constructor_tag_expr(%{op: :constructor_call, target: target, args: []})
        when is_binary(target) do
     if msg_constructor_name?(target),

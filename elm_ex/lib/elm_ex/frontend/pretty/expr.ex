@@ -941,6 +941,8 @@ defmodule ElmEx.Frontend.Pretty.Expr do
 
   defp call_argument_needs_parens?(%{op: :apply_left}), do: true
 
+  defp call_argument_needs_parens?(%{op: :pipe_chain}), do: true
+
   defp call_argument_needs_parens?(%{op: op})
        when op in [:char_from_code_expr, :tuple_first_expr, :tuple_second_expr, :string_length_expr],
        do: true

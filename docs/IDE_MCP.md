@@ -37,6 +37,12 @@ Cursor and other Streamable HTTP clients should point at the MCP URL:
 }
 ```
 
+HTTP MCP does **not** use OAuth. Clients may still probe
+`/.well-known/oauth-protected-resource` (and
+`/.well-known/oauth-protected-resource/api/mcp`); those paths return a clean
+JSON `404` so discovery fails without an HTML error page. Prefer the stdio
+transport (`mix ide.mcp`) if a client insists on an OAuth browser flow.
+
 Example Zed remote MCP configuration:
 
 ```json

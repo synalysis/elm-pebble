@@ -3,6 +3,7 @@
 
 typedef struct ElmcPebbleApp ElmcPebbleApp;
 
+#if !ELMC_PEBBLE_SCENE_STREAM_CMDS
 enum {
   ELMC_SCENE_PL_EMPTY = 0,
   ELMC_SCENE_PL_U8 = 1,
@@ -19,12 +20,8 @@ enum {
   ELMC_SCENE_PL_FULL = 24
 };
 
-typedef struct {
-  ElmcPebbleApp *app;
-  int command_count;
-} ElmcSceneWriter;
 
-void elmc_scene_writer_init_app(ElmcSceneWriter *writer, ElmcPebbleApp *app);
+#endif
 
 
 #include "elmc_worker.h"
@@ -128,6 +125,41 @@ void elmc_scene_writer_init_app(ElmcSceneWriter *writer, ElmcPebbleApp *app);
 #define ELMC_PEBBLE_FEATURE_DRAW_BITMAP_SEQUENCE_AT 0
 #define ELMC_PEBBLE_FEATURE_DRAW_ROTATED_BITMAP 0
 #define ELMC_PEBBLE_FEATURE_DRAW_TEXT 0
+#define ELMC_PEBBLE_FEATURE_COMPACT_DRAW 0
+/* Dual-target headers may define ELMC_PEBBLE_APLITE_DIRECT_VIEW_SCENE for codegen,
+   but aplite-only scene settings apply only when building the aplite binary. */
+#ifndef ELMC_PEBBLE_APLITE_DIRECT_VIEW_ACTIVE
+#if defined(ELMC_PEBBLE_APLITE_DIRECT_VIEW_SCENE) && defined(PBL_PLATFORM_APLITE)
+#define ELMC_PEBBLE_APLITE_DIRECT_VIEW_ACTIVE 1
+#else
+#define ELMC_PEBBLE_APLITE_DIRECT_VIEW_ACTIVE 0
+#endif
+#endif
+
+#ifndef ELMC_PEBBLE_SCENE_CACHE_ENABLED
+#if ELMC_PEBBLE_APLITE_DIRECT_VIEW_ACTIVE
+/* Build the view into a compact byte stream once per invalidate; draw decodes with a cursor. */
+#define ELMC_PEBBLE_SCENE_CACHE_ENABLED 0
+#else
+/* Encode the view once into a compact byte stream; draw decodes with a cursor.
+   Incremental dirty regions (prev_scene diff) stay off on Pebble targets until reliable. */
+#define ELMC_PEBBLE_SCENE_CACHE_ENABLED 1
+#endif
+#endif
+
+#ifndef ELMC_PEBBLE_SCENE_STREAM_CMDS
+#define ELMC_PEBBLE_SCENE_STREAM_CMDS 0
+#endif
+
+#ifndef ELMC_PEBBLE_SCENE_BUILD_VERIFY
+/* Full decode pass after scene build catches encoder bugs; skip on device builds. */
+#if defined(ELMC_PEBBLE_PLATFORM) && !ELMC_PEBBLE_DEBUG_LOGS
+#define ELMC_PEBBLE_SCENE_BUILD_VERIFY 0
+#else
+#define ELMC_PEBBLE_SCENE_BUILD_VERIFY 1
+#endif
+#endif
+
 #ifndef ELMC_PEBBLE_DIRTY_REGION_ENABLED
 #if defined(PBL_PLATFORM_APLITE) || defined(PBL_PLATFORM_BASALT) || defined(PBL_PLATFORM_CHALK) || defined(PBL_PLATFORM_DIORITE) || defined(PBL_PLATFORM_EMERY) || defined(PBL_PLATFORM_FLINT) || defined(PBL_PLATFORM_GABBRO)
 #define ELMC_PEBBLE_DIRTY_REGION_ENABLED 0
@@ -136,14 +168,12 @@ void elmc_scene_writer_init_app(ElmcSceneWriter *writer, ElmcPebbleApp *app);
 #endif
 #endif
 
-#ifndef ELMC_PEBBLE_SCENE_CACHE_ENABLED
-/* Encode the view once into a compact byte stream; draw decodes with a cursor.
-   Incremental dirty regions (prev_scene diff) stay off on Pebble targets until reliable. */
-#define ELMC_PEBBLE_SCENE_CACHE_ENABLED 1
-#endif
-
 #ifndef ELMC_PEBBLE_SCENE_INITIAL_CAPACITY
+#if ELMC_PEBBLE_APLITE_DIRECT_VIEW_ACTIVE
+#define ELMC_PEBBLE_SCENE_INITIAL_CAPACITY 256
+#else
 #define ELMC_PEBBLE_SCENE_INITIAL_CAPACITY 1024
+#endif
 #endif
 
 #ifndef ELMC_PEBBLE_SCENE_GROW_CHUNK
@@ -160,11 +190,19 @@ void elmc_scene_writer_init_app(ElmcSceneWriter *writer, ElmcPebbleApp *app);
 
 /* Retained scene-byte pools: grow once per slot, never shrink or realloc per frame. */
 #ifndef ELMC_PEBBLE_SCENE_POOL_SLOTS
+#if ELMC_PEBBLE_APLITE_DIRECT_VIEW_ACTIVE
+#define ELMC_PEBBLE_SCENE_POOL_SLOTS 0
+#else
 #define ELMC_PEBBLE_SCENE_POOL_SLOTS 10
+#endif
 #endif
 
 #ifndef ELMC_PEBBLE_SCENE_STATIC_CAPACITY
+#if ELMC_PEBBLE_APLITE_DIRECT_VIEW_ACTIVE
+#define ELMC_PEBBLE_SCENE_STATIC_CAPACITY 768
+#else
 #define ELMC_PEBBLE_SCENE_STATIC_CAPACITY 0
+#endif
 #endif
 
 #ifndef ELMC_PEBBLE_SCENE_CHUNK_SIZE
@@ -243,7 +281,7 @@ typedef struct ElmcPebbleApp {
   uint64_t prev_ops_hash;
   ElmcValue *stream_view_result;
   ElmcPebbleSceneBuffer scene;
-#if ELMC_PEBBLE_SCENE_CACHE_ENABLED
+#if ELMC_PEBBLE_SCENE_CACHE_ENABLED || ELMC_PEBBLE_APLITE_DIRECT_VIEW_ACTIVE
   int scene_draw_byte_offset;
 #endif
 #if ELMC_PEBBLE_DIRTY_REGION_ENABLED
@@ -337,6 +375,29 @@ typedef struct {
   };
 } ElmcPebbleDrawCmd;
 
+typedef struct {
+  ElmcPebbleApp *app;
+  int command_count;
+#if ELMC_PEBBLE_SCENE_STREAM_CMDS
+  ElmcPebbleDrawCmd *out_cmds;
+  int max_cmds;
+  int out_count;
+  int skip_remaining;
+#endif
+} ElmcSceneWriter;
+
+void elmc_scene_writer_init_app(ElmcSceneWriter *writer, ElmcPebbleApp *app);
+#if ELMC_PEBBLE_SCENE_STREAM_CMDS
+void elmc_scene_writer_init_stream(
+    ElmcSceneWriter *writer,
+    ElmcPebbleApp *app,
+    ElmcPebbleDrawCmd *out_cmds,
+    int max_cmds,
+    int skip);
+#endif
+
+
+
 RC elmc_scene_writer_push_cmd(ElmcSceneWriter *writer, const ElmcPebbleDrawCmd *cmd);
 void elmc_draw_cmd_init(ElmcPebbleDrawCmd *cmd, int32_t kind);
 
@@ -377,11 +438,13 @@ static inline void elmc_scene_text_prefix_and_nonzero_int(char *text, const char
 }
 #endif
 
+#if !ELMC_PEBBLE_SCENE_STREAM_CMDS
 int elmc_pebble_scene_decode_record(
     const unsigned char *bytes,
     int byte_count,
     int *offset,
     ElmcPebbleDrawCmd *out_cmd);
+#endif
 
 
 RC elmc_fn_Main_view_scene_append(
@@ -648,6 +711,14 @@ typedef enum {
     int elmc_pebble_scene_commands_next(ElmcPebbleApp *app, ElmcPebbleDrawCmd *out_cmds, int max_cmds);
     int elmc_pebble_ensure_scene(ElmcPebbleApp *app);
     int elmc_pebble_scene_command_count(ElmcPebbleApp *app);
+    #if ELMC_PEBBLE_SCENE_STREAM_CMDS
+    int elmc_pebble_stream_view_cmds(
+        ElmcPebbleApp *app,
+        ElmcPebbleDrawCmd *out_cmds,
+        int max_cmds,
+        int skip,
+        int *out_emitted_end);
+    #endif
     int elmc_pebble_scene_dirty_rect(ElmcPebbleApp *app, ElmcPebbleRect *out_rect, int *out_full);
     void elmc_pebble_invalidate_scene(ElmcPebbleApp *app);
     void elmc_pebble_scene_report_decode_failure(ElmcPebbleApp *app, int rc, int offset);

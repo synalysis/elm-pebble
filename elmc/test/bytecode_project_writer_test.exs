@@ -42,20 +42,20 @@ defmodule Elmc.BytecodeProjectWriterTest do
     end
   end
 
-  test "loader runs manifest entry for counterOf" do
-    out_dir = Path.expand("tmp/bytecode_loader_counter", __DIR__)
+  test "loader runs manifest entry for randomIndex" do
+    out_dir = Path.expand("tmp/bytecode_loader_random_index", __DIR__)
     File.rm_rf!(out_dir)
 
     assert {:ok, _} =
              Elmc.compile(@fixture, %{
                out_dir: out_dir,
                entry_module: "Main",
-               strip_dead_code: false,
+               strip_dead_code: true,
                plan_ir_mode: :primary
              })
 
-    assert {:ok, 7} =
-             Loader.run_manifest_entry(out_dir, {"Main", "probeScoreOf"}, params: [{:record, [nil, 7, nil, nil, nil, nil, nil, nil]}])
+    assert {:ok, 3} =
+             Loader.run_manifest_entry(out_dir, {"Main", "randomIndex"}, params: [10, 3])
   end
 
   test "primary bytecode manifest runs fused watchToPhoneTag when present" do
@@ -63,12 +63,11 @@ defmodule Elmc.BytecodeProjectWriterTest do
     File.rm_rf!(out_dir)
 
     assert {:ok, _} =
-             Elmc.compile(@fixture, %{
+             Elmc.TestSupport.TemplateCompile.compile_watch_template("watchface_yes",
                out_dir: out_dir,
-               entry_module: "Main",
-               strip_dead_code: false,
-               plan_ir_mode: :primary
-             })
+               plan_ir_mode: :primary,
+               strip_dead_code: true
+             )
 
     {:ok, manifest} = Loader.load_manifest(ProjectWriter.manifest_path(out_dir))
 

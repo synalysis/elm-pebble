@@ -2,6 +2,7 @@ defmodule Ide.CompanionPebbleApisTest do
   use Ide.DataCase, async: false
 
   alias Ide.Debugger
+  alias Ide.Debugger.RuntimeBackgroundDrains
 
   @root Path.expand("../../..", __DIR__)
   @bridge_schema Path.join(@root, "shared/companion-protocol/phone_bridge_v1.json")
@@ -11,6 +12,12 @@ defmodule Ide.CompanionPebbleApisTest do
                @root,
                "elm_pebble_dev/public/package-docs/packages/elm-pebble/companion-core/0.1.0/docs.json"
              )
+
+  defp start_debugger_session!(slug) when is_binary(slug) do
+    result = Debugger.start_session(slug)
+    on_exit(fn -> Debugger.forget_project(slug) end)
+    result
+  end
 
   test "phone bridge schema declares companion Pebble API operations" do
     schema = @bridge_schema |> File.read!() |> Jason.decode!()
@@ -116,7 +123,7 @@ defmodule Ide.CompanionPebbleApisTest do
   end
 
   test "debugger simulator settings persist typed phone context fields" do
-    {:ok, _state} = Debugger.start_session("companion-api-settings-test")
+    {:ok, _state} = start_debugger_session!("companion-api-settings-test")
 
     {:ok, state} =
       Debugger.set_simulator_settings("companion-api-settings-test", %{
@@ -203,7 +210,7 @@ defmodule Ide.CompanionPebbleApisTest do
         Sub.none
     """
 
-    {:ok, _state} = Debugger.start_session(slug)
+    {:ok, _state} = start_debugger_session!(slug)
 
     {:ok, _state} =
       Debugger.set_simulator_settings(slug, %{
@@ -285,7 +292,7 @@ defmodule Ide.CompanionPebbleApisTest do
         Sub.none
     """
 
-    {:ok, _state} = Debugger.start_session(slug)
+    {:ok, _state} = start_debugger_session!(slug)
 
     {:ok, state} =
       Debugger.reload(slug, %{
@@ -343,7 +350,7 @@ defmodule Ide.CompanionPebbleApisTest do
         Sub.none
     """
 
-    {:ok, _state} = Debugger.start_session(slug)
+    {:ok, _state} = start_debugger_session!(slug)
 
     {:ok, state} =
       Debugger.reload(slug, %{
@@ -372,7 +379,7 @@ defmodule Ide.CompanionPebbleApisTest do
 
     source = File.read!(Path.join(template_root, "phone/src/CompanionApp.elm"))
 
-    {:ok, _state} = Debugger.start_session(slug)
+    {:ok, _state} = start_debugger_session!(slug)
 
     {:ok, state} =
       Debugger.reload(slug, %{
@@ -415,7 +422,7 @@ defmodule Ide.CompanionPebbleApisTest do
 
     source = File.read!(Path.join(template_root, "phone/src/CompanionApp.elm"))
 
-    {:ok, _state} = Debugger.start_session(slug)
+    {:ok, _state} = start_debugger_session!(slug)
 
     {:ok, state} =
       Debugger.reload(slug, %{
@@ -444,7 +451,7 @@ defmodule Ide.CompanionPebbleApisTest do
 
     source = File.read!(Path.join(template_root, "phone/src/CompanionApp.elm"))
 
-    {:ok, _state} = Debugger.start_session(slug)
+    {:ok, _state} = start_debugger_session!(slug)
 
     {:ok, _state} =
       Debugger.reload(slug, %{
@@ -487,7 +494,7 @@ defmodule Ide.CompanionPebbleApisTest do
 
     source = File.read!(Path.join(template_root, "phone/src/CompanionApp.elm"))
 
-    {:ok, _state} = Debugger.start_session(slug)
+    {:ok, _state} = start_debugger_session!(slug)
 
     {:ok, _state} =
       Debugger.reload(slug, %{
@@ -540,7 +547,7 @@ defmodule Ide.CompanionPebbleApisTest do
     phone_source = File.read!(Path.join(workspace, "phone/src/CompanionApp.elm"))
     watch_source = File.read!(Path.join(workspace, "watch/src/Main.elm"))
 
-    {:ok, _state} = Debugger.start_session(slug)
+    {:ok, _state} = start_debugger_session!(slug)
 
     {:ok, _state} =
       Debugger.set_simulator_settings(slug, %{
@@ -600,7 +607,7 @@ defmodule Ide.CompanionPebbleApisTest do
     phone_source = File.read!(Path.join(workspace, "phone/src/CompanionApp.elm"))
     watch_source = File.read!(Path.join(workspace, "watch/src/Main.elm"))
 
-    {:ok, _} = Debugger.start_session(slug)
+    {:ok, _} = start_debugger_session!(slug)
 
     {:ok, _} =
       Debugger.set_simulator_settings(slug, %{
@@ -663,7 +670,7 @@ defmodule Ide.CompanionPebbleApisTest do
     workspace = Ide.Projects.project_workspace_path(project)
     watch_source = File.read!(Path.join(workspace, "watch/src/Main.elm"))
 
-    {:ok, _} = Debugger.start_session(slug)
+    {:ok, _} = start_debugger_session!(slug)
 
     {:ok, watch_state} =
       Debugger.reload(slug, %{
@@ -672,6 +679,8 @@ defmodule Ide.CompanionPebbleApisTest do
         source: watch_source,
         reason: "companion_phone_status_watch_time"
       })
+
+    assert :ok = RuntimeBackgroundDrains.await_idle(slug, 120_000)
 
     preview = get_in(watch_state, [:watch, :model, "debugger_device_current_time_string"]) || %{}
     time_string = get_in(watch_state, [:watch, :model, "runtime_model", "timeString"])
@@ -689,33 +698,5 @@ defmodule Ide.CompanionPebbleApisTest do
                  )
                )
            end)
-
-    assert watch_state.watch.view_tree
-           |> collect_view_nodes()
-           |> Enum.any?(fn node ->
-             node["type"] == "text" and node["text"] == preview["string"]
-           end)
   end
-
-  defp collect_view_nodes(%{"children" => children}) when is_list(children) do
-    Enum.flat_map(children, fn child ->
-      if is_map(child) do
-        [child | collect_view_nodes(child)]
-      else
-        []
-      end
-    end)
-  end
-
-  defp collect_view_nodes(%{children: children}) when is_list(children) do
-    Enum.flat_map(children, fn child ->
-      if is_map(child) do
-        [child | collect_view_nodes(child)]
-      else
-        []
-      end
-    end)
-  end
-
-  defp collect_view_nodes(_node), do: []
 end

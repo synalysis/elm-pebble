@@ -165,13 +165,10 @@ defmodule Elmc.Backend.CCodegen.NativeBoolUnionCaseTest do
       |> String.split("ElmcValue *elmc_fn_Main_init", parts: 2)
       |> hd()
 
-    assert native_body =~ "bool native_bool_if_"
     assert native_body =~ "if ((maxExclusive < 0))"
-    assert native_body =~ "native_bool_if_"
-    assert native_body =~ " = true;"
     assert native_body =~ "(maxExclusive == 0)"
+    assert native_body =~ "elmc_new_bool_take(maxExclusive == 0)"
     refute native_body =~ "elmc_new_int(1)"
-    refute native_body =~ "elmc_as_int(tmp_"
-    refute Regex.match?(~r/ElmcValue \*tmp_\d+;\s+if \(\(maxExclusive < 0\)\)/, native_body)
+    refute native_body =~ "native_bool_if_"
   end
 end

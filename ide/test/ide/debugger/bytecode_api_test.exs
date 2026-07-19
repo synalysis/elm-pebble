@@ -4,9 +4,10 @@ defmodule Ide.Debugger.BytecodeApiTest do
   alias Ide.Debugger.{BytecodeApi, BytecodeRunner}
 
   @elmc_fixture Path.expand("../../../../elmc/test/fixtures/simple_project", __DIR__)
+  @default_model {:record, [nil, 0, 0, 0, 0, 0, 0, nil]}
 
   test "default_params supplies model tuple for Model params" do
-    assert BytecodeApi.default_params(%{"params" => ["model"]}) == [{:record, [0, nil]}]
+    assert BytecodeApi.default_params(%{"params" => ["model"]}) == [@default_model]
     assert BytecodeApi.default_params(%{"params" => ["n"]}) == [0]
     assert BytecodeApi.default_params(nil) == []
   end
@@ -25,7 +26,7 @@ defmodule Ide.Debugger.BytecodeApiTest do
 
     params = BytecodeApi.default_params(%{"params" => ["model"]})
 
-    assert {:ok, 0} =
-             BytecodeRunner.run(build_dir, {"Main", "counterOf"}, params: params)
+    assert {:ok, {:record, [13, 26, -9, 3]}} =
+             BytecodeRunner.run(build_dir, {"Main", "boardLayout"}, params: params)
   end
 end

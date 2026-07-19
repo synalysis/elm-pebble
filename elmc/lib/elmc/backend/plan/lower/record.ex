@@ -463,6 +463,9 @@ defmodule Elmc.Backend.Plan.Lower.Record do
       inferred_fields == alias_fields ->
         false
 
+      normalize_field_names(inferred_fields) != normalize_field_names(alias_fields) ->
+        false
+
       Enum.find_index(inferred_fields, &(&1 == field_name)) !=
           Enum.find_index(alias_fields, &(&1 == field_name)) ->
         true
@@ -510,7 +513,22 @@ defmodule Elmc.Backend.Plan.Lower.Record do
         end
 
       true ->
-        min_alias_field_index(field_name, shapes)
+        case shape_key_for_inferred_fields(Map.get((ctx && ctx.inferred_param_fields) || %{}, param_name), ctx) do
+          key when is_tuple(key) ->
+            case Map.get(shapes, key) do
+              fields when is_list(fields) ->
+                case Enum.find_index(fields, &(&1 == field_name)) do
+                  idx when is_integer(idx) -> {key, idx}
+                  _ -> min_alias_field_index(field_name, shapes)
+                end
+
+              _ ->
+                min_alias_field_index(field_name, shapes)
+            end
+
+          _ ->
+            min_alias_field_index(field_name, shapes)
+        end
     end
   end
 
@@ -548,7 +566,7 @@ defmodule Elmc.Backend.Plan.Lower.Record do
                 RecordFieldMacros.format_index(idx, field_name, key)
 
               _ ->
-                field_index_macro_fallback(field_name)
+                field_index_macro_fallback(field_name, ctx, base_expr)
             end
 
           true ->
@@ -557,19 +575,50 @@ defmodule Elmc.Backend.Plan.Lower.Record do
                 RecordFieldMacros.format_index(idx, field_name, key)
 
               _ ->
-                case min_field_index_among_shapes(field_name, shapes) do
-                  {{mod, type}, idx} when is_integer(idx) ->
-                    RecordFieldMacros.format_index(idx, field_name, {mod, type})
+                case ambiguous_field_candidates(field_name, shapes) do
+                  [] ->
+                    field_index_macro_fallback(field_name, ctx, base_expr)
 
-                  _ ->
-                    field_index_macro_fallback(field_name)
+                  [{key, idx}] ->
+                    RecordFieldMacros.format_index(idx, field_name, key)
+
+                  many ->
+                    case pick_ambiguous_field_type_key(many, ctx, base_expr) do
+                      {key, idx} when is_integer(idx) ->
+                        RecordFieldMacros.format_index(idx, field_name, key)
+
+                      _ ->
+                        field_index_macro_fallback(field_name, ctx, base_expr)
+                    end
                 end
             end
         end
     end
   end
 
-  defp field_index_macro_fallback(field_name) when is_binary(field_name) do
+  defp field_index_macro_fallback(field_name, ctx \\ nil, base_expr \\ nil)
+       when is_binary(field_name) do
+    shapes = Process.get(:elmc_record_alias_shapes, %{})
+
+    case ambiguous_field_candidates(field_name, shapes) do
+      [] ->
+        numeric_field_index_fallback(field_name)
+
+      [{_key, idx}] ->
+        "#{idx} /* #{field_name} */"
+
+      many ->
+        case pick_ambiguous_field_type_key(many, ctx, base_expr) do
+          {key, idx} when is_integer(idx) ->
+            RecordFieldMacros.format_index(idx, field_name, key)
+
+          _ ->
+            numeric_field_index_fallback(field_name)
+        end
+    end
+  end
+
+  defp numeric_field_index_fallback(field_name) when is_binary(field_name) do
     case Process.get(:elmc_record_field_macros, %{}) do
       macros when is_map(macros) ->
         case Enum.find_value(macros, fn {{_mod, _type, name}, macro} ->
@@ -745,15 +794,86 @@ defmodule Elmc.Backend.Plan.Lower.Record do
       end
 
     case fields do
-      list when is_list(list) ->
-        case Enum.find_index(list, &(&1 == field_name)) do
-          idx when is_integer(idx) -> {:inline, idx}
-          _ -> :error
+      list when is_list(list) and list != [] ->
+        case shape_key_for_inferred_fields(list, ctx) do
+          key when is_tuple(key) ->
+            case Map.get(Process.get(:elmc_record_alias_shapes, %{}), key) do
+              shape when is_list(shape) ->
+                case Enum.find_index(shape, &(&1 == field_name)) do
+                  idx when is_integer(idx) -> {key, idx}
+                  _ -> :error
+                end
+
+              _ ->
+                :error
+            end
+
+          _ ->
+            case Enum.find_index(list, &(&1 == field_name)) do
+              idx when is_integer(idx) -> {:inline, idx}
+              _ -> :error
+            end
         end
 
       _ ->
         :error
     end
+  end
+
+  defp shape_key_for_inferred_fields(inferred_fields, ctx) when is_list(inferred_fields) do
+    inferred_set = MapSet.new(inferred_fields, &to_string/1)
+    shapes = Process.get(:elmc_record_alias_shapes, %{})
+
+    candidates =
+      shapes
+      |> Enum.filter(fn {_key, shape} ->
+        MapSet.subset?(inferred_set, MapSet.new(shape, &to_string/1))
+      end)
+
+    case candidates do
+      [] ->
+        nil
+
+      [{key, _}] ->
+        key
+
+      many ->
+        module = ctx && Map.get(ctx, :module)
+
+        case module do
+          mod when is_binary(mod) ->
+            case Enum.find(many, fn {{m, _}, _} -> m == mod end) do
+              {key, _} -> key
+              _ -> pick_most_specific_shape_candidate(many, inferred_set)
+            end
+
+          _ ->
+            pick_most_specific_shape_candidate(many, inferred_set)
+        end
+    end
+  end
+
+  defp shape_key_for_inferred_fields(_, _), do: nil
+
+  defp pick_most_specific_shape_candidate(candidates, inferred_set) when is_list(candidates) do
+    exact =
+      Enum.filter(candidates, fn {_key, shape} ->
+        MapSet.equal?(inferred_set, MapSet.new(shape, &to_string/1))
+      end)
+
+    case exact do
+      [{key, _} | _] ->
+        key
+
+      _ ->
+        candidates
+        |> Enum.min_by(fn {_key, shape} -> length(shape) end)
+        |> elem(0)
+    end
+  end
+
+  defp normalize_field_names(fields) when is_list(fields) do
+    fields |> Enum.map(&to_string/1) |> Enum.sort()
   end
 
   defp resolve_field_type_key_from_shapes(field_name, ctx, base_expr) when is_binary(field_name) do
@@ -919,6 +1039,10 @@ defmodule Elmc.Backend.Plan.Lower.Record do
     end
   end
 
+  defp ambiguous_field_candidates(field_name, shapes) when is_binary(field_name) do
+    shape_field_index_candidates(field_name, shapes)
+  end
+
   defp shape_field_index_candidates(field_name, shapes) when is_binary(field_name) do
     shapes
     |> Enum.filter(fn {_key, fields} -> field_name in fields end)
@@ -1002,8 +1126,9 @@ defmodule Elmc.Backend.Plan.Lower.Record do
   defp local_param_types(_), do: %{}
 
   defp param_var_types(ctx) do
-    with %Context{decl_map: decl_map, module: module, params: params} <- ctx,
-         decl when is_map(decl) <- Map.get(decl_map, {module, ctx.function_name}, %{}),
+    with %Context{decl_map: decl_map, module: module, params: params, function_name: fun} <- ctx,
+         fun when is_binary(fun) <- fun,
+         decl when is_map(decl) <- Map.get(decl_map || %{}, {module, fun}, %{}),
          type when is_binary(type) <- Map.get(decl, :type),
          arg_types when is_list(arg_types) <- TypeParsing.function_arg_types(type) do
       params

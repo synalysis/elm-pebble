@@ -92,6 +92,15 @@ defmodule ElmEx.IR.DeadCode do
     [target | qualified_field_binding_refs(target)] |> Enum.uniq()
   end
 
+  defp call_reference_targets(%{op: :qualified_ref, target: target}, _mod)
+       when is_binary(target) do
+    if String.contains?(target, ".") do
+      [target | qualified_field_binding_refs(target)] |> Enum.uniq()
+    else
+      []
+    end
+  end
+
   defp call_reference_targets(%{op: :call, name: name}, mod) when is_binary(name) do
     [local_call_target(name, mod)]
   end

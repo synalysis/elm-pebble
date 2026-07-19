@@ -36,33 +36,71 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Qualified do
   @pipeline_flatten_threshold 16
 
   def compile_qualified_call1(%{target: target}, env, counter) when is_binary(target) do
-    case Elmx.Backend.ElixirCodegen.Emit.Helpers.compile_constructor_reference(target, env, counter) do
-      {:ok, code, env, c} ->
-        {code, env, c}
+    target = QualifiedRewrite.normalize_target(target)
+
+    case QualifiedRewrite.rewrite(target, []) do
+      {:ok, rewritten} ->
+        Elmx.Backend.ElixirCodegen.Emit.compile_expr(rewritten, env, counter)
 
       :error ->
-        case SpecialValues.rewrite(target, []) do
-          {:ok, rewritten} ->
-            Elmx.Backend.ElixirCodegen.Emit.compile_expr(rewritten, env, counter)
+        case compile_dotted_var_field_access(target, env, counter) do
+          {:ok, code, env, c} ->
+            {code, env, c}
 
           :error ->
-            case Stdlib.special_call(target, "") do
-              {:ok, code} ->
-                {code, env, counter}
+            case Elmx.Backend.ElixirCodegen.Emit.Helpers.compile_constructor_reference(target, env, counter) do
+              {:ok, code, env, c} ->
+                {code, env, c}
 
               :error ->
-                case CrossModuleCall.compile_call(target, [], env, counter, &Helpers.compile_arg_parts/3) do
-                  {:ok, code, env, c} ->
-                    {code, env, c}
+                case SpecialValues.rewrite(target, []) do
+                  {:ok, rewritten} ->
+                    Elmx.Backend.ElixirCodegen.Emit.compile_expr(rewritten, env, counter)
 
                   :error ->
-                    raise Elmx.Backend.UnsupportedOpError,
-                      op: :qualified_call1,
-                      expr: %{target: target}
+                    case Stdlib.special_call(target, "") do
+                      {:ok, code} ->
+                        {code, env, counter}
+
+                      :error ->
+                        case CrossModuleCall.compile_call(target, [], env, counter, &Helpers.compile_arg_parts/3) do
+                          {:ok, code, env, c} ->
+                            {code, env, c}
+
+                          :error ->
+                            raise Elmx.Backend.UnsupportedOpError,
+                              op: :qualified_call1,
+                              expr: %{target: target}
+                        end
+                    end
                 end
             end
         end
     end
+  end
+
+  defp compile_dotted_var_field_access(target, env, counter) when is_binary(target) do
+    case String.split(target, ".") do
+      [root | fields] when fields != [] ->
+        if var_root?(root) do
+          expr =
+            Enum.reduce(fields, %{op: :var, name: root}, fn field, acc ->
+              %{op: :field_access, arg: acc, field: field}
+            end)
+
+          {code, env, c} = Elmx.Backend.ElixirCodegen.Emit.compile_expr(expr, env, counter)
+          {:ok, code, env, c}
+        else
+          :error
+        end
+
+      _ ->
+        :error
+    end
+  end
+
+  defp var_root?(name) when is_binary(name) do
+    Regex.match?(~r/^[a-z][A-Za-z0-9_']*$/u, name)
   end
 
   def compile_qualified_call(%{target: _target, args: _args} = expr, env, counter) do

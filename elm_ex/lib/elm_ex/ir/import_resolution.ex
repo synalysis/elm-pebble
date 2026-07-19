@@ -98,6 +98,25 @@ defmodule ElmEx.IR.ImportResolution do
   end
 
   @doc """
+  When import aliases lower to `field_access` on a module var (e.g. `Color.oxfordBlue`
+  as `Color` + `.oxfordBlue`), expand to the canonical qualified target.
+  """
+  @spec resolve_imported_member(Expr.t(), String.t(), lookup()) :: {:ok, String.t()} | :error
+  def resolve_imported_member(%{op: :var, name: prefix}, member, lookup)
+      when is_binary(prefix) and is_binary(member) do
+    original = "#{prefix}.#{member}"
+    resolved = resolve(original, lookup)
+
+    if resolved != original and String.contains?(resolved, ".") do
+      {:ok, resolved}
+    else
+      :error
+    end
+  end
+
+  def resolve_imported_member(_arg, _member, _lookup), do: :error
+
+  @doc """
   Walks an IR expression tree and rewrites call targets to fully qualified names.
   """
   @spec normalize_expr(Expr.t() | Expr.wire_expr(), lookup()) :: Expr.t()
@@ -111,8 +130,29 @@ defmodule ElmEx.IR.ImportResolution do
     %{expr | target: resolve(target, lookup)}
   end
 
+  def normalize_expr(%{op: :qualified_ref, target: target} = expr, lookup) when is_binary(target) do
+    %{expr | target: resolve(target, lookup)}
+  end
+
+  def normalize_expr(%{op: :qualified_var, target: target} = expr, lookup) when is_binary(target) do
+    %{expr | target: resolve(target, lookup)}
+  end
+
   def normalize_expr(%{op: :constructor_call, target: target, args: args} = expr, lookup) do
     %{expr | target: resolve(target, lookup), args: normalize_list(args, lookup)}
+  end
+
+  def normalize_expr(%{op: :field_access, arg: arg, field: field} = expr, lookup)
+      when is_binary(field) do
+    rewritten_arg = normalize_expr(arg, lookup)
+
+    case resolve_imported_member(rewritten_arg, field, lookup) do
+      {:ok, qualified_target} ->
+        %{op: :qualified_call, target: qualified_target, args: []}
+
+      :error ->
+        %{expr | arg: rewritten_arg, field: field}
+    end
   end
 
   def normalize_expr(%{op: :call, name: name, args: args} = expr, lookup) when is_binary(name) do

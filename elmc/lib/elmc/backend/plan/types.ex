@@ -107,6 +107,7 @@ defmodule Elmc.Backend.Plan.Types do
   @type opcode ::
           :const_int
           | :const_c_expr
+          | :platform_static_int
           | :const_static_list
           | :const_immortal_string
           | :load_param

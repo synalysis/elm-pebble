@@ -43,6 +43,7 @@ defmodule Elmc.AllTemplatesCodegenTest do
         |> maybe_add_protocol(protocol_src)
         |> Kernel.++([
           Path.join(@repo_root, "ide/priv/bundled_elm/pebble-watch-src"),
+          Path.join(@repo_root, "ide/priv/bundled_elm/shared-elm"),
           Path.join(@repo_root, "ide/priv/bundled_elm/shared-elm/shared/elm"),
           Path.join(@repo_root, "ide/priv/internal_packages/elm-time/src"),
           Path.join(@repo_root, "ide/priv/internal_packages/elm-random/src")

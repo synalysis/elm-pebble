@@ -260,29 +260,35 @@ defmodule Elmc.Backend.C.StubFunctions do
   end
 
   defp read_paren_args(source, open_paren) when is_integer(open_paren) do
-    case String.at(source, open_paren) do
-      "(" -> scan_paren_content(source, open_paren + 1, 1, "")
-      _ -> {"", open_paren}
+    case binary_part(source, open_paren, 1) do
+      "(" ->
+        rest_start = open_paren + 1
+        <<_::binary-size(rest_start), rest::binary>> = source
+        {content_len, close_in_rest} = scan_paren_content(rest, 1, 0, 0)
+        {binary_part(rest, 0, content_len), rest_start + close_in_rest}
+
+      _ ->
+        {"", open_paren}
     end
   end
 
-  defp scan_paren_content(source, pos, depth, acc) do
-    case String.at(source, pos) do
-      nil ->
-        {acc, pos}
+  defp scan_paren_content(<<>>, _depth, content_len, close_pos),
+    do: {content_len, close_pos}
 
-      "(" ->
-        scan_paren_content(source, pos + 1, depth + 1, acc <> "(")
+  defp scan_paren_content(<<?(, rest::binary>>, depth, content_len, pos) do
+    scan_paren_content(rest, depth + 1, content_len + 1, pos + 1)
+  end
 
-      ")" when depth == 1 ->
-        {acc, pos}
+  defp scan_paren_content(<<?), _rest::binary>>, 1, content_len, pos) do
+    {content_len, pos}
+  end
 
-      ")" ->
-        scan_paren_content(source, pos + 1, depth - 1, acc <> ")")
+  defp scan_paren_content(<<?), rest::binary>>, depth, content_len, pos) when depth > 1 do
+    scan_paren_content(rest, depth - 1, content_len + 1, pos + 1)
+  end
 
-      char ->
-        scan_paren_content(source, pos + 1, depth, acc <> char)
-    end
+  defp scan_paren_content(<<_char, rest::binary>>, depth, content_len, pos) do
+    scan_paren_content(rest, depth, content_len + 1, pos + 1)
   end
 
   defp split_call_args(args_str) when args_str in ["", nil], do: []

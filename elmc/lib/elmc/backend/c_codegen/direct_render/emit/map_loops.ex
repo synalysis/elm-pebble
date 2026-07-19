@@ -51,17 +51,6 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.MapLoops do
         )
       end
 
-    {prefix_code, prefix_refs, prefix_releases, counter} =
-      maybe_materialize_native_prefix_refs(
-        prefix_code,
-        prefix_refs,
-        prefix_releases,
-        native_prefix_fields,
-        prefix_args,
-        env,
-        counter
-      )
-
     prefix_release_code = Release.release_vars(prefix_releases, "        ")
 
     case Host.direct_static_list_items(list_expr) do
@@ -94,14 +83,27 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.MapLoops do
                   )
 
                 :error ->
-                  indexed_map_static_list_loop(
+                  materialize_prefix_for_native_append(
                     native_append?,
                     prefix_code,
                     prefix_refs,
+                    prefix_releases,
+                    native_prefix_fields,
+                    prefix_args,
                     prefix_release_code,
-                    static_items,
-                    c_name,
-                    next,
+                    fn prefix_code, prefix_refs, prefix_release_code ->
+                      indexed_map_static_list_loop(
+                        native_append?,
+                        prefix_code,
+                        prefix_refs,
+                        prefix_release_code,
+                        static_items,
+                        c_name,
+                        next,
+                        env,
+                        counter
+                      )
+                    end,
                     env,
                     counter
                   )
@@ -147,16 +149,29 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.MapLoops do
                 )
 
               :error ->
-                indexed_map_range_loop(
+                materialize_prefix_for_native_append(
                   native_append?,
                   prefix_code,
                   prefix_refs,
+                  prefix_releases,
+                  native_prefix_fields,
+                  prefix_args,
                   prefix_release_code,
-                  range_code,
-                  first_ref,
-                  last_ref,
-                  c_name,
-                  next,
+                  fn prefix_code, prefix_refs, prefix_release_code ->
+                    indexed_map_range_loop(
+                      native_append?,
+                      prefix_code,
+                      prefix_refs,
+                      prefix_release_code,
+                      range_code,
+                      first_ref,
+                      last_ref,
+                      c_name,
+                      next,
+                      counter
+                    )
+                  end,
+                  env,
                   counter
                 )
             end
@@ -178,14 +193,27 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.MapLoops do
                 )
 
               :error ->
-                indexed_map_list_loop(
+                materialize_prefix_for_native_append(
                   native_append?,
                   prefix_code,
                   prefix_refs,
+                  prefix_releases,
+                  native_prefix_fields,
+                  prefix_args,
                   prefix_release_code,
-                  list_expr,
-                  c_name,
-                  next,
+                  fn prefix_code, prefix_refs, prefix_release_code ->
+                    indexed_map_list_loop(
+                      native_append?,
+                      prefix_code,
+                      prefix_refs,
+                      prefix_release_code,
+                      list_expr,
+                      c_name,
+                      next,
+                      env,
+                      counter
+                    )
+                  end,
                   env,
                   counter
                 )
@@ -742,6 +770,48 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.MapLoops do
           {prefix_code, prefix_refs, [], nil, counter}
         end
     end
+  end
+
+  defp materialize_prefix_for_native_append(
+         false,
+         prefix_code,
+         prefix_refs,
+         _prefix_releases,
+         _native_prefix_fields,
+         _prefix_args,
+         prefix_release_code,
+         emit_fallback,
+         _env,
+         _counter
+       ) do
+    emit_fallback.(prefix_code, prefix_refs, prefix_release_code)
+  end
+
+  defp materialize_prefix_for_native_append(
+         true,
+         prefix_code,
+         prefix_refs,
+         prefix_releases,
+         native_prefix_fields,
+         prefix_args,
+         _prefix_release_code,
+         emit_fallback,
+         env,
+         counter
+       ) do
+    {prefix_code, prefix_refs, prefix_releases, counter} =
+      maybe_materialize_native_prefix_refs(
+        prefix_code,
+        prefix_refs,
+        prefix_releases,
+        native_prefix_fields,
+        prefix_args,
+        env,
+        counter
+      )
+
+    prefix_release_code = Release.release_vars(prefix_releases, "        ")
+    emit_fallback.(prefix_code, prefix_refs, prefix_release_code)
   end
 
   defp maybe_materialize_native_prefix_refs(

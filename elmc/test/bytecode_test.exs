@@ -2,8 +2,11 @@ defmodule Elmc.BytecodeTest do
   use ExUnit.Case, async: false
 
   alias Elmc.Backend.Bytecode.{FnTable, Lower, Runtime}
+  alias Elmc.Backend.CCodegen.IRQueries
   alias Elmc.Backend.Plan.Builder
   alias Elmc.Backend.Plan.Lower.Function, as: PlanLower
+  alias ElmEx.Frontend.Bridge
+  alias ElmEx.IR.{Lowerer, PipeChain}
 
   @fixture Path.expand("fixtures/simple_project", __DIR__)
 
@@ -51,25 +54,9 @@ defmodule Elmc.BytecodeTest do
   end
 
   test "encodes and runs simple_project probeHelper plan" do
-    {:ok, result} =
-      Elmc.compile(@fixture, %{
-        out_dir: Path.expand("tmp/bytecode_init_codegen", __DIR__),
-        entry_module: "Main",
-        strip_dead_code: false
-      })
-
-    Process.put(:elmc_constructor_tags, Elmc.Backend.CCodegen.IRQueries.constructor_tag_map(result.ir))
+    decl_map = simple_project_decl_map!()
 
     on_exit(fn -> Process.delete(:elmc_constructor_tags) end)
-
-    decl_map =
-      result.ir.modules
-      |> Enum.flat_map(fn mod ->
-        mod.declarations
-        |> Enum.filter(&(&1.kind == :function))
-        |> Enum.map(fn decl -> {{mod.name, decl.name}, decl} end)
-      end)
-      |> Map.new()
 
     decl = Map.fetch!(decl_map, {"Main", "probeHelper"})
 
@@ -109,25 +96,9 @@ defmodule Elmc.BytecodeTest do
   end
 
   test "call_fn preserves linked plans map for nested callees" do
-    {:ok, result} =
-      Elmc.compile(@fixture, %{
-        out_dir: Path.expand("tmp/bytecode_call_fn_plans", __DIR__),
-        entry_module: "Main",
-        strip_dead_code: false
-      })
-
-    Process.put(:elmc_constructor_tags, Elmc.Backend.CCodegen.IRQueries.constructor_tag_map(result.ir))
+    decl_map = simple_project_decl_map!()
 
     on_exit(fn -> Process.delete(:elmc_constructor_tags) end)
-
-    decl_map =
-      result.ir.modules
-      |> Enum.flat_map(fn mod ->
-        mod.declarations
-        |> Enum.filter(&(&1.kind == :function))
-        |> Enum.map(fn decl -> {{mod.name, decl.name}, decl} end)
-      end)
-      |> Map.new()
 
     {:ok, advanced} =
       PlanLower.lower(Map.fetch!(decl_map, {"Main", "probeAdvanced"}), "Main", decl_map,
@@ -226,5 +197,20 @@ defmodule Elmc.BytecodeTest do
 
     plan = Builder.to_function_plan(Builder.emit_ret(b3, dest))
     assert {:ok, []} = Runtime.run_function(plan)
+  end
+
+  defp simple_project_decl_map! do
+    {:ok, project} = Bridge.load_project(@fixture)
+    {:ok, ir} = Lowerer.lower_project(project)
+    ir = PipeChain.desugar_project(ir)
+    Process.put(:elmc_constructor_tags, IRQueries.constructor_tag_map(ir))
+
+    ir.modules
+    |> Enum.flat_map(fn mod ->
+      mod.declarations
+      |> Enum.filter(&(&1.kind == :function))
+      |> Enum.map(fn decl -> {{mod.name, decl.name}, decl} end)
+    end)
+    |> Map.new()
   end
 end

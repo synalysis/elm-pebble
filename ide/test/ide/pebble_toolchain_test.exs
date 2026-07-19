@@ -473,14 +473,16 @@ defmodule Ide.PebbleToolchainTest do
     refute template =~ "elmc_pebble_reserve_startup_scene"
     assert template =~ "static ElmcPebbleCmd cmd;"
 
+    draw_bodies =
+      Regex.scan(
+        ~r/static void draw_update_proc\(Layer \*layer, GContext \*ctx\) \{(.*?)^\}/ms,
+        template
+      )
+      |> Enum.map(fn [_, body] -> body end)
+
     draw_body =
-      case Regex.run(
-             ~r/static void draw_update_proc\(Layer \*layer, GContext \*ctx\) \{(.*?)^\}/ms,
-             template
-           ) do
-        [_, body] -> body
-        _ -> flunk("draw_update_proc body not found")
-      end
+      Enum.find(draw_bodies, fn body -> body =~ "bounds.size.w" end) ||
+        flunk("full draw_update_proc body not found")
 
     refute draw_body =~ "elmc_pebble_ensure_scene(&s_elm_app);"
     assert template =~ "schedule_scene_prep"
@@ -503,7 +505,7 @@ defmodule Ide.PebbleToolchainTest do
     assert render_model_body =~ "layer_mark_dirty(s_draw_layer);"
 
     assert template =~ "elmc_pebble_scene_report_decode_failure"
-    assert draw_body =~ "if (decoded < 0)"
+    assert template =~ "if (decoded < 0)"
 
     scene_prep_body =
       case Regex.run(~r/static void scene_prep_timer_callback\(void \*data\) \{(.*?)^\}/ms, template) do

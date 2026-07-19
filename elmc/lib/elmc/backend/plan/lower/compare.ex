@@ -1,6 +1,7 @@
 defmodule Elmc.Backend.Plan.Lower.Compare do
   @moduledoc false
 
+  alias Elmc.Backend.CCodegen.BuiltinUnion
   alias Elmc.Backend.CCodegen.{Host, TypeParsing}
   alias Elmc.Backend.CCodegen.Native.TypedReturn
   alias Elmc.Backend.Plan.{Builder, Context}
@@ -20,7 +21,13 @@ defmodule Elmc.Backend.Plan.Lower.Compare do
         compile_maybe_vs_nothing(maybe_expr, compare_kind, ctx, b)
 
       :error ->
-        compile_generic_compare(kind, left, right, ctx, b)
+        case union_ctor_equality_compare(kind, left, right) do
+          {:ok, subject_expr, ctor_name, compare_kind} ->
+            compile_union_ctor_equality(subject_expr, ctor_name, compare_kind, ctx, b)
+
+          :error ->
+            compile_generic_compare(kind, left, right, ctx, b)
+        end
     end
   end
 
@@ -118,6 +125,105 @@ defmodule Elmc.Backend.Plan.Lower.Compare do
     end
   end
 
+  defp compile_union_ctor_equality(subject_expr, ctor_name, kind, ctx, b) do
+    operand_ctx = Context.for_branch_arm(ctx)
+
+    with tag when is_integer(tag) <- union_ctor_tag(ctor_name),
+         {:ok, subj_reg, subj_owned?, b1} <- compile_operand(subject_expr, operand_ctx, b),
+         {:ok, tag_reg, b2} <- emit_test_ctor_tag(subj_reg, tag, b1),
+         {reg, b3} = Builder.fresh_reg(b2) do
+      {_, b4} =
+        Builder.emit(b3, :test_bool, %{
+          dest: reg,
+          args: %{subject: tag_reg, want_true: kind == :eq},
+          effects: %{
+            produces: {:owned, reg},
+            consumes: [tag_reg],
+            borrows: [],
+            fallible: false
+          }
+        })
+
+      b5 = maybe_consume_owned(b4, subj_reg, subj_owned?)
+      {:ok, reg, b5}
+    else
+      _ -> :unsupported
+    end
+  end
+
+  defp union_ctor_equality_compare(kind, left, right) when kind in [:eq, :neq] do
+    cond do
+      union_ctor_ref?(right) and not maybe_ctor_ref?(right) ->
+        {:ok, left, ctor_ref_name(right), kind}
+
+      union_ctor_ref?(left) and not maybe_ctor_ref?(left) ->
+        {:ok, right, ctor_ref_name(left), kind}
+
+      union_ctor_literal?(right) and not maybe_ctor_literal?(right) ->
+        {:ok, left, union_ctor_literal_name(right), kind}
+
+      union_ctor_literal?(left) and not maybe_ctor_literal?(left) ->
+        {:ok, right, union_ctor_literal_name(left), kind}
+
+      true ->
+        :error
+    end
+  end
+
+  defp union_ctor_equality_compare(_kind, _left, _right), do: :error
+
+  defp union_ctor_ref?(%{op: :constructor_ref, target: target}) when is_binary(target), do: true
+  defp union_ctor_ref?(_), do: false
+
+  defp maybe_ctor_ref?(%{op: :constructor_ref, target: target}) when is_binary(target),
+    do: short_ctor_name(target) in @nothing_names
+
+  defp maybe_ctor_ref?(_), do: false
+
+  defp ctor_ref_name(%{target: target}) when is_binary(target), do: target
+
+  defp union_ctor_literal?(%{op: :int_literal, union_ctor: ctor}) when is_binary(ctor), do: true
+  defp union_ctor_literal?(_), do: false
+
+  defp maybe_ctor_literal?(%{op: :int_literal, union_ctor: ctor}) when is_binary(ctor),
+    do: BuiltinUnion.maybe_nothing_literal?(%{op: :int_literal, union_ctor: ctor})
+
+  defp maybe_ctor_literal?(_), do: false
+
+  defp union_ctor_literal_name(%{union_ctor: ctor}) when is_binary(ctor), do: ctor
+
+  defp union_ctor_tag(name) when is_binary(name) do
+    tags = Process.get(:elmc_constructor_tags, %{})
+
+    Map.get(tags, name) ||
+      Map.get(tags, short_ctor_name(name)) ||
+      lookup_qualified_ctor_tag(name, tags)
+  end
+
+  defp lookup_qualified_ctor_tag(name, tags) do
+    Enum.find_value(tags, fn {key, tag} ->
+      if String.ends_with?(key, "." <> short_ctor_name(name)), do: tag
+    end)
+  end
+
+  defp emit_test_ctor_tag(subject_reg, tag, b) when is_integer(tag) do
+    {reg, b1} = Builder.fresh_reg(b)
+
+    {_, b2} =
+      Builder.emit(b1, :test_ctor_tag, %{
+        dest: reg,
+        args: %{subject: subject_reg, tag: tag},
+        effects: %{
+          produces: {:owned, reg},
+          consumes: [],
+          borrows: [subject_reg],
+          fallible: false
+        }
+      })
+
+    {:ok, reg, b2}
+  end
+
   defp maybe_vs_nothing_compare(kind, left, right)
        when kind in [:eq, :neq] do
     cond do
@@ -133,11 +239,15 @@ defmodule Elmc.Backend.Plan.Lower.Compare do
     short_ctor_name(target) in @nothing_names
   end
 
-  defp nothing_literal?(%{op: :int_literal, union_ctor: ctor}) when is_binary(ctor) do
-    String.ends_with?(ctor, ".Nothing") or ctor == "Nothing"
+  defp nothing_literal?(%{op: :constructor_ref, target: target}) when is_binary(target) do
+    short_ctor_name(target) in @nothing_names
   end
 
-  defp nothing_literal?(_expr), do: false
+  defp nothing_literal?(%{op: :int_literal, union_ctor: ctor}) when is_binary(ctor) do
+    BuiltinUnion.maybe_nothing_literal?(%{op: :int_literal, union_ctor: ctor})
+  end
+
+  defp nothing_literal?(expr), do: BuiltinUnion.maybe_nothing_literal?(expr)
 
   defp emit_test_maybe_nothing(subj_reg, b) do
     {reg, b1} = Builder.fresh_reg(b)

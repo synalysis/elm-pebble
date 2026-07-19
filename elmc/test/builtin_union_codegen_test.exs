@@ -59,6 +59,15 @@ defmodule Elmc.BuiltinUnionCodegenTest do
 
     import Pebble.Platform as Platform
 
+    main : Platform.Program () () ()
+    main =
+        Platform.worker
+            { init = \\flags -> ( sample, Platform.Cmd.none )
+            , update = \\_ _ -> ( (), Platform.Cmd.none )
+            , subscriptions = \\_ -> Platform.Sub.none
+            , view = \\_ -> Platform.Cmd.none
+            }
+
     sample : ( Maybe Int, Result Int String )
     sample =
         ( Just 1, Ok 2 )
@@ -69,14 +78,13 @@ defmodule Elmc.BuiltinUnionCodegenTest do
     assert {:ok, _} =
              Elmc.compile(project_dir, %{
                out_dir: out_dir,
-               entry_module: "Main",
-               strip_dead_code: false
+               entry_module: "Main"
              })
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
-    assert generated_c =~ "elmc_maybe_just("
-    assert generated_c =~ "elmc_result_ok("
+    assert generated_c =~ "elmc_maybe_just_own("
+    assert generated_c =~ "elmc_result_ok_own("
   end
 
   test "tail if with Just/Nothing writes directly to function out" do
@@ -89,7 +97,18 @@ defmodule Elmc.BuiltinUnionCodegenTest do
     File.cp_r!(source_fixture, project_dir)
 
     main = """
-    module Main exposing (maybePiece)
+    module Main exposing (main, maybePiece)
+
+    import Pebble.Platform as Platform
+
+    main : Platform.Program () () ()
+    main =
+        Platform.worker
+            { init = \\flags -> ( maybePiece True, Platform.Cmd.none )
+            , update = \\_ _ -> ( (), Platform.Cmd.none )
+            , subscriptions = \\_ -> Platform.Sub.none
+            , view = \\_ -> Platform.Cmd.none
+            }
 
     maybePiece : Bool -> Maybe Int
     maybePiece flag =
@@ -104,8 +123,7 @@ defmodule Elmc.BuiltinUnionCodegenTest do
     assert {:ok, _} =
              Elmc.compile(project_dir, %{
                out_dir: out_dir,
-               entry_module: "Main",
-               strip_dead_code: false
+               entry_module: "Main"
              })
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))

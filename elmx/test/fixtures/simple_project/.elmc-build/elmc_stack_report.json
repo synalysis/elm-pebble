@@ -1,6 +1,42 @@
 {
   "functions": [
     {
+      "function": "Basics.gt",
+      "level": "ok",
+      "score": 0,
+      "reasons": []
+    },
+    {
+      "function": "Basics.lt",
+      "level": "ok",
+      "score": 0,
+      "reasons": []
+    },
+    {
+      "function": "Basics.max",
+      "level": "ok",
+      "score": 0,
+      "reasons": []
+    },
+    {
+      "function": "Basics.min",
+      "level": "ok",
+      "score": 0,
+      "reasons": []
+    },
+    {
+      "function": "Bitwise.or",
+      "level": "ok",
+      "score": 0,
+      "reasons": []
+    },
+    {
+      "function": "Bitwise.shiftLeftBy",
+      "level": "ok",
+      "score": 0,
+      "reasons": []
+    },
+    {
       "function": "Companion.Internal.encodeLocationCode",
       "level": "ok",
       "score": 0,
@@ -110,6 +146,116 @@
     },
     {
       "function": "Elm.Kernel.PebbleWatch.timerAfter",
+      "level": "ok",
+      "score": 0,
+      "reasons": []
+    },
+    {
+      "function": "Json.Decode.bool",
+      "level": "ok",
+      "score": 0,
+      "reasons": []
+    },
+    {
+      "function": "Json.Decode.decodeValue",
+      "level": "ok",
+      "score": 0,
+      "reasons": []
+    },
+    {
+      "function": "Json.Decode.field",
+      "level": "ok",
+      "score": 0,
+      "reasons": []
+    },
+    {
+      "function": "Json.Decode.int",
+      "level": "ok",
+      "score": 0,
+      "reasons": []
+    },
+    {
+      "function": "Json.Decode.map",
+      "level": "ok",
+      "score": 0,
+      "reasons": []
+    },
+    {
+      "function": "Json.Decode.map2",
+      "level": "ok",
+      "score": 0,
+      "reasons": []
+    },
+    {
+      "function": "Json.Decode.map4",
+      "level": "ok",
+      "score": 0,
+      "reasons": []
+    },
+    {
+      "function": "Json.Decode.map7",
+      "level": "ok",
+      "score": 0,
+      "reasons": []
+    },
+    {
+      "function": "Json.Decode.null",
+      "level": "ok",
+      "score": 0,
+      "reasons": []
+    },
+    {
+      "function": "Json.Decode.oneOf",
+      "level": "ok",
+      "score": 0,
+      "reasons": []
+    },
+    {
+      "function": "Json.Decode.string",
+      "level": "ok",
+      "score": 0,
+      "reasons": []
+    },
+    {
+      "function": "Json.Decode.succeed",
+      "level": "ok",
+      "score": 0,
+      "reasons": []
+    },
+    {
+      "function": "List.cons",
+      "level": "ok",
+      "score": 0,
+      "reasons": []
+    },
+    {
+      "function": "List.foldl",
+      "level": "ok",
+      "score": 0,
+      "reasons": []
+    },
+    {
+      "function": "List.foldr",
+      "level": "ok",
+      "score": 0,
+      "reasons": []
+    },
+    {
+      "function": "List.foldrHelper",
+      "level": "risk",
+      "score": 21,
+      "reasons": []
+    },
+    {
+      "function": "List.map",
+      "level": "warn",
+      "score": 6,
+      "reasons": [
+        "lambda"
+      ]
+    },
+    {
+      "function": "List.reverse",
       "level": "ok",
       "score": 0,
       "reasons": []
@@ -658,11 +804,41 @@
       "reasons": []
     },
     {
+      "function": "Platform.worker",
+      "level": "ok",
+      "score": 0,
+      "reasons": []
+    },
+    {
+      "function": "elmc_fn_Main_advanced",
+      "level": "ok",
+      "score": 0,
+      "reasons": [],
+      "c_boxed_locals": 0,
+      "c_tmp_max": 0
+    },
+    {
+      "function": "elmc_fn_Main_counterOf",
+      "level": "ok",
+      "score": 0,
+      "reasons": [],
+      "c_boxed_locals": 0,
+      "c_tmp_max": 0
+    },
+    {
+      "function": "elmc_fn_Main_helper",
+      "level": "ok",
+      "score": 0,
+      "reasons": [],
+      "c_boxed_locals": 0,
+      "c_tmp_max": 0
+    },
+    {
       "function": "elmc_fn_Pebble_Ui_canvasLayer",
       "level": "ok",
       "score": 0,
       "reasons": [],
-      "c_boxed_locals": 2,
+      "c_boxed_locals": 1,
       "c_tmp_max": 0
     },
     {
@@ -670,7 +846,7 @@
       "level": "ok",
       "score": 0,
       "reasons": [],
-      "c_boxed_locals": 2,
+      "c_boxed_locals": 1,
       "c_tmp_max": 0
     },
     {
@@ -678,26 +854,30 @@
       "level": "ok",
       "score": 0,
       "reasons": [],
-      "c_boxed_locals": 2,
+      "c_boxed_locals": 1,
       "c_tmp_max": 0
     }
   ],
   "summary": {
-    "ok": 104,
-    "warn": 3,
-    "risk": 3
+    "ok": 130,
+    "warn": 4,
+    "risk": 4
   },
   "code_size_indicators": {
-    "boxed_tmp_declarations": 0,
+    "boxed_tmp_declarations": 4,
     "closure_allocations": 0,
-    "direct_command_defs": 0,
-    "generated_c_bytes": 86800,
-    "generated_c_lines": 2598,
-    "generic_function_defs": 3,
+    "commands_append_bytes": 6555,
+    "direct_command_defs": 2,
+    "fusion_native_count": 12,
+    "generated_c_bytes": 81543,
+    "generated_c_lines": 2378,
+    "generic_function_defs": 9,
     "linked_binary": {
       "reason": "binary size is available after platform or host linking, not during C source generation",
       "available": false
     },
+    "owned_slot_max": 119,
+    "plan_function_count": 9,
     "runtime_calls": {
       "elmc_list_all": 0,
       "elmc_list_any": 0,

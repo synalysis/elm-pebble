@@ -52,4 +52,24 @@ defmodule Elmc.PlanPatternBindJustTest do
     assert {:ok, ctx1, _b2} = PatternBind.bind(pattern, ctx, b1, subject_reg)
     assert Context.local_reg(ctx1, "pageDataBytes") != subject_reg
   end
+
+  test "union ctor bind shorthand with explicit nil arg_pattern unwraps payload" do
+    Process.put(:elmc_union_constructor_payload_specs, %{{"Main", "BestLoaded"} => "String"})
+
+    on_exit(fn -> Process.delete(:elmc_union_constructor_payload_specs) end)
+
+    b = Builder.new("Main", "pattern_bind_test", rc_required: false)
+    ctx = Context.new()
+    {subject_reg, b1} = Builder.fresh_reg(b)
+
+    pattern = %{
+      kind: :constructor,
+      name: "BestLoaded",
+      bind: "value",
+      arg_pattern: nil
+    }
+
+    assert {:ok, ctx1, _b2} = PatternBind.bind(pattern, ctx, b1, subject_reg)
+    assert Context.local_reg(ctx1, "value") != subject_reg
+  end
 end

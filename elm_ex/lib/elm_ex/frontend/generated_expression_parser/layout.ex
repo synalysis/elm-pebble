@@ -416,7 +416,13 @@ defmodule ElmEx.Frontend.GeneratedExpressionParser.Layout do
     )
   end
 
+  @max_case_layout_normalize_bytes 100_000
+
   @spec ensure_multiline_case_arm_separators(source()) :: source()
+  defp ensure_multiline_case_arm_separators(source)
+       when is_binary(source) and byte_size(source) > @max_case_layout_normalize_bytes,
+       do: source
+
   defp ensure_multiline_case_arm_separators(source) when is_binary(source) do
     source
     |> String.replace(
@@ -427,32 +433,57 @@ defmodule ElmEx.Frontend.GeneratedExpressionParser.Layout do
     |> separate_multiline_case_arms_after_in()
   end
 
+  defp separate_multiline_case_sibling_arms(source)
+       when is_binary(source) and byte_size(source) > @max_case_layout_normalize_bytes,
+       do: source
+
   defp separate_multiline_case_sibling_arms(source) when is_binary(source) do
     if String.contains?(source, " of\n") do
       source
-      |> String.replace(
-        ~r/(\n\s+[^\n]+->\n(?:(?:\s+(?!\[\s[^\n]*\]\s*->)[^\n]+\n)+))(\s+)(\[\s[^\n]*\]\s*->)/u,
-        "\\1\\2;; \\3"
-      )
-      |> String.replace(
-        ~r/(\n\s+\]\n)(\s+)([A-Z][A-Za-z0-9_]*(?:\s+[a-z_][A-Za-z0-9_]*)?\s*->)/u,
-        "\\1;; \\2\\3"
-      )
-      |> String.replace(
-        ~r/(\n\s+[^\n]+\]\s*\n)(\s+)([A-Z][A-Za-z0-9_]*(?:\s+[a-z_][A-Za-z0-9_]*)?\s*->)/u,
-        "\\1;; \\2\\3"
-      )
-      |> String.replace(
-        ~r/(\n\s+[^\n]+->\n(?:(?:\s+[^\n]+\n)+?))(\n)(\s+)((?:Just|Nothing|Err|Ok)\b[^\n]*->)/u,
-        "\\1\\2\\3;; \\4"
-      )
-      |> String.replace(
-        ~r/(\n\s+[^\n]+->\n(?:(?:\s+(?!\s+_\s*->)[^\n]+\n)+))(\s+)(_\s*->)/u,
-        "\\1;; \\2\\3"
-      )
+      |> String.split("\n")
+      |> insert_multiline_case_arm_separators()
+      |> Enum.join("\n")
     else
       source
     end
+  end
+
+  defp insert_multiline_case_arm_separators(lines) when is_list(lines) do
+    {rev, _state} =
+      Enum.reduce(lines, {[], :outside}, fn line, {acc, state} ->
+        trimmed = String.trim(line)
+        arm_header? = case_sibling_arm_header_line?(trimmed)
+
+        cond do
+          arm_header? and state == :multiline_body ->
+            {[prefixed_case_arm_line(line) | acc], :arm_start}
+
+          arm_header? ->
+            {[line | acc], :arm_start}
+
+          state == :arm_start and String.contains?(trimmed, "->") ->
+            {[line | acc], :after_arrow}
+
+          state in [:after_arrow, :multiline_body] and trimmed != "" and not arm_header? ->
+            {[line | acc], :multiline_body}
+
+          true ->
+            {[line | acc], if(trimmed == "" and state == :multiline_body, do: :multiline_body, else: :outside)}
+        end
+      end)
+
+    Enum.reverse(rev)
+  end
+
+  defp prefixed_case_arm_line(line) do
+    case Regex.run(~r/^(\s*)/, line) do
+      [_, indent] -> indent <> ";; " <> String.trim_leading(line)
+      _ -> ";; " <> String.trim(line)
+    end
+  end
+
+  defp case_sibling_arm_header_line?(trimmed) when is_binary(trimmed) do
+    Regex.match?(~r/^(\[\s|_|'|\"|[A-Z][A-Za-z0-9_.']*(?:\s+[a-z_][A-Za-z0-9_']*)*)\s*->/u, trimmed)
   end
 
   @spec collapse_binding_rhs_starts(source()) :: source()
@@ -540,6 +571,9 @@ defmodule ElmEx.Frontend.GeneratedExpressionParser.Layout do
 
   @spec normalize_case_source(source(), non_neg_integer()) :: source()
   defp normalize_case_source(source, passes) when passes >= 20, do: source
+
+  defp normalize_case_source(source, passes) when passes >= 3 and byte_size(source) > 50_000,
+    do: source
 
   defp normalize_case_source(source, passes) do
     normalized =

@@ -4,10 +4,14 @@ defmodule Elmc.Backend.Plan.Lower.Case do
   alias Elmc.Backend.Plan.Builder
   alias Elmc.Backend.Plan.Context
   alias Elmc.Backend.Plan.Lower.Case.{CharSwitch, GuardedSwitch, IntSwitch, ListSwitch, TagSwitch}
-  alias Elmc.Backend.Plan.Lower.{Expr, PatternBind}
+  alias Elmc.Backend.Plan.Lower.{Expr, PatternBind, PlatformStatic}
   alias Elmc.Backend.Plan.Types
 
   @spec compile(Types.ir_case_expr(), Context.t(), Builder.t()) :: Types.compile_result()
+  def compile(%{platform_static_macro: macro} = expr, ctx, b) when is_binary(macro) do
+    PlatformStatic.compile_case(expr, macro, ctx, b)
+  end
+
   def compile(%{subject: subject, branches: [br1, br2]}, ctx, b)
       when is_map(br1) and is_map(br2) do
     cond do

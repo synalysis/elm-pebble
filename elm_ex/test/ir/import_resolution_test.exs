@@ -52,6 +52,75 @@ defmodule ElmEx.IR.ImportResolutionTest do
              ImportResolution.normalize_expr(expr, @lookup)
   end
 
+  test "resolve/2 expands Color import alias to canonical module path" do
+    lookup = %{
+      alias_map: %{"Color" => "Pebble.Ui.Color"},
+      import_unqualified_map: %{},
+      local_call_names: MapSet.new(),
+      current_module: "Yes.Render"
+    }
+
+    assert ImportResolution.resolve("Color.oxfordBlue", lookup) ==
+             "Pebble.Ui.Color.oxfordBlue"
+  end
+
+  test "normalize_expr/2 rewrites qualified_ref import aliases" do
+    lookup = %{
+      alias_map: %{"Color" => "Pebble.Ui.Color"},
+      import_unqualified_map: %{},
+      local_call_names: MapSet.new(),
+      current_module: "Yes.Render"
+    }
+
+    expr = %{op: :qualified_ref, target: "Color.oxfordBlue"}
+
+    assert %{op: :qualified_ref, target: "Pebble.Ui.Color.oxfordBlue"} =
+             ImportResolution.normalize_expr(expr, lookup)
+  end
+
+  test "normalize_expr/2 rewrites field_access on import alias module vars" do
+    lookup = %{
+      alias_map: %{"Color" => "Pebble.Ui.Color"},
+      import_unqualified_map: %{},
+      local_call_names: MapSet.new(),
+      current_module: "Yes.Render"
+    }
+
+    expr = %{op: :field_access, arg: %{op: :var, name: "Color"}, field: "oxfordBlue"}
+
+    assert %{op: :qualified_call, target: "Pebble.Ui.Color.oxfordBlue", args: []} =
+             ImportResolution.normalize_expr(expr, lookup)
+  end
+
+  test "normalize_expr/2 rewrites Ui import alias on fillCircle calls" do
+    lookup = %{
+      alias_map: %{"Ui" => "Pebble.Ui", "Color" => "Pebble.Ui.Color"},
+      import_unqualified_map: %{},
+      local_call_names: MapSet.new(),
+      current_module: "Yes.Render"
+    }
+
+    expr = %{
+      op: :qualified_call,
+      target: "Ui.fillCircle",
+      args: [
+        %{op: :record_literal, fields: []},
+        %{op: :int_literal, value: 50},
+        %{op: :qualified_call, target: "Color.oxfordBlue", args: []}
+      ]
+    }
+
+    assert %{
+             op: :qualified_call,
+             target: "Pebble.Ui.fillCircle",
+             args: [
+               _center,
+               %{op: :int_literal, value: 50},
+               %{op: :qualified_call, target: "Pebble.Ui.Color.oxfordBlue", args: []}
+             ]
+           } = ImportResolution.normalize_expr(expr, lookup)
+  end
+
   test "resolve/2 picks the aliased module that exports the member" do
     lookup = %{
       alias_map: %{"Svg" => "Internal.Svg.Config"},

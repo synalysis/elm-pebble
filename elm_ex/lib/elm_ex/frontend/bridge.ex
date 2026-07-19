@@ -188,7 +188,11 @@ defmodule ElmEx.Frontend.Bridge do
           Path.join([System.user_home!(), ".elm", "0.19.1", "packages", author, name, ver, "src"])
         ]
         |> Enum.map(&Path.expand/1)
-        |> Enum.filter(&File.dir?/1)
+        |> Enum.find(&File.dir?/1)
+        |> case do
+          nil -> []
+          dir -> [dir]
+        end
 
       _ ->
         []

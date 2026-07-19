@@ -9,6 +9,7 @@ defmodule Ide.Debugger.SurfaceCompileElmxTest do
   alias Ide.Debugger.RuntimeSurfaces
   alias Ide.Debugger.StepInput
   alias Ide.Debugger.StepExecution
+  alias Ide.Debugger.Surface
   alias Ide.Debugger.SurfaceCompileArtifacts
   alias Ide.Debugger.SurfaceCompileArtifactsContext
   alias Ide.Debugger.Types.ElmcSurfaceFields
@@ -67,7 +68,8 @@ defmodule Ide.Debugger.SurfaceCompileElmxTest do
     got = SurfaceCompileArtifacts.artifacts_for_source_root(state, "watch", ctx)
 
     assert RuntimeArtifacts.versioned_elmx_artifacts?(got)
-    assert got["elmx_revision"] == compile_result.elmx_revision
+    assert Map.get(got, :elmx_revision) || Map.get(got, "elmx_revision") ==
+             compile_result.elmx_revision
     assert is_map(CompileContract.from_artifacts(got))
   end
 

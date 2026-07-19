@@ -741,9 +741,15 @@ defmodule ElmEx.IR.Lowerer do
   defp rewrite_expr(%{op: :field_access, arg: arg, field: field}, lookup) do
     rewritten_arg = rewrite_expr(arg, lookup)
 
-    case {field, rewritten_arg} do
-      {"value", %{op: :tuple2} = tuple_expr} -> %{op: :tuple_first, arg: tuple_expr}
-      _ -> %{op: :field_access, arg: rewritten_arg, field: field}
+    case ImportResolution.resolve_imported_member(rewritten_arg, field, lookup) do
+      {:ok, qualified_target} ->
+        %{op: :qualified_call, target: qualified_target, args: []}
+
+      :error ->
+        case {field, rewritten_arg} do
+          {"value", %{op: :tuple2} = tuple_expr} -> %{op: :tuple_first, arg: tuple_expr}
+          _ -> %{op: :field_access, arg: rewritten_arg, field: field}
+        end
     end
   end
 

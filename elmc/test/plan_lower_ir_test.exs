@@ -269,6 +269,49 @@ defmodule Elmc.PlanLowerIrTest do
     assert c =~ "elmc_retain"
   end
 
+  test "lowers Maybe var against constructor_ref Nothing with test_maybe_nothing" do
+    decl = %{
+      name: "hasValue",
+      args: ["maybe"],
+      expr: %{
+        op: :compare,
+        kind: :neq,
+        left: %{op: :var, name: "maybe"},
+        right: %{op: :constructor_ref, target: "Nothing"}
+      }
+    }
+
+    assert {:ok, plan} = Function.lower(decl, "Main", %{}, rc_required: true)
+    assert :ok = Verify.run(plan)
+
+    dump = Debug.dump(plan)
+    assert dump =~ "test_maybe_nothing"
+    refute dump =~ "elmc_as_int(maybe)"
+  end
+
+  test "lowers union ctor equality against constructor_ref with test_ctor_tag" do
+    Process.put(:elmc_constructor_tags, %{"StaticBitmap" => 3, "Main.Page.StaticBitmap" => 3})
+    on_exit(fn -> Process.delete(:elmc_constructor_tags) end)
+
+    decl = %{
+      name: "onBitmapPage",
+      args: ["page"],
+      expr: %{
+        op: :compare,
+        kind: :eq,
+        left: %{op: :var, name: "page"},
+        right: %{op: :constructor_ref, target: "StaticBitmap"}
+      }
+    }
+
+    assert {:ok, plan} = Function.lower(decl, "Main", %{}, rc_required: true)
+    assert :ok = Verify.run(plan)
+
+    dump = Debug.dump(plan)
+    assert dump =~ "test_ctor_tag"
+    refute dump =~ "elmc_as_int(page)"
+  end
+
   test "lowers Maybe.Just constructor with maybe_just_own" do
     decl = %{
       name: "wrap",

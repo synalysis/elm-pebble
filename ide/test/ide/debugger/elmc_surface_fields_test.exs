@@ -58,7 +58,7 @@ defmodule Ide.Debugger.ElmcSurfaceFieldsTest do
           manifest_path: "watch/.elmc-build/bytecode/elmc_bytecode.manifest.json",
           function_count: 12,
           skipped_count: 3,
-          functions: [%{module: "Main", name: "init"}, %{module: "Main", name: "counterOf"}]
+          functions: [%{module: "Main", name: "init"}, %{module: "Main", name: "randomIndex"}]
         }
       })
 

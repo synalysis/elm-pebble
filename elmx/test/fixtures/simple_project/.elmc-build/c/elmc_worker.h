@@ -15,7 +15,9 @@ typedef struct {
   elmc_int_t msg_tag;
 } ElmcButtonRawSub;
 
+#ifndef ELMC_WORKER_LAST_DISPATCH_CMD_CAP
 #define ELMC_WORKER_LAST_DISPATCH_CMD_CAP 8
+#endif
 
 typedef struct {
   int64_t kind;
@@ -31,8 +33,10 @@ typedef struct {
 typedef struct {
   ElmcValue *model;
   ElmcValue *pending_cmd;
+#if ELMC_WORKER_LAST_DISPATCH_CMD_CAP > 0
   ElmcWorkerDispatchCmd last_dispatch_cmds[ELMC_WORKER_LAST_DISPATCH_CMD_CAP];
   int last_dispatch_cmd_count;
+#endif
   int64_t subscriptions;
   elmc_int_t sub_msg_tags[ELMC_WORKER_SUB_TAG_SLOTS];
   ElmcButtonRawSub button_raw_subs[ELMC_WORKER_MAX_BUTTON_RAW_SUBS];

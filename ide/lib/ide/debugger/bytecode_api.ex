@@ -61,11 +61,15 @@ defmodule Ide.Debugger.BytecodeApi do
 
   defp default_param(name) when is_binary(name) do
     cond do
-      String.downcase(name) == "model" -> {:record, [0, nil]}
-      String.ends_with?(name, "Model") -> {:record, [0, nil]}
+      String.downcase(name) == "model" -> default_model_record()
+      String.ends_with?(name, "Model") -> default_model_record()
       true -> 0
     end
   end
 
   defp default_param(_), do: 0
+
+  defp default_model_record do
+    {:record, [nil, 0, 0, 0, 0, 0, 0, nil]}
+  end
 end

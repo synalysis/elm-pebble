@@ -9,18 +9,20 @@ defmodule Elmc.Backend.Pebble.SourceWriter.DrawRuntime.CmdValue.Decode.Helpers.U
     static int elmc_unpack_draw_payload(ElmcValue *payload, int64_t out[6]) {
           if (!payload) return -1;
           ElmcValue *current = payload;
-          for (int i = 0; i < 5; i++) {
-            if (!current || current->tag != ELMC_TAG_TUPLE2 || current->payload == NULL) return -2;
+          for (int i = 0; i < 6; i++) {
+            if (!current) return -2;
+            if (current->tag == ELMC_TAG_INT) {
+              out[i] = elmc_as_int(current);
+              for (int j = i + 1; j < 6; j++) {
+                out[j] = 0;
+              }
+              return 0;
+            }
+            if (current->tag != ELMC_TAG_TUPLE2 || current->payload == NULL) return -3;
             ElmcTuple2 *tuple = (ElmcTuple2 *)current->payload;
-            if (!tuple->first || !tuple->second) return -3;
+            if (!tuple->first || !tuple->second) return -4;
             out[i] = elmc_as_int(tuple->first);
             current = tuple->second;
-          }
-          if (!current || current->tag != ELMC_TAG_TUPLE2 || current->payload == NULL) return -4;
-          {
-            ElmcTuple2 *tail = (ElmcTuple2 *)current->payload;
-            if (!tail->first) return -5;
-            out[5] = elmc_as_int(tail->first);
           }
           return 0;
         }

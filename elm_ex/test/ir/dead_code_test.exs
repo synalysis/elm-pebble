@@ -203,4 +203,44 @@ defmodule ElmEx.IR.DeadCodeTest do
     assert MapSet.member?(route_decls, "route")
     refute MapSet.member?(route_decls, "orphan")
   end
+
+  test "keeps cross-module zero-arity function refs reachable from qualified_ref" do
+    ir = %IR{
+      modules: [
+        %{
+          name: "Main",
+          declarations: [
+            %{
+              kind: :function,
+              name: "init",
+              expr: %{
+                op: :record_literal,
+                fields: [
+                  %{
+                    name: "scene",
+                    expr: %{op: :qualified_ref, target: "Battle.initialScene"}
+                  }
+                ]
+              }
+            },
+            %{kind: :function, name: "orphan", expr: %{op: :int_literal, value: 0}}
+          ]
+        },
+        %{
+          name: "Battle",
+          declarations: [
+            %{kind: :function, name: "initialScene", expr: %{op: :int_literal, value: 0}},
+            %{kind: :function, name: "unused", expr: %{op: :int_literal, value: 1}}
+          ]
+        }
+      ],
+      diagnostics: []
+    }
+
+    reachable = DeadCode.reachable_keys(ir, "Main", roots: ["init"])
+
+    assert MapSet.member?(reachable, "Main.init")
+    assert MapSet.member?(reachable, "Battle.initialScene")
+    refute MapSet.member?(reachable, "Battle.unused")
+  end
 end

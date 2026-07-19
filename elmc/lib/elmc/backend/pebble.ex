@@ -4,7 +4,8 @@ defmodule Elmc.Backend.Pebble do
   """
 
   alias ElmEx.IR
-  alias Elmc.Backend.CCodegen.{FunctionCallAbi, Host, IRQueries, StackEstimate}
+  alias Elmc.Backend.Plan
+  alias Elmc.Backend.CCodegen.{FunctionCallAbi, Host, IRQueries, StackEstimate, Util}
   alias Elmc.Backend.Pebble.{FeatureFlags, HeaderWriter, IRAnalysis, Kinds, SourceWriter}
   alias Elmc.Backend.Pebble.Types, as: PebbleTypes
   alias Elmc.Types
@@ -64,8 +65,7 @@ defmodule Elmc.Backend.Pebble do
     view_decl = Map.get(decl_map, {entry_module, "view"})
 
     entry_view_direct_abi? =
-      is_map(view_decl) and
-        FunctionCallAbi.direct_plan_call_abi?(view_decl, entry_module, decl_map)
+      entry_view_uses_direct_abi?(entry_module, c_dir, view_decl, decl_map, opts)
 
     with :ok <- File.mkdir_p(c_dir),
          :ok <-
@@ -133,5 +133,27 @@ defmodule Elmc.Backend.Pebble do
     |> Enum.all?(fn entry ->
       entry.level != :risk or not String.starts_with?(entry.function, prefix)
     end)
+  end
+
+  # C codegen runs inside `with_emit_session`, which clears `:elmc_codegen_opts`
+  # before the pebble shim is written. Read the emitted view prototype instead.
+  defp entry_view_uses_direct_abi?(entry_module, c_dir, view_decl, decl_map, opts) do
+    header_path = Path.join(c_dir, "elmc_generated.h")
+    view_fn = Util.module_fn_name(entry_module, "view")
+
+    cond do
+      File.regular?(header_path) ->
+        header = File.read!(header_path)
+
+        String.contains?(header, "RC #{view_fn}(ElmcValue **out, ElmcValue *") and
+          not String.contains?(header, "#{view_fn}(ElmcValue **args")
+
+      is_map(view_decl) ->
+        Plan.plan_ir_mode(opts) == :primary and
+          FunctionCallAbi.primary_lowered?(view_decl, entry_module, decl_map)
+
+      true ->
+        false
+    end
   end
 end

@@ -246,6 +246,36 @@ defmodule ElmEx.DebuggerContract.EffectAnalysis.Subscriptions do
   end
 
   def extract_subscription_calls(
+        %{op: :apply_left, fn_expr: fn_expr, arg: arg},
+        bindings,
+        guards,
+        subscriptions_params,
+        mod
+      )
+      when is_map(bindings) and is_list(guards) and is_list(subscriptions_params) do
+    case fn_expr do
+      %{op: :call, name: name, args: prefix_args} when is_binary(name) and is_list(prefix_args) ->
+        from_arg = extract_subscription_calls(arg, bindings, guards, subscriptions_params, mod)
+
+        from_body =
+          subscription_calls_from_local_helper(
+            mod,
+            name,
+            prefix_args ++ [arg],
+            bindings,
+            guards,
+            subscriptions_params
+          )
+
+        from_arg ++ from_body
+
+      _ ->
+        extract_subscription_calls(arg, bindings, guards, subscriptions_params, mod) ++
+          extract_subscription_calls(fn_expr, bindings, guards, subscriptions_params, mod)
+    end
+  end
+
+  def extract_subscription_calls(
         %{op: :call, name: name, args: args},
         bindings,
         guards,

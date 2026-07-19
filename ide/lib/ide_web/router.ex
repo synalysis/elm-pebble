@@ -42,6 +42,13 @@ defmodule IdeWeb.Router do
     plug :accepts, ["html"]
   end
 
+  # MCP clients probe RFC 9728 discovery before Streamable HTTP connect.
+  # Serve clean JSON 404s (no OAuth) instead of Phoenix HTML NoRouteError pages.
+  scope "/.well-known", IdeWeb do
+    get "/oauth-protected-resource", WellKnownController, :oauth_protected_resource
+    get "/oauth-protected-resource/*path", WellKnownController, :oauth_protected_resource
+  end
+
   scope "/", IdeWeb do
     pipe_through :browser
 
@@ -54,6 +61,7 @@ defmodule IdeWeb.Router do
     post "/auth/refresh", AuthController, :refresh
     post "/auth/logout", AuthController, :logout
   end
+
 
   scope "/", IdeWeb do
     pipe_through [:browser, :authenticated_browser]

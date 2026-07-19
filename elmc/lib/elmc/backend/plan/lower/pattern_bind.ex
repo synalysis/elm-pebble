@@ -130,9 +130,11 @@ defmodule Elmc.Backend.Plan.Lower.PatternBind do
     bind_cons_pattern(head, tail, subject_reg, ctx, b)
   end
 
-  defp do_bind(%{kind: :constructor, arg_pattern: nil, bind: nil}, ctx, b, _subject_reg) do
-    {:ok, ctx, b}
-  end
+  # Nullary constructors only (`NoOp`, `Tick`, …). Unary shorthand like
+  # `BestLoaded value` also has `arg_pattern: nil` but binds the payload name in
+  # `:bind`; that case is handled by the `bind` + nil `arg_pattern` clause below.
+  defp do_bind(%{kind: :constructor, arg_pattern: nil, bind: nil}, ctx, b, _subject_reg),
+    do: {:ok, ctx, b}
 
   defp do_bind(%{kind: :constructor, bind: bind, arg_pattern: %{kind: :var, name: name}} = pattern, ctx, b, subject_reg)
        when is_binary(bind) do

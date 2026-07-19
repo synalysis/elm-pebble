@@ -34,10 +34,10 @@ static void elmc_worker_heap_log(const char *label) {
 
 /* Transfer ownership from (model, cmd) tuple without retaining or double-freeing. */
 static ElmcValue *extract_model_take(ElmcValue *value) {
-  if (!value) return elmc_int_zero();
+  if (!value) return NULL;
   if (value->tag != ELMC_TAG_TUPLE2 || value->payload == NULL) return elmc_retain(value);
   ElmcTuple2 *pair = (ElmcTuple2 *)value->payload;
-  if (!pair->first) return elmc_int_zero();
+  if (!pair->first) return NULL;
   ElmcValue *model = pair->first;
   pair->first = NULL;
   return model;
@@ -54,13 +54,22 @@ static ElmcValue *extract_cmd_take(ElmcValue *value) {
 }
 
 static int elmc_cmd_is_none(ElmcValue *value) {
-  return !value || ((value->tag == ELMC_TAG_INT || value->tag == ELMC_TAG_BOOL) && elmc_as_int(value) == 0);
+  if (!value) return 1;
+  if ((value->tag == ELMC_TAG_INT || value->tag == ELMC_TAG_BOOL) && elmc_as_int(value) == 0) {
+    return 1;
+  }
+  if (value->tag == ELMC_TAG_CMD && value->payload != NULL) {
+    ElmcCmdPayload *cmd = (ElmcCmdPayload *)value->payload;
+    return cmd->kind == 0;
+  }
+  return 0;
 }
 
 static ElmcValue *elmc_cmd_none(void) {
   return elmc_int_zero();
 }
 
+#if ELMC_WORKER_LAST_DISPATCH_CMD_CAP > 0
 static void elmc_worker_dispatch_cmd_clear(ElmcWorkerDispatchCmd *out) {
   if (!out) return;
   out->kind = 0;
@@ -98,7 +107,6 @@ static int elmc_worker_dispatch_cmd_from_value(ElmcValue *value, ElmcWorkerDispa
   }
   return -3;
 }
-
 static void elmc_worker_snapshot_last_dispatch_cmds(ElmcWorkerState *state, ElmcValue *queue) {
   if (!state) return;
   state->last_dispatch_cmd_count = 0;
@@ -124,6 +132,7 @@ static void elmc_worker_snapshot_last_dispatch_cmds(ElmcWorkerState *state, Elmc
     break;
   }
 }
+#endif
 
 static RC elmc_cmd_queue_cons_take(ElmcValue **out, ElmcValue *head, ElmcValue *tail) {
   RC rc = RC_SUCCESS;
@@ -505,7 +514,9 @@ int elmc_worker_init(ElmcWorkerState *state, ElmcValue *flags) {
       elmc_release(result);
       return -2;
     }
+#if ELMC_WORKER_LAST_DISPATCH_CMD_CAP > 0
     elmc_worker_snapshot_last_dispatch_cmds(state, pending);
+#endif
     state->pending_cmd = pending;
   }
   elmc_release(result);
@@ -552,7 +563,9 @@ int elmc_worker_dispatch(ElmcWorkerState *state, ElmcValue *msg) {
       elmc_release(result);
       return -2;
     }
+#if ELMC_WORKER_LAST_DISPATCH_CMD_CAP > 0
     elmc_worker_snapshot_last_dispatch_cmds(state, next_cmd);
+#endif
     if (!elmc_cmd_is_none(next_cmd)) {
       state->dispatch_needs_render = 1;
     }
@@ -588,13 +601,24 @@ ElmcValue *elmc_worker_pending_cmds_borrow(ElmcWorkerState *state) {
 
 int elmc_worker_last_dispatch_cmd_count(ElmcWorkerState *state) {
   if (!state) return 0;
+#if ELMC_WORKER_LAST_DISPATCH_CMD_CAP > 0
   return state->last_dispatch_cmd_count;
+#else
+  return 0;
+#endif
 }
 
 int elmc_worker_last_dispatch_cmd_at(ElmcWorkerState *state, int index, ElmcWorkerDispatchCmd *out_cmd) {
+#if ELMC_WORKER_LAST_DISPATCH_CMD_CAP > 0
   if (!state || !out_cmd || index < 0 || index >= state->last_dispatch_cmd_count) return -1;
   *out_cmd = state->last_dispatch_cmds[index];
   return 0;
+#else
+  (void)state;
+  (void)index;
+  (void)out_cmd;
+  return -1;
+#endif
 }
 
 ElmcValue *elmc_worker_take_cmd(ElmcWorkerState *state) {
@@ -662,6 +686,8 @@ void elmc_worker_deinit(ElmcWorkerState *state) {
     elmc_release(state->pending_cmd);
     state->pending_cmd = NULL;
   }
+#if ELMC_WORKER_LAST_DISPATCH_CMD_CAP > 0
   state->last_dispatch_cmd_count = 0;
+#endif
   state->subscriptions = 0;
 }

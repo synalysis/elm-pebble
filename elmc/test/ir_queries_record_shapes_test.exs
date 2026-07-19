@@ -352,4 +352,36 @@ defmodule Elmc.IRQueriesRecordShapesTest do
     assert Record.resolve_field_index_int("update", ctx, base) == {:ok, 1}
     assert Record.resolve_field_index_int("view", ctx, base) == {:ok, 2}
   end
+
+  test "ambiguous offset field resolves to current module Model not Time.Era" do
+    shapes = %{
+      {"Main", "Model"} => ["playerY", "velocityY", "offset", "tiles"],
+      {"Time", "Era"} => ["start", "offset", "end"]
+    }
+
+    Process.put(:elmc_record_alias_shapes, shapes)
+
+    on_exit(fn ->
+      Process.delete(:elmc_record_alias_shapes)
+      Process.delete(:elmc_record_field_macros)
+    end)
+
+    Process.put(:elmc_record_field_macros, %{
+      {"Main", "Model", "offset"} => "ELMC_FIELD_MAIN_MODEL_OFFSET",
+      {"Time", "Era", "offset"} => "ELMC_FIELD_TIME_ERA_OFFSET"
+    })
+
+    ctx = %Context{
+      module: "Main",
+      function_name: "step",
+      params: ["model"],
+      local_types: %{"model" => "Model"},
+      inferred_param_fields: %{"model" => ["offset", "playerY", "velocityY", "tiles"]}
+    }
+
+    base = %{op: :var, name: "model"}
+
+    assert Record.resolve_field_index_int("offset", ctx, base) == {:ok, 2}
+    assert Record.field_index_for("offset", ctx, base) == "ELMC_FIELD_MAIN_MODEL_OFFSET"
+  end
 end

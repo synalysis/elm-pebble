@@ -103,11 +103,15 @@ defmodule Elmc.Backend.CCodegen.SpecialValues.Core do
   @spec normalize_special_target(String.t()) :: String.t()
   def normalize_special_target(target) when is_binary(target) do
     target
-    |> normalize_bare_special_target()
+    |> normalize_pebble_package_target()
     |> denormalize_kernel_shorthand()
     |> denormalize_utils_alias()
     |> normalize_pebble_cmd_targets()
   end
+
+  @spec normalize_pebble_package_target(String.t()) :: String.t()
+  defp normalize_pebble_package_target("Pkg.app.Pebble." <> rest), do: "Pebble." <> rest
+  defp normalize_pebble_package_target(target), do: target
 
   @pebble_cmd_suffix_targets %{
     ".Random.generate" => "Random.generate"
@@ -227,41 +231,6 @@ defmodule Elmc.Backend.CCodegen.SpecialValues.Core do
   end
 
   def denormalize_module_name(module_name), do: module_name
-
-  @spec normalize_bare_special_target(String.t()) :: String.t()
-  defp normalize_bare_special_target(target) when is_binary(target) do
-    case target do
-      "Clear" -> "Pebble.Ui.clear"
-      "Pixel" -> "Pebble.Ui.pixel"
-      "Line" -> "Pebble.Ui.line"
-      "RectOp" -> "Pebble.Ui.rect"
-      "FillRect" -> "Pebble.Ui.fillRect"
-      "Circle" -> "Pebble.Ui.circle"
-      "FillCircle" -> "Pebble.Ui.fillCircle"
-      "TextInt" -> "Pebble.Ui.textInt"
-      "TextLabel" -> "Pebble.Ui.textLabel"
-      "Text" -> "Pebble.Ui.text"
-      "StrokeWidth" -> "Pebble.Ui.strokeWidth"
-      "Antialiased" -> "Pebble.Ui.antialiased"
-      "StrokeColor" -> "Pebble.Ui.strokeColor"
-      "FillColor" -> "Pebble.Ui.fillColor"
-      "TextColor" -> "Pebble.Ui.textColor"
-      "CompositingMode" -> "Pebble.Ui.compositingMode"
-      "Group" -> "Pebble.Ui.group"
-      "PathFilled" -> "Pebble.Ui.pathFilled"
-      "PathOutline" -> "Pebble.Ui.pathOutline"
-      "PathOutlineOpen" -> "Pebble.Ui.pathOutlineOpen"
-      "RoundRect" -> "Pebble.Ui.roundRect"
-      "Arc" -> "Pebble.Ui.arc"
-      "FillRadial" -> "Pebble.Ui.fillRadial"
-      "BitmapInRect" -> "Pebble.Ui.drawBitmapInRect"
-      "RotatedBitmap" -> "Pebble.Ui.drawRotatedBitmap"
-      "VectorAt" -> "Pebble.Ui.drawVectorAt"
-      "VectorSequenceAt" -> "Pebble.Ui.drawVectorSequenceAt"
-      "BitmapSequenceAt" -> "Pebble.Ui.drawBitmapSequenceAt"
-      other -> other
-    end
-  end
 
   @spec compiler_folded_union_constructors() :: MapSet.t(String.t())
   def compiler_folded_union_constructors do

@@ -221,12 +221,14 @@ defmodule Ide.Debugger.DebuggerContractTest do
 
     tuple_first =
       Enum.find(nodes, fn node ->
-        Map.get(node, "type") == "expr" and Map.get(node, "op") == "tuple_first_expr"
+        (Map.get(node, "type") == "expr" and Map.get(node, "op") == "tuple_first_expr") or
+          (Map.get(node, "type") == "first" and Map.get(node, "qualified_target") == "Tuple.first")
       end)
 
     tuple_second =
       Enum.find(nodes, fn node ->
-        Map.get(node, "type") == "expr" and Map.get(node, "op") == "tuple_second_expr"
+        (Map.get(node, "type") == "expr" and Map.get(node, "op") == "tuple_second_expr") or
+          (Map.get(node, "type") == "second" and Map.get(node, "qualified_target") == "Tuple.second")
       end)
 
     assert is_map(tuple_first)

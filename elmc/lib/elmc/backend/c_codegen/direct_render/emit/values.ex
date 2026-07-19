@@ -154,11 +154,11 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Values do
   end
 
   def int_value(%{op: :qualified_ref, target: target}, env, counter) when is_binary(target) do
-    resource_slot_int_value(target, env, counter)
+    int_value_qualified_zero_arg(target, env, counter)
   end
 
   def int_value(%{op: :qualified_var, target: target}, env, counter) when is_binary(target) do
-    resource_slot_int_value(target, env, counter)
+    int_value_qualified_zero_arg(target, env, counter)
   end
 
   def int_value(%{op: :field_access, arg: %{op: :var, name: name}, field: field}, env, counter) do
@@ -191,6 +191,22 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Values do
       {"", "#{Host.pebble_resource_slot_index(target)}", counter}
     else
       runtime_int_value(%{op: :qualified_ref, target: target}, env, counter)
+    end
+  end
+
+  defp int_value_qualified_zero_arg(target, env, counter) when is_binary(target) do
+    case Host.special_value_from_target(target, []) do
+      %{op: :int_literal, value: value} ->
+        {"", "#{value}", counter}
+
+      %{op: :c_int_expr, value: value} when is_binary(value) ->
+        int_value(%{op: :c_int_expr, value: value}, env, counter)
+
+      nil ->
+        resource_slot_int_value(target, env, counter)
+
+      expr ->
+        int_value(expr, env, counter)
     end
   end
 

@@ -584,10 +584,48 @@ defmodule Elmc.Backend.Plan.Lower.Call do
   defp html_map_curried_body(_module, _name, _partial_args, _remaining), do: :error
 
   defp compile_batch_call(target, args, ctx, b) do
+    case SpecialValues.special_value_from_target(target, args) do
+      %{op: :sub_none} ->
+        Expr.compile(%{op: :sub_none}, ctx, b)
+
+      %{op: :list_literal} = list_expr ->
+        compile_batch_list_to_runtime_batch(list_expr, target, ctx, b)
+
+      %{op: :pebble_sub} = sub ->
+        compile_batch_list_to_runtime_batch(%{op: :list_literal, items: [sub]}, target, ctx, b)
+
+      %{
+        op: :runtime_call,
+        function: "elmc_sub_batch",
+        args: [list_expr]
+      } ->
+        compile_batch_list_to_runtime_batch(list_expr, target, ctx, b)
+
+      %{
+        op: :runtime_call,
+        function: "elmc_cmd_batch",
+        args: [list_expr]
+      } ->
+        compile_batch_list_to_runtime_batch(list_expr, target, ctx, b)
+
+      %{op: op} = rewritten when is_atom(op) and op != :unsupported ->
+        compile_special_rewrite(rewritten, args, ctx, b)
+
+      _ ->
+        case args do
+          [list_expr | _] ->
+            compile_batch_list_to_runtime_batch(list_expr, target, ctx, b)
+
+          _ ->
+            :unsupported
+        end
+    end
+  end
+
+  defp compile_batch_list_to_runtime_batch(list_expr, target, ctx, b) do
     operand_ctx = Context.for_branch_arm(ctx)
 
-    with [list_expr | _] <- args,
-         {:ok, list_reg, b1} <- compile_batch_list_arg(list_expr, operand_ctx, b) do
+    with {:ok, list_reg, b1} <- compile_batch_list_arg(list_expr, operand_ctx, b) do
       Expr.compile_runtime_builtin(batch_builtin_id(target), [list_reg], ctx, b1)
     else
       _ -> :unsupported

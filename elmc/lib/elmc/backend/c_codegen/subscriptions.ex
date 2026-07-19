@@ -223,6 +223,9 @@ defmodule Elmc.Backend.CCodegen.Subscriptions do
   defp button_ctor_short_name(%{op: :qualified_var, target: target}) when is_binary(target),
     do: target |> String.split(".") |> List.last()
 
+  defp button_ctor_short_name(%{op: :constructor_ref, target: target}) when is_binary(target),
+    do: target |> String.split(".") |> List.last()
+
   defp button_ctor_short_name(%{op: :constructor_call, target: target, args: []})
        when is_binary(target),
        do: target |> String.split(".") |> List.last()

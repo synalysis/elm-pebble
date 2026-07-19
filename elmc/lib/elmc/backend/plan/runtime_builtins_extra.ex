@@ -114,6 +114,8 @@ defmodule Elmc.Backend.Plan.RuntimeBuiltins.Extra do
     json_decode_value: "elmc_json_decode_value",
     json_decode_value_decoder: "elmc_json_decode_value_decoder",
     json_encode_array: "elmc_json_encode_array",
+    json_encode_add_entry: "elmc_json_encode_add_entry",
+    json_encode_add_field: "elmc_json_encode_add_field",
     json_encode_bool: "elmc_json_encode_bool",
     json_encode_dict: "elmc_json_encode_dict",
     json_encode_encode: "elmc_json_encode_encode",
@@ -294,7 +296,8 @@ defmodule Elmc.Backend.Plan.RuntimeBuiltins.Extra do
     json_decode_map2 json_decode_map3 json_decode_map4 json_decode_map5 json_decode_map6
     json_decode_map7 json_decode_maybe json_decode_null json_decode_nullable json_decode_one_of
     json_decode_string json_decode_string_decoder json_decode_succeed json_decode_value
-    json_decode_value_decoder json_encode_array json_encode_bool json_encode_dict
+    json_decode_value_decoder json_encode_array json_encode_add_entry json_encode_add_field
+    json_encode_bool json_encode_dict
     json_encode_encode json_encode_float json_encode_int json_encode_list json_encode_null
     json_encode_object json_encode_set json_encode_string result_from_maybe result_to_maybe
     result_with_default set_singleton set_to_list

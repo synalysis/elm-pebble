@@ -36,7 +36,7 @@ defmodule Elmc.Backend.CCodegen.PlatformStaticBoolFoldTest do
     assert body =~ "#if !defined(PBL_ROUND)"
     assert body =~ "#else"
     assert body =~ "elmc_basics_not"
-    assert body =~ "ELMC_UNION_FALSE"
+    assert body =~ "elmc_maybe_nothing()"
     refute body =~ "native_union_subject_"
   end
 

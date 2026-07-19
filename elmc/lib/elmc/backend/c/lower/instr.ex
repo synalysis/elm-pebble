@@ -84,6 +84,9 @@ defmodule Elmc.Backend.C.Lower.Instr do
           rc_assign(rc?, dest, "elmc_new_int", [Map.fetch!(instr.args, :value)])
         end
 
+      :platform_static_int ->
+        emit_platform_static_int(instr, rc?, dest, opts)
+
       :record_get_int ->
         emit_record_get_int(instr, slots, rc?, dest, opts)
 
@@ -187,11 +190,7 @@ defmodule Elmc.Backend.C.Lower.Instr do
 
       :test_bool ->
         emit_native_bool_test(instr, slots, rc?, dest, opts, fn subject ->
-          if Map.fetch!(instr.args, :want_true) do
-            "elmc_as_bool(#{subject})"
-          else
-            "!elmc_as_bool(#{subject})"
-          end
+          boxed_bool_test_expr(subject, Map.fetch!(instr.args, :want_true))
         end)
 
       :bool_and ->
@@ -618,12 +617,7 @@ defmodule Elmc.Backend.C.Lower.Instr do
   end
 
   defp emit_native_bool_test(%{dest: dest_reg, args: args}, slots, rc?, dest, opts, subject_expr) do
-    subject =
-      case args do
-        %{reg: reg} -> slot_ref(reg, slots, opts)
-        %{subject: reg} -> slot_ref(reg, slots, opts)
-      end
-
+    subject = bool_test_subject_ref(args, slots, opts)
     expr = subject_expr.(subject)
 
     if MapSet.member?(Keyword.get(opts, :native_bool_only_regs, MapSet.new()), dest_reg) do
@@ -631,6 +625,33 @@ defmodule Elmc.Backend.C.Lower.Instr do
     else
       rc_assign(rc?, dest, "elmc_new_int", ["#{expr} ? 1 : 0"])
     end
+  end
+
+  defp bool_test_subject_ref(%{reg: reg}, slots, opts), do: bool_test_subject_ref(reg, slots, opts)
+  defp bool_test_subject_ref(%{subject: reg}, slots, opts), do: bool_test_subject_ref(reg, slots, opts)
+
+  defp bool_test_subject_ref(reg, slots, opts) when is_integer(reg) do
+    if MapSet.member?(Keyword.get(opts, :native_bool_only_regs, MapSet.new()), reg) do
+      Map.fetch!(Keyword.get(opts, :native_bool_regs, %{}), reg)
+    else
+      slot_ref(reg, slots, opts)
+    end
+  end
+
+  defp boxed_bool_test_expr(subject, want_true?) do
+    core =
+      cond do
+        String.match?(subject, ~r/^plan_native_bool_\d+$/) ->
+          subject
+
+        String.starts_with?(subject, "const bool plan_native_bool_") ->
+          subject |> String.replace_prefix("const bool ", "")
+
+        true ->
+          "elmc_as_bool(#{subject})"
+      end
+
+    if want_true?, do: core, else: "!(#{core})"
   end
 
   defp emit_native_bool_store(dest_reg, _dest, expr, opts) do
@@ -2196,6 +2217,10 @@ defmodule Elmc.Backend.C.Lower.Instr do
           MapSet.member?(native_int_only, reg) and not skip? ->
             native_int_slot_ref(reg, slots, opts)
 
+          MapSet.member?(Keyword.get(opts, :native_bool_only_regs, MapSet.new()), reg) ->
+            name = Map.fetch!(Keyword.get(opts, :native_bool_regs, %{}), reg)
+            "(#{name} ? 1 : 0)"
+
           true ->
             case Map.get(Keyword.get(opts, :native_int_regs, %{}), reg) do
               name when is_binary(name) ->
@@ -2441,8 +2466,15 @@ defmodule Elmc.Backend.C.Lower.Instr do
       String.match?(ref, ~r/^plan_native_int_\d+$/) ->
         ref
 
+      String.match?(ref, ~r/^plan_native_bool_\d+$/) ->
+        "(#{ref} ? 1 : 0)"
+
       String.starts_with?(ref, "const elmc_int_t plan_native_int_") ->
         ref |> String.replace_prefix("const elmc_int_t ", "")
+
+      String.starts_with?(ref, "const bool plan_native_bool_") ->
+        name = ref |> String.replace_prefix("const bool ", "")
+        "(#{name} ? 1 : 0)"
 
       true ->
         "elmc_as_int(#{ref})"
@@ -2520,8 +2552,12 @@ defmodule Elmc.Backend.C.Lower.Instr do
   defp skip_inlined_int_dest?(_, _), do: false
 
   defp bool_operand_ref(reg, slots, opts) when is_integer(reg) do
-    ref = slot_ref(reg, slots, opts)
-    "elmc_as_bool(#{ref})"
+    if MapSet.member?(Keyword.get(opts, :native_bool_only_regs, MapSet.new()), reg) do
+      Map.fetch!(Keyword.get(opts, :native_bool_regs, %{}), reg)
+    else
+      ref = slot_ref(reg, slots, opts)
+      "elmc_as_bool(#{ref})"
+    end
   end
 
   defp native_int_direct_regs(opts), do: Keyword.get(opts, :native_int_regs, %{})
@@ -2634,6 +2670,21 @@ defmodule Elmc.Backend.C.Lower.Instr do
       end
 
     decl <> "\n" <> assign
+  end
+
+  defp emit_platform_static_int(%{args: args}, rc?, dest, _opts) do
+    macro = Map.fetch!(args, :macro)
+    then_val = Integer.to_string(Map.fetch!(args, :then))
+    else_val = Integer.to_string(Map.fetch!(args, :else))
+
+    """
+    #if defined(#{macro})
+    #{rc_assign(rc?, dest, "elmc_new_int", [then_val])}
+    #else
+    #{rc_assign(rc?, dest, "elmc_new_int", [else_val])}
+    #endif
+    """
+    |> String.trim()
   end
 
   defp rc_assign(true, dest, fn_name, args) do
