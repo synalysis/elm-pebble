@@ -360,14 +360,15 @@ defmodule Elmc.Backend.Plan.Lower.Platform.Web do
 
       web_target?(opts) and module == "Svg.Attributes" and match?([_], args) ->
         [value] = args
-        compile_html_attr([%{op: :string_literal, value: name}, value], ctx, b)
+        key = virtual_dom_attribute_key(name)
+        compile_html_attr([%{op: :string_literal, value: key}, value], ctx, b)
 
-      # Unqualified Svg.Attributes helpers sometimes keep the caller module after
-      # incomplete import resolution. If Svg.Attributes declares the same name and
-      # this module does not, lower as an SVG attribute.
-      web_target?(opts) and match?([_], args) and svg_attribute_call?(module, name, ctx) ->
+      # Unqualified attribute helpers (e.g. after incomplete import resolution):
+      # if the callee name was defined as VirtualDom.attribute "…", use that key.
+      web_target?(opts) and match?([_], args) and virtual_dom_attribute_call?(module, name, ctx) ->
         [value] = args
-        compile_html_attr([%{op: :string_literal, value: name}, value], ctx, b)
+        key = virtual_dom_attribute_key(name)
+        compile_html_attr([%{op: :string_literal, value: key}, value], ctx, b)
 
       web_target?(opts) and module == "Svg" and svg_element_tag?(name) and match?([_, _], args) ->
         [attrs, children] = args
@@ -494,33 +495,49 @@ defmodule Elmc.Backend.Plan.Lower.Platform.Web do
 
   def html_element_tag?(_name), do: false
 
-  defp svg_element_tag?(name) when is_binary(name) do
+  @doc false
+  @spec svg_element_tag?(String.t()) :: boolean()
+  def svg_element_tag?(name) when is_binary(name) do
     tag = svg_element_tag_name(name)
     tag != "" and Regex.match?(~r/^[a-z][a-z0-9]*$/, tag)
   end
 
-  defp svg_element_tag?(_), do: false
+  def svg_element_tag?(_), do: false
 
   defp svg_element_tag_name(name) when is_binary(name) do
     name
     |> String.trim_trailing("_")
   end
 
-  defp svg_attribute_call?(module, name, ctx)
+  defp virtual_dom_attribute_call?(module, name, ctx)
        when is_binary(module) and is_binary(name) and is_map(ctx) do
     decl_map = Map.get(ctx, :decl_map, %{})
-    svg_names = Process.get(:elmc_svg_attribute_names, MapSet.new())
+    attr_keys = Process.get(:elmc_svg_attribute_dom_names, %{})
+    attr_names = Process.get(:elmc_svg_attribute_names, MapSet.new())
 
     not Map.has_key?(decl_map, {module, name}) and
-      (Map.has_key?(decl_map, {"Svg.Attributes", name}) or MapSet.member?(svg_names, name))
+      (Map.has_key?(attr_keys, name) or MapSet.member?(attr_names, name) or
+         Map.has_key?(decl_map, {"Svg.Attributes", name}) or
+         Map.has_key?(decl_map, {"Html.Attributes", name}))
   end
 
-  defp svg_attribute_call?(_, _, _), do: false
+  defp virtual_dom_attribute_call?(_, _, _), do: false
+
+  defp virtual_dom_attribute_key(name) when is_binary(name) do
+    case Process.get(:elmc_svg_attribute_dom_names, %{}) do
+      %{^name => key} when is_binary(key) -> key
+      _ -> name
+    end
+  end
 
   @doc false
   @spec html_element_param_names(String.t(), String.t()) :: [String.t()] | nil
   def html_element_param_names("Html", name) when is_binary(name) do
     if html_element_tag?(name), do: ["attrs", "children"], else: nil
+  end
+
+  def html_element_param_names("Svg", name) when is_binary(name) do
+    if svg_element_tag?(name), do: ["attrs", "children"], else: nil
   end
 
   def html_element_param_names(_module, _name), do: nil

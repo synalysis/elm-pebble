@@ -33,7 +33,18 @@ defmodule Elmc.Backend.Wasm.ProjectWriter do
     File.mkdir_p!(wasm_dir)
 
     Process.put(:elmc_codegen_opts, opts)
-    Process.put(:elmc_svg_attribute_names, Map.get(opts, :svg_attribute_names, IRQueries.svg_attribute_names(ir)))
+    Process.put(
+      :elmc_svg_attribute_dom_names,
+      Map.get(opts, :svg_attribute_dom_names, IRQueries.svg_attribute_dom_names(ir))
+    )
+    Process.put(
+      :elmc_svg_attribute_names,
+      Map.get(
+        opts,
+        :svg_attribute_names,
+        MapSet.new(Map.keys(Process.get(:elmc_svg_attribute_dom_names, %{})))
+      )
+    )
     Process.put(:elmc_constructor_tags, IRQueries.constructor_tag_map(ir))
     Process.put(:elmc_record_alias_shapes, IRQueries.record_alias_shape_map(ir))
     Process.put(:elmc_inline_record_literal_shapes, IRQueries.inline_record_literal_shape_map(ir))

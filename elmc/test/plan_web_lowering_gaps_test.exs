@@ -139,6 +139,8 @@ defmodule Elmc.PlanWebLoweringGapsTest do
 
     Process.put(:elmc_constructor_tags, IRQueries.constructor_tag_map(ir))
     Process.put(:elmc_program_decls, decl_map)
+    Process.put(:elmc_svg_attribute_dom_names, IRQueries.svg_attribute_dom_names(ir))
+    Process.put(:elmc_svg_attribute_names, IRQueries.svg_attribute_names(ir))
 
     rc_required? = Elmc.Backend.CCodegen.RcRequired.rc_required?(mod.name, "arrow")
 
@@ -170,12 +172,14 @@ defmodule Elmc.PlanWebLoweringGapsTest do
     on_exit(fn ->
       Process.delete(:elmc_codegen_opts)
       Process.delete(:elmc_svg_attribute_names)
+      Process.delete(:elmc_svg_attribute_dom_names)
     end)
 
     root = Path.expand("fixtures/wasm_web_wiring_diagram_project", __DIR__)
     {:ok, project} = ElmEx.Frontend.Bridge.load_project(root)
     {:ok, ir0} = ElmEx.IR.Lowerer.lower_project(project)
     ir = ElmEx.IR.DeadCode.strip(ir0, "Main")
+    Process.put(:elmc_svg_attribute_dom_names, IRQueries.svg_attribute_dom_names(ir0))
     Process.put(:elmc_svg_attribute_names, IRQueries.svg_attribute_names(ir0))
     Process.put(:elmc_constructor_tags, IRQueries.constructor_tag_map(ir))
 
@@ -201,6 +205,10 @@ defmodule Elmc.PlanWebLoweringGapsTest do
 
     assert calls == []
     assert Enum.any?(instrs, &(&1.op == :html_cmd))
+    assert IRQueries.svg_attribute_dom_names(ir0)["strokeOpacity"] == "stroke-opacity"
+    assert IRQueries.svg_attribute_dom_names(ir0)["fontWeight"] == "font-weight"
+    assert IRQueries.svg_attribute_dom_names(ir0)["textAnchor"] == "text-anchor"
+    assert IRQueries.svg_attribute_dom_names(ir0)["viewBox"] == "viewBox"
   end
 
   test "Internal.Svg.box call keeps svgConfig and boxy args" do
@@ -211,12 +219,14 @@ defmodule Elmc.PlanWebLoweringGapsTest do
     on_exit(fn ->
       Process.delete(:elmc_codegen_opts)
       Process.delete(:elmc_svg_attribute_names)
+      Process.delete(:elmc_svg_attribute_dom_names)
     end)
 
     root = Path.expand("fixtures/wasm_web_wiring_diagram_project", __DIR__)
     {:ok, project} = ElmEx.Frontend.Bridge.load_project(root)
     {:ok, ir0} = ElmEx.IR.Lowerer.lower_project(project)
     ir = ElmEx.IR.DeadCode.strip(ir0, "Main")
+    Process.put(:elmc_svg_attribute_dom_names, IRQueries.svg_attribute_dom_names(ir0))
     Process.put(:elmc_svg_attribute_names, IRQueries.svg_attribute_names(ir0))
     Process.put(:elmc_constructor_tags, IRQueries.constructor_tag_map(ir))
 

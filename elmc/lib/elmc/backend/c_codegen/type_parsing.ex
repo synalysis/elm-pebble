@@ -1,6 +1,8 @@
 defmodule Elmc.Backend.CCodegen.TypeParsing do
   @moduledoc false
 
+  @cache_key :elmc_type_parsing_arrow_cache
+
   @spec function_arg_types(String.t()) :: [String.t()]
   def function_arg_types(type) when is_binary(type) do
     type
@@ -48,36 +50,66 @@ defmodule Elmc.Backend.CCodegen.TypeParsing do
 
   def enum_type?(_type), do: false
 
+  @doc """
+  Split a type string on top-level `->` (outside parentheses / brackets / braces).
+
+  Results are memoized in the process dictionary for the current compile.
+  """
   @spec split_top_level_arrows(String.t()) :: [String.t()]
   def split_top_level_arrows(type) when is_binary(type) do
+    cache = Process.get(@cache_key, %{})
+
+    case Map.fetch(cache, type) do
+      {:ok, parts} ->
+        parts
+
+      :error ->
+        parts = do_split_top_level_arrows(type)
+        Process.put(@cache_key, Map.put(cache, type, parts))
+        parts
+    end
+  end
+
+  defp do_split_top_level_arrows(type) when is_binary(type) do
     type
-    |> String.graphemes()
-    |> split_top_level_arrows([], "", 0)
+    |> split_top_level_arrows_bin(0, byte_size(type), 0, 0, [])
     |> Enum.map(&String.trim/1)
   end
 
-  @spec split_top_level_arrows([String.t()], [String.t()], String.t(), non_neg_integer()) ::
-          [String.t()]
-  defp split_top_level_arrows(["-" | [">" | rest]], parts, current, 0) do
-    split_top_level_arrows(rest, [current | parts], "", 0)
+  # Walk the binary once; emit slices without grapheme lists or O(n²) concat.
+  defp split_top_level_arrows_bin(type, pos, size, _depth, start, parts) when pos >= size do
+    Enum.reverse([binary_part(type, start, size - start) | parts])
   end
 
-  defp split_top_level_arrows([char | rest], parts, current, depth) do
+  defp split_top_level_arrows_bin(type, pos, size, 0, start, parts) when pos + 1 < size do
+    case type do
+      <<_::binary-size(^pos), ?-, ?>, _::binary>> ->
+        part = binary_part(type, start, pos - start)
+        split_top_level_arrows_bin(type, pos + 2, size, 0, pos + 2, [part | parts])
+
+      _ ->
+        split_top_level_arrows_bin_step(type, pos, size, 0, start, parts)
+    end
+  end
+
+  defp split_top_level_arrows_bin(type, pos, size, depth, start, parts) do
+    split_top_level_arrows_bin_step(type, pos, size, depth, start, parts)
+  end
+
+  defp split_top_level_arrows_bin_step(type, pos, size, depth, start, parts) do
     next_depth =
-      case char do
-        "(" -> depth + 1
-        "{" -> depth + 1
-        "[" -> depth + 1
-        ")" -> max(depth - 1, 0)
-        "}" -> max(depth - 1, 0)
-        "]" -> max(depth - 1, 0)
-        _other -> depth
+      case :binary.at(type, pos) do
+        ?( -> depth + 1
+        ?{ -> depth + 1
+        ?[ -> depth + 1
+        ?) -> max(depth - 1, 0)
+        ?} -> max(depth - 1, 0)
+        ?] -> max(depth - 1, 0)
+        _ -> depth
       end
 
-    split_top_level_arrows(rest, parts, current <> char, next_depth)
+    split_top_level_arrows_bin(type, pos + 1, size, next_depth, start, parts)
   end
-
-  defp split_top_level_arrows([], parts, current, _depth), do: Enum.reverse([current | parts])
 
   @spec strip_wrapping_parens(String.t()) :: String.t()
   defp strip_wrapping_parens("(" <> rest = type) do

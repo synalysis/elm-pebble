@@ -114,16 +114,28 @@ view _ _ =
                     ]
                 ]
                 [ hero
-                , section
-                    [ classes [ Tw.mt s12 ] ]
-                    [ h2
-                        [ classes
-                            [ Tw.text_n3xl
-                            , Tw.font_semibold
-                            , Tw.tracking_tight
-                            ]
-                        ]
-                        [ text "Why bother (in a good way)" ]
+                , staticBelowHero ()
+                ]
+            ]
+        ]
+    }
+
+
+{-| Static sections below the hero (wiring diagrams, feature grids).
+-}
+staticBelowHero : () -> Html.Html msg
+staticBelowHero _ =
+    div []
+        [ section
+            [ classes [ Tw.mt s12 ] ]
+            [ h2
+                [ classes
+                    [ Tw.text_n3xl
+                    , Tw.font_semibold
+                    , Tw.tracking_tight
+                    ]
+                ]
+                [ text "Why bother (in a good way)" ]
                     , div
                         [ classes
                             [ Tw.mt s6
@@ -292,10 +304,7 @@ view _ _ =
                         [ classes [ Tw.mt s4, Tw.text_base, Tw.text_color (gray s600), dark [ Tw.text_color (gray s400) ] ] ]
                         [ text "Open the hosted IDE to create a project, or clone the repository and run docker compose up -d for a local workspace. Iterate from Elm code to the emulator or a real watch without losing the shape of your app." ]
                     ]
-                ]
-            ]
         ]
-    }
 
 
 hero : Html.Html msg

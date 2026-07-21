@@ -30,6 +30,7 @@ defmodule Elmc.Backend.CCodegen.VarAnalysis do
   def used_vars(%{op: :add_const, var: name}), do: MapSet.new([name])
   def used_vars(%{op: :sub_const, var: name}), do: MapSet.new([name])
   def used_vars(%{op: :add_vars, left: left, right: right}), do: MapSet.new([left, right])
+  def used_vars(%{op: :sub_vars, left: left, right: right}), do: MapSet.new([left, right])
   def used_vars(%{op: :tuple_second, arg: arg}), do: MapSet.new([arg])
   def used_vars(%{op: :tuple_first, arg: arg}), do: MapSet.new([arg])
   def used_vars(%{op: :string_length, arg: arg}), do: MapSet.new([arg])
@@ -171,6 +172,11 @@ defmodule Elmc.Backend.CCodegen.VarAnalysis do
   end
 
   defp free_vars(%{op: :add_vars, left: left, right: right}, bound, _stop_at_nested?) do
+    MapSet.new([left, right])
+    |> MapSet.reject(&MapSet.member?(bound, &1))
+  end
+
+  defp free_vars(%{op: :sub_vars, left: left, right: right}, bound, _stop_at_nested?) do
     MapSet.new([left, right])
     |> MapSet.reject(&MapSet.member?(bound, &1))
   end

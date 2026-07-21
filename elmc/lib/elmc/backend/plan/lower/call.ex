@@ -320,9 +320,9 @@ defmodule Elmc.Backend.Plan.Lower.Call do
     opts = Process.get(:elmc_codegen_opts, %{})
 
     Elmc.Backend.Plan.Lower.Platform.Web.web_target?(opts) and
-      module == "Html" and
-      Elmc.Backend.Plan.Lower.Platform.Web.html_element_tag?(name) and
-      length(args) < 2
+      length(args) < 2 and
+      ((module == "Html" and Elmc.Backend.Plan.Lower.Platform.Web.html_element_tag?(name)) or
+         (module == "Svg" and Elmc.Backend.Plan.Lower.Platform.Web.svg_element_tag?(name)))
   end
 
   defp html_element_partial?(_, _, _), do: false
@@ -435,41 +435,61 @@ defmodule Elmc.Backend.Plan.Lower.Call do
     param_names = Map.get(decl, :args, []) |> List.wrap()
     arity = length(param_names)
     {prefix, suffix} = Enum.split(args, arity)
+    # Skip params already saturated by a direct call; remaining curry slots
+    # follow the decl type's arrows (e.g. zero-arity `tie` keeps Float first).
+    expected_types =
+      decl
+      |> Map.get(:type)
+      |> case do
+        type when is_binary(type) ->
+          type
+          |> Elmc.Backend.CCodegen.TypeParsing.function_arg_types()
+          |> Enum.drop(arity)
+
+        _ ->
+          []
+      end
 
     with {:ok, prefix_regs, b1} <- Expr.compile_args(prefix, ctx, b),
          {dest, b2} = Builder.fresh_reg(b1),
          {:ok, callee_reg, b3} when is_integer(callee_reg) <-
            compile_fn_call_emit(module, name, prefix_regs, dest, ctx, b2, prefix) do
-      apply_oversaturated_suffix(callee_reg, suffix, arity, ctx, b3)
+      apply_oversaturated_suffix(callee_reg, suffix, expected_types, arity, ctx, b3)
     else
       _ -> :unsupported
     end
   end
 
-  defp apply_oversaturated_suffix(callee_reg, suffix, 0, ctx, b) do
-    apply_closure_args_sequential(callee_reg, suffix, ctx, b)
+  defp apply_oversaturated_suffix(callee_reg, suffix, expected_types, 0, ctx, b) do
+    apply_closure_args_sequential(callee_reg, suffix, expected_types, ctx, b)
   end
 
-  defp apply_oversaturated_suffix(callee_reg, suffix, _arity, ctx, b) do
-    compile_closure_call(callee_reg, suffix, ctx, b)
+  defp apply_oversaturated_suffix(callee_reg, suffix, expected_types, _arity, ctx, b) do
+    compile_closure_call(callee_reg, suffix, expected_types, ctx, b)
   end
 
-  defp apply_closure_args_sequential(callee_reg, [], _ctx, b), do: {:ok, callee_reg, b}
+  defp apply_closure_args_sequential(callee_reg, [], _expected_types, _ctx, b),
+    do: {:ok, callee_reg, b}
 
-  defp apply_closure_args_sequential(callee_reg, [arg], ctx, b) do
-    compile_closure_call(callee_reg, [arg], ctx, b)
+  defp apply_closure_args_sequential(callee_reg, [arg], expected_types, ctx, b) do
+    compile_closure_call(callee_reg, [arg], expected_types, ctx, b)
   end
 
-  defp apply_closure_args_sequential(callee_reg, [arg | rest], ctx, b) do
+  defp apply_closure_args_sequential(callee_reg, [arg | rest], expected_types, ctx, b) do
     scratch_ctx = %{ctx | dest_stack: [:scratch], function_tail: false}
+    {type_here, types_rest} = peel_expected_type(expected_types)
 
-    with {:ok, next_reg, b1} <- compile_closure_call(callee_reg, [arg], scratch_ctx, b),
+    with {:ok, next_reg, b1} <-
+           compile_closure_call(callee_reg, [arg], type_here, scratch_ctx, b),
          next when is_integer(next) <- next_reg do
-      apply_closure_args_sequential(next, rest, ctx, b1)
+      apply_closure_args_sequential(next, rest, types_rest, ctx, b1)
     else
       _ -> :unsupported
     end
   end
+
+  defp peel_expected_type([type | rest]), do: {[type], rest}
+  defp peel_expected_type(_), do: {[], []}
 
   defp closure_callee_reg(name, ctx, b) when is_binary(name) do
     case Context.local_reg(ctx, name) do
@@ -509,11 +529,28 @@ defmodule Elmc.Backend.Plan.Lower.Call do
   end
 
   defp compile_closure_call(callee_reg, args, ctx, b) do
-    do_compile_closure_call(callee_reg, args, ctx, b)
+    do_compile_closure_call(callee_reg, args, [], ctx, b)
+  end
+
+  defp compile_closure_call(callee_reg, args, expected_types, ctx, b)
+       when is_list(expected_types) do
+    do_compile_closure_call(callee_reg, args, expected_types, ctx, b)
   end
 
   defp do_compile_closure_call(callee_reg, args, ctx, b) do
+    do_compile_closure_call(callee_reg, args, [], ctx, b)
+  end
+
+  defp do_compile_closure_call(callee_reg, args, expected_types, ctx, b)
+       when is_list(expected_types) do
     with {:ok, arg_regs, b1} <- Expr.compile_args(args, ctx, b) do
+      {arg_regs, b1} =
+        if expected_types != [] do
+          CallCoerce.coerce_args_to_types(arg_regs, args, expected_types, ctx, b1)
+        else
+          CallCoerce.box_int_literal_args(arg_regs, args, ctx, b1)
+        end
+
       {dest, b2} = dest_for_call(ctx, b1)
       {borrows, consumes} = Builder.partition_call_args(b2, [callee_reg | arg_regs])
 

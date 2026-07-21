@@ -65,6 +65,41 @@ defmodule Elmc.PlanCoreBuiltinsTest do
     assert inspect(plan.blocks) =~ "basics_sqrt"
   end
 
+  test "Basics.min on float field access keeps boxed runtime builtin" do
+    plan =
+      lower_expr(
+        %{
+          op: :qualified_call,
+          target: "Basics.min",
+          args: [
+            %{op: :field_access, arg: %{op: :var, name: "left"}, field: "x"},
+            %{op: :field_access, arg: %{op: :var, name: "right"}, field: "x"}
+          ]
+        },
+        ["left", "right"]
+      )
+
+    blocks = inspect(plan.blocks)
+    assert blocks =~ "basics_min"
+    refute blocks =~ "min_vars"
+  end
+
+  test "Basics.min on int literals keeps boxed runtime builtin via special values" do
+    plan =
+      lower_expr(%{
+        op: :qualified_call,
+        target: "Basics.min",
+        args: [
+          %{op: :int_literal, value: 1},
+          %{op: :int_literal, value: 2}
+        ]
+      })
+
+    blocks = inspect(plan.blocks)
+    assert blocks =~ "basics_min"
+    refute blocks =~ "min_vars"
+  end
+
   test "List.map4 lowers through plan" do
     plan =
       lower_expr(%{

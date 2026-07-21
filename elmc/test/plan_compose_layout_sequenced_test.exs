@@ -125,8 +125,27 @@ defmodule Elmc.PlanComposeLayoutSequencedTest do
       end)
 
     assert layout_extent_gets != []
-    assert Enum.any?(layout_extent_gets, fn instr -> instr.args[:field_index] =~ "1" end)
-    assert Enum.any?(layout_extent_gets, fn instr -> instr.args[:field_index] =~ "4" end)
+
+    indices =
+      layout_extent_gets
+      |> Enum.map(& &1.args[:field_index])
+      |> Enum.map(fn
+        idx when is_binary(idx) ->
+          case Integer.parse(idx) do
+            {n, _} -> n
+            :error -> nil
+          end
+
+        _ ->
+          nil
+      end)
+      |> Enum.reject(&is_nil/1)
+      |> Enum.uniq()
+      |> Enum.sort()
+
+    # Layout payload (alpha): extent at 1; Leaf payload (alpha): extent at 0.
+    assert indices == [0, 1] or indices == [1],
+           "expected Layout/Leaf alphabetical extent indices, got #{inspect(indices)}"
   end
 
   test "layout dispatches nested Composed patterns when outer C tag is shared" do

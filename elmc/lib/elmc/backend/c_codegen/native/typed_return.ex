@@ -95,6 +95,19 @@ defmodule Elmc.Backend.CCodegen.Native.TypedReturn do
     end
   end
 
+  def expr_type(%{op: :int_literal, value: value}, _env) when is_integer(value), do: "Int"
+
+  def expr_type(%{op: :float_literal, value: value}, _env) when is_number(value), do: "Float"
+
+  def expr_type(%{op: :bool_literal}, _env), do: "Bool"
+
+  def expr_type(%{op: :if, then_expr: then_expr, else_expr: else_expr}, env) do
+    case {expr_type(then_expr, env), expr_type(else_expr, env)} do
+      {type, type} when is_binary(type) -> type
+      _ -> nil
+    end
+  end
+
   def expr_type(_expr, _env), do: nil
 
   defp function_return_type(nil, _env, _arg_count), do: nil

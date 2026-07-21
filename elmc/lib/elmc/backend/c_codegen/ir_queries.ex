@@ -87,11 +87,75 @@ defmodule Elmc.Backend.CCodegen.IRQueries do
   @spec svg_attribute_names(IR.t()) :: MapSet.t(String.t())
   def svg_attribute_names(%IR{} = ir) do
     ir
-    |> function_decl_map()
-    |> Enum.filter(fn {{module, _name}, _decl} -> module == "Svg.Attributes" end)
-    |> Enum.map(fn {{_module, name}, _decl} -> name end)
+    |> virtual_dom_attribute_keys()
+    |> Map.keys()
     |> MapSet.new()
   end
+
+  @doc """
+  Alias for `virtual_dom_attribute_keys/1` (historical name used by wasm seeding).
+  """
+  @spec svg_attribute_dom_names(IR.t()) :: %{optional(String.t()) => String.t()}
+  def svg_attribute_dom_names(%IR{} = ir), do: virtual_dom_attribute_keys(ir)
+
+  @doc """
+  Map Elm helper names → DOM attribute key strings from IR.
+
+  Not an SVG/camelCase converter. Packages like elm/svg define helpers as
+  `fontWeight = VirtualDom.attribute "font-weight"`; we read that string
+  literal from the decl body (any module). Built from pre-strip IR so
+  dead-code removal of attribute modules still works.
+  """
+  @spec virtual_dom_attribute_keys(IR.t()) :: %{optional(String.t()) => String.t()}
+  def virtual_dom_attribute_keys(%IR{} = ir) do
+    ir
+    |> function_decl_map()
+    |> Enum.reduce(%{}, fn
+      {{_module, name}, decl}, acc when is_binary(name) ->
+        case virtual_dom_attribute_key_from_decl(decl) do
+          {:ok, key} -> Map.put(acc, name, key)
+          :error -> acc
+        end
+
+      _, acc ->
+        acc
+    end)
+  end
+
+  defp virtual_dom_attribute_key_from_decl(%{expr: expr}),
+    do: virtual_dom_attribute_key_from_expr(expr)
+
+  defp virtual_dom_attribute_key_from_decl(_), do: :error
+
+  defp virtual_dom_attribute_key_from_expr(%{
+         op: :qualified_call,
+         target: "Elm.Kernel.VirtualDom.attribute",
+         args: [%{op: :string_literal, value: key} | _]
+       })
+       when is_binary(key),
+       do: {:ok, key}
+
+  defp virtual_dom_attribute_key_from_expr(%{
+         op: :qualified_call,
+         target: "VirtualDom.attribute",
+         args: [%{op: :string_literal, value: key} | _]
+       })
+       when is_binary(key),
+       do: {:ok, key}
+
+  # attributeNS "ns" "local" — use the local name for setAttribute (host may NS later).
+  defp virtual_dom_attribute_key_from_expr(%{
+         op: :qualified_call,
+         target: target,
+         args: [%{op: :string_literal}, %{op: :string_literal, value: local} | _]
+       })
+       when target in [
+              "Elm.Kernel.VirtualDom.attributeNS",
+              "VirtualDom.attributeNS"
+            ] and is_binary(local),
+       do: {:ok, local}
+
+  defp virtual_dom_attribute_key_from_expr(_), do: :error
 
   @spec record_alias_shape_map(IR.t()) :: %{optional({String.t(), String.t()}) => [String.t()]}
   def record_alias_shape_map(%IR{} = ir) do
@@ -112,7 +176,11 @@ defmodule Elmc.Backend.CCodegen.IRQueries do
         end)
       end)
 
+    # Include union constructor record payloads (e.g. Layout {inArrows, contents, ...})
+    # so ambiguous field resolution can distinguish them from unrelated aliases that
+    # share a field name (elm-pages Scaffold {path, contents}).
     named_shapes
+    |> Kernel.++(union_constructor_record_shapes(ir))
     |> Map.new()
   end
 
@@ -153,10 +221,13 @@ defmodule Elmc.Backend.CCodegen.IRQueries do
         |> Map.get(:payload_specs, %{})
         |> Enum.flat_map(fn {ctor_name, spec} ->
           if is_binary(spec) and TypeSignature.record_type?(spec) do
+            # Elm 0.19 stores record fields alphabetically; keep ctor payload shapes in
+            # that order so writes (canonicalize_literal_fields) and reads agree.
             fields =
               spec
               |> TypeSignature.record_field_names()
               |> Enum.map(&to_string/1)
+              |> Enum.sort()
 
             if fields != [] do
               [{{mod, to_string(ctor_name)}, fields}]

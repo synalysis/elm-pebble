@@ -30,6 +30,11 @@ defmodule ElmEx.Frontend.AstContract.Types.Expr do
           required(:var) => String.t(),
           required(:value) => integer()
         }
+  @type sub_vars :: %{
+          required(:op) => :sub_vars,
+          required(:left) => String.t(),
+          required(:right) => String.t()
+        }
   @type compare :: %{
           required(:op) => :compare,
           required(:left) => t(),
@@ -151,6 +156,7 @@ defmodule ElmEx.Frontend.AstContract.Types.Expr do
           | add_const()
           | add_vars()
           | sub_const()
+          | sub_vars()
           | compare()
           | tuple2()
           | list_literal()

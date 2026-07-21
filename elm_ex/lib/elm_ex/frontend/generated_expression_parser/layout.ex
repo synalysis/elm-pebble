@@ -962,7 +962,8 @@ defmodule ElmEx.Frontend.GeneratedExpressionParser.Layout do
         Regex.match?(
           ~r/^\(\s*[A-Z][A-Za-z0-9_]*(?:\s+[^=()]+)?\s*\)\s*=(?!=)/u,
           trimmed
-        )
+        ) or
+        Regex.match?(~r/^\{\s*[^=]*\}\s*=(?!=)/u, trimmed)
     end
   end
   @spec delimiter_balance_outside_string_literals(source()) :: integer()
@@ -1591,7 +1592,10 @@ defmodule ElmEx.Frontend.GeneratedExpressionParser.Layout do
 
     case_branch_wrapper_close_line?(line, current) or
       (let_binding_start_line?(line) and not String.starts_with?(trimmed, "let ")) or
-      Regex.match?(~r/^in\b/u, trimmed)
+      Regex.match?(~r/^in\b/u, trimmed) or
+      # Outer `if … then (case …) else …` — do not swallow the `else` into the
+      # last case arm (especially when that arm is a nested multi-arm `case`).
+      Regex.match?(~r/^else\b/u, trimmed)
   end
 
   defp case_branch_wrapper_close_line?(line, current)

@@ -160,8 +160,17 @@ defmodule Elmc.Backend.CCodegen.GenericReachability do
           wrapper_callee_target({module_name, name}, args || [], decl_map)
 
         %{op: :var, name: name} ->
-          target = {module_name, name}
-          if Map.has_key?(decl_map, target), do: [target], else: []
+          local_decl_callee(module_name, name, decl_map)
+
+        %{op: op, var: name} when op in [:add_const, :sub_const] and is_binary(name) ->
+          local_decl_callee(module_name, name, decl_map)
+
+        %{op: op, left: left, right: right}
+        when op in [:add_vars, :sub_vars, :mul_vars, :idiv_vars, :mod_vars, :rem_vars, :min_vars, :max_vars] ->
+          Enum.flat_map([left, right], fn
+            name when is_binary(name) -> local_decl_callee(module_name, name, decl_map)
+            _ -> []
+          end)
 
         _ ->
           []
@@ -213,12 +222,20 @@ defmodule Elmc.Backend.CCodegen.GenericReachability do
     own =
       case expr do
         %{op: :call, name: name} ->
-          target = {module_name, name}
-          if Map.has_key?(decl_map, target), do: [target], else: []
+          local_decl_callee(module_name, name, decl_map)
 
         %{op: :var, name: name} ->
-          target = {module_name, name}
-          if Map.has_key?(decl_map, target), do: [target], else: []
+          local_decl_callee(module_name, name, decl_map)
+
+        %{op: op, var: name} when op in [:add_const, :sub_const] and is_binary(name) ->
+          local_decl_callee(module_name, name, decl_map)
+
+        %{op: op, left: left, right: right}
+        when op in [:add_vars, :sub_vars, :mul_vars, :idiv_vars, :mod_vars, :rem_vars, :min_vars, :max_vars] ->
+          Enum.flat_map([left, right], fn
+            name when is_binary(name) -> local_decl_callee(module_name, name, decl_map)
+            _ -> []
+          end)
 
         _ ->
           []
@@ -238,6 +255,13 @@ defmodule Elmc.Backend.CCodegen.GenericReachability do
 
   defp expr_callees_list(_value, _module_name, _decl_map), do: []
 
+  defp local_decl_callee(module_name, name, decl_map)
+       when is_binary(module_name) and is_binary(name) do
+    target = {module_name, name}
+    if Map.has_key?(decl_map, target), do: [target], else: []
+  end
+
+  defp local_decl_callee(_, _, _), do: []
   defp wrapper_callee_child_values(%{op: op, args: args})
        when op in [:call, :qualified_call, :runtime_call, :constructor_call, :field_call] and
               is_list(args),

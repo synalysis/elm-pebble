@@ -73,7 +73,7 @@ defmodule Elmc.Backend.Plan.Lower.Record do
           field_index_ref(field, ctx, base_expr)
       end
 
-    int_field? = int_field?(field)
+    int_field? = int_field?(field, ctx, base_expr)
 
     op = if int_field?, do: :record_get_int, else: :record_get
 
@@ -173,7 +173,26 @@ defmodule Elmc.Backend.Plan.Lower.Record do
 
     case canonical_shape_for_names(names, ctx.module) do
       nil ->
-        fields
+        # Row-polymorphic callers (e.g. computeArrowDetails) index fields using a
+        # union-ctor payload shape that may include extra slots (meander). A literal
+        # that omits those slots must still be laid out like the superset, or
+        # dense indices miss and WASM record_get returns int 0 (degenerate arrows).
+        case unique_superset_shape(names) do
+          {:ok, shape} ->
+            expand_fields_to_shape(fields, shape)
+
+          :none ->
+            # Anonymous records that field_access indexes alphabetically (Elm runtime)
+            # must be stored alphabetically. Broader sorting of every anonymous
+            # literal can disagree with declaration-order type-string readers
+            # (empty views). Limit to the arrow-details field set where we know
+            # reads use alphabetical indices (Internal.Svg.Arrow.arrow).
+            if arrow_details_field_set?(names) do
+              Enum.sort_by(fields, &to_string(field_name(&1)))
+            else
+              fields
+            end
+        end
 
       canonical_names ->
         ordered =
@@ -185,14 +204,90 @@ defmodule Elmc.Backend.Plan.Lower.Record do
     end
   end
 
+  # Prefer a unique minimal proper-superset shape from alias/union payload shapes.
+  # Only pad a single missing slot (e.g. Arrow.meander) — larger gaps are too
+  # ambiguous and can break unrelated anonymous literals during lowering.
+  defp unique_superset_shape(names) when is_list(names) do
+    name_set = MapSet.new(Enum.map(names, &to_string/1))
+
+    if MapSet.size(name_set) == 0 do
+      :none
+    else
+      supersets =
+        record_shapes_for_superset()
+        |> Enum.filter(fn fields ->
+          field_set = MapSet.new(Enum.map(fields, &to_string/1))
+
+          MapSet.subset?(name_set, field_set) and
+            MapSet.size(field_set) == MapSet.size(name_set) + 1
+        end)
+        |> Enum.uniq_by(fn fields -> Enum.map(fields, &to_string/1) end)
+
+      case supersets do
+        [shape] -> {:ok, Enum.map(shape, &to_string/1)}
+        _ -> :none
+      end
+    end
+  end
+
+  defp record_shapes_for_superset do
+    Process.get(:elmc_record_alias_shapes, %{})
+    |> Map.merge(Process.get(:elmc_inline_record_literal_shapes, %{}))
+    |> Map.values()
+    |> Enum.filter(&(is_list(&1) and &1 != []))
+  end
+
+  defp expand_fields_to_shape(fields, shape) when is_list(fields) and is_list(shape) do
+    by_name = Map.new(fields, fn f -> {to_string(field_name(f)), f} end)
+
+    Enum.map(shape, fn name ->
+      case Map.get(by_name, name) do
+        nil ->
+          # Placeholder for an unread extension slot (e.g. Arrow.meander). Keep a
+          # dense layout aligned with union-ctor field indices; value is unused.
+          %{name: name, expr: %{op: :int_literal, value: 0}}
+
+        field ->
+          field
+      end
+    end)
+  end
+
+  defp arrow_details_field_set?(names) when is_list(names) do
+    MapSet.new(Enum.map(names, &to_string/1)) ==
+      MapSet.new(~w(ascent descent end headLeft headRight start))
+  end
+
   @doc false
   @spec int_field?(String.t()) :: boolean()
   def int_field?(field_name) when is_binary(field_name) do
-    Process.get(:elmc_record_field_types, %{})
-    |> Map.values()
-    |> Enum.any?(fn fields when is_map(fields) ->
-      Map.get(fields, field_name) == "Int" or Map.get(fields, to_string(field_name)) == "Int"
-    end)
+    # Unscoped lookup is unsafe: `Time` has `{ start : Int }` while Svg.Arrow
+    # details use `.start` as a Point. Prefer `int_field?/3` with a base expr.
+    _ = field_name
+    false
+  end
+
+  @doc false
+  @spec int_field?(String.t(), Context.t() | nil, Types.ir_expr() | nil) :: boolean()
+  def int_field?(field_name, ctx, base_expr) when is_binary(field_name) do
+    case field_type_from_access(field_name, ctx, base_expr) do
+      "Int" -> true
+      _ -> false
+    end
+  end
+
+  defp field_type_from_access(field_name, ctx, base_expr) when is_binary(field_name) do
+    case resolve_field_type_key(field_name, ctx, base_expr) do
+      {key, _idx} when is_tuple(key) ->
+        Process.get(:elmc_record_field_types, %{})
+        |> Map.get(key, %{})
+        |> then(fn fields ->
+          Map.get(fields, field_name) || Map.get(fields, to_string(field_name))
+        end)
+
+      _ ->
+        nil
+    end
   end
 
   @doc false
@@ -526,7 +621,7 @@ defmodule Elmc.Backend.Plan.Lower.Record do
 
     cond do
       is_binary(type) and extensible_record_type?(type) ->
-        case max_field_index_among_shapes(field_name, shapes) do
+        case field_index_among_extensible_shapes(field_name, type, shapes) do
           {key, idx} when is_integer(idx) -> {key, idx}
           _ -> :error
         end
@@ -598,7 +693,7 @@ defmodule Elmc.Backend.Plan.Lower.Record do
 
         cond do
           is_binary(container_type) and extensible_record_type?(container_type) ->
-            case max_field_index_among_shapes(field_name, shapes) do
+            case field_index_among_extensible_shapes(field_name, container_type, shapes) do
               {key, idx} when is_integer(idx) ->
                 RecordFieldMacros.format_index(idx, field_name, key)
 
@@ -679,7 +774,11 @@ defmodule Elmc.Backend.Plan.Lower.Record do
       end
 
     if is_binary(container_type) and extensible_record_type?(container_type) do
-      case max_field_index_among_shapes(field_name, Process.get(:elmc_record_alias_shapes, %{})) do
+      case field_index_among_extensible_shapes(
+             field_name,
+             container_type,
+             Process.get(:elmc_record_alias_shapes, %{})
+           ) do
         {key, idx} when is_integer(idx) -> {key, idx}
         _ -> resolve_field_type_key_concrete(field_name, ctx, base_expr)
       end
@@ -1046,17 +1145,49 @@ defmodule Elmc.Backend.Plan.Lower.Record do
 
   defp pick_ambiguous_field_type_key(many, ctx, _base_expr) when is_list(many) do
     module = ctx && Map.get(ctx, :module)
+    shapes = all_record_shapes()
 
-    case module do
-      mod when is_binary(mod) ->
-        case Enum.find(many, fn {{m, _}, _idx} -> m == mod end) do
-          {key, idx} -> {key, idx}
-          _ -> hd(many)
+    with_exact =
+      if is_binary(module) do
+        Enum.filter(many, fn {{m, _}, _idx} -> m == module end)
+      else
+        []
+      end
+
+    with_prefix =
+      if with_exact == [] and is_binary(module) do
+        Enum.filter(many, fn {{m, _}, _idx} ->
+          is_binary(m) and
+            (String.starts_with?(module, m <> ".") or String.starts_with?(m, module <> "."))
+        end)
+      else
+        with_exact
+      end
+
+    # Module-local / prefix hits: prefer the richest shape (Layout over a thin
+    # sibling). Untyped / cross-module ambiguity: prefer the smallest shape so
+    # Vec2.x is not stolen by a large record that also has an `x` field.
+    {candidates, prefer_rich?} =
+      case with_prefix do
+        [] -> {many, false}
+        preferred -> {preferred, true}
+      end
+
+    Enum.max_by(candidates, fn {key, idx} ->
+      field_count =
+        case Map.get(shapes, key) do
+          fields when is_list(fields) -> length(fields)
+          _ -> 0
         end
 
-      _ ->
-        hd(many)
-    end
+      score = if prefer_rich?, do: field_count, else: -field_count
+      {score, idx}
+    end)
+  end
+
+  defp all_record_shapes do
+    Process.get(:elmc_record_alias_shapes, %{})
+    |> Map.merge(Process.get(:elmc_inline_record_literal_shapes, %{}))
   end
 
   defp max_field_index_among_shapes(field_name, shapes) when is_binary(field_name) do
@@ -1064,6 +1195,36 @@ defmodule Elmc.Backend.Plan.Lower.Record do
     |> case do
       [] -> nil
       candidates -> Enum.max_by(candidates, fn {_key, idx} -> idx end)
+    end
+  end
+
+  # For `{c | lo : b, hi : b}`, prefer a concrete shape that contains every known
+  # row field (Extent), not the max index across unrelated shapes that happen to
+  # share one name (Box.lo at index 1 colliding with Extent.hi at index 1).
+  defp field_index_among_extensible_shapes(field_name, extensible_type, shapes)
+       when is_binary(field_name) and is_binary(extensible_type) and is_map(shapes) do
+    known = TypeSignature.extensible_record_field_names(extensible_type)
+
+    matching =
+      shapes
+      |> Enum.filter(fn {_key, fields} ->
+        is_list(fields) and known != [] and Enum.all?(known, &(&1 in fields))
+      end)
+
+    case matching do
+      [] ->
+        max_field_index_among_shapes(field_name, shapes)
+
+      candidates ->
+        {key, fields} = Enum.min_by(candidates, fn {_k, f} -> length(f) end)
+
+        case Enum.find_index(fields, &(&1 == field_name)) do
+          idx when is_integer(idx) ->
+            {key, idx}
+
+          _ ->
+            max_field_index_among_shapes(field_name, shapes)
+        end
     end
   end
 

@@ -279,7 +279,16 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
     do: Constructor.compile(expr, ctx, b)
 
   def compile(%{op: :constructor_ref, target: target}, ctx, b) when is_binary(target) do
-    Constructor.compile(%{target: target, args: []}, ctx, b)
+    # Bare ctor refs used as functions (`Tuple.mapBoth ModelIndex …`) must be
+    # unary+ partials. Compiling them as nullary values makes `invokeClosure`
+    # return Int(0) and corrupts mapped payloads (elm-pages Main.init).
+    case constructor_ref_arity(target, ctx) do
+      arity when is_integer(arity) and arity > 0 ->
+        compile(%{op: :partial_constructor, target: target, args: [], arity: arity}, ctx, b)
+
+      _ ->
+        Constructor.compile(%{target: target, args: []}, ctx, b)
+    end
   end
 
   def compile(%{op: :order_literal, value: value}, ctx, b) when is_integer(value) do
@@ -387,7 +396,7 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
     compile_qualified_ref(expr, ctx, b)
   end
 
-  def compile(%{op: op} = expr, ctx, b) when op in [:add_const, :sub_const, :add_vars],
+  def compile(%{op: op} = expr, ctx, b) when op in [:add_const, :sub_const, :add_vars, :sub_vars],
     do: Arith.compile(expr, ctx, b)
 
   def compile(%{op: :tuple2, left: left, right: right}, ctx, b) do
@@ -1278,7 +1287,7 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
   defp compile_record_get(base, field, ctx, b, base_expr) when is_integer(base) do
     {reg, b1} = Builder.fresh_reg(b)
     field_index = Record.field_index_for(field, ctx, base_expr)
-    int_field? = Record.int_field?(field)
+    int_field? = Record.int_field?(field, ctx, base_expr)
 
     op = if int_field?, do: :record_get_int, else: :record_get
 
@@ -1933,16 +1942,14 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
   end
 
   defp int_record_literal_fields?(fields) when is_list(fields) do
-    fields != [] and
-      Enum.all?(fields, fn field ->
-        name = Map.get(field, :name) || Map.get(field, :field)
-
-        is_binary(name) and Record.int_field?(name) and int_record_field_expr?(field)
-      end)
+    # Prefer expr shape over unscoped field-name Int lookup: the same field name
+    # can be Int in one record type and a Point/record in another.
+    fields != [] and Enum.all?(fields, &int_record_field_expr?/1)
   end
 
   defp int_record_shape?(field_names) when is_list(field_names) do
-    field_names != [] and Enum.all?(field_names, &Record.int_field?/1)
+    _ = field_names
+    false
   end
 
   defp int_record_field_expr?(field) do
@@ -2371,6 +2378,34 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
   defp field_access_expr?(%{op: :field_access}), do: true
   defp field_access_expr?(_), do: false
 
+  defp constructor_ref_arity(target, ctx) when is_binary(target) do
+    specs = Process.get(:elmc_union_constructor_payload_specs, %{})
+    short = target |> String.split(".") |> Enum.at(-1)
+    mod = ctx && Map.get(ctx, :module)
+
+    keys =
+      cond do
+        String.contains?(target, ".") ->
+          parts = String.split(target, ".")
+          name = Enum.at(parts, -1)
+          home = parts |> Enum.drop(-1) |> Enum.join(".")
+          [{home, name}, {home, short}]
+
+        is_binary(mod) ->
+          [{mod, target}, {mod, short}]
+
+        true ->
+          []
+      end
+
+    if Enum.any?(keys, &Map.has_key?(specs, &1)) do
+      # Elm union constructors take a single payload (record/tuple/value).
+      1
+    else
+      0
+    end
+  end
+
   # Render-op tuples (pathFilled, pathOutline, group, …) carry boxed payloads; never
   # lower them to tuple2_ints even when the payload is a bare var in IR.
   defp render_op_boxed_payload?(left, right) do
@@ -2397,7 +2432,7 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
     end
   end
 
-  defp native_int_operand_expr?(%{op: op}, _ctx) when op in [:add_const, :sub_const, :add_vars], do: true
+  defp native_int_operand_expr?(%{op: op}, _ctx) when op in [:add_const, :sub_const, :add_vars, :sub_vars], do: true
 
   defp native_int_operand_expr?(%{op: :constructor_call, args: []}, _ctx), do: true
 

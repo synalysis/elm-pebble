@@ -64,7 +64,11 @@ defmodule Elmc do
          ir0 = PipeChain.desugar_project(ir0),
          ir <- maybe_strip_dead_code(ir0, entry_module, opts[:strip_dead_code]),
          {:ok, ir, debug_usage_diagnostics} <- check_debug_usage(ir, opts),
-         opts = Map.put(opts, :svg_attribute_names, IRQueries.svg_attribute_names(ir0)),
+         svg_dom = IRQueries.svg_attribute_dom_names(ir0),
+         opts =
+           opts
+           |> Map.put(:svg_attribute_dom_names, svg_dom)
+           |> Map.put(:svg_attribute_names, MapSet.new(Map.keys(svg_dom))),
          out_dir = opts[:out_dir] || "build",
          :ok <- seed_codegen_process_state(ir, opts),
          :ok <- maybe_write_c_artifacts(ir, out_dir, entry_module, opts, wasm_only?) do
@@ -224,11 +228,20 @@ defmodule Elmc do
   defp seed_codegen_process_state(ir, opts) do
     Process.put(:elmc_codegen_opts, opts)
     Process.put(:elmc_svg_attribute_names, Map.get(opts, :svg_attribute_names, MapSet.new()))
+    Process.put(
+      :elmc_svg_attribute_dom_names,
+      Map.get(opts, :svg_attribute_dom_names, %{})
+    )
     Process.put(:elmc_constructor_tags, IRQueries.constructor_tag_map(ir))
     Process.put(:elmc_module_ports, IRQueries.module_ports_map(ir))
     Process.put(:elmc_record_alias_shapes, IRQueries.record_alias_shape_map(ir))
     Process.put(:elmc_inline_record_literal_shapes, IRQueries.inline_record_literal_shape_map(ir))
     Process.put(:elmc_record_field_types, IRQueries.record_alias_field_types_map(ir))
+    # Per-compile memoization for type/native-arg analysis (large packages like
+    # elm-geometry/elm-physics otherwise re-parse the same signatures millions of times).
+    Process.put(:elmc_type_parsing_arrow_cache, %{})
+    Process.put(:elmc_native_arg_kinds_cache, %{})
+    Process.put(:elmc_native_arg_kinds_analysis_cache, %{})
     :ok
   end
 

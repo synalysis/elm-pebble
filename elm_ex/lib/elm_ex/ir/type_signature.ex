@@ -78,13 +78,16 @@ defmodule ElmEx.IR.TypeSignature do
   @spec extensible_record_field_names(String.t()) :: [String.t()]
   def extensible_record_field_names(type) when is_binary(type) do
     if extensible_record_type?(type) do
-      type
-      |> String.trim()
-      |> String.trim_leading("{")
-      |> String.trim_trailing("}")
-      |> String.trim()
-      |> strip_extensible_record_base()
-      |> record_field_names()
+      fields_body =
+        type
+        |> String.trim()
+        |> String.trim_leading("{")
+        |> String.trim_trailing("}")
+        |> String.trim()
+        |> strip_extensible_record_base()
+
+      # record_field_names/1 requires a braced record type; re-wrap the row body.
+      record_field_names("{" <> fields_body <> "}")
     else
       []
     end

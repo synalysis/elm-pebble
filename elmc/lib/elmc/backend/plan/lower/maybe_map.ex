@@ -112,7 +112,7 @@ defmodule Elmc.Backend.Plan.Lower.MaybeMap do
     {reg, b1} = Builder.fresh_reg(b)
     base_expr = Elmc.Backend.Plan.Lower.MaybePayload.payload_base_expr(ctx)
     field_index = Record.field_index_for(field, ctx, base_expr)
-    int_field? = Record.int_field?(field)
+    int_field? = Record.int_field?(field, ctx, base_expr)
     op = if int_field?, do: :record_get_int, else: :record_get
 
     {_, b2} =

@@ -74,7 +74,9 @@ defmodule Elmc.Backend.Plan.Lower.IntCall do
         target = Map.fetch!(@runtime_ops, name)
 
         cond do
-          name in ["Basics.min", "Basics.max"] and int_binop_operands?(left, right) ->
+          # Only native-int min/max may use i32 arith. Bare vars and field accesses
+          # may be Floats (e.g. Extent.combine); those must keep boxed Basics.min/max.
+          name in ["Basics.min", "Basics.max"] and proven_native_int_binop?(left, right, ctx) ->
             kind = if name == "Basics.min", do: :min_vars, else: :max_vars
             Arith.emit_binary(kind, left, right, ctx, b)
 
@@ -189,6 +191,50 @@ defmodule Elmc.Backend.Plan.Lower.IntCall do
   end
 
   defp int_binop_operands?(left, right), do: int_operand?(left) and int_operand?(right)
+
+  defp proven_native_int_binop?(left, right, ctx),
+    do: proven_native_int_operand?(left, ctx) and proven_native_int_operand?(right, ctx)
+
+  defp proven_native_int_operand?(%{op: :int_literal}, _ctx), do: true
+  defp proven_native_int_operand?(%{op: :bool_literal}, _ctx), do: true
+  defp proven_native_int_operand?(%{op: :var} = var, ctx), do: native_int_param_var?(var, ctx)
+
+  defp proven_native_int_operand?(%{op: :add_const, var: name}, ctx) when is_binary(name),
+    do: proven_native_int_operand?(%{op: :var, name: name}, ctx)
+
+  defp proven_native_int_operand?(%{op: :sub_const, var: name}, ctx) when is_binary(name),
+    do: proven_native_int_operand?(%{op: :var, name: name}, ctx)
+
+  defp proven_native_int_operand?(%{op: :add_vars, left: left, right: right}, ctx),
+    do: proven_native_int_operand?(left, ctx) and proven_native_int_operand?(right, ctx)
+
+  defp proven_native_int_operand?(%{op: :call, name: name, args: [a, b]}, ctx)
+       when name in [
+              "modBy",
+              "Basics.modBy",
+              "remainderBy",
+              "Basics.remainderBy",
+              "Basics.min",
+              "Basics.max",
+              "__add__",
+              "__sub__",
+              "__mul__",
+              "__idiv__"
+            ],
+       do: proven_native_int_operand?(a, ctx) and proven_native_int_operand?(b, ctx)
+
+  defp proven_native_int_operand?(%{op: :qualified_call, target: target, args: [a, b]}, ctx)
+       when target in [
+              "modBy",
+              "Basics.modBy",
+              "remainderBy",
+              "Basics.remainderBy",
+              "Basics.min",
+              "Basics.max"
+            ],
+       do: proven_native_int_operand?(a, ctx) and proven_native_int_operand?(b, ctx)
+
+  defp proven_native_int_operand?(_, _ctx), do: false
 
   defp float_mixture?(left, right), do: float_operand?(left) or float_operand?(right)
 

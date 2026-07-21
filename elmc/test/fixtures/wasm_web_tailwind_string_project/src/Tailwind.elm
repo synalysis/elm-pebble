@@ -1,4 +1,4 @@
-module Tailwind exposing (classes, shrink_0, px, md, dark, text_color, gray, s3, s700)
+module Tailwind exposing (classes, shrink_0, px, p, md, dark, text_color, gray, s3, s700)
 
 
 import Html exposing (Attribute)
@@ -98,6 +98,11 @@ colorToString (Color str) =
 px : Spacing -> Tailwind
 px spacing =
     Tailwind ("px-" ++ spacingToString spacing)
+
+
+p : Spacing -> Tailwind
+p spacing =
+    Tailwind ("p-" ++ spacingToString spacing)
 
 
 text_color : Color -> Tailwind

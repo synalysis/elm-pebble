@@ -362,12 +362,24 @@ defmodule Elmc.Backend.Plan.Lower.Case do
   defp bind_maybe_payload(ctx, pattern, subj_reg, b) do
     cond do
       just_arm_pattern?(pattern) and unused_just_payload?(pattern) ->
-        {:ok, subj_reg, b, ctx}
+        {ctx1, b1} = bind_pattern_alias(ctx, b, pattern, subj_reg)
+        {:ok, subj_reg, b1, ctx1}
 
       just_arm_pattern?(pattern) ->
         {:ok, payload_reg, b1} = Expr.compile_runtime_builtin(:maybe_just_payload, [subj_reg], ctx, b)
         {ctx1, b2} = bind_just_payload_pattern(ctx, b1, pattern, payload_reg)
-        {:ok, payload_reg, b2, ctx1}
+        # `Just x` stores the payload name in `:bind`. Only `(Just …) as alias`
+        # should keep the outer Maybe in `:bind` while `:arg_pattern` holds the
+        # inner pattern — alias then, otherwise `Tuple.first x` would see the
+        # Maybe wrapper (no `.first`) and bind NULL/0.
+        {ctx2, b3} =
+          if is_map(Map.get(pattern, :arg_pattern)) do
+            bind_pattern_alias(ctx1, b2, pattern, subj_reg)
+          else
+            {ctx1, b2}
+          end
+
+        {:ok, payload_reg, b3, ctx2}
 
       unwrap_just_pattern?(pattern) ->
         {:ok, payload_reg, b1} = Expr.compile_runtime_builtin(:maybe_just_payload, [subj_reg], ctx, b)
@@ -377,6 +389,17 @@ defmodule Elmc.Backend.Plan.Lower.Case do
       true ->
         {ctx1, b2} = bind_pattern_pair(ctx, b, pattern, subj_reg)
         {:ok, subj_reg, b2, ctx1}
+    end
+  end
+
+  # `(Just _) as found` stores the alias on `bind` via build_pattern_alias.
+  defp bind_pattern_alias(ctx, b, pattern, subject_reg) do
+    case Map.get(pattern, :bind) do
+      name when is_binary(name) ->
+        {Context.put_local(ctx, name, subject_reg), Builder.bind_local(b, name, subject_reg)}
+
+      _ ->
+        {ctx, b}
     end
   end
 

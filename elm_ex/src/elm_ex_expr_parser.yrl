@@ -102,6 +102,10 @@ let_binding -> lower_qid lambda_args eq newline indent pipe_right_expr dedent :
   {token_value('$1'), build_lambda_args('$2', '$6')}.
 let_binding -> lbrace pattern_record_fields rbrace eq pipe_right_expr :
   {pattern_bind, build_pattern_record('$2'), '$5'}.
+let_binding -> lbrace pattern_record_fields rbrace eq newline pipe_right_expr :
+  {pattern_bind, build_pattern_record('$2'), '$6'}.
+let_binding -> lbrace pattern_record_fields rbrace eq newline indent pipe_right_expr dedent :
+  {pattern_bind, build_pattern_record('$2'), '$7'}.
 let_binding -> lparen wildcard comma lower_qid rparen eq pipe_right_expr :
   {pattern_bind, build_pattern_tuple(#{kind => wildcard}, build_pattern_var(token_value('$4'))), '$7'}.
 let_binding -> lparen lower_qid comma wildcard rparen eq pipe_right_expr :
@@ -115,6 +119,33 @@ let_binding -> lparen wildcard comma lower_qid comma wildcard rparen eq pipe_rig
 let_binding -> lparen wildcard comma wildcard comma lower_qid rparen eq pipe_right_expr :
   {pattern_bind, build_pattern_tuple(#{kind => wildcard}, build_pattern_tuple(#{kind => wildcard}, build_pattern_var(token_value('$6')))), '$9'}.
 let_binding -> lparen pattern rparen eq pipe_right_expr : {pattern_bind, '$2', '$5'}.
+let_binding -> lparen pattern comma pattern rparen eq pipe_right_expr :
+  {pattern_bind, build_pattern_tuple('$2', '$4'), '$7'}.
+let_binding -> lparen pattern comma pattern rparen eq newline pipe_right_expr :
+  {pattern_bind, build_pattern_tuple('$2', '$4'), '$8'}.
+let_binding -> lparen pattern comma pattern rparen eq newline indent pipe_right_expr dedent :
+  {pattern_bind, build_pattern_tuple('$2', '$4'), '$9'}.
+let_binding -> lparen lower_qid comma lparen pattern comma pattern rparen rparen eq pipe_right_expr :
+  {pattern_bind,
+    build_pattern_tuple(
+      build_pattern_var(token_value('$2')),
+      build_pattern_tuple('$5', '$7')
+    ),
+    '$11'}.
+let_binding -> lparen lower_qid comma lparen pattern comma pattern rparen rparen eq newline pipe_right_expr :
+  {pattern_bind,
+    build_pattern_tuple(
+      build_pattern_var(token_value('$2')),
+      build_pattern_tuple('$5', '$7')
+    ),
+    '$12'}.
+let_binding -> lparen lower_qid comma lparen pattern comma pattern rparen rparen eq newline indent pipe_right_expr dedent :
+  {pattern_bind,
+    build_pattern_tuple(
+      build_pattern_var(token_value('$2')),
+      build_pattern_tuple('$5', '$7')
+    ),
+    '$13'}.
 let_binding -> lparen lower_qid comma lower_qid rparen eq pipe_right_expr :
   {tuple2_bind, token_value('$2'), token_value('$4'), '$7'}.
 let_binding -> lparen lower_qid comma lower_qid rparen eq newline pipe_right_expr :
@@ -185,6 +216,19 @@ pattern -> char_lit cons pattern :
   build_pattern_cons(#{kind => char, value => parse_char(token_value('$1'))}, '$3').
 pattern -> lparen pattern comma pattern rparen cons pattern :
   build_pattern_cons(build_pattern_tuple('$2', '$4'), '$7').
+pattern -> lparen pattern comma pattern comma pattern rparen cons pattern :
+  build_pattern_cons(build_pattern_tuple('$2', build_pattern_tuple('$4', '$6')), '$9').
+pattern -> lparen pattern comma pattern rparen as_kw lower_qid :
+  build_pattern_alias(build_pattern_tuple('$2', '$4'), token_value('$7')).
+pattern -> lparen pattern comma pattern rparen as_kw lower_qid cons pattern :
+  build_pattern_cons(
+    build_pattern_alias(build_pattern_tuple('$2', '$4'), token_value('$7')),
+    '$9'
+  ).
+pattern -> lparen pattern comma pattern comma pattern rparen as_kw lower_qid :
+  build_pattern_alias(build_pattern_tuple('$2', build_pattern_tuple('$4', '$6')), token_value('$9')).
+pattern -> lbrace pattern_record_fields rbrace cons pattern :
+  build_pattern_cons(build_pattern_record('$2'), '$5').
 pattern -> lower_qid cons pattern : build_pattern_cons(build_pattern_var(token_value('$1')), '$3').
 pattern -> wildcard cons pattern : build_pattern_cons(#{kind => wildcard}, '$3').
 pattern -> lparen pattern rparen as_kw lower_qid : build_pattern_alias('$2', token_value('$5')).
@@ -284,6 +328,9 @@ app_expr -> primary : '$1'.
 
 primary -> lparen pipe_right_expr rparen opt_field_accessor :
   build_paren_primary('$2', '$4').
+%% Unary `-` is rewritten to `negate` in GeneratedExpressionParser before yecc
+%% (and negative numeric literals are single lexer tokens). Keeping
+%% `primary -> minus primary` here makes `a - b` shift/reduce into `a (-b)`.
 primary -> int_lit : #{op => int_literal, value => token_value('$1')}.
 primary -> float_lit : #{op => float_literal, value => token_value('$1')}.
 primary -> string_lit : #{op => string_literal, value => parse_string(token_value('$1'))}.
@@ -373,11 +420,13 @@ build_add(Left, Right) ->
 
 build_sub(#{op := var, name := Var}, #{op := int_literal, value := Int}) ->
   #{op => sub_const, var => Var, value => Int};
+build_sub(#{op := var, name := Left}, #{op := var, name := Right}) ->
+  #{op => sub_vars, left => Left, right => Right};
 build_sub(Left, Right) ->
-  #{op => call, name => "__sub__", args => [Left, Right]}.
+  #{op => call, name => <<"__sub__">>, args => [Left, Right]}.
 
 build_mul(Left, Right) ->
-  #{op => call, name => "__mul__", args => [Left, Right]}.
+  #{op => call, name => <<"__mul__">>, args => [Left, Right]}.
 
 build_div(Left, Right) ->
   #{op => call, name => "__fdiv__", args => [Left, Right]}.
@@ -766,15 +815,49 @@ build_lower_qid(Text) ->
         true -> #{op => qualified_ref, target => Text};
         false -> #{op => field_access, arg => Arg, field => Field}
       end;
-    _ ->
-      #{op => qualified_ref, target => Text}
+    [Arg | Fields] ->
+      %% `model.position.x` is nested record access, not a qualified ref.
+      lists:foldl(
+        fun(Field, Acc) -> #{op => field_access, arg => Acc, field => Field} end,
+        Arg,
+        Fields
+      )
   end.
 
 build_upper_qid(Text) ->
-  case has_lower_segment(Text) of
-    true -> #{op => qualified_ref, target => Text};
-    false -> #{op => constructor_ref, target => Text}
+  Segments = binary:split(Text, <<".">>, [global]),
+  case split_module_value_fields(Segments) of
+    {all_constructor, Target} ->
+      #{op => constructor_ref, target => Target};
+    {qualified_ref, Target} ->
+      #{op => qualified_ref, target => Target};
+    {qualified_ref, Target, Fields} ->
+      Base = #{op => qualified_ref, target => Target},
+      lists:foldl(
+        fun(Field, Acc) -> #{op => field_access, arg => Acc, field => Field} end,
+        Base,
+        Fields
+      )
   end.
+
+%% Elm: uppercase segments are the module path, the first lowercase segment is
+%% the value, and any further lowercase segments are record field access
+%% (`Shared.template.onPageChange` → `(Shared.template).onPageChange`).
+split_module_value_fields(Segments) ->
+  {ModuleParts, Rest} = lists:splitwith(fun starts_upper/1, Segments),
+  case Rest of
+    [] when ModuleParts =/= [] ->
+      {all_constructor, join_qid_segments(ModuleParts)};
+    [Value] ->
+      {qualified_ref, join_qid_segments(ModuleParts ++ [Value])};
+    [Value | Fields] ->
+      {qualified_ref, join_qid_segments(ModuleParts ++ [Value]), Fields};
+    [] ->
+      {all_constructor, <<>>}
+  end.
+
+join_qid_segments(Parts) ->
+  iolist_to_binary(lists:join(<<".">>, Parts)).
 
 build_paren_primary(Expr, nil) ->
   Expr;
@@ -795,10 +878,6 @@ build_field_accessor(<<$., Rest/binary>>) ->
   };
 build_field_accessor(Text) ->
   #{op => unsupported, source => Text}.
-
-has_lower_segment(Text) ->
-  Segments = binary:split(Text, <<".">>, [global]),
-  lists:any(fun(Seg) -> not starts_upper(Seg) end, Segments).
 
 starts_upper(<<C, _/binary>>) when C >= $A, C =< $Z -> true;
 starts_upper(_) -> false.

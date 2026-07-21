@@ -23,4 +23,10 @@ defmodule ElmEx.IR.TypeSignatureTest do
     refute TypeSignature.type_variable?("Int")
     refute TypeSignature.type_variable?("RenderOp")
   end
+
+  test "extensible_record_field_names strips the row variable and returns field names" do
+    assert TypeSignature.extensible_record_field_names("{c | lo : b, hi : b}") == ["lo", "hi"]
+    assert TypeSignature.extensible_record_field_names("{ r | x : Float, y : Float }") == ["x", "y"]
+    assert TypeSignature.extensible_record_field_names("{x : Float, y : Float}") == []
+  end
 end

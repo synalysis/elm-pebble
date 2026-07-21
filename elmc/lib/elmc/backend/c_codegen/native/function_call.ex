@@ -445,9 +445,31 @@ defmodule Elmc.Backend.CCodegen.Native.FunctionCall do
   @spec arg_kinds(Types.function_declaration(), String.t(), Types.function_decl_map()) ::
           [Types.native_function_arg_kind()]
   def arg_kinds(decl, module_name, decl_map) do
-    case ListIntSearch.arg_kinds(decl, module_name, decl_map) do
-      {:ok, kinds} -> kinds
-      :error -> default_arg_kinds(decl, module_name, decl_map)
+    cache_key = :elmc_native_arg_kinds_cache
+    name = Map.get(decl, :name)
+    type = Map.get(decl, :type)
+    key = {module_name, name, type}
+    cache = Process.get(cache_key, %{})
+
+    case Map.fetch(cache, key) do
+      {:ok, :computing} ->
+        # Break re-entrant cycles (A analyzes B analyzes A) with signature-only kinds.
+        signature_only_arg_kinds(decl)
+
+      {:ok, kinds} when is_list(kinds) ->
+        kinds
+
+      :error ->
+        Process.put(cache_key, Map.put(cache, key, :computing))
+
+        kinds =
+          case ListIntSearch.arg_kinds(decl, module_name, decl_map) do
+            {:ok, kinds} -> kinds
+            :error -> default_arg_kinds(decl, module_name, decl_map)
+          end
+
+        Process.put(cache_key, Map.put(Process.get(cache_key, %{}), key, kinds))
+        kinds
     end
   end
 
@@ -620,10 +642,14 @@ defmodule Elmc.Backend.CCodegen.Native.FunctionCall do
   @spec bool_arg_safe?(String.t(), Types.ir_expr() | nil, String.t(), Types.function_decl_map()) ::
           boolean()
   defp bool_arg_safe?(arg, expr, module_name, decl_map) do
-    usage =
-      Host.native_bool_usage(arg, expr || %{op: :int_literal, value: 0}, module_name, decl_map)
+    if Process.get(:elmc_skip_int_usage_recursion) do
+      not Host.binding_used_in_lambda?(arg, expr)
+    else
+      usage =
+        Host.native_bool_usage(arg, expr || %{op: :int_literal, value: 0}, module_name, decl_map)
 
-    (usage.total == 0 or usage.boxed == 0) and not Host.binding_used_in_lambda?(arg, expr)
+      (usage.total == 0 or usage.boxed == 0) and not Host.binding_used_in_lambda?(arg, expr)
+    end
   end
 
   defp native_call_out(:native_int, next), do: "native_call_#{next}"

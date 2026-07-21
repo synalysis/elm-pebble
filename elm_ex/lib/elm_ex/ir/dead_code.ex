@@ -121,6 +121,14 @@ defmodule ElmEx.IR.DeadCode do
     [local_call_target(name, mod)]
   end
 
+  defp call_reference_targets(%{op: op, left: left, right: right}, mod)
+       when op in [:add_vars, :sub_vars, :mul_vars, :idiv_vars, :mod_vars, :rem_vars, :min_vars, :max_vars] do
+    Enum.flat_map([left, right], fn
+      name when is_binary(name) -> [local_call_target(name, mod)]
+      _ -> []
+    end)
+  end
+
   defp call_reference_targets(_expr, _mod), do: []
 
   @spec qualified_field_binding_refs(String.t()) :: [DeadCode.function_key()]

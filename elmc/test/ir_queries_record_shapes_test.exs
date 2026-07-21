@@ -6,7 +6,7 @@ defmodule Elmc.IRQueriesRecordShapesTest do
   alias Elmc.Backend.Plan.Context
   alias ElmEx.IR
 
-  test "union constructor record shapes preserve declaration order not alphabetical sort" do
+  test "union constructor record shapes use alphabetical field order like Elm runtime" do
     ir = %IR{
       modules: [
         %{
@@ -15,7 +15,9 @@ defmodule Elmc.IRQueriesRecordShapesTest do
           unions: %{
             "Layout" => %{
               payload_specs: %{
-                "Leaf" => "{ value : a, extent : Extent }"
+                "Leaf" => "{ value : a, extent : Extent }",
+                "Layout" =>
+                  "{ inArrows : List Arrow , wrapping : Maybe a , contents : List a , outArrows : List Arrow , extent : Extent }"
               }
             }
           }
@@ -23,12 +25,78 @@ defmodule Elmc.IRQueriesRecordShapesTest do
       ]
     }
 
-    assert IRQueries.union_constructor_record_shapes(ir) == [
-             {{"Internal.Cartesian.Layout", "Leaf"}, ["value", "extent"]}
+    shapes = Map.new(IRQueries.union_constructor_record_shapes(ir))
+
+    assert shapes[{"Internal.Cartesian.Layout", "Leaf"}] == ["extent", "value"]
+
+    assert shapes[{"Internal.Cartesian.Layout", "Layout"}] == [
+             "contents",
+             "extent",
+             "inArrows",
+             "outArrows",
+             "wrapping"
+           ]
+  end
+
+  test "subset record literals expand to unique union payload superset layout" do
+    # Port→arrow builds {tailPoint, adjustTail, adjustHead, headPoint} but
+    # computeArrowDetails indexes the full Arrow payload (includes meander).
+    shapes = %{
+      {"Internal.Arrow", "Arrow"} => [
+        "adjustHead",
+        "adjustTail",
+        "headPoint",
+        "meander",
+        "tailPoint"
+      ]
+    }
+
+    Process.put(:elmc_record_alias_shapes, shapes)
+    on_exit(fn -> Process.delete(:elmc_record_alias_shapes) end)
+
+    fields = [
+      %{name: "tailPoint", expr: %{op: :var, name: "pos"}},
+      %{name: "adjustTail", expr: %{op: :int_literal, value: 0}},
+      %{name: "adjustHead", expr: %{op: :int_literal, value: 0}},
+      %{name: "headPoint", expr: %{op: :var, name: "pos"}}
+    ]
+
+    canonical = Record.canonicalize_literal_fields(fields, %Context{module: "Internal.Cartesian.Layout.Svg"})
+
+    assert Enum.map(canonical, & &1.name) == [
+             "adjustHead",
+             "adjustTail",
+             "headPoint",
+             "meander",
+             "tailPoint"
            ]
 
-    inline = IRQueries.inline_record_literal_shape_map(ir)
-    assert inline[{"Internal.Cartesian.Layout", "Leaf"}] == ["value", "extent"]
+    meander = Enum.find(canonical, &(&1.name == "meander"))
+    assert meander.expr == %{op: :int_literal, value: 0}
+  end
+
+  test "anonymous record literals canonicalize to alphabetical field order" do
+    # computeArrowDetails builds {start, ascent, descent, end, headLeft, headRight}
+    # in source order; field_access uses alphabetical indices like Elm runtime.
+    fields = [
+      %{name: "start", expr: %{op: :var, name: "s"}},
+      %{name: "ascent", expr: %{op: :var, name: "a"}},
+      %{name: "descent", expr: %{op: :var, name: "d"}},
+      %{name: "end", expr: %{op: :var, name: "e"}},
+      %{name: "headLeft", expr: %{op: :var, name: "hl"}},
+      %{name: "headRight", expr: %{op: :var, name: "hr"}}
+    ]
+
+    canonical = Record.canonicalize_literal_fields(fields, %Context{module: "Internal.Svg.Arrow"})
+
+    assert Enum.map(canonical, & &1.name) == [
+             "ascent",
+             "descent",
+             "end",
+             "headLeft",
+             "headRight",
+             "start"
+           ]
   end
 
   test "inline record shapes preserve declaration order from nested type alias fields" do
@@ -274,7 +342,8 @@ defmodule Elmc.IRQueriesRecordShapesTest do
     assert Record.resolve_field_index_int("head", ctx, base) == {:ok, 4}
   end
 
-  test "maybePagePath payload fields use declaration order not alphabetical sort" do
+  test "maybePagePath payload fields follow registered shape order" do
+    # Shape may be declaration order when registered that way; resolve uses the shape as-is.
     Process.put(:elmc_inline_record_literal_shapes, %{
       {"SharedTemplate", "SharedTemplate_init"} => ["path", "metadata", "pageUrl"]
     })
@@ -383,5 +452,91 @@ defmodule Elmc.IRQueriesRecordShapesTest do
 
     assert Record.resolve_field_index_int("offset", ctx, base) == {:ok, 2}
     assert Record.field_index_for("offset", ctx, base) == "ELMC_FIELD_MAIN_MODEL_OFFSET"
+  end
+
+  test "extensible {c|lo,hi} resolves lo/hi against Extent not Box.lo index" do
+    shapes = %{
+      {"Internal.Extent", "Extent"} => ["lo", "hi"],
+      {"Internal.Box", "Box"} => ["label", "lo", "width", "height", "radius"],
+      {"Internal.Svg", "Boxy"} => ["label", "lo", "width", "height", "radius"]
+    }
+
+    Process.put(:elmc_record_alias_shapes, shapes)
+
+    on_exit(fn ->
+      Process.delete(:elmc_record_alias_shapes)
+    end)
+
+    ctx = %Context{
+      module: "Internal.Extent",
+      function_name: "map",
+      params: ["f", "e"],
+      local_types: %{"e" => "{c | lo : b, hi : b}"}
+    }
+
+    base = %{op: :var, name: "e"}
+
+    assert Record.resolve_field_index_int("lo", ctx, base) == {:ok, 0}
+    assert Record.resolve_field_index_int("hi", ctx, base) == {:ok, 1}
+  end
+
+  test "ambiguous contents prefers Layout over elm-pages Scaffold path/contents" do
+    # Mirrors generated_source: type aliases in alias map, union payloads alphabetical.
+    alias_shapes = %{
+      {"Scaffold.Route", "File"} => ["path", "contents"],
+      {"Head", "Meta"} => ["contents"]
+    }
+
+    inline_shapes = %{
+      {"Internal.Cartesian.Layout", "Layout"} => [
+        "contents",
+        "extent",
+        "inArrows",
+        "outArrows",
+        "wrapping"
+      ],
+      {"Internal.Cartesian.Layout", "Leaf"} => ["extent", "value"]
+    }
+
+    Process.put(:elmc_record_alias_shapes, Map.merge(alias_shapes, inline_shapes))
+    Process.put(:elmc_inline_record_literal_shapes, inline_shapes)
+
+    on_exit(fn ->
+      Process.delete(:elmc_record_alias_shapes)
+      Process.delete(:elmc_inline_record_literal_shapes)
+    end)
+
+    # Compiled from Internal.Cartesian.Layout.Svg — module prefix should prefer Layout.
+    ctx = %Context{
+      module: "Internal.Cartesian.Layout.Svg",
+      function_name: "layoutToSvgWithConfig",
+      params: ["svgConfig", "cl"]
+    }
+
+    assert Record.resolve_field_index_int("contents", ctx, %{op: :var, name: "l"}) == {:ok, 0}
+    assert Record.resolve_field_index_int("wrapping", ctx, %{op: :var, name: "l"}) == {:ok, 4}
+    assert Record.resolve_field_index_int("inArrows", ctx, %{op: :var, name: "l"}) == {:ok, 2}
+  end
+
+  test "ambiguous x without module hint prefers Vec2 over larger records" do
+    shapes = %{
+      {"Internal.Vec2", "Vec2"} => ["x", "y"],
+      {"Diagram.Layout", "Node"} => ["label", "x", "y", "width", "height", "depth"]
+    }
+
+    Process.put(:elmc_record_alias_shapes, shapes)
+
+    on_exit(fn ->
+      Process.delete(:elmc_record_alias_shapes)
+    end)
+
+    ctx = %Context{
+      module: "Internal.Svg",
+      function_name: "viewportFor",
+      params: ["l"]
+    }
+
+    assert Record.resolve_field_index_int("x", ctx, %{op: :var, name: "pos"}) == {:ok, 0}
+    assert Record.resolve_field_index_int("y", ctx, %{op: :var, name: "pos"}) == {:ok, 1}
   end
 end

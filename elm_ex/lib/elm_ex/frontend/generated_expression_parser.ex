@@ -556,6 +556,7 @@ defmodule ElmEx.Frontend.GeneratedExpressionParser do
     |> normalize_leading_negative_hex()
     |> normalize_leading_unary_minus()
     |> normalize_contextual_unary_minus()
+    |> normalize_tight_unary_minus_args()
     |> normalize_inline_numeric_subtraction()
     |> restore_masked_string_and_char_literals(literals)
   end
@@ -603,23 +604,76 @@ defmodule ElmEx.Frontend.GeneratedExpressionParser do
     )
   end
 
+  # Operand after unary `-`: bare/qualified name (`x`, `h2`, `x.y`, `Const.maxNumber`)
+  # or an opening paren for `-(...)`. Always wrap names as `negate (name)` so
+  # `-x.y` stays `negate (x.y)` (field access binds tighter than application).
+  @unary_minus_name ~r/[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*/u
+
   @spec normalize_leading_unary_minus(source()) :: source()
   defp normalize_leading_unary_minus(source) do
-    Regex.replace(
-      ~r/^\s*-\s*([a-z][A-Za-z0-9_.]*|\()/u,
-      source,
-      "negate \\1"
+    source
+    |> then(&Regex.replace(~r/^\s*-\s*\(/u, &1, "negate ("))
+    |> then(
+      &Regex.replace(
+        ~r/^\s*-\s*(#{Regex.source(@unary_minus_name)})/u,
+        &1,
+        "negate (\\1)"
+      )
     )
   end
 
   @spec normalize_contextual_unary_minus(source()) :: source()
   defp normalize_contextual_unary_minus(source) do
-    Regex.replace(
-      ~r/(\bthen\b|\belse\b|\bin\b|==|\/=|>=|<=|>|<|=|->|,|;|\[|\{|\()\s*-\s*([a-z][A-Za-z0-9_.]*|\()/u,
-      source,
-      "\\1 negate \\2"
+    # Convert unary `-` to `negate` after tokens that cannot end a binary
+    # subtraction left-hand side. Do this so the yecc grammar can treat `minus`
+    # as binary-only (otherwise `a - b` shift/reduces into `a (-b)`).
+    source
+    |> then(
+      &Regex.replace(
+        ~r/(\bthen\b|\belse\b|\bin\b|\bof\b|==|\/=|>=|<=|>|<|=|->|,|;|\[|\{|\(|\+|\-|\*|\/\/|\/|\^|\+\+|::|<\||\|>)\s*-\s*\(/u,
+        &1,
+        "\\1 negate ("
+      )
+    )
+    |> then(
+      &Regex.replace(
+        ~r/(\bthen\b|\belse\b|\bin\b|\bof\b|==|\/=|>=|<=|>|<|=|->|,|;|\[|\{|\(|\+|\-|\*|\/\/|\/|\^|\+\+|::|<\||\|>)\s*-\s*(#{Regex.source(@unary_minus_name)})/u,
+        &1,
+        "\\1 negate (\\2)"
+      )
     )
   end
+
+  # `Orientation3d -x -y -z w` / `f -x` / `max -h2` / `-Const.maxNumber`:
+  # minus glued to the operand (no space after `-`) is unary application.
+  # Spaced `a - b` stays binary subtraction. Apply repeatedly so chains like
+  # `-x -y -z` all rewrite. Capture the full name (not one char) so `-Const`
+  # and `-radius2` are not split into `C`/`onst` or `r`/`adius2`.
+  @spec normalize_tight_unary_minus_args(source()) :: source()
+  defp normalize_tight_unary_minus_args(source) do
+    normalize_tight_unary_minus_args_loop(source, 0)
+  end
+
+  defp normalize_tight_unary_minus_args_loop(source, n) when n < 64 do
+    next =
+      source
+      |> then(&Regex.replace(~r/([A-Za-z0-9_\)\]])\s+-\(/u, &1, "\\1 (negate ("))
+      |> then(
+        &Regex.replace(
+          ~r/([A-Za-z0-9_\)\]])\s+-(#{Regex.source(@unary_minus_name)})/u,
+          &1,
+          "\\1 (negate (\\2))"
+        )
+      )
+
+    if next == source do
+      source
+    else
+      normalize_tight_unary_minus_args_loop(next, n + 1)
+    end
+  end
+
+  defp normalize_tight_unary_minus_args_loop(source, _), do: source
 
   @spec validate_source_compat(source()) :: :ok | {:error, {atom(), atom()}}
   defp validate_source_compat(source) when is_binary(source) do

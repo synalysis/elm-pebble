@@ -238,6 +238,7 @@ siteNavItems currentRoute =
     , navLink currentRoute Route.Articles__WhyElmForPebble "Why Elm"
     , navLink currentRoute Route.FAQ "FAQ"
     , navLink currentRoute Route.Source "Source"
+    , navLink currentRoute Route.Wasm "WASM"
     ]
 
 

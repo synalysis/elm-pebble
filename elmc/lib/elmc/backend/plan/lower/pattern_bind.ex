@@ -54,8 +54,17 @@ defmodule Elmc.Backend.Plan.Lower.PatternBind do
     do_bind(%{kind: :tuple, elements: nest_tuple_elements(elements)}, ctx, b, subject_reg)
   end
 
-  defp do_bind(%{kind: :tuple, elements: [left, right]}, ctx, b, subject_reg) do
-    with {:ok, ctx1, b1, _} <- bind_tuple_elem(left, :first, subject_reg, ctx, b),
+  defp do_bind(%{kind: :tuple, elements: [left, right]} = pattern, ctx, b, subject_reg) do
+    {ctx0, b0} =
+      case Map.get(pattern, :bind) do
+        bind when is_binary(bind) ->
+          {Context.put_local(ctx, bind, subject_reg), Builder.bind_local(b, bind, subject_reg)}
+
+        _ ->
+          {ctx, b}
+      end
+
+    with {:ok, ctx1, b1, _} <- bind_tuple_elem(left, :first, subject_reg, ctx0, b0),
          {:ok, ctx2, b2, _} <- bind_tuple_elem(right, :second, subject_reg, ctx1, b1) do
       {:ok, ctx2, b2}
     else

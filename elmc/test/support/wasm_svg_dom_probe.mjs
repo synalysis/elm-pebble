@@ -43,9 +43,25 @@ if (!svg) {
 console.log(
   `svg width=${JSON.stringify(svg.getAttribute("width"))} height=${JSON.stringify(svg.getAttribute("height"))} viewBox=${JSON.stringify(svg.getAttribute("viewBox"))} ns=${svg.namespaceURI}`
 );
-const rects = svg.querySelectorAll("rect").length;
-const paths = svg.querySelectorAll("path").length;
-const textNodes = svg.querySelectorAll("text");
+const rectNodes = [...svg.querySelectorAll("rect")];
+const pathNodes = [...svg.querySelectorAll("path")];
+const textNodes = [...svg.querySelectorAll("text")];
+const rects = rectNodes.length;
+const paths = pathNodes.length;
 const texts = textNodes.length;
-const labelText = [...textNodes].map((node) => node.textContent ?? "").join("");
+const labelText = textNodes.map((node) => node.textContent ?? "").join("");
 console.log(`svg shapes rect=${rects} path=${paths} text=${texts} label=${JSON.stringify(labelText)}`);
+for (const node of rectNodes) {
+  console.log(
+    `rect x=${JSON.stringify(node.getAttribute("x"))} y=${JSON.stringify(node.getAttribute("y"))} width=${JSON.stringify(node.getAttribute("width"))} height=${JSON.stringify(node.getAttribute("height"))} fill=${JSON.stringify(node.getAttribute("fill"))} stroke=${JSON.stringify(node.getAttribute("stroke"))}`
+  );
+}
+for (const node of pathNodes) {
+  const d = node.getAttribute("d") ?? "";
+  console.log(`path d=${JSON.stringify(d)}`);
+}
+for (const node of textNodes) {
+  console.log(
+    `text content=${JSON.stringify(node.textContent ?? "")} text-anchor=${JSON.stringify(node.getAttribute("text-anchor"))} font-weight=${JSON.stringify(node.getAttribute("font-weight"))} dominant-baseline=${JSON.stringify(node.getAttribute("dominant-baseline"))} font-size=${JSON.stringify(node.getAttribute("font-size"))}`
+  );
+}

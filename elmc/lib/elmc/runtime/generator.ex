@@ -6814,55 +6814,65 @@ defmodule Elmc.Runtime.Generator do
 
     RC elmc_list_maximum(ElmcValue **out, ElmcValue *list) {
       RC rc = RC_SUCCESS;
-      ElmcValue *val = NULL;
+      ElmcValue *best = NULL;
       CATCH_BEGIN
         if (!list || list->tag != ELMC_TAG_LIST || list->payload == NULL) {
           *out = elmc_maybe_nothing();
         } else {
           ElmcCons *first = (ElmcCons *)list->payload;
-          int64_t best = elmc_as_int(first->head);
+          best = first->head;
+          elmc_retain(best);
           ElmcValue *cursor = first->tail;
           while (cursor && cursor->tag == ELMC_TAG_LIST && cursor->payload != NULL) {
             ElmcCons *node = (ElmcCons *)cursor->payload;
-            int64_t v = elmc_as_int(node->head);
-            if (v > best) best = v;
+            ElmcValue *order = elmc_basics_compare_take(node->head, best);
+            int is_gt = order && elmc_as_int(order) > 0;
+            elmc_release(order);
+            if (is_gt) {
+              elmc_release(best);
+              best = node->head;
+              elmc_retain(best);
+            }
             cursor = node->tail;
           }
-          rc = elmc_new_int(&val, best);
+          rc = elmc_maybe_just(out, best);
           CHECK_RC(rc);
-          rc = elmc_maybe_just(out, val);
-          CHECK_RC(rc);
-          val = NULL;
+          best = NULL;
         }
       CATCH_END;
-      elmc_release(val);
+      elmc_release(best);
       return rc;
     }
 
     RC elmc_list_minimum(ElmcValue **out, ElmcValue *list) {
       RC rc = RC_SUCCESS;
-      ElmcValue *val = NULL;
+      ElmcValue *best = NULL;
       CATCH_BEGIN
         if (!list || list->tag != ELMC_TAG_LIST || list->payload == NULL) {
           *out = elmc_maybe_nothing();
         } else {
           ElmcCons *first = (ElmcCons *)list->payload;
-          int64_t best = elmc_as_int(first->head);
+          best = first->head;
+          elmc_retain(best);
           ElmcValue *cursor = first->tail;
           while (cursor && cursor->tag == ELMC_TAG_LIST && cursor->payload != NULL) {
             ElmcCons *node = (ElmcCons *)cursor->payload;
-            int64_t v = elmc_as_int(node->head);
-            if (v < best) best = v;
+            ElmcValue *order = elmc_basics_compare_take(node->head, best);
+            int is_lt = order && elmc_as_int(order) < 0;
+            elmc_release(order);
+            if (is_lt) {
+              elmc_release(best);
+              best = node->head;
+              elmc_retain(best);
+            }
             cursor = node->tail;
           }
-          rc = elmc_new_int(&val, best);
+          rc = elmc_maybe_just(out, best);
           CHECK_RC(rc);
-          rc = elmc_maybe_just(out, val);
-          CHECK_RC(rc);
-          val = NULL;
+          best = NULL;
         }
       CATCH_END;
-      elmc_release(val);
+      elmc_release(best);
       return rc;
     }
 

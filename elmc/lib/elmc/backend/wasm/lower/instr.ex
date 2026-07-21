@@ -401,6 +401,19 @@ defmodule Elmc.Backend.Wasm.Lower.Instr do
           const_value: Map.fetch!(args, :value)
         )
 
+      kind in [:min_vars, :max_vars] and
+          not native_int_binop_operands?(lhs, rhs, opts, MapSet.new()) ->
+        builtin = if kind == :min_vars, do: :basics_min, else: :basics_max
+
+        emit_runtime_call(
+          builtin,
+          [Slots.reg_name(slots, lhs), Slots.reg_name(slots, rhs)],
+          dest_reg,
+          slots,
+          rc?,
+          opts
+        )
+
       true ->
         expr =
           case kind do
@@ -625,8 +638,10 @@ defmodule Elmc.Backend.Wasm.Lower.Instr do
 
   defp native_int_binop_operands?(_, _, _, _), do: false
 
-  defp emit_call_runtime(%{dest: dest_reg, args: %{builtin: :native_int_to_float, args: [reg]}}, slots, rc?, _opts)
+  defp emit_call_runtime(%{dest: dest_reg, args: %{builtin: :native_int_to_float, args: [reg]}}, slots, rc?, opts)
        when is_integer(reg) do
+    # Convert the i32 payload as a native int. Do not call as_int first: raw
+    # consts like 72 collide with live handles (handle 72 may be Int(2)).
     scalar = WasmTypes.sexpr("local.get", [Slots.reg_name(slots, reg)])
 
     f32 =
@@ -641,7 +656,7 @@ defmodule Elmc.Backend.Wasm.Lower.Instr do
         format_operand(f32)
       ])
 
-    emit_runtime_call(:new_float, [bits], dest_reg, slots, rc?, [])
+    emit_runtime_call(:new_float, [bits], dest_reg, slots, rc?, opts)
   end
 
   defp emit_call_runtime(%{dest: dest_reg, args: %{builtin: :new_float, literal: value}}, slots, rc?, opts)
@@ -1734,8 +1749,9 @@ defmodule Elmc.Backend.Wasm.Lower.Instr do
           %{op: :phi, args: %{native_int_phi: true}} ->
             true
 
-          %{op: :record_get_int} ->
-            true
+          # `:record_get_int` still lowers to boxed `runtime.record_get` on WASM
+          # (no native-int import). Treating it as i32 causes `as_int` of Point
+          # handles when a field name is misclassified (e.g. Svg.Arrow `.start`).
 
           %{op: :call_runtime, args: %{builtin: :new_int, literal: _}} ->
             true

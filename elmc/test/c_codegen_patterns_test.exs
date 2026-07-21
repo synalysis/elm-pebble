@@ -1762,6 +1762,45 @@ defmodule Elmc.CCodegenPatternsTest do
     assert body =~ "elmc_list_cons(" or body =~ "elmc_list_filter_map("
   end
 
+  test "List.filterMap identity on runtime Maybe vars uses runtime filterMap" do
+    source = """
+    module Main exposing (main)
+
+    import Pebble.Platform as Platform
+    import Pebble.Ui as Ui
+    import Pebble.Ui.Color as Color
+
+    pick : Maybe Int -> Maybe Int -> List Int
+    pick a b =
+        List.filterMap identity [ a, b ]
+
+    init _ = ( { n = List.length (pick (Just 1) Nothing) }, Platform.Cmd.none )
+    update _ m = ( m, Platform.Cmd.none )
+    view m = Ui.toUiNode [ Ui.clear Color.white, Ui.text (String.fromInt m.n) ]
+    subscriptions _ = Platform.Sub.none
+    main = Platform.application { init = init, update = update, view = view, subscriptions = subscriptions }
+    """
+
+    project_dir = Path.expand("tmp/list_filter_map_identity_vars", __DIR__)
+    out_dir = Path.expand("tmp/list_filter_map_identity_vars_codegen", __DIR__)
+    File.rm_rf!(project_dir)
+    File.rm_rf!(out_dir)
+    File.mkdir_p!(Path.join(project_dir, "src"))
+    File.write!(Path.join(project_dir, "src/Main.elm"), source)
+
+    File.write!(
+      Path.join(project_dir, "elm.json"),
+      File.read!(Path.expand("fixtures/simple_project/elm.json", __DIR__))
+    )
+
+    assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+    generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+
+    body = assert_plan_fn!(generated_c, "pick")
+    assert body =~ "elmc_list_filter_map(",
+           "runtime Maybe args must not be treated as already-unwrapped values"
+  end
+
   test "list literal ownership transfer nulls tmp refs after take" do
     source = """
     module Main exposing (main)

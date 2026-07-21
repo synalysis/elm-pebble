@@ -8,10 +8,14 @@ defmodule ElmEx.Frontend.LayoutRulesTest do
     assert LayoutRules.let_binding_start?("flag b =")
     assert LayoutRules.let_binding_start?("  ( x, y ) =")
     assert LayoutRules.let_binding_start?("{ x | field } =")
+    assert LayoutRules.let_binding_start?("{ totalMass, totalVolume } =")
     refute LayoutRules.let_binding_start?("{ inArrows = []")
     assert LayoutRules.let_binding_start?("{ x | field } =")
     refute LayoutRules.let_binding_start?("in")
     refute LayoutRules.let_binding_start?("else")
+    # Parenthesized lambda / record-update lines must not look like `(pattern) =`
+    refute LayoutRules.let_binding_start?("(\\mat -> { mat | density = 0 })")
+    refute LayoutRules.let_binding_start?("( \\( shape, mat, sign ) -> ( shape, { mat | density = 0 }, sign ))")
   end
 
   test "case_arm_start? recognizes wildcard and constructor arms" do

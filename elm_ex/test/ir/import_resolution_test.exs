@@ -188,4 +188,15 @@ defmodule ElmEx.IR.ImportResolutionTest do
     assert ImportResolution.resolve("Svg.g", lookup) == "Svg.g"
     assert ImportResolution.resolve("Svg.fill", lookup) == "Svg.Attributes.fill"
   end
+
+  test "resolve/2 does not remap unrelated aliases via unqualified Html tag names" do
+    lookup = %{
+      alias_map: %{"Tw" => "Tailwind"},
+      import_unqualified_map: %{"p" => "Html", "div" => "Html"}
+    }
+
+    assert ImportResolution.resolve("Tw.p", lookup) == "Tailwind.p"
+    assert ImportResolution.resolve("p", lookup) == "Html.p"
+    assert ImportResolution.resolve("Tw.mt", lookup) == "Tailwind.mt"
+  end
 end

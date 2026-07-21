@@ -61,6 +61,9 @@ defmodule Elmc.Backend.Plan.Lower.FilterMapIdentity do
           else
             _ -> {:halt, :unsupported}
           end
+
+        :unsupported ->
+          {:halt, :unsupported}
       end
     end)
   end
@@ -112,8 +115,14 @@ defmodule Elmc.Backend.Plan.Lower.FilterMapIdentity do
 
           :error ->
             case conditional_maybe_item(expr) do
-              {:ok, cond_expr, inner} -> {:conditional, cond_expr, inner}
-              :error -> {:include, expr}
+              {:ok, cond_expr, inner} ->
+                {:conditional, cond_expr, inner}
+
+              # Runtime Maybe values (e.g. `boundOf a`) are not statically
+              # `Just`/`Nothing`. Including them as-is would skip unwrapping and
+              # break `List.map Extent.width` over `filterMap identity [...]`.
+              :error ->
+                :unsupported
             end
         end
     end

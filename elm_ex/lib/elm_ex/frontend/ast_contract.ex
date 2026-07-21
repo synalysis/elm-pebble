@@ -174,6 +174,9 @@ defmodule ElmEx.Frontend.AstContract do
       :sub_const ->
         validate_sub_const(expr)
 
+      :sub_vars ->
+        validate_sub_vars(expr)
+
       :compare ->
         validate_compare(expr)
 
@@ -291,6 +294,12 @@ defmodule ElmEx.Frontend.AstContract do
     do: :ok
 
   defp validate_sub_const(_), do: {:error, :invalid_sub_const}
+
+  @spec validate_sub_vars(Types.expr() | Types.invalid_input()) :: :ok | {:error, atom()}
+  defp validate_sub_vars(%{left: left, right: right}) when is_binary(left) and is_binary(right),
+    do: :ok
+
+  defp validate_sub_vars(_), do: {:error, :invalid_sub_vars}
 
   @spec validate_compare(Types.expr() | Types.invalid_input()) :: :ok | {:error, atom()}
   defp validate_compare(%{left: left, right: right, kind: kind})

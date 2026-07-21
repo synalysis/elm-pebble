@@ -340,12 +340,32 @@ defmodule Elmc.Backend.CCodegen.Native.UsageAnalysis do
   end
 
   defp native_function_arg_kinds_for_analysis(decl, module_name, decl_map) do
-    Process.put(:elmc_skip_int_usage_recursion, true)
+    cache_key = :elmc_native_arg_kinds_analysis_cache
+    name = Map.get(decl, :name)
+    cache = Process.get(cache_key, %{})
+    key = {module_name, name, Map.get(decl, :type)}
 
-    try do
-      NativeFunctionCall.arg_kinds(decl, module_name, decl_map)
-    after
-      Process.delete(:elmc_skip_int_usage_recursion)
+    case Map.fetch(cache, key) do
+      {:ok, :computing} ->
+        # Break re-entrant cycles without walking the function body again.
+        decl |> Map.get(:args, []) |> List.wrap() |> Enum.map(fn _ -> :boxed end)
+
+      {:ok, kinds} when is_list(kinds) ->
+        kinds
+
+      :error ->
+        Process.put(cache_key, Map.put(cache, key, :computing))
+        Process.put(:elmc_skip_int_usage_recursion, true)
+
+        kinds =
+          try do
+            NativeFunctionCall.arg_kinds(decl, module_name, decl_map)
+          after
+            Process.delete(:elmc_skip_int_usage_recursion)
+          end
+
+        Process.put(cache_key, Map.put(Process.get(cache_key, %{}), key, kinds))
+        kinds
     end
   end
 

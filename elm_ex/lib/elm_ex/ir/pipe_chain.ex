@@ -78,6 +78,13 @@ defmodule ElmEx.IR.PipeChain do
     %{op: :qualified_call, target: target, args: [acc]}
   end
 
+  def append_pipe_arg(%{op: :call, name: "__apply__"} = step, acc) do
+    # Let-bound / closure application is always binary `__apply__(fn, arg)`.
+    # `x |> (f a b)` must become `__apply__(__apply__(__apply__(f, a), b), x)`,
+    # never `__apply__(f, a, b, x)` via args-append.
+    %{op: :call, name: "__apply__", args: [step, acc]}
+  end
+
   def append_pipe_arg(%{op: :call, name: name, args: args}, acc)
        when is_binary(name) and is_list(args) do
     %{op: :call, name: name, args: args ++ [acc]}

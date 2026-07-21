@@ -1,7 +1,7 @@
 module Main exposing (main)
 
-import Html exposing (div, text)
-import Tailwind exposing (classes, dark, gray, md, px, s3, s700, shrink_0, text_color)
+import Html exposing (div, p, text)
+import Tailwind as Tw exposing (classes, dark, gray, md, px, s3, s700, shrink_0, text_color)
 
 
 main =
@@ -9,8 +9,11 @@ main =
         [ classes
             [ shrink_0
             , px s3
+            , Tw.p s3
             , md [ px s3 ]
             , dark [ text_color (gray s700) ]
             ]
         ]
-        [ text "ok" ]
+        [ text "ok"
+        , p [] [ text "paragraph" ]
+        ]

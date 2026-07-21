@@ -747,6 +747,7 @@ defmodule ElmEx.Frontend.GeneratedContractBuilder do
               :add_const,
               :add_vars,
               :sub_const,
+              :sub_vars,
               :cmd_none,
               :field_access,
               :qualified_ref,

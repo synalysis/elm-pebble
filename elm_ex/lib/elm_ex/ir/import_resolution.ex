@@ -82,11 +82,14 @@ defmodule ElmEx.IR.ImportResolution do
 
   # When `import Foo exposing (bar)` and `import Other as Foo` coexist, `Foo.bar`
   # must stay on the home module that exposed `bar`, not the conflicting alias.
+  # Only apply when the qualifier prefix is that home module (`Foo.bar`); unrelated
+  # aliases such as `Tw.p` with bare `import Html exposing (p)` must keep Tailwind.p.
   defp resolve_alias_module(prefix, member, alias_map, import_unqualified_map)
        when is_binary(prefix) and is_binary(member) and is_map(alias_map) and is_map(import_unqualified_map) do
     case {Map.get(import_unqualified_map, member), Map.get(alias_map, prefix)} do
       {home_module, aliased_module}
-      when is_binary(home_module) and is_binary(aliased_module) and home_module != aliased_module ->
+      when is_binary(home_module) and is_binary(aliased_module) and home_module != aliased_module and
+             prefix == home_module ->
         home_module
 
       {_home_module, aliased_module} when is_binary(aliased_module) ->

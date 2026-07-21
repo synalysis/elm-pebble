@@ -32,6 +32,23 @@ defmodule Elmc.Backend.Plan.Lower.Arith do
     end
   end
 
+  def compile(%{op: :sub_vars, left: left, right: right}, ctx, b)
+      when is_binary(left) and is_binary(right) do
+    # Prefer boxed/float-capable lowering — physics code subtracts Vec3 components
+    # stored in locals. Fall back to int regs when both sides look native-int.
+    left_e = %{op: :var, name: left}
+    right_e = %{op: :var, name: right}
+
+    case Elmc.Backend.Plan.Lower.IntCall.compile(
+           %{op: :call, name: "__sub__", args: [left_e, right_e]},
+           ctx,
+           b
+         ) do
+      {:ok, _, _} = ok -> ok
+      :unsupported -> :unsupported
+    end
+  end
+
   def compile(_, _, _), do: :unsupported
 
   @spec emit_binary(atom(), Types.ir_expr(), Types.ir_expr(), Context.t(), Builder.t()) ::

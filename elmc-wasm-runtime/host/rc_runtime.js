@@ -1808,8 +1808,8 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
   };
 
   const listMember = (outPtr, valuePtr, listPtr) => {
-    const value = intValue(valuePtr);
-    const found = listItems(listPtr).some((item) => item === value);
+    const needle = asHandle(valuePtr);
+    const found = listItems(listPtr).some((item) => valuesEqual(asHandle(item), needle));
     return newInt(outPtr, found ? 1 : 0);
   };
 
@@ -1872,12 +1872,24 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
 
   const listMaximum = (outPtr, listPtr) => {
     const items = listItems(listPtr);
-    return newInt(outPtr, items.length === 0 ? 0 : Math.max(...items));
+    if (items.length === 0) return maybeNothing(outPtr);
+    let best = items[0] | 0;
+    for (let i = 1; i < items.length; i++) {
+      const item = items[i] | 0;
+      if (compareValues(item, best) > 0) best = item;
+    }
+    return maybeJust(outPtr, best);
   };
 
   const listMinimum = (outPtr, listPtr) => {
     const items = listItems(listPtr);
-    return newInt(outPtr, items.length === 0 ? 0 : Math.min(...items));
+    if (items.length === 0) return maybeNothing(outPtr);
+    let best = items[0] | 0;
+    for (let i = 1; i < items.length; i++) {
+      const item = items[i] | 0;
+      if (compareValues(item, best) < 0) best = item;
+    }
+    return maybeJust(outPtr, best);
   };
 
   const listIntersperse = (outPtr, sepPtr, listPtr) => {
@@ -2115,10 +2127,15 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
   const maybeWithDefault = (outPtr, defaultPtr, maybePtr) => {
     const payload = readHandle(maybePtr);
     if (payload?.tag === TAG_MAYBE && payload.value != null) {
-      return newInt(outPtr, intValue(payload.value));
+      return retain(outPtr, payload.value | 0);
     }
-
-    return newInt(outPtr, intValue(defaultPtr));
+    if (payload?.tag === TAG_TUPLE2) {
+      const tag = intValue(payload.first);
+      if (tag === 1 && payload.second) {
+        return retain(outPtr, payload.second | 0);
+      }
+    }
+    return retain(outPtr, defaultPtr | 0);
   };
 
   const maybeMap = (outPtr, closurePtr, maybePtr) => {
@@ -2263,7 +2280,7 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
   };
 
   const basicsCompare = (outPtr, leftPtr, rightPtr) => {
-    writeOut(outPtr, internOrder(compareInts(intValue(leftPtr), intValue(rightPtr))));
+    writeOut(outPtr, internOrder(compareValues(leftPtr, rightPtr)));
     return RC_SUCCESS;
   };
 
@@ -2689,6 +2706,8 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
   };
 
   const stringLengthBoxed = (outPtr, strPtr) => newInt(outPtr, stringLen(stringValue(strPtr)));
+  // Plan/WASM lower String.length as runtime.string_length_val (RC out-ptr ABI).
+  const stringLengthVal = stringLengthBoxed;
 
   const stringIsEmpty = (outPtr, strPtr) => newInt(outPtr, stringValue(strPtr).length === 0 ? 1 : 0);
 
@@ -3160,14 +3179,16 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
     );
   };
   const basicsMax = (outPtr, aPtr, bPtr) =>
-    newInt(outPtr, Math.max(wasmScalarArg(aPtr), wasmScalarArg(bPtr)));
+    retain(outPtr, compareValues(aPtr, bPtr) >= 0 ? aPtr : bPtr);
   const basicsMin = (outPtr, aPtr, bPtr) =>
-    newInt(outPtr, Math.min(wasmScalarArg(aPtr), wasmScalarArg(bPtr)));
-  const basicsClamp = (outPtr, lowPtr, highPtr, nPtr) =>
-    newInt(
-      outPtr,
-      Math.max(wasmScalarArg(lowPtr), Math.min(wasmScalarArg(highPtr), wasmScalarArg(nPtr)))
-    );
+    retain(outPtr, compareValues(aPtr, bPtr) <= 0 ? aPtr : bPtr);
+  const basicsClamp = (outPtr, lowPtr, highPtr, nPtr) => {
+    const below = compareValues(nPtr, lowPtr);
+    if (below < 0) return retain(outPtr, lowPtr);
+    const above = compareValues(nPtr, highPtr);
+    if (above > 0) return retain(outPtr, highPtr);
+    return retain(outPtr, nPtr);
+  };
   const basicsModBy = (outPtr, modPtr, nPtr) => {
     const mod = wasmScalarArg(modPtr);
     const n = wasmScalarArg(nPtr);
@@ -4120,7 +4141,29 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
       nextApplied.slice(0, need)
     );
     if (rc !== RC_SUCCESS) return { rc, value: 0 };
-    return { rc, value: normalizeClosureValue(value) };
+
+    // Elm currying: f a b where arity(f)=1 returns g, then apply b to g.
+    // Mirrors elmc_closure_call oversaturation in the C runtime.
+    const normalized = normalizeClosureValue(value);
+    const remaining = nextApplied.slice(need);
+    if (remaining.length === 0) {
+      return { rc, value: normalized };
+    }
+
+    const continuedPayload = readHandle(normalized);
+    if (continuedPayload?.tag !== TAG_CLOSURE) {
+      return { rc, value: normalized };
+    }
+
+    const continued = invokeClosure(normalized, remaining);
+    if (
+      normalized &&
+      continued.value !== normalized &&
+      handles.has(normalized)
+    ) {
+      release(normalized);
+    }
+    return continued;
   };
 
   const normalizeClosureValue = (value) => {
@@ -4142,6 +4185,23 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
     for (const item of listItems(listPtr)) {
       const arg = asHandle(item);
       const { rc, value } = invokeClosure(closurePtr, [arg]);
+      if (rc !== RC_SUCCESS) return rc;
+      results.push(value);
+    }
+
+    return writeList(outPtr, results);
+  };
+
+  // List.map2..map5: zip shortest length; pass element handles (not ints) and keep
+  // closure results as handles — same ownership shape as list_map / C elmc_list_map2.
+  const mapListsWithClosure = (outPtr, closurePtr, listPtrs) => {
+    const lists = listPtrs.map(listItems);
+    const len = Math.min(...lists.map((items) => items.length));
+    const results = [];
+
+    for (let i = 0; i < len; i++) {
+      const args = lists.map((items) => asHandle(items[i]));
+      const { rc, value } = invokeClosure(closurePtr, args);
       if (rc !== RC_SUCCESS) return rc;
       results.push(value);
     }
@@ -4501,7 +4561,7 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
     release_unless_reachable: releaseUnlessReachable,
     release_unless_reachable_from_roots: releaseUnlessReachableFromRoots,
     release_array_lifo: releaseArrayLifo,
-    as_int: intValue,
+    as_int: asIntNumber,
     as_bool: asBoolForWasm,
     // Scalar value import: wasm switch lowering calls (union_tag_as_int handle) -> i32.
     union_tag_as_int: unionTagAsInt,
@@ -4802,6 +4862,7 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
     append,
     new_char: newChar,
     string_length_boxed: stringLengthBoxed,
+    string_length_val: stringLengthVal,
     string_is_empty: stringIsEmpty,
     string_reverse: stringReverse,
     string_repeat: stringRepeat,
@@ -4852,94 +4913,29 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
     make_closure: makeClosure,
     call_closure: callClosure,
     list_map: mapListWithClosure,
-    list_map2: (outPtr, closurePtr, aPtr, bPtr) => {
-      const a = listItems(aPtr);
-      const b = listItems(bPtr);
-      const results = [];
-
-      for (let i = 0; i < a.length; i++) {
-        const argA = newIntHandle(a[i] ?? 0);
-        const argB = newIntHandle(b[i] ?? 0);
-        const { rc, value } = invokeClosure(closurePtr, [argA, argB]);
-        release(argA);
-        release(argB);
-        if (rc !== RC_SUCCESS) return rc;
-        results.push(intValue(value));
-        release(value);
-      }
-
-      return writeList(outPtr, results);
-    },
-    list_map3: (outPtr, closurePtr, aPtr, bPtr, cPtr) => {
-      const a = listItems(aPtr);
-      const b = listItems(bPtr);
-      const c = listItems(cPtr);
-      const results = [];
-
-      for (let i = 0; i < a.length; i++) {
-        const args = [
-          newIntHandle(a[i] ?? 0),
-          newIntHandle(b[i] ?? 0),
-          newIntHandle(c[i] ?? 0),
-        ];
-        const { rc, value } = invokeClosure(closurePtr, args);
-        for (const arg of args) release(arg);
-        if (rc !== RC_SUCCESS) return rc;
-        results.push(intValue(value));
-        release(value);
-      }
-
-      return writeList(outPtr, results);
-    },
-    list_map4: (outPtr, closurePtr, aPtr, bPtr, cPtr, dPtr) => {
-      const lists = [listItems(aPtr), listItems(bPtr), listItems(cPtr), listItems(dPtr)];
-      const results = [];
-
-      for (let i = 0; i < lists[0].length; i++) {
-        const args = lists.map((items) => newIntHandle(items[i] ?? 0));
-        const { rc, value } = invokeClosure(closurePtr, args);
-        for (const arg of args) release(arg);
-        if (rc !== RC_SUCCESS) return rc;
-        results.push(intValue(value));
-        release(value);
-      }
-
-      return writeList(outPtr, results);
-    },
-    list_map5: (outPtr, closurePtr, aPtr, bPtr, cPtr, dPtr, ePtr) => {
-      const lists = [
-        listItems(aPtr),
-        listItems(bPtr),
-        listItems(cPtr),
-        listItems(dPtr),
-        listItems(ePtr),
-      ];
-      const results = [];
-
-      for (let i = 0; i < lists[0].length; i++) {
-        const args = lists.map((items) => newIntHandle(items[i] ?? 0));
-        const { rc, value } = invokeClosure(closurePtr, args);
-        for (const arg of args) release(arg);
-        if (rc !== RC_SUCCESS) return rc;
-        results.push(intValue(value));
-        release(value);
-      }
-
-      return writeList(outPtr, results);
-    },
+    list_map2: (outPtr, closurePtr, aPtr, bPtr) =>
+      mapListsWithClosure(outPtr, closurePtr, [aPtr, bPtr]),
+    list_map3: (outPtr, closurePtr, aPtr, bPtr, cPtr) =>
+      mapListsWithClosure(outPtr, closurePtr, [aPtr, bPtr, cPtr]),
+    list_map4: (outPtr, closurePtr, aPtr, bPtr, cPtr, dPtr) =>
+      mapListsWithClosure(outPtr, closurePtr, [aPtr, bPtr, cPtr, dPtr]),
+    list_map5: (outPtr, closurePtr, aPtr, bPtr, cPtr, dPtr, ePtr) =>
+      mapListsWithClosure(outPtr, closurePtr, [aPtr, bPtr, cPtr, dPtr, ePtr]),
     list_filter: filterListWithClosure,
     list_filter_map: filterMapListWithClosure,
     list_indexed_map: (outPtr, closurePtr, listPtr) => {
       const results = [];
+      const items = listItems(listPtr);
 
-      for (let index = 0; index < listItems(listPtr).length; index++) {
-        const item = listItems(listPtr)[index];
-        const args = [newIntHandle(index), asHandle(item)];
-        const { rc, value } = invokeClosure(closurePtr, args);
-        release(args[0]);
+      for (let index = 0; index < items.length; index++) {
+        const indexHandle = newIntHandle(index);
+        const { rc, value } = invokeClosure(closurePtr, [
+          indexHandle,
+          asHandle(items[index]),
+        ]);
+        release(indexHandle);
         if (rc !== RC_SUCCESS) return rc;
-        results.push(intValue(value));
-        release(value);
+        results.push(value);
       }
 
       return writeList(outPtr, results);

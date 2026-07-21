@@ -12,8 +12,59 @@ defmodule ElmEx.Frontend.LayoutRules do
     trimmed = String.trim(text)
 
     Regex.match?(~r/^[a-z_][A-Za-z0-9_']*(\s+[a-z_][A-Za-z0-9_']*)*\s*=/u, trimmed) or
-      (Regex.match?(~r/^\(\s*/u, trimmed) and Regex.match?(~r/=/u, trimmed)) or
+      paren_pattern_binding_start?(trimmed) or
       Regex.match?(~r/^\{\s*[^=]*\}\s*=/u, trimmed)
+  end
+
+  # `(a, b) = …`, `(Just x) = …` — not lambdas `(\x -> …)` and not parenthesized
+  # expressions that merely contain `=` inside a record update / nested form.
+  defp paren_pattern_binding_start?(trimmed) when is_binary(trimmed) do
+    case split_paren_pattern_binding(trimmed) do
+      {:ok, inner} ->
+        inner_trim = String.trim(inner)
+        inner_trim != "" and not String.starts_with?(inner_trim, "\\")
+
+      :error ->
+        false
+    end
+  end
+
+  defp split_paren_pattern_binding(<<"(", rest::binary>>) do
+    case find_matching_close_paren(rest, 1, 0) do
+      {:ok, inner, after_close} ->
+        if Regex.match?(~r/^\s*=(?!=)/u, after_close) do
+          {:ok, inner}
+        else
+          :error
+        end
+
+      :error ->
+        :error
+    end
+  end
+
+  defp split_paren_pattern_binding(_), do: :error
+
+  defp find_matching_close_paren(text, depth, idx) when depth > 0 do
+    case String.at(text, idx) do
+      nil ->
+        :error
+
+      "(" ->
+        find_matching_close_paren(text, depth + 1, idx + 1)
+
+      ")" ->
+        if depth == 1 do
+          inner = String.slice(text, 0, idx)
+          rest_after = String.slice(text, (idx + 1)..-1//1)
+          {:ok, inner, rest_after}
+        else
+          find_matching_close_paren(text, depth - 1, idx + 1)
+        end
+
+      _ ->
+        find_matching_close_paren(text, depth, idx + 1)
+    end
   end
 
   @doc "True when a physical line starts a new `case` arm at the block indent."

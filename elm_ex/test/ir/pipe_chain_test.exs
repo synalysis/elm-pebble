@@ -52,36 +52,32 @@ defmodule ElmEx.IR.PipeChainTest do
            } = PipeChain.desugar(chain)
   end
 
-  test "desugar appends piped value as last field_call argument" do
+  test "desugar nests binary __apply__ instead of appending pipe args" do
+    # Let-bound `emit a b` lowers to nested `__apply__`; `x |> emit a b` must
+    # apply `x` as another binary `__apply__`, not `__apply__/3`.
+    step = %{
+      op: :call,
+      name: "__apply__",
+      args: [
+        %{
+          op: :call,
+          name: "__apply__",
+          args: [%{op: :var, name: "emit"}, %{op: :int_literal, value: 1}]
+        },
+        %{op: :int_literal, value: 2}
+      ]
+    }
+
     chain = %{
       op: :pipe_chain,
-      steps: [
-        %{
-          op: :field_call,
-          arg: "config",
-          field: "init",
-          args: [
-            %{op: :var, name: "flags"},
-            %{op: :var, name: "shared"},
-            %{op: :var, name: "page"},
-            %{op: :var, name: "action"}
-          ]
-        }
-      ],
-      base: %{op: :int_literal, value: 99}
+      steps: [step],
+      base: %{op: :var, name: "contacts"}
     }
 
     assert %{
-             op: :field_call,
-             arg: "config",
-             field: "init",
-             args: [
-               %{op: :var, name: "flags"},
-               %{op: :var, name: "shared"},
-               %{op: :var, name: "page"},
-               %{op: :var, name: "action"},
-               %{op: :int_literal, value: 99}
-             ]
+             op: :call,
+             name: "__apply__",
+             args: [^step, %{op: :var, name: "contacts"}]
            } = PipeChain.desugar(chain)
   end
 end

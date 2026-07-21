@@ -87,10 +87,12 @@ defmodule Elmc.WasmWebHtmlTest do
       "ok",
       fn wat -> assert wat =~ "html_cmd" end,
       fn output ->
-        assert output =~ ~s/"value":"shrink-0 px-3 md:px-3 dark:text-gray-700"/
+        assert output =~ ~s/"value":"shrink-0 px-3 p-3 md:px-3 dark:text-gray-700"/
         refute output =~ "shrink - 0"
         refute output =~ ~s/"value":"px-3 px-3/
         refute output =~ ~s/text-gray-50/
+        # Tw.p must not resolve to Html.p (would use spacing token as attrs).
+        refute output =~ ~s(<p class="3")
       end,
       fn manifest ->
         values =
