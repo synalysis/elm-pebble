@@ -32,7 +32,7 @@ defmodule Elmc.PlanNonRcUiHelperCodegenTest do
 
     decl_map = %{{"Pebble.Ui", "canvasLayer"} => decl}
     Process.put(:elmc_program_decls, decl_map)
-    Process.put(:elmc_codegen_opts, [pebble_int32: true, plan_ir_mode: :primary])
+    Process.put(:elmc_codegen_opts, %{pebble_int32: true, plan_ir_mode: :primary})
 
     on_exit(fn ->
       Process.delete(:elmc_program_decls)

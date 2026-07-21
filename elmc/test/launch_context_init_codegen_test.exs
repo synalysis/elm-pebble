@@ -68,13 +68,10 @@ defmodule Elmc.LaunchContextInitCodegenTest do
                ~r/elmc_record_get_index\(context, ELMC_FIELD_PEBBLE_PLATFORM_LAUNCHCONTEXT_SCREEN\)/,
                init_body
              )
-           ) == 1
+           ) == 3
 
-    refute length(
-             Regex.scan(
-               ~r/ELMC_RECORD_GET_INDEX_INT\(ELMC_RECORD_GET_INDEX\(context, ELMC_FIELD_PEBBLE_PLATFORM_LAUNCHCONTEXT_SCREEN\)/,
-               init_body
-             )
-           ) > 1
+    assert init_body =~ "ELMC_RECORD_GET_INDEX_INT(owned[3], ELMC_FIELD_PEBBLE_PLATFORM_LAUNCHSCREEN_WIDTH)"
+    assert init_body =~ "ELMC_RECORD_GET_INDEX_INT(owned[6], ELMC_FIELD_PEBBLE_PLATFORM_LAUNCHSCREEN_HEIGHT)"
+    assert init_body =~ "ELMC_FIELD_PEBBLE_PLATFORM_LAUNCHSCREEN_SHAPE"
   end
 end

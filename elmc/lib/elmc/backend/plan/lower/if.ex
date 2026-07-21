@@ -31,8 +31,9 @@ defmodule Elmc.Backend.Plan.Lower.If do
 
   defp compile_branches_cfg(cond, then_expr, else_expr, ctx, b) do
     saved_pending = Map.get(b, :pending_merge_block)
+    cond_ctx = Context.for_branch_arm(ctx)
 
-    with {:ok, cond_reg, b1} <- Expr.compile(cond, ctx, b),
+    with {:ok, cond_reg, b1} <- Expr.compile(cond, cond_ctx, b),
          then_id = b1.next_block,
          else_id = then_id + 1,
          merge_id = skip_reserved(else_id + 1, saved_pending),

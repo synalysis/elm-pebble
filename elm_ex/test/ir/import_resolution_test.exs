@@ -154,6 +154,20 @@ defmodule ElmEx.IR.ImportResolutionTest do
              "Internal.Svg.Arrow.arrow"
   end
 
+  test "normalize_expr/2 rewrites constructor_ref import aliases" do
+    lookup = %{
+      alias_map: %{"UiResources" => "Pebble.Ui.Resources"},
+      import_unqualified_map: %{},
+      local_call_names: MapSet.new(),
+      current_module: "Main"
+    }
+
+    expr = %{op: :constructor_ref, target: "UiResources.BitmapStaticBtIcon"}
+
+    assert %{op: :constructor_ref, target: "Pebble.Ui.Resources.BitmapStaticBtIcon"} =
+             ImportResolution.normalize_expr(expr, lookup)
+  end
+
   test "normalize_expr/2 qualifies imported union constructors" do
     lookup = %{import_unqualified_map: %{"M" => "Svg.PathD", "L" => "Svg.PathD"}}
 

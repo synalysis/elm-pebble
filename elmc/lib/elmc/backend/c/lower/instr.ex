@@ -1312,11 +1312,17 @@ defmodule Elmc.Backend.C.Lower.Instr do
             emit_with_ephemeral_cleanup(prep_lines, assign_owned(rc?, dest, call_expr), cleanup_lines)
 
           true ->
-            emit_with_ephemeral_cleanup(
-              prep_lines,
-              rc_assign(rc?, dest, sym, c_args),
-              cleanup_lines
-            )
+            {c_args, prep_lines, cleanup_lines} = build_runtime_call_args(id, args, slots, opts)
+
+            assign =
+              if not rc? and dest == "*out" do
+                call_expr = "#{value_return_allocator(sym)}(#{Enum.join(c_args, ", ")})"
+                assign_value_return_tail(false, dest, call_expr, instr, slots, opts)
+              else
+                rc_assign(rc?, dest, sym, c_args)
+              end
+
+            emit_with_ephemeral_cleanup(prep_lines, assign, cleanup_lines)
         end
     end
   end
@@ -1643,7 +1649,11 @@ defmodule Elmc.Backend.C.Lower.Instr do
                 plan_call_site_arg_ref(arg_reg, kind, box_native_int?, slots, opts, borrows)
               end)
             else
-              Enum.map(args, &call_site_slot_ref(&1, slots, opts, borrows))
+              if kernel_stub_callee?(mod, c_name, decl) do
+                Enum.map(args, &boxed_value_ref(&1, slots, opts))
+              else
+                Enum.map(args, &call_site_slot_ref(&1, slots, opts, borrows))
+              end
             end
 
           {"", Enum.join(c_args, ", ")}
@@ -1783,18 +1793,22 @@ defmodule Elmc.Backend.C.Lower.Instr do
   defp plan_call_site_arg_ref(reg, kind, box_native_int?, slots, opts, borrows) do
     case borrow_call_param_c_ref(reg, borrows, opts) do
       c_arg when is_binary(c_arg) ->
-        case {kind, box_native_int?} do
-          {:native_int, true} ->
-            "elmc_new_int_take(#{int_operand_ref(reg, slots, opts)})"
+        if kind == :boxed do
+          boxed_value_ref(reg, slots, opts)
+        else
+          case {kind, box_native_int?} do
+            {:native_int, true} ->
+              "elmc_new_int_take(#{int_operand_ref(reg, slots, opts)})"
 
-          {:native_int, false} ->
-            int_operand_ref(reg, slots, opts)
+            {:native_int, false} ->
+              int_operand_ref(reg, slots, opts)
 
-          {:native_bool, _} ->
-            bool_operand_ref(reg, slots, opts)
+            {:native_bool, _} ->
+              bool_operand_ref(reg, slots, opts)
 
-          _ ->
-            c_arg
+            _ ->
+              c_arg
+          end
         end
 
       _ ->
@@ -1858,6 +1872,13 @@ defmodule Elmc.Backend.C.Lower.Instr do
 
   defp fusion_native_rc_callee?(c_name, fusion_arg_kinds),
     do: not is_nil(fusion_arg_kinds) and String.ends_with?(c_name, "_native")
+
+  defp kernel_stub_callee?("Elm.Kernel", _name, nil), do: true
+
+  defp kernel_stub_callee?(_mod, c_name, nil) when is_binary(c_name),
+    do: String.starts_with?(c_name, "elmc_fn_Elm_Kernel_")
+
+  defp kernel_stub_callee?(_, _, _), do: false
 
   defp plan_call_uses_native_fusion?(fusion_arg_kinds, rc?, native_ret, mod, name) do
     not is_nil(fusion_arg_kinds) and
@@ -2301,7 +2322,11 @@ defmodule Elmc.Backend.C.Lower.Instr do
   end
 
   @doc false
-  @spec switch_subject_ref(non_neg_integer(), Types.slot_map(), keyword()) :: String.t()
+  @spec switch_subject_ref(non_neg_integer() | :fn_out | :branch_out, Types.slot_map(), keyword()) ::
+          String.t()
+  def switch_subject_ref(:fn_out, _slots, _opts), do: "*out"
+  def switch_subject_ref(:branch_out, _slots, _opts), do: "*out"
+
   def switch_subject_ref(reg, slots, opts) when is_integer(reg) do
     case Map.get(Keyword.get(opts, :borrow_param_regs, %{}), reg) do
       c_arg when is_binary(c_arg) ->
@@ -2385,14 +2410,23 @@ defmodule Elmc.Backend.C.Lower.Instr do
           %{op: :load_param, args: %{index: index}} ->
             param_kinds = Keyword.get(opts, :param_kinds, [])
 
-            if Enum.at(param_kinds, index, :boxed) == :native_int do
-              ref =
-                Map.get(Keyword.get(opts, :native_int_regs, %{}), reg) ||
-                  FunctionCallAbi.param_c_arg(index, Keyword.get(opts, :params, []))
+            cond do
+              Enum.at(param_kinds, index, :boxed) == :native_int ->
+                ref =
+                  Map.get(Keyword.get(opts, :native_int_regs, %{}), reg) ||
+                    FunctionCallAbi.param_c_arg(index, Keyword.get(opts, :params, []))
 
-              "elmc_new_int_take(#{ref})"
-            else
-              slot_ref(reg, slots, opts)
+                "elmc_new_int_take(#{ref})"
+
+              Enum.at(param_kinds, index) == :native_bool ->
+                ref =
+                  Map.get(Keyword.get(opts, :native_bool_regs, %{}), reg) ||
+                    FunctionCallAbi.param_c_arg(index, Keyword.get(opts, :params, []))
+
+                "elmc_new_bool_take((#{ref}) ? 1 : 0)"
+
+              true ->
+                slot_ref(reg, slots, opts)
             end
 
           %{op: :call_runtime, args: %{builtin: :retain, view_peel: _} = _args} ->
@@ -2564,6 +2598,8 @@ defmodule Elmc.Backend.C.Lower.Instr do
 
   defp non_rc_value_return_symbol("elmc_tuple2_take"), do: "elmc_tuple2_take_value"
   defp non_rc_value_return_symbol("elmc_tuple2_ints"), do: "elmc_tuple2_ints_take_value"
+  defp non_rc_value_return_symbol("elmc_result_ok_own"), do: "elmc_result_ok_take"
+  defp non_rc_value_return_symbol("elmc_result_err_own"), do: "elmc_result_err_take"
   defp non_rc_value_return_symbol(sym), do: sym
 
   defp emit_const_static_list(%{args: %{kind: kind} = args}, slots, dest, rc?, opts) do
@@ -2695,14 +2731,26 @@ defmodule Elmc.Backend.C.Lower.Instr do
 
   defp rc_assign(false, dest, fn_name, args) do
     arg_s = Enum.join(args, ", ")
-    "#{dest} = #{value_return_allocator(fn_name)}(#{arg_s});"
+    call = "#{value_return_allocator(fn_name)}(#{arg_s})"
+
+    case dest do
+      "*out" -> "return #{call};"
+      _ -> "#{dest} = #{call};"
+    end
   end
 
   defp value_return_allocator("elmc_tuple2_take"), do: "elmc_tuple2_take_value"
   defp value_return_allocator("elmc_maybe_just_own"), do: "elmc_maybe_just_take"
+  defp value_return_allocator("elmc_result_ok_own"), do: "elmc_result_ok_take"
+  defp value_return_allocator("elmc_result_err_own"), do: "elmc_result_err_take"
 
   defp value_return_allocator(fn_name) do
-    if fn_name in @rc_allocators_with_take, do: "#{fn_name}_take", else: fn_name
+    cond do
+      fn_name in @rc_allocators_with_take -> "#{fn_name}_take"
+      String.ends_with?(fn_name, "_take") -> fn_name
+      String.ends_with?(fn_name, "_value") -> fn_name
+      true -> "#{fn_name}_take"
+    end
   end
 
   defp emit_owned_slot_transfer(dest_reg, src_reg, slots, dest, src_s, rc?) do
@@ -2802,7 +2850,8 @@ defmodule Elmc.Backend.C.Lower.Instr do
        do: true
 
   defp owned_transferring_consume_instr?(%{op: :call_runtime, args: %{builtin: id}}) do
-    id in [:record_new, :record_new_take, :record_new_values_ints, :tuple2_take]
+    id in [:record_new, :record_new_take, :record_new_values_ints, :tuple2_take] or
+      RuntimeBuiltins.ownership_transfer?(id)
   end
 
   defp owned_transferring_consume_instr?(_), do: false

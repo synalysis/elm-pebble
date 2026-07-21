@@ -32,6 +32,7 @@ defmodule Elmc.Backend.Plan.RuntimeBuiltins.Extra do
     basics_from_polar: "elmc_basics_from_polar",
     basics_is_infinite: "elmc_basics_is_infinite",
     basics_is_nan: "elmc_basics_is_nan",
+    basics_log: "elmc_basics_log",
     basics_log_base: "elmc_basics_log_base",
     basics_radians: "elmc_basics_radians",
     basics_sqrt: "elmc_basics_sqrt",
@@ -240,6 +241,7 @@ defmodule Elmc.Backend.Plan.RuntimeBuiltins.Extra do
     task_and_then: "elmc_task_and_then",
     task_on_error: "elmc_task_on_error",
     task_perform: "elmc_task_perform",
+    task_command: "elmc_task_command",
     cmd_map: "elmc_cmd_map",
     sub_map: "elmc_sub_map",
     tuple_map_both: "elmc_tuple_map_both",
@@ -267,14 +269,12 @@ defmodule Elmc.Backend.Plan.RuntimeBuiltins.Extra do
     dict_update dict_values
     list_drop_int list_find_first list_foldr list_from_values list_intersperse list_map2 list_map3 list_map4
     list_map5 list_partition list_singleton list_sort list_unzip maybe_map2
-    process_kill process_sleep process_spawn task_on_error
     set_diff set_filter set_foldl set_foldr set_from_list set_insert set_intersect set_map
     set_partition set_remove set_union
     string_all string_any string_filter string_foldl string_foldr string_from_char string_from_float
     string_from_list string_indexes string_map string_pad_left string_pad_right string_repeat
     string_replace string_reverse string_slice string_split string_to_list string_to_lower
     string_to_upper string_trim string_trim_left string_trim_right string_uncons
-    cmd_map sub_map
     tuple_map_both tuple_map_first tuple_map_second
   )a
 
@@ -283,7 +283,7 @@ defmodule Elmc.Backend.Plan.RuntimeBuiltins.Extra do
     array_get array_indexed_map array_initialize array_is_empty array_length array_map
     array_push array_repeat array_set array_slice array_to_indexed_list array_to_list
     basics_abs basics_acos basics_asin basics_atan basics_atan2 basics_ceiling
-    basics_degrees basics_from_polar basics_is_infinite basics_is_nan basics_log_base
+    basics_degrees basics_from_polar basics_is_infinite basics_is_nan basics_log basics_log_base
     basics_negate basics_radians basics_sqrt basics_tan basics_to_polar basics_truncate
     basics_turns basics_xor bitwise_and bitwise_complement bitwise_or
     bitwise_shift_left_by bitwise_shift_right_by bitwise_shift_right_zf_by bitwise_xor
@@ -313,7 +313,9 @@ defmodule Elmc.Backend.Plan.RuntimeBuiltins.Extra do
     backend_task_http_bytes_body
     backend_task_http_request backend_task_http_post
     file_download file_download_task file_select
-    task_and_then task_fail task_map task_map2 task_on_error task_perform task_succeed
+    task_and_then task_command task_fail task_map task_map2 task_on_error task_perform task_succeed
+    cmd_map sub_map
+    process_kill process_sleep process_spawn
     random_generate regex_contains regex_find regex_from_string regex_replace
     time_now_millis time_zone_offset_minutes time_here browser_get_viewport
   )a

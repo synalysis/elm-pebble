@@ -91,8 +91,9 @@ defmodule Elmc.Backend.Plan.Lower.Case do
     payload_name = "__maybe_inner"
 
     saved_pending = Map.get(b, :pending_merge_block)
+    subject_ctx = Context.for_branch_arm(ctx)
 
-    with {:ok, subj_reg, b1} <- Expr.compile(subject, ctx, b),
+    with {:ok, subj_reg, b1} <- Expr.compile(subject, subject_ctx, b),
          {:ok, cond_reg, b2} <- emit_test_maybe_nothing(subj_reg, b1),
          then_id = b2.next_block,
          else_id = then_id + 1,
@@ -229,7 +230,9 @@ defmodule Elmc.Backend.Plan.Lower.Case do
   end
 
   defp compile_record_pattern_case(subject, branches, ctx, b) do
-    with {:ok, subj_reg, b1} <- Expr.compile(subject_expr(subject), ctx, b),
+    subject_ctx = Context.for_branch_arm(ctx)
+
+    with {:ok, subj_reg, b1} <- Expr.compile(subject_expr(subject), subject_ctx, b),
          {:ok, reg, b2} <- compile_record_pattern_branches(branches, subj_reg, ctx, b1) do
       {:ok, reg, b2}
     else

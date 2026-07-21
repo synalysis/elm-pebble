@@ -263,6 +263,7 @@ defmodule Elmc.Backend.Plan.Lower.Lambda do
         letrec_refs: parent_ctx.letrec_refs,
         letrec_in_closure: letrec_in_closure?,
         letrec_capture_indices: letrec_capture_indices,
+        lambda_plan: true,
         local_types: Map.merge(parent_ctx.local_types || %{}, lambda_param_types),
         curried_type_offset: (parent_ctx.curried_type_offset || 0) + length(lambda_args)
       )

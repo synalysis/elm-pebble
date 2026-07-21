@@ -5,49 +5,31 @@ defmodule Elmc.FunctionSplitTest do
   alias Elmc.Backend.CCodegen.IRQueries
   alias Elmc.Test.CCodegenExtract
 
-  @source_template Path.expand("../../ide/priv/project_templates/watchface_yes", __DIR__)
+  defp compile_yes_project!(opts) do
+    out_dir = Keyword.fetch!(opts, :out_dir)
 
-  defp prepare_yes_project!(project_dir) do
-    File.rm_rf!(project_dir)
-    File.cp_r!(@source_template, project_dir)
+    assert {:ok, %{ir: ir}} =
+             Elmc.TestSupport.TemplateCompile.compile_watch_template("watchface_yes",
+               out_dir: out_dir,
+               direct_render_only: Keyword.get(opts, :direct_render_only, true),
+               prune_runtime: Keyword.get(opts, :prune_runtime, true),
+               pebble_int32: Keyword.get(opts, :pebble_int32, true),
+               strip_dead_code: Keyword.get(opts, :strip_dead_code, true),
+               keep_tmp: true
+             )
 
-    File.write!(
-      Path.join(project_dir, "elm.json"),
-      Jason.encode!(%{
-        "type" => "application",
-        "source-directories" => [
-          "src",
-          "protocol/src",
-          "../../../../packages/elm-pebble/elm-watch/src"
-        ],
-        "elm-version" => "0.19.1",
-        "dependencies" => %{
-          "direct" => %{"elm/core" => "1.0.5", "elm/json" => "1.1.3", "elm/time" => "1.0.0"},
-          "indirect" => %{}
-        },
-        "test-dependencies" => %{"direct" => %{}, "indirect" => %{}}
-      })
-    )
+    ir
   end
 
-  defp yes_draw_dial_decl!(project_dir) do
-    {:ok, %{ir: ir}} =
-      Elmc.compile(project_dir, %{
-        out_dir: Path.join(project_dir, ".ir-only"),
-        entry_module: "Main",
-        direct_render_only: true,
-        prune_runtime: true,
-        pebble_int32: true,
-        strip_dead_code: true
-      })
-
+  defp yes_draw_dial_decl!(out_dir) do
+    ir = compile_yes_project!(out_dir: out_dir)
     Map.fetch!(IRQueries.function_decl_map(ir), {"Yes.Render", "drawDial"})
   end
 
   test "drawDial split part0 keeps sunWindow in the first chunk" do
-    project_dir = Path.expand("tmp/function_split_yes_plan_project", __DIR__)
-    prepare_yes_project!(project_dir)
-    decl = yes_draw_dial_decl!(project_dir)
+    out_dir = Path.expand("tmp/function_split_yes_plan_codegen", __DIR__)
+    File.rm_rf!(out_dir)
+    decl = yes_draw_dial_decl!(out_dir)
 
     {:ok, parts} = FunctionSplit.plan_parts_for_test(decl.expr, decl.args || [])
     {part0_names, _part0} = hd(parts)
@@ -58,20 +40,10 @@ defmodule Elmc.FunctionSplitTest do
   end
 
   test "drawDial direct render compiles without phantom zero-arg let calls" do
-    project_dir = Path.expand("tmp/function_split_yes_project", __DIR__)
     out_dir = Path.expand("tmp/function_split_yes_codegen", __DIR__)
-    prepare_yes_project!(project_dir)
     File.rm_rf!(out_dir)
 
-    assert {:ok, _} =
-             Elmc.compile(project_dir, %{
-               out_dir: out_dir,
-               entry_module: "Main",
-               direct_render_only: true,
-               prune_runtime: true,
-               pebble_int32: true,
-               strip_dead_code: true
-             })
+    compile_yes_project!(out_dir: out_dir)
 
     generated = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 

@@ -51,8 +51,12 @@ defmodule Elmc.Backend.C.Lower.Lambda do
 
     owned = Frame.owned_declaration(lambda, slots)
     epilogue = Frame.epilogue_release(slot_indices, slot_count)
-    letrec_decls = Function.letrec_decl_lines(lambda.letrec_refs || [])
-    letrec_free = Function.letrec_free_lines(lambda.letrec_refs || [])
+    letrec_refs =
+      ((lambda.letrec_refs || []) ++ Function.forward_ref_names_in_plan(lambda))
+      |> Enum.uniq()
+
+    letrec_decls = Function.letrec_decl_lines(letrec_refs)
+    letrec_free = Function.letrec_free_lines(letrec_refs)
 
     core =
       Function.emit_core(lambda,

@@ -42,7 +42,7 @@ defmodule Elmc.WasmProjectWriterTest do
                out_dir: out_dir,
                entry_module: "Main",
                strip_dead_code: true,
-               plan_ir_mode: :off
+               plan_ir_mode: :primary
              })
 
     refute File.exists?(ProjectWriter.manifest_path(out_dir))

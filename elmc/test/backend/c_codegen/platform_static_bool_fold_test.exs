@@ -31,23 +31,23 @@ defmodule Elmc.Backend.CCodegen.PlatformStaticBoolFoldTest do
 
   test "showCorners-style guard keeps sun check only on non-round builds" do
     generated_c = File.read!(Path.join(@out_dir, "c/elmc_generated.c"))
-    body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_showCorners")
+    body = CCodegenExtract.fn_body(generated_c, "elmc_fn_Main_showCorners")
 
-    assert body =~ "#if !defined(PBL_ROUND)"
+    assert body =~ "#if defined(PBL_ROUND)"
     assert body =~ "#else"
     assert body =~ "elmc_basics_not"
-    assert body =~ "elmc_maybe_nothing()"
+    assert body =~ "elmc_maybe_is_nothing"
     refute body =~ "native_union_subject_"
   end
 
   test "view corner ops are emitted only for non-round builds" do
     generated_c = File.read!(Path.join(@out_dir, "c/elmc_generated.c"))
-    view_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_view")
+    view_body = CCodegenExtract.fn_body(generated_c, "elmc_fn_Main_view")
 
-    assert view_body =~ "#if !defined(PBL_ROUND)"
+    assert view_body =~ "#if defined(PBL_ROUND)"
     assert view_body =~ "#else"
     assert view_body =~ "ELMC_RENDER_OP_RECT"
-    refute view_body =~ ~r/#if !defined\(PBL_ROUND\)\s*\n#else\s*\n\s*#endif/
+    refute view_body =~ ~r/#if defined\(PBL_ROUND\)\s*\n#else\s*\n\s*#endif/
     refute view_body =~ "native_union_subject_"
   end
 

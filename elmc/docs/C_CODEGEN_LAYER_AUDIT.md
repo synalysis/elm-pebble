@@ -10,7 +10,7 @@ See also: [PLAN_IR_COVERAGE.md](PLAN_IR_COVERAGE.md), [plan/README.md](../lib/el
 
 | Layer | Removable? | Notes |
 |-------|------------|-------|
-| **Legacy IR→C body** (`ExprCompile`, `CaseCompile`, …) | **Quarantined** | Only used when `plan_ir_mode: :off` (explicit / `LegacyCodegen`) |
+| **Legacy IR→C body** (`ExprCompile`, `CaseCompile`, …) | **Removed from production path** | `plan_ir_mode: :off` redirects to `:primary`; gap functions emit unsupported stubs |
 | **Plan C lower** (`C.Lower.*`) | No | Primary emitter; lives outside `c_codegen/` |
 | **Function shells / orchestration** (`FunctionEmit`, ABI, `RcRequired`) | No | Wraps plan bodies, fusion, native helpers |
 | **Fusion matchers** (2048, tuple2 tables, list search, …) | Migrate later | Plan calls via `Plan.Fusion.Registry`; IR match + `fusion_c` still in CCodegen |
@@ -27,12 +27,12 @@ See also: [PLAN_IR_COVERAGE.md](PLAN_IR_COVERAGE.md), [plan/README.md](../lib/el
 |---------|----------------|------------------|
 | IDE / `SizeProfile` | `:primary` | `true` |
 | `Plan.Defaults` / `Elmc.compile/2` default | `:primary` | `true` |
-| `mix test` (`test_helper.exs`) | `:off` (legacy assertions; migrate to `:primary`) | `false` |
+| `mix test` (`test_helper.exs`) | `:primary` | `true` |
 | `PrimaryCodegenCase` / harness tests | `:primary` | `true` |
-| `LegacyCodegenCase` | `:off` | `false` |
+| Explicit `plan_ir_mode: :off` | `:primary` (+ `plan_ir_mode_off_removed` warning) | per opts |
 
-Explicit `:off` emits diagnostic `plan_legacy_codegen`. Strict `:primary` raises on
-`plan_primary_fallback` / `plan_primary_gap` (no silent legacy body).
+Explicit `:off` emits diagnostic `plan_ir_mode_off_removed` and compiles as `:primary`.
+Strict `:primary` raises on `plan_primary_fallback` / `plan_primary_gap` (no silent legacy body).
 
 ## Code paths in `FunctionEmit`
 
@@ -40,12 +40,11 @@ Explicit `:off` emits diagnostic `plan_legacy_codegen`. Strict `:primary` raises
 emit_function_def
   plan_ir_mode == :primary  →  emit_boxed_function_def → maybe_emit_primary_plan_body
                                                       → C.Lower.Function.emit(plan)
+                                                      → on :legacy → unsupported stub + plan_primary_fallback
 
   plan_ir_mode == :shadow   →  shadow_verify + same primary emit (no legacy fallback)
 
-  plan_ir_mode == :off      →  emit_legacy_codegen_body
-                               → fusion special body OR emit_legacy_boxed_body
-                               → ExprCompile / CaseCompile / …
+  plan_ir_mode == :off      →  normalized to :primary (+ plan_ir_mode_off_removed diagnostic)
 ```
 
 ## Modules referenced from Plan (shared — keep)

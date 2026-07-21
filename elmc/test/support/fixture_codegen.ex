@@ -5,7 +5,10 @@ defmodule Elmc.Test.FixtureCodegen do
 
   @elmx_excluded ~w(
     rc_track_2048_pebble_project
+    elm_make_sanity
   )
+
+  @elmx_web_fixture_prefix "wasm_"
 
   @elmx_known_failures ~w()
 
@@ -34,6 +37,7 @@ defmodule Elmc.Test.FixtureCodegen do
   def elmx_fixture_dirs do
     fixture_dirs()
     |> Enum.reject(&(&1 in @elmx_excluded))
+    |> Enum.reject(&String.starts_with?(&1, @elmx_web_fixture_prefix))
   end
 
   @spec elmx_compile_fixture_dirs() :: [String.t()]
@@ -80,7 +84,7 @@ defmodule Elmc.Test.FixtureCodegen do
     case Elmx.compile_in_memory(project_dir, %{
            entry_module: entry_module,
            strip_dead_code: false,
-           mode: :library,
+           mode: :ide_runtime,
            revision: revision
          }) do
       {:ok, %{entry_module: mod}} ->

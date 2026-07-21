@@ -1827,6 +1827,10 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
   end
 
   @spec pi_expr?(Types.ir_expr()) :: boolean()
+  defp pi_expr?(%{op: :qualified_ref, target: target})
+       when target in ["Basics.pi", "pi"],
+       do: true
+
   defp pi_expr?(%{op: :qualified_call, target: target, args: []})
        when target in ["Basics.pi", "pi"],
        do: true

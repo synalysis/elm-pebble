@@ -1,6 +1,8 @@
 defmodule Elmc.DataLogTagCodegenTest do
   use ExUnit.Case, async: true
 
+  @moduletag timeout: 300_000
+
   @source_fixture Path.expand("fixtures/simple_project", __DIR__)
 
   test "captured DataLog tag parameter is not constant-folded to module tag decl" do
@@ -20,7 +22,8 @@ defmodule Elmc.DataLogTagCodegenTest do
              Elmc.compile(project_dir, %{
                out_dir: out_dir,
                entry_module: "Main",
-               strip_dead_code: false
+               strip_dead_code: false,
+               plan_ir_mode: :primary
              })
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))

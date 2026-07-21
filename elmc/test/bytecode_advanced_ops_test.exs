@@ -222,6 +222,65 @@ defmodule Elmc.BytecodeAdvancedOpsTest do
     assert length(plan.lambdas) == 2
   end
 
+  test "call_runtime tuple_first and tuple_second project Tuple.first/second" do
+    {plan, _} =
+      Builder.new("Main", "tupleProj", args: [])
+      |> then(fn b ->
+        {_, b1} =
+          Builder.emit(b, :const_int, %{
+            dest: 0,
+            args: %{value: 1},
+            effects: Types.empty_effects()
+          })
+
+        {_, b2} =
+          Builder.emit(b1, :const_int, %{
+            dest: 1,
+            args: %{value: 2},
+            effects: Types.empty_effects()
+          })
+
+        {tuple_reg, b3} = Builder.fresh_reg(b2)
+
+        {_, b4} =
+          Builder.emit(b3, :call_runtime, %{
+            dest: tuple_reg,
+            args: %{builtin: :tuple2, args: [0, 1]},
+            effects: Types.fallible_effects(tuple_reg, [0, 1], [])
+          })
+
+        {first_reg, b5} = Builder.fresh_reg(b4)
+        {second_reg, b6} = Builder.fresh_reg(b5)
+
+        {_, b7} =
+          Builder.emit(b6, :call_runtime, %{
+            dest: first_reg,
+            args: %{builtin: :tuple_first, args: [tuple_reg]},
+            effects: %{produces: {:owned, first_reg}, consumes: [], borrows: [tuple_reg], fallible: false}
+          })
+
+        {_, b8} =
+          Builder.emit(b7, :call_runtime, %{
+            dest: second_reg,
+            args: %{builtin: :tuple_second, args: [tuple_reg]},
+            effects: %{produces: {:owned, second_reg}, consumes: [], borrows: [tuple_reg], fallible: false}
+          })
+
+        {dest, b9} = Builder.fresh_reg(b8)
+
+        {_, b10} =
+          Builder.emit(b9, :call_runtime, %{
+            dest: dest,
+            args: %{builtin: :tuple2_ints, args: [first_reg, second_reg]},
+            effects: Types.fallible_effects(dest, [first_reg, second_reg], [])
+          })
+
+        {Builder.to_function_plan(Builder.emit_ret(b10, dest)), b10}
+      end)
+
+    assert {:ok, {:tuple2, 1, 2}} = Runtime.run_function(plan, params: [])
+  end
+
   defp identity_lambda_plan(module, name) do
     %FunctionPlan{
       module: module,

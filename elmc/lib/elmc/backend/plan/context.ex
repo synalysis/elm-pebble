@@ -24,6 +24,7 @@ defmodule Elmc.Backend.Plan.Context do
     :letrec_self,
     :letrec_in_closure,
     :letrec_capture_indices,
+    :lambda_plan,
     :curried_type_offset
   ]
 
@@ -43,6 +44,7 @@ defmodule Elmc.Backend.Plan.Context do
           letrec_self: String.t() | nil,
           letrec_in_closure: boolean(),
           letrec_capture_indices: %{String.t() => non_neg_integer()},
+          lambda_plan: boolean(),
           curried_type_offset: non_neg_integer()
         }
 
@@ -68,6 +70,7 @@ defmodule Elmc.Backend.Plan.Context do
       letrec_self: Keyword.get(opts, :letrec_self),
       letrec_in_closure: Keyword.get(opts, :letrec_in_closure, false),
       letrec_capture_indices: Keyword.get(opts, :letrec_capture_indices, %{}),
+      lambda_plan: Keyword.get(opts, :lambda_plan, false),
       curried_type_offset: Keyword.get(opts, :curried_type_offset, 0)
     }
   end

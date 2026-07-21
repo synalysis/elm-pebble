@@ -888,6 +888,20 @@ defmodule Elmc.Backend.Bytecode.Runtime do
     {:pebble_cmd, :cmd1, 6, [mode]}
   end
 
+  defp apply_builtin(:tuple_first, [base | _], locals, _) do
+    case get_local(locals, base) do
+      {:tuple2, a, _b} -> a
+      other -> other
+    end
+  end
+
+  defp apply_builtin(:tuple_second, [base | _], locals, _) do
+    case get_local(locals, base) do
+      {:tuple2, _a, b} -> b
+      other -> other
+    end
+  end
+
   defp apply_builtin(_id, _args, _locals, _), do: nil
 
   defp backlight_mode_from_maybe(nil), do: 0

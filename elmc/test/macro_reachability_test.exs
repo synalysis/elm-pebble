@@ -36,35 +36,17 @@ defmodule Elmc.MacroReachabilityTest do
   end
 
   test "nested union constructor patterns in case branches are reachable" do
-    project_dir = Path.expand("tmp/macro_reachability_nested", __DIR__)
-    File.rm_rf!(project_dir)
-    File.mkdir_p!(Path.join(project_dir, "src"))
-    template = Path.expand("../../ide/priv/project_templates/watchface_yes", __DIR__)
-    File.cp_r!(template, project_dir)
-
-    File.write!(
-      Path.join(project_dir, "elm.json"),
-      Jason.encode!(%{
-        "type" => "application",
-        "source-directories" => [
-          "src",
-          "protocol/src",
-          "../../../../packages/elm-pebble/elm-watch/src"
-        ],
-        "elm-version" => "0.19.1",
-        "dependencies" => %{
-          "direct" => %{"elm/core" => "1.0.5", "elm/json" => "1.1.3", "elm/time" => "1.0.0"},
-          "indirect" => %{}
-        },
-        "test-dependencies" => %{"direct" => %{}, "indirect" => %{}}
-      })
-    )
+    out_dir = Path.join(System.tmp_dir!(), "macro_reachability_nested_#{System.unique_integer([:positive])}")
 
     assert {:ok, %{ir: ir}} =
-             Elmc.compile(project_dir, %{
-               entry_module: "Main",
-               out_dir: Path.join(project_dir, "out")
-             })
+             Elmc.TestSupport.TemplateCompile.compile_watch_template("watchface_yes",
+               out_dir: out_dir,
+               direct_render_only: true,
+               strip_dead_code: true,
+               prune_runtime: true,
+               pebble_int32: true,
+               keep_tmp: true
+             )
 
     decl_map = IRQueries.function_decl_map(ir)
 

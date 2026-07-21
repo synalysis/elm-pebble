@@ -153,19 +153,28 @@ defmodule Elmc.PlanComposeLayoutSequencedTest do
 
     assert {:ok, plan} = Function.lower(fd, mod.name, decl_map, rc_required: false)
 
-    nested_switch_blocks =
-      plan.blocks
-      |> Enum.filter(fn block ->
-        case block.terminator do
-          {:switch_tag, _, arms, _} ->
-            Enum.count(arms, fn {tag, _, _} -> tag == 1 end) >= 1 and length(arms) >= 2
+    instrs = plan.blocks |> Enum.flat_map(& &1.instrs)
 
-          _ ->
-            false
-        end
+    compose_calls =
+      Enum.filter(instrs, fn
+        %{op: :call_fn, args: %{module: "Internal.Cartesian.Layout", name: "composeLayout"}} -> true
+        _ -> false
       end)
 
-    assert nested_switch_blocks != [],
-           "expected inner Composed tag switch (Leaf vs default) inside layout"
+    ctor_tag_tests = Enum.count(instrs, &(&1.op == :test_ctor_tag))
+
+    br_if_blocks =
+      Enum.count(plan.blocks, fn block ->
+        match?({:br_if, _, _, _}, block.terminator)
+      end)
+
+    assert compose_calls != [],
+           "expected layout to delegate composed branches to composeLayout"
+
+    assert ctor_tag_tests >= 2,
+           "expected nested constructor-tag dispatch for shared outer C tags, got #{ctor_tag_tests} test_ctor_tag ops"
+
+    assert br_if_blocks >= 2,
+           "expected br_if case dispatch inside layout, got #{br_if_blocks} br_if blocks"
   end
 end

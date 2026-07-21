@@ -35,7 +35,8 @@ defmodule Elmx.Runtime.Intrinsics.Registry.ElmxCore do
       "elmx_core_task_map_error" => {Task, :map_error},
       "elmx_core_task_attempt" => {Task, :attempt},
       "elmx_core_task_and_then" => {Task, :and_then},
-      "elmx_core_random_generator" => {MaybeResult, :random_generator}
+      "elmx_core_random_generator" => {MaybeResult, :random_generator},
+      "elmx_core_random_normalize_seed" => {MaybeResult, :normalize_seed}
     }
   end
 end

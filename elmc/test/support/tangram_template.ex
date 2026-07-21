@@ -22,8 +22,9 @@ defmodule Elmc.TestSupport.TangramTemplate do
     sources = [
       "src",
       "protocol/src",
+      Path.join(@repo_root, "packages/elm-pebble/elm-watch/src"),
+      Path.join(@repo_root, "shared/elm"),
       Path.join(@repo_root, "ide/priv/bundled_elm/pebble-watch-src"),
-      Path.join(@repo_root, "ide/priv/bundled_elm/shared-elm/shared/elm"),
       Path.join(@repo_root, "ide/priv/internal_packages/elm-time/src"),
       Path.join(@repo_root, "ide/priv/internal_packages/elm-random/src")
     ]

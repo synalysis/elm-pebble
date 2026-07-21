@@ -1,6 +1,8 @@
 defmodule Elmc.BuiltinUnionCodegenTest do
   use ExUnit.Case, async: true
 
+  alias Elmc.Test.CCodegenExtract
+
   test "Pebble.Light helpers emit compact backlight commands" do
     source_fixture = Path.expand("fixtures/simple_project", __DIR__)
     project_dir = Path.expand("tmp/builtin_union_light_project", __DIR__)
@@ -128,18 +130,11 @@ defmodule Elmc.BuiltinUnionCodegenTest do
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
-    fn_body =
-      case Regex.run(
-             ~r/static RC elmc_fn_Main_maybePiece_native\(ElmcValue \*\*out,[^)]*\) \{([\s\S]*?)\n\}/,
-             generated_c
-           ) do
-        [_, body] -> body
-        _ -> flunk("missing maybePiece RC function")
-      end
+    fn_body = CCodegenExtract.fn_body(generated_c, "elmc_fn_Main_maybePiece")
 
-    assert fn_body =~
-             ~r/if \(flag\) \{[\s\S]*Rc = elmc_maybe_just_own\(out, owned\[[0-9]+\]\)/
+    assert fn_body =~ "plan block"
+    assert fn_body =~ "elmc_maybe_just_take"
     refute fn_body =~ "*out = elmc_maybe_just("
-    assert fn_body =~ ~r/\} else \{[\s\S]*elmc_maybe_nothing\(\)/
+    assert fn_body =~ "elmc_maybe_nothing()"
   end
 end

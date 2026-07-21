@@ -1,6 +1,8 @@
 defmodule Elmc.ElmCoreCodegenCommentTest do
   use ExUnit.Case
 
+  @moduletag timeout: 120_000
+
   alias Elmc.Backend.CCodegen.CallCompile
 
   @env %{"__module__" => "Main"}
@@ -42,7 +44,12 @@ defmodule Elmc.ElmCoreCodegenCommentTest do
     out_dir = Path.expand("tmp/elm_core_codegen_comments", __DIR__)
     File.rm_rf!(out_dir)
 
-    assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, strip_dead_code: false})
+    assert {:ok, _} =
+             Elmc.compile(project_dir, %{
+               out_dir: out_dir,
+               strip_dead_code: false,
+               plan_ir_mode: :primary
+             })
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 

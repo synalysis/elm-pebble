@@ -1,6 +1,8 @@
 defmodule Elmc.BytecodeIntegrationTest do
   use ExUnit.Case, async: false
 
+  @moduletag timeout: 360_000
+
   alias Elmc.Backend.Bytecode.Program
   alias Elmc.Backend.Bytecode.Runtime
   alias Elmc.Backend.Plan.Builder

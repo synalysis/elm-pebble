@@ -1,34 +1,31 @@
 defmodule Elmc.RcRequiredAllocAnalysisTest do
   use ExUnit.Case, async: false
 
+  @moduletag timeout: 180_000
+
   alias Elmc.Backend.CCodegen.{Host, IRQueries, RcRequired}
   alias Elmc.Test.CCodegenExtract
+  alias Elmc.TestSupport.TemplateCompile
 
   @fixture_elm_json Path.expand("fixtures/simple_project/elm.json", __DIR__)
   @game_2048_main Path.expand("../../ide/priv/project_templates/game_2048/src/Main.elm", __DIR__)
-  @watchface_yes_template Path.expand("../../ide/priv/project_templates/watchface_yes", __DIR__)
 
-  defp prepare_yes_watchface_project!(project_dir) do
-    File.rm_rf!(project_dir)
-    File.cp_r!(@watchface_yes_template, project_dir)
+  defp compile_yes_watchface!(opts) do
+    out_dir = Keyword.fetch!(opts, :out_dir)
 
-    File.write!(
-      Path.join(project_dir, "elm.json"),
-      Jason.encode!(%{
-        "type" => "application",
-        "source-directories" => [
-          "src",
-          "protocol/src",
-          "../../../../packages/elm-pebble/elm-watch/src"
-        ],
-        "elm-version" => "0.19.1",
-        "dependencies" => %{
-          "direct" => %{"elm/core" => "1.0.5", "elm/json" => "1.1.3", "elm/time" => "1.0.0"},
-          "indirect" => %{}
-        },
-        "test-dependencies" => %{"direct" => %{}, "indirect" => %{}}
-      })
-    )
+    compile_opts =
+      [
+        out_dir: out_dir,
+        direct_render_only: Keyword.get(opts, :direct_render_only, true),
+        strip_dead_code: Keyword.get(opts, :strip_dead_code, false),
+        prune_runtime: Keyword.get(opts, :prune_runtime, true),
+        pebble_int32: Keyword.get(opts, :pebble_int32, true),
+        keep_tmp: true
+      ]
+      |> Keyword.merge(Keyword.drop(opts, [:out_dir, :direct_render_only, :strip_dead_code, :prune_runtime, :pebble_int32]))
+
+    assert {:ok, result} = TemplateCompile.compile_watch_template("watchface_yes", compile_opts)
+    result
   end
 
   defp compile_2048_generated!(opts \\ []) do
@@ -37,25 +34,18 @@ defmodule Elmc.RcRequiredAllocAnalysisTest do
       strip_dead_code: true,
       prune_native_wrappers: true,
       pebble_int32: true,
-      prune_runtime: true
+      prune_runtime: true,
+      plan_ir_mode: :primary
     ]
 
-    project_dir = Path.expand("tmp/rc_required_2048_project", __DIR__)
     out_dir = Path.expand("tmp/rc_required_2048_codegen", __DIR__)
-    File.rm_rf!(project_dir)
     File.rm_rf!(out_dir)
-    File.mkdir_p!(Path.join(project_dir, "src"))
-    File.write!(Path.join(project_dir, "src/Main.elm"), File.read!(@game_2048_main))
-    File.write!(Path.join(project_dir, "elm.json"), File.read!(@fixture_elm_json))
 
     compile_opts =
-      %{
-        out_dir: out_dir,
-        entry_module: "Main"
-      }
-      |> Map.merge(Map.new(Keyword.merge(defaults, opts)))
+      [out_dir: out_dir]
+      |> Keyword.merge(Keyword.merge(defaults, opts))
 
-    assert {:ok, _} = Elmc.compile(project_dir, compile_opts)
+    assert {:ok, _} = TemplateCompile.compile_watch_template("game_2048", compile_opts)
 
     File.read!(Path.join(out_dir, "c/elmc_generated.c"))
   end
@@ -96,14 +86,10 @@ defmodule Elmc.RcRequiredAllocAnalysisTest do
   end
 
   test "native Int boxing wrappers are rc_required" do
-    project_dir = Path.expand("tmp/rc_required_yes_ir", __DIR__)
-    prepare_yes_watchface_project!(project_dir)
+    out_dir = Path.expand("tmp/rc_required_yes_ir_out", __DIR__)
 
-    assert {:ok, %{ir: ir}} =
-             Elmc.compile(project_dir, %{
-               entry_module: "Main",
-               out_dir: Path.expand("tmp/rc_required_yes_ir_out", __DIR__)
-             })
+    assert %{ir: ir} =
+             compile_yes_watchface!(out_dir: out_dir, direct_render_only: true, strip_dead_code: false)
 
     decl_map = IRQueries.function_decl_map(ir)
     required = RcRequired.analyze(decl_map, direct_render_only: true)
@@ -112,6 +98,7 @@ defmodule Elmc.RcRequiredAllocAnalysisTest do
     assert MapSet.member?(required, {"Main", "homeMinuteOfDay"})
   end
 
+  @tag timeout: 300_000
   test "helpers that call native boxed RC constructors are rc_required" do
     source_fixture = Path.expand("fixtures/simple_project", __DIR__)
     project_dir = Path.expand("tmp/rc_required_native_boxed_callers_project", __DIR__)
@@ -187,7 +174,9 @@ defmodule Elmc.RcRequiredAllocAnalysisTest do
              Elmc.compile(project_dir, %{
                entry_module: "Main",
                out_dir: out_dir,
-               strip_dead_code: false
+               strip_dead_code: false,
+               plan_ir_mode: :primary,
+               direct_render_only: true
              })
 
     decl_map = IRQueries.function_decl_map(ir)
@@ -201,23 +190,15 @@ defmodule Elmc.RcRequiredAllocAnalysisTest do
     assert generated_c =~ "RC elmc_fn_Main_toDownloadedPiece("
     assert body =~ "CATCH_BEGIN"
     assert body =~ "CHECK_RC(Rc)"
-    assert body =~ "Rc = elmc_fn_Main_o_native("
+    assert body =~ "Rc = elmc_fn_Main_o(&"
     refute body =~ "ELMC_RC_LOG_FAIL(__call_rc, \"elmc_fn_Main_o_native\""
   end
 
   test "watchface-yes defaultSunWindow uses RC ABI with CHECK_RC allocators" do
-    project_dir = Path.expand("tmp/rc_required_yes_project", __DIR__)
     out_dir = Path.expand("tmp/rc_required_yes_codegen", __DIR__)
     File.rm_rf!(out_dir)
-    prepare_yes_watchface_project!(project_dir)
 
-    assert {:ok, _} =
-             Elmc.compile(project_dir, %{
-               out_dir: out_dir,
-               entry_module: "Main",
-               direct_render_only: true,
-               strip_dead_code: true
-             })
+    compile_yes_watchface!(out_dir: out_dir)
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
     body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Yes_Render_defaultSunWindow")
@@ -228,14 +209,14 @@ defmodule Elmc.RcRequiredAllocAnalysisTest do
     assert body =~ "Rc = elmc_new_int(&"
     assert body =~ "Rc = elmc_record_new_values_take(out,"
     refute body =~ "_take_value"
-    refute body =~ "elmc_new_int_take"
+    refute body =~ "Rc = elmc_new_int_take("
 
     refute generated_c =~ "static RC elmc_fn_Yes_Render_angleFromMinute("
 
-    square_body = CCodegenExtract.fn_body(generated_c, "elmc_fn_Yes_Layout_centerSquare_native")
+    square_body = CCodegenExtract.fn_body(generated_c, "elmc_fn_Yes_Layout_centerSquare")
     assert square_body =~ "ElmcValue *owned["
     assert square_body =~ "Rc = elmc_new_int(&owned["
-    assert square_body =~ "elmc_release_array_lifo(owned, DIM(owned));"
+    assert square_body =~ "elmc_release_array_lifo(owned,"
     refute square_body =~ "tmp_1_boxed_int"
     refute square_body =~ "if (owned[0])"
     refute square_body =~ "if (owned[1])"
@@ -245,105 +226,70 @@ defmodule Elmc.RcRequiredAllocAnalysisTest do
       CCodegenExtract.fn_body(generated_c, "elmc_fn_Yes_Render_drawDial_commands_append")
 
     assert draw_dial_body =~ "elmc_angle_from_minute"
-    assert draw_dial_body =~ "elmc_fn_Yes_Layout_centerSquare_native(&owned["
+    assert draw_dial_body =~ "elmc_fn_Yes_Layout_centerSquare(&owned["
     assert draw_dial_body =~ "elmc_maybe_with_default"
     assert draw_dial_body =~ "elmc_polar_point_x("
 
-    refute generated_c =~ "static RC elmc_fn_Yes_Render_drawScaleTick_commands_append("
-
-    show_corners_body = CCodegenExtract.fn_body(generated_c, "elmc_fn_Main_showCorners_native")
+    show_corners_body = CCodegenExtract.fn_body(generated_c, "elmc_fn_Main_showCorners")
 
     refute show_corners_body =~ "!(tmp_"
     assert show_corners_body =~ "ELMC_FIELD_MAIN_MODEL_SUN"
   end
 
   test "watchface-yes allocating helpers use RC ABI with CHECK_RC allocators" do
-    project_dir = Path.expand("tmp/rc_required_yes_battery_project", __DIR__)
     out_dir = Path.expand("tmp/rc_required_yes_battery_codegen", __DIR__)
     File.rm_rf!(out_dir)
-    prepare_yes_watchface_project!(project_dir)
 
-    assert {:ok, _} =
-             Elmc.compile(project_dir, %{
-               out_dir: out_dir,
-               entry_module: "Main",
-               direct_render_only: true,
-               strip_dead_code: true
-             })
+    compile_yes_watchface!(out_dir: out_dir)
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
-    body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_batteryAlert")
+    body = CCodegenExtract.fn_body(generated_c, "elmc_fn_Main_batteryAlert")
 
     assert generated_c =~ "RC elmc_fn_Main_batteryAlert("
     assert body =~ "CHECK_RC(Rc)"
-    assert body =~ "elmc_value_equal("
-    refute body =~ "elmc_new_int_take("
-    refute body =~ "elmc_new_bool_take("
+    assert body =~ "elmc_as_int(owned[2])"
+    refute body =~ "Rc = elmc_new_int_take("
+    refute body =~ "Rc = elmc_new_bool_take("
     refute body =~ "ELMC_RELEASE(owned["
     refute body =~ "__cmp_"
     refute body =~ "owned[1] = tmp_"
   end
 
   test "watchface-yes calendarDayKey never emits raw ELMC_FN_OUT" do
-    project_dir = Path.expand("tmp/rc_required_yes_calendar_project", __DIR__)
     out_dir = Path.expand("tmp/rc_required_yes_calendar_codegen", __DIR__)
     File.rm_rf!(out_dir)
-    prepare_yes_watchface_project!(project_dir)
 
-    assert {:ok, _} =
-             Elmc.compile(project_dir, %{
-               out_dir: out_dir,
-               entry_module: "Main",
-               direct_render_only: true,
-               strip_dead_code: true
-             })
+    compile_yes_watchface!(out_dir: out_dir)
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
-    body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_calendarDayKey")
-    wrapper = CCodegenExtract.fn_body(generated_c, "elmc_fn_Main_calendarDayKey")
+    body = CCodegenExtract.fn_body(generated_c, "elmc_fn_Main_calendarDayKey")
 
+    assert generated_c =~ "static elmc_int_t elmc_fn_Main_calendarDayKey("
     refute body =~ "ELMC_FN_OUT"
     refute body =~ "ELMC_TAG_FLOAT"
     refute body =~ "elmc_record_get("
     assert body =~ "ELMC_RECORD_GET_INDEX_INT(now, ELMC_FIELD_PEBBLE_TIME_CURRENTDATETIME_YEAR)"
     assert body =~ "* 10000"
-    assert wrapper =~ "elmc_new_int(out, elmc_fn_Main_calendarDayKey_native(now))"
-    refute wrapper =~ "CATCH_BEGIN"
+    refute generated_c =~ "RC elmc_fn_Main_calendarDayKey("
   end
 
   test "watchface-yes partial and lambda closures survive direct-render registry reset" do
-    project_dir = Path.expand("tmp/rc_required_yes_closures_project", __DIR__)
     out_dir = Path.expand("tmp/rc_required_yes_closures_codegen", __DIR__)
     File.rm_rf!(out_dir)
-    prepare_yes_watchface_project!(project_dir)
 
-    assert {:ok, _} =
-             Elmc.compile(project_dir, %{
-               out_dir: out_dir,
-               entry_module: "Main",
-               direct_render_only: true,
-               strip_dead_code: true
-             })
+    compile_yes_watchface!(out_dir: out_dir)
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
-    assert generated_c =~ "static ElmcValue *elmc_partial_ref_1("
     assert generated_c =~ "elmc_closure_new"
+    assert generated_c =~ "_closure_"
   end
 
   test "watchface-yes int-list loop heads are declared once per iteration" do
-    project_dir = Path.expand("tmp/list_map_head_decl_project", __DIR__)
     out_dir = Path.expand("tmp/list_map_head_decl_codegen", __DIR__)
     File.rm_rf!(out_dir)
-    prepare_yes_watchface_project!(project_dir)
 
-    assert {:ok, _} =
-             Elmc.compile(project_dir, %{
-               out_dir: out_dir,
-               entry_module: "Main",
-               direct_render_only: true,
-               strip_dead_code: true
-             })
+    compile_yes_watchface!(out_dir: out_dir)
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
     draw_outer = CCodegenExtract.fn_body(generated_c, "elmc_fn_Yes_Render_drawOuterScale")
@@ -382,6 +328,7 @@ defmodule Elmc.RcRequiredAllocAnalysisTest do
     refute init_body =~ ~r/elmc_as_int\(owned\[\d+\]\)/
   end
 
+  @tag timeout: 300_000
   test "game-2048 merge uses CHECK_RC for borrowed list.cons instead of elmc_int_zero fallback" do
     generated_c = compile_2048_generated!(strip_dead_code: false, direct_render_only: false)
 

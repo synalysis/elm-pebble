@@ -144,7 +144,7 @@ defmodule Elmc.Backend.CCodegen.SpecialValues.Stdlib.String do
     do: %{
       op: :lambda,
       args: ["__c"],
-      body: %{op: :runtime_call, function: "elmc_new_char", args: [%{op: :var, name: "__c"}]}
+      body: %{op: :runtime_call, function: "elmc_char_from_code", args: [%{op: :var, name: "__c"}]}
     }
 
   def special_value_from_target("String.length", [s]),

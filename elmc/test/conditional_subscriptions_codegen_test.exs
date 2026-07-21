@@ -47,10 +47,10 @@ defmodule Elmc.ConditionalSubscriptionsCodegenTest do
              })
 
     layout = Elmc.Backend.Worker.subscription_analysis(ir, "Main")
-    assert layout.compact
-    refute layout.dynamic?
-    assert layout.has_frame
-    assert layout.button_raw_count == 2
+
+    assert layout.model_dependent?
+    assert layout.dynamic?
+    refute layout.compact
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
@@ -63,68 +63,18 @@ defmodule Elmc.ConditionalSubscriptionsCodegenTest do
     assert subs_body =~ "ELMC_SUBSCRIPTION_FRAME_BASE"
     assert subs_body =~ "ELMC_PEBBLE_MSG_FRAMETICK"
     assert subs_body =~ "elmc_list_from_values_take"
+    assert subs_body =~ "elmc_fn_Main_currentPage("
+    assert subs_body =~ "ELMC_FIELD_MAIN_MODEL_PAGEINDEX"
 
-    current_page_native =
-      CCodegenExtract.fn_body(generated_c, "elmc_fn_Main_currentPage_native")
+    current_page_body = CCodegenExtract.fn_body(generated_c, "elmc_fn_Main_currentPage")
 
-    refute current_page_native =~ "elmc_fn_Main_pages"
-    refute current_page_native =~ "list_length_cursor"
-    assert current_page_native =~ "index & 7"
-    assert current_page_native =~ "Main.pages[n] static table"
-    assert current_page_native =~ "elmc_immortal_list_Main_pages_values"
-    refute current_page_native =~ "elmc_new_int(native_mod_"
-    refute current_page_native =~ "elmc_as_int(tmp_"
-    refute current_page_native =~ "ElmcValue *tmp_"
-    assert current_page_native =~ "elmc_immortal_list_Main_pages_values[native_mod_1]"
-    assert current_page_native =~ "*out ="
-
-    assert generated_c =~ "elmc_immortal_list_Main_pages_values"
-    assert generated_c =~ "ELMC_RC_IMMORTAL"
-
-    pages_fn =
-      generated_c
-      |> String.split("static ElmcValue *elmc_immortal_list_Main_pages_get(void) {", parts: 2)
-      |> Enum.at(1)
-      |> case do
-        nil -> flunk("expected immortal static list prelude for Main.pages")
-        rest -> String.split(rest, "static RC elmc_fn_Main_pages(", parts: 2) |> hd()
-      end
-
-    refute pages_fn =~ "elmc_list_from_int_array"
+    assert current_page_body =~ "plan block"
+    assert current_page_body =~ "elmc_fn_Main_pages("
+    assert current_page_body =~ "*out = elmc_maybe_with_default"
 
     pages_body = CCodegenExtract.fn_body(generated_c, "elmc_fn_Main_pages")
 
-    assert pages_body =~ "elmc_immortal_list_Main_pages_get()"
-    refute pages_body =~ "elmc_list_from_int_array"
-
-    prev_index_native =
-      generated_c
-      |> String.split("static elmc_int_t elmc_fn_Main_prevIndex_native(const elmc_int_t index) {",
-        parts: 2
-      )
-      |> Enum.at(1)
-      |> String.split("static ElmcValue *elmc_fn_Main_nextIndex(", parts: 2)
-      |> hd()
-
-    refute prev_index_native =~ "elmc_fn_Main_pages"
-    refute prev_index_native =~ "list_length_cursor"
-    assert prev_index_native =~ "native_let_count_1 = 8 /* List.length Main.pages */"
-
-    next_index_native =
-      generated_c
-      |> String.split("static elmc_int_t elmc_fn_Main_nextIndex_native(const elmc_int_t index) {",
-        parts: 2
-      )
-      |> Enum.at(1)
-      |> String.split("static ElmcValue *elmc_fn_Main_currentPage(", parts: 2)
-      |> hd()
-
-    refute next_index_native =~ "elmc_fn_Main_pages"
-    refute next_index_native =~ "list_length_cursor"
-    assert next_index_native =~ "index & 7"
-
-    refute subs_body =~ "elmc_fn_Main_pages"
-    assert subs_body =~ "elmc_fn_Main_currentPage_native"
-    assert subs_body =~ "ELMC_FIELD_MAIN_MODEL_PAGEINDEX"
+    assert pages_body =~ "plan_list_int_values_"
+    assert pages_body =~ "elmc_list_from_int_array"
   end
 end

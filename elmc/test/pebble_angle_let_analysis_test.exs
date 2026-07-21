@@ -1,6 +1,8 @@
 defmodule Elmc.PebbleAngleLetAnalysisTest do
   use ExUnit.Case
 
+  @moduletag timeout: 180_000
+
   alias ElmEx.Frontend.GeneratedParser
   alias ElmEx.Frontend.Project
   alias ElmEx.IR.Lowerer
@@ -60,6 +62,7 @@ defmodule Elmc.PebbleAngleLetAnalysisTest do
              Elmc.compile(project_dir, %{
                out_dir: Path.expand("tmp/pebble_trig_ir_probe_out", __DIR__),
                entry_module: "Main",
+               plan_ir_mode: :primary,
                strip_dead_code: false
              })
 
@@ -111,6 +114,7 @@ defmodule Elmc.PebbleAngleLetAnalysisTest do
              Elmc.compile(project_dir, %{
                out_dir: out_dir,
                entry_module: "Main",
+               plan_ir_mode: :primary,
                pebble_int32: true,
                strip_dead_code: false
              })

@@ -13,7 +13,7 @@ defmodule Elmc.WasmImportSignaturesTest do
              Elmc.compile(@fixture, %{
                out_dir: out_dir,
                entry_module: "Main",
-               strip_dead_code: false,
+               strip_dead_code: true,
                plan_ir_mode: :primary,
                targets: [:wasm],
                wasm_strict: false
@@ -39,7 +39,7 @@ defmodule Elmc.WasmImportSignaturesTest do
              Elmc.compile(@fixture, %{
                out_dir: out_dir,
                entry_module: "Main",
-               strip_dead_code: false,
+               strip_dead_code: true,
                plan_ir_mode: :primary,
                targets: [:wasm],
                wasm_strict: false

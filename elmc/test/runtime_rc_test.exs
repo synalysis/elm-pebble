@@ -1,7 +1,10 @@
 defmodule Elmc.RuntimeRCTest do
   use Elmc.TestSupport.PrimaryCodegenCase
 
+  @moduletag timeout: 120_000
+
   alias Elmc.Test.RcTrackHarness
+  alias Elmc.TestSupport.PrimaryCodegen
 
   @deep_list_cells 200
   @deep_list_stack_kb 32
@@ -23,7 +26,7 @@ defmodule Elmc.RuntimeRCTest do
     project_dir = Path.expand("fixtures/simple_project", __DIR__)
     out_dir = Path.expand("tmp/runtime_rc_list_spine_source", __DIR__)
     File.rm_rf!(out_dir)
-    {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, strip_dead_code: false})
+    {:ok, _} = PrimaryCodegen.compile(project_dir, %{out_dir: out_dir, strip_dead_code: false})
 
     runtime_c = File.read!(Path.join(out_dir, "runtime/elmc_runtime.c"))
 
@@ -38,7 +41,7 @@ defmodule Elmc.RuntimeRCTest do
     project_dir = Path.expand("fixtures/simple_project", __DIR__)
     out_dir = Path.expand("tmp/runtime_rc_deep_list_release", __DIR__)
     File.rm_rf!(out_dir)
-    {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, strip_dead_code: false})
+    {:ok, _} = PrimaryCodegen.compile(project_dir, %{out_dir: out_dir, strip_dead_code: false})
 
     harness_path = Path.join(out_dir, "c/deep_list_release_harness.c")
 
@@ -106,7 +109,7 @@ defmodule Elmc.RuntimeRCTest do
     project_dir = Path.expand("fixtures/simple_project", __DIR__)
     out_dir = Path.expand("tmp/runtime_rc", __DIR__)
     File.rm_rf!(out_dir)
-    {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, strip_dead_code: false})
+    {:ok, _} = PrimaryCodegen.compile(project_dir, %{out_dir: out_dir, strip_dead_code: false})
 
     harness_path = Path.join(out_dir, "c/rc_harness.c")
 
@@ -159,7 +162,7 @@ defmodule Elmc.RuntimeRCTest do
     project_dir = Path.expand("fixtures/simple_project", __DIR__)
     out_dir = Path.expand("tmp/maybe_just_own_runtime", __DIR__)
     File.rm_rf!(out_dir)
-    {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, strip_dead_code: false})
+    {:ok, _} = PrimaryCodegen.compile(project_dir, %{out_dir: out_dir, strip_dead_code: false})
 
     harness_path = Path.join(out_dir, "c/maybe_just_own_harness.c")
 
@@ -232,7 +235,7 @@ defmodule Elmc.RuntimeRCTest do
     project_dir = Path.expand("fixtures/simple_project", __DIR__)
     out_dir = Path.expand("tmp/record_update_index_runtime", __DIR__)
     File.rm_rf!(out_dir)
-    {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, strip_dead_code: false})
+    {:ok, _} = PrimaryCodegen.compile(project_dir, %{out_dir: out_dir, strip_dead_code: false})
 
     harness_path = Path.join(out_dir, "c/record_update_index_harness.c")
 
@@ -298,7 +301,7 @@ defmodule Elmc.RuntimeRCTest do
     project_dir = Path.expand("fixtures/simple_project", __DIR__)
     out_dir = Path.expand("tmp/maybe_payload_detach_runtime", __DIR__)
     File.rm_rf!(out_dir)
-    {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, strip_dead_code: false})
+    {:ok, _} = PrimaryCodegen.compile(project_dir, %{out_dir: out_dir, strip_dead_code: false})
 
     harness_path = Path.join(out_dir, "c/maybe_payload_detach_harness.c")
 
@@ -354,10 +357,28 @@ defmodule Elmc.RuntimeRCTest do
     cc = System.find_executable("cc")
     if is_nil(cc), do: flunk("cc not available for runtime C test")
 
-    project_dir = Path.expand("fixtures/simple_project", __DIR__)
+    project_dir = Path.expand("tmp/runtime_rc_branches_project", __DIR__)
     out_dir = Path.expand("tmp/runtime_rc_branches", __DIR__)
+    File.rm_rf!(project_dir)
     File.rm_rf!(out_dir)
-    {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, strip_dead_code: false})
+    File.mkdir_p!(Path.join(project_dir, "src"))
+    File.cp!(Path.expand("fixtures/simple_project/elm.json", __DIR__), Path.join(project_dir, "elm.json"))
+    File.cp!(Path.expand("fixtures/simple_project/src/CoreCompliance.elm", __DIR__), Path.join(project_dir, "src/CoreCompliance.elm"))
+
+    File.write!(
+      Path.join(project_dir, "src/Main.elm"),
+      """
+      module Main exposing (main)
+
+      import CoreCompliance
+
+      main : ( Int, Int )
+      main =
+          CoreCompliance.branchTupleOut ( Ok 0, Just 0 )
+      """
+    )
+
+    {:ok, _} = PrimaryCodegen.compile(project_dir, %{out_dir: out_dir, strip_dead_code: true})
 
     branch_call =
       RcTrackHarness.generated_fn_call(out_dir, "CoreCompliance", "branchTupleOut", "args", 1)
@@ -505,7 +526,7 @@ defmodule Elmc.RuntimeRCTest do
     File.mkdir_p!(Path.join(out_dir, "runtime"))
 
     project_dir = Path.expand("fixtures/simple_project", __DIR__)
-    {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, strip_dead_code: false})
+    {:ok, _} = PrimaryCodegen.compile(project_dir, %{out_dir: out_dir, strip_dead_code: false})
 
     harness_path = Path.join(out_dir, "c/list_concat_rc_harness.c")
 
@@ -580,7 +601,7 @@ defmodule Elmc.RuntimeRCTest do
     File.mkdir_p!(Path.join(out_dir, "runtime"))
 
     project_dir = Path.expand("fixtures/simple_project", __DIR__)
-    {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, strip_dead_code: false})
+    {:ok, _} = PrimaryCodegen.compile(project_dir, %{out_dir: out_dir, strip_dead_code: false})
 
     harness_path = Path.join(out_dir, "c/as_int_number_harness.c")
 

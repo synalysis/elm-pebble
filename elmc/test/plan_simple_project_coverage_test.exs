@@ -5,6 +5,7 @@ defmodule Elmc.PlanSimpleProjectCoverageTest do
   alias Elmc.Backend.Plan.PrimaryCoverage
 
   @moduletag :plan_surface
+  @moduletag timeout: 360_000
   @fixture Path.expand("fixtures/simple_project", __DIR__)
 
   test "simple_project Main helpers reach full plan lowering coverage" do

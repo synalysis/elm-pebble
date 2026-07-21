@@ -21,6 +21,13 @@ defmodule Elmx.QualifiedRewriteTest do
              ])
   end
 
+  test "Random.normalizeSeed rewrites to runtime call" do
+    value = %{op: :int_literal, value: 42}
+
+    assert {:ok, %{op: :runtime_call, function: "elmx_core_random_normalize_seed", args: [^value]}} =
+             QualifiedRewrite.rewrite("Random.normalizeSeed", [value])
+  end
+
   test "Basics.compare full arity rewrites to runtime call" do
     a = %{op: :int_literal, value: 1}
     b = %{op: :int_literal, value: 2}

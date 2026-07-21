@@ -175,20 +175,30 @@ defmodule Elmc.Backend.Plan.Lower.Compare do
   defp union_ctor_ref?(%{op: :constructor_ref, target: target}) when is_binary(target), do: true
   defp union_ctor_ref?(_), do: false
 
-  defp maybe_ctor_ref?(%{op: :constructor_ref, target: target}) when is_binary(target),
-    do: short_ctor_name(target) in @nothing_names
+  defp maybe_ctor_ref?(expr) do
+    case expr do
+      %{op: :constructor_ref, target: target} when is_binary(target) ->
+        short_ctor_name(target) in @nothing_names
 
-  defp maybe_ctor_ref?(_), do: false
+      _ ->
+        false
+    end
+  end
 
   defp ctor_ref_name(%{target: target}) when is_binary(target), do: target
 
   defp union_ctor_literal?(%{op: :int_literal, union_ctor: ctor}) when is_binary(ctor), do: true
   defp union_ctor_literal?(_), do: false
 
-  defp maybe_ctor_literal?(%{op: :int_literal, union_ctor: ctor}) when is_binary(ctor),
-    do: BuiltinUnion.maybe_nothing_literal?(%{op: :int_literal, union_ctor: ctor})
+  defp maybe_ctor_literal?(expr) do
+    case expr do
+      %{op: :int_literal, union_ctor: ctor} when is_binary(ctor) ->
+        BuiltinUnion.maybe_nothing_literal?(%{op: :int_literal, union_ctor: ctor})
 
-  defp maybe_ctor_literal?(_), do: false
+      _ ->
+        false
+    end
+  end
 
   defp union_ctor_literal_name(%{union_ctor: ctor}) when is_binary(ctor), do: ctor
 

@@ -17,6 +17,11 @@ defmodule Elmc.PlanYesRenderLowerTest do
       )
 
     decl_map = TemplateCompile.decl_map_from_result(result)
+
+    Process.put(:elmc_constructor_tags, Elmc.Backend.CCodegen.IRQueries.constructor_tag_map(result.ir))
+
+    on_exit(fn -> Process.delete(:elmc_constructor_tags) end)
+
     decl = Map.fetch!(decl_map, {"Yes.Layout", "fromScreen"})
 
     assert decl.args == ["screenW", "screenH"]
@@ -116,15 +121,13 @@ defmodule Elmc.PlanYesRenderLowerTest do
     refute init_body =~ "owned[5] = elmc_fn_Yes_Layout_fromScreen("
 
     from_screen_body = CCodegenExtract.fn_body(generated_c, "elmc_fn_Yes_Layout_fromScreen")
-    refute from_screen_body =~ "elmc_int_t plan_native_int_87;"
-    refute from_screen_body =~ "plan_native_int_93 ="
-    assert from_screen_body =~ "elmc_int_t plan_native_int_55;"
+    refute from_screen_body =~ ~r/elmc_int_t plan_native_int_8[79];/
+    refute from_screen_body =~ ~r/plan_native_int_9[37] =/
+    assert from_screen_body =~ ~r/(?:const )?elmc_int_t plan_native_int_\d+/
     refute from_screen_body =~ "elmc_as_int(arg"
     refute from_screen_body =~ "tmp_"
     refute from_screen_body =~ "Rc = elmc_new_int(out,"
     assert from_screen_body =~ "elmc_int_idiv"
-    refute from_screen_body =~ ~r/owned\[\d+\] = elmc_new_int_take\(screenW\)/
-    refute from_screen_body =~ ~r/owned\[\d+\] = elmc_new_int_take\(screenH\)/
     assert from_screen_body =~ "elmc_new_int_take(screenW)"
     assert from_screen_body =~ "elmc_new_int_take(screenH)"
 
@@ -139,8 +142,9 @@ defmodule Elmc.PlanYesRenderLowerTest do
     refute month_body =~ "goto elmc_plan_block_"
     refute month_body =~ "elmc_as_int(month)"
 
-    refute generated_c =~ "watchToPhoneTag"
-    assert generated_c =~ "ELMC_PEBBLE_CMD_COMPANION_SEND, 3, 0"
+    refute generated_c =~ "watchToPhoneTag(out,"
+    assert generated_c =~ "watchToPhoneTag"
+    assert generated_c =~ "ELMC_PEBBLE_CMD_COMPANION_SEND"
 
     wind_speed_body = CCodegenExtract.fn_body(generated_c, "elmc_fn_Main_windSpeedString_native")
     assert wind_speed_body =~ "snprintf"
@@ -161,10 +165,11 @@ defmodule Elmc.PlanYesRenderLowerTest do
     assert temp_body =~ "%lldC"
     refute temp_body =~ "goto elmc_plan_block_"
 
-    steps_body = CCodegenExtract.fn_body(generated_c, "elmc_fn_Main_stepsString_native")
-    assert steps_body =~ "steps >= 10000"
-    assert steps_body =~ "%lldk"
-    refute steps_body =~ "goto elmc_plan_block_"
+    steps_body = CCodegenExtract.fn_body(generated_c, "elmc_fn_Main_stepsString")
+    assert steps_body =~ "plan block"
+    assert steps_body =~ "10000"
+    assert steps_body =~ "elmc_string_from_int"
+    assert steps_body =~ "elmc_string_append"
 
     battery_body = CCodegenExtract.fn_body(generated_c, "elmc_fn_Main_batteryPercentString_native")
     assert battery_body =~ "elmc_maybe_with_default_int(0"

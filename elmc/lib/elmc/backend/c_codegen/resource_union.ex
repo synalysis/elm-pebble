@@ -6,6 +6,8 @@ defmodule Elmc.Backend.CCodegen.ResourceUnion do
 
   @spec constructor?(String.t(), [Types.ir_expr()]) :: boolean()
   def constructor?(target, args) when is_binary(target) and is_list(args) do
+    target = SpecialValues.normalize_special_target(target)
+
     args == [] and
       (Map.has_key?(slot_map(), ctor_name(target)) or resource_ctor_target?(target) or
          placeholder_resource_ctor_target?(target))
@@ -30,6 +32,7 @@ defmodule Elmc.Backend.CCodegen.ResourceUnion do
 
   @spec slot_index(String.t()) :: pos_integer()
   def slot_index(target) when is_binary(target) do
+    target = SpecialValues.normalize_special_target(target)
     ctor = ctor_name(target)
 
     if placeholder_resource_ctor_target?(target) do

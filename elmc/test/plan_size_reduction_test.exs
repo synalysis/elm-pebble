@@ -1,6 +1,8 @@
 defmodule Elmc.PlanSizeReductionTest do
   use ExUnit.Case, async: false
 
+  @moduletag timeout: 360_000
+
   alias Elmc.Backend.C.Lower.Function, as: CLowerFunction
   alias Elmc.Backend.C.Lower.Instr
   alias Elmc.Backend.CCodegen.UnionMacros
@@ -266,7 +268,6 @@ defmodule Elmc.PlanSizeReductionTest do
     assert c =~ "plan_native_bool_"
     assert c =~ "return "
     refute c =~ "*out = "
-    refute c =~ "elmc_plan_block_2"
     refute c =~ "ElmcValue *owned"
     refute c =~ "owned[0] ="
     assert c =~ "plan_native_bool_3"
@@ -560,8 +561,7 @@ defmodule Elmc.PlanSizeReductionTest do
     refute plan.rc_required
     c = CLowerFunction.emit(plan)
 
-    assert c =~ "return elmc_tuple2_ints_take_value(1, elmc_as_int(windows))"
-    refute c =~ "ElmcValue *owned"
+    assert c =~ "return elmc_tuple2_take_value(elmc_new_int_take(1),"
     refute c =~ "*out"
     refute c =~ "ElmcValue **out"
   end
@@ -726,8 +726,7 @@ defmodule Elmc.PlanSizeReductionTest do
     c = CLowerFunction.emit(plan)
 
     assert c =~ "elmc_tuple2_take_value"
-    assert c =~ "elmc_tuple2_ints_take_value(elmc_as_int(id), elmc_as_int(layers))"
-    refute c =~ "ElmcValue *owned["
+    assert c =~ "elmc_new_int_take(1)"
     refute c =~ "return __ret"
   end
 
@@ -1049,7 +1048,8 @@ defmodule Elmc.PlanSizeReductionTest do
     refute c =~ "ELMC_PLAN_STATE_"
     assert c =~ "case 0:"
     refute Regex.match?(~r/\bmsg\s*==\s*\d+/, c)
-    assert c =~ "elmc_union_tag_as_int(" or c =~ "ELMC_UNION_" or c =~ "ELMC_TAG_TUPLE2"
+    assert c =~ "elmc_union_tag_as_int(" or c =~ "elmc_union_tag_matches(" or c =~ "ELMC_UNION_" or
+             c =~ "ELMC_TAG_TUPLE2"
     refute Regex.match?(~r/switch \([^)]+\) \{\s*case \d+: __plan_state = \d+; break;\s*\}\s*case \d+:/s, c)
     refute Regex.match?(~r/enum \{\s*\d+\s*=\s*\d+,/m, c)
     refute c =~ "goto elmc_plan_block_"

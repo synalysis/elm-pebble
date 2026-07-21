@@ -1,8 +1,25 @@
 defmodule Elmc.TangramTemplateCodegenTest do
   use ExUnit.Case
 
+  @moduletag timeout: 300_000
+
   alias Elmc.Test.RcTrackHarness
   alias Elmc.TestSupport.TangramTemplate
+
+  setup do
+    on_exit(fn ->
+      for key <- [
+            :elmc_codegen_opts,
+            :elmc_constructor_tags,
+            :elmc_record_field_macros,
+            :elmc_plan_ir_mode
+          ] do
+        Process.delete(key)
+      end
+    end)
+
+    :ok
+  end
 
   test "tangram watchface plan-primary direct render does not declare owned slots with call initializers" do
     project_dir = TangramTemplate.scaffold_project()
@@ -31,7 +48,8 @@ defmodule Elmc.TangramTemplateCodegenTest do
              Elmc.compile(project_dir, %{
                out_dir: out_dir,
                entry_module: "Main",
-               strip_dead_code: true
+               strip_dead_code: true,
+               plan_ir_mode: :primary
              })
 
     generated = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
@@ -105,6 +123,7 @@ defmodule Elmc.TangramTemplateCodegenTest do
   end
 
   @tag :tangram_host
+  @tag :slow
   test "tangram watchface ensure_scene builds without heap corruption" do
     project_dir = TangramTemplate.scaffold_project()
     out_dir = Path.join(System.tmp_dir!(), "tangram-host-#{System.unique_integer([:positive])}")
@@ -114,7 +133,8 @@ defmodule Elmc.TangramTemplateCodegenTest do
              Elmc.compile(project_dir, %{
                out_dir: out_dir,
                entry_module: "Main",
-               strip_dead_code: true
+               strip_dead_code: false,
+               plan_ir_mode: :primary
              })
 
     generated = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
@@ -134,10 +154,8 @@ defmodule Elmc.TangramTemplateCodegenTest do
       """
       #include "elmc_runtime.h"
       #{RcTrackHarness.harness_rc_helpers()}
-      ElmcValue *elmc_fn_Companion_Internal_watchToPhoneTag(ElmcValue **a, int n);
-      ElmcValue *elmc_fn_Companion_Internal_watchToPhoneValue(ElmcValue **a, int n);
-      
-      
+
+
       """
     )
 
@@ -145,18 +163,6 @@ defmodule Elmc.TangramTemplateCodegenTest do
       harness_path,
       """
       #include "elmc_pebble.h"
-
-      ElmcValue *elmc_fn_Companion_Internal_watchToPhoneTag(ElmcValue **a, int n) {
-        (void)a;
-        (void)n;
-        return elmc_int_zero();
-      }
-
-      ElmcValue *elmc_fn_Companion_Internal_watchToPhoneValue(ElmcValue **a, int n) {
-        (void)a;
-        (void)n;
-        return elmc_int_zero();
-      }
 
       static ElmcValue *basalt_launch_context(void) {
         ElmcValue *reason = elmc_harness_new_int(2);

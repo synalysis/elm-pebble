@@ -3,6 +3,8 @@ defmodule Elmc.NativeMaybeIntCaseCodegenTest do
 
   alias Elmc.Test.CCodegenExtract
 
+  @moduletag timeout: 180_000
+
   test "Maybe record case on field access emits native Int function body" do
     source_fixture = Path.expand("fixtures/simple_project", __DIR__)
     project_dir = Path.expand("tmp/maybe_record_int_case_project", __DIR__)
@@ -19,23 +21,21 @@ defmodule Elmc.NativeMaybeIntCaseCodegenTest do
              Elmc.compile(project_dir, %{
                out_dir: out_dir,
                entry_module: "Main",
+               plan_ir_mode: :primary,
                strip_dead_code: false
              })
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
-    assert generated_c =~ "elmc_int_t elmc_fn_Main_currentHour_native("
+    assert generated_c =~ "static RC elmc_fn_Main_currentHour("
 
-    native_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_currentHour")
-    assert native_body =~ "elmc_maybe_is_just"
-    assert native_body =~ "native_mod_"
-    assert native_body =~ "ELMC_RECORD_GET_INDEX_INT"
-    refute native_body =~ "elmc_new_int("
-    refute native_body =~ "switch ("
+    body = CCodegenExtract.fn_body(generated_c, "elmc_fn_Main_currentHour")
+    assert body =~ "elmc_maybe_is_nothing"
+    assert body =~ "ELMC_RECORD_GET_INDEX_INT"
+    refute body =~ "switch ("
 
-    caller_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_hourHandOffset")
-    assert caller_body =~ "native_maybe_case_"
-    refute caller_body =~ "elmc_fn_Main_currentHour(&"
+    caller_body = CCodegenExtract.fn_body(generated_c, "elmc_fn_Main_hourHandOffset")
+    assert caller_body =~ "elmc_fn_Main_currentHour"
     refute caller_body =~ "elmc_new_int("
   end
 
@@ -55,14 +55,15 @@ defmodule Elmc.NativeMaybeIntCaseCodegenTest do
              Elmc.compile(project_dir, %{
                out_dir: out_dir,
                entry_module: "Main",
+               plan_ir_mode: :primary,
                strip_dead_code: false
              })
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
-    native_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_maybeIntBump")
+    native_body = CCodegenExtract.fn_body(generated_c, "elmc_fn_Main_maybeIntBump")
 
-    assert generated_c =~ "elmc_int_t elmc_fn_Main_maybeIntBump_native("
-    assert native_body =~ "elmc_maybe_is_just"
+    assert generated_c =~ "static RC elmc_fn_Main_maybeIntBump(elmc_int_t *out"
+    assert native_body =~ "elmc_maybe_is_nothing"
     refute native_body =~ "elmc_new_int("
   end
 

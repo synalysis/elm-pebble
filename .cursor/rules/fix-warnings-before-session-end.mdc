@@ -1,0 +1,35 @@
+---
+description: Keep all packages compiling with zero compiler warnings
+alwaysApply: true
+---
+
+# Zero Compiler Warnings
+
+The repo must **always compile clean**: no Elixir, Erlang, or other compiler warnings left in any package. Treat warnings as errors to fix, not noise to ignore.
+
+## Required at end of session (when code was changed)
+
+1. **Compile every package you edited** (and dependents if interfaces changed) until output is warning-free:
+   - `elm_ex` → `cd elm_ex && mix compile`
+   - `elmc` → `cd elmc && mix compile`
+   - `elmx` → `cd elmx && mix compile`
+   - `ide` → `cd ide && mix compile`
+2. **Fix every warning** reported by those compiles — not only warnings in files you touched. If your edit exposes a warning elsewhere in the same package, fix it in the same session.
+3. After `.yrl`/`.erl` changes in `elm_ex`, recompile `elm_ex` then any dependent package (`elmc`, `ide`, …).
+4. Prefer the stricter CI gate when verifying `elmc`: `cd elmc && mix compile --warnings-as-errors`.
+
+## Do not
+
+- End a coding session with any compiler warnings still present
+- Dismiss warnings as “pre-existing” or “unrelated” — clean means **zero**
+- Run unbounded full test/corpus suites just to find warnings; **`mix compile` per package is sufficient**
+
+## When this rule does not apply
+
+- **Question-only or review-only** turns with no code edits
+
+## Examples
+
+- **Bad:** `mix compile` prints unused-variable and grouped-clause warnings → ship anyway
+- **Good:** `mix compile` in `elmc` → fix or prefix unused bindings, regroup clauses → recompile until silent
+- **Good:** Change `elm_ex` parser → compile `elm_ex`, then `elmc` → fix all warnings in both packages before finishing

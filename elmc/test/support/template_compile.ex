@@ -53,12 +53,11 @@ defmodule Elmc.TestSupport.TemplateCompile do
         |> maybe_add_protocol_sources(template_src, tmp)
         |> maybe_add_random_sources(deps)
 
-      elm_json = %{
-        "type" => "application",
-        "source-directories" => sources,
-        "elm-version" => "0.19.1",
-        "dependencies" => %{"direct" => deps, "indirect" => %{}}
-      }
+      elm_json =
+        Elmc.TestSupport.ElmJson.minimal_application(
+          source_directories: sources,
+          direct: deps
+        )
 
       File.write!(Path.join(tmp, "elm.json"), Jason.encode!(elm_json, pretty: true))
 

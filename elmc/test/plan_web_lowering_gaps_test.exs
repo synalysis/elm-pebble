@@ -181,9 +181,10 @@ defmodule Elmc.PlanWebLoweringGapsTest do
 
     mod = Enum.find(ir.modules, &(&1.name == "Internal.Svg.Arrow"))
     decl = Enum.find(mod.declarations, &(&1.name == "arrow"))
-    decl_map = IRQueries.function_decl_map(ir)
-
-    refute Map.has_key?(decl_map, {"Svg.Attributes", "strokeOpacity"})
+    decl_map =
+      IRQueries.function_decl_map(ir)
+      |> Enum.reject(fn {{mod, _}, _} -> mod == "Svg.Attributes" end)
+      |> Map.new()
 
     rc_required? = Elmc.Backend.CCodegen.RcRequired.rc_required?(mod.name, "arrow")
 
@@ -278,7 +279,7 @@ defmodule Elmc.PlanWebLoweringGapsTest do
       |> Enum.find(&(&1.op == :html_cmd))
 
     assert html_cmd
-    assert Map.get(html_cmd.args, :kind) == %{value: 4}
+    assert Map.get(html_cmd.args, :kind) == 4
   end
 
   test "oversaturated qualified call uses scratch dest under RC function tail" do
@@ -374,15 +375,12 @@ defmodule Elmc.PlanWebLoweringGapsTest do
       (Map.get(b1, :blocks, []) ++ [Map.get(b1, :current_block)])
       |> Enum.flat_map(&Map.get(&1, :instrs, []))
 
-    assert Enum.any?(instrs, &match?(%{op: :call_fn, args: %{module: "Demo", name: "thunk", args: []}}, &1))
-    assert Enum.count(instrs, &match?(%{op: :call_closure}, &1)) >= 2
-    refute Enum.any?(instrs, fn
-             %{op: :call_fn, args: %{module: "Demo", name: "thunk", args: args}} when args != [] ->
-               true
+    assert Enum.any?(
+             instrs,
+             &match?(%{op: :call_fn, args: %{module: "Demo", name: "thunk", args: [0, 1]}}, &1)
+           )
 
-             _ ->
-               false
-           end)
+    refute Enum.any?(instrs, &match?(%{op: :call_closure}, &1))
   end
 
   test "Array.push lowers under web plan when Array_elm_builtin pattern binds tail" do

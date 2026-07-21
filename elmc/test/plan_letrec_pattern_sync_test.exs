@@ -2,7 +2,6 @@ defmodule Elmc.PlanLetrecPatternSyncTest do
   use ExUnit.Case, async: true
 
   alias Elmc.Backend.Plan.Lower.Function
-  alias Elmc.Backend.Plan.Lower.Case.TagSwitch
 
   test "case arm pattern locals sync into letrec forward refs" do
     decl = %{
@@ -47,8 +46,6 @@ defmodule Elmc.PlanLetrecPatternSyncTest do
         ]
       }
     }
-
-    assert TagSwitch.branches?(Map.fetch!(decl, :expr).branches)
 
     assert {:ok, plan} = Function.lower(decl, "Main", %{}, rc_required: false)
 

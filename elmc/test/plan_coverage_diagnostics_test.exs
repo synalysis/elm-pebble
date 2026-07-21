@@ -85,7 +85,7 @@ defmodule Elmc.PlanCoverageDiagnosticsTest do
     assert result.plan_toolchain == %{mode: :primary, strict: true}
   end
 
-  test "explicit plan_ir_mode off emits legacy codegen info diagnostic" do
+  test "explicit plan_ir_mode off emits removed-mode warning and compiles as primary" do
     out_dir = Path.expand("tmp/plan_legacy_diag", __DIR__)
     File.rm_rf!(out_dir)
 
@@ -98,7 +98,10 @@ defmodule Elmc.PlanCoverageDiagnosticsTest do
              })
 
     assert Enum.any?(result.layout_coercion_diagnostics, fn diag ->
-             diag["code"] == "plan_legacy_codegen" and diag["severity"] == "info"
+             diag["code"] == "plan_ir_mode_off_removed" and diag["severity"] == "warning"
            end)
+
+    refute Enum.any?(result.layout_coercion_diagnostics, &(&1["code"] == "plan_legacy_codegen"))
+    assert result.plan_toolchain == %{mode: :primary, strict: true}
   end
 end

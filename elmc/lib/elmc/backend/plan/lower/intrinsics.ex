@@ -2,6 +2,7 @@ defmodule Elmc.Backend.Plan.Lower.Intrinsics do
   @moduledoc false
 
   alias Elmc.Backend.CCodegen.{FunctionEmit, TypeParsing}
+  alias Elmc.Backend.CCodegen.Expr, as: IrExpr
   alias Elmc.Backend.CCodegen.SpecialValues.Core, as: SpecialCore
   alias Elmc.Backend.Plan.{Builder, Context, EpilogueRelease, Verify}
   alias Elmc.Backend.Plan.Lower.{Call, Expr, Function, SpecialValues}
@@ -125,7 +126,9 @@ defmodule Elmc.Backend.Plan.Lower.Intrinsics do
       case SpecialValues.special_value_from_target(qualified, []) do
         %{op: :lambda, args: params, body: body}
         when is_list(params) and params != [] and is_map(body) ->
-          forward_decl = put_decl_fields(decl, params, body)
+          eff_params = effective_special_alias_params(decl, params)
+          body = rename_special_alias_params(body, params, eff_params)
+          forward_decl = put_decl_fields(decl, eff_params, body)
 
           case Function.lower(forward_decl, module_name, decl_map, opts) do
             {:ok, _} = ok -> ok
@@ -146,6 +149,23 @@ defmodule Elmc.Backend.Plan.Lower.Intrinsics do
   end
 
   defp alias_body_matches_special?(_, _), do: false
+
+  defp effective_special_alias_params(decl, params) do
+    case type_param_names(Map.get(decl, :type)) do
+      names when is_list(names) and length(names) == length(params) -> names
+      _ -> params
+    end
+  end
+
+  defp rename_special_alias_params(body, old_params, new_params) do
+    subs =
+      old_params
+      |> Enum.zip(new_params)
+      |> Enum.filter(fn {old, new} -> old != new end)
+      |> Map.new(fn {old, new} -> {old, %{op: :var, name: new}} end)
+
+    if map_size(subs) == 0, do: body, else: IrExpr.substitute_expr(body, subs)
+  end
 
   # Top-level `alias = Other.fn` keeps IR `args: []` while the callee expects parameters.
   # Rebuild the declaration with the callee's parameter names and a forwarding body.

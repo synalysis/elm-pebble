@@ -191,6 +191,10 @@ defmodule Elmc.Backend.CCodegen.Native.BindingAnalysis do
 
   defp double_to_float_expr?(_expr), do: false
 
+  defp pi_expr?(%{op: :qualified_ref, target: target})
+       when target in ["Basics.pi", "pi"],
+       do: true
+
   defp pi_expr?(%{op: :qualified_call, target: target, args: []})
        when target in ["Basics.pi", "pi"],
        do: true

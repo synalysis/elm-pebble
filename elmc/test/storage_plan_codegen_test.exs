@@ -57,15 +57,11 @@ defmodule Elmc.StoragePlanCodegenTest do
         "storage_plan_codegen_compact"
       )
 
-    count_empty_native =
-      generated_c
-      |> String.split("static elmc_int_t elmc_fn_Main_countEmpty_native(ElmcValue * const cells) {", parts: 2)
-      |> Enum.at(1, "")
-      |> String.split("\n}\n", parts: 2)
-      |> List.first()
+    count_empty_body = CCodegenExtract.fn_body(generated_c, "elmc_fn_Main_countEmpty")
 
-    assert count_empty_native =~ "ELMC_TAG_INT_LIST"
-    refute count_empty_native =~ "list_walk_cursor_"
+    assert count_empty_body =~ "plan block"
+    assert count_empty_body =~ "elmc_list_is_empty" or count_empty_body =~ "value :: rest"
+    refute count_empty_body =~ "list_walk_cursor_"
   end
 
   test "Array.get on Array.fromList (List.repeat 8 0) uses indexed int-list access" do
@@ -88,8 +84,8 @@ defmodule Elmc.StoragePlanCodegenTest do
         "storage_plan_codegen_array_get"
       )
 
-    assert generated_c =~ "elmc_array_get_with_default_int"
-    refute generated_c =~ ~r/elmc_array_get_with_default_int[\s\S]{0,400}list_walk_cursor_/
+    assert generated_c =~ "elmc_array_get("
+    refute generated_c =~ ~r/elmc_array_get\([\s\S]{0,400}list_walk_cursor_/
   end
 
   test "record grid fixture compiles and emits sumRows" do
@@ -111,7 +107,9 @@ defmodule Elmc.StoragePlanCodegenTest do
     assert grid_body =~ "elmc_list_from_record_array"
 
     sum_rows_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_sumRows")
-    assert sum_rows_body =~ "ELMC_TAG_RECORD_SEQ"
+    assert sum_rows_body =~ "plan block"
+    assert sum_rows_body =~ "ELMC_RECORD_GET_INDEX_INT"
+    assert sum_rows_body =~ "elmc_list_head" or sum_rows_body =~ "elmc_list_is_empty"
   end
 
   test "native_linked list loops accept compact int lists without cons walk" do
@@ -148,17 +146,15 @@ defmodule Elmc.StoragePlanCodegenTest do
         "storage_plan_codegen_record_map"
       )
 
-    body =
-      generated_c
-      |> String.split("elmc_fn_Main_tupleCoords(", parts: 2)
-      |> Enum.at(1, "")
-      |> String.split("\n}\n", parts: 2)
-      |> List.first()
+    body = CCodegenExtract.fn_body(generated_c, "elmc_fn_Main_tupleCoords")
+    closure_body = CCodegenExtract.fn_body(generated_c, "elmc_fn_Main_tupleCoords_closure_0")
 
-    assert body =~ "list_map_head_"
+    assert body =~ "plan block"
+    assert body =~ "elmc_list_map"
+    assert closure_body =~ "ELMC_RECORD_GET_INDEX_INT"
+    assert closure_body =~ "elmc_tuple2"
     refute body =~ "ELMC_TAG_INT_LIST"
     refute body =~ "_ilp_"
-    assert body =~ "ELMC_TAG_RECORD_SEQ" or body =~ "list_walk_cursor_"
     refute Regex.match?(~r/ELMC_TAG_INT_LIST[\s\S]*\} else \{/, body)
   end
 end

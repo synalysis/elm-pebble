@@ -6,21 +6,12 @@ defmodule Elmc.PlanConstantFoldTest do
   alias Elmc.Backend.Plan.Lower.Function, as: PlanLower
   alias Elmc.Backend.Plan.Lower.If, as: PlanIf
   alias Elmc.Backend.Plan.{Builder, ConstantFold, Context}
+  alias Elmc.TestSupport.ElmJson
   alias ElmEx.Frontend.Bridge
   alias ElmEx.IR.Lowerer
 
-  @minimal_elm_json Jason.encode!(%{
-                        "type" => "application",
-                        "source-directories" => ["src"],
-                        "elm-version" => "0.19.1",
-                        "dependencies" => %{"direct" => %{"elm/core" => "1.0.5"}, "indirect" => %{}}
-                      })
-
   defp write_minimal_project!(project_dir, source) do
-    File.rm_rf!(project_dir)
-    File.mkdir_p!(Path.join(project_dir, "src"))
-    File.write!(Path.join(project_dir, "src/Main.elm"), source)
-    File.write!(Path.join(project_dir, "elm.json"), @minimal_elm_json <> "\n")
+    ElmJson.write_probe_project!(project_dir, source)
   end
 
   defp lower_main!(source, fun_name) do

@@ -155,20 +155,12 @@ defmodule Elmc.Backend.CCodegen.NativeBoolUnionCaseTest do
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
-    native_body =
-      generated_c
-      |> String.split(
-        "static elmc_int_t elmc_fn_Main_randomIndex_native(const elmc_int_t maxExclusive, const elmc_int_t seed) {",
-        parts: 2
-      )
-      |> Enum.at(1, "")
-      |> String.split("ElmcValue *elmc_fn_Main_init", parts: 2)
-      |> hd()
+    body = CCodegenExtract.fn_body(generated_c, "elmc_fn_Main_randomIndex")
 
-    assert native_body =~ "if ((maxExclusive < 0))"
-    assert native_body =~ "(maxExclusive == 0)"
-    assert native_body =~ "elmc_new_bool_take(maxExclusive == 0)"
-    refute native_body =~ "elmc_new_int(1)"
-    refute native_body =~ "native_bool_if_"
+    assert body =~ "plan block"
+    assert body =~ "(maxExclusive < 0)"
+    assert body =~ "(maxExclusive == 0)"
+    refute body =~ "elmc_new_int(1)"
+    refute body =~ "native_bool_if_"
   end
 end

@@ -208,13 +208,12 @@ defmodule Elmc.PlanCLowerTest do
 
     tmp = Path.expand("tmp/record_field_test_probe", __DIR__)
     src = Path.join(Elmc.Test.ElmRunCorpus.corpus_dir(), "Basics/RecordFieldTest.elm")
-    File.rm_rf!(tmp)
-    File.mkdir_p!(tmp)
-    File.cp!(src, Path.join(tmp, "RecordFieldTest.elm"))
 
-    File.write!(
-      Path.join(tmp, "elm.json"),
-      Jason.encode!(%{type: "application", "source-directories": ["."], "elm-version": "0.19.1", dependencies: %{direct: %{}, indirect: %{}}}, pretty: true) <> "\n"
+    Elmc.TestSupport.ElmJson.write_probe_project!(
+      tmp,
+      File.read!(src),
+      source_root: ".",
+      rel_path: "RecordFieldTest.elm"
     )
 
     assert {:ok, _result} =
@@ -397,21 +396,11 @@ defmodule Elmc.PlanCLowerTest do
 
     tmp = Path.expand("tmp/rc_track_result_ok_four_probe", __DIR__)
     src = Path.expand("fixtures/rc_track_result_project/src/RcTrackResultProbe.elm", __DIR__)
-    File.rm_rf!(tmp)
-    File.mkdir_p!(Path.join(tmp, "src"))
-    File.cp!(src, Path.join(tmp, "src/RcTrackResultProbe.elm"))
 
-    File.write!(
-      Path.join(tmp, "elm.json"),
-      Jason.encode!(
-        %{
-          "type" => "application",
-          "source-directories" => ["src"],
-          "elm-version" => "0.19.1",
-          "dependencies" => %{"direct" => %{"elm/core" => "1.0.5"}, "indirect" => %{}}
-        },
-        pretty: true
-      ) <> "\n"
+    Elmc.TestSupport.ElmJson.write_probe_project!(
+      tmp,
+      File.read!(src),
+      rel_path: "RcTrackResultProbe.elm"
     )
 
     assert {:ok, _} =
@@ -424,5 +413,33 @@ defmodule Elmc.PlanCLowerTest do
 
     c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
     assert c =~ "elmc_result_ok_own(out, *out)"
+  end
+
+  test "result_and_then nulls consumed let-bound result without double release" do
+    decl = %{
+      name: "bind",
+      args: ["result"],
+      expr: %{
+        op: :qualified_call,
+        target: "Result.andThen",
+        args: [
+          %{op: :lambda, args: ["s"], body: %{op: :var, name: "s"}},
+          %{op: :var, name: "result"}
+        ]
+      }
+    }
+
+    assert {:ok, plan} =
+             Elmc.Backend.Plan.Lower.Function.lower(
+               decl,
+               "Main",
+               %{{"Main", "bind"} => decl},
+               rc_required: true
+             )
+
+    c = Elmc.Backend.C.Lower.Function.emit(plan)
+    assert c =~ "elmc_result_and_then("
+    assert c =~ "owned[1] = NULL;"
+    refute c =~ ~r/elmc_result_and_then\([^)]+\);\s*CHECK_RC\(Rc\);\s*elmc_release\(owned\[1\]\)/
   end
 end

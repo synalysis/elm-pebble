@@ -223,10 +223,10 @@ guard on ternary/binary maps).
 
 | Code | Strict? | Meaning |
 |------|---------|---------|
-| `plan_primary_fallback` | error | Reachable function used legacy C body |
+| `plan_primary_fallback` | error | Reachable function failed plan lowering (unsupported stub emitted) |
 | `plan_primary_gap` | error | Reachable function not plan-eligible |
 | `plan_primary_coverage` | info | Stats when primary succeeds |
-| `plan_legacy_codegen` | info | Explicit `plan_ir_mode: :off` |
+| `plan_ir_mode_off_removed` | warning | Explicit `plan_ir_mode: :off` redirected to `:primary` |
 
 `Elmc.Backend.Plan.PrimaryCoverage` aggregates reachable/Main lowering stats on
 compile results (`layout_coercion_diagnostics`).
@@ -236,7 +236,7 @@ compile results (`layout_coercion_diagnostics`).
 - **Strict pass on a template** = all reachable functions in *that* app plan-lower.
 - **Full Elm** = strict pass on every valid app — requires completing the matrices
   above, not more template tuning.
-- Legacy C body codegen remains available only with explicit `plan_ir_mode: :off` (tests via `Elmc.TestSupport.LegacyCodegen`).
+- Legacy IR→C **function body** codegen is removed from the production path; explicit `plan_ir_mode: :off` compiles as `:primary` with a `plan_ir_mode_off_removed` warning.
 
 See [C_CODEGEN_LAYER_AUDIT.md](C_CODEGEN_LAYER_AUDIT.md) for which `CCodegen` modules are legacy-body-only vs still required under plan-primary.
 

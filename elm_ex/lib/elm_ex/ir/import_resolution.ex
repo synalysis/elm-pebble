@@ -142,6 +142,15 @@ defmodule ElmEx.IR.ImportResolution do
     %{expr | target: resolve(target, lookup), args: normalize_list(args, lookup)}
   end
 
+  def normalize_expr(%{op: :constructor_ref, target: target} = expr, lookup) when is_binary(target) do
+    %{expr | target: resolve(target, lookup)}
+  end
+
+  def normalize_expr(%{op: :partial_constructor, target: target, args: args} = expr, lookup)
+      when is_binary(target) do
+    %{expr | target: resolve(target, lookup), args: normalize_list(args, lookup)}
+  end
+
   def normalize_expr(%{op: :field_access, arg: arg, field: field} = expr, lookup)
       when is_binary(field) do
     rewritten_arg = normalize_expr(arg, lookup)

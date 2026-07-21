@@ -130,12 +130,6 @@ defmodule Elmc.Backend.Plan.Lower.PatternBind do
     bind_cons_pattern(head, tail, subject_reg, ctx, b)
   end
 
-  # Nullary constructors only (`NoOp`, `Tick`, …). Unary shorthand like
-  # `BestLoaded value` also has `arg_pattern: nil` but binds the payload name in
-  # `:bind`; that case is handled by the `bind` + nil `arg_pattern` clause below.
-  defp do_bind(%{kind: :constructor, arg_pattern: nil, bind: nil}, ctx, b, _subject_reg),
-    do: {:ok, ctx, b}
-
   defp do_bind(%{kind: :constructor, bind: bind, arg_pattern: %{kind: :var, name: name}} = pattern, ctx, b, subject_reg)
        when is_binary(bind) do
     do_bind(Map.put(pattern, :arg_pattern, %{kind: :var, name: name}) |> Map.put(:bind, bind), ctx, b, subject_reg)
@@ -178,7 +172,18 @@ defmodule Elmc.Backend.Plan.Lower.PatternBind do
     end
   end
 
+  # Nullary constructors only (`NoOp`, `Tick`, `Msg.A`, …). IR may omit
+  # `arg_pattern` / `bind` instead of setting them to nil. Unary shorthand like
+  # `BestLoaded value` binds the payload name in `:bind` and is handled above.
+  defp do_bind(%{kind: :constructor} = pattern, ctx, b, _subject_reg) do
+    if nullary_ctor_pattern?(pattern), do: {:ok, ctx, b}, else: :unsupported
+  end
+
   defp do_bind(_, _ctx, _b, _subject_reg), do: :unsupported
+
+  defp nullary_ctor_pattern?(pattern) do
+    is_nil(Map.get(pattern, :arg_pattern)) and is_nil(Map.get(pattern, :bind))
+  end
 
   defp bind_tuple_elem(%{kind: :wildcard}, _which, _base, ctx, b), do: {:ok, ctx, b, nil}
 

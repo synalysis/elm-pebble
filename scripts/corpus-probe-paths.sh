@@ -15,7 +15,7 @@ for rel in "$@"; do
   set +e
   line="$(
     CORPUS_PATH="${rel}" "${ROOT}/scripts/mix-run-limited.sh" elmc -e '
-      Application.put_env(:elmc, :default_plan_ir_mode, :off)
+      Application.put_env(:elmc, :default_plan_ir_mode, :primary)
       alias Elmc.Test.ElmRunCorpus
       path = System.get_env("CORPUS_PATH")
       tmp = "test/tmp/corpus_path_probe/"

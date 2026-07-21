@@ -74,7 +74,7 @@ defmodule Elmc.Backend.CCodegen.PlanNativeProjection do
 
         :error ->
           extract = if kind == :native_int, do: "elmc_as_int", else: "elmc_as_bool"
-          call_args = boxed_call_args(decl, params)
+          call_args = boxed_call_args(decl, module_name, decl_map, params)
 
           """
           ElmcValue *boxed = NULL;
@@ -145,9 +145,10 @@ defmodule Elmc.Backend.CCodegen.PlanNativeProjection do
   defp params_suffix(""), do: ""
   defp params_suffix(params), do: ", " <> params
 
-  defp boxed_call_args(decl, params) do
+  defp boxed_call_args(decl, module_name, decl_map, params) do
     arg_names =
-      FunctionEmit.c_arg_bindings(decl.args || [])
+      FunctionEmit.effective_decl_args(decl, module_name, decl_map)
+      |> FunctionEmit.c_arg_bindings()
       |> Enum.map(fn {_arg, c_arg, _idx} -> c_arg end)
       |> Enum.join(", ")
 

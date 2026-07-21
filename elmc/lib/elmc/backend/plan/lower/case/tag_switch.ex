@@ -529,12 +529,21 @@ defmodule Elmc.Backend.Plan.Lower.Case.TagSwitch do
   defp payload_bind?(%{arg_pattern: %{kind: :var}}), do: true
   defp payload_bind?(_), do: false
 
-  defp switchable_pattern?(%{kind: :constructor, name: name, tag: tag}) when is_integer(tag) do
-    is_nil(name) or not MapSet.member?(@excluded_names, short_name(name))
+  defp switchable_pattern?(%{kind: :constructor, name: name, tag: tag} = pattern)
+       when is_integer(tag) do
+    tag_switch_payload?(Map.get(pattern, :arg_pattern)) and
+      (is_nil(name) or not MapSet.member?(@excluded_names, short_name(name)))
   end
 
-  defp switchable_pattern?(%{kind: :constructor, tag: tag}) when is_integer(tag), do: true
+  defp switchable_pattern?(%{kind: :constructor, tag: tag} = pattern) when is_integer(tag) do
+    tag_switch_payload?(Map.get(pattern, :arg_pattern))
+  end
+
   defp switchable_pattern?(_), do: false
+
+  defp tag_switch_payload?(nil), do: true
+  defp tag_switch_payload?(%{kind: :wildcard}), do: true
+  defp tag_switch_payload?(_), do: false
 
   defp pattern_tag(%{tag: tag}) when is_integer(tag), do: tag
 

@@ -51,7 +51,8 @@ defmodule Elmc.PlanCompanionPrimaryTest do
                  diag["severity"] == "error"
              end)
 
-      assert result.plan_toolchain == %{mode: :primary, strict: true}
+      assert result.plan_toolchain.mode == :primary
+      assert result.plan_toolchain.strict == true
 
       generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 

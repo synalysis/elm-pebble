@@ -15,6 +15,9 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v5
 
+      - name: Validate tracked elm.json files
+        run: ./scripts/validate-elm-json.sh
+
       - name: Fetch optional elm-run corpus
         id: elm-run-corpus
         run: |

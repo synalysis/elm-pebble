@@ -105,6 +105,9 @@ defmodule Elmc.Backend.CCodegen.SpecialValues.Stdlib.Basics do
 
   def special_value_from_target("Basics.sqrt", []), do: Helpers.unary_runtime_lambda("elmc_basics_sqrt")
 
+  def special_value_from_target("Basics.log", []),
+    do: Helpers.unary_runtime_lambda("elmc_basics_log")
+
   def special_value_from_target("Basics.logBase", []),
     do: Helpers.binary_runtime_lambda("elmc_basics_log_base")
 
@@ -269,6 +272,9 @@ defmodule Elmc.Backend.CCodegen.SpecialValues.Stdlib.Basics do
 
   def special_value_from_target("Basics.sqrt", [x]),
     do: %{op: :runtime_call, function: "elmc_basics_sqrt", args: [x]}
+
+  def special_value_from_target("Basics.log", [x]),
+    do: %{op: :runtime_call, function: "elmc_basics_log", args: [x]}
 
   def special_value_from_target("Basics.logBase", [base, x]),
     do: %{op: :runtime_call, function: "elmc_basics_log_base", args: [base, x]}

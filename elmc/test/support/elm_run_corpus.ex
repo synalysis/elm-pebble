@@ -310,7 +310,8 @@ defmodule Elmc.Test.ElmRunCorpus do
                  out_dir: out_dir,
                  strip_dead_code: false,
                  entry_module: entry_module,
-                 named_record_literals: true
+                 named_record_literals: true,
+                 plan_ir_mode: :primary
                }),
              {:ok, stdout} <- run_elmc_harness(out_dir, entry_module) do
           {:ok, normalize_output(stdout)}
@@ -647,19 +648,7 @@ defmodule Elmc.Test.ElmRunCorpus do
   end
 
   defp host_elm_json do
-    %{
-      "type" => "application",
-      "source-directories" => ["src"],
-      "elm-version" => "0.19.1",
-      "dependencies" => %{
-        "direct" => %{"elm/core" => "1.0.5"},
-        "indirect" => %{}
-      },
-      "test-dependencies" => %{
-        "direct" => %{},
-        "indirect" => %{}
-      }
-    }
+    Elmc.TestSupport.ElmJson.minimal_application()
   end
 
   @spec compile_probe!(String.t(), String.t(), keyword()) ::
@@ -719,7 +708,8 @@ defmodule Elmc.Test.ElmRunCorpus do
     case Elmc.compile(tmp_dir, %{
            out_dir: out_dir,
            strip_dead_code: false,
-           entry_module: module
+           entry_module: module,
+           plan_ir_mode: :primary
          }) do
       {:ok, _} ->
         :ok
@@ -1071,18 +1061,6 @@ defmodule Elmc.Test.ElmRunCorpus do
   end
 
   defp minimal_elm_json do
-    %{
-      "type" => "application",
-      "source-directories" => ["."],
-      "elm-version" => "0.19.1",
-      "dependencies" => %{
-        "direct" => %{"elm/core" => "1.0.5"},
-        "indirect" => %{}
-      },
-      "test-dependencies" => %{
-        "direct" => %{},
-        "indirect" => %{}
-      }
-    }
+    Elmc.TestSupport.ElmJson.minimal_application(source_directories: ["."])
   end
 end

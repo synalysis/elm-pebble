@@ -3,6 +3,7 @@ defmodule Elmc.RuntimePruneCompactListTest do
 
   alias Elmc.Test.CCodegenExtract
 
+  @moduletag timeout: 360_000
   @template_main Path.expand("../../ide/priv/project_templates/game_2048/src/Main.elm", __DIR__)
 
   test "pruned int-only runtime keeps float/record-seq release stubs and compiles" do
@@ -36,12 +37,13 @@ defmodule Elmc.RuntimePruneCompactListTest do
 
     count_empty =
       case CCodegenExtract.fn_impl_body(generated, "elmc_fn_Main_countEmpty_native") do
-        "" -> CCodegenExtract.fn_impl_body(generated, "elmc_fn_Main_countEmpty")
+        "" -> CCodegenExtract.fn_body(generated, "elmc_fn_Main_countEmpty")
         body -> body
       end
 
     assert count_empty != ""
-    assert count_empty =~ "elmc_int_list_tail" or count_empty =~ "ELMC_TAG_INT_LIST"
+    assert count_empty =~ "plan block"
+    assert count_empty =~ "elmc_list_head_with_default_int" or count_empty =~ "elmc_int_list_tail"
 
     cc = System.find_executable("cc")
     if is_nil(cc), do: flunk("cc not available")

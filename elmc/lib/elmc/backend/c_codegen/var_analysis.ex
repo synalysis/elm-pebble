@@ -17,6 +17,14 @@ defmodule Elmc.Backend.CCodegen.VarAnalysis do
   def used_vars(%{op: :float_literal}), do: MapSet.new()
   def used_vars(%{op: :field_access, arg: arg}) when is_binary(arg), do: MapSet.new([arg])
   def used_vars(%{op: :field_access, arg: arg}) when is_map(arg), do: used_vars(arg)
+
+  def used_vars(%{op: :qualified_ref, target: target}) when is_binary(target) do
+    case dotted_var_ref_root(target) do
+      root when is_binary(root) -> MapSet.new([root])
+      _ -> MapSet.new()
+    end
+  end
+
   def used_vars(%{op: :compose_left, f: f, g: g}), do: compose_used_vars(f, g)
   def used_vars(%{op: :compose_right, f: f, g: g}), do: compose_used_vars(f, g)
   def used_vars(%{op: :add_const, var: name}), do: MapSet.new([name])
@@ -189,6 +197,13 @@ defmodule Elmc.Backend.CCodegen.VarAnalysis do
 
   defp free_vars(%{op: :field_access, arg: arg}, bound, stop_at_nested?) do
     free_vars_value(arg, bound, stop_at_nested?)
+  end
+
+  defp free_vars(%{op: :qualified_ref, target: target}, bound, stop_at_nested?) when is_binary(target) do
+    case dotted_var_ref_root(target) do
+      root when is_binary(root) -> free_vars_subject(root, bound, stop_at_nested?)
+      _ -> MapSet.new()
+    end
   end
 
   defp free_vars(%{op: :qualified_call, args: args}, bound, stop_at_nested?) when is_list(args) do
@@ -365,5 +380,20 @@ defmodule Elmc.Backend.CCodegen.VarAnalysis do
 
   defp call_name_is_var_ref?(name) when is_binary(name) do
     name not in @call_operator_names and not String.starts_with?(name, "__")
+  end
+
+  # Record field chains lowered to qualified_ref (e.g. hull.lo.x) are not module paths.
+  defp dotted_var_ref_root(target) when is_binary(target) do
+    case String.split(target, ".", parts: 2) do
+      [root, _rest] when root != "" -> if var_like_root?(root), do: root, else: nil
+      _ -> nil
+    end
+  end
+
+  defp var_like_root?(root) when is_binary(root) do
+    case root do
+      <<first::utf8, _::binary>> -> first in ?a..?z or first in ?_..?_
+      _ -> false
+    end
   end
 end

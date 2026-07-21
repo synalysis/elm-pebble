@@ -129,7 +129,7 @@ defmodule Elmc.BytecodeProjectWriterTest do
     assert ProjectWriter.emit_bytecode?(%{plan_ir_mode: :primary, pebble_int32: true, targets: [:c], emit_bytecode: true})
   end
 
-  test "does not emit bytecode artifacts when plan_ir_mode is off" do
+  test "does not emit bytecode artifacts for pebble_int32 primary c-only builds" do
     out_dir = Path.expand("tmp/bytecode_project_writer_off", __DIR__)
     File.rm_rf!(out_dir)
 
@@ -138,7 +138,8 @@ defmodule Elmc.BytecodeProjectWriterTest do
                out_dir: out_dir,
                entry_module: "Main",
                strip_dead_code: true,
-               plan_ir_mode: :off
+               plan_ir_mode: :primary,
+               pebble_int32: true
              })
 
     refute File.exists?(Path.join([out_dir, "bytecode", "elmc_bytecode.manifest.json"]))

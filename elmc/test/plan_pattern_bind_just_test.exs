@@ -4,6 +4,16 @@ defmodule Elmc.PlanPatternBindJustTest do
   alias Elmc.Backend.Plan.{Builder, Context}
   alias Elmc.Backend.Plan.Lower.PatternBind
 
+  test "nullary constructor pattern without bind key is a no-op bind" do
+    b = Builder.new("Main", "nullary_ctor", rc_required: false)
+    ctx = Context.new()
+    {subject_reg, b1} = Builder.fresh_reg(b)
+
+    pattern = %{kind: :constructor, name: "Tick", tag: 1, arg_pattern: nil}
+
+    assert {:ok, ^ctx, ^b1} = PatternBind.bind(pattern, ctx, b1, subject_reg)
+  end
+
   test "Just bind without arg_pattern unwraps payload via maybe_just_payload" do
     Process.put(:elmc_constructor_tags, %{"Just" => 1, "Nothing" => 0})
 

@@ -576,6 +576,13 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
     end
   end
 
+  defp store_generic_helper_c(helper_c) when is_binary(helper_c) do
+    Process.put(
+      :elmc_generic_helper_defs,
+      [CLowerFunction.cleanup_cfg_text(helper_c) | Process.get(:elmc_generic_helper_defs, [])]
+    )
+  end
+
   @spec emit_body(
           Types.function_declaration(),
           String.t(),
@@ -654,7 +661,7 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
     end
   end
 
-  defp emit_boxed_body(decl, module_name, function_arities, decl_map, direct_args?) do
+  defp emit_boxed_body(decl, module_name, _function_arities, decl_map, direct_args?) do
     rc_required? = RcRequired.rc_required?(module_name, decl.name)
     opts = Process.get(:elmc_codegen_opts, [])
 
@@ -677,101 +684,72 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
     {entry_probe, exit_probe} = DebugProbes.entry_exit_probes(module_name, decl.name)
     arg_binding_code = arg_binding_code(arg_bindings, direct_args?)
 
-    arg_kinds =
-      if direct_args? and mixed_direct_abi?(decl, module_name, decl_map) do
-        NativeFunctionCall.arg_kinds(decl, module_name, decl_map)
-      else
-        List.duplicate(:boxed, length(arg_names))
-      end
-
-    env =
-      arg_bindings
-      |> Enum.reduce(%{__module__: module_name}, fn arg, acc ->
-        {source_arg, c_arg, _index} = arg
-        Map.put(acc, source_arg, c_arg)
-      end)
-      |> Map.put(:__function_name__, decl.name)
-      |> put_typed_arg_bindings(arg_bindings, decl.type)
-      |> put_direct_native_param_bindings(arg_bindings, arg_kinds)
-      |> Map.put(:__function_arities__, function_arities)
-      |> Map.put(:__program_decls__, decl_map)
-      |> maybe_put_direct_args(direct_args?)
-      |> maybe_put_direct_param_refs(direct_args?, arg_bindings)
-      |> EnvBindings.put_borrowed_arg_refs(decl, arg_bindings)
-      |> Map.put(:__direct_call_targets__, Process.get(:elmc_direct_call_targets, MapSet.new()))
-      |> Map.put(:__rc_required__, rc_required?)
-      |> Map.put(:__rc_catch__, false)
-      |> Map.put(:__record_field_types__, Process.get(:elmc_record_field_types, %{}))
-      |> Map.put(
-        :__function_analysis__,
-        LetAnalysis.analyze_function_expr(
-          decl.expr || %{op: :int_literal, value: 0},
-          module_name,
-          decl_map
-        )
-      )
-
     mode = Plan.plan_ir_mode(opts)
 
-    if mode in [:primary, :shadow] do
-      if mode == :shadow do
-        _ =
-          Plan.shadow_verify(decl, module_name, decl_map,
-            Keyword.merge(compile_opts_list(opts),
-              rc_required: rc_required?,
-              plan_ir_raise: plan_ir_raise?(opts)
-            )
+    if mode == :shadow do
+      _ =
+        Plan.shadow_verify(decl, module_name, decl_map,
+          Keyword.merge(compile_opts_list(opts),
+            rc_required: rc_required?,
+            plan_ir_raise: plan_ir_raise?(opts)
           )
+        )
+    end
+
+    case maybe_emit_primary_plan_body(
+           decl,
+           module_name,
+           decl_map,
+           arg_bindings,
+           arg_binding_code,
+           direct_args?,
+           rc_required?,
+           entry_probe,
+           exit_probe
+         ) do
+      {:ok, :skip_function} ->
+        ""
+
+      {:ok, body} ->
+        body
+
+      :legacy ->
+        record_plan_primary_fallback(module_name, decl.name)
+        emit_plan_lowering_gap_body(decl, module_name, decl_map, rc_required?, direct_args?)
+    end
+  end
+
+  defp emit_plan_lowering_gap_body(decl, module_name, decl_map, rc_required?, direct_args?) do
+    native_ret = NativeReturn.cached_kind({module_name, decl.name})
+    value_return? = NativeReturn.value_return?({module_name, decl.name})
+
+    core =
+      cond do
+        rc_required? ->
+          "Rc = RC_ERR_UNSUPPORTED;"
+
+        value_return? and native_ret in [:native_int, :native_bool] ->
+          "return 0;"
+
+        true ->
+          "return NULL;"
       end
 
-      case maybe_emit_primary_plan_body(
-             decl,
-             module_name,
-             decl_map,
-             arg_bindings,
-             arg_binding_code,
-             direct_args?,
-             rc_required?,
-             entry_probe,
-             exit_probe
-           ) do
-        {:ok, :skip_function} ->
-          ""
+    if rc_required? do
+      arg_names = effective_decl_args(decl, module_name, decl_map)
+      arg_bindings = c_arg_bindings(arg_names)
 
-        {:ok, body} ->
-          body
-
-        :legacy ->
-          record_plan_primary_fallback(module_name, decl.name)
-
-          emit_legacy_codegen_body(
-            module_name,
-            decl,
-            decl_map,
-            env,
-            arg_bindings,
-            direct_args?,
-            entry_probe,
-            exit_probe,
-            arg_binding_code,
-            rc_required?,
-            arg_kinds
-          )
-      end
-    else
-      emit_legacy_codegen_body(
-        module_name,
-        decl,
-        decl_map,
-        env,
+      wrap_rc_function_body(
         arg_bindings,
-        direct_args?,
-        entry_probe,
-        exit_probe,
-        arg_binding_code,
-        rc_required?,
-        arg_kinds
+        arg_binding_code(arg_bindings, direct_args?),
+        [core],
+        direct_args?
       )
+    else
+      format_function_body([
+        wrapper_abi_void_casts(direct_args?, c_arg_bindings(effective_decl_args(decl, module_name, decl_map))),
+        core
+      ])
     end
   end
 
@@ -787,126 +765,6 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
 
     Process.put(key, fallbacks)
     :ok
-  end
-
-  defp emit_legacy_codegen_body(
-         module_name,
-         decl,
-         decl_map,
-         env,
-         arg_bindings,
-         direct_args?,
-         entry_probe,
-         exit_probe,
-         arg_binding_code,
-         rc_required?,
-         arg_kinds
-       ) do
-    case boxed_special_body_emit(
-           module_name,
-           decl,
-           decl_map,
-           arg_bindings,
-           direct_args?,
-           entry_probe,
-           exit_probe,
-           arg_binding_code,
-           rc_required?
-         ) do
-      {:ok, body} ->
-        body
-
-      :error ->
-        emit_legacy_boxed_body(
-          decl,
-          module_name,
-          env,
-          arg_bindings,
-          arg_binding_code,
-          direct_args?,
-          rc_required?,
-          entry_probe,
-          exit_probe,
-          arg_kinds
-        )
-    end
-  end
-
-  defp emit_legacy_boxed_body(
-         decl,
-         module_name,
-         env,
-         arg_bindings,
-         arg_binding_code,
-         direct_args?,
-         rc_required?,
-         entry_probe,
-         exit_probe,
-         arg_kinds
-       ) do
-    compile_env =
-      if rc_required?,
-        do:
-          env
-          |> Map.put(:__rc_catch__, true)
-          |> Map.put(:__function_rc_out_param__, RcRuntimeEmit.function_out_param()),
-        else: env
-
-    root_env =
-      if rc_required?, do: RcRuntimeEmit.function_tail_env(compile_env), else: compile_env
-
-    FunctionCallCompile.reset_call_args_cache!()
-    ValueSlots.reset_closure_call_arg_consumed!()
-
-    {code, result_var, _counter} =
-      case compile_tail_recursive(
-             decl,
-             module_name,
-             compile_env,
-             arg_bindings,
-             arg_kinds,
-             :boxed
-           ) do
-        {:ok, loop_code, tail_result} ->
-          {loop_code, tail_result, 0}
-
-        :error ->
-          Host.compile_expr(decl.expr || %{op: :int_literal, value: 0}, root_env, 0)
-      end
-
-    unless rc_required? and RcRuntimeEmit.function_out_ref?(result_var),
-      do: ValueSlots.track(result_var)
-
-    result_probe = DebugProbes.result_probe(module_name, decl.name, result_var)
-
-    core_body =
-      [
-        entry_probe,
-        code,
-        exit_probe,
-        result_probe,
-        if(rc_required? and not RcRuntimeEmit.function_out_ref?(result_var),
-          do: publish_rc_function_out(result_var),
-          else: if(not rc_required?, do: "return #{result_var};", else: nil)
-        )
-      ]
-      |> Enum.reject(&is_nil/1)
-
-    if rc_required? do
-      wrap_rc_function_body(
-        arg_bindings,
-        arg_binding_code,
-        core_body,
-        direct_args?
-      )
-    else
-      unused_casts = unused_arg_casts(arg_bindings, core_body)
-
-      format_function_body(
-        [wrapper_abi_void_casts(direct_args?, arg_bindings), arg_binding_code, unused_casts |
-           core_body]
-      )
-    end
   end
 
   defp maybe_emit_primary_plan_body(
@@ -930,10 +788,7 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
             Fusion.register_rc_native_only(module_name, decl.name)
           end
 
-          Process.put(
-            :elmc_generic_helper_defs,
-            [fusion_c | Process.get(:elmc_generic_helper_defs, [])]
-          )
+          store_generic_helper_c(fusion_c)
 
           {:ok, :skip_function}
 
@@ -957,7 +812,9 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
           plan_core =
             plan
             |> CLowerFunction.emit()
+            |> CLowerFunction.cleanup_cfg_text()
             |> maybe_hoist_record_gets()
+            |> CLowerFunction.cleanup_cfg_text()
             |> insert_plan_result_probe(result_probe)
 
           unused_casts =
@@ -1086,10 +943,7 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
     c_name = Util.module_fn_name(module_name, decl.name)
     native = "#{c_name}_native"
 
-    Process.put(
-      :elmc_generic_helper_defs,
-      [helper_c | Process.get(:elmc_generic_helper_defs, [])]
-    )
+    store_generic_helper_c(helper_c)
 
     native_args = fused_native_call_args(decl, arg_bindings, direct_args?)
 
@@ -1211,35 +1065,6 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
     |> CSource.format_block(2)
   end
 
-  defp maybe_put_direct_args(env, true), do: Map.put(env, :__direct_args__, true)
-  defp maybe_put_direct_args(env, _), do: env
-
-  defp maybe_put_direct_param_refs(env, true, arg_bindings),
-    do: EnvBindings.put_direct_param_refs(env, arg_bindings)
-
-  defp maybe_put_direct_param_refs(env, _, _arg_bindings), do: env
-
-  defp put_direct_native_param_bindings(env, arg_bindings, arg_kinds) do
-    arg_bindings
-    |> Enum.zip(arg_kinds)
-    |> Enum.reduce(env, fn {{source_arg, c_arg, _index}, kind}, acc ->
-      case kind do
-        :native_int ->
-          acc
-          |> EnvBindings.put_native_int_binding(source_arg, c_arg)
-          |> EnvBindings.put_boxed_int_binding(source_arg, false)
-
-        :native_bool ->
-          acc
-          |> EnvBindings.put_native_bool_binding(source_arg, c_arg)
-          |> EnvBindings.put_boxed_bool_binding(source_arg, false)
-
-        :boxed ->
-          acc
-      end
-    end)
-  end
-
   defp arg_binding_code(arg_bindings, direct_args?) do
     if direct_args? do
       ""
@@ -1266,190 +1091,6 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
     |> Enum.reject(&(String.trim(&1) == ""))
     |> Enum.join("\n")
     |> CSource.format_block(2)
-  end
-
-  defp boxed_special_body_emit(
-         module_name,
-         decl,
-         decl_map,
-         arg_bindings,
-         direct_args?,
-         entry_probe,
-         exit_probe,
-         arg_binding_code,
-         rc_required?
-       ) do
-    if plan_primary_body?(decl, module_name, decl_map, Process.get(:elmc_codegen_opts, [])) do
-      :error
-    else
-      boxed_special_body_emit_fusion(
-        module_name,
-        decl,
-        decl_map,
-        arg_bindings,
-        direct_args?,
-        entry_probe,
-        exit_probe,
-        arg_binding_code,
-        rc_required?
-      )
-    end
-  end
-
-  defp boxed_special_body_emit_fusion(
-         module_name,
-         decl,
-         decl_map,
-         arg_bindings,
-         direct_args?,
-         entry_probe,
-         exit_probe,
-         arg_binding_code,
-         rc_required?
-       ) do
-    tuple2_table? = Tuple2CaseTable.recognized?(module_name, decl.name, decl.expr)
-
-    case Fusion.try_emit(module_name, decl.name, decl.expr, decl_map) do
-      {:ok, helper_c, _, :rc_native} when tuple2_table? ->
-        kinds = List.duplicate(:native_int, length(decl.args || []))
-        Fusion.register_rc_native_arg_kinds(module_name, decl.name, kinds)
-
-        {:ok,
-         emit_rc_tuple2_table_function(
-           decl,
-           module_name,
-           decl_map,
-           arg_bindings,
-           direct_args?,
-           helper_c,
-           entry_probe,
-           exit_probe,
-           arg_binding_code,
-           rc_required?
-         )}
-
-      {:ok, helper_c, _, :rc_native} ->
-        kinds = Fusion.infer_native_tag_fusion_arg_kinds(helper_c, decl)
-
-        if kinds do
-          Fusion.register_rc_native_arg_kinds(module_name, decl.name, kinds)
-        end
-
-        {:ok,
-         emit_rc_fused_native_wrapper_function(
-           decl,
-           module_name,
-           arg_bindings,
-           direct_args?,
-           helper_c,
-           entry_probe,
-           exit_probe,
-           arg_binding_code,
-           rc_required?,
-           kinds
-         )}
-
-      {:ok, helper_c, _} when tuple2_table? ->
-        {:ok,
-         emit_tuple2_table_function(
-           decl,
-           module_name,
-           decl_map,
-           arg_bindings,
-           direct_args?,
-           helper_c,
-           entry_probe,
-           exit_probe,
-           arg_binding_code,
-           rc_required?
-         )}
-
-      {:ok, helper_c, _} ->
-        {:ok,
-         emit_fused_native_wrapper_function(
-           decl,
-           module_name,
-           decl_map,
-           arg_bindings,
-           direct_args?,
-           helper_c,
-           entry_probe,
-           exit_probe,
-           arg_binding_code,
-           rc_required?
-         )}
-
-      :error ->
-        :error
-    end
-  end
-
-  defp emit_fused_native_wrapper_function(
-         decl,
-         module_name,
-         _decl_map,
-         arg_bindings,
-         direct_args?,
-         helper_c,
-         entry_probe,
-         exit_probe,
-         arg_binding_code,
-         rc_required?
-       ) do
-    c_name = Util.module_fn_name(module_name, decl.name)
-    native = "#{c_name}_native"
-
-    Process.put(
-      :elmc_generic_helper_defs,
-      [helper_c | Process.get(:elmc_generic_helper_defs, [])]
-    )
-
-    decl_map = Process.get(:elmc_program_decls, %{})
-
-    fusion_kinds =
-      Fusion.rc_native_fusion_arg_kinds({module_name, decl.name}) ||
-        NativeFunctionCall.signature_arg_kinds(decl, module_name, decl_map)
-
-    unboxed_native_params? =
-      direct_args? and
-        is_list(fusion_kinds) and
-        Enum.all?(fusion_kinds, &(&1 in [:native_int, :native_bool]))
-
-    native_args =
-      rc_native_fusion_call_args(
-        arg_bindings,
-        fusion_kinds,
-        unboxed_native_params?,
-        module_name,
-        decl.name,
-        decl,
-        decl_map
-      )
-
-    core_body = [
-      entry_probe,
-      if(rc_required?,
-        do: "*out = #{native}(#{native_args});",
-        else: "return #{native}(#{native_args});"
-      ),
-      exit_probe
-    ]
-
-    if rc_required? do
-      wrap_rc_function_body(
-        arg_bindings,
-        arg_binding_code,
-        core_body,
-        direct_args?
-      )
-    else
-      unused_casts = unused_arg_casts(arg_bindings, core_body)
-
-      format_function_body(
-        [wrapper_abi_void_casts(direct_args?, arg_bindings), arg_binding_code, unused_casts |
-           core_body]
-      )
-    end
   end
 
   defp emit_rc_fused_native_wrapper_function(
@@ -1531,10 +1172,7 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
           ]
       end
 
-    Process.put(
-      :elmc_generic_helper_defs,
-      [helper_c | Process.get(:elmc_generic_helper_defs, [])]
-    )
+    store_generic_helper_c(helper_c)
 
     unused_casts = unused_arg_casts(arg_bindings, core_body)
 
@@ -1625,142 +1263,11 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
     |> Enum.join(", ")
   end
 
-  defp tuple2_table_native_args(decl, module_name, decl_map, arg_bindings, direct_args?) do
-    kinds = NativeFunctionCall.arg_kinds(decl, module_name, decl_map)
-
-    arg_bindings
-    |> Enum.zip(kinds)
-    |> Enum.map_join(", ", fn {{_arg, c_arg, _index}, kind} ->
-      native_scalar_call_arg(c_arg, kind, direct_args?)
-    end)
-  end
-
   defp native_scalar_call_arg(c_arg, :native_int, true), do: c_arg
   defp native_scalar_call_arg(c_arg, :native_bool, true), do: c_arg
   defp native_scalar_call_arg(c_arg, :native_int, false), do: "elmc_as_int(#{c_arg})"
   defp native_scalar_call_arg(c_arg, :native_bool, false), do: "elmc_as_bool(#{c_arg})"
   defp native_scalar_call_arg(c_arg, _kind, _direct_args?), do: c_arg
-
-  defp emit_rc_tuple2_table_function(
-         decl,
-         module_name,
-         decl_map,
-         arg_bindings,
-         direct_args?,
-         helper_c,
-         entry_probe,
-         exit_probe,
-         arg_binding_code,
-         rc_required?
-       ) do
-    c_name = Util.module_fn_name(module_name, decl.name)
-    native = "#{c_name}_native"
-    fusion_kinds = List.duplicate(:native_int, length(decl.args || []))
-
-    binding_code =
-      if direct_args? do
-        arg_binding_code
-      else
-        native_wrapper_bindings(arg_bindings, fusion_kinds, false)
-      end
-
-    native_int_args =
-      tuple2_table_native_args(
-        decl,
-        module_name,
-        decl_map,
-        arg_bindings,
-        direct_args? or binding_code != arg_binding_code
-      )
-
-    Process.put(
-      :elmc_generic_helper_defs,
-      [helper_c | Process.get(:elmc_generic_helper_defs, [])]
-    )
-
-    core_body =
-      cond do
-        rc_required? ->
-          [
-            entry_probe,
-            "return #{native}(out, #{native_int_args});",
-            exit_probe
-          ]
-
-        true ->
-          [
-            entry_probe,
-            "ElmcValue *tmp_result = NULL;",
-            "if (#{native}(&tmp_result, #{native_int_args}) != RC_SUCCESS) return NULL;",
-            exit_probe,
-            "return tmp_result;"
-          ]
-      end
-
-    if rc_required? do
-      wrap_rc_function_body(
-        arg_bindings,
-        binding_code,
-        core_body,
-        direct_args?
-      )
-    else
-      unused_casts = unused_arg_casts(arg_bindings, core_body)
-
-      format_function_body(
-        [wrapper_abi_void_casts(direct_args?, arg_bindings), binding_code, unused_casts |
-           core_body]
-      )
-    end
-  end
-
-  defp emit_tuple2_table_function(
-         decl,
-         module_name,
-         decl_map,
-         arg_bindings,
-         direct_args?,
-         helper_c,
-         entry_probe,
-         exit_probe,
-         arg_binding_code,
-         rc_required?
-       ) do
-    c_name = Util.module_fn_name(module_name, decl.name)
-    native = "#{c_name}_native"
-
-    Process.put(
-      :elmc_generic_helper_defs,
-      [helper_c | Process.get(:elmc_generic_helper_defs, [])]
-    )
-
-    native_args = tuple2_table_native_args(decl, module_name, decl_map, arg_bindings, true)
-
-    core_body = [
-      entry_probe,
-      if(rc_required?,
-        do: "*out = #{native}(#{native_args});",
-        else: "return #{native}(#{native_args});"
-      ),
-      exit_probe
-    ]
-
-    if rc_required? do
-      wrap_rc_function_body(
-        arg_bindings,
-        arg_binding_code,
-        core_body,
-        direct_args?
-      )
-    else
-      unused_casts = unused_arg_casts(arg_bindings, core_body)
-
-      format_function_body(
-        [wrapper_abi_void_casts(direct_args?, arg_bindings), arg_binding_code, unused_casts |
-           core_body]
-      )
-    end
-  end
 
   @spec generic_native_function_prototypes(
           ElmEx.IR.t(),

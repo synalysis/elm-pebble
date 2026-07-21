@@ -1,6 +1,8 @@
 defmodule Elmc.DebugUsageTest do
   use ExUnit.Case, async: true
 
+  @moduletag timeout: 300_000
+
   alias Elmc.Backend.DebugUsage
 
   @fixture Path.expand("fixtures/rc_track_debug_project", __DIR__)
@@ -19,6 +21,7 @@ defmodule Elmc.DebugUsageTest do
         out_dir: out_dir,
         entry_module: "RcTrackDebugProbe",
         strip_dead_code: false,
+        plan_ir_mode: :primary,
         prod: true,
         debug_usage_policy: :error
       },

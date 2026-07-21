@@ -22,6 +22,7 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
     "Basics.ceiling" => :basics_ceiling,
     "Basics.truncate" => :basics_truncate,
     "Basics.toFloat" => :basics_to_float,
+    "Basics.log" => :basics_log,
     "Basics.not" => :basics_not,
     "Basics.floor" => :basics_floor,
     "Bitwise.complement" => :bitwise_complement,
@@ -97,6 +98,9 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
     json_decode_map6 json_decode_map7 json_decode_and_then json_decode_lazy
     json_encode_list json_encode_array json_encode_set json_encode_dict
   )a
+
+  # Runtime takes ownership of the last operand (named `let` locals still transfer).
+  @hof_consumes_last_operand ~w(result_and_then maybe_and_then)a
 
   @qualified_ternary %{
     "Basics.clamp" => :basics_clamp,
@@ -1635,8 +1639,10 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
 
   defp declare_letrec_refs(names, ctx, b) when is_list(names) do
     Enum.reduce(names, {ctx, b}, fn name, {ctx_acc, b_acc} ->
-      case Context.letrec_ref(ctx_acc, name) do
-        ref when is_binary(ref) ->
+      lambda_plan? = Map.get(ctx_acc, :lambda_plan, false)
+
+      case {lambda_plan?, Context.letrec_ref(ctx_acc, name)} do
+        {false, ref} when is_binary(ref) ->
           {ctx_acc, b_acc}
 
         _ ->
@@ -2280,10 +2286,14 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
               {prefix, [last]} = Enum.split(args, -1)
               {borrows, prefix_consumes} = Builder.partition_call_args(b2a, prefix)
 
-              if Builder.borrow_arg?(b2a, last) do
-                {borrows ++ [last], prefix_consumes}
-              else
+              if id in @hof_consumes_last_operand do
                 {borrows, prefix_consumes ++ [last]}
+              else
+                if Builder.borrow_arg?(b2a, last) do
+                  {borrows ++ [last], prefix_consumes}
+                else
+                  {borrows, prefix_consumes ++ [last]}
+                end
               end
 
             _ ->

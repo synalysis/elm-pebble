@@ -85,7 +85,7 @@ defmodule Elmc do
             "code" => "plan_primary_fallback",
             "severity" => StrictPolicy.fallback_severity(opts, reachable?),
             "message" =>
-              "Function #{mod}.#{name} fell back to legacy C codegen because Plan IR lowering is not yet supported for this body."
+              "Function #{mod}.#{name} could not be lowered via Plan IR; emitted unsupported stub (legacy C codegen removed)."
           }
         end)
 
@@ -264,14 +264,14 @@ defmodule Elmc do
   defp project_for_compile(project_dir, _opts), do: Bridge.load_project(project_dir)
 
   defp plan_legacy_codegen_diagnostics(opts) when is_map(opts) do
-    if Map.get(opts, :plan_ir_mode_explicit_off) == true do
+    if Map.get(opts, :plan_ir_mode_off_deprecated) == true do
       [
         %{
           "source" => "elmc/plan",
-          "code" => "plan_legacy_codegen",
-          "severity" => "info",
+          "code" => "plan_ir_mode_off_removed",
+          "severity" => "warning",
           "message" =>
-            "Compiling with plan_ir_mode: :off (legacy C codegen). Use :primary for verified Plan IR emission."
+            "plan_ir_mode: :off is no longer supported (legacy C codegen removed). Compiling with plan_ir_mode: :primary."
         }
       ]
     else

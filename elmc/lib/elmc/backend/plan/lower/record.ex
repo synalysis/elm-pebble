@@ -404,21 +404,58 @@ defmodule Elmc.Backend.Plan.Lower.Record do
 
   defp param_or_typed_var_field_index(field_name, ctx, base_expr) when is_binary(field_name) do
     if param_var_base?(base_expr, ctx) do
-      inline_result = inline_field_index_from_base(field_name, ctx, base_expr)
       alias_result = alias_field_index_for_param(field_name, ctx, base_expr)
 
-      case reconcile_param_field_indices(inline_result, alias_result, field_name, ctx, base_expr) do
-        {:inline, idx} when is_integer(idx) ->
-          {nil, idx}
-
+      case alias_result do
         {key, idx} when is_integer(idx) ->
-          {key, idx}
+          if extensible_param_var?(base_expr, ctx) do
+            {key, idx}
+          else
+            inline_result = inline_field_index_from_base(field_name, ctx, base_expr)
+
+            case reconcile_param_field_indices(inline_result, alias_result, field_name, ctx, base_expr) do
+              {:inline, inferred_idx} when is_integer(inferred_idx) ->
+                {nil, inferred_idx}
+
+              {reconciled_key, reconciled_idx} when is_integer(reconciled_idx) ->
+                {reconciled_key, reconciled_idx}
+
+              :error ->
+                nil
+            end
+          end
 
         :error ->
-          nil
+          case inline_field_index_from_base(field_name, ctx, base_expr) do
+            {:inline, idx} when is_integer(idx) ->
+              {nil, idx}
+
+            {key, idx} when is_integer(idx) ->
+              {key, idx}
+
+            :error ->
+              nil
+          end
       end
     else
       nil
+    end
+  end
+
+  defp extensible_param_var?(base_expr, ctx) do
+    case base_expr do
+      %{op: :var, name: name} when is_binary(name) ->
+        ctx
+        |> compile_env()
+        |> Map.get(:__var_types__, %{})
+        |> Map.get(name)
+        |> case do
+          type when is_binary(type) -> extensible_record_type?(type)
+          _ -> false
+        end
+
+      _ ->
+        false
     end
   end
 
@@ -596,8 +633,7 @@ defmodule Elmc.Backend.Plan.Lower.Record do
     end
   end
 
-  defp field_index_macro_fallback(field_name, ctx \\ nil, base_expr \\ nil)
-       when is_binary(field_name) do
+  defp field_index_macro_fallback(field_name, ctx, base_expr) when is_binary(field_name) do
     shapes = Process.get(:elmc_record_alias_shapes, %{})
 
     case ambiguous_field_candidates(field_name, shapes) do

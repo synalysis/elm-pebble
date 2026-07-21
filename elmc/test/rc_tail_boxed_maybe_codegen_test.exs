@@ -80,28 +80,28 @@ defmodule Elmc.RcTailBoxedMaybeCodegenTest do
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
     current_page =
-      CCodegenExtract.fn_body(generated_c, "elmc_fn_Main_currentPage_native")
+      CCodegenExtract.fn_body(generated_c, "elmc_fn_Main_currentPage")
 
-    assert current_page =~ "*out ="
-    assert current_page =~ "elmc_immortal_list_Main_pages_values"
+    assert current_page =~ "plan block"
+    assert current_page =~ "*out = elmc_maybe_with_default"
     refute current_page =~ "ElmcValue *tmp_"
 
     probe_just =
-      CCodegenExtract.fn_body(generated_c, "elmc_fn_Main_probeJustAt_native")
+      CCodegenExtract.fn_body(generated_c, "elmc_fn_Main_probeJustAt")
 
     assert probe_just =~ "elmc_maybe_with_default"
-    assert probe_just =~ "*out ="
+    assert probe_just =~ "*out = elmc_maybe_with_default"
 
     probe_nothing =
-      CCodegenExtract.fn_body(generated_c, "elmc_fn_Main_probeNothingAt_native")
+      CCodegenExtract.fn_body(generated_c, "elmc_fn_Main_probeNothingAt")
 
     assert probe_nothing =~ "elmc_maybe_with_default"
-    assert probe_nothing =~ "*out ="
+    assert probe_nothing =~ "*out = elmc_maybe_with_default"
 
     probe_list_head = CCodegenExtract.fn_body(generated_c, "elmc_fn_Main_probeListHeadAt")
 
     assert probe_list_head =~ "elmc_maybe_with_default"
-    assert probe_list_head =~ "*out ="
+    assert probe_list_head =~ "*out = elmc_maybe_with_default"
     refute probe_list_head =~ "return tmp_"
   end
 end

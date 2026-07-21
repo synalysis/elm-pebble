@@ -4,17 +4,23 @@ defmodule Elmc.PlanDefaultsTest do
   alias Elmc.Backend.Plan.{Defaults, Shadow}
 
   setup do
-    prev = Application.get_env(:elmc, :default_plan_ir_mode)
-    on_exit(fn -> Application.put_env(:elmc, :default_plan_ir_mode, prev) end)
+    prev_mode = Application.get_env(:elmc, :default_plan_ir_mode)
+    prev_strict = Application.get_env(:elmc, :default_plan_ir_strict)
+    on_exit(fn ->
+      Application.put_env(:elmc, :default_plan_ir_mode, prev_mode)
+      Application.put_env(:elmc, :default_plan_ir_strict, prev_strict)
+    end)
+
     :ok
   end
 
-  test "test env defaults plan_ir_mode to off until legacy tests migrate" do
-    assert Defaults.plan_ir_mode() == :off
-    assert Shadow.plan_ir_mode([]) == :off
+  test "test env defaults plan_ir_mode to primary with strict policy" do
+    assert Defaults.plan_ir_mode() == :primary
+    assert Shadow.plan_ir_mode([]) == :primary
+    assert Defaults.apply_defaults(%{})[:plan_ir_strict] == true
   end
 
-  test "legacy off mode when configured" do
+  test "default_plan_ir_mode off still reads as off before apply_defaults" do
     Application.put_env(:elmc, :default_plan_ir_mode, :off)
     assert Defaults.plan_ir_mode() == :off
     assert Shadow.plan_ir_mode([]) == :off
@@ -22,6 +28,7 @@ defmodule Elmc.PlanDefaultsTest do
 
   test "production default is primary when configured" do
     Application.put_env(:elmc, :default_plan_ir_mode, :primary)
+    Application.put_env(:elmc, :default_plan_ir_strict, true)
     assert Defaults.plan_ir_mode() == :primary
     assert Shadow.plan_ir_mode(%{}) == :primary
     assert Defaults.apply_defaults(%{})[:plan_ir_mode] == :primary
@@ -38,10 +45,11 @@ defmodule Elmc.PlanDefaultsTest do
            }
   end
 
-  test "explicit plan_ir_mode off records marker for legacy diagnostic" do
+  test "explicit plan_ir_mode off remaps to primary with deprecation marker" do
     Application.put_env(:elmc, :default_plan_ir_mode, :primary)
 
-    assert Defaults.apply_defaults(%{plan_ir_mode: :off})[:plan_ir_mode_explicit_off] == true
-    refute Map.has_key?(Defaults.apply_defaults(%{}), :plan_ir_mode_explicit_off)
+    assert Defaults.apply_defaults(%{plan_ir_mode: :off})[:plan_ir_mode] == :primary
+    assert Defaults.apply_defaults(%{plan_ir_mode: :off})[:plan_ir_mode_off_deprecated] == true
+    refute Map.has_key?(Defaults.apply_defaults(%{}), :plan_ir_mode_off_deprecated)
   end
 end

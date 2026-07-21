@@ -3,6 +3,8 @@ defmodule Elmc.TutorialCompleteMinuteCodegenTest do
 
   alias Elmc.Test.CCodegenExtract
 
+  @moduletag timeout: 300_000
+  @repo_root Path.expand("../..", __DIR__)
   @source_template Path.expand("../../ide/priv/project_templates/watchface_tutorial_complete", __DIR__)
 
   test "MinuteChanged weather request passes union tuple to sendWatchToPhone" do
@@ -18,8 +20,12 @@ defmodule Elmc.TutorialCompleteMinuteCodegenTest do
         "type" => "application",
         "source-directories" => [
           "src",
-          "protocol/src",
-          "../../../../packages/elm-pebble/elm-watch/src"
+          Path.join(@repo_root, "packages/elm-pebble/elm-watch/src"),
+          Path.join(@repo_root, "shared/elm"),
+          Path.join(@repo_root, "ide/priv/internal_packages/companion-protocol/src"),
+          Path.join(@repo_root, "ide/priv/bundled_elm/pebble-watch-src"),
+          Path.join(@repo_root, "ide/priv/internal_packages/elm-time/src"),
+          Path.join(@repo_root, "ide/priv/internal_packages/elm-random/src")
         ],
         "elm-version" => "0.19.1",
         "dependencies" => %{
@@ -35,6 +41,7 @@ defmodule Elmc.TutorialCompleteMinuteCodegenTest do
                out_dir: out_dir,
                entry_module: "Main",
                direct_render_only: false,
+               plan_ir_mode: :primary,
                prune_runtime: false,
                prune_native_wrappers: true,
                pebble_int32: true,
@@ -46,9 +53,10 @@ defmodule Elmc.TutorialCompleteMinuteCodegenTest do
     minute_changed =
       generated
       |> CCodegenExtract.fn_body("elmc_fn_Main_update")
-      |> String.split("case ELMC_PEBBLE_MSG_MINUTECHANGED:")
+      |> String.split("elmc_plan_block_6:")
       |> Enum.at(1)
-      |> then(fn rest -> rest |> String.split("case ") |> hd() end)
+      |> String.split("elmc_plan_block_8:")
+      |> hd()
 
     refute minute_changed =~
              ~r/elmc_fn_Main_RequestWeather\(call_args_\d+, 1\);\s*elmc_release\(tmp_\d+\);\s*owned\[\d+\] = elmc_fn_Companion_Watch_sendWatchToPhone/
@@ -59,7 +67,7 @@ defmodule Elmc.TutorialCompleteMinuteCodegenTest do
     assert minute_changed =~ "ELMC_PEBBLE_CMD_COMPANION_SEND"
     assert minute_changed =~ "elmc_fn_Companion_Internal_watchToPhoneTag"
     assert minute_changed =~ "elmc_fn_Companion_Internal_watchToPhoneValue"
-    assert minute_changed =~ "elmc_fn_Main_RequestWeather"
-    assert minute_changed =~ "elmc_fn_Main_CurrentLocation"
+    assert minute_changed =~ "elmc_new_int_take(1)"
+    assert minute_changed =~ "elmc_tuple2(&owned[5], owned[2], owned[6])"
   end
 end

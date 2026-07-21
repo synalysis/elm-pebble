@@ -16,13 +16,22 @@ defmodule Elmc.Backend.C.Lower.Function do
 
   @min_switch_arms 3
 
+  @spec cleanup_cfg_text(String.t()) :: String.t()
+  def cleanup_cfg_text(text) when is_binary(text) do
+    text
+    |> String.split("\n")
+    |> cleanup_cfg_lines()
+    |> Enum.join("\n")
+    |> String.trim()
+  end
+
   @spec emit(FunctionPlan.t(), keyword()) :: String.t()
   def emit(%FunctionPlan{} = plan, opts \\ []) do
     fusion_c = Map.get(plan, :fusion_c)
 
     cond do
       is_binary(fusion_c) and fusion_c != "" ->
-        String.trim(fusion_c)
+        cleanup_cfg_text(fusion_c)
 
       Keyword.get(opts, :shell, true) ->
         wrap_shell(plan, emit_core(plan, opts))
@@ -35,7 +44,9 @@ defmodule Elmc.Backend.C.Lower.Function do
   @spec emit_core(FunctionPlan.t(), keyword()) :: String.t()
   def emit_core(plan, opts \\ [])
 
-  def emit_core(%FunctionPlan{fusion_c: c}, _opts) when is_binary(c) and c != "", do: String.trim(c)
+  def emit_core(%FunctionPlan{fusion_c: c}, _opts) when is_binary(c) and c != "" do
+    cleanup_cfg_text(c)
+  end
 
   def emit_core(%FunctionPlan{} = plan, opts) do
     Process.put(:elmc_plan_rec_values_suffix, 0)
@@ -208,11 +219,13 @@ defmodule Elmc.Backend.C.Lower.Function do
 
     (body_lines ++ List.wrap(ret_line) ++ List.wrap(deferred_cleanup))
     |> Enum.reject(&(&1 == ""))
+    |> Enum.flat_map(&String.split(&1, "\n"))
     |> cleanup_cfg_lines()
     |> then(fn lines ->
       missing_native_int_decl_lines(lines, native_int_locals) ++ lines
     end)
     |> Enum.join("\n")
+    |> cleanup_cfg_text()
   end
 
   defp missing_native_int_decl_lines(lines, _native_int_locals) do
@@ -533,6 +546,9 @@ defmodule Elmc.Backend.C.Lower.Function do
 
   defp cleanup_cfg_lines(lines) do
     lines
+    |> Enum.flat_map(&String.split(&1, "\n"))
+    |> Enum.map(&String.trim_trailing/1)
+    |> Enum.reject(&(&1 == ""))
     |> coalesce_consecutive_block_labels()
     |> remove_redundant_cfg_jumps()
     |> remove_unused_block_labels()
@@ -1054,10 +1070,11 @@ defmodule Elmc.Backend.C.Lower.Function do
 
     cond do
       native_int_switch_subject?(subject, opts) ->
+        subject_s = int_switch_subject_ref(subject, slots, opts)
         emit_int_switch(subject_s, arms, default_id, opts)
 
       ctor_int_tag_switch_subject?(subject, opts) ->
-        emit_int_switch("elmc_as_int(#{subject_s})", arms, default_id, opts)
+        emit_int_switch("elmc_as_int(#{Instr.switch_subject_ref(subject, slots, opts)})", arms, default_id, opts)
 
       true ->
         emit_union_switch(subject_s, arms, default_id, opts)
@@ -1097,11 +1114,31 @@ defmodule Elmc.Backend.C.Lower.Function do
     qualified |> String.split(".") |> List.last()
   end
 
+  defp native_int_switch_subject?(:fn_out, opts) do
+    case plan_defining_instr(Keyword.get(opts, :parent_plan), :fn_out) do
+      %{op: :call_runtime, args: %{builtin: :char_to_code}} -> true
+      _ -> false
+    end
+  end
+
   defp native_int_switch_subject?(reg, opts) when is_integer(reg) do
     MapSet.member?(Keyword.get(opts, :native_int_only_regs, MapSet.new()), reg) or
       Map.has_key?(Keyword.get(opts, :native_int_regs, %{}), reg) or
       native_param_kind(reg, opts) == :native_int
   end
+
+  defp int_switch_subject_ref(:fn_out, slots, opts) do
+    case plan_defining_instr(Keyword.get(opts, :parent_plan), :fn_out) do
+      %{op: :call_runtime, args: %{builtin: :char_to_code}} ->
+        "elmc_as_int(#{Instr.switch_subject_ref(:fn_out, slots, opts)})"
+
+      _ ->
+        Instr.switch_subject_ref(:fn_out, slots, opts)
+    end
+  end
+
+  defp int_switch_subject_ref(subject, slots, opts),
+    do: Instr.switch_subject_ref(subject, slots, opts)
 
   defp native_param_kind(reg, opts) do
     case plan_defining_instr(Keyword.get(opts, :parent_plan), reg) do
@@ -2032,7 +2069,8 @@ defmodule Elmc.Backend.C.Lower.Function do
     end
   end
 
-  defp plan_defining_instr(%FunctionPlan{blocks: blocks}, reg) when is_integer(reg) do
+  defp plan_defining_instr(%FunctionPlan{blocks: blocks}, reg)
+       when is_integer(reg) or reg in [:fn_out, :branch_out] do
     Enum.find_value(blocks, fn %{instrs: instrs} ->
       Enum.find(instrs, fn
         %{dest: ^reg} = instr -> instr
@@ -3035,6 +3073,24 @@ defmodule Elmc.Backend.C.Lower.Function do
     do: MapSet.put(regs, reg)
 
   defp maybe_add_native_scalar_ret_bool_reg(regs, _reg, _kind), do: regs
+
+  @spec forward_ref_names_in_plan(FunctionPlan.t()) :: [String.t()]
+  def forward_ref_names_in_plan(%FunctionPlan{} = plan) do
+    plan.blocks
+    |> Enum.flat_map(& &1.instrs)
+    |> Enum.flat_map(fn
+      %{op: op, args: %{ref: ref}}
+      when op in [:forward_ref_set, :forward_ref_load, :forward_ref_capture] and is_binary(ref) ->
+        [ref]
+
+      %{op: :forward_ref_load_captured, args: %{ref: ref}} when is_binary(ref) ->
+        [ref]
+
+      _ ->
+        []
+    end)
+    |> Enum.uniq()
+  end
 
   @spec letrec_decl_lines([String.t()]) :: [String.t()]
   def letrec_decl_lines(refs) when is_list(refs) do

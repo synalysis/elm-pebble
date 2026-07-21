@@ -116,13 +116,6 @@ defmodule Elmc.Backend.CCodegen.SpecialValues.Stdlib.WebKernel do
   def special_value_from_target("Elm.Kernel.Time.now", _args),
     do: %{op: :runtime_call, function: "elmc_time_now_millis", args: []}
 
-  # --- Basics ---
-  def special_value_from_target("Basics.log", [value]),
-    do: %{op: :runtime_call, function: "elmc_debug_log", args: [value]}
-
-  def special_value_from_target("Basics.log", []),
-    do: Helpers.runtime_fn_lambda("elmc_debug_log", ["__value"])
-
   def special_value_from_target("Url.Builder.crossOrigin", [_name]),
     do: %{op: :string_literal, value: "anonymous"}
 
@@ -342,10 +335,10 @@ defmodule Elmc.Backend.CCodegen.SpecialValues.Stdlib.WebKernel do
 
   # --- Task ---
   def special_value_from_target("Task.command", [task]),
-    do: %{op: :runtime_call, function: "elmc_task_perform", args: [task]}
+    do: %{op: :runtime_call, function: "elmc_task_command", args: [task]}
 
   def special_value_from_target("Task.command", []),
-    do: Helpers.runtime_fn_lambda("elmc_task_perform", ["__task"])
+    do: Helpers.runtime_fn_lambda("elmc_task_command", ["__task"])
 
   # --- Random (browser) ---
   def special_value_from_target("Random.generate", [to_msg, generator]),

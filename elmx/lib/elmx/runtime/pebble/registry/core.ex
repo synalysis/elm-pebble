@@ -20,6 +20,7 @@ defmodule Elmx.Runtime.Pebble.Registry.Core do
       "elmx_core_result_with_default" => {MaybeResult, :result_with_default},
       "elmx_core_result_and_then" => {MaybeResult, :result_and_then},
       "elmx_core_random_generator" => {MaybeResult, :random_generator},
+      "elmx_core_random_normalize_seed" => {MaybeResult, :normalize_seed},
       "elmx_basics_compare" => {Core, :basics_compare},
       "elmx_list_repeat" => {Dispatch, :list_repeat},
       "elmx_core_list_repeat" => {Dispatch, :list_repeat},

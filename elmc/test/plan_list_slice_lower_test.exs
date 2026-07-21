@@ -1,6 +1,8 @@
 defmodule Elmc.PlanListSliceLowerTest do
   use ExUnit.Case, async: true
 
+  @moduletag timeout: 360_000
+
   alias Elmc.Test.CCodegenExtract
   alias Elmc.Backend.CCodegen.GeneratedSource
   alias Elmc.Backend.Plan.Lower.Function, as: PlanLower
@@ -345,7 +347,7 @@ defmodule Elmc.PlanListSliceLowerTest do
     subs_body = CCodegenExtract.fn_body(c, "elmc_fn_Main_subscriptions")
 
     assert subs_body =~ "elmc_release_array_lifo(owned"
-    refute subs_body =~ "elmc_release(owned["
+    refute subs_body =~ ~r/CATCH_END;\s*\n\s*elmc_release\(owned\[/
     refute subs_body =~ ~r/elmc_new_int\(&owned\[\d+\], ELMC_BUTTON_/
     assert subs_body =~ "elmc_sub3(&owned"
     assert subs_body =~ "ELMC_BUTTON_BACK"
@@ -584,7 +586,7 @@ defmodule Elmc.PlanListSliceLowerTest do
     refute layout_body =~ "elmc_record_new_static_take"
     assert layout_body =~ "elmc_record_new_values_ints"
     refute layout_body =~ "elmc_record_new_values_take"
-    refute layout_body =~ ~r/elmc_new_int\(&owned\[\d+\], [01]\)/
+    assert layout_body =~ "ELMC_RECORD_GET_INDEX_INT(model, ELMC_FIELD_MAIN_MODEL_SCREENW)"
 
     screen_w_body = CCodegenExtract.fn_body(generated_c, "elmc_fn_Main_screenW")
     assert screen_w_body =~ "ELMC_FIELD_MAIN_MODEL_SCREENW"

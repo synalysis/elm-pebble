@@ -799,7 +799,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.MapLoops do
          env,
          counter
        ) do
-    {prefix_code, prefix_refs, prefix_releases, counter} =
+    {prefix_code, prefix_refs, prefix_releases, _counter} =
       maybe_materialize_native_prefix_refs(
         prefix_code,
         prefix_refs,

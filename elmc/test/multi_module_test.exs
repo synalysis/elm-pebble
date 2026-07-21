@@ -1,6 +1,8 @@
 defmodule Elmc.MultiModuleTest do
   use ExUnit.Case
 
+  @moduletag timeout: 120_000
+
   alias ElmEx.IR.TopoSort
 
   test "modules are sorted in dependency order" do
@@ -26,7 +28,7 @@ defmodule Elmc.MultiModuleTest do
     project_dir = Path.expand("fixtures/simple_project", __DIR__)
     out_dir = Path.expand("tmp/multi_module", __DIR__)
     File.rm_rf!(out_dir)
-    assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, strip_dead_code: false})
+    assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, strip_dead_code: false, plan_ir_mode: :primary})
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
@@ -55,7 +57,7 @@ defmodule Elmc.MultiModuleTest do
     project_dir = Path.expand("fixtures/qualified_constructor_project", __DIR__)
     out_dir = Path.expand("tmp/multi_module_qual", __DIR__)
     File.rm_rf!(out_dir)
-    assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, strip_dead_code: false})
+    assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, strip_dead_code: false, plan_ir_mode: :primary})
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
@@ -70,6 +72,8 @@ defmodule Elmc.MultiModuleTest do
     assert String.contains?(generated_c, "elmc_fn_Main_matchB")
   end
 
+  @moduletag timeout: 300_000
+
   test "write_project_multi generates per-module files and link manifest" do
     project_dir = Path.expand("fixtures/simple_project", __DIR__)
     out_dir = Path.expand("tmp/multi_module_files", __DIR__)
@@ -78,7 +82,7 @@ defmodule Elmc.MultiModuleTest do
     {:ok, project} = ElmEx.Frontend.Bridge.load_project(project_dir)
     {:ok, ir} = ElmEx.IR.Lowerer.lower_project(project)
     :ok = Elmc.Runtime.Generator.write_runtime(Path.join(out_dir, "runtime"))
-    :ok = Elmc.Backend.CCodegen.write_project_multi(ir, out_dir)
+    :ok = Elmc.Backend.CCodegen.write_project_multi(ir, out_dir, %{plan_ir_mode: :primary})
 
     # Per-module headers should exist
     assert File.exists?(Path.join(out_dir, "c/elmc_Main.h"))

@@ -3,7 +3,7 @@ defmodule Elmc.CorpusResultAndThenProbeTest do
 
   alias Elmc.Test.ElmRunCorpus
 
-  @timeout_ms 60_000
+  @timeout_ms 300_000
 
   @tag timeout: @timeout_ms
   test "corpus execution Compiler/ResultAndThenDirect.elm" do

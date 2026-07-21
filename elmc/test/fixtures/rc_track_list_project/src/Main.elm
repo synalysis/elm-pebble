@@ -3,6 +3,6 @@ module Main exposing (main)
 import RcTrackListProbe
 
 
-main : String
+main : Int
 main =
-    "rc-track-list-probe"
+    RcTrackListProbe.probeAppend

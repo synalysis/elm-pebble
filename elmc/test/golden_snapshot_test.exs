@@ -1,6 +1,8 @@
 defmodule Elmc.GoldenSnapshotTest do
   use ExUnit.Case
 
+  @moduletag timeout: 120_000
+
   alias ElmEx.Frontend.Bridge
   alias ElmEx.IR.Lowerer
 
@@ -68,7 +70,7 @@ defmodule Elmc.GoldenSnapshotTest do
     project_dir = Path.expand("fixtures/simple_project", __DIR__)
     out_dir = Path.expand("tmp/snapshots_#{System.unique_integer([:positive])}", __DIR__)
     on_exit(fn -> File.rm_rf!(out_dir) end)
-    {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, strip_dead_code: false})
+    {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, strip_dead_code: false, plan_ir_mode: :primary})
 
     generated = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
@@ -82,26 +84,20 @@ defmodule Elmc.GoldenSnapshotTest do
     assert String.contains?(generated, "elmc_string_length")
     assert String.contains?(generated, "ELMC_TAG_RESULT")
     assert String.contains?(generated, "ELMC_TAG_TUPLE2")
-    assert String.contains?(generated, "elmc_tuple_first_borrow(pair)")
 
-    assert String.contains?(
-             generated,
-             "elmc_tuple_first_borrow(elmc_tuple_first_borrow(value))"
-           )
+    branch_out = Elmc.Test.CCodegenExtract.fn_body(generated, "elmc_fn_CoreCompliance_branchTupleOut")
+    assert branch_out =~ "elmc_tuple_first(value)"
+    assert branch_out =~ "elmc_tuple_second(value)"
 
     refute String.contains?(generated, "elmc_result_inc_or_zero")
     assert String.contains?(generated, "elmc_fn_CoreCompliance_branchTupleOut")
     assert String.contains?(generated, "elmc_fn_CoreCompliance_branchTupleOutNested")
 
-    assert String.contains?(
-             generated,
-             "((ElmcResult *)elmc_tuple_first_borrow(value)->payload)->value"
-           )
+    branch_nested =
+      Elmc.Test.CCodegenExtract.fn_body(generated, "elmc_fn_CoreCompliance_branchTupleOutNested")
 
-    assert String.contains?(
-             generated,
-             "elmc_maybe_or_tuple_just_payload_borrow(elmc_tuple_second_borrow(pair))"
-           )
+    assert branch_nested =~ "ELMC_TAG_RESULT"
+    assert branch_nested =~ "elmc_maybe_or_tuple_just_payload"
 
     assert String.contains?(generated, "switch (case_msg_tag_")
   end

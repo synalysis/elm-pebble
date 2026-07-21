@@ -394,8 +394,16 @@ defmodule Elmc.Backend.CCodegen.SpecialValues.Stdlib.Effects do
   def special_value_from_target("Task.andThen", [f, task]),
     do: %{op: :runtime_call, function: "elmc_task_and_then", args: [f, task]}
 
-  def special_value_from_target("Task.perform", [to_msg, task]),
-    do: %{op: :runtime_call, function: "elmc_task_perform", args: [to_msg, task]}
+  def special_value_from_target("Task.perform", [to_msg, task]) do
+    mapped = %{op: :runtime_call, function: "elmc_task_map", args: [to_msg, task]}
+
+    %{
+      op: :tuple2,
+      left: %{op: :int_literal, value: 1},
+      right: mapped
+    }
+    |> then(&%{op: :runtime_call, function: "elmc_task_perform", args: [&1]})
+  end
 
   # --- elm/core: String (extended) ---
 

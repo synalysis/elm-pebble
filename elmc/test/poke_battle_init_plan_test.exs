@@ -18,6 +18,11 @@ defmodule Elmc.PokeBattleInitPlanTest do
              )
 
     decl_map = TemplateCompile.decl_map_from_result(result)
+
+    Process.put(:elmc_constructor_tags, Elmc.Backend.CCodegen.IRQueries.constructor_tag_map(result.ir))
+
+    on_exit(fn -> Process.delete(:elmc_constructor_tags) end)
+
     init = Map.fetch!(decl_map, {"Main", "init"})
 
     assert {:ok, _plan} = PlanLower.lower(init, "Main", decl_map, rc_required: true)

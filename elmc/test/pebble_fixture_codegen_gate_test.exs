@@ -3,6 +3,8 @@ defmodule Elmc.PebbleFixtureCodegenGateTest do
 
   alias Elmc.Test.FixtureCodegen
 
+  @moduletag timeout: 180_000
+
   @tag :fixture_codegen
   @tag :pebble_fixture
   test "pebble smoke fixtures compile on elmc" do

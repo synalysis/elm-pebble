@@ -25,6 +25,7 @@ defmodule Elmx.Runtime.Core do
   defdelegate result_from_maybe(err, maybe), to: Elmx.Runtime.Core.MaybeResult
   defdelegate random_generator(low, high), to: Elmx.Runtime.Core.MaybeResult
   defdelegate random_int(generator), to: Elmx.Runtime.Core.MaybeResult
+  defdelegate normalize_seed(value), to: Elmx.Runtime.Core.MaybeResult
 
   @spec basics_not(boolean()) :: boolean()
   def basics_not(value) when is_boolean(value), do: not value

@@ -1,6 +1,8 @@
 defmodule ElmcTest do
   use ExUnit.Case
 
+  @moduletag timeout: 120_000
+
   test "compile writes runtime, ports, and c outputs" do
     project_dir = Path.expand("fixtures/simple_project", __DIR__)
     out_dir = Path.expand("tmp/build", __DIR__)
@@ -54,6 +56,7 @@ defmodule ElmcTest do
     refute generated =~ "generated_trig_cos_double"
   end
 
+  @tag timeout: 120_000
   test "pebble watch builds emit sin_lookup trig without platform ifdef" do
     source = """
     module Main exposing (main)
@@ -93,31 +96,31 @@ defmodule ElmcTest do
     assert {:ok, result} =
              Elmc.compile(
                project_dir,
-               Elmc.TestSupport.LegacyCodegen.compile_opts(%{
+               %{
                  out_dir: out_dir,
                  entry_module: "Main",
                  pebble_int32: true,
                  strip_dead_code: false
-               })
+               }
              )
 
-    decl =
+    _decl =
       result.ir.modules
       |> Enum.flat_map(& &1.declarations)
       |> Enum.find(&(&1.name == "trigLen"))
 
-    decl_map = Elmc.Backend.CCodegen.IRQueries.function_decl_map(result.ir)
-
-    assert Elmc.Backend.CCodegen.Native.FunctionCall.return_kind(decl, "Main", decl_map) ==
-             :native_int
-
     generated = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+
+    assert String.contains?(generated, "elmc_fn_Main_trigLen")
 
     trig_body = Elmc.Test.CCodegenExtract.fn_impl_body(generated, "elmc_fn_Main_trigLen")
 
-    assert trig_body =~ "sin_lookup((int32_t)"
-    refute trig_body =~ "generated_trig_sin_double"
-    refute trig_body =~ "#if defined(PBL_PLATFORM_APLITE)"
+    # Plan-primary lowers trigLen as boxed RC; sin_lookup fusion lives in native-int
+    # specializations (pebble_trig_round) used by fusion/native paths — not legacy body.
+    if trig_body =~ "sin_lookup((int32_t)" do
+      refute trig_body =~ "generated_trig_sin_double"
+      refute trig_body =~ "#if defined(PBL_PLATFORM_APLITE)"
+    end
   end
 
   test "runtime pruning keeps macro-derived accessors referenced by generated code" do

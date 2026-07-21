@@ -28,14 +28,16 @@ defmodule Elmc.Plan2048BytecodeTest do
 
     assert MapSet.member?(fusion_names, "setCell")
     assert MapSet.member?(fusion_names, "nthEmptyIndex")
-    assert MapSet.member?(fusion_names, "initialBoard")
-
     assert MapSet.member?(fusion_names, "moveBoard")
 
     refute Enum.any?(manifest["skipped"] || [], fn entry ->
-             entry["name"] in ["setCell", "nthEmptyIndex", "initialBoard", "orient", "restore", "collapseRows", "reverseRows", "moveBoard"] and
+             entry["name"] in ["setCell", "nthEmptyIndex", "orient", "restore", "collapseRows", "reverseRows", "moveBoard"] and
                entry["reason"] == "empty_plan"
            end)
+
+    generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+    assert generated_c =~ "static RC elmc_fn_Main_initialBoard("
+    refute generated_c =~ "RC_ERR_UNSUPPORTED"
 
     cells = List.duplicate(0, 16)
 

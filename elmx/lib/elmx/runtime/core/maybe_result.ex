@@ -181,6 +181,19 @@ defmodule Elmx.Runtime.Core.MaybeResult do
 
   def random_int(%{"low" => low, "high" => high}), do: random_int(%{low: low, high: high})
 
+  @seed_mod 2147483647
+
+  @spec normalize_seed(integer()) :: integer()
+  def normalize_seed(value) when is_integer(value) do
+    normalized = rem(value, @seed_mod)
+
+    if normalized <= 0 do
+      normalized + @seed_mod
+    else
+      normalized
+    end
+  end
+
   defp corpus_fixed_random_int do
     Process.get(:elmx_corpus_fixed_random_int) ||
       Application.get_env(:elmx, :corpus_fixed_random_int)

@@ -1,0 +1,15 @@
+{
+  "files.watcherExclude": {
+    "**/elmc/test/tmp/**": true,
+    "**/elm_ex/test/tmp/**": true,
+    "**/elmc/tmp/**": true,
+    "**/elmc/scripts/test/tmp/**": true
+  },
+  "search.exclude": {
+    "**/elmc/test/tmp/**": true,
+    "**/elm_ex/test/tmp/**": true,
+    "**/elmc/tmp/**": true,
+    "**/elmc/scripts/test/tmp/**": true
+  },
+  "elmLS.onlyUpdateDiagnosticsOnSave": true
+}

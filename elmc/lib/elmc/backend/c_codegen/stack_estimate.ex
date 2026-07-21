@@ -20,6 +20,7 @@ defmodule Elmc.Backend.CCodegen.StackEstimate do
   def report(ir, c_source) do
     ir_entries = ir_entries(ir)
     c_entries = c_entries(c_source)
+    body_cache = function_body_cache(c_source)
 
     entries =
       (Map.keys(ir_entries) ++ Map.keys(c_entries))
@@ -35,7 +36,7 @@ defmodule Elmc.Backend.CCodegen.StackEstimate do
         |> Map.put(:function, name)
         |> Map.put(:score, score)
         |> adjust_fused_ir_entry(name, c_source)
-        |> adjust_cursor_loop_entry(name, c_source)
+        |> adjust_cursor_loop_entry(name, c_source, body_cache)
         |> then(fn entry ->
           score = Map.get(entry, :score, 0)
           entry |> Map.put(:score, score) |> Map.put(:level, level(score))
@@ -306,7 +307,7 @@ defmodule Elmc.Backend.CCodegen.StackEstimate do
     list_concat_flat_acc_
   )
 
-  defp adjust_cursor_loop_entry(entry, name, c_source) do
+  defp adjust_cursor_loop_entry(entry, name, _c_source, body_cache) do
     c_fn =
       case String.split(name, ".", parts: 2) do
         [module, function] -> "elmc_fn_#{Util.safe_c_suffix(module)}_#{Util.safe_c_suffix(function)}"
@@ -314,8 +315,8 @@ defmodule Elmc.Backend.CCodegen.StackEstimate do
       end
 
     with c_fn when is_binary(c_fn) <- c_fn,
-         true <- String.contains?(c_source, c_fn),
-         body when is_binary(body) <- function_c_body(c_source, c_fn),
+         true <- Map.has_key?(body_cache, c_fn),
+         body when is_binary(body) <- Map.get(body_cache, c_fn),
          true <- cursor_loop_optimized?(body) do
       reasons = entry[:reasons] || entry["reasons"] || []
       score = entry[:score] || entry["score"] || 0
@@ -330,19 +331,124 @@ defmodule Elmc.Backend.CCodegen.StackEstimate do
     end
   end
 
-  defp function_c_body(source, c_fn) do
-    case :binary.match(source, "#{c_fn}(") do
-      {start, _} ->
-        source
-        |> binary_part(start, byte_size(source) - start)
-        |> String.split("{", parts: 2)
-        |> case do
-          [_sig, body] -> String.trim_leading(body)
-          _ -> nil
+  defp function_body_cache(source) do
+    pattern =
+      Regex.compile!(
+        "(?:static\\s+)?(?:RC|ElmcValue\\s*\\*+\\s*|elmc_int_t|const char\\s*\\*|void|int|bool)\\s*(elmc_fn_[A-Za-z0-9_]+)\\s*\\((?:const\\s+)?[^;{]*\\)\\s*\\{"
+      )
+
+    Regex.scan(pattern, source, return: :index)
+    |> Enum.reduce(%{}, fn
+      [{start, len}, {name_start, name_len}], acc ->
+        name = binary_part(source, name_start, name_len)
+        open_idx = start + len - 1
+
+        case find_matching_brace(source, open_idx) do
+          {:ok, end_idx} ->
+            Map.put(acc, name, binary_part(source, open_idx + 1, end_idx - open_idx - 1))
+
+          _ ->
+            acc
         end
 
-      :nomatch ->
-        nil
+      _, acc ->
+        acc
+    end)
+  end
+
+  defp find_matching_brace(source, open_idx) do
+    do_find_matching_brace(source, open_idx + 1, byte_size(source), 1)
+  end
+
+  defp do_find_matching_brace(_source, idx, size, _depth) when idx >= size, do: {:error, :unbalanced}
+
+  defp do_find_matching_brace(source, idx, size, depth) do
+    ch = :binary.at(source, idx)
+
+    cond do
+      ch == ?" ->
+        case skip_c_string(source, idx + 1, size) do
+          {:ok, next} -> do_find_matching_brace(source, next, size, depth)
+          :error -> {:error, :unbalanced}
+        end
+
+      ch == ?' ->
+        case skip_c_char_literal(source, idx + 1, size) do
+          {:ok, next} -> do_find_matching_brace(source, next, size, depth)
+          :error -> {:error, :unbalanced}
+        end
+
+      ch == ?/ and idx + 1 < size ->
+        case :binary.at(source, idx + 1) do
+          ?/ ->
+            do_find_matching_brace(source, skip_line_comment(source, idx + 2, size), size, depth)
+
+          ?* ->
+            case skip_block_comment(source, idx + 2, size) do
+              {:ok, next} -> do_find_matching_brace(source, next, size, depth)
+              :error -> {:error, :unbalanced}
+            end
+
+          _ ->
+            scan_brace_token(source, idx, size, depth)
+        end
+
+      true ->
+        scan_brace_token(source, idx, size, depth)
+    end
+  end
+
+  defp scan_brace_token(source, idx, size, depth) do
+    ch = :binary.at(source, idx)
+
+    cond do
+      ch == ?{ ->
+        do_find_matching_brace(source, idx + 1, size, depth + 1)
+
+      ch == ?} and depth == 1 ->
+        {:ok, idx}
+
+      ch == ?} and depth > 1 ->
+        do_find_matching_brace(source, idx + 1, size, depth - 1)
+
+      true ->
+        do_find_matching_brace(source, idx + 1, size, depth)
+    end
+  end
+
+  defp skip_c_string(_source, idx, size) when idx >= size, do: :error
+
+  defp skip_c_string(source, idx, size) do
+    case :binary.at(source, idx) do
+      ?" -> {:ok, idx + 1}
+      ?\\ when idx + 1 < size -> skip_c_string(source, idx + 2, size)
+      _ -> skip_c_string(source, idx + 1, size)
+    end
+  end
+
+  defp skip_c_char_literal(_source, idx, size) when idx >= size, do: :error
+
+  defp skip_c_char_literal(source, idx, size) do
+    case :binary.at(source, idx) do
+      ?' -> {:ok, idx + 1}
+      ?\\ when idx + 1 < size -> skip_c_char_literal(source, idx + 2, size)
+      _ -> skip_c_char_literal(source, idx + 1, size)
+    end
+  end
+
+  defp skip_line_comment(source, idx, size) do
+    case :binary.match(source, "\n", [{:scope, {idx, size - idx}}]) do
+      {rel, _} -> rel + 1
+      :nomatch -> size
+    end
+  end
+
+  defp skip_block_comment(_source, idx, size) when idx >= size, do: :error
+
+  defp skip_block_comment(source, idx, size) do
+    case :binary.match(source, "*/", [{:scope, {idx, size - idx}}]) do
+      {rel, len} -> {:ok, rel + len}
+      :nomatch -> :error
     end
   end
 

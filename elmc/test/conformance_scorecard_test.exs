@@ -1,6 +1,8 @@
 defmodule Elmc.ConformanceScorecardTest do
   use ExUnit.Case
 
+  @moduletag timeout: 300_000
+
   @guardrails %{
     min_required_functions: 59,
     min_required_runtime_symbols: 28,

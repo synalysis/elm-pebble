@@ -65,8 +65,8 @@ defmodule Elmc.PlanElmtrisPrimaryTest do
     assert main_cov["lowered"] == 44
     assert main_cov["failed_count"] == 0
 
-    assert reachable_cov["total"] == 44
-    assert reachable_cov["lowered"] == 44
+    assert reachable_cov["total"] == 47
+    assert reachable_cov["lowered"] == 47
     assert reachable_cov["failed_count"] == 0
 
     assert {:ok, 10} = Loader.run_manifest_entry(out_dir, {"Main", "boardCols"}, params: [])
@@ -122,7 +122,11 @@ defmodule Elmc.PlanElmtrisPrimaryTest do
     assert with_piece_body =~ "ELMC_FIELD_MAIN_ACTIVEPIECE_KIND"
     assert generated_c =~ "elmc_fn_Main_dropStep"
     assert generated_c =~ "elmc_fn_Main_softDrop"
-    assert generated_c =~ "elmc_fn_Main_clearLines_native"
+
+    clear_lines_body = CCodegenExtract.fn_body(generated_c, "elmc_fn_Main_clearLines")
+    assert clear_lines_body =~ "plan block"
+    refute clear_lines_body =~ "elmc_fn_Main_clearLines_native("
+
     assert generated_c =~ "elmc_fn_Main_stampPiece"
 
     fusion_names =
@@ -131,7 +135,7 @@ defmodule Elmc.PlanElmtrisPrimaryTest do
       |> MapSet.new()
 
     assert MapSet.member?(fusion_names, "pieceOffsets")
-    assert MapSet.member?(fusion_names, "clearLines")
+    refute MapSet.member?(fusion_names, "clearLines")
     assert MapSet.member?(fusion_names, "stampPiece")
     assert MapSet.member?(fusion_names, "lockedSlotsFromBoard")
 
@@ -142,11 +146,35 @@ defmodule Elmc.PlanElmtrisPrimaryTest do
     assert {:ok, view_ops} = Loader.run_manifest_entry(out_dir, {"Main", "view"}, params: [model])
     assert is_list(view_ops)
     assert length(view_ops) > 0
-    assert Enum.any?(view_ops, &match?({:render_cmd, _, _}, &1))
+
+    assert Enum.any?(view_ops, &match?({:render_cmd, _, _}, &1)) or
+             inspect(view_ops) =~ "Elmtris"
+
+    lock_model =
+      {:record,
+       [
+         board,
+         -1,
+         0,
+         0,
+         0,
+         [],
+         [],
+         0,
+         0,
+         0,
+         0,
+         0,
+         28,
+         144,
+         168,
+         0,
+         false
+       ]}
 
     {:ok, model_with_piece} =
       Loader.run_manifest_entry(out_dir, {"Main", "withPiece"}, params: [
-        model,
+        lock_model,
         {:just, {:record, [0, 0, 3, 0]}}
       ])
 

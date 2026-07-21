@@ -206,6 +206,7 @@ defmodule Elmc.Runtime.Generator do
     "elmc_json_decode_float_decoder",
     "elmc_json_encode_float",
     "elmc_basics_sqrt",
+    "elmc_basics_log",
     "elmc_basics_log_base",
     "elmc_basics_sin",
     "elmc_basics_cos",
@@ -1361,6 +1362,9 @@ defmodule Elmc.Runtime.Generator do
   defp runtime_call_dependencies("elmc_retain"),
     do: ["elmc_retain", "elmc_retain_impl"]
 
+  defp runtime_call_dependencies("elmc_process_sleep"),
+    do: ["elmc_process_sleep", "elmc_process_sleep_timer_cb"]
+
   defp runtime_call_dependencies(name) do
     [name | runtime_take_dependency(name)]
   end
@@ -1829,7 +1833,9 @@ defmodule Elmc.Runtime.Generator do
     ElmcValue *elmc_task_map(ElmcValue *f, ElmcValue *task);
     ElmcValue *elmc_task_map2(ElmcValue *f, ElmcValue *a, ElmcValue *b);
     ElmcValue *elmc_task_and_then(ElmcValue *f, ElmcValue *task);
-    ElmcValue *elmc_task_perform(ElmcValue *to_msg, ElmcValue *task);
+    ElmcValue *elmc_task_on_error(ElmcValue *f, ElmcValue *task);
+    ElmcValue *elmc_task_perform(ElmcValue *cmd_desc);
+    ElmcValue *elmc_task_command(ElmcValue *task);
     ElmcValue *elmc_task_force(ElmcValue *task);
     ElmcValue *elmc_process_spawn(ElmcValue *task);
     void elmc_process_release_all_slots(void);
@@ -1955,6 +1961,7 @@ defmodule Elmc.Runtime.Generator do
     ElmcValue *elmc_basics_abs(ElmcValue *x);
     ElmcValue *elmc_basics_to_float(ElmcValue *x);
     ElmcValue *elmc_basics_sqrt(ElmcValue *x);
+    ElmcValue *elmc_basics_log(ElmcValue *x);
     ElmcValue *elmc_basics_log_base(ElmcValue *base, ElmcValue *x);
     ElmcValue *elmc_basics_sin(ElmcValue *x);
     ElmcValue *elmc_basics_cos(ElmcValue *x);
@@ -3900,7 +3907,16 @@ defmodule Elmc.Runtime.Generator do
     }
 
     ElmcValue *elmc_tuple_second(ElmcValue *tuple) {
-      if (!tuple || tuple->tag != ELMC_TAG_TUPLE2 || tuple->payload == NULL) return elmc_int_zero();
+      if (!tuple) return elmc_int_zero();
+      if (tuple->tag == ELMC_TAG_RESULT && tuple->payload != NULL) {
+        ElmcResult *data = (ElmcResult *)tuple->payload;
+        return data->value ? elmc_retain(data->value) : elmc_int_zero();
+      }
+      if (tuple->tag == ELMC_TAG_MAYBE && tuple->payload != NULL) {
+        ElmcMaybe *data = (ElmcMaybe *)tuple->payload;
+        return data->is_just && data->value ? elmc_retain(data->value) : elmc_int_zero();
+      }
+      if (tuple->tag != ELMC_TAG_TUPLE2 || tuple->payload == NULL) return elmc_int_zero();
       ElmcTuple2 *data = (ElmcTuple2 *)tuple->payload;
       return elmc_retain(data->second);
     }
@@ -3912,7 +3928,16 @@ defmodule Elmc.Runtime.Generator do
     }
 
     ElmcValue *elmc_tuple_second_borrow(ElmcValue *tuple) {
-      if (!tuple || tuple->tag != ELMC_TAG_TUPLE2 || tuple->payload == NULL) return elmc_int_zero();
+      if (!tuple) return elmc_int_zero();
+      if (tuple->tag == ELMC_TAG_RESULT && tuple->payload != NULL) {
+        ElmcResult *data = (ElmcResult *)tuple->payload;
+        return data->value ? data->value : elmc_int_zero();
+      }
+      if (tuple->tag == ELMC_TAG_MAYBE && tuple->payload != NULL) {
+        ElmcMaybe *data = (ElmcMaybe *)tuple->payload;
+        return data->is_just && data->value ? data->value : elmc_int_zero();
+      }
+      if (tuple->tag != ELMC_TAG_TUPLE2 || tuple->payload == NULL) return elmc_int_zero();
       ElmcTuple2 *data = (ElmcTuple2 *)tuple->payload;
       return data->second ? data->second : elmc_int_zero();
     }
@@ -5356,6 +5381,23 @@ defmodule Elmc.Runtime.Generator do
       return elmc_task_wrap_pair(f, task, ELMC_TASK_AND_THEN_SCALAR);
     }
 
+    ElmcValue *elmc_task_on_error(ElmcValue *f, ElmcValue *task) {
+      (void)f;
+      return task ? elmc_retain(task) : elmc_int_zero();
+    }
+
+    ElmcValue *elmc_task_perform(ElmcValue *cmd_desc) {
+      (void)cmd_desc;
+      return elmc_int_zero();
+    }
+
+    ElmcValue *elmc_task_command(ElmcValue *task) {
+      ElmcValue *pair = elmc_tuple2_take_value(elmc_new_int_take(1), task ? elmc_retain(task) : elmc_int_zero());
+      ElmcValue *out = elmc_task_perform(pair);
+      elmc_release(pair);
+      return out;
+    }
+
     ElmcValue *elmc_task_force(ElmcValue *task);
 
     static ElmcValue *elmc_task_force_pair_step(ElmcValue *pair_value, elmc_int_t kind) {
@@ -5439,12 +5481,6 @@ defmodule Elmc.Runtime.Generator do
         default:
           return elmc_retain(task);
       }
-    }
-
-    ElmcValue *elmc_task_perform(ElmcValue *to_msg, ElmcValue *task) {
-      (void)to_msg;
-      (void)task;
-      return elmc_int_zero();
     }
 
     ElmcValue *elmc_process_spawn(ElmcValue *task) {
@@ -7659,10 +7695,12 @@ defmodule Elmc.Runtime.Generator do
       CATCH_BEGIN
         if (!maybe || maybe->tag != ELMC_TAG_MAYBE) {
           *out = elmc_maybe_nothing();
+          elmc_release(maybe);
         } else {
           ElmcMaybe *m = (ElmcMaybe *)maybe->payload;
           if (!m->is_just || !m->value) {
             *out = elmc_maybe_nothing();
+            elmc_release(maybe);
           } else {
             ElmcValue *payload = elmc_retain(m->value);
             ElmcValue *args[1] = { payload };
@@ -9321,6 +9359,10 @@ defmodule Elmc.Runtime.Generator do
         term *= z2;
       }
       return 2.0 * sum + (double)k;
+    }
+
+    ElmcValue *elmc_basics_log(ElmcValue *x) {
+      return elmc_new_float_take(elmc_basics_log_double(elmc_as_float(x)));
     }
 
     ElmcValue *elmc_basics_log_base(ElmcValue *base, ElmcValue *x) {

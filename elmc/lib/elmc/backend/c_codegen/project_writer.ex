@@ -37,7 +37,7 @@ defmodule Elmc.Backend.CCodegen.ProjectWriter do
          :ok <- PerModuleArtifacts.write_sources(ir, c_dir, opts),
          :ok <- File.write(Path.join(c_dir, "elmc_generated.h"), GeneratedSource.header(ir, opts)),
          :ok <- GeneratedSource.write_source!(Path.join(c_dir, "elmc_generated.c"), ir, opts),
-         generated_source <- File.read(Path.join(c_dir, "elmc_generated.c")),
+         {:ok, generated_source} <- File.read(Path.join(c_dir, "elmc_generated.c")),
          :ok <- write_stack_report(out_dir, ir, generated_source),
          :ok <- File.write(Path.join(c_dir, "host_harness.c"), BuildArtifacts.host_harness()),
          :ok <- File.write(Path.join(out_dir, "CMakeLists.txt"), BuildArtifacts.cmake()),

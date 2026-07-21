@@ -146,6 +146,9 @@ defmodule Elmx.Backend.QualifiedRewrite do
       {"Random.int", [low, high]} ->
         runtime2("elmx_core_random_generator", [low, high])
 
+      {"Random.normalizeSeed", [value]} ->
+        runtime2("elmx_core_random_normalize_seed", [value])
+
       {"Basics.toFloat", [x]} ->
         runtime2("elmx_basics_to_float", [x])
 

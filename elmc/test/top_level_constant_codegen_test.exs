@@ -1,6 +1,7 @@
 defmodule Elmc.TopLevelConstantCodegenTest do
   use ExUnit.Case
 
+  @moduletag timeout: 300_000
   @repo_root Path.expand("../..", __DIR__)
 
   test "top-level constants referenced in add_const call the value function" do
@@ -40,14 +41,15 @@ defmodule Elmc.TopLevelConstantCodegenTest do
              Elmc.compile(project_dir, %{
                out_dir: out_dir,
                entry_module: "Main",
+               plan_ir_mode: :primary,
                strip_dead_code: false
              })
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
     refute generated_c =~ ~r/elmc_as_int\(contentTop\)/
-    assert generated_c =~ "elmc_fn_Main_contentTop_native"
-    assert generated_c =~ "static RC elmc_fn_Main_contentTop("
+    assert generated_c =~ "static RC elmc_fn_Main_contentTop(elmc_int_t *out"
+    assert generated_c =~ "elmc_fn_Main_contentTop("
     assert generated_c =~ "path_point_count = 3"
     assert generated_c =~ "ELMC_RENDER_OP_PATH_FILLED"
   end

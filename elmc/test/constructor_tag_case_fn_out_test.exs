@@ -53,9 +53,11 @@ defmodule Elmc.ConstructorTagCaseFnOutTest do
 
     subs_body = CCodegenExtract.fn_body(generated, "elmc_fn_Main_subscriptions")
 
-    # Plan-primary subscriptions assemble kernel Sub values via direct calls.
-    assert subs_body =~ "elmc_fn_Pebble_Health_onEvent"
-    assert subs_body =~ "elmc_fn_Pebble_Events_onMinuteChange"
+    # Plan-primary subscriptions encode Msg tags at the call site (no wrapper callees).
+    assert subs_body =~ "ELMC_SUBSCRIPTION_HEALTH"
+    assert subs_body =~ "ELMC_PEBBLE_MSG_HEALTHEVENT"
+    assert subs_body =~ "ELMC_SUBSCRIPTION_MINUTE_CHANGE"
+    assert subs_body =~ "ELMC_PEBBLE_MSG_MINUTECHANGED"
     assert subs_body =~ "elmc_sub0" or subs_body =~ "elmc_sub1"
     refute subs_body =~ "*out = elmc_int_zero();"
     refute subs_body =~ "ElmcValue *tmp_"

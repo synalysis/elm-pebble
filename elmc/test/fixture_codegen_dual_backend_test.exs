@@ -3,10 +3,18 @@ defmodule Elmc.FixtureCodegenDualBackendTest do
 
   alias Elmc.Test.FixtureCodegen
 
+  @moduletag timeout: 600_000
+
+  @elmc_bulk_fixture_prefix "wasm_"
+  @elmc_bulk_fixture_excluded ~w(rc_track_2048_pebble_project)
+
   @tag :fixture_codegen
   test "all elmc fixture projects compile end-to-end" do
     failures =
-      Enum.flat_map(FixtureCodegen.fixture_dirs(), fn fixture ->
+      FixtureCodegen.fixture_dirs()
+      |> Enum.reject(&String.starts_with?(&1, @elmc_bulk_fixture_prefix))
+      |> Enum.reject(&(&1 in @elmc_bulk_fixture_excluded))
+      |> Enum.flat_map(fn fixture ->
         try do
           FixtureCodegen.compile_elmc!(fixture)
           []

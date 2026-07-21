@@ -1,6 +1,8 @@
 defmodule Elmc.BytecodePlatformOpsTest do
   use ExUnit.Case, async: false
 
+  @moduletag timeout: 120_000
+
   alias Elmc.Backend.Bytecode.Loader
 
   @fixture Path.expand("fixtures/simple_project", __DIR__)

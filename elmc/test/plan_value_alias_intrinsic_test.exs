@@ -2,6 +2,7 @@ defmodule Elmc.PlanValueAliasIntrinsicTest do
   use ExUnit.Case, async: true
 
   alias Elmc.Backend.CCodegen.FunctionEmit
+  alias Elmc.Backend.CCodegen.Native.FunctionCall
   alias Elmc.Backend.Plan.Lower.{Call, Function, Intrinsics}
 
   test "String.fromInt value alias lowers to unary runtime from_int, not zero-arg call" do
@@ -79,6 +80,32 @@ defmodule Elmc.PlanValueAliasIntrinsicTest do
     }
 
     assert length(FunctionEmit.effective_decl_args(decl, "String", %{})) == 3
+  end
+
+  test "call_site_arg_kinds uses type arity for Kernel aliases with empty IR args" do
+    decl = %{
+      name: "unsafeGet",
+      args: [],
+      type: "Int -> JsArray a -> a",
+      expr: %{op: :qualified_call, target: "Elm.Kernel.JsArray.unsafeGet", args: []}
+    }
+
+    assert FunctionCall.call_site_arg_kinds(decl, "Elm.JsArray", %{}) == [:native_int, :boxed]
+  end
+
+  test "call_site_arg_kinds stays empty for lambda/thunk alias bodies" do
+    decl = %{
+      name: "chopForwardSlashes",
+      args: [],
+      type: "String -> String",
+      expr: %{
+        op: :lambda,
+        args: ["__compose_arg__"],
+        body: %{op: :var, name: "__compose_arg__"}
+      }
+    }
+
+    assert FunctionCall.call_site_arg_kinds(decl, "Pages.Internal.String", %{}) == []
   end
 
   test "effective_decl_args ignores type arity for lambda/thunk bodies" do

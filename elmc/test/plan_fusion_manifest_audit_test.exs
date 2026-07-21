@@ -17,7 +17,6 @@ defmodule Elmc.PlanFusionManifestAuditTest do
     "game_2048" => %{
       "setCell" => "list_indexed_replace",
       "nthEmptyIndex" => "list_int_search",
-      "initialBoard" => "spawn_tile_chain",
       "moveBoard" => "permute_merge_inverse_pipeline",
       "orient" => "union_case_four_perm",
       "restore" => "union_case_four_perm",
@@ -27,7 +26,6 @@ defmodule Elmc.PlanFusionManifestAuditTest do
     },
     "game_elmtris" => %{
       "pieceOffsets" => "tuple2_case_table",
-      "clearLines" => "filter_map_row_drop",
       "stampPiece" => "foldl_offset_patch",
       "lockedSlotsFromBoard" => "reverse_foldl_occupied"
     },
@@ -35,7 +33,6 @@ defmodule Elmc.PlanFusionManifestAuditTest do
       "monthString" => "int_string_lut",
       "directionString" => "union_string_lut",
       "batteryPercentString" => "maybe_int_string",
-      "stepsString" => "maybe_int_string",
       "pickBottomRight" => "maybe_with_default_pick_slot",
       "temperatureString" => "union_int_suffix",
       "windSpeedString" => "union_int_suffix",

@@ -49,7 +49,8 @@ defmodule Elmc.PlanDirectCallAbiTest do
 
     clear_lines_body = CCodegenExtract.fn_body(generated_c, "elmc_fn_Main_clearLines")
     refute clear_lines_body =~ "plan_argv"
-    assert clear_lines_body =~ "elmc_fn_Main_clearLines_native"
+    assert clear_lines_body =~ "plan block"
+    refute clear_lines_body =~ "elmc_fn_Main_clearLines_native("
 
     refute generated_c =~ ~r/elmc_fn_Main_\w+\(&owned\[[0-9]+\], \)/
     refute generated_c =~ "plan_primary_boxed"

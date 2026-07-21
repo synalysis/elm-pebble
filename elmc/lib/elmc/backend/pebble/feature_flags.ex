@@ -30,6 +30,8 @@ defmodule Elmc.Backend.Pebble.FeatureFlags do
     |> Map.merge(Compact.compute(flags))
   end
 
+  def augment_from_generated_c(flags, _), do: flags
+
   defp augment_draw_from_generated_c(flags, generated_c) do
     if String.contains?(generated_c, "ELMC_RENDER_OP_TEXT_INT_WITH_FONT") do
       flags
@@ -53,8 +55,6 @@ defmodule Elmc.Backend.Pebble.FeatureFlags do
       end
     end)
   end
-
-  def augment_from_generated_c(flags, _), do: flags
 
   @spec macros(Types.feature_flags()) :: Types.c_source()
   def macros(%{} = flags), do: MacroTable.render(flags)

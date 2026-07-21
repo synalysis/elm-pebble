@@ -332,8 +332,11 @@ defmodule Elmc.Backend.CCodegen.Native.FunctionCall do
   @spec params(Types.function_declaration(), String.t(), Types.function_decl_map()) ::
           String.t()
   def params(decl, module_name, decl_map) do
-    Host.c_arg_bindings(decl.args || [])
-    |> Enum.zip(arg_kinds(decl, module_name, decl_map))
+    args = FunctionEmit.effective_decl_args(decl, module_name, decl_map)
+    effective = Map.put(decl, :args, args)
+
+    Host.c_arg_bindings(args)
+    |> Enum.zip(arg_kinds(effective, module_name, decl_map))
     |> Enum.map_join(", ", fn {{_arg, c_arg, _index}, kind} ->
       case kind do
         :native_int -> "const elmc_int_t #{c_arg}"
@@ -517,6 +520,11 @@ defmodule Elmc.Backend.CCodegen.Native.FunctionCall do
     end)
   end
 
+  defp default_arg_kinds(%{args: [], type: type} = decl, _module_name, _decl_map)
+       when is_binary(type) do
+    kernel_alias_type_kinds(decl)
+  end
+
   defp default_arg_kinds(%{args: args, type: type}, _module_name, _decl_map)
        when is_list(args) and is_binary(type) do
     signature_only_arg_kinds(%{args: args, type: type})
@@ -528,7 +536,7 @@ defmodule Elmc.Backend.CCodegen.Native.FunctionCall do
   defp default_arg_kinds(_decl, _module_name, _decl_map), do: []
 
   defp signature_only_arg_kinds(%{args: args, type: type})
-       when is_list(args) and is_binary(type) do
+       when is_list(args) and args != [] and is_binary(type) do
     arg_types = Host.function_arg_types(type)
 
     args
@@ -542,10 +550,44 @@ defmodule Elmc.Backend.CCodegen.Native.FunctionCall do
     end)
   end
 
+  defp signature_only_arg_kinds(%{args: []} = decl), do: kernel_alias_type_kinds(decl)
+
+  defp signature_only_arg_kinds(%{type: type}) when is_binary(type),
+    do: type_signature_arg_kinds(type)
+
   defp signature_only_arg_kinds(%{args: args}) when is_list(args),
     do: Enum.map(args, fn _ -> :boxed end)
 
   defp signature_only_arg_kinds(_decl), do: []
+
+  defp kernel_alias_type_kinds(%{type: type} = decl) when is_binary(type) do
+    if lambda_or_thunk_body?(Map.get(decl, :expr)) do
+      []
+    else
+      type_signature_arg_kinds(type)
+    end
+  end
+
+  defp kernel_alias_type_kinds(_decl), do: []
+
+  defp type_signature_arg_kinds(type) when is_binary(type) do
+    type
+    |> Host.function_arg_types()
+    |> Enum.map(fn ty ->
+      case Host.normalize_type_name(ty) do
+        "Int" -> :native_int
+        "Bool" -> :native_bool
+        _other -> :boxed
+      end
+    end)
+  end
+
+  defp lambda_or_thunk_body?(%{op: :lambda}), do: true
+
+  defp lambda_or_thunk_body?(%{op: op, body: body}) when op in [:let, :letrec],
+    do: lambda_or_thunk_body?(body)
+
+  defp lambda_or_thunk_body?(_), do: false
 
   @spec int_arg_safe?(
           Types.binding_name(),

@@ -1,6 +1,8 @@
 defmodule Elmc.BytecodeManifestProgramTest do
   use ExUnit.Case, async: false
 
+  @moduletag timeout: 120_000
+
   alias Elmc.Backend.Bytecode.ManifestProgram
 
   @fixture Path.expand("fixtures/simple_project", __DIR__)
@@ -43,6 +45,16 @@ defmodule Elmc.BytecodeManifestProgramTest do
     assert {:ok, program} = ManifestProgram.load_linked(build_dir, {"Main", "probeScoreOf"})
     model = {:record, [nil, 42, nil, nil, nil, nil, nil, nil]}
     assert {:ok, 42} = ManifestProgram.run(program, {"Main", "probeScoreOf"}, params: [model])
+  end
+
+  test "run boardLayout record if at function tail returns layout fields" do
+    build_dir = compile_fixture!()
+
+    assert {:ok, program} = ManifestProgram.load_linked(build_dir, {"Main", "boardLayout"})
+    model = {:record, [nil, 0, 0, 0, 0, 0, 0, nil]}
+
+    assert {:ok, {:record, [13, 26, -9, 3]}} =
+             ManifestProgram.run(program, {"Main", "boardLayout"}, params: [model])
   end
 
   test "function_entries lists manifest functions" do

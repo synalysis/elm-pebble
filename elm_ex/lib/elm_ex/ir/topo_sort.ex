@@ -7,6 +7,11 @@ defmodule ElmEx.IR.TopoSort do
   alias ElmEx.IR
   alias ElmEx.IR.Types.TopoSort
 
+  @stdlib_modules ~w(
+    Basics List Maybe Result String Char Tuple Dict Set Array
+    Bitwise Debug Platform Task Process Time Elm.JsArray
+  )
+
   @spec sort_modules(IR.t()) :: {:ok, [ElmEx.IR.Module.t()]} | {:error, {:cycle, [String.t()]}}
   def sort_modules(%IR{} = ir) do
     module_map = Map.new(ir.modules, fn mod -> {mod.name, mod} end)
@@ -18,7 +23,7 @@ defmodule ElmEx.IR.TopoSort do
       |> Map.new(fn mod ->
         dep_names =
           (mod.imports || [])
-          |> Enum.filter(&Map.has_key?(module_map, &1))
+          |> Enum.filter(&project_dependency?(&1, module_map))
 
         {mod.name, dep_names}
       end)
@@ -122,5 +127,19 @@ defmodule ElmEx.IR.TopoSort do
     new_queue = Enum.sort(new_zero) ++ rest
 
     do_topo_sort(new_queue, updated_in_degree, reverse_deps, [current | result])
+  end
+
+  defp project_dependency?(name, module_map) do
+    Map.has_key?(module_map, name) and not stdlib_module?(name)
+  end
+
+  defp stdlib_module?(name) when is_binary(name) do
+    name in @stdlib_modules or
+      String.starts_with?(name, "Pebble.") or
+      String.starts_with?(name, "Platform.") or
+      name in ["Platform", "Cmd", "Sub"] or
+      String.starts_with?(name, "Json.") or
+      String.starts_with?(name, "Elm.Kernel.") or
+      String.starts_with?(name, "Pkg.")
   end
 end

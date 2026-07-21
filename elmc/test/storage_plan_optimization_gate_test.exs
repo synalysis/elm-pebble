@@ -4,7 +4,7 @@ defmodule Elmc.StoragePlanOptimizationGateTest do
   """
   use ExUnit.Case, async: false
 
-  alias Elmc.Test.FixtureCodegen
+  alias Elmc.Test.{CCodegenExtract, FixtureCodegen}
 
   @template_main Path.expand("../../ide/priv/project_templates/game_2048/src/Main.elm", __DIR__)
 
@@ -43,20 +43,20 @@ defmodule Elmc.StoragePlanOptimizationGateTest do
     generated = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
     runtime = File.read!(Path.join(out_dir, "runtime/elmc_runtime.c"))
 
-    assert generated =~ "static RC elmc_fn_Main_initialBoard_native("
-    assert generated =~ "spawn_a_after_tile"
-    assert generated =~ "spawn_b_after_tile"
+    initial_board_body = CCodegenExtract.fn_body(generated, "elmc_fn_Main_initialBoard")
+    spawn_tile_body = CCodegenExtract.fn_body(generated, "elmc_fn_Main_spawnTileWithSeed")
+
+    assert initial_board_body =~ "plan block"
+    assert initial_board_body =~ "elmc_fn_Main_spawnTileWithSeed"
+    assert spawn_tile_body =~ "plan block"
+    assert spawn_tile_body =~ "elmc_fn_Main_countEmpty"
     refute generated =~ "elmc_fn_Main_spawnTileWithSeed(&tmp_"
 
-    count_empty =
-      generated
-      |> String.split("static elmc_int_t elmc_fn_Main_countEmpty_native(ElmcValue * const cells) {", parts: 2)
-      |> Enum.at(1, "")
-      |> String.split("\n}\n", parts: 2)
-      |> List.first()
-
-    assert count_empty =~ "ELMC_TAG_INT_LIST"
-    refute count_empty =~ "list_walk_cursor_"
+    count_empty_body = CCodegenExtract.fn_body(generated, "elmc_fn_Main_countEmpty")
+    assert count_empty_body =~ "plan block"
+    assert count_empty_body =~ "elmc_list_head_with_default_int"
+    assert count_empty_body =~ "elmc_int_list_tail"
+    refute count_empty_body =~ "list_walk_cursor_"
 
     refute runtime =~ "elmc_float_list_alloc_copy"
     refute runtime =~ "elmc_record_seq_alloc_copy"
@@ -80,13 +80,10 @@ defmodule Elmc.StoragePlanOptimizationGateTest do
 
     assert generated =~ "elmc_fn_Main_sumRows"
 
-    sum_rows_body =
-      generated
-      |> String.split("static ElmcValue * elmc_fn_Main_sumRows(ElmcValue ** const args, const int argc) {", parts: 2)
-      |> Enum.at(1, "")
-      |> String.split("\n}\n", parts: 2)
-      |> List.first()
+    sum_rows_body = CCodegenExtract.fn_body(generated, "elmc_fn_Main_sumRows")
 
-    assert sum_rows_body =~ "ELMC_TAG_RECORD_SEQ"
+    assert sum_rows_body =~ "plan block"
+    assert sum_rows_body =~ "ELMC_RECORD_GET_INDEX_INT"
+    assert sum_rows_body =~ "elmc_list_head" or sum_rows_body =~ "elmc_list_is_empty"
   end
 end

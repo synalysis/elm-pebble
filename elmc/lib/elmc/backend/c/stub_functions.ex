@@ -263,7 +263,7 @@ defmodule Elmc.Backend.C.StubFunctions do
     case binary_part(source, open_paren, 1) do
       "(" ->
         rest_start = open_paren + 1
-        <<_::binary-size(rest_start), rest::binary>> = source
+        <<_::binary-size(^rest_start), rest::binary>> = source
         {content_len, close_in_rest} = scan_paren_content(rest, 1, 0, 0)
         {binary_part(rest, 0, content_len), rest_start + close_in_rest}
 

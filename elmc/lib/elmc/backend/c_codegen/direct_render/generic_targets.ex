@@ -1111,11 +1111,15 @@ defmodule Elmc.Backend.CCodegen.DirectRender.GenericTargets do
 
   defp direct_render_op_return?(_decl), do: false
 
-  defp single_render_op_return?(%{type: type}) when is_binary(type) do
-    String.contains?(type, "RenderOp") and not String.contains?(type, "List")
-  end
+  defp single_render_op_return?(decl) do
+    case decl do
+      %{type: type} when is_binary(type) ->
+        String.contains?(type, "RenderOp") and not String.contains?(type, "List")
 
-  defp single_render_op_return?(_decl), do: false
+      _ ->
+        false
+    end
+  end
 
   defp ui_node_inner_expr(%{op: :qualified_call, target: target, args: [inner]})
        when target in ["Pebble.Ui.toUiNode"],
