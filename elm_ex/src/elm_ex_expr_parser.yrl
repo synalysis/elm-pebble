@@ -315,13 +315,12 @@ primary -> lparen apply_left_expr shr apply_left_expr rparen : build_compose_rig
 
 %% Allow these expressions in operator/argument position without extra parens.
 %% (Elm syntax allows e.g. `x ++ case y of ...`.)
+%% Precedence `Unary 210 primary` beats root `pipe_right_expr` reduce/reduce
+%% so operator contexts keep the expression as a primary operand.
 primary -> let_expr : '$1'.
 primary -> if_expr : '$1'.
 primary -> case_expr : '$1'.
 primary -> lambda_expr : '$1'.
-
-%% Parenthesized expression (needed for lambdas passed as args, etc.)
-primary -> lparen pipe_right_expr rparen : '$2'.
 
 primary -> lparen tuple_items rparen : build_tuple('$2').
 primary -> list_expr : '$1'.
