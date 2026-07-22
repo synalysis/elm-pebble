@@ -17,6 +17,20 @@ defmodule ElmEx.Frontend.ApplyLeftTest do
     assert expanded == %{op: :call, name: "f", args: [%{op: :var, name: "g"}]}
   end
 
+  test "expand recurses into case branch maps without :op" do
+    source = """
+    case x of
+        _ ->
+            f <| g
+    """
+
+    assert {:ok, ast} = GeneratedExpressionParser.parse(source)
+    expanded = ApplyLeft.expand(ast)
+
+    assert %{op: :case, branches: [%{expr: %{op: :call, name: "f", args: [%{op: :var, name: "g"}]}}]} =
+             expanded
+  end
+
   test "pretty prints multiline apply_left with nested cons" do
     source = """
     Svg.g [] <|

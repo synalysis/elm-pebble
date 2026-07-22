@@ -18,6 +18,8 @@ import { createRouteBytesRuntime } from "./route_bytes.js";
 import { createNavigationRuntime } from "./navigation_runtime.js";
 import { createVdomPatchRuntime } from "./vdom_patch.js";
 import { createDomEventRuntime } from "./dom_event_runtime.js";
+import { createMjsRuntime } from "./mjs_runtime.js";
+import { createWebglRuntime } from "./webgl_runtime.js";
 
 export const RC_SUCCESS = 0;
 export const RC_ERR_UNIMPLEMENTED = 100;
@@ -39,6 +41,12 @@ const TAG_CMD = 14;
 const TAG_SUB = 15;
 const TAG_BYTES = 16;
 const TAG_FORWARD_REF = 17;
+// Boxed elm-explorations/linear-algebra Vector2/Vector3/Vector4/Matrix4 value
+// (Elm.Kernel.MJS). `payload.kind` is "v2" | "v3" | "v4" | "m4"; `payload.data`
+// is a Float64Array matching the upstream MJS.js in-memory layout.
+const TAG_MJS = 18;
+// Elm.Kernel.WebGL.entity record (settings, vert, frag, mesh, uniforms).
+const TAG_WEBGL_ENTITY = 19;
 
 const HTML_KIND_TEXT = 1;
 const HTML_KIND_NODE = 2;
@@ -55,6 +63,11 @@ const HTML_KIND_LAZY2 = 11;
 const HTML_KIND_LAZY3 = 12;
 const HTML_KIND_LAZY4 = 13;
 const HTML_KIND_CMD_NONE = 0;
+// Reserved discriminant for a VirtualDom "custom" node (Elm.Kernel.WebGL.toHtml
+// and any future __VirtualDom_custom port). Not dispatched through html_cmd —
+// the host allocates `{tag: TAG_VDOM, kind: "custom", ...}` directly (see
+// webgl_runtime.js) — kept here purely as the documented reserved slot.
+const HTML_KIND_CUSTOM = 15;
 
 const BROWSER_KIND_APPLICATION = 1;
 const BROWSER_KIND_LOAD = 2;
@@ -84,7 +97,60 @@ const DOM_SUB_HTTP_TRACK = 9;
 export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } = {}) {
   let memory = null;
   let nextHandle = 2;
-  const handles = new Map();
+  // Scene3d pages retain 10M+ handles. JS Map.max_size is 2^24 (~16.7M), so a
+  // single /wasm boot can throw "Map maximum size exceeded" in Chromium. Store
+  // payloads in a sparse array (length max 2^32-1) and recycle ids via freelist.
+  /** @type {(object|undefined)[]} */
+  let handleStore = [];
+  let handleLiveCount = 0;
+  const handles = {
+    get(id) {
+      return handleStore[id | 0];
+    },
+    set(id, payload) {
+      const key = id | 0;
+      if (handleStore[key] === undefined) handleLiveCount += 1;
+      handleStore[key] = payload;
+      return this;
+    },
+    has(id) {
+      return handleStore[id | 0] !== undefined;
+    },
+    delete(id) {
+      const key = id | 0;
+      if (handleStore[key] === undefined) return false;
+      handleStore[key] = undefined;
+      handleLiveCount -= 1;
+      return true;
+    },
+    clear() {
+      handleStore = [];
+      handleLiveCount = 0;
+    },
+    get size() {
+      return handleLiveCount;
+    },
+    *keys() {
+      for (let i = 0; i < handleStore.length; i++) {
+        if (handleStore[i] !== undefined) yield i;
+      }
+    },
+    *values() {
+      for (let i = 0; i < handleStore.length; i++) {
+        const payload = handleStore[i];
+        if (payload !== undefined) yield payload;
+      }
+    },
+    *entries() {
+      for (let i = 0; i < handleStore.length; i++) {
+        const payload = handleStore[i];
+        if (payload !== undefined) yield [i, payload];
+      }
+    },
+    [Symbol.iterator]() {
+      return this.entries();
+    },
+  };
   const orderHandles = new Map();
   let retainCount = 0;
   let invokeClosureExport = null;
@@ -208,11 +274,15 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
     }
   };
 
-  // Sub/port taggers emit full Platform.Msg values (FrozenViewsReady tag 11,
-  // HotReloadCompleteNew tag 9, Platform.UrlChanged tag 2, etc.). onUrlRequest
-  // and DOM decoders emit app-level Msg values that must be wrapped as
-  // Platform.UserMsg (tag 3) before Platform.update.
-  const PLATFORM_OUTER_MSG_TAGS = new Set([2, 3, 9, 10, 11, 12]);
+  // Pages.Internal.Platform.Msg tags are 1-based (elmc_wasm.manifest constructor_tags):
+  //   1 LinkClicked | 2 UrlChanged | 3 UserMsg | 4 FormMsg |
+  //   5 UpdateCacheAndUrlNew | 6 FetcherComplete | 7 FetcherStarted |
+  //   8 PageScrollComplete | 9 HotReloadCompleteNew | 10 ProcessFetchResponse |
+  //   11 FrozenViewsReady | 12 NoOp
+  // Port / onUrlChange / onUrlRequest taggers already emit these outer values.
+  // Only bare app msgs need wrapping as UserMsg (tag 3).
+  const PLATFORM_OUTER_MSG_TAGS = new Set([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
+  const PLATFORM_USER_MSG_TAG = 3;
 
   const isElmPagesPlatformProgram = () => incomingPortHandlers.has("pageDataFromJs");
 
@@ -222,7 +292,7 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
     if (PLATFORM_OUTER_MSG_TAGS.has(tag)) return msgPtr;
     return allocHandle({
       tag: TAG_TUPLE2,
-      first: newIntHandle(3),
+      first: newIntHandle(PLATFORM_USER_MSG_TAG),
       second: msgPtr | 0,
     });
   };
@@ -249,6 +319,12 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
   let navigationRuntime = null;
   let vdomPatchRuntime = null;
   let domEventRuntime = null;
+  // VirtualDom "custom" node render/diff handlers, keyed by renderKey (e.g.
+  // "webgl"). Populated after the owning runtime (e.g. webglRuntime) is
+  // constructed; vdom_patch.js and vdomToDom read from this same object by
+  // reference, so registration order relative to vdomPatchRuntime creation
+  // doesn't matter.
+  const customNodeHandlers = {};
   /** @type {((portName: string, payload: Uint8Array | number) => Promise<unknown>) | null} */
   let deliverIncomingPortFn = null;
   const forwardRefs = new Map();
@@ -443,6 +519,37 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
     }
 
     return (fields[1] ?? fields[0] ?? 0) | 0;
+  };
+
+  // elm-pages duplicates ProgramConfig into init/view/update/subscriptions captures.
+  // Each copy's function fields (urlToRoute, view, …) often sit at rc=1. A heavy
+  // page view (e.g. Scene3d) during FrozenViewsReady can release_unless_reachable
+  // those handles while another config copy still points at them — mount view then
+  // calls a dangling urlToRoute and renders "Page not found". Keep config callables
+  // alive for the program lifetime.
+  const immortalizeProgramConfigClosures = (implPtr) => {
+    const impl = readHandle(implPtr);
+    for (const field of impl?.fields ?? []) {
+      const clos = readHandle(field);
+      if (clos?.tag !== TAG_CLOSURE) continue;
+      for (const cap of clos.captures ?? []) {
+        const rec = readHandle(cap);
+        if (rec?.tag !== TAG_RECORD || !Array.isArray(rec.fields)) continue;
+        if (rec.fields.length < 20) continue;
+        let closureFields = 0;
+        for (const f of rec.fields) {
+          if (readHandle(f)?.tag === TAG_CLOSURE) closureFields += 1;
+        }
+        if (closureFields < 8) continue;
+        for (const f of rec.fields) {
+          const fp = readHandle(f);
+          if (fp?.tag === TAG_CLOSURE) {
+            fp.immortal = true;
+            fp.rc = Math.max(fp.rc ?? 1, 1_000_000);
+          }
+        }
+      }
+    }
   };
 
   const browserSubscriptionsFn = (implPtr) => {
@@ -700,6 +807,14 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
     }
     const first = readHandle(updatePayload.first);
     const second = readHandle(updatePayload.second);
+    const firstIsModel = isPlatformRecordModel(first);
+    const secondIsModel = isPlatformRecordModel(second);
+    if (firstIsModel && !secondIsModel) {
+      return { modelPtr: updatePayload.first | 0, sideEffectPtr: updatePayload.second | 0 };
+    }
+    if (secondIsModel && !firstIsModel) {
+      return { modelPtr: updatePayload.second | 0, sideEffectPtr: updatePayload.first | 0 };
+    }
     const firstFields = first?.tag === TAG_RECORD ? first.fields?.length ?? 0 : -1;
     const secondFields = second?.tag === TAG_RECORD ? second.fields?.length ?? 0 : -1;
     if (firstFields >= 0 && secondFields >= 0) {
@@ -809,6 +924,8 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
       return { rc: RC_ERR_UNIMPLEMENTED, value: 0, innerText: "", stage: "impl", phases };
     }
 
+    immortalizeProgramConfigClosures(implPtr);
+
     const fieldCount = impl.fields?.length ?? 0;
     const initFn = recordField(implPtr, 0);
     const viewFn = browserViewFn(implPtr);
@@ -872,7 +989,10 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
     }
 
     t = performance.now();
-    const modelForView = cloneHandleForProgram(modelPtr);
+    // Deep-cloning huge Scene3d models is expensive; keep the live model root for
+    // elm-pages browser boots (ProgramConfig closures are immortalized above).
+    const modelForView =
+      isElmPagesPlatformProgram() ? modelPtr | 0 : cloneHandleForProgram(modelPtr);
     mark("clone_model", t);
 
     t = performance.now();
@@ -882,10 +1002,11 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
       return { rc: viewResult.rc, value: 0, innerText: "", stage: "view", phases };
     }
 
-    t = performance.now();
-    mountViewHandle(viewResult.value);
-    mark("mount", t);
-
+    // Install liveBrowser *before* mount so mountViewHandle can record mountedRoot
+    // on the active session. Clear prior patch state so SPA remounts full-replace
+    // instead of patching the previous route's VDOM (title-only / stale body).
+    const prevImplPtr = liveBrowser?.implPtr | 0;
+    retain(null, implPtr);
     liveBrowser = {
       implPtr,
       modelPtr: modelForView | 0,
@@ -893,7 +1014,17 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
       viewFn,
       mountedRoot: null,
       lastVdomPtr: 0,
+      // SPA remount uses init+pageDataFromJs (Err→Ok); Ok-branch FrozenViewsReady
+      // currently corrupts Platform.Model under elmc WASM.
+      useRouteRemount: isElmPagesPlatformProgram(),
     };
+    if (prevImplPtr && prevImplPtr !== (implPtr | 0)) {
+      release(prevImplPtr);
+    }
+
+    t = performance.now();
+    mountViewHandle(viewResult.value);
+    mark("mount", t);
 
     if (fieldCount >= 6 && navigationRuntime) {
       navigationRuntime.installApplicationNavigation(implPtr);
@@ -1059,7 +1190,25 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
         if (payload.kind === "map") {
           return valueReaches(payload.child | 0, target, visited);
         }
+        if (payload.kind === "custom") {
+          // `model` is a host-only JS object ({entities, options, cache}), not
+          // a handle — walk the two retained handle fields directly.
+          const model = payload.model;
+          return Boolean(
+            model &&
+              (valueReaches(model.entities | 0, target, visited) ||
+                valueReaches(model.options | 0, target, visited))
+          );
+        }
         return false;
+      case TAG_WEBGL_ENTITY:
+        return (
+          valueReaches(payload.settings | 0, target, visited) ||
+          valueReaches(payload.vert | 0, target, visited) ||
+          valueReaches(payload.frag | 0, target, visited) ||
+          valueReaches(payload.mesh | 0, target, visited) ||
+          valueReaches(payload.uniforms | 0, target, visited)
+        );
       case TAG_BROWSER_PROGRAM:
         return payload.impl != null && valueReaches(payload.impl | 0, target, visited);
       default:
@@ -1129,7 +1278,20 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
             for (const child of payload.children ?? []) stack.push(child | 0);
           } else if (payload.kind === "map") {
             stack.push(payload.child | 0);
+          } else if (payload.kind === "custom") {
+            if (payload.model) {
+              stack.push(payload.model.entities | 0, payload.model.options | 0);
+            }
           }
+          break;
+        case TAG_WEBGL_ENTITY:
+          stack.push(
+            payload.settings | 0,
+            payload.vert | 0,
+            payload.frag | 0,
+            payload.mesh | 0,
+            payload.uniforms | 0
+          );
           break;
         case TAG_BROWSER_PROGRAM:
           if (payload.impl != null) stack.push(payload.impl | 0);
@@ -1345,6 +1507,21 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
       // leaf attr payload
     }
 
+    if (payload?.tag === TAG_VDOM && payload.kind === "custom" && payload.model) {
+      // `model` is a host-only JS object ({entities, options, cache}), not a
+      // handle — release the two retained handle fields it wraps.
+      releaseChild(payload.model.entities, rootPtr);
+      releaseChild(payload.model.options, rootPtr);
+    }
+
+    if (payload?.tag === TAG_WEBGL_ENTITY) {
+      releaseChild(payload.settings, rootPtr);
+      releaseChild(payload.vert, rootPtr);
+      releaseChild(payload.frag, rootPtr);
+      releaseChild(payload.mesh, rootPtr);
+      releaseChild(payload.uniforms, rootPtr);
+    }
+
     if (payload?.tag === TAG_BROWSER_PROGRAM) {
       if (payload.impl && handles.has(payload.impl)) {
         releaseChild(payload.impl, rootPtr);
@@ -1397,6 +1574,76 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
     const right = view.getFloat32(0, true);
     view.setFloat32(0, left / right, true);
     return view.getUint32(0, true) | 0;
+  };
+
+  // Float.Extra.interpolateFrom start end t = start + t * (end - start)
+  // Value-returning import (result i32 handle), matching stub/host_kernels wrappers.
+  const floatInterpolateFrom = (start, end, t) => {
+    const floatVal = (ptr) => {
+      const payload = readHandle(ptr);
+      if (payload?.tag === TAG_FLOAT) return payload.value;
+      if (payload?.tag === TAG_INT) return payload.value;
+      return wasmScalarArg(ptr);
+    };
+    const s = floatVal(start);
+    const e = floatVal(end);
+    const tv = floatVal(t);
+    return allocHandle({ tag: TAG_FLOAT, value: s + tv * (e - s) });
+  };
+
+  // Iterative TriangularMesh.gridFaceIndices — same cons order as the Elm recursion
+  // (`lower :: upper :: acc`) without O(u*v) WASM/JS stack frames.
+  const triangularMeshGridFaceIndices = (
+    uStepsH,
+    uVerticesH,
+    vVerticesH,
+    uIndex0H,
+    vIndex0H,
+    accH
+  ) => {
+    const uSteps = asIntNumber(uStepsH) | 0;
+    const uVertices = asIntNumber(uVerticesH) | 0;
+    const vVertices = asIntNumber(vVerticesH) | 0;
+    let uIndex0 = asIntNumber(uIndex0H) | 0;
+    let vIndex0 = asIntNumber(vIndex0H) | 0;
+    const items = listItems(accH).map(cloneForList);
+    const modBy = (value, modulus) => {
+      if (modulus === 0) return 0;
+      const r = value % modulus;
+      return r < 0 ? r + Math.abs(modulus) : r;
+    };
+
+    const boxInt = (n) => allocHandle({ tag: TAG_INT, value: n | 0 });
+    // Elm (a, b, c) lowers as nested tuple2: (a, (b, c)).
+    const tuple3 = (a, b, c) => {
+      const bc = allocHandle({ tag: TAG_TUPLE2, first: b, second: c });
+      return allocHandle({ tag: TAG_TUPLE2, first: a, second: bc });
+    };
+
+    while (true) {
+      const rowStart0 = uVertices * vIndex0;
+      const rowStart1 = uVertices * modBy(vIndex0 + 1, vVertices);
+      const uIndex1 = modBy(uIndex0 + 1, uVertices);
+      const index00 = boxInt(rowStart0 + uIndex0);
+      const index10 = boxInt(rowStart0 + uIndex1);
+      const index01 = boxInt(rowStart1 + uIndex0);
+      const index11 = boxInt(rowStart1 + uIndex1);
+      const lower = tuple3(index00, index10, index11);
+      const upper = tuple3(index00, index11, index01);
+      items.unshift(upper);
+      items.unshift(lower);
+
+      if (uIndex0 > 0) {
+        uIndex0 -= 1;
+      } else if (vIndex0 > 0) {
+        uIndex0 = uSteps - 1;
+        vIndex0 -= 1;
+      } else {
+        break;
+      }
+    }
+
+    return allocHandle({ tag: TAG_LIST, items });
   };
 
   const applyDomAttr = (el, attr, mapperPtr = 0) => {
@@ -1621,6 +1868,14 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
         return vdomToDom(forced.value, mapperPtr);
       }
       return typeof document !== "undefined" ? document.createTextNode("") : null;
+    }
+
+    if (payload.kind === "custom") {
+      const handler = customNodeHandlers[payload.renderKey];
+      const el = handler ? handler.render(payload.model, payload.facts ?? []) : null;
+      if (!el) return typeof document !== "undefined" ? document.createTextNode("") : null;
+      for (const attr of payload.facts ?? []) applyDomAttr(el, attr, mapperPtr);
+      return el;
     }
 
     if (payload.kind === "node" && typeof document !== "undefined") {
@@ -2497,6 +2752,7 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
     TAG_INT,
     attachDomEvent,
     forceLazyHtml,
+    customNodeHandlers,
   });
 
   cloneHandleForProgram = (handlePtr) => {
@@ -3301,13 +3557,18 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
     const index = wasmScalarArg(indexPtr);
     const fields = (readHandle(recordPtr)?.fields ?? []).map(storeRecordField);
     if (index >= 0 && index < fields.length) {
+      // Drop the retain from the map-copy for the replaced slot; the new value
+      // is retained via storeRecordField below.
+      const prev = fields[index];
+      if (prev && handles.has(prev | 0)) release(prev);
       fields[index] = storeRecordField(valuePtr);
     }
     const next = allocHandle({ tag: TAG_RECORD, fields });
     writeOut(outPtr, next);
-    if ((next | 0) !== (recordPtr | 0)) {
-      release(recordPtr);
-    }
+    // Do NOT release recordPtr here. `{ r | f = v }` produces a new record; the
+    // caller (and any other roots such as model.url) still own recordPtr.
+    // Generated code may retain+pass a temporary alias — that retain is balanced
+    // by the caller's epilogue, not by consuming the source inside record_update.
     return RC_SUCCESS;
   };
 
@@ -4192,6 +4453,35 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
     return writeList(outPtr, results);
   };
 
+  // List.range |> List.map fused loop: call global closure fnIndex for each
+  // inclusive index in [start, end] (matches C emit_list_cursor_map / bytecode).
+  const listCursorMap = (outPtr, startRaw, endRaw, globalIdx) => {
+    const start = wasmScalarArg(startRaw);
+    const end = wasmScalarArg(endRaw);
+    const fnIndex = globalIdx | 0;
+    const closure = allocHandle({
+      tag: TAG_CLOSURE,
+      fnIndex,
+      arity: 1,
+      captures: [],
+    });
+    const results = [];
+
+    for (let i = start; i <= end; i++) {
+      const idxHandle = newIntHandle(i);
+      const { rc, value } = invokeClosure(closure, [idxHandle]);
+      release(idxHandle);
+      if (rc !== RC_SUCCESS) {
+        release(closure);
+        return rc;
+      }
+      results.push(value);
+    }
+
+    release(closure);
+    return writeList(outPtr, results);
+  };
+
   // List.map2..map5: zip shortest length; pass element handles (not ints) and keep
   // closure results as handles — same ownership shape as list_map / C elmc_list_map2.
   const mapListsWithClosure = (outPtr, closurePtr, listPtrs) => {
@@ -4251,6 +4541,105 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
       if (!payload?.immortal) nonImmortal += 1;
     }
     return { retainCount, total: handles.size, nonImmortal, byTag };
+  };
+
+  /** Mark every handle reachable from `root` (inclusive). */
+  const collectReachableHandles = (rootPtr, into) => {
+    const stack = [rootPtr | 0];
+    while (stack.length > 0) {
+      const ptr = stack.pop() | 0;
+      if (!ptr || into.has(ptr) || !handles.has(ptr)) continue;
+      into.add(ptr);
+      const payload = handles.get(ptr);
+      if (!payload) continue;
+      switch (payload.tag) {
+        case TAG_CLOSURE:
+          for (const c of payload.captures ?? []) stack.push(c | 0);
+          for (const a of payload.applied ?? []) stack.push(a | 0);
+          break;
+        case TAG_RECORD:
+        case TAG_LIST:
+          for (const f of payload.fields ?? payload.items ?? []) stack.push(f | 0);
+          break;
+        case TAG_TUPLE2:
+          stack.push(payload.first | 0);
+          stack.push(payload.second | 0);
+          break;
+        case TAG_MAYBE:
+        case TAG_RESULT:
+          if (payload.value) stack.push(payload.value | 0);
+          break;
+        case TAG_VDOM:
+          if (payload.child) stack.push(payload.child | 0);
+          if (payload.fn) stack.push(payload.fn | 0);
+          for (const c of payload.children ?? []) stack.push(c | 0);
+          for (const a of payload.args ?? []) stack.push(a | 0);
+          for (const a of payload.attrs ?? []) stack.push(a | 0);
+          if (payload.kind === "custom" && payload.model) {
+            stack.push(payload.model.entities | 0, payload.model.options | 0);
+          }
+          break;
+        case TAG_WEBGL_ENTITY:
+          stack.push(
+            payload.settings | 0,
+            payload.vert | 0,
+            payload.frag | 0,
+            payload.mesh | 0,
+            payload.uniforms | 0
+          );
+          break;
+        case TAG_BROWSER_PROGRAM:
+          if (payload.impl) stack.push(payload.impl | 0);
+          break;
+        case TAG_CMD:
+        case TAG_SUB:
+          if (payload.value) stack.push(payload.value | 0);
+          for (const f of payload.fields ?? []) stack.push(f | 0);
+          break;
+        default:
+          break;
+      }
+    }
+  };
+
+  /**
+   * Drop ephemeral handles before an SPA remount. Scene3d pages leave ~10M+
+   * unreclaimed handles; a second boot then hits JS "Map maximum size exceeded".
+   * Keep immortal literals and anything still reachable from `rootPtrs` (impl).
+   */
+  const resetEphemeralHandles = (rootPtrs = []) => {
+    const keep = new Set();
+    keep.add(UNIT_HANDLE);
+    for (const root of rootPtrs) {
+      collectReachableHandles(root, keep);
+    }
+    for (const [id, payload] of handles) {
+      if (payload?.immortal) keep.add(id);
+    }
+    for (const id of keep) {
+      // Immortal string handles must stay registered.
+      const payload = handles.get(id);
+      if (payload?.literalId != null) {
+        immortalStringHandles.set(payload.literalId | 0, id);
+      }
+    }
+    for (const id of [...handles.keys()]) {
+      if (!keep.has(id)) {
+        handles.delete(id);
+      }
+    }
+    lazyHtmlCache.clear();
+    // Recount retainCount as live non-freed entries (approx; immortal-heavy).
+    retainCount = 0;
+    for (const payload of handles.values()) {
+      if (!payload?.immortal) retainCount += 1;
+    }
+    // Avoid reusing ids still in `keep` (impl / immortal).
+    let maxKeep = 1;
+    for (const id of keep) {
+      if (id > maxKeep) maxKeep = id;
+    }
+    if (nextHandle <= maxKeep) nextHandle = maxKeep + 1;
   };
 
   const json = createJsonRuntime({
@@ -4407,6 +4796,34 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
   const resultErrHandle = (valueHandle) =>
     allocHandle({ tag: TAG_RESULT, isOk: false, value: valueHandle | 0 });
 
+  const mjsRuntime = createMjsRuntime({
+    allocHandle,
+    readHandle,
+    TAG_FLOAT,
+    TAG_RECORD,
+    TAG_MAYBE,
+    TAG_MJS,
+  });
+
+  const webglRuntime = createWebglRuntime({
+    allocHandle,
+    readHandle,
+    retain,
+    listItems,
+    stringValue,
+    asHandle,
+    TAG_VDOM,
+    TAG_RECORD,
+    TAG_TUPLE2,
+    TAG_LIST,
+    TAG_INT,
+    TAG_FLOAT,
+    TAG_STRING,
+    TAG_MJS,
+    TAG_WEBGL_ENTITY,
+  });
+  customNodeHandlers.webgl = { render: webglRuntime.render, diff: webglRuntime.diff };
+
   const randomRuntime = createRandomRuntime({
     RC_SUCCESS,
     allocHandle,
@@ -4515,6 +4932,48 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
     return applied;
   };
 
+  /**
+   * Remount Browser.application at a new URL with fresh pageDataFromJs.
+   * Used for elm-pages SPA nav while FrozenViewsReady on Ok models is unsafe.
+   */
+  const remountBrowserWithRoute = async (location, pageBytes) => {
+    if (!liveBrowser?.useRouteRemount || !liveBrowser?.implPtr || !pageBytes) {
+      return false;
+    }
+    const implPtr = liveBrowser.implPtr | 0;
+    navigationRuntime?.disposeNavigation?.();
+
+    // Drop the previous route's heap (esp. Scene3d) before allocating the next.
+    resetEphemeralHandles([implPtr]);
+    liveBrowser.mountedRoot = null;
+    liveBrowser.lastVdomPtr = 0;
+    liveBrowser.modelPtr = 0;
+
+    const programPtr = newBrowserProgram(implPtr);
+    const url =
+      urlRuntimeApi && location
+        ? urlRuntimeApi.urlFromLocation(location)
+        : createDefaultBootInputs().url;
+    const bytesPtr = bytes.newBytesHandle(
+      new DataView(pageBytes.buffer, pageBytes.byteOffset, pageBytes.byteLength)
+    );
+    const boot = bootBrowserProgram(programPtr, {
+      url,
+      incomingPorts: { pageDataFromJs: bytesPtr },
+      omitPortRcWalk: typeof document !== "undefined",
+      skipInnerText: typeof document !== "undefined",
+    });
+    if (boot.rc !== RC_SUCCESS) {
+      console.warn("[elmc-wasm-runtime] route remount failed", {
+        path: location?.pathname,
+        rc: boot.rc,
+        stage: boot.stage,
+      });
+      return false;
+    }
+    return true;
+  };
+
   navigationRuntime = createNavigationRuntime({
     RC_SUCCESS,
     invokeClosure,
@@ -4525,6 +4984,7 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
     urlRuntime: urlRuntimeApi,
     routeBytes: routeBytesRuntime,
     deliverIncomingPort: deliverIncomingPortFn,
+    remountBrowserWithRoute,
   });
 
   const bootUrlFromEnvironment = () => {
@@ -4579,6 +5039,96 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
     },
     as_float: asFloatBits,
     float_div_bits: floatDivBits,
+    float_interpolate_from: floatInterpolateFrom,
+    triangular_mesh_grid_face_indices: triangularMeshGridFaceIndices,
+    mjs_v2: mjsRuntime.v2,
+    mjs_v2getX: mjsRuntime.v2getX,
+    mjs_v2getY: mjsRuntime.v2getY,
+    mjs_v2setX: mjsRuntime.v2setX,
+    mjs_v2setY: mjsRuntime.v2setY,
+    mjs_v2toRecord: mjsRuntime.v2toRecord,
+    mjs_v2fromRecord: mjsRuntime.v2fromRecord,
+    mjs_v2add: mjsRuntime.v2add,
+    mjs_v2sub: mjsRuntime.v2sub,
+    mjs_v2negate: mjsRuntime.v2negate,
+    mjs_v2direction: mjsRuntime.v2direction,
+    mjs_v2length: mjsRuntime.v2length,
+    mjs_v2lengthSquared: mjsRuntime.v2lengthSquared,
+    mjs_v2distance: mjsRuntime.v2distance,
+    mjs_v2distanceSquared: mjsRuntime.v2distanceSquared,
+    mjs_v2normalize: mjsRuntime.v2normalize,
+    mjs_v2scale: mjsRuntime.v2scale,
+    mjs_v2dot: mjsRuntime.v2dot,
+    mjs_v3: mjsRuntime.v3,
+    mjs_v3getX: mjsRuntime.v3getX,
+    mjs_v3getY: mjsRuntime.v3getY,
+    mjs_v3getZ: mjsRuntime.v3getZ,
+    mjs_v3setX: mjsRuntime.v3setX,
+    mjs_v3setY: mjsRuntime.v3setY,
+    mjs_v3setZ: mjsRuntime.v3setZ,
+    mjs_v3toRecord: mjsRuntime.v3toRecord,
+    mjs_v3fromRecord: mjsRuntime.v3fromRecord,
+    mjs_v3add: mjsRuntime.v3add,
+    mjs_v3sub: mjsRuntime.v3sub,
+    mjs_v3negate: mjsRuntime.v3negate,
+    mjs_v3direction: mjsRuntime.v3direction,
+    mjs_v3length: mjsRuntime.v3length,
+    mjs_v3lengthSquared: mjsRuntime.v3lengthSquared,
+    mjs_v3distance: mjsRuntime.v3distance,
+    mjs_v3distanceSquared: mjsRuntime.v3distanceSquared,
+    mjs_v3normalize: mjsRuntime.v3normalize,
+    mjs_v3scale: mjsRuntime.v3scale,
+    mjs_v3dot: mjsRuntime.v3dot,
+    mjs_v3cross: mjsRuntime.v3cross,
+    mjs_v3mul4x4: mjsRuntime.v3mul4x4,
+    mjs_v4: mjsRuntime.v4,
+    mjs_v4getX: mjsRuntime.v4getX,
+    mjs_v4getY: mjsRuntime.v4getY,
+    mjs_v4getZ: mjsRuntime.v4getZ,
+    mjs_v4getW: mjsRuntime.v4getW,
+    mjs_v4setX: mjsRuntime.v4setX,
+    mjs_v4setY: mjsRuntime.v4setY,
+    mjs_v4setZ: mjsRuntime.v4setZ,
+    mjs_v4setW: mjsRuntime.v4setW,
+    mjs_v4toRecord: mjsRuntime.v4toRecord,
+    mjs_v4fromRecord: mjsRuntime.v4fromRecord,
+    mjs_v4add: mjsRuntime.v4add,
+    mjs_v4sub: mjsRuntime.v4sub,
+    mjs_v4negate: mjsRuntime.v4negate,
+    mjs_v4direction: mjsRuntime.v4direction,
+    mjs_v4length: mjsRuntime.v4length,
+    mjs_v4lengthSquared: mjsRuntime.v4lengthSquared,
+    mjs_v4distance: mjsRuntime.v4distance,
+    mjs_v4distanceSquared: mjsRuntime.v4distanceSquared,
+    mjs_v4normalize: mjsRuntime.v4normalize,
+    mjs_v4scale: mjsRuntime.v4scale,
+    mjs_v4dot: mjsRuntime.v4dot,
+    mjs_m4x4identity: mjsRuntime.m4x4identity,
+    mjs_m4x4fromRecord: mjsRuntime.m4x4fromRecord,
+    mjs_m4x4toRecord: mjsRuntime.m4x4toRecord,
+    mjs_m4x4inverse: mjsRuntime.m4x4inverse,
+    mjs_m4x4inverseOrthonormal: mjsRuntime.m4x4inverseOrthonormal,
+    mjs_m4x4makeFrustum: mjsRuntime.m4x4makeFrustum,
+    mjs_m4x4makePerspective: mjsRuntime.m4x4makePerspective,
+    mjs_m4x4makeOrtho: mjsRuntime.m4x4makeOrtho,
+    mjs_m4x4makeOrtho2D: mjsRuntime.m4x4makeOrtho2D,
+    mjs_m4x4mul: mjsRuntime.m4x4mul,
+    mjs_m4x4mulAffine: mjsRuntime.m4x4mulAffine,
+    mjs_m4x4makeRotate: mjsRuntime.m4x4makeRotate,
+    mjs_m4x4rotate: mjsRuntime.m4x4rotate,
+    mjs_m4x4makeScale3: mjsRuntime.m4x4makeScale3,
+    mjs_m4x4makeScale: mjsRuntime.m4x4makeScale,
+    mjs_m4x4scale3: mjsRuntime.m4x4scale3,
+    mjs_m4x4scale: mjsRuntime.m4x4scale,
+    mjs_m4x4makeTranslate3: mjsRuntime.m4x4makeTranslate3,
+    mjs_m4x4makeTranslate: mjsRuntime.m4x4makeTranslate,
+    mjs_m4x4translate3: mjsRuntime.m4x4translate3,
+    mjs_m4x4translate: mjsRuntime.m4x4translate,
+    mjs_m4x4makeLookAt: mjsRuntime.m4x4makeLookAt,
+    mjs_m4x4transpose: mjsRuntime.m4x4transpose,
+    mjs_m4x4makeBasis: mjsRuntime.m4x4makeBasis,
+    webgl_entity: webglRuntime.entity,
+    webgl_to_html: webglRuntime.toHtml,
     new_int: newInt,
     new_bool: newBool,
     new_float: newFloat,
@@ -4913,6 +5463,7 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
     make_closure: makeClosure,
     call_closure: callClosure,
     list_map: mapListWithClosure,
+    list_cursor_map: listCursorMap,
     list_map2: (outPtr, closurePtr, aPtr, bPtr) =>
       mapListsWithClosure(outPtr, closurePtr, [aPtr, bPtr]),
     list_map3: (outPtr, closurePtr, aPtr, bPtr, cPtr) =>

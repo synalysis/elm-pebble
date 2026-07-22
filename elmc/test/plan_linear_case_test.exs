@@ -183,6 +183,64 @@ defmodule Elmc.PlanLinearCaseTest do
     assert text =~ "maybe_just_payload"
   end
 
+  test "guarded cons case with string literal head tests the literal" do
+    # Route.segmentsToRoute-style: [ "wasm" ] / [ "f-a-q" ] must not match on
+    # nonempty alone — otherwise every singleton list hits the first arm.
+    decl = %{
+      name: "segmentsToRoute",
+      args: ["segments"],
+      expr: %{
+        op: :case,
+        subject: %{op: :var, name: "segments"},
+        branches: [
+          %{
+            pattern: %{
+              kind: :constructor,
+              name: "::",
+              resolved_name: "List.::",
+              arg_pattern: %{
+                kind: :tuple,
+                elements: [
+                  %{kind: :string, value: "wasm"},
+                  %{kind: :constructor, name: "[]", resolved_name: "[]", arg_pattern: nil}
+                ]
+              }
+            },
+            expr: %{op: :int_literal, value: 13}
+          },
+          %{
+            pattern: %{
+              kind: :constructor,
+              name: "::",
+              resolved_name: "List.::",
+              arg_pattern: %{
+                kind: :tuple,
+                elements: [
+                  %{kind: :string, value: "f-a-q"},
+                  %{kind: :constructor, name: "[]", resolved_name: "[]", arg_pattern: nil}
+                ]
+              }
+            },
+            expr: %{op: :int_literal, value: 6}
+          },
+          %{
+            pattern: %{kind: :constructor, name: "[]", resolved_name: "[]", arg_pattern: nil},
+            expr: %{op: :int_literal, value: 14}
+          },
+          %{pattern: %{kind: :wildcard}, expr: %{op: :int_literal, value: 0}}
+        ]
+      }
+    }
+
+    decl_map = %{{"Probe", "segmentsToRoute"} => decl}
+
+    assert {:ok, plan} = Function.lower(decl, "Probe", decl_map, rc_required: true)
+    text = inspect(plan.blocks)
+    assert text =~ "test_string_literal"
+    assert text =~ "list_head"
+    assert text =~ ~s(literal: "wasm")
+  end
+
   test "constructor case with string payload pattern lowers" do
     Process.put(:elmc_constructor_tags, %{"Companion.Types.PushString" => 7})
 

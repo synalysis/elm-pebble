@@ -10,7 +10,8 @@
 #   SKIP_VERIFY=1     — skip Node page-data probe after wasm build
 #
 # Open after start:
-#   http://localhost:<port>/wasm-web/host/browser.html
+#   http://localhost:<port>/   (WASM SPA — navigate all prerendered routes)
+#   http://localhost:<port>/wasm-web/host/browser.html  (direct host entry)
 
 set -euo pipefail
 
@@ -70,13 +71,19 @@ if [[ "${KEEP_WASM_DEBUG_MANIFEST:-0}" != "1" ]]; then
   rm -f dist/wasm-web/wasm/elmc_wasm.manifest.debug.json
 fi
 
-URL="http://localhost:${PORT}/wasm-web/host/browser.html"
+URL="http://localhost:${PORT}/"
+WASM_URL="http://localhost:${PORT}/wasm-web/host/browser.html"
 echo ""
-echo "Serving $APP/dist on port ${PORT} (Brotli negotiation for .br sidecars)"
-echo "  WASM browser: ${URL}"
-echo "  elm-pages:    http://localhost:${PORT}/"
+echo "Serving $APP/dist on port ${PORT} (Brotli + WASM SPA shell)"
+echo "  Site (WASM SPA):  ${URL}"
+echo "  Direct host entry: ${WASM_URL}"
+echo "  Tip: open ${URL} — client nav and refresh stay in the WASM shell;"
+echo "       content.dat under each route still serves for page data."
 echo ""
 echo "Press Ctrl+C to stop."
 echo ""
 
-exec python3 "$ROOT/scripts/serve-static-brotli.py" dist --port "$PORT" --bind 0.0.0.0
+exec python3 "$ROOT/scripts/serve-static-brotli.py" dist \
+  --port "$PORT" \
+  --bind 0.0.0.0 \
+  --spa-shell wasm-web/host/browser.html

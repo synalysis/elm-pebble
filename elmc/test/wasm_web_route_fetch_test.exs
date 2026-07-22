@@ -11,6 +11,11 @@ defmodule Elmc.WasmWebRouteFetchTest do
     route_host = File.read!(route_bytes)
     assert route_host =~ "defaultRuntimeFetcher"
     assert route_host =~ "setSiteRootFromPageHtml"
+    assert route_host =~ "content.dat"
+    assert route_host =~ "fetchFromContentDat"
+    # Deep-link site root must walk up from /getting-started/index.html.
+    assert route_host =~ "/wasm-web/"
+    assert route_host =~ "getting-started/f-a-q/content.dat"
 
     nav = File.read!(navigation)
     refute nav =~ "[navigationKeyPtr, urlPtr]"
@@ -21,7 +26,11 @@ defmodule Elmc.WasmWebRouteFetchTest do
     url_host = File.read!(Path.expand("../../elmc-wasm-runtime/host/url_runtime.js", __DIR__))
     assert url_host =~ "constructorTags"
     assert url_host =~ "urlRequestInternalTag"
-    assert url_host =~ "pathFromSegments"
+    assert url_host =~ "pathStringFromLocation"
+    assert url_host =~ "newStringHandle(pathStringFromLocation(pathname))"
+    # elm/url declaration order: protocol, host, port_, path, query, fragment
+    assert url_host =~ "protocolFromString(protocol)"
+    refute url_host =~ "pathFromSegments"
 
     assert File.regular?(rc_runtime)
     rc_host = File.read!(rc_runtime)

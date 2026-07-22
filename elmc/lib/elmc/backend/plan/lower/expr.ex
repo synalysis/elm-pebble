@@ -235,6 +235,18 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
     |> compile(ctx, b)
   end
 
+  def compile(%{op: :apply_left} = expr, ctx, b) do
+    expr
+    |> ElmEx.Frontend.ApplyLeft.expand()
+    |> compile(ctx, b)
+  end
+
+  def compile(%{op: :let_bindings} = expr, ctx, b) do
+    expr
+    |> ElmEx.Frontend.LetBindings.expand()
+    |> compile(ctx, b)
+  end
+
   def compile(%{op: :let_in} = expr, ctx, b) do
     compile_let(expr, ctx, b)
   end
@@ -1342,7 +1354,7 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
 
       uses_pattern_var? = fn value ->
         value
-        |> VarAnalysis.used_vars()
+        |> VarAnalysis.free_vars()
         |> MapSet.intersection(pattern_vars)
         |> MapSet.size() > 0
       end
@@ -1483,9 +1495,11 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
     names = Enum.map(bindings, fn {n, _} -> n end)
 
     Enum.reduce_while(Enum.with_index(bindings), false, fn {{name, value_expr}, idx}, _acc ->
+      # Free vars only — nested `let caseSubject = …` must not look like a use of
+      # a later sibling binding also named `caseSubject` (Scene3d.toWebGLEntities).
       used =
         value_expr
-        |> Elmc.Backend.CCodegen.VarAnalysis.used_vars()
+        |> Elmc.Backend.CCodegen.VarAnalysis.free_vars()
         |> MapSet.new()
 
       cond do
@@ -1559,7 +1573,7 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
       indexed
       |> Enum.flat_map(fn {{name, value_expr}, idx} ->
         value_expr
-        |> Elmc.Backend.CCodegen.VarAnalysis.used_vars()
+        |> Elmc.Backend.CCodegen.VarAnalysis.free_vars()
         |> Enum.filter(&Map.has_key?(var_to_def, &1))
         |> Enum.flat_map(fn var ->
           {_dep_name, dep_idx} = Map.fetch!(var_to_def, var)
@@ -1634,9 +1648,9 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
   defp letrec_outer_local_names(bindings, tail_expr, ctx) when is_list(bindings) do
     bindings
     |> Enum.reduce(MapSet.new(), fn {_, value_expr}, acc ->
-      MapSet.union(acc, Elmc.Backend.CCodegen.VarAnalysis.used_vars(value_expr))
+      MapSet.union(acc, Elmc.Backend.CCodegen.VarAnalysis.free_vars(value_expr))
     end)
-    |> MapSet.union(Elmc.Backend.CCodegen.VarAnalysis.used_vars(tail_expr))
+    |> MapSet.union(Elmc.Backend.CCodegen.VarAnalysis.free_vars(tail_expr))
     |> MapSet.intersection(MapSet.new(Map.keys(ctx.locals || %{})))
     |> MapSet.to_list()
   end

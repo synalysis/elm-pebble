@@ -698,6 +698,13 @@ defmodule Elmc.Backend.C.Lower.Instr do
         eq_expr = "(#{left} == #{right})"
         if kind == :eq, do: eq_expr, else: "(!#{eq_expr})"
 
+      compare_mode == :float_boxed ->
+        compare_native_c_expr(
+          kind,
+          compare_float_boxed_operand(left_reg, slots, opts),
+          compare_float_boxed_operand(right_reg, slots, opts)
+        )
+
       kind in [:eq, :neq] ->
         left = int_operand_ref(left_reg, slots, opts)
         right = int_operand_ref(right_reg, slots, opts)
@@ -711,6 +718,10 @@ defmodule Elmc.Backend.C.Lower.Instr do
           int_operand_ref(right_reg, slots, opts)
         )
     end
+  end
+
+  defp compare_float_boxed_operand(reg, slots, opts) do
+    "elmc_as_float(#{slot_ref(reg, slots, opts)})"
   end
 
   defp compare_int_boxed_operand(reg, true, slots, opts),

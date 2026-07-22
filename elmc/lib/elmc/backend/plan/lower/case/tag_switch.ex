@@ -2,7 +2,7 @@ defmodule Elmc.Backend.Plan.Lower.Case.TagSwitch do
   @moduledoc false
 
   alias Elmc.Backend.Plan.{Builder, Context}
-  alias Elmc.Backend.Plan.Lower.Case.ArmMerge
+  alias Elmc.Backend.Plan.Lower.Case.{ArmMerge, GuardedSwitch}
   alias Elmc.Backend.Plan.Lower.{Expr, PatternBind}
   alias Elmc.Backend.Plan.Types
   alias Elmc.Backend.SizeProfile
@@ -192,150 +192,21 @@ defmodule Elmc.Backend.Plan.Lower.Case.TagSwitch do
     end
   end
 
+  # Same outer tag, different nested payloads (e.g. Scene3d `UnlitMaterial _ (Constant …)`
+  # vs `UnlitMaterial UseMeshUvs (Texture { data })`). Discriminant-only inner switches
+  # drop bindings in non-discriminant columns; GuardedSwitch matches/binds full patterns.
   defp compile_nested_duplicate_tag_arm(branches, subj_reg, ctx, b) do
     branch_ctx = Context.for_branch_arm(ctx)
     representative = hd(branches)
     tag = pattern_tag(representative.pattern)
+    subject_name = "__dup_tag_subject__"
+    subject = %{op: :var, name: subject_name}
+    ctx1 = Context.put_local(branch_ctx, subject_name, subj_reg)
+    b1 = Builder.bind_local(b, subject_name, subj_reg)
 
-    outer_pattern = %{
-      kind: :constructor,
-      name: Map.get(representative.pattern, :name),
-      resolved_name: Map.get(representative.pattern, :resolved_name),
-      tag: tag,
-      arg_pattern: outer_bind_arg_pattern(branches)
-    }
-
-    with {:ok, bind_ctx, b1} <- branch_ctx_for_pattern(branch_ctx, outer_pattern, subj_reg, b),
-         inner_name = inner_switch_subject_name(),
-         inner_reg when is_integer(inner_reg) <- Context.local_reg(bind_ctx, inner_name),
-         inner_branches = inner_branches_from_duplicates(branches),
-         {:ok, reg, b2} <-
-           compile_inner_branches_switch(inner_branches, inner_reg, inner_name, bind_ctx, b1) do
-      {:ok, reg, tag, b2}
-    else
+    case GuardedSwitch.compile(subject, branches, ctx1, b1) do
+      {:ok, reg, b2} when is_integer(tag) -> {:ok, reg, tag, b2}
       _ -> :unsupported
-    end
-  end
-
-  defp compile_inner_branches_switch(branches, inner_reg, inner_name, ctx, b) do
-    inner_subject = %{op: :var, name: inner_name}
-
-    {ctx1, b1} =
-      Enum.reduce(branches, {ctx, b}, fn branch, {c, bb} ->
-        case Map.get(branch, :catch_all_var) do
-          name when is_binary(name) ->
-            c1 = Context.put_local(c, name, inner_reg)
-            {c1, Builder.bind_local(bb, name, inner_reg)}
-
-          _ ->
-            {c, bb}
-        end
-      end)
-
-    branches_clean = Enum.map(branches, &Map.drop(&1, [:catch_all_var]))
-    compile(inner_subject, branches_clean, ctx1, b1)
-  end
-
-  defp outer_bind_arg_pattern(branches) do
-    lists =
-      branches
-      |> Enum.map(&tuple_elements_from_ctor_pattern/1)
-      |> Enum.reject(&is_nil/1)
-
-    case lists do
-      [] ->
-        nil
-
-      [first | _] = lists ->
-        width = length(first)
-        discriminant_idx = tuple_discriminant_index(lists)
-
-        elements =
-          for idx <- 0..(width - 1) do
-            column = Enum.map(lists, &Enum.at(&1, idx))
-            merge_tuple_column(column, idx, discriminant_idx)
-          end
-
-        %{kind: :tuple, elements: elements}
-    end
-  end
-
-  defp tuple_elements_from_ctor_pattern(%{pattern: %{arg_pattern: %{kind: :tuple, elements: elements}}})
-       when is_list(elements),
-       do: elements
-
-  defp tuple_elements_from_ctor_pattern(_), do: nil
-
-  defp tuple_discriminant_index(lists) do
-    width = lists |> hd() |> length()
-
-    Enum.find_value(0..(width - 1), fn idx ->
-      kinds =
-        lists
-        |> Enum.map(fn elements -> Enum.at(elements, idx) |> Map.get(:kind) end)
-        |> Enum.uniq()
-
-      if :constructor in kinds and (:var in kinds or :wildcard in kinds), do: idx
-    end) || max(width - 1, 0)
-  end
-
-  defp merge_tuple_column(column, idx, discriminant_idx) do
-    if idx == discriminant_idx do
-      %{kind: :var, name: inner_switch_subject_name()}
-    else
-      case Enum.find(column, &match?(%{kind: :var, name: name} when is_binary(name), &1)) do
-        %{kind: :var, name: name} -> %{kind: :var, name: name}
-        _ -> %{kind: :wildcard}
-      end
-    end
-  end
-
-  defp inner_switch_subject_name, do: "__inner_switch_subject__"
-
-  defp inner_branches_from_duplicates(branches) do
-    discriminant_idx =
-      branches
-      |> Enum.map(&tuple_elements_from_ctor_pattern/1)
-      |> Enum.reject(&is_nil/1)
-      |> then(fn lists ->
-        if lists == [], do: 0, else: tuple_discriminant_index(lists)
-      end)
-
-    {ctor_branches, default_branches} =
-      Enum.split_with(branches, fn branch ->
-        match?(%{kind: :constructor}, inner_discriminant_pattern(branch, discriminant_idx))
-      end)
-
-    ctor_arms =
-      Enum.map(ctor_branches, fn branch ->
-        %{branch | pattern: inner_discriminant_pattern(branch, discriminant_idx)}
-      end)
-
-    default_arms =
-      Enum.map(default_branches, fn branch ->
-        var_name = inner_discriminant_var_name(branch, discriminant_idx)
-
-        branch
-        |> Map.put(:pattern, %{kind: :wildcard})
-        |> then(fn b -> if var_name, do: Map.put(b, :catch_all_var, var_name), else: b end)
-      end)
-
-    ctor_arms ++ default_arms
-  end
-
-  defp inner_discriminant_pattern(branch, idx) do
-    branch
-    |> tuple_elements_from_ctor_pattern()
-    |> case do
-      elements when is_list(elements) -> Enum.at(elements, idx)
-      _ -> %{kind: :wildcard}
-    end
-  end
-
-  defp inner_discriminant_var_name(branch, idx) do
-    case inner_discriminant_pattern(branch, idx) do
-      %{kind: :var, name: name} when is_binary(name) -> name
-      _ -> nil
     end
   end
 

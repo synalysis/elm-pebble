@@ -65,7 +65,31 @@ export function createRouteBytesRuntime({ fetchFn = typeof fetch !== "undefined"
       return;
     }
     try {
-      siteRootUrl = new URL("./", pageHtmlUrl).href;
+      // Site root is the deploy root that contains every `/$route/content.dat`,
+      // not the directory of the page we happened to boot from. Deep-linking
+      // `/getting-started` must not make later nav fetch
+      // `/getting-started/f-a-q/content.dat`.
+      const url = new URL(pageHtmlUrl);
+      let path = url.pathname.replace(/\/+$/, "") || "";
+      if (path.endsWith("/index.html")) {
+        path = path.slice(0, -"/index.html".length);
+      } else if (path.endsWith(".html")) {
+        path = path.slice(0, -path.split("/").pop().length - 1);
+      }
+      // path is "" (site index) or "/getting-started" (route page) or
+      // "/wasm-web/host" (direct host shell). Route pages and the host shell
+      // walk up to the deploy root; site index stays at origin/.
+      if (path.startsWith("/wasm-web/")) {
+        siteRootUrl = `${url.origin}/`;
+        return;
+      }
+      if (path !== "" && path !== "/") {
+        // Parent of the route folder.
+        siteRootUrl = new URL("..", `${url.origin}${path}/`).href;
+        if (!siteRootUrl.endsWith("/")) siteRootUrl = `${siteRootUrl}/`;
+        return;
+      }
+      siteRootUrl = `${url.origin}/`;
     } catch {
       siteRootUrl = null;
     }
@@ -74,8 +98,13 @@ export function createRouteBytesRuntime({ fetchFn = typeof fetch !== "undefined"
   const siteRootDir = () => {
     if (siteRootUrl) return siteRootUrl;
     if (typeof document === "undefined") return null;
-    const base = document.baseURI || window.location.href;
-    return base.replace(/\/[^/]*$/, "/");
+    // Never derive from the current route path — trailing `/getting-started/`
+    // would otherwise prefix every content.dat fetch.
+    try {
+      return `${new URL(document.baseURI || window.location.href).origin}/`;
+    } catch {
+      return null;
+    }
   };
 
   const lookup = async (path) => {
@@ -92,6 +121,19 @@ export function createRouteBytesRuntime({ fetchFn = typeof fetch !== "undefined"
     return null;
   };
 
+  /** Like lookup but always refreshes from the runtime fetcher (SPA remount). */
+  const lookupFresh = async (path) => {
+    const key = normalizeRoutePath(path);
+    if (runtimeFetcher) {
+      const fetched = await runtimeFetcher(key);
+      if (fetched) {
+        staticRoutes.set(key, fetched);
+        return fetched;
+      }
+    }
+    return staticRoutes.get(key) ?? null;
+  };
+
   const fetchFromHtmlUrl = async (htmlUrl) => {
     if (!fetchFn || !htmlUrl) return null;
     try {
@@ -104,8 +146,48 @@ export function createRouteBytesRuntime({ fetchFn = typeof fetch !== "undefined"
     }
   };
 
+  /** Parse content.dat frozen-views prefix into window.__ELM_PAGES_FROZEN_VIEWS__. */
+  const applyFrozenViewsFromContentDat = (buffer) => {
+    if (typeof window === "undefined" || !buffer || buffer.byteLength < 4) return;
+    try {
+      const view = new DataView(buffer.buffer, buffer.byteOffset, buffer.byteLength);
+      const frozenLen = view.getUint32(0, false);
+      if (frozenLen < 0 || 4 + frozenLen > buffer.byteLength) return;
+      const frozenBytes = new Uint8Array(buffer.buffer, buffer.byteOffset + 4, frozenLen);
+      const frozenJson = new TextDecoder().decode(frozenBytes);
+      window.__ELM_PAGES_FROZEN_VIEWS__ = JSON.parse(frozenJson);
+    } catch (_err) {
+      /* ignore malformed prefix — Elm decoder still gets the full buffer */
+    }
+  };
+
+  /** elm-pages SPA contract: `${origin}${path}/content.dat` (full buffer for pageDataFromJs). */
+  const fetchFromContentDat = async (path) => {
+    if (!fetchFn) return null;
+    const dir = siteRootDir();
+    if (!dir) return null;
+    const suffix = path === "/" ? "content.dat" : `${path.slice(1)}/content.dat`;
+    const url = `${dir}${suffix}`;
+    try {
+      const response = await fetchFn(url);
+      if (!response.ok) return null;
+      const buffer = await response.arrayBuffer();
+      if (!buffer || buffer.byteLength === 0) return null;
+      const bytes = new Uint8Array(buffer);
+      applyFrozenViewsFromContentDat(bytes);
+      return bytes;
+    } catch (_err) {
+      return null;
+    }
+  };
+
   const defaultRuntimeFetcher = async (path) => {
-    if (!fetchFn || typeof document === "undefined") return null;
+    if (!fetchFn) return null;
+    // Prefer content.dat (same payload elm-pages sends on FetchFrozenViews).
+    const fromDat = await fetchFromContentDat(path);
+    if (fromDat) return fromDat;
+
+    if (typeof document === "undefined") return null;
     const dir = siteRootDir();
     if (!dir) return null;
     const candidates = [
@@ -125,8 +207,10 @@ export function createRouteBytesRuntime({ fetchFn = typeof fetch !== "undefined"
     setRuntimeFetcher,
     setSiteRootFromPageHtml,
     lookup,
+    lookupFresh,
     normalizeRoutePath,
     defaultRuntimeFetcher,
+    applyFrozenViewsFromContentDat,
     ELM_PAGES_BYTES_ELEMENT_ID,
   };
 }

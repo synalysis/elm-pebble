@@ -19,17 +19,23 @@ Right 170 pow.
 Left 180 shl shr.
 Left 190 apply_left.
 Left 200 pipe_right pipe_dot pipe_eq.
+%% `app_expr` precedence (below FIRST(primary) tokens) makes
+%% `pow_expr -> app_expr` lose to juxtaposition shifts.
+Left 205 app_expr.
 Unary 210 primary.
 Left 220 case_sep.
 Left 221 newline.
 Left 222 indent.
 Left 223 dedent.
 Left 225 field_accessor.
+%% FIRST(primary) tokens for application shift/reduce; must outrank
+%% `app_expr` so juxtaposition wins (same resolution yecc defaulted to).
+Left 230 bslash case_kw if_kw let_kw lbrace lbracket lparen.
 
 Rootsymbol pipe_right_expr.
-%% Shift/reduce ambiguities (pipes, composition, field access, case) are resolved
-%% by the precedence declarations above.
-Expect 11.
+%% Pipe/composition/field-access/case ambiguities are resolved by the
+%% precedence declarations above (not counted as conflicts).
+Expect 0.
 
 pipe_right_expr -> let_expr : '$1'.
 pipe_right_expr -> if_expr : '$1'.
@@ -106,18 +112,8 @@ let_binding -> lbrace pattern_record_fields rbrace eq newline pipe_right_expr :
   {pattern_bind, build_pattern_record('$2'), '$6'}.
 let_binding -> lbrace pattern_record_fields rbrace eq newline indent pipe_right_expr dedent :
   {pattern_bind, build_pattern_record('$2'), '$7'}.
-let_binding -> lparen wildcard comma lower_qid rparen eq pipe_right_expr :
-  {pattern_bind, build_pattern_tuple(#{kind => wildcard}, build_pattern_var(token_value('$4'))), '$7'}.
-let_binding -> lparen lower_qid comma wildcard rparen eq pipe_right_expr :
-  {pattern_bind, build_pattern_tuple(build_pattern_var(token_value('$2')), #{kind => wildcard}), '$7'}.
-let_binding -> lparen wildcard comma wildcard rparen eq pipe_right_expr :
-  {pattern_bind, build_pattern_tuple(#{kind => wildcard}, #{kind => wildcard}), '$7'}.
-let_binding -> lparen lower_qid comma wildcard comma wildcard rparen eq pipe_right_expr :
-  {pattern_bind, build_pattern_tuple(build_pattern_var(token_value('$2')), build_pattern_tuple(#{kind => wildcard}, #{kind => wildcard})), '$9'}.
-let_binding -> lparen wildcard comma lower_qid comma wildcard rparen eq pipe_right_expr :
-  {pattern_bind, build_pattern_tuple(#{kind => wildcard}, build_pattern_tuple(build_pattern_var(token_value('$4')), #{kind => wildcard})), '$9'}.
-let_binding -> lparen wildcard comma wildcard comma lower_qid rparen eq pipe_right_expr :
-  {pattern_bind, build_pattern_tuple(#{kind => wildcard}, build_pattern_tuple(#{kind => wildcard}, build_pattern_var(token_value('$6')))), '$9'}.
+%% Parenthesized / tuple let bindings go through `pattern` only — specialized
+%% `lower_qid`/`wildcard` forms overlapped and caused shift/reduce conflicts.
 let_binding -> lparen pattern rparen eq pipe_right_expr : {pattern_bind, '$2', '$5'}.
 let_binding -> lparen pattern comma pattern rparen eq pipe_right_expr :
   {pattern_bind, build_pattern_tuple('$2', '$4'), '$7'}.
@@ -125,39 +121,12 @@ let_binding -> lparen pattern comma pattern rparen eq newline pipe_right_expr :
   {pattern_bind, build_pattern_tuple('$2', '$4'), '$8'}.
 let_binding -> lparen pattern comma pattern rparen eq newline indent pipe_right_expr dedent :
   {pattern_bind, build_pattern_tuple('$2', '$4'), '$9'}.
-let_binding -> lparen lower_qid comma lparen pattern comma pattern rparen rparen eq pipe_right_expr :
-  {pattern_bind,
-    build_pattern_tuple(
-      build_pattern_var(token_value('$2')),
-      build_pattern_tuple('$5', '$7')
-    ),
-    '$11'}.
-let_binding -> lparen lower_qid comma lparen pattern comma pattern rparen rparen eq newline pipe_right_expr :
-  {pattern_bind,
-    build_pattern_tuple(
-      build_pattern_var(token_value('$2')),
-      build_pattern_tuple('$5', '$7')
-    ),
-    '$12'}.
-let_binding -> lparen lower_qid comma lparen pattern comma pattern rparen rparen eq newline indent pipe_right_expr dedent :
-  {pattern_bind,
-    build_pattern_tuple(
-      build_pattern_var(token_value('$2')),
-      build_pattern_tuple('$5', '$7')
-    ),
-    '$13'}.
-let_binding -> lparen lower_qid comma lower_qid rparen eq pipe_right_expr :
-  {tuple2_bind, token_value('$2'), token_value('$4'), '$7'}.
-let_binding -> lparen lower_qid comma lower_qid rparen eq newline pipe_right_expr :
-  {tuple2_bind, token_value('$2'), token_value('$4'), '$8'}.
-let_binding -> lparen lower_qid comma lower_qid rparen eq newline indent pipe_right_expr dedent :
-  {tuple2_bind, token_value('$2'), token_value('$4'), '$9'}.
-let_binding -> lparen lower_qid comma lower_qid comma lower_qid rparen eq pipe_right_expr :
-  {tuple3_bind, token_value('$2'), token_value('$4'), token_value('$6'), '$9'}.
-let_binding -> lparen lower_qid comma lower_qid comma lower_qid rparen eq newline pipe_right_expr :
-  {tuple3_bind, token_value('$2'), token_value('$4'), token_value('$6'), '$10'}.
-let_binding -> lparen lower_qid comma lower_qid comma lower_qid rparen eq newline indent pipe_right_expr dedent :
-  {tuple3_bind, token_value('$2'), token_value('$4'), token_value('$6'), '$11'}.
+let_binding -> lparen pattern comma pattern comma pattern rparen eq pipe_right_expr :
+  {pattern_bind, build_pattern_tuple('$2', build_pattern_tuple('$4', '$6')), '$9'}.
+let_binding -> lparen pattern comma pattern comma pattern rparen eq newline pipe_right_expr :
+  {pattern_bind, build_pattern_tuple('$2', build_pattern_tuple('$4', '$6')), '$10'}.
+let_binding -> lparen pattern comma pattern comma pattern rparen eq newline indent pipe_right_expr dedent :
+  {pattern_bind, build_pattern_tuple('$2', build_pattern_tuple('$4', '$6')), '$11'}.
 let_binding -> lparen pattern rparen eq newline indent pipe_right_expr dedent : {pattern_bind, '$2', '$7'}.
 let_binding -> lparen pattern rparen eq newline pipe_right_expr : {pattern_bind, '$2', '$6'}.
 
@@ -268,23 +237,7 @@ lambda_arg -> lower_qid : token_value('$1').
 lambda_arg -> wildcard : <<"_">>.
 lambda_arg -> lparen rparen : <<"unitArg">>.
 lambda_arg -> lbrace pattern_record_fields rbrace : {record, '$2'}.
-lambda_arg -> lparen wildcard comma pattern rparen :
-  {pattern, build_pattern_tuple(#{kind => wildcard}, '$4')}.
-lambda_arg -> lparen pattern comma wildcard rparen :
-  {pattern, build_pattern_tuple('$2', #{kind => wildcard})}.
-lambda_arg -> lparen lower_qid comma wildcard rparen : {tuple2_wild_right, token_value('$2')}.
-lambda_arg -> lparen wildcard comma lower_qid rparen : {tuple2_wild_left, token_value('$4')}.
-lambda_arg -> lparen lower_qid comma lower_qid rparen : {tuple2, token_value('$2'), token_value('$4')}.
-lambda_arg -> lparen lower_qid comma lower_qid comma lower_qid rparen :
-  {tuple3, token_value('$2'), token_value('$4'), token_value('$6')}.
-lambda_arg -> lparen wildcard comma lower_qid comma lower_qid rparen :
-  {tuple3_wild_left, token_value('$4'), token_value('$6')}.
-lambda_arg -> lparen lower_qid comma wildcard comma lower_qid rparen :
-  {tuple3_wild_middle, token_value('$2'), token_value('$6')}.
-lambda_arg -> lparen lower_qid comma lower_qid comma wildcard rparen :
-  {tuple3_wild_right, token_value('$2'), token_value('$4')}.
-lambda_arg -> lparen lower_qid comma wildcard comma wildcard rparen :
-  {tuple3_wild_only_first, token_value('$2')}.
+%% Tuple / nested args use `pattern` only (avoids shift/reduce vs lower_qid).
 lambda_arg -> lparen pattern comma pattern rparen :
   {pattern, build_pattern_tuple('$2', '$4')}.
 lambda_arg -> lparen pattern comma pattern comma pattern rparen :
@@ -501,12 +454,36 @@ let_binding_entry({Name, ValueExpr}) when is_binary(Name) ->
   #{kind => name, name => Name, value => ValueExpr};
 let_binding_entry({discard_bind, ValueExpr}) ->
   #{kind => discard, value => ValueExpr};
-let_binding_entry({tuple2_bind, Left, Right, ValueExpr}) ->
-  #{kind => tuple2, names => [Left, Right], value => ValueExpr};
-let_binding_entry({tuple3_bind, Left, Middle, Right, ValueExpr}) ->
-  #{kind => tuple3, names => [Left, Middle, Right], value => ValueExpr};
 let_binding_entry({pattern_bind, Pattern, ValueExpr}) ->
-  #{kind => pattern, pattern => Pattern, value => ValueExpr}.
+  case simple_tuple_var_names(Pattern) of
+    {ok, [Left, Right]} ->
+      #{kind => tuple2, names => [Left, Right], value => ValueExpr};
+    {ok, [Left, Middle, Right]} ->
+      #{kind => tuple3, names => [Left, Middle, Right], value => ValueExpr};
+    _ ->
+      #{kind => pattern, pattern => Pattern, value => ValueExpr}
+  end.
+
+%% Recover `(a, b)` / `(a, b, c)` name tuples from pattern binds so expansion
+%% can keep using Tuple.first/second projections.
+simple_tuple_var_names(#{kind := tuple, elements := [Left, Right]}) ->
+  case {simple_pattern_var_name(Left), simple_pattern_var_name(Right)} of
+    {{ok, L}, {ok, R}} -> {ok, [L, R]};
+    {{ok, L}, error} ->
+      case simple_tuple_var_names(Right) of
+        {ok, [M, R]} -> {ok, [L, M, R]};
+        _ -> error
+      end;
+    _ ->
+      error
+  end;
+simple_tuple_var_names(_) ->
+  error.
+
+simple_pattern_var_name(#{kind := var, name := Name}) when is_binary(Name) ->
+  {ok, Name};
+simple_pattern_var_name(_) ->
+  error.
 
 build_if(CondExpr, ThenExpr, ElseExpr) ->
   #{op => 'if', 'cond' => CondExpr, then_expr => ThenExpr, else_expr => ElseExpr}.
@@ -645,83 +622,16 @@ normalize_lambda_args([{pattern, Pattern} | Rest], Counter, Acc) ->
       1 -> <<"patternArg">>;
       _ -> list_to_binary("patternArg" ++ integer_to_list(Counter))
     end,
-  normalize_lambda_args(Rest, Counter + 1, [{pattern, Placeholder, Pattern} | Acc]);
-normalize_lambda_args([{tuple2_wild_right, Left} | Rest], Counter, Acc) ->
-  Placeholder =
-    case Counter of
-      1 -> <<"tupleArg">>;
-      _ -> list_to_binary("tupleArg" ++ integer_to_list(Counter))
+  Spec =
+    case simple_tuple_var_names(Pattern) of
+      {ok, [Left, Right]} ->
+        {tuple2, Placeholder, Left, Right};
+      {ok, [Left, Middle, Right]} ->
+        {tuple3, Placeholder, Left, Middle, Right};
+      _ ->
+        {pattern, Placeholder, Pattern}
     end,
-  normalize_lambda_args(Rest, Counter + 1, [{tuple2_wild_right, Placeholder, Left} | Acc]);
-normalize_lambda_args([{tuple2_wild_left, Right} | Rest], Counter, Acc) ->
-  Placeholder =
-    case Counter of
-      1 -> <<"tupleArg">>;
-      _ -> list_to_binary("tupleArg" ++ integer_to_list(Counter))
-    end,
-  normalize_lambda_args(Rest, Counter + 1, [{tuple2_wild_left, Placeholder, Right} | Acc]);
-normalize_lambda_args([{tuple2, Left, Right} | Rest], Counter, Acc) ->
-  Placeholder =
-    case Counter of
-      1 -> <<"tupleArg">>;
-      _ -> list_to_binary("tupleArg" ++ integer_to_list(Counter))
-    end,
-  normalize_lambda_args(Rest, Counter + 1, [{tuple2, Placeholder, Left, Right} | Acc]);
-normalize_lambda_args([{tuple3, Left, Middle, Right} | Rest], Counter, Acc) ->
-  Placeholder =
-    case Counter of
-      1 -> <<"tupleArg">>;
-      _ -> list_to_binary("tupleArg" ++ integer_to_list(Counter))
-    end,
-  normalize_lambda_args(
-    Rest,
-    Counter + 1,
-    [{tuple3, Placeholder, Left, Middle, Right} | Acc]
-  );
-normalize_lambda_args([{tuple3_wild_left, Middle, Right} | Rest], Counter, Acc) ->
-  Placeholder =
-    case Counter of
-      1 -> <<"tupleArg">>;
-      _ -> list_to_binary("tupleArg" ++ integer_to_list(Counter))
-    end,
-  normalize_lambda_args(
-    Rest,
-    Counter + 1,
-    [{tuple3_wild_left, Placeholder, Middle, Right} | Acc]
-  );
-normalize_lambda_args([{tuple3_wild_middle, Left, Right} | Rest], Counter, Acc) ->
-  Placeholder =
-    case Counter of
-      1 -> <<"tupleArg">>;
-      _ -> list_to_binary("tupleArg" ++ integer_to_list(Counter))
-    end,
-  normalize_lambda_args(
-    Rest,
-    Counter + 1,
-    [{tuple3_wild_middle, Placeholder, Left, Right} | Acc]
-  );
-normalize_lambda_args([{tuple3_wild_right, Left, Middle} | Rest], Counter, Acc) ->
-  Placeholder =
-    case Counter of
-      1 -> <<"tupleArg">>;
-      _ -> list_to_binary("tupleArg" ++ integer_to_list(Counter))
-    end,
-  normalize_lambda_args(
-    Rest,
-    Counter + 1,
-    [{tuple3_wild_right, Placeholder, Left, Middle} | Acc]
-  );
-normalize_lambda_args([{tuple3_wild_only_first, Left} | Rest], Counter, Acc) ->
-  Placeholder =
-    case Counter of
-      1 -> <<"tupleArg">>;
-      _ -> list_to_binary("tupleArg" ++ integer_to_list(Counter))
-    end,
-  normalize_lambda_args(
-    Rest,
-    Counter + 1,
-    [{tuple3_wild_only_first, Placeholder, Left} | Acc]
-  );
+  normalize_lambda_args(Rest, Counter + 1, [Spec | Acc]);
 normalize_lambda_args([Arg | Rest], Counter, Acc) ->
   normalize_lambda_args(Rest, Counter + 1, [{simple, Arg} | Acc]).
 
@@ -737,16 +647,6 @@ build_lambda_spec({record, Placeholder, Fields}, Body) ->
   build_lambda(Placeholder, ExpandedBody);
 build_lambda_spec({pattern, Placeholder, Pattern}, Body) ->
   ExpandedBody = build_pattern_bind_body(Pattern, Placeholder, Body),
-  build_lambda(Placeholder, ExpandedBody);
-build_lambda_spec({tuple2_wild_right, Placeholder, Left}, Body) ->
-  PlaceholderVar = #{op => var, name => Placeholder},
-  FirstExpr = #{op => qualified_call, target => <<"Tuple.first">>, args => [PlaceholderVar]},
-  ExpandedBody = build_let(Left, FirstExpr, Body),
-  build_lambda(Placeholder, ExpandedBody);
-build_lambda_spec({tuple2_wild_left, Placeholder, Right}, Body) ->
-  PlaceholderVar = #{op => var, name => Placeholder},
-  SecondExpr = #{op => qualified_call, target => <<"Tuple.second">>, args => [PlaceholderVar]},
-  ExpandedBody = build_let(Right, SecondExpr, Body),
   build_lambda(Placeholder, ExpandedBody);
 build_lambda_spec({tuple2, Placeholder, Left, Right}, Body) ->
   PlaceholderVar = #{op => var, name => Placeholder},
@@ -766,35 +666,6 @@ build_lambda_spec({tuple3, Placeholder, Left, Middle, Right}, Body) ->
       FirstExpr,
       build_let(Middle, MiddleExpr, build_let(Right, RightExpr, Body))
     ),
-  build_lambda(Placeholder, ExpandedBody);
-build_lambda_spec({tuple3_wild_left, Placeholder, Middle, Right}, Body) ->
-  PlaceholderVar = #{op => var, name => Placeholder},
-  TailExpr = #{op => qualified_call, target => <<"Tuple.second">>, args => [PlaceholderVar]},
-  MiddleExpr = #{op => qualified_call, target => <<"Tuple.first">>, args => [TailExpr]},
-  RightExpr = #{op => qualified_call, target => <<"Tuple.second">>, args => [TailExpr]},
-  ExpandedBody =
-    build_let(Middle, MiddleExpr, build_let(Right, RightExpr, Body)),
-  build_lambda(Placeholder, ExpandedBody);
-build_lambda_spec({tuple3_wild_middle, Placeholder, Left, Right}, Body) ->
-  PlaceholderVar = #{op => var, name => Placeholder},
-  FirstExpr = #{op => qualified_call, target => <<"Tuple.first">>, args => [PlaceholderVar]},
-  TailExpr = #{op => qualified_call, target => <<"Tuple.second">>, args => [PlaceholderVar]},
-  RightExpr = #{op => qualified_call, target => <<"Tuple.second">>, args => [TailExpr]},
-  ExpandedBody =
-    build_let(Left, FirstExpr, build_let(Right, RightExpr, Body)),
-  build_lambda(Placeholder, ExpandedBody);
-build_lambda_spec({tuple3_wild_right, Placeholder, Left, Middle}, Body) ->
-  PlaceholderVar = #{op => var, name => Placeholder},
-  FirstExpr = #{op => qualified_call, target => <<"Tuple.first">>, args => [PlaceholderVar]},
-  TailExpr = #{op => qualified_call, target => <<"Tuple.second">>, args => [PlaceholderVar]},
-  MiddleExpr = #{op => qualified_call, target => <<"Tuple.first">>, args => [TailExpr]},
-  ExpandedBody =
-    build_let(Left, FirstExpr, build_let(Middle, MiddleExpr, Body)),
-  build_lambda(Placeholder, ExpandedBody);
-build_lambda_spec({tuple3_wild_only_first, Placeholder, Left}, Body) ->
-  PlaceholderVar = #{op => var, name => Placeholder},
-  FirstExpr = #{op => qualified_call, target => <<"Tuple.first">>, args => [PlaceholderVar]},
-  ExpandedBody = build_let(Left, FirstExpr, Body),
   build_lambda(Placeholder, ExpandedBody).
 
 build_record_pattern_lets([], _Placeholder, Body) ->

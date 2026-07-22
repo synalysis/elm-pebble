@@ -108,6 +108,10 @@ ELMC_OUT_DIR="$OUT" "$ROOT/scripts/mix-run-limited.sh" elmc test/support/validat
 if [[ "$SKIP_VERIFY" != "1" && -f "$APP/dist/index.html" ]]; then
   echo "==> wasm page-data probe (Node)"
   node "$ROOT/elmc/test/support/wasm_browser_page_data_probe_runner.mjs" "$OUT"
+  if [[ -f "$APP/dist/all-paths.json" ]]; then
+    echo "==> wasm route content.dat probe (all-paths)"
+    node "$ROOT/elmc/test/support/wasm_route_bytes_content_dat_probe_runner.mjs" "$APP/dist"
+  fi
 fi
 
 # Precompress large transfer targets before optional host minify refreshes .br.

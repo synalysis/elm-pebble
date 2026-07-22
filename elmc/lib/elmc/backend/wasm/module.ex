@@ -3,7 +3,7 @@ defmodule Elmc.Backend.Wasm.Module do
 
   alias Elmc.Backend.Wasm.ClosureRegistry
   alias Elmc.Backend.Wasm.Lower.Function
-  alias Elmc.Backend.Wasm.{FunctionOrder, ImportCollect, ImportSignatures, StubFunctions}
+  alias Elmc.Backend.Wasm.{FunctionOrder, HostKernels, ImportCollect, ImportSignatures, StubFunctions}
   alias Elmc.Backend.Wasm.Types, as: WasmTypes
 
   @type t :: %{
@@ -51,7 +51,9 @@ defmodule Elmc.Backend.Wasm.Module do
         Function.lower_closure(entry.parent_plan, entry.lambda, entry.lambda_index)
       end)
 
-    functions = Enum.map(plans, &Function.lower/1) ++ closure_functions
+    functions =
+      (Enum.map(plans, &Function.lower/1) ++ closure_functions)
+      |> Enum.map(&HostKernels.maybe_override/1)
 
     {functions, closures} =
       if export_all? do

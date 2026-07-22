@@ -19,11 +19,8 @@ defmodule ElmEx.Frontend.BoolOps do
       %{op: :bool_and, left: left, right: right} ->
         expand_bool_and(expand(left), expand(right))
 
-      %{op: _} = map ->
+      map ->
         Map.new(map, fn {key, value} -> {key, expand(value)} end)
-
-      other ->
-        other
     end
   end
 

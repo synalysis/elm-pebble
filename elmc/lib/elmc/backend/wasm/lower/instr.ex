@@ -153,7 +153,7 @@ defmodule Elmc.Backend.Wasm.Lower.Instr do
         emit_unsupported_platform(instr, slots)
 
       :list_cursor_map ->
-        emit_list_cursor_map(instr, slots, rc?)
+        emit_list_cursor_map(instr, slots, rc?, opts)
 
       :html_cmd ->
         emit_web_platform_op(instr, slots, rc?)
@@ -382,27 +382,13 @@ defmodule Elmc.Backend.Wasm.Lower.Instr do
     kind = Map.fetch!(args, :kind)
     lhs = Map.fetch!(args, :lhs)
     rhs = Map.get(args, :rhs)
+    native_dest? = MapSet.member?(Keyword.get(opts, :native_int_only_regs, MapSet.new()), dest_reg)
 
     cond do
-      kind in [:add_vars, :sub_vars, :mul_vars] and is_integer(rhs) and
-          not native_int_binop_operands?(lhs, rhs, opts, MapSet.new()) ->
-        emit_float_binop(float_op_for_kind(kind), lhs, rhs, dest_reg, slots, rc?, opts)
-
-      kind in [:add_const, :sub_const] and not native_int_reg?(opts, lhs, MapSet.new()) ->
-        emit_float_binop(
-          float_op_for_kind(kind),
-          lhs,
-          0,
-          dest_reg,
-          slots,
-          rc?,
-          opts,
-          rhs_is_const: true,
-          const_value: Map.fetch!(args, :value)
-        )
-
-      kind in [:min_vars, :max_vars] and
-          not native_int_binop_operands?(lhs, rhs, opts, MapSet.new()) ->
+      # Int arithmetic must stay on the i32/new_int path. A prior float fallback
+      # for non-native regs broke Int countdown loops (TriangularMesh.gridFaceIndices):
+      # `uIndex0 - 1` became f32.sub and never reached a stable Int zero.
+      kind in [:min_vars, :max_vars] and not native_int_binop_operands?(lhs, rhs, opts, MapSet.new()) ->
         builtin = if kind == :min_vars, do: :basics_min, else: :basics_max
 
         emit_runtime_call(
@@ -451,15 +437,13 @@ defmodule Elmc.Backend.Wasm.Lower.Instr do
               int_const(0)
           end
 
-        [set_reg(dest_reg, expr, slots)]
+        if native_dest? do
+          [set_reg(dest_reg, expr, slots)]
+        else
+          emit_runtime_call(:new_int, [expr], dest_reg, slots, rc?, opts)
+        end
     end
   end
-
-  defp float_op_for_kind(:add_vars), do: :add
-  defp float_op_for_kind(:add_const), do: :add
-  defp float_op_for_kind(:sub_vars), do: :sub
-  defp float_op_for_kind(:sub_const), do: :sub
-  defp float_op_for_kind(:mul_vars), do: :mul
 
   defp int_operand_wat(reg, slots, opts) do
     reg_expr = WasmTypes.sexpr("local.get", [Slots.reg_name(slots, reg)])
@@ -537,6 +521,22 @@ defmodule Elmc.Backend.Wasm.Lower.Instr do
         right_wat = bool_scalar_operand_wat(right_reg, slots, opts)
         [set_reg(dest_reg, binop(pred, left_wat, right_wat), slots)]
 
+      {:float_boxed, _} ->
+        pred =
+          case kind do
+            :eq -> "f32.eq"
+            :neq -> "f32.ne"
+            :gt -> "f32.gt"
+            :gte -> "f32.ge"
+            :lt -> "f32.lt"
+            :lte -> "f32.le"
+            _ -> "f32.eq"
+          end
+
+        left_wat = float_operand_wat(left_reg, slots, opts)
+        right_wat = float_operand_wat(right_reg, slots, opts)
+        [set_reg(dest_reg, binop(pred, left_wat, right_wat), slots)]
+
       _ ->
         pred =
           case kind do
@@ -550,6 +550,19 @@ defmodule Elmc.Backend.Wasm.Lower.Instr do
           end
 
         [set_reg(dest_reg, binop(pred, left, right), slots)]
+    end
+  end
+
+  # Raw int consts (e.g. `0` in `stripIndex == 0`) must convert, not as_float —
+  # handle id 0 is null and other small ints can alias live handles.
+  defp float_operand_wat(reg, slots, opts) do
+    reg_expr = WasmTypes.sexpr("local.get", [Slots.reg_name(slots, reg)])
+
+    if raw_scalar_int_operand?(opts, reg, MapSet.new()) do
+      WasmTypes.sexpr("f32.convert_i32_s", [" ", format_operand(reg_expr)])
+    else
+      bits = call_import("runtime.as_float", [reg_expr])
+      WasmTypes.sexpr("f32.reinterpret_i32", [" ", format_operand(bits)])
     end
   end
 
@@ -678,8 +691,9 @@ defmodule Elmc.Backend.Wasm.Lower.Instr do
     prep ++ emit_runtime_call(:maybe_just_payload, reg_exprs, dest_reg, slots, rc?, opts)
   end
 
-  defp emit_call_runtime(%{dest: dest_reg, args: %{builtin: id, args: args} = args_map}, slots, rc?, opts) do
-    {reg_exprs, prep} = build_runtime_call_args(id, args || [], slots, opts)
+  defp emit_call_runtime(%{dest: dest_reg, args: %{builtin: id} = args_map}, slots, rc?, opts) do
+    call_args = Map.get(args_map, :args) || []
+    {reg_exprs, prep} = build_runtime_call_args(id, call_args, slots, opts)
     literal = Map.get(args_map, :literal)
     c_expr = Map.get(args_map, :c_expr)
 
@@ -687,11 +701,45 @@ defmodule Elmc.Backend.Wasm.Lower.Instr do
       cond do
         id == :new_float and is_number(literal) -> [float32_bits_const(literal)]
         literal != nil and is_integer(literal) -> [int_const(literal)]
-        c_expr != nil -> [int_const(resolve_c_expr_int(c_expr) |> elem_or(0))]
+        is_binary(c_expr) or is_integer(c_expr) -> [c_expr_int_wat(c_expr, opts)]
         true -> []
       end
 
     prep ++ emit_runtime_call(id, reg_exprs ++ extra, dest_reg, slots, rc?, opts)
+  end
+
+  defp c_expr_int_wat(expr, opts) do
+    case resolve_c_expr_int(expr) do
+      {:ok, n} ->
+        int_const(n)
+
+      :error when is_binary(expr) ->
+        # Native-int ABI params are boxed via `new_int` + C param name; map back to `$paramN`.
+        case param_index_for_c_expr(expr, opts) do
+          {:ok, idx} -> WasmTypes.sexpr("local.get", [WasmTypes.ident("param#{idx}")])
+          :error -> int_const(0)
+        end
+
+      :error ->
+        int_const(0)
+    end
+  end
+
+  defp param_index_for_c_expr(name, opts) when is_binary(name) do
+    case Keyword.get(opts, :parent_plan) do
+      %{params: params} when is_list(params) ->
+        idx =
+          Enum.find_index(params, fn
+            %{name: ^name} -> true
+            ^name -> true
+            _ -> false
+          end)
+
+        if is_integer(idx), do: {:ok, idx}, else: :error
+
+      _ ->
+        :error
+    end
   end
 
   defp emit_call_fn(%{dest: dest_reg, args: %{module: mod, name: name, args: args}}, slots, fn_table, rc?, _opts) do
@@ -1052,17 +1100,29 @@ defmodule Elmc.Backend.Wasm.Lower.Instr do
     emit_runtime_call(:forward_ref_load_captured, [ref_name(ref)], dest_reg, slots, rc?)
   end
 
-  defp emit_list_cursor_map(%{dest: dest_reg, args: args}, slots, rc?) do
+  defp emit_list_cursor_map(%{dest: dest_reg, args: args}, slots, rc?, opts) do
+    start_wat = cursor_bound_wat(args, :start, :start_literal?, slots)
+    end_wat = cursor_bound_wat(args, :end, :end_literal?, slots)
+    parent = Keyword.fetch!(opts, :parent_plan)
+    registry = Process.get(:elmc_wasm_closure_registry)
+    global_idx = ClosureRegistry.global_index(registry, parent, Map.fetch!(args, :lambda_idx))
+
     emit_runtime_call(
       :list_cursor_map,
-      [
-        Slots.reg_name(slots, Map.fetch!(args, :list)),
-        int_const(Map.fetch!(args, :lambda_idx))
-      ],
+      [start_wat, end_wat, int_const(global_idx)],
       dest_reg,
       slots,
-      rc?
+      rc?,
+      opts
     )
+  end
+
+  defp cursor_bound_wat(args, key, literal_key, slots) do
+    if Map.get(args, literal_key) do
+      int_const(Map.fetch!(args, key))
+    else
+      Slots.reg_name(slots, Map.fetch!(args, key))
+    end
   end
 
   defp emit_unsupported_platform(%{dest: dest_reg, op: op}, slots) do
@@ -1685,8 +1745,8 @@ defmodule Elmc.Backend.Wasm.Lower.Instr do
           %{op: :int_arith, args: args} ->
             native_int_arith_result?(args, opts, visited)
 
-          %{op: :compare} ->
-            true
+          %{op: :compare, args: args} ->
+            compare_produces_raw_scalar_int?(args, opts)
 
           %{op: :phi, args: %{native_int_phi: true}} ->
             true
@@ -1743,8 +1803,8 @@ defmodule Elmc.Backend.Wasm.Lower.Instr do
           %{op: :int_arith, args: args} ->
             native_int_arith_result?(args, opts, visited)
 
-          %{op: :compare} ->
-            true
+          %{op: :compare, args: args} ->
+            compare_produces_raw_scalar_int?(args, opts)
 
           %{op: :phi, args: %{native_int_phi: true}} ->
             true
@@ -1768,6 +1828,15 @@ defmodule Elmc.Backend.Wasm.Lower.Instr do
         end
     end
   end
+
+  # String equality writes a boxed Int handle via runtime.string_equals. Callers
+  # such as basics_not must pass that handle through — not re-box local.get as
+  # new_int(handle_id), which made `item /= ""` always false for non-empty paths.
+  defp compare_produces_raw_scalar_int?(args, opts) when is_map(args) do
+    effective_compare_mode(args, opts) != :string
+  end
+
+  defp compare_produces_raw_scalar_int?(_, _), do: true
 
   defp defining_plan_instr(%FunctionPlan{blocks: blocks}, reg) when is_integer(reg) do
     blocks

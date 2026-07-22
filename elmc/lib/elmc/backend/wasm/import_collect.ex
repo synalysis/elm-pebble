@@ -112,6 +112,12 @@ defmodule Elmc.Backend.Wasm.ImportCollect do
     end
   end
 
+  defp collect_instr(%{op: :compare, args: %{mode: :float_boxed}}, acc),
+    do: put_import_elem(acc, "runtime.as_float", 1)
+
+  defp collect_instr(%{op: :compare, args: %{mode: :int_boxed}}, acc),
+    do: put_import_elem(acc, "runtime.as_int", 1)
+
   defp collect_instr(%{op: :test_string_literal}, acc),
     do: put_import_elem(acc, RuntimeImports.import_name(:string_equals_literal), 3)
 
@@ -131,7 +137,8 @@ defmodule Elmc.Backend.Wasm.ImportCollect do
     do: put_import_elem(acc, RuntimeImports.import_name(:forward_ref_load_captured), 2)
 
   defp collect_instr(%{op: :list_cursor_map}, acc),
-    do: put_import_elem(acc, RuntimeImports.import_name(:list_cursor_map), 3)
+    # (out_ptr, start, end, lambda_idx)
+    do: put_import_elem(acc, RuntimeImports.import_name(:list_cursor_map), 4)
 
   defp collect_instr(%{op: :html_cmd, args: %{params: params}}, {imports, arities}) do
     argc = params |> List.wrap() |> length()
@@ -197,8 +204,7 @@ defmodule Elmc.Backend.Wasm.ImportCollect do
   defp collect_instr(%{op: :int_arith}, acc) do
     acc
     |> put_import_elem("runtime.as_int", 1)
-    |> put_import_elem("runtime.as_float", 1)
-    |> put_import_elem(RuntimeImports.import_name(:new_float), 2)
+    |> put_import_elem(RuntimeImports.import_name(:new_int), 2)
   end
 
   defp collect_instr(%{op: :publish, dest: :fn_out}, acc),

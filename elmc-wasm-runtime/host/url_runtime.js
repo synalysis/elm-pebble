@@ -1,8 +1,11 @@
 /**
  * Browser URL parsing for Elm Browser.application / Navigation.
  *
- * Elm Url record: protocol, host, port_, path, query, fragment
- * Protocol: Http = 0, Https = 1 (Elm.Kernel.Url tags)
+ * Url record field order matches elm/url declaration order:
+ *   0 protocol, 1 host, 2 port_, 3 path, 4 query, 5 fragment
+ *
+ * Url.path is a String (e.g. "/wasm"), not a segment list. Protocol tags
+ * come from the WASM constructor_tags manifest (Url.Http / Url.Https).
  */
 
 export function createUrlRuntime(deps) {
@@ -48,19 +51,6 @@ export function createUrlRuntime(deps) {
     return newIntHandle(tag);
   };
 
-  const pathFromSegments = (pathname) => {
-    const raw = pathname || "/";
-    if (raw === "/") return 0;
-    const parts = raw.split("/").filter((s) => s !== "");
-    if (parts.length === 0) return 0;
-    let list = 0;
-    for (let i = parts.length - 1; i >= 0; i--) {
-      const seg = newStringHandle(parts[i]);
-      list = allocHandle({ tag: TAG_TUPLE2, first: seg, second: list | 0 });
-    }
-    return list;
-  };
-
   const pathStringFromLocation = (pathname) => {
     const raw = pathname || "/";
     return raw.startsWith("/") ? raw : `/${raw}`;
@@ -71,8 +61,10 @@ export function createUrlRuntime(deps) {
       port && port !== "" && port !== "80" && port !== "443"
         ? maybeJust(newIntHandle(Number.parseInt(port, 10) || 0))
         : maybeNothing();
-    const queryMaybe = search && search.length > 1 ? maybeJust(newStringHandle(search.slice(1))) : maybeNothing();
-    const fragmentMaybe = hash && hash.length > 1 ? maybeJust(newStringHandle(hash.slice(1))) : maybeNothing();
+    const queryMaybe =
+      search && search.length > 1 ? maybeJust(newStringHandle(search.slice(1))) : maybeNothing();
+    const fragmentMaybe =
+      hash && hash.length > 1 ? maybeJust(newStringHandle(hash.slice(1))) : maybeNothing();
 
     return allocHandle({
       tag: TAG_RECORD,
@@ -80,7 +72,7 @@ export function createUrlRuntime(deps) {
         protocolFromString(protocol),
         newStringHandle(host || "localhost"),
         portMaybe,
-        pathFromSegments(pathname),
+        newStringHandle(pathStringFromLocation(pathname)),
         queryMaybe,
         fragmentMaybe,
       ],

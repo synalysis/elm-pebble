@@ -312,6 +312,11 @@ defmodule Elmc.Backend.Plan.Lower.Compare do
       string_compare_pair?(left, right, env) ->
         :string
 
+      # Float == 0 / Float < 1 must unbox — pointer i32.eq on handles never
+      # terminates Scene3d-style countdown loops (`stripIndex == 0`).
+      float_compare_pair?(left, right, env) ->
+        :float_boxed
+
       int_equality_operand?(left, env) and int_equality_operand?(right, env) ->
         :int_boxed
 
@@ -319,6 +324,26 @@ defmodule Elmc.Backend.Plan.Lower.Compare do
         :pointer
     end
   end
+
+  defp float_compare_pair?(left, right, env) do
+    left_float? = float_equality_operand?(left, env)
+    right_float? = float_equality_operand?(right, env)
+    left_num? = numeric_literal_operand?(left)
+    right_num? = numeric_literal_operand?(right)
+
+    (left_float? and (right_float? or right_num?)) or
+      (right_float? and (left_float? or left_num?))
+  end
+
+  defp float_equality_operand?(%{op: :float_literal}, _env), do: true
+
+  defp float_equality_operand?(expr, env) do
+    TypedReturn.expr_type(expr, env) == "Float"
+  end
+
+  defp numeric_literal_operand?(%{op: :int_literal}), do: true
+  defp numeric_literal_operand?(%{op: :float_literal}), do: true
+  defp numeric_literal_operand?(_), do: false
 
   defp boxed_bool_test_expr?(%{op: :runtime_call, function: function}) when is_binary(function) do
     function in [

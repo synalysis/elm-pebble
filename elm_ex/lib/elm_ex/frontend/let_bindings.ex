@@ -13,11 +13,11 @@ defmodule ElmEx.Frontend.LetBindings do
       %{op: :let_bindings, bindings: bindings, in_expr: in_expr} when is_list(bindings) ->
         expand_bindings(bindings, expand(in_expr))
 
-      %{op: _} = map ->
+      map ->
+        # Recurse into every map value — case branches (`%{pattern, expr}`),
+        # patterns, and other non-`:op` nodes — so nested `let` lists inside
+        # branches (Scene3d.toWebGLEntities) are fully desugared.
         Map.new(map, fn {key, value} -> {key, expand(value)} end)
-
-      other ->
-        other
     end
   end
 

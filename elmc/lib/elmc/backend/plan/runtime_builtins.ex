@@ -134,6 +134,7 @@ defmodule Elmc.Backend.Plan.RuntimeBuiltins do
     :list_repeat,
     :list_range,
     :list_map,
+    :list_cursor_map,
     :list_all,
     :list_any,
     :list_filter,

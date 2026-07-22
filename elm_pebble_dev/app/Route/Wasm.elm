@@ -1,6 +1,6 @@
 module Route.Wasm exposing (ActionData, Data, Model, Msg(..), route)
 
-{-| Explains the elmc WASM web compile path and hosts the Elm+Pebble physics demo.
+{-| Explains the elmc WASM web compile path and hosts a WebGL demo via elm-3d-scene.
 -}
 
 import BackendTask exposing (BackendTask)
@@ -8,7 +8,7 @@ import Effect exposing (Effect)
 import FatalError exposing (FatalError)
 import Head
 import Head.Seo as Seo
-import HeroPhysics
+import HeroScene
 import Html exposing (Html, a, code, div, h1, h2, li, p, pre, section, span, text, ul)
 import Html.Attributes exposing (href, rel, target)
 import Pages.Url
@@ -23,12 +23,12 @@ import View exposing (View)
 
 
 type alias Model =
-    { physics : HeroPhysics.Model
+    { scene : HeroScene.Model
     }
 
 
 type Msg
-    = PhysicsMsg HeroPhysics.Msg
+    = SceneMsg HeroScene.Msg
 
 
 type alias RouteParams =
@@ -62,7 +62,7 @@ init :
     -> Shared.Model
     -> ( Model, Effect Msg )
 init _ _ =
-    ( { physics = HeroPhysics.init }
+    ( { scene = HeroScene.init }
     , Effect.none
     )
 
@@ -75,8 +75,8 @@ update :
     -> ( Model, Effect Msg )
 update _ _ msg model =
     case msg of
-        PhysicsMsg physicsMsg ->
-            ( { model | physics = HeroPhysics.update physicsMsg model.physics }
+        SceneMsg sceneMsg ->
+            ( { model | scene = HeroScene.update sceneMsg model.scene }
             , Effect.none
             )
 
@@ -88,7 +88,7 @@ subscriptions :
     -> Model
     -> Sub Msg
 subscriptions _ _ _ model =
-    Sub.map PhysicsMsg (HeroPhysics.subscriptions model.physics)
+    Sub.map SceneMsg (HeroScene.subscriptions model.scene)
 
 
 data : BackendTask FatalError Data
@@ -109,7 +109,7 @@ head _ =
             , dimensions = Nothing
             , mimeType = Nothing
             }
-        , description = "How elmc compiles Elm to WebAssembly for the browser, and what it takes for demos like elm-physics to lower cleanly."
+        , description = "How elmc compiles Elm to WebAssembly for the browser, and a live elm-3d-scene (WebGL) demo."
         , locale = Nothing
         , title = "elmc WASM compile"
         }
@@ -162,18 +162,20 @@ view _ _ model =
                             , dark [ Tw.text_color (gray s300) ]
                             ]
                         ]
-                        [ text "Green Elm “ideas” bounce around a Pebble watch. The simulation uses "
-                        , codeLink "https://package.elm-lang.org/packages/w0rm/elm-physics/6.2.0/" "w0rm/elm-physics"
-                        , text "; rendering is Svg (not WebGL), so it stays on the WASM web surface once plan lowering is complete."
+                        [ text "Live "
+                        , codeLink "https://package.elm-lang.org/packages/ianmackenzie/elm-3d-scene/latest/" "ianmackenzie/elm-3d-scene"
+                        , text " render (WebGL via "
+                        , codeLink "https://package.elm-lang.org/packages/elm-explorations/webgl/latest/" "elm-explorations/webgl"
+                        , text "). A Pebble-like watch wears the Elm tangram (heart) on its face, with orbiting logo-colored spheres — no physics solver, ~16 Hz ticks, so the page stays responsive."
                         ]
                     , div
                         [ classes [ Tw.mt s6, Tw.w_full ] ]
-                        [ HeroPhysics.view model.physics ]
+                        [ Html.map (PagesMsg.fromMsg << SceneMsg) (HeroScene.view model.scene) ]
                     ]
                 , whatIsWasm
                 , howToBuild
                 , supportedSurface
-                , physicsGap
+                , webglGap
                 ]
             ]
         ]
@@ -355,13 +357,13 @@ supportedSurface =
         ]
 
 
-physicsGap : Html msg
-physicsGap =
+webglGap : Html msg
+webglGap =
     section
         [ classes [ Tw.mt s12 ] ]
         [ h2
             [ classes [ Tw.text_n3xl, Tw.font_semibold, Tw.tracking_tight ] ]
-            [ text "Why this demo is not in the nav yet" ]
+            [ text "WASM parity note" ]
         , p
             [ classes
                 [ Tw.mt s4
@@ -370,9 +372,11 @@ physicsGap =
                 , dark [ Tw.text_color (gray s300) ]
                 ]
             ]
-            [ text "Official Elm (elm-pages) runs the animation fine. elmc can emit a WASM module for a minimal elm-physics fixture, but about a dozen Internal/Collision helpers still hit plan-lowering gaps and become missing-callee stubs. Until "
-            , codeInline "stub_functions == []"
-            , text " for that probe (and the site graph), the WASM menu entry stays commented out so we do not advertise a broken parity path."
+            [ text "This live demo runs on official Elm (elm-pages) in the browser. elmc’s WASM web surface covers Html/Svg/VirtualDom well, but "
+            , codeLink "https://package.elm-lang.org/packages/elm-explorations/webgl/latest/" "elm-explorations/webgl"
+            , text " (and therefore "
+            , codeLink "https://package.elm-lang.org/packages/ianmackenzie/elm-3d-scene/latest/" "elm-3d-scene"
+            , text ") is not a parity target yet — expect WebGL canvas/kernel gaps until that layer is lowered."
             ]
         , p
             [ classes
@@ -382,9 +386,9 @@ physicsGap =
                 , dark [ Tw.text_color (gray s400) ]
                 ]
             ]
-            [ text "Probe fixture: "
-            , codeInline "elmc/test/fixtures/wasm_web_physics_hero_project/"
-            , text ". Gate when ready: empty stubs + page-data / browser smoke for this route."
+            [ text "CPU choice on purpose: procedural orbits + "
+            , codeInline "Time.every 64"
+            , text " instead of elm-physics / animation-frame physics, so the rest of the docs page stays snappy."
             ]
         ]
 

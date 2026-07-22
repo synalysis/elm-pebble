@@ -39,7 +39,7 @@ defmodule Elmc.Backend.Plan.Lower.IntCall do
         kind = Map.fetch!(@binary_ops, name)
 
         cond do
-          float_mixture?(left, right) ->
+          float_mixture?(left, right, ctx) ->
             op =
               case name do
                 "__add__" -> :add
@@ -236,10 +236,25 @@ defmodule Elmc.Backend.Plan.Lower.IntCall do
 
   defp proven_native_int_operand?(_, _ctx), do: false
 
-  defp float_mixture?(left, right), do: float_operand?(left) or float_operand?(right)
+  defp float_mixture?(left, right, ctx),
+    do: float_operand?(left, ctx) or float_operand?(right, ctx)
 
-  defp float_operand?(%{op: :float_literal}), do: true
-  defp float_operand?(_), do: false
+  defp float_operand?(%{op: :float_literal}, _ctx), do: true
+
+  defp float_operand?(expr, ctx) do
+    env = type_env(ctx)
+    Elmc.Backend.CCodegen.Native.TypedReturn.expr_type(expr, env) == "Float"
+  end
+
+  defp type_env(%Context{} = ctx) do
+    %{
+      __module__: ctx.module || "Main",
+      __var_types__: ctx.local_types || %{},
+      __program_decls__: ctx.decl_map || %{},
+      __record_field_types__: Process.get(:elmc_record_field_types, %{}),
+      __record_field_kinds__: Process.get(:elmc_record_field_kinds, %{})
+    }
+  end
 
   defp int_operand?(%{op: :int_literal}), do: true
   defp int_operand?(%{op: :bool_literal}), do: true

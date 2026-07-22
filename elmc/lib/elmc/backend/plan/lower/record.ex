@@ -183,11 +183,12 @@ defmodule Elmc.Backend.Plan.Lower.Record do
 
           :none ->
             # Anonymous records that field_access indexes alphabetically (Elm runtime)
-            # must be stored alphabetically. Broader sorting of every anonymous
-            # literal can disagree with declaration-order type-string readers
-            # (empty views). Limit to the arrow-details field set where we know
-            # reads use alphabetical indices (Internal.Svg.Arrow.arrow).
-            if arrow_details_field_set?(names) do
+            # must be stored alphabetically. Sorting *every* anonymous literal can
+            # disagree with declaration-order readers (page-data / empty views).
+            # Sort only field sets we know are read alphabetically:
+            # - Svg.Arrow details (Internal.Svg.Arrow.arrow)
+            # - RouteBuilder local-state handlers (`config.init` at index 0)
+            if arrow_details_field_set?(names) or local_state_handlers_field_set?(names) do
               Enum.sort_by(fields, &to_string(field_name(&1)))
             else
               fields
@@ -256,6 +257,11 @@ defmodule Elmc.Backend.Plan.Lower.Record do
   defp arrow_details_field_set?(names) when is_list(names) do
     MapSet.new(Enum.map(names, &to_string/1)) ==
       MapSet.new(~w(ascent descent end headLeft headRight start))
+  end
+
+  defp local_state_handlers_field_set?(names) when is_list(names) do
+    MapSet.new(Enum.map(names, &to_string/1)) ==
+      MapSet.new(~w(init subscriptions update view))
   end
 
   @doc false
@@ -1201,14 +1207,29 @@ defmodule Elmc.Backend.Plan.Lower.Record do
   # For `{c | lo : b, hi : b}`, prefer a concrete shape that contains every known
   # row field (Extent), not the max index across unrelated shapes that happen to
   # share one name (Box.lo at index 1 colliding with Extent.hi at index 1).
+  #
+  # For singleton rows like `{url | path : String}`, *every* shape that has
+  # `path` matches. Picking the shortest (Payload/Request with path@0) makes
+  # Route.urlToRoute read Url.protocol instead of Url.path — deep links then
+  # init as Index/ErrorPage while view rewrites field 0 and reports Wasm
+  # (Model mismatch). Prefer an exact field-set match, then min-length for
+  # multi-field rows (Extent), else the highest path index (Url/PageUrl @3).
   defp field_index_among_extensible_shapes(field_name, extensible_type, shapes)
        when is_binary(field_name) and is_binary(extensible_type) and is_map(shapes) do
-    known = TypeSignature.extensible_record_field_names(extensible_type)
+    known =
+      extensible_type
+      |> TypeSignature.extensible_record_field_names()
+      |> Enum.map(&to_string/1)
 
     matching =
       shapes
       |> Enum.filter(fn {_key, fields} ->
-        is_list(fields) and known != [] and Enum.all?(known, &(&1 in fields))
+        if is_list(fields) and known != [] do
+          field_names = Enum.map(fields, &to_string/1)
+          Enum.all?(known, fn name -> name in field_names end)
+        else
+          false
+        end
       end)
 
     case matching do
@@ -1216,15 +1237,46 @@ defmodule Elmc.Backend.Plan.Lower.Record do
         max_field_index_among_shapes(field_name, shapes)
 
       candidates ->
-        {key, fields} = Enum.min_by(candidates, fn {_k, f} -> length(f) end)
+        {key, fields} = pick_extensible_shape_candidate(candidates, known, field_name)
 
-        case Enum.find_index(fields, &(&1 == field_name)) do
+        case Enum.find_index(Enum.map(fields, &to_string/1), &(&1 == field_name)) do
           idx when is_integer(idx) ->
             {key, idx}
 
           _ ->
             max_field_index_among_shapes(field_name, shapes)
         end
+    end
+  end
+
+  defp pick_extensible_shape_candidate(candidates, known, field_name) do
+    known_set = MapSet.new(known)
+
+    exact =
+      Enum.filter(candidates, fn {_k, fields} ->
+        MapSet.equal?(MapSet.new(Enum.map(fields, &to_string/1)), known_set)
+      end)
+
+    case exact do
+      [only] ->
+        only
+
+      [_ | _] = many ->
+        Enum.min_by(many, fn {_k, f} -> length(f) end)
+
+      [] when length(known) == 1 ->
+        Enum.max_by(candidates, fn {_k, fields} ->
+          fields
+          |> Enum.map(&to_string/1)
+          |> Enum.find_index(&(&1 == field_name))
+          |> case do
+            idx when is_integer(idx) -> idx
+            _ -> -1
+          end
+        end)
+
+      [] ->
+        Enum.min_by(candidates, fn {_k, f} -> length(f) end)
     end
   end
 

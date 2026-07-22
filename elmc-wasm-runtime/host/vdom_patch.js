@@ -16,6 +16,13 @@ export function createVdomPatchRuntime(deps) {
     TAG_INT,
     attachDomEvent,
     forceLazyHtml,
+    // VirtualDom "custom" node handlers, keyed by renderKey (e.g. "webgl").
+    // Each entry is `{ render(model, facts) -> Node, diff(oldModel, newModel,
+    // domNode) -> Node }`. `model` is a host-only JS object (not a handle
+    // pointer) owned by the TAG_VDOM payload — see webgl_runtime.js. Shared
+    // by reference with rc_runtime.js so handlers registered after this
+    // runtime is constructed still apply.
+    customNodeHandlers = {},
   } = deps;
 
   /** @type {WeakMap<Node, { vdomPtr: number, listeners: Array<{el: Element, type: string, fn: Function}> }>} */
@@ -71,6 +78,14 @@ export function createVdomPatchRuntime(deps) {
     return 0;
   };
 
+  const vdomCustom = (ptr) => {
+    const p = readHandle(resolveHtml(ptr));
+    if (p?.tag !== TAG_VDOM || p.kind !== "custom") return null;
+    // model is a host-side JS object (entities/options handles + cache), not a
+    // handle pointer — never coerce with `| 0`.
+    return { renderKey: p.renderKey, model: p.model, facts: p.facts ?? [] };
+  };
+
   const clearListeners = (node) => {
     const state = domState.get(node);
     if (!state) return;
@@ -99,12 +114,10 @@ export function createVdomPatchRuntime(deps) {
       if (name === "style" && typeof value === "string") {
         el.setAttribute("style", value);
       } else if (attr.kind === "property") {
-        const prop = attr.name;
-        if (prop === "value" || prop === "checked" || prop === "selected") {
-          el[prop] = attr.value;
-        } else {
-          el.setAttribute(prop, attr.value);
-        }
+        // A "property" fact is always a direct JS-property assignment (e.g.
+        // canvas.width/height, input.value/checked) — never setAttribute.
+        // Numeric IDL props (width/height) coerce a numeric string fine.
+        el[attr.name] = attr.value;
       } else if (attr.kind === "event" && attachDomEvent) {
         const fn = attachDomEvent(el, attr, mapperPtr | 0);
         const state = domState.get(el) ?? { vdomPtr: 0, listeners: [] };
@@ -136,6 +149,17 @@ export function createVdomPatchRuntime(deps) {
         return mount(parent, forced.value, mapperPtr);
       }
       return null;
+    }
+
+    if (kind === "custom") {
+      const custom = vdomCustom(resolved);
+      const handler = custom && customNodeHandlers[custom.renderKey];
+      const el = handler ? handler.render(custom.model, custom.facts) : null;
+      if (!el) return null;
+      applyAttrs(el, custom.facts, mapperPtr);
+      if (parent) parent.appendChild(el);
+      domState.set(el, { vdomPtr: resolved | 0, listeners: [] });
+      return el;
     }
 
     if (kind === "document") {
@@ -203,6 +227,34 @@ export function createVdomPatchRuntime(deps) {
         return patch(oldPtr, forced.value, domNode, mapperPtr);
       }
       return domNode;
+    }
+
+    if (newKind === "custom") {
+      const newCustom = vdomCustom(newResolved);
+      const handler = newCustom && customNodeHandlers[newCustom.renderKey];
+      const oldKind = oldPtr ? vdomKind(oldResolved) : null;
+
+      if (
+        handler &&
+        oldKind === "custom" &&
+        vdomCustom(oldResolved)?.renderKey === newCustom.renderKey &&
+        domNode.nodeType === Node.ELEMENT_NODE
+      ) {
+        const oldCustom = vdomCustom(oldResolved);
+        const updated = handler.diff(oldCustom.model, newCustom.model, domNode) || domNode;
+        clearListeners(updated);
+        applyAttrs(updated, newCustom.facts, mapperPtr);
+        return updated;
+      }
+
+      clearListeners(domNode);
+      const parent = domNode.parentNode;
+      const fresh = handler ? handler.render(newCustom.model, newCustom.facts) : null;
+      if (!fresh) return domNode;
+      applyAttrs(fresh, newCustom.facts, mapperPtr);
+      domNode.replaceWith(fresh);
+      domState.set(fresh, { vdomPtr: newResolved | 0, listeners: [] });
+      return fresh;
     }
 
     if (domNode.nodeType !== Node.ELEMENT_NODE) {

@@ -22,6 +22,17 @@ defmodule ElmEx.Frontend.GeneratedExpressionParser do
 
   @spec parse(String.t()) :: {:ok, expr()} | {:error, Types.parse_error_reason()}
   def parse(source) when is_binary(source) do
+    case glsl_literal_expr(source) do
+      {:ok, expr} ->
+        {:ok, expr}
+
+      :error ->
+        parse_non_glsl(source)
+    end
+  end
+
+  @spec parse_non_glsl(source()) :: {:ok, expr()} | {:error, Types.parse_error_reason()}
+  defp parse_non_glsl(source) when is_binary(source) do
     source_for_parse =
       if unbalanced_multiline_string_delimiter?(source),
         do: String.replace(source, "\"\"\"", "\"\""),
@@ -43,6 +54,78 @@ defmodule ElmEx.Frontend.GeneratedExpressionParser do
             end
         end
     end
+  end
+
+  # `[glsl| ... |]` shader literals (elm-explorations/webgl). The body between
+  # the opening `[glsl|` and the first `|]` terminator is opaque GLSL source,
+  # not Elm — it must bypass the normal lex/parse pipeline entirely (comment
+  # stripping, unary-minus rewriting, etc. would corrupt it). Lower to a
+  # `:record_literal` with `src` / `attributes` / `uniforms` fields matching
+  # the runtime shader object shape the WebGL kernel expects, so downstream
+  # record lowering (plan/WASM) needs no new AST op.
+  @glsl_qualifier_precision ~r/(?:highp|mediump|lowp)\s+/u
+
+  @spec glsl_literal_expr(source()) :: {:ok, expr()} | :error
+  defp glsl_literal_expr(source) when is_binary(source) do
+    case extract_glsl_source(String.trim(source)) do
+      {:ok, glsl_src} -> {:ok, build_glsl_record(glsl_src)}
+      :error -> :error
+    end
+  end
+
+  @spec extract_glsl_source(source()) :: {:ok, source()} | :error
+  defp extract_glsl_source("[glsl|" <> rest) do
+    case String.split(rest, "|]", parts: 2) do
+      [glsl_src, tail] ->
+        if String.trim(tail) == "" do
+          {:ok, glsl_src}
+        else
+          :error
+        end
+
+      _ ->
+        :error
+    end
+  end
+
+  defp extract_glsl_source(_source), do: :error
+
+  @spec build_glsl_record(source()) :: expr()
+  defp build_glsl_record(glsl_src) when is_binary(glsl_src) do
+    %{
+      op: :record_literal,
+      fields: [
+        %{name: "src", expr: %{op: :string_literal, value: glsl_src}},
+        %{name: "attributes", expr: glsl_names_record(glsl_src, "attribute")},
+        %{name: "uniforms", expr: glsl_names_record(glsl_src, "uniform")}
+      ]
+    }
+  end
+
+  @spec glsl_names_record(source(), String.t()) :: expr()
+  defp glsl_names_record(glsl_src, keyword) do
+    %{
+      op: :record_literal,
+      fields:
+        glsl_src
+        |> extract_glsl_names(keyword)
+        |> Enum.map(fn name -> %{name: name, expr: %{op: :string_literal, value: name}} end)
+    }
+  end
+
+  @spec extract_glsl_names(source(), String.t()) :: [String.t()]
+  defp extract_glsl_names(glsl_src, keyword) when is_binary(keyword) do
+    pattern =
+      Regex.compile!(
+        "\\b#{keyword}\\s+(?:#{Regex.source(@glsl_qualifier_precision)})?" <>
+          "[A-Za-z_][A-Za-z0-9_]*\\s+" <>
+          "([A-Za-z_][A-Za-z0-9_]*(?:\\s*,\\s*[A-Za-z_][A-Za-z0-9_]*)*)\\s*;"
+      )
+
+    Regex.scan(pattern, glsl_src)
+    |> Enum.flat_map(fn [_full, names] -> String.split(names, ~r/\s*,\s*/u) end)
+    |> Enum.map(&String.trim/1)
+    |> Enum.uniq()
   end
 
   @doc false

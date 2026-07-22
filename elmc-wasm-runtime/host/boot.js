@@ -23,17 +23,40 @@ async function fetchWasmResponse(url, fetchFn) {
   return response;
 }
 
-/** One fetch of index.html → page bytes (+ optional shared HTML for styles). */
+/** Load page bytes (prefer content.dat) plus HTML for style injection. */
 async function loadPageBundle(htmlUrl, fetchFn) {
   if (!htmlUrl) {
     return { html: null, pageBytes: null };
   }
-  const response = await fetchFn(htmlUrl);
-  if (!response.ok) {
-    return { html: null, pageBytes: null };
+
+  let contentDatUrl = null;
+  try {
+    const html = new URL(htmlUrl);
+    if (html.pathname.endsWith("index.html")) {
+      // …/index.html → …/content.dat (elm-pages SPA contract)
+      contentDatUrl = new URL("./content.dat", html).href;
+    }
+  } catch {
+    contentDatUrl = null;
   }
-  const html = await response.text();
-  return { html, pageBytes: decodePageBytesFromHtml(html) };
+
+  const htmlPromise = fetchFn(htmlUrl)
+    .then(async (response) => (response.ok ? response.text() : null))
+    .catch(() => null);
+
+  const datPromise = contentDatUrl
+    ? fetchFn(contentDatUrl)
+        .then(async (response) => {
+          if (!response.ok) return null;
+          const buffer = await response.arrayBuffer();
+          return buffer.byteLength > 0 ? new Uint8Array(buffer) : null;
+        })
+        .catch(() => null)
+    : Promise.resolve(null);
+
+  const [html, datBytes] = await Promise.all([htmlPromise, datPromise]);
+  const pageBytes = datBytes ?? (html ? decodePageBytesFromHtml(html) : null);
+  return { html, pageBytes };
 }
 
 export async function bootFromUrls({
@@ -41,6 +64,8 @@ export async function bootFromUrls({
   wasmUrl,
   exportName,
   pageHtmlUrl,
+  /** Deploy root (directory that contains `/`, `/getting-started/`, …). */
+  siteRootUrl,
   pageBytes,
   pageBundlePromise,
   fetchFn,
@@ -104,8 +129,14 @@ export async function bootFromUrls({
     immortalStrings: manifest.immortal_strings || {},
     constructorTags: manifest.constructor_tags || {},
   });
-  if (pageHtmlUrl) {
-    helpers.setRouteBytesSiteRoot?.(pageHtmlUrl);
+  // Prefer explicit deploy root so deep-link boots do not pin content.dat under
+  // the first route (e.g. /getting-started/f-a-q/content.dat).
+  const rootForRouteBytes =
+    siteRootUrl != null
+      ? new URL("index.html", siteRootUrl).href
+      : pageHtmlUrl;
+  if (rootForRouteBytes) {
+    helpers.setRouteBytesSiteRoot?.(rootForRouteBytes);
   }
   const afterLoadMs = performance.now() - t0;
 
@@ -120,7 +151,24 @@ export async function bootFromUrls({
     let bootOpts = {};
     const loadedPageBytes = pageBundle?.pageBytes ?? null;
     if (loadedPageBytes) {
-      helpers.registerRouteBytes?.("/", loadedPageBytes);
+      // Cache under the actual route only. Registering a deep-link's bytes as "/"
+      // poisons later SPA remounts back to the homepage (route/pageData mismatch).
+      if (pageHtmlUrl) {
+        try {
+          const pagePath = new URL(pageHtmlUrl).pathname;
+          const routePath =
+            pagePath.endsWith("/index.html")
+              ? pagePath.slice(0, -"/index.html".length) || "/"
+              : pagePath.endsWith(".html")
+                ? pagePath.slice(0, -".html".length) || "/"
+                : "/";
+          helpers.registerRouteBytes?.(routePath || "/", loadedPageBytes);
+        } catch {
+          helpers.registerRouteBytes?.("/", loadedPageBytes);
+        }
+      } else {
+        helpers.registerRouteBytes?.("/", loadedPageBytes);
+      }
       const bytesHandle = helpers.newBytesFromUint8Array(loadedPageBytes);
       bootOpts = { incomingPorts: { pageDataFromJs: bytesHandle } };
     } else if (pageHtmlUrl) {
@@ -232,9 +280,30 @@ if (typeof document !== "undefined") {
     console.error(err);
   };
 
-  const pageHtmlParam = new URLSearchParams(location.search).get("pageHtml");
-  const defaultPageHtml = new URL("../../index.html", import.meta.url).href;
-  const pageHtmlUrl = pageHtmlParam || defaultPageHtml;
+  const siteRoot = new URL("../../", import.meta.url);
+  const defaultPageHtml = new URL("index.html", siteRoot).href;
+
+  const resolveBootPageHtml = () => {
+    const pageHtmlParam = new URLSearchParams(location.search).get("pageHtml");
+    if (pageHtmlParam) {
+      try {
+        return new URL(pageHtmlParam, location.href).href;
+      } catch {
+        return defaultPageHtml;
+      }
+    }
+
+    // SPA deep link: static server rewrites `/getting-started` → this host shell while
+    // keeping the route pathname. Boot that route's HTML (styles + embedded bytes).
+    const hostPrefix = new URL("./", import.meta.url).pathname.replace(/\/$/, "");
+    const path = (location.pathname || "/").replace(/\/$/, "") || "/";
+    if (path === "/" || path === hostPrefix || path.startsWith(`${hostPrefix}/`)) {
+      return defaultPageHtml;
+    }
+    return new URL(`${path.slice(1)}/index.html`, siteRoot).href;
+  };
+
+  const pageHtmlUrl = resolveBootPageHtml();
   const fetchImpl = fetch;
   // Start HTML fetch immediately so styles+bytes share one transfer with wasm/manifest.
   const pageBundlePromise = loadPageBundle(pageHtmlUrl, fetchImpl);
@@ -243,6 +312,7 @@ if (typeof document !== "undefined") {
     manifestUrl: new URL("../wasm/elmc_wasm.manifest.json", import.meta.url).href,
     wasmUrl: new URL("../wasm/app.wasm", import.meta.url).href,
     pageHtmlUrl,
+    siteRootUrl: siteRoot.href,
     pageBundlePromise,
     fetchFn: fetchImpl,
   }).catch(showError);

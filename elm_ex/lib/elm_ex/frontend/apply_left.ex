@@ -12,11 +12,11 @@ defmodule ElmEx.Frontend.ApplyLeft do
       %{op: :apply_left, fn_expr: fn_expr, arg: arg} ->
         expand_apply_left(expand(fn_expr), expand(arg))
 
-      %{op: _} = map ->
+      map ->
+        # Recurse into every map value — case branches (`%{pattern, expr}`),
+        # patterns, and other non-`:op` nodes — so whole-tree expand (pretty
+        # normalize, probes) does not leave nested `<|` intact.
         Map.new(map, fn {key, value} -> {key, expand(value)} end)
-
-      other ->
-        other
     end
   end
 

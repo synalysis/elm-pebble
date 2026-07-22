@@ -129,9 +129,17 @@ route’s `index.html` (`__ELM_PAGES_BYTES_DATA__`). The host registers bytes on
 boot and re-delivers `pageDataFromJs` on `onUrlChange`.
 
 **Route bytes (runtime fetch):** when a path is missing from the static manifest,
-`route_bytes.js` falls back to fetching `/<path>/index.html` (or sibling `.html`)
-and decoding embedded bytes — optional second path for client navigation without
-a full reload.
+`route_bytes.js` prefers fetching `/<path>/content.dat` (elm-pages SPA contract —
+same buffer `pageDataFromJs` expects), then falls back to scraping
+`/<path>/index.html` embedded `__ELM_PAGES_BYTES_DATA__`.
+
+Serve the full elm-pages `dist/` with the WASM SPA shell so client navigation and
+refresh stay on the host:
+
+```bash
+./scripts/serve-elm-pebble-dev-wasm.sh 8080
+# → http://localhost:8080/  (SPA shell = wasm-web/host/browser.html)
+```
 
 ## Boot status
 

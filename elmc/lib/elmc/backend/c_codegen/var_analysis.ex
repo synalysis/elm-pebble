@@ -142,6 +142,13 @@ defmodule Elmc.Backend.CCodegen.VarAnalysis do
     free_vars(body, MapSet.new(lambda_args || []), true)
   end
 
+  @doc """
+  Names referenced by `expr` that are not bound by nested `let` / `case` / lambda
+  binders inside `expr`. Prefer this over `used_vars/1` for dependency analysis.
+  """
+  @spec free_vars(Types.ir_expr() | nil) :: Types.var_name_set()
+  def free_vars(expr), do: free_vars(expr, MapSet.new(), false)
+
   @spec free_vars(Types.ir_expr() | nil, Types.var_name_set(), boolean()) :: Types.var_name_set()
   defp free_vars(nil, _bound, _stop_at_nested?), do: MapSet.new()
 

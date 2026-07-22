@@ -99,6 +99,26 @@ defmodule Elmc.IRQueriesRecordShapesTest do
            ]
   end
 
+  test "buildWithLocalState handlers literal sorts init before view" do
+    # Route.Wasm passes {view, init, update, subscriptions} in source order.
+    # RouteBuilder.buildWithLocalState reads config.init at alphabetical index 0.
+    fields = [
+      %{name: "view", expr: %{op: :var, name: "view"}},
+      %{name: "init", expr: %{op: :var, name: "init"}},
+      %{name: "update", expr: %{op: :var, name: "update"}},
+      %{name: "subscriptions", expr: %{op: :var, name: "subscriptions"}}
+    ]
+
+    canonical = Record.canonicalize_literal_fields(fields, %Context{module: "Route.Wasm"})
+
+    assert Enum.map(canonical, & &1.name) == [
+             "init",
+             "subscriptions",
+             "update",
+             "view"
+           ]
+  end
+
   test "inline record shapes preserve declaration order from nested type alias fields" do
     ir = %IR{
       modules: [
@@ -478,6 +498,35 @@ defmodule Elmc.IRQueriesRecordShapesTest do
 
     assert Record.resolve_field_index_int("lo", ctx, base) == {:ok, 0}
     assert Record.resolve_field_index_int("hi", ctx, base) == {:ok, 1}
+  end
+
+  test "extensible {url|path} prefers Url.path index over short Payload.path@0" do
+    # elm-pages Route.urlToRoute : {url | path : String} -> Maybe Route.
+    # Short unrelated aliases also have `path` (Pages.Payload, Http.Request, …).
+    # Picking path@0 reads Url.protocol and deep links init as Index (Model mismatch).
+    shapes = %{
+      {"Pages.Internal.NotFoundReason", "Payload"} => ["path", "reason"],
+      {"Pages.Fetcher", "Request"} => ["path", "body", "expect"],
+      {"Url", "Url"} => ["protocol", "host", "port_", "path", "query", "fragment"],
+      {"Pages.PageUrl", "PageUrl"} => ["protocol", "host", "port_", "path", "query", "fragment"]
+    }
+
+    Process.put(:elmc_record_alias_shapes, shapes)
+
+    on_exit(fn ->
+      Process.delete(:elmc_record_alias_shapes)
+    end)
+
+    ctx = %Context{
+      module: "Route",
+      function_name: "urlToRoute",
+      params: ["url"],
+      local_types: %{"url" => "{url | path : String}"}
+    }
+
+    base = %{op: :var, name: "url"}
+
+    assert Record.resolve_field_index_int("path", ctx, base) == {:ok, 3}
   end
 
   test "ambiguous contents prefers Layout over elm-pages Scaffold path/contents" do

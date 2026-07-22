@@ -39,6 +39,14 @@ defmodule Elmc.Backend.Plan.Lower.PatternMatch do
     end
   end
 
+  # Record patterns only bind fields (`{ data }`); they never discriminate.
+  # PatternBind peels fields; match must accept so constructor payloads like
+  # `Texture { data }` (Scene3d materials) can lower through GuardedSwitch.
+  defp do_match_condition(%{kind: :record, fields: fields}, _subject_reg, b)
+       when is_list(fields) do
+    const_true(b)
+  end
+
   defp do_match_condition(%{kind: :tuple, elements: elements}, subject_reg, b)
        when is_list(elements) and length(elements) > 2 do
     do_match_condition(
@@ -64,7 +72,11 @@ defmodule Elmc.Backend.Plan.Lower.PatternMatch do
 
     cond do
       cons_pattern?(pattern) ->
-        test_list_nonempty(subject_reg, b)
+        # `::` is not a tagged union — only nonempty is not enough. Recurse into
+        # head/tail so `[ "wasm" ]` / `"a" :: "b" :: []` actually test literals
+        # (Route.segmentsToRoute). Skipping that made every nonempty list match
+        # the first cons arm (Articles), so deep links always mismatched.
+        match_cons_pattern(pattern, subject_reg, b)
 
       maybe_nothing?(resolved, name) ->
         test_maybe_nothing(subject_reg, b)
@@ -84,6 +96,62 @@ defmodule Elmc.Backend.Plan.Lower.PatternMatch do
   end
 
   defp do_match_condition(_, _, _), do: :unsupported
+
+  defp match_cons_pattern(pattern, subject_reg, b) do
+    case cons_head_tail(pattern) do
+      {:ok, head_pat, tail_pat} ->
+        with {:ok, nonempty_cond, b1} <- test_list_nonempty(subject_reg, b),
+             {:ok, head_reg, b2} <- peel_list_head(subject_reg, b1),
+             {:ok, tail_reg, b3} <- peel_list_tail(subject_reg, b2),
+             {:ok, head_cond, b4} <- do_match_condition(head_pat, head_reg, b3),
+             {:ok, tail_cond, b5} <- do_match_condition(tail_pat, tail_reg, b4),
+             {:ok, elems_cond, b6} <- bool_and(head_cond, tail_cond, b5) do
+          bool_and(nonempty_cond, elems_cond, b6)
+        else
+          _ -> :unsupported
+        end
+
+      :error ->
+        test_list_nonempty(subject_reg, b)
+    end
+  end
+
+  defp cons_head_tail(%{arg_pattern: %{kind: :tuple, elements: [head, tail]}}),
+    do: {:ok, head, tail}
+
+  defp cons_head_tail(_), do: :error
+
+  defp peel_list_head(subject_reg, b) do
+    with {:ok, maybe_reg, b1} <- emit_list_op(:list_head, subject_reg, b),
+         {:ok, head_reg, b2} <- emit_list_op(:maybe_just_payload, maybe_reg, b1) do
+      {:ok, head_reg, b2}
+    end
+  end
+
+  defp peel_list_tail(subject_reg, b) do
+    with {:ok, maybe_reg, b1} <- emit_list_op(:list_tail, subject_reg, b),
+         {:ok, tail_reg, b2} <- emit_list_op(:maybe_just_payload, maybe_reg, b1) do
+      {:ok, tail_reg, b2}
+    end
+  end
+
+  defp emit_list_op(builtin, arg_reg, b) when is_atom(builtin) and is_integer(arg_reg) do
+    {dest, b1} = Builder.fresh_reg(b)
+
+    {_, b2} =
+      Builder.emit(b1, :call_runtime, %{
+        dest: dest,
+        args: %{builtin: builtin, args: [arg_reg]},
+        effects: %{
+          produces: nil,
+          consumes: [],
+          borrows: [arg_reg],
+          fallible: false
+        }
+      })
+
+    {:ok, dest, b2}
+  end
 
   defp match_ctor_with_arg_pattern(%{arg_pattern: arg_pattern} = pattern, subject_reg, b)
        when is_map(arg_pattern) do

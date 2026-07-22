@@ -36,6 +36,23 @@ defmodule ElmEx.Frontend.LetBindingsTest do
     assert expanded.name == "__tupleBind_contents_fullExtent_wrappingExtent"
   end
 
+  test "expand recurses into case branch maps without :op" do
+    source = """
+    case x of
+        _ ->
+            let
+                y = 1
+            in
+                y
+    """
+
+    assert {:ok, ast} = GeneratedExpressionParser.parse(source)
+    expanded = LetBindings.expand(ast)
+
+    assert %{op: :case, branches: [%{expr: %{op: :let_in, name: "y"}}]} = expanded
+    refute match?(%{op: :let_bindings}, expanded.branches |> hd() |> Map.get(:expr))
+  end
+
   test "pretty prints let_bindings without synthetic names" do
     source = """
     let

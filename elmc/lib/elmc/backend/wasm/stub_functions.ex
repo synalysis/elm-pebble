@@ -38,6 +38,84 @@ defmodule Elmc.Backend.Wasm.StubFunctions do
   end
 
   @spec lower_stub(stub_entry()) :: map()
+  def lower_stub(%{module: "Float", name: "Extra.interpolateFrom", arity: arity} = entry)
+      when arity >= 3 do
+    params = Enum.map(0..(arity - 1), &"param#{&1}")
+
+    %{
+      export_name: WasmTypes.fn_ident(entry.module, entry.name),
+      module: entry.module,
+      name: entry.name,
+      params: params,
+      rc_required: true,
+      body: interpolate_from_body(),
+      imports: MapSet.new(["runtime.float_interpolate_from"]),
+      import_arities: %{"runtime.float_interpolate_from" => 3}
+    }
+  end
+
+  # elm-explorations/linear-algebra Vector2/Vector3/Vector4/Matrix4 kernels.
+  # These are pure numeric ops (no Elm plan body), so every call site becomes
+  # a missing_callee stub; route them all through one host implementation per
+  # kernel name (runtime.mjs_<name>) instead of RC_ERR_UNIMPLEMENTED.
+  def lower_stub(%{module: "Elm.Kernel.MJS", name: name, arity: arity} = entry) do
+    params =
+      if arity == 0 do
+        []
+      else
+        Enum.map(0..(arity - 1), &"param#{&1}")
+      end
+
+    import_name = "runtime.mjs_#{name}"
+
+    %{
+      export_name: WasmTypes.fn_ident(entry.module, entry.name),
+      module: entry.module,
+      name: entry.name,
+      params: params,
+      rc_required: true,
+      body: host_value_stub_body(params, import_name),
+      imports: MapSet.new([import_name]),
+      import_arities: %{import_name => arity}
+    }
+  end
+
+  # elm-explorations/webgl kernels — host builds entity records and VDOM custom
+  # canvas widgets (see elmc-wasm-runtime/host/webgl_runtime.js).
+  def lower_stub(%{module: "Elm.Kernel.WebGL", name: "entity", arity: arity} = entry)
+      when arity >= 5 do
+    params = Enum.map(0..(arity - 1), &"param#{&1}")
+    import_name = "runtime.webgl_entity"
+
+    %{
+      export_name: WasmTypes.fn_ident(entry.module, entry.name),
+      module: entry.module,
+      name: entry.name,
+      params: params,
+      rc_required: true,
+      body: host_value_stub_body(Enum.take(params, 5), import_name),
+      imports: MapSet.new([import_name]),
+      import_arities: %{import_name => 5}
+    }
+  end
+
+  def lower_stub(%{module: "Elm.Kernel.WebGL", name: "toHtml", arity: arity} = entry)
+      when arity >= 3 do
+    params = Enum.map(0..(arity - 1), &"param#{&1}")
+    import_name = "runtime.webgl_to_html"
+
+    %{
+      export_name: WasmTypes.fn_ident(entry.module, entry.name),
+      module: entry.module,
+      name: entry.name,
+      params: params,
+      rc_required: true,
+      body: host_value_stub_body(Enum.take(params, 3), import_name),
+      imports: MapSet.new([import_name]),
+      import_arities: %{import_name => 3}
+    }
+  end
+
   def lower_stub(%{module: mod, name: name, arity: arity}) do
     params =
       if arity == 0 do
@@ -58,10 +136,36 @@ defmodule Elmc.Backend.Wasm.StubFunctions do
     }
   end
 
+  defp interpolate_from_body do
+    """
+    (local $out i32)
+    local.get $param0
+    local.get $param1
+    local.get $param2
+    call $runtime_float_interpolate_from
+    local.set $out
+    i32.const 0
+    local.get $out
+    """
+  end
+
   defp stub_body do
     """
     i32.const #{@rc_err_unimplemented}
     i32.const 0
+    """
+  end
+
+  defp host_value_stub_body(params, import_name) do
+    loads = Enum.map_join(params, "\n", &"local.get $#{&1}")
+
+    """
+    (local $out i32)
+    #{loads}
+    call #{WasmTypes.import_ident(import_name)}
+    local.set $out
+    i32.const 0
+    local.get $out
     """
   end
 

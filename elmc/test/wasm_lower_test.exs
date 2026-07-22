@@ -142,7 +142,7 @@ defmodule Elmc.WasmLowerTest do
     assert wat =~ "elmc_fn_B_g"
   end
 
-  test "boxed float sub_vars lowers to f32.sub and new_float" do
+  test "boxed float sub via boxed_binop lowers to f32.sub and new_float" do
     plan =
       Builder.new("Test", "float_sub", args: ["a", "b"], rc_required: true)
       |> Builder.catch_begin()
@@ -152,9 +152,9 @@ defmodule Elmc.WasmLowerTest do
         {dest, b3} = Builder.fresh_reg(b2)
 
         {_, b4} =
-          Builder.emit(b3, :int_arith, %{
+          Builder.emit(b3, :boxed_binop, %{
             dest: dest,
-            args: %{kind: :sub_vars, lhs: a, rhs: b_reg},
+            args: %{op: :sub, lhs: a, rhs: b_reg},
             effects: Elmc.Backend.Plan.Types.fallible_effects(dest, [a, b_reg])
           })
 
@@ -175,7 +175,7 @@ defmodule Elmc.WasmLowerTest do
     refute wat =~ ";; boxed_binop dynamic"
   end
 
-  test "float int_arith chain keeps add_const on f32 path after sub_vars" do
+  test "float boxed_binop chain keeps add on f32 path after sub" do
     plan =
       Builder.new("Test", "float_chain", args: ["a", "b"], rc_required: true)
       |> Builder.catch_begin()
@@ -184,22 +184,30 @@ defmodule Elmc.WasmLowerTest do
         {b_reg, b2} = Builder.get_or_load_param(b1, 1, "b")
         {width, b3} = Builder.fresh_reg(b2)
         {padded, b4} = Builder.fresh_reg(b3)
+        {four, b5} = Builder.fresh_reg(b4)
 
-        {_, b5} =
-          Builder.emit(b4, :int_arith, %{
+        {_, b6} =
+          Builder.emit(b5, :boxed_binop, %{
             dest: width,
-            args: %{kind: :sub_vars, lhs: a, rhs: b_reg},
+            args: %{op: :sub, lhs: a, rhs: b_reg},
             effects: Elmc.Backend.Plan.Types.fallible_effects(width, [a, b_reg])
           })
 
-        {_, b6} =
-          Builder.emit(b5, :int_arith, %{
-            dest: padded,
-            args: %{kind: :add_const, lhs: width, value: 4},
-            effects: Elmc.Backend.Plan.Types.fallible_effects(padded, [width])
+        {_, b7} =
+          Builder.emit(b6, :call_runtime, %{
+            dest: four,
+            args: %{builtin: :new_float, literal: 4.0},
+            effects: Elmc.Backend.Plan.Types.fallible_effects(four, [])
           })
 
-        b6
+        {_, b8} =
+          Builder.emit(b7, :boxed_binop, %{
+            dest: padded,
+            args: %{op: :add, lhs: width, rhs: four},
+            effects: Elmc.Backend.Plan.Types.fallible_effects(padded, [width, four])
+          })
+
+        b8
       end)
       |> Builder.catch_end()
       |> then(fn b ->
@@ -212,6 +220,38 @@ defmodule Elmc.WasmLowerTest do
     assert wat =~ "f32.sub"
     assert wat =~ "f32.add"
     refute wat =~ "i32.add"
+  end
+
+  test "boxed Int int_arith sub_const uses as_int and new_int (not f32)" do
+    plan =
+      Builder.new("Test", "int_sub_const", args: ["n"], rc_required: true)
+      |> Builder.catch_begin()
+      |> then(fn b ->
+        {n, b1} = Builder.get_or_load_param(b, 0, "n")
+        {dest, b2} = Builder.fresh_reg(b1)
+
+        {_, b3} =
+          Builder.emit(b2, :int_arith, %{
+            dest: dest,
+            args: %{kind: :sub_const, lhs: n, value: 1},
+            effects: Elmc.Backend.Plan.Types.fallible_effects(dest, [n])
+          })
+
+        b3
+      end)
+      |> Builder.catch_end()
+      |> then(fn b ->
+        Builder.to_function_plan(Builder.emit_ret(b, 0))
+      end)
+
+    assert {:ok, module_map} = Lower.lower(plan)
+    wat = Lower.render_wat(module_map)
+
+    assert wat =~ "runtime_as_int"
+    assert wat =~ "i32.sub"
+    assert wat =~ "runtime_new_int"
+    refute wat =~ "f32.sub"
+    refute wat =~ "runtime_as_float"
   end
 
   test "boxed Int compare unboxes operands before i32.gt_s" do
@@ -252,5 +292,99 @@ defmodule Elmc.WasmLowerTest do
     assert wat =~ "runtime_as_int"
     assert wat =~ "i32.gt_s"
     refute wat =~ ~r/local\.get \$reg\d+\)\s*\n\s*\(i32\.gt_s\s+\(local\.get \$reg/
+  end
+
+  test "boxed Float compare unboxes via as_float and uses f32.eq" do
+    # Scene3d countdown loops use `stripIndex == 0` (Float == numeric literal).
+    # Pointer i32.eq on handles never terminates — must compare float values.
+    plan =
+      Builder.new("Test", "float_boxed_compare", args: ["x"], rc_required: false)
+      |> then(fn b ->
+        {x_reg, b1} = Builder.fresh_reg(b)
+        {zero_reg, b2} = Builder.fresh_reg(b1)
+        {dest, b3} = Builder.fresh_reg(b2)
+
+        {_, b4} =
+          Builder.emit(b3, :load_param, %{
+            dest: x_reg,
+            args: %{index: 0},
+            effects: Elmc.Backend.Plan.Types.empty_effects()
+          })
+
+        {_, b5} =
+          Builder.emit(b4, :const_int, %{
+            dest: zero_reg,
+            args: %{value: 0},
+            effects: Elmc.Backend.Plan.Types.empty_effects()
+          })
+
+        {_, b6} =
+          Builder.emit(b5, :compare, %{
+            dest: dest,
+            args: %{kind: :eq, left: x_reg, right: zero_reg, mode: :float_boxed},
+            effects: Elmc.Backend.Plan.Types.empty_effects()
+          })
+
+        Builder.to_function_plan(Builder.emit_ret(b6, 0))
+      end)
+
+    assert {:ok, module_map} = Lower.lower(plan)
+    wat = Lower.render_wat(module_map)
+
+    assert wat =~ "runtime_as_float"
+    assert wat =~ "f32.eq"
+    assert wat =~ "f32.convert_i32_s"
+    refute wat =~ ~r/\(i32\.eq\s+\(local\.get \$reg/
+  end
+
+  test "basics_not of string equals passes boxed handle (no new_int of handle id)" do
+    # Mimics `Basics.not (item == "")` / filter predicate: string_equals writes a
+    # boxed Int, then basics_not must consume that handle — not re-box the ptr.
+    plan =
+      Builder.new("Test", "string_neq_via_not", args: ["item"], rc_required: false)
+      |> then(fn b ->
+        {item, b1} = Builder.fresh_reg(b)
+        {empty, b2} = Builder.fresh_reg(b1)
+        {eq_reg, b3} = Builder.fresh_reg(b2)
+        {not_reg, b4} = Builder.fresh_reg(b3)
+
+        {_, b5} =
+          Builder.emit(b4, :load_param, %{
+            dest: item,
+            args: %{index: 0},
+            effects: Elmc.Backend.Plan.Types.empty_effects()
+          })
+
+        {_, b6} =
+          Builder.emit(b5, :const_immortal_string, %{
+            dest: empty,
+            args: %{value: ""},
+            effects: Elmc.Backend.Plan.Types.empty_effects()
+          })
+
+        {_, b7} =
+          Builder.emit(b6, :compare, %{
+            dest: eq_reg,
+            args: %{kind: :eq, left: item, right: empty, mode: :string},
+            effects: Elmc.Backend.Plan.Types.empty_effects()
+          })
+
+        {_, b8} =
+          Builder.emit(b7, :call_runtime, %{
+            dest: not_reg,
+            args: %{builtin: :basics_not, args: [eq_reg]},
+            effects: Elmc.Backend.Plan.Types.empty_effects()
+          })
+
+        Builder.to_function_plan(Builder.emit_ret(b8, not_reg))
+      end)
+
+    assert {:ok, module_map} = Lower.lower(plan)
+    wat = Lower.render_wat(module_map)
+
+    assert wat =~ "runtime_string_equals"
+    assert wat =~ "runtime_basics_not"
+    # Must not insert new_int(handle) between equals and not.
+    refute wat =~ ~r/runtime_string_equals[\s\S]*?runtime_new_int[\s\S]*?runtime_basics_not/
   end
 end

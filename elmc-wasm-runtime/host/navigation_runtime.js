@@ -13,9 +13,11 @@ export function createNavigationRuntime(deps) {
     urlRuntime,
     routeBytes,
     deliverIncomingPort,
+    remountBrowserWithRoute,
   } = deps;
 
-  // Browser.application / elm-pages Platform.Msg: UrlChanged = 2.
+  // Pages.Internal.Platform.Msg (1-based): LinkClicked=1, UrlChanged=2, UserMsg=3, …
+  // Simple Browser.application fixtures often use UrlChanged=2 when LinkClicked=1.
   const URL_CHANGED_MSG_TAG = 2;
 
   let navigationKeyPtr = 0;
@@ -74,6 +76,22 @@ export function createNavigationRuntime(deps) {
   };
 
   const invokeUrlChange = async (location) => {
+    // elm-pages SPA: FrozenViewsReady on an already-Ok Model currently corrupts
+    // platform Model fields under elmc WASM (Ok-branch record update). Remounting
+    // reuses the working init + pageDataFromJs (Err→Ok) path instead.
+    if (typeof remountBrowserWithRoute === "function" && routeBytes && location) {
+      const bytes = routeBytes.lookupFresh
+        ? await routeBytes.lookupFresh(location.pathname)
+        : await routeBytes.lookup(location.pathname);
+      if (bytes) {
+        const ok = await remountBrowserWithRoute(location, bytes);
+        if (ok) return;
+        console.warn("[elmc-nav] remount failed; not applying UrlChanged fallback (unsafe)");
+        return;
+      }
+      console.warn("[elmc-nav] no page bytes for", location.pathname);
+    }
+
     const urlPtr = urlRuntime.urlFromLocation(location);
     if (onUrlChangeFn) {
       const msgResult = invokeClosure(onUrlChangeFn, [urlPtr]);
@@ -116,7 +134,11 @@ export function createNavigationRuntime(deps) {
       void invokeUrlChange(window.location);
     };
     window.addEventListener("popstate", onPopstate);
-    popstateDispose = () => window.removeEventListener("popstate", onPopstate);
+    popstateDispose = () => {
+      if (typeof window.removeEventListener === "function") {
+        window.removeEventListener("popstate", onPopstate);
+      }
+    };
 
     const onClick = (event) => {
       if (!onUrlRequestFn) return;
@@ -166,8 +188,16 @@ export function createNavigationRuntime(deps) {
   };
 
   const disposeNavigation = () => {
-    if (popstateDispose) popstateDispose();
-    if (linkCaptureDispose) linkCaptureDispose();
+    try {
+      if (popstateDispose) popstateDispose();
+    } catch (_err) {
+      /* probe / minimal window stubs may lack removeEventListener */
+    }
+    try {
+      if (linkCaptureDispose) linkCaptureDispose();
+    } catch (_err) {
+      /* same */
+    }
     popstateDispose = null;
     linkCaptureDispose = null;
     onUrlChangeFn = 0;
