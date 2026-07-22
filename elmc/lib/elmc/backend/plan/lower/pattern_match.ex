@@ -404,17 +404,8 @@ defmodule Elmc.Backend.Plan.Lower.PatternMatch do
 
     if is_binary(name) do
       tags = Process.get(:elmc_constructor_tags, %{})
-
-      Map.get(tags, name) ||
-        Map.get(tags, short_ctor(name)) ||
-        lookup_qualified_tag(name, tags)
+      Elmc.Backend.CCodegen.IRQueries.lookup_tag(tags, name)
     end
-  end
-
-  defp lookup_qualified_tag(name, tags) do
-    Enum.find_value(tags, fn {key, tag} ->
-      if String.ends_with?(key, "." <> short_ctor(name)), do: tag
-    end)
   end
 
   defp nest_tuple_elements([left, right]), do: [left, right]

@@ -356,13 +356,7 @@ defmodule Elmc.Backend.CCodegen.SpecialValues.Helpers do
   @spec constructor_tag(String.t()) :: non_neg_integer()
   def constructor_tag(name) do
     tags = Process.get(:elmc_constructor_tags, %{})
-
-    Map.get_lazy(tags, name, fn ->
-      name
-      |> String.split(".")
-      |> List.last()
-      |> then(&Map.get(tags, &1, 0))
-    end)
+    Elmc.Backend.CCodegen.IRQueries.lookup_tag(tags, name) || 0
   end
 
   @spec point_coord_exprs(Types.ir_expr()) :: {:ok, {Types.ir_expr(), Types.ir_expr()}} | :error

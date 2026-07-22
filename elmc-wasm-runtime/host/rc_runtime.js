@@ -297,11 +297,44 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
     });
   };
 
+  let __sceneTagMissLogs = 0;
+  let __sceneListProjLogs = 0;
   const unionTagMatches = (outPtr, handlePtr, tagPtr) => {
     // WASM/C codegen pass constructor tags as raw i32 immediates (elmc_int_t),
     // not boxed handles — never resolve tagPtr through the handle table.
     const want = tagPtr | 0;
-    return newInt(outPtr, unionTagAsInt(handlePtr) === want ? 1 : 0);
+    const got = unionTagAsInt(handlePtr);
+    const matched = got === want ? 1 : 0;
+    const debugScene =
+      typeof process !== "undefined" && process.env && process.env.ELMC_DEBUG_SCENE;
+    // getViewBounds falls through to Transformed after missing tags 1..6.
+    if (debugScene && want === 6 && !matched && __sceneTagMissLogs < 8) {
+      __sceneTagMissLogs += 1;
+      const p = readHandle(handlePtr);
+      let detail = `payloadTag=${p?.tag}`;
+      if (p?.tag === TAG_INT) detail += ` intVal=${p.value}`;
+      if (p?.tag === TAG_LIST) detail += ` listLen=${p.items?.length} headUnion=${unionTagAsInt(p.items?.[0])}`;
+      if (p?.tag === TAG_TUPLE2) {
+        detail += ` firstTag=${unionTagAsInt(p.first)} secondPayloadTag=${readHandle(p.second)?.tag}`;
+        const inner = readHandle(p.second);
+        if (inner?.tag === TAG_TUPLE2) {
+          detail += ` inner0Tag=${readHandle(inner.first)?.tag} inner1Tag=${readHandle(inner.second)?.tag}`;
+          detail += ` inner0Union=${unionTagAsInt(inner.first)} inner1Union=${unionTagAsInt(inner.second)}`;
+        } else if (inner?.tag === TAG_RECORD) {
+          detail += ` recordFields=${inner.fields?.length}`;
+        } else if (inner?.tag === TAG_LIST) {
+          const heads = (inner.items ?? []).slice(0, 4).map((h) => {
+            const hp = readHandle(h);
+            return `u=${unionTagAsInt(h)}/t=${hp?.tag}`;
+          });
+          detail += ` listLen=${inner.items?.length} heads=[${heads.join(",")}]`;
+        }
+      }
+      console.error(
+        `[scene-debug] miss-tag6 #${__sceneTagMissLogs} handle=${handlePtr|0} unionTag=${got} ${detail}`
+      );
+    }
+    return newInt(outPtr, matched);
   };
 
   const newIntHandle = (value) => allocHandle({ tag: TAG_INT, value: value | 0 });
@@ -500,15 +533,15 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
     const fields = impl?.fields ?? [];
     const fieldCount = fields.length;
 
-    // Browser.application: init, view, update, subscriptions, then onUrlRequest /
-    // onUrlChange in record source order (elm-pages swaps these — navigation_runtime probes).
+    // Elm stores record fields alphabetically. Browser.application:
+    // init, onUrlChange, onUrlRequest, subscriptions, update, view
     if (fieldCount >= 6) {
-      return fields[1] | 0;
+      return fields[5] | 0;
     }
 
-    // Browser.element / Browser.sandbox options record: init, view, update, subscriptions
+    // Browser.element / Browser.sandbox: init, subscriptions, update, view
     if (fieldCount === 4) {
-      return fields[1] | 0;
+      return fields[3] | 0;
     }
 
     for (let i = fieldCount - 1; i >= 0; i--) {
@@ -518,7 +551,7 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
       }
     }
 
-    return (fields[1] ?? fields[0] ?? 0) | 0;
+    return (fields[fieldCount - 1] ?? fields[0] ?? 0) | 0;
   };
 
   // elm-pages duplicates ProgramConfig into init/view/update/subscriptions captures.
@@ -555,8 +588,12 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
   const browserSubscriptionsFn = (implPtr) => {
     const impl = readHandle(implPtr);
     const fields = impl?.fields ?? [];
-    if (fields.length >= 4) {
+    // Alphabetical: application subscriptions@3; element/sandbox subscriptions@1.
+    if (fields.length >= 6) {
       return fields[3] | 0;
+    }
+    if (fields.length >= 2) {
+      return fields[1] | 0;
     }
     return 0;
   };
@@ -792,6 +829,10 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
   const browserUpdateFn = (implPtr) => {
     const impl = readHandle(implPtr);
     const fields = impl?.fields ?? [];
+    // Alphabetical: application update@4; element/sandbox update@2.
+    if (fields.length >= 6) {
+      return fields[4] | 0;
+    }
     if (fields.length >= 3) {
       return fields[2] | 0;
     }
@@ -1955,18 +1996,9 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
     if (!ptr) return [];
     const payload = readHandle(ptr);
     if (!payload) return [];
+    // Only TAG_LIST is a list. TAG_TUPLE2 is the union/pair encoding; walking it
+    // as a cons spine confuses constructors (e.g. Group tag 6) with list cells.
     if (payload.tag === TAG_LIST) return payload.items ?? [];
-    if (payload.tag === TAG_TUPLE2) {
-      const items = [];
-      let cur = ptr | 0;
-      while (cur) {
-        const cell = readHandle(cur);
-        if (cell?.tag !== TAG_TUPLE2) break;
-        items.push(cell.first | 0);
-        cur = cell.second | 0;
-      }
-      return items;
-    }
     return [];
   };
 
@@ -2021,10 +2053,38 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
     return ptr;
   };
 
+  let __sceneDebugDepth = 0;
+  let __sceneHeadLogs = 0;
   const listFromValues = (outPtr, arrayPtr, count) => {
     const items = [];
     for (let i = 0; i < count; i++) {
       items.push(cloneForList(view().getUint32(arrayPtr + i * 4, true)));
+    }
+    const debugScene =
+      typeof process !== "undefined" && process.env && process.env.ELMC_DEBUG_SCENE;
+    if (debugScene && count === 1) {
+      const h = items[0] | 0;
+      const p = readHandle(h);
+      const tag = unionTagAsInt(h);
+      // Transformed path builds a singleton list of the child node.
+      if (tag === 7 || tag === 0 || p?.tag === TAG_INT || !p) {
+        __sceneDebugDepth += 1;
+        if (__sceneDebugDepth <= 8) {
+          console.error(
+            `[scene-debug] singleton#${__sceneDebugDepth} handle=${h} payloadTag=${p?.tag} unionTag=${tag}` +
+              (p?.tag === TAG_INT
+                ? ` intVal=${p?.value}`
+                : p?.tag === TAG_TUPLE2
+                  ? ` firstTag=${unionTagAsInt(p.first)} secondTag=${unionTagAsInt(p.second)}`
+                  : "")
+          );
+        }
+        if (__sceneDebugDepth > 20) {
+          throw new Error(
+            `scene-debug: Transformed-style recursion depth ${__sceneDebugDepth} handle=${h} unionTag=${tag} payloadTag=${p?.tag} intVal=${p?.value}`
+          );
+        }
+      }
     }
     writeOut(outPtr, allocHandle({ tag: TAG_LIST, items }));
     return RC_SUCCESS;
@@ -2119,8 +2179,28 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
   };
 
   // Match C elmc_list_cons(take=0): retain spine elements so callers can release consumed args.
+  let __sceneConsLogs = 0;
   const listCons = (outPtr, headPtr, tailPtr) => {
     const head = handles.has(headPtr | 0) ? cloneForList(headPtr) : intValue(headPtr);
+    const debugScene =
+      typeof process !== "undefined" && process.env && process.env.ELMC_DEBUG_SCENE;
+    if (debugScene && __sceneConsLogs < 30) {
+      const tag = unionTagAsInt(head);
+      const p = readHandle(head);
+      if (tag < 1 || tag > 7 || p?.tag === TAG_INT || p?.tag === TAG_LIST) {
+        __sceneConsLogs += 1;
+        console.error(
+          `[scene-debug] list_cons#${__sceneConsLogs} head=${head|0} unionTag=${tag} payloadTag=${p?.tag}` +
+            (p?.tag === TAG_TUPLE2
+              ? ` first=${unionTagAsInt(p.first)} secondTag=${readHandle(p.second)?.tag}`
+              : p?.tag === TAG_INT
+                ? ` intVal=${p.value}`
+                : p?.tag === TAG_LIST
+                  ? ` listLen=${p.items?.length}`
+                  : "")
+        );
+      }
+    }
     const tail = listItems(tailPtr).map(cloneForList);
     return writeList(outPtr, [head, ...tail]);
   };
@@ -3397,6 +3477,8 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
   const basicsFloor = (outPtr, nPtr) => newInt(outPtr, Math.floor(floatNumber(nPtr)));
   const basicsCeiling = (outPtr, nPtr) => newInt(outPtr, Math.ceil(floatNumber(nPtr)));
   const basicsSqrt = (outPtr, nPtr) => writeFloatNumber(outPtr, Math.sqrt(floatNumber(nPtr)));
+  const basicsPow = (outPtr, basePtr, expPtr) =>
+    writeFloatNumber(outPtr, Math.pow(floatNumber(basePtr), floatNumber(expPtr)));
   const basicsSin = (outPtr, nPtr) => writeFloatNumber(outPtr, Math.sin(floatNumber(nPtr)));
   const basicsCos = (outPtr, nPtr) => writeFloatNumber(outPtr, Math.cos(floatNumber(nPtr)));
   const basicsTan = (outPtr, nPtr) => writeFloatNumber(outPtr, Math.tan(floatNumber(nPtr)));
@@ -5195,6 +5277,7 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
     basics_round: basicsRound,
     basics_sin: basicsSin,
     basics_sqrt: basicsSqrt,
+    basics_pow: basicsPow,
     basics_tan: basicsTan,
     basics_to_float: basicsToFloat,
     basics_to_polar: basicsToPolar,
@@ -5624,11 +5707,13 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
 
       if (kind === HTML_KIND_KEYED) {
         const tagPtr = params[0] | 0;
-        const keyedPtr = params[1] | 0;
+        const attrsPtr = params[1] | 0;
+        const keyedPtr = params[2] | 0;
+        const attrs = attrsFromList(attrsPtr);
         const keyedChildren = keyedChildrenFromList(keyedPtr);
         const handle = newVdomNode(
           stringValue(tagPtr),
-          [],
+          attrs,
           keyedChildren.map((entry) => entry.child),
           null,
           keyedChildren
@@ -5640,11 +5725,13 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
       if (kind === HTML_KIND_KEYED_NS) {
         const nsPtr = params[0] | 0;
         const tagPtr = params[1] | 0;
-        const keyedPtr = params[2] | 0;
+        const attrsPtr = params[2] | 0;
+        const keyedPtr = params[3] | 0;
+        const attrs = attrsFromList(attrsPtr);
         const keyedChildren = keyedChildrenFromList(keyedPtr);
         const handle = newVdomNode(
           stringValue(tagPtr),
-          [],
+          attrs,
           keyedChildren.map((entry) => entry.child),
           stringValue(nsPtr),
           keyedChildren

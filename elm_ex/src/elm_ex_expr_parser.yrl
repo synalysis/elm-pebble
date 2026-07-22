@@ -19,9 +19,10 @@ Right 170 pow.
 Left 180 shl shr.
 Left 190 apply_left.
 Left 200 pipe_right pipe_dot pipe_eq.
-%% `app_expr` precedence (below FIRST(primary) tokens) makes
-%% `pow_expr -> app_expr` lose to juxtaposition shifts.
-Left 205 app_expr.
+%% Do not assign precedence to the `app_expr` nonterminal: `pow_expr -> app_expr`
+%% would inherit it and outrank `pow` (170), so `2 ^ 3` would reduce past `^`
+%% and fail with "syntax error before: pow". Juxtaposition still wins because
+%% FIRST(primary) tokens are declared at 230 below.
 Unary 210 primary.
 Left 220 case_sep.
 Left 221 newline.
@@ -29,8 +30,10 @@ Left 222 indent.
 Left 223 dedent.
 Left 225 field_accessor.
 %% FIRST(primary) tokens for application shift/reduce; must outrank
-%% `app_expr` so juxtaposition wins (same resolution yecc defaulted to).
-Left 230 bslash case_kw if_kw let_kw lbrace lbracket lparen.
+%% bare `pow_expr -> app_expr` (prec 0) so juxtaposition wins.
+%% `field_accessor` is already Left 225 (above).
+Left 230 bslash case_kw if_kw let_kw lbrace lbracket lparen
+         int_lit float_lit string_lit char_lit lower_qid upper_qid.
 
 Rootsymbol pipe_right_expr.
 %% Pipe/composition/field-access/case ambiguities are resolved by the

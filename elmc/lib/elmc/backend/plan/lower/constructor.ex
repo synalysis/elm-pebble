@@ -255,7 +255,8 @@ defmodule Elmc.Backend.Plan.Lower.Constructor do
   # Payload is:
   # - `()` for nullary ctors
   # - the single value for unary ctors
-  # - a list of values for n-ary ctors (n > 1)
+  # - right-nested tuple2s for n-ary ctors (n > 1), matching PatternBind
+  #   (`Pair x y` → tuple2(x, y); `T a b c` → tuple2(a, tuple2(b, c)))
   defp compile_union_value(target, args, value, ctx, b) when is_binary(target) and is_list(args) do
     scratch_ctx = %{ctx | dest_stack: [:scratch], function_tail: false}
 
@@ -275,9 +276,10 @@ defmodule Elmc.Backend.Plan.Lower.Constructor do
     Expr.compile(only, ctx, b)
   end
 
-  defp compile_union_payload(args, ctx, b) when is_list(args) do
-    with {:ok, regs, b1} <- Expr.compile_args(args, ctx, b) do
-      Expr.compile_runtime_builtin(:list_from_values, regs, ctx, b1)
+  defp compile_union_payload([left | rest], ctx, b) when rest != [] do
+    with {:ok, left_reg, b1} <- Expr.compile(left, ctx, b),
+         {:ok, rest_reg, b2} <- compile_union_payload(rest, ctx, b1) do
+      Expr.compile_runtime_builtin(:tuple2, [left_reg, rest_reg], ctx, b2)
     else
       _ -> :unsupported
     end
@@ -286,16 +288,8 @@ defmodule Elmc.Backend.Plan.Lower.Constructor do
   defp lookup_constructor_tag(target, value) do
     tags = Process.get(:elmc_constructor_tags, %{})
 
-    Map.get(tags, target) ||
-      Map.get(tags, short_name(target)) ||
-      lookup_qualified_tag(target, tags) ||
+    Elmc.Backend.CCodegen.IRQueries.lookup_tag(tags, target) ||
       (is_integer(value) && value)
-  end
-
-  defp lookup_qualified_tag(name, tags) do
-    Enum.find_value(tags, fn {key, tag} ->
-      if String.ends_with?(key, "." <> short_name(name)), do: tag
-    end)
   end
 
   defp short_name(name), do: name |> String.split(".") |> List.last()

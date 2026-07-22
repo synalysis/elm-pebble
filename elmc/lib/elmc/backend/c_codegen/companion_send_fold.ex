@@ -38,14 +38,10 @@ defmodule Elmc.Backend.CCodegen.CompanionSendFold do
   defp lookup_constructor_tag(target) do
     tags = Process.get(:elmc_constructor_tags, %{})
 
-    case Map.get(tags, target) || Map.get(tags, short_constructor_name(target)) do
+    case Elmc.Backend.CCodegen.IRQueries.lookup_tag(tags, target) do
       tag when is_integer(tag) -> {:ok, tag}
       _ -> :error
     end
-  end
-
-  defp short_constructor_name(target) do
-    target |> String.split(".") |> List.last()
   end
 
   defp fold_union_int_lookup(module, name, union_tag, decl_map) do

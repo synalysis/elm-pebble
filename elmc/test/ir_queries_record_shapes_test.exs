@@ -99,6 +99,28 @@ defmodule Elmc.IRQueriesRecordShapesTest do
            ]
   end
 
+  test "Scene3d.composite-style args sort alphabetically so dimensions is index 4" do
+    # custom builds {camera, clipDepth, antialiasing, dimensions, background} in
+    # source order; composite reads arguments.dimensions at alphabetical index 4.
+    fields = [
+      %{name: "camera", expr: %{op: :var, name: "c"}},
+      %{name: "clipDepth", expr: %{op: :var, name: "d"}},
+      %{name: "antialiasing", expr: %{op: :var, name: "a"}},
+      %{name: "dimensions", expr: %{op: :var, name: "dims"}},
+      %{name: "background", expr: %{op: :var, name: "b"}}
+    ]
+
+    canonical = Record.canonicalize_literal_fields(fields, %Context{module: "Scene3d"})
+
+    assert Enum.map(canonical, & &1.name) == [
+             "antialiasing",
+             "background",
+             "camera",
+             "clipDepth",
+             "dimensions"
+           ]
+  end
+
   test "buildWithLocalState handlers literal sorts init before view" do
     # Route.Wasm passes {view, init, update, subscriptions} in source order.
     # RouteBuilder.buildWithLocalState reads config.init at alphabetical index 0.
@@ -285,7 +307,9 @@ defmodule Elmc.IRQueriesRecordShapesTest do
              {:ok, 4}
   end
 
-  test "zero-arg callee record literal resolves Shared.template.view to index 2" do
+  test "zero-arg callee record literal resolves Shared.template fields alphabetically" do
+    # Shared.template = { init, update, view, data, subscriptions, onPageChange }
+    # in source order; record_new and field_access both use alphabetical layout.
     ctx = %Context{
       module: "Main",
       function_name: "view",
@@ -316,9 +340,11 @@ defmodule Elmc.IRQueriesRecordShapesTest do
     }
 
     for base <- [base_call, base_ref, base_field_access] do
-      assert Record.resolve_field_index_int("init", ctx, base) == {:ok, 0}
-      assert Record.resolve_field_index_int("view", ctx, base) == {:ok, 2}
-      assert Record.resolve_field_index_int("onPageChange", ctx, base) == {:ok, 5}
+      # alphabetical: data, init, onPageChange, subscriptions, update, view
+      assert Record.resolve_field_index_int("data", ctx, base) == {:ok, 0}
+      assert Record.resolve_field_index_int("init", ctx, base) == {:ok, 1}
+      assert Record.resolve_field_index_int("onPageChange", ctx, base) == {:ok, 2}
+      assert Record.resolve_field_index_int("view", ctx, base) == {:ok, 5}
     end
   end
 

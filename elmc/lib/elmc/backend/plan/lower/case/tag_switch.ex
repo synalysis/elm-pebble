@@ -423,17 +423,8 @@ defmodule Elmc.Backend.Plan.Lower.Case.TagSwitch do
 
     if is_binary(name) do
       tags = Process.get(:elmc_constructor_tags, %{})
-
-      Map.get(tags, name) ||
-        Map.get(tags, short_name(name)) ||
-        lookup_qualified_tag(name, tags)
+      Elmc.Backend.CCodegen.IRQueries.lookup_tag(tags, name)
     end
-  end
-
-  defp lookup_qualified_tag(name, tags) do
-    Enum.find_value(tags, fn {key, tag} ->
-      if String.ends_with?(key, "." <> short_name(name)), do: tag
-    end)
   end
 
   defp short_name(name), do: name |> String.split(".") |> List.last()

@@ -12,6 +12,7 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
   alias Elmc.Backend.Plan.Lower.Platform.Web, as: PlatformWeb
   alias Elmc.Backend.Plan.RuntimeBuiltins
   alias Elmc.Backend.Plan.Types
+  alias Elmc.Backend.Pebble.Util, as: PebbleUtil
 
   @literal_ops [:int_literal, :c_int_expr, :bool_literal, :string_literal, :char_literal, :cmd_none, :sub_none, :float_literal]
 
@@ -2412,11 +2413,15 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
           []
       end
 
-    if Enum.any?(keys, &Map.has_key?(specs, &1)) do
-      # Elm union constructors take a single payload (record/tuple/value).
-      1
-    else
-      0
+    # Multi-arg ctors (`OpaqueMeshNode Bounds DrawFunction`) must keep full
+    # Elm arity so bare refs lower to arity-N partials, not a unary wrapper.
+    case Enum.find_value(keys, &Map.get(specs, &1)) ||
+           Enum.find_value(specs, fn
+             {{_mod, name}, spec} when name == short and is_binary(spec) -> spec
+             _ -> nil
+           end) do
+      spec when is_binary(spec) -> PebbleUtil.payload_arity_for_spec(spec)
+      _ -> 0
     end
   end
 

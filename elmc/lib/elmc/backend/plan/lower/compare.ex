@@ -59,7 +59,7 @@ defmodule Elmc.Backend.Plan.Lower.Compare do
             kind: kind || :eq,
             left: left_reg,
             right: right_reg,
-            mode: compare_equality_mode(left, right, ctx)
+            mode: compare_mode(kind || :eq, left, right, ctx)
           },
           effects: %{
             produces: {:owned, reg},
@@ -204,16 +204,7 @@ defmodule Elmc.Backend.Plan.Lower.Compare do
 
   defp union_ctor_tag(name) when is_binary(name) do
     tags = Process.get(:elmc_constructor_tags, %{})
-
-    Map.get(tags, name) ||
-      Map.get(tags, short_ctor_name(name)) ||
-      lookup_qualified_ctor_tag(name, tags)
-  end
-
-  defp lookup_qualified_ctor_tag(name, tags) do
-    Enum.find_value(tags, fn {key, tag} ->
-      if String.ends_with?(key, "." <> short_ctor_name(name)), do: tag
-    end)
+    Elmc.Backend.CCodegen.IRQueries.lookup_tag(tags, name)
   end
 
   defp emit_test_ctor_tag(subject_reg, tag, b) when is_integer(tag) do
@@ -297,6 +288,21 @@ defmodule Elmc.Backend.Plan.Lower.Compare do
 
   defp short_ctor_name(name) when is_binary(name) do
     name |> String.split(".") |> List.last()
+  end
+
+  defp compare_mode(kind, left, right, ctx) do
+    mode = compare_equality_mode(left, right, ctx)
+
+    # Ordering must never use pointer identity. Polymorphic `number` payloads
+    # (elm-units `Quantity.greaterThan (Quantity y) (Quantity x) = x > y`) have no
+    # Int/Float type in the env, so mode would be `:pointer` and `i32.gt_s` on
+    # handles follows allocation order — `Quantity.abs` boxes fresh Ints each
+    # call, so Light.soft's intensity swap recurses forever.
+    if mode == :pointer and kind in [:gt, :gte, :lt, :lte] do
+      :int_boxed
+    else
+      mode
+    end
   end
 
   defp compare_equality_mode(left, right, ctx) do

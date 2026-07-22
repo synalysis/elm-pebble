@@ -47,11 +47,13 @@ export function createNavigationRuntime(deps) {
     const fields = impl?.fields ?? [];
     if (fields.length < 6) return { onUrlRequest: 0, onUrlChange: 0 };
 
-    const field4 = fields[4] | 0;
-    const field5 = fields[5] | 0;
+    // Alphabetical Browser.application layout:
+    // init, onUrlChange, onUrlRequest, subscriptions, update, view
+    const onUrlChange = fields[1] | 0;
+    const onUrlRequest = fields[2] | 0;
 
-    // Record literal field order varies (fixtures vs elm-pages Platform.application).
-    // onUrlChange : Url -> msg always tags UrlChanged (2); onUrlRequest expects UrlRequest.
+    // Defensive: some older artifacts used declaration order (…, onUrlRequest,
+    // onUrlChange at indices 4/5). Probe when alpha slots do not look like Url→msg.
     const probeUrl = urlRuntime.urlFromParts({
       protocol: "http:",
       host: "localhost",
@@ -61,6 +63,13 @@ export function createNavigationRuntime(deps) {
       hash: "",
     });
 
+    const tagChange = probeCallbackMsgTag(onUrlChange, probeUrl);
+    if (tagChange === URL_CHANGED_MSG_TAG) {
+      return { onUrlChange, onUrlRequest };
+    }
+
+    const field4 = fields[4] | 0;
+    const field5 = fields[5] | 0;
     const tag4Url = probeCallbackMsgTag(field4, probeUrl);
     const tag5Url = probeCallbackMsgTag(field5, probeUrl);
 
@@ -71,8 +80,7 @@ export function createNavigationRuntime(deps) {
       return { onUrlChange: field5, onUrlRequest: field4 };
     }
 
-    // Fallback: common Browser.application fixture order.
-    return { onUrlRequest: field4, onUrlChange: field5 };
+    return { onUrlChange, onUrlRequest };
   };
 
   const invokeUrlChange = async (location) => {

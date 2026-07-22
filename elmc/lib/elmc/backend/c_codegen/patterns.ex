@@ -496,27 +496,7 @@ defmodule Elmc.Backend.CCodegen.Patterns do
 
   defp lookup_ir_constructor_tag_by_name(name) when is_binary(name) do
     tags = Process.get(:elmc_constructor_tags, %{})
-
-    cond do
-      Map.has_key?(tags, name) ->
-        Map.get(tags, name)
-
-      true ->
-        short = name |> String.split(".") |> List.last()
-
-        case Map.get(tags, short) do
-          tag when is_integer(tag) ->
-            tag
-
-          _ ->
-            tags
-            |> Enum.filter(fn {key, _tag} -> String.ends_with?(key, "." <> short) end)
-            |> case do
-              [{_key, tag}] -> tag
-              _ -> nil
-            end
-        end
-    end
+    Elmc.Backend.CCodegen.IRQueries.lookup_tag(tags, name)
   end
 
   defp bind_pattern_fallback(env, %{arg_pattern: arg} = pattern, subject_ref) when not is_nil(arg) do

@@ -378,6 +378,79 @@ defmodule Elmc.Backend.CCodegen.IRQueries do
     Map.merge(@bundled_union_constructor_tags, Map.new(qualified ++ unqualified))
   end
 
+  @doc """
+  Resolve a constructor name to its tag.
+
+  Prefer exact / unique short-name hits. When a short name is shared across
+  modules (e.g. `Group`), qualify via the call-site module (`Scene3d.Entity.Group`)
+  and pick the candidate with the longest shared module prefix
+  (`Scene3d.Types.Group`), never an unrelated package's ctor
+  (`Benchmark.Benchmark.Group`).
+  """
+  @spec lookup_tag(%{optional(String.t()) => non_neg_integer()}, String.t()) ::
+          non_neg_integer() | nil
+  def lookup_tag(tags, target) when is_map(tags) and is_binary(target) do
+    short = constructor_short_name(target)
+
+    Map.get(tags, target) ||
+      Map.get(tags, short) ||
+      lookup_suffix_tag(tags, target, short)
+  end
+
+  def lookup_tag(_tags, _target), do: nil
+
+  defp lookup_suffix_tag(tags, target, short) do
+    suffix = "." <> short
+
+    candidates =
+      for {key, tag} <- tags,
+          is_binary(key) and is_integer(tag),
+          String.ends_with?(key, suffix),
+          do: {key, tag}
+
+    case candidates do
+      [] ->
+        nil
+
+      [{_key, tag}] ->
+        tag
+
+      many ->
+        target_mod = target |> String.split(".") |> Enum.drop(-1)
+
+        scored =
+          Enum.map(many, fn {key, tag} ->
+            key_mod = key |> String.split(".") |> Enum.drop(-1)
+            leading = shared_prefix_len(target_mod, key_mod)
+            trailing = shared_prefix_len(Enum.reverse(target_mod), Enum.reverse(key_mod))
+            {{leading, trailing}, String.length(key), key, tag}
+          end)
+
+        max_score = scored |> Enum.map(&elem(&1, 0)) |> Enum.max()
+
+        # Refuse to guess among unrelated packages (no shared module segments).
+        if max_score == {0, 0} do
+          nil
+        else
+          {_score, _len, _key, tag} =
+            scored
+            |> Enum.filter(fn {score, _, _, _} -> score == max_score end)
+            |> Enum.max_by(fn {_score, len, _key, _tag} -> len end)
+
+          tag
+        end
+    end
+  end
+
+  defp shared_prefix_len(left, right) do
+    left
+    |> Enum.zip(right)
+    |> Enum.take_while(fn {a, b} -> a == b end)
+    |> length()
+  end
+
+  defp constructor_short_name(name), do: name |> String.split(".") |> List.last()
+
   @spec module_ports_map(IR.t()) :: %{optional(String.t()) => [String.t()]}
   def module_ports_map(%IR{} = ir) do
     ir.modules

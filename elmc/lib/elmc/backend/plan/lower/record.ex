@@ -182,17 +182,11 @@ defmodule Elmc.Backend.Plan.Lower.Record do
             expand_fields_to_shape(fields, shape)
 
           :none ->
-            # Anonymous records that field_access indexes alphabetically (Elm runtime)
-            # must be stored alphabetically. Sorting *every* anonymous literal can
-            # disagree with declaration-order readers (page-data / empty views).
-            # Sort only field sets we know are read alphabetically:
-            # - Svg.Arrow details (Internal.Svg.Arrow.arrow)
-            # - RouteBuilder local-state handlers (`config.init` at index 0)
-            if arrow_details_field_set?(names) or local_state_handlers_field_set?(names) do
-              Enum.sort_by(fields, &to_string(field_name(&1)))
-            else
-              fields
-            end
+            # Anonymous records: Elm stores fields alphabetically, and field_access on
+            # anonymous / inline param types uses alphabetical indices. Write and read
+            # must agree. Named alias / union-payload shapes are handled above (and may
+            # preserve declaration order when registered that way).
+            Enum.sort_by(fields, &to_string(field_name(&1)))
         end
 
       canonical_names ->
@@ -252,16 +246,6 @@ defmodule Elmc.Backend.Plan.Lower.Record do
           field
       end
     end)
-  end
-
-  defp arrow_details_field_set?(names) when is_list(names) do
-    MapSet.new(Enum.map(names, &to_string/1)) ==
-      MapSet.new(~w(ascent descent end headLeft headRight start))
-  end
-
-  defp local_state_handlers_field_set?(names) when is_list(names) do
-    MapSet.new(Enum.map(names, &to_string/1)) ==
-      MapSet.new(~w(init subscriptions update view))
   end
 
   @doc false
@@ -328,12 +312,15 @@ defmodule Elmc.Backend.Plan.Lower.Record do
 
   # Top-level values like `Shared.template = { init, update, view, … }` are record
   # literals in IR. When lowering `Shared.template.view`, the base expression is the
-  # zero-arg call — resolve field indices from that literal's declaration order.
+  # zero-arg call — resolve field indices in the same order as record_new
+  # (`canonicalize_literal_fields`), not raw IR source order.
   defp field_index_from_callee_record_literal(field_name, ctx, base_expr)
        when is_binary(field_name) do
     case callee_decl_for_base_expr(base_expr, ctx) do
       %{expr: %{op: :record_literal, fields: fields}} when is_list(fields) ->
-        Enum.find_index(fields, &(field_name(&1) == field_name))
+        fields
+        |> canonicalize_literal_fields(ctx || %Context{})
+        |> Enum.find_index(&(field_name(&1) == field_name))
 
       _ ->
         nil
