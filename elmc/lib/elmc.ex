@@ -59,10 +59,11 @@ defmodule Elmc do
     with {:ok, project} <- project_for_compile(project_dir, opts),
          :ok <- check_missing_imports(project, opts),
          :ok <- compile_log(lowering_ir_log_message(opts)),
-         {:ok, ir0} <- Lowerer.lower_project(project),
+         {:ok, ir0} <- Lowerer.lower_project(project, lower_project_opts(project, opts)),
          :ok <- compile_log("IR lower complete (#{length(ir0.modules)} modules); emitting artifacts…"),
          ir0 = PipeChain.desugar_project(ir0),
          ir <- maybe_strip_dead_code(ir0, entry_module, opts[:strip_dead_code]),
+         :ok <- compile_log("dead-code strip complete; planning/emitting…"),
          {:ok, ir, debug_usage_diagnostics} <- check_debug_usage(ir, opts),
          svg_dom = IRQueries.svg_attribute_dom_names(ir0),
          opts =
@@ -218,10 +219,43 @@ defmodule Elmc do
   @spec lowering_ir_log_message(compile_options()) :: String.t()
   defp lowering_ir_log_message(opts) do
     if Targets.emit_wasm?(opts) do
-      "lowering IR (large elm-pages apps often take 20–40 minutes with no further output)…"
+      "lowering IR (progress on stderr; cache/reachable-only enabled by default)…"
     else
       "lowering IR…"
     end
+  end
+
+  defp lower_project_opts(%ElmEx.Frontend.Project{} = project, opts) when is_map(opts) do
+    strip? = Map.get(opts, :strip_dead_code, true) != false
+    fast? = Map.get(opts, :fast, false) == true or System.get_env("ELMC_FAST") in ["1", "true"]
+
+    parallel =
+      Map.get(opts, :ir_parallel) ||
+        case System.get_env("ELMC_IR_PARALLEL") do
+          nil -> if fast?, do: 2, else: 1
+          n -> String.to_integer(n)
+        end
+
+    cache? =
+      Map.get(opts, :ir_cache, true) != false and
+        is_binary(project.project_dir)
+
+    cache_dir =
+      Map.get(opts, :ir_cache_dir) ||
+        (cache? && Path.join(project.project_dir, ".elmc-cache/ir"))
+
+    [
+      entry_module: opts[:entry_module] || "Main",
+      reachable_only: Map.get(opts, :ir_reachable_only, strip?),
+      cache: cache?,
+      cache_dir: cache_dir,
+      progress: Map.get(opts, :ir_progress, true),
+      parallel: max(1, parallel)
+    ]
+    |> Enum.reject(fn
+      {:cache_dir, nil} -> true
+      _ -> false
+    end)
   end
 
   @spec seed_codegen_process_state(ElmEx.IR.t(), compile_options()) :: :ok

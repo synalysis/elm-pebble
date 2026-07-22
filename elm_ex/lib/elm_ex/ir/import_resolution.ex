@@ -109,11 +109,20 @@ defmodule ElmEx.IR.ImportResolution do
       when is_binary(prefix) and is_binary(member) do
     original = "#{prefix}.#{member}"
     resolved = resolve(original, lookup)
+    alias_map = Map.get(lookup, :alias_map, %{})
 
-    if resolved != original and String.contains?(resolved, ".") do
-      {:ok, resolved}
-    else
-      :error
+    cond do
+      resolved != original and String.contains?(resolved, ".") ->
+        {:ok, resolved}
+
+      # `import Theme` / `as Theme` keeps the qualifier string identical, but the
+      # prefix is still a module alias — treat `Theme.white` as that binding.
+      Map.has_key?(alias_map, prefix) ->
+        module = Map.fetch!(alias_map, prefix)
+        {:ok, "#{module}.#{member}"}
+
+      true ->
+        :error
     end
   end
 

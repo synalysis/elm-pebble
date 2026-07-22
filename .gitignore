@@ -11,6 +11,7 @@
 # Elm artifacts
 **/elm-stuff/
 **/.elm/
+**/.elmc-cache/
 
 # Node / JS artifacts
 **/node_modules/

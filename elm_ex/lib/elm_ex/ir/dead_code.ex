@@ -27,15 +27,46 @@ defmodule ElmEx.IR.DeadCode do
     walk_reachable(function_map, MapSet.new(initial_roots), initial_roots)
   end
 
+  @doc """
+  All qualified/local call targets mentioned in function bodies (whether or not
+  the callee exists in `ir`).
+  """
+  @spec referenced_keys(IR.t()) :: MapSet.t()
+  def referenced_keys(%IR{} = ir) do
+    ir.modules
+    |> Enum.flat_map(fn mod ->
+      mod.declarations
+      |> Enum.filter(&(&1.kind == :function))
+      |> Enum.flat_map(fn decl -> collect_calls(decl.expr, mod.name) end)
+    end)
+    |> MapSet.new()
+  end
+
+  @doc """
+  `Module.function` keys present as function declarations in `ir`.
+  """
+  @spec present_keys(IR.t()) :: MapSet.t()
+  def present_keys(%IR{} = ir) do
+    ir
+    |> function_map()
+    |> Map.keys()
+    |> MapSet.new()
+  end
+
   @spec strip(IR.t(), String.t(), keyword()) :: IR.t()
   def strip(%IR{} = ir, entry_module, opts \\ []) do
     reachable = reachable_keys(ir, entry_module, opts)
 
     modules =
       Enum.map(ir.modules, fn mod ->
+        ports = Map.get(mod, :ports, []) || []
+
         declarations =
           Enum.filter(mod.declarations, fn decl ->
-            decl.kind != :function || MapSet.member?(reachable, "#{mod.name}.#{decl.name}")
+            decl.kind != :function ||
+              MapSet.member?(reachable, "#{mod.name}.#{decl.name}") ||
+              # Port signatures have no body so they never enter the walk; always keep.
+              decl.name in ports
           end)
 
         %{mod | declarations: declarations}

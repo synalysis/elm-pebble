@@ -12,6 +12,23 @@ KEEP_WAT="${KEEP_WAT:-0}"
 SKIP_WASM_OPT="${SKIP_WASM_OPT:-0}"
 SKIP_VERIFY="${SKIP_VERIFY:-0}"
 
+# ELMC_FAST=1 — iterate without wasm-opt / probes; enables modest IR parallelism.
+if [[ "${ELMC_FAST:-0}" == "1" || "${ELMC_FAST:-}" == "true" ]]; then
+  SKIP_WASM_OPT="${SKIP_WASM_OPT:-1}"
+  SKIP_VERIFY="${SKIP_VERIFY:-1}"
+  export ELMC_FAST=1
+  export ELMC_IR_PARALLEL="${ELMC_IR_PARALLEL:-2}"
+  # Allow a second scheduler when IR lower runs in parallel (still ulimit-capped).
+  export ELIXIR_ERL_OPTIONS="${ELIXIR_ERL_OPTIONS:-+S 2:2 +MMscs 512}"
+fi
+
+# ELMC_IR_PARALLEL>1 without FAST still bumps schedulers unless caller set ERL opts.
+if [[ -n "${ELMC_IR_PARALLEL:-}" && "${ELMC_IR_PARALLEL}" -gt 1 ]]; then
+  if [[ -z "${ELIXIR_ERL_OPTIONS:-}" || "${ELIXIR_ERL_OPTIONS}" == "+S 1:1 +MMscs 256" ]]; then
+    export ELIXIR_ERL_OPTIONS="+S ${ELMC_IR_PARALLEL}:${ELMC_IR_PARALLEL} +MMscs 512"
+  fi
+fi
+
 find_wasm_opt() {
   if [[ -n "${WASM_OPT:-}" && -x "${WASM_OPT}" ]]; then
     echo "$WASM_OPT"
@@ -51,18 +68,26 @@ ensure_wasm_opt() {
 # matches mix-test-limited's default ceiling and still prevents unbounded OOM.
 export TEST_ULIMIT_V_KB="${TEST_ULIMIT_V_KB:-10485760}"
 export ELIXIR_ERL_OPTIONS="${ELIXIR_ERL_OPTIONS:-+S 1:1 +MMscs 256}"
-echo "==> elmc compile (IR lower + WASM emit; often 20–40 min for elm_pebble_dev)"
+if [[ "${ELMC_FAST:-0}" == "1" || "${ELMC_FAST:-}" == "true" ]]; then
+  echo "==> elmc compile (FAST: reachable-only IR, disk cache, skip wasm-opt/probes)"
+else
+  echo "==> elmc compile (IR lower + WASM emit; uses .elmc-cache/ir when present)"
+fi
 echo "    Progress lines are prefixed with [elmc] on stderr."
 "$ROOT/scripts/mix-run-limited.sh" elmc -e "
 out = \"$OUT\"
-File.rm_rf!(out)
+if System.get_env(\"ELMC_KEEP_OUT\") not in [\"1\", \"true\"] do
+  File.rm_rf!(out)
+end
+fast? = System.get_env(\"ELMC_FAST\") in [\"1\", \"true\"]
 case Elmc.compile(\"$APP\", %{
   out_dir: out,
   targets: [:wasm],
   web: true,
   entry_module: \"Main\",
   strip_dead_code: true,
-  wasm_strict: false
+  wasm_strict: false,
+  fast: fast?
 }) do
   {:ok, _} ->
     IO.puts(\"WASM web build OK: #{out}\")
@@ -95,6 +120,8 @@ if [[ "$SKIP_WASM_OPT" != "1" ]]; then
   "$OPT_BIN" "$WASM_OPT_LEVEL" --converge --enable-multivalue "$WASM" -o "$WASM"
   bytes="$(wc -c < "$WASM" | tr -d ' ')"
   echo "Optimized: $WASM (${bytes} bytes) via $OPT_BIN $WASM_OPT_LEVEL --converge"
+else
+  echo "==> SKIP_WASM_OPT=1 (raw wat2wasm output kept)"
 fi
 
 if [[ "$KEEP_WAT" != "1" ]]; then

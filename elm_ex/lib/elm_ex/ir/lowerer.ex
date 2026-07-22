@@ -9,9 +9,12 @@ defmodule ElmEx.IR.Lowerer do
   alias ElmEx.Frontend.Project
   alias ElmEx.Frontend.DefaultImports
   alias ElmEx.IR
+  alias ElmEx.IR.DeadCode
   alias ElmEx.IR.Declaration
+  alias ElmEx.IR.FrontendReachability
   alias ElmEx.IR.FunctionCallCheck
   alias ElmEx.IR.ImportResolution
+  alias ElmEx.IR.LowererCache
   alias ElmEx.IR.Module
   alias ElmEx.IR.PipeChain
   alias ElmEx.IR.Wire3HelperResolution
@@ -42,343 +45,80 @@ defmodule ElmEx.IR.Lowerer do
       "Diagram.Svg.Config.withCellAttributesFunction"
   }
 
+  @doc """
+  Public export map used by reachability and import resolution.
+  """
+  @spec project_module_exports([FrontendModule.t()]) :: ModuleExports.project_exports()
+  def project_module_exports(modules), do: build_project_module_exports(modules)
+
+  @doc """
+  Import-resolution bundle for a frontend module.
+  """
+  @spec import_resolution_for(FrontendModule.t() | map(), ModuleExports.project_exports()) ::
+          Lookup.import_resolution_bundle()
+  def import_resolution_for(frontend_module, project_module_exports) when is_map(frontend_module) do
+    build_import_resolution(
+      Map.get(frontend_module, :import_entries) || [],
+      project_module_exports
+    )
+  end
+
   @spec lower_project(Project.t()) :: {:ok, IR.t()}
-  def lower_project(%Project{} = project) do
-    global_constructor_lookup =
-      project.modules
-      |> Enum.flat_map(fn frontend_module ->
-        frontend_module.declarations
-        |> Enum.filter(&(&1.kind == :union))
-        |> Enum.flat_map(fn union ->
-          constructors = Map.get(union, :constructors, [])
+  @spec lower_project(Project.t(), keyword()) :: {:ok, IR.t()}
+  def lower_project(%Project{} = project, opts \\ []) do
+    opts = normalize_lower_opts(opts, project)
 
-          constructors
-          |> Enum.with_index(1)
-          |> Enum.map(fn {constructor, index} -> {constructor.name, index} end)
-        end)
-      end)
-      |> Map.new()
-
-    global_qualified_constructor_lookup =
-      project.modules
-      |> Enum.flat_map(fn frontend_module ->
-        frontend_module.declarations
-        |> Enum.filter(&(&1.kind == :union))
-        |> Enum.flat_map(fn union ->
-          constructors = Map.get(union, :constructors, [])
-
-          constructors
-          |> Enum.with_index(1)
-          |> Enum.map(fn {constructor, index} ->
-            {"#{frontend_module.name}.#{constructor.name}", index}
-          end)
-        end)
-      end)
-      |> Map.new()
-
-    global_payload_kind_lookup =
-      project.modules
-      |> Enum.flat_map(fn frontend_module ->
-        frontend_module.declarations
-        |> Enum.filter(&(&1.kind == :union))
-        |> Enum.flat_map(fn union ->
-          constructors = Map.get(union, :constructors, [])
-
-          constructors
-          |> Enum.map(fn constructor ->
-            {constructor.name, payload_kind_for_spec(constructor.arg)}
-          end)
-        end)
-      end)
-      |> Map.new()
-
-    global_qualified_payload_kind_lookup =
-      project.modules
-      |> Enum.flat_map(fn frontend_module ->
-        frontend_module.declarations
-        |> Enum.filter(&(&1.kind == :union))
-        |> Enum.flat_map(fn union ->
-          constructors = Map.get(union, :constructors, [])
-
-          constructors
-          |> Enum.map(fn constructor ->
-            {"#{frontend_module.name}.#{constructor.name}",
-             payload_kind_for_spec(constructor.arg)}
-          end)
-        end)
-      end)
-      |> Map.new()
-
-    global_payload_arity_lookup =
-      project.modules
-      |> Enum.flat_map(fn frontend_module ->
-        frontend_module.declarations
-        |> Enum.filter(&(&1.kind == :union))
-        |> Enum.flat_map(fn union ->
-          constructors = Map.get(union, :constructors, [])
-
-          constructors
-          |> Enum.map(fn constructor ->
-            {constructor.name, payload_arity_for_spec(constructor.arg)}
-          end)
-        end)
-      end)
-      |> Map.new()
-
-    global_qualified_payload_arity_lookup =
-      project.modules
-      |> Enum.flat_map(fn frontend_module ->
-        frontend_module.declarations
-        |> Enum.filter(&(&1.kind == :union))
-        |> Enum.flat_map(fn union ->
-          constructors = Map.get(union, :constructors, [])
-
-          constructors
-          |> Enum.map(fn constructor ->
-            {"#{frontend_module.name}.#{constructor.name}",
-             payload_arity_for_spec(constructor.arg)}
-          end)
-        end)
-      end)
-      |> Map.new()
-
-    global_record_alias_field_lookup =
-      project.modules
-      |> Enum.flat_map(fn frontend_module ->
-        frontend_module.declarations
-        |> Enum.filter(&(&1.kind == :type_alias))
-        |> Enum.flat_map(fn decl ->
-          case Map.get(decl, :fields) do
-            fields when is_list(fields) and fields != [] ->
-              [{decl.name, Enum.map(fields, &to_string/1)}]
-
-            _ ->
-              []
-          end
-        end)
-      end)
-      |> Map.new()
-
-    global_qualified_record_alias_field_lookup =
-      project.modules
-      |> Enum.flat_map(fn frontend_module ->
-        frontend_module.declarations
-        |> Enum.filter(&(&1.kind == :type_alias))
-        |> Enum.flat_map(fn decl ->
-          case Map.get(decl, :fields) do
-            fields when is_list(fields) and fields != [] ->
-              [{"#{frontend_module.name}.#{decl.name}", Enum.map(fields, &to_string/1)}]
-
-            _ ->
-              []
-          end
-        end)
-      end)
-      |> Map.new()
-
+    globals = build_global_tables(project.modules)
     project_module_exports = build_project_module_exports(project.modules)
 
+    reachable =
+      if Keyword.get(opts, :reachable_only, false) do
+        entry = Keyword.get(opts, :entry_module, "Main")
+        progress_log(opts, "computing reachable functions from #{entry}…")
+        keys = FrontendReachability.reachable_function_keys(project, entry, opts)
+
+        if MapSet.size(keys) == 0 do
+          progress_log(opts, "reachable set empty; lowering all functions")
+          :all
+        else
+          progress_log(opts, "reachable functions: #{MapSet.size(keys)}")
+          keys
+        end
+      else
+        :all
+      end
+
+    cache_opts =
+      opts
+      |> Keyword.put(:reachable_fp, LowererCache.fingerprint_reachable(reachable))
+
+    cache =
+      LowererCache.init(
+        cache_opts,
+        globals.fingerprint,
+        project.project_dir
+      )
+
     modules =
-      Enum.map(project.modules, fn frontend_module ->
-        {signatures, others} =
-          Enum.split_with(frontend_module.declarations, &(&1.kind == :function_signature))
-
-        unions =
-          others
-          |> Enum.filter(&(&1.kind == :union))
-          |> Enum.map(fn union ->
-            constructors = Map.get(union, :constructors, [])
-
-            tag_map =
-              constructors
-              |> Enum.with_index(1)
-              |> Map.new(fn {constructor, index} ->
-                {constructor.name, index}
-              end)
-
-            payload_specs =
-              constructors
-              |> Map.new(fn constructor ->
-                {constructor.name, constructor.arg}
-              end)
-
-            payload_kinds =
-              payload_specs
-              |> Map.new(fn {name, spec} ->
-                {name, payload_kind_for_spec(spec)}
-              end)
-
-            {union.name,
-             %{
-               constructors: constructors,
-               tags: tag_map,
-               payload_specs: payload_specs,
-               payload_kinds: payload_kinds
-             }}
-          end)
-          |> Map.new()
-
-        definition_decls =
-          others
-          |> Enum.filter(&(&1.kind == :function_definition))
-          |> then(
-            &Wire3HelperResolution.augment_function_definitions(
-              frontend_module.name,
-              &1,
-              Wire3HelperResolution.union_meta_from_lowerer(unions)
-            )
-          )
-
-        {definitions, rewrite_lookup} =
-          definition_decls
-          |> then(fn defs ->
-            local_constructor_lookup =
-              unions
-              |> Map.values()
-              |> Enum.flat_map(fn union_info ->
-                union_info
-                |> Map.get(:tags, %{})
-                |> Enum.to_list()
-              end)
-              |> Map.new()
-
-            {alias_map, alias_member_map, import_unqualified_map, wildcard_import_modules,
-             type_unqualified_map} =
-              build_import_resolution(
-                Map.get(frontend_module, :import_entries) || [],
-                project_module_exports
-              )
-
-            local_payload_arity_lookup =
-              unions
-              |> Map.values()
-              |> Enum.flat_map(fn union_info ->
-                union_info
-                |> Map.get(:payload_specs, %{})
-                |> Enum.map(fn {name, spec} -> {name, payload_arity_for_spec(spec)} end)
-              end)
-              |> Map.new()
-
-            rewrite_lookup = %{
-              local: local_constructor_lookup,
-              unqualified: global_constructor_lookup,
-              qualified: global_qualified_constructor_lookup,
-              payload_arity_local: local_payload_arity_lookup,
-              payload_arity_unqualified: global_payload_arity_lookup,
-              payload_arity_qualified: global_qualified_payload_arity_lookup,
-              current_module: frontend_module.name,
-              alias_map: alias_map,
-              alias_member_map: alias_member_map,
-              import_unqualified_map: import_unqualified_map,
-              type_unqualified_map: type_unqualified_map,
-              wildcard_import_modules: wildcard_import_modules,
-              local_call_names: MapSet.new(Enum.map(defs, & &1.name)),
-              record_alias_fields_local: local_record_alias_field_lookup(frontend_module),
-              record_alias_fields_unqualified: global_record_alias_field_lookup,
-              record_alias_fields_qualified: global_qualified_record_alias_field_lookup
-            }
-
-            {defs, rewrite_lookup}
-          end)
-          |> then(fn {defs, rewrite_lookup} ->
-            definitions =
-              defs
-              |> Map.new(fn defn ->
-                fn_lookup =
-                  Enum.reduce(defn.args || [], rewrite_lookup, fn arg, acc ->
-                    put_let_bound_name(acc, arg)
-                  end)
-
-                expr = rewrite_expr(defn.expr, fn_lookup)
-                {defn.name, %{defn | expr: expr}}
-              end)
-
-            {definitions, rewrite_lookup}
-          end)
-
-        signature_names = signatures |> Enum.map(& &1.name) |> MapSet.new()
-
-        signature_declarations =
-          signatures
-          |> Enum.map(fn sig ->
-            lower_declaration(sig, Map.get(definitions, sig.name), rewrite_lookup)
-          end)
-          |> Enum.reject(&is_nil/1)
-
-        definition_only_declarations =
-          definition_decls
-          |> Enum.reject(&MapSet.member?(signature_names, &1.name))
-          |> Enum.map(fn defn ->
-            lowered = Map.get(definitions, defn.name, defn)
-            lower_declaration(lowered, nil, rewrite_lookup)
-          end)
-          |> Enum.reject(&is_nil/1)
-
-        signature_by_name = Map.new(signature_declarations, &{&1.name, &1})
-        definition_only_by_name = Map.new(definition_only_declarations, &{&1.name, &1})
-
-        type_alias_declarations =
-          others
-          |> Enum.filter(&(&1.kind == :type_alias))
-          |> Enum.map(&lower_declaration(&1, nil, rewrite_lookup))
-          |> Enum.reject(&is_nil/1)
-
-        ordered_function_names =
-          frontend_module.declarations
-          |> Enum.filter(&(&1.kind in [:function_signature, :function_definition]))
-          |> Enum.map(& &1.name)
-          |> Enum.reduce({[], MapSet.new()}, fn name, {acc, seen} ->
-            if MapSet.member?(seen, name) do
-              {acc, seen}
-            else
-              {[name | acc], MapSet.put(seen, name)}
-            end
-          end)
-          |> elem(0)
-          |> Enum.reverse()
-
-        wire3_extra_names =
-          definition_decls
-          |> Enum.map(& &1.name)
-          |> Enum.reject(&(&1 in ordered_function_names))
-
-        ordered_declarations =
-          type_alias_declarations ++
-            (ordered_function_names
-             |> Enum.map(fn name ->
-               Map.get(signature_by_name, name) || Map.get(definition_only_by_name, name)
-             end)
-             |> Enum.reject(&is_nil/1)) ++
-            (wire3_extra_names
-             |> Enum.map(&Map.get(definition_only_by_name, &1))
-             |> Enum.reject(&is_nil/1))
-          |> Enum.map(fn decl ->
-            case Map.get(decl, :expr) do
-              nil -> decl
-              expr -> %{decl | expr: ImportResolution.normalize_expr(expr, rewrite_lookup)}
-            end
-          end)
-
-        %Module{
-          name: frontend_module.name,
-          imports: frontend_module.imports,
-          unions: unions,
-          declarations: ordered_declarations,
-          ports: Map.get(frontend_module, :ports, []),
-          port_module: Map.get(frontend_module, :port_module, false)
-        }
-      end)
+      lower_all_modules(
+        project.modules,
+        globals,
+        project_module_exports,
+        reachable,
+        cache,
+        opts
+      )
 
     diagnostics =
       collect_constructor_arity_diagnostics(
         modules,
-        global_payload_kind_lookup,
-        global_qualified_payload_kind_lookup
+        globals.payload_kind_unqualified,
+        globals.payload_kind_qualified
       ) ++
         collect_constructor_call_arity_diagnostics(
           project.modules,
-          global_payload_arity_lookup,
-          global_qualified_payload_arity_lookup
+          globals.payload_arity_unqualified,
+          globals.payload_arity_qualified
         ) ++
         FunctionCallCheck.collect_project_diagnostics(
           project.modules,
@@ -388,33 +128,591 @@ defmodule ElmEx.IR.Lowerer do
         ) ++
         collect_preferences_schema_field_order_diagnostics(project.modules)
 
-    modules = Wire3HelperResolution.augment_cross_module_wire3(modules, Wire3HelperResolution.union_meta_from_lowerer(unions_from_modules(modules)))
+    modules =
+      Wire3HelperResolution.augment_cross_module_wire3(
+        modules,
+        Wire3HelperResolution.union_meta_from_lowerer(unions_from_modules(modules))
+      )
+
+    # Reachable-only may miss callees only visible after import normalize / Wire3
+    # synthesis. Pull those frontend defs in until the IR call graph is closed.
+    modules =
+      close_missing_callees(
+        modules,
+        project,
+        globals,
+        project_module_exports,
+        reachable,
+        opts
+      )
 
     {:ok, %IR{modules: modules, diagnostics: diagnostics}}
   end
 
-  defp unions_from_modules(modules) do
-    modules
-    |> Enum.flat_map(fn mod ->
-      mod.declarations
+  defp normalize_lower_opts(opts, %Project{} = project) when is_list(opts) do
+    opts
+    |> Keyword.put_new(:entry_module, "Main")
+    |> Keyword.put_new(:progress, false)
+    |> Keyword.put_new(:parallel, 1)
+    |> Keyword.put_new(:reachable_only, false)
+    |> Keyword.put_new(:cache, false)
+    |> then(fn o ->
+      if Keyword.get(o, :cache) == true and is_nil(Keyword.get(o, :cache_dir)) do
+        Keyword.put(o, :cache_dir, LowererCache.default_cache_dir(project.project_dir))
+      else
+        o
+      end
+    end)
+  end
+
+  defp progress_log(opts, message) when is_list(opts) and is_binary(message) do
+    if Keyword.get(opts, :progress, false) do
+      IO.puts(:stderr, "[elmc] #{message}")
+    end
+
+    :ok
+  end
+
+  defp build_global_tables(modules) when is_list(modules) do
+    init = %{
+      constructor_unqualified: [],
+      constructor_qualified: [],
+      payload_kind_unqualified: [],
+      payload_kind_qualified: [],
+      payload_arity_unqualified: [],
+      payload_arity_qualified: [],
+      record_alias_unqualified: [],
+      record_alias_qualified: [],
+      fingerprint_parts: []
+    }
+
+    acc =
+      Enum.reduce(modules, init, fn frontend_module, acc ->
+        Enum.reduce(frontend_module.declarations, acc, fn decl, acc ->
+          case decl do
+            %{kind: :union, name: union_name, constructors: constructors}
+            when is_list(constructors) ->
+              tags =
+                constructors
+                |> Enum.with_index(1)
+                |> Enum.map(fn {constructor, index} -> {constructor.name, index} end)
+
+              kinds =
+                Enum.map(constructors, fn constructor ->
+                  {constructor.name, payload_kind_for_spec(constructor.arg)}
+                end)
+
+              arities =
+                Enum.map(constructors, fn constructor ->
+                  {constructor.name, payload_arity_for_spec(constructor.arg)}
+                end)
+
+              qualified_tags =
+                Enum.map(tags, fn {name, index} ->
+                  {"#{frontend_module.name}.#{name}", index}
+                end)
+
+              qualified_kinds =
+                Enum.map(kinds, fn {name, kind} ->
+                  {"#{frontend_module.name}.#{name}", kind}
+                end)
+
+              qualified_arities =
+                Enum.map(arities, fn {name, arity} ->
+                  {"#{frontend_module.name}.#{name}", arity}
+                end)
+
+              %{
+                acc
+                | constructor_unqualified: tags ++ acc.constructor_unqualified,
+                  constructor_qualified: qualified_tags ++ acc.constructor_qualified,
+                  payload_kind_unqualified: kinds ++ acc.payload_kind_unqualified,
+                  payload_kind_qualified: qualified_kinds ++ acc.payload_kind_qualified,
+                  payload_arity_unqualified: arities ++ acc.payload_arity_unqualified,
+                  payload_arity_qualified: qualified_arities ++ acc.payload_arity_qualified,
+                  fingerprint_parts: [
+                    {:u, frontend_module.name, union_name, tags} | acc.fingerprint_parts
+                  ]
+              }
+
+            %{kind: :type_alias, name: name, fields: fields}
+            when is_list(fields) and fields != [] ->
+              field_names = Enum.map(fields, &to_string/1)
+
+              %{
+                acc
+                | record_alias_unqualified: [{name, field_names} | acc.record_alias_unqualified],
+                  record_alias_qualified: [
+                    {"#{frontend_module.name}.#{name}", field_names} | acc.record_alias_qualified
+                  ],
+                  fingerprint_parts: [
+                    {:a, frontend_module.name, name, field_names} | acc.fingerprint_parts
+                  ]
+              }
+
+            _ ->
+              acc
+          end
+        end)
+      end)
+
+    fingerprint =
+      acc.fingerprint_parts
+      |> Enum.reverse()
+      |> :erlang.term_to_binary()
+      |> then(&:crypto.hash(:sha256, [&1]))
+      |> Base.encode16(case: :lower)
+
+    %{
+      constructor_unqualified: Map.new(acc.constructor_unqualified),
+      constructor_qualified: Map.new(acc.constructor_qualified),
+      payload_kind_unqualified: Map.new(acc.payload_kind_unqualified),
+      payload_kind_qualified: Map.new(acc.payload_kind_qualified),
+      payload_arity_unqualified: Map.new(acc.payload_arity_unqualified),
+      payload_arity_qualified: Map.new(acc.payload_arity_qualified),
+      record_alias_unqualified: Map.new(acc.record_alias_unqualified),
+      record_alias_qualified: Map.new(acc.record_alias_qualified),
+      fingerprint: fingerprint
+    }
+  end
+
+  defp lower_all_modules(modules, globals, project_module_exports, reachable, cache, opts) do
+    total = length(modules)
+    parallel = max(1, Keyword.get(opts, :parallel, 1))
+    progress? = Keyword.get(opts, :progress, false)
+
+    lower_one = fn frontend_module, index ->
+      if progress? and (rem(index, 25) == 0 or index == total) do
+        progress_log(opts, "lowering module #{index}/#{total}: #{frontend_module.name}")
+      end
+
+      case LowererCache.fetch(cache, frontend_module) do
+        {:hit, ir_mod} ->
+          ir_mod
+
+        :miss ->
+          ir_mod =
+            lower_frontend_module(
+              frontend_module,
+              globals,
+              project_module_exports,
+              reachable
+            )
+
+          LowererCache.put(cache, frontend_module, ir_mod)
+          ir_mod
+      end
+    end
+
+    if parallel > 1 do
+      modules
+      |> Enum.with_index(1)
+      |> Task.async_stream(
+        fn {mod, idx} -> lower_one.(mod, idx) end,
+        max_concurrency: parallel,
+        timeout: :infinity,
+        ordered: true
+      )
+      |> Enum.map(fn {:ok, ir_mod} -> ir_mod end)
+    else
+      modules
+      |> Enum.with_index(1)
+      |> Enum.map(fn {mod, idx} -> lower_one.(mod, idx) end)
+    end
+  end
+
+  defp lower_frontend_module(frontend_module, globals, project_module_exports, reachable) do
+    ports = Map.get(frontend_module, :ports, []) || []
+
+    {signatures, others} =
+      Enum.split_with(frontend_module.declarations, &(&1.kind == :function_signature))
+
+    unions =
+      others
       |> Enum.filter(&(&1.kind == :union))
       |> Enum.map(fn union ->
         constructors = Map.get(union, :constructors, [])
 
+        tag_map =
+          constructors
+          |> Enum.with_index(1)
+          |> Map.new(fn {constructor, index} ->
+            {constructor.name, index}
+          end)
+
+        payload_specs =
+          constructors
+          |> Map.new(fn constructor ->
+            {constructor.name, constructor.arg}
+          end)
+
+        payload_kinds =
+          payload_specs
+          |> Map.new(fn {name, spec} ->
+            {name, payload_kind_for_spec(spec)}
+          end)
+
         {union.name,
          %{
            constructors: constructors,
-           tags:
-             constructors
-             |> Enum.with_index(1)
-             |> Enum.map(fn {ctor, idx} -> {ctor.name, idx} end)
-             |> Map.new(),
-           payload_specs: %{},
-           payload_kinds: %{}
+           tags: tag_map,
+           payload_specs: payload_specs,
+           payload_kinds: payload_kinds
          }}
       end)
+      |> Map.new()
+
+    all_definition_decls =
+      others
+      |> Enum.filter(&(&1.kind == :function_definition))
+
+    # Wire3 synthesis must see encode*ForClient / encode* sources even when those
+    # helpers are not yet in the reachable set (they are only referenced via the
+    # synthesized w3_* bindings). Filter to reachable + synthesized helpers after.
+    definition_decls =
+      all_definition_decls
+      |> then(
+        &Wire3HelperResolution.augment_function_definitions(
+          frontend_module.name,
+          &1,
+          Wire3HelperResolution.union_meta_from_lowerer(unions)
+        )
+      )
+      |> Enum.filter(fn defn ->
+        function_reachable?(reachable, frontend_module.name, defn.name, ports) or
+          String.starts_with?(defn.name, "w3_")
+      end)
+
+    {definitions, rewrite_lookup} =
+      definition_decls
+      |> then(fn defs ->
+        local_constructor_lookup =
+          unions
+          |> Map.values()
+          |> Enum.flat_map(fn union_info ->
+            union_info
+            |> Map.get(:tags, %{})
+            |> Enum.to_list()
+          end)
+          |> Map.new()
+
+        {alias_map, alias_member_map, import_unqualified_map, wildcard_import_modules,
+         type_unqualified_map} =
+          build_import_resolution(
+            Map.get(frontend_module, :import_entries) || [],
+            project_module_exports
+          )
+
+        local_payload_arity_lookup =
+          unions
+          |> Map.values()
+          |> Enum.flat_map(fn union_info ->
+            union_info
+            |> Map.get(:payload_specs, %{})
+            |> Enum.map(fn {name, spec} -> {name, payload_arity_for_spec(spec)} end)
+          end)
+          |> Map.new()
+
+        rewrite_lookup = %{
+          local: local_constructor_lookup,
+          unqualified: globals.constructor_unqualified,
+          qualified: globals.constructor_qualified,
+          payload_arity_local: local_payload_arity_lookup,
+          payload_arity_unqualified: globals.payload_arity_unqualified,
+          payload_arity_qualified: globals.payload_arity_qualified,
+          current_module: frontend_module.name,
+          alias_map: alias_map,
+          alias_member_map: alias_member_map,
+          import_unqualified_map: import_unqualified_map,
+          type_unqualified_map: type_unqualified_map,
+          wildcard_import_modules: wildcard_import_modules,
+          local_call_names: MapSet.new(Enum.map(defs, & &1.name)),
+          record_alias_fields_local: local_record_alias_field_lookup(frontend_module),
+          record_alias_fields_unqualified: globals.record_alias_unqualified,
+          record_alias_fields_qualified: globals.record_alias_qualified
+        }
+
+        {defs, rewrite_lookup}
+      end)
+      |> then(fn {defs, rewrite_lookup} ->
+        definitions =
+          defs
+          |> Map.new(fn defn ->
+            fn_lookup =
+              Enum.reduce(defn.args || [], rewrite_lookup, fn arg, acc ->
+                put_let_bound_name(acc, arg)
+              end)
+
+            expr = rewrite_expr(defn.expr, fn_lookup)
+            {defn.name, %{defn | expr: expr}}
+          end)
+
+        {definitions, rewrite_lookup}
+      end)
+
+    signature_names = signatures |> Enum.map(& &1.name) |> MapSet.new()
+
+    signature_declarations =
+      signatures
+      |> Enum.filter(&function_reachable?(reachable, frontend_module.name, &1.name, ports))
+      |> Enum.map(fn sig ->
+        lower_declaration(sig, Map.get(definitions, sig.name), rewrite_lookup)
+      end)
+      |> Enum.reject(&is_nil/1)
+
+    definition_only_declarations =
+      definition_decls
+      |> Enum.reject(&MapSet.member?(signature_names, &1.name))
+      |> Enum.map(fn defn ->
+        lowered = Map.get(definitions, defn.name, defn)
+        lower_declaration(lowered, nil, rewrite_lookup)
+      end)
+      |> Enum.reject(&is_nil/1)
+
+    signature_by_name = Map.new(signature_declarations, &{&1.name, &1})
+    definition_only_by_name = Map.new(definition_only_declarations, &{&1.name, &1})
+
+    type_alias_declarations =
+      others
+      |> Enum.filter(&(&1.kind == :type_alias))
+      |> Enum.map(&lower_declaration(&1, nil, rewrite_lookup))
+      |> Enum.reject(&is_nil/1)
+
+    ordered_function_names =
+      frontend_module.declarations
+      |> Enum.filter(&(&1.kind in [:function_signature, :function_definition]))
+      |> Enum.map(& &1.name)
+      |> Enum.filter(&function_reachable?(reachable, frontend_module.name, &1, ports))
+      |> Enum.reduce({[], MapSet.new()}, fn name, {acc, seen} ->
+        if MapSet.member?(seen, name) do
+          {acc, seen}
+        else
+          {[name | acc], MapSet.put(seen, name)}
+        end
+      end)
+      |> elem(0)
+      |> Enum.reverse()
+
+    # Ports are signature-only (no body) so they never appear in the reachable
+    # function walk; always retain their decls for plan/port lowering.
+    ordered_function_names =
+      (ordered_function_names ++ ports)
+      |> Enum.reduce({[], MapSet.new()}, fn name, {acc, seen} ->
+        if MapSet.member?(seen, name) do
+          {acc, seen}
+        else
+          {[name | acc], MapSet.put(seen, name)}
+        end
+      end)
+      |> elem(0)
+      |> Enum.reverse()
+
+    wire3_extra_names =
+      definition_decls
+      |> Enum.map(& &1.name)
+      |> Enum.reject(&(&1 in ordered_function_names))
+
+    ordered_declarations =
+      type_alias_declarations ++
+        (ordered_function_names
+         |> Enum.map(fn name ->
+           Map.get(signature_by_name, name) || Map.get(definition_only_by_name, name)
+         end)
+         |> Enum.reject(&is_nil/1)) ++
+        (wire3_extra_names
+         |> Enum.map(&Map.get(definition_only_by_name, &1))
+         |> Enum.reject(&is_nil/1))
+      |> Enum.map(fn decl ->
+        case Map.get(decl, :expr) do
+          nil -> decl
+          expr -> %{decl | expr: ImportResolution.normalize_expr(expr, rewrite_lookup)}
+        end
+      end)
+
+    %Module{
+      name: frontend_module.name,
+      imports: frontend_module.imports,
+      unions: unions,
+      declarations: ordered_declarations,
+      ports: ports,
+      port_module: Map.get(frontend_module, :port_module, false)
+    }
+  end
+
+  defp function_reachable?(:all, _mod, _name, _ports), do: true
+
+  defp function_reachable?(%MapSet{} = reachable, mod, name, ports)
+       when is_binary(mod) and is_binary(name) and is_list(ports) do
+    MapSet.member?(reachable, "#{mod}.#{name}") or name in ports
+  end
+
+  defp function_reachable?(%MapSet{} = reachable, mod, name, _ports)
+       when is_binary(mod) and is_binary(name) do
+    MapSet.member?(reachable, "#{mod}.#{name}")
+  end
+
+  # After reachable-only lower + Wire3 synthesis, IR may reference frontend
+  # functions that were never walked. Re-lower those modules with an expanded
+  # reachable set until referenced frontend callees are present (or give up).
+  defp close_missing_callees(modules, _project, _globals, _exports, :all, _opts), do: modules
+
+  defp close_missing_callees(
+         modules,
+         project,
+         globals,
+         project_module_exports,
+         %MapSet{} = reachable,
+         opts
+       )
+       when is_list(modules) do
+    frontend_by_name = Map.new(project.modules, &{&1.name, &1})
+    frontend_keys = frontend_function_keys(project.modules)
+
+    do_close_missing_callees(
+      modules,
+      frontend_by_name,
+      frontend_keys,
+      globals,
+      project_module_exports,
+      reachable,
+      opts,
+      0
+    )
+  end
+
+  defp do_close_missing_callees(
+         modules,
+         _frontend_by_name,
+         _frontend_keys,
+         _globals,
+         _project_module_exports,
+         _reachable,
+         opts,
+         iter
+       )
+       when iter >= 8 do
+    progress_log(opts, "reachable callee closure stopped after #{iter} passes")
+    modules
+  end
+
+  defp do_close_missing_callees(
+         modules,
+         frontend_by_name,
+         frontend_keys,
+         globals,
+         project_module_exports,
+         reachable,
+         opts,
+         iter
+       ) do
+    ir = %IR{modules: modules, diagnostics: []}
+    present = DeadCode.present_keys(ir)
+
+    missing =
+      ir
+      |> DeadCode.referenced_keys()
+      |> MapSet.intersection(frontend_keys)
+      |> MapSet.difference(present)
+
+    case MapSet.size(missing) do
+      0 ->
+        modules
+
+      n ->
+        progress_log(opts, "pulling #{n} referenced callees missing from IR (pass #{iter + 1})…")
+        reachable2 = MapSet.union(reachable, missing)
+
+        affected =
+          missing
+          |> MapSet.to_list()
+          |> Enum.map(&module_of_function_key/1)
+          |> MapSet.new()
+
+        modules2 =
+          Enum.map(modules, fn mod ->
+            if MapSet.member?(affected, mod.name) do
+              case Map.get(frontend_by_name, mod.name) do
+                nil ->
+                  mod
+
+                frontend ->
+                  fresh =
+                    lower_frontend_module(
+                      frontend,
+                      globals,
+                      project_module_exports,
+                      reachable2
+                    )
+
+                  merge_module_declarations(mod, fresh)
+              end
+            else
+              mod
+            end
+          end)
+
+        modules3 =
+          Wire3HelperResolution.augment_cross_module_wire3(
+            modules2,
+            Wire3HelperResolution.union_meta_from_lowerer(unions_from_modules(modules2))
+          )
+
+        do_close_missing_callees(
+          modules3,
+          frontend_by_name,
+          frontend_keys,
+          globals,
+          project_module_exports,
+          reachable2,
+          opts,
+          iter + 1
+        )
+    end
+  end
+
+  defp frontend_function_keys(modules) when is_list(modules) do
+    modules
+    |> Enum.flat_map(fn mod ->
+      mod.declarations
+      |> Enum.filter(&(&1.kind in [:function_definition, :function_signature]))
+      |> Enum.map(&"#{mod.name}.#{&1.name}")
     end)
-    |> Map.new()
+    |> MapSet.new()
+  end
+
+  defp module_of_function_key(key) when is_binary(key) do
+    case String.split(key, ".") do
+      parts when length(parts) >= 2 ->
+        parts |> Enum.drop(-1) |> Enum.join(".")
+
+      _ ->
+        key
+    end
+  end
+
+  defp merge_module_declarations(%Module{} = existing, %Module{} = fresh) do
+    by_name = Map.new(existing.declarations, &{&1.name, &1})
+
+    merged_decls =
+      Enum.reduce(fresh.declarations, existing.declarations, fn decl, acc ->
+        if Map.has_key?(by_name, decl.name) do
+          acc
+        else
+          acc ++ [decl]
+        end
+      end)
+
+    ports =
+      (Map.get(existing, :ports, []) ++ Map.get(fresh, :ports, []))
+      |> Enum.uniq()
+
+    %{existing | declarations: merged_decls, ports: ports}
+  end
+
+  defp unions_from_modules(modules) when is_list(modules) do
+    Enum.reduce(modules, %{}, fn mod, acc ->
+      Map.merge(acc, Map.get(mod, :unions) || %{})
+    end)
   end
 
   @spec lower_declaration(AstDeclaration.t(), AstDeclaration.t() | nil, Lookup.t()) ::
@@ -1673,8 +1971,8 @@ defmodule ElmEx.IR.Lowerer do
     end
   end
 
-  defp local_record_alias_field_lookup(%FrontendModule{} = frontend_module) do
-    frontend_module.declarations
+  defp local_record_alias_field_lookup(%{declarations: declarations}) when is_list(declarations) do
+    declarations
     |> Enum.filter(&(&1.kind == :type_alias))
     |> Enum.flat_map(fn decl ->
       case Map.get(decl, :fields) do
@@ -1687,6 +1985,8 @@ defmodule ElmEx.IR.Lowerer do
     end)
     |> Map.new()
   end
+
+  defp local_record_alias_field_lookup(_), do: %{}
 
   @spec rewrite_virtual_ui_constructor(String.t(), [Expr.t()], Lookup.t()) :: Expr.t() | nil
   defp rewrite_virtual_ui_constructor(resolved_target, rewritten_args, lookup) do

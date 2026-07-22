@@ -28,7 +28,7 @@ if [[ "$SKIP_BUILD" != "1" ]]; then
   npm run build
 
   echo "==> WASM web build (includes page-data probe when dist/index.html exists)"
-  echo "    IR lower often takes 20–40 min; watch for [elmc] progress on stderr."
+  echo "    IR lower uses .elmc-cache/ir + reachable-only; ELMC_FAST=1 skips wasm-opt/probes."
   SKIP_VERIFY="${SKIP_VERIFY:-0}" npm run build:wasm
 
   if [[ "$SKIP_VERIFY" == "1" ]]; then

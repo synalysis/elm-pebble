@@ -43,7 +43,7 @@ defmodule Elmc.Backend.Plan.Lower.Port do
           {:ok, Types.reg() | :fn_out, Builder.t()} | :unsupported
   def compile_call(module, name, args, ctx, b) do
     if port_signature?(ctx, module, name) do
-      decl = Map.fetch!(ctx.decl_map, {module, name})
+      decl = Map.get(ctx.decl_map, {module, name}, %{})
       type = Map.get(decl, :type) || Map.get(decl, :return_type)
 
       case {direction_from_type(type), args} do

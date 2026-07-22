@@ -35,7 +35,7 @@ defmodule Elmx do
     source_overrides = Map.get(opts, :source_overrides, %{})
 
     with {:ok, project} <- Bridge.load_project_from_sources(project_dir, source_overrides),
-         {:ok, ir0} <- Lowerer.lower_project(project) do
+         {:ok, ir0} <- Lowerer.lower_project(project, lower_project_opts(project, opts)) do
       ir = maybe_strip_dead_code(ir0, entry_module, opts[:strip_dead_code])
       ir_sha256 = IRDigest.sha256(ir)
 
@@ -66,7 +66,7 @@ defmodule Elmx do
     source_overrides = Map.get(opts, :source_overrides, %{})
 
     with {:ok, project} <- project_for_compile(project_dir, source_overrides, opts),
-         {:ok, ir0} <- Lowerer.lower_project(project),
+         {:ok, ir0} <- Lowerer.lower_project(project, lower_project_opts(project, opts)),
          ir <- maybe_strip_dead_code(ir0, entry_module, opts[:strip_dead_code]),
          ir_sha256 <- IRDigest.sha256(ir),
          emit_opts <- %{
@@ -162,4 +162,26 @@ defmodule Elmx do
 
   defp project_for_compile(project_dir, source_overrides, _opts),
     do: Bridge.load_project_from_sources(project_dir, source_overrides)
+
+  defp lower_project_opts(%ElmEx.Frontend.Project{} = project, opts) when is_map(opts) do
+    strip? = Map.get(opts, :strip_dead_code, true) != false
+    entry = opts[:entry_module] || "Main"
+
+    cache? =
+      Map.get(opts, :ir_cache, true) != false and is_binary(project.project_dir)
+
+    [
+      entry_module: entry,
+      reachable_only: Map.get(opts, :ir_reachable_only, strip?),
+      cache: cache?,
+      cache_dir: Map.get(opts, :ir_cache_dir) || (cache? && Path.join(project.project_dir, ".elmc-cache/ir")),
+      progress: Map.get(opts, :ir_progress, false),
+      parallel: Map.get(opts, :ir_parallel, 1)
+    ]
+    |> Enum.reject(fn
+      {:cache_dir, nil} -> true
+      {:cache_dir, false} -> true
+      _ -> false
+    end)
+  end
 end
