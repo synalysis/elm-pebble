@@ -595,9 +595,6 @@ defmodule Elmc.Backend.Plan.Lower.Record do
 
               {reconciled_key, reconciled_idx} when is_integer(reconciled_idx) ->
                 {reconciled_key, reconciled_idx}
-
-              :error ->
-                nil
             end
           end
 
@@ -635,29 +632,24 @@ defmodule Elmc.Backend.Plan.Lower.Record do
     end
   end
 
-  defp reconcile_param_field_indices(inline, alias_result, field_name, ctx, base_expr) do
-    case {inline, alias_result} do
-      {:error, :error} ->
-        :error
+  defp reconcile_param_field_indices(inline, {key, alias_idx} = alias_result, field_name, ctx, base_expr)
+       when is_integer(alias_idx) do
+    case inline do
+      :error ->
+        {key, alias_idx}
 
-      {:error, {key, idx}} ->
-        {key, idx}
-
-      {{:inline, inferred_idx}, {key, alias_idx}} when inferred_idx != alias_idx ->
+      {:inline, inferred_idx} when inferred_idx != alias_idx ->
         if prefer_alias_field_index?(field_name, ctx, base_expr, key, alias_idx),
           do: {key, alias_idx},
           else: {:inline, inferred_idx}
 
-      {{key, inferred_idx}, {_, alias_idx}} when inferred_idx != alias_idx ->
+      {_, inferred_idx} when inferred_idx != alias_idx ->
         if prefer_alias_field_index?(field_name, ctx, base_expr, key, alias_idx),
           do: alias_result,
           else: inline
 
-      {result, _} when result != :error ->
+      result ->
         result
-
-      {_, alias} ->
-        alias
     end
   end
 

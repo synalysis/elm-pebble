@@ -24,6 +24,20 @@ config :ide, Ide.Compiler,
   elmc_root: Path.expand("../../elmc", __DIR__),
   elm_ex_root: Path.expand("../../elm_ex", __DIR__)
 
+elm_format_fixtures_root =
+  [
+    System.get_env("ELM_FORMAT_FIXTURES_ROOT"),
+    Path.expand("../../vendor/elm-format/tests/test-files/good", __DIR__)
+  ]
+  |> Enum.find(fn
+    path when is_binary(path) -> File.dir?(path)
+    _ -> false
+  end)
+
+if elm_format_fixtures_root do
+  config :ide, Ide.Formatter.Parity, fixtures_root: elm_format_fixtures_root
+end
+
 config :ide, Ide.Packages,
   provider_order: [:official, :mirror],
   providers: [
@@ -78,6 +92,7 @@ config :ide, Ide.GitHub,
   oauth_client_id: nil
 
 config :ide, Ide.Formatter,
+  engine: :pretty,
   semantics_pipeline: true,
   semantic_edit_ops: true
 

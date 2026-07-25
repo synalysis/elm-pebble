@@ -215,17 +215,25 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
   end
 
   def compile(%{op: :qualified_call} = expr, ctx, b) do
-    case expr do
-      %{target: "Maybe.withDefault", args: args} ->
-        StdlibCall.compile_maybe_with_default(args, ctx, b)
+    # Prefer native Int lowering (modBy/min/max/…) before SpecialValues rewrites
+    # those callees to boxed `elmc_basics_*` runtime calls.
+    case IntCall.compile(expr, ctx, b) do
+      {:ok, _, _} = ok ->
+        ok
 
-      %{target: target, args: args} ->
-        case compile_special_runtime_call(target, args, ctx, b) do
-          {:ok, _, _} = ok ->
-            ok
+      :unsupported ->
+        case expr do
+          %{target: "Maybe.withDefault", args: args} ->
+            StdlibCall.compile_maybe_with_default(args, ctx, b)
 
-          :unsupported ->
-            compile_qualified_call_dispatch(expr, target, ctx, b)
+          %{target: target, args: args} ->
+            case compile_special_runtime_call(target, args, ctx, b) do
+              {:ok, _, _} = ok ->
+                ok
+
+              :unsupported ->
+                compile_qualified_call_dispatch(expr, target, ctx, b)
+            end
         end
     end
   end
@@ -935,7 +943,10 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
         ok
 
       :unsupported ->
-        arg_types = elm_callee_arg_types(elm_target, ctx)
+        arg_types =
+          elm_target
+          |> elm_callee_arg_types(ctx)
+          |> refine_hof_arg_types(elm_target, args, ctx)
 
         with id when not is_nil(id) <- RuntimeBuiltins.from_c_symbol(fun),
              {:ok, arg_regs, b1} <- compile_args_with_expected_types(args, arg_types, ctx, b) do
@@ -947,6 +958,83 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
   end
 
   defp compile_runtime_call_with_callee_arg_types(_, _, _, _), do: :unsupported
+
+  # Specialize polymorphic HOF param types from known list/array element types so
+  # lambdas like `List.map (\p -> p.x) points` with `points : List Point` get
+  # `expected_fn_type` `Point -> …` and native Int field reads.
+  defp refine_hof_arg_types(arg_types, target, args, ctx)
+       when is_list(arg_types) and is_binary(target) and is_list(args) do
+    short = target |> String.split(".") |> Elixir.List.last()
+
+    case {short, args, arg_types} do
+      {name, [_fun, list | _], [fun_type | rest]}
+      when name in ["map", "filter", "filterMap", "any", "all", "foldl", "foldr"] and
+             is_binary(fun_type) ->
+        case list_element_type(list, ctx) do
+          elem when is_binary(elem) ->
+            if ElmEx.IR.TypeSignature.type_variable?(elem) do
+              arg_types
+            else
+              [specialize_fun_type_elem(fun_type, elem) | rest]
+            end
+
+          _ ->
+            arg_types
+        end
+
+      _ ->
+        arg_types
+    end
+  end
+
+  defp refine_hof_arg_types(arg_types, _, _, _), do: arg_types
+
+  defp list_element_type(%{op: :var, name: name}, ctx) when is_binary(name) do
+    ctx
+    |> Context.local_type(name)
+    |> list_element_type_from_sig()
+  end
+
+  defp list_element_type(name, ctx) when is_binary(name) do
+    ctx
+    |> Context.local_type(name)
+    |> list_element_type_from_sig()
+  end
+
+  defp list_element_type(_, _), do: nil
+
+  defp list_element_type_from_sig(type) when is_binary(type) do
+    trimmed = TypeParsing.normalize_type_name(type)
+
+    cond do
+      String.starts_with?(trimmed, "List ") ->
+        String.trim_leading(trimmed, "List ") |> String.trim()
+
+      String.starts_with?(trimmed, "Array ") ->
+        String.trim_leading(trimmed, "Array ") |> String.trim()
+
+      true ->
+        nil
+    end
+  end
+
+  defp list_element_type_from_sig(_), do: nil
+
+  defp specialize_fun_type_elem(fun_type, elem) when is_binary(fun_type) and is_binary(elem) do
+    # List.map etc. store the mapper type as `(a -> b)` — strip parens before
+    # splitting arrows or the inner `->` stays nested and specialization no-ops.
+    fun_type = TypeParsing.normalize_type_name(fun_type)
+    [head | rest] =
+      TypeParsing.function_arg_types(fun_type) ++ [TypeParsing.function_return_type(fun_type)]
+
+    head_norm = TypeParsing.normalize_type_name(head)
+
+    if ElmEx.IR.TypeSignature.type_variable?(head_norm) do
+      Enum.join([elem | rest], " -> ")
+    else
+      fun_type
+    end
+  end
 
   defp try_ir_specialized_runtime_call(%{function: "elmc_maybe_map"} = expr, ctx, b) do
     Elmc.Backend.Plan.Lower.MaybeMap.try_compile(expr, ctx, b)

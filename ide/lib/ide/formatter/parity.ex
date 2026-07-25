@@ -1,11 +1,14 @@
 defmodule Ide.Formatter.Parity do
   @moduledoc """
-  Compatibility harness for comparing `Ide.Formatter` output against `elm-format`.
+  Compatibility harness for comparing formatter output against `elm-format`.
+
+  Supports comparing `ElmEx.Frontend.Pretty` output against `elm-format`.
   """
 
   alias Ide.Formatter
 
   @default_reference_executable "elm-format"
+  @default_engine :pretty
 
   @type case_status :: :match | :mismatch | :formatter_error | :reference_error
   @type mismatch_category ::
@@ -59,6 +62,7 @@ defmodule Ide.Formatter.Parity do
           actionable_parity_pct: float(),
           parity_pct: float(),
           comparable_parity_pct: float(),
+          engine: :pretty,
           category_counts: %{optional(mismatch_category()) => non_neg_integer()},
           results: [case_result()]
         }
@@ -68,6 +72,7 @@ defmodule Ide.Formatter.Parity do
     fixture_root = Keyword.get(opts, :fixture_root, default_fixture_root())
     limit = Keyword.get(opts, :limit, nil)
     reference_executable = Keyword.get(opts, :reference_executable, @default_reference_executable)
+    engine = Keyword.get(opts, :engine, @default_engine)
     shard_total = Keyword.get(opts, :shard_total, nil)
     shard_index = Keyword.get(opts, :shard_index, nil)
 
@@ -80,10 +85,10 @@ defmodule Ide.Formatter.Parity do
 
       results =
         Enum.map(selected, fn fixture ->
-          compare_fixture(fixture, fixture_root, reference_executable)
+          compare_fixture(fixture, fixture_root, reference_executable, engine)
         end)
 
-      {:ok, summarize(fixture_root, results)}
+      {:ok, summarize(fixture_root, results, engine)}
     end
   end
 
@@ -122,12 +127,12 @@ defmodule Ide.Formatter.Parity do
     end
   end
 
-  @spec compare_fixture(String.t(), String.t(), String.t()) :: case_result()
-  defp compare_fixture(path, fixture_root, reference_executable) do
+  @spec compare_fixture(String.t(), String.t(), String.t(), :pretty) :: case_result()
+  defp compare_fixture(path, fixture_root, reference_executable, engine) do
     rel = Path.relative_to(path, fixture_root)
 
     with {:ok, source} <- File.read(path),
-         {:ok, ide_result} <- Formatter.format(source),
+         {:ok, ide_result} <- format_with_engine(source, path, engine),
          {:ok, reference_output} <- run_reference_formatter(source, reference_executable) do
       ide_output = normalize_output(ide_result.formatted_source)
       ref_output = normalize_output(reference_output)
@@ -255,8 +260,14 @@ defmodule Ide.Formatter.Parity do
     |> Kernel.<>("\n")
   end
 
-  @spec summarize(String.t(), [case_result()]) :: run_result()
-  defp summarize(fixture_root, results) do
+  @spec format_with_engine(String.t(), String.t(), :pretty) ::
+          {:ok, Formatter.format_result()} | {:error, term()}
+  defp format_with_engine(source, path, :pretty) do
+    Formatter.format(source, path: path, engine: :pretty)
+  end
+
+  @spec summarize(String.t(), [case_result()], :pretty) :: run_result()
+  defp summarize(fixture_root, results, engine) do
     counts = Enum.frequencies_by(results, & &1.status)
 
     category_counts =
@@ -294,6 +305,7 @@ defmodule Ide.Formatter.Parity do
 
     %{
       fixture_root: fixture_root,
+      engine: engine,
       total: total,
       comparable_total: comparable_total,
       match: match,

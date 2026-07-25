@@ -1,20 +1,15 @@
 defmodule Ide.Formatter do
   @moduledoc """
-  Parser-backed formatting boundary for Elm sources.
+  Elm source formatting boundary for the IDE.
 
-  This starts with a conservative normalization pass and parser validation.
+  The built-in backend uses `ElmEx.Frontend.Pretty` (shared with the layout lexer).
   """
   alias Ide.Formatter.EditEngine
   alias Ide.Formatter.EditPatch
-  alias Ide.Formatter.Printer.Pipeline
-  alias Ide.Formatter.Semantics.Finalize
-  alias Ide.Formatter.Semantics.Layout
-  alias Ide.Formatter.Semantics.Normalize
-  alias Ide.Formatter.Semantics.Parse
   alias Ide.Formatter.Types
+  alias ElmEx.Frontend.Pretty
 
   @type diagnostic :: Types.diagnostic()
-
   @type format_result :: Types.format_result()
 
   @type edit_patch_result :: %{
@@ -25,56 +20,37 @@ defmodule Ide.Formatter do
           cursor_end: non_neg_integer()
         }
 
+  @default_engine :pretty
+
   @spec format(String.t(), keyword()) :: {:ok, format_result()} | {:error, Types.parse_error()}
   def format(source, opts \\ []) when is_binary(source) do
-    if semantics_pipeline_enabled?(opts) do
-      format_with_semantics_pipeline(source, opts)
-    else
-      format_with_legacy_pipeline(source, opts)
+    case Keyword.get(opts, :engine, default_engine()) do
+      :pretty -> format_with_pretty(source, opts)
+      other -> {:error, unsupported_engine_error(other)}
     end
   end
 
-  @spec format_with_semantics_pipeline(String.t(), Types.format_opts()) ::
+  @spec format_with_pretty(String.t(), Types.format_opts()) ::
           {:ok, format_result()} | {:error, Types.parse_error()}
-  defp format_with_semantics_pipeline(source, opts) do
-    with {:ok, parser_payload} <- parse_stage(source, opts),
-         {:ok, laid_out} <- layout_stage(source),
-         {:ok, normalized} <- normalize_stage(laid_out, parser_payload, opts),
-         {:ok, finalized} <- finalize_stage(normalized) do
-      {:ok,
-       %{
-         formatted_source: finalized,
-         changed?: finalized != source,
-         diagnostics: parser_payload.diagnostics,
-         formatter: "semantics-v1",
-         details: %{
-           parser_payload_reused?: parser_payload[:reused?] == true,
-           pipeline: "semantics-v1"
-         }
-       }}
-    end
-  end
+  defp format_with_pretty(source, opts) do
+    path = Keyword.get(opts, :path, "Main.elm")
 
-  @spec format_with_legacy_pipeline(String.t(), Types.format_opts()) ::
-          {:ok, format_result()} | {:error, Types.parse_error()}
-  defp format_with_legacy_pipeline(source, opts) do
-    with {:ok, parser_payload} <- parse_stage(source, opts),
-         {:ok, laid_out} <- layout_stage(source),
-         {:ok, normalized} <- normalize_stage(laid_out, parser_payload, opts),
-         {:ok, finalized} <- finalize_stage(normalized) do
-      diagnostics = add_fallback_diagnostic_tag(parser_payload.diagnostics)
+    case Pretty.format_module_source_preserve(path, source, pretty_opts(opts)) do
+      {:ok, formatted} ->
+        {:ok,
+         %{
+           formatted_source: formatted,
+           changed?: formatted != source,
+           diagnostics: [],
+           formatter: "pretty-v1",
+           details: %{
+             pipeline: "pretty-v1",
+             backend: :pretty
+           }
+         }}
 
-      {:ok,
-       %{
-         formatted_source: finalized,
-         changed?: finalized != source,
-         diagnostics: diagnostics,
-         formatter: "legacy-v1",
-         details: %{
-           parser_payload_reused?: parser_payload[:reused?] == true,
-           pipeline: "legacy-v1"
-         }
-       }}
+      {:error, reason} ->
+        {:error, parse_error_from_reason(reason)}
     end
   end
 
@@ -106,48 +82,47 @@ defmodule Ide.Formatter do
     )
   end
 
-  @spec parse_stage(String.t(), Types.format_opts()) ::
-          {:ok, Types.parse_payload()} | {:error, Types.parse_error()}
-  defp parse_stage(source, opts), do: Parse.validate_with_parser(source, opts)
-
-  @spec layout_stage(String.t()) :: {:ok, String.t()} | {:error, Types.parse_error()}
-  defp layout_stage(source), do: {:ok, Layout.normalize_layout(source)}
-
-  @spec normalize_stage(String.t(), Types.parse_payload(), Types.format_opts()) ::
-          {:ok, String.t()} | {:error, Types.parse_error()}
-  defp normalize_stage(source, parser_payload, opts) when is_map(parser_payload) do
-    metadata = parser_payload.metadata
-
-    if parser_payload[:fallback?] == true do
-      {:ok, Normalize.apply(source, metadata, opts)}
-    else
-      {:ok, Pipeline.apply(source, metadata, opts)}
-    end
+  @spec default_engine() :: :pretty | :ide
+  defp default_engine do
+    Application.get_env(:ide, Ide.Formatter, [])
+    |> Keyword.get(:engine, @default_engine)
   end
 
-  @spec finalize_stage(String.t()) :: {:ok, String.t()} | {:error, Types.parse_error()}
-  defp finalize_stage(source), do: {:ok, Finalize.finalize(source)}
-
-  @spec semantics_pipeline_enabled?(Types.format_opts()) :: boolean()
-  defp semantics_pipeline_enabled?(opts) do
-    default =
-      Application.get_env(:ide, Ide.Formatter, [])
-      |> Keyword.get(:semantics_pipeline, true)
-
-    Keyword.get(opts, :semantics_pipeline, default)
+  @spec pretty_opts(Types.format_opts()) :: Pretty.opts()
+  defp pretty_opts(opts) do
+    opts
+    |> Keyword.take([:width, :indent])
   end
 
-  @spec add_fallback_diagnostic_tag([diagnostic()]) :: [diagnostic()]
-  defp add_fallback_diagnostic_tag(diagnostics) when is_list(diagnostics) do
-    [
-      %{
-        severity: "info",
-        source: "formatter/pipeline",
-        message: "Using legacy formatter pipeline fallback.",
-        line: nil,
-        column: nil
-      }
-      | diagnostics
-    ]
+  @spec parse_error_from_reason(term()) :: Types.parse_error()
+  defp parse_error_from_reason(%{kind: _, reason: reason, path: path}) when is_binary(reason) do
+    %{
+      severity: "error",
+      source: "formatter/parser",
+      message: "Cannot format #{path}: #{inspect(reason)}",
+      line: nil,
+      column: nil
+    }
+  end
+
+  defp parse_error_from_reason(reason) do
+    %{
+      severity: "error",
+      source: "formatter/parser",
+      message: "Cannot format: #{inspect(reason)}",
+      line: nil,
+      column: nil
+    }
+  end
+
+  @spec unsupported_engine_error(term()) :: Types.parse_error()
+  defp unsupported_engine_error(engine) do
+    %{
+      severity: "error",
+      source: "formatter/engine",
+      message: "Unsupported formatter engine: #{inspect(engine)}",
+      line: nil,
+      column: nil
+    }
   end
 end

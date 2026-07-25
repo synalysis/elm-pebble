@@ -160,4 +160,63 @@ defmodule Ide.PebbleToolchainElmcCompileTest do
     assert Elmc.normalize_stamp_platforms(["Chalk", " basalt ", "aplite", "chalk"]) ==
              ["aplite", "basalt", "chalk"]
   end
+
+  test "compile_project_succeeded? accepts CLI project_run maps" do
+    assert Elmc.compile_project_succeeded?(%{status: :ok, output: "ok"})
+    assert Elmc.compile_project_succeeded?({:ok, %{}})
+    refute Elmc.compile_project_succeeded?(%{status: :error})
+    refute Elmc.compile_project_succeeded?({:error, :boom})
+  end
+
+  test "generate_sources reuses stamped .elmc-build without recompiling" do
+    tmp = Path.join(System.tmp_dir!(), "pebble-elmc-reuse-#{System.unique_integer([:positive])}")
+    watch = Path.join(tmp, "watch")
+    out = Path.join(watch, ".elmc-build")
+    c_dir = Path.join(out, "c")
+    File.mkdir_p!(c_dir)
+
+    File.write!(
+      Path.join(tmp, "elm-pebble.project.json"),
+      Jason.encode!(%{
+        "release_defaults" => %{"target_platforms" => ["basalt"]}
+      })
+    )
+
+    File.write!(Path.join(watch, "elm.json"), "{}")
+    File.write!(Path.join(c_dir, "elmc_generated.c"), "/* stamped reuse fixture */\n")
+
+    platforms = ["basalt"]
+
+    compile_opts =
+      Elmc.watch_compile_opts(out, platforms, %{
+        prod: true,
+        debug_usage_policy: :error,
+        plan_ir_mode: :primary,
+        plan_ir_strict: true,
+        codegen_profile: :size
+      })
+
+    :ok = Elmc.write_compile_stamp(watch, out, compile_opts, platforms)
+    mtime_before = File.stat!(Path.join(c_dir, "elmc_generated.c")).mtime
+
+    app = Path.join(tmp, "app")
+    File.mkdir_p!(app)
+
+    assert :ok =
+             Elmc.generate_sources(watch, app, tmp,
+               target_platforms: platforms,
+               prod: true,
+               debug_usage_policy: :error,
+               plan_ir_mode: :primary,
+               plan_ir_strict: true,
+               reuse_elmc_build: true
+             )
+
+    assert File.stat!(Path.join(c_dir, "elmc_generated.c")).mtime == mtime_before
+
+    staged = Path.join(app, "src/c/elmc/c/elmc_generated.c")
+    assert File.read!(staged) == "/* stamped reuse fixture */\n"
+
+    on_exit(fn -> File.rm_rf(tmp) end)
+  end
 end

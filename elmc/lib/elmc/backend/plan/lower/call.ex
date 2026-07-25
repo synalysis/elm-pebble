@@ -337,8 +337,6 @@ defmodule Elmc.Backend.Plan.Lower.Call do
     module == (ctx.module || "Main")
   end
 
-  defp local_callee_shadow_allowed?(_, _), do: false
-
   defp html_element_partial?(module, name, args)
        when is_binary(module) and is_binary(name) and is_list(args) do
     opts = Process.get(:elmc_codegen_opts, %{})

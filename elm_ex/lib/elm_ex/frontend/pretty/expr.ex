@@ -1,7 +1,7 @@
 defmodule ElmEx.Frontend.Pretty.Expr do
   @moduledoc false
 
-  alias ElmEx.Frontend.Pretty.{Doc, Pattern}
+  alias ElmEx.Frontend.Pretty.{Doc, Literal, Pattern}
 
   @type opts :: keyword()
   @type binding() ::
@@ -12,13 +12,15 @@ defmodule ElmEx.Frontend.Pretty.Expr do
   @spec format(map(), opts()) :: Doc.t()
   def format(expr, opts \\ [])
 
+  def format(%{op: :int_literal, text: text}, _opts) when is_binary(text), do: Doc.text(text)
+
   def format(%{op: :int_literal, value: value}, _opts), do: Doc.text(Integer.to_string(value))
 
   def format(%{op: :float_literal, value: value}, _opts), do: Doc.text(float_to_string(value))
 
-  def format(%{op: :string_literal, value: value}, _opts), do: Doc.text(string_literal(value))
+  def format(%{op: :string_literal, value: value}, _opts), do: Doc.text(Literal.string_literal(value))
 
-  def format(%{op: :char_literal, value: value}, _opts), do: Doc.text(char_literal(value))
+  def format(%{op: :char_literal, value: value}, _opts), do: Doc.text(Literal.char_literal(value))
 
   @operator_vars ["__add__", "__sub__", "__mul__", "__fdiv__", "__idiv__", "__pow__"]
 
@@ -58,6 +60,10 @@ defmodule ElmEx.Frontend.Pretty.Expr do
 
   def format(%{op: :sub_const, var: var, value: value}, opts) do
     Doc.concat([format(%{op: :var, name: var}, opts), Doc.text(" - #{value}")])
+  end
+
+  def format(%{op: :sub_vars, left: left, right: right}, _opts) do
+    Doc.concat([Doc.text(left), Doc.text(" - "), Doc.text(right)])
   end
 
   def format(%{op: :tuple2, left: left, right: right}, opts) do
@@ -517,6 +523,7 @@ defmodule ElmEx.Frontend.Pretty.Expr do
   defp infix_expr_kind(%{op: :add_vars}), do: {:ok, :add}
   defp infix_expr_kind(%{op: :add_const}), do: {:ok, :add}
   defp infix_expr_kind(%{op: :sub_const}), do: {:ok, :sub}
+  defp infix_expr_kind(%{op: :sub_vars}), do: {:ok, :sub}
 
   defp infix_expr_kind(%{op: :call, name: name}) when name in ["__add__", "__sub__", "__mul__", "__fdiv__", "__idiv__", "__pow__"],
     do: {:ok, infix_kind(name)}
@@ -980,22 +987,19 @@ defmodule ElmEx.Frontend.Pretty.Expr do
   defp format_multiline_list(items, opts) do
     Doc.concat([
       Doc.text("["),
-      Doc.nest(
-        1,
-        Doc.concat(
-          items
-          |> Enum.with_index()
-          |> Enum.map(fn {item, index} ->
-            prefix =
-              if index == 0 do
-                Doc.break()
-              else
-                Doc.concat([Doc.break(), Doc.text(", ")])
-              end
+      Doc.concat(
+        items
+        |> Enum.with_index()
+        |> Enum.map(fn {item, index} ->
+          prefix =
+            if index == 0 do
+              Doc.concat([Doc.text(" "), format_list_item(item, opts)])
+            else
+              Doc.concat([Doc.break(), Doc.text(", "), format_list_item(item, opts)])
+            end
 
-            Doc.concat([prefix, format_list_item(item, opts)])
-          end)
-        )
+          prefix
+        end)
       ),
       Doc.break(),
       Doc.text("]")
@@ -1234,8 +1238,30 @@ defmodule ElmEx.Frontend.Pretty.Expr do
   end
 
   defp format_tuple_elements(elements, opts) do
-    Doc.parens(Doc.join(Enum.map(elements, &format(&1, opts)), Doc.text(", ")))
+    if compact_tuple_elements?(elements) do
+      Doc.parens(Doc.join(Enum.map(elements, &format(&1, opts)), Doc.text(", ")))
+    else
+      format_multiline_tuple(elements, opts)
+    end
   end
+
+  defp format_multiline_tuple(elements, opts) do
+    [first | rest] = elements
+
+    Doc.concat([
+      Doc.text("( "),
+      format(first, opts),
+      Doc.concat(
+        Enum.map(rest, fn item ->
+          Doc.concat([Doc.break(), Doc.text(", "), format(item, opts)])
+        end)
+      ),
+      Doc.break(),
+      Doc.text(")")
+    ])
+  end
+
+  defp compact_tuple_elements?(elements), do: Enum.all?(elements, &compact_list_item?/1)
 
   @spec multiline_body?(map()) :: boolean()
   defp multiline_body?(%{op: op})
@@ -1290,21 +1316,4 @@ defmodule ElmEx.Frontend.Pretty.Expr do
 
   defp float_to_string(value) when is_float(value), do: Float.to_string(value)
   defp float_to_string(value) when is_integer(value), do: Integer.to_string(value) <> ".0"
-
-  defp char_literal(92), do: "'\\\\'"
-  defp char_literal(39), do: "'\\''"
-  defp char_literal(10), do: "'\\n'"
-  defp char_literal(9), do: "'\\t'"
-
-  defp char_literal(codepoint) when is_integer(codepoint) do
-    "'#{<<codepoint::utf8>>}'"
-  end
-
-  defp string_literal(value) when is_binary(value), do: "\"#{escape_string(value)}\""
-
-  defp escape_string("\\"), do: "\\\\"
-  defp escape_string("\""), do: "\\\""
-  defp escape_string("\n"), do: "\\n"
-  defp escape_string("\t"), do: "\\t"
-  defp escape_string(ch), do: ch
 end

@@ -864,20 +864,20 @@
     "risk": 4
   },
   "code_size_indicators": {
-    "direct_command_defs": 2,
-    "boxed_tmp_declarations": 4,
-    "closure_allocations": 0,
-    "commands_append_bytes": 6555,
-    "fusion_native_count": 12,
-    "generated_c_bytes": 82014,
-    "generated_c_lines": 2387,
-    "generic_function_defs": 9,
     "linked_binary": {
       "reason": "binary size is available after platform or host linking, not during C source generation",
       "available": false
     },
+    "fusion_native_count": 10,
+    "plan_function_count": 7,
+    "commands_append_bytes": 6473,
     "owned_slot_max": 119,
-    "plan_function_count": 9,
+    "direct_command_defs": 2,
+    "boxed_tmp_declarations": 4,
+    "closure_allocations": 0,
+    "generated_c_bytes": 79276,
+    "generated_c_lines": 2306,
+    "generic_function_defs": 9,
     "runtime_calls": {
       "elmc_list_all": 0,
       "elmc_list_any": 0,

@@ -94,11 +94,14 @@ defmodule ElmEx.Frontend.GeneratedParser do
         module_name_from_header_lines(lines) || infer_module_name_from_path(path)
 
       %{
-        module_exposing: module_exposing,
+        module_exposing: token_module_exposing,
         import_entries: import_entries,
         port_module: port_module?,
         ports: ports
       } = extract_header_metadata(tokens)
+
+      module_exposing =
+        module_exposing_from_source(metadata_source) || token_module_exposing
 
       imports =
         import_entries
@@ -692,4 +695,110 @@ defmodule ElmEx.Frontend.GeneratedParser do
   @spec token_kind(token()) :: atom()
   defp token_kind({kind, _line}) when is_atom(kind), do: kind
   defp token_kind({kind, _line, _value}) when is_atom(kind), do: kind
+
+  @spec module_exposing_from_source(String.t()) :: Types.module_exposing()
+  defp module_exposing_from_source(source) when is_binary(source) do
+    case :binary.match(source, "exposing") do
+      {pos, _len} ->
+        after_kw =
+          source
+          |> String.slice((pos + byte_size("exposing"))..-1//1)
+          |> String.trim_leading()
+
+        case after_kw do
+          "(" <> rest ->
+            case take_balanced_source(rest, 1, "") do
+              {:ok, inner, _} -> parse_exposing_items_from_source(inner)
+              :error -> nil
+            end
+
+          _ ->
+            nil
+        end
+
+      :nomatch ->
+        nil
+    end
+  end
+
+  defp module_exposing_from_source(_source), do: nil
+
+  @spec take_balanced_source(String.t(), non_neg_integer(), String.t()) ::
+          {:ok, String.t(), String.t()} | :error
+  defp take_balanced_source("", 0, acc), do: {:ok, acc, ""}
+
+  defp take_balanced_source("", _depth, _acc), do: :error
+
+  defp take_balanced_source(<<")", rest::binary>>, 1, acc), do: {:ok, acc, rest}
+
+  defp take_balanced_source(<<")", rest::binary>>, depth, acc) when depth > 1 do
+    take_balanced_source(rest, depth - 1, acc <> ")")
+  end
+
+  defp take_balanced_source(<<")", _rest::binary>>, _depth, _acc), do: :error
+
+  defp take_balanced_source(<<"(", rest::binary>>, depth, acc) do
+    take_balanced_source(rest, depth + 1, acc <> "(")
+  end
+
+  defp take_balanced_source(<<ch::utf8, rest::binary>>, depth, acc) do
+    take_balanced_source(rest, depth, acc <> <<ch::utf8>>)
+  end
+
+  @spec parse_exposing_items_from_source(String.t()) :: Types.module_exposing()
+  defp parse_exposing_items_from_source(inner) do
+    trimmed = String.trim(inner)
+
+    cond do
+      trimmed == ".." ->
+        ".."
+
+      trimmed == "" ->
+        nil
+
+      true ->
+        trimmed
+        |> split_source_top_level_commas()
+        |> Enum.map(&String.trim/1)
+        |> Enum.reject(&(&1 == ""))
+        |> case do
+          [] -> nil
+          items -> items
+        end
+    end
+  end
+
+  @spec split_source_top_level_commas(String.t()) :: [String.t()]
+  defp split_source_top_level_commas(source) do
+    do_split_source_top_level_commas(source, 0, nil, "")
+  end
+
+  defp do_split_source_top_level_commas("", _depth, _quote, current) do
+    token = String.trim(current)
+    if token == "", do: [], else: [token]
+  end
+
+  defp do_split_source_top_level_commas(<<char::utf8, rest::binary>>, depth, quote, current) do
+    ch = <<char::utf8>>
+
+    cond do
+      quote != nil and ch == quote ->
+        do_split_source_top_level_commas(rest, depth, nil, current <> ch)
+
+      quote == nil and ch in ["\"", "'"] ->
+        do_split_source_top_level_commas(rest, depth, ch, current <> ch)
+
+      quote == nil and ch == "(" ->
+        do_split_source_top_level_commas(rest, depth + 1, quote, current <> ch)
+
+      quote == nil and ch == ")" and depth > 0 ->
+        do_split_source_top_level_commas(rest, depth - 1, quote, current <> ch)
+
+      quote == nil and ch == "," and depth == 0 ->
+        [String.trim(current) | do_split_source_top_level_commas(rest, depth, quote, "")]
+
+      true ->
+        do_split_source_top_level_commas(rest, depth, quote, current <> ch)
+    end
+  end
 end

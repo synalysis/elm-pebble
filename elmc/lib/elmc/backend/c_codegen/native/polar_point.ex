@@ -46,8 +46,10 @@ defmodule Elmc.Backend.CCodegen.Native.PolarPoint do
   @spec polar_point_target?(Types.function_decl_key(), Types.function_decl_map()) :: boolean()
   def polar_point_target?({module_name, _name} = target, decl_map) when is_map(decl_map) do
     case Map.fetch(decl_map, target) do
-      {:ok, %{args: args}} when is_list(args) and length(args) == 4 ->
-        point_return?(target, %{__module__: module_name, __program_decls__: decl_map})
+      {:ok, %{args: args, expr: expr}} when is_list(args) and length(args) == 4 and is_map(expr) ->
+        env = %{__module__: module_name, __program_decls__: decl_map}
+
+        point_return?(target, env) and polar_math_expr?(expr)
 
       _ ->
         false
@@ -198,8 +200,45 @@ defmodule Elmc.Backend.CCodegen.Native.PolarPoint do
 
   defp polar_point_call?(target, args, env) do
     length(args) == 4 and Enum.all?(args, &polar_coord_arg?(&1, env)) and
-      point_return?(target, env)
+      point_return?(target, env) and
+      polar_point_body?(target, env)
   end
+
+  defp polar_point_body?(target, env) do
+    case Map.get(Map.get(env, :__program_decls__, %{}), target) do
+      %{expr: expr} when is_map(expr) -> polar_math_expr?(expr)
+      _ -> false
+    end
+  end
+
+  # True polar helpers use angle→sin/cos (see `elmc_polar_point_*`). Cartesian
+  # offsets like `{ x = cx + dx, y = cy + dy }` must not match.
+  defp polar_math_expr?(expr) when is_map(expr) do
+    case expr do
+      %{op: :qualified_call, target: target} when is_binary(target) ->
+        trig_call_target?(target) or polar_math_children?(expr)
+
+      %{op: :call, name: name} when is_binary(name) ->
+        trig_call_name?(name) or polar_math_children?(expr)
+
+      _ ->
+        polar_math_children?(expr)
+    end
+  end
+
+  defp polar_math_expr?(exprs) when is_list(exprs), do: Enum.any?(exprs, &polar_math_expr?/1)
+  defp polar_math_expr?(_), do: false
+
+  defp polar_math_children?(expr) when is_map(expr) do
+    Enum.any?(Map.values(expr), &polar_math_expr?/1)
+  end
+
+  defp trig_call_target?(target) when is_binary(target) do
+    target in ["Basics.sin", "Basics.cos", "sin", "cos"] or
+      String.ends_with?(target, ".sin") or String.ends_with?(target, ".cos")
+  end
+
+  defp trig_call_name?(name) when is_binary(name), do: name in ["sin", "cos"]
 
   defp polar_coord_arg?(arg, env) do
     NativeInt.expr?(arg, env) or int_var_arg?(arg, env)

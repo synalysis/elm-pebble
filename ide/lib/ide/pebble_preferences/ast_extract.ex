@@ -258,7 +258,7 @@ defmodule Ide.PebblePreferences.AstExtract do
   end
 
   @spec apply_schema_step(map(), map(), map()) :: {:ok, map()} | :error
-  defp apply_schema_step(step, %{title: title, sections: sections} = state, lookup) do
+  defp apply_schema_step(step, %{title: _title, sections: sections} = state, lookup) do
     step = normalize_expr(step)
 
     case call_api(step, "section", lookup) do

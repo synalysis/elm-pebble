@@ -464,7 +464,9 @@ ElmcValue *elmc_task_fail(ElmcValue *value);
 ElmcValue *elmc_task_map(ElmcValue *f, ElmcValue *task);
 ElmcValue *elmc_task_map2(ElmcValue *f, ElmcValue *a, ElmcValue *b);
 ElmcValue *elmc_task_and_then(ElmcValue *f, ElmcValue *task);
-ElmcValue *elmc_task_perform(ElmcValue *to_msg, ElmcValue *task);
+ElmcValue *elmc_task_on_error(ElmcValue *f, ElmcValue *task);
+ElmcValue *elmc_task_perform(ElmcValue *cmd_desc);
+ElmcValue *elmc_task_command(ElmcValue *task);
 ElmcValue *elmc_task_force(ElmcValue *task);
 ElmcValue *elmc_process_spawn(ElmcValue *task);
 void elmc_process_release_all_slots(void);
@@ -586,6 +588,7 @@ RC elmc_tuple_map_both(ElmcValue **out, ElmcValue *f, ElmcValue *g, ElmcValue *t
 ElmcValue *elmc_basics_not(ElmcValue *x);
 ElmcValue *elmc_basics_negate(ElmcValue *x);
 ElmcValue *elmc_basics_abs(ElmcValue *x);
+ElmcValue *elmc_basics_log(ElmcValue *x);
 ElmcValue *elmc_basics_remainder_by(ElmcValue *base, ElmcValue *value);
 ElmcValue *elmc_basics_pow(ElmcValue *base, ElmcValue *exponent);
 ElmcValue *elmc_basics_xor(ElmcValue *a, ElmcValue *b);
@@ -1512,12 +1515,26 @@ static inline elmc_int_t elmc_union_tag_as_int(ElmcValue *v) {
 }
 
 static inline bool elmc_union_tag_matches(ElmcValue *v, elmc_int_t tag) {
-  return v && ((v->tag == ELMC_TAG_INT && elmc_as_int(v) == tag) ||
-               (v->tag == ELMC_TAG_TUPLE2 && v->payload != NULL &&
-                elmc_as_int(((ElmcTuple2 *)v->payload)->first) == tag));
+  if (!v) return false;
+  if (v->tag == ELMC_TAG_RESULT && v->payload != NULL) {
+    ElmcResult *r = (ElmcResult *)v->payload;
+    return r->is_ok ? (tag == 1) : (tag == 2);
+  }
+  if (v->tag == ELMC_TAG_MAYBE && v->payload != NULL) {
+    ElmcMaybe *m = (ElmcMaybe *)v->payload;
+    return m->is_just ? (tag == 1) : (tag == 2);
+  }
+  return (v->tag == ELMC_TAG_INT && elmc_as_int(v) == tag) ||
+         (v->tag == ELMC_TAG_TUPLE2 && v->payload != NULL &&
+          elmc_as_int(((ElmcTuple2 *)v->payload)->first) == tag);
 }
 
 static inline ElmcValue *elmc_union_payload(ElmcValue *v) {
+  if (v && v->tag == ELMC_TAG_RESULT && v->payload != NULL)
+    return ((ElmcResult *)v->payload)->value;
+  if (v && v->tag == ELMC_TAG_MAYBE && v->payload != NULL &&
+      ((ElmcMaybe *)v->payload)->is_just)
+    return ((ElmcMaybe *)v->payload)->value;
   if (v && v->tag == ELMC_TAG_TUPLE2 && v->payload != NULL)
     return ((ElmcTuple2 *)v->payload)->second;
   return v;

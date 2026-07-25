@@ -2,6 +2,7 @@ Definitions.
 WS = [\s\t\r\n]+
 FLOAT_DEC = -?[0-9]+\.[0-9]+([eE][\+\-]?[0-9]+)?
 FLOAT_EXP = -?[0-9]+[eE][\+\-]?[0-9]+
+NEG_HEX = -0x[0-9A-Fa-f]+
 HEX = 0x[0-9A-Fa-f]+
 INT = -?[0-9]+
 FIELD = [a-z][A-Za-z0-9_]*
@@ -58,7 +59,8 @@ _ : {token, {wildcard, TokenLine}}.
 < : {token, {lt, TokenLine}}.
 {FLOAT_DEC} : {token, {float_lit, TokenLine, parse_float(TokenChars)}}.
 {FLOAT_EXP} : {token, {float_lit, TokenLine, parse_float(TokenChars)}}.
-{HEX} : {token, {int_lit, TokenLine, parse_hex(TokenChars)}}.
+{NEG_HEX} : {token, {int_lit, TokenLine, {parse_neg_hex(TokenChars), to_binary(TokenChars)}}}.
+{HEX} : {token, {int_lit, TokenLine, {parse_hex(TokenChars), to_binary(TokenChars)}}}.
 {INT} : {token, {int_lit, TokenLine, list_to_integer(TokenChars)}}.
 {STRING} : {token, {string_lit, TokenLine, to_binary(TokenChars)}}.
 {CHAR} : {token, {char_lit, TokenLine, to_binary(TokenChars)}}.
@@ -70,6 +72,9 @@ Erlang code.
 
 parse_hex([$0, $x | Digits]) ->
   list_to_integer(Digits, 16).
+
+parse_neg_hex([$- | Rest]) ->
+  parse_hex(Rest) * -1.
 
 parse_float(TokenChars) ->
   try

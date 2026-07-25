@@ -19,6 +19,7 @@ defmodule Mix.Tasks.Formatter.Certify do
     phase: :string,
     baseline: :string,
     fixtures: :string,
+    engine: :string,
     shard_total: :integer,
     shard_index: :integer
   ]
@@ -38,7 +39,10 @@ defmodule Mix.Tasks.Formatter.Certify do
 
     Mix.Task.run("test", [
       "test/ide/formatter_test.exs",
-      "test/mix/tasks/formatter_parity_task_test.exs"
+      "test/ide/formatter/parity_test.exs",
+      "test/ide/formatter/edit_engine_test.exs",
+      "test/mix/tasks/formatter_parity_task_test.exs",
+      "test/mix/tasks/formatter_certify_task_test.exs"
     ])
   end
 
@@ -49,6 +53,7 @@ defmodule Mix.Tasks.Formatter.Certify do
     |> append_opt("--phase", opts[:phase])
     |> append_opt("--baseline", opts[:baseline])
     |> append_opt("--fixtures", opts[:fixtures])
+    |> append_opt("--engine", opts[:engine] || "pretty")
     |> append_opt("--shard-total", opts[:shard_total])
     |> append_opt("--shard-index", opts[:shard_index])
   end

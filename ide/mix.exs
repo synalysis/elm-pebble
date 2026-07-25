@@ -91,7 +91,7 @@ defmodule Ide.MixProject do
       {:mdex_gfm, "~> 0.2"},
       {:html_sanitize_ex, "~> 1.4"},
       {:dns_cluster, "~> 0.1.1"},
-      {:bandit, "~> 1.11"},
+      {:bandit, "~> 1.12.1"},
       {:hpax, "~> 1.0.4", override: true},
       {:mint, "~> 1.9.2", override: true},
       {:dialyxir, "~> 1.4", only: [:dev], runtime: false},

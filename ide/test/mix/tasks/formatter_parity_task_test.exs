@@ -3,6 +3,10 @@ defmodule Mix.Tasks.Formatter.ParityTaskTest do
 
   alias Mix.Tasks.Formatter.Parity, as: ParityTask
 
+  test "build_parity_args includes pretty engine by default" do
+    assert Mix.Tasks.Formatter.Certify.build_parity_args([]) == ["--engine", "pretty"]
+  end
+
   test "phase gate outcome is disabled without threshold" do
     result = %{total: 10, actionable_total: 10, actionable_parity_pct: 100.0}
     assert ParityTask.phase_gate_outcome(result, nil) == :disabled
@@ -66,21 +70,31 @@ defmodule Mix.Tasks.Formatter.ParityTaskTest do
         "ide_parity_mismatch_log_#{System.unique_integer([:positive])}"
       )
 
-    fixture = Path.join(root, "Elm-0.17/AllSyntax/LineComments/Module.elm")
+    fixture = Path.join(root, "Elm-0.17/AllSyntax.elm")
     mismatch_log = Path.join(root, "parity-mismatches.jsonl")
     File.mkdir_p!(Path.dirname(fixture))
-    File.write!(fixture, "value = @\n")
+    File.write!(fixture, "module Main exposing (main)\n\nmain = 1\n")
+    fake_ref = Path.join(root, "fail-elm-format.sh")
+    File.write!(fake_ref, "#!/bin/sh\nexit 1\n")
+    File.chmod!(fake_ref, 0o755)
     on_exit(fn -> File.rm_rf(root) end)
 
     with_process_shell(fn ->
-      ParityTask.run(["--fixtures", root, "--mismatch-log", mismatch_log])
+      ParityTask.run([
+        "--fixtures",
+        root,
+        "--mismatch-log",
+        mismatch_log,
+        "--reference",
+        fake_ref
+      ])
     end)
 
     {:ok, content} = File.read(mismatch_log)
     [line | _] = String.split(content, "\n", trim: true)
     {:ok, payload} = Jason.decode(line)
 
-    assert payload["status"] == "formatter_error"
+    assert payload["status"] == "reference_error"
     assert payload["known_limitation?"] == true
     assert is_binary(payload["limitation_reason"])
   end
@@ -89,13 +103,25 @@ defmodule Mix.Tasks.Formatter.ParityTaskTest do
     root =
       Path.join(System.tmp_dir!(), "ide_parity_known_only_#{System.unique_integer([:positive])}")
 
-    fixture = Path.join(root, "Elm-0.17/AllSyntax/LineComments/Module.elm")
+    fixture = Path.join(root, "Elm-0.17/AllSyntax.elm")
     File.mkdir_p!(Path.dirname(fixture))
-    File.write!(fixture, "value = @\n")
+    File.write!(fixture, "module Main exposing (main)\n\nmain = 1\n")
+    fake_ref = Path.join(root, "fail-elm-format.sh")
+    File.write!(fake_ref, "#!/bin/sh\nexit 1\n")
+    File.chmod!(fake_ref, 0o755)
     on_exit(fn -> File.rm_rf(root) end)
 
     with_process_shell(fn ->
-      ParityTask.run(["--fixtures", root, "--phase", "C", "--show-mismatches", "1"])
+      ParityTask.run([
+        "--fixtures",
+        root,
+        "--phase",
+        "C",
+        "--show-mismatches",
+        "1",
+        "--reference",
+        fake_ref
+      ])
     end)
 
     assert shell_output_contains?("parity_gate: skipped (no actionable fixtures in selection)")

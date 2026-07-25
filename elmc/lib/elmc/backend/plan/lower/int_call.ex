@@ -87,12 +87,13 @@ defmodule Elmc.Backend.Plan.Lower.IntCall do
             kind = if name == "Basics.min", do: :min_vars, else: :max_vars
             Arith.emit_binary(kind, left, right, ctx, b)
 
-          name in ["modBy", "Basics.modBy"] and int_binop_operands?(left, right) and
-              not native_int_param_in_operands?([left, right], ctx) ->
+          # Prefer native mod/rem whenever both operands are int-shaped, including
+          # native-int params (`modBy 4 index`). Mixed boxed ops (e.g. List.length)
+          # fail `int_binop_operands?` and still box via the runtime path below.
+          name in ["modBy", "Basics.modBy"] and int_binop_operands?(left, right) ->
             Arith.emit_binary(:mod_vars, left, right, ctx, b)
 
-          name in ["remainderBy", "Basics.remainderBy"] and int_binop_operands?(left, right) and
-              not native_int_param_in_operands?([left, right], ctx) ->
+          name in ["remainderBy", "Basics.remainderBy"] and int_binop_operands?(left, right) ->
             Arith.emit_binary(:rem_vars, left, right, ctx, b)
 
           true ->
@@ -170,18 +171,18 @@ defmodule Elmc.Backend.Plan.Lower.IntCall do
     end
   end
 
-  defp native_int_param_in_operands?([left, right], ctx) do
-    native_int_param_var?(left, ctx) or native_int_param_var?(right, ctx)
-  end
+  defp native_int_param_var?(expr, ctx) do
+    case expr do
+      %{op: :var, name: name} when is_binary(name) ->
+        case Enum.find_index(ctx.params, &(&1 == name)) do
+          idx when is_integer(idx) -> native_int_param_index?(idx, ctx)
+          _ -> false
+        end
 
-  defp native_int_param_var?(%{op: :var, name: name}, ctx) when is_binary(name) do
-    case Enum.find_index(ctx.params, &(&1 == name)) do
-      idx when is_integer(idx) -> native_int_param_index?(idx, ctx)
-      _ -> false
+      _ ->
+        false
     end
   end
-
-  defp native_int_param_var?(_, _), do: false
 
   defp box_native_int_param_reg(idx, ctx, b) do
     c_ref = FunctionCallAbi.param_c_arg(idx, ctx.params)
@@ -206,7 +207,7 @@ defmodule Elmc.Backend.Plan.Lower.IntCall do
   defp proven_native_int_operand?(%{op: :bool_literal}, _ctx), do: true
 
   defp proven_native_int_operand?(%{op: :var, name: name} = var, ctx) when is_binary(name) do
-    native_int_param_var?(var, ctx) or Map.get(ctx.local_types || %{}, name) == "Int"
+    native_int_param_var?(var, ctx) or Map.get(ctx.local_types, name) == "Int"
   end
 
   defp proven_native_int_operand?(%{op: :field_access, field: field} = expr, ctx)
@@ -298,9 +299,9 @@ defmodule Elmc.Backend.Plan.Lower.IntCall do
   defp untyped_bare_var_operand?(%{op: :var, name: name} = var, ctx) when is_binary(name) do
     cond do
       native_int_param_var?(var, ctx) -> false
-      Map.get(ctx.local_types || %{}, name) in ["Int", "Bool"] -> false
-      Map.get(ctx.local_types || %{}, name) == "Float" -> true
-      is_list(ctx.params) and name in ctx.params -> true
+      Map.get(ctx.local_types, name) in ["Int", "Bool"] -> false
+      Map.get(ctx.local_types, name) == "Float" -> true
+      name in ctx.params -> true
       true -> false
     end
   end
@@ -308,10 +309,10 @@ defmodule Elmc.Backend.Plan.Lower.IntCall do
   defp untyped_bare_var_operand?(_, _), do: false
 
   defp function_returns_int?(%Context{} = ctx) do
-    case Map.get(ctx.decl_map || %{}, {ctx.module, ctx.function_name}) do
+    case Map.get(ctx.decl_map, {ctx.module, ctx.function_name}) do
       %{type: type} when is_binary(type) ->
         Elmc.Backend.CCodegen.Host.normalize_type_name(
-          Elmc.Backend.CCodegen.TypeParsing.function_return_type(type) || ""
+          Elmc.Backend.CCodegen.TypeParsing.function_return_type(type)
         ) == "Int"
 
       _ ->
@@ -381,7 +382,7 @@ defmodule Elmc.Backend.Plan.Lower.IntCall do
         false
 
       true ->
-        case Map.get(ctx.local_types || %{}, name) do
+        case Map.get(ctx.local_types, name) do
           "Float" ->
             true
 
@@ -443,13 +444,13 @@ defmodule Elmc.Backend.Plan.Lower.IntCall do
   defp callee_returns_int?(name, arity, ctx) when is_binary(name) and is_integer(arity) do
     {mod, fun} = split_callee_name(name, ctx.module)
 
-    case Map.get(ctx.decl_map || %{}, {mod, fun}) do
+    case Map.get(ctx.decl_map, {mod, fun}) do
       %{type: type} when is_binary(type) ->
-        arg_types = Elmc.Backend.CCodegen.TypeParsing.function_arg_types(type) || []
+        arg_types = Elmc.Backend.CCodegen.TypeParsing.function_arg_types(type)
 
         length(arg_types) == arity and
           Elmc.Backend.CCodegen.Host.normalize_type_name(
-            Elmc.Backend.CCodegen.TypeParsing.function_return_type(type) || ""
+            Elmc.Backend.CCodegen.TypeParsing.function_return_type(type)
           ) == "Int"
 
       _ ->
@@ -537,8 +538,8 @@ defmodule Elmc.Backend.Plan.Lower.IntCall do
   defp type_env(%Context{} = ctx) do
     %{
       __module__: ctx.module || "Main",
-      __var_types__: ctx.local_types || %{},
-      __program_decls__: ctx.decl_map || %{},
+      __var_types__: ctx.local_types,
+      __program_decls__: ctx.decl_map,
       __record_field_types__: Process.get(:elmc_record_field_types, %{}),
       __record_field_kinds__: Process.get(:elmc_record_field_kinds, %{})
     }

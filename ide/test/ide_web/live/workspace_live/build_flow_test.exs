@@ -21,6 +21,26 @@ defmodule IdeWeb.WorkspaceLive.BuildFlowTest do
     assert result.manifest.status == :ok
   end
 
+  test "run_build_pipeline_for_root skips elmc compile for phone after elm check" do
+    workspace = tmp_phone_workspace!()
+
+    assert {:ok, result} =
+             BuildFlow.run_build_pipeline_for_root(
+               "yes",
+               "phone",
+               Path.join(workspace, "phone"),
+               false
+             )
+
+    assert result.status == :ok
+    assert result.check.status == :ok
+    assert result.compile.status == :ok
+    assert result.compile.output =~ "elm make"
+    assert result.compile.output =~ "watch only"
+    assert result.manifest.status == :ok
+    refute result.compile.output =~ "[elmc]"
+  end
+
   test "package failure explains Aplite memory overflow" do
     reason =
       {:pebble_build_failed,
@@ -166,6 +186,56 @@ defmodule IdeWeb.WorkspaceLive.BuildFlowTest do
 
       sendWatchToPhone _ =
           Cmd.none
+      """
+    )
+
+    on_exit(fn -> File.rm_rf(workspace) end)
+    workspace
+  end
+
+  defp tmp_phone_workspace! do
+    workspace =
+      Path.join(
+        System.tmp_dir!(),
+        "build_flow_phone_#{System.unique_integer([:positive])}"
+      )
+
+    phone_root = Path.join(workspace, "phone")
+    File.mkdir_p!(Path.join(phone_root, "src"))
+
+    File.write!(
+      Path.join(phone_root, "elm.json"),
+      Jason.encode!(%{
+        "type" => "application",
+        "source-directories" => ["src"],
+        "elm-version" => "0.19.1",
+        "dependencies" => %{
+          "direct" => %{"elm/core" => "1.0.5", "elm/browser" => "1.0.2", "elm/html" => "1.0.0"},
+          "indirect" => %{
+            "elm/json" => "1.1.3",
+            "elm/time" => "1.0.0",
+            "elm/url" => "1.0.0",
+            "elm/virtual-dom" => "1.0.3"
+          }
+        },
+        "test-dependencies" => %{"direct" => %{}, "indirect" => %{}}
+      })
+    )
+
+    File.write!(
+      Path.join(phone_root, "src/CompanionApp.elm"),
+      """
+      module CompanionApp exposing (main)
+
+      import Browser
+      import Html exposing (text)
+
+      main =
+          Browser.sandbox
+              { init = ()
+              , update = \\_ model -> model
+              , view = \\_ -> text "ok"
+              }
       """
     )
 

@@ -204,8 +204,6 @@ defmodule Elmc.Backend.Plan.Lower.CallCoerce do
   defp function_param_var?(name, %Context{params: params}) when is_list(params),
     do: name in params
 
-  defp function_param_var?(_, _), do: false
-
   defp int_literal_expr?(%{op: :int_literal, union_ctor: _}), do: false
   defp int_literal_expr?(%{op: :int_literal, value: value}) when is_integer(value), do: true
   defp int_literal_expr?(_), do: false
@@ -214,8 +212,8 @@ defmodule Elmc.Backend.Plan.Lower.CallCoerce do
     %{
       __module__: ctx.module || "Main",
       __function_name__: ctx.function_name,
-      __var_types__: ctx.local_types || %{},
-      __program_decls__: ctx.decl_map || %{},
+      __var_types__: ctx.local_types,
+      __program_decls__: ctx.decl_map,
       __record_field_types__: Process.get(:elmc_record_field_types, %{}),
       __record_field_kinds__: Process.get(:elmc_record_field_kinds, %{})
     }

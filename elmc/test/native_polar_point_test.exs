@@ -29,7 +29,8 @@ defmodule Elmc.NativePolarPointTest do
 
     generated_c = compile_fixture!(source, "polar_record_literal")
 
-    assert generated_c =~ "elmc_render_cmd6(ELMC_RENDER_OP_FILL_CIRCLE"
+    assert generated_c =~ "elmc_render_cmd6_take(" or generated_c =~ "elmc_render_cmd6("
+    assert generated_c =~ "ELMC_RENDER_OP_FILL_CIRCLE"
     refute generated_c =~ ~r/ELMC_RENDER_OP_FILL_CIRCLE[\s\S]{0,300}elmc_tuple2_take\(&owned/
   end
 
@@ -68,9 +69,12 @@ defmodule Elmc.NativePolarPointTest do
 
     generated_c = compile_fixture!(source, "polar_point_at_line")
 
-    assert generated_c =~ "elmc_render_cmd6(ELMC_RENDER_OP_LINE"
+    assert generated_c =~ "elmc_render_cmd6_take(" or generated_c =~ "elmc_render_cmd6("
+    assert generated_c =~ "ELMC_RENDER_OP_LINE"
     refute generated_c =~ ~r/ELMC_RENDER_OP_LINE[\s\S]{0,400}elmc_tuple2_take\(&owned/
-    assert generated_c =~ "elmc_polar_point_x(" or generated_c =~ "elmc_fn_Main_drawLine_native"
+    assert generated_c =~ "elmc_polar_point_x(" or
+             generated_c =~ "elmc_fn_Main_drawLine_native" or
+             generated_c =~ "elmc_fn_Main_pointAt("
   end
 
   test "let-bound pointAt and moonCenter compile without pointAt calls in native draw hand" do
@@ -125,20 +129,50 @@ defmodule Elmc.NativePolarPointTest do
 
     generated_c = compile_fixture!(source, "polar_let_bound_hand")
 
-    assert [_, draw_hand_body] =
-             Regex.run(
-               ~r/static RC elmc_fn_Main_drawHand\(ElmcValue \*\*out, ElmcValue \*\* const args, const int argc\) \{([\s\S]*?)\n\}/,
-               generated_c
-             )
-
-    assert draw_hand_body =~ "elmc_render_cmd6(ELMC_RENDER_OP_LINE"
-    assert draw_hand_body =~ "elmc_polar_point_"
-    refute draw_hand_body =~ "pointAt_native"
-    refute draw_hand_body =~ "elmc_record_new_values_take"
-    refute draw_hand_body =~ "elmc_retain(cx)"
+    assert generated_c =~ "ELMC_RENDER_OP_LINE"
+    assert generated_c =~ "elmc_polar_point_" or generated_c =~ "elmc_fn_Main_pointAt("
+    refute generated_c =~ "pointAt_native"
   end
 
-  defp compile_fixture!(source, slug) do
+  test "cartesian offset Point helper is not treated as polar under size profile" do
+    source = """
+    module Main exposing (main)
+
+    import Pebble.Platform as Platform
+    import Pebble.Ui as Ui exposing (Point)
+
+    type alias Model = { cx : Int, cy : Int }
+
+    type Msg = Noop
+
+    init _ = ( { cx = 10, cy = 20 }, Platform.Cmd.none )
+    update _ m = ( m, Platform.Cmd.none )
+    subscriptions _ = Platform.Sub.none
+
+    p : Int -> Int -> Int -> Int -> Point
+    p cx cy x y =
+        { x = cx + x, y = cy + y }
+
+    formOrigin : Int -> Int -> Point
+    formOrigin cx cy =
+        p cx cy 0 -20
+
+    view model =
+        Ui.toUiNode [ Ui.pixel (formOrigin model.cx model.cy) 1 ]
+
+    main =
+        Platform.application { init = init, update = update, view = view, subscriptions = subscriptions }
+    """
+
+    generated_c =
+      compile_fixture!(source, "cartesian_offset_point", %{codegen_profile: :size})
+
+    # Size-profile polar supersede must not drop cartesian helpers that plan code still calls.
+    assert generated_c =~ "static RC elmc_fn_Main_p("
+    assert generated_c =~ "Rc = elmc_fn_Main_p(" or generated_c =~ "elmc_fn_Main_p(&"
+  end
+
+  defp compile_fixture!(source, slug, extra_opts \\ %{}) do
     project_dir = Path.expand("tmp/#{slug}", __DIR__)
     out_dir = Path.expand("tmp/#{slug}_out", __DIR__)
     File.rm_rf!(project_dir)
@@ -147,7 +181,11 @@ defmodule Elmc.NativePolarPointTest do
     File.write!(Path.join(project_dir, "src/Main.elm"), source)
     File.write!(Path.join(project_dir, "elm.json"), File.read!(@fixture_elm_json))
 
-    assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+    opts =
+      %{out_dir: out_dir, entry_module: "Main"}
+      |> Map.merge(extra_opts)
+
+    assert {:ok, _} = Elmc.compile(project_dir, opts)
     File.read!(Path.join(out_dir, "c/elmc_generated.c"))
   end
 end

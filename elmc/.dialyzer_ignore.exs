@@ -60,6 +60,7 @@
   {"lib/elmc/backend/c_codegen/tuple2_case_table.ex", :pattern_match},
   {"lib/elmc/backend/c_codegen/union_case_four_perm.ex", :pattern_match},
   {"lib/elmc/backend/pebble.ex", :no_return},
+  {"lib/elmc/backend/pebble.ex", :unused_fun},
   {"lib/elmc/backend/pebble/feature_flags.ex", :no_return},
   {"lib/elmc/backend/pebble/feature_flags/draw_flags.ex", :call},
   {"lib/elmc/backend/pebble/feature_flags/draw_flags.ex", :no_return},

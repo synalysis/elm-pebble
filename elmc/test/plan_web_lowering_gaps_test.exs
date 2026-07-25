@@ -245,9 +245,10 @@ defmodule Elmc.PlanWebLoweringGapsTest do
       end)
 
     assert box_call
-    assert box_call.args.args == []
-
-    assert Enum.any?(plan.blocks |> Enum.flat_map(& &1.instrs), &(&1.op == :call_closure))
+    # `box (Config svgConfig) b` desugars to a real 2-arg function; the call site
+    # must keep both svgConfig and boxy as direct args (not drop to a 0-arg
+    # call_fn + call_closure partial).
+    assert length(box_call.args.args) == 2
   end
 
   test "unqualified Svg.Attributes call in Internal.Svg.Arrow lowers to html_cmd attr" do

@@ -16,6 +16,7 @@ defmodule Elmx.TestSupport.CoverageGate do
                    :add_const,
                    :add_vars,
                    :sub_const,
+                   :sub_vars,
                    :tuple2,
                    :list_literal,
                    :record_literal,

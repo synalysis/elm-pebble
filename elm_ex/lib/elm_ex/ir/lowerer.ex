@@ -762,6 +762,7 @@ defmodule ElmEx.IR.Lowerer do
       span: span || signature_span,
       ownership: ownership_for_type(type)
     }
+    |> ElmEx.IR.FnArgDesugar.desugar_function()
   end
 
   defp lower_declaration(
@@ -778,6 +779,7 @@ defmodule ElmEx.IR.Lowerer do
       span: Map.get(definition, :span),
       ownership: ownership_for_type(nil)
     }
+    |> ElmEx.IR.FnArgDesugar.desugar_function()
   end
 
   defp lower_declaration(%{kind: :type_alias, name: name} = decl, _definition, lookup) do

@@ -13,10 +13,14 @@ defmodule ElmEx.Frontend.Pretty do
   alias ElmEx.Frontend.GeneratedParser
   alias ElmEx.Frontend.Module, as: FrontendModule
   alias ElmEx.Frontend.Pretty.AstNormalize
+  alias ElmEx.Frontend.Pretty.Finalize
   alias ElmEx.Frontend.Pretty.ModuleNormalize
   alias ElmEx.Frontend.Pretty.Doc
   alias ElmEx.Frontend.Pretty.Expr
   alias ElmEx.Frontend.Pretty.Module, as: ModulePretty
+  alias ElmEx.Frontend.Pretty.PreserveNormalize
+  alias ElmEx.Frontend.SourceComments
+  alias ElmEx.Frontend.SourceRegions
 
   @type opts :: [
           width: pos_integer(),
@@ -105,6 +109,37 @@ defmodule ElmEx.Frontend.Pretty do
       when is_binary(path) and is_binary(source) do
     with {:ok, mod} <- GeneratedParser.parse_source(path, source) do
       {:ok, format_module(mod, opts)}
+    end
+  end
+
+  @doc """
+  Parse module source, pretty-print, and merge comments/docs from the original source.
+  """
+  @spec format_module_source_preserve(String.t(), String.t(), opts()) ::
+          {:ok, String.t()} | {:error, term()}
+  def format_module_source_preserve(path, source, opts \\ [])
+      when is_binary(path) and is_binary(source) do
+    with {:ok, mod} <- GeneratedParser.parse_source(path, source) do
+      regions =
+        source
+        |> SourceRegions.extract()
+        |> PreserveNormalize.normalize_regions(mod)
+
+      comments =
+        source
+        |> then(&SourceComments.extract(path, &1, mod))
+        |> SourceComments.for_body_region(regions.body_line_start)
+
+      declarations =
+        mod
+        |> ModulePretty.format_declarations_only(opts)
+        |> Doc.render(opts)
+        |> SourceComments.merge(comments)
+        |> Finalize.finalize()
+
+      formatted = SourceRegions.stitch(regions, declarations)
+
+      {:ok, formatted}
     end
   end
 

@@ -1299,21 +1299,23 @@ defmodule ElmEx.IR.FunctionCallCheck do
           String.t()
   defp resolve_unqualified_type(name, declaring_module, type_map, current_module)
        when is_binary(name) do
-    cond do
-      is_binary(declaring_module) and declaring_module != "" ->
-        "#{declaring_module}.#{name}"
+    # Prefer imported/exposed types over the parent alias module. Record fields like
+    # `p1 : Point` on `Main.DownloadedPiece` with `import Pebble.Ui exposing (Point)`
+    # must resolve to `Pebble.Ui.Point`, not `Main.Point`.
+    case match_unqualified_type_export(name, type_map) do
+      exported when is_binary(exported) ->
+        exported
 
-      true ->
-        case match_unqualified_type_export(name, type_map) do
-          exported when is_binary(exported) ->
-            exported
+      _ ->
+        cond do
+          is_binary(declaring_module) and declaring_module != "" ->
+            "#{declaring_module}.#{name}"
 
-          _ ->
-            if is_binary(current_module) and current_module != "" do
-              "#{current_module}.#{name}"
-            else
-              name
-            end
+          is_binary(current_module) and current_module != "" ->
+            "#{current_module}.#{name}"
+
+          true ->
+            name
         end
     end
   end

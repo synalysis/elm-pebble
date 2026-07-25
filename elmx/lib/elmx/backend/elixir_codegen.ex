@@ -4,6 +4,7 @@ defmodule Elmx.Backend.ElixirCodegen do
   """
 
   alias Elmx.Backend.ElixirCodegen.Emit
+  alias Elmx.Backend.ElixirCodegen.FnArgs
   alias Elmx.Backend.ReachableModules
   alias Elmx.Backend.UnsupportedOpError
   alias Elmx.Types
@@ -436,10 +437,9 @@ defmodule Elmx.Backend.ElixirCodegen do
         0
       end
 
-    env =
-      Enum.reduce(param_source, env, fn arg, acc ->
-        Map.put(acc, String.to_atom(Emit.param_name(arg)), true)
-      end)
+    classified_params = FnArgs.classify_all(param_source)
+
+    env = FnArgs.put_env(env, classified_params)
 
     expr =
       cond do
@@ -472,10 +472,18 @@ defmodule Elmx.Backend.ElixirCodegen do
     fn_name = function_symbol(module_name, decl.name)
     body_str = IO.iodata_to_binary(body)
 
-    used_params = Emit.Helpers.params_referenced_in_body(body_str, param_source)
+    used_bindings =
+      Emit.Helpers.pattern_bindings_referenced_in_body(
+        body_str,
+        FnArgs.all_binding_names(classified_params)
+      )
 
     params =
-      param_list(param_source, if(param_source == [], do: arity, else: nil), used_params)
+      if classified_params == [] and is_integer(arity) and arity > 0 do
+        FnArgs.emit_params(FnArgs.classify_all(Enum.map(1..arity, &"__p#{&1}")), used_bindings)
+      else
+        FnArgs.emit_params(classified_params, used_bindings)
+      end
 
     source =
       if module_value_binding?(decl, synthetic_params, saturated_arity) do
@@ -530,30 +538,6 @@ defmodule Elmx.Backend.ElixirCodegen do
   end
 
   defp function_like_value_expr?(_expr), do: false
-
-  defp param_list(args, arity, used_params) when is_list(args) do
-    names =
-      cond do
-        args != [] ->
-          Enum.map(args, &Emit.param_name/1)
-
-        is_integer(arity) and arity > 0 ->
-          Enum.map(1..arity, &"__p#{&1}")
-
-        true ->
-          []
-      end
-
-    Enum.map_join(Enum.with_index(names), ", ", fn {name, index} ->
-      emit_name = name |> Elmx.Backend.ElixirCodegen.Emit.Helpers.param_var_name(%{})
-
-      if MapSet.member?(used_params, name) or MapSet.member?(used_params, emit_name) do
-        emit_name
-      else
-        "_unused#{index}"
-      end
-    end)
-  end
 
   defp function_symbol(module, name) do
     "elmx_fn_#{module |> String.replace(".", "_")}_#{name}"

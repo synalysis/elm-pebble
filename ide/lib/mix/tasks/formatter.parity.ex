@@ -13,6 +13,7 @@ defmodule Mix.Tasks.Formatter.Parity do
       mix formatter.parity --baseline tmp/parity-baseline.json --update-baseline
       mix formatter.parity --phase A --baseline tmp/parity-baseline.json
       mix formatter.parity --shard-total 4 --shard-index 0
+      mix formatter.parity --engine pretty
   """
 
   use Mix.Task
@@ -24,6 +25,7 @@ defmodule Mix.Tasks.Formatter.Parity do
     limit: :integer,
     fixtures: :string,
     reference: :string,
+    engine: :string,
     shard_total: :integer,
     shard_index: :integer,
     phase: :string,
@@ -47,6 +49,7 @@ defmodule Mix.Tasks.Formatter.Parity do
         fixture_root: opts[:fixtures],
         limit: opts[:limit],
         reference_executable: opts[:reference],
+        engine: parse_engine(opts[:engine]),
         shard_total: opts[:shard_total],
         shard_index: opts[:shard_index]
       ]
@@ -54,6 +57,7 @@ defmodule Mix.Tasks.Formatter.Parity do
 
     case Parity.run(harness_opts) do
       {:ok, result} ->
+        Mix.shell().info("engine: #{result.engine}")
         Mix.shell().info("fixture_root: #{result.fixture_root}")
         Mix.shell().info("total: #{result.total}")
         Mix.shell().info("comparable_total: #{result.comparable_total}")
@@ -102,6 +106,13 @@ defmodule Mix.Tasks.Formatter.Parity do
   end
 
   defp format_error(reason), do: "formatter parity failed: #{inspect(reason)}"
+
+  @spec parse_engine(String.t() | nil) :: :ide | :pretty | nil
+  defp parse_engine(nil), do: nil
+  defp parse_engine("pretty"), do: :pretty
+
+  defp parse_engine(other),
+    do: Mix.raise("invalid --engine #{inspect(other)}; expected pretty")
 
   @spec maybe_write_json_output(Parity.run_result(), String.t() | nil) :: :ok
   defp maybe_write_json_output(_result, nil), do: :ok

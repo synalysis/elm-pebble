@@ -238,7 +238,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.GenericTargets do
         |> MapSet.intersection(render_op_defs)
 
       MapSet.difference(render_op_defs, required_boxed)
-      |> MapSet.union(polar_point_superseded_boxed(opts, decl_map, reachable_core))
+      |> MapSet.union(polar_point_superseded_boxed(opts, decl_map, reachable_core, direct_targets))
     else
       MapSet.new()
     end
@@ -466,15 +466,31 @@ defmodule Elmc.Backend.CCodegen.DirectRender.GenericTargets do
   defp call_args_from_expr(%{op: :qualified_call, args: args}), do: args
 
   # Polar helpers are inlined via elmc_polar_point_x/y in direct `_commands_append`.
-  defp polar_point_superseded_boxed(opts, decl_map, reachable_core) do
+  # Only drop standalone emit when no remaining plan-emitted caller still needs the boxed ABI.
+  defp polar_point_superseded_boxed(opts, decl_map, reachable_core, direct_targets) do
     if supersede_direct_render_op_boxed?(opts) do
-      decl_map
-      |> Map.keys()
-      |> Enum.filter(&Elmc.Backend.CCodegen.Native.PolarPoint.polar_point_target?(&1, decl_map))
-      |> MapSet.new()
-      |> MapSet.difference(
-        plan_required_direct_boxed_callees(reachable_core, decl_map, MapSet.new())
-      )
+      polar_targets =
+        decl_map
+        |> Map.keys()
+        |> Enum.filter(&Elmc.Backend.CCodegen.Native.PolarPoint.polar_point_target?(&1, decl_map))
+        |> MapSet.new()
+
+      required =
+        reachable_core
+        |> Enum.reject(&MapSet.member?(direct_targets, &1))
+        |> Enum.flat_map(fn {module_name, _name} = key ->
+          case Map.fetch(decl_map, key) do
+            {:ok, decl} ->
+              GenericReachability.expr_callees(decl.expr, module_name, decl_map)
+
+            :error ->
+              []
+          end
+        end)
+        |> MapSet.new()
+        |> MapSet.intersection(polar_targets)
+
+      MapSet.difference(polar_targets, required)
     else
       MapSet.new()
     end

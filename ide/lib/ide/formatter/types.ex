@@ -4,7 +4,6 @@ defmodule Ide.Formatter.Types do
   """
 
   alias Ide.Formatter.Semantics.HeaderMetadata
-  alias Ide.Formatter.Semantics.Parse
   alias Ide.Tokenizer.Types, as: TokenizerTypes
 
   @type source :: String.t()
@@ -17,7 +16,13 @@ defmodule Ide.Formatter.Types do
         }
 
   @type parse_error :: diagnostic() | parse_metadata_error()
-  @type parse_payload :: Parse.parse_payload()
+  @type parse_payload :: %{
+          required(:diagnostics) => [diagnostic()],
+          required(:metadata) => metadata(),
+          required(:source_hash) => integer(),
+          optional(:reused?) => boolean(),
+          optional(:fallback?) => boolean()
+        }
   @type metadata :: HeaderMetadata.metadata()
   @type format_token :: TokenizerTypes.token()
 

@@ -295,3 +295,43 @@ jobs:
         env:
           ELMC_TEMPLATE_PBW_GATE: "1"
         run: mix test test/ide/template_pbw_gate_test.exs --only template_pbw_gate --max-cases 1
+
+  ide-formatter-gate:
+    name: IDE formatter unit and elm-format parity gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Set up Erlang/Elixir
+        uses: erlef/setup-beam@v1
+        with:
+          otp-version: "27.3.3"
+          elixir-version: "1.20.1"
+          version-type: strict
+          install-rebar: false
+          rebar3-version: "3.24.0"
+          hexpm-mirrors: |
+            https://builds.hex.pm
+            https://cdn.jsdelivr.net/hex
+
+      - name: Install elm-format and fixture fetch tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends git nodejs npm
+          npm install -g elm-format@0.8.8
+
+      - name: Install elm_ex dependencies
+        working-directory: elm_ex
+        run: mix deps.get
+
+      - name: Install IDE dependencies
+        working-directory: ide
+        run: mix deps.get
+
+      - name: Run formatter CI gate
+        env:
+          TEST_ULIMIT_V_KB: "6291456"
+          ELIXIR_ERL_OPTIONS: "+S 1:1 +MMscs 256"
+        run: ./scripts/formatter-ci-gate.sh

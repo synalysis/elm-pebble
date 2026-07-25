@@ -92,6 +92,13 @@ defmodule ElmEx.Frontend.AstContract do
     end
   end
 
+  defp validate_declaration(%{kind: :raw, source: source, span: span}) do
+    with :ok <- validate_non_empty_binary(source, :invalid_raw_source),
+         :ok <- validate_span(span) do
+      :ok
+    end
+  end
+
   defp validate_declaration(%{kind: kind})
        when kind in [:function_definition, :function_signature, :type_alias, :union],
        do: {:error, :invalid_declaration_shape}

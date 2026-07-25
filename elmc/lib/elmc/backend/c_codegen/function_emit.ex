@@ -1454,6 +1454,7 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
     |> Enum.map(fn {arg, index} ->
       c_arg =
         cond do
+          not is_binary(arg) or not c_identifier?(arg) -> "_arg_#{index}"
           arg == "_" -> "_unused_#{index}"
           c_reserved_binding_name?(arg) -> "#{arg}_arg"
           Enum.count(arg_names, &(&1 == arg)) > 1 -> "#{arg}_#{index}"
@@ -1463,6 +1464,9 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
       {arg, c_arg, index}
     end)
   end
+
+  defp c_identifier?(value) when is_binary(value),
+    do: Regex.match?(~r/^[A-Za-z_][A-Za-z0-9_]*$/, value)
 
   @spec put_typed_arg_bindings(Types.compile_env(), [Types.c_arg_binding()], String.t() | nil) ::
           Types.compile_env()

@@ -63,6 +63,9 @@ defmodule Elmx.Backend.ElixirCodegen.Emit do
       :add_vars ->
         Expr.compile_add_vars(expr, env, counter)
 
+      :sub_vars ->
+        Expr.compile_sub_vars(expr, env, counter)
+
       :sub_const ->
         Expr.compile_sub_const(expr, env, counter)
 

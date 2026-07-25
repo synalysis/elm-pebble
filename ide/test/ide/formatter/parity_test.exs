@@ -23,7 +23,7 @@ defmodule Ide.Formatter.ParityTest do
     assert rel == ["A.elm", "nested/B.elm"]
   end
 
-  test "run summary includes category_counts map" do
+  test "run summary includes category_counts map and engine" do
     root =
       Path.join(System.tmp_dir!(), "ide_parity_summary_#{System.unique_integer([:positive])}")
 
@@ -32,6 +32,7 @@ defmodule Ide.Formatter.ParityTest do
     on_exit(fn -> File.rm_rf(root) end)
 
     assert {:ok, result} = Parity.run(fixture_root: root, limit: 1)
+    assert result.engine == :pretty
     assert is_map(result.category_counts)
     assert is_integer(result.comparable_total)
     assert is_float(result.comparable_parity_pct)
@@ -47,16 +48,19 @@ defmodule Ide.Formatter.ParityTest do
     root =
       Path.join(System.tmp_dir!(), "ide_parity_known_limit_#{System.unique_integer([:positive])}")
 
-    fixture = Path.join(root, "Elm-0.17/AllSyntax/LineComments/Module.elm")
+    fixture = Path.join(root, "Elm-0.17/AllSyntax.elm")
     File.mkdir_p!(Path.dirname(fixture))
-    File.write!(fixture, "value = @\n")
+    File.write!(fixture, "module Main exposing (main)\n\nmain = 1\n")
+    fake_ref = Path.join(root, "fail-elm-format.sh")
+    File.write!(fake_ref, "#!/bin/sh\nexit 1\n")
+    File.chmod!(fake_ref, 0o755)
     on_exit(fn -> File.rm_rf(root) end)
 
-    assert {:ok, result} = Parity.run(fixture_root: root)
+    assert {:ok, result} = Parity.run(fixture_root: root, reference_executable: fake_ref)
     assert result.total == 1
-    assert result.formatter_error == 1
+    assert result.reference_error == 1
     assert result.known_limitations == 1
-    assert result.unexpected_formatter_error == 0
+    assert result.unexpected_reference_error == 0
     assert result.actionable_total == 0
     assert result.actionable_match == 0
     assert result.actionable_parity_pct == 0.0

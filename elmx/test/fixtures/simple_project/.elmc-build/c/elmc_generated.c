@@ -191,7 +191,6 @@ elmc_int_t p3, elmc_int_t p4, elmc_int_t p5) {
 }
 
 static RC elmc_fn_Main_temperatureValue_native(elmc_int_t *out, ElmcValue * const temperature);
-static RC elmc_fn_Pebble_Ui_rotationToPebbleAngle_native(elmc_int_t *out);
 static RC elmc_fn_Companion_Internal_watchToPhoneTag_native(elmc_int_t *out, ElmcValue * const message);
 static RC elmc_fn_Companion_Internal_watchToPhoneValue_native(elmc_int_t *out, ElmcValue * const message);
 
@@ -217,7 +216,7 @@ static ElmcValue *elmc_fn_Pebble_Ui_windowStack(ElmcValue *windows);
 static ElmcValue *elmc_fn_Pebble_Ui_window(ElmcValue *id, ElmcValue *layers);
 static ElmcValue *elmc_fn_Pebble_Ui_canvasLayer(ElmcValue *id, ElmcValue *ops);
 static RC elmc_fn_Pebble_Ui_path(ElmcValue **out, ElmcValue *points, ElmcValue *offset, ElmcValue *rotation);
-static RC elmc_fn_Pebble_Ui_rotationToPebbleAngle(ElmcValue **out);
+static RC elmc_fn_Pebble_Ui_rotationToPebbleAngle(ElmcValue **out, ElmcValue ** const args, const int argc);
 static RC elmc_fn_Companion_Internal_encodeLocationCode(ElmcValue **out, ElmcValue *value);
 static RC elmc_fn_Companion_Internal_watchToPhoneTag(ElmcValue **out, ElmcValue *message);
 static RC elmc_fn_Companion_Internal_watchToPhoneValue(ElmcValue **out, ElmcValue *message);
@@ -227,47 +226,24 @@ static RC elmc_fn_Pebble_Ui_path_closure_0(ElmcValue **out, ElmcValue **args, in
   (void)capture_count;
   RC Rc = RC_SUCCESS;
 
-  ElmcValue *owned[1] = {0};
+  ElmcValue *owned[3] = {0};
   CATCH_BEGIN
     /* plan block 0 */
     CATCH_BEGIN
-      const elmc_int_t plan_native_int_1 = ELMC_RECORD_GET_INDEX_INT((argc > 0 ? args[0] : NULL), ELMC_FIELD_PEBBLE_ACCEL_SAMPLE_X);
-      const elmc_int_t plan_native_int_2 = ELMC_RECORD_GET_INDEX_INT((argc > 0 ? args[0] : NULL), ELMC_FIELD_PEBBLE_ACCEL_SAMPLE_Y);
-      ElmcValue *plan_ephemeral_box_17442 = elmc_new_int_take(plan_native_int_1);
-      ElmcValue *plan_ephemeral_box_17458 = elmc_new_int_take(plan_native_int_2);
-      Rc = elmc_tuple2(&owned[0], plan_ephemeral_box_17442, plan_ephemeral_box_17458);
+      owned[1] = elmc_record_get_index((argc > 0 ? args[0] : NULL), 0 /* x */);
+      owned[2] = elmc_record_get_index((argc > 0 ? args[0] : NULL), 1 /* y */);
+      Rc = elmc_tuple2(&owned[0], owned[1], owned[2]);
       CHECK_RC(Rc);
-      elmc_release(plan_ephemeral_box_17442);
-      elmc_release(plan_ephemeral_box_17458);
+      elmc_release(owned[1]);
+      owned[1] = NULL;
+      elmc_release(owned[2]);
+      owned[2] = NULL;
       *out = owned[0];
       owned[0] = NULL;
     CATCH_END;
   CATCH_END;
 
-  elmc_release_array_lifo(owned, 1);
-  return Rc;
-}
-static RC elmc_fn_Pebble_Ui_rotationToPebbleAngle_closure_0(ElmcValue **out, ElmcValue **args, int argc, ElmcValue **captures, int capture_count) {
-  (void)captures;
-  (void)capture_count;
-  RC Rc = RC_SUCCESS;
-
-  ElmcValue *owned[2] = {0};
-  CATCH_BEGIN
-    /* plan block 0 */
-    CATCH_BEGIN
-      if (!elmc_union_tag_matches((argc > 0 ? args[0] : NULL), ELMC_UNION_PEBBLE_UI_ROTATION)) {
-        goto elmc_plan_block_4;
-      }
-      owned[1] = elmc_tuple_second((argc > 0 ? args[0] : NULL));
-      owned[0] = elmc_retain(owned[1]);
-      elmc_plan_block_4:
-      *out = owned[0];
-      owned[0] = NULL;
-    CATCH_END;
-  CATCH_END;
-
-  elmc_release_array_lifo(owned, 2);
+  elmc_release_array_lifo(owned, 3);
   return Rc;
 }
 
@@ -314,7 +290,6 @@ static RC elmc_fn_Main_temperatureOf(ElmcValue **out, ElmcValue *model) {
     *out = owned[0];
     owned[0] = NULL;
   CATCH_END;
-
   elmc_release_array_lifo(owned, 1);
   return Rc;
 }
@@ -328,10 +303,10 @@ static RC elmc_fn_Main_requestWeather(ElmcValue **out, ElmcValue *location) {
     Rc = elmc_cmd0(&owned[1], ELMC_PEBBLE_CMD_COMPANION_SEND);
     CHECK_RC(Rc);
     owned[3] = elmc_retain(location);
-    ElmcValue *plan_ephemeral_box_16818 = elmc_new_int_take(1);
-    Rc = elmc_tuple2(&owned[4], plan_ephemeral_box_16818, owned[3]);
+    ElmcValue *plan_ephemeral_box_18994 = elmc_new_int_take(1);
+    Rc = elmc_tuple2(&owned[4], plan_ephemeral_box_18994, owned[3]);
     CHECK_RC(Rc);
-    elmc_release(plan_ephemeral_box_16818);
+    elmc_release(plan_ephemeral_box_18994);
     elmc_release(owned[3]);
     owned[3] = NULL;
     Rc = elmc_fn_Companion_Internal_watchToPhoneTag(&owned[2], owned[4]);
@@ -339,10 +314,10 @@ static RC elmc_fn_Main_requestWeather(ElmcValue **out, ElmcValue *location) {
     elmc_release(owned[4]);
     owned[4] = NULL;
     owned[4] = elmc_retain(location);
-    ElmcValue *plan_ephemeral_box_16834 = elmc_new_int_take(1);
-    Rc = elmc_tuple2(&owned[0], plan_ephemeral_box_16834, owned[4]);
+    ElmcValue *plan_ephemeral_box_19010 = elmc_new_int_take(1);
+    Rc = elmc_tuple2(&owned[0], plan_ephemeral_box_19010, owned[4]);
     CHECK_RC(Rc);
-    elmc_release(plan_ephemeral_box_16834);
+    elmc_release(plan_ephemeral_box_19010);
     elmc_release(owned[4]);
     owned[4] = NULL;
     Rc = elmc_fn_Companion_Internal_watchToPhoneValue(&owned[3], owned[0]);
@@ -351,16 +326,16 @@ static RC elmc_fn_Main_requestWeather(ElmcValue **out, ElmcValue *location) {
     owned[0] = NULL;
     Rc = elmc_tuple2_ints(&owned[5], 0, 0);
     CHECK_RC(Rc);
-    ElmcValue *plan_ephemeral_box_16850 = elmc_new_int_take(0);
-    Rc = elmc_tuple2(&owned[6], plan_ephemeral_box_16850, owned[5]);
+    ElmcValue *plan_ephemeral_box_19026 = elmc_new_int_take(0);
+    Rc = elmc_tuple2(&owned[6], plan_ephemeral_box_19026, owned[5]);
     CHECK_RC(Rc);
-    elmc_release(plan_ephemeral_box_16850);
+    elmc_release(plan_ephemeral_box_19026);
     elmc_release(owned[5]);
     owned[5] = NULL;
-    ElmcValue *plan_ephemeral_box_16866 = elmc_new_int_take(0);
-    Rc = elmc_tuple2(&owned[4], plan_ephemeral_box_16866, owned[6]);
+    ElmcValue *plan_ephemeral_box_19042 = elmc_new_int_take(0);
+    Rc = elmc_tuple2(&owned[4], plan_ephemeral_box_19042, owned[6]);
     CHECK_RC(Rc);
-    elmc_release(plan_ephemeral_box_16866);
+    elmc_release(plan_ephemeral_box_19042);
     elmc_release(owned[6]);
     owned[6] = NULL;
     Rc = elmc_tuple2(&owned[0], owned[3], owned[4]);
@@ -378,7 +353,6 @@ static RC elmc_fn_Main_requestWeather(ElmcValue **out, ElmcValue *location) {
     Rc = elmc_tuple2(out, owned[1], owned[3]);
     CHECK_RC(Rc);
   CATCH_END;
-
   elmc_release_array_lifo(owned, 7);
   return Rc;
 }
@@ -424,8 +398,8 @@ static RC elmc_fn_Main_requestSystemInfo(ElmcValue **out) {
     owned[6] = elmc_retain(owned[7]);
     elmc_release(owned[7]);
     owned[7] = NULL;
-    ElmcValue *plan_list_items_16882[7] = { owned[0], owned[1], owned[2], owned[3], owned[4], owned[5], owned[6] };
-    Rc = elmc_list_from_values_take(&owned[7], plan_list_items_16882, 7);
+    ElmcValue *plan_list_items_19058[7] = { owned[0], owned[1], owned[2], owned[3], owned[4], owned[5], owned[6] };
+    Rc = elmc_list_from_values_take(&owned[7], plan_list_items_19058, 7);
     CHECK_RC(Rc);
     owned[0] = NULL;
     owned[1] = NULL;
@@ -436,7 +410,6 @@ static RC elmc_fn_Main_requestSystemInfo(ElmcValue **out) {
     owned[6] = NULL;
     *out = elmc_cmd_batch(owned[7]);
   CATCH_END;
-
   elmc_release_array_lifo(owned, 8);
   return Rc;
 }
@@ -457,18 +430,18 @@ RC elmc_fn_Main_init(ElmcValue **out, ElmcValue *launchContext) {
     owned[3] = elmc_retain(owned[2]);
     owned[4] = elmc_retain(owned[1]);
     owned[5] = elmc_retain(owned[3]);
-    ElmcValue *rec_values_8_86[2] = { owned[4], owned[5] };
-    Rc = elmc_record_new_values_take(&owned[6], 2, rec_values_8_86);
+    ElmcValue *rec_values_8_131[2] = { owned[4], owned[5] };
+    Rc = elmc_record_new_values_take(&owned[6], 2, rec_values_8_131);
     CHECK_RC(Rc);
     owned[4] = NULL;
     owned[5] = NULL;
     owned[4] = NULL;
     owned[5] = NULL;
     owned[5] = elmc_unit();
-    ElmcValue *plan_ephemeral_box_16898 = elmc_new_int_take(2);
-    Rc = elmc_tuple2(&owned[7], plan_ephemeral_box_16898, owned[5]);
+    ElmcValue *plan_ephemeral_box_19074 = elmc_new_int_take(2);
+    Rc = elmc_tuple2(&owned[7], plan_ephemeral_box_19074, owned[5]);
     CHECK_RC(Rc);
-    elmc_release(plan_ephemeral_box_16898);
+    elmc_release(plan_ephemeral_box_19074);
     elmc_release(owned[5]);
     owned[5] = NULL;
     Rc = elmc_fn_Main_requestWeather(&owned[4], owned[7]);
@@ -479,8 +452,8 @@ RC elmc_fn_Main_init(ElmcValue **out, ElmcValue *launchContext) {
     CHECK_RC(Rc);
     owned[7] = elmc_retain(owned[4]);
     owned[8] = elmc_retain(owned[5]);
-    ElmcValue *plan_list_items_16914[2] = { owned[7], owned[8] };
-    Rc = elmc_list_from_values_take(&owned[9], plan_list_items_16914, 2);
+    ElmcValue *plan_list_items_19090[2] = { owned[7], owned[8] };
+    Rc = elmc_list_from_values_take(&owned[9], plan_list_items_19090, 2);
     CHECK_RC(Rc);
     owned[7] = NULL;
     owned[8] = NULL;
@@ -502,7 +475,6 @@ RC elmc_fn_Main_init(ElmcValue **out, ElmcValue *launchContext) {
     elmc_release(owned[5]);
     owned[5] = NULL;
   CATCH_END;
-
   elmc_release_array_lifo(owned, 10);
   return Rc;
 }
@@ -562,7 +534,6 @@ RC elmc_fn_Main_update(ElmcValue **out, ElmcValue *msg, ElmcValue *model) {
       if (__plan_state < 0) break;
     }
   CATCH_END;
-
   elmc_release_array_lifo(owned, 2);
   return Rc;
 }
@@ -610,8 +581,8 @@ static RC elmc_fn_Main_handleAppMsg(ElmcValue **out, ElmcValue *msg, ElmcValue *
         owned[2] = elmc_retain(owned[1]);
         elmc_release(owned[1]);
         owned[1] = NULL;
-        ElmcValue *rec_values_10_87[2] = { owned[3], owned[2] };
-        Rc = elmc_record_new_values_take(&owned[1], 2, rec_values_10_87);
+        ElmcValue *rec_values_10_132[2] = { owned[3], owned[2] };
+        Rc = elmc_record_new_values_take(&owned[1], 2, rec_values_10_132);
         CHECK_RC(Rc);
         owned[3] = NULL;
         owned[2] = NULL;
@@ -627,7 +598,6 @@ static RC elmc_fn_Main_handleAppMsg(ElmcValue **out, ElmcValue *msg, ElmcValue *
         owned[2] = NULL;
         owned[1] = owned[3];
         owned[3] = NULL;
-
         __plan_state = 25; break;
         case 4:
         plan_native_int_15 = elmc_fn_Main_counterOf(model);
@@ -647,8 +617,8 @@ static RC elmc_fn_Main_handleAppMsg(ElmcValue **out, ElmcValue *msg, ElmcValue *
         owned[3] = elmc_retain(owned[2]);
         elmc_release(owned[2]);
         owned[2] = NULL;
-        ElmcValue *rec_values_22_88[2] = { owned[4], owned[3] };
-        Rc = elmc_record_new_values_take(&owned[2], 2, rec_values_22_88);
+        ElmcValue *rec_values_22_133[2] = { owned[4], owned[3] };
+        Rc = elmc_record_new_values_take(&owned[2], 2, rec_values_22_133);
         CHECK_RC(Rc);
         owned[4] = NULL;
         owned[3] = NULL;
@@ -664,7 +634,6 @@ static RC elmc_fn_Main_handleAppMsg(ElmcValue **out, ElmcValue *msg, ElmcValue *
         owned[3] = NULL;
         owned[1] = owned[4];
         owned[4] = NULL;
-
         __plan_state = 25; break;
         case 6:
         owned[2] = elmc_tuple_second(msg);
@@ -689,8 +658,8 @@ static RC elmc_fn_Main_handleAppMsg(ElmcValue **out, ElmcValue *msg, ElmcValue *
         owned[3] = elmc_retain(owned[4]);
         elmc_release(owned[4]);
         owned[4] = NULL;
-        ElmcValue *rec_values_35_89[2] = { owned[2], owned[3] };
-        Rc = elmc_record_new_values_take(&owned[4], 2, rec_values_35_89);
+        ElmcValue *rec_values_35_134[2] = { owned[2], owned[3] };
+        Rc = elmc_record_new_values_take(&owned[4], 2, rec_values_35_134);
         CHECK_RC(Rc);
         owned[2] = NULL;
         owned[3] = NULL;
@@ -706,7 +675,6 @@ static RC elmc_fn_Main_handleAppMsg(ElmcValue **out, ElmcValue *msg, ElmcValue *
         owned[2] = NULL;
         owned[1] = owned[3];
         owned[3] = NULL;
-
         __plan_state = 25; break;
         case 8:
         owned[2] = elmc_tuple_second(msg);
@@ -723,7 +691,6 @@ static RC elmc_fn_Main_handleAppMsg(ElmcValue **out, ElmcValue *msg, ElmcValue *
         owned[3] = NULL;
         owned[1] = owned[2];
         owned[2] = NULL;
-
         __plan_state = 25; break;
         case 10:
         owned[2] = elmc_tuple_second(msg);
@@ -740,7 +707,6 @@ static RC elmc_fn_Main_handleAppMsg(ElmcValue **out, ElmcValue *msg, ElmcValue *
         owned[3] = NULL;
         owned[1] = owned[2];
         owned[2] = NULL;
-
         __plan_state = 25; break;
         case 12:
         owned[2] = elmc_tuple_second(msg);
@@ -757,7 +723,6 @@ static RC elmc_fn_Main_handleAppMsg(ElmcValue **out, ElmcValue *msg, ElmcValue *
         owned[3] = NULL;
         owned[1] = owned[2];
         owned[2] = NULL;
-
         __plan_state = 25; break;
         case 14:
         owned[2] = elmc_tuple_second(msg);
@@ -774,7 +739,6 @@ static RC elmc_fn_Main_handleAppMsg(ElmcValue **out, ElmcValue *msg, ElmcValue *
         owned[3] = NULL;
         owned[1] = owned[2];
         owned[2] = NULL;
-
         __plan_state = 25; break;
         case 16:
         owned[2] = elmc_tuple_second(msg);
@@ -791,7 +755,6 @@ static RC elmc_fn_Main_handleAppMsg(ElmcValue **out, ElmcValue *msg, ElmcValue *
         owned[3] = NULL;
         owned[1] = owned[2];
         owned[2] = NULL;
-
         __plan_state = 25; break;
         case 18:
         owned[2] = elmc_tuple_second(msg);
@@ -808,7 +771,6 @@ static RC elmc_fn_Main_handleAppMsg(ElmcValue **out, ElmcValue *msg, ElmcValue *
         owned[3] = NULL;
         owned[1] = owned[2];
         owned[2] = NULL;
-
         __plan_state = 25; break;
         case 20:
         owned[2] = elmc_tuple_second(msg);
@@ -825,7 +787,6 @@ static RC elmc_fn_Main_handleAppMsg(ElmcValue **out, ElmcValue *msg, ElmcValue *
         owned[2] = NULL;
         owned[1] = owned[0];
         owned[0] = NULL;
-
         __plan_state = 25; break;
         case 22:
         Rc = elmc_cmd0(&owned[2], ELMC_PEBBLE_CMD_NONE);
@@ -839,7 +800,6 @@ static RC elmc_fn_Main_handleAppMsg(ElmcValue **out, ElmcValue *msg, ElmcValue *
         owned[2] = NULL;
         owned[1] = owned[0];
         owned[0] = NULL;
-
         __plan_state = 25; break;
         case 24:
         __plan_state = 25; break;
@@ -853,7 +813,6 @@ static RC elmc_fn_Main_handleAppMsg(ElmcValue **out, ElmcValue *msg, ElmcValue *
       if (__plan_state < 0) break;
     }
   CATCH_END;
-
   elmc_release_array_lifo(owned, 5);
   return Rc;
 }
@@ -902,8 +861,8 @@ static RC elmc_fn_Main_handlePlatformMsg(ElmcValue **out, ElmcValue *msg, ElmcVa
         owned[1] = elmc_retain(owned[0]);
         elmc_release(owned[0]);
         owned[0] = NULL;
-        ElmcValue *rec_values_11_90[2] = { owned[2], owned[1] };
-        Rc = elmc_record_new_values_take(&owned[0], 2, rec_values_11_90);
+        ElmcValue *rec_values_11_135[2] = { owned[2], owned[1] };
+        Rc = elmc_record_new_values_take(&owned[0], 2, rec_values_11_135);
         CHECK_RC(Rc);
         owned[2] = NULL;
         owned[1] = NULL;
@@ -919,7 +878,6 @@ static RC elmc_fn_Main_handlePlatformMsg(ElmcValue **out, ElmcValue *msg, ElmcVa
         owned[2] = NULL;
         owned[0] = owned[1];
         owned[1] = NULL;
-
         __plan_state = 15; break;
         case 4:
         plan_native_int_17 = elmc_fn_Main_counterOf(model);
@@ -937,8 +895,8 @@ static RC elmc_fn_Main_handlePlatformMsg(ElmcValue **out, ElmcValue *msg, ElmcVa
         owned[2] = elmc_retain(owned[1]);
         elmc_release(owned[1]);
         owned[1] = NULL;
-        ElmcValue *rec_values_24_91[2] = { owned[4], owned[2] };
-        Rc = elmc_record_new_values_take(&owned[1], 2, rec_values_24_91);
+        ElmcValue *rec_values_24_136[2] = { owned[4], owned[2] };
+        Rc = elmc_record_new_values_take(&owned[1], 2, rec_values_24_136);
         CHECK_RC(Rc);
         owned[4] = NULL;
         owned[2] = NULL;
@@ -956,14 +914,13 @@ static RC elmc_fn_Main_handlePlatformMsg(ElmcValue **out, ElmcValue *msg, ElmcVa
         owned[4] = NULL;
         owned[0] = owned[2];
         owned[2] = NULL;
-
         __plan_state = 15; break;
         case 6:
         owned[3] = elmc_unit();
-        ElmcValue *plan_ephemeral_box_16930 = elmc_new_int_take(2);
-        Rc = elmc_tuple2(&owned[4], plan_ephemeral_box_16930, owned[3]);
+        ElmcValue *plan_ephemeral_box_19106 = elmc_new_int_take(2);
+        Rc = elmc_tuple2(&owned[4], plan_ephemeral_box_19106, owned[3]);
         CHECK_RC(Rc);
-        elmc_release(plan_ephemeral_box_16930);
+        elmc_release(plan_ephemeral_box_19106);
         elmc_release(owned[3]);
         owned[3] = NULL;
         Rc = elmc_fn_Main_requestWeather(&owned[2], owned[4]);
@@ -978,8 +935,8 @@ static RC elmc_fn_Main_handlePlatformMsg(ElmcValue **out, ElmcValue *msg, ElmcVa
         owned[2] = elmc_retain(owned[3]);
         elmc_release(owned[3]);
         owned[3] = NULL;
-        ElmcValue *plan_list_items_16946[2] = { owned[4], owned[2] };
-        Rc = elmc_list_from_values_take(&owned[3], plan_list_items_16946, 2);
+        ElmcValue *plan_list_items_19122[2] = { owned[4], owned[2] };
+        Rc = elmc_list_from_values_take(&owned[3], plan_list_items_19122, 2);
         CHECK_RC(Rc);
         owned[4] = NULL;
         owned[2] = NULL;
@@ -995,7 +952,6 @@ static RC elmc_fn_Main_handlePlatformMsg(ElmcValue **out, ElmcValue *msg, ElmcVa
         owned[2] = NULL;
         owned[0] = owned[1];
         owned[1] = NULL;
-
         __plan_state = 15; break;
         case 8:
         plan_native_int_41 = elmc_fn_Main_counterOf(model);
@@ -1015,8 +971,8 @@ static RC elmc_fn_Main_handlePlatformMsg(ElmcValue **out, ElmcValue *msg, ElmcVa
         owned[2] = elmc_retain(owned[1]);
         elmc_release(owned[1]);
         owned[1] = NULL;
-        ElmcValue *rec_values_50_92[2] = { owned[3], owned[2] };
-        Rc = elmc_record_new_values_take(&owned[1], 2, rec_values_50_92);
+        ElmcValue *rec_values_50_137[2] = { owned[3], owned[2] };
+        Rc = elmc_record_new_values_take(&owned[1], 2, rec_values_50_137);
         CHECK_RC(Rc);
         owned[3] = NULL;
         owned[2] = NULL;
@@ -1032,7 +988,6 @@ static RC elmc_fn_Main_handlePlatformMsg(ElmcValue **out, ElmcValue *msg, ElmcVa
         owned[3] = NULL;
         owned[0] = owned[2];
         owned[2] = NULL;
-
         __plan_state = 15; break;
         case 10:
         plan_native_int_53 = elmc_fn_Main_counterOf(model);
@@ -1052,8 +1007,8 @@ static RC elmc_fn_Main_handlePlatformMsg(ElmcValue **out, ElmcValue *msg, ElmcVa
         owned[2] = elmc_retain(owned[1]);
         elmc_release(owned[1]);
         owned[1] = NULL;
-        ElmcValue *rec_values_63_93[2] = { owned[3], owned[2] };
-        Rc = elmc_record_new_values_take(&owned[1], 2, rec_values_63_93);
+        ElmcValue *rec_values_63_138[2] = { owned[3], owned[2] };
+        Rc = elmc_record_new_values_take(&owned[1], 2, rec_values_63_138);
         CHECK_RC(Rc);
         owned[3] = NULL;
         owned[2] = NULL;
@@ -1069,7 +1024,6 @@ static RC elmc_fn_Main_handlePlatformMsg(ElmcValue **out, ElmcValue *msg, ElmcVa
         owned[2] = NULL;
         owned[0] = owned[3];
         owned[3] = NULL;
-
         __plan_state = 15; break;
         case 12:
         Rc = elmc_cmd0(&owned[2], ELMC_PEBBLE_CMD_NONE);
@@ -1083,7 +1037,6 @@ static RC elmc_fn_Main_handlePlatformMsg(ElmcValue **out, ElmcValue *msg, ElmcVa
         owned[2] = NULL;
         owned[0] = owned[1];
         owned[1] = NULL;
-
         __plan_state = 15; break;
         case 14:
         __plan_state = 15; break;
@@ -1097,7 +1050,6 @@ static RC elmc_fn_Main_handlePlatformMsg(ElmcValue **out, ElmcValue *msg, ElmcVa
       if (__plan_state < 0) break;
     }
   CATCH_END;
-
   elmc_release_array_lifo(owned, 5);
   return Rc;
 }
@@ -1124,8 +1076,8 @@ RC elmc_fn_Main_subscriptions(ElmcValue **out, ElmcValue *_unused_0) {
     owned[7] = elmc_retain(owned[2]);
     owned[8] = elmc_retain(owned[3]);
     owned[9] = elmc_retain(owned[4]);
-    ElmcValue *plan_list_items_16962[5] = { owned[5], owned[6], owned[7], owned[8], owned[9] };
-    Rc = elmc_list_from_values_take(&owned[10], plan_list_items_16962, 5);
+    ElmcValue *plan_list_items_19138[5] = { owned[5], owned[6], owned[7], owned[8], owned[9] };
+    Rc = elmc_list_from_values_take(&owned[10], plan_list_items_19138, 5);
     CHECK_RC(Rc);
     owned[5] = NULL;
     owned[6] = NULL;
@@ -1145,7 +1097,6 @@ RC elmc_fn_Main_subscriptions(ElmcValue **out, ElmcValue *_unused_0) {
     elmc_release(owned[4]);
     owned[4] = NULL;
   CATCH_END;
-
   elmc_release_array_lifo(owned, 11);
   return Rc;
 }
@@ -1168,31 +1119,31 @@ RC elmc_fn_Main_view(ElmcValue **out, ElmcValue *model) {
     CHECK_RC(Rc);
     Rc = elmc_tuple2_ints(&owned[7], ELMC_CONTEXT_ANTIALIASED, 1);
     CHECK_RC(Rc);
-    ElmcValue *plan_ephemeral_box_16978 = elmc_new_int_take(ELMC_CONTEXT_STROKE_COLOR);
-    ElmcValue *plan_ephemeral_box_16994 = elmc_new_int_take(ELMC_COLOR_BLACK);
-    Rc = elmc_tuple2(&owned[10], plan_ephemeral_box_16978, plan_ephemeral_box_16994);
+    ElmcValue *plan_ephemeral_box_19154 = elmc_new_int_take(ELMC_CONTEXT_STROKE_COLOR);
+    ElmcValue *plan_ephemeral_box_19170 = elmc_new_int_take(ELMC_COLOR_BLACK);
+    Rc = elmc_tuple2(&owned[10], plan_ephemeral_box_19154, plan_ephemeral_box_19170);
     CHECK_RC(Rc);
-    elmc_release(plan_ephemeral_box_16978);
-    elmc_release(plan_ephemeral_box_16994);
-    ElmcValue *plan_ephemeral_box_17010 = elmc_new_int_take(ELMC_CONTEXT_FILL_COLOR);
-    ElmcValue *plan_ephemeral_box_17026 = elmc_new_int_take(ELMC_COLOR_BLACK);
-    Rc = elmc_tuple2(&owned[11], plan_ephemeral_box_17010, plan_ephemeral_box_17026);
+    elmc_release(plan_ephemeral_box_19154);
+    elmc_release(plan_ephemeral_box_19170);
+    ElmcValue *plan_ephemeral_box_19186 = elmc_new_int_take(ELMC_CONTEXT_FILL_COLOR);
+    ElmcValue *plan_ephemeral_box_19202 = elmc_new_int_take(ELMC_COLOR_BLACK);
+    Rc = elmc_tuple2(&owned[11], plan_ephemeral_box_19186, plan_ephemeral_box_19202);
     CHECK_RC(Rc);
-    elmc_release(plan_ephemeral_box_17010);
-    elmc_release(plan_ephemeral_box_17026);
-    ElmcValue *plan_ephemeral_box_17042 = elmc_new_int_take(ELMC_CONTEXT_TEXT_COLOR);
-    ElmcValue *plan_ephemeral_box_17058 = elmc_new_int_take(ELMC_COLOR_BLACK);
-    Rc = elmc_tuple2(&owned[12], plan_ephemeral_box_17042, plan_ephemeral_box_17058);
+    elmc_release(plan_ephemeral_box_19186);
+    elmc_release(plan_ephemeral_box_19202);
+    ElmcValue *plan_ephemeral_box_19218 = elmc_new_int_take(ELMC_CONTEXT_TEXT_COLOR);
+    ElmcValue *plan_ephemeral_box_19234 = elmc_new_int_take(ELMC_COLOR_BLACK);
+    Rc = elmc_tuple2(&owned[12], plan_ephemeral_box_19218, plan_ephemeral_box_19234);
     CHECK_RC(Rc);
-    elmc_release(plan_ephemeral_box_17042);
-    elmc_release(plan_ephemeral_box_17058);
+    elmc_release(plan_ephemeral_box_19218);
+    elmc_release(plan_ephemeral_box_19234);
     owned[8] = elmc_retain(owned[6]);
     owned[9] = elmc_retain(owned[7]);
     owned[13] = elmc_retain(owned[10]);
     owned[14] = elmc_retain(owned[11]);
     owned[15] = elmc_retain(owned[12]);
-    ElmcValue *plan_list_items_17074[5] = { owned[8], owned[9], owned[13], owned[14], owned[15] };
-    Rc = elmc_list_from_values_take(&owned[16], plan_list_items_17074, 5);
+    ElmcValue *plan_list_items_19250[5] = { owned[8], owned[9], owned[13], owned[14], owned[15] };
+    Rc = elmc_list_from_values_take(&owned[16], plan_list_items_19250, 5);
     CHECK_RC(Rc);
     owned[8] = NULL;
     owned[9] = NULL;
@@ -1211,12 +1162,12 @@ RC elmc_fn_Main_view(ElmcValue **out, ElmcValue *model) {
     owned[23] = elmc_retain(owned[22]);
     owned[24] = elmc_retain(owned[21]);
     owned[25] = elmc_retain(owned[23]);
-    elmc_int_t rec_values_51_94[2] = { elmc_as_int(owned[24]), elmc_as_int(owned[25]) };
-    Rc = elmc_record_new_values_ints(&owned[26], 2, rec_values_51_94);
+    ElmcValue *rec_values_51_139[2] = { owned[24], owned[25] };
+    Rc = elmc_record_new_values_take(&owned[26], 2, rec_values_51_139);
     CHECK_RC(Rc);
-    elmc_release(owned[24]);
     owned[24] = NULL;
-    elmc_release(owned[25]);
+    owned[25] = NULL;
+    owned[24] = NULL;
     owned[25] = NULL;
     Rc = elmc_new_int(&owned[24], 10);
     CHECK_RC(Rc);
@@ -1226,12 +1177,12 @@ RC elmc_fn_Main_view(ElmcValue **out, ElmcValue *model) {
     owned[28] = elmc_retain(owned[27]);
     owned[29] = elmc_retain(owned[25]);
     owned[30] = elmc_retain(owned[28]);
-    elmc_int_t rec_values_58_95[2] = { elmc_as_int(owned[29]), elmc_as_int(owned[30]) };
-    Rc = elmc_record_new_values_ints(&owned[31], 2, rec_values_58_95);
+    ElmcValue *rec_values_58_140[2] = { owned[29], owned[30] };
+    Rc = elmc_record_new_values_take(&owned[31], 2, rec_values_58_140);
     CHECK_RC(Rc);
-    elmc_release(owned[29]);
     owned[29] = NULL;
-    elmc_release(owned[30]);
+    owned[30] = NULL;
+    owned[29] = NULL;
     owned[30] = NULL;
     Rc = elmc_new_int(&owned[29], 16);
     CHECK_RC(Rc);
@@ -1241,12 +1192,12 @@ RC elmc_fn_Main_view(ElmcValue **out, ElmcValue *model) {
     owned[33] = elmc_retain(owned[32]);
     owned[34] = elmc_retain(owned[30]);
     owned[35] = elmc_retain(owned[33]);
-    elmc_int_t rec_values_65_96[2] = { elmc_as_int(owned[34]), elmc_as_int(owned[35]) };
-    Rc = elmc_record_new_values_ints(&owned[36], 2, rec_values_65_96);
+    ElmcValue *rec_values_65_141[2] = { owned[34], owned[35] };
+    Rc = elmc_record_new_values_take(&owned[36], 2, rec_values_65_141);
     CHECK_RC(Rc);
-    elmc_release(owned[34]);
     owned[34] = NULL;
-    elmc_release(owned[35]);
+    owned[35] = NULL;
+    owned[34] = NULL;
     owned[35] = NULL;
     Rc = elmc_new_int(&owned[34], 8);
     CHECK_RC(Rc);
@@ -1256,12 +1207,12 @@ RC elmc_fn_Main_view(ElmcValue **out, ElmcValue *model) {
     owned[38] = elmc_retain(owned[37]);
     owned[39] = elmc_retain(owned[35]);
     owned[40] = elmc_retain(owned[38]);
-    elmc_int_t rec_values_72_97[2] = { elmc_as_int(owned[39]), elmc_as_int(owned[40]) };
-    Rc = elmc_record_new_values_ints(&owned[41], 2, rec_values_72_97);
+    ElmcValue *rec_values_72_142[2] = { owned[39], owned[40] };
+    Rc = elmc_record_new_values_take(&owned[41], 2, rec_values_72_142);
     CHECK_RC(Rc);
-    elmc_release(owned[39]);
     owned[39] = NULL;
-    elmc_release(owned[40]);
+    owned[40] = NULL;
+    owned[39] = NULL;
     owned[40] = NULL;
     Rc = elmc_new_int(&owned[39], 0);
     CHECK_RC(Rc);
@@ -1271,20 +1222,20 @@ RC elmc_fn_Main_view(ElmcValue **out, ElmcValue *model) {
     owned[43] = elmc_retain(owned[42]);
     owned[44] = elmc_retain(owned[40]);
     owned[45] = elmc_retain(owned[43]);
-    elmc_int_t rec_values_79_98[2] = { elmc_as_int(owned[44]), elmc_as_int(owned[45]) };
-    Rc = elmc_record_new_values_ints(&owned[46], 2, rec_values_79_98);
+    ElmcValue *rec_values_79_143[2] = { owned[44], owned[45] };
+    Rc = elmc_record_new_values_take(&owned[46], 2, rec_values_79_143);
     CHECK_RC(Rc);
-    elmc_release(owned[44]);
     owned[44] = NULL;
-    elmc_release(owned[45]);
+    owned[45] = NULL;
+    owned[44] = NULL;
     owned[45] = NULL;
     owned[44] = elmc_retain(owned[26]);
     owned[45] = elmc_retain(owned[31]);
     owned[47] = elmc_retain(owned[36]);
     owned[48] = elmc_retain(owned[41]);
     owned[49] = elmc_retain(owned[46]);
-    ElmcValue *plan_list_record_items_17090[5] = { owned[44], owned[45], owned[47], owned[48], owned[49] };
-    Rc = elmc_list_from_record_array(&owned[50], plan_list_record_items_17090, 5);
+    ElmcValue *plan_list_record_items_19266[5] = { owned[44], owned[45], owned[47], owned[48], owned[49] };
+    Rc = elmc_list_from_record_array(&owned[50], plan_list_record_items_19266, 5);
     CHECK_RC(Rc);
     owned[44] = NULL;
     owned[45] = NULL;
@@ -1299,19 +1250,19 @@ RC elmc_fn_Main_view(ElmcValue **out, ElmcValue *model) {
     owned[48] = elmc_retain(owned[47]);
     owned[49] = elmc_retain(owned[45]);
     owned[51] = elmc_retain(owned[48]);
-    elmc_int_t rec_values_92_99[2] = { elmc_as_int(owned[49]), elmc_as_int(owned[51]) };
-    Rc = elmc_record_new_values_ints(&owned[52], 2, rec_values_92_99);
+    ElmcValue *rec_values_92_144[2] = { owned[49], owned[51] };
+    Rc = elmc_record_new_values_take(&owned[52], 2, rec_values_92_144);
     CHECK_RC(Rc);
-    elmc_release(owned[49]);
     owned[49] = NULL;
-    elmc_release(owned[51]);
     owned[51] = NULL;
-    ElmcValue *plan_ephemeral_box_17106 = elmc_new_int_take(1);
-    ElmcValue *plan_ephemeral_box_17122 = elmc_new_int_take(0);
-    Rc = elmc_tuple2(&owned[53], plan_ephemeral_box_17106, plan_ephemeral_box_17122);
+    owned[49] = NULL;
+    owned[51] = NULL;
+    ElmcValue *plan_ephemeral_box_19282 = elmc_new_int_take(1);
+    ElmcValue *plan_ephemeral_box_19298 = elmc_new_int_take(0);
+    Rc = elmc_tuple2(&owned[53], plan_ephemeral_box_19282, plan_ephemeral_box_19298);
     CHECK_RC(Rc);
-    elmc_release(plan_ephemeral_box_17106);
-    elmc_release(plan_ephemeral_box_17122);
+    elmc_release(plan_ephemeral_box_19282);
+    elmc_release(plan_ephemeral_box_19298);
     Rc = elmc_fn_Pebble_Ui_path(&owned[49], owned[50], owned[52], owned[53]);
     CHECK_RC(Rc);
     elmc_release(owned[50]);
@@ -1320,10 +1271,10 @@ RC elmc_fn_Main_view(ElmcValue **out, ElmcValue *model) {
     owned[52] = NULL;
     elmc_release(owned[53]);
     owned[53] = NULL;
-    ElmcValue *plan_ephemeral_box_17138 = elmc_new_int_take(ELMC_RENDER_OP_PATH_OUTLINE);
-    Rc = elmc_tuple2(&owned[50], plan_ephemeral_box_17138, owned[49]);
+    ElmcValue *plan_ephemeral_box_19314 = elmc_new_int_take(ELMC_RENDER_OP_PATH_OUTLINE);
+    Rc = elmc_tuple2(&owned[50], plan_ephemeral_box_19314, owned[49]);
     CHECK_RC(Rc);
-    elmc_release(plan_ephemeral_box_17138);
+    elmc_release(plan_ephemeral_box_19314);
     elmc_release(owned[49]);
     owned[49] = NULL;
     Rc = elmc_new_int(&owned[49], 0);
@@ -1334,12 +1285,12 @@ RC elmc_fn_Main_view(ElmcValue **out, ElmcValue *model) {
     owned[53] = elmc_retain(owned[52]);
     owned[54] = elmc_retain(owned[51]);
     owned[55] = elmc_retain(owned[53]);
-    elmc_int_t rec_values_105_100[2] = { elmc_as_int(owned[54]), elmc_as_int(owned[55]) };
-    Rc = elmc_record_new_values_ints(&owned[56], 2, rec_values_105_100);
+    ElmcValue *rec_values_105_145[2] = { owned[54], owned[55] };
+    Rc = elmc_record_new_values_take(&owned[56], 2, rec_values_105_145);
     CHECK_RC(Rc);
-    elmc_release(owned[54]);
     owned[54] = NULL;
-    elmc_release(owned[55]);
+    owned[55] = NULL;
+    owned[54] = NULL;
     owned[55] = NULL;
     Rc = elmc_new_int(&owned[54], 8);
     CHECK_RC(Rc);
@@ -1349,12 +1300,12 @@ RC elmc_fn_Main_view(ElmcValue **out, ElmcValue *model) {
     owned[58] = elmc_retain(owned[57]);
     owned[59] = elmc_retain(owned[55]);
     owned[60] = elmc_retain(owned[58]);
-    elmc_int_t rec_values_112_101[2] = { elmc_as_int(owned[59]), elmc_as_int(owned[60]) };
-    Rc = elmc_record_new_values_ints(&owned[61], 2, rec_values_112_101);
+    ElmcValue *rec_values_112_146[2] = { owned[59], owned[60] };
+    Rc = elmc_record_new_values_take(&owned[61], 2, rec_values_112_146);
     CHECK_RC(Rc);
-    elmc_release(owned[59]);
     owned[59] = NULL;
-    elmc_release(owned[60]);
+    owned[60] = NULL;
+    owned[59] = NULL;
     owned[60] = NULL;
     Rc = elmc_new_int(&owned[59], 6);
     CHECK_RC(Rc);
@@ -1364,12 +1315,12 @@ RC elmc_fn_Main_view(ElmcValue **out, ElmcValue *model) {
     owned[63] = elmc_retain(owned[62]);
     owned[64] = elmc_retain(owned[60]);
     owned[65] = elmc_retain(owned[63]);
-    elmc_int_t rec_values_119_102[2] = { elmc_as_int(owned[64]), elmc_as_int(owned[65]) };
-    Rc = elmc_record_new_values_ints(&owned[66], 2, rec_values_119_102);
+    ElmcValue *rec_values_119_147[2] = { owned[64], owned[65] };
+    Rc = elmc_record_new_values_take(&owned[66], 2, rec_values_119_147);
     CHECK_RC(Rc);
-    elmc_release(owned[64]);
     owned[64] = NULL;
-    elmc_release(owned[65]);
+    owned[65] = NULL;
+    owned[64] = NULL;
     owned[65] = NULL;
     Rc = elmc_new_int(&owned[64], 2);
     CHECK_RC(Rc);
@@ -1379,12 +1330,12 @@ RC elmc_fn_Main_view(ElmcValue **out, ElmcValue *model) {
     owned[68] = elmc_retain(owned[67]);
     owned[69] = elmc_retain(owned[65]);
     owned[70] = elmc_retain(owned[68]);
-    elmc_int_t rec_values_126_103[2] = { elmc_as_int(owned[69]), elmc_as_int(owned[70]) };
-    Rc = elmc_record_new_values_ints(&owned[71], 2, rec_values_126_103);
+    ElmcValue *rec_values_126_148[2] = { owned[69], owned[70] };
+    Rc = elmc_record_new_values_take(&owned[71], 2, rec_values_126_148);
     CHECK_RC(Rc);
-    elmc_release(owned[69]);
     owned[69] = NULL;
-    elmc_release(owned[70]);
+    owned[70] = NULL;
+    owned[69] = NULL;
     owned[70] = NULL;
     Rc = elmc_new_int(&owned[69], 0);
     CHECK_RC(Rc);
@@ -1394,20 +1345,20 @@ RC elmc_fn_Main_view(ElmcValue **out, ElmcValue *model) {
     owned[73] = elmc_retain(owned[72]);
     owned[74] = elmc_retain(owned[70]);
     owned[75] = elmc_retain(owned[73]);
-    elmc_int_t rec_values_133_104[2] = { elmc_as_int(owned[74]), elmc_as_int(owned[75]) };
-    Rc = elmc_record_new_values_ints(&owned[76], 2, rec_values_133_104);
+    ElmcValue *rec_values_133_149[2] = { owned[74], owned[75] };
+    Rc = elmc_record_new_values_take(&owned[76], 2, rec_values_133_149);
     CHECK_RC(Rc);
-    elmc_release(owned[74]);
     owned[74] = NULL;
-    elmc_release(owned[75]);
+    owned[75] = NULL;
+    owned[74] = NULL;
     owned[75] = NULL;
     owned[74] = elmc_retain(owned[56]);
     owned[75] = elmc_retain(owned[61]);
     owned[77] = elmc_retain(owned[66]);
     owned[78] = elmc_retain(owned[71]);
     owned[79] = elmc_retain(owned[76]);
-    ElmcValue *plan_list_record_items_17154[5] = { owned[74], owned[75], owned[77], owned[78], owned[79] };
-    Rc = elmc_list_from_record_array(&owned[80], plan_list_record_items_17154, 5);
+    ElmcValue *plan_list_record_items_19330[5] = { owned[74], owned[75], owned[77], owned[78], owned[79] };
+    Rc = elmc_list_from_record_array(&owned[80], plan_list_record_items_19330, 5);
     CHECK_RC(Rc);
     owned[74] = NULL;
     owned[75] = NULL;
@@ -1422,19 +1373,19 @@ RC elmc_fn_Main_view(ElmcValue **out, ElmcValue *model) {
     owned[78] = elmc_retain(owned[77]);
     owned[79] = elmc_retain(owned[75]);
     owned[81] = elmc_retain(owned[78]);
-    elmc_int_t rec_values_146_105[2] = { elmc_as_int(owned[79]), elmc_as_int(owned[81]) };
-    Rc = elmc_record_new_values_ints(&owned[82], 2, rec_values_146_105);
+    ElmcValue *rec_values_146_150[2] = { owned[79], owned[81] };
+    Rc = elmc_record_new_values_take(&owned[82], 2, rec_values_146_150);
     CHECK_RC(Rc);
-    elmc_release(owned[79]);
     owned[79] = NULL;
-    elmc_release(owned[81]);
     owned[81] = NULL;
-    ElmcValue *plan_ephemeral_box_17170 = elmc_new_int_take(1);
-    ElmcValue *plan_ephemeral_box_17186 = elmc_new_int_take(0);
-    Rc = elmc_tuple2(&owned[83], plan_ephemeral_box_17170, plan_ephemeral_box_17186);
+    owned[79] = NULL;
+    owned[81] = NULL;
+    ElmcValue *plan_ephemeral_box_19346 = elmc_new_int_take(1);
+    ElmcValue *plan_ephemeral_box_19362 = elmc_new_int_take(0);
+    Rc = elmc_tuple2(&owned[83], plan_ephemeral_box_19346, plan_ephemeral_box_19362);
     CHECK_RC(Rc);
-    elmc_release(plan_ephemeral_box_17170);
-    elmc_release(plan_ephemeral_box_17186);
+    elmc_release(plan_ephemeral_box_19346);
+    elmc_release(plan_ephemeral_box_19362);
     Rc = elmc_fn_Pebble_Ui_path(&owned[79], owned[80], owned[82], owned[83]);
     CHECK_RC(Rc);
     elmc_release(owned[80]);
@@ -1443,10 +1394,10 @@ RC elmc_fn_Main_view(ElmcValue **out, ElmcValue *model) {
     owned[82] = NULL;
     elmc_release(owned[83]);
     owned[83] = NULL;
-    ElmcValue *plan_ephemeral_box_17202 = elmc_new_int_take(ELMC_RENDER_OP_PATH_FILLED);
-    Rc = elmc_tuple2(&owned[80], plan_ephemeral_box_17202, owned[79]);
+    ElmcValue *plan_ephemeral_box_19378 = elmc_new_int_take(ELMC_RENDER_OP_PATH_FILLED);
+    Rc = elmc_tuple2(&owned[80], plan_ephemeral_box_19378, owned[79]);
     CHECK_RC(Rc);
-    elmc_release(plan_ephemeral_box_17202);
+    elmc_release(plan_ephemeral_box_19378);
     elmc_release(owned[79]);
     owned[79] = NULL;
     Rc = elmc_new_int(&owned[79], 0);
@@ -1457,12 +1408,12 @@ RC elmc_fn_Main_view(ElmcValue **out, ElmcValue *model) {
     owned[83] = elmc_retain(owned[82]);
     owned[84] = elmc_retain(owned[81]);
     owned[85] = elmc_retain(owned[83]);
-    elmc_int_t rec_values_159_106[2] = { elmc_as_int(owned[84]), elmc_as_int(owned[85]) };
-    Rc = elmc_record_new_values_ints(&owned[86], 2, rec_values_159_106);
+    ElmcValue *rec_values_159_151[2] = { owned[84], owned[85] };
+    Rc = elmc_record_new_values_take(&owned[86], 2, rec_values_159_151);
     CHECK_RC(Rc);
-    elmc_release(owned[84]);
     owned[84] = NULL;
-    elmc_release(owned[85]);
+    owned[85] = NULL;
+    owned[84] = NULL;
     owned[85] = NULL;
     Rc = elmc_new_int(&owned[84], 8);
     CHECK_RC(Rc);
@@ -1472,12 +1423,12 @@ RC elmc_fn_Main_view(ElmcValue **out, ElmcValue *model) {
     owned[88] = elmc_retain(owned[87]);
     owned[89] = elmc_retain(owned[85]);
     owned[90] = elmc_retain(owned[88]);
-    elmc_int_t rec_values_166_107[2] = { elmc_as_int(owned[89]), elmc_as_int(owned[90]) };
-    Rc = elmc_record_new_values_ints(&owned[91], 2, rec_values_166_107);
+    ElmcValue *rec_values_166_152[2] = { owned[89], owned[90] };
+    Rc = elmc_record_new_values_take(&owned[91], 2, rec_values_166_152);
     CHECK_RC(Rc);
-    elmc_release(owned[89]);
     owned[89] = NULL;
-    elmc_release(owned[90]);
+    owned[90] = NULL;
+    owned[89] = NULL;
     owned[90] = NULL;
     Rc = elmc_new_int(&owned[89], 16);
     CHECK_RC(Rc);
@@ -1487,12 +1438,12 @@ RC elmc_fn_Main_view(ElmcValue **out, ElmcValue *model) {
     owned[93] = elmc_retain(owned[92]);
     owned[94] = elmc_retain(owned[90]);
     owned[95] = elmc_retain(owned[93]);
-    elmc_int_t rec_values_173_108[2] = { elmc_as_int(owned[94]), elmc_as_int(owned[95]) };
-    Rc = elmc_record_new_values_ints(&owned[96], 2, rec_values_173_108);
+    ElmcValue *rec_values_173_153[2] = { owned[94], owned[95] };
+    Rc = elmc_record_new_values_take(&owned[96], 2, rec_values_173_153);
     CHECK_RC(Rc);
-    elmc_release(owned[94]);
     owned[94] = NULL;
-    elmc_release(owned[95]);
+    owned[95] = NULL;
+    owned[94] = NULL;
     owned[95] = NULL;
     Rc = elmc_new_int(&owned[94], 24);
     CHECK_RC(Rc);
@@ -1502,19 +1453,19 @@ RC elmc_fn_Main_view(ElmcValue **out, ElmcValue *model) {
     owned[98] = elmc_retain(owned[97]);
     owned[99] = elmc_retain(owned[95]);
     owned[100] = elmc_retain(owned[98]);
-    elmc_int_t rec_values_180_109[2] = { elmc_as_int(owned[99]), elmc_as_int(owned[100]) };
-    Rc = elmc_record_new_values_ints(&owned[101], 2, rec_values_180_109);
+    ElmcValue *rec_values_180_154[2] = { owned[99], owned[100] };
+    Rc = elmc_record_new_values_take(&owned[101], 2, rec_values_180_154);
     CHECK_RC(Rc);
-    elmc_release(owned[99]);
     owned[99] = NULL;
-    elmc_release(owned[100]);
+    owned[100] = NULL;
+    owned[99] = NULL;
     owned[100] = NULL;
     owned[99] = elmc_retain(owned[86]);
     owned[100] = elmc_retain(owned[91]);
     owned[102] = elmc_retain(owned[96]);
     owned[103] = elmc_retain(owned[101]);
-    ElmcValue *plan_list_record_items_17218[4] = { owned[99], owned[100], owned[102], owned[103] };
-    Rc = elmc_list_from_record_array(&owned[104], plan_list_record_items_17218, 4);
+    ElmcValue *plan_list_record_items_19394[4] = { owned[99], owned[100], owned[102], owned[103] };
+    Rc = elmc_list_from_record_array(&owned[104], plan_list_record_items_19394, 4);
     CHECK_RC(Rc);
     owned[99] = NULL;
     owned[100] = NULL;
@@ -1528,19 +1479,19 @@ RC elmc_fn_Main_view(ElmcValue **out, ElmcValue *model) {
     owned[103] = elmc_retain(owned[102]);
     owned[105] = elmc_retain(owned[100]);
     owned[106] = elmc_retain(owned[103]);
-    elmc_int_t rec_values_192_110[2] = { elmc_as_int(owned[105]), elmc_as_int(owned[106]) };
-    Rc = elmc_record_new_values_ints(&owned[107], 2, rec_values_192_110);
+    ElmcValue *rec_values_192_155[2] = { owned[105], owned[106] };
+    Rc = elmc_record_new_values_take(&owned[107], 2, rec_values_192_155);
     CHECK_RC(Rc);
-    elmc_release(owned[105]);
     owned[105] = NULL;
-    elmc_release(owned[106]);
     owned[106] = NULL;
-    ElmcValue *plan_ephemeral_box_17234 = elmc_new_int_take(1);
-    ElmcValue *plan_ephemeral_box_17250 = elmc_new_int_take(0);
-    Rc = elmc_tuple2(&owned[108], plan_ephemeral_box_17234, plan_ephemeral_box_17250);
+    owned[105] = NULL;
+    owned[106] = NULL;
+    ElmcValue *plan_ephemeral_box_19410 = elmc_new_int_take(1);
+    ElmcValue *plan_ephemeral_box_19426 = elmc_new_int_take(0);
+    Rc = elmc_tuple2(&owned[108], plan_ephemeral_box_19410, plan_ephemeral_box_19426);
     CHECK_RC(Rc);
-    elmc_release(plan_ephemeral_box_17234);
-    elmc_release(plan_ephemeral_box_17250);
+    elmc_release(plan_ephemeral_box_19410);
+    elmc_release(plan_ephemeral_box_19426);
     Rc = elmc_fn_Pebble_Ui_path(&owned[105], owned[104], owned[107], owned[108]);
     CHECK_RC(Rc);
     elmc_release(owned[104]);
@@ -1549,10 +1500,10 @@ RC elmc_fn_Main_view(ElmcValue **out, ElmcValue *model) {
     owned[107] = NULL;
     elmc_release(owned[108]);
     owned[108] = NULL;
-    ElmcValue *plan_ephemeral_box_17266 = elmc_new_int_take(ELMC_RENDER_OP_PATH_OUTLINE_OPEN);
-    Rc = elmc_tuple2(&owned[104], plan_ephemeral_box_17266, owned[105]);
+    ElmcValue *plan_ephemeral_box_19442 = elmc_new_int_take(ELMC_RENDER_OP_PATH_OUTLINE_OPEN);
+    Rc = elmc_tuple2(&owned[104], plan_ephemeral_box_19442, owned[105]);
     CHECK_RC(Rc);
-    elmc_release(plan_ephemeral_box_17266);
+    elmc_release(plan_ephemeral_box_19442);
     elmc_release(owned[105]);
     owned[105] = NULL;
     owned[19] = elmc_retain(owned[17]);
@@ -1560,8 +1511,8 @@ RC elmc_fn_Main_view(ElmcValue **out, ElmcValue *model) {
     owned[106] = elmc_retain(owned[50]);
     owned[107] = elmc_retain(owned[80]);
     owned[108] = elmc_retain(owned[104]);
-    ElmcValue *plan_list_items_17282[5] = { owned[19], owned[105], owned[106], owned[107], owned[108] };
-    Rc = elmc_list_from_values_take(&owned[109], plan_list_items_17282, 5);
+    ElmcValue *plan_list_items_19458[5] = { owned[19], owned[105], owned[106], owned[107], owned[108] };
+    Rc = elmc_list_from_values_take(&owned[109], plan_list_items_19458, 5);
     CHECK_RC(Rc);
     owned[19] = NULL;
     owned[105] = NULL;
@@ -1574,10 +1525,10 @@ RC elmc_fn_Main_view(ElmcValue **out, ElmcValue *model) {
     owned[16] = NULL;
     elmc_release(owned[109]);
     owned[109] = NULL;
-    ElmcValue *plan_ephemeral_box_17298 = elmc_new_int_take(ELMC_RENDER_OP_CONTEXT_GROUP);
-    Rc = elmc_tuple2(&owned[16], plan_ephemeral_box_17298, owned[19]);
+    ElmcValue *plan_ephemeral_box_19474 = elmc_new_int_take(ELMC_RENDER_OP_CONTEXT_GROUP);
+    Rc = elmc_tuple2(&owned[16], plan_ephemeral_box_19474, owned[19]);
     CHECK_RC(Rc);
-    elmc_release(plan_ephemeral_box_17298);
+    elmc_release(plan_ephemeral_box_19474);
     elmc_release(owned[19]);
     owned[19] = NULL;
     Rc = elmc_render_cmd6_take(&owned[108], ELMC_RENDER_OP_LINE, 0, 84, 143, 84, ELMC_COLOR_BLACK, 0);
@@ -1594,8 +1545,8 @@ RC elmc_fn_Main_view(ElmcValue **out, ElmcValue *model) {
     owned[115] = elmc_retain(owned[110]);
     owned[116] = elmc_retain(owned[111]);
     owned[117] = elmc_retain(owned[112]);
-    ElmcValue *plan_list_items_17314[6] = { owned[0], owned[113], owned[114], owned[115], owned[116], owned[117] };
-    Rc = elmc_list_from_values_take(&owned[118], plan_list_items_17314, 6);
+    ElmcValue *plan_list_items_19490[6] = { owned[0], owned[113], owned[114], owned[115], owned[116], owned[117] };
+    Rc = elmc_list_from_values_take(&owned[118], plan_list_items_19490, 6);
     CHECK_RC(Rc);
     owned[0] = NULL;
     owned[113] = NULL;
@@ -1603,44 +1554,44 @@ RC elmc_fn_Main_view(ElmcValue **out, ElmcValue *model) {
     owned[115] = NULL;
     owned[116] = NULL;
     owned[117] = NULL;
-    ElmcValue *plan_ephemeral_box_17330 = elmc_new_int_take(1);
-    Rc = elmc_tuple2(&owned[0], plan_ephemeral_box_17330, owned[118]);
+    ElmcValue *plan_ephemeral_box_19506 = elmc_new_int_take(1);
+    Rc = elmc_tuple2(&owned[0], plan_ephemeral_box_19506, owned[118]);
     CHECK_RC(Rc);
-    elmc_release(plan_ephemeral_box_17330);
+    elmc_release(plan_ephemeral_box_19506);
     elmc_release(owned[118]);
     owned[118] = NULL;
-    ElmcValue *plan_ephemeral_box_17346 = elmc_new_int_take(ELMC_UI_NODE_CANVAS_LAYER);
-    Rc = elmc_tuple2(&owned[4], plan_ephemeral_box_17346, owned[0]);
+    ElmcValue *plan_ephemeral_box_19522 = elmc_new_int_take(ELMC_UI_NODE_CANVAS_LAYER);
+    Rc = elmc_tuple2(&owned[4], plan_ephemeral_box_19522, owned[0]);
     CHECK_RC(Rc);
-    elmc_release(plan_ephemeral_box_17346);
+    elmc_release(plan_ephemeral_box_19522);
     elmc_release(owned[0]);
     owned[0] = NULL;
     owned[0] = elmc_retain(owned[4]);
-    ElmcValue *plan_list_items_17362[1] = { owned[0] };
-    Rc = elmc_list_from_values_take(&owned[3], plan_list_items_17362, 1);
+    ElmcValue *plan_list_items_19538[1] = { owned[0] };
+    Rc = elmc_list_from_values_take(&owned[3], plan_list_items_19538, 1);
     CHECK_RC(Rc);
     owned[0] = NULL;
-    ElmcValue *plan_ephemeral_box_17378 = elmc_new_int_take(1);
-    Rc = elmc_tuple2(&owned[0], plan_ephemeral_box_17378, owned[3]);
+    ElmcValue *plan_ephemeral_box_19554 = elmc_new_int_take(1);
+    Rc = elmc_tuple2(&owned[0], plan_ephemeral_box_19554, owned[3]);
     CHECK_RC(Rc);
-    elmc_release(plan_ephemeral_box_17378);
+    elmc_release(plan_ephemeral_box_19554);
     elmc_release(owned[3]);
     owned[3] = NULL;
-    ElmcValue *plan_ephemeral_box_17394 = elmc_new_int_take(ELMC_UI_NODE_WINDOW);
-    Rc = elmc_tuple2(&owned[2], plan_ephemeral_box_17394, owned[0]);
+    ElmcValue *plan_ephemeral_box_19570 = elmc_new_int_take(ELMC_UI_NODE_WINDOW);
+    Rc = elmc_tuple2(&owned[2], plan_ephemeral_box_19570, owned[0]);
     CHECK_RC(Rc);
-    elmc_release(plan_ephemeral_box_17394);
+    elmc_release(plan_ephemeral_box_19570);
     elmc_release(owned[0]);
     owned[0] = NULL;
     owned[0] = elmc_retain(owned[2]);
-    ElmcValue *plan_list_items_17410[1] = { owned[0] };
-    Rc = elmc_list_from_values_take(&owned[1], plan_list_items_17410, 1);
+    ElmcValue *plan_list_items_19586[1] = { owned[0] };
+    Rc = elmc_list_from_values_take(&owned[1], plan_list_items_19586, 1);
     CHECK_RC(Rc);
     owned[0] = NULL;
-    ElmcValue *plan_ephemeral_box_17426 = elmc_new_int_take(ELMC_UI_NODE_WINDOW_STACK);
-    Rc = elmc_tuple2(out, plan_ephemeral_box_17426, owned[1]);
+    ElmcValue *plan_ephemeral_box_19602 = elmc_new_int_take(ELMC_UI_NODE_WINDOW_STACK);
+    Rc = elmc_tuple2(out, plan_ephemeral_box_19602, owned[1]);
     CHECK_RC(Rc);
-    elmc_release(plan_ephemeral_box_17426);
+    elmc_release(plan_ephemeral_box_19602);
     elmc_release(owned[5]);
     owned[5] = NULL;
     elmc_release(owned[6]);
@@ -1842,7 +1793,6 @@ RC elmc_fn_Main_view(ElmcValue **out, ElmcValue *model) {
     elmc_release(owned[2]);
     owned[2] = NULL;
   CATCH_END;
-
   elmc_release_array_lifo(owned, ELMC_OWNED_SLOT_COUNT);
   elmc_free(owned);
   return Rc;
@@ -1872,7 +1822,6 @@ static RC elmc_fn_Main_temperatureValue(ElmcValue **out, ElmcValue *temperature)
     *out = owned[1];
     owned[1] = NULL;
   CATCH_END;
-
   elmc_release_array_lifo(owned, 2);
   return Rc;
 }
@@ -1893,7 +1842,6 @@ static RC elmc_fn_Main_main(ElmcValue **out) {
     Rc = elmc_new_int(out, 0);
     CHECK_RC(Rc);
   CATCH_END;
-
   return Rc;
 }
 
@@ -1939,7 +1887,6 @@ static RC elmc_fn_Pebble_Platform_launchReasonToInt_native(ElmcValue **out, elmc
         case_int_1 = -1;
         break;
       }
-
     }
     Rc = elmc_new_int(out, case_int_1);
     CHECK_RC(Rc);
@@ -1990,66 +1937,49 @@ static ElmcValue * elmc_fn_Pebble_Ui_canvasLayer(ElmcValue *id, ElmcValue *ops) 
 static RC elmc_fn_Pebble_Ui_path(ElmcValue **out, ElmcValue *points, ElmcValue *offset, ElmcValue *rotation) {
   /* Ownership policy: borrow_arg, retain_result, direct_call_abi */
   RC Rc = RC_SUCCESS;
-  ElmcValue *owned[4] = {0};
+  ElmcValue *owned[5] = {0};
   CATCH_BEGIN
     /* plan block 0 */
-    Rc = elmc_closure_new_rc(&owned[2], elmc_fn_Pebble_Ui_path_closure_0, 1, 0, NULL);
+    Rc = elmc_closure_new_rc(&owned[3], elmc_fn_Pebble_Ui_path_closure_0, 1, 0, NULL);
     CHECK_RC(Rc);
-    Rc = elmc_list_map(&owned[3], owned[2], points);
+    Rc = elmc_list_map(&owned[4], owned[3], points);
     CHECK_RC(Rc);
-    elmc_release(owned[2]);
-    owned[2] = NULL;
+    elmc_release(owned[3]);
+    owned[3] = NULL;
     const elmc_int_t plan_native_int_5 = ELMC_RECORD_GET_INDEX_INT(offset, ELMC_FIELD_PEBBLE_UI_POINT_X);
-    const elmc_int_t plan_native_int_6 = ELMC_RECORD_GET_INDEX_INT(offset, ELMC_FIELD_PEBBLE_UI_POINT_Y);
-    ElmcValue *plan_ephemeral_box_17474 = elmc_new_int_take(plan_native_int_5);
-    ElmcValue *plan_ephemeral_box_17490 = elmc_new_int_take(plan_native_int_6);
-    Rc = elmc_tuple2(&owned[1], plan_ephemeral_box_17474, plan_ephemeral_box_17490);
+    owned[3] = elmc_record_get_index(offset, ELMC_FIELD_PEBBLE_UI_POINT_Y);
+    ElmcValue *plan_ephemeral_box_19618 = elmc_new_int_take(plan_native_int_5);
+    Rc = elmc_tuple2(&owned[1], plan_ephemeral_box_19618, owned[3]);
     CHECK_RC(Rc);
-    elmc_release(plan_ephemeral_box_17474);
-    elmc_release(plan_ephemeral_box_17490);
-    Rc = elmc_fn_Pebble_Ui_rotationToPebbleAngle(&owned[0]);
+    elmc_release(plan_ephemeral_box_19618);
+    elmc_release(owned[3]);
+    owned[3] = NULL;
+    ElmcValue *plan_argv_19634[1] = { rotation };
+    Rc = elmc_fn_Pebble_Ui_rotationToPebbleAngle(&owned[0], plan_argv_19634, 1);
     CHECK_RC(Rc);
-    ElmcValue *plan_closure_argv_17506[1] = { rotation };
-    Rc = elmc_closure_call_rc(&owned[2], owned[0], plan_closure_argv_17506, 1);
-    CHECK_RC(Rc);
-    elmc_release(owned[0]);
-    owned[0] = NULL;
-    Rc = elmc_tuple2(&owned[0], owned[1], owned[2]);
+    Rc = elmc_tuple2(&owned[2], owned[1], owned[0]);
     CHECK_RC(Rc);
     elmc_release(owned[1]);
     owned[1] = NULL;
-    elmc_release(owned[2]);
-    owned[2] = NULL;
-    Rc = elmc_tuple2(out, owned[3], owned[0]);
-    CHECK_RC(Rc);
-  CATCH_END;
-
-  elmc_release_array_lifo(owned, 4);
-  return Rc;
-}
-
-static RC elmc_fn_Pebble_Ui_rotationToPebbleAngle(ElmcValue **out) {
-  /* Ownership policy: borrow_arg, borrow_result, direct_call_abi */
-  RC Rc = RC_SUCCESS;
-  ElmcValue *owned[1] = {0};
-  CATCH_BEGIN
-    /* plan block 0 */
-    Rc = elmc_closure_new_rc(&owned[0], elmc_fn_Pebble_Ui_rotationToPebbleAngle_closure_0, 1, 0, NULL);
-    CHECK_RC(Rc);
-    *out = owned[0];
+    elmc_release(owned[0]);
     owned[0] = NULL;
+    Rc = elmc_tuple2(out, owned[4], owned[2]);
+    CHECK_RC(Rc);
   CATCH_END;
-
-  elmc_release_array_lifo(owned, 1);
+  elmc_release_array_lifo(owned, 5);
   return Rc;
 }
-static RC elmc_fn_Pebble_Ui_rotationToPebbleAngle_native(elmc_int_t *out) {
-  ElmcValue *boxed = NULL;
-  RC Rc = elmc_fn_Pebble_Ui_rotationToPebbleAngle(&boxed);
-  if (Rc != RC_SUCCESS) return Rc;
-  *out = elmc_as_int(boxed);
-  elmc_release(boxed);
-  return RC_SUCCESS;
+
+static RC elmc_fn_Pebble_Ui_rotationToPebbleAngle(ElmcValue **out, ElmcValue ** const args, const int argc) {
+  /* Ownership policy: borrow_arg, borrow_result */
+  RC Rc = RC_SUCCESS;
+
+  ElmcValue *(Rotation angle) = (argc > 0) ? args[0] : NULL;
+  (void)(Rotation angle);
+
+  Rc = RC_ERR_UNSUPPORTED;
+
+  return Rc;
 }
 
 static RC elmc_fn_Companion_Internal_encodeLocationCode_native(ElmcValue **out, elmc_int_t value) {
@@ -2074,7 +2004,6 @@ static RC elmc_fn_Companion_Internal_encodeLocationCode_native(ElmcValue **out, 
         case_int_1 = 4;
         break;
       }
-
     }
     Rc = elmc_new_int(out, case_int_1);
     CHECK_RC(Rc);
@@ -2092,9 +2021,6 @@ static RC elmc_fn_Companion_Internal_watchToPhoneTag(ElmcValue **out, ElmcValue 
   ElmcValue *owned[2] = {0};
   CATCH_BEGIN
     /* plan block 0 */
-    if (!elmc_union_tag_matches(message, ELMC_UNION_COMPANION_TYPES_REQUESTWEATHER)) {
-      goto elmc_plan_block_4;
-    }
     owned[1] = elmc_tuple_second(message);
     Rc = elmc_new_int(&owned[0], 2);
     CHECK_RC(Rc);
@@ -2102,12 +2028,9 @@ static RC elmc_fn_Companion_Internal_watchToPhoneTag(ElmcValue **out, ElmcValue 
     owned[1] = NULL;
     owned[1] = owned[0];
     owned[0] = NULL;
-
-    elmc_plan_block_4:
     *out = owned[1];
     owned[1] = NULL;
   CATCH_END;
-
   elmc_release_array_lifo(owned, 2);
   return Rc;
 }
@@ -2126,17 +2049,12 @@ static RC elmc_fn_Companion_Internal_watchToPhoneValue(ElmcValue **out, ElmcValu
   ElmcValue *owned[2] = {0};
   CATCH_BEGIN
     /* plan block 0 */
-    if (!elmc_union_tag_matches(message, ELMC_UNION_COMPANION_TYPES_REQUESTWEATHER)) {
-      goto elmc_plan_block_4;
-    }
     owned[1] = elmc_tuple_second(message);
     Rc = elmc_fn_Companion_Internal_encodeLocationCode(&owned[0], owned[1]);
     CHECK_RC(Rc);
-    elmc_plan_block_4:
     *out = owned[0];
     owned[0] = NULL;
   CATCH_END;
-
   elmc_release_array_lifo(owned, 2);
   return Rc;
 }
@@ -2157,7 +2075,7 @@ static RC elmc_fn_Main_view_commands_append(ElmcValue ** const args, const int a
   if (!writer)
     return RC_ERR_INVALID_ARG;
   RC Rc = RC_SUCCESS;
-  ElmcValue *owned[2] = {0};
+  ElmcValue *owned[3] = {0};
 
   static ElmcPebbleDrawCmd scene_cmd;
 
@@ -2358,19 +2276,20 @@ static RC elmc_fn_Main_view_commands_append(ElmcValue ** const args, const int a
 
     }
 
-    // inlined Main.counterOf
-    const elmc_int_t direct_hoisted_int_24 = ELMC_RECORD_GET_INDEX_INT(model, ELMC_FIELD_MAIN_MODEL_VALUE);
+    const elmc_int_t native_call_24 = elmc_fn_Main_counterOf(model);
 
-    const elmc_int_t direct_native_let_counter_25 = direct_hoisted_int_24;
-    ElmcValue *tmp_26 = elmc_int_zero();
-    int64_t direct_i_27 = elmc_as_int_number(tmp_26);
-    elmc_release(tmp_26);
+    Rc = elmc_new_int(&owned[2], native_call_24);
+    CHECK_RC(Rc);
+
+    ElmcValue *tmp_25 = elmc_int_zero();
+    int64_t direct_i_26 = elmc_as_int_number(tmp_25);
+    elmc_release(tmp_25);
 
     elmc_draw_cmd_init(&scene_cmd, ELMC_RENDER_OP_TEXT_INT_WITH_FONT);
-    scene_cmd.p0 = direct_i_27;
+    scene_cmd.p0 = direct_i_26;
     scene_cmd.p1 = 0;
     scene_cmd.p2 = 56;
-    scene_cmd.p3 = direct_native_let_counter_25;
+    scene_cmd.p3 = elmc_as_int(owned[2]);
     Rc = elmc_scene_writer_push_cmd(writer, &scene_cmd);
     CHECK_RC(Rc);
 

@@ -100,11 +100,21 @@ defmodule Ide.PebbleToolchain.Elmc do
       |> then(&watch_compile_opts(out_dir, target_platforms, &1))
 
     Elmc.CLI.compile_project(project_dir, out_dir, elmc_opts: elmc_opts)
-    |> tap(fn
-      {:ok, _} -> :ok = write_compile_stamp(project_dir, out_dir, elmc_opts, target_platforms)
-      _ -> :ok
+    |> tap(fn result ->
+      # `compile_project/3` returns a CLI `project_run` map (`%{status: :ok, ...}`),
+      # not `{:ok, _}`. Without a stamp, PBW packaging cannot reuse `.elmc-build` and
+      # recompiles watch a second time on every Build.
+      if compile_project_succeeded?(result) do
+        :ok = write_compile_stamp(project_dir, out_dir, elmc_opts, target_platforms)
+      end
     end)
   end
+
+  @doc false
+  @spec compile_project_succeeded?(term()) :: boolean()
+  def compile_project_succeeded?({:ok, _}), do: true
+  def compile_project_succeeded?(%{status: :ok}), do: true
+  def compile_project_succeeded?(_), do: false
 
   @spec generate_sources(String.t(), String.t(), String.t(), keyword()) ::
           :ok | {:error, toolchain_error()}
@@ -209,8 +219,9 @@ defmodule Ide.PebbleToolchain.Elmc do
   @spec compile_stamp_path(String.t()) :: String.t()
   defp compile_stamp_path(out_dir), do: Path.join(out_dir, @compile_stamp_file)
 
+  @doc false
   @spec write_compile_stamp(String.t(), String.t(), map(), [String.t()]) :: :ok
-  defp write_compile_stamp(project_root, out_dir, compile_opts, target_platforms) do
+  def write_compile_stamp(project_root, out_dir, compile_opts, target_platforms) do
     payload = compile_stamp_payload(project_root, compile_opts, target_platforms)
     File.mkdir_p!(out_dir)
     File.write!(compile_stamp_path(out_dir), payload)

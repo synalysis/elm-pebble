@@ -1,7 +1,7 @@
 defmodule ElmEx.Frontend.Pretty.Declaration do
   @moduledoc false
 
-  alias ElmEx.Frontend.Pretty.{Doc, Expr}
+  alias ElmEx.Frontend.Pretty.{BodyLayout, Doc, Expr}
 
   @type opts :: keyword()
 
@@ -10,29 +10,66 @@ defmodule ElmEx.Frontend.Pretty.Declaration do
     args = Map.get(decl, :args, [])
     arg_text = if args == [], do: "", else: " " <> Enum.join(args, " ")
 
-    header = Doc.text("#{decl.name}#{arg_text} =")
+    header =
+      if header_source = Map.get(decl, :header_source) do
+        Doc.text(String.trim_trailing(header_source))
+      else
+        Doc.text("#{decl.name}#{arg_text} =")
+      end
 
     body_doc =
       cond do
+        is_binary(body = Map.get(decl, :body)) and body != "" ->
+          Doc.text(BodyLayout.normalize_function_body(body))
+
         is_map(Map.get(decl, :expr)) ->
           Expr.format(decl.expr, opts)
-
-        is_binary(body = Map.get(decl, :body)) and body != "" ->
-          Doc.text(String.trim(body))
 
         true ->
           Doc.text("")
       end
 
-    Doc.concat([header, Doc.nest(1, Doc.concat([Doc.break(), body_doc]))])
+    if is_binary(Map.get(decl, :body)) and Map.get(decl, :body) != "" do
+      Doc.concat([header, Doc.break(), body_doc])
+    else
+      Doc.concat([header, Doc.nest(1, Doc.concat([Doc.break(), body_doc]))])
+    end
   end
 
-  def format(%{kind: :function_signature, name: name, type: type}, opts) do
-    prefix = if name in Keyword.get(opts, :ports, []), do: "port ", else: ""
-    Doc.text("#{prefix}#{name} : #{type}")
+  def format(%{kind: :function_signature, name: name, type: type} = decl, opts) do
+    if source = Map.get(decl, :source) do
+      Doc.text(source)
+    else
+      prefix = if name in Keyword.get(opts, :ports, []), do: "port ", else: ""
+      Doc.text("#{prefix}#{name} : #{type}")
+    end
+  end
+
+  def format(%{kind: :raw, source: source}, _opts) when is_binary(source) do
+    Doc.text(String.trim_trailing(source))
   end
 
   def format(%{kind: :type_alias, name: name} = decl, _opts) do
+    if source = Map.get(decl, :source) do
+      Doc.text(source |> normalize_type_alias_source() |> String.trim_trailing())
+    else
+      format_type_alias_decl(name, decl)
+    end
+  end
+
+  def format(%{kind: :union, name: name} = decl, _opts) do
+    if source = Map.get(decl, :source) do
+      Doc.text(source |> normalize_union_source() |> String.trim_trailing())
+    else
+      format_union_from_ast(name, Map.get(decl, :type_params, []), Map.get(decl, :constructors, []))
+    end
+  end
+
+  def format(other, _opts) do
+    Doc.text(inspect(other, limit: :infinity, printable_limit: 120))
+  end
+
+  defp format_type_alias_decl(name, decl) do
     fields = Map.get(decl, :fields, [])
     field_types = Map.get(decl, :field_types, %{})
     extensible_base = Map.get(decl, :extensible_base)
@@ -54,34 +91,6 @@ defmodule ElmEx.Frontend.Pretty.Declaration do
         )
       ])
     end
-  end
-
-  def format(%{kind: :union, name: name, constructors: constructors}, _opts) do
-    case constructors do
-      [] ->
-        Doc.text("type #{name}")
-
-      [first | rest] ->
-        Doc.concat([
-          Doc.text("type #{name}"),
-          Doc.nest(
-            1,
-            Doc.concat([
-              Doc.break(),
-              format_union_constructor(first, :first),
-              Doc.concat(
-                Enum.map(rest, fn ctor ->
-                  Doc.concat([Doc.break(), format_union_constructor(ctor, :rest)])
-                end)
-              )
-            ])
-          )
-        ])
-    end
-  end
-
-  def format(other, _opts) do
-    Doc.text(inspect(other, limit: :infinity, printable_limit: 120))
   end
 
   @spec format_type_alias_record([String.t()], %{optional(String.t()) => String.t()}, String.t() | nil) ::
@@ -112,24 +121,17 @@ defmodule ElmEx.Frontend.Pretty.Declaration do
           Doc.concat([record_open, single, Doc.text(" }")])
 
         [first | rest] ->
-          Doc.group(
-            Doc.concat([
-              record_open,
-              first,
-              Doc.text(","),
-              Doc.nest(
-                1,
-                Doc.concat([
-                  Doc.break(),
-                  Doc.concat(
-                    Enum.intersperse(rest, Doc.concat([Doc.text(","), Doc.break()]))
-                  ),
-                  Doc.break(),
-                  Doc.text("}")
-                ])
-              )
-            ])
-          )
+          Doc.concat([
+            record_open,
+            first,
+            Doc.concat(
+              Enum.map(rest, fn field_doc ->
+                Doc.concat([Doc.break(), Doc.text(", "), field_doc])
+              end)
+            ),
+            Doc.break(),
+            Doc.text("}")
+          ])
 
         [] ->
           Doc.concat([record_open, Doc.text("}")])
@@ -146,8 +148,39 @@ defmodule ElmEx.Frontend.Pretty.Declaration do
 
   @spec compact_type_alias_fields?([String.t()], %{optional(String.t()) => String.t()}) :: boolean()
   defp compact_type_alias_fields?(fields, field_types) do
-    length(fields) <= 2 and
+    length(fields) <= 1 and
       Enum.all?(field_types, fn {_name, type} -> String.length(type) <= 24 end)
+  end
+
+  @spec format_union_from_ast(String.t(), [String.t()], [map()]) :: Doc.t()
+  defp format_union_from_ast(name, type_params, constructors) do
+    params_text =
+      case type_params do
+        [] -> ""
+        params -> " " <> Enum.join(params, " ")
+      end
+
+    case constructors do
+      [] ->
+        Doc.text("type #{name}#{params_text}")
+
+      [first | rest] ->
+        Doc.concat([
+          Doc.text("type #{name}#{params_text}"),
+          Doc.nest(
+            1,
+            Doc.concat([
+              Doc.break(),
+              format_union_constructor(first, :first),
+              Doc.concat(
+                Enum.map(rest, fn ctor ->
+                  Doc.concat([Doc.break(), format_union_constructor(ctor, :rest)])
+                end)
+              )
+            ])
+          )
+        ])
+    end
   end
 
   @spec format_union_constructor(map(), :first | :rest) :: Doc.t()
@@ -160,4 +193,34 @@ defmodule ElmEx.Frontend.Pretty.Declaration do
 
   defp format_union_constructor(%{name: name, arg: arg}, :rest) when is_binary(arg),
     do: Doc.text("| " <> name <> " " <> arg)
+
+  @spec normalize_union_source(String.t()) :: String.t()
+  defp normalize_union_source(source) when is_binary(source) do
+    source
+    |> String.split("\n", trim: false)
+    |> Enum.map_join("\n", &normalize_union_source_line/1)
+  end
+
+  @spec normalize_union_source_line(String.t()) :: String.t()
+  defp normalize_union_source_line(line) when is_binary(line) do
+    Regex.replace(~r/^(\s*(?:=|\|)\s+\S+)\s{2,}/u, line, "\\1 ")
+  end
+
+  @spec normalize_type_alias_source(String.t()) :: String.t()
+  defp normalize_type_alias_source(source) when is_binary(source) do
+    case String.split(source, "\n", parts: 2) do
+      [head] ->
+        normalize_type_alias_head(head)
+
+      [head, tail] ->
+        normalize_type_alias_head(head) <> "\n" <> tail
+    end
+  end
+
+  defp normalize_type_alias_head(head) do
+    case Regex.run(~r/^(type\s+alias)\s+([A-Z][A-Za-z0-9_']*)\s*=(.*)$/u, String.trim_trailing(head)) do
+      [_, keyword, name, rest] -> "#{keyword} #{name} =#{rest}"
+      _ -> head
+    end
+  end
 end

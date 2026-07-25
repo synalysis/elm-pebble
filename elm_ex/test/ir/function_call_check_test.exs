@@ -934,6 +934,131 @@ defmodule ElmEx.IR.FunctionCallCheckTest do
     refute Enum.any?(ir.diagnostics, &(&1.code == "function_return_type"))
   end
 
+  test "accepts imported Point fields on local record aliases (Tangram DownloadedPiece)" do
+    project = %Project{
+      project_dir: "/tmp",
+      elm_json: %{"source-directories" => ["src"]},
+      modules: [
+        %FrontendModule{
+          name: "Pebble.Ui",
+          path: "/tmp/src/Pebble/Ui.elm",
+          imports: [],
+          module_exposing: "Point",
+          declarations: [
+            %{
+              kind: :type_alias,
+              name: "Point",
+              fields: ["x", "y"],
+              field_types: %{"x" => "Int", "y" => "Int"},
+              span: %{start_line: 1, end_line: 1}
+            }
+          ]
+        },
+        %FrontendModule{
+          name: "Main",
+          path: "/tmp/src/Main.elm",
+          imports: ["Pebble.Ui"],
+          import_entries: [
+            %{"module" => "Pebble.Ui", "as" => "Ui", "exposing" => ["Point"]}
+          ],
+          module_exposing: "main",
+          declarations: [
+            %{
+              kind: :type_alias,
+              name: "DownloadedPiece",
+              fields: ["index", "p1", "p2", "p3", "p4"],
+              field_types: %{
+                "index" => "Int",
+                "p1" => "Point",
+                "p2" => "Point",
+                "p3" => "Point",
+                "p4" => "Point"
+              },
+              span: %{start_line: 25, end_line: 32}
+            },
+            %{
+              kind: :function_signature,
+              name: "o",
+              type: "Int -> Int -> Point",
+              span: %{start_line: 384, end_line: 384}
+            },
+            %{
+              kind: :function_definition,
+              name: "o",
+              args: ["x", "y"],
+              expr: %{
+                op: :record_literal,
+                fields: [
+                  %{name: "x", expr: %{op: :var, name: "x"}},
+                  %{name: "y", expr: %{op: :var, name: "y"}}
+                ]
+              },
+              span: %{start_line: 385, end_line: 388}
+            },
+            %{
+              kind: :function_signature,
+              name: "toDownloadedPiece",
+              type: "Int -> DownloadedPiece",
+              span: %{start_line: 500, end_line: 500}
+            },
+            %{
+              kind: :function_definition,
+              name: "toDownloadedPiece",
+              args: ["_"],
+              expr: %{
+                op: :record_literal,
+                fields: [
+                  %{name: "index", expr: %{op: :int_literal, value: 0}},
+                  %{
+                    name: "p1",
+                    expr: %{
+                      op: :call,
+                      name: "o",
+                      args: [%{op: :int_literal, value: 1}, %{op: :int_literal, value: 2}]
+                    }
+                  },
+                  %{
+                    name: "p2",
+                    expr: %{
+                      op: :call,
+                      name: "o",
+                      args: [%{op: :int_literal, value: 1}, %{op: :int_literal, value: 2}]
+                    }
+                  },
+                  %{
+                    name: "p3",
+                    expr: %{
+                      op: :call,
+                      name: "o",
+                      args: [%{op: :int_literal, value: 1}, %{op: :int_literal, value: 2}]
+                    }
+                  },
+                  %{
+                    name: "p4",
+                    expr: %{
+                      op: :call,
+                      name: "o",
+                      args: [%{op: :int_literal, value: 1}, %{op: :int_literal, value: 2}]
+                    }
+                  }
+                ]
+              },
+              span: %{start_line: 522, end_line: 522}
+            }
+          ]
+        }
+      ]
+    }
+
+    assert {:ok, ir} = Lowerer.lower_project(project)
+
+    refute Enum.any?(
+             ir.diagnostics,
+             &(&1.code == "function_return_type" and &1.function == "toDownloadedPiece")
+           ),
+           inspect(Enum.filter(ir.diagnostics, &(&1.code == "function_return_type")))
+  end
+
   defp yes_main_face_display_module do
     %FrontendModule{
       name: "Main",

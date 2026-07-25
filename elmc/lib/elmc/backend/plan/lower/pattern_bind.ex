@@ -148,11 +148,6 @@ defmodule Elmc.Backend.Plan.Lower.PatternBind do
     bind_cons_pattern(head, tail, subject_reg, ctx, b)
   end
 
-  defp do_bind(%{kind: :constructor, bind: bind, arg_pattern: %{kind: :var, name: name}} = pattern, ctx, b, subject_reg)
-       when is_binary(bind) do
-    do_bind(Map.put(pattern, :arg_pattern, %{kind: :var, name: name}) |> Map.put(:bind, bind), ctx, b, subject_reg)
-  end
-
   defp do_bind(%{kind: :constructor, bind: bind, arg_pattern: arg_pattern} = pattern, ctx, b, subject_reg)
        when is_binary(bind) and is_map(arg_pattern) do
     # Pattern like `Ctor ... as x` (or nested constructor bind slots) must bind
@@ -399,7 +394,7 @@ defmodule Elmc.Backend.Plan.Lower.PatternBind do
         |> Enum.map(&to_string/1)
         |> Enum.sort()
 
-      %{ctx | inferred_param_fields: Map.put(ctx.inferred_param_fields || %{}, bind, fields)}
+      %{ctx | inferred_param_fields: Map.put(ctx.inferred_param_fields, bind, fields)}
     else
       ctx
     end

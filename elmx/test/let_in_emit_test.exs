@@ -201,6 +201,16 @@ defmodule Elmx.LetInEmitTest do
     refute source =~ "(fn -> _ = "
   end
 
+  test "emits sub_vars as integer subtraction" do
+    {code, _, _} =
+      Emit.compile_expr(%{op: :sub_vars, left: "screenW", right: "margin"}, env(), 0)
+
+    source = IO.iodata_to_binary(code)
+    assert source =~ "screenW"
+    assert source =~ "margin"
+    assert source =~ " - "
+  end
+
   test "sequential let block omits bindings not referenced in the body" do
     bindings =
       [{"v1", %{op: :int_literal, value: 0}}] ++

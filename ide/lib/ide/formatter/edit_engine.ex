@@ -1,6 +1,6 @@
 defmodule Ide.Formatter.EditEngine do
   @moduledoc false
-  alias Ide.Formatter.Printer.TypeDecl
+  alias Ide.Formatter.Semantics.UnionAlign
   alias Ide.Formatter.Semantics.RecordRules
   alias Ide.Formatter.Semantics.Rules
   alias Ide.Formatter.Semantics.SpacingRules
@@ -235,7 +235,7 @@ defmodule Ide.Formatter.EditEngine do
   defp normalize_union_alignment_for_enter(content, cursor_offset) do
     if Regex.match?(~r/^\s*[=|]\s/m, content) do
       {line, col} = offset_to_line_col(content, cursor_offset)
-      normalized = TypeDecl.normalize_union_constructor_alignment(content)
+      normalized = UnionAlign.normalize_union_constructor_alignment(content)
 
       if normalized == content do
         {content, cursor_offset}

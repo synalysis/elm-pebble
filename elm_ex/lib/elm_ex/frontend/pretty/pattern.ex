@@ -1,7 +1,7 @@
 defmodule ElmEx.Frontend.Pretty.Pattern do
   @moduledoc false
 
-  alias ElmEx.Frontend.Pretty.Doc
+  alias ElmEx.Frontend.Pretty.{Doc, Literal}
 
   @spec format(map()) :: Doc.t()
   def format(%{kind: :wildcard}), do: Doc.text("_")
@@ -10,9 +10,9 @@ defmodule ElmEx.Frontend.Pretty.Pattern do
 
   def format(%{kind: :int, value: value}), do: Doc.text(Integer.to_string(value))
 
-  def format(%{kind: :char, value: value}), do: Doc.text(char_literal(value))
+  def format(%{kind: :char, value: value}), do: Doc.text(Literal.char_literal(value))
 
-  def format(%{kind: :string, value: value}), do: Doc.text(string_literal(value))
+  def format(%{kind: :string, value: value}), do: Doc.text(Literal.string_literal(value))
 
   def format(%{kind: :tuple, elements: elements}) when is_list(elements) do
     Doc.parens(Doc.join(Enum.map(elements, &format/1), Doc.text(", ")))
@@ -166,23 +166,4 @@ defmodule ElmEx.Frontend.Pretty.Pattern do
   end
 
   defp flatten_list_tail(_), do: :error
-
-  defp char_literal(92), do: "'\\\\'"
-  defp char_literal(39), do: "'\\''"
-  defp char_literal(10), do: "'\\n'"
-  defp char_literal(9), do: "'\\t'"
-
-  defp char_literal(codepoint) when is_integer(codepoint) do
-    "'#{<<codepoint::utf8>>}'"
-  end
-
-  defp string_literal(value) when is_binary(value) do
-    "\"#{escape_string(value)}\""
-  end
-
-  defp escape_string("\\"), do: "\\\\"
-  defp escape_string("\""), do: "\\\""
-  defp escape_string("\n"), do: "\\n"
-  defp escape_string("\t"), do: "\\t"
-  defp escape_string(ch), do: ch
 end

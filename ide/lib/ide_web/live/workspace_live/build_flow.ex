@@ -803,10 +803,12 @@ defmodule IdeWeb.WorkspaceLive.BuildFlow do
 
   @spec compile_result_for_build_root(String.t(), String.t(), String.t()) ::
           Compiler.compile_result()
-  defp compile_result_for_build_root("protocol", _scoped_slug, root_path) do
+  defp compile_result_for_build_root(label, _scoped_slug, root_path)
+       when label in ["protocol", "phone"] do
     ok_skipped_compile_result(
       root_path,
-      "Companion protocol validated with elm make; elmc compile applies to watch/phone only."
+      "Companion #{label} validated with elm make; elmc C codegen applies to watch only. " <>
+        "Phone companion JS is produced later with `elm make --optimize` during PBW packaging."
     )
   end
 
@@ -822,11 +824,13 @@ defmodule IdeWeb.WorkspaceLive.BuildFlow do
 
   @spec manifest_result_for_build_root(String.t(), String.t(), String.t(), boolean()) ::
           Compiler.manifest_result()
-  defp manifest_result_for_build_root("protocol", _scoped_slug, root_path, strict?) do
+  defp manifest_result_for_build_root(label, _scoped_slug, root_path, strict?)
+       when label in ["protocol", "phone"] do
     ok_skipped_manifest_result(
       root_path,
       strict?,
-      "Companion protocol has no elmc manifest; PBW packaging uses watch elmc + protocol generator."
+      "Companion #{label} has no watch elmc manifest; PBW packaging uses watch elmc + " <>
+        "protocol generator / phone elm make."
     )
   end
 

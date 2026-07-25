@@ -261,8 +261,8 @@ defmodule Elmc do
     end)
   end
 
-  @spec seed_codegen_process_state(ElmEx.IR.t(), compile_options()) :: :ok
-  defp seed_codegen_process_state(ir, opts) do
+  @spec seed_codegen_process_state(ElmEx.IR.t(), map()) :: :ok
+  defp seed_codegen_process_state(ir, opts) when is_map(opts) do
     Process.put(:elmc_codegen_opts, opts)
     Process.put(:elmc_svg_attribute_names, Map.get(opts, :svg_attribute_names, MapSet.new()))
     Process.put(

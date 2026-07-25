@@ -422,11 +422,8 @@ defmodule Ide.PebblePreferences do
 
   @spec preferences_inputs_mtime(String.t()) :: non_neg_integer() | nil
   defp preferences_inputs_mtime(phone_root) do
-    paths =
-      case preference_source_files(phone_root) do
-        {:ok, files} -> [Path.join(phone_root, "elm.json") | files]
-        _ -> [Path.join(phone_root, "elm.json")]
-      end
+    {:ok, files} = preference_source_files(phone_root)
+    paths = [Path.join(phone_root, "elm.json") | files]
 
     paths
     |> Enum.reduce(0, fn path, max_mtime ->

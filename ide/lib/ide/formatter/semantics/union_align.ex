@@ -1,15 +1,7 @@
-defmodule Ide.Formatter.Printer.TypeDecl do
+defmodule Ide.Formatter.Semantics.UnionAlign do
   @moduledoc false
-  alias Ide.Formatter.Semantics.Rules
-  alias Ide.Formatter.Types
 
-  @spec normalize_alias_head_spacing(String.t()) :: String.t()
-  def normalize_alias_head_spacing(source) when is_binary(source) do
-    source
-    |> String.split("\n", trim: false)
-    |> Enum.map(&normalize_alias_head_line/1)
-    |> Enum.join("\n")
-  end
+  alias Ide.Formatter.Semantics.Rules
 
   @spec normalize_union_constructor_alignment(String.t()) :: String.t()
   def normalize_union_constructor_alignment(source) when is_binary(source) do
@@ -27,8 +19,6 @@ defmodule Ide.Formatter.Printer.TypeDecl do
     |> Enum.join("\n")
   end
 
-  @spec normalize_union_lines(Types.line_list(), Types.union_align_state(), Types.line_list()) ::
-          Types.line_list()
   defp normalize_union_lines([], state, acc) do
     emit_blanks(acc, state.pending_blanks)
   end
@@ -92,11 +82,9 @@ defmodule Ide.Formatter.Printer.TypeDecl do
     end
   end
 
-  @spec emit_blanks(Types.line_list(), non_neg_integer()) :: Types.line_list()
   defp emit_blanks(acc, 0), do: acc
   defp emit_blanks(acc, n) when n > 0, do: emit_blanks(["" | acc], n - 1)
 
-  @spec normalize_union_constructor_line(String.t(), non_neg_integer(), String.t()) :: String.t()
   defp normalize_union_constructor_line(line, indent, marker) do
     trimmed = String.trim_leading(line)
 
@@ -130,12 +118,10 @@ defmodule Ide.Formatter.Printer.TypeDecl do
     end
   end
 
-  @spec starts_with_trimmed?(String.t(), String.t()) :: boolean()
   defp starts_with_trimmed?(line, marker) when is_binary(marker) do
     String.trim_leading(line) |> String.starts_with?(marker)
   end
 
-  @spec type_declaration_line?(String.t()) :: boolean()
   defp type_declaration_line?(line) do
     trimmed = String.trim_leading(line)
 
@@ -152,7 +138,6 @@ defmodule Ide.Formatter.Printer.TypeDecl do
     end
   end
 
-  @spec collapse_spaces(String.t()) :: String.t()
   defp collapse_spaces(value) do
     value
     |> String.graphemes()
@@ -173,19 +158,10 @@ defmodule Ide.Formatter.Printer.TypeDecl do
     |> String.trim()
   end
 
-  @spec split_top_level_pipes(String.t()) :: [String.t()]
   defp split_top_level_pipes(value) when is_binary(value) do
     do_split_top_level_pipes(value, [], "", [], false, false)
   end
 
-  @spec do_split_top_level_pipes(
-          String.t(),
-          list(),
-          String.t(),
-          [String.t()],
-          boolean(),
-          boolean()
-        ) :: [String.t()]
   defp do_split_top_level_pipes("", _stack, current, segments, _in_string, _escape_next) do
     normalized = String.trim(current)
     if normalized == "", do: segments, else: segments ++ [normalized]
@@ -201,64 +177,22 @@ defmodule Ide.Formatter.Printer.TypeDecl do
        ) do
     cond do
       escape_next ->
-        do_split_top_level_pipes(
-          rest,
-          stack,
-          current <> <<char::utf8>>,
-          segments,
-          in_string,
-          false
-        )
+        do_split_top_level_pipes(rest, stack, current <> <<char::utf8>>, segments, in_string, false)
 
       in_string and char == ?\\ ->
-        do_split_top_level_pipes(
-          rest,
-          stack,
-          current <> <<char::utf8>>,
-          segments,
-          in_string,
-          true
-        )
+        do_split_top_level_pipes(rest, stack, current <> <<char::utf8>>, segments, in_string, true)
 
       char == ?" ->
-        do_split_top_level_pipes(
-          rest,
-          stack,
-          current <> <<char::utf8>>,
-          segments,
-          not in_string,
-          false
-        )
+        do_split_top_level_pipes(rest, stack, current <> <<char::utf8>>, segments, not in_string, false)
 
       in_string ->
-        do_split_top_level_pipes(
-          rest,
-          stack,
-          current <> <<char::utf8>>,
-          segments,
-          in_string,
-          false
-        )
+        do_split_top_level_pipes(rest, stack, current <> <<char::utf8>>, segments, in_string, false)
 
       char in [?(, ?[, ?{] ->
-        do_split_top_level_pipes(
-          rest,
-          [char | stack],
-          current <> <<char::utf8>>,
-          segments,
-          false,
-          false
-        )
+        do_split_top_level_pipes(rest, [char | stack], current <> <<char::utf8>>, segments, false, false)
 
       char in [?), ?], ?}] ->
-        do_split_top_level_pipes(
-          rest,
-          pop_stack(stack, char),
-          current <> <<char::utf8>>,
-          segments,
-          false,
-          false
-        )
+        do_split_top_level_pipes(rest, pop_stack(stack, char), current <> <<char::utf8>>, segments, false, false)
 
       char == ?| and stack == [] ->
         next =
@@ -274,60 +208,18 @@ defmodule Ide.Formatter.Printer.TypeDecl do
     end
   end
 
-  @spec pop_stack(list(), non_neg_integer()) :: list()
   defp pop_stack([], _closing), do: []
 
   defp pop_stack([open | rest], closing) do
     if delimiter_char_match?(open, closing), do: rest, else: [open | rest]
   end
 
-  @spec delimiter_char_match?(non_neg_integer(), non_neg_integer()) :: boolean()
   defp delimiter_char_match?(?(, ?)), do: true
   defp delimiter_char_match?(?[, ?]), do: true
   defp delimiter_char_match?(?{, ?}), do: true
   defp delimiter_char_match?(_, _), do: false
 
-  @spec leading_indent(String.t()) :: non_neg_integer()
   defp leading_indent(line) do
     String.length(line) - String.length(String.trim_leading(line))
-  end
-
-  @spec normalize_alias_head_line(String.t()) :: String.t()
-  defp normalize_alias_head_line(line) do
-    trimmed = String.trim_leading(line)
-
-    if String.starts_with?(trimmed, "type alias ") do
-      case split_once(trimmed, "=") do
-        {lhs, rhs} ->
-          indent = String.slice(line, 0, leading_indent(line))
-          normalized_lhs = collapse_spaces(lhs)
-          normalized_rhs = String.trim_leading(rhs)
-
-          if normalized_rhs == "" do
-            indent <> normalized_lhs <> " ="
-          else
-            indent <> normalized_lhs <> " = " <> normalized_rhs
-          end
-
-        :error ->
-          line
-      end
-    else
-      line
-    end
-  end
-
-  @spec split_once(String.t(), String.t()) :: Types.split_result()
-  defp split_once(value, delimiter) do
-    case :binary.match(value, delimiter) do
-      {idx, len} ->
-        {
-          binary_part(value, 0, idx),
-          binary_part(value, idx + len, byte_size(value) - idx - len)
-        }
-
-      :nomatch ->
-        :error
-    end
   end
 end

@@ -1173,7 +1173,16 @@ elmc_int_t elmc_as_int_number(ElmcValue *value) {
 }
 
 ElmcValue *elmc_tuple_second(ElmcValue *tuple) {
-  if (!tuple || tuple->tag != ELMC_TAG_TUPLE2 || tuple->payload == NULL) return elmc_int_zero();
+  if (!tuple) return elmc_int_zero();
+  if (tuple->tag == ELMC_TAG_RESULT && tuple->payload != NULL) {
+    ElmcResult *data = (ElmcResult *)tuple->payload;
+    return data->value ? elmc_retain(data->value) : elmc_int_zero();
+  }
+  if (tuple->tag == ELMC_TAG_MAYBE && tuple->payload != NULL) {
+    ElmcMaybe *data = (ElmcMaybe *)tuple->payload;
+    return data->is_just && data->value ? elmc_retain(data->value) : elmc_int_zero();
+  }
+  if (tuple->tag != ELMC_TAG_TUPLE2 || tuple->payload == NULL) return elmc_int_zero();
   ElmcTuple2 *data = (ElmcTuple2 *)tuple->payload;
   return elmc_retain(data->second);
 }
@@ -1229,25 +1238,6 @@ RC elmc_record_new_values_take(ElmcValue **out, int field_count, ElmcValue **fie
     rc = elmc_record_cell_alloc_values(out, field_count, field_values, 1);
     CHECK_RC(rc);
   CATCH_END;
-  return rc;
-}
-
-RC elmc_record_new_values_ints(ElmcValue **out, int field_count, const elmc_int_t *field_values) {
-  ElmcValue *values[field_count];
-  RC rc = RC_SUCCESS;
-  CATCH_BEGIN
-    for (int i = 0; i < field_count; i++) {
-      rc = elmc_new_int(&values[i], field_values[i]);
-      CHECK_RC(rc);
-    }
-    rc = elmc_record_new_values_take(out, field_count, values);
-    CHECK_RC(rc);
-  CATCH_END;
-  if (rc != RC_SUCCESS) {
-    for (int i = 0; i < field_count; i++) {
-      elmc_release(values[i]);
-    }
-  }
   return rc;
 }
 

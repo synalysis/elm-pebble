@@ -584,6 +584,21 @@ defmodule ElmEx.Frontend.PrettyTest do
            ]
   end
 
+  test "format_module_source_preserve collapses redundant union constructor spacing" do
+    source = """
+    module Main exposing (Msg)
+
+    type Msg
+        = Increment  Int
+        | Decrement
+    """
+
+    assert {:ok, formatted} = Pretty.format_module_source_preserve("Main.elm", source, [])
+
+    assert formatted =~ "= Increment Int\n"
+    refute formatted =~ "= Increment  Int"
+  end
+
   test "format_module renders port module header and port signatures" do
     alias ElmEx.Frontend.GeneratedParser
 

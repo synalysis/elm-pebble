@@ -21,6 +21,10 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Expr do
     {["(", Helpers.binding_ref(left, env), " + ", Helpers.binding_ref(right, env), ")"], env, counter}
   end
 
+  def compile_sub_vars(%{left: left, right: right}, env, counter) do
+    {["(", Helpers.binding_ref(left, env), " - ", Helpers.binding_ref(right, env), ")"], env, counter}
+  end
+
   def compile_sub_const(%{var: name, value: value}, env, counter) do
     ref = Helpers.binding_ref(name, env)
     {["(", ref, " - ", Integer.to_string(value), ")"], env, counter}
@@ -174,30 +178,29 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Expr do
     args = Map.get(expr, :args) || Map.get(expr, :params) || []
     name = :"elmx_lambda_#{counter}"
     counter = counter + 1
-    lambda_env = Helpers.put_lambda_params(env, args)
-    used = referenced_binding_names(body)
+    classified = Elmx.Backend.ElixirCodegen.FnArgs.classify_all(args)
+    lambda_env = Elmx.Backend.ElixirCodegen.FnArgs.put_env(env, classified)
 
     {body_code, _, _} = Emit.compile_expr(body, lambda_env, 0)
+    body_str = IO.iodata_to_binary(body_code)
+
+    used =
+      Helpers.pattern_bindings_referenced_in_body(
+        body_str,
+        Elmx.Backend.ElixirCodegen.FnArgs.all_binding_names(classified)
+      )
 
     code =
-      args
+      classified
       |> Enum.reverse()
       |> Enum.with_index()
       |> Enum.reduce(body_code, fn {arg, index}, inner ->
-        param_name = Helpers.param_name(arg)
-
-        param =
-          if MapSet.member?(used, param_name) do
-            Helpers.binding_ref(param_name, lambda_env)
-          else
-            "_unused#{index}"
-          end
-
+        param = Elmx.Backend.ElixirCodegen.FnArgs.emit_param(arg, index, used)
         ["fn ", param, " -> ", inner, " end"]
       end)
 
     code =
-      case args do
+      case classified do
         [] -> ["fn _ -> ", body_code, " end"]
         [_ | _] -> code
       end

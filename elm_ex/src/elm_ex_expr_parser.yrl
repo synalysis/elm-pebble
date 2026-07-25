@@ -163,7 +163,7 @@ case_branch -> pattern arrow newline indent pipe_right_expr dedent : #{pattern =
 
 pattern -> wildcard : #{kind => wildcard}.
 pattern -> lower_qid : build_pattern_var(token_value('$1')).
-pattern -> int_lit : #{kind => int, value => token_value('$1')}.
+pattern -> int_lit : build_pattern_int_literal('$1').
 pattern -> char_lit : #{kind => char, value => parse_char(token_value('$1'))}.
 pattern -> string_lit : #{kind => string, value => parse_string(token_value('$1'))}.
 pattern -> lparen rparen : build_pattern_ctor(<<"()">>, none).
@@ -287,7 +287,7 @@ primary -> lparen pipe_right_expr rparen opt_field_accessor :
 %% Unary `-` is rewritten to `negate` in GeneratedExpressionParser before yecc
 %% (and negative numeric literals are single lexer tokens). Keeping
 %% `primary -> minus primary` here makes `a - b` shift/reduce into `a (-b)`.
-primary -> int_lit : #{op => int_literal, value => token_value('$1')}.
+primary -> int_lit : build_int_literal('$1').
 primary -> float_lit : #{op => float_literal, value => token_value('$1')}.
 primary -> string_lit : #{op => string_literal, value => parse_string(token_value('$1'))}.
 primary -> char_lit : #{op => char_literal, value => parse_char(token_value('$1'))}.
@@ -360,6 +360,20 @@ opt_field_accessor -> '$empty' : nil.
 Erlang code.
 
 token_value({_Tok, _Line, Value}) -> Value.
+
+build_int_literal({int_lit, _Line, {Value, Text}}) when is_integer(Value), is_binary(Text) ->
+  #{op => int_literal, value => Value, text => Text};
+build_int_literal({int_lit, _Line, Value}) when is_integer(Value) ->
+  #{op => int_literal, value => Value};
+build_int_literal(Token) ->
+  #{op => int_literal, value => token_value(Token)}.
+
+build_pattern_int_literal({int_lit, _Line, {Value, _Text}}) when is_integer(Value) ->
+  #{kind => int, value => Value};
+build_pattern_int_literal({int_lit, _Line, Value}) when is_integer(Value) ->
+  #{kind => int, value => Value};
+build_pattern_int_literal(Token) ->
+  #{kind => int, value => token_value(Token)}.
 
 build_compare(#{op := var, name := Left}, Kind, Right) ->
   #{op => compare, kind => Kind, left => #{op => var, name => Left}, right => Right};
