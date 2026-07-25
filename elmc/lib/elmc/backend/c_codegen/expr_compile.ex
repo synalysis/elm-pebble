@@ -33,7 +33,7 @@ defmodule Elmc.Backend.CCodegen.ExprCompile do
   ]
 
   @sub_ops [:pebble_sub]
-  @var_arith_ops [:add_const, :add_vars, :sub_const]
+  @var_arith_ops [:add_const, :add_vars, :sub_const, :sub_vars, :mul_vars]
   @collection_ops [
     :tuple2,
     :list_literal,

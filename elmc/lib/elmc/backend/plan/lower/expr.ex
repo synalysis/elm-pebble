@@ -2700,7 +2700,9 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
               {borrows, prefix_consumes} = Builder.partition_call_args(b2a, prefix)
 
               if id in @hof_consumes_last_operand do
-                {borrows, prefix_consumes ++ [last]}
+                # Runtime releases only the last operand (Maybe/Result). Keep the
+                # callback as a borrow so emit releases it (transfer-null would leak).
+                {borrows ++ prefix, [last]}
               else
                 if Builder.borrow_arg?(b2a, last) do
                   {borrows ++ [last], prefix_consumes}

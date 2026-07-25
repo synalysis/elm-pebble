@@ -443,10 +443,15 @@ defmodule Elmc.Backend.Wasm.Lower.Instr do
               binop("i32.rem_s", int_operand_wat(lhs, slots, opts), int_operand_wat(rhs, slots, opts))
 
             :min_vars ->
-              binop("i32.min_s", int_operand_wat(lhs, slots, opts), int_operand_wat(rhs, slots, opts))
+              l = int_operand_wat(lhs, slots, opts)
+              r = int_operand_wat(rhs, slots, opts)
+              # No i32.min_s in WASM; select on i32.le_s (same as C ternary).
+              WasmTypes.sexpr("select", [" ", l, " ", r, " ", binop("i32.le_s", l, r)])
 
             :max_vars ->
-              binop("i32.max_s", int_operand_wat(lhs, slots, opts), int_operand_wat(rhs, slots, opts))
+              l = int_operand_wat(lhs, slots, opts)
+              r = int_operand_wat(rhs, slots, opts)
+              WasmTypes.sexpr("select", [" ", l, " ", r, " ", binop("i32.ge_s", l, r)])
 
             _ ->
               int_const(0)

@@ -195,14 +195,18 @@ defmodule Elmc.Backend.Plan.Lower.PatternMatch do
     do: test_ctor_tag(pattern, subject_reg, b)
 
   defp emit_union_payload_view(subject_reg, b) do
+    # Must retain into an owned slot. The C helper `elmc_union_payload` returns a
+    # borrow; assigning that borrow to owned[] and later releasing it frees the
+    # subject's nested payload while the subject still points at it (UAF).
+    # Match `Expr.compile_borrow_view_builtin(:union_payload, …)` → tuple_proj.
     {dest, b1} = Builder.fresh_reg(b)
 
     {_, b2} =
-      Builder.emit(b1, :call_runtime, %{
+      Builder.emit(b1, :tuple_proj, %{
         dest: dest,
-        args: %{builtin: :union_payload, args: [subject_reg]},
+        args: %{base: subject_reg, which: :second},
         effects: %{
-          produces: nil,
+          produces: {:owned, dest},
           consumes: [],
           borrows: [subject_reg],
           fallible: false

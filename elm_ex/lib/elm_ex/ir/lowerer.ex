@@ -825,11 +825,38 @@ defmodule ElmEx.IR.Lowerer do
   @spec ownership_for_type(String.t() | nil) :: [atom()]
   defp ownership_for_type(type) do
     cond do
-      not is_binary(type) -> [:borrow_arg, :borrow_result]
-      String.contains?(type, "List") -> [:borrow_arg, :retain_result]
-      String.contains?(type, "String") -> [:retain_arg, :retain_result]
-      String.contains?(type, "->") -> [:borrow_arg, :borrow_result]
-      true -> [:borrow_arg, :borrow_result]
+      not is_binary(type) ->
+        [:borrow_arg, :borrow_result]
+
+      # Function types must be classified from the *result* side. Matching
+      # "String"/"List" on the full signature incorrectly marked `Model -> String`
+      # (and similar) as `:retain_arg`, so callers released borrowed params.
+      String.contains?(type, "->") ->
+        [:borrow_arg, ownership_result_for_type(function_result_type(type))]
+
+      String.contains?(type, "List") ->
+        [:borrow_arg, :retain_result]
+
+      String.contains?(type, "String") ->
+        [:retain_arg, :retain_result]
+
+      true ->
+        [:borrow_arg, :borrow_result]
+    end
+  end
+
+  defp function_result_type(type) when is_binary(type) do
+    type
+    |> String.split("->")
+    |> List.last()
+    |> String.trim()
+  end
+
+  defp ownership_result_for_type(result) when is_binary(result) do
+    cond do
+      String.contains?(result, "List") -> :retain_result
+      String.contains?(result, "String") -> :retain_result
+      true -> :borrow_result
     end
   end
 
@@ -1850,7 +1877,7 @@ defmodule ElmEx.IR.Lowerer do
   defp known_wildcard_exports("Bitwise"),
     do: ~w(and or xor complement shiftLeftBy shiftRightBy shiftRightZfBy)
 
-  defp known_wildcard_exports("Tuple"), do: ~w(first second mapFirst mapSecond pair)
+  defp known_wildcard_exports("Tuple"), do: ~w(first second mapFirst mapSecond mapBoth pair)
   defp known_wildcard_exports("Debug"), do: ~w(log todo toString)
   defp known_wildcard_exports(_), do: []
 

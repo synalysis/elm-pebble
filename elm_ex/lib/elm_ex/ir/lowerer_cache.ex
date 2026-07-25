@@ -8,8 +8,8 @@ defmodule ElmEx.IR.LowererCache do
 
   alias ElmEx.IR.Module, as: IRModule
 
-  # Bump when lowering retention rules change (ports, callee-closure, wire3 sources).
-  @cache_version "ir-module-v4"
+  # Bump when IR lowering shape changes (ports/callee retention, FnArgDesugar, etc.).
+  @cache_version "ir-module-v6"
 
   @type t ::
           :disabled

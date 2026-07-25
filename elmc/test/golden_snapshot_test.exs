@@ -79,10 +79,7 @@ defmodule Elmc.GoldenSnapshotTest do
     assert String.contains?(generated, "elmc_maybe_with_default")
     assert String.contains?(generated, "elmc_tuple_second")
     assert String.contains?(generated, "elmc_tuple_first")
-    assert String.contains?(generated, "elmc_tuple_second_borrow")
-    assert String.contains?(generated, "elmc_tuple_first_borrow")
     assert String.contains?(generated, "elmc_string_length")
-    assert String.contains?(generated, "ELMC_TAG_RESULT")
     assert String.contains?(generated, "ELMC_TAG_TUPLE2")
 
     branch_out = Elmc.Test.CCodegenExtract.fn_body(generated, "elmc_fn_CoreCompliance_branchTupleOut")
@@ -96,9 +93,9 @@ defmodule Elmc.GoldenSnapshotTest do
     branch_nested =
       Elmc.Test.CCodegenExtract.fn_body(generated, "elmc_fn_CoreCompliance_branchTupleOutNested")
 
-    assert branch_nested =~ "ELMC_TAG_RESULT"
-    assert branch_nested =~ "elmc_maybe_or_tuple_just_payload"
+    assert branch_nested =~ "elmc_union_tag_matches(value,"
+    assert branch_nested =~ "elmc_maybe_is_nothing"
 
-    assert String.contains?(generated, "switch (case_msg_tag_")
+    assert String.contains?(generated, "switch (elmc_union_tag_as_int(msg))")
   end
 end

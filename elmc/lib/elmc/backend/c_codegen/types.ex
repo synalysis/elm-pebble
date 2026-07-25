@@ -16,7 +16,7 @@ defmodule Elmc.Backend.CCodegen.Types do
   @type ir_cmd_op :: :pebble_cmd
   @type ir_sub_op :: :pebble_sub
 
-  @type ir_var_arith_op :: :add_const | :add_vars | :sub_const
+  @type ir_var_arith_op :: :add_const | :add_vars | :sub_const | :sub_vars | :mul_vars
 
   @type ir_collection_op ::
           :tuple2

@@ -241,11 +241,64 @@ defmodule Elmc.Backend.CCodegen.SpecialValues.Stdlib.Basics do
   def special_value_from_target("Tuple.mapFirst", [f, t]),
     do: %{op: :runtime_call, function: "elmc_tuple_map_first", args: [f, t]}
 
+  def special_value_from_target("Tuple.mapFirst", [f]),
+    do: %{
+      op: :lambda,
+      args: ["__t"],
+      body: %{
+        op: :runtime_call,
+        function: "elmc_tuple_map_first",
+        args: [f, %{op: :var, name: "__t"}]
+      }
+    }
+
+  def special_value_from_target("Tuple.mapFirst", []),
+    do: Helpers.runtime_fn_lambda("elmc_tuple_map_first", ["__f", "__t"])
+
   def special_value_from_target("Tuple.mapSecond", [f, t]),
     do: %{op: :runtime_call, function: "elmc_tuple_map_second", args: [f, t]}
 
+  def special_value_from_target("Tuple.mapSecond", [f]),
+    do: %{
+      op: :lambda,
+      args: ["__t"],
+      body: %{
+        op: :runtime_call,
+        function: "elmc_tuple_map_second",
+        args: [f, %{op: :var, name: "__t"}]
+      }
+    }
+
+  def special_value_from_target("Tuple.mapSecond", []),
+    do: Helpers.runtime_fn_lambda("elmc_tuple_map_second", ["__f", "__t"])
+
   def special_value_from_target("Tuple.mapBoth", [f, g, t]),
     do: %{op: :runtime_call, function: "elmc_tuple_map_both", args: [f, g, t]}
+
+  def special_value_from_target("Tuple.mapBoth", [f, g]),
+    do: %{
+      op: :lambda,
+      args: ["__t"],
+      body: %{
+        op: :runtime_call,
+        function: "elmc_tuple_map_both",
+        args: [f, g, %{op: :var, name: "__t"}]
+      }
+    }
+
+  def special_value_from_target("Tuple.mapBoth", [f]),
+    do: %{
+      op: :lambda,
+      args: ["__g", "__t"],
+      body: %{
+        op: :runtime_call,
+        function: "elmc_tuple_map_both",
+        args: [f, %{op: :var, name: "__g"}, %{op: :var, name: "__t"}]
+      }
+    }
+
+  def special_value_from_target("Tuple.mapBoth", []),
+    do: Helpers.runtime_fn_lambda("elmc_tuple_map_both", ["__f", "__g", "__t"])
 
   # --- elm/core: Basics (extended) ---
   def special_value_from_target("Basics.identity", [x]), do: x

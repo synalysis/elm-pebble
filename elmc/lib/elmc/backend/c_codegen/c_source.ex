@@ -293,7 +293,11 @@ defmodule Elmc.Backend.CCodegen.CSource do
   end
 
   defp braceless_if_opener?(content) do
-    Regex.match?(~r/^if\s*\(.+\)$/, content) and not String.contains?(content, "{")
+    # Avoid `^if\s*\(.+\)$` — greedy `.+` is catastrophic on long `if (...)` lines.
+    String.starts_with?(content, "if") and
+      not String.contains?(content, "{") and
+      String.ends_with?(content, ")") and
+      Regex.match?(~r/^if\s*\(/, content)
   end
 
   defp preprocessor_line?(line) do

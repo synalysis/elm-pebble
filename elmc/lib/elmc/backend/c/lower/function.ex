@@ -34,7 +34,8 @@ defmodule Elmc.Backend.C.Lower.Function do
         cleanup_cfg_text(fusion_c)
 
       Keyword.get(opts, :shell, true) ->
-        wrap_shell(plan, emit_core(plan, opts))
+        {core, slots} = emit_core_with_slots(plan, opts)
+        wrap_shell(plan, core, slots)
 
       true ->
         emit_core(plan, opts)
@@ -49,6 +50,18 @@ defmodule Elmc.Backend.C.Lower.Function do
   end
 
   def emit_core(%FunctionPlan{} = plan, opts) do
+    {core, _slots} = emit_core_with_slots(plan, opts)
+    core
+  end
+
+  @spec emit_core_with_slots(FunctionPlan.t(), keyword()) :: {String.t(), map()}
+  def emit_core_with_slots(plan, opts \\ [])
+
+  def emit_core_with_slots(%FunctionPlan{fusion_c: c}, _opts) when is_binary(c) and c != "" do
+    {cleanup_cfg_text(c), %{}}
+  end
+
+  def emit_core_with_slots(%FunctionPlan{} = plan, opts) do
     Process.put(:elmc_plan_rec_values_suffix, 0)
     Process.put(:elmc_rc_call_tmp_counter, 0)
     unless Keyword.get(opts, :closure_mode) do
@@ -79,6 +92,27 @@ defmodule Elmc.Backend.C.Lower.Function do
 
     native_int_only_regs =
       maybe_add_native_ret_reg(native_int_only_regs, plan, ret_reg, native_scalar_out)
+
+    # Native-int regs used as boxed operands (phi arms, tuples, …) must stay boxed ElmcValue*
+    # (owned slots + `elmc_new_int`), not native `elmc_int_t` temps with skipped const_int emit.
+    # Limit demotion to `const_int` defs: params / native call results keep `plan_native_int_*`
+    # and ephemeral `elmc_new_int_take` at the use site. Pure `const_c_expr` tags prefer ephemeral
+    # boxing too (exclude from owned).
+    boxed_uses = boxed_use_regs(plan, decl_map)
+
+    const_int_defs =
+      boxed_uses
+      |> Enum.filter(fn reg ->
+        match?(%{op: :const_int}, plan_defining_instr(plan, reg))
+      end)
+      |> MapSet.new()
+
+    native_int_owned_regs =
+      native_int_only_regs
+      |> MapSet.intersection(const_int_defs)
+      |> MapSet.difference(MapSet.new(Map.keys(const_c_expr_regs)))
+
+    native_int_only_regs = MapSet.difference(native_int_only_regs, native_int_owned_regs)
 
     unused_native_int_skip_regs = build_unused_native_int_skip_regs(plan, native_int_only_regs)
 
@@ -124,7 +158,25 @@ defmodule Elmc.Backend.C.Lower.Function do
       |> Map.merge(const_c_expr_regs)
       |> Map.merge(native_int_locals)
 
-    slots = finalize_owned_slots_map(plan, slots, native_int_only_regs, native_bool_only_regs, fusion_native_literal_regs)
+    slots =
+      finalize_owned_slots_map(
+        plan,
+        slots,
+        MapSet.difference(native_int_only_regs, native_int_owned_regs),
+        native_bool_only_regs,
+        fusion_native_literal_regs
+      )
+
+    skip_fill =
+      MapSet.difference(native_int_only_regs, native_int_owned_regs)
+      |> MapSet.union(native_bool_only_regs)
+      |> MapSet.union(fusion_native_literal_regs)
+      |> MapSet.union(tail_inline_skip_regs)
+      |> MapSet.union(MapSet.new(Map.keys(native_int_regs)))
+      |> MapSet.union(MapSet.new(Map.keys(borrow_param_regs)))
+      |> MapSet.union(closure_borrow_regs)
+
+    slots = fill_missing_owned_slots(plan, slots, skip_fill)
 
     native_int_inline =
       NativeIntFold.inline_exprs(plan,
@@ -217,15 +269,18 @@ defmodule Elmc.Backend.C.Lower.Function do
 
     deferred_cleanup = emit_deferred_consume_releases(instr_opts, slots)
 
-    (body_lines ++ List.wrap(ret_line) ++ List.wrap(deferred_cleanup))
-    |> Enum.reject(&(&1 == ""))
-    |> Enum.flat_map(&String.split(&1, "\n"))
-    |> cleanup_cfg_lines()
-    |> then(fn lines ->
-      missing_native_int_decl_lines(lines, native_int_locals) ++ lines
-    end)
-    |> Enum.join("\n")
-    |> cleanup_cfg_text()
+    core =
+      (body_lines ++ List.wrap(ret_line) ++ List.wrap(deferred_cleanup))
+      |> Enum.reject(&(&1 == ""))
+      |> Enum.flat_map(&String.split(&1, "\n"))
+      |> cleanup_cfg_lines()
+      |> then(fn lines ->
+        missing_native_int_decl_lines(lines, native_int_locals) ++ lines
+      end)
+      |> Enum.join("\n")
+      |> cleanup_cfg_text()
+
+    {core, slots}
   end
 
   defp missing_native_int_decl_lines(lines, _native_int_locals) do
@@ -1367,16 +1422,16 @@ defmodule Elmc.Backend.C.Lower.Function do
     |> Enum.join("")
   end
 
-  defp wrap_shell(%FunctionPlan{} = plan, core) do
-    if Map.get(plan, :native_scalar_value_return) do
+  defp wrap_shell(%FunctionPlan{} = plan, core, slots) do
+    if Map.get(plan, :native_scalar_value_return) == true and owned_slot_count(slots) == 0 do
       String.trim(core)
     else
-      wrap_rc_shell(plan, core)
+      wrap_rc_shell(plan, core, slots)
     end
   end
 
-  defp wrap_rc_shell(%FunctionPlan{rc_required: rc?, fallible: fallible?} = plan, core) do
-    {slots, slot_count} = prepared_owned_slots(plan)
+  defp wrap_rc_shell(%FunctionPlan{rc_required: rc?, fallible: fallible?} = plan, core, slots) do
+    slot_count = owned_slot_count(slots)
     owned = Frame.owned_declaration(plan, slots)
     slot_indices = if slot_count > 0, do: Enum.to_list(0..(slot_count - 1)), else: []
     epilogue = Frame.epilogue_release(slot_indices, slot_count)
@@ -1475,18 +1530,75 @@ defmodule Elmc.Backend.C.Lower.Function do
 
     closure_mode = Keyword.get(opts, :closure_mode)
 
-    {_native_int_regs, slots} =
+    {native_int_regs, slots} =
       allocate_native_int_param_slots(plan, slots, param_kinds, decl_map, closure_mode)
 
-    {_borrow_param_regs, slots} =
+    {borrow_param_regs, slots} =
       allocate_borrow_param_direct_slots(plan, slots, param_kinds, decl_map, closure_mode)
 
-    slots = Map.drop(slots, MapSet.to_list(build_tail_inline_skip_regs(plan)))
+    closure_borrow_regs = build_closure_borrow_regs(plan, closure_mode)
+
+    const_c_expr_regs = build_const_c_expr_regs(plan)
+    fusion_native_literal_regs = build_fusion_native_literal_regs(plan)
+    native_scalar_out = Map.get(plan, :native_scalar_return)
+    ret_reg = ret_source_reg(plan)
 
     native_int_only_regs = build_native_int_only_regs(plan, decl_map)
-    native_bool_only_regs = build_native_bool_only_regs(plan, decl_map)
+    native_int_only_regs =
+      maybe_add_native_ret_reg(native_int_only_regs, plan, ret_reg, native_scalar_out)
 
-    finalize_owned_slots_map(plan, slots, native_int_only_regs, native_bool_only_regs)
+    boxed_uses = boxed_use_regs(plan, decl_map)
+
+    const_int_defs =
+      boxed_uses
+      |> Enum.filter(fn reg ->
+        match?(%{op: :const_int}, plan_defining_instr(plan, reg))
+      end)
+      |> MapSet.new()
+
+    native_int_owned_regs =
+      native_int_only_regs
+      |> MapSet.intersection(const_int_defs)
+      |> MapSet.difference(MapSet.new(Map.keys(const_c_expr_regs)))
+
+    native_int_only_regs = MapSet.difference(native_int_only_regs, native_int_owned_regs)
+
+    unused_native_int_skip_regs = build_unused_native_int_skip_regs(plan, native_int_only_regs)
+
+    tail_inline_skip_regs =
+      plan
+      |> build_tail_inline_skip_regs()
+      |> MapSet.union(build_record_param_inline_skip_regs(plan, param_kinds))
+      |> MapSet.union(build_unused_boxed_param_skip_regs(plan, param_kinds))
+      |> MapSet.union(build_overwritten_inline_skip_regs(plan))
+      |> MapSet.union(unused_native_int_skip_regs)
+
+    slots = Map.drop(slots, MapSet.to_list(tail_inline_skip_regs))
+
+    native_bool_only_regs =
+      build_native_bool_only_regs(plan, decl_map)
+      |> MapSet.difference(native_int_only_regs)
+      |> maybe_add_native_scalar_ret_bool_reg(ret_reg, native_scalar_out)
+
+    slots =
+      finalize_owned_slots_map(
+        plan,
+        slots,
+        MapSet.difference(native_int_only_regs, native_int_owned_regs),
+        native_bool_only_regs,
+        fusion_native_literal_regs
+      )
+
+    skip_fill =
+      MapSet.difference(native_int_only_regs, native_int_owned_regs)
+      |> MapSet.union(native_bool_only_regs)
+      |> MapSet.union(fusion_native_literal_regs)
+      |> MapSet.union(tail_inline_skip_regs)
+      |> MapSet.union(MapSet.new(Map.keys(native_int_regs)))
+      |> MapSet.union(MapSet.new(Map.keys(borrow_param_regs)))
+      |> MapSet.union(closure_borrow_regs)
+
+    fill_missing_owned_slots(plan, slots, skip_fill)
   end
 
   defp emit_return(%FunctionPlan{native_scalar_value_return: true, blocks: blocks} = plan, slots, kind, _borrow_nulls, instr_opts)
@@ -1696,20 +1808,44 @@ defmodule Elmc.Backend.C.Lower.Function do
     end
   end
 
-  defp owned_slot_count(slots) do
+  @spec owned_slot_count(map()) :: non_neg_integer()
+  def owned_slot_count(slots) when is_map(slots) do
     case Map.values(slots) do
       [] -> 0
       values -> Enum.max(values) + 1
     end
   end
 
-  defp finalize_owned_slots_map(%FunctionPlan{} = plan, slots, native_int_only_regs, native_bool_only_regs, fusion_native_literal_regs \\ MapSet.new()) do
+  defp finalize_owned_slots_map(%FunctionPlan{} = plan, slots, native_int_only_regs, native_bool_only_regs, fusion_native_literal_regs) do
     slots
     |> then(&drop_undef_slot_regs(plan, &1))
     |> Map.drop(MapSet.to_list(native_int_only_regs))
     |> Map.drop(MapSet.to_list(native_bool_only_regs))
     |> Map.drop(MapSet.to_list(fusion_native_literal_regs))
     |> compact_slots()
+  end
+
+  defp fill_missing_owned_slots(%FunctionPlan{} = plan, slots, skip_regs) do
+    defined = all_def_regs(plan)
+    next = owned_slot_count(slots)
+
+    {slots, _} =
+      defined
+      |> Enum.sort()
+      |> Enum.reduce({slots, next}, fn reg, {acc, idx} ->
+        cond do
+          Map.has_key?(acc, reg) ->
+            {acc, idx}
+
+          MapSet.member?(skip_regs, reg) ->
+            {acc, idx}
+
+          true ->
+            {Map.put(acc, reg, idx), idx + 1}
+        end
+      end)
+
+    slots
   end
 
   defp build_fusion_native_literal_regs(%FunctionPlan{} = plan) do
@@ -2032,6 +2168,11 @@ defmodule Elmc.Backend.C.Lower.Function do
       |> Enum.filter(&(&1 == reg))
     end)
     |> Enum.uniq()
+  end
+
+  defp plan_instr_operand_regs(%{op: :phi, args: args}) when is_map(args) do
+    [Map.get(args, :then), Map.get(args, :else), Map.get(args, :cond)]
+    |> Enum.filter(&is_integer/1)
   end
 
   defp plan_instr_operand_regs(%{effects: %{borrows: borrows, consumes: consumes}}) do
@@ -2900,9 +3041,17 @@ defmodule Elmc.Backend.C.Lower.Function do
   end
 
   defp boxed_use_regs(%FunctionPlan{} = plan, decl_map) do
+    skip_publish_fn_out? = Map.get(plan, :native_scalar_return) in [:native_int, :native_bool]
+
     plan.blocks
     |> Enum.flat_map(fn %Block{instrs: instrs} ->
-      Enum.flat_map(instrs, &boxed_operand_regs(&1, decl_map))
+      Enum.flat_map(instrs, fn instr ->
+        if skip_publish_fn_out? and match?(%{op: :publish, dest: :fn_out}, instr) do
+          []
+        else
+          boxed_operand_regs(instr, decl_map)
+        end
+      end)
     end)
     |> Enum.filter(&is_integer/1)
     |> MapSet.new()
@@ -3007,7 +3156,7 @@ defmodule Elmc.Backend.C.Lower.Function do
 
   defp boxed_operand_regs(%{op: :publish, args: %{source: source}}, _decl_map), do: [source]
 
-  defp boxed_operand_regs(%{op: :release, args: %{reg: reg}}, _decl_map), do: [reg]
+  defp boxed_operand_regs(%{op: :release}, _decl_map), do: []
 
   defp boxed_operand_regs(%{op: op}, _decl_map)
        when op in [:int_arith, :compare, :load_param, :const_int, :const_static_list, :const_immortal_string],

@@ -419,12 +419,14 @@ defmodule Elmc.Backend.Bytecode.Runtime do
       8 ->
         <<rhs::16, tail::binary>> = rest
         rhs_n = local_int(locals, rhs)
+        # left = modulus (modBy first arg), rhs = value
         {elm_mod_by(left, rhs_n), tail}
 
       9 ->
         <<rhs::16, tail::binary>> = rest
         rhs_n = local_int(locals, rhs)
-        {if(rhs_n == 0, do: 0, else: rem(left, rhs_n)), tail}
+        # left = modulus (remainderBy first arg), rhs = value
+        {if(left == 0, do: 0, else: rem(rhs_n, left)), tail}
 
       _ ->
         {left, rest}

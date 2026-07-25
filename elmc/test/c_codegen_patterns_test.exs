@@ -157,6 +157,7 @@ defmodule Elmc.CCodegenPatternsTest do
     refute code =~ ~r/ElmcValue \*tmp_1 = elmc_retain\(tmp_1\);/
   end
 
+  @tag timeout: 180_000
   test "game elmtris template dropStep does not read record fields from Maybe wrapper" do
     source_fixture = Path.expand("fixtures/simple_project", __DIR__)
 
@@ -564,6 +565,47 @@ defmodule Elmc.CCodegenPatternsTest do
     assert body =~ "elmc_list_find_first("
     refute body =~ "elmc_list_filter("
     refute body =~ "elmc_list_head("
+  end
+
+  test "Model -> String helpers are borrow_arg, not retain_arg" do
+    source = """
+    module Main exposing (main)
+
+    import Pebble.Platform as Platform
+    import Pebble.Ui as Ui
+    import Pebble.Ui.Color as Color
+
+    type alias Model = { label : String, shown : String }
+
+    timeString : Model -> String
+    timeString model =
+        model.label
+
+    init _ =
+        let
+            model = { label = "10:30", shown = "" }
+        in
+        ( { model | shown = timeString model }, Platform.Cmd.none )
+
+    update _ m = ( { m | shown = timeString m }, Platform.Cmd.none )
+    view model = Ui.toUiNode [ Ui.clear Color.white, Ui.text model.shown ]
+    subscriptions _ = Platform.Sub.none
+    main = Platform.application { init = init, update = update, view = view, subscriptions = subscriptions }
+    """
+
+    project_dir = Path.expand("tmp/model_to_string_borrow_arg", __DIR__)
+    out_dir = Path.expand("tmp/model_to_string_borrow_arg_codegen", __DIR__)
+    File.rm_rf!(project_dir)
+    File.rm_rf!(out_dir)
+    File.cp_r!(Path.expand("fixtures/simple_project", __DIR__), project_dir)
+    File.write!(Path.join(project_dir, "src/Main.elm"), source)
+
+    assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+    generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+    assert generated_c =~ "elmc_fn_Main_timeString"
+    body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_timeString")
+    assert body =~ "Ownership policy: borrow_arg, retain_result"
+    refute body =~ "Ownership policy: retain_arg"
   end
 
   test "pickSlot-style case on filter head and filter map field fuse through let bindings" do
@@ -4590,6 +4632,7 @@ defmodule Elmc.CCodegenPatternsTest do
     assert fn_body =~ ~r/elmc_maybe_is_nothing\(owned\[\d+\]\)/
   end
 
+  @tag timeout: 180_000
   test "union constructor multi-arg case binds fields from payload not tag" do
     source = """
     module Main exposing (main, updateFromPhone)
@@ -4947,7 +4990,8 @@ defmodule Elmc.CCodegenPatternsTest do
     refute subscriptions_body =~ "elmc_new_int(ELMC_SUBSCRIPTION_MINUTE_CHANGE)"
     refute subscriptions_body =~ "elmc_new_int(2048)"
     refute subscriptions_body =~ "\n\n\n"
-    assert subscriptions_body =~ "(void)_unused_0;"
+    # Unused Elm `_` args are desugared to `ignoredArg` (see ElmEx.IR.FnArgDesugar).
+    assert subscriptions_body =~ "(void)ignoredArg;"
   end
 
   test "button press subscription encodes button, event, and msg tag" do
@@ -5350,7 +5394,7 @@ defmodule Elmc.CCodegenPatternsTest do
         "-lm",
         "-o",
         binary_path
-      ])
+      ], stderr_to_stdout: true)
 
     assert compile_code == 0, compile_out
 

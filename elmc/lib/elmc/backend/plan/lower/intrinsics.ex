@@ -12,6 +12,9 @@ defmodule Elmc.Backend.Plan.Lower.Intrinsics do
           Types.lower_result() | :not_intrinsic
   def try_lower(decl, module_name, decl_map, opts) do
     case decl do
+      %{expr: %{op: :tuple2}} = decl ->
+        lower_runtime_special_tuple_body(decl, module_name, decl_map, opts)
+
       %{name: "toInt", args: [param_name], expr: %{op: :case}} ->
         lower_color_to_int_identity(decl, module_name, param_name, decl_map, opts)
 
@@ -113,6 +116,30 @@ defmodule Elmc.Backend.Plan.Lower.Intrinsics do
   end
 
   defp batch_kernel_target?(_), do: false
+
+  # elm/core functions like Tuple.map* and Basics.toPolar keep tuple-destructure
+  # field names in the IR body without binding them on the tuple parameter. When a
+  # saturated special_value runtime_call exists, lower through that instead.
+  defp lower_runtime_special_tuple_body(decl, module_name, decl_map, opts) do
+    name = Map.get(decl, :name)
+    qualified = "#{module_name}.#{name}"
+    param_names = FunctionEmit.effective_decl_args(decl, module_name, decl_map)
+    call_args = Enum.map(param_names, &%{op: :var, name: &1})
+
+    case SpecialValues.special_value_from_target(qualified, call_args) do
+      %{op: :runtime_call} ->
+        body = %{op: :qualified_call, target: qualified, args: call_args}
+        forward_decl = put_decl_fields(decl, param_names, body)
+
+        case Function.lower(forward_decl, module_name, decl_map, opts) do
+          {:ok, _} = ok -> ok
+          _ -> :not_intrinsic
+        end
+
+      _ ->
+        :not_intrinsic
+    end
+  end
 
   # Public specials for value aliases (`String.fromInt` → unary lambda over runtime).
   # Only when the IR body is already a 0-arg alias to this same public name (or a

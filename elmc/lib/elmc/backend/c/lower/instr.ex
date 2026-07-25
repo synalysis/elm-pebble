@@ -4,11 +4,35 @@ defmodule Elmc.Backend.C.Lower.Instr do
   alias Elmc.Backend.C.Lower.{Function, Lambda, NativeReturn, NativeIntFold, TagRefs}
   alias Elmc.Backend.CCodegen.{FunctionCallAbi, FunctionEmit, Fusion, ImmortalStringLiteral, PlanNativeProjection, RcRequired, RcRuntimeEmit, RowMajorLayout}
   alias Elmc.Backend.CCodegen.Native.FunctionCall, as: NativeFunctionCall
+  alias Elmc.Backend.CCodegen.SpecialValues.ElmCore
   alias Elmc.Backend.CCodegen.Util
   alias Elmc.Backend.Plan
   alias Elmc.Backend.Plan.RuntimeBuiltins
   alias Elmc.Backend.Plan.Types
   alias Elmc.Backend.SizeProfile
+
+  # Plan `call_runtime` ids → elm/core qualified names (parity with CallCompile comments).
+  @elm_core_runtime_targets %{
+    list_append: "List.append",
+    list_cons: "List.cons",
+    list_repeat: "List.repeat",
+    list_map: "List.map",
+    list_foldl: "List.foldl",
+    list_length: "List.length",
+    list_reverse: "List.reverse",
+    list_is_empty: "List.isEmpty",
+    maybe_and_then: "Maybe.andThen",
+    maybe_with_default: "Maybe.withDefault",
+    result_and_then: "Result.andThen",
+    result_with_default: "Result.withDefault",
+    basics_min: "Basics.min",
+    basics_max: "Basics.max",
+    basics_mod_by: "Basics.modBy",
+    string_append: "String.append",
+    string_length: "String.length",
+    char_to_code: "Char.toCode",
+    char_from_code: "Char.fromCode"
+  }
 
   @rc_allocators_with_take ~w(
     elmc_new_int
@@ -359,13 +383,17 @@ defmodule Elmc.Backend.C.Lower.Instr do
   end
 
   # Native-int params / locals must be boxed when merging into an owned slot — never `elmc_retain`
-  # on an `elmc_int_t` C value.
+  # on an `elmc_int_t` C value. Prefer an existing owned slot when the reg was already boxed
+  # (e.g. native-int param with boxed phi uses).
   defp phi_boxed_arm_source(reg, slots, opts) when is_integer(reg) do
     native_int_regs = Keyword.get(opts, :native_int_regs, %{})
     native_int_only = Keyword.get(opts, :native_int_only_regs, MapSet.new())
     const_int_regs = Keyword.get(opts, :const_int_regs, %{})
 
     cond do
+      is_integer(Map.get(slots, reg)) ->
+        slot_ref(reg, slots, opts)
+
       MapSet.member?(native_int_only, reg) ->
         boxed_value_ref(reg, slots, opts)
 
@@ -1284,6 +1312,7 @@ defmodule Elmc.Backend.C.Lower.Instr do
 
   defp emit_call_runtime(%{args: %{builtin: id, args: args}} = instr, slots, rc?, dest, opts) do
     sym = runtime_builtin_sym(id, args, slots, opts) || "elmc_unknown"
+    core_comment = elm_core_runtime_comment(id)
 
     cond do
       RuntimeBuiltins.direct_value_return?(id) ->
@@ -1294,7 +1323,7 @@ defmodule Elmc.Backend.C.Lower.Instr do
 
         emit_with_ephemeral_cleanup(
           prep_lines,
-          assign_value_return_tail(rc?, dest, call_expr, instr, slots, opts),
+          core_comment <> assign_value_return_tail(rc?, dest, call_expr, instr, slots, opts),
           cleanup_lines
         )
 
@@ -1307,7 +1336,7 @@ defmodule Elmc.Backend.C.Lower.Instr do
 
         emit_with_ephemeral_cleanup(
           prep_lines,
-          assign_non_rc_c_value_return(dest, call_expr, instr, slots, opts),
+          core_comment <> assign_non_rc_c_value_return(dest, call_expr, instr, slots, opts),
           cleanup_lines
         )
 
@@ -1317,10 +1346,21 @@ defmodule Elmc.Backend.C.Lower.Instr do
 
         cond do
           RuntimeBuiltins.c_value_return?(id) ->
-            emit_with_ephemeral_cleanup(prep_lines, assign_owned(rc?, dest, call_expr), cleanup_lines)
+            emit_with_ephemeral_cleanup(
+              prep_lines,
+              core_comment <> assign_owned(rc?, dest, call_expr),
+              cleanup_lines
+            )
 
           RuntimeBuiltins.value_return?(id) ->
-            emit_with_ephemeral_cleanup(prep_lines, assign_owned(rc?, dest, call_expr), cleanup_lines)
+            assign =
+              if not rc? and dest == "*out" do
+                assign_value_return_tail(false, dest, call_expr, instr, slots, opts)
+              else
+                assign_owned(rc?, dest, call_expr)
+              end
+
+            emit_with_ephemeral_cleanup(prep_lines, core_comment <> assign, cleanup_lines)
 
           true ->
             {c_args, prep_lines, cleanup_lines} = build_runtime_call_args(id, args, slots, opts)
@@ -1333,7 +1373,7 @@ defmodule Elmc.Backend.C.Lower.Instr do
                 rc_assign(rc?, dest, sym, c_args)
               end
 
-            emit_with_ephemeral_cleanup(prep_lines, assign, cleanup_lines)
+            emit_with_ephemeral_cleanup(prep_lines, core_comment <> assign, cleanup_lines)
         end
     end
   end
@@ -1360,6 +1400,13 @@ defmodule Elmc.Backend.C.Lower.Instr do
   end
 
   defp null_owned_slots_named_in_values_array(_), do: ""
+
+  defp elm_core_runtime_comment(id) when is_atom(id) do
+    case Map.get(@elm_core_runtime_targets, id) do
+      target when is_binary(target) -> String.trim_leading(ElmCore.comment_line(target))
+      _ -> ""
+    end
+  end
 
   defp build_runtime_call_args(id, args, slots, opts, call_opts \\ []) do
     consume_args? = Keyword.get(call_opts, :consume_args, false)
@@ -1595,7 +1642,7 @@ defmodule Elmc.Backend.C.Lower.Instr do
         plan_call_uses_native_fusion?(fusion_arg_kinds, rc?, native_ret, mod, name) ->
           "#{c_name}_native"
 
-        supersedes_native? ->
+        supersedes_native? and not NativeReturn.value_return?({mod, name}) ->
           "#{c_name}_native"
 
         true ->
@@ -2025,17 +2072,25 @@ defmodule Elmc.Backend.C.Lower.Instr do
     end
   end
 
-  defp emit_native_bool_fn_call_boxed(rc?, dest, dest_reg, c_name, call_arg_s, _callee) do
+  defp emit_native_bool_fn_call_boxed(rc?, dest, dest_reg, c_name, call_arg_s, callee) do
     tmp = "plan_call_bool_#{dest_reg}"
     box_dest = if dest == "*out", do: "out", else: dest
 
-    """
-    bool #{tmp} = false;
-    Rc = #{c_name}(&#{tmp}#{native_call_suffix(call_arg_s)});
-    CHECK_RC(Rc);
-    #{rc_assign(rc?, box_dest, "elmc_new_bool", ["(#{tmp}) ? 1 : 0"])}
-    """
-    |> String.trim()
+    if NativeReturn.value_return?(callee) do
+      """
+      bool #{tmp} = #{c_name}(#{call_arg_s});
+      #{rc_assign(rc?, box_dest, "elmc_new_bool", ["(#{tmp}) ? 1 : 0"])}
+      """
+      |> String.trim()
+    else
+      """
+      bool #{tmp} = false;
+      Rc = #{c_name}(&#{tmp}#{native_call_suffix(call_arg_s)});
+      CHECK_RC(Rc);
+      #{rc_assign(rc?, box_dest, "elmc_new_bool", ["(#{tmp}) ? 1 : 0"])}
+      """
+      |> String.trim()
+    end
   end
 
   defp emit_native_int_fn_call_boxed(rc?, dest, dest_reg, c_name, call_arg_s, {_mod, _name} = callee) do

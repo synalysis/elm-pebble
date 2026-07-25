@@ -255,14 +255,15 @@ defmodule Elmc.Backend.Bytecode.PhiShapes do
   defp truthy?({:just, inner}), do: truthy?(inner)
   defp truthy?(_), do: true
 
-  defp elm_mod_by(_a, 0), do: 0
+  # Plan `:mod_vars` / `:rem_vars` store lhs = modulus (first Elm arg), rhs = value.
+  # Match C `elm_mod_by_c_expr(base, value)` and Runtime.elm_mod_by/2: rem(value, base).
+  defp elm_mod_by(0, _value), do: 0
 
-  defp elm_mod_by(a, b) do
-    r = rem(a, b)
-    if r < 0, do: r + abs(b), else: r
+  defp elm_mod_by(base, value) do
+    r = rem(value, base)
+    if r < 0, do: r + abs(base), else: r
   end
 
-  defp elm_rem_by(a, b) do
-    if b == 0, do: 0, else: rem(a, b)
-  end
+  defp elm_rem_by(0, _value), do: 0
+  defp elm_rem_by(base, value), do: rem(value, base)
 end

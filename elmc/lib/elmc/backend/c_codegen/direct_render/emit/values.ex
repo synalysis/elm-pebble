@@ -238,9 +238,44 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Values do
                 {code, value, counter}
 
               :error ->
-                Host.compile_native_int_fallback(expr, env, counter)
+                case resolve_local_zero_arg_let_call(expr, env) do
+                  {:ok, bound_expr} ->
+                    int_value(bound_expr, env, counter)
+
+                  :error ->
+                    Host.compile_native_int_fallback(expr, env, counter)
+                end
             end
         end
+    end
+  end
+
+  defp resolve_local_zero_arg_let_call(%{op: :call, name: name, args: args}, env)
+       when is_binary(name) and args in [[], nil] do
+    resolve_local_zero_arg_let_name(name, env)
+  end
+
+  defp resolve_local_zero_arg_let_call(%{op: :qualified_call, target: target, args: args}, env)
+       when is_binary(target) and args in [[], nil] do
+    case Util.split_qualified_function_target(Host.normalize_special_target(target)) do
+      {_mod, name} -> resolve_local_zero_arg_let_name(name, env)
+      _ -> :error
+    end
+  end
+
+  defp resolve_local_zero_arg_let_call(_, _), do: :error
+
+  defp resolve_local_zero_arg_let_name(name, env) do
+    module_name = Map.get(env, :__module__, "Main")
+    decl_map = Map.get(env, :__program_decls__, %{})
+
+    if Map.has_key?(decl_map, {module_name, name}) do
+      :error
+    else
+      case EnvBindings.let_value_expr(env, name) do
+        bound when is_map(bound) -> {:ok, bound}
+        _ -> :error
+      end
     end
   end
 

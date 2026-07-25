@@ -99,7 +99,9 @@ defmodule Elmc.Test.RcTrackHarness do
   def compile_c(out_dir, sources, binary_path, opts \\ []) do
     cc = System.find_executable("cc") || flunk("cc not available for C harness compile")
 
-    System.cmd(cc, compile_and_link_args(out_dir, sources, binary_path, opts))
+    System.cmd(cc, compile_and_link_args(out_dir, sources, binary_path, opts),
+      stderr_to_stdout: true
+    )
   end
 
   @spec compile_c!(String.t(), [String.t()], String.t(), keyword()) :: :ok
@@ -132,7 +134,9 @@ defmodule Elmc.Test.RcTrackHarness do
     binary_path = Path.join(out_dir, binary_name)
 
     {compile_out, compile_code} =
-      System.cmd(cc, compile_and_link_args(out_dir, sources, binary_path, opts))
+      System.cmd(cc, compile_and_link_args(out_dir, sources, binary_path, opts),
+        stderr_to_stdout: true
+      )
 
     if compile_code != 0, do: flunk("harness compile failed:\n#{compile_out}")
 

@@ -53,20 +53,40 @@ defmodule Elmc.Backend.CCodegen.Expr do
   @spec substitute_expr(Types.ir_expr() | [Types.ir_expr()], Types.let_substitutions()) ::
           Types.ir_expr() | [Types.ir_expr()]
   def substitute_expr(%{op: :var, name: name}, substitutions) do
-    key = Host.binding_key(name)
-
-    case Map.fetch(substitutions, key) do
+    case lookup_let_binding(substitutions, name) do
       {:ok, bound} ->
-        substitute_expr(bound, Map.delete(substitutions, key))
+        substitute_expr(bound, Map.delete(substitutions, Host.binding_key(name)))
 
       :error ->
-        case Map.fetch(substitutions, name) do
+        %{op: :var, name: name}
+    end
+  end
+
+  def substitute_expr(%{op: :call, name: name, args: args}, substitutions)
+      when is_binary(name) and args in [[], nil] do
+    case lookup_let_binding(substitutions, name) do
+      {:ok, bound} ->
+        substitute_expr(bound, Map.delete(substitutions, Host.binding_key(name)))
+
+      :error ->
+        %{op: :call, name: name, args: []}
+    end
+  end
+
+  def substitute_expr(%{op: :qualified_call, target: target, args: args}, substitutions)
+      when is_binary(target) and args in [[], nil] do
+    case Util.split_qualified_function_target(Host.normalize_special_target(target)) do
+      {_mod, name} ->
+        case lookup_let_binding(substitutions, name) do
           {:ok, bound} ->
-            substitute_expr(bound, Map.delete(substitutions, name))
+            substitute_expr(bound, Map.delete(substitutions, Host.binding_key(name)))
 
           :error ->
-            %{op: :var, name: name}
+            %{op: :qualified_call, target: target, args: []}
         end
+
+      _ ->
+        %{op: :qualified_call, target: target, args: []}
     end
   end
 
@@ -272,8 +292,32 @@ defmodule Elmc.Backend.CCodegen.Expr do
       end
 
     case record_field_expr(branch_expr, field) do
-      nil -> nil
-      field_expr -> resolve_branch_let_bindings(field_expr, let_bindings)
+      nil ->
+        nil
+
+      field_expr ->
+        field_expr
+        |> fully_resolve_branch_let_bindings(let_bindings)
+    end
+  end
+
+  defp fully_resolve_branch_let_bindings(expr, let_bindings) do
+    Enum.reduce_while(1..32, expr, fn _, acc ->
+      next =
+        acc
+        |> resolve_branch_let_bindings(let_bindings)
+        |> substitute_expr(let_bindings)
+
+      if next == acc, do: {:halt, acc}, else: {:cont, next}
+    end)
+  end
+
+  defp lookup_let_binding(let_bindings, name) when is_map(let_bindings) do
+    key = Host.binding_key(name)
+
+    case Map.fetch(let_bindings, key) do
+      {:ok, bound} -> {:ok, bound}
+      :error -> Map.fetch(let_bindings, name)
     end
   end
 
@@ -282,9 +326,7 @@ defmodule Elmc.Backend.CCodegen.Expr do
 
   defp resolve_branch_let_bindings(%{op: :var, name: name}, let_bindings)
        when is_binary(name) or is_atom(name) do
-    key = Host.binding_key(name)
-
-    case Map.fetch(let_bindings, key) do
+    case lookup_let_binding(let_bindings, name) do
       {:ok, bound} -> resolve_branch_let_bindings(bound, let_bindings)
       :error -> %{op: :var, name: name}
     end
@@ -312,9 +354,26 @@ defmodule Elmc.Backend.CCodegen.Expr do
 
   defp resolve_branch_let_bindings(%{op: :call, name: name, args: args}, let_bindings)
        when is_binary(name) and args in [[], nil] do
-    case Map.fetch(let_bindings, name) do
+    case lookup_let_binding(let_bindings, name) do
       {:ok, bound} -> resolve_branch_let_bindings(bound, let_bindings)
       :error -> %{op: :call, name: name, args: []}
+    end
+  end
+
+  defp resolve_branch_let_bindings(
+         %{op: :qualified_call, target: target, args: args},
+         let_bindings
+       )
+       when is_binary(target) and args in [[], nil] do
+    case Util.split_qualified_function_target(Host.normalize_special_target(target)) do
+      {_mod, name} ->
+        case lookup_let_binding(let_bindings, name) do
+          {:ok, bound} -> resolve_branch_let_bindings(bound, let_bindings)
+          :error -> %{op: :qualified_call, target: target, args: []}
+        end
+
+      _ ->
+        %{op: :qualified_call, target: target, args: []}
     end
   end
 

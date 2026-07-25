@@ -12,11 +12,11 @@ defmodule Elmc.FrontendParserConstructsTest do
       |> Enum.filter(&(&1.kind == :function_definition))
       |> Map.new(&{&1.name, &1})
 
-    assert defs["probeAdvanced"].expr.op == :let_in
-    assert defs["probeAdvanced"].expr.in_expr.op == :if
+    assert defs["probeAdvanced"].expr.op in [:let_in, :let_bindings]
+    assert let_body(defs["probeAdvanced"].expr).op == :if
     assert defs["init"].expr.op == :tuple2
-    assert defs["view"].expr.op == :let_in
-    assert defs["moveBoard"].expr.op == :let_in
+    assert defs["view"].expr.op in [:let_in, :let_bindings]
+    assert defs["moveBoard"].expr.op in [:let_in, :let_bindings]
     assert defs["subscriptions"].expr.op == :qualified_call
     assert defs["main"].expr.op == :qualified_call
   end
@@ -60,4 +60,8 @@ defmodule Elmc.FrontendParserConstructsTest do
   end
 
   defp collect_unsupported(_), do: []
+
+  defp let_body(%{op: :let_in, in_expr: in_expr}), do: let_body(in_expr)
+  defp let_body(%{op: :let_bindings, in_expr: in_expr}), do: let_body(in_expr)
+  defp let_body(expr), do: expr
 end

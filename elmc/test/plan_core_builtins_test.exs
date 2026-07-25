@@ -65,6 +65,45 @@ defmodule Elmc.PlanCoreBuiltinsTest do
     assert inspect(plan.blocks) =~ "basics_sqrt"
   end
 
+  test "Tuple.mapFirst qualified call lowers through plan runtime builtin" do
+    plan =
+      lower_expr(
+        %{
+          op: :qualified_call,
+          target: "Tuple.mapFirst",
+          args: [
+            %{op: :lambda, args: ["x"], body: %{op: :var, name: "x"}},
+            %{op: :tuple2, left: %{op: :int_literal, value: 1}, right: %{op: :int_literal, value: 2}}
+          ]
+        },
+        ["f", "t"]
+      )
+
+    assert inspect(plan.blocks) =~ "tuple_map_first"
+  end
+
+  test "Tuple.mapFirst elm/core decl lowers via runtime intrinsic rewrite" do
+    decl = %{
+      name: "mapFirst",
+      args: ["func", "x_y"],
+      type: "(a -> x) -> (a, b) -> (x, b)",
+      expr: %{
+        op: :tuple2,
+        left: %{
+          op: :call,
+          name: "__apply__",
+          args: [%{op: :var, name: "func"}, %{op: :var, name: "x"}]
+        },
+        right: %{op: :var, name: "y"}
+      }
+    }
+
+    decl_map = %{{"Tuple", "mapFirst"} => decl}
+
+    assert {:ok, plan} = Function.lower(decl, "Tuple", decl_map, rc_required: true)
+    assert inspect(plan.blocks) =~ "tuple_map_first"
+  end
+
   test "Basics.min on float field access keeps boxed runtime builtin" do
     plan =
       lower_expr(
@@ -84,7 +123,7 @@ defmodule Elmc.PlanCoreBuiltinsTest do
     refute blocks =~ "min_vars"
   end
 
-  test "Basics.min on int literals keeps boxed runtime builtin via special values" do
+  test "Basics.min on int literals lowers to native min_vars" do
     plan =
       lower_expr(%{
         op: :qualified_call,
@@ -96,8 +135,8 @@ defmodule Elmc.PlanCoreBuiltinsTest do
       })
 
     blocks = inspect(plan.blocks)
-    assert blocks =~ "basics_min"
-    refute blocks =~ "min_vars"
+    assert blocks =~ "min_vars"
+    refute blocks =~ "basics_min"
   end
 
   test "List.map4 lowers through plan" do

@@ -44,9 +44,14 @@ defmodule Elmc.Backend.C.Lower.Lambda do
     lambda = Enum.at(parent.lambdas, idx)
     closure_name = closure_fn_name(parent, idx)
     capture_count = capture_count(lambda)
-    {slots, slot_count} =
-      Function.prepared_owned_slots(lambda, closure_mode: %{capture_count: capture_count})
 
+    {core, slots} =
+      Function.emit_core_with_slots(lambda,
+        shell: false,
+        closure_mode: %{capture_count: capture_count}
+      )
+
+    slot_count = Function.owned_slot_count(slots)
     slot_indices = if slot_count > 0, do: Enum.to_list(0..(slot_count - 1)), else: []
 
     owned = Frame.owned_declaration(lambda, slots)
@@ -58,17 +63,11 @@ defmodule Elmc.Backend.C.Lower.Lambda do
     letrec_decls = Function.letrec_decl_lines(letrec_refs)
     letrec_free = Function.letrec_free_lines(letrec_refs)
 
-    core =
-      Function.emit_core(lambda,
-        shell: false,
-        closure_mode: %{capture_count: capture_count}
-      )
-
     body =
       Frame.wrap_catch(lambda.rc_required and lambda.fallible, core)
       |> String.trim()
 
-  void_casts =
+    void_casts =
       ["args", "argc", "captures", "capture_count"]
       |> Enum.reject(&closure_param_used?(&1, body))
       |> Enum.map_join("\n  ", &"(void)#{&1};")

@@ -398,18 +398,30 @@ defmodule Elmc.Backend.Plan.RuntimeBuiltins do
     index in Map.get(@native_int_arg_indices, id, [])
   end
 
-  @ownership_transfer MapSet.new([
+  # Runtime takes ownership of arg 0 (wrapper constructors).
+  @ownership_transfer_first MapSet.new([
     :maybe_just_own,
     :result_ok_own,
-    :result_err_own,
+    :result_err_own
+  ])
+
+  # Runtime releases only the last operand (Maybe/Result); callback stays caller-owned.
+  @ownership_transfer_last MapSet.new([
     :result_and_then,
     :maybe_and_then
   ])
 
+  @ownership_transfer MapSet.union(@ownership_transfer_first, @ownership_transfer_last)
+
   @spec ownership_transfer_arg?(atom(), non_neg_integer()) :: boolean()
   def ownership_transfer_arg?(id, index)
       when is_atom(id) and is_integer(index) and index == 0 do
-    MapSet.member?(@ownership_transfer, id)
+    MapSet.member?(@ownership_transfer_first, id)
+  end
+
+  def ownership_transfer_arg?(id, index)
+      when is_atom(id) and is_integer(index) and index == 1 do
+    MapSet.member?(@ownership_transfer_last, id)
   end
 
   def ownership_transfer_arg?(_, _), do: false

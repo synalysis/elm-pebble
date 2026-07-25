@@ -60,7 +60,7 @@ defmodule Elmc.PlanElmtrisGridLowerTest do
     c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
     body = Elmc.Test.CCodegenExtract.fn_body(c, "elmc_fn_Main_lockPiece")
 
-    assert body =~ ~r/ElmcValue \*owned\[1[34]\]/
+    assert body =~ ~r/ElmcValue \*owned\[1[4-8]\]/
     assert body =~ "plan block"
     refute body =~ "elmc_owned_i"
     refute body =~ "elmc_calloc(ELMC_OWNED_SLOT_COUNT"

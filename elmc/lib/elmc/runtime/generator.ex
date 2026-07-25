@@ -1854,6 +1854,7 @@ defmodule Elmc.Runtime.Generator do
     ElmcValue *elmc_list_member(ElmcValue *value, ElmcValue *list);
     RC elmc_list_map(ElmcValue **out, ElmcValue *f, ElmcValue *list);
     RC elmc_list_filter(ElmcValue **out, ElmcValue *f, ElmcValue *list);
+    RC elmc_list_find_first(ElmcValue **out, ElmcValue *f, ElmcValue *list);
     RC elmc_list_filter_record_field(ElmcValue **out, ElmcValue *list, elmc_int_t field_index);
     RC elmc_list_filter_record_and(ElmcValue **out, ElmcValue *list, elmc_int_t field_a, elmc_int_t field_b);
     RC elmc_list_map_record_field(ElmcValue **out, ElmcValue *list, elmc_int_t field_index);
@@ -6290,6 +6291,22 @@ defmodule Elmc.Runtime.Generator do
       elmc_release(mapped);
       elmc_release(next);
       elmc_release(rev);
+      return rc;
+    }
+
+    RC elmc_list_find_first(ElmcValue **out, ElmcValue *f, ElmcValue *list) {
+      RC rc = RC_SUCCESS;
+      ElmcValue *filtered = NULL;
+      CATCH_BEGIN
+        rc = elmc_list_filter(&filtered, f, list);
+        CHECK_RC(rc);
+        *out = elmc_list_head(filtered);
+        if (!*out) {
+          rc = RC_ERR_OUT_OF_MEMORY;
+          CHECK_RC(rc);
+        }
+      CATCH_END;
+      elmc_release(filtered);
       return rc;
     }
 

@@ -177,18 +177,32 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
 
           :error ->
             module_name = Map.get(env, :__module__, "Main")
-            arity = EnvBindings.function_arity(env, module_name, name, [])
+            decl_map = EnvBindings.effective_program_decls(env)
 
-            if arity > 0 do
-              {closure_code, tmp, next} = top_level_closure(module_name, name, arity, env, counter)
-              {closure_code, tmp, next}
+            if Map.has_key?(decl_map, {module_name, name}) do
+              arity = EnvBindings.function_arity(env, module_name, name, [])
+
+              if arity > 0 do
+                {closure_code, tmp, next} = top_level_closure(module_name, name, arity, env, counter)
+                {closure_code, tmp, next}
+              else
+                {var, next} = CaseCompile.fresh_var(counter, env)
+                c_name = Util.module_fn_name(module_name, name)
+                if caller_rc?(env), do: ValueSlots.track(var)
+
+                code = zero_arg_call_code(env, module_name, name, c_name, var)
+                {code <> "\n", var, next}
+              end
             else
-              {var, next} = CaseCompile.fresh_var(counter, env)
-              c_name = Util.module_fn_name(module_name, name)
-              if caller_rc?(env), do: ValueSlots.track(var)
+              case let_bound_expr(name, env) do
+                {:ok, bound} ->
+                  Host.compile_expr(bound, env, counter)
 
-              code = zero_arg_call_code(env, module_name, name, c_name, var)
-              {code <> "\n", var, next}
+                :error ->
+                  {var, next} = CaseCompile.fresh_var(counter, env)
+                  if caller_rc?(env), do: ValueSlots.track(var)
+                  {ValueSlots.boxed_decl(var, "elmc_int_zero()", env), var, next}
+              end
             end
         end
     end
@@ -575,15 +589,35 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
           Types.compile_counter()
         ) :: Types.compile_result()
   defp compile_zero_arg_constant(module_name, name, env, counter, var, next) do
-    case ConstantInt.compile_boxed_call(module_name, name, [], env, counter) do
-      {:ok, code, out, c} ->
-        {code, out, c}
+    decl_map = EnvBindings.effective_program_decls(env)
 
-      :error ->
-        c_name = Util.module_fn_name(module_name, name)
-        if caller_rc?(env), do: ValueSlots.track(var)
+    if Map.has_key?(decl_map, {module_name, name}) do
+      case ConstantInt.compile_boxed_call(module_name, name, [], env, counter) do
+        {:ok, code, out, c} ->
+          {code, out, c}
 
-        {zero_arg_call_code(env, module_name, name, c_name, var) <> "\n", var, next}
+        :error ->
+          c_name = Util.module_fn_name(module_name, name)
+          if caller_rc?(env), do: ValueSlots.track(var)
+
+          {zero_arg_call_code(env, module_name, name, c_name, var) <> "\n", var, next}
+      end
+    else
+      case let_bound_expr(name, env) do
+        {:ok, bound} ->
+          Host.compile_expr(bound, env, counter)
+
+        :error ->
+          if caller_rc?(env), do: ValueSlots.track(var)
+          {ValueSlots.boxed_decl(var, "elmc_int_zero()", env), var, next}
+      end
+    end
+  end
+
+  defp let_bound_expr(name, env) do
+    case EnvBindings.let_value_expr(env, name) do
+      bound when is_map(bound) -> {:ok, bound}
+      _ -> :error
     end
   end
 
@@ -1665,7 +1699,7 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
     |> Enum.with_index()
     |> Enum.reject(fn {var, index} ->
       var == out or passthrough?(arg_passthrough, index) or
-        EnvBindings.borrowed_arg_ref?(env, var) or RcRuntimeEmit.function_out_ref?(var)
+        non_owned_call_operand?(env, var)
     end)
     |> Enum.map(fn {var, _index} -> var end)
     |> Enum.map_join("\n  ", &ValueSlots.post_call_operand_release/1)
@@ -1682,7 +1716,7 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
     arg_vars
     |> Enum.zip(arg_passthrough)
     |> Enum.reject(fn {var, passthrough?} ->
-      var == out or passthrough? or EnvBindings.borrowed_arg_ref?(env, var)
+      var == out or passthrough? or non_owned_call_operand?(env, var)
     end)
     |> Enum.map_join("\n  ", fn {var, _} -> ValueSlots.post_call_operand_release(var) end)
     |> case do
@@ -1690,6 +1724,16 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
       releases -> releases
     end
   end
+
+  # Direct-render / borrow_arg params are caller-owned aliases — never release them
+  # after a callee call, even when the callee is marked `:retain_arg`.
+  defp non_owned_call_operand?(env, var) when is_binary(var) do
+    EnvBindings.borrowed_arg_ref?(env, var) or
+      EnvBindings.direct_param_ref?(env, var) or
+      RcRuntimeEmit.function_out_ref?(var)
+  end
+
+  defp non_owned_call_operand?(_env, _var), do: false
 
   defp field_accessor_field(%{op: :field_access, field: field}) when is_binary(field),
     do: field

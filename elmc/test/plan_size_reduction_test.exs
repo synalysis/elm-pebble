@@ -273,6 +273,29 @@ defmodule Elmc.PlanSizeReductionTest do
     assert c =~ "plan_native_bool_3"
   end
 
+  test "rc_required literal Int value return skips owned shell and boxing" do
+    decl = %{
+      name: "angleEast",
+      args: [],
+      type: "Int",
+      ownership: [:borrow_arg, :borrow_result],
+      expr: %{op: :int_literal, value: 49_152}
+    }
+
+    Process.put(:elmc_program_decls, %{{"Main", "angleEast"} => decl})
+
+    assert {:ok, plan} = PlanLower.lower(decl, "Main", %{}, rc_required: true)
+    assert plan.native_scalar_return == :native_int
+    assert plan.native_scalar_value_return
+
+    c = CLowerFunction.emit(plan)
+    assert c =~ "return 49152"
+    refute c =~ "Rc ="
+    refute c =~ "owned["
+    refute c =~ "CHECK_RC"
+    refute c =~ "elmc_new_int"
+  end
+
   test "Program-return main tails literal int into out without owned slot" do
     decl = %{
       name: "main",
@@ -492,7 +515,9 @@ defmodule Elmc.PlanSizeReductionTest do
         _ -> flunk("spawnTileWithSeed plan body not found in generated C")
       end
 
-    refute spawn_fn =~ "plan_call_int_"
+    # Value-return native callees may box once via plan_call_int_ + elmc_new_int when the
+    # result is later consumed as an owned ElmcValue* (tuple seed). Forbid RC-ABI ping-pong
+    # (CHECK_RC then immediately re-box the same call).
     refute spawn_fn =~ ~r/elmc_fn_Main_advanceSeed\([^;]+;\s*CHECK_RC\(Rc\);\s*Rc = elmc_new_int/
     refute spawn_fn =~ ~r/elmc_fn_Main_randomIndex\([^;]+;\s*CHECK_RC\(Rc\);\s*Rc = elmc_new_int/
     assert spawn_fn =~ "elmc_fn_Main_countEmpty(&plan_native_int_"

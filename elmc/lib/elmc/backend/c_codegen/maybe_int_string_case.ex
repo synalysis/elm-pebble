@@ -19,6 +19,8 @@ defmodule Elmc.Backend.CCodegen.MaybeIntStringCase do
   def try_emit(_module_name, _name, nil, _decl_map), do: :error
 
   def try_emit(module_name, name, expr, decl_map) do
+    expr = expand_let_bindings(expr)
+
     with {:ok, body} <- try_emit_with_default_append(module_name, name, expr, decl_map) do
       FusionSupport.ok_rc(body, [])
     else
@@ -261,14 +263,31 @@ defmodule Elmc.Backend.CCodegen.MaybeIntStringCase do
   defp ge_compare_threshold(
          %{op: :if,
            cond: %{op: :compare, kind: :gt, left: %{op: :var, name: left}, right: %{op: :int_literal, value: threshold}},
-           then_expr: %{op: :constructor_call, target: "True"},
+           then_expr: then_expr,
            else_expr: %{op: :compare, kind: :eq, left: %{op: :var, name: right}, right: %{op: :int_literal, value: threshold2}}},
          var
        )
-       when left == var and right == var and threshold == threshold2,
-       do: {:ok, threshold}
+       when left == var and right == var and threshold == threshold2 do
+    if bool_true?(then_expr), do: {:ok, threshold}, else: :error
+  end
 
   defp ge_compare_threshold(_, _), do: :error
+
+  defp bool_true?(%{op: :bool_literal, value: true}), do: true
+  defp bool_true?(%{op: :int_literal, value: 1}), do: true
+
+  defp bool_true?(%{op: :constructor_call, target: target, args: args}) when args in [nil, []] do
+    target == "True" or String.ends_with?(target, ".True")
+  end
+
+  defp bool_true?(%{op: :constructor_ref, target: target}) do
+    target == "True" or String.ends_with?(target, ".True")
+  end
+
+  defp bool_true?(_expr), do: false
+
+  defp expand_let_bindings(%{op: :let_bindings} = expr), do: ElmEx.Frontend.LetBindings.expand(expr)
+  defp expand_let_bindings(expr), do: expr
 
   defp parse_threshold_suffix_arm(expr, var) do
     with {:ok, left, right} <- append_parts(expr),
@@ -400,6 +419,8 @@ defmodule Elmc.Backend.CCodegen.MaybeIntStringCase do
   @spec extract_fusion_data(String.t(), String.t(), Types.ir_expr() | nil, Types.function_decl_map()) ::
           {:ok, :maybe_int_string, Types.fusion_metadata()} | :error
   def extract_fusion_data(module_name, name, expr, decl_map) do
+    expr = expand_let_bindings(expr)
+
     case extract_default_append_fusion(module_name, name, expr, decl_map) do
       {:ok, data} ->
         {:ok, :maybe_int_string, data}

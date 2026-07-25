@@ -2,6 +2,7 @@ defmodule Elmc.Backend.CCodegen.CallCompile do
   @moduledoc false
 
   alias Elmc.Backend.CCodegen.BuiltinOperators
+  alias Elmc.Backend.CCodegen.EnvBindings
   alias Elmc.Backend.CCodegen.FunctionCallCompile
   alias Elmc.Backend.CCodegen.Host
   alias Elmc.Backend.CCodegen.ListHofResolve
@@ -91,7 +92,20 @@ defmodule Elmc.Backend.CCodegen.CallCompile do
 
               _ ->
                 module_name = Map.get(env, :__module__, "Main")
-                FunctionCallCompile.compile(module_name, name, args, env, counter)
+
+                cond do
+                  args in [[], nil] ->
+                    case resolve_local_zero_arg_let_name(name, env) do
+                      {:ok, bound_expr} ->
+                        Host.compile_expr(bound_expr, env, counter)
+
+                      :error ->
+                        FunctionCallCompile.compile(module_name, name, args, env, counter)
+                    end
+
+                  true ->
+                    FunctionCallCompile.compile(module_name, name, args, env, counter)
+                end
             end
         end
 
@@ -295,5 +309,19 @@ defmodule Elmc.Backend.CCodegen.CallCompile do
     """
 
     {code, out, out_counter}
+  end
+
+  defp resolve_local_zero_arg_let_name(name, env) when is_binary(name) do
+    module_name = Map.get(env, :__module__, "Main")
+    decl_map = Map.get(env, :__program_decls__, %{})
+
+    if Map.has_key?(decl_map, {module_name, name}) do
+      :error
+    else
+      case EnvBindings.let_value_expr(env, name) do
+        bound when is_map(bound) -> {:ok, bound}
+        _ -> :error
+      end
+    end
   end
 end

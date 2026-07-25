@@ -78,4 +78,60 @@ defmodule Elmc.Backend.CCodegen.VarArithCompile do
       {code, var, next}
     end
   end
+
+  def compile(%{op: :sub_vars, left: left, right: right}, env, counter) do
+    if EnvBindings.native_int_binding?(env, left) or EnvBindings.native_int_binding?(env, right) do
+      NativeInt.compile_boxed(
+        %{
+          op: :call,
+          name: "__sub__",
+          args: [%{op: :var, name: left}, %{op: :var, name: right}]
+        },
+        env,
+        counter
+      )
+    else
+      {left_prefix, left_ref, counter} = FunctionCallCompile.value_source(env, left, counter)
+      {right_prefix, right_ref, counter} = FunctionCallCompile.value_source(env, right, counter)
+      next = counter + 1
+      var = "tmp_#{next}"
+
+      code =
+        left_prefix <>
+          right_prefix <>
+          RcRuntimeEmit.assign_call(env, var, "elmc_new_int",
+            "elmc_as_int(#{left_ref}) - elmc_as_int(#{right_ref})"
+          )
+
+      {code, var, next}
+    end
+  end
+
+  def compile(%{op: :mul_vars, left: left, right: right}, env, counter) do
+    if EnvBindings.native_int_binding?(env, left) or EnvBindings.native_int_binding?(env, right) do
+      NativeInt.compile_boxed(
+        %{
+          op: :call,
+          name: "__mul__",
+          args: [%{op: :var, name: left}, %{op: :var, name: right}]
+        },
+        env,
+        counter
+      )
+    else
+      {left_prefix, left_ref, counter} = FunctionCallCompile.value_source(env, left, counter)
+      {right_prefix, right_ref, counter} = FunctionCallCompile.value_source(env, right, counter)
+      next = counter + 1
+      var = "tmp_#{next}"
+
+      code =
+        left_prefix <>
+          right_prefix <>
+          RcRuntimeEmit.assign_call(env, var, "elmc_new_int",
+            "elmc_as_int(#{left_ref}) * elmc_as_int(#{right_ref})"
+          )
+
+      {code, var, next}
+    end
+  end
 end

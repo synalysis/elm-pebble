@@ -152,13 +152,19 @@ defmodule Elmc.FrontendGeneratedArtifactsTest do
 
     assert {:ok,
             %{
-              name: "base",
-              op: :let_in,
-              value_expr: %{
-                args: [%{name: "n", op: :var}],
-                name: "helper",
-                op: :call
-              },
+              op: :let_bindings,
+              layout: :inline_first,
+              bindings: [
+                %{
+                  kind: :name,
+                  name: "base",
+                  value: %{
+                    args: [%{name: "n", op: :var}],
+                    name: "helper",
+                    op: :call
+                  }
+                }
+              ],
               in_expr: %{value: 1, op: :add_const, var: "base"}
             }} =
              ElmEx.Frontend.GeneratedExpressionParser.parse("let base = helper n in base + 1")
@@ -167,8 +173,9 @@ defmodule Elmc.FrontendGeneratedArtifactsTest do
              :elm_ex_expr_lexer.string(String.to_charlist("let\nbase = helper n\nin\nbase + 1"))
 
     assert {:ok, expr4} = :elm_ex_expr_parser.parse(tokens4)
-    assert expr4[:op] == :let_in
-    assert expr4[:name] == "base"
+    assert expr4[:op] == :let_bindings
+    assert expr4[:layout] == :inline_first
+    assert hd(expr4[:bindings])[:name] == "base"
     assert expr4[:in_expr][:op] == :add_const
 
     assert {:ok, tokens5, _} =
@@ -212,7 +219,7 @@ defmodule Elmc.FrontendGeneratedArtifactsTest do
                "let maybeTemp = temperatureOf model in case maybeTemp of\nJust temperature -> Pebble.Draw.textInt 0 28 temperature\nNothing -> Pebble.Draw.textLabel 0 28 Pebble.Draw.WaitingForCompanion"
              )
 
-    assert expr6d_inline[:op] == :let_in
+    assert expr6d_inline[:op] == :let_bindings
     assert expr6d_inline[:in_expr][:op] == :case
     assert length(expr6d_inline[:in_expr][:branches]) == 2
 
@@ -221,7 +228,7 @@ defmodule Elmc.FrontendGeneratedArtifactsTest do
                "let\nmaybeTemp = temperatureOf model\nin\ncase maybeTemp of\nJust temperature -> Pebble.Draw.textInt 0 28 temperature\nNothing -> Pebble.Draw.textLabel 0 28 Pebble.Draw.WaitingForCompanion"
              )
 
-    assert expr6d[:op] == :let_in
+    assert expr6d[:op] == :let_bindings
     assert expr6d[:in_expr][:op] == :case
     assert length(expr6d[:in_expr][:branches]) == 2
 
@@ -230,23 +237,23 @@ defmodule Elmc.FrontendGeneratedArtifactsTest do
                "let\nx = a + 1\ny = b + 2\nin\nx + y"
              )
 
-    assert expr6e[:op] == :let_in
-    assert expr6e[:name] == "x"
-    assert expr6e[:in_expr][:op] == :let_in
-    assert expr6e[:in_expr][:name] == "y"
+    assert expr6e[:op] == :let_bindings
+    assert length(expr6e[:bindings]) == 2
+    assert hd(expr6e[:bindings])[:name] == "x"
+    assert Enum.at(expr6e[:bindings], 1)[:name] == "y"
 
     assert {:ok, expr6f} =
              ElmEx.Frontend.GeneratedExpressionParser.parse("let\nf n = n + 1\nin\nf 2")
 
-    assert expr6f[:op] == :let_in
-    assert expr6f[:name] == "f"
-    assert expr6f[:value_expr][:op] == :lambda
+    assert expr6f[:op] == :let_bindings
+    assert hd(expr6f[:bindings])[:name] == "f"
+    assert hd(expr6f[:bindings])[:value][:op] == :lambda
 
     assert {:ok, expr6g} =
              ElmEx.Frontend.GeneratedExpressionParser.parse("let\n(a, b, c) = tuple\nin\na")
 
-    assert expr6g[:op] == :let_in
-    assert expr6g[:name] == "__tupleBind_a_b_c"
+    assert expr6g[:op] == :let_bindings
+    assert hd(expr6g[:bindings])[:kind] == :tuple3
 
     assert {:ok, tokens7, _} =
              :elm_ex_expr_lexer.string(
@@ -343,18 +350,18 @@ defmodule Elmc.FrontendGeneratedArtifactsTest do
     assert {:ok, expr12} =
              ElmEx.Frontend.GeneratedExpressionParser.parse("fn <| value")
 
-    assert expr12[:op] == :call
-    assert expr12[:name] == "fn"
-    assert length(expr12[:args]) == 1
+    assert expr12[:op] == :apply_left
+    assert expr12[:fn_expr][:name] == "fn"
+    assert expr12[:arg][:name] == "value"
 
     assert {:ok, expr12b} =
              ElmEx.Frontend.GeneratedExpressionParser.parse(
                "resolve <| \\bytes -> Result.fromMaybe \"unexpected bytes\" bytes"
              )
 
-    assert expr12b[:op] == :call
-    assert expr12b[:name] == "resolve"
-    assert Enum.at(expr12b[:args], 0)[:op] == :lambda
+    assert expr12b[:op] == :apply_left
+    assert expr12b[:fn_expr][:name] == "resolve"
+    assert expr12b[:arg][:op] == :lambda
 
     assert {:ok, expr13} =
              ElmEx.Frontend.GeneratedExpressionParser.parse("(f << g) value")
@@ -406,14 +413,14 @@ defmodule Elmc.FrontendGeneratedArtifactsTest do
              ElmEx.Frontend.GeneratedExpressionParser.parse("\\(left, right) -> left")
 
     assert expr17b[:op] == :lambda
-    assert expr17b[:args] == ["tupleArg"]
+    assert expr17b[:args] == ["patternArg"]
     assert expr17b[:body][:op] == :let_in
 
     assert {:ok, expr17d} =
              ElmEx.Frontend.GeneratedExpressionParser.parse("\\(a, b, c) -> a")
 
     assert expr17d[:op] == :lambda
-    assert expr17d[:args] == ["tupleArg"]
+    assert expr17d[:args] == ["patternArg"]
     assert expr17d[:body][:op] == :let_in
 
     assert {:ok, expr17e} =
@@ -427,22 +434,22 @@ defmodule Elmc.FrontendGeneratedArtifactsTest do
              ElmEx.Frontend.GeneratedExpressionParser.parse("\\(weight, _) -> weight")
 
     assert expr17f[:op] == :lambda
-    assert expr17f[:args] == ["tupleArg"]
-    assert expr17f[:body][:op] == :let_in
+    assert expr17f[:args] == ["patternArg"]
+    assert expr17f[:body][:op] == :case
 
     assert {:ok, expr17g} =
              ElmEx.Frontend.GeneratedExpressionParser.parse(
                "let\n(Parser parse) = callback\nin\nparse"
              )
 
-    assert expr17g[:op] == :let_in
+    assert expr17g[:op] == :let_bindings
 
     assert {:ok, expr17h} =
              ElmEx.Frontend.GeneratedExpressionParser.parse(
                "let\nclassName = if currentIndex == index then \"a\" else \"b\"\nin\nclassName"
              )
 
-    assert expr17h[:op] == :let_in
+    assert expr17h[:op] == :let_bindings
 
     assert {:ok, expr18} =
              ElmEx.Frontend.GeneratedExpressionParser.parse(
@@ -544,16 +551,16 @@ defmodule Elmc.FrontendGeneratedArtifactsTest do
     assert {:ok, expr24d} =
              ElmEx.Frontend.GeneratedExpressionParser.parse("-0x2")
 
-    assert expr24d[:op] == :call
-    assert expr24d[:name] == "negate"
+    assert expr24d[:op] == :qualified_call
+    assert expr24d[:target] == "Basics.negate"
     assert Enum.at(expr24d[:args], 0)[:op] == :int_literal
     assert Enum.at(expr24d[:args], 0)[:value] == 2
 
     assert {:ok, expr24g} =
              ElmEx.Frontend.GeneratedExpressionParser.parse("-n")
 
-    assert expr24g[:op] == :call
-    assert expr24g[:name] == "negate"
+    assert expr24g[:op] == :qualified_call
+    assert expr24g[:target] == "Basics.negate"
     assert Enum.at(expr24g[:args], 0)[:op] == :var
     assert Enum.at(expr24g[:args], 0)[:name] == "n"
 
@@ -561,8 +568,8 @@ defmodule Elmc.FrontendGeneratedArtifactsTest do
              ElmEx.Frontend.GeneratedExpressionParser.parse("if lt n 0 then -n else n")
 
     assert expr24h[:op] == :if
-    assert expr24h[:then_expr][:op] == :call
-    assert expr24h[:then_expr][:name] == "negate"
+    assert expr24h[:then_expr][:op] == :qualified_call
+    assert expr24h[:then_expr][:target] == "Basics.negate"
 
     assert {:ok, expr24b} =
              ElmEx.Frontend.GeneratedExpressionParser.parse("\"a\" ++ String.fromInt n")
@@ -593,9 +600,9 @@ defmodule Elmc.FrontendGeneratedArtifactsTest do
                "let\nstarter =\ncase context of\n[] -> \"Json.Decode.oneOf\"\n_ -> \"The Json.Decode.oneOf at json\" ++ String.join \"\" (List.reverse context)\nintroduction =\nstarter ++ \" failed in the following \" ++ String.fromInt (List.length errors) ++ \" ways:\"\nin\nString.join \"\\n\\n\" (introduction :: List.indexedMap errorOneOf errors)"
              )
 
-    assert expr24n[:op] == :let_in
-    assert expr24n[:name] == "starter"
-    assert expr24n[:in_expr][:op] == :let_in
+    assert expr24n[:op] == :let_bindings
+    assert hd(expr24n[:bindings])[:name] == "starter"
+    assert length(expr24n[:bindings]) == 2
 
     assert {:ok, expr24o} =
              ElmEx.Frontend.GeneratedExpressionParser.parse("\"\"\"")
@@ -631,22 +638,22 @@ defmodule Elmc.FrontendGeneratedArtifactsTest do
     assert {:ok, expr25} =
              ElmEx.Frontend.GeneratedExpressionParser.parse("a > 0 && b > 0 && c > 0")
 
-    assert expr25[:op] == :if
+    assert expr25[:op] == :bool_and
 
     assert {:ok, expr26} =
              ElmEx.Frontend.GeneratedExpressionParser.parse("a > 0 || b > 0 || c > 0")
 
-    assert expr26[:op] == :if
+    assert expr26[:op] == :bool_or
 
     assert {:ok, expr27} =
              ElmEx.Frontend.GeneratedExpressionParser.parse("a >= b")
 
-    assert expr27[:op] == :if
+    assert expr27[:op] == :bool_or
 
     assert {:ok, expr28} =
              ElmEx.Frontend.GeneratedExpressionParser.parse("a <= b")
 
-    assert expr28[:op] == :if
+    assert expr28[:op] == :bool_or
 
     assert {:ok, expr29} =
              ElmEx.Frontend.GeneratedExpressionParser.parse("a /= b")
@@ -664,18 +671,18 @@ defmodule Elmc.FrontendGeneratedArtifactsTest do
     assert {:ok, expr31} =
              ElmEx.Frontend.GeneratedExpressionParser.parse("a > 0 || b > 0 && c > 0")
 
-    assert expr31[:op] == :if
+    assert expr31[:op] == :bool_or
 
     assert {:ok, expr32} =
              ElmEx.Frontend.GeneratedExpressionParser.parse("(a > 0 || b > 0) && c > 0")
 
-    assert expr32[:op] == :if
+    assert expr32[:op] == :bool_and
 
     assert {:ok, expr33} =
              ElmEx.Frontend.GeneratedExpressionParser.parse("if a > 0 && b > 0 then 1 else 0")
 
     assert expr33[:op] == :if
-    assert expr33[:cond][:op] == :if
+    assert expr33[:cond][:op] == :bool_and
 
     assert {:ok, expr34} =
              ElmEx.Frontend.GeneratedExpressionParser.parse("not (a > 0 || b > 0)")
@@ -994,11 +1001,13 @@ defmodule Elmc.FrontendGeneratedArtifactsTest do
   test "generated declaration parser handles function header lines" do
     assert {:ok, %{name: "update", args: ["msg", "model"], body: "case msg of"}} =
              ElmEx.Frontend.GeneratedDeclarationParser.parse_function_header_line(
+               "update msg model = case msg of",
                "update msg model = case msg of"
              )
 
     assert {:ok, %{name: "decode'", args: ["arg'"], body: "arg'"}} =
              ElmEx.Frontend.GeneratedDeclarationParser.parse_function_header_line(
+               "decode' arg' = arg'",
                "decode' arg' = arg'"
              )
   end

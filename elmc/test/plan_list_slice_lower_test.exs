@@ -397,7 +397,8 @@ defmodule Elmc.PlanListSliceLowerTest do
     min_body = CCodegenExtract.fn_body(c, "elmc_fn_Main_nativeMinRecordFields")
 
     assert min_body =~ "ELMC_RECORD_GET_INDEX_INT"
-    assert min_body =~ "elmc_basics_min"
+    # Prefer a native ternary (or elmc_basics_min) — no boxed record_get.
+    assert min_body =~ ~r/\? plan_native_int_|elmc_basics_min/
     refute min_body =~ "elmc_record_get_index"
   end
 

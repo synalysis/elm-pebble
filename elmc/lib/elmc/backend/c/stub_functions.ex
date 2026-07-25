@@ -177,14 +177,17 @@ defmodule Elmc.Backend.C.StubFunctions do
       |> String.slice(close_paren + 1, 32)
       |> String.trim_leading()
 
-    if not String.starts_with?(after_close, ";"), do: false
-
-    source
-    |> line_prefix_at(name_start)
-    |> String.trim()
-    |> then(fn line_prefix ->
-      Regex.match?(~r/^(?:static\s+)?(?:RC|ElmcValue\s*\*|elmc_int_t|bool)$/u, line_prefix)
-    end)
+    # Must early-return: a bare `if …, do: false` does not exit the function.
+    if not String.starts_with?(after_close, ";") do
+      false
+    else
+      source
+      |> line_prefix_at(name_start)
+      |> String.trim()
+      |> then(fn line_prefix ->
+        Regex.match?(~r/^(?:static\s+)?(?:RC|ElmcValue\s*\*|elmc_int_t|bool)$/u, line_prefix)
+      end)
+    end
   end
 
   defp name_start_for_name(source, name, fallback) do
@@ -227,11 +230,23 @@ defmodule Elmc.Backend.C.StubFunctions do
     end
   end
 
+  # O(line length): walk back to the previous newline. Avoid slicing+splitting the
+  # whole file prefix on every call site (quadratic on large generated C).
   defp line_prefix_at(source, pos) when is_integer(pos) and pos >= 0 do
-    source
-    |> String.slice(0, pos)
-    |> String.split("\n")
-    |> List.last("")
+    size = byte_size(source)
+    pos = min(pos, size)
+    line_start = line_start_before(source, pos - 1)
+    binary_part(source, line_start, pos - line_start)
+  end
+
+  defp line_start_before(_source, idx) when idx < 0, do: 0
+
+  defp line_start_before(source, idx) do
+    if :binary.at(source, idx) == ?\n do
+      idx + 1
+    else
+      line_start_before(source, idx - 1)
+    end
   end
 
   defp argv_call?(args_str) do

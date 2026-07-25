@@ -59,7 +59,13 @@ defmodule Elmc.DrawFieldCmdEncodingTest do
     assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
-    assert generated_c =~ "elmc_render_cmd6(ELMC_RENDER_OP_FILL_CIRCLE, 10, 20, 3, 1, 0, 0)"
+    assert Regex.match?(
+             ~r/elmc_render_cmd6_take\(&owned\[\d+\], ELMC_RENDER_OP_FILL_CIRCLE, 10, 20, 3, 1, 0, 0\)/,
+             generated_c
+           ) or
+             generated_c =~
+               "elmc_render_cmd6(ELMC_RENDER_OP_FILL_CIRCLE, 10, 20, 3, 1, 0, 0)"
+
     refute generated_c =~ ~r/ELMC_RENDER_OP_FILL_CIRCLE[\s\S]{0,300}elmc_new_int\(&owned/
   end
 

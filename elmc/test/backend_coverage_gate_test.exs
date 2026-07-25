@@ -22,6 +22,8 @@ defmodule Elmc.BackendCoverageGateTest do
                    :add_const,
                    :add_vars,
                    :sub_const,
+                   :sub_vars,
+                   :mul_vars,
                    :tuple2,
                    :list_literal,
                    :record_literal,

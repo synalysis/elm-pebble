@@ -14,9 +14,29 @@ defmodule Elmc.Backend.Plan.Allocate do
   @spec run(FunctionPlan.t()) :: {slot_map(), non_neg_integer()}
   def run(%FunctionPlan{blocks: blocks, reg_count: reg_count}) do
     instrs = linear_instrs(blocks)
-    intervals = live_intervals(instrs, reg_count)
+    # Builder may emit dest regs at/above `reg_count` when the count lags; live
+    # intervals must cover every referenced reg or owned slots fall back to `tmp_N`.
+    effective_count = max(reg_count, max_reg_index(instrs) + 1)
+    intervals = live_intervals(instrs, effective_count)
     greedy_slots(intervals)
   end
+
+  defp max_reg_index(instrs) do
+    instrs
+    |> Enum.flat_map(fn {instr, _} -> instr_regs(instr) end)
+    |> Enum.filter(&is_integer/1)
+    |> Enum.max(fn -> -1 end)
+  end
+
+  defp instr_regs(%{terminator: true, uses: uses}) when is_list(uses), do: uses
+
+  defp instr_regs(%{effects: fx} = instr) when is_map(fx) do
+    [Map.get(instr, :dest)] ++
+      List.wrap(fx.borrows) ++ List.wrap(fx.consumes) ++ operand_regs(instr)
+  end
+
+  defp instr_regs(%{dest: dest} = instr), do: [dest | operand_regs(instr)]
+  defp instr_regs(_), do: []
 
   defp linear_instrs(blocks) do
     blocks
@@ -97,7 +117,7 @@ defmodule Elmc.Backend.Plan.Allocate do
   defp operand_regs(%{args: %{subject: subject}}) when is_integer(subject), do: [subject]
   defp operand_regs(_), do: []
 
-  defp mark_def({first, last}, reg, idx) when is_integer(reg) do
+  defp mark_def({first, last}, reg, idx) when is_integer(reg) and reg < length(last) do
     f =
       case Enum.at(first, reg) do
         nil -> List.replace_at(first, reg, idx)
@@ -110,11 +130,11 @@ defmodule Elmc.Backend.Plan.Allocate do
   defp mark_def(acc, _, _), do: acc
 
   defp touch_use({first, last}, reg, idx) when is_integer(reg) and reg < length(last) do
-  f =
-    case Enum.at(first, reg) do
-      nil -> List.replace_at(first, reg, idx)
-      _ -> first
-    end
+    f =
+      case Enum.at(first, reg) do
+        nil -> List.replace_at(first, reg, idx)
+        _ -> first
+      end
 
     {f, List.replace_at(last, reg, max(Enum.at(last, reg), idx))}
   end
