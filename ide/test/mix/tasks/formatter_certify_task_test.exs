@@ -20,6 +20,8 @@ defmodule Mix.Tasks.Formatter.CertifyTaskTest do
              "tmp/base.json",
              "--fixtures",
              "/tmp/fixtures",
+             "--engine",
+             "pretty",
              "--shard-total",
              "4",
              "--shard-index",
@@ -37,6 +39,6 @@ defmodule Mix.Tasks.Formatter.CertifyTaskTest do
         shard_index: nil
       )
 
-    assert args == []
+    assert args == ["--engine", "pretty"]
   end
 end

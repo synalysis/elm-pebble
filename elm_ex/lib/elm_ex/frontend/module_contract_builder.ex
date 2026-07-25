@@ -313,9 +313,25 @@ defmodule ElmEx.Frontend.GeneratedContractBuilder do
       comment_line_inside_function_body?(line_info, next_line) ->
         true
 
+      expression_continuation_line?(line_info) ->
+        true
+
       true ->
         false
     end
+  end
+
+  @spec expression_continuation_line?(scanned_line()) :: boolean()
+  defp expression_continuation_line?(line_info) do
+    not line_info.indented? and expression_continuation_trimmed?(line_info.trimmed)
+  end
+
+  @spec expression_continuation_trimmed?(String.t()) :: boolean()
+  defp expression_continuation_trimmed?(trimmed) when is_binary(trimmed) do
+    String.starts_with?(trimmed, ",") or String.starts_with?(trimmed, "(") or
+      String.starts_with?(trimmed, "{") or String.starts_with?(trimmed, "[") or
+      String.starts_with?(trimmed, ")") or String.starts_with?(trimmed, "]") or
+      String.starts_with?(trimmed, "}")
   end
 
   @spec comment_line_inside_function_body?(scanned_line(), scanned_line() | nil) :: boolean()

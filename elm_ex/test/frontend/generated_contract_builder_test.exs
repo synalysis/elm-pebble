@@ -35,6 +35,24 @@ defmodule ElmEx.Frontend.GeneratedContractBuilderTest do
     refute match?(%{op: :unsupported}, view.expr)
   end
 
+  test "unindented record continuation lines do not truncate function bodies" do
+    source = """
+    module Main exposing (model)
+
+    model = { value = 1
+    , temperature = 2 }
+    """
+
+    model =
+      "Main.elm"
+      |> GeneratedContractBuilder.build(source, "Main", [])
+      |> Map.get(:declarations)
+      |> Enum.find(&(&1.kind == :function_definition and &1.name == "model"))
+
+    assert String.contains?(model.body, "temperature = 2")
+    refute match?(%{op: :unsupported}, model.expr)
+  end
+
   test "block comment prose with equals signs is not parsed as function definitions" do
     source = """
     module InlineBoxIntCorruption exposing (main)

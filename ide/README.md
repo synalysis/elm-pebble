@@ -71,10 +71,13 @@ See **[docs/embedded-emulator.md](docs/embedded-emulator.md)** for architecture,
 cd ide
 mix formatter.parity --limit 25
 mix formatter.parity --json-output tmp/formatter-parity-report.json
-mix formatter.parity --baseline tmp/formatter-parity-baseline.json --update-baseline
-mix formatter.parity --baseline tmp/formatter-parity-baseline.json
-mix formatter.certify --phase B --baseline tmp/formatter-parity-baseline.json
+mix formatter.parity --baseline priv/formatter_parity_baseline.json --update-baseline
+mix formatter.parity --baseline priv/formatter_parity_baseline.json
+mix formatter.certify --phase C --baseline priv/formatter_parity_baseline.json
+./scripts/formatter-ci-gate.sh
 ```
+
+CI runs `./scripts/formatter-ci-gate.sh` in the `ide-formatter-gate` job (elm-format parity phase C + formatter unit tests).
 
 - `comparable_parity_pct` excludes reference formatter failures.
 - `actionable_parity_pct` excludes known fixture limitations (recommended CI gate metric).
