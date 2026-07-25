@@ -11,6 +11,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.NativeRecord do
   alias Elmc.Backend.CCodegen.Host
   alias Elmc.Backend.CCodegen.Native.RecordFields
   alias Elmc.Backend.CCodegen.PlatformStatic
+  alias Elmc.Backend.CCodegen.RcRuntimeEmit
   alias Elmc.Backend.CCodegen.Types
   alias Elmc.Backend.CCodegen.Util
   alias Elmc.Backend.CCodegen.VarAnalysis
@@ -1195,7 +1196,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.NativeRecord do
 
   defp drop_hoists_declared_in_code(code) when is_binary(code) do
     declared_refs =
-      ~r/const elmc_int_t (native_(?:min|max)_\d+) =/
+      ~r/const elmc_int_t (native_(?:min|max)(?:_left|_right)?_\d+) =/
       |> Regex.scan(code)
       |> Enum.map(&List.last/1)
       |> MapSet.new()
@@ -1208,6 +1209,14 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.NativeRecord do
         |> Map.new()
 
       Process.put(:elmc_hoisted_native_ints, hoisted)
+
+      inits =
+        :elmc_hoisted_native_int_inits
+        |> Process.get(%{})
+        |> Enum.reject(fn {ref, _init} -> MapSet.member?(declared_refs, ref) end)
+        |> Map.new()
+
+      Process.put(:elmc_hoisted_native_int_inits, inits)
     end
 
     :ok
@@ -1232,6 +1241,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.NativeRecord do
 
     line_count >= 80 and
       (length(field_entries) >= 3 or line_count >= 160) and
+      not RcRuntimeEmit.rc_style_codegen_body?(field_code) and
       Enum.all?(field_entries, fn
         {_field, nil} ->
           false

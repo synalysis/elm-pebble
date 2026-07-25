@@ -2,32 +2,98 @@ import { readFileSync } from "node:fs";
 import { loadElmcWasm, RC_SUCCESS } from "../../../elmc-wasm-runtime/host/loader.js";
 
 function installDomStubs() {
-  const makeElement = (tag) => ({
-    tagName: tag,
-    nodeType: 1,
-    childNodes: [],
-    firstElementChild: null,
-    parentNode: null,
-    setAttribute() {},
-    appendChild(child) {
-      this.childNodes.push(child);
-      child.parentNode = this;
-      if (child.nodeType === 1) this.firstElementChild = child;
-    },
-    replaceChildren(...kids) {
-      this.childNodes = [...kids];
-    },
-    addEventListener() {},
-    dispatchEvent() {},
-    get textContent() {
-      return this.childNodes.map((n) => n.textContent ?? "").join("");
-    },
-    set textContent(v) {
-      this.childNodes = [{ nodeType: 3, textContent: v }];
-    },
-  });
+  const flattenKids = (kids) => {
+    const out = [];
+    for (const kid of kids) {
+      if (kid && kid.nodeType === 11) {
+        out.push(...kid.childNodes.splice(0, kid.childNodes.length));
+      } else if (kid != null) {
+        out.push(kid);
+      }
+    }
+    return out;
+  };
 
-  globalThis.Node = { TEXT_NODE: 3, ELEMENT_NODE: 1 };
+  const attachReplaceWith = (node) => {
+    node.replaceWith = function replaceWith(...nodes) {
+      const parent = this.parentNode;
+      if (!parent) return;
+      const index = parent.childNodes.indexOf(this);
+      if (index < 0) return;
+      const flat = flattenKids(nodes);
+      parent.childNodes.splice(index, 1, ...flat);
+      this.parentNode = null;
+      for (const n of flat) n.parentNode = parent;
+      if (typeof parent.firstElementChild !== "undefined") {
+        parent.firstElementChild =
+          parent.childNodes.find((c) => c?.nodeType === 1) ?? null;
+      }
+    };
+    return node;
+  };
+
+  const makeElement = (tag) =>
+    attachReplaceWith({
+      tagName: tag,
+      nodeType: 1,
+      childNodes: [],
+      firstElementChild: null,
+      parentNode: null,
+      id: "",
+      setAttribute(name, value) {
+        if (name === "id") this.id = value;
+      },
+      appendChild(child) {
+        const nodes =
+          child && child.nodeType === 11
+            ? child.childNodes.splice(0, child.childNodes.length)
+            : [child];
+        for (const node of nodes) {
+          this.childNodes.push(node);
+          node.parentNode = this;
+          if (node.nodeType === 1 && !this.firstElementChild) {
+            this.firstElementChild = node;
+          }
+        }
+        return child;
+      },
+      replaceChildren(...kids) {
+        for (const child of this.childNodes) child.parentNode = null;
+        const flat = flattenKids(kids);
+        this.childNodes = flat;
+        for (const child of flat) child.parentNode = this;
+        this.firstElementChild = flat.find((c) => c?.nodeType === 1) ?? null;
+      },
+      replaceChild(next, prev) {
+        const index = this.childNodes.indexOf(prev);
+        if (index < 0) return prev;
+        this.childNodes[index] = next;
+        prev.parentNode = null;
+        next.parentNode = this;
+        this.firstElementChild = this.childNodes.find((c) => c?.nodeType === 1) ?? null;
+        return prev;
+      },
+      addEventListener() {},
+      dispatchEvent() {
+        return true;
+      },
+      get textContent() {
+        return this.childNodes.map((n) => n.textContent ?? "").join("");
+      },
+      set textContent(v) {
+        this.childNodes = [
+          attachReplaceWith({
+            nodeType: 3,
+            textContent: String(v),
+            childNodes: [],
+            parentNode: null,
+          }),
+        ];
+        this.firstElementChild = null;
+      },
+    });
+
+  globalThis.Node = { TEXT_NODE: 3, ELEMENT_NODE: 1, DOCUMENT_FRAGMENT_NODE: 11 };
   globalThis.document = {
     title: "",
     body: makeElement("body"),
@@ -36,12 +102,27 @@ function installDomStubs() {
     },
     createElement: (tag) => makeElement(tag),
     createElementNS: (_ns, tag) => makeElement(tag),
-    createTextNode: (text) => ({ nodeType: 3, textContent: text }),
-    createDocumentFragment: () => ({ appendChild() {} }),
+    createTextNode: (text) =>
+      attachReplaceWith({
+        nodeType: 3,
+        textContent: text,
+        childNodes: [],
+        parentNode: null,
+      }),
+    createDocumentFragment: () => ({
+      nodeType: 11,
+      childNodes: [],
+      appendChild(child) {
+        this.childNodes.push(child);
+        child.parentNode = this;
+        return child;
+      },
+    }),
     addEventListener() {},
   };
   document._app = makeElement("div");
   document._app.id = "app";
+  document.body.appendChild(document._app);
 
   globalThis.window = {
     location: {

@@ -32,31 +32,38 @@ defmodule Elmc.Backend.Plan.Lower.IntCall do
       name == "__pow__" ->
         compile_runtime_binop_with_native_box("elmc_basics_pow", left, right, ctx, b)
 
-      Map.has_key?(@binary_ops, name) and int_binop_operands?(left, right) ->
+      # Proven native-int only. Bare vars / field accesses may be Float
+      # (Scene3d `center.x * scale` must not become as_int+i32.mul).
+      Map.has_key?(@binary_ops, name) and prefer_int_binop?(left, right, ctx) ->
         Arith.emit_binary(Map.fetch!(@binary_ops, name), left, right, ctx, b)
 
       name in ["__add__", "__sub__", "__mul__", "__idiv__"] ->
         kind = Map.fetch!(@binary_ops, name)
 
-        cond do
-          float_mixture?(left, right, ctx) ->
-            op =
-              case name do
-                "__add__" -> :add
-                "__sub__" -> :sub
-                "__mul__" -> :mul
-                "__idiv__" -> :idiv
-              end
+        op =
+          case name do
+            "__add__" -> :add
+            "__sub__" -> :sub
+            "__mul__" -> :mul
+            "__idiv__" -> :idiv
+          end
 
+        cond do
+          float_mixture?(left, right, ctx) or soft_float_risk?(left, ctx) or
+              soft_float_risk?(right, ctx) ->
             Arith.emit_boxed_binop(op, left, right, ctx, b)
 
-          int_binop_operands?(left, right) ->
-            Arith.emit_binary(kind, left, right, ctx, b)
-
           true ->
-            with {:ok, l, b1} <- Expr.compile(left, ctx, b),
-                 {:ok, r, b2} <- Expr.compile(right, ctx, b1) do
+            # Calls that return Int (hourHandOffset: currentHour model * 30) are not
+            # `int_operand?` shapes, but after compiling both sides the regs are i32
+            # candidates — keep the pre-prefer_int emit_int_arith_regs fallback.
+            operand_ctx = Context.for_branch_arm(ctx)
+
+            with {:ok, l, b1} <- Expr.compile(left, operand_ctx, b),
+                 {:ok, r, b2} <- Expr.compile(right, operand_ctx, b1) do
               Arith.emit_int_arith_regs(kind, l, r, ctx, b2)
+            else
+              _ -> Arith.emit_boxed_binop(op, left, right, ctx, b)
             end
         end
 
@@ -197,7 +204,15 @@ defmodule Elmc.Backend.Plan.Lower.IntCall do
 
   defp proven_native_int_operand?(%{op: :int_literal}, _ctx), do: true
   defp proven_native_int_operand?(%{op: :bool_literal}, _ctx), do: true
-  defp proven_native_int_operand?(%{op: :var} = var, ctx), do: native_int_param_var?(var, ctx)
+
+  defp proven_native_int_operand?(%{op: :var, name: name} = var, ctx) when is_binary(name) do
+    native_int_param_var?(var, ctx) or Map.get(ctx.local_types || %{}, name) == "Int"
+  end
+
+  defp proven_native_int_operand?(%{op: :field_access, field: field} = expr, ctx)
+       when is_binary(field) do
+    Elmc.Backend.Plan.Lower.Record.int_field?(field, ctx, field_access_base(expr))
+  end
 
   defp proven_native_int_operand?(%{op: :add_const, var: name}, ctx) when is_binary(name),
     do: proven_native_int_operand?(%{op: :var, name: name}, ctx)
@@ -205,8 +220,11 @@ defmodule Elmc.Backend.Plan.Lower.IntCall do
   defp proven_native_int_operand?(%{op: :sub_const, var: name}, ctx) when is_binary(name),
     do: proven_native_int_operand?(%{op: :var, name: name}, ctx)
 
-  defp proven_native_int_operand?(%{op: :add_vars, left: left, right: right}, ctx),
-    do: proven_native_int_operand?(left, ctx) and proven_native_int_operand?(right, ctx)
+  defp proven_native_int_operand?(%{op: op, left: left, right: right}, ctx)
+       when op in [:add_vars, :sub_vars, :mul_vars, :idiv_vars, :mod_vars, :rem_vars, :min_vars, :max_vars],
+       do:
+         proven_native_int_operand?(named_arith_operand(left), ctx) and
+           proven_native_int_operand?(named_arith_operand(right), ctx)
 
   defp proven_native_int_operand?(%{op: :call, name: name, args: [a, b]}, ctx)
        when name in [
@@ -236,10 +254,280 @@ defmodule Elmc.Backend.Plan.Lower.IntCall do
 
   defp proven_native_int_operand?(_, _ctx), do: false
 
+  defp prefer_int_binop?(left, right, ctx) do
+    cond do
+      float_mixture?(left, right, ctx) ->
+        false
+
+      # Known Float record fields (Scene3d) must stay on the boxed/float path.
+      # Unknown field types follow HEAD: int_binop shape → i32 (piece.y + 1,
+      # model.screenW - …). TypedReturn / field registry covers Float fields.
+      known_float_field_operand?(left, ctx) or known_float_field_operand?(right, ctx) ->
+        false
+
+      proven_native_int_binop?(left, right, ctx) ->
+        true
+
+      int_binop_operands?(left, right) and not soft_float_risk?(left, ctx) and
+          not soft_float_risk?(right, ctx) ->
+        true
+
+      # Int-returning helpers (integerLetArithmetic): let-bound Int locals may be
+      # missing from local_types when TypedReturn cannot type the binding. Prefer
+      # i32 when the op shape is int-only and no field-access float risk remains.
+      int_binop_operands?(left, right) and function_returns_int?(ctx) and
+          not field_access_float_risk?(left, ctx) and not field_access_float_risk?(right, ctx) ->
+        true
+
+      # HEAD-like int shape, but never for a *direct* untyped bare var operand.
+      # Color.toCssString `pct x = x * 10000` must stay on f32 (as_int truncates
+      # fractional channels). Nested field/call soft-float risk alone must not
+      # block Int layouts like `screenW - cell / 2` / game-2048 view.
+      int_binop_operands?(left, right) and not untyped_bare_var_operand?(left, ctx) and
+          not untyped_bare_var_operand?(right, ctx) ->
+        true
+
+      true ->
+        false
+    end
+  end
+
+  # Direct operand only — do not recurse into nested calls/fields.
+  # Untyped *params* (lambda/closure args) are often Float — Color.toCssString
+  # `pct x`. Untyped *lets* are usually Int intermediates in layout math.
+  defp untyped_bare_var_operand?(%{op: :var, name: name} = var, ctx) when is_binary(name) do
+    cond do
+      native_int_param_var?(var, ctx) -> false
+      Map.get(ctx.local_types || %{}, name) in ["Int", "Bool"] -> false
+      Map.get(ctx.local_types || %{}, name) == "Float" -> true
+      is_list(ctx.params) and name in ctx.params -> true
+      true -> false
+    end
+  end
+
+  defp untyped_bare_var_operand?(_, _), do: false
+
+  defp function_returns_int?(%Context{} = ctx) do
+    case Map.get(ctx.decl_map || %{}, {ctx.module, ctx.function_name}) do
+      %{type: type} when is_binary(type) ->
+        Elmc.Backend.CCodegen.Host.normalize_type_name(
+          Elmc.Backend.CCodegen.TypeParsing.function_return_type(type) || ""
+        ) == "Int"
+
+      _ ->
+        false
+    end
+  end
+
+  defp field_access_float_risk?(%{op: :field_access, field: field} = expr, ctx)
+       when is_binary(field) do
+    # Mirror soft_float_risk?/2 for fields: only treat as float risk when the
+    # field is known Float (or mjs Float). Unknown fields must not block
+    # `piece.y + 1` int_arith (plan_lower_ir bumpY).
+    soft_float_risk?(expr, ctx)
+  end
+
+  defp field_access_float_risk?(%{op: :field_access}, _ctx), do: true
+
+  defp field_access_float_risk?(%{op: :call, name: name, args: args}, ctx) when is_list(args) do
+    (float_like_unary?(name) and not Enum.all?(args, &proven_native_int_operand?(&1, ctx))) or
+      Enum.any?(args, &field_access_float_risk?(&1, ctx))
+  end
+
+  defp field_access_float_risk?(%{op: :qualified_call, target: target, args: args}, ctx)
+       when is_list(args) do
+    (float_like_unary?(target) and not Enum.all?(args, &proven_native_int_operand?(&1, ctx))) or
+      Enum.any?(args, &field_access_float_risk?(&1, ctx))
+  end
+
+  defp field_access_float_risk?(%{op: op, left: l, right: r}, ctx)
+       when op in [:add_vars, :sub_vars, :mul_vars, :idiv_vars, :mod_vars, :rem_vars, :min_vars, :max_vars],
+       do:
+         field_access_float_risk?(named_arith_operand(l), ctx) or
+           field_access_float_risk?(named_arith_operand(r), ctx)
+
+  defp field_access_float_risk?(_, _), do: false
+
+  defp soft_float_risk?(%{op: :field_access, field: field} = expr, ctx) when is_binary(field) do
+    base = field_access_base(expr)
+
+    cond do
+      Elmc.Backend.Plan.Lower.Record.int_field?(field, ctx, base) ->
+        false
+
+      Elmc.Backend.CCodegen.Native.TypedReturn.expr_type(expr, type_env(ctx)) == "Float" ->
+        true
+
+      # Unknown field type: do not assume Float. Scene3d Float fields are typed
+      # in the registry or via TypedReturn; treating every `.x` as soft-float
+      # forced boxed_binop for Int records (`piece.y + 1`, Ui.Point).
+      true ->
+        false
+    end
+  end
+
+  defp soft_float_risk?(%{op: :field_access}, _ctx), do: true
+
+  defp soft_float_risk?(%{op: op, left: l, right: r}, ctx)
+       when op in [:add_vars, :sub_vars, :mul_vars, :idiv_vars, :mod_vars, :rem_vars, :min_vars, :max_vars],
+       do:
+         soft_float_risk?(named_arith_operand(l), ctx) or
+           soft_float_risk?(named_arith_operand(r), ctx)
+
+  defp soft_float_risk?(%{op: :var, name: name} = var, ctx) when is_binary(name) do
+    cond do
+      # Typed Int params stay on the i32 path (integerLetArithmetic, etc.).
+      native_int_param_var?(var, ctx) ->
+        false
+
+      true ->
+        case Map.get(ctx.local_types || %{}, name) do
+          "Float" ->
+            true
+
+          "Int" ->
+            false
+
+          "Bool" ->
+            false
+
+          # Untyped locals (lambda/pattern binds) are often Float — e.g. Color.toCssString
+          # `pct x = ((x * 10000) |> round …)`. Treating them as Int does
+          # `as_int(0.058)*10000` → 0 and paints every CSS color black.
+          _ ->
+            true
+        end
+    end
+  end
+
+  # Scene3d.updateViewBounds: `abs (a * i.x) + abs (b * i.y) + …` — abs/mul of
+  # record fields are Float, but int_operand? still matches and the old path did
+  # as_int+i32.add → Int dimensions → near≈far clip planes → empty framebuffer.
+  # Abs/negate of proven Int params/locals stay on the native Int path.
+  defp soft_float_risk?(%{op: :call, name: name, args: args}, ctx) when is_list(args) do
+    cond do
+      float_like_unary?(name) and Enum.all?(args, &proven_native_int_operand?(&1, ctx)) ->
+        false
+
+      float_like_unary?(name) ->
+        true
+
+      # Int-returning callees (`currentHour model * 30`) are not soft-float just
+      # because an argument is an untyped record/model param.
+      callee_returns_int?(name, length(args), ctx) ->
+        false
+
+      true ->
+        Enum.any?(args, &soft_float_risk?(&1, ctx))
+    end
+  end
+
+  defp soft_float_risk?(%{op: :qualified_call, target: target, args: args}, ctx) when is_list(args) do
+    cond do
+      float_like_unary?(target) and Enum.all?(args, &proven_native_int_operand?(&1, ctx)) ->
+        false
+
+      float_like_unary?(target) ->
+        true
+
+      callee_returns_int?(target, length(args), ctx) ->
+        false
+
+      true ->
+        Enum.any?(args, &soft_float_risk?(&1, ctx))
+    end
+  end
+
+  defp soft_float_risk?(_, _), do: false
+
+  defp callee_returns_int?(name, arity, ctx) when is_binary(name) and is_integer(arity) do
+    {mod, fun} = split_callee_name(name, ctx.module)
+
+    case Map.get(ctx.decl_map || %{}, {mod, fun}) do
+      %{type: type} when is_binary(type) ->
+        arg_types = Elmc.Backend.CCodegen.TypeParsing.function_arg_types(type) || []
+
+        length(arg_types) == arity and
+          Elmc.Backend.CCodegen.Host.normalize_type_name(
+            Elmc.Backend.CCodegen.TypeParsing.function_return_type(type) || ""
+          ) == "Int"
+
+      _ ->
+        false
+    end
+  end
+
+  defp callee_returns_int?(_, _, _), do: false
+
+  defp split_callee_name(name, default_mod) when is_binary(name) do
+    case String.split(name, ".") do
+      [single] ->
+        {default_mod || "Main", single}
+
+      parts ->
+        {Enum.join(Enum.drop(parts, -1), "."), List.last(parts)}
+    end
+  end
+
+  defp float_like_unary?(name) when is_binary(name) do
+    name in [
+      "Basics.abs",
+      "abs",
+      "Basics.negate",
+      "negate",
+      "Basics.sqrt",
+      "sqrt",
+      "Basics.toFloat",
+      "toFloat"
+    ] or String.ends_with?(name, ".abs") or String.ends_with?(name, ".negate") or
+      String.ends_with?(name, ".sqrt") or String.ends_with?(name, ".toFloat")
+  end
+
+  defp float_like_unary?(_), do: false
+
+  defp named_arith_operand(name) when is_binary(name), do: %{op: :var, name: name}
+  defp named_arith_operand(expr) when is_map(expr), do: expr
+  defp named_arith_operand(other), do: other
+
+  # IR often stores field bases as bare name strings; Record.int_field?/3 expects
+  # a var map (same normalization as Expr.base_expr_for_field_access/1).
+  defp field_access_base(%{op: :field_access, arg: name}) when is_binary(name),
+    do: %{op: :var, name: name}
+
+  defp field_access_base(%{op: :field_access, arg: arg}) when is_map(arg), do: arg
+  defp field_access_base(_), do: nil
+
+  defp known_float_field_operand?(%{op: :field_access} = expr, ctx) do
+    Elmc.Backend.CCodegen.Native.TypedReturn.expr_type(expr, type_env(ctx)) == "Float"
+  end
+
+  defp known_float_field_operand?(%{op: :call, args: args}, ctx) when is_list(args),
+    do: Enum.any?(args, &known_float_field_operand?(&1, ctx))
+
+  defp known_float_field_operand?(%{op: :qualified_call, args: args}, ctx) when is_list(args),
+    do: Enum.any?(args, &known_float_field_operand?(&1, ctx))
+
+  defp known_float_field_operand?(%{op: op, left: l, right: r}, ctx)
+       when op in [:add_vars, :sub_vars, :mul_vars, :idiv_vars],
+       do:
+         known_float_field_operand?(named_arith_operand(l), ctx) or
+           known_float_field_operand?(named_arith_operand(r), ctx)
+
+  defp known_float_field_operand?(_, _), do: false
+
   defp float_mixture?(left, right, ctx),
     do: float_operand?(left, ctx) or float_operand?(right, ctx)
 
   defp float_operand?(%{op: :float_literal}, _ctx), do: true
+
+  defp float_operand?(%{op: :field_access, field: field} = expr, ctx) when is_binary(field) do
+    # Prefer Record.int_field? over TypedReturn's mjs Float heuristic for `.x`/`.y`.
+    if Elmc.Backend.Plan.Lower.Record.int_field?(field, ctx, field_access_base(expr)) do
+      false
+    else
+      Elmc.Backend.CCodegen.Native.TypedReturn.expr_type(expr, type_env(ctx)) == "Float"
+    end
+  end
 
   defp float_operand?(expr, ctx) do
     env = type_env(ctx)
@@ -261,7 +549,13 @@ defmodule Elmc.Backend.Plan.Lower.IntCall do
   defp int_operand?(%{op: :var}), do: true
   defp int_operand?(%{op: :add_const, var: _, value: _}), do: true
   defp int_operand?(%{op: :sub_const, var: _, value: _}), do: true
-  defp int_operand?(%{op: :add_vars, left: _, right: _}), do: true
+
+  # Named binary arith (`sub_vars` etc.) appears nested under `__mul__` /
+  # `__sub__` before Arith rewrites it — must count as an int operand or
+  # prefer_int fails and Int helpers fall into boxed_binop (dropping params).
+  defp int_operand?(%{op: op, left: _, right: _})
+       when op in [:add_vars, :sub_vars, :mul_vars, :idiv_vars, :mod_vars, :rem_vars, :min_vars, :max_vars],
+       do: true
 
   defp int_operand?(%{op: :call, name: name, args: [a, b]})
        when name in ["modBy", "Basics.modBy", "remainderBy", "Basics.remainderBy", "Basics.min", "Basics.max"],

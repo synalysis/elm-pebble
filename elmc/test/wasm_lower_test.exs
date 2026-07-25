@@ -175,6 +175,236 @@ defmodule Elmc.WasmLowerTest do
     refute wat =~ ";; boxed_binop dynamic"
   end
 
+  test "fdiv of native int consts uses float_div_bits not i32.const 0" do
+    # Color.rgb255: scaleFrom255 c = toFloat c / 255. When both sides look like
+    # native ints, the old native-int binop path emitted i32.const 0 for :fdiv.
+    plan =
+      Builder.new("Test", "scale_from_255", args: [], rc_required: true)
+      |> Builder.catch_begin()
+      |> then(fn b ->
+        {c, b1} = Builder.emit_const_int(b, 15)
+        {denom, b2} = Builder.emit_const_int(b1, 255)
+        {dest, b3} = Builder.fresh_reg(b2)
+
+        {_, b4} =
+          Builder.emit(b3, :boxed_binop, %{
+            dest: dest,
+            args: %{op: :fdiv, lhs: c, rhs: denom},
+            effects: Elmc.Backend.Plan.Types.fallible_effects(dest, [c, denom])
+          })
+
+        Builder.emit_ret(b4, dest)
+      end)
+      |> Builder.catch_end()
+      |> then(&Builder.to_function_plan/1)
+
+    assert {:ok, module_map} = Lower.lower(plan)
+    wat = Lower.render_wat(module_map)
+
+    assert wat =~ "runtime_float_div_bits"
+    assert wat =~ "runtime_as_float"
+    assert wat =~ "runtime_new_float"
+    refute wat =~ ~r/\(i32\.const 0\)\s*\)\s*;; boxed_binop/
+    # Must not be a bare zero result from the native-int fallback.
+    refute Regex.match?(~r/\$r\d+\s+=\s+\(i32\.const 0\)/, wat) and
+             not String.contains?(wat, "runtime_float_div_bits")
+  end
+
+  test "Float field * scale lowers via boxed f32.mul not as_int+i32.mul" do
+    # Scene3d.updateViewBounds: modelCenterX = originalCenter.x * scale
+    alias Elmc.Backend.Plan.{Builder, Context}
+    alias Elmc.Backend.Plan.Lower.IntCall
+
+    ctx =
+      Context.new(
+        module: "Scene3d",
+        function_name: "updateViewBounds",
+        params: ["scale", "originalCenter"],
+        decl_map: %{},
+        local_types: %{"scale" => "Float"},
+        rc_required: true,
+        fallible: true
+      )
+
+    b0 =
+      Builder.new("Scene3d", "updateViewBounds",
+        args: ["scale", "originalCenter"],
+        rc_required: true,
+        fallible: true
+      )
+      |> Builder.catch_begin()
+
+    {_, b1} = Builder.get_or_load_param(b0, 0, "scale")
+    {_, b2} = Builder.get_or_load_param(b1, 1, "originalCenter")
+
+    expr = %{
+      op: :call,
+      name: "__mul__",
+      args: [
+        %{op: :field_access, arg: %{op: :var, name: "originalCenter"}, field: "x"},
+        %{op: :var, name: "scale"}
+      ]
+    }
+
+    assert {:ok, dest, b3} = IntCall.compile(expr, ctx, b2)
+    plan = Builder.to_function_plan(Builder.emit_ret(Builder.catch_end(b3), dest))
+
+    assert {:ok, module_map} = Lower.lower(plan)
+    wat = Lower.render_wat(module_map)
+
+    assert wat =~ "f32.mul"
+    assert wat =~ "runtime_as_float"
+    assert wat =~ "runtime_new_float"
+    refute wat =~ ~r/i32\.mul\s+\(call \$runtime_as_int/
+  end
+
+  test "untyped Float param * int literal uses f32.mul (Color.toCssString pct)" do
+    # Color.toCssString: pct x = ((x * 10000) |> round |> toFloat) / 100
+    # Lambda param `x` often has no local_types entry; int-path as_int truncates
+    # 15/255≈0.058 → 0 and every channel becomes rgba(0%,…).
+    alias Elmc.Backend.Plan.{Builder, Context}
+    alias Elmc.Backend.Plan.Lower.IntCall
+
+    ctx =
+      Context.new(
+        module: "Color",
+        function_name: "toCssString_lam_0",
+        params: ["x"],
+        decl_map: %{},
+        local_types: %{},
+        rc_required: true,
+        fallible: true
+      )
+
+    b0 =
+      Builder.new("Color", "toCssString_lam_0", args: ["x"], rc_required: true, fallible: true)
+      |> Builder.catch_begin()
+
+    {_, b1} = Builder.get_or_load_param(b0, 0, "x")
+
+    expr = %{
+      op: :call,
+      name: "__mul__",
+      args: [%{op: :var, name: "x"}, %{op: :int_literal, value: 10000}]
+    }
+
+    assert {:ok, dest, b2} = IntCall.compile(expr, ctx, b1)
+    plan = Builder.to_function_plan(Builder.emit_ret(Builder.catch_end(b2), dest))
+
+    assert {:ok, module_map} = Lower.lower(plan)
+    wat = Lower.render_wat(module_map)
+
+    assert wat =~ "f32.mul"
+    assert wat =~ "runtime_new_float"
+    refute wat =~ ~r/i32\.mul\s+\(call \$runtime_as_int/
+  end
+
+  test "abs of field muls sum via f32.add (Scene3d.updateViewBounds dimensions)" do
+    # xDimension = abs(modelX*i.x) + abs(modelY*i.y) + abs(modelZ*i.z)
+    alias Elmc.Backend.Plan.{Builder, Context}
+    alias Elmc.Backend.Plan.Lower.IntCall
+
+    ctx =
+      Context.new(
+        module: "Scene3d",
+        function_name: "updateViewBounds",
+        params: ["a", "b"],
+        decl_map: %{},
+        local_types: %{},
+        rc_required: true,
+        fallible: true
+      )
+
+    b0 =
+      Builder.new("Scene3d", "updateViewBounds",
+        args: ["a", "b"],
+        rc_required: true,
+        fallible: true
+      )
+      |> Builder.catch_begin()
+
+    {_, b1} = Builder.get_or_load_param(b0, 0, "a")
+    {_, b2} = Builder.get_or_load_param(b1, 1, "b")
+
+    abs_mul = fn left, right ->
+      %{
+        op: :call,
+        name: "Basics.abs",
+        args: [
+          %{
+            op: :call,
+            name: "__mul__",
+            args: [
+              %{op: :field_access, arg: %{op: :var, name: left}, field: "x"},
+              %{op: :field_access, arg: %{op: :var, name: right}, field: "x"}
+            ]
+          }
+        ]
+      }
+    end
+
+    expr = %{
+      op: :call,
+      name: "__add__",
+      args: [abs_mul.("a", "b"), abs_mul.("a", "b")]
+    }
+
+    assert {:ok, dest, b3} = IntCall.compile(expr, ctx, b2)
+    plan = Builder.to_function_plan(Builder.emit_ret(Builder.catch_end(b3), dest))
+
+    assert {:ok, module_map} = Lower.lower(plan)
+    wat = Lower.render_wat(module_map)
+
+    assert wat =~ "f32.add"
+    assert wat =~ "runtime_new_float"
+    refute wat =~ ~r/i32\.add\s+\(call \$runtime_as_int/
+  end
+
+  test "int_arith add_vars of floatish regs lowers to f32.add not as_int" do
+    # WebGL.Matrices.projectionMatrix: -(f + n) / (f - n) where f,n come from
+    # Quantity tuple_proj. Plan may still emit int_arith; WASM must f32.add.
+    plan =
+      Builder.new("Test", "clip_sum", args: [], rc_required: true)
+      |> Builder.catch_begin()
+      |> then(fn b ->
+        {f, b1} = Builder.fresh_reg(b)
+        {n, b2} = Builder.fresh_reg(b1)
+        {dest, b3} = Builder.fresh_reg(b2)
+
+        {_, b4} =
+          Builder.emit(b3, :call_runtime, %{
+            dest: f,
+            args: %{builtin: :new_float, literal: 2.5},
+            effects: Elmc.Backend.Plan.Types.fallible_effects(f)
+          })
+
+        {_, b5} =
+          Builder.emit(b4, :call_runtime, %{
+            dest: n,
+            args: %{builtin: :new_float, literal: 0.1},
+            effects: Elmc.Backend.Plan.Types.fallible_effects(n)
+          })
+
+        {_, b6} =
+          Builder.emit(b5, :int_arith, %{
+            dest: dest,
+            args: %{kind: :add_vars, lhs: f, rhs: n},
+            effects: Elmc.Backend.Plan.Types.fallible_effects(dest, [f, n])
+          })
+
+        Builder.emit_ret(b6, dest)
+      end)
+      |> Builder.catch_end()
+      |> then(&Builder.to_function_plan/1)
+
+    assert {:ok, module_map} = Lower.lower(plan)
+    wat = Lower.render_wat(module_map)
+
+    assert wat =~ "f32.add"
+    assert wat =~ "runtime_new_float"
+    refute wat =~ ~r/i32\.add\s+\(call \$runtime_as_int/
+  end
+
   test "float boxed_binop chain keeps add on f32 path after sub" do
     plan =
       Builder.new("Test", "float_chain", args: ["a", "b"], rc_required: true)
@@ -386,5 +616,44 @@ defmodule Elmc.WasmLowerTest do
     assert wat =~ "runtime_basics_not"
     # Must not insert new_int(handle) between equals and not.
     refute wat =~ ~r/runtime_string_equals[\s\S]*?runtime_new_int[\s\S]*?runtime_basics_not/
+  end
+
+  test "call_fn boxes const_int True/False args (no raw i32.const handles)" do
+    # Scene3d.cylinder passes True/False as const_int 1/0. Those collide with
+    # immortal UNIT on WASM unless boxed before the callee retain.
+    callee =
+      Builder.new("Scene3d.Entity", "cylinder", args: ["a", "b", "c", "d"], rc_required: false)
+      |> then(fn b ->
+        {reg, b1} = Builder.get_or_load_param(b, 0, "a")
+        Builder.to_function_plan(Builder.emit_ret(b1, reg))
+      end)
+
+    caller =
+      Builder.new("Scene3d", "cylinder", args: ["m", "c"], rc_required: false)
+      |> then(fn b ->
+        {m, b1} = Builder.get_or_load_param(b, 0, "m")
+        {c, b2} = Builder.get_or_load_param(b1, 1, "c")
+        {t, b3} = Builder.emit_const_int(b2, 1)
+        {f, b4} = Builder.emit_const_int(b3, 0)
+        {dest, b5} = Builder.fresh_reg(b4)
+
+        {_, b6} =
+          Builder.emit(b5, :call_fn, %{
+            dest: dest,
+            args: %{module: "Scene3d.Entity", name: "cylinder", args: [t, f, m, c]},
+            effects: Elmc.Backend.Plan.Types.fallible_effects(dest, [t, f, m, c])
+          })
+
+        Builder.to_function_plan(Builder.emit_ret(b6, dest))
+      end)
+
+    assert {:ok, module_map} = Lower.lower_many([callee, caller])
+    wat = Lower.render_wat(module_map)
+
+    assert wat =~ "elmc_fn_Scene3d_cylinder"
+    assert wat =~ "runtime_new_int"
+    # Must not pass bare i32.const 0/1 as Entity.cylinder args.
+    refute wat =~ ~r/call \$elmc_fn_Scene3d_Entity_cylinder \(local\.get \$reg\d+\) \(local\.get \$reg\d+\)/
+    assert wat =~ ~r/runtime_new_int[\s\S]*?call \$elmc_fn_Scene3d_Entity_cylinder/
   end
 end

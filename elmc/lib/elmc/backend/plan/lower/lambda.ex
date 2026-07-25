@@ -3,7 +3,7 @@ defmodule Elmc.Backend.Plan.Lower.Lambda do
 
   alias Elmc.Backend.CCodegen.{Host, TypeParsing}
   alias Elmc.Backend.CCodegen.VarAnalysis
-  alias Elmc.Backend.Plan.{Builder, Context}
+  alias Elmc.Backend.Plan.{Builder, Context, ParamFieldInference}
   alias Elmc.Backend.Plan.Lower.{Expr, Tuple}
   alias Elmc.Backend.Plan.Types
 
@@ -246,6 +246,15 @@ defmodule Elmc.Backend.Plan.Lower.Lambda do
 
     lambda_param_types = lambda_param_types(parent_ctx, lambda_args)
 
+    # Same as Function.seed_inferred_param_fields: anonymous record field_access
+    # on lambda params (e.g. Scene3d.composite `\scene -> scene.entities`) must
+    # not fall back to index 0 when the param type is erased in the closure.
+    inferred_param_fields =
+      Map.merge(
+        parent_ctx.inferred_param_fields || %{},
+        ParamFieldInference.infer(%{expr: body, args: lambda_args})
+      )
+
     letrec_in_closure? =
       parent_ctx.letrec_in_closure or
         map_size(letrec_capture_indices) > 0 or
@@ -265,6 +274,7 @@ defmodule Elmc.Backend.Plan.Lower.Lambda do
         letrec_capture_indices: letrec_capture_indices,
         lambda_plan: true,
         local_types: Map.merge(parent_ctx.local_types || %{}, lambda_param_types),
+        inferred_param_fields: inferred_param_fields,
         curried_type_offset: (parent_ctx.curried_type_offset || 0) + length(lambda_args)
       )
 
@@ -355,9 +365,12 @@ defmodule Elmc.Backend.Plan.Lower.Lambda do
         :scratch -> Builder.fresh_reg(b)
       end
 
-    # Named locals nested into the closure must be retain-dup'd then consumed —
-    # otherwise they stay borrows and epilogue frees them under the closure/`fn_out`.
-    {capture_regs, b1a} = Builder.dup_named_locals_for_consume(b1, capture_regs)
+    # Always retain-dup capture regs before make_closure's transfer-consume.
+    # Nested lambdas share parent free vars (andThen's `callback` / `decodeA`).
+    # Duping only "named locals" in the nested builder leaves parent regs to be
+    # zeroed, so the outer closure captures INT 0 and skipFrozenViewsPrefix
+    # decodes at offset 0 (Page Data Error).
+    {capture_regs, b1a} = Builder.dup_all_regs_for_consume(b1, capture_regs)
     {borrows, consumes} = {[], capture_regs}
 
     wrap_catch? = Builder.wrap_fallible_instr_catch?(b1a, ctx, true)
@@ -388,25 +401,56 @@ defmodule Elmc.Backend.Plan.Lower.Lambda do
   end
 
   defp lambda_param_types(parent_ctx, lambda_args) when is_list(lambda_args) do
+    from_root = lambda_param_types_from_root(parent_ctx, lambda_args)
+    from_expected = lambda_param_types_from_expected(parent_ctx, lambda_args)
+    # Call-site expected types (withMetadata combine, etc.) win over the enclosing
+    # root function's curried offset, which does not describe nested lambdas.
+    Map.merge(from_root, from_expected)
+  end
+
+  defp lambda_param_types_from_root(parent_ctx, lambda_args) do
     with module when is_binary(module) <- parent_ctx.module,
          root when is_binary(root) <- Context.root_function_name(parent_ctx),
          %{type: type} <- Map.get(parent_ctx.decl_map, {module, root}, %{}),
          arg_types when is_list(arg_types) <- TypeParsing.function_arg_types(type),
          offset when is_integer(offset) <- parent_ctx.curried_type_offset || 0 do
-      lambda_args
-      |> Enum.with_index()
-      |> Enum.reduce(%{}, fn {arg, idx}, acc ->
-        case Enum.at(arg_types, offset + idx) do
-          arg_type when is_binary(arg_type) ->
-            Map.put(acc, arg, Host.normalize_type_name(arg_type))
-
-          _ ->
-            acc
-        end
-      end)
+      bind_lambda_arg_types(lambda_args, arg_types, offset)
     else
       _ -> %{}
     end
+  end
+
+  defp lambda_param_types_from_expected(parent_ctx, lambda_args) do
+    case parent_ctx.expected_fn_type do
+      type when is_binary(type) ->
+        bind_lambda_arg_types(lambda_args, TypeParsing.function_arg_types(type), 0)
+
+      _ ->
+        %{}
+    end
+  end
+
+  defp bind_lambda_arg_types(lambda_args, arg_types, offset)
+       when is_list(lambda_args) and is_list(arg_types) and is_integer(offset) do
+    lambda_args
+    |> Enum.with_index()
+    |> Enum.reduce(%{}, fn {arg, idx}, acc ->
+      case Enum.at(arg_types, offset + idx) do
+        arg_type when is_binary(arg_type) ->
+          normalized = Host.normalize_type_name(arg_type)
+
+          # Skip type variables (`a`, `b`) — they must not look like concrete
+          # record aliases and must not force Float soft-risk either.
+          if ElmEx.IR.TypeSignature.type_variable?(normalized) do
+            acc
+          else
+            Map.put(acc, arg, normalized)
+          end
+
+        _ ->
+          acc
+      end
+    end)
   end
 
   defp record_lambda_unsupported(ctx, step) when is_map(ctx) do

@@ -286,6 +286,36 @@ defmodule Elmc.Backend.Plan.Lower.Platform.Web do
 
   def rewrite_html_lazy_function_decl(_module, decl, _opts), do: decl
 
+  @doc """
+  Apply all web function-decl rewrites (tag helpers, Html.map, partial Html.map,
+  Html.lazy). Idempotent. Used when lowering a function *body*.
+  """
+  @spec rewrite_function_decl(String.t(), map(), keyword() | map()) :: map()
+  def rewrite_function_decl(module, decl, opts \\ []) when is_binary(module) and is_map(decl) do
+    decl
+    |> then(&rewrite_html_tag_function_decl(module, &1, opts))
+    |> then(&rewrite_html_map_function_decl(module, &1, opts))
+    |> then(&rewrite_partial_html_map_function_decl(module, &1, opts))
+    |> then(&rewrite_html_lazy_function_decl(module, &1, opts))
+  end
+
+  @doc """
+  Sync call-site arity with eta-expanded partial `Html.map` bindings
+  (`wrap = Html.map identity` → 1-arg). Does **not** rewrite Html tag
+  helpers in the map — those stay CAF-shaped for call sites; only the
+  callee body rewrite (via `rewrite_function_decl/3`) eta-expands them.
+  """
+  @spec rewrite_decl_map(map(), keyword() | map()) :: map()
+  def rewrite_decl_map(decl_map, opts \\ []) when is_map(decl_map) do
+    Map.new(decl_map, fn
+      {{module, _name} = key, decl} when is_binary(module) and is_map(decl) ->
+        {key, rewrite_partial_html_map_function_decl(module, decl, opts)}
+
+      other ->
+        other
+    end)
+  end
+
   defp html_map_partial(%{
          op: :qualified_call,
          target: target,
@@ -320,6 +350,20 @@ defmodule Elmc.Backend.Plan.Lower.Platform.Web do
         [msg] = args
         event_name = Map.fetch!(@html_event_targets, {module, name})
         compile_html_event(event_name, msg, ctx, b)
+
+      # VirtualDom.on : String -> Handler msg -> Attribute msg (real 2-arg API)
+      web_target?(opts) and module in ["VirtualDom", "Elm.Kernel.VirtualDom", "Html.Events"] and
+          name == "on" and match?([_, _], args) ->
+        [event, handler] = args
+        compile_html_cmd(
+          %{
+            op: :html_cmd,
+            kind: %{op: :int_literal, value: 8},
+            params: [event, handler]
+          },
+          ctx,
+          b
+        )
 
       web_target?(opts) and module == "VirtualDom" and name == "on" and match?([_, _, _], args) ->
         [event, decoder, handler] = args
@@ -434,6 +478,20 @@ defmodule Elmc.Backend.Plan.Lower.Platform.Web do
           match?([_], args) ->
         [arg] = args
         Expr.compile(arg, ctx, b)
+
+      web_target?(opts) and module in ["VirtualDom", "Elm.Kernel.VirtualDom"] and name == "on" and
+          match?([_, _], args) ->
+        [event, handler] = args
+
+        compile_html_cmd(
+          %{
+            op: :html_cmd,
+            kind: %{op: :int_literal, value: 8},
+            params: [event, handler]
+          },
+          ctx,
+          b
+        )
 
       web_target?(opts) and module in ["VirtualDom", "Elm.Kernel.VirtualDom"] and name == "nodeNS" and
           match?([_, _, _], args) ->

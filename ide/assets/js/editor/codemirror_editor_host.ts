@@ -379,6 +379,7 @@ export class CodeMirrorEditorHost {
   onFocusOut?: () => void
   onScroll?: () => void
   onSubmit?: () => void
+  onFormatRequest?: () => void
   vimModeListener?: (event: {mode?: string; subMode?: string}) => void
 
   constructor(hook: HookContext) {
@@ -1034,6 +1035,9 @@ export class CodeMirrorEditorHost {
       this.cancelPendingEditorChange()
       this.syncHiddenInput()
     }
+    this.onFormatRequest = () => {
+      this.requestFormatDocument()
+    }
 
     view.dom.addEventListener("keydown", this.onKeydown)
     view.dom.addEventListener("contextmenu", this.onContextMenu)
@@ -1042,12 +1046,22 @@ export class CodeMirrorEditorHost {
     view.dom.addEventListener("focusout", this.onFocusOut)
     view.scrollDOM.addEventListener("scroll", this.onScroll, {passive: true})
     if (this.form) this.form.addEventListener("submit", this.onSubmit)
+    this.el.addEventListener("ide:request-format", this.onFormatRequest)
   }
 
   unbindDomEvents(): void {
     const view = this.view
     if (!view) return
-    const {onKeydown, onContextMenu, onClick, onFocusIn, onFocusOut, onScroll, onSubmit} = this
+    const {
+      onKeydown,
+      onContextMenu,
+      onClick,
+      onFocusIn,
+      onFocusOut,
+      onScroll,
+      onSubmit,
+      onFormatRequest
+    } = this
     if (onKeydown) view.dom.removeEventListener("keydown", onKeydown)
     if (onContextMenu) view.dom.removeEventListener("contextmenu", onContextMenu)
     if (onClick) view.dom.removeEventListener("click", onClick)
@@ -1055,6 +1069,7 @@ export class CodeMirrorEditorHost {
     if (onFocusOut) view.dom.removeEventListener("focusout", onFocusOut)
     if (onScroll) view.scrollDOM.removeEventListener("scroll", onScroll)
     if (this.form && onSubmit) this.form.removeEventListener("submit", onSubmit)
+    if (onFormatRequest) this.el.removeEventListener("ide:request-format", onFormatRequest)
   }
 
   syncEditorPresentation(): void {
@@ -1565,20 +1580,18 @@ export class CodeMirrorEditorHost {
     this.bindVimInstance()
   }
 
-  applyServerEdit({
-    replace_from,
-    replace_to,
-    inserted_text,
-    cursor_start,
-    cursor_end
-  }: {
-    replace_from: number
-    replace_to: number
-    inserted_text: string
+  applyServerEdit(payload: {
+    replace_from?: number
+    replace_to?: number
+    inserted_text?: string
     cursor_start?: number
     cursor_end?: number
   }): void {
-    if (!this.view) return
+    if (!this.view || !payload || typeof payload !== "object") return
+
+    const replace_from = Number(payload.replace_from)
+    const replace_to = Number(payload.replace_to)
+    const inserted_text = payload.inserted_text
     if (!Number.isInteger(replace_from) || !Number.isInteger(replace_to)) return
     if (typeof inserted_text !== "string") return
 
@@ -1586,8 +1599,8 @@ export class CodeMirrorEditorHost {
     const from = clamp(replace_from, 0, len)
     const to = clamp(replace_to, from, len)
     const nextLen = len - (to - from) + inserted_text.length
-    const start = clamp(Number(cursor_start ?? from), 0, nextLen)
-    const end = clamp(Number(cursor_end ?? start), 0, nextLen)
+    const start = clamp(Number(payload.cursor_start ?? from), 0, nextLen)
+    const end = clamp(Number(payload.cursor_end ?? start), 0, nextLen)
 
     this.view.dispatch({
       changes: {from, to, insert: inserted_text},

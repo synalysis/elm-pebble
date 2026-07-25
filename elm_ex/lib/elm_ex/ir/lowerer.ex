@@ -36,6 +36,18 @@ defmodule ElmEx.IR.Lowerer do
     "List.Nonempty" => %{"Nonempty" => ["Nonempty"]},
     "Svg.PathD" => %{
       "Segment" => ~w(M L H V Z C S Q T A Md Ld Hd Vd Zd Cd Sd Qd Td Ad)
+    },
+    # Scene3d.Entity imports `Node(..)` and matches Group/EmptyNode unqualified.
+    # Without these ctors in import_unqualified_map, bare `Group` falls through to the
+    # global short-name table and can collide with Internal.Compiler.Group (tag 5),
+    # which is also PointNode — transformBy then treats Groups as Points / Empty.
+    "Scene3d.Types" => %{
+      "Node" =>
+        ~w(EmptyNode OpaqueMeshNode TransparentMeshNode ShadowNode PointNode Group Transformed),
+      "Entity" => ["Entity"],
+      "Mesh" =>
+        ~w(EmptyMesh Triangles Facets Indexed MeshWithNormals MeshWithUvs MeshWithNormalsAndUvs MeshWithTangents LineSegments Polyline Points),
+      "Shadow" => ~w(EmptyShadow Shadow)
     }
   }
 
@@ -264,13 +276,16 @@ defmodule ElmEx.IR.Lowerer do
       |> Base.encode16(case: :lower)
 
     %{
-      constructor_unqualified: Map.new(acc.constructor_unqualified),
+      # Drop short names that appear under multiple modules (e.g. Group). Last-wins
+      # Map.new would otherwise bind Group to Internal.Compiler.Group (tag 5) and
+      # poison Scene3d.Types.Group (tag 6) pattern matches / constructor builds.
+      constructor_unqualified: unique_short_name_map(acc.constructor_unqualified),
       constructor_qualified: Map.new(acc.constructor_qualified),
-      payload_kind_unqualified: Map.new(acc.payload_kind_unqualified),
+      payload_kind_unqualified: unique_short_name_map(acc.payload_kind_unqualified),
       payload_kind_qualified: Map.new(acc.payload_kind_qualified),
-      payload_arity_unqualified: Map.new(acc.payload_arity_unqualified),
+      payload_arity_unqualified: unique_short_name_map(acc.payload_arity_unqualified),
       payload_arity_qualified: Map.new(acc.payload_arity_qualified),
-      record_alias_unqualified: Map.new(acc.record_alias_unqualified),
+      record_alias_unqualified: unique_short_name_map(acc.record_alias_unqualified),
       record_alias_qualified: Map.new(acc.record_alias_qualified),
       fingerprint: fingerprint
     }
@@ -1238,6 +1253,13 @@ defmodule ElmEx.IR.Lowerer do
     %{expr | args: args ++ [%{op: :var, name: arg_name}]}
   end
 
+  # Never append into `__apply__` — nest binary applies (same as pipe_chain).
+  # Appending turns `f >> g >> h` / expand chains into ternary `__apply__`, which
+  # plan Call only lowers as binary (StencilTest.testSeparate).
+  defp apply_expr_to_arg(%{op: :call, name: "__apply__"} = expr, arg_name) do
+    %{op: :call, name: "__apply__", args: [expr, %{op: :var, name: arg_name}]}
+  end
+
   defp apply_expr_to_arg(%{op: :call, args: args} = expr, arg_name) do
     %{expr | args: args ++ [%{op: :var, name: arg_name}]}
   end
@@ -1264,6 +1286,10 @@ defmodule ElmEx.IR.Lowerer do
 
   defp apply_expr_to_operand(%{op: :qualified_call, args: args} = expr, operand) do
     %{expr | args: args ++ [operand]}
+  end
+
+  defp apply_expr_to_operand(%{op: :call, name: "__apply__"} = expr, operand) do
+    %{op: :call, name: "__apply__", args: [expr, operand]}
   end
 
   defp apply_expr_to_operand(%{op: :call, args: args} = expr, operand) do
@@ -1633,7 +1659,18 @@ defmodule ElmEx.IR.Lowerer do
 
   @spec type_wildcard_name(String.t()) :: String.t() | nil
   defp type_wildcard_name(name) when is_binary(name) do
-    if String.ends_with?(name, "(..)"), do: String.replace_suffix(name, "(..)", ""), else: nil
+    trimmed = String.trim(name)
+
+    cond do
+      String.ends_with?(trimmed, "(..)") ->
+        trimmed |> String.replace_suffix("(..)", "") |> String.trim()
+
+      String.ends_with?(trimmed, "( .. )") ->
+        trimmed |> String.replace_suffix("( .. )", "") |> String.trim()
+
+      true ->
+        nil
+    end
   end
 
   defp type_wildcard_name(_), do: nil
@@ -2086,16 +2123,102 @@ defmodule ElmEx.IR.Lowerer do
 
     case segments do
       [_single] ->
+        import_mod = import_module_for_ctor(lookup, unqualified_name)
+        current_mod = Map.get(lookup, :current_module)
+
         lookup.local[unqualified_name] ||
+          (is_binary(import_mod) &&
+             Map.get(lookup.qualified, "#{import_mod}.#{unqualified_name}")) ||
+          lookup_qualified_affinity(lookup.qualified, current_mod, unqualified_name) ||
           lookup.unqualified[unqualified_name] ||
           builtin_constructor_tag(unqualified_name)
 
       _many ->
-        lookup.qualified[target] ||
-          lookup.unqualified[unqualified_name] ||
+        # Qualified targets must not fall back to an ambiguous short-name table
+        # (Group → Internal.Compiler.Group tag 5 vs Scene3d.Types.Group tag 6).
+        Map.get(lookup.qualified, target) ||
+          lookup_qualified_affinity(lookup.qualified, Map.get(lookup, :current_module), unqualified_name) ||
           builtin_constructor_tag(unqualified_name)
     end
   end
+
+  defp import_module_for_ctor(lookup, name) when is_map(lookup) and is_binary(name) do
+    case Map.get(lookup, :import_unqualified_map, %{}) |> Map.get(name) do
+      mod when is_binary(mod) and mod != "" -> mod
+      _ -> nil
+    end
+  end
+
+  defp import_module_for_ctor(_, _), do: nil
+
+  # When short names collide across packages, prefer the candidate that shares the
+  # most module-path prefix with the call-site module (Scene3d.Entity + Group →
+  # Scene3d.Types.Group), never an unrelated Internal.Compiler.Group.
+  defp lookup_qualified_affinity(qualified, current_module, short_name)
+       when is_map(qualified) and is_binary(short_name) do
+    suffix = "." <> short_name
+
+    candidates =
+      for {key, tag} <- qualified,
+          is_binary(key) and is_integer(tag),
+          String.ends_with?(key, suffix),
+          do: {key, tag}
+
+    case candidates do
+      [] ->
+        nil
+
+      [{_key, tag}] ->
+        tag
+
+      many when is_binary(current_module) ->
+        target_mod = current_module |> String.split(".") |> Enum.drop(-1)
+
+        scored =
+          Enum.map(many, fn {key, tag} ->
+            key_mod = key |> String.split(".") |> Enum.drop(-1)
+            leading = shared_prefix_len(target_mod, key_mod)
+            {{leading}, String.length(key), tag}
+          end)
+
+        max_score = scored |> Enum.map(&elem(&1, 0)) |> Enum.max()
+
+        if max_score == {0} do
+          nil
+        else
+          scored
+          |> Enum.filter(&(elem(&1, 0) == max_score))
+          |> Enum.max_by(&elem(&1, 1))
+          |> elem(2)
+        end
+
+      _many ->
+        nil
+    end
+  end
+
+  defp lookup_qualified_affinity(_, _, _), do: nil
+
+  defp shared_prefix_len(a, b), do: shared_prefix_len(a, b, 0)
+  defp shared_prefix_len([x | as], [x | bs], n), do: shared_prefix_len(as, bs, n + 1)
+  defp shared_prefix_len(_, _, n), do: n
+
+  # Keep only short names that map to a single tag across the project.
+  defp unique_short_name_map(pairs) when is_list(pairs) do
+    pairs
+    |> Enum.group_by(fn {name, _value} -> name end)
+    |> Enum.flat_map(fn {name, values} ->
+      distinct = values |> Enum.map(fn {_n, v} -> v end) |> Enum.uniq()
+
+      case distinct do
+        [value] -> [{name, value}]
+        _ -> []
+      end
+    end)
+    |> Map.new()
+  end
+
+  defp unique_short_name_map(_), do: %{}
 
   @spec build_constructor_payload([Expr.t()]) :: Expr.t()
   defp build_constructor_payload([left, right]), do: %{op: :tuple2, left: left, right: right}

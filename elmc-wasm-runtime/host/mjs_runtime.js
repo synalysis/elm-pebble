@@ -15,12 +15,34 @@
  */
 
 export function createMjsRuntime(deps) {
-  const { allocHandle, readHandle, TAG_FLOAT, TAG_RECORD, TAG_MAYBE, TAG_MJS } = deps;
+  const {
+    allocHandle,
+    readHandle,
+    TAG_FLOAT,
+    TAG_RECORD,
+    TAG_MAYBE,
+    TAG_MJS,
+    // Optional: when provided, peel single-payload unions (Quantity number).
+    TAG_TUPLE2 = 6,
+    TAG_INT = 1,
+  } = deps;
 
-  const numberValue = (ptr) => {
+  // Scalars for MJS ops. elmc encodes single-constructor unions such as
+  // `Quantity number = Quantity number` as tuple2(tag, payload). Scene3d /
+  // elm-geometry pass those into Matrix4.makePerspective / Vector3 without a
+  // host-side unwrap — treat them as their numeric payload, not as 0.
+  const numberValue = (ptr, depth = 0) => {
+    if (!ptr || depth > 4) return 0;
     const payload = readHandle(ptr);
-    if (payload?.tag === TAG_FLOAT) return payload.value;
-    if (payload?.tag === 1 /* TAG_INT */) return payload.value;
+    if (!payload) return 0;
+    if (payload.tag === TAG_FLOAT) return payload.value;
+    if (payload.tag === TAG_INT) return payload.value;
+    if (payload.tag === TAG_TUPLE2) {
+      return numberValue(payload.second | 0, depth + 1);
+    }
+    if (payload.tag === TAG_RECORD && Array.isArray(payload.fields) && payload.fields.length === 1) {
+      return numberValue(payload.fields[0] | 0, depth + 1);
+    }
     return 0;
   };
 

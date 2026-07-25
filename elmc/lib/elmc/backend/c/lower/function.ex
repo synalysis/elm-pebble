@@ -1793,12 +1793,15 @@ defmodule Elmc.Backend.C.Lower.Function do
 
     boxed_uses = boxed_use_regs(plan, decl_map)
 
+    # Params that are retained / captured still keep owned slots and are boxed
+    # at `load_param` (`elmc_new_int`). Only pure native params are direct
+    # `elmc_int_t` regs with no owned slot.
     pure_native_param_regs =
       Map.keys(all_native_int_regs)
       |> Enum.reject(&MapSet.member?(boxed_uses, &1))
 
     slots = Map.drop(slots, pure_native_param_regs)
-    {all_native_int_regs, slots}
+    {Map.take(all_native_int_regs, pure_native_param_regs), slots}
   end
 
   defp build_tail_inline_skip_regs(%FunctionPlan{} = plan) do

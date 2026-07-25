@@ -48,8 +48,7 @@ defmodule IdeWeb.WorkspaceLive.Types do
 
   @type format_success :: %{
           tab: format_tab(),
-          result: FormatterTypes.format_result(),
-          write_result: :ok | File.posix()
+          result: FormatterTypes.format_result()
         }
 
   @type format_error_payload :: %{

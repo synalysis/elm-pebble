@@ -895,6 +895,13 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
 
   defp compile_special_runtime_call(target, args, ctx, b) when is_binary(target) and is_list(args) do
     case SpecialValues.special_value_from_target(target, args) do
+      %{op: :runtime_call, function: fun, args: call_args} = rewritten
+      when is_binary(fun) and is_list(call_args) ->
+        case compile_runtime_call_with_callee_arg_types(rewritten, target, ctx, b) do
+          {:ok, _, _} = ok -> ok
+          :unsupported -> compile(rewritten, ctx, b)
+        end
+
       %{op: :runtime_call} = rewritten ->
         compile(rewritten, ctx, b)
 
@@ -910,6 +917,138 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
   end
 
   defp compile_special_runtime_call(_, _, _, _), do: :unsupported
+
+  # Thread Elm callee arg types into lambda operands (e.g. BackendTask.Http.withMetadata
+  # `(Metadata -> a -> b) -> …` so combine closures resolve Metadata.statusCode@1).
+  defp compile_runtime_call_with_callee_arg_types(
+         %{function: fun, args: args} = rewritten,
+         elm_target,
+         ctx,
+         b
+       )
+       when is_binary(fun) and is_list(args) and is_binary(elm_target) do
+    # IR-shaped specializers (field-accessor Maybe.andThen/map, list fusions, …) must
+    # run before args are compiled to regs. The typed-args path below is for HOF
+    # lambdas that need callee param types (e.g. BackendTask.Http.withMetadata).
+    case try_ir_specialized_runtime_call(rewritten, ctx, b) do
+      {:ok, _, _} = ok ->
+        ok
+
+      :unsupported ->
+        arg_types = elm_callee_arg_types(elm_target, ctx)
+
+        with id when not is_nil(id) <- RuntimeBuiltins.from_c_symbol(fun),
+             {:ok, arg_regs, b1} <- compile_args_with_expected_types(args, arg_types, ctx, b) do
+          compile_runtime_builtin(id, arg_regs, ctx, b1)
+        else
+          _ -> :unsupported
+        end
+    end
+  end
+
+  defp compile_runtime_call_with_callee_arg_types(_, _, _, _), do: :unsupported
+
+  defp try_ir_specialized_runtime_call(%{function: "elmc_maybe_map"} = expr, ctx, b) do
+    Elmc.Backend.Plan.Lower.MaybeMap.try_compile(expr, ctx, b)
+  end
+
+  defp try_ir_specialized_runtime_call(%{function: "elmc_maybe_and_then"} = expr, ctx, b) do
+    Elmc.Backend.Plan.Lower.MaybeAndThen.try_compile(expr, ctx, b)
+  end
+
+  defp try_ir_specialized_runtime_call(%{function: "elmc_list_repeat", args: args}, ctx, b) do
+    case fold_list_repeat_literals(args, ctx, b) do
+      {:ok, reg, b1} -> {:ok, reg, b1}
+      :error -> :unsupported
+    end
+  end
+
+  defp try_ir_specialized_runtime_call(%{function: "elmc_list_map"} = expr, ctx, b) do
+    case Elmc.Backend.Plan.Lower.ListCursor.try_compile_map(expr, ctx, b) do
+      {:ok, _, _} = ok ->
+        ok
+
+      :unsupported ->
+        Elmc.Backend.Plan.Lower.ListRecord.try_compile_map(expr, ctx, b)
+    end
+  end
+
+  defp try_ir_specialized_runtime_call(%{function: "elmc_list_filter_map"} = expr, ctx, b) do
+    Elmc.Backend.Plan.Lower.FilterMapIdentity.try_compile(expr, ctx, b)
+  end
+
+  defp try_ir_specialized_runtime_call(%{function: "elmc_list_filter"} = expr, ctx, b) do
+    Elmc.Backend.Plan.Lower.ListRecord.try_compile_filter(expr, ctx, b)
+  end
+
+  defp try_ir_specialized_runtime_call(_, _, _), do: :unsupported
+
+  defp retain_last_hof_operand_if_borrowed(b, arg_regs) when is_list(arg_regs) do
+    case arg_regs do
+      [] ->
+        {arg_regs, b}
+
+      args ->
+        {prefix, [last]} = Enum.split(args, -1)
+
+        if Builder.borrow_arg?(b, last) do
+          {owned, b1} = Builder.retain_reg_copy(b, last)
+          {prefix ++ [owned], b1}
+        else
+          {arg_regs, b}
+        end
+    end
+  end
+
+  defp elm_callee_arg_types(target, ctx) when is_binary(target) do
+    {mod, fun} = split_elm_callee(target, ctx.module)
+
+    case Map.get(ctx.decl_map || %{}, {mod, fun}) do
+      %{type: type} when is_binary(type) -> TypeParsing.function_arg_types(type)
+      _ -> []
+    end
+  end
+
+  defp split_elm_callee(target, default_module) when is_binary(target) do
+    parts = String.split(target, ".")
+
+    case parts do
+      [single] ->
+        {default_module || "Main", single}
+
+      many ->
+        {Enum.join(Enum.drop(many, -1), "."), Enum.at(many, -1)}
+    end
+  end
+
+  defp compile_args_with_expected_types(args, arg_types, ctx, b)
+       when is_list(args) and is_list(arg_types) do
+    operand_ctx = Context.for_branch_arm(ctx)
+
+    Enum.reduce_while(Enum.with_index(args), {:ok, [], b}, fn {arg, idx}, {:ok, acc, b_acc} ->
+      expected = Enum.at(arg_types, idx)
+      arg_ctx = maybe_expect_fn_type(operand_ctx, arg, expected)
+
+      case compile(arg, arg_ctx, b_acc) do
+        {:ok, reg, b1} when is_integer(reg) -> {:cont, {:ok, acc ++ [reg], b1}}
+        _ ->
+          record_unsupported(arg, arg_ctx)
+          {:halt, :unsupported}
+      end
+    end)
+  end
+
+  defp maybe_expect_fn_type(ctx, %{op: :lambda}, type) when is_binary(type) do
+    normalized = TypeParsing.normalize_type_name(type)
+
+    if String.contains?(normalized, "->") do
+      Context.with_expected_fn_type(ctx, normalized)
+    else
+      ctx
+    end
+  end
+
+  defp maybe_expect_fn_type(ctx, _, _), do: ctx
 
   defp compile_dotted_var_path(root, fields, ctx, b) when is_binary(root) and is_list(fields) do
     root_ir = %{op: :var, name: root}
@@ -952,6 +1091,10 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
     %{expr | args: args ++ [%{op: :var, name: arg_name}]}
   end
 
+  defp apply_expr_to_arg(%{op: :call, name: "__apply__"} = expr, arg_name) do
+    %{op: :call, name: "__apply__", args: [expr, %{op: :var, name: arg_name}]}
+  end
+
   defp apply_expr_to_arg(%{op: :call, args: args} = expr, arg_name) do
     %{expr | args: args ++ [%{op: :var, name: arg_name}]}
   end
@@ -978,6 +1121,11 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
 
   defp apply_expr_to_operand(%{op: :qualified_call, args: args} = expr, operand) do
     %{expr | args: args ++ [operand]}
+  end
+
+  # Never append into `__apply__` — nest binary applies (compose / expand chains).
+  defp apply_expr_to_operand(%{op: :call, name: "__apply__"} = expr, operand) do
+    %{op: :call, name: "__apply__", args: [expr, operand]}
   end
 
   defp apply_expr_to_operand(%{op: :call, args: args} = expr, operand) do
@@ -1136,16 +1284,25 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
   end
 
   defp compile_literal(%{op: :int_literal, value: value}, ctx, b) do
-    if ctx.rc_required and Context.function_tail?(ctx) do
-      compile_runtime_builtin(:new_int, [], ctx, b, %{literal: value})
-    else
-      Builder.emit_const_int(b, value) |> then(fn {reg, b1} -> {:ok, reg, b1} end)
+    # Heap ABI (WASM RC and memoized top-level values): never publish a raw
+    # i32 as fn_out. Unboxed `64` collides with handle id 64 and Time.every
+    # used to install a ~2ms timer (Scene3d rebuild storm / tab crash).
+    # Float-typed returns must be TAG_FLOAT — Time.every takes Float ms.
+    cond do
+      Context.function_tail?(ctx) and float_return?(ctx) ->
+        compile_runtime_builtin(:new_float, [], ctx, b, %{literal: value * 1.0})
+
+      Context.function_tail?(ctx) ->
+        compile_runtime_builtin(:new_int, [], ctx, b, %{literal: value})
+
+      true ->
+        Builder.emit_const_int(b, value) |> then(fn {reg, b1} -> {:ok, reg, b1} end)
     end
   end
 
   defp compile_literal(%{op: :bool_literal, value: value}, ctx, b) do
     int_val = if value, do: 1, else: 0
-    compile_runtime_builtin(:new_bool, [int_val], ctx, b, %{literal: int_val})
+    compile_runtime_builtin(:new_bool, [], ctx, b, %{literal: int_val})
   end
 
   defp compile_literal(%{op: :sub_none}, ctx, b) do
@@ -1198,6 +1355,20 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
   end
 
   defp compile_literal(_, _, _), do: :unsupported
+
+  defp float_return?(%Context{} = ctx) do
+    name = ctx.function_name
+    mod = ctx.module || "Main"
+    decl_map = ctx.decl_map || %{}
+
+    type =
+      case Map.get(decl_map, {mod, name}) do
+        %{type: t} when is_binary(t) and t != "" -> t
+        _ -> nil
+      end
+
+    is_binary(type) and Host.function_return_type(type) == "Float"
+  end
 
   defp param_index(ctx, name) when is_binary(name) do
     ctx.params
@@ -1935,11 +2106,28 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
 
   defp compile_field_values(fields, ctx, b) do
     operand_ctx = Context.for_branch_arm(ctx)
+    field_names = Enum.map(fields, &literal_field_name/1)
+    types_by_name = literal_field_types_by_name(field_names)
 
     Enum.reduce_while(fields, {:ok, [], b}, fn field, {:ok, acc, b_acc} ->
+      name = literal_field_name(field)
       expr = Map.get(field, :expr) || Map.get(field, :value)
+      expected = Map.get(types_by_name, name)
 
-      case compile(expr, operand_ctx, b_acc) do
+      compile_result =
+        case {expected, expr} do
+          # Elm number polymorphism: `scale = 1` in a Float field must be TAG_FLOAT.
+          # WASM otherwise boxes const_int via new_int → Int-in-Float-slot, and
+          # later Basics.negate/as_float paths treat handle ids as scalars.
+          {"Float", %{op: :int_literal, value: value} = lit}
+          when is_integer(value) and not is_map_key(lit, :union_ctor) ->
+            compile_runtime_builtin(:new_float, [], operand_ctx, b_acc, %{literal: value * 1.0})
+
+          _ ->
+            compile(expr, operand_ctx, b_acc)
+        end
+
+      case compile_result do
         {:ok, reg, b1} ->
           {kept, b2} =
             if is_integer(reg) do
@@ -1956,19 +2144,120 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
     end)
   end
 
+  defp literal_field_name(field) do
+    (Map.get(field, :name) || Map.get(field, :field) || "") |> to_string()
+  end
+
+  # Resolve Float/Int/Bool per field when the literal's field set matches one or
+  # more registered type-alias shapes. If several aliases share the field set
+  # (Point3d / Direction3d / Vector3d all use {x,y,z}), keep a type only when
+  # every match agrees — that still catches Float number-polymorphism.
+  defp literal_field_types_by_name(field_names) when is_list(field_names) do
+    name_set = MapSet.new(Enum.map(field_names, &to_string/1))
+    shapes = Process.get(:elmc_record_alias_shapes, %{})
+    types = Process.get(:elmc_record_field_types, %{})
+
+    matches =
+      shapes
+      |> Enum.filter(fn {_key, shape} ->
+        is_list(shape) and MapSet.equal?(MapSet.new(Enum.map(shape, &to_string/1)), name_set)
+      end)
+      |> Enum.map(fn {key, _} -> Map.get(types, key, %{}) end)
+      |> Enum.reject(&(&1 == %{}))
+
+    case matches do
+      [] ->
+        %{}
+
+      [only] ->
+        Map.new(only, fn {k, v} -> {to_string(k), Host.normalize_type_name(v)} end)
+
+      many ->
+        keys =
+          many
+          |> Enum.map(fn m ->
+            m |> Map.keys() |> Enum.map(&to_string/1) |> MapSet.new()
+          end)
+          |> Enum.reduce(&MapSet.intersection/2)
+
+        Enum.reduce(keys, %{}, fn name, acc ->
+          agreed =
+            many
+            |> Enum.map(fn m ->
+              Host.normalize_type_name(Map.get(m, name) || Map.get(m, to_string(name)))
+            end)
+            |> Enum.reject(&is_nil/1)
+            |> Enum.uniq()
+
+          case agreed do
+            [type] when is_binary(type) and type != "" -> Map.put(acc, name, type)
+            _ -> acc
+          end
+        end)
+    end
+  end
+
   defp int_record_literal_fields?(fields) when is_list(fields) do
     # Prefer expr shape over unscoped field-name Int lookup: the same field name
     # can be Int in one record type and a Point/record in another.
-    fields != [] and Enum.all?(fields, &int_record_field_expr?/1)
+    # Only use record_new_values_ints when every field is a known Int. Number
+    # literals in Float records (Direction3d {x=0,y=0,z=1}, Transformation)
+    # must go through new_float + record_new instead.
+    field_names = Enum.map(fields, &literal_field_name/1)
+    types_by_name = literal_field_types_by_name(field_names)
+
+    fields != [] and
+      types_by_name != %{} and
+      Enum.all?(field_names, fn name -> Map.get(types_by_name, name) == "Int" end) and
+      Enum.all?(fields, fn field ->
+        expr = Map.get(field, :expr) || Map.get(field, :value)
+        # Typed Int fields may be bare vars (params/lets); literals/ops still required
+        # when the registered field type is not known to be Int.
+        # Field reads + Int arith (`labelPoint.x - 9`) are allowed only here — the
+        # record being built already checked every field type is Int.
+        int_record_expr?(expr) or match?(%{op: :var}, expr) or int_record_field_arith?(expr)
+      end)
   end
+
+  # Int record literal field values like `labelPoint.x - 9` / `p.y`.
+  defp int_record_field_arith?(%{op: :field_access, field: field}) when is_binary(field), do: true
+
+  defp int_record_field_arith?(%{op: :call, name: name, args: args}) when is_list(args) do
+    name in ["max", "min", "modBy", "remainderBy", "__idiv__", "__mul__", "__add__", "__sub__"] and
+      Enum.all?(args, fn arg ->
+        int_record_expr?(arg) or int_record_field_arith?(arg) or match?(%{op: :var}, arg)
+      end)
+  end
+
+  defp int_record_field_arith?(%{op: :qualified_call, target: target, args: args})
+       when is_list(args) do
+    int_call_target?(target) and
+      Enum.all?(args, fn arg ->
+        int_record_expr?(arg) or int_record_field_arith?(arg) or match?(%{op: :var}, arg)
+      end)
+  end
+
+  defp int_record_field_arith?(%{op: op})
+       when op in [
+              :add_const,
+              :sub_const,
+              :add_vars,
+              :sub_vars,
+              :mul_vars,
+              :idiv_vars,
+              :min_vars,
+              :max_vars,
+              :mod_vars,
+              :rem_vars,
+              :record_get_int
+            ],
+       do: true
+
+  defp int_record_field_arith?(_), do: false
 
   defp int_record_shape?(field_names) when is_list(field_names) do
     _ = field_names
     false
-  end
-
-  defp int_record_field_expr?(field) do
-    int_record_expr?(Map.get(field, :expr) || Map.get(field, :value))
   end
 
   defp int_record_expr?(%{op: :int_literal, union_ctor: ctor}) when is_binary(ctor), do: false
@@ -2002,9 +2291,17 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
             ],
        do: true
 
+  # Point.x / Rect field reads used in Int record literals
+  # (`{ x = labelPoint.x - 9, … }`). Keep this false for general
+  # int_record_expr? — tuple2_ints_eligible? also calls it and must not treat
+  # Maybe/Result record fields as ints.
   defp int_record_expr?(%{op: :field_access, arg: arg, field: field})
        when is_binary(field) and is_map(arg),
        do: int_record_expr?(arg)
+
+  defp int_record_expr?(%{op: :field_access, arg: arg, field: field})
+       when is_binary(field) and is_binary(arg),
+       do: false
 
   defp int_record_expr?(_), do: false
 
@@ -2284,6 +2581,12 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
           # stay as borrows — EpilogueRelease then frees them while they are nested
           # under the published result. Retain-dup named locals, then consume all args.
           Builder.dup_named_locals_for_consume(b2, arg_regs)
+
+        id in @hof_consumes_last_operand ->
+          # Runtime releases the last operand (elmc_maybe_and_then / result_and_then).
+          # Retain-dup params and named locals so later borrows of the same value
+          # (e.g. Maybe.map2 (andThen .a x) (map .b x)) do not read_after_consume.
+          retain_last_hof_operand_if_borrowed(b2, arg_regs)
 
         true ->
           {arg_regs, b2}

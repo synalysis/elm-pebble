@@ -27,8 +27,6 @@ defmodule Elmc.WasmWebBytesTest do
                    wasm_strict: true
                  })
 
-        manifest = out_dir |> ProjectWriter.manifest_path() |> File.read!() |> Jason.decode!()
-
         refute Enum.any?(ProjectWriter.stub_functions(out_dir), fn stub ->
                  stub["module"] == "Elm.Kernel.Bytes"
                end)

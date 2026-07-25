@@ -1,6 +1,6 @@
 module HeroScene exposing (Model, Msg, init, subscriptions, update, view)
 
-{-| Pebble watchface featuring the Elm tangram (heart) logo, rendered with
+{-| Pebble watchface featuring the Elm tangram (square) logo, rendered with
 elm-3d-scene (WebGL under the hood).
 
 Keeps CPU light: no physics solver — just a slow camera orbit and a few
@@ -61,7 +61,7 @@ tickMs =
     64
 
 
-{-| Official Elm logo palette (tangram / “heart”).
+{-| Official Elm logo palette (tangram / square).
 -}
 elmCyan : Color
 elmCyan =
@@ -165,7 +165,9 @@ view : Model -> Html Msg
 view model =
     div
         [ classes
-            [ Tw.w_full
+            [ Tw.mx_auto
+            , Tw.w_fit
+            , Tw.max_w_full
             , Tw.overflow_hidden
             , Tw.rounded_lg
             , Tw.border
@@ -193,7 +195,7 @@ view model =
                 , Tw.text_color (gray s300)
                 ]
             ]
-            [ text "Drag to orbit. Watch face is the Elm tangram (heart) — ianmackenzie/elm-3d-scene over elm-explorations/webgl." ]
+            [ text "Drag to orbit. Watch face is the Elm tangram (square) — ianmackenzie/elm-3d-scene over elm-explorations/webgl." ]
         ]
 
 

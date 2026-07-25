@@ -5,6 +5,7 @@ defmodule Elmc.Backend.CCodegen.Native.TypedReturn do
   alias Elmc.Backend.CCodegen.Host
   alias Elmc.Backend.CCodegen.Native.RecordFields
   alias Elmc.Backend.CCodegen.Types
+  alias ElmEx.IR.TypeSignature
 
   @spec function_return?(
           Types.function_decl_key() | nil,
@@ -90,8 +91,23 @@ defmodule Elmc.Backend.CCodegen.Native.TypedReturn do
 
   def expr_type(%{op: :field_access, arg: arg, field: field}, env) when is_binary(field) do
     case RecordFields.field_type(env, arg, field) do
-      type when is_binary(type) -> Host.normalize_type_name(type)
-      _ -> nil
+      type when is_binary(type) ->
+        Host.normalize_type_name(type)
+
+      _ ->
+        # linear-algebra Kernel.MJS *toRecord fields are always Float. Do not
+        # apply this to every untyped `.x`/`.y` (Ui.Point is Int; treating those
+        # as Float forced boxed Number arith and broke Rect literal native ints).
+        cond do
+          mjs_matrix_component_field?(field) ->
+            "Float"
+
+          field in ["x", "y", "z", "w"] and mjs_to_record_base?(arg) ->
+            "Float"
+
+          true ->
+            nil
+        end
     end
   end
 
@@ -105,6 +121,27 @@ defmodule Elmc.Backend.CCodegen.Native.TypedReturn do
     case {expr_type(then_expr, env), expr_type(else_expr, env)} do
       {type, type} when is_binary(type) -> type
       _ -> nil
+    end
+  end
+
+  # `let model = Tuple.first patternArg` (performUserMsg) must carry Model so
+  # `model.pageData` resolves to Platform.Model @4, not nested Ok-payload @1.
+  def expr_type(%{op: op, arg: arg}, env)
+      when op in [:tuple_first_expr, :tuple_first, :tuple_second_expr, :tuple_second] do
+    case expr_type(arg, env) do
+      tuple_type when is_binary(tuple_type) ->
+        elems = TypeSignature.tuple_element_types(tuple_type)
+
+        idx =
+          if op in [:tuple_first_expr, :tuple_first], do: 0, else: 1
+
+        case Enum.at(elems, idx) do
+          type when is_binary(type) and type != "" -> Host.normalize_type_name(type)
+          _ -> nil
+        end
+
+      _ ->
+        nil
     end
   end
 
@@ -132,5 +169,31 @@ defmodule Elmc.Backend.CCodegen.Native.TypedReturn do
       type when is_binary(type) -> Host.normalize_type_name(type)
       _ -> nil
     end
+  end
+
+  defp mjs_matrix_component_field?(<<"m", r, c>>) when r in ?1..?4 and c in ?1..?4, do: true
+  defp mjs_matrix_component_field?(_), do: false
+
+  defp mjs_to_record_base?(%{op: :qualified_call, target: target}) when is_binary(target),
+    do: mjs_to_record_target?(target)
+
+  defp mjs_to_record_base?(%{op: :call, target: {mod, name}})
+       when is_binary(mod) and is_binary(name),
+       do: mjs_to_record_target?("#{mod}.#{name}")
+
+  defp mjs_to_record_base?(%{op: :call, name: name}) when is_binary(name),
+    do: mjs_to_record_target?(name)
+
+  defp mjs_to_record_base?(%{op: :field_access, arg: inner}) when is_map(inner),
+    do: mjs_to_record_base?(inner)
+
+  defp mjs_to_record_base?(_), do: false
+
+  defp mjs_to_record_target?(target) when is_binary(target) do
+    short = target |> String.split(".") |> List.last()
+
+    short in ["toRecord", "m4x4toRecord", "v4toRecord", "v3toRecord", "v2toRecord"] and
+      (String.contains?(target, "Matrix") or String.contains?(target, "Vector") or
+         short in ["m4x4toRecord", "v4toRecord", "v3toRecord", "v2toRecord"])
   end
 end

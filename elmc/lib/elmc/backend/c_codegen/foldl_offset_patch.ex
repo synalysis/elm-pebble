@@ -59,15 +59,15 @@ defmodule Elmc.Backend.CCodegen.FoldlOffsetPatch do
 
   defp parse_foldl_lambda(%{
          op: :lambda,
-         args: ["tupleArg"],
+         args: [tuple_arg],
          body: %{
            op: :let_in,
            name: "dx",
-           value_expr: %{op: :tuple_first_expr, arg: %{op: :var, name: "tupleArg"}},
+           value_expr: %{op: :tuple_first_expr, arg: %{op: :var, name: first_arg}},
            in_expr: %{
              op: :let_in,
              name: "dy",
-             value_expr: %{op: :tuple_second_expr, arg: %{op: :var, name: "tupleArg"}},
+             value_expr: %{op: :tuple_second_expr, arg: %{op: :var, name: second_arg}},
              in_expr: %{
                op: :lambda,
                args: ["acc"],
@@ -75,7 +75,8 @@ defmodule Elmc.Backend.CCodegen.FoldlOffsetPatch do
              }
            }
          }
-       }) do
+       })
+       when is_binary(tuple_arg) and first_arg == tuple_arg and second_arg == tuple_arg do
     parse_set_cell_call(set_cell_call)
   end
 

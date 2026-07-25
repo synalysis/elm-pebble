@@ -201,6 +201,18 @@ defmodule Elmc.Backend.Wasm.ImportCollect do
   defp collect_instr(%{op: :load_local, dest: dest}, acc) when dest in [:fn_out, :branch_out],
     do: put_import_elem(acc, RuntimeImports.import_name(:new_int), 2)
 
+  defp collect_instr(%{op: :int_arith, args: %{kind: kind}}, acc)
+       when kind in [:add_vars, :sub_vars, :mul_vars] do
+    # WASM lower may float-promote floatish regs (Quantity unwrap, new_float
+    # temps) via emit_float_binop — declare those imports even when the plan
+    # op is still :int_arith.
+    acc
+    |> put_import_elem("runtime.as_int", 1)
+    |> put_import_elem(RuntimeImports.import_name(:new_int), 2)
+    |> put_import_elem("runtime.as_float", 1)
+    |> put_import_elem(RuntimeImports.import_name(:new_float), 2)
+  end
+
   defp collect_instr(%{op: :int_arith}, acc) do
     acc
     |> put_import_elem("runtime.as_int", 1)

@@ -20,7 +20,7 @@ export TEST_ULIMIT_V_KB=6291456 ELIXIR_ERL_OPTIONS="+S 1:1 +MMscs 256"
 ```
 
 - `<pkg>` is the package directory name: `elmc`, `ide`, `elmx`, etc.
-- The script sets `ulimit -v` (default **10 GiB** virtual; override with `TEST_ULIMIT_V_KB`) and `ELIXIR_ERL_OPTIONS` (default `+S 1:1 +MMscs 256`).
+- The script sets `ulimit -S -v` (default **6 GiB** soft virtual via `TEST_ULIMIT_V_KB`; hard limit stays open so node wasm probes can raise via `run_without_ulimit`) and `ELIXIR_ERL_OPTIONS` (default `+S 1:1 +MMscs 256`).
 - For heavy local/agent runs, prefer **`TEST_ULIMIT_V_KB=6291456`** (6 GiB) unless a specific test needs more headroom.
 
 ## Large or Full Suites

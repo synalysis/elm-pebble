@@ -78,6 +78,24 @@ export function createVdomPatchRuntime(deps) {
     return 0;
   };
 
+  const vdomMapChild = (ptr) => {
+    const p = readHandle(resolveHtml(ptr));
+    if (p?.tag === TAG_VDOM && p.kind === "map") return p.child | 0;
+    return 0;
+  };
+
+  const normalizeMappers = (mappers) => {
+    if (Array.isArray(mappers)) return mappers.filter((m) => (m | 0) !== 0);
+    const single = mappers | 0;
+    return single ? [single] : [];
+  };
+
+  const pushMapper = (mappers, mapperPtr) => {
+    const m = mapperPtr | 0;
+    if (!m) return normalizeMappers(mappers);
+    return [m, ...normalizeMappers(mappers)];
+  };
+
   const vdomCustom = (ptr) => {
     const p = readHandle(resolveHtml(ptr));
     if (p?.tag !== TAG_VDOM || p.kind !== "custom") return null;
@@ -105,8 +123,9 @@ export function createVdomPatchRuntime(deps) {
     return ns ? document.createElementNS(ns, tag) : document.createElement(tag);
   };
 
-  const applyAttrs = (el, attrs, mapperPtr) => {
+  const applyAttrs = (el, attrs, mappers) => {
     if (!el || !attrs) return;
+    const mapperChain = normalizeMappers(mappers);
     for (const attr of attrs) {
       if (!attr) continue;
       const name = attr.name ?? attr.key;
@@ -119,7 +138,7 @@ export function createVdomPatchRuntime(deps) {
         // Numeric IDL props (width/height) coerce a numeric string fine.
         el[attr.name] = attr.value;
       } else if (attr.kind === "event" && attachDomEvent) {
-        const fn = attachDomEvent(el, attr, mapperPtr | 0);
+        const fn = attachDomEvent(el, attr, mapperChain);
         const state = domState.get(el) ?? { vdomPtr: 0, listeners: [] };
         state.listeners.push({ el, type: attr.event, fn });
         domState.set(el, state);
@@ -129,7 +148,8 @@ export function createVdomPatchRuntime(deps) {
     }
   };
 
-  const mount = (parent, vdomPtr, mapperPtr = 0) => {
+  const mount = (parent, vdomPtr, mappers = []) => {
+    const mapperChain = normalizeMappers(mappers);
     const resolved = resolveHtml(vdomPtr);
     const text = vdomText(resolved);
     if (text != null) {
@@ -140,13 +160,16 @@ export function createVdomPatchRuntime(deps) {
 
     const kind = vdomKind(resolved);
     if (kind === "map") {
-      return mount(parent, resolved, vdomMapper(resolved) || mapperPtr);
+      // Descend into the mapped child while prepending this node's mapper so
+      // nested Html.map composes (inner then outer).
+      const child = vdomMapChild(resolved);
+      return mount(parent, child || resolved, pushMapper(mapperChain, vdomMapper(resolved)));
     }
 
     if (kind === "lazy") {
       const forced = forceLazyHtml(resolved);
       if (forced.rc === 0 && forced.value) {
-        return mount(parent, forced.value, mapperPtr);
+        return mount(parent, forced.value, mapperChain);
       }
       return null;
     }
@@ -156,7 +179,7 @@ export function createVdomPatchRuntime(deps) {
       const handler = custom && customNodeHandlers[custom.renderKey];
       const el = handler ? handler.render(custom.model, custom.facts) : null;
       if (!el) return null;
-      applyAttrs(el, custom.facts, mapperPtr);
+      applyAttrs(el, custom.facts, mapperChain);
       if (parent) parent.appendChild(el);
       domState.set(el, { vdomPtr: resolved | 0, listeners: [] });
       return el;
@@ -165,7 +188,7 @@ export function createVdomPatchRuntime(deps) {
     if (kind === "document") {
       const frag = typeof document !== "undefined" ? document.createDocumentFragment() : null;
       for (const child of vdomChildren(resolved)) {
-        mount(frag, child, mapperPtr);
+        mount(frag, child, mapperChain);
       }
       if (frag && parent) parent.appendChild(frag);
       return frag;
@@ -177,17 +200,17 @@ export function createVdomPatchRuntime(deps) {
     const el = createElementDom(tag, ns);
     if (!el) return null;
 
-    applyAttrs(el, vdomAttrs(resolved), mapperPtr);
+    applyAttrs(el, vdomAttrs(resolved), mapperChain);
 
     const keyed = vdomKeyedChildren(resolved);
     if (keyed) {
       for (const { key, child } of keyed) {
-        const childEl = mount(el, child, mapperPtr);
+        const childEl = mount(el, child, mapperChain);
         if (childEl && key != null) childEl.__vdomKey = String(key);
       }
     } else {
       for (const child of vdomChildren(resolved)) {
-        mount(el, child, mapperPtr);
+        mount(el, child, mapperChain);
       }
     }
 
@@ -196,9 +219,10 @@ export function createVdomPatchRuntime(deps) {
     return el;
   };
 
-  const patch = (oldPtr, newPtr, domNode, mapperPtr = 0) => {
+  const patch = (oldPtr, newPtr, domNode, mappers = []) => {
+    const mapperChain = normalizeMappers(mappers);
     if (!domNode) {
-      return mount(null, newPtr, mapperPtr);
+      return mount(null, newPtr, mapperChain);
     }
 
     const oldResolved = oldPtr ? resolveHtml(oldPtr) : 0;
@@ -218,13 +242,26 @@ export function createVdomPatchRuntime(deps) {
 
     const newKind = vdomKind(newResolved);
     if (newKind === "map") {
-      return patch(oldPtr, newResolved, domNode, vdomMapper(newResolved) || mapperPtr);
+      const child = vdomMapChild(newResolved);
+      // Unwrap Html.map on the *old* side too. Leaving oldPtr as a map node made
+      // custom/webgl patches see oldKind==="map" !== "custom", so they replaced the
+      // canvas via render() instead of calling diff/drawGL — or skipped updates.
+      const oldChild =
+        oldPtr && vdomKind(oldResolved) === "map"
+          ? vdomMapChild(oldResolved) || oldPtr
+          : oldPtr;
+      return patch(
+        oldChild,
+        child || newResolved,
+        domNode,
+        pushMapper(mapperChain, vdomMapper(newResolved))
+      );
     }
 
     if (newKind === "lazy") {
       const forced = forceLazyHtml(newResolved);
       if (forced.rc === 0 && forced.value) {
-        return patch(oldPtr, forced.value, domNode, mapperPtr);
+        return patch(oldPtr, forced.value, domNode, mapperChain);
       }
       return domNode;
     }
@@ -232,18 +269,28 @@ export function createVdomPatchRuntime(deps) {
     if (newKind === "custom") {
       const newCustom = vdomCustom(newResolved);
       const handler = newCustom && customNodeHandlers[newCustom.renderKey];
-      const oldKind = oldPtr ? vdomKind(oldResolved) : null;
+      // Peel Html.map wrappers from the previous tree so we can reuse the canvas.
+      let oldComparePtr = oldPtr;
+      let oldCompareResolved = oldResolved;
+      let oldKind = oldPtr ? vdomKind(oldResolved) : null;
+      while (oldKind === "map" && oldComparePtr) {
+        const unwrapped = vdomMapChild(oldCompareResolved);
+        if (!unwrapped || unwrapped === oldComparePtr) break;
+        oldComparePtr = unwrapped;
+        oldCompareResolved = resolveHtml(oldComparePtr);
+        oldKind = vdomKind(oldCompareResolved);
+      }
 
       if (
         handler &&
         oldKind === "custom" &&
-        vdomCustom(oldResolved)?.renderKey === newCustom.renderKey &&
+        vdomCustom(oldCompareResolved)?.renderKey === newCustom.renderKey &&
         domNode.nodeType === Node.ELEMENT_NODE
       ) {
-        const oldCustom = vdomCustom(oldResolved);
+        const oldCustom = vdomCustom(oldCompareResolved);
         const updated = handler.diff(oldCustom.model, newCustom.model, domNode) || domNode;
         clearListeners(updated);
-        applyAttrs(updated, newCustom.facts, mapperPtr);
+        applyAttrs(updated, newCustom.facts, mapperChain);
         return updated;
       }
 
@@ -251,7 +298,7 @@ export function createVdomPatchRuntime(deps) {
       const parent = domNode.parentNode;
       const fresh = handler ? handler.render(newCustom.model, newCustom.facts) : null;
       if (!fresh) return domNode;
-      applyAttrs(fresh, newCustom.facts, mapperPtr);
+      applyAttrs(fresh, newCustom.facts, mapperChain);
       domNode.replaceWith(fresh);
       domState.set(fresh, { vdomPtr: newResolved | 0, listeners: [] });
       return fresh;
@@ -260,14 +307,14 @@ export function createVdomPatchRuntime(deps) {
     if (domNode.nodeType !== Node.ELEMENT_NODE) {
       clearListeners(domNode);
       const parent = domNode.parentNode;
-      const fresh = mount(parent, newPtr, mapperPtr);
+      const fresh = mount(parent, newPtr, mapperChain);
       if (fresh) domNode.replaceWith(fresh);
       return fresh;
     }
 
     const el = domNode;
     clearListeners(el);
-    applyAttrs(el, vdomAttrs(newResolved), mapperPtr);
+    applyAttrs(el, vdomAttrs(newResolved), mapperChain);
 
     const oldKeyed = oldPtr ? vdomKeyedChildren(oldResolved) : null;
     const newKeyed = vdomKeyedChildren(newResolved);
@@ -290,11 +337,11 @@ export function createVdomPatchRuntime(deps) {
         const existingDom = oldDomByKey.get(k);
         const oldChild = oldMap.get(k) ?? 0;
         if (existingDom) {
-          patch(oldChild, child, existingDom, mapperPtr);
+          patch(oldChild, child, existingDom, mapperChain);
           nextChildren.push(existingDom);
           oldDomByKey.delete(k);
         } else {
-          const created = mount(null, child, mapperPtr);
+          const created = mount(null, child, mapperChain);
           if (created) {
             created.__vdomKey = k;
             nextChildren.push(created);
@@ -319,10 +366,10 @@ export function createVdomPatchRuntime(deps) {
         continue;
       }
       if (!domChild) {
-        mount(el, newChild, mapperPtr);
+        mount(el, newChild, mapperChain);
         continue;
       }
-      patch(oldChild, newChild, domChild, mapperPtr);
+      patch(oldChild, newChild, domChild, mapperChain);
     }
     domState.set(el, { vdomPtr: newResolved | 0, listeners: [] });
     return el;

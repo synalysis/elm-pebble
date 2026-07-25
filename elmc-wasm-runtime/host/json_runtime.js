@@ -683,6 +683,7 @@ export function createJsonRuntime(deps) {
     newJsonValue,
     unwrapJsonValue,
     runDecoderToResult,
+    runDecoderHelp,
     decodeErrorToString,
     DEC_LIST,
     DEC_ARRAY,

@@ -114,13 +114,27 @@ defmodule Elmc.Backend.CCodegen.TypeParsing do
   @spec strip_wrapping_parens(String.t()) :: String.t()
   defp strip_wrapping_parens("(" <> rest = type) do
     if String.ends_with?(type, ")") do
-      rest
-      |> String.slice(0, String.length(rest) - 1)
-      |> normalize_type_name()
+      # Keep real tuples `(A, B)`. Unwrap `(Int)`, `(a -> b)`, and
+      # `(Metadata -> a -> b)` — `tuple_type?/1` only checks outer parens, so it
+      # must not block stripping parenthesized function types.
+      if multi_element_tuple_type?(type) do
+        String.trim(type)
+      else
+        rest
+        |> String.slice(0, String.length(rest) - 1)
+        |> normalize_type_name()
+      end
     else
       type
     end
   end
 
   defp strip_wrapping_parens(type), do: type
+
+  defp multi_element_tuple_type?(type) when is_binary(type) do
+    case ElmEx.IR.TypeSignature.tuple_element_types(type) do
+      [_first, _second | _] -> true
+      _ -> false
+    end
+  end
 end

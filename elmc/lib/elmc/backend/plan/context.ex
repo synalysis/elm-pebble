@@ -25,7 +25,8 @@ defmodule Elmc.Backend.Plan.Context do
     :letrec_in_closure,
     :letrec_capture_indices,
     :lambda_plan,
-    :curried_type_offset
+    :curried_type_offset,
+    :expected_fn_type
   ]
 
   @type t :: %__MODULE__{
@@ -45,7 +46,8 @@ defmodule Elmc.Backend.Plan.Context do
           letrec_in_closure: boolean(),
           letrec_capture_indices: %{String.t() => non_neg_integer()},
           lambda_plan: boolean(),
-          curried_type_offset: non_neg_integer()
+          curried_type_offset: non_neg_integer(),
+          expected_fn_type: String.t() | nil
         }
 
   @type dest :: :scratch | :fn_out | :branch_out
@@ -71,9 +73,21 @@ defmodule Elmc.Backend.Plan.Context do
       letrec_in_closure: Keyword.get(opts, :letrec_in_closure, false),
       letrec_capture_indices: Keyword.get(opts, :letrec_capture_indices, %{}),
       lambda_plan: Keyword.get(opts, :lambda_plan, false),
-      curried_type_offset: Keyword.get(opts, :curried_type_offset, 0)
+      curried_type_offset: Keyword.get(opts, :curried_type_offset, 0),
+      expected_fn_type: Keyword.get(opts, :expected_fn_type)
     }
   end
+
+  @doc """
+  Expect a lambda argument to match this Elm function type (e.g. call-site
+  `withMetadata : (Metadata -> a -> b) -> …` typing the combine closure).
+  """
+  @spec with_expected_fn_type(t(), String.t() | nil) :: t()
+  def with_expected_fn_type(ctx, type) when is_binary(type),
+    do: %{ctx | expected_fn_type: type}
+
+  def with_expected_fn_type(ctx, _),
+    do: %{ctx | expected_fn_type: nil}
 
   @spec from_compile_env(Types.compile_env()) :: t()
   def from_compile_env(env) when is_map(env) do

@@ -25,9 +25,13 @@ init : () -> ( (), Cmd Msg )
 init _ =
     ( ()
     , Cmd.batch
-        [ Http.get
-            { url = "https://slow.example.com/data"
+        [ Http.request
+            { method = "GET"
+            , headers = []
+            , url = "https://slow.example.com/data"
+            , body = Http.emptyBody
             , expect = Http.expectString Got
+            , timeout = Nothing
             , tracker = Just "upload"
             }
         , Http.cancel "upload"

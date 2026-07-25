@@ -47,17 +47,25 @@ defmodule Elmc.Backend.Plan.Lower.Constructor do
         qualified = UnionCtor.qualify(ctor, ctx)
         tag = Map.get(left, :value) || lookup_constructor_tag(qualified, nil)
 
-        if is_integer(tag) do
-          scratch_ctx = %{ctx | dest_stack: [:scratch], function_tail: false}
+        cond do
+          # Nullary ctors in multi-arg nests are `tuple2(Tag, restArgs)`, not
+          # `(tag, payload)`. Treating rest as payload made UseMeshUvs swallow
+          # Constant/AO/NoNormalMap so Entity.mesh never matched LambertianMaterial.
+          nullary_union_ctor?(qualified, ctor) ->
+            :unsupported
 
-          with {:ok, tag_reg, b1} <- compile_union_tag_int(qualified, tag, scratch_ctx, b),
-               {:ok, payload_reg, b2} <- compile_union_payload([payload_expr], scratch_ctx, b1) do
-            Expr.compile_runtime_builtin(:tuple2, [tag_reg, payload_reg], ctx, b2)
-          else
-            _ -> :unsupported
-          end
-        else
-          :unsupported
+          is_integer(tag) ->
+            scratch_ctx = %{ctx | dest_stack: [:scratch], function_tail: false}
+
+            with {:ok, tag_reg, b1} <- compile_union_tag_int(qualified, tag, scratch_ctx, b),
+                 {:ok, payload_reg, b2} <- compile_union_payload([payload_expr], scratch_ctx, b1) do
+              Expr.compile_runtime_builtin(:tuple2, [tag_reg, payload_reg], ctx, b2)
+            else
+              _ -> :unsupported
+            end
+
+          true ->
+            :unsupported
         end
 
       builtin ->
@@ -75,6 +83,31 @@ defmodule Elmc.Backend.Plan.Lower.Constructor do
   end
 
   def compile_payload_tuple2(_, _, _, _), do: :unsupported
+
+  defp nullary_union_ctor?(qualified, ctor) when is_binary(qualified) and is_binary(ctor) do
+    specs = Process.get(:elmc_union_constructor_payload_specs, %{})
+    short = short_name(ctor)
+
+    keys =
+      [{qualified, short}] ++
+        case String.split(qualified, ".") do
+          parts when length(parts) >= 2 ->
+            home = parts |> Enum.drop(-1) |> Enum.join(".")
+            [{home, short}, {home, short_name(qualified)}]
+
+          _ ->
+            []
+        end
+
+    case Enum.find_value(keys, &Map.get(specs, &1)) do
+      spec when is_binary(spec) ->
+        Elmc.Backend.Pebble.Util.payload_arity_for_spec(spec) == 0
+
+      _ ->
+        # Unknown ctor: keep legacy (tag, payload) packing.
+        false
+    end
+  end
 
   def compile(%{target: target} = expr, ctx, b) when is_binary(target) do
     args = Map.get(expr, :args, [])
@@ -229,6 +262,9 @@ defmodule Elmc.Backend.Plan.Lower.Constructor do
   end
 
   defp compile_bool_literal(target, _ctx, b) do
+    # Native-bool returns / compares use raw 0/1 in i32 locals, then box at the
+    # ABI boundary. Heap call args must be boxed via CallCoerce (Bool params) —
+    # raw i32.const 1 collides with immortal UNIT on WASM.
     value =
       cond do
         String.ends_with?(target, "True") -> 1

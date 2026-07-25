@@ -372,7 +372,14 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
   end
 
   defp lambda_or_thunk_body?(%{op: :lambda}), do: true
+  defp lambda_or_thunk_body?(%{op: :constructor_call}), do: true
+  defp lambda_or_thunk_body?(%{op: :partial_constructor}), do: true
+  defp lambda_or_thunk_body?(%{op: :make_closure}), do: true
+  # Partial application CAF: `normalize = scaleTo (Quantity.float 1)`.
+  defp lambda_or_thunk_body?(%{op: :qualified_call, args: [_ | _]}), do: true
+  defp lambda_or_thunk_body?(%{op: :call, args: [_ | _]}), do: true
   defp lambda_or_thunk_body?(%{op: op, body: body}) when op in [:let, :letrec], do: lambda_or_thunk_body?(body)
+  defp lambda_or_thunk_body?(%{op: :let_in, in_expr: body}), do: lambda_or_thunk_body?(body)
   defp lambda_or_thunk_body?(_), do: false
 
   defp type_param_names(type) when is_binary(type) do

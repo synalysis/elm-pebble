@@ -37,11 +37,14 @@ defmodule Elmc do
 
   @doc """
   Typechecks and extracts frontend metadata for an Elm project.
+
+  Does **not** run IR lowering or dead-code stripping — those belong to `compile/2`.
+  IDE save checks and `elmc check` use this lighter path for diagnostics feedback.
   """
   @spec check(String.t()) ::
           {:ok, ElmEx.Frontend.Project.t()} | {:error, RootTypes.frontend_bridge_error()}
   def check(project_dir) do
-    Bridge.load_project(project_dir)
+    Bridge.load_project(project_dir, lowerer_diagnostics: false)
   end
 
   @doc """
@@ -308,7 +311,8 @@ defmodule Elmc do
   defp project_for_compile(_project_dir, %{"project" => %ElmEx.Frontend.Project{} = project}),
     do: {:ok, project}
 
-  defp project_for_compile(project_dir, _opts), do: Bridge.load_project(project_dir)
+  defp project_for_compile(project_dir, _opts),
+    do: Bridge.load_project(project_dir, lowerer_diagnostics: false)
 
   defp plan_legacy_codegen_diagnostics(opts) when is_map(opts) do
     if Map.get(opts, :plan_ir_mode_off_deprecated) == true do

@@ -514,8 +514,17 @@ defmodule Elmc.Backend.CCodegen.Native.FunctionCall do
     end
   end
 
+  defp default_arg_kinds(%{args: [], type: type} = decl, _module_name, _decl_map)
+       when is_binary(type) do
+    # Kernel aliases often keep `args: []` while the type still has arity
+    # (`a -> JsArray a`). Prefer the type signature over mapping zero IR args
+    # (which would cache `[]` and poison later `direct_params` emits that invent
+    # effective arg names from the same type).
+    kernel_alias_type_kinds(decl)
+  end
+
   defp default_arg_kinds(%{args: args, type: type, expr: expr}, module_name, decl_map)
-       when is_list(args) and is_binary(type) do
+       when is_list(args) and args != [] and is_binary(type) do
     arg_types = Host.function_arg_types(type)
 
     args
@@ -540,11 +549,6 @@ defmodule Elmc.Backend.CCodegen.Native.FunctionCall do
           :boxed
       end
     end)
-  end
-
-  defp default_arg_kinds(%{args: [], type: type} = decl, _module_name, _decl_map)
-       when is_binary(type) do
-    kernel_alias_type_kinds(decl)
   end
 
   defp default_arg_kinds(%{args: args, type: type}, _module_name, _decl_map)

@@ -21,4 +21,15 @@ defmodule ElmEx.Frontend.BridgeSourceOverridesTest do
     assert main
     assert Enum.any?(main.declarations, &(&1.name == "add"))
   end
+
+  test "load_project can skip IR lowerer diagnostics" do
+    project_dir = Path.expand("../../elmx/test/fixtures/minimal", __DIR__)
+
+    assert {:ok, project} =
+             Bridge.load_project(project_dir, lowerer_diagnostics: false)
+
+    refute Enum.any?(project.diagnostics, fn diag ->
+             is_map(diag) and Map.get(diag, "type") == "lowerer-warning"
+           end)
+  end
 end

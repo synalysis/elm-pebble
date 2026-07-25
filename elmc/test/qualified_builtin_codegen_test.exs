@@ -170,11 +170,10 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     typed_access_body = lowered_fn_body!(generated_c, "elmc_fn_Main_typedBoundsAccess")
 
-    assert typed_access_body =~ "ELMC_RECORD_GET_INDEX_INT(bounds, 0 /* x */)" or
-             typed_access_body =~ "elmc_record_get_index("
-
+    # Same alphabetical shape as BoardLayout may share a field macro; index must be x@0.
     assert typed_access_body =~
-             ~r/(?:ELMC_RECORD_GET_INDEX_INT|elmc_record_get_index)\(bounds, (?:ELMC_FIELD_MAIN_TYPEDBOUNDS_X|0 \/\* x \*\/|2 \/\* x \*\/)\)/
+             ~r/(?:ELMC_RECORD_GET_INDEX_INT|elmc_record_get_index)\(bounds, (?:ELMC_FIELD_MAIN_\w+_X|0 \/\* x \*\/|2 \/\* x \*\/)\)/
+
     refute typed_access_body =~ "elmc_record_get(tmp_"
   end
 

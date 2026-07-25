@@ -48,14 +48,6 @@ defmodule Elmc.CCodegenPatternsTest do
   defp rc_direct_fn_def_marker(name),
     do: ~r/static RC elmc_fn_Main_#{name}(?:_native)?\(ElmcValue \*\*out,[^)]*\) \{/
 
-  defp rc_worker_fn_def_marker(name),
-    do: ~r/static RC elmc_fn_Main_#{name}\(ElmcValue \*\*out, ElmcValue \*\* const args, const int argc\) \{/
-
-  defp worker_fn_open(name),
-    do: "RC elmc_fn_Main_#{name}(ElmcValue **out, ElmcValue ** const args, const int argc) {"
-
-  defp worker_fn_marker(name), do: ~r/(?:RC|ElmcValue \*) elmc_fn_Main_#{name}/
-
   defp worker_fn_def_marker(name),
     do: ~r/(?:RC|ElmcValue \*) elmc_fn_Main_#{name}\([^)]*\) \{/
 
@@ -82,24 +74,6 @@ defmodule Elmc.CCodegenPatternsTest do
     assert generated_c =~ "elmc_fn_Main_#{fn_name}"
     body
   end
-
-  defp compile_main!(source, project_name, compile_opts \\ %{}) do
-    source_fixture = Path.expand("fixtures/simple_project", __DIR__)
-    project_dir = Path.expand("tmp/#{project_name}", __DIR__)
-    out_dir = Path.expand("tmp/#{project_name}_codegen", __DIR__)
-    File.rm_rf!(project_dir)
-    File.rm_rf!(out_dir)
-    File.cp_r!(source_fixture, project_dir)
-    File.write!(Path.join(project_dir, "src/Main.elm"), source)
-
-    assert {:ok, _} =
-             Elmc.compile(project_dir, Map.merge(%{out_dir: out_dir, entry_module: "Main"}, compile_opts))
-
-    File.read!(Path.join(out_dir, "c/elmc_generated.c"))
-  end
-
-  defp static_fn_def_marker(name, params),
-    do: ~r/static (?:RC|ElmcValue \*) *elmc_fn_Main_#{name}\(#{Regex.escape(params)}\) \{/
 
   test "maybe_unwrap_just_case? recognizes Nothing + bare var branches" do
     branches = [
@@ -587,8 +561,9 @@ defmodule Elmc.CCodegenPatternsTest do
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
     body = assert_plan_fn!(generated_c, "pickExclusive")
-    assert body =~ "elmc_list_filter("
-    assert body =~ "elmc_list_head("
+    assert body =~ "elmc_list_find_first("
+    refute body =~ "elmc_list_filter("
+    refute body =~ "elmc_list_head("
   end
 
   test "pickSlot-style case on filter head and filter map field fuse through let bindings" do

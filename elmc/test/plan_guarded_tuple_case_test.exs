@@ -59,11 +59,6 @@ defmodule Elmc.PlanGuardedTupleCaseTest do
 
     assert {:ok, plan} = Function.lower(decl, "Main", %{}, rc_required: false)
 
-    blocks =
-      plan.blocks
-      |> Enum.map(& &1.id)
-      |> MapSet.new()
-
     br_ifs =
       plan.blocks
       |> Enum.flat_map(fn block ->

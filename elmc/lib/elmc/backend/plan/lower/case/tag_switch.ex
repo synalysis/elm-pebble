@@ -3,9 +3,10 @@ defmodule Elmc.Backend.Plan.Lower.Case.TagSwitch do
 
   alias Elmc.Backend.Plan.{Builder, Context}
   alias Elmc.Backend.Plan.Lower.Case.{ArmMerge, GuardedSwitch}
-  alias Elmc.Backend.Plan.Lower.{Expr, PatternBind}
+  alias Elmc.Backend.Plan.Lower.{Expr, PatternBind, UnionCtor}
   alias Elmc.Backend.Plan.Types
   alias Elmc.Backend.SizeProfile
+  alias Elmc.Backend.CCodegen.IRQueries
 
   # Ok/Err must tag-switch (linear multi-arm lowering runs every arm). Maybe uses
   # compile_maybe_nothing_case; list ctors stay excluded here.
@@ -13,12 +14,21 @@ defmodule Elmc.Backend.Plan.Lower.Case.TagSwitch do
 
   @spec branches?(Types.case_branches()) :: boolean()
   def branches?(branches) when is_list(branches) do
+    # Single-constructor peels (`(Quantity r)`, `(Entity node)`, `Frame3d` as
+    # bind, …) must not tag-switch: constructor tags are global, and bare
+    # payloads are common after prior peels. Those go to GuardedSwitch as
+    # untyped unwraps. TagSwitch is for discriminating 2+ constructors.
+    ctor_count =
+      Enum.count(branches, fn branch ->
+        match?(%{pattern: %{kind: :constructor}}, branch)
+      end)
+
     tagged? =
       Enum.any?(branches, fn branch ->
         match?(%{pattern: %{kind: :constructor, tag: tag}} when is_integer(tag), branch)
       end)
 
-    tagged? and
+    ctor_count >= 2 and tagged? and
       Enum.all?(branches, fn branch ->
         case Map.get(branch, :pattern) do
           %{kind: :wildcard} -> true
@@ -144,14 +154,14 @@ defmodule Elmc.Backend.Plan.Lower.Case.TagSwitch do
 
   defp compile_tagged_arms(tagged, subj_reg, ctx, b, merge_reg, acc) when is_list(tagged) do
     tagged
-    |> group_branches_by_tag()
+    |> group_branches_by_tag(ctx)
     |> Enum.sort_by(fn {tag, _} -> tag end)
     |> compile_tag_groups(subj_reg, ctx, b, merge_reg, acc)
   end
 
-  defp group_branches_by_tag(tagged) do
+  defp group_branches_by_tag(tagged, ctx) do
     tagged
-    |> Enum.group_by(fn branch -> pattern_tag(branch.pattern) end)
+    |> Enum.group_by(fn branch -> pattern_tag(branch.pattern, ctx) end)
     |> Enum.map(fn {tag, branches} -> {tag, branches} end)
   end
 
@@ -198,7 +208,7 @@ defmodule Elmc.Backend.Plan.Lower.Case.TagSwitch do
   defp compile_nested_duplicate_tag_arm(branches, subj_reg, ctx, b) do
     branch_ctx = Context.for_branch_arm(ctx)
     representative = hd(branches)
-    tag = pattern_tag(representative.pattern)
+    tag = pattern_tag(representative.pattern, ctx)
     subject_name = "__dup_tag_subject__"
     subject = %{op: :var, name: subject_name}
     ctx1 = Context.put_local(branch_ctx, subject_name, subj_reg)
@@ -241,7 +251,7 @@ defmodule Elmc.Backend.Plan.Lower.Case.TagSwitch do
         end
 
       %{kind: :constructor} = ctor_pattern ->
-        tag = pattern_tag(ctor_pattern)
+        tag = pattern_tag(ctor_pattern, ctx)
 
         if is_integer(tag) do
           with {:ok, arm_ctx, b1} <- branch_ctx_for_pattern(branch_ctx, ctor_pattern, subj_reg, b),
@@ -416,16 +426,27 @@ defmodule Elmc.Backend.Plan.Lower.Case.TagSwitch do
   defp tag_switch_payload?(%{kind: :wildcard}), do: true
   defp tag_switch_payload?(_), do: false
 
-  defp pattern_tag(%{tag: tag}) when is_integer(tag), do: tag
-
-  defp pattern_tag(pattern) do
+  defp pattern_tag(pattern, ctx) when is_map(pattern) do
     name = Map.get(pattern, :resolved_name) || Map.get(pattern, :name)
+    tags = Process.get(:elmc_constructor_tags, %{})
 
-    if is_binary(name) do
-      tags = Process.get(:elmc_constructor_tags, %{})
-      Elmc.Backend.CCodegen.IRQueries.lookup_tag(tags, name)
+    resolved =
+      if is_binary(name) do
+        qualified = UnionCtor.qualify(name, ctx)
+        IRQueries.lookup_tag(tags, qualified) || IRQueries.lookup_tag(tags, name)
+      end
+
+    # Prefer name+module affinity over a baked IR tag. Ambiguous short names
+    # (e.g. Group) may have been poisoned to Internal.Compiler.Group (5) in IR
+    # while Scene3d.Types.Group is 6.
+    cond do
+      is_integer(resolved) -> resolved
+      match?(%{tag: t} when is_integer(t), pattern) -> pattern.tag
+      true -> nil
     end
   end
+
+  defp pattern_tag(_, _), do: nil
 
   defp short_name(name), do: name |> String.split(".") |> List.last()
 

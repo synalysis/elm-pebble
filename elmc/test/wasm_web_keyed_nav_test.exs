@@ -50,7 +50,8 @@ defmodule Elmc.WasmWebKeyedNavTest do
   end
 
   defp run_probe(out_dir) do
-    WasmRcTrackHarness.run_node_script(@browser_runner, [out_dir, "elmc_fn_Main_main", "swap"])
+    # Full vdom text: button "swap" plus keyed children "A" and "B".
+    WasmRcTrackHarness.run_node_script(@browser_runner, [out_dir, "elmc_fn_Main_main", "swapAB"])
   end
 
   defp execution_tools_available? do

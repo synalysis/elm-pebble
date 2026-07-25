@@ -414,6 +414,8 @@ defmodule IdeWeb.WorkspaceLive.EditorFlow do
             tokens = socket.assigns[:token_tokens]
             formatter_backend = socket.assigns.formatter_backend
 
+            # Format updates the editor buffer only — do not write to disk or
+            # schedule save-side checks/builds. Persist via Save (or auto-format on save).
             {:noreply,
              socket
              |> assign(:format_status, :running)
@@ -421,15 +423,7 @@ defmodule IdeWeb.WorkspaceLive.EditorFlow do
              |> start_async(:format_file, fn ->
                case format_source(project, tab, formatter_backend, parser_payload, tokens) do
                  {:ok, result} ->
-                   write_result =
-                     Projects.write_source_file(
-                       project,
-                       tab.source_root,
-                       tab.rel_path,
-                       result.formatted_source
-                     )
-
-                   {:ok, %{tab: tab, result: result, write_result: write_result}}
+                   {:ok, %{tab: tab, result: result}}
 
                  {:error, reason} ->
                    {:error, %{tab: tab, reason: reason}}
@@ -474,14 +468,20 @@ defmodule IdeWeb.WorkspaceLive.EditorFlow do
                  content_to_save
                ) do
             :ok ->
+              # Hot-reload only when the debugger is actually running; otherwise
+              # save would still pay reload/precompile work for no UI benefit.
               socket =
-                DebuggerSupport.maybe_reload(
-                  socket,
-                  tab.rel_path,
-                  content_to_save,
-                  "file_saved",
-                  tab.source_root
-                )
+                if DebuggerFlow.debugger_session_active?(socket) do
+                  DebuggerSupport.maybe_reload(
+                    socket,
+                    tab.rel_path,
+                    content_to_save,
+                    "file_saved",
+                    tab.source_root
+                  )
+                else
+                  socket
+                end
 
               socket = maybe_regenerate_phone_preferences_after_save(socket, tab)
 
@@ -499,6 +499,7 @@ defmodule IdeWeb.WorkspaceLive.EditorFlow do
                   socket
                 end
 
+              # Diagnostics-only: parser + elmc check without IR lower / DCE.
               socket = schedule_editor_check(socket, tab)
 
               socket =
@@ -960,7 +961,7 @@ defmodule IdeWeb.WorkspaceLive.EditorFlow do
 
   defp do_handle_async(
          :format_file,
-         {:ok, {:ok, %{tab: tab, result: result, write_result: :ok}}},
+         {:ok, {:ok, %{tab: tab, result: result}}},
          socket
        ) do
     socket =
@@ -969,7 +970,8 @@ defmodule IdeWeb.WorkspaceLive.EditorFlow do
       |> assign(:format_output, render_format_output(result))
       |> update_tab(fn active ->
         if active.id == tab.id do
-          mark_editor_content_saved(active, result.formatted_source)
+          # Keep dirty vs on-disk baseline — Format must not imply Save.
+          apply_editor_content(active, result.formatted_source)
         else
           active
         end
@@ -988,7 +990,8 @@ defmodule IdeWeb.WorkspaceLive.EditorFlow do
           )
 
         socket
-        |> assign_tokenization(result.formatted_source, tab.rel_path, mode: :compiler)
+        |> clear_editor_check(tab)
+        |> assign_tokenization(result.formatted_source, tab.rel_path)
         |> push_event("token-editor-apply-edit", edit_patch)
       else
         socket
@@ -997,22 +1000,15 @@ defmodule IdeWeb.WorkspaceLive.EditorFlow do
     disp = editor_source_display_path(tab.rel_path)
 
     flash_message =
-      if result.changed?,
-        do: "Formatted #{disp}.",
-        else: "Already formatted: #{disp}."
+      cond do
+        not result.changed? ->
+          "Already formatted: #{disp}."
+
+        true ->
+          "Formatted #{disp} (unsaved)."
+      end
 
     {:noreply, put_flash(socket, :info, flash_message)}
-  end
-
-  defp do_handle_async(
-         :format_file,
-         {:ok, {:ok, %{tab: _tab, write_result: {:error, reason}}}},
-         socket
-       ) do
-    {:noreply,
-     socket
-     |> assign(:format_status, :error)
-     |> assign(:format_output, "Format completed but save failed: #{inspect(reason)}")}
   end
 
   defp do_handle_async(:format_file, {:ok, {:error, %{reason: reason}}}, socket) do

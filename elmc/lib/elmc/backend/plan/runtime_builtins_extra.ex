@@ -229,6 +229,7 @@ defmodule Elmc.Backend.Plan.RuntimeBuiltins.Extra do
     backend_task_http_string_body: "elmc_backend_task_http_string_body",
     backend_task_http_json_body: "elmc_backend_task_http_json_body",
     backend_task_http_bytes_body: "elmc_backend_task_http_bytes_body",
+    bytes_encode_sequence: "elmc_bytes_encode_sequence",
     backend_task_http_request: "elmc_backend_task_http_request",
     backend_task_http_post: "elmc_backend_task_http_post",
     file_download_task: "elmc_file_download_task",
@@ -310,7 +311,7 @@ defmodule Elmc.Backend.Plan.RuntimeBuiltins.Extra do
     backend_task_http_expect_json backend_task_http_expect_string backend_task_http_expect_whatever
     backend_task_http_expect_bytes backend_task_http_with_metadata
     backend_task_http_empty_body backend_task_http_string_body backend_task_http_json_body
-    backend_task_http_bytes_body
+    backend_task_http_bytes_body bytes_encode_sequence
     backend_task_http_request backend_task_http_post
     file_download file_download_task file_select
     task_and_then task_command task_fail task_map task_map2 task_on_error task_perform task_succeed

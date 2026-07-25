@@ -42,7 +42,7 @@ defmodule Elmc.WasmWebJsonDecodeErrorTest do
         case run_html_probe(out_dir) do
           {:ok, output} ->
             assert output =~ "rc_ok"
-            assert output =~ "field `missing`"
+            assert output =~ "field named `missing`" || output =~ "field `missing`"
 
           {:error, output} ->
             if probe_skipped_under_ulimit?(output) do

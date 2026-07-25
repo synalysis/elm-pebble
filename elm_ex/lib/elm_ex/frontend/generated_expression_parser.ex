@@ -674,7 +674,7 @@ defmodule ElmEx.Frontend.GeneratedExpressionParser do
     Regex.replace(
       ~r/^\s*-\s*(0x[0-9A-Fa-f]+)\b/u,
       source,
-      "negate \\1"
+      "Basics.negate \\1"
     )
   end
 
@@ -688,26 +688,29 @@ defmodule ElmEx.Frontend.GeneratedExpressionParser do
   end
 
   # Operand after unary `-`: bare/qualified name (`x`, `h2`, `x.y`, `Const.maxNumber`)
-  # or an opening paren for `-(...)`. Always wrap names as `negate (name)` so
-  # `-x.y` stays `negate (x.y)` (field access binds tighter than application).
+  # or an opening paren for `-(...)`. Always wrap names as `Basics.negate (name)` so
+  # `-x.y` stays `Basics.negate (x.y)` (field access binds tighter than application).
   @unary_minus_name ~r/[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*/u
 
   @spec normalize_leading_unary_minus(source()) :: source()
   defp normalize_leading_unary_minus(source) do
     source
-    |> then(&Regex.replace(~r/^\s*-\s*\(/u, &1, "negate ("))
+    # Always qualify as Basics.negate — bare `negate` resolves to the local
+    # module's `negate` (e.g. Quantity.negate), which turns `Quantity -value`
+    # into infinite recursion once single-ctor peels stop falling through.
+    |> then(&Regex.replace(~r/^\s*-\s*\(/u, &1, "Basics.negate ("))
     |> then(
       &Regex.replace(
         ~r/^\s*-\s*(#{Regex.source(@unary_minus_name)})/u,
         &1,
-        "negate (\\1)"
+        "Basics.negate (\\1)"
       )
     )
   end
 
   @spec normalize_contextual_unary_minus(source()) :: source()
   defp normalize_contextual_unary_minus(source) do
-    # Convert unary `-` to `negate` after tokens that cannot end a binary
+    # Convert unary `-` to `Basics.negate` after tokens that cannot end a binary
     # subtraction left-hand side. Do this so the yecc grammar can treat `minus`
     # as binary-only (otherwise `a - b` shift/reduces into `a (-b)`).
     source
@@ -715,14 +718,14 @@ defmodule ElmEx.Frontend.GeneratedExpressionParser do
       &Regex.replace(
         ~r/(\bthen\b|\belse\b|\bin\b|\bof\b|==|\/=|>=|<=|>|<|=|->|,|;|\[|\{|\(|\+|\-|\*|\/\/|\/|\^|\+\+|::|<\||\|>)\s*-\s*\(/u,
         &1,
-        "\\1 negate ("
+        "\\1 Basics.negate ("
       )
     )
     |> then(
       &Regex.replace(
         ~r/(\bthen\b|\belse\b|\bin\b|\bof\b|==|\/=|>=|<=|>|<|=|->|,|;|\[|\{|\(|\+|\-|\*|\/\/|\/|\^|\+\+|::|<\||\|>)\s*-\s*(#{Regex.source(@unary_minus_name)})/u,
         &1,
-        "\\1 negate (\\2)"
+        "\\1 Basics.negate (\\2)"
       )
     )
   end
@@ -740,12 +743,12 @@ defmodule ElmEx.Frontend.GeneratedExpressionParser do
   defp normalize_tight_unary_minus_args_loop(source, n) when n < 64 do
     next =
       source
-      |> then(&Regex.replace(~r/([A-Za-z0-9_\)\]])\s+-\(/u, &1, "\\1 (negate ("))
+      |> then(&Regex.replace(~r/([A-Za-z0-9_\)\]])\s+-\(/u, &1, "\\1 (Basics.negate ("))
       |> then(
         &Regex.replace(
           ~r/([A-Za-z0-9_\)\]])\s+-(#{Regex.source(@unary_minus_name)})/u,
           &1,
-          "\\1 (negate (\\2))"
+          "\\1 (Basics.negate (\\2))"
         )
       )
 

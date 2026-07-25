@@ -6,6 +6,68 @@ defmodule Elmc.IRQueriesRecordShapesTest do
   alias Elmc.Backend.Plan.Context
   alias ElmEx.IR
 
+  test "type alias shapes sort alphabetically like Elm (Transformation.scale last)" do
+    # Scene3d.Types.Transformation declares ix…pz, scale, isRightHanded. Elm stores
+    # isRightHanded first and scale last; declaration-order shapes made .scale read
+    # pz (0) and .pz read scale (1) → zero modelScale + translation z=1 → solid white.
+    ir = %IR{
+      modules: [
+        %{
+          name: "Scene3d.Types",
+          declarations: [
+            %{
+              kind: :type_alias,
+              name: "Transformation",
+              expr: %{
+                op: :record_alias,
+                fields: [
+                  "ix",
+                  "iy",
+                  "iz",
+                  "jx",
+                  "jy",
+                  "jz",
+                  "kx",
+                  "ky",
+                  "kz",
+                  "px",
+                  "py",
+                  "pz",
+                  "scale",
+                  "isRightHanded"
+                ]
+              }
+            }
+          ],
+          unions: %{}
+        }
+      ]
+    }
+
+    shapes = IRQueries.record_alias_shape_map(ir)
+    shape = shapes[{"Scene3d.Types", "Transformation"}]
+
+    assert shape == [
+             "isRightHanded",
+             "ix",
+             "iy",
+             "iz",
+             "jx",
+             "jy",
+             "jz",
+             "kx",
+             "ky",
+             "kz",
+             "px",
+             "py",
+             "pz",
+             "scale"
+           ]
+
+    assert Enum.find_index(shape, &(&1 == "scale")) == 13
+    assert Enum.find_index(shape, &(&1 == "pz")) == 12
+  end
+
   test "union constructor record shapes use alphabetical field order like Elm runtime" do
     ir = %IR{
       modules: [
@@ -73,6 +135,74 @@ defmodule Elmc.IRQueriesRecordShapesTest do
 
     meander = Enum.find(canonical, &(&1.name == "meander"))
     assert meander.expr == %{op: :int_literal, value: 0}
+  end
+
+  test "cylinder args {radius, length} do not pad Cylinder3d axis placeholder" do
+    # Geometry.Types.Cylinder3d payload is a unique +1 superset of {radius, length}.
+    # Padding axis=0 made centeredOn treat int 0 as radius → zero preScale → gray HeroScene.
+    shapes = %{
+      {"Geometry.Types", "Cylinder3d"} => ["axis", "radius", "length"]
+    }
+
+    Process.put(:elmc_record_alias_shapes, shapes)
+    on_exit(fn -> Process.delete(:elmc_record_alias_shapes) end)
+
+    fields = [
+      %{name: "radius", expr: %{op: :var, name: "r"}},
+      %{name: "length", expr: %{op: :var, name: "l"}}
+    ]
+
+    canonical = Record.canonicalize_literal_fields(fields, %Context{module: "HeroScene"})
+
+    assert Enum.map(canonical, & &1.name) == ["length", "radius"]
+    refute Enum.any?(canonical, &(&1.name == "axis"))
+  end
+
+  test "mesh vertices {position, normal} pad trailing uv in alphabetical layout" do
+    # Pad to the 3-field UniformVertex / VertexWithNormalAndUv shape so textured
+    # and untextured paths share indices. Layout is alphabetical (Elm + WebGL
+    # attribute maps): normal, position, uv — not declaration order.
+    shapes = %{
+      {"Scene3d.Mesh", "UniformVertex"} => ["normal", "position", "uv"]
+    }
+
+    Process.put(:elmc_record_alias_shapes, shapes)
+    on_exit(fn -> Process.delete(:elmc_record_alias_shapes) end)
+
+    fields = [
+      %{name: "position", expr: %{op: :var, name: "p"}},
+      %{name: "normal", expr: %{op: :var, name: "n"}}
+    ]
+
+    canonical = Record.canonicalize_literal_fields(fields, %Context{module: "Scene3d.Primitives"})
+
+    assert Enum.map(canonical, & &1.name) == ["normal", "position", "uv"]
+    uv = Enum.find(canonical, &(&1.name == "uv"))
+    assert uv.expr == %{op: :int_literal, value: 0}
+  end
+
+  test "Scene3d.Types.VertexWithNormal alias shape is alphabetical" do
+    ir = %IR{
+      modules: [
+        %{
+          name: "Scene3d.Types",
+          declarations: [
+            %{
+              kind: :type_alias,
+              name: "VertexWithNormal",
+              expr: %{
+                op: :record_alias,
+                fields: ["position", "normal"]
+              }
+            }
+          ],
+          unions: %{}
+        }
+      ]
+    }
+
+    shapes = IRQueries.record_alias_shape_map(ir)
+    assert shapes[{"Scene3d.Types", "VertexWithNormal"}] == ["normal", "position"]
   end
 
   test "anonymous record literals canonicalize to alphabetical field order" do
@@ -252,7 +382,8 @@ defmodule Elmc.IRQueriesRecordShapesTest do
         "pendingRedirect",
         "pendingData",
         "pendingFrozenViewsUrl"
-      ]
+      ],
+      {"RouteBuilder", "App"} => ["data", "sharedData", "routeParams"]
     })
 
     Process.put(:elmc_inline_record_literal_shapes, %{
@@ -280,6 +411,17 @@ defmodule Elmc.IRQueriesRecordShapesTest do
     assert Record.resolve_field_index_int("actionData", ctx, nil) == {:ok, 3}
     assert Record.resolve_field_index_int("userModel", ctx, nil) == {:ok, 0}
 
+    # Poisoned Result.Ok type-var local type must still prefer Model_pageData.
+    poisoned =
+      put_in(ctx.local_types, %{"pageData" => "value"})
+
+    base = %{op: :var, name: "pageData"}
+
+    assert Record.resolve_field_index_int("sharedData", poisoned, base) == {:ok, 2}
+    assert Record.resolve_field_index_int("pageData", poisoned, base) == {:ok, 1}
+    assert Record.resolve_field_index_int("actionData", poisoned, base) == {:ok, 3}
+    assert Record.resolve_field_index_int("userModel", poisoned, base) == {:ok, 0}
+
     model_ctx =
       put_in(
         ctx.local_types,
@@ -304,6 +446,80 @@ defmodule Elmc.IRQueriesRecordShapesTest do
       }
 
     assert Record.resolve_field_index_int("pageData", param_ctx, %{op: :var, name: "model"}) ==
+             {:ok, 4}
+  end
+
+  test "tuple_first let-bound model keeps Platform.Model pageData @4 (performUserMsg)" do
+    # performUserMsg desugars `(model, effect)` as:
+    #   let model = Tuple.first patternArg3
+    # TypedReturn must project the tuple elem type onto `model`, otherwise
+    # pageData falls through to nested Ok-payload @1 (url) and update returns 0.
+    alias Elmc.Backend.CCodegen.Native.TypedReturn
+
+    model_type = "Pages.Internal.Platform.Model userModel pageData actionData sharedData"
+    effect_type = "Effect userMsg pageData actionData sharedData userEffect errorPage"
+    tuple_type = "( #{model_type}, #{effect_type} )"
+
+    env = %{
+      __module__: "Pages.Internal.Platform",
+      __var_types__: %{"patternArg3" => tuple_type}
+    }
+
+    assert TypedReturn.expr_type(
+             %{op: :tuple_first_expr, arg: %{op: :var, name: "patternArg3"}},
+             env
+           ) == model_type
+
+    assert TypedReturn.expr_type(
+             %{op: :tuple_second_expr, arg: %{op: :var, name: "patternArg3"}},
+             env
+           ) == effect_type
+
+    Process.put(:elmc_record_alias_shapes, %{
+      {"Pages.Internal.Platform", "Model"} => [
+        "key",
+        "url",
+        "currentPath",
+        "ariaNavigationAnnouncement",
+        "pageData",
+        "notFound",
+        "userFlags",
+        "transition",
+        "nextTransitionKey",
+        "inFlightFetchers",
+        "pageFormState",
+        "pendingRedirect",
+        "pendingData",
+        "pendingFrozenViewsUrl"
+      ]
+    })
+
+    Process.put(:elmc_inline_record_literal_shapes, %{
+      {"Pages.Internal.Platform", "Model_pageData"} => [
+        "userModel",
+        "pageData",
+        "sharedData",
+        "actionData"
+      ]
+    })
+
+    on_exit(fn ->
+      Process.delete(:elmc_record_alias_shapes)
+      Process.delete(:elmc_inline_record_literal_shapes)
+    end)
+
+    ctx = %Context{
+      module: "Pages.Internal.Platform",
+      function_name: "performUserMsg_lam_0",
+      params: ["userMsg", "config", "patternArg3"],
+      local_types: %{
+        "patternArg3" => tuple_type,
+        "model" => model_type
+      },
+      decl_map: %{}
+    }
+
+    assert Record.resolve_field_index_int("pageData", ctx, %{op: :var, name: "model"}) ==
              {:ok, 4}
   end
 
@@ -414,6 +630,9 @@ defmodule Elmc.IRQueriesRecordShapesTest do
   end
 
   test "curried lambda param inline record resolves view at index 0" do
+    # buildNoState only accesses `.view` on `{view : …}`. Without preferring the
+    # declared inline equal-set layout, same-module StatefulRoute (view@3) steals
+    # the index → OOB Int(0) captured into the view wrapper → empty Document.title.
     Process.put(:elmc_record_alias_shapes, %{
       {"RouteBuilder", "StatefulRoute"} => [
         "data",
@@ -443,7 +662,8 @@ defmodule Elmc.IRQueriesRecordShapesTest do
       },
       local_types: %{
         "recordArg" => "{view : App data action routeParams -> Shared.Model -> View.View msg}"
-      }
+      },
+      inferred_param_fields: %{"recordArg" => ["view"]}
     }
 
     base = %{op: :var, name: "recordArg"}
@@ -524,6 +744,45 @@ defmodule Elmc.IRQueriesRecordShapesTest do
 
     assert Record.resolve_field_index_int("lo", ctx, base) == {:ok, 0}
     assert Record.resolve_field_index_int("hi", ctx, base) == {:ok, 1}
+  end
+
+  test "BoundingBox3d min/max fields prefer alphabetical union shape over fromExtrema decl order" do
+    # Geometry.Types.BoundingBox3d stores fields alphabetically (maxX first).
+    # fromExtrema's argument type is the same field set in declaration order
+    # (minX first). Preferring the lower inline index made minX/maxX both read
+    # slot 0 → zero X dimensions → near≈far projection → invisible Scene3d.
+    alias_shapes = %{
+      {"Geometry.Types", "BoundingBox2d"} => ["maxX", "maxY", "minX", "minY"],
+      {"Geometry.Types", "BoundingBox3d"} => ["maxX", "maxY", "maxZ", "minX", "minY", "minZ"],
+      {"Geometry.Types", "VectorBoundingBox3d"} => ["maxX", "maxY", "maxZ", "minX", "minY", "minZ"]
+    }
+
+    inline_shapes = %{
+      {"BoundingBox3d", "fromExtrema_given"} => ["minX", "maxX", "minY", "maxY", "minZ", "maxZ"]
+    }
+
+    Process.put(:elmc_record_alias_shapes, alias_shapes)
+    Process.put(:elmc_inline_record_literal_shapes, inline_shapes)
+
+    on_exit(fn ->
+      Process.delete(:elmc_record_alias_shapes)
+      Process.delete(:elmc_inline_record_literal_shapes)
+    end)
+
+    ctx = %Context{
+      module: "BoundingBox3d",
+      function_name: "centerPoint",
+      params: ["boundingBox"]
+    }
+
+    base = %{op: :var, name: "b"}
+
+    assert Record.resolve_field_index_int("minX", ctx, base) == {:ok, 3}
+    assert Record.resolve_field_index_int("maxX", ctx, base) == {:ok, 0}
+    assert Record.resolve_field_index_int("minY", ctx, base) == {:ok, 4}
+    assert Record.resolve_field_index_int("maxY", ctx, base) == {:ok, 1}
+    assert Record.resolve_field_index_int("minZ", ctx, base) == {:ok, 5}
+    assert Record.resolve_field_index_int("maxZ", ctx, base) == {:ok, 2}
   end
 
   test "extensible {url|path} prefers Url.path index over short Payload.path@0" do
@@ -613,5 +872,111 @@ defmodule Elmc.IRQueriesRecordShapesTest do
 
     assert Record.resolve_field_index_int("x", ctx, %{op: :var, name: "pos"}) == {:ok, 0}
     assert Record.resolve_field_index_int("y", ctx, %{op: :var, name: "pos"}) == {:ok, 1}
+  end
+
+  test "Platform.application subscriptions subset inference uses Model pageData @4" do
+    # Nested `\model -> case model.pageData of` only accesses pageData + url.
+    # Alphabetical layout of that subset maps pageData→0 (key / Maybe.Just), so
+    # subscriptions never reach userModel / Time.every. Same-module proper
+    # supersets must recover Platform.Model declaration indices.
+    Process.put(:elmc_record_alias_shapes, %{
+      {"Pages.Internal.Platform", "Model"} => [
+        "key",
+        "url",
+        "currentPath",
+        "ariaNavigationAnnouncement",
+        "pageData",
+        "notFound",
+        "userFlags",
+        "transition",
+        "nextTransitionKey",
+        "inFlightFetchers",
+        "pageFormState",
+        "pendingRedirect",
+        "pendingData",
+        "pendingFrozenViewsUrl"
+      ]
+    })
+
+    on_exit(fn -> Process.delete(:elmc_record_alias_shapes) end)
+
+    ctx = %Context{
+      module: "Pages.Internal.Platform",
+      function_name: "application_lam_3",
+      params: ["config", "model"],
+      inferred_param_fields: %{"model" => ["pageData", "url"]}
+    }
+
+    base = %{op: :var, name: "model"}
+    assert Record.resolve_field_index_int("pageData", ctx, base) == {:ok, 4}
+    assert Record.resolve_field_index_int("url", ctx, base) == {:ok, 1}
+  end
+
+  test "collectSmooth {position, normal} is not TexturedFacetVertex normal@2" do
+    # Scene3d.Mesh.TexturedFacetVertex is `{position, uv, normal}` in source order.
+    # Same-module proper-superset inference must not map collectSmooth's
+    # `{position, normal}` onto that layout (normal→2 past a 2-field vertex).
+    Process.put(:elmc_record_alias_shapes, %{
+      {"Scene3d.Types", "VertexWithNormal"} => ["normal", "position"],
+      {"Scene3d.Types", "VertexWithNormalAndUv"} => ["normal", "position", "uv"],
+      {"Scene3d.Mesh", "TexturedFacetVertex"} => ["position", "uv", "normal"],
+      {"Scene3d.Mesh", "TexturedTriangleVertex"} => ["position", "uv"]
+    })
+
+    on_exit(fn -> Process.delete(:elmc_record_alias_shapes) end)
+
+    ctx = %Context{
+      module: "Scene3d.Mesh",
+      function_name: "collectSmooth",
+      params: ["__patternArg0"],
+      inferred_param_fields: %{"__patternArg0" => ["position", "normal"]}
+    }
+
+    base = %{op: :var, name: "__patternArg0"}
+    assert Record.resolve_field_index_int("position", ctx, base) == {:ok, 1}
+    assert Record.resolve_field_index_int("normal", ctx, base) == {:ok, 0}
+  end
+
+  test "TexturedFacetVertex alias shape is alphabetical" do
+    ir = %IR{
+      modules: [
+        %{
+          name: "Scene3d.Mesh",
+          declarations: [
+            %{
+              kind: :type_alias,
+              name: "TexturedFacetVertex",
+              expr: %{
+                op: :record_alias,
+                fields: ["position", "uv", "normal"]
+              }
+            }
+          ],
+          unions: %{}
+        }
+      ]
+    }
+
+    shapes = IRQueries.record_alias_shape_map(ir)
+    assert shapes[{"Scene3d.Mesh", "TexturedFacetVertex"}] == ["normal", "position", "uv"]
+  end
+
+  test "mesh {position, normal} prefers VertexWithNormal over TexturedFacetVertex pad" do
+    # Exact 2-field VertexWithNormal must win over padding through TexturedFacetVertex's
+    # middle `uv` slot (which would write/read `.normal` at index 2).
+    Process.put(:elmc_record_alias_shapes, %{
+      {"Scene3d.Types", "VertexWithNormal"} => ["normal", "position"],
+      {"Scene3d.Mesh", "TexturedFacetVertex"} => ["position", "uv", "normal"]
+    })
+
+    on_exit(fn -> Process.delete(:elmc_record_alias_shapes) end)
+
+    fields = [
+      %{name: "position", expr: %{op: :var, name: "p"}},
+      %{name: "normal", expr: %{op: :var, name: "n"}}
+    ]
+
+    canonical = Record.canonicalize_literal_fields(fields, %Context{module: "Scene3d.Primitives"})
+    assert Enum.map(canonical, & &1.name) == ["normal", "position"]
   end
 end

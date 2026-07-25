@@ -32,9 +32,13 @@ view model =
 init : () -> ( Model, Cmd Msg )
 init _ =
     ( { progressCount = 0 }
-    , Http.get
-        { url = "https://example.com/data"
+    , Http.request
+        { method = "GET"
+        , headers = []
+        , url = "https://example.com/data"
+        , body = Http.emptyBody
         , expect = Http.expectString Got
+        , timeout = Nothing
         , tracker = Just "download"
         }
     )

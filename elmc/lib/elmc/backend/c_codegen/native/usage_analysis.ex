@@ -355,14 +355,13 @@ defmodule Elmc.Backend.CCodegen.Native.UsageAnalysis do
 
       :error ->
         Process.put(cache_key, Map.put(cache, key, :computing))
-        Process.put(:elmc_skip_int_usage_recursion, true)
 
-        kinds =
-          try do
-            NativeFunctionCall.arg_kinds(decl, module_name, decl_map)
-          after
-            Process.delete(:elmc_skip_int_usage_recursion)
-          end
+        # Use signature kinds only. Walking `arg_kinds/3` here (even with
+        # `:elmc_skip_int_usage_recursion`) writes body-based results into the
+        # shared `:elmc_native_arg_kinds_cache`. Callers analyzed before a
+        # callee (e.g. update paths before `canPlace`) then permanently cache
+        # lambda-captured Int params as `:boxed`, poisoning the real ABI.
+        kinds = NativeFunctionCall.signature_arg_kinds(decl, module_name, decl_map)
 
         Process.put(cache_key, Map.put(Process.get(cache_key, %{}), key, kinds))
         kinds

@@ -167,7 +167,20 @@ defmodule Elmc.Backend.CCodegen.IRQueries do
         |> Enum.flat_map(fn decl ->
           case Map.get(decl, :expr) do
             %{op: :record_alias, fields: fields} when is_list(fields) ->
-              shape = fields |> Enum.map(&to_string/1)
+              names = fields |> Enum.map(&to_string/1)
+              # Most aliases keep declaration order so elm-pages / Url / Model field
+              # disambiguation stays stable. Scene3d.Types.Transformation is the
+              # exception: package code and anonymous-style field_access assume Elm's
+              # alphabetical layout (isRightHanded first, scale last). Declaration
+              # order made .scale read pz (0) and .pz read scale (1) → zero modelScale
+              # and translation z=1 → solid-white HeroScene after materials worked.
+              shape =
+                if elm_alphabetical_alias?(mod.name, decl.name, names) do
+                  Enum.sort(names)
+                else
+                  names
+                end
+
               [{{mod.name, decl.name}, shape}]
 
             _ ->
@@ -184,10 +197,40 @@ defmodule Elmc.Backend.CCodegen.IRQueries do
     |> Map.new()
   end
 
+  # Aliases that must match Elm 0.19 alphabetical record layout end-to-end.
+  defp elm_alphabetical_alias?("Scene3d.Types", "Transformation", _names), do: true
+
+  # WebGL mesh vertices: shader attribute maps are alphabetical (`normal` before
+  # `position`). Declaration-order VertexWithNormal wrote [position, normal] so
+  # the host bound normals as positions → collapsed caps / radial floor stripes
+  # and notched tangram (body showing through shredded face cylinders).
+  defp elm_alphabetical_alias?("Scene3d.Types", name, _names)
+       when name in [
+              "PlainVertex",
+              "VertexWithNormal",
+              "VertexWithUv",
+              "VertexWithNormalAndUv",
+              "VertexWithTangent"
+            ],
+       do: true
+
+  # Same WebGL attribute contract for Mesh-local vertex aliases. Declaration
+  # order TexturedFacetVertex is `{position, uv, normal}` — a false proper-superset
+  # of `{position, normal}` that mapped collectSmooth `.normal`→2.
+  defp elm_alphabetical_alias?("Scene3d.Mesh", name, _names)
+       when name in ["TexturedFacetVertex", "TexturedTriangleVertex"],
+       do: true
+
+  defp elm_alphabetical_alias?(_mod, _name, _names), do: false
+
   @spec inline_record_literal_shape_map(IR.t()) :: %{optional({String.t(), String.t()}) => [String.t()]}
   def inline_record_literal_shape_map(%IR{} = ir) do
     inline_record_shapes_from_type_aliases(ir)
     |> Kernel.++(union_constructor_record_shapes(ir))
+    # Nested anonymous records inside union payloads (e.g. Scene3d MeshWithNormals
+    # TriangularMesh `{position, normal}` / `{position, normal, uv}`) must be
+    # registered so unique_superset can pad trailing extension slots.
+    |> Kernel.++(union_payload_embedded_record_shapes(ir))
     |> Map.new()
   end
 
@@ -200,10 +243,17 @@ defmodule Elmc.Backend.CCodegen.IRQueries do
         entry
         |> Map.get(:payload_specs, %{})
         |> Enum.flat_map(fn {ctor_name, spec} ->
-          if is_binary(spec) and spec != "" do
-            [{{mod, to_string(ctor_name)}, spec}]
-          else
-            []
+          cond do
+            is_binary(spec) ->
+              # Keep "" for nullary so plan lowering can tell nullary nests
+              # (`tuple2(UseMeshUvs, rest)`) from unary `(tag, payload)`.
+              [{{mod, to_string(ctor_name)}, spec}]
+
+            is_nil(spec) ->
+              [{{mod, to_string(ctor_name)}, ""}]
+
+            true ->
+              []
           end
         end)
       end)
@@ -234,6 +284,33 @@ defmodule Elmc.Backend.CCodegen.IRQueries do
             else
               []
             end
+          else
+            []
+          end
+        end)
+      end)
+    end)
+  end
+
+  defp union_payload_embedded_record_shapes(%IR{} = ir) do
+    ir.modules
+    |> Enum.flat_map(fn %{name: mod, unions: unions} ->
+      unions
+      |> Enum.flat_map(fn {union_name, entry} ->
+        entry
+        |> Map.get(:payload_specs, %{})
+        |> Enum.flat_map(fn {ctor_name, spec} ->
+          if is_binary(spec) do
+            spec
+            |> embedded_record_types()
+            |> Enum.with_index()
+            |> Enum.map(fn {shape, idx} ->
+              # Elm stores anonymous / payload-embedded records alphabetically.
+              # Declaration order made MeshWithNormals embeds `{position, normal}`
+              # fight alphabetical VertexWithNormal writes and WebGL attribute maps.
+              sorted = shape |> Enum.map(&to_string/1) |> Enum.sort()
+              {{mod, "#{union_name}.#{ctor_name}_embed#{idx}"}, sorted}
+            end)
           else
             []
           end

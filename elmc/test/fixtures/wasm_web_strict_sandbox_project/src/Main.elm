@@ -8,8 +8,8 @@ type alias Model =
     Int
 
 
-init : () -> Model
-init _ =
+init : Model
+init =
     0
 
 

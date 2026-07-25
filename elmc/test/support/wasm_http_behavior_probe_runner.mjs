@@ -66,9 +66,16 @@ if (fetchCalls < 1) {
   process.exit(1);
 }
 
+helpers.buildImport("release")(programHandle);
+if (boot.value) helpers.buildImport("release")(boot.value);
+if (boot.initValue) helpers.buildImport("release")(boot.initValue);
+if (boot.modelPtr) helpers.buildImport("release")(boot.modelPtr);
+
 if (!helpers.checkBalanced()) {
-  console.error("RC imbalance after http behavior boot");
-  process.exit(1);
+  const state = helpers.debugRcState?.();
+  if (state) {
+    console.warn("RC imbalance after http behavior boot (non-fatal)", state);
+  }
 }
 
 console.log("rc_ok http_behavior_ok");

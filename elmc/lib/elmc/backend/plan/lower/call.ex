@@ -90,6 +90,18 @@ defmodule Elmc.Backend.Plan.Lower.Call do
     end
   end
 
+  # Defense: left-fold n-ary `__apply__` into nested binary applies (C codegen
+  # already does this; IR compose nesting should prevent n-ary, but tolerate it).
+  defp compile_apply_call([fn_expr | args], ctx, b)
+       when is_list(args) and length(args) >= 2 do
+    nested =
+      Enum.reduce(args, fn_expr, fn arg, acc ->
+        %{op: :call, name: "__apply__", args: [acc, arg]}
+      end)
+
+    Expr.compile(nested, ctx, b)
+  end
+
   defp compile_apply_call(_, _ctx, _b), do: :unsupported
 
   defp compile_fn_call_default(_expr, target, args, ctx, b) do
@@ -274,7 +286,11 @@ defmodule Elmc.Backend.Plan.Lower.Call do
         compile_oversaturated_call(module, name, args, ctx, b)
 
       true ->
-        with {:ok, callee_reg, b_callee} <- closure_callee_reg(name, ctx, b),
+        # Locals/params may shadow *unqualified* / same-module bare names only.
+        # Qualified `Html.Attributes.width` must not pick up a local `width`
+        # (Scene3d.composite binds `(width, height)` then calls the Attributes helpers).
+        with true <- local_callee_shadow_allowed?(module, ctx),
+             {:ok, callee_reg, b_callee} <- closure_callee_reg(name, ctx, b),
              true <- args != [] do
           compile_closure_call(callee_reg, args, ctx, b_callee)
         else
@@ -314,6 +330,14 @@ defmodule Elmc.Backend.Plan.Lower.Call do
         end
     end
   end
+
+  # Unqualified `width x` lowers as `{ctx.module, "width"}` and may apply a local.
+  # Cross-module qualified targets must call the named decl, not a same-named local.
+  defp local_callee_shadow_allowed?(module, ctx) when is_binary(module) do
+    module == (ctx.module || "Main")
+  end
+
+  defp local_callee_shadow_allowed?(_, _), do: false
 
   defp html_element_partial?(module, name, args)
        when is_binary(module) and is_binary(name) and is_list(args) do
@@ -408,9 +432,13 @@ defmodule Elmc.Backend.Plan.Lower.Call do
   defp zero_arity_thunk_call?(ctx, module, name, args) when is_list(args) do
     case Map.fetch(ctx.decl_map, {module, name}) do
       {:ok, decl} ->
-        param_names = FunctionEmit.effective_decl_args(decl, module, ctx.decl_map) |> List.wrap()
+        # Use IR `args` (not type-inferred effective_decl_args). Bindings like
+        # `WebGL.indexedTriangles = MeshIndexed3 {…}` have args: [] but a
+        # multi-arrow type; effective_decl_args invents __eff_arg_* and would
+        # skip this path, emitting call_fn(verts, indices) against a 0-param CAF.
+        ir_params = Map.get(decl, :args, []) |> List.wrap()
 
-        length(param_names) == 0 and length(args) > 0 and closure_thunk_decl?(decl) and
+        length(ir_params) == 0 and length(args) > 0 and closure_thunk_decl?(decl) and
           FunctionEmit.function_type_arity(decl) > 0
 
       _ ->
@@ -424,9 +452,25 @@ defmodule Elmc.Backend.Plan.Lower.Call do
 
   defp closure_thunk_expr?(%{op: :lambda}), do: true
 
+  # `WebGL.indexedTriangles = MeshIndexed3 {…}` — constructor value whose type is
+  # still `List a -> List indices -> Mesh a`. Calls must load the CAF then
+  # call_closure; a direct call_fn with args is ignored by wat2wasm arity fixup
+  # and returns the unapplied closure as the "mesh".
+  defp closure_thunk_expr?(%{op: :constructor_call}), do: true
+  defp closure_thunk_expr?(%{op: :partial_constructor}), do: true
+  defp closure_thunk_expr?(%{op: :make_closure}), do: true
+
+  # Eta-reduced partials: `normalize = scaleTo (Quantity.float 1)`. IR args are
+  # [] but the body is already an applied call returning a function. Empty-arg
+  # `f = Other.g` aliases are intentionally excluded (delegate arity path).
+  defp closure_thunk_expr?(%{op: :qualified_call, args: [_ | _]}), do: true
+  defp closure_thunk_expr?(%{op: :call, args: [_ | _]}), do: true
+
   defp closure_thunk_expr?(%{op: op, body: body}) when op in [:let, :letrec] do
     closure_thunk_expr?(body)
   end
+
+  defp closure_thunk_expr?(%{op: :let_in, in_expr: body}), do: closure_thunk_expr?(body)
 
   defp closure_thunk_expr?(_), do: false
 

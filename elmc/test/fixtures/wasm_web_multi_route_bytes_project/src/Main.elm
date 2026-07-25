@@ -2,12 +2,14 @@ port module Main exposing (main)
 
 import Browser
 import Browser.Navigation as Nav exposing (UrlRequest(..))
+import Bytes exposing (Bytes)
+import Bytes.Decode as Decode
 import Html exposing (Html, a, div, text)
 import Html.Attributes as Attr
 import Url
 
 
-port pageDataFromJs : (Int -> msg) -> Sub msg
+port pageDataFromJs : (Bytes -> msg) -> Sub msg
 
 
 type alias Model =
@@ -19,7 +21,7 @@ type alias Model =
 type Msg
     = LinkClicked UrlRequest
     | UrlChanged Url.Url
-    | RouteData Int
+    | RouteData Bytes
 
 
 routeTitle : Int -> String
@@ -32,6 +34,12 @@ routeTitle id =
             "home"
 
 
+decodeRouteId : Bytes -> Int
+decodeRouteId bytes =
+    Decode.decode Decode.unsignedInt8 bytes
+        |> Maybe.withDefault 0
+
+
 init : () -> Url.Url -> Nav.Key -> ( Model, Cmd Msg )
 init _ _ key =
     ( { key = key, routeId = 0 }, Cmd.none )
@@ -40,8 +48,8 @@ init _ _ key =
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
-        RouteData id ->
-            ( { model | routeId = id }, Cmd.none )
+        RouteData bytes ->
+            ( { model | routeId = decodeRouteId bytes }, Cmd.none )
 
         UrlChanged _ ->
             ( model, Cmd.none )

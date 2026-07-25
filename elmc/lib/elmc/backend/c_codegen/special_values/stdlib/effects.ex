@@ -221,9 +221,51 @@ defmodule Elmc.Backend.CCodegen.SpecialValues.Stdlib.Effects do
     end
   end
 
-  def special_value_from_target("Browser.Events.onMouseMove", [to_msg]) do
+  def special_value_from_target("Browser.Events.onMouseMove", [decoder]) do
     if PlatformWeb.web_target?(Process.get(:elmc_codegen_opts, %{})) do
-      %{op: :dom_sub, kind: %{op: :int_literal, value: 5}, params: [to_msg]}
+      # Decoder msg on document "mousemove" (same shape as Browser.Events.on).
+      %{
+        op: :dom_sub,
+        kind: %{op: :int_literal, value: 10},
+        params: [
+          %{op: :int_literal, value: 0},
+          %{op: :string_literal, value: "mousemove"},
+          decoder
+        ]
+      }
+    else
+      nil
+    end
+  end
+
+  def special_value_from_target("Browser.Events.onMouseUp", [to_msg]) do
+    if PlatformWeb.web_target?(Process.get(:elmc_codegen_opts, %{})) do
+      # Same host path as mouse-move: Decoder msg on document "mouseup".
+      %{
+        op: :dom_sub,
+        kind: %{op: :int_literal, value: 10},
+        params: [
+          %{op: :int_literal, value: 0},
+          %{op: :string_literal, value: "mouseup"},
+          to_msg
+        ]
+      }
+    else
+      nil
+    end
+  end
+
+  def special_value_from_target("Browser.Events.onMouseDown", [to_msg]) do
+    if PlatformWeb.web_target?(Process.get(:elmc_codegen_opts, %{})) do
+      %{
+        op: :dom_sub,
+        kind: %{op: :int_literal, value: 10},
+        params: [
+          %{op: :int_literal, value: 0},
+          %{op: :string_literal, value: "mousedown"},
+          to_msg
+        ]
+      }
     else
       nil
     end
@@ -248,6 +290,54 @@ defmodule Elmc.Backend.CCodegen.SpecialValues.Stdlib.Effects do
   def special_value_from_target("Browser.Events.onKeyUp", [to_msg]) do
     if PlatformWeb.web_target?(Process.get(:elmc_codegen_opts, %{})) do
       %{op: :dom_sub, kind: %{op: :int_literal, value: 8}, params: [to_msg]}
+    else
+      nil
+    end
+  end
+
+  def special_value_from_target("Browser.Events.onKeyPress", [to_msg]) do
+    if PlatformWeb.web_target?(Process.get(:elmc_codegen_opts, %{})) do
+      %{
+        op: :dom_sub,
+        kind: %{op: :int_literal, value: 10},
+        params: [
+          %{op: :int_literal, value: 0},
+          %{op: :string_literal, value: "keypress"},
+          to_msg
+        ]
+      }
+    else
+      nil
+    end
+  end
+
+  # Generic Browser.Events.on Document|Window name decoder
+  def special_value_from_target("Browser.Events.on", [node, name, decoder]) do
+    if PlatformWeb.web_target?(Process.get(:elmc_codegen_opts, %{})) do
+      %{
+        op: :dom_sub,
+        kind: %{op: :int_literal, value: 10},
+        params: [node, name, decoder]
+      }
+    else
+      nil
+    end
+  end
+
+  # Effect-manager entry: subscription (MySub node name decoder)
+  def special_value_from_target("Browser.Events.subscription", [sub]) do
+    if PlatformWeb.web_target?(Process.get(:elmc_codegen_opts, %{})) do
+      case browser_events_mysub(sub) do
+        {:ok, node, name, decoder} ->
+          %{
+            op: :dom_sub,
+            kind: %{op: :int_literal, value: 10},
+            params: [node, name, decoder]
+          }
+
+        :error ->
+          nil
+      end
     else
       nil
     end
@@ -408,4 +498,38 @@ defmodule Elmc.Backend.CCodegen.SpecialValues.Stdlib.Effects do
   # --- elm/core: String (extended) ---
 
   def special_value_from_target(_target, _args), do: nil
+
+  defp browser_events_mysub(%{
+         op: :constructor_call,
+         target: target,
+         args: [node, name, decoder]
+       })
+       when target in ["MySub", "Browser.Events.MySub"],
+       do: {:ok, node, name, decoder}
+
+  defp browser_events_mysub(%{
+         op: :qualified_call,
+         target: target,
+         args: [node, name, decoder]
+       })
+       when target in ["MySub", "Browser.Events.MySub"],
+       do: {:ok, node, name, decoder}
+
+  defp browser_events_mysub(%{
+         op: :tuple2,
+         left: %{union_ctor: ctor},
+         right: %{op: :tuple2, left: name, right: decoder}
+       })
+       when ctor in ["MySub", "Browser.Events.MySub"],
+       do: {:ok, %{op: :int_literal, value: 0}, name, decoder}
+
+  defp browser_events_mysub(%{
+         op: :tuple2,
+         left: %{union_ctor: ctor},
+         right: %{op: :tuple2, left: node, right: %{op: :tuple2, left: name, right: decoder}}
+       })
+       when ctor in ["MySub", "Browser.Events.MySub"],
+       do: {:ok, node, name, decoder}
+
+  defp browser_events_mysub(_), do: :error
 end

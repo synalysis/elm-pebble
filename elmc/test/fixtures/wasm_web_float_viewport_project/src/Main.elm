@@ -14,14 +14,14 @@ type alias Vec2 =
     { x : Float, y : Float }
 
 
-init : () -> ( Model, Cmd () )
-init _ =
-    ( (), Cmd.none )
+init : Model
+init =
+    ()
 
 
-update : () -> Model -> ( Model, Cmd () )
+update : () -> Model -> Model
 update _ model =
-    ( model, Cmd.none )
+    model
 
 
 view : Model -> Html ()

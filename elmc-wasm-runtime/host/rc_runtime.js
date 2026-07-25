@@ -93,6 +93,8 @@ const DOM_SUB_ON_CLICK = 6;
 const DOM_SUB_ON_KEY_DOWN = 7;
 const DOM_SUB_ON_KEY_UP = 8;
 const DOM_SUB_HTTP_TRACK = 9;
+// Browser.Events.on Document|Window name decoder (also onMouseMove/Up/Down/KeyPress).
+const DOM_SUB_BROWSER_ON = 10;
 
 export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } = {}) {
   let memory = null;
@@ -219,6 +221,26 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
     return payload?.tag === TAG_INT ? payload.value | 0 : ptr | 0;
   };
 
+  /**
+   * Time.every interval (Elm Float ms).
+   *
+   * Prefer a boxed TAG_FLOAT. Otherwise treat the operand as a raw i32 ms
+   * immediate — never intValue()/asInt. Codegen sometimes publishes `64` as
+   * fn_out without boxing; handle id 64 often collides with an early TAG_INT
+   * (e.g. value 2), and intValue would install a ~2ms timer → Scene3d rebuild
+   * storm → 100% CPU / tab crash.
+   */
+  const timeEveryIntervalMs = (ptr) => {
+    const p = ptr | 0;
+    if (!p) return 1;
+    const payload = readHandle(p);
+    if (payload?.tag === TAG_FLOAT) {
+      const ms = Number(payload.value);
+      return Math.max(1, Number.isFinite(ms) ? Math.round(ms) : 1);
+    }
+    return Math.max(1, p);
+  };
+
   const asIntNumber = (ptr) => {
     if (!ptr) return 0;
     const payload = readHandle(ptr);
@@ -263,7 +285,8 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
       }
       case TAG_RESULT: {
         if (payload.ctorTag != null) return payload.ctorTag | 0;
-        return payload.isOk ? 1 : 0;
+        // Result.Ok=1, Result.Err=2 (manifest / Elm declaration order).
+        return payload.isOk ? 1 : 2;
       }
       case TAG_MAYBE: {
         if (payload.ctorTag != null) return payload.ctorTag | 0;
@@ -275,65 +298,59 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
   };
 
   // Pages.Internal.Platform.Msg tags are 1-based (elmc_wasm.manifest constructor_tags):
-  //   1 LinkClicked | 2 UrlChanged | 3 UserMsg | 4 FormMsg |
-  //   5 UpdateCacheAndUrlNew | 6 FetcherComplete | 7 FetcherStarted |
-  //   8 PageScrollComplete | 9 HotReloadCompleteNew | 10 ProcessFetchResponse |
-  //   11 FrozenViewsReady | 12 NoOp
-  // Port / onUrlChange / onUrlRequest taggers already emit these outer values.
-  // Only bare app msgs need wrapping as UserMsg (tag 3).
-  const PLATFORM_OUTER_MSG_TAGS = new Set([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
+  //   1 LinkClicked | 2 UrlChanged | 3 UserMsg | 4 FormMsg | …
+  // App msgs (SceneMsg, PagesMsg.fromMsg, MouseDown, …) often reuse small ctor tags
+  // that collide with LinkClicked/UrlChanged. Never treat "tag ∈ 1..12" as proof the
+  // value is already a Platform.Msg — only skip wrapping when it is already UserMsg
+  // (tag 3). Navigation / ports that emit true Platform.Msg values must pass
+  // `alreadyPlatform: true` into dispatchPlatformMsg.
   const PLATFORM_USER_MSG_TAG = 3;
 
-  const isElmPagesPlatformProgram = () => incomingPortHandlers.has("pageDataFromJs");
+  // Sticky: elm-pages only registers pageDataFromJs on the Err boot branch.
+  // After Ok, registerSubscriptions clears that port — but DOM events still need
+  // Platform.UserMsg wrapping for the life of the session.
+  let detectedElmPagesPlatform = false;
 
-  const wrapIncomingPlatformMsg = (msgPtr) => {
-    if (!msgPtr || !isElmPagesPlatformProgram()) return msgPtr;
+  const isElmPagesPlatformProgram = () => {
+    if (incomingPortHandlers.has("pageDataFromJs")) {
+      detectedElmPagesPlatform = true;
+    }
+    return (
+      detectedElmPagesPlatform || Boolean(liveBrowser?.useRouteRemount)
+    );
+  };
+
+  const wrapIncomingPlatformMsg = (msgPtr, opts = {}) => {
+    const isPages = isElmPagesPlatformProgram();
+    if (!msgPtr || !isPages) {
+      return msgPtr;
+    }
+    if (opts.alreadyPlatform) return msgPtr;
     const tag = unionTagAsInt(msgPtr);
-    if (PLATFORM_OUTER_MSG_TAGS.has(tag)) return msgPtr;
-    return allocHandle({
+    // Already Platform.UserMsg — leave nested app msg intact.
+    if (tag === PLATFORM_USER_MSG_TAG) return msgPtr;
+    const wrapped = allocHandle({
       tag: TAG_TUPLE2,
       first: newIntHandle(PLATFORM_USER_MSG_TAG),
       second: msgPtr | 0,
     });
+    addOwner(msgPtr | 0, wrapped);
+    return wrapped;
   };
-
-  let __sceneTagMissLogs = 0;
-  let __sceneListProjLogs = 0;
+  let __sceneFreedJustLogs = 0;
   const unionTagMatches = (outPtr, handlePtr, tagPtr) => {
     // WASM/C codegen pass constructor tags as raw i32 immediates (elmc_int_t),
     // not boxed handles — never resolve tagPtr through the handle table.
     const want = tagPtr | 0;
     const got = unionTagAsInt(handlePtr);
     const matched = got === want ? 1 : 0;
-    const debugScene =
-      typeof process !== "undefined" && process.env && process.env.ELMC_DEBUG_SCENE;
-    // getViewBounds falls through to Transformed after missing tags 1..6.
-    if (debugScene && want === 6 && !matched && __sceneTagMissLogs < 8) {
-      __sceneTagMissLogs += 1;
-      const p = readHandle(handlePtr);
-      let detail = `payloadTag=${p?.tag}`;
-      if (p?.tag === TAG_INT) detail += ` intVal=${p.value}`;
-      if (p?.tag === TAG_LIST) detail += ` listLen=${p.items?.length} headUnion=${unionTagAsInt(p.items?.[0])}`;
-      if (p?.tag === TAG_TUPLE2) {
-        detail += ` firstTag=${unionTagAsInt(p.first)} secondPayloadTag=${readHandle(p.second)?.tag}`;
-        const inner = readHandle(p.second);
-        if (inner?.tag === TAG_TUPLE2) {
-          detail += ` inner0Tag=${readHandle(inner.first)?.tag} inner1Tag=${readHandle(inner.second)?.tag}`;
-          detail += ` inner0Union=${unionTagAsInt(inner.first)} inner1Union=${unionTagAsInt(inner.second)}`;
-        } else if (inner?.tag === TAG_RECORD) {
-          detail += ` recordFields=${inner.fields?.length}`;
-        } else if (inner?.tag === TAG_LIST) {
-          const heads = (inner.items ?? []).slice(0, 4).map((h) => {
-            const hp = readHandle(h);
-            return `u=${unionTagAsInt(h)}/t=${hp?.tag}`;
-          });
-          detail += ` listLen=${inner.items?.length} heads=[${heads.join(",")}]`;
-        }
+    try {
+      const bag = (globalThis.__ELMC_UTAG__ = globalThis.__ELMC_UTAG__ || []);
+      if (bag.length < 40 && (want === 13 || want === 14 || want === 9)) {
+        const p = readHandle(handlePtr);
+        bag.push({ want, got, matched, handle: handlePtr|0, tag: p?.tag ?? null, fields: p?.fields?.length, ctorTag: p?.ctorTag ?? null, first: p?.first|0, second: p?.second|0 });
       }
-      console.error(
-        `[scene-debug] miss-tag6 #${__sceneTagMissLogs} handle=${handlePtr|0} unionTag=${got} ${detail}`
-      );
-    }
+    } catch (_) {}
     return newInt(outPtr, matched);
   };
 
@@ -481,25 +498,42 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
           wrapper = document.createElement("div");
           root.replaceChildren(wrapper);
         }
-        const bodyChild = listItems(bodyPtr)[0];
-        if (bodyChild && vdomPatchRuntime && liveBrowser?.mountedRoot) {
-          const patched = vdomPatchRuntime.patch(
-            liveBrowser.lastVdomPtr ?? 0,
-            asHandle(bodyChild),
-            liveBrowser.mountedRoot
-          );
-          liveBrowser.mountedRoot = patched;
-          liveBrowser.lastVdomPtr = asHandle(bodyChild);
+        // elm-pages Shared body is a list [header, main, footer]; the WebGL
+        // canvas lives under <main>. Patching only body[0] leaves later
+        // siblings stale so Time.every never redraws the scene.
+        const bodyChildren = listItems(bodyPtr).map((c) => asHandle(c));
+        const prevPtrs = liveBrowser?.lastBodyPtrs ?? null;
+        const canPatch =
+          vdomPatchRuntime &&
+          liveBrowser?.mountedBodyWrapper === wrapper &&
+          Array.isArray(prevPtrs) &&
+          prevPtrs.length === bodyChildren.length &&
+          wrapper.childNodes.length === bodyChildren.length;
+
+        if (canPatch) {
+          for (let i = 0; i < bodyChildren.length; i++) {
+            const domChild = wrapper.childNodes[i];
+            if (!domChild) continue;
+            const patched = vdomPatchRuntime.patch(prevPtrs[i] | 0, bodyChildren[i], domChild);
+            // patch() may already have swapped via Node.replaceWith (custom/webgl
+            // remount). Only replaceChild when the old node is still our child.
+            if (patched && patched !== domChild && domChild.parentNode === wrapper) {
+              wrapper.replaceChild(patched, domChild);
+            }
+          }
+          adoptLiveViewPtrs(viewPtr, bodyChildren);
+          liveBrowser.mountedRoot = wrapper.firstChild;
         } else {
           const fragment = document.createDocumentFragment();
-          for (const child of listItems(bodyPtr)) {
-            const dom = vdomToDom(resolveHtml(asHandle(child)));
+          for (const child of bodyChildren) {
+            const dom = vdomToDom(resolveHtml(child));
             if (dom) fragment.appendChild(dom);
           }
           wrapper.replaceChildren(fragment);
           if (liveBrowser) {
+            liveBrowser.mountedBodyWrapper = wrapper;
+            adoptLiveViewPtrs(viewPtr, bodyChildren);
             liveBrowser.mountedRoot = wrapper.firstChild;
-            liveBrowser.lastVdomPtr = asHandle(listItems(bodyPtr)[0] ?? 0);
           }
         }
       }
@@ -512,8 +546,17 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
         viewPtr | 0,
         liveBrowser.mountedRoot
       );
+      // Same replaceWith vs replaceChild contract as the document-body path.
+      if (
+        patched &&
+        patched !== liveBrowser.mountedRoot &&
+        liveBrowser.mountedRoot.parentNode &&
+        liveBrowser.mountedRoot.parentNode === patched.parentNode
+      ) {
+        liveBrowser.mountedRoot.parentNode.replaceChild(patched, liveBrowser.mountedRoot);
+      }
       liveBrowser.mountedRoot = patched;
-      liveBrowser.lastVdomPtr = viewPtr | 0;
+      adoptLiveViewPtrs(viewPtr, null);
       return RC_SUCCESS;
     }
 
@@ -521,9 +564,34 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
     if (liveBrowser && typeof document !== "undefined") {
       const root = ensureAppRoot();
       liveBrowser.mountedRoot = root?.firstElementChild?.firstChild ?? root?.firstChild ?? null;
-      liveBrowser.lastVdomPtr = viewPtr | 0;
+      adoptLiveViewPtrs(viewPtr, null);
     }
     return RC_SUCCESS;
+  };
+
+  /**
+   * Keep the mounted Document/view VDOM alive across ticks. Boot used to
+   * release `boot.value` immediately, so `lastBodyPtrs` dangled and the next
+   * Time.every patch treated the old tree as missing → WebGL `render()` +
+   * replaceWith + replaceChild NotFoundError → blank white canvas.
+   */
+  const adoptLiveViewPtrs = (viewPtr, bodyChildren) => {
+    if (!liveBrowser) return;
+    const prevView = liveBrowser.lastViewPtr | 0;
+    const nextView = viewPtr | 0;
+    if (nextView && handles.has(nextView)) retain(null, nextView);
+    liveBrowser.lastViewPtr = nextView;
+    if (prevView && prevView !== nextView) release(prevView);
+
+    if (Array.isArray(bodyChildren)) {
+      // Body child handles are owned by the retained view record; keep indices
+      // for patch identity only (no extra retain — avoids double-free).
+      liveBrowser.lastBodyPtrs = bodyChildren.map((c) => c | 0);
+      liveBrowser.lastVdomPtr = (bodyChildren[0] | 0) || nextView;
+    } else {
+      liveBrowser.lastBodyPtrs = null;
+      liveBrowser.lastVdomPtr = nextView;
+    }
   };
 
   let createDefaultBootInputs = () => ({ flags: 0, url: 0, key: 0 });
@@ -560,10 +628,22 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
   // those handles while another config copy still points at them — mount view then
   // calls a dangling urlToRoute and renders "Page not found". Keep config callables
   // alive for the program lifetime.
+  //
+  // Same Ok/view path can also free the Browser.application field closures themselves
+  // (subscriptions@3 etc.). After that, registerSubscriptions sees a dead handle and
+  // returns Sub.none — orbit / Time.every / pageDataFromJs all stop. Immortalize the
+  // impl's own closures too.
+  const immortalizeClosurePayload = (payload) => {
+    if (payload?.tag !== TAG_CLOSURE) return;
+    payload.immortal = true;
+    payload.rc = Math.max(payload.rc ?? 1, 1_000_000);
+  };
+
   const immortalizeProgramConfigClosures = (implPtr) => {
     const impl = readHandle(implPtr);
     for (const field of impl?.fields ?? []) {
       const clos = readHandle(field);
+      immortalizeClosurePayload(clos);
       if (clos?.tag !== TAG_CLOSURE) continue;
       for (const cap of clos.captures ?? []) {
         const rec = readHandle(cap);
@@ -575,11 +655,7 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
         }
         if (closureFields < 8) continue;
         for (const f of rec.fields) {
-          const fp = readHandle(f);
-          if (fp?.tag === TAG_CLOSURE) {
-            fp.immortal = true;
-            fp.rc = Math.max(fp.rc ?? 1, 1_000_000);
-          }
+          immortalizeClosurePayload(readHandle(f));
         }
       }
     }
@@ -656,6 +732,14 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
 
   const dispatchTaggedMsg = (toMsgPtr, valuePtr, taggers) => {
     let value = valuePtr | 0;
+    if (toMsgPtr) {
+      const next = invokeClosure(toMsgPtr, [asHandle(value)]);
+      if (value !== valuePtr && handles.has(value) && !valueReaches(next.value, value)) {
+        release(value);
+      }
+      if (next.rc !== RC_SUCCESS) return next;
+      value = next.value;
+    }
     for (const taggerPtr of [...taggers].reverse()) {
       const next = invokeClosure(taggerPtr, [asHandle(value)]);
       if (value !== valuePtr && handles.has(value) && !valueReaches(next.value, value)) {
@@ -674,14 +758,33 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
     const id = nextDomSubId++;
     let dispose = () => {};
 
+    // Http.track only registers a progress listener — no DOM/window required.
+    // Skipping it when `window` is missing left probes on fetch (no progress).
+    // Prefer a live toMsg; if the callback was already freed, keep the listener
+    // installed eagerly from dom_sub (see implementations.dom_sub).
+    if (kind === DOM_SUB_HTTP_TRACK) {
+      const tracker = stringValue(params[0] | 0);
+      const toMsgPtr = params[1] | 0;
+      if (tracker && toMsgPtr && handles.has(toMsgPtr | 0)) {
+        http.registerProgressListener(tracker, toMsgPtr, taggers);
+        dispose = () => http.unregisterProgressListener(tracker);
+      }
+      activeDomSubs.set(id, { dispose });
+      return;
+    }
+
     if (typeof window === "undefined") {
       activeDomSubs.set(id, { dispose });
       return;
     }
 
     if (kind === DOM_SUB_TIME_EVERY) {
-      const interval = Math.max(1, intValue(params[0] | 0));
+      const interval = timeEveryIntervalMs(params[0] | 0);
       const toMsgPtr = params[1] | 0;
+      try {
+        const bag = (globalThis.__ELMC_SUBS__ = globalThis.__ELMC_SUBS__ || []);
+        bag.push({ kind, interval, toMsg: toMsgPtr|0, taggers: taggers.map(t=>t|0), params: params.map(p=>p|0) });
+      } catch (_) {}
       const tick = () => {
         dispatchTaggedMsg(toMsgPtr, newIntHandle(Date.now()), taggers);
       };
@@ -746,11 +849,42 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
       };
       document.addEventListener("keyup", handler);
       dispose = () => document.removeEventListener("keyup", handler);
-    } else if (kind === DOM_SUB_HTTP_TRACK) {
-      const tracker = stringValue(params[0] | 0);
-      const toMsgPtr = params[1] | 0;
-      http.registerProgressListener(tracker, toMsgPtr, taggers);
-      dispose = () => http.unregisterProgressListener(tracker);
+    } else if (kind === DOM_SUB_BROWSER_ON) {
+      // Browser.Events.on Document|Window name decoder — params: [node, name, decoder]
+      const nodeKind = intValue(params[0] | 0); // 0=Document, 1=Window
+      const eventName = stringValue(params[1] | 0);
+      const decoderPtr = params[2] | 0;
+      const target = nodeKind === 1 ? window : document;
+      const handler = (event) => {
+        const jsEvent = {
+          type: event?.type ?? eventName,
+          movementX: Number(event?.movementX) || 0,
+          movementY: Number(event?.movementY) || 0,
+          clientX: Number(event?.clientX) || 0,
+          clientY: Number(event?.clientY) || 0,
+          button: Number(event?.button) || 0,
+          buttons: Number(event?.buttons) || 0,
+          ctrlKey: Boolean(event?.ctrlKey),
+          shiftKey: Boolean(event?.shiftKey),
+          altKey: Boolean(event?.altKey),
+          metaKey: Boolean(event?.metaKey),
+          key: event?.key ?? "",
+          code: event?.code ?? "",
+          keyCode: Number(event?.keyCode) || 0,
+          repeat: Boolean(event?.repeat),
+          visibilityState:
+            typeof document !== "undefined" ? document.visibilityState : "visible",
+        };
+        // Decoder is Json.Decode.Decoder msg (TAG_JSON_DECODER). Decode.succeed /
+        // map2 produce the platform msg directly — no separate toMsg wrapper.
+        const step = json.runDecoderHelp(decoderPtr, jsEvent);
+        if (!step.ok) return;
+        dispatchTaggedMsg(0, asHandle(step.handle), taggers);
+      };
+      if (eventName && target && typeof target.addEventListener === "function") {
+        target.addEventListener(eventName, handler);
+        dispose = () => target.removeEventListener(eventName, handler);
+      }
     }
 
     activeDomSubs.set(id, { dispose });
@@ -761,6 +895,7 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
 
     const payload = readHandle(nodePtr);
     if (!payload) return;
+
 
     if (payload.tag === TAG_INT && payload.value === 0) return;
 
@@ -820,7 +955,34 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
     const result = invokeClosure(subFn, [modelPtr]);
 
     if (result.rc === RC_SUCCESS && result.value) {
+      try {
+        const describe = (ptr, depth=0) => {
+          if (depth > 5 || !ptr) return null;
+          const p = readHandle(ptr);
+          if (!p) return { dead: ptr|0 };
+          if (p.tag === TAG_SUB) return { tag:'SUB', kind:p.domKind|0, params:(p.params||[]).length };
+          if (p.tag === TAG_INT) return { tag:'INT', v:p.value|0 };
+          if (p.tag === TAG_LIST) return { tag:'LIST', n:listItems(ptr).length, items:listItems(ptr).slice(0,6).map(i=>describe(i, depth+1)) };
+          if (p.tag === TAG_RECORD) {
+            const t = intValue(p.fields[0]);
+            if (t === 1) return { tag:'PORT', name:stringValue(p.fields[1]) };
+            if (t === 2) return { tag:'BATCH', items:describe(p.fields[1], depth+1) };
+            if (t === 3) return { tag:'MAP', fn:p.fields[1]|0, inner:describe(p.fields[2], depth+1) };
+            return { tag:'REC', n:p.fields.length, t0:t };
+          }
+          if (p.tag === TAG_CLOSURE) return { tag:'CLOS', arity:p.arity|0 };
+          return { tag:p.tag };
+        };
+        const bag = (globalThis.__ELMC_REG_SUB__ = globalThis.__ELMC_REG_SUB__ || []);
+        bag.push({ tree: describe(result.value), subFn: subFn|0 });
+      } catch (e) {
+        (globalThis.__ELMC_REG_SUB__ = globalThis.__ELMC_REG_SUB__ || []).push({ err: String(e) });
+      }
       resolveSubscriptionTree(result.value);
+    } else {
+      try {
+        (globalThis.__ELMC_REG_SUB__ = globalThis.__ELMC_REG_SUB__ || []).push({ empty: true, rc: result.rc, value: result.value|0, subFn: subFn|0 });
+      } catch (_) {}
     }
 
     return result;
@@ -881,7 +1043,7 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
 
     if (payload.tag === TAG_INT) {
       const kind = payload.value | 0;
-      if (kind === 1 && typeof window !== "undefined") {
+      if (kind === 1 && typeof window !== "undefined" && typeof window.scroll === "function") {
         window.scroll(0, 0);
       }
       return;
@@ -914,7 +1076,9 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
         return { rc: msgResult.rc, modelPtr: model };
       }
 
-      const platformMsg = wrapIncomingPlatformMsg(msgResult.value);
+      const platformMsg = wrapIncomingPlatformMsg(msgResult.value, {
+        alreadyPlatform: true,
+      });
       const wrappedPlatformMsg = platformMsg !== msgResult.value;
       const updateResult = invokeClosure(updateFn, [platformMsg, model]);
       if (updateResult.rc !== RC_SUCCESS) {
@@ -1047,7 +1211,10 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
     // on the active session. Clear prior patch state so SPA remounts full-replace
     // instead of patching the previous route's VDOM (title-only / stale body).
     const prevImplPtr = liveBrowser?.implPtr | 0;
+    const prevModelPtr = liveBrowser?.modelPtr | 0;
+    const prevViewPtr = liveBrowser?.lastViewPtr | 0;
     retain(null, implPtr);
+    if (modelForView) retain(null, modelForView);
     liveBrowser = {
       implPtr,
       modelPtr: modelForView | 0,
@@ -1055,12 +1222,21 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
       viewFn,
       mountedRoot: null,
       lastVdomPtr: 0,
+      lastViewPtr: 0,
+      lastBodyPtrs: null,
+      mountedBodyWrapper: null,
       // SPA remount uses init+pageDataFromJs (Err→Ok); Ok-branch FrozenViewsReady
       // currently corrupts Platform.Model under elmc WASM.
       useRouteRemount: isElmPagesPlatformProgram(),
     };
     if (prevImplPtr && prevImplPtr !== (implPtr | 0)) {
       release(prevImplPtr);
+    }
+    if (prevModelPtr && prevModelPtr !== (modelForView | 0)) {
+      release(prevModelPtr);
+    }
+    if (prevViewPtr) {
+      release(prevViewPtr);
     }
 
     t = performance.now();
@@ -1252,6 +1428,21 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
         );
       case TAG_BROWSER_PROGRAM:
         return payload.impl != null && valueReaches(payload.impl | 0, target, visited);
+      case TAG_CMD:
+      case TAG_SUB:
+        if (payload.value != null && valueReaches(payload.value | 0, target, visited)) return true;
+        if (payload.request != null && valueReaches(payload.request | 0, target, visited)) return true;
+        if (payload.tracker != null && valueReaches(payload.tracker | 0, target, visited)) return true;
+        for (const p of payload.params ?? []) {
+          if (valueReaches(p | 0, target, visited)) return true;
+        }
+        for (const f of payload.fields ?? []) {
+          if (valueReaches(f | 0, target, visited)) return true;
+        }
+        for (const item of payload.items ?? []) {
+          if (valueReaches(item | 0, target, visited)) return true;
+        }
+        return false;
       default:
         return false;
     }
@@ -1336,6 +1527,15 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
           break;
         case TAG_BROWSER_PROGRAM:
           if (payload.impl != null) stack.push(payload.impl | 0);
+          break;
+        case TAG_CMD:
+        case TAG_SUB:
+          if (payload.value != null) stack.push(payload.value | 0);
+          if (payload.request != null) stack.push(payload.request | 0);
+          if (payload.tracker != null) stack.push(payload.tracker | 0);
+          for (const p of payload.params ?? []) stack.push(p | 0);
+          for (const f of payload.fields ?? []) stack.push(f | 0);
+          for (const item of payload.items ?? []) stack.push(item | 0);
           break;
         default:
           break;
@@ -1444,6 +1644,7 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
       return RC_SUCCESS;
     }
 
+
     const fallbackRoot = memory ? view().getUint32(rootsPtr | 0, true) | 0 : 0;
     releaseValue(handle, fallbackRoot);
     return RC_SUCCESS;
@@ -1458,6 +1659,36 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
     // Do not write into 4096 — that scratch holds the multi-root epilogue list.
     view().setUint32(SINGLE_ROOT_SCRATCH, rootPtr | 0, true);
     return releaseUnlessReachableFromRoots(ptr, SINGLE_ROOT_SCRATCH, 1);
+  };
+
+  const addOwner = (childPtr, ownerPtr) => {
+    const child = childPtr | 0;
+    const owner = ownerPtr | 0;
+    if (!child || !owner || child === owner) return;
+    const payload = handles.get(child);
+    if (!payload || payload.immortal) return;
+    if (!payload.owners) payload.owners = new Set();
+    payload.owners.add(owner);
+  };
+
+  const removeOwner = (childPtr, ownerPtr) => {
+    const child = childPtr | 0;
+    const owner = ownerPtr | 0;
+    const payload = handles.get(child);
+    if (!payload?.owners) return;
+    payload.owners.delete(owner);
+  };
+
+  const liveOwnerCount = (ptr) => {
+    const payload = handles.get(ptr | 0);
+    if (!payload?.owners || payload.owners.size === 0) return 0;
+    let live = 0;
+    for (const owner of payload.owners) {
+      const parent = handles.get(owner | 0);
+      if (parent && (parent.rc ?? 0) > 0) live += 1;
+      else payload.owners.delete(owner);
+    }
+    return live;
   };
 
   const releaseChild = (childPtr, rootPtr) => {
@@ -1499,33 +1730,54 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
       return RC_SUCCESS;
     }
 
+    // Safety net: owned-slot epilogues can over-release values that are still
+    // stored inside a live parent (e.g. Group.second list, Just viewBounds)
+    // when that parent is not in the epilogue root set. Heal instead of
+    // creating dangling fields that later read as Nothing / empty entities.
+    const inbound = liveOwnerCount(ptr);
+    if (inbound > 0) {
+      payload.rc = inbound;
+      return RC_SUCCESS;
+    }
+
     if (payload?.tag === TAG_CLOSURE) {
       for (const capture of payload.captures ?? []) {
+        removeOwner(capture, ptr);
         releaseChild(capture, rootPtr);
+      }
+      for (const applied of payload.applied ?? []) {
+        removeOwner(applied, ptr);
+        releaseChild(applied, rootPtr);
       }
     }
 
     if (payload?.tag === TAG_MAYBE && payload.value && handles.has(payload.value)) {
+      removeOwner(payload.value, ptr);
       releaseChild(payload.value, rootPtr);
     }
 
     if (payload?.tag === TAG_RESULT && payload.value && handles.has(payload.value)) {
+      removeOwner(payload.value, ptr);
       releaseChild(payload.value, rootPtr);
     }
 
     if (payload?.tag === TAG_LIST) {
       for (const item of payload.items ?? []) {
+        removeOwner(item, ptr);
         releaseChild(item, rootPtr);
       }
     }
 
     if (payload?.tag === TAG_TUPLE2) {
+      removeOwner(payload.first, ptr);
+      removeOwner(payload.second, ptr);
       releaseChild(payload.first, rootPtr);
       releaseChild(payload.second, rootPtr);
     }
 
     if (payload?.tag === TAG_RECORD) {
       for (const field of payload.fields ?? []) {
+        removeOwner(field, ptr);
         releaseChild(field, rootPtr);
       }
     }
@@ -1533,6 +1785,19 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
     if (payload?.tag === TAG_VDOM && payload.kind === "node") {
       for (const child of payload.children ?? []) {
         releaseChild(child, rootPtr);
+      }
+      for (const attr of payload.attrs ?? []) {
+        if (!attr || attr.kind !== "event") continue;
+        const handler = attr.handler | 0;
+        const decoder = attr.decoder | 0;
+        if (handler) {
+          removeOwner(handler, ptr);
+          releaseChild(handler, rootPtr);
+        }
+        if (decoder) {
+          removeOwner(decoder, ptr);
+          releaseChild(decoder, rootPtr);
+        }
       }
     }
 
@@ -1595,7 +1860,11 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
 
   const asFloatBits = (ptr) => {
     if (!ptr) return 0;
-    const payload = handles.get(ptr);
+    let payload = handles.get(ptr);
+    // Single-payload unions (Quantity number): peel to the numeric payload.
+    for (let depth = 0; payload?.tag === TAG_TUPLE2 && depth < 4; depth++) {
+      payload = handles.get(payload.second | 0);
+    }
     if (!payload) return 0;
 
     const buf = new ArrayBuffer(4);
@@ -1717,17 +1986,25 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
   const newVdomProperty = (name, value) =>
     allocHandle({ tag: TAG_VDOM, kind: "property", name: String(name), value: String(value) });
 
-  const newVdomEvent = (eventName, handlerPtr, decoderPtr = 0) =>
-    allocHandle({
+  const newVdomEvent = (eventName, handlerPtr, decoderPtr = 0) => {
+    const handler = handlerPtr | 0;
+    const decoder = decoderPtr | 0;
+    // Html.Events.onMouseDown builds Decode.succeed msg then releases the decoder
+    // after html_cmd — the event node must own handler/decoder for the listener
+    // lifetime (same for Decode.succeed's captured msg via the decoder handle).
+    if (handler && handles.has(handler)) retain(null, handler);
+    if (decoder && handles.has(decoder)) retain(null, decoder);
+    return allocHandle({
       tag: TAG_VDOM,
       kind: "event",
       event: String(eventName),
-      handler: handlerPtr | 0,
-      decoder: decoderPtr | 0,
+      handler,
+      decoder,
     });
+  };
 
-  const newVdomNode = (tagName, attrs, children, namespace = null, keyedChildren = null) =>
-    allocHandle({
+  const newVdomNode = (tagName, attrs, children, namespace = null, keyedChildren = null) => {
+    const handle = allocHandle({
       tag: TAG_VDOM,
       kind: "node",
       tagName: String(tagName),
@@ -1736,6 +2013,24 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
       children: children ?? [],
       keyedChildren: keyedChildren ?? null,
     });
+    // attrsFromList copies event handler/decoder into plain objects. Retain and
+    // owner-link them to this node so remount prune / epilogue release cannot
+    // free Decode.succeed payloads while the node is live.
+    for (const attr of attrs ?? []) {
+      if (!attr || attr.kind !== "event") continue;
+      const handler = attr.handler | 0;
+      const decoder = attr.decoder | 0;
+      if (handler && handles.has(handler)) {
+        retain(null, handler);
+        addOwner(handler, handle);
+      }
+      if (decoder && handles.has(decoder)) {
+        retain(null, decoder);
+        addOwner(decoder, handle);
+      }
+    }
+    return handle;
+  };
 
   const vdomAttrs = (attrs) =>
     (attrs ?? [])
@@ -1868,10 +2163,10 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
     return root;
   };
 
-  const dispatchPlatformMsg = (msgPtr) => {
+  const dispatchPlatformMsg = (msgPtr, opts = {}) => {
     if (!liveBrowser || !msgPtr) return;
     const { implPtr, modelPtr, updateFn, viewFn } = liveBrowser;
-    const platformMsg = wrapIncomingPlatformMsg(msgPtr | 0);
+    const platformMsg = wrapIncomingPlatformMsg(msgPtr | 0, opts);
     const updateResult = invokeClosure(updateFn, [platformMsg, modelPtr | 0]);
     if (updateResult.rc !== RC_SUCCESS) {
       return;
@@ -1879,9 +2174,17 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
     const updatePayload = readHandle(updateResult.value);
     if (updatePayload?.tag === TAG_TUPLE2) {
       const { modelPtr: nextModelPtr, sideEffectPtr } = readPlatformUpdateTuple(updatePayload);
-      liveBrowser.modelPtr = nextModelPtr | 0;
+      const prevModel = liveBrowser.modelPtr | 0;
+      const nextModel = nextModelPtr | 0;
+      if (nextModel && handles.has(nextModel)) retain(null, nextModel);
+      liveBrowser.modelPtr = nextModel;
+      if (prevModel && prevModel !== nextModel) release(prevModel);
       void drainPlatformSideEffect(sideEffectPtr);
     }
+    // Conditional Subs (e.g. Browser.Events.onMouseMove while orbiting) must be
+    // re-resolved after every model update — not only at boot.
+    const initFn = recordField(implPtr, 0);
+    registerSubscriptions(implPtr, initFn, liveBrowser.modelPtr | 0);
     const viewResult = invokeClosure(viewFn, [liveBrowser.modelPtr | 0]);
     if (viewResult.rc === RC_SUCCESS) {
       mountViewHandle(viewResult.value);
@@ -1889,7 +2192,12 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
   };
   dispatchPlatformMsgRef = dispatchPlatformMsg;
 
-  const vdomToDom = (ptr, mapperPtr = 0) => {
+  const vdomToDom = (ptr, mappers = []) => {
+    const mapperChain = Array.isArray(mappers)
+      ? mappers.map((m) => m | 0).filter((m) => m !== 0)
+      : mappers
+        ? [mappers | 0]
+        : [];
     const payload = readHandle(resolveHtml(ptr));
     if (!payload || payload.tag !== TAG_VDOM) {
       return typeof document !== "undefined" ? document.createTextNode("") : null;
@@ -1900,13 +2208,15 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
     }
 
     if (payload.kind === "map" && typeof document !== "undefined") {
-      return vdomToDom(payload.child | 0, payload.mapper | 0);
+      // Nested Html.map: prepend this mapper (same order as vdom_patch.js).
+      const next = [payload.mapper | 0, ...mapperChain].filter((m) => m !== 0);
+      return vdomToDom(payload.child | 0, next);
     }
 
     if (payload.kind === "lazy") {
       const forced = forceLazyHtml(ptr);
       if (forced.rc === RC_SUCCESS && forced.value) {
-        return vdomToDom(forced.value, mapperPtr);
+        return vdomToDom(forced.value, mapperChain);
       }
       return typeof document !== "undefined" ? document.createTextNode("") : null;
     }
@@ -1915,7 +2225,7 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
       const handler = customNodeHandlers[payload.renderKey];
       const el = handler ? handler.render(payload.model, payload.facts ?? []) : null;
       if (!el) return typeof document !== "undefined" ? document.createTextNode("") : null;
-      for (const attr of payload.facts ?? []) applyDomAttr(el, attr, mapperPtr);
+      for (const attr of payload.facts ?? []) applyDomAttr(el, attr, mapperChain);
       return el;
     }
 
@@ -1925,7 +2235,7 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
         : document.createElement(payload.tagName || "div");
       let styleText = "";
       for (const attr of payload.attrs ?? []) {
-        applyDomAttr(el, attr, mapperPtr);
+        applyDomAttr(el, attr, mapperChain);
         if (attr?.name === "style" && attr.kind !== "event" && attr.kind !== "property") {
           styleText += attr.value;
         }
@@ -1933,7 +2243,7 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
       if (styleText) el.setAttribute("style", styleText);
       if (payload.keyedChildren?.length) {
         for (const { key, child } of payload.keyedChildren) {
-          const childDom = vdomToDom(child, mapperPtr);
+          const childDom = vdomToDom(child, mapperChain);
           if (childDom) {
             childDom.__vdomKey = String(key);
             el.appendChild(childDom);
@@ -1941,7 +2251,7 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
         }
       } else {
         for (const child of payload.children ?? []) {
-          const childDom = vdomToDom(child, mapperPtr);
+          const childDom = vdomToDom(child, mapperChain);
           if (childDom) el.appendChild(childDom);
         }
       }
@@ -1951,28 +2261,81 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
     return typeof document !== "undefined" ? document.createTextNode("") : null;
   };
 
-  const attachDomEvent = (el, eventAttr, mapperPtr = 0) => {
+  const attachDomEvent = (el, eventAttr, mappers = 0) => {
     const eventName = eventAttr.event || "click";
     const handlerPtr = eventAttr.handler | 0;
     const decoderPtr = eventAttr.decoder | 0;
+    const mapperChain = Array.isArray(mappers)
+      ? mappers.map((m) => m | 0).filter((m) => m !== 0)
+      : mappers
+        ? [mappers | 0]
+        : [];
     const listener = (domEvent) => {
       if (eventName === "submit" && typeof domEvent.preventDefault === "function") {
         domEvent.preventDefault();
       }
       let msgPtr = 0;
-      if (decoderPtr) {
-        const eventValue = domEventRuntime
-          ? domEventRuntime.buildDecoderArg(domEvent, eventName)
-          : newIntHandle(domEvent?.target?.value ? 1 : 0);
-        const decoded = invokeClosure(decoderPtr, [eventValue]);
-        if (decoded.rc !== RC_SUCCESS) return;
-        msgPtr = decoded.value | 0;
+      const jsEvent = {
+        type: domEvent?.type ?? eventName,
+        movementX: Number(domEvent?.movementX) || 0,
+        movementY: Number(domEvent?.movementY) || 0,
+        clientX: Number(domEvent?.clientX) || 0,
+        clientY: Number(domEvent?.clientY) || 0,
+        button: Number(domEvent?.button) || 0,
+        buttons: Number(domEvent?.buttons) || 0,
+        ctrlKey: Boolean(domEvent?.ctrlKey),
+        shiftKey: Boolean(domEvent?.shiftKey),
+        altKey: Boolean(domEvent?.altKey),
+        metaKey: Boolean(domEvent?.metaKey),
+        key: domEvent?.key ?? "",
+        code: domEvent?.code ?? "",
+        keyCode: Number(domEvent?.keyCode) || 0,
+        repeat: Boolean(domEvent?.repeat),
+        target: domEvent?.target ?? null,
+        currentTarget: domEvent?.currentTarget ?? null,
+        value: domEvent?.target?.value,
+        checked: Boolean(domEvent?.target?.checked),
+      };
+
+      // Html.Events.on stores either:
+      // - a Json.Decode.Decoder (Decode.succeed / map2 / …), or
+      // - a constant msg handle (optimized nullary: tuple2(tag, unit) / INT)
+      // in the decoder slot (older builds used the handler slot).
+      const decodePtr =
+        decoderPtr ||
+        (readHandle(handlerPtr)?.kind >= 1 && readHandle(handlerPtr)?.kind <= 12
+          ? handlerPtr
+          : 0);
+      const constantMsgPtr = (() => {
+        const candidates = [decoderPtr, handlerPtr].filter((p) => p);
+        for (const ptr of candidates) {
+          const p = readHandle(ptr);
+          if (!p) continue;
+          // JSON decoder: has numeric kind 1..12 and tag 14
+          if (p.tag === 14 && p.kind >= 1 && p.kind <= 12) continue;
+          if (p.tag === TAG_INT || p.tag === TAG_TUPLE2 || p.tag === TAG_RECORD) {
+            return ptr;
+          }
+        }
+        return 0;
+      })();
+
+      if (decodePtr && json && readHandle(decodePtr)?.tag === 14) {
+        const step = json.runDecoderHelp(decodePtr, jsEvent);
+        if (!step.ok) {
+          return;
+        }
+        msgPtr = asHandle(step.handle);
+      } else if (constantMsgPtr) {
+        msgPtr = constantMsgPtr | 0;
+        if (handles.has(msgPtr)) retain(null, msgPtr);
       } else if (handlerPtr) {
         const invoked = invokeClosure(handlerPtr, []);
         if (invoked.rc !== RC_SUCCESS) return;
         msgPtr = invoked.value | 0;
       }
-      if (mapperPtr) {
+      // Nested Html.map: apply innermost mapper first, then outer (chain order).
+      for (const mapperPtr of mapperChain) {
         const mapped = invokeClosure(mapperPtr, [asHandle(msgPtr)]);
         if (mapped.rc !== RC_SUCCESS) return;
         msgPtr = mapped.value | 0;
@@ -2029,14 +2392,20 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
     return RC_SUCCESS;
   };
 
-  const newList = (items) => allocHandle({ tag: TAG_LIST, items: [...items] });
+  const newList = (items) => {
+    const handle = allocHandle({ tag: TAG_LIST, items: [...items] });
+    for (const item of items) addOwner(item, handle);
+    return handle;
+  };
 
   const writeList = (outPtr, items) => {
     writeOut(outPtr, newList(items));
     return RC_SUCCESS;
   };
 
-  const listNil = (outPtr) => writeList(outPtr, []);
+  const listNil = (outPtr) => {
+    return writeList(outPtr, []);
+  };
 
   const listFromIntArray = (outPtr, itemsPtr, count) => {
     const items = [];
@@ -2052,41 +2421,15 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
     retain(null, ptr);
     return ptr;
   };
-
-  let __sceneDebugDepth = 0;
   let __sceneHeadLogs = 0;
   const listFromValues = (outPtr, arrayPtr, count) => {
     const items = [];
     for (let i = 0; i < count; i++) {
       items.push(cloneForList(view().getUint32(arrayPtr + i * 4, true)));
     }
-    const debugScene =
-      typeof process !== "undefined" && process.env && process.env.ELMC_DEBUG_SCENE;
-    if (debugScene && count === 1) {
-      const h = items[0] | 0;
-      const p = readHandle(h);
-      const tag = unionTagAsInt(h);
-      // Transformed path builds a singleton list of the child node.
-      if (tag === 7 || tag === 0 || p?.tag === TAG_INT || !p) {
-        __sceneDebugDepth += 1;
-        if (__sceneDebugDepth <= 8) {
-          console.error(
-            `[scene-debug] singleton#${__sceneDebugDepth} handle=${h} payloadTag=${p?.tag} unionTag=${tag}` +
-              (p?.tag === TAG_INT
-                ? ` intVal=${p?.value}`
-                : p?.tag === TAG_TUPLE2
-                  ? ` firstTag=${unionTagAsInt(p.first)} secondTag=${unionTagAsInt(p.second)}`
-                  : "")
-          );
-        }
-        if (__sceneDebugDepth > 20) {
-          throw new Error(
-            `scene-debug: Transformed-style recursion depth ${__sceneDebugDepth} handle=${h} unionTag=${tag} payloadTag=${p?.tag} intVal=${p?.value}`
-          );
-        }
-      }
-    }
-    writeOut(outPtr, allocHandle({ tag: TAG_LIST, items }));
+    const handle = allocHandle({ tag: TAG_LIST, items });
+    for (const item of items) addOwner(item, handle);
+    writeOut(outPtr, handle);
     return RC_SUCCESS;
   };
 
@@ -2179,28 +2522,31 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
   };
 
   // Match C elmc_list_cons(take=0): retain spine elements so callers can release consumed args.
-  let __sceneConsLogs = 0;
+  const valueCache = new Map();
+
+  const valueCacheGet = (id, outPtr) => {
+    const cached = valueCache.get(id | 0) | 0;
+    if (cached && handles.has(cached)) {
+      retain(null, cached);
+      writeOut(outPtr, cached);
+      return RC_SUCCESS;
+    }
+    writeOut(outPtr, 0);
+    return RC_SUCCESS;
+  };
+
+  const valueCachePut = (id, handlePtr) => {
+    const handle = handlePtr | 0;
+    const key = id | 0;
+    if (handle && handles.has(handle) && !valueCache.has(key)) {
+      retain(null, handle);
+      valueCache.set(key, handle);
+    }
+    return RC_SUCCESS;
+  };
+
   const listCons = (outPtr, headPtr, tailPtr) => {
     const head = handles.has(headPtr | 0) ? cloneForList(headPtr) : intValue(headPtr);
-    const debugScene =
-      typeof process !== "undefined" && process.env && process.env.ELMC_DEBUG_SCENE;
-    if (debugScene && __sceneConsLogs < 30) {
-      const tag = unionTagAsInt(head);
-      const p = readHandle(head);
-      if (tag < 1 || tag > 7 || p?.tag === TAG_INT || p?.tag === TAG_LIST) {
-        __sceneConsLogs += 1;
-        console.error(
-          `[scene-debug] list_cons#${__sceneConsLogs} head=${head|0} unionTag=${tag} payloadTag=${p?.tag}` +
-            (p?.tag === TAG_TUPLE2
-              ? ` first=${unionTagAsInt(p.first)} secondTag=${readHandle(p.second)?.tag}`
-              : p?.tag === TAG_INT
-                ? ` intVal=${p.value}`
-                : p?.tag === TAG_LIST
-                  ? ` listLen=${p.items?.length}`
-                  : "")
-        );
-      }
-    }
     const tail = listItems(tailPtr).map(cloneForList);
     return writeList(outPtr, [head, ...tail]);
   };
@@ -2419,10 +2765,9 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
       ? payloadHandle
       : newIntHandle(intValue(asHandle(payloadHandle)));
     const ctorTag = tagPtr != null && tagPtr !== 0 ? wasmScalarArg(tagPtr) : 1;
-    writeOut(
-      outPtr,
-      allocHandle({ tag: TAG_MAYBE, value: owned, isJust: true, ctorTag })
-    );
+    const handle = allocHandle({ tag: TAG_MAYBE, value: owned, isJust: true, ctorTag });
+    addOwner(owned, handle);
+    writeOut(outPtr, handle);
     return RC_SUCCESS;
   };
 
@@ -2455,8 +2800,9 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
 
   const maybeIsNothing = (outPtr, maybePtr) => {
     const isNothing = isMaybeNothing(maybePtr);
-    if (outPtr) view().setUint32(outPtr, isNothing ? 1 : 0, true);
-    return RC_SUCCESS;
+    // Match list_is_empty: write a boxed Int 0/1 handle. Raw i32 0/1 collides with
+    // immortal UNIT (handle 1 = Int 0) when callers use runtime_as_bool.
+    return newInt(outPtr, isNothing ? 1 : 0);
   };
 
   const maybeWithDefault = (outPtr, defaultPtr, maybePtr) => {
@@ -2541,10 +2887,8 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
       return tuple2(outPtr, value, elements.second);
     }
 
-    const secondHandle = newIntHandle(elements.second);
-    const mapRc = tuple2Ints(outPtr, value, secondHandle);
+    const mapRc = tuple2Ints(outPtr, intValue(value), elements.second | 0);
     release(value);
-    release(secondHandle);
     return mapRc;
   };
 
@@ -2564,9 +2908,7 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
       return tuple2(outPtr, elements.first, value);
     }
 
-    const firstHandle = newIntHandle(elements.first);
-    const mapRc = tuple2Ints(outPtr, firstHandle, value);
-    release(firstHandle);
+    const mapRc = tuple2Ints(outPtr, elements.first | 0, intValue(value));
     release(value);
     return mapRc;
   };
@@ -2595,7 +2937,11 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
       return tuple2(outPtr, firstResult.value, secondResult.value);
     }
 
-    const mapRc = tuple2Ints(outPtr, firstResult.value, secondResult.value);
+    const mapRc = tuple2Ints(
+      outPtr,
+      intValue(firstResult.value),
+      intValue(secondResult.value)
+    );
     release(firstResult.value);
     release(secondResult.value);
     return mapRc;
@@ -2621,27 +2967,26 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
 
   const basicsNot = (outPtr, valuePtr) => newInt(outPtr, intValue(valuePtr) === 0 ? 1 : 0);
 
-  const tuple2Ints = (outPtr, aPtr, bPtr) => {
-    writeOut(
-      outPtr,
-      allocHandle({
-        tag: TAG_TUPLE2,
-        first: newIntHandle(intValue(aPtr)),
-        second: newIntHandle(intValue(bPtr)),
-      })
-    );
+  // Match C `elmc_tuple2_ints(out, elmc_int_t, elmc_int_t)`: args are raw i32
+  // scalars, not handles. Using intValue() here made `i32.const 300` collide with
+  // live handle id 300 and rewrite logo/Scene3d coordinates (300→garbage).
+  const tuple2Ints = (outPtr, a, b) => {
+    const first = newIntHandle(a | 0);
+    const second = newIntHandle(b | 0);
+    const handle = allocHandle({ tag: TAG_TUPLE2, first, second });
+    addOwner(first, handle);
+    addOwner(second, handle);
+    writeOut(outPtr, handle);
     return RC_SUCCESS;
   };
 
   const tuple2 = (outPtr, firstPtr, secondPtr) => {
-    writeOut(
-      outPtr,
-      allocHandle({
-        tag: TAG_TUPLE2,
-        first: storeRecordField(firstPtr),
-        second: storeRecordField(secondPtr),
-      })
-    );
+    const first = storeRecordField(firstPtr);
+    const second = storeRecordField(secondPtr);
+    const handle = allocHandle({ tag: TAG_TUPLE2, first, second });
+    addOwner(first, handle);
+    addOwner(second, handle);
+    writeOut(outPtr, handle);
     return RC_SUCCESS;
   };
 
@@ -2671,7 +3016,10 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
     const first = listItemHandle(items[startIndex]);
     if (startIndex === items.length - 1) return first;
     const second = nestedTupleFromListItems(items, startIndex + 1);
-    return allocHandle({ tag: TAG_TUPLE2, first, second });
+    const handle = allocHandle({ tag: TAG_TUPLE2, first, second });
+    addOwner(first, handle);
+    addOwner(second, handle);
+    return handle;
   };
 
   const writeTupleProjField = (outPtr, fieldPtr) => {
@@ -2701,7 +3049,11 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
   const runtimeTupleSecond = (outPtr, tuplePtr) => tupleFieldAccess(outPtr, tuplePtr, 1);
 
   const tupleProj = (outPtr, tuplePtr, indexPtr) => {
-    const index = wasmScalarArg(indexPtr);
+    // Field indices are raw i32.const from WASM lower — never heap handles.
+    // wasmScalarArg(N) collides when handle id N is a live Int (same class as
+    // html_cmd/browser_cmd kinds): record_get(..., 2) read field 0 when handle
+    // 2 was Int 0, so Browser.sandbox put init into the view slot.
+    const index = indexPtr | 0;
     let subject = tuplePtr;
     const maybe = readHandle(tuplePtr);
     if (maybe?.tag === TAG_MAYBE && maybe.value != null) {
@@ -2709,6 +3061,7 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
     }
 
     const payload = readHandle(subject);
+
 
     if (payload?.tag === TAG_TUPLE2) {
       const field = index === 1 ? payload.second : payload.first;
@@ -3065,7 +3418,10 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
     return writeString(outPtr, haystack.split(needle).join(replacement));
   };
 
-  const stringFromIntValue = (outPtr, nPtr) => writeString(outPtr, String(wasmScalarArg(nPtr)));
+  const stringFromIntValue = (outPtr, nPtr) =>
+    // Coerce TAG_FLOAT (boxed_binop / floatish int_arith) — wasmScalarArg/intValue
+    // returns the handle id for non-INT tags, which made String.fromInt print "85".
+    writeString(outPtr, String(asIntNumber(nPtr)));
 
   const parseStringInt = (str) => {
     if (!str || !/^[-+]?\d+$/.test(str)) return null;
@@ -3458,9 +3814,18 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
   const debugTodo = (outPtr, _labelPtr) => newInt(outPtr, 0);
 
   const floatNumber = (ptr) => {
-    const payload = readHandle(ptr);
-    if (payload?.tag === TAG_FLOAT) return payload.value;
-    if (payload?.tag === TAG_INT) return payload.value;
+    let cur = ptr | 0;
+    for (let depth = 0; depth < 4; depth++) {
+      const payload = readHandle(cur);
+      if (!payload) return wasmScalarArg(ptr);
+      if (payload.tag === TAG_FLOAT) return payload.value;
+      if (payload.tag === TAG_INT) return payload.value;
+      if (payload.tag === TAG_TUPLE2) {
+        cur = payload.second | 0;
+        continue;
+      }
+      return wasmScalarArg(ptr);
+    }
     return wasmScalarArg(ptr);
   };
 
@@ -3512,8 +3877,8 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
     const y = floatNumber(yPtr);
     return tuple2Ints(
       outPtr,
-      newIntHandle(Math.trunc(Math.sqrt(x * x + y * y))),
-      newIntHandle(Math.trunc(Math.atan2(y, x)))
+      Math.trunc(Math.sqrt(x * x + y * y)),
+      Math.trunc(Math.atan2(y, x))
     );
   };
   const basicsMax = (outPtr, aPtr, bPtr) =>
@@ -3521,6 +3886,28 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
   const basicsMin = (outPtr, aPtr, bPtr) =>
     retain(outPtr, compareValues(aPtr, bPtr) <= 0 ? aPtr : bPtr);
   const basicsClamp = (outPtr, lowPtr, highPtr, nPtr) => {
+    const lowP = peelNumericPayload(lowPtr);
+    const highP = peelNumericPayload(highPtr);
+    const nP = peelNumericPayload(nPtr);
+    // Mixed Int/Float (e.g. `clamp 0 1 u` in ColorConversions.inverseGamma):
+    // compare-by-tag would pick Int bounds and poison Float results as Int(1).
+    if (
+      lowP &&
+      highP &&
+      nP &&
+      (lowP.tag === TAG_INT || lowP.tag === TAG_FLOAT) &&
+      (highP.tag === TAG_INT || highP.tag === TAG_FLOAT) &&
+      (nP.tag === TAG_INT || nP.tag === TAG_FLOAT)
+    ) {
+      const low = Number(lowP.value);
+      const high = Number(highP.value);
+      const n = Number(nP.value);
+      const clamped = Math.min(high, Math.max(low, n));
+      if (lowP.tag === TAG_FLOAT || highP.tag === TAG_FLOAT || nP.tag === TAG_FLOAT) {
+        return writeFloatNumber(outPtr, clamped);
+      }
+      return newInt(outPtr, clamped | 0);
+    }
     const below = compareValues(nPtr, lowPtr);
     if (below < 0) return retain(outPtr, lowPtr);
     const above = compareValues(nPtr, highPtr);
@@ -3535,8 +3922,37 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
   };
   const basicsRemainderBy = (outPtr, modPtr, nPtr) =>
     newInt(outPtr, wasmScalarArg(nPtr) % wasmScalarArg(modPtr));
-  const basicsNegate = (outPtr, nPtr) => newInt(outPtr, -wasmScalarArg(nPtr));
-  const basicsAbs = (outPtr, nPtr) => newInt(outPtr, Math.abs(wasmScalarArg(nPtr)));
+  // Match C elmc_basics_negate/abs: Float (and Quantity Float wrappers) must
+  // stay TAG_FLOAT. wasmScalarArg on a Float handle returns the handle id, and
+  // boxing that as Int poisons Scene3d lights (`-direction.x`) / modelScale.
+  const peelNumericPayload = (ptr) => {
+    let payload = readHandle(ptr | 0);
+    for (let depth = 0; payload?.tag === TAG_TUPLE2 && depth < 4; depth++) {
+      payload = readHandle(payload.second | 0);
+    }
+    return payload;
+  };
+  const basicsNegate = (outPtr, nPtr) => {
+    const payload = peelNumericPayload(nPtr);
+    if (payload?.tag === TAG_FLOAT) {
+      const buf = new ArrayBuffer(4);
+      const view = new DataView(buf);
+      view.setFloat32(0, -payload.value, true);
+      return newFloat(outPtr, view.getUint32(0, true) | 0);
+    }
+    return newInt(outPtr, -wasmScalarArg(nPtr));
+  };
+  const basicsAbs = (outPtr, nPtr) => {
+    const payload = peelNumericPayload(nPtr);
+    if (payload?.tag === TAG_FLOAT) {
+      const v = payload.value;
+      const buf = new ArrayBuffer(4);
+      const view = new DataView(buf);
+      view.setFloat32(0, v < 0 ? -v : v, true);
+      return newFloat(outPtr, view.getUint32(0, true) | 0);
+    }
+    return newInt(outPtr, Math.abs(wasmScalarArg(nPtr)));
+  };
   const basicsXor = (outPtr, aPtr, bPtr) =>
     newInt(outPtr, (intValue(aPtr) !== 0) !== (intValue(bPtr) !== 0) ? 1 : 0);
 
@@ -3599,9 +4015,11 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
     const fields = [];
     for (let i = 0; i < end; i += 1) {
       const ptr = fieldPtrs[i] | 0;
-      if (ptr !== 0) {
-        fields[i] = storeField(ptr);
-      }
+      // Never leave sparse holes: a null slot is an explicit 0 int field.
+      // Skipping nulls made `{x, y=0.0-as-null, z}` pack as `[x,z]` so `.y`
+      // read `z` (and Matrix4.fromRecord scrambled triangleVertexPositions
+      // whenever a coordinate was exactly 0).
+      fields[i] = storeField(ptr !== 0 ? ptr : newIntHandle(0));
     }
     return fields;
   };
@@ -3610,18 +4028,23 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
     const fields = recordFieldsFromWasmArgs(fieldPtrs, (ptr) =>
       newIntHandle(wasmScalarArg(ptr))
     );
-    writeOut(outPtr, allocHandle({ tag: TAG_RECORD, fields }));
+    const handle = allocHandle({ tag: TAG_RECORD, fields });
+    for (const field of fields) addOwner(field, handle);
+    writeOut(outPtr, handle);
     return RC_SUCCESS;
   };
 
   const recordNew = (outPtr, ...fieldPtrs) => {
     const fields = recordFieldsFromWasmArgs(fieldPtrs, storeRecordField);
-    writeOut(outPtr, allocHandle({ tag: TAG_RECORD, fields }));
+    const handle = allocHandle({ tag: TAG_RECORD, fields });
+    for (const field of fields) addOwner(field, handle);
+    writeOut(outPtr, handle);
     return RC_SUCCESS;
   };
 
   const recordGet = (outPtr, recordPtr, indexPtr) => {
-    const index = wasmScalarArg(indexPtr);
+    // Raw i32 field index from codegen (see tupleProj).
+    const index = indexPtr | 0;
     const fields = readHandle(recordPtr)?.fields ?? [];
     const field = fields[index];
     if (field == null) {
@@ -3636,7 +4059,8 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
   // Match C elmc_record_update_index_cow_drop: clone+retain fields, then release
   // the old record when a fresh handle is published so caller can null owned[base].
   const recordUpdate = (outPtr, recordPtr, valuePtr, indexPtr) => {
-    const index = wasmScalarArg(indexPtr);
+    // Raw i32 field index from codegen (see tupleProj).
+    const index = indexPtr | 0;
     const fields = (readHandle(recordPtr)?.fields ?? []).map(storeRecordField);
     if (index >= 0 && index < fields.length) {
       // Drop the retain from the map-copy for the replaced slot; the new value
@@ -3646,6 +4070,7 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
       fields[index] = storeRecordField(valuePtr);
     }
     const next = allocHandle({ tag: TAG_RECORD, fields });
+    for (const field of fields) addOwner(field, next);
     writeOut(outPtr, next);
     // Do NOT release recordPtr here. `{ r | f = v }` produces a new record; the
     // caller (and any other roots such as model.url) still own recordPtr.
@@ -3764,6 +4189,17 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
     const left = readHandle(leftPtr);
     const right = readHandle(rightPtr);
     if (!left || !right) return left ? 1 : right ? -1 : 0;
+    // Elm `comparable` numbers: Int and Float must compare by numeric value.
+    // Tag-order compare made every `clamp 0 1 float` return Int(1) (TAG_FLOAT >
+    // TAG_INT), so ColorConversions.inverseGamma → pure white PBR materials.
+    if (
+      (left.tag === TAG_INT || left.tag === TAG_FLOAT) &&
+      (right.tag === TAG_INT || right.tag === TAG_FLOAT)
+    ) {
+      const lv = Number(left.value);
+      const rv = Number(right.value);
+      return lv < rv ? -1 : lv > rv ? 1 : 0;
+    }
     if (left.tag !== right.tag) return left.tag < right.tag ? -1 : 1;
 
     switch (left.tag) {
@@ -4329,8 +4765,9 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
     for (let i = 0; i < count; i++) {
       const { rc, value } = invokeClosure(closurePtr, [newIntHandle(i)]);
       if (rc !== RC_SUCCESS) return rc;
+      // Transfer ownership into the array spine (same as list_map). Releasing
+      // here freed TriangularMesh.grid vertices before writeList/addOwner ran.
       items.push(asHandle(value));
-      release(value);
     }
     return writeList(outPtr, items);
   };
@@ -4354,8 +4791,8 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
       const { rc, value } = invokeClosure(closurePtr, [arg]);
       release(arg);
       if (rc !== RC_SUCCESS) return rc;
+      // Transfer ownership into the result array — do not release(value).
       items.push(asHandle(value));
-      release(value);
     }
     return writeList(outPtr, items);
   };
@@ -4367,39 +4804,37 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
       release(args[0]);
       release(args[1]);
       if (rc !== RC_SUCCESS) return;
+      // Transfer ownership into the result array — do not release(value).
       items.push(asHandle(value));
-      release(value);
     });
     return writeList(outPtr, items);
   };
+  // Match listFoldl/listFoldr ownership: each closure result becomes the next
+  // accumulator. Releasing `value` after assign freed Mesh collect* list spines
+  // (Scene3d Primitives.cylinder/sphere → EmptyMesh; HeroScene ~11 entities).
   const arrayFoldl = (outPtr, closurePtr, accPtr, arrayPtr) => {
-    let acc = accPtr;
+    let accHandle = asHandle(accPtr);
     for (const item of listItems(arrayPtr)) {
-      const args = [asHandle(item), asHandle(acc)];
-      const { rc, value } = invokeClosure(closurePtr, args);
-      release(args[0]);
-      release(args[1]);
+      const arg = asHandle(item);
+      const { rc, value } = invokeClosure(closurePtr, [arg, accHandle]);
       if (rc !== RC_SUCCESS) return rc;
-      release(acc);
-      acc = asHandle(value);
-      release(value);
+      if (accHandle) release(accHandle);
+      accHandle = value;
     }
-    writeOut(outPtr, acc);
+    writeOut(outPtr, accHandle);
     return RC_SUCCESS;
   };
   const arrayFoldr = (outPtr, closurePtr, accPtr, arrayPtr) => {
-    let acc = accPtr;
-    for (const item of [...listItems(arrayPtr)].reverse()) {
-      const args = [asHandle(item), asHandle(acc)];
-      const { rc, value } = invokeClosure(closurePtr, args);
-      release(args[0]);
-      release(args[1]);
+    let accHandle = asHandle(accPtr);
+    const items = listItems(arrayPtr);
+    for (let i = items.length - 1; i >= 0; i--) {
+      const arg = asHandle(items[i]);
+      const { rc, value } = invokeClosure(closurePtr, [arg, accHandle]);
       if (rc !== RC_SUCCESS) return rc;
-      release(acc);
-      acc = asHandle(value);
-      release(value);
+      if (accHandle) release(accHandle);
+      accHandle = value;
     }
-    writeOut(outPtr, acc);
+    writeOut(outPtr, accHandle);
     return RC_SUCCESS;
   };
   const arrayFilter = (outPtr, closurePtr, arrayPtr) => {
@@ -4466,14 +4901,30 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
     const need = payload.arity | 0;
 
     if (nextApplied.length < need) {
+      // Partial application must own its env: retain captures + applied args so
+      // the caller can release temporaries (Scene3d.createRenderPass releases
+      // modelScale after call_closure). Without this, applied handles die and
+      // Entity draw records see recycled zeros → solid-white WebGL.
+      const retainedCaptures = [];
+      for (const c of captures) {
+        const h = c | 0;
+        if (h && handles.has(h)) retain(null, h);
+        retainedCaptures.push(h);
+      }
+      const retainedApplied = [];
+      for (const a of nextApplied) {
+        const h = a | 0;
+        if (h && handles.has(h)) retain(null, h);
+        retainedApplied.push(h);
+      }
       return {
         rc: RC_SUCCESS,
         value: allocHandle({
           tag: TAG_CLOSURE,
           fnIndex: payload.fnIndex | 0,
           arity: need,
-          captures,
-          applied: nextApplied,
+          captures: retainedCaptures,
+          applied: retainedApplied,
         }),
       };
     }
@@ -4516,7 +4967,23 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
   };
 
   const callClosure = (outPtr, argc, closurePtr, ...callArgs) => {
-    const { rc, value } = invokeClosure(closurePtr, callArgs.slice(0, argc | 0));
+    const args = callArgs.slice(0, argc | 0);
+    try {
+      const bag = (globalThis.__ELMC_CALL_CLOS__ = globalThis.__ELMC_CALL_CLOS__ || []);
+      if (bag.length < 40 && (argc|0) >= 3) {
+        const p = readHandle(closurePtr);
+        bag.push({
+          argc: argc|0,
+          clos: closurePtr|0,
+          tag: p?.tag ?? null,
+          fnIndex: p?.fnIndex ?? null,
+          arity: p?.arity ?? null,
+          caps: (p?.captures||[]).length,
+          args: args.map(a=>a|0).slice(0,6),
+        });
+      }
+    } catch (_) {}
+    const { rc, value } = invokeClosure(closurePtr, args);
     if (rc !== RC_SUCCESS) return rc;
     writeOut(outPtr, value);
     return RC_SUCCESS;
@@ -4656,7 +5123,16 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
           if (payload.fn) stack.push(payload.fn | 0);
           for (const c of payload.children ?? []) stack.push(c | 0);
           for (const a of payload.args ?? []) stack.push(a | 0);
-          for (const a of payload.attrs ?? []) stack.push(a | 0);
+          for (const a of payload.attrs ?? []) {
+            if (typeof a === "number") {
+              stack.push(a | 0);
+            } else if (a && a.kind === "event") {
+              if (a.handler) stack.push(a.handler | 0);
+              if (a.decoder) stack.push(a.decoder | 0);
+            }
+          }
+          if (payload.handler) stack.push(payload.handler | 0);
+          if (payload.decoder) stack.push(payload.decoder | 0);
           if (payload.kind === "custom" && payload.model) {
             stack.push(payload.model.entities | 0, payload.model.options | 0);
           }
@@ -4676,7 +5152,17 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
         case TAG_CMD:
         case TAG_SUB:
           if (payload.value) stack.push(payload.value | 0);
+          if (payload.request) stack.push(payload.request | 0);
+          if (payload.tracker) stack.push(payload.tracker | 0);
           for (const f of payload.fields ?? []) stack.push(f | 0);
+          for (const p of payload.params ?? []) stack.push(p | 0);
+          for (const item of payload.items ?? []) stack.push(item | 0);
+          // Json.Decode.Decoder shares tag 14 with TAG_CMD; keep succeed/fail msgs.
+          if (payload.msg) stack.push(payload.msg | 0);
+          if (payload.decoder) stack.push(payload.decoder | 0);
+          for (const d of payload.decoders ?? []) stack.push(d | 0);
+          if (payload.func) stack.push(payload.func | 0);
+          if (payload.callback) stack.push(payload.callback | 0);
           break;
         default:
           break;
@@ -4798,6 +5284,21 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
     stringValue,
     invokeClosure,
     tuple2,
+    makeTuple2Handle: (firstPtr, secondPtr) => {
+      const first = storeRecordField(firstPtr);
+      const second = storeRecordField(secondPtr);
+      const handle = allocHandle({ tag: TAG_TUPLE2, first, second });
+      addOwner(first, handle);
+      addOwner(second, handle);
+      return handle;
+    },
+    retainHandle: (ptr) => {
+      retain(0, ptr | 0);
+    },
+    releaseHandle: (ptr) => {
+      release(ptr | 0);
+    },
+    addOwner,
     tupleFirst,
     tupleSecond,
     newIntHandle,
@@ -4849,6 +5350,11 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
     TAG_CMD,
     TAG_RESULT,
     TAG_TUPLE2,
+    TAG_MAYBE,
+    TAG_FLOAT,
+    TAG_BYTES,
+    TAG_CLOSURE,
+    fetchFn: typeof fetch !== "undefined" ? fetch.bind(globalThis) : null,
     taskSucceed: taskRuntime.taskSucceed,
     taskFail: taskRuntime.taskFail,
     cmdNoneHandle,
@@ -4885,6 +5391,8 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
     TAG_RECORD,
     TAG_MAYBE,
     TAG_MJS,
+    TAG_TUPLE2,
+    TAG_INT,
   });
 
   const webglRuntime = createWebglRuntime({
@@ -4948,7 +5456,7 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
     if (!payload) return;
 
     if (payload.tag === TAG_CMD) {
-      if (payload.kind === "http") {
+      if (payload.kind === "http" || payload.kind === "http_cancel") {
         await http.drainHttpCommands(ptr, bytes);
         return;
       }
@@ -5007,6 +5515,8 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
     });
     if (applied.rc !== RC_SUCCESS) return applied;
     liveBrowser.modelPtr = applied.modelPtr | 0;
+    const initFnForSubs = recordField(liveBrowser.implPtr, 0);
+    registerSubscriptions(liveBrowser.implPtr, initFnForSubs, liveBrowser.modelPtr | 0);
     const viewResult = invokeClosure(liveBrowser.viewFn, [liveBrowser.modelPtr]);
     if (viewResult.rc === RC_SUCCESS) {
       mountViewHandle(viewResult.value);
@@ -5102,6 +5612,8 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
     release,
     release_unless_reachable: releaseUnlessReachable,
     release_unless_reachable_from_roots: releaseUnlessReachableFromRoots,
+    value_cache_get: valueCacheGet,
+    value_cache_put: valueCachePut,
     release_array_lifo: releaseArrayLifo,
     as_int: asIntNumber,
     as_bool: asBoolForWasm,
@@ -5113,6 +5625,12 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
       if (payload?.tag === TAG_TUPLE2) {
         writeOut(outPtr, payload.second | 0);
         retain(null, payload.second | 0);
+      } else if (payload?.tag === TAG_RESULT || payload?.tag === TAG_MAYBE) {
+        // Result.Err / Maybe.Just carry the payload in `.value`. Returning the
+        // wrapper itself made Err's ctorTag (2) look like Timeout (also tag 2).
+        const inner = (payload.value | 0) || 0;
+        writeOut(outPtr, inner);
+        if (inner) retain(null, inner);
       } else {
         writeOut(outPtr, handlePtr | 0);
         retain(null, handlePtr | 0);
@@ -5363,6 +5881,7 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
     task_and_then: taskRuntime.taskAndThen,
     task_on_error: taskRuntime.taskOnError,
     task_perform: taskRuntime.taskPerform,
+    task_command: taskRuntime.taskCommand,
     backend_task_http_get_json: taskRuntime.backendTaskHttpGetJson,
     backend_task_http_get: taskRuntime.backendTaskHttpGet,
     backend_task_http_expect_json: taskRuntime.backendTaskHttpExpectJson,
@@ -5621,7 +6140,10 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
     list_from_values: listFromValues,
     tuple2,
     html_cmd: (outPtr, kindPtr, ...params) => {
-      const kind = wasmScalarArg(kindPtr);
+      // Kind is always a raw i32.const from WASM lower — never a heap handle.
+      // wasmScalarArg(kind) collides when handle id N is a live Int (e.g. model 0
+      // at handle 6 makes element kind 6 read as 0 → unimplemented).
+      const kind = kindPtr | 0;
 
       if (kind === HTML_KIND_CMD_NONE) {
         writeOut(outPtr, newIntHandle(0));
@@ -5773,9 +6295,11 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
         const bPtr = params[1] | 0;
         const cPtr = params[2] | 0;
         if (cPtr) {
+          // onWithOptions-style: name, decoder, handler options — keep decoder in decoder slot
           writeOut(outPtr, newVdomEvent(stringValue(aPtr), cPtr | 0, bPtr | 0));
         } else {
-          writeOut(outPtr, newVdomEvent(stringValue(aPtr), bPtr | 0, 0));
+          // Html.Events.on / onMouseDown: (name, decoder) — decoder only (not a closure)
+          writeOut(outPtr, newVdomEvent(stringValue(aPtr), 0, bPtr | 0));
         }
         return RC_SUCCESS;
       }
@@ -5785,7 +6309,8 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
       return RC_ERR_UNIMPLEMENTED;
     },
     browser_cmd: (outPtr, kindPtr, ...params) => {
-      const kind = wasmScalarArg(kindPtr);
+      // Same as html_cmd: kinds are raw i32 immediates from codegen.
+      const kind = kindPtr | 0;
 
       if (kind === BROWSER_KIND_APPLICATION || kind === BROWSER_KIND_ELEMENT || kind === BROWSER_KIND_DOCUMENT || kind === BROWSER_KIND_WORKER) {
         const implPtr = cloneRecordHandle(params[0] | 0);
@@ -5872,16 +6397,43 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
       return RC_SUCCESS;
     },
     dom_sub: (outPtr, kindPtr, ...params) => {
-      const kind = wasmScalarArg(kindPtr);
+      // Dom sub kinds are raw i32.const immediates from plan lower.
+      const kind = kindPtr | 0;
       if (kind === DOM_SUB_NONE) {
         writeOut(outPtr, newIntHandle(0));
         return RC_SUCCESS;
       }
+      const normalizedParams = params.map((p) => p | 0);
+      // Retain params for the SUB's lifetime. Callers release their owned
+      // slots after publishing the SUB; without this, Http.track's toMsg
+      // closure is freed before registerSubscriptions can install it.
+      for (const p of normalizedParams) {
+        if (p && handles.has(p)) retain(null, p);
+      }
       const subHandle = allocHandle({
         tag: TAG_SUB,
         domKind: kind | 0,
-        params: params.map((p) => p | 0),
+        params: normalizedParams,
       });
+      for (const p of normalizedParams) {
+        if (p) addOwner(p, subHandle);
+      }
+      // Install Http.track immediately and keep a dispose entry so clearDomSubs
+      // can unregister. Generated subscriptions release the toMsg owned slot
+      // right after dom_sub returns; registerProgressListener retains it.
+      if (kind === DOM_SUB_HTTP_TRACK) {
+        const tracker = stringValue(normalizedParams[0] | 0);
+        const toMsgPtr = normalizedParams[1] | 0;
+        http.registerProgressListener(tracker, toMsgPtr, []);
+        const id = nextDomSubId++;
+        activeDomSubs.set(id, {
+          dispose: () => http.unregisterProgressListener(tracker),
+        });
+      }
+      try {
+        const bag = (globalThis.__ELMC_DOM_SUB__ = globalThis.__ELMC_DOM_SUB__ || []);
+        if (bag.length < 40) bag.push({ kind, handle: subHandle|0, params: normalizedParams });
+      } catch (_) {}
       writeOut(outPtr, subHandle);
       return RC_SUCCESS;
     },
@@ -5889,6 +6441,7 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
     bytes_cmd: (outPtr, kindPtr, ...params) => bytes.bytesCmd(outPtr, wasmScalarArg(kindPtr), ...params),
     parser_cmd: (outPtr, kindPtr, ...params) => parser.parserCmd(outPtr, wasmScalarArg(kindPtr), ...params),
     bytes_from_list: (outPtr, listPtr) => bytes.bytesFromList(outPtr, listPtr),
+    bytes_encode_sequence: (outPtr, listPtr) => bytes.bytesEncodeSequence(outPtr, listPtr),
     json_decode_value: (outPtr, decoderPtr, valuePtr) =>
       json.jsonDecodeRun(outPtr, decoderPtr, valuePtr),
     json_decode_string: (outPtr, decoderPtr, stringPtr) =>
@@ -5981,8 +6534,12 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
         func: funcPtr,
         decoders: [d1, d2, d3, d4, d5, d6, d7],
       }),
-    json_decode_succeed: (outPtr, valuePtr) =>
-      json.writeDecoderOut(outPtr, { kind: json.DEC_SUCCEED, msg: valuePtr }),
+    json_decode_succeed: (outPtr, valuePtr) => {
+      const msg = valuePtr | 0;
+      if (msg && handles.has(msg)) retain(null, msg);
+      const rc = json.writeDecoderOut(outPtr, { kind: json.DEC_SUCCEED, msg });
+      return rc;
+    },
     json_decode_fail: (outPtr, msgPtr) =>
       json.writeDecoderOut(outPtr, { kind: json.DEC_FAIL, msg: msgPtr }),
     json_decode_and_then: (outPtr, funcPtr, decoderPtr) =>
@@ -6120,11 +6677,20 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
     },
     sub_map: (outPtr, fnPtr, subPtr) => {
       const subPayload = readHandle(subPtr);
-      if (subPayload?.tag === TAG_SUB) {
-        writeOut(outPtr, subPtr);
-        retain(null, subPtr);
-        return RC_SUCCESS;
-      }
+      try {
+        const bag = (globalThis.__ELMC_SUB_MAP__ = globalThis.__ELMC_SUB_MAP__ || []);
+        if (bag.length < 30) {
+          bag.push({
+            fn: fnPtr|0,
+            sub: subPtr|0,
+            subTag: subPayload?.tag ?? null,
+            domKind: subPayload?.domKind ?? null,
+            wrappedTagger: true,
+          });
+        }
+      } catch (_) {}
+      // Always keep the tagger. Bare TAG_SUB (Time.every / onAnimationFrame) must
+      // still become MAP(fn, sub) so Tick / SceneMsg wrappers reach update.
       writeOut(outPtr, platformManagerMap(fnPtr, subPtr));
       return RC_SUCCESS;
     },
@@ -6180,6 +6746,7 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
     debugRcState,
     readHandle,
     writeOut,
+    timeEveryIntervalMs,
     inspectVdom,
     forceLazyHtml: (lazyPtr, argPtrs) => forceLazyHtml(lazyPtr, argPtrs),
     vdomInnerText,
@@ -6190,7 +6757,7 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
     drainOutgoingPorts,
     sendIncomingPort,
     deliverIncomingPort: (portName, payload) => deliverIncomingPortFn?.(portName, payload),
-    dispatchPlatformMsg: (msgPtr) => dispatchPlatformMsg(msgPtr | 0),
+    dispatchPlatformMsg: (msgPtr, opts) => dispatchPlatformMsg(msgPtr | 0, opts),
     registerRouteBytes: (path, routeBytes) => routeBytesRuntime?.registerRoute(path, routeBytes),
     loadRouteBytesManifest: (url) => routeBytesRuntime?.loadManifest(url),
     setRouteBytesSiteRoot: (pageHtmlUrl) =>

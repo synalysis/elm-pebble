@@ -104,6 +104,8 @@ defmodule Elmc.Backend.Wasm.ImportSignatures do
                     "runtime.release_unless_reachable" => 2,
                     "runtime.release_unless_reachable_from_roots" => 3,
                     "runtime.release_array_lifo" => 2,
+                    "runtime.value_cache_get" => 2,
+                    "runtime.value_cache_put" => 2,
                     "runtime.as_int" => 1,
                     "runtime.as_bool" => 1,
                     "runtime.union_tag_as_int" => 1,

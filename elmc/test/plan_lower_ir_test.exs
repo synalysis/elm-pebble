@@ -1132,6 +1132,80 @@ defmodule Elmc.PlanLowerIrTest do
     assert :ok = Verify.run(plan)
   end
 
+  test "Maybe.map2 reuses maybe via andThen + map on same param (qualified_call)" do
+    # Mirrors elm_pebble_dev Main.init:
+    #   Maybe.map2 Tuple.pair
+    #     (Maybe.andThen .metadata maybePagePath)
+    #     (Maybe.map .path maybePagePath)
+    # Special-value lowering must not consume the param on andThen then borrow it on map.
+    decl_map = %{
+      {"Main", "pairFields"} => %{
+        name: "pairFields",
+        type: "Maybe { metadata : Maybe Int, path : Int } -> Maybe (Maybe Int, Int)",
+        args: ["maybePagePath"],
+        expr: %{
+          op: :qualified_call,
+          target: "Maybe.map2",
+          args: [
+            %{op: :qualified_ref, target: "Tuple.pair"},
+            %{
+              op: :qualified_call,
+              target: "Maybe.andThen",
+              args: [
+                %{
+                  op: :lambda,
+                  args: ["fieldAccessorArg"],
+                  body: %{
+                    op: :field_access,
+                    arg: "fieldAccessorArg",
+                    field: "metadata"
+                  }
+                },
+                %{op: :var, name: "maybePagePath"}
+              ]
+            },
+            %{
+              op: :qualified_call,
+              target: "Maybe.map",
+              args: [
+                %{
+                  op: :lambda,
+                  args: ["fieldAccessorArg"],
+                  body: %{
+                    op: :field_access,
+                    arg: "fieldAccessorArg",
+                    field: "path"
+                  }
+                },
+                %{op: :var, name: "maybePagePath"}
+              ]
+            }
+          ]
+        }
+      }
+    }
+
+    assert {:ok, plan} =
+             Function.lower(Map.fetch!(decl_map, {"Main", "pairFields"}), "Main", decl_map,
+               rc_required: false
+             )
+
+    assert :ok = Verify.run(plan)
+
+    ops =
+      plan.blocks
+      |> Enum.flat_map(& &1.instrs)
+      |> Enum.map(& &1.op)
+
+    assert :record_get in ops
+    refute Enum.any?(plan.blocks, fn block ->
+             Enum.any?(block.instrs, fn
+               %{op: :call_runtime, args: %{builtin: :maybe_and_then}} -> true
+               _ -> false
+             end)
+           end)
+  end
+
   test "__apply__ field accessor uses applied value type for record field index" do
     Process.put(:elmc_record_alias_shapes, %{
       {"Main", "App"} => ["view", "head"],

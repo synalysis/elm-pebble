@@ -38,6 +38,22 @@ if [[ "${SKIP_MINIFY_HOST:-0}" == "1" ]]; then
   exit 0
 fi
 
+# Always refresh dist host from elmc-wasm-runtime before bundling. Minify used to
+# re-bundle an already-minified boot.js (siblings deleted), so host-only fixes
+# never reached the browser until a full serve/build sync.
+HOST_SRC="${ELMC_WASM_HOST_SRC:-$ROOT/elmc-wasm-runtime/host}"
+if [[ "${SKIP_SYNC_HOST:-0}" != "1" && -d "$HOST_SRC" ]]; then
+  echo "==> sync host JS from $HOST_SRC"
+  shopt -s nullglob
+  for host_file in "$HOST_SRC"/*.js; do
+    cp "$host_file" "$HOST/$(basename "$host_file")"
+  done
+  if [[ -f "$HOST_SRC/browser.html" ]]; then
+    cp "$HOST_SRC/browser.html" "$HOST/browser.html"
+  fi
+  shopt -u nullglob
+fi
+
 find_esbuild() {
   if [[ -n "${ESBUILD:-}" && -x "${ESBUILD}" ]]; then
     echo "$ESBUILD"

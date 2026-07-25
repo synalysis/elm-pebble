@@ -8,6 +8,7 @@
     "build:wasm": "bash ../scripts/build-elm-pebble-dev-wasm.sh",
     "verify:wasm": "node ../elmc/test/support/wasm_browser_page_data_probe_runner.mjs dist/wasm-web",
     "verify:wasm:routes": "node ../elmc/test/support/wasm_route_bytes_content_dat_probe_runner.mjs dist",
+    "verify:wasm:hero": "node ../elmc/test/support/wasm_hero_scene_probe.mjs dist/wasm-web dist/wasm/content.dat",
     "verify:wasm:browser": "node ../elmc/test/support/wasm_browser_playwright_probe_runner.mjs dist",
     "bench:wasm": "bash ../scripts/benchmark-elm-pebble-dev-wasm.sh",
     "bench:wasm:browser": "node ../scripts/benchmark-elm-pebble-dev-wasm-browser.mjs",

@@ -212,14 +212,15 @@ export async function bootFromUrls({
     }
 
     helpers.buildImport("release")(value);
-    if (boot.value) helpers.buildImport("release")(boot.value);
-    if (boot.initValue) helpers.buildImport("release")(boot.initValue);
-    else if (boot.modelPtr) helpers.buildImport("release")(boot.modelPtr);
-
-    if (!helpers.checkBalanced()) {
-      console.warn("RC imbalance after mounting browser program");
+    // Live browser owns model + mounted view (retained in liveBrowser). Releasing
+    // them here freed lastBodyPtrs and the next Time.every patch remounted WebGL
+    // via replaceWith + replaceChild → NotFoundError and a blank white canvas.
+    if (boot.initValue && boot.initValue !== boot.modelPtr && boot.initValue !== boot.value) {
+      helpers.buildImport("release")(boot.initValue);
     }
 
+    // Browser programs intentionally keep non-immortal model/view/subs alive.
+    // checkBalanced() is for one-shot VDOM mounts, not the live SPA session.
     const timing = {
       total_ms: +(performance.now() - t0).toFixed(1),
       fetch_ms: +fetchMs.toFixed(1),

@@ -35,6 +35,10 @@ export function createTaskRuntime(deps) {
     stringValue,
     invokeClosure,
     tuple2,
+    makeTuple2Handle = null,
+    retainHandle = null,
+    releaseHandle = null,
+    addOwner = null,
     tupleFirst,
     tupleSecond,
     newIntHandle,
@@ -101,16 +105,35 @@ export function createTaskRuntime(deps) {
     return payload?.tag === TAG_RESULT && payload.taskKind != null;
   };
 
-  const taskWrap = (kind, valuePtr) =>
-    allocHandle({
+  const taskWrap = (kind, valuePtr) => {
+    const value = valuePtr | 0;
+    const handle = allocHandle({
       tag: TAG_RESULT,
       isOk: true,
       taskKind: kind,
-      value: valuePtr | 0,
+      value,
     });
+    // Transfer ownership of `value` into the task (no extra retain). Callers that
+    // keep a parallel owned-slot ref must retain before wrapping.
+    if (value && addOwner) addOwner(value, handle);
+    return handle;
+  };
+
+  // `tuple2(out, …)` writes through an out-pointer and returns RC — not a handle.
+  const makeTuple2 = (firstPtr, secondPtr) => {
+    if (typeof makeTuple2Handle === "function") {
+      return makeTuple2Handle(firstPtr | 0, secondPtr | 0);
+    }
+    // Fallback without ownership (tests that don't pass makeTuple2Handle).
+    return allocHandle({
+      tag: TAG_TUPLE2,
+      first: firstPtr | 0,
+      second: secondPtr | 0,
+    });
+  };
 
   const taskWrapPair = (kind, firstPtr, secondPtr) =>
-    taskWrap(kind, tuple2(0, firstPtr | 0, secondPtr | 0));
+    taskWrap(kind, makeTuple2(firstPtr | 0, secondPtr | 0));
 
   const taskToResult = (ok, valuePtr) =>
     allocHandle({
@@ -118,6 +141,20 @@ export function createTaskRuntime(deps) {
       isOk: ok,
       value: valuePtr | 0,
     });
+
+  const isAsyncForce = (forced) =>
+    Boolean(
+      forced &&
+        (forced.httpGetJson ||
+          forced.httpGetWithOptions ||
+          forced.httpRequest ||
+          (forced.async && forced.rc === RC_ERR_UNIMPLEMENTED))
+    );
+
+  const withCont = (forced, step) => ({
+    ...forced,
+    cont: [...(forced.cont || []), step],
+  });
 
   const forceTask = (taskPtr) => {
     const payload = readHandle(taskPtr);
@@ -136,6 +173,9 @@ export function createTaskRuntime(deps) {
         const pair = readHandle(payload.value);
         if (pair?.tag !== TAG_TUPLE2) return { rc: RC_ERR_UNIMPLEMENTED, value: 0 };
         const forced = forceTask(pair.second | 0);
+        if (isAsyncForce(forced)) {
+          return withCont(forced, { kind: "onError", fn: pair.first | 0 });
+        }
         if (forced.rc !== RC_SUCCESS) return forced;
         const resultPayload = readHandle(forced.value);
         if (resultPayload?.isOk) return { rc: RC_SUCCESS, value: forced.value };
@@ -147,6 +187,9 @@ export function createTaskRuntime(deps) {
         const pair = readHandle(payload.value);
         if (pair?.tag !== TAG_TUPLE2) return { rc: RC_ERR_UNIMPLEMENTED, value: 0 };
         const forced = forceTask(pair.second | 0);
+        if (isAsyncForce(forced)) {
+          return withCont(forced, { kind: "map", fn: pair.first | 0 });
+        }
         if (forced.rc !== RC_SUCCESS) return forced;
         const resultPayload = readHandle(forced.value);
         if (!resultPayload?.isOk) return { rc: RC_SUCCESS, value: forced.value };
@@ -158,6 +201,9 @@ export function createTaskRuntime(deps) {
         const pair = readHandle(payload.value);
         if (pair?.tag !== TAG_TUPLE2) return { rc: RC_ERR_UNIMPLEMENTED, value: 0 };
         const forced = forceTask(pair.second | 0);
+        if (isAsyncForce(forced)) {
+          return withCont(forced, { kind: "andThen", fn: pair.first | 0 });
+        }
         if (forced.rc !== RC_SUCCESS) return forced;
         const resultPayload = readHandle(forced.value);
         if (!resultPayload?.isOk) return { rc: RC_SUCCESS, value: forced.value };
@@ -242,8 +288,6 @@ export function createTaskRuntime(deps) {
     return headers;
   };
 
-  const headersFromOptionsFields = (fields) => headersFromListPtr(fields[2] ?? 0);
-
   const readMaybeInt = (maybePtr) => {
     const maybe = readHandle(maybePtr);
     if (maybe?.tag !== TAG_MAYBE || maybe.value == null) return 0;
@@ -256,15 +300,52 @@ export function createTaskRuntime(deps) {
     return maybe?.tag === TAG_MAYBE && maybe.value != null;
   };
 
+  // Elm stores record fields alphabetically. `buildGetOptionsRecord` uses source
+  // declaration order (url-first). Detect which layout we have.
+  const parseGetOptionsFields = (fields) => {
+    const list = fields ?? [];
+    const first = stringValue(list[0] | 0);
+    const declarationOrder =
+      first.startsWith("http://") || first.startsWith("https://") || first.startsWith("/");
+
+    if (declarationOrder) {
+      return {
+        url: first,
+        expectPtr: list[1] ?? 0,
+        headerPairs: headersFromListPtr(list[2] ?? 0),
+        retries: readMaybeInt(list[4] ?? 0),
+        timeoutMs: readMaybeInt(list[5] ?? 0),
+        cacheStrategyJust: maybeIsJust(list[3] ?? 0),
+        cachePathJust: maybeIsJust(list[6] ?? 0),
+      };
+    }
+
+    // Alphabetical: cachePath, cacheStrategy, expect, headers, retries, timeoutInMs, url
+    return {
+      url: urlFromRecordFields(list),
+      expectPtr: list[2] ?? 0,
+      headerPairs: headersFromListPtr(list[3] ?? 0),
+      retries: readMaybeInt(list[4] ?? 0),
+      timeoutMs: readMaybeInt(list[5] ?? 0),
+      cacheStrategyJust: maybeIsJust(list[1] ?? 0),
+      cachePathJust: maybeIsJust(list[0] ?? 0),
+    };
+  };
+
+  const headersFromOptionsFields = (fields) => parseGetOptionsFields(fields).headerPairs;
+
   const warnIfBrowserCacheIgnored = (fields) => {
     if (browserCacheWarned) return;
-    if (maybeIsJust(fields[3] ?? 0) || maybeIsJust(fields[6] ?? 0)) {
+    const parsed = parseGetOptionsFields(fields);
+    if (parsed.cacheStrategyJust || parsed.cachePathJust) {
       browserCacheWarned = true;
       console.warn(
         "[elmc-wasm-runtime] BackendTask.Http cacheStrategy/cachePath are ignored in browser WASM builds; requests use fetch directly."
       );
     }
   };
+
+  const timeoutFromOptionsFields = (fields) => parseGetOptionsFields(fields).timeoutMs;
 
   const parseRequestRecord = (fields) => ({
     url: stringValue(fields[0] | 0),
@@ -337,7 +418,7 @@ export function createTaskRuntime(deps) {
         : message;
     return makeHttpTaskFailure(
       "BadBody",
-      tuple2(0, maybePtr, newStringHandle(bodyText)),
+      makeTuple2(maybePtr, newStringHandle(bodyText)),
       bodyText
     );
   };
@@ -359,21 +440,41 @@ export function createTaskRuntime(deps) {
     return { combines, innerExpectPtr: 0 };
   };
 
-  const buildGetOptionsRecord = (urlPtr, expectPtr, headersPtr = null) =>
-    allocHandle({
-      tag: TAG_RECORD,
-      fields: [
-        urlPtr | 0,
-        expectPtr | 0,
-        headersPtr ?? newList([]),
-        maybeNothingHandle(),
-        maybeNothingHandle(),
-        maybeNothingHandle(),
-        maybeNothingHandle(),
-      ],
-    });
+  const ownHandle = (ptr) => {
+    const handle = ptr | 0;
+    if (handle && retainHandle) retainHandle(handle);
+    return handle;
+  };
 
-  const timeoutFromOptionsFields = (fields) => readMaybeInt(fields[5] ?? 0);
+  // Record fields: retain only handles the caller still owns separately. Fresh
+  // allocs (rc=1) are transferred into the record without an extra retain.
+  const allocOwnedRecord = (fields, extra = {}) => {
+    const ownedFields = fields ?? [];
+    const handle = allocHandle({
+      tag: TAG_RECORD,
+      fields: ownedFields,
+      ...extra,
+    });
+    if (addOwner) {
+      for (const field of ownedFields) {
+        if (field) addOwner(field | 0, handle);
+      }
+    }
+    return handle;
+  };
+
+  const buildGetOptionsRecord = (urlPtr, expectPtr, headersPtr = null) => {
+    const headers = headersPtr != null ? ownHandle(headersPtr) : newList([]);
+    return allocOwnedRecord([
+      ownHandle(urlPtr),
+      ownHandle(expectPtr),
+      headers,
+      maybeNothingHandle(),
+      maybeNothingHandle(),
+      maybeNothingHandle(),
+      maybeNothingHandle(),
+    ]);
+  };
 
   const decodeJsonResponse = async (decoderPtr, text) => {
     if (!jsonDecodeRunString || !readOutSlot) {
@@ -428,14 +529,17 @@ export function createTaskRuntime(deps) {
     const headerItems = [];
     if (response.headers?.forEach) {
       response.headers.forEach((value, key) => {
-        headerItems.push(tuple2(0, newStringHandle(key), newStringHandle(value)));
+        headerItems.push(makeTuple2(newStringHandle(key), newStringHandle(value)));
       });
     } else {
       for (const [key, value] of headerPairs) {
-        headerItems.push(tuple2(0, newStringHandle(key), newStringHandle(value)));
+        headerItems.push(makeTuple2(newStringHandle(key), newStringHandle(value)));
       }
     }
 
+    // Declaration-order Metadata (matches BackendTask.Http.Metadata / Http.Metadata
+    // alias shapes): url, statusCode, statusText, headers. Alphabetical would still
+    // put statusCode at index 1, but url/headers disagree with plan field indices.
     return allocHandle({
       tag: TAG_RECORD,
       fields: [
@@ -546,7 +650,7 @@ export function createTaskRuntime(deps) {
           const metadataPtr = makeMetadataHandle(url, response, headerPairs);
           lastFailure = makeHttpTaskFailure(
             "BadStatus",
-            tuple2(0, metadataPtr, newStringHandle(errText)),
+            makeTuple2(metadataPtr, newStringHandle(errText)),
             `Bad status ${response.status}: ${errText}`
           );
           if (attempt < retries) continue;
@@ -608,13 +712,9 @@ export function createTaskRuntime(deps) {
 
     const fields = options.fields ?? [];
     warnIfBrowserCacheIgnored(fields);
-    const url = urlFromRecordFields(fields);
-    const expectPtr = fields[1] ?? 0;
-    const timeoutMs = timeoutFromOptionsFields(fields);
-    const headerPairs = headersFromOptionsFields(fields);
-    const retries = readMaybeInt(fields[4] ?? 0);
+    const parsed = parseGetOptionsFields(fields);
 
-    if (!url || !expectPtr) {
+    if (!parsed.url || !parsed.expectPtr) {
       return {
         rc: RC_SUCCESS,
         value: taskToResult(false, newStringHandle("BackendTask.Http.getWithOptions")),
@@ -622,11 +722,11 @@ export function createTaskRuntime(deps) {
     }
 
     return fetchBackendTaskHttp({
-      url,
-      expectPtr,
-      timeoutMs,
-      headerPairs,
-      retries,
+      url: parsed.url,
+      expectPtr: parsed.expectPtr,
+      timeoutMs: parsed.timeoutMs,
+      headerPairs: parsed.headerPairs,
+      retries: parsed.retries,
     });
   };
 
@@ -664,32 +764,78 @@ export function createTaskRuntime(deps) {
     });
   };
 
+  const applyTaskCont = async (result, cont) => {
+    let current = result;
+    for (const step of cont || []) {
+      if (!current || current.rc !== RC_SUCCESS || !current.value) return current;
+      const resultPayload = readHandle(current.value);
+      if (!resultPayload) return current;
+
+      if (step.kind === "andThen") {
+        // Propagate Err so a later onError can recover.
+        if (!resultPayload.isOk) continue;
+        const next = invokeClosure(step.fn | 0, [resultPayload.value | 0]);
+        if (next.rc !== RC_SUCCESS) return next;
+        current = await runTaskAsync(next.value | 0);
+        continue;
+      }
+
+      if (step.kind === "onError") {
+        if (resultPayload.isOk) continue;
+        const recovered = invokeClosure(step.fn | 0, [resultPayload.value | 0]);
+        if (recovered.rc !== RC_SUCCESS) return recovered;
+        current = await runTaskAsync(recovered.value | 0);
+        continue;
+      }
+
+      if (step.kind === "map") {
+        if (!resultPayload.isOk) continue;
+        const mapped = invokeClosure(step.fn | 0, [resultPayload.value | 0]);
+        if (mapped.rc !== RC_SUCCESS) return mapped;
+        current = { rc: RC_SUCCESS, value: taskToResult(true, mapped.value | 0) };
+      }
+    }
+    return current;
+  };
+
   const runTaskAsync = (taskPtr) =>
     new Promise((resolve) => {
       const run = () => {
-        const { rc, value, async, ms, httpGetJson, httpGetWithOptions, httpRequest } =
-          forceTask(taskPtr);
+        const forced = forceTask(taskPtr);
+        const {
+          rc,
+          value,
+          async: isAsync,
+          ms,
+          httpGetJson,
+          httpGetWithOptions,
+          httpRequest,
+          cont,
+        } = forced;
+
+        const finish = (result) => applyTaskCont(result, cont).then(resolve);
+
         if (httpGetJson) {
-          runHttpGetJsonTask(httpGetJson.taskPtr).then(resolve);
+          runHttpGetJsonTask(httpGetJson.taskPtr).then(finish);
           return;
         }
         if (httpGetWithOptions) {
-          runHttpGetWithOptionsTask(httpGetWithOptions.taskPtr).then(resolve);
+          runHttpGetWithOptionsTask(httpGetWithOptions.taskPtr).then(finish);
           return;
         }
         if (httpRequest) {
-          runHttpRequestTask(httpRequest.taskPtr).then(resolve);
+          runHttpRequestTask(httpRequest.taskPtr).then(finish);
           return;
         }
-        if (async && rc === RC_ERR_UNIMPLEMENTED) {
+        if (isAsync && rc === RC_ERR_UNIMPLEMENTED) {
           const timer = setTimeout(() => {
             pendingTimers.delete(timer);
-            resolve({ rc: RC_SUCCESS, value: taskToResult(true, newIntHandle(0)) });
+            finish({ rc: RC_SUCCESS, value: taskToResult(true, newIntHandle(0)) });
           }, Math.max(0, ms | 0));
           pendingTimers.add(timer);
           return;
         }
-        resolve({ rc, value });
+        finish({ rc, value });
       };
       queueMicrotask(run);
     });
@@ -710,7 +856,7 @@ export function createTaskRuntime(deps) {
   };
 
   const taskMap2 = (outPtr, fnPtr, aPtr, bPtr) => {
-    const pair = tuple2(0, aPtr | 0, bPtr | 0);
+    const pair = makeTuple2(aPtr | 0, bPtr | 0);
     writeOut(outPtr, taskWrapPair(TASK_MAP, fnPtr | 0, pair));
     return RC_SUCCESS;
   };
@@ -739,9 +885,7 @@ export function createTaskRuntime(deps) {
   const backendTaskHttpExpectJson = (outPtr, decoderPtr) => {
     writeOut(
       outPtr,
-      allocHandle({
-        tag: TAG_RECORD,
-        fields: [decoderPtr | 0],
+      allocOwnedRecord([ownHandle(decoderPtr)], {
         backendTaskExpectKind: BACKEND_TASK_EXPECT_JSON,
       })
     );
@@ -763,9 +907,7 @@ export function createTaskRuntime(deps) {
   const backendTaskHttpExpectWhatever = (outPtr, valuePtr) => {
     writeOut(
       outPtr,
-      allocHandle({
-        tag: TAG_RECORD,
-        fields: [valuePtr | 0],
+      allocOwnedRecord([ownHandle(valuePtr)], {
         backendTaskExpectKind: BACKEND_TASK_EXPECT_WHATEVER,
       })
     );
@@ -775,9 +917,7 @@ export function createTaskRuntime(deps) {
   const backendTaskHttpExpectBytes = (outPtr, decoderPtr) => {
     writeOut(
       outPtr,
-      allocHandle({
-        tag: TAG_RECORD,
-        fields: [decoderPtr | 0],
+      allocOwnedRecord([ownHandle(decoderPtr)], {
         backendTaskExpectKind: BACKEND_TASK_EXPECT_BYTES,
       })
     );
@@ -787,9 +927,7 @@ export function createTaskRuntime(deps) {
   const backendTaskHttpWithMetadata = (outPtr, combineFnPtr, originalExpectPtr) => {
     writeOut(
       outPtr,
-      allocHandle({
-        tag: TAG_RECORD,
-        fields: [combineFnPtr | 0, originalExpectPtr | 0],
+      allocOwnedRecord([ownHandle(combineFnPtr), ownHandle(originalExpectPtr)], {
         backendTaskExpectKind: BACKEND_TASK_EXPECT_METADATA,
       })
     );
@@ -811,9 +949,7 @@ export function createTaskRuntime(deps) {
   const backendTaskHttpStringBody = (outPtr, contentTypePtr, contentPtr) => {
     writeOut(
       outPtr,
-      allocHandle({
-        tag: TAG_RECORD,
-        fields: [contentTypePtr | 0, contentPtr | 0],
+      allocOwnedRecord([ownHandle(contentTypePtr), ownHandle(contentPtr)], {
         backendTaskBodyKind: BACKEND_TASK_BODY_STRING,
       })
     );
@@ -827,9 +963,7 @@ export function createTaskRuntime(deps) {
         : null;
     writeOut(
       outPtr,
-      allocHandle({
-        tag: TAG_RECORD,
-        fields: [valuePtr | 0],
+      allocOwnedRecord([ownHandle(valuePtr)], {
         backendTaskBodyKind: BACKEND_TASK_BODY_JSON,
         encodedJson: encodedJson ?? "null",
       })
@@ -840,9 +974,7 @@ export function createTaskRuntime(deps) {
   const backendTaskHttpBytesBody = (outPtr, contentTypePtr, bytesPtr) => {
     writeOut(
       outPtr,
-      allocHandle({
-        tag: TAG_RECORD,
-        fields: [contentTypePtr | 0, bytesPtr | 0],
+      allocOwnedRecord([ownHandle(contentTypePtr), ownHandle(bytesPtr)], {
         backendTaskBodyKind: BACKEND_TASK_BODY_BYTES,
       })
     );
@@ -850,17 +982,14 @@ export function createTaskRuntime(deps) {
   };
 
   const buildPostRequestRecord = (urlPtr, bodyPtr) =>
-    allocHandle({
-      tag: TAG_RECORD,
-      fields: [
-        urlPtr | 0,
-        newStringHandle("POST"),
-        newList([]),
-        bodyPtr | 0,
-        maybeNothingHandle(),
-        maybeNothingHandle(),
-      ],
-    });
+    allocOwnedRecord([
+      ownHandle(urlPtr),
+      newStringHandle("POST"),
+      newList([]),
+      ownHandle(bodyPtr),
+      maybeNothingHandle(),
+      maybeNothingHandle(),
+    ]);
 
   const backendTaskHttpRequest = (outPtr, reqPtr, expectPtr) => {
     writeOut(outPtr, taskWrapPair(TASK_HTTP_REQUEST, reqPtr | 0, expectPtr | 0));
@@ -878,16 +1007,50 @@ export function createTaskRuntime(deps) {
     return RC_SUCCESS;
   };
 
-  const taskPerform = (outPtr, toMsgPtr, taskPtr) => {
-    runTaskAsync(taskPtr | 0).then(({ rc, value }) => {
-      if (rc !== RC_SUCCESS || !value) return;
-      const result = readHandle(value);
-      if (!result?.isOk) return;
-      const mapped = invokeClosure(toMsgPtr | 0, [result.value | 0]);
-      if (mapped.rc === RC_SUCCESS && mapped.value && dispatchPlatformMsg) {
-        dispatchPlatformMsg(mapped.value);
-      }
-    });
+  // Task.perform / Task.attempt lower to `(Perform task)` as tuple2(1, task).
+  // WASM imports are `(out, cmdDesc)` — not `(out, toMsg, task)`.
+  const unwrapPerformTask = (cmdDescPtr) => {
+    const desc = readHandle(cmdDescPtr | 0);
+    if (desc?.tag === TAG_TUPLE2) {
+      return desc.second | 0;
+    }
+    return cmdDescPtr | 0;
+  };
+
+  const dispatchTaskMsg = (taskPtr) => {
+    const ptr = taskPtr | 0;
+    // Survive Task.attempt / init owned-slot epilogues that release the Perform
+    // wrapper and the task between scheduling and the microtask.
+    if (ptr && retainHandle) retainHandle(ptr);
+    runTaskAsync(ptr)
+      .then(({ rc, value }) => {
+        try {
+          if (rc !== RC_SUCCESS || !value) return;
+          const result = readHandle(value);
+          // Task.attempt/perform map failures into Ok(msg); only Ok payloads are msgs.
+          if (!result?.isOk) return;
+          if (dispatchPlatformMsg && result.value) {
+            dispatchPlatformMsg(result.value);
+          }
+        } finally {
+          if (value && releaseHandle) releaseHandle(value);
+          if (ptr && releaseHandle) releaseHandle(ptr);
+        }
+      })
+      .catch(() => {
+        if (ptr && releaseHandle) releaseHandle(ptr);
+      });
+  };
+
+  const taskPerform = (outPtr, cmdDescPtr) => {
+    dispatchTaskMsg(unwrapPerformTask(cmdDescPtr));
+    writeOut(outPtr, cmdNoneHandle());
+    return RC_SUCCESS;
+  };
+
+  // Effect-module `command (Perform task)` — same descriptor shape as task_perform.
+  const taskCommand = (outPtr, cmdDescPtr) => {
+    dispatchTaskMsg(unwrapPerformTask(cmdDescPtr));
     writeOut(outPtr, cmdNoneHandle());
     return RC_SUCCESS;
   };
@@ -925,6 +1088,7 @@ export function createTaskRuntime(deps) {
     taskAndThen,
     taskOnError,
     taskPerform,
+    taskCommand,
     backendTaskHttpGetJson,
     backendTaskHttpGet,
     backendTaskHttpExpectJson,

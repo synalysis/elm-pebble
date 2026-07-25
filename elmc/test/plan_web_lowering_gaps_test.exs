@@ -347,6 +347,224 @@ defmodule Elmc.PlanWebLoweringGapsTest do
     assert {:ok, _reg, _b2} = Call.compile_call(expr, ctx, b1)
   end
 
+  test "zero-arity MeshIndexed3-style value applies via call_closure" do
+    # WebGL.indexedTriangles = MeshIndexed3 {…} — IR args [], type still arity-2.
+    # Direct call_fn(verts, indices) must not swallow args (returns the CAF closure).
+    decl_map = %{
+      {"WebGL", "indexedTriangles"} => %{
+        name: "indexedTriangles",
+        args: [],
+        type: "List a -> List (Int, Int, Int) -> Mesh a",
+        expr: %{
+          op: :constructor_call,
+          target: "MeshIndexed3",
+          args: [%{op: :record, fields: []}]
+        }
+      }
+    }
+
+    expr = %{
+      op: :qualified_call,
+      target: "WebGL.indexedTriangles",
+      args: [
+        %{op: :var, name: "verts"},
+        %{op: :var, name: "indices"}
+      ]
+    }
+
+    ctx =
+      Context.new(
+        module: "Scene3d.Mesh",
+        function_name: "toWebGL",
+        params: ["verts", "indices"],
+        decl_map: decl_map,
+        rc_required: true,
+        fallible: true
+      )
+
+    b0 =
+      Builder.new("Scene3d.Mesh", "toWebGL",
+        args: ["verts", "indices"],
+        rc_required: true,
+        fallible: true
+      )
+      |> Builder.catch_begin()
+
+    {_, b1} = Builder.get_or_load_param(b0, 0, "verts")
+    {_, b2} = Builder.get_or_load_param(b1, 1, "indices")
+
+    assert {:ok, _reg, b3} = Call.compile_call(expr, ctx, b2)
+
+    instrs =
+      (b3.blocks ++ [b3.current_block])
+      |> Enum.flat_map(& &1.instrs)
+
+    assert Enum.any?(instrs, &(&1.op == :call_fn))
+    assert Enum.any?(instrs, &(&1.op == :call_closure))
+
+    call_fn = Enum.find(instrs, &(&1.op == :call_fn))
+    assert Map.get(call_fn.args, :args) == [] or Map.get(call_fn.args, :args) == nil
+  end
+
+  test "zero-arity eta-reduced partial applies via call_closure" do
+    # Vector3d.normalize = scaleTo (Quantity.float 1) — IR args [], body is a
+    # partial call, type still arity-1. Direct call_fn(vec) drops the arg under
+    # wat2wasm arity fixup and returns the unapplied scaleTo closure as the
+    # "normal" (all-zero Block3d facet normals / white PBR).
+    decl_map = %{
+      {"Vector3d", "normalize"} => %{
+        name: "normalize",
+        args: [],
+        type: "Vector3d units coordinates -> Vector3d Unitless coordinates",
+        expr: %{
+          op: :qualified_call,
+          target: "Vector3d.scaleTo",
+          args: [
+            %{
+              op: :qualified_call,
+              target: "Quantity.float",
+              args: [%{op: :float_literal, value: 1.0}]
+            }
+          ]
+        }
+      }
+    }
+
+    expr = %{
+      op: :qualified_call,
+      target: "Vector3d.normalize",
+      args: [%{op: :var, name: "vec"}]
+    }
+
+    ctx =
+      Context.new(
+        module: "Scene3d.Mesh",
+        function_name: "triangleNormal",
+        params: ["vec"],
+        decl_map: decl_map,
+        rc_required: true,
+        fallible: true
+      )
+
+    b0 =
+      Builder.new("Scene3d.Mesh", "triangleNormal",
+        args: ["vec"],
+        rc_required: true,
+        fallible: true
+      )
+      |> Builder.catch_begin()
+
+    {_, b1} = Builder.get_or_load_param(b0, 0, "vec")
+
+    assert {:ok, _reg, b2} = Call.compile_call(expr, ctx, b1)
+
+    instrs =
+      (b2.blocks ++ [b2.current_block])
+      |> Enum.flat_map(& &1.instrs)
+
+    assert Enum.any?(instrs, &(&1.op == :call_fn))
+    assert Enum.any?(instrs, &(&1.op == :call_closure))
+
+    call_fn = Enum.find(instrs, &(&1.op == :call_fn))
+    assert Map.get(call_fn.args, :args) == [] or Map.get(call_fn.args, :args) == nil
+
+    call_closure = Enum.find(instrs, &(&1.op == :call_closure))
+    assert length(Map.get(call_closure.args, :args) || []) == 1
+  end
+
+  test "qualified Html.Attributes.width ignores local width binding" do
+    Process.put(:elmc_codegen_opts, %{web: true, targets: [:wasm]})
+
+    on_exit(fn ->
+      Process.delete(:elmc_codegen_opts)
+    end)
+
+    decl_map = %{
+      {"Html.Attributes", "width"} => %{
+        name: "width",
+        args: ["n"],
+        expr: %{
+          op: :qualified_call,
+          target: "Elm.Kernel.VirtualDom.attribute",
+          args: [
+            %{op: :string_literal, value: "width"},
+            %{
+              op: :qualified_call,
+              target: "String.fromInt",
+              args: [%{op: :var, name: "n"}]
+            }
+          ]
+        }
+      }
+    }
+
+    expr = %{
+      op: :qualified_call,
+      target: "Html.Attributes.width",
+      args: [%{op: :int_literal, value: 720}]
+    }
+
+    ctx0 =
+      Context.new(
+        module: "Scene3d",
+        function_name: "composite",
+        params: [],
+        decl_map: decl_map
+      )
+
+    b0 = Builder.new("Scene3d", "composite", args: [])
+    {width_reg, b1} = Builder.fresh_reg(b0)
+    ctx = Context.put_local(ctx0, "width", width_reg)
+
+    assert {:ok, _reg, b2} = Call.compile_call(expr, ctx, b1)
+
+    instrs =
+      (Map.get(b2, :blocks, []) ++ [Map.get(b2, :current_block)])
+      |> Enum.flat_map(&Map.get(&1, :instrs, []))
+
+    refute Enum.any?(instrs, fn
+             %{op: :call_closure, args: %{callee: ^width_reg}} -> true
+             _ -> false
+           end)
+
+    assert Enum.any?(instrs, fn
+             %{op: :call_fn, args: %{module: "Html.Attributes", name: "width"}} -> true
+             %{op: :html_cmd} -> true
+             _ -> false
+           end)
+  end
+
+  test "unqualified width still applies local binding when present" do
+    expr = %{
+      op: :call,
+      name: "width",
+      args: [%{op: :int_literal, value: 720}]
+    }
+
+    ctx0 =
+      Context.new(
+        module: "Scene3d",
+        function_name: "composite",
+        params: [],
+        decl_map: %{}
+      )
+
+    b0 = Builder.new("Scene3d", "composite", args: [])
+    {width_reg, b1} = Builder.fresh_reg(b0)
+    ctx = Context.put_local(ctx0, "width", width_reg)
+
+    assert {:ok, _reg, b2} = Call.compile_call(expr, ctx, b1)
+
+    instrs =
+      (Map.get(b2, :blocks, []) ++ [Map.get(b2, :current_block)])
+      |> Enum.flat_map(&Map.get(&1, :instrs, []))
+
+    assert Enum.any?(instrs, fn
+             %{op: :call_closure, args: %{callee: ^width_reg}} -> true
+             _ -> false
+           end)
+  end
+
   test "zero-arity helper called with args lowers to closure apply chain" do
     decl_map = %{
       {"Demo", "thunk"} => %{
@@ -534,11 +752,12 @@ defmodule Elmc.PlanWebLoweringGapsTest do
       end)
 
     assert record_new
+    # Anonymous impl records canonicalize to Elm alphabetical field order.
     assert Map.get(record_new.args, :field_names) == [
              "init",
-             "view",
+             "subscriptions",
              "update",
-             "subscriptions"
+             "view"
            ]
   end
 
@@ -865,6 +1084,7 @@ defmodule Elmc.PlanWebLoweringGapsTest do
     wrap = %{
       name: "wrap",
       args: [],
+      type: "Html.Html msg -> Html.Html msg",
       expr: %{
         op: :qualified_call,
         target: "Html.map",
@@ -881,5 +1101,66 @@ defmodule Elmc.PlanWebLoweringGapsTest do
 
     assert rewritten.args == ["html"]
     assert %{op: :html_cmd, kind: %{value: 3}} = rewritten.expr
+  end
+
+  test "call site of partial Html.map wrap uses 1-arg call_fn, not CAF+closure" do
+    Process.put(:elmc_codegen_opts, %{web: true, targets: [:wasm]})
+
+    on_exit(fn ->
+      Process.delete(:elmc_codegen_opts)
+    end)
+
+    wrap = %{
+      name: "wrap",
+      args: [],
+      type: "Html.Html msg -> Html.Html msg",
+      expr: %{
+        op: :qualified_call,
+        target: "Html.map",
+        args: [%{op: :qualified_call, target: "Basics.identity", args: []}]
+      }
+    }
+
+    main = %{
+      name: "main",
+      args: [],
+      type: "Html.Html msg",
+      expr: %{
+        op: :qualified_call,
+        target: "Main.wrap",
+        args: [
+          %{
+            op: :qualified_call,
+            target: "Html.text",
+            args: [%{op: :string_literal, value: "x"}]
+          }
+        ]
+      }
+    }
+
+    decl_map = %{
+      {"Main", "wrap"} => wrap,
+      {"Main", "main"} => main
+    }
+
+    assert {:ok, plan} =
+             Elmc.Backend.Plan.Lower.Function.lower(main, "Main", decl_map, web: true, targets: [:wasm])
+
+    wrap_calls =
+      for block <- plan.blocks,
+          %{op: :call_fn, args: %{module: "Main", name: "wrap", args: args}} <- block.instrs,
+          do: args
+
+    refute wrap_calls == [], "expected a call_fn to Main.wrap"
+    assert Enum.any?(wrap_calls, &(length(&1) == 1)),
+           "wrap must be called with 1 arg after decl_map rewrite; got #{inspect(wrap_calls)}"
+
+    refute Enum.any?(plan.blocks, fn block ->
+             Enum.any?(block.instrs, fn
+               %{op: :call_closure} -> true
+               _ -> false
+             end)
+           end),
+           "partial Html.map wrap must not lower via CAF + call_closure"
   end
 end

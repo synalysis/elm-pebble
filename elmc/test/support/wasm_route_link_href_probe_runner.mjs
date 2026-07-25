@@ -120,7 +120,7 @@ const walk = (n) => {
 walk(document.getElementById("app"));
 
 const checks = [
-  { text: "Getting started with Elm Pebble", expect: "/getting-started" },
+  { text: "Start", expect: "/getting-started" },
   { text: "Docs", expect: "/packages" },
   { text: "FAQ", expect: "/f-a-q" },
 ];

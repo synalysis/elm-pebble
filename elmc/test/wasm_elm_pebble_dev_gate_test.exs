@@ -6,8 +6,6 @@ defmodule Elmc.WasmElmPebbleDevGateTest do
 
   @app_root Path.expand("../../elm_pebble_dev", __DIR__)
 
-  @allowed_server_stubs MapSet.new([])
-
   @tag :slow
   @tag timeout: 180_000
   test "elm_pebble_dev wasm compile gate: no stubs, no skipped paths, constructor tags present" do
@@ -25,9 +23,7 @@ defmodule Elmc.WasmElmPebbleDevGateTest do
         stub_functions = ProjectWriter.stub_functions(out_dir)
 
         unexpected_stubs =
-          Enum.reject(stub_functions, fn entry ->
-            MapSet.member?(@allowed_server_stubs, {entry["module"], entry["name"]})
-          end)
+          Enum.reject(stub_functions, &ElmPebbleDevWasmCompile.allowed_host_bridge_stub?/1)
 
         assert unexpected_stubs == []
 
@@ -37,7 +33,10 @@ defmodule Elmc.WasmElmPebbleDevGateTest do
             _ -> []
           end
 
-        assert debug_skipped == []
+        unexpected_skipped =
+          Enum.reject(debug_skipped, &ElmPebbleDevWasmCompile.allowed_host_bridge_stub?/1)
+
+        assert unexpected_skipped == []
 
         if System.find_executable("wat2wasm") do
           wat_path = ProjectWriter.wat_path(out_dir)

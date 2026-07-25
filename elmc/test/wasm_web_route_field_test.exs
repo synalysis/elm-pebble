@@ -26,8 +26,6 @@ defmodule Elmc.WasmWebRouteFieldTest do
                    strip_dead_code: true
                  })
 
-        manifest = out_dir |> ProjectWriter.manifest_path() |> File.read!() |> Jason.decode!()
-
         wat = File.read!(ProjectWriter.wat_path(out_dir))
         assert wat =~ "runtime_record_get"
         refute wat =~ "elmc_fn_Route_Articles_Example_route_data"

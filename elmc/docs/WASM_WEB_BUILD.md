@@ -6,6 +6,7 @@ Build from the repo root or from `elm_pebble_dev/`:
 # from elm_pebble_dev/
 npm run build:wasm
 npm run verify:wasm   # Node page-data gate (also runs at end of build:wasm)
+npm run verify:wasm:hero   # /wasm HeroScene WebGL entities + draws (needs dist build)
 npm run verify:wasm:browser   # Playwright browser.html smoke (needs chromium)
 
 # build site + wasm + verify + serve (from repo root or via npm)
@@ -43,8 +44,10 @@ Elmc.compile("elm_pebble_dev", targets: [:wasm], web: true, wasm_strict: false, 
 | `Browser.sandbox` / `element` / `document` / `application` | compile + boot | `wasm_web_strict_sandbox_test.exs` |
 | `Platform.worker` | lowers to `browser_cmd` kind 8 | plan lower |
 | `Html` / `VirtualDom` / `Svg` | `html_cmd` text/node/map/event/NS | `wasm_web_{events,svg}_test.exs` |
+| `WebGL` / `elm-3d-scene` (HeroScene) | host `webgl_*` + MJS bridges; canvas draws; Scene3d mesh helpers plan-lower | `wasm_web_hero_scene_test.exs` / `verify:wasm:hero` |
 | `Html.Keyed` / `Html.Lazy` lazy2–4 | `html_cmd` kinds 9–13 + `vdom_patch.js` | `wasm_web_keyed_nav_test.exs` |
-| `Browser.Events` resize/visibility/animationFrame/mouse/key | `dom_sub` kinds 2–8 | `wasm_web_time_every_test.exs` |
+| `Browser.Events` mouse/key (Decoder msg) | `dom_sub` kinds 5–8/10 + Json decode on raw event | host `installDomSub` |
+| `VirtualDom.on` / `Html.Events.on*` | `html_cmd` kind 8 | `wasm_web_events_test.exs` |
 | `Browser.Dom.focus` / `setTitle` / `getViewport` | `browser_cmd` + `browser_get_viewport` task | effects lowering |
 | `Html.map` events | mapper composed at dispatch + real decoder args | `wasm_web_map_events_test.exs` |
 | elm-pages multi-route bytes | `pageDataFromJs` on boot + nav | `wasm_web_multi_route_bytes_test.exs` (`:wasm_elm_pages_corpus`) |

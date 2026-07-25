@@ -190,7 +190,8 @@ defmodule Ide.Compiler do
 
   Companion `phone` and shared `protocol` packages are validated with upstream
   `elm make` so naming, imports, and type errors match the pkjs build. Watch-side
-  roots use elmc so the editor matches the Pebble runtime compiler.
+  roots use elmc **check** (parse + import diagnostics — no IR lowering or
+  dead-code strip) so the editor stays responsive on save.
   """
   @spec check_source_root(project_slug(), opts()) ::
           {:ok, check_result()} | {:error, compiler_error()}

@@ -64,8 +64,12 @@ defmodule Elmc.Backend.Plan.Lower.PatternBind do
           {ctx, b}
       end
 
-    with {:ok, ctx1, b1, _} <- bind_tuple_elem(left, :first, subject_reg, ctx0, b0),
-         {:ok, ctx2, b2, _} <- bind_tuple_elem(right, :second, subject_reg, ctx1, b1) do
+    elem_types = tuple_elem_types_for_reg(ctx0, subject_reg)
+
+    with {:ok, ctx1, b1, _} <-
+           bind_tuple_elem(left, :first, subject_reg, ctx0, b0, Enum.at(elem_types, 0)),
+         {:ok, ctx2, b2, _} <-
+           bind_tuple_elem(right, :second, subject_reg, ctx1, b1, Enum.at(elem_types, 1)) do
       {:ok, ctx2, b2}
     else
       _ -> :unsupported
@@ -85,12 +89,17 @@ defmodule Elmc.Backend.Plan.Lower.PatternBind do
 
     base_expr = if is_binary(bind), do: %{op: :var, name: bind}, else: nil
 
-    Enum.with_index(fields)
-    |> Enum.reduce_while({:ok, ctx0, b0}, fn {field_name, field_index}, {:ok, ctx_acc, b_acc}
-                                            when is_binary(field_name) ->
+    # Pattern field lists follow source/destructure order, not runtime layout.
+    # Named aliases keep declaration order (via elmc_record_alias_shapes); anonymous
+    # records (Color.toRgba, etc.) are alphabetical like Elm. Never use Enum.with_index
+    # on the IR pattern list — that scrambled View {title,body} and rgba alike.
+    field_index_by_name = record_pattern_field_indices(fields)
+
+    Enum.reduce_while(fields, {:ok, ctx0, b0}, fn field_name, {:ok, ctx_acc, b_acc}
+                                                 when is_binary(field_name) ->
       opts =
         if base_expr == nil do
-          [index_override: field_index]
+          [index_override: Map.fetch!(field_index_by_name, field_name)]
         else
           []
         end
@@ -161,8 +170,13 @@ defmodule Elmc.Backend.Plan.Lower.PatternBind do
 
   defp do_bind(%{kind: :constructor, arg_pattern: arg_pattern} = pattern, ctx, b, subject_reg)
        when is_map(arg_pattern) do
-    with {:ok, payload_reg, b1} <- emit_ctor_payload(pattern, subject_reg, ctx, b),
-         {:ok, ctx1, b2} <- do_bind(arg_pattern, ctx, b1, payload_reg) do
+    # `Types.Light first` binds the payload in arg_pattern (no outer `:bind`).
+    # Attach the union payload record type so field indices use Light layout
+    # (x@6, …), not a min-index fallback across unrelated shapes.
+    ctx0 = maybe_enrich_payload_arg_ctx(ctx, arg_pattern, pattern)
+
+    with {:ok, payload_reg, b1} <- emit_ctor_payload(pattern, subject_reg, ctx0, b),
+         {:ok, ctx1, b2} <- do_bind(arg_pattern, ctx0, b1, payload_reg) do
       {:ok, ctx1, b2}
     else
       _ -> :unsupported
@@ -190,23 +204,94 @@ defmodule Elmc.Backend.Plan.Lower.PatternBind do
 
   defp do_bind(_, _ctx, _b, _subject_reg), do: :unsupported
 
+  # Prefer a unique registered shape for this field set; else Elm alphabetical layout.
+  defp record_pattern_field_indices(fields) when is_list(fields) do
+    names = Enum.map(fields, &to_string/1)
+    sorted = Enum.sort(names)
+
+    shape =
+      case unique_registered_shape_for_fields(sorted) do
+        {:ok, registered} -> registered
+        :none -> sorted
+      end
+
+    shape
+    |> Enum.with_index()
+    |> Map.new()
+  end
+
+  defp unique_registered_shape_for_fields(sorted_names) when is_list(sorted_names) do
+    shapes =
+      Process.get(:elmc_record_alias_shapes, %{})
+      |> Map.merge(Process.get(:elmc_inline_record_literal_shapes, %{}))
+      |> Map.values()
+      |> Enum.filter(&(is_list(&1) and &1 != []))
+      |> Enum.map(fn shape -> Enum.map(shape, &to_string/1) end)
+      |> Enum.filter(fn shape -> Enum.sort(shape) == sorted_names end)
+      |> Enum.uniq()
+
+    case shapes do
+      [shape] ->
+        {:ok, shape}
+
+      [] ->
+        :none
+
+      many ->
+        # Prefer declaration-order alias when it is the unique non-alphabetical layout;
+        # otherwise Elm alphabetical (anonymous literals / union payloads).
+        alpha = sorted_names
+
+        case Enum.reject(many, &(&1 == alpha)) do
+          [decl] -> {:ok, decl}
+          _ -> {:ok, alpha}
+        end
+    end
+  end
+
   defp nullary_ctor_pattern?(pattern) do
     is_nil(Map.get(pattern, :arg_pattern)) and is_nil(Map.get(pattern, :bind))
   end
 
-  defp bind_tuple_elem(%{kind: :wildcard}, _which, _base, ctx, b), do: {:ok, ctx, b, nil}
+  defp bind_tuple_elem(%{kind: :wildcard}, _which, _base, ctx, b, _elem_type),
+    do: {:ok, ctx, b, nil}
 
-  defp bind_tuple_elem(%{kind: :int}, _which, _base, ctx, b), do: {:ok, ctx, b, nil}
+  defp bind_tuple_elem(%{kind: :int}, _which, _base, ctx, b, _elem_type), do: {:ok, ctx, b, nil}
 
-  defp bind_tuple_elem(%{kind: :string}, _which, _base, ctx, b), do: {:ok, ctx, b, nil}
+  defp bind_tuple_elem(%{kind: :string}, _which, _base, ctx, b, _elem_type),
+    do: {:ok, ctx, b, nil}
 
-  defp bind_tuple_elem(pattern, which, base, ctx, b) do
+  defp bind_tuple_elem(pattern, which, base, ctx, b, elem_type) do
     with {:ok, reg, b1} <- emit_tuple_proj(base, which, b),
-         {:ok, ctx1, b2} <- do_bind(pattern, ctx, b1, reg) do
+         ctx_typed <- maybe_put_tuple_elem_type(ctx, pattern, elem_type),
+         {:ok, ctx1, b2} <- do_bind(pattern, ctx_typed, b1, reg) do
       {:ok, ctx1, b2, reg}
     else
       _ -> :unsupported
     end
+  end
+
+  defp maybe_put_tuple_elem_type(ctx, %{kind: :var, name: name}, type)
+       when is_binary(name) and is_binary(type) and type != "" do
+    Context.put_local_type(ctx, name, type)
+  end
+
+  defp maybe_put_tuple_elem_type(ctx, _pattern, _type), do: ctx
+
+  defp tuple_elem_types_for_reg(ctx, subject_reg) when is_integer(subject_reg) do
+    case type_for_reg(ctx, subject_reg) do
+      type when is_binary(type) -> TypeSignature.tuple_element_types(type)
+      _ -> []
+    end
+  end
+
+  defp type_for_reg(ctx, subject_reg) when is_integer(subject_reg) do
+    locals = ctx.locals || %{}
+    local_types = ctx.local_types || %{}
+
+    Enum.find_value(locals, fn {name, reg} ->
+      if reg == subject_reg, do: Map.get(local_types, name)
+    end)
   end
 
   defp emit_ctor_payload(pattern, subject_reg, ctx, b) do
@@ -272,16 +357,38 @@ defmodule Elmc.Backend.Plan.Lower.PatternBind do
   defp nest_tuple_elements([left | rest]),
     do: [left, %{kind: :tuple, elements: nest_tuple_elements(rest)}]
 
+  defp maybe_enrich_payload_arg_ctx(ctx, %{kind: :var, name: name}, pattern)
+       when is_binary(name) do
+    enrich_constructor_bind_ctx(ctx, name, pattern)
+  end
+
+  defp maybe_enrich_payload_arg_ctx(ctx, _arg_pattern, _pattern), do: ctx
+
   defp enrich_constructor_bind_ctx(ctx, bind, pattern) when is_binary(bind) do
     case constructor_payload_spec(pattern, ctx) do
+      # Result.Ok / Result.Err payload specs are the type variables `value` /
+      # `error` from `type Result error value = Ok value | Err error`. Storing
+      # those as local types invents a phantom container key
+      # `{Module, "value"}` that blocks Model_pageData inline field indices
+      # (mainView then reads Ok payload.pageData @ Model@4 → Int(0) →
+      # "Page not found").
       spec when is_binary(spec) ->
-        ctx
-        |> Context.put_local_type(bind, spec)
-        |> maybe_put_inferred_param_fields(bind, spec)
+        if useful_payload_type_spec?(spec) do
+          ctx
+          |> Context.put_local_type(bind, spec)
+          |> maybe_put_inferred_param_fields(bind, spec)
+        else
+          ctx
+        end
 
       _ ->
         ctx
     end
+  end
+
+  defp useful_payload_type_spec?(spec) when is_binary(spec) do
+    trimmed = String.trim(spec)
+    trimmed != "" and not TypeSignature.type_variable?(trimmed)
   end
 
   defp maybe_put_inferred_param_fields(ctx, bind, spec) when is_binary(bind) and is_binary(spec) do
@@ -302,13 +409,55 @@ defmodule Elmc.Backend.Plan.Lower.PatternBind do
     specs = Process.get(:elmc_union_constructor_payload_specs, %{})
     mod = ctx.module
 
-    [Map.get(pattern, :resolved_name), Map.get(pattern, :name)]
-    |> Enum.reject(&is_nil/1)
-    |> Enum.flat_map(fn name ->
-      short = short_name(name)
-      [{mod, name}, {mod, short}]
-    end)
-    |> Enum.uniq()
-    |> Enum.find_value(fn key -> Map.get(specs, key) end)
+    names =
+      [Map.get(pattern, :resolved_name), Map.get(pattern, :name)]
+      |> Enum.reject(&is_nil/1)
+
+    keys =
+      names
+      |> Enum.flat_map(fn name ->
+        short = short_name(name)
+
+        home =
+          case String.split(to_string(name), ".") do
+            parts when length(parts) >= 2 ->
+              parts |> Enum.drop(-1) |> Enum.join(".")
+
+            _ ->
+              nil
+          end
+
+        [
+          {mod, name},
+          {mod, short},
+          if(home, do: {home, short}, else: nil),
+          if(home, do: {home, name}, else: nil)
+        ]
+        |> Enum.reject(&is_nil/1)
+      end)
+      |> Enum.uniq()
+
+    case Enum.find_value(keys, &Map.get(specs, &1)) do
+      spec when is_binary(spec) ->
+        spec
+
+      _ ->
+        # Unique short-name hit across modules (Scene3d.lightPair patterns
+        # `Types.Light` while specs are keyed under `Scene3d.Types`).
+        names
+        |> Enum.map(&short_name/1)
+        |> Enum.uniq()
+        |> Enum.find_value(fn short ->
+          matches =
+            for {{_home, ctor}, spec} <- specs,
+                is_binary(spec) and (ctor == short or short_name(ctor) == short),
+                do: spec
+
+          case Enum.uniq(matches) do
+            [only] -> only
+            _ -> nil
+          end
+        end)
+    end
   end
 end

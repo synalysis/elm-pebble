@@ -184,8 +184,8 @@ defmodule Elmc.Backend.Plan.Lower.Record do
           :none ->
             # Anonymous records: Elm stores fields alphabetically, and field_access on
             # anonymous / inline param types uses alphabetical indices. Write and read
-            # must agree. Named alias / union-payload shapes are handled above (and may
-            # preserve declaration order when registered that way).
+            # must agree. Named alias shapes usually keep declaration order; a few
+            # (Scene3d.Types.Transformation) are registered alphabetically.
             Enum.sort_by(fields, &to_string(field_name(&1)))
         end
 
@@ -200,8 +200,13 @@ defmodule Elmc.Backend.Plan.Lower.Record do
   end
 
   # Prefer a unique minimal proper-superset shape from alias/union payload shapes.
-  # Only pad a single missing slot (e.g. Arrow.meander) — larger gaps are too
-  # ambiguous and can break unrelated anonymous literals during lowering.
+  # Pad a single missing slot so dense field indices match callers that use the
+  # full payload layout (Arrow.meander; Scene3d `{position,normal}` + trailing `uv`).
+  #
+  # Reject *leading* pads: `{radius, length}` uniquely sits under Cylinder3d/Cone3d
+  # `{axis, radius, length}`, and padding `axis = 0` at index 0 makes centeredOn
+  # read int-0 as radius → zero preScale / EmptyMesh fallout on HeroScene.
+  # Middle pads (Arrow.meander) remain allowed when they are the unique +1 slot.
   defp unique_superset_shape(names) when is_list(names) do
     name_set = MapSet.new(Enum.map(names, &to_string/1))
 
@@ -211,10 +216,15 @@ defmodule Elmc.Backend.Plan.Lower.Record do
       supersets =
         record_shapes_for_superset()
         |> Enum.filter(fn fields ->
-          field_set = MapSet.new(Enum.map(fields, &to_string/1))
+          shape = Enum.map(fields, &to_string/1)
+          field_set = MapSet.new(shape)
+          missing = MapSet.difference(field_set, name_set)
 
           MapSet.subset?(name_set, field_set) and
-            MapSet.size(field_set) == MapSet.size(name_set) + 1
+            MapSet.size(field_set) == MapSet.size(name_set) + 1 and
+            match?([_], MapSet.to_list(missing)) and
+            # Missing slot must not be shape[0] (would shift every present index).
+            Enum.find_index(shape, &(&1 == hd(MapSet.to_list(missing)))) != 0
         end)
         |> Enum.uniq_by(fn fields -> Enum.map(fields, &to_string/1) end)
 
@@ -290,19 +300,25 @@ defmodule Elmc.Backend.Plan.Lower.Record do
           {:ok, integer()} | :error
   def resolve_field_index_int(field_name, ctx \\ nil, base_expr \\ nil)
       when is_binary(field_name) do
-    case field_index_from_callee_record_literal(field_name, ctx, base_expr) do
+    case field_index_from_mjs_to_record(field_name, base_expr) do
       idx when is_integer(idx) ->
         {:ok, idx}
 
       _ ->
-        case field_index_from_binding_decl_type(field_name, ctx, base_expr) do
+        case field_index_from_callee_record_literal(field_name, ctx, base_expr) do
           idx when is_integer(idx) ->
             {:ok, idx}
 
           _ ->
-            case resolve_field_type_key(field_name, ctx, base_expr) do
-              {_key, idx} when is_integer(idx) -> {:ok, idx}
-              _ -> :error
+            case field_index_from_binding_decl_type(field_name, ctx, base_expr) do
+              idx when is_integer(idx) ->
+                {:ok, idx}
+
+              _ ->
+                case resolve_field_type_key(field_name, ctx, base_expr) do
+                  {_key, idx} when is_integer(idx) -> {:ok, idx}
+                  _ -> :error
+                end
             end
         end
     end
@@ -469,25 +485,97 @@ defmodule Elmc.Backend.Plan.Lower.Record do
   end
 
   defp field_index_ref(field_name, ctx, base_expr) when is_binary(field_name) do
-    case field_index_from_callee_record_literal(field_name, ctx, base_expr) do
+    case field_index_from_mjs_to_record(field_name, base_expr) do
       idx when is_integer(idx) ->
         RecordFieldMacros.format_index(idx, field_name, nil)
 
       _ ->
-        case field_index_from_binding_decl_type(field_name, ctx, base_expr) do
+        case field_index_from_callee_record_literal(field_name, ctx, base_expr) do
           idx when is_integer(idx) ->
             RecordFieldMacros.format_index(idx, field_name, nil)
 
           _ ->
-            case param_or_typed_var_field_index(field_name, ctx, base_expr) do
-              {key, idx} when is_integer(idx) ->
-                RecordFieldMacros.format_index(idx, field_name, key)
+            case field_index_from_binding_decl_type(field_name, ctx, base_expr) do
+              idx when is_integer(idx) ->
+                RecordFieldMacros.format_index(idx, field_name, nil)
 
               _ ->
-                field_index_ref_from_type(field_name, ctx, base_expr)
+                case param_or_typed_var_field_index(field_name, ctx, base_expr) do
+                  {key, idx} when is_integer(idx) ->
+                    RecordFieldMacros.format_index(idx, field_name, key)
+
+                  _ ->
+                    field_index_ref_from_type(field_name, ctx, base_expr)
+                end
             end
         end
     end
+  end
+
+  # elm-explorations/linear-algebra Kernel.MJS *toRecord always emits fields in
+  # alphabetical order (see elmc-wasm-runtime/host/mjs_runtime.js). Without this
+  # shape, `Matrix4.toRecord m |> .m44` fell back to index 0 (m11) and Scene3d
+  # treated perspective cameras as orthographic (solid-white lighting).
+  defp field_index_from_mjs_to_record(field_name, base_expr) when is_binary(field_name) do
+    case mjs_to_record_fields(base_expr) do
+      fields when is_list(fields) ->
+        Enum.find_index(fields, &(&1 == field_name))
+
+      _ ->
+        nil
+    end
+  end
+
+  defp mjs_to_record_fields(%{op: :qualified_call, target: target}) when is_binary(target),
+    do: mjs_to_record_fields_for_target(target)
+
+  defp mjs_to_record_fields(%{op: :call, target: {mod, name}})
+       when is_binary(mod) and is_binary(name),
+       do: mjs_to_record_fields_for_target("#{mod}.#{name}")
+
+  defp mjs_to_record_fields(%{op: :call, name: name}) when is_binary(name),
+    do: mjs_to_record_fields_for_target(name)
+
+  defp mjs_to_record_fields(%{op: :field_access, arg: inner}) when is_map(inner),
+    do: mjs_to_record_fields(inner)
+
+  defp mjs_to_record_fields(_), do: nil
+
+  defp mjs_to_record_fields_for_target(target) when is_binary(target) do
+    short = target |> String.split(".") |> List.last()
+
+    cond do
+      short in ["toRecord"] and String.contains?(target, "Matrix4") ->
+        mat4_to_record_fields()
+
+      short in ["toRecord"] and String.contains?(target, "Vector4") ->
+        ["w", "x", "y", "z"]
+
+      short in ["toRecord"] and String.contains?(target, "Vector3") ->
+        ["x", "y", "z"]
+
+      short in ["toRecord"] and String.contains?(target, "Vector2") ->
+        ["x", "y"]
+
+      short in ["m4x4toRecord"] ->
+        mat4_to_record_fields()
+
+      short in ["v4toRecord"] ->
+        ["w", "x", "y", "z"]
+
+      short in ["v3toRecord"] ->
+        ["x", "y", "z"]
+
+      short in ["v2toRecord"] ->
+        ["x", "y"]
+
+      true ->
+        nil
+    end
+  end
+
+  defp mat4_to_record_fields do
+    for i <- 1..4, j <- 1..4, do: "m#{i}#{j}"
   end
 
   defp param_or_typed_var_field_index(field_name, ctx, base_expr) when is_binary(field_name) do
@@ -578,7 +666,18 @@ defmodule Elmc.Backend.Plan.Lower.Record do
     inferred_fields = Map.get((ctx && ctx.inferred_param_fields) || %{}, param, [])
     alias_fields = Map.get(Process.get(:elmc_record_alias_shapes, %{}), key, [])
 
+    inferred_names = Enum.map(inferred_fields, &to_string/1)
+    alias_names = Enum.map(alias_fields, &to_string/1)
+    inferred_alpha? = inferred_names != [] and inferred_names == Enum.sort(inferred_names)
+    alias_alpha? = alias_names != [] and alias_names == Enum.sort(alias_names)
+
     cond do
+      # Typed param (`Metadata` from withMetadata's combine type) must use the
+      # declared alias layout even when ParamFieldInference only saw a subset
+      # (`{statusCode}` → index 0). Host/runtime Metadata values are full records.
+      param_typed_as_alias_key?(ctx, param, key) ->
+        true
+
       inferred_fields == [] ->
         false
 
@@ -591,6 +690,15 @@ defmodule Elmc.Backend.Plan.Lower.Record do
       normalize_field_names(inferred_fields) != normalize_field_names(alias_fields) ->
         false
 
+      # Union payloads / anonymous records: inferred is alphabetical (storage order).
+      # Do not let a declaration-order alias (or min_alias across unrelated shapes)
+      # remap .vertices → index 0 (faceIndices) — Scene3d cylinders/spheres went blank.
+      inferred_alpha? and not alias_alpha? ->
+        false
+
+      inferred_alpha? and alias_alpha? ->
+        false
+
       Enum.find_index(inferred_fields, &(&1 == field_name)) !=
           Enum.find_index(alias_fields, &(&1 == field_name)) ->
         true
@@ -601,6 +709,19 @@ defmodule Elmc.Backend.Plan.Lower.Record do
   end
 
   defp prefer_alias_field_index?(_, _, _, _, _), do: false
+
+  defp param_typed_as_alias_key?(ctx, param, key)
+       when is_binary(param) and is_tuple(key) do
+    type =
+      ctx
+      |> compile_env()
+      |> Map.get(:__var_types__, %{})
+      |> Map.get(param)
+
+    is_binary(type) and record_key_from_type(type, ctx) == key
+  end
+
+  defp param_typed_as_alias_key?(_, _, _), do: false
 
   defp alias_field_index_for_param(field_name, ctx, %{op: :var, name: param_name})
        when is_binary(field_name) and is_binary(param_name) do
@@ -639,6 +760,12 @@ defmodule Elmc.Backend.Plan.Lower.Record do
 
       true ->
         case shape_key_for_inferred_fields(Map.get((ctx && ctx.inferred_param_fields) || %{}, param_name), ctx) do
+          {key, fields} when is_tuple(key) and is_list(fields) ->
+            case Enum.find_index(fields, &(&1 == field_name)) do
+              idx when is_integer(idx) -> {key, idx}
+              _ -> min_alias_field_index(field_name, shapes)
+            end
+
           key when is_tuple(key) ->
             case Map.get(shapes, key) do
               fields when is_list(fields) ->
@@ -868,7 +995,10 @@ defmodule Elmc.Backend.Plan.Lower.Record do
 
   defp inline_field_index_from_concrete_var(field_name, ctx, name)
        when is_binary(field_name) and is_binary(name) do
-    case inline_field_index_from_declared_param_type(field_name, ctx, name) do
+    # Prefer pattern_bind / union-payload inferred fields (already alphabetical) over
+    # declaration-order type strings and same-field-set alias shapes. Otherwise
+    # TriangularMesh.vertices reads faceIndices and indexed meshes draw empty.
+    case inline_field_index_from_inferred_param(field_name, ctx, name) do
       {:inline, _} = ok ->
         ok
 
@@ -876,7 +1006,11 @@ defmodule Elmc.Backend.Plan.Lower.Record do
         ok
 
       :error ->
-        inline_field_index_from_inferred_param(field_name, ctx, name)
+        case inline_field_index_from_declared_param_type(field_name, ctx, name) do
+          {:inline, _} = ok -> ok
+          {_, _} = ok -> ok
+          :error -> :error
+        end
     end
   end
 
@@ -923,23 +1057,71 @@ defmodule Elmc.Backend.Plan.Lower.Record do
 
     case fields do
       list when is_list(list) and list != [] ->
-        case shape_key_for_inferred_fields(list, ctx) do
-          key when is_tuple(key) ->
-            case Map.get(Process.get(:elmc_record_alias_shapes, %{}), key) do
-              shape when is_list(shape) ->
-                case Enum.find_index(shape, &(&1 == field_name)) do
-                  idx when is_integer(idx) -> {key, idx}
-                  _ -> :error
+        # Declared inline param type `{view : …}` (buildNoState) must win over a
+        # same-module proper-superset alias such as StatefulRoute (view@3). Capturing
+        # Int(0) from OOB record_get skips Index.view and leaves Document.title empty.
+        case exact_declared_inline_record_field_index(field_name, list, ctx, name) do
+          {:inline, _} = ok ->
+            ok
+
+          :error ->
+            # Nested lambdas (Platform.application subscriptions `\model ->`) often only
+            # access a subset of a named alias. Alphabetical layout of that subset maps
+            # `pageData`→0 (key) instead of Platform.Model@4 — Time.every never installs.
+            # Same-module proper supersets are safe; cross-module supersets (Cylinder3d
+            # for anonymous `{radius,length}`) must not win.
+            case same_module_proper_superset_field_index(field_name, list, ctx) do
+              {key, idx} ->
+                {key, idx}
+
+              :error ->
+                # Param type `{init, view, update}` must win over access-order subsets
+                # like `{init, view}` (alphabetical view→1). Anonymous/inline declared
+                # types are alphabetical; only apply when the type is a proper superset
+                # so TriangularMesh equal-set alphabetical inference still wins.
+                case declared_param_type_proper_superset_field_index(field_name, list, ctx, name) do
+                  {:inline, _} = ok ->
+                    ok
+
+                  :error ->
+                    as_strings = Enum.map(list, &to_string/1)
+                    # Union ctor payloads (TriangularMesh, etc.) and anonymous records are stored
+                    # alphabetically; pattern_bind seeds inferred fields already sorted. A
+                    # declaration-order registered shape with the same field *set* must not
+                    # override that — otherwise `.vertices` reads `faceIndices` (index 0) and
+                    # WebGL.indexedTriangles gets (0,0,0) indices → invisible cylinders/spheres.
+                    if as_strings == Enum.sort(as_strings) do
+                      alphabetical_inferred_field_index(field_name, list)
+                    else
+                      # Access-order inference (ParamFieldInference) is unsorted. Only reuse a
+                      # registered shape when it is an *exact* field-set match (declaration-order
+                      # named type). Strict supersets such as Cylinder3d/Cone3d
+                      # `{axis, length, radius}` for anonymous `{radius, length}` must not win —
+                      # that mapped `.length`→1 and `.radius`→2, so centeredOn wrote radius into
+                      # the length slot and left radius as missing/0 → modelScale [0,0,r,-1].
+                      case shape_key_for_inferred_fields(list, ctx) do
+                        {key, shape} when is_list(shape) ->
+                          inferred_set = MapSet.new(as_strings)
+                          shape_set = MapSet.new(Enum.map(shape, &to_string/1))
+
+                          if MapSet.equal?(inferred_set, shape_set) do
+                            # Elm stores records alphabetically even when a named alias was
+                            # registered in declaration order (e.g. sandbox `{init,view,update}`).
+                            sorted_shape = shape |> Enum.map(&to_string/1) |> Enum.sort()
+
+                            case Enum.find_index(sorted_shape, &(&1 == field_name)) do
+                              idx when is_integer(idx) -> {key, idx}
+                              _ -> alphabetical_inferred_field_index(field_name, list)
+                            end
+                          else
+                            alphabetical_inferred_field_index(field_name, list)
+                          end
+
+                        _ ->
+                          alphabetical_inferred_field_index(field_name, list)
+                      end
+                    end
                 end
-
-              _ ->
-                :error
-            end
-
-          _ ->
-            case Enum.find_index(list, &(&1 == field_name)) do
-              idx when is_integer(idx) -> {:inline, idx}
-              _ -> :error
             end
         end
 
@@ -948,35 +1130,183 @@ defmodule Elmc.Backend.Plan.Lower.Record do
     end
   end
 
-  defp shape_key_for_inferred_fields(inferred_fields, ctx) when is_list(inferred_fields) do
+  # When the param's declared type is an anonymous record whose field *set* equals
+  # the inferred accesses, use that layout (alphabetical). Do not let a larger
+  # same-module alias (StatefulRoute for `{view}`) steal the index.
+  defp exact_declared_inline_record_field_index(field_name, inferred_fields, ctx, name)
+       when is_binary(field_name) and is_list(inferred_fields) and is_binary(name) do
+    env = compile_env(ctx)
     inferred_set = MapSet.new(inferred_fields, &to_string/1)
     shapes = Process.get(:elmc_record_alias_shapes, %{})
+
+    with type when is_binary(type) <- Map.get(env, :__var_types__, %{}) |> Map.get(name),
+         false <- extensible_record_type?(type),
+         true <- TypeSignature.record_type?(type),
+         # Named aliases registered in shapes (`Model`, `StatefulRoute`) keep
+         # proper-superset recovery. `record_key_from_type` invents synthetic keys
+         # for `{view : …}` strings, so only treat as named when the key exists.
+         false <- named_registered_record_alias?(type, ctx, shapes),
+         declared when is_list(declared) and declared != [] <- elm_inline_record_field_names(type),
+         true <- MapSet.equal?(inferred_set, MapSet.new(declared)),
+         idx when is_integer(idx) <- Enum.find_index(declared, &(&1 == field_name)) do
+      {:inline, idx}
+    else
+      _ -> :error
+    end
+  end
+
+  defp named_registered_record_alias?(type, ctx, shapes)
+       when is_binary(type) and is_map(shapes) do
+    case record_key_from_type(type, ctx) do
+      key when is_tuple(key) -> Map.has_key?(shapes, key)
+      _ -> false
+    end
+  end
+
+  # When ParamFieldInference only saw a subset of fields on a lambda/param, but a
+  # unique same-module alias is a proper field-set superset, use that alias's
+  # indices. Cross-module supersets stay rejected (anonymous cylinder args).
+  #
+  # Do not win over an *exact* field-set match registered in any module. Scene3d.Mesh
+  # `TexturedFacetVertex` is `{position, uv, normal}` — a false proper-superset of
+  # `collectSmooth`'s `{position, normal}` that maps `.normal`→2 (past the end of a
+  # 2-field vertex) and shreds cylinder caps / tangram faces. Prefer the exact
+  # `VertexWithNormal` layout instead. Platform.Model `{pageData, url}` has no exact
+  # match, so same-module supersets still recover declaration indices there.
+  defp same_module_proper_superset_field_index(field_name, inferred_fields, ctx)
+       when is_binary(field_name) and is_list(inferred_fields) do
+    module = ctx && Map.get(ctx, :module)
+    inferred_set = MapSet.new(inferred_fields, &to_string/1)
+
+    cond do
+      not is_binary(module) or MapSet.size(inferred_set) == 0 ->
+        :error
+
+      exact_registered_field_set?(inferred_set) ->
+        :error
+
+      true ->
+        # Include test/inline shapes (e.g. Scene3d.scene) alongside compiled aliases.
+        candidates =
+          Process.get(:elmc_record_alias_shapes, %{})
+          |> Map.merge(Process.get(:elmc_inline_record_literal_shapes, %{}))
+          |> Enum.filter(fn
+            {{^module, _name}, shape} when is_list(shape) and shape != [] ->
+              shape_set = MapSet.new(shape, &to_string/1)
+
+              MapSet.subset?(inferred_set, shape_set) and
+                not MapSet.equal?(inferred_set, shape_set)
+
+            _ ->
+              false
+          end)
+
+        case candidates do
+          [{key, shape}] ->
+            case Enum.find_index(shape, &(to_string(&1) == field_name)) do
+              idx when is_integer(idx) -> {key, idx}
+              _ -> :error
+            end
+
+          _ ->
+            :error
+        end
+    end
+  end
+
+  defp exact_registered_field_set?(field_set) when is_map(field_set) do
+    Process.get(:elmc_record_alias_shapes, %{})
+    |> Map.merge(Process.get(:elmc_inline_record_literal_shapes, %{}))
+    |> Enum.any?(fn {_key, shape} ->
+      is_list(shape) and MapSet.equal?(field_set, MapSet.new(shape, &to_string/1))
+    end)
+  end
+
+  # When ParamFieldInference only saw a subset of an *inline* param type
+  # (`{init, view, update}` but only `init`/`view` accessed), use that type's
+  # alphabetical indices. Named aliases use same_module_proper_superset instead
+  # (Platform.Model keeps declaration order).
+  defp declared_param_type_proper_superset_field_index(field_name, inferred_fields, ctx, name)
+       when is_binary(field_name) and is_list(inferred_fields) and is_binary(name) do
+    env = compile_env(ctx)
+    inferred_set = MapSet.new(inferred_fields, &to_string/1)
+
+    with type when is_binary(type) <- Map.get(env, :__var_types__, %{}) |> Map.get(name),
+         false <- extensible_record_type?(type),
+         declared when is_list(declared) and declared != [] <- elm_inline_record_field_names(type),
+         declared_set = MapSet.new(declared),
+         true <- MapSet.subset?(inferred_set, declared_set),
+         true <- not MapSet.equal?(inferred_set, declared_set),
+         idx when is_integer(idx) <- Enum.find_index(declared, &(&1 == field_name)) do
+      {:inline, idx}
+    else
+      _ -> :error
+    end
+  end
+
+  # Anonymous records are stored alphabetically; access-order inference alone is
+  # wrong for `scene.lights` vs `scene.entities` when both are inferred.
+  defp alphabetical_inferred_field_index(field_name, list)
+       when is_binary(field_name) and is_list(list) do
+    sorted = list |> Enum.map(&to_string/1) |> Enum.sort()
+
+    case Enum.find_index(sorted, &(&1 == field_name)) do
+      idx when is_integer(idx) -> {:inline, idx}
+      _ -> :error
+    end
+  end
+
+  defp shape_key_for_inferred_fields(inferred_fields, ctx) when is_list(inferred_fields) do
+    inferred_set = MapSet.new(inferred_fields, &to_string/1)
+
+    shapes =
+      Process.get(:elmc_record_alias_shapes, %{})
+      |> Map.merge(Process.get(:elmc_inline_record_literal_shapes, %{}))
 
     candidates =
       shapes
       |> Enum.filter(fn {_key, shape} ->
-        MapSet.subset?(inferred_set, MapSet.new(shape, &to_string/1))
+        is_list(shape) and MapSet.subset?(inferred_set, MapSet.new(shape, &to_string/1))
       end)
 
     case candidates do
       [] ->
         nil
 
-      [{key, _}] ->
-        key
+      [{key, shape}] ->
+        {key, shape}
 
       many ->
-        module = ctx && Map.get(ctx, :module)
+        # Prefer an exact field-set match (anonymous scene records, etc.).
+        exact =
+          Enum.filter(many, fn {_key, shape} ->
+            MapSet.equal?(inferred_set, MapSet.new(shape, &to_string/1))
+          end)
 
-        case module do
-          mod when is_binary(mod) ->
-            case Enum.find(many, fn {{m, _}, _} -> m == mod end) do
-              {key, _} -> key
-              _ -> pick_most_specific_shape_candidate(many, inferred_set)
-            end
+        case exact do
+          [{key, shape}] ->
+            {key, shape}
 
           _ ->
-            pick_most_specific_shape_candidate(many, inferred_set)
+            module = ctx && Map.get(ctx, :module)
+
+            picked =
+              case module do
+                mod when is_binary(mod) ->
+                  case Enum.find(many, fn {{m, _}, _} -> m == mod end) do
+                    {key, shape} -> {key, shape}
+                    _ -> pick_most_specific_shape_candidate(many, inferred_set)
+                  end
+
+                _ ->
+                  pick_most_specific_shape_candidate(many, inferred_set)
+              end
+
+            case picked do
+              {key, shape} when is_list(shape) -> {key, shape}
+              key when is_tuple(key) -> {key, Map.get(shapes, key)}
+              _ -> nil
+            end
         end
     end
   end
@@ -1049,7 +1379,13 @@ defmodule Elmc.Backend.Plan.Lower.Record do
             end
 
           _ ->
-            nil
+            # Phantom keys (e.g. `{Module, "value"}` from Result.Ok's type-var
+            # payload spec) must not suppress the nested-inline heuristic.
+            if Map.has_key?(shapes, key) do
+              nil
+            else
+              prefer_inline_shape_when_container_unknown(field_name, shapes, inline_shapes)
+            end
         end
 
       _ ->
@@ -1072,7 +1408,10 @@ defmodule Elmc.Backend.Plan.Lower.Record do
 
   defp param_var_base?(%{op: :var, name: name}, ctx) when is_binary(name) do
     params = (ctx && Map.get(ctx, :params)) || []
-    name in params
+    inferred = (ctx && Map.get(ctx, :inferred_param_fields)) || %{}
+    # Pattern-bound union payloads (TriangularMesh mesh) are locals, not params,
+    # but still carry inferred_param_fields from pattern_bind — must use that path.
+    name in params or Map.has_key?(inferred, name)
   end
 
   defp param_var_base?(_, _), do: false
@@ -1103,8 +1442,86 @@ defmodule Elmc.Backend.Plan.Lower.Record do
             {key, idx}
 
           alias_many ->
-            {_, alias_idx} = Enum.max_by(alias_many, fn {_, i} -> i end)
-            if idx < alias_idx, do: {key, idx}, else: nil
+            # Prefer nested inline layouts (Model_pageData.pageData @1) when both the
+            # parent alias and an inline payload shape expose the same field name.
+            # performUserMsg's `model.pageData` must not use this path — it relies on
+            # a Model-typed `model` local (see PatternBind tuple elem typing).
+            #
+            # Only compare against same-module parent aliases (`Model` vs
+            # `Model_pageData`). Unrelated aliases that happen to share a field
+            # (RouteBuilder.App.sharedData @1) must not veto the nested payload.
+            #
+            # Exception: when inline and alias expose the *same* field set in
+            # different orders (e.g. fromExtrema `{minX,maxX,…}` declaration
+            # order vs Geometry.Types.BoundingBox3d alphabetical payload), the
+            # lower inline index is wrong for runtime records — Elm stores
+            # BoundingBox fields alphabetically (minX@3, not @0). Prefer the
+            # alias/union shape in that case so Scene3d clip depths stay finite.
+            inline_fields = Map.get(inline_shapes, key)
+
+            parent_aliases =
+              case key do
+                {inline_mod, inline_name} when is_binary(inline_mod) and is_binary(inline_name) ->
+                  Enum.filter(alias_many, fn {{amod, aname}, _} ->
+                    amod == inline_mod and String.starts_with?(inline_name, aname <> "_")
+                  end)
+
+                _ ->
+                  []
+              end
+
+            case parent_aliases do
+              [] ->
+                # No same-module parent alias (Model → Model_pageData). Keep the
+                # nested inline index unless some alias exposes the *same* field
+                # set in another order (BoundingBox3d alphabetical vs fromExtrema).
+                same_field_set? =
+                  is_list(inline_fields) and
+                    Enum.any?(alias_many, fn {ak, _} ->
+                      case Map.get(shapes, ak) do
+                        af when is_list(af) ->
+                          MapSet.equal?(
+                            MapSet.new(Enum.map(inline_fields, &to_string/1)),
+                            MapSet.new(Enum.map(af, &to_string/1))
+                          )
+
+                        _ ->
+                          false
+                      end
+                    end)
+
+                if same_field_set?, do: nil, else: {key, idx}
+
+              parent_many ->
+                {alias_key, alias_idx} = Enum.max_by(parent_many, fn {_, i} -> i end)
+
+                same_field_set? =
+                  is_list(inline_fields) and
+                    Enum.any?(parent_many, fn {ak, _} ->
+                      case Map.get(shapes, ak) do
+                        af when is_list(af) ->
+                          MapSet.equal?(
+                            MapSet.new(Enum.map(inline_fields, &to_string/1)),
+                            MapSet.new(Enum.map(af, &to_string/1))
+                          )
+
+                        _ ->
+                          false
+                      end
+                    end)
+
+                cond do
+                  same_field_set? ->
+                    nil
+
+                  idx < alias_idx ->
+                    {key, idx}
+
+                  true ->
+                    _ = alias_key
+                    nil
+                end
+            end
         end
     end
   end
@@ -1160,10 +1577,59 @@ defmodule Elmc.Backend.Plan.Lower.Record do
     # Module-local / prefix hits: prefer the richest shape (Layout over a thin
     # sibling). Untyped / cross-module ambiguity: prefer the smallest shape so
     # Vec2.x is not stolen by a large record that also has an `x` field.
+    #
+    # Nested axis-aligned box payloads are the exception: BoundingBox2d ⊂
+    # BoundingBox3d share minX/maxX/… field names, and the small shape's
+    # alphabetical minX@2 is wrong for 3d (minX@3) — zero X span collapses
+    # Scene3d near/far. Only apply richness when every candidate is an
+    # extrema record (`min`/`max` + `X`/`Y`/`Z`).
+    box_extrema_fields? = fn fields ->
+      is_list(fields) and fields != [] and
+        Enum.all?(fields, fn f ->
+          String.match?(to_string(f), ~r/^(min|max)[XYZ]$/)
+        end)
+    end
+
     {candidates, prefer_rich?} =
       case with_prefix do
-        [] -> {many, false}
-        preferred -> {preferred, true}
+        [] ->
+          all_box_extrema? =
+            Enum.all?(many, fn {key, _} ->
+              box_extrema_fields?.(Map.get(shapes, key))
+            end)
+
+          nested_box? =
+            if all_box_extrema? do
+              rich_len =
+                Enum.max(
+                  Enum.map(many, fn {key, _} ->
+                    length(Map.get(shapes, key) || [])
+                  end) ++ [0]
+                )
+
+              rich_field_set =
+                Enum.find_value(many, fn {k, _} ->
+                  fields = Map.get(shapes, k)
+
+                  if is_list(fields) and length(fields) == rich_len do
+                    MapSet.new(Enum.map(fields, &to_string/1))
+                  end
+                end) || MapSet.new()
+
+              Enum.all?(many, fn {key, _} ->
+                MapSet.subset?(
+                  MapSet.new(Enum.map(Map.get(shapes, key) || [], &to_string/1)),
+                  rich_field_set
+                )
+              end)
+            else
+              false
+            end
+
+          {many, nested_box?}
+
+        preferred ->
+          {preferred, true}
       end
 
     Enum.max_by(candidates, fn {key, idx} ->
@@ -1300,15 +1766,22 @@ defmodule Elmc.Backend.Plan.Lower.Record do
 
   defp record_key_from_type(type, ctx) do
     normalized = Host.normalize_type_name(type)
-    type_name = type_constructor_name(normalized)
-    shapes = Process.get(:elmc_record_alias_shapes, %{})
 
-    case CExpr.split_qualified_type_name(type_name) do
-      {mod, name} ->
-        if Map.has_key?(shapes, {mod, name}), do: {mod, name}, else: shape_key_by_name(shapes, name, ctx)
+    if TypeSignature.type_variable?(normalized) do
+      nil
+    else
+      type_name = type_constructor_name(normalized)
+      shapes = Process.get(:elmc_record_alias_shapes, %{})
 
-      _ ->
-        shape_key_by_name(shapes, type_name, ctx)
+      case CExpr.split_qualified_type_name(type_name) do
+        {mod, name} ->
+          if Map.has_key?(shapes, {mod, name}),
+            do: {mod, name},
+            else: shape_key_by_name(shapes, name, ctx)
+
+        _ ->
+          shape_key_by_name(shapes, type_name, ctx)
+      end
     end
   end
 

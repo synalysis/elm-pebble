@@ -1,5 +1,5 @@
 repo_root = Path.expand("../../..", __DIR__)
-elmc_root = Path.join(repo_root, "elmc")
+_elmc_root = Path.join(repo_root, "elmc")
 
 {out, _} = Code.eval_file(Path.join(__DIR__, "compile_elm_pebble_dev_wasm.exs"))
 

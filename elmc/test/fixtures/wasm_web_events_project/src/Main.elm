@@ -9,14 +9,14 @@ type alias Model =
     String
 
 
-init : () -> ( Model, Cmd () )
-init _ =
-    ( "hello", Cmd.none )
+init : Model
+init =
+    "hello"
 
 
-update : () -> Model -> ( Model, Cmd () )
+update : () -> Model -> Model
 update _ _ =
-    ( "clicked", Cmd.none )
+    "clicked"
 
 
 view : Model -> Html ()

@@ -15,14 +15,14 @@ type Msg
     = Swap
 
 
-init : () -> ( Model, Cmd Msg )
-init _ =
-    ( { swapped = False }, Cmd.none )
+init : Model
+init =
+    { swapped = False }
 
 
-update : Msg -> Model -> ( Model, Cmd Msg )
+update : Msg -> Model -> Model
 update Swap model =
-    ( { model | swapped = not model.swapped }, Cmd.none )
+    { model | swapped = not model.swapped }
 
 
 items : Bool -> List ( String, Html Msg )

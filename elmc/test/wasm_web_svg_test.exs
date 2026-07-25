@@ -4,8 +4,6 @@ defmodule Elmc.WasmWebSvgTest do
   alias Elmc.Backend.Wasm.ProjectWriter
   alias Elmc.Test.WasmRcTrackHarness
 
-  @html_runner Path.expand("support/wasm_html_probe_runner.mjs", __DIR__)
-
   @tag :wasm_execute
   test "web wasm lowers Svg via nodeNS html_cmd kind 7" do
     run_fixture(

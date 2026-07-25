@@ -10,21 +10,29 @@ defmodule ElmEx.Frontend.Bridge do
   alias ElmEx.IR.Types.Diagnostic, as: IRDiagnostic
   alias ElmEx.Types
 
-  @spec load_project(String.t()) :: {:ok, Project.t()} | {:error, BridgeTypes.bridge_error()}
-  def load_project(project_dir) do
-    load_project_from_sources(project_dir, %{})
+  @spec load_project(String.t(), keyword()) ::
+          {:ok, Project.t()} | {:error, BridgeTypes.bridge_error()}
+  def load_project(project_dir, opts \\ []) when is_binary(project_dir) and is_list(opts) do
+    load_project_from_sources(project_dir, %{}, opts)
   end
 
   @doc """
   Loads a project from disk, optionally overlaying module sources from memory.
 
   `source_overrides` keys are paths relative to `project_dir` (for example `"src/Main.elm"`).
+
+  ## Options
+
+  * `:lowerer_diagnostics` — when `true` (default), runs a full IR lower to attach
+    lowerer warnings. Pass `false` for check/IDE save paths that only need parse and
+    import diagnostics; compile already lowers once and should skip this.
   """
-  @spec load_project_from_sources(String.t(), %{String.t() => String.t()}) ::
+  @spec load_project_from_sources(String.t(), %{String.t() => String.t()}, keyword()) ::
           {:ok, Project.t()} | {:error, BridgeTypes.bridge_error()}
-  def load_project_from_sources(project_dir, source_overrides \\ %{})
-      when is_binary(project_dir) and is_map(source_overrides) do
+  def load_project_from_sources(project_dir, source_overrides \\ %{}, opts \\ [])
+      when is_binary(project_dir) and is_map(source_overrides) and is_list(opts) do
     project_dir = Path.expand(project_dir)
+    lowerer_diagnostics? = Keyword.get(opts, :lowerer_diagnostics, true)
 
     with {:ok, elm_json} <- read_elm_json(project_dir),
          {:ok, module_paths} <- discover_module_paths(project_dir, elm_json),
@@ -33,15 +41,23 @@ defmodule ElmEx.Frontend.Bridge do
          {:ok, modules} <- apply_source_overrides(project_dir, modules, source_overrides) do
       modules = disambiguate_package_module_collisions(modules)
 
-      {:ok,
-       %Project{
-         project_dir: project_dir,
-         elm_json: elm_json,
-         modules: modules,
-         diagnostics: diagnostics
-       }
-       |> attach_missing_import_diagnostics()
-       |> attach_lowerer_diagnostics()}
+      project =
+        %Project{
+          project_dir: project_dir,
+          elm_json: elm_json,
+          modules: modules,
+          diagnostics: diagnostics
+        }
+        |> attach_missing_import_diagnostics()
+
+      project =
+        if lowerer_diagnostics? do
+          attach_lowerer_diagnostics(project)
+        else
+          project
+        end
+
+      {:ok, project}
     end
   end
 

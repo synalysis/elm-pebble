@@ -315,6 +315,14 @@ defmodule Elmc.Backend.CCodegen.SpecialValues.Stdlib.WebKernel do
   def special_value_from_target("BackendTask.Http.bytesBody", []),
     do: Helpers.runtime_fn_lambda("elmc_backend_task_http_bytes_body", ["__content_type", "__content"])
 
+  # Host Seq construction: plan getWidths releases the shared builders spine before
+  # `Seq width builders` retains it (handle reuse → empty encode). Mirror kernel encode.
+  def special_value_from_target("Bytes.Encode.sequence", [builders]),
+    do: %{op: :runtime_call, function: "elmc_bytes_encode_sequence", args: [builders]}
+
+  def special_value_from_target("Bytes.Encode.sequence", []),
+    do: Helpers.runtime_fn_lambda("elmc_bytes_encode_sequence", ["__builders"])
+
   def special_value_from_target("BackendTask.Http.request", [req, expect]),
     do: %{op: :runtime_call, function: "elmc_backend_task_http_request", args: [req, expect]}
 

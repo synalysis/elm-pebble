@@ -14,16 +14,16 @@ childView =
     button [ onClick 1 ] [ text "mapped click" ]
 
 
-init : () -> ( Int, Cmd Msg )
-init _ =
-    ( 0, Cmd.none )
+init : Int
+init =
+    0
 
 
-update : Msg -> Int -> ( Int, Cmd Msg )
+update : Msg -> Int -> Int
 update msg model =
     case msg of
         Outer n ->
-            ( model + n, Cmd.none )
+            model + n
 
 
 view : Int -> Html Msg

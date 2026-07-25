@@ -46,7 +46,15 @@ defmodule Elmc.Backend.Plan.Lower.Case.GuardedSwitch do
     with {:ok, arm_exits, default_block_id, b_chain} <-
            compile_test_chain(tested, subj_reg, ctx, b0, merge_reg, entry_id),
          {:ok, default_exit, b_default} <-
-           compile_arm(default_br, subj_reg, ctx, b_chain, default_block_id, merge_reg),
+           compile_default_arm(
+             default_br,
+             branches,
+             subj_reg,
+             ctx,
+             b_chain,
+             default_block_id,
+             merge_reg
+           ),
          merge_id = skip_reserved(b_default.next_block, saved_pending),
          b_reserved = %{b_default | next_block: max(b_default.next_block, merge_id + 1)},
          b_br = patch_arm_exits(b_reserved, arm_exits ++ List.wrap(default_exit), merge_id),
@@ -58,7 +66,20 @@ defmodule Elmc.Backend.Plan.Lower.Case.GuardedSwitch do
     end
   end
 
-  defp split_branches([only]), do: {[], only}
+  # Single-constructor patterns (`(Quantity r) = …`, `(Entity node)`,
+  # `(Frame3d rec)`, argument peels, …) are untyped unwraps: bind the payload
+  # without a tag gate. Constructor tags are *global* in elmc (many types share
+  # tag 1), and peels may already have produced a bare record/float payload —
+  # requiring `union_tag_matches` then falls through to `int_literal 0` and
+  # poisons Scene3d entity lists.
+  #
+  # Exhaustive *multi*-constructor cases must still test *every* arm, including
+  # the last. Treating the last constructor as an untagged default peels
+  # garbage as that constructor (e.g. Scene3d `Transformed`) and can recurse
+  # forever.
+  defp split_branches([only]) do
+    {[], only}
+  end
 
   defp split_branches(branches) do
     {catch_alls, specific} =
@@ -68,7 +89,7 @@ defmodule Elmc.Backend.Plan.Lower.Case.GuardedSwitch do
 
     cond do
       catch_alls == [] ->
-        {Enum.drop(branches, -1), List.last(branches)}
+        {branches, :impossible}
 
       specific == [] ->
         {[], List.last(catch_alls)}
@@ -107,6 +128,63 @@ defmodule Elmc.Backend.Plan.Lower.Case.GuardedSwitch do
     end
   end
 
+  # Impossible under well-typed data. Prefer a passive arm's body (no subject
+  # bindings — e.g. EmptyNode skip) so callers can continue; otherwise a null
+  # handle (Maybe Nothing, empty, etc.).
+  defp compile_default_arm(:impossible, branches, subj_reg, ctx, b, arm_id, merge_reg) do
+    fallback_expr =
+      Enum.find_value(branches, fn branch ->
+        if passive_pattern?(Map.get(branch, :pattern)), do: Map.get(branch, :expr)
+      end)
+
+    branch =
+      case fallback_expr do
+        nil ->
+          %{pattern: %{kind: :wildcard}, expr: %{op: :int_literal, value: 0}}
+
+        expr ->
+          %{pattern: %{kind: :wildcard}, expr: expr}
+      end
+
+    compile_arm(branch, subj_reg, ctx, b, arm_id, merge_reg)
+  end
+
+  defp compile_default_arm(branch, _branches, subj_reg, ctx, b, arm_id, merge_reg)
+       when is_map(branch) do
+    compile_arm(branch, subj_reg, ctx, b, arm_id, merge_reg)
+  end
+
+  defp passive_pattern?(%{kind: kind}) when kind in [:wildcard, :var], do: true
+
+  # A constructor arm is passive only when it binds nothing from the subject.
+  # `UseTexture materialColorData` has `bind` set and `arg_pattern: nil` (unary
+  # payload) — that must NOT be treated as passive, or the impossible-default
+  # fallback recompiles the arm under a wildcard and leaves the payload unbound
+  # for nested lambdas (Scene3d textured/bumpy mesh helpers).
+  defp passive_pattern?(%{kind: :constructor, bind: bind}) when is_binary(bind), do: false
+
+  defp passive_pattern?(%{kind: :constructor} = pattern) do
+    passive_payload?(Map.get(pattern, :arg_pattern))
+  end
+
+  defp passive_pattern?(_), do: false
+
+  defp passive_payload?(nil), do: true
+  defp passive_payload?(%{kind: :wildcard}), do: true
+
+  defp passive_payload?(%{kind: :tuple, elements: elements}) when is_list(elements) do
+    Enum.all?(elements, &passive_payload?/1)
+  end
+
+  defp passive_payload?(%{kind: :var}), do: false
+  defp passive_payload?(%{kind: :constructor, bind: bind}) when is_binary(bind), do: false
+
+  defp passive_payload?(%{kind: :constructor} = pattern) do
+    passive_payload?(Map.get(pattern, :arg_pattern))
+  end
+
+  defp passive_payload?(_), do: false
+
   defp compile_arm(branch, subj_reg, ctx, b, arm_id, merge_reg) do
     b_arm =
       if b.current_block.id == arm_id do
@@ -114,6 +192,7 @@ defmodule Elmc.Backend.Plan.Lower.Case.GuardedSwitch do
       else
         Builder.begin_block(b, arm_id)
       end
+
     pattern = Map.get(branch, :pattern, %{})
     expr = Map.get(branch, :expr)
 

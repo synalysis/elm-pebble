@@ -30,13 +30,51 @@ defmodule Elmc.Backend.Plan.PrimaryCoverage do
 
   @spec report(function_decl_map(), keyword() | compile_options()) :: report()
   def report(decl_map, opts \\ []) when is_map(decl_map) do
+    report_keys(decl_map, Map.keys(decl_map), opts)
+  end
+
+  @spec main_functions_report(function_decl_map(), keyword() | compile_options()) :: report()
+  def main_functions_report(decl_map, opts \\ []) do
+    keys =
+      decl_map
+      |> Map.keys()
+      |> Enum.filter(fn {mod, _name} -> mod == "Main" end)
+
+    # Lower against the full decl_map so Main helpers can resolve cross-module
+    # nullary `qualified_ref` / CAF targets (e.g. `Physics.onEarth`).
+    report_keys(decl_map, keys, opts)
+  end
+
+  @doc """
+  Coverage for functions reachable from worker entry roots (`init`, `update`, …).
+
+  Dead bundled helpers (for example phone-only `Pebble.Platform` JSON decoders)
+  are excluded so audits reflect watch codegen obligations.
+  """
+  @spec reachable_report(function_decl_map(), keyword() | compile_options()) :: report()
+  def reachable_report(decl_map, opts \\ []) when is_map(decl_map) do
+    keys = decl_map |> filter_reachable(opts) |> Map.keys()
+    report_keys(decl_map, keys, opts)
+  end
+
+  @spec module_prefix_report(function_decl_map(), String.t(), keyword()) :: report()
+  def module_prefix_report(decl_map, prefix, opts \\ []) when is_binary(prefix) do
+    keys =
+      decl_map
+      |> Map.keys()
+      |> Enum.filter(fn {mod, _name} -> String.starts_with?(mod, prefix) end)
+
+    report_keys(decl_map, keys, opts)
+  end
+
+  defp report_keys(decl_map, keys, opts) when is_map(decl_map) and is_list(keys) do
     with_constructor_tags!(opts)
 
-    decl_map
+    keys
     |> Enum.sort()
-    |> Enum.reduce(%{total: 0, lowered: 0, failed: []}, fn {{mod, name}, decl}, acc ->
+    |> Enum.reduce(%{total: 0, lowered: 0, failed: []}, fn {mod, name}, acc ->
+      decl = Map.fetch!(decl_map, {mod, name})
       rc_required? = RcRequired.rc_required?(mod, name)
-
       acc = %{acc | total: acc.total + 1}
 
       case PlanLower.lower(decl, mod, decl_map, rc_required: rc_required?) do
@@ -48,36 +86,6 @@ defmodule Elmc.Backend.Plan.PrimaryCoverage do
       end
     end)
   end
-
-  @spec main_functions_report(function_decl_map(), keyword() | compile_options()) :: report()
-  def main_functions_report(decl_map, opts \\ []) do
-    decl_map
-    |> Enum.filter(fn {{mod, _name}, _} -> mod == "Main" end)
-    |> Map.new()
-    |> report(opts)
-  end
-
-  @doc """
-  Coverage for functions reachable from worker entry roots (`init`, `update`, …).
-
-  Dead bundled helpers (for example phone-only `Pebble.Platform` JSON decoders)
-  are excluded so audits reflect watch codegen obligations.
-  """
-  @spec reachable_report(function_decl_map(), keyword() | compile_options()) :: report()
-  def reachable_report(decl_map, opts \\ []) when is_map(decl_map) do
-    decl_map
-    |> filter_reachable(opts)
-    |> report(opts)
-  end
-
-  @spec module_prefix_report(function_decl_map(), String.t(), keyword()) :: report()
-  def module_prefix_report(decl_map, prefix, opts \\ []) when is_binary(prefix) do
-    decl_map
-    |> Enum.filter(fn {{mod, _name}, _} -> String.starts_with?(mod, prefix) end)
-    |> Map.new()
-    |> report(opts)
-  end
-
   @spec filter_reachable(function_decl_map(), keyword() | compile_options()) :: function_decl_map()
   def filter_reachable(decl_map, opts \\ []) when is_map(decl_map) do
     codegen_opts = codegen_opts(opts)

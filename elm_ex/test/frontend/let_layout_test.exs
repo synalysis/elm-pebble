@@ -297,7 +297,7 @@ defmodule ElmEx.Frontend.LetLayoutTest do
   end
 
   test "parses unary minus after comparison operators" do
-    assert {:ok, %{op: :compare, kind: :lt, right: %{op: :call, name: "negate"}}} =
+    assert {:ok, %{op: :compare, kind: :lt, right: %{op: :qualified_call, target: "Basics.negate"}}} =
              GeneratedExpressionParser.parse("normalized < -pi")
   end
 

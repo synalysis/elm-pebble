@@ -60,10 +60,11 @@ init _ =
             BackendTask.Http.post
                 "https://example.com/upload.bin"
                 (BackendTask.Http.bytesBody "application/octet-stream" <|
-                    Encode.sequence
-                        [ Encode.unsignedInt8 7
-                        , Encode.unsignedInt8 8
-                        ]
+                    Encode.encode <|
+                        Encode.sequence
+                            [ Encode.unsignedInt8 7
+                            , Encode.unsignedInt8 8
+                            ]
                 )
                 (BackendTask.Http.expectWhatever ())
         ]

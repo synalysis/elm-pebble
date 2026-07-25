@@ -45,10 +45,10 @@ defmodule Elmc.Backend.Plan.Lower.Function do
   defp do_lower(decl, module_name, decl_map, opts) do
     opts = codegen_opts(opts)
 
-    decl = Web.rewrite_html_tag_function_decl(module_name, decl, opts)
-    decl = Web.rewrite_html_map_function_decl(module_name, decl, opts)
-    decl = Web.rewrite_partial_html_map_function_decl(module_name, decl, opts)
-    decl = Web.rewrite_html_lazy_function_decl(module_name, decl, opts)
+    # Call sites read arity from decl_map. Sync partial Html.map bindings
+    # (`wrap = Html.map f`) to 1-arg so callers use call_fn, not CAF+closure.
+    decl_map = Web.rewrite_decl_map(decl_map, opts)
+    decl = Web.rewrite_function_decl(module_name, decl, opts)
 
     case Fusion.try_plan(module_name, decl, decl_map, opts) do
       {:ok, plan} ->

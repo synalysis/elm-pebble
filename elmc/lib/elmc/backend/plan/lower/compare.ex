@@ -292,16 +292,31 @@ defmodule Elmc.Backend.Plan.Lower.Compare do
 
   defp compare_mode(kind, left, right, ctx) do
     mode = compare_equality_mode(left, right, ctx)
+    env = type_env(ctx)
 
-    # Ordering must never use pointer identity. Polymorphic `number` payloads
-    # (elm-units `Quantity.greaterThan (Quantity y) (Quantity x) = x > y`) have no
-    # Int/Float type in the env, so mode would be `:pointer` and `i32.gt_s` on
-    # handles follows allocation order — `Quantity.abs` boxes fresh Ints each
-    # call, so Light.soft's intensity swap recurses forever.
-    if mode == :pointer and kind in [:gt, :gte, :lt, :lte] do
-      :int_boxed
-    else
-      mode
+    cond do
+      # Ordering must never use pointer identity. Polymorphic `number` payloads
+      # (elm-units `Quantity.greaterThan (Quantity y) (Quantity x) = x > y`) have no
+      # Int/Float type in the env, so mode would be `:pointer` and `i32.gt_s` on
+      # handles follows allocation order — `Quantity.abs` boxes fresh Ints each
+      # call, so Light.soft's intensity swap recurses forever.
+      #
+      # Prefer float when either side looks like Float (including `__mul__` trees
+      # from `Frame3d.isRightHanded`'s triple product); `as_int` truncates and
+      # turns `det > 0` into a false negative for |det| < 1.
+      mode == :pointer and kind in [:gt, :gte, :lt, :lte] ->
+        if float_compare_pair?(left, right, env), do: :float_boxed, else: :int_boxed
+
+      # Elm `==` on Int/Bool is by value. Pointer `i32.eq` breaks
+      # `Transformation.compose`'s `t1.isRightHanded == t2.isRightHanded`:
+      # identity stores a True Int box and placeIn stores `new_int(1)` from
+      # Frame3d.isRightHanded — distinct handles → always False → modelScale.w=-1.
+      # For non-Int tags, `as_int` falls back to the handle id (≈ pointer).
+      mode == :pointer and kind in [:eq, :neq] ->
+        :int_boxed
+
+      true ->
+        mode
     end
   end
 
@@ -343,9 +358,45 @@ defmodule Elmc.Backend.Plan.Lower.Compare do
 
   defp float_equality_operand?(%{op: :float_literal}, _env), do: true
 
+  # Matrix4/VectorN.toRecord fields are always Floats; without a type env entry,
+  # `projectionType == 0` was lowered as pointer i32.eq and never matched.
+  defp float_equality_operand?(%{op: :field_access, field: field} = expr, env)
+       when is_binary(field) do
+    mjs_float_record_field?(field) or TypedReturn.expr_type(expr, env) == "Float"
+  end
+
+  defp float_equality_operand?(%{op: :record_access, field: field}, _env)
+       when is_binary(field) do
+    mjs_float_record_field?(field)
+  end
+
+  # Polymorphic Basics operators on Float operands stay untyped (`number`); walk
+  # the call tree so `a * e * i + … > 0` selects float_boxed, not truncating int.
+  defp float_equality_operand?(%{op: :call, name: name, args: args}, env)
+       when name in ["__add__", "__sub__", "__mul__", "__fdiv__", "/"] do
+    Enum.any?(List.wrap(args), &float_equality_operand?(&1, env))
+  end
+
+  defp float_equality_operand?(%{op: :qualified_call, target: target, args: args}, env)
+       when is_binary(target) do
+    short = target |> String.split(".") |> List.last()
+
+    if short in ["add", "sub", "mul", "fdiv"] do
+      Enum.any?(List.wrap(args), &float_equality_operand?(&1, env))
+    else
+      TypedReturn.expr_type(%{op: :qualified_call, target: target, args: args}, env) == "Float"
+    end
+  end
+
   defp float_equality_operand?(expr, env) do
     TypedReturn.expr_type(expr, env) == "Float"
   end
+
+  defp mjs_float_record_field?(field) when field in ["x", "y", "z", "w"], do: true
+
+  defp mjs_float_record_field?(<<"m", r, c>>) when r in ?1..?4 and c in ?1..?4, do: true
+
+  defp mjs_float_record_field?(_), do: false
 
   defp numeric_literal_operand?(%{op: :int_literal}), do: true
   defp numeric_literal_operand?(%{op: :float_literal}), do: true

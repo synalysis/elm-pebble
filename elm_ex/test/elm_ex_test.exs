@@ -1045,6 +1045,105 @@ defmodule ElmExTest do
     assert String.contains?(output, "elm.json")
   end
 
+  test "lowerer resolves Scene3d Group pattern to tag 6 despite Internal.Compiler.Group tag 5" do
+    # Regression: unqualified constructor tables used Map.new last-wins. When
+    # Internal.Compiler.Group (tag 5) overwrote Scene3d.Types.Group (tag 6),
+    # Scene3d.Entity.transformBy treated Group nodes as PointNode and returned Empty
+    # — HeroScene WebGL entity lists collapsed to nothing.
+    types_module =
+      %FrontendModule{
+        name: "Scene3d.Types",
+        path: "/tmp/synthetic/src/Scene3d/Types.elm",
+        imports: [],
+        import_entries: [],
+        declarations: [
+          %{
+            kind: :union,
+            name: "Node",
+            constructors: [
+              %{name: "EmptyNode", arg: nil},
+              %{name: "OpaqueMeshNode", arg: "Bounds DrawFn"},
+              %{name: "TransparentMeshNode", arg: "Bounds DrawFn"},
+              %{name: "ShadowNode", arg: "DrawFn"},
+              %{name: "PointNode", arg: "Bounds DrawFn"},
+              %{name: "Group", arg: "List Node"},
+              %{name: "Transformed", arg: "Transformation Node"}
+            ],
+            span: %{start_line: 1, end_line: 1}
+          }
+        ]
+      }
+
+    compiler_module =
+      %FrontendModule{
+        name: "Internal.Compiler",
+        path: "/tmp/synthetic/src/Internal/Compiler.elm",
+        imports: [],
+        import_entries: [],
+        declarations: [
+          %{
+            kind: :union,
+            name: "Chunk",
+            constructors: [
+              %{name: "A", arg: nil},
+              %{name: "B", arg: nil},
+              %{name: "C", arg: nil},
+              %{name: "D", arg: nil},
+              %{name: "Group", arg: nil}
+            ],
+            span: %{start_line: 1, end_line: 1}
+          }
+        ]
+      }
+
+    entity_module =
+      %FrontendModule{
+        name: "Scene3d.Entity",
+        path: "/tmp/synthetic/src/Scene3d/Entity.elm",
+        imports: ["Scene3d.Types"],
+        import_entries: [
+          %{
+            "module" => "Scene3d.Types",
+            "as" => "Types",
+            "exposing" => ["Node(..)"]
+          }
+        ],
+        declarations: [
+          sig("wrapGroup", "Node -> Node"),
+          defn("wrapGroup", ["node"], %{
+            op: :case,
+            subject: %{op: :var, name: "node"},
+            branches: [
+              %{
+                pattern: %{kind: :constructor, name: "Group", arg_pattern: %{kind: :wildcard}},
+                expr: %{op: :var, name: "node"}
+              },
+              %{
+                pattern: %{kind: :wildcard},
+                expr: %{op: :constructor_call, target: "EmptyNode", args: []}
+              }
+            ]
+          })
+        ]
+      }
+
+    project = %ElmEx.Frontend.Project{
+      project_dir: "/tmp/synthetic",
+      elm_json: %{"source-directories" => ["src"]},
+      # Compiler module last so a naive Map.new last-wins would bind Group → 5.
+      modules: [types_module, entity_module, compiler_module]
+    }
+
+    assert {:ok, %IR{modules: modules}} = Lowerer.lower_project(project)
+    mod = Enum.find(modules, &(&1.name == "Scene3d.Entity"))
+    func = Enum.find(mod.declarations, &(&1.name == "wrapGroup" and &1.kind == :function))
+
+    assert %{op: :case, branches: [group_br | _]} = func.expr
+    assert %{pattern: %{name: "Group", tag: 6, resolved_name: resolved}} = group_br
+    assert resolved in ["Group", "Scene3d.Types.Group"]
+    refute group_br.pattern.tag == 5
+  end
+
   # ---------------------------------------------------------------------------
   # Helpers
   # ---------------------------------------------------------------------------

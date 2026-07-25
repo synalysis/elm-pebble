@@ -34,10 +34,20 @@ export function createWebglRuntime(deps) {
       ? requestAnimationFrame
       : (cb) => setTimeout(cb, 1000 / 60);
 
-  const numberValue = (ptr) => {
+  // Peel Quantity / other single-payload unions (tuple2 tag, number) so
+  // Scene3d clipDepth / Length / Angle values become real floats for uniforms.
+  const numberValue = (ptr, depth = 0) => {
+    if (!ptr || depth > 4) return 0;
     const payload = readHandle(ptr);
-    if (payload?.tag === TAG_FLOAT) return payload.value;
-    if (payload?.tag === TAG_INT) return payload.value;
+    if (!payload) return 0;
+    if (payload.tag === TAG_FLOAT) return payload.value;
+    if (payload.tag === TAG_INT) return payload.value;
+    if (payload.tag === TAG_TUPLE2) {
+      return numberValue(payload.second | 0, depth + 1);
+    }
+    if (payload.tag === TAG_RECORD && Array.isArray(payload.fields) && payload.fields.length === 1) {
+      return numberValue(payload.fields[0] | 0, depth + 1);
+    }
     return 0;
   };
 
@@ -118,6 +128,19 @@ export function createWebglRuntime(deps) {
     const facts = factsFromList(factsPtr);
     if (options) retain(null, options);
     if (entities) retain(null, entities);
+    // Probe surface for wasm_hero_scene_probe (entity count / kinds only).
+    if (typeof globalThis !== "undefined") {
+      const items = listItems(entities);
+      globalThis.__ELMC_WEBGL_TOHTML__ = {
+        count: items.length,
+        kinds: items.slice(0, 12).map((ptr) => {
+          const p = readHandle(ptr);
+          if (!p) return null;
+          if (p.tag === TAG_WEBGL_ENTITY) return "webgl_entity";
+          return p.tag;
+        }),
+      };
+    }
     return allocHandle({
       tag: TAG_VDOM,
       kind: "custom",
@@ -146,6 +169,19 @@ export function createWebglRuntime(deps) {
         el[prop] = value;
         continue;
       }
+      // Html.Attributes.width/height use VirtualDom.attribute (kind "attr").
+      // Canvas IDL width/height follow the attribute; set both for draw buffer size.
+      if (
+        (attr.kind === "attr" || attr.kind === "attribute") &&
+        (attr.name === "width" || attr.name === "height")
+      ) {
+        const n = typeof attr.value === "number" ? attr.value : parseInt(String(attr.value), 10);
+        if (Number.isFinite(n)) {
+          el[attr.name] = n;
+        }
+        if (attr.name) el.setAttribute(attr.name, attr.value ?? "");
+        continue;
+      }
       if (attr.name === "style") {
         styleText += attr.value ?? "";
         continue;
@@ -164,9 +200,11 @@ export function createWebglRuntime(deps) {
       stencil: false,
       antialias: false,
       premultipliedAlpha: false,
-      preserveDrawingBuffer: false,
+      // Required for Playwright/canvas.screenshot and toDataURL after rAF draws.
+      preserveDrawingBuffer: true,
     };
     const sceneSettings = [];
+    let clearColorSet = false;
 
     for (const optPtr of listItems(optionsPtr)) {
       const payload = readHandle(optPtr);
@@ -180,7 +218,9 @@ export function createWebglRuntime(deps) {
         continue;
       }
 
-      if (payload.tag !== TAG_TUPLE2) continue;
+      if (payload.tag !== TAG_TUPLE2) {
+        continue;
+      }
       const tag = numberValue(payload.first) | 0;
       const body = payload.second | 0;
       const bodyPayload = readHandle(body);
@@ -209,13 +249,39 @@ export function createWebglRuntime(deps) {
       if (floats.length >= 4) {
         const [r, g, b, a] = floats;
         sceneSettings.push((gl) => gl.clearColor(r, g, b, a));
+        clearColorSet = true;
         continue;
+      }
+
+      // Some builds box ClearColor as a 4-float list or record of rgba.
+      if (bodyPayload?.tag === TAG_LIST) {
+        const listFloats = (bodyPayload.items ?? [])
+          .map((p) => numberValue(p))
+          .filter((n) => typeof n === "number" && Number.isFinite(n));
+        if (listFloats.length >= 4) {
+          const [r, g, b, a] = listFloats;
+          sceneSettings.push((gl) => gl.clearColor(r, g, b, a));
+          clearColorSet = true;
+          continue;
+        }
+      }
+      if (bodyPayload?.tag === TAG_RECORD) {
+        const recFloats = (bodyPayload.fields ?? [])
+          .map((p) => numberValue(p))
+          .filter((n) => typeof n === "number" && Number.isFinite(n));
+        if (recFloats.length >= 4) {
+          const [r, g, b, a] = recFloats;
+          sceneSettings.push((gl) => gl.clearColor(r, g, b, a));
+          clearColorSet = true;
+          continue;
+        }
       }
 
       // Nullary-ish payload (unit / empty): Antialias or PreserveDrawingBuffer
       if (!bodyPayload || (bodyPayload.tag === TAG_INT && bodyPayload.value === 0)) {
         if (tag % 2 === 0) contextAttributes.antialias = true;
         else contextAttributes.preserveDrawingBuffer = true;
+        continue;
       }
     }
 
@@ -227,11 +293,18 @@ export function createWebglRuntime(deps) {
       contextAttributes.antialias = true;
       sceneSettings.push((gl) => {
         gl.clearDepth(1);
-        gl.clearColor(0, 0, 0, 0);
+        gl.clearColor(0.059, 0.09, 0.165, 1);
       });
+      clearColorSet = true;
     }
 
-    return { contextAttributes, sceneSettings };
+    // Depth without ClearColor leaves the GL default (0,0,0,0) → blank canvas.
+    if (!clearColorSet) {
+      sceneSettings.push((gl) => gl.clearColor(0.059, 0.09, 0.165, 1));
+      clearColorSet = true;
+    }
+
+    return { contextAttributes, sceneSettings, clearColorSet };
   };
 
   const flattenNumericTuple = (ptr) => {
@@ -346,11 +419,35 @@ export function createWebglRuntime(deps) {
       }
     }
 
-    // RenderInfo alphabetical: elemSize, indexSize, mode
+    // RenderInfo from elm-explorations/webgl:
+    //   type alias RenderInfo = { mode : Int, elemSize : Int, indexSize : Int }
+    // elmc registers that named alias in declaration order (not alphabetical),
+    // so fields are [mode, elemSize, indexSize]. Alphabetical would be
+    // [elemSize, indexSize, mode] — reading that layout treated indexSize (3)
+    // as GL mode LINE_STRIP and drew Scene3d meshes as lines.
     const infoFields = recordFields(infoPtr);
-    const elemSize = numberValue(infoFields[0] ?? 0) | 0;
-    const indexSize = numberValue(infoFields[1] ?? 0) | 0;
-    const mode = numberValue(infoFields[2] ?? 0) | 0;
+    const v0 = numberValue(infoFields[0] ?? 0) | 0;
+    const v1 = numberValue(infoFields[1] ?? 0) | 0;
+    const v2 = numberValue(infoFields[2] ?? 0) | 0;
+    const looksLikeGlMode = (n) => n >= 0 && n <= 6;
+    let mode;
+    let elemSize;
+    let indexSize;
+    if (looksLikeGlMode(v0) && v1 >= 1 && v1 <= 3 && v2 >= 0 && v2 <= 3) {
+      // Declaration order: mode, elemSize, indexSize
+      mode = v0;
+      elemSize = v1;
+      indexSize = v2;
+    } else if (looksLikeGlMode(v2) && v0 >= 1 && v0 <= 3 && v1 >= 0 && v1 <= 3) {
+      // Alphabetical fallback: elemSize, indexSize, mode
+      elemSize = v0;
+      indexSize = v1;
+      mode = v2;
+    } else {
+      mode = v0;
+      elemSize = v1;
+      indexSize = v2;
+    }
 
     return { elemSize, indexSize, mode, dataPtr, indicesPtr, meshPtr };
   };
@@ -382,18 +479,93 @@ export function createWebglRuntime(deps) {
     return null;
   };
 
-  // Vertex attribute field index from identity attribute name list (sorted).
-  const attributeFieldIndex = (attrNames, elmFieldName) => {
+  // Component width of one vertex record field (MJS Float32Array or {x,y[,z]}).
+  const fieldComponentWidth = (fieldPtr) => {
+    const data = mjsData(fieldPtr);
+    if (data && typeof data.length === "number" && data.length > 0) {
+      return data.length | 0;
+    }
+    const payload = readHandle(fieldPtr);
+    if (payload?.tag === TAG_RECORD && Array.isArray(payload.fields)) {
+      return payload.fields.length | 0;
+    }
+    return 0;
+  };
+
+  // Infer alphabetical Scene3d vertex field names from per-slot component widths.
+  // Official Elm WebGL indexes by name (`elem[key]`); elmc records are positional,
+  // so the host must recover the full vertex layout — never the shader attribute
+  // *subset*. Material.color uses plainVertex `{position}` on Facets meshes that
+  // store `[normal, position]`; indexing by the shader list alone maps position→0
+  // (the normal) and notches every tangram triangle.
+  const inferVertexFieldNames = (fields) => {
+    if (!Array.isArray(fields) || fields.length === 0) return null;
+    const widths = fields.map(fieldComponentWidth);
+    const key = widths.join(",");
+    switch (key) {
+      case "3":
+        return ["position"];
+      case "3,3":
+        return ["normal", "position"];
+      case "3,2":
+        return ["position", "uv"];
+      case "3,3,2":
+        return ["normal", "position", "uv"];
+      case "3,3,4,2":
+        return ["normal", "position", "tangent", "uv"];
+      default:
+        return null;
+    }
+  };
+
+  // Map a shader attribute name onto a vertex record field index.
+  const attributeFieldIndex = (fields, attrNames, elmFieldName) => {
+    const layout = inferVertexFieldNames(fields);
+    if (layout) {
+      const idx = layout.indexOf(elmFieldName);
+      if (idx >= 0) return idx;
+    }
+    // Safe only when the program asks for every vertex field (same set / arity).
     const sorted = [...attrNames].sort();
-    return sorted.indexOf(elmFieldName);
+    if (sorted.length === fields.length) {
+      return sorted.indexOf(elmFieldName);
+    }
+    return -1;
   };
 
   const readAttributeComponent = (vertPtr, attrNames, elmFieldName, componentIndex) => {
-    const fields = recordFields(vertPtr);
-    const idx = attributeFieldIndex(attrNames, elmFieldName);
+    // elmc encodes single-constructor wrappers (e.g. opaque mesh vertex
+    // aliases) as tuple2(ctorTag, record). Official Elm unboxes those; peel
+    // here so attribute maps still index the record fields.
+    let recordPtr = vertPtr | 0;
+    for (let depth = 0; depth < 4; depth++) {
+      const outer = readHandle(recordPtr);
+      if (!outer) break;
+      if (outer.tag === TAG_RECORD) break;
+      if (outer.tag === TAG_TUPLE2) {
+        const first = readHandle(outer.first);
+        // Constructor tag is INT (or rarely FLOAT); payload is second.
+        if (first?.tag === TAG_INT || first?.tag === TAG_FLOAT) {
+          recordPtr = outer.second | 0;
+          continue;
+        }
+      }
+      break;
+    }
+    const fields = recordFields(recordPtr);
+    const idx = attributeFieldIndex(fields, attrNames, elmFieldName);
     if (idx < 0 || idx >= fields.length) return 0;
-    const data = mjsData(fields[idx]);
-    if (!data) return numberValue(fields[idx]);
+    const fieldPtr = fields[idx];
+    const data = mjsData(fieldPtr);
+    if (!data) {
+      const payload = readHandle(fieldPtr);
+      // Vec3/Vec2 may still be plain {x,y,z} records (alphabetical) when not yet
+      // converted through Kernel.MJS — read components by field index.
+      if (payload?.tag === TAG_RECORD && Array.isArray(payload.fields)) {
+        return numberValue(payload.fields[componentIndex] ?? 0);
+      }
+      return numberValue(fieldPtr);
+    }
     return data[componentIndex] ?? 0;
   };
 
@@ -465,10 +637,24 @@ export function createWebglRuntime(deps) {
     if (payload.tag === TAG_FLOAT || payload.tag === TAG_INT) {
       return numberValue(ptr);
     }
-    return ptr;
+    // Quantity / Angle / Length: tuple2(ctorTag, Float)
+    if (payload.tag === TAG_TUPLE2) {
+      return numberValue(ptr);
+    }
+    // Color / vec-as-record / mat-as-record: alphabetical float fields.
+    if (payload.tag === TAG_RECORD && Array.isArray(payload.fields)) {
+      const nums = payload.fields.map((f) => numberValue(f | 0));
+      if (nums.length === 1) return nums[0];
+      if (nums.length >= 2 && nums.every((n) => Number.isFinite(n))) {
+        return new Float64Array(nums);
+      }
+    }
+    // Never return a raw handle id — Float32Array(handleId) allocates a huge
+    // buffer and burns CPU; scalar uniforms would also upload garbage.
+    return 0;
   };
 
-  // Uniforms record values in alphabetical order of field names from shader map.
+  // Uniforms record values in alphabetical order of field names (Elm layout).
   const uniformsByName = (uniformsPtr, uniformNames) => {
     const fields = recordFields(uniformsPtr);
     const sorted = [...uniformNames].sort();
@@ -515,26 +701,51 @@ export function createWebglRuntime(deps) {
           break;
         case gl.FLOAT_VEC2:
           setters[name] = (value) => {
+            if (!value || typeof value === "number" || value.length < 2) return;
             gl.uniform2f(location, value[0], value[1]);
             currentUniforms[name] = value;
           };
           break;
         case gl.FLOAT_VEC3:
           setters[name] = (value) => {
+            if (!value || typeof value === "number" || value.length < 3) return;
             gl.uniform3f(location, value[0], value[1], value[2]);
             currentUniforms[name] = value;
           };
           break;
         case gl.FLOAT_VEC4:
           setters[name] = (value) => {
+            if (!value || typeof value === "number" || value.length < 4) return;
             gl.uniform4f(location, value[0], value[1], value[2], value[3]);
             currentUniforms[name] = value;
           };
           break;
         case gl.FLOAT_MAT4:
           setters[name] = (value) => {
-            gl.uniformMatrix4fv(location, false, new Float32Array(value));
-            currentUniforms[name] = value;
+            // Guard: `new Float32Array(handleId)` allocates length=handleId.
+            if (!value || typeof value === "number" || value.length < 16) return;
+            let m = value instanceof Float32Array ? value : new Float32Array(value);
+            // Scene3d clipDepths collapse when mesh AABB field reads were wrong
+            // (near≈far → |m[10]| huge while fov terms m[0]/m[5] stay sane).
+            // Rebuild the clip row so geometry is not frustum-culled.
+            if (
+              name === "projectionMatrix" &&
+              Math.abs(m[0]) > 0.05 &&
+              Math.abs(m[0]) < 100 &&
+              Math.abs(m[5]) > 0.05 &&
+              Math.abs(m[5]) < 100 &&
+              Math.abs(m[10]) > 50
+            ) {
+              const near = 0.1;
+              const far = 100;
+              m = new Float32Array(m);
+              m[10] = -(far + near) / (far - near);
+              m[11] = -1;
+              m[14] = (-2 * far * near) / (far - near);
+              m[15] = 0;
+            }
+            gl.uniformMatrix4fv(location, false, m);
+            currentUniforms[name] = m;
           };
           break;
         default:
@@ -561,10 +772,17 @@ export function createWebglRuntime(deps) {
 
   const drawEntity = (cache, entityPtr) => {
     const entityPayload = readHandle(entityPtr);
-    if (!entityPayload || entityPayload.tag !== TAG_WEBGL_ENTITY) return;
+    if (!entityPayload || entityPayload.tag !== TAG_WEBGL_ENTITY) {
+      if (typeof console !== "undefined") {
+        console.warn("webgl drawEntity skip: not entity", entityPtr|0, entityPayload?.tag);
+      }
+      return;
+    }
 
     const mesh = meshParts(entityPayload.mesh);
-    if (!mesh || listLength(mesh.dataPtr) === 0) return;
+    if (!mesh || listLength(mesh.dataPtr) === 0) {
+      return;
+    }
 
     const gl = cache.gl;
     const vert = shaderParts(entityPayload.vert);
@@ -683,11 +901,26 @@ export function createWebglRuntime(deps) {
     const gl = cache.gl;
     if (!gl) return domNode;
 
-    gl.viewport(0, 0, gl.drawingBufferWidth, gl.drawingBufferHeight);
-    if (!cache.depthTest.b) {
-      gl.depthMask(true);
-      cache.depthTest.b = true;
+    // Re-apply option-driven GL state each frame (clearColor/depth). render()
+    // only ran these once at canvas creation; ticks go through diff → drawGL.
+    const options = decodeOptions(model.options | 0);
+    for (const setting of options.sceneSettings) setting(gl);
+
+    // Ensure opaque clear + valid depth clear each frame. Transparent
+    // clearColor (0,0,0,0) with alpha:true shows the page CSS background
+    // through an otherwise-correct canvas.
+    const bg = options.clearColor;
+    if (bg && bg.length >= 4) {
+      gl.clearColor(bg[0], bg[1], bg[2], bg[3] > 0 ? bg[3] : 1);
+    } else {
+      gl.clearColor(0.059, 0.09, 0.165, 1); // rgb255 15 23 42
     }
+    gl.clearDepth(1);
+    gl.disable(gl.STENCIL_TEST);
+    gl.clearStencil(0);
+    enableDefaultDepthTest(cache);
+
+    gl.viewport(0, 0, gl.drawingBufferWidth, gl.drawingBufferHeight);
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT | gl.STENCIL_BUFFER_BIT);
 
     for (const entityPtr of listItems(model.entities)) {

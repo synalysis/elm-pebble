@@ -10,8 +10,8 @@ defmodule ElmEx.Frontend.UnaryMinusNormalizeTest do
               name: "f",
               args: [
                 %{
-                  op: :call,
-                  name: "negate",
+                  op: :qualified_call,
+                  target: "Basics.negate",
                   args: [%{op: :qualified_ref, target: "Const.maxNumber"}]
                 }
               ]
@@ -21,7 +21,7 @@ defmodule ElmEx.Frontend.UnaryMinusNormalizeTest do
             %{
               op: :call,
               name: "max",
-              args: [%{op: :call, name: "negate", args: [%{op: :var, name: "h2"}]}]
+              args: [%{op: :qualified_call, target: "Basics.negate", args: [%{op: :var, name: "h2"}]}]
             }} = GeneratedExpressionParser.parse("max -h2")
 
     assert {:ok,
@@ -29,7 +29,7 @@ defmodule ElmEx.Frontend.UnaryMinusNormalizeTest do
               op: :qualified_call,
               target: "Vec3.scale",
               args: [
-                %{op: :call, name: "negate", args: [%{op: :var, name: "radius2"}]},
+                %{op: :qualified_call, target: "Basics.negate", args: [%{op: :var, name: "radius2"}]},
                 %{op: :var, name: "normal"}
               ]
             }} = GeneratedExpressionParser.parse("Vec3.scale -radius2 normal")
@@ -38,5 +38,21 @@ defmodule ElmEx.Frontend.UnaryMinusNormalizeTest do
   test "spaced binary subtraction is not rewritten to negate" do
     assert {:ok, %{op: :sub_vars, left: "a", right: "b"}} =
              GeneratedExpressionParser.parse("a - b")
+  end
+
+  test "constructor application with unary minus uses Basics.negate" do
+    # Quantity.negate is `Quantity -value` — must not resolve to Quantity.negate.
+    assert {:ok,
+            %{
+              op: :constructor_call,
+              target: "Quantity",
+              args: [
+                %{
+                  op: :qualified_call,
+                  target: "Basics.negate",
+                  args: [%{op: :var, name: "value"}]
+                }
+              ]
+            }} = GeneratedExpressionParser.parse("Quantity -value")
   end
 end

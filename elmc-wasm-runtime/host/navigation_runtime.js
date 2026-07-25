@@ -104,7 +104,7 @@ export function createNavigationRuntime(deps) {
     if (onUrlChangeFn) {
       const msgResult = invokeClosure(onUrlChangeFn, [urlPtr]);
       if (msgResult.rc === RC_SUCCESS && msgResult.value) {
-        dispatchPlatformMsg(msgResult.value);
+        dispatchPlatformMsg(msgResult.value, { alreadyPlatform: true });
       }
     }
 
@@ -167,7 +167,7 @@ export function createNavigationRuntime(deps) {
         const req = urlRuntime.urlRequestExternal(urlRuntime.newStringHandle(href));
         const msgResult = invokeClosure(onUrlRequestFn, [req]);
         if (msgResult.rc === RC_SUCCESS && msgResult.value) {
-          dispatchPlatformMsg(msgResult.value);
+          dispatchPlatformMsg(msgResult.value, { alreadyPlatform: true });
         }
         return;
       }
@@ -178,7 +178,7 @@ export function createNavigationRuntime(deps) {
       const req = urlRuntime.urlRequestInternal(urlRuntime.urlFromLocation(targetUrl));
       const msgResult = invokeClosure(onUrlRequestFn, [req]);
       if (msgResult.rc === RC_SUCCESS && msgResult.value) {
-        dispatchPlatformMsg(msgResult.value);
+        dispatchPlatformMsg(msgResult.value, { alreadyPlatform: true });
       }
       if (
         typeof window !== "undefined" &&

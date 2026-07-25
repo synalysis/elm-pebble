@@ -57,10 +57,14 @@ defmodule Elmc.Backend.Wasm.ProjectWriter do
     Process.put(:elmc_wasm_record_field_macro_indices, macro_index_map(record_field_macros, shapes))
 
     try do
+      opts_map = Map.new(opts)
+
       decl_map =
         ir
         |> IRQueries.function_decl_map()
         |> inject_web_wire3_helpers(opts)
+        |> Elmc.Backend.Plan.Lower.Platform.Web.rewrite_decl_map(opts_map)
+
       coverage_opts = coverage_opts(opts)
       emit_map = emit_decl_map(decl_map, coverage_opts)
       pruned_count = map_size(decl_map) - map_size(emit_map)

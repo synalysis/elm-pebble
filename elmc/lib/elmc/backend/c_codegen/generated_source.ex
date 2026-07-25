@@ -234,17 +234,19 @@ defmodule Elmc.Backend.CCodegen.GeneratedSource do
     Process.put(:elmc_borrowed_field_refs, MapSet.new())
     RecordCompile.reset_rec_values_suffix()
 
-    function_arities =
-      ir.modules
-      |> Enum.flat_map(fn mod ->
-        mod.declarations
-        |> Enum.filter(&(&1.kind == :function))
-        |> Enum.map(fn decl -> {{mod.name, decl.name}, length(decl.args || [])} end)
-      end)
-      |> Map.new()
-
     constructor_tags = IRQueries.constructor_tag_map(ir)
-    decl_map = IRQueries.function_decl_map(ir)
+    opts_map = Map.new(opts)
+    decl_map =
+      ir
+      |> IRQueries.function_decl_map()
+      |> Elmc.Backend.Plan.Lower.Platform.Web.rewrite_decl_map(opts_map)
+
+    # Arity must match rewritten decls (partial Html.map becomes 1-arg).
+    function_arities =
+      Map.new(decl_map, fn {{mod, name}, decl} ->
+        {{mod, name}, length(Map.get(decl, :args, []) || [])}
+      end)
+
     generic_targets = GenericTargets.function_targets(ir, opts)
 
     reachable_for_fields =

@@ -400,6 +400,21 @@ defmodule Elmc.Backend.Wasm.Lower.Instr do
           opts
         )
 
+      # Boxed Float-ish operands (Quantity unwrap via tuple_proj, new_float, etc.).
+      # Plan sometimes emits int_arith for `f + n` in projectionMatrix; as_int
+      # truncates and `-(f+n)/(f-n)` explodes. Do NOT float-promote arbitrary
+      # boxed Ints — that hung TriangularMesh-style countdowns.
+      kind in [:add_vars, :sub_vars, :mul_vars] and is_integer(lhs) and is_integer(rhs) and
+          (floatish_reg?(opts, lhs, MapSet.new()) or floatish_reg?(opts, rhs, MapSet.new())) ->
+        op =
+          case kind do
+            :add_vars -> :add
+            :sub_vars -> :sub
+            :mul_vars -> :mul
+          end
+
+        emit_float_binop(op, lhs, rhs, dest_reg, slots, rc?, opts)
+
       true ->
         expr =
           case kind do
@@ -568,7 +583,13 @@ defmodule Elmc.Backend.Wasm.Lower.Instr do
 
   defp emit_boxed_binop(%{dest: dest_reg, args: %{op: op, lhs: lhs, rhs: rhs}}, slots, rc?, opts) do
     cond do
-      op in [:fdiv, :idiv] and not native_int_binop_operands?(lhs, rhs, opts, MapSet.new()) ->
+      # Float division must never take the native-int path. `emit_native_int_binop`
+      # has no `:fdiv` clause and emitted `i32.const 0` — so `toFloat c / 255`
+      # (Color.rgb255) became 0 and Scene3d cleared to black.
+      op == :fdiv ->
+        emit_fdiv_binop(lhs, rhs, dest_reg, slots, rc?, opts)
+
+      op == :idiv and not native_int_binop_operands?(lhs, rhs, opts, MapSet.new()) ->
         emit_fdiv_binop(lhs, rhs, dest_reg, slots, rc?, opts)
 
       op in [:add, :sub, :mul] and not native_int_binop_operands?(lhs, rhs, opts, MapSet.new()) ->
@@ -742,15 +763,22 @@ defmodule Elmc.Backend.Wasm.Lower.Instr do
     end
   end
 
-  defp emit_call_fn(%{dest: dest_reg, args: %{module: mod, name: name, args: args}}, slots, fn_table, rc?, _opts) do
+  defp emit_call_fn(%{dest: dest_reg, args: %{module: mod, name: name, args: args}}, slots, fn_table, rc?, opts) do
     _idx = FnTable.index(fn_table, {mod, name})
     track_wasm_callee!(mod, name, args || [])
     callee = WasmTypes.fn_ident(mod, name)
-    arg_regs = Enum.map(args || [], &Slots.reg_name(slots, &1))
+
+    # Box const_int / native-int temps to heap handles. Raw i32.const 0/1 (True/False)
+    # collide with immortal UNIT (handle 1); retain rematerializes True as Int(0).
+    {arg_exprs, prep} =
+      Enum.map_reduce(args || [], [], fn reg, acc_prep ->
+        {expr, prep_add} = boxed_runtime_arg_wat(reg, slots, opts)
+        {expr, acc_prep ++ prep_add}
+      end)
 
     call =
       WasmTypes.sexpr("call", [
-        callee | Enum.map(arg_regs, fn reg -> " " <> WasmTypes.sexpr("local.get", [reg]) end)
+        callee | Enum.map(arg_exprs, fn expr -> " " <> format_operand(expr) end)
       ])
 
     {pop_value, pop_rc} =
@@ -760,11 +788,13 @@ defmodule Elmc.Backend.Wasm.Lower.Instr do
         {dest_slot(dest_reg, slots), slots.rc_local}
       end
 
-    call_lines = [
-      WasmTypes.line(call),
-      WasmTypes.line(WasmTypes.sexpr("local.set", [pop_value])),
-      WasmTypes.line(WasmTypes.sexpr("local.set", [pop_rc]))
-    ]
+    call_lines =
+      prep ++
+        [
+          WasmTypes.line(call),
+          WasmTypes.line(WasmTypes.sexpr("local.set", [pop_value])),
+          WasmTypes.line(WasmTypes.sexpr("local.set", [pop_rc]))
+        ]
 
     lines =
       if rc? do
@@ -803,16 +833,24 @@ defmodule Elmc.Backend.Wasm.Lower.Instr do
     ]
   end
 
-  defp emit_call_closure(%{dest: dest_reg, args: %{callee: callee, args: args}}, slots, rc?, _opts) do
+  defp emit_call_closure(%{dest: dest_reg, args: %{callee: callee, args: args}}, slots, rc?, opts) do
     call_args = args || []
 
-    emit_runtime_call(
-      :call_closure,
-      [int_const(length(call_args)), Slots.reg_name(slots, callee) | Enum.map(call_args, &Slots.reg_name(slots, &1))],
-      dest_reg,
-      slots,
-      rc?
-    )
+    {arg_exprs, prep} =
+      Enum.map_reduce(call_args, [], fn reg, acc_prep ->
+        {expr, prep_add} = boxed_runtime_arg_wat(reg, slots, opts)
+        {expr, acc_prep ++ prep_add}
+      end)
+
+    prep ++
+      emit_runtime_call(
+        :call_closure,
+        [int_const(length(call_args)), Slots.reg_name(slots, callee) | arg_exprs],
+        dest_reg,
+        slots,
+        rc?,
+        opts
+      )
   end
 
   defp emit_make_closure(%{dest: dest_reg, args: %{index: idx, arity: arity, captures: caps}}, slots, rc?, opts) do
@@ -1702,12 +1740,15 @@ defmodule Elmc.Backend.Wasm.Lower.Instr do
   defp box_const_int_prep(value, offset) do
     [
       WasmTypes.line(
-        WasmTypes.sexpr("call", [
-          WasmTypes.import_ident("runtime.new_int"),
+        WasmTypes.sexpr("drop", [
           " ",
-          int_const(offset),
-          " ",
-          int_const(value)
+          WasmTypes.sexpr("call", [
+            WasmTypes.import_ident("runtime.new_int"),
+            " ",
+            int_const(offset),
+            " ",
+            int_const(value)
+          ])
         ])
       )
     ]
@@ -1716,12 +1757,15 @@ defmodule Elmc.Backend.Wasm.Lower.Instr do
   defp box_native_int_prep(reg, slots, offset, opts) do
     [
       WasmTypes.line(
-        WasmTypes.sexpr("call", [
-          WasmTypes.import_ident("runtime.new_int"),
+        WasmTypes.sexpr("drop", [
           " ",
-          int_const(offset),
-          " ",
-          int_operand_wat(reg, slots, opts)
+          WasmTypes.sexpr("call", [
+            WasmTypes.import_ident("runtime.new_int"),
+            " ",
+            int_const(offset),
+            " ",
+            int_operand_wat(reg, slots, opts)
+          ])
         ])
       )
     ]
@@ -1754,6 +1798,49 @@ defmodule Elmc.Backend.Wasm.Lower.Instr do
           %{op: :load_param, args: %{index: index}} ->
             param_kinds = Keyword.get(opts, :param_kinds, [])
             Enum.at(param_kinds, index, :boxed) == :native_int
+
+          _ ->
+            false
+        end
+    end
+  end
+
+  # Float payloads that plan may still feed to int_arith (Quantity unwrap, etc.).
+  defp floatish_reg?(opts, reg, visited) do
+    cond do
+      not is_integer(reg) ->
+        false
+
+      MapSet.member?(visited, reg) ->
+        false
+
+      true ->
+        visited = MapSet.put(visited, reg)
+
+        case defining_plan_instr(Keyword.get(opts, :parent_plan), reg) do
+          %{op: :call_runtime, args: %{builtin: builtin}}
+          when builtin in [:new_float, :basics_to_float, :basics_sqrt] ->
+            true
+
+          %{op: :boxed_binop, args: %{op: op}} when op in [:add, :sub, :mul, :fdiv] ->
+            true
+
+          %{op: :tuple_proj} ->
+            true
+
+          %{op: :call_runtime, args: %{builtin: builtin}}
+          when builtin in [:tuple_proj, :tuple_second, :tuple_first, :record_get] ->
+            true
+
+          %{op: :record_get} ->
+            true
+
+          %{op: :int_arith, args: args} ->
+            lhs = Map.get(args, :lhs)
+            rhs = Map.get(args, :rhs)
+
+            (is_integer(lhs) and floatish_reg?(opts, lhs, visited)) or
+              (is_integer(rhs) and floatish_reg?(opts, rhs, visited))
 
           _ ->
             false

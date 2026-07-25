@@ -27,6 +27,13 @@ defmodule Elmc.Backend.Plan.Verify do
          :ok <- verify_entry_block(plan),
          :ok <- walk_blocks(plan) do
       :ok
+    else
+      {:error, _reason, _meta} = err ->
+        if Process.get(:elmc_verify_dump_on_fail) do
+          Process.put(:elmc_verify_fail_plan, plan)
+        end
+
+        err
     end
   end
 

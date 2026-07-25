@@ -109,11 +109,30 @@ export function createHttpRuntime(deps) {
 
   const registerProgressListener = (tracker, toMsgPtr, taggers = []) => {
     if (!tracker) return;
-    progressListeners.set(tracker, { toMsgPtr: toMsgPtr | 0, taggers: taggers.map((p) => p | 0) });
+    unregisterProgressListener(tracker);
+    const retainedTaggers = taggers.map((p) => p | 0);
+    if (retain) {
+      if (toMsgPtr) retain(null, toMsgPtr | 0);
+      for (const tagger of retainedTaggers) {
+        if (tagger) retain(null, tagger);
+      }
+    }
+    progressListeners.set(tracker, {
+      toMsgPtr: toMsgPtr | 0,
+      taggers: retainedTaggers,
+    });
   };
 
   const unregisterProgressListener = (tracker) => {
-    if (tracker) progressListeners.delete(tracker);
+    if (!tracker) return;
+    const prev = progressListeners.get(tracker);
+    if (prev && release) {
+      if (prev.toMsgPtr) release(prev.toMsgPtr | 0);
+      for (const tagger of prev.taggers ?? []) {
+        if (tagger) release(tagger | 0);
+      }
+    }
+    progressListeners.delete(tracker);
   };
 
   const newFloatHandle = (value) => allocHandle({ tag: TAG_FLOAT, value: Number(value) || 0 });

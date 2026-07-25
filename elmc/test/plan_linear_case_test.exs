@@ -310,4 +310,221 @@ defmodule Elmc.PlanLinearCaseTest do
     text = inspect(plan.blocks)
     assert text =~ "switch_tag" or text =~ "switch_ctor_tag"
   end
+
+  test "exhaustive constructor case tests the last arm tag (no untagged default)" do
+    # Scene3d.getViewBounds-style: last ctor is Transformed with payload binds.
+    # Untagged default peels garbage as Transformed and can recurse forever.
+    Process.put(:elmc_constructor_tags, %{
+      "Node.Empty" => 1,
+      "Node.Group" => 6,
+      "Node.Transformed" => 7
+    })
+
+    on_exit(fn -> Process.delete(:elmc_constructor_tags) end)
+
+    decl = %{
+      name: "classify",
+      args: ["node"],
+      expr: %{
+        op: :case,
+        subject: %{op: :var, name: "node"},
+        branches: [
+          %{
+            pattern: %{
+              kind: :constructor,
+              name: "Empty",
+              resolved_name: "Node.Empty",
+              tag: 1
+            },
+            expr: %{op: :int_literal, value: 1}
+          },
+          %{
+            pattern: %{
+              kind: :constructor,
+              name: "Group",
+              resolved_name: "Node.Group",
+              tag: 6,
+              arg_pattern: %{kind: :var, name: "kids"}
+            },
+            expr: %{op: :int_literal, value: 6}
+          },
+          %{
+            pattern: %{
+              kind: :constructor,
+              name: "Transformed",
+              resolved_name: "Node.Transformed",
+              tag: 7,
+              arg_pattern: %{
+                kind: :tuple,
+                elements: [%{kind: :var, name: "t"}, %{kind: :var, name: "child"}]
+              }
+            },
+            expr: %{op: :int_literal, value: 7}
+          }
+        ]
+      }
+    }
+
+    decl_map = %{{"Probe", "classify"} => decl}
+
+    assert {:ok, plan} = Function.lower(decl, "Probe", decl_map, rc_required: true)
+
+    br_ifs =
+      plan.blocks
+      |> Enum.count(fn block -> match?({:br_if, _, _, _}, block.terminator) end)
+
+    # Exhaustive arms are all guarded — Empty, Group, and Transformed each get a br_if.
+    assert br_ifs == 3
+  end
+
+  test "single-constructor peel does not tag-test (untyped unwrap)" do
+    # (Quantity r) = q and (Entity node) must peel payload even when the value is a
+    # bare float/record or shares global tag 1 with unrelated types.
+    # Real IR often uses `bind:` (not arg_pattern var); TagSwitch used to claim
+    # those and emit switch_tag → fallthrough Int 0 on mismatch.
+    Process.put(:elmc_constructor_tags, %{"Quantity.Quantity" => 1})
+
+    on_exit(fn -> Process.delete(:elmc_constructor_tags) end)
+
+    for pattern <- [
+          %{
+            kind: :constructor,
+            name: "Quantity",
+            resolved_name: "Quantity.Quantity",
+            tag: 1,
+            arg_pattern: %{kind: :var, name: "r"}
+          },
+          %{
+            kind: :constructor,
+            name: "Quantity",
+            resolved_name: "Quantity.Quantity",
+            tag: 1,
+            bind: "r"
+          }
+        ] do
+      decl = %{
+        name: "unwrapQuantity",
+        args: ["q"],
+        expr: %{
+          op: :case,
+          subject: %{op: :var, name: "q"},
+          branches: [%{pattern: pattern, expr: %{op: :var, name: "r"}}]
+        }
+      }
+
+      decl_map = %{{"Probe", "unwrapQuantity"} => decl}
+
+      assert {:ok, plan} = Elmc.Backend.Plan.Lower.Function.lower(decl, "Probe", decl_map, rc_required: true)
+
+      text = inspect(plan.blocks)
+      refute text =~ "union_tag_matches"
+      refute text =~ "switch_tag"
+      refute Enum.any?(plan.blocks, fn block -> match?({:br_if, _, _, _}, block.terminator) end)
+      assert text =~ "union_payload" or text =~ "tuple_proj"
+    end
+  end
+
+  test "ctor payload bind is not treated as passive impossible-default" do
+    Process.put(:elmc_constructor_tags, %{"UseTexture" => 0, "UseColor" => 1})
+    on_exit(fn -> Process.delete(:elmc_constructor_tags) end)
+
+    # Scene3d textured/bumpy mesh shape: UseTexture payload is captured by a
+    # nested lambda. Impossible-default must not recompile that arm under a
+    # wildcard (which left materialColorData unbound).
+    decl = %{
+      name: "texturedMesh",
+      args: ["mat", "y"],
+      expr: %{
+        op: :case,
+        subject: %{op: :var, name: "mat"},
+        branches: [
+          %{
+            pattern: %{
+              kind: :constructor,
+              name: "UseTexture",
+              tag: 0,
+              bind: "materialColorData",
+              arg_pattern: nil
+            },
+            expr: %{
+              op: :lambda,
+              args: ["z"],
+              body: %{
+                op: :call,
+                name: "__apply__",
+                args: [
+                  %{op: :var, name: "materialColorData"},
+                  %{op: :var, name: "z"}
+                ]
+              }
+            }
+          },
+          %{
+            pattern: %{
+              kind: :constructor,
+              name: "UseColor",
+              tag: 1,
+              bind: "constantColor",
+              arg_pattern: nil
+            },
+            expr: %{
+              op: :lambda,
+              args: ["z"],
+              body: %{op: :var, name: "constantColor"}
+            }
+          }
+        ]
+      }
+    }
+
+    decl_map = %{{"Probe", "texturedMesh"} => decl}
+
+    assert {:ok, plan} = Function.lower(decl, "Probe", decl_map, rc_required: true)
+    assert is_list(plan.lambdas)
+    assert length(plan.lambdas) >= 1
+  end
+
+  test "n-ary __apply__ left-folds in plan Call" do
+    decl = %{
+      name: "apply3",
+      args: ["f", "a", "b", "c"],
+      expr: %{
+        op: :call,
+        name: "__apply__",
+        args: [
+          %{op: :var, name: "f"},
+          %{op: :var, name: "a"},
+          %{op: :var, name: "b"},
+          %{op: :var, name: "c"}
+        ]
+      }
+    }
+
+    decl_map = %{{"Probe", "apply3"} => decl}
+
+    assert {:ok, plan} = Function.lower(decl, "Probe", decl_map, rc_required: true)
+    text = inspect(plan.blocks)
+    assert text =~ "call_closure"
+  end
+
+  test "VirtualDom.on/2 lowers to html_cmd event" do
+    Process.put(:elmc_codegen_opts, %{web: true, targets: [:wasm]})
+    on_exit(fn -> Process.delete(:elmc_codegen_opts) end)
+
+    decl = %{
+      name: "onCustom",
+      args: ["event", "handler"],
+      expr: %{
+        op: :qualified_call,
+        target: "Elm.Kernel.VirtualDom.on",
+        args: [%{op: :var, name: "event"}, %{op: :var, name: "handler"}]
+      }
+    }
+
+    decl_map = %{{"Probe", "onCustom"} => decl}
+
+    assert {:ok, plan} = Function.lower(decl, "Probe", decl_map, rc_required: true)
+    text = inspect(plan.blocks)
+    assert text =~ "html_cmd"
+  end
 end

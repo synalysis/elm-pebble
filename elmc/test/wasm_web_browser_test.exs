@@ -26,8 +26,6 @@ defmodule Elmc.WasmWebBrowserTest do
                    strip_dead_code: true
                  })
 
-        manifest = out_dir |> ProjectWriter.manifest_path() |> File.read!() |> Jason.decode!()
-
         refute Enum.any?(ProjectWriter.stub_functions(out_dir), fn stub ->
                  stub["module"] == "Elm.Kernel.Browser"
                end)

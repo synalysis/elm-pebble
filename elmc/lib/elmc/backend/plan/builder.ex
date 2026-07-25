@@ -284,6 +284,32 @@ defmodule Elmc.Backend.Plan.Builder do
     dup_regs_with_canonical(b, arg_regs, param_retain?: false)
   end
 
+  @doc """
+  Retain-dup every integer capture reg before a transferring `make_closure`.
+
+  Nested lambdas share parent free vars; transfer-consume without a dup zeroes
+  those parent regs and the outer closure then captures INT 0.
+  """
+  @spec dup_all_regs_for_consume(t(), [Types.reg()]) :: {[Types.reg()], t()}
+  def dup_all_regs_for_consume(b, arg_regs) when is_list(arg_regs) do
+    {regs, {b_final, _canon}} =
+      Enum.map_reduce(arg_regs, {b, %{}}, fn reg, {b_acc, canon} ->
+        cond do
+          not is_integer(reg) ->
+            {reg, {b_acc, canon}}
+
+          Map.has_key?(canon, reg) ->
+            {Map.fetch!(canon, reg), {b_acc, canon}}
+
+          true ->
+            {dup, b1} = retain_reg_copy(b_acc, reg)
+            {dup, {b1, Map.put(canon, reg, dup)}}
+        end
+      end)
+
+    {regs, b_final}
+  end
+
   defp dup_regs_with_canonical(b, arg_regs, opts) do
     param_retain? = Keyword.get(opts, :param_retain?, false)
 

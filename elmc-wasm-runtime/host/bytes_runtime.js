@@ -90,8 +90,7 @@ export function createBytesRuntime(deps) {
     return new DataView(slice);
   };
 
-  const writeTuple2Ints = (outPtr, a, b) =>
-    tuple2Ints(outPtr, newIntHandle(a | 0), newIntHandle(b | 0));
+  const writeTuple2Ints = (outPtr, a, b) => tuple2Ints(outPtr, a | 0, b | 0);
 
   const writeReadFailure = (outPtr) => writeTuple2Ints(outPtr, -1, 0);
 
@@ -321,6 +320,26 @@ export function createBytesRuntime(deps) {
     return RC_SUCCESS;
   };
 
+  const bytesEncodeSequence = (outPtr, buildersPtr) => {
+    // Retain builders for the Seq payload. Elm `sequence builders =
+    // Seq (getWidths 0 builders) builders` shares the list; plan/WASM getWidths
+    // currently releases the spine during tail recursion, so a post-call retain
+    // sees a recycled handle. Build Seq on the host instead.
+    const builders = buildersPtr | 0;
+    if (builders) retain(null, builders);
+
+    let width = 0;
+    for (const itemPtr of listItems(builders)) {
+      width += encoderWidth(itemPtr) | 0;
+    }
+
+    const widthHandle = newIntHandle(width | 0);
+    const inner = allocHandle({ tag: TAG_TUPLE2, first: widthHandle, second: builders });
+    const tagHandle = newIntHandle(ENC_SEQ);
+    writeOut(outPtr, allocHandle({ tag: TAG_TUPLE2, first: tagHandle, second: inner }));
+    return RC_SUCCESS;
+  };
+
   const bytesWidth = (outPtr, bytesPtr) => {
     const view = bytesView(bytesPtr);
     if (!view) {
@@ -332,6 +351,10 @@ export function createBytesRuntime(deps) {
   };
 
   const bytesReadU8 = (outPtr, ...params) => {
+    if (typeof process !== "undefined" && process.env && process.env.ELMC_DEBUG_BYTES_READ) {
+      console.error("[bytesReadU8] " + JSON.stringify({params: params.map(p => { const h=readHandle(p|0); return h?{tag:h.tag,v:h.value,isJust:h.isJust}:p; })}));
+    }
+
     const resolved = resolveBytesAndOffset(params);
     if (!resolved) {
       writeReadFailure(outPtr);
@@ -349,6 +372,10 @@ export function createBytesRuntime(deps) {
   };
 
   const bytesReadU32 = (outPtr, ...params) => {
+    if (typeof process !== "undefined" && process.env && process.env.ELMC_DEBUG_BYTES_READ) {
+      console.error("[bytesReadU32] " + JSON.stringify({params: params.map(p => { const h=readHandle(p|0); return h?{tag:h.tag,v:h.value,isJust:h.isJust}:p; })}));
+    }
+
     let isLE = true;
     let rest = params;
 
@@ -378,6 +405,10 @@ export function createBytesRuntime(deps) {
   };
 
   const bytesReadBytes = (outPtr, ...params) => {
+    if (typeof process !== "undefined" && process.env && process.env.ELMC_DEBUG_BYTES_READ) {
+      console.error("[bytesReadBytes] " + JSON.stringify({params: params.map(p => { const h=readHandle(p|0); return h?{tag:h.tag,v:h.value,isJust:h.isJust}:p; })}));
+    }
+
     let len = 0;
     let rest = params;
 
@@ -486,7 +517,9 @@ export function createBytesRuntime(deps) {
 
   const bytesDecode = (outPtr, decoderPtr, bytesPtr) => {
     const resolvedBytes = coerceBytesHandle(bytesPtr);
+    const debug = typeof process !== "undefined" && process.env && process.env.ELMC_DEBUG_BYTES_DECODE;
     if (!bytesView(resolvedBytes)) {
+      if (debug) console.error("[bytesDecode] no view", bytesPtr, resolvedBytes);
       maybeNothing(outPtr);
       return RC_SUCCESS;
     }
@@ -495,17 +528,20 @@ export function createBytesRuntime(deps) {
       retain(null, resolvedBytes);
       const offsetHandle = newIntHandle(0);
       const startOffset = intValue(offsetHandle) | 0;
+      const view = bytesView(resolvedBytes);
 
       try {
         const { rc, value } = invokeBytesDecoder(decoderPtr, [resolvedBytes, offsetHandle]);
 
         if (rc !== RC_SUCCESS) {
+          if (debug) console.error("[bytesDecode] decoder rc", rc, "len", view?.byteLength);
           maybeNothing(outPtr);
           return RC_SUCCESS;
         }
 
         const payload = readHandle(value);
         if (payload?.tag !== TAG_TUPLE2) {
+          if (debug) console.error("[bytesDecode] not tuple", payload?.tag, value);
           release(value);
           maybeNothing(outPtr);
           return RC_SUCCESS;
@@ -514,11 +550,27 @@ export function createBytesRuntime(deps) {
         const newOffset = intValue(payload.first);
         const decoded = detachTupleSecond(value);
         if (newOffset < 0 || !decoded || newOffset <= startOffset) {
+          if (debug) console.error("[bytesDecode] bad offset/progress", {newOffset, startOffset, decoded: !!decoded, len: view?.byteLength, secondTag: readHandle(decoded)?.tag});
           release(value);
           maybeNothing(outPtr);
           return RC_SUCCESS;
         }
 
+        if (debug) {
+          const d = readHandle(decoded);
+          let detail = {newOffset, len: view?.byteLength, decodedTag: d?.tag};
+          if (d?.tag === TAG_TUPLE2) {
+            const f = readHandle(d.first); const s = readHandle(d.second);
+            detail.first = f?.tag===1 ? f.value : f?.tag;
+            detail.secondTag = s?.tag;
+            detail.secondFields = s?.fields?.length;
+            if (s?.tag === TAG_TUPLE2) {
+              detail.s0 = readHandle(s.first)?.tag===1 ? readHandle(s.first).value : readHandle(s.first)?.tag;
+              detail.s1tag = readHandle(s.second)?.tag;
+            }
+          }
+          console.error("[bytesDecode] ok " + JSON.stringify(detail));
+        }
         release(value);
         const justRc = maybeJustOwn(outPtr, decoded);
         return justRc;
@@ -578,6 +630,7 @@ export function createBytesRuntime(deps) {
     bytesCmd,
     bytesFromList,
     bytesDecode,
+    bytesEncodeSequence,
     newBytesHandle,
     bytesView,
     TAG_BYTES,

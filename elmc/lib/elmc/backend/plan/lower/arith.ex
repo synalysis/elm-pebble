@@ -55,8 +55,12 @@ defmodule Elmc.Backend.Plan.Lower.Arith do
           {:ok, Types.reg() | :fn_out, Builder.t()} | :unsupported
   def emit_binary(kind, left, right, ctx, b)
       when kind in [:add_vars, :mul_vars, :sub_vars, :idiv_vars, :mod_vars, :rem_vars, :min_vars, :max_vars] do
-    with {:ok, l, b1} <- Expr.compile(left, ctx, b),
-         {:ok, r, b2} <- Expr.compile(right, ctx, b1) do
+    # Operands must not target fn_out/branch_out — at function tail both sides
+    # would overwrite the same slot (Color.scaleFrom255: toFloat c / 255 → 1.0).
+    operand_ctx = Context.for_branch_arm(ctx)
+
+    with {:ok, l, b1} <- Expr.compile(left, operand_ctx, b),
+         {:ok, r, b2} <- Expr.compile(right, operand_ctx, b1) do
       emit_int_arith(kind, l, r, ctx, b2)
     else
       _ -> :unsupported
@@ -68,8 +72,11 @@ defmodule Elmc.Backend.Plan.Lower.Arith do
   @spec emit_boxed_binop(atom(), Types.ir_expr(), Types.ir_expr(), Context.t(), Builder.t()) ::
           {:ok, Types.reg() | :fn_out, Builder.t()} | :unsupported
   def emit_boxed_binop(kind, left, right, ctx, b) when kind in [:add, :sub, :mul, :idiv, :fdiv] do
-    with {:ok, l, b1} <- Expr.compile(left, ctx, b),
-         {:ok, r, b2} <- Expr.compile(right, ctx, b1) do
+    # See emit_binary/5 — keep left and right in distinct scratch regs.
+    operand_ctx = Context.for_branch_arm(ctx)
+
+    with {:ok, l, b1} <- Expr.compile(left, operand_ctx, b),
+         {:ok, r, b2} <- Expr.compile(right, operand_ctx, b1) do
       {dest, b3} = dest_for(ctx, b2)
       operands = [l, r]
       {borrows, consumes} = Builder.partition_call_args(b3, operands)

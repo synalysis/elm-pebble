@@ -122,20 +122,47 @@ defmodule Elmc.Backend.Plan.Lower.PatternMatch do
   defp cons_head_tail(_), do: :error
 
   defp peel_list_head(subject_reg, b) do
-    with {:ok, maybe_reg, b1} <- emit_list_op(:list_head, subject_reg, b),
-         {:ok, head_reg, b2} <- emit_list_op(:maybe_just_payload, maybe_reg, b1) do
+    with {:ok, maybe_reg, b1} <- emit_owned_list_op(:list_head, subject_reg, b),
+         {:ok, head_reg, b2} <- emit_maybe_just_payload_retain(maybe_reg, b1) do
       {:ok, head_reg, b2}
     end
   end
 
   defp peel_list_tail(subject_reg, b) do
-    with {:ok, maybe_reg, b1} <- emit_list_op(:list_tail, subject_reg, b),
-         {:ok, tail_reg, b2} <- emit_list_op(:maybe_just_payload, maybe_reg, b1) do
+    with {:ok, maybe_reg, b1} <- emit_owned_list_op(:list_tail, subject_reg, b),
+         {:ok, tail_reg, b2} <- emit_maybe_just_payload_retain(maybe_reg, b1) do
       {:ok, tail_reg, b2}
     end
   end
 
-  defp emit_list_op(builtin, arg_reg, b) when is_atom(builtin) and is_integer(arg_reg) do
+  # `elmc_list_head` / `elmc_list_tail` return an owned Maybe. Peeling the Just
+  # payload must retain it before the Maybe is released — otherwise match
+  # conditions like `'n' :: 'u' :: rest` use a dangling payload (heap corruption).
+  defp emit_maybe_just_payload_retain(maybe_reg, b) when is_integer(maybe_reg) do
+    {dest, b1} = Builder.fresh_reg(b)
+
+    {_, b2} =
+      Builder.emit(b1, :call_runtime, %{
+        dest: dest,
+        args: %{
+          builtin: :retain,
+          args: [maybe_reg],
+          view_peel: :maybe_just_payload,
+          view_peel_args: [maybe_reg]
+        },
+        effects: %{
+          produces: {:owned, dest},
+          consumes: [],
+          borrows: [maybe_reg],
+          fallible: false
+        }
+      })
+
+    {:ok, dest, b2}
+  end
+
+  defp emit_owned_list_op(builtin, arg_reg, b)
+       when builtin in [:list_head, :list_tail] and is_integer(arg_reg) do
     {dest, b1} = Builder.fresh_reg(b)
 
     {_, b2} =
@@ -143,7 +170,7 @@ defmodule Elmc.Backend.Plan.Lower.PatternMatch do
         dest: dest,
         args: %{builtin: builtin, args: [arg_reg]},
         effects: %{
-          produces: nil,
+          produces: {:owned, dest},
           consumes: [],
           borrows: [arg_reg],
           fallible: false
@@ -397,7 +424,18 @@ defmodule Elmc.Backend.Plan.Lower.PatternMatch do
   defp short_ctor(name) when is_binary(name), do: name |> String.split(".") |> List.last()
   defp short_ctor(_), do: ""
 
-  defp pattern_tag(%{tag: tag}) when is_integer(tag), do: tag
+  defp pattern_tag(%{tag: tag} = pattern) when is_integer(tag) do
+    # Re-resolve ambiguous short names even when IR baked a tag (Group poison).
+    name = Map.get(pattern, :resolved_name) || Map.get(pattern, :name)
+
+    resolved =
+      if is_binary(name) do
+        tags = Process.get(:elmc_constructor_tags, %{})
+        Elmc.Backend.CCodegen.IRQueries.lookup_tag(tags, name)
+      end
+
+    if is_integer(resolved), do: resolved, else: tag
+  end
 
   defp pattern_tag(pattern) do
     name = Map.get(pattern, :resolved_name) || Map.get(pattern, :name)

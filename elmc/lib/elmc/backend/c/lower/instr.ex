@@ -930,17 +930,17 @@ defmodule Elmc.Backend.C.Lower.Instr do
     left = slot_ref(lhs, slots, opts)
     right = slot_ref(rhs, slots, opts)
 
-    float_expr = "elmc_as_float(#{left}) #{op_sym} elmc_as_float(#{right})"
-    int_expr = "elmc_as_int(#{left}) #{op_sym} elmc_as_int(#{right})"
-
-    """
-    if (((#{left}) && (#{left})->tag == ELMC_TAG_FLOAT) || ((#{right}) && (#{right})->tag == ELMC_TAG_FLOAT)) {
-      #{rc_assign(rc?, dest, "elmc_new_float", [float_expr])}
-    } else {
-      #{rc_assign(rc?, dest, "elmc_new_int", [int_expr])}
-    }
-    """
-    |> String.trim()
+    # Non-fdiv boxed binops are Int in practice when they reach this fallback
+    # (Float arithmetic is lowered via float-specific ops / as_float paths).
+    # Emitting a dead `elmc_new_float` branch broke Int helpers such as
+    # integerLetArithmetic (`refute body =~ "elmc_new_float"`).
+    if op == :fdiv do
+      float_expr = "elmc_as_float(#{left}) #{op_sym} elmc_as_float(#{right})"
+      rc_assign(rc?, dest, "elmc_new_float", [float_expr])
+    else
+      int_expr = "elmc_as_int(#{left}) #{op_sym} elmc_as_int(#{right})"
+      rc_assign(rc?, dest, "elmc_new_int", [int_expr])
+    end
   end
 
   defp native_int_binop_operands?(lhs, rhs, opts) when is_integer(lhs) and is_integer(rhs) do
