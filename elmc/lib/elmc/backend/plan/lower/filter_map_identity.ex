@@ -1,12 +1,11 @@
 defmodule Elmc.Backend.Plan.Lower.FilterMapIdentity do
   @moduledoc false
 
-  alias Elmc.Backend.Plan.Types
+  alias Elmc.Backend.CCodegen.BuiltinUnion
   alias Elmc.Backend.CCodegen.ListHofResolve
   alias Elmc.Backend.Plan.Lower.Expr
   alias Elmc.Backend.Plan.{Builder, Context, Types}
 
-  @nothing_names ~w(Nothing Maybe.Nothing)
   @just_names ~w(Just Maybe.Just)
 
   @spec try_compile(Types.ir_expr(), Context.t(), Builder.t()) ::
@@ -149,18 +148,25 @@ defmodule Elmc.Backend.Plan.Lower.FilterMapIdentity do
 
   defp conditional_maybe_item(_), do: :error
 
-  defp nothing_ctor?(%{op: :constructor_call, target: target, args: args}) when is_list(args) do
-    short_name(target) in @nothing_names and args == []
-  end
-
-  defp nothing_ctor?(%{op: :int_literal, value: 0}), do: true
-  defp nothing_ctor?(_), do: false
+  defp nothing_ctor?(expr), do: BuiltinUnion.maybe_nothing_literal?(expr)
 
   defp just_inner(%{op: :constructor_call, target: target, args: [inner]})
        when is_binary(target),
        do: if(short_name(target) in @just_names, do: {:ok, inner}, else: :error)
 
-  defp just_inner(%{op: :tuple2, left: %{op: :int_literal, value: 1}, right: inner}), do: {:ok, inner}
+  # Lowered `Just x` is `tuple2(tag=Just, payload)` with `union_ctor` on the tag.
+  defp just_inner(%{
+         op: :tuple2,
+         left: %{op: :int_literal, union_ctor: ctor},
+         right: inner
+       })
+       when is_binary(ctor) do
+    if short_name(ctor) in @just_names, do: {:ok, inner}, else: :error
+  end
+
+  defp just_inner(%{op: :tuple2, left: %{op: :int_literal, value: 1}, right: inner}),
+    do: {:ok, inner}
+
   defp just_inner(_), do: :error
 
   defp nothing_branch?(expr), do: nothing_ctor?(expr)

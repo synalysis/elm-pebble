@@ -382,6 +382,11 @@ defmodule Elmc.Backend.CCodegen.GeneratedSource do
     Process.put(:elmc_plan_primary_lowered_cache, %{})
     Process.put(:elmc_plan_native_returns, %{})
     Process.put(:elmc_plan_native_value_returns, MapSet.new())
+    Process.put(:elmc_plan_native_refresh_attempted, MapSet.new())
+    Process.delete(:elmc_web_rewritten_decl_map)
+    Process.delete(:elmc_literal_int_decl_cache)
+    Process.delete(:elmc_literal_int_visiting)
+    Process.delete(:elmc_literal_int_depth)
     DefRegistry.reset()
     _ = RcRequired.run!(decl_map, rc_required_opts(opts, direct_command_targets))
     :ok

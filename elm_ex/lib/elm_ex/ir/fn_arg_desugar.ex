@@ -53,9 +53,17 @@ defmodule ElmEx.IR.FnArgDesugar do
         {:simple, stripped}
 
       true ->
-        case parse_pattern(stripped) do
-          {:ok, pattern} -> {:pattern, pattern}
-          :error -> {:simple, sanitize_fallback(trimmed)}
+        # Prefer the original (possibly parenthesized) source. Stripping
+        # `(x, y)` → `x, y` makes tuple patterns fail to parse.
+        case parse_pattern(trimmed) do
+          {:ok, pattern} ->
+            {:pattern, pattern}
+
+          :error ->
+            case parse_pattern(stripped) do
+              {:ok, pattern} -> {:pattern, pattern}
+              :error -> {:simple, sanitize_fallback(trimmed)}
+            end
         end
     end
   end

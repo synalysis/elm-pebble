@@ -1299,6 +1299,25 @@ defmodule Elmc.Backend.C.Lower.Instr do
     end
   end
 
+  defp emit_call_runtime(
+         %{dest: dest_reg, args: %{builtin: :maybe_with_default_int, args: [default, maybe]}},
+         slots,
+         rc?,
+         dest,
+         opts
+       )
+       when is_integer(default) and is_integer(maybe) do
+    default_ref = int_operand_ref(default, slots, opts)
+    maybe_ref = slot_ref(maybe, slots, opts)
+    expr = "elmc_maybe_with_default_int(#{default_ref}, #{maybe_ref})"
+
+    if MapSet.member?(Keyword.get(opts, :native_int_only_regs, MapSet.new()), dest_reg) do
+      emit_native_store(dest_reg, dest, expr, opts)
+    else
+      rc_assign(rc?, dest, "elmc_new_int", [expr])
+    end
+  end
+
   defp emit_call_runtime(%{args: %{builtin: :tuple2_ints, args: args}}, slots, rc?, dest, opts) do
     left = int_operand_ref(Enum.at(args, 0), slots, opts)
     right = int_operand_ref(Enum.at(args, 1), slots, opts)

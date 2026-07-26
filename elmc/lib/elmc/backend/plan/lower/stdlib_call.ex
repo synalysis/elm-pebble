@@ -24,7 +24,7 @@ defmodule Elmc.Backend.Plan.Lower.StdlibCall do
           else
             with {:ok, maybe_reg, b4} <-
                    Expr.compile_runtime_builtin(:list_nth_maybe, [list_reg, index_reg], ctx, b3) do
-              Expr.compile_runtime_builtin(:maybe_with_default, [default_reg, maybe_reg], ctx, b4)
+              compile_with_default(default_val, default_reg, maybe_reg, ctx, b4)
             end
           end
         else
@@ -32,13 +32,23 @@ defmodule Elmc.Backend.Plan.Lower.StdlibCall do
         end
 
       :error ->
-        with {:ok, arg_regs, b1} <- Expr.compile_args([default_val, second], ctx, b) do
-          Expr.compile_runtime_builtin(:maybe_with_default, arg_regs, ctx, b1)
+        with {:ok, [default_reg, maybe_reg], b1} <-
+               Expr.compile_args([default_val, second], ctx, b) do
+          compile_with_default(default_val, default_reg, maybe_reg, ctx, b1)
         end
     end
   end
 
   def compile_maybe_with_default(_, _, _), do: :unsupported
+
+  defp compile_with_default(default_val, default_reg, maybe_reg, ctx, b) do
+    builtin =
+      if int_literal_default?(default_val),
+        do: :maybe_with_default_int,
+        else: :maybe_with_default
+
+    Expr.compile_runtime_builtin(builtin, [default_reg, maybe_reg], ctx, b)
+  end
 
   defp list_at_index_list(%{
          op: :qualified_call,
@@ -63,6 +73,15 @@ defmodule Elmc.Backend.Plan.Lower.StdlibCall do
 
   defp list_at_index_list(_), do: :error
 
-  defp int_literal_zero?(%{op: :int_literal, value: 0}), do: true
+  defp int_literal_zero?(%{op: :int_literal, value: 0} = lit),
+    do: int_literal_default?(lit)
+
   defp int_literal_zero?(_), do: false
+
+  # Plain int defaults (not union tag literals such as `Nothing`).
+  defp int_literal_default?(%{op: :int_literal, value: value} = lit) when is_integer(value) do
+    not Map.has_key?(lit, :union_ctor)
+  end
+
+  defp int_literal_default?(_), do: false
 end

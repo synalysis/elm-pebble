@@ -66,21 +66,30 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Patterns.Match.Pattern do
   def branch_pattern(%{pattern: %{kind: :constructor, name: name} = pat}, env) do
     ctor = pattern_ctor_name(name)
 
-    case Map.get(pat, :arg_pattern) do
-      %{kind: :wildcard} ->
-        bool_case_pattern(ctor, "{:#{ctor}, _}")
+    if ctor == "[]" do
+      "[]"
+    else
+      core =
+        case Map.get(pat, :arg_pattern) do
+          %{kind: :wildcard} ->
+            bool_case_pattern(ctor, "{:#{ctor}, _}")
 
-      nil ->
-        case Map.get(pat, :bind) do
-          bind when is_binary(bind) and bind != "" ->
-            bool_case_pattern(ctor, "{:#{ctor}, #{Helpers.pattern_var_name(bind, env)}}")
+          nil ->
+            case Map.get(pat, :bind) do
+              bind when is_binary(bind) and bind != "" ->
+                # Zero-arg ctor with only a bind is payload-shaped in some IR;
+                # as-alias on nullary ctors is handled below when arg_pattern is set.
+                bool_case_pattern(ctor, "{:#{ctor}, #{Helpers.pattern_var_name(bind, env)}}")
 
-          _ ->
-            bool_case_pattern(ctor, ":#{ctor}")
+              _ ->
+                bool_case_pattern(ctor, safe_ctor_atom_pattern(ctor))
+            end
+
+          other ->
+            bool_case_pattern(ctor, constructor_case_pattern(ctor, other, env))
         end
 
-      other ->
-        bool_case_pattern(ctor, constructor_case_pattern(ctor, other, env))
+      maybe_as_bind(core, Map.get(pat, :bind), Map.get(pat, :arg_pattern), env)
     end
   end
 
@@ -193,14 +202,33 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Patterns.Match.Pattern do
   defp flatten_cons_tail(other, env), do: {[], list_tail_pattern(other, env)}
 
   @spec tuple_case_elem(Types.ir_pattern(), env()) :: String.t()
-  def tuple_case_elem(%{kind: :constructor, name: name, bind: bind, arg_pattern: nil}, env)
-       when is_binary(bind) and bind != "" do
-    "{:#{pattern_ctor_name(name)}, #{Helpers.pattern_var_name(bind, env)}}"
+  def tuple_case_elem(%{kind: :constructor, name: "[]"}, _env), do: "[]"
+
+  def tuple_case_elem(%{kind: :constructor, name: "::", arg_pattern: ap} = pat, env) when is_map(ap) do
+    inner = cons_list_case_pattern(ap, env)
+    maybe_as_bind(inner, Map.get(pat, :bind), ap, env)
   end
 
-  def tuple_case_elem(%{kind: :constructor, name: name, arg_pattern: ap}, env) when is_map(ap) do
+  def tuple_case_elem(%{kind: :constructor, name: name, bind: bind, arg_pattern: nil}, env)
+       when is_binary(bind) and bind != "" do
     ctor = pattern_ctor_name(name)
-    constructor_case_pattern(ctor, ap, env)
+    if ctor == "[]", do: "[]", else: "{:#{ctor}, #{Helpers.pattern_var_name(bind, env)}}"
+  end
+
+  def tuple_case_elem(%{kind: :constructor, name: name, arg_pattern: ap} = pat, env) when is_map(ap) do
+    ctor = pattern_ctor_name(name)
+
+    cond do
+      ctor == "[]" ->
+        "[]"
+
+      ctor == "::" ->
+        inner = cons_list_case_pattern(ap, env)
+        maybe_as_bind(inner, Map.get(pat, :bind), ap, env)
+
+      true ->
+        constructor_case_pattern(ctor, ap, env)
+    end
   end
 
   def tuple_case_elem(%{kind: :var, name: name}, env) when is_binary(name),
@@ -249,24 +277,58 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Patterns.Match.Pattern do
   def pattern_arg(%{kind: :constructor, name: "()", arg_pattern: nil}, _env), do: "nil"
   def pattern_arg(%{kind: :constructor, name: "()", arg_pattern: other}, env), do: pattern_arg(other, env)
 
+  # Nested `[]` must stay a list literal — never `:[]` (invalid Elixir atom syntax).
+  def pattern_arg(%{kind: :constructor, name: "[]"}, _env), do: "[]"
+
+  def pattern_arg(%{kind: :constructor, name: "::", arg_pattern: arg} = pat, env) do
+    inner = cons_list_case_pattern(arg, env)
+
+    case Map.get(pat, :bind) do
+      bind when is_binary(bind) and bind != "" ->
+        "#{inner} = #{Helpers.pattern_var_name(bind, env)}"
+
+      _ ->
+        inner
+    end
+  end
+
   def pattern_arg(%{kind: :constructor, name: name} = pat, env) do
     ctor = pattern_ctor_name(name)
 
-    case Map.get(pat, :arg_pattern) do
-      %{kind: :wildcard} ->
-        "{:#{ctor}, _}"
+    cond do
+      ctor == "[]" ->
+        "[]"
 
-      nil ->
-        case Map.get(pat, :bind) do
-          bind when is_binary(bind) and bind != "" ->
-            bool_case_pattern(ctor, "{:#{ctor}, #{Helpers.pattern_var_name(bind, env)}}")
+      ctor == "::" ->
+        case Map.get(pat, :arg_pattern) do
+          arg when is_map(arg) ->
+            inner = cons_list_case_pattern(arg, env)
+            maybe_as_bind(inner, Map.get(pat, :bind), arg, env)
 
           _ ->
-            bool_case_pattern(ctor, ":#{ctor}")
+            "_"
         end
 
-      other ->
-        constructor_case_pattern(ctor, other, env)
+      true ->
+        core =
+          case Map.get(pat, :arg_pattern) do
+            %{kind: :wildcard} ->
+              "{:#{ctor}, _}"
+
+            nil ->
+              case Map.get(pat, :bind) do
+                bind when is_binary(bind) and bind != "" ->
+                  bool_case_pattern(ctor, "{:#{ctor}, #{Helpers.pattern_var_name(bind, env)}}")
+
+                _ ->
+                  bool_case_pattern(ctor, safe_ctor_atom_pattern(ctor))
+              end
+
+            other ->
+              constructor_case_pattern(ctor, other, env)
+          end
+
+        maybe_as_bind(core, Map.get(pat, :bind), Map.get(pat, :arg_pattern), env)
     end
   end
 
@@ -329,9 +391,22 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Patterns.Match.Pattern do
   @spec list_tail_pattern(Types.ir_pattern(), env()) :: String.t()
   def list_tail_pattern(%{kind: :list, elements: []}, _env), do: "[]"
 
+  def list_tail_pattern(%{kind: :constructor, name: "[]"}, _env), do: "[]"
+
   def list_tail_pattern(%{kind: :var, name: name}, env) when is_binary(name),
     do: Helpers.pattern_var_name(name, env)
 
   def list_tail_pattern(%{kind: :wildcard}, _env), do: "_"
   def list_tail_pattern(_, _env), do: "_"
+
+  # As-patterns on ctors with payloads: `{:Ctor, a, b} = alias`.
+  # When arg_pattern is nil, `bind` is the payload name (not an as-alias).
+  defp maybe_as_bind(core, bind, arg_pattern, env)
+       when is_binary(bind) and bind != "" and is_map(arg_pattern) do
+    "#{core} = #{Helpers.pattern_var_name(bind, env)}"
+  end
+
+  defp maybe_as_bind(core, _bind, _arg_pattern, _env), do: core
+
+  defp safe_ctor_atom_pattern(ctor) when is_binary(ctor), do: inspect(String.to_atom(ctor))
 end

@@ -121,10 +121,12 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Constructor do
   def ide_runtime_zero_arg_code("True"), do: "true"
   def ide_runtime_zero_arg_code("False"), do: "false"
   def ide_runtime_zero_arg_code("()"), do: "nil"
-  def ide_runtime_zero_arg_code(ctor), do: ":#{ctor}"
+  def ide_runtime_zero_arg_code("[]"), do: "[]"
+  def ide_runtime_zero_arg_code(ctor), do: safe_ctor_atom(ctor)
 
   def ide_runtime_ctor_atom("()"), do: "nil"
-  def ide_runtime_ctor_atom(ctor), do: ":#{ctor}"
+  def ide_runtime_ctor_atom("[]"), do: "[]"
+  def ide_runtime_ctor_atom(ctor), do: safe_ctor_atom(ctor)
 
   def ide_runtime_constructor_code(_ctor, [], _arg_str, name, env),
     do: zero_arg_constructor_code(name, env)
@@ -145,11 +147,16 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Constructor do
     "#{CodegenRefs.values()}.ctor(#{inspect(ctor)}, [#{arg_str}])"
   end
 
-  def zero_arg_constructor_code_library("True", _ctor, _env), do: "true"
-  def zero_arg_constructor_code_library("False", _ctor, _env), do: "false"
-  def zero_arg_constructor_code_library("()", _ctor, _env), do: "nil"
+  # Match on resolved ctor (not IR name) so qualified/`Basics.()`-style names still sanitize.
+  def zero_arg_constructor_code_library(_name, "True", _env), do: "true"
+  def zero_arg_constructor_code_library(_name, "False", _env), do: "false"
+  def zero_arg_constructor_code_library(_name, "()", _env), do: "nil"
+  def zero_arg_constructor_code_library(_name, "[]", _env), do: "[]"
 
-  def zero_arg_constructor_code_library(_name, ctor, _env), do: ":#{ctor}"
+  def zero_arg_constructor_code_library(_name, ctor, _env), do: safe_ctor_atom(ctor)
+
+  # `:Foo` for normal ctors; `:"()"`-style for names that are not bare atom syntax.
+  defp safe_ctor_atom(ctor) when is_binary(ctor), do: inspect(String.to_atom(ctor))
 
   def compile_var(name, env, counter) when is_binary(name) do
     case String.split(name, ".") do

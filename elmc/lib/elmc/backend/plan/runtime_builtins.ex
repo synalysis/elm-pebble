@@ -17,7 +17,8 @@ defmodule Elmc.Backend.Plan.RuntimeBuiltins do
     list_filter_record_field: [1],
     list_filter_record_and: [1, 2],
     list_map_record_field: [1],
-    native_int_to_float: [0]
+    native_int_to_float: [0],
+    maybe_with_default_int: [0]
   }
 
   @builtins Map.merge(%{
@@ -55,6 +56,7 @@ defmodule Elmc.Backend.Plan.RuntimeBuiltins do
     list_nth_int_default: "elmc_list_nth_int_default_boxed",
     list_replace_nth_int: "elmc_list_replace_nth_int",
     maybe_with_default: "elmc_maybe_with_default",
+    maybe_with_default_int: "elmc_maybe_with_default_int",
     maybe_map: "elmc_maybe_map",
     basics_min: "elmc_basics_min",
     basics_max: "elmc_basics_max",
@@ -311,6 +313,7 @@ defmodule Elmc.Backend.Plan.RuntimeBuiltins do
     :list_nth_int_default,
     :list_replace_nth_int,
     :maybe_with_default,
+    :maybe_with_default_int,
     :maybe_map,
     :basics_min,
     :basics_max,

@@ -21,9 +21,16 @@ defmodule Elmx.Backend.ElixirCodegen.FnArgs do
         {:simple, stripped}
 
       true ->
-        case parse_pattern(stripped) do
-          {:ok, pattern} -> {:pattern, pattern}
-          :error -> {:simple, trimmed}
+        # Keep parentheses for tuple patterns — `(x, y)` parses, `x, y` does not.
+        case parse_pattern(trimmed) do
+          {:ok, pattern} ->
+            {:pattern, pattern}
+
+          :error ->
+            case parse_pattern(stripped) do
+              {:ok, pattern} -> {:pattern, pattern}
+              :error -> {:simple, trimmed}
+            end
         end
     end
   end

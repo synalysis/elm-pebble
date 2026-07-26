@@ -2497,6 +2497,9 @@ defmodule Elmc.Backend.C.Lower.Function do
       [%{op: :call_runtime, args: %{builtin: :int_list_head_int}} | _] ->
         native_int_uses_only?(plan, reg, decl_map, native_set)
 
+      [%{op: :call_runtime, args: %{builtin: :maybe_with_default_int}} | _] ->
+        native_int_uses_only?(plan, reg, decl_map, native_set)
+
       [%{op: :call_fn, args: %{module: mod, name: name}} | _] ->
         NativeReturn.cached_kind({mod, name}) == :native_int and
           native_int_uses_only?(plan, reg, decl_map, native_set)
@@ -2538,6 +2541,9 @@ defmodule Elmc.Backend.C.Lower.Function do
           true
 
         %{op: :call_runtime, args: %{builtin: :int_list_head_int}} ->
+          true
+
+        %{op: :call_runtime, args: %{builtin: :maybe_with_default_int}} ->
           true
 
         %{op: :phi, args: %{native_int_phi: true}} ->
@@ -2850,6 +2856,9 @@ defmodule Elmc.Backend.C.Lower.Function do
             true
 
           %{op: :call_runtime, args: %{builtin: :int_list_head_int}} ->
+            true
+
+          %{op: :call_runtime, args: %{builtin: :maybe_with_default_int}} ->
             true
 
           %{op: :phi, args: %{native_int_phi: true}} ->

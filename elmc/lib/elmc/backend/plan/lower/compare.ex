@@ -130,7 +130,7 @@ defmodule Elmc.Backend.Plan.Lower.Compare do
 
     with tag when is_integer(tag) <- union_ctor_tag(ctor_name),
          {:ok, subj_reg, subj_owned?, b1} <- compile_operand(subject_expr, operand_ctx, b),
-         {:ok, tag_reg, b2} <- emit_test_ctor_tag(subj_reg, tag, b1),
+         {:ok, tag_reg, b2} <- emit_test_ctor_tag(subj_reg, tag, ctor_name, b1),
          {reg, b3} = Builder.fresh_reg(b2) do
       {_, b4} =
         Builder.emit(b3, :test_bool, %{
@@ -207,13 +207,14 @@ defmodule Elmc.Backend.Plan.Lower.Compare do
     Elmc.Backend.CCodegen.IRQueries.lookup_tag(tags, name)
   end
 
-  defp emit_test_ctor_tag(subject_reg, tag, b) when is_integer(tag) do
+  defp emit_test_ctor_tag(subject_reg, tag, ctor_name, b)
+       when is_integer(tag) and is_binary(ctor_name) do
     {reg, b1} = Builder.fresh_reg(b)
 
     {_, b2} =
       Builder.emit(b1, :test_ctor_tag, %{
         dest: reg,
-        args: %{subject: subject_reg, tag: tag},
+        args: %{subject: subject_reg, tag: tag, union_ctor: ctor_name},
         effects: %{
           produces: {:owned, reg},
           consumes: [],

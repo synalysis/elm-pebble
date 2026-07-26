@@ -87,7 +87,13 @@ defmodule Elmc.CoreComplianceTest do
       File.mkdir_p!(out_dir)
 
       {output, exit_code} =
-        System.cmd("bash", ["-lc", "elm make src/Main.elm --output=#{out_dir}/out.js"],
+        System.cmd(
+          "bash",
+          [
+            "-lc",
+            # Lift AS limit so elm make is not killed by the agent/CI test ulimit.
+            "ulimit -v unlimited 2>/dev/null || true; elm make src/Main.elm --output=#{out_dir}/out.js"
+          ],
           cd: project_dir,
           stderr_to_stdout: true
         )

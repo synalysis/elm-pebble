@@ -490,7 +490,18 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Expr do
 
   defp compile_single_let_in(%{name: name, value_expr: value, in_expr: body}, env, counter) do
     used? = MapSet.member?(referenced_binding_names(body, MapSet.new()), name)
-    {value_code, env, c1} = Emit.compile_expr(value, env, counter)
+    self_ref? = match?(%{op: :lambda}, value) and self_references?(name, value)
+
+    {value_code, env, c1} =
+      if self_ref? do
+        env_for_value = Map.put(env, String.to_atom(name), true)
+        {raw, env2, c} = Emit.compile_expr(value, env_for_value, counter)
+        param = Helpers.let_emit_name(name)
+        var = Macro.to_string(Macro.var(String.to_atom(param), nil))
+        {["Elmx.Runtime.Core.Apply.fix(fn ", var, " -> ", raw, " end)"], env2, c}
+      else
+        Emit.compile_expr(value, env, counter)
+      end
 
     if used? do
       emit_name = Helpers.let_emit_name(name)

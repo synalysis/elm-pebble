@@ -12,16 +12,36 @@ defmodule Elmc.Backend.CCodegen.ConstantInt do
 
   @int_binops ~w(__add__ __sub__ __mul__ __idiv__)
 
+  @literal_fold_max_depth 64
+
   @spec literal_value(Types.ir_expr(), Types.compile_env()) :: {:ok, integer()} | :error
-  def literal_value(%{op: :int_literal, union_ctor: ctor}, _env) when is_binary(ctor), do: :error
+  def literal_value(expr, env) when is_map(expr) do
+    depth = Process.get(:elmc_literal_int_depth, 0)
 
-  def literal_value(%{op: :int_literal, value: value}, _env) when is_integer(value),
+    if depth > @literal_fold_max_depth do
+      :error
+    else
+      Process.put(:elmc_literal_int_depth, depth + 1)
+
+      try do
+        literal_value_at(expr, env)
+      after
+        Process.put(:elmc_literal_int_depth, depth)
+      end
+    end
+  end
+
+  def literal_value(_expr, _env), do: :error
+
+  defp literal_value_at(%{op: :int_literal, union_ctor: ctor}, _env) when is_binary(ctor), do: :error
+
+  defp literal_value_at(%{op: :int_literal, value: value}, _env) when is_integer(value),
     do: {:ok, value}
 
-  def literal_value(%{op: :char_literal, value: value}, _env) when is_integer(value),
+  defp literal_value_at(%{op: :char_literal, value: value}, _env) when is_integer(value),
     do: {:ok, value}
 
-  def literal_value(%{op: :var, name: name}, env) do
+  defp literal_value_at(%{op: :var, name: name}, env) do
     bindings = Map.get(env, :__literal_int_bindings__, %{})
 
     case Map.get(bindings, EnvBindings.binding_key(name)) do
@@ -37,38 +57,38 @@ defmodule Elmc.Backend.CCodegen.ConstantInt do
     end
   end
 
-  def literal_value(%{op: :sub_const, var: name, value: value}, env) when is_integer(value) do
+  defp literal_value_at(%{op: :sub_const, var: name, value: value}, env) when is_integer(value) do
     with {:ok, base} <- literal_from_decl(Map.get(env, :__module__, "Main"), name, env) do
       {:ok, base - value}
     end
   end
 
-  def literal_value(%{op: :add_const, var: name, value: value}, env) when is_integer(value) do
+  defp literal_value_at(%{op: :add_const, var: name, value: value}, env) when is_integer(value) do
     with {:ok, base} <- literal_from_decl(Map.get(env, :__module__, "Main"), name, env) do
       {:ok, base + value}
     end
   end
 
-  def literal_value(%{op: :call, name: name, args: []}, env) do
+  defp literal_value_at(%{op: :call, name: name, args: []}, env) do
     literal_from_decl(Map.get(env, :__module__, "Main"), name, env)
   end
 
-  def literal_value(%{op: :qualified_call, target: target, args: []}, env) do
+  defp literal_value_at(%{op: :qualified_call, target: target, args: []}, env) do
     case Host.split_qualified_function_target(Host.normalize_special_target(target)) do
       {module, name} -> literal_from_decl(module, name, env)
       _ -> :error
     end
   end
 
-  def literal_value(%{op: :call, name: name, args: [left, right]}, env)
-      when name in @int_binops do
+  defp literal_value_at(%{op: :call, name: name, args: [left, right]}, env)
+       when name in @int_binops do
     with {:ok, left_value} <- literal_value(left, env),
          {:ok, right_value} <- literal_value(right, env) do
       {:ok, apply_binop(name, left_value, right_value)}
     end
   end
 
-  def literal_value(%{op: :qualified_call, target: target, args: [left, right]}, env) do
+  defp literal_value_at(%{op: :qualified_call, target: target, args: [left, right]}, env) do
     case Host.qualified_builtin_operator_name(target) do
       op when op in @int_binops ->
         literal_value(%{op: :call, name: op, args: [left, right]}, env)
@@ -78,14 +98,14 @@ defmodule Elmc.Backend.CCodegen.ConstantInt do
     end
   end
 
-  def literal_value(
-        %{op: :runtime_call, function: "elmc_basics_mod_by", args: [base, value]},
-        env
-      ) do
+  defp literal_value_at(
+         %{op: :runtime_call, function: "elmc_basics_mod_by", args: [base, value]},
+         env
+       ) do
     literal_value(%{op: :call, name: "modBy", args: [base, value]}, env)
   end
 
-  def literal_value(%{op: :call, name: "modBy", args: [base, value]}, env) do
+  defp literal_value_at(%{op: :call, name: "modBy", args: [base, value]}, env) do
     with {:ok, base_value} <- literal_value(base, env),
          {:ok, value_value} <- literal_value(value, env),
          true <- base_value != 0 do
@@ -95,7 +115,7 @@ defmodule Elmc.Backend.CCodegen.ConstantInt do
     end
   end
 
-  def literal_value(%{op: :call, name: "remainderBy", args: [base, value]}, env) do
+  defp literal_value_at(%{op: :call, name: "remainderBy", args: [base, value]}, env) do
     with {:ok, base_value} <- literal_value(base, env),
          {:ok, value_value} <- literal_value(value, env),
          true <- base_value != 0 do
@@ -105,8 +125,8 @@ defmodule Elmc.Backend.CCodegen.ConstantInt do
     end
   end
 
-  def literal_value(%{op: :let_in, name: name, value_expr: value_expr, in_expr: in_expr}, env)
-      when is_binary(name) or is_atom(name) do
+  defp literal_value_at(%{op: :let_in, name: name, value_expr: value_expr, in_expr: in_expr}, env)
+       when is_binary(name) or is_atom(name) do
     with {:ok, value} <- literal_value(value_expr, env) do
       bindings =
         env
@@ -117,7 +137,7 @@ defmodule Elmc.Backend.CCodegen.ConstantInt do
     end
   end
 
-  def literal_value(%{op: :case, subject: subject, branches: branches}, env) do
+  defp literal_value_at(%{op: :case, subject: subject, branches: branches}, env) do
     subject_expr = CaseCompile.subject_expr(subject)
 
     with {:ok, subject_value} <- literal_value(subject_expr, env) do
@@ -125,20 +145,20 @@ defmodule Elmc.Backend.CCodegen.ConstantInt do
     end
   end
 
-  def literal_value(%{op: :runtime_call, function: "elmc_list_length", args: [list]}, env) do
+  defp literal_value_at(%{op: :runtime_call, function: "elmc_list_length", args: [list]}, env) do
     ImmortalStaticList.static_length(list, env)
   end
 
-  def literal_value(%{op: :qualified_call, target: target, args: [list]}, env)
-      when target in ["List.length", "Elm.Kernel.List.length"] do
+  defp literal_value_at(%{op: :qualified_call, target: target, args: [list]}, env)
+       when target in ["List.length", "Elm.Kernel.List.length"] do
     ImmortalStaticList.static_length(list, env)
   end
 
-  def literal_value(%{op: :call, name: "length", args: [list]}, env) do
+  defp literal_value_at(%{op: :call, name: "length", args: [list]}, env) do
     ImmortalStaticList.static_length(list, env)
   end
 
-  def literal_value(_expr, _env), do: :error
+  defp literal_value_at(_expr, _env), do: :error
 
   @spec literal_binop(String.t(), Types.ir_expr(), Types.ir_expr(), Types.compile_env()) ::
           {:ok, integer()} | :error
@@ -159,11 +179,56 @@ defmodule Elmc.Backend.CCodegen.ConstantInt do
   @spec literal_from_decl(String.t(), String.t(), Types.compile_env()) ::
           {:ok, integer()} | :error
   def literal_from_decl(module_name, name, env) do
+    key = {module_name, name}
+    cache = Process.get(:elmc_literal_int_decl_cache, %{})
+
+    case Map.fetch(cache, key) do
+      {:ok, result} ->
+        result
+
+      :error ->
+        visiting = Process.get(:elmc_literal_int_visiting, MapSet.new())
+
+        if MapSet.member?(visiting, key) do
+          :error
+        else
+          Process.put(:elmc_literal_int_visiting, MapSet.put(visiting, key))
+
+          try do
+            result = literal_from_decl_uncached(key, env)
+
+            Process.put(
+              :elmc_literal_int_decl_cache,
+              Map.put(Process.get(:elmc_literal_int_decl_cache, %{}), key, result)
+            )
+
+            result
+          after
+            Process.put(
+              :elmc_literal_int_visiting,
+              MapSet.delete(Process.get(:elmc_literal_int_visiting, MapSet.new()), key)
+            )
+          end
+        end
+    end
+  end
+
+  defp literal_from_decl_uncached(key, env) do
     decl_map = Map.get(env, :__program_decls__, %{})
 
-    case Map.get(decl_map, {module_name, name}) do
-      %{expr: expr} when is_map(expr) -> literal_value(expr, env)
-      _ -> :error
+    case Map.get(decl_map, key) do
+      %{expr: expr, args: args} when is_map(expr) and args in [[], nil] ->
+        literal_value(expr, env)
+
+      %{expr: expr} = decl when is_map(expr) ->
+        if Map.get(decl, :args) in [[], nil] do
+          literal_value(expr, env)
+        else
+          :error
+        end
+
+      _ ->
+        :error
     end
   end
 

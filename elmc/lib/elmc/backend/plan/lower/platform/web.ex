@@ -307,13 +307,27 @@ defmodule Elmc.Backend.Plan.Lower.Platform.Web do
   """
   @spec rewrite_decl_map(map(), keyword() | map()) :: map()
   def rewrite_decl_map(decl_map, opts \\ []) when is_map(decl_map) do
-    Map.new(decl_map, fn
-      {{module, _name} = key, decl} when is_binary(module) and is_map(decl) ->
-        {key, rewrite_partial_html_map_function_decl(module, decl, opts)}
+    if web_target?(opts) do
+      case Process.get(:elmc_web_rewritten_decl_map) do
+        {^decl_map, rewritten} when is_map(rewritten) ->
+          rewritten
 
-      other ->
-        other
-    end)
+        _ ->
+          rewritten =
+            Map.new(decl_map, fn
+              {{module, _name} = key, decl} when is_binary(module) and is_map(decl) ->
+                {key, rewrite_partial_html_map_function_decl(module, decl, opts)}
+
+              other ->
+                other
+            end)
+
+          Process.put(:elmc_web_rewritten_decl_map, {decl_map, rewritten})
+          rewritten
+      end
+    else
+      decl_map
+    end
   end
 
   defp html_map_partial(%{

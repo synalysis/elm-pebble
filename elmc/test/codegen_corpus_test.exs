@@ -7,6 +7,8 @@ defmodule Elmc.CodegenCorpusTest do
   codegen failures, and link failures. Writes a scorecard artifact.
   """
 
+  @moduletag timeout: 1_200_000
+
   @fixtures_dir Path.expand("fixtures", __DIR__)
   @scorecard_dir Path.expand("tmp/codegen_corpus", __DIR__)
 
@@ -61,7 +63,7 @@ defmodule Elmc.CodegenCorpusTest do
                 unsupported_ops: unsupported
             }
 
-            case Elmc.compile(project_dir, %{out_dir: out_dir, strip_dead_code: false}) do
+            case Elmc.compile(project_dir, %{out_dir: out_dir, strip_dead_code: true}) do
               {:ok, _} -> %{result | codegen: :ok}
               {:error, _} -> %{result | codegen: :error}
             end

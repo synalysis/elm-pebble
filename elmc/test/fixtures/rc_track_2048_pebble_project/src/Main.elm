@@ -8,8 +8,8 @@ import Pebble.Ui
 import Pebble.Ui.Color as Color
 import Pebble.Ui.Resources as Resources
 import Platform
+import Platform.Sub as Sub
 import RcTrack2048Probe as Board
-import Sub
 
 
 type alias Model =

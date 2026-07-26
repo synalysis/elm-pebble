@@ -374,14 +374,22 @@ defmodule Elmc.Backend.Plan.Lower.PatternMatch do
 
   defp test_ctor_tag(pattern, subject_reg, b) do
     tag = pattern_tag(pattern)
+    ctor = Map.get(pattern, :resolved_name) || Map.get(pattern, :name)
 
     if is_integer(tag) do
       {dest, b1} = Builder.fresh_reg(b)
 
+      args =
+        if is_binary(ctor) do
+          %{subject: subject_reg, tag: tag, union_ctor: ctor}
+        else
+          %{subject: subject_reg, tag: tag}
+        end
+
       {_, b2} =
         Builder.emit(b1, :test_ctor_tag, %{
           dest: dest,
-          args: %{subject: subject_reg, tag: tag},
+          args: args,
           effects: %{
             produces: {:owned, dest},
             consumes: [],

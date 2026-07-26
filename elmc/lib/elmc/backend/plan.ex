@@ -64,24 +64,31 @@ defmodule Elmc.Backend.Plan do
 
   # An early primary_lowered? probe can succeed before record field types are installed,
   # leaving native return metadata uncached even though the function value-returns.
+  # Refresh at most once per key: annotate may uncache non-native functions, and
+  # re-lowering those on every primary_lowered? hit is pathological (O(n) emit hang).
   defp maybe_refresh_native_scalar_metadata(decl, module_name, decl_map) when is_map(decl) do
     name = Map.get(decl, :name, "")
     key = {module_name, name}
+    attempted = Process.get(:elmc_plan_native_refresh_attempted, MapSet.new())
 
     refresh? =
       NativeFunctionCall.native_scalar_fn?(decl, module_name, decl_map) and
         not NativeReturn.value_return?(key) and
-        is_nil(NativeReturn.cached_kind(key))
+        is_nil(NativeReturn.cached_kind(key)) and
+        not MapSet.member?(attempted, key)
 
     if refresh? do
-      case lower_function(
-             decl,
-             module_name,
-             decl_map,
-             rc_required: RcRequired.rc_required?(module_name, name)
-           ) do
-        _ -> :ok
-      end
+      Process.put(:elmc_plan_native_refresh_attempted, MapSet.put(attempted, key))
+
+      _ =
+        lower_function(
+          decl,
+          module_name,
+          decl_map,
+          rc_required: RcRequired.rc_required?(module_name, name)
+        )
+
+      :ok
     else
       :ok
     end

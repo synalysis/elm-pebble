@@ -361,6 +361,38 @@ defmodule Elmx.CasePatternEmitTest do
     assert source =~ "second"
   end
 
+  test "tuple pattern with nested empty list emits [] not :[]" do
+    expr = %{
+      op: :case,
+      subject: "pair",
+      branches: [
+        %{
+          pattern: %{
+            kind: :tuple,
+            elements: [
+              %{kind: :wildcard},
+              %{kind: :constructor, name: "[]", bind: nil, arg_pattern: nil}
+            ]
+          },
+          expr: %{op: :int_literal, value: 0}
+        }
+      ]
+    }
+
+    env =
+      Emit.function_env("Main", ["pair"])
+      |> Map.put(:module, "Main")
+      |> Map.put(:zero_arity_fns, MapSet.new())
+      |> Map.put(:function_arities, %{})
+
+    {code, _, _} = Emit.compile_expr(expr, env, 0)
+    source = IO.iodata_to_binary(code)
+
+    assert source =~ "{_, []}"
+    refute source =~ ":[]"
+    assert {:ok, _} = Code.string_to_quoted(source)
+  end
+
   test "ide_runtime keeps plain pair constructor payloads nested in case patterns" do
     expr = %{
       op: :case,

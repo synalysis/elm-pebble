@@ -695,6 +695,14 @@ defmodule Elmc.Backend.Bytecode.Runtime do
     end
   end
 
+  defp apply_builtin(:maybe_with_default_int, [default, maybe | _], locals, _) do
+    case get_local(locals, maybe) do
+      nil -> local_int(locals, default)
+      {:just, val} -> to_int(val)
+      other -> to_int(other)
+    end
+  end
+
   defp apply_builtin(:result_with_default, [default, result | _], locals, _) do
     case get_local(locals, result) do
       {:ok, value} -> value

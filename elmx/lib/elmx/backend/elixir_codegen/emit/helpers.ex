@@ -50,7 +50,7 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Helpers do
     else
       case Map.get(env, :module) do
         module when is_binary(module) -> function_reference(module, name, env)
-        _ -> name
+        _ -> let_emit_name(name)
       end
     end
   end
@@ -75,7 +75,9 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Helpers do
 
     case function_arity(env, name) do
       :unresolved ->
-        name
+        # Local/unknown vars may be Elm identifiers that are Elixir keywords
+        # (`fn`, `end`, …). Always sanitize before emitting as a bare name.
+        let_emit_name(name)
 
       0 ->
         if MapSet.member?(zero_arity, name) do
