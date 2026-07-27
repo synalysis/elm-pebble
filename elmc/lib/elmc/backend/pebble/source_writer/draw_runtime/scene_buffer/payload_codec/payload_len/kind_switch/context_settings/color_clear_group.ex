@@ -1,5 +1,7 @@
 defmodule Elmc.Backend.Pebble.SourceWriter.DrawRuntime.SceneBuffer.PayloadCodec.PayloadLen.KindSwitch.ContextSettings.ColorClearGroup do
   @moduledoc false
+  alias Elmc.Types, as: Types
+
 
   alias Elmc.Backend.Pebble.Types
 

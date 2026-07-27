@@ -72,6 +72,8 @@ defmodule Ide.Emulator.PBWInstaller do
     end
   end
 
+  @spec do_install_with_retries(term(), term(), term(), term(), term(), term(), term(), term(), term(), term(), term(), term(), term(), term()) :: term()
+
   defp do_install_with_retries(
          router,
          pbw,
@@ -163,17 +165,23 @@ defmodule Ide.Emulator.PBWInstaller do
     end
   end
 
+  @spec validate_pbw_platform(map(), term()) :: term()
+
   defp validate_pbw_platform(%{variant: variant}, platform) when variant == platform, do: :ok
 
   defp validate_pbw_platform(%{variant: variant}, platform) do
     {:error, {:pbw_platform_mismatch, %{expected: platform, got: variant}}}
   end
 
+  @spec handshake_retryable?(term() | integer()) :: boolean()
+
   defp handshake_retryable?(:timeout), do: true
   defp handshake_retryable?({:blob_insert_failed, _response}), do: true
   defp handshake_retryable?({:wrong_blob_token, _expected, _actual}), do: true
   defp handshake_retryable?({:wrong_app_fetch_uuid, _expected, _actual}), do: true
   defp handshake_retryable?(_reason), do: false
+
+  @spec do_install(term(), term(), term(), term(), term(), term(), term(), term(), term(), term(), term(), term()) :: term()
 
   defp do_install(
          router,

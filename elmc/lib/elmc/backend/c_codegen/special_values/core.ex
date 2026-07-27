@@ -1,5 +1,7 @@
 defmodule Elmc.Backend.CCodegen.SpecialValues.Core do
   @moduledoc false
+  alias Elmc.Backend.CCodegen.Types, as: Types
+
 
   alias Elmc.Backend.CCodegen.IRQueries
   alias Elmc.Backend.CCodegen.SpecialValues.{Dispatcher, Helpers}
@@ -151,12 +153,16 @@ defmodule Elmc.Backend.CCodegen.SpecialValues.Core do
     end
   end
 
+  @spec compare_op_kind(Types.ir_expr()) :: Types.ir_expr()
+
   defp compare_op_kind("__eq__"), do: :eq
   defp compare_op_kind("__neq__"), do: :neq
   defp compare_op_kind("__lt__"), do: :lt
   defp compare_op_kind("__lte__"), do: :lte
   defp compare_op_kind("__gt__"), do: :gt
   defp compare_op_kind("__gte__"), do: :gte
+
+  @spec operator_call_name(Types.ir_expr() | String.t()) :: Types.ir_expr()
 
   defp operator_call_name("Basics.add"), do: "__add__"
   defp operator_call_name("Basics.sub"), do: "__sub__"
@@ -190,6 +196,8 @@ defmodule Elmc.Backend.CCodegen.SpecialValues.Core do
     end
   end
 
+  @spec denormalize_kernel_shorthand(Types.ir_expr() | String.t()) :: Types.ir_expr()
+
   defp denormalize_kernel_shorthand("Elm.Kernel." <> rest) do
     case String.split(rest, ".", parts: 2) do
       ["JsArray", name] ->
@@ -211,6 +219,8 @@ defmodule Elmc.Backend.CCodegen.SpecialValues.Core do
   end
 
   defp denormalize_kernel_shorthand(target), do: target
+
+  @spec denormalize_utils_alias(Types.ir_expr() | String.t()) :: Types.ir_expr()
 
   defp denormalize_utils_alias("Utils.compare"), do: "Basics.compare"
   defp denormalize_utils_alias(target), do: target

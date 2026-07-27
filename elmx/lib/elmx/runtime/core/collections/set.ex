@@ -1,15 +1,30 @@
 defmodule Elmx.Runtime.Core.Collections.Set do
   @moduledoc false
+  alias Elmx.Types, as: Types
+
 
   alias Elmx.Runtime.Core
+  alias Elmx.Runtime.Core.Collections.Dict
   alias Elmx.Types
 
   @type set :: Types.elm_set()
 
   defp wrap(items) when is_list(items), do: {:elmx_set, items}
+
   defp unwrap({:elmx_set, items}) when is_list(items), do: items
   defp unwrap(items) when is_list(items), do: items
 
+  # elm/core `type Set t = Set_elm_builtin (Dict t ())` when mixed with runtime helpers.
+  defp unwrap({:Set_elm_builtin, dict}), do: Dict.dict_keys(dict)
+  defp unwrap(%{ctor: :Set_elm_builtin, args: [dict]}), do: Dict.dict_keys(dict)
+  defp unwrap(%{"ctor" => "Set_elm_builtin", "args" => [dict]}), do: Dict.dict_keys(dict)
+  defp unwrap({:ctor, "Set_elm_builtin", [dict]}), do: Dict.dict_keys(dict)
+
+  # Bare Dict / RB tree mistaken for a Set (partial kernel rewrite paths).
+  defp unwrap({:elmx_dict, _} = dict), do: Dict.dict_keys(dict)
+  defp unwrap(:RBEmpty_elm_builtin), do: []
+  defp unwrap({:RBEmpty_elm_builtin, _} = tree), do: Dict.dict_keys(tree)
+  defp unwrap({:RBNode_elm_builtin, _, _, _, _, _} = tree), do: Dict.dict_keys(tree)
   @spec set_empty() :: set()
   def set_empty, do: wrap([])
 

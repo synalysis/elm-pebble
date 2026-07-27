@@ -292,6 +292,10 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
         if (payload.ctorTag != null) return payload.ctorTag | 0;
         return payload.value != null ? 1 : 0;
       }
+      case TAG_ORDER:
+        // Runtime Order is TAG_ORDER with scalar -1/0/1 (LT/EQ/GT), not
+        // constructor-table ids. Match C elmc_union_tag_as_int / TagRefs.
+        return payload.value | 0;
       default:
         return -1;
     }
@@ -1343,8 +1347,10 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
     const handle = handlePtr ?? outPtr;
     if (!outPtr && handle && handles.has(handle)) {
       const payload = handles.get(handle);
-      payload.rc = (payload.rc ?? 1) + 1;
-      retainCount += 1;
+      if (!payload?.immortal) {
+        payload.rc = (payload.rc ?? 1) + 1;
+        retainCount += 1;
+      }
     }
 
     if (outPtr) {
@@ -1664,7 +1670,7 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
   const addOwner = (childPtr, ownerPtr) => {
     const child = childPtr | 0;
     const owner = ownerPtr | 0;
-    if (!child || !owner || child === owner) return;
+    if (!child || !owner || child === owner || !handles.has(child)) return;
     const payload = handles.get(child);
     if (!payload || payload.immortal) return;
     if (!payload.owners) payload.owners = new Set();
@@ -2392,9 +2398,17 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
     return RC_SUCCESS;
   };
 
+  const normalizeListItem = (item) => {
+    const ptr = item | 0;
+    if (!ptr) return newIntHandle(0);
+    if (handles.has(ptr)) return ptr;
+    return newIntHandle(intValue(item));
+  };
+
   const newList = (items) => {
-    const handle = allocHandle({ tag: TAG_LIST, items: [...items] });
-    for (const item of items) addOwner(item, handle);
+    const normalized = items.map(normalizeListItem);
+    const handle = allocHandle({ tag: TAG_LIST, items: normalized });
+    for (const item of normalized) addOwner(item, handle);
     return handle;
   };
 
@@ -2410,7 +2424,7 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
   const listFromIntArray = (outPtr, itemsPtr, count) => {
     const items = [];
     for (let i = 0; i < count; i++) {
-      items.push(view().getInt32(itemsPtr + i * 4, true));
+      items.push(newIntHandle(view().getInt32(itemsPtr + i * 4, true)));
     }
     return writeList(outPtr, items);
   };
@@ -2421,28 +2435,40 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
     retain(null, ptr);
     return ptr;
   };
+
+  const boxListItem = (ptr) => {
+    if (!ptr) return newIntHandle(0);
+    if (handles.has(ptr | 0)) return cloneForList(ptr);
+    return newIntHandle(intValue(ptr));
+  };
   let __sceneHeadLogs = 0;
   const listFromValues = (outPtr, arrayPtr, count) => {
     const items = [];
     for (let i = 0; i < count; i++) {
       items.push(cloneForList(view().getUint32(arrayPtr + i * 4, true)));
     }
-    const handle = allocHandle({ tag: TAG_LIST, items });
-    for (const item of items) addOwner(item, handle);
-    writeOut(outPtr, handle);
+    writeOut(outPtr, newList(items));
     return RC_SUCCESS;
   };
 
   const listLength = (outPtr, listPtr) => newInt(outPtr, listItems(listPtr).length);
 
+  const listElementNumber = (item) => {
+    if (!item) return 0;
+    const payload = readHandle(item | 0);
+    if (payload?.tag === TAG_FLOAT) return payload.value | 0;
+    return intValue(item);
+  };
+
   const listSum = (outPtr, listPtr) => {
-    const sum = listItems(listPtr).reduce((a, b) => a + b, 0);
+    const sum = listItems(listPtr).reduce((a, b) => a + listElementNumber(b), 0);
     return newInt(outPtr, sum);
   };
 
   const listProduct = (outPtr, listPtr) => {
     const items = listItems(listPtr);
-    const product = items.length === 0 ? 0 : items.reduce((a, b) => a * b, 1);
+    const product =
+      items.length === 0 ? 0 : items.reduce((a, b) => a * listElementNumber(b), 1);
     return newInt(outPtr, product);
   };
 
@@ -2489,14 +2515,27 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
     return maybeJustOwn(outPtr, newList(items.slice(1)));
   };
 
+  const listCountArg = (ptr) => {
+    const p = ptr | 0;
+    if (!p) return 0;
+    const payload = readHandle(p);
+    if (!payload) return p;
+    // Wasm partials like `List.take 2` pass i32.const N that collides with early
+    // handles; treat as raw when handle id != boxed Int payload (see wasmScalarArg).
+    if (payload.tag === TAG_INT && p <= 255 && (payload.value | 0) !== p) {
+      return p;
+    }
+    return intValue(p);
+  };
+
   const listTake = (outPtr, countPtr, listPtr) => {
-    const count = intValue(countPtr);
-    return writeList(outPtr, listItems(listPtr).slice(0, count));
+    const count = listCountArg(countPtr);
+    return writeList(outPtr, listItems(listPtr).slice(0, count).map(cloneForList));
   };
 
   const listDrop = (outPtr, countPtr, listPtr) => {
-    const count = intValue(countPtr);
-    return writeList(outPtr, listItems(listPtr).slice(count));
+    const count = listCountArg(countPtr);
+    return writeList(outPtr, listItems(listPtr).slice(count).map(cloneForList));
   };
 
   const listRange = (outPtr, startPtr, endPtr) => {
@@ -2504,25 +2543,57 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
     const high = asIntNumber(endPtr);
     const items = [];
     // Match C elmc_list_range / Elm List.range: inclusive on both ends, high -> low.
-    for (let i = high; i >= low; i--) items.push(i);
+    for (let i = high; i >= low; i--) items.push(newIntHandle(i));
     return writeList(outPtr, items);
   };
 
   const listRepeat = (outPtr, valuePtr, countPtr) => {
     const value = intValue(valuePtr);
     const count = intValue(countPtr);
-    return writeList(outPtr, Array.from({ length: count }, () => value));
+    return writeList(
+      outPtr,
+      Array.from({ length: count }, () => newIntHandle(value))
+    );
   };
 
-  const listSingleton = (outPtr, valuePtr) => {
-    if (handles.has(valuePtr | 0)) {
-      return writeList(outPtr, [cloneForList(valuePtr)]);
-    }
-    return writeList(outPtr, [intValue(valuePtr)]);
-  };
+  const listSingleton = (outPtr, valuePtr) =>
+    writeList(outPtr, [boxListItem(valuePtr)]);
 
   // Match C elmc_list_cons(take=0): retain spine elements so callers can release consumed args.
   const valueCache = new Map();
+
+  const immortalizeHandleTree = (rootPtr) => {
+    const stack = [rootPtr | 0];
+    while (stack.length > 0) {
+      const ptr = stack.pop() | 0;
+      if (!ptr || !handles.has(ptr)) continue;
+      const payload = handles.get(ptr);
+      if (!payload || payload.immortal) continue;
+      payload.immortal = true;
+      payload.rc = 1_000_000;
+      switch (payload.tag) {
+        case TAG_TUPLE2:
+          stack.push(payload.first | 0, payload.second | 0);
+          break;
+        case TAG_RECORD:
+          for (const field of payload.fields ?? []) stack.push(field | 0);
+          break;
+        case TAG_LIST:
+          for (const item of payload.items ?? []) stack.push(item | 0);
+          break;
+        case TAG_MAYBE:
+        case TAG_RESULT:
+          if (payload.value != null) stack.push(payload.value | 0);
+          break;
+        case TAG_CLOSURE:
+          for (const capture of payload.captures ?? []) stack.push(capture | 0);
+          for (const applied of payload.applied ?? []) stack.push(applied | 0);
+          break;
+        default:
+          break;
+      }
+    }
+  };
 
   const valueCacheGet = (id, outPtr) => {
     const cached = valueCache.get(id | 0) | 0;
@@ -2539,14 +2610,14 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
     const handle = handlePtr | 0;
     const key = id | 0;
     if (handle && handles.has(handle) && !valueCache.has(key)) {
-      retain(null, handle);
+      immortalizeHandleTree(handle);
       valueCache.set(key, handle);
     }
     return RC_SUCCESS;
   };
 
   const listCons = (outPtr, headPtr, tailPtr) => {
-    const head = handles.has(headPtr | 0) ? cloneForList(headPtr) : intValue(headPtr);
+    const head = boxListItem(headPtr);
     const tail = listItems(tailPtr).map(cloneForList);
     return writeList(outPtr, [head, ...tail]);
   };
@@ -2554,9 +2625,9 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
   const listMaximum = (outPtr, listPtr) => {
     const items = listItems(listPtr);
     if (items.length === 0) return maybeNothing(outPtr);
-    let best = items[0] | 0;
+    let best = items[0];
     for (let i = 1; i < items.length; i++) {
-      const item = items[i] | 0;
+      const item = items[i];
       if (compareValues(item, best) > 0) best = item;
     }
     return maybeJust(outPtr, best);
@@ -2565,27 +2636,32 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
   const listMinimum = (outPtr, listPtr) => {
     const items = listItems(listPtr);
     if (items.length === 0) return maybeNothing(outPtr);
-    let best = items[0] | 0;
+    let best = items[0];
     for (let i = 1; i < items.length; i++) {
-      const item = items[i] | 0;
+      const item = items[i];
       if (compareValues(item, best) < 0) best = item;
     }
     return maybeJust(outPtr, best);
   };
 
   const listIntersperse = (outPtr, sepPtr, listPtr) => {
-    const sep = intValue(sepPtr);
+    const sepValue = intValue(sepPtr);
     const items = listItems(listPtr);
     if (items.length === 0) return writeList(outPtr, []);
-    const out = [items[0]];
+    const out = [cloneForList(items[0])];
     for (let i = 1; i < items.length; i++) {
-      out.push(sep, items[i]);
+      out.push(newIntHandle(sepValue), cloneForList(items[i]));
     }
     return writeList(outPtr, out);
   };
 
   const listSort = (outPtr, listPtr) =>
-    writeList(outPtr, [...listItems(listPtr)].sort((a, b) => a - b));
+    writeList(
+      outPtr,
+      [...listItems(listPtr)]
+        .sort((a, b) => listElementNumber(a) - listElementNumber(b))
+        .map(cloneForList)
+    );
 
   const compareInts = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
 
@@ -2712,7 +2788,7 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
       const arg = asHandle(item);
       const { rc, value } = invokeClosure(predClosurePtr, [arg]);
       if (rc !== RC_SUCCESS) return rc;
-      const truthy = intValue(value) !== 0;
+      const truthy = asBoolForWasm(value) !== 0;
       release(value);
       if (truthy) return newInt(outPtr, 1);
     }
@@ -2728,7 +2804,7 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
       const arg = asHandle(item);
       const { rc, value } = invokeClosure(predClosurePtr, [arg]);
       if (rc !== RC_SUCCESS) return rc;
-      const truthy = intValue(value) !== 0;
+      const truthy = asBoolForWasm(value) !== 0;
       release(value);
       if (!truthy) return newInt(outPtr, 0);
     }
@@ -2746,7 +2822,7 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
 
       if (!isMaybeNothing(value)) {
         const mapped = maybeJustPayloadHandle(value);
-        if (mapped != null) results.push(mapped);
+        if (mapped != null) results.push(cloneForList(mapped));
       }
 
       release(value);
@@ -2817,6 +2893,22 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
       }
     }
     return retain(outPtr, defaultPtr | 0);
+  };
+
+  // Native-int default (arg 0); result is a boxed Int handle at outPtr.
+  // Matches elmc_maybe_with_default_int / plan builtin :maybe_with_default_int.
+  const maybeWithDefaultInt = (outPtr, defaultNativeInt, maybePtr) => {
+    const payload = readHandle(maybePtr);
+    if (payload?.tag === TAG_MAYBE && payload.value != null) {
+      return newInt(outPtr, intValue(payload.value));
+    }
+    if (payload?.tag === TAG_TUPLE2) {
+      const tag = intValue(payload.first);
+      if (tag === 1 && payload.second) {
+        return newInt(outPtr, intValue(payload.second));
+      }
+    }
+    return newInt(outPtr, defaultNativeInt | 0);
   };
 
   const maybeMap = (outPtr, closurePtr, maybePtr) => {
@@ -2995,7 +3087,7 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
     if (!payload) return [0, 0];
 
     if (payload.tag === TAG_TUPLE2) {
-      return [intValue(payload.first), intValue(payload.second)];
+      return [payload.first | 0, payload.second | 0];
     }
 
     if (payload.tag === TAG_LIST) {
@@ -3683,7 +3775,7 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
       const { rc, value } = invokeClosure(closurePtr, [arg]);
       release(arg);
       if (rc !== RC_SUCCESS) return rc;
-      const truthy = intValue(value) !== 0;
+      const truthy = asBoolForWasm(value) !== 0;
       release(value);
       if (truthy) return newInt(outPtr, 1);
     }
@@ -3698,7 +3790,8 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
       const { rc, value } = invokeClosure(closurePtr, [arg]);
       release(arg);
       if (rc !== RC_SUCCESS) return rc;
-      const truthy = intValue(value) !== 0;
+      // Bool closures may return raw 0/1 that collide with early immortal handles.
+      const truthy = asBoolForWasm(value) !== 0;
       release(value);
       if (!truthy) return newInt(outPtr, 0);
     }
@@ -3863,22 +3956,27 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
   const basicsIsNan = (outPtr, nPtr) => newInt(outPtr, Number.isNaN(floatNumber(nPtr)) ? 1 : 0);
   const basicsIsInfinite = (outPtr, nPtr) =>
     newInt(outPtr, !Number.isFinite(floatNumber(nPtr)) && !Number.isNaN(floatNumber(nPtr)) ? 1 : 0);
-  const basicsFromPolar = (outPtr, rPtr, thetaPtr) => {
+  const newFloatHandle = (value) => allocHandle({ tag: TAG_FLOAT, value: Number(value) });
+
+  // Match C elmc_basics_from_polar / to_polar: single tuple arg, Float components.
+  const basicsFromPolar = (outPtr, polarPtr) => {
+    const [rPtr, thetaPtr] = tuplePairItems(polarPtr);
     const r = floatNumber(rPtr);
     const theta = floatNumber(thetaPtr);
     return tuple2(
       outPtr,
-      newIntHandle(Math.trunc(r * Math.cos(theta))),
-      newIntHandle(Math.trunc(r * Math.sin(theta)))
+      newFloatHandle(r * Math.cos(theta)),
+      newFloatHandle(r * Math.sin(theta))
     );
   };
-  const basicsToPolar = (outPtr, xPtr, yPtr) => {
+  const basicsToPolar = (outPtr, pointPtr) => {
+    const [xPtr, yPtr] = tuplePairItems(pointPtr);
     const x = floatNumber(xPtr);
     const y = floatNumber(yPtr);
-    return tuple2Ints(
+    return tuple2(
       outPtr,
-      Math.trunc(Math.sqrt(x * x + y * y)),
-      Math.trunc(Math.atan2(y, x))
+      newFloatHandle(Math.sqrt(x * x + y * y)),
+      newFloatHandle(Math.atan2(y, x))
     );
   };
   const basicsMax = (outPtr, aPtr, bPtr) =>
@@ -4263,27 +4361,41 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
   const dictEntries = (dictPtr) =>
     listItems(dictPtr).map((entryPtr) => [dictPairKey(entryPtr), dictPairValue(entryPtr)]);
 
+  // Dict entries must own key/value (addOwner), matching tuple2. Without this,
+  // Dict.update's release(Just 9) freed the payload still referenced by the
+  // new entry and Dict.get later read a recycled handle (checksum 17 vs 9).
+  const makeDictPair = (keyPtr, valuePtr) => {
+    const key = storeRecordField(asHandle(keyPtr));
+    const value = storeRecordField(asHandle(valuePtr));
+    const handle = allocHandle({ tag: TAG_TUPLE2, first: key, second: value });
+    addOwner(key, handle);
+    addOwner(value, handle);
+    return handle;
+  };
+
   const dictInsertSorted = (dictPtr, keyPtr, valuePtr) => {
     const entries = [];
     let inserted = false;
+    const key = asHandle(keyPtr);
+    const value = asHandle(valuePtr);
 
     for (const entryPtr of listItems(dictPtr)) {
       const existingKey = dictPairKey(entryPtr);
-      const cmp = compareValues(keyPtr, existingKey);
+      const cmp = compareValues(key, existingKey);
       if (cmp === 0) {
-        entries.push(allocHandle({ tag: TAG_TUPLE2, first: keyPtr, second: valuePtr }));
+        entries.push(makeDictPair(key, value));
         inserted = true;
       } else if (!inserted && cmp < 0) {
-        entries.push(allocHandle({ tag: TAG_TUPLE2, first: keyPtr, second: valuePtr }));
-        entries.push(entryPtr);
+        entries.push(makeDictPair(key, value));
+        entries.push(cloneForList(entryPtr));
         inserted = true;
       } else {
-        entries.push(entryPtr);
+        entries.push(cloneForList(entryPtr));
       }
     }
 
     if (!inserted) {
-      entries.push(allocHandle({ tag: TAG_TUPLE2, first: keyPtr, second: valuePtr }));
+      entries.push(makeDictPair(key, value));
     }
 
     return newList(entries);
@@ -4345,45 +4457,37 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
 
   const dictToList = (outPtr, dictPtr) => writeOut(outPtr, dictPtr);
 
-  const dictMapEntries = (dictPtr, mapper) => {
-    const entries = listItems(dictPtr).map((entryPtr) => {
+  const dictMap = (outPtr, closurePtr, dictPtr) => {
+    const entries = [];
+    for (const entryPtr of listItems(dictPtr)) {
       const key = dictPairKey(entryPtr);
       const value = dictPairValue(entryPtr);
-      const mapped = mapper(key, value);
-      return allocHandle({ tag: TAG_TUPLE2, first: key, second: mapped });
-    });
-    return newList(entries);
-  };
-
-  const dictMap = (outPtr, closurePtr, dictPtr) => {
-    const mapped = dictMapEntries(dictPtr, (key, value) => {
       const args = [asHandle(key), asHandle(value)];
       const { rc, value: out } = invokeClosure(closurePtr, args);
       release(args[0]);
       release(args[1]);
-      if (rc !== RC_SUCCESS) return value;
-      const handle = asHandle(out);
+      if (rc !== RC_SUCCESS) return rc;
+      entries.push(makeDictPair(key, out));
       release(out);
-      return handle;
-    });
-    writeOut(outPtr, mapped);
-    return RC_SUCCESS;
+    }
+    return writeList(outPtr, entries);
   };
 
   const dictFold = (closurePtr, accPtr, dictPtr, rightToLeft) => {
     const entries = dictEntries(dictPtr);
     const order = rightToLeft ? [...entries].reverse() : entries;
-    let acc = accPtr;
+    // Match listFoldl: borrow key/value, own only the accumulator chain.
+    // Releasing asHandle(key/value/acc) freed live dict entries / the result.
+    let acc = asHandle(accPtr);
     for (const [key, value] of order) {
-      const args = [asHandle(key), asHandle(value), asHandle(acc)];
-      const { rc, value: out } = invokeClosure(closurePtr, args);
-      release(args[0]);
-      release(args[1]);
-      release(args[2]);
+      const { rc, value: out } = invokeClosure(closurePtr, [
+        asHandle(key),
+        asHandle(value),
+        acc,
+      ]);
       if (rc !== RC_SUCCESS) return { rc, acc };
-      release(acc);
-      acc = asHandle(out);
-      release(out);
+      if (acc && acc !== out) release(acc);
+      acc = out;
     }
     return { rc: RC_SUCCESS, acc };
   };
@@ -4474,7 +4578,7 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
   };
 
   const dictMerge = (outPtr, leftFnPtr, bothFnPtr, rightFnPtr, leftPtr, rightPtr, resultPtr) => {
-    let acc = resultPtr;
+    let acc = asHandle(resultPtr);
     const left = [...listItems(leftPtr)];
     const right = [...listItems(rightPtr)];
     let li = 0;
@@ -4484,57 +4588,62 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
       const lKey = dictPairKey(left[li]);
       const rKey = dictPairKey(right[ri]);
       const cmp = compareValues(lKey, rKey);
-      let args;
-      let { rc, value } = { rc: RC_SUCCESS, value: acc };
+      let rc;
+      let value;
 
       if (cmp < 0) {
-        args = [asHandle(lKey), asHandle(dictPairValue(left[li])), asHandle(acc)];
-        ({ rc, value } = invokeClosure(leftFnPtr, args));
+        ({ rc, value } = invokeClosure(leftFnPtr, [
+          asHandle(lKey),
+          asHandle(dictPairValue(left[li])),
+          acc,
+        ]));
         li += 1;
       } else if (cmp > 0) {
-        args = [asHandle(rKey), asHandle(dictPairValue(right[ri])), asHandle(acc)];
-        ({ rc, value } = invokeClosure(rightFnPtr, args));
+        ({ rc, value } = invokeClosure(rightFnPtr, [
+          asHandle(rKey),
+          asHandle(dictPairValue(right[ri])),
+          acc,
+        ]));
         ri += 1;
       } else {
-        args = [
+        ({ rc, value } = invokeClosure(bothFnPtr, [
           asHandle(lKey),
           asHandle(dictPairValue(left[li])),
           asHandle(dictPairValue(right[ri])),
-          asHandle(acc),
-        ];
-        ({ rc, value } = invokeClosure(bothFnPtr, args));
+          acc,
+        ]));
         li += 1;
         ri += 1;
       }
 
-      for (const arg of args) release(arg);
       if (rc !== RC_SUCCESS) return rc;
-      release(acc);
-      acc = asHandle(value);
-      release(value);
+      if (acc && acc !== value) release(acc);
+      acc = value;
     }
 
     while (li < left.length) {
       const lKey = dictPairKey(left[li]);
-      const args = [asHandle(lKey), asHandle(dictPairValue(left[li])), asHandle(acc)];
-      const result = invokeClosure(leftFnPtr, args);
-      for (const arg of args) release(arg);
-      if (result.rc !== RC_SUCCESS) return result.rc;
-      release(acc);
-      acc = asHandle(result.value);
-      release(result.value);
+      const { rc, value } = invokeClosure(leftFnPtr, [
+        asHandle(lKey),
+        asHandle(dictPairValue(left[li])),
+        acc,
+      ]);
+      if (rc !== RC_SUCCESS) return rc;
+      if (acc && acc !== value) release(acc);
+      acc = value;
       li += 1;
     }
 
     while (ri < right.length) {
       const rKey = dictPairKey(right[ri]);
-      const args = [asHandle(rKey), asHandle(dictPairValue(right[ri])), asHandle(acc)];
-      const result = invokeClosure(rightFnPtr, args);
-      for (const arg of args) release(arg);
-      if (result.rc !== RC_SUCCESS) return result.rc;
-      release(acc);
-      acc = asHandle(result.value);
-      release(result.value);
+      const { rc, value } = invokeClosure(rightFnPtr, [
+        asHandle(rKey),
+        asHandle(dictPairValue(right[ri])),
+        acc,
+      ]);
+      if (rc !== RC_SUCCESS) return rc;
+      if (acc && acc !== value) release(acc);
+      acc = value;
       ri += 1;
     }
 
@@ -4543,54 +4652,42 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
   };
 
   const dictSingleton = (outPtr, keyPtr, valuePtr) => {
-    writeOut(
-      outPtr,
-      newList([allocHandle({ tag: TAG_TUPLE2, first: keyPtr, second: valuePtr })])
-    );
+    writeOut(outPtr, newList([makeDictPair(keyPtr, valuePtr)]));
     return RC_SUCCESS;
   };
 
+  // Match C elmc_dict_update: get old as Maybe, call f, insert or remove, then
+  // release the temporary Maybe. makeDictPair retains the Just payload so
+  // release(newMaybe) does not free the value still stored in the dict.
   const dictUpdate = (outPtr, keyPtr, closurePtr, dictPtr) => {
+    let maybePtr = 0;
     let found = false;
-    const updated = [];
-
     for (const entryPtr of listItems(dictPtr)) {
-      const key = dictPairKey(entryPtr);
-      const value = dictPairValue(entryPtr);
-      if (!valuesEqual(key, keyPtr)) {
-        updated.push(entryPtr);
-        continue;
+      if (valuesEqual(dictPairKey(entryPtr), keyPtr)) {
+        found = true;
+        const value = dictPairValue(entryPtr);
+        maybePtr = allocHandle({ tag: TAG_MAYBE, value, isJust: true, ctorTag: 1 });
+        if (value) addOwner(value, maybePtr);
+        break;
       }
-
-      found = true;
-      const maybePtr = allocHandle({ tag: TAG_MAYBE, value });
-      const { rc, value: out } = invokeClosure(closurePtr, [maybePtr]);
-      release(maybePtr);
-      if (rc !== RC_SUCCESS) return rc;
-      const maybeOut = readHandle(out);
-      if (maybeOut?.tag === TAG_MAYBE && maybeOut.value != null) {
-        updated.push(allocHandle({ tag: TAG_TUPLE2, first: key, second: maybeOut.value }));
-      }
-      release(out);
     }
-
     if (!found) {
-      const nothingPtr = allocHandle({ tag: TAG_MAYBE, value: null });
-      const { rc, value: out } = invokeClosure(closurePtr, [nothingPtr]);
-      release(nothingPtr);
-      if (rc !== RC_SUCCESS) return rc;
-      const maybeOut = readHandle(out);
-      if (maybeOut?.tag === TAG_MAYBE && maybeOut.value != null) {
-        let dict = newList(updated);
-        const next = dictInsertSorted(dict, keyPtr, maybeOut.value);
-        release(dict);
-        release(out);
-        return writeOut(outPtr, next);
-      }
-      release(out);
+      maybePtr = allocHandle({ tag: TAG_MAYBE, value: null });
     }
 
-    return writeList(outPtr, updated);
+    const { rc, value: newMaybe } = invokeClosure(closurePtr, [maybePtr]);
+    release(maybePtr);
+    if (rc !== RC_SUCCESS) return rc;
+
+    const maybeOut = readHandle(newMaybe);
+    let updateRc;
+    if (maybeOut?.tag === TAG_MAYBE && maybeOut.value != null) {
+      updateRc = dictInsert(outPtr, keyPtr, maybeOut.value, dictPtr);
+    } else {
+      updateRc = dictRemove(outPtr, keyPtr, dictPtr);
+    }
+    release(newMaybe);
+    return updateRc;
   };
 
   const setInsertSorted = (setPtr, valuePtr) => {
@@ -4680,16 +4777,13 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
   };
   const setFold = (closurePtr, accPtr, setPtr, rightToLeft) => {
     const items = rightToLeft ? [...listItems(setPtr)].reverse() : listItems(setPtr);
-    let acc = accPtr;
+    // Match listFoldl: do not release borrowed elements or double-release acc.
+    let acc = asHandle(accPtr);
     for (const item of items) {
-      const args = [asHandle(item), asHandle(acc)];
-      const { rc, value } = invokeClosure(closurePtr, args);
-      release(args[0]);
-      release(args[1]);
+      const { rc, value } = invokeClosure(closurePtr, [asHandle(item), acc]);
       if (rc !== RC_SUCCESS) return { rc, acc };
-      release(acc);
-      acc = asHandle(value);
-      release(value);
+      if (acc && acc !== value) release(acc);
+      acc = value;
     }
     return { rc: RC_SUCCESS, acc };
   };
@@ -5065,9 +5159,22 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
     return writeList(outPtr, kept);
   };
 
-  const unboxInt = (handle) => intValue(handle);
+  const unboxInt = (handle) => {
+    if (!handle) return 0;
+    const payload = readHandle(handle);
+    if (payload?.tag === TAG_FLOAT) return payload.value | 0;
+    return intValue(handle);
+  };
 
   const checkBalanced = () => {
+    for (const cached of valueCache.values()) {
+      immortalizeHandleTree(cached);
+    }
+
+    // Module-level memo slots and their subgraphs are expected to survive a
+    // one-shot probe / boot; drop any other ephemeral handles first.
+    resetEphemeralHandles([...valueCache.values()]);
+
     if (retainCount !== 0) {
       return false;
     }
@@ -5766,6 +5873,7 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
     maybe_just_payload: maybeJustPayload,
     maybe_is_nothing: maybeIsNothing,
     maybe_with_default: maybeWithDefault,
+    maybe_with_default_int: maybeWithDefaultInt,
     maybe_map: maybeMap,
     maybe_map2: maybeMap2,
     maybe_and_then: maybeAndThen,
@@ -6116,8 +6224,8 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
         const { rc, value } = invokeClosure(closurePtr, [arg]);
         release(arg);
         if (rc !== RC_SUCCESS) return rc;
-        if (intValue(value) !== 0) yes.push(item);
-        else no.push(item);
+        if (asBoolForWasm(value) !== 0) yes.push(cloneForList(item));
+        else no.push(cloneForList(item));
         release(value);
       }
 
@@ -6131,8 +6239,8 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
 
       for (const item of listItems(listPtr)) {
         const [a, b] = tuplePairItems(item);
-        left.push(a);
-        right.push(b);
+        left.push(cloneForList(a));
+        right.push(cloneForList(b));
       }
 
       return tuple2(outPtr, newList(left), newList(right));

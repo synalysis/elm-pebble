@@ -1,5 +1,7 @@
 defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Expr do
   @moduledoc false
+  alias Elmc.Backend.CCodegen.Types, as: Types
+
 
   alias Elmc.Backend.CCodegen.ConstructorTagCase
   alias Elmc.Backend.CCodegen.DirectRender.CommandDef
@@ -404,12 +406,16 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Expr do
 
   def emit_expr(_expr, _env, _counter), do: :error
 
+  @spec let_bound_closure_call?(Types.compile_env(), String.t()) :: boolean()
+
   defp let_bound_closure_call?(env, name) do
     case Map.get(env, Host.binding_key(name)) do
       closure_var when is_binary(closure_var) -> true
       _ -> false
     end
   end
+
+  @spec emit_closure_command_call(String.t(), [String.t()], Types.compile_env(), Types.ir_expr()) :: Types.ir_expr()
 
   defp emit_closure_command_call(name, args, env, counter) do
     closure_var = Map.fetch!(env, Host.binding_key(name))
@@ -437,6 +443,8 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Expr do
        #{releases}
      """, next}
   end
+
+  @spec emit_direct_command_native_int_let(String.t(), Types.expr(), Types.expr(), Types.compile_env(), Types.ir_expr()) :: Types.ir_expr()
 
   defp emit_direct_command_native_int_let(name, value_expr, in_expr, env, counter)
        when is_binary(name) or is_atom(name) do
@@ -489,6 +497,8 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Expr do
   defp emit_direct_command_native_int_let(_name, _value_expr, _in_expr, _env, _counter),
     do: :error
 
+  @spec direct_command_native_int_ref?(String.t()) :: boolean()
+
   defp direct_command_native_int_ref?(ref) when is_binary(ref) do
     ref != "" and not String.starts_with?(ref, "tmp_")
   end
@@ -511,6 +521,8 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Expr do
 
   defp native_int_let?(_name, _value_expr, _in_expr, _env), do: false
 
+  @spec native_int_let_value?(Types.expr(), Types.compile_env()) :: boolean()
+
   defp native_int_let_value?(value_expr, env) do
     case TypedReturn.expr_type(value_expr, env) do
       nil -> Host.native_int_expr?(value_expr, env)
@@ -518,6 +530,8 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Expr do
       _ -> false
     end
   end
+
+  @spec native_string_let?(String.t(), Types.expr(), Types.expr(), Types.compile_env()) :: boolean()
 
   defp native_string_let?(name, value_expr, in_expr, env)
        when is_binary(name) or is_atom(name) do
@@ -529,6 +543,8 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Expr do
 
   defp native_string_let?(_name, _value_expr, _in_expr, _env), do: false
 
+  @spec native_float_let?(String.t(), Types.expr(), Types.expr(), Types.compile_env()) :: boolean()
+
   defp native_float_let?(name, value_expr, in_expr, env)
        when is_binary(name) or is_atom(name) do
     usage = native_float_usage(name, in_expr, env)
@@ -539,12 +555,16 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Expr do
 
   defp native_float_let?(_name, _value_expr, _in_expr, _env), do: false
 
+  @spec pebble_angle_let_binding?(String.t(), Types.expr(), Types.expr(), Types.compile_env()) :: boolean()
+
   defp pebble_angle_let_binding?(name, value_expr, in_expr, _env)
        when is_binary(name) or is_atom(name) do
     Host.pebble_angle_let?(name, value_expr, in_expr)
   end
 
   defp pebble_angle_let_binding?(_name, _value_expr, _in_expr, _env), do: false
+
+  @spec native_float_usage(String.t(), Types.expr(), Types.compile_env()) :: Types.ir_expr()
 
   defp native_float_usage(name, expr, env) do
     name
@@ -558,6 +578,8 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Expr do
     end)
   end
 
+  @spec native_string_usage(String.t(), Types.expr(), Types.compile_env()) :: Types.ir_expr()
+
   defp native_string_usage(name, expr, env) do
     name
     |> collect_direct_var_contexts(expr, :boxed, env)
@@ -570,6 +592,8 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Expr do
     end)
   end
 
+  @spec native_int_usage(String.t(), Types.expr(), Types.compile_env()) :: Types.ir_expr()
+
   defp native_int_usage(name, expr, env) do
     name
     |> collect_direct_var_contexts(expr, :boxed, env)
@@ -580,6 +604,8 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Expr do
       }
     end)
   end
+
+  @spec collect_direct_var_contexts(String.t(), map() | list() | Types.expr(), String.t(), Types.compile_env()) :: Types.ir_expr()
 
   defp collect_direct_var_contexts(name, %{op: :var, name: var_name}, context, _env) do
     if EnvBindings.same_binding?(name, var_name), do: [context], else: []
@@ -839,6 +865,8 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Expr do
 
   defp collect_direct_var_contexts(_name, _expr, _context, _env), do: []
 
+  @spec record_literal_field_expr(map() | Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+
   defp record_literal_field_expr(%{op: :record_literal, fields: fields}, field)
        when is_list(fields) and is_binary(field) do
     case Enum.find(fields, &(&1.name == field)) do
@@ -849,11 +877,15 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Expr do
 
   defp record_literal_field_expr(_arg, _field), do: :error
 
+  @spec collect_direct_var_contexts_from_map(String.t(), Types.expr(), String.t(), Types.compile_env()) :: Types.ir_expr()
+
   defp collect_direct_var_contexts_from_map(name, expr, context, env) do
     expr
     |> Map.values()
     |> Enum.flat_map(&collect_direct_var_contexts(name, &1, context, env))
   end
+
+  @spec collect_direct_command_arg_contexts(String.t(), String.t(), [String.t()], Types.compile_env()) :: Types.ir_expr()
 
   defp collect_direct_command_arg_contexts(name, target_key, args, env) do
     decl = env |> Map.get(:__program_decls__, %{}) |> Map.get(target_key)
@@ -863,6 +895,8 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Expr do
 
     collect_direct_function_arg_contexts(name, args, arg_kinds, env)
   end
+
+  @spec collect_direct_function_arg_contexts(String.t(), [String.t()], Types.ir_expr(), Types.compile_env()) :: Types.ir_expr()
 
   defp collect_direct_function_arg_contexts(name, args, arg_kinds, env) do
     args
@@ -878,6 +912,8 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Expr do
       collect_direct_var_contexts(name, arg, context, env)
     end)
   end
+
+  @spec fragment_expr_target?(String.t()) :: boolean()
 
   defp fragment_expr_target?(target) do
     target in [
@@ -945,13 +981,19 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Expr do
 
   defp fragment_expr?(_, _env), do: false
 
+  @spec inline_render_expr?(Types.expr(), Types.compile_env()) :: boolean()
+
   defp inline_render_expr?(expr, env), do: render_list_expr?(expr, env)
+
+  @spec pattern_bind_let_name?(String.t()) :: boolean()
 
   defp pattern_bind_let_name?(name) when is_binary(name) do
     String.starts_with?(name, "__patternBind_") or String.starts_with?(name, "__tupleBind_")
   end
 
   defp pattern_bind_let_name?(_name), do: false
+
+  @spec qualified_direct_fragment?(String.t(), Types.compile_env()) :: boolean()
 
   defp qualified_direct_fragment?(target, env) do
     targets = Map.get(env, :__direct_targets__, MapSet.new())
@@ -964,6 +1006,8 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Expr do
       target_key -> MapSet.member?(targets, target_key)
     end
   end
+
+  @spec render_list_expr?(Types.expr(), Types.compile_env()) :: boolean()
 
   defp render_list_expr?(expr, env) do
     module_name = Map.get(env, :__module__, "Main")
@@ -1002,6 +1046,8 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Expr do
         ListLoopPlans.pipeline_fragment?(expr, env) or false
     end
   end
+
+  @spec emit_platform_static_and_if(Types.ir_expr(), non_neg_integer(), integer(), Types.expr(), Types.expr(), Types.compile_env(), Types.ir_expr()) :: Types.ir_expr()
 
   defp emit_platform_static_and_if(macro, polarity, inner_then, then_expr, else_expr, env, counter) do
     hoisted_before = Process.get(:elmc_hoisted_native_int_inits, %{})
@@ -1043,6 +1089,8 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Expr do
     end
   end
 
+  @spec emit_platform_static_expr(Types.ir_expr(), non_neg_integer(), Types.expr(), Types.expr(), Types.compile_env(), Types.ir_expr()) :: Types.ir_expr()
+
   defp emit_platform_static_expr(macro, polarity, then_expr, else_expr, env, counter) do
     hoisted_before = Process.get(:elmc_hoisted_native_int_inits, %{})
 
@@ -1062,6 +1110,8 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Expr do
       _ -> :error
     end
   end
+
+  @spec emit_runtime_if_expr(Types.expr(), Types.expr(), Types.expr(), Types.compile_env(), Types.ir_expr()) :: Types.ir_expr()
 
   defp emit_runtime_if_expr(cond_expr, then_expr, else_expr, env, counter) do
     {cond_code, cond_ref, cond_release, counter} =
@@ -1091,6 +1141,8 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Expr do
     end
   end
 
+  @spec emit_polar_point_let(String.t(), Types.expr(), Types.expr(), Types.compile_env(), Types.ir_expr()) :: Types.ir_expr()
+
   defp emit_polar_point_let(name, value_expr, in_expr, env, counter) do
     case PolarPoint.compile_polar_native_record(value_expr, env, counter) do
       {:ok, value_code, fields, counter} ->
@@ -1116,6 +1168,8 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Expr do
         :error
     end
   end
+
+  @spec emit_xy_draw_center_let(String.t(), Types.expr(), Types.expr(), Types.compile_env(), Types.ir_expr()) :: Types.ir_expr()
 
   defp emit_xy_draw_center_let(name, value_expr, in_expr, env, counter) do
     case PolarPoint.compile_xy_draw_center_native_record(value_expr, env, counter) do

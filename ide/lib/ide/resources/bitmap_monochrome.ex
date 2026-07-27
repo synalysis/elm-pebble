@@ -43,11 +43,15 @@ defmodule Ide.Resources.BitmapMonochrome do
     |> Enum.find(&executable_file?/1)
   end
 
+  @spec executable_file?(String.t() | term()) :: boolean()
+
   defp executable_file?(path) when is_binary(path) and path != "" do
     File.regular?(path) and File.exists?(path)
   end
 
   defp executable_file?(_), do: false
+
+  @spec convert_with_bin(integer(), String.t(), String.t()) :: term()
 
   defp convert_with_bin(bin, input_path, output_path) do
     input_path = Path.expand(input_path)

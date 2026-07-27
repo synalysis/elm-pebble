@@ -345,7 +345,6 @@ defmodule ElmEx.Frontend.Pretty.Expr do
 
   defp compact_single_let?(_, _), do: false
 
-  @spec format_single_binding_inline(map(), opts()) :: Doc.t()
   defp format_single_binding_inline(%{kind: :name, name: name, value: value}, opts) do
     Doc.concat([Doc.text(name), Doc.text(" = "), format(value, opts)])
   end
@@ -354,7 +353,6 @@ defmodule ElmEx.Frontend.Pretty.Expr do
     Doc.concat([Doc.text("_ = "), format(value, opts)])
   end
 
-  @spec format_plain_lambda(map(), opts()) :: Doc.t()
   defp format_plain_lambda(%{args: args, body: body}, opts) do
     header =
       Doc.text("\\" <> Enum.join(Enum.map(args, &format_lambda_arg/1), " ") <> " ->")
@@ -398,7 +396,6 @@ defmodule ElmEx.Frontend.Pretty.Expr do
     )
   end
 
-  @spec format_binding_entry(map(), opts()) :: Doc.t()
   defp format_binding_entry(%{kind: :name, name: name, value: value}, opts),
     do: format_binding({:name, name, value}, opts)
 
@@ -413,7 +410,6 @@ defmodule ElmEx.Frontend.Pretty.Expr do
   defp format_binding_entry(%{kind: :pattern, pattern: pattern, value: value}, opts),
     do: format_binding({:pattern, pattern, value}, opts)
 
-  @spec collected_binding_entry(binding()) :: map()
   defp collected_binding_entry({:name, name, value}), do: %{kind: :name, name: name, value: value}
 
   defp collected_binding_entry({:tuple, names, value}) when length(names) == 2 do
@@ -427,7 +423,6 @@ defmodule ElmEx.Frontend.Pretty.Expr do
   defp collected_binding_entry({:pattern, pattern, value}),
     do: %{kind: :pattern, pattern: pattern, value: value}
 
-  @spec format_binding(binding() | {atom(), term()}, opts()) :: Doc.t()
   defp format_binding({:tuple, names, value}, opts) do
     Doc.concat([
       Doc.concat([Doc.parens(Doc.text(Enum.join(names, ", "))), Doc.text(" =")]),
@@ -733,7 +728,6 @@ defmodule ElmEx.Frontend.Pretty.Expr do
     ])
   end
 
-  @spec format_branch(map(), opts()) :: Doc.t()
   defp format_branch(%{pattern: pattern, expr: expr}, opts) do
     pattern_doc = Pattern.format(pattern)
     expr_doc = format(expr, opts)
@@ -784,12 +778,10 @@ defmodule ElmEx.Frontend.Pretty.Expr do
     )
   end
 
-  @spec format_inline_record_field(map(), opts()) :: Doc.t()
   defp format_inline_record_field(%{name: name, expr: expr}, opts) do
     Doc.concat([Doc.text(name), Doc.text(" = "), format(expr, opts)])
   end
 
-  @spec format_record_field(map(), opts()) :: Doc.t()
   defp format_record_field(%{name: name, expr: expr}, opts) do
     Doc.concat([
       Doc.text(name),

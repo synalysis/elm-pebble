@@ -39,7 +39,15 @@ defmodule Elmc.Backend.Bytecode.FnTable do
   defp collect_blocks(blocks) do
     blocks
     |> Enum.flat_map(&block_instrs/1)
-    |> Enum.filter(&(&1.op == :call_fn))
-    |> Enum.map(fn %{args: %{module: mod, name: name}} -> {mod, name} end)
+    |> Enum.flat_map(fn
+      %{op: :call_fn, args: %{module: mod, name: name}} ->
+        [{mod, name}]
+
+      %{op: :pipe_apply_repeat, args: %{module: mod, name: name}} ->
+        [{mod, name}]
+
+      _ ->
+        []
+    end)
   end
 end

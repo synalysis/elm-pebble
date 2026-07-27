@@ -1,5 +1,7 @@
 defmodule Elmc.Backend.CCodegen.RecordCompile do
   @moduledoc false
+  alias Elmc.Backend.CCodegen.Types, as: Types
+
 
   alias Elmc.Backend.CCodegen.BuiltinUnion
   alias Elmc.Backend.CCodegen.DebugProbes
@@ -117,6 +119,8 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
     compile(%{op: :field_access, arg: arg, field: field}, env, counter)
   end
 
+  @spec compile_field_access(map(), Types.compile_env(), Types.ir_expr()) :: Types.ir_expr()
+
   defp compile_field_access(%{op: :field_access, arg: arg, field: field}, env, counter)
        when is_binary(arg) do
     compile_field_access_var(arg, field, env, counter)
@@ -229,6 +233,8 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
     end
   end
 
+  @spec compile_inline_boxed_literal(Types.ir_expr(), non_neg_integer(), Types.compile_env(), Types.ir_expr()) :: Types.ir_expr()
+
   defp compile_inline_boxed_literal(ordered_fields, field_count, env, counter) do
     env = native_boxed_rc_env(env)
 
@@ -289,6 +295,8 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
     {code, out, counter2}
   end
 
+  @spec record_values_array(Types.ir_expr()) :: Types.ir_expr()
+
   defp record_values_array(field_refs) do
     field_refs
     |> Enum.with_index()
@@ -304,12 +312,16 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
     end)
   end
 
+  @spec put_literal_record_meta(Types.ir_expr(), Types.ir_expr(), Types.compile_env()) :: Types.ir_expr()
+
   defp put_literal_record_meta(var, ordered_fields, env) do
     names = Enum.map(ordered_fields, & &1.name)
     type = Expr.record_type_for_field_names(names, env)
     shape = if is_binary(type), do: Expr.record_shape_for_type(type, env), else: names
     Expr.put_subexpr_record_meta(var, %{type: type, shape: shape})
   end
+
+  @spec unique_field_refs(Types.ir_expr()) :: Types.ir_expr()
 
   defp unique_field_refs(field_refs) do
     field_refs
@@ -320,16 +332,22 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
     end)
   end
 
+  @spec remap_literal_fields(Types.ir_expr(), String.t()) :: Types.ir_expr()
+
   defp remap_literal_fields(ordered_fields, canonical_names) do
     fields = Enum.map(canonical_names, fn name -> Enum.find(ordered_fields, &(&1.name == name)) end)
 
     if Enum.all?(fields, &is_map/1), do: {:ok, fields}, else: :error
   end
 
+  @spec native_int_record_literal?(list(), Types.compile_env()) :: boolean()
+
   defp native_int_record_literal?(ordered_fields, env) when is_list(ordered_fields) do
     Enum.all?(ordered_fields, &Host.native_int_expr?(&1.expr, env)) and
       native_int_record_field_types?(ordered_fields, env)
   end
+
+  @spec native_int_record_field_types?(list(), Types.compile_env()) :: boolean()
 
   defp native_int_record_field_types?(ordered_fields, env) when is_list(ordered_fields) do
     names = Enum.map(ordered_fields, & &1.name)
@@ -349,6 +367,8 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
     end
   end
 
+  @spec record_field_types_for_type(String.t(), Types.compile_env()) :: Types.ir_expr()
+
   defp record_field_types_for_type(type, env) when is_binary(type) do
     module = Map.get(env, :__module__, "Main")
     type_name = Host.normalize_type_name(type)
@@ -360,6 +380,8 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
     Map.get(types_map, {module, type_name}) ||
       Map.get(types_map, {module, type})
   end
+
+  @spec canonicalize_literal_fields(list(), Types.compile_env()) :: Types.ir_expr()
 
   defp canonicalize_literal_fields(ordered_fields, env) when is_list(ordered_fields) do
     names = Enum.map(ordered_fields, & &1.name)
@@ -381,6 +403,8 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
         end
     end
   end
+
+  @spec maybe_extract_boxed_record_literal_helper(Types.ir_expr(), non_neg_integer(), Types.compile_env(), Types.ir_expr()) :: Types.ir_expr() | nil
 
   defp maybe_extract_boxed_record_literal_helper(
          ordered_fields,
@@ -508,9 +532,13 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
     end
   end
 
+  @spec extract_boxed_record_literal_helper?(non_neg_integer()) :: boolean()
+
   defp extract_boxed_record_literal_helper?(field_count) do
     field_count >= 12 and Process.get(:elmc_generic_helper_defs) != nil
   end
+
+  @spec record_literal_helper_params(Types.ir_expr(), Types.compile_env()) :: Types.ir_expr()
 
   defp record_literal_helper_params(ordered_fields, env) do
     params =
@@ -535,6 +563,8 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
     end
   end
 
+  @spec resolve_record_helper_param(Types.compile_env(), Types.ir_expr()) :: Types.ir_expr()
+
   defp resolve_record_helper_param(env, var) do
     cond do
       is_binary(c_ref = Map.get(env, var)) and c_identifier?(c_ref) ->
@@ -553,6 +583,8 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
         :error
     end
   end
+
+  @spec record_update_result_slot(Types.compile_env(), Types.ir_expr(), boolean()) :: Types.ir_expr()
 
   defp record_update_result_slot(env, counter, last_field?) do
     if last_field? and RcRuntimeEmit.function_tail_compile?(env) and
@@ -778,6 +810,8 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
     end
   end
 
+  @spec retain_in_place_cow_result(Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.compile_env(), Types.ir_expr(), Types.ir_expr() | boolean()) :: Types.ir_expr()
+
   defp retain_in_place_cow_result(code, base_var, result_var, env, counter, true)
        when is_binary(code) and is_binary(base_var) and is_binary(result_var) do
     if in_place_cow_record_base?(env, base_var) do
@@ -800,9 +834,13 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
     {code, result_var, counter}
   end
 
+  @spec in_place_cow_record_base?(Types.compile_env(), Types.ir_expr()) :: boolean()
+
   defp in_place_cow_record_base?(env, base_var) do
     EnvBindings.borrowed_arg_ref?(env, base_var) or EnvBindings.direct_param_ref?(env, base_var)
   end
+
+  @spec base_owned_copy_release?(Types.compile_env(), Types.ir_expr(), Types.ir_expr()) :: boolean()
 
   defp base_owned_copy_release?(env, base_var, current_var)
        when is_binary(base_var) and is_binary(current_var) do
@@ -812,10 +850,14 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
 
   defp base_owned_copy_release?(_env, _base_var, _current_var), do: false
 
+  @spec base_fresh_owned?(Types.ir_expr(), Types.ir_expr(), boolean(), Types.compile_env()) :: boolean()
+
   defp base_fresh_owned?(base, base_var, base_passthrough?, env) do
     ValueSlots.owned_ref?(base_var) and not base_passthrough? and
       not EnvBindings.borrowed_arg_ref?(env, base_var) and base_fresh_expr?(base, env)
   end
+
+  @spec base_fresh_expr?(map() | Types.ir_expr(), Types.compile_env()) :: boolean()
 
   defp base_fresh_expr?(%{op: :call, args: args}, _env) when args in [[], nil], do: true
 
@@ -828,6 +870,8 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
 
   defp base_fresh_expr?(_base, _env), do: false
 
+  @spec record_update_multi_use_names(list()) :: Types.ir_expr()
+
   defp record_update_multi_use_names(fields) when is_list(fields) do
     fields
     |> Enum.flat_map(fn field -> VarAnalysis.used_vars(field.expr) end)
@@ -839,6 +883,8 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
     |> MapSet.new()
   end
 
+  @spec defer_record_update_field_release?(map() | Types.expr(), Types.ir_expr(), String.t()) :: boolean()
+
   defp defer_record_update_field_release?(
          %{op: :var, name: name},
          field_var,
@@ -849,6 +895,8 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
   end
 
   defp defer_record_update_field_release?(_expr, _field_var, _multi_use_names), do: false
+
+  @spec maybe_extract_chained_update_helper(Types.ir_expr(), list(), Types.compile_env(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr() | nil
 
   defp maybe_extract_chained_update_helper(base, fields, env, update_code, result_var, counter) do
     cond do
@@ -898,9 +946,13 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
     end
   end
 
+  @spec extract_chained_update_helper?(non_neg_integer(), Types.ir_expr()) :: boolean()
+
   defp extract_chained_update_helper?(field_count, _code) do
     Process.get(:elmc_generic_helper_defs) != nil and field_count >= 5
   end
+
+  @spec chained_update_helper_params(Types.ir_expr(), list(), Types.compile_env()) :: Types.ir_expr()
 
   defp chained_update_helper_params(base, fields, env) do
     vars =
@@ -927,8 +979,12 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
     end
   end
 
+  @spec c_identifier?(String.t()) :: boolean()
+
   defp c_identifier?(value) when is_binary(value),
     do: Regex.match?(~r/^[A-Za-z_][A-Za-z0-9_]*$/, value)
+
+  @spec compile_update_operand(map() | Types.expr(), Types.compile_env(), Types.ir_expr()) :: Types.ir_expr()
 
   defp compile_update_operand(%{op: :var, name: name}, env, counter) do
     operand_env = Map.put(env, :__transfer_operand__, true)
@@ -972,12 +1028,16 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
     {code, ref, counter, false}
   end
 
+  @spec live_in_let_body?(Types.compile_env(), String.t()) :: boolean()
+
   defp live_in_let_body?(env, name) do
     MapSet.member?(
       Map.get(env, :__let_body_live_vars__, MapSet.new()),
       EnvBindings.binding_key(name)
     )
   end
+
+  @spec compile_record_field_update_operand(Types.ir_expr(), Types.compile_env(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
 
   defp compile_record_field_update_operand(field, env, counter, record_shape, record_type) do
     expr = field.expr
@@ -1009,12 +1069,16 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
     end
   end
 
+  @spec record_field_is_int?(String.t(), Types.ir_expr(), Types.ir_expr(), Types.compile_env()) :: boolean()
+
   defp record_field_is_int?(field_name, _record_shape, record_type, env)
        when is_binary(field_name) and is_binary(record_type) do
     record_field_is_scalar?(field_name, record_type, env, "Int")
   end
 
   defp record_field_is_int?(_field_name, _record_shape, _record_type, _env), do: false
+
+  @spec record_field_is_bool?(String.t(), Types.ir_expr(), Types.ir_expr(), Types.compile_env()) :: boolean()
 
   defp record_field_is_bool?(field_name, _record_shape, record_type, env)
        when is_binary(field_name) and is_binary(record_type) do
@@ -1023,12 +1087,16 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
 
   defp record_field_is_bool?(_field_name, _record_shape, _record_type, _env), do: false
 
+  @spec record_field_is_float?(String.t(), Types.ir_expr(), Types.ir_expr(), Types.compile_env()) :: boolean()
+
   defp record_field_is_float?(field_name, _record_shape, record_type, env)
        when is_binary(field_name) and is_binary(record_type) do
     record_field_is_scalar?(field_name, record_type, env, "Float")
   end
 
   defp record_field_is_float?(_field_name, _record_shape, _record_type, _env), do: false
+
+  @spec record_field_is_scalar?(String.t(), Types.ir_expr(), Types.compile_env(), Types.ir_expr()) :: boolean()
 
   defp record_field_is_scalar?(field_name, record_type, env, scalar_type)
        when is_binary(field_name) and is_binary(record_type) and is_binary(scalar_type) do
@@ -1087,12 +1155,16 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
     end
   end
 
+  @spec inline_immortal_record_field_operand(Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+
   defp inline_immortal_record_field_operand(field_code, field_var) do
     case parse_single_immortal_assign(field_code, field_var) do
       {:ok, rhs} -> {"", rhs}
       :error -> {field_code, field_var}
     end
   end
+
+  @spec parse_single_immortal_assign(Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
 
   defp parse_single_immortal_assign(code, field_var)
        when is_binary(code) and is_binary(field_var) do
@@ -1116,9 +1188,13 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
 
   defp parse_single_immortal_assign(_code, _field_var), do: :error
 
+  @spec immortal_inline_rhs?(Types.ir_expr() | term()) :: boolean()
+
   defp immortal_inline_rhs?("elmc_maybe_nothing()"), do: true
   defp immortal_inline_rhs?("elmc_int_zero()"), do: true
   defp immortal_inline_rhs?(_), do: false
+
+  @spec borrowed_projection_operand?(Types.ir_expr(), Types.ir_expr()) :: boolean()
 
   defp borrowed_projection_operand?(var, code)
        when is_binary(var) and is_binary(code) do
@@ -1129,6 +1205,8 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
   end
 
   defp borrowed_projection_operand?(_var, _code), do: false
+
+  @spec update_operand_release(Types.ir_expr(), boolean()) :: Types.ir_expr()
 
   defp update_operand_release(var, passthrough?) do
     cond do
@@ -1142,6 +1220,8 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
         ValueSlots.release_stmt(var) <> "\n"
     end
   end
+
+  @spec zero_arg_function_var?(Types.compile_env(), Types.ir_expr()) :: boolean()
 
   defp zero_arg_function_var?(env, var) do
     module_name = Map.get(env, :__module__, "Main")
@@ -1344,6 +1424,8 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
     {code, var, next}
   end
 
+  @spec mark_borrowed_record_field_ref(Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+
   defp mark_borrowed_record_field_ref(var, getter)
        when is_binary(var) and is_binary(getter) do
     if borrowed_record_field_getter?(getter) do
@@ -1355,6 +1437,8 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
   end
 
   defp mark_borrowed_record_field_ref(_var, _getter), do: :ok
+
+  @spec borrowed_record_field_getter?(Types.ir_expr()) :: boolean()
 
   defp borrowed_record_field_getter?(getter) do
     String.starts_with?(getter, "ELMC_RECORD_GET_INDEX(")
@@ -1430,6 +1514,8 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
     {code, out, next2}
   end
 
+  @spec compile_boxed_field_value_expr(map() | Types.expr(), Types.compile_env(), Types.ir_expr()) :: Types.ir_expr()
+
   defp compile_boxed_field_value_expr(%{op: :char_literal, value: value}, env, counter) do
     {var, next} = CaseCompile.fresh_var(counter, env)
     {RcRuntimeEmit.assign_call(env, var, "elmc_new_char", "#{value}") <> "\n", var, next}
@@ -1444,6 +1530,8 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
         compile_boxed_non_union_field_value(expr, env, counter)
     end
   end
+
+  @spec compile_boxed_non_union_field_value(Types.expr(), Types.compile_env(), Types.ir_expr()) :: Types.ir_expr()
 
   defp compile_boxed_non_union_field_value(expr, env, counter) do
     cond do
@@ -1473,6 +1561,8 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
         Host.compile_expr(expr, env, counter)
     end
   end
+
+  @spec compile_boxed_union_field_value(map() | Types.expr(), Types.compile_env(), Types.ir_expr()) :: Types.ir_expr()
 
   defp compile_boxed_union_field_value(%{op: :int_literal, union_ctor: _} = expr, env, counter) do
     compile_boxed_union_tag_int(expr, env, counter)
@@ -1506,6 +1596,8 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
 
   defp compile_boxed_union_field_value(_expr, _env, _counter), do: :error
 
+  @spec compile_boxed_union_tag_int(Types.expr(), Types.compile_env(), Types.ir_expr()) :: Types.ir_expr()
+
   defp compile_boxed_union_tag_int(expr, env, counter) do
     if BuiltinUnion.maybe_nothing_literal?(expr) do
       {code, var, next} = BuiltinUnion.compile_maybe_nothing(env, counter)
@@ -1514,6 +1606,8 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
       compile_boxed_union_tag_int_ref(expr, env, counter)
     end
   end
+
+  @spec compile_boxed_union_tag_int_ref(Types.expr(), Types.compile_env(), Types.ir_expr()) :: Types.ir_expr()
 
   defp compile_boxed_union_tag_int_ref(expr, env, counter) do
     tag_ref =
@@ -1534,10 +1628,14 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
     end
   end
 
+  @spec union_ctor_tag_ref(map() | term()) :: Types.ir_expr()
+
   defp union_ctor_tag_ref(%{union_ctor: ctor}) when is_binary(ctor),
     do: lookup_ir_constructor_tag_by_name(ctor)
 
   defp union_ctor_tag_ref(_), do: nil
+
+  @spec lookup_ir_constructor_tag_by_name(String.t()) :: Types.ir_expr()
 
   defp lookup_ir_constructor_tag_by_name(name) when is_binary(name) do
     tags = Process.get(:elmc_constructor_tags, %{})
@@ -1563,6 +1661,8 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
         end
     end
   end
+
+  @spec compile_field_exprs(Types.ir_expr(), Types.compile_env(), Types.ir_expr(), integer()) :: Types.ir_expr()
 
   defp compile_field_exprs(ordered_fields, env, counter, compile_fn) do
     env = RcRuntimeEmit.strip_function_tail_scope(env)
@@ -1605,6 +1705,8 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
     {field_code, field_refs, counter, post_release}
   end
 
+  @spec record_subexpr_cache_env(Types.compile_env()) :: Types.ir_expr()
+
   defp record_subexpr_cache_env(env) do
     cache_key = make_ref()
     Process.put({:elmc_subexpr_cache, cache_key}, %{})
@@ -1613,6 +1715,8 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
     |> Map.drop([:__subexpr_cache__, :__subexpr_cache_key__, :__record_subexpr_cache_key__])
     |> Map.put(:__record_subexpr_cache_key__, cache_key)
   end
+
+  @spec field_subexpr_cache_env(Types.compile_env()) :: Types.ir_expr()
 
   defp field_subexpr_cache_env(record_env) do
     cache_key = make_ref()
@@ -1713,6 +1817,8 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
     end
   end
 
+  @spec release_compare_operand_var(Types.ir_expr()) :: Types.ir_expr()
+
   defp release_compare_operand_var(var) do
     cond do
       ValueSlots.owned_ref?(var) -> ValueSlots.release_owned_and_null(var)
@@ -1751,6 +1857,8 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
     end
   end
 
+  @spec mark_shared_subexpr_ref(Types.compile_env(), String.t()) :: Types.ir_expr()
+
   defp mark_shared_subexpr_ref(env, ref) when is_binary(ref) do
     case Map.get(env, :__subexpr_cache_key__) do
       nil ->
@@ -1766,6 +1874,8 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
     end
   end
 
+  @spec sync_record_subexpr_cache(Types.compile_env(), Types.compile_env()) :: Types.ir_expr()
+
   defp sync_record_subexpr_cache(record_env, field_env) do
     field_cache = take_field_subexpr_cache(field_env)
 
@@ -1775,12 +1885,16 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
     |> then(&put_record_subexpr_cache(record_env, &1))
   end
 
+  @spec get_field_subexpr_cache(Types.compile_env()) :: Types.ir_expr()
+
   defp get_field_subexpr_cache(env) do
     case Map.get(env, :__subexpr_cache_key__) do
       nil -> %{}
       key -> Process.get({:elmc_subexpr_cache, key}, %{})
     end
   end
+
+  @spec put_field_subexpr_cache(Types.compile_env(), Types.ir_expr()) :: Types.ir_expr()
 
   defp put_field_subexpr_cache(env, cache) do
     case Map.get(env, :__subexpr_cache_key__) do
@@ -1792,6 +1906,8 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
         env
     end
   end
+
+  @spec take_field_subexpr_cache(Types.compile_env()) :: Types.ir_expr()
 
   defp take_field_subexpr_cache(env) do
     case Map.get(env, :__subexpr_cache_key__) do
@@ -1806,12 +1922,16 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
     end
   end
 
+  @spec get_record_subexpr_cache(Types.compile_env()) :: Types.ir_expr()
+
   defp get_record_subexpr_cache(env) do
     case Map.get(env, :__record_subexpr_cache_key__) do
       nil -> %{}
       key -> Process.get({:elmc_subexpr_cache, key}, %{})
     end
   end
+
+  @spec put_record_subexpr_cache(Types.compile_env(), Types.ir_expr()) :: Types.ir_expr()
 
   defp put_record_subexpr_cache(env, cache) do
     case Map.get(env, :__record_subexpr_cache_key__) do
@@ -1823,6 +1943,8 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
         env
     end
   end
+
+  @spec take_record_subexpr_cache(Types.compile_env()) :: Types.ir_expr()
 
   defp take_record_subexpr_cache(env) do
     case Map.get(env, :__record_subexpr_cache_key__) do
@@ -1836,6 +1958,8 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
     end
   end
 
+  @spec lookup_subexpr_cache(Types.compile_env(), String.t()) :: Types.ir_expr()
+
   defp lookup_subexpr_cache(env, key) do
     case Map.get(get_field_subexpr_cache(env), key) do
       {cached_ref} ->
@@ -1848,6 +1972,8 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
         end
     end
   end
+
+  @spec store_subexpr_cache(Types.compile_env(), String.t(), Types.ir_expr()) :: Types.ir_expr()
 
   defp store_subexpr_cache(env, key, ref) do
     entry = {ref}
@@ -1872,6 +1998,8 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
     end
     |> mark_shared_subexpr_ref(ref)
   end
+
+  @spec compile_cached_expr(Types.expr(), Types.compile_env(), Types.ir_expr(), integer()) :: Types.ir_expr()
 
   defp compile_cached_expr(expr, env, counter, compile_fn) do
     key = subexpr_key(expr)
@@ -1913,6 +2041,8 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
     end
   end
 
+  @spec compile_cached_field_access(Types.expr(), Types.expr(), Types.ir_expr(), Types.compile_env(), Types.ir_expr(), integer()) :: Types.ir_expr()
+
   defp compile_cached_field_access(full_expr, arg_expr, field, env, counter, compile_fn) do
     cond do
       boxed_field_compile_fn?(compile_fn) and shareable_field_access_arg?(arg_expr) and
@@ -1929,8 +2059,12 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
     end
   end
 
+  @spec shareable_field_access_arg?(map() | term()) :: boolean()
+
   defp shareable_field_access_arg?(%{op: :field_access}), do: true
   defp shareable_field_access_arg?(_), do: false
+
+  @spec compile_cached_boxed_native_int_field(Types.expr(), Types.ir_expr(), Types.compile_env(), Types.ir_expr()) :: Types.ir_expr()
 
   defp compile_cached_boxed_native_int_field(arg_expr, field, env, counter) do
     {arg_code, arg_var, counter, env, release_arg?} =
@@ -1953,6 +2087,8 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
 
     {code, var, next, env}
   end
+
+  @spec compile_cached_field_access_impl(Types.expr(), Types.expr(), Types.ir_expr(), Types.compile_env(), Types.ir_expr(), integer()) :: Types.ir_expr()
 
   defp compile_cached_field_access_impl(_full_expr, arg_expr, field, env, counter, compile_fn) do
     arg_expr = Expr.normalize_field_access_arg(arg_expr)
@@ -2005,10 +2141,14 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
     end
   end
 
+  @spec record_field_get_expr(String.t(), Types.ir_expr(), Types.expr(), Types.compile_env()) :: Types.ir_expr()
+
   defp record_field_get_expr(source, field, arg_expr, env) do
     {shape, type} = record_field_container_meta(arg_expr, env)
     Expr.record_get_expr(source, field, shape, env, type)
   end
+
+  @spec record_field_container_meta(map() | Types.expr(), Types.compile_env()) :: Types.ir_expr()
 
   defp record_field_container_meta(%{op: :field_access, arg: arg, field: parent_field}, env) do
     case nested_record_container_meta(env, arg, parent_field) do
@@ -2023,6 +2163,8 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
   defp record_field_container_meta(arg_expr, env) do
     {Expr.record_shape(arg_expr, env), Expr.record_container_type_for_expr(arg_expr, env)}
   end
+
+  @spec nested_record_container_meta(Types.compile_env(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
 
   defp nested_record_container_meta(env, arg, parent_field) do
     case RecordFields.field_type(env, arg, parent_field) do
@@ -2047,6 +2189,8 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
     end
   end
 
+  @spec record_container_decl_type(map() | Types.ir_expr(), Types.compile_env()) :: Types.ir_expr()
+
   defp record_container_decl_type(%{op: :var, name: name}, env) when is_binary(name) do
     Expr.record_type_for_function_return(
       {Map.get(env, :__module__, "Main"), name},
@@ -2057,6 +2201,8 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
 
   defp record_container_decl_type(_arg, _env), do: nil
 
+  @spec record_container_shape(String.t() | map() | Types.expr(), Types.compile_env()) :: Types.ir_expr()
+
   defp record_container_shape(name, env) when is_binary(name) do
     Expr.record_shape_for_var(env, name) || Expr.record_shape(name, env)
   end
@@ -2065,6 +2211,8 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
     do: record_container_shape(name, env)
 
   defp record_container_shape(arg_expr, env), do: Expr.record_shape(arg_expr, env)
+
+  @spec record_container_type(String.t() | map() | Types.expr(), Types.compile_env()) :: Types.ir_expr()
 
   defp record_container_type(name, env) when is_binary(name) do
     Expr.record_type_for_var(env, name) ||
@@ -2076,6 +2224,8 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
 
   defp record_container_type(arg_expr, env),
     do: Expr.record_container_type_for_expr(arg_expr, env)
+
+  @spec subexpr_record_meta_for_field_access(Types.compile_env(), Types.expr(), Types.ir_expr()) :: Types.ir_expr()
 
   defp subexpr_record_meta_for_field_access(env, arg_expr, field) do
     record_type = RecordFields.field_type(env, arg_expr, field)
@@ -2102,11 +2252,17 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
     %{type: record_type, shape: shape}
   end
 
+  @spec native_int_compile_fn?(integer()) :: boolean()
+
   defp native_int_compile_fn?(compile_fn),
     do: compile_fn == (&Host.compile_native_int_expr/3)
 
+  @spec boxed_field_compile_fn?(integer()) :: boolean()
+
   defp boxed_field_compile_fn?(compile_fn),
     do: compile_fn == (&compile_boxed_field_value_expr/3)
+
+  @spec runtime_record_field_access?(Types.expr(), Types.ir_expr(), Types.ir_expr()) :: boolean()
 
   defp runtime_record_field_access?(field_expr, arg, field)
        when is_binary(field) or is_atom(field) do
@@ -2115,10 +2271,14 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
 
   defp runtime_record_field_access?(_field_expr, _arg, _field), do: false
 
+  @spec record_field_arg?(map() | Types.ir_expr()) :: boolean()
+
   defp record_field_arg?(%{op: :var, name: name}) when is_binary(name) or is_atom(name), do: true
   defp record_field_arg?(%{op: :call}), do: true
   defp record_field_arg?(%{op: :qualified_call}), do: true
   defp record_field_arg?(_arg), do: false
+
+  @spec compile_cached_field_access_bound_name(String.t(), Types.compile_env(), Types.ir_expr()) :: Types.ir_expr()
 
   defp compile_cached_field_access_bound_name(name, env, counter) do
     case EnvBindings.lookup_binding(env, name) do
@@ -2138,6 +2298,8 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
         end
     end
   end
+
+  @spec compile_cached_field_access_arg(map() | Types.expr(), Types.compile_env(), Types.ir_expr()) :: Types.ir_expr()
 
   defp compile_cached_field_access_arg(%{op: :field_access} = arg_expr, env, counter) do
     {code, ref, counter, env} = compile_cached_expr(arg_expr, env, counter, @uncached_compile)
@@ -2163,8 +2325,12 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
     {code, ref, counter, env, release?}
   end
 
+  @spec cacheable_call_arg?(map() | term()) :: boolean()
+
   defp cacheable_call_arg?(%{op: op}) when op in [:call, :qualified_call, :constructor_call], do: true
   defp cacheable_call_arg?(_), do: false
+
+  @spec deferred_cache_release_refs(Types.compile_env(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
 
   defp deferred_cache_release_refs(env, field_refs, field_code) do
     env
@@ -2177,6 +2343,8 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
     |> Enum.reject(&orphan_cache_release?(&1, field_code))
     |> Enum.uniq()
   end
+
+  @spec record_field_source_release_refs(Types.ir_expr(), Types.ir_expr(), keyword()) :: Types.ir_expr()
 
   defp record_field_source_release_refs(field_refs, field_code, opts) do
     clear? = Keyword.get(opts, :clear?, true)
@@ -2195,6 +2363,8 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
     refs
   end
 
+  @spec releases_to_code(term() | Types.ir_expr()) :: Types.ir_expr()
+
   defp releases_to_code([]), do: ""
 
   defp releases_to_code(refs) do
@@ -2203,11 +2373,15 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
     |> then(&("\n  " <> &1))
   end
 
+  @spec field_ref_still_uses_cache_ref?(String.t() | Types.ir_expr(), Types.ir_expr()) :: boolean()
+
   defp field_ref_still_uses_cache_ref?(cached_ref, field_refs) when is_binary(cached_ref) do
     cached_ref in field_refs
   end
 
   defp field_ref_still_uses_cache_ref?(_cached_ref, _field_refs), do: false
+
+  @spec post_record_cache_release_refs(Types.compile_env(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
 
   defp post_record_cache_release_refs(env, field_refs, field_code, skip_refs) do
     already_released = released_vars_in_code(field_code)
@@ -2226,6 +2400,8 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
     |> Enum.uniq()
   end
 
+  @spec orphan_cache_release?(String.t() | Types.ir_expr(), String.t() | Types.ir_expr()) :: boolean()
+
   defp orphan_cache_release?(ref, field_code) when is_binary(ref) and is_binary(field_code) do
     not declared_boxed_var?(ref, field_code) or
       OwnershipTransfer.transferred_in_c_source?(ref, field_code)
@@ -2233,9 +2409,13 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
 
   defp orphan_cache_release?(_ref, _field_code), do: false
 
+  @spec declared_boxed_var?(String.t(), String.t()) :: boolean()
+
   defp declared_boxed_var?(ref, field_code) when is_binary(ref) and is_binary(field_code) do
     Regex.match?(~r/ElmcValue \*#{Regex.escape(ref)}(?!\w)\s*=/, field_code)
   end
+
+  @spec released_vars_in_code(String.t() | term()) :: Types.ir_expr()
 
   defp released_vars_in_code(code) when is_binary(code) do
     Regex.scan(~r/elmc_release\((tmp_\d+|head_\d+)\)/, code)
@@ -2245,11 +2425,15 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
 
   defp released_vars_in_code(_), do: MapSet.new()
 
+  @spec released_in_field_code?(String.t() | Types.ir_expr(), String.t() | Types.ir_expr()) :: boolean()
+
   defp released_in_field_code?(ref, field_code) when is_binary(ref) and is_binary(field_code) do
     String.contains?(field_code, "elmc_release(#{ref})")
   end
 
   defp released_in_field_code?(_ref, _field_code), do: false
+
+  @spec subexpr_key(map() | Types.ir_expr()) :: Types.ir_expr()
 
   defp subexpr_key(%{op: :var, name: name}), do: {:var, name}
 
@@ -2268,9 +2452,13 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
 
   defp subexpr_key(other), do: other
 
+  @spec boxed_release_var?(Types.ir_expr()) :: boolean()
+
   defp boxed_release_var?(var) do
     Util.boxed_temp_var?(var) and not EnvBindings.borrowed_arg_ref?(%{}, var)
   end
+
+  @spec native_boxed_rc_env(Types.compile_env()) :: Types.ir_expr()
 
   defp native_boxed_rc_env(env) do
     if Map.get(env, :__native_return_kind__) == :boxed,

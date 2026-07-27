@@ -1,5 +1,7 @@
 defmodule Elmx.Runtime.Core.MaybeResult do
   @moduledoc false
+  alias Elmx.Types, as: Types
+
 
   alias Elmx.Runtime.Core
   alias Elmx.Types
@@ -194,14 +196,20 @@ defmodule Elmx.Runtime.Core.MaybeResult do
     end
   end
 
+  @spec corpus_fixed_random_int() :: Types.elm_value()
+
   defp corpus_fixed_random_int do
     Process.get(:elmx_corpus_fixed_random_int) ||
       Application.get_env(:elmx, :corpus_fixed_random_int)
   end
 
+  @spec clamp_int(integer(), integer(), integer()) :: Types.elm_value()
+
   defp clamp_int(n, low, high) when is_integer(n) and is_integer(low) and is_integer(high) do
     min(max(n, low), high)
   end
+
+  @spec normalize_maybe_strict(Types.elm_value() | term() | map()) :: Types.elm_value()
 
   defp normalize_maybe_strict(:Nothing), do: :Nothing
   defp normalize_maybe_strict({:Just, value}), do: {:Just, value}
@@ -211,12 +219,16 @@ defmodule Elmx.Runtime.Core.MaybeResult do
   defp normalize_maybe_strict(%{ctor: :Just, args: [value]}), do: {:Just, value}
   defp normalize_maybe_strict(_), do: :Nothing
 
+  @spec maybe_map_n(integer(), Types.elm_value()) :: Types.elm_value() | nil
+
   defp maybe_map_n(fun, maybes) do
     case collect_maybe_values(maybes) do
       :nothing -> :Nothing
       values -> {:Just, apply(fun, values)}
     end
   end
+
+  @spec collect_maybe_values(Types.elm_value()) :: Types.elm_value()
 
   defp collect_maybe_values(maybes) do
     Enum.reduce_while(maybes, [], fn maybe, acc ->
@@ -227,12 +239,16 @@ defmodule Elmx.Runtime.Core.MaybeResult do
     end)
   end
 
+  @spec result_map_n(integer(), Types.elm_value()) :: Types.elm_value()
+
   defp result_map_n(fun, results) do
     case collect_result_values(results) do
       {:error, err} -> {:Err, err}
       values -> {:Ok, apply(fun, values)}
     end
   end
+
+  @spec collect_result_values(Types.elm_value()) :: Types.elm_value()
 
   defp collect_result_values(results) do
     Enum.reduce_while(results, [], fn result, acc ->
@@ -242,6 +258,8 @@ defmodule Elmx.Runtime.Core.MaybeResult do
       end
     end)
   end
+
+  @spec normalize_result_strict(term() | map()) :: term()
 
   defp normalize_result_strict({:Ok, value}), do: {:ok, value}
   defp normalize_result_strict(%{"ctor" => "Ok", "args" => [value]}), do: {:ok, value}

@@ -134,7 +134,8 @@ defmodule Elmc.Backend.C.StubFunctions do
     Regex.scan(call_re, source, return: :index)
     |> Enum.reduce(%{}, fn
       [{match_start, match_len}, {name_start, name_len}], acc ->
-        name = String.slice(source, name_start, name_len)
+        # Regex `:index` offsets are bytes — never String.slice (breaks on UTF-8).
+        name = byte_slice(source, name_start, name_len)
         open_paren = match_start + match_len - 1
         {args_str, close_paren} = read_paren_args(source, open_paren)
 
@@ -150,7 +151,7 @@ defmodule Elmc.Backend.C.StubFunctions do
         end
 
       [{match_start, match_len}], acc ->
-        full = String.slice(source, match_start, match_len)
+        full = byte_slice(source, match_start, match_len)
         name = full |> String.trim_trailing("(") |> String.trim()
         open_paren = match_start + byte_size(full) - 1
         {args_str, close_paren} = read_paren_args(source, open_paren)
@@ -174,7 +175,7 @@ defmodule Elmc.Backend.C.StubFunctions do
   defp prototype_declaration?(source, name_start, close_paren) when is_integer(close_paren) do
     after_close =
       source
-      |> String.slice(close_paren + 1, 32)
+      |> byte_slice(close_paren + 1, 32)
       |> String.trim_leading()
 
     # Must early-return: a bare `if …, do: false` does not exit the function.
@@ -188,6 +189,15 @@ defmodule Elmc.Backend.C.StubFunctions do
         Regex.match?(~r/^(?:static\s+)?(?:RC|ElmcValue\s*\*|elmc_int_t|bool)$/u, line_prefix)
       end)
     end
+  end
+
+  # Byte-safe slice for Regex `:index` / binary_part offsets (UTF-8 safe).
+  defp byte_slice(source, start, len)
+       when is_binary(source) and is_integer(start) and is_integer(len) and start >= 0 and len >= 0 do
+    size = byte_size(source)
+    start = min(start, size)
+    len = min(len, size - start)
+    binary_part(source, start, len)
   end
 
   defp name_start_for_name(source, name, fallback) do

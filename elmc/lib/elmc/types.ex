@@ -6,6 +6,13 @@ defmodule Elmc.Types do
   alias ElmEx.Frontend.Project, as: FrontendProject
   alias ElmEx.IR
   alias ElmEx.Types, as: ElmExTypes
+  alias Elmc.Backend.CCodegen.Types, as: CCodegenTypes
+
+  @type ir_expr :: CCodegenTypes.ir_expr()
+  @type expr :: CCodegenTypes.ir_expr()
+  @type decl :: CCodegenTypes.function_decl()
+  @type decl_map :: CCodegenTypes.function_decl_map()
+  @type t :: term()
 
   @type file_error :: File.posix()
 

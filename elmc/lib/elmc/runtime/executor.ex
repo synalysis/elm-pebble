@@ -5,6 +5,8 @@ defmodule Elmc.Runtime.Executor do
   This currently provides deterministic simulation-grade execution output while
   keeping a stable API shape for future full `init`/`update`/`view` execution.
   """
+  alias Elmc.Types, as: Types
+
 
   alias Elmc.Runtime.Executor.Types
 

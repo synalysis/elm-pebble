@@ -1,5 +1,7 @@
 defmodule Elmx.Backend.ReachableModules do
   @moduledoc false
+  alias Elmx.Types, as: Types
+
 
   alias ElmEx.IR
   alias ElmEx.IR.DeadCode
@@ -44,6 +46,8 @@ defmodule Elmx.Backend.ReachableModules do
     |> modules_for_emit(entry_module, opts)
     |> Enum.map(& &1.name)
   end
+
+  @spec emit_module?(Types.elm_value(), keyword()) :: boolean()
 
   defp emit_module?(mod, opts) do
     if Keyword.has_key?(opts, :user_module_names) do

@@ -1,5 +1,7 @@
 defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
   @moduledoc false
+  alias Elmc.Backend.CCodegen.Types, as: Types
+
 
   alias Elmc.Backend.CCodegen.BuiltinOperators
   alias Elmc.Backend.CCodegen.CaseCompile
@@ -277,11 +279,19 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
         ) ::
           Types.compile_operand_inner_result()
   def compile_retaining_call_operand(%{op: :var, name: name}, env, counter) do
-    case Map.get(env, name) do
-      source when is_binary(source) ->
-        {"", source, counter, true}
+    cond do
+      is_binary(EnvBindings.native_int_binding(env, name)) ->
+        # Tail-loop scalars (n_loop) must not reuse the original param box in
+        # retaining operands such as List.cons — callers that can use the native
+        # ref directly pass :native_head through emit_int_list_cons_assign.
+        {code, var, c} = Host.compile_expr(%{op: :var, name: name}, env, counter)
+        {code, var, c, false}
 
-      _ ->
+      is_binary(Map.get(env, name)) ->
+        # Env-bound vars (e.g. head -> tmp_head) are borrowed; do not emit retain temps.
+        {"", Map.get(env, name), counter, true}
+
+      true ->
         {code, var, c} = Host.compile_expr(%{op: :var, name: name}, env, counter)
         {code, var, c, false}
     end

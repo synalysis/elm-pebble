@@ -2,6 +2,8 @@ defmodule Elmx.Runtime.CompanionPreferences do
   @moduledoc """
   Decodes companion preference responses from wire `Maybe` wrappers and JSON strings.
   """
+  alias Elmx.Types, as: Types
+
 
   alias Elmx.Runtime.Json.Decode
   alias Elmx.Types
@@ -17,6 +19,8 @@ defmodule Elmx.Runtime.CompanionPreferences do
     end
   end
 
+  @spec normalize_response(Types.elm_value() | term() | map()) :: Types.elm_value()
+
   defp normalize_response(:Nothing), do: :nothing
   defp normalize_response({:Nothing}), do: :nothing
   defp normalize_response(%{"ctor" => "Nothing"}), do: :nothing
@@ -25,6 +29,8 @@ defmodule Elmx.Runtime.CompanionPreferences do
   defp normalize_response(%{"ctor" => "Just", "args" => [payload]}), do: {:just, payload}
 
   defp normalize_response(other), do: {:just, other}
+
+  @spec decode_payload(String.t() | map() | term()) :: Types.elm_value()
 
   defp decode_payload(payload) when is_binary(payload) do
     case Decode.decode_string(Decode.value(), payload) do

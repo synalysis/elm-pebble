@@ -1,6 +1,7 @@
 defmodule Elmc.Backend.Wasm.Module do
   @moduledoc false
 
+
   alias Elmc.Backend.Wasm.ClosureRegistry
   alias Elmc.Backend.Wasm.Lower.Function
   alias Elmc.Backend.Wasm.{FunctionOrder, HostKernels, ImportCollect, ImportSignatures, StubFunctions}

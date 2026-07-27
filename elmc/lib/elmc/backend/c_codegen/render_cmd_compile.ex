@@ -1,5 +1,7 @@
 defmodule Elmc.Backend.CCodegen.RenderCmdCompile do
   @moduledoc false
+  alias Elmc.Backend.CCodegen.Types, as: Types
+
 
   alias Elmc.Backend.CCodegen.CollectionCompile
   alias Elmc.Backend.CCodegen.Host
@@ -31,6 +33,8 @@ defmodule Elmc.Backend.CCodegen.RenderCmdCompile do
       compile_native_render_cmd(kind, params, env, counter)
     end
   end
+
+  @spec compile_native_render_cmd(atom(), Types.ir_expr(), Types.compile_env(), Types.ir_expr()) :: Types.ir_expr()
 
   defp compile_native_render_cmd(kind, params, env, counter) do
     {kind_code, kind_ref, counter} = compile_kind_ref(kind, env, counter)
@@ -67,6 +71,8 @@ defmodule Elmc.Backend.CCodegen.RenderCmdCompile do
     {code, out, next}
   end
 
+  @spec compile_kind_ref(map() | atom(), Types.compile_env(), Types.ir_expr()) :: Types.ir_expr()
+
   defp compile_kind_ref(%{op: :c_int_expr, value: value}, _env, counter) when is_binary(value),
     do: {"", value, counter}
 
@@ -77,6 +83,8 @@ defmodule Elmc.Backend.CCodegen.RenderCmdCompile do
     {code, var, counter} = Host.compile_expr(kind, env, counter)
     {code, "elmc_as_int(#{var})", counter}
   end
+
+  @spec compile_param_ref(map() | Types.expr(), Types.compile_env(), Types.ir_expr()) :: Types.ir_expr()
 
   defp compile_param_ref(%{op: :c_int_expr, value: value}, _env, counter) when is_binary(value),
     do: {"", value, counter}
@@ -100,6 +108,8 @@ defmodule Elmc.Backend.CCodegen.RenderCmdCompile do
   defp compile_param_ref(expr, env, counter) do
     compile_param_ref_fallback(expr, env, counter)
   end
+
+  @spec compile_param_ref_fallback(map() | Types.expr(), Types.compile_env(), Types.ir_expr()) :: Types.ir_expr()
 
   defp compile_param_ref_fallback(%{op: :field_access, arg: arg, field: field}, env, counter)
        when is_binary(field) do

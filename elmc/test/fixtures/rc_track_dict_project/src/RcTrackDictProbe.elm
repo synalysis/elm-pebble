@@ -151,11 +151,12 @@ probeMerge : Int
 probeMerge =
     Dict.size
         (Dict.merge
+            Dict.insert
+            (\k left right result -> Dict.insert k (left + right) result)
+            Dict.insert
             (Dict.singleton "onlyLeft" 1)
             (Dict.singleton "onlyRight" 2)
-            (\k left right -> left + right)
-            (Dict.singleton "a" 1)
-            (Dict.singleton "a" 10)
+            Dict.empty
         )
 
 

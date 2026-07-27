@@ -1,5 +1,7 @@
 defmodule Elmx.Runtime.Pebble.DeviceStubs do
   @moduledoc false
+  alias Elmx.Types, as: Types
+
 
   alias Elmx.Runtime.Cmd
   alias Elmx.Types

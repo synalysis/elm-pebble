@@ -1,5 +1,7 @@
 defmodule Elmc.Backend.CCodegen.CollectionCompile do
   @moduledoc false
+  alias Elmc.Backend.CCodegen.Types, as: Types
+
 
   alias Elmc.Backend.CCodegen.CaseCompile
   alias Elmc.Backend.CCodegen.BuiltinUnion
@@ -116,6 +118,8 @@ defmodule Elmc.Backend.CCodegen.CollectionCompile do
     {code, var, next}
   end
 
+  @spec compile_generic_tuple2(Types.expr(), Types.expr(), Types.compile_env(), Types.ir_expr()) :: Types.ir_expr()
+
   defp compile_generic_tuple2(left, right, env, counter) do
     child_env = RcRuntimeEmit.strip_function_tail_scope(env)
     compile_right_first? = tuple2_case_on_pre_update_record?(left, right)
@@ -216,11 +220,15 @@ defmodule Elmc.Backend.CCodegen.CollectionCompile do
     end
   end
 
+  @spec tuple2_native_int_operands?(Types.expr(), Types.expr(), Types.compile_env()) :: boolean()
+
   defp tuple2_native_int_operands?(left, right, env) do
     NativeInt.expr?(left, env) and NativeInt.expr?(right, env) and
       not tuple2_unspecialized_var?(left, env) and
       not tuple2_unspecialized_var?(right, env)
   end
+
+  @spec tuple2_unspecialized_var?(map() | Types.expr(), Types.compile_env()) :: boolean()
 
   defp tuple2_unspecialized_var?(%{op: :var, name: name}, env),
     do: not ConstantInt.native_let_value?(%{op: :var, name: name}, env)
@@ -230,6 +238,8 @@ defmodule Elmc.Backend.CCodegen.CollectionCompile do
   # Elm `( { m | f = v }, case m.f of ... )` must read `m.f` from the pre-update
   # record. In-place `elmc_record_update_index_cow_drop` can mutate `m` before the
   # case runs when tuple elements are compiled left-to-right.
+  @spec tuple2_case_on_pre_update_record?(map() | Types.ir_expr(), Types.expr() | Types.ir_expr()) :: boolean()
+
   defp tuple2_case_on_pre_update_record?(
          %{op: :record_update, base: %{op: :var, name: base_name}},
          right
@@ -239,6 +249,8 @@ defmodule Elmc.Backend.CCodegen.CollectionCompile do
   end
 
   defp tuple2_case_on_pre_update_record?(_left, _right), do: false
+
+  @spec expr_reads_var_field?(map() | list() | term(), String.t() | term()) :: boolean()
 
   defp expr_reads_var_field?(%{op: :field_access, arg: %{op: :var, name: name}}, base_name)
        when is_binary(name) and is_binary(base_name),
@@ -264,6 +276,8 @@ defmodule Elmc.Backend.CCodegen.CollectionCompile do
 
   defp expr_reads_var_field?(_, _), do: false
 
+  @spec compile_dynamic_list_literal(list(), Types.compile_env(), Types.ir_expr()) :: Types.ir_expr()
+
   defp compile_dynamic_list_literal(items, env, counter) do
     item_env = RcRuntimeEmit.strip_function_tail_scope(env)
 
@@ -278,6 +292,8 @@ defmodule Elmc.Backend.CCodegen.CollectionCompile do
         compile_generic_list_literal(items, item_env, env, counter)
     end
   end
+
+  @spec compile_generic_list_literal(list(), Types.compile_env(), Types.compile_env(), Types.ir_expr()) :: Types.ir_expr()
 
   defp compile_generic_list_literal(items, item_env, env, counter) do
     nested_item_env =
@@ -359,6 +375,8 @@ defmodule Elmc.Backend.CCodegen.CollectionCompile do
     {code, out, max(next, list_items_id + 1)}
   end
 
+  @spec static_record_list_literal(list() | Types.ir_expr(), Types.compile_env(), Types.ir_expr()) :: Types.ir_expr()
+
   defp static_record_list_literal(items, env, counter) when is_list(items) and items != [] do
     if Enum.all?(items, &all_native_primitive_record_literal?/1) do
       {:ok, compile_record_array_list_literal(items, env, env, counter)}
@@ -368,6 +386,8 @@ defmodule Elmc.Backend.CCodegen.CollectionCompile do
   end
 
   defp static_record_list_literal(_items, _env, _counter), do: :error
+
+  @spec compile_record_array_list_literal(list(), Types.compile_env(), Types.compile_env(), Types.ir_expr()) :: Types.ir_expr()
 
   defp compile_record_array_list_literal(items, item_env, env, counter) do
     nested_item_env =
@@ -401,6 +421,8 @@ defmodule Elmc.Backend.CCodegen.CollectionCompile do
     {code, out, max(next, list_items_id + 1)}
   end
 
+  @spec all_native_primitive_record_literal?(map() | term()) :: boolean()
+
   defp all_native_primitive_record_literal?(%{op: :record_literal, fields: fields}) when is_list(fields) do
     fields != [] and
       Enum.all?(fields, fn
@@ -422,6 +444,8 @@ defmodule Elmc.Backend.CCodegen.CollectionCompile do
 
   defp all_native_primitive_record_literal?(_), do: false
 
+  @spec static_list_literal(list() | Types.ir_expr(), Types.compile_env(), Types.ir_expr()) :: Types.ir_expr()
+
   defp static_list_literal(items, env, counter) when length(items) >= 4 do
     cond do
       Enum.all?(items, &static_int_literal?/1) ->
@@ -436,6 +460,8 @@ defmodule Elmc.Backend.CCodegen.CollectionCompile do
   end
 
   defp static_list_literal(_items, _env, _counter), do: :error
+
+  @spec compile_static_int_list(list(), Types.compile_env(), Types.ir_expr()) :: Types.ir_expr()
 
   defp compile_static_int_list(items, env, counter) do
     env = RcRuntimeEmit.strip_function_tail_scope(env)
@@ -459,6 +485,8 @@ defmodule Elmc.Backend.CCodegen.CollectionCompile do
     {code, out, max(next, values_id + 1)}
   end
 
+  @spec compile_static_tuple2_int_list(list(), Types.compile_env(), Types.ir_expr()) :: Types.ir_expr()
+
   defp compile_static_tuple2_int_list(items, env, counter) do
     env = RcRuntimeEmit.strip_function_tail_scope(env)
     {out, next, _} = CaseCompile.result_out_binding(env, counter)
@@ -481,8 +509,12 @@ defmodule Elmc.Backend.CCodegen.CollectionCompile do
     {code, out, max(next, values_id + 1)}
   end
 
+  @spec static_int_literal?(map() | term()) :: boolean()
+
   defp static_int_literal?(%{op: :int_literal, value: value}) when is_integer(value), do: true
   defp static_int_literal?(_), do: false
+
+  @spec static_tuple2_int_literal?(map() | term()) :: boolean()
 
   defp static_tuple2_int_literal?(%{
          op: :tuple2,
@@ -608,7 +640,11 @@ defmodule Elmc.Backend.CCodegen.CollectionCompile do
     {code, var, next}
   end
 
+  @spec boxed_slot_assign(Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+
   defp boxed_slot_assign(var, rhs), do: ValueSlots.boxed_decl(var, rhs)
+
+  @spec multi_use_elm_var_names(list()) :: Types.ir_expr()
 
   defp multi_use_elm_var_names(items) when is_list(items) do
     items
@@ -620,6 +656,8 @@ defmodule Elmc.Backend.CCodegen.CollectionCompile do
     end)
     |> MapSet.new()
   end
+
+  @spec emit_multi_use_owned_copies(Types.ir_expr(), map(), Types.ir_expr()) :: Types.ir_expr()
 
   defp emit_multi_use_owned_copies(multi_use, env, counter) when is_map(env) do
     Enum.reduce(multi_use, {"", %{}, counter}, fn name, {code, copy_map, c} ->
@@ -642,6 +680,8 @@ defmodule Elmc.Backend.CCodegen.CollectionCompile do
     end)
   end
 
+  @spec item_env_for_multi_use(Types.compile_env(), Types.ir_expr(), map()) :: Types.ir_expr()
+
   defp item_env_for_multi_use(env, consumed, copy_map)
        when is_map(env) and is_map(copy_map) do
     Enum.reduce(copy_map, env, fn {name, copy_var}, acc ->
@@ -652,6 +692,8 @@ defmodule Elmc.Backend.CCodegen.CollectionCompile do
       end
     end)
   end
+
+  @spec list_literal_result_out_env(Types.compile_env()) :: Types.ir_expr()
 
   defp list_literal_result_out_env(env) do
     if RcRuntimeEmit.function_tail_compile?(env) or

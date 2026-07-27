@@ -5,6 +5,8 @@ defmodule Elmc.Backend.CCodegen.ValueSlots do
   Deprecated for functions lowered via Plan IR (`plan_ir_mode: :primary`).
   Use `Elmc.Backend.Plan.Allocate` for slot assignment from verified plans.
   """
+  alias Elmc.Backend.CCodegen.Types, as: Types
+
 
   alias Elmc.Backend.CCodegen.EnvBindings
   alias Elmc.Backend.CCodegen.OwnershipTransfer

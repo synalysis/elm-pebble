@@ -1,5 +1,7 @@
 defmodule Elmc.Backend.CCodegen.ExprCompile do
   @moduledoc false
+  alias Elmc.Backend.CCodegen.Types, as: Types
+
 
   alias Elmc.Backend.CCodegen.CallCompile
   alias Elmc.Backend.CCodegen.CaseCompile

@@ -1,5 +1,7 @@
 defmodule Elmc.Backend.CCodegen.SpecialValues.Helpers do
   @moduledoc false
+  alias Elmc.Backend.CCodegen.Types, as: Types
+
 
   alias Elmc.Backend.CCodegen.IRQueries
   alias Elmc.Backend.CCodegen.PebbleMsgTag
@@ -7,20 +9,36 @@ defmodule Elmc.Backend.CCodegen.SpecialValues.Helpers do
   alias Elmc.Backend.CCodegen.SpecialValues.Core
   alias Elmc.Backend.CCodegen.Types
 
+  @spec draw_kind(atom()) :: Types.ir_expr()
+
   def draw_kind(kind), do: Elmc.Backend.Pebble.draw_kind_id!(kind)
 
+  @spec command_kind(atom()) :: Types.ir_expr()
+
   def command_kind(kind), do: Elmc.Backend.Pebble.command_kind_id!(kind)
+
+  @spec command_kind_expr(atom()) :: Types.ir_expr()
 
   def command_kind_expr(kind),
     do: %{op: :c_int_expr, value: Elmc.Backend.Pebble.command_kind_c_name!(kind)}
 
+  @spec encoded_to_msg_cmd(atom(), String.t()) :: Types.ir_expr()
+
   def encoded_to_msg_cmd(kind, to_msg),
     do: encoded_cmd_expr(command_kind(kind), [constructor_tag_expr(to_msg)], 1)
 
+  @spec ui_node_kind_expr(atom()) :: Types.ir_expr()
+
   def ui_node_kind_expr(kind), do: %{op: :c_int_expr, value: generated_ui_node_kind_macro(kind)}
+  @spec context_kind_expr(atom()) :: Types.ir_expr()
+
   def context_kind_expr(kind), do: %{op: :c_int_expr, value: generated_context_kind_macro(kind)}
 
+  @spec draw_kind_expr(atom()) :: Types.ir_expr()
+
   def draw_kind_expr(kind), do: %{op: :c_int_expr, value: generated_draw_kind_macro(kind)}
+
+  @spec generated_draw_kind_macro(atom() | integer()) :: Types.ir_expr()
 
   def generated_draw_kind_macro(kind) when is_atom(kind) do
     kind
@@ -35,9 +53,13 @@ defmodule Elmc.Backend.CCodegen.SpecialValues.Helpers do
     |> String.replace_prefix("ELMC_PEBBLE_DRAW_", "ELMC_RENDER_OP_")
   end
 
+  @spec generated_ui_node_kind_macro(Types.ir_expr()) :: Types.ir_expr()
+
   def generated_ui_node_kind_macro(:window_stack), do: "ELMC_UI_NODE_WINDOW_STACK"
   def generated_ui_node_kind_macro(:window_node), do: "ELMC_UI_NODE_WINDOW"
   def generated_ui_node_kind_macro(:canvas_layer), do: "ELMC_UI_NODE_CANVAS_LAYER"
+
+  @spec generated_context_kind_macro(Types.ir_expr()) :: Types.ir_expr()
 
   def generated_context_kind_macro(:stroke_width), do: "ELMC_CONTEXT_STROKE_WIDTH"
   def generated_context_kind_macro(:antialiased), do: "ELMC_CONTEXT_ANTIALIASED"
@@ -46,10 +68,14 @@ defmodule Elmc.Backend.CCodegen.SpecialValues.Helpers do
   def generated_context_kind_macro(:text_color), do: "ELMC_CONTEXT_TEXT_COLOR"
   def generated_context_kind_macro(:compositing_mode), do: "ELMC_CONTEXT_COMPOSITING_MODE"
 
+  @spec text_options_special_arg(map() | keyword()) :: Types.ir_expr()
+
   def text_options_special_arg(%{op: :var} = options), do: options
 
   def text_options_special_arg(options),
     do: Elmc.Backend.CCodegen.Host.text_options_expr(options)
+
+  @spec subscription_special_value(String.t(), [String.t()]) :: Types.ir_expr()
 
   def subscription_special_value(target, args) do
     case Subscriptions.subscription_sub_expr(target, args) do
@@ -96,9 +122,13 @@ defmodule Elmc.Backend.CCodegen.SpecialValues.Helpers do
     %{op: :tuple2, left: kind_expr, right: tuple_chain(payload)}
   end
 
+  @spec pebble_cmd_eligible?([String.t()]) :: boolean()
+
   defp pebble_cmd_eligible?(args) do
     length(args) <= 5 and Enum.all?(args, &pebble_cmd_param?/1)
   end
+
+  @spec pebble_cmd_param?(map() | term()) :: boolean()
 
   defp pebble_cmd_param?(%{op: op}) when op in [:int_literal, :c_int_expr, :msg_tag_expr],
     do: true
@@ -128,6 +158,8 @@ defmodule Elmc.Backend.CCodegen.SpecialValues.Helpers do
     do: Enum.all?(fields, fn %{expr: expr} -> pebble_cmd_param?(expr) end)
 
   defp pebble_cmd_param?(_), do: false
+
+  @spec render_cmd_eligible?([String.t()]) :: boolean()
 
   defp render_cmd_eligible?(args) do
     length(args) <= 6 and Enum.all?(args, &pebble_cmd_param?/1)
@@ -166,11 +198,15 @@ defmodule Elmc.Backend.CCodegen.SpecialValues.Helpers do
 
   def encoded_text_cmd_expr(_kind, _args), do: %{op: :unsupported}
 
+  @spec render_text_cmd_eligible?(Types.ir_expr(), String.t()) :: boolean()
+
   defp render_text_cmd_eligible?(payload, text) do
     length(payload) == 6 and
       Enum.all?(payload, &render_text_int_param?/1) and
       render_text_value_param?(text)
   end
+
+  @spec render_text_int_param?(map() | term()) :: boolean()
 
   defp render_text_int_param?(%{op: op}) when op in [:int_literal, :c_int_expr, :msg_tag_expr],
     do: true
@@ -194,6 +230,8 @@ defmodule Elmc.Backend.CCodegen.SpecialValues.Helpers do
 
   defp render_text_int_param?(_), do: false
 
+  @spec render_text_value_param?(map() | term()) :: boolean()
+
   defp render_text_value_param?(%{op: op})
        when op in [
               :string_literal,
@@ -212,9 +250,13 @@ defmodule Elmc.Backend.CCodegen.SpecialValues.Helpers do
 
   defp render_text_value_param?(_), do: false
 
+  @spec text_alignment_expr(Types.ir_expr()) :: Types.ir_expr()
+
   def text_alignment_expr(:left), do: %{op: :c_int_expr, value: "ELMC_TEXT_ALIGN_LEFT"}
   def text_alignment_expr(:center), do: %{op: :c_int_expr, value: "ELMC_TEXT_ALIGN_CENTER"}
   def text_alignment_expr(:right), do: %{op: :c_int_expr, value: "ELMC_TEXT_ALIGN_RIGHT"}
+
+  @spec text_overflow_expr(Types.ir_expr()) :: Types.ir_expr()
 
   def text_overflow_expr(:word_wrap),
     do: %{op: :c_int_expr, value: "ELMC_TEXT_OVERFLOW_WORD_WRAP"}
@@ -231,6 +273,8 @@ defmodule Elmc.Backend.CCodegen.SpecialValues.Helpers do
     %{op: :tuple2, left: head, right: tuple_chain(rest)}
   end
 
+  @spec health_metric_to_kernel_expr(map()) :: Types.ir_expr()
+
   def health_metric_to_kernel_expr(%{op: :constructor_call, target: target, args: []})
        when is_binary(target) do
     %{
@@ -243,6 +287,8 @@ defmodule Elmc.Backend.CCodegen.SpecialValues.Helpers do
     do: %{op: :int_literal, value: value}
 
   def health_metric_to_kernel_expr(metric) when is_map(metric), do: metric
+
+  @spec runtime_fn_lambda(String.t(), list()) :: Types.ir_expr()
 
   def runtime_fn_lambda(function, arg_names) when is_binary(function) and is_list(arg_names) do
     %{
@@ -328,6 +374,8 @@ defmodule Elmc.Backend.CCodegen.SpecialValues.Helpers do
 
   def constructor_tag_expr(_), do: %{op: :int_literal, value: 0}
 
+  @spec animation_id_int_expr(map() | Types.expr()) :: Types.ir_expr()
+
   def animation_id_int_expr(%{op: :int_literal, union_ctor: ctor, value: value})
        when is_binary(ctor) and is_integer(value) do
     %{op: :int_literal, value: value}
@@ -340,14 +388,20 @@ defmodule Elmc.Backend.CCodegen.SpecialValues.Helpers do
   def animation_id_int_expr(%{op: :var} = expr), do: expr
   def animation_id_int_expr(expr), do: expr
 
+  @spec msg_constructor_name?(String.t()) :: boolean()
+
   defp msg_constructor_name?(name) when is_binary(name) do
     short = constructor_short_name(name)
     PebbleMsgTag.msg_constructor?(short) or PebbleMsgTag.msg_constructor?(name)
   end
 
+  @spec msg_tag_expr(String.t()) :: Types.ir_expr()
+
   def msg_tag_expr(name) when is_binary(name) do
     %{op: :msg_tag_expr, name: constructor_short_name(name)}
   end
+
+  @spec constructor_short_name(String.t()) :: Types.ir_expr()
 
   def constructor_short_name(name) do
     name |> String.split(".") |> List.last()
@@ -434,6 +488,8 @@ defmodule Elmc.Backend.CCodegen.SpecialValues.Helpers do
     |> maybe_put_platform_static_macro(platform_static_macro)
   end
 
+  @spec maybe_put_platform_static_macro(Types.expr(), String.t()) :: Types.ir_expr() | nil
+
   def maybe_put_platform_static_macro(expr, macro) when is_binary(macro),
     do: Map.put(expr, :platform_static_macro, macro)
 
@@ -460,9 +516,13 @@ defmodule Elmc.Backend.CCodegen.SpecialValues.Helpers do
   @spec pebble_angle_from_degrees(number()) :: integer()
   def pebble_angle_from_degrees(degrees), do: round(degrees * 65_536 / 360)
 
+  @spec rotation_to_pebble_angle_call(integer()) :: Types.ir_expr()
+
   def rotation_to_pebble_angle_call(rotation) do
     %{op: :qualified_call, target: "Pebble.Ui.rotationToPebbleAngle", args: [rotation]}
   end
+
+  @spec rotation_union_payload?(map() | Types.ir_expr()) :: boolean()
 
   defp rotation_union_payload?(%{op: :c_int_expr, value: "ELMC_UNION_ROTATION"}), do: true
 
@@ -493,6 +553,8 @@ defmodule Elmc.Backend.CCodegen.SpecialValues.Helpers do
     }
   end
 
+  @spec unary_runtime_lambda(integer()) :: Types.ir_expr()
+
   def unary_runtime_lambda(function) do
     %{
       op: :lambda,
@@ -500,6 +562,8 @@ defmodule Elmc.Backend.CCodegen.SpecialValues.Helpers do
       body: %{op: :runtime_call, function: function, args: [%{op: :var, name: "__x"}]}
     }
   end
+
+  @spec binary_runtime_lambda(integer()) :: Types.ir_expr()
 
   def binary_runtime_lambda(function) do
     %{
@@ -513,6 +577,8 @@ defmodule Elmc.Backend.CCodegen.SpecialValues.Helpers do
     }
   end
 
+  @spec bound_binary_runtime_lambda(integer(), Types.ir_expr()) :: Types.ir_expr()
+
   def bound_binary_runtime_lambda(function, first) do
     %{
       op: :lambda,
@@ -524,6 +590,8 @@ defmodule Elmc.Backend.CCodegen.SpecialValues.Helpers do
       }
     }
   end
+
+  @spec ternary_runtime_lambda(integer()) :: Types.ir_expr()
 
   def ternary_runtime_lambda(function) do
     %{
@@ -540,6 +608,8 @@ defmodule Elmc.Backend.CCodegen.SpecialValues.Helpers do
       }
     }
   end
+
+  @spec bound_ternary_runtime_lambda(integer(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
 
   def bound_ternary_runtime_lambda(function, first) do
     %{

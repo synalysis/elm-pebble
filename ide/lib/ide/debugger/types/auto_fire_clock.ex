@@ -1,6 +1,7 @@
 defmodule Ide.Debugger.Types.AutoFireClock do
   @moduledoc false
 
+
   @typedoc "Per-surface simulated clock fields stored in `auto_fire_clock`."
   @type entry :: %{
           optional(String.t()) => integer()

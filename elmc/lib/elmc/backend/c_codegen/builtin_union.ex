@@ -1,5 +1,7 @@
 defmodule Elmc.Backend.CCodegen.BuiltinUnion do
   @moduledoc false
+  alias Elmc.Backend.CCodegen.Types, as: Types
+
 
   alias Elmc.Backend.CCodegen.Host
   alias Elmc.Backend.CCodegen.RcRuntimeEmit
@@ -112,6 +114,8 @@ defmodule Elmc.Backend.CCodegen.BuiltinUnion do
   end
 
   def try_compile_tuple2(_expr, _env, _counter), do: :error
+
+  @spec union_out_target(Types.compile_env(), Types.ir_expr()) :: Types.ir_expr()
 
   defp union_out_target(env, counter) do
     {out, counter} = RcRuntimeEmit.compile_result_slot(env, counter)

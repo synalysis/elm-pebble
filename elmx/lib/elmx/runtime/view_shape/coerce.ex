@@ -1,9 +1,13 @@
 defmodule Elmx.Runtime.ViewShape.Coerce do
   @moduledoc false
+  alias Elmx.Types, as: Types
+
 
   alias Elmx.Runtime.Pebble.Ui, as: PebbleUi
   alias Elmx.Runtime.ViewShape
   alias Elmx.Runtime.ViewShape.Geometry
+
+  @spec coerce_ctor(Types.elm_value(), list() | term() | [String.t()]) :: Types.elm_value()
 
   def coerce_ctor("WindowStack", windows) when is_list(windows),
     do: PebbleUi.window_stack(windows)
@@ -119,6 +123,8 @@ defmodule Elmx.Runtime.ViewShape.Coerce do
   def coerce_ctor("PathOutlineOpen", [path]), do: PebbleUi.path_outline_open(Geometry.coerce_path_value(path))
 
   def coerce_ctor(_other, _args), do: nil
+  @spec coerce_group_context(term() | map() | Types.elm_value()) :: Types.elm_value()
+
   def coerce_group_context({settings, commands}) when is_list(settings) and is_list(commands) do
     %{style: coerce_context_settings(settings), ops: commands}
   end
@@ -132,6 +138,8 @@ defmodule Elmx.Runtime.ViewShape.Coerce do
   end
 
   def coerce_group_context(other), do: other
+
+  @spec coerce_context_settings(list() | Types.elm_value()) :: Types.elm_value()
 
   def coerce_context_settings(settings) when is_list(settings) do
     Enum.reduce(settings, %{}, fn setting, acc ->
@@ -154,6 +162,8 @@ defmodule Elmx.Runtime.ViewShape.Coerce do
   end
 
   def coerce_context_settings(other), do: other
+
+  @spec context_key(Types.elm_value()) :: Types.elm_value()
 
   def context_key(:StrokeWidth), do: "stroke_width"
   def context_key(:Antialiased), do: "antialiased"

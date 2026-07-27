@@ -1,5 +1,7 @@
 defmodule Elmc.Backend.CCodegen.PlanNativeProjection do
   @moduledoc false
+  alias Elmc.Backend.CCodegen.Types, as: Types
+
 
   alias Elmc.Backend.C.Lower.NativeReturn
   alias Elmc.Backend.CCodegen.{Fusion, FunctionEmit, Host, Native.AngleMinute, Native.FunctionCall, RcRequired, Types, Util}

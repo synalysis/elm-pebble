@@ -5,6 +5,8 @@ defmodule Elmx.Runtime.ViewShape do
   Used for functions compiled from Elm source (including `Pebble.Ui.*` helpers and
   user-defined wrappers) without name-specific codegen hooks.
   """
+  alias Elmx.Types, as: Types
+
 
   alias Elmx.Runtime.ViewShape.{Coerce, Keys, RenderOps}
   alias Elmx.Types
@@ -70,6 +72,8 @@ defmodule Elmx.Runtime.ViewShape do
 
   def coerce(list) when is_list(list), do: Enum.map(list, &coerce/1)
   def coerce(other), do: other
+
+  @spec tagged_ctor_args(term() | list() | Types.elm_value()) :: Types.elm_value()
 
   defp tagged_ctor_args({left, right}), do: [coerce(left), coerce(right)]
   defp tagged_ctor_args(list) when is_list(list), do: Enum.map(list, &coerce/1)

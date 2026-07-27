@@ -80,6 +80,8 @@ defmodule Ide.Emulator.Session.ProcessHost do
   def live_pid?(pid) when is_pid(pid), do: Process.alive?(pid)
   def live_pid?(_pid), do: false
 
+  @spec wait_for_daemon(term(), term(), pos_integer(), term()) :: term()
+
   defp wait_for_daemon(pid, port, deadline, last_error) do
     cond do
       not Process.alive?(pid) ->
@@ -96,6 +98,8 @@ defmodule Ide.Emulator.Session.ProcessHost do
         wait_for_daemon(pid, port, deadline, :not_ready)
     end
   end
+
+  @spec wait_for_tcp_socket(term(), term(), pos_integer()) :: term()
 
   defp wait_for_tcp_socket(pid, port, deadline) do
     cond do
@@ -116,6 +120,8 @@ defmodule Ide.Emulator.Session.ProcessHost do
         end
     end
   end
+
+  @spec wait_for_qemu_boot_marker(term(), term(), pos_integer(), term(), term()) :: term()
 
   defp wait_for_qemu_boot_marker(pid, socket, deadline, received, markers) do
     cond do
@@ -154,11 +160,15 @@ defmodule Ide.Emulator.Session.ProcessHost do
     end
   end
 
+  @spec boot_marker?(term(), term()) :: boolean()
+
   defp boot_marker?(data, markers) do
     Enum.any?(markers, fn marker ->
       :binary.match(data, marker) != :nomatch
     end)
   end
+
+  @spec stop_process(term(), term()) :: term()
 
   defp stop_process(pid, timeout) do
     GenServer.stop(pid, :normal, timeout)
@@ -168,6 +178,8 @@ defmodule Ide.Emulator.Session.ProcessHost do
       Process.exit(pid, :kill)
       wait_for_process_exit(pid, timeout)
   end
+
+  @spec wait_for_process_exit(term(), term()) :: term()
 
   defp wait_for_process_exit(pid, timeout) do
     ref = Process.monitor(pid)

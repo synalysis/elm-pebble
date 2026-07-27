@@ -29,4 +29,22 @@ defmodule Elmc.CStubFunctionsTest do
     refute protos =~ "elmc_fn_Task_command"
     assert defs =~ "elmc_fn_Elm_Kernel_Json_addEntry(ElmcValue **out, ElmcValue *arg0)"
   end
+
+  test "missing_callee_stubs finds Kernel calls after UTF-8 string literals" do
+    # Regression: String.slice on Regex byte indexes skipped callees once non-ASCII
+    # bytes appeared earlier in the translation unit (Unicode corpus).
+    impl = """
+    static ElmcValue native_str = { ELMC_RC_IMMORTAL, ELMC_TAG_STRING, (void *)"ßΩ🙂", 8 };
+    (void)native_str;
+    Rc = elmc_fn_Elm_Kernel_Basics_and(&owned[2], elmc_new_bool_take(1), elmc_new_bool_take(0));
+    return elmc_fn_Elm_Kernel_JsArray_initialize(elmc_new_int_take(1), elmc_new_int_take(0), fn);
+    """
+
+    %{prototypes: protos, definitions: defs} = StubFunctions.missing_callee_stubs([impl], [])
+
+    assert protos =~ "elmc_fn_Elm_Kernel_Basics_and"
+    assert protos =~ "elmc_fn_Elm_Kernel_JsArray_initialize"
+    assert defs =~ "elmc_fn_Elm_Kernel_Basics_and"
+    assert defs =~ "elmc_fn_Elm_Kernel_JsArray_initialize"
+  end
 end

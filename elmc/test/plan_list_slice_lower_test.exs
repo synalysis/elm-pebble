@@ -624,7 +624,9 @@ defmodule Elmc.PlanListSliceLowerTest do
     assert draw_body =~ "if (!plan_native_bool_"
     assert draw_body =~ "if (plan_native_bool_"
     assert draw_body =~ "ELMC_FIELD_MAIN_BOARDLAYOUT_CELL"
-    assert draw_body =~ "elmc_int_idiv(index, 4)"
+    # Native idiv: either elmc_int_idiv helper or inlined `(d == 0 ? 0 : n / d)`.
+    assert draw_body =~ "elmc_int_idiv(index, 4)" or
+             draw_body =~ "(4 == 0 ? 0 : index / 4)"
   end
 
   test "merge nested if phi bools use const native bool at assign site" do

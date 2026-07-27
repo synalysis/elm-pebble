@@ -3,6 +3,7 @@ defmodule Ide.Mcp.Tools do
   Capability-scoped MCP tool registry and dispatcher for IDE operations.
   """
 
+
   alias Ide.Mcp.{VectorResources}
   alias Ide.Mcp.ToolCatalog
   alias Ide.Mcp.Handlers.Build, as: BuildHandler

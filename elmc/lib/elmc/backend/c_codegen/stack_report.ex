@@ -1,6 +1,7 @@
 defmodule Elmc.Backend.CCodegen.StackReport do
   @moduledoc false
 
+
   alias Elmc.Backend.CCodegen.LinkedBinaryReport
   alias Elmc.Backend.CCodegen.StackEstimate
   alias Elmc.Backend.CCodegen.Types.LinkedBinary, as: LinkedBinaryTypes

@@ -287,6 +287,8 @@ defmodule ElmEx.DebuggerContract.ViewTree.Structure do
     end)
   end
 
+  @spec source_call_arg_names(String.t(), non_neg_integer(), term()) :: term()
+
   def source_call_arg_names(target, arity, api_metadata)
       when is_binary(target) and is_integer(arity) and is_map(api_metadata) do
     case resolve_source_call(target, api_metadata) do

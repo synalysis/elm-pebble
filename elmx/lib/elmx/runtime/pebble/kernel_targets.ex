@@ -2,6 +2,8 @@ defmodule Elmx.Runtime.Pebble.KernelTargets do
   @moduledoc """
   Lowers `Elm.Kernel.PebbleWatch` / `Elm.Kernel.PebblePhone` qualified calls to runtime IR nodes.
   """
+  alias Elmx.Types, as: Types
+
 
   alias Elmx.Runtime.Pebble.Subscriptions
   alias Elmx.Types
@@ -22,6 +24,8 @@ defmodule Elmx.Runtime.Pebble.KernelTargets do
         :error
     end
   end
+
+  @spec rewrite_watch(Types.elm_value() | String.t(), String.t(), [String.t()]) :: Types.elm_value()
 
   defp rewrite_watch("none", _target, _args), do: {:ok, %{op: :cmd_none}}
 
@@ -54,6 +58,8 @@ defmodule Elmx.Runtime.Pebble.KernelTargets do
     |> Macro.underscore()
     |> then(&("elmx_kernel_pebble_phone_" <> &1))
   end
+
+  @spec target_string_ir(String.t()) :: Types.elm_value()
 
   defp target_string_ir(target) when is_binary(target), do: %{op: :string_literal, value: target}
 end

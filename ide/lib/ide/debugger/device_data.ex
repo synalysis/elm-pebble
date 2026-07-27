@@ -168,6 +168,8 @@ defmodule Ide.Debugger.DeviceData do
     end
   end
 
+  @spec parse_simulated_date(String.t() | integer(), term()) :: term()
+
   defp parse_simulated_date(value, fallback) when is_binary(value) do
     case Date.from_iso8601(String.trim(value)) do
       {:ok, date} -> date
@@ -176,6 +178,8 @@ defmodule Ide.Debugger.DeviceData do
   end
 
   defp parse_simulated_date(_value, fallback), do: fallback
+
+  @spec parse_simulated_time(String.t() | integer(), term()) :: term()
 
   defp parse_simulated_time(value, fallback) when is_binary(value) do
     case Time.from_iso8601(String.trim(value)) do
@@ -409,6 +413,8 @@ defmodule Ide.Debugger.DeviceData do
   end
 
   def response_wire_value(_req), do: nil
+
+  @spec elm_literal(boolean() | integer() | float() | String.t()) :: term()
 
   def elm_literal(value) when is_boolean(value), do: if(value, do: "True", else: "False")
   def elm_literal(value) when is_integer(value), do: Integer.to_string(value)
@@ -733,13 +739,19 @@ defmodule Ide.Debugger.DeviceData do
       get_in(runtime, ["supported", "args", Access.at(0)]) == true
   end
 
+  @spec filter_update_cmd_calls(list(), term(), integer()) :: term()
+
   defp filter_update_cmd_calls(calls, current_ctor, filter_fn) when is_list(calls) do
     if is_function(filter_fn, 2), do: filter_fn.(calls, current_ctor), else: calls
   end
 
+  @spec expand_cmd_calls(list(), integer(), integer()) :: term()
+
   defp expand_cmd_calls(calls, ei, expand_fn) when is_list(calls) do
     if is_function(expand_fn, 2), do: expand_fn.(calls, ei), else: calls
   end
+
+  @spec init_request_deferred?(term()) :: boolean()
 
   defp init_request_deferred?(_req), do: false
 
@@ -773,6 +785,8 @@ defmodule Ide.Debugger.DeviceData do
   end
 
   def firmware_version_wire_record(_version), do: nil
+
+  @spec parse_firmware_version_core(String.t()) :: term()
 
   defp parse_firmware_version_core(core) when is_binary(core) do
     parts =

@@ -1,5 +1,7 @@
 defmodule Elmc.Backend.CCodegen.SpecialValues.ElmCore do
   @moduledoc false
+  alias Elmc.Backend.CCodegen.Types, as: Types
+
 
   alias Elmc.Backend.CCodegen.Types
   alias Elmc.Backend.CCodegen.Util
@@ -31,12 +33,16 @@ defmodule Elmc.Backend.CCodegen.SpecialValues.ElmCore do
     end
   end
 
+  @spec match_module?(String.t()) :: boolean()
+
   defp match_module?(target) do
     case String.split(target, ".") do
       [module, _function | _] -> module in @modules
       _ -> false
     end
   end
+
+  @spec display_name(String.t()) :: Types.ir_expr()
 
   defp display_name(target) do
     case String.split(target, ".") do

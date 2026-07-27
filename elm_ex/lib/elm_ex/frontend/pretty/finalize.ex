@@ -1,5 +1,7 @@
 defmodule ElmEx.Frontend.Pretty.Finalize do
   @moduledoc false
+  alias ElmEx.Frontend.AstContract.Types, as: Types
+
 
   @spec finalize(String.t()) :: String.t()
   def finalize(source) when is_binary(source) do
@@ -18,6 +20,8 @@ defmodule ElmEx.Frontend.Pretty.Finalize do
 
   defp ensure_terminal_newline(value),
     do: if(String.ends_with?(value, "\n"), do: value, else: value <> "\n")
+
+  @spec ensure_import_doc_gap(list()) :: Types.expr()
 
   defp ensure_import_doc_gap(lines) when is_list(lines) do
     Enum.reduce(lines, [], fn line, acc ->
@@ -44,15 +48,21 @@ defmodule ElmEx.Frontend.Pretty.Finalize do
     end)
   end
 
+  @spec last_non_empty(Types.expr()) :: Types.expr()
+
   defp last_non_empty(lines) do
     lines
     |> Enum.reverse()
     |> Enum.find(&(String.trim(&1) != ""))
   end
 
+  @spec leading_indent(pos_integer()) :: Types.expr()
+
   defp leading_indent(line) do
     String.length(line) - String.length(String.trim_leading(line))
   end
+
+  @spec count_trailing_blank_lines(Types.expr()) :: Types.expr()
 
   defp count_trailing_blank_lines(lines) do
     lines

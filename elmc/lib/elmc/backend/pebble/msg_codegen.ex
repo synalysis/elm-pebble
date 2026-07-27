@@ -1,5 +1,7 @@
 defmodule Elmc.Backend.Pebble.MsgCodegen do
   @moduledoc false
+  alias Elmc.Types, as: Types
+
 
   alias Elmc.Backend.Pebble.MsgCodegen.{Fragments, Header, TickArity}
   alias Elmc.Backend.Pebble.Types

@@ -1,5 +1,7 @@
 defmodule Elmc.Backend.Pebble.Kinds.Tables.PlatformIds do
   @moduledoc false
+  alias Elmc.Types, as: Types
+
 
   alias Elmc.Backend.Pebble.Kinds.Types, as: KindTypes
   alias Elmc.Backend.Pebble.Types

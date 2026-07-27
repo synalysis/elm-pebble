@@ -1,5 +1,7 @@
 defmodule Elmc.Backend.Plan.Lower.If do
   @moduledoc false
+  alias Elmc.Backend.Plan.Types, as: Types
+
 
   alias Elmc.Backend.Plan.{Builder, ConstantFold, Context, IntPhiNative, TruthyNative}
   alias Elmc.Backend.Plan.Lower.Expr
@@ -16,6 +18,8 @@ defmodule Elmc.Backend.Plan.Lower.If do
 
   def compile(_, _, _), do: :unsupported
 
+  @spec compile_branches(Types.expr(), Types.expr(), Types.expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+
   defp compile_branches(cond, then_expr, else_expr, ctx, b) do
     case ConstantFold.bool_value(cond, ctx) do
       :unknown ->
@@ -28,6 +32,8 @@ defmodule Elmc.Backend.Plan.Lower.If do
         Expr.compile(else_expr, ctx, b)
     end
   end
+
+  @spec compile_branches_cfg(Types.expr(), Types.expr(), Types.expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
 
   defp compile_branches_cfg(cond, then_expr, else_expr, ctx, b) do
     saved_pending = Map.get(b, :pending_merge_block)
@@ -52,6 +58,8 @@ defmodule Elmc.Backend.Plan.Lower.If do
     end
   end
 
+  @spec compile_branch(Types.expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+
   defp compile_branch(expr, ctx, b, block_id) do
     b_arm = Builder.begin_cfg_arm_block(b, block_id)
     arm_ctx = Context.for_branch_arm(ctx)
@@ -66,18 +74,22 @@ defmodule Elmc.Backend.Plan.Lower.If do
     end
   end
 
+  @spec emit_phi(Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+
   defp emit_phi(cond_reg, then_reg, else_reg, then_arm_block, else_arm_block, b) do
     {merge, b1} = Builder.fresh_reg(b)
     instrs = builder_instrs(b1)
 
-    {native_int_phi?, int_then_shape, int_else_shape} =
-      IntPhiNative.native_int_phi_shapes?(instrs, then_reg, else_reg)
-
     {truthy_native?, then_shape, else_shape} =
-      if native_int_phi? do
+      TruthyNative.phi_shapes?(instrs, then_reg, else_reg)
+
+    # Bool True/False arms are const_int 0/1 with bool_lit. Prefer truthy_native
+    # so Debug.toString prints True/False (native_int_phi would box via new_int).
+    {native_int_phi?, int_then_shape, int_else_shape} =
+      if truthy_native? do
         {false, :unknown, :unknown}
       else
-        TruthyNative.phi_shapes?(instrs, then_reg, else_reg)
+        IntPhiNative.native_int_phi_shapes?(instrs, then_reg, else_reg)
       end
 
     phi_consumes =
@@ -115,6 +127,8 @@ defmodule Elmc.Backend.Plan.Lower.If do
     {:ok, merge, b2}
   end
 
+  @spec maybe_put_truthy_native([String.t()], Types.ir_expr(), term() | Types.ir_expr(), term() | Types.ir_expr(), term() | Types.ir_expr(), term() | Types.ir_expr()) :: Types.ir_expr() | nil
+
   defp maybe_put_truthy_native(args, false, _, _, _, _), do: args
 
   defp maybe_put_truthy_native(args, true, then_shape, else_shape, then_arm_block, else_arm_block) do
@@ -126,6 +140,8 @@ defmodule Elmc.Backend.Plan.Lower.If do
       else_arm_block: else_arm_block
     })
   end
+
+  @spec maybe_put_native_int_phi([String.t()], Types.ir_expr(), term() | Types.ir_expr(), term() | Types.ir_expr(), term() | Types.ir_expr(), term() | Types.ir_expr()) :: Types.ir_expr() | nil
 
   defp maybe_put_native_int_phi(args, false, _, _, _, _), do: args
 
@@ -139,10 +155,14 @@ defmodule Elmc.Backend.Plan.Lower.If do
     })
   end
 
+  @spec builder_instrs(Types.ir_expr()) :: Types.ir_expr()
+
   defp builder_instrs(b) do
     (Map.get(b, :blocks, []) ++ [Map.get(b, :current_block)])
     |> Enum.flat_map(&Map.get(&1, :instrs, []))
   end
+
+  @spec skip_reserved(Types.ir_expr(), Types.ir_expr() | term()) :: Types.ir_expr()
 
   defp skip_reserved(id, nil), do: id
   defp skip_reserved(id, reserved) when id == reserved, do: id + 1

@@ -1,5 +1,7 @@
 defmodule ElmEx.Frontend.Pretty.PreserveNormalize do
   @moduledoc false
+  alias ElmEx.Frontend.AstContract.Types, as: Types
+
 
   alias ElmEx.Frontend.Module
 
@@ -77,6 +79,8 @@ defmodule ElmEx.Frontend.Pretty.PreserveNormalize do
 
     Enum.join(lines, "\n")
   end
+  @spec candidate_union_exposing_types(String.t()) :: Types.expr()
+
   defp candidate_union_exposing_types(text) when is_binary(text) do
     ~r/\b([A-Z][A-Za-z0-9_']*)\b\s*(?:\((?!\.\.)|\n[ \t]*\()/u
     |> Regex.scan(text)
@@ -219,6 +223,8 @@ defmodule ElmEx.Frontend.Pretty.PreserveNormalize do
     do_consume_gap(text, pos, "")
   end
 
+  @spec do_consume_gap(String.t(), Types.expr(), term()) :: Types.expr()
+
   defp do_consume_gap(text, pos, acc) do
     case String.at(text, pos) do
       nil ->
@@ -248,6 +254,8 @@ defmodule ElmEx.Frontend.Pretty.PreserveNormalize do
   defp consume_comment_only_gap(text, pos) do
     do_consume_comment_only_gap(text, pos, "")
   end
+
+  @spec do_consume_comment_only_gap(String.t(), Types.expr(), term()) :: Types.expr()
 
   defp do_consume_comment_only_gap(text, pos, acc) do
     case String.at(text, pos) do
@@ -300,6 +308,8 @@ defmodule ElmEx.Frontend.Pretty.PreserveNormalize do
       _ -> :error
     end
   end
+
+  @spec do_take_balanced(String.t(), Types.expr(), non_neg_integer() | Types.expr(), term()) :: Types.expr()
 
   defp do_take_balanced(text, pos, depth, acc) when depth > 0 do
     case String.at(text, pos) do
@@ -455,6 +465,8 @@ defmodule ElmEx.Frontend.Pretty.PreserveNormalize do
   defp find_close_paren_line(lines, open_idx) do
     do_find_close_paren_line(lines, open_idx + 1, 1)
   end
+
+  @spec do_find_close_paren_line(Types.expr(), Types.expr(), Types.expr() | non_neg_integer()) :: Types.expr()
 
   defp do_find_close_paren_line(_lines, _idx, 0), do: nil
 

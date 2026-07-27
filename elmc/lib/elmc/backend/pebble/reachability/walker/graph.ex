@@ -1,5 +1,7 @@
 defmodule Elmc.Backend.Pebble.Reachability.Walker.Graph do
   @moduledoc false
+  alias Elmc.Types, as: Types
+
 
   alias Elmc.Backend.Pebble.{Reachability.Collector, Types}
 

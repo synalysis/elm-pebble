@@ -1,5 +1,7 @@
 defmodule Elmx.Runtime.Cmd.Companion do
   @moduledoc false
+  alias Elmx.Types, as: Types
+
 
   alias Elmx.Runtime.Cmd.Wire
   alias Elmx.Runtime.Values
@@ -90,8 +92,12 @@ defmodule Elmx.Runtime.Cmd.Companion do
     }
   end
 
+  @spec maybe_put_key(Types.elm_value(), String.t() | term()) :: Types.elm_value() | nil
+
   def maybe_put_key(cmd, key) when is_binary(key), do: Map.put(cmd, "key", key)
   def maybe_put_key(cmd, _), do: cmd
+
+  @spec maybe_put_field(Types.elm_value(), Types.elm_value(), Types.elm_value() | integer()) :: Types.elm_value() | nil
 
   def maybe_put_field(cmd, _field, nil), do: cmd
   def maybe_put_field(cmd, field, value), do: Map.put(cmd, field, Values.wire_value(value))

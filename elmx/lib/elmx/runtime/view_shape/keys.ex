@@ -1,5 +1,9 @@
 defmodule Elmx.Runtime.ViewShape.Keys do
   @moduledoc false
+  alias Elmx.Types, as: Types
+
+  @spec stringify_keys(map() | list() | Types.elm_value()) :: Types.elm_value()
+
   def stringify_keys(map) when is_map(map) do
     map
     |> Enum.map(fn

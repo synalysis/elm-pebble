@@ -2,6 +2,8 @@ defmodule Elmx.Runtime.Values do
   @moduledoc """
   Wire-format helpers for generated Elm code and debugger execution.
   """
+  alias Elmx.Types, as: Types
+
 
   alias Elmx.Runtime.Platform.Manager
   alias Elmx.Types
@@ -39,11 +41,17 @@ defmodule Elmx.Runtime.Values do
   def port_incoming_sub(port_key, callback) when is_binary(port_key),
     do: Manager.port(port_key, callback)
 
+  @spec manager_value(integer()) :: Types.elm_value()
+
   defp manager_value(value), do: value
+
+  @spec manager_batch?(list()) :: boolean()
 
   defp manager_batch?(commands) when is_list(commands) do
     Enum.any?(commands, &manager_item?/1)
   end
+
+  @spec manager_item?(map() | Types.elm_value() | term()) :: boolean()
 
   defp manager_item?(item) when is_map(item) do
     Map.has_key?(item, "$") or Map.has_key?(item, :"$")

@@ -1,5 +1,7 @@
 defmodule Elmc.Backend.CCodegen.ImmortalStaticList do
   @moduledoc false
+  alias Elmc.Backend.CCodegen.Types, as: Types
+
 
   alias Elmc.Backend.CCodegen.CSource
   alias Elmc.Backend.CCodegen.CodegenListHelpers

@@ -1,5 +1,7 @@
 defmodule Elmx.Runtime.Pebble.TextOptions do
   @moduledoc false
+  alias Elmx.Types, as: Types
+
 
   alias Elmx.Types
 

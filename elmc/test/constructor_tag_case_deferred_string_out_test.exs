@@ -19,7 +19,7 @@ defmodule Elmc.ConstructorTagCaseDeferredStringOutTest do
       |> Map.put(:__rc_catch__, true)
       |> RcRuntimeEmit.function_tail_env()
 
-    {code, out, _counter} =
+    {code, _out, _counter} =
       ConstructorTagCase.compile_boxed_subject(
         %{op: :var, name: "direction"},
         direction_branches(),

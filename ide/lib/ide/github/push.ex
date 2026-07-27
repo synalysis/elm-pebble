@@ -145,6 +145,8 @@ defmodule Ide.GitHub.Push do
     end
   end
 
+  @spec rm_rf(String.t()) :: term()
+
   defp rm_rf(path) do
     case File.rm_rf(path) do
       {:ok, _} -> :ok
@@ -168,6 +170,8 @@ defmodule Ide.GitHub.Push do
         {:error, reason}
     end
   end
+
+  @spec copy_entry(String.t(), term()) :: term()
 
   defp copy_entry(source, dest) do
     case File.lstat(source) do
@@ -288,6 +292,8 @@ defmodule Ide.GitHub.Push do
       {output, _} -> {:error, {:git_failed, "rev-parse HEAD", String.trim(output)}}
     end
   end
+
+  @spec commit_env() :: term()
 
   defp commit_env do
     [

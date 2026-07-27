@@ -1,5 +1,7 @@
 defmodule Elmx.Runtime.Pebble.SpecialValues.Json do
   @moduledoc false
+  alias Elmx.Types, as: Types
+
 
   @behaviour Elmx.Runtime.Pebble.SpecialValues.Dispatcher
 

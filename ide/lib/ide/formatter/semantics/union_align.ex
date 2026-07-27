@@ -19,6 +19,8 @@ defmodule Ide.Formatter.Semantics.UnionAlign do
     |> Enum.join("\n")
   end
 
+  @spec normalize_union_lines(term(), term(), term()) :: term()
+
   defp normalize_union_lines([], state, acc) do
     emit_blanks(acc, state.pending_blanks)
   end
@@ -82,8 +84,12 @@ defmodule Ide.Formatter.Semantics.UnionAlign do
     end
   end
 
+  @spec emit_blanks(term() | list(), term() | integer()) :: term()
+
   defp emit_blanks(acc, 0), do: acc
   defp emit_blanks(acc, n) when n > 0, do: emit_blanks(["" | acc], n - 1)
+
+  @spec normalize_union_constructor_line(pos_integer(), term(), term()) :: pos_integer()
 
   defp normalize_union_constructor_line(line, indent, marker) do
     trimmed = String.trim_leading(line)
@@ -118,9 +124,13 @@ defmodule Ide.Formatter.Semantics.UnionAlign do
     end
   end
 
+  @spec starts_with_trimmed?(pos_integer(), String.t()) :: boolean()
+
   defp starts_with_trimmed?(line, marker) when is_binary(marker) do
     String.trim_leading(line) |> String.starts_with?(marker)
   end
+
+  @spec type_declaration_line?(pos_integer()) :: boolean()
 
   defp type_declaration_line?(line) do
     trimmed = String.trim_leading(line)
@@ -137,6 +147,8 @@ defmodule Ide.Formatter.Semantics.UnionAlign do
       false
     end
   end
+
+  @spec collapse_spaces(integer()) :: term()
 
   defp collapse_spaces(value) do
     value
@@ -158,9 +170,13 @@ defmodule Ide.Formatter.Semantics.UnionAlign do
     |> String.trim()
   end
 
+  @spec split_top_level_pipes(String.t()) :: term()
+
   defp split_top_level_pipes(value) when is_binary(value) do
     do_split_top_level_pipes(value, [], "", [], false, false)
   end
+
+  @spec do_split_top_level_pipes(term() | binary(), term(), term(), term(), term(), term()) :: term()
 
   defp do_split_top_level_pipes("", _stack, current, segments, _in_string, _escape_next) do
     normalized = String.trim(current)
@@ -208,16 +224,22 @@ defmodule Ide.Formatter.Semantics.UnionAlign do
     end
   end
 
+  @spec pop_stack(term(), term()) :: term()
+
   defp pop_stack([], _closing), do: []
 
   defp pop_stack([open | rest], closing) do
     if delimiter_char_match?(open, closing), do: rest, else: [open | rest]
   end
 
+  @spec delimiter_char_match?(term(), term()) :: boolean()
+
   defp delimiter_char_match?(?(, ?)), do: true
   defp delimiter_char_match?(?[, ?]), do: true
   defp delimiter_char_match?(?{, ?}), do: true
   defp delimiter_char_match?(_, _), do: false
+
+  @spec leading_indent(pos_integer()) :: term()
 
   defp leading_indent(line) do
     String.length(line) - String.length(String.trim_leading(line))

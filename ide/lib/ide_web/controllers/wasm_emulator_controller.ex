@@ -113,6 +113,8 @@ defmodule IdeWeb.WasmEmulatorController do
     conn |> put_status(:bad_request) |> json(%{error: "Expected image data URL"})
   end
 
+  @spec build_install_plan(term(), term()) :: term()
+
   defp build_install_plan(pbw, firmware) do
     sdk_limit = firmware_sdk_limit(firmware)
     app_metadata = compatible_app_metadata(pbw.app_metadata, sdk_limit)
@@ -148,8 +150,12 @@ defmodule IdeWeb.WasmEmulatorController do
     }
   end
 
+  @spec firmware_sdk_limit(term()) :: term()
+
   defp firmware_sdk_limit("full"), do: {5, 86}
   defp firmware_sdk_limit(_), do: nil
+
+  @spec compatible_app_metadata(term() | map(), term()) :: term()
 
   defp compatible_app_metadata(metadata, nil), do: metadata
 
@@ -162,6 +168,8 @@ defmodule IdeWeb.WasmEmulatorController do
   end
 
   defp compatible_app_metadata(metadata, _sdk_limit), do: metadata
+
+  @spec compatible_part_data(map() | term(), term()) :: term()
 
   defp compatible_part_data(%{kind: :binary, data: data}, {major, max_minor})
        when byte_size(data) >= 12 do
@@ -176,16 +184,22 @@ defmodule IdeWeb.WasmEmulatorController do
 
   defp compatible_part_data(part, _sdk_limit), do: part.data
 
+  @spec packet_base64(term(), term()) :: term()
+
   defp packet_base64(endpoint, payload) do
     {endpoint, payload}
     |> Packets.frame()
     |> Base.encode64()
   end
 
+  @spec install_part_order(map() | term()) :: term()
+
   defp install_part_order(%{kind: :binary}), do: 0
   defp install_part_order(%{kind: :resources}), do: 1
   defp install_part_order(%{kind: :worker}), do: 2
   defp install_part_order(_part), do: 3
+
+  @spec page_html() :: term()
 
   defp page_html do
     """
@@ -1188,6 +1202,8 @@ defmodule IdeWeb.WasmEmulatorController do
     </html>
     """
   end
+
+  @spec require_wasm_enabled(integer(), keyword()) :: term()
 
   defp require_wasm_enabled(conn, _opts) do
     if EmulatorSupport.wasm_mode_enabled?() do

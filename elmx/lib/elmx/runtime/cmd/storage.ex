@@ -1,5 +1,7 @@
 defmodule Elmx.Runtime.Cmd.Storage do
   @moduledoc false
+  alias Elmx.Types, as: Types
+
 
   alias Elmx.Runtime.Cmd.Wire
   alias Elmx.Runtime.Values

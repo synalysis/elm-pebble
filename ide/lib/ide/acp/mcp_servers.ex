@@ -37,6 +37,8 @@ defmodule Ide.Acp.McpServers do
     }
   end
 
+  @spec normalize_capabilities(String.t() | list() | term()) :: String.t() | list()
+
   defp normalize_capabilities(capabilities) when is_binary(capabilities) do
     capabilities
     |> String.split(",", trim: true)
@@ -57,6 +59,8 @@ defmodule Ide.Acp.McpServers do
   end
 
   defp normalize_capabilities(_capabilities), do: "read"
+
+  @spec env_variables(map() | list() | Types.compile_env()) :: term()
 
   defp env_variables(env) when is_map(env) do
     Enum.map(env, fn {name, value} ->
@@ -79,12 +83,16 @@ defmodule Ide.Acp.McpServers do
 
   defp env_variables(_env), do: []
 
+  @spec configured_ide_dir() :: term()
+
   defp configured_ide_dir do
     :ide
     |> Application.get_env(__MODULE__, [])
     |> Keyword.get(:ide_dir, default_ide_dir())
     |> Path.expand()
   end
+
+  @spec default_ide_dir() :: term()
 
   defp default_ide_dir do
     cwd = File.cwd!()
@@ -100,6 +108,8 @@ defmodule Ide.Acp.McpServers do
         cwd
     end
   end
+
+  @spec shell_quote(integer()) :: term()
 
   defp shell_quote(value) do
     "'" <> String.replace(to_string(value), "'", "'\"'\"'") <> "'"

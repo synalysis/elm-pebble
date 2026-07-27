@@ -1,5 +1,7 @@
 defmodule Elmc.Backend.Pebble.SourceWriter.AppLifecycle.Tick do
   @moduledoc false
+  alias Elmc.Types, as: Types
+
 
   alias Elmc.Backend.Pebble.{MsgCodegen, Types}
 

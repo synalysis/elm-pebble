@@ -2,6 +2,8 @@ defmodule Elmc.Backend.Bytecode.Loader do
   @moduledoc """
   Load `.elmcbc` artifacts emitted by `Bytecode.ProjectWriter`.
   """
+  alias Elmc.Backend.Bytecode.Artifacts.Types, as: Types
+
 
   alias Elmc.Backend.Bytecode.{Lower, ManifestProgram, Program, Runtime}
 

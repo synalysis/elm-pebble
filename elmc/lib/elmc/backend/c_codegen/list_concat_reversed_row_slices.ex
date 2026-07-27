@@ -4,6 +4,8 @@ defmodule Elmc.Backend.CCodegen.ListConcatReversedRowSlices do
 
   Verifies `rowAt` as `List.take w (List.drop (row * w) board)` from `decl_map`.
   """
+  alias Elmc.Backend.CCodegen.Types, as: Types
+
 
   alias Elmc.Backend.CCodegen.Types
 
@@ -31,6 +33,8 @@ defmodule Elmc.Backend.CCodegen.ListConcatReversedRowSlices do
     end
   end
 
+  @spec parse(map() | term()) :: Types.ir_expr()
+
   defp parse(%{op: :qualified_call, target: "List.concat", args: [list_expr]}) do
     parse_list_literal(list_expr)
   end
@@ -56,6 +60,8 @@ defmodule Elmc.Backend.CCodegen.ListConcatReversedRowSlices do
   end
 
   defp parse(_), do: :error
+
+  @spec parse_list_literal(map() | term()) :: Types.ir_expr()
 
   defp parse_list_literal(%{op: :list_literal, items: items}) when is_list(items) do
     items
@@ -83,6 +89,8 @@ defmodule Elmc.Backend.CCodegen.ListConcatReversedRowSlices do
 
   defp parse_list_literal(_), do: :error
 
+  @spec parse_row_reverse(map() | term()) :: Types.ir_expr()
+
   defp parse_row_reverse(%{
          op: :qualified_call,
          target: "List.reverse",
@@ -92,6 +100,8 @@ defmodule Elmc.Backend.CCodegen.ListConcatReversedRowSlices do
   end
 
   defp parse_row_reverse(_), do: :error
+
+  @spec parse_row_at_call(map() | term()) :: Types.ir_expr()
 
   defp parse_row_at_call(%{
          op: :qualified_call,
@@ -113,6 +123,8 @@ defmodule Elmc.Backend.CCodegen.ListConcatReversedRowSlices do
 
   defp parse_row_at_call(_), do: :error
 
+  @spec row_slice_width(Types.decl_map(), String.t(), String.t()) :: Types.ir_expr()
+
   defp row_slice_width(decl_map, module_name, row_at_target) do
     case Map.get(decl_map, FusionSupport.callee_key(module_name, row_at_target)) do
       %{
@@ -130,6 +142,8 @@ defmodule Elmc.Backend.CCodegen.ListConcatReversedRowSlices do
     end
   end
 
+  @spec row_drop_stride?(map() | term(), Types.ir_expr() | term()) :: boolean()
+
   defp row_drop_stride?(
          %{
            op: :qualified_call,
@@ -141,6 +155,8 @@ defmodule Elmc.Backend.CCodegen.ListConcatReversedRowSlices do
        do: row_mul_width?(index_expr, width)
 
   defp row_drop_stride?(_, _), do: false
+
+  @spec row_mul_width?(map() | term(), Types.ir_expr() | term()) :: boolean()
 
   defp row_mul_width?(
          %{op: :call, name: op, args: [%{op: :var, name: "row"}, %{op: :int_literal, value: width}]},
@@ -161,6 +177,8 @@ defmodule Elmc.Backend.CCodegen.ListConcatReversedRowSlices do
        do: true
 
   defp row_mul_width?(_, _), do: false
+
+  @spec emit(String.t(), String.t(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
 
   defp emit(module_name, name, cells_var, width, rows) do
     c_prefix = Util.module_fn_name(module_name, name)
@@ -200,6 +218,8 @@ defmodule Elmc.Backend.CCodegen.ListConcatReversedRowSlices do
       _ -> :error
     end
   end
+
+  @spec row_at_from_parse(Types.expr(), Types.ir_expr()) :: Types.ir_expr()
 
   defp row_at_from_parse(expr, _row_indices) do
     case parse(expr) do

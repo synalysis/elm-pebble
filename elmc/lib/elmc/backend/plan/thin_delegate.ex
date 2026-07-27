@@ -1,5 +1,7 @@
 defmodule Elmc.Backend.Plan.ThinDelegate do
   @moduledoc false
+  alias Elmc.Backend.Plan.Types, as: Types
+
 
   alias Elmc.Backend.CCodegen.Host
   alias Elmc.Backend.Plan.Types
@@ -48,11 +50,17 @@ defmodule Elmc.Backend.Plan.ThinDelegate do
     end
   end
 
+  @spec user_callee?(String.t(), String.t(), Types.decl_map()) :: boolean()
+
   defp user_callee?(module, name, decl_map),
     do: is_map(Map.get(decl_map, {module, name}))
 
+  @spec kernel_call?(String.t()) :: boolean()
+
   defp kernel_call?(name) when is_binary(name),
     do: name in @kernel_call_names or String.starts_with?(name, "__")
+
+  @spec parse_qualified_target(String.t() | term()) :: Types.ir_expr()
 
   defp parse_qualified_target(target) when is_binary(target) do
     case String.split(target, ".") do

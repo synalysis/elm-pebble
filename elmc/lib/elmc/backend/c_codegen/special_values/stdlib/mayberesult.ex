@@ -1,5 +1,7 @@
 defmodule Elmc.Backend.CCodegen.SpecialValues.Stdlib.MaybeResult do
   @moduledoc false
+  alias Elmc.Backend.CCodegen.Types, as: Types
+
 
   alias Elmc.Backend.CCodegen.Types
 
@@ -244,8 +246,12 @@ defmodule Elmc.Backend.CCodegen.SpecialValues.Stdlib.MaybeResult do
 
   def special_value_from_target(_target, _args), do: nil
 
+  @spec int_list_with_default_fusion?(map() | term()) :: boolean()
+
   defp int_list_with_default_fusion?(%{op: :int_literal}), do: true
   defp int_list_with_default_fusion?(_), do: false
+
+  @spec list_at_target?(String.t() | term()) :: boolean()
 
   defp list_at_target?(target) when is_binary(target) do
     String.ends_with?(target, ".listAt") or String.ends_with?(target, ".list_at") or

@@ -1,5 +1,7 @@
 defmodule Elmx.Runtime.ViewShape.RenderOps do
   @moduledoc false
+  alias Elmx.Types, as: Types
+
 
   alias Elmx.Runtime.Pebble.Ui, as: PebbleUi
   alias Elmx.Runtime.ViewShape
@@ -37,12 +39,18 @@ defmodule Elmx.Runtime.ViewShape.RenderOps do
     end
   end
 
+  @spec render_op_list?(list()) :: boolean()
+
   def render_op_list?(ops) when is_list(ops),
     do: Enum.all?(ops, &render_op_shape?/1)
+
+  @spec render_op_shape?(map() | term()) :: boolean()
 
   def render_op_shape?(%{"type" => type}) when is_binary(type), do: draw_op_type?(type)
   def render_op_shape?(%{type: type}) when is_binary(type) or is_atom(type), do: draw_op_type?(to_string(type))
   def render_op_shape?(_), do: false
+
+  @spec draw_op_type?(String.t()) :: boolean()
 
   def draw_op_type?(type) when is_binary(type), do: MapSet.member?(@render_op_types, type)
 end

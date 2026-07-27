@@ -1,5 +1,7 @@
 defmodule Elmx.Runtime.Core.Tuple do
   @moduledoc false
+  alias Elmx.Types, as: Types
+
 
   alias Elmx.Runtime.Core.Apply
 

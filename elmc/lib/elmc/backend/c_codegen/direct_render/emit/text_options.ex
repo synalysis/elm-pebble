@@ -1,5 +1,7 @@
 defmodule Elmc.Backend.CCodegen.DirectRender.Emit.TextOptions do
   @moduledoc false
+  alias Elmc.Backend.CCodegen.Types, as: Types
+
 
   alias Elmc.Backend.CCodegen.EnvBindings
   alias Elmc.Backend.CCodegen.Expr
@@ -88,6 +90,8 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.TextOptions do
 
   def arg(options, _env, _counter), do: expr(options)
 
+  @spec packed_c_value(Types.expr()) :: Types.ir_expr()
+
   defp packed_c_value(expr) do
     expr =
       case expr do
@@ -107,6 +111,8 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.TextOptions do
       _ -> :error
     end
   end
+
+  @spec value_shape?(map() | term()) :: boolean()
 
   defp value_shape?(%{op: :qualified_call, target: target, args: args}) when is_binary(target) do
     case Host.normalize_special_target(target) do
@@ -159,6 +165,8 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.TextOptions do
     :ok
   end
 
+  @spec register_packed_value_aliases(Types.expr(), Types.ir_expr()) :: Types.ir_expr()
+
   defp register_packed_value_aliases(expr, ref) do
     case packed_expr(expr) do
       {:ok, %{op: :c_int_expr, value: value}} ->
@@ -178,6 +186,8 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.TextOptions do
     end
   end
 
+  @spec hoisted_alias_exprs(map() | Types.expr()) :: Types.ir_expr()
+
   defp hoisted_alias_exprs(%{op: :if, then_expr: then_expr, else_expr: else_expr}) do
     case {packed_c_value(then_expr), packed_c_value(else_expr)} do
       {{:ok, then_value}, {:ok, else_value}} when then_value == else_value ->
@@ -190,12 +200,16 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.TextOptions do
 
   defp hoisted_alias_exprs(expr), do: [expr]
 
+  @spec record_fields?(list()) :: boolean()
+
   defp record_fields?(fields) do
     fields
     |> Enum.map(& &1.name)
     |> Enum.sort()
     |> Kernel.==(["alignment", "overflow"])
   end
+
+  @spec expr_from_static_record(keyword()) :: Types.ir_expr()
 
   defp expr_from_static_record(options) do
     alignment = Expr.record_field_expr(options, "alignment")

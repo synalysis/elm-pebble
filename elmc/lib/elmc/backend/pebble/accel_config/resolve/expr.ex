@@ -1,5 +1,7 @@
 defmodule Elmc.Backend.Pebble.AccelConfig.Resolve.Expr do
   @moduledoc false
+  alias Elmc.Types, as: Types
+
 
   alias Elmc.Backend.CCodegen.Types, as: CCodegenTypes
   alias Elmc.Backend.Pebble.Types

@@ -2,6 +2,8 @@ defmodule Elmx.Runtime.Core do
   @moduledoc """
   Elm `elm/core` runtime helpers for generated Elixir code.
   """
+  alias Elmx.Types, as: Types
+
 
   alias Elmx.Types
 
@@ -74,6 +76,8 @@ defmodule Elmx.Runtime.Core do
 
   def new_char(_), do: {:elmx_char, 0xFFFD}
 
+  @spec valid_char_code?(integer()) :: boolean()
+
   defp valid_char_code?(code) when is_integer(code), do: code >= 0 and code <= 0x10FFFF
 
   @spec basics_compare(Types.comparable(), Types.comparable()) :: :LT | :EQ | :GT
@@ -125,6 +129,7 @@ defmodule Elmx.Runtime.Core do
 
   @spec apply1(Types.elm_hof(), Types.elm_value()) :: Types.elm_value()
   defdelegate apply1(fun, arg), to: Elmx.Runtime.Core.Apply
+  defdelegate call1(fun, arg), to: Elmx.Runtime.Core.Apply
   defdelegate fix(f), to: Elmx.Runtime.Core.Apply
 
   @spec apply2(Types.elm_hof(), Types.elm_value(), Types.elm_value()) :: Types.elm_value()
@@ -145,6 +150,8 @@ defmodule Elmx.Runtime.Core do
   defdelegate apply5(fun, a, b, c, d, e), to: Elmx.Runtime.Core.Apply
   defdelegate apply6(fun, a, b, c, d, e, f), to: Elmx.Runtime.Core.Apply
   defdelegate apply7(fun, a, b, c, d, e, f, g), to: Elmx.Runtime.Core.Apply
+
+  @spec to_number(integer() | float() | map() | term()) :: Types.elm_value()
 
   defp to_number(n) when is_integer(n), do: {:ok, n}
   defp to_number(n) when is_float(n), do: {:ok, n}

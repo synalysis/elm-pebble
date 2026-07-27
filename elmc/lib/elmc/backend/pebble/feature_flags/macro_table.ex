@@ -1,5 +1,7 @@
 defmodule Elmc.Backend.Pebble.FeatureFlags.MacroTable do
   @moduledoc false
+  alias Elmc.Types, as: Types
+
 
   alias Elmc.Backend.Pebble.Types
   alias Elmc.Backend.Pebble.FeatureFlags.MacroTable.{CommandRows, DrawRows, EventRows}

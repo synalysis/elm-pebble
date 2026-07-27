@@ -74,6 +74,8 @@ defmodule Ide.Debugger.RuntimeBackgroundWork do
     end
   end
 
+  @spec poll_idle(term(), pos_integer()) :: term()
+
   defp poll_idle(project_slug, deadline) do
     if idle?(project_slug) do
       true
@@ -86,6 +88,8 @@ defmodule Ide.Debugger.RuntimeBackgroundWork do
       end
     end
   end
+
+  @spec ensure_table() :: term()
 
   defp ensure_table do
     if :ets.whereis(@table) == :undefined do

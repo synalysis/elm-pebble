@@ -139,6 +139,13 @@ if_expr -> if_kw pipe_right_expr then_kw newline indent pipe_right_expr dedent e
   build_if('$2', '$6', '$9').
 if_expr -> if_kw pipe_right_expr then_kw newline indent pipe_right_expr dedent else_kw newline indent pipe_right_expr dedent :
   build_if('$2', '$6', '$11').
+%% When the then-body is a multiline `case` (or similar), its closing dedent is
+%% consumed inside that expression — same shape as let-in + case (no trailing
+%% dedent after the body). Lookahead `else_kw` selects these over the dedent forms.
+if_expr -> if_kw pipe_right_expr then_kw newline indent pipe_right_expr else_kw pipe_right_expr :
+  build_if('$2', '$6', '$8').
+if_expr -> if_kw pipe_right_expr then_kw newline indent pipe_right_expr else_kw newline indent pipe_right_expr dedent :
+  build_if('$2', '$6', '$10').
 
 case_expr -> case_kw pipe_right_expr of_kw case_after_of case_branches case_after_branches :
   build_case('$2', '$5').
@@ -268,7 +275,13 @@ compare_op -> gt : gt.
 compare_op -> lt : lt.
 
 add_expr -> add_expr plus mul_expr : build_add('$1', '$3').
+add_expr -> add_expr newline plus mul_expr : build_add('$1', '$4').
+add_expr -> add_expr newline indent plus mul_expr : build_add('$1', '$5').
+add_expr -> add_expr newline indent plus mul_expr dedent : build_add('$1', '$5').
 add_expr -> add_expr minus mul_expr : build_sub('$1', '$3').
+add_expr -> add_expr newline minus mul_expr : build_sub('$1', '$4').
+add_expr -> add_expr newline indent minus mul_expr : build_sub('$1', '$5').
+add_expr -> add_expr newline indent minus mul_expr dedent : build_sub('$1', '$5').
 add_expr -> mul_expr : '$1'.
 
 mul_expr -> mul_expr times pow_expr : build_mul('$1', '$3').

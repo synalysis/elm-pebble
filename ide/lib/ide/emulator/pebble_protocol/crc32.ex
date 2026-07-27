@@ -15,6 +15,8 @@ defmodule Ide.Emulator.PebbleProtocol.CRC32 do
     |> band(@mask)
   end
 
+  @spec words(term()) :: term()
+
   defp words(data) do
     full_size = div(byte_size(data), 4) * 4
     <<full::binary-size(^full_size), rest::binary>> = data
@@ -37,6 +39,8 @@ defmodule Ide.Emulator.PebbleProtocol.CRC32 do
         full_words ++ [word]
     end
   end
+
+  @spec add_word(term(), term()) :: term()
 
   defp add_word(word, crc) do
     crc = bxor(crc, word)

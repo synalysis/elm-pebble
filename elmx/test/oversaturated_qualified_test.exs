@@ -33,7 +33,7 @@ defmodule Elmx.OversaturatedQualifiedTest do
     code = IO.iodata_to_binary(emit_code)
 
     assert code =~ "elem(ops, 0)"
-    assert code =~ "Apply.apply1"
+    assert code =~ "Apply.call1"
     refute code =~ "elem(ops, g, 7"
   end
 
@@ -120,7 +120,7 @@ defmodule Elmx.OversaturatedQualifiedTest do
     code = IO.iodata_to_binary(emit_code)
 
     assert code =~ "elmx_pipe_slot_"
-    assert code =~ "Apply.apply1(add1, elmx_pipe_slot_"
-    refute String.match?(code, ~r/Apply\.apply1\(Apply\.apply1/)
+    assert code =~ "Apply.call1(add1, elmx_pipe_slot_"
+    refute String.match?(code, ~r/Apply\.call1\(Apply\.call1/)
   end
 end

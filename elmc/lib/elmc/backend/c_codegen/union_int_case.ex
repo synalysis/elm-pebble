@@ -1,5 +1,7 @@
 defmodule Elmc.Backend.CCodegen.UnionIntCase do
   @moduledoc false
+  alias Elmc.Backend.CCodegen.Types, as: Types
+
 
   alias Elmc.Backend.CCodegen.Types
 
@@ -19,9 +21,12 @@ defmodule Elmc.Backend.CCodegen.UnionIntCase do
   def try_emit(_module_name, _name, nil, _decl_map), do: :error
 
   def try_emit(module_name, name, expr, decl_map) do
-    with {:ok, _subject, branches} <- parse_case(expr),
+    with {:ok, subject, branches} <- parse_case(expr),
          param when is_binary(param) <- fusion_param_name(module_name, name, decl_map),
+         true <- single_param_decl?(module_name, name, decl_map),
+         true <- subject_is_param?(subject, param),
          true <- ConstructorTagCase.branches?(branches),
+         true <- not bool_ctor_branches?(branches),
          true <- union_int_case_eligible?(branches) do
       env =
         module_name
@@ -47,6 +52,8 @@ defmodule Elmc.Backend.CCodegen.UnionIntCase do
       _ -> :error
     end
   end
+
+  @spec emit_native_int_tag_switch(list(), Types.compile_env(), Types.ir_expr()) :: Types.ir_expr()
 
   defp emit_native_int_tag_switch(branches, env, param) do
     int_scratch = "case_int_1"
@@ -113,6 +120,8 @@ defmodule Elmc.Backend.CCodegen.UnionIntCase do
     """
   end
 
+  @spec case_label(map(), Types.compile_env()) :: Types.ir_expr()
+
   defp case_label(%{kind: :wildcard}, _env), do: "default"
 
   defp case_label(%{kind: :constructor, tag: tag} = pattern, env) when is_integer(tag) do
@@ -130,9 +139,13 @@ defmodule Elmc.Backend.CCodegen.UnionIntCase do
     "case #{ref || Integer.to_string(tag)}"
   end
 
+  @spec branch_int_spec(map(), Types.compile_env()) :: Types.ir_expr()
+
   defp branch_int_spec(%{expr: expr}, env) do
     int_expr_spec(expr, env)
   end
+
+  @spec parse_case(map() | term()) :: Types.ir_expr()
 
   defp parse_case(%{op: :case, subject: subject, branches: branches}),
     do: {:ok, subject, branches}
@@ -140,10 +153,35 @@ defmodule Elmc.Backend.CCodegen.UnionIntCase do
   defp parse_case(%{op: :let_in, in_expr: body}), do: parse_case(body)
   defp parse_case(_), do: :error
 
+  @spec union_int_case_eligible?(list()) :: boolean()
+
   defp union_int_case_eligible?(branches) when is_list(branches) do
     int_count = Enum.count(branches, &int_literal_branch?/1)
     int_count >= 2 and Enum.all?(branches, &int_literal_branch?/1)
   end
+
+  defp bool_ctor_branches?(branches) when is_list(branches) do
+    Enum.any?(branches, fn branch ->
+      case Map.get(branch, :pattern) do
+        %{kind: :constructor} = pattern -> bool_ctor_name?(pattern)
+        _ -> false
+      end
+    end)
+  end
+
+  defp bool_ctor_name?(pattern) when is_map(pattern) do
+    [Map.get(pattern, :resolved_name), Map.get(pattern, :name)]
+    |> Enum.any?(fn
+      name when is_binary(name) ->
+        short = name |> String.split(".") |> List.last()
+        short in ["True", "False"]
+
+      _ ->
+        false
+    end)
+  end
+
+  @spec int_literal_branch?(map() | term()) :: boolean()
 
   defp int_literal_branch?(%{pattern: %{tag: tag}, expr: %{op: :int_literal, value: value}})
        when is_integer(tag) and is_integer(value),
@@ -151,11 +189,15 @@ defmodule Elmc.Backend.CCodegen.UnionIntCase do
 
   defp int_literal_branch?(_), do: false
 
+  @spec union_int_lut(list()) :: Types.ir_expr()
+
   defp union_int_lut(branches) do
     Map.new(branches, fn %{pattern: %{tag: tag}, expr: %{op: :int_literal, value: wire}} ->
       {tag, wire}
     end)
   end
+
+  @spec int_expr_spec(map() | Types.expr(), Types.compile_env()) :: Types.ir_expr()
 
   defp int_expr_spec(%{op: :int_literal, value: value} = expr, env)
        when is_integer(value) do
@@ -164,12 +206,31 @@ defmodule Elmc.Backend.CCodegen.UnionIntCase do
 
   defp int_expr_spec(_expr, _env), do: :complex
 
+  @spec fusion_param_name(String.t(), String.t(), Types.decl_map()) :: Types.ir_expr()
+
   defp fusion_param_name(module_name, name, decl_map) do
     case Map.get(decl_map, {module_name, name}) do
       %{args: [param | _]} when is_binary(param) -> param
       _ -> nil
     end
   end
+
+  # Native helper is unary (`elmc_int_t param`). Multi-arg wrappers still pass every
+  # decl arg (ListSortWith.descending), so only fuse true 1-param case-on-param shapes.
+  defp single_param_decl?(module_name, name, decl_map) do
+    case Map.get(decl_map, {module_name, name}) do
+      %{args: [_]} -> true
+      _ -> false
+    end
+  end
+
+  defp subject_is_param?(%{op: :var, name: name}, param) when is_binary(name) and is_binary(param),
+    do: name == param
+
+  defp subject_is_param?(name, param) when is_binary(name) and is_binary(param), do: name == param
+  defp subject_is_param?(_, _), do: false
+
+  @spec fusion_env(String.t(), String.t(), String.t()) :: Types.ir_expr()
 
   defp fusion_env(module_name, name, param) when is_binary(param) do
     %{
@@ -187,8 +248,11 @@ defmodule Elmc.Backend.CCodegen.UnionIntCase do
   @doc false
   @spec extract_fusion_data(String.t(), String.t(), Types.ir_expr() | nil, Types.function_decl_map()) ::
           {:ok, :union_int_lut, Types.fusion_metadata()} | :error
-  def extract_fusion_data(_module_name, _name, expr, _decl_map) do
-    with {:ok, _subject, branches} <- parse_case(expr),
+  def extract_fusion_data(module_name, name, expr, decl_map) do
+    with {:ok, subject, branches} <- parse_case(expr),
+         param when is_binary(param) <- fusion_param_name(module_name, name, decl_map),
+         true <- single_param_decl?(module_name, name, decl_map),
+         true <- subject_is_param?(subject, param),
          true <- union_int_case_eligible?(branches) do
       {:ok, :union_int_lut, %{lut: union_int_lut(branches), exhaustive: true}}
     else

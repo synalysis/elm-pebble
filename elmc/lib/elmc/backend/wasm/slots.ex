@@ -1,6 +1,7 @@
 defmodule Elmc.Backend.Wasm.Slots do
   @moduledoc false
 
+
   alias Elmc.Backend.Plan
   alias Elmc.Backend.Plan.Types.FunctionPlan
   alias Elmc.Backend.Wasm.Types, as: WasmTypes

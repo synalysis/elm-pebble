@@ -1,5 +1,7 @@
 defmodule Elmc.Backend.Plan.Fusion.ListIntSearch do
   @moduledoc false
+  alias Elmc.Backend.Plan.Types, as: Types
+
 
   alias Elmc.Backend.CCodegen.{EnvBindings, Host, Util}
   alias Elmc.Backend.CCodegen.Native.ListIntSearch
@@ -24,6 +26,8 @@ defmodule Elmc.Backend.Plan.Fusion.ListIntSearch do
       _ -> :error
     end
   end
+
+  @spec emit_helper(String.t(), Types.decl(), Types.decl_map()) :: Types.ir_expr()
 
   defp emit_helper(module_name, decl, decl_map) do
     env = fusion_env(module_name, decl, decl_map)
@@ -52,6 +56,8 @@ defmodule Elmc.Backend.Plan.Fusion.ListIntSearch do
     end
   end
 
+  @spec maybe_mark_native_scalar(map(), term()) :: Types.ir_expr() | nil
+
   defp maybe_mark_native_scalar(%FunctionPlan{} = plan, {:native_int, :delegate}) do
     %FunctionPlan{
       plan
@@ -69,6 +75,8 @@ defmodule Elmc.Backend.Plan.Fusion.ListIntSearch do
         fusion_emit: :helper_only
     }
   end
+
+  @spec fusion_env(String.t(), Types.decl(), Types.decl_map()) :: Types.ir_expr()
 
   defp fusion_env(module_name, decl, decl_map) do
     args = Map.get(decl, :args, [])
@@ -92,6 +100,8 @@ defmodule Elmc.Backend.Plan.Fusion.ListIntSearch do
     end)
   end
 
+  @spec wrap_native_helper(String.t(), Types.decl(), Types.decl_map(), Types.ir_expr(), Types.ir_expr(), String.t()) :: Types.ir_expr()
+
   defp wrap_native_helper(module_name, decl, decl_map, code, result_var, name_suffix \\ "_native") do
     c_prefix = Util.module_fn_name(module_name, decl.name)
     params = native_param_decls(decl, module_name, decl_map)
@@ -104,6 +114,8 @@ defmodule Elmc.Backend.Plan.Fusion.ListIntSearch do
     }
     """
   end
+
+  @spec native_param_decls(Types.decl(), String.t(), Types.decl_map()) :: Types.ir_expr()
 
   defp native_param_decls(decl, module_name, decl_map) do
     args = Map.get(decl, :args, [])
@@ -128,6 +140,8 @@ defmodule Elmc.Backend.Plan.Fusion.ListIntSearch do
     end)
   end
 
+  @spec compile_not_found_literal(map() | term(), Types.compile_env() | term(), Types.ir_expr() | term(), Types.ir_expr() | term()) :: Types.ir_expr()
+
   defp compile_not_found_literal(%{op: :int_literal, value: value}, _env, :native_int, _counter)
        when is_integer(value) do
     {"", Integer.to_string(value), 0}
@@ -140,12 +154,16 @@ defmodule Elmc.Backend.Plan.Fusion.ListIntSearch do
 
   defp compile_not_found_literal(_, _, _, _), do: {"", "0", 0}
 
+  @spec attach_list_int_search_fusion(map(), String.t(), Types.decl(), Types.decl_map()) :: Types.ir_expr()
+
   defp attach_list_int_search_fusion(%FunctionPlan{} = plan, module_name, decl, decl_map) do
     case fusion_bytecode_data(module_name, decl, decl_map) do
       {:ok, data} -> Helper.attach_bytecode_fusion(plan, :list_int_search, data)
       :error -> plan
     end
   end
+
+  @spec fusion_bytecode_data(String.t(), Types.decl(), Types.decl_map()) :: Types.ir_expr()
 
   defp fusion_bytecode_data(module_name, decl, decl_map) do
     case ListIntSearch.recognize(decl, module_name, decl_map) do
@@ -163,9 +181,13 @@ defmodule Elmc.Backend.Plan.Fusion.ListIntSearch do
     end
   end
 
+  @spec not_found_literal(map() | term()) :: Types.ir_expr()
+
   defp not_found_literal(%{op: :int_literal, value: value}) when is_integer(value), do: value
   defp not_found_literal(%{op: :c_int_expr, value: value}) when is_binary(value), do: String.to_integer(value)
   defp not_found_literal(_), do: -1
+
+  @spec delegate_help_forward_decl(map(), Types.decl_map(), String.t(), Types.decl()) :: Types.ir_expr()
 
   defp delegate_help_forward_decl(
          %{help_module: help_module, help_name: help_name},

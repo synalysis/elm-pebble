@@ -67,9 +67,13 @@ defmodule Ide.Emulator.PebbleProtocol.LogLines do
       String.contains?(line, "fault_handling")
   end
 
+  @spec putbytes_noise?(binary() | term()) :: boolean()
+
   defp putbytes_noise?(<<0x02, _cookie::32, _size::32, _payload::binary>>), do: true
   defp putbytes_noise?(<<0x02, _rest::binary>>), do: true
   defp putbytes_noise?(_), do: false
+
+  @spec format_app_log(term()) :: term()
 
   defp format_app_log(payload) do
     if byte_size(payload) >= 40 do
@@ -92,6 +96,8 @@ defmodule Ide.Emulator.PebbleProtocol.LogLines do
     end
   end
 
+  @spec format_system_log(term()) :: term()
+
   defp format_system_log(payload) do
     strings = printable_strings(payload)
 
@@ -103,6 +109,8 @@ defmodule Ide.Emulator.PebbleProtocol.LogLines do
         ["SystemLog #{hex_preview(payload)}"]
     end
   end
+
+  @spec format_app_run_state(term()) :: term()
 
   defp format_app_run_state(payload) do
     case payload do
@@ -123,9 +131,13 @@ defmodule Ide.Emulator.PebbleProtocol.LogLines do
     end
   end
 
+  @spec format_app_fetch(term()) :: term()
+
   defp format_app_fetch(payload) do
     "AppFetch #{hex_preview(payload)}"
   end
+
+  @spec c_string(term()) :: term()
 
   defp c_string(binary) do
     binary
@@ -134,6 +146,8 @@ defmodule Ide.Emulator.PebbleProtocol.LogLines do
     |> to_string()
     |> String.trim()
   end
+
+  @spec printable_strings_impl(String.t()) :: term()
 
   defp printable_strings_impl(binary) when is_binary(binary) do
     binary
@@ -144,11 +158,15 @@ defmodule Ide.Emulator.PebbleProtocol.LogLines do
     |> Enum.filter(&(String.length(&1) >= 4))
   end
 
+  @spec hex_preview(term()) :: term()
+
   defp hex_preview(payload) do
     preview = binary_part(payload, 0, min(byte_size(payload), 24))
     hex = Base.encode16(preview, case: :lower)
     if byte_size(payload) > 24, do: hex <> "...", else: hex
   end
+
+  @spec format_uuid(binary()) :: term()
 
   defp format_uuid(<<a::32, b::16, c::16, d::16, e::48>>) do
     Enum.join(

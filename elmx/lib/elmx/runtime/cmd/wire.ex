@@ -1,9 +1,13 @@
 defmodule Elmx.Runtime.Cmd.Wire do
   @moduledoc false
+  alias Elmx.Types, as: Types
+
 
   alias Elmx.Runtime.Cmd
   alias Elmx.Runtime.Values
   alias Elmx.Types
+
+  @spec data_log_tag_id(map() | term() | integer()) :: Types.elm_value()
 
   def data_log_tag_id(%{"ctor" => "Tag", "args" => [tag]}) when is_integer(tag), do: {:ok, tag}
   def data_log_tag_id(%{ctor: :Tag, args: [tag]}) when is_integer(tag), do: {:ok, tag}

@@ -5,6 +5,8 @@ defmodule Elmx.Runtime.Json.Decode do
   Decoders are opaque `{:json_decoder, spec}` terms composed at compile time and
   interpreted by `decode_value/2` against plain maps or JSON strings.
   """
+  alias Elmx.Types, as: Types
+
 
   alias Elmx.Runtime.Json.Decode.{Build, Runtime}
   alias Elmx.Types

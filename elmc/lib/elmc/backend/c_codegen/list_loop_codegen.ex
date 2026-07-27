@@ -1,10 +1,14 @@
 defmodule Elmc.Backend.CCodegen.ListLoopCodegen do
   @moduledoc false
+  alias Elmc.Backend.CCodegen.Types, as: Types
+
 
   alias Elmc.Backend.CCodegen.RcRuntimeEmit
   alias Elmc.Backend.CCodegen.Types
   alias Elmc.Backend.CCodegen.Util
   alias Elmc.Backend.CCodegen.ValueSlots
+
+  @spec val_expr(String.t()) :: Types.ir_expr()
 
   defp val_expr(ref) when is_binary(ref), do: RcRuntimeEmit.value_expr(ref)
 
@@ -111,6 +115,8 @@ defmodule Elmc.Backend.CCodegen.ListLoopCodegen do
     end
   end
 
+  @spec emit_repeat_inline_loop_cons(Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), term(), Types.compile_env()) :: Types.ir_expr()
+
   defp emit_repeat_inline_loop_cons(count_ref, value_ref, loop_id, acc, env) do
     index_var = "list_repeat_i_#{loop_id}"
 
@@ -186,12 +192,14 @@ defmodule Elmc.Backend.CCodegen.ListLoopCodegen do
           pos_integer()
         ) :: String.t()
   def emit_int_list_cons_assign(env, out, head, tail, loop_id, opts \\ []) do
+    native_head = Keyword.get(opts, :native_head)
     head = val_expr(head)
     tail = val_expr(tail)
-    head_ref = "(#{head})"
+    head_ref = if native_head, do: native_head, else: "(#{head})"
     tail_ref = "(#{tail})"
     buf = "int_list_cons_buf_#{loop_id}"
     len = "int_list_cons_tail_len_#{loop_id}"
+    head_int_ref = if native_head, do: native_head, else: "elmc_as_int(#{head_ref})"
 
     declare? =
       Keyword.get(
@@ -227,22 +235,41 @@ defmodule Elmc.Backend.CCodegen.ListLoopCodegen do
       )
 
     slow_path_assign =
-      RcRuntimeEmit.mutually_exclusive_allocator_assign(
-        env,
-        out,
-        "elmc_list_cons",
-        "#{head}, #{tail}",
-        declare_out?: false
-      )
+      if native_head do
+        head_box = "int_list_cons_head_#{loop_id}"
+
+        """
+        ElmcValue *#{head_box} = NULL;
+        Rc = elmc_new_int(&#{head_box}, #{native_head});
+        CHECK_RC(Rc);
+        #{RcRuntimeEmit.mutually_exclusive_allocator_assign(env, out, "elmc_list_cons", "#{head_box}, #{tail}", declare_out?: false)}
+        elmc_release(#{head_box});
+        """
+      else
+        RcRuntimeEmit.mutually_exclusive_allocator_assign(
+          env,
+          out,
+          "elmc_list_cons",
+          "#{head}, #{tail}",
+          declare_out?: false
+        )
+      end
+
+    fast_path_guard =
+      if native_head do
+        "(#{tail_ref} && #{tail_ref}->tag == ELMC_TAG_INT_LIST)"
+      else
+        "(#{tail_ref} && #{tail_ref}->tag == ELMC_TAG_INT_LIST && #{head_ref} && (#{head_ref}->tag == ELMC_TAG_INT || #{head_ref}->tag == ELMC_TAG_CHAR))"
+      end
 
     if ValueSlots.owned_ref?(out), do: ValueSlots.mark_written(out)
 
     """
-    #{init}if (#{tail_ref} && #{tail_ref}->tag == ELMC_TAG_INT_LIST && #{head_ref} && (#{head_ref}->tag == ELMC_TAG_INT || #{head_ref}->tag == ELMC_TAG_CHAR)) {
+    #{init}if #{fast_path_guard} {
       ElmcIntListPayload *_ilp_#{loop_id} = (ElmcIntListPayload *)#{tail_ref}->payload;
       int #{len} = _ilp_#{loop_id} ? _ilp_#{loop_id}->length : 0;
       elmc_int_t #{buf}[1 + #{len}];
-      #{buf}[0] = elmc_as_int(#{head_ref});
+      #{buf}[0] = #{head_int_ref};
       for (int _ii_#{loop_id} = 0; _ii_#{loop_id} < #{len}; _ii_#{loop_id}++) {
         #{buf}[_ii_#{loop_id} + 1] = _ilp_#{loop_id}->values[_ii_#{loop_id}];
       }
@@ -283,6 +310,8 @@ defmodule Elmc.Backend.CCodegen.ListLoopCodegen do
     end
   end
 
+  @spec repeat_count_display(Types.ir_expr(), Types.compile_env()) :: Types.ir_expr()
+
   defp repeat_count_display(count_ref, env) do
     case {Util.parse_compile_time_int_ref(count_ref), Map.get(env, :__repeat_count_source__)} do
       {n, expr} when is_integer(n) and is_map(expr) ->
@@ -292,6 +321,8 @@ defmodule Elmc.Backend.CCodegen.ListLoopCodegen do
         count_ref
     end
   end
+
+  @spec emit_int_zero_repeat_from_dynamic_count(Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.compile_env()) :: Types.ir_expr()
 
   defp emit_int_zero_repeat_from_dynamic_count(count_ref, out, loop_id, env) do
     buf = "list_repeat_zero_buf_#{loop_id}"
@@ -456,6 +487,8 @@ defmodule Elmc.Backend.CCodegen.ListLoopCodegen do
   defp forward_cell(loop_id), do: "list_fwd_cell_#{loop_id}"
 
   # `elmc_list_cons` retains its head; owned forward-build loops already hold one ref.
+  @spec owned_forward_item_expr?(String.t()) :: boolean()
+
   defp owned_forward_item_expr?(item_expr) when is_binary(item_expr) do
     Regex.match?(~r/^[A-Za-z_][A-Za-z0-9_]*$/, item_expr)
   end
@@ -492,6 +525,8 @@ defmodule Elmc.Backend.CCodegen.ListLoopCodegen do
     end
   end
 
+  @spec emit_native_linked_int_head_loop(Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+
   defp emit_native_linked_int_head_loop(list_ref, loop_id, head_native_var, inner_body) do
     cursor = "list_spine_cursor_#{loop_id}"
 
@@ -514,6 +549,8 @@ defmodule Elmc.Backend.CCodegen.ListLoopCodegen do
     """
   end
 
+  @spec emit_native_list_int_head_loop_only(Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+
   defp emit_native_list_int_head_loop_only(list_ref, loop_id, head_native_var, inner_body) do
     """
     if (#{val_expr(list_ref)} && #{val_expr(list_ref)}->tag == ELMC_TAG_INT_LIST) {
@@ -526,6 +563,8 @@ defmodule Elmc.Backend.CCodegen.ListLoopCodegen do
     }
     """
   end
+
+  @spec emit_native_list_cons_head_loop_only(Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
 
   defp emit_native_list_cons_head_loop_only(list_ref, loop_id, head_native_var, inner_body) do
     cursor = "list_walk_cursor_#{loop_id}"
@@ -541,6 +580,8 @@ defmodule Elmc.Backend.CCodegen.ListLoopCodegen do
     }
     """
   end
+
+  @spec emit_native_list_int_head_loop_dual(Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
 
   defp emit_native_list_int_head_loop_dual(list_ref, loop_id, head_native_var, inner_body) do
     cursor = "list_walk_cursor_#{loop_id}"
@@ -589,6 +630,8 @@ defmodule Elmc.Backend.CCodegen.ListLoopCodegen do
     end
   end
 
+  @spec int_list_head_take(Types.ir_expr(), Types.expr(), Types.compile_env()) :: Types.ir_expr()
+
   defp int_list_head_take(head_var, list_expr, env) do
     if RcRuntimeEmit.rc_allocator_emit_mode?(env) do
       RcRuntimeEmit.check_rc_take(head_var, "elmc_new_int", list_expr, env, declare_out?: false)
@@ -596,6 +639,8 @@ defmodule Elmc.Backend.CCodegen.ListLoopCodegen do
       RcRuntimeEmit.assign_stmt(head_var, "elmc_new_int_take(#{list_expr})")
     end
   end
+
+  @spec int_spine_head_take(Types.ir_expr(), Types.expr(), Types.compile_env()) :: Types.ir_expr()
 
   defp int_spine_head_take(head_var, list_expr, env) do
     if RcRuntimeEmit.rc_allocator_emit_mode?(env) do
@@ -606,6 +651,8 @@ defmodule Elmc.Backend.CCodegen.ListLoopCodegen do
       RcRuntimeEmit.assign_stmt(head_var, "elmc_int_spine_head_boxed_take(#{list_expr})")
     end
   end
+
+  @spec emit_boxed_head_int_list_walk_only(Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), keyword()) :: Types.ir_expr()
 
   defp emit_boxed_head_int_list_walk_only(list_ref, loop_id, head_var, inner_body, opts) do
     env = Keyword.get(opts, :env, %{})
@@ -624,6 +671,8 @@ defmodule Elmc.Backend.CCodegen.ListLoopCodegen do
     """
   end
 
+  @spec emit_boxed_head_cons_walk_only(Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+
   defp emit_boxed_head_cons_walk_only(list_ref, loop_id, head_var, inner_body) do
     cursor = "list_walk_cursor_#{loop_id}"
     node = "list_walk_node_#{loop_id}"
@@ -638,6 +687,8 @@ defmodule Elmc.Backend.CCodegen.ListLoopCodegen do
     }
     """
   end
+
+  @spec emit_boxed_head_native_linked_walk(Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), keyword()) :: Types.ir_expr()
 
   defp emit_boxed_head_native_linked_walk(list_ref, loop_id, head_var, inner_body, opts) do
     env = Keyword.get(opts, :env, %{})
@@ -667,6 +718,8 @@ defmodule Elmc.Backend.CCodegen.ListLoopCodegen do
     """
   end
 
+  @spec emit_boxed_head_record_seq_walk_only(Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+
   defp emit_boxed_head_record_seq_walk_only(list_ref, loop_id, head_var, inner_body) do
     """
     if (#{val_expr(list_ref)} && #{val_expr(list_ref)}->tag == ELMC_TAG_RECORD_SEQ) {
@@ -679,6 +732,8 @@ defmodule Elmc.Backend.CCodegen.ListLoopCodegen do
     }
     """
   end
+
+  @spec emit_boxed_head_list_walk_dual(Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), keyword()) :: Types.ir_expr()
 
   defp emit_boxed_head_list_walk_dual(list_ref, loop_id, head_var, inner_body, opts) do
     env = Keyword.get(opts, :env, %{})
@@ -707,6 +762,8 @@ defmodule Elmc.Backend.CCodegen.ListLoopCodegen do
     }
     """
   end
+
+  @spec emit_ascending_int_range_loop(Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.expr()) :: Types.ir_expr()
 
   def emit_ascending_int_range_loop(first_ref, last_ref, item_var, step_var, body) do
     """
@@ -739,6 +796,8 @@ defmodule Elmc.Backend.CCodegen.ListLoopCodegen do
     """
   end
 
+  @spec emit_native_float_list_head_loop_only(Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+
   defp emit_native_float_list_head_loop_only(list_ref, loop_id, head_native_var, inner_body) do
     """
     if (#{val_expr(list_ref)} && #{val_expr(list_ref)}->tag == ELMC_TAG_FLOAT_LIST) {
@@ -752,6 +811,8 @@ defmodule Elmc.Backend.CCodegen.ListLoopCodegen do
     """
   end
 
+  @spec emit_native_record_seq_head_loop_only(Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+
   defp emit_native_record_seq_head_loop_only(list_ref, loop_id, head_var, inner_body) do
     """
     if (#{val_expr(list_ref)} && #{val_expr(list_ref)}->tag == ELMC_TAG_RECORD_SEQ) {
@@ -764,6 +825,8 @@ defmodule Elmc.Backend.CCodegen.ListLoopCodegen do
     }
     """
   end
+
+  @spec operand_release_after_cons(String.t()) :: Types.ir_expr()
 
   defp operand_release_after_cons(var) when is_binary(var) do
     if ValueSlots.owned_ref?(var) do

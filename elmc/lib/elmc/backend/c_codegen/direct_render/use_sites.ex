@@ -1,5 +1,7 @@
 defmodule Elmc.Backend.CCodegen.DirectRender.UseSites do
   @moduledoc false
+  alias Elmc.Backend.CCodegen.Types, as: Types
+
 
   alias Elmc.Backend.CCodegen.DirectRender.ListLoopPlans
   alias Elmc.Backend.CCodegen.Host

@@ -40,7 +40,7 @@ defmodule Elmx.PartialQualifiedEmitTest do
              "fn elmx_dict -> Elmx.Runtime.Core.Collections.dict_insert(1, v, elmx_dict) end"
   end
 
-  test "compile_list_qualified partial List.foldl emits two-arg lambda" do
+  test "compile_list_qualified partial List.foldl emits curried lambdas" do
     expr = %{
       op: :qualified_call,
       target: "List.foldl",
@@ -50,8 +50,9 @@ defmodule Elmx.PartialQualifiedEmitTest do
     {code, _, _} = QualifiedEmit.compile_qualified_call(expr, env(), 0)
     source = IO.iodata_to_binary(code)
 
-    assert source =~ "fn elmx_acc, elmx_list ->"
+    assert source =~ "fn elmx_acc -> fn elmx_list ->"
     assert source =~ "Core.foldl"
+    refute source =~ "fn elmx_acc, elmx_list ->"
   end
 
   test "emit fallback string path delegates to Stdlib.qualified_call" do

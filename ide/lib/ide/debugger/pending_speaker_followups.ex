@@ -37,6 +37,8 @@ defmodule Ide.Debugger.PendingSpeakerFollowups do
   def clear_pending(state) when is_map(state), do: Map.delete(state, @pending_key)
   def clear_pending(state), do: state
 
+  @spec inject_speaker_finished(String.t()) :: term()
+
   defp inject_speaker_finished(project_slug) when is_binary(project_slug) do
     AgentSession.with_hosts(fn hosts ->
       contexts = AgentHosts.contexts(hosts)
@@ -54,6 +56,8 @@ defmodule Ide.Debugger.PendingSpeakerFollowups do
     end)
   end
 
+  @spec start_worker(term(), term()) :: term()
+
   defp start_worker(project_slug, duration_ms)
        when is_binary(project_slug) and is_integer(duration_ms) and duration_ms > 0 do
     :ets.insert(@drain_lock_table, {project_slug, true})
@@ -66,6 +70,8 @@ defmodule Ide.Debugger.PendingSpeakerFollowups do
     end)
   end
 
+  @spec finish_worker(String.t()) :: term()
+
   defp finish_worker(project_slug) when is_binary(project_slug) do
     case :ets.lookup(@drain_lock_table, project_slug) do
       [{^project_slug, {:extend, duration_ms}}] when is_integer(duration_ms) and duration_ms > 0 ->
@@ -76,6 +82,8 @@ defmodule Ide.Debugger.PendingSpeakerFollowups do
     end
   end
 
+  @spec ensure_drain_lock_table() :: term()
+
   defp ensure_drain_lock_table do
     if :ets.whereis(@drain_lock_table) == :undefined do
       :ets.new(@drain_lock_table, [:named_table, :public, :set, read_concurrency: true])
@@ -83,6 +91,8 @@ defmodule Ide.Debugger.PendingSpeakerFollowups do
 
     :ok
   end
+
+  @spec release_drain_lock(String.t()) :: term()
 
   defp release_drain_lock(project_slug) when is_binary(project_slug) do
     ensure_drain_lock_table()

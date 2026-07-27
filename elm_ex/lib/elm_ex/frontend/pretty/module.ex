@@ -34,7 +34,6 @@ defmodule ElmEx.Frontend.Pretty.Module do
 
   defp format_header(%Module{} = mod), do: format_header_module(mod)
 
-  @spec format_header_module(Module.t()) :: Doc.t()
   defp format_header_module(%Module{name: name, module_exposing: exposing}) do
     exposing_text =
       case exposing do

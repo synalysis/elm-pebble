@@ -1,5 +1,7 @@
 defmodule Elmc.Backend.Pebble.FeatureFlags.CommandFlags.Services do
   @moduledoc false
+  alias Elmc.Types, as: Types
+
 
   alias Elmc.Backend.Pebble.FeatureFlags.CommandFlags.Services.{
     DeviceServices,

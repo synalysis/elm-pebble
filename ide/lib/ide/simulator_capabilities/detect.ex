@@ -100,6 +100,8 @@ defmodule Ide.SimulatorCapabilities.Detect do
       platform_launch_usage?(introspect, module_name)
   end
 
+  @spec platform_launch_usage?(term(), term() | String.t()) :: boolean()
+
   defp platform_launch_usage?(introspect, "Platform") do
     Enum.any?(subscription_calls(introspect), fn row ->
       target = call_target(row)

@@ -1,5 +1,7 @@
 defmodule Elmx.Backend.CrossModuleCall do
   @moduledoc false
+  alias Elmx.Types, as: Types
+
 
   alias Elmx.Backend.ElixirCodegen.Emit.Helpers
   alias Elmx.Types
@@ -39,6 +41,8 @@ defmodule Elmx.Backend.CrossModuleCall do
     end
   end
 
+  @spec compile_cross_module_call(String.t(), String.t(), [String.t()], Types.compile_env(), Types.elm_value(), Types.elm_value()) :: Types.elm_value()
+
   defp compile_cross_module_call(module, name, args, env, counter, compile_arg_parts) do
         {arg_parts, env, c1} = compile_arg_parts.(args, env, counter)
         fn_sym = function_symbol(module, name)
@@ -70,7 +74,7 @@ defmodule Elmx.Backend.CrossModuleCall do
                   end
 
                 Enum.reduce(extra, base, fn arg, acc ->
-                  ["Elmx.Runtime.Core.Apply.apply1(", acc, ", ", arg, ")"]
+                  ["Elmx.Runtime.Core.Apply.call1(", acc, ", ", arg, ")"]
                 end)
               end
 
@@ -84,6 +88,8 @@ defmodule Elmx.Backend.CrossModuleCall do
         {:ok, code, env, c1}
   end
 
+  @spec cross_module_allowed?(Types.compile_env(), String.t()) :: boolean()
+
   defp cross_module_allowed?(env, module) do
     case Map.get(env, :emit_module_names) do
       names when is_list(names) -> module in names
@@ -91,9 +97,13 @@ defmodule Elmx.Backend.CrossModuleCall do
     end
   end
 
+  @spec cross_module_arity(Types.compile_env(), String.t(), String.t()) :: Types.elm_value()
+
   defp cross_module_arity(env, module, name) do
     Map.get(Map.get(env, :cross_module_arities, %{}), {module, name}, %{explicit: 0, callable: 0})
   end
+
+  @spec partial_application(Types.elm_value(), Types.elm_value(), Types.elm_value()) :: Types.elm_value()
 
   defp partial_application(fn_sym, fixed_parts, 1) do
     param = Helpers.let_emit_name("__p1")
@@ -119,6 +129,8 @@ defmodule Elmx.Backend.CrossModuleCall do
       ["fn ", param, " -> ", body, " end"]
     end)
   end
+
+  @spec safe_module(String.t()) :: Types.elm_value()
 
   defp safe_module(name), do: name |> String.replace(".", "_")
 end

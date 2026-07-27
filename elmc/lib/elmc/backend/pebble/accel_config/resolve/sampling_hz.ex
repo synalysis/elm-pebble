@@ -1,6 +1,7 @@
 defmodule Elmc.Backend.Pebble.AccelConfig.Resolve.SamplingHz do
   @moduledoc false
 
+
   alias Elmc.Backend.CCodegen.Types, as: CCodegenTypes
 
   @spec from_record(CCodegenTypes.ir_expr(), pos_integer()) :: pos_integer()

@@ -430,6 +430,8 @@ defmodule ElmEx.Frontend.AstContract do
 
   defp validate_compose(_, reason), do: {:error, reason}
 
+  @spec validate_compose_side(String.t() | map() | term()) :: Types.expr()
+
   defp validate_compose_side(f) when is_binary(f) and f != "", do: :ok
   defp validate_compose_side(f) when is_map(f), do: validate_expr(f)
   defp validate_compose_side(_), do: {:error, :invalid_compose_operand}
@@ -466,8 +468,12 @@ defmodule ElmEx.Frontend.AstContract do
 
   defp validate_let_bindings(_), do: {:error, :invalid_let_bindings_expr}
 
+  @spec validate_let_layout(map()) :: Types.expr()
+
   defp validate_let_layout(%{layout: layout}) when layout in [:inline_first, :block], do: :ok
   defp validate_let_layout(%{}), do: :ok
+
+  @spec validate_let_binding_entries(list()) :: Types.expr()
 
   defp validate_let_binding_entries(bindings) when is_list(bindings) do
     if Enum.all?(bindings, &valid_let_binding_entry?/1) do
@@ -476,6 +482,8 @@ defmodule ElmEx.Frontend.AstContract do
       {:error, :invalid_let_binding_entry}
     end
   end
+
+  @spec valid_let_binding_entry?(map() | term()) :: boolean()
 
   defp valid_let_binding_entry?(%{kind: :name, name: name, value: value}) when is_binary(name) do
     validate_expr(value) == :ok

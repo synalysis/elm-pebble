@@ -46,6 +46,8 @@ defmodule Ide.Emulator.Screenshot do
     end
   end
 
+  @spec capture_timeout(term(), keyword()) :: term()
+
   defp capture_timeout(platform, opts) do
     Keyword.get_lazy(opts, :timeout, fn -> capture_timeout_ms(platform) end)
   end

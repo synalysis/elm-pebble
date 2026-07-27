@@ -16,6 +16,8 @@ defmodule Mix.Tasks.Ide.InstallGif2apng do
   @shortdoc "Build gif2apng into priv/bin for animated GIF resources"
 
   @impl Mix.Task
+  @spec run([String.t()]) :: term()
+
   def run(args) do
     root = File.cwd!()
     script = Path.join(root, "scripts/install_gif2apng.sh")
@@ -32,6 +34,8 @@ defmodule Mix.Tasks.Ide.InstallGif2apng do
     end
   end
 
+  @spec check!(integer()) :: term()
+
   defp check!(bin) do
     if File.exists?(bin) and not File.dir?(bin) do
       Mix.shell().info("gif2apng present at #{bin}")
@@ -43,6 +47,8 @@ defmodule Mix.Tasks.Ide.InstallGif2apng do
       """)
     end
   end
+
+  @spec install!(term(), term(), integer()) :: term()
 
   defp install!(root, script, bin) do
     {output, status} = System.cmd("bash", [script], cd: root, stderr_to_stdout: true)

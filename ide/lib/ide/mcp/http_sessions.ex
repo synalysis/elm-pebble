@@ -1,6 +1,7 @@
 defmodule Ide.Mcp.HttpSessions do
   @moduledoc false
 
+
   use GenServer
 
   alias Ide.Mcp.WireTypes

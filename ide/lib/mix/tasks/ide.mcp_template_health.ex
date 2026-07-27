@@ -25,6 +25,8 @@ defmodule Mix.Tasks.Ide.McpTemplateHealth do
   }
 
   @impl Mix.Task
+  @spec run([String.t()]) :: term()
+
   def run(args) do
     Mix.Task.run("app.start")
 
@@ -59,6 +61,8 @@ defmodule Mix.Tasks.Ide.McpTemplateHealth do
     end
   end
 
+  @spec check_template(term()) :: term()
+
   defp check_template(template) do
     slug = "mcp-health-#{template}-#{System.unique_integer([:positive])}"
     name = "MCP Health #{template}"
@@ -91,6 +95,8 @@ defmodule Mix.Tasks.Ide.McpTemplateHealth do
       _ -> :error
     end)
   end
+
+  @spec run_health_steps(term()) :: term()
 
   defp run_health_steps(base) do
     base
@@ -128,15 +134,21 @@ defmodule Mix.Tasks.Ide.McpTemplateHealth do
       Map.merge(base, %{status: :error, issues: [Exception.message(error)]})
   end
 
+  @spec step(map() | term(), String.t(), integer()) :: term()
+
   defp step(%{status: :error} = acc, _name, _fun), do: acc
 
   defp step(acc, name, fun) do
     fun.(Map.update!(acc, :steps, &[name | &1]))
   end
 
+  @spec fail(term(), term(), integer()) :: term()
+
   defp fail(acc, step, reason) do
     %{acc | status: :error, issues: acc.issues ++ ["#{step}: #{reason}"]}
   end
+
+  @spec bootstrap_debugger(map() | term()) :: term()
 
   defp bootstrap_debugger(%{status: :error} = acc), do: acc
 
@@ -179,6 +191,8 @@ defmodule Mix.Tasks.Ide.McpTemplateHealth do
     end
   end
 
+  @spec capture_baseline(map() | term()) :: term()
+
   defp capture_baseline(%{status: :error} = acc), do: acc
 
   defp capture_baseline(acc) do
@@ -190,6 +204,8 @@ defmodule Mix.Tasks.Ide.McpTemplateHealth do
         fail(acc, "debugger.models baseline", reason)
     end
   end
+
+  @spec inject_simulator(map() | term()) :: term()
 
   defp inject_simulator(%{status: :error} = acc), do: acc
 
@@ -205,6 +221,8 @@ defmodule Mix.Tasks.Ide.McpTemplateHealth do
     end
   end
 
+  @spec verify_injection(map() | term()) :: term()
+
   defp verify_injection(%{status: :error} = acc), do: acc
 
   defp verify_injection(acc) do
@@ -218,6 +236,8 @@ defmodule Mix.Tasks.Ide.McpTemplateHealth do
       other -> fail(acc, "injection verify", inspect(other))
     end
   end
+
+  @spec check_render_tree(map() | term()) :: term()
 
   defp check_render_tree(%{status: :error} = acc), do: acc
 
@@ -263,6 +283,8 @@ defmodule Mix.Tasks.Ide.McpTemplateHealth do
     end
   end
 
+  @spec package_pbw(map() | term()) :: term()
+
   defp package_pbw(%{status: :error} = acc), do: acc
 
   defp package_pbw(acc) do
@@ -284,6 +306,8 @@ defmodule Mix.Tasks.Ide.McpTemplateHealth do
         fail(acc, "pebble.package", reason)
     end
   end
+
+  @spec simulator_profile(term()) :: term()
 
   defp simulator_profile(template) do
     cond do
@@ -313,14 +337,20 @@ defmodule Mix.Tasks.Ide.McpTemplateHealth do
     end
   end
 
+  @spec weather_template?(term()) :: boolean()
+
   defp weather_template?(template) do
     template in ["watchface-weather-animated", "watchface-tutorial-complete", "watchface-yes"] or
       String.contains?(template, "weather")
   end
 
+  @spec geolocation_template?(term()) :: boolean()
+
   defp geolocation_template?(template) do
     String.contains?(template, "geolocation")
   end
+
+  @spec assert_injection_changed(term(), map(), term(), term()) :: term()
 
   defp assert_injection_changed(template, %{kind: kind}, before, after_models) do
     before_watch = get_in(before, ["watch"]) || get_in(before, [:watch]) || %{}
@@ -362,9 +392,13 @@ defmodule Mix.Tasks.Ide.McpTemplateHealth do
     end
   end
 
+  @spec model_field(term(), String.t()) :: term()
+
   defp model_field(model, key) do
     Map.get(model, key) || get_in(model, ["runtime_model", key])
   end
+
+  @spec preview_diagnostics_ok?(term()) :: boolean()
 
   defp preview_diagnostics_ok?(slug) do
     case mcp("debugger.preview_diagnostics", %{"slug" => slug, "target" => "watch"}) do
@@ -381,6 +415,8 @@ defmodule Mix.Tasks.Ide.McpTemplateHealth do
         false
     end
   end
+
+  @spec mcp(String.t(), [String.t()]) :: term()
 
   defp mcp(name, args) do
     request = %{
@@ -404,6 +440,8 @@ defmodule Mix.Tasks.Ide.McpTemplateHealth do
         {:error, "#{code}: #{message}"}
     end
   end
+
+  @spec mcp_gaps() :: term()
 
   defp mcp_gaps do
     [
@@ -438,6 +476,8 @@ defmodule Mix.Tasks.Ide.McpTemplateHealth do
     ]
   end
 
+  @spec print_report(term()) :: term()
+
   defp print_report(results) do
     IO.puts("\n=== MCP template health (#{length(results)} templates) ===\n")
 
@@ -459,12 +499,16 @@ defmodule Mix.Tasks.Ide.McpTemplateHealth do
     IO.puts("\nSummary: #{ok}/#{length(results)} passed\n")
   end
 
+  @spec optional_field(term(), String.t(), String.t()) :: term()
+
   defp optional_field(row, key, label) do
     case Map.get(row, key) do
       nil -> ""
       value -> "#{label}=#{value}"
     end
   end
+
+  @spec optional_render(term()) :: term()
 
   defp optional_render(row) do
     case Map.get(row, :render) do
@@ -475,6 +519,8 @@ defmodule Mix.Tasks.Ide.McpTemplateHealth do
         ""
     end
   end
+
+  @spec print_mcp_gaps() :: term()
 
   defp print_mcp_gaps do
     IO.puts("=== MCP interface gaps (efficiency) ===\n")

@@ -1,5 +1,7 @@
 defmodule Elmc.Backend.CCodegen.SequenceLoopCodegen do
   @moduledoc false
+  alias Elmc.Backend.CCodegen.Types, as: Types
+
 
   alias Elmc.Backend.CCodegen.LayoutSolver
   alias Elmc.Backend.CCodegen.ListLoopCodegen
@@ -40,6 +42,8 @@ defmodule Elmc.Backend.CCodegen.SequenceLoopCodegen do
     repr = loop_repr_option(env, list_arg, opts)
     ListLoopCodegen.emit_length_native_count(list_var, loop_id, repr: repr)
   end
+
+  @spec loop_repr_option(Types.compile_env(), Types.ir_expr(), keyword()) :: Types.ir_expr()
 
   defp loop_repr_option(env, list_arg, opts) do
     case Keyword.get(opts, :repr) do

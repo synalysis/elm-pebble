@@ -280,10 +280,12 @@ defmodule Elmc.PlanCLowerTest do
     assert c =~ "switch (" or c =~ "else if (elmc_union_tag_matches"
   end
 
-  test "release_array_lifo dedupes aliased owned slots" do
+  test "release_array_lifo releases each owned slot independently" do
     decl = Elmc.Runtime.RcMacros.release_array_lifo_declaration()
-    assert decl =~ "for (size_t i = 0; i < n; i++)"
-    assert decl =~ "if (slots[i] == value)"
+    assert decl =~ "slots[count] = NULL"
+    assert decl =~ "elmc_release(value)"
+    refute decl =~ "for (size_t i = 0; i < n; i++)"
+    assert decl =~ "elmc_owned_null_aliases"
   end
 
   test "cmd_batch is value-returning not RC allocator" do

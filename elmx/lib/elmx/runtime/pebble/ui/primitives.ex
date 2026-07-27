@@ -1,5 +1,7 @@
 defmodule Elmx.Runtime.Pebble.Ui.Primitives do
   @moduledoc false
+  alias Elmx.Types, as: Types
+
 
   alias Elmx.Runtime.Pebble.Colors
   alias Elmx.Runtime.Pebble.TextOptions
@@ -7,6 +9,8 @@ defmodule Elmx.Runtime.Pebble.Ui.Primitives do
   alias Elmx.Types
 
   @color_context_keys ~w(stroke_color fill_color text_color)
+
+  @spec clear(Types.elm_value()) :: Types.elm_value()
 
   def clear(color \\ :black) do
     %{type: "clear", label: "clear", color: Helpers.color_value(color)}

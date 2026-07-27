@@ -422,8 +422,6 @@ defmodule Elmc.JsonRuntimeTest do
       printf("json-runtime-ok\\n");
       return 0;
     }
-    
-      
-      """
+    """
   end
 end

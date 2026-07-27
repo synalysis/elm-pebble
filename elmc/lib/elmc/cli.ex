@@ -2,6 +2,8 @@ defmodule Elmc.CLI do
   @moduledoc """
   Command-line entrypoint for the compiler.
   """
+  alias Elmc.CLI.Types, as: Types
+
 
   alias ElmEx.DiagnosticFormatter
   alias Elmc.CLI.Types

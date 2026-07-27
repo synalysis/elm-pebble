@@ -17,7 +17,8 @@ defmodule ElmEx.DebuggerContract.ViewTree.Operators do
     |> ViewTree.annotate_view_tree_sources(api_metadata)
   end
 
-  @spec unknown() :: Types.view_tree()
+  @spec unknown() :: term()
+
   def unknown, do: ViewTree.view_tree_unknown()
 
   @spec build_view_tree(Types.ast_expr(), Types.view_build_metadata()) :: Types.view_tree()

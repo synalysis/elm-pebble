@@ -235,7 +235,7 @@ defmodule Elmc.Backend.C.Lower.StringConcat do
       if kind in [:min_vars, :max_vars] do
         "(#{l} <= #{r}) ? #{l} : #{r}"
       else
-        if kind == :idiv_vars, do: "(#{r} == 0 ? 0 : #{l} / #{r})", else: "(#{l} #{op} #{r})"
+        if kind == :idiv_vars, do: Instr.idiv_c_expr(l, r), else: "(#{l} #{op} #{r})"
       end
     else
       _ -> nil

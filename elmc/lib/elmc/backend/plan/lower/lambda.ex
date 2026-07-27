@@ -1,9 +1,11 @@
 defmodule Elmc.Backend.Plan.Lower.Lambda do
   @moduledoc false
+  alias Elmc.Backend.Plan.Types, as: Types
+
 
   alias Elmc.Backend.CCodegen.{Host, TypeParsing}
   alias Elmc.Backend.CCodegen.VarAnalysis
-  alias Elmc.Backend.Plan.{Builder, Context, ParamFieldInference}
+  alias Elmc.Backend.Plan.{Builder, Context, EpilogueRelease, Optimize, ParamFieldInference}
   alias Elmc.Backend.Plan.Lower.{Expr, Tuple}
   alias Elmc.Backend.Plan.Types
 
@@ -189,17 +191,33 @@ defmodule Elmc.Backend.Plan.Lower.Lambda do
     end)
   end
 
+  # `used_names` is the same list (in the same order) that `lower_lambda_plan`
+  # uses to assign `letrec_capture_indices` (0, 1, 2, … via `Enum.with_index`).
+  # The loaded letrec captures here must land in the closure's `captures[]`
+  # array in that exact order — `Enum.reduce` + `[loaded | acc]` prepends each
+  # new load, which reverses the *relative* order of multiple letrec captures
+  # (last name processed ends up at index 0). With two used letrec refs (for
+  # example a self-recursive `go` plus an incidentally-named case-pattern
+  # binding sharing the letrec_refs table), `captures[0]` and `captures[1]`
+  # silently swap: `forward_ref_load_captured` for `go` reads the wrong slot
+  # and the closure calls a stale/unset forward ref instead of recursing into
+  # itself (TcoCaptureClober: `addCaptured` closure over `captured` clobbered
+  # by the loop accumulator because the self-recursion capture pointed at the
+  # wrong forward ref).
   defp prepend_letrec_captures(ctx, b, capture_regs, used_names) when is_list(used_names) do
-    Enum.reduce(used_names, {:ok, capture_regs, b}, fn name, {:ok, acc, b_acc} ->
-      case Context.letrec_ref(ctx, name) do
-        ref when is_binary(ref) ->
-          {:ok, loaded, b_next} = capture_letrec_ref(ref, ctx, b_acc)
-          {:ok, [loaded | acc], b_next}
+    {loaded_in_reverse, b1} =
+      Enum.reduce(used_names, {[], b}, fn name, {acc, b_acc} ->
+        case Context.letrec_ref(ctx, name) do
+          ref when is_binary(ref) ->
+            {:ok, loaded, b_next} = capture_letrec_ref(ref, ctx, b_acc)
+            {[loaded | acc], b_next}
 
-        _ ->
-          {:ok, acc, b_acc}
-      end
-    end)
+          _ ->
+            {acc, b_acc}
+        end
+      end)
+
+    {:ok, Enum.reverse(loaded_in_reverse) ++ capture_regs, b1}
   end
 
   defp capture_letrec_ref(ref, %{letrec_in_closure: true} = ctx, b) when is_binary(ref) do
@@ -231,15 +249,35 @@ defmodule Elmc.Backend.Plan.Lower.Lambda do
 
     all_params = letrec_cap_params ++ free_vars ++ lambda_args
 
+    # Outer letrec lambdas receive forward-ref *boxes* and share them with the
+    # parent via letrec_capture_indices. Nested lambdas inside a letrec closure
+    # receive already-loaded *values* (see capture_letrec_ref/3); bind those as
+    # ordinary locals so the body does not emit forward_ref_load_captured against
+    # a non-box capture (TcoLetFuncClobber withLet: `\x -> cont (n + x)`).
+    capturing_values? = parent_ctx.letrec_in_closure == true
+
     letrec_capture_indices =
-      used_letrec_refs
-      |> Enum.with_index()
-      |> Enum.reduce(%{}, fn {name, idx}, acc ->
-        case Context.letrec_ref(parent_ctx, name) do
-          ref when is_binary(ref) -> Map.put(acc, ref, idx)
-          _ -> acc
-        end
-      end)
+      if capturing_values? do
+        %{}
+      else
+        used_letrec_refs
+        |> Enum.with_index()
+        |> Enum.reduce(%{}, fn {name, idx}, acc ->
+          case Context.letrec_ref(parent_ctx, name) do
+            ref when is_binary(ref) -> Map.put(acc, ref, idx)
+            _ -> acc
+          end
+        end)
+      end
+
+    child_letrec_refs =
+      if capturing_values? do
+        Enum.reduce(used_letrec_refs, parent_ctx.letrec_refs || %{}, fn name, acc ->
+          Map.delete(acc, name)
+        end)
+      else
+        parent_ctx.letrec_refs
+      end
 
     lam_idx = length(b.lambdas)
     lam_name = "#{parent_ctx.function_name || "anon"}_lam_#{lam_idx}"
@@ -258,6 +296,7 @@ defmodule Elmc.Backend.Plan.Lower.Lambda do
     letrec_in_closure? =
       parent_ctx.letrec_in_closure or
         map_size(letrec_capture_indices) > 0 or
+        capturing_values? or
         is_binary(parent_ctx.letrec_self)
 
     child_ctx =
@@ -269,7 +308,7 @@ defmodule Elmc.Backend.Plan.Lower.Lambda do
         rc_required: parent_ctx.rc_required,
         fallible: parent_ctx.fallible,
         function_tail: false,
-        letrec_refs: parent_ctx.letrec_refs,
+        letrec_refs: child_letrec_refs,
         letrec_in_closure: letrec_in_closure?,
         letrec_capture_indices: letrec_capture_indices,
         lambda_plan: true,
@@ -293,21 +332,33 @@ defmodule Elmc.Backend.Plan.Lower.Lambda do
       end
 
     with {:ok, child_ctx1, child_b1} <-
-           bind_tuple_prelude(tuple_prelude, letrec_cap_params ++ free_vars, lambda_args, child_ctx, child_b) do
-      case Expr.compile(body, child_ctx1, child_b1) do
+           bind_tuple_prelude(tuple_prelude, letrec_cap_params ++ free_vars, lambda_args, child_ctx, child_b),
+         {:ok, child_ctx2, child_b2} <-
+           bind_letrec_value_captures(used_letrec_refs, capturing_values?, child_ctx1, child_b1) do
+      case Expr.compile(body, child_ctx2, child_b2) do
         {:ok, result_reg, b1} ->
           {b2, ret_reg} = finalize_lambda_result(b1, result_reg, parent_ctx.rc_required)
           b3 = if parent_ctx.rc_required, do: Builder.catch_end(b2), else: b2
           b4 = Builder.emit_ret(b3, ret_reg)
 
+          # EpilogueRelease/Optimize must run here (not only at verification time)
+          # so the plan stored in `b.lambdas` matches what phi construction assumed
+          # when it decided to inline an arm's value and drop the arm's materializing
+          # instruction (see IntPhiNative/TruthyNative phi_arm_drop_instrs). Otherwise
+          # codegen reads the *unoptimized* lambda plan, keeps the dropped-in-theory
+          # instruction, and its owned/boxed operand gets released before the phi's
+          # inlined recompute reads it again (use-after-release).
           child_plan =
             Builder.to_function_plan(b4)
+            |> EpilogueRelease.run()
+            |> Optimize.run()
             |> Map.put(:lambda_arg_count, length(lambda_args))
+            |> Map.put(:letrec_capture_indices, letrec_capture_indices)
 
           {:ok, child_plan, b}
 
         _ ->
-          record_lambda_body_unsupported(child_ctx1, body)
+          record_lambda_body_unsupported(child_ctx2, body)
           :unsupported
       end
     else
@@ -315,6 +366,25 @@ defmodule Elmc.Backend.Plan.Lower.Lambda do
         record_lambda_body_unsupported(child_ctx, body)
         :unsupported
     end
+  end
+
+  defp bind_letrec_value_captures(_names, false, ctx, b), do: {:ok, ctx, b}
+  defp bind_letrec_value_captures([], true, ctx, b), do: {:ok, ctx, b}
+
+  defp bind_letrec_value_captures(names, true, ctx, b) when is_list(names) do
+    Enum.reduce_while(Enum.with_index(names), {:ok, ctx, b}, fn {name, idx}, {:ok, ctx_acc, b_acc} ->
+      param = "__letrec_cap_#{idx}__"
+
+      case Builder.get_or_load_param(b_acc, idx, param) do
+        {reg, b1} when is_integer(reg) ->
+          ctx1 = Context.put_local(ctx_acc, name, reg)
+          b2 = Builder.bind_local(b1, name, reg)
+          {:cont, {:ok, ctx1, b2}}
+
+        _ ->
+          {:halt, :unsupported}
+      end
+    end)
   end
 
   defp bind_tuple_prelude([], _capture_prefix, _lambda_args, ctx, b), do: {:ok, ctx, b}

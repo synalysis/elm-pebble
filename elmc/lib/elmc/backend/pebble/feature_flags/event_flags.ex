@@ -1,5 +1,7 @@
 defmodule Elmc.Backend.Pebble.FeatureFlags.EventFlags do
   @moduledoc false
+  alias Elmc.Types, as: Types
+
 
   alias Elmc.Backend.Pebble.FeatureFlags.EventFlags.{Clock, Input, Platform}
   alias Elmc.Backend.Pebble.Types

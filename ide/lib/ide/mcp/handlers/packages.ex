@@ -1,9 +1,12 @@
 defmodule Ide.Mcp.Handlers.Packages do
   @moduledoc false
 
+
   alias Ide.Mcp.ToolSupport
   alias Ide.Mcp.ToolTypes
   alias Ide.Packages
+
+  @spec call(term() | String.t(), [String.t()] | map()) :: term()
 
   def call("packages.search", args) do
     query = Map.get(args, "query", "")

@@ -4,6 +4,8 @@ defmodule Elmx.Runtime.Pebble.Colors do
 
   Values match `Elmc.Backend.CCodegen.Constants.pebble_color_constants/0`.
   """
+  alias Elmx.Types, as: Types
+
 
   alias Elmx.Types
 
@@ -124,9 +126,13 @@ defmodule Elmx.Runtime.Pebble.Colors do
     aa <<< 6 ||| rr <<< 4 ||| gg <<< 2 ||| bb
   end
 
+  @spec channel_to_2bit(integer() | term()) :: Types.elm_value()
+
   defp channel_to_2bit(value) when is_integer(value) and value <= 3, do: value
   defp channel_to_2bit(value) when is_integer(value), do: min(3, div(max(value, 0), 64))
   defp channel_to_2bit(_), do: 0
+
+  @spec clamp_byte(integer() | term()) :: Types.elm_value()
 
   defp clamp_byte(value) when is_integer(value), do: max(0, min(255, value))
   defp clamp_byte(_), do: 0

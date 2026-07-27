@@ -6,6 +6,8 @@ defmodule Elmc.Backend.CCodegen.UnionCaseFourPerm do
   The fourth branch distinguishes forward (`reverseRows (transpose cells)`) from inverse
   (`transpose (reverseRows cells)`). Callee targets come from IR, not app names.
   """
+  alias Elmc.Backend.CCodegen.Types, as: Types
+
 
   alias Elmc.Backend.CCodegen.Types
 
@@ -67,6 +69,8 @@ defmodule Elmc.Backend.CCodegen.UnionCaseFourPerm do
     end
   end
 
+  @spec extract_metadata(String.t(), Types.expr(), Types.decl_map()) :: Types.ir_expr()
+
   defp extract_metadata(module_name, expr, decl_map) do
     case expr do
       %{op: :case, branches: case_branches} ->
@@ -96,6 +100,8 @@ defmodule Elmc.Backend.CCodegen.UnionCaseFourPerm do
 
   def ordered_branch_tags(_), do: :error
 
+  @spec parse(map() | term(), String.t() | term()) :: Types.ir_expr()
+
   defp parse(%{op: :case, subject: subject, branches: branches}, module_name)
        when is_list(branches) and length(branches) == 4 do
     with true <- case_subject?(subject),
@@ -113,12 +119,16 @@ defmodule Elmc.Backend.CCodegen.UnionCaseFourPerm do
 
   defp parse(_, _), do: :error
 
+  @spec branch_unary_targets(Types.ir_expr(), Types.ir_expr(), String.t()) :: Types.ir_expr()
+
   defp branch_unary_targets(b1, b2, module_name) do
     with {:ok, reverse_rows_target} <- unary_call_target(b1.expr, module_name),
          {:ok, transpose_target} <- unary_call_target(b2.expr, module_name) do
       {:ok, reverse_rows_target, transpose_target}
     end
   end
+
+  @spec unary_call_target(map() | term(), String.t() | term()) :: Types.ir_expr()
 
   defp unary_call_target(%{op: :qualified_call, target: target, args: [_]}, _module_name)
        when is_binary(target),
@@ -133,14 +143,20 @@ defmodule Elmc.Backend.CCodegen.UnionCaseFourPerm do
 
   defp unary_call_target(_, _), do: :error
 
+  @spec case_subject?(map() | String.t() | term()) :: boolean()
+
   defp case_subject?(%{op: :var, name: _}), do: true
   defp case_subject?(name) when is_binary(name), do: true
   defp case_subject?(_), do: false
+
+  @spec identity_cells_var(map() | term()) :: Types.ir_expr()
 
   defp identity_cells_var(%{op: :var, name: cells_var}) when is_binary(cells_var),
     do: {:ok, cells_var}
 
   defp identity_cells_var(_), do: :error
+
+  @spec cells_call?(map() | term(), Types.ir_expr() | term()) :: boolean()
 
   defp cells_call?(%{op: :var, name: cells_var}, cells_var), do: true
 
@@ -158,6 +174,8 @@ defmodule Elmc.Backend.CCodegen.UnionCaseFourPerm do
 
   defp cells_call?(_, _), do: false
 
+  @spec fourth_branch_mode(Types.expr(), Types.ir_expr(), String.t(), String.t()) :: Types.ir_expr()
+
   defp fourth_branch_mode(expr, cells_var, reverse_rows_target, transpose_target) do
     cond do
       nested_compose?(expr, cells_var, reverse_rows_target, transpose_target) ->
@@ -170,6 +188,8 @@ defmodule Elmc.Backend.CCodegen.UnionCaseFourPerm do
         :error
     end
   end
+
+  @spec nested_compose?(Types.expr(), Types.ir_expr(), String.t(), String.t()) :: boolean()
 
   defp nested_compose?(expr, cells_var, outer_target, inner_target) do
     case expr do
@@ -194,6 +214,8 @@ defmodule Elmc.Backend.CCodegen.UnionCaseFourPerm do
     end
   end
 
+  @spec callee_targets(list(), String.t()) :: Types.ir_expr()
+
   defp callee_targets(branches, module_name) do
     with [_, right, up, down] <- branches,
          {:ok, reverse_rows} <- reverse_rows_target(right, module_name),
@@ -204,6 +226,8 @@ defmodule Elmc.Backend.CCodegen.UnionCaseFourPerm do
       _ -> :error
     end
   end
+
+  @spec reverse_rows_target(map() | term(), String.t() | term()) :: Types.ir_expr()
 
   defp reverse_rows_target(
          %{op: :qualified_call, target: target, args: [%{op: :var, name: _}]},
@@ -219,6 +243,8 @@ defmodule Elmc.Backend.CCodegen.UnionCaseFourPerm do
 
   defp reverse_rows_target(_, _), do: :error
 
+  @spec transpose_target(map() | term(), String.t() | term()) :: Types.ir_expr()
+
   defp transpose_target(
          %{op: :qualified_call, target: target, args: [%{op: :var, name: _}]},
          module_name
@@ -233,9 +259,13 @@ defmodule Elmc.Backend.CCodegen.UnionCaseFourPerm do
 
   defp transpose_target(_, _), do: :error
 
+  @spec local_callee(String.t(), String.t()) :: Types.ir_expr()
+
   defp local_callee(module_name, target) do
     qualified_local(module_name, FusionSupport.local_name(target))
   end
+
+  @spec qualified_local(String.t(), String.t()) :: Types.ir_expr()
 
   defp qualified_local(module_name, name) when is_binary(name) do
     case String.split(name, ".", parts: 2) do
@@ -245,9 +275,13 @@ defmodule Elmc.Backend.CCodegen.UnionCaseFourPerm do
     end
   end
 
+  @spec fourth_branch_uses?(integer(), Types.ir_expr(), Types.ir_expr()) :: boolean()
+
   defp fourth_branch_uses?(down, rr, tr) do
     forward_compose?(down, rr, tr) or inverse_compose?(down, rr, tr)
   end
+
+  @spec forward_compose?(map() | term(), Types.ir_expr() | term(), Types.ir_expr() | term()) :: boolean()
 
   defp forward_compose?(
          %{op: :qualified_call, target: t1, args: [%{op: :qualified_call, target: t2}]},
@@ -265,6 +299,8 @@ defmodule Elmc.Backend.CCodegen.UnionCaseFourPerm do
 
   defp forward_compose?(_, _, _), do: false
 
+  @spec inverse_compose?(map() | term(), Types.ir_expr() | term(), Types.ir_expr() | term()) :: boolean()
+
   defp inverse_compose?(
          %{op: :qualified_call, target: t1, args: [%{op: :qualified_call, target: t2}]},
          rr,
@@ -281,9 +317,13 @@ defmodule Elmc.Backend.CCodegen.UnionCaseFourPerm do
 
   defp inverse_compose?(_, _, _), do: false
 
+  @spec targets_match?(String.t(), Types.ir_expr()) :: boolean()
+
   defp targets_match?(target, expected) do
     FusionSupport.local_name(target) == expected or target == "Main.#{expected}"
   end
+
+  @spec row_major_dims(Types.decl_map(), String.t(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
 
   defp row_major_dims(decl_map, module_name, reverse_rows, transpose) do
     with {:ok, width, rows} <- dims_from_reverse_rows(decl_map, module_name, reverse_rows),
@@ -292,6 +332,8 @@ defmodule Elmc.Backend.CCodegen.UnionCaseFourPerm do
     end
   end
 
+  @spec dims_from_reverse_rows(Types.decl_map(), String.t(), Types.ir_expr()) :: Types.ir_expr()
+
   defp dims_from_reverse_rows(decl_map, module_name, reverse_rows) do
     case Map.get(decl_map, {module_name, reverse_rows}) do
       %{expr: expr} -> parse_dims_from_reverse_rows_expr(expr, decl_map, module_name)
@@ -299,12 +341,16 @@ defmodule Elmc.Backend.CCodegen.UnionCaseFourPerm do
     end
   end
 
+  @spec parse_dims_from_reverse_rows_expr(Types.expr(), Types.decl_map(), String.t()) :: Types.ir_expr()
+
   defp parse_dims_from_reverse_rows_expr(expr, decl_map, module_name) do
     with {:ok, row_at, _cells, indices} <- reverse_rows_list(expr),
          {:ok, width} <- row_slice_width(decl_map, module_name, row_at) do
       {:ok, width, length(indices)}
     end
   end
+
+  @spec reverse_rows_list(map() | term()) :: Types.ir_expr()
 
   defp reverse_rows_list(%{op: :qualified_call, target: "List.concat", args: [list_expr]}) do
     parse_row_indices(list_items(list_expr))
@@ -328,8 +374,12 @@ defmodule Elmc.Backend.CCodegen.UnionCaseFourPerm do
 
   defp reverse_rows_list(_), do: :error
 
+  @spec list_items(map() | term()) :: Types.ir_expr()
+
   defp list_items(%{op: :list_literal, items: items}), do: items
   defp list_items(_), do: []
+
+  @spec parse_row_indices(list()) :: Types.ir_expr()
 
   defp parse_row_indices(items) do
     items
@@ -354,6 +404,8 @@ defmodule Elmc.Backend.CCodegen.UnionCaseFourPerm do
     end)
   end
 
+  @spec collect_row_index(term(), Types.ir_expr() | term(), Types.ir_expr() | term(), non_neg_integer() | term()) :: Types.ir_expr()
+
   defp collect_row_index({:ok, row_at, cells_var, indices}, row_at, cells, row_index)
        when cells == cells_var,
        do: {:cont, {:ok, row_at, cells_var, indices ++ [row_index]}}
@@ -362,6 +414,8 @@ defmodule Elmc.Backend.CCodegen.UnionCaseFourPerm do
     do: {:cont, {:ok, row_at, cells, [row_index]}}
 
   defp collect_row_index(_, _, _, _), do: {:halt, :error}
+
+  @spec row_slice_width(Types.decl_map(), String.t(), String.t()) :: Types.ir_expr()
 
   defp row_slice_width(decl_map, module_name, row_at_target) do
     case Map.get(decl_map, FusionSupport.callee_key(module_name, row_at_target)) do
@@ -380,6 +434,8 @@ defmodule Elmc.Backend.CCodegen.UnionCaseFourPerm do
     end
   end
 
+  @spec row_drop_stride?(map() | term(), Types.ir_expr() | term()) :: boolean()
+
   defp row_drop_stride?(
          %{
            op: :qualified_call,
@@ -391,6 +447,8 @@ defmodule Elmc.Backend.CCodegen.UnionCaseFourPerm do
        do: row_mul_width?(index_expr, width)
 
   defp row_drop_stride?(_, _), do: false
+
+  @spec row_mul_width?(map() | term(), Types.ir_expr() | term()) :: boolean()
 
   defp row_mul_width?(
          %{op: :call, name: op, args: [%{op: :var, name: "row"}, %{op: :int_literal, value: width}]},
@@ -412,6 +470,8 @@ defmodule Elmc.Backend.CCodegen.UnionCaseFourPerm do
 
   defp row_mul_width?(_, _), do: false
 
+  @spec transpose_static_count?(Types.decl_map(), String.t(), Types.ir_expr(), non_neg_integer()) :: boolean()
+
   defp transpose_static_count?(decl_map, module_name, transpose, count) do
     case Map.get(decl_map, {module_name, transpose}) do
       %{expr: expr} ->
@@ -426,6 +486,8 @@ defmodule Elmc.Backend.CCodegen.UnionCaseFourPerm do
     end
   end
 
+  @spec transpose_index_count(map() | term()) :: Types.ir_expr()
+
   defp transpose_index_count(%{op: :qualified_call, target: "List.map", args: [_, list_expr]}) do
     case list_expr do
       %{op: :list_literal, items: items} -> length(items)
@@ -435,9 +497,13 @@ defmodule Elmc.Backend.CCodegen.UnionCaseFourPerm do
 
   defp transpose_index_count(_), do: 0
 
+  @spec ctor_tag_fallback(map() | term()) :: Types.ir_expr()
+
   defp ctor_tag_fallback(%{kind: :constructor, tag: tag}) when is_integer(tag), do: tag
   defp ctor_tag_fallback(%{kind: :constructor, union_tag: tag}) when is_integer(tag), do: tag
   defp ctor_tag_fallback(_), do: nil
+
+  @spec emit(String.t(), String.t(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
 
   defp emit(module_name, name, cells_var, width, rows, mode, tags) do
     c_prefix = Util.module_fn_name(module_name, name)
@@ -464,6 +530,8 @@ defmodule Elmc.Backend.CCodegen.UnionCaseFourPerm do
     }
     """
   end
+
+  @spec forward_inverse_mode(term()) :: Types.ir_expr()
 
   defp forward_inverse_mode({:forward, _, _}), do: :forward
   defp forward_inverse_mode({:inverse, _, _}), do: :inverse

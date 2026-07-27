@@ -47,6 +47,8 @@ defmodule ElmEx.DebuggerContract.EffectAnalysis do
     end
   end
 
+  @spec scrutinee_case_analysis(term() | Types.expr(), term() | list()) :: term()
+
   def scrutinee_case_analysis(nil, _), do: {[], nil}
 
   def scrutinee_case_analysis(expr, params) when is_list(params) do
@@ -197,7 +199,6 @@ defmodule ElmEx.DebuggerContract.EffectAnalysis do
     |> Support.expr_to_json_value(0, 12, mod)
   end
 
-  @spec function_cmd_calls(Types.module_ref()) :: Types.function_cmd_calls_map()
 
   defdelegate function_cmd_calls(mod), to: CmdCalls
   defdelegate init_cmd_ops_outline(expr, init_params), to: CmdCalls

@@ -1,5 +1,7 @@
 defmodule Elmc.Backend.CCodegen.FunctionCallAbi do
   @moduledoc false
+  alias Elmc.Backend.CCodegen.Types, as: Types
+
 
   alias Elmc.Backend.CCodegen.FunctionEmit
   alias Elmc.Backend.CCodegen.Native.FunctionCall, as: NativeFunctionCall
@@ -16,6 +18,8 @@ defmodule Elmc.Backend.CCodegen.FunctionCallAbi do
       argv_abi_legacy?(decl, module_name, decl_map)
     end
   end
+
+  @spec argv_abi_legacy?(Types.decl(), String.t(), Types.decl_map()) :: boolean()
 
   defp argv_abi_legacy?(decl, module_name, decl_map) do
     emit_wrapper? =

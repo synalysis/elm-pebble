@@ -1,5 +1,7 @@
 defmodule Elmx.Runtime.Cmd.Effects do
   @moduledoc false
+  alias Elmx.Types, as: Types
+
 
   alias Elmx.Runtime.Cmd.{Companion, Wire}
   alias Elmx.Types
@@ -40,6 +42,8 @@ defmodule Elmx.Runtime.Cmd.Effects do
     |> Companion.maybe_put_field("pattern", Keyword.get(opts, :pattern))
     |> merge_extra_fields(Keyword.get(opts, :extra))
   end
+
+  @spec merge_extra_fields(map() | Types.elm_value(), map() | term()) :: Types.elm_value()
 
   defp merge_extra_fields(cmd, extra) when is_map(cmd) and is_map(extra) do
     Enum.reduce(extra, cmd, fn {key, value}, acc ->

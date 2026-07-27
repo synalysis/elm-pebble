@@ -330,17 +330,6 @@ defmodule ElmEx.Frontend.ExprLayoutLexer do
     ]
   end
 
-  @spec layout_tokens_for_line(
-          line_info(),
-          [non_neg_integer()],
-          non_neg_integer(),
-          [block_kind()],
-          cont_kind(),
-          layout_mode(),
-          non_neg_integer() | nil
-        ) ::
-          {[non_neg_integer()], [token()], [block_kind()], cont_kind(), layout_mode(),
-           non_neg_integer() | nil}
   defp layout_tokens_for_line(
          %{line_no: line_no, indent: indent, paren_at_start: 0, text: text},
          stack,

@@ -1,5 +1,7 @@
 defmodule Elmc.Backend.CCodegen.BuiltinOperators do
   @moduledoc false
+  alias Elmc.Backend.CCodegen.Types, as: Types
+
 
   alias Elmc.Backend.CCodegen.ConstantInt
   alias Elmc.Backend.CCodegen.EnvBindings
@@ -621,6 +623,8 @@ defmodule Elmc.Backend.CCodegen.BuiltinOperators do
       nil -> known_int_binop_operand_fallback?(expr, env)
     end
   end
+
+  @spec known_int_binop_operand_fallback?(Types.expr(), Types.compile_env()) :: boolean()
 
   defp known_int_binop_operand_fallback?(expr, env) do
     case expr do

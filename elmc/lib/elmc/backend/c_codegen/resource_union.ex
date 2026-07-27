@@ -1,5 +1,7 @@
 defmodule Elmc.Backend.CCodegen.ResourceUnion do
   @moduledoc false
+  alias Elmc.Backend.CCodegen.Types, as: Types
+
 
   alias Elmc.Backend.CCodegen.SpecialValues
   alias Elmc.Backend.CCodegen.Types
@@ -73,6 +75,8 @@ defmodule Elmc.Backend.CCodegen.ResourceUnion do
     target |> String.split(".") |> List.last()
   end
 
+  @spec resource_ctor_target?(String.t()) :: boolean()
+
   defp resource_ctor_target?(target) when is_binary(target) do
     case target do
       "Pebble.Ui.Resources." <> ctor ->
@@ -92,6 +96,8 @@ defmodule Elmc.Backend.CCodegen.ResourceUnion do
     end
   end
 
+  @spec placeholder_resource_ctor_target?(String.t()) :: boolean()
+
   defp placeholder_resource_ctor_target?(target) when is_binary(target) do
     case target do
       "Pebble.Ui.Resources." <> ctor ->
@@ -110,6 +116,8 @@ defmodule Elmc.Backend.CCodegen.ResourceUnion do
         false
     end
   end
+
+  @spec no_resource_ctor?(String.t()) :: boolean()
 
   defp no_resource_ctor?(name) when is_binary(name), do: String.starts_with?(name, "No")
 end

@@ -2,6 +2,8 @@ defmodule Elmx.Runtime.Subscriptions.ActiveSet do
   @moduledoc """
   Flattens runtime `Sub` values from `subscriptions/1` into `cmd.subscription.register` maps.
   """
+  alias Elmx.Types, as: Types
+
 
   alias Elmx.Runtime.Followups.Flatten
   alias Elmx.Types

@@ -1,5 +1,7 @@
 defmodule Elmc.Backend.CCodegen.SpecialValues.Stdlib.WebKernel do
   @moduledoc false
+  alias Elmc.Backend.CCodegen.Types, as: Types
+
 
   alias Elmc.Backend.CCodegen.SpecialValues.Helpers
   alias Elmc.Backend.CCodegen.Types
@@ -7,6 +9,8 @@ defmodule Elmc.Backend.CCodegen.SpecialValues.Stdlib.WebKernel do
   alias Elmc.Backend.Wasm.WebKernelDiagnostics
 
   @behaviour Elmc.Backend.CCodegen.SpecialValues.Handler
+
+  @spec http_track_dom_sub(Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
 
   defp http_track_dom_sub(tracker, toMsg) do
     if PlatformWeb.web_target?(Process.get(:elmc_codegen_opts, %{})) do

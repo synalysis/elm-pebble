@@ -1,5 +1,7 @@
 defmodule Elmc.Backend.Plan.Lower.Case.TagSwitch do
   @moduledoc false
+  alias Elmc.Backend.Plan.Types, as: Types
+
 
   alias Elmc.Backend.Plan.{Builder, Context}
   alias Elmc.Backend.Plan.Lower.Case.{ArmMerge, GuardedSwitch}
@@ -10,7 +12,9 @@ defmodule Elmc.Backend.Plan.Lower.Case.TagSwitch do
 
   # Ok/Err must tag-switch (linear multi-arm lowering runs every arm). Maybe uses
   # compile_maybe_nothing_case; list ctors stay excluded here.
-  @excluded_names MapSet.new(["Just", "Nothing", "::", "[]"])
+  # True/False must not tag-switch: native-bool ABI is 0/1 while union tags are
+  # ELMC_UNION_BASICS_TRUE/FALSE (1/2). Bool cases go through test_bool instead.
+  @excluded_names MapSet.new(["Just", "Nothing", "::", "[]", "True", "False"])
 
   @spec branches?(Types.case_branches()) :: boolean()
   def branches?(branches) when is_list(branches) do
@@ -28,14 +32,17 @@ defmodule Elmc.Backend.Plan.Lower.Case.TagSwitch do
         match?(%{pattern: %{kind: :constructor, tag: tag}} when is_integer(tag), branch)
       end)
 
-    ctor_count >= 2 and tagged? and
-      Enum.all?(branches, fn branch ->
-        case Map.get(branch, :pattern) do
-          %{kind: :wildcard} -> true
-          %{kind: :constructor} = pattern -> switchable_pattern?(pattern)
-          _ -> false
-        end
-      end)
+    result =
+      ctor_count >= 2 and tagged? and
+        Enum.all?(branches, fn branch ->
+          case Map.get(branch, :pattern) do
+            %{kind: :wildcard} -> true
+            %{kind: :constructor} = pattern -> switchable_pattern?(pattern)
+            _ -> false
+          end
+        end)
+
+    result
   end
 
   def branches?(_), do: false
@@ -51,6 +58,8 @@ defmodule Elmc.Backend.Plan.Lower.Case.TagSwitch do
     end
   end
 
+  @spec maybe_peel_enum_tag(Types.expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr() | nil
+
   defp maybe_peel_enum_tag(subject, subj_reg, b) do
     opts = Process.get(:elmc_codegen_opts, %{})
 
@@ -60,6 +69,8 @@ defmodule Elmc.Backend.Plan.Lower.Case.TagSwitch do
       {subj_reg, b}
     end
   end
+
+  @spec enum_call_subject?(map() | term()) :: boolean()
 
   defp enum_call_subject?(%{op: :qualified_call, target: target, args: args})
        when is_binary(target) and is_list(args) do
@@ -78,12 +89,16 @@ defmodule Elmc.Backend.Plan.Lower.Case.TagSwitch do
 
   defp enum_call_subject?(_), do: false
 
+  @spec enum_return_type?(String.t()) :: boolean()
+
   defp enum_return_type?(target) when is_binary(target) do
     decl = lookup_call_decl(target)
     type = Map.get(decl || %{}, :type)
 
     is_binary(type) and enum_type?(type)
   end
+
+  @spec enum_type?(String.t()) :: boolean()
 
   defp enum_type?(type) when is_binary(type) do
     return =
@@ -98,6 +113,8 @@ defmodule Elmc.Backend.Plan.Lower.Case.TagSwitch do
       MapSet.member?(enums, short_name(return))
   end
 
+  @spec lookup_call_decl(String.t()) :: Types.ir_expr()
+
   defp lookup_call_decl(target) do
     decls = Process.get(:elmc_program_decls, %{})
 
@@ -106,6 +123,8 @@ defmodule Elmc.Backend.Plan.Lower.Case.TagSwitch do
       [name] -> Enum.find_value(decls, fn {{_mod, n}, decl} -> if n == name, do: decl end)
     end
   end
+
+  @spec compile_cfg(Types.ir_expr(), list(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
 
   defp compile_cfg(subj_reg, branches, ctx, b) do
     saved_pending = Map.get(b, :pending_merge_block)
@@ -135,11 +154,15 @@ defmodule Elmc.Backend.Plan.Lower.Case.TagSwitch do
     end
   end
 
+  @spec split_branches(list()) :: Types.ir_expr()
+
   defp split_branches(branches) do
     tagged = Enum.filter(branches, fn br -> match?(%{pattern: %{kind: :constructor}}, br) end)
     default = Enum.find(branches, fn br -> match?(%{pattern: %{kind: :wildcard}}, br) end)
     {tagged, default}
   end
+
+  @spec compile_arm_blocks(Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
 
   defp compile_arm_blocks(tagged, default_br, subj_reg, ctx, b, merge_reg) do
     with {:ok, tagged_results, arm_exits, b1} <-
@@ -152,6 +175,8 @@ defmodule Elmc.Backend.Plan.Lower.Case.TagSwitch do
     end
   end
 
+  @spec compile_tagged_arms(list(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), term()) :: Types.ir_expr()
+
   defp compile_tagged_arms(tagged, subj_reg, ctx, b, merge_reg, acc) when is_list(tagged) do
     tagged
     |> group_branches_by_tag(ctx)
@@ -159,11 +184,15 @@ defmodule Elmc.Backend.Plan.Lower.Case.TagSwitch do
     |> compile_tag_groups(subj_reg, ctx, b, merge_reg, acc)
   end
 
+  @spec group_branches_by_tag(Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+
   defp group_branches_by_tag(tagged, ctx) do
     tagged
     |> Enum.group_by(fn branch -> pattern_tag(branch.pattern, ctx) end)
     |> Enum.map(fn {tag, branches} -> {tag, branches} end)
   end
+
+  @spec compile_tag_groups(term(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), term()) :: Types.ir_expr()
 
   defp compile_tag_groups([], _subj, _ctx, b, _merge_reg, acc), do: {:ok, Enum.reverse(acc), [], b}
 
@@ -205,6 +234,8 @@ defmodule Elmc.Backend.Plan.Lower.Case.TagSwitch do
   # Same outer tag, different nested payloads (e.g. Scene3d `UnlitMaterial _ (Constant …)`
   # vs `UnlitMaterial UseMeshUvs (Texture { data })`). Discriminant-only inner switches
   # drop bindings in non-discriminant columns; GuardedSwitch matches/binds full patterns.
+  @spec compile_nested_duplicate_tag_arm(list(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+
   defp compile_nested_duplicate_tag_arm(branches, subj_reg, ctx, b) do
     branch_ctx = Context.for_branch_arm(ctx)
     representative = hd(branches)
@@ -219,6 +250,8 @@ defmodule Elmc.Backend.Plan.Lower.Case.TagSwitch do
       _ -> :unsupported
     end
   end
+
+  @spec compile_default_arm(Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
 
   defp compile_default_arm(nil, _subj, _ctx, b, _merge_reg), do: {:ok, nil, nil, b}
 
@@ -235,6 +268,8 @@ defmodule Elmc.Backend.Plan.Lower.Case.TagSwitch do
       _ -> :unsupported
     end
   end
+
+  @spec compile_one_arm(Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
 
   defp compile_one_arm(branch, subj_reg, ctx, b) do
     pattern = Map.get(branch, :pattern, %{})
@@ -270,6 +305,8 @@ defmodule Elmc.Backend.Plan.Lower.Case.TagSwitch do
         :unsupported
     end
   end
+
+  @spec record_case_arm_unsupported(map(), Types.pattern(), Types.expr(), atom()) :: Types.ir_expr()
 
   defp record_case_arm_unsupported(ctx, pattern, expr, kind) when is_map(ctx) do
     key = {Map.get(ctx, :module), Map.get(ctx, :function_name)}
@@ -308,6 +345,8 @@ defmodule Elmc.Backend.Plan.Lower.Case.TagSwitch do
     Process.put(:elmc_plan_unsupported_reasons, Map.put_new(cache, key, reason))
   end
 
+  @spec deepest_unsupported_reason(map() | term(), map() | term()) :: Types.ir_expr()
+
   defp deepest_unsupported_reason(expr, ctx) when is_map(expr) and is_map(ctx) do
     Process.delete(:elmc_plan_unsupported_reasons)
 
@@ -331,35 +370,50 @@ defmodule Elmc.Backend.Plan.Lower.Case.TagSwitch do
   defp deepest_unsupported_reason(_, _), do: nil
 
 
+  @spec patch_arm_exits(Types.ir_expr(), list(), Types.ir_expr()) :: Types.ir_expr()
+
   defp patch_arm_exits(b, exit_ids, merge_id) when is_list(exit_ids) do
     Enum.reduce(exit_ids, b, fn exit_id, b_acc ->
       Builder.patch_terminator(b_acc, exit_id, {:br, merge_id})
     end)
   end
 
+  @spec skip_reserved(Types.ir_expr(), Types.ir_expr() | term()) :: Types.ir_expr()
+
   defp skip_reserved(id, nil), do: id
   defp skip_reserved(id, reserved) when id == reserved, do: id + 1
   defp skip_reserved(id, _), do: id
+
+  @spec branch_ctx_for_pattern(Types.ir_expr(), map(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
 
   defp branch_ctx_for_pattern(ctx, %{kind: :constructor} = pattern, subj_reg, b) do
     PatternBind.bind(pattern, ctx, b, subj_reg)
   end
 
-  defp switchable_pattern?(%{kind: :constructor, name: name, tag: tag} = pattern)
-       when is_integer(tag) do
-    tag_switch_payload?(Map.get(pattern, :arg_pattern)) and
-      (is_nil(name) or not MapSet.member?(@excluded_names, short_name(name)))
-  end
+  @spec switchable_pattern?(map() | term()) :: boolean()
 
   defp switchable_pattern?(%{kind: :constructor, tag: tag} = pattern) when is_integer(tag) do
-    tag_switch_payload?(Map.get(pattern, :arg_pattern))
+    tag_switch_payload?(Map.get(pattern, :arg_pattern)) and
+      not excluded_ctor_pattern?(pattern)
   end
 
   defp switchable_pattern?(_), do: false
 
+  defp excluded_ctor_pattern?(pattern) when is_map(pattern) do
+    [Map.get(pattern, :resolved_name), Map.get(pattern, :name)]
+    |> Enum.any?(fn
+      name when is_binary(name) -> MapSet.member?(@excluded_names, short_name(name))
+      _ -> false
+    end)
+  end
+
+  @spec tag_switch_payload?(Types.ir_expr() | map() | term()) :: boolean()
+
   defp tag_switch_payload?(nil), do: true
   defp tag_switch_payload?(%{kind: :wildcard}), do: true
   defp tag_switch_payload?(_), do: false
+
+  @spec pattern_tag(map() | term(), Types.ir_expr() | term()) :: Types.ir_expr()
 
   defp pattern_tag(pattern, ctx) when is_map(pattern) do
     name = Map.get(pattern, :resolved_name) || Map.get(pattern, :name)
@@ -383,10 +437,16 @@ defmodule Elmc.Backend.Plan.Lower.Case.TagSwitch do
 
   defp pattern_tag(_, _), do: nil
 
+  @spec short_name(String.t()) :: Types.ir_expr()
+
   defp short_name(name), do: name |> String.split(".") |> List.last()
+
+  @spec ctor_name(map() | term()) :: Types.ir_expr()
 
   defp ctor_name(%{pattern: pattern}) when is_map(pattern), do: union_ctor_name_from_pattern(pattern)
   defp ctor_name(_), do: nil
+
+  @spec union_ctor_name_from_pattern(map() | term()) :: Types.ir_expr()
 
   defp union_ctor_name_from_pattern(%{resolved_name: name}) when is_binary(name), do: name
 

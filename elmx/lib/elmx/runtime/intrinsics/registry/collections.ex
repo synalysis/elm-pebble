@@ -13,5 +13,6 @@ defmodule Elmx.Runtime.Intrinsics.Registry.Collections do
     |> Map.merge(Prefix.handlers("elmc_dict_", "dict_", Collections))
     |> Map.merge(Prefix.handlers("elmc_set_", "set_", Collections))
     |> Map.merge(Prefix.handlers("elmc_array_", "array_", Collections))
+    |> Map.merge(Prefix.handlers("elmc_js_array_", "js_array_", Collections))
   end
 end

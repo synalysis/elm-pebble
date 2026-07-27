@@ -2,6 +2,8 @@ defmodule Ide.PebbleToolchain do
   @moduledoc """
   Boundary for Pebble SDK and emulator command execution.
   """
+  alias Ide.Types, as: Types
+
 
   alias Ide.PebbleToolchain.{Build, Command, Companion, Emulator, Package, Types}
 

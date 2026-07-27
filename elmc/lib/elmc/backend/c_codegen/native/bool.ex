@@ -1,5 +1,7 @@
 defmodule Elmc.Backend.CCodegen.Native.Bool do
   @moduledoc false
+  alias Elmc.Backend.CCodegen.Types, as: Types
+
 
   alias Elmc.Backend.CCodegen.DirectRender.RecordViewPeel
   alias Elmc.Backend.CCodegen.EnvBindings
@@ -7,6 +9,7 @@ defmodule Elmc.Backend.CCodegen.Native.Bool do
   alias Elmc.Backend.CCodegen.Hoist
   alias Elmc.Backend.CCodegen.Host
   alias Elmc.Backend.CCodegen.Native.FunctionCall, as: NativeFunctionCall
+  alias Elmc.Backend.CCodegen.Native.Int, as: NativeInt
   alias Elmc.Backend.CCodegen.Native.RecordFields
   alias Elmc.Backend.CCodegen.Native.TypedReturn
   alias Elmc.Backend.CCodegen.Patterns
@@ -172,6 +175,24 @@ defmodule Elmc.Backend.CCodegen.Native.Bool do
     end
   end
 
+  defp compile_expr_uncached(%{op: :runtime_call, function: "elmc_set_member", args: [value, set]}, env, counter) do
+    if NativeInt.expr?(value, env) do
+      {value_code, value_ref, counter} = NativeInt.compile_expr(value, env, counter)
+      {set_code, set_var, counter} = Host.compile_expr(set, env, counter)
+      next = counter + 1
+      out = "native_set_member_#{next}"
+
+      code = """
+      #{value_code}#{set_code}
+        const #{@native_bool_c_type} #{out} = elmc_set_member_int(#{value_ref}, #{RcRuntimeEmit.value_expr(set_var)});
+      """
+
+      {code, out, next}
+    else
+      compile_fallback(%{op: :runtime_call, function: "elmc_set_member", args: [value, set]}, env, counter)
+    end
+  end
+
   defp compile_expr_uncached(%{op: :compare, kind: kind, left: left, right: right}, env, counter) do
     operator =
       case kind do
@@ -292,34 +313,40 @@ defmodule Elmc.Backend.CCodegen.Native.Bool do
   defp compile_expr_uncached(expr, env, counter), do: compile_fallback(expr, env, counter)
 
   defp compile_runtime_bool_if_expr(cond_expr, then_expr, else_expr, env, counter) do
-    if bool_coercible_branch?(then_expr, env) and bool_coercible_branch?(else_expr, env) do
-      {cond_code, cond_ref, counter} = compile_expr(cond_expr, env, counter)
-      then_env = RecordCompile.fresh_subexpr_cache(env)
-      else_env = RecordCompile.fresh_subexpr_cache(env)
-      {then_code, then_ref, counter} = compile_bool_branch(then_expr, then_env, counter)
-      {else_code, else_ref, counter} = compile_bool_branch(else_expr, else_env, counter)
-      next = counter + 1
-      out = "native_bool_if_#{next}"
+    case try_compile_threshold_compare_if(cond_expr, then_expr, else_expr, env, counter) do
+      {:ok, code, ref, counter} ->
+        {code, ref, counter}
 
-      code = """
-      #{cond_code}
-        #{@native_bool_c_type} #{out};
-        if (#{cond_ref}) {
-      #{CSource.indent(then_code, 4)}
-          #{out} = #{then_ref};
-        } else {
-      #{CSource.indent(else_code, 4)}
-          #{out} = #{else_ref};
-        }
-      """
+      :error ->
+        if bool_coercible_branch?(then_expr, env) and bool_coercible_branch?(else_expr, env) do
+          {cond_code, cond_ref, counter} = compile_expr(cond_expr, env, counter)
+          then_env = RecordCompile.fresh_subexpr_cache(env)
+          else_env = RecordCompile.fresh_subexpr_cache(env)
+          {then_code, then_ref, counter} = compile_bool_branch(then_expr, then_env, counter)
+          {else_code, else_ref, counter} = compile_bool_branch(else_expr, else_env, counter)
+          next = counter + 1
+          out = "native_bool_if_#{next}"
 
-      {code, out, next}
-    else
-      compile_fallback(
-        %{op: :if, cond: cond_expr, then_expr: then_expr, else_expr: else_expr},
-        env,
-        counter
-      )
+          code = """
+          #{cond_code}
+            #{@native_bool_c_type} #{out};
+            if (#{cond_ref}) {
+          #{CSource.indent(then_code, 4)}
+              #{out} = #{then_ref};
+            } else {
+          #{CSource.indent(else_code, 4)}
+              #{out} = #{else_ref};
+            }
+          """
+
+          {code, out, next}
+        else
+          compile_fallback(
+            %{op: :if, cond: cond_expr, then_expr: then_expr, else_expr: else_expr},
+            env,
+            counter
+          )
+        end
     end
   end
 
@@ -811,6 +838,121 @@ defmodule Elmc.Backend.CCodegen.Native.Bool do
       _ -> :error
     end
   end
+
+  # Elm lowers `a <= b` to `if a < b then False else a == b` (and similarly for >=).
+  # Emit the direct native compare so tail loops avoid boxing a fresh Bool each iteration.
+  defp try_compile_threshold_compare_if(cond_expr, then_expr, else_expr, env, counter) do
+    with {:ok, op, left, right} <- threshold_compare_if_pattern(cond_expr, then_expr, else_expr),
+         true <- Host.native_int_compare_safe?(threshold_compare_operator(op), left, right, env) do
+      {left_code, left_ref, counter} = Host.compile_native_int_expr(left, env, counter)
+      {right_code, right_ref, counter} = Host.compile_native_int_expr(right, env, counter)
+      comparison = threshold_compare_operator_c(op)
+      code = CSource.join_fragments([left_code, right_code])
+      {:ok, code, "(#{left_ref} #{comparison} #{right_ref})", counter}
+    else
+      _ -> :error
+    end
+  end
+
+  defp threshold_compare_if_pattern(cond_expr, then_expr, else_expr) do
+    with {:ok, :lt, left, right} <- compare_side_pattern(cond_expr, :lt),
+         true <- true_bool_branch?(then_expr),
+         {:ok, :eq, eq_left, eq_right} <- compare_side_pattern(else_expr, :eq),
+         true <- same_compare_operands?(left, right, eq_left, eq_right) do
+      {:ok, :lte, left, right}
+    else
+      _ ->
+        with {:ok, :lt, left, right} <- compare_side_pattern(cond_expr, :lt),
+             true <- false_bool_branch?(then_expr),
+             {:ok, :eq, eq_left, eq_right} <- compare_side_pattern(else_expr, :eq),
+             true <- same_compare_operands?(left, right, eq_left, eq_right) do
+          {:ok, :lte, left, right}
+        else
+          _ ->
+            with {:ok, :gt, left, right} <- compare_side_pattern(cond_expr, :gt),
+                 true <- true_bool_branch?(then_expr),
+                 {:ok, :eq, eq_left, eq_right} <- compare_side_pattern(else_expr, :eq),
+                 true <- same_compare_operands?(left, right, eq_left, eq_right) do
+              {:ok, :gte, left, right}
+            else
+              _ ->
+                with {:ok, :gt, left, right} <- compare_side_pattern(cond_expr, :gt),
+                     true <- false_bool_branch?(then_expr),
+                     {:ok, :eq, eq_left, eq_right} <- compare_side_pattern(else_expr, :eq),
+                     true <- same_compare_operands?(left, right, eq_left, eq_right) do
+                  {:ok, :gte, left, right}
+                else
+                  _ -> :error
+                end
+            end
+        end
+    end
+  end
+
+  defp compare_side_pattern(%{op: :compare, kind: :lt, left: left, right: right}, :lt),
+    do: {:ok, :lt, left, right}
+
+  defp compare_side_pattern(%{op: :compare, kind: :gt, left: left, right: right}, :gt),
+    do: {:ok, :gt, left, right}
+
+  defp compare_side_pattern(%{op: :compare, kind: :eq, left: left, right: right}, :eq),
+    do: {:ok, :eq, left, right}
+
+  defp compare_side_pattern(%{op: :call, name: "__lt__", args: [left, right]}, :lt),
+    do: {:ok, :lt, left, right}
+
+  defp compare_side_pattern(%{op: :call, name: "__gt__", args: [left, right]}, :gt),
+    do: {:ok, :gt, left, right}
+
+  defp compare_side_pattern(%{op: :call, name: "__eq__", args: [left, right]}, :eq),
+    do: {:ok, :eq, left, right}
+
+  defp compare_side_pattern(_expr, _expected), do: :error
+
+  defp false_bool_branch?(%{op: :bool_literal, value: false}), do: true
+  defp false_bool_branch?(%{op: :int_literal, value: 0}), do: true
+
+  defp false_bool_branch?(%{op: :constructor_ref, target: target}),
+    do: match?({:ok, false}, constructor_bool_literal(target))
+
+  defp false_bool_branch?(%{op: :qualified_call, target: target, args: args}) do
+    args == [] and match?({:ok, false}, constructor_bool_literal(target))
+  end
+
+  defp false_bool_branch?(_expr), do: false
+
+  defp true_bool_branch?(%{op: :bool_literal, value: true}), do: true
+  defp true_bool_branch?(%{op: :int_literal, value: 1}), do: true
+
+  defp true_bool_branch?(%{op: :constructor_call, target: target, args: args}) do
+    args == [] and match?({:ok, true}, constructor_bool_literal(target))
+  end
+
+  defp true_bool_branch?(%{op: :constructor_ref, target: target}),
+    do: match?({:ok, true}, constructor_bool_literal(target))
+
+  defp true_bool_branch?(%{op: :qualified_call, target: target, args: args}) do
+    args == [] and match?({:ok, true}, constructor_bool_literal(target))
+  end
+
+  defp true_bool_branch?(_expr), do: false
+
+  defp same_compare_operands?(left, right, eq_left, eq_right) do
+    same_ir_var_or_expr?(left, eq_left) and same_ir_var_or_expr?(right, eq_right)
+  end
+
+  defp same_ir_var_or_expr?(%{op: :var, name: a}, %{op: :var, name: b}), do: a == b
+
+  defp same_ir_var_or_expr?(%{op: :int_literal, value: a}, %{op: :int_literal, value: b}),
+    do: a == b
+
+  defp same_ir_var_or_expr?(_left, _right), do: false
+
+  defp threshold_compare_operator(:lte), do: "__lte__"
+  defp threshold_compare_operator(:gte), do: "__gte__"
+
+  defp threshold_compare_operator_c(:lte), do: "<="
+  defp threshold_compare_operator_c(:gte), do: ">="
 
   @spec compile_fallback(Types.ir_expr(), Types.compile_env(), Types.compile_counter()) ::
           compile_result()

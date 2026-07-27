@@ -1,5 +1,7 @@
 defmodule Elmc.Backend.CCodegen.ConstantInt do
   @moduledoc false
+  alias Elmc.Backend.CCodegen.Types, as: Types
+
 
   alias Elmc.Backend.CCodegen.CaseCompile
   alias Elmc.Backend.CCodegen.EnvBindings
@@ -32,6 +34,8 @@ defmodule Elmc.Backend.CCodegen.ConstantInt do
   end
 
   def literal_value(_expr, _env), do: :error
+
+  @spec literal_value_at(map() | Types.expr(), Types.compile_env()) :: Types.ir_expr()
 
   defp literal_value_at(%{op: :int_literal, union_ctor: ctor}, _env) when is_binary(ctor), do: :error
 
@@ -213,6 +217,8 @@ defmodule Elmc.Backend.CCodegen.ConstantInt do
     end
   end
 
+  @spec literal_from_decl_uncached(String.t(), Types.compile_env()) :: Types.ir_expr()
+
   defp literal_from_decl_uncached(key, env) do
     decl_map = Map.get(env, :__program_decls__, %{})
 
@@ -305,12 +311,16 @@ defmodule Elmc.Backend.CCodegen.ConstantInt do
 
   def literal_decl_name(_expr, _env), do: nil
 
+  @spec local_binding?(map(), String.t()) :: boolean()
+
   defp local_binding?(env, name) when is_map(env) and is_binary(name) do
     key = EnvBindings.binding_key(name)
 
     Map.has_key?(env, key) or Map.has_key?(env, name) or
       EnvBindings.native_int_binding(env, name) != nil
   end
+
+  @spec zero_arg_int_decl?(String.t(), String.t(), Types.compile_env()) :: boolean()
 
   defp zero_arg_int_decl?(module, name, env) do
     case Map.get(Map.get(env, :__program_decls__, %{}), {module, name}) do
@@ -345,11 +355,15 @@ defmodule Elmc.Backend.CCodegen.ConstantInt do
     compile_boxed(%{op: :call, name: name, args: args}, %{env | __module__: module_name}, counter)
   end
 
+  @spec apply_binop(Types.ir_expr(), Types.expr() | Types.ir_expr(), Types.expr() | Types.ir_expr()) :: Types.ir_expr()
+
   defp apply_binop("__add__", left, right), do: left + right
   defp apply_binop("__sub__", left, right), do: left - right
   defp apply_binop("__mul__", left, right), do: left * right
   defp apply_binop("__idiv__", _left, 0), do: 0
   defp apply_binop("__idiv__", left, right), do: Integer.floor_div(left, right)
+
+  @spec boxed_out_slot(Types.compile_env(), Types.ir_expr()) :: Types.ir_expr()
 
   defp boxed_out_slot(env, counter) do
     case RcRuntimeEmit.nested_out_target(env) do
@@ -362,6 +376,8 @@ defmodule Elmc.Backend.CCodegen.ConstantInt do
     end
   end
 
+  @spec elmc_mod_by(integer(), Types.ir_expr()) :: Types.ir_expr()
+
   defp elmc_mod_by(value, base) do
     rem = rem(value, base)
 
@@ -371,6 +387,8 @@ defmodule Elmc.Backend.CCodegen.ConstantInt do
       rem
     end
   end
+
+  @spec literal_case_select(list(), integer(), Types.compile_env()) :: Types.ir_expr()
 
   defp literal_case_select(branches, subject_value, env) do
     Enum.reduce_while(branches, :error, fn branch, _ ->

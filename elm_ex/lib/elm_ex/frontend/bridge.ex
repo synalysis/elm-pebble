@@ -184,6 +184,8 @@ defmodule ElmEx.Frontend.Bridge do
     {:ok, module_paths}
   end
 
+  @spec dependency_package_source_dirs(Types.t(), integer()) :: Types.expr()
+
   defp dependency_package_source_dirs(project_dir, elm_json)
        when is_binary(project_dir) and is_map(elm_json) do
     {_visited, deps} = collect_dependency_version_pairs(project_dir, elm_json)
@@ -195,6 +197,8 @@ defmodule ElmEx.Frontend.Bridge do
   end
 
   defp dependency_package_source_dirs(_project_dir, _elm_json), do: []
+
+  @spec dependency_package_src_dirs(Types.t(), Types.expr(), Types.expr()) :: Types.expr()
 
   defp dependency_package_src_dirs(project_dir, pkg, ver) do
     case String.split(pkg, "/", parts: 2) do
@@ -214,6 +218,8 @@ defmodule ElmEx.Frontend.Bridge do
         []
     end
   end
+
+  @spec collect_dependency_version_pairs(Types.t(), integer(), Types.expr()) :: Types.expr()
 
   defp collect_dependency_version_pairs(project_dir, elm_json, visited \\ MapSet.new()) do
     elm_json
@@ -239,6 +245,8 @@ defmodule ElmEx.Frontend.Bridge do
       end
     end)
   end
+
+  @spec package_elm_json(Types.t(), Types.expr(), Types.expr()) :: Types.expr()
 
   defp package_elm_json(project_dir, pkg, ver) do
     case String.split(pkg, "/", parts: 2) do
@@ -275,6 +283,8 @@ defmodule ElmEx.Frontend.Bridge do
     end
   end
 
+  @spec dependency_version_pairs(map() | term()) :: Types.expr()
+
   defp dependency_version_pairs(%{"direct" => direct, "indirect" => indirect})
        when is_map(direct) and is_map(indirect) do
     Map.merge(indirect, direct)
@@ -290,6 +300,8 @@ defmodule ElmEx.Frontend.Bridge do
 
   defp dependency_version_pairs(_), do: []
 
+  @spec application_dependency_pins(integer()) :: Types.expr()
+
   defp application_dependency_pins(elm_json) do
     case elm_json do
       %{} = json ->
@@ -302,6 +314,8 @@ defmodule ElmEx.Frontend.Bridge do
         %{}
     end
   end
+
+  @spec dependency_exact_version(String.t() | term()) :: Types.expr()
 
   defp dependency_exact_version(range) when is_binary(range) do
     range |> String.split() |> List.first()
@@ -435,6 +449,8 @@ defmodule ElmEx.Frontend.Bridge do
 
   defp disambiguate_package_module_collisions(modules), do: modules
 
+  @spec rewrite_collision_import_entry(map() | Types.expr(), Types.expr(), Types.expr()) :: map()
+
   defp rewrite_collision_import_entry(entry, importer_pkg, collisions) when is_map(entry) do
     module_name = Map.get(entry, "module") || Map.get(entry, :module)
 
@@ -522,7 +538,8 @@ defmodule ElmEx.Frontend.Bridge do
     end
   end
 
-  @spec parser_backend() :: module()
+  @spec parser_backend() :: Types.expr()
+
   defp parser_backend do
     backend =
       System.get_env("ELMEX_PARSER_BACKEND") ||
@@ -537,6 +554,7 @@ defmodule ElmEx.Frontend.Bridge do
   end
 
   @spec elm_make_check_enabled?() :: boolean()
+
   defp elm_make_check_enabled? do
     case System.get_env("ELMEX_ENABLE_ELM_MAKE_CHECK") do
       value when value in ["1", "true", "TRUE", "yes", "YES"] ->
@@ -549,6 +567,8 @@ defmodule ElmEx.Frontend.Bridge do
         Application.get_env(:elm_ex, :enable_elm_make_check, false)
     end
   end
+
+  @spec attach_missing_import_diagnostics(map()) :: Types.expr()
 
   defp attach_missing_import_diagnostics(%Project{} = project) do
     available =
@@ -580,6 +600,8 @@ defmodule ElmEx.Frontend.Bridge do
 
     %{project | diagnostics: project.diagnostics ++ missing}
   end
+
+  @spec missing_import?(String.t() | term()) :: boolean()
 
   defp missing_import?(name) when is_binary(name) do
     name != "" and

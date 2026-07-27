@@ -1,5 +1,7 @@
 defmodule Ide.Emulator.Session.Control do
   @moduledoc false
+  alias Ide.Emulator.Types, as: Types
+
 
   alias Ide.Debugger.SimulatorSettings
   alias Ide.Emulator.{QemuControl, Types}
@@ -66,6 +68,8 @@ defmodule Ide.Emulator.Session.Control do
       end
     end
   end
+
+  @spec validate_commands_offline(term()) :: term()
 
   defp validate_commands_offline(commands) do
     Enum.reduce_while(commands, :ok, fn %{protocol: protocol, payload: payload}, :ok ->

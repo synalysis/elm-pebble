@@ -194,6 +194,8 @@ defmodule Ide.Debugger.CompanionConfiguration do
     Map.get(model, "configuration") || get_in(model, ["runtime_model", "configuration"]) || %{}
   end
 
+  @spec sync_field_control_values(integer(), term()) :: term()
+
   defp sync_field_control_values(configuration, values)
        when is_map(configuration) and is_map(values) do
     update_in(configuration, ["sections"], fn

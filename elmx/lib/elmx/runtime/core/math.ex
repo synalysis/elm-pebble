@@ -77,6 +77,10 @@ defmodule Elmx.Runtime.Core.Math do
   @spec pow(Types.numeric_input(), Types.numeric_input()) :: float()
   def pow(base, exp) when is_number(base) and is_number(exp), do: :math.pow(base * 1.0, exp * 1.0)
 
+  @spec log(Types.numeric_input()) :: float() | :nan
+  def log(n) when is_number(n) and n > 0, do: :math.log(n * 1.0)
+  def log(_), do: :nan
+
   @spec log_base(Types.numeric_input(), Types.numeric_input()) :: float()
   def log_base(base, value) when is_number(base) and is_number(value) and base > 0 and value > 0,
     do: :math.log(value * 1.0) / :math.log(base * 1.0)

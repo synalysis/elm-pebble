@@ -1,5 +1,7 @@
 defmodule Ide.Emulator.Session.InstallCalls do
   @moduledoc false
+  alias Ide.Emulator.Types, as: Types
+
 
   require Logger
 
@@ -56,6 +58,8 @@ defmodule Ide.Emulator.Session.InstallCalls do
     end
   end
 
+  @spec do_prepare_for_install(term()) :: term()
+
   defp do_prepare_for_install(state) do
     reuse? = not InstallPrep.reset_needed?(state)
 
@@ -70,6 +74,8 @@ defmodule Ide.Emulator.Session.InstallCalls do
         {:reply, {:error, reason}, %{state | installing?: false}}
     end
   end
+
+  @spec prepare_for_install_after_refresh(term(), boolean()) :: term()
 
   defp prepare_for_install_after_refresh(state, reuse?) do
     result =

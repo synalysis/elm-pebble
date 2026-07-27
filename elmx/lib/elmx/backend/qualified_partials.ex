@@ -2,6 +2,8 @@ defmodule Elmx.Backend.QualifiedPartials do
   @moduledoc """
   Partial-application rewrites for `qualified_call` (mirrors `elmc` `c_codegen` zero/low-arity clauses).
   """
+  alias Elmx.Types, as: Types
+
 
   alias Elmx.Types
 
@@ -281,6 +283,8 @@ defmodule Elmx.Backend.QualifiedPartials do
     end
   end
 
+  @spec unary(integer(), Types.elm_value()) :: Types.elm_value()
+
   defp unary(function, param) do
     {:ok,
      %{
@@ -293,6 +297,8 @@ defmodule Elmx.Backend.QualifiedPartials do
        }
      }}
   end
+
+  @spec unary_bound(integer(), Types.elm_value(), Types.elm_value()) :: Types.elm_value()
 
   defp unary_bound(function, fixed, param) do
     {:ok,
@@ -307,6 +313,8 @@ defmodule Elmx.Backend.QualifiedPartials do
      }}
   end
 
+  @spec binary(integer(), Types.elm_value(), Types.elm_value()) :: Types.elm_value()
+
   defp binary(function, p1, p2) do
     {:ok,
      %{
@@ -320,6 +328,8 @@ defmodule Elmx.Backend.QualifiedPartials do
      }}
   end
 
+  @spec binary_bound(integer(), Types.elm_value(), Types.elm_value()) :: Types.elm_value()
+
   defp binary_bound(function, fixed, param) do
     {:ok,
      %{
@@ -332,6 +342,8 @@ defmodule Elmx.Backend.QualifiedPartials do
        }
      }}
   end
+
+  @spec ternary(integer(), Types.elm_value(), Types.elm_value(), Types.elm_value()) :: Types.elm_value()
 
   defp ternary(function, p1, p2, p3) do
     {:ok,
@@ -349,6 +361,8 @@ defmodule Elmx.Backend.QualifiedPartials do
        }
      }}
   end
+
+  @spec ternary_bound(integer(), Types.elm_value(), Types.elm_value()) :: Types.elm_value()
 
   defp ternary_bound(function, fixed, params) do
     {:ok,

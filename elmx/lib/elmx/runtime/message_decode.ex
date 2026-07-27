@@ -5,6 +5,8 @@ defmodule Elmx.Runtime.MessageDecode do
   Accepts string message names, wire ctor maps (`"ctor"` / `"args"`), and companion
   payloads. Used by `Elmx.Runtime.Executor` on the IDE execution path.
   """
+  alias Elmx.Types, as: Types
+
 
   alias Elmx.Runtime.MessageDecode.{Parse, Wire}
   alias Elmx.Types
@@ -32,6 +34,8 @@ defmodule Elmx.Runtime.MessageDecode do
 
   @doc false
   defdelegate wire_to_runtime(value), to: Wire, as: :to_runtime
+
+  @spec blank_message_value?(Types.elm_value() | map() | term()) :: boolean()
 
   defp blank_message_value?(nil), do: true
   defp blank_message_value?(map) when is_map(map), do: map_size(map) == 0

@@ -15,6 +15,8 @@ defmodule Ide.Emulator.PebblePalette do
     end
   end
 
+  @spec quantize_channel(integer()) :: term()
+
   defp quantize_channel(value) do
     Enum.min_by(@levels, fn level -> abs(level - value) end)
   end

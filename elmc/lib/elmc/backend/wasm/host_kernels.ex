@@ -1,5 +1,7 @@
 defmodule Elmc.Backend.Wasm.HostKernels do
   @moduledoc false
+  alias Elmc.Types, as: Types
+
 
   # Replace deep recursive Elm kernels with thin host-backed bodies.
   # TriangularMesh.gridFaceIndices is O(u*v) recursion; each WASM frame
@@ -28,6 +30,8 @@ defmodule Elmc.Backend.Wasm.HostKernels do
   end
 
   def maybe_override(fun), do: fun
+
+  @spec grid_face_indices_body() :: Types.ir_expr()
 
   defp grid_face_indices_body do
     """

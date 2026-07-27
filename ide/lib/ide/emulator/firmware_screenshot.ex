@@ -64,6 +64,8 @@ defmodule Ide.Emulator.FirmwareScreenshot do
     end
   end
 
+  @spec capture_locked(term(), term(), term()) :: term()
+
   defp capture_locked(router, platform, timeout) do
     Process.sleep(capture_settle_ms(timeout))
     :ok = Router.send_packet(router, @endpoint, @request)
@@ -76,15 +78,21 @@ defmodule Ide.Emulator.FirmwareScreenshot do
     end
   end
 
+  @spec capture_settle_ms(term()) :: term()
+
   defp capture_settle_ms(timeout) when timeout >= 60_000, do: 500
   defp capture_settle_ms(timeout) when timeout >= 40_000, do: 300
   defp capture_settle_ms(_timeout), do: 150
+
+  @spec timeout_from_pixels(term()) :: term()
 
   defp timeout_from_pixels(pixels) do
     kb = div(pixels, 1024)
     ms = @capture_timeout_base + kb * @capture_timeout_per_kb
     min(@max_capture_timeout, max(@min_capture_timeout, ms))
   end
+
+  @spec read_screenshot(term(), term()) :: term()
 
   defp read_screenshot(router, deadline_ms) do
     with {:ok, %{payload: payload}} <-
@@ -97,6 +105,8 @@ defmodule Ide.Emulator.FirmwareScreenshot do
       collect_payload(router, header, data, deadline_ms)
     end
   end
+
+  @spec collect_payload(term(), term(), term(), term()) :: term()
 
   defp collect_payload(router, header, data, deadline_ms) do
     if byte_size(data) >= header.expected_bytes do
@@ -116,6 +126,8 @@ defmodule Ide.Emulator.FirmwareScreenshot do
     end
   end
 
+  @spec remaining_ms(term()) :: term()
+
   defp remaining_ms(deadline_ms) do
     max(1, deadline_ms - System.monotonic_time(:millisecond))
   end
@@ -125,6 +137,8 @@ defmodule Ide.Emulator.FirmwareScreenshot do
   @spec parse_header_payload(binary()) ::
           {:ok, Types.screenshot_header(), binary()} | {:error, Types.screenshot_error()}
   def parse_header_payload(payload), do: parse_header(payload)
+
+  @spec parse_header(binary() | term()) :: term()
 
   defp parse_header(
          <<response_code, version::unsigned-big-32, width::unsigned-big-32,
@@ -147,11 +161,15 @@ defmodule Ide.Emulator.FirmwareScreenshot do
 
   defp parse_header(_), do: {:error, :invalid_screenshot_header}
 
+  @spec expected_bytes(term() | integer(), term(), term()) :: term()
+
   defp expected_bytes(1, width, height), do: {:ok, div(width * height, 8)}
   defp expected_bytes(2, width, height), do: {:ok, width * height}
 
   defp expected_bytes(version, _width, _height),
     do: {:error, {:unknown_screenshot_version, version}}
+
+  @spec decode_image(map(), term()) :: term()
 
   defp decode_image(%{version: 1, width: width, height: height}, data) do
     {:ok, decode_1bpp(width, height, data)}
@@ -160,6 +178,8 @@ defmodule Ide.Emulator.FirmwareScreenshot do
   defp decode_image(%{version: 2, width: width, height: height}, data) do
     {:ok, decode_8bpp(width, height, data)}
   end
+
+  @spec decode_1bpp(term(), term(), term()) :: term()
 
   defp decode_1bpp(width, height, data) do
     row_bytes = div(width, 8)
@@ -174,6 +194,8 @@ defmodule Ide.Emulator.FirmwareScreenshot do
   end
 
   @doc false
+  @spec decode_8bpp(term(), term(), term()) :: term()
+
   def decode_8bpp(width, height, data) do
     for y <- 0..(height - 1), x <- 0..(width - 1), into: <<>> do
       pixel = :binary.at(data, y * width + x)

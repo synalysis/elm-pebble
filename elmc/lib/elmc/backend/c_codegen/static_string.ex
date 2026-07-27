@@ -1,10 +1,14 @@
 defmodule Elmc.Backend.CCodegen.StaticString do
   @moduledoc false
+  alias Elmc.Backend.CCodegen.Types, as: Types
+
 
   alias Elmc.Backend.CCodegen.Types
 
   @spec fold_append_literals(Types.ir_expr()) :: Types.ir_expr()
   def fold_append_literals(expr), do: fold(expr)
+
+  @spec fold(map() | Types.expr()) :: Types.ir_expr()
 
   defp fold(%{op: :call, name: "__append__", args: [left, right]}),
     do: combine(fold(left), fold(right), &__append__/2)
@@ -13,6 +17,8 @@ defmodule Elmc.Backend.CCodegen.StaticString do
     do: combine(fold(left), fold(right), &elmc_append/2)
 
   defp fold(expr), do: expr
+
+  @spec combine(map() | Types.expr(), map() | Types.expr(), Types.ir_expr()) :: Types.ir_expr()
 
   defp combine(%{op: :string_literal, value: left}, %{op: :string_literal, value: right}, _builder),
     do: %{op: :string_literal, value: left <> right}
@@ -50,7 +56,11 @@ defmodule Elmc.Backend.CCodegen.StaticString do
 
   defp combine(left, right, builder), do: builder.(left, right)
 
+  @spec __append__(Types.expr(), Types.expr()) :: Types.ir_expr()
+
   defp __append__(left, right), do: %{op: :call, name: "__append__", args: [left, right]}
+
+  @spec elmc_append(Types.expr(), Types.expr()) :: Types.ir_expr()
 
   defp elmc_append(left, right),
     do: %{op: :runtime_call, function: "elmc_append", args: [left, right]}

@@ -1,7 +1,11 @@
 defmodule Elmx.Runtime.ViewShape.Geometry do
   @moduledoc false
+  alias Elmx.Types, as: Types
+
 
   alias Elmx.Runtime.Pebble.Ui, as: PebbleUi
+
+  @spec coerce_path_value(map() | String.t()) :: Types.elm_value()
 
   def coerce_path_value(%{"type" => "path"} = path), do: path
   def coerce_path_value(%{type: "path"} = path), do: path
@@ -14,11 +18,15 @@ defmodule Elmx.Runtime.ViewShape.Geometry do
 
   def coerce_path_value(path), do: path
 
+  @spec coerce_path_points(list() | term()) :: Types.elm_value()
+
   def coerce_path_points(points) when is_list(points) do
     Enum.map(points, &coerce_point_map/1)
   end
 
   def coerce_path_points(_), do: []
+
+  @spec coerce_point_map(map() | term()) :: Types.elm_value()
 
   def coerce_point_map(%{"x" => x, "y" => y}) when is_integer(x) and is_integer(y), do: %{x: x, y: y}
   def coerce_point_map(%{x: x, y: y}) when is_integer(x) and is_integer(y), do: %{x: x, y: y}
@@ -37,10 +45,16 @@ defmodule Elmx.Runtime.ViewShape.Geometry do
 
   def coerce_point_map(_), do: %{x: 0, y: 0}
 
+  @spec coerce_rotation(integer() | term()) :: Types.elm_value()
+
   def coerce_rotation(value) when is_integer(value), do: value
   def coerce_rotation(_), do: 0
 
+  @spec rect_map(Types.elm_value(), Types.elm_value(), Types.elm_value(), Types.elm_value()) :: Types.elm_value()
+
   def rect_map(x, y, w, h), do: %{x: x, y: y, w: w, h: h}
+
+  @spec coerce_rect_map(map() | term()) :: Types.elm_value()
 
   def coerce_rect_map(%{x: x, y: y, w: w, h: h}) when is_integer(x),
     do: %{x: x, y: y, w: w, h: h}

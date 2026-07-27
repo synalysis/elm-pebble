@@ -1,5 +1,7 @@
 defmodule Elmx.Runtime.Core.Collections.Dict do
   @moduledoc false
+  alias Elmx.Types, as: Types
+
 
   alias Elmx.Runtime.Core
   alias Elmx.Runtime.Core.Collections.Pairs
@@ -12,12 +14,51 @@ defmodule Elmx.Runtime.Core.Collections.Dict do
   defp unwrap({:elmx_dict, map}) when is_map(map), do: map
 
   defp unwrap({:elmx_dict, pairs}) when is_list(pairs) do
-    Enum.reduce(pairs, %{}, fn {k, v}, acc -> Map.put(acc, k, v) end)
+    Enum.reduce(pairs, %{}, fn pair, acc ->
+      {k, v} = Pairs.normalize_pair(pair)
+      Map.put(acc, k, v)
+    end)
   end
 
   defp unwrap(items) when is_list(items) do
-    Enum.reduce(items, %{}, fn {k, v}, acc -> Map.put(acc, k, v) end)
+    Enum.reduce(items, %{}, fn pair, acc ->
+      {k, v} = Pairs.normalize_pair(pair)
+      Map.put(acc, k, v)
+    end)
   end
+
+  # elm/core Dict tree (RBEmpty / RBNode) when mixed with runtime helpers.
+  defp unwrap(:RBEmpty_elm_builtin), do: %{}
+  defp unwrap({:RBEmpty_elm_builtin, _}), do: %{}
+  defp unwrap({:ctor, "RBEmpty_elm_builtin", _}), do: %{}
+  defp unwrap(%{ctor: :RBEmpty_elm_builtin}), do: %{}
+  defp unwrap(%{"ctor" => "RBEmpty_elm_builtin"}), do: %{}
+
+  defp unwrap({:RBNode_elm_builtin, _color, key, value, left, right}) do
+    unwrap(left)
+    |> Map.merge(unwrap(right))
+    |> Map.put(key, value)
+  end
+
+  defp unwrap({:ctor, "RBNode_elm_builtin", [_color, key, value, left, right]}) do
+    unwrap(left)
+    |> Map.merge(unwrap(right))
+    |> Map.put(key, value)
+  end
+
+  defp unwrap(%{ctor: :RBNode_elm_builtin, args: [_color, key, value, left, right]}) do
+    unwrap(left)
+    |> Map.merge(unwrap(right))
+    |> Map.put(key, value)
+  end
+
+  defp unwrap(%{"ctor" => "RBNode_elm_builtin", "args" => [_color, key, value, left, right]}) do
+    unwrap(left)
+    |> Map.merge(unwrap(right))
+    |> Map.put(key, value)
+  end
+
+  defp unwrap(map) when is_map(map), do: map
 
   defp sorted_pairs(dict) do
     dict

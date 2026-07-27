@@ -9,6 +9,8 @@ defmodule ElmEx.DebuggerContract.EffectAnalysis.Subscriptions do
   alias ElmEx.DebuggerContract.EffectAnalysis.Support
   alias ElmEx.DebuggerContract.CmdCall
 
+  @spec subscriptions_outline(term() | Types.expr(), term() | list()) :: term()
+
   def subscriptions_outline(nil, _), do: []
 
   def subscriptions_outline(expr, subscriptions_params) when is_list(subscriptions_params) do
@@ -375,6 +377,8 @@ defmodule ElmEx.DebuggerContract.EffectAnalysis.Subscriptions do
 
   defp call_param_bindings(_param_names, _args, bindings), do: bindings
 
+  @spec subscription_call_rows(String.t(), [String.t()], term(), term()) :: term()
+
   def subscription_call_rows(target, args, bindings, guards)
       when is_binary(target) and is_list(args) and is_map(bindings) and is_list(guards) do
     active_guards = Enum.filter(guards, &is_map/1)
@@ -466,6 +470,8 @@ defmodule ElmEx.DebuggerContract.EffectAnalysis.Subscriptions do
   def subscription_batch_target?(target) when is_binary(target) do
     target in ["Sub.batch", "Platform.Sub.batch"] or Support.view_type_name(target) == "batch"
   end
+
+  @spec subscription_item_label(map() | term()) :: term()
 
   def subscription_item_label(%{op: :qualified_call, target: "Cmd.none", args: []}),
     do: "Cmd.none"

@@ -3,6 +3,7 @@ defmodule Elmc.Backend.CCodegen.Types.StackEstimate do
   Stack-risk report maps from `Elmc.Backend.CCodegen.StackEstimate`.
   """
 
+
   @type risk_level :: :ok | :warn | :risk
 
   @type risk_reason ::

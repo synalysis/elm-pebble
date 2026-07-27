@@ -1,6 +1,7 @@
 defmodule Ide.Emulator.PebbleProtocol.Router do
   @moduledoc false
 
+
   use GenServer
 
   require Logger

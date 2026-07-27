@@ -1,6 +1,7 @@
 defmodule Ide.Acp.Types do
   @moduledoc false
 
+
   alias Ide.Mcp.WireTypes
 
   @type mcp_server_env :: %{optional(String.t()) => String.t()}

@@ -223,8 +223,12 @@ defmodule IdeWeb.AuthController do
     end
   end
 
+  @spec custom_login_step(map() | term()) :: term()
+
   defp custom_login_step(%{"step" => "sent"}), do: :sent
   defp custom_login_step(_), do: :email
+
+  @spec custom_login_email(map() | term()) :: term()
 
   defp custom_login_email(%{"email" => email}) when is_binary(email) do
     email
@@ -271,6 +275,8 @@ defmodule IdeWeb.AuthController do
   rescue
     _ -> "0.0.0.0"
   end
+
+  @spec renew_session(integer()) :: term()
 
   defp renew_session(conn) do
     conn

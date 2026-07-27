@@ -131,7 +131,8 @@ defmodule Elmc.BytecodeOpcodeAuditTest do
       :forward_ref_set,
       :forward_ref_load,
       :forward_ref_capture,
-      :forward_ref_load_captured
+      :forward_ref_load_captured,
+      :pipe_apply_repeat
     ]
   end
 
@@ -154,6 +155,10 @@ defmodule Elmc.BytecodeOpcodeAuditTest do
       :call_fn ->
         <<_idx::16, sz::16, _::binary>> = rest
         4 + sz
+
+      :pipe_apply_repeat ->
+        # fn_idx::16 + count::32 + base::16
+        8
 
       :const_immortal_string ->
         <<sz::16, _::binary>> = rest

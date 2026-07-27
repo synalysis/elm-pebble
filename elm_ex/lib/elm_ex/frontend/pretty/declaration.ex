@@ -183,7 +183,6 @@ defmodule ElmEx.Frontend.Pretty.Declaration do
     end
   end
 
-  @spec format_union_constructor(map(), :first | :rest) :: Doc.t()
   defp format_union_constructor(%{name: name, arg: nil}, :first), do: Doc.text("= " <> name)
 
   defp format_union_constructor(%{name: name, arg: arg}, :first) when is_binary(arg),

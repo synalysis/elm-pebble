@@ -3,6 +3,7 @@ defmodule ElmEx.DebuggerContract.Types.ProgramOutline do
   `Main` program shape summary from `EffectAnalysis.main_program_outline/1`.
   """
 
+
   @typedoc """
   Runtime keys: `"target"`, `"kind"`, `"fields"`.
   """

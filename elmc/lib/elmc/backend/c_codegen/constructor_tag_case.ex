@@ -1,5 +1,7 @@
 defmodule Elmc.Backend.CCodegen.ConstructorTagCase do
   @moduledoc false
+  alias Elmc.Backend.CCodegen.Types, as: Types
+
 
   alias Elmc.Backend.CCodegen.Host
   alias Elmc.Backend.CCodegen.ImmortalStringLiteral
@@ -25,7 +27,11 @@ defmodule Elmc.Backend.CCodegen.ConstructorTagCase do
                                            "Just",
                                            "Nothing",
                                            "::",
-                                           "[]"
+                                           "[]",
+                                           # Native-bool ABI is 0/1; Basics.True/False union
+                                           # tags are 1/2. Tag-switching bools is wrong.
+                                           "True",
+                                           "False"
                                          ])
 
   @spec branches?(Types.case_branches()) :: boolean()
@@ -63,9 +69,13 @@ defmodule Elmc.Backend.CCodegen.ConstructorTagCase do
       switch_branch_count(branches) >= 2
   end
 
+  @spec min_switch_branches(list()) :: Types.ir_expr()
+
   defp min_switch_branches(branches) do
     if enum_only_branches?(branches), do: 2, else: @constructor_tag_switch_min_branches
   end
+
+  @spec enum_only_branches?(list()) :: boolean()
 
   defp enum_only_branches?(branches) do
     Enum.all?(branches, fn branch ->
@@ -76,6 +86,8 @@ defmodule Elmc.Backend.CCodegen.ConstructorTagCase do
       end
     end)
   end
+
+  @spec nullary_enum_pattern?(map() | term()) :: boolean()
 
   defp nullary_enum_pattern?(%{kind: :constructor, tag: tag, arg_pattern: nil}) when is_integer(tag),
     do: true
@@ -183,6 +195,8 @@ defmodule Elmc.Backend.CCodegen.ConstructorTagCase do
     end
   end
 
+  @spec compile_boxed_subject_switch(Types.expr(), list(), Types.compile_env(), Types.ir_expr()) :: Types.ir_expr()
+
   defp compile_boxed_subject_switch(subject, branches, env, counter) do
     {subject_setup, subject_ref, counter} = compile_subject_ref(subject, env, counter)
     tag_ref = "case_msg_tag_#{counter + 1}"
@@ -236,6 +250,8 @@ defmodule Elmc.Backend.CCodegen.ConstructorTagCase do
     {code, out, final_counter}
   end
 
+  @spec branch_out_env(Types.compile_env(), Types.ir_expr()) :: Types.ir_expr()
+
   defp branch_out_env(env, out) do
     ValueSlots.reset_function_out_written()
 
@@ -265,6 +281,8 @@ defmodule Elmc.Backend.CCodegen.ConstructorTagCase do
         env
     end
   end
+
+  @spec compile_deferred_int_box_subject(Types.expr(), list(), Types.compile_env(), Types.ir_expr()) :: Types.ir_expr()
 
   defp compile_deferred_int_box_subject(subject, branches, env, counter) do
     {subject_setup, subject_ref, counter} = compile_subject_ref(subject, env, counter)
@@ -316,6 +334,8 @@ defmodule Elmc.Backend.CCodegen.ConstructorTagCase do
 
     {code, out, final_counter}
   end
+
+  @spec compile_deferred_string_box_subject(Types.expr(), list(), Types.compile_env(), Types.ir_expr()) :: Types.ir_expr()
 
   defp compile_deferred_string_box_subject(subject, branches, env, counter) do
     {subject_setup, subject_ref, counter} = compile_subject_ref(subject, env, counter)
@@ -370,6 +390,8 @@ defmodule Elmc.Backend.CCodegen.ConstructorTagCase do
     {code, out, final_counter}
   end
 
+  @spec deferred_box_out_decl(Types.ir_expr(), boolean()) :: Types.ir_expr()
+
   defp deferred_box_out_decl(out, declare_out?) do
     cond do
       RcRuntimeEmit.function_out_ref?(out) ->
@@ -386,11 +408,15 @@ defmodule Elmc.Backend.CCodegen.ConstructorTagCase do
     end
   end
 
+  @spec deferred_box_exhaustive?(list()) :: boolean()
+
   defp deferred_box_exhaustive?(branches) when is_list(branches) do
     not Enum.any?(branches, fn %{pattern: pattern} ->
       match?(%{kind: :wildcard}, pattern)
     end)
   end
+
+  @spec deferred_box_switch_default(list(), Types.ir_expr(), boolean()) :: Types.ir_expr()
 
   defp deferred_box_switch_default(branches, out, skip_default?) do
     cond do
@@ -404,6 +430,8 @@ defmodule Elmc.Backend.CCodegen.ConstructorTagCase do
         deferred_int_box_zero_snippet("default", out)
     end
   end
+
+  @spec deferred_int_box_post_box(Types.compile_env(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
 
   defp deferred_int_box_post_box(env, out, int_scratch, true) do
     RcRuntimeEmit.assign_into(env, out, "elmc_new_int", int_scratch)
@@ -422,6 +450,8 @@ defmodule Elmc.Backend.CCodegen.ConstructorTagCase do
     |> CSource.indent(2)
   end
 
+  @spec deferred_string_box_eligible?(list() | Types.ir_expr()) :: boolean()
+
   defp deferred_string_box_eligible?(branches) when is_list(branches) do
     specs = Enum.map(branches, &branch_string_box_spec/1)
     string_count = Enum.count(specs, &match?({:string, _}, &1))
@@ -435,7 +465,11 @@ defmodule Elmc.Backend.CCodegen.ConstructorTagCase do
 
   defp deferred_string_box_eligible?(_branches), do: false
 
+  @spec branch_string_box_spec(map()) :: Types.ir_expr()
+
   defp branch_string_box_spec(%{expr: expr}), do: string_box_expr_spec(expr)
+
+  @spec string_box_expr_spec(map() | Types.expr()) :: Types.ir_expr()
 
   defp string_box_expr_spec(%{op: :int_literal, value: 0}), do: :zero
 
@@ -449,6 +483,8 @@ defmodule Elmc.Backend.CCodegen.ConstructorTagCase do
 
   defp string_box_expr_spec(_expr), do: :complex
 
+  @spec deferred_int_box_slot_snippet(String.t(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+
   defp deferred_int_box_slot_snippet(label, ref, int_scratch) do
     """
     #{label}: {
@@ -460,6 +496,8 @@ defmodule Elmc.Backend.CCodegen.ConstructorTagCase do
     |> CSource.indent(2)
   end
 
+  @spec deferred_int_box_zero_snippet(String.t(), Types.ir_expr()) :: Types.ir_expr()
+
   defp deferred_int_box_zero_snippet(label, out) do
     """
     #{label}:
@@ -470,6 +508,8 @@ defmodule Elmc.Backend.CCodegen.ConstructorTagCase do
     |> CSource.indent(2)
   end
 
+  @spec deferred_int_box_eligible?(list() | Types.ir_expr(), Types.compile_env()) :: boolean()
+
   defp deferred_int_box_eligible?(branches, env) when is_list(branches) do
     specs = Enum.map(branches, &branch_int_box_spec(&1, env))
     slot_count = Enum.count(specs, &match?({:slot, _}, &1))
@@ -479,7 +519,11 @@ defmodule Elmc.Backend.CCodegen.ConstructorTagCase do
 
   defp deferred_int_box_eligible?(_branches, _env), do: false
 
+  @spec branch_int_box_spec(map(), Types.compile_env()) :: Types.ir_expr()
+
   defp branch_int_box_spec(%{expr: expr}, env), do: int_box_expr_spec(expr, env)
+
+  @spec int_box_expr_spec(map() | Types.expr(), Types.compile_env()) :: Types.ir_expr()
 
   defp int_box_expr_spec(%{op: :int_literal, value: value} = expr, env)
        when is_integer(value) do
@@ -496,12 +540,21 @@ defmodule Elmc.Backend.CCodegen.ConstructorTagCase do
   end
 
   @spec switchable_pattern?(Types.pattern()) :: boolean()
-  defp switchable_pattern?(%{kind: :constructor, name: name, tag: _tag} = pattern) do
+  defp switchable_pattern?(%{kind: :constructor, tag: _tag} = pattern) do
     name_allowed? =
-      is_nil(name) or not MapSet.member?(@constructor_tag_switch_excluded_names, name)
+      not excluded_ctor_name?(Map.get(pattern, :name)) and
+        not excluded_ctor_name?(Map.get(pattern, :resolved_name))
 
     name_allowed? and simple_constructor_pattern?(pattern)
   end
+
+  defp excluded_ctor_name?(name) when is_binary(name) do
+    short = name |> String.split(".") |> List.last()
+    MapSet.member?(@constructor_tag_switch_excluded_names, short)
+  end
+
+  defp excluded_ctor_name?(nil), do: false
+  defp excluded_ctor_name?(_), do: false
 
   @spec simple_constructor_pattern?(Types.pattern()) :: boolean()
   defp simple_constructor_pattern?(%{kind: :constructor, tag: _tag, arg_pattern: nil}), do: true
@@ -539,6 +592,8 @@ defmodule Elmc.Backend.CCodegen.ConstructorTagCase do
     Host.compile_expr(subject_expr, env, counter)
   end
 
+  @spec switch_result_out(Types.compile_env(), Types.ir_expr()) :: Types.ir_expr()
+
   defp switch_result_out(env, counter) do
     publish_fn_out? =
       RcRuntimeEmit.function_tail_compile?(env) and
@@ -552,6 +607,8 @@ defmodule Elmc.Backend.CCodegen.ConstructorTagCase do
     end
   end
 
+  @spec switch_default_case(Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+
   defp switch_default_case(_out, true), do: ""
 
   defp switch_default_case(out, false) do
@@ -563,6 +620,8 @@ defmodule Elmc.Backend.CCodegen.ConstructorTagCase do
     |> String.trim()
     |> CSource.indent(2)
   end
+
+  @spec switch_branch_snippet(String.t(), Types.ir_expr(), Types.expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
 
   defp switch_branch_snippet(label, setup, expr_code, assignment_code, release, out) do
     cleanup = switch_branch_cleanup(expr_code, assignment_code, out)
@@ -585,6 +644,8 @@ defmodule Elmc.Backend.CCodegen.ConstructorTagCase do
   @foldl_borrowed_var ~r/^list_foldl_(cursor|head|node)_\d+$/
   @list_walk_borrowed_var ~r/^list_walk_(cursor|node)_\d+$/
   @list_case_suffix_var ~r/^list_case_suffix_\d+$/
+
+  @spec switch_branch_cleanup(Types.expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
 
   defp switch_branch_cleanup(expr_code, assignment_code, out) do
     body =
@@ -624,6 +685,8 @@ defmodule Elmc.Backend.CCodegen.ConstructorTagCase do
     |> Enum.map_join("\n", &ValueSlots.release_stmt/1)
   end
 
+  @spec block_scoped_assignments(String.t()) :: Types.ir_expr()
+
   defp block_scoped_assignments(body) when is_binary(body) do
     body
     |> String.split("\n")
@@ -659,6 +722,8 @@ defmodule Elmc.Backend.CCodegen.ConstructorTagCase do
     "case #{ref || pebble_tag}"
   end
 
+  @spec constructor_literal_expr(map()) :: Types.ir_expr()
+
   defp constructor_literal_expr(%{tag: tag} = pattern) do
     %{
       op: :int_literal,
@@ -669,8 +734,6 @@ defmodule Elmc.Backend.CCodegen.ConstructorTagCase do
 
   @spec message_tag_expr(Types.subject_ref()) :: String.t()
   defp message_tag_expr(subject_ref) do
-    "(#{subject_ref} && (#{subject_ref})->tag == ELMC_TAG_INT ? elmc_as_int(#{subject_ref}) : " <>
-      "(#{subject_ref} && (#{subject_ref})->tag == ELMC_TAG_TUPLE2 && (#{subject_ref})->payload != NULL ? " <>
-      "elmc_as_int(((ElmcTuple2 *)(#{subject_ref})->payload)->first) : -1))"
+    "elmc_union_tag_as_int(#{subject_ref})"
   end
 end

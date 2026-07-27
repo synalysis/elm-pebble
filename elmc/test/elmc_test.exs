@@ -437,8 +437,9 @@ defmodule ElmcTest do
     assert runtime =~ "ElmcTuple2Cell"
     assert runtime =~ "ElmcRecordCell"
     assert runtime =~ "ElmcClosureCell"
-    assert runtime =~ "rc = elmc_list_cell_alloc(out, head, tail, 0)"
-    assert runtime =~ "elmc_list_cell_alloc(out, head, tail, 0)"
+    # Cons may materialize INT_LIST tails into `use_tail` before cell alloc.
+    assert runtime =~ ~r/rc = elmc_list_cell_alloc\(out, head, (?:use_)?tail, 0\)/
+    assert runtime =~ ~r/elmc_list_cell_alloc\(out, head, (?:use_)?tail, 0\)/
     assert runtime =~ "rc = elmc_record_cell_alloc(out, field_count, field_names, field_values, 0)"
     assert runtime =~ "rc = elmc_record_cell_alloc(out, field_count, field_names, field_values, 1)"
     assert runtime =~ "if (value->tag == ELMC_TAG_LIST)"

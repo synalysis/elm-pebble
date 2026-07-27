@@ -147,6 +147,8 @@ defmodule Ide.Mcp.VectorResources do
   @spec opts_schema() :: ConversionOpts.schema_map()
   def opts_schema, do: @vector_opts_schema
 
+  @spec preview_bytes(term(), term()) :: term()
+
   defp preview_bytes(bytes, frame) do
     case SvgConverter.pdc_magic(bytes) do
       "PDCS" ->
@@ -172,6 +174,8 @@ defmodule Ide.Mcp.VectorResources do
     end
   end
 
+  @spec import_payload(map() | term()) :: term()
+
   defp import_payload(%{duplicate: true} = result) do
     %{
       "duplicate" => true,
@@ -189,12 +193,16 @@ defmodule Ide.Mcp.VectorResources do
     }
   end
 
+  @spec report_map(term()) :: term()
+
   defp report_map(result) do
     case Map.get(result, :report) do
       %ConversionReport{} = report -> ConversionReport.to_map(report)
       _ -> nil
     end
   end
+
+  @spec write_temp_svg(term()) :: term()
 
   defp write_temp_svg(svg) do
     path = Path.join(System.tmp_dir!(), "mcp_vector_#{System.unique_integer([:positive])}.svg")
@@ -205,12 +213,16 @@ defmodule Ide.Mcp.VectorResources do
     end
   end
 
+  @spec fetch_project(term()) :: term()
+
   defp fetch_project(slug) do
     case Projects.get_project_by_scope_key(slug) do
       nil -> {:error, "project not found"}
       project -> {:ok, project}
     end
   end
+
+  @spec format_error(String.t() | integer()) :: term()
 
   defp format_error(reason) when is_binary(reason), do: reason
   defp format_error(reason), do: inspect(reason)

@@ -1,5 +1,7 @@
 defmodule Elmc.Backend.Plan.Lower.Compare do
   @moduledoc false
+  alias Elmc.Backend.Plan.Types, as: Types
+
 
   alias Elmc.Backend.CCodegen.BuiltinUnion
   alias Elmc.Backend.CCodegen.{Host, TypeParsing}
@@ -32,6 +34,8 @@ defmodule Elmc.Backend.Plan.Lower.Compare do
   end
 
   def compile(_, _, _), do: :unsupported
+
+  @spec compile_generic_compare(atom(), Types.expr(), Types.expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
 
   defp compile_generic_compare(kind, left, right, ctx, b) do
     operand_ctx = Context.for_branch_arm(ctx)
@@ -74,6 +78,8 @@ defmodule Elmc.Backend.Plan.Lower.Compare do
       _ -> :unsupported
     end
   end
+
+  @spec compile_maybe_vs_nothing(Types.expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
 
   defp compile_maybe_vs_nothing(maybe_expr, :eq, ctx, b) do
     operand_ctx = Context.for_branch_arm(ctx)
@@ -125,6 +131,8 @@ defmodule Elmc.Backend.Plan.Lower.Compare do
     end
   end
 
+  @spec compile_union_ctor_equality(Types.expr(), String.t(), atom(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+
   defp compile_union_ctor_equality(subject_expr, ctor_name, kind, ctx, b) do
     operand_ctx = Context.for_branch_arm(ctx)
 
@@ -151,6 +159,8 @@ defmodule Elmc.Backend.Plan.Lower.Compare do
     end
   end
 
+  @spec union_ctor_equality_compare(atom(), Types.expr() | Types.ir_expr(), Types.expr() | Types.ir_expr()) :: Types.ir_expr()
+
   defp union_ctor_equality_compare(kind, left, right) when kind in [:eq, :neq] do
     cond do
       union_ctor_ref?(right) and not maybe_ctor_ref?(right) ->
@@ -172,8 +182,12 @@ defmodule Elmc.Backend.Plan.Lower.Compare do
 
   defp union_ctor_equality_compare(_kind, _left, _right), do: :error
 
+  @spec union_ctor_ref?(map() | term()) :: boolean()
+
   defp union_ctor_ref?(%{op: :constructor_ref, target: target}) when is_binary(target), do: true
   defp union_ctor_ref?(_), do: false
+
+  @spec maybe_ctor_ref?(Types.expr()) :: boolean()
 
   defp maybe_ctor_ref?(expr) do
     case expr do
@@ -185,10 +199,16 @@ defmodule Elmc.Backend.Plan.Lower.Compare do
     end
   end
 
+  @spec ctor_ref_name(map()) :: Types.ir_expr()
+
   defp ctor_ref_name(%{target: target}) when is_binary(target), do: target
+
+  @spec union_ctor_literal?(map() | term()) :: boolean()
 
   defp union_ctor_literal?(%{op: :int_literal, union_ctor: ctor}) when is_binary(ctor), do: true
   defp union_ctor_literal?(_), do: false
+
+  @spec maybe_ctor_literal?(Types.expr()) :: boolean()
 
   defp maybe_ctor_literal?(expr) do
     case expr do
@@ -200,12 +220,18 @@ defmodule Elmc.Backend.Plan.Lower.Compare do
     end
   end
 
+  @spec union_ctor_literal_name(map()) :: Types.ir_expr()
+
   defp union_ctor_literal_name(%{union_ctor: ctor}) when is_binary(ctor), do: ctor
+
+  @spec union_ctor_tag(String.t()) :: Types.ir_expr()
 
   defp union_ctor_tag(name) when is_binary(name) do
     tags = Process.get(:elmc_constructor_tags, %{})
     Elmc.Backend.CCodegen.IRQueries.lookup_tag(tags, name)
   end
+
+  @spec emit_test_ctor_tag(Types.ir_expr(), String.t(), String.t(), Types.ir_expr()) :: Types.ir_expr()
 
   defp emit_test_ctor_tag(subject_reg, tag, ctor_name, b)
        when is_integer(tag) and is_binary(ctor_name) do
@@ -226,6 +252,8 @@ defmodule Elmc.Backend.Plan.Lower.Compare do
     {:ok, reg, b2}
   end
 
+  @spec maybe_vs_nothing_compare(atom(), Types.expr() | Types.ir_expr(), Types.expr() | Types.ir_expr()) :: Types.ir_expr() | nil
+
   defp maybe_vs_nothing_compare(kind, left, right)
        when kind in [:eq, :neq] do
     cond do
@@ -236,6 +264,8 @@ defmodule Elmc.Backend.Plan.Lower.Compare do
   end
 
   defp maybe_vs_nothing_compare(_kind, _left, _right), do: :error
+
+  @spec nothing_literal?(map() | Types.expr()) :: boolean()
 
   defp nothing_literal?(%{op: :constructor_call, target: target}) when is_binary(target) do
     short_ctor_name(target) in @nothing_names
@@ -250,6 +280,8 @@ defmodule Elmc.Backend.Plan.Lower.Compare do
   end
 
   defp nothing_literal?(expr), do: BuiltinUnion.maybe_nothing_literal?(expr)
+
+  @spec emit_test_maybe_nothing(Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
 
   defp emit_test_maybe_nothing(subj_reg, b) do
     {reg, b1} = Builder.fresh_reg(b)
@@ -269,8 +301,12 @@ defmodule Elmc.Backend.Plan.Lower.Compare do
     {:ok, reg, b2}
   end
 
+  @spec maybe_consume_owned(Types.ir_expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr() | nil
+
   defp maybe_consume_owned(b, _reg, false), do: b
   defp maybe_consume_owned(b, _reg, true), do: b
+
+  @spec compile_operand(Types.expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
 
   defp compile_operand(expr, ctx, b) do
     case Expr.compile(expr, ctx, b) do
@@ -278,6 +314,8 @@ defmodule Elmc.Backend.Plan.Lower.Compare do
       other -> other
     end
   end
+
+  @spec operand_owned?(map() | term()) :: boolean()
 
   defp operand_owned?(%{op: :field_access}), do: true
 
@@ -287,9 +325,13 @@ defmodule Elmc.Backend.Plan.Lower.Compare do
 
   defp operand_owned?(_), do: false
 
+  @spec short_ctor_name(String.t()) :: Types.ir_expr()
+
   defp short_ctor_name(name) when is_binary(name) do
     name |> String.split(".") |> List.last()
   end
+
+  @spec compare_mode(atom(), Types.expr(), Types.expr(), Types.ir_expr()) :: Types.ir_expr()
 
   defp compare_mode(kind, left, right, ctx) do
     mode = compare_equality_mode(left, right, ctx)
@@ -321,6 +363,8 @@ defmodule Elmc.Backend.Plan.Lower.Compare do
     end
   end
 
+  @spec compare_equality_mode(Types.expr(), Types.expr(), Types.ir_expr()) :: Types.ir_expr()
+
   defp compare_equality_mode(left, right, ctx) do
     env = type_env(ctx)
 
@@ -347,6 +391,8 @@ defmodule Elmc.Backend.Plan.Lower.Compare do
     end
   end
 
+  @spec float_compare_pair?(Types.expr(), Types.expr(), Types.compile_env()) :: boolean()
+
   defp float_compare_pair?(left, right, env) do
     left_float? = float_equality_operand?(left, env)
     right_float? = float_equality_operand?(right, env)
@@ -357,18 +403,27 @@ defmodule Elmc.Backend.Plan.Lower.Compare do
       (right_float? and (left_float? or left_num?))
   end
 
+  @spec float_equality_operand?(map() | Types.expr(), Types.compile_env()) :: boolean()
+
   defp float_equality_operand?(%{op: :float_literal}, _env), do: true
 
   # Matrix4/VectorN.toRecord fields are always Floats; without a type env entry,
   # `projectionType == 0` was lowered as pointer i32.eq and never matched.
+  # Prefer TypedReturn (which already applies the MJS toRecord Float heuristic).
+  # Do not second-guess untyped x/y/z/w — Ui.Point / game rects are Int.
   defp float_equality_operand?(%{op: :field_access, field: field} = expr, env)
        when is_binary(field) do
-    mjs_float_record_field?(field) or TypedReturn.expr_type(expr, env) == "Float"
+    case TypedReturn.expr_type(expr, env) do
+      "Float" -> true
+      "Int" -> false
+      _ -> false
+    end
   end
 
   defp float_equality_operand?(%{op: :record_access, field: field}, _env)
        when is_binary(field) do
-    mjs_float_record_field?(field)
+    # record_access has no TypedReturn clause; keep matrix-component heuristic only.
+    match?(<<"m", r, c>> when r in ?1..?4 and c in ?1..?4, field)
   end
 
   # Polymorphic Basics operators on Float operands stay untyped (`number`); walk
@@ -393,15 +448,13 @@ defmodule Elmc.Backend.Plan.Lower.Compare do
     TypedReturn.expr_type(expr, env) == "Float"
   end
 
-  defp mjs_float_record_field?(field) when field in ["x", "y", "z", "w"], do: true
-
-  defp mjs_float_record_field?(<<"m", r, c>>) when r in ?1..?4 and c in ?1..?4, do: true
-
-  defp mjs_float_record_field?(_), do: false
+  @spec numeric_literal_operand?(map() | term()) :: boolean()
 
   defp numeric_literal_operand?(%{op: :int_literal}), do: true
   defp numeric_literal_operand?(%{op: :float_literal}), do: true
   defp numeric_literal_operand?(_), do: false
+
+  @spec boxed_bool_test_expr?(map() | Types.expr()) :: boolean()
 
   defp boxed_bool_test_expr?(%{op: :runtime_call, function: function}) when is_binary(function) do
     function in [
@@ -422,6 +475,8 @@ defmodule Elmc.Backend.Plan.Lower.Compare do
 
   defp boxed_bool_test_expr?(_expr), do: false
 
+  @spec string_compare_pair?(Types.expr(), Types.expr(), Types.compile_env()) :: boolean()
+
   defp string_compare_pair?(left, right, env) do
     left_kind = string_operand_kind(left, env)
     right_kind = string_operand_kind(right, env)
@@ -429,6 +484,8 @@ defmodule Elmc.Backend.Plan.Lower.Compare do
     (left_kind == :string and right_kind != :non_string) or
       (right_kind == :string and left_kind != :non_string)
   end
+
+  @spec string_operand_kind(map() | Types.expr(), Types.compile_env()) :: Types.ir_expr()
 
   defp string_operand_kind(%{op: :string_literal}, _env), do: :string
 
@@ -447,6 +504,8 @@ defmodule Elmc.Backend.Plan.Lower.Compare do
       _ -> :unknown
     end
   end
+
+  @spec int_equality_operand?(map() | Types.expr(), Types.compile_env()) :: boolean()
 
   defp int_equality_operand?(%{op: :int_literal}, _env), do: true
 
@@ -472,6 +531,8 @@ defmodule Elmc.Backend.Plan.Lower.Compare do
     end
   end
 
+  @spec type_env(map()) :: Types.ir_expr()
+
   defp type_env(%Context{} = ctx) do
     %{
       __module__: ctx.module || "Main",
@@ -483,6 +544,8 @@ defmodule Elmc.Backend.Plan.Lower.Compare do
       __record_field_kinds__: Process.get(:elmc_record_field_kinds, %{})
     }
   end
+
+  @spec param_var_types(map() | term()) :: Types.ir_expr()
 
   defp param_var_types(%Context{decl_map: decl_map, module: module, params: params, function_name: fun})
        when is_binary(module) and is_binary(fun) and is_list(params) do

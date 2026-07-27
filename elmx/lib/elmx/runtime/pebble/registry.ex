@@ -7,6 +7,8 @@ defmodule Elmx.Runtime.Pebble.Registry do
   can resolve them without falling through. UI/http/dispatch handlers use `wrap_modules` for
   splat argument lists.
   """
+  alias Elmx.Types, as: Types
+
 
   alias Elmx.Runtime.Handler
   alias Elmx.Runtime.Pebble.Dispatch

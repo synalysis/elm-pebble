@@ -13,6 +13,8 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage.SpeakerSamples do
 
   def json(_project, _samples), do: "[]"
 
+  @spec wire_row(term(), map()) :: term()
+
   defp wire_row(project, row) when is_map(row) do
     filename = to_string(Map.get(row, :filename) || Map.get(row, "filename") || "")
 
@@ -24,6 +26,8 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage.SpeakerSamples do
       "loop" => Map.get(row, :loop) || Map.get(row, "loop") || false
     }
   end
+
+  @spec sample_url(map() | term(), String.t()) :: term()
 
   defp sample_url(%Project{slug: slug}, filename) when is_binary(filename) and filename != "" do
     "/projects/#{slug}/speaker_samples/#{URI.encode(filename)}"

@@ -1,5 +1,7 @@
 defmodule Elmc.Backend.CCodegen.MaybeIntStringCase do
   @moduledoc false
+  alias Elmc.Backend.CCodegen.Types, as: Types
+
 
   alias Elmc.Backend.CCodegen.Types
 
@@ -50,6 +52,8 @@ defmodule Elmc.Backend.CCodegen.MaybeIntStringCase do
     end
   end
 
+  @spec try_emit_with_default_append(String.t(), String.t(), Types.expr(), Types.decl_map()) :: Types.ir_expr() | nil
+
   defp try_emit_with_default_append(module_name, name, expr, decl_map) do
     with param when is_binary(param) <- fusion_param_name(module_name, name, decl_map),
          {:ok, ^param, field, default, suffix} <- parse_maybe_with_default_append(expr),
@@ -84,6 +88,8 @@ defmodule Elmc.Backend.CCodegen.MaybeIntStringCase do
     end
   end
 
+  @spec parse_maybe_with_default_append(Types.expr()) :: Types.ir_expr()
+
   defp parse_maybe_with_default_append(expr) do
     with {:ok, left, right} <- append_parts(expr),
          {:ok, suffix} <- string_literal_suffix(right),
@@ -94,11 +100,15 @@ defmodule Elmc.Backend.CCodegen.MaybeIntStringCase do
     end
   end
 
+  @spec string_literal_suffix(map() | term()) :: Types.ir_expr()
+
   defp string_literal_suffix(%{op: :string_literal, value: value}) when is_binary(value) do
     if String.contains?(value, <<0>>), do: :error, else: {:ok, value}
   end
 
   defp string_literal_suffix(_), do: :error
+
+  @spec parse_with_default_int_field(map() | Types.expr()) :: Types.ir_expr()
 
   defp parse_with_default_int_field(%{op: :qualified_call, target: "String.fromInt", args: [inner]}),
     do: parse_with_default_int_field(inner)
@@ -107,6 +117,8 @@ defmodule Elmc.Backend.CCodegen.MaybeIntStringCase do
     do: parse_with_default_int_field(inner)
 
   defp parse_with_default_int_field(expr), do: parse_with_default_call(expr)
+
+  @spec parse_with_default_call(map() | term()) :: Types.ir_expr()
 
   defp parse_with_default_call(%{op: :qualified_call, target: "Maybe.withDefault", args: [default, maybe]}) do
     parse_with_default_args(default, maybe)
@@ -122,6 +134,8 @@ defmodule Elmc.Backend.CCodegen.MaybeIntStringCase do
 
   defp parse_with_default_call(_), do: :error
 
+  @spec parse_with_default_args(Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+
   defp parse_with_default_args(default, maybe) do
     with %{op: :int_literal, value: value} when is_integer(value) <- default,
          {:ok, param, field} <- parse_maybe_field_source(maybe) do
@@ -130,6 +144,8 @@ defmodule Elmc.Backend.CCodegen.MaybeIntStringCase do
       _ -> :error
     end
   end
+
+  @spec emit_maybe_int_string_core(Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), String.t(), Types.ir_expr()) :: Types.ir_expr()
 
   defp emit_maybe_int_string_core(param, field_macro, int_var, nothing_text, format) do
     default_lit = "\"#{Util.escape_c_string(nothing_text)}\""
@@ -172,6 +188,8 @@ defmodule Elmc.Backend.CCodegen.MaybeIntStringCase do
     """
   end
 
+  @spec parse_maybe_int_case(map() | term()) :: Types.ir_expr()
+
   defp parse_maybe_int_case(%{op: :let_in, value_expr: source, in_expr: %{op: :case, branches: branches}}) do
     case parse_maybe_field_source(source) do
       {:ok, param, field} -> {:ok, param, field, branches}
@@ -188,6 +206,8 @@ defmodule Elmc.Backend.CCodegen.MaybeIntStringCase do
 
   defp parse_maybe_int_case(_), do: :error
 
+  @spec parse_maybe_field_source(map() | term()) :: Types.ir_expr()
+
   defp parse_maybe_field_source(%{op: :field_access, arg: param, field: field})
        when is_binary(param) and is_binary(field),
        do: {:ok, param, field}
@@ -197,6 +217,8 @@ defmodule Elmc.Backend.CCodegen.MaybeIntStringCase do
        do: {:ok, param, field}
 
   defp parse_maybe_field_source(_), do: :error
+
+  @spec parse_just_int_format(list()) :: Types.ir_expr()
 
   defp parse_just_int_format(branches) do
     case Enum.find(branches, &just_branch?/1) do
@@ -214,10 +236,14 @@ defmodule Elmc.Backend.CCodegen.MaybeIntStringCase do
     end
   end
 
+  @spec just_branch?(map() | term()) :: boolean()
+
   defp just_branch?(%{pattern: %{kind: :constructor, name: name}}) when name in ["Just", "Maybe.Just"],
     do: true
 
   defp just_branch?(_), do: false
+
+  @spec parse_just_int_expr(Types.expr(), Types.ir_expr()) :: Types.ir_expr()
 
   defp parse_just_int_expr(expr, var) do
     with {:ok, threshold, divisor, suffix} <- parse_threshold_format(expr, var) do
@@ -237,6 +263,8 @@ defmodule Elmc.Backend.CCodegen.MaybeIntStringCase do
     end
   end
 
+  @spec parse_threshold_format(Types.expr(), Types.ir_expr()) :: Types.ir_expr()
+
   defp parse_threshold_format(expr, var) do
     with {:ok, threshold} <- parse_ge_threshold(expr, var),
          {:ok, divisor, suffix} <- parse_threshold_suffix_arm(Map.fetch!(expr, :then_expr), var) do
@@ -250,6 +278,8 @@ defmodule Elmc.Backend.CCodegen.MaybeIntStringCase do
     end
   end
 
+  @spec parse_ge_threshold(map() | term(), Types.ir_expr() | term()) :: Types.ir_expr()
+
   defp parse_ge_threshold(%{op: :if, cond: cond}, var) do
     ge_compare_threshold(cond, var)
   end
@@ -259,6 +289,8 @@ defmodule Elmc.Backend.CCodegen.MaybeIntStringCase do
        do: {:ok, threshold}
 
   defp parse_ge_threshold(_, _), do: :error
+
+  @spec ge_compare_threshold(map() | term(), Types.ir_expr() | term()) :: Types.ir_expr()
 
   defp ge_compare_threshold(
          %{op: :if,
@@ -273,6 +305,8 @@ defmodule Elmc.Backend.CCodegen.MaybeIntStringCase do
 
   defp ge_compare_threshold(_, _), do: :error
 
+  @spec bool_true?(map() | Types.expr()) :: boolean()
+
   defp bool_true?(%{op: :bool_literal, value: true}), do: true
   defp bool_true?(%{op: :int_literal, value: 1}), do: true
 
@@ -286,8 +320,12 @@ defmodule Elmc.Backend.CCodegen.MaybeIntStringCase do
 
   defp bool_true?(_expr), do: false
 
+  @spec expand_let_bindings(map() | Types.expr()) :: Types.ir_expr()
+
   defp expand_let_bindings(%{op: :let_bindings} = expr), do: ElmEx.Frontend.LetBindings.expand(expr)
   defp expand_let_bindings(expr), do: expr
+
+  @spec parse_threshold_suffix_arm(Types.expr(), Types.ir_expr()) :: Types.ir_expr()
 
   defp parse_threshold_suffix_arm(expr, var) do
     with {:ok, left, right} <- append_parts(expr),
@@ -299,6 +337,8 @@ defmodule Elmc.Backend.CCodegen.MaybeIntStringCase do
       _ -> :error
     end
   end
+
+  @spec parse_plain_suffix_format(Types.expr(), Types.ir_expr()) :: Types.ir_expr()
 
   defp parse_plain_suffix_format(expr, var) do
     with {:ok, left, right} <- append_parts(expr),
@@ -315,6 +355,8 @@ defmodule Elmc.Backend.CCodegen.MaybeIntStringCase do
     end
   end
 
+  @spec parse_plain_from_int(map() | term(), Types.ir_expr() | term()) :: Types.ir_expr()
+
   defp parse_plain_from_int(%{op: :qualified_call, target: "String.fromInt", args: [%{op: :var, name: var}]}, var),
     do: :ok
 
@@ -322,6 +364,8 @@ defmodule Elmc.Backend.CCodegen.MaybeIntStringCase do
     do: :ok
 
   defp parse_plain_from_int(_, _), do: :error
+
+  @spec idiv_divisor(map() | term(), Types.ir_expr() | term()) :: Types.ir_expr()
 
   defp idiv_divisor(%{op: :call, name: "__idiv__", args: [%{op: :var, name: var}, %{op: :int_literal, value: divisor}]}, var)
        when is_integer(divisor),
@@ -333,6 +377,8 @@ defmodule Elmc.Backend.CCodegen.MaybeIntStringCase do
   end
 
   defp idiv_divisor(_, _), do: :error
+
+  @spec int_expr_references_var?(map() | term(), Types.ir_expr() | term()) :: boolean()
 
   defp int_expr_references_var?(%{op: :var, name: name}, var), do: name == var
 
@@ -347,7 +393,11 @@ defmodule Elmc.Backend.CCodegen.MaybeIntStringCase do
 
   defp int_expr_references_var?(_, _), do: false
 
+  @spec int_env(Types.ir_expr()) :: Types.ir_expr()
+
   defp int_env(var), do: EnvBindings.put_native_int_binding(%{}, var, var)
+
+  @spec append_parts(map() | term()) :: Types.ir_expr()
 
   defp append_parts(%{op: :call, name: "__append__", args: [left, right]}), do: {:ok, left, right}
 
@@ -361,6 +411,8 @@ defmodule Elmc.Backend.CCodegen.MaybeIntStringCase do
 
   defp append_parts(_), do: :error
 
+  @spec nothing_branch_text(list()) :: Types.ir_expr()
+
   defp nothing_branch_text(branches) do
     case Enum.find(branches, &nothing_branch?/1) do
       %{expr: %{op: :string_literal, value: value}} when is_binary(value) ->
@@ -371,10 +423,14 @@ defmodule Elmc.Backend.CCodegen.MaybeIntStringCase do
     end
   end
 
+  @spec nothing_branch?(map() | term()) :: boolean()
+
   defp nothing_branch?(%{pattern: %{kind: :constructor, name: name}}) when name in ["Nothing", "Maybe.Nothing"],
     do: true
 
   defp nothing_branch?(_), do: false
+
+  @spec field_macro(String.t(), String.t(), Types.ir_expr(), Types.ir_expr(), Types.decl_map()) :: Types.ir_expr()
 
   defp field_macro(module_name, fn_name, _param, field, decl_map) do
     with {:ok, model_type} <- record_param_type(module_name, fn_name, decl_map),
@@ -384,6 +440,8 @@ defmodule Elmc.Backend.CCodegen.MaybeIntStringCase do
       _ -> nil
     end
   end
+
+  @spec record_param_type(String.t(), String.t(), Types.decl_map()) :: Types.ir_expr()
 
   defp record_param_type(module_name, fn_name, decl_map) do
     case Map.get(decl_map, {module_name, fn_name}) do
@@ -398,9 +456,13 @@ defmodule Elmc.Backend.CCodegen.MaybeIntStringCase do
     end
   end
 
+  @spec type_basename(String.t()) :: Types.ir_expr()
+
   defp type_basename(type) when is_binary(type) do
     type |> String.split(".") |> List.last()
   end
+
+  @spec fusion_param_name(String.t(), String.t(), Types.decl_map()) :: Types.ir_expr()
 
   defp fusion_param_name(module_name, name, decl_map) do
     case Map.get(decl_map, {module_name, name}) do
@@ -408,6 +470,8 @@ defmodule Elmc.Backend.CCodegen.MaybeIntStringCase do
       _ -> nil
     end
   end
+
+  @spec escape_snprintf_literal(Types.ir_expr()) :: Types.ir_expr()
 
   defp escape_snprintf_literal(""), do: ""
 
@@ -433,6 +497,8 @@ defmodule Elmc.Backend.CCodegen.MaybeIntStringCase do
     end
   end
 
+  @spec extract_default_append_fusion(String.t(), String.t(), Types.expr(), Types.decl_map()) :: Types.ir_expr()
+
   defp extract_default_append_fusion(module_name, name, expr, decl_map) do
     with param when is_binary(param) <- fusion_param_name(module_name, name, decl_map),
          {:ok, ^param, field, default, suffix} <- parse_maybe_with_default_append(expr),
@@ -443,6 +509,8 @@ defmodule Elmc.Backend.CCodegen.MaybeIntStringCase do
       _ -> :error
     end
   end
+
+  @spec extract_maybe_case_fusion(String.t(), String.t(), Types.expr(), Types.decl_map()) :: Types.ir_expr()
 
   defp extract_maybe_case_fusion(module_name, name, expr, decl_map) do
     with param when is_binary(param) <- fusion_param_name(module_name, name, decl_map),
@@ -462,6 +530,8 @@ defmodule Elmc.Backend.CCodegen.MaybeIntStringCase do
       _ -> :error
     end
   end
+
+  @spec wire_format(term()) :: Types.ir_expr()
 
   defp wire_format({:plain, suffix}), do: %{kind: :plain, suffix: suffix}
 

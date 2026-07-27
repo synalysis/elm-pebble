@@ -12,7 +12,6 @@ defmodule Ide.Repo do
 
   for {name, arity} <- @delegated_functions do
     args = Macro.generate_arguments(arity, __MODULE__)
-
     def unquote(name)(unquote_splicing(args)) do
       apply(repo_module(), unquote(name), [unquote_splicing(args)])
     end

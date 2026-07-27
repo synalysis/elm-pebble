@@ -1,5 +1,7 @@
 defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Env do
   @moduledoc false
+  alias Elmc.Backend.CCodegen.Types, as: Types
+
 
   alias Elmc.Backend.CCodegen.Host
   alias Elmc.Backend.CCodegen.Types
@@ -28,6 +30,8 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Env do
     )
     |> Host.put_typed_arg_bindings(arg_bindings, decl.type)
   end
+
+  @spec record_alias_shapes() :: Types.ir_expr()
 
   defp record_alias_shapes do
     case Process.get(:elmc_record_alias_shapes) do

@@ -1,5 +1,7 @@
 defmodule Elmx.Runtime.Pebble.SpecialValues.Http do
   @moduledoc false
+  alias Elmx.Types, as: Types
+
 
   @behaviour Elmx.Runtime.Pebble.SpecialValues.Dispatcher
 
@@ -23,6 +25,8 @@ defmodule Elmx.Runtime.Pebble.SpecialValues.Http do
     end
   end
 
+  @spec expect_string(term()) :: Types.elm_value()
+
   defp expect_string([to_msg, req]) do
     ui_call("elmx_http_expect_string", [to_msg, req])
   end
@@ -32,6 +36,8 @@ defmodule Elmx.Runtime.Pebble.SpecialValues.Http do
   end
 
   defp expect_string(_), do: :error
+
+  @spec expect_json(term()) :: Types.elm_value()
 
   defp expect_json([decoder, to_msg, req]) do
     ui_call("elmx_http_expect_json", [decoder, to_msg, req])

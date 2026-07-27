@@ -4,11 +4,15 @@ defmodule IdeWeb.LspChannel do
   alias Ide.Lsp.Server
 
   @impl true
+  @spec join(term(), term(), term()) :: term()
+
   def join("lsp:" <> project_slug, _payload, socket) do
     {:ok, assign(socket, :lsp_state, Server.new(project_slug))}
   end
 
   @impl true
+  @spec handle_in(term(), map() | term(), term()) :: term()
+
   def handle_in("message", %{"message" => raw}, socket) when is_binary(raw) do
     {messages, next_state} = Server.handle(raw, socket.assigns.lsp_state)
 

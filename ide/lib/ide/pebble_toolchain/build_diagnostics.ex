@@ -72,6 +72,8 @@ defmodule Ide.PebbleToolchain.BuildDiagnostics do
 
   def bitmap_resource_error?(_output), do: false
 
+  @spec linker_overflow_issue(term()) :: term()
+
   defp linker_overflow_issue(info) do
     %{
       title: "PBW too large for #{target_label(info.target)}",
@@ -81,6 +83,8 @@ defmodule Ide.PebbleToolchain.BuildDiagnostics do
       detail: overflow_detail(info)
     }
   end
+
+  @spec bitmap_resource_issue(term()) :: term()
 
   defp bitmap_resource_issue(output) do
     filename = bitmap_resource_filename(output)
@@ -104,6 +108,8 @@ defmodule Ide.PebbleToolchain.BuildDiagnostics do
     }
   end
 
+  @spec bitmap_resource_hint(term()) :: term()
+
   defp bitmap_resource_hint(output) do
     if bitmap_resource_error?(output) do
       case bitmap_resource_filename(output) do
@@ -118,6 +124,8 @@ defmodule Ide.PebbleToolchain.BuildDiagnostics do
     end
   end
 
+  @spec bitmap_resource_filename(term()) :: term()
+
   defp bitmap_resource_filename(output) do
     output
     |> String.split("\n")
@@ -128,6 +136,8 @@ defmodule Ide.PebbleToolchain.BuildDiagnostics do
       end
     end)
   end
+
+  @spec memory_overflow_hint(term(), String.t()) :: term()
 
   defp memory_overflow_hint(output, targets) do
     normalized = String.downcase(output)
@@ -146,6 +156,8 @@ defmodule Ide.PebbleToolchain.BuildDiagnostics do
     end
   end
 
+  @spec memory_overflow_info(term()) :: term()
+
   defp memory_overflow_info(output) do
     normalized = String.downcase(output)
 
@@ -161,6 +173,8 @@ defmodule Ide.PebbleToolchain.BuildDiagnostics do
     end
   end
 
+  @spec overflow_target(term()) :: term()
+
   defp overflow_target(output) do
     lines = String.split(output, "\n")
 
@@ -171,6 +185,8 @@ defmodule Ide.PebbleToolchain.BuildDiagnostics do
     end
   end
 
+  @spec overflow_line_index(term()) :: term()
+
   defp overflow_line_index(lines) do
     Enum.find_index(lines, fn line ->
       normalized = String.downcase(line)
@@ -180,6 +196,8 @@ defmodule Ide.PebbleToolchain.BuildDiagnostics do
         String.contains?(normalized, "overflowed by")
     end)
   end
+
+  @spec overflow_context_target(term(), non_neg_integer()) :: term()
 
   defp overflow_context_target(lines, index) do
     before_or_at =
@@ -195,6 +213,8 @@ defmodule Ide.PebbleToolchain.BuildDiagnostics do
     |> Enum.find_value(&pebble_app_target_from_line/1)
   end
 
+  @spec last_linking_target_before(term(), non_neg_integer()) :: term()
+
   defp last_linking_target_before(lines, index) do
     lines
     |> Enum.take(index + 1)
@@ -207,7 +227,11 @@ defmodule Ide.PebbleToolchain.BuildDiagnostics do
     end)
   end
 
+  @spec first_pebble_app_target(term()) :: term()
+
   defp first_pebble_app_target(output), do: pebble_app_target_from_line(output)
+
+  @spec pebble_app_target_from_line(pos_integer()) :: term()
 
   defp pebble_app_target_from_line(line) do
     case Regex.run(~r/build\/([a-z0-9_-]+)\/pebble-app\.elf/i, line) do
@@ -216,6 +240,8 @@ defmodule Ide.PebbleToolchain.BuildDiagnostics do
     end
   end
 
+  @spec overflow_bytes(term()) :: term()
+
   defp overflow_bytes(output) do
     case Regex.run(~r/overflowed by\s+(\d+)\s+bytes/i, output) do
       [_, bytes] -> String.to_integer(bytes)
@@ -223,14 +249,20 @@ defmodule Ide.PebbleToolchain.BuildDiagnostics do
     end
   end
 
+  @spec overflow_detail(map()) :: term()
+
   defp overflow_detail(%{target: target, bytes: bytes}) when is_integer(bytes) do
     "target=#{target} overflow=#{bytes} bytes"
   end
 
   defp overflow_detail(%{target: target}), do: "target=#{target}"
 
+  @spec target_label(term() | String.t()) :: term()
+
   defp target_label(nil), do: "watch"
   defp target_label(target) when is_binary(target), do: String.capitalize(target)
+
+  @spec overflow_action(term() | String.t()) :: term()
 
   defp overflow_action("aplite") do
     "Aplite is enabled. Remove it from target platforms if you do not need original black-and-white Pebble support, or reduce app size."

@@ -1,5 +1,7 @@
 defmodule Elmx.Backend.CompileTimeCall do
   @moduledoc false
+  alias Elmx.Types, as: Types
+
 
   alias Elmx.Backend.QualifiedRewrite
   alias Elmx.Runtime.Pebble
@@ -46,6 +48,8 @@ defmodule Elmx.Backend.CompileTimeCall do
     end
   end
 
+  @spec qualified_rewrite?(String.t()) :: boolean()
+
   defp qualified_rewrite?(target) do
     Enum.any?(0..@max_dummy_args, fn n ->
       match?({:ok, _}, QualifiedRewrite.rewrite(target, dummy_args(n)))
@@ -54,6 +58,8 @@ defmodule Elmx.Backend.CompileTimeCall do
 
   # Subscription stubs rewrite to `0` only for arity-0 probes; do not treat that as
   # "handled" or companion-core callback bodies are never emitted.
+  @spec pebble_rewrite_handled?(String.t()) :: boolean()
+
   defp pebble_rewrite_handled?(target) do
     case Pebble.rewrite_qualified_call(target, []) do
       {:ok, %{op: :int_literal, value: 0}} ->
@@ -68,6 +74,8 @@ defmodule Elmx.Backend.CompileTimeCall do
         end)
     end
   end
+
+  @spec dummy_args(integer()) :: Types.elm_value()
 
   defp dummy_args(n) when n >= 0 do
     Enum.map(1..n//1, fn _ -> %{op: :int_literal, value: 0} end)

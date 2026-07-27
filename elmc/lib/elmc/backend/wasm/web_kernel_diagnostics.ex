@@ -47,6 +47,8 @@ defmodule Elmc.Backend.Wasm.WebKernelDiagnostics do
     end
   end
 
+  @spec cache_field_just?(map() | term()) :: boolean()
+
   defp cache_field_just?(%{op: :record_literal, fields: fields}) when is_list(fields) do
     Enum.any?(fields, fn
       %{name: name, expr: expr} when name in @cache_fields -> maybe_just?(expr)
@@ -55,6 +57,8 @@ defmodule Elmc.Backend.Wasm.WebKernelDiagnostics do
   end
 
   defp cache_field_just?(_), do: false
+
+  @spec maybe_just?(map() | term()) :: boolean()
 
   defp maybe_just?(%{op: :tuple2, left: %{union_ctor: ctor}}) when ctor in @just_names, do: true
   defp maybe_just?(%{union_ctor: ctor}) when ctor in @just_names, do: true

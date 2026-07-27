@@ -1,5 +1,7 @@
 defmodule Elmx.Runtime.Pebble.Dispatch.Companion do
   @moduledoc false
+  alias Elmx.Types, as: Types
+
 
   alias Elmx.Runtime.Cmd
   alias Elmx.Runtime.CompanionPreferences
@@ -138,6 +140,8 @@ defmodule Elmx.Runtime.Pebble.Dispatch.Companion do
   end
 
   defp normalize_command_envelope(_), do: %{}
+
+  @spec envelope_field(map(), String.t()) :: Types.elm_value()
 
   defp envelope_field(map, key) when is_map(map) and is_binary(key) do
     Map.get(map, key) || Map.get(map, String.to_atom(key))

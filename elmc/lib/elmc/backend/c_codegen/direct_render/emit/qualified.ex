@@ -1,5 +1,7 @@
 defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Qualified do
   @moduledoc false
+  alias Elmc.Backend.CCodegen.Types, as: Types
+
 
   alias Elmc.Backend.CCodegen.DirectRender.Emit.Commands
   alias Elmc.Backend.CCodegen.DirectRender.Emit.Qualified.Draws
@@ -256,6 +258,8 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Qualified do
         end)
     end
   end
+
+  @spec draw_kind(atom()) :: Types.ir_expr()
 
   defp draw_kind(kind), do: Elmc.Backend.Pebble.draw_kind_id!(kind)
 end

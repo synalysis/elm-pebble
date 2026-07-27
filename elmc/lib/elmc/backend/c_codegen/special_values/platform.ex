@@ -1,5 +1,7 @@
 defmodule Elmc.Backend.CCodegen.SpecialValues.Platform do
   @moduledoc false
+  alias Elmc.Backend.CCodegen.Types, as: Types
+
 
   alias Elmc.Backend.CCodegen.SpecialValues.Helpers
   alias Elmc.Backend.CCodegen.Types
@@ -53,6 +55,8 @@ defmodule Elmc.Backend.CCodegen.SpecialValues.Platform do
   end
 
   def special_value_from_target(_target, _args), do: nil
+
+  @spec pebble_platform_allowed?() :: boolean()
 
   defp pebble_platform_allowed? do
     not PlatformWeb.web_target?(Process.get(:elmc_codegen_opts, %{}))

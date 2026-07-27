@@ -4,7 +4,6 @@ defmodule Elmc.EnumTagSwitchTest do
   alias Elmc.Backend.C.Lower.Function, as: CLowerFunction
   alias Elmc.Backend.Plan.Builder
   alias Elmc.Backend.Plan.Lower.Case.TagSwitch
-  alias Elmc.Backend.Plan.Lower.Expr
   alias Elmc.Backend.Plan.Lower.Function, as: PlanLower
   alias Elmc.Backend.Plan.Context
 

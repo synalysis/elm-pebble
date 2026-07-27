@@ -1,5 +1,7 @@
 defmodule Elmx.Runtime.Pebble.Ui.Assets do
   @moduledoc false
+  alias Elmx.Types, as: Types
+
 
   alias Elmx.Types
 
@@ -60,6 +62,8 @@ defmodule Elmx.Runtime.Pebble.Ui.Assets do
 
   def draw_vector_sequence_at(animation_id, resource, origin),
     do: draw_vector_sequence_at(animation_id, resource, 0, origin, 0)
+
+  @spec coerce_animation_id(map() | integer()) :: Types.elm_value()
 
   defp coerce_animation_id(%{"ctor" => "AnimationId", "args" => [value]}), do: value
   defp coerce_animation_id(%{ctor: "AnimationId", args: [value]}), do: value

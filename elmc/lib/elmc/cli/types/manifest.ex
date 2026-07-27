@@ -3,6 +3,7 @@ defmodule Elmc.CLI.Types.Manifest do
   JSON manifest maps emitted by `elmc manifest` (`Elmc.CLI.build_manifest/2`).
   """
 
+
   @type dependency_status :: String.t()
 
   @typedoc """

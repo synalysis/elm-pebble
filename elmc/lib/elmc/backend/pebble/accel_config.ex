@@ -1,5 +1,7 @@
 defmodule Elmc.Backend.Pebble.AccelConfig do
   @moduledoc false
+  alias Elmc.Types, as: Types
+
 
   alias ElmEx.IR
   alias Elmc.Backend.Pebble.AccelConfig.{Resolve, Walker}

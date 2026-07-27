@@ -1,5 +1,7 @@
 defmodule Elmx.Runtime.Followups.Protocol do
   @moduledoc false
+  alias Elmx.Types, as: Types
+
 
   alias Elmx.Runtime.Followups.Flatten
   alias Elmx.Types

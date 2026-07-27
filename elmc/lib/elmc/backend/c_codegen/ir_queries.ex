@@ -1,5 +1,7 @@
 defmodule Elmc.Backend.CCodegen.IRQueries do
   @moduledoc false
+  alias Elmc.Backend.CCodegen.Types, as: Types
+
 
   alias ElmEx.IR
   alias ElmEx.IR.TypeSignature
@@ -122,10 +124,14 @@ defmodule Elmc.Backend.CCodegen.IRQueries do
     end)
   end
 
+  @spec virtual_dom_attribute_key_from_decl(map() | term()) :: Types.ir_expr()
+
   defp virtual_dom_attribute_key_from_decl(%{expr: expr}),
     do: virtual_dom_attribute_key_from_expr(expr)
 
   defp virtual_dom_attribute_key_from_decl(_), do: :error
+
+  @spec virtual_dom_attribute_key_from_expr(map() | term()) :: Types.ir_expr()
 
   defp virtual_dom_attribute_key_from_expr(%{
          op: :qualified_call,
@@ -198,6 +204,8 @@ defmodule Elmc.Backend.CCodegen.IRQueries do
   end
 
   # Aliases that must match Elm 0.19 alphabetical record layout end-to-end.
+  @spec elm_alphabetical_alias?(Types.ir_expr(), Types.ir_expr() | String.t(), String.t()) :: boolean()
+
   defp elm_alphabetical_alias?("Scene3d.Types", "Transformation", _names), do: true
 
   # WebGL mesh vertices: shader attribute maps are alphabetical (`normal` before
@@ -225,13 +233,98 @@ defmodule Elmc.Backend.CCodegen.IRQueries do
 
   @spec inline_record_literal_shape_map(IR.t()) :: %{optional({String.t(), String.t()}) => [String.t()]}
   def inline_record_literal_shape_map(%IR{} = ir) do
-    inline_record_shapes_from_type_aliases(ir)
-    |> Kernel.++(union_constructor_record_shapes(ir))
-    # Nested anonymous records inside union payloads (e.g. Scene3d MeshWithNormals
-    # TriangularMesh `{position, normal}` / `{position, normal, uv}`) must be
-    # registered so unique_superset can pad trailing extension slots.
-    |> Kernel.++(union_payload_embedded_record_shapes(ir))
+    base =
+      inline_record_shapes_from_type_aliases(ir)
+      |> Kernel.++(union_constructor_record_shapes(ir))
+      # Nested anonymous records inside union payloads (e.g. Scene3d MeshWithNormals
+      # TriangularMesh `{position, normal}` / `{position, normal, uv}`) must be
+      # registered so unique_superset can pad trailing extension slots.
+      |> Kernel.++(union_payload_embedded_record_shapes(ir))
+      |> Map.new()
+
+    Map.merge(base, literal_record_shape_map_from_bodies(ir, base))
+  end
+
+  # Anonymous record literals with no type alias (e.g. a `let`-bound helper
+  # returning `{ id = .., val = {..} }`) never populate any shape table above.
+  # Field access on a variable of unresolved origin — a case-bound `Just p`
+  # payload, a `List.filter`/`List.head` result, etc. — then falls back to a
+  # usage-only guess that only sees the *one* field actually read in that arm
+  # (e.g. `p.val`), producing index 0 for a two-field record. Register the
+  # field set as actually written at each literal so ambiguous-field lookups
+  # in `Plan.Lower.Record` can recover the real layout.
+  #
+  # Elm stores anonymous records alphabetically. Skip any field set that
+  # exactly matches, or is a proper subset of, an already-known shape so
+  # unique-superset padding (Arrow.meander, Scene3d embeds) and named-alias
+  # layouts keep taking priority over a same-length alphabetical guess.
+  @spec literal_record_shape_map_from_bodies(IR.t(), map()) ::
+          %{optional({String.t(), String.t()}) => [String.t()]}
+  defp literal_record_shape_map_from_bodies(%IR{} = ir, known_shapes) do
+    reference_shapes = Map.merge(Process.get(:elmc_record_alias_shapes, %{}), known_shapes)
+
+    ir.modules
+    |> Enum.flat_map(fn mod ->
+      mod.declarations
+      |> Enum.flat_map(fn decl ->
+        decl
+        |> Map.get(:expr)
+        |> collect_record_literal_field_sets([])
+        |> Enum.uniq()
+        |> Enum.with_index()
+        |> Enum.flat_map(fn {names, idx} ->
+          if registrable_literal_shape?(names, reference_shapes) do
+            [{{mod.name, "#{decl.name}@literal#{idx}"}, names}]
+          else
+            []
+          end
+        end)
+      end)
+    end)
     |> Map.new()
+  end
+
+  @spec collect_record_literal_field_sets(Types.ir_expr() | term(), [[String.t()]]) :: [
+          [String.t()]
+        ]
+  defp collect_record_literal_field_sets(expr, acc) do
+    acc =
+      case expr do
+        %{op: :record_literal, fields: fields} when is_list(fields) ->
+          names =
+            fields
+            |> Enum.map(fn f -> Map.get(f, :name) || Map.get(f, :field) end)
+            |> Enum.filter(&is_binary/1)
+            |> Enum.sort()
+
+          if names == [], do: acc, else: [names | acc]
+
+        _ ->
+          acc
+      end
+
+    case expr do
+      list when is_list(list) -> Enum.reduce(list, acc, &collect_record_literal_field_sets/2)
+      map when is_map(map) -> map |> Map.values() |> Enum.reduce(acc, &collect_record_literal_field_sets/2)
+      _ -> acc
+    end
+  end
+
+  @spec registrable_literal_shape?([String.t()], map()) :: boolean()
+  defp registrable_literal_shape?(names, shapes) when is_list(names) and is_map(shapes) do
+    name_set = MapSet.new(names)
+
+    blockers =
+      Enum.filter(shapes, fn {_key, shape} ->
+        is_list(shape) and shape != [] and
+          (fn shape_set ->
+             MapSet.equal?(shape_set, name_set) or
+               (MapSet.size(shape_set) > MapSet.size(name_set) and
+                  MapSet.subset?(name_set, shape_set))
+           end).(MapSet.new(shape, &to_string/1))
+      end)
+
+    blockers == []
   end
 
   @spec union_constructor_payload_specs_map(IR.t()) :: %{{String.t(), String.t()} => String.t()}
@@ -292,6 +385,8 @@ defmodule Elmc.Backend.CCodegen.IRQueries do
     end)
   end
 
+  @spec union_payload_embedded_record_shapes(map()) :: Types.ir_expr()
+
   defp union_payload_embedded_record_shapes(%IR{} = ir) do
     ir.modules
     |> Enum.flat_map(fn %{name: mod, unions: unions} ->
@@ -345,6 +440,8 @@ defmodule Elmc.Backend.CCodegen.IRQueries do
     end)
   end
 
+  @spec embedded_record_types(String.t()) :: Types.ir_expr()
+
   defp embedded_record_types(type) when is_binary(type) do
     type
     |> brace_record_fragments([])
@@ -366,6 +463,8 @@ defmodule Elmc.Backend.CCodegen.IRQueries do
     |> Enum.uniq()
   end
 
+  @spec brace_record_fragments(binary(), term()) :: Types.ir_expr()
+
   defp brace_record_fragments(<<>>, acc), do: Enum.reverse(acc)
 
   defp brace_record_fragments(<<char, rest::binary>>, acc) when char in [?\s, ?\t, ?\n, ?\r] do
@@ -380,6 +479,9 @@ defmodule Elmc.Backend.CCodegen.IRQueries do
   end
 
   defp brace_record_fragments(<<_char, rest::binary>>, acc), do: brace_record_fragments(rest, acc)
+
+
+  @spec take_brace_record(binary(), non_neg_integer(), binary()) :: {binary(), binary()} | :error
 
   defp take_brace_record(_rest, 0, acc), do: {acc, ""}
 
@@ -476,6 +578,8 @@ defmodule Elmc.Backend.CCodegen.IRQueries do
 
   def lookup_tag(_tags, _target), do: nil
 
+  @spec lookup_suffix_tag(Types.ir_expr(), String.t(), Types.ir_expr()) :: Types.ir_expr()
+
   defp lookup_suffix_tag(tags, target, short) do
     suffix = "." <> short
 
@@ -519,12 +623,16 @@ defmodule Elmc.Backend.CCodegen.IRQueries do
     end
   end
 
+  @spec shared_prefix_len(Types.expr(), Types.expr()) :: Types.ir_expr()
+
   defp shared_prefix_len(left, right) do
     left
     |> Enum.zip(right)
     |> Enum.take_while(fn {a, b} -> a == b end)
     |> length()
   end
+
+  @spec constructor_short_name(String.t()) :: Types.ir_expr()
 
   defp constructor_short_name(name), do: name |> String.split(".") |> List.last()
 

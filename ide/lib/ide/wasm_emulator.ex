@@ -3,6 +3,7 @@ defmodule Ide.WasmEmulator do
   Local asset boundary for the browser-hosted Pebble QEMU WASM emulator.
   """
 
+
   @runtime_assets [
     "qemu-system-arm.js",
     "qemu-system-arm.wasm",

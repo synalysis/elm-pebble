@@ -17,7 +17,6 @@ defmodule ElmEx.CoreIR do
   @doc """
   Validates structural shape of normalized Core IR (modules, declarations, expr ops).
   """
-  @spec validate_shape(Types.wire_core_ir()) :: {:ok, t()} | {:error, [Validate.shape_error()]}
   defdelegate validate_shape(core_ir), to: Validate
 
   @type from_ir_error :: %{

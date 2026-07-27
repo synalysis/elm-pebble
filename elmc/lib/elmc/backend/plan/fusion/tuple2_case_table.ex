@@ -1,5 +1,7 @@
 defmodule Elmc.Backend.Plan.Fusion.Tuple2CaseTable do
   @moduledoc false
+  alias Elmc.Backend.Plan.Types, as: Types
+
 
   alias Elmc.Backend.Plan.Fusion.Helper
   alias Elmc.Backend.Plan.Types

@@ -10,6 +10,8 @@ defmodule Mix.Tasks.Ide.PackageDocs do
   @shortdoc "Export Pebble package docs JSON"
 
   @impl true
+  @spec run([String.t()]) :: term()
+
   def run(args) do
     Mix.Task.run("app.start")
 

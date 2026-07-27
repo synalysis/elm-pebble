@@ -5,6 +5,7 @@ defmodule Elmc.Backend.CCodegen.Types.LinkedBinary do
   Runtime maps use string keys (`"available"`, `"elf_size"`, …).
   """
 
+
   @type elf_size_sections :: %{
           optional(atom()) => non_neg_integer() | String.t() | nil,
           optional(String.t()) => non_neg_integer() | String.t() | nil

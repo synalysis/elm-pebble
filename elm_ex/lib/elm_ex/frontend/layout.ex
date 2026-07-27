@@ -7,11 +7,14 @@ defmodule ElmEx.Frontend.Layout do
   `ElmEx.Frontend.LayoutEnter` (Enter- and Tab-key indentation in the IDE), and
   `ElmEx.Frontend.Pretty` (emitting Elm-shaped layout).
   """
+  alias ElmEx.Frontend.AstContract.Types, as: Types
+
 
   @default_indent_step 4
 
   @doc "Spaces per indentation level in generated Elm source."
-  @spec indent_step() :: pos_integer()
+  @spec indent_step() :: Types.expr()
+
   def indent_step, do: @default_indent_step
 
   @doc "Indent string for a given nesting level (0 → empty)."

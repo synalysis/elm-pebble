@@ -1,5 +1,7 @@
 defmodule Elmc.Backend.CCodegen.LinkedBinaryReport do
   @moduledoc false
+  alias Elmc.Backend.CCodegen.Types, as: Types
+
 
   @symbol_line_re ~r/^\s+0x[0-9a-fA-F]+\s+0x([0-9a-fA-F]+)\s+(.+)$/
 
@@ -37,6 +39,8 @@ defmodule Elmc.Backend.CCodegen.LinkedBinaryReport do
     }
   end
 
+  @spec stringify_symbol_rows(Types.ir_expr()) :: Types.ir_expr()
+
   defp stringify_symbol_rows(rows) do
     Enum.map(rows, fn %{size: size, symbol: symbol} ->
       %{"size" => size, "symbol" => symbol}
@@ -72,6 +76,8 @@ defmodule Elmc.Backend.CCodegen.LinkedBinaryReport do
        |> List.first())
   end
 
+  @spec find_elf_file(Types.t(), Types.ir_expr(), String.t()) :: Types.ir_expr()
+
   defp find_elf_file(build_dir, platform, map_path) do
     candidates =
       case platform do
@@ -93,11 +99,15 @@ defmodule Elmc.Backend.CCodegen.LinkedBinaryReport do
     end)
   end
 
+  @spec preferred_platform_elfs(Types.t()) :: Types.ir_expr()
+
   defp preferred_platform_elfs(build_dir) do
     ~w(basalt flint gabbro aplite diorite chalk emery)
     |> Enum.map(fn platform -> Path.join([build_dir, platform, "pebble-app.elf"]) end)
     |> Enum.filter(&File.regular?/1)
   end
+
+  @spec parse_symbols(Types.ir_expr()) :: Types.ir_expr()
 
   defp parse_symbols(contents) do
     contents
@@ -105,6 +115,8 @@ defmodule Elmc.Backend.CCodegen.LinkedBinaryReport do
     |> Enum.flat_map(&parse_symbol_line/1)
     |> Enum.sort_by(& &1.size, :desc)
   end
+
+  @spec parse_symbol_line(pos_integer()) :: Types.ir_expr()
 
   defp parse_symbol_line(line) do
     case Regex.run(@symbol_line_re, line) do
@@ -116,9 +128,13 @@ defmodule Elmc.Backend.CCodegen.LinkedBinaryReport do
     end
   end
 
+  @spec elmc_symbol?(map()) :: boolean()
+
   defp elmc_symbol?(%{symbol: symbol}) do
     String.contains?(symbol, "elmc_") or String.contains?(symbol, "Elmc")
   end
+
+  @spec elf_size(Types.ir_expr() | String.t()) :: Types.ir_expr()
 
   defp elf_size(nil), do: nil
 
@@ -133,6 +149,8 @@ defmodule Elmc.Backend.CCodegen.LinkedBinaryReport do
       _ -> file_bytes(path)
     end
   end
+
+  @spec find_arm_size() :: Types.ir_expr()
 
   defp find_arm_size do
     sdk_root = System.get_env("PEBBLE_SDK_ROOT")
@@ -170,6 +188,8 @@ defmodule Elmc.Backend.CCodegen.LinkedBinaryReport do
     |> Enum.find(&File.regular?/1)
   end
 
+  @spec parse_size_line(Types.ir_expr() | pos_integer()) :: Types.ir_expr()
+
   defp parse_size_line(nil), do: nil
 
   defp parse_size_line(line) do
@@ -188,6 +208,8 @@ defmodule Elmc.Backend.CCodegen.LinkedBinaryReport do
     end
   end
 
+  @spec file_bytes(String.t()) :: Types.ir_expr()
+
   defp file_bytes(path) do
     case File.stat(path) do
       {:ok, %{type: :regular, size: size}} -> %{file_bytes: size}
@@ -195,12 +217,16 @@ defmodule Elmc.Backend.CCodegen.LinkedBinaryReport do
     end
   end
 
+  @spec parse_int(integer()) :: Types.ir_expr()
+
   defp parse_int(value) do
     case Integer.parse(value) do
       {int, _} -> int
       :error -> nil
     end
   end
+
+  @spec parse_hex(integer()) :: Types.ir_expr()
 
   defp parse_hex(value) do
     case Integer.parse(value, 16) do

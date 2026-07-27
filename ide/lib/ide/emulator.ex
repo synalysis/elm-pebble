@@ -2,6 +2,8 @@ defmodule Ide.Emulator do
   @moduledoc """
   Runtime boundary for embedded Pebble emulator sessions.
   """
+  alias Ide.Emulator.Types, as: Types
+
 
   alias Ide.Emulator.{LogCapture, Screenshot, Session, Session.RuntimeSetup, SlotLimiter, Types}
 

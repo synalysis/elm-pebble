@@ -1,11 +1,15 @@
 defmodule Elmx.Backend.ElixirCodegen.Emit.Records do
   @moduledoc false
+  alias Elmx.Types, as: Types
+
 
   alias Elmx.Backend.ElixirCodegen.Emit
   alias Elmx.Backend.ElixirCodegen.Emit.Helpers
   alias Elmx.Runtime.CodegenRefs
 
   @rt_values CodegenRefs.values()
+
+  @spec compile_record(map(), Types.compile_env(), Types.elm_value()) :: Types.elm_value()
 
   def compile_record(%{fields: fields}, env, counter) when is_list(fields) do
     {parts, {env, counter}} =
@@ -17,6 +21,8 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Records do
     field_strs = Enum.map(parts, &IO.iodata_to_binary/1)
     {["%{", Enum.intersperse(field_strs, ", "), "}"], env, counter}
   end
+
+  @spec compile_record_update(map(), Types.compile_env(), Types.elm_value()) :: Types.elm_value()
 
   def compile_record_update(%{base: base, fields: fields}, env, counter) when is_list(fields) do
     {acc, env, counter} =
@@ -44,6 +50,8 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Records do
     {["Map.put(", base_code, ", ", inspect(field), ", ", value_code, ")"], env, c2}
   end
 
+  @spec compile_field_access(map(), Types.compile_env(), Types.elm_value()) :: Types.elm_value()
+
   def compile_field_access(%{target: target, field: field}, env, counter) do
     {t, env, c1} = Emit.compile_expr(target, env, counter)
     {["Map.get(", t, ", ", inspect(field), ")"], env, c1}
@@ -61,6 +69,8 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Records do
   def compile_field_access(%{arg: arg, field: field}, env, counter) do
     compile_field_access(%{target: arg, field: field}, env, counter)
   end
+
+  @spec compile_field_call(map(), Types.compile_env(), Types.elm_value()) :: Types.elm_value()
 
   def compile_field_call(%{target: target, field: field, args: args}, env, counter)
       when is_binary(target) do

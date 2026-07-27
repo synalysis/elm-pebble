@@ -35,6 +35,8 @@ defmodule Ide.Paths do
     end
   end
 
+  @spec default_repo_root() :: term()
+
   defp default_repo_root do
     Path.expand("../../..", __DIR__)
   end

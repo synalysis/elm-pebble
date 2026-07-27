@@ -3,6 +3,7 @@ defmodule Ide.Debugger.BytecodeApi do
   Debugger-facing bytecode manifest inspection and smoke execution.
   """
 
+
   alias Elmc.Backend.Bytecode.Runtime
   alias Ide.Debugger.BytecodeRunner
   alias Ide.Projects

@@ -112,19 +112,27 @@ defmodule Ide.EmulatorSupport do
     end)
   end
 
+  @spec default_modes() :: term()
+
   defp default_modes do
     ~w(embedded external wasm)
     |> without_external_unless_enabled()
     |> without_wasm_unless_enabled()
   end
 
+  @spec without_external_unless_enabled(term()) :: term()
+
   defp without_external_unless_enabled(modes) do
     if external_mode_enabled?(), do: modes, else: Enum.reject(modes, &(&1 == "external"))
   end
 
+  @spec without_wasm_unless_enabled(term()) :: term()
+
   defp without_wasm_unless_enabled(modes) do
     if wasm_mode_enabled?(), do: modes, else: Enum.reject(modes, &(&1 == "wasm"))
   end
+
+  @spec default_mode(String.t()) :: term()
 
   defp default_mode(target) do
     target
@@ -133,10 +141,14 @@ defmodule Ide.EmulatorSupport do
     |> Kernel.||("embedded")
   end
 
+  @spec default_target() :: term()
+
   defp default_target do
     Application.get_env(:ide, Ide.PebbleToolchain, [])
     |> Keyword.get(:emulator_target, "basalt")
   end
+
+  @spec mode_known?(term()) :: boolean()
 
   defp mode_known?(mode), do: Enum.any?(@mode_options, &(&1.id == mode))
 end

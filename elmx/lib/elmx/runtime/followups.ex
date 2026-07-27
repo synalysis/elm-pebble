@@ -5,6 +5,8 @@ defmodule Elmx.Runtime.Followups do
   `flatten_commands/1` expands `batch` and drops `none`. `protocol_events/1` extracts
   synthetic `debugger.protocol_tx` / `debugger.protocol_rx` timeline events.
   """
+  alias Elmx.Types, as: Types
+
 
   alias Elmx.Runtime.Followups.{Commands, Flatten, Protocol}
   alias Elmx.Types

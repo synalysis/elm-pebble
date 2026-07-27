@@ -2,6 +2,8 @@ defmodule Elmx.Runtime.Json.Encode do
   @moduledoc """
   Minimal `Json.Encode` runtime for companion phone apps (aligned with Core IR json.encode builtins).
   """
+  alias Elmx.Types, as: Types
+
 
   alias Elmx.Types
 
@@ -64,6 +66,8 @@ defmodule Elmx.Runtime.Json.Encode do
     encode_value(value, indent, 0)
   end
 
+  @spec encode_value(term() | list() | boolean() | String.t() | map() | integer(), Types.elm_value(), non_neg_integer()) :: Types.elm_value()
+
   defp encode_value({:elmx_json_object, pairs}, indent, depth) when is_list(pairs) do
     if indent > 0 do
       inner_indent = indent_string(indent, depth + 1)
@@ -115,12 +119,16 @@ defmodule Elmx.Runtime.Json.Encode do
 
   defp encode_value(_value, _indent, _depth), do: "null"
 
+  @spec encode_object_pair(term(), Types.elm_value(), non_neg_integer()) :: Types.elm_value()
+
   defp encode_object_pair({key, value}, indent, depth) when is_binary(key) do
     case Jason.encode(key) do
       {:ok, encoded_key} -> encoded_key <> ":" <> encode_value(value, indent, depth)
       _ -> "\"\":" <> encode_value(value, indent, depth)
     end
   end
+
+  @spec indent_string(Types.elm_value(), non_neg_integer()) :: Types.elm_value()
 
   defp indent_string(_indent, depth) when depth <= 0, do: ""
   defp indent_string(indent, depth) when indent > 0 and depth > 0, do: String.duplicate(" ", indent * depth)

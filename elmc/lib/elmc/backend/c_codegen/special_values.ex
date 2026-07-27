@@ -1,5 +1,7 @@
 defmodule Elmc.Backend.CCodegen.SpecialValues do
   @moduledoc false
+  alias Elmc.Backend.CCodegen.Types, as: Types
+
 
   alias Elmc.Backend.CCodegen.SpecialValues.{Core, Dispatcher, Helpers}
   alias Elmc.Backend.CCodegen.Types

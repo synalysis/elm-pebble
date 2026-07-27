@@ -1,5 +1,7 @@
 defmodule Elmc.Backend.Pebble.Reachability.Collector do
   @moduledoc false
+  alias Elmc.Types, as: Types
+
 
   alias Elmc.Backend.CCodegen.Types, as: CCodegenTypes
   alias Elmc.Backend.Pebble.Types

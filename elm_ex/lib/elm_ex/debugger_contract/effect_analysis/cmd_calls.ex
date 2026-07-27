@@ -183,6 +183,8 @@ defmodule ElmEx.DebuggerContract.EffectAnalysis.CmdCalls do
 
   def maybe_put_branch_constructor(row, _constructor), do: row
 
+  @spec extract_cmd_op_items(map() | Types.expr()) :: term()
+
   def extract_cmd_op_items(%{
         op: :qualified_call,
         args: [%{op: :list_literal, items: items}]
@@ -220,6 +222,8 @@ defmodule ElmEx.DebuggerContract.EffectAnalysis.CmdCalls do
       s -> [s]
     end
   end
+
+  @spec extract_cmd_calls(Types.expr() | map() | term(), term() | map()) :: term()
 
   def extract_cmd_calls(expr), do: extract_cmd_calls(expr, %{})
 
@@ -600,6 +604,8 @@ defmodule ElmEx.DebuggerContract.EffectAnalysis.CmdCalls do
   @spec expr_arg_kind(Types.ast_expr()) :: String.t()
   def expr_arg_kind(%{op: op}) when is_atom(op), do: Atom.to_string(op)
   def expr_arg_kind(_), do: "unknown"
+
+  @spec function_cmd_calls(map() | term()) :: term()
 
   def function_cmd_calls(%Module{declarations: decls}) when is_list(decls) do
     decls

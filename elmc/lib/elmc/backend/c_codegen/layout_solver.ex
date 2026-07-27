@@ -1,5 +1,7 @@
 defmodule Elmc.Backend.CCodegen.LayoutSolver do
   @moduledoc false
+  alias Elmc.Backend.CCodegen.Types, as: Types
+
 
   alias Elmc.Backend.CCodegen.BindingPlans
   alias Elmc.Backend.CCodegen.Fusion

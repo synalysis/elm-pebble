@@ -2,6 +2,8 @@ defmodule Elmc.Backend.Plan.Debug do
   @moduledoc """
   Human-readable plan dumps for tests and diagnostics.
   """
+  alias Elmc.Backend.Plan.Types, as: Types
+
 
   alias Elmc.Backend.Plan.Types
   alias Elmc.Backend.Plan.Types.{Block, FunctionPlan}
@@ -30,6 +32,8 @@ defmodule Elmc.Backend.Plan.Debug do
   @spec dump_compact(FunctionPlan.t()) :: String.t()
   def dump_compact(plan), do: dump(plan)
 
+  @spec format_instr(map()) :: Types.ir_expr()
+
   defp format_instr(%Types{id: id, op: op, dest: dest, args: args, effects: fx}) do
     dest_s = format_dest(dest)
     args_s = inspect(args, limit: :infinity, printable_limit: 80)
@@ -37,16 +41,22 @@ defmodule Elmc.Backend.Plan.Debug do
     "%#{id} #{op} #{dest_s} #{args_s} #{fx_s}"
   end
 
+  @spec format_dest(Types.ir_expr() | integer()) :: Types.ir_expr()
+
   defp format_dest(nil), do: "→ _"
   defp format_dest(:fn_out), do: "→ fn_out"
   defp format_dest(:branch_out), do: "→ branch_out"
   defp format_dest(r) when is_integer(r), do: "→ %#{r}"
+
+  @spec format_effects(map() | Types.ir_expr()) :: Types.ir_expr()
 
   defp format_effects(%{fallible: true} = fx),
     do: "[fallible borrows=#{inspect(fx.borrows)} consumes=#{inspect(fx.consumes)}]"
 
   defp format_effects(fx),
     do: "[borrows=#{inspect(fx.borrows)} consumes=#{inspect(fx.consumes)}]"
+
+  @spec format_terminator(term() | Types.ir_expr()) :: Types.ir_expr()
 
   defp format_terminator({:ret, r}), do: "ret #{inspect(r)}"
   defp format_terminator({:br, id}), do: "br #{id}"

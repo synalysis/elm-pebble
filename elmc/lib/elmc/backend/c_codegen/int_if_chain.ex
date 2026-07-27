@@ -1,5 +1,7 @@
 defmodule Elmc.Backend.CCodegen.IntIfChain do
   @moduledoc false
+  alias Elmc.Backend.CCodegen.Types, as: Types
+
 
   alias Elmc.Backend.CCodegen.EnvBindings
   alias Elmc.Backend.CCodegen.Native.Int, as: NativeInt
@@ -56,17 +58,23 @@ defmodule Elmc.Backend.CCodegen.IntIfChain do
     end
   end
 
+  @spec switch_eligible?(Types.expr(), list(), Types.compile_env()) :: boolean()
+
   defp switch_eligible?(subject, branches, env) do
     NativeInt.expr?(subject, env) and
       NativeIntCase.branches?(branches) and
       int_branch_count(branches) >= @min_branches
   end
 
+  @spec int_branch_count(list()) :: Types.ir_expr()
+
   defp int_branch_count(branches) do
     Enum.count(branches, fn %{pattern: pattern} ->
       match?(%{kind: :int, value: value} when is_integer(value), pattern)
     end)
   end
+
+  @spec parse_else_chain(map() | Types.expr(), Types.expr(), Types.compile_env()) :: Types.ir_expr()
 
   defp parse_else_chain(%{op: :if, cond: cond, then_expr: then_expr, else_expr: else_expr}, subject, env) do
     with {:ok, branch_subject, value} <- int_equality(cond, env),
@@ -84,6 +92,8 @@ defmodule Elmc.Backend.CCodegen.IntIfChain do
 
   # `if x == 10 || x == 30 || x == 60 then x else 5` lowers to nested bool ifs:
   # if (x == 10) then True else if (x == 30) then True else (x == 60)
+  @spec collect_or_equalities(map() | Types.expr(), Types.compile_env(), term()) :: Types.ir_expr()
+
   defp collect_or_equalities(
          %{op: :if, cond: cond, then_expr: then_expr, else_expr: else_expr},
          env,
@@ -110,6 +120,8 @@ defmodule Elmc.Backend.CCodegen.IntIfChain do
 
   defp collect_or_equalities(_cond_expr, _env, _acc), do: :error
 
+  @spec bool_true?(map() | Types.expr()) :: boolean()
+
   defp bool_true?(%{op: :bool_literal, value: true}), do: true
   defp bool_true?(%{op: :int_literal, value: 1}), do: true
 
@@ -119,11 +131,17 @@ defmodule Elmc.Backend.CCodegen.IntIfChain do
 
   defp bool_true?(_expr), do: false
 
+  @spec then_returns_subject?(Types.expr(), Types.expr()) :: boolean()
+
   defp then_returns_subject?(then_expr, subject), do: same_subject?(then_expr, subject)
+
+  @spec same_subjects?(term(), Types.expr()) :: boolean()
 
   defp same_subjects?(acc, subject) do
     Enum.all?(acc, fn {entry_subject, _} -> same_subject?(entry_subject, subject) end)
   end
+
+  @spec int_equality(Types.expr(), Types.compile_env()) :: Types.ir_expr()
 
   defp int_equality(cond_expr, env) do
     case cond_expr do
@@ -137,6 +155,8 @@ defmodule Elmc.Backend.CCodegen.IntIfChain do
         :error
     end
   end
+
+  @spec int_equality_pair(Types.expr(), Types.expr(), Types.compile_env()) :: Types.ir_expr()
 
   defp int_equality_pair(left, right, env) do
     with subject when not is_nil(subject) <- subject_expr(left, env),
@@ -153,12 +173,18 @@ defmodule Elmc.Backend.CCodegen.IntIfChain do
     end
   end
 
+  @spec subject_expr(Types.expr(), Types.compile_env()) :: Types.ir_expr()
+
   defp subject_expr(expr, env) do
     if NativeInt.expr?(expr, env), do: expr, else: nil
   end
 
+  @spec int_literal(map() | Types.expr()) :: Types.ir_expr()
+
   defp int_literal(%{op: :int_literal, value: value}) when is_integer(value), do: value
   defp int_literal(_expr), do: nil
+
+  @spec same_subject?(map() | Types.expr(), map() | Types.expr()) :: boolean()
 
   defp same_subject?(
          %{op: :var, name: left},

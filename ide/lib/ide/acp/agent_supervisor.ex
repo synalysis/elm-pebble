@@ -11,6 +11,8 @@ defmodule Ide.Acp.AgentSupervisor do
   end
 
   @impl true
+  @spec init(keyword()) :: term()
+
   def init(_opts) do
     DynamicSupervisor.init(strategy: :one_for_one)
   end

@@ -1,5 +1,7 @@
 defmodule Elmx.Runtime.Core.Time do
   @moduledoc false
+  alias Elmx.Types, as: Types
+
 
   alias Elmx.Runtime.Core.Task
   alias Elmx.Runtime.Values
@@ -15,6 +17,8 @@ defmodule Elmx.Runtime.Core.Time do
       _ -> :os.system_time(:millisecond)
     end
   end
+
+  @spec corpus_fixed_posix_millis() :: Types.elm_value()
 
   defp corpus_fixed_posix_millis do
     Process.get(:elmx_corpus_fixed_posix_millis) ||
@@ -87,6 +91,8 @@ defmodule Elmx.Runtime.Core.Time do
 
   defp adjusted_datetime(zone, _millis), do: adjusted_datetime(zone, 0)
 
+  @spec zone_offset(term() | map() | Types.elm_value(), Types.elm_value()) :: Types.elm_value()
+
   defp zone_offset({:Zone, default_offset, eras}, posix_minutes)
        when is_integer(default_offset) and is_list(eras) do
     era_offset(eras, posix_minutes, default_offset)
@@ -98,6 +104,8 @@ defmodule Elmx.Runtime.Core.Time do
   end
 
   defp zone_offset(_zone, _posix_minutes), do: 0
+
+  @spec era_offset(term(), Types.elm_value(), Types.elm_value()) :: Types.elm_value()
 
   defp era_offset([%{"start" => start, "offset" => offset} | _], posix_minutes, _default)
        when is_integer(start) and is_integer(offset) and start < posix_minutes,

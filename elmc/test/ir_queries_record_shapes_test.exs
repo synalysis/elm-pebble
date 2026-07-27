@@ -323,6 +323,96 @@ defmodule Elmc.IRQueriesRecordShapesTest do
     assert names == ["userModel", "pageData", "sharedData", "actionData"]
   end
 
+  test "case-bound Just p -> p.val resolves against a let-bound record literal with no type alias" do
+    # Basics/ClosureCaptureWorkerBug corpus fixture:
+    #   items = [ { id = "a", val = { x = n, y = n + 1 } } ]
+    #   case List.head (List.filter (\p -> p.id == id) items) of
+    #     Just p -> p.val
+    # `{id, val}` has no type alias, so `p.val` (a case-bound payload, not a
+    # param) only had the usage-only single-field guess to fall back on,
+    # which always resolves the one field it sees to index 0. Scanning
+    # declaration bodies for anonymous record literals must recover the
+    # real two-field alphabetical layout (id@0, val@1) from the literal.
+    ir = %IR{
+      modules: [
+        %{
+          name: "ClosureCaptureWorkerBug",
+          declarations: [
+            %{
+              kind: :function,
+              name: "compute",
+              expr: %{
+                op: :let,
+                bindings: [
+                  %{
+                    name: "items",
+                    expr: %{
+                      op: :list_literal,
+                      items: [
+                        %{
+                          op: :record_literal,
+                          fields: [
+                            %{name: "id", expr: %{op: :string_literal, value: "a"}},
+                            %{
+                              name: "val",
+                              expr: %{
+                                op: :record_literal,
+                                fields: [
+                                  %{name: "x", expr: %{op: :var, name: "n"}},
+                                  %{name: "y", expr: %{op: :var, name: "n"}}
+                                ]
+                              }
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  }
+                ],
+                body: %{op: :var, name: "items"}
+              }
+            }
+          ],
+          unions: %{}
+        }
+      ]
+    }
+
+    shapes = IRQueries.inline_record_literal_shape_map(ir)
+    assert shapes[{"ClosureCaptureWorkerBug", "compute@literal1"}] == ["id", "val"]
+
+    Process.put(:elmc_inline_record_literal_shapes, shapes)
+    on_exit(fn -> Process.delete(:elmc_inline_record_literal_shapes) end)
+
+    ctx = %Context{module: "ClosureCaptureWorkerBug", function_name: "compute_lam_0"}
+    base = %{op: :var, name: "p"}
+
+    assert Record.resolve_field_index_int("id", ctx, base) == {:ok, 0}
+    assert Record.resolve_field_index_int("val", ctx, base) == {:ok, 1}
+  end
+
+  test "inline record literal shapes survive a per-lambda emit-probe reset (process dictionary whitelist)" do
+    # Elmc.Backend.CCodegen.GeneratedSource.reset_emit_probe_state!/0 runs
+    # between sub-emissions within one compile session (lambda bodies, direct
+    # render probes, ...) and deletes any `elmc_*` process key that is not in
+    # @compile_session_process_keys. `elmc_inline_record_literal_shapes` was
+    # seeded once per session (in prepare_emit_session!/header) but, unlike
+    # its sibling `elmc_record_alias_shapes`, was missing from that whitelist:
+    # the very next probe reset wiped it with no reseed in between, so any
+    # later `p.val`-style field lookup silently fell back to a usage-only
+    # guess (index 0) instead of the real literal layout.
+    alias Elmc.Backend.CCodegen.GeneratedSource
+
+    seeded = %{{"ClosureCaptureWorkerBug", "compute@literal1"} => ["id", "val"]}
+    Process.put(:elmc_inline_record_literal_shapes, seeded)
+
+    on_exit(fn -> Process.delete(:elmc_inline_record_literal_shapes) end)
+
+    GeneratedSource.reset_emit_probe_state!()
+
+    assert Process.get(:elmc_inline_record_literal_shapes) == seeded
+  end
+
   test "ProgramConfig.init resolves to field index 0 on extensible config param" do
     shapes = %{
       {"Pages.ProgramConfig", "ProgramConfig"} => [

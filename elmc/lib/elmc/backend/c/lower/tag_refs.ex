@@ -1,6 +1,7 @@
 defmodule Elmc.Backend.C.Lower.TagRefs do
   @moduledoc false
 
+
   alias Elmc.Backend.CCodegen.Util
   alias Elmc.Backend.Plan.Types.{Block, FunctionPlan}
   alias Elmc.Backend.SizeProfile
@@ -24,13 +25,34 @@ defmodule Elmc.Backend.C.Lower.TagRefs do
 
   @spec union_tag_ref(integer(), String.t() | nil, String.t() | nil) :: String.t()
   def union_tag_ref(tag, ctor_name, module \\ nil) when is_integer(tag) do
-    macros = Process.get(:elmc_union_constructor_macros, %{})
+    # Runtime Order is ELMC_TAG_ORDER with scalar -1/0/1, not the Basics.Order
+    # constructor-table ids (typically 1/2/3) behind ELMC_UNION_BASICS_LT/EQ/GT.
+    case order_runtime_scalar_ref(ctor_name) do
+      ref when is_binary(ref) ->
+        ref
 
-    ctor_name
-    |> union_ctor_candidates(module)
-    |> Enum.find_value(fn name -> Map.get(macros, name) end) ||
-      Integer.to_string(tag)
+      nil ->
+        macros = Process.get(:elmc_union_constructor_macros, %{})
+
+        ctor_name
+        |> union_ctor_candidates(module)
+        |> Enum.find_value(fn name -> Map.get(macros, name) end) ||
+          Integer.to_string(tag)
+    end
   end
+
+  @spec order_runtime_scalar_ref(String.t() | nil) :: String.t() | nil
+
+  defp order_runtime_scalar_ref(name) when is_binary(name) do
+    case name |> String.split(".") |> List.last() do
+      "LT" -> "-1"
+      "EQ" -> "0"
+      "GT" -> "1"
+      _ -> nil
+    end
+  end
+
+  defp order_runtime_scalar_ref(_), do: nil
 
   @spec const_int_ref(integer(), String.t() | nil, String.t() | nil) :: String.t()
   def const_int_ref(value, ctor_name, module \\ nil) when is_integer(value) do

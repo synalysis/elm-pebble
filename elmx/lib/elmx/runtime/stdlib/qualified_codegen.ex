@@ -57,7 +57,8 @@ defmodule Elmx.Runtime.Stdlib.QualifiedCodegen do
           "fn #{list_param} -> #{mod_ref}.#{core_fun}(#{fun}, #{acc}, #{list_param}) end"
 
         true ->
-          "fn #{acc_param}, #{list_param} -> #{mod_ref}.#{core_fun}(#{fun}, #{acc_param}, #{list_param}) end"
+          # Curried (not `fn acc, list ->`) so `partial.(acc).(list)` Elm apply works.
+          "fn #{acc_param} -> fn #{list_param} -> #{mod_ref}.#{core_fun}(#{fun}, #{acc_param}, #{list_param}) end end"
       end
 
     {:ok, code}
@@ -90,9 +91,12 @@ defmodule Elmx.Runtime.Stdlib.QualifiedCodegen do
 
     code =
       if container_expr do
-        "#{mod_ref}.#{fun}(#{prefix}, #{IO.iodata_to_binary(container_expr)})"
+        container = IO.iodata_to_binary(container_expr)
+        args = if prefix == "", do: container, else: "#{prefix}, #{container}"
+        "#{mod_ref}.#{fun}(#{args})"
       else
-        "fn #{container_param} -> #{mod_ref}.#{fun}(#{prefix}, #{container_param}) end"
+        args = if prefix == "", do: container_param, else: "#{prefix}, #{container_param}"
+        "fn #{container_param} -> #{mod_ref}.#{fun}(#{args}) end"
       end
 
     {:ok, code}

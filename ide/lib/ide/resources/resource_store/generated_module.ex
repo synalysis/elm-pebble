@@ -1,5 +1,7 @@
 defmodule Ide.Resources.ResourceStore.GeneratedModule do
   @moduledoc false
+  alias Ide.Types, as: Types
+
 
   alias Ide.Resources.{BitmapVariants, CtorNaming, Types}
   alias Ide.Resources.ResourceStore.Coercion

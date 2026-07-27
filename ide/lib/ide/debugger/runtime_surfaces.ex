@@ -353,6 +353,8 @@ defmodule Ide.Debugger.RuntimeSurfaces do
 
   defp patch_runtime_model_screen_fields(model, _screen_fields) when is_map(model), do: model
 
+  @spec screen_fields_for_runtime_model(term(), map()) :: term()
+
   defp screen_fields_for_runtime_model(screen_fields, runtime_model) when is_map(runtime_model) do
     Enum.reduce(["screenW", "screenH", "displayShape"], screen_fields, fn key, fields ->
       if Map.has_key?(runtime_model, key) or Map.has_key?(runtime_model, String.to_atom(key)) do
@@ -363,8 +365,12 @@ defmodule Ide.Debugger.RuntimeSurfaces do
     end)
   end
 
+  @spec maybe_put_screen_field(term(), String.t(), integer()) :: term() | nil
+
   defp maybe_put_screen_field(map, _key, value) when not is_integer(value) or value <= 0, do: map
   defp maybe_put_screen_field(map, key, value), do: Map.put(map, key, value)
+
+  @spec maybe_put_runtime_value(term(), String.t(), integer()) :: term() | nil
 
   defp maybe_put_runtime_value(map, _key, value) when value in [nil, ""], do: map
   defp maybe_put_runtime_value(map, key, value), do: Map.put(map, key, value)
@@ -388,6 +394,8 @@ defmodule Ide.Debugger.RuntimeSurfaces do
         "Color"
     end
   end
+
+  @spec merge_launch_context_view_tree(term() | map(), String.t()) :: term()
 
   defp merge_launch_context_view_tree(view_tree, launch_context)
        when is_map(view_tree) and is_map(launch_context) do

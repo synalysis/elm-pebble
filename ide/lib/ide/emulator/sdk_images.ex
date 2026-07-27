@@ -88,6 +88,8 @@ defmodule Ide.Emulator.SdkImages do
     File.exists?(micro) and (File.exists?(spi) or File.exists?(spi <> ".bz2"))
   end
 
+  @spec sdk_archive(keyword()) :: term()
+
   defp sdk_archive(opts) do
     case Keyword.get(opts, :archive_path) do
       path when is_binary(path) and path != "" ->
@@ -102,6 +104,8 @@ defmodule Ide.Emulator.SdkImages do
         end
     end
   end
+
+  @spec ensure_sdk_python_env(term(), keyword()) :: term()
 
   defp ensure_sdk_python_env(sdk_root, opts) do
     venv_python = Path.join(sdk_root, ".venv/bin/python")
@@ -142,12 +146,16 @@ defmodule Ide.Emulator.SdkImages do
     end
   end
 
+  @spec ensure_sdk_runtime_env(term(), keyword()) :: term()
+
   defp ensure_sdk_runtime_env(sdk_root, opts) do
     with :ok <- ensure_sdk_python_env(sdk_root, opts),
          :ok <- ensure_sdk_node_modules(sdk_root) do
       :ok
     end
   end
+
+  @spec ensure_sdk_node_modules(term()) :: term()
 
   defp ensure_sdk_node_modules(sdk_root) do
     source_package_json = Path.join(sdk_root, "sdk-core/package.json")
@@ -173,6 +181,8 @@ defmodule Ide.Emulator.SdkImages do
     end
   end
 
+  @spec toolchain_archive(keyword()) :: term()
+
   defp toolchain_archive(opts) do
     case Keyword.get(opts, :toolchain_archive_path) do
       path when is_binary(path) and path != "" ->
@@ -189,6 +199,8 @@ defmodule Ide.Emulator.SdkImages do
         end
     end
   end
+
+  @spec sdk_url(keyword()) :: term()
 
   defp sdk_url(opts) do
     version = Keyword.get(opts, :sdk_version, @default_sdk_version)
@@ -215,6 +227,8 @@ defmodule Ide.Emulator.SdkImages do
     end
   end
 
+  @spec toolchain_url(keyword()) :: term()
+
   defp toolchain_url(opts) do
     version = Keyword.get(opts, :sdk_version, @default_sdk_version)
     platform_name = toolchain_platform_name(opts)
@@ -229,9 +243,13 @@ defmodule Ide.Emulator.SdkImages do
     end
   end
 
+  @spec toolchain_platform_name(keyword()) :: term()
+
   defp toolchain_platform_name(opts) do
     "#{toolchain_os_name(opts)}-#{toolchain_arch_name(opts)}"
   end
+
+  @spec toolchain_os_name(keyword()) :: term()
 
   defp toolchain_os_name(opts) do
     case Keyword.get(opts, :os_name) do
@@ -245,6 +263,8 @@ defmodule Ide.Emulator.SdkImages do
         end
     end
   end
+
+  @spec toolchain_arch_name(keyword()) :: term()
 
   defp toolchain_arch_name(opts) do
     case Keyword.get(opts, :arch_name) do
@@ -261,6 +281,8 @@ defmodule Ide.Emulator.SdkImages do
         end
     end
   end
+
+  @spec download_sdk_archive(term()) :: term()
 
   defp download_sdk_archive(url) do
     path =
@@ -283,6 +305,8 @@ defmodule Ide.Emulator.SdkImages do
     end
   end
 
+  @spec extract_sdk_core(String.t(), term()) :: term()
+
   defp extract_sdk_core(archive_path, sdk_root) do
     case System.cmd("tar", ["xzf", archive_path, "-C", sdk_root], stderr_to_stdout: true) do
       {_output, 0} ->
@@ -296,6 +320,8 @@ defmodule Ide.Emulator.SdkImages do
         {:error, {:sdk_extract_failed, exit_code, output}}
     end
   end
+
+  @spec extract_toolchain(String.t(), term(), String.t()) :: term()
 
   defp extract_toolchain(archive_path, sdk_root, platform_name) do
     toolchain_root = Path.join(sdk_root, "toolchain")
@@ -330,6 +356,8 @@ defmodule Ide.Emulator.SdkImages do
     end
   end
 
+  @spec extracted_toolchain_root(term(), String.t()) :: term()
+
   defp extracted_toolchain_root(temp_root, platform_name) do
     exact = Path.join(temp_root, "toolchain-#{platform_name}")
 
@@ -345,6 +373,8 @@ defmodule Ide.Emulator.SdkImages do
     end
   end
 
+  @spec first_toolchain_root(term()) :: term()
+
   defp first_toolchain_root(temp_root) do
     temp_root
     |> File.ls!()
@@ -357,6 +387,8 @@ defmodule Ide.Emulator.SdkImages do
     end)
   end
 
+  @spec copy_toolchain_contents(term(), term()) :: term()
+
   defp copy_toolchain_contents(source_root, toolchain_root) do
     source_root
     |> File.ls!()
@@ -368,6 +400,8 @@ defmodule Ide.Emulator.SdkImages do
   rescue
     error -> {:error, {:toolchain_copy_failed, Exception.message(error)}}
   end
+
+  @spec extract_platform_images(String.t(), term(), term()) :: term()
 
   defp extract_platform_images(archive_path, image_root, platform) do
     wanted_path = "sdk-core/pebble/#{platform}/qemu"
@@ -389,8 +423,12 @@ defmodule Ide.Emulator.SdkImages do
     end
   end
 
+  @spec cleanup_archive(String.t(), term()) :: term()
+
   defp cleanup_archive(path, true), do: File.rm(path)
   defp cleanup_archive(_path, false), do: :ok
+
+  @spec run_command(term(), [String.t()], term()) :: term()
 
   defp run_command(command, args, opts \\ []) do
     case System.cmd(command, args, Keyword.merge([stderr_to_stdout: true], opts)) do

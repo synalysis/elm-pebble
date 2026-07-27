@@ -1,5 +1,7 @@
 defmodule Ide.PebbleToolchain.Prepare do
   @moduledoc false
+  alias Ide.Types, as: Types
+
 
   import Bitwise, only: [&&&: 2, |||: 2]
 

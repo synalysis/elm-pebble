@@ -3,6 +3,7 @@ defmodule Elmc.Runtime.Executor.Types.WireJson do
   JSON-like scalar and object values used by the experimental runtime executor.
   """
 
+
   @type t ::
           String.t()
           | integer()

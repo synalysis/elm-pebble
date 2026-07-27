@@ -3,6 +3,7 @@ defmodule Ide.Debugger.Types.DebuggerTimelineRow do
   User-visible debugger timeline row (`RuntimeState.debugger_timeline`).
   """
 
+
   alias Ide.Debugger.Surface
 
   @type t :: %{

@@ -1,5 +1,7 @@
 defmodule Elmc.Backend.Plan.Lower.UnionCtor do
   @moduledoc false
+  alias Elmc.Backend.Plan.Types, as: Types
+
 
   alias Elmc.Backend.Plan.Context
 
@@ -14,6 +16,8 @@ defmodule Elmc.Backend.Plan.Lower.UnionCtor do
       end
     end
   end
+
+  @spec module_name(map() | term()) :: Types.ir_expr()
 
   defp module_name(%Context{module: mod}) when is_binary(mod), do: mod
   defp module_name(%{module: mod}) when is_binary(mod), do: mod

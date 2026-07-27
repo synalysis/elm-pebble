@@ -1,5 +1,7 @@
 defmodule Elmc.Backend.CCodegen.Native.TypedReturn do
   @moduledoc false
+  alias Elmc.Backend.CCodegen.Types, as: Types
+
 
   alias Elmc.Backend.CCodegen.EnvBindings
   alias Elmc.Backend.CCodegen.Host
@@ -117,6 +119,10 @@ defmodule Elmc.Backend.CCodegen.Native.TypedReturn do
 
   def expr_type(%{op: :bool_literal}, _env), do: "Bool"
 
+  def expr_type(%{op: :string_literal}, _env), do: "String"
+
+  def expr_type(%{op: :char_literal}, _env), do: "Char"
+
   def expr_type(%{op: :if, then_expr: then_expr, else_expr: else_expr}, env) do
     case {expr_type(then_expr, env), expr_type(else_expr, env)} do
       {type, type} when is_binary(type) -> type
@@ -147,6 +153,8 @@ defmodule Elmc.Backend.CCodegen.Native.TypedReturn do
 
   def expr_type(_expr, _env), do: nil
 
+  @spec function_return_type(Types.ir_expr() | String.t(), Types.compile_env(), non_neg_integer()) :: Types.ir_expr()
+
   defp function_return_type(nil, _env, _arg_count), do: nil
 
   defp function_return_type(target, env, arg_count) do
@@ -161,6 +169,8 @@ defmodule Elmc.Backend.CCodegen.Native.TypedReturn do
     end
   end
 
+  @spec type_from_env(Types.compile_env(), String.t()) :: Types.ir_expr()
+
   defp type_from_env(env, name) when is_binary(name) or is_atom(name) do
     env
     |> Map.get(:__var_types__, %{})
@@ -171,8 +181,12 @@ defmodule Elmc.Backend.CCodegen.Native.TypedReturn do
     end
   end
 
+  @spec mjs_matrix_component_field?(binary() | term()) :: boolean()
+
   defp mjs_matrix_component_field?(<<"m", r, c>>) when r in ?1..?4 and c in ?1..?4, do: true
   defp mjs_matrix_component_field?(_), do: false
+
+  @spec mjs_to_record_base?(map() | term()) :: boolean()
 
   defp mjs_to_record_base?(%{op: :qualified_call, target: target}) when is_binary(target),
     do: mjs_to_record_target?(target)
@@ -188,6 +202,8 @@ defmodule Elmc.Backend.CCodegen.Native.TypedReturn do
     do: mjs_to_record_base?(inner)
 
   defp mjs_to_record_base?(_), do: false
+
+  @spec mjs_to_record_target?(String.t()) :: boolean()
 
   defp mjs_to_record_target?(target) when is_binary(target) do
     short = target |> String.split(".") |> List.last()

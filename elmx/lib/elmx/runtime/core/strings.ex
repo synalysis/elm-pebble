@@ -1,5 +1,7 @@
 defmodule Elmx.Runtime.Core.Strings do
   @moduledoc false
+  alias Elmx.Types, as: Types
+
 
   alias Elmx.Runtime.Core
   alias Elmx.Types
@@ -17,6 +19,11 @@ defmodule Elmx.Runtime.Core.Strings do
 
   @spec from_int(integer()) :: String.t()
   def from_int(n) when is_integer(n), do: Integer.to_string(n)
+
+  @spec from_number(number()) :: String.t()
+  def from_number(n) when is_integer(n), do: Integer.to_string(n)
+  def from_number(n) when is_float(n), do: from_float(n)
+  def from_number(_), do: "0"
 
   @spec from_float(number()) :: String.t()
   def from_float(n) when is_float(n), do: :erlang.float_to_binary(n, [:compact, decimals: 16])
@@ -55,17 +62,25 @@ defmodule Elmx.Runtime.Core.Strings do
     |> IO.iodata_to_binary()
   end
 
+  @spec string_grapheme_chars(String.t()) :: Types.elm_value()
+
   defp string_grapheme_chars(text) when is_binary(text) do
     Enum.map(string_codepoint_segments(text), fn segment ->
       {:elmx_char, grapheme_codepoint(segment)}
     end)
   end
 
+  @spec string_codepoint_segments(String.t()) :: Types.elm_value()
+
   defp string_codepoint_segments(text) when is_binary(text) do
     for <<c::utf8 <- text>>, do: <<c::utf8>>
   end
 
+  @spec grapheme_codepoint(binary()) :: Types.elm_value()
+
   defp grapheme_codepoint(<<c::utf8>>), do: c
+
+  @spec char_to_binary(term() | integer() | String.t() | Types.elm_value()) :: Types.elm_value()
 
   defp char_to_binary({:elmx_char, code}) when is_integer(code), do: <<code::utf8>>
   defp char_to_binary({:elmx_char, bin}) when is_binary(bin), do: bin
@@ -116,6 +131,8 @@ defmodule Elmx.Runtime.Core.Strings do
       String.slice(text, start_i, end_i - start_i)
     end
   end
+
+  @spec normalize_slice_index(integer(), integer()) :: integer()
 
   defp normalize_slice_index(index, len) when is_integer(index) and is_integer(len) do
     index = if index < 0, do: len + index, else: index
@@ -246,9 +263,13 @@ defmodule Elmx.Runtime.Core.Strings do
     text <> String.duplicate(to_string(ch), count)
   end
 
+  @spec to_int(integer() | float() | Types.elm_value(), Types.elm_value()) :: Types.elm_value()
+
   defp to_int(n, _default) when is_integer(n), do: n
   defp to_int(n, _default) when is_float(n), do: trunc(n)
   defp to_int(_other, default), do: default
+
+  @spec stringify(term() | String.t() | Types.elm_value()) :: Types.elm_value()
 
   defp stringify({:elmx_char, code}) when is_integer(code), do: <<code::utf8>>
   defp stringify(bin) when is_binary(bin), do: bin

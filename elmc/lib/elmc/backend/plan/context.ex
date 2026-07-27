@@ -5,6 +5,8 @@ defmodule Elmc.Backend.Plan.Context do
   Replaces scattered C-codegen env keys (`__function_tail_compile__`,
   `__branch_out__`, `__allow_fn_out_slot__`) with an explicit stack.
   """
+  alias Elmc.Backend.Plan.Types, as: Types
+
 
   alias Elmc.Backend.Plan.Types
 

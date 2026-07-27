@@ -1,5 +1,7 @@
 defmodule Elmc.Backend.Pebble.SourceWriter.SceneHost.DirtyRegion.CmdBounds.IsVisual do
   @moduledoc false
+  alias Elmc.Types, as: Types
+
 
   alias Elmc.Backend.Pebble.Kinds.Tables.DrawKindLuts
   alias Elmc.Backend.Pebble.Types

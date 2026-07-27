@@ -1,5 +1,7 @@
 defmodule Elmc.Backend.CCodegen.TypeParsing do
   @moduledoc false
+  alias Elmc.Backend.CCodegen.Types, as: Types
+
 
   @cache_key :elmc_type_parsing_arrow_cache
 
@@ -70,6 +72,8 @@ defmodule Elmc.Backend.CCodegen.TypeParsing do
     end
   end
 
+  @spec do_split_top_level_arrows(String.t()) :: Types.ir_expr()
+
   defp do_split_top_level_arrows(type) when is_binary(type) do
     type
     |> split_top_level_arrows_bin(0, byte_size(type), 0, 0, [])
@@ -77,6 +81,8 @@ defmodule Elmc.Backend.CCodegen.TypeParsing do
   end
 
   # Walk the binary once; emit slices without grapheme lists or O(n²) concat.
+  @spec split_top_level_arrows_bin(Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), non_neg_integer() | Types.ir_expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+
   defp split_top_level_arrows_bin(type, pos, size, _depth, start, parts) when pos >= size do
     Enum.reverse([binary_part(type, start, size - start) | parts])
   end
@@ -95,6 +101,8 @@ defmodule Elmc.Backend.CCodegen.TypeParsing do
   defp split_top_level_arrows_bin(type, pos, size, depth, start, parts) do
     split_top_level_arrows_bin_step(type, pos, size, depth, start, parts)
   end
+
+  @spec split_top_level_arrows_bin_step(Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), non_neg_integer(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
 
   defp split_top_level_arrows_bin_step(type, pos, size, depth, start, parts) do
     next_depth =
@@ -130,6 +138,8 @@ defmodule Elmc.Backend.CCodegen.TypeParsing do
   end
 
   defp strip_wrapping_parens(type), do: type
+
+  @spec multi_element_tuple_type?(String.t()) :: boolean()
 
   defp multi_element_tuple_type?(type) when is_binary(type) do
     case ElmEx.IR.TypeSignature.tuple_element_types(type) do

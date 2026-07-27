@@ -1,5 +1,7 @@
 defmodule Elmc.Backend.CCodegen.PipeChainCompile do
   @moduledoc false
+  alias Elmc.Backend.CCodegen.Types, as: Types
+
 
   alias Elmc.Backend.CCodegen.{EnvBindings, Host, RcRequired, Types, Util, ValueSlots}
   alias ElmEx.IR.PipeChain
@@ -28,6 +30,8 @@ defmodule Elmc.Backend.CCodegen.PipeChainCompile do
     end
   end
 
+  @spec compile_iterative(Types.ir_expr(), Types.ir_expr(), Types.compile_env(), Types.ir_expr()) :: Types.ir_expr()
+
   defp compile_iterative(steps, base, env, counter) do
     {base_code, acc_var, counter} = Host.compile_expr(base, env, counter)
 
@@ -39,6 +43,8 @@ defmodule Elmc.Backend.CCodegen.PipeChainCompile do
       {code_acc <> step_code <> release, next_var, c2}
     end)
   end
+
+  @spec compile_homogeneous_steps(Types.ir_expr(), non_neg_integer(), Types.ir_expr(), Types.ir_expr(), Types.compile_env(), Types.ir_expr()) :: Types.ir_expr()
 
   defp compile_homogeneous_steps(step, count, base, rest, env, counter) do
     {base_code, base_var, c0} = Host.compile_expr(base, env, counter)
@@ -106,6 +112,8 @@ defmodule Elmc.Backend.CCodegen.PipeChainCompile do
     end
   end
 
+  @spec compile_homogeneous_closure_loop(Types.ir_expr(), non_neg_integer(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.compile_env(), Types.ir_expr()) :: Types.ir_expr()
+
   defp compile_homogeneous_closure_loop(step, count, base_var, acc_var, loop_id, env, counter) do
     {fun_code, fun_var, c1} = Host.compile_expr(step, env, counter + 2)
 
@@ -123,6 +131,8 @@ defmodule Elmc.Backend.CCodegen.PipeChainCompile do
     {code, acc_var, c1}
   end
 
+  @spec direct_top_level_fn(map() | Types.ir_expr(), Types.compile_env()) :: Types.ir_expr()
+
   defp direct_top_level_fn(%{op: :call, name: name, args: []}, env) when is_binary(name) do
     module = Map.get(env, :__module__, "Main")
     {Util.module_fn_name(module, name), module, name}
@@ -134,6 +144,8 @@ defmodule Elmc.Backend.CCodegen.PipeChainCompile do
   end
 
   defp direct_top_level_fn(_step, _env), do: :error
+
+  @spec split_homogeneous_prefix_steps(term()) :: Types.ir_expr()
 
   defp split_homogeneous_prefix_steps([]), do: {[], []}
 

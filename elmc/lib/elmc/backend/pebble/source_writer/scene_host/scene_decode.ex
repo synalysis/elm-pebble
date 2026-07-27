@@ -1,5 +1,7 @@
 defmodule Elmc.Backend.Pebble.SourceWriter.SceneHost.SceneDecode do
   @moduledoc false
+  alias Elmc.Types, as: Types
+
 
   alias Elmc.Backend.Pebble.Types
 
@@ -11,6 +13,8 @@ defmodule Elmc.Backend.Pebble.SourceWriter.SceneHost.SceneDecode do
     #endif
     """
   end
+
+  @spec body_without_guard() :: Types.ir_expr()
 
   defp body_without_guard do
     """

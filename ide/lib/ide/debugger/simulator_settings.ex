@@ -313,8 +313,12 @@ defmodule Ide.Debugger.SimulatorSettings do
   defp normalize_boolean("false", _default), do: false
   defp normalize_boolean(_value, default) when is_boolean(default), do: default
 
+  @spec normalize_string(String.t() | integer(), term() | String.t()) :: String.t()
+
   defp normalize_string(value, _default) when is_binary(value) and value != "", do: value
   defp normalize_string(_value, default) when is_binary(default), do: default
+
+  @spec normalize_optional_string(String.t() | integer(), term()) :: String.t()
 
   defp normalize_optional_string(value, _default) when is_binary(value) do
     case String.trim(value) do
@@ -325,8 +329,12 @@ defmodule Ide.Debugger.SimulatorSettings do
 
   defp normalize_optional_string(_value, default), do: default
 
+  @spec normalize_json_map(map() | integer(), term() | map()) :: map()
+
   defp normalize_json_map(value, _default) when is_map(value), do: value
   defp normalize_json_map(_value, default) when is_map(default), do: default
+
+  @spec normalize_json_list(list() | integer(), term() | list()) :: list()
 
   defp normalize_json_list(value, _default) when is_list(value), do: value
   defp normalize_json_list(_value, default) when is_list(default), do: default
@@ -354,6 +362,8 @@ defmodule Ide.Debugger.SimulatorSettings do
 
   defp normalize_weather_settings(_value, default) when is_map(default), do: default
   defp normalize_weather_settings(_value, _default), do: %{}
+
+  @spec normalize_float(float() | integer() | String.t(), term(), integer(), integer()) :: float() | integer() | String.t()
 
   defp normalize_float(value, _default, min_value, max_value) when is_float(value),
     do: value |> max(min_value) |> min(max_value)

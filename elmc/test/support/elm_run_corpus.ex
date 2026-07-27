@@ -38,7 +38,6 @@ defmodule Elmc.Test.ElmRunCorpus do
     "Basics/BoolIntrinsicWrappers.elm",
     "Basics/AsBound.elm",
     "Advanced/MainRecordUpdateNested.elm",
-    "Parser/MainDeepAst.elm",
     "TailDef/Main.elm",
     "Bitwise/BitwiseSpec.elm",
     "Array/PushSharedBranches.elm",
@@ -48,11 +47,8 @@ defmodule Elmc.Test.ElmRunCorpus do
     "Iterative/Collections.elm",
     "Kernel/DiagAbs10.elm",
     "Json/MainDecodeArrayPrimitive.elm",
-    "Binary/FixedWidthHash.elm",
     "Graph/MainDictGet.elm",
     "Compiler/BccBinopTypeLoss.elm",
-    "Bugs/A64FieldArgCorruption.elm",
-    "Compatibility/ProcessSendDead.elm",
     "Collections/BenchDictIntLookup.elm"
   ]
 

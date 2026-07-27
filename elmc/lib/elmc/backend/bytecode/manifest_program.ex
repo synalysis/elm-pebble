@@ -7,6 +7,7 @@ defmodule Elmc.Backend.Bytecode.ManifestProgram do
   targets through the shared `plans` map on `Bytecode.Runtime`.
   """
 
+
   alias Elmc.Backend.Bytecode.{FnTable, Loader, Lower, Runtime}
   alias Elmc.Backend.Plan.Types.FunctionPlan
 

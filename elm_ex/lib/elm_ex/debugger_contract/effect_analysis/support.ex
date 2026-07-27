@@ -12,6 +12,8 @@ defmodule ElmEx.DebuggerContract.EffectAnalysis.Support do
     end
   end
 
+  @spec init_case_subjects(list()) :: term()
+
   def init_case_subjects(init_params) when is_list(init_params) do
     init_params
     |> Enum.filter(&(is_binary(&1) and &1 != "" and &1 != "_"))
@@ -38,6 +40,8 @@ defmodule ElmEx.DebuggerContract.EffectAnalysis.Support do
         false
     end
   end
+
+  @spec update_case_subject_allowed?(term(), term(), term(), term()) :: boolean()
 
   def update_case_subject_allowed?(subj, allowed, update_params, bindings)
       when is_list(allowed) and is_list(update_params) and is_map(bindings) do
@@ -66,9 +70,13 @@ defmodule ElmEx.DebuggerContract.EffectAnalysis.Support do
     end
   end
 
+  @spec peel_lets(map() | term()) :: term()
+
   def peel_lets(%{op: :let_bindings, in_expr: inner}), do: peel_lets(inner)
   def peel_lets(%{op: :let_in, in_expr: inner}), do: peel_lets(inner)
   def peel_lets(other), do: other
+  @spec inline_let_bindings(Types.expr() | map(), term(), integer(), non_neg_integer()) :: term()
+
   def inline_let_bindings(expr, _bindings, _seen, depth) when depth > 12, do: expr
 
   def inline_let_bindings(%{op: :var, name: name}, bindings, seen, depth)
@@ -216,6 +224,8 @@ defmodule ElmEx.DebuggerContract.EffectAnalysis.Support do
   def expr_to_json_value(%{op: op}, _, _, _), do: %{"$opaque" => true, "op" => to_string(op)}
 
   def expr_to_json_value(_, _, _, _), do: %{"$opaque" => true}
+  @spec peel_update_outer(map() | term()) :: term()
+
   def peel_update_outer(%{op: :let_bindings, in_expr: inner}), do: peel_update_outer(inner)
   def peel_update_outer(%{op: :let_in, in_expr: inner}), do: peel_update_outer(inner)
   def peel_update_outer(other), do: other

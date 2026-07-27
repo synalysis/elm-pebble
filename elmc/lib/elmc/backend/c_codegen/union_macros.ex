@@ -1,5 +1,7 @@
 defmodule Elmc.Backend.CCodegen.UnionMacros do
   @moduledoc false
+  alias Elmc.Backend.CCodegen.Types, as: Types
+
 
   alias ElmEx.IR
   alias Elmc.Backend.CCodegen.ProdMode
@@ -126,6 +128,7 @@ defmodule Elmc.Backend.CCodegen.UnionMacros do
 
   defp debug_ctor_name_fn_impl(%IR{} = ir, opts) do
     used = Keyword.get(opts, :used_union_ctors)
+    entry_module = Keyword.get(opts, :entry_module)
 
     entries =
       ir.modules
@@ -133,19 +136,30 @@ defmodule Elmc.Backend.CCodegen.UnionMacros do
         mod.unions
         |> Map.values()
         |> Enum.flat_map(fn union ->
-          union.tags
-          |> Enum.map(fn {name, tag} ->
-            {short_union_ctor_name(name), tag}
+          tags = union.tags || %{}
+          single_ctor? = map_size(tags) == 1
+
+          Enum.map(tags, fn {name, tag} ->
+            %{
+              name: short_union_ctor_name(name),
+              tag: tag,
+              module: mod.name,
+              single_ctor?: single_ctor?
+            }
           end)
         end)
       end)
-      |> maybe_filter_debug_entries(used)
+      |> maybe_filter_debug_entry_maps(used)
 
     unique_by_tag =
       entries
-      |> Enum.group_by(fn {_name, tag} -> tag end)
-      |> Enum.filter(fn {_tag, group} -> length(group) == 1 end)
-      |> Enum.map(fn {tag, [{name, tag}]} -> {tag, name} end)
+      |> Enum.group_by(& &1.tag)
+      |> Enum.flat_map(fn {tag, group} ->
+        case pick_debug_ctor_name(group, entry_module) do
+          name when is_binary(name) -> [{tag, name}]
+          _ -> []
+        end
+      end)
       |> Enum.sort_by(fn {tag, _name} -> tag end)
 
     cases =
@@ -164,8 +178,62 @@ defmodule Elmc.Backend.CCodegen.UnionMacros do
     """
   end
 
-  defp maybe_filter_debug_entries(entries, %MapSet{} = used) do
-    Enum.filter(entries, fn {name, _tag} ->
+  # Core packages reuse small tag integers for unrelated single-ctor wrappers
+  # (Cmd/Sub/Value/…). Prefer constructors from non-stdlib modules so app types
+  # like ActionConfig win Debug.toString over those opaque wrappers.
+  @stdlib_modules MapSet.new(~w(
+    Array Basics Bitwise Bytes Char Dict Debug Elm.JsArray Elm.Kernel.Basics
+    Elm.Kernel.Bitwise Elm.Kernel.Char Elm.Kernel.Debug Elm.Kernel.Json
+    Elm.Kernel.List Elm.Kernel.Parser Elm.Kernel.Platform Elm.Kernel.Process
+    Elm.Kernel.Scheduler Elm.Kernel.String Elm.Kernel.Utils Json.Decode
+    Json.Encode List Maybe Platform Platform.Cmd Platform.Sub Process Result
+    Set String Task Time Tuple VirtualDom
+  ))
+
+  defp pick_debug_ctor_name([%{name: name}], _entry_module), do: name
+
+  defp pick_debug_ctor_name(group, entry_module) when is_list(group) do
+    singles = Enum.filter(group, & &1.single_ctor?)
+
+    entry_singles =
+      if is_binary(entry_module) do
+        Enum.filter(singles, &(&1.module == entry_module))
+      else
+        []
+      end
+
+    app_singles =
+      Enum.filter(singles, fn %{module: mod} ->
+        not MapSet.member?(@stdlib_modules, mod)
+      end)
+
+    entry_ctors =
+      if is_binary(entry_module) do
+        Enum.filter(group, &(&1.module == entry_module))
+      else
+        []
+      end
+
+    # Multi-ctor app unions (e.g. Opcode.Char) share small tag ints with stdlib
+    # (Order.GT, Json.Decode.OneOf). Prefer a unique non-stdlib / entry ctor so
+    # Debug.toString prints `Char 'a'` instead of `(3,'a')`.
+    app_ctors =
+      Enum.filter(group, fn %{module: mod} ->
+        not MapSet.member?(@stdlib_modules, mod)
+      end)
+
+    cond do
+      match?([%{name: _}], entry_singles) -> hd(entry_singles).name
+      match?([%{name: _}], app_singles) -> hd(app_singles).name
+      match?([%{name: _}], singles) -> hd(singles).name
+      match?([%{name: _}], entry_ctors) -> hd(entry_ctors).name
+      match?([%{name: _}], app_ctors) -> hd(app_ctors).name
+      true -> nil
+    end
+  end
+
+  defp maybe_filter_debug_entry_maps(entries, %MapSet{} = used) do
+    Enum.filter(entries, fn %{name: name} ->
       MapSet.member?(used, name) or
         Enum.any?(used, fn entry ->
           entry == name or String.ends_with?(entry, "." <> name)
@@ -173,7 +241,7 @@ defmodule Elmc.Backend.CCodegen.UnionMacros do
     end)
   end
 
-  defp maybe_filter_debug_entries(entries, _), do: entries
+  defp maybe_filter_debug_entry_maps(entries, _), do: entries
 
   defp escape_c_string(name) when is_binary(name) do
     name |> String.replace("\\", "\\\\") |> String.replace("\"", "\\\"")

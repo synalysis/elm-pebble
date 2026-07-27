@@ -1,4 +1,5 @@
 defmodule IdeWeb.Telemetry do
+
   use Supervisor
   import Telemetry.Metrics
 

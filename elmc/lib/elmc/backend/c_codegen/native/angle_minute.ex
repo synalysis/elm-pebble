@@ -1,5 +1,7 @@
 defmodule Elmc.Backend.CCodegen.Native.AngleMinute do
   @moduledoc false
+  alias Elmc.Backend.CCodegen.Types, as: Types
+
 
   alias Elmc.Backend.CCodegen.Host
   alias Elmc.Backend.CCodegen.Types
@@ -7,6 +9,8 @@ defmodule Elmc.Backend.CCodegen.Native.AngleMinute do
   @idiv_ops ~w(__idiv__ // idiv)
   @mul_ops ~w(__mul__ *)
   @sub_ops ~w(__sub__ -)
+
+  @spec op_name?(String.t() | atom() | term(), Types.ir_expr() | term()) :: boolean()
 
   defp op_name?(name, ops) when is_binary(name), do: name in ops
   defp op_name?(name, ops) when is_atom(name), do: Atom.to_string(name) in ops
@@ -70,6 +74,8 @@ defmodule Elmc.Backend.CCodegen.Native.AngleMinute do
     end
   end
 
+  @spec mod_by_target?(String.t() | term()) :: boolean()
+
   defp mod_by_target?(target) when is_binary(target) do
     target in ["modBy", "Basics.modBy", "Elm.Kernel.modBy"]
   end
@@ -97,8 +103,12 @@ defmodule Elmc.Backend.CCodegen.Native.AngleMinute do
     end
   end
 
+  @spec mod_by_65536_base?(map() | term()) :: boolean()
+
   defp mod_by_65536_base?(%{op: :int_literal, value: 65_536}), do: true
   defp mod_by_65536_base?(_), do: false
+
+  @spec idiv_numerator(map() | term(), Types.ir_expr() | term()) :: Types.ir_expr()
 
   defp idiv_numerator(%{op: :call, name: name, args: [num, %{op: :int_literal, value: denom}]}, denom) do
     if op_name?(name, @idiv_ops), do: {:ok, num}, else: :error
@@ -112,6 +122,8 @@ defmodule Elmc.Backend.CCodegen.Native.AngleMinute do
 
   defp idiv_numerator(_, _), do: :error
 
+  @spec minute_expr_from_scaled(map() | term()) :: Types.ir_expr()
+
   defp minute_expr_from_scaled(%{op: :call, name: name, args: [left, %{op: :int_literal, value: 65_536}]}) do
     if op_name?(name, @mul_ops), do: minute_expr_from_minus_720(left), else: :error
   end
@@ -120,6 +132,8 @@ defmodule Elmc.Backend.CCodegen.Native.AngleMinute do
     do: minute_expr_from_minus_720(left)
 
   defp minute_expr_from_scaled(_), do: :error
+
+  @spec minute_expr_from_minus_720(map() | term()) :: Types.ir_expr()
 
   defp minute_expr_from_minus_720(%{op: :call, name: name, args: [minute, %{op: :int_literal, value: 720}]}) do
     if op_name?(name, @sub_ops), do: {:ok, minute}, else: :error

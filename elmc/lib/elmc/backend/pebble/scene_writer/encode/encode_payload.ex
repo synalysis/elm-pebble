@@ -1,5 +1,7 @@
 defmodule Elmc.Backend.Pebble.SceneWriter.Encode.EncodePayload do
   @moduledoc false
+  alias Elmc.Types, as: Types
+
 
   alias Elmc.Backend.Pebble.Types
   alias Elmc.Backend.Pebble.SceneWriter.Encode.EncodePayload.{Fallbacks, SwitchCases}

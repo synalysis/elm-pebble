@@ -4,6 +4,8 @@ defmodule Elmc.Backend.CCodegen.SpawnTileChain do
 
   Matches `initialBoard`-shaped IR: spawn on a zero-arg board, then spawn on the first result.
   """
+  alias Elmc.Backend.CCodegen.Types, as: Types
+
 
   alias Elmc.Backend.CCodegen.Types
 
@@ -31,6 +33,8 @@ defmodule Elmc.Backend.CCodegen.SpawnTileChain do
     end
   end
 
+  @spec tuple_pair_return?(Types.decl_map(), String.t(), String.t()) :: boolean()
+
   defp tuple_pair_return?(decl_map, module_name, name) do
     case Map.get(decl_map, {module_name, name}) do
       %{type: type} when is_binary(type) ->
@@ -48,6 +52,8 @@ defmodule Elmc.Backend.CCodegen.SpawnTileChain do
     end
   end
 
+  @spec parse_chain(Types.expr(), Types.decl_map(), String.t(), Types.compile_env()) :: Types.ir_expr()
+
   defp parse_chain(expr, decl_map, module_name, env) do
     {bindings, body} = flatten_lets(expr)
     env = Map.merge(env, %{__program_decls__: decl_map, __module__: module_name})
@@ -62,6 +68,8 @@ defmodule Elmc.Backend.CCodegen.SpawnTileChain do
     end
   end
 
+  @spec flatten_lets(Types.expr() | map(), Types.ir_expr() | term()) :: Types.ir_expr()
+
   defp flatten_lets(expr, acc \\ [])
 
   defp flatten_lets(%{op: :let_in, name: name, value_expr: value, in_expr: body}, acc)
@@ -71,6 +79,8 @@ defmodule Elmc.Backend.CCodegen.SpawnTileChain do
 
   defp flatten_lets(expr, acc), do: {Enum.reverse(acc), expr}
 
+  @spec find_first_spawn(Types.ir_expr(), String.t()) :: Types.ir_expr()
+
   defp find_first_spawn(bindings, module_name) do
     Enum.find_value(bindings, :error, fn {name, value} ->
       case parse_spawn_call(value, module_name) do
@@ -79,6 +89,8 @@ defmodule Elmc.Backend.CCodegen.SpawnTileChain do
       end
     end)
   end
+
+  @spec find_tuple_destructure(Types.ir_expr(), String.t()) :: Types.ir_expr()
 
   defp find_tuple_destructure(bindings, tuple_bind) when is_binary(tuple_bind) do
     cells_bind =
@@ -104,6 +116,8 @@ defmodule Elmc.Backend.CCodegen.SpawnTileChain do
     end
   end
 
+  @spec parse_second_spawn(Types.expr(), integer(), Types.ir_expr(), Types.ir_expr(), String.t()) :: Types.ir_expr()
+
   defp parse_second_spawn(body, spawn_fn, seed_bind, cells_bind, module_name) do
     case parse_spawn_call(body, module_name) do
       {:ok, ^spawn_fn, second_seed, second_cells} ->
@@ -118,9 +132,13 @@ defmodule Elmc.Backend.CCodegen.SpawnTileChain do
     end
   end
 
+  @spec var_ref?(map() | String.t() | term(), Types.ir_expr() | term()) :: boolean()
+
   defp var_ref?(%{op: :var, name: name}, bind), do: name == bind
   defp var_ref?(name, bind) when is_binary(name), do: name == bind
   defp var_ref?(_, _), do: false
+
+  @spec parse_spawn_call(map() | term(), String.t() | term()) :: Types.ir_expr()
 
   defp parse_spawn_call(%{op: :qualified_call, target: target, args: args}, _module_name) do
     with [seed, cells] <- args || [],
@@ -136,6 +154,8 @@ defmodule Elmc.Backend.CCodegen.SpawnTileChain do
   end
 
   defp parse_spawn_call(_, _), do: :error
+
+  @spec seed_param_name(map() | term()) :: Types.ir_expr()
 
   defp seed_param_name(%{op: :qualified_call, args: [seed, _]}) do
     case seed do
@@ -154,9 +174,13 @@ defmodule Elmc.Backend.CCodegen.SpawnTileChain do
 
   defp seed_param_name(_), do: :error
 
+  @spec board_expr_from_spawn(map() | term()) :: Types.ir_expr()
+
   defp board_expr_from_spawn(%{op: :qualified_call, args: [_, board]}), do: {:ok, board}
   defp board_expr_from_spawn(%{op: :call, args: [_, board]}), do: {:ok, board}
   defp board_expr_from_spawn(_), do: :error
+
+  @spec emit(String.t(), String.t(), integer(), Types.ir_expr(), Types.expr(), non_neg_integer(), Types.decl_map()) :: Types.ir_expr()
 
   defp emit(module_name, name, _spawn_fn, seed_param, board_expr, count, decl_map) do
     c_prefix = Util.module_fn_name(module_name, name)
@@ -186,6 +210,8 @@ defmodule Elmc.Backend.CCodegen.SpawnTileChain do
     """
   end
 
+  @spec seed_param_emit(Types.decl_map(), String.t(), String.t(), Types.ir_expr()) :: Types.ir_expr()
+
   defp seed_param_emit(decl_map, module_name, fn_name, seed_param) do
     case Map.get(decl_map, {module_name, fn_name}) do
       decl when is_map(decl) ->
@@ -204,6 +230,8 @@ defmodule Elmc.Backend.CCodegen.SpawnTileChain do
         {"ElmcValue *#{seed_param}", "elmc_as_int(#{seed_param})"}
     end
   end
+
+  @spec emit_board_load(Types.expr(), non_neg_integer(), Types.decl_map(), String.t()) :: Types.ir_expr()
 
   defp emit_board_load(board_expr, count, _decl_map, module_name) do
     case board_expr do
@@ -263,6 +291,8 @@ defmodule Elmc.Backend.CCodegen.SpawnTileChain do
       _ -> :error
     end
   end
+
+  @spec board_source(map() | term(), String.t()) :: Types.ir_expr()
 
   defp board_source(%{op: :var, name: _}, _module_name), do: :zeros
 

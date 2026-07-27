@@ -1,5 +1,7 @@
 defmodule Elmc.Backend.Pebble.MsgCodegen.DecodeCases do
   @moduledoc false
+  alias Elmc.Types, as: Types
+
 
   alias Elmc.Backend.Pebble.{Types, Util}
 

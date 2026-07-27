@@ -34,4 +34,34 @@ defmodule Elmc.UnionIntCaseTest do
     assert body =~ "elmc_new_int"
     refute body =~ "goto elmc_plan_block_"
   end
+
+  test "try_emit rejects multi-arg case-on-compare shapes (List.sortWith comparator)" do
+    expr = %{
+      op: :case,
+      subject: %{
+        op: :call,
+        name: "compare",
+        args: [%{op: :var, name: "a"}, %{op: :var, name: "b"}]
+      },
+      branches: [
+        %{
+          pattern: %{kind: :constructor, name: "LT", tag: -1, arg_pattern: nil},
+          expr: %{op: :int_literal, value: 1, union_ctor: "GT"}
+        },
+        %{
+          pattern: %{kind: :constructor, name: "EQ", tag: 0, arg_pattern: nil},
+          expr: %{op: :int_literal, value: 0, union_ctor: "EQ"}
+        },
+        %{
+          pattern: %{kind: :constructor, name: "GT", tag: 1, arg_pattern: nil},
+          expr: %{op: :int_literal, value: -1, union_ctor: "LT"}
+        }
+      ]
+    }
+
+    assert :error =
+             UnionIntCase.try_emit("ListSortWith", "descending", expr, %{
+               {"ListSortWith", "descending"} => %{args: ["a", "b"]}
+             })
+  end
 end

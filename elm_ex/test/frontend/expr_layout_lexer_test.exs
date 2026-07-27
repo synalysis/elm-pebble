@@ -148,4 +148,45 @@ defmodule ElmEx.Frontend.ExprLayoutLexerTest do
     assert {:ok, %{op: :case, branches: [%{expr: %{op: :let_bindings, bindings: [%{kind: :name, name: "y"} | _]}}]}} =
              GeneratedExpressionParser.parse_with_layout_lexer(source)
   end
+
+  test "parse_with_layout_lexer parses leading plus before parenthesized case" do
+    source = """
+    phaseToInt x * 1000
+    + (case w of
+        Nothing -> 0
+        Just n -> n)
+    """
+
+    assert {:ok, %{op: :call}} = GeneratedExpressionParser.parse_with_layout_lexer(source)
+  end
+
+  test "parse_with_layout_lexer parses if/case/else without extra dedent" do
+    source = """
+    if x then
+        case args of
+            [] ->
+                Nothing
+            _ ->
+                Nothing
+    else
+        Nothing
+    """
+
+    assert {:ok, %{op: :if}} = GeneratedExpressionParser.parse_with_layout_lexer(source)
+  end
+
+  test "inline-first let tolerates deeper indented in keyword" do
+    source = """
+    let isolate = testState.isolate
+        in
+        isolate
+    """
+
+    assert {:ok, tokens, _} = ExprLayoutLexer.tokenize(source)
+    kinds = Enum.map(tokens, &token_kind/1)
+    refute Enum.any?(Enum.chunk_every(kinds, 2, 1, :discard), &(&1 == [:indent, :in_kw]))
+
+    assert {:ok, %{op: :let_bindings}} =
+             GeneratedExpressionParser.parse_with_layout_lexer(source)
+  end
 end

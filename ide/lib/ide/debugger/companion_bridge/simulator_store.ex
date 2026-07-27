@@ -115,6 +115,8 @@ defmodule Ide.Debugger.CompanionBridge.SimulatorStore do
 
   def command_json_value(value), do: value
 
+  @spec put_nested(term(), String.t(), String.t(), term() | integer()) :: term()
+
   defp put_nested(settings, key, child_key, nil)
        when is_map(settings) and is_binary(key) and is_binary(child_key) do
     values =

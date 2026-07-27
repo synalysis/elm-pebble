@@ -1,5 +1,7 @@
 defmodule Elmc.Backend.Wasm.Lower.FusionFunction do
   @moduledoc false
+  alias Elmc.Types, as: Types
+
 
   alias Elmc.Backend.Plan.Types.FunctionPlan
   alias Elmc.Backend.Wasm.Lower.Frame
@@ -18,6 +20,8 @@ defmodule Elmc.Backend.Wasm.Lower.FusionFunction do
   def lower(%FunctionPlan{fusion_kind: :list_indexed_replace} = plan) do
     lower_list_indexed_replace(plan)
   end
+
+  @spec lower_list_indexed_replace(map()) :: Types.ir_expr()
 
   defp lower_list_indexed_replace(%FunctionPlan{} = plan) do
     slots = Slots.build(plan)
@@ -89,6 +93,8 @@ defmodule Elmc.Backend.Wasm.Lower.FusionFunction do
       import_arities: %{import_name => 4}
     }
   end
+
+  @spec param_names(map()) :: Types.ir_expr()
 
   defp param_names(%FunctionPlan{params: params}) do
     Enum.map(params || [], fn

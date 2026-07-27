@@ -5,6 +5,8 @@ defmodule Elmc.Backend.Plan.Fusion do
   Plan-native providers implement `try_plan/4`. C-emit fusion providers are registered
   in `CEmit` and wrap the shared IR matchers under `Elmc.Backend.CCodegen.*`.
   """
+  alias Elmc.Backend.Plan.Types, as: Types
+
 
   alias Elmc.Backend.Plan.Fusion.{CEmit, ListIndexedReplace, ListIntSearch}
   alias Elmc.Backend.Plan.Types

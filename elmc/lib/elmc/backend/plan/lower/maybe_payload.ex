@@ -1,5 +1,7 @@
 defmodule Elmc.Backend.Plan.Lower.MaybePayload do
   @moduledoc false
+  alias Elmc.Backend.Plan.Types, as: Types
+
 
   alias Elmc.Backend.Plan.Context
   alias Elmc.Backend.Plan.Types

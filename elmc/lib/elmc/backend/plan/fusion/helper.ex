@@ -1,5 +1,7 @@
 defmodule Elmc.Backend.Plan.Fusion.Helper do
   @moduledoc false
+  alias Elmc.Backend.Plan.Types, as: Types
+
 
   alias Elmc.Backend.Plan.Types
   alias Elmc.Backend.Plan.Types.FunctionPlan

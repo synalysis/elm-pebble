@@ -1,22 +1,36 @@
 defmodule Elmx.Runtime.Pebble.Ui.Helpers do
   @moduledoc false
+  alias Elmx.Types, as: Types
+
 
   alias Elmx.Runtime.Pebble.Colors
+
+  @spec draw_op(map() | Types.elm_value()) :: Types.elm_value()
 
   def draw_op(op) when is_map(op), do: op
   def draw_op(other), do: %{type: "drawOp", label: inspect(other)}
 
+  @spec normalize_child(map() | Types.elm_value()) :: map()
+
   def normalize_child(%{type: _} = node), do: node
   def normalize_child(other), do: %{type: "node", label: inspect(other)}
 
+  @spec expr_node(integer()) :: Types.elm_value()
+
   def expr_node(value), do: %{type: "expr", label: inspect(value)}
 
+  @spec color_value(Types.elm_value()) :: Types.elm_value()
+
   def color_value(color), do: Colors.to_int(color)
+
+  @spec point_xy(map() | term()) :: Types.elm_value()
 
   def point_xy(%{"x" => x, "y" => y}), do: {int_value(x), int_value(y)}
   def point_xy(%{x: x, y: y}), do: {int_value(x), int_value(y)}
   def point_xy({x, y}), do: {int_value(x), int_value(y)}
   def point_xy(_), do: {0, 0}
+
+  @spec label_display_text(String.t()) :: Types.elm_value()
 
   def label_display_text(label) do
     case label do
@@ -27,9 +41,13 @@ defmodule Elmx.Runtime.Pebble.Ui.Helpers do
     end
   end
 
+  @spec int_value(integer() | float() | term()) :: Types.elm_value()
+
   def int_value(value) when is_integer(value), do: value
   def int_value(value) when is_float(value), do: trunc(value)
   def int_value(_), do: 0
+
+  @spec bounds_xywh(map() | term()) :: Types.elm_value()
 
   def bounds_xywh(%{"x" => x, "y" => y, "w" => w, "h" => h}),
     do: {int_value(x), int_value(y), int_value(w), int_value(h)}
@@ -44,6 +62,8 @@ defmodule Elmx.Runtime.Pebble.Ui.Helpers do
     do: {int_value(x), int_value(y), int_value(w), int_value(h)}
 
   def bounds_xywh(_), do: {0, 0, 0, 0}
+
+  @spec context_style(list()) :: Types.elm_value()
 
   def context_style(settings) when is_list(settings) do
     Enum.reduce(settings, %{}, fn
@@ -63,6 +83,8 @@ defmodule Elmx.Runtime.Pebble.Ui.Helpers do
         Map.put(acc, "setting", other)
     end)
   end
+
+  @spec context_style_key(Types.elm_value() | String.t()) :: Types.elm_value()
 
   def context_style_key("strokeWidth"), do: "stroke_color"
   def context_style_key("strokeColor"), do: "stroke_color"

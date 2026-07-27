@@ -4,6 +4,8 @@ defmodule Elmc.Backend.Plan.Lower.Platform.Web do
 
   Phase 2 scaffold — emits plan platform ops consumed by `Wasm.Lower.Instr`.
   """
+  alias Elmc.Backend.Plan.Types, as: Types
+
 
   alias Elmc.Backend.Plan.{Builder, Context, Types}
   alias Elmc.Backend.Plan.Lower.{Expr, If, Lambda}
@@ -237,6 +239,8 @@ defmodule Elmc.Backend.Plan.Lower.Platform.Web do
     end
   end
 
+  @spec rewrite_html_map_two_arg_decl(Types.decl()) :: Types.decl()
+
   defp rewrite_html_map_two_arg_decl(decl) do
     param_names =
       case Map.get(decl, :args, []) do
@@ -251,6 +255,8 @@ defmodule Elmc.Backend.Plan.Lower.Platform.Web do
     |> Map.put(:expr, html_map_cmd_expr(%{op: :var, name: fn_name}, node_name))
   end
 
+  @spec html_map_cmd_expr(Types.expr(), String.t()) :: Types.ir_expr()
+
   defp html_map_cmd_expr(mapper_expr, html_name) when is_binary(html_name) do
     %{
       op: :html_cmd,
@@ -258,6 +264,8 @@ defmodule Elmc.Backend.Plan.Lower.Platform.Web do
       params: [mapper_expr, %{op: :var, name: html_name}]
     }
   end
+
+  @spec html_map_alias_decl?(map() | term()) :: boolean()
 
   defp html_map_alias_decl?(%{expr: %{op: :qualified_call, target: target, args: []}})
        when target in ["VirtualDom.map", "Elm.Kernel.VirtualDom.map"],
@@ -330,6 +338,8 @@ defmodule Elmc.Backend.Plan.Lower.Platform.Web do
     end
   end
 
+  @spec html_map_partial(map() | term()) :: Types.ir_expr()
+
   defp html_map_partial(%{
          op: :qualified_call,
          target: target,
@@ -340,6 +350,8 @@ defmodule Elmc.Backend.Plan.Lower.Platform.Web do
   end
 
   defp html_map_partial(_), do: :error
+
+  @spec html_tag_literal_from_node_partial(map() | term()) :: Types.ir_expr()
 
   defp html_tag_literal_from_node_partial(%{
          op: :qualified_call,
@@ -576,10 +588,14 @@ defmodule Elmc.Backend.Plan.Lower.Platform.Web do
 
   def svg_element_tag?(_), do: false
 
+  @spec svg_element_tag_name(String.t()) :: Types.ir_expr()
+
   defp svg_element_tag_name(name) when is_binary(name) do
     name
     |> String.trim_trailing("_")
   end
+
+  @spec virtual_dom_attribute_call?(String.t() | term(), String.t() | term(), Types.ir_expr() | term()) :: boolean()
 
   defp virtual_dom_attribute_call?(module, name, ctx)
        when is_binary(module) and is_binary(name) and is_map(ctx) do
@@ -594,6 +610,8 @@ defmodule Elmc.Backend.Plan.Lower.Platform.Web do
   end
 
   defp virtual_dom_attribute_call?(_, _, _), do: false
+
+  @spec virtual_dom_attribute_key(String.t()) :: Types.ir_expr()
 
   defp virtual_dom_attribute_key(name) when is_binary(name) do
     case Process.get(:elmc_svg_attribute_dom_names, %{}) do
@@ -614,7 +632,11 @@ defmodule Elmc.Backend.Plan.Lower.Platform.Web do
 
   def html_element_param_names(_module, _name), do: nil
 
+  @spec html_element_tag(String.t()) :: Types.ir_expr()
+
   defp html_element_tag(name) when is_binary(name), do: String.trim_trailing(name, "_")
+
+  @spec compile_html_attr(list(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
 
   defp compile_html_attr(params, ctx, b) when is_list(params) do
     compile_html_cmd(
@@ -628,6 +650,8 @@ defmodule Elmc.Backend.Plan.Lower.Platform.Web do
     )
   end
 
+  @spec compile_html_style(list(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+
   defp compile_html_style(params, ctx, b) when is_list(params) do
     compile_html_cmd(
       %{
@@ -639,6 +663,8 @@ defmodule Elmc.Backend.Plan.Lower.Platform.Web do
       b
     )
   end
+
+  @spec compile_html_property(list(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
 
   defp compile_html_property(params, ctx, b) when is_list(params) do
     compile_html_cmd(
@@ -652,6 +678,8 @@ defmodule Elmc.Backend.Plan.Lower.Platform.Web do
     )
   end
 
+  @spec compile_html_event(String.t(), String.t(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+
   defp compile_html_event(event_name, msg, ctx, b) when is_binary(event_name) do
     compile_html_cmd(
       %{
@@ -663,6 +691,8 @@ defmodule Elmc.Backend.Plan.Lower.Platform.Web do
       b
     )
   end
+
+  @spec compile_html_event_expr(Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
 
   defp compile_html_event_expr(event, decoder, handler, ctx, b) do
     compile_html_cmd(
@@ -686,6 +716,8 @@ defmodule Elmc.Backend.Plan.Lower.Platform.Web do
       _ -> :unsupported
     end
   end
+
+  @spec compile_json_kernel_call(String.t(), list(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
 
   defp compile_json_kernel_call(name, params, ctx, b) when is_binary(name) and is_list(params) do
     with kind when is_integer(kind) <- Map.get(@json_kernel_kinds, name),
@@ -721,6 +753,8 @@ defmodule Elmc.Backend.Plan.Lower.Platform.Web do
     end
   end
 
+  @spec compile_parser_kernel_call(String.t(), list(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+
   defp compile_parser_kernel_call(name, params, ctx, b) when is_binary(name) and is_list(params) do
     with kind when is_integer(kind) <- Map.get(@parser_kernel_kinds, name) do
       with {:ok, param_regs, b1} <- compile_params_scratch(params, ctx, b) do
@@ -730,6 +764,8 @@ defmodule Elmc.Backend.Plan.Lower.Platform.Web do
       _ -> :unsupported
     end
   end
+
+  @spec compile_bytes_kernel_call(String.t(), list(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
 
   defp compile_bytes_kernel_call(name, params, ctx, b) when is_binary(name) and is_list(params) do
     with kind when is_integer(kind) <- Map.get(@bytes_kernel_kinds, name) do
@@ -744,6 +780,8 @@ defmodule Elmc.Backend.Plan.Lower.Platform.Web do
       _ -> :unsupported
     end
   end
+
+  @spec compile_bytes_read_step(integer(), list(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
 
   defp compile_bytes_read_step(kind, params, ctx, b) when is_integer(kind) and is_list(params) do
     with {:ok, capture_regs, b1} <- compile_bytes_capture_params(params, ctx, b),
@@ -774,6 +812,8 @@ defmodule Elmc.Backend.Plan.Lower.Platform.Web do
     end
   end
 
+  @spec bind_bytes_read_capture_locals(Types.ir_expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+
   defp bind_bytes_read_capture_locals(capture_regs, ctx, b) do
     Enum.reduce(Enum.with_index(capture_regs), {:ok, ctx, b}, fn {reg, idx}, {:ok, ctx_acc, b_acc} ->
       name = bytes_read_capture_name(idx)
@@ -783,7 +823,11 @@ defmodule Elmc.Backend.Plan.Lower.Platform.Web do
     end)
   end
 
+  @spec bytes_read_capture_name(integer()) :: Types.ir_expr()
+
   defp bytes_read_capture_name(idx) when is_integer(idx), do: "__bytes_read_arg_#{idx}__"
+
+  @spec compile_bytes_capture_params(list(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
 
   defp compile_bytes_capture_params(params, ctx, b) when is_list(params) do
     Enum.reduce_while(params, {:ok, [], b}, fn param, {:ok, acc, b_acc} ->
@@ -793,6 +837,8 @@ defmodule Elmc.Backend.Plan.Lower.Platform.Web do
       end
     end)
   end
+
+  @spec compile_bytes_capture_param(map() | Types.ir_expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
 
   defp compile_bytes_capture_param(%{op: :compare} = cmp, ctx, b) do
     If.compile(
@@ -815,6 +861,8 @@ defmodule Elmc.Backend.Plan.Lower.Platform.Web do
       _ -> :unsupported
     end
   end
+
+  @spec compile_platform_op(atom(), atom(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
 
   defp compile_platform_op(op, kind, param_regs, ctx, b) do
     wrap_catch? = Builder.wrap_fallible_instr_catch?(b, ctx, true)
@@ -852,6 +900,8 @@ defmodule Elmc.Backend.Plan.Lower.Platform.Web do
     end
   end
 
+  @spec borrow_only_platform_effects(Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+
   defp borrow_only_platform_effects(dest, param_regs) do
     if is_integer(dest) do
       Types.fallible_effects(dest, param_regs, [])
@@ -859,6 +909,8 @@ defmodule Elmc.Backend.Plan.Lower.Platform.Web do
       %{produces: nil, consumes: [], borrows: param_regs, fallible: true}
     end
   end
+
+  @spec compile_params_scratch(list(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
 
   defp compile_params_scratch(params, ctx, b) when is_list(params) do
     scratch_ctx = %{ctx | dest_stack: [:scratch], function_tail: false}
@@ -870,6 +922,8 @@ defmodule Elmc.Backend.Plan.Lower.Platform.Web do
       end
     end)
   end
+
+  @spec normalize_kind(map() | integer() | atom()) :: map()
 
   defp normalize_kind(%{op: :int_literal, value: value}) when is_integer(value), do: value
   defp normalize_kind(%{op: :c_int_expr, value: value}), do: %{c_expr: value}

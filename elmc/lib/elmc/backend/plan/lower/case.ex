@@ -1,8 +1,11 @@
 defmodule Elmc.Backend.Plan.Lower.Case do
   @moduledoc false
+  alias Elmc.Backend.Plan.Types, as: Types
+
 
   alias Elmc.Backend.Plan.Builder
   alias Elmc.Backend.Plan.Context
+  alias Elmc.Backend.Plan.{IntPhiNative, TruthyNative}
   alias Elmc.Backend.Plan.Lower.Case.{CharSwitch, GuardedSwitch, IntSwitch, ListSwitch, TagSwitch}
   alias Elmc.Backend.Plan.Lower.{Expr, PatternBind, PlatformStatic}
   alias Elmc.Backend.Plan.Types
@@ -50,9 +53,13 @@ defmodule Elmc.Backend.Plan.Lower.Case do
 
   def compile(_, _, _), do: :unsupported
 
+  @spec subject_expr(String.t() | map() | term()) :: Types.ir_expr()
+
   defp subject_expr(name) when is_binary(name), do: %{op: :var, name: name}
   defp subject_expr(expr) when is_map(expr), do: expr
   defp subject_expr(_), do: %{op: :int_literal, value: 0}
+
+  @spec compile_dispatch(Types.expr(), Types.expr(), list(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
 
   defp compile_dispatch(_expr, subject, branches, ctx, b) do
     branches = normalize_case_branches(branches)
@@ -78,6 +85,8 @@ defmodule Elmc.Backend.Plan.Lower.Case do
       true -> compile_linear_branches(branches, subject, ctx, b)
     end
   end
+
+  @spec compile_nested_maybe_ctor_case(Types.expr(), list(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
 
   defp compile_nested_maybe_ctor_case(subject, branches, ctx, b) do
     {fallback_br, just_nested} = split_nested_maybe_branches(branches)
@@ -114,12 +123,15 @@ defmodule Elmc.Backend.Plan.Lower.Case do
          switch_merge_id = tag_switch_merge_block_id(b_else),
          b_else_done = Builder.patch_terminator(b_else, switch_merge_id, {:br, merge_id}),
          b_merge = Builder.begin_block(b_else_done, merge_id),
-         {:ok, merge, b_out} <- emit_merge(cond_reg, then_reg, else_reg, b_merge) do
+         {:ok, merge, b_out} <-
+           emit_merge(cond_reg, then_reg, else_reg, then_id, else_id, b_merge) do
       {:ok, merge, %{b_out | pending_merge_block: saved_pending}}
     else
       _ -> :unsupported
     end
   end
+
+  @spec compile_maybe_nothing_case(Types.expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
 
   defp compile_maybe_nothing_case(subject, arm_a, arm_b, ctx, b) do
     {nothing_br, other_br} = normalize_maybe_nothing_arms(arm_a, arm_b)
@@ -147,12 +159,15 @@ defmodule Elmc.Backend.Plan.Lower.Case do
            ),
          b_else_done = Builder.patch_terminator(b_else, else_exit, {:br, merge_id}),
          b_merge = Builder.begin_block(b_else_done, merge_id),
-         {:ok, merge, b_out} <- emit_merge(cond_reg, then_reg, else_reg, b_merge) do
+         {:ok, merge, b_out} <-
+           emit_merge(cond_reg, then_reg, else_reg, then_id, else_id, b_merge) do
       {:ok, merge, %{b_out | pending_merge_block: saved_pending}}
     else
       _ -> :unsupported
     end
   end
+
+  @spec compile_maybe_branch(Types.expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
 
   defp compile_maybe_branch(expr, ctx, b, block_id) do
     b_arm = Builder.begin_cfg_arm_block(b, block_id)
@@ -168,6 +183,8 @@ defmodule Elmc.Backend.Plan.Lower.Case do
     end
   end
 
+  @spec compile_maybe_else_branch(Types.pattern(), Types.expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+
   defp compile_maybe_else_branch(pattern, expr, subj_reg, ctx, b, block_id) do
     b_arm = Builder.begin_cfg_arm_block(b, block_id)
     arm_ctx = Context.for_branch_arm(ctx)
@@ -181,20 +198,51 @@ defmodule Elmc.Backend.Plan.Lower.Case do
     end
   end
 
+  @spec skip_reserved(Types.ir_expr(), Types.ir_expr() | term()) :: Types.ir_expr()
+
   defp skip_reserved(id, nil), do: id
   defp skip_reserved(id, reserved) when id == reserved, do: id + 1
   defp skip_reserved(id, _), do: id
 
-  defp emit_merge(cond_reg, then_reg, else_reg, b) do
+  @spec emit_merge(
+          Types.reg(),
+          Types.reg(),
+          Types.reg(),
+          non_neg_integer(),
+          non_neg_integer(),
+          Builder.t()
+        ) :: {:ok, Types.reg(), Builder.t()}
+  defp emit_merge(cond_reg, then_reg, else_reg, then_arm_block, else_arm_block, b) do
     {merge, b1} = Builder.fresh_reg(b)
+    instrs = builder_instrs(b1)
 
-    phi_consumes =
-      Builder.phi_branch_consumes(b, [cond_reg])
+    {truthy_native?, then_shape, else_shape} =
+      TruthyNative.phi_shapes?(instrs, then_reg, else_reg)
+
+    {native_int_phi?, int_then_shape, int_else_shape} =
+      if truthy_native? do
+        {false, :unknown, :unknown}
+      else
+        IntPhiNative.native_int_phi_shapes?(instrs, then_reg, else_reg)
+      end
+
+    phi_consumes = Builder.phi_branch_consumes(b1, [cond_reg])
+
+    args =
+      %{then: then_reg, else: else_reg, cond: cond_reg}
+      |> maybe_put_truthy_native(truthy_native?, then_shape, else_shape, then_arm_block, else_arm_block)
+      |> maybe_put_native_int_phi(
+        native_int_phi?,
+        int_then_shape,
+        int_else_shape,
+        then_arm_block,
+        else_arm_block
+      )
 
     {_, b2} =
       Builder.emit(b1, :phi, %{
         dest: merge,
-        args: %{then: then_reg, else: else_reg, cond: cond_reg},
+        args: args,
         effects: %{
           produces: {:owned, merge},
           consumes: phi_consumes,
@@ -206,9 +254,44 @@ defmodule Elmc.Backend.Plan.Lower.Case do
     {:ok, merge, b2}
   end
 
+  defp maybe_put_truthy_native(args, false, _, _, _, _), do: args
+
+  defp maybe_put_truthy_native(args, true, then_shape, else_shape, then_arm_block, else_arm_block) do
+    Map.merge(args, %{
+      truthy_native: true,
+      then_shape: then_shape,
+      else_shape: else_shape,
+      then_arm_block: then_arm_block,
+      else_arm_block: else_arm_block
+    })
+  end
+
+  defp maybe_put_native_int_phi(args, false, _, _, _, _), do: args
+
+  defp maybe_put_native_int_phi(args, true, then_shape, else_shape, then_arm_block, else_arm_block) do
+    Map.merge(args, %{
+      native_int_phi: true,
+      then_shape: then_shape,
+      else_shape: else_shape,
+      then_arm_block: then_arm_block,
+      else_arm_block: else_arm_block
+    })
+  end
+
+  defp builder_instrs(%{blocks: blocks, current_block: %{instrs: cur}}) do
+    Enum.flat_map(blocks, & &1.instrs) ++ cur
+  end
+
+  defp builder_instrs(%{blocks: blocks}), do: Enum.flat_map(blocks, & &1.instrs)
+  defp builder_instrs(_), do: []
+
+  @spec compile_linear_branches(list(), Types.expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+
   defp compile_linear_branches(branches, subject, ctx, b) do
     cond do
-      tagged_constructor_branches?(branches) ->
+      # Respect TagSwitch.branches?/1 exclusions (True/False, Maybe, lists).
+      # A raw tag-count check would re-enter TagSwitch.compile/4 for bools.
+      TagSwitch.branches?(branches) ->
         TagSwitch.compile(subject, branches, ctx, b)
 
       record_pattern_branches?(branches) ->
@@ -222,12 +305,16 @@ defmodule Elmc.Backend.Plan.Lower.Case do
     end
   end
 
+  @spec record_pattern_branches?(list()) :: boolean()
+
   defp record_pattern_branches?(branches) when is_list(branches) do
     branches != [] and
       Enum.all?(branches, fn branch ->
         match?(%{pattern: %{kind: :record, fields: fields}} when is_list(fields), branch)
       end)
   end
+
+  @spec compile_record_pattern_case(Types.expr(), list(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
 
   defp compile_record_pattern_case(subject, branches, ctx, b) do
     subject_ctx = Context.for_branch_arm(ctx)
@@ -239,6 +326,8 @@ defmodule Elmc.Backend.Plan.Lower.Case do
       _ -> :unsupported
     end
   end
+
+  @spec compile_record_pattern_branches(term(), Types.ir_expr() | term(), Types.ir_expr() | term(), Types.ir_expr() | term()) :: Types.ir_expr()
 
   defp compile_record_pattern_branches([%{pattern: pattern, expr: expr}], subj_reg, ctx, b) do
     arm_ctx = Context.for_branch_arm(ctx)
@@ -253,6 +342,8 @@ defmodule Elmc.Backend.Plan.Lower.Case do
 
   defp compile_record_pattern_branches(_, _, _, _), do: :unsupported
 
+  @spec normalize_case_branches(list()) :: list()
+
   defp normalize_case_branches(branches) when is_list(branches) do
     Enum.map(branches, fn branch ->
       case Map.get(branch, :pattern) do
@@ -265,14 +356,7 @@ defmodule Elmc.Backend.Plan.Lower.Case do
     end)
   end
 
-  defp tagged_constructor_branches?(branches) when is_list(branches) do
-    Enum.count(branches, fn branch ->
-      case Map.get(branch, :pattern) do
-        %{kind: :constructor, tag: tag} when is_integer(tag) -> true
-        _ -> false
-      end
-    end) >= 2
-  end
+  @spec emit_test_maybe_nothing(Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
 
   defp emit_test_maybe_nothing(subj_reg, b) do
     {reg, b1} = Builder.fresh_reg(b)
@@ -292,6 +376,8 @@ defmodule Elmc.Backend.Plan.Lower.Case do
     {:ok, reg, b2}
   end
 
+  @spec nothing_arm?(map() | term()) :: boolean()
+
   defp nothing_arm?(%{pattern: %{kind: :constructor, name: name}}) when is_binary(name) do
     short_ctor_name(name) == "Nothing"
   end
@@ -306,6 +392,8 @@ defmodule Elmc.Backend.Plan.Lower.Case do
 
   defp nothing_arm?(_), do: false
 
+  @spec normalize_maybe_nothing_arms(Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+
   defp normalize_maybe_nothing_arms(arm_a, arm_b) do
     cond do
       nothing_arm?(arm_a) -> {arm_a, arm_b}
@@ -313,6 +401,8 @@ defmodule Elmc.Backend.Plan.Lower.Case do
       true -> {arm_a, arm_b}
     end
   end
+
+  @spec catch_all_arm?(map() | term()) :: boolean()
 
   defp catch_all_arm?(%{pattern: %{kind: :var}}), do: true
   defp catch_all_arm?(%{pattern: %{kind: :wildcard}}), do: true
@@ -322,9 +412,13 @@ defmodule Elmc.Backend.Plan.Lower.Case do
 
   defp catch_all_arm?(_), do: false
 
+  @spec short_ctor_name(String.t()) :: Types.ir_expr()
+
   defp short_ctor_name(name) do
     name |> String.split(".") |> List.last()
   end
+
+  @spec bind_pattern_pair(Types.ir_expr(), Types.ir_expr(), map() | term(), Types.ir_expr() | term()) :: Types.ir_expr()
 
   defp bind_pattern_pair(ctx, b, %{kind: :tuple, elements: elements}, subj_reg)
        when is_list(elements) do
@@ -358,6 +452,8 @@ defmodule Elmc.Backend.Plan.Lower.Case do
 
   defp bind_pattern_pair(ctx, b, %{kind: :wildcard}, _subj_reg), do: {ctx, b}
   defp bind_pattern_pair(ctx, b, _, _), do: {ctx, b}
+
+  @spec bind_maybe_payload(Types.ir_expr(), Types.pattern(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
 
   defp bind_maybe_payload(ctx, pattern, subj_reg, b) do
     cond do
@@ -393,6 +489,8 @@ defmodule Elmc.Backend.Plan.Lower.Case do
   end
 
   # `(Just _) as found` stores the alias on `bind` via build_pattern_alias.
+  @spec bind_pattern_alias(Types.ir_expr(), Types.ir_expr(), Types.pattern(), Types.ir_expr()) :: Types.ir_expr()
+
   defp bind_pattern_alias(ctx, b, pattern, subject_reg) do
     case Map.get(pattern, :bind) do
       name when is_binary(name) ->
@@ -406,6 +504,8 @@ defmodule Elmc.Backend.Plan.Lower.Case do
   # After `maybe_just_payload`, the subject is the Just payload — do not run
   # constructor payload extraction again on a `Just …` pattern (that would call
   # `maybe_just_payload` on a bare record and bind NULL fields).
+  @spec bind_just_payload_pattern(Types.ir_expr(), Types.ir_expr(), map() | binary(), Types.ir_expr()) :: Types.ir_expr()
+
   defp bind_just_payload_pattern(ctx, b, %{kind: :constructor, arg_pattern: inner}, payload_reg)
        when not is_nil(inner) do
     bind_pattern_pair(ctx, b, inner, payload_reg)
@@ -423,11 +523,17 @@ defmodule Elmc.Backend.Plan.Lower.Case do
     bind_pattern_pair(ctx, b, %{kind: :wildcard}, payload_reg)
   end
 
+  @spec maybe_just_pair?(Types.ir_expr(), Types.ir_expr()) :: boolean()
+
   defp maybe_just_pair?(br1, br2) do
     (nothing_arm?(br1) and just_arm?(br2)) or (nothing_arm?(br2) and just_arm?(br1))
   end
 
+  @spec just_arm?(map()) :: boolean()
+
   defp just_arm?(%{pattern: pattern}), do: just_arm_pattern?(pattern)
+
+  @spec just_arm_pattern?(map() | term()) :: boolean()
 
   defp just_arm_pattern?(%{kind: :constructor, name: name}) when is_binary(name),
     do: short_ctor_name(name) == "Just"
@@ -440,6 +546,8 @@ defmodule Elmc.Backend.Plan.Lower.Case do
 
   defp just_arm_pattern?(_), do: false
 
+  @spec unwrap_just_pattern?(map() | term()) :: boolean()
+
   defp unwrap_just_pattern?(%{kind: :var}), do: true
   defp unwrap_just_pattern?(%{kind: :wildcard}), do: true
 
@@ -448,9 +556,13 @@ defmodule Elmc.Backend.Plan.Lower.Case do
 
   defp unwrap_just_pattern?(_), do: false
 
+  @spec unused_just_payload?(map() | term()) :: boolean()
+
   defp unused_just_payload?(%{kind: :constructor, arg_pattern: %{kind: :wildcard}}), do: true
   defp unused_just_payload?(%{kind: :constructor, arg_pattern: nil, bind: nil}), do: true
   defp unused_just_payload?(_), do: false
+
+  @spec nested_maybe_ctor_branches?(list()) :: boolean()
 
   defp nested_maybe_ctor_branches?(branches) when is_list(branches) do
     fallback_count = Enum.count(branches, &maybe_ctor_fallback_arm?/1)
@@ -459,9 +571,15 @@ defmodule Elmc.Backend.Plan.Lower.Case do
     fallback_count == 1 and length(just_nested) == length(branches) - 1 and length(branches) >= 2
   end
 
+  @spec maybe_ctor_fallback_arm?(Types.ir_expr()) :: boolean()
+
   defp maybe_ctor_fallback_arm?(branch), do: nothing_arm?(branch) or catch_all_arm?(branch)
 
+  @spec just_nested_ctor_arm?(map()) :: boolean()
+
   defp just_nested_ctor_arm?(%{pattern: pattern}), do: just_nested_ctor_pattern?(pattern)
+
+  @spec just_nested_ctor_pattern?(map() | term()) :: boolean()
 
   defp just_nested_ctor_pattern?(%{kind: :constructor} = outer) do
     just_arm_pattern?(outer) and match?(%{kind: :constructor}, Map.get(outer, :arg_pattern))
@@ -469,15 +587,21 @@ defmodule Elmc.Backend.Plan.Lower.Case do
 
   defp just_nested_ctor_pattern?(_), do: false
 
+  @spec split_nested_maybe_branches(list()) :: Types.ir_expr()
+
   defp split_nested_maybe_branches(branches) do
     fallback = Enum.find(branches, &maybe_ctor_fallback_arm?/1)
     nested = Enum.reject(branches, &maybe_ctor_fallback_arm?/1)
     {fallback, nested}
   end
 
+  @spec unwrap_just_nested_branch(map()) :: Types.ir_expr()
+
   defp unwrap_just_nested_branch(%{pattern: %{arg_pattern: inner}, expr: expr}) do
     %{pattern: inner, expr: expr}
   end
+
+  @spec assign_ctor_tags_when_missing(list()) :: Types.ir_expr()
 
   defp assign_ctor_tags_when_missing(branches) when is_list(branches) do
     if Enum.all?(branches, &missing_ctor_tag?/1) do
@@ -492,14 +616,20 @@ defmodule Elmc.Backend.Plan.Lower.Case do
     end
   end
 
+  @spec missing_ctor_tag?(map() | term()) :: boolean()
+
   defp missing_ctor_tag?(%{pattern: %{kind: :constructor, tag: nil}}), do: true
   defp missing_ctor_tag?(_), do: false
+
+  @spec maybe_append_wildcard_default(list(), map() | Types.ir_expr()) :: Types.ir_expr() | nil
 
   defp maybe_append_wildcard_default(branches, %{pattern: %{kind: :wildcard}} = fallback_br) do
     branches ++ [%{pattern: %{kind: :wildcard}, expr: Map.get(fallback_br, :expr)}]
   end
 
   defp maybe_append_wildcard_default(branches, _fallback_br), do: branches
+
+  @spec tag_switch_merge_block_id(Types.ir_expr()) :: Types.ir_expr()
 
   defp tag_switch_merge_block_id(b) do
     Map.get(b, :tag_switch_merge_block) ||

@@ -68,4 +68,13 @@ defmodule Elmx.Runtime.Core.Collections do
   defdelegate array_filter(fun, array), to: Array
   defdelegate array_append(left, right), to: Array
   defdelegate array_slice(start, length, array), to: Array
+
+  defdelegate js_array_singleton(value), to: Array
+  defdelegate js_array_initialize(size, offset, fun), to: Array
+  defdelegate js_array_initialize_from_list(max, list), to: Array
+  defdelegate js_array_unsafe_get(index, array), to: Array
+  defdelegate js_array_unsafe_set(index, value, array), to: Array
+  defdelegate js_array_indexed_map(fun, offset, array), to: Array
+  defdelegate js_array_slice(from, to, array), to: Array
+  defdelegate js_array_append_n(n, dest, source), to: Array
 end

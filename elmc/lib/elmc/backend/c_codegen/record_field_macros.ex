@@ -1,5 +1,7 @@
 defmodule Elmc.Backend.CCodegen.RecordFieldMacros do
   @moduledoc false
+  alias Elmc.Backend.CCodegen.Types, as: Types
+
 
   alias Elmc.Backend.CCodegen.Expr
   alias Elmc.Backend.CCodegen.Host

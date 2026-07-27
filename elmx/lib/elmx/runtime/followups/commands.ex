@@ -1,5 +1,7 @@
 defmodule Elmx.Runtime.Followups.Commands do
   @moduledoc false
+  alias Elmx.Types, as: Types
+
 
   alias Elmx.Types
 

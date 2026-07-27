@@ -1,11 +1,17 @@
 defmodule Elmx.Runtime.ViewOutput.Geometry do
   @moduledoc false
+  alias Elmx.Types, as: Types
+
 
   alias Elmx.Types
+
+  @spec path_output_kind(String.t()) :: Types.elm_value()
 
   def path_output_kind("pathFilled"), do: "path_filled"
   def path_output_kind("pathOutline"), do: "path_outline"
   def path_output_kind("pathOutlineOpen"), do: "path_outline_open"
+
+  @spec path_fields(map() | term()) :: Types.elm_value()
 
   def path_fields(path) when is_map(path) do
     points =
@@ -26,11 +32,15 @@ defmodule Elmx.Runtime.ViewOutput.Geometry do
 
   def path_fields(_), do: %{"points" => [], "offset_x" => 0, "offset_y" => 0, "rotation" => 0}
 
+  @spec point_xy_map(map() | term()) :: Types.elm_value()
+
   def point_xy_map(%{"x" => x, "y" => y}) when is_integer(x) and is_integer(y), do: {x, y}
   def point_xy_map(%{x: x, y: y}) when is_integer(x) and is_integer(y), do: {x, y}
   def point_xy_map({x, y}) when is_integer(x) and is_integer(y), do: {x, y}
   def point_xy_map([x, y]) when is_integer(x) and is_integer(y), do: {x, y}
   def point_xy_map(_), do: {0, 0}
+
+  @spec normalize_path_points_list(list() | term()) :: list()
 
   def normalize_path_points_list(points) when is_list(points) do
     points
@@ -40,15 +50,21 @@ defmodule Elmx.Runtime.ViewOutput.Geometry do
 
   def normalize_path_points_list(_), do: []
 
+  @spec normalize_path_point(term() | map()) :: term()
+
   def normalize_path_point([x, y]) when is_integer(x) and is_integer(y), do: [x, y]
   def normalize_path_point({x, y}) when is_integer(x) and is_integer(y), do: [x, y]
   def normalize_path_point(%{"x" => x, "y" => y}) when is_integer(x) and is_integer(y), do: [x, y]
   def normalize_path_point(%{x: x, y: y}) when is_integer(x) and is_integer(y), do: [x, y]
   def normalize_path_point(_), do: nil
+  @spec rect_fields(Types.expr(), String.t()) :: Types.elm_value()
+
   def rect_fields(node, key) do
     bounds = Map.get(node, key) || Map.get(node, String.to_atom(key)) || %{}
     rect_bounds_from_value(bounds)
   end
+
+  @spec rect_bounds_from_value(map() | term()) :: Types.elm_value()
 
   def rect_bounds_from_value(%{"x" => x, "y" => y, "w" => w, "h" => h}),
     do: {rect_int(x), rect_int(y), rect_int(w), rect_int(h)}
@@ -71,9 +87,13 @@ defmodule Elmx.Runtime.ViewOutput.Geometry do
 
   def rect_bounds_from_value(_), do: {0, 0, 0, 0}
 
+  @spec rect_int(integer() | float() | term()) :: Types.elm_value()
+
   def rect_int(value) when is_integer(value), do: value
   def rect_int(value) when is_float(value), do: trunc(value)
   def rect_int(_), do: 0
+
+  @spec line_endpoints(map()) :: Types.elm_value()
 
   def line_endpoints(node) when is_map(node) do
     x1 = int_field(node, "x1", nil)
@@ -90,6 +110,8 @@ defmodule Elmx.Runtime.ViewOutput.Geometry do
     end
   end
 
+  @spec rect_bounds(Types.expr(), String.t()) :: Types.elm_value()
+
   def rect_bounds(node, nested_key) do
     x = int_field(node, "x", nil)
     y = int_field(node, "y", nil)
@@ -103,6 +125,8 @@ defmodule Elmx.Runtime.ViewOutput.Geometry do
     end
   end
 
+  @spec point_xy(Types.expr(), String.t(), Types.elm_value()) :: Types.elm_value()
+
   def point_xy(node, nested_key, default \\ {0, 0}) do
     x = int_field(node, "x", nil)
     y = int_field(node, "y", nil)
@@ -114,10 +138,14 @@ defmodule Elmx.Runtime.ViewOutput.Geometry do
     end
   end
 
+  @spec point_fields(Types.expr(), String.t(), Types.elm_value()) :: Types.elm_value()
+
   def point_fields(node, key, default \\ {0, 0}) do
     point = Map.get(node, key) || Map.get(node, String.to_atom(key)) || %{}
     {int_field(point, "x", elem(default, 0)), int_field(point, "y", elem(default, 1))}
   end
+
+  @spec text_content(map()) :: Types.elm_value()
 
   def text_content(node) when is_map(node) do
     value =
@@ -127,6 +155,8 @@ defmodule Elmx.Runtime.ViewOutput.Geometry do
     to_string(value || "")
   end
 
+  @spec label_display_text(map()) :: Types.elm_value()
+
   def label_display_text(node) when is_map(node) do
     text_content(node)
     |> case do
@@ -134,6 +164,8 @@ defmodule Elmx.Runtime.ViewOutput.Geometry do
       text -> text
     end
   end
+
+  @spec text_align(Types.expr()) :: Types.elm_value()
 
   def text_align(node) do
     case Map.get(node, "text_align") || Map.get(node, :text_align) do
@@ -153,6 +185,8 @@ defmodule Elmx.Runtime.ViewOutput.Geometry do
     end
   end
 
+  @spec text_overflow(Types.expr()) :: Types.elm_value()
+
   def text_overflow(node) do
     case Map.get(node, "text_overflow") || Map.get(node, :text_overflow) do
       value when is_binary(value) ->
@@ -170,6 +204,8 @@ defmodule Elmx.Runtime.ViewOutput.Geometry do
         end)
     end
   end
+  @spec sanitize_rect(term(), Types.elm_value(), keyword()) :: Types.elm_value()
+
   def sanitize_rect({x, y, w, h}, _node, opts) do
     screen_w = screen_dimension(opts, :screen_w)
     screen_h = screen_dimension(opts, :screen_h)
@@ -189,6 +225,8 @@ defmodule Elmx.Runtime.ViewOutput.Geometry do
 
     {x, y, w, h}
   end
+
+  @spec screen_dimension(list(), String.t()) :: Types.elm_value()
 
   def screen_dimension(opts, key) when is_list(opts) do
     case Keyword.get(opts, key) do
@@ -215,6 +253,8 @@ defmodule Elmx.Runtime.ViewOutput.Geometry do
         end
     end
   end
+
+  @spec screen_key_fallback(Types.elm_value()) :: Types.elm_value()
 
   def screen_key_fallback(:screen_w), do: "screenW"
   def screen_key_fallback(:screen_h), do: "screenH"

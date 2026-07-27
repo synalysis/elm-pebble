@@ -8,6 +8,7 @@ defmodule ElmEx.IR.Types.Expr do
   `:constructor_ref`.
   """
 
+
   @type op ::
           :int_literal
           | :float_literal

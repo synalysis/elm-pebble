@@ -598,6 +598,32 @@ defmodule Elmc.PlanLowerIrTest do
     assert :ok = Verify.run(plan)
   end
 
+  test "String-typed params use string_append for ++ (not List.append)" do
+    decl = %{
+      name: "joinLines",
+      args: ["sep", "x", "rest"],
+      type: "String -> String -> String -> String",
+      expr: %{
+        op: :call,
+        name: "__append__",
+        args: [
+          %{op: :var, name: "x"},
+          %{
+            op: :call,
+            name: "__append__",
+            args: [%{op: :var, name: "sep"}, %{op: :var, name: "rest"}]
+          }
+        ]
+      }
+    }
+
+    assert {:ok, plan} = Function.lower(decl, "JoinTest", %{}, rc_required: true)
+    dump = Debug.dump(plan)
+    assert dump =~ "string_append"
+    refute dump =~ "list_append"
+    assert :ok = Verify.run(plan)
+  end
+
   test "nested maybe constructor case seals tag-switch merge block" do
     decl = %{
       name: "readingString",

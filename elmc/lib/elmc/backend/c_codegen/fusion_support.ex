@@ -1,5 +1,7 @@
 defmodule Elmc.Backend.CCodegen.FusionSupport do
   @moduledoc false
+  alias Elmc.Backend.CCodegen.Types, as: Types
+
 
   alias Elmc.Backend.CCodegen.Tuple2CaseTable
   alias Elmc.Backend.CCodegen.Types

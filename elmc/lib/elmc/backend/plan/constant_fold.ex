@@ -1,5 +1,7 @@
 defmodule Elmc.Backend.Plan.ConstantFold do
   @moduledoc false
+  alias Elmc.Backend.Plan.Types, as: Types
+
 
   alias Elmc.Backend.CCodegen.{ConstantInt, Host}
   alias Elmc.Backend.Plan.{Context, Types}
@@ -15,6 +17,11 @@ defmodule Elmc.Backend.Plan.ConstantFold do
     case expr do
       %{op: :bool_literal, value: value} ->
         value
+
+      # Basics.True/False are int_literal with union_ctor tags (often 1/2), not
+      # numeric 0/1. Treating tag 2 as truthy made `not False` fold to false.
+      %{op: :int_literal, union_ctor: ctor} when is_binary(ctor) ->
+        bool_ctor_value(ctor)
 
       %{op: :int_literal, value: value} when is_integer(value) ->
         value != 0
@@ -64,6 +71,16 @@ defmodule Elmc.Backend.Plan.ConstantFold do
     end
   end
 
+  defp bool_ctor_value(ctor) when is_binary(ctor) do
+    case ctor |> String.split(".") |> List.last() do
+      "True" -> true
+      "False" -> false
+      _ -> :unknown
+    end
+  end
+
+  @spec fold_qualified_binary(String.t(), Types.expr(), Types.expr(), Types.compile_env()) :: Types.ir_expr()
+
   defp fold_qualified_binary(target, left, right, env) do
     case Host.qualified_builtin_operator_name(target) do
       op when op in @compare_ops ->
@@ -80,6 +97,8 @@ defmodule Elmc.Backend.Plan.ConstantFold do
     end
   end
 
+  @spec fold_and(Types.expr(), Types.expr(), Types.compile_env()) :: Types.ir_expr()
+
   defp fold_and(left, right, env) do
     case {bool_value(left, env), bool_value(right, env)} do
       {false, _} -> false
@@ -88,6 +107,8 @@ defmodule Elmc.Backend.Plan.ConstantFold do
       _ -> :unknown
     end
   end
+
+  @spec fold_or(Types.expr(), Types.expr(), Types.compile_env()) :: Types.ir_expr()
 
   defp fold_or(left, right, env) do
     case {bool_value(left, env), bool_value(right, env)} do
@@ -98,12 +119,16 @@ defmodule Elmc.Backend.Plan.ConstantFold do
     end
   end
 
+  @spec fold_env(map()) :: Types.ir_expr()
+
   defp fold_env(%Context{module: mod, decl_map: decl_map}) do
     %{
       __module__: mod,
       __program_decls__: decl_map
     }
   end
+
+  @spec compare_literal(atom(), Types.expr(), Types.expr(), Types.compile_env()) :: Types.ir_expr()
 
   defp compare_literal(kind, left, right, env) do
     with {:ok, left_value} <- ConstantInt.literal_value(left, env),
@@ -113,6 +138,8 @@ defmodule Elmc.Backend.Plan.ConstantFold do
       _ -> :unknown
     end
   end
+
+  @spec apply_compare(atom(), Types.expr(), Types.expr()) :: Types.ir_expr()
 
   defp apply_compare(kind, left, right) do
     case kind do
@@ -125,6 +152,8 @@ defmodule Elmc.Backend.Plan.ConstantFold do
       _ -> :unknown
     end
   end
+
+  @spec op_to_kind(Types.ir_expr()) :: Types.ir_expr()
 
   defp op_to_kind("__eq__"), do: :eq
   defp op_to_kind("__neq__"), do: :neq

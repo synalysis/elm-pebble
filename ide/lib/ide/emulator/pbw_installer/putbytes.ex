@@ -71,6 +71,8 @@ defmodule Ide.Emulator.PBWInstaller.Putbytes do
     chunks(data, chunk_size, [])
   end
 
+  @spec chunks(binary() | term(), term(), term()) :: term()
+
   defp chunks(<<>>, _chunk_size, acc), do: Enum.reverse(acc)
 
   defp chunks(data, chunk_size, acc) when byte_size(data) <= chunk_size do
@@ -82,6 +84,8 @@ defmodule Ide.Emulator.PBWInstaller.Putbytes do
     rest = binary_part(data, chunk_size, byte_size(data) - chunk_size)
     chunks(rest, chunk_size, [chunk | acc])
   end
+
+  @spec do_send_putbytes(term(), term(), term(), term(), term(), term()) :: term()
 
   defp do_send_putbytes(
          router,

@@ -5,6 +5,8 @@ defmodule Elmc.Backend.CCodegen.PermuteMergeInversePipeline do
   Verifies permute/inverse helpers, row merge, spawn, score merge, best save, and model
   record updates from IR — not from app-specific function names.
   """
+  alias Elmc.Backend.CCodegen.Types, as: Types
+
 
   alias Elmc.Backend.CCodegen.Types
 
@@ -53,6 +55,8 @@ defmodule Elmc.Backend.CCodegen.PermuteMergeInversePipeline do
     end
   end
 
+  @spec pipeline_callees(String.t(), pos_integer(), Types.ir_expr(), Types.decl_map()) :: Types.ir_expr()
+
   defp pipeline_callees(module_name, pipeline, else_info, decl_map) do
     base = [
       {module_name, pipeline.permute_fn},
@@ -76,6 +80,8 @@ defmodule Elmc.Backend.CCodegen.PermuteMergeInversePipeline do
 
     Enum.uniq(base ++ merge_extra)
   end
+
+  @spec parse_pipeline(Types.expr()) :: Types.ir_expr()
 
   defp parse_pipeline(expr) do
     with {:ok, permute_call, merge_call, inverse_call, if_expr} <- three_lets(expr),
@@ -103,6 +109,8 @@ defmodule Elmc.Backend.CCodegen.PermuteMergeInversePipeline do
     end
   end
 
+  @spec three_lets(map() | term()) :: Types.ir_expr()
+
   defp three_lets(%{
          op: :let_in,
          value_expr: e1,
@@ -111,6 +119,8 @@ defmodule Elmc.Backend.CCodegen.PermuteMergeInversePipeline do
        do: {:ok, e1, e2, e3, body}
 
   defp three_lets(_), do: :error
+
+  @spec pipeline_output_var(map() | term()) :: Types.ir_expr()
 
   defp pipeline_output_var(%{
          op: :if,
@@ -126,6 +136,8 @@ defmodule Elmc.Backend.CCodegen.PermuteMergeInversePipeline do
 
   defp pipeline_output_var(_), do: "out_buf"
 
+  @spec parse_permute_call(map() | term()) :: Types.ir_expr()
+
   defp parse_permute_call(%{
          op: :qualified_call,
          target: permute_fn,
@@ -137,12 +149,16 @@ defmodule Elmc.Backend.CCodegen.PermuteMergeInversePipeline do
 
   defp parse_permute_call(_), do: :error
 
+  @spec parse_unary_call(map() | term()) :: Types.ir_expr()
+
   defp parse_unary_call(%{op: :qualified_call, target: target, args: [%{op: :var, name: arg}]})
        when is_binary(target) and is_binary(arg) do
     {:ok, FusionSupport.local_name(target), arg}
   end
 
   defp parse_unary_call(_), do: :error
+
+  @spec parse_inverse_call(map() | term()) :: Types.ir_expr()
 
   defp parse_inverse_call(%{
          op: :qualified_call,
@@ -159,8 +175,12 @@ defmodule Elmc.Backend.CCodegen.PermuteMergeInversePipeline do
 
   defp parse_inverse_call(_), do: :error
 
+  @spec if_else(map() | term()) :: Types.ir_expr()
+
   defp if_else(%{op: :if, else_expr: else_expr}), do: {:ok, else_expr}
   defp if_else(_), do: :error
+
+  @spec merge_dims(Types.decl_map(), String.t(), integer()) :: Types.ir_expr()
 
   defp merge_dims(decl_map, module_name, merge_fn) do
     case Map.get(decl_map, {module_name, merge_fn}) do
@@ -176,6 +196,8 @@ defmodule Elmc.Backend.CCodegen.PermuteMergeInversePipeline do
     end
   end
 
+  @spec merge_fn_dims(Types.expr(), Types.decl_map(), String.t()) :: Types.ir_expr()
+
   defp merge_fn_dims(expr, decl_map, module_name) do
     with {:ok, row_calls} <- merge_row_calls(expr, []),
          {:ok, width} <- row_width(row_calls, decl_map, module_name) do
@@ -183,12 +205,16 @@ defmodule Elmc.Backend.CCodegen.PermuteMergeInversePipeline do
     end
   end
 
+  @spec merge_row_calls(map() | term(), term()) :: Types.ir_expr()
+
   defp merge_row_calls(%{op: :let_in, value_expr: call, in_expr: rest}, acc),
     do: merge_row_calls(rest, acc ++ [call])
 
   defp merge_row_calls(%{op: :record_literal}, acc) when acc != [], do: {:ok, acc}
 
   defp merge_row_calls(_, _), do: :error
+
+  @spec row_width(term(), Types.decl_map(), String.t()) :: Types.ir_expr()
 
   defp row_width([first | _], decl_map, module_name) do
     case first do
@@ -205,6 +231,8 @@ defmodule Elmc.Backend.CCodegen.PermuteMergeInversePipeline do
         :error
     end
   end
+
+  @spec row_slice_width(Types.decl_map(), String.t(), String.t()) :: Types.ir_expr()
 
   defp row_slice_width(decl_map, module_name, row_at_target) do
     case Map.get(decl_map, FusionSupport.callee_key(module_name, row_at_target)) do
@@ -223,6 +251,8 @@ defmodule Elmc.Backend.CCodegen.PermuteMergeInversePipeline do
     end
   end
 
+  @spec row_drop_stride?(map() | term(), Types.ir_expr() | term()) :: boolean()
+
   defp row_drop_stride?(
          %{
            op: :qualified_call,
@@ -234,6 +264,8 @@ defmodule Elmc.Backend.CCodegen.PermuteMergeInversePipeline do
        do: row_mul_width?(index_expr, width)
 
   defp row_drop_stride?(_, _), do: false
+
+  @spec row_mul_width?(map() | term(), Types.ir_expr() | term()) :: boolean()
 
   defp row_mul_width?(
          %{op: :call, name: op, args: [%{op: :var, name: "row"}, %{op: :int_literal, value: width}]},
@@ -255,10 +287,14 @@ defmodule Elmc.Backend.CCodegen.PermuteMergeInversePipeline do
 
   defp row_mul_width?(_, _), do: false
 
+  @spec permute_inverse_shape?(Types.decl_map(), String.t(), integer(), integer()) :: boolean()
+
   defp permute_inverse_shape?(decl_map, module_name, permute_fn, inverse_fn) do
     permute_ok?(decl_map, module_name, permute_fn) and
       permute_ok?(decl_map, module_name, inverse_fn)
   end
+
+  @spec permute_ok?(Types.decl_map(), String.t(), String.t()) :: boolean()
 
   defp permute_ok?(decl_map, module_name, fn_name) do
     case Map.get(decl_map, {module_name, fn_name}) do
@@ -274,12 +310,16 @@ defmodule Elmc.Backend.CCodegen.PermuteMergeInversePipeline do
     end
   end
 
+  @spec permute_case_tags(Types.decl_map(), String.t(), integer()) :: Types.ir_expr()
+
   defp permute_case_tags(decl_map, module_name, permute_fn) do
     case Map.get(decl_map, {module_name, permute_fn}) do
       %{expr: %{op: :case, branches: branches}} -> UnionCaseFourPerm.ordered_branch_tags(branches)
       _ -> :error
     end
   end
+
+  @spec parse_else_branch(Types.expr(), pos_integer()) :: Types.ir_expr()
 
   defp parse_else_branch(expr, pipeline) do
     with {:ok, spawn, seed_field, output_var} <- parse_spawn(expr, pipeline.output_var),
@@ -304,6 +344,8 @@ defmodule Elmc.Backend.CCodegen.PermuteMergeInversePipeline do
     end
   end
 
+  @spec parse_spawn(map() | term(), Types.ir_expr() | term()) :: Types.ir_expr()
+
   defp parse_spawn(%{op: :let_in, value_expr: spawn_call, in_expr: rest}, output_var) do
     case spawn_call do
       %{
@@ -320,6 +362,8 @@ defmodule Elmc.Backend.CCodegen.PermuteMergeInversePipeline do
   end
 
   defp parse_spawn(_, _), do: :error
+
+  @spec parse_score_add(Types.expr()) :: Types.ir_expr()
 
   defp parse_score_add(expr) do
     find_let_value(expr, fn
@@ -350,6 +394,8 @@ defmodule Elmc.Backend.CCodegen.PermuteMergeInversePipeline do
     end)
   end
 
+  @spec parse_best(Types.expr()) :: Types.ir_expr()
+
   defp parse_best(expr) do
     find_let_value(expr, fn
       %{
@@ -364,6 +410,8 @@ defmodule Elmc.Backend.CCodegen.PermuteMergeInversePipeline do
         :error
     end)
   end
+
+  @spec parse_storage(Types.expr()) :: Types.ir_expr()
 
   defp parse_storage(expr) do
     find_let_value(expr, fn
@@ -382,6 +430,8 @@ defmodule Elmc.Backend.CCodegen.PermuteMergeInversePipeline do
         :error
     end)
   end
+
+  @spec parse_turn_field(Types.expr()) :: Types.ir_expr()
 
   defp parse_turn_field(expr) do
     case find_record_update(expr) do
@@ -426,8 +476,12 @@ defmodule Elmc.Backend.CCodegen.PermuteMergeInversePipeline do
     end
   end
 
+  @spec turn_field_or_default(term() | Types.ir_expr()) :: Types.ir_expr()
+
   defp turn_field_or_default({:ok, field}), do: field
   defp turn_field_or_default(:error), do: "turn"
+
+  @spec parse_record_update(Types.expr()) :: Types.ir_expr()
 
   defp parse_record_update(expr) do
     case find_record_update(expr) do
@@ -439,6 +493,8 @@ defmodule Elmc.Backend.CCodegen.PermuteMergeInversePipeline do
     end
   end
 
+  @spec find_record_update(map() | term()) :: Types.ir_expr()
+
   defp find_record_update(%{op: :record_update, fields: _} = expr), do: expr
 
   defp find_record_update(%{op: :let_in, in_expr: rest}), do: find_record_update(rest)
@@ -446,6 +502,8 @@ defmodule Elmc.Backend.CCodegen.PermuteMergeInversePipeline do
   defp find_record_update(%{op: :tuple2, left: left}), do: find_record_update(left)
 
   defp find_record_update(_), do: nil
+
+  @spec record_field_map(list()) :: Types.ir_expr()
 
   defp record_field_map(fields) do
     field_map =
@@ -456,12 +514,16 @@ defmodule Elmc.Backend.CCodegen.PermuteMergeInversePipeline do
     if map_size(field_map) >= 4, do: {:ok, field_map}, else: :error
   end
 
+  @spec record_updates_match?(map(), pos_integer(), Types.ir_expr()) :: boolean()
+
   defp record_updates_match?(field_map, pipeline, else_info) do
     Enum.all?(
       [pipeline.cells_field, else_info.score_field, else_info.best_field, else_info.seed_field],
       &Map.has_key?(field_map, &1)
     )
   end
+
+  @spec find_let_value(map() | term(), Types.ir_expr() | term()) :: Types.ir_expr()
 
   defp find_let_value(%{op: :let_in, value_expr: value, in_expr: rest}, matcher) do
     case matcher.(value) do
@@ -473,6 +535,8 @@ defmodule Elmc.Backend.CCodegen.PermuteMergeInversePipeline do
 
   defp find_let_value(%{op: :let_in, in_expr: rest}, matcher), do: find_let_value(rest, matcher)
   defp find_let_value(_, _), do: :error
+
+  @spec model_type_name(Types.decl_map(), String.t(), String.t()) :: Types.ir_expr()
 
   defp model_type_name(decl_map, module_name, name) do
     case Map.get(decl_map, {module_name, name}) do
@@ -489,6 +553,8 @@ defmodule Elmc.Backend.CCodegen.PermuteMergeInversePipeline do
     end
   end
 
+  @spec model_field_macros?(String.t(), Types.ir_expr(), pos_integer(), Types.ir_expr()) :: boolean()
+
   defp model_field_macros?(module_name, model_type, pipeline, else_info) do
     fields = [
       {pipeline.cells_field, model_type},
@@ -503,9 +569,13 @@ defmodule Elmc.Backend.CCodegen.PermuteMergeInversePipeline do
     end)
   end
 
+  @spec type_basename(Types.ir_expr()) :: Types.ir_expr()
+
   defp type_basename(type) do
     type |> String.trim() |> String.split(".") |> List.last()
   end
+
+  @spec emit(String.t(), String.t(), pos_integer(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.decl_map()) :: Types.ir_expr()
 
   defp emit(module_name, name, pipeline, else_info, width, rows, model_type, decl_map) do
     c_prefix = Util.module_fn_name(module_name, name)
@@ -542,6 +612,8 @@ defmodule Elmc.Backend.CCodegen.PermuteMergeInversePipeline do
       _ -> ""
     end
   end
+
+  @spec emit_body(Types.ir_expr(), non_neg_integer(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), non_neg_integer(), String.t()) :: Types.ir_expr()
 
   defp emit_body(
          c_prefix,
@@ -629,6 +701,8 @@ defmodule Elmc.Backend.CCodegen.PermuteMergeInversePipeline do
     """
   end
 
+  @spec emit_inline_spawn_tile(String.t(), Types.ir_expr(), non_neg_integer()) :: Types.ir_expr()
+
   defp emit_inline_spawn_tile(_module_name, seed_macro, count) do
   """
   #{SpawnTileInline.emit("spawn", "out_buf", count, "ELMC_RECORD_GET_INDEX_INT(model, #{seed_macro})")}
@@ -677,6 +751,8 @@ defmodule Elmc.Backend.CCodegen.PermuteMergeInversePipeline do
       _ -> :error
     end
   end
+
+  @spec field_idx(String.t(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
 
   defp field_idx(module_name, model_type, field) do
     case FusionSupport.field_index(module_name, model_type, field) do

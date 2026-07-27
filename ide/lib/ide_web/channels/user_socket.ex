@@ -7,6 +7,8 @@ defmodule IdeWeb.UserSocket do
   channel "emulator_vnc:*", IdeWeb.EmulatorVncChannel
 
   @impl true
+  @spec connect(term(), term(), term()) :: term()
+
   def connect(params, socket, connect_info) do
     Logger.info(
       "user socket connect transport=#{inspect(Map.get(connect_info, :transport))} params_keys=#{inspect(Map.keys(params || %{}))}"
@@ -16,5 +18,7 @@ defmodule IdeWeb.UserSocket do
   end
 
   @impl true
+  @spec id(term()) :: term()
+
   def id(_socket), do: nil
 end

@@ -51,7 +51,17 @@ defmodule Elmc.Backend.Wasm.ImportCollect do
   defp collect_instr(%{op: :call_runtime, args: %{builtin: builtin} = args_map}, {imports, arities}) do
     name = RuntimeImports.import_name(builtin)
     arity = ImportSignatures.call_runtime_param_count(builtin, args_map)
-    put_import(imports, arities, name, arity)
+    # Lowering may box const_int / native-int args via runtime.new_int before
+    # handle-taking builtins (tuple2, etc.). Declare the import even though the
+    # plan itself has no :new_int instruction.
+    {imports, arities}
+    |> put_import_elem(name, arity)
+    |> put_import_elem(RuntimeImports.import_name(:new_int), 2)
+  end
+
+  defp collect_instr(%{op: :call_fn}, acc) do
+    # call_fn boxes True/False const_int args (Scene3d.cylinder) before the callee.
+    put_import_elem(acc, RuntimeImports.import_name(:new_int), 2)
   end
 
   defp collect_instr(%{op: :const_static_list, args: args}, acc) do

@@ -1,5 +1,7 @@
 defmodule Elmc.Backend.CCodegen.LambdaCompile do
   @moduledoc false
+  alias Elmc.Backend.CCodegen.Types, as: Types
+
 
   alias Elmc.Backend.CCodegen.EnvBindings
   alias Elmc.Backend.CCodegen.Host
@@ -378,15 +380,21 @@ defmodule Elmc.Backend.CCodegen.LambdaCompile do
     {code, out, next}
   end
 
+  @spec lambda_closure_emitted?(String.t()) :: boolean()
+
   defp lambda_closure_emitted?(closure_fn_name) when is_binary(closure_fn_name) do
     MapSet.member?(Process.get(:elmc_lambda_emitted_names, MapSet.new()), closure_fn_name) or
       Process.get(:elmc_lambdas, [])
       |> Enum.any?(fn defn -> String.contains?(defn, " #{closure_fn_name}(") end)
   end
 
+  @spec closure_param_used?(String.t(), String.t()) :: boolean()
+
   defp closure_param_used?(param, body) when is_binary(param) and is_binary(body) do
     Regex.match?(~r/(?:\W|^)#{Regex.escape(param)}(?:\W|$)/, body)
   end
+
+  @spec propagate_lambda_metadata(Types.compile_env(), Types.compile_env(), list()) :: Types.ir_expr()
 
   defp propagate_lambda_metadata(body_env, parent_env, names) when is_list(names) do
     keys = Enum.map(names, &EnvBindings.binding_key/1)
@@ -417,9 +425,13 @@ defmodule Elmc.Backend.CCodegen.LambdaCompile do
     |> Map.put(:__boxed_string_bindings__, boxed_strings)
   end
 
+  @spec normalize_lambda_type(Types.ir_expr() | String.t()) :: Types.ir_expr()
+
   defp normalize_lambda_type(nil), do: nil
 
   defp normalize_lambda_type(type) when is_binary(type), do: Host.normalize_type_name(type)
+
+  @spec boxed_capture_in_env?(String.t(), Types.compile_env()) :: boolean()
 
   defp boxed_capture_in_env?(name, env) do
     case EnvBindings.lookup_binding(env, name) do
@@ -432,6 +444,8 @@ defmodule Elmc.Backend.CCodegen.LambdaCompile do
         false
     end
   end
+
+  @spec identity_arg_release_stmts(Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
 
   defp identity_arg_release_stmts(_lambda_arg_bindings, _body), do: ""
 end

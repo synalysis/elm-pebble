@@ -359,7 +359,6 @@ defmodule ElmEx.Frontend.SourceRegions do
   @doc """
   Stitch preserved regions with freshly formatted declarations.
   """
-  @spec stitch(t(), String.t()) :: String.t()
   def stitch(
         %{
           preamble: preamble,

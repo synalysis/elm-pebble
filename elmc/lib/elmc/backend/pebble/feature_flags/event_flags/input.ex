@@ -1,5 +1,7 @@
 defmodule Elmc.Backend.Pebble.FeatureFlags.EventFlags.Input do
   @moduledoc false
+  alias Elmc.Types, as: Types
+
 
   alias Elmc.Backend.Pebble.FeatureFlags.{EventFlags.Lookup, TargetSet}
   alias Elmc.Backend.Pebble.Types

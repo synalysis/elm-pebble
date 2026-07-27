@@ -2,6 +2,8 @@ defmodule Elmx.Runtime.Cmd do
   @moduledoc """
   Wire-format `Cmd` values for debugger runtime command maps.
   """
+  alias Elmx.Types, as: Types
+
 
   alias Elmx.Runtime.Cmd.{Companion, Device, Effects, Storage, Wire}
   alias Elmx.Types

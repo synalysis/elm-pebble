@@ -1,5 +1,7 @@
 defmodule Elmc.Backend.Plan.Lower.StdlibCall do
   @moduledoc false
+  alias Elmc.Backend.Plan.Types, as: Types
+
 
   alias Elmc.Backend.Plan.Types
   alias Elmc.Backend.Plan.Lower.Expr
@@ -41,6 +43,8 @@ defmodule Elmc.Backend.Plan.Lower.StdlibCall do
 
   def compile_maybe_with_default(_, _, _), do: :unsupported
 
+  @spec compile_with_default(Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+
   defp compile_with_default(default_val, default_reg, maybe_reg, ctx, b) do
     builtin =
       if int_literal_default?(default_val),
@@ -49,6 +53,8 @@ defmodule Elmc.Backend.Plan.Lower.StdlibCall do
 
     Expr.compile_runtime_builtin(builtin, [default_reg, maybe_reg], ctx, b)
   end
+
+  @spec list_at_index_list(map() | term()) :: Types.ir_expr()
 
   defp list_at_index_list(%{
          op: :qualified_call,
@@ -73,12 +79,16 @@ defmodule Elmc.Backend.Plan.Lower.StdlibCall do
 
   defp list_at_index_list(_), do: :error
 
+  @spec int_literal_zero?(map() | term()) :: boolean()
+
   defp int_literal_zero?(%{op: :int_literal, value: 0} = lit),
     do: int_literal_default?(lit)
 
   defp int_literal_zero?(_), do: false
 
   # Plain int defaults (not union tag literals such as `Nothing`).
+  @spec int_literal_default?(map() | term()) :: boolean()
+
   defp int_literal_default?(%{op: :int_literal, value: value} = lit) when is_integer(value) do
     not Map.has_key?(lit, :union_ctor)
   end

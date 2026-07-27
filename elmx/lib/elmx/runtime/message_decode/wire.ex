@@ -1,5 +1,7 @@
 defmodule Elmx.Runtime.MessageDecode.Wire do
   @moduledoc false
+  alias Elmx.Types, as: Types
+
 
   alias Elmx.Runtime.MessageDecode.Ctor
   alias Elmx.Types
@@ -94,11 +96,15 @@ defmodule Elmx.Runtime.MessageDecode.Wire do
     |> to_string()
   end
 
+  @spec matches_parent?(String.t() | Types.elm_value(), String.t() | Types.elm_value()) :: boolean()
+
   defp matches_parent?(ctor, message) when is_binary(ctor) and is_binary(message) do
     String.downcase(ctor) == String.downcase(message_ctor(message))
   end
 
   defp matches_parent?(_ctor, _message), do: false
+
+  @spec parent_wraps_payload?(Types.elm_value(), Types.elm_value()) :: boolean()
 
   defp parent_wraps_payload?(_message, ctor) when ctor in ["Ok", "Err", "Nothing", "Just"], do: true
   defp parent_wraps_payload?(_message, _ctor), do: false

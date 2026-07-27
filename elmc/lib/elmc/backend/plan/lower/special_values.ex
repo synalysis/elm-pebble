@@ -5,6 +5,8 @@ defmodule Elmc.Backend.Plan.Lower.SpecialValues do
   Rewrites still live in `Elmc.Backend.CCodegen.SpecialValues` until each
   handler is migrated to plan builtins or platform lowerers.
   """
+  alias Elmc.Backend.Plan.Types, as: Types
+
 
   alias Elmc.Backend.Plan.Types
 

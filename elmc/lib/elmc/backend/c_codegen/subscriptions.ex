@@ -1,5 +1,7 @@
 defmodule Elmc.Backend.CCodegen.Subscriptions do
   @moduledoc false
+  alias Elmc.Backend.CCodegen.Types, as: Types
+
 
   alias Elmc.Backend.CCodegen.SpecialValues
   alias Elmc.Backend.CCodegen.Types

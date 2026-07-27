@@ -22,6 +22,7 @@ defmodule Elmx.Runtime.Intrinsics.Registry.Strings do
           {"from_char", :from_char},
           {"from_float", :from_float},
           {"from_int", :from_int},
+          {"from_number", :from_number},
           {"from_list", :from_list},
           {"indexes", :indexes},
           {"is_empty", :is_empty},

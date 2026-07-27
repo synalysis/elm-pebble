@@ -1,5 +1,7 @@
 defmodule Elmx.Runtime.Pebble.Subscriptions do
   @moduledoc false
+  alias Elmx.Types, as: Types
+
 
   alias Elmx.Runtime.Pebble.SubscriptionMasks
   alias Elmx.Runtime.Pebble.Subscriptions.Frame, as: FrameMask
@@ -36,6 +38,8 @@ defmodule Elmx.Runtime.Pebble.Subscriptions do
   def item_mask(value) when is_integer(value), do: value
   def item_mask(_), do: 0
 
+  @spec item_mask_from_call(String.t(), [String.t()]) :: Types.elm_value()
+
   defp item_mask_from_call(target, _args), do: mask(target) || 0
 
   @doc """
@@ -63,6 +67,8 @@ defmodule Elmx.Runtime.Pebble.Subscriptions do
     do: mask(target) != nil
 
   def static_batch_item?(_), do: false
+
+  @spec static_frame_args?(term()) :: boolean()
 
   defp static_frame_args?([%{op: :int_literal, value: interval} | _msg])
        when is_integer(interval),

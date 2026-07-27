@@ -57,6 +57,8 @@ defmodule Ide.Emulator.ScreenshotCaptureRepair do
     end
   end
 
+  @spec top_left_bezel?(term(), term(), term()) :: boolean()
+
   defp top_left_bezel?(rgb, width, height) do
     row0 = black_fraction(rgb, width, width, fn x -> {x, 0} end)
     col0 = black_fraction(rgb, width, height, fn y -> {0, y} end)
@@ -73,6 +75,8 @@ defmodule Ide.Emulator.ScreenshotCaptureRepair do
     uniform_bezel or shifted_capture
   end
 
+  @spec black_fraction(term(), term(), non_neg_integer(), term()) :: term()
+
   defp black_fraction(rgb, stride, count, coord) do
     black =
       Enum.count(0..(count - 1), fn i ->
@@ -82,6 +86,8 @@ defmodule Ide.Emulator.ScreenshotCaptureRepair do
 
     black / count
   end
+
+  @spec shift_top_left(term(), term(), term(), term()) :: term()
 
   defp shift_top_left(rgb, width, height, fill) do
     for y <- 0..(height - 1), x <- 0..(width - 1), into: <<>> do
@@ -96,6 +102,8 @@ defmodule Ide.Emulator.ScreenshotCaptureRepair do
     end
   end
 
+  @spec resize_rgb_nearest(term(), term(), term(), term(), term()) :: term()
+
   defp resize_rgb_nearest(rgb, src_w, src_h, dst_w, dst_h) do
     for y <- 0..(dst_h - 1), x <- 0..(dst_w - 1), into: <<>> do
       src_x = min(src_w - 1, div(x * src_w, dst_w))
@@ -104,6 +112,8 @@ defmodule Ide.Emulator.ScreenshotCaptureRepair do
       <<r, g, b>>
     end
   end
+
+  @spec clear_top_left_edge_black(term(), term(), term(), map() | term()) :: term()
 
   defp clear_top_left_edge_black(rgba, width, height, %{"shape" => "round"} = profile) do
     fill = margin_fill_rgba(profile)
@@ -124,11 +134,15 @@ defmodule Ide.Emulator.ScreenshotCaptureRepair do
     |> clear_column_black(width, height, 0, fill)
   end
 
+  @spec clear_row_black(term(), term(), term(), term()) :: term()
+
   defp clear_row_black(rgba, width, y, fill) do
     Enum.reduce(0..(width - 1), rgba, fn x, acc ->
       if pixel_black?(acc, width, x, y), do: put_rgba(acc, width, x, y, fill), else: acc
     end)
   end
+
+  @spec clear_column_black(term(), term(), term(), term(), term()) :: term()
 
   defp clear_column_black(rgba, width, height, x, fill) do
     Enum.reduce(0..(height - 1), rgba, fn y, acc ->
@@ -136,8 +150,12 @@ defmodule Ide.Emulator.ScreenshotCaptureRepair do
     end)
   end
 
+  @spec margin_fill_rgba(map() | term()) :: term()
+
   defp margin_fill_rgba(%{"shape" => "round"}), do: @transparent
   defp margin_fill_rgba(_), do: <<255, 255, 255, 255>>
+
+  @spec maybe_clear_round_black_ring(term(), term(), term(), map() | term()) :: term() | nil
 
   defp maybe_clear_round_black_ring(rgba, width, height, %{"shape" => "round"}) do
     radius = min(width, height) / 2.0
@@ -163,6 +181,8 @@ defmodule Ide.Emulator.ScreenshotCaptureRepair do
 
   # Roundify leaves opaque black pixels along the inner arc; clear those that touch
   # transparent corners so listing screenshots do not show a thin top/left ring.
+  @spec maybe_clear_black_adjacent_transparent(term(), term(), term(), map() | term()) :: term() | nil
+
   defp maybe_clear_black_adjacent_transparent(rgba, width, height, %{"shape" => "round"}) do
     indices =
       for y <- 0..(height - 1),
@@ -176,6 +196,8 @@ defmodule Ide.Emulator.ScreenshotCaptureRepair do
 
   defp maybe_clear_black_adjacent_transparent(rgba, _width, _height, _profile), do: rgba
 
+  @spec transparent_neighbor?(term(), term(), term(), term(), term()) :: boolean()
+
   defp transparent_neighbor?(rgba, width, height, x, y) do
     Enum.any?(neighbors(x, y, width, height), fn {nx, ny} ->
       case pixel_rgba(rgba, width, nx, ny) do
@@ -184,6 +206,8 @@ defmodule Ide.Emulator.ScreenshotCaptureRepair do
       end
     end)
   end
+
+  @spec neighbors(term(), term(), term(), term()) :: term()
 
   defp neighbors(x, y, width, height) do
     for {nx, ny} <- [{x + 1, y}, {x - 1, y}, {x, y + 1}, {x, y - 1}],
@@ -195,6 +219,8 @@ defmodule Ide.Emulator.ScreenshotCaptureRepair do
   # that touch a border (for example checkerboard quadrants).
   @rect_letterbox_max_depth 4
 
+  @spec maybe_flood_rect_letterbox(term(), term(), term(), map() | term()) :: term() | nil
+
   defp maybe_flood_rect_letterbox(rgba, width, height, %{
          "shape" => "rect",
          "color_mode" => "BlackWhite"
@@ -204,6 +230,8 @@ defmodule Ide.Emulator.ScreenshotCaptureRepair do
   end
 
   defp maybe_flood_rect_letterbox(rgba, _width, _height, _profile), do: rgba
+
+  @spec border_letterbox_black(term(), term(), term(), non_neg_integer()) :: term()
 
   defp border_letterbox_black(width, height, rgba, max_depth) when max_depth >= 0 do
     seeds =
@@ -216,6 +244,8 @@ defmodule Ide.Emulator.ScreenshotCaptureRepair do
     flood_black_within_depth(width, height, rgba, seeds, max_depth)
   end
 
+  @spec flood_black_within_depth(term(), term(), term(), term(), non_neg_integer()) :: term()
+
   defp flood_black_within_depth(_width, _height, _rgba, [], _max_depth), do: MapSet.new()
 
   defp flood_black_within_depth(width, height, rgba, seeds, max_depth) do
@@ -226,6 +256,8 @@ defmodule Ide.Emulator.ScreenshotCaptureRepair do
 
     flood_depth_loop(queue, width, height, rgba, visited, MapSet.new(), max_depth)
   end
+
+  @spec flood_depth_loop(term(), term(), term(), term(), term(), term(), non_neg_integer()) :: term()
 
   defp flood_depth_loop(queue, width, height, rgba, visited, painted, max_depth) do
     case :queue.out(queue) do
@@ -253,11 +285,15 @@ defmodule Ide.Emulator.ScreenshotCaptureRepair do
     end
   end
 
+  @spec paint_indices(term(), term(), map(), term()) :: term()
+
   defp paint_indices(rgba, width, %MapSet{} = indices, pixel) do
     Enum.reduce(indices, rgba, fn {x, y}, acc ->
       put_rgba(acc, width, x, y, pixel)
     end)
   end
+
+  @spec circle_inside?(term(), term(), term(), term(), term()) :: boolean()
 
   defp circle_inside?(x, y, center_x, center_y, radius_sq) do
     dx = x - center_x
@@ -265,18 +301,26 @@ defmodule Ide.Emulator.ScreenshotCaptureRepair do
     dx * dx + dy * dy <= radius_sq
   end
 
+  @spec pixel_rgb(term(), term(), term(), term()) :: term()
+
   defp pixel_rgb(rgb, width, x, y) do
     <<r, g, b>> = :binary.part(rgb, (y * width + x) * 3, 3)
     {r, g, b}
   end
 
+  @spec pixel_black?(term(), term(), term(), term()) :: boolean()
+
   defp pixel_black?(rgba, width, x, y) do
     <<0, 0, 0, 255>> == pixel_rgba(rgba, width, x, y)
   end
 
+  @spec pixel_rgba(term(), term(), term(), term()) :: term()
+
   defp pixel_rgba(rgba, width, x, y) do
     :binary.part(rgba, (y * width + x) * 4, 4)
   end
+
+  @spec put_rgba(term(), term(), term(), term(), term()) :: term()
 
   defp put_rgba(rgba, width, x, y, pixel) do
     offset = (y * width + x) * 4

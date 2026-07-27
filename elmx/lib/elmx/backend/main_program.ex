@@ -2,6 +2,8 @@ defmodule Elmx.Backend.MainProgram do
   @moduledoc """
   Reads `Platform.application` / `Platform.watchface` worker fields from lowered IR.
   """
+  alias Elmx.Types, as: Types
+
 
   alias ElmEx.DebuggerContract.EffectAnalysis
   alias Elmx.Types

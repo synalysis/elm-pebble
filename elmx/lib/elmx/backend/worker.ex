@@ -1,5 +1,7 @@
 defmodule Elmx.Backend.Worker do
   @moduledoc false
+  alias Elmx.Types, as: Types
+
 
   alias Elmx.Backend.MainProgram
   alias Elmx.Runtime.CodegenRefs
@@ -28,6 +30,8 @@ defmodule Elmx.Backend.Worker do
       |> Enum.join("\n")
 
     """
+    @spec debugger_execute(map()) :: Types.elm_value()
+
     def debugger_execute(request) when is_map(request) do
       Elmx.Runtime.Executor.execute_generated(__MODULE__, request)
     end
@@ -35,6 +39,8 @@ defmodule Elmx.Backend.Worker do
     #{callback_defs}
     """
   end
+
+  @spec callback_definition(Types.elm_value() | term(), String.t() | term(), Types.t() | term()) :: Types.elm_value()
 
   defp callback_definition("init", entry_module, ir) do
     fn_name = callback_fn(entry_module, "init")
@@ -47,6 +53,8 @@ defmodule Elmx.Backend.Worker do
         end
 
       """
+      @spec init(String.t()) :: Types.elm_value()
+
       def init(launch_context) do
         #{init_call}
       end
@@ -63,6 +71,8 @@ defmodule Elmx.Backend.Worker do
 
     if function_defined?(ir, entry_module, "update") do
       """
+      @spec update(String.t(), Types.elm_value()) :: Types.elm_value()
+
       def update(msg, model) do
         #{fn_name}(msg, model)
       end
@@ -79,6 +89,8 @@ defmodule Elmx.Backend.Worker do
 
     if function_defined?(ir, entry_module, "view") do
       """
+      @spec view(Types.elm_value()) :: Types.elm_value()
+
       def view(model) do
         #{fn_name}(model)
       end
@@ -95,6 +107,8 @@ defmodule Elmx.Backend.Worker do
 
     if function_defined?(ir, entry_module, "subscriptions") do
       """
+      @spec subscriptions(Types.elm_value()) :: Types.elm_value()
+
       def subscriptions(model) do
         #{fn_name}(model)
       end
@@ -104,9 +118,13 @@ defmodule Elmx.Backend.Worker do
 
   defp callback_definition(_, _, _), do: ""
 
+  @spec callback_fn(String.t(), String.t()) :: Types.elm_value()
+
   defp callback_fn(entry_module, name) do
     "elmx_fn_#{safe(entry_module)}_#{name}"
   end
+
+  @spec function_defined?(Types.t(), String.t(), String.t()) :: boolean()
 
   defp function_defined?(ir, module, name) do
     Enum.any?(ir.modules, fn mod ->
@@ -114,6 +132,8 @@ defmodule Elmx.Backend.Worker do
         Enum.any?(mod.declarations, &(&1.kind == :function and &1.name == name and is_map(&1.expr)))
     end)
   end
+
+  @spec function_arity(Types.t(), String.t(), String.t()) :: Types.elm_value()
 
   defp function_arity(ir, module, name) do
     Enum.find_value(ir.modules, fn mod ->
@@ -125,6 +145,8 @@ defmodule Elmx.Backend.Worker do
       end
     end) || 1
   end
+
+  @spec safe(String.t()) :: Types.elm_value()
 
   defp safe(name), do: name |> String.replace(".", "_")
 end

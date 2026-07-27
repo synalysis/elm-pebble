@@ -1,5 +1,7 @@
 defmodule Elmc.Backend.CCodegen.LetRecCompile do
   @moduledoc false
+  alias Elmc.Backend.CCodegen.Types, as: Types
+
 
   alias Elmc.Backend.CCodegen.Host
   alias Elmc.Backend.CCodegen.RcRuntimeEmit

@@ -123,6 +123,8 @@ defmodule IdeWeb.WorkspaceLive.EditorSupport do
     end
   end
 
+  @spec update_editor_state_tab(term(), String.t() | term(), term()) :: term()
+
   def update_editor_state_tab(socket, tab_id, updater) when is_binary(tab_id) do
     tabs =
       Enum.map(socket.assigns.tabs, fn tab ->
@@ -326,6 +328,8 @@ defmodule IdeWeb.WorkspaceLive.EditorSupport do
     |> assign(:rename_form, to_form(%{"new_rel_path" => ""}, as: :rename))
   end
 
+  @spec maybe_open_editor_default_file(term(), term(), term()) :: term() | nil
+
   def maybe_open_editor_default_file(socket, project, previous_pane) do
     if socket.assigns.live_action == :editor and
          (previous_pane != :editor or is_nil(active_tab(socket))) do
@@ -334,6 +338,8 @@ defmodule IdeWeb.WorkspaceLive.EditorSupport do
       socket
     end
   end
+
+  @spec open_editor_default_file(term(), term()) :: term()
 
   def open_editor_default_file(socket, project) do
     Enum.reduce_while(editor_entry_candidates(), socket, fn {source_root, rel_path}, acc ->
@@ -390,9 +396,13 @@ defmodule IdeWeb.WorkspaceLive.EditorSupport do
     end)
   end
 
+  @spec editor_entry_candidates() :: term()
+
   def editor_entry_candidates do
     [{"watch", "src/Main.elm"}, {"watch", "Main.elm"}]
   end
+
+  @spec default_editor_state() :: term()
 
   def default_editor_state do
     %{
@@ -1019,6 +1029,8 @@ defmodule IdeWeb.WorkspaceLive.EditorSupport do
   end
 
   def parse_non_negative_int(_), do: nil
+
+  @spec parse_non_negative_number(term() | integer() | float() | String.t()) :: term()
 
   def parse_non_negative_number(nil), do: nil
   def parse_non_negative_number(value) when is_integer(value) and value >= 0, do: value

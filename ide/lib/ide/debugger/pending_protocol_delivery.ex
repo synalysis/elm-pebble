@@ -66,6 +66,8 @@ defmodule Ide.Debugger.PendingProtocolDelivery do
     :ok
   end
 
+  @spec drain_until_empty(term(), term()) :: term()
+
   defp drain_until_empty(project_slug, ctx)
        when is_binary(project_slug) and is_map(ctx) do
     items = project_slug |> AgentStore.fetch() |> pending()
@@ -134,6 +136,8 @@ defmodule Ide.Debugger.PendingProtocolDelivery do
     end
   end
 
+  @spec delivery_fields(map()) :: term()
+
   defp delivery_fields(item) when is_map(item) do
     recipient =
       item
@@ -144,16 +148,22 @@ defmodule Ide.Debugger.PendingProtocolDelivery do
     {recipient, payload}
   end
 
+  @spec normalize_recipient(term()) :: term()
+
   defp normalize_recipient("watch"), do: :watch
   defp normalize_recipient("companion"), do: :companion
   defp normalize_recipient("phone"), do: :phone
   defp normalize_recipient(_), do: :companion
+
+  @spec put_pending(map(), list()) :: term()
 
   defp put_pending(state, items) when is_map(state) and is_list(items) do
     state
     |> Map.put(@pending_key, items)
     |> drop_legacy_companion_pending()
   end
+
+  @spec legacy_companion_pending(term()) :: term()
 
   defp legacy_companion_pending(state) do
     case Map.get(state, :companion) do
@@ -162,12 +172,16 @@ defmodule Ide.Debugger.PendingProtocolDelivery do
     end
   end
 
+  @spec drop_legacy_companion_pending(term()) :: term()
+
   defp drop_legacy_companion_pending(state) do
     update_in(state, [:companion], fn
       %{@pending_key => _} = companion -> Map.delete(companion, @pending_key)
       other -> other
     end)
   end
+
+  @spec ensure_drain_lock_table() :: term()
 
   defp ensure_drain_lock_table do
     if :ets.whereis(@drain_lock_table) == :undefined do

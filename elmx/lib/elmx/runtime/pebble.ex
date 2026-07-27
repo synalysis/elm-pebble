@@ -2,6 +2,8 @@ defmodule Elmx.Runtime.Pebble do
   @moduledoc """
   Pebble platform lowering and runtime stubs for generated Elixir code.
   """
+  alias Elmx.Types, as: Types
+
 
   alias Elmx.Runtime.CodegenRefs
   alias Elmx.Runtime.Generator

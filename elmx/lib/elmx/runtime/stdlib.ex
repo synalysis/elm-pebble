@@ -7,6 +7,8 @@ defmodule Elmx.Runtime.Stdlib do
   `Emit.Qualified.compile_qualified_call_fallback_string/4`. Registry intrinsics use
   `Generator.compile_call/2` and `CodegenRefs` module paths instead.
   """
+  alias Elmx.Types, as: Types
+
 
   alias Elmx.Runtime.CodegenRefs
   alias Elmx.Runtime.Generator
@@ -198,6 +200,8 @@ defmodule Elmx.Runtime.Stdlib do
     end
   end
 
+  @spec collection_qualified_full_arity(String.t()) :: Types.elm_value()
+
   defp collection_qualified_full_arity(target) do
     cond do
       String.starts_with?(target, "Dict.") -> {:ok, collection_op_arity(target, 2)}
@@ -206,6 +210,8 @@ defmodule Elmx.Runtime.Stdlib do
       true -> :error
     end
   end
+
+  @spec collection_op_arity(String.t(), Types.elm_value()) :: Types.elm_value()
 
   defp collection_op_arity(target, default) do
     op = target |> String.split(".") |> List.last()
@@ -287,6 +293,8 @@ defmodule Elmx.Runtime.Stdlib do
     |> then(&runtime_call_parts(function, &1))
   end
 
+  @spec runtime_call_dispatch(String.t(), list()) :: Types.elm_value()
+
   defp runtime_call_dispatch(function, args) when is_binary(function) and is_list(args) do
     args = Enum.map(args, &IO.iodata_to_binary/1)
 
@@ -314,6 +322,8 @@ defmodule Elmx.Runtime.Stdlib do
   def call("__append__", arg_code), do: binary_op("++", arg_code)
   def call(name, arg_code), do: "raise \"unsupported internal call #{name}(#{arg_code})\""
 
+  @spec binary_op(atom(), Types.elm_value()) :: Types.elm_value()
+
   defp binary_op(op, arg_code) do
     case split_top_level_args(arg_code) do
       [left, right] -> "(#{left} #{op} #{right})"
@@ -322,6 +332,8 @@ defmodule Elmx.Runtime.Stdlib do
   end
 
   @doc false
+  @spec split_top_level_args(String.t()) :: Types.elm_value()
+
   def split_top_level_args(arg_code) when is_binary(arg_code) do
     arg_code
     |> String.to_charlist()
@@ -330,6 +342,8 @@ defmodule Elmx.Runtime.Stdlib do
     |> Enum.map(fn chars -> chars |> List.to_string() |> String.trim() end)
     |> Enum.reject(&(&1 == ""))
   end
+
+  @spec split_top_level_commas(term(), Types.elm_value(), non_neg_integer() | Types.elm_value(), Types.elm_value()) :: Types.elm_value()
 
   defp split_top_level_commas([], parts, _depth, current),
     do: [current | parts]

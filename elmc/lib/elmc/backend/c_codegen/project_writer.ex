@@ -1,5 +1,7 @@
 defmodule Elmc.Backend.CCodegen.ProjectWriter do
   @moduledoc false
+  alias Elmc.Backend.CCodegen.Types, as: Types
+
 
   alias ElmEx.IR
   alias Elmc.Backend.CCodegen.BuildArtifacts
@@ -49,6 +51,8 @@ defmodule Elmc.Backend.CCodegen.ProjectWriter do
     end
   end
 
+  @spec write_stack_report(Types.t(), Types.t(), String.t()) :: Types.ir_expr()
+
   defp write_stack_report(out_dir, ir, generated_source) do
     report =
       ir
@@ -57,6 +61,8 @@ defmodule Elmc.Backend.CCodegen.ProjectWriter do
 
     File.write(Path.join(out_dir, "elmc_stack_report.json"), report)
   end
+
+  @spec normalize_codegen_opts(list() | map()) :: list() | map()
 
   defp normalize_codegen_opts(opts) when is_list(opts) do
     opts |> Map.new() |> normalize_codegen_opts()
@@ -69,6 +75,8 @@ defmodule Elmc.Backend.CCodegen.ProjectWriter do
       true -> opts
     end
   end
+
+  @spec pebble_production_build?(keyword()) :: boolean()
 
   defp pebble_production_build?(opts) do
     opts[:pebble_int32] == true or opts[:prune_runtime] == true

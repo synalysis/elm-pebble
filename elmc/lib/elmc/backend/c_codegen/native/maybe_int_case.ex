@@ -1,5 +1,7 @@
 defmodule Elmc.Backend.CCodegen.Native.MaybeIntCase do
   @moduledoc false
+  alias Elmc.Backend.CCodegen.Types, as: Types
+
 
   alias Elmc.Backend.CCodegen.CaseCompile
   alias Elmc.Backend.CCodegen.ConstructorTagCase
@@ -122,6 +124,8 @@ defmodule Elmc.Backend.CCodegen.Native.MaybeIntCase do
     end
   end
 
+  @spec build_just_branch_env(Types.compile_env(), Types.ir_expr(), Types.ir_expr(), Types.expr(), list(), Types.ir_expr()) :: Types.ir_expr()
+
   defp build_just_branch_env(env, branch, subject_ref, subject_expr, branches, counter) do
     if Patterns.maybe_unwrap_just_case?(branches) and var_branch?(branch) do
       {branch_env, setup, _release, counter} =
@@ -144,6 +148,8 @@ defmodule Elmc.Backend.CCodegen.Native.MaybeIntCase do
     end
   end
 
+  @spec put_case_subject_payload_type(Types.compile_env(), Types.expr()) :: Types.ir_expr()
+
   defp put_case_subject_payload_type(env, subject_expr) do
     case Expr.maybe_unwrapped_record_type(subject_expr, env) do
       type when is_binary(type) -> Map.put(env, :__case_subject_payload_type__, type)
@@ -151,11 +157,15 @@ defmodule Elmc.Backend.CCodegen.Native.MaybeIntCase do
     end
   end
 
+  @spec just_branch?(map() | term()) :: boolean()
+
   defp just_branch?(%{pattern: %{kind: :constructor, name: name}})
        when name in ["Just", "Maybe.Just"],
        do: true
 
   defp just_branch?(_), do: false
+
+  @spec nothing_branch?(map() | term()) :: boolean()
 
   defp nothing_branch?(%{pattern: %{kind: :constructor, name: name}})
        when name in ["Nothing", "Maybe.Nothing"],
@@ -164,6 +174,8 @@ defmodule Elmc.Backend.CCodegen.Native.MaybeIntCase do
   defp nothing_branch?(%{pattern: %{kind: :wildcard}}), do: true
 
   defp nothing_branch?(_), do: false
+
+  @spec var_branch?(map() | term()) :: boolean()
 
   defp var_branch?(%{pattern: %{kind: :var, name: name}})
        when name not in [nil, "", "_"],

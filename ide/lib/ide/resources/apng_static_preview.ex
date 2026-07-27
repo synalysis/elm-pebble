@@ -37,6 +37,8 @@ defmodule Ide.Resources.ApngStaticPreview do
     end
   end
 
+  @spec validate_signature(binary() | term()) :: term()
+
   defp validate_signature(<<@png_signature, _::binary>>), do: :ok
   defp validate_signature(_), do: {:error, :invalid_png}
 
@@ -45,6 +47,8 @@ defmodule Ide.Resources.ApngStaticPreview do
     <<@png_signature, rest::binary>> = bytes
     parse_chunk_loop(rest, [])
   end
+
+  @spec parse_chunk_loop(binary() | term(), term()) :: term()
 
   defp parse_chunk_loop(<<>>, acc), do: {:ok, Enum.reverse(acc)}
 

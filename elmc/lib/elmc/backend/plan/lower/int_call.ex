@@ -1,5 +1,7 @@
 defmodule Elmc.Backend.Plan.Lower.IntCall do
   @moduledoc false
+  alias Elmc.Backend.Plan.Types, as: Types
+
 
   alias Elmc.Backend.CCodegen.{FunctionCallAbi, FunctionEmit}
   alias Elmc.Backend.CCodegen.Native.FunctionCall, as: NativeFunctionCall
@@ -49,8 +51,14 @@ defmodule Elmc.Backend.Plan.Lower.IntCall do
           end
 
         cond do
-          float_mixture?(left, right, ctx) or soft_float_risk?(left, ctx) or
-              soft_float_risk?(right, ctx) ->
+          float_mixture?(left, right, ctx) ->
+            Arith.emit_boxed_binop(op, left, right, ctx, b, float: true)
+
+          # Soft float risk alone must not force f64: untyped Int params (e.g. Dict
+          # map `key * 3 + 1`, Result.andThen `\x -> Ok (x * 2)`) are soft-float
+          # but must stay on as_int / i32. Typed Float uses float_mixture above;
+          # WASM float-promotes floatish regs (record_get, new_float, basics_abs).
+          soft_float_risk?(left, ctx) or soft_float_risk?(right, ctx) ->
             Arith.emit_boxed_binop(op, left, right, ctx, b)
 
           true ->
@@ -112,14 +120,17 @@ defmodule Elmc.Backend.Plan.Lower.IntCall do
 
   def compile(_, _, _), do: :unsupported
 
+  @spec compile_folded_append(map() | Types.expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+
   defp compile_folded_append(%{op: :string_literal} = lit, ctx, b),
     do: Expr.compile(lit, ctx, b)
 
   defp compile_folded_append(%{op: :call, name: "__append__", args: [left, right]}, ctx, b) do
     append_builtin =
       cond do
-        list_append_operand?(left) or list_append_operand?(right) -> :list_append
-        string_append_operands?(left, right) -> :string_append
+        list_append_operand?(left, ctx) or list_append_operand?(right, ctx) -> :list_append
+        string_append_operands?(left, right, ctx) -> :string_append
+        # Untyped vars historically defaulted to List.append (see plan_lower_ir_test).
         true -> :list_append
       end
 
@@ -130,6 +141,8 @@ defmodule Elmc.Backend.Plan.Lower.IntCall do
 
   defp compile_folded_append(expr, ctx, b), do: Expr.compile(expr, ctx, b)
 
+  @spec compile_runtime_binop_with_native_box(String.t(), Types.expr(), Types.expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+
   defp compile_runtime_binop_with_native_box(target, left, right, ctx, b) do
     with {:ok, arg_regs, b1} <- Expr.compile_args([left, right], ctx, b),
          {boxed_regs, b2} <- box_native_int_call_args(arg_regs, ctx, b1),
@@ -139,6 +152,8 @@ defmodule Elmc.Backend.Plan.Lower.IntCall do
       _ -> :unsupported
     end
   end
+
+  @spec box_native_int_call_args(list(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
 
   defp box_native_int_call_args(regs, ctx, b) when is_list(regs) do
     Enum.map_reduce(regs, b, fn reg, b_acc ->
@@ -152,6 +167,8 @@ defmodule Elmc.Backend.Plan.Lower.IntCall do
     end)
   end
 
+  @spec param_reg_index(integer() | term(), Types.ir_expr() | term(), Types.ir_expr() | term()) :: Types.ir_expr()
+
   defp param_reg_index(reg, ctx, b) when is_integer(reg) do
     Enum.find_value(Enum.with_index(ctx.params), fn {name, idx} ->
       if Map.get(b.param_regs, name) == reg, do: idx
@@ -159,6 +176,8 @@ defmodule Elmc.Backend.Plan.Lower.IntCall do
   end
 
   defp param_reg_index(_, _, _), do: nil
+
+  @spec native_int_param_index?(Types.ir_expr(), Types.ir_expr()) :: boolean()
 
   defp native_int_param_index?(idx, ctx) do
     case Map.get(ctx.decl_map, {ctx.module, ctx.function_name}) do
@@ -170,6 +189,8 @@ defmodule Elmc.Backend.Plan.Lower.IntCall do
         false
     end
   end
+
+  @spec native_int_param_var?(Types.expr(), Types.ir_expr()) :: boolean()
 
   defp native_int_param_var?(expr, ctx) do
     case expr do
@@ -183,6 +204,8 @@ defmodule Elmc.Backend.Plan.Lower.IntCall do
         false
     end
   end
+
+  @spec box_native_int_param_reg(Types.ir_expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
 
   defp box_native_int_param_reg(idx, ctx, b) do
     c_ref = FunctionCallAbi.param_c_arg(idx, ctx.params)
@@ -198,10 +221,16 @@ defmodule Elmc.Backend.Plan.Lower.IntCall do
     {box_reg, b2}
   end
 
+  @spec int_binop_operands?(Types.expr(), Types.expr()) :: boolean()
+
   defp int_binop_operands?(left, right), do: int_operand?(left) and int_operand?(right)
+
+  @spec proven_native_int_binop?(Types.expr(), Types.expr(), Types.ir_expr()) :: boolean()
 
   defp proven_native_int_binop?(left, right, ctx),
     do: proven_native_int_operand?(left, ctx) and proven_native_int_operand?(right, ctx)
+
+  @spec proven_native_int_operand?(map() | term(), Types.ir_expr()) :: boolean()
 
   defp proven_native_int_operand?(%{op: :int_literal}, _ctx), do: true
   defp proven_native_int_operand?(%{op: :bool_literal}, _ctx), do: true
@@ -255,6 +284,8 @@ defmodule Elmc.Backend.Plan.Lower.IntCall do
 
   defp proven_native_int_operand?(_, _ctx), do: false
 
+  @spec prefer_int_binop?(Types.expr(), Types.expr(), Types.ir_expr()) :: boolean()
+
   defp prefer_int_binop?(left, right, ctx) do
     cond do
       float_mixture?(left, right, ctx) ->
@@ -296,6 +327,8 @@ defmodule Elmc.Backend.Plan.Lower.IntCall do
   # Direct operand only — do not recurse into nested calls/fields.
   # Untyped *params* (lambda/closure args) are often Float — Color.toCssString
   # `pct x`. Untyped *lets* are usually Int intermediates in layout math.
+  @spec untyped_bare_var_operand?(map() | term(), Types.ir_expr() | term()) :: boolean()
+
   defp untyped_bare_var_operand?(%{op: :var, name: name} = var, ctx) when is_binary(name) do
     cond do
       native_int_param_var?(var, ctx) -> false
@@ -308,6 +341,8 @@ defmodule Elmc.Backend.Plan.Lower.IntCall do
 
   defp untyped_bare_var_operand?(_, _), do: false
 
+  @spec function_returns_int?(map()) :: boolean()
+
   defp function_returns_int?(%Context{} = ctx) do
     case Map.get(ctx.decl_map, {ctx.module, ctx.function_name}) do
       %{type: type} when is_binary(type) ->
@@ -319,6 +354,8 @@ defmodule Elmc.Backend.Plan.Lower.IntCall do
         false
     end
   end
+
+  @spec field_access_float_risk?(map() | term(), Types.ir_expr() | term()) :: boolean()
 
   defp field_access_float_risk?(%{op: :field_access, field: field} = expr, ctx)
        when is_binary(field) do
@@ -348,6 +385,8 @@ defmodule Elmc.Backend.Plan.Lower.IntCall do
            field_access_float_risk?(named_arith_operand(r), ctx)
 
   defp field_access_float_risk?(_, _), do: false
+
+  @spec soft_float_risk?(map() | term(), Types.ir_expr() | term()) :: boolean()
 
   defp soft_float_risk?(%{op: :field_access, field: field} = expr, ctx) when is_binary(field) do
     base = field_access_base(expr)
@@ -441,6 +480,8 @@ defmodule Elmc.Backend.Plan.Lower.IntCall do
 
   defp soft_float_risk?(_, _), do: false
 
+  @spec callee_returns_int?(String.t() | term(), integer() | term(), Types.ir_expr() | term()) :: boolean()
+
   defp callee_returns_int?(name, arity, ctx) when is_binary(name) and is_integer(arity) do
     {mod, fun} = split_callee_name(name, ctx.module)
 
@@ -460,6 +501,8 @@ defmodule Elmc.Backend.Plan.Lower.IntCall do
 
   defp callee_returns_int?(_, _, _), do: false
 
+  @spec split_callee_name(String.t(), Types.ir_expr()) :: Types.ir_expr()
+
   defp split_callee_name(name, default_mod) when is_binary(name) do
     case String.split(name, ".") do
       [single] ->
@@ -469,6 +512,8 @@ defmodule Elmc.Backend.Plan.Lower.IntCall do
         {Enum.join(Enum.drop(parts, -1), "."), List.last(parts)}
     end
   end
+
+  @spec float_like_unary?(String.t() | term()) :: boolean()
 
   defp float_like_unary?(name) when is_binary(name) do
     name in [
@@ -486,17 +531,23 @@ defmodule Elmc.Backend.Plan.Lower.IntCall do
 
   defp float_like_unary?(_), do: false
 
+  @spec named_arith_operand(String.t() | map() | Types.ir_expr()) :: Types.ir_expr()
+
   defp named_arith_operand(name) when is_binary(name), do: %{op: :var, name: name}
   defp named_arith_operand(expr) when is_map(expr), do: expr
   defp named_arith_operand(other), do: other
 
   # IR often stores field bases as bare name strings; Record.int_field?/3 expects
   # a var map (same normalization as Expr.base_expr_for_field_access/1).
+  @spec field_access_base(map() | term()) :: Types.ir_expr()
+
   defp field_access_base(%{op: :field_access, arg: name}) when is_binary(name),
     do: %{op: :var, name: name}
 
   defp field_access_base(%{op: :field_access, arg: arg}) when is_map(arg), do: arg
   defp field_access_base(_), do: nil
+
+  @spec known_float_field_operand?(map() | term(), Types.ir_expr() | term()) :: boolean()
 
   defp known_float_field_operand?(%{op: :field_access} = expr, ctx) do
     Elmc.Backend.CCodegen.Native.TypedReturn.expr_type(expr, type_env(ctx)) == "Float"
@@ -516,10 +567,32 @@ defmodule Elmc.Backend.Plan.Lower.IntCall do
 
   defp known_float_field_operand?(_, _), do: false
 
+  @spec float_mixture?(Types.expr(), Types.expr(), Types.ir_expr()) :: boolean()
+
   defp float_mixture?(left, right, ctx),
     do: float_operand?(left, ctx) or float_operand?(right, ctx)
 
+  @spec float_operand?(map() | Types.expr(), Types.ir_expr()) :: boolean()
+
   defp float_operand?(%{op: :float_literal}, _ctx), do: true
+
+  # Nested `x * y + 1` must see the mul as Float when either operand is Float.
+  defp float_operand?(%{op: :call, name: name, args: [a, b]}, ctx)
+       when name in ["__add__", "__sub__", "__mul__", "__fdiv__"],
+       do: float_operand?(a, ctx) or float_operand?(b, ctx)
+
+  defp float_operand?(%{op: :qualified_call, target: target, args: [a, b]}, ctx)
+       when target in [
+              "Basics.add",
+              "Basics.sub",
+              "Basics.mul",
+              "Basics.fdiv",
+              "__add__",
+              "__sub__",
+              "__mul__",
+              "__fdiv__"
+            ],
+       do: float_operand?(a, ctx) or float_operand?(b, ctx)
 
   defp float_operand?(%{op: :field_access, field: field} = expr, ctx) when is_binary(field) do
     # Prefer Record.int_field? over TypedReturn's mjs Float heuristic for `.x`/`.y`.
@@ -535,6 +608,8 @@ defmodule Elmc.Backend.Plan.Lower.IntCall do
     Elmc.Backend.CCodegen.Native.TypedReturn.expr_type(expr, env) == "Float"
   end
 
+  @spec type_env(map()) :: Types.ir_expr()
+
   defp type_env(%Context{} = ctx) do
     %{
       __module__: ctx.module || "Main",
@@ -544,6 +619,8 @@ defmodule Elmc.Backend.Plan.Lower.IntCall do
       __record_field_kinds__: Process.get(:elmc_record_field_kinds, %{})
     }
   end
+
+  @spec int_operand?(map() | term()) :: boolean()
 
   defp int_operand?(%{op: :int_literal}), do: true
   defp int_operand?(%{op: :bool_literal}), do: true
@@ -674,37 +751,75 @@ defmodule Elmc.Backend.Plan.Lower.IntCall do
     fromList
   )
 
-  defp string_append_operands?(left, right),
-    do: string_append_operand?(left) or string_append_operand?(right)
+  @spec string_append_operands?(Types.expr(), Types.expr(), Types.ir_expr()) :: boolean()
 
-  defp string_append_operand?(%{op: :list_literal}), do: false
-  defp string_append_operand?(%{op: :string_literal}), do: true
+  defp string_append_operands?(left, right, ctx),
+    do: string_append_operand?(left, ctx) or string_append_operand?(right, ctx)
 
-  defp string_append_operand?(%{op: :call, name: name, args: args}) do
+  @spec string_append_operand?(map() | term(), Types.ir_expr()) :: boolean()
+
+  defp string_append_operand?(%{op: :list_literal}, _ctx), do: false
+  defp string_append_operand?(%{op: :string_literal}, _ctx), do: true
+
+  defp string_append_operand?(%{op: :var, name: name}, ctx) when is_binary(name),
+    do: local_type_is_string?(ctx, name)
+
+  defp string_append_operand?(%{op: :call, name: name, args: args}, ctx) do
     name in @string_append_call_targets or
       (name == "__append__" and match?([_, _], args) and
-         string_append_operands?(hd(args), Enum.at(args, 1)))
+         string_append_operands?(hd(args), Enum.at(args, 1), ctx))
   end
 
-  defp string_append_operand?(%{op: :qualified_call, target: target, args: args}) do
+  defp string_append_operand?(%{op: :qualified_call, target: target, args: args}, ctx) do
     target in @string_append_call_targets or
-      (target == "++" and match?([_, _], args) and string_append_operands?(hd(args), Enum.at(args, 1)))
+      (target == "++" and match?([_, _], args) and
+         string_append_operands?(hd(args), Enum.at(args, 1), ctx))
   end
 
-  defp string_append_operand?(%{op: :runtime_call, function: function}) when is_binary(function),
-    do: function in @string_append_runtime_functions
+  defp string_append_operand?(%{op: :runtime_call, function: function}, _ctx)
+       when is_binary(function),
+       do: function in @string_append_runtime_functions
 
-  defp string_append_operand?(_), do: false
+  defp string_append_operand?(_, _), do: false
 
-  defp list_append_operand?(%{op: :list_literal}), do: true
+  @spec list_append_operand?(map() | term(), Types.ir_expr()) :: boolean()
 
-  defp list_append_operand?(%{op: :call, name: name, args: [left, right]})
+  defp list_append_operand?(%{op: :list_literal}, _ctx), do: true
+
+  defp list_append_operand?(%{op: :var, name: name}, ctx) when is_binary(name),
+    do: local_type_is_list?(ctx, name)
+
+  defp list_append_operand?(%{op: :call, name: name, args: [left, right]}, ctx)
        when name in ["__append__", "++"],
-       do: list_append_operand?(left) or list_append_operand?(right)
+       do: list_append_operand?(left, ctx) or list_append_operand?(right, ctx)
 
-  defp list_append_operand?(%{op: :qualified_call, target: target, args: [left, right]})
+  defp list_append_operand?(%{op: :qualified_call, target: target, args: [left, right]}, ctx)
        when target in ["++", "Basics.++"],
-       do: list_append_operand?(left) or list_append_operand?(right)
+       do: list_append_operand?(left, ctx) or list_append_operand?(right, ctx)
 
-  defp list_append_operand?(_), do: false
+  defp list_append_operand?(_, _), do: false
+
+  @spec local_type_is_string?(Types.ir_expr(), String.t()) :: boolean()
+
+  defp local_type_is_string?(ctx, name) when is_binary(name) do
+    case Map.get(ctx.local_types || %{}, name) do
+      "String" -> true
+      "String.String" -> true
+      _ -> false
+    end
+  end
+
+  @spec local_type_is_list?(Types.ir_expr(), String.t()) :: boolean()
+
+  defp local_type_is_list?(ctx, name) when is_binary(name) do
+    case Map.get(ctx.local_types || %{}, name) do
+      type when is_binary(type) ->
+        trimmed = String.trim_leading(type)
+        String.starts_with?(trimmed, "List ") or trimmed == "List" or
+          String.starts_with?(trimmed, "List(")
+
+      _ ->
+        false
+    end
+  end
 end

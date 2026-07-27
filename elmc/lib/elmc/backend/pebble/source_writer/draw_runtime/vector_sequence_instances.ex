@@ -1,5 +1,7 @@
 defmodule Elmc.Backend.Pebble.SourceWriter.DrawRuntime.VectorSequenceInstances do
   @moduledoc false
+  alias Elmc.Types, as: Types
+
 
   alias Elmc.Backend.Pebble.Types
 

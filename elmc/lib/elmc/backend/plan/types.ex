@@ -22,6 +22,10 @@ defmodule Elmc.Backend.Plan.Types do
   @type function_decl :: CCodegenTypes.function_decl()
   @type function_decl_map :: CCodegenTypes.function_decl_map()
 
+  @type expr :: ir_expr()
+  @type decl :: function_decl()
+  @type decl_map :: function_decl_map()
+
   @type lower_verify_meta ::
           String.t()
           | [String.t() | integer() | atom() | lower_verify_meta()]
@@ -151,6 +155,7 @@ defmodule Elmc.Backend.Plan.Types do
           | :render_cmd
           | :render_text_cmd
           | :list_cursor_map
+          | :pipe_apply_repeat
           | :pebble_sub
           | :forward_ref_set
           | :forward_ref_load
@@ -233,6 +238,7 @@ defmodule Elmc.Backend.Plan.Types do
       :lambdas,
       :lambda_arg_count,
       :letrec_refs,
+      :letrec_capture_indices,
       :fusion_c,
       :fusion_kind,
       :fusion_data,
@@ -256,6 +262,7 @@ defmodule Elmc.Backend.Plan.Types do
             lambdas: [FunctionPlan.t()],
             lambda_arg_count: non_neg_integer() | nil,
             letrec_refs: [String.t()],
+            letrec_capture_indices: %{String.t() => non_neg_integer()},
             fusion_c: String.t() | nil,
             fusion_kind: atom() | nil,
             fusion_data: Elmc.Backend.Plan.Types.fusion_data() | nil,

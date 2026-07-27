@@ -5,6 +5,7 @@ defmodule ElmEx.Types.ElmReport do
   Runtime maps use string keys. Shapes vary by `"type"`; unknown fields are allowed.
   """
 
+
   @type region_point :: %{
           optional(atom()) => integer() | String.t() | nil,
           optional(String.t()) => integer() | String.t() | nil

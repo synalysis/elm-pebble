@@ -3,6 +3,7 @@ defmodule Elmc.Backend.Bytecode.Artifacts do
   Summarize `.elmcbc` build artifacts for IDE/debugger surfaces.
   """
 
+
   alias Elmc.Backend.Bytecode.{Loader, ProjectWriter}
   alias Elmc.Backend.Bytecode.Artifacts.Types, as: ArtifactTypes
 

@@ -1,5 +1,7 @@
 defmodule Elmx.Backend.ElixirCodegen.Emit.Calls do
   @moduledoc false
+  alias Elmx.Types, as: Types
+
 
   alias Elmx.Backend.ElixirCodegen.Emit
   alias Elmx.Backend.ElixirCodegen.Emit.Helpers
@@ -14,6 +16,8 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Calls do
 @comparison_ops ~w(__eq__ __neq__ __lt__ __lte__ __gt__ __gte__)
   @pipeline_flatten_threshold 16
 
+  @spec compile_call(map(), Types.compile_env(), Types.elm_value()) :: Types.elm_value()
+
   def compile_call(%{name: "__apply__", args: [fun, arg]}, env, counter) do
     case fun do
       %{op: :var, name: name} when is_binary(name) ->
@@ -22,7 +26,7 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Calls do
       _ ->
         {fun_code, env, c1} = Emit.compile_expr(fun, env, counter)
         {arg_code, env, c2} = Emit.compile_expr(arg, env, c1)
-        {["Elmx.Runtime.Core.Apply.apply1(", fun_code, ", ", arg_code, ")"], env, c2}
+        {["Elmx.Runtime.Core.Apply.call1(", fun_code, ", ", arg_code, ")"], env, c2}
     end
   end
 
@@ -39,7 +43,7 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Calls do
         {code, env, final_c} =
           Enum.reduce(rest, {fun_code, env, c}, fn arg, {acc, acc_env, acc_c} ->
             {arg_code, acc_env, next_c} = Emit.compile_expr(arg, acc_env, acc_c)
-            {["Elmx.Runtime.Core.Apply.apply1(", acc, ", ", arg_code, ")"], acc_env, next_c}
+            {["Elmx.Runtime.Core.Apply.call1(", acc, ", ", arg_code, ")"], acc_env, next_c}
           end)
 
         {code, env, final_c}
@@ -114,7 +118,7 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Calls do
   def compile_call(%{name: "<|", args: [fun, arg]}, env, counter) do
     {fun_code, env, c1} = Emit.compile_expr(fun, env, counter)
     {arg_code, env, c2} = Emit.compile_expr(arg, env, c1)
-    {["Elmx.Runtime.Core.Apply.apply1(", fun_code, ", ", arg_code, ")"], env, c2}
+    {["Elmx.Runtime.Core.Apply.call1(", fun_code, ", ", arg_code, ")"], env, c2}
   end
 
   def compile_call(%{name: "|>", args: [arg, fun]}, env, counter) do
@@ -131,7 +135,7 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Calls do
       _ ->
         {fun_code, env, c1} = Emit.compile_expr(fun, env, counter)
         {arg_code, env, c2} = Emit.compile_expr(arg, env, c1)
-        {["Elmx.Runtime.Core.Apply.apply1(", fun_code, ", ", arg_code, ")"], env, c2}
+        {["Elmx.Runtime.Core.Apply.call1(", fun_code, ", ", arg_code, ")"], env, c2}
     end
   end
 
@@ -148,9 +152,13 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Calls do
     compile_call1(%{name: name}, env, counter)
   end
 
+  @spec compile_apply_to_target(String.t(), list(), Types.compile_env(), Types.elm_value()) :: Types.elm_value()
+
   defp compile_apply_to_target(name, args, env, counter) when is_binary(name) and is_list(args) do
     compile_user_call(name, args, env, counter)
   end
+
+  @spec operator_symbol(Types.elm_value()) :: Types.elm_value()
 
   def operator_symbol("__append__"), do: "++"
   def operator_symbol("__add__"), do: "+"
@@ -164,12 +172,18 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Calls do
   def operator_symbol("__gt__"), do: ">"
   def operator_symbol("__gte__"), do: ">="
 
+  @spec operator_call?(String.t()) :: boolean()
+
   def operator_call?(name) when is_binary(name),
     do: String.starts_with?(name, "__")
+
+  @spec compile_call1(map(), Types.compile_env(), Types.elm_value()) :: Types.elm_value()
 
   def compile_call1(%{name: name}, env, counter) do
     compile_user_call(name, [], env, counter)
   end
+
+  @spec compile_user_call(Types.elm_value() | String.t(), term() | list(), Types.compile_env(), Types.elm_value()) :: Types.elm_value()
 
   def compile_user_call("clamp", [lo, hi, value], env, counter) do
     {lo_code, env, c1} = Emit.compile_expr(lo, env, counter)
@@ -189,7 +203,8 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Calls do
             ref
 
           [arg] ->
-            [ref, ".(", arg, ")"]
+            # Use call1 so multi-arity Elixir captures (`&fn/2`) curried-apply correctly.
+            ["Elmx.Runtime.Core.Apply.call1(", ref, ", ", arg, ")"]
 
           parts ->
             apply_call(ref, parts)
@@ -208,12 +223,16 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Calls do
     end
   end
 
+  @spec compile_basics_unqualified(String.t() | term(), [String.t()] | term(), Types.compile_env() | term(), Types.elm_value() | term()) :: Types.elm_value()
+
   def compile_basics_unqualified(name, args, env, counter)
        when name in ["max", "min", "modBy", "remainderBy", "not", "abs", "negate"] do
     QualifiedEmit.compile_stdlib_qualified_ir("Basics.#{name}", args, env, counter)
   end
 
   def compile_basics_unqualified(_, _, _, _), do: :error
+
+  @spec compile_module_call(Types.elm_value() | String.t(), term() | Types.elm_value(), map() | Types.compile_env()) :: Types.elm_value()
 
   def compile_module_call("none", [], %{module: "Pebble.Cmd"}),
     do: [@rt_values, ".cmd_none()"]
@@ -233,6 +252,8 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Calls do
     end
   end
 
+  @spec compile_module_call_body(String.t(), Types.elm_value(), Types.compile_env(), String.t()) :: Types.elm_value()
+
   defp compile_module_call_body(name, arg_parts, env, module) do
     arity = Helpers.function_arity(env, name)
     given = length(arg_parts)
@@ -241,8 +262,14 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Calls do
       Map.get(env, :emit_partial_value) == true and given < arity ->
         [Helpers.module_fn(module, name), "(", Enum.intersperse(arg_parts, ", "), ")"]
 
+      # Effect-manager leaf (`effect module Task where { command = MyCmd }`):
+      # IR lowers `command payload` as a bare call with no declared local.
+      arity == :unresolved and name in ~w(command subscription) ->
+        effect_manager_leaf(arg_parts)
+
       arity == :unresolved ->
-        if given == 0, do: name, else: [name, "(", Enum.intersperse(arg_parts, ", "), ")"]
+        emit_name = Helpers.let_emit_name(name)
+        if given == 0, do: emit_name, else: [emit_name, "(", Enum.intersperse(arg_parts, ", "), ")"]
 
       given == 0 and arity == 0 ->
         "#{Helpers.module_fn(module, name)}()"
@@ -267,7 +294,7 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Calls do
             end
 
           Enum.reduce(extra, base, fn arg, acc ->
-            ["Elmx.Runtime.Core.Apply.apply1(", acc, ", ", arg, ")"]
+            ["Elmx.Runtime.Core.Apply.call1(", acc, ", ", arg, ")"]
           end)
         end
 
@@ -279,11 +306,29 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Calls do
     end
   end
 
+  # Platform.command / effect `command` and `subscription` are identity wrappers in elmx.
+  @spec effect_manager_leaf(term()) :: Types.elm_value()
+
+  defp effect_manager_leaf([]), do: "fn elmx_leaf -> elmx_leaf end"
+  defp effect_manager_leaf([arg]), do: arg
+
+  defp effect_manager_leaf([arg | rest]) do
+    Enum.reduce(rest, arg, fn next, acc ->
+      ["Elmx.Runtime.Core.Apply.call1(", acc, ", ", next, ")"]
+    end)
+  end
+
+  @spec compile_qualified_call1(Types.expr(), Types.compile_env(), Types.elm_value()) :: Types.elm_value()
+
   def compile_qualified_call1(expr, env, counter),
     do: QualifiedEmit.compile_qualified_call1(expr, env, counter)
 
+  @spec compile_qualified_call(Types.expr(), Types.compile_env(), Types.elm_value()) :: Types.elm_value()
+
   def compile_qualified_call(expr, env, counter),
     do: QualifiedEmit.compile_qualified_call(expr, env, counter)
+
+  @spec compile_pipe_chain(map(), Types.compile_env(), Types.elm_value()) :: Types.elm_value()
 
   def compile_pipe_chain(%{steps: steps, base: base}, env, counter) when is_list(steps) do
     {homogeneous_prefix, rest} = split_homogeneous_prefix_steps(steps)
@@ -295,12 +340,16 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Calls do
     end
   end
 
+  @spec split_homogeneous_prefix_steps(term()) :: Types.elm_value()
+
   defp split_homogeneous_prefix_steps([]), do: {[], []}
 
   defp split_homogeneous_prefix_steps([first | rest]) do
     {same, other} = Enum.split_while(rest, &(&1 == first))
     {[first | same], other}
   end
+
+  @spec compile_homogeneous_pipe_steps(Types.elm_value(), non_neg_integer(), Types.elm_value(), Types.elm_value(), Types.compile_env(), Types.elm_value()) :: Types.elm_value()
 
   defp compile_homogeneous_pipe_steps(step, count, base, rest, env, counter) do
     {base_code, env, c0} = Emit.compile_expr(base, env, counter)
@@ -335,10 +384,14 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Calls do
     {final_code, env, c}
   end
 
+  @spec compile_pipe_step(Types.elm_value(), String.t(), Types.compile_env(), Types.elm_value()) :: Types.elm_value()
+
   defp compile_pipe_step(step, acc_name, env, counter) do
     acc_expr = %{op: :var, name: acc_name}
     Emit.compile_expr(append_pipe_arg(step, acc_expr), env, counter)
   end
+
+  @spec append_pipe_arg(map() | Types.elm_value(), Types.elm_value()) :: Types.elm_value()
 
   defp append_pipe_arg(%{op: :qualified_call, target: target, args: args}, arg) when is_list(args) do
     %{op: :qualified_call, target: target, args: args ++ [arg]}
@@ -360,6 +413,8 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Calls do
     %{op: :call, name: "|>", args: [arg, step]}
   end
 
+  @spec compile_pipe_steps_iterative(Types.elm_value(), Types.elm_value(), Types.compile_env(), Types.elm_value()) :: Types.elm_value()
+
   defp compile_pipe_steps_iterative(steps, base, env, counter) do
     {base_code, env, c0} = Emit.compile_expr(base, env, counter)
 
@@ -373,14 +428,20 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Calls do
     {code, env, c}
   end
 
+  @spec apply_call(Types.elm_value(), list()) :: Types.elm_value()
+
   defp apply_call(ref, parts) when is_list(parts) and length(parts) > 1 do
     n = length(parts)
     [@rt_core, ".apply#{n}(", ref, ", ", Enum.intersperse(parts, ", "), ")"]
   end
 
+  @spec port_signature?(Types.compile_env(), String.t(), String.t()) :: boolean()
+
   defp port_signature?(env, module, name) do
     Map.get(Map.get(env, :port_signatures, %{}), {module, name}) == true
   end
+
+  @spec compile_port_call(String.t(), Types.elm_value() | String.t(), term() | Types.elm_value()) :: Types.elm_value()
 
   defp compile_port_call(module, "outgoing", [payload]) do
     [@rt_values, ".port_outgoing(", inspect("#{module}.outgoing"), ", ", payload, ")"]
@@ -393,6 +454,8 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Calls do
   defp compile_port_call(_module, _name, arg_parts) do
   [@rt_values, ".port_outgoing(", inspect("unknown.port"), ", ", Enum.at(arg_parts, 0, "nil"), ")"]
   end
+
+  @spec unwrap_pipe_pipeline(Types.expr() | map(), term()) :: Types.elm_value()
 
   defp unwrap_pipe_pipeline(expr), do: unwrap_pipe_pipeline(expr, [])
 
@@ -408,7 +471,11 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Calls do
 
   defp unwrap_pipe_pipeline(_expr, _acc), do: :error
 
+  @spec homogeneous_pipe_steps?(term()) :: boolean()
+
   defp homogeneous_pipe_steps?([step | rest]), do: Enum.all?(rest, &(&1 == step))
+
+  @spec compile_homogeneous_pipe_block(Types.elm_value(), non_neg_integer(), Types.elm_value(), Types.compile_env(), Types.elm_value()) :: Types.elm_value()
 
   defp compile_homogeneous_pipe_block(step, count, base, env, counter) do
     {base_code, env, c0} = Emit.compile_expr(base, env, counter)
@@ -427,12 +494,14 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Calls do
     {code, env, c1}
   end
 
+  @spec compile_pipe_pipeline_block(Types.elm_value(), Types.elm_value(), Types.compile_env(), Types.elm_value()) :: Types.elm_value()
+
   defp compile_pipe_pipeline_block(steps, base, env, counter) do
     {base_code, env, c0} = Emit.compile_expr(base, env, counter)
 
     compile_step = fn step, prev_slot, c ->
       {step_code, _, c1} = Emit.compile_expr(step, env, c)
-      {["Elmx.Runtime.Core.Apply.apply1(", step_code, ", ", prev_slot, ")"], c1}
+      {["Elmx.Runtime.Core.Apply.call1(", step_code, ", ", prev_slot, ")"], c1}
     end
 
     {code, _, c} = Helpers.compile_pipe_iife(base_code, steps, compile_step, c0)

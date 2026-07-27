@@ -1,5 +1,7 @@
 defmodule Elmc.Backend.Pebble.SourceWriter.SceneHost.VirtualUi.Extract.WindowWalk.WindowListWalk do
   @moduledoc false
+  alias Elmc.Types, as: Types
+
 
   alias Elmc.Backend.Pebble.Types
 

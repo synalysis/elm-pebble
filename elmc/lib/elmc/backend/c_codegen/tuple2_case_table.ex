@@ -1,5 +1,7 @@
 defmodule Elmc.Backend.CCodegen.Tuple2CaseTable do
   @moduledoc false
+  alias Elmc.Backend.CCodegen.Types, as: Types
+
 
   alias Elmc.Backend.CCodegen.Types
 
@@ -72,6 +74,8 @@ defmodule Elmc.Backend.CCodegen.Tuple2CaseTable do
     end
   end
 
+  @spec parse_outer_case(map() | term()) :: Types.ir_expr()
+
   defp parse_outer_case(%{
          op: :let_in,
          value_expr: value,
@@ -92,6 +96,8 @@ defmodule Elmc.Backend.CCodegen.Tuple2CaseTable do
 
   defp parse_outer_case(_), do: :error
 
+  @spec mod_base(map() | term()) :: Types.ir_expr()
+
   defp mod_base(%{op: :call, name: "modBy", args: [%{op: :int_literal, value: mod}, _]}),
     do: {:ok, mod}
 
@@ -100,6 +106,8 @@ defmodule Elmc.Backend.CCodegen.Tuple2CaseTable do
        do: {:ok, mod}
 
   defp mod_base(_), do: :error
+
+  @spec parse_rows(list()) :: Types.ir_expr()
 
   defp parse_rows(branches) do
     rows =
@@ -117,6 +125,8 @@ defmodule Elmc.Backend.CCodegen.Tuple2CaseTable do
     if normalized == [], do: :error, else: {:ok, normalized}
   end
 
+  @spec parse_inner_cells(Types.expr()) :: Types.ir_expr()
+
   defp parse_inner_cells(expr) do
     case parse_inner_case(expr) do
       {:ok, cells} -> {:ok, cells}
@@ -124,12 +134,16 @@ defmodule Elmc.Backend.CCodegen.Tuple2CaseTable do
     end
   end
 
+  @spec flat_rot_cells(Types.expr()) :: Types.ir_expr()
+
   defp flat_rot_cells(expr) do
     case static_pairs(expr) do
       {:ok, pairs} -> {:ok, Enum.map(0..3, fn rot -> {rot, pairs} end)}
       :error -> :error
     end
   end
+
+  @spec normalize_rows(Types.ir_expr()) :: Types.ir_expr()
 
   defp normalize_rows(rows) do
     rows
@@ -146,6 +160,8 @@ defmodule Elmc.Backend.CCodegen.Tuple2CaseTable do
         []
     end)
   end
+
+  @spec normalize_rot_cells(Types.ir_expr()) :: Types.ir_expr()
 
   defp normalize_rot_cells(cells) do
     cells
@@ -165,9 +181,13 @@ defmodule Elmc.Backend.CCodegen.Tuple2CaseTable do
     end)
   end
 
+  @spec int_pattern_index(map() | term()) :: Types.ir_expr()
+
   defp int_pattern_index(%{kind: :int, value: n}) when is_integer(n), do: n
   defp int_pattern_index(%{kind: :wildcard}), do: :default
   defp int_pattern_index(_), do: nil
+
+  @spec parse_inner_case(map() | term()) :: Types.ir_expr()
 
   defp parse_inner_case(%{
          op: :let_in,
@@ -188,6 +208,8 @@ defmodule Elmc.Backend.CCodegen.Tuple2CaseTable do
 
   defp parse_inner_case(_), do: :error
 
+  @spec parse_cells(list()) :: Types.ir_expr()
+
   defp parse_cells(branches) do
     cells =
       Enum.map(branches, fn branch ->
@@ -201,6 +223,8 @@ defmodule Elmc.Backend.CCodegen.Tuple2CaseTable do
 
     if Enum.any?(cells, &is_nil/1), do: :error, else: {:ok, cells}
   end
+
+  @spec static_pairs(map() | term()) :: Types.ir_expr()
 
   defp static_pairs(%{op: :list_literal, items: items}) do
     pairs =
@@ -216,6 +240,8 @@ defmodule Elmc.Backend.CCodegen.Tuple2CaseTable do
   end
 
   defp static_pairs(_), do: :error
+
+  @spec emit(String.t(), String.t(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
 
   defp emit(module_name, name, outer_mod, rows) do
     c_prefix = Util.module_fn_name(module_name, name)

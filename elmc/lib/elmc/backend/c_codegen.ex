@@ -6,6 +6,7 @@ defmodule Elmc.Backend.CCodegen do
   `Elmc.Backend.CCodegen.Host` during compilation.
   """
 
+
   alias Elmc.Backend.CCodegen.ProjectWriter
 
   @spec write_project(ElmEx.IR.t(), String.t(), Elmc.Backend.CCodegen.Types.codegen_opts()) ::

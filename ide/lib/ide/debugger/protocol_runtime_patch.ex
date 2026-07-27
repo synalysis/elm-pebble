@@ -627,6 +627,8 @@ defmodule Ide.Debugger.ProtocolRuntimePatch do
 
   defp protocol_watch_online_from_message_value(_message_value), do: nil
 
+  @spec maybe_runtime_ctor?(map() | integer()) :: boolean()
+
   defp maybe_runtime_ctor?(%{"ctor" => ctor, "args" => args})
        when ctor in ["Nothing", "Just"] and is_list(args), do: true
 
@@ -635,27 +637,39 @@ defmodule Ide.Debugger.ProtocolRuntimePatch do
 
   defp maybe_runtime_ctor?(_value), do: false
 
+  @spec elm_message_constructor_map?(map()) :: boolean()
+
   defp elm_message_constructor_map?(map) when is_map(map) do
     keys = map |> Map.keys() |> Enum.map(&to_string/1) |> Enum.sort()
     keys == ["args", "ctor"] or keys == ["$args", "$ctor"]
   end
+
+  @spec runtime_patch_for_message(term(), integer()) :: term()
 
   def runtime_patch_for_message(introspect, message_value) do
     subscription_payload_model_patch(introspect, message_value)
     |> Map.merge(patch_from_message_value(introspect, message_value))
   end
 
+  @spec patch_from_message_value(term(), integer()) :: term()
+
   def patch_from_message_value(introspect, message_value),
     do: protocol_runtime_model_patch_from_message_value(introspect, message_value)
 
+  @spec merge_model_patch(term(), term(), term()) :: term()
+
   def merge_model_patch(model, patch, introspect),
     do: merge_protocol_runtime_model_patch(model, patch, introspect)
+
+  @spec patch_watch(map() | term(), term(), integer(), term()) :: term()
 
   def patch_watch(state, :watch, message_value, introspect) when is_map(state) do
     patch_watch_runtime_from_protocol_message(state, :watch, message_value, introspect)
   end
 
   def patch_watch(state, _recipient, _message_value, _introspect), do: state
+
+  @spec watch_online_from_message(integer()) :: term()
 
   def watch_online_from_message(message_value),
     do: protocol_watch_online_from_message_value(message_value)

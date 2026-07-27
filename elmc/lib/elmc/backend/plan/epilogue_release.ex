@@ -1,5 +1,7 @@
 defmodule Elmc.Backend.Plan.EpilogueRelease do
   @moduledoc false
+  alias Elmc.Backend.Plan.Types, as: Types
+
 
   alias Elmc.Backend.Plan.Types
   alias Elmc.Backend.Plan.Types.{Block, FunctionPlan}
@@ -11,8 +13,12 @@ defmodule Elmc.Backend.Plan.EpilogueRelease do
     %{plan | blocks: Enum.map(blocks, &maybe_insert_releases/1)}
   end
 
+  @spec maybe_insert_releases(map() | Types.ir_expr()) :: Types.ir_expr() | nil
+
   defp maybe_insert_releases(%Block{terminator: {:ret, _}} = block), do: insert_releases(block)
   defp maybe_insert_releases(block), do: block
+
+  @spec insert_releases(map()) :: Types.ir_expr()
 
   defp insert_releases(%Block{instrs: instrs, terminator: term} = block) do
     live = live_owned(instrs)
@@ -40,6 +46,8 @@ defmodule Elmc.Backend.Plan.EpilogueRelease do
     %{block | instrs: instrs ++ renumber_releases(release_instrs, instrs)}
   end
 
+  @spec renumber_releases(Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+
   defp renumber_releases(releases, instrs) do
     next_id =
       case List.last(instrs) do
@@ -49,6 +57,8 @@ defmodule Elmc.Backend.Plan.EpilogueRelease do
 
     Enum.with_index(releases, fn instr, i -> %{instr | id: next_id + i} end)
   end
+
+  @spec live_owned(Types.ir_expr()) :: Types.ir_expr()
 
   defp live_owned(instrs) do
     Enum.reduce(instrs, MapSet.new(), fn instr, owned ->
@@ -66,6 +76,8 @@ defmodule Elmc.Backend.Plan.EpilogueRelease do
     end)
   end
 
+  @spec track_produces(Types.ir_expr(), map() | term()) :: Types.ir_expr()
+
   defp track_produces(owned, %Types{effects: %{produces: {:owned, _reg}}, dest: dest}) do
     case dest do
       r when is_integer(r) -> MapSet.put(owned, r)
@@ -75,9 +87,13 @@ defmodule Elmc.Backend.Plan.EpilogueRelease do
 
   defp track_produces(owned, _), do: owned
 
+  @spec mark_consumed(Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+
   defp mark_consumed(owned, consumes) do
     Enum.reduce(consumes, owned, &MapSet.delete(&2, &1))
   end
+
+  @spec ret_reg(term()) :: Types.ir_expr()
 
   defp ret_reg({:ret, reg}) when is_integer(reg), do: reg
   defp ret_reg(_), do: nil

@@ -23,6 +23,8 @@ defmodule Ide.Debugger.RuntimeModelMessages do
 
   def update_branch_matches_message?(_branch, _message), do: false
 
+  @spec branch_tokens_match_message?(String.t(), String.t()) :: boolean()
+
   defp branch_tokens_match_message?(branch, message) when is_binary(branch) and is_binary(message) do
     normalized =
       message

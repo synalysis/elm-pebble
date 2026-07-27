@@ -1,5 +1,7 @@
 defmodule Elmc.Backend.Wasm.Targets do
   @moduledoc false
+  alias Elmc.Types, as: Types
+
 
   alias Elmc.Types
 

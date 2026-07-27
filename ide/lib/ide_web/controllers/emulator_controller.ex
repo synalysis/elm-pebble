@@ -59,6 +59,8 @@ defmodule IdeWeb.EmulatorController do
     conn |> put_status(:bad_request) |> json(%{error: "Expected slug and platform"})
   end
 
+  @spec qemu_protocol(integer() | String.t() | non_neg_integer()) :: term()
+
   defp qemu_protocol(protocol) when is_integer(protocol) and protocol >= 0 and protocol <= 255,
     do: {:ok, protocol}
 
@@ -70,6 +72,8 @@ defmodule IdeWeb.EmulatorController do
   end
 
   defp qemu_protocol(_protocol), do: {:error, :invalid_qemu_protocol}
+
+  @spec qemu_payload(list() | term()) :: term()
 
   defp qemu_payload(payload) when is_list(payload) do
     if Enum.all?(payload, &(is_integer(&1) and &1 >= 0 and &1 <= 255)) do
@@ -229,6 +233,8 @@ defmodule IdeWeb.EmulatorController do
   @spec ws_phone(Plug.Conn.t(), Types.wire_params()) :: Plug.Conn.t()
   def ws_phone(conn, %{"id" => id}), do: proxy(conn, id, :phone)
 
+  @spec proxy(integer(), term(), atom()) :: term()
+
   defp proxy(conn, id, kind) do
     if websocket_upgrade?(conn) do
       do_proxy(conn, id, kind)
@@ -239,6 +245,8 @@ defmodule IdeWeb.EmulatorController do
       |> halt()
     end
   end
+
+  @spec do_proxy(integer(), term(), atom()) :: term()
 
   defp do_proxy(conn, id, kind) do
     with {:ok, info} <- Emulator.info(id),
@@ -261,12 +269,16 @@ defmodule IdeWeb.EmulatorController do
     end
   end
 
+  @spec websocket_upgrade?(integer()) :: boolean()
+
   defp websocket_upgrade?(conn) do
     conn.method == "GET" and
       Enum.any?(get_req_header(conn, "upgrade"), fn value ->
         value |> String.downcase() |> String.contains?("websocket")
       end)
   end
+
+  @spec proxy_target(map(), atom() | term()) :: term()
 
   defp proxy_target(%{backend_enabled: false}, _kind),
     do: {:error, :embedded_emulator_backend_disabled}
@@ -293,6 +305,8 @@ defmodule IdeWeb.EmulatorController do
     end
   end
 
+  @spec session_local_port(pid(), atom()) :: term()
+
   defp session_local_port(pid, kind) when is_pid(pid) do
     case Session.local_port(pid, kind) do
       port when is_integer(port) and port > 0 -> {:ok, port}
@@ -304,6 +318,8 @@ defmodule IdeWeb.EmulatorController do
     :exit, :killed -> {:error, :emulator_not_running}
     :exit, reason -> {:error, reason}
   end
+
+  @spec screenshot_error_message(term() | integer()) :: term()
 
   defp screenshot_error_message(:invalid_data_url),
     do: "Expected a PNG data URL from the emulator display."

@@ -2,6 +2,8 @@ defmodule Elmc.Backend.Pebble do
   @moduledoc """
   Generates a Pebble-oriented host shim around the worker adapter.
   """
+  alias Elmc.Types, as: Types
+
 
   alias ElmEx.IR
   alias Elmc.Backend.Plan
@@ -100,9 +102,13 @@ defmodule Elmc.Backend.Pebble do
     end
   end
 
+  @spec prune_generic_view_for_direct_scene?(keyword()) :: boolean()
+
   defp prune_generic_view_for_direct_scene?(opts) do
     opts[:direct_render_only] == true or opts[:prune_direct_generic] == true
   end
+
+  @spec stream_view_fallback_needed_for_dual_codegen?(Types.t(), Types.ir_expr(), String.t(), keyword()) :: boolean()
 
   defp stream_view_fallback_needed_for_dual_codegen?(ir, generated_c, entry_module, opts) do
     decl_map = IRQueries.function_decl_map(ir)
@@ -137,6 +143,8 @@ defmodule Elmc.Backend.Pebble do
 
   # C codegen runs inside `with_emit_session`, which clears `:elmc_codegen_opts`
   # before the pebble shim is written. Read the emitted view prototype instead.
+  @spec entry_view_uses_direct_abi?(String.t(), Types.t(), Types.decl(), Types.decl_map(), keyword()) :: boolean()
+
   defp entry_view_uses_direct_abi?(entry_module, c_dir, view_decl, decl_map, opts) do
     header_path = Path.join(c_dir, "elmc_generated.h")
     view_fn = Util.module_fn_name(entry_module, "view")

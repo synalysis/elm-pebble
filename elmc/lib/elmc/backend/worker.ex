@@ -2,6 +2,8 @@ defmodule Elmc.Backend.Worker do
   @moduledoc """
   Generates a minimal C worker adapter for Elm-like init/update loops.
   """
+  alias Elmc.Types, as: Types
+
 
   alias ElmEx.IR
   alias Elmc.Backend.CCodegen.CSource
@@ -57,6 +59,8 @@ defmodule Elmc.Backend.Worker do
     end
   end
 
+  @spec subscriptions_decl(map(), String.t()) :: Types.ir_expr()
+
   defp subscriptions_decl(%IR{} = ir, entry_module) do
     ir.modules
     |> Enum.find_value(fn mod ->
@@ -70,6 +74,8 @@ defmodule Elmc.Backend.Worker do
     end)
   end
 
+  @spec subscriptions_expr(map(), String.t()) :: Types.ir_expr()
+
   defp subscriptions_expr(%IR{} = ir, entry_module) do
     case subscriptions_decl(ir, entry_module) do
       %{expr: expr} when not is_nil(expr) -> expr
@@ -77,6 +83,8 @@ defmodule Elmc.Backend.Worker do
       _ -> nil
     end
   end
+
+  @spec build_slot_layout(map()) :: Types.ir_expr()
 
   defp build_slot_layout(%{compact: false} = analysis) do
     Map.merge(analysis, %{
@@ -113,6 +121,8 @@ defmodule Elmc.Backend.Worker do
       button_raw_subs: button_raw_subs
     })
   end
+
+  @spec sub_tag_slot_fn(map()) :: Types.ir_expr()
 
   defp sub_tag_slot_fn(%{compact: false}) do
     """
@@ -162,9 +172,13 @@ defmodule Elmc.Backend.Worker do
     """
   end
 
+  @spec mask_case_label(String.t()) :: Types.ir_expr()
+
   defp mask_case_label(mask) when is_binary(mask) do
     Map.get(Emit.subscription_mask_literals(), mask, mask)
   end
+
+  @spec slot_define_name(String.t()) :: Types.ir_expr()
 
   defp slot_define_name(mask) when is_binary(mask) do
     mask
@@ -243,6 +257,8 @@ defmodule Elmc.Backend.Worker do
     """
   end
 
+  @spec worker_slot_defines(map()) :: Types.ir_expr()
+
   defp worker_slot_defines(%{compact: false}), do: ""
 
   defp worker_slot_defines(%{slot_map: slot_map, frame_slot: frame_slot}) do
@@ -266,6 +282,8 @@ defmodule Elmc.Backend.Worker do
       defines -> defines <> "\n"
     end
   end
+
+  @spec last_dispatch_cmd_cap(keyword()) :: Types.ir_expr()
 
   defp last_dispatch_cmd_cap(opts) do
     opts = Map.new(opts)
@@ -1034,6 +1052,8 @@ defmodule Elmc.Backend.Worker do
   end
 
   @worker_entry_rc_vars %{"subscriptions" => "sub_rc"}
+
+  @spec worker_entry_call(String.t(), String.t(), String.t(), Types.decl_map(), Types.expr(), Types.ir_expr(), keyword()) :: Types.ir_expr()
 
   defp worker_entry_call(safe_module, fun_name, entry_module, decl_map, arg_exprs, on_fail_body, opts) do
     rc_var = Map.get(@worker_entry_rc_vars, fun_name, "#{fun_name}_rc")

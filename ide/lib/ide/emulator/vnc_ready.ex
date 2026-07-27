@@ -72,6 +72,8 @@ defmodule Ide.Emulator.VncReady do
     end
   end
 
+  @spec capture_banner_loop(term(), pos_integer(), term()) :: term()
+
   defp capture_banner_loop(socket, deadline, acc \\ <<>>) do
     cond do
       version_line_complete?(acc) ->

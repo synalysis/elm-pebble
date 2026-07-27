@@ -45,7 +45,8 @@ defmodule Elmc.Backend.Bytecode.Opcodes do
     forward_ref_set: 39,
     forward_ref_load: 40,
     forward_ref_capture: 41,
-    forward_ref_load_captured: 42
+    forward_ref_load_captured: 42,
+    pipe_apply_repeat: 43
   }
 
   @spec opcode(atom()) :: non_neg_integer() | nil

@@ -37,6 +37,7 @@ defmodule Elmx.Runtime.Intrinsics.Registry.Basics do
       "elmc_basics_radians" => {Math, :radians},
       "elmc_basics_turns" => {Math, :turns},
       "elmc_basics_pow" => {Math, :pow},
+      "elmc_basics_log" => {Math, :log},
       "elmc_basics_log_base" => {Math, :log_base},
       "elmc_basics_is_infinite" => {Math, :is_infinite},
       "elmc_basics_is_nan" => {Math, :is_nan},

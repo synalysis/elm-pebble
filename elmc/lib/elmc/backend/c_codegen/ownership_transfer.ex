@@ -1,5 +1,7 @@
 defmodule Elmc.Backend.CCodegen.OwnershipTransfer do
   @moduledoc false
+  alias Elmc.Backend.CCodegen.Types, as: Types
+
 
   alias Elmc.Backend.CCodegen.ValueSlots
 
@@ -90,6 +92,8 @@ defmodule Elmc.Backend.CCodegen.OwnershipTransfer do
 
   # Non-RC closure calls pass let-bound operands by pointer (passthrough). The callee
   # may release them (for example append on a lambda parameter); skip let epilogue release.
+  @spec closure_passthrough_arg?(Types.ir_expr(), Types.expr()) :: boolean()
+
   defp closure_passthrough_arg?(escaped, body) do
     Regex.match?(
       ~r/(?:call_args|apply_args|pipe_args|direct_call_args)_\d+\[[^\]]*\]\s*=\s*\{[^}]*\b#{escaped}\b[^}]*\}[\s\S]*?elmc_closure_call\s*\(/,
@@ -114,6 +118,8 @@ defmodule Elmc.Backend.CCodegen.OwnershipTransfer do
 
   def assignment_rhs_to_out(_body, _out), do: MapSet.new()
 
+  @spec cow_drop_edges(Types.expr()) :: Types.ir_expr()
+
   defp cow_drop_edges(body) do
     decl_edges =
       Regex.scan(@cow_drop_decl, body)
@@ -126,9 +132,13 @@ defmodule Elmc.Backend.CCodegen.OwnershipTransfer do
     decl_edges ++ reassign_edges
   end
 
+  @spec kept_binding?(String.t(), Types.ir_expr(), Types.expr()) :: boolean()
+
   defp kept_binding?(name, out, body) do
     name == out or transferred_in_c_source?(name, body) or ValueSlots.transferred?(name, body)
   end
+
+  @spec propagate_cow_drop_sources(Types.ir_expr(), term() | Types.ir_expr()) :: Types.ir_expr()
 
   defp propagate_cow_drop_sources(_edges, []), do: MapSet.new()
 
@@ -139,6 +149,8 @@ defmodule Elmc.Backend.CCodegen.OwnershipTransfer do
 
     bfs_cow_drop_sources(sources_by_result, kept_results, MapSet.new())
   end
+
+  @spec bfs_cow_drop_sources(Types.ir_expr(), term(), Types.ir_expr()) :: Types.ir_expr()
 
   defp bfs_cow_drop_sources(_sources_by_result, [], skip), do: skip
 

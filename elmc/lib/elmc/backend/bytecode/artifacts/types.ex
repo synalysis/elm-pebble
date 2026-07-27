@@ -1,6 +1,13 @@
 defmodule Elmc.Backend.Bytecode.Artifacts.Types do
   @moduledoc false
 
+  alias Elmc.Backend.CCodegen.Types, as: CCodegenTypes
+
+  @type ir_expr :: CCodegenTypes.ir_expr()
+  @type expr :: CCodegenTypes.ir_expr()
+  @type decl :: CCodegenTypes.function_decl()
+  @type decl_map :: CCodegenTypes.function_decl_map()
+
   @type function_row :: %{
           required(:module) => String.t(),
           required(:name) => String.t(),

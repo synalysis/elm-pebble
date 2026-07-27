@@ -5,6 +5,7 @@ defmodule ElmEx.DebuggerContract.Types.EffectFields do
   Only non-empty fields are present. Runtime maps use string keys.
   """
 
+
   alias ElmEx.DebuggerContract.CmdCall
 
   @type cmd_call_rows :: [CmdCall.wire_map()]

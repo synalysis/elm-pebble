@@ -52,6 +52,8 @@ defmodule ElmEx.DebuggerContract do
   end
 
   @doc false
+  @spec analyze_source_impl(String.t(), String.t(), term()) :: term()
+
   def analyze_source_impl(source, virtual_path \\ "Main.elm", opts \\ []),
     do: analyze_source(source, virtual_path, opts)
 
@@ -121,7 +123,8 @@ defmodule ElmEx.DebuggerContract do
     end
   end
 
-  @spec find_entry_module(Project.t()) :: Module.t() | nil
+  @spec find_entry_module(map()) :: term()
+
   defp find_entry_module(%Project{modules: modules, project_dir: project_dir}) do
     entry_name = entry_module_name(project_dir)
 

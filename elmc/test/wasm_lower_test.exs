@@ -154,7 +154,7 @@ defmodule Elmc.WasmLowerTest do
         {_, b4} =
           Builder.emit(b3, :boxed_binop, %{
             dest: dest,
-            args: %{op: :sub, lhs: a, rhs: b_reg},
+            args: %{op: :sub, lhs: a, rhs: b_reg, mode: :float},
             effects: Elmc.Backend.Plan.Types.fallible_effects(dest, [a, b_reg])
           })
 
@@ -260,7 +260,8 @@ defmodule Elmc.WasmLowerTest do
 
   test "untyped Float param * int literal uses f32.mul (Color.toCssString pct)" do
     # Color.toCssString: pct x = ((x * 10000) |> round |> toFloat) / 100
-    # Lambda param `x` often has no local_types entry; int-path as_int truncates
+    # When the lambda param is typed Float (from the enclosing signature /
+    # call-site expected type), mul must stay on f32 — as_int truncates
     # 15/255≈0.058 → 0 and every channel becomes rgba(0%,…).
     alias Elmc.Backend.Plan.{Builder, Context}
     alias Elmc.Backend.Plan.Lower.IntCall
@@ -271,7 +272,7 @@ defmodule Elmc.WasmLowerTest do
         function_name: "toCssString_lam_0",
         params: ["x"],
         decl_map: %{},
-        local_types: %{},
+        local_types: %{"x" => "Float"},
         rc_required: true,
         fallible: true
       )
@@ -419,7 +420,7 @@ defmodule Elmc.WasmLowerTest do
         {_, b6} =
           Builder.emit(b5, :boxed_binop, %{
             dest: width,
-            args: %{op: :sub, lhs: a, rhs: b_reg},
+            args: %{op: :sub, lhs: a, rhs: b_reg, mode: :float},
             effects: Elmc.Backend.Plan.Types.fallible_effects(width, [a, b_reg])
           })
 
@@ -433,7 +434,7 @@ defmodule Elmc.WasmLowerTest do
         {_, b8} =
           Builder.emit(b7, :boxed_binop, %{
             dest: padded,
-            args: %{op: :add, lhs: width, rhs: four},
+            args: %{op: :add, lhs: width, rhs: four, mode: :float},
             effects: Elmc.Backend.Plan.Types.fallible_effects(padded, [width, four])
           })
 
@@ -651,9 +652,43 @@ defmodule Elmc.WasmLowerTest do
     wat = Lower.render_wat(module_map)
 
     assert wat =~ "elmc_fn_Scene3d_cylinder"
+    assert wat =~ ~s|(import "runtime" "new_int" (func $runtime_new_int|
     assert wat =~ "runtime_new_int"
     # Must not pass bare i32.const 0/1 as Entity.cylinder args.
     refute wat =~ ~r/call \$elmc_fn_Scene3d_Entity_cylinder \(local\.get \$reg\d+\) \(local\.get \$reg\d+\)/
     assert wat =~ ~r/runtime_new_int[\s\S]*?call \$elmc_fn_Scene3d_Entity_cylinder/
+  end
+
+  test "tuple2 of const_int imports runtime.new_int for boxing" do
+    # Web Browser.application / Msg constructors build (tag, payload) with
+    # const_int tags. Lowering boxes the tag via runtime.new_int before tuple2.
+    plan =
+      Builder.new("Test", "tagged", args: ["payload"], rc_required: true)
+      |> Builder.catch_begin()
+      |> then(fn b ->
+        {tag, b1} = Builder.emit_const_int(b, 2)
+        {payload, b2} = Builder.get_or_load_param(b1, 0, "payload")
+        {dest, b3} = Builder.fresh_reg(b2)
+
+        {_, b4} =
+          Builder.emit(b3, :call_runtime, %{
+            dest: dest,
+            args: %{builtin: :tuple2, args: [tag, payload]},
+            effects: Elmc.Backend.Plan.Types.fallible_effects(dest, [tag, payload])
+          })
+
+        b4
+      end)
+      |> Builder.catch_end()
+      |> then(fn b ->
+        Builder.to_function_plan(Builder.emit_ret(b, 0))
+      end)
+
+    assert {:ok, module_map} = Lower.lower(plan)
+    wat = Lower.render_wat(module_map)
+
+    assert wat =~ ~s|(import "runtime" "new_int" (func $runtime_new_int|
+    assert wat =~ ~s|(import "runtime" "tuple2"|
+    assert wat =~ ~r/call \$runtime_new_int[\s\S]*?call \$runtime_tuple2/
   end
 end

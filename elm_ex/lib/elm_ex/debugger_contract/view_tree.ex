@@ -229,7 +229,8 @@ defmodule ElmEx.DebuggerContract.ViewTree do
 
   defp view_case_param_prefix?(_subj, _param), do: false
 
-  @spec view_tree_unknown() :: Types.view_tree()
+  @spec view_tree_unknown() :: term()
+
   def view_tree_unknown, do: %{"type" => "unknown", "label" => "", "children" => []}
 
   @spec annotate_view_tree_sources(Types.view_tree(), Types.view_build_metadata()) ::

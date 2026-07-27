@@ -104,6 +104,55 @@ defmodule Elmc.PlanCoreBuiltinsTest do
     assert inspect(plan.blocks) =~ "tuple_map_first"
   end
 
+  test "Maybe.map of partial Tuple.mapBoth lowers to runtime builtin not call_fn" do
+    map_both = %{
+      name: "mapBoth",
+      args: ["funcA", "funcB", "tuple"],
+      type: "(a -> x) -> (b -> y) -> (a, b) -> (x, y)",
+      expr: %{op: :int_literal, value: 0}
+    }
+
+    bound_of = %{
+      name: "boundOf",
+      args: ["layout"],
+      type: "Layout -> Bound",
+      expr: %{op: :var, name: "layout"}
+    }
+
+    decl = %{
+      name: "extents",
+      args: ["contents"],
+      type: "Maybe (Layout, Layout) -> Maybe (Bound, Bound)",
+      expr: %{
+        op: :runtime_call,
+        function: "elmc_maybe_map",
+        args: [
+          %{
+            op: :qualified_call,
+            target: "Tuple.mapBoth",
+            args: [
+              %{op: :qualified_ref, target: "Main.boundOf"},
+              %{op: :qualified_ref, target: "Main.boundOf"}
+            ]
+          },
+          %{op: :var, name: "contents"}
+        ]
+      }
+    }
+
+    decl_map = %{
+      {"Tuple", "mapBoth"} => map_both,
+      {"Main", "boundOf"} => bound_of,
+      {"Main", "extents"} => decl
+    }
+
+    assert {:ok, plan} = Function.lower(decl, "Main", decl_map, rc_required: true)
+    blocks = inspect(plan.blocks)
+    assert blocks =~ "tuple_map_both"
+    refute blocks =~ "module: \"Tuple\""
+    refute Regex.match?(~r/call_fn.*mapBoth|name: \"mapBoth\"/, blocks)
+  end
+
   test "Basics.min on float field access keeps boxed runtime builtin" do
     plan =
       lower_expr(

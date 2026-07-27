@@ -1,6 +1,7 @@
 defmodule Ide.Mcp.ToolCatalog.Definitions.Emulator do
   @moduledoc false
 
+
   alias Ide.Mcp.ToolCatalog.Core
 
   @spec tools() :: [Ide.Mcp.ToolCatalog.Types.tool_definition()]

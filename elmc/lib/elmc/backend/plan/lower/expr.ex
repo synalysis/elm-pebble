@@ -2,14 +2,17 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
   @moduledoc """
   Lower Elm IR expressions to verified `%FunctionPlan{}` fragments.
   """
+  alias Elmc.Backend.Plan.Types, as: Types
+
 
   alias Elmc.Backend.CCodegen.{ConstantInt, VarAnalysis}
   alias Elmc.Backend.CCodegen.{FunctionEmit, Host, TypeParsing}
   alias Elmc.Backend.CCodegen.Native.{FunctionCall, TypedReturn}
   alias Elmc.Backend.Plan.Builder
   alias Elmc.Backend.Plan.Context
-  alias Elmc.Backend.Plan.Lower.{Arith, Call, Case, Cmd, Compare, Constructor, If, IntCall, Lambda, List, Port, Record, SpecialValues, StdlibCall, Tuple, UnionCtor}
+  alias Elmc.Backend.Plan.Lower.{Arith, Call, Case, Cmd, Compare, Constructor, If, IntCall, Lambda, List, PipeChain, Port, Record, SpecialValues, StdlibCall, Tuple, UnionCtor}
   alias Elmc.Backend.Plan.Lower.Platform.Web, as: PlatformWeb
+  alias Elmc.Backend.Plan.ParamFieldInference
   alias Elmc.Backend.Plan.RuntimeBuiltins
   alias Elmc.Backend.Plan.Types
   alias Elmc.Backend.Pebble.Util, as: PebbleUtil
@@ -226,6 +229,10 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
           %{target: "Maybe.withDefault", args: args} ->
             StdlibCall.compile_maybe_with_default(args, ctx, b)
 
+          # Prefer typed Set Debug.toString before SpecialValues hardcodes elmc_debug_to_string.
+          %{target: "Debug.toString", args: [arg]} ->
+            compile_qualified_unary("Debug.toString", arg, ctx, b)
+
           %{target: target, args: args} ->
             case compile_special_runtime_call(target, args, ctx, b) do
               {:ok, _, _} = ok ->
@@ -238,11 +245,9 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
     end
   end
 
-  def compile(%{op: :pipe_chain} = expr, ctx, b) do
-    expr
-    |> ElmEx.IR.PipeChain.desugar()
-    |> compile(ctx, b)
-  end
+  # Long homogeneous chains stay as `:pipe_chain` after IR desugar so backends can
+  # flatten them. Never desugar+recurse here — that loops forever on those nodes.
+  def compile(%{op: :pipe_chain} = expr, ctx, b), do: PipeChain.compile(expr, ctx, b)
 
   def compile(%{op: :apply_left} = expr, ctx, b) do
     expr
@@ -493,6 +498,8 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
     :unsupported
   end
 
+  @spec record_unsupported(map() | term(), map() | term()) :: Types.ir_expr()
+
   defp record_unsupported(%{op: op} = expr, ctx) when is_map(ctx) do
     key = {Map.get(ctx, :module), Map.get(ctx, :function_name)}
 
@@ -508,6 +515,8 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
   end
 
   defp record_unsupported(_, _), do: :ok
+
+  @spec compile_qualified_call_dispatch(Types.expr(), String.t(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
 
   defp compile_qualified_call_dispatch(expr, _target, ctx, b) do
     case expr do
@@ -714,6 +723,8 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
     end
   end
 
+  @spec compile_cmd_map_partial(term(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+
   defp compile_cmd_map_partial([], ctx, b) do
     tagger_name = "__cmd_map_tagger__"
     cmd_name = "__cmd_map_cmd__"
@@ -753,6 +764,8 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
     )
   end
 
+  @spec compile_sub_map_partial(term(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+
   defp compile_sub_map_partial([], ctx, b) do
     tagger_name = "__sub_map_tagger__"
     sub_name = "__sub_map_sub__"
@@ -789,6 +802,8 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
     )
   end
 
+  @spec compile_json_decode_map(atom(), list(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+
   defp compile_json_decode_map(id, args, ctx, b) when is_atom(id) and is_list(args) do
     scratch_ctx = %{ctx | dest_stack: [:scratch], function_tail: false}
 
@@ -798,6 +813,8 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
       _ -> :unsupported
     end
   end
+
+  @spec compile_bytes_decode_partial(String.t(), non_neg_integer(), [String.t()], Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
 
   defp compile_bytes_decode_partial(target, expected_arity, provided_args, ctx, b)
        when is_binary(target) and is_integer(expected_arity) and is_list(provided_args) do
@@ -835,6 +852,8 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
         Call.compile_call(%{op: :qualified_call, target: target, args: rewritten_args}, ctx, b)
     end
   end
+
+  @spec curried_constructor_callback(map() | Types.expr(), non_neg_integer()) :: Types.ir_expr()
 
   defp curried_constructor_callback(
          %{op: :constructor_call, target: target, args: bound_args},
@@ -879,6 +898,8 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
 
   defp curried_constructor_callback(expr, _callback_arity), do: expr
 
+  @spec compile_json_decode_partial(Types.ir_expr(), String.t(), non_neg_integer(), [String.t()], Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+
   defp compile_json_decode_partial(id, target, expected_arity, provided_args, ctx, b)
        when is_atom(id) and is_binary(target) and is_integer(expected_arity) and is_list(provided_args) do
     cond do
@@ -900,6 +921,8 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
         Call.compile_call(%{op: :qualified_call, target: target, args: provided_args}, ctx, b)
     end
   end
+
+  @spec compile_special_runtime_call(String.t() | term(), list() | term(), Types.ir_expr() | term(), Types.ir_expr() | term()) :: Types.ir_expr()
 
   defp compile_special_runtime_call(target, args, ctx, b) when is_binary(target) and is_list(args) do
     case SpecialValues.special_value_from_target(target, args) do
@@ -928,6 +951,8 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
 
   # Thread Elm callee arg types into lambda operands (e.g. BackendTask.Http.withMetadata
   # `(Metadata -> a -> b) -> …` so combine closures resolve Metadata.statusCode@1).
+  @spec compile_runtime_call_with_callee_arg_types(map() | term(), String.t() | term(), Types.ir_expr() | term(), Types.ir_expr() | term()) :: Types.ir_expr()
+
   defp compile_runtime_call_with_callee_arg_types(
          %{function: fun, args: args} = rewritten,
          elm_target,
@@ -962,6 +987,8 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
   # Specialize polymorphic HOF param types from known list/array element types so
   # lambdas like `List.map (\p -> p.x) points` with `points : List Point` get
   # `expected_fn_type` `Point -> …` and native Int field reads.
+  @spec refine_hof_arg_types(Types.ir_expr(), String.t() | term(), [String.t()] | term(), Types.ir_expr() | term()) :: Types.ir_expr()
+
   defp refine_hof_arg_types(arg_types, target, args, ctx)
        when is_list(arg_types) and is_binary(target) and is_list(args) do
     short = target |> String.split(".") |> Elixir.List.last()
@@ -989,6 +1016,8 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
 
   defp refine_hof_arg_types(arg_types, _, _, _), do: arg_types
 
+  @spec list_element_type(map() | String.t() | term(), Types.ir_expr() | term()) :: Types.ir_expr()
+
   defp list_element_type(%{op: :var, name: name}, ctx) when is_binary(name) do
     ctx
     |> Context.local_type(name)
@@ -1002,6 +1031,8 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
   end
 
   defp list_element_type(_, _), do: nil
+
+  @spec list_element_type_from_sig(String.t() | term()) :: Types.ir_expr()
 
   defp list_element_type_from_sig(type) when is_binary(type) do
     trimmed = TypeParsing.normalize_type_name(type)
@@ -1020,6 +1051,8 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
 
   defp list_element_type_from_sig(_), do: nil
 
+  @spec specialize_fun_type_elem(String.t(), String.t()) :: Types.ir_expr()
+
   defp specialize_fun_type_elem(fun_type, elem) when is_binary(fun_type) and is_binary(elem) do
     # List.map etc. store the mapper type as `(a -> b)` — strip parens before
     # splitting arrows or the inner `->` stays nested and specialization no-ops.
@@ -1035,6 +1068,8 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
       fun_type
     end
   end
+
+  @spec try_ir_specialized_runtime_call(map() | term(), Types.ir_expr() | term(), Types.ir_expr() | term()) :: Types.ir_expr() | nil
 
   defp try_ir_specialized_runtime_call(%{function: "elmc_maybe_map"} = expr, ctx, b) do
     Elmc.Backend.Plan.Lower.MaybeMap.try_compile(expr, ctx, b)
@@ -1071,6 +1106,8 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
 
   defp try_ir_specialized_runtime_call(_, _, _), do: :unsupported
 
+  @spec retain_last_hof_operand_if_borrowed(Types.ir_expr(), list()) :: Types.ir_expr()
+
   defp retain_last_hof_operand_if_borrowed(b, arg_regs) when is_list(arg_regs) do
     case arg_regs do
       [] ->
@@ -1088,6 +1125,8 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
     end
   end
 
+  @spec elm_callee_arg_types(String.t(), Types.ir_expr()) :: Types.ir_expr()
+
   defp elm_callee_arg_types(target, ctx) when is_binary(target) do
     {mod, fun} = split_elm_callee(target, ctx.module)
 
@@ -1096,6 +1135,8 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
       _ -> []
     end
   end
+
+  @spec split_elm_callee(String.t(), String.t()) :: Types.ir_expr()
 
   defp split_elm_callee(target, default_module) when is_binary(target) do
     parts = String.split(target, ".")
@@ -1108,6 +1149,8 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
         {Enum.join(Enum.drop(many, -1), "."), Enum.at(many, -1)}
     end
   end
+
+  @spec compile_args_with_expected_types([String.t()], Types.ir_expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
 
   defp compile_args_with_expected_types(args, arg_types, ctx, b)
        when is_list(args) and is_list(arg_types) do
@@ -1126,6 +1169,8 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
     end)
   end
 
+  @spec maybe_expect_fn_type(Types.ir_expr(), map() | term(), String.t() | term()) :: Types.ir_expr() | nil
+
   defp maybe_expect_fn_type(ctx, %{op: :lambda}, type) when is_binary(type) do
     normalized = TypeParsing.normalize_type_name(type)
 
@@ -1137,6 +1182,8 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
   end
 
   defp maybe_expect_fn_type(ctx, _, _), do: ctx
+
+  @spec compile_dotted_var_path(String.t(), list(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
 
   defp compile_dotted_var_path(root, fields, ctx, b) when is_binary(root) and is_list(fields) do
     root_ir = %{op: :var, name: root}
@@ -1153,6 +1200,8 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
     end
   end
 
+  @spec base_expr_for_field_access(map() | String.t() | term()) :: Types.ir_expr()
+
   defp base_expr_for_field_access(%{op: :var, name: name}) when is_binary(name),
     do: %{op: :var, name: name}
 
@@ -1160,6 +1209,8 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
 
   defp base_expr_for_field_access(arg) when is_map(arg), do: arg
   defp base_expr_for_field_access(_), do: nil
+
+  @spec compile_compose(Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
 
   defp compile_compose(f, g, :left, ctx, b) do
     arg_name = "__compose_arg__"
@@ -1174,6 +1225,8 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
     body = apply_expr_to_operand(g, inner)
     Lambda.compile(%{op: :lambda, args: [arg_name], body: body}, ctx, b)
   end
+
+  @spec apply_expr_to_arg(map() | Types.expr(), String.t()) :: Types.ir_expr()
 
   defp apply_expr_to_arg(%{op: :qualified_call, args: args} = expr, arg_name) do
     %{expr | args: args ++ [%{op: :var, name: arg_name}]}
@@ -1206,6 +1259,8 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
   defp apply_expr_to_arg(expr, arg_name) do
     %{op: :call, name: "__apply__", args: [expr, %{op: :var, name: arg_name}]}
   end
+
+  @spec apply_expr_to_operand(map() | Types.expr(), Types.ir_expr()) :: Types.ir_expr()
 
   defp apply_expr_to_operand(%{op: :qualified_call, args: args} = expr, operand) do
     %{expr | args: args ++ [operand]}
@@ -1240,6 +1295,8 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
     %{op: :call, name: "__apply__", args: [expr, operand]}
   end
 
+  @spec compile_root_var(String.t(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+
   defp compile_root_var(name, ctx, b) when is_binary(name) do
     cond do
       Lambda.partial_operator_var?(name) ->
@@ -1249,6 +1306,8 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
         compile_root_var_binding(name, ctx, b)
     end
   end
+
+  @spec compile_root_var_binding(String.t(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
 
   defp compile_root_var_binding(name, ctx, b) when is_binary(name) do
     case Context.local_reg(ctx, name) do
@@ -1272,8 +1331,9 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
                       {:ok, reg, b1} -> {:ok, reg, b1}
                       :unsupported ->
                         ports_by_module = Process.get(:elmc_module_ports, %{})
+                        port_module = ctx.module || "Main"
 
-                        if is_map(ports_by_module) and name in Map.get(ports_by_module, ctx.module || "Main", []) do
+                        if is_map(ports_by_module) and name in Map.get(ports_by_module, port_module, []) do
                           case Port.direction_from_type(port_decl_type(ctx, name)) do
                             :incoming ->
                               record_unsupported(%{op: :port_incoming_ref, name: name}, ctx)
@@ -1288,7 +1348,7 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
                                   args: [payload_arg],
                                   body: %{
                                     op: :port_outgoing_expr,
-                                    port: name,
+                                    port: Port.qualified_name(port_module, name),
                                     payload: %{op: :var, name: payload_arg}
                                   }
                                 },
@@ -1354,6 +1414,8 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
       end
     end)
   end
+
+  @spec compile_literal(map() | term(), Types.ir_expr() | term(), Types.ir_expr() | term()) :: Types.ir_expr()
 
   defp compile_literal(%{op: :int_literal, union_ctor: ctor} = expr, ctx, b) when is_binary(ctor) do
     Constructor.compile(
@@ -1444,6 +1506,8 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
 
   defp compile_literal(_, _, _), do: :unsupported
 
+  @spec float_return?(map()) :: boolean()
+
   defp float_return?(%Context{} = ctx) do
     name = ctx.function_name
     mod = ctx.module || "Main"
@@ -1458,16 +1522,22 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
     is_binary(type) and Host.function_return_type(type) == "Float"
   end
 
+  @spec param_index(Types.ir_expr(), String.t()) :: Types.ir_expr()
+
   defp param_index(ctx, name) when is_binary(name) do
     ctx.params
     |> Enum.find_index(&(&1 == name))
   end
+
+  @spec resolve_field_base(String.t() | map() | term(), Types.ir_expr() | term(), Types.ir_expr() | term()) :: Types.ir_expr()
 
   defp resolve_field_base(arg, ctx, b) when is_binary(arg),
     do: compile(%{op: :var, name: arg}, ctx, b)
 
   defp resolve_field_base(arg, ctx, b) when is_map(arg), do: compile(arg, ctx, b)
   defp resolve_field_base(_, _, _), do: :unsupported
+
+  @spec compile_qualified_ref(map(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
 
   defp compile_qualified_ref(%{target: target}, ctx, b) when is_binary(target) do
     case String.split(target, ".") do
@@ -1484,6 +1554,8 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
         compile_qualified_ref_target(target, ctx, b)
     end
   end
+
+  @spec compile_qualified_ref_target(String.t(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
 
   defp compile_qualified_ref_target(target, ctx, b) when is_binary(target) do
     case target do
@@ -1513,11 +1585,15 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
     end
   end
 
+  @spec dotted_var_root?(String.t(), map()) :: boolean()
+
   defp dotted_var_root?(root, ctx) when is_binary(root) and is_map(ctx) do
     is_integer(Context.local_reg(ctx, root)) or
       is_integer(param_index(ctx, root)) or
       is_binary(Context.letrec_ref(ctx, root))
   end
+
+  @spec compile_qualified_ref_decl(String.t(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
 
   defp compile_qualified_ref_decl(target, ctx, b) when is_binary(target) do
     {mod, name} =
@@ -1556,6 +1632,8 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
     end
   end
 
+  @spec compile_record_get(integer(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.expr()) :: Types.ir_expr()
+
   defp compile_record_get(base, field, ctx, b, base_expr) when is_integer(base) do
     {reg, b1} = Builder.fresh_reg(b)
     field_index = Record.field_index_for(field, ctx, base_expr)
@@ -1572,6 +1650,8 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
 
     {:ok, reg, b2}
   end
+
+  @spec compile_let(map(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
 
   defp compile_let(%{op: :let_in, name: name, value_expr: value_expr, in_expr: in_expr}, ctx, b) do
     {bindings, tail_expr} = collect_let_bindings(%{name: name, value_expr: value_expr, in_expr: in_expr})
@@ -1603,6 +1683,8 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
         end
     end
   end
+
+  @spec split_pattern_bind_reorder(Types.ir_expr(), Types.expr()) :: Types.ir_expr()
 
   defp split_pattern_bind_reorder(bindings, tail_expr) do
     with [%{pattern: pattern, expr: case_tail} | _] <- case_branches(tail_expr),
@@ -1643,12 +1725,18 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
     end
   end
 
+  @spec case_branches(map() | term()) :: Types.ir_expr()
+
   defp case_branches(%{op: :case, branches: branches}) when is_list(branches), do: branches
   defp case_branches(_), do: :error
+
+  @spec case_subject_name(map() | term()) :: Types.ir_expr()
 
   defp case_subject_name(%{op: :case, subject: subject}) when is_binary(subject), do: subject
   defp case_subject_name(%{op: :case, subject: %{op: :var, name: name}}), do: name
   defp case_subject_name(_), do: :error
+
+  @spec compile_pattern_bind_reordered(Types.ir_expr(), String.t(), integer(), Types.pattern(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
 
   defp compile_pattern_bind_reordered(
          prefix_bindings,
@@ -1675,6 +1763,8 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
     end
   end
 
+  @spec compile_prefix_bindings(term(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+
   defp compile_prefix_bindings([], ctx, b), do: {:ok, ctx, b}
 
   defp compile_prefix_bindings([{name, value_expr} | rest], ctx, b) do
@@ -1685,6 +1775,8 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
       _ -> :unsupported
     end
   end
+
+  @spec compile_single_binding(String.t(), Types.expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
 
   defp compile_single_binding(name, value_expr, ctx, b) do
     value_expr = maybe_packed_text_options_expr(value_expr)
@@ -1706,6 +1798,8 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
     end
   end
 
+  @spec nest_deferred_lets(term(), Types.expr()) :: Types.ir_expr()
+
   defp nest_deferred_lets([], tail_expr), do: tail_expr
 
   defp nest_deferred_lets([{name, value_expr} | rest], tail_expr) do
@@ -1716,6 +1810,8 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
       in_expr: nest_deferred_lets(rest, tail_expr)
     }
   end
+
+  @spec compile_let_block_letrec_or_sequential(Types.ir_expr(), Types.expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
 
   defp compile_let_block_letrec_or_sequential(bindings, tail_expr, ctx, b) do
     if letrec_sequential_reorder_eligible?(bindings) do
@@ -1731,16 +1827,22 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
     end
   end
 
+  @spec letrec_sequential_reorder_eligible?(list()) :: boolean()
+
   defp letrec_sequential_reorder_eligible?(bindings) when is_list(bindings) do
     Enum.all?(bindings, fn {_, value_expr} ->
       not match?(%{op: :lambda}, value_expr)
     end)
   end
 
+  @spec collect_let_bindings(map()) :: Types.ir_expr()
+
   defp collect_let_bindings(%{name: name, value_expr: value_expr, in_expr: in_expr})
        when is_binary(name) and is_map(value_expr) and is_map(in_expr) do
     do_collect_let_bindings([{name, value_expr}], in_expr)
   end
+
+  @spec do_collect_let_bindings(term() | list(), map()) :: Types.ir_expr()
 
   defp do_collect_let_bindings(acc, %{op: :let_in, name: name, value_expr: value_expr, in_expr: in_expr})
        when is_binary(name) and is_map(value_expr) and is_map(in_expr) do
@@ -1750,6 +1852,8 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
   defp do_collect_let_bindings(acc, tail_expr) when is_list(acc) and is_map(tail_expr) do
     {acc, tail_expr}
   end
+
+  @spec let_bindings_need_recursion?(list(), Types.expr()) :: boolean()
 
   defp let_bindings_need_recursion?(bindings, _tail_expr) when is_list(bindings) do
     names = Enum.map(bindings, fn {n, _} -> n end)
@@ -1781,6 +1885,8 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
     end)
   end
 
+  @spec compile_let_block_letrec(Types.ir_expr(), Types.expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+
   defp compile_let_block_letrec(bindings, tail_expr, ctx, b) do
     # Elm `let` bindings are mutually recursive; generate forward refs so later bindings
     # are in-scope even when referenced earlier in the block.
@@ -1804,6 +1910,8 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
     end
   end
 
+  @spec letrec_scope_names(list(), Types.expr(), Types.ir_expr()) :: Types.ir_expr()
+
   defp letrec_scope_names(bindings, tail_expr, ctx) when is_list(bindings) do
     binding_names = Enum.map(bindings, fn {name, _} -> name end)
 
@@ -1815,6 +1923,8 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
     (binding_names ++ binding_pattern_names ++ letrec_outer_local_names(bindings, tail_expr, ctx))
     |> Enum.uniq()
   end
+
+  @spec reorder_letrec_bindings(list()) :: Types.ir_expr()
 
   defp reorder_letrec_bindings(bindings) when is_list(bindings) do
     indexed = Enum.with_index(bindings)
@@ -1855,9 +1965,13 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
     end
   end
 
+  @spec letrec_binding_defined_vars(String.t(), Types.expr()) :: Types.ir_expr()
+
   defp letrec_binding_defined_vars(name, value_expr) when is_binary(name) do
     [name | bound_vars_in_expr_patterns(value_expr)] |> Enum.uniq()
   end
+
+  @spec topo_sort_dependency_order(list(), list()) :: Types.ir_expr()
 
   defp topo_sort_dependency_order(names, deps) when is_list(names) and is_list(deps) do
     edges =
@@ -1883,6 +1997,8 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
     end
   end
 
+  @spec topo_sort_kahn(term() | Types.ir_expr(), Types.ir_expr(), non_neg_integer(), term()) :: Types.ir_expr()
+
   defp topo_sort_kahn([], _edges, _in_count, acc), do: Enum.reverse(acc)
 
   defp topo_sort_kahn(remaining, edges, in_count, acc) do
@@ -1905,6 +2021,8 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
     end
   end
 
+  @spec letrec_outer_local_names(list(), Types.expr(), Types.ir_expr()) :: Types.ir_expr()
+
   defp letrec_outer_local_names(bindings, tail_expr, ctx) when is_list(bindings) do
     bindings
     |> Enum.reduce(MapSet.new(), fn {_, value_expr}, acc ->
@@ -1915,10 +2033,14 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
     |> MapSet.to_list()
   end
 
+  @spec drop_locals(Types.ir_expr(), list()) :: Types.ir_expr()
+
   defp drop_locals(ctx, names) when is_list(names) do
     locals = Map.drop(ctx.locals || %{}, names)
     %{ctx | locals: locals}
   end
+
+  @spec declare_letrec_refs(list(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
 
   defp declare_letrec_refs(names, ctx, b) when is_list(names) do
     Enum.reduce(names, {ctx, b}, fn name, {ctx_acc, b_acc} ->
@@ -1934,6 +2056,8 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
       end
     end)
   end
+
+  @spec sync_letrec_outer_regs(map(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
 
   defp sync_letrec_outer_regs(reg_map, ctx, b) when is_map(reg_map) do
     Enum.reduce(reg_map, b, fn {name, reg}, b_acc ->
@@ -1953,6 +2077,8 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
     end)
   end
 
+  @spec sync_letrec_forward_ref(String.t(), Types.ir_expr(), integer(), Types.ir_expr()) :: Types.ir_expr()
+
   defp sync_letrec_forward_ref(name, ctx, reg, b) when is_binary(name) and is_integer(reg) do
     case Context.letrec_ref(ctx, name) do
       ref when is_binary(ref) ->
@@ -1970,11 +2096,15 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
     end
   end
 
+  @spec bound_vars_in_expr_patterns(map() | term()) :: Types.ir_expr()
+
   defp bound_vars_in_expr_patterns(expr) when is_map(expr) do
     do_bound_vars_in_expr_patterns(expr, MapSet.new()) |> MapSet.to_list()
   end
 
   defp bound_vars_in_expr_patterns(_), do: []
+
+  @spec do_bound_vars_in_expr_patterns(map() | list() | term(), term()) :: Types.ir_expr()
 
   defp do_bound_vars_in_expr_patterns(%{op: :case, branches: branches} = expr, acc)
        when is_list(branches) do
@@ -2001,6 +2131,8 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
   end
 
   defp do_bound_vars_in_expr_patterns(_, acc), do: acc
+
+  @spec bound_vars_in_pattern(map() | Types.ir_expr(), term()) :: Types.ir_expr()
 
   defp bound_vars_in_pattern(%{kind: :var, name: name}, acc) when is_binary(name),
     do: MapSet.put(acc, name)
@@ -2032,7 +2164,11 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
   defp bound_vars_in_pattern(%{kind: :char}, acc), do: acc
   defp bound_vars_in_pattern(_pat, acc), do: acc
 
+  @spec compile_let_block_sequential(list(), Types.expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+
   defp compile_let_block_sequential(bindings, tail_expr, ctx, b) when is_list(bindings) do
+    ctx = seed_let_inferred_fields(ctx, bindings, tail_expr)
+
     Enum.reduce_while(bindings, {:ok, ctx, b}, fn {name, value_expr}, {:ok, ctx_acc, b_acc} ->
       value_expr = maybe_packed_text_options_expr(value_expr)
       value_ctx = Context.for_branch_arm(ctx_acc)
@@ -2058,6 +2194,90 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
     end)
   end
 
+  # Let-bound records (especially HOF results like `List.foldl` accumulators) are
+  # not params, so ParamFieldInference on the function body never sees them.
+  # Without seeding, `result.sum` falls back to field index 0.
+  @spec seed_let_inferred_fields(Context.t(), list(), Types.expr()) :: Context.t()
+  defp seed_let_inferred_fields(%Context{} = ctx, bindings, tail_expr)
+       when is_list(bindings) and is_map(tail_expr) do
+    names = Enum.map(bindings, &elem(&1, 0))
+
+    from_literals =
+      Enum.reduce(bindings, %{}, fn {name, value_expr}, acc ->
+        case record_shape_fields_from_value(value_expr, ctx) do
+          fields when is_list(fields) and fields != [] ->
+            Map.put(acc, name, fields)
+
+          _ ->
+            acc
+        end
+      end)
+
+    from_access =
+      bindings
+      |> nest_deferred_lets(tail_expr)
+      |> ParamFieldInference.infer_names(names)
+
+    # Prefer literal / fold-accumulator shapes (canonical alphabetical) over
+    # access-order inference when both are available.
+    merged = Map.merge(from_access, from_literals)
+
+    if map_size(merged) == 0 do
+      ctx
+    else
+      %{
+        ctx
+        | inferred_param_fields: Map.merge(ctx.inferred_param_fields || %{}, merged)
+      }
+    end
+  end
+
+  defp seed_let_inferred_fields(ctx, _, _), do: ctx
+
+  @spec record_shape_fields_from_value(Types.expr(), Context.t()) :: [String.t()] | nil
+  defp record_shape_fields_from_value(%{op: :record_literal, fields: fields}, ctx)
+       when is_list(fields) do
+    # Use the same canonical ordering as literal construction
+    # (Record.canonicalize_literal_fields) rather than blindly alphabetizing —
+    # named aliases registered in declaration order (e.g. MainResolveAndWalk.Options
+    # `{paths, name}`) must keep that order here too, or field-index lookups for
+    # this let-bound record (record_update, field_access) disagree with the
+    # ELMC_FIELD_* layout used when the literal was built.
+    fields
+    |> Record.canonicalize_literal_fields(ctx)
+    |> Enum.map(fn f -> Map.get(f, :name) || Map.get(f, :field) end)
+    |> Enum.filter(&is_binary/1)
+    |> case do
+      [] -> nil
+      names -> names
+    end
+  end
+
+  # List.foldl / List.foldr return the accumulator type.
+  defp record_shape_fields_from_value(%{op: :qualified_call, target: target, args: args}, ctx)
+       when is_binary(target) and is_list(args) do
+    if String.ends_with?(target, ".foldl") or String.ends_with?(target, ".foldr") do
+      case args do
+        [_, acc, _] -> record_shape_fields_from_value(acc, ctx)
+        _ -> nil
+      end
+    else
+      nil
+    end
+  end
+
+  defp record_shape_fields_from_value(%{op: :call, name: name, args: args}, ctx)
+       when name in ["foldl", "foldr"] and is_list(args) do
+    case args do
+      [_, acc, _] -> record_shape_fields_from_value(acc, ctx)
+      _ -> nil
+    end
+  end
+
+  defp record_shape_fields_from_value(_, _ctx), do: nil
+
+  @spec compile_letrec_value_bindings(list(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+
   defp compile_letrec_value_bindings(bindings, ctx, b) when is_list(bindings) do
     Enum.reduce_while(bindings, {:ok, ctx, b}, fn {name, value_expr}, {:ok, ctx_acc, b_acc} ->
       ref = Context.letrec_ref(ctx_acc, name)
@@ -2079,6 +2299,8 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
       end
     end)
   end
+
+  @spec maybe_packed_text_options_expr(Types.expr()) :: Types.ir_expr() | nil
 
   defp maybe_packed_text_options_expr(value_expr) do
     alias Elmc.Backend.CCodegen.DirectRender.Emit.TextOptions
@@ -2104,12 +2326,16 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
     end
   end
 
+  @spec maybe_put_local_type(Types.ir_expr(), String.t(), Types.expr(), Types.ir_expr()) :: Types.ir_expr() | nil
+
   defp maybe_put_local_type(ctx, name, value_expr, parent_ctx) do
     case TypedReturn.expr_type(value_expr, let_type_env(parent_ctx)) do
       type when is_binary(type) -> Context.put_local_type(ctx, name, type)
       _ -> ctx
     end
   end
+
+  @spec let_type_env(map()) :: Types.ir_expr()
 
   defp let_type_env(%Context{} = ctx) do
     %{
@@ -2122,6 +2348,8 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
       __record_field_kinds__: Process.get(:elmc_record_field_kinds, %{})
     }
   end
+
+  @spec let_param_var_types(map() | term()) :: Types.ir_expr()
 
   defp let_param_var_types(%Context{decl_map: decl_map, module: module, params: params, function_name: fun})
        when is_binary(module) and is_binary(fun) and is_list(params) do
@@ -2146,6 +2374,8 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
 
   defp let_param_var_types(_), do: %{}
 
+  @spec compile_string_unary(Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+
   defp compile_string_unary("String.fromInt", arg, ctx, b) do
     with {:ok, arg_reg, b1} <- compile(arg, ctx, b) do
       compile_runtime_builtin(:string_from_int_value, [arg_reg], ctx, b1)
@@ -2154,10 +2384,32 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
     end
   end
 
+  @spec compile_qualified_unary(String.t(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+
   defp compile_qualified_unary(target, arg, ctx, b) do
     case Map.get(@qualified_unary, target) do
+      :debug_to_string ->
+        # Arg must not write :fn_out — otherwise truncate_after_non_rc_tail_fn_out
+        # drops the Debug.toString emit (CorpusHost quotes / Set.fromList prefix).
+        arg_ctx = Context.for_branch_arm(ctx)
+
+        with {:ok, arg_reg, b1} <- compile(arg, arg_ctx, b) do
+          id =
+            if debug_set_arg?(arg, ctx) do
+              :debug_set_to_string
+            else
+              :debug_to_string
+            end
+
+          compile_runtime_builtin(id, [arg_reg], ctx, b1)
+        else
+          _ -> :unsupported
+        end
+
       id when is_atom(id) and not is_nil(id) ->
-        with {:ok, arg_reg, b1} <- compile(arg, ctx, b) do
+        arg_ctx = Context.for_branch_arm(ctx)
+
+        with {:ok, arg_reg, b1} <- compile(arg, arg_ctx, b) do
           compile_runtime_builtin(id, [arg_reg], ctx, b1)
         else
           _ -> :unsupported
@@ -2168,6 +2420,45 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
     end
   end
 
+  @spec debug_set_arg?(Types.expr() | term(), Types.ir_expr() | term()) :: boolean()
+
+  defp debug_set_arg?(arg, ctx) do
+    env = %{
+      __module__: ctx.module || "Main",
+      __function_name__: ctx.function_name,
+      __var_types__: ctx.local_types,
+      __program_decls__: ctx.decl_map
+    }
+
+    case Elmc.Backend.CCodegen.Native.TypedReturn.expr_type(arg, env) do
+      type when is_binary(type) ->
+        Elmc.Backend.CCodegen.TypeParsing.set_type?(type)
+
+      _ ->
+        case arg do
+          %{op: :var, name: name} when is_binary(name) ->
+            case Map.get(ctx.decl_map, {ctx.module, ctx.function_name}) do
+              %{type: type, args: args} when is_binary(type) and is_list(args) ->
+                with idx when is_integer(idx) <- Enum.find_index(args, &(&1 == name)),
+                     param_type when is_binary(param_type) <-
+                       Enum.at(Elmc.Backend.CCodegen.TypeParsing.function_arg_types(type), idx) do
+                  Elmc.Backend.CCodegen.TypeParsing.set_type?(param_type)
+                else
+                  _ -> false
+                end
+
+              _ ->
+                false
+            end
+
+          _ ->
+            false
+        end
+    end
+  end
+
+  @spec compile_qualified_binary(Types.ir_expr(), Types.expr(), Types.expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+
   defp compile_qualified_binary(id, left, right, ctx, b) do
     with {:ok, [left_reg, right_reg], b1} <- compile_args([left, right], ctx, b) do
       compile_runtime_builtin(id, [left_reg, right_reg], ctx, b1)
@@ -2175,6 +2466,8 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
       _ -> :unsupported
     end
   end
+
+  @spec compile_qualified_ternary(Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
 
   defp compile_qualified_ternary(id, a, b, c, ctx, builder) do
     with {:ok, [a_reg, b_reg, c_reg], b1} <- compile_args([a, b, c], ctx, builder) do
@@ -2184,6 +2477,8 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
     end
   end
 
+  @spec compile_ternary_runtime(String.t(), Types.ir_expr(), Types.ir_expr(), integer(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+
   defp compile_ternary_runtime(_target, low, high, value, id, ctx, b) do
     with {:ok, [low_reg, high_reg, value_reg], b1} <- compile_args([low, high, value], ctx, b) do
       compile_runtime_builtin(id, [low_reg, high_reg, value_reg], ctx, b1)
@@ -2191,6 +2486,8 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
       _ -> :unsupported
     end
   end
+
+  @spec compile_field_values(list(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
 
   defp compile_field_values(fields, ctx, b) do
     operand_ctx = Context.for_branch_arm(ctx)
@@ -2232,6 +2529,8 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
     end)
   end
 
+  @spec literal_field_name(Types.ir_expr()) :: Types.ir_expr()
+
   defp literal_field_name(field) do
     (Map.get(field, :name) || Map.get(field, :field) || "") |> to_string()
   end
@@ -2240,6 +2539,8 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
   # more registered type-alias shapes. If several aliases share the field set
   # (Point3d / Direction3d / Vector3d all use {x,y,z}), keep a type only when
   # every match agrees — that still catches Float number-polymorphism.
+  @spec literal_field_types_by_name(list()) :: Types.ir_expr()
+
   defp literal_field_types_by_name(field_names) when is_list(field_names) do
     name_set = MapSet.new(Enum.map(field_names, &to_string/1))
     shapes = Process.get(:elmc_record_alias_shapes, %{})
@@ -2285,6 +2586,8 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
     end
   end
 
+  @spec int_record_literal_fields?(list()) :: boolean()
+
   defp int_record_literal_fields?(fields) when is_list(fields) do
     # Prefer expr shape over unscoped field-name Int lookup: the same field name
     # can be Int in one record type and a Point/record in another.
@@ -2308,6 +2611,8 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
   end
 
   # Int record literal field values like `labelPoint.x - 9` / `p.y`.
+  @spec int_record_field_arith?(map() | term()) :: boolean()
+
   defp int_record_field_arith?(%{op: :field_access, field: field}) when is_binary(field), do: true
 
   defp int_record_field_arith?(%{op: :call, name: name, args: args}) when is_list(args) do
@@ -2343,10 +2648,14 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
 
   defp int_record_field_arith?(_), do: false
 
+  @spec int_record_shape?(list()) :: boolean()
+
   defp int_record_shape?(field_names) when is_list(field_names) do
     _ = field_names
     false
   end
+
+  @spec int_record_expr?(map() | term()) :: boolean()
 
   defp int_record_expr?(%{op: :int_literal, union_ctor: ctor}) when is_binary(ctor), do: false
 
@@ -2393,6 +2702,8 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
 
   defp int_record_expr?(_), do: false
 
+  @spec int_call_target?(String.t()) :: boolean()
+
   defp int_call_target?(target) when is_binary(target) do
     target in [
       "Basics.max",
@@ -2406,6 +2717,8 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
       String.ends_with?(target, ".min") or
       String.ends_with?(target, ".modBy")
   end
+
+  @spec compile_runtime_call(map() | Types.expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
 
   defp compile_runtime_call(%{function: "elmc_list_repeat", args: args}, ctx, b) do
     case fold_list_repeat_literals(args, ctx, b) do
@@ -2476,6 +2789,8 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
 
   defp compile_runtime_call(expr, ctx, b), do: compile_runtime_call_default(expr, ctx, b)
 
+  @spec compile_runtime_call_default(map() | term(), Types.ir_expr() | term(), Types.ir_expr() | term()) :: Types.ir_expr()
+
   defp compile_runtime_call_default(%{function: "elmc_list_find_first", args: args}, ctx, b) do
     with {:ok, [pred_reg, list_reg], b1} <- compile_call_args(args, ctx, b),
          {:ok, filtered_reg, b2} <-
@@ -2501,11 +2816,15 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
 
   defp compile_runtime_call_default(_, _, _), do: :unsupported
 
+  @spec compile_call_args(list() | term(), Types.ir_expr() | term(), Types.ir_expr() | term()) :: Types.ir_expr()
+
   defp compile_call_args(args, ctx, b) when is_list(args) do
     compile_args(args, ctx, b)
   end
 
   defp compile_call_args(_, _, _), do: {:ok, [], nil}
+
+  @spec fold_list_repeat_literals(term(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
 
   defp fold_list_repeat_literals([count_expr, item_expr], ctx, b) do
     with {:ok, count} <- fold_list_repeat_count(count_expr, ctx),
@@ -2518,6 +2837,8 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
     end
   end
 
+  @spec fold_list_repeat_count(map() | Types.expr(), Types.ir_expr()) :: Types.ir_expr()
+
   defp fold_list_repeat_count(%{op: :int_literal, value: count}, _ctx) when is_integer(count),
     do: {:ok, count}
 
@@ -2525,12 +2846,16 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
     ConstantInt.literal_value(expr, constant_int_env(ctx))
   end
 
+  @spec fold_list_repeat_item(map() | Types.expr(), Types.ir_expr()) :: Types.ir_expr()
+
   defp fold_list_repeat_item(%{op: :int_literal, value: item}, _ctx) when is_integer(item),
     do: {:ok, item}
 
   defp fold_list_repeat_item(expr, ctx) do
     ConstantInt.literal_value(expr, constant_int_env(ctx))
   end
+
+  @spec constant_int_env(map()) :: Types.ir_expr()
 
   defp constant_int_env(%Context{module: mod, decl_map: decl_map}) do
     %{
@@ -2541,6 +2866,8 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
   end
 
   @doc false
+  @spec compile_const_static_list(Types.ir_expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+
   def compile_const_static_list(spec, ctx, b) do
     # List builders take ownership of element regs. Retain-dup first so values that
     # are still live after the list (e.g. Nonempty extentA [extentB] then use
@@ -2564,6 +2891,8 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
     {:ok, result, b4}
   end
 
+  @spec prepare_static_list_consume(term() | Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+
   defp prepare_static_list_consume({:values, regs}, b) when is_list(regs) do
     {regs2, b1} = Builder.dup_all_regs_for_record_new_consume(b, regs)
     {{:values, regs2}, b1}
@@ -2575,6 +2904,8 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
   end
 
   defp prepare_static_list_consume(spec, b), do: {spec, b}
+
+  @spec static_list_instr(term(), Types.ir_expr()) :: Types.ir_expr()
 
   defp static_list_instr({:int_array, values}, dest) do
     {%{kind: :int_array, values: values}, Types.fallible_effects(dest)}
@@ -2607,6 +2938,8 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
     :list_length
   ]
 
+  @spec compile_runtime_builtin(Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+
   def compile_runtime_builtin(id, arg_regs, ctx, b, extra \\ %{}) do
     if id in @borrow_view_builtins do
       compile_borrow_view_builtin(id, arg_regs, ctx, b, extra)
@@ -2614,6 +2947,8 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
       compile_runtime_builtin_core(id, arg_regs, ctx, b, extra)
     end
   end
+
+  @spec compile_borrow_view_builtin(Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
 
   defp compile_borrow_view_builtin(id, arg_regs, _ctx, b, extra) do
     [subject | _] = arg_regs
@@ -2647,6 +2982,8 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
         {:ok, owned, b2}
     end
   end
+
+  @spec compile_runtime_builtin_core(Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
 
   defp compile_runtime_builtin_core(:list_from_values, arg_regs, ctx, b, _extra) do
     compile_const_static_list({:values, arg_regs}, ctx, b)
@@ -2689,7 +3026,7 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
         id in [:tuple2, :tuple2_take] -> {[], arg_regs}
         id in [:list_cons, :list_append] -> {[], arg_regs}
         id in [:cmd_batch, :sub_batch] -> {[], arg_regs}
-        id == :debug_to_string -> {[], arg_regs}
+        id in [:debug_to_string, :debug_set_to_string] -> {[], arg_regs}
         id in [:char_from_code] -> {[], arg_regs}
         id in [:string_length_boxed] -> {arg_regs, []}
         id == :tuple2_ints -> {arg_regs, []}
@@ -2747,6 +3084,8 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
     {:ok, result, b4}
   end
 
+  @spec dest_for_builtin(Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+
   defp dest_for_builtin(ctx, b) do
     case Context.dest_for_call(ctx) do
       :fn_out -> {:fn_out, b}
@@ -2754,6 +3093,8 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
       :scratch -> Builder.fresh_reg(b)
     end
   end
+
+  @spec compile_tuple2_pair(Types.expr(), Types.expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
 
   defp compile_tuple2_pair(left, right, ctx, b) do
     operand_ctx = %{ctx | dest_stack: [:scratch], function_tail: false}
@@ -2770,10 +3111,14 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
     end
   end
 
+  @spec tuple2_ints_eligible?(Types.expr(), Types.expr(), Types.ir_expr()) :: boolean()
+
   defp tuple2_ints_eligible?(left, right, ctx) do
     tuple2_int_pair_operand?(left, ctx) and tuple2_int_pair_operand?(right, ctx) and
       not render_op_boxed_payload?(left, right)
   end
+
+  @spec tuple2_int_pair_operand?(map() | Types.expr(), Types.ir_expr()) :: boolean()
 
   defp tuple2_int_pair_operand?(%{op: :int_literal, union_ctor: ctor}, _ctx) when is_binary(ctor),
     do: false
@@ -2783,8 +3128,12 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
       (native_int_operand_expr?(expr, ctx) and not field_access_expr?(expr))
   end
 
+  @spec field_access_expr?(map() | term()) :: boolean()
+
   defp field_access_expr?(%{op: :field_access}), do: true
   defp field_access_expr?(_), do: false
+
+  @spec constructor_ref_arity(String.t(), Types.ir_expr()) :: Types.ir_expr()
 
   defp constructor_ref_arity(target, ctx) when is_binary(target) do
     specs = Process.get(:elmc_union_constructor_payload_specs, %{})
@@ -2820,17 +3169,25 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
 
   # Render-op tuples (pathFilled, pathOutline, group, …) carry boxed payloads; never
   # lower them to tuple2_ints even when the payload is a bare var in IR.
+  @spec render_op_boxed_payload?(Types.expr(), Types.expr()) :: boolean()
+
   defp render_op_boxed_payload?(left, right) do
     render_op_kind_expr?(left) and boxed_payload_operand?(right)
   end
+
+  @spec render_op_kind_expr?(map() | term()) :: boolean()
 
   defp render_op_kind_expr?(%{op: :c_int_expr, value: value}) when is_binary(value),
     do: String.starts_with?(value, "ELMC_RENDER_OP_")
 
   defp render_op_kind_expr?(_), do: false
 
+  @spec boxed_payload_operand?(map() | term()) :: boolean()
+
   defp boxed_payload_operand?(%{op: op}) when op in [:var, :call, :qualified_call], do: true
   defp boxed_payload_operand?(_), do: false
+
+  @spec native_int_operand_expr?(map() | term(), Types.ir_expr()) :: boolean()
 
   defp native_int_operand_expr?(%{op: op}, _ctx) when op in [:int_literal, :c_int_expr, :msg_tag_expr],
     do: true
@@ -2853,6 +3210,8 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
 
   defp native_int_operand_expr?(_, _ctx), do: false
 
+  @spec native_int_param_index?(Types.ir_expr(), Types.ir_expr()) :: boolean()
+
   defp native_int_param_index?(idx, ctx) do
     case Map.get(ctx.decl_map, {ctx.module, ctx.function_name}) do
       decl when is_map(decl) ->
@@ -2864,6 +3223,8 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
     end
   end
 
+  @spec port_decl_type(Types.ir_expr(), String.t()) :: Types.ir_expr()
+
   defp port_decl_type(ctx, name) do
     case Map.get(ctx.decl_map, {ctx.module || "Main", name}) do
       %{type: type} when is_binary(type) -> type
@@ -2871,6 +3232,8 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
       _ -> nil
     end
   end
+
+  @spec compare_op_kind(Types.ir_expr()) :: Types.ir_expr()
 
   defp compare_op_kind("__eq__"), do: :eq
   defp compare_op_kind("__neq__"), do: :neq

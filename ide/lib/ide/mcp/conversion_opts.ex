@@ -1,6 +1,7 @@
 defmodule Ide.Mcp.ConversionOpts do
   @moduledoc false
 
+
   alias Ide.Mcp.JsonSchema
   alias Ide.Mcp.ToolTypes
 

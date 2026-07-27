@@ -61,12 +61,16 @@ defmodule Ide.Mcp.StreamableHttp do
     end
   end
 
+  @spec run_listen_loop(integer(), term()) :: term()
+
   defp run_listen_loop(conn, session_id) do
     case stream_loop_override() do
       fun when is_function(fun, 2) -> fun.(conn, session_id)
       _ -> default_listen_loop(conn, session_id)
     end
   end
+
+  @spec default_listen_loop(integer(), term()) :: term()
 
   defp default_listen_loop(conn, session_id) do
     receive do
@@ -81,9 +85,13 @@ defmodule Ide.Mcp.StreamableHttp do
     end
   end
 
+  @spec stream_loop_override() :: term()
+
   defp stream_loop_override do
     Application.get_env(:ide, IdeWeb.McpController, [])[:stream_loop]
   end
+
+  @spec chunk!(integer(), term()) :: term()
 
   defp chunk!(conn, data) do
     case chunk(conn, data) do
@@ -92,12 +100,16 @@ defmodule Ide.Mcp.StreamableHttp do
     end
   end
 
+  @spec accept_header(integer()) :: term()
+
   defp accept_header(conn) do
     conn
     |> get_req_header("accept")
     |> Enum.join(",")
     |> String.downcase()
   end
+
+  @spec localhost_origin?(integer(), term()) :: boolean()
 
   defp localhost_origin?(origin, host) do
     case URI.parse(origin) do

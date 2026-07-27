@@ -1,5 +1,7 @@
 defmodule Ide.Emulator.Session do
   @moduledoc false
+  alias Ide.Emulator.Types, as: Types
+
 
   use GenServer
 

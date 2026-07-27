@@ -90,6 +90,8 @@ defmodule Ide.Emulator.InstallPrep do
 
   def qemu_and_router_healthy?(_state), do: false
 
+  @spec ensure_min_time_since_boot(term(), term()) :: term()
+
   defp ensure_min_time_since_boot(platform, last_boot_ms) do
     required = min_ms_after_boot(platform)
     elapsed = now_ms() - last_boot_ms
@@ -100,6 +102,8 @@ defmodule Ide.Emulator.InstallPrep do
 
     :ok
   end
+
+  @spec reuse_settle_ms(term()) :: term()
 
   defp reuse_settle_ms(state) do
     base = config(:install_reuse_settle_ms, 500)
@@ -117,6 +121,8 @@ defmodule Ide.Emulator.InstallPrep do
 
   # Larger PBWs on snowy-class QEMU machines need smaller PutBytes chunks and more
   # time between chunks so the Bluetooth stack keeps up during the binary phase (~5% UI).
+  @spec platform_putbytes_pacing(term()) :: term()
+
   defp platform_putbytes_pacing(platform) when platform in ["emery", "flint", "gabbro"] do
     [
       chunk_size: config(:pbw_chunk_size, 256),
@@ -133,10 +139,16 @@ defmodule Ide.Emulator.InstallPrep do
     ]
   end
 
+  @spec live_pid?(pid() | term()) :: boolean()
+
   defp live_pid?(pid) when is_pid(pid), do: Process.alive?(pid)
   defp live_pid?(_pid), do: false
 
+  @spec now_ms() :: term()
+
   defp now_ms, do: System.monotonic_time(:millisecond)
+
+  @spec config(String.t(), term()) :: term()
 
   defp config(key, default), do: Config.config(key, default)
 end

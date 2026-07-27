@@ -1,6 +1,9 @@
 defmodule Elmc.Backend.Wasm.Lower.Frame do
   @moduledoc false
+  alias Elmc.Types, as: Types
 
+
+  alias Elmc.Backend.Plan.Types.FunctionPlan
   alias Elmc.Backend.Wasm.Slots
   alias Elmc.Backend.Wasm.Types, as: WasmTypes
 
@@ -70,6 +73,8 @@ defmodule Elmc.Backend.Wasm.Lower.Frame do
     store_roots ++ releases
   end
 
+  @spec emit_epilogue_roots(Types.ir_expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+
   defp emit_epilogue_roots(slots, scratch, fn_out) do
     fn_out_store =
       WasmTypes.line(
@@ -99,7 +104,21 @@ defmodule Elmc.Backend.Wasm.Lower.Frame do
   end
 
   @spec box_native_scalar_return(Elmc.Backend.Plan.Types.FunctionPlan.t(), Slots.t()) :: iodata()
-  def box_native_scalar_return(%{native_scalar_return: kind}, slots) when kind in [:native_int, :native_bool] do
+  def box_native_scalar_return(%{native_scalar_return: :native_int} = plan, slots) do
+    if plan_publishes_boxed_int?(plan) do
+      []
+    else
+      box_native_scalar_return_impl(:native_int, slots)
+    end
+  end
+
+  def box_native_scalar_return(%{native_scalar_return: kind}, slots) when kind in [:native_bool] do
+    box_native_scalar_return_impl(kind, slots)
+  end
+
+  def box_native_scalar_return(_plan, _slots), do: []
+
+  defp box_native_scalar_return_impl(kind, slots) do
     import_sym =
       (case kind do
          :native_int -> Elmc.Backend.Wasm.RuntimeImports.import_name(:new_int)
@@ -129,7 +148,15 @@ defmodule Elmc.Backend.Wasm.Lower.Frame do
     ]
   end
 
-  def box_native_scalar_return(_plan, _slots), do: []
+  defp plan_publishes_boxed_int?(%FunctionPlan{blocks: blocks}) do
+    blocks
+    |> Enum.flat_map(& &1.instrs)
+    |> Enum.any?(fn
+      %{op: :call_runtime, args: %{builtin: :new_int}} -> true
+      %{op: :int_arith, dest: dest} when is_integer(dest) -> true
+      _ -> false
+    end)
+  end
 
   @spec return_rc(Slots.t()) :: iodata()
   def return_rc(slots) do

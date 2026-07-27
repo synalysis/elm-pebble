@@ -1,5 +1,7 @@
 defmodule Elmx.Runtime.Core.Debug do
   @moduledoc false
+  alias Elmx.Types, as: Types
+
 
   alias Elmx.Types
 
@@ -17,6 +19,8 @@ defmodule Elmx.Runtime.Core.Debug do
 
   @spec to_string(Types.string_like() | Types.wire_input()) :: String.t()
   def to_string(value), do: format_value(value)
+
+  @spec format_value(integer()) :: Types.elm_value()
 
   defp format_value(value) do
     case wire_shape(value) do
@@ -78,9 +82,15 @@ defmodule Elmx.Runtime.Core.Debug do
     end
   end
 
+  @spec wire_shape(term() | map() | Types.elm_value() | atom() | list()) :: Types.elm_value()
+
   defp wire_shape({:elmx_task, kind, payload}), do: {:task, task_debug_label(kind, payload)}
 
   defp wire_shape({:elmx_set, items}) when is_list(items), do: {:set, items}
+
+  defp wire_shape({:Set_elm_builtin, dict}) do
+    {:set, Elmx.Runtime.Core.Collections.dict_keys(dict)}
+  end
   defp wire_shape({:elmx_dict, items}) when is_map(items),
     do: {:dict, Map.to_list(items)}
 
@@ -146,9 +156,13 @@ defmodule Elmx.Runtime.Core.Debug do
   defp wire_shape(map) when is_map(map), do: {:record, Map.to_list(map)}
   defp wire_shape(_), do: :plain
 
+  @spec union_ctor_display_cell?(term() | atom()) :: boolean()
+
   defp union_ctor_display_cell?({ctor, _}) when is_atom(ctor), do: union_ctor_atom?(ctor)
   defp union_ctor_display_cell?(atom) when is_atom(atom), do: union_ctor_atom?(atom)
   defp union_ctor_display_cell?(_), do: false
+
+  @spec union_tuple_shape(term()) :: Types.elm_value()
 
   defp union_tuple_shape([ctor | args]) when is_atom(ctor) do
     case ctor do
@@ -165,6 +179,8 @@ defmodule Elmx.Runtime.Core.Debug do
     end
   end
 
+  @spec tuple_spine_shape(Types.elm_value()) :: Types.elm_value()
+
   defp tuple_spine_shape(tuple) when is_tuple(tuple) do
     case tuple_size(tuple) do
       2 -> {:tuple, elem(tuple, 0), elem(tuple, 1)}
@@ -172,12 +188,18 @@ defmodule Elmx.Runtime.Core.Debug do
     end
   end
 
+  @spec nested_pair_spine(term()) :: Types.elm_value()
+
   defp nested_pair_spine([value]), do: {:tuple, value, nil}
   defp nested_pair_spine([first, second]), do: {:tuple, first, second}
   defp nested_pair_spine([first | rest]), do: {:tuple, first, nested_pair_rest(rest)}
 
+  @spec nested_pair_rest(term()) :: Types.elm_value()
+
   defp nested_pair_rest([value]), do: value
   defp nested_pair_rest([first | rest]), do: {first, nested_pair_rest(rest)}
+
+  @spec format_tuple_spine(Types.elm_value(), Types.elm_value()) :: Types.elm_value()
 
   defp format_tuple_spine(first, rest) do
     case flatten_union_display_spine(first, rest) do
@@ -195,6 +217,8 @@ defmodule Elmx.Runtime.Core.Debug do
     end
   end
 
+  @spec format_tuple_spine_default(Types.elm_value(), Types.elm_value()) :: Types.elm_value()
+
   defp format_tuple_spine_default(first, rest) do
     first_str = format_value(first)
 
@@ -206,6 +230,8 @@ defmodule Elmx.Runtime.Core.Debug do
     end
   end
 
+  @spec flatten_union_ctor_chain(Types.elm_value(), Types.elm_value()) :: Types.elm_value()
+
   defp flatten_union_ctor_chain(first, rest) do
     with {:ok, left} <- flatten_union_ctor_chain_cell(first),
          {:ok, right} <- flatten_union_ctor_chain_cell(rest) do
@@ -214,6 +240,8 @@ defmodule Elmx.Runtime.Core.Debug do
       _ -> :error
     end
   end
+
+  @spec flatten_union_ctor_chain_cell(atom() | term()) :: Types.elm_value()
 
   defp flatten_union_ctor_chain_cell(atom) when is_atom(atom) do
     if union_ctor_atom?(atom), do: {:ok, [atom]}, else: :error
@@ -226,6 +254,8 @@ defmodule Elmx.Runtime.Core.Debug do
 
   defp flatten_union_ctor_chain_cell(_), do: :error
 
+  @spec flatten_union_display_spine(Types.elm_value(), Types.elm_value()) :: Types.elm_value()
+
   defp flatten_union_display_spine(first, rest) do
     with true <- union_display_cell?(first),
          {:ok, tail} <- flatten_union_display_rest(rest) do
@@ -234,6 +264,8 @@ defmodule Elmx.Runtime.Core.Debug do
       _ -> :error
     end
   end
+
+  @spec flatten_union_display_rest(term() | Types.elm_value()) :: Types.elm_value()
 
   defp flatten_union_display_rest({left, right}) when is_tuple({left, right}) and tuple_size({left, right}) == 2 do
     cell = {left, right}
@@ -254,6 +286,8 @@ defmodule Elmx.Runtime.Core.Debug do
     if union_display_cell?(cell), do: {:ok, [cell]}, else: :error
   end
 
+  @spec union_display_cell?(term() | atom()) :: boolean()
+
   defp union_display_cell?({left, right}) when is_atom(left) and is_atom(right) do
     union_ctor_atom?(left) and union_ctor_atom?(right) and false
   end
@@ -263,12 +297,16 @@ defmodule Elmx.Runtime.Core.Debug do
   defp union_display_cell?(atom) when is_atom(atom), do: union_ctor_atom?(atom)
   defp union_display_cell?(_), do: false
 
+  @spec union_display_leaf_cell?(term()) :: boolean()
+
   defp union_display_leaf_cell?({ctor, payload}) when is_atom(ctor) do
     union_ctor_atom?(ctor) and not (is_atom(payload) and union_ctor_atom?(payload)) and
       not elm_tuple_cell?(payload)
   end
 
   defp union_display_leaf_cell?(_), do: false
+
+  @spec format_tuple_spine_loop(term() | Types.elm_value()) :: Types.elm_value()
 
   defp format_tuple_spine_loop({mid, rest} = cell) when is_tuple(cell) and tuple_size(cell) == 2 do
     cond do
@@ -295,10 +333,14 @@ defmodule Elmx.Runtime.Core.Debug do
 
   defp format_tuple_spine_loop(rest), do: format_value(rest)
 
+  @spec union_ctor_tuple?(term()) :: boolean()
+
   defp union_ctor_tuple?({ctor, payload}) when is_atom(ctor),
     do: union_ctor_atom?(ctor) and not elm_tuple_cell?(payload)
 
   defp union_ctor_tuple?(_), do: false
+
+  @spec union_tuple_spine_pair?(term()) :: boolean()
 
   defp union_tuple_spine_pair?({left, right}) when is_atom(left) and is_atom(right),
     do: union_ctor_atom?(left) and union_ctor_atom?(right)
@@ -307,6 +349,8 @@ defmodule Elmx.Runtime.Core.Debug do
     do: union_ctor_atom?(elem({left, right}, 0)) and union_tuple_spine_pair?(right)
 
   defp union_tuple_spine_pair?(_), do: false
+
+  @spec task_debug_label(Types.elm_value() | integer(), Types.elm_value() | term()) :: Types.elm_value()
 
   defp task_debug_label(:succeed, _payload), do: "<Task:succeed>"
   defp task_debug_label(:fail, _payload), do: "<Task:fail>"
@@ -320,8 +364,12 @@ defmodule Elmx.Runtime.Core.Debug do
     end
   end
 
+  @spec elm_tuple_cell?(Types.elm_value() | term()) :: boolean()
+
   defp elm_tuple_cell?(term) when is_tuple(term) and tuple_size(term) == 2, do: true
   defp elm_tuple_cell?(_), do: false
+
+  @spec union_ctor_atom?(atom() | term()) :: boolean()
 
   defp union_ctor_atom?(ctor) when is_atom(ctor) do
     case Atom.to_string(ctor) do
@@ -332,6 +380,8 @@ defmodule Elmx.Runtime.Core.Debug do
 
   defp union_ctor_atom?(_), do: false
 
+  @spec record_fields_to_string(list()) :: Types.elm_value()
+
   defp record_fields_to_string(fields) do
     fields
     |> Enum.sort_by(fn {key, _} -> record_field_sort_key(key) end)
@@ -341,8 +391,12 @@ defmodule Elmx.Runtime.Core.Debug do
     end)
   end
 
+  @spec record_field_sort_key(atom() | String.t()) :: Types.elm_value()
+
   defp record_field_sort_key(key) when is_atom(key), do: Atom.to_string(key)
   defp record_field_sort_key(key) when is_binary(key), do: key
+
+  @spec format_manager(map()) :: Types.elm_value()
 
   defp format_manager(%{"$" => 1, "k" => key, "l" => leaf}) do
     "{ $ = 1, k = " <> format_value(key) <> ", l = " <> format_value(leaf) <> " }"
@@ -362,12 +416,16 @@ defmodule Elmx.Runtime.Core.Debug do
       " }"
   end
 
+  @spec format_scientific_float(integer()) :: Types.elm_value()
+
   defp format_scientific_float(value) do
     value
     |> then(&:io_lib_format.fwrite("~.6e", [&1]))
     |> IO.iodata_to_binary()
     |> String.downcase()
   end
+
+  @spec plain_to_string(integer() | Types.elm_value() | String.t() | float()) :: Types.elm_value()
 
   defp plain_to_string(value) when is_function(value), do: "<function>"
   defp plain_to_string(:nan), do: "nan"
@@ -393,6 +451,8 @@ defmodule Elmx.Runtime.Core.Debug do
 
   defp plain_to_string(value), do: inspect(value, limit: :infinity, printable_limit: :infinity)
 
+  @spec format_char_payload(term() | integer() | String.t()) :: Types.elm_value()
+
   defp format_char_payload({:elmx_char, code}) when is_integer(code), do: format_char_literal(code)
   defp format_char_payload(code) when is_integer(code), do: format_char_literal(code)
 
@@ -404,6 +464,8 @@ defmodule Elmx.Runtime.Core.Debug do
   end
 
   defp format_char_payload(value), do: format_value(value)
+
+  @spec format_char_literal(integer()) :: Types.elm_value()
 
   defp format_char_literal(code) when is_integer(code) do
     cond do
@@ -421,12 +483,16 @@ defmodule Elmx.Runtime.Core.Debug do
     end
   end
 
+  @spec char_codepoint(String.t()) :: Types.elm_value()
+
   defp char_codepoint(bin) when is_binary(bin) do
     case String.next_codepoint(bin) do
       {<<cp::utf8>>, ""} -> {:ok, cp}
       _ -> :error
     end
   end
+
+  @spec escape_elm_string(integer()) :: Types.elm_value()
 
   defp escape_elm_string(value) do
     value

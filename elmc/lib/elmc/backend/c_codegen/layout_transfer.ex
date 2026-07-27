@@ -1,5 +1,7 @@
 defmodule Elmc.Backend.CCodegen.LayoutTransfer do
   @moduledoc false
+  alias Elmc.Backend.CCodegen.Types, as: Types
+
 
   alias Elmc.Backend.CCodegen.StoragePlan
   alias Elmc.Backend.CCodegen.Types
@@ -52,9 +54,13 @@ defmodule Elmc.Backend.CCodegen.LayoutTransfer do
 
   def output_plan(_target, _args, input_plan, _opts), do: input_plan || StoragePlan.mixed()
 
+  @spec repeat_target?(String.t()) :: boolean()
+
   defp repeat_target?(target) do
     target in ~w(List.repeat Elm.Kernel.List.repeat)
   end
+
+  @spec repeat_plan(term() | [String.t()], Types.ir_expr()) :: Types.ir_expr()
 
   defp repeat_plan([n, _value], elem_schema) do
     if known_length?(n) do
@@ -66,12 +72,16 @@ defmodule Elmc.Backend.CCodegen.LayoutTransfer do
 
   defp repeat_plan(_args, elem_schema), do: native_linked_for(elem_schema)
 
+  @spec concat_plan([String.t()], integer(), Types.ir_expr()) :: Types.ir_expr()
+
   defp concat_plan(_args, input_plan, elem_schema) do
     case input_plan do
       %StoragePlan{layout: :compact} = plan -> plan
       _ -> native_linked_for(elem_schema || plan_elem(input_plan))
     end
   end
+
+  @spec preserve_or_compact(integer(), Types.ir_expr(), keyword()) :: Types.ir_expr()
 
   defp preserve_or_compact(input_plan, elem_schema, opts) do
     case input_plan do
@@ -83,6 +93,8 @@ defmodule Elmc.Backend.CCodegen.LayoutTransfer do
     end
   end
 
+  @spec preserve_input(Types.ir_expr() | map(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+
   defp preserve_input(nil, elem_schema, "List Float"),
     do: compact_for_elem(elem_schema || {:primitive, :float})
 
@@ -91,6 +103,8 @@ defmodule Elmc.Backend.CCodegen.LayoutTransfer do
 
   defp preserve_input(%StoragePlan{} = plan, _elem, _type), do: plan
   defp preserve_input(_other, elem_schema, _type), do: compact_for_elem(elem_schema)
+
+  @spec compact_for_elem(Types.ir_expr() | term(), Types.ir_expr() | keyword()) :: Types.ir_expr()
 
   defp compact_for_elem(elem, opts \\ [])
 
@@ -109,13 +123,19 @@ defmodule Elmc.Backend.CCodegen.LayoutTransfer do
 
   defp compact_for_elem(_elem, _opts), do: StoragePlan.mixed()
 
+  @spec native_linked_for(term()) :: Types.ir_expr()
+
   defp native_linked_for({:primitive, :int}), do: StoragePlan.int_native_linked()
   defp native_linked_for({:primitive, :float}), do: StoragePlan.float_native_linked()
   defp native_linked_for({:record, mod, name}), do: StoragePlan.record_compact(mod, name, length: :unknown)
   defp native_linked_for(_), do: StoragePlan.mixed()
 
+  @spec plan_elem(map() | term()) :: Types.ir_expr()
+
   defp plan_elem(%StoragePlan{elem: elem}) when not is_nil(elem), do: elem
   defp plan_elem(_), do: nil
+
+  @spec known_length?(map() | term()) :: boolean()
 
   defp known_length?(%{op: :int_literal, value: n}) when is_integer(n), do: true
   defp known_length?(_), do: false

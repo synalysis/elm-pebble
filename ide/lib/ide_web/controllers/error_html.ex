@@ -4,6 +4,7 @@ defmodule IdeWeb.ErrorHTML do
 
   See config/config.exs.
   """
+
   use IdeWeb, :html
 
   # If you want to customize your error pages,

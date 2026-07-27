@@ -13,15 +13,28 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Qualified.List do
 
   @spec compile(String.t(), ir_arg_list(), env(), emit_counter()) :: qualified_result()
   def compile("List.cons", [], env, counter) do
-    {:ok, "&#{CodegenRefs.core()}.list_cons/2", env, counter}
+    # Elm-curried first-class value; `&list_cons/2` breaks `cons.(x)` apply sites.
+    core = CodegenRefs.core()
+
+    {:ok,
+     "fn elmx_x -> fn elmx_xs -> #{core}.list_cons(elmx_x, elmx_xs) end end", env, counter}
   end
 
   def compile("List.foldl", [], env, counter) do
-    {:ok, "&#{CodegenRefs.core()}.foldl/3", env, counter}
+    # Fully curried so first-class `List.foldl` works with nested Elm application.
+    core = CodegenRefs.core()
+
+    {:ok,
+     "fn elmx_f -> fn elmx_acc -> fn elmx_list -> #{core}.foldl(elmx_f, elmx_acc, elmx_list) end end end",
+     env, counter}
   end
 
   def compile("List.foldr", [], env, counter) do
-    {:ok, "&#{CodegenRefs.core()}.foldr/3", env, counter}
+    core = CodegenRefs.core()
+
+    {:ok,
+     "fn elmx_f -> fn elmx_acc -> fn elmx_list -> #{core}.foldr(elmx_f, elmx_acc, elmx_list) end end end",
+     env, counter}
   end
 
   def compile("List.filter", [pred, list], env, counter),

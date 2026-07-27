@@ -1,5 +1,7 @@
 defmodule Elmc.Backend.Plan.IntPhiNative do
   @moduledoc false
+  alias Elmc.Backend.Plan.Types, as: Types
+
 
   alias Elmc.Backend.Plan.Types
 
@@ -19,6 +21,8 @@ defmodule Elmc.Backend.Plan.IntPhiNative do
         shape_from_instr(instr)
     end
   end
+
+  defp shape_from_instr(%{op: :const_int, args: %{bool_lit: true}}), do: :unknown
 
   defp shape_from_instr(%{op: :const_int, args: %{value: value}}), do: {:const_int, value}
 

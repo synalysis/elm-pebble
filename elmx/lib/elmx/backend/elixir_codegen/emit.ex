@@ -1,5 +1,7 @@
 defmodule Elmx.Backend.ElixirCodegen.Emit do
   @moduledoc false
+  alias Elmx.Types, as: Types
+
 
   alias Elmx.Backend.ElixirCodegen.Emit.Calls
   alias Elmx.Backend.ElixirCodegen.Emit.Constructor

@@ -1,5 +1,7 @@
 defmodule Elmc.Backend.CCodegen.FunctionSplit do
   @moduledoc false
+  alias Elmc.Backend.CCodegen.Types, as: Types
+
 
   alias Elmc.Backend.CCodegen.AppendSegments
   alias Elmc.Backend.CCodegen.EnvBindings
@@ -60,6 +62,8 @@ defmodule Elmc.Backend.CCodegen.FunctionSplit do
     end
   end
 
+  @spec split_enabled?() :: boolean()
+
   defp split_enabled? do
     opts = Process.get(:elmc_codegen_opts, [])
 
@@ -79,6 +83,8 @@ defmodule Elmc.Backend.CCodegen.FunctionSplit do
 
     pebble_int32? and split_opt?
   end
+
+  @spec split_candidate?(Types.decl()) :: boolean()
 
   defp split_candidate?(decl) do
     StackEstimate.ir_function_score(decl) >= @risk_threshold
@@ -130,6 +136,8 @@ defmodule Elmc.Backend.CCodegen.FunctionSplit do
       _ -> :error
     end
   end
+
+  @spec build_split_native(Types.decl(), String.t(), Types.decl_map(), Types.compile_env(), String.t(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
 
   defp build_split_native(
          decl,
@@ -220,6 +228,8 @@ defmodule Elmc.Backend.CCodegen.FunctionSplit do
     {:ok, native_def}
   end
 
+  @spec emit_part_native(Types.decl(), String.t(), Types.decl_map(), Types.compile_env(), String.t(), String.t(), Types.expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+
   defp emit_part_native(
          decl,
          module_name,
@@ -305,6 +315,8 @@ defmodule Elmc.Backend.CCodegen.FunctionSplit do
     """
   end
 
+  @spec fused_call_args(Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+
   defp fused_call_args(arg_bindings, arg_kinds) do
     arg_bindings
     |> Enum.zip(arg_kinds)
@@ -316,6 +328,8 @@ defmodule Elmc.Backend.CCodegen.FunctionSplit do
       end
     end)
   end
+
+  @spec prepare_catch_body(String.t(), Types.ir_expr()) :: Types.ir_expr()
 
   defp prepare_catch_body(body_text, body_var) do
     body_text =
@@ -331,6 +345,8 @@ defmodule Elmc.Backend.CCodegen.FunctionSplit do
     end
   end
 
+  @spec rc_body_needs_catch?(String.t()) :: boolean()
+
   defp rc_body_needs_catch?(body_text) when is_binary(body_text) do
     String.contains?(body_text, "CHECK_RC") or
       String.contains?(body_text, "CHECK_RC_TO") or
@@ -338,12 +354,16 @@ defmodule Elmc.Backend.CCodegen.FunctionSplit do
       String.contains?(body_text, "owned[")
   end
 
+  @spec peel_lets(map() | Types.expr()) :: Types.ir_expr()
+
   defp peel_lets(%{op: :let_in, name: name, value_expr: value_expr, in_expr: in_expr}) do
     {body, lets} = peel_lets(in_expr)
     {body, lets ++ [{name, value_expr}]}
   end
 
   defp peel_lets(expr), do: {expr, []}
+
+  @spec rebuild_lets(term() | Types.ir_expr(), Types.expr()) :: Types.ir_expr()
 
   defp rebuild_lets([], body), do: body
 
@@ -355,6 +375,8 @@ defmodule Elmc.Backend.CCodegen.FunctionSplit do
     end)
   end
 
+  @spec fold_append(term() | Types.ir_expr()) :: Types.ir_expr()
+
   defp fold_append([segment]), do: segment
 
   defp fold_append(segments) do
@@ -362,6 +384,8 @@ defmodule Elmc.Backend.CCodegen.FunctionSplit do
       %{op: :call, name: "__append__", args: [acc, segment]}
     end)
   end
+
+  @spec required_lets(Types.ir_expr(), Types.ir_expr(), String.t()) :: Types.ir_expr()
 
   defp required_lets(all_lets, segments, arg_names) do
     bound =
@@ -376,6 +400,8 @@ defmodule Elmc.Backend.CCodegen.FunctionSplit do
 
     expand_required_lets(all_lets, needed, bound)
   end
+
+  @spec expand_required_lets(Types.ir_expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
 
   defp expand_required_lets(all_lets, needed, bound) do
     lets_by_name =
@@ -398,6 +424,8 @@ defmodule Elmc.Backend.CCodegen.FunctionSplit do
       expand_required_lets(all_lets, expanded_needed, bound)
     end
   end
+
+  @spec free_vars(map() | list() | Types.expr(), Types.ir_expr()) :: Types.ir_expr()
 
   defp free_vars(%{op: :var, name: name}, bound) when is_binary(name) or is_atom(name) do
     key = EnvBindings.binding_key(name)

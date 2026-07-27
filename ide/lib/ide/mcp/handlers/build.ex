@@ -10,6 +10,8 @@ defmodule Ide.Mcp.Handlers.Build do
   alias Ide.Projects.Project
   alias Ide.Screenshots
 
+  @spec call(term(), map()) :: term()
+
   def call("pebble.package", %{"slug" => slug}) do
     toolchain = pebble_toolchain_module()
 
@@ -107,6 +109,8 @@ defmodule Ide.Mcp.Handlers.Build do
       {:error, reason} -> {:error, "screenshot capture failed: #{inspect(reason)}"}
     end
   end
+
+  @spec mcp_tools_config() :: term()
 
   defp mcp_tools_config, do: Application.get_env(:ide, Ide.Mcp.Tools, [])
 

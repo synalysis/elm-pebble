@@ -1,5 +1,7 @@
 defmodule Elmc.Backend.Plan.Lower.Call do
   @moduledoc false
+  alias Elmc.Backend.Plan.Types, as: Types
+
 
   alias Elmc.Backend.CCodegen.{FunctionEmit, Util}
   alias Elmc.Backend.Plan.Builder
@@ -40,6 +42,8 @@ defmodule Elmc.Backend.Plan.Lower.Call do
 
   def compile_call(_, _, _), do: :unsupported
 
+  @spec compile_fn_call(Types.expr(), String.t(), [String.t()], Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+
   defp compile_fn_call(expr, target, args, ctx, b) do
     cond do
       target == "__apply__" ->
@@ -53,10 +57,14 @@ defmodule Elmc.Backend.Plan.Lower.Call do
     end
   end
 
+  @spec ui_to_ui_node?(String.t() | term()) :: boolean()
+
   defp ui_to_ui_node?(target) when is_binary(target),
     do: target in ["Pebble.Ui.toUiNode", "PebbleUi.toUiNode", "Ui.toUiNode"]
 
   defp ui_to_ui_node?(_), do: false
+
+  @spec compile_ui_to_ui_node(term(), Types.ir_expr() | term(), Types.ir_expr() | term()) :: Types.ir_expr()
 
   defp compile_ui_to_ui_node([ops], ctx, b) do
     with {:ok, [ops_reg], b1} <- Expr.compile_args([ops], ctx, b) do
@@ -68,6 +76,8 @@ defmodule Elmc.Backend.Plan.Lower.Call do
 
   # Generic function application for value-level call targets.
   # Used by lowerer rewrites (compose, partials, etc) when applying a computed function value.
+  @spec compile_apply_call(term(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+
   defp compile_apply_call([fn_expr, arg_expr], ctx, b) do
     case MaybeMap.field_accessor_lambda(fn_expr) do
       {:ok, field} ->
@@ -104,6 +114,8 @@ defmodule Elmc.Backend.Plan.Lower.Call do
 
   defp compile_apply_call(_, _ctx, _b), do: :unsupported
 
+  @spec compile_fn_call_default(Types.expr(), String.t(), [String.t()], Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+
   defp compile_fn_call_default(_expr, target, args, ctx, b) do
     case call_rewrite(target, args) do
       %{op: :pebble_cmd} = rewritten ->
@@ -119,6 +131,8 @@ defmodule Elmc.Backend.Plan.Lower.Call do
         end
     end
   end
+
+  @spec compile_fn_call_special_or_target(String.t(), [String.t()], Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
 
   defp compile_fn_call_special_or_target(target, args, ctx, b) do
     case try_compile_qualified_field_call(target, args, ctx, b) do
@@ -140,6 +154,8 @@ defmodule Elmc.Backend.Plan.Lower.Call do
         end
     end
   end
+
+  @spec try_compile_qualified_field_call(String.t() | term(), [String.t()] | term(), Types.ir_expr() | term(), Types.ir_expr() | term()) :: Types.ir_expr() | nil
 
   defp try_compile_qualified_field_call(target, args, ctx, b)
        when is_binary(target) and is_list(args) do
@@ -173,6 +189,8 @@ defmodule Elmc.Backend.Plan.Lower.Call do
 
   defp try_compile_qualified_field_call(_, _, _, _), do: :unsupported
 
+  @spec compile_module_binding_field_call(String.t(), Types.ir_expr(), list(), [String.t()], Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+
   defp compile_module_binding_field_call(module, binding, fields, args, ctx, b)
        when is_binary(module) and is_binary(binding) and is_list(fields) and is_list(args) do
     field_ir =
@@ -190,6 +208,8 @@ defmodule Elmc.Backend.Plan.Lower.Call do
       _ -> :unsupported
     end
   end
+
+  @spec compile_special_rewrite(map() | integer(), [String.t()], Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
 
   defp compile_special_rewrite(%{op: :pebble_cmd} = rewritten, _args, ctx, b),
     do: Cmd.compile(rewritten, ctx, b)
@@ -237,6 +257,8 @@ defmodule Elmc.Backend.Plan.Lower.Call do
 
   defp compile_special_rewrite(_rewritten, _args, _ctx, _b), do: :unsupported
 
+  @spec call_rewrite(String.t(), [String.t()]) :: Types.ir_expr()
+
   defp call_rewrite(target, args) do
     case SpecialValues.special_value_from_target(target, args) do
       %{op: :call, name: ^target, args: ^args} -> nil
@@ -249,6 +271,8 @@ defmodule Elmc.Backend.Plan.Lower.Call do
   def compile_closure_call_from_reg(callee_reg, args, ctx, b) when is_integer(callee_reg) do
     do_compile_closure_call(callee_reg, args, ctx, b)
   end
+
+  @spec compile_fn_call_target(String.t(), String.t(), [String.t()], Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
 
   defp compile_fn_call_target(module, name, args, ctx, b) do
     {module, name} = rewrite_web_call_target(module, name)
@@ -265,6 +289,8 @@ defmodule Elmc.Backend.Plan.Lower.Call do
     end
   end
 
+  @spec do_compile_fn_call_target(String.t(), String.t(), [String.t()], Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+
   defp do_compile_fn_call_target(module, name, args, ctx, b) do
     {module, name} = resolve_delegate_call_target(module, name, args, ctx.decl_map)
 
@@ -276,6 +302,8 @@ defmodule Elmc.Backend.Plan.Lower.Call do
         do_compile_fn_call_target_after_ports(module, name, args, ctx, b)
     end
   end
+
+  @spec do_compile_fn_call_target_after_ports(String.t(), String.t(), [String.t()], Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
 
   defp do_compile_fn_call_target_after_ports(module, name, args, ctx, b) do
     cond do
@@ -333,9 +361,13 @@ defmodule Elmc.Backend.Plan.Lower.Call do
 
   # Unqualified `width x` lowers as `{ctx.module, "width"}` and may apply a local.
   # Cross-module qualified targets must call the named decl, not a same-named local.
+  @spec local_callee_shadow_allowed?(String.t(), Types.ir_expr()) :: boolean()
+
   defp local_callee_shadow_allowed?(module, ctx) when is_binary(module) do
     module == (ctx.module || "Main")
   end
+
+  @spec html_element_partial?(String.t() | term(), String.t() | term(), [String.t()] | term()) :: boolean()
 
   defp html_element_partial?(module, name, args)
        when is_binary(module) and is_binary(name) and is_list(args) do
@@ -354,6 +386,8 @@ defmodule Elmc.Backend.Plan.Lower.Call do
   # placeholder names (`__f`, `__decoder`) instead of the wrapper's params.
   # Applied Kernel calls still hit SpecialValues via the normal call path; stubs
   # cover remaining missing `elmc_fn_Elm_Kernel_*` symbols.
+  @spec compile_kernel_fn_ref(String.t(), String.t(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+
   defp compile_kernel_fn_ref(module, name, ctx, b) do
     qualified = "#{module}.#{name}"
 
@@ -365,6 +399,8 @@ defmodule Elmc.Backend.Plan.Lower.Call do
         compile_kernel_fn_ref_lambda(module, name, ctx, b)
     end
   end
+
+  @spec compile_kernel_fn_ref_lambda(String.t(), String.t(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
 
   defp compile_kernel_fn_ref_lambda(module, name, ctx, b) do
     qualified = "#{module}.#{name}"
@@ -386,9 +422,13 @@ defmodule Elmc.Backend.Plan.Lower.Call do
   end
 
   # Package shims: elm-pages internal modules that are aliases of elm/browser / elm/core.
+  @spec rewrite_web_call_target(Types.ir_expr() | String.t(), String.t() | Types.ir_expr()) :: Types.ir_expr()
+
   defp rewrite_web_call_target("Pages.Internal.String", name), do: {"String", name}
   defp rewrite_web_call_target("Pages", "Internal.String." <> rest), do: {"String", rest}
   defp rewrite_web_call_target(module, name), do: {module, name}
+
+  @spec resolve_delegate_call_target(String.t(), String.t(), list(), Types.decl_map()) :: Types.ir_expr()
 
   defp resolve_delegate_call_target(module, name, args, decl_map) when is_list(args) do
     decl = Map.get(decl_map, {module, name})
@@ -416,6 +456,8 @@ defmodule Elmc.Backend.Plan.Lower.Call do
     end
   end
 
+  @spec oversaturated_call?(Types.ir_expr(), String.t(), String.t(), list()) :: boolean()
+
   defp oversaturated_call?(ctx, module, name, args) when is_list(args) do
     case Map.fetch(ctx.decl_map, {module, name}) do
       {:ok, decl} ->
@@ -427,6 +469,8 @@ defmodule Elmc.Backend.Plan.Lower.Call do
     end
   end
 
+  @spec zero_arity_thunk_call?(Types.ir_expr(), String.t(), String.t(), list()) :: boolean()
+
   defp zero_arity_thunk_call?(ctx, module, name, args) when is_list(args) do
     case Map.fetch(ctx.decl_map, {module, name}) do
       {:ok, decl} ->
@@ -436,17 +480,27 @@ defmodule Elmc.Backend.Plan.Lower.Call do
         # skip this path, emitting call_fn(verts, indices) against a 0-param CAF.
         ir_params = Map.get(decl, :args, []) |> List.wrap()
 
+        # Untyped partials (`addFive = add 5`) often have `type: nil` even though
+        # the body is clearly a function value. Still treat as a thunk so
+        # `addFive 3` becomes load-CAF + call_closure (not call_fn with ignored args).
+        remaining_arity? =
+          FunctionEmit.function_type_arity(decl) > 0 or is_nil(Map.get(decl, :type))
+
         length(ir_params) == 0 and length(args) > 0 and closure_thunk_decl?(decl) and
-          FunctionEmit.function_type_arity(decl) > 0
+          remaining_arity?
 
       _ ->
         false
     end
   end
 
+  @spec closure_thunk_decl?(map()) :: boolean()
+
   defp closure_thunk_decl?(decl) when is_map(decl) do
     closure_thunk_expr?(Map.get(decl, :expr))
   end
+
+  @spec closure_thunk_expr?(map() | term()) :: boolean()
 
   defp closure_thunk_expr?(%{op: :lambda}), do: true
 
@@ -471,6 +525,8 @@ defmodule Elmc.Backend.Plan.Lower.Call do
   defp closure_thunk_expr?(%{op: :let_in, in_expr: body}), do: closure_thunk_expr?(body)
 
   defp closure_thunk_expr?(_), do: false
+
+  @spec compile_oversaturated_call(String.t(), String.t(), [String.t()], Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
 
   defp compile_oversaturated_call(module, name, args, ctx, b) do
     {:ok, decl} = Map.fetch(ctx.decl_map, {module, name})
@@ -502,6 +558,8 @@ defmodule Elmc.Backend.Plan.Lower.Call do
     end
   end
 
+  @spec apply_oversaturated_suffix(Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr() | non_neg_integer(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+
   defp apply_oversaturated_suffix(callee_reg, suffix, expected_types, 0, ctx, b) do
     apply_closure_args_sequential(callee_reg, suffix, expected_types, ctx, b)
   end
@@ -509,6 +567,8 @@ defmodule Elmc.Backend.Plan.Lower.Call do
   defp apply_oversaturated_suffix(callee_reg, suffix, expected_types, _arity, ctx, b) do
     compile_closure_call(callee_reg, suffix, expected_types, ctx, b)
   end
+
+  @spec apply_closure_args_sequential(Types.ir_expr(), term(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
 
   defp apply_closure_args_sequential(callee_reg, [], _expected_types, _ctx, b),
     do: {:ok, callee_reg, b}
@@ -530,8 +590,12 @@ defmodule Elmc.Backend.Plan.Lower.Call do
     end
   end
 
+  @spec peel_expected_type(term()) :: Types.ir_expr()
+
   defp peel_expected_type([type | rest]), do: {[type], rest}
   defp peel_expected_type(_), do: {[], []}
+
+  @spec closure_callee_reg(String.t(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
 
   defp closure_callee_reg(name, ctx, b) when is_binary(name) do
     case Context.local_reg(ctx, name) do
@@ -548,6 +612,8 @@ defmodule Elmc.Backend.Plan.Lower.Call do
         end
     end
   end
+
+  @spec closure_callee_reg_local(String.t(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
 
   defp closure_callee_reg_local(name, ctx, b) when is_binary(name) do
     case Context.local_reg(ctx, name) do
@@ -566,9 +632,13 @@ defmodule Elmc.Backend.Plan.Lower.Call do
     end
   end
 
+  @spec compile_forward_ref_load(String.t(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+
   defp compile_forward_ref_load(ref, ctx, b) when is_binary(ref) do
     Expr.compile_forward_ref_load(ref, ctx, b)
   end
+
+  @spec compile_closure_call(Types.ir_expr(), [String.t()], Types.ir_expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
 
   defp compile_closure_call(callee_reg, args, ctx, b) do
     do_compile_closure_call(callee_reg, args, [], ctx, b)
@@ -578,6 +648,8 @@ defmodule Elmc.Backend.Plan.Lower.Call do
        when is_list(expected_types) do
     do_compile_closure_call(callee_reg, args, expected_types, ctx, b)
   end
+
+  @spec do_compile_closure_call(Types.ir_expr(), [String.t()], Types.ir_expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
 
   defp do_compile_closure_call(callee_reg, args, ctx, b) do
     do_compile_closure_call(callee_reg, args, [], ctx, b)
@@ -621,6 +693,8 @@ defmodule Elmc.Backend.Plan.Lower.Call do
     end
   end
 
+  @spec compile_curried_lambda(String.t(), String.t(), String.t(), [String.t()], Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+
   defp compile_curried_lambda(module, name, param_names, partial_args, ctx, b) do
     remaining = Enum.drop(param_names, length(partial_args))
 
@@ -642,6 +716,8 @@ defmodule Elmc.Backend.Plan.Lower.Call do
     Lambda.compile_lambda(remaining, body, [], ctx, b)
   end
 
+  @spec html_map_curried_body(String.t(), Types.ir_expr() | String.t(), [String.t()], Types.ir_expr()) :: Types.ir_expr()
+
   defp html_map_curried_body(module, "map", partial_args, remaining) do
     opts = Process.get(:elmc_codegen_opts, %{})
 
@@ -661,6 +737,8 @@ defmodule Elmc.Backend.Plan.Lower.Call do
   end
 
   defp html_map_curried_body(_module, _name, _partial_args, _remaining), do: :error
+
+  @spec compile_batch_call(String.t(), [String.t()], Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
 
   defp compile_batch_call(target, args, ctx, b) do
     case SpecialValues.special_value_from_target(target, args) do
@@ -701,6 +779,8 @@ defmodule Elmc.Backend.Plan.Lower.Call do
     end
   end
 
+  @spec compile_batch_list_to_runtime_batch(Types.expr(), String.t(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+
   defp compile_batch_list_to_runtime_batch(list_expr, target, ctx, b) do
     operand_ctx = Context.for_branch_arm(ctx)
 
@@ -711,10 +791,14 @@ defmodule Elmc.Backend.Plan.Lower.Call do
     end
   end
 
+  @spec compile_batch_list_arg(map() | Types.expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+
   defp compile_batch_list_arg(%{op: :list_literal, items: items}, ctx, b),
     do: Elmc.Backend.Plan.Lower.List.compile_literal(items, ctx, b)
 
   defp compile_batch_list_arg(expr, ctx, b), do: Expr.compile(expr, ctx, b)
+
+  @spec batch_target?(String.t() | term()) :: boolean()
 
   defp batch_target?(target) when is_binary(target) do
     String.ends_with?(target, ".batch") or target == "batch"
@@ -722,12 +806,16 @@ defmodule Elmc.Backend.Plan.Lower.Call do
 
   defp batch_target?(_), do: false
 
+  @spec batch_builtin_id(String.t()) :: Types.ir_expr()
+
   defp batch_builtin_id(target) when is_binary(target) do
     cond do
       subscription_batch_target?(target) -> :sub_batch
       true -> :cmd_batch
     end
   end
+
+  @spec subscription_batch_target?(String.t()) :: boolean()
 
   defp subscription_batch_target?(target) when is_binary(target) do
     target in [
@@ -754,6 +842,8 @@ defmodule Elmc.Backend.Plan.Lower.Call do
     end
   end
 
+  @spec compile_top_level_ref_in(String.t(), String.t(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+
   defp compile_top_level_ref_in(module, name, ctx, b)
        when is_binary(module) and is_binary(name) do
     case Map.fetch(ctx.decl_map, {module, name}) do
@@ -774,6 +864,8 @@ defmodule Elmc.Backend.Plan.Lower.Call do
     end
   end
 
+  @spec compile_top_level_closure(String.t(), String.t(), String.t(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+
   defp compile_top_level_closure(module, name, param_names, ctx, b) do
     qualified = "#{module}.#{name}"
     unique_names = Context.unique_param_names(param_names)
@@ -788,6 +880,8 @@ defmodule Elmc.Backend.Plan.Lower.Call do
   end
 
   @doc false
+  @spec parse_target(String.t(), Types.ir_expr(), Types.decl()) :: Types.ir_expr()
+
   def parse_target(target, ctx, decl_map \\ nil) when is_binary(target) do
     decl_map = decl_map || Map.get(ctx, :decl_map, %{})
 
@@ -818,13 +912,19 @@ defmodule Elmc.Backend.Plan.Lower.Call do
     end
   end
 
+  @spec kernel_qualified_target?(String.t()) :: boolean()
+
   defp kernel_qualified_target?(module_name) when is_binary(module_name) do
     module_name == "Elm.Kernel" or String.starts_with?(module_name, "Elm.Kernel.")
   end
 
+  @spec zero_arg_fn_ref?(String.t()) :: boolean()
+
   defp zero_arg_fn_ref?(module_name) when is_binary(module_name) do
     kernel_qualified_target?(module_name) or module_name == "Elm.JsArray"
   end
+
+  @spec dest_for_call(Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
 
   defp dest_for_call(ctx, b) do
     case Context.dest_for_call(ctx) do
@@ -840,6 +940,8 @@ defmodule Elmc.Backend.Plan.Lower.Call do
   end
 
   @doc false
+  @spec compile_fn_call_emit(String.t(), String.t(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.expr()) :: Types.ir_expr()
+
   def compile_fn_call_emit(module, name, arg_regs, dest, ctx, b, arg_exprs \\ []) do
     {module, name} = rewrite_web_call_target(module, name)
     qualified = "#{module}.#{name}"
@@ -856,6 +958,8 @@ defmodule Elmc.Backend.Plan.Lower.Call do
         do_compile_fn_call_emit(module, name, arg_regs, dest, ctx, b, arg_exprs)
     end
   end
+
+  @spec do_compile_fn_call_emit(String.t(), String.t(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.expr()) :: Types.ir_expr()
 
   defp do_compile_fn_call_emit(module, name, arg_regs, dest, ctx, b, arg_exprs) do
     {arg_regs, b0} =

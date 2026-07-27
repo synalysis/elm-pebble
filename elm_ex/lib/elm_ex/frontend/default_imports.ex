@@ -1,7 +1,8 @@
 defmodule ElmEx.Frontend.DefaultImports do
   @moduledoc false
+  alias ElmEx.Frontend.AstContract.Types, as: Types
 
-  alias ElmEx.Frontend.Types.ImportEntry
+
 
   @default_module_names ["Basics", "List", "Maybe", "Result", "String", "Char", "Tuple", "Debug"]
 
@@ -16,9 +17,11 @@ defmodule ElmEx.Frontend.DefaultImports do
     %{"module" => "Debug", "as" => nil, "exposing" => nil}
   ]
 
-  @spec module_names() :: [String.t()]
+  @spec module_names() :: Types.expr()
+
   def module_names, do: @default_module_names
 
-  @spec import_entries() :: [ImportEntry.wire_map()]
+  @spec import_entries() :: Types.expr()
+
   def import_entries, do: @default_import_entries
 end

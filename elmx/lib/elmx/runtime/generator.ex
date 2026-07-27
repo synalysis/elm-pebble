@@ -10,6 +10,8 @@ defmodule Elmx.Runtime.Generator do
   `Elmx.Runtime.CodegenRefs` module paths. Qualified Elm stdlib calls use
   `Elmx.Runtime.Stdlib` instead (see `Emit.Qualified` and `Stdlib.Qualified`).
   """
+  alias Elmx.Types, as: Types
+
 
   alias Elmx.Runtime.Intrinsics
   alias Elmx.Runtime.Pebble.Registry, as: PebbleRegistry

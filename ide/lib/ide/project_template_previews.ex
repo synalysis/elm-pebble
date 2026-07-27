@@ -98,6 +98,8 @@ defmodule Ide.ProjectTemplatePreviews do
     end
   end
 
+  @spec write_preview_for_project!(String.t(), term()) :: term()
+
   defp write_preview_for_project!(template_key, project) do
     slug = project.slug
 

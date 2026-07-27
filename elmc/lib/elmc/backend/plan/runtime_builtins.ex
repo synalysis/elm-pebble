@@ -119,6 +119,7 @@ defmodule Elmc.Backend.Plan.RuntimeBuiltins do
     union_tag_matches: "elmc_union_tag_matches",
     union_payload: "elmc_union_payload",
     debug_to_string: "elmc_debug_to_string",
+    debug_set_to_string: "elmc_debug_set_to_string",
     result_and_then: "elmc_result_and_then",
     result_map: "elmc_result_map",
     result_map_error: "elmc_result_map_error",
@@ -227,6 +228,7 @@ defmodule Elmc.Backend.Plan.RuntimeBuiltins do
     :string_to_int,
     :list_nth_int_default,
     :debug_to_string,
+    :debug_set_to_string,
     :char_from_code,
     :cmd_backlight_from_maybe
   ])
@@ -367,6 +369,7 @@ defmodule Elmc.Backend.Plan.RuntimeBuiltins do
     :union_tag_matches,
     :union_payload,
     :debug_to_string,
+    :debug_set_to_string,
     :result_and_then,
     :maybe_and_then
   ]

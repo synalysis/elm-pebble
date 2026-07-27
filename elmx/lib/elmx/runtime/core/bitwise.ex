@@ -1,5 +1,7 @@
 defmodule Elmx.Runtime.Core.Bitwise do
   @moduledoc false
+  alias Elmx.Types, as: Types
+
 
   @mask32 0xFFFFFFFF
 
@@ -26,6 +28,8 @@ defmodule Elmx.Runtime.Core.Bitwise do
     raw = :erlang.band(value, @mask32)
     Bitwise.>>>(raw, clamp_shift(bits))
   end
+
+  @spec clamp_shift(Types.elm_value()) :: Types.elm_value()
 
   defp clamp_shift(bits) when bits < 0, do: 0
   defp clamp_shift(bits), do: bits

@@ -78,6 +78,8 @@ defmodule Ide.ScreenshotDimensions do
     Enum.sort(@store_dimensions)
   end
 
+  @spec normalize_platform(term()) :: term()
+
   defp normalize_platform(platform) do
     platform
     |> to_string()

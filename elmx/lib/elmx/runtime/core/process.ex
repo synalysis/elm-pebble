@@ -1,5 +1,7 @@
 defmodule Elmx.Runtime.Core.Process do
   @moduledoc false
+  alias Elmx.Types, as: Types
+
 
   alias Elmx.Types
 
@@ -15,10 +17,14 @@ defmodule Elmx.Runtime.Core.Process do
   @spec kill(integer()) :: Types.result_native()
   def kill(_pid), do: {:Ok, 0}
 
+  @spec next_pid() :: Types.elm_value()
+
   defp next_pid do
   :atomics.add(pid_counter(), 1, 1)
   :atomics.get(pid_counter(), 1)
   end
+
+  @spec pid_counter() :: Types.elm_value()
 
   defp pid_counter do
     case :persistent_term.get({__MODULE__, :counter}, nil) do

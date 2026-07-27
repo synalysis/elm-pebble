@@ -12,6 +12,8 @@ defmodule Mix.Tasks.Ide.GenTemplatePreviews do
   alias Ide.ProjectTemplates
 
   @impl Mix.Task
+  @spec run([String.t()]) :: term()
+
   def run(args) do
     Mix.Task.run("app.start")
 

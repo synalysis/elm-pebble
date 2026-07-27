@@ -1,5 +1,7 @@
 defmodule Elmx.Runtime.Pebble.Dispatch.Effects do
   @moduledoc false
+  alias Elmx.Types, as: Types
+
 
   alias Elmx.Runtime.Cmd
   alias Elmx.Runtime.Pebble.Dispatch.Speaker

@@ -399,6 +399,53 @@ defmodule ElmEx.Frontend.LayoutLexerCoverageTest do
          case seg of
              A ->
                  ""
+     """},
+    {"if then case else if chain", """
+     if a then
+         case args of
+             [] ->
+                 Nothing
+             _ ->
+                 Nothing
+     else if b then
+         case args of
+             [x] ->
+                 Just x
+             _ ->
+                 Nothing
+     else
+         Nothing
+     """},
+    {"if case let pipe withDefault nested case", """
+     if b then
+         case args of
+             [ f, d1, d2 ] ->
+                 let
+                     finalizer = f
+                     decoders = [d1, d2]
+                 in
+                 coalesceFixedSpan finalizer decoders
+                     |> Maybe.withDefault
+                         (case decoders of
+                             [ c1, c2 ] ->
+                                 Map2 finalizer c1 c2
+                             _ ->
+                                 Map2 finalizer d1 d2
+                         )
+                     |> Just
+             _ ->
+                 Nothing
+     else
+         Nothing
+     """},
+    {"inline let with deeper indented in before plus case", """
+     let isolate = testState.isolate
+         in
+         phaseToInt isolate.phase * 10000
+         + (case isolate.suspendedContinuation of
+             Nothing -> 0
+             Just (ContinuationRef contId) ->
+                 phaseToInt isolate.phase * 100 + contId)
      """}
   ]
 

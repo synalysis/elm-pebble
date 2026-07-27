@@ -124,6 +124,8 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Constructor do
   def ide_runtime_zero_arg_code("[]"), do: "[]"
   def ide_runtime_zero_arg_code(ctor), do: safe_ctor_atom(ctor)
 
+  def ide_runtime_ctor_atom("True"), do: "true"
+  def ide_runtime_ctor_atom("False"), do: "false"
   def ide_runtime_ctor_atom("()"), do: "nil"
   def ide_runtime_ctor_atom("[]"), do: "[]"
   def ide_runtime_ctor_atom(ctor), do: safe_ctor_atom(ctor)

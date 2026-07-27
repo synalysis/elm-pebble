@@ -57,4 +57,40 @@ defmodule Elmc.PlanEpiloguePhiTest do
 
     refute c =~ ~r/elmc_plan_block_\d+:\n\s*if \(plan_native_bool_\d+\)[\s\S]*?\}\n\s*elmc_release\(owned\[\d+\]\);\n\s*owned\[\d+\] = NULL;\n\s*elmc_release\(owned\[\d+\]\)/
   end
+
+  test "non-RC if/lambda phi merge transfers or retains arm closures" do
+    decl = %{
+      name: "choose",
+      args: ["keep"],
+      expr: %{
+        op: :if,
+        cond: %{op: :var, name: "keep"},
+        then_expr: %{
+          op: :lambda,
+          args: ["n"],
+          body: %{
+            op: :call,
+            name: "__add__",
+            args: [%{op: :var, name: "n"}, %{op: :int_literal, value: 1}]
+          }
+        },
+        else_expr: %{
+          op: :lambda,
+          args: ["n"],
+          body: %{
+            op: :call,
+            name: "__add__",
+            args: [%{op: :var, name: "n"}, %{op: :int_literal, value: 2}]
+          }
+        }
+      }
+    }
+
+    assert {:ok, plan} = PlanLower.lower(decl, "Main", %{}, rc_required: false)
+    c = CLowerFunction.emit(plan)
+
+    assert c =~ "elmc_closure_new_take"
+    assert c =~ "owned["
+    refute c =~ ~r/owned\[\d+\] = owned\[\d+\];\n\s*elmc_release\(owned\[\d+\]\);\n\s*owned\[\d+\] = NULL;\n\s*\{\n\s*ElmcValue \*__ret = owned\[\d+\];/
+  end
 end

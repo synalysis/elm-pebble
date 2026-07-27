@@ -384,6 +384,13 @@ defmodule Elmc.Backend.CCodegen.Types do
   @type function_decl :: ElmEx.IR.Declaration.t()
   @type function_decl_map :: %{function_decl_key() => function_decl()}
 
+  # Compatibility aliases for injected @spec heuristics
+  @type expr :: ir_expr()
+  @type decl :: function_decl()
+  @type decl_map :: function_decl_map()
+  @type t :: term()
+  @type diagnostic :: map()
+
   @type ir_record_field :: %{required(:name) => String.t(), required(:expr) => ir_expr()}
   @type ir_record_fields :: [ir_record_field()]
 

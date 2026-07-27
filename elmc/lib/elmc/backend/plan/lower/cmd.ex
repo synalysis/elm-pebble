@@ -1,5 +1,7 @@
 defmodule Elmc.Backend.Plan.Lower.Cmd do
   @moduledoc false
+  alias Elmc.Backend.Plan.Types, as: Types
+
 
   alias Elmc.Backend.Plan.Types
   alias Elmc.Backend.Plan.Lower.Platform.Pebble

@@ -1,5 +1,7 @@
 defmodule Elmx.Backend.ElixirCodegen.Emit.Patterns.Case do
   @moduledoc false
+  alias Elmx.Types, as: Types
+
 
   alias Elmx.Backend.ElixirCodegen.Emit.Patterns.Match
   alias Elmx.Types

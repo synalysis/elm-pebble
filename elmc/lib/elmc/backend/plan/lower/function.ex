@@ -2,12 +2,14 @@ defmodule Elmc.Backend.Plan.Lower.Function do
   @moduledoc """
   Lower a whole function declaration expr to `%FunctionPlan{}`.
   """
+  alias Elmc.Backend.Plan.Types, as: Types
+
 
   alias Elmc.Backend.CCodegen.RcRequired
   alias Elmc.Backend.C.Lower.NativeReturn
   alias Elmc.Backend.CCodegen.Host
   alias Elmc.Backend.Plan.Fusion
-  alias Elmc.Backend.Plan.{Builder, Context, EpilogueRelease, Optimize, ParamFieldInference, ThinDelegate, Verify}
+  alias Elmc.Backend.Plan.{Builder, Context, EpilogueRelease, Optimize, ParamFieldInference, ThinDelegate, TupleParamBind, Verify}
   alias Elmc.Backend.Plan.Lower.{Expr, Intrinsics, Platform.Web}
   alias Elmc.Backend.Plan.Types
 
@@ -36,11 +38,15 @@ defmodule Elmc.Backend.Plan.Lower.Function do
     end
   end
 
+  @spec codegen_opts(keyword()) :: Types.ir_expr()
+
   defp codegen_opts(opts) do
     Process.get(:elmc_codegen_opts, %{})
     |> Map.merge(Map.new(List.wrap(opts)))
     |> Map.to_list()
   end
+
+  @spec do_lower(Types.decl(), String.t(), Types.decl_map(), keyword()) :: Types.ir_expr()
 
   defp do_lower(decl, module_name, decl_map, opts) do
     opts = codegen_opts(opts)
@@ -68,6 +74,8 @@ defmodule Elmc.Backend.Plan.Lower.Function do
     end
   end
 
+  @spec register_fusion_native_cache(map() | integer(), String.t()) :: Types.ir_expr()
+
   defp register_fusion_native_cache(%{fusion_c: c, native_scalar_return: kind} = plan, module_name)
        when is_binary(c) and kind in [:native_int, :native_bool] do
     NativeReturn.cache_scalar_return(module_name, plan.name, kind)
@@ -81,11 +89,21 @@ defmodule Elmc.Backend.Plan.Lower.Function do
 
   defp register_fusion_native_cache(plan, _module_name), do: plan
 
+  @spec lower_expr_body(Types.decl(), String.t(), Types.decl_map(), keyword()) :: Types.ir_expr()
+
   defp lower_expr_body(decl, module_name, decl_map, opts) do
     expr = Map.get(decl, :expr) || %{op: :int_literal, value: 0}
     args = Map.get(decl, :args, []) |> List.wrap()
     name = Map.get(decl, :name, "anon")
     rc_required? = Keyword.get(opts, :rc_required, RcRequired.rc_required?(module_name, name))
+
+    # Unit tests / isolated lowers pass `rc_required: true` without running
+    # RcRequired.analyze. Seed the process set so recursive native-scalar call
+    # sites pick the `RC fn(T *out, …)` ABI consistently with the plan body.
+    if rc_required? do
+      set = Process.get(:elmc_rc_required, MapSet.new())
+      Process.put(:elmc_rc_required, MapSet.put(set, {module_name, name}))
+    end
 
     ctx =
       Context.new(
@@ -108,42 +126,54 @@ defmodule Elmc.Backend.Plan.Lower.Function do
 
     b_entry = preload_params(b, args)
 
-    case Expr.compile(expr, ctx, b_entry) do
-      {:ok, result_reg, b1} ->
-        {b2, ret_reg} = finalize_result(b1, result_reg, rc_required?)
-        b4 = Builder.emit_ret(b2, ret_reg)
+    case TupleParamBind.bind(decl, ctx, b_entry) do
+      {:ok, ctx1, b1} ->
+        case Expr.compile(expr, ctx1, b1) do
+          {:ok, result_reg, b2} ->
+            {b3, ret_reg} = finalize_result(b2, result_reg, rc_required?)
+            b4 = Builder.emit_ret(b3, ret_reg)
 
-        plan =
-          Builder.to_function_plan(b4)
-          |> EpilogueRelease.run()
-          |> Optimize.run()
-          |> NativeReturn.annotate(decl)
+            plan =
+              Builder.to_function_plan(b4)
+              |> EpilogueRelease.run()
+              |> Optimize.run()
+              |> NativeReturn.annotate(decl)
 
-        case Verify.run(plan) do
-          :ok ->
-        case verify_lambda_plans(Map.get(plan, :lambdas, [])) do
-              :ok -> {:ok, plan}
-              {:error, reason, meta} -> {:error, {:verify, reason, meta}}
+            case Verify.run(plan) do
+              :ok ->
+                case verify_lambda_plans(Map.get(plan, :lambdas, [])) do
+                  :ok -> {:ok, plan}
+                  {:error, reason, meta} -> {:error, {:verify, reason, meta}}
+                end
+
+              {:error, reason, meta} ->
+                {:error, {:verify, reason, meta}}
             end
 
-          {:error, reason, meta} ->
-            {:error, {:verify, reason, meta}}
+          :unsupported ->
+            record_plan_unsupported(module_name, name, expr)
         end
 
       :unsupported ->
-        cache = Process.get(:elmc_plan_unsupported_reasons, %{})
-
-        reason =
-          %{
-            op: Map.get(expr, :op),
-            target: Map.get(expr, :target) || Map.get(expr, :name),
-            kind: Map.get(expr, :kind)
-          }
-
-        Process.put(:elmc_plan_unsupported_reasons, Map.put_new(cache, {module_name, name}, reason))
-        :unsupported
+        record_plan_unsupported(module_name, name, expr)
     end
   end
+
+  defp record_plan_unsupported(module_name, name, expr) do
+    cache = Process.get(:elmc_plan_unsupported_reasons, %{})
+
+    reason =
+      %{
+        op: Map.get(expr, :op),
+        target: Map.get(expr, :target) || Map.get(expr, :name),
+        kind: Map.get(expr, :kind)
+      }
+
+    Process.put(:elmc_plan_unsupported_reasons, Map.put_new(cache, {module_name, name}, reason))
+    :unsupported
+  end
+
+  @spec seed_param_types(map() | Types.ir_expr(), map() | term()) :: Types.ir_expr()
 
   defp seed_param_types(%Context{} = ctx, decl) when is_map(decl) do
     type = Map.get(decl, :type)
@@ -168,6 +198,8 @@ defmodule Elmc.Backend.Plan.Lower.Function do
 
   defp seed_param_types(ctx, _), do: ctx
 
+  @spec seed_inferred_param_fields(map() | Types.ir_expr(), map() | term()) :: Types.ir_expr()
+
   defp seed_inferred_param_fields(%Context{} = ctx, decl) when is_map(decl) do
     case ParamFieldInference.infer(decl) do
       fields when map_size(fields) > 0 -> %{ctx | inferred_param_fields: fields}
@@ -176,6 +208,8 @@ defmodule Elmc.Backend.Plan.Lower.Function do
   end
 
   defp seed_inferred_param_fields(ctx, _), do: ctx
+
+  @spec finalize_result(Types.ir_expr(), Types.ir_expr() | integer(), Types.ir_expr() | term()) :: Types.ir_expr()
 
   defp finalize_result(b, :fn_out, true), do: {b, :fn_out}
   defp finalize_result(b, :fn_out, false), do: {b, :fn_out}
@@ -187,12 +221,16 @@ defmodule Elmc.Backend.Plan.Lower.Function do
   defp finalize_result(b, result_reg, false) when is_integer(result_reg), do: {b, result_reg}
   defp finalize_result(b, result_reg, _), do: {b, result_reg}
 
+  @spec preload_params(Types.ir_expr(), [String.t()]) :: Types.ir_expr()
+
   defp preload_params(b, args) do
     Enum.reduce(Enum.with_index(args), b, fn {name, idx}, b_acc ->
       {_reg, b1} = Builder.get_or_load_param(b_acc, idx, name)
       b1
     end)
   end
+
+  @spec verify_lambda_plans(list()) :: Types.ir_expr()
 
   defp verify_lambda_plans(lambdas) when is_list(lambdas) do
     Enum.reduce_while(lambdas, :ok, fn lam, :ok ->
@@ -206,6 +244,8 @@ defmodule Elmc.Backend.Plan.Lower.Function do
   # Native Int/Bool bodies lowered to value-return C ABI skip *out tails; thin user
   # delegates (for example nthEmptyIndex -> nthEmptyIndexHelp) still tail into out.
   # Non-RC boxed returns (for example Pebble.Ui.window) may tail with `return …`.
+  @spec function_tail_compile?(Types.decl(), String.t(), Types.decl_map(), boolean()) :: boolean()
+
   defp function_tail_compile?(decl, module_name, decl_map, rc_required?) do
     cond do
       rc_required? ->
@@ -222,9 +262,13 @@ defmodule Elmc.Backend.Plan.Lower.Function do
     end
   end
 
+  @spec literal_boxed_tail?(map() | term()) :: boolean()
+
   defp literal_boxed_tail?(%{expr: %{op: :int_literal}}), do: true
   defp literal_boxed_tail?(%{expr: %{op: :call_runtime, args: %{builtin: :new_int}}}), do: true
   defp literal_boxed_tail?(_), do: false
+
+  @spec boxed_tail_compile?(Types.decl(), String.t(), Types.decl_map()) :: boolean()
 
   defp boxed_tail_compile?(decl, module_name, decl_map) do
     case Host.function_return_type(Map.get(decl, :type)) do

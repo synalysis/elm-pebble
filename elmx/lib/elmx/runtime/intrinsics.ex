@@ -2,6 +2,8 @@ defmodule Elmx.Runtime.Intrinsics do
   @moduledoc """
   Registry and dispatch for `elmc_*` runtime intrinsics emitted by `elmc` codegen.
   """
+  alias Elmx.Types, as: Types
+
 
   alias Elmx.Runtime.Handler
   alias Elmx.Runtime.Intrinsics.Registry

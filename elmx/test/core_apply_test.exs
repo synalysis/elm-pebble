@@ -14,4 +14,11 @@ defmodule Elmx.CoreApplyTest do
       Apply.apply1(fn _ -> fn _ -> :ok end end, 1)
     end
   end
+
+  test "call1 allows still-curried language-level application" do
+    folder = fn f -> fn acc -> fn list -> Core.foldl(f, acc, list) end end end
+    step = fn a, b -> a + b end
+
+    assert Apply.call1(Apply.call1(folder.(step), 0), [1, 2, 3]) == 6
+  end
 end

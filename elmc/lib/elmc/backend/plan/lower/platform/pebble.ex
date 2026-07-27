@@ -5,6 +5,8 @@ defmodule Elmc.Backend.Plan.Lower.Platform.Pebble do
   Kept separate from core opcodes so web/WASM lowering can use
   `Plan.Lower.Platform.Web` instead.
   """
+  alias Elmc.Backend.Plan.Types, as: Types
+
 
   alias Elmc.Backend.Plan.{Builder, Context, Types}
   alias Elmc.Backend.Plan.Lower.Expr
@@ -95,6 +97,8 @@ defmodule Elmc.Backend.Plan.Lower.Platform.Pebble do
 
   def compile_sub(_, _, _), do: :unsupported
 
+  @spec compile_native_platform_op(atom(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+
   defp compile_native_platform_op(op, kind_arg, params, ctx, b) do
     with {:ok, param_regs, b1} <- compile_params_scratch(params || [], ctx, b) do
       wrap_catch? = Builder.wrap_fallible_instr_catch?(b1, ctx, true)
@@ -137,6 +141,8 @@ defmodule Elmc.Backend.Plan.Lower.Platform.Pebble do
     end
   end
 
+  @spec platform_op_effects(Types.ir_expr() | atom(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+
   defp platform_op_effects(:render_cmd, dest, param_regs, _b) do
     borrow_only_platform_effects(dest, param_regs)
   end
@@ -159,6 +165,8 @@ defmodule Elmc.Backend.Plan.Lower.Platform.Pebble do
     end
   end
 
+  @spec borrow_only_platform_effects(Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+
   defp borrow_only_platform_effects(dest, param_regs) do
     if is_integer(dest) do
       Types.fallible_effects(dest, param_regs, [])
@@ -167,6 +175,8 @@ defmodule Elmc.Backend.Plan.Lower.Platform.Pebble do
     end
   end
 
+  @spec normalize_kind(map() | term()) :: map()
+
   defp normalize_kind(%{op: :c_int_expr, value: value}) when is_binary(value),
     do: %{c_expr: value}
 
@@ -174,6 +184,8 @@ defmodule Elmc.Backend.Plan.Lower.Platform.Pebble do
     do: %{literal: value}
 
   defp normalize_kind(_), do: %{literal: 0}
+
+  @spec compile_native_text_cmd(atom(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
 
   defp compile_native_text_cmd(op, kind_arg, param_regs, text_reg, ctx, b) do
     wrap_catch? = Builder.wrap_fallible_instr_catch?(b, ctx, true)
@@ -219,6 +231,8 @@ defmodule Elmc.Backend.Plan.Lower.Platform.Pebble do
     end
   end
 
+  @spec compile_text_param(String.t(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+
   defp compile_text_param(text, ctx, b) do
     scratch_ctx = %{ctx | dest_stack: [:scratch], function_tail: false}
 
@@ -229,6 +243,8 @@ defmodule Elmc.Backend.Plan.Lower.Platform.Pebble do
   end
 
   # Companion-send pattern: param calls must use scratch regs, not fn_out.
+  @spec compile_params_scratch(list(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+
   defp compile_params_scratch(params, ctx, b) when is_list(params) do
     scratch_ctx = %{ctx | dest_stack: [:scratch], function_tail: false}
 
@@ -239,6 +255,8 @@ defmodule Elmc.Backend.Plan.Lower.Platform.Pebble do
       end
     end)
   end
+
+  @spec cmd_builtin(Types.ir_expr() | term()) :: Types.ir_expr()
 
   defp cmd_builtin(0), do: :cmd0
   defp cmd_builtin(1), do: :cmd1

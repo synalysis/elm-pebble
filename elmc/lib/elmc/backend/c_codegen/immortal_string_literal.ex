@@ -1,5 +1,7 @@
 defmodule Elmc.Backend.CCodegen.ImmortalStringLiteral do
   @moduledoc false
+  alias Elmc.Backend.CCodegen.Types, as: Types
+
 
   alias Elmc.Backend.CCodegen.RcRuntimeEmit
   alias Elmc.Backend.CCodegen.Types

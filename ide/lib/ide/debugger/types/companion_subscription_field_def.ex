@@ -5,6 +5,7 @@ defmodule Ide.Debugger.Types.CompanionSubscriptionFieldDef do
   Contract tables use **atom keys** in Elixir; simulator form payloads stringify them.
   """
 
+
   @type field_type :: :boolean | :integer | :string
 
   @type t :: %{

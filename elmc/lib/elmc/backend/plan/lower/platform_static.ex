@@ -1,5 +1,7 @@
 defmodule Elmc.Backend.Plan.Lower.PlatformStatic do
   @moduledoc false
+  alias Elmc.Backend.Plan.Types, as: Types
+
 
   alias Elmc.Backend.Plan.{Builder, Context}
   alias Elmc.Backend.Plan.Types
@@ -18,6 +20,8 @@ defmodule Elmc.Backend.Plan.Lower.PlatformStatic do
 
   def compile_case(_, _, _, _), do: :unsupported
 
+  @spec static_branch_values(term()) :: Types.ir_expr()
+
   defp static_branch_values([
          %{pattern: %{kind: :constructor}, expr: %{op: :int_literal, value: then_val}},
          %{pattern: %{kind: :wildcard}, expr: %{op: :int_literal, value: else_val}}
@@ -26,6 +30,8 @@ defmodule Elmc.Backend.Plan.Lower.PlatformStatic do
        do: {:ok, then_val, else_val}
 
   defp static_branch_values(_), do: :error
+
+  @spec emit_static_int(Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
 
   defp emit_static_int(macro, then_val, else_val, ctx, b) do
     wrap_catch? = Builder.wrap_fallible_instr_catch?(b, ctx, true)

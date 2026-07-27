@@ -215,14 +215,13 @@ defmodule Elmc.GeneratedRcTrackGame2048AllocProbeTest do
     view_leaks = RcTrackHarness.parse_alloc_probe_view_leaks(out)
 
     IO.puts("""
-    2048 alloc probe (clockwise Up→Right→Down→Left, #{@move_count} moves):
-      total unbalanced regions: #{leaks}
-      update regions with rc_net>0: #{update_leaks} (max rc_net +#{max_update_rc_net})
-      early-game strict leaks (moves 0-9, rc_net!=0): #{early_strict_leaks}
-      catastrophic update regions (rc_net>=10): #{catastrophic_update_leaks}
-      view regions with rc_net>0: #{view_leaks}
-    Run: mix test.rc_2048
-    
+      2048 alloc probe (clockwise Up→Right→Down→Left, #{@move_count} moves):
+        total unbalanced regions: #{leaks}
+        update regions with rc_net>0: #{update_leaks} (max rc_net +#{max_update_rc_net})
+        early-game strict leaks (moves 0-9, rc_net!=0): #{early_strict_leaks}
+        catastrophic update regions (rc_net>=10): #{catastrophic_update_leaks}
+        view regions with rc_net>0: #{view_leaks}
+      Run: mix test.rc_2048
       """)
 
     RcTrackHarness.assert_alloc_probe_thresholds!(out, early_strict_moves: 10, max_early_strict_leaks: 1)

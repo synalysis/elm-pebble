@@ -1,5 +1,7 @@
 defmodule Ide.Resources.ResourceStore.SpeakerSamples do
   @moduledoc false
+  alias Ide.Types, as: Types
+
 
   alias Ide.Projects
   alias Ide.Projects.Project
@@ -92,11 +94,15 @@ defmodule Ide.Resources.ResourceStore.SpeakerSamples do
 
   def read_only_generated_module?(_, _), do: false
 
+  @spec read_manifest(term()) :: term()
+
   defp read_manifest(workspace) do
     workspace
     |> Path.join(@manifest_rel_path)
     |> Manifest.read_manifest()
   end
+
+  @spec file_backed_entries(term(), list()) :: term()
 
   defp file_backed_entries(workspace, entries) when is_list(entries) do
     assets_root = Path.join(workspace, @assets_rel_dir)
@@ -107,6 +113,8 @@ defmodule Ide.Resources.ResourceStore.SpeakerSamples do
     end)
   end
 
+  @spec validate_pcm_bytes(String.t() | term()) :: term()
+
   defp validate_pcm_bytes(bytes) when is_binary(bytes) and byte_size(bytes) > 0 do
     if byte_size(bytes) <= @max_total_bytes do
       :ok
@@ -116,6 +124,8 @@ defmodule Ide.Resources.ResourceStore.SpeakerSamples do
   end
 
   defp validate_pcm_bytes(_), do: {:error, :invalid_speaker_sample}
+
+  @spec enforce_total_bytes(list(), term()) :: term()
 
   defp enforce_total_bytes(entries, incoming_bytes) when is_list(entries) do
     total =
@@ -130,6 +140,8 @@ defmodule Ide.Resources.ResourceStore.SpeakerSamples do
     end
   end
 
+  @spec normalized_filename(String.t()) :: String.t()
+
   defp normalized_filename(original_name) do
     ext = original_name |> Path.basename() |> Path.extname() |> String.downcase()
 
@@ -140,6 +152,8 @@ defmodule Ide.Resources.ResourceStore.SpeakerSamples do
     end
   end
 
+  @spec base_name(String.t()) :: term()
+
   defp base_name(original_name) do
     original_name
     |> Path.basename()
@@ -147,8 +161,12 @@ defmodule Ide.Resources.ResourceStore.SpeakerSamples do
     |> CtorNaming.normalize_base_name()
   end
 
+  @spec normalize_source_root(term() | String.t()) :: term()
+
   defp normalize_source_root("watch"), do: "watch"
   defp normalize_source_root(other) when is_binary(other), do: String.trim_trailing(other, "/")
+
+  @spec normalize_editor_rel_path(String.t()) :: String.t()
 
   defp normalize_editor_rel_path(path) when is_binary(path),
     do: path |> String.trim_leading("/") |> String.trim_leading("watch/")

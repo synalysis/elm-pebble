@@ -1,5 +1,7 @@
 defmodule Elmc.Backend.Pebble.HeaderWriter.Bindings do
   @moduledoc false
+  alias Elmc.Types, as: Types
+
 
   alias Elmc.Backend.Pebble.{CEmit, FeatureFlags, IRAnalysis, Kinds, MsgCodegen, SceneWriter, Types,
     Util}

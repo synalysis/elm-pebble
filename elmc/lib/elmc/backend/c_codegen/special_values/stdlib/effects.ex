@@ -1,5 +1,7 @@
 defmodule Elmc.Backend.CCodegen.SpecialValues.Stdlib.Effects do
   @moduledoc false
+  alias Elmc.Backend.CCodegen.Types, as: Types
+
 
   alias Elmc.Backend.CCodegen.Subscriptions
   alias Elmc.Backend.CCodegen.Types
@@ -498,6 +500,8 @@ defmodule Elmc.Backend.CCodegen.SpecialValues.Stdlib.Effects do
   # --- elm/core: String (extended) ---
 
   def special_value_from_target(_target, _args), do: nil
+
+  @spec browser_events_mysub(map() | term()) :: Types.ir_expr()
 
   defp browser_events_mysub(%{
          op: :constructor_call,

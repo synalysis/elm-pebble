@@ -1,5 +1,7 @@
 defmodule Elmx.Runtime.Pebble.Dispatch.Speaker do
   @moduledoc false
+  alias Elmx.Types, as: Types
+
 
   alias Elmx.Runtime.Cmd
   alias Elmx.Types
@@ -55,6 +57,8 @@ defmodule Elmx.Runtime.Pebble.Dispatch.Speaker do
 
   def set_volume_cmd(_), do: Cmd.effect("speaker", variant: "set_volume")
 
+  @spec note_wire_values(list() | term()) :: Types.elm_value()
+
   defp note_wire_values(values) when is_list(values) do
     case values do
       [first | _] when is_integer(first) ->
@@ -67,6 +71,8 @@ defmodule Elmx.Runtime.Pebble.Dispatch.Speaker do
 
   defp note_wire_values(_), do: []
 
+  @spec note_record_values(map() | integer() | term()) :: Types.elm_value()
+
   defp note_record_values(note) when is_map(note) do
     [
       field_int(note, "midiNote"),
@@ -78,6 +84,8 @@ defmodule Elmx.Runtime.Pebble.Dispatch.Speaker do
 
   defp note_record_values(note) when is_integer(note), do: [note]
   defp note_record_values(_), do: []
+
+  @spec track_wire_values(list() | term()) :: Types.elm_value()
 
   defp track_wire_values(tracks) when is_list(tracks) do
     Enum.flat_map(tracks, fn
@@ -96,6 +104,8 @@ defmodule Elmx.Runtime.Pebble.Dispatch.Speaker do
 
   defp track_wire_values(_), do: []
 
+  @spec sample_index_from_track(map()) :: Types.elm_value()
+
   defp sample_index_from_track(track) when is_map(track) do
     case Map.get(track, "sample") || Map.get(track, :sample) do
       %{"ctor" => "Nothing"} -> 0
@@ -105,6 +115,8 @@ defmodule Elmx.Runtime.Pebble.Dispatch.Speaker do
       _ -> 0
     end
   end
+
+  @spec sample_index_value(integer() | map() | term()) :: Types.elm_value()
 
   defp sample_index_value(sample) when is_integer(sample), do: sample
 
@@ -118,8 +130,12 @@ defmodule Elmx.Runtime.Pebble.Dispatch.Speaker do
 
   defp sample_index_value(_), do: 0
 
+  @spec sample_ctor_index(Types.elm_value()) :: Types.elm_value()
+
   defp sample_ctor_index("NoSample"), do: 0
   defp sample_ctor_index(_ctor), do: 1
+
+  @spec field_int(Types.elm_value(), Types.elm_value()) :: Types.elm_value()
 
   defp field_int(map, field) do
     map
@@ -130,6 +146,8 @@ defmodule Elmx.Runtime.Pebble.Dispatch.Speaker do
     end
     |> coerce_int()
   end
+
+  @spec coerce_int(integer() | float() | term()) :: Types.elm_value()
 
   defp coerce_int(value) when is_integer(value), do: value
   defp coerce_int(value) when is_float(value), do: trunc(value)

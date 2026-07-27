@@ -10,6 +10,8 @@ defmodule Elmx.Runtime.Stdlib.Qualified do
   see `Elmx.Backend.ElixirCodegen.Emit.Qualified` (split into `Emit.Qualified.*` domain modules).
   Shared helpers live in `Stdlib.Qualified.Helpers`; codegen fragments in `Stdlib.QualifiedCodegen`.
   """
+  alias Elmx.Types, as: Types
+
 
   alias Elmx.Runtime.CodegenRefs
   alias Elmx.Runtime.Stdlib.Qualified.Helpers
@@ -36,6 +38,8 @@ defmodule Elmx.Runtime.Stdlib.Qualified do
     Enum.any?(@collection_op_prefixes, &String.starts_with?(target, &1)) or
       Enum.any?(qualified_arg_probes(), &match?({:ok, _}, call(target, &1)))
   end
+
+  @spec qualified_arg_probes() :: Types.elm_value()
 
   defp qualified_arg_probes do
     [

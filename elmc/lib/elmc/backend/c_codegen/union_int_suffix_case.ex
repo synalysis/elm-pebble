@@ -1,5 +1,7 @@
 defmodule Elmc.Backend.CCodegen.UnionIntSuffixCase do
   @moduledoc false
+  alias Elmc.Backend.CCodegen.Types, as: Types
+
 
   alias Elmc.Backend.CCodegen.Types
 
@@ -33,6 +35,8 @@ defmodule Elmc.Backend.CCodegen.UnionIntSuffixCase do
     end
   end
 
+  @spec try_emit_direct_union_suffix(String.t(), String.t(), Types.expr(), Types.decl_map()) :: Types.ir_expr() | nil
+
   defp try_emit_direct_union_suffix(module_name, name, expr, decl_map) do
     with {:ok, _subject, branches} <- parse_case(expr),
          param when is_binary(param) <- fusion_param_name(module_name, name, decl_map),
@@ -51,6 +55,8 @@ defmodule Elmc.Backend.CCodegen.UnionIntSuffixCase do
     end
   end
 
+  @spec try_emit_maybe_union_suffix(String.t(), String.t(), Types.expr(), Types.decl_map()) :: Types.ir_expr() | nil
+
   defp try_emit_maybe_union_suffix(module_name, name, expr, decl_map) do
     with param when is_binary(param) <- fusion_param_name(module_name, name, decl_map),
          {:ok, source, branches} <- parse_maybe_union_case(expr),
@@ -64,6 +70,8 @@ defmodule Elmc.Backend.CCodegen.UnionIntSuffixCase do
       _ -> :error
     end
   end
+
+  @spec emit_rc_native_helper(String.t(), String.t(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
 
   defp emit_rc_native_helper(module_name, name, param, core) do
     c_prefix = Util.module_fn_name(module_name, name)
@@ -80,6 +88,8 @@ defmodule Elmc.Backend.CCodegen.UnionIntSuffixCase do
 
     FusionSupport.ok_rc(body, [])
   end
+
+  @spec emit_native_suffix_switch(Types.ir_expr(), Types.ir_expr(), Types.compile_env()) :: Types.ir_expr()
 
   defp emit_native_suffix_switch(subject_ref, branch_specs, env) do
     tag_ref = "case_msg_tag_1"
@@ -122,6 +132,8 @@ defmodule Elmc.Backend.CCodegen.UnionIntSuffixCase do
     """
   end
 
+  @spec branch_specs(list()) :: Types.ir_expr()
+
   defp branch_specs(branches) do
     specs =
       Enum.map(branches, fn branch ->
@@ -140,6 +152,8 @@ defmodule Elmc.Backend.CCodegen.UnionIntSuffixCase do
     end
   end
 
+  @spec union_int_suffix_eligible?(list()) :: boolean()
+
   defp union_int_suffix_eligible?(branches) when is_list(branches) do
     length(branches) >= 2 and
       Enum.all?(branches, fn branch ->
@@ -147,6 +161,8 @@ defmodule Elmc.Backend.CCodegen.UnionIntSuffixCase do
           match?({:ok, _, _, _}, parse_suffix_append(branch.expr, elem(payload_var(branch.pattern), 1)))
       end)
   end
+
+  @spec parse_suffix_append(Types.expr(), Types.ir_expr()) :: Types.ir_expr()
 
   defp parse_suffix_append(expr, payload_var) do
     suffix_env =
@@ -172,6 +188,8 @@ defmodule Elmc.Backend.CCodegen.UnionIntSuffixCase do
     end
   end
 
+  @spec append_parts(map() | term()) :: Types.ir_expr()
+
   defp append_parts(%{op: :call, name: "__append__", args: [left, right]}),
     do: {:ok, left, right}
 
@@ -189,6 +207,8 @@ defmodule Elmc.Backend.CCodegen.UnionIntSuffixCase do
 
   defp append_parts(_), do: :error
 
+  @spec int_expr_references_payload?(map() | Types.expr(), Types.ir_expr()) :: boolean()
+
   defp int_expr_references_payload?(%{op: :var, name: name}, payload_var),
     do: name == payload_var
 
@@ -196,6 +216,8 @@ defmodule Elmc.Backend.CCodegen.UnionIntSuffixCase do
     Host.native_int_expr?(expr, %{payload_var_name() => payload_var}) and
       subtree_references_var?(expr, payload_var)
   end
+
+  @spec subtree_references_var?(map() | term(), Types.ir_expr() | term()) :: boolean()
 
   defp subtree_references_var?(%{op: :var, name: name}, payload_var), do: name == payload_var
 
@@ -214,6 +236,8 @@ defmodule Elmc.Backend.CCodegen.UnionIntSuffixCase do
 
   defp subtree_references_var?(_, _), do: false
 
+  @spec payload_var(map() | term()) :: Types.ir_expr()
+
   defp payload_var(%{kind: :constructor, bind: name}) when is_binary(name),
     do: {:ok, name}
 
@@ -225,11 +249,17 @@ defmodule Elmc.Backend.CCodegen.UnionIntSuffixCase do
 
   defp payload_var(_), do: :error
 
+  @spec payload_var_name() :: Types.ir_expr()
+
   defp payload_var_name, do: "__union_payload_int__"
+
+  @spec snprintf_format(Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
 
   defp snprintf_format(prefix, suffix) do
     "\"#{escape_snprintf_literal(prefix)}%lld#{escape_snprintf_literal(suffix)}\""
   end
+
+  @spec escape_snprintf_literal(Types.ir_expr()) :: Types.ir_expr()
 
   defp escape_snprintf_literal(""), do: ""
 
@@ -237,11 +267,15 @@ defmodule Elmc.Backend.CCodegen.UnionIntSuffixCase do
     literal |> Util.escape_c_string() |> String.replace("%", "%%")
   end
 
+  @spec message_tag_expr(Types.ir_expr()) :: Types.ir_expr()
+
   defp message_tag_expr(subject_ref) do
     "(#{subject_ref} && (#{subject_ref})->tag == ELMC_TAG_INT ? elmc_as_int(#{subject_ref}) : " <>
       "(#{subject_ref} && (#{subject_ref})->tag == ELMC_TAG_TUPLE2 && (#{subject_ref})->payload != NULL ? " <>
       "elmc_as_int(((ElmcTuple2 *)(#{subject_ref})->payload)->first) : -1))"
   end
+
+  @spec case_label(map(), Types.compile_env()) :: Types.ir_expr()
 
   defp case_label(%{kind: :constructor, tag: tag} = pattern, env) when is_integer(tag) do
     ref =
@@ -258,11 +292,15 @@ defmodule Elmc.Backend.CCodegen.UnionIntSuffixCase do
     "case #{ref || Integer.to_string(tag)}"
   end
 
+  @spec parse_case(map() | term()) :: Types.ir_expr()
+
   defp parse_case(%{op: :case, subject: _subject, branches: branches}),
     do: {:ok, nil, branches}
 
   defp parse_case(%{op: :let_in, in_expr: body}), do: parse_case(body)
   defp parse_case(_), do: :error
+
+  @spec parse_maybe_union_case(map() | term()) :: Types.ir_expr()
 
   defp parse_maybe_union_case(%{op: :let_in, value_expr: source, in_expr: %{op: :case, branches: branches}}) do
     case parse_maybe_union_source(source) do
@@ -279,6 +317,8 @@ defmodule Elmc.Backend.CCodegen.UnionIntSuffixCase do
   end
 
   defp parse_maybe_union_case(_), do: :error
+
+  @spec parse_maybe_union_source(map() | term()) :: Types.ir_expr()
 
   defp parse_maybe_union_source(%{op: :qualified_call, target: "Maybe.map", args: [lam, src]}) do
     with %{op: :lambda, body: %{op: :field_access, field: inner_field}} <- lam,
@@ -302,6 +342,8 @@ defmodule Elmc.Backend.CCodegen.UnionIntSuffixCase do
 
   defp parse_maybe_union_source(_), do: :error
 
+  @spec param_field_access(map() | term()) :: Types.ir_expr()
+
   defp param_field_access(%{op: :field_access, arg: %{op: :var, name: param}, field: field})
        when is_binary(param) and is_binary(field),
        do: {:ok, param, field}
@@ -312,9 +354,13 @@ defmodule Elmc.Backend.CCodegen.UnionIntSuffixCase do
 
   defp param_field_access(_), do: :error
 
+  @spec param_matches_source?(Types.ir_expr() | term(), term()) :: boolean()
+
   defp param_matches_source?(param, {:map_field, param, _, _}), do: true
   defp param_matches_source?(param, {:maybe_field, param, _}), do: true
   defp param_matches_source?(_, _), do: false
+
+  @spec nothing_branch_text(list()) :: Types.ir_expr()
 
   defp nothing_branch_text(branches) do
     case Enum.find(branches, &maybe_nothing_branch?/1) do
@@ -326,11 +372,15 @@ defmodule Elmc.Backend.CCodegen.UnionIntSuffixCase do
     end
   end
 
+  @spec maybe_nothing_branch?(map() | term()) :: boolean()
+
   defp maybe_nothing_branch?(%{pattern: %{kind: :constructor, name: name}})
        when name in ["Nothing", "Maybe.Nothing"],
        do: true
 
   defp maybe_nothing_branch?(_), do: false
+
+  @spec maybe_union_branch_specs(list()) :: Types.ir_expr() | nil
 
   defp maybe_union_branch_specs(branches) do
     specs =
@@ -351,6 +401,8 @@ defmodule Elmc.Backend.CCodegen.UnionIntSuffixCase do
     end
   end
 
+  @spec maybe_union_branch_spec(map() | term()) :: Types.ir_expr() | nil
+
   defp maybe_union_branch_spec(%{pattern: %{kind: :constructor, name: name}}) when name in ["Nothing", "Maybe.Nothing"],
     do: :skip
 
@@ -366,6 +418,8 @@ defmodule Elmc.Backend.CCodegen.UnionIntSuffixCase do
 
   defp maybe_union_branch_spec(_), do: :error
 
+  @spec just_union_pattern(map() | term()) :: Types.ir_expr()
+
   defp just_union_pattern(%{
          kind: :constructor,
          name: name,
@@ -375,6 +429,8 @@ defmodule Elmc.Backend.CCodegen.UnionIntSuffixCase do
        do: {:ok, inner}
 
   defp just_union_pattern(_), do: :error
+
+  @spec emit_maybe_union_core(String.t(), Types.ir_expr(), String.t(), String.t(), Types.ir_expr(), String.t(), Types.decl_map()) :: Types.ir_expr()
 
   defp emit_maybe_union_core(module_name, param, source, nothing_text, branch_specs, fn_name, decl_map) do
     env = fusion_env(module_name, fn_name, param)
@@ -426,6 +482,8 @@ defmodule Elmc.Backend.CCodegen.UnionIntSuffixCase do
     end
   end
 
+  @spec record_param_type(String.t(), String.t(), Types.decl_map()) :: Types.ir_expr()
+
   defp record_param_type(module_name, fn_name, decl_map) do
     case Map.get(decl_map, {module_name, fn_name}) do
       %{type: type} when is_binary(type) ->
@@ -438,6 +496,8 @@ defmodule Elmc.Backend.CCodegen.UnionIntSuffixCase do
         :error
     end
   end
+
+  @spec nested_record_type_name(String.t(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
 
   defp nested_record_type_name(module_name, parent_type, field) do
     field_types =
@@ -456,11 +516,15 @@ defmodule Elmc.Backend.CCodegen.UnionIntSuffixCase do
     end
   end
 
+  @spec type_basename(String.t()) :: Types.ir_expr()
+
   defp type_basename(type) when is_binary(type) do
     type
     |> String.split(".")
     |> List.last()
   end
+
+  @spec fusion_param_name(String.t(), String.t(), Types.decl_map()) :: Types.ir_expr()
 
   defp fusion_param_name(module_name, name, decl_map) do
     case Map.get(decl_map, {module_name, name}) do
@@ -468,6 +532,8 @@ defmodule Elmc.Backend.CCodegen.UnionIntSuffixCase do
       _ -> nil
     end
   end
+
+  @spec fusion_env(String.t(), String.t(), String.t()) :: Types.ir_expr()
 
   defp fusion_env(module_name, name, param) when is_binary(param) do
     %{
@@ -498,6 +564,8 @@ defmodule Elmc.Backend.CCodegen.UnionIntSuffixCase do
     end
   end
 
+  @spec extract_direct_union_data(Types.expr()) :: Types.ir_expr()
+
   defp extract_direct_union_data(expr) do
     with {:ok, _, branches} <- parse_case(expr),
          true <- union_int_suffix_eligible?(branches),
@@ -508,6 +576,8 @@ defmodule Elmc.Backend.CCodegen.UnionIntSuffixCase do
       _ -> :error
     end
   end
+
+  @spec extract_maybe_union_data(String.t(), String.t(), Types.expr(), Types.decl_map()) :: Types.ir_expr()
 
   defp extract_maybe_union_data(module_name, name, expr, decl_map) do
     with param when is_binary(param) <- fusion_param_name(module_name, name, decl_map),
@@ -558,6 +628,8 @@ defmodule Elmc.Backend.CCodegen.UnionIntSuffixCase do
     end
   end
 
+  @spec wire_branch_specs(Types.ir_expr()) :: Types.ir_expr()
+
   defp wire_branch_specs(specs) do
     wired =
       Enum.map(specs, fn spec ->
@@ -570,6 +642,8 @@ defmodule Elmc.Backend.CCodegen.UnionIntSuffixCase do
     if Enum.all?(wired, &is_map/1), do: wired, else: :error
   end
 
+  @spec wire_branch_spec(term()) :: Types.ir_expr()
+
   defp wire_branch_spec({pattern, prefix, suffix, int_expr}) do
     with {:ok, var} <- payload_var(pattern),
          {:ok, tag} <- union_branch_tag(pattern),
@@ -579,6 +653,8 @@ defmodule Elmc.Backend.CCodegen.UnionIntSuffixCase do
       _ -> :error
     end
   end
+
+  @spec union_branch_tag(map() | term()) :: Types.ir_expr()
 
   defp union_branch_tag(%{kind: :constructor, tag: tag}) when is_integer(tag), do: {:ok, tag}
 
@@ -591,6 +667,8 @@ defmodule Elmc.Backend.CCodegen.UnionIntSuffixCase do
        do: {:ok, tag}
 
   defp union_branch_tag(_), do: :error
+
+  @spec wire_int_expr(Types.expr(), Types.ir_expr()) :: Types.ir_expr()
 
   defp wire_int_expr(expr, payload_var) do
     cond do
@@ -605,6 +683,8 @@ defmodule Elmc.Backend.CCodegen.UnionIntSuffixCase do
     end
   end
 
+  @spec int_expr_var?(map() | term(), Types.ir_expr() | term()) :: boolean()
+
   defp int_expr_var?(%{op: :var, name: name}, payload_var), do: name == payload_var
 
   defp int_expr_var?(%{op: :runtime_call, function: "elmc_string_from_int", args: [inner]}, payload_var),
@@ -618,6 +698,8 @@ defmodule Elmc.Backend.CCodegen.UnionIntSuffixCase do
 
   defp int_expr_var?(_, _), do: false
 
+  @spec wire_scaled_expr(Types.expr(), Types.ir_expr()) :: Types.ir_expr()
+
   defp wire_scaled_expr(expr, payload_var) do
     with {:ok, left, divisor} <- idiv_parts(expr),
          {:ok, offset} <- add_const_offset(left, payload_var),
@@ -627,6 +709,8 @@ defmodule Elmc.Backend.CCodegen.UnionIntSuffixCase do
       _ -> :error
     end
   end
+
+  @spec idiv_parts(map()) :: Types.ir_expr()
 
   defp idiv_parts(%{op: :call, name: "__idiv__", args: [left, %{op: :int_literal, value: divisor}]})
        when is_integer(divisor),
@@ -643,6 +727,8 @@ defmodule Elmc.Backend.CCodegen.UnionIntSuffixCase do
   defp idiv_parts(%{op: :qualified_call, target: target, args: [left, %{op: :int_literal, value: divisor}]})
        when target in ["Basics.fdiv", "Basics.idiv", "//"] and is_integer(divisor),
        do: {:ok, left, divisor}
+
+  @spec add_const_offset(map() | term(), Types.ir_expr() | term()) :: Types.ir_expr()
 
   defp add_const_offset(%{op: :add_const, var: name, value: offset}, payload_var)
        when name == payload_var and is_integer(offset),

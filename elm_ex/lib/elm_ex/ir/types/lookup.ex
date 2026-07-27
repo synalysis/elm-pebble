@@ -4,6 +4,7 @@ defmodule ElmEx.IR.Types.Lookup do
   `ElmEx.IR.ImportResolution`.
   """
 
+
   @type payload_kind :: :none | :single | :multi | :function_like
 
   @type name_map :: %{String.t() => String.t()}

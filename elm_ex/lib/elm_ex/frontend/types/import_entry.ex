@@ -3,6 +3,7 @@ defmodule ElmEx.Frontend.Types.ImportEntry do
   Parsed `import` line metadata from `GeneratedParser`.
   """
 
+
   # `".."` open exposing is represented as the binary `".."` at runtime.
   @type exposing :: nil | String.t() | [String.t()]
 

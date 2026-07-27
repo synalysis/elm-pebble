@@ -1,5 +1,7 @@
 defmodule Elmc.Backend.CCodegen.SpecialValues.Dispatcher do
   @moduledoc false
+  alias Elmc.Backend.CCodegen.Types, as: Types
+
 
   alias Elmc.Backend.CCodegen.SpecialValues.{
     Cmd,
@@ -72,6 +74,8 @@ defmodule Elmc.Backend.CCodegen.SpecialValues.Dispatcher do
       end
     end)
   end
+
+  @spec handlers_for(keyword()) :: Types.ir_expr()
 
   defp handlers_for(opts) do
     if PlatformWeb.web_target?(opts) do

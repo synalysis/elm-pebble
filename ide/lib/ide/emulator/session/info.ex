@@ -1,5 +1,7 @@
 defmodule Ide.Emulator.Session.Info do
   @moduledoc false
+  alias Ide.Emulator.Types, as: Types
+
 
   alias Ide.Emulator.{QemuControl, Types}
   alias Ide.Emulator.Session.{Config, ProcessHost}
@@ -48,6 +50,8 @@ defmodule Ide.Emulator.Session.Info do
 
   @spec supported_controls() :: [String.t()]
   def supported_controls, do: QemuControl.supported_controls()
+
+  @spec tcp_port_open?(integer() | term()) :: boolean()
 
   defp tcp_port_open?(port) when is_integer(port) and port > 0 do
     ProcessHost.tcp_port_open?(port)

@@ -1,5 +1,7 @@
 defmodule Elmc.Backend.CCodegen.PebbleMsgTag do
   @moduledoc false
+  alias Elmc.Backend.CCodegen.Types, as: Types
+
 
   alias Elmc.Backend.CCodegen.Types
   alias Elmc.Backend.Pebble.Util
@@ -23,6 +25,8 @@ defmodule Elmc.Backend.CCodegen.PebbleMsgTag do
   def msg_constructor?(name) when is_binary(name) do
     MapSet.member?(Process.get(:elmc_pebble_msg_names, MapSet.new()), name)
   end
+
+  @spec constructor_short_name(map() | term()) :: Types.ir_expr()
 
   defp constructor_short_name(%{name: name}) when is_binary(name), do: name
 

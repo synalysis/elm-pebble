@@ -1,5 +1,7 @@
 defmodule Elmc.Backend.Pebble.IRAnalysis.Msg do
   @moduledoc false
+  alias Elmc.Types, as: Types
+
 
   alias ElmEx.IR
   alias Elmc.Backend.Pebble.Types

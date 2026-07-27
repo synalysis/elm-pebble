@@ -2,6 +2,8 @@ defmodule Elmx.Runtime.Executor do
   @moduledoc """
   Debugger execution contract for compiled Elixir Elm apps (`elmx.runtime_executor.v1`).
   """
+  alias Elmx.Types, as: Types
+
 
   alias Elmx.Runtime.Executor.{Model, Run, Subscriptions, View}
   alias Elmx.Runtime.Followups
@@ -120,6 +122,8 @@ defmodule Elmx.Runtime.Executor do
 
   defp sync_launch_screen_fields(_runtime_model, _launch_context), do: %{}
 
+  @spec maybe_put_screen_dimension(Types.elm_value(), String.t(), integer()) :: Types.elm_value() | nil
+
   defp maybe_put_screen_dimension(model, key, value)
        when is_map(model) and is_binary(key) and is_integer(value) and value > 0 do
     if Map.has_key?(model, key) or Map.has_key?(model, String.to_atom(key)) do
@@ -131,6 +135,8 @@ defmodule Elmx.Runtime.Executor do
 
   defp maybe_put_screen_dimension(model, _key, _value), do: model
 
+  @spec maybe_put_display_shape(Types.elm_value(), map() | term()) :: Types.elm_value() | nil
+
   defp maybe_put_display_shape(model, %{"ctor" => _, "args" => _} = shape)
        when is_map(model) and is_map(shape) do
     if Map.has_key?(model, "displayShape") or Map.has_key?(model, :displayShape) do
@@ -141,6 +147,8 @@ defmodule Elmx.Runtime.Executor do
   end
 
   defp maybe_put_display_shape(model, _), do: model
+
+  @spec commands_to_followups(map(), Types.elm_value()) :: Types.elm_value()
 
   defp commands_to_followups(cmd, source_root) when is_map(cmd) do
     Followups.from_commands(cmd, source_root: source_root || "watch")

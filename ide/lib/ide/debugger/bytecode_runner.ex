@@ -6,6 +6,7 @@ defmodule Ide.Debugger.BytecodeRunner do
   optional in-process interpretation when bytecode artifacts are present.
   """
 
+
   alias Elmc.Backend.Bytecode.{Artifacts, ManifestProgram, Runtime}
   alias Ide.Debugger.BytecodeTypes
 

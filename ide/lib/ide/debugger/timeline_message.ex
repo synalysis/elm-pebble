@@ -192,6 +192,8 @@ defmodule Ide.Debugger.TimelineMessage do
   @spec wire_ctor_display(Types.protocol_wire_arg()) :: String.t()
   defp wire_ctor_display(value), do: wire_ctor_display_inner(value)
 
+  @spec wire_ctor_display_inner(integer()) :: term()
+
   defp wire_ctor_display_inner(value) do
     case wire_ctor_parts(value) do
       {ctor, args} when is_binary(ctor) ->

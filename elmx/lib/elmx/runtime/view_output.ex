@@ -2,6 +2,8 @@ defmodule Elmx.Runtime.ViewOutput do
   @moduledoc """
   Flattens evaluated `Pebble.Ui` view trees into debugger `runtime_view_output` rows.
   """
+  alias Elmx.Types, as: Types
+
 
   alias Elmx.Types
   alias Elmx.Runtime.ViewOutput.{Resources, Tree}

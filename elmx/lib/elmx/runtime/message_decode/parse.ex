@@ -1,5 +1,7 @@
 defmodule Elmx.Runtime.MessageDecode.Parse do
   @moduledoc false
+  alias Elmx.Types, as: Types
+
 
   alias Elmx.Runtime.MessageDecode.Ctor
   alias Elmx.Types
@@ -18,6 +20,8 @@ defmodule Elmx.Runtime.MessageDecode.Parse do
         decode_nullary(ctor, frame_payload)
     end
   end
+
+  @spec decode_with_rest(Types.elm_value(), String.t()) :: Types.elm_value()
 
   defp decode_with_rest(ctor, rest) when is_binary(rest) do
     atom = String.to_atom(ctor)
@@ -50,6 +54,8 @@ defmodule Elmx.Runtime.MessageDecode.Parse do
     end
   end
 
+  @spec decode_nullary(Types.elm_value(), Types.elm_value()) :: Types.elm_value()
+
   defp decode_nullary(ctor, frame_payload) do
     atom = String.to_atom(ctor)
 
@@ -60,6 +66,8 @@ defmodule Elmx.Runtime.MessageDecode.Parse do
     end
   end
 
+  @spec parse_paren_payload(String.t()) :: Types.elm_value()
+
   defp parse_paren_payload(content) when is_binary(content) do
     case String.split(content, " ", parts: 2) do
       [ctor, args_rest] -> Ctor.build(ctor, tokenize_args(args_rest))
@@ -67,12 +75,18 @@ defmodule Elmx.Runtime.MessageDecode.Parse do
     end
   end
 
+  @spec tokenize_args(String.t()) :: Types.elm_value()
+
   defp tokenize_args(rest) when is_binary(rest) do
     rest |> String.trim() |> tokenize_arg_tokens([]) |> Enum.map(&parse_arg_value/1)
   end
 
+  @spec parse_arg_value(String.t() | integer()) :: Types.elm_value()
+
   defp parse_arg_value(value) when is_binary(value), do: Ctor.parse_scalar_token(value)
   defp parse_arg_value(value), do: value
+
+  @spec tokenize_arg_tokens(Types.elm_value(), term()) :: Types.elm_value()
 
   defp tokenize_arg_tokens("", acc), do: Enum.reverse(acc)
 
@@ -103,9 +117,13 @@ defmodule Elmx.Runtime.MessageDecode.Parse do
     end
   end
 
+  @spec take_balanced_paren(Types.elm_value()) :: Types.elm_value()
+
   defp take_balanced_paren("(" <> rest) do
     do_take_balanced_paren(rest, 1, "")
   end
+
+  @spec do_take_balanced_paren(Types.elm_value() | binary(), non_neg_integer() | Types.elm_value(), Types.elm_value()) :: Types.elm_value()
 
   defp do_take_balanced_paren("", _depth, inner), do: {inner, ""}
 

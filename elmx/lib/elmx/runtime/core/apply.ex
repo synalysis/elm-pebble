@@ -1,5 +1,7 @@
 defmodule Elmx.Runtime.Core.Apply do
   @moduledoc false
+  alias Elmx.Types, as: Types
+
 
   alias Elmx.Types
 
@@ -35,6 +37,66 @@ defmodule Elmx.Runtime.Core.Apply do
 
       value ->
         value
+    end
+  end
+
+  @doc """
+  Language-level Elm application (`f x`). Unlike `apply1/2`, may return a still-curried function.
+  """
+  @spec call1(Types.elm_hof(), Types.elm_value()) :: Types.elm_value()
+  def call1(fun, arg) when is_function(fun, 1), do: fun.(arg)
+
+  def call1(fun, arg) when is_function(fun, 2) do
+    fn next -> fun.(arg, next) end
+  end
+
+  def call1(fun, arg) when is_function(fun, 3) do
+    fn b ->
+      fn c -> fun.(arg, b, c) end
+    end
+  end
+
+  def call1(fun, arg) when is_function(fun, 4) do
+    fn b ->
+      fn c ->
+        fn d -> fun.(arg, b, c, d) end
+      end
+    end
+  end
+
+  def call1(fun, arg) when is_function(fun, 5) do
+    fn b ->
+      fn c ->
+        fn d ->
+          fn e -> fun.(arg, b, c, d, e) end
+        end
+      end
+    end
+  end
+
+  def call1(fun, arg) when is_function(fun, 6) do
+    fn b ->
+      fn c ->
+        fn d ->
+          fn e ->
+            fn f -> fun.(arg, b, c, d, e, f) end
+          end
+        end
+      end
+    end
+  end
+
+  def call1(fun, arg) when is_function(fun, 7) do
+    fn b ->
+      fn c ->
+        fn d ->
+          fn e ->
+            fn f ->
+              fn g -> fun.(arg, b, c, d, e, f, g) end
+            end
+          end
+        end
+      end
     end
   end
 

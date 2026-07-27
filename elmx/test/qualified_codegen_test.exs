@@ -24,7 +24,8 @@ defmodule Elmx.QualifiedCodegenTest do
     assert acc_only =~ ".foldl(f, 0, elmx_list)"
 
     assert {:ok, fun_only} = QualifiedCodegen.list_fold("foldr", "f", nil, nil)
-    assert fun_only =~ "fn elmx_acc, elmx_list ->"
+    assert fun_only =~ "fn elmx_acc -> fn elmx_list ->"
+    refute fun_only =~ "fn elmx_acc, elmx_list ->"
   end
 
   test "collection_call lowers Dict/Set/Array ops" do

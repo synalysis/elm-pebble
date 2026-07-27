@@ -6,6 +6,7 @@ defmodule ElmEx.Frontend.LayoutRules do
   same indentation level, so formatted source re-tokenizes the same way.
   """
 
+
   @doc "True when a physical line starts a new `let` binding at the block indent."
   @spec let_binding_start?(String.t()) :: boolean()
   def let_binding_start?(text) when is_binary(text) do
@@ -18,6 +19,8 @@ defmodule ElmEx.Frontend.LayoutRules do
 
   # `(a, b) = …`, `(Just x) = …` — not lambdas `(\x -> …)` and not parenthesized
   # expressions that merely contain `=` inside a record update / nested form.
+  @spec paren_pattern_binding_start?(String.t()) :: boolean()
+
   defp paren_pattern_binding_start?(trimmed) when is_binary(trimmed) do
     case split_paren_pattern_binding(trimmed) do
       {:ok, inner} ->
@@ -28,6 +31,8 @@ defmodule ElmEx.Frontend.LayoutRules do
         false
     end
   end
+
+  @spec split_paren_pattern_binding(binary()) :: {:ok, binary()} | :error
 
   defp split_paren_pattern_binding(<<"(", rest::binary>>) do
     case find_matching_close_paren(rest, 1, 0) do
@@ -44,6 +49,9 @@ defmodule ElmEx.Frontend.LayoutRules do
   end
 
   defp split_paren_pattern_binding(_), do: :error
+
+  @spec find_matching_close_paren(String.t(), pos_integer(), non_neg_integer()) ::
+          {:ok, String.t(), String.t()} | :error
 
   defp find_matching_close_paren(text, depth, idx) when depth > 0 do
     case String.at(text, idx) do
@@ -79,6 +87,8 @@ defmodule ElmEx.Frontend.LayoutRules do
       (Regex.match?(~r/^_\s*->/u, trimmed) or Regex.match?(~r/^\[/u, trimmed) or
          Regex.match?(~r/^[A-Za-z_(]/u, trimmed))
   end
+
+  @spec keyword_line?(String.t()) :: boolean()
 
   defp keyword_line?(trimmed) do
     trimmed in ["in", "else", "then", "of", "let", "if", "case"] or
@@ -156,10 +166,12 @@ defmodule ElmEx.Frontend.LayoutRules do
   end
 
   @doc "Token the layout lexer emits between sibling `let` bindings."
-  @spec let_binding_sep() :: :semicolon
+  @spec let_binding_sep() :: atom()
+
   def let_binding_sep, do: :semicolon
 
   @doc "Token the layout lexer emits between sibling `case` arms."
-  @spec case_arm_sep() :: :case_sep
+  @spec case_arm_sep() :: atom()
+
   def case_arm_sep, do: :case_sep
 end

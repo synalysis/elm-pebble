@@ -1,5 +1,7 @@
 defmodule Elmx.Backend.ElixirCodegen.Emit.Expr do
   @moduledoc false
+  alias Elmx.Types, as: Types
+
 
   @let_iife_threshold 32
 
@@ -12,23 +14,33 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Expr do
   alias Elmx.Runtime.Stdlib
   alias Elmx.Types
 
+  @spec compile_add_const(map(), Types.compile_env(), Types.elm_value()) :: Types.elm_value()
+
   def compile_add_const(%{var: name, value: value}, env, counter) do
     ref = Helpers.binding_ref(name, env)
     {["(", ref, " + ", Integer.to_string(value), ")"], env, counter}
   end
 
+  @spec compile_add_vars(map(), Types.compile_env(), Types.elm_value()) :: Types.elm_value()
+
   def compile_add_vars(%{left: left, right: right}, env, counter) do
     {["(", Helpers.binding_ref(left, env), " + ", Helpers.binding_ref(right, env), ")"], env, counter}
   end
+
+  @spec compile_sub_vars(map(), Types.compile_env(), Types.elm_value()) :: Types.elm_value()
 
   def compile_sub_vars(%{left: left, right: right}, env, counter) do
     {["(", Helpers.binding_ref(left, env), " - ", Helpers.binding_ref(right, env), ")"], env, counter}
   end
 
+  @spec compile_sub_const(map(), Types.compile_env(), Types.elm_value()) :: Types.elm_value()
+
   def compile_sub_const(%{var: name, value: value}, env, counter) do
     ref = Helpers.binding_ref(name, env)
     {["(", ref, " - ", Integer.to_string(value), ")"], env, counter}
   end
+
+  @spec compile_compare(map(), Types.compile_env(), Types.elm_value()) :: Types.elm_value()
 
   def compile_compare(%{left: left, kind: kind, right: right}, env, counter) do
     compile_compare(%{left: left, op: kind, right: right}, env, counter)
@@ -57,6 +69,8 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Expr do
     {["(", l, " ", op, " ", r, ")"], env, c2}
   end
 
+  @spec compile_tuple2(map(), Types.compile_env(), Types.elm_value()) :: Types.elm_value()
+
   def compile_tuple2(%{left: %{op: :int_literal, value: _tag, union_ctor: qualified} = left, right: right}, env, counter)
        when is_binary(qualified) do
     ctor = union_ctor_emit_name(qualified, env)
@@ -80,6 +94,8 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Expr do
     {r, env, c2} = Emit.compile_expr(right, env, c1)
     {["{", l, ", ", r, "}"], env, c2}
   end
+
+  @spec compile_flat_tagged_ctor(Types.elm_value(), Types.expr() | Types.elm_value(), Types.compile_env(), Types.elm_value(), Types.elm_value()) :: Types.elm_value()
 
   def compile_flat_tagged_ctor(ctor, right, env, counter, qualified \\ nil)
 
@@ -117,6 +133,8 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Expr do
     end
   end
 
+  @spec flatten_ctor_payload_exprs(map() | Types.elm_value()) :: Types.elm_value()
+
   def flatten_ctor_payload_exprs(%{op: :tuple2, left: %{union_ctor: qualified}, right: _right} = expr)
        when is_binary(qualified),
        do: [expr]
@@ -126,6 +144,8 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Expr do
   end
 
   def flatten_ctor_payload_exprs(other), do: [other]
+
+  @spec union_ctor_payload_atoms_only?(Types.expr()) :: boolean()
 
   defp union_ctor_payload_atoms_only?(expr) do
     expr
@@ -137,6 +157,8 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Expr do
     end)
   end
 
+  @spec compile_int_literal(Types.expr(), Types.compile_env()) :: Types.elm_value()
+
   def compile_int_literal(expr, env) do
     case Map.get(expr, :union_ctor) do
       qualified when is_binary(qualified) ->
@@ -146,6 +168,8 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Expr do
         Integer.to_string(expr.value)
     end
   end
+
+  @spec union_ctor_emit_name(String.t(), Types.compile_env()) :: Types.elm_value()
 
   def union_ctor_emit_name(qualified, env) when is_binary(qualified) do
     case Map.get(env, :constructor_lookup) do
@@ -160,6 +184,8 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Expr do
     end
   end
 
+  @spec compile_list(map(), Types.compile_env(), Types.elm_value()) :: Types.elm_value()
+
   def compile_list(%{items: elements}, env, counter) when is_list(elements) do
     compile_list(%{elements: elements}, env, counter)
   end
@@ -173,6 +199,8 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Expr do
 
     {["[", Enum.intersperse(parts, ", "), "]"], env, counter}
   end
+
+  @spec compile_lambda(map(), Types.compile_env(), Types.elm_value()) :: Types.elm_value()
 
   def compile_lambda(%{body: body} = expr, env, counter) do
     args = Map.get(expr, :args) || Map.get(expr, :params) || []
@@ -208,6 +236,8 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Expr do
     {code, Map.put(env, name, true), counter}
   end
 
+  @spec compile_runtime_call(map(), Types.compile_env(), Types.elm_value()) :: Types.elm_value()
+
   def compile_runtime_call(%{function: function, args: args}, env, counter) do
     {parts, {env, c1}} =
       Enum.map_reduce(args, {env, counter}, fn arg, {env, c} ->
@@ -229,6 +259,8 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Expr do
     {code, env, c1}
   end
 
+  @spec compile_let_in(map(), Types.compile_env(), Types.elm_value()) :: Types.elm_value()
+
   def compile_let_in(%{op: :let_in} = expr, env, counter) do
     {bindings, body} = collect_let_bindings(expr)
 
@@ -244,6 +276,8 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Expr do
     end
   end
 
+  @spec collect_let_bindings(map() | Types.expr()) :: Types.elm_value()
+
   defp collect_let_bindings(%{op: :let_in, name: name, value_expr: value, in_expr: inner}) do
     {rest, body} = collect_let_bindings(inner)
     {[{name, value} | rest], body}
@@ -251,17 +285,23 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Expr do
 
   defp collect_let_bindings(body), do: {[], body}
 
+  @spec function_letrec?(Types.elm_value()) :: boolean()
+
   defp function_letrec?(bindings) do
     bindings != [] and
       letrec_like_bindings?(bindings) and
       Enum.all?(bindings, fn {_name, value} -> function_like?(value) end)
   end
 
+  @spec letrec_like_bindings?(Types.elm_value()) :: boolean()
+
   defp letrec_like_bindings?(bindings) do
     Enum.any?(bindings, fn {_name, value} ->
       match?(%{op: :lambda}, value) or match?(%{op: :qualified_call, args: []}, value)
     end)
   end
+
+  @spec function_like?(map() | term()) :: boolean()
 
   defp function_like?(%{op: :lambda}), do: true
 
@@ -270,6 +310,8 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Expr do
   defp function_like?(%{op: :var}), do: true
 
   defp function_like?(_), do: false
+
+  @spec compile_function_letrec_block(Types.elm_value(), Types.expr(), Types.compile_env(), Types.elm_value()) :: Types.elm_value()
 
   defp compile_function_letrec_block(bindings, body, env, counter) do
     sorted = order_letrec_bindings(bindings)
@@ -291,6 +333,8 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Expr do
 
     {code, env, c1}
   end
+
+  @spec compile_sequential_let_block(Types.elm_value(), Types.expr(), Types.compile_env(), Types.elm_value()) :: Types.elm_value()
 
   defp compile_sequential_let_block(bindings, body, env, counter) do
     used_names = used_let_binding_names(bindings, body)
@@ -314,6 +358,8 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Expr do
     {code, env, c1}
   end
 
+  @spec order_letrec_bindings(Types.elm_value()) :: Types.elm_value()
+
   defp order_letrec_bindings(bindings) do
     names = MapSet.new(Enum.map(bindings, &elem(&1, 0)))
 
@@ -330,6 +376,8 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Expr do
 
     topo_sort_letrec_bindings(bindings, deps)
   end
+
+  @spec topo_sort_letrec_bindings(Types.elm_value(), Types.elm_value()) :: Types.elm_value()
 
   defp topo_sort_letrec_bindings(bindings, deps) do
     binding_map = Map.new(bindings)
@@ -363,6 +411,8 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Expr do
     do: referenced_binding_names(expr, MapSet.new())
 
   def referenced_binding_names(_expr), do: MapSet.new()
+
+  @spec referenced_binding_names(map() | list() | term(), term()) :: Types.elm_value()
 
   defp referenced_binding_names(%{op: :call} = map, acc) do
     acc =
@@ -430,9 +480,13 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Expr do
 
   defp referenced_binding_names(_, acc), do: acc
 
+  @spec referenced_binding_name(term(), String.t() | map() | term()) :: Types.elm_value()
+
   defp referenced_binding_name(acc, name) when is_binary(name), do: MapSet.put(acc, name)
   defp referenced_binding_name(acc, expr) when is_map(expr), do: referenced_binding_names(expr, acc)
   defp referenced_binding_name(acc, _), do: acc
+
+  @spec used_let_binding_names(Types.elm_value(), Types.expr()) :: Types.elm_value()
 
   defp used_let_binding_names(bindings, body) do
     Enum.reduce(Enum.reverse(bindings), referenced_binding_names(body, MapSet.new()), fn
@@ -444,6 +498,8 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Expr do
         end
     end)
   end
+
+  @spec letrec_binding_value(String.t(), map() | integer(), Types.compile_env(), Types.elm_value()) :: Types.elm_value()
 
   defp letrec_binding_value(name, %{op: :lambda} = value, env, counter) do
     self_ref? = self_references?(name, value)
@@ -470,7 +526,11 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Expr do
     {value_code, c}
   end
 
+  @spec self_references?(String.t(), Types.expr()) :: boolean()
+
   defp self_references?(name, expr), do: ir_references_name?(expr, name)
+
+  @spec ir_references_name?(map() | list() | term(), String.t() | term()) :: boolean()
 
   defp ir_references_name?(%{op: :call, name: n} = map, target) when is_binary(target) do
     n == target or ir_references_name?(Map.get(map, :args) || [], target)
@@ -487,6 +547,8 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Expr do
     do: Enum.any?(list, &ir_references_name?(&1, name))
 
   defp ir_references_name?(_, _), do: false
+
+  @spec compile_single_let_in(map(), Types.compile_env(), Types.elm_value()) :: Types.elm_value()
 
   defp compile_single_let_in(%{name: name, value_expr: value, in_expr: body}, env, counter) do
     used? = MapSet.member?(referenced_binding_names(body, MapSet.new()), name)
@@ -532,6 +594,8 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Expr do
     end
   end
 
+  @spec compile_if(map(), Types.compile_env(), Types.elm_value()) :: Types.elm_value()
+
   def compile_if(%{cond: condition, then_expr: then_expr, else_expr: else_expr}, env, counter) do
     compile_if(%{condition: condition, then_expr: then_expr, else_expr: else_expr}, env, counter)
   end
@@ -543,6 +607,8 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Expr do
     {["(if ", c, " do\n    ", t, "\n  else\n    ", e, "\n  end)"], env, c3}
   end
 
+  @spec compile_tuple_accessor(map(), Types.compile_env(), Types.elm_value(), non_neg_integer()) :: Types.elm_value()
+
   def compile_tuple_accessor(%{target: target}, env, counter, index) do
     {t, env, c1} = Emit.compile_expr(target, env, counter)
     {["elem(", t, ", ", Integer.to_string(index), ")"], env, c1}
@@ -552,10 +618,14 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Expr do
     compile_tuple_accessor(%{target: arg}, env, counter, index)
   end
 
+  @spec compile_string_length(map(), Types.compile_env(), Types.elm_value()) :: Types.elm_value()
+
   def compile_string_length(%{arg: arg}, env, counter) do
     {a, env, c1} = Emit.compile_expr(arg, env, counter)
     {["String.length(", a, ")"], env, c1}
   end
+
+  @spec compile_char_from_code(map(), Types.compile_env(), Types.elm_value()) :: Types.elm_value()
 
   def compile_char_from_code(%{arg: arg}, env, counter) do
     {a, env, c1} = Emit.compile_expr(arg, env, counter)

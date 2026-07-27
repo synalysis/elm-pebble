@@ -6,6 +6,8 @@ defmodule ElmEx.Frontend.LetBindings do
   tuple/pattern/function binding shape survives for pretty-printing. Downstream
   passes call `expand/1` to obtain nested `let_in` chains when needed.
   """
+  alias ElmEx.Frontend.AstContract.Types, as: Types
+
 
   @spec expand(term()) :: term()
   def expand(expr) when is_map(expr) do
@@ -35,6 +37,9 @@ defmodule ElmEx.Frontend.LetBindings do
     expand_simple_binding(binding, expand_bindings(rest, in_expr))
   end
 
+
+  @spec expand_simple_binding(map(), Types.expr()) :: Types.expr()
+
   defp expand_simple_binding(%{kind: :name, name: name, value: value}, in_expr) do
     %{op: :let_in, name: name, value_expr: expand(value), in_expr: in_expr}
   end
@@ -51,6 +56,9 @@ defmodule ElmEx.Frontend.LetBindings do
     expand_tuple_bind(names, expand(value), in_expr)
   end
 
+
+  @spec expand_pattern_binding(map(), Types.expr()) :: Types.expr()
+
   defp expand_pattern_binding(%{pattern: pattern, value: value}, in_expr) do
     tmp = pattern_bind_name(pattern)
 
@@ -62,6 +70,8 @@ defmodule ElmEx.Frontend.LetBindings do
 
     %{op: :let_in, name: tmp, value_expr: expand(value), in_expr: case_expr}
   end
+
+  @spec expand_tuple_bind(String.t(), integer(), Types.expr()) :: Types.expr()
 
   defp expand_tuple_bind(names, value, in_expr) do
     tmp = tuple_bind_name(names)
@@ -77,6 +87,8 @@ defmodule ElmEx.Frontend.LetBindings do
     |> then(&%{op: :let_in, name: tmp, value_expr: value, in_expr: &1})
   end
 
+  @spec tuple_projections(Types.expr(), term()) :: Types.expr()
+
   defp tuple_projections(tmp_var, [_left, _right]) do
     [tuple_call("Tuple.first", tmp_var), tuple_call("Tuple.second", tmp_var)]
   end
@@ -90,6 +102,8 @@ defmodule ElmEx.Frontend.LetBindings do
       tuple_call("Tuple.second", tail)
     ]
   end
+
+  @spec tuple_call(String.t(), Types.expr()) :: Types.expr()
 
   defp tuple_call(target, arg), do: %{op: :qualified_call, target: target, args: [arg]}
 

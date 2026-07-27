@@ -562,6 +562,96 @@ defmodule Elmc.Runtime.IntList do
       return !payload || payload->length <= 0;
     }
 
+    static int elmc_int_list_sorted_member(elmc_int_t key, ElmcValue *list) {
+      ElmcIntListPayload *payload = elmc_int_list_payload(list);
+      if (!payload || payload->length <= 0) return 0;
+      int lo = 0;
+      int hi = payload->length - 1;
+      while (lo <= hi) {
+        int mid = lo + ((hi - lo) >> 1);
+        elmc_int_t value = payload->values[mid];
+        if (value == key) return 1;
+        if (value < key) lo = mid + 1;
+        else hi = mid - 1;
+      }
+      return 0;
+    }
+
+    static RC elmc_int_list_sorted_insert(ElmcValue **out, elmc_int_t key, ElmcValue *list) {
+      ElmcIntListPayload *payload = elmc_int_list_payload(list);
+      RC rc = RC_SUCCESS;
+      elmc_int_t *buf = NULL;
+      CATCH_BEGIN
+        int len = payload ? payload->length : 0;
+        if (len <= 0) {
+          rc = elmc_int_list_alloc_copy(out, &key, 1);
+          CHECK_RC(rc);
+        } else {
+          int pos = 0;
+          while (pos < len && payload->values[pos] < key) pos++;
+          if (pos < len && payload->values[pos] == key) {
+            *out = elmc_retain(list);
+          } else {
+            buf = (elmc_int_t *)elmc_malloc((size_t)(len + 1) * sizeof(elmc_int_t), __func__);
+            if (!buf) {
+              rc = RC_ERR_OUT_OF_MEMORY;
+              CHECK_RC(rc);
+            }
+            if (pos > 0) {
+              memcpy(buf, payload->values, (size_t)pos * sizeof(elmc_int_t));
+            }
+            buf[pos] = key;
+            if (pos < len) {
+              memcpy(buf + pos + 1, payload->values + pos, (size_t)(len - pos) * sizeof(elmc_int_t));
+            }
+            rc = elmc_int_list_alloc_copy(out, buf, len + 1);
+            CHECK_RC(rc);
+          }
+        }
+      CATCH_END;
+      if (buf) elmc_free(buf);
+      return rc;
+    }
+
+    static RC elmc_int_list_sorted_remove(ElmcValue **out, elmc_int_t key, ElmcValue *list) {
+      ElmcIntListPayload *payload = elmc_int_list_payload(list);
+      RC rc = RC_SUCCESS;
+      elmc_int_t *buf = NULL;
+      CATCH_BEGIN
+        if (!payload || payload->length <= 0) {
+          *out = elmc_retain(list);
+        } else {
+          int pos = 0;
+          while (pos < payload->length && payload->values[pos] < key) pos++;
+          if (pos >= payload->length || payload->values[pos] != key) {
+            *out = elmc_retain(list);
+          } else {
+            int len = payload->length - 1;
+            if (len <= 0) {
+              rc = elmc_int_list_alloc_copy(out, NULL, 0);
+              CHECK_RC(rc);
+            } else {
+              buf = (elmc_int_t *)elmc_malloc((size_t)len * sizeof(elmc_int_t), __func__);
+              if (!buf) {
+                rc = RC_ERR_OUT_OF_MEMORY;
+                CHECK_RC(rc);
+              }
+              if (pos > 0) {
+                memcpy(buf, payload->values, (size_t)pos * sizeof(elmc_int_t));
+              }
+              if (pos < len) {
+                memcpy(buf + pos, payload->values + pos + 1, (size_t)(len - pos) * sizeof(elmc_int_t));
+              }
+              rc = elmc_int_list_alloc_copy(out, buf, len);
+              CHECK_RC(rc);
+            }
+          }
+        }
+      CATCH_END;
+      if (buf) elmc_free(buf);
+      return rc;
+    }
+
     RC elmc_int_list_head_boxed(ElmcValue **out, ElmcValue *list) {
       RC rc = RC_SUCCESS;
       CATCH_BEGIN

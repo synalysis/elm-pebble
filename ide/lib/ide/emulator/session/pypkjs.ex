@@ -69,6 +69,8 @@ defmodule Ide.Emulator.Session.Pypkjs do
     end
   end
 
+  @spec maybe_append_layout_arg([String.t()], term()) :: term() | nil
+
   defp maybe_append_layout_arg(args, state) do
     layout_path = Path.join(Qemu.image_dir(state.platform), "layouts.json")
 
@@ -89,6 +91,8 @@ defmodule Ide.Emulator.Session.Pypkjs do
   end
 
   def handle_local_port(state), do: {:reply, state.phone_ws_port, state}
+
+  @spec python_from_shebang(integer()) :: term()
 
   defp python_from_shebang(pypkjs_bin) do
     with {:ok, <<"#!", rest::binary>>} <- File.read(pypkjs_bin),

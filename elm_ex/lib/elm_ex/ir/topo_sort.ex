@@ -129,9 +129,13 @@ defmodule ElmEx.IR.TopoSort do
     do_topo_sort(new_queue, updated_in_degree, reverse_deps, [current | result])
   end
 
+  @spec project_dependency?(String.t(), map()) :: boolean()
+
   defp project_dependency?(name, module_map) do
     Map.has_key?(module_map, name) and not stdlib_module?(name)
   end
+
+  @spec stdlib_module?(String.t()) :: boolean()
 
   defp stdlib_module?(name) when is_binary(name) do
     name in @stdlib_modules or

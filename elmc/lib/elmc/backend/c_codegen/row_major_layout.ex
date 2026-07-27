@@ -1,5 +1,7 @@
 defmodule Elmc.Backend.CCodegen.RowMajorLayout do
   @moduledoc false
+  alias Elmc.Backend.CCodegen.Types, as: Types
+
 
   @spec identity_perm(non_neg_integer()) :: [non_neg_integer()]
   def identity_perm(count), do: Enum.to_list(0..(count - 1))
@@ -185,6 +187,8 @@ defmodule Elmc.Backend.CCodegen.RowMajorLayout do
     """
   end
 
+  @spec compact_perm_table_rows(Types.ir_expr()) :: Types.ir_expr()
+
   defp compact_perm_table_rows(perms) do
     perms
     |> Enum.with_index()
@@ -193,6 +197,8 @@ defmodule Elmc.Backend.CCodegen.RowMajorLayout do
       "  { #{values} } /* #{index} */"
     end)
   end
+
+  @spec fourth_branch_src_index(Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
 
   defp fourth_branch_src_index(:forward, width) do
     """

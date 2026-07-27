@@ -1,5 +1,7 @@
 defmodule Elmx.Backend.ElixirCodegen.Emit.Patterns.Match.Bindings do
   @moduledoc false
+  alias Elmx.Types, as: Types
+
 
   alias Elmx.Types
 

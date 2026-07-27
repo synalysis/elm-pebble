@@ -1,5 +1,7 @@
 defmodule Elmx.Runtime.Pebble.Dispatch.Platform do
   @moduledoc false
+  alias Elmx.Types, as: Types
+
 
   alias Elmx.Runtime.LaunchContext
   alias Elmx.Runtime.Pebble.DeviceStubs

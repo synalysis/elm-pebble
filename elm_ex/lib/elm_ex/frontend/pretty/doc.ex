@@ -13,7 +13,6 @@ defmodule ElmEx.Frontend.Pretty.Doc do
   @spec text(String.t()) :: t()
   def text(string) when is_binary(string), do: {:text, string}
 
-  @spec break() :: t()
   def break, do: :break
 
   @spec nest(pos_integer(), t()) :: t()

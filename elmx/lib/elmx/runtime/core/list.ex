@@ -2,6 +2,8 @@ defmodule Elmx.Runtime.Core.List do
   @moduledoc """
   Elm `List` runtime helpers for generated Elixir code.
   """
+  alias Elmx.Types, as: Types
+
 
   alias Elmx.Runtime.Core
   alias Elmx.Types

@@ -1,5 +1,7 @@
 defmodule Elmc.Backend.CCodegen.FusedNativeReachability do
   @moduledoc false
+  alias Elmc.Backend.CCodegen.Types, as: Types
+
 
   alias Elmc.Backend.CCodegen.Fusion
   alias Elmc.Backend.CCodegen.Types

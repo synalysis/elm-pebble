@@ -67,7 +67,8 @@ defmodule Elmc.TutorialCompleteMinuteCodegenTest do
     assert minute_changed =~ "ELMC_PEBBLE_CMD_COMPANION_SEND"
     assert minute_changed =~ "elmc_fn_Companion_Internal_watchToPhoneTag"
     assert minute_changed =~ "elmc_fn_Companion_Internal_watchToPhoneValue"
-    assert minute_changed =~ "elmc_new_int_take(1)"
-    assert minute_changed =~ "elmc_tuple2(&owned[5], owned[2], owned[6])"
+    # RC ABI: `elmc_new_int(&owned[i], 1)` — legacy `_take` is gone.
+    assert minute_changed =~ ~r/elmc_new_int(?:_take)?\((?:&owned\[\d+\],\s*)?1\)/
+    assert minute_changed =~ ~r/elmc_tuple2\(&owned\[\d+\],\s*owned\[\d+\],\s*owned\[\d+\]\)/
   end
 end

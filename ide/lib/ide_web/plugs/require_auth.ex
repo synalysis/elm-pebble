@@ -28,6 +28,8 @@ defmodule IdeWeb.Plugs.RequireAuth do
     end
   end
 
+  @spec reject(integer()) :: term()
+
   defp reject(conn) do
     if websocket_upgrade?(conn) do
       conn
@@ -37,6 +39,8 @@ defmodule IdeWeb.Plugs.RequireAuth do
       reject_non_websocket(conn)
     end
   end
+
+  @spec reject_non_websocket(integer()) :: term()
 
   defp reject_non_websocket(conn) do
     if json_request?(conn) do
@@ -50,11 +54,15 @@ defmodule IdeWeb.Plugs.RequireAuth do
     end
   end
 
+  @spec json_request?(integer()) :: boolean()
+
   defp json_request?(conn) do
     not websocket_upgrade?(conn) and
       (String.starts_with?(conn.request_path, "/api/") or
          Enum.any?(get_req_header(conn, "accept"), &String.contains?(&1, "application/json")))
   end
+
+  @spec websocket_upgrade?(integer()) :: boolean()
 
   defp websocket_upgrade?(conn) do
     conn.method == "GET" and

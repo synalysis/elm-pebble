@@ -1,5 +1,7 @@
 defmodule Elmc.Backend.Plan.Fusion.CEmit do
   @moduledoc false
+  alias Elmc.Backend.Plan.Types, as: Types
+
 
   alias Elmc.Backend.Plan.Fusion.Registry
   alias Elmc.Backend.Plan.Fusion.Helper

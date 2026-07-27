@@ -1,5 +1,7 @@
 defmodule Elmc.Backend.DebugUsage do
   @moduledoc false
+  alias Elmc.Types, as: Types
+
 
   alias ElmEx.IR
   alias Elmc.Backend.CCodegen.Types, as: CCodegenTypes

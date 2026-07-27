@@ -1,5 +1,7 @@
 defmodule Elmx.Runtime.ViewOutput.Draw do
   @moduledoc false
+  alias Elmx.Types, as: Types
+
 
   alias Elmx.Types
   alias Elmx.Runtime.ViewOutput.Draw.{Assets, Path, Shapes, Text}

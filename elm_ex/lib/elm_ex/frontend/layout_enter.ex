@@ -112,7 +112,6 @@ defmodule ElmEx.Frontend.LayoutEnter do
     end
   end
 
-  @spec initial_state() :: state()
   defp initial_state do
     %{indent_stack: [0], blocks: [], cont: nil}
   end
@@ -124,7 +123,6 @@ defmodule ElmEx.Frontend.LayoutEnter do
     |> apply_line_semantics(line)
   end
 
-  @spec apply_indent_transitions(state(), map()) :: state()
   defp apply_indent_transitions(%{indent_stack: stack, cont: cont} = state, line) do
     indent = Map.get(line, :indent, 0)
 

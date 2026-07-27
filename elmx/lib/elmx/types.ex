@@ -175,6 +175,9 @@ defmodule Elmx.Types do
   @typedoc "Opaque Elm runtime cell (list element, dict value, set member, etc.)."
   @type elm_value :: term()
 
+  @typedoc "Compatibility alias for injected @spec heuristics."
+  @type expr :: elm_value()
+
   @typedoc "Time zone value from Elm `Time.customZone` / `Time.utc`."
   @type time_zone :: {:Zone, integer(), list()}
 
@@ -203,7 +206,10 @@ defmodule Elmx.Types do
   @type elm_dict :: {:elmx_dict, %{(comparable() | elm_char() | atom()) => elm_value()}}
 
   @typedoc "Elm `Set` runtime representation."
-  @type elm_set :: {:elmx_set, [elm_value()]} | [elm_value()]
+  @type elm_set ::
+          {:elmx_set, [elm_value()]}
+          | {:Set_elm_builtin, elm_dict()}
+          | [elm_value()]
 
   @typedoc "Elm `Char` runtime representation."
   @type elm_char :: {:elmx_char, integer()}
@@ -588,6 +594,10 @@ defmodule Elmx.Types do
   @type record_field_types_map :: %{optional(String.t()) => %{optional(String.t()) => String.t()}}
 
   @typedoc "Codegen environment passed through `Emit.compile_expr/3`."
+  @type compile_env :: emit_env()
+
+  @type t :: term()
+
   @type emit_env :: %{
           optional(:module) => String.t(),
           optional(:emit_mode) => :library | :ide_runtime,

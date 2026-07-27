@@ -70,10 +70,14 @@ defmodule Ide.Emulator.PBWInstaller.Parts do
   @spec sort_parts_for_install([PBW.part()]) :: [PBW.part()]
   def sort_parts_for_install(parts), do: Enum.sort_by(parts, &install_part_order/1)
 
+  @spec install_part_order(map() | term()) :: term()
+
   defp install_part_order(%{kind: :binary}), do: 0
   defp install_part_order(%{kind: :resources}), do: 1
   defp install_part_order(%{kind: :worker}), do: 2
   defp install_part_order(_part), do: 3
+
+  @spec send_part(term(), term(), term(), term(), term(), term(), term(), term(), term(), term(), boolean()) :: term()
 
   defp send_part(
          router,
@@ -136,6 +140,8 @@ defmodule Ide.Emulator.PBWInstaller.Parts do
         result
     end
   end
+
+  @spec send_part_once(term(), term(), term(), term(), term(), term(), term(), term(), term(), boolean()) :: term()
 
   defp send_part_once(
          router,
@@ -213,6 +219,8 @@ defmodule Ide.Emulator.PBWInstaller.Parts do
     end
   end
 
+  @spec maybe_install_part(term(), atom(), term(), term(), term(), term(), term()) :: term() | nil
+
   defp maybe_install_part(
          router,
          kind,
@@ -278,6 +286,8 @@ defmodule Ide.Emulator.PBWInstaller.Parts do
         {:error, reason}
     end
   end
+
+  @spec maybe_delay_between_parts(term() | non_neg_integer(), term()) :: term() | nil
 
   defp maybe_delay_between_parts(0, _delay_ms), do: :ok
   defp maybe_delay_between_parts(_index, delay_ms) when delay_ms <= 0, do: :ok

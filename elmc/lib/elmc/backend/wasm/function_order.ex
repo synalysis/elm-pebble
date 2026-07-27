@@ -1,5 +1,7 @@
 defmodule Elmc.Backend.Wasm.FunctionOrder do
   @moduledoc false
+  alias Elmc.Types, as: Types
+
 
   alias Elmc.Backend.Plan.Types.FunctionPlan
 
@@ -19,6 +21,8 @@ defmodule Elmc.Backend.Wasm.FunctionOrder do
     Enum.map(sorted_keys, &Map.fetch!(by_key, &1))
   end
 
+  @spec deps(map()) :: Types.ir_expr()
+
   defp deps(%FunctionPlan{} = plan) do
     blocks = plan.blocks ++ Enum.flat_map(Map.get(plan, :lambdas) || [], & &1.blocks)
 
@@ -31,6 +35,8 @@ defmodule Elmc.Backend.Wasm.FunctionOrder do
     |> Enum.uniq()
   end
 
+  @spec topo_sort(Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+
   defp topo_sort(keys, graph) do
     {sorted, _} =
       Enum.reduce(keys, {[], MapSet.new()}, fn key, {acc, visited} ->
@@ -39,6 +45,8 @@ defmodule Elmc.Backend.Wasm.FunctionOrder do
 
     sorted
   end
+
+  @spec visit(String.t(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), term()) :: Types.ir_expr()
 
   defp visit(key, graph, visited, stack, acc) do
     cond do

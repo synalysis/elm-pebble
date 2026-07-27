@@ -27,6 +27,8 @@ defmodule Ide.Resources.GifToApng do
 
   def convert(_, _), do: {:error, :conversion_failed}
 
+  @spec executable_file?(String.t() | term()) :: boolean()
+
   defp executable_file?(path) when is_binary(path) and path != "" do
     File.regular?(path) and File.exists?(path)
   end
@@ -35,6 +37,8 @@ defmodule Ide.Resources.GifToApng do
 
   # gif2apng 1.9: no -o flag; pass `gif2apng -z0 input.gif output.png`.
   # It only opens relative input paths, so run with cwd = input directory.
+  @spec convert_with_bin(integer(), String.t(), String.t()) :: term()
+
   defp convert_with_bin(bin, input_path, output_path) do
     input_dir = Path.dirname(Path.expand(input_path))
     input_name = Path.basename(input_path)
@@ -64,6 +68,8 @@ defmodule Ide.Resources.GifToApng do
     end
   end
 
+  @spec move_into_place(term(), term()) :: term()
+
   defp move_into_place(from, to) do
     from = Path.expand(from)
     to = Path.expand(to)
@@ -82,6 +88,8 @@ defmodule Ide.Resources.GifToApng do
         end
     end
   end
+
+  @spec copy_and_remove(term(), term()) :: term()
 
   defp copy_and_remove(from, to) do
     with {:ok, bytes} <- File.read(from),

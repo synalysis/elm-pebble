@@ -42,17 +42,23 @@ defmodule ElmEx.IR.PipeChain do
 
   def desugar_project(ir), do: ir
 
+  @spec desugar_module(map() | Types.expr()) :: map()
+
   defp desugar_module(%{declarations: decls} = mod) when is_list(decls) do
     %{mod | declarations: Enum.map(decls, &desugar_declaration/1)}
   end
 
   defp desugar_module(mod), do: mod
 
+  @spec desugar_declaration(map() | Types.decl()) :: map()
+
   defp desugar_declaration(%{expr: expr} = decl) when is_map(expr) do
     %{decl | expr: desugar_expr(expr)}
   end
 
   defp desugar_declaration(decl), do: decl
+
+  @spec desugar_children(map()) :: map()
 
   defp desugar_children(%{op: :pipe_chain} = expr), do: desugar(expr)
 
@@ -63,6 +69,8 @@ defmodule ElmEx.IR.PipeChain do
       {key, other} -> {key, other}
     end)
   end
+
+  @spec desugar_child(map() | Types.expr()) :: map()
 
   defp desugar_child(%{} = child), do: desugar_expr(child)
   defp desugar_child(child), do: child
@@ -118,6 +126,8 @@ defmodule ElmEx.IR.PipeChain do
   def append_pipe_arg(step, acc) do
     %{op: :call, name: "__apply__", args: [step, acc]}
   end
+
+  @spec split_homogeneous_prefix(term()) :: Types.expr()
 
   defp split_homogeneous_prefix([]), do: {[], []}
 

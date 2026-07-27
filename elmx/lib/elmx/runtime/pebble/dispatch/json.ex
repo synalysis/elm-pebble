@@ -1,5 +1,7 @@
 defmodule Elmx.Runtime.Pebble.Dispatch.Json do
   @moduledoc false
+  alias Elmx.Types, as: Types
+
 
   alias Elmx.Runtime.Json.Encode
   alias Elmx.Types

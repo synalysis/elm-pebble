@@ -99,6 +99,8 @@ defmodule Ide.Emulator.Session.RuntimeSetup do
      }}
   end
 
+  @spec component_missing_detail(map() | term()) :: term()
+
   defp component_missing_detail(%{label: label, detail: detail})
        when is_binary(label) and is_binary(detail) do
     "#{label}: #{detail}"
@@ -107,17 +109,23 @@ defmodule Ide.Emulator.Session.RuntimeSetup do
   defp component_missing_detail(%{label: label}) when is_binary(label), do: label
   defp component_missing_detail(component), do: inspect(component)
 
+  @spec component(term(), String.t(), term(), term(), term()) :: term()
+
   defp component(id, label, true, detail, installable),
     do: %{id: id, label: label, status: :ok, detail: detail, installable: installable}
 
   defp component(id, label, _present, detail, installable),
     do: %{id: id, label: label, status: :missing, detail: detail, installable: installable}
 
+  @spec command_component(term(), String.t(), term(), term()) :: term()
+
   defp command_component(id, label, {:ok, path}, installable),
     do: component(id, label, true, path, installable)
 
   defp command_component(id, label, {:error, reason}, installable),
     do: component(id, label, false, inspect(reason), installable)
+
+  @spec qemu_component(term()) :: term()
 
   defp qemu_component({:ok, path}) do
     case Qemu.health(path) do
@@ -132,6 +140,8 @@ defmodule Ide.Emulator.Session.RuntimeSetup do
   defp qemu_component({:error, reason}) do
     component(:qemu, "Pebble QEMU", false, inspect(reason), true)
   end
+
+  @spec install_steps_for_component(term() | integer() | Types.compile_env() | String.t(), term()) :: term()
 
   defp install_steps_for_component(id, platform)
        when id in [:qemu, :qemu_micro_flash, :qemu_spi_flash] do
@@ -167,6 +177,8 @@ defmodule Ide.Emulator.Session.RuntimeSetup do
 
   defp install_steps_for_component(_id, _platform), do: []
 
+  @spec run_install_steps(term()) :: term()
+
   defp run_install_steps(steps) do
     Enum.reduce_while(steps, [], fn step, results ->
       result = run_install_step(step)
@@ -179,6 +191,8 @@ defmodule Ide.Emulator.Session.RuntimeSetup do
     end)
   end
 
+  @spec run_install_step(map()) :: term()
+
   defp run_install_step(%{name: name, fun: fun}) do
     case fun.() do
       {:ok, output} -> %{name: name, status: :ok, output: output}
@@ -187,6 +201,8 @@ defmodule Ide.Emulator.Session.RuntimeSetup do
   rescue
     error -> %{name: name, status: :error, output: Exception.message(error)}
   end
+
+  @spec install_pebble_sdk() :: term()
 
   defp install_pebble_sdk do
     version = Config.config(:sdk_core_version, "4.9.169")
@@ -208,6 +224,8 @@ defmodule Ide.Emulator.Session.RuntimeSetup do
     end
   end
 
+  @spec ensure_sdk_roots_with_toolchain(term(), keyword()) :: term()
+
   defp ensure_sdk_roots_with_toolchain(roots, opts) do
     roots
     |> Enum.uniq()
@@ -219,12 +237,16 @@ defmodule Ide.Emulator.Session.RuntimeSetup do
     end)
   end
 
+  @spec ensure_sdk_with_toolchain(term(), keyword()) :: term()
+
   defp ensure_sdk_with_toolchain(sdk_root, opts) do
     with :ok <- SdkImages.ensure_sdk_core(sdk_root, opts),
          :ok <- SdkImages.ensure_toolchain(sdk_root, opts) do
       :ok
     end
   end
+
+  @spec install_qemu_images(term()) :: term()
 
   defp install_qemu_images(platform) do
     image_root = Qemu.preferred_image_root()
@@ -242,6 +264,8 @@ defmodule Ide.Emulator.Session.RuntimeSetup do
       {:error, reason} -> {:error, reason}
     end
   end
+
+  @spec install_pebble_tool() :: term()
 
   defp install_pebble_tool do
     cond do
@@ -262,6 +286,8 @@ defmodule Ide.Emulator.Session.RuntimeSetup do
     end
   end
 
+  @spec install_pebble_tool_with_uv(term()) :: term()
+
   defp install_pebble_tool_with_uv(uv) do
     tool_args = ["tool", "install", "--force", "--python", pebble_tool_python(), "pebble-tool"]
 
@@ -278,6 +304,8 @@ defmodule Ide.Emulator.Session.RuntimeSetup do
     end
   end
 
+  @spec install_uv_python_and_retry_tool(term(), [String.t()]) :: term()
+
   defp install_uv_python_and_retry_tool(uv, tool_args) do
     with {:ok, python_output} <- run_command(uv, ["python", "install", pebble_tool_python()]),
          {:ok, tool_output} <- run_command(uv, tool_args) do
@@ -287,6 +315,8 @@ defmodule Ide.Emulator.Session.RuntimeSetup do
     end
   end
 
+  @spec uv_python_missing?(String.t() | term()) :: boolean()
+
   defp uv_python_missing?(output) when is_binary(output) do
     String.contains?(output, "No interpreter found for Python") and
       String.contains?(output, "uv python install")
@@ -294,12 +324,16 @@ defmodule Ide.Emulator.Session.RuntimeSetup do
 
   defp uv_python_missing?(_output), do: false
 
+  @spec pebble_tool_python() :: term()
+
   defp pebble_tool_python do
     case Config.config(:pebble_tool_python, "3.13") do
       python when is_binary(python) and python != "" -> python
       _ -> "3.13"
     end
   end
+
+  @spec pebble_tool_python_bin() :: term()
 
   defp pebble_tool_python_bin do
     pebble_tool_python_candidates()
@@ -312,6 +346,8 @@ defmodule Ide.Emulator.Session.RuntimeSetup do
     end
   end
 
+  @spec resolve_python_candidate(term()) :: term()
+
   defp resolve_python_candidate("/" <> _ = candidate) do
     if Bins.executable_file?(candidate), do: {:ok, candidate}
   end
@@ -322,6 +358,8 @@ defmodule Ide.Emulator.Session.RuntimeSetup do
       path -> {:ok, path}
     end
   end
+
+  @spec pebble_tool_python_candidates() :: term()
 
   defp pebble_tool_python_candidates do
     configured = pebble_tool_python()
@@ -338,6 +376,8 @@ defmodule Ide.Emulator.Session.RuntimeSetup do
     end
   end
 
+  @spec run_command(term(), [String.t()]) :: term()
+
   defp run_command(command, args) do
     {output, exit_code} = System.cmd(command, args, stderr_to_stdout: true)
 
@@ -347,6 +387,8 @@ defmodule Ide.Emulator.Session.RuntimeSetup do
       {:error, %{command: Enum.join([command | args], " "), exit_code: exit_code, output: output}}
     end
   end
+
+  @spec render_install_results(term(), term()) :: term()
 
   defp render_install_results(results, after_status) do
     result_lines =
@@ -366,6 +408,8 @@ defmodule Ide.Emulator.Session.RuntimeSetup do
     """
     |> String.trim()
   end
+
+  @spec maybe_download_qemu_images(term()) :: term() | nil
 
   defp maybe_download_qemu_images(platform) do
     image_root = Qemu.preferred_image_root()
@@ -390,15 +434,21 @@ defmodule Ide.Emulator.Session.RuntimeSetup do
     end
   end
 
+  @spec maybe_put_metadata_url(keyword(), String.t() | term()) :: term() | nil
+
   defp maybe_put_metadata_url(opts, url) when is_binary(url) and url != "",
     do: Keyword.put(opts, :metadata_url, url)
 
   defp maybe_put_metadata_url(opts, _url), do: opts
 
+  @spec maybe_put_archive_path(keyword(), String.t()) :: term() | nil
+
   defp maybe_put_archive_path(opts, path) when is_binary(path) and path != "",
     do: Keyword.put(opts, :archive_path, path)
 
   defp maybe_put_archive_path(opts, _path), do: opts
+
+  @spec maybe_put_toolchain_archive_path(keyword(), String.t()) :: term() | nil
 
   defp maybe_put_toolchain_archive_path(opts, path) when is_binary(path) and path != "",
     do: Keyword.put(opts, :toolchain_archive_path, path)

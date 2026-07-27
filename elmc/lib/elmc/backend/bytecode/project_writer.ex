@@ -2,6 +2,8 @@ defmodule Elmc.Backend.Bytecode.ProjectWriter do
   @moduledoc """
   Emit `.elmcbc` sections and a manifest alongside C codegen when plan IR is active.
   """
+  alias Elmc.Backend.Bytecode.Artifacts.Types, as: Types
+
 
   alias Elmc.Backend.Bytecode.{FusionRunner, Lower}
   alias Elmc.Backend.CCodegen.{IRQueries, RcRequired}
@@ -30,6 +32,8 @@ defmodule Elmc.Backend.Bytecode.ProjectWriter do
 
   # Pebble watch PBW builds already lower Plan IR to C; emitting bytecode sections
   # duplicates the full plan-lowering pass. Keep bytecode for WASM/shadow/audits.
+  @spec skip_pebble_bytecode?(keyword()) :: boolean()
+
   defp skip_pebble_bytecode?(opts) do
     Plan.plan_ir_mode(opts) == :primary and Targets.emit_c?(opts) and not Targets.emit_wasm?(opts) and
       Map.get(opts, :pebble_int32, false) == true and Map.get(opts, :emit_bytecode, false) != true
@@ -116,6 +120,8 @@ defmodule Elmc.Backend.Bytecode.ProjectWriter do
   @spec manifest_path(String.t()) :: String.t()
   def manifest_path(out_dir), do: Path.join([out_dir, "bytecode", @manifest_name])
 
+  @spec lower_plan(Types.decl(), String.t(), String.t(), Types.decl_map()) :: Types.ir_expr()
+
   defp lower_plan(decl, module, name, decl_map) do
     rc_required? = RcRequired.rc_required?(module, name)
 
@@ -141,16 +147,22 @@ defmodule Elmc.Backend.Bytecode.ProjectWriter do
     end
   end
 
+  @spec section_filename(String.t(), String.t()) :: Types.ir_expr()
+
   defp section_filename(module, name) do
     safe_mod = module |> String.replace(".", "_")
     "#{safe_mod}_#{name}.elmcbc"
   end
+
+  @spec reason_string(integer() | Types.ir_expr() | term()) :: Types.ir_expr()
 
   defp reason_string(:empty_plan), do: "empty_plan"
   defp reason_string(:encode_error), do: "encode_error"
   defp reason_string(:unsupported), do: "unsupported"
   defp reason_string({:verify, reason, _}), do: "verify:#{reason}"
   defp reason_string(other), do: inspect(other)
+
+  @spec fusion_manifest_entry(String.t(), String.t(), Types.decl(), integer()) :: Types.ir_expr()
 
   defp fusion_manifest_entry(module, name, decl, plan) do
     %{
@@ -161,6 +173,8 @@ defmodule Elmc.Backend.Bytecode.ProjectWriter do
       "fusion_data" => wire_fusion_data(plan.fusion_data)
     }
   end
+
+  @spec wire_fusion_data(map() | Types.ir_expr()) :: Types.ir_expr()
 
   defp wire_fusion_data(data) when is_map(data) do
     data
@@ -173,6 +187,8 @@ defmodule Elmc.Backend.Bytecode.ProjectWriter do
 
   defp wire_fusion_data(other), do: other
 
+  @spec wire_fusion_value(term() | list() | map() | atom() | Types.ir_expr()) :: Types.ir_expr()
+
   defp wire_fusion_value({mod, name}) when is_binary(mod) and is_binary(name),
     do: %{"module" => mod, "name" => name}
 
@@ -180,6 +196,8 @@ defmodule Elmc.Backend.Bytecode.ProjectWriter do
   defp wire_fusion_value(map) when is_map(map), do: wire_fusion_data(map)
   defp wire_fusion_value(atom) when is_atom(atom), do: Atom.to_string(atom)
   defp wire_fusion_value(other), do: other
+
+  @spec coverage_opts(keyword()) :: Types.ir_expr()
 
   defp coverage_opts(opts) do
     [
@@ -189,6 +207,8 @@ defmodule Elmc.Backend.Bytecode.ProjectWriter do
     ]
   end
 
+  @spec emit_decl_map(Types.decl_map(), keyword()) :: Types.ir_expr()
+
   defp emit_decl_map(decl_map, coverage_opts) do
     if Keyword.get(coverage_opts, :strip_dead_code, true) do
       PrimaryCoverage.filter_reachable(decl_map, coverage_opts)
@@ -196,6 +216,8 @@ defmodule Elmc.Backend.Bytecode.ProjectWriter do
       decl_map
     end
   end
+
+  @spec plan_coverage_manifest(Types.decl_map(), keyword(), keyword()) :: Types.ir_expr()
 
   defp plan_coverage_manifest(decl_map, coverage_opts, compile_opts) do
     coverage_report_opts = coverage_report_opts(coverage_opts, compile_opts)
@@ -211,6 +233,8 @@ defmodule Elmc.Backend.Bytecode.ProjectWriter do
     }
   end
 
+  @spec all_coverage_report(Types.decl_map(), keyword()) :: Types.ir_expr()
+
   defp all_coverage_report(decl_map, coverage_report_opts) do
     if Plan.plan_ir_mode(coverage_report_opts) == :primary and
          opt_bool(coverage_report_opts, :strip_dead_code, true) do
@@ -219,6 +243,8 @@ defmodule Elmc.Backend.Bytecode.ProjectWriter do
       PrimaryCoverage.report(decl_map, coverage_report_opts)
     end
   end
+
+  @spec coverage_report_opts(keyword(), keyword()) :: Types.ir_expr()
 
   defp coverage_report_opts(coverage_opts, compile_opts) do
     base =
@@ -229,12 +255,16 @@ defmodule Elmc.Backend.Bytecode.ProjectWriter do
     Map.put_new(base, :plan_ir_mode, Plan.plan_ir_mode(base))
   end
 
+  @spec plan_toolchain_manifest(keyword()) :: Types.ir_expr()
+
   defp plan_toolchain_manifest(opts) do
     %{
       "mode" => Plan.plan_ir_mode(opts) |> Atom.to_string(),
       "strict" => Plan.strict_primary?(opts)
     }
   end
+
+  @spec opt_bool(list() | map(), String.t(), Types.ir_expr()) :: Types.ir_expr()
 
   defp opt_bool(opts, key, default) when is_list(opts),
     do: Keyword.get(opts, key, default) == true

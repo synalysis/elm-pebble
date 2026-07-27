@@ -43,34 +43,42 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Qualified do
         Elmx.Backend.ElixirCodegen.Emit.compile_expr(rewritten, env, counter)
 
       :error ->
-        case compile_dotted_var_field_access(target, env, counter) do
+        # Prefer stdlib/domain lowering (e.g. Set.empty → set_empty) over compiled
+        # elm/core cross-module refs that mix Dict trees with Collections.set_*.
+        case try_domain_qualified(target, [], env, counter) do
           {:ok, code, env, c} ->
             {code, env, c}
 
           :error ->
-            case Elmx.Backend.ElixirCodegen.Emit.Helpers.compile_constructor_reference(target, env, counter) do
+            case compile_dotted_var_field_access(target, env, counter) do
               {:ok, code, env, c} ->
                 {code, env, c}
 
               :error ->
-                case SpecialValues.rewrite(target, []) do
-                  {:ok, rewritten} ->
-                    Elmx.Backend.ElixirCodegen.Emit.compile_expr(rewritten, env, counter)
+                case Elmx.Backend.ElixirCodegen.Emit.Helpers.compile_constructor_reference(target, env, counter) do
+                  {:ok, code, env, c} ->
+                    {code, env, c}
 
                   :error ->
-                    case Stdlib.special_call(target, "") do
-                      {:ok, code} ->
-                        {code, env, counter}
+                    case SpecialValues.rewrite(target, []) do
+                      {:ok, rewritten} ->
+                        Elmx.Backend.ElixirCodegen.Emit.compile_expr(rewritten, env, counter)
 
                       :error ->
-                        case CrossModuleCall.compile_call(target, [], env, counter, &Helpers.compile_arg_parts/3) do
-                          {:ok, code, env, c} ->
-                            {code, env, c}
+                        case Stdlib.special_call(target, "") do
+                          {:ok, code} ->
+                            {code, env, counter}
 
                           :error ->
-                            raise Elmx.Backend.UnsupportedOpError,
-                              op: :qualified_call1,
-                              expr: %{target: target}
+                            case CrossModuleCall.compile_call(target, [], env, counter, &Helpers.compile_arg_parts/3) do
+                              {:ok, code, env, c} ->
+                                {code, env, c}
+
+                              :error ->
+                                raise Elmx.Backend.UnsupportedOpError,
+                                  op: :qualified_call1,
+                                  expr: %{target: target}
+                            end
                         end
                     end
                 end

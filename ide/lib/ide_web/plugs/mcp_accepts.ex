@@ -20,6 +20,8 @@ defmodule IdeWeb.Plugs.McpAccepts do
     end
   end
 
+  @spec not_acceptable_body(integer()) :: term()
+
   defp not_acceptable_body(conn) do
     %{
       "jsonrpc" => "2.0",

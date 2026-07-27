@@ -2,6 +2,8 @@ defmodule Elmx.Runtime.LaunchContext do
   @moduledoc """
   Normalizes debugger wire launch metadata into the shape Elm `Platform` code expects.
   """
+  alias Elmx.Types, as: Types
+
 
   alias Elmx.Types
 
@@ -135,6 +137,8 @@ defmodule Elmx.Runtime.LaunchContext do
   defp button_ctor(name) when is_binary(name) and name in @launch_buttons, do: %{"ctor" => name, "args" => []}
   defp button_ctor(_), do: %{"ctor" => "Select", "args" => []}
 
+  @spec launch_screen(map(), map()) :: Types.elm_value()
+
   defp launch_screen(screen, context) when is_map(screen) and is_map(context) do
     shape = launch_shape_value(screen, context)
     color = launch_color_value(screen, context)
@@ -152,6 +156,8 @@ defmodule Elmx.Runtime.LaunchContext do
       "is_round" => is_round
     }
   end
+
+  @spec launch_shape_value(map(), map()) :: Types.elm_value()
 
   defp launch_shape_value(screen, context) when is_map(screen) and is_map(context) do
     case map_value(screen, :shape) || map_value(context, :shape) do
@@ -172,6 +178,8 @@ defmodule Elmx.Runtime.LaunchContext do
     end
   end
 
+  @spec launch_color_value(map(), map()) :: Types.elm_value()
+
   defp launch_color_value(screen, context) when is_map(screen) and is_map(context) do
     case map_value(screen, :color_mode) || map_value(context, :color_mode) do
       %{"ctor" => ctor, "args" => _} = value when is_binary(ctor) ->
@@ -191,6 +199,8 @@ defmodule Elmx.Runtime.LaunchContext do
     end
   end
 
+  @spec display_shape_is_round?(map() | String.t() | term()) :: boolean()
+
   defp display_shape_is_round?(%{"ctor" => ctor}) when is_binary(ctor),
     do: String.contains?(String.downcase(ctor), "round")
 
@@ -202,16 +212,22 @@ defmodule Elmx.Runtime.LaunchContext do
 
   defp display_shape_is_round?(_), do: false
 
+  @spec color_capability_is_color?(Types.elm_value() | map() | term()) :: boolean()
+
   defp color_capability_is_color?("BlackWhite"), do: false
   defp color_capability_is_color?(%{"ctor" => "BlackWhite"}), do: false
   defp color_capability_is_color?(%{ctor: "BlackWhite"}), do: false
   defp color_capability_is_color?(_), do: true
+
+  @spec color_mode_name(Types.elm_value() | map() | String.t() | term()) :: Types.elm_value()
 
   defp color_mode_name("BlackWhite"), do: "BlackWhite"
   defp color_mode_name(%{"ctor" => ctor, "args" => _}) when is_binary(ctor), do: ctor
   defp color_mode_name(%{ctor: ctor, args: _}) when is_binary(ctor), do: ctor
   defp color_mode_name(mode) when is_binary(mode), do: mode
   defp color_mode_name(_), do: "Color"
+
+  @spec display_shape_ctor(map() | String.t() | term()) :: Types.elm_value()
 
   defp display_shape_ctor(%{"ctor" => ctor, "args" => args} = value) when is_binary(ctor) do
     Map.put(value, "args", args || [])
@@ -231,10 +247,14 @@ defmodule Elmx.Runtime.LaunchContext do
 
   defp display_shape_ctor(_), do: %{"ctor" => "Rectangular", "args" => []}
 
+  @spec color_mode_ctor(Types.elm_value() | map() | term()) :: Types.elm_value()
+
   defp color_mode_ctor("BlackWhite"), do: %{"ctor" => "BlackWhite", "args" => []}
   defp color_mode_ctor(%{"ctor" => ctor, "args" => _} = value) when is_binary(ctor), do: value
   defp color_mode_ctor(%{ctor: ctor, args: args}) when is_binary(ctor), do: %{"ctor" => ctor, "args" => args || []}
   defp color_mode_ctor(_), do: %{"ctor" => "Color", "args" => []}
+
+  @spec map_value(map(), String.t()) :: Types.elm_value()
 
   defp map_value(map, key) when is_map(map) and (is_atom(key) or is_binary(key)) do
     Map.get(map, key) || Map.get(map, to_string(key))

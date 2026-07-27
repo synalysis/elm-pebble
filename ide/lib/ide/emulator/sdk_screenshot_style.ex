@@ -357,11 +357,15 @@ defmodule Ide.Emulator.SdkScreenshotStyle do
     Map.get(@colour_map, {r, g, b}, {r, g, b})
   end
 
+  @spec rgb_to_rgba(term()) :: term()
+
   defp rgb_to_rgba(rgb) do
     for <<r, g, b <- rgb>>, into: <<>> do
       <<r, g, b, 255>>
     end
   end
+
+  @spec roundify(term(), term(), term(), term()) :: term()
 
   defp roundify(rgba, platform, width, height) do
     case Map.get(@roundness_by_platform, platform) do

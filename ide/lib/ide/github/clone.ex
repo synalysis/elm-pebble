@@ -1,5 +1,7 @@
 defmodule Ide.GitHub.Clone do
   @moduledoc false
+  alias Ide.Types, as: Types
+
 
   alias Ide.GitHub.{Credentials, Types}
 

@@ -1,5 +1,7 @@
 defmodule Elmc.Backend.Plan.Lower.FilterMapIdentity do
   @moduledoc false
+  alias Elmc.Backend.Plan.Types, as: Types
+
 
   alias Elmc.Backend.CCodegen.BuiltinUnion
   alias Elmc.Backend.CCodegen.ListHofResolve
@@ -26,6 +28,8 @@ defmodule Elmc.Backend.Plan.Lower.FilterMapIdentity do
 
   def try_compile(_, _, _), do: :unsupported
 
+  @spec compile_literal_cat(list(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+
   defp compile_literal_cat(items, ctx, b) do
     operand_ctx = Context.for_branch_arm(ctx)
 
@@ -37,6 +41,8 @@ defmodule Elmc.Backend.Plan.Lower.FilterMapIdentity do
       _ -> :unsupported
     end
   end
+
+  @spec fold_literal_items(list(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
 
   defp fold_literal_items(items, acc_reg, ctx, b) do
     Enum.reduce_while(items, {:ok, acc_reg, b}, fn item, {:ok, acc, b_acc} ->
@@ -67,9 +73,13 @@ defmodule Elmc.Backend.Plan.Lower.FilterMapIdentity do
     end)
   end
 
+  @spec prepend_item(Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+
   defp prepend_item(value_reg, acc_reg, ctx, b) do
     Expr.compile_runtime_builtin(:list_cons, [value_reg, acc_reg], ctx, b)
   end
+
+  @spec prepend_if(Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
 
   defp prepend_if(cond_reg, value_reg, acc_reg, ctx, b) do
     saved_pending = Map.get(b, :pending_merge_block)
@@ -92,6 +102,8 @@ defmodule Elmc.Backend.Plan.Lower.FilterMapIdentity do
     end
   end
 
+  @spec prepend_branch(Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+
   defp prepend_branch(acc_reg, value_reg, ctx, b, block_id) do
     b_arm = Builder.begin_cfg_arm_block(b, block_id)
     arm_ctx = Context.for_branch_arm(ctx)
@@ -101,6 +113,8 @@ defmodule Elmc.Backend.Plan.Lower.FilterMapIdentity do
       {:ok, reg, exit_id, Builder.finish_block(b1, :none)}
     end
   end
+
+  @spec classify_item(Types.expr()) :: Types.ir_expr()
 
   defp classify_item(expr) do
     cond do
@@ -127,6 +141,8 @@ defmodule Elmc.Backend.Plan.Lower.FilterMapIdentity do
     end
   end
 
+  @spec conditional_maybe_item(map() | term()) :: Types.ir_expr()
+
   defp conditional_maybe_item(%{op: :if, cond: cond, then_expr: then_expr, else_expr: else_expr}) do
     cond do
       nothing_branch?(then_expr) ->
@@ -148,7 +164,11 @@ defmodule Elmc.Backend.Plan.Lower.FilterMapIdentity do
 
   defp conditional_maybe_item(_), do: :error
 
+  @spec nothing_ctor?(Types.expr()) :: boolean()
+
   defp nothing_ctor?(expr), do: BuiltinUnion.maybe_nothing_literal?(expr)
+
+  @spec just_inner(map() | term()) :: Types.ir_expr()
 
   defp just_inner(%{op: :constructor_call, target: target, args: [inner]})
        when is_binary(target),
@@ -169,11 +189,17 @@ defmodule Elmc.Backend.Plan.Lower.FilterMapIdentity do
 
   defp just_inner(_), do: :error
 
+  @spec nothing_branch?(Types.expr()) :: boolean()
+
   defp nothing_branch?(expr), do: nothing_ctor?(expr)
+
+  @spec short_name(String.t()) :: Types.ir_expr()
 
   defp short_name(target) when is_binary(target) do
     target |> String.split(".") |> List.last()
   end
+
+  @spec emit_test_nonzero(Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
 
   defp emit_test_nonzero(cond_reg, b) do
     {zero, b0} = Builder.emit_const_int(b, 0)
@@ -194,6 +220,8 @@ defmodule Elmc.Backend.Plan.Lower.FilterMapIdentity do
     {:ok, reg, b2}
   end
 
+  @spec emit_merge(Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+
   defp emit_merge(cond_reg, then_reg, else_reg, b) do
     {merge, b1} = Builder.fresh_reg(b)
     phi_consumes = Builder.phi_branch_consumes(b, [then_reg, else_reg, cond_reg])
@@ -212,6 +240,8 @@ defmodule Elmc.Backend.Plan.Lower.FilterMapIdentity do
 
     {:ok, merge, b2}
   end
+
+  @spec skip_reserved(Types.ir_expr(), Types.ir_expr() | term()) :: Types.ir_expr()
 
   defp skip_reserved(id, nil), do: id
   defp skip_reserved(id, reserved) when id == reserved, do: id + 1

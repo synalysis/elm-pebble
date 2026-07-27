@@ -228,6 +228,11 @@ defmodule Elmc.Backend.Bytecode.Lower do
     <<idx::16, byte_size(args_bin)::16, args_bin::binary>>
   end
 
+  defp encode_args(:pipe_apply_repeat, %{module: mod, name: name, count: count, base: base}, fn_table) do
+    idx = FnTable.index(fn_table, {mod, name}) || 0
+    <<idx::16, count::32, encode_dest(base)::16>>
+  end
+
   defp encode_args(:int_arith, %{kind: kind, lhs: lhs} = args, _fn_table) do
     kind_n =
       case kind do

@@ -1,5 +1,7 @@
 defmodule Elmc.Backend.Pebble.HeaderWriter.AccelDefaults do
   @moduledoc false
+  alias Elmc.Types, as: Types
+
 
   alias Elmc.Backend.Pebble.HeaderWriter.Bindings
 

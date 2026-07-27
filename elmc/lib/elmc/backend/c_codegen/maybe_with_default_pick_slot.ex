@@ -1,5 +1,7 @@
 defmodule Elmc.Backend.CCodegen.MaybeWithDefaultPickSlot do
   @moduledoc false
+  alias Elmc.Backend.CCodegen.Types, as: Types
+
 
   alias Elmc.Backend.CCodegen.Types
 
@@ -84,6 +86,8 @@ defmodule Elmc.Backend.CCodegen.MaybeWithDefaultPickSlot do
     end
   end
 
+  @spec parse_default_tag(integer() | String.t()) :: Types.ir_expr()
+
   defp parse_default_tag(tag) when is_integer(tag), do: tag
 
   defp parse_default_tag(tag) when is_binary(tag) do
@@ -92,6 +96,8 @@ defmodule Elmc.Backend.CCodegen.MaybeWithDefaultPickSlot do
       _ -> :error
     end
   end
+
+  @spec parse(Types.expr(), String.t()) :: Types.ir_expr()
 
   defp parse(expr, module_name) do
     case parse_with_default(expr) do
@@ -103,6 +109,8 @@ defmodule Elmc.Backend.CCodegen.MaybeWithDefaultPickSlot do
     end
   end
 
+  @spec parse_with_default(map() | term()) :: Types.ir_expr()
+
   defp parse_with_default(%{op: :qualified_call, target: "Maybe.withDefault", args: [default, pick_call]}) do
     with {:ok, default_tag} <- default_ctor_tag(default),
          {:ok, model_var, pick_mod, pick_name, slots_expr} <- parse_pick_slot_call(pick_call) do
@@ -111,6 +119,8 @@ defmodule Elmc.Backend.CCodegen.MaybeWithDefaultPickSlot do
   end
 
   defp parse_with_default(_), do: :error
+
+  @spec parse_case_default(map() | term(), String.t() | term()) :: Types.ir_expr()
 
   defp parse_case_default(
          %{
@@ -139,17 +149,29 @@ defmodule Elmc.Backend.CCodegen.MaybeWithDefaultPickSlot do
 
   defp parse_case_default(_, _), do: :error
 
+  @spec just_ctor?(String.t()) :: boolean()
+
   defp just_ctor?(name), do: short_name(name) == "Just"
+  @spec nothing_ctor?(String.t()) :: boolean()
+
   defp nothing_ctor?(name), do: short_name(name) == "Nothing"
+
+  @spec just_arm_acceptable?(map() | Types.expr(), Types.ir_expr(), Types.ir_expr()) :: boolean()
 
   defp just_arm_acceptable?(%{op: :var, name: name}, _just_pat, model_var) when name == model_var, do: true
   defp just_arm_acceptable?(%{op: :var, name: "_"}, _just_pat, _model_var), do: true
   defp just_arm_acceptable?(_just_expr, just_pat, _model_var), do: payload_var_just?(just_pat)
 
+  @spec payload_var_just?(map() | term()) :: boolean()
+
   defp payload_var_just?(%{arg_pattern: %{kind: :var}}), do: true
   defp payload_var_just?(_), do: false
 
+  @spec parse_pick_slot_call(Types.expr()) :: Types.ir_expr()
+
   defp parse_pick_slot_call(expr), do: parse_pick_slot_subject(expr)
+
+  @spec parse_pick_slot_subject(map() | term()) :: Types.ir_expr()
 
   defp parse_pick_slot_subject(%{op: :qualified_call, target: target, args: [model, slots]})
        when is_binary(target) do
@@ -179,6 +201,8 @@ defmodule Elmc.Backend.CCodegen.MaybeWithDefaultPickSlot do
 
   defp parse_pick_slot_subject(_), do: :error
 
+  @spec parse_pick_slot_target(String.t(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+
   defp parse_pick_slot_target(target, model, slots) do
     if short_name(target) in @pick_slot_names do
       with %{op: :var, name: model_var} <- model,
@@ -190,12 +214,16 @@ defmodule Elmc.Backend.CCodegen.MaybeWithDefaultPickSlot do
     end
   end
 
+  @spec callee_module_name(String.t()) :: Types.ir_expr()
+
   defp callee_module_name(target) do
     case String.split(target, ".", parts: 2) do
       [mod, name] -> {mod, name}
       [name] -> {"Main", name}
     end
   end
+
+  @spec default_ctor_tag(map() | term()) :: Types.ir_expr()
 
   defp default_ctor_tag(%{op: :int_literal, value: tag, union_ctor: ctor}) when is_integer(tag) do
     {:ok, ctor_tag_literal(tag, ctor)}
@@ -215,6 +243,8 @@ defmodule Elmc.Backend.CCodegen.MaybeWithDefaultPickSlot do
 
   defp default_ctor_tag(_), do: :error
 
+  @spec lookup_ctor_tag(String.t()) :: Types.ir_expr()
+
   defp lookup_ctor_tag(name) when is_binary(name) do
     tags = Process.get(:elmc_constructor_tags, %{})
 
@@ -224,6 +254,8 @@ defmodule Elmc.Backend.CCodegen.MaybeWithDefaultPickSlot do
     end
   end
 
+  @spec ctor_tag_literal(String.t(), String.t() | term()) :: Types.ir_expr()
+
   defp ctor_tag_literal(tag, ctor) when is_binary(ctor) do
     case lookup_ctor_tag(ctor) do
       {:ok, lit} -> lit
@@ -232,6 +264,8 @@ defmodule Elmc.Backend.CCodegen.MaybeWithDefaultPickSlot do
   end
 
   defp ctor_tag_literal(tag, _), do: Integer.to_string(tag)
+
+  @spec emit_slots_call(Types.ir_expr(), String.t(), Types.ir_expr(), Types.ir_expr(), Types.decl_map()) :: Types.ir_expr()
 
   defp emit_slots_call(slots_mod, slots_name, c_prefix, model_param, decl_map) do
     case Map.get(decl_map, {slots_mod, slots_name}) do
@@ -248,6 +282,8 @@ defmodule Elmc.Backend.CCodegen.MaybeWithDefaultPickSlot do
     end
   end
 
+  @spec slots_callee(map() | term(), String.t()) :: Types.ir_expr()
+
   defp slots_callee(%{op: :qualified_call, target: target, args: _}, _module_name) do
     callee_module_name(target)
   end
@@ -258,12 +294,16 @@ defmodule Elmc.Backend.CCodegen.MaybeWithDefaultPickSlot do
 
   defp slots_callee(_, module_name), do: {module_name, "slots"}
 
+  @spec fusion_param_name(String.t(), String.t(), Types.decl_map()) :: Types.ir_expr()
+
   defp fusion_param_name(module_name, name, decl_map) do
     case Map.get(decl_map, {module_name, name}) do
       %{args: [param | _]} when is_binary(param) -> param
       _ -> nil
     end
   end
+
+  @spec short_name(String.t()) :: Types.ir_expr()
 
   defp short_name(name), do: name |> String.split(".") |> List.last()
 end

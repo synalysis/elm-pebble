@@ -1,5 +1,7 @@
 defmodule Elmc.Backend.CCodegen.LayoutCoerceEmit do
   @moduledoc false
+  alias Elmc.Backend.CCodegen.Types, as: Types
+
 
   alias Elmc.Backend.CCodegen.FusionSupport
   alias Elmc.Backend.CCodegen.Host

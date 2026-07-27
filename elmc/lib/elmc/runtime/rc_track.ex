@@ -421,7 +421,15 @@ defmodule Elmc.Runtime.RcTrack do
         }
         elmc_free(clo->captures);
       } else if (value->tag == ELMC_TAG_FORWARD_REF && value->payload != NULL) {
+        /* Payload is a heap ElmcForwardRef*; free it here and return so the
+           generic elmc_free(value->payload) fallthrough below cannot double-free. */
         elmc_free(value->payload);
+      #if ELMC_RC_TRACK
+        elmc_rc_track_drop_owned(value);
+      #endif
+        elmc_free(value);
+        ELMC_RELEASED += 1;
+        return;
       }
       if (value->tag == ELMC_TAG_INT_LIST && elmc_int_list_cell_release(value)) {
         ELMC_RELEASED += 1;

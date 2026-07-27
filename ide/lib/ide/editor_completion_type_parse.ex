@@ -30,9 +30,13 @@ defmodule Ide.EditorCompletionTypeParse do
 
   def function_param_types(_), do: []
 
+  @spec split_function_type_parts(term()) :: term()
+
   defp split_function_type_parts(type) do
     do_split_function_type_parts(type, "", 0, nil, [])
   end
+
+  @spec do_split_function_type_parts(binary(), term(), non_neg_integer(), term(), term()) :: term()
 
   defp do_split_function_type_parts(<<>>, current, _depth, _quote, acc) do
     Enum.reverse([String.trim(current) | acc])
@@ -68,6 +72,8 @@ defmodule Ide.EditorCompletionTypeParse do
     end
   end
 
+  @spec record_type_body(String.t()) :: term()
+
   defp record_type_body(source) do
     trimmed = String.trim(source)
 
@@ -78,12 +84,16 @@ defmodule Ide.EditorCompletionTypeParse do
     end
   end
 
+  @spec strip_extensible_record_base(String.t()) :: term()
+
   defp strip_extensible_record_base(source) do
     case split_top_level(source, "|", []) do
       [_base, fields] -> String.trim(fields)
       _ -> source
     end
   end
+
+  @spec record_field_spec(String.t()) :: term()
 
   defp record_field_spec(source) do
     case split_top_level(source, ":", []) do
@@ -102,16 +112,22 @@ defmodule Ide.EditorCompletionTypeParse do
     end
   end
 
+  @spec valid_record_field_name?(binary() | term()) :: boolean()
+
   defp valid_record_field_name?(<<first::utf8, rest::binary>>) when first in ?a..?z do
     String.printable?(rest)
   end
 
   defp valid_record_field_name?(_), do: false
 
+  @spec split_top_level(String.t(), term(), term()) :: term()
+
   defp split_top_level(source, separator, acc)
        when is_binary(source) and is_binary(separator) and byte_size(separator) == 1 do
     do_split_top_level(source, separator, acc, "", 0, nil)
   end
+
+  @spec do_split_top_level(binary(), term(), term(), term(), non_neg_integer(), term()) :: term()
 
   defp do_split_top_level(<<>>, _separator, acc, current, _depth, _quote) do
     Enum.reverse([String.trim(current) | acc])

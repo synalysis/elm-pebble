@@ -3,6 +3,7 @@ defmodule ElmEx.IR.Types.TopoSort do
   Graph types for `ElmEx.IR.TopoSort` module dependency ordering.
   """
 
+
   @type module_name :: String.t()
 
   @type dependency_graph :: %{module_name() => [module_name()]}

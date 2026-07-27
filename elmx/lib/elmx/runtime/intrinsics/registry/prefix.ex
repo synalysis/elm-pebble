@@ -26,5 +26,9 @@ defmodule Elmx.Runtime.Intrinsics.Registry.Prefix do
     do:
       ~w(append empty filter foldl foldr from_list get indexed_map initialize is_empty length map push repeat set slice to_indexed_list to_list)
 
+  def suffixes_for_prefix("elmc_js_array_"),
+    do:
+      ~w(append_n indexed_map initialize initialize_from_list singleton slice unsafe_get unsafe_set)
+
   def suffixes_for_prefix(_), do: []
 end

@@ -1,5 +1,7 @@
 defmodule Elmx.Runtime.Pebble.Subscriptions.Frame do
   @moduledoc false
+  alias Elmx.Types, as: Types
+
 
   alias Elmx.Types
 
@@ -18,8 +20,12 @@ defmodule Elmx.Runtime.Pebble.Subscriptions.Frame do
     @frame_base + Bitwise.bsl(clamp_ms(interval), 16)
   end
 
+  @spec int_literal_at(term(), Types.elm_value() | term()) :: Types.elm_value()
+
   defp int_literal_at([%{op: :int_literal, value: value} | _], 0) when is_integer(value), do: value
   defp int_literal_at(_, _), do: nil
+
+  @spec clamp_ms(integer()) :: Types.elm_value()
 
   defp clamp_ms(ms) when is_integer(ms) do
     ms |> max(1) |> min(32_767)

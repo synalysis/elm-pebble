@@ -43,6 +43,8 @@ defmodule Ide.Debugger.ProtocolRuntimeMetadata do
     Map.get(previous_model, key) || get_in(previous_model, ["runtime_model", key])
   end
 
+  @spec maybe_put(term() | map(), String.t(), integer()) :: term() | nil
+
   defp maybe_put(map, _key, value) when value in [nil, ""], do: map
   defp maybe_put(map, key, value) when is_map(map), do: Map.put(map, key, value)
 end

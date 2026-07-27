@@ -1,16 +1,32 @@
 defmodule Elmc.Backend.Plan.ParamFieldInference do
   @moduledoc false
+  alias Elmc.Backend.Plan.Types, as: Types
+
 
   @spec infer(map() | struct()) :: %{String.t() => [String.t()]}
   def infer(%{expr: expr, args: args}) when is_map(expr) and is_list(args) do
-    params = MapSet.new(args)
-
-    expr
-    |> collect_field_accesses(params, %{})
-    |> Map.take(args)
+    infer_names(expr, args)
   end
 
   def infer(_), do: %{}
+
+  @doc """
+  Collect field accesses for any set of local/param names (let bindings, lambda
+  args, etc.). Used so `let result = List.foldl … in result.sum` resolves `sum`
+  against the inferred record shape instead of falling back to index 0.
+  """
+  @spec infer_names(Types.expr(), [String.t()]) :: %{String.t() => [String.t()]}
+  def infer_names(expr, names) when is_map(expr) and is_list(names) do
+    params = MapSet.new(names)
+
+    expr
+    |> collect_field_accesses(params, %{})
+    |> Map.take(names)
+  end
+
+  def infer_names(_, _), do: %{}
+
+  @spec collect_field_accesses(Types.expr(), Types.ir_expr(), term()) :: Types.ir_expr()
 
   defp collect_field_accesses(expr, params, acc) do
     case expr do
@@ -41,6 +57,11 @@ defmodule Elmc.Backend.Plan.ParamFieldInference do
           end)
 
         collect_field_accesses(body, params, acc)
+
+      %{op: :let_in, name: _name, value_expr: value_expr, in_expr: in_expr} ->
+        acc
+        |> then(&collect_field_accesses(value_expr, params, &1))
+        |> then(&collect_field_accesses(in_expr, params, &1))
 
       %{op: :case, subject: subject, arms: arms} ->
         acc = collect_field_accesses(subject, params, acc)
@@ -91,6 +112,8 @@ defmodule Elmc.Backend.Plan.ParamFieldInference do
         acc
     end
   end
+
+  @spec append_field(term(), String.t(), String.t()) :: Types.ir_expr()
 
   defp append_field(acc, param, field) when is_binary(param) and is_binary(field) do
     fields = Map.get(acc, param, [])

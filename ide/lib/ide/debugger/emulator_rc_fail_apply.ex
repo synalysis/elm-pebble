@@ -25,11 +25,15 @@ defmodule Ide.Debugger.EmulatorRcFailApply do
     end)
   end
 
+  @spec maybe_put_line(list(), integer() | term()) :: term() | nil
+
   defp maybe_put_line(fields, line) when is_integer(line) and line > 0 do
     Map.put(fields, "elmc_last_fail_line", line)
   end
 
   defp maybe_put_line(fields, _), do: fields
+
+  @spec parse_nonneg_int(integer() | String.t() | term()) :: term()
 
   defp parse_nonneg_int(value) when is_integer(value) and value >= 0, do: value
 

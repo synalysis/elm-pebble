@@ -5,6 +5,8 @@ defmodule Elmx.Backend.ConstructorEmit do
   Uses `ConstructorLookup` metadata and `SpecialValues.rewrite/2` on each entry's
   `qualified` target; remaining shapes are derived from payload kind and union type.
   """
+  alias Elmx.Types, as: Types
+
 
   alias Elmx.Runtime.Pebble.SpecialValues
   alias Elmx.Types

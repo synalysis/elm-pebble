@@ -1,5 +1,7 @@
 defmodule Elmx.Runtime.ViewOutput.Draw.Shapes do
   @moduledoc false
+  alias Elmx.Types, as: Types
+
 
   alias Elmx.Types
   alias Elmx.Runtime.ViewOutput.Geometry

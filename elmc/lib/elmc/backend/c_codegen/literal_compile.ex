@@ -1,5 +1,7 @@
 defmodule Elmc.Backend.CCodegen.LiteralCompile do
   @moduledoc false
+  alias Elmc.Backend.CCodegen.Types, as: Types
+
 
   alias Elmc.Backend.CCodegen.BuiltinUnion
   alias Elmc.Backend.CCodegen.CaseCompile
@@ -94,6 +96,8 @@ defmodule Elmc.Backend.CCodegen.LiteralCompile do
     )
   end
 
+  @spec compile_int_literal(map(), Types.compile_env(), Types.ir_expr()) :: Types.ir_expr()
+
   defp compile_int_literal(%{op: :int_literal} = expr, env, counter) do
     value = ResourceUnion.int_literal_value(expr)
     ref = IntLiteralRef.ref(expr, env)
@@ -110,6 +114,8 @@ defmodule Elmc.Backend.CCodegen.LiteralCompile do
     {code, var, counter}
   end
 
+  @spec int_zero_assign(Types.ir_expr(), Types.compile_env()) :: Types.ir_expr()
+
   defp int_zero_assign(var, env) do
     if ValueSlots.owned_ref?(var) or Map.get(env, :__into_out__) == var or
          RcRuntimeEmit.function_out_ref?(var) do
@@ -118,6 +124,8 @@ defmodule Elmc.Backend.CCodegen.LiteralCompile do
       "ElmcValue *#{var} = elmc_int_zero();"
     end
   end
+
+  @spec literal_out_slot(Types.compile_env(), Types.ir_expr()) :: Types.ir_expr()
 
   defp literal_out_slot(env, counter) do
     cond do

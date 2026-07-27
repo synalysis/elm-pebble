@@ -1,6 +1,7 @@
 defmodule Ide.Mcp.Types do
   @moduledoc false
 
+
   alias Ide.Compiler.Cache, as: CompileCache
   alias Ide.Compiler.ManifestCache
   alias Ide.Mcp.CheckCache

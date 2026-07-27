@@ -1,5 +1,7 @@
 defmodule Ide.GitHub.AuthFlow do
   @moduledoc false
+  alias Ide.Types, as: Types
+
 
   alias Ide.GitHub.{Client, Credentials, Types}
 

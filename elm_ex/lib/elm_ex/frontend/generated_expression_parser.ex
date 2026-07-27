@@ -227,6 +227,8 @@ defmodule ElmEx.Frontend.GeneratedExpressionParser do
     |> Enum.join("\n")
   end
 
+  @spec drop_local_type_annotation_lines(term(), term(), Types.expr()) :: Types.expr()
+
   defp drop_local_type_annotation_lines([], acc, _mode), do: acc
 
   defp drop_local_type_annotation_lines([line | rest], acc, :dropping) do
@@ -309,6 +311,8 @@ defmodule ElmEx.Frontend.GeneratedExpressionParser do
     |> count_paren_balance(:code, 0)
   end
 
+  @spec count_paren_balance(term(), Types.expr(), term()) :: Types.expr()
+
   defp count_paren_balance([], _state, acc), do: acc
 
   defp count_paren_balance([?( | rest], :code, acc),
@@ -344,6 +348,8 @@ defmodule ElmEx.Frontend.GeneratedExpressionParser do
     |> String.to_charlist()
     |> count_bracket_balance(:code, 0)
   end
+
+  @spec count_bracket_balance(term(), Types.expr(), term()) :: Types.expr()
 
   defp count_bracket_balance([], _state, acc), do: acc
 
@@ -399,6 +405,8 @@ defmodule ElmEx.Frontend.GeneratedExpressionParser do
     |> Enum.reverse()
     |> Enum.join("\n")
   end
+
+  @spec do_collapse_standalone_record_update_bars(term(), term()) :: Types.expr()
 
   defp do_collapse_standalone_record_update_bars([], acc), do: acc
 
@@ -513,9 +521,14 @@ defmodule ElmEx.Frontend.GeneratedExpressionParser do
     end
   end
 
+
+  @spec layout_lexer_enabled?() :: boolean()
+
   defp layout_lexer_enabled? do
     Application.get_env(:elm_ex, :expr_layout_lexer, true)
   end
+
+  @spec layout_lexer_eligible?(Types.expr()) :: boolean()
 
   defp layout_lexer_eligible?(prepared) do
     String.contains?(prepared, "\n") and not String.contains?(prepared, ";;") and
@@ -739,6 +752,8 @@ defmodule ElmEx.Frontend.GeneratedExpressionParser do
   defp normalize_tight_unary_minus_args(source) do
     normalize_tight_unary_minus_args_loop(source, 0)
   end
+
+  @spec normalize_tight_unary_minus_args_loop(String.t(), integer() | term()) :: String.t()
 
   defp normalize_tight_unary_minus_args_loop(source, n) when n < 64 do
     next =

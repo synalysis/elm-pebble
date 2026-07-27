@@ -1,5 +1,7 @@
 defmodule Elmc.Backend.Plan.Lower.List do
   @moduledoc false
+  alias Elmc.Backend.Plan.Types, as: Types
+
 
   alias Elmc.Backend.Plan.Types
   alias Elmc.Backend.Plan.Lower.Expr
@@ -48,6 +50,8 @@ defmodule Elmc.Backend.Plan.Lower.List do
     end
   end
 
+  @spec compile_static_record_array(list(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+
   defp compile_static_record_array(items, ctx, b) do
     scratch = Context.for_branch_arm(ctx)
 
@@ -56,6 +60,8 @@ defmodule Elmc.Backend.Plan.Lower.List do
     end
   end
 
+  @spec compile_static_values_array(list(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+
   defp compile_static_values_array(items, ctx, b) do
     scratch = Context.for_branch_arm(ctx)
 
@@ -63,6 +69,8 @@ defmodule Elmc.Backend.Plan.Lower.List do
       Expr.compile_const_static_list({:values, regs}, scratch, b1)
     end
   end
+
+  @spec compile_item_regs(list(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
 
   defp compile_item_regs(items, ctx, b) do
     operand_ctx = Context.for_branch_arm(ctx)
@@ -74,6 +82,8 @@ defmodule Elmc.Backend.Plan.Lower.List do
       end
     end)
   end
+
+  @spec compile_literal_cons(list(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
 
   defp compile_literal_cons(items, ctx, b) do
     operand_ctx = Context.for_branch_arm(ctx)
@@ -95,6 +105,8 @@ defmodule Elmc.Backend.Plan.Lower.List do
     end
   end
 
+  @spec static_int_literal_values(list()) :: Types.ir_expr()
+
   defp static_int_literal_values(items) do
     items
     |> Enum.reduce_while({:ok, []}, fn
@@ -110,6 +122,8 @@ defmodule Elmc.Backend.Plan.Lower.List do
     end
   end
 
+  @spec static_float_literal_values(list()) :: Types.ir_expr()
+
   defp static_float_literal_values(items) do
     items
     |> Enum.reduce_while({:ok, []}, fn
@@ -124,6 +138,8 @@ defmodule Elmc.Backend.Plan.Lower.List do
       _ -> :error
     end
   end
+
+  @spec static_tuple2_int_literal_values(list()) :: Types.ir_expr()
 
   defp static_tuple2_int_literal_values(items) do
     items
@@ -146,8 +162,12 @@ defmodule Elmc.Backend.Plan.Lower.List do
     end
   end
 
+  @spec simple_literal_item?(map() | term()) :: boolean()
+
   defp simple_literal_item?(%{op: op}) when op in @simple_literal_ops, do: true
   defp simple_literal_item?(_), do: false
+
+  @spec primitive_record_literal?(map() | term()) :: boolean()
 
   defp primitive_record_literal?(%{op: :record_literal, fields: fields}) when is_list(fields) do
     fields != [] and Enum.all?(fields, &primitive_record_field?/1)
@@ -159,8 +179,12 @@ defmodule Elmc.Backend.Plan.Lower.List do
 
   defp primitive_record_literal?(_), do: false
 
+  @spec primitive_record_field?(map() | term()) :: boolean()
+
   defp primitive_record_field?(%{expr: expr}), do: primitive_record_expr?(expr)
   defp primitive_record_field?(_), do: false
+
+  @spec primitive_record_expr?(map() | term()) :: boolean()
 
   defp primitive_record_expr?(%{op: op}) when op in [:int_literal, :float_literal, :bool_literal, :char_literal],
     do: true

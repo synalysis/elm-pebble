@@ -31,12 +31,16 @@ defmodule Ide.Auth.LoginRateLimit do
   end
 
   @impl true
+  @spec init(keyword()) :: term()
+
   def init(_opts) do
     :ets.new(@table, [:named_table, :set, :public, read_concurrency: true])
     {:ok, %{}}
   end
 
   @impl true
+  @spec handle_call(term(), term(), term()) :: term()
+
   def handle_call({:allowed?, scope, key}, _from, state) do
     {limit, period_ms} = config(scope)
     bucket = bucket(period_ms)
@@ -50,6 +54,8 @@ defmodule Ide.Auth.LoginRateLimit do
   end
 
   @impl true
+  @spec handle_cast(term(), term()) :: term()
+
   def handle_cast({:record, scope, key}, state) do
     {_, period_ms} = config(scope)
     bucket = bucket(period_ms)

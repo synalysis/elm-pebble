@@ -181,6 +181,10 @@ defmodule Elmc.Backend.Bytecode.Runtime do
         {value, tail} = eval_call_fn(rest, frame)
         step(frame, dest, value, rest, tail)
 
+      :pipe_apply_repeat ->
+        {value, tail} = eval_pipe_apply_repeat(rest, frame)
+        step(frame, dest, value, rest, tail)
+
       :compare ->
         <<kind::8, left::16, right::16, tail::binary>> = rest
         lv = local_int(frame.locals, left)
@@ -574,6 +578,41 @@ defmodule Elmc.Backend.Bytecode.Runtime do
         _ ->
           0
       end
+
+    {value, tail}
+  end
+
+  defp eval_pipe_apply_repeat(<<fn_idx::16, count::32, base::16, tail::binary>>, frame) do
+    acc0 = get_local(frame.locals, base)
+    target = Enum.at(frame.fn_table, fn_idx)
+
+    value =
+      Enum.reduce(1..count, acc0, fn _, acc ->
+        case target do
+          {mod, name} ->
+            case Map.get(frame.plans, {mod, name}) do
+              %FunctionPlan{} = plan ->
+                case run_function(plan, params: [acc], plans: frame.plans) do
+                  {:ok, val} -> val
+                  _ -> acc
+                end
+
+              %{code: _} = section ->
+                case run_section(section,
+                       Keyword.merge([params: [acc]], plans: frame.plans, plan_key: {mod, name})
+                     ) do
+                  {:ok, val} -> val
+                  _ -> acc
+                end
+
+              _ ->
+                Map.get(frame.fn_registry, {mod, name}, fn _args -> acc end).([acc])
+            end
+
+          _ ->
+            acc
+        end
+      end)
 
     {value, tail}
   end

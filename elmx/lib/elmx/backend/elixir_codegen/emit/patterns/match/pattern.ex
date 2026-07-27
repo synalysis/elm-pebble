@@ -1,5 +1,7 @@
 defmodule Elmx.Backend.ElixirCodegen.Emit.Patterns.Match.Pattern do
   @moduledoc false
+  alias Elmx.Types, as: Types
+
 
   alias Elmx.Backend.ElixirCodegen.Emit.Helpers
   alias Elmx.Types
@@ -29,10 +31,10 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Patterns.Match.Pattern do
     do: Integer.to_string(value)
 
   def branch_pattern(%{pattern: %{kind: :bool, value: value}}, _env) when is_boolean(value),
-    do: if(value, do: "true", else: "false")
+    do: bool_case_pattern(if(value, do: "True", else: "False"), if(value, do: "true", else: "false"))
 
   def branch_pattern(%{pattern: %{op: :bool_literal, value: value}}, _env) when is_boolean(value),
-    do: if(value, do: "true", else: "false")
+    do: bool_case_pattern(if(value, do: "True", else: "False"), if(value, do: "true", else: "false"))
 
   def branch_pattern(%{pattern: %{kind: :list, elements: []}}, _env), do: "[]"
 
@@ -172,8 +174,9 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Patterns.Match.Pattern do
   end
 
   @spec bool_case_pattern(String.t(), String.t()) :: String.t()
-  def bool_case_pattern("True", _default), do: "true"
-  def bool_case_pattern("False", _default), do: "false"
+  # Accept both Elixir booleans and atom constructors (`:True` / `:False`).
+  def bool_case_pattern("True", _default), do: "x when x in [true, :True]"
+  def bool_case_pattern("False", _default), do: "x when x in [false, :False]"
   def bool_case_pattern(_ctor, default), do: default
 
   @spec cons_list_case_pattern(Types.ir_pattern(), env()) :: String.t()

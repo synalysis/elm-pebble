@@ -1,5 +1,7 @@
 defmodule Elmx.Backend.ElixirCodegen.Emit.Helpers do
   @moduledoc false
+  alias Elmx.Types, as: Types
+
 
   alias Elmx.Backend.ConstructorEmit
   alias Elmx.Backend.ConstructorLookup
@@ -68,6 +70,8 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Helpers do
   end
 
   def function_reference_uncurried(_module, "identity", _env), do: "fn x -> x end"
+  def function_reference_uncurried(_module, "command", _env), do: "fn elmx_leaf -> elmx_leaf end"
+  def function_reference_uncurried(_module, "subscription", _env), do: "fn elmx_leaf -> elmx_leaf end"
 
   def function_reference_uncurried(module, name, env) do
     fn_sym = module_fn(module, name)
@@ -200,8 +204,8 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Helpers do
   @spec operator_var_code(String.t()) :: String.t() | nil
   def operator_var_code(name) when name in @operator_vars do
     case name do
-      "<|" -> "fn fun, arg -> Elmx.Runtime.Core.Apply.apply1(fun, arg) end"
-      "|>" -> "fn arg, fun -> Elmx.Runtime.Core.Apply.apply1(fun, arg) end"
+      "<|" -> "fn fun, arg -> Elmx.Runtime.Core.Apply.call1(fun, arg) end"
+      "|>" -> "fn arg, fun -> Elmx.Runtime.Core.Apply.call1(fun, arg) end"
       "__add__" -> "fn a, b -> a + b end"
       "__sub__" -> "fn a, b -> a - b end"
       "__mul__" -> "fn a, b -> a * b end"

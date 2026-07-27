@@ -1,5 +1,7 @@
 defmodule Elmc.Backend.Pebble.SourceWriter.EventDispatch.WorkerViewApi.TakeCmd do
   @moduledoc false
+  alias Elmc.Types, as: Types
+
 
   alias Elmc.Backend.Pebble.Types
 

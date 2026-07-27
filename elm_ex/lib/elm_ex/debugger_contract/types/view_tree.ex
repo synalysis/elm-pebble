@@ -5,6 +5,7 @@ defmodule ElmEx.DebuggerContract.Types.ViewTree do
   Runtime maps use string keys (`"type"`, `"label"`, `"children"`, …).
   """
 
+
   alias ElmEx.DebuggerContract.Payload
 
   @type tree_node :: %{

@@ -6,6 +6,7 @@ defmodule Elmc.Backend.Plan.Fusion.Registry do
   ordering and runtime metadata caches for plan-primary fusion.
   """
 
+
   alias ElmEx.IR.PipeChain
 
   alias Elmc.Backend.CCodegen.Types, as: CCodegenTypes
@@ -20,6 +21,7 @@ defmodule Elmc.Backend.Plan.Fusion.Registry do
     ReverseFoldlOccupied,
     RowSliceAdjacentMerge,
     SpawnTileChain,
+    TailRecursiveLoop,
     Tuple2CaseTable,
     UnionCaseFourPerm,
     UnionStringCase,
@@ -33,6 +35,7 @@ defmodule Elmc.Backend.Plan.Fusion.Registry do
   @runtime_callees_cache_key :elmc_fusion_runtime_callees_cache
 
   @providers [
+    {TailRecursiveLoop, 4},
     {FilterMapRowDrop, 4},
     {FoldlOffsetPatch, 4},
     {UnionCaseFourPerm, 4},
@@ -145,6 +148,12 @@ defmodule Elmc.Backend.Plan.Fusion.Registry do
           _ -> :boxed
         end)
 
+      # Prefer parsing the real `_native(ElmcValue **out, …)` param list so mixed
+      # Int/boxed helpers (e.g. TailRecursiveLoop) are not collapsed to all-native.
+      arg_count > 0 and match?({:ok, _}, parse_rc_native_out_param_kinds(c_body, arg_count)) ->
+        {:ok, kinds} = parse_rc_native_out_param_kinds(c_body, arg_count)
+        kinds
+
       arg_count > 0 and native_seed_fusion?(c_body) ->
         List.duplicate(:native_int, arg_count)
 
@@ -162,6 +171,32 @@ defmodule Elmc.Backend.Plan.Fusion.Registry do
   defp native_seed_fusion?(c_body) do
     String.match?(c_body, ~r/_native\(ElmcValue \*\*out, const elmc_int_t /) or
       String.match?(c_body, ~r/_native\(ElmcValue \*\*out, elmc_int_t /)
+  end
+
+  defp parse_rc_native_out_param_kinds(c_body, arg_count)
+       when is_binary(c_body) and is_integer(arg_count) and arg_count > 0 do
+    case Regex.run(~r/_native\s*\(\s*ElmcValue\s*\*\*\s*\w+\s*,([^)]*)\)/, c_body) do
+      [_, params] ->
+        kinds =
+          params
+          |> String.split(",")
+          |> Enum.map(&String.trim/1)
+          |> Enum.reject(&(&1 == ""))
+          |> Enum.map(fn
+            "const elmc_int_t " <> _ -> :native_int
+            "elmc_int_t " <> _ -> :native_int
+            "const bool " <> _ -> :native_bool
+            "bool " <> _ -> :native_bool
+            "ElmcValue *" <> _ -> :boxed
+            "ElmcValue* " <> _ -> :boxed
+            _ -> :boxed
+          end)
+
+        if length(kinds) == arg_count, do: {:ok, kinds}, else: :error
+
+      _ ->
+        :error
+    end
   end
 
   @spec runtime_callees(String.t(), String.t(), CCodegenTypes.ir_expr() | nil, CCodegenTypes.function_decl_map()) ::

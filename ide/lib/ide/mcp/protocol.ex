@@ -3,6 +3,7 @@ defmodule Ide.Mcp.Protocol do
   Protocol-level MCP JSON-RPC handling shared by stdio and HTTP transports.
   """
 
+
   alias Ide.Mcp.Audit
   alias Ide.Mcp.Tools
   alias Ide.Mcp.WireTypes

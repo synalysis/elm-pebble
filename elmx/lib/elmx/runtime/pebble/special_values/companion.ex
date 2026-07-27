@@ -1,5 +1,7 @@
 defmodule Elmx.Runtime.Pebble.SpecialValues.Companion do
   @moduledoc false
+  alias Elmx.Types, as: Types
+
 
   @behaviour Elmx.Runtime.Pebble.SpecialValues.Dispatcher
 
@@ -109,7 +111,11 @@ defmodule Elmx.Runtime.Pebble.SpecialValues.Companion do
 
   def fallback_rewrite(_target, _args), do: :unmatched
 
+  @spec companion_subscription_stub([String.t()]) :: Types.elm_value()
+
   defp companion_subscription_stub(_args), do: companion_subscription_zero()
+
+  @spec companion_configuration_on_closed(term()) :: Types.elm_value()
 
   defp companion_configuration_on_closed([]), do: companion_subscription_zero()
 
@@ -118,6 +124,8 @@ defmodule Elmx.Runtime.Pebble.SpecialValues.Companion do
   end
 
   defp companion_configuration_on_closed(_), do: :unmatched
+
+  @spec companion_preferences_decode_response(term()) :: Types.elm_value()
 
   defp companion_preferences_decode_response([schema, response]) do
     {:ok,
@@ -130,7 +138,11 @@ defmodule Elmx.Runtime.Pebble.SpecialValues.Companion do
 
   defp companion_preferences_decode_response(_), do: :unmatched
 
+  @spec companion_json_encode?(String.t()) :: boolean()
+
   defp companion_json_encode?(target), do: String.starts_with?(target, "Json.Encode.")
+
+  @spec companion_emit_module_api?(String.t()) :: boolean()
 
   defp companion_emit_module_api?(target) do
     Enum.any?(
@@ -145,14 +157,20 @@ defmodule Elmx.Runtime.Pebble.SpecialValues.Companion do
     )
   end
 
+  @spec companion_storage_or_preference_api?(String.t()) :: boolean()
+
   defp companion_storage_or_preference_api?(target) do
     String.starts_with?(target, "Pebble.Companion.Storage.") or
       String.starts_with?(target, "Pebble.Companion.PreferenceStore.")
   end
 
+  @spec companion_phone_protocol_send?(String.t()) :: boolean()
+
   defp companion_phone_protocol_send?(target) do
     target == "Pebble.Companion.Phone.sendPhoneToWatch"
   end
+
+  @spec companion_subscription_api?(String.t()) :: boolean()
 
   defp companion_subscription_api?(target) do
     case String.split(target, ".") do

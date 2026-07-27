@@ -765,6 +765,16 @@ defmodule ElmEx.Frontend.GeneratedContractBuilder do
     do_split_top_level(source, separator, acc, "", 0, nil)
   end
 
+
+  @spec do_split_top_level(
+          String.t(),
+          String.t(),
+          [String.t()],
+          String.t(),
+          integer(),
+          nil | integer()
+        ) :: [String.t()]
+
   defp do_split_top_level(<<>>, _separator, acc, current, _depth, _quote) do
     Enum.reverse([String.trim(current) | acc])
   end
@@ -931,6 +941,8 @@ defmodule ElmEx.Frontend.GeneratedContractBuilder do
     do_advance_block_comment_depth(line, depth)
   end
 
+  @spec do_advance_block_comment_depth(binary(), non_neg_integer()) :: non_neg_integer()
+
   defp do_advance_block_comment_depth(<<>>, depth), do: depth
 
   defp do_advance_block_comment_depth(<<"{-", rest::binary>>, depth) do
@@ -952,6 +964,8 @@ defmodule ElmEx.Frontend.GeneratedContractBuilder do
 
     generated_expr || unsupported_expr(body)
   end
+
+  @spec unsupported_expr(String.t()) :: Types.expr()
 
   defp unsupported_expr(body) when is_binary(body) do
     case GeneratedExpressionParser.parse(body) do
@@ -1299,8 +1313,12 @@ defmodule ElmEx.Frontend.GeneratedContractBuilder do
 
   defp allow_generated_expr?(_), do: false
 
+  @spec allow_compose_side?(String.t() | Types.expr()) :: boolean()
+
   defp allow_compose_side?(side) when is_binary(side), do: true
   defp allow_compose_side?(side), do: allow_generated_expr?(side)
+
+  @spec bool_intrinsic_lambda(Types.expr()) :: Types.expr()
 
   defp bool_intrinsic_lambda(:and) do
     %{
@@ -1524,6 +1542,8 @@ defmodule ElmEx.Frontend.GeneratedContractBuilder do
   defp take_consecutive_comment_raw_lines([line | rest]) do
     do_take_consecutive_comment_raw_lines(rest, [line])
   end
+
+  @spec do_take_consecutive_comment_raw_lines(term(), term()) :: Types.expr()
 
   defp do_take_consecutive_comment_raw_lines([], acc), do: {Enum.reverse(acc), []}
 

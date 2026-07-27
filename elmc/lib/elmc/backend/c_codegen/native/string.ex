@@ -1,5 +1,7 @@
 defmodule Elmc.Backend.CCodegen.Native.String do
   @moduledoc false
+  alias Elmc.Backend.CCodegen.Types, as: Types
+
 
   alias Elmc.Backend.CCodegen.CaseCompile
   alias Elmc.Backend.CCodegen.EnvBindings
@@ -18,6 +20,8 @@ defmodule Elmc.Backend.CCodegen.Native.String do
   def compile_expr(expr, env, counter) do
     compile_expr_impl(StaticString.fold_append_literals(expr), env, counter)
   end
+
+  @spec compile_expr_impl(map() | Types.expr(), Types.compile_env(), Types.ir_expr()) :: Types.ir_expr()
 
   defp compile_expr_impl(%{op: :string_literal, value: value}, _env, counter) do
     {"", "\"#{Util.escape_c_string(value)}\"", [], counter}
@@ -257,6 +261,8 @@ defmodule Elmc.Backend.CCodegen.Native.String do
 
   def try_compile_snprintf_concat(_segments, _env, _counter), do: :error
 
+  @spec classify_snprintf_segments(Types.ir_expr(), Types.compile_env()) :: Types.ir_expr()
+
   defp classify_snprintf_segments(segments, env) do
     Enum.reduce_while(segments, {:ok, []}, fn segment, {:ok, acc} ->
       case classify_snprintf_segment(segment, env) do
@@ -265,6 +271,8 @@ defmodule Elmc.Backend.CCodegen.Native.String do
       end
     end)
   end
+
+  @spec classify_snprintf_segment(map() | Types.expr(), Types.compile_env()) :: Types.ir_expr()
 
   defp classify_snprintf_segment(%{op: :string_literal, value: value}, _env),
     do: {:ok, {:literal, value}}
@@ -286,6 +294,8 @@ defmodule Elmc.Backend.CCodegen.Native.String do
     end
   end
 
+  @spec fused_snprintf_format(Types.ir_expr()) :: Types.ir_expr()
+
   defp fused_snprintf_format(classified) do
     classified
     |> Enum.map_join("", fn
@@ -301,6 +311,8 @@ defmodule Elmc.Backend.CCodegen.Native.String do
   # Snprintf uses C-string %s semantics (stops at NUL) and a fixed stack buffer — only fuse
   # when the estimated result fits. Variable string operands are unbounded (loops, params);
   # fall back to elmc_string_append so growing accumulators stay correct.
+  @spec fused_snprintf_buf_size(Types.ir_expr()) :: Types.ir_expr()
+
   defp fused_snprintf_buf_size(classified) do
     if Enum.any?(classified, fn
          {:cstr, _} -> true
@@ -321,6 +333,8 @@ defmodule Elmc.Backend.CCodegen.Native.String do
       if format_len > @fused_literal_int_buf_size, do: :error, else: format_len
     end
   end
+
+  @spec compile_snprintf_segment_args(Types.ir_expr(), Types.compile_env(), Types.ir_expr()) :: Types.ir_expr()
 
   defp compile_snprintf_segment_args(classified, env, counter) do
     Enum.reduce_while(classified, {:ok, "", [], [], counter}, fn
@@ -368,6 +382,8 @@ defmodule Elmc.Backend.CCodegen.Native.String do
     end)
   end
 
+  @spec literal_int_append_parts(Types.expr(), Types.expr(), Types.compile_env()) :: Types.ir_expr()
+
   defp literal_int_append_parts(left, right, env) do
     case left do
       %{op: :string_literal, value: prefix} ->
@@ -390,6 +406,8 @@ defmodule Elmc.Backend.CCodegen.Native.String do
     end
   end
 
+  @spec native_int_string_operand(Types.expr(), Types.compile_env()) :: Types.ir_expr()
+
   defp native_int_string_operand(expr, env) do
     case unwrap_string_from_int(expr, env) do
       {:ok, value} ->
@@ -399,6 +417,8 @@ defmodule Elmc.Backend.CCodegen.Native.String do
         :error
     end
   end
+
+  @spec unwrap_string_from_int(map() | term(), Types.compile_env() | term()) :: Types.ir_expr()
 
   defp unwrap_string_from_int(
          %{op: :runtime_call, function: "elmc_string_from_int", args: [value]},
@@ -415,9 +435,13 @@ defmodule Elmc.Backend.CCodegen.Native.String do
 
   defp unwrap_string_from_int(_, _), do: :error
 
+  @spec fused_int_snprintf_format(Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+
   defp fused_int_snprintf_format(prefix, suffix) do
     "\"#{escape_snprintf_literal(prefix)}%lld#{escape_snprintf_literal(suffix)}\""
   end
+
+  @spec escape_snprintf_literal(Types.ir_expr()) :: Types.ir_expr()
 
   defp escape_snprintf_literal(""), do: ""
 
@@ -605,6 +629,8 @@ defmodule Elmc.Backend.CCodegen.Native.String do
         }
     end
   end
+
+  @spec native_string_call_expr?(Types.expr(), Types.compile_env()) :: boolean()
 
   defp native_string_call_expr?(expr, env) do
     case expr do

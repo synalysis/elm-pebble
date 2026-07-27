@@ -3,6 +3,7 @@ defmodule ElmEx.IR.Types.ModuleExports do
   Module export metadata collected during `ElmEx.IR.Lowerer` import resolution.
   """
 
+
   @type union_constructors :: %{String.t() => [String.t()]}
 
   @type module_export :: %{

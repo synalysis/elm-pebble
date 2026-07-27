@@ -42,7 +42,10 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Qualified.Collections do
     do: compile_collections_op("set", "member", [value], nil, env, counter, "elmx_set")
 
   def compile("Set.insert", [], env, counter) do
-    {:ok, "&#{CodegenRefs.core_collections()}.set_insert/2", env, counter}
+    col = CodegenRefs.core_collections()
+
+    {:ok,
+     "fn elmx_v -> fn elmx_set -> #{col}.set_insert(elmx_v, elmx_set) end end", env, counter}
   end
 
   def compile("Set.insert", [value], env, counter),
@@ -63,8 +66,47 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Qualified.Collections do
     {:ok, "#{CodegenRefs.core_collections()}.array_empty()", env, counter}
   end
 
+  def compile("Array.fromList", [items], env, counter),
+    do: compile_collections_op("array", "fromList", [], items, env, counter, "elmx_array")
+
+  def compile("Array.fromList", [], env, counter),
+    do: compile_collections_op("array", "fromList", [], nil, env, counter, "elmx_array")
+
+  def compile("Array.toList", [array], env, counter),
+    do: compile_collections_op("array", "toList", [], array, env, counter, "elmx_array")
+
+  def compile("Array.toList", [], env, counter),
+    do: compile_collections_op("array", "toList", [], nil, env, counter, "elmx_array")
+
+  def compile("Array.push", [value, array], env, counter),
+    do: compile_collections_op("array", "push", [value], array, env, counter, "elmx_array")
+
+  def compile("Array.push", [value], env, counter),
+    do: compile_collections_op("array", "push", [value], nil, env, counter, "elmx_array")
+
+  def compile("Array.set", [index, value, array], env, counter),
+    do: compile_collections_op("array", "set", [index, value], array, env, counter, "elmx_array")
+
+  def compile("Array.set", [index, value], env, counter),
+    do: compile_collections_op("array", "set", [index, value], nil, env, counter, "elmx_array")
+
+  def compile("Array.get", [index, array], env, counter),
+    do: compile_collections_op("array", "get", [index], array, env, counter, "elmx_array")
+
+  def compile("Array.get", [index], env, counter),
+    do: compile_collections_op("array", "get", [index], nil, env, counter, "elmx_array")
+
+  def compile("Array.length", [array], env, counter),
+    do: compile_collections_op("array", "length", [], array, env, counter, "elmx_array")
+
+  def compile("Array.length", [], env, counter),
+    do: compile_collections_op("array", "length", [], nil, env, counter, "elmx_array")
+
   def compile("Set.remove", [], env, counter) do
-    {:ok, "&#{CodegenRefs.core_collections()}.set_remove/2", env, counter}
+    col = CodegenRefs.core_collections()
+
+    {:ok,
+     "fn elmx_v -> fn elmx_set -> #{col}.set_remove(elmx_v, elmx_set) end end", env, counter}
   end
 
   def compile("Set.remove", [value], env, counter),
@@ -72,12 +114,6 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Qualified.Collections do
 
   def compile("Set.remove", [value, set], env, counter),
     do: compile_collections_op("set", "remove", [value], set, env, counter, "elmx_set")
-
-  def compile("Array.get", [index, array], env, counter),
-    do: compile_collections_op("array", "get", [index], array, env, counter, "elmx_array")
-
-  def compile("Array.get", [index], env, counter),
-    do: compile_collections_op("array", "get", [index], nil, env, counter, "elmx_array")
 
   def compile(_, _, _, _), do: :error
 

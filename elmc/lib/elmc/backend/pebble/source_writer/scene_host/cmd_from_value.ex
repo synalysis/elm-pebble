@@ -1,5 +1,7 @@
 defmodule Elmc.Backend.Pebble.SourceWriter.SceneHost.CmdFromValue do
   @moduledoc false
+  alias Elmc.Types, as: Types
+
 
   alias Elmc.Backend.Pebble.Types
   alias Elmc.Backend.Pebble.SourceWriter.SceneHost.CmdFromValue.{FromValue, SerializeList}

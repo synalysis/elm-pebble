@@ -16,6 +16,8 @@ defmodule Ide.Debugger.CompanionBootstrapLock do
     :ok
   end
 
+  @spec ensure_table() :: term()
+
   defp ensure_table do
     if :ets.whereis(@table) == :undefined do
       :ets.new(@table, [:named_table, :public, :set, read_concurrency: true])

@@ -4,6 +4,8 @@ defmodule Elmc.Backend.Plan do
 
   See `plan/README.md` for the cross-target runtime builtin registry.
   """
+  alias Elmc.Backend.Plan.Types, as: Types
+
 
   alias Elmc.Backend.C.Lower.NativeReturn
   alias Elmc.Backend.CCodegen.Native.FunctionCall, as: NativeFunctionCall
@@ -49,6 +51,8 @@ defmodule Elmc.Backend.Plan do
     end
   end
 
+  @spec primary_lowered_cache_get(String.t()) :: Types.ir_expr()
+
   defp primary_lowered_cache_get(key) do
     case Map.get(Process.get(:elmc_plan_primary_lowered_cache, %{}), key) do
       {:ok, _} = hit -> hit
@@ -56,6 +60,8 @@ defmodule Elmc.Backend.Plan do
       _ -> :miss
     end
   end
+
+  @spec primary_lowered_cache_put(String.t(), integer()) :: Types.ir_expr()
 
   defp primary_lowered_cache_put(key, value) do
     cache = Process.get(:elmc_plan_primary_lowered_cache, %{})
@@ -66,6 +72,8 @@ defmodule Elmc.Backend.Plan do
   # leaving native return metadata uncached even though the function value-returns.
   # Refresh at most once per key: annotate may uncache non-native functions, and
   # re-lowering those on every primary_lowered? hit is pathological (O(n) emit hang).
+  @spec maybe_refresh_native_scalar_metadata(map(), String.t(), Types.decl_map()) :: Types.ir_expr() | nil
+
   defp maybe_refresh_native_scalar_metadata(decl, module_name, decl_map) when is_map(decl) do
     name = Map.get(decl, :name, "")
     key = {module_name, name}

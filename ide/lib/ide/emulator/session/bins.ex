@@ -124,14 +124,20 @@ defmodule Ide.Emulator.Session.Bins do
 
   def executable_file?(_), do: false
 
+  @spec find_executable(term()) :: term()
+
   defp find_executable(fallbacks) do
     Enum.find_value(fallbacks, &System.find_executable/1)
   end
+
+  @spec qemu_pebble_candidates() :: term()
 
   defp qemu_pebble_candidates do
     sdk_roots()
     |> Enum.map(&Path.join(&1, "toolchain/bin/qemu-pebble"))
   end
+
+  @spec pypkjs_candidates() :: term()
 
   defp pypkjs_candidates do
     [
@@ -141,6 +147,8 @@ defmodule Ide.Emulator.Session.Bins do
     ]
   end
 
+  @spec pebble_candidates() :: term()
+
   defp pebble_candidates do
     [
       Path.expand(".local/share/uv/tools/pebble-tool/bin/pebble", System.user_home!()),
@@ -149,6 +157,8 @@ defmodule Ide.Emulator.Session.Bins do
       "/usr/local/bin/pebble"
     ]
   end
+
+  @spec sdk_roots_for_os(term()) :: term()
 
   defp sdk_roots_for_os(home) do
     linux_roots = [

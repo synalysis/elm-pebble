@@ -1,0 +1,101 @@
+#!/usr/bin/env python3
+"""Remove orphaned typespec fragment lines left when @spec headers were deleted."""
+
+from __future__ import annotations
+
+import argparse
+import re
+import sys
+from pathlib import Path
+
+PACKAGES = ("elm_ex", "elmc", "elmx", "ide")
+
+ORPHAN_LINE = re.compile(
+    r"^\s+(?:"
+    r"\{:ok,.*\}\s*\|\s*\{:error.*\}"
+    r"|String\.t\(\)\s*\|"
+    r"|term\(\)\s*\|"
+    r"|integer\(\)\s*\|"
+    r"|boolean\(\)\s*\|"
+    r"|Types\.[A-Za-z0-9_.?]+\(\)\s*\|"
+    r"|map\(\)\s*\|"
+    r"|\)\s*::\s*"
+    r"|String\.t\(\)\s*\|"
+    r"|String\.t\(\)\s*,\s*$"
+    r"|non_neg_integer\(\)\s*,\s*$"
+    r"|pos_integer\(\)\s*,\s*$"
+    r"|Types\.[A-Za-z0-9_.?]+\(\)\s*,\s*$"
+    r"|\}\s*$"
+    r")"
+)
+DEF_LINE = re.compile(r"^\s*(def|defp|defmacro|@doc|@moduledoc)\b")
+SPEC_LINE = re.compile(r"^\s*@spec\b")
+
+
+def is_orphan(lines: list[str], idx: int) -> bool:
+    line = lines[idx]
+    stripped = line.strip()
+    if not stripped or stripped.startswith("#"):
+        return False
+    if SPEC_LINE.match(line) or DEF_LINE.match(line):
+        return False
+    if not ORPHAN_LINE.search(line):
+        return False
+    # must look like a typespec fragment, not runtime code with |>
+    if "|>" in line:
+        return False
+    if re.search(r"\b(do|when|case|if|with|fn)\b", line):
+        return False
+    if re.search(r"<-|=\s*:", line):
+        return False
+
+    for j in range(idx - 1, max(-1, idx - 8), -1):
+        prev = lines[j].strip()
+        if not prev:
+            continue
+        if SPEC_LINE.match(lines[j]):
+            return False
+        if prev.endswith(",") and not prev.startswith("@"):
+            # continuation of multiline @spec above
+            for k in range(j - 1, max(-1, j - 8), -1):
+                if SPEC_LINE.match(lines[k]):
+                    return False
+        if DEF_LINE.match(lines[j]) or prev.startswith("@"):
+            return True
+        if not ORPHAN_LINE.search(lines[j]) and not prev.endswith(","):
+            return True
+    return True
+
+
+def write_ex_file(path: Path, content: str) -> None:
+    path.chmod(path.stat().st_mode | 0o200)
+    path.write_text(content, encoding="utf-8")
+
+
+def clean_file(path: Path) -> int:
+    lines = path.read_text(encoding="utf-8").splitlines()
+    remove = {i for i in range(len(lines)) if is_orphan(lines, i)}
+    if not remove:
+        return 0
+    new_lines = [ln for idx, ln in enumerate(lines) if idx not in remove]
+    write_ex_file(path, "\n".join(new_lines) + "\n")
+    return len(remove)
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--root", type=Path, default=Path(__file__).resolve().parents[1])
+    parser.add_argument("--package", choices=PACKAGES, action="append")
+    args = parser.parse_args()
+    total = 0
+    for pkg in args.package or PACKAGES:
+        for path in sorted((args.root / pkg / "lib").rglob("*.ex")):
+            if "vendor" in path.parts:
+                continue
+            total += clean_file(path)
+    print(f"removed {total} orphaned typespec fragment lines")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -1463,7 +1463,17 @@ defmodule Elmc.Runtime.JsonSections do
         if (elmc_new_string(&_elmc_rc_out, "[]") != RC_SUCCESS) return NULL;
         return _elmc_rc_out;
       }
+      ElmcValue *owned_items = NULL;
       ElmcValue *cursor = items;
+      /* Compact INT_LIST / RECORD_SEQ must materialize to cons cells before walk. */
+      if (cursor && cursor->tag != ELMC_TAG_LIST) {
+        if (elmc_list_materialize_cons(&owned_items, cursor) != RC_SUCCESS) {
+          ElmcValue *_elmc_rc_out = NULL;
+          if (elmc_new_string(&_elmc_rc_out, "[]") != RC_SUCCESS) return NULL;
+          return _elmc_rc_out;
+        }
+        cursor = owned_items;
+      }
       int first = 1;
       while (cursor && cursor->tag == ELMC_TAG_LIST && cursor->payload != NULL) {
         ElmcCons *node = (ElmcCons *)cursor->payload;
@@ -1475,6 +1485,7 @@ defmodule Elmc.Runtime.JsonSections do
         if (mapped) elmc_release(mapped);
         cursor = node->tail;
       }
+      if (owned_items) elmc_release(owned_items);
       elmc_json_buf_append_char(&buf, ']');
       return elmc_json_buf_to_string(&buf);
     }

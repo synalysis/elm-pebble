@@ -1,5 +1,7 @@
 defmodule Elmc.Backend.C.Lower.NativeReturn do
   @moduledoc false
+  alias Elmc.Types, as: Types
+
 
   alias Elmc.Backend.C.Lower.Function, as: CLowerFunction
   alias Elmc.Backend.CCodegen.Host

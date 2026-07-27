@@ -606,10 +606,14 @@ defmodule Elmc.PlanWebLoweringGapsTest do
 
     assert Enum.any?(
              instrs,
-             &match?(%{op: :call_fn, args: %{module: "Demo", name: "thunk", args: [0, 1]}}, &1)
+             &match?(%{op: :call_fn, args: %{module: "Demo", name: "thunk", args: []}}, &1)
            )
 
-    refute Enum.any?(instrs, &match?(%{op: :call_closure}, &1))
+    assert Enum.any?(instrs, &match?(%{op: :call_closure}, &1))
+    refute Enum.any?(
+             instrs,
+             &match?(%{op: :call_fn, args: %{module: "Demo", name: "thunk", args: [0, 1]}}, &1)
+           )
   end
 
   test "Array.push lowers under web plan when Array_elm_builtin pattern binds tail" do

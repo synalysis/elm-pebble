@@ -1,5 +1,7 @@
 defmodule Elmc.Backend.C.Lower.Lambda do
   @moduledoc false
+  alias Elmc.Types, as: Types
+
 
   alias Elmc.Backend.C.Lower.{Frame, Function}
   alias Elmc.Backend.CCodegen.Util
@@ -26,6 +28,8 @@ defmodule Elmc.Backend.C.Lower.Lambda do
     "#{Util.module_fn_name(parent.module, parent.name)}_closure_#{idx}"
   end
 
+  @spec ensure_one!(Types.ir_expr(), map(), Types.ir_expr()) :: Types.ir_expr()
+
   defp ensure_one!(parent, %FunctionPlan{} = _lambda, idx) do
     key = {parent.module, parent.name, idx}
     emitted = Process.get(@emitted_key, MapSet.new())
@@ -39,6 +43,8 @@ defmodule Elmc.Backend.C.Lower.Lambda do
       :ok
     end
   end
+
+  @spec emit_closure_def(map(), Types.ir_expr()) :: Types.ir_expr()
 
   defp emit_closure_def(%FunctionPlan{} = parent, idx) do
     lambda = Enum.at(parent.lambdas, idx)
@@ -56,12 +62,24 @@ defmodule Elmc.Backend.C.Lower.Lambda do
 
     owned = Frame.owned_declaration(lambda, slots)
     epilogue = Frame.epilogue_release(slot_indices, slot_count)
-    letrec_refs =
+    capture_indices = Map.get(lambda, :letrec_capture_indices) || %{}
+
+    all_ref_names =
       ((lambda.letrec_refs || []) ++ Function.forward_ref_names_in_plan(lambda))
       |> Enum.uniq()
 
-    letrec_decls = Function.letrec_decl_lines(letrec_refs)
-    letrec_free = Function.letrec_free_lines(letrec_refs)
+    {captured_refs, local_refs} =
+      Enum.split_with(all_ref_names, &Map.has_key?(capture_indices, &1))
+
+    letrec_decls =
+      Enum.map(captured_refs, fn ref ->
+        idx = Map.fetch!(capture_indices, ref)
+
+        "ElmcForwardRef *#{ref} = (capture_count > #{idx} && captures[#{idx}] && captures[#{idx}]->tag == ELMC_TAG_FORWARD_REF && captures[#{idx}]->payload) ? *((ElmcForwardRef **)captures[#{idx}]->payload) : NULL;"
+      end) ++ Function.letrec_decl_lines(local_refs)
+
+    # Parent owns captured forward refs; only free ones this closure allocated.
+    letrec_free = Function.letrec_free_lines(local_refs)
 
     body =
       Frame.wrap_catch(lambda.rc_required and lambda.fallible, core)
@@ -100,6 +118,8 @@ defmodule Elmc.Backend.C.Lower.Lambda do
       |> String.trim()
     end
   end
+
+  @spec closure_param_used?(String.t(), String.t()) :: boolean()
 
   defp closure_param_used?(param, body) when is_binary(param) and is_binary(body) do
     Regex.match?(~r/\b#{Regex.escape(param)}\b/, body)

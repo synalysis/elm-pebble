@@ -18,12 +18,16 @@ defmodule IdeWeb.Plugs.CrossOriginIsolation do
     end
   end
 
+  @spec isolated_path?(term() | String.t()) :: boolean()
+
   defp isolated_path?("/wasm-emulator" <> _), do: true
   defp isolated_path?("/api/wasm-emulator" <> _), do: true
 
   defp isolated_path?(path) when is_binary(path) do
     String.starts_with?(path, "/projects/") and workspace_pane_path?(path)
   end
+
+  @spec workspace_pane_path?(String.t()) :: boolean()
 
   defp workspace_pane_path?(path) do
     # Emulator pane uses WebSocket VNC to /api; skip COEP here (not needed without WASM).

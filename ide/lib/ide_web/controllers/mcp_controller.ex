@@ -13,6 +13,8 @@ defmodule IdeWeb.McpController do
   Clients that include `Accept: text/event-stream` receive a long-lived SSE
   listener stream. JSON-only probes receive HTTP 405.
   """
+  @spec show(integer(), term()) :: term()
+
   def show(conn, _params) do
     cond do
       not Auth.mcp_enabled?() ->
@@ -47,6 +49,8 @@ defmodule IdeWeb.McpController do
   @doc """
   Handles MCP JSON-RPC over Streamable HTTP POST requests.
   """
+  @spec create(integer(), map() | list() | term()) :: term()
+
   def create(conn, %{"_json" => request_body}) when is_list(request_body) do
     create(conn, request_body)
   end
@@ -100,6 +104,8 @@ defmodule IdeWeb.McpController do
     })
   end
 
+  @spec ensure_post_acceptable(integer()) :: term()
+
   defp ensure_post_acceptable(conn) do
     cond do
       not valid_origin?(conn) ->
@@ -113,7 +119,11 @@ defmodule IdeWeb.McpController do
     end
   end
 
+  @spec valid_origin?(integer()) :: boolean()
+
   defp valid_origin?(conn), do: StreamableHttp.valid_origin?(conn)
+
+  @spec maybe_attach_initialize_session(integer(), list() | term()) :: term() | nil
 
   defp maybe_attach_initialize_session(conn, request_body) when is_list(request_body) do
     if Enum.any?(request_body, &initialize_request?/1) do
@@ -131,8 +141,12 @@ defmodule IdeWeb.McpController do
     end
   end
 
+  @spec initialize_request?(map() | term()) :: boolean()
+
   defp initialize_request?(%{"method" => "initialize"}), do: true
   defp initialize_request?(_request), do: false
+
+  @spec http_capabilities(integer()) :: term()
 
   defp http_capabilities(conn) do
     if Auth.mcp_enabled?() do
@@ -155,6 +169,8 @@ defmodule IdeWeb.McpController do
     end
   end
 
+  @spec disabled_response(integer()) :: term()
+
   defp disabled_response(conn) do
     conn
     |> put_status(:forbidden)
@@ -165,6 +181,8 @@ defmodule IdeWeb.McpController do
     })
   end
 
+  @spec invalid_origin_response(integer()) :: term()
+
   defp invalid_origin_response(conn) do
     conn
     |> put_status(:forbidden)
@@ -174,6 +192,8 @@ defmodule IdeWeb.McpController do
       "error" => %{"code" => -32000, "message" => "invalid Origin header for MCP HTTP endpoint"}
     })
   end
+
+  @spec not_acceptable_response(integer()) :: term()
 
   defp not_acceptable_response(conn) do
     conn
@@ -188,6 +208,8 @@ defmodule IdeWeb.McpController do
       }
     })
   end
+
+  @spec with_current_user(integer(), integer()) :: term()
 
   defp with_current_user(conn, fun) do
     previous = Process.get(:ide_current_user)

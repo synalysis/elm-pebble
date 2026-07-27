@@ -168,6 +168,8 @@ defmodule Ide.Debugger.CompanionBridge do
     |> wrap_optional_weather_int_field("windDirectionDeg")
   end
 
+  @spec normalize_weather_condition_field(term()) :: term()
+
   defp normalize_weather_condition_field(info) do
     case Map.get(info, "condition") do
       %{"ctor" => ctor, "args" => []} when is_binary(ctor) ->
@@ -187,6 +189,8 @@ defmodule Ide.Debugger.CompanionBridge do
         info
     end
   end
+
+  @spec wrap_optional_weather_int_field(map(), String.t()) :: term()
 
   defp wrap_optional_weather_int_field(info, key) when is_map(info) and is_binary(key) do
     case Map.get(info, key) do
@@ -212,6 +216,8 @@ defmodule Ide.Debugger.CompanionBridge do
     }
   end
 
+  @spec sun_info(map()) :: term()
+
   defp sun_info(sun) when is_map(sun) do
     %{}
     |> maybe_put("sunriseMin", coerce_sun_int(Map.get(sun, "sunriseMin")))
@@ -220,6 +226,8 @@ defmodule Ide.Debugger.CompanionBridge do
     |> Enum.reject(fn {_key, value} -> is_nil(value) end)
     |> Map.new()
   end
+
+  @spec coerce_sun_int(integer() | String.t()) :: term()
 
   defp coerce_sun_int(value) when is_integer(value), do: value
 
@@ -232,6 +240,8 @@ defmodule Ide.Debugger.CompanionBridge do
 
   defp coerce_sun_int(_value), do: nil
 
+  @spec coerce_polar_day(term() | String.t() | integer()) :: term()
+
   defp coerce_polar_day(true), do: true
   defp coerce_polar_day(false), do: false
 
@@ -241,6 +251,8 @@ defmodule Ide.Debugger.CompanionBridge do
 
   defp coerce_polar_day(_value), do: false
 
+  @spec moon_info(map()) :: term()
+
   defp moon_info(moon) when is_map(moon) do
     %{}
     |> maybe_put("moonriseMin", maybe_int_wire_value(Map.get(moon, "moonriseMin")))
@@ -248,12 +260,16 @@ defmodule Ide.Debugger.CompanionBridge do
     |> maybe_put("phaseE6", Map.get(moon, "phaseE6"))
   end
 
+  @spec tide_info(map()) :: term()
+
   defp tide_info(tide) when is_map(tide) do
     tide
     |> Map.take(["nextMin", "levelCm", "rising"])
     |> Enum.reject(fn {_key, value} -> is_nil(value) end)
     |> Map.new()
   end
+
+  @spec maybe_wire_value(map() | term() | integer(), term()) :: term() | nil
 
   defp maybe_wire_value(%{"ctor" => ctor} = value, _normalize)
        when ctor in ["Just", "Nothing"] do
@@ -271,6 +287,8 @@ defmodule Ide.Debugger.CompanionBridge do
     wire_just(normalize.(value))
   end
 
+  @spec maybe_int_wire_value(map() | integer()) :: term() | nil
+
   defp maybe_int_wire_value(%{"ctor" => ctor} = value) when ctor in ["Just", "Nothing"], do: value
 
   defp maybe_int_wire_value(%{"$ctor" => ctor} = value) when ctor in ["Just", "Nothing"] do
@@ -280,10 +298,16 @@ defmodule Ide.Debugger.CompanionBridge do
   defp maybe_int_wire_value(value) when is_integer(value), do: wire_just(value)
   defp maybe_int_wire_value(_value), do: wire_nothing()
 
+  @spec maybe_put(term(), String.t(), term() | integer()) :: term() | nil
+
   defp maybe_put(map, _key, nil), do: map
   defp maybe_put(map, key, value), do: Map.put(map, key, value)
 
+  @spec wire_just(integer()) :: term()
+
   defp wire_just(value), do: %{"ctor" => "Just", "args" => [value]}
+  @spec wire_nothing() :: term()
+
   defp wire_nothing, do: %{"ctor" => "Nothing", "args" => []}
 
   @spec subscription_message_value(
@@ -352,6 +376,8 @@ defmodule Ide.Debugger.CompanionBridge do
       ]
     }
   end
+
+  @spec bool_setting(map(), String.t(), term()) :: term()
 
   defp bool_setting(settings, key, default) when is_map(settings) do
     case Map.get(settings, key) || Map.get(settings, to_string(key)) do

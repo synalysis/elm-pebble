@@ -1,5 +1,7 @@
 defmodule Elmc.Backend.CCodegen.Util do
   @moduledoc false
+  alias Elmc.Backend.CCodegen.Types, as: Types
+
 
   alias Elmc.Backend.CCodegen.Types
 
@@ -51,6 +53,8 @@ defmodule Elmc.Backend.CCodegen.Util do
           if kernel_module?(full_module), do: {full_module, name}, else: nil
     end
   end
+
+  @spec kernel_module?(String.t()) :: boolean()
 
   defp kernel_module?(module) do
     module == "Elm.Kernel" or String.starts_with?(module, "Elm.Kernel.")

@@ -1,5 +1,7 @@
 defmodule Elmc.Backend.Plan.Lower.PatternBind do
   @moduledoc false
+  alias Elmc.Backend.Plan.Types, as: Types
+
 
   alias Elmc.Backend.Plan.Types
   alias Elmc.Backend.Plan.{Builder, Context}
@@ -11,6 +13,8 @@ defmodule Elmc.Backend.Plan.Lower.PatternBind do
   def bind(pattern, ctx, b, subject_reg) when is_map(pattern) and is_integer(subject_reg) do
     do_bind(pattern, ctx, b, subject_reg)
   end
+
+  @spec do_bind(map() | term(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
 
   defp do_bind(%{kind: :qualified_constructor} = pattern, ctx, b, subject_reg) do
     normalized =
@@ -200,6 +204,8 @@ defmodule Elmc.Backend.Plan.Lower.PatternBind do
   defp do_bind(_, _ctx, _b, _subject_reg), do: :unsupported
 
   # Prefer a unique registered shape for this field set; else Elm alphabetical layout.
+  @spec record_pattern_field_indices(list()) :: Types.ir_expr()
+
   defp record_pattern_field_indices(fields) when is_list(fields) do
     names = Enum.map(fields, &to_string/1)
     sorted = Enum.sort(names)
@@ -214,6 +220,8 @@ defmodule Elmc.Backend.Plan.Lower.PatternBind do
     |> Enum.with_index()
     |> Map.new()
   end
+
+  @spec unique_registered_shape_for_fields(list()) :: Types.ir_expr()
 
   defp unique_registered_shape_for_fields(sorted_names) when is_list(sorted_names) do
     shapes =
@@ -244,9 +252,13 @@ defmodule Elmc.Backend.Plan.Lower.PatternBind do
     end
   end
 
+  @spec nullary_ctor_pattern?(Types.pattern()) :: boolean()
+
   defp nullary_ctor_pattern?(pattern) do
     is_nil(Map.get(pattern, :arg_pattern)) and is_nil(Map.get(pattern, :bind))
   end
+
+  @spec bind_tuple_elem(map() | Types.pattern(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
 
   defp bind_tuple_elem(%{kind: :wildcard}, _which, _base, ctx, b, _elem_type),
     do: {:ok, ctx, b, nil}
@@ -266,6 +278,8 @@ defmodule Elmc.Backend.Plan.Lower.PatternBind do
     end
   end
 
+  @spec maybe_put_tuple_elem_type(Types.ir_expr(), map() | binary(), Types.ir_expr()) :: Types.ir_expr() | nil
+
   defp maybe_put_tuple_elem_type(ctx, %{kind: :var, name: name}, type)
        when is_binary(name) and is_binary(type) and type != "" do
     Context.put_local_type(ctx, name, type)
@@ -273,12 +287,16 @@ defmodule Elmc.Backend.Plan.Lower.PatternBind do
 
   defp maybe_put_tuple_elem_type(ctx, _pattern, _type), do: ctx
 
+  @spec tuple_elem_types_for_reg(Types.ir_expr(), integer()) :: Types.ir_expr()
+
   defp tuple_elem_types_for_reg(ctx, subject_reg) when is_integer(subject_reg) do
     case type_for_reg(ctx, subject_reg) do
       type when is_binary(type) -> TypeSignature.tuple_element_types(type)
       _ -> []
     end
   end
+
+  @spec type_for_reg(Types.ir_expr(), integer()) :: Types.ir_expr()
 
   defp type_for_reg(ctx, subject_reg) when is_integer(subject_reg) do
     locals = ctx.locals || %{}
@@ -289,6 +307,8 @@ defmodule Elmc.Backend.Plan.Lower.PatternBind do
     end)
   end
 
+  @spec emit_ctor_payload(Types.pattern(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+
   defp emit_ctor_payload(pattern, subject_reg, ctx, b) do
     if just_ctor?(pattern) do
       emit_maybe_just_payload(subject_reg, ctx, b)
@@ -296,6 +316,8 @@ defmodule Elmc.Backend.Plan.Lower.PatternBind do
       emit_union_payload(subject_reg, ctx, b)
     end
   end
+
+  @spec emit_tuple_proj(Types.ir_expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
 
   defp emit_tuple_proj(base_reg, which, b) do
     {dest, b1} = Builder.fresh_reg(b)
@@ -315,24 +337,36 @@ defmodule Elmc.Backend.Plan.Lower.PatternBind do
     {:ok, dest, b2}
   end
 
+  @spec emit_union_payload(Types.ir_expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+
   defp emit_union_payload(subject_reg, ctx, b) do
     Expr.compile_runtime_builtin(:union_payload, [subject_reg], ctx, b)
   end
 
+  @spec emit_maybe_just_payload(Types.ir_expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+
   defp emit_maybe_just_payload(subject_reg, ctx, b) do
     Expr.compile_runtime_builtin(:maybe_just_payload, [subject_reg], ctx, b)
   end
+
+  @spec just_ctor?(Types.pattern()) :: boolean()
 
   defp just_ctor?(pattern) do
     name = Map.get(pattern, :resolved_name) || Map.get(pattern, :name)
     is_binary(name) and short_name(name) == "Just"
   end
 
+  @spec short_name(String.t()) :: Types.ir_expr()
+
   defp short_name(name), do: name |> String.split(".") |> List.last()
+
+  @spec cons_pattern?(map() | term()) :: boolean()
 
   defp cons_pattern?(%{name: name}) when is_binary(name), do: short_name(name) == "::"
   defp cons_pattern?(%{resolved_name: "List.::"}), do: true
   defp cons_pattern?(_), do: false
+
+  @spec bind_cons_pattern(Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
 
   defp bind_cons_pattern(head, tail, subject_reg, ctx, b) do
     with {:ok, head_maybe, b1} <- Expr.compile_runtime_builtin(:list_head, [subject_reg], ctx, b),
@@ -347,10 +381,14 @@ defmodule Elmc.Backend.Plan.Lower.PatternBind do
     end
   end
 
+  @spec nest_tuple_elements(term()) :: Types.ir_expr()
+
   defp nest_tuple_elements([left, right]), do: [left, right]
 
   defp nest_tuple_elements([left | rest]),
     do: [left, %{kind: :tuple, elements: nest_tuple_elements(rest)}]
+
+  @spec maybe_enrich_payload_arg_ctx(Types.ir_expr(), map() | Types.pattern(), Types.pattern() | binary()) :: Types.ir_expr() | nil
 
   defp maybe_enrich_payload_arg_ctx(ctx, %{kind: :var, name: name}, pattern)
        when is_binary(name) do
@@ -358,6 +396,8 @@ defmodule Elmc.Backend.Plan.Lower.PatternBind do
   end
 
   defp maybe_enrich_payload_arg_ctx(ctx, _arg_pattern, _pattern), do: ctx
+
+  @spec enrich_constructor_bind_ctx(Types.ir_expr(), String.t(), Types.pattern()) :: Types.ir_expr()
 
   defp enrich_constructor_bind_ctx(ctx, bind, pattern) when is_binary(bind) do
     case constructor_payload_spec(pattern, ctx) do
@@ -381,10 +421,14 @@ defmodule Elmc.Backend.Plan.Lower.PatternBind do
     end
   end
 
+  @spec useful_payload_type_spec?(String.t()) :: boolean()
+
   defp useful_payload_type_spec?(spec) when is_binary(spec) do
     trimmed = String.trim(spec)
     trimmed != "" and not TypeSignature.type_variable?(trimmed)
   end
+
+  @spec maybe_put_inferred_param_fields(Types.ir_expr(), String.t(), String.t()) :: Types.ir_expr() | nil
 
   defp maybe_put_inferred_param_fields(ctx, bind, spec) when is_binary(bind) and is_binary(spec) do
     if TypeSignature.record_type?(spec) do
@@ -399,6 +443,8 @@ defmodule Elmc.Backend.Plan.Lower.PatternBind do
       ctx
     end
   end
+
+  @spec constructor_payload_spec(Types.pattern(), Types.ir_expr()) :: Types.ir_expr()
 
   defp constructor_payload_spec(pattern, ctx) do
     specs = Process.get(:elmc_union_constructor_payload_specs, %{})

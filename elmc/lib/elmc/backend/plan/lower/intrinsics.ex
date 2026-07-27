@@ -1,5 +1,7 @@
 defmodule Elmc.Backend.Plan.Lower.Intrinsics do
   @moduledoc false
+  alias Elmc.Backend.Plan.Types, as: Types
+
 
   alias Elmc.Backend.CCodegen.{FunctionEmit, TypeParsing}
   alias Elmc.Backend.CCodegen.Expr, as: IrExpr
@@ -38,6 +40,8 @@ defmodule Elmc.Backend.Plan.Lower.Intrinsics do
     end
   end
 
+  @spec lower_color_to_int_identity(Types.decl(), String.t(), String.t(), Types.decl_map(), keyword()) :: Types.ir_expr()
+
   defp lower_color_to_int_identity(decl, module_name, param_name, decl_map, opts) do
     if module_name != "Pebble.Ui.Color" do
       :not_intrinsic
@@ -45,6 +49,8 @@ defmodule Elmc.Backend.Plan.Lower.Intrinsics do
       lower_param_identity(decl, module_name, param_name, decl_map, opts)
     end
   end
+
+  @spec lower_batch_kernel_alias(Types.decl(), String.t(), Types.decl_map(), keyword()) :: Types.ir_expr()
 
   defp lower_batch_kernel_alias(decl, module_name, decl_map, opts) do
     name = Map.get(decl, :name, "batch")
@@ -79,6 +85,8 @@ defmodule Elmc.Backend.Plan.Lower.Intrinsics do
     end
   end
 
+  @spec lower_param_identity(Types.decl(), String.t(), String.t(), Types.decl_map(), keyword()) :: Types.ir_expr()
+
   defp lower_param_identity(decl, module_name, param_name, _decl_map, opts) do
     name = Map.get(decl, :name, "anon")
     rc_required? = Keyword.get(opts, :rc_required, false)
@@ -101,6 +109,8 @@ defmodule Elmc.Backend.Plan.Lower.Intrinsics do
     end
   end
 
+  @spec finalize_result(Types.ir_expr(), Types.ir_expr() | integer(), Types.ir_expr() | term()) :: Types.ir_expr()
+
   defp finalize_result(b, :fn_out, true), do: {b, :fn_out}
   defp finalize_result(b, :fn_out, false), do: {b, :fn_out}
 
@@ -111,6 +121,8 @@ defmodule Elmc.Backend.Plan.Lower.Intrinsics do
   defp finalize_result(b, result_reg, false) when is_integer(result_reg), do: {b, result_reg}
   defp finalize_result(b, result_reg, _), do: {b, result_reg}
 
+  @spec batch_kernel_target?(String.t() | term()) :: boolean()
+
   defp batch_kernel_target?(target) when is_binary(target) do
     String.ends_with?(target, ".batch") or target == "batch"
   end
@@ -120,6 +132,8 @@ defmodule Elmc.Backend.Plan.Lower.Intrinsics do
   # elm/core functions like Tuple.map* and Basics.toPolar keep tuple-destructure
   # field names in the IR body without binding them on the tuple parameter. When a
   # saturated special_value runtime_call exists, lower through that instead.
+  @spec lower_runtime_special_tuple_body(Types.decl(), String.t(), Types.decl_map(), keyword()) :: Types.ir_expr()
+
   defp lower_runtime_special_tuple_body(decl, module_name, decl_map, opts) do
     name = Map.get(decl, :name)
     qualified = "#{module_name}.#{name}"
@@ -145,6 +159,8 @@ defmodule Elmc.Backend.Plan.Lower.Intrinsics do
   # Only when the IR body is already a 0-arg alias to this same public name (or a
   # Kernel synonym that denormalizes to it). Never replace unrelated bodies such as
   # `Json.Encode.int = Elm.Kernel.Json.wrap` with `Json.Encode.int []` specials.
+  @spec try_special_value_alias(Types.decl(), String.t(), Types.decl_map(), keyword()) :: Types.ir_expr() | nil
+
   defp try_special_value_alias(decl, module_name, decl_map, opts) do
     name = Map.get(decl, :name)
     qualified = "#{module_name}.#{name}"
@@ -170,6 +186,8 @@ defmodule Elmc.Backend.Plan.Lower.Intrinsics do
     end
   end
 
+  @spec alias_body_matches_special?(map() | term(), Types.ir_expr() | term()) :: boolean()
+
   defp alias_body_matches_special?(%{op: :qualified_call, target: target, args: []}, qualified)
        when is_binary(target) and is_binary(qualified) do
     SpecialCore.normalize_special_target(target) == qualified
@@ -177,12 +195,16 @@ defmodule Elmc.Backend.Plan.Lower.Intrinsics do
 
   defp alias_body_matches_special?(_, _), do: false
 
+  @spec effective_special_alias_params(Types.decl(), Types.ir_expr()) :: Types.ir_expr()
+
   defp effective_special_alias_params(decl, params) do
     case type_param_names(Map.get(decl, :type)) do
       names when is_list(names) and length(names) == length(params) -> names
       _ -> params
     end
   end
+
+  @spec rename_special_alias_params(Types.expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
 
   defp rename_special_alias_params(body, old_params, new_params) do
     subs =
@@ -196,6 +218,8 @@ defmodule Elmc.Backend.Plan.Lower.Intrinsics do
 
   # Top-level `alias = Other.fn` keeps IR `args: []` while the callee expects parameters.
   # Rebuild the declaration with the callee's parameter names and a forwarding body.
+  @spec lower_qualified_delegate_alias(Types.decl(), String.t(), String.t(), Types.decl_map(), keyword()) :: Types.ir_expr()
+
   defp lower_qualified_delegate_alias(decl, module_name, target, decl_map, opts) do
     with {mod, name} <-
            Call.parse_target(target, %{module: module_name, decl_map: decl_map}, decl_map),
@@ -219,8 +243,12 @@ defmodule Elmc.Backend.Plan.Lower.Intrinsics do
     end
   end
 
+  @spec put_decl_fields(map(), [String.t()], Types.expr()) :: Types.ir_expr()
+
   defp put_decl_fields(%{__struct__: _} = decl, args, expr), do: %{decl | args: args, expr: expr}
   defp put_decl_fields(decl, args, expr) when is_map(decl), do: Map.merge(decl, %{args: args, expr: expr})
+
+  @spec delegate_alias_param_names(Types.ir_expr(), String.t(), Types.decl_map(), keyword()) :: Types.ir_expr()
 
   defp delegate_alias_param_names(mod, name, decl_map, opts) do
     case Map.fetch(decl_map, {mod, name}) do
@@ -238,6 +266,8 @@ defmodule Elmc.Backend.Plan.Lower.Intrinsics do
     end
   end
 
+  @spec web_html_param_names(Types.ir_expr(), String.t(), keyword()) :: Types.ir_expr()
+
   defp web_html_param_names(mod, name, opts) do
     web = Elmc.Backend.Plan.Lower.Platform.Web
 
@@ -247,6 +277,8 @@ defmodule Elmc.Backend.Plan.Lower.Intrinsics do
       nil
     end
   end
+
+  @spec type_param_names(String.t() | term()) :: Types.ir_expr()
 
   defp type_param_names(type) when is_binary(type) do
     case TypeParsing.function_arg_types(type) do
@@ -262,6 +294,8 @@ defmodule Elmc.Backend.Plan.Lower.Intrinsics do
 
   defp type_param_names(_), do: nil
 
+  @spec lower_same_module_delegate_alias(Types.decl(), String.t(), String.t(), Types.decl_map(), keyword()) :: Types.ir_expr()
+
   defp lower_same_module_delegate_alias(decl, module_name, target, decl_map, opts) do
     lower_qualified_delegate_alias(
       decl,
@@ -271,6 +305,8 @@ defmodule Elmc.Backend.Plan.Lower.Intrinsics do
       opts
     )
   end
+
+  @spec lower_var_delegate_alias(Types.decl(), String.t(), String.t(), Types.decl_map(), keyword()) :: Types.ir_expr()
 
   defp lower_var_delegate_alias(decl, module_name, target, decl_map, opts) do
     with {:ok, callee_decl} <- Map.fetch(decl_map, {module_name, target}),
@@ -282,6 +318,8 @@ defmodule Elmc.Backend.Plan.Lower.Intrinsics do
       _ -> :not_intrinsic
     end
   end
+
+  @spec var_alias_decl_args?(map() | term(), String.t() | term()) :: boolean()
 
   defp var_alias_decl_args?(%{args: []}, _param_names), do: true
 

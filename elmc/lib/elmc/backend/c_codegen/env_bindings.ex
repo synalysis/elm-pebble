@@ -1,5 +1,7 @@
 defmodule Elmc.Backend.CCodegen.EnvBindings do
   @moduledoc false
+  alias Elmc.Backend.CCodegen.Types, as: Types
+
 
   alias Elmc.Backend.CCodegen.Native.TypedReturn
   alias Elmc.Backend.CCodegen.{FunctionCallAbi, Types}
@@ -162,6 +164,8 @@ defmodule Elmc.Backend.CCodegen.EnvBindings do
   end
 
   def function_int_param?(_env, _name), do: false
+
+  @spec non_native_scalar_param?(Types.compile_env(), String.t()) :: boolean()
 
   defp non_native_scalar_param?(env, name) do
     case TypedReturn.expr_type(%{op: :var, name: name}, env) do
@@ -367,6 +371,8 @@ defmodule Elmc.Backend.CCodegen.EnvBindings do
   end
 
   def callee_borrow_args?(_env, _module_name, _name), do: false
+
+  @spec decl_arity(Types.compile_env(), String.t(), String.t(), [String.t()]) :: Types.ir_expr()
 
   defp decl_arity(env, module_name, name, call_args) do
     case Map.get(effective_program_decls(env), {module_name, name}) do

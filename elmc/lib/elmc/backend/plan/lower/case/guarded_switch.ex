@@ -1,5 +1,7 @@
 defmodule Elmc.Backend.Plan.Lower.Case.GuardedSwitch do
   @moduledoc false
+  alias Elmc.Backend.Plan.Types, as: Types
+
 
   alias Elmc.Backend.Plan.{Builder, Context}
   alias Elmc.Backend.Plan.Lower.Case.ArmMerge
@@ -29,6 +31,8 @@ defmodule Elmc.Backend.Plan.Lower.Case.GuardedSwitch do
     end
   end
 
+  @spec seal_entry_block(Types.ir_expr()) :: Types.ir_expr()
+
   defp seal_entry_block(b) do
     if b.current_block.instrs != [] or b.current_block.terminator != :none do
       Builder.finish_block(b, :none)
@@ -36,6 +40,8 @@ defmodule Elmc.Backend.Plan.Lower.Case.GuardedSwitch do
       b
     end
   end
+
+  @spec compile_cfg(Types.ir_expr(), list(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
 
   defp compile_cfg(subj_reg, branches, ctx, b) do
     saved_pending = Map.get(b, :pending_merge_block)
@@ -77,6 +83,8 @@ defmodule Elmc.Backend.Plan.Lower.Case.GuardedSwitch do
   # the last. Treating the last constructor as an untagged default peels
   # garbage as that constructor (e.g. Scene3d `Transformed`) and can recurse
   # forever.
+  @spec split_branches(term() | list()) :: Types.ir_expr()
+
   defp split_branches([only]) do
     {[], only}
   end
@@ -99,8 +107,12 @@ defmodule Elmc.Backend.Plan.Lower.Case.GuardedSwitch do
     end
   end
 
+  @spec catch_all_pattern?(map() | term()) :: boolean()
+
   defp catch_all_pattern?(%{kind: kind}) when kind in [:wildcard, :var], do: true
   defp catch_all_pattern?(_), do: false
+
+  @spec compile_test_chain(term(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
 
   defp compile_test_chain([], _subj, _ctx, b, _merge, default_id),
     do: {:ok, [], default_id, b}
@@ -131,6 +143,8 @@ defmodule Elmc.Backend.Plan.Lower.Case.GuardedSwitch do
   # Impossible under well-typed data. Prefer a passive arm's body (no subject
   # bindings — e.g. EmptyNode skip) so callers can continue; otherwise a null
   # handle (Maybe Nothing, empty, etc.).
+  @spec compile_default_arm(Types.ir_expr(), list() | Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+
   defp compile_default_arm(:impossible, branches, subj_reg, ctx, b, arm_id, merge_reg) do
     fallback_expr =
       Enum.find_value(branches, fn branch ->
@@ -154,6 +168,8 @@ defmodule Elmc.Backend.Plan.Lower.Case.GuardedSwitch do
     compile_arm(branch, subj_reg, ctx, b, arm_id, merge_reg)
   end
 
+  @spec passive_pattern?(map() | term()) :: boolean()
+
   defp passive_pattern?(%{kind: kind}) when kind in [:wildcard, :var], do: true
 
   # A constructor arm is passive only when it binds nothing from the subject.
@@ -168,6 +184,8 @@ defmodule Elmc.Backend.Plan.Lower.Case.GuardedSwitch do
   end
 
   defp passive_pattern?(_), do: false
+
+  @spec passive_payload?(Types.ir_expr() | map() | term()) :: boolean()
 
   defp passive_payload?(nil), do: true
   defp passive_payload?(%{kind: :wildcard}), do: true
@@ -184,6 +202,8 @@ defmodule Elmc.Backend.Plan.Lower.Case.GuardedSwitch do
   end
 
   defp passive_payload?(_), do: false
+
+  @spec compile_arm(Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
 
   defp compile_arm(branch, subj_reg, ctx, b, arm_id, merge_reg) do
     b_arm =
@@ -207,12 +227,16 @@ defmodule Elmc.Backend.Plan.Lower.Case.GuardedSwitch do
     end
   end
 
+  @spec bind_pattern(Types.ir_expr(), Types.ir_expr(), Types.pattern(), Types.ir_expr()) :: Types.ir_expr()
+
   defp bind_pattern(ctx, b, pattern, subj_reg) do
     case PatternBind.bind(pattern, ctx, b, subj_reg) do
       {:ok, ctx1, b1} -> {:ok, ctx1, b1}
       :unsupported -> :unsupported
     end
   end
+
+  @spec patch_arm_exits(Types.ir_expr(), list(), Types.ir_expr()) :: Types.ir_expr()
 
   defp patch_arm_exits(b, exit_ids, merge_id) when is_list(exit_ids) do
     exit_ids
@@ -222,11 +246,15 @@ defmodule Elmc.Backend.Plan.Lower.Case.GuardedSwitch do
     end)
   end
 
+  @spec guardable_pattern?(map() | term()) :: boolean()
+
   defp guardable_pattern?(%{kind: kind})
        when kind in [:tuple, :constructor, :qualified_constructor, :wildcard, :var, :int, :string, :char],
        do: true
 
   defp guardable_pattern?(_), do: false
+
+  @spec normalize_branch_patterns(list()) :: list()
 
   defp normalize_branch_patterns(branches) when is_list(branches) do
     Enum.map(branches, fn branch ->
@@ -239,6 +267,8 @@ defmodule Elmc.Backend.Plan.Lower.Case.GuardedSwitch do
       end
     end)
   end
+
+  @spec skip_reserved(Types.ir_expr(), Types.ir_expr() | term()) :: Types.ir_expr()
 
   defp skip_reserved(id, nil), do: id
   defp skip_reserved(id, reserved) when id == reserved, do: id + 1

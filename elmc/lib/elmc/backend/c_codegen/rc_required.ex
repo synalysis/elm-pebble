@@ -1,5 +1,7 @@
 defmodule Elmc.Backend.CCodegen.RcRequired do
   @moduledoc false
+  alias Elmc.Backend.CCodegen.Types, as: Types
+
 
   alias Elmc.Backend.CCodegen.GenericReachability
   alias Elmc.Backend.CCodegen.Native.FunctionCall, as: NativeFunctionCall

@@ -1,5 +1,7 @@
 defmodule Elmc.Backend.Plan.Optimize do
   @moduledoc false
+  alias Elmc.Backend.Plan.Types, as: Types
+
 
   alias Elmc.Backend.Plan.{IntPhiNative, TruthyNative}
   alias Elmc.Backend.Plan.Types
@@ -24,9 +26,13 @@ defmodule Elmc.Backend.Plan.Optimize do
     %{plan | blocks: blocks}
   end
 
+  @spec coalesce_arm_publish_block(map()) :: Types.ir_expr()
+
   defp coalesce_arm_publish_block(%Block{instrs: instrs} = block) do
     %{block | instrs: coalesce_arm_publish_instrs(instrs)}
   end
+
+  @spec coalesce_arm_publish_instrs(list()) :: Types.ir_expr()
 
   defp coalesce_arm_publish_instrs(instrs) when is_list(instrs) do
     case Enum.split(instrs, -2) do
@@ -64,6 +70,8 @@ defmodule Elmc.Backend.Plan.Optimize do
     end
   end
 
+  @spec optimize_block(map(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+
   defp optimize_block(%Block{} = block, used, phi_arm_drops) do
     instrs =
       block.instrs
@@ -73,6 +81,8 @@ defmodule Elmc.Backend.Plan.Optimize do
 
     %{block | instrs: instrs}
   end
+
+  @spec drop_unread_overwritten_defs(list(), Types.ir_expr()) :: Types.ir_expr()
 
   defp drop_unread_overwritten_defs(instrs, terminator) when is_list(instrs) do
     {dead, _} = unread_overwritten_indices(instrs, terminator)
@@ -97,6 +107,8 @@ defmodule Elmc.Backend.Plan.Optimize do
     end)
     |> MapSet.new()
   end
+
+  @spec unread_overwritten_indices(list(), Types.ir_expr()) :: Types.ir_expr()
 
   defp unread_overwritten_indices(instrs, terminator) when is_list(instrs) do
     final_reads = terminator |> terminator_uses() |> MapSet.new()
@@ -139,6 +151,8 @@ defmodule Elmc.Backend.Plan.Optimize do
     {dead, state}
   end
 
+  @spec removable_overwritten_def?(map() | term()) :: boolean()
+
   defp removable_overwritten_def?(%{op: :const_int}), do: true
 
   defp removable_overwritten_def?(%{op: :call_runtime, args: %{builtin: builtin}})
@@ -146,6 +160,8 @@ defmodule Elmc.Backend.Plan.Optimize do
        do: true
 
   defp removable_overwritten_def?(_), do: false
+
+  @spec mark_operand_reads(Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
 
   defp mark_operand_reads(instr, state) do
     Enum.reduce(operand_regs(instr), state, fn reg, acc ->
@@ -156,12 +172,16 @@ defmodule Elmc.Backend.Plan.Optimize do
     end)
   end
 
+  @spec dead_phi_arm_value?(map() | term(), Types.ir_expr() | term()) :: boolean()
+
   defp dead_phi_arm_value?(%{dest: dest, block_id: block_id}, phi_arm_drops)
        when is_integer(dest) and is_integer(block_id) do
     MapSet.member?(phi_arm_drops, {dest, block_id})
   end
 
   defp dead_phi_arm_value?(_, _), do: false
+
+  @spec dead_retain?(map() | term(), Types.ir_expr() | term()) :: boolean()
 
   defp dead_retain?(
          %{
@@ -177,6 +197,8 @@ defmodule Elmc.Backend.Plan.Optimize do
 
   defp dead_retain?(_, _), do: false
 
+  @spec used_regs(Types.ir_expr()) :: Types.ir_expr()
+
   defp used_regs(blocks) do
     blocks
     |> Enum.flat_map(fn %Block{instrs: instrs, terminator: term} ->
@@ -185,6 +207,8 @@ defmodule Elmc.Backend.Plan.Optimize do
     |> Enum.filter(&is_integer/1)
     |> MapSet.new()
   end
+
+  @spec instr_uses(Types.ir_expr()) :: Types.ir_expr()
 
   defp instr_uses(instrs) do
     Enum.flat_map(instrs, fn
@@ -196,10 +220,14 @@ defmodule Elmc.Backend.Plan.Optimize do
     end)
   end
 
+  @spec terminator_uses(term()) :: Types.ir_expr()
+
   defp terminator_uses({:br_if, _, _, cond}) when is_integer(cond), do: [cond]
   defp terminator_uses({:switch_tag, subject, _, _}) when is_integer(subject), do: [subject]
   defp terminator_uses({:ret, reg}) when is_integer(reg), do: [reg]
   defp terminator_uses(_), do: []
+
+  @spec operand_regs(map() | term()) :: Types.ir_expr()
 
   defp operand_regs(%{op: :phi, args: %{then: then_r, else: else_r, cond: cond}}),
     do: [then_r, else_r, cond]
@@ -218,6 +246,8 @@ defmodule Elmc.Backend.Plan.Optimize do
   defp operand_regs(%{args: %{regs: regs}}) when is_list(regs), do: regs
   defp operand_regs(%{args: %{params: params}}) when is_list(params), do: params
   defp operand_regs(_), do: []
+
+  @spec simplify_branch_targets(list()) :: Types.ir_expr()
 
   defp simplify_branch_targets(blocks) when is_list(blocks) do
     by_id = Map.new(blocks, &{&1.id, &1})
@@ -253,6 +283,8 @@ defmodule Elmc.Backend.Plan.Optimize do
       end
     end)
   end
+
+  @spec resolve_br_target(Types.ir_expr(), integer()) :: Types.ir_expr()
 
   defp resolve_br_target(by_id, id) when is_integer(id) do
     case Map.get(by_id, id) do

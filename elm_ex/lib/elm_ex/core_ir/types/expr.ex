@@ -223,11 +223,9 @@ defmodule ElmEx.CoreIR.Types.Expr do
           | atom()
 
   @doc false
-  @spec known_ops() :: [String.t()]
   def known_ops, do: Map.keys(required_keys_by_op())
 
   @doc false
-  @spec required_keys_by_op() :: %{String.t() => [String.t()]}
   def required_keys_by_op do
     %{
       "int_literal" => ["value"],

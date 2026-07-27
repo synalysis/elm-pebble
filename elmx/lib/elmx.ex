@@ -2,6 +2,8 @@ defmodule Elmx do
   @moduledoc """
   Elm-to-Elixir compiler for debugger execution and optional disk export.
   """
+  alias Elmx.Types, as: Types
+
 
   alias Elmx.Backend.ElixirCodegen
   alias Elmx.Backend.Pebble

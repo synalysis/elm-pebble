@@ -1,5 +1,7 @@
 defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
   @moduledoc false
+  alias Elmc.Backend.CCodegen.Types, as: Types
+
 
   alias Elmc.Backend.CCodegen.CaseCompile
   alias Elmc.Backend.CCodegen.CodegenListHelpers
@@ -57,6 +59,14 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
   @retaining_runtime_functions MapSet.new(~w(elmc_list_cons))
 
   @retain_borrow_arg_runtime_functions MapSet.new(~w(elmc_array_from_list))
+
+  # Runtime returns `elmc_retain(chosen_arg)`. When an owned operand aliases that
+  # result, codegen nulls the operand (transfer). Drop the retain first so the
+  # remaining refcount is the operand's ownership — otherwise epilogue release
+  # leaves rc=1 (view/layout Basics.min leaks on game-2048).
+  @retains_operand_result_runtime_functions MapSet.new(
+                                             ~w(elmc_basics_min elmc_basics_max elmc_basics_clamp)
+                                           )
 
   # Runtime consumes the last operand when producing a new value (not on transfer *out = input).
   @runtime_consumes_last_operand MapSet.new(~w(elmc_result_and_then elmc_maybe_and_then))
@@ -649,6 +659,30 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
       end
 
     compile_generic(%{op: :runtime_call, function: function, args: [value]}, env, counter)
+  end
+
+  def compile(%{op: :runtime_call, function: "elmc_set_insert", args: [value, set]}, env, counter) do
+    if native_int_set_key?(value, env) do
+      compile_set_insert_int(value, set, env, counter)
+    else
+      compile_generic(%{op: :runtime_call, function: "elmc_set_insert", args: [value, set]}, env, counter)
+    end
+  end
+
+  def compile(%{op: :runtime_call, function: "elmc_set_remove", args: [value, set]}, env, counter) do
+    if native_int_set_key?(value, env) do
+      compile_set_remove_int(value, set, env, counter)
+    else
+      compile_generic(%{op: :runtime_call, function: "elmc_set_remove", args: [value, set]}, env, counter)
+    end
+  end
+
+  def compile(%{op: :runtime_call, function: "elmc_set_member", args: [value, set]}, env, counter) do
+    if native_int_set_key?(value, env) do
+      compile_set_member_int(value, set, env, counter)
+    else
+      compile_generic(%{op: :runtime_call, function: "elmc_set_member", args: [value, set]}, env, counter)
+    end
   end
 
   def compile(%{op: :runtime_call, function: function, args: args}, env, counter) do
@@ -4101,6 +4135,7 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
       cond do
         suffix_cons_take? ->
           [head, tail] = arg_vars
+          native_head = list_cons_native_head(Enum.at(args, 0), env)
 
           out_init =
             if ValueSlots.owned_ref?(out) or RcRuntimeEmit.predeclared_out_slot?(env, out) or
@@ -4113,7 +4148,8 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
           """
           #{out_init}#{ListLoopCodegen.emit_int_list_cons_assign(env, out, head, tail, next,
             declare_out?: false,
-            fast_path_release_operands?: true
+            fast_path_release_operands?: true,
+            native_head: native_head
           )}
           """
 
@@ -4122,6 +4158,7 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
 
         function == "elmc_list_cons" ->
           [head, tail] = arg_vars
+          native_head = list_cons_native_head(Enum.at(args, 0), env)
 
           out_init =
             if ValueSlots.owned_ref?(out) or RcRuntimeEmit.predeclared_out_slot?(env, out) or
@@ -4134,7 +4171,8 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
           """
           #{out_init}#{ListLoopCodegen.emit_int_list_cons_assign(env, out, head, tail, next,
             declare_out?: false,
-            fast_path_release_operands?: cons_take_transfer?
+            fast_path_release_operands?: cons_take_transfer?,
+            native_head: native_head
           )}
           """
 
@@ -4146,12 +4184,22 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
           RcRuntimeEmit.assign_call(env, out, function, call_args)
       end
 
+    alias_null = ValueSlots.null_call_operands_aliasing_out(out, arg_vars, env)
+
+    drop_operand_retain =
+      if MapSet.member?(@retains_operand_result_runtime_functions, function) and
+           alias_null != "" do
+        "elmc_release(#{RcRuntimeEmit.value_expr(out)});\n"
+      else
+        ""
+      end
+
     code = """
     #{arg_code}
       #{assign}
       #{releases}
       #{consumed_operand_null}
-      #{ValueSlots.null_call_operands_aliasing_out(out, arg_vars, env)}
+      #{drop_operand_retain}#{alias_null}
       #{Host.face_ops_append_probe(env, function, out, next)}
     """
 
@@ -4159,13 +4207,24 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
   end
 
   defp array_to_list_assign(env, out, array_ref) do
-    if ValueSlots.owned_ref?(out) and ValueSlots.owned_ref?(array_ref) and
-         not ValueSlots.transferred?(array_ref) do
-      """
-      #{ValueSlots.boxed_decl(out, RcRuntimeEmit.value_expr(array_ref), env)}
-      #{ValueSlots.null_assignment(array_ref)}
-      """
-      |> String.trim()
+    # Array is represented as List; toList is an ownership transfer when the
+    # array lives in an owned slot. Using elmc_array_to_list (retain) + later
+    # null_aliases of the same pointer skips releasing the owned slot and leaks
+    # (probeToListResult: retain then null owned[0], harness release leaves rc=1).
+    if ValueSlots.owned_ref?(array_ref) and not ValueSlots.transferred?(array_ref) do
+      if ValueSlots.owned_ref?(out) do
+        """
+        #{ValueSlots.boxed_decl(out, RcRuntimeEmit.value_expr(array_ref), env)}
+        #{ValueSlots.null_assignment(array_ref)}
+        """
+        |> String.trim()
+      else
+        """
+        #{out} = #{RcRuntimeEmit.value_expr(array_ref)};
+        #{ValueSlots.null_assignment(array_ref)}
+        """
+        |> String.trim()
+      end
     else
       RcRuntimeEmit.assign_call(env, out, "elmc_array_to_list", array_ref)
     end
@@ -4935,6 +4994,110 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
       end
     else
       ""
+    end
+  end
+
+  defp compile_set_insert_int(value, set, env, counter) do
+    compile_set_int_call("elmc_set_insert_int", value, set, env, counter, :rc)
+  end
+
+  defp compile_set_remove_int(value, set, env, counter) do
+    compile_set_int_call("elmc_set_remove_int", value, set, env, counter, :rc)
+  end
+
+  defp list_cons_native_head(%{op: :var, name: name}, env) when is_binary(name) or is_atom(name) do
+    EnvBindings.native_int_binding(env, name)
+  end
+
+  defp list_cons_native_head(value, env) do
+    if NativeInt.expr?(value, env) do
+      case NativeInt.compile_expr(value, env, 0) do
+        {_, ref, _} when is_binary(ref) -> ref
+        _ -> nil
+      end
+    end
+  end
+
+  defp compile_set_member_int(value, set, env, counter) do
+    {value_code, value_ref, counter} = compile_native_int_set_key(value, env, counter)
+    {set_code, set_var, counter} = Host.compile_expr(set, env, counter)
+    {out, next} = RcRuntimeEmit.compile_result_slot(env, counter)
+    set_ref = RcRuntimeEmit.value_expr(set_var)
+    {key_ref, key_decl, next} = native_set_key_temp(value_ref, next)
+    member_ref = "native_set_member_#{next}"
+    next = next + 1
+
+    code = """
+    #{value_code}#{set_code}
+      #{key_decl}const bool #{member_ref} = elmc_set_member_int(#{key_ref}, #{set_ref});
+      #{RcRuntimeEmit.assign_call(env, out, "elmc_new_bool", [member_ref])}
+    """
+
+    {code, out, next}
+  end
+
+  defp compile_set_int_call(function, value, set, env, counter, :rc) do
+    {value_code, value_ref, counter} = compile_native_int_set_key(value, env, counter)
+    {set_code, set_var, counter} = Host.compile_expr(set, env, counter)
+    {out, next} = RcRuntimeEmit.compile_result_slot(env, counter)
+    set_ref = RcRuntimeEmit.value_expr(set_var)
+    {key_ref, key_decl, next} = native_set_key_temp(value_ref, next)
+
+    code = """
+    #{value_code}#{set_code}
+      #{key_decl}#{RcRuntimeEmit.assign_call(env, out, function, RcRuntimeEmit.call_arg_list([key_ref, set_ref]))}
+    """
+
+    {code, out, next}
+  end
+
+  defp native_set_key_temp(value_ref, counter) when is_binary(value_ref) do
+    if native_set_key_ref?(value_ref) do
+      {value_ref, "", counter}
+    else
+      key_ref = "native_set_key_#{counter}"
+      {key_ref, "const elmc_int_t #{key_ref} = #{value_ref};\n  ", counter + 1}
+    end
+  end
+
+  defp native_set_key_ref?(ref) when is_binary(ref) do
+    Regex.match?(~r/^(native_|remaining_loop|[a-z_]*_loop(?:_next)?$)/, ref)
+  end
+
+  defp native_int_set_key?(value, env) do
+    NativeInt.expr?(value, env) or native_int_set_key_var?(value, env)
+  end
+
+  defp native_int_set_key_var?(%{op: :var, name: name}, env) when is_binary(name) or is_atom(name) do
+    is_binary(EnvBindings.native_int_binding(env, name)) or
+      NativeTypedReturn.expr_type(%{op: :var, name: name}, env) == "Int"
+  end
+
+  defp native_int_set_key_var?(_value, _env), do: false
+
+  defp compile_native_int_set_key(value, env, counter) do
+    case value do
+      %{op: :var, name: name} = var when is_binary(name) or is_atom(name) ->
+        case EnvBindings.native_int_binding(env, name) do
+          ref when is_binary(ref) ->
+            {"", ref, counter}
+
+          nil ->
+            case Map.fetch(env, name) do
+              {:ok, source} when is_binary(source) ->
+                if NativeTypedReturn.expr_type(var, env) == "Int" do
+                  {"", "elmc_as_int(#{RcRuntimeEmit.value_expr(source)})", counter}
+                else
+                  NativeInt.compile_expr(var, env, counter)
+                end
+
+              :error ->
+                NativeInt.compile_expr(var, env, counter)
+            end
+        end
+
+      _ ->
+        NativeInt.compile_expr(value, env, counter)
     end
   end
 end

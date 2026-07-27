@@ -1,5 +1,7 @@
 defmodule Elmx.Runtime.Pebble.Dispatch.Kernel do
   @moduledoc false
+  alias Elmx.Types, as: Types
+
 
   alias Elmx.Runtime.Http
   alias Elmx.Runtime.Pebble.Dispatch

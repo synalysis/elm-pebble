@@ -1,5 +1,7 @@
 defmodule Elmc.Backend.CCodegen.VarCompile do
   @moduledoc false
+  alias Elmc.Backend.CCodegen.Types, as: Types
+
 
   alias Elmc.Backend.CCodegen.EnvBindings
   alias Elmc.Backend.CCodegen.EnvBindings
@@ -21,6 +23,8 @@ defmodule Elmc.Backend.CCodegen.VarCompile do
     end
   end
 
+  @spec compile_var_expr(map(), Types.compile_env(), Types.ir_expr()) :: Types.ir_expr()
+
   defp compile_var_expr(%{op: :var, name: name}, env, counter) when is_binary(name) do
     case String.split(name, ".", parts: 2) do
       [base, field] when field != "" ->
@@ -31,6 +35,8 @@ defmodule Elmc.Backend.CCodegen.VarCompile do
     end
   end
 
+  @spec top_level_zero_arg_var?(String.t(), Types.compile_env()) :: boolean()
+
   defp top_level_zero_arg_var?(name, env) when is_binary(name) do
     module_name = Map.get(env, :__module__, "Main")
 
@@ -38,6 +44,8 @@ defmodule Elmc.Backend.CCodegen.VarCompile do
       not Map.has_key?(env, name) and
       EnvBindings.function_arity(env, module_name, name, []) == 0
   end
+
+  @spec ambient_math_constant_name?(String.t()) :: boolean()
 
   defp ambient_math_constant_name?(name), do: name in ["e", "pi"]
 end

@@ -1,5 +1,7 @@
 defmodule Elmc.Backend.Plan.RuntimeBuiltins.Extra do
   @moduledoc false
+  alias Elmc.Backend.Plan.Types, as: Types
+
 
   @extra_builtins %{
     port_outgoing: "elmc_port_outgoing",
@@ -316,6 +318,7 @@ defmodule Elmc.Backend.Plan.RuntimeBuiltins.Extra do
     file_download file_download_task file_select
     task_and_then task_command task_fail task_map task_map2 task_on_error task_perform task_succeed
     cmd_map sub_map
+    port_outgoing port_incoming_sub
     process_kill process_sleep process_spawn
     random_generate regex_contains regex_find regex_from_string regex_replace
     time_now_millis time_zone_offset_minutes time_here browser_get_viewport
@@ -328,9 +331,19 @@ defmodule Elmc.Backend.Plan.RuntimeBuiltins.Extra do
     string_length_val
   )a
 
+  @spec builtins() :: Types.ir_expr()
+
   def builtins, do: @extra_builtins
+  @spec symbol_aliases() :: Types.ir_expr()
+
   def symbol_aliases, do: @symbol_aliases
+  @spec fallible_ids() :: Types.ir_expr()
+
   def fallible_ids, do: @extra_fallible
+  @spec c_value_return_ids() :: Types.ir_expr()
+
   def c_value_return_ids, do: @extra_c_value_return
+  @spec value_return_ids() :: Types.ir_expr()
+
   def value_return_ids, do: @extra_value_return
 end

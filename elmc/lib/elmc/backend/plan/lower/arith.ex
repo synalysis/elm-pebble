@@ -1,5 +1,7 @@
 defmodule Elmc.Backend.Plan.Lower.Arith do
   @moduledoc false
+  alias Elmc.Backend.Plan.Types, as: Types
+
 
   alias Elmc.Backend.Plan.{Builder, Context}
   alias Elmc.Backend.Plan.Lower.Expr
@@ -24,8 +26,13 @@ defmodule Elmc.Backend.Plan.Lower.Arith do
 
   def compile(%{op: :add_vars, left: left, right: right}, ctx, b)
       when is_binary(left) and is_binary(right) do
-    with {:ok, l, b1} <- Expr.compile(%{op: :var, name: left}, ctx, b),
-         {:ok, r, b2} <- Expr.compile(%{op: :var, name: right}, ctx, b1) do
+    # Zero-arg CAF names (e.g. `x + g0`) lower through `:var` → call_fn. Operands
+    # must not target fn_out/branch_out or the CAF clobbers the function result slot
+    # (ManyGlobals addN: `return g0(); return x + *out`).
+    operand_ctx = Context.for_branch_arm(ctx)
+
+    with {:ok, l, b1} <- Expr.compile(%{op: :var, name: left}, operand_ctx, b),
+         {:ok, r, b2} <- Expr.compile(%{op: :var, name: right}, operand_ctx, b1) do
       emit_int_arith(:add_vars, l, r, ctx, b2)
     else
       _ -> :unsupported
@@ -36,6 +43,7 @@ defmodule Elmc.Backend.Plan.Lower.Arith do
       when is_binary(left) and is_binary(right) do
     # Prefer boxed/float-capable lowering — physics code subtracts Vec3 components
     # stored in locals. Fall back to int regs when both sides look native-int.
+    # IntCall/emit_binary already use for_branch_arm for operands.
     left_e = %{op: :var, name: left}
     right_e = %{op: :var, name: right}
 
@@ -71,9 +79,11 @@ defmodule Elmc.Backend.Plan.Lower.Arith do
 
   @spec emit_boxed_binop(atom(), Types.ir_expr(), Types.ir_expr(), Context.t(), Builder.t()) ::
           {:ok, Types.reg() | :fn_out, Builder.t()} | :unsupported
-  def emit_boxed_binop(kind, left, right, ctx, b) when kind in [:add, :sub, :mul, :idiv, :fdiv] do
+  def emit_boxed_binop(kind, left, right, ctx, b, opts \\ [])
+      when kind in [:add, :sub, :mul, :idiv, :fdiv] do
     # See emit_binary/5 — keep left and right in distinct scratch regs.
     operand_ctx = Context.for_branch_arm(ctx)
+    float? = Keyword.get(opts, :float, false) or kind == :fdiv
 
     with {:ok, l, b1} <- Expr.compile(left, operand_ctx, b),
          {:ok, r, b2} <- Expr.compile(right, operand_ctx, b1) do
@@ -92,10 +102,13 @@ defmodule Elmc.Backend.Plan.Lower.Arith do
           %{produces: nil, consumes: consumes, borrows: borrows, fallible: true}
         end
 
+      args = %{op: kind, lhs: l, rhs: r}
+      args = if float?, do: Map.put(args, :mode, :float), else: args
+
       {_, b5} =
         Builder.emit(b4, :boxed_binop, %{
           dest: dest,
-          args: %{op: kind, lhs: l, rhs: r},
+          args: args,
           effects: effects
         })
 
@@ -106,16 +119,22 @@ defmodule Elmc.Backend.Plan.Lower.Arith do
     end
   end
 
+  @spec emit_boxed_binop_from_vars(atom(), Types.expr(), Types.expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+
   def emit_boxed_binop_from_vars(kind, left, right, ctx, b)
       when kind in [:add_vars, :sub_vars, :mul_vars, :fdiv_vars] do
     emit_boxed_binop(Map.fetch!(@binop_atoms, kind), left, right, ctx, b)
   end
 
   @doc false
+  @spec emit_int_arith_regs(atom(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+
   def emit_int_arith_regs(kind, lhs, rhs, ctx, b)
       when kind in [:add_vars, :mul_vars, :sub_vars, :idiv_vars, :mod_vars, :rem_vars, :min_vars, :max_vars] do
     emit_int_arith(kind, lhs, rhs, ctx, b)
   end
+
+  @spec emit_int_arith(atom(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
 
   defp emit_int_arith(kind, lhs, rhs, ctx, b)
        when kind in [:add_vars, :mul_vars, :sub_vars, :idiv_vars, :mod_vars, :rem_vars, :min_vars, :max_vars] do
@@ -170,6 +189,8 @@ defmodule Elmc.Backend.Plan.Lower.Arith do
     b4 = if wrap_catch?, do: Builder.catch_end(b3), else: b3
     {:ok, dest, b4}
   end
+
+  @spec dest_for(Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
 
   defp dest_for(ctx, b) do
     case Context.dest_for_call(ctx) do

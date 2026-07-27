@@ -14,6 +14,8 @@ defmodule Ide.Acp.AgentServer do
     |> loop()
   end
 
+  @spec loop(term()) :: term()
+
   defp loop(state) do
     case IO.binread(:stdio, :line) do
       :eof ->
@@ -37,6 +39,8 @@ defmodule Ide.Acp.AgentServer do
         loop(state)
     end
   end
+
+  @spec write_message(term()) :: term()
 
   defp write_message(message) do
     IO.binwrite(Jason.encode!(message))

@@ -1,5 +1,7 @@
 defmodule Elmc.Backend.Wasm.WebCoverage do
   @moduledoc false
+  alias Elmc.Types, as: Types
+
 
   alias Elmc.Backend.CCodegen.Types, as: CCodegenTypes
   alias Elmc.Backend.Plan.PrimaryCoverage
@@ -47,11 +49,15 @@ defmodule Elmc.Backend.Wasm.WebCoverage do
     end
   end
 
+  @spec server_only_backend_task?(String.t()) :: boolean()
+
   defp server_only_backend_task?(module) when is_binary(module) do
     Enum.any?(@server_only_backend_task_prefixes, fn prefix ->
       module == prefix or String.starts_with?(module, prefix <> ".")
     end)
   end
+
+  @spec drop_server_only(Types.decl_map()) :: Types.ir_expr()
 
   defp drop_server_only(decl_map) do
     decl_map

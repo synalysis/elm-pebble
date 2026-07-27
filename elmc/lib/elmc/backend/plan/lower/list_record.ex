@@ -1,5 +1,7 @@
 defmodule Elmc.Backend.Plan.Lower.ListRecord do
   @moduledoc false
+  alias Elmc.Backend.Plan.Types, as: Types
+
 
   alias Elmc.Backend.Plan.Lower.{Expr, Record}
   alias Elmc.Backend.Plan.{Builder, Context, Types}
@@ -34,6 +36,8 @@ defmodule Elmc.Backend.Plan.Lower.ListRecord do
 
   def try_compile_map(_, _, _), do: :unsupported
 
+  @spec filter_builtin(Types.ir_expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+
   defp filter_builtin(pred, ctx, b) do
     case parse_filter_pred(pred) do
       {:ok, :and, f1, f2} ->
@@ -51,6 +55,8 @@ defmodule Elmc.Backend.Plan.Lower.ListRecord do
         :unsupported
     end
   end
+
+  @spec parse_filter_pred(map() | term()) :: Types.ir_expr()
 
   defp parse_filter_pred(%{op: :lambda, args: [arg], body: body}) when is_binary(arg) do
     body = normalize_bool_predicate_body(body)
@@ -98,6 +104,8 @@ defmodule Elmc.Backend.Plan.Lower.ListRecord do
 
   defp parse_filter_pred(_), do: :error
 
+  @spec normalize_bool_predicate_body(map() | Types.expr()) :: map()
+
   defp normalize_bool_predicate_body(%{op: :call, name: op, args: [left, right]})
        when op in ["&&", "Basics.and", "and"] do
     %{
@@ -110,6 +118,8 @@ defmodule Elmc.Backend.Plan.Lower.ListRecord do
 
   defp normalize_bool_predicate_body(body), do: body
 
+  @spec false_branch?(map() | Types.expr()) :: boolean()
+
   defp false_branch?(%{op: :bool_literal, value: false}), do: true
   defp false_branch?(%{op: :int_literal, value: 0}), do: true
 
@@ -118,6 +128,8 @@ defmodule Elmc.Backend.Plan.Lower.ListRecord do
        do: true
 
   defp false_branch?(_expr), do: false
+
+  @spec field_on_lambda_arg(map() | Types.expr(), Types.ir_expr()) :: Types.ir_expr()
 
   defp field_on_lambda_arg(%{op: :field_access, arg: arg_name, field: field}, arg)
        when is_binary(field) and arg_name == arg,
@@ -128,6 +140,8 @@ defmodule Elmc.Backend.Plan.Lower.ListRecord do
        do: {:ok, field}
 
   defp field_on_lambda_arg(_expr, _arg), do: :error
+
+  @spec field_accessor_lambda(map() | term()) :: Types.ir_expr()
 
   defp field_accessor_lambda(%{op: :lambda, args: [arg], body: %{op: :field_access, arg: arg_name, field: field}})
        when is_binary(arg) and is_binary(field) and arg == arg_name,
@@ -143,9 +157,13 @@ defmodule Elmc.Backend.Plan.Lower.ListRecord do
 
   defp field_accessor_lambda(_), do: :error
 
+  @spec var_name(String.t() | map() | term()) :: Types.ir_expr()
+
   defp var_name(name) when is_binary(name), do: name
   defp var_name(%{op: :var, name: name}) when is_binary(name), do: name
   defp var_name(_), do: nil
+
+  @spec field_index_reg(String.t(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
 
   defp field_index_reg(field, ctx, b) when is_binary(field) do
     case Record.resolve_field_index_int(field, ctx) do
@@ -157,6 +175,8 @@ defmodule Elmc.Backend.Plan.Lower.ListRecord do
         :unsupported
     end
   end
+
+  @spec emit_builtin(integer(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
 
   defp emit_builtin(builtin, arg_regs, ctx, b) do
     wrap_catch? = Builder.wrap_fallible_instr_catch?(b, ctx, true)
@@ -181,6 +201,8 @@ defmodule Elmc.Backend.Plan.Lower.ListRecord do
     result = if is_integer(dest), do: dest, else: dest
     {:ok, result, b4}
   end
+
+  @spec dest_for_call(Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
 
   defp dest_for_call(ctx, b) do
     case Context.dest_for_call(ctx) do

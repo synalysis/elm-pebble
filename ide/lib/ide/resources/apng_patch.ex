@@ -29,6 +29,8 @@ defmodule Ide.Resources.ApngPatch do
     end
   end
 
+  @spec patch_chunks(binary() | String.t(), term(), term()) :: term()
+
   defp patch_chunks(<<>>, acc, _plays), do: acc
 
   defp patch_chunks(

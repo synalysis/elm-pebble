@@ -6,6 +6,8 @@ defmodule Elmc.Backend.CCodegen.ListMapStaticIndexAt do
   `listAt` must lower to flat index lookup (`List.head` + `List.drop` or
   `elmc_list_nth_maybe`). Indices and helper names come from IR, not app names.
   """
+  alias Elmc.Backend.CCodegen.Types, as: Types
+
 
   alias Elmc.Backend.CCodegen.Types
 
@@ -29,6 +31,8 @@ defmodule Elmc.Backend.CCodegen.ListMapStaticIndexAt do
     end
   end
 
+  @spec parse(map() | term()) :: Types.ir_expr()
+
   defp parse(%{
          op: :qualified_call,
          target: "List.map",
@@ -42,11 +46,15 @@ defmodule Elmc.Backend.CCodegen.ListMapStaticIndexAt do
 
   defp parse(_), do: :error
 
+  @spec parse_lambda(map() | term()) :: Types.ir_expr()
+
   defp parse_lambda(%{op: :lambda, args: [index_var], body: body}) do
     parse_with_default_list_at(body, index_var)
   end
 
   defp parse_lambda(_), do: :error
+
+  @spec parse_with_default_list_at(map() | term(), Types.ir_expr() | term()) :: Types.ir_expr()
 
   defp parse_with_default_list_at(
          %{op: :qualified_call, target: "Maybe.withDefault", args: [default_expr, list_at_call]},
@@ -61,6 +69,8 @@ defmodule Elmc.Backend.CCodegen.ListMapStaticIndexAt do
   end
 
   defp parse_with_default_list_at(_, _), do: :error
+
+  @spec parse_list_at_call(map() | term(), Types.ir_expr() | term()) :: Types.ir_expr()
 
   defp parse_list_at_call(
          %{op: :qualified_call, target: list_at_target, args: args},
@@ -92,6 +102,8 @@ defmodule Elmc.Backend.CCodegen.ListMapStaticIndexAt do
 
   defp parse_list_at_call(_, _), do: :error
 
+  @spec parse_static_int_list(map() | term()) :: Types.ir_expr()
+
   defp parse_static_int_list(%{op: :list_literal, items: items}) when is_list(items) and items != [] do
     items
     |> Enum.reduce_while({:ok, []}, fn
@@ -108,6 +120,8 @@ defmodule Elmc.Backend.CCodegen.ListMapStaticIndexAt do
   end
 
   defp parse_static_int_list(_), do: :error
+
+  @spec emit(String.t(), String.t(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
 
   defp emit(module_name, name, list_var, default, indices) do
     c_prefix = Util.module_fn_name(module_name, name)

@@ -2,6 +2,8 @@ defmodule Elmc.Backend.Plan.Shadow do
   @moduledoc """
   Shadow-mode plan lowering alongside legacy C emission.
   """
+  alias Elmc.Backend.Plan.Types, as: Types
+
 
   alias Elmc.Backend.Plan.Lower.Function
 
@@ -34,6 +36,8 @@ defmodule Elmc.Backend.Plan.Shadow do
     :ok
   end
 
+  @spec run_shadow(Types.decl(), String.t(), Types.decl_map(), keyword()) :: Types.ir_expr()
+
   defp run_shadow(decl, module_name, decl_map, opts) do
     try do
       case Function.lower(decl, module_name, decl_map, opts) do
@@ -53,6 +57,8 @@ defmodule Elmc.Backend.Plan.Shadow do
         :skipped
     end
   end
+
+  @spec record_stat(Types.ir_expr(), String.t(), String.t()) :: Types.ir_expr()
 
   defp record_stat(result, module, name) do
     stats = shadow_stats()
@@ -80,11 +86,15 @@ defmodule Elmc.Backend.Plan.Shadow do
     |> normalize_mode()
   end
 
+  @spec normalize_mode(Types.ir_expr() | term()) :: Types.ir_expr()
+
   defp normalize_mode(:primary), do: :primary
   defp normalize_mode(:shadow), do: :shadow
   defp normalize_mode("primary"), do: :primary
   defp normalize_mode("shadow"), do: :shadow
   defp normalize_mode(_), do: :off
+
+  @spec raise_on_failure?(list() | term()) :: boolean()
 
   defp raise_on_failure?(opts) when is_list(opts), do: Keyword.get(opts, :plan_ir_raise, false)
   defp raise_on_failure?(_), do: Application.get_env(:elmc, :plan_ir_raise, false)

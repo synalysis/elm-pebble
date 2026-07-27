@@ -5,6 +5,8 @@ defmodule Elmc.Backend.CCodegen.RcRuntimeEmit do
   Slot targeting (`compile_result_slot`, `function_tail_env`) is deprecated
   for Plan-primary functions — use `Elmc.Backend.Plan.Context` instead.
   """
+  alias Elmc.Backend.CCodegen.Types, as: Types
+
 
   alias Elmc.Backend.CCodegen.CaseCompile
   alias Elmc.Backend.CCodegen.ListLoopCodegen
@@ -125,6 +127,8 @@ defmodule Elmc.Backend.CCodegen.RcRuntimeEmit do
     "elmc_dict_update",
     "elmc_set_from_list",
     "elmc_set_insert",
+    "elmc_set_insert_int",
+    "elmc_set_remove_int",
     "elmc_set_remove",
     "elmc_set_foldl",
     "elmc_set_foldr",
@@ -520,12 +524,16 @@ defmodule Elmc.Backend.CCodegen.RcRuntimeEmit do
     end
   end
 
+  @spec join_stmts(list()) :: Types.ir_expr()
+
   defp join_stmts(stmts) when is_list(stmts) do
     stmts
     |> Enum.map(&String.trim/1)
     |> Enum.reject(&(&1 == ""))
     |> Enum.join("\n")
   end
+
+  @spec abandon_owned_source(Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
 
   defp abandon_owned_source(ref, stmt) do
     ValueSlots.transfer(ref)
@@ -596,6 +604,8 @@ defmodule Elmc.Backend.CCodegen.RcRuntimeEmit do
     end
   end
 
+  @spec compile_result_slot_branch(Types.compile_env(), Types.ir_expr()) :: Types.ir_expr()
+
   defp compile_result_slot_branch(env, counter) do
     branch_out = Map.get(env, :__branch_out__)
 
@@ -617,6 +627,8 @@ defmodule Elmc.Backend.CCodegen.RcRuntimeEmit do
   @doc "Out slot for RC function calls."
   @spec compile_call_result_slot(Types.compile_env(), non_neg_integer()) :: {String.t(), non_neg_integer()}
   def compile_call_result_slot(env, counter), do: compile_result_slot(env, counter)
+
+  @spec branch_out_slot?(Types.compile_env(), Types.ir_expr()) :: boolean()
 
   defp branch_out_slot?(env, out) do
     (function_out_ref?(out) and function_tail_compile?(env)) or ValueSlots.owned_ref?(out) or
@@ -940,6 +952,8 @@ defmodule Elmc.Backend.CCodegen.RcRuntimeEmit do
     end
   end
 
+  @spec rc_function_out_stmt(Types.compile_env(), Types.ir_expr(), integer(), [String.t()], keyword()) :: Types.ir_expr()
+
   defp rc_function_out_stmt(_env, out, function, call_args, opts) do
     fresh_out? = Keyword.get(opts, :fresh_out?, false)
 
@@ -978,6 +992,8 @@ defmodule Elmc.Backend.CCodegen.RcRuntimeEmit do
     end
   end
 
+  @spec int_list_cons_assign(Types.compile_env(), Types.ir_expr(), [String.t()], Types.ir_expr()) :: Types.ir_expr()
+
   defp int_list_cons_assign(env, out, call_args, opts \\ []) do
     loop_id = Keyword.get(opts, :loop_id, 0)
 
@@ -989,6 +1005,8 @@ defmodule Elmc.Backend.CCodegen.RcRuntimeEmit do
         allocator_assign(env, out, "elmc_list_cons", call_args, opts)
     end
   end
+
+  @spec parse_call_args_pair(String.t()) :: Types.ir_expr()
 
   defp parse_call_args_pair(call_args) when is_binary(call_args) do
     case String.split(call_args, ", ", parts: 2) do
@@ -1008,6 +1026,8 @@ defmodule Elmc.Backend.CCodegen.RcRuntimeEmit do
   end
 
   @doc false
+  @spec take_wrapper_for(String.t()) :: Types.ir_expr()
+
   def take_wrapper_for(function) when is_binary(function), do: Map.get(@take_wrappers, function)
 
   @doc "RC allocator assign for fused/native C snippets (never uses break)."
@@ -1101,9 +1121,13 @@ defmodule Elmc.Backend.CCodegen.RcRuntimeEmit do
     |> String.trim()
   end
 
+  @spec rc_failure_return(keyword()) :: Types.ir_expr()
+
   defp rc_failure_return(opts) do
     failure_return(Keyword.get(opts, :env, %{}))
   end
+
+  @spec legacy_declare_out?(Types.ir_expr(), keyword()) :: boolean()
 
   defp legacy_declare_out?(out, opts) do
     case Keyword.get(opts, :declare_out?) do
@@ -1119,6 +1143,8 @@ defmodule Elmc.Backend.CCodegen.RcRuntimeEmit do
         not predeclared_out_slot?(env, out) and Regex.match?(@fresh_owned_slot, out)
     end
   end
+
+  @spec failure_return(Types.compile_env()) :: Types.ir_expr()
 
   def failure_return(env) do
     cond do
@@ -1209,18 +1235,26 @@ defmodule Elmc.Backend.CCodegen.RcRuntimeEmit do
     |> String.trim()
   end
 
+  @spec fusion_owned_slot_addr(Types.ir_expr() | String.t()) :: Types.ir_expr()
+
   defp fusion_owned_slot_addr("owned[" <> _ = slot), do: "&#{slot}"
   defp fusion_owned_slot_addr(slot) when is_binary(slot), do: "&#{slot}"
+
+  @spec declared_out_slot?(Types.compile_env(), Types.ir_expr()) :: boolean()
 
   defp declared_out_slot?(env, out) do
     MapSet.member?(Map.get(env, :__declared_outs__, MapSet.new()), out)
   end
 
   @doc false
+  @spec predeclared_out_slot?(Types.compile_env(), Types.ir_expr()) :: boolean()
+
   def predeclared_out_slot?(env, out) do
     declared_out_slot?(env, out) or Map.get(env, :__into_out__) == out or
       Map.get(env, :__branch_out__) == out
   end
+
+  @spec rc_owned_slot?(Types.ir_expr()) :: boolean()
 
   defp rc_owned_slot?(out), do: ValueSlots.owned_ref?(out)
 
@@ -1278,6 +1312,8 @@ defmodule Elmc.Backend.CCodegen.RcRuntimeEmit do
     stmt
   end
 
+  @spec allocator_same_slot_transfer?(Types.ir_expr(), integer(), [String.t()]) :: boolean()
+
   defp allocator_same_slot_transfer?(out, function, call_args)
        when is_binary(out) and is_binary(function) and is_binary(call_args) do
     MapSet.member?(@own_transfer_allocators, function) and
@@ -1286,9 +1322,13 @@ defmodule Elmc.Backend.CCodegen.RcRuntimeEmit do
 
   # Array-source record/list allocators skip eager out-slot release on the first
   # assignment in a branch, but loop iterations still overwrite prior out values.
+  @spec array_source_transfer_skip_preempt?(String.t()) :: boolean()
+
   defp array_source_transfer_skip_preempt?(function) when is_binary(function) do
     MapSet.member?(@array_source_transfer_allocators, function) and not ValueSlots.in_c_loop?()
   end
+
+  @spec function_out_assign(Types.compile_env(), String.t(), String.t()) :: Types.ir_expr()
 
   defp function_out_assign(_env, out, rhs) when is_binary(out) and is_binary(rhs) do
     if function_out_ref?(out) and ValueSlots.owned_ref?(rhs) do
@@ -1307,6 +1347,8 @@ defmodule Elmc.Backend.CCodegen.RcRuntimeEmit do
       prefix <> "#{assignment_lhs(out)} = #{rhs};"
     end
   end
+
+  @spec result_payload_owned_release(integer(), [String.t()]) :: Types.ir_expr()
 
   defp result_payload_owned_release(function, _call_args)
        when function in ["elmc_result_ok_own", "elmc_result_err_own"], do: ""

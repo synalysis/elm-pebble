@@ -4,6 +4,7 @@ defmodule Elmc.Backend.Plan.Lower.Port do
   alias Elmc.Backend.Plan.Builder
   alias Elmc.Backend.Plan.Context
   alias Elmc.Backend.Plan.Lower.Expr
+  alias Elmc.Backend.Plan.Lower.Platform.Web, as: PlatformWeb
   alias Elmc.Backend.Plan.Lower.Types, as: Types
 
   @type direction :: :incoming | :outgoing
@@ -46,18 +47,38 @@ defmodule Elmc.Backend.Plan.Lower.Port do
       decl = Map.get(ctx.decl_map, {module, name}, %{})
       type = Map.get(decl, :type) || Map.get(decl, :return_type)
 
+      port_key = qualified_name(module, name)
+
       case {direction_from_type(type), args} do
         {:incoming, [callback]} ->
-          compile_incoming(name, callback, ctx, b)
+          compile_incoming(port_key, callback, ctx, b)
 
         {:outgoing, [payload]} ->
-          compile_outgoing(name, payload, ctx, b)
+          compile_outgoing(port_key, payload, ctx, b)
 
         _ ->
           :unsupported
       end
     else
       :unsupported
+    end
+  end
+
+  @doc """
+  Runtime key used to identify a port's queued Cmd/Sub value.
+
+  The web target maps ports 1:1 onto real browser `app.ports.<name>` JS
+  interop, so the key must stay the bare declared port name. Other targets
+  (native/Pebble) have no such external contract; qualifying with the
+  declaring module disambiguates same-named ports declared in different
+  modules for debugger/introspection output.
+  """
+  @spec qualified_name(String.t(), String.t()) :: String.t()
+  def qualified_name(module, name) do
+    if PlatformWeb.web_target?(Process.get(:elmc_codegen_opts, %{})) do
+      name
+    else
+      "#{module}.#{name}"
     end
   end
 

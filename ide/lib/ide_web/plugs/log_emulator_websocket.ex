@@ -19,10 +19,14 @@ defmodule IdeWeb.Plugs.LogEmulatorWebSocket do
     conn
   end
 
+  @spec emulator_ws_path?(String.t()) :: boolean()
+
   defp emulator_ws_path?(path) do
     String.starts_with?(path, "/api/emulator/") and
       (String.ends_with?(path, "/ws/vnc") or String.ends_with?(path, "/ws/phone"))
   end
+
+  @spec upgrade_request?(integer()) :: boolean()
 
   defp upgrade_request?(conn) do
     conn.method == "GET" and
@@ -30,6 +34,8 @@ defmodule IdeWeb.Plugs.LogEmulatorWebSocket do
         value |> String.downcase() |> String.contains?("websocket")
       end)
   end
+
+  @spec header(integer(), String.t()) :: term()
 
   defp header(conn, name), do: conn |> get_req_header(name) |> List.first() |> Kernel.||("-")
 end

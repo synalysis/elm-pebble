@@ -3,6 +3,7 @@ defmodule Ide.Debugger.Types.ExportTraceResult do
   Return value of `Debugger.export_trace/2`.
   """
 
+
   @type t :: %{
           required(:json) => String.t(),
           required(:sha256) => String.t(),

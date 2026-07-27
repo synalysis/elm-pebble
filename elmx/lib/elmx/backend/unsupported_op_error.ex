@@ -1,8 +1,12 @@
 defmodule Elmx.Backend.UnsupportedOpError do
   @moduledoc false
+  alias Elmx.Types, as: Types
+
   defexception [:op, :expr, message: "unsupported IR op for Elmx backend"]
 
   @impl true
+  @spec exception(keyword()) :: Types.elm_value()
+
   def exception(opts) do
     op = Keyword.get(opts, :op)
     expr = Keyword.get(opts, :expr)

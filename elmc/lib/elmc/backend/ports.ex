@@ -2,6 +2,8 @@ defmodule Elmc.Backend.Ports do
   @moduledoc """
   Generates C headers for Ports callback ABI.
   """
+  alias Elmc.Types, as: Types
+
 
   alias ElmEx.IR
   alias Elmc.Backend.CCodegen.CSource

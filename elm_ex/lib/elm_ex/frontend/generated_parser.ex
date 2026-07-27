@@ -692,7 +692,6 @@ defmodule ElmEx.Frontend.GeneratedParser do
     |> Enum.join()
   end
 
-  @spec token_kind(token()) :: atom()
   defp token_kind({kind, _line}) when is_atom(kind), do: kind
   defp token_kind({kind, _line, _value}) when is_atom(kind), do: kind
 

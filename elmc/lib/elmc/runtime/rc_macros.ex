@@ -160,6 +160,8 @@ defmodule Elmc.Runtime.RcMacros do
 
     static inline elmc_int_t elmc_union_tag_as_int(ElmcValue *v) {
       if (!v) return -1;
+      /* Order is a dedicated scalar tag with runtime values LT=-1, EQ=0, GT=1. */
+      if (v->tag == ELMC_TAG_ORDER) return elmc_as_int(v);
       if (v->tag == ELMC_TAG_INT) return elmc_as_int(v);
       if (v->tag == ELMC_TAG_TUPLE2 && v->payload != NULL)
         return elmc_as_int(((ElmcTuple2 *)v->payload)->first);
@@ -176,6 +178,7 @@ defmodule Elmc.Runtime.RcMacros do
         ElmcMaybe *m = (ElmcMaybe *)v->payload;
         return m->is_just ? (tag == 1) : (tag == 2);
       }
+      if (v->tag == ELMC_TAG_ORDER) return elmc_as_int(v) == tag;
       return (v->tag == ELMC_TAG_INT && elmc_as_int(v) == tag) ||
              (v->tag == ELMC_TAG_TUPLE2 && v->payload != NULL &&
               elmc_as_int(((ElmcTuple2 *)v->payload)->first) == tag);
@@ -207,18 +210,24 @@ defmodule Elmc.Runtime.RcMacros do
   @spec release_array_lifo_declaration() :: String.t()
   def release_array_lifo_declaration do
     """
+    /* Release each owned slot independently. Do not coalesce by pointer equality:
+       phi/retain chains legitimately store the same pointer in multiple slots, each
+       with its own rc credit. Coalescing under-releases (rc_track 2048 merge).
+       Transfer assigns must null the source slot so true aliases are not double-freed. */
     static inline void elmc_release_array_lifo(ElmcValue **slots, size_t count) {
-      size_t n = count;
       while (count-- > 0) {
         ElmcValue *value = slots[count];
         if (value) {
+          slots[count] = NULL;
           elmc_release(value);
-          for (size_t i = 0; i < n; i++) {
-            if (slots[i] == value) {
-              slots[i] = NULL;
-            }
-          }
         }
+      }
+    }
+
+    static inline void elmc_owned_null_aliases(ElmcValue **slots, size_t count, ElmcValue *value) {
+      if (!value) return;
+      for (size_t i = 0; i < count; i++) {
+        if (slots[i] == value) slots[i] = NULL;
       }
     }
     """

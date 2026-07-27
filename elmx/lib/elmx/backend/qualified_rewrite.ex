@@ -2,6 +2,8 @@ defmodule Elmx.Backend.QualifiedRewrite do
   @moduledoc """
   Rewrites `qualified_call` IR to expression nodes (mirrors `elmc` `special_value_from_target/2`).
   """
+  alias Elmx.Types, as: Types
+
 
   alias Elmx.Types
 
@@ -28,7 +30,10 @@ defmodule Elmx.Backend.QualifiedRewrite do
     |> Elmx.Runtime.Pebble.SpecialValues.canonical_target()
     |> denormalize_kernel_shorthand()
     |> denormalize_utils_alias()
+    |> denormalize_elm_js_array()
   end
+
+  @spec strip_pkg_mangle_prefix(Types.elm_value() | String.t()) :: Types.elm_value()
 
   defp strip_pkg_mangle_prefix("Pkg." <> rest) do
     case String.split(rest, ".", parts: 2) do
@@ -38,6 +43,8 @@ defmodule Elmx.Backend.QualifiedRewrite do
   end
 
   defp strip_pkg_mangle_prefix(target), do: target
+
+  @spec rewrite_qualified(String.t(), [String.t()]) :: String.t()
 
   defp rewrite_qualified(target, args) do
     case {target, args} do
@@ -456,10 +463,403 @@ defmodule Elmx.Backend.QualifiedRewrite do
            }
          }}
 
+      # --- Kernel / stdlib gaps: identity where representation matches ---
+      {"List.toArray", [list]} ->
+        {:ok, list}
+
+      {"List.toArray", []} ->
+        {:ok, %{op: :lambda, args: ["__list"], body: %{op: :var, name: "__list"}}}
+
+      {"List.fromArray", [array]} ->
+        {:ok, array}
+
+      {"List.fromArray", []} ->
+        {:ok, %{op: :lambda, args: ["__array"], body: %{op: :var, name: "__array"}}}
+
+      {"Platform.command", [cmd]} ->
+        {:ok, cmd}
+
+      {"Platform.command", []} ->
+        {:ok, %{op: :lambda, args: ["__cmd"], body: %{op: :var, name: "__cmd"}}}
+
+      {"Elm.Kernel.Platform.command", [cmd]} ->
+        {:ok, cmd}
+
+      {"Elm.Kernel.Platform.command", []} ->
+        {:ok, %{op: :lambda, args: ["__cmd"], body: %{op: :var, name: "__cmd"}}}
+
+      {"Basics.log", [x]} ->
+        runtime2("elmc_basics_log", [x])
+
+      {"Basics.log", []} ->
+        curried("elmc_basics_log", [], "__x")
+
+      {"String.fromNumber", [n]} ->
+        runtime2("elmc_string_from_number", [n])
+
+      {"String.fromNumber", []} ->
+        curried("elmc_string_from_number", [], "__n")
+
+      # --- Elm.JsArray (list-backed); Kernel denorms to JsArray.* ---
+      {"JsArray.empty", []} ->
+        {:ok, %{op: :list_literal, items: []}}
+
+      {"JsArray.singleton", [value]} ->
+        runtime2("elmc_js_array_singleton", [value])
+
+      {"JsArray.singleton", []} ->
+        curried("elmc_js_array_singleton", [], "__v")
+
+      {"JsArray.length", [array]} ->
+        runtime2("elmc_array_length", [array])
+
+      {"JsArray.length", []} ->
+        curried("elmc_array_length", [], "__a")
+
+      {"JsArray.initialize", [size, offset, fun]} ->
+        runtime3("elmc_js_array_initialize", [size, offset, fun])
+
+      {"JsArray.initialize", [size, offset]} ->
+        curried("elmc_js_array_initialize", [size, offset], "__f")
+
+      {"JsArray.initialize", [size]} ->
+        {:ok,
+         %{
+           op: :lambda,
+           args: ["__offset"],
+           body: %{
+             op: :lambda,
+             args: ["__f"],
+             body: %{
+               op: :runtime_call,
+               function: "elmc_js_array_initialize",
+               args: [size, %{op: :var, name: "__offset"}, %{op: :var, name: "__f"}]
+             }
+           }
+         }}
+
+      {"JsArray.initialize", []} ->
+        {:ok,
+         %{
+           op: :lambda,
+           args: ["__size", "__offset", "__f"],
+           body: %{
+             op: :runtime_call,
+             function: "elmc_js_array_initialize",
+             args: [
+               %{op: :var, name: "__size"},
+               %{op: :var, name: "__offset"},
+               %{op: :var, name: "__f"}
+             ]
+           }
+         }}
+
+      {"JsArray.initializeFromList", [max, list]} ->
+        runtime2("elmc_js_array_initialize_from_list", [max, list])
+
+      {"JsArray.initializeFromList", [max]} ->
+        curried("elmc_js_array_initialize_from_list", [max], "__list")
+
+      {"JsArray.initializeFromList", []} ->
+        {:ok,
+         %{
+           op: :lambda,
+           args: ["__max", "__list"],
+           body: %{
+             op: :runtime_call,
+             function: "elmc_js_array_initialize_from_list",
+             args: [%{op: :var, name: "__max"}, %{op: :var, name: "__list"}]
+           }
+         }}
+
+      {"JsArray.unsafeGet", [index, array]} ->
+        runtime2("elmc_js_array_unsafe_get", [index, array])
+
+      {"JsArray.unsafeGet", [index]} ->
+        curried("elmc_js_array_unsafe_get", [index], "__a")
+
+      {"JsArray.unsafeGet", []} ->
+        {:ok,
+         %{
+           op: :lambda,
+           args: ["__index", "__a"],
+           body: %{
+             op: :runtime_call,
+             function: "elmc_js_array_unsafe_get",
+             args: [%{op: :var, name: "__index"}, %{op: :var, name: "__a"}]
+           }
+         }}
+
+      {"JsArray.unsafeSet", [index, value, array]} ->
+        runtime3("elmc_js_array_unsafe_set", [index, value, array])
+
+      {"JsArray.unsafeSet", [index, value]} ->
+        curried("elmc_js_array_unsafe_set", [index, value], "__a")
+
+      {"JsArray.unsafeSet", [index]} ->
+        {:ok,
+         %{
+           op: :lambda,
+           args: ["__value"],
+           body: %{
+             op: :lambda,
+             args: ["__a"],
+             body: %{
+               op: :runtime_call,
+               function: "elmc_js_array_unsafe_set",
+               args: [index, %{op: :var, name: "__value"}, %{op: :var, name: "__a"}]
+             }
+           }
+         }}
+
+      {"JsArray.unsafeSet", []} ->
+        {:ok,
+         %{
+           op: :lambda,
+           args: ["__index", "__value", "__a"],
+           body: %{
+             op: :runtime_call,
+             function: "elmc_js_array_unsafe_set",
+             args: [
+               %{op: :var, name: "__index"},
+               %{op: :var, name: "__value"},
+               %{op: :var, name: "__a"}
+             ]
+           }
+         }}
+
+      {"JsArray.push", [value, array]} ->
+        runtime2("elmc_array_push", [value, array])
+
+      {"JsArray.push", [value]} ->
+        curried("elmc_array_push", [value], "__a")
+
+      {"JsArray.push", []} ->
+        {:ok,
+         %{
+           op: :lambda,
+           args: ["__value", "__a"],
+           body: %{
+             op: :runtime_call,
+             function: "elmc_array_push",
+             args: [%{op: :var, name: "__value"}, %{op: :var, name: "__a"}]
+           }
+         }}
+
+      {"JsArray.foldl", [fun, acc, array]} ->
+        runtime3("elmc_array_foldl", [fun, acc, array])
+
+      {"JsArray.foldl", [fun, acc]} ->
+        curried("elmc_array_foldl", [fun, acc], "__a")
+
+      {"JsArray.foldl", [fun]} ->
+        {:ok,
+         %{
+           op: :lambda,
+           args: ["__acc"],
+           body: %{
+             op: :lambda,
+             args: ["__a"],
+             body: %{
+               op: :runtime_call,
+               function: "elmc_array_foldl",
+               args: [fun, %{op: :var, name: "__acc"}, %{op: :var, name: "__a"}]
+             }
+           }
+         }}
+
+      {"JsArray.foldl", []} ->
+        {:ok,
+         %{
+           op: :lambda,
+           args: ["__f", "__acc", "__a"],
+           body: %{
+             op: :runtime_call,
+             function: "elmc_array_foldl",
+             args: [
+               %{op: :var, name: "__f"},
+               %{op: :var, name: "__acc"},
+               %{op: :var, name: "__a"}
+             ]
+           }
+         }}
+
+      {"JsArray.foldr", [fun, acc, array]} ->
+        runtime3("elmc_array_foldr", [fun, acc, array])
+
+      {"JsArray.foldr", [fun, acc]} ->
+        curried("elmc_array_foldr", [fun, acc], "__a")
+
+      {"JsArray.foldr", [fun]} ->
+        {:ok,
+         %{
+           op: :lambda,
+           args: ["__acc"],
+           body: %{
+             op: :lambda,
+             args: ["__a"],
+             body: %{
+               op: :runtime_call,
+               function: "elmc_array_foldr",
+               args: [fun, %{op: :var, name: "__acc"}, %{op: :var, name: "__a"}]
+             }
+           }
+         }}
+
+      {"JsArray.foldr", []} ->
+        {:ok,
+         %{
+           op: :lambda,
+           args: ["__f", "__acc", "__a"],
+           body: %{
+             op: :runtime_call,
+             function: "elmc_array_foldr",
+             args: [
+               %{op: :var, name: "__f"},
+               %{op: :var, name: "__acc"},
+               %{op: :var, name: "__a"}
+             ]
+           }
+         }}
+
+      {"JsArray.map", [fun, array]} ->
+        runtime2("elmc_array_map", [fun, array])
+
+      {"JsArray.map", [fun]} ->
+        curried("elmc_array_map", [fun], "__a")
+
+      {"JsArray.map", []} ->
+        {:ok,
+         %{
+           op: :lambda,
+           args: ["__f", "__a"],
+           body: %{
+             op: :runtime_call,
+             function: "elmc_array_map",
+             args: [%{op: :var, name: "__f"}, %{op: :var, name: "__a"}]
+           }
+         }}
+
+      {"JsArray.indexedMap", [fun, offset, array]} ->
+        runtime3("elmc_js_array_indexed_map", [fun, offset, array])
+
+      {"JsArray.indexedMap", [fun, offset]} ->
+        curried("elmc_js_array_indexed_map", [fun, offset], "__a")
+
+      {"JsArray.indexedMap", [fun]} ->
+        {:ok,
+         %{
+           op: :lambda,
+           args: ["__offset"],
+           body: %{
+             op: :lambda,
+             args: ["__a"],
+             body: %{
+               op: :runtime_call,
+               function: "elmc_js_array_indexed_map",
+               args: [fun, %{op: :var, name: "__offset"}, %{op: :var, name: "__a"}]
+             }
+           }
+         }}
+
+      {"JsArray.indexedMap", []} ->
+        {:ok,
+         %{
+           op: :lambda,
+           args: ["__f", "__offset", "__a"],
+           body: %{
+             op: :runtime_call,
+             function: "elmc_js_array_indexed_map",
+             args: [
+               %{op: :var, name: "__f"},
+               %{op: :var, name: "__offset"},
+               %{op: :var, name: "__a"}
+             ]
+           }
+         }}
+
+      {"JsArray.slice", [from, to, array]} ->
+        runtime3("elmc_js_array_slice", [from, to, array])
+
+      {"JsArray.slice", [from, to]} ->
+        curried("elmc_js_array_slice", [from, to], "__a")
+
+      {"JsArray.slice", [from]} ->
+        {:ok,
+         %{
+           op: :lambda,
+           args: ["__to"],
+           body: %{
+             op: :lambda,
+             args: ["__a"],
+             body: %{
+               op: :runtime_call,
+               function: "elmc_js_array_slice",
+               args: [from, %{op: :var, name: "__to"}, %{op: :var, name: "__a"}]
+             }
+           }
+         }}
+
+      {"JsArray.slice", []} ->
+        {:ok,
+         %{
+           op: :lambda,
+           args: ["__from", "__to", "__a"],
+           body: %{
+             op: :runtime_call,
+             function: "elmc_js_array_slice",
+             args: [
+               %{op: :var, name: "__from"},
+               %{op: :var, name: "__to"},
+               %{op: :var, name: "__a"}
+             ]
+           }
+         }}
+
+      {"JsArray.appendN", [n, dest, source]} ->
+        runtime3("elmc_js_array_append_n", [n, dest, source])
+
+      {"JsArray.appendN", [n, dest]} ->
+        curried("elmc_js_array_append_n", [n, dest], "__src")
+
+      {"JsArray.appendN", [n]} ->
+        {:ok,
+         %{
+           op: :lambda,
+           args: ["__dest"],
+           body: %{
+             op: :lambda,
+             args: ["__src"],
+             body: %{
+               op: :runtime_call,
+               function: "elmc_js_array_append_n",
+               args: [n, %{op: :var, name: "__dest"}, %{op: :var, name: "__src"}]
+             }
+           }
+         }}
+
+      {"JsArray.appendN", []} ->
+        {:ok,
+         %{
+           op: :lambda,
+           args: ["__n", "__dest", "__src"],
+           body: %{
+             op: :runtime_call,
+             function: "elmc_js_array_append_n",
+             args: [
+               %{op: :var, name: "__n"},
+               %{op: :var, name: "__dest"},
+               %{op: :var, name: "__src"}
+             ]
+           }
+         }}
+
       _ ->
         Elmx.Backend.QualifiedPartials.rewrite(target, args)
     end
   end
+
+  @spec unary_bound_task(integer(), [String.t()], Types.elm_value()) :: Types.elm_value()
 
   defp unary_bound_task(function, fixed_args, param) do
     {:ok,
@@ -473,6 +873,8 @@ defmodule Elmx.Backend.QualifiedRewrite do
        }
      }}
   end
+
+  @spec platform_send_stub_lambda(Types.elm_value()) :: Types.elm_value()
 
   defp platform_send_stub_lambda(1) do
     {:ok,
@@ -502,12 +904,16 @@ defmodule Elmx.Backend.QualifiedRewrite do
 
   # Elm operators often lower as `Elm.Kernel.Basics.*` / `Elm.Kernel.Utils.*` qualified calls.
   # Emit already handles the `__add__` / `__eq__` family via `:call` nodes.
+  @spec operator_call_rewrite(String.t(), list()) :: Types.elm_value()
+
   defp operator_call_rewrite(target, args) when is_binary(target) and is_list(args) do
     case operator_call_name(target) do
       nil -> :error
       name -> {:ok, %{op: :call, name: name, args: args}}
     end
   end
+
+  @spec operator_call_name(Types.elm_value() | term()) :: Types.elm_value()
 
   defp operator_call_name("Basics.add"), do: "__add__"
   defp operator_call_name("Basics.sub"), do: "__sub__"
@@ -532,8 +938,12 @@ defmodule Elmx.Backend.QualifiedRewrite do
   defp operator_call_name(_), do: nil
 
   # Comparisons / append live under Utils in Kernel IR; emit clauses use Basics.*.
+  @spec denormalize_utils_alias(Types.elm_value() | String.t()) :: Types.elm_value()
+
   defp denormalize_utils_alias("Utils.compare"), do: "Basics.compare"
   defp denormalize_utils_alias(target), do: target
+
+  @spec curried(integer(), [String.t()], Types.elm_value()) :: Types.elm_value()
 
   defp curried(function, fixed_args, param) do
     {:ok,
@@ -548,21 +958,31 @@ defmodule Elmx.Backend.QualifiedRewrite do
      }}
   end
 
+  @spec runtime2(integer(), [String.t()]) :: Types.elm_value()
+
   defp runtime2(function, args) do
     {:ok, %{op: :runtime_call, function: function, args: args}}
   end
+
+  @spec runtime3(integer(), [String.t()]) :: Types.elm_value()
 
   defp runtime3(function, args) do
     {:ok, %{op: :runtime_call, function: function, args: args}}
   end
 
+  @spec runtime4(integer(), [String.t()]) :: Types.elm_value()
+
   defp runtime4(function, args) do
     {:ok, %{op: :runtime_call, function: function, args: args}}
   end
 
+  @spec runtime5(integer(), [String.t()]) :: Types.elm_value()
+
   defp runtime5(function, args) do
     {:ok, %{op: :runtime_call, function: function, args: args}}
   end
+
+  @spec runtime6(integer(), [String.t()]) :: Types.elm_value()
 
   defp runtime6(function, args) do
     {:ok, %{op: :runtime_call, function: function, args: args}}
@@ -607,10 +1027,12 @@ defmodule Elmx.Backend.QualifiedRewrite do
     "encodeNull" => "Json.Encode.null"
   }
 
+  @spec denormalize_kernel_shorthand(Types.elm_value() | String.t()) :: Types.elm_value()
+
   defp denormalize_kernel_shorthand("Elm.Kernel." <> rest) do
     case String.split(rest, ".", parts: 2) do
       ["JsArray", name] ->
-        "Array." <> name
+        "JsArray." <> name
 
       ["Json", name] ->
         Map.get(@kernel_json_to_decode, name, "Elm.Kernel.Json." <> name)
@@ -628,4 +1050,10 @@ defmodule Elmx.Backend.QualifiedRewrite do
   end
 
   defp denormalize_kernel_shorthand(target), do: target
+  # elm/core `Elm.JsArray` is a thin alias over Kernel.JsArray; rewrite as JsArray.*.
+  @spec denormalize_elm_js_array(String.t()) :: String.t()
+
+  defp denormalize_elm_js_array("Elm.JsArray." <> name), do: "JsArray." <> name
+  defp denormalize_elm_js_array(target), do: target
+
 end

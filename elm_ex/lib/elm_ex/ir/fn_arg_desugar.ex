@@ -7,6 +7,8 @@ defmodule ElmEx.IR.FnArgDesugar do
   the expression parser; function decls did not. Rewrite once here so every
   backend sees C-/Elixir-safe param names and pattern bindings in the body.
   """
+  alias ElmEx.IR.Types, as: Types
+
 
   alias ElmEx.Frontend.GeneratedExpressionParser
 
@@ -41,6 +43,8 @@ defmodule ElmEx.IR.FnArgDesugar do
     {names, body}
   end
 
+  @spec classify(String.t() | term()) :: Types.expr()
+
   defp classify(arg) when is_binary(arg) do
     trimmed = String.trim(arg)
     stripped = strip_outer_parens(trimmed)
@@ -70,6 +74,8 @@ defmodule ElmEx.IR.FnArgDesugar do
 
   defp classify(_), do: {:simple, "arg"}
 
+  @spec parse_pattern(String.t()) :: Types.expr()
+
   defp parse_pattern(source) when is_binary(source) do
     # Subject must not contain `_` — the expr lexer treats `_…` as wildcards
     # (`__fnArg` fails; `elmxArg` / `fnArg` parse cleanly).
@@ -82,6 +88,8 @@ defmodule ElmEx.IR.FnArgDesugar do
     end
   end
 
+  @spec wrap_case(String.t(), map(), map()) :: Types.expr()
+
   defp wrap_case(name, pattern, body) when is_binary(name) and is_map(pattern) and is_map(body) do
     %{
       op: :case,
@@ -90,16 +98,24 @@ defmodule ElmEx.IR.FnArgDesugar do
     }
   end
 
+  @spec pattern_arg_name(Types.expr() | integer()) :: Types.expr()
+
   defp pattern_arg_name(1), do: "patternArg"
   defp pattern_arg_name(n) when is_integer(n), do: "patternArg#{n}"
 
+  @spec ignored_arg_name(Types.expr() | integer()) :: Types.expr()
+
   defp ignored_arg_name(1), do: "ignoredArg"
   defp ignored_arg_name(n) when is_integer(n), do: "ignoredArg#{n}"
+
+  @spec simple_ident?(String.t()) :: boolean()
 
   defp simple_ident?(name) when is_binary(name),
     do: Regex.match?(~r/^[A-Za-z_][A-Za-z0-9_']*$/, name)
 
   # Last-resort: keep a C-/Elixir-safe token if pattern parse fails.
+  @spec sanitize_fallback(String.t()) :: Types.expr()
+
   defp sanitize_fallback(name) when is_binary(name) do
     cleaned =
       name
@@ -113,6 +129,8 @@ defmodule ElmEx.IR.FnArgDesugar do
     end
   end
 
+  @spec strip_outer_parens(String.t()) :: Types.expr()
+
   defp strip_outer_parens(text) when is_binary(text) do
     trimmed = String.trim(text)
 
@@ -125,6 +143,8 @@ defmodule ElmEx.IR.FnArgDesugar do
       trimmed
     end
   end
+
+  @spec outer_parens_wrap_all?(String.t()) :: boolean()
 
   defp outer_parens_wrap_all?(text) when is_binary(text) do
     graphemes = String.graphemes(text)

@@ -1,5 +1,7 @@
 defmodule Elmc.Backend.CCodegen.ResourceSlotMacros do
   @moduledoc false
+  alias Elmc.Backend.CCodegen.Types, as: Types
+
 
   alias Elmc.Backend.CCodegen.Types
   alias Elmc.Backend.CCodegen.Util
@@ -37,6 +39,8 @@ defmodule Elmc.Backend.CCodegen.ResourceSlotMacros do
     "ELMC_RESOURCE_SLOT_#{suffix}"
   end
 
+  @spec slot_map(map()) :: Types.ir_expr()
+
   defp slot_map do
     Enum.reduce(
       [
@@ -63,6 +67,8 @@ defmodule Elmc.Backend.CCodegen.ResourceSlotMacros do
     |> Map.merge(IRQueries.pebble_animation_resource_slot_map(ir))
     |> Map.merge(IRQueries.pebble_font_resource_slot_map(ir))
   end
+
+  @spec short_ctor_name(String.t()) :: Types.ir_expr()
 
   defp short_ctor_name(ctor) when is_binary(ctor) do
     ctor |> String.split(".") |> List.last()

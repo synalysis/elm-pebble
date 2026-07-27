@@ -1,5 +1,7 @@
 defmodule Elmc.Backend.Pebble.CEmit do
   @moduledoc false
+  alias Elmc.Types, as: Types
+
 
   alias Elmc.Backend.Pebble.{Types, Util}
 

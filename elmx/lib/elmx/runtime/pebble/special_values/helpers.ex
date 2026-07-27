@@ -1,5 +1,7 @@
 defmodule Elmx.Runtime.Pebble.SpecialValues.Helpers do
   @moduledoc false
+  alias Elmx.Types, as: Types
+
 
   alias Elmx.Runtime.Pebble.KernelTargets
   alias Elmx.Runtime.Pebble.Subscriptions
@@ -109,6 +111,8 @@ defmodule Elmx.Runtime.Pebble.SpecialValues.Helpers do
   @spec string_literal_ir(String.t()) :: Types.ir_expr()
   def string_literal_ir(value) when is_binary(value), do: %{op: :string_literal, value: value}
 
+  @spec phone_request_envelope_ir(map() | term()) :: Types.elm_value()
+
   defp phone_request_envelope_ir(%{op: :qualified_call, target: target, args: req_args})
        when target in [
               "Pebble.Companion.Phone.request",
@@ -140,8 +144,12 @@ defmodule Elmx.Runtime.Pebble.SpecialValues.Helpers do
 
   defp phone_request_envelope_ir(_), do: :error
 
+  @spec string_literal_ir_value(map() | term()) :: Types.elm_value()
+
   defp string_literal_ir_value(%{op: :string_literal, value: value}) when is_binary(value), do: {:ok, value}
   defp string_literal_ir_value(_), do: :error
+
+  @spec command_envelope_record(Types.elm_value(), integer(), atom(), Types.elm_value()) :: Types.elm_value()
 
   defp command_envelope_record(id, api, op, payload)
        when is_binary(id) and is_binary(api) and is_binary(op) do
@@ -156,11 +164,17 @@ defmodule Elmx.Runtime.Pebble.SpecialValues.Helpers do
     }
   end
 
+  @spec empty_payload_record() :: Types.elm_value()
+
   defp empty_payload_record, do: %{op: :record_literal, fields: []}
+
+  @spec companion_bridge_callback(list()) :: Types.elm_value()
 
   defp companion_bridge_callback(args) when is_list(args) do
     args |> List.last() |> companion_bridge_callback_arg()
   end
+
+  @spec companion_bridge_callback_arg(map() | String.t() | term()) :: Types.elm_value()
 
   defp companion_bridge_callback_arg(%{op: :compose_left, f: f, g: _g}) do
     companion_bridge_callback_arg(f)
@@ -189,6 +203,8 @@ defmodule Elmx.Runtime.Pebble.SpecialValues.Helpers do
 
   defp companion_bridge_callback_arg(callback) when is_binary(callback), do: string_literal_ir(callback)
   defp companion_bridge_callback_arg(_), do: string_literal_ir("Unknown")
+
+  @spec union_ctor_short_name(String.t()) :: Types.elm_value()
 
   defp union_ctor_short_name(qualified) when is_binary(qualified) do
     qualified |> String.split(".") |> List.last()

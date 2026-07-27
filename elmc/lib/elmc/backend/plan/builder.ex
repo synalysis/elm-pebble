@@ -2,6 +2,8 @@ defmodule Elmc.Backend.Plan.Builder do
   @moduledoc """
   Append-only builder for `%FunctionPlan{}` during lowering.
   """
+  alias Elmc.Backend.Plan.Types, as: Types
+
 
   alias Elmc.Backend.Plan.Types
   alias Elmc.Backend.Plan.Types.{Block, FunctionPlan, Param}
@@ -126,7 +128,7 @@ defmodule Elmc.Backend.Plan.Builder do
       span: Keyword.get(opts, :span)
     }
 
-    current = %{b.current_block | instrs: b.current_block.instrs ++ [instr]}
+    current = %{b.current_block | instrs: [instr | b.current_block.instrs]}
 
     result_dest =
       case {op, dest} do
@@ -144,10 +146,16 @@ defmodule Elmc.Backend.Plan.Builder do
     {reg, b1} = fresh_reg(b)
 
     args =
-      case Keyword.get(opts, :union_ctor) do
-        ctor when is_binary(ctor) -> %{value: value, union_ctor: ctor}
-        _ -> %{value: value}
-      end
+      %{value: value}
+      |> then(fn base ->
+        case Keyword.get(opts, :union_ctor) do
+          ctor when is_binary(ctor) -> Map.put(base, :union_ctor, ctor)
+          _ -> base
+        end
+      end)
+      |> then(fn base ->
+        if Keyword.get(opts, :bool_lit, false), do: Map.put(base, :bool_lit, true), else: base
+      end)
 
     {_, b2} =
       emit(b1, :const_int, %{
@@ -390,9 +398,9 @@ defmodule Elmc.Backend.Plan.Builder do
   end
 
   defp find_view_peel_retain_instr(b, src_reg) do
+    # Instrs are stored newest-first during building; first match is most recent.
     b.current_block.instrs
     |> Enum.with_index()
-    |> Enum.reverse()
     |> Enum.find_value(fn
       {%{
          op: :call_runtime,
@@ -583,10 +591,10 @@ defmodule Elmc.Backend.Plan.Builder do
 
   @spec finish_block(t(), Block.terminator()) :: t()
   def finish_block(b, terminator) do
-    finished = %{b.current_block | terminator: terminator}
+    finished = seal_block_instrs(%{b.current_block | terminator: terminator})
     next_id = skip_reserved(b.next_block, b.pending_merge_block)
     next = %Block{id: next_id, instrs: [], terminator: :none}
-    %{b | blocks: b.blocks ++ [finished], current_block: next, next_block: next_id + 1}
+    %{b | blocks: [finished | b.blocks], current_block: next, next_block: next_id + 1}
   end
 
   @doc false
@@ -671,11 +679,8 @@ defmodule Elmc.Backend.Plan.Builder do
 
   @spec to_function_plan(t()) :: FunctionPlan.t()
   def to_function_plan(b) do
-    blocks =
-      case b.current_block.terminator do
-        :none -> b.blocks ++ [b.current_block]
-        _ -> b.blocks ++ [b.current_block]
-      end
+    sealed_current = seal_block_instrs(b.current_block)
+    blocks = Enum.reverse([sealed_current | b.blocks])
 
     %FunctionPlan{
       module: b.module,
@@ -693,6 +698,11 @@ defmodule Elmc.Backend.Plan.Builder do
       letrec_refs: b.letrec_refs || []
     }
   end
+
+  # Instrs / finished blocks are stored newest-first for O(1) append during
+  # lowering; seal reverses to chronological order for backends.
+  defp seal_block_instrs(%Block{instrs: instrs} = block),
+    do: %{block | instrs: Enum.reverse(instrs)}
 
   @spec declare_letrec(t(), String.t()) :: {String.t(), t()}
   def declare_letrec(b, name) when is_binary(name) do

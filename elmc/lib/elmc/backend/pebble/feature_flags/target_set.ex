@@ -1,5 +1,7 @@
 defmodule Elmc.Backend.Pebble.FeatureFlags.TargetSet do
   @moduledoc false
+  alias Elmc.Types, as: Types
+
 
   alias Elmc.Backend.Pebble.Types
 

@@ -1,5 +1,7 @@
 defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Values do
   @moduledoc false
+  alias Elmc.Backend.CCodegen.Types, as: Types
+
 
   alias Elmc.Backend.CCodegen.DirectRender.Emit.Release
   alias Elmc.Backend.CCodegen.EnvBindings
@@ -183,8 +185,12 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Values do
 
   def int_value(expr, env, counter), do: runtime_int_value(expr, env, counter)
 
+  @spec hoisted_c_int_literal?(integer()) :: boolean()
+
   defp hoisted_c_int_literal?(value),
     do: String.contains?(value, ["ELMC_TEXT", "<<", "+"])
+
+  @spec resource_slot_int_value(String.t(), Types.compile_env(), Types.ir_expr()) :: Types.ir_expr()
 
   defp resource_slot_int_value(target, env, counter) when is_binary(target) do
     if Host.resource_union_constructor?(target, []) do
@@ -193,6 +199,8 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Values do
       runtime_int_value(%{op: :qualified_ref, target: target}, env, counter)
     end
   end
+
+  @spec int_value_qualified_zero_arg(String.t(), Types.compile_env(), Types.ir_expr()) :: Types.ir_expr()
 
   defp int_value_qualified_zero_arg(target, env, counter) when is_binary(target) do
     case Host.special_value_from_target(target, []) do
@@ -210,6 +218,8 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Values do
     end
   end
 
+  @spec int_hoistable_zero_arg_call?(map() | term(), Types.compile_env()) :: boolean()
+
   defp int_hoistable_zero_arg_call?(%{op: :call, args: []}, env),
     do: Host.hoisted_native_ints_enabled?(env)
 
@@ -221,6 +231,8 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Values do
   end
 
   defp int_hoistable_zero_arg_call?(_, _env), do: false
+
+  @spec int_hoisted_zero_arg_value(Types.expr(), Types.compile_env(), Types.ir_expr()) :: Types.ir_expr()
 
   defp int_hoisted_zero_arg_value(expr, env, counter) do
     case Host.hoisted_native_int_lookup(env, expr) do
@@ -250,6 +262,8 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Values do
     end
   end
 
+  @spec resolve_local_zero_arg_let_call(map() | term(), Types.compile_env() | term()) :: Types.ir_expr()
+
   defp resolve_local_zero_arg_let_call(%{op: :call, name: name, args: args}, env)
        when is_binary(name) and args in [[], nil] do
     resolve_local_zero_arg_let_name(name, env)
@@ -265,6 +279,8 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Values do
 
   defp resolve_local_zero_arg_let_call(_, _), do: :error
 
+  @spec resolve_local_zero_arg_let_name(String.t(), Types.compile_env()) :: Types.ir_expr()
+
   defp resolve_local_zero_arg_let_name(name, env) do
     module_name = Map.get(env, :__module__, "Main")
     decl_map = Map.get(env, :__program_decls__, %{})
@@ -279,6 +295,8 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Values do
     end
   end
 
+  @spec inline_zero_arg_native_int_call(Types.expr(), Types.compile_env(), Types.ir_expr()) :: Types.ir_expr()
+
   defp inline_zero_arg_native_int_call(expr, env, counter) do
     case zero_arg_native_int_call_target_key(expr, env) do
       target_key when not is_nil(target_key) ->
@@ -288,6 +306,8 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Values do
         :error
     end
   end
+
+  @spec zero_arg_native_int_call_target_key(map() | term(), Types.compile_env() | term()) :: Types.ir_expr()
 
   defp zero_arg_native_int_call_target_key(%{op: :call, name: name, args: []}, env)
        when is_binary(name) do
@@ -467,6 +487,8 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Values do
 
   defp int_builtin(_name, _args, _env, _counter), do: :error
 
+  @spec static_nonzero_int_value(Types.expr(), Types.compile_env()) :: Types.ir_expr()
+
   defp static_nonzero_int_value(expr, env) do
     case Elmc.Backend.CCodegen.ConstantInt.literal_value(expr, env) do
       {:ok, value} when is_integer(value) and value != 0 -> value
@@ -474,12 +496,16 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Values do
     end
   end
 
+  @spec parse_compile_time_int_ref(String.t()) :: Types.ir_expr()
+
   defp parse_compile_time_int_ref(ref) when is_binary(ref) do
     case Util.parse_compile_time_int_ref(ref) do
       value when is_integer(value) and value != 0 -> value
       _ -> nil
     end
   end
+
+  @spec int_min_max_builtin(String.t(), Types.expr(), Types.expr(), Types.compile_env(), Types.ir_expr()) :: Types.ir_expr()
 
   defp int_min_max_builtin(name, left, right, env, counter) do
     expr = %{op: :call, name: name, args: [left, right]}
@@ -492,6 +518,8 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Values do
       int_min_max(left, right, op, env, counter)
     end
   end
+
+  @spec int_min_max(Types.expr(), Types.expr(), atom(), Types.compile_env(), Types.ir_expr()) :: Types.ir_expr()
 
   defp int_min_max(left, right, op, env, counter) do
     {left_code, left_value, counter} = int_value(left, env, counter)
@@ -563,6 +591,8 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Values do
   end
 
   defp zero_arg_native_int_call?(_, _), do: false
+
+  @spec zero_arg_declared_int_function?(String.t(), Types.compile_env()) :: boolean()
 
   defp zero_arg_declared_int_function?(target_key, env) do
     case Map.get(Map.get(env, :__program_decls__, %{}), target_key) do

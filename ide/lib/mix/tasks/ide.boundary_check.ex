@@ -26,6 +26,8 @@ defmodule Mix.Tasks.Ide.BoundaryCheck do
   ]
 
   @impl Mix.Task
+  @spec run([String.t()]) :: term()
+
   def run(_args) do
     root = File.cwd!()
 
@@ -34,6 +36,8 @@ defmodule Mix.Tasks.Ide.BoundaryCheck do
     check_stale_watch_model_reads!(root)
     Mix.shell().info("Debugger boundary checks passed.")
   end
+
+  @spec check_elm_introspect_access!(term()) :: term()
 
   defp check_elm_introspect_access!(root) do
     lib_root = Path.join(root, "lib")
@@ -55,6 +59,8 @@ defmodule Mix.Tasks.Ide.BoundaryCheck do
     end)
   end
 
+  @spec check_stale_watch_model_reads!(term()) :: term()
+
   defp check_stale_watch_model_reads!(root) do
     lib_root = Path.join(root, "lib")
 
@@ -73,6 +79,8 @@ defmodule Mix.Tasks.Ide.BoundaryCheck do
       end
     end)
   end
+
+  @spec check_elm_introspect_analyze_calls!(term()) :: term()
 
   defp check_elm_introspect_analyze_calls!(root) do
     lib_root = Path.join(root, "lib")
@@ -95,15 +103,21 @@ defmodule Mix.Tasks.Ide.BoundaryCheck do
     end)
   end
 
+  @spec allowed_elm_introspect_file?(String.t()) :: boolean()
+
   defp allowed_elm_introspect_file?(path) do
     Enum.any?(@allowed_elm_introspect_files, &String.ends_with?(path, &1))
   end
+
+  @spec allowed_elm_introspect_analyze_file?(String.t()) :: boolean()
 
   defp allowed_elm_introspect_analyze_file?(path) do
     allowed_elm_introspect_file?(path) or
       String.contains?(path, "/test/") or
       String.ends_with?(path, "contract_test_support.ex")
   end
+
+  @spec allowed_stale_model_file?(String.t()) :: boolean()
 
   defp allowed_stale_model_file?(path) do
     Enum.any?(@allowed_stale_model_patterns, &String.ends_with?(path, &1))

@@ -4,6 +4,8 @@ defmodule Elmx.Runtime.Handler do
 
   Emits `CodegenRefs.module_ref/1` paths so Intrinsics and Pebble registries stay aligned.
   """
+  alias Elmx.Types, as: Types
+
 
   alias Elmx.Runtime.CodegenRefs
   alias Elmx.Types

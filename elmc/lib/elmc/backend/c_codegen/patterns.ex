@@ -1,5 +1,7 @@
 defmodule Elmc.Backend.CCodegen.Patterns do
   @moduledoc false
+  alias Elmc.Backend.CCodegen.Types, as: Types
+
 
   alias Elmc.Backend.CCodegen.EnvBindings
   alias Elmc.Backend.CCodegen.Expr

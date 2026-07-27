@@ -1,6 +1,7 @@
 defmodule Ide.Debugger.BytecodeTypes do
   @moduledoc false
 
+
   alias Elmc.Backend.Bytecode.Runtime
 
   @type function_entry :: %{

@@ -1072,7 +1072,23 @@ defmodule Elmc.CCodegenPatternsTest do
 
     main : Int
     main =
-        0 |> add1 |> add1 |> add1 |> add1 |> add1
+        0
+            |> add1
+            |> add1
+            |> add1
+            |> add1
+            |> add1
+            |> add1
+            |> add1
+            |> add1
+            |> add1
+            |> add1
+            |> add1
+            |> add1
+            |> add1
+            |> add1
+            |> add1
+            |> add1
 
     """
 
@@ -1093,7 +1109,8 @@ defmodule Elmc.CCodegenPatternsTest do
 
     main_body = fn_body!(generated_c, "main")
     assert_plan_lowered!(main_body)
-    assert main_body =~ "elmc_fn_Main_add1(" or main_body =~ "plan block"
+    assert main_body =~ "for (elmc_int_t pipe_i_"
+    assert main_body =~ "elmc_fn_Main_add1("
   end
 
   test "native int minus List.length uses cursor count without boxing length" do
@@ -5590,8 +5607,17 @@ defmodule Elmc.CCodegenPatternsTest do
     generated_c = compile_generated_c!("rc_tail_rec_owned_base", source, %{})
 
     build_list_fn = fn_body!(generated_c, "buildList")
-    assert_plan_lowered!(build_list_fn)
-    assert build_list_fn =~ "elmc_fn_Main_buildList("
+    # Thin RC wrapper delegates to the fused native helper.
+    assert build_list_fn =~ "elmc_fn_Main_buildList_native("
+
+    native_body = CCodegenExtract.fn_body(generated_c, "elmc_fn_Main_buildList_native")
+    assert native_body =~ "while (1)"
+    assert native_body =~ "*out = tail_result"
+    # Base case moves the owned accumulator into tail_result (nulling the owned
+    # slot) before the epilogue LIFO release.
+    assert native_body =~ "tail_result = owned["
+    assert native_body =~ ~r/tail_result = owned\[\d+\];\s*\n\s*owned\[\d+\] = NULL;/
+    assert native_body =~ "elmc_release_array_lifo(owned,"
   end
 
   test "tail-recursive qualified self calls emit loop instead of broken native inline" do

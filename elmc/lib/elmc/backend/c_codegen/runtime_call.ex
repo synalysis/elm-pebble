@@ -1,5 +1,7 @@
 defmodule Elmc.Backend.CCodegen.RuntimeCall do
   @moduledoc false
+  alias Elmc.Backend.CCodegen.Types, as: Types
+
 
   alias Elmc.Backend.CCodegen.RuntimeCall.Core
   alias Elmc.Backend.CCodegen.RuntimeCall.Dispatcher

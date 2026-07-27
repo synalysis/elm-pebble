@@ -4,6 +4,8 @@ defmodule Elmc.Backend.CCodegen.ReverseFoldlOccupied do
 
   Cell reader and board size vars are resolved from IR/`decl_map`, not by name.
   """
+  alias Elmc.Backend.CCodegen.Types, as: Types
+
 
   alias Elmc.Backend.CCodegen.Types
 
@@ -28,6 +30,8 @@ defmodule Elmc.Backend.CCodegen.ReverseFoldlOccupied do
     end
   end
 
+  @spec parse(map() | term()) :: Types.ir_expr()
+
   defp parse(%{
          op: :qualified_call,
          target: "List.reverse",
@@ -46,6 +50,8 @@ defmodule Elmc.Backend.CCodegen.ReverseFoldlOccupied do
   end
 
   defp parse(_), do: :error
+
+  @spec parse_foldl_lambda(map() | term()) :: Types.ir_expr()
 
   defp parse_foldl_lambda(%{
          op: :lambda,
@@ -75,6 +81,8 @@ defmodule Elmc.Backend.CCodegen.ReverseFoldlOccupied do
 
   defp parse_foldl_lambda(_), do: :error
 
+  @spec flat_index_from_cell_at(map() | term()) :: Types.ir_expr()
+
   defp flat_index_from_cell_at(%{
          op: :qualified_call,
          target: cell_reader,
@@ -94,6 +102,8 @@ defmodule Elmc.Backend.CCodegen.ReverseFoldlOccupied do
 
   defp flat_index_from_cell_at(_), do: :error
 
+  @spec mod_by_cols(map() | term()) :: Types.ir_expr()
+
   defp mod_by_cols(%{
          op: :qualified_call,
          target: target,
@@ -104,6 +114,8 @@ defmodule Elmc.Backend.CCodegen.ReverseFoldlOccupied do
 
   defp mod_by_cols(_), do: :error
 
+  @spec row_from_index_div(map() | term(), Types.ir_expr() | term()) :: Types.ir_expr()
+
   defp row_from_index_div(%{op: :call, name: "__idiv__", args: [%{op: :var, name: "index"}, %{op: :var, name: cols_var}]}, cols_var),
     do: cols_var
 
@@ -111,6 +123,8 @@ defmodule Elmc.Backend.CCodegen.ReverseFoldlOccupied do
     do: cols_var
 
   defp row_from_index_div(_, _), do: false
+
+  @spec range_zero_to_exclusive_upper?(map() | term()) :: boolean()
 
   defp range_zero_to_exclusive_upper?(%{
          op: :qualified_call,
@@ -121,6 +135,8 @@ defmodule Elmc.Backend.CCodegen.ReverseFoldlOccupied do
   end
 
   defp range_zero_to_exclusive_upper?(_), do: :error
+
+  @spec emit(String.t(), String.t(), Types.ir_expr()) :: Types.ir_expr()
 
   defp emit(module_name, name, size) do
     c_prefix = Util.module_fn_name(module_name, name)

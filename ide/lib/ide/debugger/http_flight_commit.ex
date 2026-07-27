@@ -54,6 +54,8 @@ defmodule Ide.Debugger.HttpFlightCommit do
     |> Map.put(:seq, max(session_seq(current), session_seq(applied)))
   end
 
+  @spec merge_changed_surfaces(term(), term(), term()) :: term()
+
   defp merge_changed_surfaces(current, applied, basis)
        when is_map(current) and is_map(applied) and is_map(basis) do
     Enum.reduce(@surfaces, current, fn surface, acc ->
@@ -68,11 +70,15 @@ defmodule Ide.Debugger.HttpFlightCommit do
     end)
   end
 
+  @spec merge_pending_items(term(), term(), term()) :: term()
+
   defp merge_pending_items(current_items, applied_items, basis_items)
        when is_list(current_items) and is_list(applied_items) and is_list(basis_items) do
     new_items = Enum.drop(applied_items, length(basis_items))
     current_items ++ new_items
   end
+
+  @spec merge_app_message_queues(term(), term(), term()) :: term()
 
   defp merge_app_message_queues(current, applied, basis) do
     current_q = Map.get(current, :app_message_queues, %{})
@@ -88,17 +94,25 @@ defmodule Ide.Debugger.HttpFlightCommit do
     end)
   end
 
+  @spec queue_for(map(), term()) :: term()
+
   defp queue_for(queues, surface) when is_map(queues) do
     Map.get(queues, surface) || Map.get(queues, Atom.to_string(surface)) || []
   end
+
+  @spec dbg_seq(map()) :: term()
 
   defp dbg_seq(state) when is_map(state) do
     Map.get(state, :debugger_seq) || Map.get(state, "debugger_seq", 0)
   end
 
+  @spec row_dbg_seq(map() | term()) :: term()
+
   defp row_dbg_seq(%{seq: seq}) when is_integer(seq), do: seq
   defp row_dbg_seq(row) when is_map(row), do: Map.get(row, "seq", 0)
   defp row_dbg_seq(_), do: 0
+
+  @spec session_seq(map() | term()) :: term()
 
   defp session_seq(%{seq: seq}) when is_integer(seq), do: seq
   defp session_seq(state) when is_map(state), do: Map.get(state, :seq, 0)

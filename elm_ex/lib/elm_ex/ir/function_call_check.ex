@@ -1059,6 +1059,8 @@ defmodule ElmEx.IR.FunctionCallCheck do
 
   # Bare references (`Tuple.pair`, `List.map`) keep the full function type so HOFs like
   # `Decode.map2` accept them. Applied calls report the result type.
+  @spec applied_or_value_type(String.t(), term() | list()) :: Types.expr()
+
   defp applied_or_value_type(type, []) when is_binary(type), do: String.trim(type)
 
   defp applied_or_value_type(type, args) when is_binary(type) and is_list(args) do
@@ -1531,6 +1533,8 @@ defmodule ElmEx.IR.FunctionCallCheck do
   defp build_import_resolution(_import_entries, _project_module_exports),
     do: {%{}, %{}, %{}, [], %{}}
 
+  @spec put_alias_binding(term(), String.t(), String.t()) :: Types.expr()
+
   defp put_alias_binding({alias_acc, alias_modules_acc}, alias_name, module_name)
        when is_binary(alias_name) and alias_name != "" and is_binary(module_name) do
     {
@@ -1542,6 +1546,8 @@ defmodule ElmEx.IR.FunctionCallCheck do
   end
 
   defp put_alias_binding(acc, _alias_name, _module_name), do: acc
+
+  @spec build_alias_member_map(String.t() | term(), String.t() | term()) :: Types.expr()
 
   defp build_alias_member_map(alias_modules, project_module_exports)
        when is_map(alias_modules) and is_map(project_module_exports) do

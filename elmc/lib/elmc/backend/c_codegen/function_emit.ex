@@ -1,5 +1,7 @@
 defmodule Elmc.Backend.CCodegen.FunctionEmit do
   @moduledoc false
+  alias Elmc.Backend.CCodegen.Types, as: Types
+
 
   alias Elmc.Backend.CCodegen.DebugProbes
   alias Elmc.Backend.CCodegen.CSource
@@ -102,9 +104,13 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
     end
   end
 
+  @spec emit_argv_wrapper?(Types.decl(), String.t(), Types.decl_map(), boolean()) :: boolean()
+
   defp emit_argv_wrapper?(decl, module_name, decl_map, emit_wrapper?) do
     emit_wrapper? and not FunctionCallAbi.direct_entry_abi?(decl, module_name, decl_map)
   end
+
+  @spec emit_boxed_function_def(Types.decl(), String.t(), String.t(), Types.ir_expr(), Types.decl_map(), boolean()) :: Types.ir_expr()
 
   defp emit_boxed_function_def(
          decl,
@@ -193,28 +199,40 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
     end
   end
 
+  @spec size_fusion_native_first?(keyword(), String.t(), Types.decl(), Types.decl_map()) :: boolean()
+
   defp size_fusion_native_first?(opts, module_name, decl, decl_map) do
     Elmc.Backend.SizeProfile.size?(opts) and
       Fusion.rc_native_fusion?(module_name, decl.name, decl.expr, decl_map)
   end
 
+  @spec plan_primary_emit_mode?(keyword()) :: boolean()
+
   defp plan_primary_emit_mode?(opts) do
     Plan.plan_ir_mode(opts) in [:primary, :shadow]
   end
+
+  @spec plan_primary_body?(Types.decl(), String.t(), Types.decl_map(), keyword()) :: boolean()
 
   defp plan_primary_body?(decl, module_name, decl_map, opts) do
     plan_primary_emit_mode?(opts) and
       Plan.primary_lowered?(decl, module_name, decl_map)
   end
 
+  @spec skip_native_def?(Types.decl(), String.t(), Types.decl_map()) :: boolean()
+
   defp skip_native_def?(decl, module_name, decl_map) do
     skippable_zero_arg_native?(decl, module_name, decl_map)
   end
+
+  @spec emit_native_prototype?(Types.decl(), String.t(), Types.decl_map()) :: boolean()
 
   defp emit_native_prototype?(decl, module_name, decl_map) do
     emit_native_function?(decl, module_name, decl_map) or
       not skippable_zero_arg_native?(decl, module_name, decl_map)
   end
+
+  @spec skippable_zero_arg_native?(Types.decl(), String.t(), Types.decl_map()) :: boolean()
 
   defp skippable_zero_arg_native?(decl, module_name, decl_map) do
     (decl.args || []) == [] and
@@ -224,6 +242,8 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
       NativeFunctionCall.return_kind(decl, module_name, decl_map) in [:native_int, :native_bool] and
       native_zero_arg_literal_body?(decl, module_name, decl_map)
   end
+
+  @spec native_zero_arg_literal_body?(Types.decl(), String.t(), Types.decl_map()) :: boolean()
 
   defp native_zero_arg_literal_body?(decl, module_name, decl_map) do
     case decl do
@@ -245,6 +265,8 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
         false
     end
   end
+
+  @spec emit_native_function?(Types.decl(), String.t(), Types.decl_map()) :: boolean()
 
   defp emit_native_function?(decl, module_name, decl_map) do
     not skip_native_def?(decl, module_name, decl_map)
@@ -273,11 +295,14 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
         "ElmcValue ** const args, const int argc"
       end
 
-    case params do
+    case String.trim(params) do
+      "" -> "ElmcValue **out"
       "void" -> "ElmcValue **out"
       other -> "ElmcValue **out, #{other}"
     end
   end
+
+  @spec native_rc_function_params(boolean(), Types.decl(), String.t(), Types.decl_map(), Types.ir_expr()) :: Types.ir_expr()
 
   defp native_rc_function_params(direct_args?, decl, module_name, decl_map, native_ret) do
     out = NativeReturn.c_out_type(native_ret)
@@ -289,7 +314,8 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
         "ElmcValue ** const args, const int argc"
       end
 
-    case params do
+    case String.trim(params) do
+      "" -> out
       "void" -> out
       other -> out <> ", " <> other
     end
@@ -329,16 +355,34 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
       bindings ->
         kinds = NativeFunctionCall.arg_kinds(effective, module_name, decl_map)
 
+        # Port / body-less decls can report empty arg_kinds while still having
+        # effective args from the type — default those params to boxed.
+        kinds =
+          if length(kinds) < length(bindings) do
+            bindings
+            |> Enum.with_index()
+            |> Enum.map(fn {_b, idx} -> Enum.at(kinds, idx, :boxed) end)
+          else
+            kinds
+          end
+
         bindings
         |> Enum.zip(kinds)
         |> Enum.map_join(", ", fn {{_arg, c_arg, _index}, kind} ->
           case kind do
             :native_int -> "elmc_int_t #{c_arg}"
             :native_bool -> "bool #{c_arg}"
-            :boxed -> "ElmcValue *#{c_arg}"
+            _ -> "ElmcValue *#{c_arg}"
           end
         end)
     end
+  end
+
+  defp unused_direct_param_casts(decl, module_name, decl_map) do
+    decl
+    |> effective_decl_args(module_name, decl_map)
+    |> c_arg_bindings()
+    |> Enum.map_join("", fn {_arg, c_arg, _idx} -> "(void)#{c_arg}; " end)
   end
 
   @doc false
@@ -371,6 +415,8 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
     end
   end
 
+  @spec lambda_or_thunk_body?(map() | term()) :: boolean()
+
   defp lambda_or_thunk_body?(%{op: :lambda}), do: true
   defp lambda_or_thunk_body?(%{op: :constructor_call}), do: true
   defp lambda_or_thunk_body?(%{op: :partial_constructor}), do: true
@@ -381,6 +427,8 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
   defp lambda_or_thunk_body?(%{op: op, body: body}) when op in [:let, :letrec], do: lambda_or_thunk_body?(body)
   defp lambda_or_thunk_body?(%{op: :let_in, in_expr: body}), do: lambda_or_thunk_body?(body)
   defp lambda_or_thunk_body?(_), do: false
+
+  @spec type_param_names(String.t() | term()) :: Types.ir_expr()
 
   defp type_param_names(type) when is_binary(type) do
     case TypeParsing.function_arg_types(type) do
@@ -402,6 +450,8 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
       _ -> 0
     end
   end
+
+  @spec delegate_param_names(map() | term(), String.t() | term(), Types.decl_map() | term()) :: Types.ir_expr()
 
   defp delegate_param_names(
          %{expr: %{op: :qualified_call, target: target, args: []}} = decl,
@@ -442,6 +492,8 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
 
   defp delegate_param_names(_, _, _), do: nil
 
+  @spec html_map_delegate_param_names(Types.ir_expr() | term(), map() | term()) :: Types.ir_expr()
+
   defp html_map_delegate_param_names("map", %{expr: %{op: :qualified_call, target: target, args: []}})
        when target in ["VirtualDom.map", "Elm.Kernel.VirtualDom.map", "Html.map"],
        do: ["func", "node"]
@@ -450,6 +502,8 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
        do: ["func", "node"]
 
   defp html_map_delegate_param_names(_, _), do: nil
+
+  @spec delegate_var_param_names(String.t(), String.t(), Types.decl_map()) :: Types.ir_expr()
 
   defp delegate_var_param_names(module_name, name, decl_map) do
     case Map.fetch(decl_map, {module_name, name}) do
@@ -474,6 +528,8 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
   end
 
   def delegate_call_target(_, _, _), do: nil
+
+  @spec delegate_expr_target(map() | term(), String.t() | term(), Types.decl_map() | term()) :: Types.ir_expr()
 
   defp delegate_expr_target(%{expr: %{op: :qualified_call, target: target, args: []}}, module_name, decl_map) do
     ctx = %{module: module_name, decl_map: decl_map}
@@ -568,9 +624,13 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
     end
   end
 
+  @spec worker_rc_abi?(boolean(), String.t(), String.t(), Types.decl_map()) :: boolean()
+
   defp worker_rc_abi?(emit_wrapper?, module_name, decl_name, decl_map) do
     emit_wrapper? or RcRequired.platform_worker_rc_abi?(module_name, decl_name, decl_map)
   end
+
+  @spec generic_helper_defs() :: Types.ir_expr()
 
   defp generic_helper_defs do
     :elmc_generic_helper_defs
@@ -582,6 +642,8 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
       defs -> defs <> "\n"
     end
   end
+
+  @spec store_generic_helper_c(String.t()) :: Types.ir_expr()
 
   defp store_generic_helper_c(helper_c) when is_binary(helper_c) do
     Process.put(
@@ -605,12 +667,24 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
         direct_args? \\ false
       )
 
-  def emit_body(%{expr: nil} = decl, module_name, _function_arities, _decl_map, _direct_args?) do
+  def emit_body(%{expr: nil} = decl, module_name, _function_arities, decl_map, direct_args?) do
+    # Port decls and other body-less exports. Prefer direct params (payload/callback)
+    # over argv casts when the ABI is direct — empty `ElmcValue **out, )` is invalid C.
     stub =
-      if RcRequired.rc_required?(module_name, decl.name) do
-        "(void)args; (void)argc; *out = elmc_int_zero(); return RC_SUCCESS;"
-      else
-        "(void)args; (void)argc; return elmc_int_zero();"
+      cond do
+        RcRequired.rc_required?(module_name, decl.name) and not direct_args? ->
+          "(void)args; (void)argc; *out = elmc_int_zero(); return RC_SUCCESS;"
+
+        RcRequired.rc_required?(module_name, decl.name) ->
+          unused = unused_direct_param_casts(decl, module_name, decl_map)
+          "#{unused}*out = elmc_int_zero(); return RC_SUCCESS;"
+
+        not direct_args? ->
+          "(void)args; (void)argc; return elmc_int_zero();"
+
+        true ->
+          unused = unused_direct_param_casts(decl, module_name, decl_map)
+          "#{unused}return elmc_int_zero();"
       end
 
     {"", stub}
@@ -633,6 +707,8 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
       )
     end
   end
+
+  @spec emit_body_immortal_or_boxed(Types.decl(), String.t(), Types.ir_expr(), Types.decl_map(), boolean(), boolean()) :: Types.ir_expr()
 
   defp emit_body_immortal_or_boxed(
          decl,
@@ -667,6 +743,8 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
         {"", emit_boxed_body(decl, module_name, function_arities, decl_map, direct_args?)}
     end
   end
+
+  @spec emit_boxed_body(Types.decl(), String.t(), Types.ir_expr(), Types.decl_map(), boolean()) :: Types.ir_expr()
 
   defp emit_boxed_body(decl, module_name, _function_arities, decl_map, direct_args?) do
     rc_required? = RcRequired.rc_required?(module_name, decl.name)
@@ -726,6 +804,8 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
     end
   end
 
+  @spec emit_plan_lowering_gap_body(Types.decl(), String.t(), Types.decl_map(), boolean(), boolean()) :: Types.ir_expr()
+
   defp emit_plan_lowering_gap_body(decl, module_name, decl_map, rc_required?, direct_args?) do
     native_ret = NativeReturn.cached_kind({module_name, decl.name})
     value_return? = NativeReturn.value_return?({module_name, decl.name})
@@ -760,6 +840,8 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
     end
   end
 
+  @spec record_plan_primary_fallback(String.t(), String.t()) :: Types.ir_expr()
+
   defp record_plan_primary_fallback(module_name, fun_name)
        when is_binary(module_name) and is_binary(fun_name) do
     key = :elmc_plan_primary_fallbacks
@@ -773,6 +855,8 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
     Process.put(key, fallbacks)
     :ok
   end
+
+  @spec maybe_emit_primary_plan_body(Types.decl(), String.t(), Types.decl_map(), Types.ir_expr(), Types.ir_expr(), boolean(), boolean(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr() | nil
 
   defp maybe_emit_primary_plan_body(
          decl,
@@ -788,7 +872,8 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
     opts = Process.get(:elmc_codegen_opts, [])
 
     if plan_primary_emit_mode?(opts) do
-      case Plan.lower_function(decl, module_name, decl_map, rc_required: rc_required?) do
+      lower_result = Plan.lower_function(decl, module_name, decl_map, rc_required: rc_required?)
+      case lower_result do
            {:ok, %{fusion_c: fusion_c, fusion_emit: mode}}
            when is_binary(fusion_c) and fusion_c != "" and mode in [:helper_only, :public_native] ->
           if mode == :helper_only do
@@ -854,6 +939,8 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
       :legacy
     end
   end
+
+  @spec emit_plan_fusion_body(Types.decl(), String.t(), Types.ir_expr(), Types.ir_expr(), boolean(), map() | Types.ir_expr() | integer(), Types.ir_expr(), Types.ir_expr(), boolean()) :: Types.ir_expr()
 
   defp emit_plan_fusion_body(
          decl,
@@ -935,6 +1022,8 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
        ),
        do: ""
 
+  @spec emit_fused_native_int_scalar_wrapper_function(Types.decl(), String.t(), Types.ir_expr(), boolean(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), boolean(), integer()) :: Types.ir_expr()
+
   defp emit_fused_native_int_scalar_wrapper_function(
          decl,
          module_name,
@@ -989,13 +1078,19 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
     end
   end
 
+  @spec compile_opts_list(list() | map() | term()) :: Types.ir_expr()
+
   defp compile_opts_list(opts) when is_list(opts), do: opts
   defp compile_opts_list(opts) when is_map(opts), do: Map.to_list(opts)
   defp compile_opts_list(_), do: []
 
+  @spec plan_ir_raise?(list() | map() | term()) :: boolean()
+
   defp plan_ir_raise?(opts) when is_list(opts), do: Keyword.get(opts, :plan_ir_raise, false)
   defp plan_ir_raise?(opts) when is_map(opts), do: Map.get(opts, :plan_ir_raise, false)
   defp plan_ir_raise?(_), do: false
+
+  @spec maybe_hoist_record_gets(String.t()) :: Types.ir_expr() | nil
 
   defp maybe_hoist_record_gets(body) when is_binary(body) do
     opts = Process.get(:elmc_codegen_opts, %{})
@@ -1006,6 +1101,8 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
       body
     end
   end
+
+  @spec insert_plan_result_probe(Types.expr() | String.t(), Types.ir_expr() | String.t()) :: Types.ir_expr()
 
   defp insert_plan_result_probe(body, ""), do: body
 
@@ -1019,6 +1116,8 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
         body
     end
   end
+
+  @spec wrap_rc_function_body(Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), boolean()) :: Types.ir_expr()
 
   defp wrap_rc_function_body(
          arg_bindings,
@@ -1051,19 +1150,27 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
     format_rc_function_body(prefix ++ core ++ suffix)
   end
 
+  @spec rc_body_needs_catch?(String.t()) :: boolean()
+
   defp rc_body_needs_catch?(body_text) when is_binary(body_text) do
     String.contains?(body_text, "CHECK_RC") or
       String.contains?(body_text, "CHECK_RC_TO") or
       String.contains?(body_text, "\nbreak;")
   end
 
+  @spec epilogue_suffix(Types.ir_expr(), String.t(), boolean()) :: Types.ir_expr()
+
   defp epilogue_suffix(failure_cleanup, _body_text, _needs_catch?) do
     if failure_cleanup == "", do: [], else: [failure_cleanup]
   end
 
+  @spec publish_rc_function_out(Types.ir_expr()) :: Types.ir_expr()
+
   defp publish_rc_function_out(result_var) do
     RcRuntimeEmit.publish_function_out_from(result_var)
   end
+
+  @spec format_rc_function_body(Types.ir_expr()) :: Types.ir_expr()
 
   defp format_rc_function_body(parts) do
     parts
@@ -1071,6 +1178,8 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
     |> Enum.join("\n")
     |> CSource.format_block(2)
   end
+
+  @spec arg_binding_code(Types.ir_expr(), boolean()) :: Types.ir_expr()
 
   defp arg_binding_code(arg_bindings, direct_args?) do
     if direct_args? do
@@ -1084,6 +1193,8 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
     end
   end
 
+  @spec wrapper_abi_void_casts(Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+
   defp wrapper_abi_void_casts(true, _arg_bindings), do: ""
 
   defp wrapper_abi_void_casts(false, arg_bindings) when arg_bindings == [] do
@@ -1092,6 +1203,8 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
 
   defp wrapper_abi_void_casts(false, _arg_bindings), do: ""
 
+  @spec format_function_body(Types.ir_expr()) :: Types.ir_expr()
+
   defp format_function_body(parts) do
     parts
     |> List.flatten()
@@ -1099,6 +1212,8 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
     |> Enum.join("\n")
     |> CSource.format_block(2)
   end
+
+  @spec emit_rc_fused_native_wrapper_function(Types.decl(), String.t(), Types.ir_expr(), boolean(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), boolean(), Types.ir_expr()) :: Types.ir_expr()
 
   defp emit_rc_fused_native_wrapper_function(
          decl,
@@ -1189,6 +1304,8 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
     )
   end
 
+  @spec rc_native_fusion_call_args(Types.ir_expr(), Types.ir_expr(), boolean(), String.t(), String.t(), Types.decl(), Types.decl_map()) :: Types.ir_expr()
+
   defp rc_native_fusion_call_args(arg_bindings, kinds, unboxed_in_wrapper?, module_name, _fun_name, decl, decl_map)
        when is_list(kinds) do
     direct_kinds =
@@ -1224,6 +1341,8 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
     |> Enum.join(", ")
   end
 
+  @spec fusion_native_call_arg(Types.ir_expr(), atom(), boolean()) :: Types.ir_expr()
+
   defp fusion_native_call_arg(c_arg, kind, direct_native?) do
     case kind do
       :boxed_int_tag when direct_native? -> c_arg
@@ -1236,16 +1355,22 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
     end
   end
 
+  @spec fusion_wrapper_native_args?(list() | term()) :: boolean()
+
   defp fusion_wrapper_native_args?(kinds) when is_list(kinds) do
     Enum.all?(kinds, &(&1 in [:native_int, :native_bool, :boxed_int_tag]))
   end
 
   defp fusion_wrapper_native_args?(_), do: false
 
+  @spec fusion_wrapper_unboxed_in_wrapper?(Types.decl(), String.t(), Types.decl_map(), Types.ir_expr()) :: boolean()
+
   defp fusion_wrapper_unboxed_in_wrapper?(decl, module_name, decl_map, wrapper_arg_kinds) do
     fusion_wrapper_native_args?(wrapper_arg_kinds) and
       not FunctionCallAbi.direct_entry_abi?(decl, module_name, decl_map)
   end
+
+  @spec fused_native_call_args(map() | Types.decl(), Types.ir_expr(), boolean()) :: Types.ir_expr()
 
   defp fused_native_call_args(%{type: type}, arg_bindings, direct_args?) when is_binary(type) do
     arg_types = Host.function_arg_types(type)
@@ -1269,6 +1394,8 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
     |> Enum.map(fn {_arg, c_arg, _index} -> c_arg end)
     |> Enum.join(", ")
   end
+
+  @spec native_scalar_call_arg(Types.ir_expr(), Types.ir_expr() | atom(), Types.ir_expr() | boolean()) :: Types.ir_expr()
 
   defp native_scalar_call_arg(c_arg, :native_int, true), do: c_arg
   defp native_scalar_call_arg(c_arg, :native_bool, true), do: c_arg
@@ -1328,6 +1455,8 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
     end)
     |> Enum.join("\n")
   end
+
+  @spec rc_native_fusion_proto_params(Types.decl(), list(), String.t()) :: Types.ir_expr()
 
   defp rc_native_fusion_proto_params(decl, kinds, _module_name) when is_list(kinds) do
     arg_bindings = c_arg_bindings(Map.get(decl, :args, []))
@@ -1434,6 +1563,8 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
     |> Enum.join("\n")
   end
 
+  @spec helper_only_fusion_plan?(Types.decl(), String.t(), Types.decl_map()) :: boolean()
+
   defp helper_only_fusion_plan?(decl, module_name, decl_map) do
     opts = Process.get(:elmc_codegen_opts, [])
 
@@ -1464,6 +1595,8 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
       {arg, c_arg, index}
     end)
   end
+
+  @spec c_identifier?(String.t()) :: boolean()
 
   defp c_identifier?(value) when is_binary(value),
     do: Regex.match?(~r/^[A-Za-z_][A-Za-z0-9_]*$/, value)
@@ -1502,6 +1635,8 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
 
   @spec c_reserved_binding_name?(String.t()) :: boolean()
   defp c_reserved_binding_name?(name), do: name in @c_reserved_binding_names
+
+  @spec put_var_type(Types.compile_env(), String.t(), Types.ir_expr()) :: Types.ir_expr()
 
   defp put_var_type(env, name, type), do: EnvBindings.put_var_type(env, name, type)
 
@@ -1720,6 +1855,8 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
     """
   end
 
+  @spec native_boxed_special_emit(String.t(), Types.decl(), Types.decl_map()) :: Types.ir_expr()
+
   defp native_boxed_special_emit(module_name, decl, decl_map) do
     case Fusion.try_emit(module_name, decl.name, decl.expr, decl_map) do
       {:ok, helper_c, callees, :rc_native} -> {:ok, helper_c, callees, :rc_native}
@@ -1728,9 +1865,13 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
     end
   end
 
+  @spec rc_native_fusion?(String.t(), Types.decl(), Types.decl_map()) :: boolean()
+
   defp rc_native_fusion?(module_name, decl, decl_map) do
     Fusion.rc_native_fusion?(module_name, decl.name, decl.expr, decl_map)
   end
+
+  @spec native_wrapper_bindings(Types.ir_expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
 
   defp native_wrapper_bindings(c_arg_bindings, arg_kinds, true) do
     native_wrapper_bindings(c_arg_bindings, arg_kinds, false)
@@ -1755,6 +1896,8 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
       end
     end)
   end
+
+  @spec compile_native_function_body(Types.decl(), String.t(), String.t(), Types.decl_map(), Types.compile_env(), atom(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), boolean()) :: Types.ir_expr()
 
   defp compile_native_function_body(
          decl,
@@ -1833,6 +1976,8 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
     end
   end
 
+  @spec compile_native_function_body_unsplit(Types.decl(), String.t(), String.t(), Types.decl_map(), Types.compile_env(), atom(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+
   defp compile_native_function_body_unsplit(
          decl,
          module_name,
@@ -1908,6 +2053,8 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
 
     {"", native_def}
   end
+
+  @spec wrap_native_boxed_function_body(String.t(), Types.decl(), String.t(), Types.decl_map(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
 
   defp wrap_native_boxed_function_body(
          c_name,
@@ -2018,6 +2165,8 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
     """
   end
 
+  @spec wrap_native_bool_rc_function_body(String.t(), Types.decl(), String.t(), Types.decl_map(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+
   defp wrap_native_bool_rc_function_body(
          c_name,
          decl,
@@ -2104,6 +2253,8 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
     """
   end
 
+  @spec prepare_native_bool_catch_body(String.t(), Types.ir_expr()) :: Types.ir_expr()
+
   defp prepare_native_bool_catch_body(body_text, body_var) do
     body_text =
       body_text
@@ -2135,10 +2286,14 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
     end
   end
 
+  @spec native_bool_result_var?(String.t() | term()) :: boolean()
+
   defp native_bool_result_var?(ref) when is_binary(ref),
     do: Regex.match?(~r/^[A-Za-z_][A-Za-z0-9_]*$/, ref)
 
   defp native_bool_result_var?(_), do: false
+
+  @spec prepare_native_boxed_catch_body(String.t(), Types.ir_expr()) :: Types.ir_expr()
 
   defp prepare_native_boxed_catch_body(body_text, body_var) do
     body_text =
@@ -2149,6 +2304,8 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
     hoist_result_decl(body_text, body_var)
   end
 
+  @spec hoist_result_decl(String.t(), Types.ir_expr()) :: Types.ir_expr()
+
   defp hoist_result_decl(body_text, body_var) do
     if ValueSlots.owned_ref?(body_var) or RcRuntimeEmit.function_out_ref?(body_var) do
       {"", body_text}
@@ -2156,6 +2313,8 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
       hoist_boxed_result_decl(body_text, body_var)
     end
   end
+
+  @spec hoist_boxed_result_decl(String.t(), Types.ir_expr()) :: Types.ir_expr()
 
   defp hoist_boxed_result_decl(body_text, body_var) do
     null_decl = "ElmcValue *#{body_var} = NULL;"
@@ -2172,6 +2331,8 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
         {null_decl, body_text}
     end
   end
+
+  @spec generic_helper_defs_and_clear() :: Types.ir_expr()
 
   defp generic_helper_defs_and_clear do
     defs = generic_helper_defs()
@@ -2235,6 +2396,8 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
     end)
   end
 
+  @spec compile_native_body(Types.decl(), String.t(), Types.decl_map(), Types.compile_env(), atom() | Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+
   defp compile_native_body(decl, module_name, decl_map, env, return_kind, arg_kinds)
        when return_kind in [:native_int, :native_bool] do
     expr = decl.expr || %{op: :int_literal, value: 0}
@@ -2286,6 +2449,8 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
     end
   end
 
+  @spec compile_list_int_search_native(Types.decl(), String.t(), Types.decl_map(), Types.compile_env(), atom()) :: Types.ir_expr()
+
   defp compile_list_int_search_native(decl, module_name, decl_map, env, return_kind) do
     with {:ok, spec} <- ListIntSearch.recognize(decl, module_name, decl_map),
          {:ok, code, result_var} <-
@@ -2302,6 +2467,8 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
     end
   end
 
+  @spec compile_list_int_reduce_native(Types.decl(), String.t(), Types.decl_map(), Types.compile_env(), atom()) :: Types.ir_expr()
+
   defp compile_list_int_reduce_native(decl, module_name, decl_map, env, return_kind) do
     with {:ok, spec} <- ListIntReduce.recognize(decl, module_name, decl_map),
          {:ok, code, result_var} <-
@@ -2312,16 +2479,35 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
     end
   end
 
+  @spec compile_scalar_native_expr(Types.expr(), Types.compile_env(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+
   defp compile_scalar_native_expr(expr, env, :native_int, counter),
     do: NativeInt.compile_expr(expr, env, counter)
 
   defp compile_scalar_native_expr(expr, env, :native_bool, counter),
     do: NativeBool.compile_expr(expr, env, counter)
 
+  @spec compile_tail_recursive_fusion(
+          Types.decl(),
+          String.t(),
+          Types.compile_env(),
+          [atom()],
+          atom()
+        ) :: {:ok, String.t(), String.t()} | :error
+  def compile_tail_recursive_fusion(decl, module_name, env, arg_kinds, return_kind)
+      when return_kind in [:boxed, :native_int, :native_bool] and is_list(arg_kinds) do
+    c_arg_bindings = c_arg_bindings(decl.args || [])
+    compile_tail_recursive(decl, module_name, env, c_arg_bindings, arg_kinds, return_kind)
+  end
+
+  @spec compile_tail_recursive_native(Types.decl(), String.t(), Types.compile_env(), atom(), Types.ir_expr()) :: Types.ir_expr()
+
   defp compile_tail_recursive_native(decl, module_name, env, return_kind, arg_kinds) do
     c_arg_bindings = c_arg_bindings(decl.args || [])
     compile_tail_recursive(decl, module_name, env, c_arg_bindings, arg_kinds, return_kind)
   end
+
+  @spec compile_tail_recursive(Types.decl(), String.t(), Types.compile_env(), Types.ir_expr(), Types.ir_expr(), atom()) :: Types.ir_expr()
 
   defp compile_tail_recursive(decl, module_name, env, arg_bindings, arg_kinds, return_kind) do
     arg_names = decl.args || []
@@ -2350,8 +2536,7 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
               "elmc_int_t #{loop} = #{c_arg};"
 
             {:boxed, "Int"} ->
-              box = boxed_int_loop_name(c_arg)
-              "elmc_int_t #{loop} = elmc_as_int(#{c_arg});\n  ElmcValue *#{box} = NULL;\n  #{tail_int_box_new_stmt(box, loop, env)}"
+              "elmc_int_t #{loop} = elmc_as_int(#{c_arg});"
 
             {:native_bool, _} ->
               "bool #{loop} = #{c_arg};"
@@ -2376,11 +2561,7 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
               EnvBindings.put_native_int_binding(acc, source_arg, loop)
 
             {:boxed, "Int"} ->
-              box = boxed_int_loop_name(c_arg)
-
-              acc
-              |> EnvBindings.put_native_int_binding(source_arg, loop)
-              |> Map.put(source_arg, box)
+              EnvBindings.put_native_int_binding(acc, source_arg, loop)
 
             {:native_bool, _} ->
               EnvBindings.put_native_bool_binding(acc, source_arg, loop)
@@ -2484,6 +2665,8 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
     end
   end
 
+  @spec compile_tail_recursive_continue_updates([String.t()], Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.compile_env(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+
   defp compile_tail_recursive_continue_updates(
          recursive_args,
          c_arg_bindings,
@@ -2496,8 +2679,24 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
     {loop_env, counter, let_code} =
       Enum.reduce(let_prelude, {loop_env, counter, ""}, fn {let_name, let_value},
                                                             {env, ctr, code_acc} ->
-        {let_code, let_ref, ctr2} = Host.compile_expr(let_value, env, ctr)
-        {Map.put(env, let_name, let_ref), ctr2, code_acc <> "\n" <> let_code}
+        {let_code, let_ref, ctr2} =
+          case NativeInt.compile_expr(let_value, env, ctr) do
+            {_, ref, _} = native_result ->
+              if native_int_loop_let_ref?(ref),
+                do: native_result,
+                else: Host.compile_expr(let_value, env, ctr)
+          end
+
+        env =
+          if native_int_loop_let_ref?(let_ref) do
+            env
+            |> Map.put(let_name, let_ref)
+            |> EnvBindings.put_native_int_binding(let_name, let_ref)
+          else
+            Map.put(env, let_name, let_ref)
+          end
+
+        {env, ctr2, code_acc <> "\n" <> let_code}
       end)
 
     {_counter, update_code, int_refs, boxed_refs, boxed_int_refs} =
@@ -2524,19 +2723,28 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
 
             {ctr2,
              code_acc <> "\n" <> arg_code <> "\n      elmc_int_t #{next_ref} = #{arg_ref};",
-             int_refs ++ [{loop, next_ref}], boxed_refs,
-             if(kind == :boxed and type_name == "Int",
-               do: boxed_int_refs ++ [{boxed_int_loop_name(c_arg), loop}],
-               else: boxed_int_refs
-             )}
+             int_refs ++ [{loop, next_ref}], boxed_refs, boxed_int_refs}
         end
       end)
 
     {update_code, int_refs, boxed_refs, boxed_int_refs, loop_env}
   end
 
+  @spec effective_tail_loop_kind(Types.ir_expr() | atom(), Types.ir_expr() | String.t()) :: Types.ir_expr()
+
   defp effective_tail_loop_kind(:boxed, "Int"), do: :native_int
   defp effective_tail_loop_kind(kind, _type_name), do: kind
+
+  defp native_int_loop_let_ref?(ref) when is_binary(ref) do
+    not Regex.match?(~r/^(owned|tmp)_\d+$/, ref) and
+      not Regex.match?(~r/^native_i_\d+$/, ref) and
+      (String.starts_with?(ref, "native_") or String.starts_with?(ref, "(") or
+         Regex.match?(~r/^[a-z_]*_loop(?:_next)?$/, ref))
+  end
+
+  defp native_int_loop_let_ref?(_), do: false
+
+  @spec compile_tail_recursive_step_arg(Types.expr(), Types.compile_env(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
 
   defp compile_tail_recursive_step_arg(expr, loop_env, :boxed, counter),
     do: Host.compile_expr(expr, loop_env, counter)
@@ -2546,6 +2754,8 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
 
   defp compile_tail_recursive_step_arg(expr, loop_env, :native_int, counter),
     do: NativeInt.compile_expr(expr, loop_env, counter)
+
+  @spec hoist_tail_recursive_top_level_vars([String.t()], Types.ir_expr(), Types.compile_env(), Types.ir_expr(), String.t()) :: Types.ir_expr()
 
   defp hoist_tail_recursive_top_level_vars(recursive_args, let_prelude, env, counter, module_name) do
     vars =
@@ -2576,6 +2786,8 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
     end)
   end
 
+  @spec collect_ir_var_names(map() | list() | term()) :: Types.ir_expr()
+
   defp collect_ir_var_names(%{op: :var, name: name}) when is_binary(name), do: [name]
 
   defp collect_ir_var_names(map) when is_map(map) do
@@ -2587,6 +2799,8 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
   end
 
   defp collect_ir_var_names(_), do: []
+
+  @spec tail_recursive_if(map() | Types.expr(), String.t(), String.t()) :: Types.ir_expr()
 
   defp tail_recursive_if(
          %{op: :if, cond: cond, then_expr: then_expr, else_expr: else_expr},
@@ -2610,6 +2824,8 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
 
   defp tail_recursive_if(_expr, _module_name, _name), do: :error
 
+  @spec tail_recursive_branch(Types.expr(), String.t(), String.t()) :: Types.ir_expr()
+
   defp tail_recursive_branch(expr, module_name, name) do
     {let_prelude, core} = peel_tail_recursive_lets(expr, [])
 
@@ -2620,6 +2836,8 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
     end
   end
 
+  @spec peel_tail_recursive_lets(map() | Types.expr(), term()) :: Types.ir_expr()
+
   defp peel_tail_recursive_lets(
          %{op: :let_in, name: let_name, value_expr: let_value, in_expr: in_expr},
          acc
@@ -2628,6 +2846,8 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
   end
 
   defp peel_tail_recursive_lets(expr, acc), do: {acc, expr}
+
+  @spec tail_recursive_arg_kinds?(Types.ir_expr(), Types.ir_expr()) :: boolean()
 
   defp tail_recursive_arg_kinds?(arg_kinds, arg_types) do
     arg_kinds
@@ -2642,14 +2862,18 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
     end)
   end
 
+  @spec loop_arg_name(Types.ir_expr()) :: Types.ir_expr()
+
   defp loop_arg_name(c_arg), do: "#{c_arg}_loop"
 
-  defp boxed_int_loop_name(c_arg), do: "#{c_arg}_box_loop"
+  @spec tail_loop_caller_rc?(Types.compile_env()) :: boolean()
 
   defp tail_loop_caller_rc?(env) do
     Map.get(env, :__rc_catch__, false) or Map.get(env, :__rc_required__, false) or
       Map.get(env, :__native_rc_out__, false)
   end
+
+  @spec tail_int_box_new_stmt(Types.ir_expr(), atom(), Types.compile_env()) :: Types.ir_expr()
 
   defp tail_int_box_new_stmt(box, loop, env) do
     if tail_loop_caller_rc?(env) do
@@ -2667,6 +2891,8 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
       |> String.trim()
     end
   end
+
+  @spec tail_continue_branch(Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.compile_env()) :: Types.ir_expr()
 
   defp tail_continue_branch(
          update_code,
@@ -2712,35 +2938,46 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
     """
   end
 
+  @spec tail_base_branch_boxed(Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+
   defp tail_base_branch_boxed(base_code, result_var, base_ref, arg_bindings, arg_kinds, arg_types) do
-    releases =
+    loop_boxed_names =
       arg_bindings
       |> Enum.zip(arg_kinds)
       |> Enum.with_index()
       |> Enum.flat_map(fn {{{_source, c_arg, _arg_index}, kind}, index} ->
         type_name = Enum.at(arg_types, index) |> Host.normalize_type_name()
 
-        if effective_tail_loop_kind(kind, type_name) == :boxed do
-          ["elmc_release(#{loop_arg_name(c_arg)});"]
-        else
-          if kind == :boxed and type_name == "Int" do
-            ["elmc_release(#{boxed_int_loop_name(c_arg)});"]
-          else
+        cond do
+          effective_tail_loop_kind(kind, type_name) == :boxed ->
+            [loop_arg_name(c_arg)]
+
+          true ->
             []
-          end
         end
       end)
-      |> Enum.join("\n      ")
 
-    result_assign =
-      if ValueSlots.owned_ref?(base_ref) do
-        """
-        #{result_var} = #{base_ref};
-        #{ValueSlots.transfer_and_null(base_ref)}
-        """
-      else
-        "#{result_var} = #{base_ref};"
+    {result_assign, skip_release} =
+      cond do
+        ValueSlots.owned_ref?(base_ref) ->
+          {"""
+           #{result_var} = #{base_ref};
+           #{ValueSlots.transfer_and_null(base_ref)}
+           """, MapSet.new()}
+
+        base_ref in loop_boxed_names ->
+          # Base case returns a loop accumulator: transfer the loop retain into
+          # the result instead of releasing the same pointer underneath *out.
+          {"#{result_var} = #{base_ref};\n      #{base_ref} = NULL;", MapSet.new([base_ref])}
+
+        true ->
+          {"#{result_var} = #{base_ref};", MapSet.new()}
       end
+
+    releases =
+      loop_boxed_names
+      |> Enum.reject(&MapSet.member?(skip_release, &1))
+      |> Enum.map_join("\n      ", fn name -> "elmc_release(#{name});" end)
 
     """
     #{base_code}
@@ -2750,6 +2987,8 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
     """
   end
 
+  @spec tail_base_branch(Types.ir_expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+
   defp tail_base_branch(base_code, result_var, base_ref) do
     """
     #{base_code}
@@ -2758,15 +2997,21 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
     """
   end
 
+  @spec register_native_boxed_rc_abi!(String.t(), String.t(), boolean()) :: Types.ir_expr()
+
   defp register_native_boxed_rc_abi!(module_name, name, rc_abi?) do
     table = Process.get(:elmc_native_boxed_rc_abi, %{})
     Process.put(:elmc_native_boxed_rc_abi, Map.put(table, {module_name, name}, rc_abi?))
   end
 
+  @spec register_native_bool_rc_abi!(String.t(), String.t(), boolean()) :: Types.ir_expr()
+
   defp register_native_bool_rc_abi!(module_name, name, rc_abi?) do
     table = Process.get(:elmc_native_bool_rc_abi, %{})
     Process.put(:elmc_native_bool_rc_abi, Map.put(table, {module_name, name}, rc_abi?))
   end
+
+  @spec wrapper_return(String.t(), [String.t()], Types.ir_expr() | atom(), Types.decl(), String.t(), Types.decl_map()) :: Types.ir_expr()
 
   defp wrapper_return(c_name, native_args, :boxed, decl, module_name, decl_map) do
     if NativeFunctionCall.native_boxed_rc_abi?(decl, module_name, decl_map) do
@@ -2788,6 +3033,8 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
     wrapper_return_scalar(c_name, native_args, return_kind)
   end
 
+  @spec native_function_owned_slots?(Types.decl(), String.t(), Types.decl_map(), atom()) :: boolean()
+
   defp native_function_owned_slots?(decl, module_name, decl_map, return_kind) do
     case return_kind do
       :boxed ->
@@ -2800,6 +3047,8 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
         false
     end
   end
+
+  @spec rc_native_bool_delegate(String.t(), [String.t()]) :: Types.ir_expr()
 
   defp rc_native_bool_delegate(c_name, native_args) do
     call = "#{c_name}_native(#{RcRuntimeEmit.native_call_args("&native_result", native_args)})"
@@ -2818,6 +3067,8 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
     |> String.trim()
   end
 
+  @spec rc_native_boxed_delegate(String.t(), [String.t()]) :: Types.ir_expr()
+
   defp rc_native_boxed_delegate(c_name, native_args) do
     call = "#{c_name}_native(#{RcRuntimeEmit.native_call_args("out", native_args)})"
     """
@@ -2831,6 +3082,8 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
     |> String.trim()
   end
 
+  @spec rc_legacy_boxed_native_delegate(String.t(), [String.t()]) :: Types.ir_expr()
+
   defp rc_legacy_boxed_native_delegate(c_name, native_args) do
     call = "#{c_name}_native(#{native_args})"
 
@@ -2843,6 +3096,8 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
     """
     |> String.trim()
   end
+
+  @spec non_rc_wrapper_boxed_rc_native_delegate(String.t(), [String.t()]) :: Types.ir_expr()
 
   defp non_rc_wrapper_boxed_rc_native_delegate(c_name, native_args) do
     call = "#{c_name}_native(#{RcRuntimeEmit.native_call_args("&result", native_args)})"
@@ -2859,6 +3114,8 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
     |> String.trim()
   end
 
+  @spec wrapper_return_scalar(String.t(), [String.t()], Types.ir_expr()) :: Types.ir_expr()
+
   defp wrapper_return_scalar(c_name, native_args, :native_int) do
     """
     RC Rc = elmc_new_int(#{RcRuntimeEmit.function_out_param()}, #{c_name}_native(#{native_args}));
@@ -2874,6 +3131,8 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
     """
     |> String.trim()
   end
+
+  @spec wrapper_return_skipped_native(Types.decl(), String.t(), Types.decl_map(), String.t(), [String.t()], atom(), boolean()) :: Types.ir_expr()
 
   defp wrapper_return_skipped_native(
          decl,
@@ -2892,6 +3151,8 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
       wrapper_return(c_name, native_args, return_kind, decl, module_name, decl_map)
     end
   end
+
+  @spec skipped_native_boxed_literal(Types.decl() | map(), String.t(), Types.decl_map(), Types.ir_expr() | atom(), Types.ir_expr() | boolean()) :: Types.ir_expr()
 
   defp skipped_native_boxed_literal(decl, module_name, decl_map, :native_int, true) do
     env = %{__module__: module_name, __program_decls__: decl_map}
@@ -2931,6 +3192,8 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
 
   defp skipped_native_boxed_literal(_decl, _module, _decl_map, _return_kind, _rc_required?), do: nil
 
+  @spec native_return_prefix(atom()) :: Types.ir_expr()
+
   defp native_return_prefix(return_kind), do: "#{NativeFunctionCall.c_return_type(return_kind)} "
 
   @doc false
@@ -2946,6 +3209,8 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
       names -> Enum.map_join(names, "\n", &"(void)#{&1};")
     end
   end
+
+  @spec arg_referenced?(Types.ir_expr(), String.t()) :: boolean()
 
   defp arg_referenced?(c_arg, body_text) do
     Regex.match?(~r/(?:\W|^)#{Regex.escape(c_arg)}(?:\W|$)/, body_text)

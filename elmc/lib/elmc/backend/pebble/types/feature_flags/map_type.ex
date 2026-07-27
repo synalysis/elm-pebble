@@ -1,6 +1,7 @@
 defmodule Elmc.Backend.Pebble.Types.FeatureFlags.MapType do
   @moduledoc false
 
+
   @doc false
   defmacro def_flags_type(name, keys_ast) do
     keys = keys_list!(keys_ast, __CALLER__)

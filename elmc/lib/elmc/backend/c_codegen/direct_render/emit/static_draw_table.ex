@@ -1,5 +1,7 @@
 defmodule Elmc.Backend.CCodegen.DirectRender.Emit.StaticDrawTable do
   @moduledoc false
+  alias Elmc.Backend.CCodegen.Types, as: Types
+
 
   alias Elmc.Backend.CCodegen.DirectRender.Emit.Commands
   alias Elmc.Backend.CCodegen.Host
@@ -128,6 +130,8 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.StaticDrawTable do
     end
   end
 
+  @spec static_int_ref?(String.t()) :: boolean()
+
   defp static_int_ref?(ref) when is_binary(ref), do: Regex.match?(~r/^-?\d+$/, ref)
 
   @spec static_record_int_fields(
@@ -190,6 +194,8 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.StaticDrawTable do
 
     {:ok, code, counter}
   end
+
+  @spec draw_kind(atom()) :: Types.ir_expr()
 
   defp draw_kind(kind), do: Elmc.Backend.Pebble.draw_kind_id!(kind)
 end

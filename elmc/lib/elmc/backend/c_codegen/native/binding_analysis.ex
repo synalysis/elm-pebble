@@ -1,5 +1,7 @@
 defmodule Elmc.Backend.CCodegen.Native.BindingAnalysis do
   @moduledoc false
+  alias Elmc.Backend.CCodegen.Types, as: Types
+
 
   alias Elmc.Backend.CCodegen.EnvBindings
   alias Elmc.Backend.CCodegen.Types
@@ -24,6 +26,8 @@ defmodule Elmc.Backend.CCodegen.Native.BindingAnalysis do
           non_neg_integer()
   def pebble_angle_optimized_reference_count(name, expr),
     do: pebble_angle_optimized_reference_count_node(name, expr)
+
+  @spec used_in_lambda_node?(String.t(), map() | list() | Types.expr()) :: boolean()
 
   defp used_in_lambda_node?(name, %{op: :lambda, args: args, body: body}) when is_list(args) do
     not Enum.any?(args, &EnvBindings.same_binding?(name, &1)) and referenced?(name, body)
@@ -98,6 +102,8 @@ defmodule Elmc.Backend.CCodegen.Native.BindingAnalysis do
     end
   end
 
+  @spec referenced?(String.t(), map() | String.t() | list() | Types.expr()) :: boolean()
+
   defp referenced?(name, %{op: :var, name: var_name}),
     do: EnvBindings.same_binding?(name, var_name)
 
@@ -115,6 +121,8 @@ defmodule Elmc.Backend.CCodegen.Native.BindingAnalysis do
 
   defp referenced?(_name, _expr), do: false
 
+  @spec pebble_trig_round_expr?(map() | Types.expr(), String.t()) :: boolean()
+
   defp pebble_trig_round_expr?(
          %{op: :qualified_call, target: target, args: [value]},
          angle_name
@@ -130,6 +138,8 @@ defmodule Elmc.Backend.CCodegen.Native.BindingAnalysis do
 
   defp pebble_trig_round_expr?(_expr, _angle_name), do: false
 
+  @spec pebble_trig_scaled_expr?(map() | Types.expr(), String.t()) :: boolean()
+
   defp pebble_trig_scaled_expr?(
          %{op: :call, name: "__mul__", args: [left, right]},
          angle_name
@@ -139,6 +149,8 @@ defmodule Elmc.Backend.CCodegen.Native.BindingAnalysis do
   end
 
   defp pebble_trig_scaled_expr?(_expr, _angle_name), do: false
+
+  @spec pebble_trig_call_expr?(map() | Types.expr(), String.t()) :: boolean()
 
   defp pebble_trig_call_expr?(
          %{op: :qualified_call, target: target, args: [%{op: :var, name: name}]},
@@ -156,6 +168,8 @@ defmodule Elmc.Backend.CCodegen.Native.BindingAnalysis do
 
   defp pebble_trig_call_expr?(_expr, _angle_name), do: false
 
+  @spec to_float_expr?(map() | Types.expr()) :: boolean()
+
   defp to_float_expr?(%{op: :qualified_call, target: target, args: [_value]})
        when target in ["Basics.toFloat", "toFloat"],
        do: true
@@ -168,12 +182,16 @@ defmodule Elmc.Backend.CCodegen.Native.BindingAnalysis do
 
   defp to_float_expr?(_expr), do: false
 
+  @spec pebble_angle_numerator_expr?(map() | Types.expr()) :: boolean()
+
   defp pebble_angle_numerator_expr?(%{op: :call, name: "__mul__", args: [left, right]}) do
     (pi_expr?(left) and double_to_float_expr?(right)) or
       (pi_expr?(right) and double_to_float_expr?(left))
   end
 
   defp pebble_angle_numerator_expr?(_expr), do: false
+
+  @spec double_to_float_expr?(map() | Types.expr()) :: boolean()
 
   defp double_to_float_expr?(%{
          op: :call,
@@ -190,6 +208,8 @@ defmodule Elmc.Backend.CCodegen.Native.BindingAnalysis do
        do: to_float_expr?(right)
 
   defp double_to_float_expr?(_expr), do: false
+
+  @spec pi_expr?(map() | Types.expr()) :: boolean()
 
   defp pi_expr?(%{op: :qualified_ref, target: target})
        when target in ["Basics.pi", "pi"],

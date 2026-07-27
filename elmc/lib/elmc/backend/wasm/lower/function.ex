@@ -34,15 +34,24 @@ defmodule Elmc.Backend.Wasm.Lower.Function do
   end
 
   defp annotate_lambda_return(%FunctionPlan{} = lambda) do
-    lambda
-    |> NativeReturn.annotate(%{type: "Int"})
-    |> then(fn plan ->
-      if Map.get(plan, :native_scalar_return) do
-        plan
+    # Prefer Bool first so `\_ -> True` keeps native_bool boxing via new_bool.
+    # Annotating Int first treated bool_lit const 1 as native_int, deleted the
+    # scalar marker, and returned raw 1 — stringAll's intValue(1) hit UNIT.
+    bool_plan = NativeReturn.annotate(lambda, %{type: "Bool"})
+
+    if Map.get(bool_plan, :native_scalar_return) == :native_bool do
+      bool_plan
+    else
+      int_plan = NativeReturn.annotate(lambda, %{type: "Int"})
+
+      if Map.get(int_plan, :native_scalar_return) == :native_int do
+        # Wasm Int closure bodies already box via runtime.new_int; running
+        # box_native_scalar_return would treat the handle in $fn_out as a raw i32.
+        %{int_plan | native_scalar_return: nil, native_scalar_value_return: nil}
       else
-        NativeReturn.annotate(plan, %{type: "Bool"})
+        int_plan
       end
-    end)
+    end
   end
 
   @spec lower(FunctionPlan.t()) :: function_unit()

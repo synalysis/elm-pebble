@@ -12,6 +12,8 @@ defmodule Ide.Mcp.Handlers.Projects do
   alias Ide.Projects.FileTypes
   alias Ide.Projects.Types, as: ProjectsTypes
 
+  @spec call(term(), [String.t()] | map()) :: term()
+
   def call("templates.list", _args) do
     {:ok, %{templates: ProjectTemplates.catalog()}}
   end

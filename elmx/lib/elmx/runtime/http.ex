@@ -2,6 +2,8 @@ defmodule Elmx.Runtime.Http do
   @moduledoc """
   Builds `elm/http` wire commands for debugger execution.
   """
+  alias Elmx.Types, as: Types
+
 
   alias Elmx.Runtime.Values
   alias Elmx.Types

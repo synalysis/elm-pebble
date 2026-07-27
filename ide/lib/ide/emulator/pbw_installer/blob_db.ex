@@ -37,6 +37,8 @@ defmodule Ide.Emulator.PBWInstaller.BlobDb do
     end
   end
 
+  @spec retry_insert_app_metadata(term(), term(), term(), term()) :: term()
+
   defp retry_insert_app_metadata(router, metadata, timeout, settle_ms) do
     token = System.unique_integer([:positive]) |> rem(0xFFFE) |> Kernel.+(1)
     {endpoint, payload} = Packets.blob_insert_app(token, metadata)
@@ -52,6 +54,8 @@ defmodule Ide.Emulator.PBWInstaller.BlobDb do
         error
     end
   end
+
+  @spec delete_app_metadata(term(), term(), term()) :: term()
 
   defp delete_app_metadata(router, uuid, timeout) do
     token = System.unique_integer([:positive]) |> rem(0xFFFE) |> Kernel.+(1)
@@ -71,6 +75,8 @@ defmodule Ide.Emulator.PBWInstaller.BlobDb do
         error
     end
   end
+
+  @spec send_blob_request(term(), term(), term(), integer(), term()) :: term()
 
   defp send_blob_request(router, endpoint, payload, token, timeout) do
     with {:ok, frame} <-

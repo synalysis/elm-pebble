@@ -17,6 +17,8 @@ defmodule Ide.Emulator.VncHandshake do
     end
   end
 
+  @spec handshake(term(), term()) :: term()
+
   defp handshake(socket, timeout) do
     try do
       with {:ok, server_version} <- recv_line(socket, timeout),
@@ -36,6 +38,8 @@ defmodule Ide.Emulator.VncHandshake do
     end
   end
 
+  @spec negotiate_security(term(), term()) :: term()
+
   defp negotiate_security(socket, timeout) do
     with {:ok, <<count::unsigned-8>>} <- recv_exact(socket, 1, timeout),
          true <- count > 0,
@@ -49,6 +53,8 @@ defmodule Ide.Emulator.VncHandshake do
     end
   end
 
+  @spec recv_security_result(term(), term()) :: term()
+
   defp recv_security_result(socket, timeout) do
     case recv_exact(socket, 4, timeout) do
       {:ok, <<0, 0, 0, 0>>} -> {:ok, :ok}
@@ -56,6 +62,8 @@ defmodule Ide.Emulator.VncHandshake do
       other -> other
     end
   end
+
+  @spec read_server_init(term(), term()) :: term()
 
   defp read_server_init(socket, timeout) do
     with {:ok,
@@ -66,6 +74,8 @@ defmodule Ide.Emulator.VncHandshake do
       {:ok, width, height, nil}
     end
   end
+
+  @spec recv_line(term(), term(), term()) :: term()
 
   defp recv_line(socket, timeout) do
     recv_line(socket, timeout, <<>>)
@@ -84,6 +94,8 @@ defmodule Ide.Emulator.VncHandshake do
         end
     end
   end
+
+  @spec recv_exact(term(), term(), term()) :: term()
 
   defp recv_exact(socket, size, timeout) do
     :gen_tcp.recv(socket, size, timeout)

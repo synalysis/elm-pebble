@@ -1,5 +1,7 @@
 defmodule Elmc.Backend.CCodegen.DirectRender.Emit.CommandCall do
   @moduledoc false
+  alias Elmc.Backend.CCodegen.Types, as: Types
+
 
   alias Elmc.Backend.CCodegen.DirectRender.CommandDef
   alias Elmc.Backend.CCodegen.DirectRender.Emit.Catch
@@ -65,6 +67,8 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.CommandCall do
     end
   end
 
+  @spec inline_bind_params(String.t(), [String.t()], Types.expr(), Types.decl()) :: Types.ir_expr()
+
   defp inline_bind_params(arg_names, args, body_expr, decl) do
     used = VarAnalysis.used_vars(body_expr)
     kinds = CommandDef.arg_kinds(decl)
@@ -85,12 +89,16 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.CommandCall do
     end
   end
 
+  @spec trailing_unused?(String.t(), [String.t()], Types.ir_expr()) :: boolean()
+
   defp trailing_unused?(arg_names, args, used) do
     provided = length(args)
 
     Enum.drop(arg_names, provided)
     |> Enum.all?(fn name -> not MapSet.member?(used, name) end)
   end
+
+  @spec inline_command_env(String.t(), [String.t()], String.t(), Types.ir_expr(), Types.compile_env(), Types.ir_expr()) :: Types.ir_expr()
 
   defp inline_command_env(target_key, args, arg_names, arg_kinds, env, counter) do
     decl_map = Map.get(env, :__program_decls__, %{})
@@ -150,6 +158,8 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.CommandCall do
     {:ok, arg_code, inline_env, release_refs, counter}
   end
 
+  @spec inline_native_record_point_arg(map() | term(), String.t() | term(), Types.compile_env() | term()) :: Types.ir_expr()
+
   defp inline_native_record_point_arg(%{op: :var, name: name}, arg_name, env) do
     case native_record_point_binding(env, name) do
       {:native_record, fields} ->
@@ -161,6 +171,8 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.CommandCall do
   end
 
   defp inline_native_record_point_arg(_, _, _), do: :error
+
+  @spec native_record_point_binding(Types.compile_env(), String.t()) :: Types.ir_expr()
 
   defp native_record_point_binding(env, name) do
     binding =
@@ -179,6 +191,8 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.CommandCall do
         :error
     end
   end
+
+  @spec emit_outlined_command_call(String.t(), [String.t()], Types.compile_env(), Types.ir_expr()) :: Types.ir_expr()
 
   defp emit_outlined_command_call(target_key, args, env, counter) do
     decl_map = Map.get(env, :__program_decls__, %{})
@@ -233,6 +247,8 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.CommandCall do
     end
   end
 
+  @spec compile_outlined_boxed_arg(map() | Types.expr(), Types.compile_env(), Types.ir_expr()) :: Types.ir_expr()
+
   defp compile_outlined_boxed_arg(%{op: :var, name: name}, env, counter) do
     case EnvBindings.lookup_binding(env, name) do
       {:record_peel, source_ref, _helper_key, _helper_call} when is_binary(source_ref) ->
@@ -248,6 +264,8 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.CommandCall do
 
   defp compile_outlined_boxed_arg(arg_expr, env, counter),
     do: compile_outlined_boxed_expr(arg_expr, env, counter)
+
+  @spec compile_outlined_boxed_expr(Types.expr(), Types.compile_env(), Types.ir_expr()) :: Types.ir_expr()
 
   defp compile_outlined_boxed_expr(arg_expr, env, counter) do
     hoisted_scope? = Process.get(:elmc_hoisted_native_ints_scope, false)

@@ -1,5 +1,7 @@
 defmodule Elmx.Backend.OversaturatedQualified do
   @moduledoc false
+  alias Elmx.Types, as: Types
+
 
   alias Elmx.Backend.QualifiedSaturatedArity
   alias Elmx.Types
@@ -16,6 +18,8 @@ defmodule Elmx.Backend.OversaturatedQualified do
   end
 
   def normalize(expr), do: expr
+
+  @spec apply_extra(String.t(), [String.t()], non_neg_integer()) :: Types.elm_value()
 
   defp apply_extra(target, args, arity) do
     {bound, extra} = Enum.split(args, arity)

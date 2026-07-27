@@ -4,6 +4,8 @@ defmodule Elmc.Backend.CCodegen.FilterMapRowDrop do
 
   Matches when row-full and row-slice helpers are verified from `decl_map`, not by name.
   """
+  alias Elmc.Backend.CCodegen.Types, as: Types
+
 
   alias Elmc.Backend.CCodegen.Types
 
@@ -38,6 +40,8 @@ defmodule Elmc.Backend.CCodegen.FilterMapRowDrop do
   end
 
 
+  @spec parse(map() | term()) :: Types.ir_expr()
+
   defp parse(%{op: :let_in, name: "kept", value_expr: kept_expr, in_expr: rest}) do
     with {:ok, rows_var, row_full, row_cells} <- parse_filter_map_rows(kept_expr),
          {:ok, cols_var} <- parse_cleared_concat(rest) do
@@ -46,6 +50,8 @@ defmodule Elmc.Backend.CCodegen.FilterMapRowDrop do
   end
 
   defp parse(_), do: :error
+
+  @spec parse_filter_map_rows(map() | term()) :: Types.ir_expr()
 
   defp parse_filter_map_rows(%{
          op: :qualified_call,
@@ -60,6 +66,8 @@ defmodule Elmc.Backend.CCodegen.FilterMapRowDrop do
   end
 
   defp parse_filter_map_rows(_), do: :error
+
+  @spec parse_filter_lambda(map() | term()) :: Types.ir_expr()
 
   defp parse_filter_lambda(%{
          op: :lambda,
@@ -88,6 +96,8 @@ defmodule Elmc.Backend.CCodegen.FilterMapRowDrop do
 
   defp parse_filter_lambda(_), do: :error
 
+  @spec parse_range_zero_to_rows_minus_one(map() | term()) :: Types.ir_expr()
+
   defp parse_range_zero_to_rows_minus_one(%{
          op: :qualified_call,
          target: target,
@@ -105,6 +115,8 @@ defmodule Elmc.Backend.CCodegen.FilterMapRowDrop do
        do: {:ok, rows_var}
 
   defp parse_range_zero_to_rows_minus_one(_), do: :error
+
+  @spec parse_cleared_concat(map() | term()) :: Types.ir_expr()
 
   defp parse_cleared_concat(%{
          op: :let_in,
@@ -131,6 +143,8 @@ defmodule Elmc.Backend.CCodegen.FilterMapRowDrop do
 
   defp parse_cleared_concat(_), do: :error
 
+  @spec parse_concat_repeat_zero_rows(map() | term()) :: Types.ir_expr()
+
   defp parse_concat_repeat_zero_rows(%{
          op: :qualified_call,
          target: concat_target,
@@ -156,6 +170,8 @@ defmodule Elmc.Backend.CCodegen.FilterMapRowDrop do
 
   defp parse_concat_repeat_zero_rows(_), do: :error
 
+  @spec parse_zero_row_repeat(map() | term()) :: Types.ir_expr()
+
   defp parse_zero_row_repeat(%{
          op: :qualified_call,
          target: target,
@@ -165,6 +181,8 @@ defmodule Elmc.Backend.CCodegen.FilterMapRowDrop do
        do: {:ok, cols_var}
 
   defp parse_zero_row_repeat(_), do: :error
+
+  @spec row_full_matches?(Types.decl_map(), String.t(), Types.ir_expr(), Types.ir_expr()) :: boolean()
 
   defp row_full_matches?(decl_map, module_name, row_full, row_cells) do
     case Map.get(decl_map, FusionSupport.callee_key(module_name, row_full)) do
@@ -188,6 +206,8 @@ defmodule Elmc.Backend.CCodegen.FilterMapRowDrop do
         false
     end
   end
+
+  @spec row_cells_matches?(Types.decl_map(), String.t(), Types.ir_expr(), Types.ir_expr()) :: boolean()
 
   defp row_cells_matches?(decl_map, module_name, row_cells, cols_var) do
     case Map.get(decl_map, FusionSupport.callee_key(module_name, row_cells)) do
@@ -222,6 +242,8 @@ defmodule Elmc.Backend.CCodegen.FilterMapRowDrop do
     end
   end
 
+  @spec range_zero_to_cols_minus_one?(map() | term(), Types.ir_expr() | term()) :: boolean()
+
   defp range_zero_to_cols_minus_one?(%{
          op: :qualified_call,
          target: target,
@@ -239,6 +261,8 @@ defmodule Elmc.Backend.CCodegen.FilterMapRowDrop do
        do: true
 
   defp range_zero_to_cols_minus_one?(_, _), do: false
+
+  @spec emit(String.t(), String.t(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
 
   defp emit(module_name, name, rows, cols) do
     c_prefix = Util.module_fn_name(module_name, name)

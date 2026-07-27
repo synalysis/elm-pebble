@@ -1,5 +1,7 @@
 defmodule Elmc.Backend.Plan.TruthyNative do
   @moduledoc false
+  alias Elmc.Backend.Plan.Types, as: Types
+
 
   alias Elmc.Backend.Plan.Types
 
@@ -28,8 +30,11 @@ defmodule Elmc.Backend.Plan.TruthyNative do
     end)
   end
 
-  defp shape_from_instr(%{op: :const_int, args: %{value: value}}) when value in [0, 1],
-    do: {:const_int, value}
+  # Only Bool True/False (const_int with bool_lit), not Int 0/1 — those belong to
+  # IntPhiNative so Debug.toString stays numeric and arm drops stay consistent.
+  defp shape_from_instr(%{op: :const_int, args: %{value: value, bool_lit: true}})
+       when value in [0, 1],
+       do: {:const_int, value}
 
   defp shape_from_instr(%{op: :compare, args: %{kind: kind, left: left, right: right}}),
     do: {:compare, kind || :eq, left, right}
@@ -37,10 +42,6 @@ defmodule Elmc.Backend.Plan.TruthyNative do
   defp shape_from_instr(%{op: op, dest: dest, args: %{left: _left, right: _right}})
        when op in [:bool_and, :test_maybe_nothing, :test_list_empty, :test_ctor_tag, :test_bool] and is_integer(dest),
        do: {:reg, dest}
-
-  defp shape_from_instr(%{op: :call_runtime, args: %{builtin: :new_int, literal: value}})
-       when value in [0, 1],
-       do: {:const_int, value}
 
   defp shape_from_instr(%{op: :call_runtime, args: %{builtin: :new_bool, literal: value}})
        when value in [0, 1],
@@ -56,11 +57,48 @@ defmodule Elmc.Backend.Plan.TruthyNative do
   @spec phi_shapes?(Types.instr_list(), non_neg_integer(), non_neg_integer()) ::
           {boolean(), arm_shape(), arm_shape()}
   def phi_shapes?(instrs, then_reg, else_reg) do
-    then_shape = arm_shape(instrs, then_reg)
-    else_shape = arm_shape(instrs, else_reg)
+    then_raw = arm_shape(instrs, then_reg)
+    else_raw = arm_shape(instrs, else_reg)
+    then_bare = bare_const_int_01_shape(instrs, then_reg)
+    else_bare = bare_const_int_01_shape(instrs, else_reg)
 
-    truthy? = truthy_bool_phi_shape?(then_shape) and truthy_bool_phi_shape?(else_shape)
+    # Prefer Bool True/False / compare shapes. Also accept a bare Int 0/1 next to
+    # a bool-shaped arm (e.g. `if n < 0 then 1 else n == 0`) so the merge stays
+    # native bool (`? true :`). Both-arms bare 0/1 stays IntPhiNative.
+    {truthy?, then_shape, else_shape} =
+      cond do
+        truthy_bool_phi_shape?(then_raw) and truthy_bool_phi_shape?(else_raw) ->
+          {true, then_raw, else_raw}
+
+        match?({:const_int, _}, then_bare) and truthy_bool_phi_shape?(else_raw) ->
+          {true, then_bare, else_raw}
+
+        truthy_bool_phi_shape?(then_raw) and match?({:const_int, _}, else_bare) ->
+          {true, then_raw, else_bare}
+
+        true ->
+          {false, then_raw, else_raw}
+      end
+
     {truthy?, then_shape, else_shape}
+  end
+
+  # Bare Int 0/1 (no bool_lit) — promoted only when paired with a bool-shaped arm.
+  defp bare_const_int_01_shape(instrs, reg) do
+    case Enum.find(instrs, &(&1.dest == reg)) do
+      %{op: :const_int, args: %{value: value} = args} when value in [0, 1] ->
+        if Map.get(args, :bool_lit) == true do
+          nil
+        else
+          {:const_int, value}
+        end
+
+      %{op: :call_runtime, args: %{builtin: :new_int, literal: value}} when value in [0, 1] ->
+        {:const_int, value}
+
+      _ ->
+        nil
+    end
   end
 
   @spec phi_arm_drop_instrs(Types.block_list()) :: MapSet.t({non_neg_integer(), non_neg_integer()})

@@ -5,6 +5,8 @@ defmodule Elmc.Backend.CCodegen.RowSliceAdjacentMerge do
   Verifies `rowAt` (`List.take`/`List.drop`), `collapseRow` (filter nonzero + slide merge + pad),
   and `merge` (adjacent equal pair collapse into a two-field record) from `decl_map`.
   """
+  alias Elmc.Backend.CCodegen.Types, as: Types
+
 
   alias Elmc.Backend.CCodegen.Types
 
@@ -42,12 +44,16 @@ defmodule Elmc.Backend.CCodegen.RowSliceAdjacentMerge do
     end
   end
 
+  @spec parse_collapse_rows(Types.expr()) :: Types.ir_expr()
+
   defp parse_collapse_rows(expr) do
     with {:ok, row_calls, cells_var} <- parse_row_lets(expr, []),
          {:ok, cells_field, score_field} <- parse_result_record(expr) do
       {:ok, row_calls, cells_field, score_field, cells_var}
     end
   end
+
+  @spec parse_row_lets(map() | term(), term()) :: Types.ir_expr()
 
   defp parse_row_lets(%{op: :let_in, value_expr: row_call, in_expr: rest}, acc) do
     parse_row_lets(rest, acc ++ [row_call])
@@ -61,12 +67,16 @@ defmodule Elmc.Backend.CCodegen.RowSliceAdjacentMerge do
 
   defp parse_row_lets(_, _), do: :error
 
+  @spec cells_var_from_row_calls(term()) :: Types.ir_expr()
+
   defp cells_var_from_row_calls([first | _]) do
     case row_at_call(first) do
       {:ok, _collapse_row, _row_at, _row_index, cells_var} -> {:ok, cells_var}
       :error -> :error
     end
   end
+
+  @spec row_at_call(map() | term()) :: Types.ir_expr()
 
   defp row_at_call(%{
          op: :qualified_call,
@@ -89,7 +99,11 @@ defmodule Elmc.Backend.CCodegen.RowSliceAdjacentMerge do
 
   defp row_at_call(_), do: :error
 
+  @spec parse_result_record(Types.expr()) :: Types.ir_expr()
+
   defp parse_result_record(expr), do: unwrap_result_record(expr) |> parse_result_fields()
+
+  @spec unwrap_result_record(Types.expr()) :: Types.ir_expr()
 
   defp unwrap_result_record(expr) do
     case expr do
@@ -113,6 +127,8 @@ defmodule Elmc.Backend.CCodegen.RowSliceAdjacentMerge do
     end
   end
 
+  @spec parse_result_fields(term() | Types.ir_expr()) :: Types.ir_expr()
+
   defp parse_result_fields({:ok, cells_field, score_field, cells_expr, score_expr}) do
     with true <- append_chain_fields?(cells_expr),
          true <- add_chain_fields?(score_expr) do
@@ -124,6 +140,8 @@ defmodule Elmc.Backend.CCodegen.RowSliceAdjacentMerge do
 
   defp parse_result_fields(:error), do: :error
 
+  @spec find_padded_cells_field(list(), Types.ir_expr()) :: Types.ir_expr()
+
   defp find_padded_cells_field(fields, width) do
     Enum.find_value(fields, :error, fn
       %{name: name, expr: expr} when is_binary(name) ->
@@ -133,6 +151,8 @@ defmodule Elmc.Backend.CCodegen.RowSliceAdjacentMerge do
         nil
     end)
   end
+
+  @spec padded_row_cells?(map() | term(), Types.ir_expr() | term(), Types.ir_expr() | term()) :: boolean()
 
   defp padded_row_cells?(
          %{op: :call, name: op, args: [left, right]},
@@ -153,6 +173,8 @@ defmodule Elmc.Backend.CCodegen.RowSliceAdjacentMerge do
 
   defp padded_row_cells?(_, _, _), do: false
 
+  @spec find_append_field(list()) :: Types.ir_expr()
+
   defp find_append_field(fields) do
     Enum.find_value(fields, :error, fn
       %{name: name, expr: expr} when is_binary(name) ->
@@ -165,6 +187,8 @@ defmodule Elmc.Backend.CCodegen.RowSliceAdjacentMerge do
     end)
   end
 
+  @spec append_chain_root?(map() | term()) :: boolean()
+
   defp append_chain_root?(%{op: :call, name: op, args: [_left, _right]})
        when op in ["__append__", "++"],
        do: true
@@ -173,6 +197,8 @@ defmodule Elmc.Backend.CCodegen.RowSliceAdjacentMerge do
     do: true
 
   defp append_chain_root?(_), do: false
+
+  @spec find_add_field(list()) :: Types.ir_expr()
 
   defp find_add_field(fields) do
     Enum.find_value(fields, :error, fn
@@ -184,6 +210,8 @@ defmodule Elmc.Backend.CCodegen.RowSliceAdjacentMerge do
     end)
   end
 
+  @spec find_score_field(list()) :: Types.ir_expr()
+
   defp find_score_field(fields) do
     Enum.find_value(fields, :error, fn
       %{name: name, expr: expr} when is_binary(name) ->
@@ -193,6 +221,8 @@ defmodule Elmc.Backend.CCodegen.RowSliceAdjacentMerge do
         nil
     end)
   end
+
+  @spec append_chain_fields?(map() | term()) :: boolean()
 
   defp append_chain_fields?(%{op: :call, name: op, args: [left, right]})
        when op in ["__append__", "++"],
@@ -208,13 +238,21 @@ defmodule Elmc.Backend.CCodegen.RowSliceAdjacentMerge do
   defp append_chain_fields?(%{op: :field_access, field: field}) when is_binary(field), do: true
   defp append_chain_fields?(_), do: false
 
+  @spec append_side?(Types.expr()) :: boolean()
+
   defp append_side?(expr), do: field_access?(expr) or append_chain_fields?(expr)
+
+  @spec field_access?(map() | term()) :: boolean()
 
   defp field_access?(%{op: :field_access, field: field}) when is_binary(field), do: true
   defp field_access?(_), do: false
 
+  @spec field_access_field(map() | term()) :: Types.ir_expr()
+
   defp field_access_field(%{op: :field_access, field: field}) when is_binary(field), do: field
   defp field_access_field(_), do: nil
+
+  @spec add_chain_fields?(map() | term()) :: boolean()
 
   defp add_chain_fields?(%{op: :call, name: op, args: [left, right]})
        when op in ["__add__", "+"],
@@ -230,7 +268,11 @@ defmodule Elmc.Backend.CCodegen.RowSliceAdjacentMerge do
   defp add_chain_fields?(%{op: :field_access, field: field}) when is_binary(field), do: true
   defp add_chain_fields?(_), do: false
 
+  @spec sum_side?(Types.expr()) :: boolean()
+
   defp sum_side?(expr), do: field_access?(expr) or add_chain_fields?(expr)
+
+  @spec row_width_from_calls(Types.decl_map(), String.t(), Types.ir_expr()) :: Types.ir_expr()
 
   defp row_width_from_calls(decl_map, module_name, row_calls) do
     with [first | _] <- row_calls,
@@ -252,6 +294,8 @@ defmodule Elmc.Backend.CCodegen.RowSliceAdjacentMerge do
     end
   end
 
+  @spec call_targets_from(Types.decl_map(), String.t(), Types.ir_expr()) :: Types.ir_expr()
+
   defp call_targets_from(decl_map, module_name, row_calls) do
     with [first | _] <- row_calls,
          {:ok, collapse_row, row_at, _, _} <- row_at_call(first),
@@ -259,6 +303,8 @@ defmodule Elmc.Backend.CCodegen.RowSliceAdjacentMerge do
       {:ok, collapse_row, row_at, merge}
     end
   end
+
+  @spec row_slice_width(Types.decl_map(), String.t(), String.t()) :: Types.ir_expr()
 
   defp row_slice_width(decl_map, module_name, row_at_target) do
     case Map.get(decl_map, FusionSupport.callee_key(module_name, row_at_target)) do
@@ -277,6 +323,8 @@ defmodule Elmc.Backend.CCodegen.RowSliceAdjacentMerge do
     end
   end
 
+  @spec row_drop_stride?(map() | term(), Types.ir_expr() | term()) :: boolean()
+
   defp row_drop_stride?(
          %{
            op: :qualified_call,
@@ -289,6 +337,8 @@ defmodule Elmc.Backend.CCodegen.RowSliceAdjacentMerge do
   end
 
   defp row_drop_stride?(_, _), do: false
+
+  @spec row_mul_width?(map() | term(), Types.ir_expr() | term()) :: boolean()
 
   defp row_mul_width?(%{op: :call, name: op, args: [%{op: :var, name: "row"}, %{op: :int_literal, value: width}]}, width)
        when op in ["__mul__", "*"],
@@ -306,6 +356,8 @@ defmodule Elmc.Backend.CCodegen.RowSliceAdjacentMerge do
        do: true
 
   defp row_mul_width?(_, _), do: false
+
+  @spec collapse_row_merge(Types.decl_map(), String.t(), String.t()) :: Types.ir_expr()
 
   defp collapse_row_merge(decl_map, module_name, collapse_row_target) do
     case Map.get(decl_map, FusionSupport.callee_key(module_name, collapse_row_target)) do
@@ -327,6 +379,8 @@ defmodule Elmc.Backend.CCodegen.RowSliceAdjacentMerge do
         :error
     end
   end
+
+  @spec nonzero_filter?(map() | term()) :: boolean()
 
   defp nonzero_filter?(%{
          op: :qualified_call,
@@ -353,6 +407,8 @@ defmodule Elmc.Backend.CCodegen.RowSliceAdjacentMerge do
 
   defp nonzero_filter?(_), do: false
 
+  @spec collapse_row_shape(Types.decl_map(), String.t(), String.t(), Types.ir_expr()) :: Types.ir_expr()
+
   defp collapse_row_shape(decl_map, module_name, collapse_row_target, width) do
     case Map.get(decl_map, FusionSupport.callee_key(module_name, collapse_row_target)) do
       %{
@@ -374,6 +430,8 @@ defmodule Elmc.Backend.CCodegen.RowSliceAdjacentMerge do
         :error
     end
   end
+
+  @spec repeat_pad?(map() | term(), Types.ir_expr() | term(), Types.ir_expr() | term()) :: boolean()
 
   defp repeat_pad?(
          %{
@@ -422,6 +480,8 @@ defmodule Elmc.Backend.CCodegen.RowSliceAdjacentMerge do
 
   defp repeat_pad?(_, _, _), do: false
 
+  @spec adjacent_pair_merge_record?(Types.decl_map(), String.t(), String.t(), Types.ir_expr(), Types.ir_expr()) :: boolean()
+
   defp adjacent_pair_merge_record?(decl_map, module_name, merge_target, cells_field, score_field) do
     case Map.get(decl_map, FusionSupport.callee_key(module_name, merge_target)) do
       %{expr: %{op: :case, subject: "values", branches: branches}} ->
@@ -431,6 +491,8 @@ defmodule Elmc.Backend.CCodegen.RowSliceAdjacentMerge do
         false
     end
   end
+
+  @spec adjacent_pair_merge_branches?(term(), String.t() | term(), String.t() | term(), Types.ir_expr() | term(), Types.ir_expr() | term()) :: boolean()
 
   defp adjacent_pair_merge_branches?(
          [
@@ -448,6 +510,8 @@ defmodule Elmc.Backend.CCodegen.RowSliceAdjacentMerge do
 
   defp adjacent_pair_merge_branches?(_, _, _, _, _), do: false
 
+  @spec adjacent_pair_merge_default?(map() | term(), Types.ir_expr() | term(), Types.ir_expr() | term()) :: boolean()
+
   defp adjacent_pair_merge_default?(
          %{op: :record_literal, fields: fields},
          cells_field,
@@ -462,6 +526,8 @@ defmodule Elmc.Backend.CCodegen.RowSliceAdjacentMerge do
   end
 
   defp adjacent_pair_merge_default?(_, _, _), do: false
+
+  @spec equal_merge_branch?(Types.expr(), String.t(), String.t(), Types.ir_expr(), Types.ir_expr(), term()) :: boolean()
 
   defp equal_merge_branch?(expr, module_name, merge_target, cells_field, score_field, _) do
     case expr do
@@ -478,6 +544,8 @@ defmodule Elmc.Backend.CCodegen.RowSliceAdjacentMerge do
         false
     end
   end
+
+  @spec adjacent_pair_merge_equal_then?(map() | term(), String.t() | term(), String.t() | term(), Types.ir_expr() | term(), Types.ir_expr() | term()) :: boolean()
 
   defp adjacent_pair_merge_equal_then?(
          %{
@@ -500,6 +568,8 @@ defmodule Elmc.Backend.CCodegen.RowSliceAdjacentMerge do
 
   defp adjacent_pair_merge_equal_then?(_, _, _, _, _), do: false
 
+  @spec adjacent_pair_merge_unequal_else?(map() | term(), String.t() | term(), String.t() | term(), Types.ir_expr() | term(), Types.ir_expr() | term()) :: boolean()
+
   defp adjacent_pair_merge_unequal_else?(
          %{
            op: :let_in,
@@ -517,11 +587,15 @@ defmodule Elmc.Backend.CCodegen.RowSliceAdjacentMerge do
 
   defp adjacent_pair_merge_unequal_else?(_, _, _, _, _), do: false
 
+  @spec merge_rest_call?(map() | term(), String.t() | term(), Types.ir_expr() | term()) :: boolean()
+
   defp merge_rest_call?(%{op: :qualified_call, target: target, args: [%{name: "rest"}]}, merge_target, "rest") do
     target == merge_target
   end
 
   defp merge_rest_call?(_, _, _), do: false
+
+  @spec merge_cons_rest_call?(map() | term(), String.t() | term()) :: boolean()
 
   defp merge_cons_rest_call?(
          %{
@@ -542,6 +616,8 @@ defmodule Elmc.Backend.CCodegen.RowSliceAdjacentMerge do
 
   defp merge_cons_rest_call?(_, _), do: false
 
+  @spec adjacent_pair_merge_cons_record?(Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), boolean()) :: boolean()
+
   defp adjacent_pair_merge_cons_record?(record, head_var, cells_field, score_field, add_score?) do
     case record do
       %{op: :record_literal, fields: fields} ->
@@ -559,6 +635,8 @@ defmodule Elmc.Backend.CCodegen.RowSliceAdjacentMerge do
     end
   end
 
+  @spec cons_matches?(map() | term(), Types.ir_expr() | term(), Types.ir_expr() | term()) :: boolean()
+
   defp cons_matches?(
          %{
            op: :qualified_call,
@@ -573,6 +651,8 @@ defmodule Elmc.Backend.CCodegen.RowSliceAdjacentMerge do
   end
 
   defp cons_matches?(_, _, _), do: false
+
+  @spec score_field_expr?(Types.expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr()) :: boolean()
 
   defp score_field_expr?(expr, score_field, head_var, true) do
     case expr do
@@ -596,6 +676,8 @@ defmodule Elmc.Backend.CCodegen.RowSliceAdjacentMerge do
     field_access_field(expr) == score_field
   end
 
+  @spec result_record_type(Types.decl_map(), String.t(), String.t()) :: Types.ir_expr()
+
   defp result_record_type(decl_map, module_name, name) do
     case Map.get(decl_map, {module_name, name}) do
       %{type: type} when is_binary(type) ->
@@ -609,12 +691,16 @@ defmodule Elmc.Backend.CCodegen.RowSliceAdjacentMerge do
     end
   end
 
+  @spec result_type_name(Types.ir_expr()) :: Types.ir_expr()
+
   defp result_type_name(type) do
     type
     |> String.trim()
     |> String.split(".")
     |> List.last()
   end
+
+  @spec emit(String.t(), String.t(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
 
   defp emit(module_name, name, cells_var, rows, width) do
     c_prefix = Util.module_fn_name(module_name, name)

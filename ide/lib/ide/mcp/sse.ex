@@ -1,6 +1,7 @@
 defmodule Ide.Mcp.Sse do
   @moduledoc false
 
+
   alias Ide.Mcp.WireTypes
 
   @spec priming_event() :: String.t()

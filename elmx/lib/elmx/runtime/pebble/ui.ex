@@ -1,5 +1,7 @@
 defmodule Elmx.Runtime.Pebble.Ui do
   @moduledoc false
+  alias Elmx.Types, as: Types
+
 
   alias Elmx.Runtime.Pebble.Ui.{Assets, Primitives, Structure}
   alias Elmx.Types

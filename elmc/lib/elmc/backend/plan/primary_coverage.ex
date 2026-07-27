@@ -1,5 +1,7 @@
 defmodule Elmc.Backend.Plan.PrimaryCoverage do
   @moduledoc false
+  alias Elmc.Backend.Plan.Types, as: Types
+
 
   alias Elmc.Backend.CCodegen.Types, as: CCodegenTypes
   alias Elmc.Backend.CCodegen.{DirectRender.Analysis, GenericReachability, RcRequired}

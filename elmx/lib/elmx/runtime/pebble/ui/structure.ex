@@ -1,8 +1,12 @@
 defmodule Elmx.Runtime.Pebble.Ui.Structure do
   @moduledoc false
+  alias Elmx.Types, as: Types
+
 
   alias Elmx.Runtime.Pebble.Ui.Helpers
   alias Elmx.Types
+
+  @spec window_stack(list()) :: Types.elm_value()
 
   def window_stack(windows) when is_list(windows),
     do: %{type: "windowStack", label: "", children: Enum.map(windows, &Helpers.normalize_child/1)}

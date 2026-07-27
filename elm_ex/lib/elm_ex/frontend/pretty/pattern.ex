@@ -1,5 +1,7 @@
 defmodule ElmEx.Frontend.Pretty.Pattern do
   @moduledoc false
+  alias ElmEx.Frontend.AstContract.Types, as: Types
+
 
   alias ElmEx.Frontend.Pretty.{Doc, Literal}
 
@@ -91,6 +93,8 @@ defmodule ElmEx.Frontend.Pretty.Pattern do
     Doc.text(inspect(other, limit: :infinity, printable_limit: 80))
   end
 
+  @spec format_list_elements(term() | Types.expr()) :: Types.expr()
+
   defp format_list_elements([]), do: Doc.text("[]")
 
   defp format_list_elements(elements) do
@@ -118,6 +122,8 @@ defmodule ElmEx.Frontend.Pretty.Pattern do
 
   defp compact_list_pattern_element?(_), do: false
 
+  @spec format_cons_pattern(Types.expr(), Types.expr()) :: Types.expr()
+
   defp format_cons_pattern(head, tail) do
     Doc.concat([
       format_cons_head(head),
@@ -125,6 +131,8 @@ defmodule ElmEx.Frontend.Pretty.Pattern do
       format(tail)
     ])
   end
+
+  @spec format_cons_head(Types.expr()) :: Types.expr()
 
   defp format_cons_head(head) do
     if cons_head_needs_parens?(head) do
@@ -134,8 +142,12 @@ defmodule ElmEx.Frontend.Pretty.Pattern do
     end
   end
 
+  @spec cons_head_needs_parens?(map() | term()) :: boolean()
+
   defp cons_head_needs_parens?(%{kind: :constructor, arg_pattern: arg}) when not is_nil(arg), do: true
   defp cons_head_needs_parens?(_), do: false
+
+  @spec format_constructor_arg(Types.expr()) :: Types.expr()
 
   defp format_constructor_arg(arg) do
     if constructor_arg_needs_parens?(arg) do
@@ -145,9 +157,13 @@ defmodule ElmEx.Frontend.Pretty.Pattern do
     end
   end
 
+  @spec constructor_arg_needs_parens?(map() | term()) :: boolean()
+
   defp constructor_arg_needs_parens?(%{kind: :constructor, bind: bind}) when is_binary(bind), do: true
   defp constructor_arg_needs_parens?(%{kind: :constructor, arg_pattern: arg}) when not is_nil(arg), do: true
   defp constructor_arg_needs_parens?(_), do: false
+
+  @spec flatten_list_pattern(Types.expr(), Types.expr()) :: Types.expr()
 
   defp flatten_list_pattern(head, tail) do
     case flatten_list_tail(tail) do
@@ -155,6 +171,8 @@ defmodule ElmEx.Frontend.Pretty.Pattern do
       :error -> :error
     end
   end
+
+  @spec flatten_list_tail(map() | term()) :: Types.expr()
 
   defp flatten_list_tail(%{kind: :constructor, name: "[]", arg_pattern: nil}), do: {:ok, []}
 

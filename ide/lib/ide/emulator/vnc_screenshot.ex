@@ -25,6 +25,8 @@ defmodule Ide.Emulator.VncScreenshot do
     end
   end
 
+  @spec capture_from_socket(term(), term(), term()) :: term()
+
   defp capture_from_socket(socket, platform, timeout) do
     try do
       profile = WatchModels.profile_for(platform)
@@ -64,6 +66,8 @@ defmodule Ide.Emulator.VncScreenshot do
     end
   end
 
+  @spec negotiate_security(term(), term()) :: term()
+
   defp negotiate_security(socket, timeout) do
     with {:ok, <<count::unsigned-8>>} <- recv_exact(socket, 1, timeout),
          true <- count > 0,
@@ -79,6 +83,8 @@ defmodule Ide.Emulator.VncScreenshot do
     end
   end
 
+  @spec recv_security_result(term(), term()) :: term()
+
   defp recv_security_result(socket, timeout) do
     case recv_exact(socket, 4, timeout) do
       {:ok, <<0, 0, 0, 0>>} -> {:ok, :ok}
@@ -86,6 +92,8 @@ defmodule Ide.Emulator.VncScreenshot do
       other -> other
     end
   end
+
+  @spec read_server_init(term(), term()) :: term()
 
   defp read_server_init(socket, timeout) do
     with {:ok,
@@ -97,6 +105,8 @@ defmodule Ide.Emulator.VncScreenshot do
       {:ok, width, height, pixel_format}
     end
   end
+
+  @spec request_framebuffer(term(), term(), term(), term()) :: term()
 
   defp request_framebuffer(socket, width, height, _timeout) do
     message =
@@ -115,6 +125,8 @@ defmodule Ide.Emulator.VncScreenshot do
     end
   end
 
+  @spec read_framebuffer_update(term(), term(), term(), term(), term()) :: term()
+
   defp read_framebuffer_update(socket, width, height, profile, timeout) do
     with {:ok, <<0, _padding, count::unsigned-big-16>>} <- recv_exact(socket, 4, timeout),
          {:ok, pixels, fb_w, fb_h} <-
@@ -122,6 +134,8 @@ defmodule Ide.Emulator.VncScreenshot do
       {:ok, pixels, fb_w, fb_h}
     end
   end
+
+  @spec composite_rectangles(term(), term() | non_neg_integer(), term(), term(), term(), term()) :: term()
 
   defp composite_rectangles(_socket, 0, _fb_w, _fb_h, _profile, _timeout) do
     {:error, :vnc_empty_framebuffer_update}
@@ -139,6 +153,8 @@ defmodule Ide.Emulator.VncScreenshot do
     )
   end
 
+  @spec composite_rectangles_loop(term(), term() | non_neg_integer(), term(), term(), term(), term(), term()) :: term()
+
   defp composite_rectangles_loop(_socket, 0, fb_w, fb_h, _timeout, buffer, _profile),
     do: {:ok, buffer, fb_w, fb_h}
 
@@ -149,11 +165,15 @@ defmodule Ide.Emulator.VncScreenshot do
     end
   end
 
+  @spec blank_buffer(term(), term(), term()) :: term()
+
   defp blank_buffer(width, height, profile) do
     blank = ScreenshotPostprocess.blank_bgrx_pixel(profile)
     blank_row = :binary.copy(blank, width)
     :binary.copy(blank_row, height)
   end
+
+  @spec read_rectangle(term(), term(), term(), term(), term(), term()) :: term()
 
   defp read_rectangle(socket, fb_width, fb_height, timeout, buffer, profile) do
     with {:ok, header} <- recv_exact(socket, 12, timeout) do
@@ -175,6 +195,8 @@ defmodule Ide.Emulator.VncScreenshot do
       )
     end
   end
+
+  @spec apply_rectangle(term(), term(), term(), term(), term(), term(), term(), term(), term(), term(), term()) :: term()
 
   defp apply_rectangle(
          socket,
@@ -301,6 +323,8 @@ defmodule Ide.Emulator.VncScreenshot do
     {:error, {:vnc_unsupported_encoding, encoding}}
   end
 
+  @spec grow_framebuffer(term(), term(), term(), term(), term(), term()) :: term()
+
   defp grow_framebuffer(buffer, fb_w, fb_h, needed_w, needed_h, profile) do
     if needed_w <= fb_w and needed_h <= fb_h do
       {buffer, fb_w, fb_h}
@@ -310,6 +334,8 @@ defmodule Ide.Emulator.VncScreenshot do
       {copy_region(blank_buffer(new_w, new_h, profile), buffer, fb_w, fb_h), new_w, new_h}
     end
   end
+
+  @spec copy_region(term(), term(), term(), term()) :: term()
 
   defp copy_region(dest, src, src_w, src_h) do
     dest_w = div(byte_size(dest), src_h)
@@ -330,6 +356,8 @@ defmodule Ide.Emulator.VncScreenshot do
     end)
   end
 
+  @spec clip_rectangle(term(), term(), term(), term(), term(), term()) :: term()
+
   defp clip_rectangle(x, y, rect_w, rect_h, fb_width, fb_height) do
     dst_x = max(x, 0)
     dst_y = max(y, 0)
@@ -345,6 +373,8 @@ defmodule Ide.Emulator.VncScreenshot do
     end
   end
 
+  @spec extract_rectangle_pixels(term(), term(), term(), term(), term(), term(), term()) :: term()
+
   defp extract_rectangle_pixels(wire_pixels, rect_w, _rect_h, src_x, src_y, clip_w, clip_h) do
     row_bytes = rect_w * 4
     clip_row_bytes = clip_w * 4
@@ -353,6 +383,8 @@ defmodule Ide.Emulator.VncScreenshot do
       :binary.part(wire_pixels, row * row_bytes + src_x * 4, clip_row_bytes)
     end
   end
+
+  @spec blit_raw(term(), term(), term(), term(), term(), term(), term(), term()) :: term()
 
   defp blit_raw(_buffer, fb_width, fb_height, 0, 0, rect_w, rect_h, pixels)
        when rect_w == fb_width and rect_h == fb_height do
@@ -387,6 +419,8 @@ defmodule Ide.Emulator.VncScreenshot do
     {:ok, buffer}
   end
 
+  @spec recv_line(term(), term(), term()) :: term()
+
   defp recv_line(socket, timeout) do
     recv_line(socket, timeout, <<>>)
   end
@@ -399,11 +433,15 @@ defmodule Ide.Emulator.VncScreenshot do
     end
   end
 
+  @spec recv_exact(term(), term(), term()) :: term()
+
   defp recv_exact(socket, length, timeout) do
     :gen_tcp.recv(socket, length, timeout)
   end
 
   # SDK uses firmware screenshots, not VNC. Trim QEMU margins, then SDK styling on RGB.
+  @spec crop_trim_and_normalize_vnc(term(), term(), term(), term(), term(), term(), term()) :: term()
+
   defp crop_trim_and_normalize_vnc(raw_pixels, fb_w, fb_h, exp_w, exp_h, pixel_format, profile) do
     with {:ok, pixels} <-
            ScreenshotPostprocess.crop_framebuffer(raw_pixels, fb_w, fb_h, exp_w, exp_h),

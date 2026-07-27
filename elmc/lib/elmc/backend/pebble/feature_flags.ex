@@ -1,5 +1,7 @@
 defmodule Elmc.Backend.Pebble.FeatureFlags do
   @moduledoc false
+  alias Elmc.Types, as: Types
+
 
   alias ElmEx.IR
   alias Elmc.Backend.Pebble.{Reachability, Types}
@@ -32,6 +34,8 @@ defmodule Elmc.Backend.Pebble.FeatureFlags do
 
   def augment_from_generated_c(flags, _), do: flags
 
+  @spec augment_draw_from_generated_c(Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+
   defp augment_draw_from_generated_c(flags, generated_c) do
     if String.contains?(generated_c, "ELMC_RENDER_OP_TEXT_INT_WITH_FONT") do
       flags
@@ -41,6 +45,8 @@ defmodule Elmc.Backend.Pebble.FeatureFlags do
       flags
     end
   end
+
+  @spec augment_command_flags_from_generated_c(Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
 
   defp augment_command_flags_from_generated_c(flags, generated_c) do
     Tables.command_kinds()

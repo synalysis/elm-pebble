@@ -1,5 +1,7 @@
 defmodule Elmc.Backend.CCodegen.BindingPlans do
   @moduledoc false
+  alias Elmc.Backend.CCodegen.Types, as: Types
+
 
   alias Elmc.Backend.CCodegen.Native.Int, as: NativeInt
   alias Elmc.Backend.CCodegen.Native.UsageAnalysis, as: NativeUsageAnalysis

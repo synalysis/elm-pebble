@@ -62,6 +62,8 @@ defmodule Ide.Debugger.PendingHttpFollowups do
     :ok
   end
 
+  @spec drain_until_empty(term(), term()) :: term()
+
   defp drain_until_empty(project_slug, ctx)
        when is_binary(project_slug) and is_map(ctx) do
     items = project_slug |> AgentStore.fetch() |> pending()
@@ -181,6 +183,8 @@ defmodule Ide.Debugger.PendingHttpFollowups do
     end
   end
 
+  @spec run_flight_locked(term(), String.t(), String.t(), term(), term(), term(), term()) :: term()
+
   defp run_flight_locked(
          project_slug,
          target,
@@ -223,9 +227,13 @@ defmodule Ide.Debugger.PendingHttpFollowups do
   @spec flight_fetch_timeout_ms() :: pos_integer()
   defp flight_fetch_timeout_ms, do: @flight_fetch_timeout_ms
 
+  @spec execute_flight_http(term(), String.t(), term(), term()) :: term()
+
   defp execute_flight_http(state, target, command, ctx) do
     RuntimeFollowups.execute_http_command(state, target, command, ctx)
   end
+
+  @spec flight_fields(map()) :: term()
 
   defp flight_fields(item) when is_map(item) do
     target =
@@ -241,11 +249,15 @@ defmodule Ide.Debugger.PendingHttpFollowups do
     {target, target_name, package, command, followup_message}
   end
 
+  @spec put_pending(map(), list()) :: term()
+
   defp put_pending(state, items) when is_map(state) and is_list(items) do
     state
     |> Map.put(@pending_key, items)
     |> drop_legacy_companion_pending()
   end
+
+  @spec legacy_companion_pending(term()) :: term()
 
   defp legacy_companion_pending(state) do
     case Map.get(state, :companion) do
@@ -254,6 +266,8 @@ defmodule Ide.Debugger.PendingHttpFollowups do
       _ -> []
     end
   end
+
+  @spec drop_legacy_companion_pending(term()) :: term()
 
   defp drop_legacy_companion_pending(state) do
     update_in(state, [:companion], fn
@@ -268,6 +282,8 @@ defmodule Ide.Debugger.PendingHttpFollowups do
     end)
   end
 
+  @spec completed_flights(map()) :: term()
+
   defp completed_flights(state) when is_map(state) do
     case Map.get(state, @completed_key) || Map.get(state, to_string(@completed_key)) do
       %MapSet{} = set -> set
@@ -275,6 +291,8 @@ defmodule Ide.Debugger.PendingHttpFollowups do
       _ -> MapSet.new()
     end
   end
+
+  @spec completed_flight?(term(), String.t()) :: boolean()
 
   defp completed_flight?(project_slug, key) do
     project_slug
@@ -285,9 +303,13 @@ defmodule Ide.Debugger.PendingHttpFollowups do
     _ -> false
   end
 
+  @spec mark_http_completed(map(), map()) :: term()
+
   defp mark_http_completed(state, command) when is_map(state) and is_map(command) do
     Map.put(state, @completed_key, MapSet.put(completed_flights(state), http_flight_key(command)))
   end
+
+  @spec ensure_drain_lock_table() :: term()
 
   defp ensure_drain_lock_table do
     if :ets.whereis(@drain_lock_table) == :undefined do
@@ -297,6 +319,8 @@ defmodule Ide.Debugger.PendingHttpFollowups do
     :ok
   end
 
+  @spec ensure_in_flight_table() :: term()
+
   defp ensure_in_flight_table do
     if :ets.whereis(@in_flight_table) == :undefined do
       :ets.new(@in_flight_table, [:named_table, :public, :set, read_concurrency: true])
@@ -304,6 +328,8 @@ defmodule Ide.Debugger.PendingHttpFollowups do
 
     :ok
   end
+
+  @spec http_in_flight?(String.t()) :: boolean()
 
   defp http_in_flight?(key) do
     ensure_in_flight_table()
@@ -314,10 +340,14 @@ defmodule Ide.Debugger.PendingHttpFollowups do
     end
   end
 
+  @spec mark_http_in_flight(String.t()) :: term()
+
   defp mark_http_in_flight(key) do
     ensure_in_flight_table()
     :ets.insert(@in_flight_table, {key, true})
   end
+
+  @spec clear_http_in_flight(String.t()) :: term()
 
   defp clear_http_in_flight(key) do
     case :ets.whereis(@in_flight_table) do

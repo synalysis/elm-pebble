@@ -1,5 +1,7 @@
 defmodule Elmx.Runtime.Json.Decode.Build do
   @moduledoc false
+  alias Elmx.Types, as: Types
+
 
   alias Elmx.Runtime.Core
   alias Elmx.Types

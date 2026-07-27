@@ -1,5 +1,7 @@
 defmodule Ide.Emulator.Session.Startup do
   @moduledoc false
+  alias Ide.Emulator.Types, as: Types
+
 
   require Logger
 

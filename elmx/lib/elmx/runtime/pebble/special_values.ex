@@ -1,5 +1,7 @@
 defmodule Elmx.Runtime.Pebble.SpecialValues do
   @moduledoc false
+  alias Elmx.Types, as: Types
+
 
   alias Elmx.Runtime.Pebble.KernelTargets
   alias Elmx.Runtime.Pebble.SpecialValues.Companion
@@ -32,6 +34,8 @@ defmodule Elmx.Runtime.Pebble.SpecialValues do
   @spec dispatchers() :: [module()]
   def dispatchers, do: @dispatchers
 
+  @spec rewrite_qualified(String.t(), [String.t()]) :: String.t()
+
   defp rewrite_qualified(target, args) do
     case dispatch_rewrite(target, args) do
       {:ok, _} = ok ->
@@ -41,6 +45,8 @@ defmodule Elmx.Runtime.Pebble.SpecialValues do
         kernel_targets_rewrite(target, args)
     end
   end
+
+  @spec dispatch_rewrite(String.t(), [String.t()]) :: Types.elm_value()
 
   defp dispatch_rewrite(target, args) do
     Enum.reduce_while(@dispatchers, :error, fn mod, :error ->
@@ -52,6 +58,8 @@ defmodule Elmx.Runtime.Pebble.SpecialValues do
     end)
   end
 
+  @spec kernel_targets_rewrite(String.t(), [String.t()]) :: Types.elm_value()
+
   defp kernel_targets_rewrite(target, args) do
     if kernel_target?(target) do
       KernelTargets.rewrite(target, args)
@@ -59,6 +67,8 @@ defmodule Elmx.Runtime.Pebble.SpecialValues do
       :error
     end
   end
+
+  @spec kernel_target?(String.t()) :: boolean()
 
   defp kernel_target?(target) when is_binary(target) do
     String.starts_with?(target, "Elm.Kernel.PebbleWatch.") or

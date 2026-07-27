@@ -1,5 +1,7 @@
 defmodule Elmc.Backend.CCodegen.DirectAffine do
   @moduledoc false
+  alias Elmc.Backend.CCodegen.Types, as: Types
+
 
   alias Elmc.Backend.CCodegen.DirectRender.Emit.Release
   alias Elmc.Backend.CCodegen.Host

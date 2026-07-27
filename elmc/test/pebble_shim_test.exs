@@ -1369,7 +1369,9 @@ defmodule Elmc.PebbleShimTest do
     generated = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
     assert String.contains?(generated, "elmc_closure_new_rc")
     assert String.contains?(generated, "elmc_fn_Main_step_closure_0")
-    assert String.contains?(generated, "elmc_list_filter")
+    # `List.filter pred |> List.head` lowers to find-first (keeps the partial pred).
+    assert String.contains?(generated, "elmc_list_find_first") or
+             String.contains?(generated, "elmc_list_filter")
     refute String.contains?(generated, "elmc_partial_ref_")
 
     harness_path = Path.join(out_dir, "c/partial_collision_harness.c")
