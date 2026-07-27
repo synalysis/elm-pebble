@@ -1,0 +1,27 @@
+defmodule Elmc.Backend.Pebble.SourceWriter.ViewRuntime.ViewCommands.ResultFetch.StreamViewFetch do
+  @moduledoc false
+  alias Elmc.Types, as: Types
+
+
+  alias Elmc.Backend.Pebble.Types
+
+  alias Elmc.Backend.Pebble.SourceWriter.ViewRuntime.ViewCommands.ResultFetch.StreamViewFetch.{
+    CachedResult,
+    ElseOpen,
+    ModelInvoke,
+    ResultShape
+  }
+
+  @spec body(Types.view_command_bindings()) :: Types.c_source()
+  def body(%{entry_view_fn: entry_view_fn} = bindings) do
+    direct_abi? = Map.get(bindings, :entry_view_direct_abi?, false)
+
+    [
+      ElseOpen.body(),
+      CachedResult.body(),
+      ModelInvoke.body(entry_view_fn, direct_abi?),
+      ResultShape.body()
+    ]
+    |> IO.iodata_to_binary()
+  end
+end

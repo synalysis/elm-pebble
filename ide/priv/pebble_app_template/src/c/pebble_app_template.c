@@ -1406,10 +1406,13 @@ static void apply_pending_cmd(void) {
 #endif
 #if ELMC_PEBBLE_FEATURE_CMD_GET_FIRMWARE_VERSION
     case ELMC_PEBBLE_CMD_GET_FIRMWARE_VERSION: {
-      char firmware_buffer[32] = {0};
-      watch_info_get_firmware_version(false, firmware_buffer, sizeof(firmware_buffer));
-      int rc = elmc_pebble_dispatch_tag_string(&s_elm_app, (int)cmd.p0, firmware_buffer);
-      APP_LOG(APP_LOG_LEVEL_INFO, "cmd firmware=%s tag=%ld rc=%d", firmware_buffer, (long)cmd.p0, rc);
+      WatchInfoVersion ver = watch_info_get_firmware_version();
+      const char *field_names[] = {"major", "minor", "patch"};
+      int64_t field_values[] = {ver.major, ver.minor, ver.patch};
+      int rc = elmc_pebble_dispatch_tag_record_int_fields(
+          &s_elm_app, (int)cmd.p0, 3, field_names, field_values);
+      APP_LOG(APP_LOG_LEVEL_INFO, "cmd firmware=%d.%d.%d tag=%ld rc=%d",
+              (int)ver.major, (int)ver.minor, (int)ver.patch, (long)cmd.p0, rc);
       if (rc == 0) {
         apply_pending_cmd();
         render_model();
@@ -2146,6 +2149,7 @@ static void draw_update_proc(Layer *layer, GContext *ctx) {
     }
     const ElmcPebbleDrawCmd *cmd = &s_draw_cmd;
     switch (cmd->kind) {
+#if ELMC_PEBBLE_FEATURE_DRAW_CONTEXT
       case ELMC_PEBBLE_DRAW_PUSH_CONTEXT:
         if (s_draw_style_top < ELMC_DRAW_STYLE_STACK_DEPTH - 1) {
           s_draw_style_stack[s_draw_style_top + 1] = s_draw_style_stack[s_draw_style_top];
@@ -2159,19 +2163,41 @@ static void draw_update_proc(Layer *layer, GContext *ctx) {
           apply_draw_style_compact(ctx, &s_draw_style_stack[s_draw_style_top]);
         }
         break;
+#endif
+#if ELMC_PEBBLE_FEATURE_DRAW_STROKE_COLOR
       case ELMC_PEBBLE_DRAW_STROKE_COLOR:
         s_draw_style_stack[s_draw_style_top].stroke_color = color_from_code(cmd->p0);
         graphics_context_set_stroke_color(ctx, s_draw_style_stack[s_draw_style_top].stroke_color);
         break;
+#endif
+#if ELMC_PEBBLE_FEATURE_DRAW_TEXT_COLOR
       case ELMC_PEBBLE_DRAW_TEXT_COLOR:
         s_draw_style_stack[s_draw_style_top].text_color = color_from_code(cmd->p0);
         graphics_context_set_text_color(ctx, s_draw_style_stack[s_draw_style_top].text_color);
         break;
+#endif
+#if ELMC_PEBBLE_FEATURE_DRAW_CLEAR
       case ELMC_PEBBLE_DRAW_CLEAR:
         graphics_context_set_fill_color(ctx, color_from_code(cmd->p0));
         graphics_fill_rect(ctx, paint_rect, 0, GCornerNone);
         graphics_context_set_fill_color(ctx, s_draw_style_stack[s_draw_style_top].fill_color);
         break;
+#endif
+#if ELMC_PEBBLE_FEATURE_DRAW_FILL_RECT
+      case ELMC_PEBBLE_DRAW_FILL_RECT: {
+        int16_t x = (int16_t)cmd->p0;
+        int16_t y = (int16_t)cmd->p1;
+        int16_t w = (int16_t)cmd->p2;
+        int16_t h = (int16_t)cmd->p3;
+        if (rect_params_are_valid(w, h)) {
+          graphics_context_set_fill_color(ctx, color_from_code(cmd->p4));
+          graphics_fill_rect(ctx, GRect(x, y, w, h), 0, GCornerNone);
+          graphics_context_set_fill_color(ctx, s_draw_style_stack[s_draw_style_top].fill_color);
+        }
+        break;
+      }
+#endif
+#if ELMC_PEBBLE_FEATURE_DRAW_RECT
       case ELMC_PEBBLE_DRAW_RECT: {
         int16_t x = (int16_t)cmd->p0;
         int16_t y = (int16_t)cmd->p1;
@@ -2194,6 +2220,8 @@ static void draw_update_proc(Layer *layer, GContext *ctx) {
         }
         break;
       }
+#endif
+#if ELMC_PEBBLE_FEATURE_DRAW_TEXT
       case ELMC_PEBBLE_DRAW_TEXT: {
         bool should_unload = false;
         GFont font = font_from_id_for_height(cmd->p0, cmd->p4, &should_unload);
@@ -2212,6 +2240,7 @@ static void draw_update_proc(Layer *layer, GContext *ctx) {
         }
         break;
       }
+#endif
       default:
         break;
     }

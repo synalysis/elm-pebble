@@ -128,7 +128,9 @@ defmodule Ide.PebbleToolchain.Elmc do
       debug_usage_policy: Keyword.get(opts, :debug_usage_policy, :error),
       plan_ir_mode: Keyword.get(opts, :plan_ir_mode, :primary),
       plan_ir_strict: Keyword.get(opts, :plan_ir_strict, true),
-      codegen_profile: codegen_profile_for_project_dir(project_root, %{})
+      codegen_profile:
+        Keyword.get(opts, :codegen_profile) ||
+          codegen_profile_for_project_dir(project_root, %{})
     }
 
     compile_opts = watch_compile_opts(compile_out_dir, target_platforms, compile_extra)

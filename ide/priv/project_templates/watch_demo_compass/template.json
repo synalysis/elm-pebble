@@ -1,3 +1,3 @@
 {
-  "target_platforms": ["aplite"]
+  "target_platforms": ["basalt", "chalk", "diorite", "emery", "flint", "gabbro"]
 }

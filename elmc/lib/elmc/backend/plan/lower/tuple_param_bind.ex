@@ -52,23 +52,24 @@ defmodule Elmc.Backend.Plan.TupleParamBind do
 
   def bind(_, ctx, b), do: {:ok, ctx, b}
 
-  @spec param_types_by_name(Types.decl(), Types.ir_expr()) :: Types.ir_expr()
-
+  @spec param_types_by_name(map(), Context.t()) :: %{optional(String.t()) => String.t()}
   defp param_types_by_name(decl, ctx) do
+    local_types = ctx.local_types
+
     with type when is_binary(type) <- Map.get(decl, :type),
          arg_types when is_list(arg_types) <- TypeParsing.function_arg_types(type),
          args when is_list(args) <- Map.get(decl, :args) do
       args
       |> Enum.with_index()
-      |> Enum.reduce(ctx.local_types || %{}, fn {param, idx}, acc ->
+      |> Enum.reduce(local_types, fn {param, idx}, acc ->
         case Enum.at(arg_types, idx) do
           t when is_binary(t) -> Map.put(acc, param, Host.normalize_type_name(t))
           _ -> acc
         end
       end)
-      |> Map.merge(ctx.local_types || %{})
+      |> Map.merge(local_types)
     else
-      _ -> ctx.local_types || %{}
+      _ -> local_types
     end
   end
 

@@ -132,6 +132,76 @@ defmodule ElmEx.Frontend.GeneratedExpressionParser do
   @spec prepare_for_debug(String.t()) :: String.t()
   def prepare_for_debug(source) when is_binary(source), do: prepare_source(source)
 
+  @doc false
+  @spec trim_expression_source(String.t()) :: String.t()
+  def trim_expression_source(source) when is_binary(source), do: trim_prepared_source(source)
+
+  @doc false
+  @spec normalize_function_body(String.t()) :: String.t()
+  def normalize_function_body(source) when is_binary(source) do
+    if String.contains?(source, "\n") do
+      dedented = trim_expression_source(source)
+      trimmed = String.trim(source)
+
+      cond do
+        dedent_unindented_if_after_in?(dedented) -> trimmed
+        trim_misaligns_let_in?(trimmed) -> dedented
+        true -> dedented
+      end
+    else
+      String.trim(source)
+    end
+  end
+
+  @spec trim_misaligns_let_in?(String.t()) :: boolean()
+  defp trim_misaligns_let_in?(source) when is_binary(source) do
+    lines = String.split(source, "\n")
+
+    let_indent =
+      lines
+      |> Enum.find_value(fn line ->
+        if String.match?(String.trim_leading(line), ~r/^let\b/u), do: leading_indent_count(line)
+      end)
+
+    in_indent =
+      lines
+      |> Enum.find_value(fn line ->
+        if String.match?(String.trim_leading(line), ~r/^in\b/u), do: leading_indent_count(line)
+      end)
+
+    is_integer(let_indent) and is_integer(in_indent) and let_indent == 0 and in_indent > 0
+  end
+
+  @spec dedent_unindented_if_after_in?(String.t()) :: boolean()
+  defp dedent_unindented_if_after_in?(source) when is_binary(source) do
+    lines =
+      source
+      |> String.split("\n")
+      |> Enum.map(&String.trim_trailing/1)
+      |> Enum.reject(&(String.trim(&1) == ""))
+
+    case Enum.find_index(lines, &String.match?(String.trim_leading(&1), ~r/^in\b/u)) do
+      nil ->
+        false
+
+      idx ->
+        lines
+        |> Enum.drop(idx + 1)
+        |> Enum.find(fn line ->
+          trimmed = String.trim_leading(line)
+          trimmed != "" and not String.starts_with?(trimmed, "--")
+        end)
+        |> case do
+          line when is_binary(line) ->
+            leading_indent_count(line) == 0 and
+              String.match?(String.trim_leading(line), ~r/^(if|case)\b/u)
+
+          _ ->
+            false
+        end
+    end
+  end
+
   @spec prepare_source(source()) :: source()
   defp prepare_source(source) when is_binary(source) do
     source

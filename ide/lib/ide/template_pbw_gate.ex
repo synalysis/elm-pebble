@@ -55,7 +55,9 @@ defmodule Ide.TemplatePbwGate do
                workspace_root: workspace,
                target_type: ProjectTemplates.target_type_for_template(template),
                project_name: template,
-               target_platforms: target_platforms
+               target_platforms: target_platforms,
+               emulator_debug_logs: false,
+               emulator_storage_logs: false
              ),
            true <- File.regular?(pkg.artifact_path) do
         {:ok,

@@ -959,7 +959,7 @@ defmodule ElmEx.Frontend.GeneratedContractBuilder do
 
   @spec parse_expression(String.t() | nil, String.t()) :: AstTypes.expr()
   defp parse_expression(_name, body) do
-    body = String.trim(body)
+    body = GeneratedExpressionParser.normalize_function_body(body)
     generated_expr = maybe_generated_expr(body)
 
     generated_expr || unsupported_expr(body)
@@ -1624,7 +1624,8 @@ defmodule ElmEx.Frontend.GeneratedContractBuilder do
 
   @spec infix_declaration_line?(String.t()) :: boolean()
   defp infix_declaration_line?(trimmed) when is_binary(trimmed) do
-    Regex.match?(~r/^infix(?:l|r)?\s+/u, trimmed)
+    Regex.match?(~r/^infix(?:l|r)?\s+/u, trimmed) and
+      not Regex.match?(~r/^infix(?:l|r)?\s+[a-z][A-Za-z0-9_']*(?:\s+[a-z][A-Za-z0-9_']*)*\s*=/u, trimmed)
   end
 
   @spec comment_only_raw_line?(String.t()) :: boolean()

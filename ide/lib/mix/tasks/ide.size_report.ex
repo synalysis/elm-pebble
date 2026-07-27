@@ -390,7 +390,9 @@ defmodule Mix.Tasks.Ide.SizeReport do
       opts = [
         workspace_root: workspace_root,
         target_type: target_type,
-        project_name: template
+        project_name: template,
+        emulator_debug_logs: false,
+        emulator_storage_logs: false
       ]
 
       opts =

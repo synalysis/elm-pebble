@@ -1159,23 +1159,22 @@ defmodule Elmc.Backend.Plan.Lower.Record do
             ok
 
           :error ->
-            # Nested lambdas (Platform.application subscriptions `\model ->`) often only
-            # access a subset of a named alias. Alphabetical layout of that subset maps
-            # `pageData`→0 (key) instead of Platform.Model@4 — Time.every never installs.
-            # Same-module proper supersets are safe; cross-module supersets (Cylinder3d
-            # for anonymous `{radius,length}`) must not win.
-            case same_module_proper_superset_field_index(field_name, list, ctx) do
-              {key, idx} ->
-                {key, idx}
+            # Param type `{init, view, update}` must win over access-order subsets like
+            # `{init, view}` and over same-module alias supersets (Browser.element's
+            # `{init, subscriptions, update, view}` would map view→3 instead of impl@2).
+            case declared_param_type_proper_superset_field_index(field_name, list, ctx, name) do
+              {:inline, _} = ok ->
+                ok
 
               :error ->
-                # Param type `{init, view, update}` must win over access-order subsets
-                # like `{init, view}` (alphabetical view→1). Anonymous/inline declared
-                # types are alphabetical; only apply when the type is a proper superset
-                # so TriangularMesh equal-set alphabetical inference still wins.
-                case declared_param_type_proper_superset_field_index(field_name, list, ctx, name) do
-                  {:inline, _} = ok ->
-                    ok
+                # Nested lambdas (Platform.application subscriptions `\model ->`) often only
+                # access a subset of a named alias. Alphabetical layout of that subset maps
+                # `pageData`→0 (key) instead of Platform.Model@4 — Time.every never installs.
+                # Same-module proper supersets are safe; cross-module supersets (Cylinder3d
+                # for anonymous `{radius,length}`) must not win.
+                case same_module_proper_superset_field_index(field_name, list, ctx) do
+                  {key, idx} ->
+                    {key, idx}
 
                   :error ->
                     as_strings = Enum.map(list, &to_string/1)

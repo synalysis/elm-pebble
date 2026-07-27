@@ -1,0 +1,1031 @@
+defmodule Elmc.Backend.CCodegen.BuiltinOperators do
+  @moduledoc false
+  alias Elmc.Backend.CCodegen.Types, as: Types
+
+
+  alias Elmc.Backend.CCodegen.ConstantInt
+  alias Elmc.Backend.CCodegen.EnvBindings
+  alias Elmc.Backend.CCodegen.CaseCompile
+  alias Elmc.Backend.CCodegen.Host
+  alias Elmc.Backend.CCodegen.RcRuntimeEmit
+  alias Elmc.Backend.CCodegen.Native.Float, as: NativeFloat
+  alias Elmc.Backend.CCodegen.Native.Int, as: NativeInt
+  alias Elmc.Backend.CCodegen.Native.TypedReturn
+  alias Elmc.Backend.CCodegen.OwnershipCompile
+  alias Elmc.Backend.CCodegen.RuntimeCall
+  alias Elmc.Backend.CCodegen.SpecialValues
+  alias Elmc.Backend.CCodegen.Types
+  alias Elmc.Backend.CCodegen.ValueSlots
+
+  @basics_operator_names ~w(
+    __add__ __sub__ __mul__ __pow__ __fdiv__ __idiv__ __append__
+    __eq__ __neq__ __lt__ __lte__ __gt__ __gte__
+    modBy remainderBy round floor ceiling truncate toFloat
+    abs negate not xor compare max min clamp
+  )a
+
+  @utils_operator_names %{
+    "equal" => "__eq__",
+    "notEqual" => "__neq__",
+    "lt" => "__lt__",
+    "le" => "__lte__",
+    "gt" => "__gt__",
+    "ge" => "__gte__",
+    "append" => "__append__"
+  }
+
+  @spec qualified_operator_name(String.t()) :: String.t() | nil
+  def qualified_operator_name(target) when is_binary(target) do
+    normalized = SpecialValues.normalize_special_target(target)
+
+    case String.split(normalized, ".") do
+      ["Basics", name] when is_binary(name) ->
+        if Enum.member?(@basics_operator_names, name), do: name, else: nil
+
+      ["Utils", name] when is_binary(name) ->
+        Map.get(@utils_operator_names, name)
+
+      _ ->
+        nil
+    end
+  end
+
+  @spec qualified_operator_member?(String.t(), [String.t()]) :: boolean()
+  def qualified_operator_member?(target, operators)
+      when is_binary(target) and is_list(operators) do
+    case qualified_operator_name(target) do
+      nil -> false
+      name -> Enum.member?(operators, name)
+    end
+  end
+
+  @spec call(
+          String.t(),
+          [Types.ir_expr()],
+          Types.compile_env(),
+          Types.compile_counter()
+        ) ::
+          Types.compile_result_or_nil()
+  def call("e", [], env, counter) do
+    if ambient_math_constant_resolvable?(env, "e") do
+      Host.compile_expr(%{op: :float_literal, value: 2.718281828459045}, env, counter)
+    end
+  end
+
+  def call("pi", [], env, counter) do
+    if ambient_math_constant_resolvable?(env, "pi") do
+      Host.compile_expr(%{op: :float_literal, value: 3.141592653589793}, env, counter)
+    end
+  end
+
+  def call("LT", [], env, counter),
+    do: Host.compile_expr(%{op: :order_literal, value: -1}, env, counter)
+
+  def call("EQ", [], env, counter),
+    do: Host.compile_expr(%{op: :order_literal, value: 0}, env, counter)
+
+  def call("GT", [], env, counter),
+    do: Host.compile_expr(%{op: :order_literal, value: 1}, env, counter)
+
+  def call("__add__", [left, right], env, counter),
+    do: int_binop(left, right, "+", env, counter)
+
+  def call("__add__", args, env, counter) when length(args) in [0, 1],
+    do: curried_binary("__add__", args, env, counter)
+
+  def call("__sub__", [left, right], env, counter),
+    do: int_binop(left, right, "-", env, counter)
+
+  def call("__sub__", args, env, counter) when length(args) in [0, 1],
+    do: curried_binary("__sub__", args, env, counter)
+
+  def call("__mul__", [left, right], env, counter),
+    do: int_binop(left, right, "*", env, counter)
+
+  def call("__mul__", args, env, counter) when length(args) in [0, 1],
+    do: curried_binary("__mul__", args, env, counter)
+
+  def call("__pow__", [base, exponent], env, counter),
+    do:
+      Host.compile_expr(
+        %{op: :runtime_call, function: "elmc_basics_pow", args: [base, exponent]},
+        env,
+        counter
+      )
+
+  def call("__pow__", args, env, counter) when length(args) in [0, 1],
+    do: curried_binary("__pow__", args, env, counter)
+
+  def call("__fdiv__", [left, right], env, counter),
+    do: float_div(left, right, env, counter)
+
+  def call("__fdiv__", args, env, counter) when length(args) in [0, 1],
+    do: curried_binary("__fdiv__", args, env, counter)
+
+  def call("__idiv__", [left, right], env, counter),
+    do: int_idiv(left, right, env, counter)
+
+  def call("__idiv__", args, env, counter) when length(args) in [0, 1],
+    do: curried_binary("__idiv__", args, env, counter)
+
+  def call("__append__", [left, right], env, counter),
+    do:
+      Host.compile_expr(
+        Elmc.Backend.CCodegen.RuntimeCall.flatten_append_ir(left, right, env),
+        env,
+        counter
+      )
+
+  def call("__append__", args, env, counter)
+      when length(args) in [0, 1],
+      do: curried_binary("__append__", args, env, counter)
+
+  def call(name, [left, right], env, counter)
+      when name in ["__eq__", "__neq__", "__lt__", "__lte__", "__gt__", "__gte__"],
+      do: compare_operator(left, right, name, env, counter)
+
+  def call(name, args, env, counter)
+      when name in ["__eq__", "__neq__", "__lt__", "__lte__", "__gt__", "__gte__"] and
+             length(args) in [0, 1],
+      do: curried_binary(name, args, env, counter)
+
+  def call("modBy", [base, value], env, counter),
+    do:
+      Host.compile_expr(
+        %{op: :runtime_call, function: "elmc_basics_mod_by", args: [base, value]},
+        env,
+        counter
+      )
+
+  def call("remainderBy", [base, value], env, counter),
+    do:
+      Host.compile_expr(
+        %{op: :runtime_call, function: "elmc_basics_remainder_by", args: [base, value]},
+        env,
+        counter
+      )
+
+  def call("round", [x], env, counter),
+    do:
+      Host.compile_expr(
+        %{op: :runtime_call, function: "elmc_basics_round", args: [x]},
+        env,
+        counter
+      )
+
+  def call("floor", [x], env, counter),
+    do:
+      Host.compile_expr(
+        %{op: :runtime_call, function: "elmc_basics_floor", args: [x]},
+        env,
+        counter
+      )
+
+  def call("ceiling", [x], env, counter),
+    do:
+      Host.compile_expr(
+        %{op: :runtime_call, function: "elmc_basics_ceiling", args: [x]},
+        env,
+        counter
+      )
+
+  def call("truncate", [x], env, counter),
+    do:
+      Host.compile_expr(
+        %{op: :runtime_call, function: "elmc_basics_truncate", args: [x]},
+        env,
+        counter
+      )
+
+  def call("toFloat", [x], env, counter),
+    do:
+      Host.compile_expr(
+        %{op: :runtime_call, function: "elmc_basics_to_float", args: [x]},
+        env,
+        counter
+      )
+
+  def call("sqrt", [x], env, counter),
+    do:
+      Host.compile_expr(
+        %{op: :runtime_call, function: "elmc_basics_sqrt", args: [x]},
+        env,
+        counter
+      )
+
+  def call("logBase", [base, x], env, counter),
+    do:
+      Host.compile_expr(
+        %{op: :runtime_call, function: "elmc_basics_log_base", args: [base, x]},
+        env,
+        counter
+      )
+
+  def call("sin", [x], env, counter),
+    do:
+      Host.compile_expr(
+        %{op: :runtime_call, function: "elmc_basics_sin", args: [x]},
+        env,
+        counter
+      )
+
+  def call("cos", [x], env, counter),
+    do:
+      Host.compile_expr(
+        %{op: :runtime_call, function: "elmc_basics_cos", args: [x]},
+        env,
+        counter
+      )
+
+  def call("tan", [x], env, counter),
+    do:
+      Host.compile_expr(
+        %{op: :runtime_call, function: "elmc_basics_tan", args: [x]},
+        env,
+        counter
+      )
+
+  def call("acos", [x], env, counter),
+    do:
+      Host.compile_expr(
+        %{op: :runtime_call, function: "elmc_basics_acos", args: [x]},
+        env,
+        counter
+      )
+
+  def call("asin", [x], env, counter),
+    do:
+      Host.compile_expr(
+        %{op: :runtime_call, function: "elmc_basics_asin", args: [x]},
+        env,
+        counter
+      )
+
+  def call("atan", [x], env, counter),
+    do:
+      Host.compile_expr(
+        %{op: :runtime_call, function: "elmc_basics_atan", args: [x]},
+        env,
+        counter
+      )
+
+  def call("atan2", [y, x], env, counter),
+    do:
+      Host.compile_expr(
+        %{op: :runtime_call, function: "elmc_basics_atan2", args: [y, x]},
+        env,
+        counter
+      )
+
+  def call("degrees", [x], env, counter),
+    do:
+      Host.compile_expr(
+        %{op: :runtime_call, function: "elmc_basics_degrees", args: [x]},
+        env,
+        counter
+      )
+
+  def call("radians", [x], env, counter),
+    do:
+      Host.compile_expr(
+        %{op: :runtime_call, function: "elmc_basics_radians", args: [x]},
+        env,
+        counter
+      )
+
+  def call("turns", [x], env, counter),
+    do:
+      Host.compile_expr(
+        %{op: :runtime_call, function: "elmc_basics_turns", args: [x]},
+        env,
+        counter
+      )
+
+  def call("fromPolar", [polar], env, counter),
+    do:
+      Host.compile_expr(
+        %{op: :runtime_call, function: "elmc_basics_from_polar", args: [polar]},
+        env,
+        counter
+      )
+
+  def call("toPolar", [point], env, counter),
+    do:
+      Host.compile_expr(
+        %{op: :runtime_call, function: "elmc_basics_to_polar", args: [point]},
+        env,
+        counter
+      )
+
+  def call("isNaN", [x], env, counter),
+    do:
+      Host.compile_expr(
+        %{op: :runtime_call, function: "elmc_basics_is_nan", args: [x]},
+        env,
+        counter
+      )
+
+  def call("isInfinite", [x], env, counter),
+    do:
+      Host.compile_expr(
+        %{op: :runtime_call, function: "elmc_basics_is_infinite", args: [x]},
+        env,
+        counter
+      )
+
+  def call("abs", [x], env, counter),
+    do:
+      Host.compile_expr(
+        %{op: :runtime_call, function: "elmc_basics_abs", args: [x]},
+        env,
+        counter
+      )
+
+  def call("negate", [x], env, counter),
+    do:
+      Host.compile_expr(
+        %{op: :runtime_call, function: "elmc_basics_negate", args: [x]},
+        env,
+        counter
+      )
+
+  def call("not", [x], env, counter),
+    do:
+      Host.compile_expr(
+        %{op: :runtime_call, function: "elmc_basics_not", args: [x]},
+        env,
+        counter
+      )
+
+  def call("xor", [a, b], env, counter),
+    do:
+      Host.compile_expr(
+        %{op: :runtime_call, function: "elmc_basics_xor", args: [a, b]},
+        env,
+        counter
+      )
+
+  def call("compare", [a, b], env, counter),
+    do:
+      Host.compile_expr(
+        %{op: :runtime_call, function: "elmc_basics_compare", args: [a, b]},
+        env,
+        counter
+      )
+
+  def call("max", [left, right], env, counter),
+    do:
+      Host.compile_expr(
+        %{op: :runtime_call, function: "elmc_basics_max", args: [left, right]},
+        env,
+        counter
+      )
+
+  def call("min", [left, right], env, counter),
+    do:
+      Host.compile_expr(
+        %{op: :runtime_call, function: "elmc_basics_min", args: [left, right]},
+        env,
+        counter
+      )
+
+  def call("clamp", [low, high, value], env, counter),
+    do:
+      Host.compile_expr(
+        %{op: :runtime_call, function: "elmc_basics_clamp", args: [low, high, value]},
+        env,
+        counter
+      )
+
+  def call(_name, _args, _env, _counter), do: nil
+
+  @spec curried_binary(
+          String.t(),
+          [Types.ir_expr()],
+          Types.compile_env(),
+          Types.compile_counter()
+        ) ::
+          Types.compile_result()
+  defp curried_binary(name, [], env, counter) do
+    Host.compile_expr(
+      %{
+        op: :lambda,
+        args: ["__left", "__right"],
+        body: %{
+          op: :call,
+          name: name,
+          args: [%{op: :var, name: "__left"}, %{op: :var, name: "__right"}]
+        }
+      },
+      env,
+      counter
+    )
+  end
+
+  defp curried_binary(name, [left], env, counter) do
+    Host.compile_expr(
+      %{
+        op: :lambda,
+        args: ["__right"],
+        body: %{op: :call, name: name, args: [left, %{op: :var, name: "__right"}]}
+      },
+      env,
+      counter
+    )
+  end
+
+  @spec float_operator_name(String.t()) :: String.t()
+  defp float_operator_name("+"), do: "__add__"
+  defp float_operator_name("-"), do: "__sub__"
+  defp float_operator_name("*"), do: "__mul__"
+
+  @spec int_binop(
+          Types.ir_expr(),
+          Types.ir_expr(),
+          String.t(),
+          Types.compile_env(),
+          Types.compile_counter()
+        ) ::
+          Types.compile_result()
+  def int_binop(
+        %{op: :int_literal, value: left},
+        %{op: :int_literal, value: right},
+        operator,
+        _env,
+        counter
+      )
+      when operator in ["+", "-", "*"] do
+    value =
+      case operator do
+        "+" -> left + right
+        "-" -> left - right
+        "*" -> left * right
+      end
+
+    Host.compile_expr(%{op: :int_literal, value: value}, %{}, counter)
+  end
+
+  def int_binop(left, right, "-", env, counter) do
+    case RuntimeCall.compile_int_sub_list_length(left, right, env, counter) do
+      {:ok, code, out, c} ->
+        {code, out, c}
+
+      :error ->
+        int_binop_dispatch(left, right, "-", env, counter)
+    end
+  end
+
+  def int_binop(left, right, operator, env, counter) when operator in ["+", "*"] do
+    int_binop_dispatch(left, right, operator, env, counter)
+  end
+
+  @spec int_binop_dispatch(
+          Types.ir_expr(),
+          Types.ir_expr(),
+          String.t(),
+          Types.compile_env(),
+          Types.compile_counter()
+        ) :: Types.compile_result()
+  defp int_binop_dispatch(left, right, operator, env, counter) when operator in ["+", "-", "*"] do
+    case ConstantInt.literal_binop(operator, left, right, env) do
+      {:ok, value} ->
+        Host.compile_expr(%{op: :int_literal, value: value}, env, counter)
+
+      :error ->
+        int_binop_dispatch_values(left, right, operator, env, counter)
+    end
+  end
+
+  defp int_binop_dispatch(left, right, operator, env, counter) do
+    int_binop_dispatch_values(left, right, operator, env, counter)
+  end
+
+  @spec int_binop_dispatch_values(
+          Types.ir_expr(),
+          Types.ir_expr(),
+          String.t(),
+          Types.compile_env(),
+          Types.compile_counter()
+        ) :: Types.compile_result()
+  defp int_binop_dispatch_values(left, right, operator, env, counter) do
+    cond do
+      both_native_int_operands?(left, right, env) ->
+        {left_code, left_var, counter} = compile_native_int_operand(left, env, counter)
+        {right_code, right_var, counter} = compile_native_int_operand(right, env, counter)
+        {out, next} = CaseCompile.fresh_var(counter, env)
+
+        code = """
+        #{left_code}
+          #{right_code}
+          #{RcRuntimeEmit.assign_call(env, out, "elmc_new_int", "#{left_var} #{operator} #{right_var}")}
+        """
+
+        {code, out, next}
+
+      Host.native_float_expr?(left, env) and Host.native_float_expr?(right, env) ->
+        NativeFloat.compile_boxed(
+          %{op: :call, name: float_operator_name(operator), args: [left, right]},
+          env,
+          counter
+        )
+
+      both_known_int_binop_operands?(left, right, env) ->
+        compile_known_int_boxed_binop(left, right, operator, env, counter)
+
+      true ->
+        operand_env = RcRuntimeEmit.operand_env(env)
+
+        {left_code, left_var, counter} = Host.compile_expr(left, operand_env, counter)
+        {right_code, right_var, counter} = Host.compile_expr(right, operand_env, counter)
+        {left_code, left_var, counter} = retain_declared_out_operand(left_code, left_var, env, counter)
+        {right_code, right_var, counter} = retain_declared_out_operand(right_code, right_var, env, counter)
+        left_ref = RcRuntimeEmit.value_expr(left_var)
+        right_ref = RcRuntimeEmit.value_expr(right_var)
+        {out, next} = CaseCompile.fresh_var(counter, env)
+        ValueSlots.set_result_slot_root(out)
+
+        {assign_prefix, env} =
+          if ValueSlots.owned_ref?(out) do
+            {"", env}
+          else
+            env =
+              Map.update(env, :__declared_outs__, MapSet.new([out]), &MapSet.put(&1, out))
+
+            {"ElmcValue *#{out} = NULL;\n      ", env}
+          end
+
+        float_stmt =
+          RcRuntimeEmit.mutually_exclusive_allocator_assign(
+            env,
+            out,
+            "elmc_new_float",
+            "elmc_as_float(#{left_ref}) #{operator} elmc_as_float(#{right_ref})"
+          )
+
+        int_stmt =
+          RcRuntimeEmit.mutually_exclusive_allocator_assign(
+            env,
+            out,
+            "elmc_new_int",
+            "elmc_as_int(#{left_ref}) #{operator} elmc_as_int(#{right_ref})"
+          )
+
+        converge = ValueSlots.normalize_branch_result_slot(out)
+
+        code = """
+        #{left_code}
+          #{right_code}
+          #{assign_prefix}if ((#{left_ref} && #{left_ref}->tag == ELMC_TAG_FLOAT) || (#{right_ref} && #{right_ref}->tag == ELMC_TAG_FLOAT)) {
+            #{float_stmt}
+          } else {
+            #{int_stmt}
+          }
+          #{converge}
+          #{binop_operand_release(left_var, out)}
+          #{binop_operand_release(right_var, out)}
+        """
+
+        {code, out, next}
+    end
+  end
+
+  @spec both_native_int_operands?(Types.ir_expr(), Types.ir_expr(), Types.compile_env()) ::
+          boolean()
+  @spec both_native_int_operands?(Types.ir_expr(), Types.ir_expr(), Types.compile_env()) ::
+          boolean()
+  defp both_native_int_operands?(left, right, env) do
+    native_int_operand_available?(left, env) and native_int_operand_available?(right, env)
+  end
+
+  @spec native_int_operand_available?(Types.ir_expr(), Types.compile_env()) :: boolean()
+  @spec native_int_operand_available?(Types.ir_expr(), Types.compile_env()) :: boolean()
+  defp native_int_operand_available?(%{op: :var, name: name}, env)
+       when is_binary(name) or is_atom(name) do
+    Host.native_int_expr?(%{op: :var, name: name}, env) or
+      is_binary(EnvBindings.native_int_binding(env, name))
+  end
+
+  defp native_int_operand_available?(expr, env),
+    do: Host.native_int_expr?(expr, env) or ConstantInt.native_let_value?(expr, env)
+
+  @spec both_known_int_binop_operands?(Types.ir_expr(), Types.ir_expr(), Types.compile_env()) ::
+          boolean()
+  defp both_known_int_binop_operands?(left, right, env) do
+    known_int_binop_operand?(left, env) and known_int_binop_operand?(right, env)
+  end
+
+  @spec known_int_binop_operand?(Types.ir_expr(), Types.compile_env()) :: boolean()
+  defp known_int_binop_operand?(expr, env) do
+    case TypedReturn.expr_type(expr, env) do
+      "Int" -> true
+      "Float" -> false
+      type when is_binary(type) -> false
+      nil -> known_int_binop_operand_fallback?(expr, env)
+    end
+  end
+
+  @spec known_int_binop_operand_fallback?(Types.expr(), Types.compile_env()) :: boolean()
+
+  defp known_int_binop_operand_fallback?(expr, env) do
+    case expr do
+      %{op: :int_literal, union_ctor: ctor} when is_binary(ctor) -> false
+      %{op: :int_literal} -> true
+      _ -> Host.native_int_expr?(expr, env) or ConstantInt.native_let_value?(expr, env)
+    end
+  end
+
+  @spec compile_known_int_boxed_binop(
+          Types.ir_expr(),
+          Types.ir_expr(),
+          String.t(),
+          Types.compile_env(),
+          Types.compile_counter()
+        ) :: Types.compile_result()
+  defp compile_known_int_boxed_binop(left, right, operator, env, counter) do
+    operand_env = RcRuntimeEmit.operand_env(env)
+
+    {left_code, left_var, counter} = Host.compile_expr(left, operand_env, counter)
+    {right_code, right_var, counter} = Host.compile_expr(right, operand_env, counter)
+    left_ref = RcRuntimeEmit.value_expr(left_var)
+    right_ref = RcRuntimeEmit.value_expr(right_var)
+    {out, next} = CaseCompile.fresh_var(counter, env)
+
+    code = """
+    #{left_code}
+      #{right_code}
+      #{RcRuntimeEmit.assign_call(env, out, "elmc_new_int", "elmc_as_int(#{left_ref}) #{operator} elmc_as_int(#{right_ref})")}
+      #{binop_operand_release(left_var, out)}
+      #{binop_operand_release(right_var, out)}
+    """
+
+    {code, out, next}
+  end
+
+  @spec compile_native_int_operand(
+          Types.ir_expr(),
+          Types.compile_env(),
+          Types.compile_counter()
+        ) :: {String.t(), String.t(), Types.compile_counter()}
+  @spec compile_native_int_operand(
+          Types.ir_expr(),
+          Types.compile_env(),
+          Types.compile_counter()
+        ) :: {String.t(), String.t(), Types.compile_counter()}
+  defp compile_native_int_operand(expr, env, counter) do
+    case ConstantInt.compile_native_operand(expr, env, counter) do
+      {:ok, code, ref, c} ->
+        {code, ref, c}
+
+      :error ->
+        case expr do
+          %{op: :var, name: name} ->
+            case EnvBindings.native_int_binding(env, name) do
+              ref when is_binary(ref) ->
+                {"", ref, counter}
+
+              nil ->
+                {code, ref, c} = Host.compile_native_int_expr(expr, env, counter)
+                {code, ref, c}
+            end
+
+          _ ->
+            {code, ref, c} = Host.compile_native_int_expr(expr, env, counter)
+            {code, ref, c}
+        end
+    end
+  end
+
+  @spec int_idiv(
+          Types.ir_expr(),
+          Types.ir_expr(),
+          Types.compile_env(),
+          Types.compile_counter()
+        ) ::
+          Types.compile_result()
+  def int_idiv(left, right, env, counter) do
+    {left_code, left_var, counter} = Host.compile_native_int_expr(left, env, counter)
+
+    {code, out, counter} =
+      case NativeInt.static_nonzero_int_value(right, env) do
+        value when is_integer(value) ->
+          {out, next} = CaseCompile.fresh_var(counter, env)
+
+          code =
+            """
+            #{left_code}
+              #{RcRuntimeEmit.assign_call(env, out, "elmc_new_int", "elmc_int_idiv(#{left_var}, #{value})")}
+            """
+
+          {code, out, next}
+
+        nil ->
+          {right_code, right_var, counter} = Host.compile_native_int_expr(right, env, counter)
+          {out, next} = CaseCompile.fresh_var(counter, env)
+          denom = "native_idiv_den_#{next}"
+
+          code =
+            """
+            #{left_code}
+              #{right_code}
+              const elmc_int_t #{denom} = #{right_var};
+              #{RcRuntimeEmit.assign_call(env, out, "elmc_new_int", "elmc_int_idiv(#{left_var}, #{denom})")}
+            """
+
+          {code, out, next}
+      end
+
+    {code, out, counter}
+  end
+
+  @spec float_div(
+          Types.ir_expr(),
+          Types.ir_expr(),
+          Types.compile_env(),
+          Types.compile_counter()
+        ) ::
+          Types.compile_result()
+  def float_div(left, right, env, counter) do
+    if Host.native_float_expr?(left, env) and Host.native_float_expr?(right, env) do
+      NativeFloat.compile_boxed(
+        %{op: :call, name: "__fdiv__", args: [left, right]},
+        env,
+        counter
+      )
+    else
+      operand_env = RcRuntimeEmit.operand_env(env)
+
+      {left_code, left_var, counter} = Host.compile_expr(left, operand_env, counter)
+      {right_code, right_var, counter} = Host.compile_expr(right, operand_env, counter)
+      left_ref = RcRuntimeEmit.value_expr(left_var)
+      right_ref = RcRuntimeEmit.value_expr(right_var)
+      next = counter + 1
+      out = "tmp_#{next}"
+
+      code = """
+      #{left_code}
+        #{right_code}
+          const double __denf_#{next} = elmc_as_float(#{right_ref});
+          const double __numf_#{next} = elmc_as_float(#{left_ref});
+        #{ValueSlots.boxed_decl(out, "elmc_new_float(__numf_#{next} / __denf_#{next})", env)}
+        #{ValueSlots.release_stmt(left_var)}
+        #{ValueSlots.release_stmt(right_var)}
+      """
+
+      {code, out, next}
+    end
+  end
+
+  @spec compare_operator(
+          Types.ir_expr(),
+          Types.ir_expr(),
+          String.t(),
+          Types.compile_env(),
+          Types.compile_counter()
+        ) :: Types.compile_result()
+  def compare_operator(left, right, operator, env, counter) do
+    cond do
+      Host.native_int_compare_safe?(operator, left, right, env) ->
+        int_compare_operator(left, right, operator, env, counter)
+
+      list_int_compare_safe?(operator, left, right, env) ->
+        list_int_compare_operator(left, right, operator, env, counter)
+
+      true ->
+        {left_code, left_var, counter, left_borrowed?} =
+          compile_compare_operand(left, env, counter)
+
+        {right_code, right_var, counter, right_borrowed?} =
+          compile_compare_operand(right, env, counter)
+
+        {out, next} = compare_bool_out_slot(env, counter)
+        left_release = compare_operand_release(env, left_var, left_borrowed?)
+        right_release = compare_operand_release(env, right_var, right_borrowed?)
+
+        {code, final_counter} =
+          case operator do
+            "__eq__" ->
+              {"""
+              #{left_code}
+                #{right_code}
+                #{RcRuntimeEmit.assign_call(env, out, "elmc_new_bool", "elmc_value_equal(#{left_var}, #{right_var})")}
+                #{left_release}#{right_release}\
+              """, next}
+
+            "__neq__" ->
+              {"""
+              #{left_code}
+                #{right_code}
+                #{RcRuntimeEmit.assign_call(env, out, "elmc_new_bool", "!elmc_value_equal(#{left_var}, #{right_var})")}
+                #{left_release}#{right_release}\
+              """, next}
+
+            _ ->
+              {cmp_var, cmp_counter} = RcRuntimeEmit.compare_order_slot(env, next)
+
+              comparison =
+                case operator do
+                  "__lt__" -> "<"
+                  "__lte__" -> "<="
+                  "__gt__" -> ">"
+                  "__gte__" -> ">="
+                end
+
+              {"""
+              #{left_code}
+                #{right_code}
+                #{RcRuntimeEmit.assign_call(env, cmp_var, "elmc_basics_compare", "#{left_var}, #{right_var}")}
+                #{RcRuntimeEmit.assign_call(env, out, "elmc_new_bool", "elmc_as_int(#{cmp_var}) #{comparison} 0")}
+                #{ValueSlots.release_consumed(cmp_var)}
+                #{left_release}#{right_release}\
+              """, cmp_counter}
+          end
+
+        {code, out, final_counter}
+    end
+  end
+
+  @spec list_int_compare_safe?(
+          String.t(),
+          Types.ir_expr(),
+          Types.ir_expr(),
+          Types.compile_env()
+        ) :: boolean()
+  defp list_int_compare_safe?(operator, left, right, env)
+       when operator in ["__eq__", "__neq__"] do
+    TypedReturn.list_int_expr?(left, env) and TypedReturn.list_int_expr?(right, env)
+  end
+
+  defp list_int_compare_safe?(_operator, _left, _right, _env), do: false
+
+  @spec list_int_compare_operator(
+          Types.ir_expr(),
+          Types.ir_expr(),
+          String.t(),
+          Types.compile_env(),
+          Types.compile_counter()
+        ) :: Types.compile_result()
+  defp list_int_compare_operator(left, right, operator, env, counter) do
+    {left_code, left_var, counter, left_borrowed?} = compile_compare_operand(left, env, counter)
+
+    {right_code, right_var, counter, right_borrowed?} =
+      compile_compare_operand(right, env, counter)
+
+    {out, next} = compare_bool_out_slot(env, counter)
+    left_release = compare_operand_release(env, left_var, left_borrowed?)
+    right_release = compare_operand_release(env, right_var, right_borrowed?)
+    negate = if operator == "__neq__", do: "!", else: ""
+
+    code = """
+    #{left_code}
+      #{right_code}
+      #{RcRuntimeEmit.assign_call(env, out, "elmc_new_bool", "#{negate}elmc_list_equal_int(#{left_var}, #{right_var})")}
+      #{left_release}#{right_release}\
+    """
+
+    {code, out, next}
+  end
+
+  @spec compile_compare_operand(
+          Types.ir_expr(),
+          Types.compile_env(),
+          Types.compile_counter()
+        ) :: {String.t(), String.t(), Types.compile_counter(), boolean()}
+  defp compile_compare_operand(%{op: :var, name: name}, env, counter) do
+    case EnvBindings.lookup_binding(env, name) do
+      source when is_binary(source) ->
+        if c_identifier?(source) do
+          {"", source, counter, true}
+        else
+          {code, var, counter} = Host.compile_expr(%{op: :var, name: name}, env, counter)
+          {code, var, counter, false}
+        end
+
+      _ ->
+        {code, var, counter} = Host.compile_expr(%{op: :var, name: name}, env, counter)
+        {code, var, counter, false}
+    end
+  end
+
+  defp compile_compare_operand(expr, env, counter) do
+    {code, var, counter} = Host.compile_expr(expr, RcRuntimeEmit.operand_env(env), counter)
+    {code, var, counter, false}
+  end
+
+  @spec compare_operand_release(Types.compile_env(), String.t(), boolean()) :: String.t()
+  defp compare_operand_release(_env, _var, true), do: ""
+
+  defp compare_operand_release(env, var, false) do
+    OwnershipCompile.release_if_owned(env, var, :compare)
+  end
+
+  @spec compare_bool_out_slot(Types.compile_env(), Types.compile_counter()) ::
+          {String.t(), Types.compile_counter()}
+  defp compare_bool_out_slot(env, counter) do
+    case Map.get(env, :__branch_out__) || RcRuntimeEmit.nested_out_target(env) do
+      slot when is_binary(slot) ->
+        {slot, counter + 1}
+
+      _ ->
+        CaseCompile.fresh_var(counter, env)
+    end
+  end
+
+  @spec c_identifier?(String.t()) :: boolean()
+  defp c_identifier?(value) when is_binary(value),
+    do: Regex.match?(~r/^[A-Za-z_][A-Za-z0-9_]*$/, value)
+
+  @spec int_compare_operator(
+          Types.ir_expr(),
+          Types.ir_expr(),
+          String.t(),
+          Types.compile_env(),
+          Types.compile_counter()
+        ) :: Types.compile_result()
+  defp int_compare_operator(
+         %{op: :int_literal, value: left},
+         %{op: :int_literal, value: right},
+         operator,
+         env,
+         counter
+       ) do
+    result =
+      case operator do
+        "__eq__" -> left == right
+        "__neq__" -> left != right
+        "__lt__" -> left < right
+        "__lte__" -> left <= right
+        "__gt__" -> left > right
+        "__gte__" -> left >= right
+      end
+
+    {out, next} = compare_bool_out_slot(env, counter)
+
+    {RcRuntimeEmit.assign_call(env, out, "elmc_new_bool", if(result, do: "1", else: "0")), out,
+     next}
+  end
+
+  defp int_compare_operator(left, right, operator, env, counter) do
+    {left_code, left_var, counter} = Host.compile_native_int_expr(left, env, counter)
+    {right_code, right_var, counter} = Host.compile_native_int_expr(right, env, counter)
+    {out, next} = compare_bool_out_slot(env, counter)
+
+    comparison =
+      case operator do
+        "__eq__" -> "=="
+        "__neq__" -> "!="
+        "__lt__" -> "<"
+        "__lte__" -> "<="
+        "__gt__" -> ">"
+        "__gte__" -> ">="
+      end
+
+    code = """
+    #{left_code}
+      #{right_code}
+      #{RcRuntimeEmit.assign_call(env, out, "elmc_new_bool", "#{left_var} #{comparison} #{right_var}")}
+    """
+
+    {code, out, next}
+  end
+
+  @spec binop_operand_release(String.t(), String.t()) :: String.t()
+  defp binop_operand_release(var, out) when var == out, do: ""
+
+  defp binop_operand_release(var, _out) do
+    ValueSlots.release_consumed(var)
+  end
+
+  @spec retain_declared_out_operand(
+          String.t(),
+          String.t(),
+          Types.compile_env(),
+          Types.compile_counter()
+        ) :: Types.compile_result()
+  defp retain_declared_out_operand(code, var, env, counter) do
+    if MapSet.member?(Map.get(env, :__declared_outs__, MapSet.new()), var) do
+      {retain_var, next} = CaseCompile.fresh_var(counter, env)
+
+      transfer =
+        if ValueSlots.owned_ref?(var) and ValueSlots.owned_ref?(retain_var) do
+          ValueSlots.owned_reassign_prefix(retain_var) <>
+            RcRuntimeEmit.transfer_assignment(retain_var, var)
+        else
+          ValueSlots.boxed_decl(retain_var, "elmc_retain(#{var})")
+        end
+
+      retain_code = code <> "\n  " <> transfer <> "\n"
+
+      {retain_code, retain_var, next}
+    else
+      {code, var, counter}
+    end
+  end
+
+  @spec ambient_math_constant_resolvable?(Types.compile_env(), String.t()) :: boolean()
+  defp ambient_math_constant_resolvable?(env, name) when is_binary(name) do
+    not Map.has_key?(env, name) and
+      is_nil(EnvBindings.lookup_binding(env, name)) and
+      is_nil(EnvBindings.native_int_binding(env, name)) and
+      is_nil(EnvBindings.native_float_binding(env, name))
+  end
+end

@@ -127,7 +127,8 @@ defmodule ElmEx.Frontend.GeneratedDeclarationParser do
       true ->
         case Regex.run(~r/^([a-z][A-Za-z0-9_']*)\s+(.+)$/u, trimmed_left, capture: :all_but_first) do
           [name, arg_source] ->
-            if name in ["type", "module", "import", "port", "effect", "infix"] do
+            if name in ["type", "module", "import", "port", "effect"] or
+                 (name == "infix" and not infix_function_definition_line?(trimmed_left <> " =")) do
               {:error, :invalid_function_header}
             else
               args = split_top_level_spaces(arg_source)
@@ -314,6 +315,12 @@ defmodule ElmEx.Frontend.GeneratedDeclarationParser do
       (String.starts_with?(trimmed, "port ") and
          not Regex.match?(~r/^port\s+[a-z][A-Za-z0-9_']*\s*=/u, trimmed)) or
       String.starts_with?(trimmed, "effect module ") or
-      Regex.match?(~r/^infix(?:l|r)?\s+/u, trimmed)
+      (Regex.match?(~r/^infix(?:l|r)?\s+/u, trimmed) and
+         not infix_function_definition_line?(trimmed))
+  end
+
+  @spec infix_function_definition_line?(String.t()) :: boolean()
+  defp infix_function_definition_line?(trimmed) when is_binary(trimmed) do
+    Regex.match?(~r/^infix(?:l|r)?\s+[a-z][A-Za-z0-9_']*(?:\s+[a-z][A-Za-z0-9_']*)*\s*=/u, trimmed)
   end
 end

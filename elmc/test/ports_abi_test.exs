@@ -13,4 +13,12 @@ defmodule Elmc.PortsAbiTest do
     assert String.contains?(header, "send_outgoing_port")
     assert String.contains?(header, "ElmcPortCallback")
   end
+
+  test "pebble builds use a tiny incoming-port table" do
+    ports_source = File.read!(Path.expand("../lib/elmc/backend/ports.ex", __DIR__))
+
+    assert ports_source =~ "#ifdef ELMC_PEBBLE_PLATFORM"
+    assert ports_source =~ "#define ELMC_MAX_PORTS 2"
+    assert ports_source =~ "#define ELMC_MAX_PORTS 32"
+  end
 end

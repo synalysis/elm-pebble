@@ -314,9 +314,30 @@ defmodule Elmc.Runtime.Generator do
       |> String.replace(@elmc_as_float_fn_impl_unindented, @elmc_as_float_fn_stub_unindented)
       |> String.replace(@elmc_as_int_number_fn_impl, @elmc_as_int_number_fn_stub)
       |> String.replace(@elmc_as_int_number_fn_impl_unindented, @elmc_as_int_number_fn_stub_unindented)
+      |> stub_int_only_basics_abs_negate()
     else
       source
     end
+  end
+
+  # Int-only apps keep Basics.abs/negate for integers, but float branches still call
+  # elmc_new_float_take after header float-take wrappers are pruned.
+  defp stub_int_only_basics_abs_negate(source) do
+    source
+    |> then(
+      &Regex.replace(
+        ~r/^[ \t]*if \(x && x->tag == ELMC_TAG_FLOAT\) \{\n[ \t]*return elmc_new_float_take\(-elmc_as_float\(x\)\);\n[ \t]*\}\n/m,
+        &1,
+        ""
+      )
+    )
+    |> then(
+      &Regex.replace(
+        ~r/^[ \t]*if \(x && x->tag == ELMC_TAG_FLOAT\) \{\n[ \t]*double v = elmc_as_float\(x\);\n[ \t]*return elmc_new_float_take\(v < 0 \? -v : v\);\n[ \t]*\}\n/m,
+        &1,
+        ""
+      )
+    )
   end
 
   @spec maybe_inject_pruned_c_coercion_decls(Types.runtime_source(), MapSet.t(String.t())) ::
@@ -356,7 +377,7 @@ defmodule Elmc.Runtime.Generator do
 
     header
     |> maybe_prune_header_json_float(source)
-    |> maybe_prune_header_float_coercions(direct_refs)
+    |> maybe_prune_header_float_coercions(direct_refs, source)
     |> maybe_prune_header_unused_float(referenced)
     |> maybe_prune_header_float_list(joined)
   end
@@ -371,14 +392,23 @@ defmodule Elmc.Runtime.Generator do
     end
   end
 
-  defp maybe_prune_header_float_coercions(header, direct_refs) do
+  defp maybe_prune_header_float_coercions(header, direct_refs, source) do
     if int_only_float_coercions?(direct_refs) do
-      header
-      |> drop_header_macro("ELMC_RECORD_GET_INDEX_FLOAT")
-      |> drop_header_lines(~r/^RC elmc_new_float\(/)
-      |> drop_header_lines(~r/^double elmc_as_float\(/)
-      |> drop_header_lines(~r/^double elmc_basics_(sqrt|sin|cos|tan)_double\(/)
-      |> drop_header_static_inlines(@header_float_take_wrapper_names)
+      header =
+        header
+        |> drop_header_macro("ELMC_RECORD_GET_INDEX_FLOAT")
+        |> drop_header_lines(~r/^double elmc_as_float\(/)
+        |> drop_header_lines(~r/^double elmc_basics_(sqrt|sin|cos|tan)_double\(/)
+
+      # Keep float-take + elmc_new_float when pruned source still references take
+      # (e.g. Basics.abs float branch survived stubbing).
+      if String.contains?(source, "elmc_new_float_take") do
+        header
+      else
+        header
+        |> drop_header_lines(~r/^RC elmc_new_float\(/)
+        |> drop_header_static_inlines(@header_float_take_wrapper_names)
+      end
     else
       header
     end
@@ -593,7 +623,7 @@ defmodule Elmc.Runtime.Generator do
   defp int_spine_release_stub do
     """
     /* elmc_int_spine_release_stub */
-    static int elmc_int_spine_cell_release(ElmcValue *value) {
+    static int ELMC_UNUSED elmc_int_spine_cell_release(ElmcValue *value) {
       (void)value;
       return 0;
     }
@@ -661,7 +691,7 @@ defmodule Elmc.Runtime.Generator do
   defp float_list_release_stub do
     """
     /* elmc_float_list_release_stub */
-    static int elmc_float_list_cell_release(ElmcValue *value) {
+    static int ELMC_UNUSED elmc_float_list_cell_release(ElmcValue *value) {
       (void)value;
       return 0;
     }
@@ -671,7 +701,7 @@ defmodule Elmc.Runtime.Generator do
   defp record_seq_release_stub do
     """
     /* elmc_record_seq_release_stub */
-    static int elmc_record_seq_cell_release(ElmcValue *value) {
+    static int ELMC_UNUSED elmc_record_seq_cell_release(ElmcValue *value) {
       (void)value;
       return 0;
     }
@@ -1798,6 +1828,11 @@ defmodule Elmc.Runtime.Generator do
     elmc_int_t elmc_as_int_number(ElmcValue *value);
     int elmc_value_is_unit(ElmcValue *value);
     elmc_int_t elmc_int_idiv(elmc_int_t numerator, elmc_int_t denominator);
+    static inline elmc_int_t elmc_int_mod_by(elmc_int_t base, elmc_int_t value) {
+      if (base == 0) return 0;
+      elmc_int_t r = value % base;
+      return r < 0 ? r + (base < 0 ? -base : base) : r;
+    }
     static inline elmc_int_t elmc_angle_from_minute(elmc_int_t minute) {
       elmc_int_t angle = elmc_int_idiv(((minute - (elmc_int_t)720) * (elmc_int_t)65536), (elmc_int_t)1440) % (elmc_int_t)65536;
       return angle < 0 ? angle + (elmc_int_t)65536 : angle;
@@ -3665,15 +3700,24 @@ defmodule Elmc.Runtime.Generator do
     }
 
     elmc_int_t elmc_polar_point_x(elmc_int_t cx, elmc_int_t cy, elmc_int_t radius, elmc_int_t angle) {
-      double theta = (double)angle * 2.0 * 3.14159265358979323846 / 65536.0;
       (void)cy;
+      #ifdef ELMC_PEBBLE_PLATFORM
+      /* `angle` is already in Pebble trig units (full turn = TRIG_MAX_ANGLE = 65536). */
+      return cx + (elmc_int_t)(((int64_t)radius * (int64_t)sin_lookup((int32_t)angle)) / TRIG_MAX_RATIO);
+      #else
+      double theta = (double)angle * 2.0 * 3.14159265358979323846 / 65536.0;
       return cx + (elmc_int_t)lround(sin(theta) * (double)radius);
+      #endif
     }
 
     elmc_int_t elmc_polar_point_y(elmc_int_t cx, elmc_int_t cy, elmc_int_t radius, elmc_int_t angle) {
-      double theta = (double)angle * 2.0 * 3.14159265358979323846 / 65536.0;
       (void)cx;
+      #ifdef ELMC_PEBBLE_PLATFORM
+      return cy - (elmc_int_t)(((int64_t)radius * (int64_t)cos_lookup((int32_t)angle)) / TRIG_MAX_RATIO);
+      #else
+      double theta = (double)angle * 2.0 * 3.14159265358979323846 / 65536.0;
       return cy - (elmc_int_t)lround(cos(theta) * (double)radius);
+      #endif
     }
 
     elmc_int_t elmc_as_bool(ElmcValue *value) {

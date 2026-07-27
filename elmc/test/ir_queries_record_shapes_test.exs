@@ -778,6 +778,29 @@ defmodule Elmc.IRQueriesRecordShapesTest do
     assert Record.resolve_field_index_int("view", ctx, base) == {:ok, 2}
   end
 
+  test "Browser.sandbox impl view stays at index 2 when ParamFieldInference only saw init and view" do
+    Process.put(:elmc_record_alias_shapes, %{
+      {"Browser", "ProgramConfig"} => ["init", "subscriptions", "update", "view"]
+    })
+
+    on_exit(fn -> Process.delete(:elmc_record_alias_shapes) end)
+
+    ctx = %Context{
+      module: "Browser",
+      function_name: "sandbox",
+      params: ["impl"],
+      decl_map: %{},
+      local_types: %{
+        "impl" => "{init : model, view : model -> Html msg, update : msg -> model -> model}"
+      },
+      inferred_param_fields: %{"impl" => ["init", "view"]}
+    }
+
+    base = %{op: :var, name: "impl"}
+
+    assert Record.resolve_field_index_int("view", ctx, base) == {:ok, 2}
+  end
+
   test "ambiguous offset field resolves to current module Model not Time.Era" do
     shapes = %{
       {"Main", "Model"} => ["playerY", "velocityY", "offset", "tiles"],

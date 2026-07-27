@@ -224,28 +224,47 @@ defmodule Ide.ProjectTemplatesTest do
     assert platforms == ["basalt", "chalk", "diorite", "emery", "flint", "gabbro"]
   end
 
-  test "game-2048 template includes aplite after startup timer removal" do
+  test "game-2048 template excludes aplite" do
     platforms = ProjectTemplates.target_platforms_for_template("game-2048")
 
-    assert platforms == [
-             "aplite",
-             "basalt",
-             "chalk",
-             "diorite",
-             "emery",
-             "flint",
-             "gabbro"
-           ]
+    refute "aplite" in platforms
+    assert platforms == ["basalt", "chalk", "diorite", "emery", "flint", "gabbro"]
+  end
+
+  test "companion demos that need companion RAM exclude aplite" do
+    for key <- [
+          "companion-demo-storage",
+          "companion-demo-settings",
+          "companion-demo-websocket",
+          "companion-demo-geolocation",
+          "companion-demo-weather-env"
+        ] do
+      platforms = ProjectTemplates.target_platforms_for_template(key)
+      refute "aplite" in platforms, "#{key} should exclude aplite"
+      assert platforms == ["basalt", "chalk", "diorite", "emery", "flint", "gabbro"]
+    end
   end
 
   test "watch demo templates with metadata restrict target platforms" do
     compass = ProjectTemplates.target_platforms_for_template("watch-demo-compass")
     dictation = ProjectTemplates.target_platforms_for_template("watch-demo-dictation")
     health = ProjectTemplates.target_platforms_for_template("watch-demo-health")
+    time = ProjectTemplates.target_platforms_for_template("watch-demo-time")
 
-    assert compass == ["aplite"]
+    refute "aplite" in compass
+    assert compass == ["basalt", "chalk", "diorite", "emery", "flint", "gabbro"]
     assert dictation == ["diorite", "emery", "flint"]
     assert health == ["basalt", "chalk", "diorite", "emery", "flint", "gabbro"]
+
+    refute "aplite" in time
+    assert time == ["basalt", "chalk", "diorite", "emery", "flint", "gabbro"]
+  end
+
+  test "starter template excludes aplite" do
+    platforms = ProjectTemplates.target_platforms_for_template("starter")
+
+    refute "aplite" in platforms
+    assert platforms == ["basalt", "chalk", "diorite", "emery", "flint", "gabbro"]
   end
 
   test "create_project applies template target platform defaults" do

@@ -1,0 +1,324 @@
+defmodule Elmc.RuntimeStdlibGapsTest do
+  use ExUnit.Case
+
+  @tag :runtime_c
+  test "list sortBy sorts by mapped keys" do
+    run_harness(
+      """
+      static ElmcValue *by_identity(ElmcValue **args, int argc, ElmcValue **captures, int capture_count) {
+        (void)captures; (void)capture_count;
+        if (argc < 1 || !args[0]) return elmc_int_zero();
+        return elmc_retain(args[0]);
+      }
+
+      int main(void) {
+        ElmcValue *list = elmc_list_nil();
+        ElmcValue *n3 = elmc_new_int_take(3);
+        list = elmc_list_cons_take(n3, list);
+        ElmcValue *n1 = elmc_new_int_take(1);
+        list = elmc_list_cons_take(n1, list);
+        ElmcValue *n2 = elmc_new_int_take(2);
+        list = elmc_list_cons_take(n2, list);
+
+        ElmcValue *cap[1] = { NULL };
+        ElmcValue *f = elmc_closure_new_take(by_identity, 1, 0, cap);
+        ElmcValue *sorted = elmc_list_sort_by_take(f, list);
+        ElmcValue *cursor = sorted;
+        printf("%lld", (long long)elmc_as_int(((ElmcCons *)cursor->payload)->head));
+        cursor = ((ElmcCons *)cursor->payload)->tail;
+        printf(" %lld", (long long)elmc_as_int(((ElmcCons *)cursor->payload)->head));
+        cursor = ((ElmcCons *)cursor->payload)->tail;
+        printf(" %lld\\n", (long long)elmc_as_int(((ElmcCons *)cursor->payload)->head));
+
+        elmc_release(sorted);
+        elmc_release(f);
+        elmc_release(list);
+        return 0;
+      }
+      
+      
+      """,
+      "1 2 3"
+    )
+  end
+
+  @tag :runtime_c
+  test "list sortWith orders by comparison function" do
+    run_harness(
+      """
+      static ElmcValue *compare_ints(ElmcValue **args, int argc, ElmcValue **captures, int capture_count) {
+        (void)captures; (void)capture_count;
+        if (argc < 2) return elmc_int_zero();
+        return elmc_basics_compare_take(args[0], args[1]);
+      }
+
+      int main(void) {
+        ElmcValue *list = elmc_list_nil();
+        ElmcValue *n3 = elmc_new_int_take(3);
+        list = elmc_list_cons_take(n3, list);
+        ElmcValue *n1 = elmc_new_int_take(1);
+        list = elmc_list_cons_take(n1, list);
+        ElmcValue *n2 = elmc_new_int_take(2);
+        list = elmc_list_cons_take(n2, list);
+
+        ElmcValue *cap[1] = { NULL };
+        ElmcValue *f = elmc_closure_new_take(compare_ints, 2, 0, cap);
+        ElmcValue *sorted = elmc_list_sort_with_take(f, list);
+        ElmcValue *cursor = sorted;
+        printf("%lld", (long long)elmc_as_int(((ElmcCons *)cursor->payload)->head));
+        cursor = ((ElmcCons *)cursor->payload)->tail;
+        printf(" %lld", (long long)elmc_as_int(((ElmcCons *)cursor->payload)->head));
+        cursor = ((ElmcCons *)cursor->payload)->tail;
+        printf(" %lld\\n", (long long)elmc_as_int(((ElmcCons *)cursor->payload)->head));
+
+        elmc_release(sorted);
+        elmc_release(f);
+        elmc_release(list);
+        return 0;
+      }
+      
+      
+      """,
+      "1 2 3"
+    )
+  end
+
+  @tag :runtime_c
+  test "string replace substitutes all occurrences" do
+    run_harness(
+      """
+      int main(void) {
+        ElmcValue *s = elmc_new_string_take("a-b-a");
+        ElmcValue *dash = elmc_new_string_take("-");
+        ElmcValue *plus = elmc_new_string_take("+");
+        ElmcValue *out = elmc_string_replace_take(dash, plus, s);
+        printf("%s\\n", (const char *)out->payload);
+        elmc_release(out);
+        elmc_release(plus);
+        elmc_release(dash);
+        elmc_release(s);
+        return 0;
+      }
+      
+      
+      """,
+      "a+b+a"
+    )
+  end
+
+  @tag :runtime_c
+  test "dict get with default uses comparable keys for strings" do
+    run_harness(
+      """
+      int main(void) {
+        ElmcValue *empty = elmc_list_nil();
+        ElmcValue *key = elmc_new_string_take("name");
+        ElmcValue *val = elmc_new_int_take(42);
+        ElmcValue *dict = elmc_dict_insert_take(key, val, empty);
+        elmc_release(val);
+        ElmcValue *lookup_key = elmc_new_string_take("name");
+        elmc_int_t found = elmc_dict_get_with_default_int_value(0, lookup_key, dict);
+        ElmcValue *other = elmc_new_string_take("other");
+        elmc_int_t missing = elmc_dict_get_with_default_int_value(7, other, dict);
+        printf("%lld %lld\\n", (long long)found, (long long)missing);
+        elmc_release(other);
+        elmc_release(lookup_key);
+        elmc_release(key);
+        elmc_release(dict);
+        elmc_release(empty);
+        return (found == 42 && missing == 7) ? 0 : 1;
+      }
+      
+      
+      """,
+      "42 7"
+    )
+  end
+
+  @tag :runtime_c
+  test "dict insert and get use comparable keys for strings" do
+    run_harness(
+      """
+      int main(void) {
+        ElmcValue *empty = elmc_list_nil();
+        ElmcValue *key = elmc_new_string_take("name");
+        ElmcValue *val = elmc_new_int_take(42);
+        ElmcValue *dict = elmc_dict_insert_take(key, val, empty);
+        elmc_release(val);
+        ElmcValue *lookup_key = elmc_new_string_take("name");
+        ElmcValue *found = elmc_dict_get_take(lookup_key, dict);
+        int ok = found && found->tag == ELMC_TAG_MAYBE && found->payload &&
+                 ((ElmcMaybe *)found->payload)->is_just &&
+                 elmc_as_int(((ElmcMaybe *)found->payload)->value) == 42;
+        printf("%d\\n", ok);
+        elmc_release(found);
+        elmc_release(lookup_key);
+        elmc_release(key);
+        elmc_release(dict);
+        elmc_release(empty);
+        return ok ? 0 : 1;
+      }
+      
+      
+      """,
+      "1"
+    )
+  end
+
+  @tag :runtime_c
+  test "dict merge applies left, both, and right resolvers" do
+    run_harness(
+      """
+      static ElmcValue *dict_insert_ret(ElmcValue *key, ElmcValue *val, ElmcValue *dict) {
+        ElmcValue *out = NULL;
+        if (elmc_dict_insert(&out, key, val, dict) != RC_SUCCESS) return NULL;
+        return out;
+      }
+
+      static ElmcValue *left_only(ElmcValue **args, int argc, ElmcValue **captures, int capture_count) {
+        (void)captures; (void)capture_count;
+        if (argc < 3) return args[2] ? elmc_retain(args[2]) : elmc_int_zero();
+        return dict_insert_ret(args[0], args[1], args[2]);
+      }
+
+      static ElmcValue *both(ElmcValue **args, int argc, ElmcValue **captures, int capture_count) {
+        (void)captures; (void)capture_count;
+        if (argc < 4) return args[3] ? elmc_retain(args[3]) : elmc_int_zero();
+        ElmcValue *sum = NULL;
+        if (elmc_new_int(&sum, elmc_as_int(args[1]) + elmc_as_int(args[2])) != RC_SUCCESS) return NULL;
+        ElmcValue *out = dict_insert_ret(args[0], sum, args[3]);
+        elmc_release(sum);
+        return out;
+      }
+
+      static ElmcValue *right_only(ElmcValue **args, int argc, ElmcValue **captures, int capture_count) {
+        (void)captures; (void)capture_count;
+        if (argc < 3) return args[2] ? elmc_retain(args[2]) : elmc_int_zero();
+        return dict_insert_ret(args[0], args[1], args[2]);
+      }
+
+      static ElmcValue *pair(const char *key, elmc_int_t value) {
+        ElmcValue *k = NULL;
+        ElmcValue *v = NULL;
+        ElmcValue *pair = NULL;
+        if (elmc_new_string(&k, key) != RC_SUCCESS) return NULL;
+        if (elmc_new_int(&v, value) != RC_SUCCESS) { elmc_release(k); return NULL; }
+        if (elmc_tuple2_take(&pair, k, v) != RC_SUCCESS) {
+          elmc_release(k);
+          elmc_release(v);
+          return NULL;
+        }
+        return pair;
+      }
+
+      static ElmcValue *dict_from_pairs(ElmcValue *first, ElmcValue *second) {
+        ElmcValue *list = elmc_list_nil();
+        ElmcValue *cell = NULL;
+        if (elmc_list_cons(&cell, second, list) != RC_SUCCESS) return NULL;
+        elmc_release(second);
+        ElmcValue *out_list = NULL;
+        if (elmc_list_cons(&out_list, first, cell) != RC_SUCCESS) {
+          elmc_release(cell);
+          return NULL;
+        }
+        elmc_release(first);
+        elmc_release(cell);
+        ElmcValue *dict = NULL;
+        if (elmc_dict_from_list(&dict, out_list) != RC_SUCCESS) {
+          elmc_release(out_list);
+          return NULL;
+        }
+        elmc_release(out_list);
+        return dict;
+      }
+
+      int main(void) {
+        ElmcValue *a = dict_from_pairs(pair("x", 1), pair("z", 3));
+        ElmcValue *b = dict_from_pairs(pair("y", 10), pair("z", 30));
+        if (!a || !b) return 1;
+
+        ElmcValue *cap[1] = { NULL };
+        ElmcValue *lf = elmc_closure_new_take(left_only, 3, 0, cap);
+        ElmcValue *bf = elmc_closure_new_take(both, 4, 0, cap);
+        ElmcValue *rf = elmc_closure_new_take(right_only, 3, 0, cap);
+        ElmcValue *empty = elmc_list_nil();
+
+        ElmcValue *merged = elmc_dict_merge_take(lf, bf, rf, a, b, empty);
+        ElmcValue *kx = elmc_new_string_take("x");
+        ElmcValue *ky = elmc_new_string_take("y");
+        ElmcValue *kz = elmc_new_string_take("z");
+        ElmcValue *mx = elmc_dict_get_take(kx, merged);
+        ElmcValue *my = elmc_dict_get_take(ky, merged);
+        ElmcValue *mz = elmc_dict_get_take(kz, merged);
+        printf("%lld %lld %lld\\n",
+          (long long)elmc_as_int(((ElmcMaybe *)mx->payload)->value),
+          (long long)elmc_as_int(((ElmcMaybe *)my->payload)->value),
+          (long long)elmc_as_int(((ElmcMaybe *)mz->payload)->value));
+        elmc_release(mx);
+        elmc_release(my);
+        elmc_release(mz);
+        elmc_release(kx);
+        elmc_release(ky);
+        elmc_release(kz);
+        elmc_release(merged);
+        elmc_release(lf);
+        elmc_release(bf);
+        elmc_release(rf);
+        elmc_release(a);
+        elmc_release(b);
+        elmc_release(empty);
+        return 0;
+      }
+      
+      
+      """,
+      "1 10 33"
+    )
+  end
+
+  defp run_harness(body, expected_output) do
+    cc = System.find_executable("cc")
+    if is_nil(cc), do: flunk("cc not available for runtime C test")
+
+    out_dir = Path.expand("tmp/runtime_stdlib_gaps", __DIR__)
+    runtime_dir = Path.join(out_dir, "runtime")
+    File.rm_rf!(out_dir)
+    assert :ok = Elmc.Runtime.Generator.write_runtime(runtime_dir)
+
+    harness_path = Path.join(out_dir, "harness.c")
+
+    File.write!(
+      harness_path,
+      """
+      #include "elmc_runtime.h"
+      #include <stdio.h>
+
+      #{body}
+      
+      
+      """
+    )
+
+    binary_path = Path.join(out_dir, "harness")
+
+    {compile_out, compile_code} =
+      System.cmd(cc, [
+        "-std=c11",
+        "-Wall",
+        "-Wextra",
+        "-I#{runtime_dir}",
+        Path.join(runtime_dir, "elmc_runtime.c"),
+        Elmc.Test.RcTrackHarness.runtime_link_stub(),
+        harness_path,
+        "-lm",
+        "-o",
+        binary_path
+      ])
+
+    assert compile_code == 0, compile_out
+
+    {run_out, run_code} = System.cmd(binary_path, [], stderr_to_stdout: true)
+    assert run_code == 0, run_out
+    assert String.trim(run_out) == expected_output
+  end
+end

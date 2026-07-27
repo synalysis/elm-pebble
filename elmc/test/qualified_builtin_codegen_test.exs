@@ -201,7 +201,8 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
     native_case_body = lowered_fn_body!(generated_c, "elmc_fn_Main_nativeIntCase")
 
     assert_plan_native_body!(native_case_body)
-    assert native_case_body =~ "elmc_basics_mod_by(" or native_case_body =~ "%",
+    assert native_case_body =~ "elmc_int_mod_by(" or
+             native_case_body =~ "elmc_basics_mod_by(" or native_case_body =~ "%",
            "expected native modulo (helper or %), got: #{String.slice(native_case_body, 0, 400)}"
     assert native_case_body =~ "switch (elmc_union_tag_as_int(" or
              native_case_body =~ ~r/switch\s*\(\s*plan_native_int_\d+\s*\)/,

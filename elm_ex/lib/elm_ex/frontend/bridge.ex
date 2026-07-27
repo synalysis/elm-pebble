@@ -160,19 +160,13 @@ defmodule ElmEx.Frontend.Bridge do
   defp discover_module_paths(project_dir, elm_json) do
     source_dirs =
       Map.get(elm_json, "source-directories", ["src"]) ++
-        builtin_source_dirs(elm_json) ++
+        builtin_source_dirs(project_dir, elm_json) ++
         dependency_package_source_dirs(project_dir, elm_json)
 
     module_paths =
       source_dirs
       |> Enum.flat_map(fn dir ->
-        source_root =
-          case Path.type(dir) do
-            :absolute -> dir
-            _ -> Path.join(project_dir, dir)
-          end
-
-        source_root = Path.expand(source_root)
+        source_root = resolve_source_root(project_dir, dir)
 
         source_root
         |> Path.join("**/*.elm")
@@ -182,6 +176,67 @@ defmodule ElmEx.Frontend.Bridge do
       |> unique_module_paths_by_source_order()
 
     {:ok, module_paths}
+  end
+
+  @spec resolve_source_root(String.t(), String.t()) :: String.t()
+  defp resolve_source_root(project_dir, dir) when is_binary(project_dir) and is_binary(dir) do
+    direct =
+      case Path.type(dir) do
+        :absolute -> dir
+        _ -> Path.join(project_dir, dir)
+      end
+      |> Path.expand()
+
+    cond do
+      File.dir?(direct) ->
+        direct
+
+      true ->
+        case monorepo_relative_source_dir(project_dir, dir) do
+          resolved when is_binary(resolved) -> resolved
+          _ -> direct
+        end
+    end
+  end
+
+  @spec monorepo_relative_source_dir(String.t(), String.t()) :: String.t() | nil
+  defp monorepo_relative_source_dir(project_dir, dir) when is_binary(project_dir) and is_binary(dir) do
+    suffix =
+      cond do
+        String.starts_with?(dir, "ide/priv/") -> dir
+        match = Regex.run(~r/(ide\/priv\/.*)$/, dir) -> List.last(match)
+        true -> nil
+      end
+
+    case suffix do
+      suffix when is_binary(suffix) ->
+        project_dir
+        |> ancestor_dirs()
+        |> Enum.find_value(fn root ->
+          candidate = Path.expand(Path.join(root, suffix))
+          if File.dir?(candidate), do: candidate
+        end)
+
+      _ ->
+        nil
+    end
+  end
+
+  @spec ancestor_dirs(String.t()) :: [String.t()]
+  defp ancestor_dirs(dir) when is_binary(dir) do
+    dir
+    |> Path.expand()
+    |> do_ancestor_dirs([])
+  end
+
+  defp do_ancestor_dirs(dir, acc) when is_binary(dir) do
+    parent = Path.dirname(dir)
+
+    if parent == dir do
+      acc
+    else
+      do_ancestor_dirs(parent, [dir | acc])
+    end
   end
 
   @spec dependency_package_source_dirs(Types.t(), integer()) :: Types.expr()
@@ -497,18 +552,30 @@ defmodule ElmEx.Frontend.Bridge do
     |> Enum.join(".")
   end
 
-  @spec builtin_source_dirs(Types.elm_json()) :: [String.t()]
-  defp builtin_source_dirs(elm_json) when is_map(elm_json) do
+  @spec builtin_source_dirs(String.t(), Types.elm_json()) :: [String.t()]
+  defp builtin_source_dirs(project_dir, elm_json)
+       when is_binary(project_dir) and is_map(elm_json) do
     deps =
       elm_json
       |> Map.get("dependencies", %{})
       |> dependency_names()
 
     if "elm/random" in deps do
-      [Path.expand("../../../../ide/priv/internal_packages/elm-random/src", __DIR__)]
+      elm_random_src_dirs(project_dir)
     else
       []
     end
+  end
+
+  @spec elm_random_src_dirs(String.t()) :: [String.t()]
+  defp elm_random_src_dirs(project_dir) when is_binary(project_dir) do
+    rel = "ide/priv/internal_packages/elm-random/src"
+
+    ([Path.expand("../../../../#{rel}", __DIR__)] ++
+       Enum.map(ancestor_dirs(project_dir), &Path.join(&1, rel)))
+    |> Enum.map(&Path.expand/1)
+    |> Enum.uniq()
+    |> Enum.filter(&File.dir?/1)
   end
 
   @spec dependency_names(Types.dependency_sections() | Types.elm_json() | list() | nil) :: [String.t()]

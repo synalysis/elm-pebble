@@ -208,4 +208,60 @@ defmodule ElmEx.Frontend.GeneratedContractBuilderTest do
     assert tuple_case
     assert length(tuple_case.branches) == 3
   end
+
+  test "indented let/in with line comments and split infix expression parses in function bodies" do
+    source = """
+    module DiagRecordPhase4 exposing (main)
+
+    main : Int
+    main =
+        let isolate = testState.isolate
+        in
+        -- Test 1: direct phase access
+        phaseToInt isolate.phase * 10000
+        -- Test 2: phase inside case destructure
+        + (case isolate.suspendedContinuation of
+            Nothing -> 0
+            Just (ContinuationRef contId) ->
+                phaseToInt isolate.phase * 100 + contId)
+    """
+
+    main =
+      "DiagRecordPhase4.elm"
+      |> GeneratedContractBuilder.build(source, "DiagRecordPhase4", [])
+      |> Map.get(:declarations)
+      |> Enum.find(&(&1.kind == :function_definition and &1.name == "main"))
+
+    assert LetExprHelpers.let_expr?(main.expr)
+    refute match?(%{op: :unsupported}, main.expr)
+  end
+
+  test "dedented let/in with unindented if/else after in keeps String.trim layout" do
+    source = """
+    module ArrayAppendPushBuilt exposing (main)
+
+    compareArrays name expected got =
+        let
+            lenE =
+                Array.length expected
+
+            lenG =
+                Array.length got
+        in
+        if lenE /= lenG then
+            Just "fail"
+
+        else
+            Nothing
+    """
+
+    compare =
+      "ArrayAppendPushBuilt.elm"
+      |> GeneratedContractBuilder.build(source, "ArrayAppendPushBuilt", [])
+      |> Map.get(:declarations)
+      |> Enum.find(&(&1.kind == :function_definition and &1.name == "compareArrays"))
+
+    assert LetExprHelpers.let_expr?(compare.expr)
+    refute match?(%{op: :unsupported}, compare.expr)
+  end
 end

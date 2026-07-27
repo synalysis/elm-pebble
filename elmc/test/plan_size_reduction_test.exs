@@ -233,7 +233,7 @@ defmodule Elmc.PlanSizeReductionTest do
     refute c =~ "CATCH_BEGIN"
     assert c =~ "seed * 16807"
     assert c =~ "+ 11"
-    assert c =~ "% 2147483647"
+    assert c =~ "elmc_int_mod_by(2147483647,"
   end
 
   test "randomIndex lowers to native int return with native int phi" do
@@ -756,11 +756,10 @@ defmodule Elmc.PlanSizeReductionTest do
   end
 
   test "elm_mod_by_c_expr folds known non-zero divisor" do
-    assert Instr.elm_mod_by_c_expr("2147483647", "x") =~ "__elmc_mod_v % 2147483647"
-    refute Instr.elm_mod_by_c_expr("2147483647", "x") =~ "2147483647 == 0"
-    refute Instr.elm_mod_by_c_expr("2147483647", "x") =~ "2147483647 < 0"
-    refute Instr.elm_mod_by_c_expr("2147483647", "x") =~ ~r/^\{ /
+    expr = Instr.elm_mod_by_c_expr("2147483647", "x")
+    assert expr == "elmc_int_mod_by(2147483647, x)"
     assert Instr.elm_mod_by_c_expr("0", "x") == "0"
+    assert Instr.elm_mod_by_c_expr("maxExclusive", "seed") == "elmc_int_mod_by(maxExclusive, seed)"
   end
 
   test "setCell plan fusion lowers indexedMap replace to elmc_list_replace_nth_int" do

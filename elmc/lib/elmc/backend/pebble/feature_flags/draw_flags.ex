@@ -6,9 +6,14 @@ defmodule Elmc.Backend.Pebble.FeatureFlags.DrawFlags do
   alias Elmc.Backend.Pebble.FeatureFlags.DrawFlags.{Compact, Context, Primitives, Text}
   alias Elmc.Backend.Pebble.FeatureFlags.TargetSet
   alias Elmc.Backend.Pebble.Types
+  alias Elmc.Types, as: ElmcTypes
 
   @spec compute(Types.call_target_set()) :: Types.draw_feature_flags()
-  def compute(targets) do
+  def compute(targets), do: compute(targets, %{})
+
+  @spec compute(Types.call_target_set(), ElmcTypes.compile_options() | map()) ::
+          Types.draw_feature_flags()
+  def compute(targets, opts) when is_map(opts) do
     context? =
       TargetSet.member?(targets, "Pebble.Ui.group") or
         TargetSet.member?(targets, "Pebble.Ui.context")
@@ -19,6 +24,6 @@ defmodule Elmc.Backend.Pebble.FeatureFlags.DrawFlags do
       |> Map.merge(Context.compute(targets, context?))
       |> Map.merge(Text.compute(targets))
 
-    Map.merge(flags, Compact.compute(flags))
+    Map.merge(flags, Compact.compute(flags, opts))
   end
 end

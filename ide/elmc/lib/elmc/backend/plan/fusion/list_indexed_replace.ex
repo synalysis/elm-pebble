@@ -1,0 +1,183 @@
+defmodule Elmc.Backend.Plan.Fusion.ListIndexedReplace do
+  @moduledoc false
+  alias Elmc.Backend.Plan.Types, as: Types
+
+
+  alias Elmc.Backend.CCodegen.{FusionSupport, Host, Util}
+  alias Elmc.Backend.Plan.Fusion.{Helper, Registry, Tuple2CaseTable}
+  alias Elmc.Backend.Plan.Types
+
+  @indexed_map_targets ~w(List.indexedMap Elm.Kernel.List.indexedMap)
+
+  @spec try_plan(String.t(), Types.function_decl(), Types.function_decl_map(), keyword()) ::
+          {:ok, Types.FunctionPlan.t()} | :error
+  def try_plan(module_name, decl, _decl_map, _opts) do
+    name = Map.get(decl, :name, "")
+
+    with [index_arg, value_arg, list_arg] <- Map.get(decl, :args, []),
+         true <- list_int_return?(Map.get(decl, :type, "")),
+         {:ok, index_param, value_param} <-
+           parse_indexed_replace(Map.get(decl, :expr), index_arg, value_arg, list_arg),
+         true <- index_param == index_arg,
+         true <- value_param == value_arg do
+      FusionSupport.ok_rc(
+        emit(module_name, name, index_arg, value_arg, list_arg),
+        []
+      )
+      |> case do
+        {:ok, c_body, _, :rc_native} ->
+          kinds = [:native_int, :native_int, :boxed]
+          Registry.register_rc_native_arg_kinds(module_name, name, kinds)
+
+          plan =
+            module_name
+            |> Tuple2CaseTable.build_fusion_plan(name, decl, c_body)
+            |> Helper.maybe_put_fusion_arg_kinds(kinds)
+            |> Helper.attach_bytecode_fusion(:list_indexed_replace)
+
+          {:ok, plan}
+      end
+    else
+      _ -> :error
+    end
+  end
+
+  @spec parse_indexed_replace(map() | term(), Types.ir_expr() | term(), Types.ir_expr() | term(), Types.ir_expr() | term()) :: Types.ir_expr()
+
+  defp parse_indexed_replace(
+         %{
+           op: :qualified_call,
+           target: target,
+           args: [lambda, %{op: :var, name: list_arg}]
+         },
+         index_arg,
+         value_arg,
+         list_arg
+       )
+       when target in @indexed_map_targets and is_binary(index_arg) and is_binary(value_arg) and
+              is_binary(list_arg) do
+    parse_replace_lambda(lambda, index_arg, value_arg)
+  end
+
+  defp parse_indexed_replace(
+         %{
+           op: :runtime_call,
+           function: "elmc_list_indexed_map",
+           args: [lambda, %{op: :var, name: list_arg}]
+         },
+         index_arg,
+         value_arg,
+         list_arg
+       )
+       when is_binary(index_arg) and is_binary(value_arg) and is_binary(list_arg) do
+    parse_replace_lambda(lambda, index_arg, value_arg)
+  end
+
+  defp parse_indexed_replace(_, _, _, _), do: :error
+
+  @spec list_int_return?(String.t() | term()) :: boolean()
+
+  defp list_int_return?(type) when is_binary(type) do
+    Host.normalize_type_name(Host.function_return_type(type)) == "List Int"
+  end
+
+  defp list_int_return?(_), do: false
+
+  @spec parse_replace_lambda(map() | term(), Types.ir_expr() | term(), Types.ir_expr() | term()) :: Types.ir_expr()
+
+  defp parse_replace_lambda(
+         %{op: :lambda, args: [index_param, item_param], body: body},
+         index_arg,
+         value_arg
+       )
+       when is_binary(index_param) and is_binary(item_param) do
+    parse_replace_lambda_body(body, index_param, item_param, index_arg, value_arg)
+  end
+
+  defp parse_replace_lambda(
+         %{op: :lambda, args: [index_param], body: %{op: :lambda, args: [item_param], body: body}},
+         index_arg,
+         value_arg
+       )
+       when is_binary(index_param) and is_binary(item_param) do
+    parse_replace_lambda_body(body, index_param, item_param, index_arg, value_arg)
+  end
+
+  defp parse_replace_lambda(_, _, _), do: :error
+
+  @spec parse_replace_lambda_body(Types.expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+
+  defp parse_replace_lambda_body(body, index_param, item_param, index_arg, value_arg) do
+    case body do
+      %{
+        op: :if,
+        cond: %{op: :compare, kind: :eq, left: left, right: right},
+        then_expr: then_expr,
+        else_expr: %{op: :var, name: else_name}
+      }
+      when else_name == item_param ->
+        match_replace_target(index_param, left, right, then_expr, index_arg, value_arg)
+
+      %{
+        op: :if,
+        cond: %{op: :compare, kind: :eq, left: left, right: right},
+        then_expr: %{op: :var, name: then_name},
+        else_expr: else_expr
+      }
+      when then_name == item_param ->
+        match_replace_target(index_param, left, right, else_expr, index_arg, value_arg)
+
+      _ ->
+        :error
+    end
+  end
+
+  @spec match_replace_target(Types.ir_expr(), Types.expr(), Types.expr(), Types.expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+
+  defp match_replace_target(index_param, left, right, value_expr, index_arg, value_arg) do
+    if compare_is_index_replace?(left, right, index_param, index_arg) and
+         match_value?(value_expr, value_arg) do
+      {:ok, index_arg, value_arg}
+    else
+      :error
+    end
+  end
+
+  @spec compare_is_index_replace?(Types.expr(), Types.expr(), Types.ir_expr(), Types.ir_expr()) :: boolean()
+
+  defp compare_is_index_replace?(left, right, index_param, index_arg) do
+    (var_name?(left, index_param) and var_name?(right, index_arg)) or
+      (var_name?(right, index_param) and var_name?(left, index_arg))
+  end
+
+  @spec var_name?(map() | term(), Types.ir_expr() | term()) :: boolean()
+
+  defp var_name?(%{op: :var, name: name}, expected), do: name == expected
+  defp var_name?(_, _), do: false
+
+  @spec match_value?(map() | term(), Types.ir_expr() | term()) :: boolean()
+
+  defp match_value?(%{op: :var, name: name}, value_arg), do: name == value_arg
+  defp match_value?(_, _), do: false
+
+  @spec emit(String.t(), String.t(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+
+  defp emit(module_name, name, index_arg, value_arg, list_arg) do
+    c_prefix = Util.module_fn_name(module_name, name)
+
+    """
+    static RC #{c_prefix}_native(ElmcValue **out, const elmc_int_t #{index_arg}, const elmc_int_t #{value_arg}, ElmcValue * const #{list_arg}) {
+      RC Rc = RC_SUCCESS;
+      CATCH_BEGIN
+        ElmcValue *result = elmc_list_replace_nth_int(#{list_arg}, #{index_arg}, #{value_arg});
+        if (!result) {
+          Rc = RC_ERR_OUT_OF_MEMORY;
+          CHECK_RC(Rc);
+        }
+        *out = result;
+      CATCH_END
+      return Rc;
+    }
+    """
+  end
+end

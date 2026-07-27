@@ -109,12 +109,20 @@ defmodule Elmc do
 
       web_kernel_diagnostics = WebKernelDiagnostics.compile_diagnostics()
 
+      subscription_layout_diagnostics =
+        Process.get(:elmc_compile_warnings, [])
+        |> Enum.filter(fn
+          %{"source" => "elmc/subscriptions"} -> true
+          _ -> false
+        end)
+
       layout_and_plan_diagnostics =
         layout_coercion_diagnostics ++
           plan_primary_fallbacks ++
           plan_legacy_diagnostics ++
           plan_coverage_diagnostics ++
-          web_kernel_diagnostics
+          web_kernel_diagnostics ++
+          subscription_layout_diagnostics
 
       wasm_empty_export_diagnostics = wasm_empty_export_diagnostics(wasm_summary, opts)
 
@@ -143,6 +151,7 @@ defmodule Elmc do
       Process.delete(:elmc_layout_coercion_diagnostics)
       Process.delete(:elmc_plan_primary_fallbacks)
       Process.delete(:elmc_web_kernel_diagnostics)
+      Process.delete(:elmc_compile_warnings)
 
       {:ok,
        %{
@@ -265,6 +274,7 @@ defmodule Elmc do
   @spec seed_codegen_process_state(ElmEx.IR.t(), map()) :: :ok
   defp seed_codegen_process_state(ir, opts) when is_map(opts) do
     Process.put(:elmc_codegen_opts, opts)
+    Process.put(:elmc_compile_warnings, [])
     Process.put(:elmc_svg_attribute_names, Map.get(opts, :svg_attribute_names, MapSet.new()))
     Process.put(
       :elmc_svg_attribute_dom_names,

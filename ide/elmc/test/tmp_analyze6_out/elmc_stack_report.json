@@ -1,0 +1,67 @@
+{
+  "functions": [
+    {
+      "function": "Main.init",
+      "level": "ok",
+      "reasons": [],
+      "score": 0
+    },
+    {
+      "function": "Main.main",
+      "level": "ok",
+      "reasons": [],
+      "score": 0
+    },
+    {
+      "function": "Main.subscriptions",
+      "level": "ok",
+      "reasons": [],
+      "score": 0
+    },
+    {
+      "function": "Main.update",
+      "level": "ok",
+      "reasons": [],
+      "score": 0
+    },
+    {
+      "function": "Main.view",
+      "level": "ok",
+      "reasons": [],
+      "score": 0
+    },
+    {
+      "function": "elmc_fn_Main_main",
+      "level": "ok",
+      "reasons": [],
+      "score": 0,
+      "c_boxed_locals": 1,
+      "c_tmp_max": 1
+    }
+  ],
+  "summary": {
+    "ok": 6,
+    "warn": 0,
+    "risk": 0
+  },
+  "code_size_indicators": {
+    "direct_command_defs": 0,
+    "boxed_tmp_declarations": 2,
+    "closure_allocations": 0,
+    "generated_c_bytes": 4409,
+    "generated_c_lines": 162,
+    "generic_function_defs": 1,
+    "linked_binary": {
+      "reason": "binary size is available after platform or host linking, not during C source generation",
+      "available": false
+    },
+    "runtime_calls": {
+      "elmc_list_all": 0,
+      "elmc_list_any": 0,
+      "elmc_list_drop": 0,
+      "elmc_list_filter": 0,
+      "elmc_list_filter_map": 0,
+      "elmc_list_map": 0
+    }
+  }
+}

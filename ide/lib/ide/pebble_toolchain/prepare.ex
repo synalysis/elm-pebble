@@ -66,7 +66,8 @@ defmodule Ide.PebbleToolchain.Prepare do
              debug_usage_policy: Keyword.get(opts, :debug_usage_policy, :error),
              plan_ir_mode: Keyword.get(opts, :plan_ir_mode, :primary),
              plan_ir_strict: Keyword.get(opts, :plan_ir_strict, true),
-             reuse_elmc_build: Keyword.get(opts, :reuse_elmc_build, false)
+             reuse_elmc_build: Keyword.get(opts, :reuse_elmc_build, false),
+             codegen_profile: Keyword.get(opts, :codegen_profile)
            ),
          :ok <- Companion.generate_protocol(protocol_elm, app_root, compile_project_root),
          :ok <- ToolchainElmc.reprune_staged_runtime(app_root),
@@ -185,7 +186,7 @@ defmodule Ide.PebbleToolchain.Prepare do
       if watchface?, do: "#define ELMC_WATCHFACE_MODE 1\n", else: ""
 
     storage_log_defines =
-      if Keyword.get(opts, :emulator_storage_logs, true) do
+      if Keyword.get(opts, :emulator_storage_logs, false) do
         "#define ELMC_PEBBLE_EMULATOR_STORAGE_LOGS 1\n"
       else
         ""
@@ -206,7 +207,7 @@ defmodule Ide.PebbleToolchain.Prepare do
       end
 
     debug_log_defines =
-      if Keyword.get(opts, :emulator_debug_logs, true) do
+      if Keyword.get(opts, :emulator_debug_logs, false) do
         "#define ELMC_PEBBLE_DEBUG_LOGS 1\n"
       else
         ""

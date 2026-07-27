@@ -310,8 +310,6 @@ defmodule Ide.Test.TemplateElmxElmcParity.ExecutionPlan do
     String.match?(String.trim(message), ~r/ _\z/)
   end
 
-  defp wildcard_update_branch?(_), do: false
-
   defp subscription_message_value(message) do
     Ide.Test.TemplateElmxElmcParity.ExecutionPlan.TimelineMessageValue.sample_for_message(message)
   end

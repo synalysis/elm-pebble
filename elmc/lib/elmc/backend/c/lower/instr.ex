@@ -4323,34 +4323,15 @@ defmodule Elmc.Backend.C.Lower.Instr do
   @spec elm_mod_by_c_expr(String.t(), String.t()) :: String.t()
   def elm_mod_by_c_expr(base_s, value_s) do
     value_s = parenthesize_mod_value(value_s)
-    opts = Process.get(:elmc_codegen_opts, %{})
-    fast? = Elmc.Backend.SizeProfile.mod_by_fast?(opts)
 
     case parse_int_literal(base_s) do
       {:ok, 0} ->
         "0"
 
-      {:ok, base} when base > 0 and fast? ->
-        "(({ elmc_int_t __elmc_mod_v = (#{value_s}); ((__elmc_mod_v % #{base}) + #{base}) % #{base} }))"
-
-      {:ok, base} ->
-        correction = mod_abs_addend(base)
-        "({ elmc_int_t __elmc_mod_v = (#{value_s}); elmc_int_t __elmc_mod_r = __elmc_mod_v % #{base}; (__elmc_mod_r < 0 ? __elmc_mod_r + (elmc_int_t)#{correction} : __elmc_mod_r); })"
-
-      :dynamic ->
-        "(#{base_s} == 0 ? 0 : (((elmc_int_t)(#{value_s} % #{base_s})) < 0 ? ((elmc_int_t)(#{value_s} % #{base_s})) + (elmc_int_t)#{mod_abs_addend_expr(base_s)} : (elmc_int_t)(#{value_s} % #{base_s})))"
+      _ ->
+        "elmc_int_mod_by(#{base_s}, #{value_s})"
     end
   end
-
-  @spec mod_abs_addend(integer() | Types.ir_expr()) :: Types.ir_expr()
-
-  defp mod_abs_addend(base) when is_integer(base) and base > 0, do: Integer.to_string(base)
-  defp mod_abs_addend(base) when is_integer(base) and base < 0, do: Integer.to_string(-base)
-  defp mod_abs_addend(0), do: "0"
-
-  @spec mod_abs_addend_expr(Types.ir_expr()) :: Types.ir_expr()
-
-  defp mod_abs_addend_expr(base_s), do: "(#{base_s} < 0 ? -#{base_s} : #{base_s})"
 
   @spec parse_int_literal(String.t()) :: Types.ir_expr()
 

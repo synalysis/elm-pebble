@@ -87,11 +87,13 @@ defmodule Ide.Test.TemplateElmxElmcParity.ElmcRunner.PayloadCodegen do
     end
   end
 
-  defp dispatch_with_optional_payload(_ctor, sample, tags, app_expr) when not is_nil(sample) do
-    tag = Map.get(tags, normalize_ctor(_ctor))
+  def dispatch_expr(_message, _message_value, _tags), do: {"0", "invalid_message"}
+
+  defp dispatch_with_optional_payload(ctor, sample, tags, app_expr) when not is_nil(sample) do
+    tag = Map.get(tags, normalize_ctor(ctor))
 
     if is_nil(tag) do
-      {"0", "missing_tag:#{inspect(_ctor)}"}
+      {"0", "missing_tag:#{inspect(ctor)}"}
     else
       {payload_expr, err} = wire_value_expr(sample)
 
@@ -118,8 +120,6 @@ defmodule Ide.Test.TemplateElmxElmcParity.ElmcRunner.PayloadCodegen do
   end
 
   defp wildcard_update_branch?(_), do: false
-
-  def dispatch_expr(_message, _message_value, _tags), do: {"0", "invalid_message"}
 
   @spec wire_value_expr(ParityTypes.wire_json_map() | integer() | boolean() | String.t()) ::
           {String.t(), String.t() | nil}

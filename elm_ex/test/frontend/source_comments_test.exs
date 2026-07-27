@@ -52,4 +52,19 @@ defmodule ElmEx.Frontend.SourceCommentsTest do
     assert String.contains?(formatted, "{-| Docs")
     assert String.contains?(formatted, "value : Int")
   end
+
+  test "format_module_source_preserve attaches doc comments before infix-named functions" do
+    source = """
+    module Main exposing (..)
+
+    {-| As top-level declaration
+    -}
+    infix x =
+        ()
+    """
+
+    assert {:ok, formatted} = Pretty.format_module_source_preserve("Main.elm", source, [])
+
+    assert formatted =~ ~r/\{-\\| As top-level declaration\n-\}\ninfix x =\n    \(\)\n/u
+  end
 end

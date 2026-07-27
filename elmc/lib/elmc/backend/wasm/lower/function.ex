@@ -47,7 +47,9 @@ defmodule Elmc.Backend.Wasm.Lower.Function do
       if Map.get(int_plan, :native_scalar_return) == :native_int do
         # Wasm Int closure bodies already box via runtime.new_int; running
         # box_native_scalar_return would treat the handle in $fn_out as a raw i32.
-        %{int_plan | native_scalar_return: nil, native_scalar_value_return: nil}
+        int_plan
+        |> Map.put(:native_scalar_return, nil)
+        |> Map.put(:native_scalar_value_return, false)
       else
         int_plan
       end

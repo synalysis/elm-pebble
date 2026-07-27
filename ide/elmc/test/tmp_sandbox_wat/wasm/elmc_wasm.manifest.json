@@ -1,0 +1,222 @@
+{
+  "closures": [
+    {
+      "arity": 1,
+      "capture_count": 1,
+      "export": "elmc_fn_Browser_sandbox_closure_0",
+      "index": 0,
+      "lambda_index": 0,
+      "parent_module": "Browser",
+      "parent_name": "sandbox",
+      "rc_required": false
+    },
+    {
+      "arity": 1,
+      "capture_count": 0,
+      "export": "elmc_fn_Browser_sandbox_closure_1",
+      "index": 1,
+      "lambda_index": 1,
+      "parent_module": "Browser",
+      "parent_name": "sandbox",
+      "rc_required": false
+    },
+    {
+      "arity": 2,
+      "capture_count": 1,
+      "export": "elmc_fn_Browser_sandbox_closure_2",
+      "index": 2,
+      "lambda_index": 2,
+      "parent_module": "Browser",
+      "parent_name": "sandbox",
+      "rc_required": false
+    },
+    {
+      "arity": 2,
+      "capture_count": 0,
+      "export": "elmc_fn_Main_main_closure_0",
+      "index": 3,
+      "lambda_index": 0,
+      "parent_module": "Main",
+      "parent_name": "main",
+      "rc_required": false
+    },
+    {
+      "arity": 1,
+      "capture_count": 0,
+      "export": "elmc_fn_Main_main_closure_1",
+      "index": 4,
+      "lambda_index": 1,
+      "parent_module": "Main",
+      "parent_name": "main",
+      "rc_required": false
+    }
+  ],
+  "contract": "elmc.wasm_manifest.v1",
+  "entry_export": "elmc_fn_Main_main",
+  "entry_module": "Main",
+  "export_signature": {
+    "results": 2
+  },
+  "functions": [
+    {
+      "export": "elmc_fn_Browser_sandbox",
+      "module": "Browser",
+      "name": "sandbox",
+      "params": [
+        "impl"
+      ],
+      "rc_required": false
+    },
+    {
+      "export": "elmc_fn_Html_div",
+      "module": "Html",
+      "name": "div",
+      "params": [],
+      "rc_required": false
+    },
+    {
+      "export": "elmc_fn_Html_text",
+      "module": "Html",
+      "name": "text",
+      "params": [],
+      "rc_required": false
+    },
+    {
+      "export": "elmc_fn_Main_main",
+      "module": "Main",
+      "name": "main",
+      "params": [],
+      "rc_required": false
+    },
+    {
+      "export": "elmc_fn_VirtualDom_text",
+      "module": "VirtualDom",
+      "name": "text",
+      "params": [],
+      "rc_required": false
+    }
+  ],
+  "fusion_functions": [],
+  "immortal_strings": {
+    "28402": "div"
+  },
+  "import_signatures": {
+    "runtime.as_int": {
+      "params": 1,
+      "results": 1
+    },
+    "runtime.browser_cmd": {
+      "params": 3,
+      "results": 1
+    },
+    "runtime.call_closure": {
+      "params": 4,
+      "results": 1
+    },
+    "runtime.html_cmd": {
+      "params": 5,
+      "results": 1
+    },
+    "runtime.list_from_values": {
+      "params": 3,
+      "results": 1
+    },
+    "runtime.list_nil": {
+      "params": 1,
+      "results": 1
+    },
+    "runtime.make_closure": {
+      "params": 4,
+      "results": 1
+    },
+    "runtime.new_immortal_string": {
+      "params": 2,
+      "results": 1
+    },
+    "runtime.new_int": {
+      "params": 2,
+      "results": 1
+    },
+    "runtime.record_get": {
+      "params": 3,
+      "results": 1
+    },
+    "runtime.record_new": {
+      "params": 5,
+      "results": 1
+    },
+    "runtime.release": {
+      "params": 1,
+      "results": 1
+    },
+    "runtime.release_array_lifo": {
+      "params": 2,
+      "results": 1
+    },
+    "runtime.retain": {
+      "params": 2,
+      "results": 1
+    },
+    "runtime.tuple2": {
+      "params": 3,
+      "results": 1
+    },
+    "runtime.unit": {
+      "params": 1,
+      "results": 1
+    }
+  },
+  "imports": [
+    "runtime.as_int",
+    "runtime.browser_cmd",
+    "runtime.call_closure",
+    "runtime.html_cmd",
+    "runtime.list_from_values",
+    "runtime.list_nil",
+    "runtime.make_closure",
+    "runtime.new_immortal_string",
+    "runtime.new_int",
+    "runtime.record_get",
+    "runtime.record_new",
+    "runtime.release",
+    "runtime.release_array_lifo",
+    "runtime.retain",
+    "runtime.tuple2",
+    "runtime.unit"
+  ],
+  "plan_coverage": {
+    "all": {
+      "failed_count": 0,
+      "failed_preview": [],
+      "lowered": 5,
+      "ratio": 1.0,
+      "total": 5
+    },
+    "main": {
+      "failed_count": 0,
+      "failed_preview": [],
+      "lowered": 1,
+      "ratio": 1.0,
+      "total": 1
+    },
+    "reachable": {
+      "failed_count": 0,
+      "failed_preview": [],
+      "lowered": 5,
+      "ratio": 1.0,
+      "total": 5
+    }
+  },
+  "plan_toolchain": {
+    "mode": "primary",
+    "strict": true,
+    "targets": [
+      "wasm"
+    ]
+  },
+  "pruned_count": 0,
+  "skipped": [],
+  "stub_functions": [],
+  "version": 1,
+  "wat_file": "elmc_generated.wat"
+}

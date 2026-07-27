@@ -4,6 +4,7 @@ import Battle as Battle exposing (Scene(..))
 import Basics
 import Json.Decode as Decode
 import Pebble.Button as Button
+import Pebble.Cmd as Cmd
 import Pebble.Events as Events
 import Pebble.Frame as Frame
 import Pebble.Health as Health
@@ -13,7 +14,7 @@ import Pebble.System as System
 import Pebble.Time as Time
 import Pebble.Ui as Ui
 import Pokemon as Pokemon exposing (Player, PlayerSpecies(..))
-import Render exposing (FaceModel, render)
+import Render exposing (render)
 
 
 type alias Model =
@@ -35,7 +36,7 @@ type alias Model =
     , opponent : Pokemon.Opponent
     , opponentPick : Int
     , scene : Scene
-    , opponentHealth : Float
+    , opponentHealth : Int
     , opponentYOffset : Int
     , animating : Bool
     , battleNonce : Int
@@ -121,7 +122,7 @@ init context =
 
             else
                 Waiting
-      , opponentHealth = 1
+      , opponentHealth = 1000
       , opponentYOffset = 0
       , animating = startAnimating
       , battleNonce = 0
@@ -319,7 +320,7 @@ startBattle model =
     ( { model
         | animating = True
         , scene = Battle.initialScene
-        , opponentHealth = 1
+        , opponentHealth = 1000
         , opponentYOffset = 0
         , opponent = Pokemon.opponentForTier model.screenW model.screenH tier pick
         , opponentPick = pick
@@ -355,9 +356,9 @@ advanceAnimation model =
         HealthDrain ->
             let
                 nextHealth =
-                    model.opponentHealth - 0.2
+                    model.opponentHealth - 200
             in
-            if nextHealth > 0.1 then
+            if nextHealth > 100 then
                 ( { model | opponentHealth = nextHealth }, Cmd.none )
 
             else
@@ -388,12 +389,12 @@ advanceFrom model nextModel =
                 }
     in
     if finished then
-        ( { nextModel | animating = False, scene = Waiting, opponentHealth = 1, opponentYOffset = 0 }
+        ( { nextModel | animating = False, scene = Waiting, opponentHealth = 1000, opponentYOffset = 0 }
         , Cmd.none
         )
 
     else if isFaintedScene scene then
-        ( { nextModel | scene = scene, opponentYOffset = 0, opponentHealth = 1 }, Cmd.none )
+        ( { nextModel | scene = scene, opponentYOffset = 0, opponentHealth = 1000 }, Cmd.none )
 
     else
         ( { nextModel | scene = scene }, Cmd.none )
@@ -420,6 +421,14 @@ refreshSteps model =
 
 subscriptions : Model -> Sub Msg
 subscriptions model =
+    let
+        frameSub =
+            if model.animating then
+                Frame.every 500 FrameTick
+
+            else
+                Sub.none
+    in
     Events.batch
         [ Events.onMinuteChange MinuteChanged
         , Events.onHourChange HourChanged
@@ -427,17 +436,8 @@ subscriptions model =
         , Button.onRelease Button.Select SelectPressed
         , Button.onRelease Button.Up UpPressed
         , Button.onRelease Button.Down DownPressed
+        , frameSub
         ]
-        |> addAnimationSub model
-
-
-addAnimationSub : Model -> Sub Msg -> Sub Msg
-addAnimationSub model subs =
-    if model.animating then
-        Sub.batch [ subs, Frame.every 500 FrameTick ]
-
-    else
-        subs
 
 
 clockHour : Model -> Int
@@ -480,16 +480,15 @@ clockDay model =
             1
 
 
-playerLevelFromSteps : Model -> Int
-playerLevelFromSteps model =
-    model.stepsToday
-        |> Maybe.map (\steps -> Basics.clamp 4 99 ((steps * 99) // max 1 model.stepGoal))
-        |> Maybe.withDefault 4
-
-
 playerForView : Model -> Pokemon.Player
 playerForView model =
-    { model.player | levelTag = ":L" ++ String.fromInt (playerLevelFromSteps model) }
+    let
+        level =
+            model.stepsToday
+                |> Maybe.map (\steps -> Basics.clamp 4 99 ((steps * 99) // max 1 model.stepGoal))
+                |> Maybe.withDefault 4
+    in
+    { model.player | levelTag = ":L" ++ String.fromInt level }
 
 
 thunderFlashForView : Model -> Bool
@@ -501,32 +500,28 @@ thunderFlashForView model =
     model.scene == AttackFrame2 && player.attack == Pokemon.Thunder
 
 
-        faceModelFrom : Model -> FaceModel
-
-
-faceModelFrom model =
-    { layout = model.layout
-    , scene = model.scene
-    , player = playerForView model
-    , opponent = model.opponent
-    , opponentHealth = model.opponentHealth
-    , opponentYOffset = model.opponentYOffset
-    , batteryPercent = Maybe.withDefault 100 model.batteryLevel
-    , showDate = model.showDate
-    , showSteps = model.showSteps
-    , stepsToday = model.stepsToday
-    , hour = clockHour model
-    , minute = clockMinute model
-    , month = clockMonth model
-    , day = clockDay model
-    , use24Hour = model.use24Hour
-    , thunderFlash = thunderFlashForView model
-    }
-
-
 view : Model -> Ui.UiNode
 view model =
-    Ui.toUiNode (render (faceModelFrom model))
+    Ui.toUiNode
+        (render
+            { layout = model.layout
+            , scene = model.scene
+            , player = playerForView model
+            , opponent = model.opponent
+            , opponentHealth = model.opponentHealth
+            , opponentYOffset = model.opponentYOffset
+            , batteryPercent = Maybe.withDefault 100 model.batteryLevel
+            , showDate = model.showDate
+            , showSteps = model.showSteps
+            , stepsToday = model.stepsToday
+            , hour = clockHour model
+            , minute = clockMinute model
+            , month = clockMonth model
+            , day = clockDay model
+            , use24Hour = model.use24Hour
+            , thunderFlash = thunderFlashForView model
+            }
+        )
 
 
 main : Program Decode.Value Model Msg

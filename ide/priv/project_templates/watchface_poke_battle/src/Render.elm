@@ -22,7 +22,7 @@ type alias FaceModel =
     , scene : Scene
     , player : Player
     , opponent : Opponent
-    , opponentHealth : Float
+    , opponentHealth : Int
     , opponentYOffset : Int
     , batteryPercent : Int
     , showDate : Bool
@@ -120,45 +120,42 @@ drawSteps layout model =
 
 drawInfoBox : Layout -> List Ui.RenderOp
 drawInfoBox layout =
-    let
-        cx =
-            layout.screenW // 2
-
-        cy =
-            layout.screenH // 2
-
-        radius =
-            layout.screenW // 2 - 4
-
-        innerRadius =
-            layout.screenW // 2 - 6
-
-        ballW =
-            12
-
-        ballH =
-            12
-    in
     [ Ui.group
         (Ui.context [ Ui.strokeColor Color.white, Ui.strokeWidth 2 ]
-            [ Ui.arc (square cx cy radius) layout.arcStart layout.arcEnd
-            , Ui.line { x = layout.boxX + ballW, y = layout.boxY + ballH // 2 + 1 }
-                { x = layout.screenW - layout.boxX - ballW, y = layout.boxY + ballH // 2 + 1 }
+            [ Ui.arc
+                { x = layout.screenW // 2 - (layout.screenW // 2 - 4)
+                , y = layout.screenH // 2 - (layout.screenH // 2 - 4)
+                , w = (layout.screenW // 2 - 4) * 2
+                , h = (layout.screenW // 2 - 4) * 2
+                }
+                layout.arcStart
+                layout.arcEnd
+            , Ui.line
+                { x = layout.boxX + 12, y = layout.boxY + 6 + 1 }
+                { x = layout.screenW - layout.boxX - 12, y = layout.boxY + 6 + 1 }
             ]
         )
     , Ui.group
         (Ui.context [ Ui.strokeColor Color.white, Ui.strokeWidth 1 ]
-            [ Ui.arc (square cx cy innerRadius) layout.arcStart layout.arcEnd
-            , Ui.line { x = layout.boxX + ballW - 1, y = layout.boxY + ballH // 2 - 2 }
-                { x = layout.screenW - layout.boxX - ballW + 1, y = layout.boxY + ballH // 2 - 2 }
+            [ Ui.arc
+                { x = layout.screenW // 2 - (layout.screenW // 2 - 6)
+                , y = layout.screenH // 2 - (layout.screenH // 2 - 6)
+                , w = (layout.screenW // 2 - 6) * 2
+                , h = (layout.screenW // 2 - 6) * 2
+                }
+                layout.arcStart
+                layout.arcEnd
+            , Ui.line
+                { x = layout.boxX + 12 - 1, y = layout.boxY + 6 - 2 }
+                { x = layout.screenW - layout.boxX - 12 + 1, y = layout.boxY + 6 - 2 }
             ]
         )
-    , Ui.drawBitmapInRect Resources.BitmapStaticBoxBall { x = layout.boxX, y = layout.boxY, w = ballW, h = ballH }
+    , Ui.drawBitmapInRect Resources.BitmapStaticBoxBall { x = layout.boxX, y = layout.boxY, w = 12, h = 12 }
     , Ui.drawBitmapInRect Resources.BitmapStaticBoxBall
-        { x = layout.screenW - layout.boxX - ballW
+        { x = layout.screenW - layout.boxX - 12
         , y = layout.boxY
-        , w = ballW
-        , h = ballH
+        , w = 12
+        , h = 12
         }
     ]
 
@@ -179,7 +176,7 @@ drawPlayer layout model =
         player =
             model.player
     in
-    drawTrainerCard layout nameX nameY player.displayName player.levelTag (toFloat model.batteryPercent / 100) False
+    drawTrainerCard layout nameX nameY player.displayName player.levelTag (model.batteryPercent * 10) False
         ++ [ Ui.drawBitmapInRect player.bitmap { x = player.x, y = player.y, w = 56, h = 48 } ]
 
 
@@ -288,14 +285,25 @@ drawOpponent layout model =
            ]
 
 
-drawTrainerCard : Layout -> Int -> Int -> String -> String -> Float -> Bool -> List Ui.RenderOp
+drawTrainerCard : Layout -> Int -> Int -> String -> String -> Int -> Bool -> List Ui.RenderOp
 drawTrainerCard _ nameX nameY name levelTag health isOpponent =
     let
         barW =
-            healthBarWidth health
+            if health <= 100 then
+                0
+
+            else
+                (health * 42 // 1000) + 2
 
         barColor =
-            healthColor health
+            if health > 500 then
+                Color.green
+
+            else if health > 210 then
+                Color.chromeYellow
+
+            else
+                Color.red
     in
     [ textLeft nameX nameY 72 16 (String.toUpper name)
     , textLeft (nameX + 28) (nameY + 15) 40 12 levelTag
@@ -312,39 +320,6 @@ drawTrainerCard _ nameX nameY name levelTag health isOpponent =
             else
                 []
            )
-
-
-healthBarWidth : Float -> Int
-healthBarWidth health =
-    let
-        fillable =
-            42
-    in
-    if health <= 0.1 then
-        0
-
-    else
-        let
-            fraction =
-                if health > 1.0 then
-                    health / 100.0
-
-                else
-                    health
-        in
-        round (toFloat fillable * fraction) + 2
-
-
-healthColor : Float -> Color.Color
-healthColor health =
-    if health > 0.5 then
-        Color.green
-
-    else if health > 0.21 then
-        Color.chromeYellow
-
-    else
-        Color.red
 
 
 drawAttack : Layout -> FaceModel -> Int -> List Ui.RenderOp
@@ -525,11 +500,6 @@ textLeft x y w h value =
         (Ui.context [ Ui.textColor Color.white ]
             [ Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = x, y = y, w = w, h = h } value ]
         )
-
-
-square : Int -> Int -> Int -> Ui.Rect
-square cx cy radius =
-    { x = cx - radius, y = cy - radius, w = radius * 2, h = radius * 2 }
 
 
 pad2 : Int -> String

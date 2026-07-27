@@ -28,18 +28,20 @@ defmodule Elmc.Backend.Pebble.HeaderWriter.SceneConfig.ConfigDefaults.ArenaSizin
     #define ELMC_PEBBLE_SCENE_TRIM_SLACK 0
     #endif
 
-    /* Retained scene-byte pools: grow once per slot, never shrink or realloc per frame. */
+    /* Retained scene-byte pools: grow once per slot, never shrink or realloc per frame.
+       Each slot is ~8B BSS on pebble_int32. Watchfaces typically keep 1–2 live scenes;
+       4 leaves headroom under flint's 64KiB APP virtual-size uint16 limit. */
     #ifndef ELMC_PEBBLE_SCENE_POOL_SLOTS
     #if ELMC_PEBBLE_APLITE_DIRECT_VIEW_ACTIVE
     #define ELMC_PEBBLE_SCENE_POOL_SLOTS 0
     #else
-    #define ELMC_PEBBLE_SCENE_POOL_SLOTS 10
+    #define ELMC_PEBBLE_SCENE_POOL_SLOTS 4
     #endif
     #endif
 
     #ifndef ELMC_PEBBLE_SCENE_STATIC_CAPACITY
     #if ELMC_PEBBLE_APLITE_DIRECT_VIEW_ACTIVE
-    #define ELMC_PEBBLE_SCENE_STATIC_CAPACITY 768
+    #define ELMC_PEBBLE_SCENE_STATIC_CAPACITY 512
     #else
     #define ELMC_PEBBLE_SCENE_STATIC_CAPACITY 0
     #endif

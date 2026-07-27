@@ -1,21 +1,21 @@
 {
   "version": 1,
-  "description": "Size-profile compiler baselines (flint). Use mix ide.size_report --profile size.",
+  "description": "Size-profile compiler baselines (flint). Use mix ide.size_report --profile size. Baseline refresh 2026-07: elmc_int_mod_by runtime helper and plan-primary codegen fixes.",
   "templates": {
     "game-2048": {
-      "generated_c_bytes": 34000,
-      "elmc_stack_text_bytes": 17313,
-      "pebble_app_bin_flint": 23500
+      "generated_c_bytes": 46000,
+      "elmc_stack_text_bytes": 18900,
+      "pebble_app_bin_flint": 24228
     },
     "watchface-smoke-screen": {
       "generated_c_bytes": 7906,
-      "elmc_stack_text_bytes": 12288,
-      "pebble_app_bin_flint": 11936,
+      "elmc_stack_text_bytes": 12400,
+      "pebble_app_bin_flint": 10300,
       "pebble_app_bin_aplite": 11936
     },
     "watchface-yes": {
-      "generated_c_bytes": 169000,
-      "elmc_stack_text_bytes": 41595,
+      "generated_c_bytes": 229000,
+      "elmc_stack_text_bytes": 43900,
       "pebble_app_bin_flint": 65000
     }
   }

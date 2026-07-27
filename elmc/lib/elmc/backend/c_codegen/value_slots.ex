@@ -479,8 +479,35 @@ defmodule Elmc.Backend.CCodegen.ValueSlots do
 
   @spec slot_count() :: non_neg_integer()
   def slot_count do
-    slots_state().next
+    Map.get(slots_state(), :next, 0)
   end
+
+  @doc """
+  Ensure `owned[N]` is declared for every index referenced in already-emitted C.
+
+  Direct-render bodies can retain high `owned[i]` text after nested ValueSlots
+  reset/restore shrinks `next`; declaration size must still cover those refs.
+  """
+  @spec ensure_covers_owned_refs(String.t()) :: :ok
+  def ensure_covers_owned_refs(body) when is_binary(body) do
+    case Regex.scan(~r/\bowned\[(\d+)\]/, body) do
+      [] ->
+        :ok
+
+      matches ->
+        max_index =
+          matches
+          |> Enum.map(fn [_, digits] -> String.to_integer(digits) end)
+          |> Enum.max()
+
+        slots = slots_state()
+        next = max(Map.get(slots, :next, 0), max_index + 1)
+        Process.put(:elmc_value_slots, %{slots | next: next})
+        :ok
+    end
+  end
+
+  def ensure_covers_owned_refs(_), do: :ok
 
   @spec owned_declaration() :: String.t()
   def owned_declaration do

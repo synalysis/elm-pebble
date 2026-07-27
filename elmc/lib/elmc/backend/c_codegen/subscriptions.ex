@@ -528,10 +528,17 @@ defmodule Elmc.Backend.CCodegen.Subscriptions do
         %{acc | dynamic?: true}
 
       nil ->
-        if subscription_mask_c_expr(normalized, args) != nil do
-          %{acc | dynamic?: true}
-        else
-          Enum.reduce(args, acc, &collect_subscription_specs/2)
+        case subscription_mask_c_expr(normalized, args) do
+          @button_raw_mask ->
+            # Msg tag may be unresolved during early analysis; still size the
+            # button-raw table from the known mask instead of falling back to 16.
+            %{acc | button_raw_count: acc.button_raw_count + 1}
+
+          mask when is_binary(mask) ->
+            %{acc | tag_masks: [mask | acc.tag_masks]}
+
+          nil ->
+            Enum.reduce(args, acc, &collect_subscription_specs/2)
         end
     end
   end

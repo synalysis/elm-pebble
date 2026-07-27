@@ -1,0 +1,380 @@
+defmodule Elmc.Backend.Plan.Lower.Constructor do
+  @moduledoc false
+  alias Elmc.Backend.Plan.Types, as: Types
+
+
+  alias Elmc.Backend.CCodegen.ResourceUnion
+  alias Elmc.Backend.Plan.{Builder, Context}
+  alias Elmc.Backend.Plan.Lower.UnionCtor
+  alias Elmc.Backend.Plan.Lower.Expr
+  alias Elmc.Backend.Plan.Types
+
+  @nothing_names ~w(Nothing Maybe.Nothing)
+  @just_names ~w(Just Maybe.Just)
+  @order_names ~w(LT EQ GT Basics.LT Basics.EQ Basics.GT)
+  @order_values %{"LT" => -1, "EQ" => 0, "GT" => 1}
+
+  @payload_builtins %{
+    "Just" => :maybe_just_own,
+    "Ok" => :result_ok_own,
+    "Err" => :result_err_own
+  }
+
+  @spec compile(Types.constructor_target_input() | Types.ir_expr(), Context.t(), Builder.t()) ::
+          Types.compile_result_required()
+
+  @spec compile_payload_tuple2(Types.ir_expr(), Types.ir_expr(), Context.t(), Builder.t()) ::
+          {:ok, Types.reg() | :fn_out, Builder.t()} | :unsupported
+  def compile_payload_tuple2(%{op: :int_literal, value: tag, union_ctor: "Decoder"}, payload_expr, ctx, b) do
+    operand_ctx = %{ctx | dest_stack: [:scratch], function_tail: false}
+
+    with {:ok, payload_reg, b1} <- Expr.compile(payload_expr, operand_ctx, b),
+         {:ok, tag_reg, b2} <-
+           Expr.compile_runtime_builtin(:new_int, [], operand_ctx, b1, %{literal: tag}) do
+      Expr.compile_runtime_builtin(:tuple2, [tag_reg, payload_reg], ctx, b2)
+    else
+      _ -> :unsupported
+    end
+  end
+
+  def compile_payload_tuple2(
+        %{op: :int_literal, union_ctor: ctor} = left,
+        payload_expr,
+        ctx,
+        b
+      )
+      when is_binary(ctor) do
+    case Map.get(@payload_builtins, short_name(ctor)) do
+      nil ->
+        qualified = UnionCtor.qualify(ctor, ctx)
+        tag = Map.get(left, :value) || lookup_constructor_tag(qualified, nil)
+
+        cond do
+          # Nullary ctors in multi-arg nests are `tuple2(Tag, restArgs)`, not
+          # `(tag, payload)`. Treating rest as payload made UseMeshUvs swallow
+          # Constant/AO/NoNormalMap so Entity.mesh never matched LambertianMaterial.
+          nullary_union_ctor?(qualified, ctor) ->
+            :unsupported
+
+          is_integer(tag) ->
+            scratch_ctx = %{ctx | dest_stack: [:scratch], function_tail: false}
+
+            with {:ok, tag_reg, b1} <- compile_union_tag_int(qualified, tag, scratch_ctx, b),
+                 {:ok, payload_reg, b2} <- compile_union_payload([payload_expr], scratch_ctx, b1) do
+              Expr.compile_runtime_builtin(:tuple2, [tag_reg, payload_reg], ctx, b2)
+            else
+              _ -> :unsupported
+            end
+
+          true ->
+            :unsupported
+        end
+
+      builtin ->
+        qualified = UnionCtor.qualify(ctor, ctx)
+        tag = lookup_constructor_tag(qualified, nil)
+
+        with {:ok, payload_reg, b1} <- Expr.compile(payload_expr, ctx, b),
+             {owned_payload, b_owned} = Builder.copy_reg_owned(b1, payload_reg) do
+          extra = if is_integer(tag), do: %{literal: tag}, else: %{}
+          Expr.compile_runtime_builtin(builtin, [owned_payload], ctx, b_owned, extra)
+        else
+          _ -> :unsupported
+        end
+    end
+  end
+
+  def compile_payload_tuple2(_, _, _, _), do: :unsupported
+
+  @spec nullary_union_ctor?(String.t(), String.t()) :: boolean()
+
+  defp nullary_union_ctor?(qualified, ctor) when is_binary(qualified) and is_binary(ctor) do
+    specs = Process.get(:elmc_union_constructor_payload_specs, %{})
+    short = short_name(ctor)
+
+    keys =
+      [{qualified, short}] ++
+        case String.split(qualified, ".") do
+          parts when length(parts) >= 2 ->
+            home = parts |> Enum.drop(-1) |> Enum.join(".")
+            [{home, short}, {home, short_name(qualified)}]
+
+          _ ->
+            []
+        end
+
+    case Enum.find_value(keys, &Map.get(specs, &1)) do
+      spec when is_binary(spec) ->
+        Elmc.Backend.Pebble.Util.payload_arity_for_spec(spec) == 0
+
+      _ ->
+        # Unknown ctor: keep legacy (tag, payload) packing.
+        false
+    end
+  end
+
+  @spec compile(map() | term(), Types.ir_expr() | term(), Types.ir_expr() | term()) :: Types.ir_expr()
+
+  def compile(%{target: target} = expr, ctx, b) when is_binary(target) do
+    args = Map.get(expr, :args, [])
+    short = target |> String.split(".") |> List.last()
+
+    cond do
+      record_alias_ctor?(target, args, ctx) ->
+        compile_record_alias_ctor(target, args || [], ctx, b)
+
+      ResourceUnion.constructor?(target, args) ->
+        compile_resource_union_index(target, ctx, b)
+
+      short in @nothing_names ->
+        compile_nothing(ctx, b)
+
+      short in @just_names ->
+        compile_just(args, ctx, b)
+
+      unit_ctor?(target, short) ->
+        Expr.compile_runtime_builtin(:unit, [], ctx, b)
+
+      short in @order_names or target in @order_names ->
+        compile_order_literal(short, ctx, b)
+
+      true_or_false?(target) ->
+        compile_bool_literal(target, ctx, b)
+
+      true ->
+        compile_union_value(target, args || [], Map.get(expr, :value), ctx, b)
+    end
+  end
+
+  def compile(_, _, _), do: :unsupported
+
+  @spec record_alias_ctor?(String.t(), [String.t()], Types.ir_expr()) :: boolean()
+
+  defp record_alias_ctor?(target, args, ctx) when is_binary(target) do
+    arity = args |> List.wrap() |> length()
+    shapes = Process.get(:elmc_record_alias_shapes, %{})
+
+    case record_alias_key(target, ctx, shapes) do
+      {mod, name} ->
+        case Map.get(shapes, {mod, name}) do
+          fields when is_list(fields) -> length(fields) == arity
+          _ -> false
+        end
+
+      _ ->
+        false
+    end
+  end
+
+  @spec record_alias_key(String.t(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+
+  defp record_alias_key(target, ctx, shapes) do
+    case String.split(target, ".", trim: true) do
+      [name] ->
+        mod = ctx && Map.get(ctx, :module)
+        if is_binary(mod) and Map.has_key?(shapes, {mod, name}), do: {mod, name}, else: nil
+
+      parts ->
+        mod = parts |> Enum.drop(-1) |> Enum.join(".")
+        name = parts |> List.last()
+        if Map.has_key?(shapes, {mod, name}), do: {mod, name}, else: nil
+    end
+  end
+
+  @spec compile_record_alias_ctor(String.t(), list(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+
+  defp compile_record_alias_ctor(target, args, ctx, b) when is_binary(target) and is_list(args) do
+    shapes = Process.get(:elmc_record_alias_shapes, %{})
+
+    case record_alias_key(target, ctx, shapes) do
+      {mod, name} ->
+        field_names = Map.get(shapes, {mod, name}, []) |> List.wrap()
+        shape = "#{mod}.#{name}"
+
+        scratch_ctx = %{ctx | dest_stack: [:scratch], function_tail: false}
+
+        with {:ok, regs, b1} <- Expr.compile_args(args, scratch_ctx, b) do
+          Expr.compile_runtime_builtin(:record_new, regs, ctx, b1, %{shape: shape, field_names: field_names})
+        else
+          _ -> :unsupported
+        end
+
+      _ ->
+        :unsupported
+    end
+  end
+
+  @spec compile_resource_union_index(String.t(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+
+  defp compile_resource_union_index(target, _ctx, b) do
+    {reg, b1} = Builder.emit_const_int(b, ResourceUnion.slot_index(target))
+    {:ok, reg, b1}
+  end
+
+  @spec compile_nothing(Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+
+  defp compile_nothing(ctx, b) do
+    {dest, b1} = dest_for_ctor(ctx, b)
+
+    {_, b2} =
+      Builder.emit(b1, :call_runtime, %{
+        dest: dest,
+        args: %{builtin: :maybe_nothing, args: []},
+        effects:
+          if(is_integer(dest),
+            do: Types.owned_effects(dest),
+            else: Types.empty_effects()
+          )
+      })
+
+    {:ok, dest, b2}
+  end
+
+  @spec compile_just([String.t()], Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+
+  defp compile_just(args, ctx, b) do
+    payload = List.first(args || [])
+
+    with {:ok, payload_reg, b1} <- Expr.compile(payload, ctx, b),
+         {owned_payload, b_owned} = Builder.copy_reg_owned(b1, payload_reg) do
+      {dest, b2} = dest_for_ctor(ctx, b_owned)
+
+      wrap_catch? = Builder.wrap_fallible_instr_catch?(b2, ctx, true)
+
+      b3 = if wrap_catch?, do: Builder.catch_begin(b2), else: b2
+
+      effects =
+        if is_integer(dest) do
+          Types.fallible_effects(dest, [owned_payload], [owned_payload])
+        else
+          Types.fallible_transfer([owned_payload], [owned_payload])
+        end
+
+      {_, b4} =
+        Builder.emit(b3, :call_runtime, %{
+          dest: dest,
+          args: %{builtin: :maybe_just_own, args: [owned_payload]},
+          effects: effects
+        })
+
+      b5 = if wrap_catch?, do: Builder.catch_end(b4), else: b4
+      {:ok, dest, b5}
+    else
+      _ -> :unsupported
+    end
+  end
+
+  @spec unit_ctor?(String.t(), Types.ir_expr()) :: boolean()
+
+  defp unit_ctor?(target, short) do
+    short == "()" or target in ["()", "Basics.()"]
+  end
+
+  @spec true_or_false?(String.t()) :: boolean()
+
+  defp true_or_false?(target) when is_binary(target) do
+    target in ["True", "False", "Basics.True", "Basics.False"] or
+      String.ends_with?(target, ".True") or
+      String.ends_with?(target, ".False")
+  end
+
+  @spec compile_order_literal(Types.ir_expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+
+  defp compile_order_literal(short, ctx, b) do
+    value = Map.fetch!(@order_values, short_name(short))
+    Expr.compile_runtime_builtin(:new_order, [], ctx, b, %{literal: value})
+  end
+
+  @spec compile_bool_literal(String.t(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+
+  defp compile_bool_literal(target, _ctx, b) do
+    # Native-bool returns / compares use raw 0/1 in i32 locals, then box at the
+    # ABI boundary. Heap call args must be boxed via CallCoerce (Bool params) —
+    # raw i32.const 1 collides with immortal UNIT on WASM. Tag as bool_lit so
+    # C emit boxes with elmc_new_bool (Debug.toString → "True"/"False").
+    value =
+      cond do
+        String.ends_with?(target, "True") -> 1
+        true -> 0
+      end
+
+    Builder.emit_const_int(b, value, bool_lit: true)
+    |> then(fn {reg, b1} -> {:ok, reg, b1} end)
+  end
+
+  @spec compile_union_tag_int(String.t(), integer(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+
+  defp compile_union_tag_int(target, value, ctx, b) do
+    qualified = UnionCtor.qualify(target, ctx)
+
+    case lookup_constructor_tag(qualified, value) do
+      tag when is_integer(tag) ->
+        Builder.emit_const_int(b, tag, union_ctor: qualified)
+        |> then(fn {reg, b1} -> {:ok, reg, b1} end)
+
+      _ ->
+        :unsupported
+    end
+  end
+
+  # Generic custom type constructors are represented as (tag, payload) tuple2.
+  # Payload is:
+  # - `()` for nullary ctors
+  # - the single value for unary ctors
+  # - right-nested tuple2s for n-ary ctors (n > 1), matching PatternBind
+  #   (`Pair x y` → tuple2(x, y); `T a b c` → tuple2(a, tuple2(b, c)))
+  @spec compile_union_value(String.t(), list(), integer(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+
+  defp compile_union_value(target, args, value, ctx, b) when is_binary(target) and is_list(args) do
+    scratch_ctx = %{ctx | dest_stack: [:scratch], function_tail: false}
+
+    with {:ok, tag_reg, b1} <- compile_union_tag_int(target, value, scratch_ctx, b),
+         {:ok, payload_reg, b2} <- compile_union_payload(args, scratch_ctx, b1) do
+      Expr.compile_runtime_builtin(:tuple2, [tag_reg, payload_reg], ctx, b2)
+    else
+      _ -> :unsupported
+    end
+  end
+
+  @spec compile_union_payload(term(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+
+  defp compile_union_payload([], ctx, b) do
+    Expr.compile_runtime_builtin(:unit, [], ctx, b)
+  end
+
+  defp compile_union_payload([only], ctx, b) do
+    Expr.compile(only, ctx, b)
+  end
+
+  defp compile_union_payload([left | rest], ctx, b) when rest != [] do
+    with {:ok, left_reg, b1} <- Expr.compile(left, ctx, b),
+         {:ok, rest_reg, b2} <- compile_union_payload(rest, ctx, b1) do
+      Expr.compile_runtime_builtin(:tuple2, [left_reg, rest_reg], ctx, b2)
+    else
+      _ -> :unsupported
+    end
+  end
+
+  @spec lookup_constructor_tag(String.t(), integer()) :: Types.ir_expr()
+
+  defp lookup_constructor_tag(target, value) do
+    tags = Process.get(:elmc_constructor_tags, %{})
+
+    Elmc.Backend.CCodegen.IRQueries.lookup_tag(tags, target) ||
+      (is_integer(value) && value)
+  end
+
+  @spec short_name(String.t()) :: Types.ir_expr()
+
+  defp short_name(name), do: name |> String.split(".") |> List.last()
+
+  @spec dest_for_ctor(Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+
+  defp dest_for_ctor(ctx, b) do
+    case Context.dest_for_call(ctx) do
+      :fn_out -> {:fn_out, b}
+      :branch_out -> {:branch_out, b}
+      :scratch -> Builder.fresh_reg(b)
+    end
+  end
+end

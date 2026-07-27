@@ -11,6 +11,7 @@ defmodule Elmc.Backend.Worker do
   alias Elmc.Backend.CCodegen.FunctionCallAbi
   alias Elmc.Backend.CCodegen.IRQueries
   alias Elmc.Backend.CCodegen.Subscriptions
+  alias Elmc.Backend.Pebble.IRAnalysis
   alias Elmc.Types
 
   @fallback_sub_tag_slots 32
@@ -35,27 +36,55 @@ defmodule Elmc.Backend.Worker do
 
   @spec subscription_analysis(IR.t(), String.t()) :: Subscriptions.worker_subscription_layout()
   def subscription_analysis(%IR{} = ir, entry_module) do
-    case subscriptions_expr(ir, entry_module) do
-      nil ->
-        %{
-          tag_masks: [],
-          button_raw_count: 0,
-          compact: true,
-          has_frame: false,
-          model_dependent?: false,
-          slot_map: %{},
-          frame_slot: nil,
-          sub_tag_slots: 1,
-          button_raw_subs: 1
-        }
+    # Worker adapter runs before C codegen populates :elmc_pebble_msg_names.
+    # Seed Msg constructor names here so bare constructor_ref tags (UpPressed,
+    # FrameTick, …) resolve during compact slot analysis — otherwise known
+    # button/frame masks are marked dynamic and fall back to 32/16 BSS arrays.
+    with_msg_constructor_names(ir, entry_module, fn ->
+      case subscriptions_expr(ir, entry_module) do
+        nil ->
+          %{
+            tag_masks: [],
+            button_raw_count: 0,
+            compact: true,
+            has_frame: false,
+            model_dependent?: false,
+            slot_map: %{},
+            frame_slot: nil,
+            sub_tag_slots: 1,
+            button_raw_subs: 1
+          }
 
-      expr ->
-        decl = subscriptions_decl(ir, entry_module)
+        expr ->
+          decl = subscriptions_decl(ir, entry_module)
 
-        expr
-        |> Subscriptions.analyze_subscription_masks()
-        |> Map.put(:model_dependent?, Subscriptions.model_dependent?(decl))
-        |> build_slot_layout()
+          expr
+          |> Subscriptions.analyze_subscription_masks()
+          |> Map.put(:model_dependent?, Subscriptions.model_dependent?(decl))
+          |> build_slot_layout()
+      end
+    end)
+  end
+
+  defp with_msg_constructor_names(%IR{} = ir, entry_module, fun) when is_function(fun, 0) do
+    previous = Process.get(:elmc_pebble_msg_names)
+
+    msg_names =
+      ir
+      |> IRAnalysis.msg_constructors(entry_module)
+      |> Enum.map(&elem(&1, 0))
+      |> MapSet.new()
+
+    Process.put(:elmc_pebble_msg_names, msg_names)
+
+    try do
+      fun.()
+    after
+      if is_nil(previous) do
+        Process.delete(:elmc_pebble_msg_names)
+      else
+        Process.put(:elmc_pebble_msg_names, previous)
+      end
     end
   end
 
@@ -87,6 +116,21 @@ defmodule Elmc.Backend.Worker do
   @spec build_slot_layout(map()) :: Types.ir_expr()
 
   defp build_slot_layout(%{compact: false} = analysis) do
+    diagnostic = %{
+      "severity" => "warning",
+      "source" => "elmc/subscriptions",
+      "code" => "dynamic_subscription_layout",
+      "message" =>
+        "Worker subscription layout could not be compacted; using fallback " <>
+          "ELMC_WORKER_SUB_TAG_SLOTS=#{@fallback_sub_tag_slots} and " <>
+          "ELMC_WORKER_MAX_BUTTON_RAW_SUBS=#{@fallback_button_raw_subs}. " <>
+          "Prefer a statically enumerable Events.batch / if-else Sub tree so " <>
+          "the worker can use a dense slot map."
+    }
+
+    warnings = Process.get(:elmc_compile_warnings, [])
+    Process.put(:elmc_compile_warnings, [diagnostic | warnings])
+
     Map.merge(analysis, %{
       slot_map: %{},
       frame_slot: nil,

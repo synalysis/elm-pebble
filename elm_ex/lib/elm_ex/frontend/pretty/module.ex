@@ -168,7 +168,8 @@ defmodule ElmEx.Frontend.Pretty.Module do
   end
 
   defp infix_declaration_line?(trimmed) when is_binary(trimmed) do
-    Regex.match?(~r/^infix(?:l|r)?\s+/u, trimmed)
+    Regex.match?(~r/^infix(?:l|r)?\s+/u, trimmed) and
+      not Regex.match?(~r/^infix(?:l|r)?\s+[a-z][A-Za-z0-9_']*(?:\s+[a-z][A-Za-z0-9_']*)*\s*=/u, trimmed)
   end
 
   defp section_comment?(source) when is_binary(source) do

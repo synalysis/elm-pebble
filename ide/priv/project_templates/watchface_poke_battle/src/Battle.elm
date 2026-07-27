@@ -43,11 +43,11 @@ isAnimating scene =
             True
 
 
-resetBattle : { scene | scene : Scene, opponentHealth : Float, opponentYOffset : Int, repeatA : Int, repeatB : Int } -> scene
+resetBattle : { scene | scene : Scene, opponentHealth : Int, opponentYOffset : Int, repeatA : Int, repeatB : Int } -> scene
 resetBattle model =
     { model
         | scene = Waiting
-        , opponentHealth = 1
+        , opponentHealth = 1000
         , opponentYOffset = 0
         , repeatA = 0
         , repeatB = 0
@@ -60,7 +60,7 @@ Returns the next scene and whether the battle sequence has finished.
 advance :
     Scene
     ->
-        { opponentHealth : Float
+        { opponentHealth : Int
         , opponentYOffset : Int
         }
     ->
@@ -101,7 +101,7 @@ advance scene health =
             ( HealthDrain, False )
 
         HealthDrain ->
-            if health.opponentHealth > 0.1 then
+            if health.opponentHealth > 100 then
                 ( HealthDrain, False )
 
             else

@@ -49,8 +49,11 @@ defmodule Elmc.ConditionalSubscriptionsCodegenTest do
     layout = Elmc.Backend.Worker.subscription_analysis(ir, "Main")
 
     assert layout.model_dependent?
-    assert layout.dynamic?
-    refute layout.compact
+    refute layout.dynamic?
+    assert layout.compact
+    assert layout.has_frame
+    assert layout.sub_tag_slots < 32
+    assert layout.button_raw_subs < 16
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 

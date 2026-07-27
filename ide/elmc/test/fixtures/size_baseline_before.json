@@ -1,0 +1,24 @@
+{
+  "version": 1,
+  "captured": "2026-07-09",
+  "note": "Pre size-reduction plan baseline via mix ide.size_report --package --targets flint",
+  "templates": {
+    "game-2048": {
+      "generated_c_bytes": 80022,
+      "pebble_app_bin_flint": 36776,
+      "symbols": {
+        "elmc_render_cmd6": 2,
+        "elmc_draw_cmd_init": 14,
+        "list_map_cursor": 0,
+        "elmc_list_map": 1,
+        "elmc_closure_new": 3,
+        "_native": 10
+      }
+    },
+    "watchface-yes": {
+      "generated_c_bytes": 217723,
+      "pebble_app_bin_flint": null,
+      "note": "aplite package not captured in this snapshot"
+    }
+  }
+}

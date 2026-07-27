@@ -1,0 +1,750 @@
+defmodule Elmc.Backend.CCodegen.UnionIntSuffixCase do
+  @moduledoc false
+  alias Elmc.Backend.CCodegen.Types, as: Types
+
+
+  alias Elmc.Backend.CCodegen.Types
+
+  alias Elmc.Backend.CCodegen.{
+    ConstructorTagCase,
+    CSource,
+    EnvBindings,
+    FusionSupport,
+    Host,
+    IntLiteralRef,
+    Native.Int,
+    RcRuntimeEmit,
+    Util
+  }
+
+  alias Elmc.Backend.CCodegen.Native.String, as: NativeStringMod
+
+  @buf_size 22
+
+  @spec try_emit(String.t(), String.t(), Types.ir_expr() | nil, Types.function_decl_map()) ::
+          {:ok, String.t(), [FusionSupport.callee_key()], :rc_native} | :error
+  def try_emit(_module_name, _name, nil, _decl_map), do: :error
+
+  def try_emit(module_name, name, expr, decl_map) do
+    case try_emit_maybe_union_suffix(module_name, name, expr, decl_map) do
+      {:ok, _, _, :rc_native} = ok ->
+        ok
+
+      :error ->
+        try_emit_direct_union_suffix(module_name, name, expr, decl_map)
+    end
+  end
+
+  @spec try_emit_direct_union_suffix(String.t(), String.t(), Types.expr(), Types.decl_map()) :: Types.ir_expr() | nil
+
+  defp try_emit_direct_union_suffix(module_name, name, expr, decl_map) do
+    with {:ok, _subject, branches} <- parse_case(expr),
+         param when is_binary(param) <- fusion_param_name(module_name, name, decl_map),
+         true <- ConstructorTagCase.branches?(branches),
+         true <- union_int_suffix_eligible?(branches),
+         {:ok, branch_specs} <- branch_specs(branches) do
+      env = fusion_env(module_name, name, param)
+      core = emit_native_suffix_switch(param, branch_specs, env)
+      {:ok, emit_rc_native_helper(module_name, name, param, core)}
+    else
+      _ -> :error
+    end
+    |> case do
+      {:ok, {:ok, _, _, :rc_native} = ok} -> ok
+      :error -> :error
+    end
+  end
+
+  @spec try_emit_maybe_union_suffix(String.t(), String.t(), Types.expr(), Types.decl_map()) :: Types.ir_expr() | nil
+
+  defp try_emit_maybe_union_suffix(module_name, name, expr, decl_map) do
+    with param when is_binary(param) <- fusion_param_name(module_name, name, decl_map),
+         {:ok, source, branches} <- parse_maybe_union_case(expr),
+         true <- param_matches_source?(param, source),
+         {:ok, nothing_text} <- nothing_branch_text(branches),
+         {:ok, branch_specs} <- maybe_union_branch_specs(branches),
+         {:ok, core} <-
+           emit_maybe_union_core(module_name, param, source, nothing_text, branch_specs, name, decl_map) do
+      emit_rc_native_helper(module_name, name, param, core)
+    else
+      _ -> :error
+    end
+  end
+
+  @spec emit_rc_native_helper(String.t(), String.t(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+
+  defp emit_rc_native_helper(module_name, name, param, core) do
+    c_prefix = Util.module_fn_name(module_name, name)
+
+    body = """
+    static RC #{c_prefix}_native(ElmcValue **out, ElmcValue *#{param}) {
+      RC Rc = RC_SUCCESS;
+      CATCH_BEGIN
+    #{CSource.indent(String.trim(core), 2)}
+      CATCH_END
+      return Rc;
+    }
+    """
+
+    FusionSupport.ok_rc(body, [])
+  end
+
+  @spec emit_native_suffix_switch(Types.ir_expr(), Types.ir_expr(), Types.compile_env()) :: Types.ir_expr()
+
+  defp emit_native_suffix_switch(subject_ref, branch_specs, env) do
+    tag_ref = "case_msg_tag_1"
+    payload_ref = "elmc_union_payload_int(#{subject_ref})"
+
+    branch_code =
+      branch_specs
+      |> Enum.map(fn {pattern, prefix, suffix, int_expr} ->
+        label = case_label(pattern, env)
+        {:ok, payload_var} = payload_var(pattern)
+
+        branch_env =
+          env
+          |> EnvBindings.put_native_int_binding(payload_var, payload_ref)
+
+        {value_code, value_ref, _} = Int.compile_expr(int_expr, branch_env, 0)
+        format = snprintf_format(prefix, suffix)
+        buf = "native_suffix_buf_#{Map.get(pattern, :tag, 0)}"
+
+        """
+        #{label}: {
+        #{CSource.indent(String.trim(value_code), 2)}
+          char #{buf}[#{@buf_size}];
+          snprintf(#{buf}, sizeof(#{buf}), #{format}, (long long)#{value_ref});
+          Rc = elmc_new_string(out, #{buf});
+          CHECK_RC(Rc);
+          break;
+        }
+        """
+        |> String.trim_trailing()
+        |> CSource.indent(2)
+      end)
+      |> Enum.join("\n")
+
+    """
+    const int #{tag_ref} = #{message_tag_expr(subject_ref)};
+      switch (#{tag_ref}) {
+    #{branch_code}
+      }
+    """
+  end
+
+  @spec branch_specs(list()) :: Types.ir_expr()
+
+  defp branch_specs(branches) do
+    specs =
+      Enum.map(branches, fn branch ->
+        with {:ok, var} <- payload_var(branch.pattern),
+             {:ok, prefix, suffix, int_expr} <- parse_suffix_append(branch.expr, var) do
+          {:ok, {branch.pattern, prefix, suffix, int_expr}}
+        else
+          _ -> :error
+        end
+      end)
+
+    if Enum.all?(specs, &match?({:ok, _}, &1)) do
+      {:ok, Enum.map(specs, fn {:ok, spec} -> spec end)}
+    else
+      :error
+    end
+  end
+
+  @spec union_int_suffix_eligible?(list()) :: boolean()
+
+  defp union_int_suffix_eligible?(branches) when is_list(branches) do
+    length(branches) >= 2 and
+      Enum.all?(branches, fn branch ->
+        match?({:ok, _}, payload_var(branch.pattern)) and
+          match?({:ok, _, _, _}, parse_suffix_append(branch.expr, elem(payload_var(branch.pattern), 1)))
+      end)
+  end
+
+  @spec parse_suffix_append(Types.expr(), Types.ir_expr()) :: Types.ir_expr()
+
+  defp parse_suffix_append(expr, payload_var) do
+    suffix_env =
+      %{}
+      |> EnvBindings.put_native_int_binding(payload_var, payload_var)
+
+    case append_parts(expr) do
+      {:ok, left, right} ->
+        case NativeStringMod.int_suffix_parts(left, right, suffix_env) do
+          {:ok, prefix, suffix, int_expr} ->
+            if int_expr_references_payload?(int_expr, payload_var) do
+              {:ok, prefix, suffix, int_expr}
+            else
+              :error
+            end
+
+          :error ->
+            :error
+        end
+
+      :error ->
+        :error
+    end
+  end
+
+  @spec append_parts(map() | term()) :: Types.ir_expr()
+
+  defp append_parts(%{op: :call, name: "__append__", args: [left, right]}),
+    do: {:ok, left, right}
+
+  defp append_parts(%{op: :runtime_call, function: fun, args: [left, right]})
+       when fun in ["elmc_string_append", "elmc_append", "elmc_string_concat"],
+       do: {:ok, left, right}
+
+  defp append_parts(%{op: :qualified_call, target: target, args: [left, right]})
+       when target in ["Basics.append", "String.append", "++"],
+       do: {:ok, left, right}
+
+  defp append_parts(%{op: :call, name: name, args: [left, right]})
+       when name in ["append", "++"],
+       do: {:ok, left, right}
+
+  defp append_parts(_), do: :error
+
+  @spec int_expr_references_payload?(map() | Types.expr(), Types.ir_expr()) :: boolean()
+
+  defp int_expr_references_payload?(%{op: :var, name: name}, payload_var),
+    do: name == payload_var
+
+  defp int_expr_references_payload?(expr, payload_var) do
+    Host.native_int_expr?(expr, %{payload_var_name() => payload_var}) and
+      subtree_references_var?(expr, payload_var)
+  end
+
+  @spec subtree_references_var?(map() | term(), Types.ir_expr() | term()) :: boolean()
+
+  defp subtree_references_var?(%{op: :var, name: name}, payload_var), do: name == payload_var
+
+  defp subtree_references_var?(%{op: op, var: name}, payload_var)
+       when op in [:add_const, :sub_const] and is_binary(name),
+       do: name == payload_var
+
+  defp subtree_references_var?(%{args: args}, payload_var) when is_list(args),
+    do: Enum.any?(args, &subtree_references_var?(&1, payload_var))
+
+  defp subtree_references_var?(%{left: left, right: right}, payload_var),
+    do: subtree_references_var?(left, payload_var) or subtree_references_var?(right, payload_var)
+
+  defp subtree_references_var?(%{arg: arg}, payload_var),
+    do: subtree_references_var?(arg, payload_var)
+
+  defp subtree_references_var?(_, _), do: false
+
+  @spec payload_var(map() | term()) :: Types.ir_expr()
+
+  defp payload_var(%{kind: :constructor, bind: name}) when is_binary(name),
+    do: {:ok, name}
+
+  defp payload_var(%{kind: :constructor, arg_pattern: %{kind: :var, name: name}}) when is_binary(name),
+    do: {:ok, name}
+
+  defp payload_var(%{kind: :constructor, arg_pattern: %{kind: :var, bind: name}}) when is_binary(name),
+    do: {:ok, name}
+
+  defp payload_var(_), do: :error
+
+  @spec payload_var_name() :: Types.ir_expr()
+
+  defp payload_var_name, do: "__union_payload_int__"
+
+  @spec snprintf_format(Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+
+  defp snprintf_format(prefix, suffix) do
+    "\"#{escape_snprintf_literal(prefix)}%lld#{escape_snprintf_literal(suffix)}\""
+  end
+
+  @spec escape_snprintf_literal(Types.ir_expr()) :: Types.ir_expr()
+
+  defp escape_snprintf_literal(""), do: ""
+
+  defp escape_snprintf_literal(literal) do
+    literal |> Util.escape_c_string() |> String.replace("%", "%%")
+  end
+
+  @spec message_tag_expr(Types.ir_expr()) :: Types.ir_expr()
+
+  defp message_tag_expr(subject_ref) do
+    "(#{subject_ref} && (#{subject_ref})->tag == ELMC_TAG_INT ? elmc_as_int(#{subject_ref}) : " <>
+      "(#{subject_ref} && (#{subject_ref})->tag == ELMC_TAG_TUPLE2 && (#{subject_ref})->payload != NULL ? " <>
+      "elmc_as_int(((ElmcTuple2 *)(#{subject_ref})->payload)->first) : -1))"
+  end
+
+  @spec case_label(map(), Types.compile_env()) :: Types.ir_expr()
+
+  defp case_label(%{kind: :constructor, tag: tag} = pattern, env) when is_integer(tag) do
+    ref =
+      pattern
+      |> Map.get(:resolved_name)
+      |> case do
+        name when is_binary(name) ->
+          IntLiteralRef.ref(%{op: :int_literal, value: tag, union_ctor: name}, env)
+
+        _ ->
+          nil
+      end
+
+    "case #{ref || Integer.to_string(tag)}"
+  end
+
+  @spec parse_case(map() | term()) :: Types.ir_expr()
+
+  defp parse_case(%{op: :case, subject: _subject, branches: branches}),
+    do: {:ok, nil, branches}
+
+  defp parse_case(%{op: :let_in, in_expr: body}), do: parse_case(body)
+  defp parse_case(_), do: :error
+
+  @spec parse_maybe_union_case(map() | term()) :: Types.ir_expr()
+
+  defp parse_maybe_union_case(%{op: :let_in, value_expr: source, in_expr: %{op: :case, branches: branches}}) do
+    case parse_maybe_union_source(source) do
+      {:ok, parsed_source} -> {:ok, parsed_source, branches}
+      :error -> :error
+    end
+  end
+
+  defp parse_maybe_union_case(%{op: :case, subject: source, branches: branches}) do
+    case parse_maybe_union_source(source) do
+      {:ok, parsed_source} -> {:ok, parsed_source, branches}
+      :error -> :error
+    end
+  end
+
+  defp parse_maybe_union_case(_), do: :error
+
+  @spec parse_maybe_union_source(map() | term()) :: Types.ir_expr()
+
+  defp parse_maybe_union_source(%{op: :qualified_call, target: "Maybe.map", args: [lam, src]}) do
+    with %{op: :lambda, body: %{op: :field_access, field: inner_field}} <- lam,
+         true <- is_binary(inner_field),
+         {:ok, param, outer_field} <- param_field_access(src) do
+      {:ok, {:map_field, param, outer_field, inner_field}}
+    else
+      _ -> :error
+    end
+  end
+
+  defp parse_maybe_union_source(%{op: :field_access, arg: %{op: :var, name: param}, field: field})
+       when is_binary(param) and is_binary(field) do
+    {:ok, {:maybe_field, param, field}}
+  end
+
+  defp parse_maybe_union_source(%{op: :field_access, arg: param, field: field})
+       when is_binary(param) and is_binary(field) do
+    {:ok, {:maybe_field, param, field}}
+  end
+
+  defp parse_maybe_union_source(_), do: :error
+
+  @spec param_field_access(map() | term()) :: Types.ir_expr()
+
+  defp param_field_access(%{op: :field_access, arg: %{op: :var, name: param}, field: field})
+       when is_binary(param) and is_binary(field),
+       do: {:ok, param, field}
+
+  defp param_field_access(%{op: :field_access, arg: param, field: field})
+       when is_binary(param) and is_binary(field),
+       do: {:ok, param, field}
+
+  defp param_field_access(_), do: :error
+
+  @spec param_matches_source?(Types.ir_expr() | term(), term()) :: boolean()
+
+  defp param_matches_source?(param, {:map_field, param, _, _}), do: true
+  defp param_matches_source?(param, {:maybe_field, param, _}), do: true
+  defp param_matches_source?(_, _), do: false
+
+  @spec nothing_branch_text(list()) :: Types.ir_expr()
+
+  defp nothing_branch_text(branches) do
+    case Enum.find(branches, &maybe_nothing_branch?/1) do
+      %{expr: %{op: :string_literal, value: value}} when is_binary(value) ->
+        if String.contains?(value, <<0>>), do: :error, else: {:ok, value}
+
+      _ ->
+        :error
+    end
+  end
+
+  @spec maybe_nothing_branch?(map() | term()) :: boolean()
+
+  defp maybe_nothing_branch?(%{pattern: %{kind: :constructor, name: name}})
+       when name in ["Nothing", "Maybe.Nothing"],
+       do: true
+
+  defp maybe_nothing_branch?(_), do: false
+
+  @spec maybe_union_branch_specs(list()) :: Types.ir_expr() | nil
+
+  defp maybe_union_branch_specs(branches) do
+    specs =
+      Enum.flat_map(branches, fn branch ->
+        case maybe_union_branch_spec(branch) do
+          {:ok, spec} -> [{:ok, spec}]
+          :skip -> []
+          :error -> [:error]
+        end
+      end)
+
+    union_specs = Enum.filter(specs, &match?({:ok, _}, &1))
+
+    if specs == [:error] or union_specs == [] do
+      :error
+    else
+      {:ok, Enum.map(union_specs, fn {:ok, spec} -> spec end)}
+    end
+  end
+
+  @spec maybe_union_branch_spec(map() | term()) :: Types.ir_expr() | nil
+
+  defp maybe_union_branch_spec(%{pattern: %{kind: :constructor, name: name}}) when name in ["Nothing", "Maybe.Nothing"],
+    do: :skip
+
+  defp maybe_union_branch_spec(%{pattern: pattern, expr: expr}) do
+    with {:ok, inner_pattern} <- just_union_pattern(pattern),
+         {:ok, var} <- payload_var(inner_pattern),
+         {:ok, prefix, suffix, int_expr} <- parse_suffix_append(expr, var) do
+      {:ok, {inner_pattern, prefix, suffix, int_expr}}
+    else
+      _ -> :error
+    end
+  end
+
+  defp maybe_union_branch_spec(_), do: :error
+
+  @spec just_union_pattern(map() | term()) :: Types.ir_expr()
+
+  defp just_union_pattern(%{
+         kind: :constructor,
+         name: name,
+         arg_pattern: %{kind: :constructor} = inner
+       })
+       when name in ["Just", "Maybe.Just"],
+       do: {:ok, inner}
+
+  defp just_union_pattern(_), do: :error
+
+  @spec emit_maybe_union_core(String.t(), Types.ir_expr(), String.t(), String.t(), Types.ir_expr(), String.t(), Types.decl_map()) :: Types.ir_expr()
+
+  defp emit_maybe_union_core(module_name, param, source, nothing_text, branch_specs, fn_name, decl_map) do
+    env = fusion_env(module_name, fn_name, param)
+    union_switch = emit_native_suffix_switch("union_val", branch_specs, env)
+    default_lit = "\"#{Util.escape_c_string(nothing_text)}\""
+
+    case source do
+      {:map_field, ^param, outer_field, inner_field} ->
+        with {:ok, model_type} <- record_param_type(module_name, fn_name, decl_map),
+             outer_macro when is_binary(outer_macro) <-
+               FusionSupport.field_macro(module_name, model_type, outer_field),
+             {:ok, inner_type} <- nested_record_type_name(module_name, model_type, outer_field),
+             inner_macro when is_binary(inner_macro) <-
+               FusionSupport.field_macro(module_name, inner_type, inner_field) do
+          {:ok,
+           """
+           ElmcValue *outer_maybe = elmc_record_get_index(#{param}, #{outer_macro});
+             if (elmc_maybe_is_nothing(outer_maybe)) {
+               Rc = elmc_new_string(out, #{default_lit});
+               CHECK_RC(Rc);
+             } else {
+               ElmcValue *outer = elmc_maybe_just_payload(outer_maybe);
+               ElmcValue *union_val = elmc_record_get_index(outer, #{inner_macro});
+           #{CSource.indent(String.trim(union_switch), 2)}
+             }
+           """}
+        else
+          _ -> :error
+        end
+
+      {:maybe_field, ^param, field} ->
+        with {:ok, model_type} <- record_param_type(module_name, fn_name, decl_map),
+             field_macro when is_binary(field_macro) <-
+               FusionSupport.field_macro(module_name, model_type, field) do
+          {:ok,
+           """
+           ElmcValue *union_val = elmc_record_get_index(#{param}, #{field_macro});
+             if (elmc_maybe_is_nothing(union_val)) {
+               Rc = elmc_new_string(out, #{default_lit});
+               CHECK_RC(Rc);
+             } else {
+               union_val = elmc_maybe_just_payload(union_val);
+           #{CSource.indent(String.trim(union_switch), 2)}
+             }
+           """}
+        else
+          _ -> :error
+        end
+    end
+  end
+
+  @spec record_param_type(String.t(), String.t(), Types.decl_map()) :: Types.ir_expr()
+
+  defp record_param_type(module_name, fn_name, decl_map) do
+    case Map.get(decl_map, {module_name, fn_name}) do
+      %{type: type} when is_binary(type) ->
+        case String.split(type, " -> ") do
+          [arg, _] -> {:ok, type_basename(arg)}
+          _ -> :error
+        end
+
+      _ ->
+        :error
+    end
+  end
+
+  @spec nested_record_type_name(String.t(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+
+  defp nested_record_type_name(module_name, parent_type, field) do
+    field_types =
+      Process.get(:elmc_record_field_types, %{})
+      |> Map.get({module_name, parent_type}, %{})
+
+    case Map.get(field_types, field) do
+      type when is_binary(type) ->
+        type
+        |> String.replace_prefix("Maybe ", "")
+        |> type_basename()
+        |> then(&{:ok, &1})
+
+      _ ->
+        :error
+    end
+  end
+
+  @spec type_basename(String.t()) :: Types.ir_expr()
+
+  defp type_basename(type) when is_binary(type) do
+    type
+    |> String.split(".")
+    |> List.last()
+  end
+
+  @spec fusion_param_name(String.t(), String.t(), Types.decl_map()) :: Types.ir_expr()
+
+  defp fusion_param_name(module_name, name, decl_map) do
+    case Map.get(decl_map, {module_name, name}) do
+      %{args: [param | _]} when is_binary(param) -> param
+      _ -> nil
+    end
+  end
+
+  @spec fusion_env(String.t(), String.t(), String.t()) :: Types.ir_expr()
+
+  defp fusion_env(module_name, name, param) when is_binary(param) do
+    %{
+      :__rc_required__ => true,
+      :__rc_catch__ => true,
+      :__function_tail_compile__ => true,
+      :__into_out__ => RcRuntimeEmit.function_out_ref(),
+      :__module__ => module_name,
+      :__function_name__ => name,
+      :__function_args__ => [param],
+      param => param
+    }
+  end
+
+  @doc false
+  @spec extract_fusion_data(String.t(), String.t(), Types.ir_expr() | nil, Types.function_decl_map()) ::
+          {:ok, :union_int_suffix, Types.fusion_metadata()} | :error
+  def extract_fusion_data(module_name, name, expr, decl_map) do
+    case extract_maybe_union_data(module_name, name, expr, decl_map) do
+      {:ok, data} ->
+        {:ok, :union_int_suffix, data}
+
+      :error ->
+        case extract_direct_union_data(expr) do
+          {:ok, data} -> {:ok, :union_int_suffix, data}
+          :error -> :error
+        end
+    end
+  end
+
+  @spec extract_direct_union_data(Types.expr()) :: Types.ir_expr()
+
+  defp extract_direct_union_data(expr) do
+    with {:ok, _, branches} <- parse_case(expr),
+         true <- union_int_suffix_eligible?(branches),
+         {:ok, branch_specs} <- branch_specs(branches),
+         wired when is_list(wired) <- wire_branch_specs(branch_specs) do
+      {:ok, %{mode: :direct, branches: wired}}
+    else
+      _ -> :error
+    end
+  end
+
+  @spec extract_maybe_union_data(String.t(), String.t(), Types.expr(), Types.decl_map()) :: Types.ir_expr()
+
+  defp extract_maybe_union_data(module_name, name, expr, decl_map) do
+    with param when is_binary(param) <- fusion_param_name(module_name, name, decl_map),
+         {:ok, source, branches} <- parse_maybe_union_case(expr),
+         true <- param_matches_source?(param, source),
+         {:ok, nothing_text} <- nothing_branch_text(branches),
+         {:ok, branch_specs} <- maybe_union_branch_specs(branches),
+         wired when is_list(wired) <- wire_branch_specs(branch_specs) do
+      case source do
+        {:map_field, ^param, outer_field, inner_field} ->
+          with {:ok, model_type} <- record_param_type(module_name, name, decl_map),
+               outer_idx when is_integer(outer_idx) <-
+                 FusionSupport.field_index(module_name, model_type, outer_field),
+               {:ok, inner_type} <- nested_record_type_name(module_name, model_type, outer_field),
+               inner_idx when is_integer(inner_idx) <-
+                 FusionSupport.field_index(module_name, inner_type, inner_field) do
+            {:ok,
+             %{
+               mode: :maybe_map_field,
+               nothing: nothing_text,
+               outer_field: outer_idx,
+               inner_field: inner_idx,
+               branches: wired
+             }}
+          else
+            _ -> :error
+          end
+
+        {:maybe_field, ^param, field} ->
+          with {:ok, model_type} <- record_param_type(module_name, name, decl_map),
+               idx when is_integer(idx) <- FusionSupport.field_index(module_name, model_type, field) do
+            {:ok,
+             %{
+               mode: :maybe_field,
+               nothing: nothing_text,
+               field: idx,
+               branches: wired
+             }}
+          else
+            _ -> :error
+          end
+
+        _ ->
+          :error
+      end
+    else
+      _ -> :error
+    end
+  end
+
+  @spec wire_branch_specs(Types.ir_expr()) :: Types.ir_expr()
+
+  defp wire_branch_specs(specs) do
+    wired =
+      Enum.map(specs, fn spec ->
+        case wire_branch_spec(spec) do
+          {:ok, branch} -> branch
+          :error -> :error
+        end
+      end)
+
+    if Enum.all?(wired, &is_map/1), do: wired, else: :error
+  end
+
+  @spec wire_branch_spec(term()) :: Types.ir_expr()
+
+  defp wire_branch_spec({pattern, prefix, suffix, int_expr}) do
+    with {:ok, var} <- payload_var(pattern),
+         {:ok, tag} <- union_branch_tag(pattern),
+         {:ok, expr} <- wire_int_expr(int_expr, var) do
+      {:ok, %{tag: tag, prefix: prefix, suffix: suffix, expr: expr}}
+    else
+      _ -> :error
+    end
+  end
+
+  @spec union_branch_tag(map() | term()) :: Types.ir_expr()
+
+  defp union_branch_tag(%{kind: :constructor, tag: tag}) when is_integer(tag), do: {:ok, tag}
+
+  defp union_branch_tag(%{
+         kind: :constructor,
+         name: name,
+         arg_pattern: %{kind: :constructor, tag: tag}
+       })
+       when name in ["Just", "Maybe.Just"] and is_integer(tag),
+       do: {:ok, tag}
+
+  defp union_branch_tag(_), do: :error
+
+  @spec wire_int_expr(Types.expr(), Types.ir_expr()) :: Types.ir_expr()
+
+  defp wire_int_expr(expr, payload_var) do
+    cond do
+      int_expr_var?(expr, payload_var) ->
+        {:ok, %{kind: :var}}
+
+      match?({:ok, _}, wire_scaled_expr(expr, payload_var)) ->
+        wire_scaled_expr(expr, payload_var)
+
+      true ->
+        :error
+    end
+  end
+
+  @spec int_expr_var?(map() | term(), Types.ir_expr() | term()) :: boolean()
+
+  defp int_expr_var?(%{op: :var, name: name}, payload_var), do: name == payload_var
+
+  defp int_expr_var?(%{op: :runtime_call, function: "elmc_string_from_int", args: [inner]}, payload_var),
+    do: int_expr_var?(inner, payload_var)
+
+  defp int_expr_var?(
+         %{op: :qualified_call, target: "String.fromInt", args: [inner]},
+         payload_var
+       ),
+       do: int_expr_var?(inner, payload_var)
+
+  defp int_expr_var?(_, _), do: false
+
+  @spec wire_scaled_expr(Types.expr(), Types.ir_expr()) :: Types.ir_expr()
+
+  defp wire_scaled_expr(expr, payload_var) do
+    with {:ok, left, divisor} <- idiv_parts(expr),
+         {:ok, offset} <- add_const_offset(left, payload_var),
+         true <- divisor != 0 do
+      {:ok, %{kind: :scaled, offset: offset, divisor: divisor}}
+    else
+      _ -> :error
+    end
+  end
+
+  @spec idiv_parts(map()) :: Types.ir_expr()
+
+  defp idiv_parts(%{op: :call, name: "__idiv__", args: [left, %{op: :int_literal, value: divisor}]})
+       when is_integer(divisor),
+       do: {:ok, left, divisor}
+
+  defp idiv_parts(%{
+         op: :runtime_call,
+         function: fun,
+         args: [left, %{op: :int_literal, value: divisor}]
+       })
+       when fun in ["elmc_int_idiv", "elmc_idiv"] and is_integer(divisor),
+       do: {:ok, left, divisor}
+
+  defp idiv_parts(%{op: :qualified_call, target: target, args: [left, %{op: :int_literal, value: divisor}]})
+       when target in ["Basics.fdiv", "Basics.idiv", "//"] and is_integer(divisor),
+       do: {:ok, left, divisor}
+
+  @spec add_const_offset(map() | term(), Types.ir_expr() | term()) :: Types.ir_expr()
+
+  defp add_const_offset(%{op: :add_const, var: name, value: offset}, payload_var)
+       when name == payload_var and is_integer(offset),
+       do: {:ok, offset}
+
+  defp add_const_offset(%{op: :sub_const, var: name, value: offset}, payload_var)
+       when name == payload_var and is_integer(offset),
+       do: {:ok, -offset}
+
+  defp add_const_offset(
+         %{op: :call, name: op, args: [%{op: :var, name: name}, %{op: :int_literal, value: offset}]},
+         payload_var
+       )
+       when name == payload_var and op in ["__add__", "__sub__"] and is_integer(offset) do
+    if op == "__add__", do: {:ok, offset}, else: {:ok, -offset}
+  end
+
+  defp add_const_offset(_, _), do: :error
+end

@@ -83,23 +83,6 @@ defmodule Ide.Test.TemplateElmxElmcParity.ElmxRunner do
     end)
   end
 
-  defp run_model_step(module, acc, run) do
-    try do
-      {runtime_model, _source, cmd} = run.()
-      next_acc = %{acc | runtime_model: runtime_model}
-
-      with {:ok, view_payload} <- Executor.view_generated(module, view_request(next_acc)) do
-        subs = Executor.Subscriptions.evaluate(module, runtime_model)
-
-        {init_update_result(runtime_model, cmd, view_payload, subs), next_acc}
-      else
-        {:error, reason} -> {error_step(reason), acc}
-      end
-    rescue
-      e -> {error_step(Exception.message(e)), acc}
-    end
-  end
-
   defp run_step(module, %{op: :subscriptions}, acc) do
     subs =
       try do
@@ -123,8 +106,7 @@ defmodule Ide.Test.TemplateElmxElmcParity.ElmxRunner do
            "active_subscriptions" => list,
            "model" => acc.runtime_model,
            "view_output" => list_field(view_payload, :view_output),
-           "render_tree" =>
-             render_tree_summary(Map.get(view_payload, :view_tree) || Map.get(view_payload, "view_tree")),
+           "render_tree" => render_tree_summary(Map.get(view_payload, :view_tree)),
            "commands" => []
          }, acc}
     end
@@ -137,6 +119,23 @@ defmodule Ide.Test.TemplateElmxElmcParity.ElmxRunner do
 
       {:error, reason} ->
         {error_step(reason), acc}
+    end
+  end
+
+  defp run_model_step(module, acc, run) do
+    try do
+      {runtime_model, _source, cmd} = run.()
+      next_acc = %{acc | runtime_model: runtime_model}
+
+      with {:ok, view_payload} <- Executor.view_generated(module, view_request(next_acc)) do
+        subs = Executor.Subscriptions.evaluate(module, runtime_model)
+
+        {init_update_result(runtime_model, cmd, view_payload, subs), next_acc}
+      else
+        {:error, reason} -> {error_step(reason), acc}
+      end
+    rescue
+      e -> {error_step(Exception.message(e)), acc}
     end
   end
 
@@ -154,8 +153,7 @@ defmodule Ide.Test.TemplateElmxElmcParity.ElmxRunner do
     %{
       "model" => runtime_model,
       "view_output" => list_field(view_payload, :view_output),
-      "render_tree" =>
-        render_tree_summary(Map.get(view_payload, :view_tree) || Map.get(view_payload, "view_tree")),
+      "render_tree" => render_tree_summary(Map.get(view_payload, :view_tree)),
       "active_subscriptions" => subs,
       "commands" => commands_from_cmd(cmd),
       "error" => nil
@@ -170,7 +168,7 @@ defmodule Ide.Test.TemplateElmxElmcParity.ElmxRunner do
     %{
       "model" => nil,
       "view_output" => list_field(payload, :view_output),
-      "render_tree" => render_tree_summary(Map.get(payload, :view_tree) || Map.get(payload, "view_tree")),
+      "render_tree" => render_tree_summary(Map.get(payload, :view_tree)),
       "active_subscriptions" => [],
       "commands" => [],
       "error" => nil

@@ -130,6 +130,10 @@ defmodule Ide.Test.TemplateElmxElmcParity.Compare do
     end
   end
 
+  defp fields_equal?(field, _step_id, elmx, elmc) do
+    Map.get(elmx, field) == Map.get(elmc, field)
+  end
+
   defp health_event_refresh_steps_parity?("update:HealthEvent _", elmx_cmds, elmc_cmds) do
     elmc_cmds == [] and
       Enum.any?(elmx_cmds, fn
@@ -145,10 +149,6 @@ defmodule Ide.Test.TemplateElmxElmcParity.Compare do
 
   defp cmd_none_only?([%{"kind" => 0}]), do: true
   defp cmd_none_only?(_), do: false
-
-  defp fields_equal?(field, _step_id, elmx, elmc) do
-    Map.get(elmx, field) == Map.get(elmc, field)
-  end
 
   defp active_subscription_count(subs) when is_list(subs) do
     case subs do
@@ -228,14 +228,6 @@ defmodule Ide.Test.TemplateElmxElmcParity.Compare do
   defp normalize_view_kind_name(kind) when is_atom(kind), do: Atom.to_string(kind)
   defp normalize_view_kind_name(_), do: "unknown"
 
-  defp model_compare_tokens(model) do
-    model
-    |> Snapshot.model_value_list()
-    |> Enum.flat_map(&model_compare_token/1)
-    |> Enum.reject(&(&1 in [nil, ""]))
-    |> Enum.sort()
-  end
-
   defp model_semantic_fingerprint(model) do
     raw =
       cond do
@@ -257,18 +249,6 @@ defmodule Ide.Test.TemplateElmxElmcParity.Compare do
 
   defp unprintable_elmc_model?(%{} = map), do: map == %{}
   defp unprintable_elmc_model?(_), do: false
-
-  defp model_compare_token(%{"ctor" => _ctor, "args" => []}), do: []
-
-  defp model_compare_token(%{"ctor" => ctor, "args" => args}) when is_list(args) do
-    [to_string(ctor) | Enum.flat_map(args, &model_compare_token/1)]
-  end
-
-  defp model_compare_token(value) when is_binary(value), do: [value]
-  defp model_compare_token(value) when is_integer(value) and value > 15, do: [Integer.to_string(value)]
-  defp model_compare_token(value) when is_integer(value), do: []
-  defp model_compare_token(value) when is_boolean(value), do: [to_string(value)]
-  defp model_compare_token(_), do: []
 
   defp render_tree_comparable?(elmx, elmc) do
     elmx_tree = Map.get(elmx, "render_tree") || %{}

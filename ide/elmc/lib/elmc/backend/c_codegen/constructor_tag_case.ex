@@ -1,0 +1,739 @@
+defmodule Elmc.Backend.CCodegen.ConstructorTagCase do
+  @moduledoc false
+  alias Elmc.Backend.CCodegen.Types, as: Types
+
+
+  alias Elmc.Backend.CCodegen.Host
+  alias Elmc.Backend.CCodegen.ImmortalStringLiteral
+  alias Elmc.Backend.CCodegen.CaseCompile
+  alias Elmc.Backend.CCodegen.CSource
+  alias Elmc.Backend.CCodegen.FunctionCallCompile
+  alias Elmc.Backend.CCodegen.IntLiteralRef
+  alias Elmc.Backend.CCodegen.OwnershipTransfer
+  alias Elmc.Backend.CCodegen.RcRuntimeEmit
+  alias Elmc.Backend.CCodegen.ValueSlots
+  alias Elmc.Backend.CCodegen.PebbleMsgTag
+  alias Elmc.Backend.CCodegen.RecordCompile
+  alias Elmc.Backend.CCodegen.Native.Int, as: NativeInt
+  alias Elmc.Backend.CCodegen.Native.IntCase, as: NativeIntCase
+  alias Elmc.Backend.CCodegen.Patterns
+  alias Elmc.Backend.CCodegen.Types
+  alias Elmc.Backend.CCodegen.UnionMacros
+  @constructor_tag_switch_min_branches 4
+
+  @constructor_tag_switch_excluded_names MapSet.new([
+                                           "Ok",
+                                           "Err",
+                                           "Just",
+                                           "Nothing",
+                                           "::",
+                                           "[]",
+                                           # Native-bool ABI is 0/1; Basics.True/False union
+                                           # tags are 1/2. Tag-switching bools is wrong.
+                                           "True",
+                                           "False"
+                                         ])
+
+  @spec branches?(Types.case_branches()) :: boolean()
+  def branches?(branches) when is_list(branches) do
+    tagged? =
+      Enum.any?(branches, fn branch ->
+        match?(%{pattern: %{kind: :constructor, tag: tag}} when is_integer(tag), branch)
+      end)
+
+    tagged? and
+      Enum.all?(branches, fn branch ->
+        case branch.pattern do
+          %{kind: :wildcard} ->
+            true
+
+          %{kind: :constructor, tag: tag} = pattern when is_integer(tag) ->
+            switchable_pattern?(pattern)
+
+          _ ->
+            false
+        end
+      end)
+  end
+
+  def branches?(_branches), do: false
+
+  @spec switch_eligible?(Types.case_branches()) :: boolean()
+  def switch_eligible?(branches) do
+    branches?(branches) and switch_branch_count(branches) >= min_switch_branches(branches)
+  end
+
+  @spec enum_only_switch_eligible?(Types.case_branches()) :: boolean()
+  def enum_only_switch_eligible?(branches) do
+    branches?(branches) and enum_only_branches?(branches) and
+      switch_branch_count(branches) >= 2
+  end
+
+  @spec min_switch_branches(list()) :: Types.ir_expr()
+
+  defp min_switch_branches(branches) do
+    if enum_only_branches?(branches), do: 2, else: @constructor_tag_switch_min_branches
+  end
+
+  @spec enum_only_branches?(list()) :: boolean()
+
+  defp enum_only_branches?(branches) do
+    Enum.all?(branches, fn branch ->
+      case branch.pattern do
+        %{kind: :wildcard} -> true
+        %{kind: :constructor} = pattern -> nullary_enum_pattern?(pattern)
+        _ -> false
+      end
+    end)
+  end
+
+  @spec nullary_enum_pattern?(map() | term()) :: boolean()
+
+  defp nullary_enum_pattern?(%{kind: :constructor, tag: tag, arg_pattern: nil}) when is_integer(tag),
+    do: true
+
+  defp nullary_enum_pattern?(%{kind: :constructor, tag: tag, arg_pattern: %{kind: :var}})
+       when is_integer(tag),
+       do: true
+
+  defp nullary_enum_pattern?(_), do: false
+
+  @spec native_subject_switch?(Types.ir_expr(), Types.case_branches(), Types.compile_env()) ::
+          boolean()
+  def native_subject_switch?(subject_expr, branches, env) do
+    NativeIntCase.subject_expr?(subject_expr, env) and
+      Enum.all?(branches, fn branch ->
+        case branch.pattern do
+          %{kind: :constructor} = pattern -> simple_constructor_pattern?(pattern)
+          %{kind: :wildcard} -> true
+          _ -> false
+        end
+      end)
+  end
+
+  @spec compile_native_subject(
+          Types.ir_expr(),
+          Types.case_branches(),
+          Types.compile_env(),
+          Types.compile_counter()
+        ) :: Types.compile_result()
+  def compile_native_subject(subject_expr, branches, env, counter) do
+    {subject_code, subject_ref, counter} = NativeInt.compile_expr(subject_expr, env, counter)
+    {out, next, declare_out?} = switch_result_out(env, counter)
+    next = CaseCompile.advance_counter_past_out(next, out, declare_out?)
+
+    has_default? =
+      Enum.any?(branches, fn branch -> match?(%{kind: :wildcard}, branch.pattern) end)
+
+    {branch_code, final_counter} =
+      Enum.reduce(branches, {"", next}, fn branch, {acc, c} ->
+        FunctionCallCompile.reset_call_args_cache!()
+
+        branch_env = branch_out_env(env, out)
+
+        {branch_env, unwrap_setup, unwrap_release, c} =
+          Patterns.case_branch_bindings(branch_env, branch, subject_ref, c)
+
+        {expr_code, assignment_code, c2} =
+          Host.compile_case_branch_assignment(branch.expr, out, branch_env, c)
+
+        snippet =
+          switch_branch_snippet(
+            case_label(branch.pattern, env),
+            unwrap_setup,
+            expr_code,
+            assignment_code,
+            unwrap_release,
+            out
+          )
+
+        {acc <> snippet <> "\n", c2}
+      end)
+
+    default_case = switch_default_case(out, has_default?)
+
+    switch_body = CSource.indent(branch_code <> default_case, 2)
+
+    code = """
+    #{subject_code}
+      #{CaseCompile.result_out_decl(out, declare_out?)}
+      switch (#{subject_ref}) {
+    #{switch_body}
+      }
+    """
+
+    {code, out, final_counter}
+  end
+
+  @spec compile(
+          Types.case_subject(),
+          Types.case_branches(),
+          Types.compile_env(),
+          Types.compile_counter()
+        ) ::
+          Types.compile_result()
+  def compile(subject, branches, env, counter) do
+    compile_boxed_subject(subject, branches, env, counter)
+  end
+
+  @spec compile_boxed_subject(
+          Types.case_subject(),
+          Types.case_branches(),
+          Types.compile_env(),
+          Types.compile_counter()
+        ) :: Types.compile_result()
+  def compile_boxed_subject(subject, branches, env, counter) do
+    cond do
+      deferred_string_box_eligible?(branches) ->
+        compile_deferred_string_box_subject(subject, branches, env, counter)
+
+      deferred_int_box_eligible?(branches, env) ->
+        compile_deferred_int_box_subject(subject, branches, env, counter)
+
+      true ->
+        compile_boxed_subject_switch(subject, branches, env, counter)
+    end
+  end
+
+  @spec compile_boxed_subject_switch(Types.expr(), list(), Types.compile_env(), Types.ir_expr()) :: Types.ir_expr()
+
+  defp compile_boxed_subject_switch(subject, branches, env, counter) do
+    {subject_setup, subject_ref, counter} = compile_subject_ref(subject, env, counter)
+    tag_ref = "case_msg_tag_#{counter + 1}"
+    counter = counter + 1
+    {out, branch_counter, declare_out?} = switch_result_out(env, counter)
+    branch_counter = CaseCompile.advance_counter_past_out(branch_counter, out, declare_out?)
+
+    has_default? =
+      Enum.any?(branches, fn branch -> match?(%{kind: :wildcard}, branch.pattern) end)
+
+    exhaustive? = deferred_box_exhaustive?(branches)
+
+    {branch_code, final_counter} =
+      Enum.reduce(branches, {"", branch_counter}, fn branch, {acc, c} ->
+        FunctionCallCompile.reset_call_args_cache!()
+
+        branch_env = branch_out_env(env, out)
+
+        {branch_env, unwrap_setup, unwrap_release, c} =
+          Patterns.case_branch_bindings(branch_env, branch, subject_ref, c)
+
+        {expr_code, assignment_code, c2} =
+          Host.compile_case_branch_assignment(branch.expr, out, branch_env, c)
+
+        snippet =
+          switch_branch_snippet(
+            case_label(branch.pattern, env),
+            unwrap_setup,
+            expr_code,
+            assignment_code,
+            unwrap_release,
+            out
+          )
+
+        {acc <> snippet <> "\n", c2}
+      end)
+
+    default_case = switch_default_case(out, has_default? or exhaustive?)
+
+    switch_body = CSource.indent(branch_code <> default_case, 2)
+
+    code = """
+    #{subject_setup}
+      const int #{tag_ref} = #{message_tag_expr(subject_ref)};
+      #{CaseCompile.result_out_decl(out, declare_out?)}
+      switch (#{tag_ref}) {
+    #{switch_body}
+      }
+    """
+
+    {code, out, final_counter}
+  end
+
+  @spec branch_out_env(Types.compile_env(), Types.ir_expr()) :: Types.ir_expr()
+
+  defp branch_out_env(env, out) do
+    ValueSlots.reset_function_out_written()
+
+    env =
+      env
+      |> RecordCompile.fresh_subexpr_cache()
+      |> Map.update(:__declared_outs__, MapSet.new([out]), &MapSet.put(&1, out))
+
+    cond do
+      RcRuntimeEmit.function_out_ref?(out) ->
+        env
+        |> RcRuntimeEmit.strip_function_tail_scope()
+        |> Map.delete(:__branch_out__)
+
+      ValueSlots.owned_ref?(out) ->
+        env
+        |> RcRuntimeEmit.strip_function_tail_scope()
+        |> then(fn branch_env ->
+          ValueSlots.set_result_slot_root(out)
+          Map.put(branch_env, :__branch_out__, out)
+        end)
+
+      RcRuntimeEmit.function_tail_compile?(env) ->
+        RcRuntimeEmit.strip_function_tail_scope(env)
+
+      true ->
+        env
+    end
+  end
+
+  @spec compile_deferred_int_box_subject(Types.expr(), list(), Types.compile_env(), Types.ir_expr()) :: Types.ir_expr()
+
+  defp compile_deferred_int_box_subject(subject, branches, env, counter) do
+    {subject_setup, subject_ref, counter} = compile_subject_ref(subject, env, counter)
+    tag_ref = "case_msg_tag_#{counter + 1}"
+    counter = counter + 1
+    {out, branch_counter, declare_out?} = switch_result_out(env, counter)
+    branch_counter = CaseCompile.advance_counter_past_out(branch_counter, out, declare_out?)
+    int_scratch = "case_int_#{branch_counter + 1}"
+    exhaustive? = deferred_box_exhaustive?(branches)
+
+    {branch_code, final_counter} =
+      Enum.reduce(branches, {"", branch_counter}, fn branch, {acc, c} ->
+        FunctionCallCompile.reset_call_args_cache!()
+
+        spec = branch_int_box_spec(branch, env)
+
+        snippet =
+          case spec do
+            {:slot, ref} ->
+              deferred_int_box_slot_snippet(case_label(branch.pattern, env), ref, int_scratch)
+          end
+
+        {acc <> snippet <> "\n", c}
+      end)
+
+    default_case = deferred_box_switch_default(branches, out, exhaustive?)
+    post_box = deferred_int_box_post_box(env, out, int_scratch, exhaustive?)
+
+    switch_body = CSource.indent(branch_code <> default_case, 2)
+
+    {int_decl, int_init} =
+      if exhaustive? do
+        {"elmc_int_t #{int_scratch};", "  #{int_scratch} = 0;"}
+      else
+        {"elmc_int_t #{int_scratch} = -1;", ""}
+      end
+
+    code = """
+    #{subject_setup}
+      const int #{tag_ref} = #{message_tag_expr(subject_ref)};
+      #{deferred_box_out_decl(out, declare_out?)}
+      #{int_decl}
+    #{int_init}
+      switch (#{tag_ref}) {
+    #{switch_body}
+      }
+    #{post_box}
+    """
+
+    {code, out, final_counter}
+  end
+
+  @spec compile_deferred_string_box_subject(Types.expr(), list(), Types.compile_env(), Types.ir_expr()) :: Types.ir_expr()
+
+  defp compile_deferred_string_box_subject(subject, branches, env, counter) do
+    {subject_setup, subject_ref, counter} = compile_subject_ref(subject, env, counter)
+    tag_ref = "case_msg_tag_#{counter + 1}"
+    counter = counter + 1
+    {out, branch_counter, declare_out?} = switch_result_out(env, counter)
+    branch_counter = CaseCompile.advance_counter_past_out(branch_counter, out, declare_out?)
+    exhaustive? = deferred_box_exhaustive?(branches)
+
+    {branch_code, immortal_decls, final_counter} =
+      Enum.reduce(branches, {"", [], branch_counter}, fn branch, {acc, decls, c} ->
+        FunctionCallCompile.reset_call_args_cache!()
+
+        spec = branch_string_box_spec(branch)
+
+        case spec do
+          {:string, value} ->
+            lit_name = "native_str_immortal_#{c + 1}"
+            next = c + 1
+            decl = ImmortalStringLiteral.static_decl(lit_name, value)
+            assign = ImmortalStringLiteral.assign_ref(env, out, "&#{lit_name}") |> CSource.indent(2)
+
+            snippet = """
+            #{case_label(branch.pattern, env)}: {
+            #{assign}
+              break;
+            }
+            """
+
+            {acc <> snippet <> "\n", [decl | decls], next}
+
+          :zero ->
+            snippet = deferred_int_box_zero_snippet(case_label(branch.pattern, env), out)
+            {acc <> snippet <> "\n", decls, c}
+        end
+      end)
+
+    default_case = deferred_box_switch_default(branches, out, exhaustive?)
+    immortal_preamble = immortal_decls |> Enum.reverse() |> Enum.join("\n  ")
+    switch_body = CSource.indent(branch_code <> default_case, 2)
+
+    code = """
+    #{subject_setup}
+      const int #{tag_ref} = #{message_tag_expr(subject_ref)};
+      #{deferred_box_out_decl(out, declare_out?)}
+      #{immortal_preamble}
+      switch (#{tag_ref}) {
+    #{switch_body}
+      }
+    """
+
+    {code, out, final_counter}
+  end
+
+  @spec deferred_box_out_decl(Types.ir_expr(), boolean()) :: Types.ir_expr()
+
+  defp deferred_box_out_decl(out, declare_out?) do
+    cond do
+      RcRuntimeEmit.function_out_ref?(out) ->
+        ""
+
+      ValueSlots.owned_ref?(out) ->
+        ""
+
+      declare_out? ->
+        CaseCompile.result_out_decl(out, true)
+
+      true ->
+        "ElmcValue *#{out} = NULL;"
+    end
+  end
+
+  @spec deferred_box_exhaustive?(list()) :: boolean()
+
+  defp deferred_box_exhaustive?(branches) when is_list(branches) do
+    not Enum.any?(branches, fn %{pattern: pattern} ->
+      match?(%{kind: :wildcard}, pattern)
+    end)
+  end
+
+  @spec deferred_box_switch_default(list(), Types.ir_expr(), boolean()) :: Types.ir_expr()
+
+  defp deferred_box_switch_default(branches, out, skip_default?) do
+    cond do
+      skip_default? ->
+        ""
+
+      Enum.any?(branches, fn branch -> match?(%{kind: :wildcard}, branch.pattern) end) ->
+        ""
+
+      true ->
+        deferred_int_box_zero_snippet("default", out)
+    end
+  end
+
+  @spec deferred_int_box_post_box(Types.compile_env(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+
+  defp deferred_int_box_post_box(env, out, int_scratch, true) do
+    RcRuntimeEmit.assign_into(env, out, "elmc_new_int", int_scratch)
+    |> CSource.indent(2)
+  end
+
+  defp deferred_int_box_post_box(env, out, int_scratch, false) do
+    assign = RcRuntimeEmit.assign_into(env, out, "elmc_new_int", int_scratch)
+
+    """
+    if (#{int_scratch} >= 0) {
+      #{assign}
+    }
+    """
+    |> String.trim()
+    |> CSource.indent(2)
+  end
+
+  @spec deferred_string_box_eligible?(list() | Types.ir_expr()) :: boolean()
+
+  defp deferred_string_box_eligible?(branches) when is_list(branches) do
+    specs = Enum.map(branches, &branch_string_box_spec/1)
+    string_count = Enum.count(specs, &match?({:string, _}, &1))
+
+    string_count >= 2 and Enum.all?(specs, fn
+      {:string, _} -> true
+      :zero -> true
+      _ -> false
+    end)
+  end
+
+  defp deferred_string_box_eligible?(_branches), do: false
+
+  @spec branch_string_box_spec(map()) :: Types.ir_expr()
+
+  defp branch_string_box_spec(%{expr: expr}), do: string_box_expr_spec(expr)
+
+  @spec string_box_expr_spec(map() | Types.expr()) :: Types.ir_expr()
+
+  defp string_box_expr_spec(%{op: :int_literal, value: 0}), do: :zero
+
+  defp string_box_expr_spec(%{op: :string_literal, value: value}) when is_binary(value) do
+    if String.contains?(value, <<0>>) do
+      :complex
+    else
+      {:string, value}
+    end
+  end
+
+  defp string_box_expr_spec(_expr), do: :complex
+
+  @spec deferred_int_box_slot_snippet(String.t(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+
+  defp deferred_int_box_slot_snippet(label, ref, int_scratch) do
+    """
+    #{label}: {
+      #{int_scratch} = #{ref};
+      break;
+    }
+    """
+    |> String.trim_trailing()
+    |> CSource.indent(2)
+  end
+
+  @spec deferred_int_box_zero_snippet(String.t(), Types.ir_expr()) :: Types.ir_expr()
+
+  defp deferred_int_box_zero_snippet(label, out) do
+    """
+    #{label}:
+      #{RcRuntimeEmit.assignment_lhs(out)} = elmc_int_zero();
+      break;
+    """
+    |> String.trim()
+    |> CSource.indent(2)
+  end
+
+  @spec deferred_int_box_eligible?(list() | Types.ir_expr(), Types.compile_env()) :: boolean()
+
+  defp deferred_int_box_eligible?(branches, env) when is_list(branches) do
+    specs = Enum.map(branches, &branch_int_box_spec(&1, env))
+    slot_count = Enum.count(specs, &match?({:slot, _}, &1))
+
+    slot_count >= 2 and Enum.all?(specs, &match?({:slot, _}, &1))
+  end
+
+  defp deferred_int_box_eligible?(_branches, _env), do: false
+
+  @spec branch_int_box_spec(map(), Types.compile_env()) :: Types.ir_expr()
+
+  defp branch_int_box_spec(%{expr: expr}, env), do: int_box_expr_spec(expr, env)
+
+  @spec int_box_expr_spec(map() | Types.expr(), Types.compile_env()) :: Types.ir_expr()
+
+  defp int_box_expr_spec(%{op: :int_literal, value: value} = expr, env)
+       when is_integer(value) do
+    {:slot, IntLiteralRef.ref(expr, env)}
+  end
+
+  defp int_box_expr_spec(_expr, _env), do: :complex
+
+  @spec switch_branch_count(Types.case_branches()) :: non_neg_integer()
+  defp switch_branch_count(branches) do
+    branches
+    |> Enum.reject(fn branch -> match?(%{pattern: %{kind: :wildcard}}, branch) end)
+    |> length()
+  end
+
+  @spec switchable_pattern?(Types.pattern()) :: boolean()
+  defp switchable_pattern?(%{kind: :constructor, tag: _tag} = pattern) do
+    name_allowed? =
+      not excluded_ctor_name?(Map.get(pattern, :name)) and
+        not excluded_ctor_name?(Map.get(pattern, :resolved_name))
+
+    name_allowed? and simple_constructor_pattern?(pattern)
+  end
+
+  defp excluded_ctor_name?(name) when is_binary(name) do
+    short = name |> String.split(".") |> List.last()
+    MapSet.member?(@constructor_tag_switch_excluded_names, short)
+  end
+
+  defp excluded_ctor_name?(nil), do: false
+  defp excluded_ctor_name?(_), do: false
+
+  @spec simple_constructor_pattern?(Types.pattern()) :: boolean()
+  defp simple_constructor_pattern?(%{kind: :constructor, tag: _tag, arg_pattern: nil}), do: true
+
+  defp simple_constructor_pattern?(%{
+         kind: :constructor,
+         tag: _tag,
+         arg_pattern: %{kind: :wildcard}
+       }),
+       do: true
+
+  defp simple_constructor_pattern?(%{kind: :constructor, tag: _tag, arg_pattern: %{kind: :var}}),
+    do: true
+
+  defp simple_constructor_pattern?(_pattern), do: false
+
+  @doc false
+  @spec compile_subject_ref(Types.case_subject(), Types.compile_env(), Types.compile_counter()) ::
+          {String.t(), Types.subject_ref(), Types.compile_counter()}
+  def compile_subject_ref(subject, env, counter) when is_binary(subject) do
+    case Map.get(env, subject) do
+      ref when is_binary(ref) ->
+        {"", ref, counter}
+
+      _ ->
+        Host.compile_expr(%{op: :var, name: subject}, env, counter)
+    end
+  end
+
+  def compile_subject_ref(%{op: :var, name: name}, env, counter) when is_binary(name) do
+    compile_subject_ref(name, env, counter)
+  end
+
+  def compile_subject_ref(subject_expr, env, counter) do
+    Host.compile_expr(subject_expr, env, counter)
+  end
+
+  @spec switch_result_out(Types.compile_env(), Types.ir_expr()) :: Types.ir_expr()
+
+  defp switch_result_out(env, counter) do
+    publish_fn_out? =
+      RcRuntimeEmit.function_tail_compile?(env) and
+        Map.get(env, :__into_out__) == RcRuntimeEmit.function_out_ref()
+
+    if publish_fn_out? do
+      {RcRuntimeEmit.function_out_ref(), counter, false}
+    else
+      branch_env = RcRuntimeEmit.strip_function_tail_scope(env)
+      CaseCompile.result_out_binding(branch_env, counter)
+    end
+  end
+
+  @spec switch_default_case(Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+
+  defp switch_default_case(_out, true), do: ""
+
+  defp switch_default_case(out, false) do
+    """
+    default:
+      #{RcRuntimeEmit.assignment_lhs(out)} = elmc_int_zero();
+      break;
+    """
+    |> String.trim()
+    |> CSource.indent(2)
+  end
+
+  @spec switch_branch_snippet(String.t(), Types.ir_expr(), Types.expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+
+  defp switch_branch_snippet(label, setup, expr_code, assignment_code, release, out) do
+    cleanup = switch_branch_cleanup(expr_code, assignment_code, out)
+    normalize = ValueSlots.normalize_branch_result_slot(out)
+
+    body =
+      [setup, expr_code, assignment_code, normalize, release, cleanup, "break;"]
+      |> Enum.reject(&(String.trim(&1) == ""))
+      |> Enum.join("\n")
+
+    """
+    #{label}: {
+    #{CSource.indent(body, 2)}
+    }
+    """
+    |> String.trim_trailing()
+    |> CSource.indent(2)
+  end
+
+  @foldl_borrowed_var ~r/^list_foldl_(cursor|head|node)_\d+$/
+  @list_walk_borrowed_var ~r/^list_walk_(cursor|node)_\d+$/
+  @list_case_suffix_var ~r/^list_case_suffix_\d+$/
+
+  @spec switch_branch_cleanup(Types.expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+
+  defp switch_branch_cleanup(expr_code, assignment_code, out) do
+    body =
+      [expr_code, assignment_code]
+      |> Enum.filter(&is_binary/1)
+      |> Enum.join("\n")
+
+    block_scoped = block_scoped_assignments(body)
+
+    assigned =
+      Regex.scan(~r/ElmcValue \*([A-Za-z_][A-Za-z0-9_]*)\s*=/, body)
+      |> Enum.map(fn [_, name] -> name end)
+      |> Enum.uniq()
+
+    released =
+      Regex.scan(~r/elmc_release\(([A-Za-z_][A-Za-z0-9_]*)\)/, body)
+      |> Enum.map(fn [_, name] -> name end)
+      |> MapSet.new()
+
+    cow_drop_skip = OwnershipTransfer.cow_drop_chain_sources_to_skip(body, out)
+    out_transfer_rhs = OwnershipTransfer.assignment_rhs_to_out(body, out)
+
+    assigned
+    |> Enum.reject(fn name ->
+      name == out or
+        String.starts_with?(name, "__") or
+        Regex.match?(@foldl_borrowed_var, name) or
+        Regex.match?(@list_walk_borrowed_var, name) or
+        Regex.match?(@list_case_suffix_var, name) or
+        MapSet.member?(released, name) or
+        MapSet.member?(cow_drop_skip, name) or
+        MapSet.member?(block_scoped, name) or
+        MapSet.member?(out_transfer_rhs, name) or
+        ValueSlots.transferred?(name, body) or
+        OwnershipTransfer.transferred_in_c_source?(name, body)
+    end)
+    |> Enum.map_join("\n", &ValueSlots.release_stmt/1)
+  end
+
+  @spec block_scoped_assignments(String.t()) :: Types.ir_expr()
+
+  defp block_scoped_assignments(body) when is_binary(body) do
+    body
+    |> String.split("\n")
+    |> Enum.reduce({0, MapSet.new()}, fn line, {brace_depth, scoped} ->
+      open_braces = line |> String.graphemes() |> Enum.count(&(&1 == "{"))
+      close_braces = line |> String.graphemes() |> Enum.count(&(&1 == "}"))
+
+      scoped =
+        case Regex.run(~r/^\s+ElmcValue \*([A-Za-z_][A-Za-z0-9_]*)\s*=/, line) do
+          [_, var] when brace_depth > 0 -> MapSet.put(scoped, var)
+          _ -> scoped
+        end
+
+      brace_depth = max(brace_depth + open_braces - close_braces, 0)
+      {brace_depth, scoped}
+    end)
+    |> elem(1)
+  end
+
+  @spec case_label(Types.pattern(), Types.compile_env()) :: String.t()
+  defp case_label(%{kind: :wildcard}, _env), do: "default"
+
+  defp case_label(%{kind: :constructor, tag: tag} = pattern, env) when is_integer(tag) do
+    pebble_tag = PebbleMsgTag.tag_expr(pattern)
+
+    ref =
+      if pebble_tag == Integer.to_string(tag) do
+        pattern
+        |> constructor_literal_expr()
+        |> UnionMacros.literal_ref(env)
+      end
+
+    "case #{ref || pebble_tag}"
+  end
+
+  @spec constructor_literal_expr(map()) :: Types.ir_expr()
+
+  defp constructor_literal_expr(%{tag: tag} = pattern) do
+    %{
+      op: :int_literal,
+      value: tag,
+      union_ctor: Map.get(pattern, :resolved_name) || Map.get(pattern, :name)
+    }
+  end
+
+  @spec message_tag_expr(Types.subject_ref()) :: String.t()
+  defp message_tag_expr(subject_ref) do
+    "elmc_union_tag_as_int(#{subject_ref})"
+  end
+end

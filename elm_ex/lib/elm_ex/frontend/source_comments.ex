@@ -165,8 +165,8 @@ defmodule ElmEx.Frontend.SourceComments do
       Regex.match?(~r/^([a-z][A-Za-z0-9_']*)\s*:/u, trimmed) ->
         capture(trimmed, ~r/^([a-z][A-Za-z0-9_']*)\s*:/u)
 
-      Regex.match?(~r/^([a-z][A-Za-z0-9_']*)\s*=/u, trimmed) ->
-        capture(trimmed, ~r/^([a-z][A-Za-z0-9_']*)\s*=/u)
+      Regex.match?(~r/^([a-z][A-Za-z0-9_']*)(?:\s+[a-z][A-Za-z0-9_']*)*\s*=/u, trimmed) ->
+        capture(trimmed, ~r/^([a-z][A-Za-z0-9_']*)(?:\s+[a-z][A-Za-z0-9_']*)*\s*=/u)
 
       Regex.match?(~r/^type alias\s+([A-Z][A-Za-z0-9_']*)/u, trimmed) ->
         capture(trimmed, ~r/^type alias\s+([A-Z][A-Za-z0-9_']*)/u)

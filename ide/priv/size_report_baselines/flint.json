@@ -1,18 +1,18 @@
 {
   "version": 3,
-  "description": "Balanced-profile compiler baselines (flint). pebble-app.bin from mix ide.size_report --package.",
+  "description": "IDE size-report baselines (flint). Compiler metrics use --profile balanced; pebble-app.bin from mix ide.size_report --package (IDE size codegen profile). Baseline refresh 2026-07: plan-primary Pebble modBy helper (elmc_int_mod_by), owned-slot coverage, ports BSS trim.",
   "templates": {
     "game-2048": {
-      "generated_c_bytes": 32000,
+      "generated_c_bytes": 46000,
       "pebble_app_bin_aplite": 21528,
-      "pebble_app_bin_flint": 23500
+      "pebble_app_bin_flint": 24228
     },
     "watchface-tangram-time": {
-      "generated_c_bytes": 115000,
+      "generated_c_bytes": 149000,
       "pebble_app_bin_flint": 50000
     },
     "watchface-yes": {
-      "generated_c_bytes": 191709,
+      "generated_c_bytes": 229000,
       "pebble_app_bin_flint": 65000
     }
   }

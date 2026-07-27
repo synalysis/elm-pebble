@@ -94,11 +94,9 @@ defmodule Elmc.Backend.C.Lower.NativeReturn do
   def ret_reg_allows_native?(_, _, _), do: false
 
   defp maybe_mark_value_return(%FunctionPlan{} = plan) do
-    if native_scalar_value_return?(plan) do
-      Map.put(plan, :native_scalar_value_return, true)
-    else
-      Map.delete(plan, :native_scalar_value_return)
-    end
+    # Keep the struct key present — Map.delete would drop it and later
+    # `%{plan | native_scalar_value_return: …}` updates KeyError (wasm lambda annotate).
+    Map.put(plan, :native_scalar_value_return, native_scalar_value_return?(plan))
   end
 
   @spec native_scalar_value_return?(FunctionPlan.t()) :: boolean()

@@ -1126,6 +1126,7 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
          direct_args?
        ) do
     body_text = Enum.join(List.wrap(core_body), "\n")
+    ValueSlots.ensure_covers_owned_refs(body_text)
     owned_decls = ValueSlots.owned_declaration()
     failure_cleanup = ValueSlots.failure_cleanup()
     unused_casts = unused_arg_casts(arg_bindings, core_body)

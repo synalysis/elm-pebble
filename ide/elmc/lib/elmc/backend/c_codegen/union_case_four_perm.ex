@@ -1,0 +1,538 @@
+defmodule Elmc.Backend.CCodegen.UnionCaseFourPerm do
+  @moduledoc """
+  Fuses four-branch union `case` row-major permutes: identity, reverse rows, transpose,
+  and a composed fourth branch.
+
+  The fourth branch distinguishes forward (`reverseRows (transpose cells)`) from inverse
+  (`transpose (reverseRows cells)`). Callee targets come from IR, not app names.
+  """
+  alias Elmc.Backend.CCodegen.Types, as: Types
+
+
+  alias Elmc.Backend.CCodegen.Types
+
+  alias Elmc.Backend.CCodegen.{FusionSupport, ListMapStaticIndexAt, RowMajorLayout, Util}
+
+  @spec try_emit(String.t(), String.t(), Types.ir_expr() | nil, Types.function_decl_map()) ::
+          {:ok, String.t(), [FusionSupport.callee_key()]}
+          | {:ok, String.t(), [FusionSupport.callee_key()], :rc_native}
+          | :error
+  def try_emit(_module_name, _name, nil, _decl_map), do: :error
+
+  def try_emit(module_name, name, expr, decl_map) do
+    case expr do
+      %{op: :case, branches: case_branches} ->
+        case parse(expr, module_name) do
+          {:ok, cells_var, branches, mode} ->
+            case callee_targets(branches, module_name) do
+              {:ok, reverse_rows, transpose} ->
+                case row_major_dims(decl_map, module_name, reverse_rows, transpose) do
+                  {:ok, width, rows} ->
+                    case ordered_branch_tags(case_branches) do
+                      {:ok, tags} ->
+                        FusionSupport.ok_rc(
+                          emit(module_name, name, cells_var, width, rows, mode, tags),
+                          [
+                            FusionSupport.callee_key(module_name, reverse_rows),
+                            FusionSupport.callee_key(module_name, transpose)
+                          ]
+                        )
+
+                      _ ->
+                        :error
+                    end
+
+                  _ ->
+                    :error
+                end
+
+              _ ->
+                :error
+            end
+
+          _ ->
+            :error
+        end
+
+      _ ->
+        :error
+    end
+  end
+
+  @doc false
+  @spec extract_fusion_data(String.t(), String.t(), Types.ir_expr() | nil, Types.function_decl_map()) ::
+          {:ok, :union_case_four_perm, Types.fusion_metadata()} | :error
+  def extract_fusion_data(module_name, _name, expr, decl_map) do
+    case extract_metadata(module_name, expr, decl_map) do
+      {:ok, data} -> {:ok, :union_case_four_perm, data}
+      :error -> :error
+    end
+  end
+
+  @spec extract_metadata(String.t(), Types.expr(), Types.decl_map()) :: Types.ir_expr()
+
+  defp extract_metadata(module_name, expr, decl_map) do
+    case expr do
+      %{op: :case, branches: case_branches} ->
+        with {:ok, _cells_var, branches, mode} <- parse(expr, module_name),
+             {:ok, reverse_rows, transpose} <- callee_targets(branches, module_name),
+             {:ok, width, rows} <- row_major_dims(decl_map, module_name, reverse_rows, transpose),
+             {:ok, tags} <- ordered_branch_tags(case_branches) do
+          {:ok, %{width: width, rows: rows, mode: forward_inverse_mode(mode), tags: tags}}
+        else
+          _ -> :error
+        end
+
+      _ ->
+        :error
+    end
+  end
+
+  @spec ordered_branch_tags(Types.case_branches()) :: {:ok, [integer()]} | :error
+  def ordered_branch_tags(branches) when is_list(branches) and length(branches) == 4 do
+    tags =
+      Enum.map(branches, fn %{pattern: pattern} ->
+        pattern[:tag] || pattern[:union_tag] || ctor_tag_fallback(pattern)
+      end)
+
+    if Enum.all?(tags, &is_integer/1), do: {:ok, tags}, else: :error
+  end
+
+  def ordered_branch_tags(_), do: :error
+
+  @spec parse(map() | term(), String.t() | term()) :: Types.ir_expr()
+
+  defp parse(%{op: :case, subject: subject, branches: branches}, module_name)
+       when is_list(branches) and length(branches) == 4 do
+    with true <- case_subject?(subject),
+         [b0, b1, b2, b3] <- branches,
+         {:ok, cells_var} <- identity_cells_var(b0.expr),
+         true <- cells_call?(b1.expr, cells_var),
+         true <- cells_call?(b2.expr, cells_var),
+         {:ok, reverse_rows_target, transpose_target} <- branch_unary_targets(b1, b2, module_name),
+         {:ok, mode} <- fourth_branch_mode(b3.expr, cells_var, reverse_rows_target, transpose_target) do
+      {:ok, cells_var, [b0.expr, b1.expr, b2.expr, b3.expr], mode}
+    else
+      _ -> :error
+    end
+  end
+
+  defp parse(_, _), do: :error
+
+  @spec branch_unary_targets(Types.ir_expr(), Types.ir_expr(), String.t()) :: Types.ir_expr()
+
+  defp branch_unary_targets(b1, b2, module_name) do
+    with {:ok, reverse_rows_target} <- unary_call_target(b1.expr, module_name),
+         {:ok, transpose_target} <- unary_call_target(b2.expr, module_name) do
+      {:ok, reverse_rows_target, transpose_target}
+    end
+  end
+
+  @spec unary_call_target(map() | term(), String.t() | term()) :: Types.ir_expr()
+
+  defp unary_call_target(%{op: :qualified_call, target: target, args: [_]}, _module_name)
+       when is_binary(target),
+       do: {:ok, FusionSupport.local_name(target)}
+
+  defp unary_call_target(%{op: :call, target: {_, name}, args: [_]}, _module_name)
+       when is_binary(name),
+       do: {:ok, name}
+
+  defp unary_call_target(%{op: :call, name: name, args: [_]}, _module_name) when is_binary(name),
+    do: {:ok, name}
+
+  defp unary_call_target(_, _), do: :error
+
+  @spec case_subject?(map() | String.t() | term()) :: boolean()
+
+  defp case_subject?(%{op: :var, name: _}), do: true
+  defp case_subject?(name) when is_binary(name), do: true
+  defp case_subject?(_), do: false
+
+  @spec identity_cells_var(map() | term()) :: Types.ir_expr()
+
+  defp identity_cells_var(%{op: :var, name: cells_var}) when is_binary(cells_var),
+    do: {:ok, cells_var}
+
+  defp identity_cells_var(_), do: :error
+
+  @spec cells_call?(map() | term(), Types.ir_expr() | term()) :: boolean()
+
+  defp cells_call?(%{op: :var, name: cells_var}, cells_var), do: true
+
+  defp cells_call?(
+         %{op: :qualified_call, args: [%{op: :var, name: cells_var}]},
+         cells_var
+       ),
+       do: true
+
+  defp cells_call?(
+         %{op: :call, target: {_, _}, args: [%{op: :var, name: cells_var}]},
+         cells_var
+       ),
+       do: true
+
+  defp cells_call?(_, _), do: false
+
+  @spec fourth_branch_mode(Types.expr(), Types.ir_expr(), String.t(), String.t()) :: Types.ir_expr()
+
+  defp fourth_branch_mode(expr, cells_var, reverse_rows_target, transpose_target) do
+    cond do
+      nested_compose?(expr, cells_var, reverse_rows_target, transpose_target) ->
+        {:ok, {:forward, reverse_rows_target, transpose_target}}
+
+      nested_compose?(expr, cells_var, transpose_target, reverse_rows_target) ->
+        {:ok, {:inverse, reverse_rows_target, transpose_target}}
+
+      true ->
+        :error
+    end
+  end
+
+  @spec nested_compose?(Types.expr(), Types.ir_expr(), String.t(), String.t()) :: boolean()
+
+  defp nested_compose?(expr, cells_var, outer_target, inner_target) do
+    case expr do
+      %{
+        op: :qualified_call,
+        target: outer,
+        args: [%{op: :qualified_call, target: inner, args: [%{op: :var, name: cells}]}]
+      } ->
+        cells == cells_var and targets_match?(outer, outer_target) and
+          targets_match?(inner, inner_target)
+
+      %{
+        op: :call,
+        target: {_, outer},
+        args: [%{op: :call, target: {_, inner}, args: [%{op: :var, name: cells}]}]
+      } ->
+        cells == cells_var and targets_match?(outer, outer_target) and
+          targets_match?(inner, inner_target)
+
+      _ ->
+        false
+    end
+  end
+
+  @spec callee_targets(list(), String.t()) :: Types.ir_expr()
+
+  defp callee_targets(branches, module_name) do
+    with [_, right, up, down] <- branches,
+         {:ok, reverse_rows} <- reverse_rows_target(right, module_name),
+         {:ok, transpose} <- transpose_target(up, module_name),
+         true <- fourth_branch_uses?(down, reverse_rows, transpose) do
+      {:ok, reverse_rows, transpose}
+    else
+      _ -> :error
+    end
+  end
+
+  @spec reverse_rows_target(map() | term(), String.t() | term()) :: Types.ir_expr()
+
+  defp reverse_rows_target(
+         %{op: :qualified_call, target: target, args: [%{op: :var, name: _}]},
+         module_name
+       ),
+       do: {:ok, local_callee(module_name, target)}
+
+  defp reverse_rows_target(
+         %{op: :call, target: {_, target}, args: [%{op: :var, name: _}]},
+         module_name
+       ),
+       do: {:ok, local_callee(module_name, target)}
+
+  defp reverse_rows_target(_, _), do: :error
+
+  @spec transpose_target(map() | term(), String.t() | term()) :: Types.ir_expr()
+
+  defp transpose_target(
+         %{op: :qualified_call, target: target, args: [%{op: :var, name: _}]},
+         module_name
+       ),
+       do: {:ok, local_callee(module_name, target)}
+
+  defp transpose_target(
+         %{op: :call, target: {_, target}, args: [%{op: :var, name: _}]},
+         module_name
+       ),
+       do: {:ok, local_callee(module_name, target)}
+
+  defp transpose_target(_, _), do: :error
+
+  @spec local_callee(String.t(), String.t()) :: Types.ir_expr()
+
+  defp local_callee(module_name, target) do
+    qualified_local(module_name, FusionSupport.local_name(target))
+  end
+
+  @spec qualified_local(String.t(), String.t()) :: Types.ir_expr()
+
+  defp qualified_local(module_name, name) when is_binary(name) do
+    case String.split(name, ".", parts: 2) do
+      [^module_name, local] -> local
+      [_other, local] -> local
+      [local] -> local
+    end
+  end
+
+  @spec fourth_branch_uses?(integer(), Types.ir_expr(), Types.ir_expr()) :: boolean()
+
+  defp fourth_branch_uses?(down, rr, tr) do
+    forward_compose?(down, rr, tr) or inverse_compose?(down, rr, tr)
+  end
+
+  @spec forward_compose?(map() | term(), Types.ir_expr() | term(), Types.ir_expr() | term()) :: boolean()
+
+  defp forward_compose?(
+         %{op: :qualified_call, target: t1, args: [%{op: :qualified_call, target: t2}]},
+         rr,
+         tr
+       ),
+       do: targets_match?(t1, rr) and targets_match?(t2, tr)
+
+  defp forward_compose?(
+         %{op: :call, target: {_, t1}, args: [%{op: :call, target: {_, t2}}]},
+         rr,
+         tr
+       ),
+       do: targets_match?(t1, rr) and targets_match?(t2, tr)
+
+  defp forward_compose?(_, _, _), do: false
+
+  @spec inverse_compose?(map() | term(), Types.ir_expr() | term(), Types.ir_expr() | term()) :: boolean()
+
+  defp inverse_compose?(
+         %{op: :qualified_call, target: t1, args: [%{op: :qualified_call, target: t2}]},
+         rr,
+         tr
+       ),
+       do: targets_match?(t1, tr) and targets_match?(t2, rr)
+
+  defp inverse_compose?(
+         %{op: :call, target: {_, t1}, args: [%{op: :call, target: {_, t2}}]},
+         rr,
+         tr
+       ),
+       do: targets_match?(t1, tr) and targets_match?(t2, rr)
+
+  defp inverse_compose?(_, _, _), do: false
+
+  @spec targets_match?(String.t(), Types.ir_expr()) :: boolean()
+
+  defp targets_match?(target, expected) do
+    FusionSupport.local_name(target) == expected or target == "Main.#{expected}"
+  end
+
+  @spec row_major_dims(Types.decl_map(), String.t(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+
+  defp row_major_dims(decl_map, module_name, reverse_rows, transpose) do
+    with {:ok, width, rows} <- dims_from_reverse_rows(decl_map, module_name, reverse_rows),
+         true <- transpose_static_count?(decl_map, module_name, transpose, width * rows) do
+      {:ok, width, rows}
+    end
+  end
+
+  @spec dims_from_reverse_rows(Types.decl_map(), String.t(), Types.ir_expr()) :: Types.ir_expr()
+
+  defp dims_from_reverse_rows(decl_map, module_name, reverse_rows) do
+    case Map.get(decl_map, {module_name, reverse_rows}) do
+      %{expr: expr} -> parse_dims_from_reverse_rows_expr(expr, decl_map, module_name)
+      _ -> :error
+    end
+  end
+
+  @spec parse_dims_from_reverse_rows_expr(Types.expr(), Types.decl_map(), String.t()) :: Types.ir_expr()
+
+  defp parse_dims_from_reverse_rows_expr(expr, decl_map, module_name) do
+    with {:ok, row_at, _cells, indices} <- reverse_rows_list(expr),
+         {:ok, width} <- row_slice_width(decl_map, module_name, row_at) do
+      {:ok, width, length(indices)}
+    end
+  end
+
+  @spec reverse_rows_list(map() | term()) :: Types.ir_expr()
+
+  defp reverse_rows_list(%{op: :qualified_call, target: "List.concat", args: [list_expr]}) do
+    parse_row_indices(list_items(list_expr))
+  end
+
+  defp reverse_rows_list(%{
+         op: :pipe,
+         left: list_expr,
+         right: %{op: :qualified_call, target: "List.concat", args: []}
+       }) do
+    parse_row_indices(list_items(list_expr))
+  end
+
+  defp reverse_rows_list(%{
+         op: :pipe,
+         left: list_expr,
+         right: %{op: :call, target: {_, "concat"}, args: []}
+       }) do
+    parse_row_indices(list_items(list_expr))
+  end
+
+  defp reverse_rows_list(_), do: :error
+
+  @spec list_items(map() | term()) :: Types.ir_expr()
+
+  defp list_items(%{op: :list_literal, items: items}), do: items
+  defp list_items(_), do: []
+
+  @spec parse_row_indices(list()) :: Types.ir_expr()
+
+  defp parse_row_indices(items) do
+    items
+    |> Enum.reduce_while({:ok, nil, nil, []}, fn item, acc ->
+      case item do
+        %{
+          op: :qualified_call,
+          target: "List.reverse",
+          args: [
+            %{
+              op: :qualified_call,
+              target: row_at,
+              args: [%{op: :int_literal, value: row_index}, %{op: :var, name: cells}]
+            }
+          ]
+        } ->
+          collect_row_index(acc, row_at, cells, row_index)
+
+        _ ->
+          {:halt, :error}
+      end
+    end)
+  end
+
+  @spec collect_row_index(term(), Types.ir_expr() | term(), Types.ir_expr() | term(), non_neg_integer() | term()) :: Types.ir_expr()
+
+  defp collect_row_index({:ok, row_at, cells_var, indices}, row_at, cells, row_index)
+       when cells == cells_var,
+       do: {:cont, {:ok, row_at, cells_var, indices ++ [row_index]}}
+
+  defp collect_row_index({:ok, nil, nil, []}, row_at, cells, row_index),
+    do: {:cont, {:ok, row_at, cells, [row_index]}}
+
+  defp collect_row_index(_, _, _, _), do: {:halt, :error}
+
+  @spec row_slice_width(Types.decl_map(), String.t(), String.t()) :: Types.ir_expr()
+
+  defp row_slice_width(decl_map, module_name, row_at_target) do
+    case Map.get(decl_map, FusionSupport.callee_key(module_name, row_at_target)) do
+      %{
+        expr: %{
+          op: :qualified_call,
+          target: "List.take",
+          args: [%{op: :int_literal, value: width}, drop_expr]
+        }
+      }
+      when is_integer(width) ->
+        if row_drop_stride?(drop_expr, width), do: {:ok, width}, else: :error
+
+      _ ->
+        :error
+    end
+  end
+
+  @spec row_drop_stride?(map() | term(), Types.ir_expr() | term()) :: boolean()
+
+  defp row_drop_stride?(
+         %{
+           op: :qualified_call,
+           target: "List.drop",
+           args: [index_expr, %{op: :var, name: _cells}]
+         },
+         width
+       ),
+       do: row_mul_width?(index_expr, width)
+
+  defp row_drop_stride?(_, _), do: false
+
+  @spec row_mul_width?(map() | term(), Types.ir_expr() | term()) :: boolean()
+
+  defp row_mul_width?(
+         %{op: :call, name: op, args: [%{op: :var, name: "row"}, %{op: :int_literal, value: width}]},
+         width
+       )
+       when op in ["__mul__", "*"],
+       do: true
+
+  defp row_mul_width?(
+         %{
+           op: :qualified_call,
+           target: op,
+           args: [%{op: :var, name: "row"}, %{op: :int_literal, value: width}]
+         },
+         width
+       )
+       when op in ["Basics.mul", "*"],
+       do: true
+
+  defp row_mul_width?(_, _), do: false
+
+  @spec transpose_static_count?(Types.decl_map(), String.t(), Types.ir_expr(), non_neg_integer()) :: boolean()
+
+  defp transpose_static_count?(decl_map, module_name, transpose, count) do
+    case Map.get(decl_map, {module_name, transpose}) do
+      %{expr: expr} ->
+        case ListMapStaticIndexAt.try_emit(module_name, transpose, expr, decl_map) do
+          {:ok, _, _, _} -> transpose_index_count(expr) == count
+          {:ok, _, _} -> transpose_index_count(expr) == count
+          :error -> false
+        end
+
+      _ ->
+        false
+    end
+  end
+
+  @spec transpose_index_count(map() | term()) :: Types.ir_expr()
+
+  defp transpose_index_count(%{op: :qualified_call, target: "List.map", args: [_, list_expr]}) do
+    case list_expr do
+      %{op: :list_literal, items: items} -> length(items)
+      _ -> 0
+    end
+  end
+
+  defp transpose_index_count(_), do: 0
+
+  @spec ctor_tag_fallback(map() | term()) :: Types.ir_expr()
+
+  defp ctor_tag_fallback(%{kind: :constructor, tag: tag}) when is_integer(tag), do: tag
+  defp ctor_tag_fallback(%{kind: :constructor, union_tag: tag}) when is_integer(tag), do: tag
+  defp ctor_tag_fallback(_), do: nil
+
+  @spec emit(String.t(), String.t(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+
+  defp emit(module_name, name, cells_var, width, rows, mode, tags) do
+    c_prefix = Util.module_fn_name(module_name, name)
+    count = rows * width
+    tag_expr = RowMajorLayout.union_tag_expr("tag_arg")
+    index_expr = RowMajorLayout.case_tag_perm_index_expr("case_tag", tags) |> String.trim()
+
+    """
+    static RC #{c_prefix}_native(ElmcValue **out, ElmcValue *tag_arg, ElmcValue *#{cells_var}) {
+      RC Rc = RC_SUCCESS;
+      CATCH_BEGIN
+        elmc_int_t src[#{count}];
+        elmc_int_t dst[#{count}];
+        for (elmc_int_t i = 0; i < #{count}; i++) {
+          src[i] = elmc_list_nth_int_default(#{cells_var}, i, 0);
+        }
+        const int case_tag = #{tag_expr};
+        const int perm_case = #{index_expr};
+        #{RowMajorLayout.emit_apply_row_major_perm(forward_inverse_mode(mode), width, rows, "src", "dst", "perm_case", count)}
+        Rc = elmc_list_from_int_array(out, dst, #{count});
+        CHECK_RC(Rc);
+      CATCH_END;
+      return Rc;
+    }
+    """
+  end
+
+  @spec forward_inverse_mode(term()) :: Types.ir_expr()
+
+  defp forward_inverse_mode({:forward, _, _}), do: :forward
+  defp forward_inverse_mode({:inverse, _, _}), do: :inverse
+end
