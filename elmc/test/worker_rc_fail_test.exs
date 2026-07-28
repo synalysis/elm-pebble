@@ -23,6 +23,8 @@ defmodule Elmc.WorkerRcFailTest do
 
     worker_c = File.read!(Path.join(out_dir, "c/elmc_worker.c"))
     worker_h = File.read!(Path.join(out_dir, "c/elmc_worker.h"))
+    runtime_c = File.read!(Path.join(out_dir, "runtime/elmc_runtime.c"))
+    runtime_h = File.read!(Path.join(out_dir, "runtime/elmc_runtime.h"))
 
     assert worker_h =~ "elmc_worker_last_fail_code(void)"
     assert worker_h =~ "elmc_worker_last_fail_line(void)"
@@ -33,7 +35,9 @@ defmodule Elmc.WorkerRcFailTest do
     assert worker_c =~ "elmc_last_fail_line"
     refute worker_c =~ "ELMC_TAKE_OR_RETURN"
     assert worker_c =~ "elmc_cmd_queue_normalize(&pending"
-    assert worker_c =~ "elmc_cmd_queue_peel_manager"
-    assert worker_c =~ "List spine cells were released in the loop"
+    refute worker_c =~ "static RC elmc_cmd_queue_normalize"
+    assert runtime_h =~ "RC elmc_cmd_queue_normalize(ElmcValue **out, ElmcValue *cmd);"
+    assert runtime_c =~ "elmc_cmd_queue_peel_manager"
+    assert runtime_c =~ "List spine cells were released in the loop"
   end
 end

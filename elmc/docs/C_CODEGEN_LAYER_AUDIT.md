@@ -134,11 +134,16 @@ adapter (`elmc_worker.{h,c}`) uses `Plan.Worker.HostPlan` (not FunctionPlan SSA)
 | Piece | Owner |
 |-------|--------|
 | App `init` / `update` / `subscriptions` bodies | FunctionPlan → C.Lower |
-| TEA host shell (`init` / `dispatch` / `compute_subscriptions`) | `Plan.Worker.HostPlan` → `Host.Lower` + `Host.Emit` |
+| TEA host shell (`init` / `dispatch` / `compute_subscriptions`) | `Plan.Worker.HostPlan` → `Host.Lower` + `Host.Verify` + `Host.Emit` |
+| Pure pending-cmd queue (`elmc_cmd_queue_*`) | `Elmc.Runtime.CmdQueue` → packaged `elmc_runtime` |
 | `subscriptions()` / `Sub.batch` IR rewrite | `Plan.Worker.Subscriptions` (+ Plan special-values) |
 | Compact slot layout (`sub_tag_slots`, `slot_map`, `frame_slot`) | `Plan.Worker.Layout` |
-| Slot table + `apply_sub` / `sub_msg_tag` + cmd-queue runtime C | `Plan.Worker.Emit` |
+| Slot table + `apply_sub` / extract+snapshot + subscription runtime C | `Plan.Worker.Emit` |
 | Pebble event dispatch + host cmd/view wrappers | `pebble/source_writer/event_dispatch` (`Registry` + `Emit`) |
+
+`Host.Verify` is structural entry-ABI only (not FunctionPlan ownership). HostPlan
+does not emit bytecode. `ElmcWorkerState` field renames / 32/16 compact thresholds
+remain frozen.
 
 **Layout ABI:** `sub_tag_slots`, `button_raw_subs`, `slot_map`, `frame_slot`,
 `model_dependent?`, `compact` (fallback 32/16 when not compact).

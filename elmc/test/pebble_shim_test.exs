@@ -3641,13 +3641,14 @@ defmodule Elmc.PebbleShimTest do
              Elmc.compile(source_fixture, %{out_dir: out_dir, entry_module: "Main"})
 
     worker_c = File.read!(Path.join(out_dir, "c/elmc_worker.c"))
+    runtime_c = File.read!(Path.join(out_dir, "runtime/elmc_runtime.c"))
     pebble_c = File.read!(Path.join(out_dir, "c/elmc_pebble.c"))
 
     assert worker_c =~ "dispatch_needs_render"
     assert worker_c =~ "if (model_changed)"
     assert worker_c =~ "if (!elmc_cmd_is_none(next_cmd))"
-    assert worker_c =~ "ELMC_TAG_CMD"
-    assert worker_c =~ "cmd->kind == 0"
+    assert runtime_c =~ "ELMC_TAG_CMD"
+    assert runtime_c =~ "cmd->kind == 0"
     assert pebble_c =~ "elmc_worker_dispatch_needs_render"
     assert pebble_c =~ "elmc_pebble_invalidate_scene_for_dispatch"
     refute pebble_c =~ "elmc_pebble_prepare_dispatch(ElmcPebbleApp *app) {\n      if (!app) return;\n      elmc_pebble_heap_log(\"dispatch:prepare:before\");\n      elmc_pebble_clear_view_cache(app);"

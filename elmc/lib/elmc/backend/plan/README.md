@@ -39,15 +39,22 @@ static draw tables remain on legacy DR emit (see `Plan.Stream.ListLoop.tracked_g
 `Plan.Worker.Subscriptions` owns `:pebble_sub` IR rewrite and mask analysis.
 `Plan.Worker.Layout.analyze/2` derives compact subscription slot metadata from
 `subscriptions` IR. `Plan.Worker.Emit` emits table-driven `elmc_sub_tag_slot`
-lookup, shared `apply_sub` helpers, and cmd-queue/subscription runtime C into
-generated `elmc_worker.c`.
+lookup, shared `apply_sub` helpers, TEA tuple extract/snapshot, and subscription
+runtime C into generated `elmc_worker.c`. Pure pending-cmd queue helpers
+(`elmc_cmd_queue_*`, `elmc_cmd_is_none`) live in `Elmc.Runtime.CmdQueue` and ship
+in packaged `elmc_runtime.{h,c}`.
 
 **HostPlan vs FunctionPlan:** App `init` / `update` / `subscriptions` bodies are
 `FunctionPlan` SSA. The TEA host shell (`elmc_worker_init` / `dispatch`) is a
 separate `Plan.Worker.HostPlan` IR — mutable `ElmcWorkerState`, side effects, and
 host return codes do not fit `Plan.Verify`. `Plan.Worker.Host.Lower` lowers IR +
-layout into `HostPlan`; `Plan.Worker.Host.Emit` emits init/dispatch/compute_subs
-steps. `Worker` orchestrates layout → lower → emit and writes `elmc_worker.{h,c}`.
+layout into `HostPlan`; `Plan.Worker.Host.Verify` checks entry ABI structurally;
+`Plan.Worker.Host.Emit` emits init/dispatch/compute_subs shells. `Worker`
+orchestrates layout → lower → verify → emit and writes `elmc_worker.{h,c}`.
+
+HostPlan does **not** lower to FunctionPlan SSA, bytecode, or `Plan.Verify`
+ownership checks. `ElmcWorkerState` field layout / 32/16 compact fallbacks stay
+frozen (host contract is `elmc_worker_*` APIs).
 
 Pebble subscription event dispatch (including tick, compass when enabled, app-message decode,
 storage/random cmd stubs, and take_cmd/view_commands host wrappers) is

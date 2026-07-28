@@ -3,8 +3,9 @@ defmodule Elmc.Backend.Worker do
   Thin C worker adapter for Elm TEA init/update loops.
 
   Layout analysis lives in `Plan.Worker.Layout`; TEA host shells are lowered to
-  `Plan.Worker.HostPlan` and emitted by `Plan.Worker.Host.Emit`. Shared cmd-queue
-  and subscription runtime C remain in `Plan.Worker.Emit`.
+  `Plan.Worker.HostPlan`, checked by `Plan.Worker.Host.Verify`, and emitted by
+  `Plan.Worker.Host.Emit`. Pure cmd-queue helpers live in `Elmc.Runtime.CmdQueue`;
+  extract/snapshot and subscription slot C remain in `Plan.Worker.Emit`.
   """
   alias Elmc.Types
   alias ElmEx.IR
@@ -13,6 +14,7 @@ defmodule Elmc.Backend.Worker do
   alias Elmc.Backend.Plan.Worker.Emit, as: WorkerEmit
   alias Elmc.Backend.Plan.Worker.Host.Emit, as: HostEmit
   alias Elmc.Backend.Plan.Worker.Host.Lower, as: HostLower
+  alias Elmc.Backend.Plan.Worker.Host.Verify, as: HostVerify
   alias Elmc.Backend.Plan.Worker.Layout, as: WorkerLayout
 
   @spec write_worker_adapter(IR.t(), String.t(), String.t(), keyword()) ::
@@ -21,6 +23,11 @@ defmodule Elmc.Backend.Worker do
     c_dir = Path.join(out_dir, "c")
     layout = subscription_analysis(ir, entry_module)
     host_plan = HostLower.lower(ir, entry_module, layout, opts)
+
+    case HostVerify.verify(host_plan) do
+      :ok -> :ok
+      {:error, reason} -> raise "host plan verify failed: #{inspect(reason)}"
+    end
 
     with :ok <- File.mkdir_p(c_dir),
          :ok <- File.write(Path.join(c_dir, "elmc_worker.h"), worker_header(host_plan, opts)),

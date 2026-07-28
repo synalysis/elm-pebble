@@ -3,8 +3,10 @@ defmodule Elmc.HostPlanTest do
 
   alias Elmc.Backend.Plan.Worker.Host.Emit, as: HostEmit
   alias Elmc.Backend.Plan.Worker.Host.Lower, as: HostLower
+  alias Elmc.Backend.Plan.Worker.Host.Verify, as: HostVerify
   alias Elmc.Backend.Plan.Worker.HostPlan
   alias Elmc.Backend.Worker
+  alias Elmc.Runtime.Generator
 
   @simple_project Path.expand("fixtures/simple_project", __DIR__)
 
@@ -20,6 +22,7 @@ defmodule Elmc.HostPlanTest do
     plan = lower_simple!()
 
     assert %HostPlan{entry_module: "Main"} = plan
+    assert :ok = HostVerify.verify(plan)
     assert plan.init.present?
     assert plan.update.present?
     assert plan.subscriptions.present?
@@ -36,6 +39,27 @@ defmodule Elmc.HostPlanTest do
   test "prod pebble_int32 build caps last_dispatch_cmd at zero" do
     plan = lower_simple!(pebble_int32: true, prod: true)
     assert plan.last_dispatch_cmd_cap == 0
+    assert :ok = HostVerify.verify(plan)
+  end
+
+  test "verify rejects incomplete present entry call" do
+    plan = lower_simple!()
+    bad = %{plan | init: %{present?: true, call: %{fun: "init"}}}
+
+    assert {:error, {:host_plan, :incomplete_entry_call, {:init, _}}} = HostVerify.verify(bad)
+  end
+
+  test "verify rejects model_dependent without subscriptions" do
+    plan = lower_simple!()
+
+    bad = %{
+      plan
+      | model_dependent_subs?: true,
+        subscriptions: %{present?: false, stub_c: "ElmcValue *result = elmc_int_zero();\n"}
+    }
+
+    assert {:error, {:host_plan, :model_dependent_without_subscriptions, nil}} =
+             HostVerify.verify(bad)
   end
 
   test "emit composes shared runtime and TEA host shells from HostPlan" do
@@ -50,6 +74,8 @@ defmodule Elmc.HostPlanTest do
     assert source =~ "elmc_fn_Main_init(&result, flags)"
     assert source =~ "elmc_fn_Main_update(&result, msg, state->model)"
     assert source =~ "elmc_fn_Main_subscriptions(&result, state->model)"
+    refute source =~ "static RC elmc_cmd_queue_normalize"
+    refute source =~ "static int elmc_cmd_is_none"
 
     dispatch_body =
       source
@@ -59,5 +85,21 @@ defmodule Elmc.HostPlanTest do
       |> hd()
 
     refute dispatch_body =~ "compute_subscriptions"
+  end
+
+  test "packaged runtime declares and defines cmd-queue helpers" do
+    out_dir = Path.expand("tmp/host_plan_cmd_queue_runtime", __DIR__)
+    File.rm_rf!(out_dir)
+    runtime_dir = Path.join(out_dir, "runtime")
+    assert :ok = Generator.write_runtime(runtime_dir)
+
+    header = File.read!(Path.join(runtime_dir, "elmc_runtime.h"))
+    source = File.read!(Path.join(runtime_dir, "elmc_runtime.c"))
+
+    assert header =~ "RC elmc_cmd_queue_normalize(ElmcValue **out, ElmcValue *cmd);"
+    assert header =~ "int elmc_cmd_is_none(ElmcValue *value);"
+    assert source =~ "RC elmc_cmd_queue_normalize(ElmcValue **out, ElmcValue *cmd)"
+    assert source =~ "RC elmc_cmd_queue_concat_take(ElmcValue **out, ElmcValue *left, ElmcValue *right)"
+    refute source =~ "static RC elmc_cmd_queue_normalize"
   end
 end

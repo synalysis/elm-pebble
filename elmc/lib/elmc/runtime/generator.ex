@@ -5,6 +5,7 @@ defmodule Elmc.Runtime.Generator do
   alias Elmc.Types, as: Types
 
 
+  alias Elmc.Runtime.CmdQueue
   alias Elmc.Runtime.FloatList
   alias Elmc.Runtime.JsonSections
   alias Elmc.Runtime.WebPlatform
@@ -1835,6 +1836,7 @@ defmodule Elmc.Runtime.Generator do
     RC elmc_tuple2_ints(ElmcValue **out, elmc_int_t first, elmc_int_t second);
     RC elmc_cmd0(ElmcValue **out, elmc_int_t kind);
     RC elmc_cmd_batch(ElmcValue **out, ElmcValue *commands);
+    #{CmdQueue.header_declarations()}
     RC elmc_cmd_map(ElmcValue **out, ElmcValue *f, ElmcValue *cmd);
     RC elmc_sub_batch(ElmcValue **out, ElmcValue *subs);
     RC elmc_sub_map(ElmcValue **out, ElmcValue *f, ElmcValue *sub);
@@ -3640,6 +3642,8 @@ defmodule Elmc.Runtime.Generator do
       }
       return elmc_platform_manager_batch(out, 2, commands);
     }
+
+    #{CmdQueue.implementation()}
 
     RC elmc_cmd_map(ElmcValue **out, ElmcValue *f, ElmcValue *cmd) {
       if (cmd && cmd->tag == ELMC_TAG_CMD) {
