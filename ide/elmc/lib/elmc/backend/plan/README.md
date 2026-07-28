@@ -154,7 +154,7 @@ for comparable before/after metrics (`elmc_stack_report.json` merged into compil
 
 See [docs/PLAN_IR_COVERAGE.md](../../../docs/PLAN_IR_COVERAGE.md) for construct-level
 coverage, strict template smoke results, and how to extend plan lowering without
-per-app shims. CI smoke: `mix test test/plan_template_strict_gate_test.exs`.
+per-app shims. CI smoke: `mix test test/plan_template_strict_gate_test.exs --include slow`.
 
 ## Plan bytecode tier (deferred)
 

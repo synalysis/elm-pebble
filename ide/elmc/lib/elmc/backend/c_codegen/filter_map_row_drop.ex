@@ -334,7 +334,7 @@ defmodule Elmc.Backend.CCodegen.FilterMapRowDrop do
             #{RcRuntimeEmit.fusion_tuple2_take_int_out("out", "built", "cleared")}
           }
         }
-      CATCH_END;
+      CATCH_END
       elmc_release_array_lifo(owned, DIM(owned));
       return Rc;
     }

@@ -680,7 +680,11 @@ defmodule Elmc.Backend.Plan.Builder do
   @spec to_function_plan(t()) :: FunctionPlan.t()
   def to_function_plan(b) do
     sealed_current = seal_block_instrs(b.current_block)
-    blocks = Enum.reverse([sealed_current | b.blocks])
+
+    blocks =
+      b.blocks
+      |> Enum.reverse()
+      |> maybe_append_current_block(sealed_current)
 
     %FunctionPlan{
       module: b.module,
@@ -703,6 +707,39 @@ defmodule Elmc.Backend.Plan.Builder do
   # lowering; seal reverses to chronological order for backends.
   defp seal_block_instrs(%Block{instrs: instrs} = block),
     do: %{block | instrs: Enum.reverse(instrs)}
+
+  # `finish_block/2` advances `current_block` to an empty placeholder. Only
+  # include it in finished plans when it carries code or is a real CFG target.
+  defp maybe_append_current_block(blocks, %Block{id: id, instrs: []} = current) do
+    if referenced_block_id?(id, blocks), do: blocks ++ [current], else: blocks
+  end
+
+  defp maybe_append_current_block(blocks, current), do: blocks ++ [current]
+
+  defp referenced_block_id?(id, blocks) when is_integer(id) and is_list(blocks) do
+    Enum.any?(blocks, fn %Block{terminator: term} ->
+      id in block_successors(term)
+    end)
+  end
+
+  defp block_successors({:br, target_id}) when is_integer(target_id), do: [target_id]
+
+  defp block_successors({:br_if, then_id, else_id, _})
+       when is_integer(then_id) and is_integer(else_id),
+       do: [then_id, else_id]
+
+  defp block_successors({:switch_tag, _, arms, default_id}) when is_integer(default_id) do
+    arm_ids =
+      Enum.map(arms, fn
+        {_, target_id} when is_integer(target_id) -> target_id
+        {_, target_id, _} when is_integer(target_id) -> target_id
+        _ -> nil
+      end)
+
+    (arm_ids ++ [default_id]) |> Enum.reject(&is_nil/1)
+  end
+
+  defp block_successors(_), do: []
 
   @spec declare_letrec(t(), String.t()) :: {String.t(), t()}
   def declare_letrec(b, name) when is_binary(name) do

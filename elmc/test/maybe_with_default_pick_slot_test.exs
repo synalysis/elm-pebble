@@ -1,7 +1,7 @@
 defmodule Elmc.MaybeWithDefaultPickSlotTest do
   use Elmc.TestSupport.PrimaryCodegenCase, async: true
 
-  alias Elmc.Backend.CCodegen.MaybeWithDefaultPickSlot
+  alias Elmc.Backend.Plan.Fusion.Matchers.MaybeWithDefaultPickSlot
 
   test "try_emit recognizes Maybe.withDefault defaultCtor (pickSlot model slotsFn)" do
     expr = %{

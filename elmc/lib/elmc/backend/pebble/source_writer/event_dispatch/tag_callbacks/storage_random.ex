@@ -6,18 +6,20 @@ defmodule Elmc.Backend.Pebble.SourceWriter.EventDispatch.TagCallbacks.StorageRan
   alias Elmc.Backend.Pebble.Types
 
   @spec body(Types.event_dispatch_bindings()) :: Types.c_source()
-  def body(%{msg: msg, random_generate_tag: random_generate_tag}) do
+  def body(%{msg: _msg, random_generate_tag: _random_generate_tag}) do
     """
     int elmc_pebble_dispatch_storage_string(ElmcPebbleApp *app, const char *value) {
+      (void)value;
       if (!app || !app->initialized) return -1;
-      if (#{msg.storage_string_tag} <= 0) return -6;
-      return elmc_pebble_dispatch_tag_string(app, #{msg.storage_string_tag}, value ? value : "");
+      /* Storage string dispatch requires the Msg tag encoded in the cmd (cmd.p1). */
+      return -6;
     }
 
     int elmc_pebble_dispatch_random_int(ElmcPebbleApp *app, int32_t value) {
+      (void)value;
       if (!app || !app->initialized) return -1;
-      if (#{random_generate_tag} <= 0) return -6;
-      return elmc_pebble_dispatch_tag_value(app, #{random_generate_tag}, value);
+      /* Random.generate must encode the callback tag in the cmd (cmd.p0). */
+      return -6;
     }
 """
   end

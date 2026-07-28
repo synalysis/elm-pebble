@@ -5,7 +5,7 @@ defmodule Elmc.Backend.Plan.Lower.Intrinsics do
 
   alias Elmc.Backend.CCodegen.{FunctionEmit, TypeParsing}
   alias Elmc.Backend.CCodegen.Expr, as: IrExpr
-  alias Elmc.Backend.CCodegen.SpecialValues.Core, as: SpecialCore
+  alias Elmc.Backend.Plan.Lower.SpecialValues.Core, as: SpecialCore
   alias Elmc.Backend.Plan.{Builder, Context, EpilogueRelease, Verify}
   alias Elmc.Backend.Plan.Lower.{Call, Expr, Function, SpecialValues}
   alias Elmc.Backend.Plan.Types

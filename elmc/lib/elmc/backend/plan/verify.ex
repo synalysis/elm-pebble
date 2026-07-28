@@ -6,6 +6,7 @@ defmodule Elmc.Backend.Plan.Verify do
   result inspection bugs before any backend emits target code.
   """
 
+  alias Elmc.Backend.Plan.Cfg
   alias Elmc.Backend.Plan.Types
   alias Elmc.Backend.Plan.Types.{Block, FunctionPlan}
 
@@ -25,6 +26,7 @@ defmodule Elmc.Backend.Plan.Verify do
   def run(%FunctionPlan{} = plan) do
     with :ok <- verify_blocks_present(plan),
          :ok <- verify_entry_block(plan),
+         :ok <- verify_cfg(plan),
          :ok <- walk_blocks(plan) do
       :ok
     else
@@ -48,6 +50,47 @@ defmodule Elmc.Backend.Plan.Verify do
 
   defp verify_entry_block(%{entry_block: entry, blocks: blocks}) do
     if Enum.any?(blocks, &(&1.id == entry)), do: :ok, else: {:error, :missing_entry_block, []}
+  end
+
+  defp verify_cfg(%{blocks: [], fusion_c: fusion}) when is_binary(fusion) and fusion != "",
+    do: :ok
+
+  defp verify_cfg(%{blocks: blocks, entry_block: entry}) do
+    with :ok <- verify_no_permanent_none(blocks),
+         :ok <- verify_no_dangling_targets(blocks),
+         :ok <- verify_all_blocks_reachable(blocks, entry) do
+      :ok
+    end
+  end
+
+  defp verify_no_permanent_none(blocks) do
+    case Cfg.permanent_none_blocks(blocks) do
+      [] ->
+        :ok
+
+      [block_id | _] ->
+        {:error, :permanent_none_terminator, [block: block_id]}
+    end
+  end
+
+  defp verify_no_dangling_targets(blocks) do
+    case Cfg.dangling_targets(blocks) do
+      [] ->
+        :ok
+
+      [{from_id, target_id} | _] ->
+        {:error, :dangling_branch_target, [from: from_id, target: target_id]}
+    end
+  end
+
+  defp verify_all_blocks_reachable(blocks, entry) do
+    case Cfg.unreachable_block_ids(blocks, entry) do
+      [] ->
+        :ok
+
+      [block_id | _] ->
+        {:error, :unreachable_block, [block: block_id, entry: entry]}
+    end
   end
 
   defp walk_blocks(plan) do
@@ -209,7 +252,7 @@ defmodule Elmc.Backend.Plan.Verify do
     end)
   end
 
-  defp apply_terminator({:ret, reg}, st) when reg in [:fn_out, :branch_out] do
+  defp apply_terminator({:ret, reg}, st) when reg in [:fn_out, :branch_out, :stream_void] do
     %{st | owned: MapSet.delete(st.owned, reg)}
   end
 

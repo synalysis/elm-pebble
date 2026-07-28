@@ -5,7 +5,7 @@ defmodule Elmc.Backend.Pebble.IRAnalysis.Build do
 
   alias ElmEx.IR
   alias Elmc.Backend.Pebble.{AccelConfig, FeatureFlags, Types}
-  alias Elmc.Backend.Pebble.IRAnalysis.{Msg, RandomGenerate}
+  alias Elmc.Backend.Pebble.IRAnalysis.Msg
 
   @spec analyze(IR.t(), Types.entry_module()) :: Types.shim_analysis()
   def analyze(%IR{} = ir, entry_module), do: analyze(ir, entry_module, %{})
@@ -22,7 +22,7 @@ defmodule Elmc.Backend.Pebble.IRAnalysis.Build do
       watch_color_tags: Msg.union_constructors(ir, "Pebble.WatchInfo", "WatchColor"),
       has_view: Msg.has_view?(ir, entry_module),
       feature_flags: FeatureFlags.compute(ir, msg_constructors, entry_module, opts),
-      random_generate_tag: RandomGenerate.target_tag(ir, msg_constructors),
+      random_generate_tag: 0,
       accel_config: AccelConfig.from_ir(ir, entry_module)
     }
   end

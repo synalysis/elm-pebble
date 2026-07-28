@@ -74,7 +74,7 @@ defmodule Elmc.Runtime.FloatList do
           *out = &cell->value;
           cell = NULL;
         }
-      CATCH_END;
+      CATCH_END
       if (cell) {
         if (cell->data.values) elmc_free(cell->data.values);
         elmc_free(cell);
@@ -109,7 +109,7 @@ defmodule Elmc.Runtime.FloatList do
           rc = elmc_new_float(out, payload->values[0]);
           CHECK_RC(rc);
         }
-      CATCH_END;
+      CATCH_END
       return rc;
     }
 
@@ -118,7 +118,7 @@ defmodule Elmc.Runtime.FloatList do
       CATCH_BEGIN
         rc = elmc_float_list_drop(out, 1, list);
         CHECK_RC(rc);
-      CATCH_END;
+      CATCH_END
       return rc;
     }
     """

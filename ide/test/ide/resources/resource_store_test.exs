@@ -14,6 +14,36 @@ defmodule Ide.Resources.ResourceStoreTest do
     refute ResourceStore.read_only_generated_module?("protocol", "src/Companion/Types.elm")
   end
 
+  test "ensure_generated_workspace does not bump mtime when generated Elm is unchanged" do
+    slug = "resources-mtime-#{System.unique_integer([:positive])}"
+    project = %Ide.Projects.Project{slug: slug}
+    workspace = Projects.project_workspace_path(project)
+    on_exit(fn -> File.rm_rf!(workspace) end)
+
+    File.mkdir_p!(Path.join(workspace, "watch/resources/bitmaps"))
+    File.write!(Path.join(workspace, "watch/resources/bitmaps.json"), ~s({"schema_version":1,"entries":[]}\n))
+    File.write!(Path.join(workspace, "watch/resources/fonts.json"), ~s({"schema_version":1,"entries":[]}\n))
+    File.write!(Path.join(workspace, "watch/resources/vectors.json"), ~s({"schema_version":1,"entries":[]}\n))
+    File.write!(Path.join(workspace, "watch/resources/animations.json"), ~s({"schema_version":1,"entries":[]}\n))
+    File.write!(
+      Path.join(workspace, "watch/resources/speaker_samples.json"),
+      ~s({"schema_version":1,"entries":[]}\n)
+    )
+
+    assert :ok = ResourceStore.ensure_generated_workspace(workspace)
+
+    ui = Path.join(workspace, "watch/src/Pebble/Ui/Resources.elm")
+    speaker = Path.join(workspace, "watch/src/Pebble/Speaker/Resources.elm")
+    stale = {{2020, 1, 2}, {3, 4, 5}}
+    File.touch!(ui, stale)
+    File.touch!(speaker, stale)
+
+    assert :ok = ResourceStore.ensure_generated_workspace(workspace)
+
+    assert File.stat!(ui).mtime == stale
+    assert File.stat!(speaker).mtime == stale
+  end
+
   test "generated Resources.elm sorts constructors within each resource kind" do
     slug = "resources-sort-#{System.unique_integer([:positive])}"
     project = %Ide.Projects.Project{slug: slug}

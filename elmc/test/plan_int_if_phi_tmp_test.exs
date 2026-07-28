@@ -48,4 +48,34 @@ defmodule Elmc.PlanIntIfPhiTmpTest do
     c = CLower.emit(plan)
     refute c =~ ~r/\btmp_\d+\b/
   end
+
+  test "truthy_native {:reg,_} phi arms are not dropped (no dangling tmp_)" do
+    blocks = [
+      %{
+        id: 0,
+        instrs: [
+          %{
+            op: :phi,
+            dest: 19,
+            args: %{
+              then: 17,
+              else: 18,
+              cond: 13,
+              truthy_native: true,
+              then_shape: {:reg, 17},
+              else_shape: {:const_int, 0},
+              then_arm_block: 3,
+              else_arm_block: 4
+            }
+          }
+        ],
+        terminator: :none
+      }
+    ]
+
+    drops = TruthyNative.phi_arm_drop_instrs(blocks)
+    refute MapSet.member?(drops, {17, 3}),
+           "must not drop {:reg,_} then arm (would emit undeclared tmp_17)"
+    assert MapSet.member?(drops, {18, 4})
+  end
 end

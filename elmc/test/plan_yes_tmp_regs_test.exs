@@ -33,5 +33,28 @@ defmodule Elmc.PlanYesTmpRegsTest do
       refute body =~ ~r/\btmp_\d+\b/,
              "Main.#{name} emitted undeclared tmp reg:\n#{body}"
     end
+
+    # Pipeline-generated C (not re-lower): native_int params with retain must
+    # alias screenW/screenH, not leave plan_native_int_0 uninitialized.
+    out_dir = Path.expand("tmp/plan_yes_tmp_regs", __DIR__)
+    generated = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+
+    {start, _} =
+      :binary.match(
+        generated,
+        "static RC elmc_fn_Yes_Layout_fromScreen(ElmcValue **out, elmc_int_t screenW, elmc_int_t screenH) {"
+      )
+
+    stop =
+      case :binary.match(generated, "\n}\n\nstatic ", start) do
+        {idx, _} -> idx
+        :nomatch -> start + 2000
+      end
+
+    from_screen = binary_part(generated, start, stop - start)
+    refute from_screen =~ "(void)screenH"
+    refute from_screen =~ ~r/\bplan_native_int_0\b/
+    assert from_screen =~ "screenW"
+    assert from_screen =~ "screenH"
   end
 end

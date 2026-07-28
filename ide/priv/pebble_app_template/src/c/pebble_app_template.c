@@ -974,12 +974,17 @@ static void apply_pending_cmd(void) {
       if (s_random_seed <= 0) {
         s_random_seed = 1;
       }
+      int32_t value = s_random_seed;
+      if (!(cmd.p1 == 0 && cmd.p2 == 0) && cmd.p2 >= cmd.p1) {
+        uint32_t span = (uint32_t)(cmd.p2 - cmd.p1 + 1);
+        value = cmd.p1 + (int32_t)((uint32_t)value % span);
+      }
       int64_t target = cmd.p0;
       int rc = target > 0
-                   ? elmc_pebble_dispatch_tag_value(&s_elm_app, target, s_random_seed)
-                   : elmc_pebble_dispatch_random_int(&s_elm_app, s_random_seed);
+                   ? elmc_pebble_dispatch_tag_value(&s_elm_app, target, value)
+                   : -6;
       ELMC_PEBBLE_DEBUG_LOG(APP_LOG_LEVEL_INFO, "cmd random_generate target=%lld value=%ld rc=%d",
-              (long long)target, (long)s_random_seed, rc);
+              (long long)target, (long)value, rc);
       (void)rc;
       break;
     }

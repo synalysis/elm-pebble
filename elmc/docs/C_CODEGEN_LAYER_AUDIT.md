@@ -10,16 +10,24 @@ See also: [PLAN_IR_COVERAGE.md](PLAN_IR_COVERAGE.md), [plan/README.md](../lib/el
 
 | Layer | Removable? | Notes |
 |-------|------------|-------|
-| **Legacy IR→C body** (`ExprCompile`, `CaseCompile`, …) | **Removed from production path** | `plan_ir_mode: :off` redirects to `:primary`; gap functions emit unsupported stubs |
+| **Fragment IR→C** (`DirectRender.Emit.ExprDispatch`, `CaseCompile`, …) | **No** | DirectRender/scene operands via `Operand` → `ExprDispatch`; `Host.compile_expr` routes to same dispatcher |
 | **Plan C lower** (`C.Lower.*`) | No | Primary emitter; lives outside `c_codegen/` |
 | **Function shells / orchestration** (`FunctionEmit`, ABI, `RcRequired`) | No | Wraps plan bodies, fusion, native helpers |
-| **Fusion matchers** (2048, tuple2 tables, list search, …) | Migrate later | Plan calls via `Plan.Fusion.Registry`; IR match + `fusion_c` still in CCodegen |
-| **Direct render** (`DirectRender.*`) | No (today) | View/scene inlining; cooperates with plan-primary |
-| **SpecialValues** (Cmd/Sub/Pebble rewrites) | Migrate incrementally | Facade in `Plan.Lower.SpecialValues` |
+| **Fusion matchers** | No (relocated) | `Elmc.Backend.Plan.Fusion.Matchers.*`; registry in `Plan.Fusion.Registry` |
+| **Direct render** (`DirectRender.*`) | Partial | Selection + `CommandDef` shell; bodies via **Plan stream SSA** (`Plan.Stream` → `C.Lower.emit_core` + `direct_scene_push`) with `Emit.Expr` / `ExprDispatch` fallback |
+| **SpecialValues** (Cmd/Sub/Pebble rewrites) | No (relocated) | `Plan.Lower.SpecialValues.*` handlers |
 | **Project / pebble glue** (`ProjectWriter`, `Emit`, macros) | No | Always needed for `elmc_generated.c` |
 
-**Do not delete the `c_codegen/` directory wholesale.** Delete or quarantine the
-**legacy body compiler** subtree once `:off` is test-only.
+**Do not delete the `c_codegen/` directory wholesale.** The legacy `legacy_body/` subtree is removed;
+fragment compilation lives under `DirectRender.Emit.ExprDispatch` and shared `*_compile` modules.
+
+## Fragment dispatch (2026-07)
+
+- `DirectRender.Emit.Operand` — DR entry with `ValueSlots.transfer/1` take marking
+- `DirectRender.Emit.ExprDispatch` — IR→C fragment dispatcher (formerly `LegacyBody.ExprCompile`)
+- `Host.compile_expr` — sets `__direct_render_emit__`, delegates to `ExprDispatch` (or `Operand` when take-marking)
+- `TailRecursiveLoopEmit` — fusion `while (1)` helper emission (no `FunctionEmit`/`Host` body debt)
+- `DirectRender.Emit.BoxedOperand` — native demotion boxed subexpr helper (no `Host.compile_expr`)
 
 ## Production vs test defaults
 
@@ -29,10 +37,10 @@ See also: [PLAN_IR_COVERAGE.md](PLAN_IR_COVERAGE.md), [plan/README.md](../lib/el
 | `Plan.Defaults` / `Elmc.compile/2` default | `:primary` | `true` |
 | `mix test` (`test_helper.exs`) | `:primary` | `true` |
 | `PrimaryCodegenCase` / harness tests | `:primary` | `true` |
-| Explicit `plan_ir_mode: :off` | `:primary` (+ `plan_ir_mode_off_removed` warning) | per opts |
+| Explicit unknown / legacy `:off` | `:primary` (normalized) | per opts |
 
-Explicit `:off` emits diagnostic `plan_ir_mode_off_removed` and compiles as `:primary`.
-Strict `:primary` raises on `plan_primary_fallback` / `plan_primary_gap` (no silent legacy body).
+Unknown mode values normalize to `:primary`.
+Strict `:primary` raises on `plan_primary_fallback` / `plan_primary_gap` (no silent gap bodies).
 
 ## Code paths in `FunctionEmit`
 
@@ -77,26 +85,21 @@ These are imported from `lib/elmc/backend/plan/**` or `lib/elmc/backend/c/lower/
 - `FunctionEmit`, `FunctionCallAbi`, `Fusion`, `RcRequired`, `RcRuntimeEmit`
 - `Native.FunctionCall`, `ImmortalStringLiteral`, `RowMajorLayout`, `Util`
 
-## Legacy body compiler (delete candidate)
+## Fragment compiler modules (keep — used by ExprDispatch)
 
-Used only from `emit_legacy_boxed_body` / `ExprCompile.compile` chain when plan
-lowering is not primary. **~15 top-level modules + pattern helpers:**
+Shared `*_compile` modules back `DirectRender.Emit.ExprDispatch` and native peel paths:
 
 | Module | Role |
 |--------|------|
-| `ExprCompile` | IR expr → C statements (legacy) |
+| `ExprDispatch` | IR expr → C statements (DR fragment root) |
 | `CaseCompile` | `case` → C switch/if chains |
-| `RecordCompile` | record update/get in legacy body |
-| `CallCompile` / `FunctionCallCompile` | calls in legacy body |
+| `RecordCompile` | record update/get in fragment bodies |
+| `CallCompile` / `FunctionCallCompile` | calls in fragment bodies |
 | `VarCompile`, `LiteralCompile`, `CollectionCompile` | expression leaves |
 | `PipeChainCompile`, `LetRecCompile`, `CompareCompile` | control/data |
-| `CmdCompile`, `RenderCmdCompile` | platform cmds in legacy path |
-| `ConstructorTagCase`, `UnionIntCase`, … | legacy pattern emitters (overlap with fusion) |
-| `Patterns`, `IfCompile`, `VarArithCompile` | legacy helpers |
-
-Many **unit tests** under `elmc/test/` call these modules directly (shape
-assertions on generated C text). Those tests remain valuable for fusion/pattern
-modules; legacy-body-only tests can be retired with `:off`.
+| `CmdCompile`, `RenderCmdCompile` | platform cmds in DR/scene paths |
+| `ConstructorTagCase`, patterns | case specialization |
+| `Patterns`, `IfCompile`, `VarArithCompile` | fragment helpers |
 
 ## Infrastructure (always keep)
 
@@ -114,8 +117,14 @@ modules; legacy-body-only tests can be retired with `:off`.
 It runs under plan-primary (`direct_render_only`, `prune_direct_generic`,
 `SizeProfile`) and shares analysis with `PrimaryCoverage`.
 
-Not a replacement for Plan IR; it supersede-emits some view helpers while
-`update`/`init` stay on plan.
+**Body emit (2026-07):** `CommandDef` tries `DirectRender.PlanStreamEmit` first:
+
+1. Verified Plan stream SSA (`Plan.Stream.lower_function` + `elmc_direct_scene_writer` scene push)
+2. List-loop peels via `Plan.Stream.ListLoop` → `ListLoopPlans` (tracked gaps: static draw tables, affine templates)
+3. Legacy `Emit.Expr` / `ExprDispatch` fallback with `plan_stream_fallback` diagnostic
+
+Not a replacement for Plan IR on `update`/`init`; it supersede-emits view helpers while
+keeping compact scene-writer push (no boxed `List RenderOp` tails).
 
 ## Recommended removal sequence
 
@@ -123,7 +132,7 @@ Not a replacement for Plan IR; it supersede-emits some view helpers while
 2. **Shadow / off emit split** — `:shadow` and `:primary` emit plan bodies only; `:off` uses legacy body (no plan fallback). ✅
 3. **Migrate legacy-only tests** — add `LegacyCodegenCase` to modules asserting legacy C shapes (`c_codegen_patterns_test`, …); then flip `test_helper.exs` to `:primary`.
 4. **Migrate or drop parity tests** that compared both paths (`plan_parity`). ✅
-5. **Quarantine legacy body** — move `ExprCompile`, `CaseCompile`, … to `c_codegen/legacy_body/` or feature-flag behind `plan_ir_mode: :off`.
+5. **Delete legacy body** — `legacy_body/ExprCompile` removed; dispatcher is `DirectRender.Emit.ExprDispatch`. ✅
 6. **Migrate SpecialValues** — one handler at a time to `Plan.RuntimeBuiltins` + `Plan.Lower.Platform.Pebble`.
 7. **Optional rename** — `CCodegen` → `Backend.C` or split `Backend.Fusion` / `Backend.DirectRender`.
 
@@ -132,16 +141,14 @@ Not a replacement for Plan IR; it supersede-emits some view helpers while
 ```bash
 export TEST_ULIMIT_V_KB=6291456 ELIXIR_ERL_OPTIONS="+S 1:1 +MMscs 256"
 
-# Strict template gate (46 templates)
-./scripts/mix-test-limited.sh elmc test/plan_template_strict_gate_test.exs
+# Strict template gate (46 templates; tagged :slow)
+./scripts/mix-test-limited.sh elmc test/plan_template_strict_gate_test.exs --include slow
 
 # Reachable coverage (all strict templates, one process per template)
 ./scripts/mix-test-per-template.sh test/plan_reachable_coverage_test.exs
 
-# Excluded-corpus smoke (no corpus OOM)
-./scripts/mix-test-limited.sh elmc --exclude corpus --exclude corpus_run \
-  --exclude corpus_elmx --exclude corpus_index --exclude fixture_codegen \
-  --exclude slow --exclude rc_track_2048
+# Default unit smoke (`:slow` and corpus tags already excluded)
+./scripts/mix-test-limited.sh elmc
 ```
 
 ## Current gate status (2026-07)

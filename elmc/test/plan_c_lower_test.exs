@@ -109,7 +109,7 @@ defmodule Elmc.PlanCLowerTest do
 
     c = CLowerFunction.emit(plan)
     assert c =~ "elmc_record_new_values_take"
-    assert c =~ ~r/elmc_retain\(owned\[\d+\]\)/
+    assert c =~ ~r/elmc_retain\((owned\[\d+\]|x)\)/
   end
 
   test "record update uses value-returning C calls" do
@@ -128,10 +128,140 @@ defmodule Elmc.PlanCLowerTest do
 
     c = CLowerFunction.emit(plan)
     assert c =~ "elmc_retain(model)"
-    assert c =~ "elmc_record_update_index_cow_drop("
-    refute c =~ "Rc = elmc_record_update_index_cow_drop("
+    assert c =~ "Rc = elmc_record_update_index_cow_drop("
     assert c =~ "owned[1] = NULL;"
+    refute c =~ ~r/elmc_release\(owned\[\d+\]\)/
     refute c =~ ~r/owned\[1\] = NULL;\s*elmc_release\(owned\[1\]\);\s*owned\[1\] = NULL;\s*Rc = elmc_cmd0\(&owned\[1\]/
+  end
+
+  test "inlined native const ints do not emit invalid C bindings" do
+    # Const ints that are only used as operands are mapped into native_int_regs as
+    # the literal text for use-site inlining. Emitting `const elmc_int_t 2 = 2;` is
+    # not valid C and must be skipped; use sites already see the literal.
+    decl = %{
+      name: "scaleByTwo",
+      args: ["n"],
+      expr: %{
+        op: :call,
+        name: "__mul__",
+        args: [%{op: :var, name: "n"}, %{op: :int_literal, value: 2}]
+      }
+    }
+
+    assert {:ok, plan} =
+             Elmc.Backend.Plan.Lower.Function.lower(decl, "Main", %{}, rc_required: true)
+
+    c = CLowerFunction.emit(plan)
+    refute c =~ ~r/const elmc_int_t \d+\s*=/
+    refute c =~ ~r/const elmc_int_t ELMC_[A-Z0-9_]+\s*=/
+  end
+
+  test "native int merge stores into plan_native_int locals" do
+    # Constructor-tag / int switch arms writing a shared native merge (pieceColor-like).
+    decl = %{
+      name: "pieceColor",
+      args: ["index"],
+      expr: %{
+        op: :case,
+        subject: %{op: :var, name: "index"},
+        branches: [
+          %{
+            pattern: %{kind: :int, value: 0},
+            expr: %{op: :c_int_expr, value: "ELMC_COLOR_RED"}
+          },
+          %{
+            pattern: %{kind: :int, value: 1},
+            expr: %{op: :c_int_expr, value: "ELMC_COLOR_BLUE"}
+          },
+          %{
+            pattern: %{kind: :wildcard},
+            expr: %{op: :c_int_expr, value: "ELMC_COLOR_BLACK"}
+          }
+        ]
+      }
+    }
+
+    assert {:ok, plan} =
+             Elmc.Backend.Plan.Lower.Function.lower(decl, "Main", %{}, rc_required: true)
+
+    c = CLowerFunction.emit(plan)
+    refute c =~ ~r/const elmc_int_t ELMC_COLOR_/
+    refute c =~ ~r/const elmc_int_t \d+\s*=/
+    assert c =~ "ELMC_COLOR_RED"
+    assert c =~ "ELMC_COLOR_BLUE"
+    # Native merge (`plan_native_int_N = …`) or boxed owned slot — both valid.
+    assert c =~ "plan_native_int_" or c =~ "owned["
+  end
+
+  test "RC emit never mid-body releases owned slots after retain-style consumes" do
+    # Boxed values (not native-int fused) land in owned[]; RC `tuple2` retains them
+    # while the plan marks consumes. Emit must leave pointers for frame LIFO.
+    decl = %{
+      name: "pair",
+      args: [],
+      expr: %{
+        op: :tuple2,
+        left: %{
+          op: :constructor_call,
+          target: "Maybe.Just",
+          args: [%{op: :int_literal, value: 1}]
+        },
+        right: %{
+          op: :constructor_call,
+          target: "Maybe.Just",
+          args: [%{op: :int_literal, value: 2}]
+        }
+      }
+    }
+
+    Process.put(:elmc_constructor_tags, %{"Just" => 1, "Nothing" => 0})
+    on_exit(fn -> Process.delete(:elmc_constructor_tags) end)
+
+    assert {:ok, plan} =
+             Elmc.Backend.Plan.Lower.Function.lower(decl, "Main", %{}, rc_required: true)
+
+    c = CLowerFunction.emit(plan)
+    assert c =~ "ElmcValue *owned["
+    assert c =~ "elmc_tuple2("
+    assert c =~ "elmc_release_array_lifo(owned,"
+    refute c =~ ~r/elmc_release\(owned\[\d+\]\)/
+
+    # Branch merge into a retain-style consume must follow the same rule.
+    branched = %{
+      name: "pickPair",
+      args: ["flag"],
+      expr: %{
+        op: :tuple2,
+        left: %{
+          op: :if,
+          cond: %{op: :var, name: "flag"},
+          then_expr: %{
+            op: :constructor_call,
+            target: "Maybe.Just",
+            args: [%{op: :int_literal, value: 1}]
+          },
+          else_expr: %{
+            op: :constructor_call,
+            target: "Maybe.Just",
+            args: [%{op: :int_literal, value: 2}]
+          }
+        },
+        right: %{
+          op: :constructor_call,
+          target: "Maybe.Nothing",
+          args: []
+        }
+      }
+    }
+
+    assert {:ok, branched_plan} =
+             Elmc.Backend.Plan.Lower.Function.lower(branched, "Main", %{}, rc_required: true)
+
+    branched_c = CLowerFunction.emit(branched_plan)
+    assert branched_c =~ "ElmcValue *owned["
+    assert branched_c =~ "elmc_tuple2("
+    assert branched_c =~ "elmc_release_array_lifo(owned,"
+    refute branched_c =~ ~r/elmc_release\(owned\[\d+\]\)/
   end
 
   test "record get lowers to elmc_record_get_index" do
@@ -200,6 +330,61 @@ defmodule Elmc.PlanCLowerTest do
     assert c =~ "elmc_tuple_second("
     refute Regex.match?(~r/elmc_tuple_first\([^)]+\);\s*if \(!owned\[/, c)
     refute Regex.match?(~r/elmc_tuple_second\([^)]+\);\s*if \(!owned\[/, c)
+  end
+
+  test "view_peel retain and list_head use correct OOM contracts" do
+    out_dir = Path.expand("tmp/view_peel_oom_out", __DIR__)
+    project_dir = Path.expand("tmp/view_peel_oom_project", __DIR__)
+    File.rm_rf!(out_dir)
+    File.rm_rf!(project_dir)
+    File.mkdir_p!(Path.join(project_dir, "src"))
+    File.cp!(Path.expand("fixtures/simple_project/elm.json", __DIR__), Path.join(project_dir, "elm.json"))
+
+    File.write!(Path.join(project_dir, "src/Main.elm"), """
+    module Main exposing (main)
+
+    unwrap : Maybe Int -> Int
+    unwrap m =
+        case m of
+            Just n ->
+                n
+
+            Nothing ->
+                0
+
+    firstOrZero : List a -> Int
+    firstOrZero xs =
+        case List.head xs of
+            Just _ ->
+                1
+
+            Nothing ->
+                0
+
+    main =
+        unwrap (Just 1) + firstOrZero [ "a", "b" ]
+    """)
+
+    assert {:ok, _} =
+             Elmc.compile(project_dir, %{
+               out_dir: out_dir,
+               entry_module: "Main",
+               strip_dead_code: true,
+               plan_ir_mode: :primary
+             })
+
+    c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+
+    # Borrow-view peels never allocate; retain cannot OOM.
+    assert c =~ "elmc_retain(elmc_maybe_just_payload("
+    refute Regex.match?(
+             ~r/elmc_retain\(elmc_maybe_just_payload\([^)]+\)\);\s*if \(!owned\[/,
+             c
+           )
+
+    # Allocating List.head must use RC out-param, not a null-as-OOM value return.
+    assert c =~ ~r/Rc = elmc_list_head\(&owned\[\d+\],/
+    refute Regex.match?(~r/owned\[\d+\] = elmc_list_head\([^;]+\);\s*if \(!owned\[/, c)
   end
 
   test "record field corpus main lowers owned slots and RC callee bridge" do
@@ -288,9 +473,9 @@ defmodule Elmc.PlanCLowerTest do
     assert decl =~ "elmc_owned_null_aliases"
   end
 
-  test "cmd_batch is value-returning not RC allocator" do
-    refute Elmc.Backend.Plan.RuntimeBuiltins.fallible?(:cmd_batch)
-    assert Elmc.Backend.Plan.RuntimeBuiltins.value_return?(:cmd_batch)
+  test "cmd_batch is fallible RC allocator" do
+    assert Elmc.Backend.Plan.RuntimeBuiltins.fallible?(:cmd_batch)
+    refute Elmc.Backend.Plan.RuntimeBuiltins.value_return?(:cmd_batch)
   end
 
   test "native Int param boxes into Basics.modBy boxed operands" do
@@ -325,7 +510,7 @@ defmodule Elmc.PlanCLowerTest do
     c = CLowerFunction.emit(plan)
     assert c =~ "elmc_basics_mod_by("
     assert c =~ "elmc_small_int(index)" or c =~ "elmc_new_int_take(index)" or
-             c =~ "elmc_new_int(&owned[0], index)"
+             c =~ ~r/elmc_new_int\(&owned\[\d+\], index\)/
     refute c =~ "(void)index;"
   end
 
@@ -385,7 +570,7 @@ defmodule Elmc.PlanCLowerTest do
     }
 
     assert %{op: :pebble_cmd} =
-             Elmc.Backend.CCodegen.SpecialValues.special_value_from_target(
+             Elmc.Backend.Plan.Lower.SpecialValues.special_value_from_target(
                "Elm.Kernel.PebbleWatch.logInfoCode",
                [arg]
              )

@@ -18,14 +18,14 @@ defmodule Elmc.Backend.CCodegen.GeneratedSource do
   alias Elmc.Backend.CCodegen.LayoutSolver
   alias Elmc.Backend.CCodegen.SchemaRegistry
   alias Elmc.Backend.CCodegen.MacroReachability
-  alias Elmc.Backend.CCodegen.Tuple2CaseTable
+  alias Elmc.Backend.Plan.Fusion.Matchers.Tuple2CaseTable
   alias Elmc.Backend.CCodegen.Native.DefRegistry
   alias Elmc.Backend.CCodegen.Native.FunctionCall, as: NativeFunctionCall
   alias Elmc.Backend.CCodegen.Types
   alias Elmc.Backend.CCodegen.RcRequired
   alias Elmc.Backend.CCodegen.RecordCompile
   alias Elmc.Backend.CCodegen.RecordFieldMacros
-  alias Elmc.Backend.CCodegen.SpecialValues
+  alias Elmc.Backend.Plan.Lower.SpecialValues
   alias Elmc.Backend.CCodegen.UnionMacros
   alias Elmc.Backend.CCodegen.Util
   alias Elmc.Backend.CCodegen.ValueSlots

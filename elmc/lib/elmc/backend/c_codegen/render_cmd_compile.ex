@@ -8,7 +8,7 @@ defmodule Elmc.Backend.CCodegen.RenderCmdCompile do
   alias Elmc.Backend.CCodegen.Native.PolarPoint
   alias Elmc.Backend.CCodegen.Native.Int, as: NativeInt
   alias Elmc.Backend.CCodegen.RcRuntimeEmit
-  alias Elmc.Backend.CCodegen.SpecialValues.Helpers
+  alias Elmc.Backend.Plan.Lower.SpecialValues.Helpers
   alias Elmc.Backend.CCodegen.Types
 
   @max_native_params 6

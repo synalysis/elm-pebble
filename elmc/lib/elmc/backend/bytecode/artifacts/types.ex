@@ -34,7 +34,7 @@ defmodule Elmc.Backend.Bytecode.Artifacts.Types do
         }
 
   @type plan_toolchain :: %{
-          optional(:mode) => :off | :shadow | :primary | String.t(),
+          optional(:mode) => :shadow | :primary | String.t(),
           optional(:strict) => boolean(),
           optional(String.t()) => coverage_stat(),
           optional(atom()) => coverage_stat()

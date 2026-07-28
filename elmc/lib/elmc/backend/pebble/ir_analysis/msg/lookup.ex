@@ -27,20 +27,4 @@ defmodule Elmc.Backend.Pebble.IRAnalysis.Msg.Lookup do
       _ -> nil
     end)
   end
-
-  @spec pick_tag(
-          Types.msg_constructor_list(),
-          [Types.msg_constructor_name()],
-          Types.pick_tag_opts()
-        ) :: Types.msg_tag()
-  def pick_tag(msg_constructors, names, opts \\ []) do
-    fallback = Keyword.get(opts, :fallback, -1)
-
-    Enum.find_value(names, fallback, fn name ->
-      Enum.find_value(msg_constructors, fn
-        {^name, tag} -> tag
-        _ -> nil
-      end)
-    end)
-  end
 end

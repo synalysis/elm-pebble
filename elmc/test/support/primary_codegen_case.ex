@@ -2,8 +2,8 @@ defmodule Elmc.TestSupport.PrimaryCodegenCase do
   @moduledoc """
   Tests that compile through the production plan-primary pipeline.
 
-  Uses a process-local plan mode (not Application env) so async tests that
-  rely on `test_helper`'s `:off` default are not poisoned.
+  Uses a process-local plan mode (not Application env) so async tests are not
+  affected by other suites toggling `:elmc_plan_ir_mode`.
   """
 
   use ExUnit.CaseTemplate

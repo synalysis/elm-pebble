@@ -3,6 +3,7 @@ defmodule Elmc.Backend.CCodegen.Native.String do
   alias Elmc.Backend.CCodegen.Types, as: Types
 
 
+  alias Elmc.Backend.CCodegen.DirectRender.Emit.BoxedOperand
   alias Elmc.Backend.CCodegen.CaseCompile
   alias Elmc.Backend.CCodegen.EnvBindings
   alias Elmc.Backend.CCodegen.Host
@@ -346,7 +347,7 @@ defmodule Elmc.Backend.CCodegen.Native.String do
         {:cont, {:ok, code_acc <> value_code, args_acc ++ [{:int, value_ref}], cleanup_acc, c2}}
 
       {:boxed_int, expr}, {:ok, code_acc, args_acc, cleanup_acc, c} ->
-        {value_code, value_ref, c2} = Host.compile_expr(expr, env, c)
+        {value_code, value_ref, c2} = BoxedOperand.compile(expr, env, c)
 
         {:cont,
          {:ok, code_acc <> value_code, args_acc ++ [{:boxed_int, value_ref}], cleanup_acc ++ [value_ref],
@@ -357,7 +358,7 @@ defmodule Elmc.Backend.CCodegen.Native.String do
         {:cont, {:ok, code_acc <> segment_code, args_acc ++ [{:cstr, cstr_ref}], cleanup_acc ++ segment_cleanup, c2}}
 
       {:boxed_cstr, expr}, {:ok, code_acc, args_acc, cleanup_acc, c} ->
-        {boxed_code, boxed_ref, c2} = Host.compile_expr(expr, env, c)
+        {boxed_code, boxed_ref, c2} = BoxedOperand.compile(expr, env, c)
         next = c2 + 1
         cstr_ref = "snprintf_cstr_#{next}"
 
@@ -568,7 +569,7 @@ defmodule Elmc.Backend.CCodegen.Native.String do
   @spec compile_fallback(Types.ir_expr(), Types.compile_env(), Types.compile_counter()) ::
           Types.native_string_compile_result()
   defp compile_fallback(expr, env, counter) do
-    {code, var, counter} = Host.compile_expr(expr, env, counter)
+    {code, var, counter} = BoxedOperand.compile(expr, env, counter)
     next = counter + 1
     out = "native_string_#{next}"
     {value_lines, value_cleanup} = value_code(expr, env, var, out)
@@ -579,7 +580,7 @@ defmodule Elmc.Backend.CCodegen.Native.String do
       #{value_lines}
       """,
       out,
-      [var | value_cleanup],
+      Enum.uniq(value_cleanup ++ [var]),
       next
     }
   end
@@ -595,7 +596,7 @@ defmodule Elmc.Backend.CCodegen.Native.String do
           """
             const char *#{out} = (const char *)#{value_ref}->payload;
           """,
-          []
+          [var]
         }
 
       TypedReturn.string_expr?(expr, env) ->

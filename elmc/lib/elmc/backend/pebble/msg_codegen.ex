@@ -15,9 +15,4 @@ defmodule Elmc.Backend.Pebble.MsgCodegen do
   @spec fragments(Types.msg_constructor_list(), Types.msg_constructor_arities()) ::
           Types.msg_fragments()
   defdelegate fragments(msg_constructors, msg_constructor_arities), to: Fragments, as: :build
-
-  @spec storage_string_callback_names() :: [Types.msg_constructor_name()]
-  def storage_string_callback_names do
-    ["StorageStringLoaded", "GotStorageString", "GotString"]
-  end
 end

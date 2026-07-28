@@ -1,6 +1,8 @@
 defmodule Elmc.AllTemplatesCodegenTest do
   use ExUnit.Case
 
+  @moduletag :slow
+
   @repo_root Path.expand("../..", __DIR__)
 
   @template_dirs Path.wildcard(Path.join(@repo_root, "ide/priv/project_templates/*"))

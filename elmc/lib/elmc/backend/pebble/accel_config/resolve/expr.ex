@@ -9,14 +9,26 @@ defmodule Elmc.Backend.Pebble.AccelConfig.Resolve.Expr do
   @spec resolve(CCodegenTypes.ir_expr(), Types.record_literal_bindings()) ::
           CCodegenTypes.ir_expr()
   def resolve(%{op: :var, name: name}, bindings) do
-    Map.get(bindings, name, %{op: :unknown})
+    Map.get(bindings, name) ||
+      Elmc.Backend.CCodegen.UnsupportedSurface.unsupported_expr(%{
+        kind: :expr,
+        target: name,
+        detail: "accel config binding miss"
+      })
   end
 
   def resolve(%{op: :qualified_var, target: target}, bindings) do
-    target
-    |> String.split(".")
-    |> List.last()
-    |> then(&Map.get(bindings, &1, %{op: :unknown}))
+    short =
+      target
+      |> String.split(".")
+      |> List.last()
+
+    Map.get(bindings, short) ||
+      Elmc.Backend.CCodegen.UnsupportedSurface.unsupported_expr(%{
+        kind: :expr,
+        target: target,
+        detail: "accel config binding miss"
+      })
   end
 
   def resolve(expr, _bindings), do: expr

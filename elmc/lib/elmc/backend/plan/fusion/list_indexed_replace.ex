@@ -3,8 +3,9 @@ defmodule Elmc.Backend.Plan.Fusion.ListIndexedReplace do
   alias Elmc.Backend.Plan.Types, as: Types
 
 
-  alias Elmc.Backend.CCodegen.{FusionSupport, Host, Util}
-  alias Elmc.Backend.Plan.Fusion.{Helper, Registry, Tuple2CaseTable}
+  alias Elmc.Backend.CCodegen.{Host, Util}
+  alias Elmc.Backend.Plan.Fusion.Matchers.FusionSupport
+  alias Elmc.Backend.Plan.Fusion.{Helper, Registry}
   alias Elmc.Backend.Plan.Types
 
   @indexed_map_targets ~w(List.indexedMap Elm.Kernel.List.indexedMap)
@@ -30,8 +31,7 @@ defmodule Elmc.Backend.Plan.Fusion.ListIndexedReplace do
           Registry.register_rc_native_arg_kinds(module_name, name, kinds)
 
           plan =
-            module_name
-            |> Tuple2CaseTable.build_fusion_plan(name, decl, c_body)
+            Helper.build_fusion_plan(module_name, name, decl, c_body)
             |> Helper.maybe_put_fusion_arg_kinds(kinds)
             |> Helper.attach_bytecode_fusion(:list_indexed_replace)
 
@@ -169,12 +169,8 @@ defmodule Elmc.Backend.Plan.Fusion.ListIndexedReplace do
     static RC #{c_prefix}_native(ElmcValue **out, const elmc_int_t #{index_arg}, const elmc_int_t #{value_arg}, ElmcValue * const #{list_arg}) {
       RC Rc = RC_SUCCESS;
       CATCH_BEGIN
-        ElmcValue *result = elmc_list_replace_nth_int(#{list_arg}, #{index_arg}, #{value_arg});
-        if (!result) {
-          Rc = RC_ERR_OUT_OF_MEMORY;
-          CHECK_RC(Rc);
-        }
-        *out = result;
+        Rc = elmc_list_replace_nth_int(out, #{list_arg}, #{index_arg}, #{value_arg});
+        CHECK_RC(Rc);
       CATCH_END
       return Rc;
     }

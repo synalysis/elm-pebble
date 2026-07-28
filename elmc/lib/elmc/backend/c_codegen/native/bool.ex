@@ -3,6 +3,7 @@ defmodule Elmc.Backend.CCodegen.Native.Bool do
   alias Elmc.Backend.CCodegen.Types, as: Types
 
 
+  alias Elmc.Backend.CCodegen.DirectRender.Emit.BoxedOperand
   alias Elmc.Backend.CCodegen.DirectRender.RecordViewPeel
   alias Elmc.Backend.CCodegen.EnvBindings
   alias Elmc.Backend.CCodegen.CSource
@@ -120,7 +121,7 @@ defmodule Elmc.Backend.CCodegen.Native.Bool do
        when is_map(arg_expr) do
     case Host.inline_record_field_expr(arg_expr, field, env) do
       nil ->
-        {arg_code, arg_var, counter} = Host.compile_expr(arg_expr, env, counter)
+        {arg_code, arg_var, counter} = BoxedOperand.compile(arg_expr, env, counter)
         next = counter + 1
         out = "native_bool_field_#{next}"
         getter = RecordFields.get_bool_expr(arg_var, field, Host.record_shape(arg_expr, env))
@@ -178,7 +179,7 @@ defmodule Elmc.Backend.CCodegen.Native.Bool do
   defp compile_expr_uncached(%{op: :runtime_call, function: "elmc_set_member", args: [value, set]}, env, counter) do
     if NativeInt.expr?(value, env) do
       {value_code, value_ref, counter} = NativeInt.compile_expr(value, env, counter)
-      {set_code, set_var, counter} = Host.compile_expr(set, env, counter)
+      {set_code, set_var, counter} = BoxedOperand.compile(set, env, counter)
       next = counter + 1
       out = "native_set_member_#{next}"
 
@@ -298,15 +299,16 @@ defmodule Elmc.Backend.CCodegen.Native.Bool do
          env,
          counter
        ) do
-    case {union_constructor_case?(expr), PlatformStatic.platform_static_branch(expr)} do
-      {true, {macro, polarity}} ->
+    case PlatformStatic.platform_static_branch(expr) do
+      {macro, polarity} ->
         PlatformStatic.compile_native_bool(macro, polarity, counter)
 
-      {true, nil} ->
-        compile_union_constructor_case(subject, branches, env, counter)
-
-      {false, _} ->
-        compile_fallback(expr, env, counter)
+      nil ->
+        if union_constructor_case?(expr) do
+          compile_union_constructor_case(subject, branches, env, counter)
+        else
+          compile_fallback(expr, env, counter)
+        end
     end
   end
 
@@ -360,8 +362,8 @@ defmodule Elmc.Backend.CCodegen.Native.Bool do
   defp compile_compare(left, right, operator, env, counter) do
     cond do
       list_int_compare_safe?(operator, left, right, env) ->
-        {left_code, left_var, counter} = Host.compile_expr(left, env, counter)
-        {right_code, right_var, counter} = Host.compile_expr(right, env, counter)
+        {left_code, left_var, counter} = BoxedOperand.compile(left, env, counter)
+        {right_code, right_var, counter} = BoxedOperand.compile(right, env, counter)
         next = counter + 1
         out = "native_cmp_#{next}"
         negate = if operator == "__neq__", do: "!", else: ""
@@ -546,7 +548,7 @@ defmodule Elmc.Backend.CCodegen.Native.Bool do
   end
 
   defp compile_boxed_int_literal_compare(left, %{op: :int_literal, value: right_lit}, operator, env, counter) do
-    {left_code, left_var, counter} = Host.compile_expr(left, env, counter)
+    {left_code, left_var, counter} = BoxedOperand.compile(left, env, counter)
     next = counter + 1
     out = "native_cmp_#{next}"
 
@@ -662,7 +664,8 @@ defmodule Elmc.Backend.CCodegen.Native.Bool do
   defp expr?(%{op: :runtime_call, function: "elmc_basics_not", args: [value]}, env, :normalized),
     do: expr?(value, env)
 
-  defp expr?(%{op: :case} = expr, _env, :normalized), do: union_constructor_case?(expr)
+  defp expr?(%{op: :case} = expr, _env, :normalized),
+    do: union_constructor_case?(expr) or PlatformStatic.platform_static?(expr)
 
   defp expr?(expr, env, :normalized),
     do: structural_expr?(expr) or TypedReturn.bool_expr?(expr, env)
@@ -742,7 +745,7 @@ defmodule Elmc.Backend.CCodegen.Native.Bool do
         true -> left
       end
 
-    {left_code, left_var, counter} = Host.compile_expr(maybe_expr, env, counter)
+    {left_code, left_var, counter} = BoxedOperand.compile(maybe_expr, env, counter)
     next = counter + 1
     out = "native_maybe_#{next}"
 
@@ -973,7 +976,7 @@ defmodule Elmc.Backend.CCodegen.Native.Bool do
         {operand_env, counter}
       end
 
-    {code, var, counter} = Host.compile_expr(expr, compile_env, counter)
+    {code, var, counter} = BoxedOperand.compile(expr, compile_env, counter)
     next = counter + 1
     out = "native_b_#{next}"
 
@@ -993,16 +996,11 @@ defmodule Elmc.Backend.CCodegen.Native.Bool do
   end
 
   @spec value_expr(Types.ir_expr(), Types.compile_env(), String.t()) :: String.t()
-  defp value_expr(expr, env, var) do
-    cond do
-      native_bool_c_ref?(var) ->
-        var
-
-      TypedReturn.bool_expr?(expr, env) ->
-        "(bool)elmc_as_bool(#{RcRuntimeEmit.value_expr(var)})"
-
-      true ->
-        "elmc_as_int(#{RcRuntimeEmit.value_expr(var)}) != 0"
+  defp value_expr(_expr, _env, var) do
+    if native_bool_c_ref?(var) do
+      var
+    else
+      "(bool)elmc_as_bool(#{RcRuntimeEmit.value_expr(var)})"
     end
   end
 
@@ -1013,11 +1011,11 @@ defmodule Elmc.Backend.CCodegen.Native.Bool do
   defp union_constructor_case?(%{op: :case, branches: branches}) do
     case branches do
       [
-        %{pattern: %{kind: :constructor, tag: tag}, expr: %{op: :int_literal, value: 1}},
-        %{pattern: %{kind: :wildcard}, expr: %{op: :int_literal, value: 0}}
+        %{pattern: %{kind: :constructor, tag: tag}, expr: then_expr},
+        %{pattern: %{kind: :wildcard}, expr: else_expr}
       ]
       when is_integer(tag) ->
-        true
+        bool_01_literal?(then_expr) and bool_01_literal?(else_expr)
 
       _ ->
         false
@@ -1025,6 +1023,10 @@ defmodule Elmc.Backend.CCodegen.Native.Bool do
   end
 
   defp union_constructor_case?(_expr), do: false
+
+  defp bool_01_literal?(%{op: :bool_literal, value: value}) when is_boolean(value), do: true
+  defp bool_01_literal?(%{op: :int_literal, value: value}) when value in [0, 1], do: true
+  defp bool_01_literal?(_), do: false
 
   defp compile_platform_static_and_if(macro, polarity, inner_then, then_expr, else_expr, env, counter) do
     then_env = RecordCompile.fresh_subexpr_cache(env)
@@ -1097,7 +1099,7 @@ defmodule Elmc.Backend.CCodegen.Native.Bool do
         {code, out, next}
 
       nil ->
-        {subject_code, subject_var, counter} = Host.compile_expr(subject, env, counter)
+        {subject_code, subject_var, counter} = BoxedOperand.compile(subject, env, counter)
         next = counter + 1
         out = "native_b_#{next}"
         condition = Patterns.pattern_condition(subject_var, pattern)
@@ -1144,7 +1146,7 @@ defmodule Elmc.Backend.CCodegen.Native.Bool do
         |> Map.put(:__branch_out__, slot)
         |> Map.put(:__declared_outs__, MapSet.new([slot]))
 
-      {code, ref, final_counter} = Host.compile_expr(expr, branch_env, next)
+      {code, ref, final_counter} = BoxedOperand.compile(expr, branch_env, next)
       ref = ValueSlots.resolve_result_slot(ref)
 
       {code, var, final_counter} =
@@ -1163,7 +1165,7 @@ defmodule Elmc.Backend.CCodegen.Native.Bool do
 
       {code, var, final_counter}
     else
-      Host.compile_expr(expr, operand_env, counter)
+      BoxedOperand.compile(expr, operand_env, counter)
     end
   end
 

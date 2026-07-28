@@ -244,10 +244,7 @@ defmodule Elmc.Test.RcTrackHarness do
     """
     static int list_int_length(ElmcValue *list) {
       if (list && list->tag == ELMC_TAG_INT_LIST) {
-        ElmcValue *len = elmc_list_length(list);
-        int value = len ? (int)elmc_as_int(len) : 0;
-        if (len) elmc_release(len);
-        return value;
+        return (int)elmc_list_length_native(list);
       }
       int len = 0;
       ElmcValue *cursor = list;

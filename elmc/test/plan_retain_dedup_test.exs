@@ -271,14 +271,104 @@ defmodule Elmc.PlanRetainDedupTest do
     optimized = Optimize.run(plan)
     [block] = optimized.blocks
 
+    # Consuming retain coalesces into the producer dest — no move+null juggling.
+    assert [%{op: :tuple_proj, dest: 2, effects: %{produces: {:owned, 2}}}] = block.instrs
+  end
+
+  test "coalesce folds new_int through retain chain into record field regs" do
+    plan = %FunctionPlan{
+      module: "Main",
+      name: "point_record",
+      params: [],
+      return_type: nil,
+      fallible: true,
+      rc_required: true,
+      reg_count: 7,
+      entry_block: 0,
+      blocks: [
+        %Block{
+          id: 0,
+          instrs: [
+            %{
+              id: 0,
+              op: :call_runtime,
+              dest: 0,
+              args: %{builtin: :new_int, literal: 1},
+              effects: %{produces: {:owned, 0}, consumes: [], borrows: [], fallible: true},
+              block_id: 0,
+              span: nil
+            },
+            %{
+              id: 1,
+              op: :call_runtime,
+              dest: 1,
+              args: %{builtin: :retain, args: [0]},
+              effects: %{produces: {:owned, 1}, consumes: [], borrows: [0], fallible: false},
+              block_id: 0,
+              span: nil
+            },
+            %{
+              id: 2,
+              op: :call_runtime,
+              dest: 2,
+              args: %{builtin: :new_int, literal: 2},
+              effects: %{produces: {:owned, 2}, consumes: [], borrows: [], fallible: true},
+              block_id: 0,
+              span: nil
+            },
+            %{
+              id: 3,
+              op: :call_runtime,
+              dest: 3,
+              args: %{builtin: :retain, args: [2]},
+              effects: %{produces: {:owned, 3}, consumes: [], borrows: [2], fallible: false},
+              block_id: 0,
+              span: nil
+            },
+            %{
+              id: 4,
+              op: :call_runtime,
+              dest: 5,
+              args: %{builtin: :retain, args: [1]},
+              effects: %{produces: {:owned, 5}, consumes: [], borrows: [1], fallible: false},
+              block_id: 0,
+              span: nil
+            },
+            %{
+              id: 5,
+              op: :call_runtime,
+              dest: 6,
+              args: %{builtin: :retain, args: [3]},
+              effects: %{produces: {:owned, 6}, consumes: [], borrows: [3], fallible: false},
+              block_id: 0,
+              span: nil
+            },
+            %{
+              id: 6,
+              op: :call_runtime,
+              dest: 4,
+              args: %{builtin: :record_new_take, args: [5, 6]},
+              effects: %{produces: {:owned, 4}, consumes: [5, 6], borrows: [], fallible: true},
+              block_id: 0,
+              span: nil
+            }
+          ],
+          terminator: {:ret, 4}
+        }
+      ],
+      lambdas: [],
+      lambda_arg_count: nil
+    }
+
+    optimized = Optimize.run(plan)
+    [block] = optimized.blocks
+    retains = Enum.filter(block.instrs, &match?(%{args: %{builtin: :retain}}, &1))
+    assert retains == []
+
     assert [
-             %{op: :tuple_proj, dest: 1},
-             %{
-               op: :call_runtime,
-               dest: 2,
-               args: %{builtin: :retain, args: [1]},
-               effects: %{consumes: [1], borrows: []}
-             }
+             %{op: :call_runtime, dest: 5, args: %{builtin: :new_int, literal: 1}},
+             %{op: :call_runtime, dest: 6, args: %{builtin: :new_int, literal: 2}},
+             %{op: :call_runtime, dest: 4, args: %{builtin: :record_new_take, args: [5, 6]}}
            ] = block.instrs
   end
 

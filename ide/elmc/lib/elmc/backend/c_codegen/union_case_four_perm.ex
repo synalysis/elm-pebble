@@ -525,7 +525,7 @@ defmodule Elmc.Backend.CCodegen.UnionCaseFourPerm do
         #{RowMajorLayout.emit_apply_row_major_perm(forward_inverse_mode(mode), width, rows, "src", "dst", "perm_case", count)}
         Rc = elmc_list_from_int_array(out, dst, #{count});
         CHECK_RC(Rc);
-      CATCH_END;
+      CATCH_END
       return Rc;
     }
     """

@@ -347,7 +347,7 @@ defmodule Elmc.PlanListSliceLowerTest do
     subs_body = CCodegenExtract.fn_body(c, "elmc_fn_Main_subscriptions")
 
     assert subs_body =~ "elmc_release_array_lifo(owned"
-    refute subs_body =~ ~r/CATCH_END;\s*\n\s*elmc_release\(owned\[/
+    refute subs_body =~ ~r/CATCH_END\s*\n\s*elmc_release\(owned\[/
     refute subs_body =~ ~r/elmc_new_int\(&owned\[\d+\], ELMC_BUTTON_/
     assert subs_body =~ "elmc_sub3(&owned"
     assert subs_body =~ "ELMC_BUTTON_BACK"

@@ -78,11 +78,7 @@ defmodule Ide.Resources.ResourceStore.SpeakerSamples do
       end
 
     path = Path.join(workspace, @generated_module_rel_path)
-
-    with :ok <- File.mkdir_p(Path.dirname(path)),
-         :ok <- File.write(path, SpeakerGeneratedModule.source(entries)) do
-      :ok
-    end
+    Manifest.write_file_if_changed(path, SpeakerGeneratedModule.source(entries))
   end
 
   @spec read_only_generated_module?(String.t(), String.t()) :: boolean()

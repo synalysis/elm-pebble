@@ -3,8 +3,9 @@ defmodule Elmc.Backend.CCodegen.Subscriptions do
   alias Elmc.Backend.CCodegen.Types, as: Types
 
 
-  alias Elmc.Backend.CCodegen.SpecialValues
+  alias Elmc.Backend.Plan.Lower.SpecialValues
   alias Elmc.Backend.CCodegen.Types
+  alias Elmc.Backend.CCodegen.UnsupportedSurface
 
   @type subscription_slot_entry :: {String.t(), non_neg_integer()}
   @type subscription_slot_map :: %{String.t() => subscription_slot_entry()}
@@ -46,7 +47,16 @@ defmodule Elmc.Backend.CCodegen.Subscriptions do
   def subscription_sub_expr(target, args \\ []) when is_binary(target) do
     case subscription_mask_c_expr(target, args) do
       nil ->
-        nil
+        if frame_subscription_target?(target) do
+          UnsupportedSurface.unsupported_expr(%{
+            kind: :sub,
+            target: target,
+            arity: length(args),
+            detail: "interval must be int literal"
+          })
+        else
+          nil
+        end
 
       mask_c_expr ->
         params = subscription_sub_params(target, args)
@@ -74,12 +84,31 @@ defmodule Elmc.Backend.CCodegen.Subscriptions do
     end
   end
 
-  def subscription_batch_expr(_), do: nil
+  def subscription_batch_expr(_args) do
+    UnsupportedSurface.unsupported_expr(%{
+      kind: :sub,
+      target: "Pebble.Events.batch",
+      arity: 1,
+      detail: "batch list must be literal"
+    })
+  end
+
+  @frame_subscription_targets ~w(
+    Pebble.Frame.every
+    Pebble.Frame.atFps
+    Elm.Kernel.PebbleWatch.onFrame
+  )
+
+  @spec frame_subscription_target?(String.t()) :: boolean()
+  defp frame_subscription_target?(target) when is_binary(target) do
+    SpecialValues.normalize_special_target(target) in @frame_subscription_targets
+  end
 
   @spec batch_list_item_expr(Types.ir_expr()) :: [Types.ir_expr()]
   defp batch_list_item_expr(item) do
     case subscription_item_sub_expr(item) do
       :none -> []
+      %{op: :unsupported} = unsupported -> [unsupported]
       sub when is_map(sub) -> [sub]
       nil -> [item]
     end

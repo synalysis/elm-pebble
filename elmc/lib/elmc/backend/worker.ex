@@ -568,7 +568,7 @@ defmodule Elmc.Backend.Worker do
       RC rc = RC_SUCCESS;
       CATCH_BEGIN
         *out = elmc_list_cons_take(head, tail);
-      CATCH_END;
+      CATCH_END
       return rc;
     }
 
@@ -621,7 +621,7 @@ defmodule Elmc.Backend.Worker do
             queue = NULL;
           }
         }
-      CATCH_END;
+      CATCH_END
       elmc_release(cmd);
       elmc_release(queue);
       elmc_release(cell);
@@ -696,7 +696,7 @@ defmodule Elmc.Backend.Worker do
           *out = left;
           left = NULL;
         }
-      CATCH_END;
+      CATCH_END
       elmc_release(left);
       elmc_release(right);
       elmc_release(tail_cell);
@@ -774,7 +774,7 @@ defmodule Elmc.Backend.Worker do
           entry = NULL;
           CHECK_RC(rc);
         }
-      CATCH_END;
+      CATCH_END
       elmc_release(flat);
       elmc_release(entry);
       return rc;
@@ -823,7 +823,7 @@ defmodule Elmc.Backend.Worker do
             flat = NULL;
           }
         }
-      CATCH_END;
+      CATCH_END
       elmc_release(cmd);
       elmc_release(materialized);
       elmc_release(flat);

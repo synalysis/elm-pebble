@@ -2,16 +2,15 @@ defmodule Elmc.Backend.Plan.Fusion.Registry do
   @moduledoc """
   Registry for generic whole-function C fusion emitters.
 
-  IR matchers live under `Elmc.Backend.CCodegen.*`; this module owns provider
+  IR matchers live under `Elmc.Backend.Plan.Fusion.Matchers.*`; this module owns provider
   ordering and runtime metadata caches for plan-primary fusion.
   """
-
 
   alias ElmEx.IR.PipeChain
 
   alias Elmc.Backend.CCodegen.Types, as: CCodegenTypes
 
-  alias Elmc.Backend.CCodegen.{
+  alias Elmc.Backend.Plan.Fusion.Matchers.{
     FilterMapRowDrop,
     FoldlOffsetPatch,
     FusionSupport,

@@ -3,6 +3,9 @@ defmodule Elmc.TestSupport.TemplateCompile do
 
   @repo_root Path.expand("../../..", __DIR__)
 
+  alias Elmc.CLI.Types, as: ElmcCliTypes
+  alias Elmc.TestSupport.CompileCache
+
   defp shared_elm_sources do
     bundled = Path.join(@repo_root, "ide/priv/bundled_elm/shared-elm")
     checkout = Path.join(@repo_root, "shared/elm")
@@ -14,13 +17,33 @@ defmodule Elmc.TestSupport.TemplateCompile do
     end
   end
 
-  alias Elmc.CLI.Types, as: ElmcCliTypes
-
   @spec compile_watch_template(String.t(), keyword()) ::
           {:ok, ElmcCliTypes.compile_result()} | {:error, ElmcCliTypes.compile_error()}
   def compile_watch_template(template_name, opts \\ []) when is_binary(template_name) do
     template_src = Path.join(@repo_root, "ide/priv/project_templates/#{template_name}")
-    tmp = Path.join(System.tmp_dir!(), "elmc-template-#{template_name}-#{System.unique_integer([:positive])}")
+    out_dir = Keyword.get_lazy(opts, :out_dir, fn ->
+      Path.join(System.tmp_dir!(), "elmc-template-out-#{template_name}-#{System.unique_integer([:positive])}")
+    end)
+
+    compile_opts = build_compile_opts(opts, out_dir)
+    cache_key = cache_key(template_name, template_src, compile_opts)
+
+    case CompileCache.fetch(cache_key) do
+      {:hit, result, out_cache} ->
+        CompileCache.materialize_out(out_cache, out_dir)
+        {:ok, result}
+
+      :miss ->
+        do_compile(template_name, template_src, opts, compile_opts, cache_key)
+    end
+  end
+
+  defp do_compile(template_name, template_src, opts, compile_opts, cache_key) do
+    tmp =
+      Path.join(
+        System.tmp_dir!(),
+        "elmc-template-#{template_name}-#{System.unique_integer([:positive])}"
+      )
 
     try do
       File.mkdir_p!(Path.join(tmp, "src"))
@@ -40,8 +63,8 @@ defmodule Elmc.TestSupport.TemplateCompile do
              "game_elmtris",
              "game_tiny_bird"
            ],
-          do: Map.put(deps, "elm/random", "1.0.0"),
-          else: deps
+           do: Map.put(deps, "elm/random", "1.0.0"),
+           else: deps
 
       sources =
         [
@@ -61,22 +84,47 @@ defmodule Elmc.TestSupport.TemplateCompile do
 
       File.write!(Path.join(tmp, "elm.json"), Jason.encode!(elm_json, pretty: true))
 
-      out_dir = Keyword.get(opts, :out_dir, Path.join(tmp, ".elmc-out"))
+      case Elmc.compile(tmp, compile_opts) do
+        {:ok, result} = ok ->
+          CompileCache.store(cache_key, result, compile_opts.out_dir)
+          ok
 
-      compile_opts =
-        %{
-          out_dir: out_dir,
-          entry_module: "Main",
-          strip_dead_code: Keyword.get(opts, :strip_dead_code, true),
-          plan_ir_mode: Keyword.get(opts, :plan_ir_mode, :primary),
-          pebble_int32: Keyword.get(opts, :pebble_int32, false)
-        }
-        |> Map.merge(Map.new(Keyword.take(opts, [:plan_ir_strict, :direct_render_only, :prune_runtime, :codegen_profile, :emit_bytecode])))
-
-      Elmc.compile(tmp, compile_opts)
+        other ->
+          other
+      end
     after
       unless Keyword.get(opts, :keep_tmp, false), do: File.rm_rf(tmp)
     end
+  end
+
+  defp build_compile_opts(opts, out_dir) do
+    %{
+      out_dir: out_dir,
+      entry_module: "Main",
+      strip_dead_code: Keyword.get(opts, :strip_dead_code, true),
+      plan_ir_mode: Keyword.get(opts, :plan_ir_mode, :primary),
+      pebble_int32: Keyword.get(opts, :pebble_int32, false)
+    }
+    |> Map.merge(
+      Map.new(Keyword.take(opts, [:plan_ir_strict, :direct_render_only, :prune_runtime, :codegen_profile, :emit_bytecode]))
+    )
+  end
+
+  defp cache_key(template_name, template_src, compile_opts) do
+    opts_fingerprint = Map.drop(compile_opts, [:out_dir])
+
+    fingerprint = {
+      :template_compile_v1,
+      template_name,
+      opts_fingerprint,
+      CompileCache.dir_stamp(Path.join(template_src, "src")),
+      CompileCache.file_hash(Path.join(template_src, "protocol/src/Companion/Types.elm")),
+      CompileCache.dir_stamp(Path.join(@repo_root, "ide/priv/bundled_elm/pebble-watch-src")),
+      CompileCache.dir_stamp(shared_elm_sources()),
+      CompileCache.compiler_identity()
+    }
+
+    CompileCache.key(fingerprint)
   end
 
   defp maybe_add_protocol_sources(sources, template_src, tmp) do
@@ -88,6 +136,20 @@ defmodule Elmc.TestSupport.TemplateCompile do
       File.cp_r!(protocol_src, Path.join(tmp, "protocol/src"))
       generated_types = Path.join(tmp, "protocol/src/Companion/Types.elm")
       internal_path = Path.join(tmp, "protocol/src/Companion/Internal.elm")
+      ensure_companion_internal!(generated_types, internal_path)
+      ["protocol/src" | sources]
+    else
+      sources
+    end
+  end
+
+  defp ensure_companion_internal!(types_path, internal_path) do
+    types_hash = CompileCache.file_hash(types_path) || raise("missing Companion/Types.elm")
+    cache_path = Path.join([CompileCache.cache_root(), "protocol", "#{types_hash}.elm"])
+
+    if File.regular?(cache_path) do
+      File.cp!(cache_path, internal_path)
+    else
       ide_dir = Path.join(@repo_root, "ide")
 
       with :ok <- ensure_ide_deps(ide_dir),
@@ -98,11 +160,13 @@ defmodule Elmc.TestSupport.TemplateCompile do
                  "run",
                  "--no-start",
                  "-e",
-                 "case Ide.CompanionProtocolGenerator.generate_elm_internal(\"#{generated_types}\", \"#{internal_path}\") do :ok -> :ok; err -> IO.inspect(err); System.halt(1) end"
+                 "case Ide.CompanionProtocolGenerator.generate_elm_internal(\"#{types_path}\", \"#{internal_path}\") do :ok -> :ok; err -> IO.inspect(err); System.halt(1) end"
                ],
                cd: ide_dir,
                stderr_to_stdout: true
              ) do
+        File.mkdir_p!(Path.dirname(cache_path))
+        File.cp!(internal_path, cache_path)
         :ok
       else
         {:error, reason} ->
@@ -111,10 +175,6 @@ defmodule Elmc.TestSupport.TemplateCompile do
         {output, _} ->
           raise "failed to generate Companion/Internal.elm via ide mix run:\n#{output}"
       end
-
-      ["protocol/src" | sources]
-    else
-      sources
     end
   end
 

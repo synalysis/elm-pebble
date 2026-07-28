@@ -158,7 +158,7 @@ defmodule Elmc.Backend.CCodegen.ListMapStaticIndexAt do
           *out = owned[0];
           owned[0] = NULL;
         }
-      CATCH_END;
+      CATCH_END
       elmc_release_array_lifo(owned, DIM(owned));
       return Rc;
     }

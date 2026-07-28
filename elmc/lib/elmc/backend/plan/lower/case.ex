@@ -95,6 +95,9 @@ defmodule Elmc.Backend.Plan.Lower.Case do
       ListSwitch.triple_branches?(branches) ->
         ListSwitch.compile_triple(subject, branches, ctx, b)
 
+      ListSwitch.deep_cons_wildcard_branches?(branches) ->
+        ListSwitch.compile_deep_cons_wildcard(subject, branches, ctx, b)
+
       ListSwitch.double_cons_wildcard_branches?(branches) ->
         ListSwitch.compile_double_cons_wildcard(subject, branches, ctx, b)
 

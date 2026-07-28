@@ -42,12 +42,19 @@ defmodule Elmc.MixProject do
 
   defp aliases do
     [
+      "test.slow": ["test --only slow"],
+      "test.plan_gates": [
+        "test test/plan_template_strict_gate_test.exs test/plan_reachable_coverage_test.exs test/plan_templates_primary_audit_test.exs test/plan_fusion_manifest_audit_test.exs test/bytecode_opcode_audit_test.exs --include slow"
+      ],
       "test.rc": ["test --only rc_track"],
       "test.rc_2048": ["test --only rc_track_2048"],
       "test.rc_gate": ["test --only rc_track_gate"],
       "test.rc_stress": ["test --only rc_track_stress"],
-      "test.plan_rc": ["test --only plan_rc_track"],
-      "test.plan_rc_exec": ["test --include plan_rc_track_exec --only plan_rc_track"],
+      "test.watchface_rc": [
+        "test test/watchface_rc_track_smoke_test.exs --include slow --only watchface_rc"
+      ],
+      "test.plan_rc": ["test --include slow --only plan_rc_track"],
+      "test.plan_rc_exec": ["test --include slow --include plan_rc_track_exec --only plan_rc_track"],
       "test.corpus": ["test --only corpus"],
       "test.corpus_smoke": ["test --only corpus_smoke"],
       "test.corpus_index": ["test --only corpus_index"],
@@ -66,10 +73,13 @@ defmodule Elmc.MixProject do
   def cli do
     [
       preferred_envs: [
+        "test.slow": :test,
+        "test.plan_gates": :test,
         "test.rc": :test,
         "test.rc_2048": :test,
         "test.rc_gate": :test,
         "test.rc_stress": :test,
+        "test.watchface_rc": :test,
         "test.plan_rc": :test,
         "test.plan_rc_exec": :test,
         "test.corpus": :test,

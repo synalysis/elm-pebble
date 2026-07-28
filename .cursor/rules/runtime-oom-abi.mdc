@@ -1,0 +1,51 @@
+---
+description: Runtime allocating APIs must propagate OOM via RC, never NULL or void-casts
+globs: elmc/lib/elmc/runtime/**/*.ex
+alwaysApply: false
+---
+
+# Runtime OOM ABI (elmc)
+
+Generated C in `elmc/lib/elmc/runtime/` must not hide allocation failure.
+
+## Invariant
+
+| Kind | ABI |
+|------|-----|
+| Allocates (`elmc_new_int`, `elmc_maybe_just`, `elmc_list_cons`, …) | `RC name(ElmcValue **out, …)` — return `RC_ERR_OUT_OF_MEMORY` / propagate callee `RC` |
+| Never allocates (immortal bool/zero, borrow peels, `elmc_retain`) | `ElmcValue *` / native scalar OK; **no** fake OOM null-checks in codegen |
+| Bool box | Use immortal `elmc_bool(v)` / `&ELMC_BOOL_TRUE` — `elmc_new_bool` never allocates |
+
+## Forbidden
+
+```c
+/* NULL-as-OOM value return */
+ElmcValue *elmc_foo(...) {
+  ElmcValue *_elmc_rc_out = NULL;
+  if (elmc_new_int(&_elmc_rc_out, n) != RC_SUCCESS) return NULL;
+  return _elmc_rc_out;
+}
+
+/* Casting away RC (looks like “ignore OOM”; for ints it really does) */
+(void)elmc_new_int(&_elmc_rc_out, n);
+(void)elmc_new_bool(&_elmc_rc_out, b);  /* use elmc_bool(b) instead */
+```
+
+## Required when adding or changing a helper
+
+1. If it allocates → RC out-param (+ `_take` in `rc_macros.ex` only for legacy non-RC paths).
+2. If callers only need a scalar → prefer `*_native` / immortal (e.g. `elmc_list_length_native`) and avoid boxing.
+3. Update plan maps: `fallible` for RC allocators; `direct_value_return` only for never-fail value returns; **do not** leave allocating helpers in `c_value_return`.
+4. Extend `elmc/test/runtime_oom_abi_test.exs` if you introduce a new forever-banned pattern.
+
+## Prefer
+
+```c
+RC elmc_list_length(ElmcValue **out, ElmcValue *list) {
+  return elmc_new_int(out, elmc_list_length_native(list));
+}
+
+ElmcValue *elmc_list_is_empty(ElmcValue *list) {
+  return elmc_bool(/* … */);
+}
+```

@@ -18,12 +18,18 @@ defmodule Elmc.BasicsMinRcOwnershipTest do
       ]
     }
 
-    env = %{"left" => "owned[0]", "right" => "owned[1]"}
+    env = %{
+      "left" => "owned[0]",
+      "right" => "owned[1]",
+      __rc_required__: true,
+      __rc_catch__: true
+    }
 
     {code, out, _counter} = RuntimeCall.compile(expr, env, 0)
     source = IO.iodata_to_binary(code)
 
-    assert source =~ "#{out} = elmc_basics_min(owned[0], owned[1]);"
+    assert source =~ "elmc_basics_min(&#{out}, owned[0], owned[1])"
+    assert source =~ "CHECK_RC(Rc)"
     assert source =~ "elmc_release(#{out});"
     assert source =~ "if (#{out} == owned[0])"
     assert source =~ "if (#{out} == owned[1])"

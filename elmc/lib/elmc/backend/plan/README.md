@@ -24,6 +24,16 @@ Pebble-specific lowering (`pebble_cmd`, `render_cmd`, `pebble_sub`, companion se
 lives in `Plan.Lower.Platform.Pebble`. Web Elm would use `Plan.Lower.Platform.Web`
 for `Html` / `Browser` cmds — not in core plan opcodes.
 
+## DirectRender scene stream
+
+`Plan.Stream` lowers eligible `*_commands_append` bodies as effect-only SSA
+(`:stream_void` terminators, `render_cmd` with `direct_scene_push: true`).
+`DirectRender.PlanStreamEmit` wraps `C.Lower.Function.emit_core/1` inside the
+existing `CommandDef` + `Emit.Catch` writer shell.
+
+List/map loop peels use `Plan.Stream.ListLoop` until full stream fusions exist;
+static draw tables remain on legacy DR emit (see `Plan.Stream.ListLoop.tracked_gaps/0`).
+
   ## Ownership verification
 
   `Elmc.Backend.Plan.Verify` runs before any backend. Invariants:
@@ -32,32 +42,45 @@ for `Html` / `Browser` cmds — not in core plan opcodes.
   - Single `fn_out` publish per success path
   - Fallible ops inside catch regions when not `rc_required` (per-instr catch) or covered by frame catch when `rc_required`
   - No leaked owned registers at block `ret` (`EpilogueRelease` inserts plan `:release` ops; C/bytecode backends defer to epilogue LIFO)
+  - **Stream mode:** `:render_cmd` / `:render_text_cmd` may use `dest: :stream_void` (effect-only scene push); `{:ret, :stream_void}` is a valid terminator
+  - **CFG:** no permanent `:none` terminators; all branch/switch targets exist; every block reachable from `entry_block` (`Plan.Cfg` + `Verify.verify_cfg/1`)
+
+  Static Verify covers every plan-lowered function (including app `update`/`view`).
+  **Runtime** retain/release balance for arbitrary templates is gated by host
+  `ELMC_RC_TRACK` smokes (`watchface_rc_track_smoke_test.exs`, `generated_rc_track_*`).
+  Nestable emit Process keys (`:elmc_value_slots`) only via snapshot/restore.
+
+  ## C codegen emit isolation
+
+  Legacy/direct-render emission tracks owned slots in `Process` (`:elmc_value_slots`).
+  Nested fusion probes must use `ValueSlots.with_isolated_probe/1` (or equivalent
+  full-state restore) so a probe's `reset/1` cannot clobber a parent function's
+  live slot indices mid-emit.
 
 ## Fusion
 
 Plan-native fusion (`ListIndexedReplace`, `ListIntSearch`) implements `try_plan/4`
-directly. Shared IR matchers remain under `Elmc.Backend.CCodegen.*` and are wired
-through `Plan.Fusion.CEmit`, which reads the provider registry from
-`CCodegen.Fusion.providers/0`.
+directly. IR matchers live under `Elmc.Backend.Plan.Fusion.Matchers.*` and are wired
+through `Plan.Fusion.Registry` / `CEmit`.
 
 Qualified-call rewrites for plan lowering go through `Plan.Lower.SpecialValues`
-(facade over `CCodegen.SpecialValues` until each handler migrates to plan builtins).
+(handlers under `plan/lower/special_values/`).
 
 ## Feature flag
 
-`opts[:plan_ir_mode]` — `:off` | `:shadow` | `:primary`
+`opts[:plan_ir_mode]` — `:shadow` | `:primary`
 
-- `:shadow` — build + verify plan alongside legacy C (tests may set `plan_ir_raise: true`)
-- `:primary` — emit C from plan via `C.Lower.Function` only. Plan lowering failure raises at compile time (no legacy body fallback). Successful primary compiles emit an info diagnostic (`plan_primary_coverage`) with reachable/Main stats; reachable gaps emit `plan_primary_gap` (warning, or error when strict).
+- `:shadow` — emit plan-primary C and run plan verify alongside primary emit (tests may set `plan_ir_raise: true`)
+- `:primary` — emit C from plan via `C.Lower.Function` only. Plan lowering failure emits an unsupported stub + `plan_primary_fallback` diagnostic (error when strict). Successful primary compiles emit an info diagnostic (`plan_primary_coverage`) with reachable/Main stats; reachable gaps emit `plan_primary_gap` (warning, or error when strict).
 
-`Elmc.Backend.Plan.Defaults` sets `default_plan_ir_mode` to `:primary`. `Elmc.compile/2` and `Elmc.CLI` apply these defaults. Legacy body tests use `Elmc.TestSupport.LegacyCodegen` / `LegacyCodegenCase` with explicit `plan_ir_mode: :off`.
+`Elmc.Backend.Plan.Defaults` sets `default_plan_ir_mode` to `:primary`. `Elmc.compile/2` and `Elmc.CLI` apply these defaults.
 
 `direct_plan_call_abi?` — plan-primary functions that are not partial-application
 wrappers emit and call with named parameters instead of `args`/`argc`.
 
-`plan_ir_strict` defaults to `true` in `:primary` mode. Set `plan_ir_strict: false` to allow legacy fallback warnings while migrating a construct.
+`plan_ir_strict` defaults to `true` in `:primary` mode. Set `plan_ir_strict: false` to allow gap/fallback warnings while migrating a construct.
 
-Explicit `plan_ir_mode: :off` emits an info diagnostic (`plan_legacy_codegen`). The test suite sets `default_plan_ir_mode` to `:off` without the marker so legacy tests stay quiet.
+Unknown or deprecated mode values (including legacy `:off`) normalize to `:primary`.
 
 Tagged `case` lowering uses a **multi-block CFG**: entry `switch_tag` dispatch
 (per-arm block ids are assigned after arm bodies are lowered so nested cases
@@ -154,7 +177,7 @@ for comparable before/after metrics (`elmc_stack_report.json` merged into compil
 
 See [docs/PLAN_IR_COVERAGE.md](../../../docs/PLAN_IR_COVERAGE.md) for construct-level
 coverage, strict template smoke results, and how to extend plan lowering without
-per-app shims. CI smoke: `mix test test/plan_template_strict_gate_test.exs`.
+per-app shims. CI smoke: `mix test test/plan_template_strict_gate_test.exs --include slow`.
 
 ## Plan bytecode tier (deferred)
 

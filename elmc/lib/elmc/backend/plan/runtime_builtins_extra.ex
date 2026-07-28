@@ -279,19 +279,29 @@ defmodule Elmc.Backend.Plan.RuntimeBuiltins.Extra do
     string_replace string_reverse string_slice string_split string_to_list string_to_lower
     string_to_upper string_trim string_trim_left string_trim_right string_uncons
     tuple_map_both tuple_map_first tuple_map_second
-  )a
-
-  @extra_c_value_return ~w(
-    append array_append array_empty array_filter array_foldl array_foldr array_from_list
-    array_get array_indexed_map array_initialize array_is_empty array_length array_map
-    array_push array_repeat array_set array_slice array_to_indexed_list array_to_list
+    array_length array_push array_set
     basics_abs basics_acos basics_asin basics_atan basics_atan2 basics_ceiling
-    basics_degrees basics_from_polar basics_is_infinite basics_is_nan basics_log basics_log_base
-    basics_negate basics_radians basics_sqrt basics_tan basics_to_polar basics_truncate
-    basics_turns basics_xor bitwise_and bitwise_complement bitwise_or
+    basics_degrees basics_from_polar basics_log basics_log_base basics_negate
+    basics_radians basics_sqrt basics_tan basics_to_polar basics_truncate basics_turns
+    bitwise_and bitwise_complement bitwise_or
     bitwise_shift_left_by bitwise_shift_right_by bitwise_shift_right_zf_by bitwise_xor
-    char_to_lower char_to_upper debug_log debug_todo new_char
-    dict_singleton dict_to_list
+    char_to_code char_to_lower char_to_upper debug_todo dict_size new_char
+    result_from_maybe result_inc_or_zero result_to_maybe set_size
+    string_cons string_drop_left string_drop_right string_from_int_value string_length_val
+    string_lines string_pad string_right string_words
+    time_now_millis time_zone_offset_minutes
+    append array_append array_filter array_foldl array_foldr array_get
+    array_indexed_map array_initialize array_map array_repeat array_slice
+    array_to_indexed_list array_to_list
+    cmd_backlight_from_maybe debug_log
+    dict_singleton set_singleton set_to_list
+    dict_to_list
+    json_encode_array json_encode_add_entry json_encode_add_field
+    json_encode_bool json_encode_dict
+    json_encode_encode json_encode_float json_encode_int json_encode_list json_encode_null
+    json_encode_object json_encode_set json_encode_string
+    task_and_then task_command task_fail task_map task_map2 task_succeed
+    process_kill process_sleep process_spawn
     json_decode_and_then json_decode_array json_decode_at json_decode_bool_decoder
     json_decode_dict json_decode_error_to_string json_decode_fail json_decode_field
     json_decode_float_decoder json_decode_index json_decode_int_decoder
@@ -299,13 +309,11 @@ defmodule Elmc.Backend.Plan.RuntimeBuiltins.Extra do
     json_decode_map2 json_decode_map3 json_decode_map4 json_decode_map5 json_decode_map6
     json_decode_map7 json_decode_maybe json_decode_null json_decode_nullable json_decode_one_of
     json_decode_string json_decode_string_decoder json_decode_succeed json_decode_value
-    json_decode_value_decoder json_encode_array json_encode_add_entry json_encode_add_field
-    json_encode_bool json_encode_dict
-    json_encode_encode json_encode_float json_encode_int json_encode_list json_encode_null
-    json_encode_object json_encode_set json_encode_string result_from_maybe result_to_maybe
-    result_with_default set_singleton set_to_list
-    string_cons string_contains string_drop_left string_drop_right string_from_int_value
-    string_left string_lines string_pad string_right string_to_float string_words
+    json_decode_value_decoder
+    task_force
+    cmd_map sub_map cmd_batch sub_batch
+    port_outgoing port_incoming_sub
+    record_update_cow_drop
     string_chop_end string_chop_start string_chop_forward_slashes
     url_percent_encode url_percent_decode url_from_string
     http_command http_cancel http_empty_body http_expect http_pair http_to_data_view
@@ -316,19 +324,19 @@ defmodule Elmc.Backend.Plan.RuntimeBuiltins.Extra do
     backend_task_http_bytes_body bytes_encode_sequence
     backend_task_http_request backend_task_http_post
     file_download file_download_task file_select
-    task_and_then task_command task_fail task_map task_map2 task_on_error task_perform task_succeed
-    cmd_map sub_map
-    port_outgoing port_incoming_sub
-    process_kill process_sleep process_spawn
     random_generate regex_contains regex_find regex_from_string regex_replace
-    time_now_millis time_zone_offset_minutes time_here browser_get_viewport
+    time_here browser_get_viewport
   )a
 
+  # Empty: allocating helpers must be RC + fallible, never value-return OOM ABI.
+  @extra_c_value_return ~w()a
+
   @extra_value_return ~w(
-    array_get array_is_empty array_length char_is_alpha char_is_alpha_num
-    char_is_digit char_is_hex_digit char_is_lower char_is_oct_digit char_is_upper char_to_code
-    dict_is_empty dict_member dict_size list_member set_is_empty set_member set_size
-    string_length_val
+    array_empty array_from_list array_is_empty char_is_alpha char_is_alpha_num
+    char_is_digit char_is_hex_digit char_is_lower char_is_oct_digit char_is_upper
+    dict_is_empty dict_member list_member set_is_empty set_member
+    basics_is_infinite basics_is_nan basics_xor string_contains
+    task_on_error task_perform
   )a
 
   @spec builtins() :: Types.ir_expr()

@@ -134,8 +134,14 @@ defmodule Elmc.Backend.Plan.Lower.IntCall do
         true -> :list_append
       end
 
-    with {:ok, arg_regs, b1} <- Expr.compile_args([left, right], ctx, b) do
-      Expr.compile_runtime_builtin(append_builtin, arg_regs, ctx, b1)
+    cond do
+      append_builtin == :list_append and Context.stream_mode?(ctx) ->
+        Elmc.Backend.Plan.Lower.Stream.List.compile_append(left, right, ctx, b)
+
+      true ->
+        with {:ok, arg_regs, b1} <- Expr.compile_args([left, right], ctx, b) do
+          Expr.compile_runtime_builtin(append_builtin, arg_regs, ctx, b1)
+        end
     end
   end
 

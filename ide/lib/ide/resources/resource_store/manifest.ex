@@ -111,20 +111,34 @@ defmodule Ide.Resources.ResourceStore.Manifest do
     path = Path.join(workspace, @generated_module_rel_path)
     legacy = Path.join(workspace, @legacy_generated_module_rel_path)
 
-    with :ok <- File.mkdir_p(Path.dirname(path)),
-         :ok <-
-           File.write(
-             path,
-             GeneratedModule.source(
-               bitmap_entries,
-               font_entries,
-               vector_entries,
-               animation_entries
-             )
-           ),
+    source =
+      GeneratedModule.source(
+        bitmap_entries,
+        font_entries,
+        vector_entries,
+        animation_entries
+      )
+
+    with :ok <- write_file_if_changed(path, source),
          :ok <- SpeakerSamples.write_generated_module(workspace) do
       _ = File.rm(legacy)
       :ok
+    end
+  end
+
+  @doc false
+  @spec write_file_if_changed(Path.t(), iodata()) :: :ok | {:error, File.posix()}
+  def write_file_if_changed(path, contents) when is_binary(path) do
+    binary = IO.iodata_to_binary(contents)
+
+    case File.read(path) do
+      {:ok, ^binary} ->
+        :ok
+
+      _ ->
+        with :ok <- File.mkdir_p(Path.dirname(path)) do
+          File.write(path, binary)
+        end
     end
   end
 

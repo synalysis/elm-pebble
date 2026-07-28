@@ -244,7 +244,7 @@ defmodule Elmc.Backend.CCodegen.CSourceTest do
       }
 
       return direct_rc;
-      CATCH_END;
+      CATCH_END
       }
       """
 
@@ -257,7 +257,7 @@ defmodule Elmc.Backend.CCodegen.CSourceTest do
       }
 
       return direct_rc;
-    CATCH_END;
+    CATCH_END
     }
     """
   end

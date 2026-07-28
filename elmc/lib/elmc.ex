@@ -88,13 +88,22 @@ defmodule Elmc do
         Process.get(:elmc_plan_primary_fallbacks, [])
         |> Enum.map(fn {mod, name} ->
           reachable? = PrimaryCoverage.reachable_function?(decl_map, mod, name, opts)
+          reason = Elmc.Backend.Plan.UnsupportedReason.lookup(mod, name)
+
+          message =
+            case reason do
+              nil ->
+                "Function #{mod}.#{name} could not be lowered via Plan IR; emitted unsupported stub (legacy C codegen removed)."
+
+              _ ->
+                Elmc.Backend.CCodegen.UnsupportedSurface.fallback_message(mod, name, reason)
+            end
 
           %{
             "source" => "elmc/plan",
             "code" => "plan_primary_fallback",
             "severity" => StrictPolicy.fallback_severity(opts, reachable?),
-            "message" =>
-              "Function #{mod}.#{name} could not be lowered via Plan IR; emitted unsupported stub (legacy C codegen removed)."
+            "message" => message
           }
         end)
 
@@ -105,24 +114,31 @@ defmodule Elmc do
         Elmc.Backend.Plan.PrimaryCoverage.compile_diagnostics(bytecode_summary, opts) ++
           wasm_plan_coverage_diagnostics(wasm_summary, opts)
 
-      plan_legacy_diagnostics = plan_legacy_codegen_diagnostics(opts)
-
       web_kernel_diagnostics = WebKernelDiagnostics.compile_diagnostics()
 
       subscription_layout_diagnostics =
         Process.get(:elmc_compile_warnings, [])
         |> Enum.filter(fn
-          %{"source" => "elmc/subscriptions"} -> true
-          _ -> false
+          %{"source" => "elmc/subscriptions", "code" => "dynamic_subscription_layout"} -> true
+          %{source: source, code: code}
+          when source in ["elmc/subscriptions", :elmc_subscriptions] and
+                 code == "dynamic_subscription_layout" ->
+            true
+
+          _ ->
+            false
         end)
+
+      unsupported_surface_diagnostics =
+        Elmc.Backend.CCodegen.UnsupportedSurface.compile_warnings(opts)
 
       layout_and_plan_diagnostics =
         layout_coercion_diagnostics ++
           plan_primary_fallbacks ++
-          plan_legacy_diagnostics ++
           plan_coverage_diagnostics ++
           web_kernel_diagnostics ++
-          subscription_layout_diagnostics
+          subscription_layout_diagnostics ++
+          unsupported_surface_diagnostics
 
       wasm_empty_export_diagnostics = wasm_empty_export_diagnostics(wasm_summary, opts)
 
@@ -324,22 +340,6 @@ defmodule Elmc do
 
   defp project_for_compile(project_dir, _opts),
     do: Bridge.load_project(project_dir, lowerer_diagnostics: false)
-
-  defp plan_legacy_codegen_diagnostics(opts) when is_map(opts) do
-    if Map.get(opts, :plan_ir_mode_off_deprecated) == true do
-      [
-        %{
-          "source" => "elmc/plan",
-          "code" => "plan_ir_mode_off_removed",
-          "severity" => "warning",
-          "message" =>
-            "plan_ir_mode: :off is no longer supported (legacy C codegen removed). Compiling with plan_ir_mode: :primary."
-        }
-      ]
-    else
-      []
-    end
-  end
 
   defp maybe_write_c_artifacts(ir, out_dir, _entry_module, opts, true = _wasm_only?) do
     with :ok <- Elmc.Backend.Wasm.ProjectWriter.write(ir, out_dir, opts),
@@ -578,9 +578,8 @@ defmodule Elmc do
   defp normalize_plan_toolchain(%{mode: mode, strict: strict}),
     do: %{mode: normalize_plan_mode(mode), strict: strict}
 
-  defp normalize_plan_mode(mode) when is_atom(mode), do: mode
   defp normalize_plan_mode("primary"), do: :primary
   defp normalize_plan_mode("shadow"), do: :shadow
-  defp normalize_plan_mode("off"), do: :off
-  defp normalize_plan_mode(mode) when is_binary(mode), do: String.to_existing_atom(mode)
+  defp normalize_plan_mode("off"), do: :primary
+  defp normalize_plan_mode(mode) when is_atom(mode) and mode in [:primary, :shadow], do: mode
 end

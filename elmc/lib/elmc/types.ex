@@ -21,7 +21,7 @@ defmodule Elmc.Types do
 
   @type debug_usage_policy :: :error | :warn | :warning
 
-  @type plan_ir_mode :: :off | :shadow | :primary
+  @type plan_ir_mode :: :shadow | :primary
   @type codegen_profile :: :default | :balanced | :size
   @type plan_emit_mode :: :goto | :state_switch
 
@@ -84,7 +84,7 @@ defmodule Elmc.Types do
         }
 
   @type plan_toolchain :: %{
-          optional(:mode) => :off | :shadow | :primary | String.t(),
+          optional(:mode) => :shadow | :primary | String.t(),
           optional(:strict) => boolean(),
           optional(String.t()) => coverage_stat(),
           optional(atom()) => coverage_stat()

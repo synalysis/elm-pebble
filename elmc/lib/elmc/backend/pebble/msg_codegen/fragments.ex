@@ -3,7 +3,7 @@ defmodule Elmc.Backend.Pebble.MsgCodegen.Fragments do
   alias Elmc.Types, as: Types
 
 
-  alias Elmc.Backend.Pebble.{IRAnalysis, MsgCodegen, Types, Util}
+  alias Elmc.Backend.Pebble.{MsgCodegen, Types, Util}
 
   @spec build(Types.msg_constructor_list(), Types.msg_constructor_arities()) ::
           Types.msg_fragments()
@@ -29,8 +29,7 @@ defmodule Elmc.Backend.Pebble.MsgCodegen.Fragments do
       msg_constructor_arity_cases: msg_constructor_arity_cases,
       tick_has_payload?: tick_has_payload?,
       current_second_helper: MsgCodegen.TickArity.current_second_helper(tick_has_payload?),
-      storage_string_tag:
-        IRAnalysis.pick_tag(msg_constructors, MsgCodegen.storage_string_callback_names()),
+      storage_string_tag: 0,
       msg_constructor_arity_fn:
         MsgCodegen.TickArity.constructor_arity_fn(tick_has_payload?, msg_constructor_arity_cases)
     }

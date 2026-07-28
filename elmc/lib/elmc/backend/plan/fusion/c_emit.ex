@@ -7,7 +7,7 @@ defmodule Elmc.Backend.Plan.Fusion.CEmit do
   alias Elmc.Backend.Plan.Fusion.Helper
   alias Elmc.Backend.Plan.Types
   alias Elmc.Backend.Plan.Types.FunctionPlan
-  alias Elmc.Backend.CCodegen.Tuple2CaseTable
+  alias Elmc.Backend.Plan.Fusion.Matchers.Tuple2CaseTable
 
   @type emit_provider :: {module(), 3 | 4}
 

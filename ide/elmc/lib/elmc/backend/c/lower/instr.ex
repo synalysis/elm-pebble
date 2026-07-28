@@ -3995,7 +3995,7 @@ defmodule Elmc.Backend.C.Lower.Instr do
   end
 
   defp emit_op_only(%Types{op: :catch_begin}, _slots, _opts), do: "CATCH_BEGIN"
-  defp emit_op_only(%Types{op: :catch_end}, _slots, _opts), do: "CATCH_END;"
+  defp emit_op_only(%Types{op: :catch_end}, _slots, _opts), do: "CATCH_END"
   defp emit_op_only(_, _slots, _opts), do: ""
 
   @spec emit_load_param_copy(map(), Types.ir_expr(), keyword()) :: Types.ir_expr()

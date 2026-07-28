@@ -184,7 +184,7 @@ defmodule Elmc.RuntimeRCTest do
         ElmcValue *sun = elmc_record_new_values_take_value(3, vals);
         ElmcValue *just = NULL;
         if (elmc_maybe_just_own(&just, sun) != RC_SUCCESS) return;
-        ElmcValue *next = elmc_record_update_index_cow_drop(model, index, just);
+        ElmcValue *next = elmc_record_update_index_cow_drop_take(model, index, just);
         elmc_release(just);
         (void)next;
       }
@@ -254,7 +254,7 @@ defmodule Elmc.RuntimeRCTest do
         ElmcValue *piece = elmc_record_new_values_take_value(3, fields);
 
         ElmcValue *next_y = elmc_new_int_take(11);
-        ElmcValue *updated = elmc_record_update_index(piece, 2, next_y);
+        ElmcValue *updated = elmc_record_update_index_take(piece, 2, next_y);
         elmc_release(next_y);
         elmc_release(piece);
 

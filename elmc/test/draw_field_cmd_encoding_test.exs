@@ -2,7 +2,7 @@ defmodule Elmc.DrawFieldCmdEncodingTest do
   use ExUnit.Case
 
   alias Elmc.Backend.CCodegen.Emit
-  alias Elmc.Backend.CCodegen.SpecialValues
+  alias Elmc.Backend.Plan.Lower.SpecialValues
   alias Elmc.Backend.Pebble.Kinds
 
   test "fillCircle with point center encodes render op kind not runtime command id" do

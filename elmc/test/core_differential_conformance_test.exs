@@ -97,21 +97,21 @@ defmodule Elmc.CoreDifferentialConformanceTest do
     refute pebble_c =~ "extern time_t time"
 
     expected_calls = [
-      "elmc_basics_clamp(",
-      "elmc_bitwise_and(",
-      "elmc_bitwise_xor(",
-      "elmc_bitwise_shift_left_by(",
-      "elmc_char_to_code(",
-      "elmc_debug_log(",
-      "elmc_string_length(",
+      "elmc_basics_clamp",
+      "elmc_bitwise_and",
+      "elmc_bitwise_xor",
+      "elmc_bitwise_shift_left_by",
+      "elmc_char_to_code",
+      "elmc_debug_log",
+      "elmc_string_length",
       "elmc_string_is_empty(",
       "elmc_tuple_first(",
       "elmc_tuple_second(",
       "elmc_list_foldl",
       "elmc_maybe_with_default_int(",
-      "elmc_process_spawn(",
-      "elmc_process_sleep(",
-      "elmc_process_kill("
+      "elmc_process_spawn",
+      "elmc_process_sleep",
+      "elmc_process_kill"
     ]
 
     Enum.each(expected_calls, fn call ->

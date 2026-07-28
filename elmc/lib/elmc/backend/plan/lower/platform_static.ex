@@ -11,7 +11,7 @@ defmodule Elmc.Backend.Plan.Lower.PlatformStatic do
   def compile_case(%{branches: branches}, macro, ctx, b)
       when is_binary(macro) and is_list(branches) do
     with {:ok, then_val, else_val} <- static_branch_values(branches),
-         {:ok, reg, b1} <- emit_static_int(macro, then_val, else_val, ctx, b) do
+         {:ok, reg, b1} <- emit_static_bool(macro, then_val, else_val, ctx, b) do
       {:ok, reg, b1}
     else
       _ -> :unsupported
@@ -23,17 +23,25 @@ defmodule Elmc.Backend.Plan.Lower.PlatformStatic do
   @spec static_branch_values(term()) :: Types.ir_expr()
 
   defp static_branch_values([
+         %{pattern: %{kind: :constructor}, expr: %{op: :bool_literal, value: then_val}},
+         %{pattern: %{kind: :wildcard}, expr: %{op: :bool_literal, value: else_val}}
+       ])
+       when is_boolean(then_val) and is_boolean(else_val),
+       do: {:ok, then_val, else_val}
+
+  # Legacy IR still used int 0/1 for Bool; keep accepting it and lower as bool.
+  defp static_branch_values([
          %{pattern: %{kind: :constructor}, expr: %{op: :int_literal, value: then_val}},
          %{pattern: %{kind: :wildcard}, expr: %{op: :int_literal, value: else_val}}
        ])
-       when is_integer(then_val) and is_integer(else_val),
-       do: {:ok, then_val, else_val}
+       when then_val in [0, 1] and else_val in [0, 1],
+       do: {:ok, then_val == 1, else_val == 1}
 
   defp static_branch_values(_), do: :error
 
-  @spec emit_static_int(Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+  @spec emit_static_bool(Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
 
-  defp emit_static_int(macro, then_val, else_val, ctx, b) do
+  defp emit_static_bool(macro, then_val, else_val, ctx, b) do
     wrap_catch? = Builder.wrap_fallible_instr_catch?(b, ctx, true)
     b1 = if wrap_catch?, do: Builder.catch_begin(b), else: b
 
@@ -52,7 +60,7 @@ defmodule Elmc.Backend.Plan.Lower.PlatformStatic do
       end
 
     {_, b2} =
-      Builder.emit(b_dest, :platform_static_int, %{
+      Builder.emit(b_dest, :platform_static_bool, %{
         dest: dest,
         args: %{macro: macro, then: then_val, else: else_val},
         effects: effects

@@ -4,6 +4,10 @@ defmodule Elmc.Backend.Plan.Allocate do
 
   C backend uses `owned[i]` indices; bytecode uses local indices;
   both derive from the same liveness pass.
+
+  Each SSA register maps to `owned[reg]` (no index reuse). That trades a
+  slightly larger `owned[]` for fewer mid-function `elmc_release` pairs before
+  reassignment — epilogue `elmc_release_array_lifo` owns cleanup.
   """
 
   alias Elmc.Backend.Plan.Types
@@ -18,7 +22,7 @@ defmodule Elmc.Backend.Plan.Allocate do
     # intervals must cover every referenced reg or owned slots fall back to `tmp_N`.
     effective_count = max(reg_count, max_reg_index(instrs) + 1)
     intervals = live_intervals(instrs, effective_count)
-    greedy_slots(intervals)
+    unique_slots(intervals)
   end
 
   defp max_reg_index(instrs) do
@@ -141,51 +145,12 @@ defmodule Elmc.Backend.Plan.Allocate do
 
   defp touch_use(acc, _, _), do: acc
 
-  defp greedy_slots(intervals) when map_size(intervals) == 0, do: {%{}, 0}
+  # One owned[] index per SSA register — avoids eager release before slot reuse.
+  defp unique_slots(intervals) when map_size(intervals) == 0, do: {%{}, 0}
 
-  defp greedy_slots(intervals) do
-    regs =
-      intervals
-      |> Map.keys()
-      |> Enum.sort_by(fn reg ->
-        {start, _finish} = Map.fetch!(intervals, reg)
-        start
-      end)
-
-    {slot_map, _free, _max} =
-      Enum.reduce(regs, {%{}, [], -1}, fn reg, {map, free, max} ->
-        {start, finish} = Map.fetch!(intervals, reg)
-
-        {slot, free1, max1} =
-          case first_free_slot(free, start) do
-            {:ok, slot, rest} ->
-              {slot, rest, max}
-
-            :none ->
-              slot = max + 1
-              {slot, free, slot}
-          end
-
-        free2 = sort_free([{slot, finish} | free1])
-
-        {Map.put(map, reg, slot), free2, max1}
-      end)
-
-    slot_count =
-      case Map.values(slot_map) do
-        [] -> 0
-        indices -> Enum.max(indices) + 1
-      end
-
-    {slot_map, slot_count}
+  defp unique_slots(intervals) do
+    slot_map = Map.new(intervals, fn {reg, _} -> {reg, reg} end)
+    count = Enum.max(Map.keys(intervals)) + 1
+    {slot_map, count}
   end
-
-  defp first_free_slot(free, start) do
-    case Enum.find(free, fn {_slot, avail} -> avail < start end) do
-      {slot, _} = hit -> {:ok, slot, List.delete(free, hit)}
-      nil -> :none
-    end
-  end
-
-  defp sort_free(free), do: Enum.sort_by(free, fn {slot, _} -> slot end)
 end

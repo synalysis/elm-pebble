@@ -192,12 +192,7 @@ defmodule Elmc.Backend.Plan.Lower.PatternMatch do
       Builder.emit(b1, :call_runtime, %{
         dest: dest,
         args: %{builtin: builtin, args: [arg_reg]},
-        effects: %{
-          produces: {:owned, dest},
-          consumes: [],
-          borrows: [arg_reg],
-          fallible: false
-        }
+        effects: Types.fallible_effects(dest, [arg_reg], [])
       })
 
     {:ok, dest, b2}

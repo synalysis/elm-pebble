@@ -52,4 +52,38 @@ defmodule Elmc.TestSupport.PlanStrictTemplates do
 
   @spec names() :: [String.t()]
   def names, do: @strict_pass
+
+  @doc """
+  Templates that host-link under generic TEA + RC balance smokes.
+
+  Expand as more templates become ABI-clean for `elmc_pebble_*` host harnesses.
+  """
+  @host_smoke_templates ~w(
+    watchface_digital
+    watchface_minimal
+    watchface_tangram_time
+    watchface_smoke_screen
+    watch_demo_time
+    watchface_analog
+    watchface_color_shapes
+  )
+
+  @rc_host_smoke_templates ~w(
+    watchface_digital
+    watchface_minimal
+    watch_demo_time
+    watchface_analog
+    watchface_color_shapes
+    watchface_smoke_screen
+    watchface_tangram_time
+  )
+
+  @spec host_smoke_names() :: [String.t()]
+  def host_smoke_names, do: @host_smoke_templates
+
+  @doc """
+  Templates that host-link under the generic watchface RC balance smoke.
+  """
+  @spec rc_host_smoke_names() :: [String.t()]
+  def rc_host_smoke_names, do: @rc_host_smoke_templates
 end

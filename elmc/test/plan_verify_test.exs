@@ -2,7 +2,7 @@ defmodule Elmc.PlanVerifyTest do
   use ExUnit.Case, async: true
 
   alias Elmc.Backend.Plan.{Builder, EpilogueRelease, Types, Verify}
-  alias Elmc.Backend.Plan.Types.FunctionPlan
+  alias Elmc.Backend.Plan.Types.{Block, FunctionPlan}
 
   defp nested_maybe_good_plan do
     b =
@@ -126,5 +126,56 @@ defmodule Elmc.PlanVerifyTest do
     plan = b7 |> Builder.emit_ret(retained) |> Builder.to_function_plan()
 
     assert :ok = Verify.run(plan)
+  end
+
+  test "rejects entry block with permanent :none terminator" do
+    plan = %FunctionPlan{
+      name: "dead_entry",
+      module: "Main",
+      params: ["msg"],
+      rc_required: true,
+      reg_count: 2,
+      entry_block: 0,
+      blocks: [
+        %Block{id: 0, instrs: [], terminator: :none},
+        %Block{id: 1, instrs: [], terminator: {:ret, :fn_out}}
+      ]
+    }
+
+    assert {:error, :permanent_none_terminator, [block: 0]} = Verify.run(plan)
+  end
+
+  test "rejects dangling branch target" do
+    plan = %FunctionPlan{
+      name: "dangling",
+      module: "Main",
+      params: [],
+      rc_required: true,
+      reg_count: 1,
+      entry_block: 0,
+      blocks: [
+        %Block{id: 0, instrs: [], terminator: {:br, 99}},
+        %Block{id: 1, instrs: [], terminator: {:ret, :fn_out}}
+      ]
+    }
+
+    assert {:error, :dangling_branch_target, [from: 0, target: 99]} = Verify.run(plan)
+  end
+
+  test "rejects unreachable arm block" do
+    plan = %FunctionPlan{
+      name: "orphan_arm",
+      module: "Main",
+      params: [],
+      rc_required: true,
+      reg_count: 1,
+      entry_block: 0,
+      blocks: [
+        %Block{id: 0, instrs: [], terminator: {:ret, :fn_out}},
+        %Block{id: 1, instrs: [], terminator: {:ret, :fn_out}}
+      ]
+    }
+
+    assert {:error, :unreachable_block, [block: 1, entry: 0]} = Verify.run(plan)
   end
 end

@@ -81,7 +81,7 @@ defmodule Elmc.Backend.CCodegen.CaseCompile do
   end
 
   def branch_assignment(%{op: :bool_literal, value: value}, out, env, counter) do
-    branch_assignment_rc(env, out, "elmc_new_bool", if(value, do: "1", else: "0"), counter)
+    branch_assignment_rc(env, out, "elmc_new_bool", if(value, do: "true", else: "false"), counter)
   end
 
   def branch_assignment(%{op: :cmd_none}, out, env, counter) do
@@ -109,7 +109,7 @@ defmodule Elmc.Backend.CCodegen.CaseCompile do
           {"", RcRuntimeEmit.assign_stmt(out, "elmc_maybe_nothing()"), counter}
 
         value in [0, 1] and function_returns_bool?(env) ->
-          {"", RcRuntimeEmit.assign_into(env, out, "elmc_new_bool", Integer.to_string(value)), counter}
+          {"", RcRuntimeEmit.assign_into(env, out, "elmc_new_bool", if(value == 1, do: "true", else: "false")), counter}
 
         true ->
           branch_assignment_int_literal(expr, out, env, counter)

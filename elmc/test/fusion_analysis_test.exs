@@ -32,7 +32,7 @@ defmodule Elmc.FusionAnalysisTest do
     decl = Map.get(decl_map, {"Main", "moveBoard"})
 
     assert match?({:ok, _, _, :rc_native},
-             Elmc.Backend.CCodegen.PermuteMergeInversePipeline.try_emit(
+             Elmc.Backend.Plan.Fusion.Matchers.PermuteMergeInversePipeline.try_emit(
                "Main",
                "moveBoard",
                decl.expr,
@@ -40,7 +40,7 @@ defmodule Elmc.FusionAnalysisTest do
              ))
 
     assert {:ok, :permute_merge_inverse_pipeline, data} =
-             Elmc.Backend.CCodegen.PermuteMergeInversePipeline.extract_fusion_data(
+             Elmc.Backend.Plan.Fusion.Matchers.PermuteMergeInversePipeline.extract_fusion_data(
                "Main",
                "moveBoard",
                decl.expr,

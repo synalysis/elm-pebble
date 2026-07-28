@@ -1,0 +1,33 @@
+---
+description: Emulator bugs require Verify/TEA invariant tests before regex-only guards
+globs:
+  - elmc/**
+  - elm_ex/**
+  - elmx/**
+---
+
+# Emulator Bug → Invariant First
+
+When a watchface/app bug traces to elmc codegen (dead `update`, `--:--`, blank draw, wrong RC), fix the toolchain and add a **structural or semantic CI gate** — not only a C-text regex.
+
+## Required
+
+1. **Plan.Verify** — CFG / ownership invariant (`:permanent_none_terminator`, `:unreachable_block`, `:leaked_owned_regs`, …) when the bug is dead CFG or static RC.
+2. **TEA host smoke** — `watchface_tea_semantic_smoke_test.exs` property (time drain, non-placeholder text, geometry) when the bug is init/update/view behavior.
+3. **App RC balance** — `watchface_rc_track_smoke_test.exs` (`ELMC_RC_TRACK` after init/drain/view/deinit) when the bug is a retain/release leak in app TEA.
+4. **Value oracle** — `core_compliance_differential_test.exs` or corpus parity when the bug is wrong pure-helper semantics.
+5. **Emit isolation** — `ValueSlots.with_isolated_probe/1` when mid-emit probes clobber parent owned slots.
+
+## Secondary (optional)
+
+- Generated-C regex asserts (e.g. “no `case 0: __plan_state = -1` before case 1”) — useful but **not sufficient alone**.
+
+## Do not
+
+- Close emulator bugs with only a tangram/yes-specific string match and no Verify/TEA test.
+- Patch app Elm to dodge compiler bugs (`fix-toolchain-not-apps`).
+
+## Examples
+
+- **Bad:** Tangram `--:--` → only `assert update =~ "CURRENTDATETIME"` in codegen test.
+- **Good:** `Verify` rejects entry `:none` + TEA smoke drains `GET_CURRENT_DATE_TIME` and asserts view text ≠ `--:--`.

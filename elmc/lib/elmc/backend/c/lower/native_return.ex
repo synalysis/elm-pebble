@@ -229,7 +229,7 @@ defmodule Elmc.Backend.C.Lower.NativeReturn do
   defp native_bool_value_reg?(plan, reg) do
     case CLowerFunction.all_defining_instrs(plan, reg) do
       [%{op: op} | _]
-      when op in [:compare, :bool_and, :test_maybe_nothing, :test_list_empty, :test_ctor_tag, :test_bool] ->
+      when op in [:compare, :bool_and, :test_maybe_nothing, :test_list_empty, :test_list_length_gte, :test_ctor_tag, :test_bool] ->
         true
 
       [%{op: :phi, args: %{truthy_native: true}}] ->

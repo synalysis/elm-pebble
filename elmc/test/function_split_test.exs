@@ -1,6 +1,8 @@
 defmodule Elmc.FunctionSplitTest do
   use ExUnit.Case, async: false
 
+  @moduletag :slow
+
   alias Elmc.Backend.CCodegen.FunctionSplit
   alias Elmc.Backend.CCodegen.IRQueries
   alias Elmc.Test.CCodegenExtract

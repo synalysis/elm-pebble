@@ -1,6 +1,6 @@
 defmodule Elmc.Backend.Plan.Shadow do
   @moduledoc """
-  Shadow-mode plan lowering alongside legacy C emission.
+  Plan lowering verification alongside primary C emission.
   """
   alias Elmc.Backend.Plan.Types, as: Types
 
@@ -14,15 +14,9 @@ defmodule Elmc.Backend.Plan.Shadow do
   @spec maybe_verify_function(Types.function_decl(), String.t(), Types.function_decl_map(), keyword()) ::
           :ok | :skipped | {:error, Types.lower_error()}
   def maybe_verify_function(decl, module_name, decl_map, opts) do
-    case plan_ir_mode(opts) do
-      :off ->
-        :skipped
-
-      mode when mode in [:shadow, :primary] ->
-        result = run_shadow(decl, module_name, decl_map, opts)
-        record_stat(result, module_name, Map.get(decl, :name, "anon"))
-        result
-    end
+    result = run_shadow(decl, module_name, decl_map, opts)
+    record_stat(result, module_name, Map.get(decl, :name, "anon"))
+    result
   end
 
   @spec shadow_stats() :: %{ok: non_neg_integer(), skipped: non_neg_integer(), error: non_neg_integer()}
@@ -73,7 +67,7 @@ defmodule Elmc.Backend.Plan.Shadow do
     Process.put(@stats_key, Map.put(updated, :last, {module, name, result}))
   end
 
-  @spec plan_ir_mode(keyword() | Types.compile_env()) :: :off | :shadow | :primary
+  @spec plan_ir_mode(keyword() | Types.compile_env()) :: :shadow | :primary
   def plan_ir_mode(opts) do
     mode =
       cond do
@@ -92,7 +86,7 @@ defmodule Elmc.Backend.Plan.Shadow do
   defp normalize_mode(:shadow), do: :shadow
   defp normalize_mode("primary"), do: :primary
   defp normalize_mode("shadow"), do: :shadow
-  defp normalize_mode(_), do: :off
+  defp normalize_mode(_), do: :primary
 
   @spec raise_on_failure?(list() | term()) :: boolean()
 

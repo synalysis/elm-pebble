@@ -1,7 +1,7 @@
 defmodule Elmc.UnionIntCaseTest do
   use ExUnit.Case, async: true
 
-  alias Elmc.Backend.CCodegen.UnionIntCase
+  alias Elmc.Backend.Plan.Fusion.Matchers.UnionIntCase
 
   test "try_emit recognizes union int case IR" do
     expr = %{

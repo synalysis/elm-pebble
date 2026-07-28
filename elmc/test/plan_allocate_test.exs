@@ -4,7 +4,7 @@ defmodule Elmc.PlanAllocateTest do
   alias Elmc.Backend.Plan.Allocate
   alias Elmc.Backend.Plan.Types.{Block, FunctionPlan}
 
-  test "reuses owned slots when register live ranges do not overlap" do
+  test "assigns one owned slot per SSA register" do
     # reg 0 dies before reg 1 is defined (consumed at idx 1, reg 1 defined at idx 2)
     plan = %FunctionPlan{
       module: "Main",
@@ -52,8 +52,8 @@ defmodule Elmc.PlanAllocateTest do
     {slots, count} = Allocate.run(plan)
 
     assert Map.get(slots, 0) == 0
-    assert Map.get(slots, 1) == 0
-    assert count == 1
+    assert Map.get(slots, 1) == 1
+    assert count == 2
   end
 
   test "ret terminator keeps result register live through exit" do

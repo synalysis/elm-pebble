@@ -21,10 +21,12 @@ See also: [CODEGEN_COVERAGE_MATRIX.md](CODEGEN_COVERAGE_MATRIX.md) (legacy C pat
 
 ## Strict smoke gate (templates)
 
-`mix test test/plan_template_strict_gate_test.exs` compiles watch templates with
+`mix test test/plan_template_strict_gate_test.exs --include slow` (or
+`./scripts/mix-test-strict-gate.sh`) compiles watch templates with
 `plan_ir_strict: true`. Templates in `@strict_pass` must compile with **zero**
 `plan_primary_fallback` diagnostics and **zero** `elmc_unknown` calls in
-`c/elmc_generated.c`.
+`c/elmc_generated.c`. Default `mix test` **excludes** `:slow`; use
+`mix test.slow` / `mix test.plan_gates` / `--include slow` for these suites.
 
 **Do not** run the full strict gate, reachable coverage, or opcode audit files in
 one `mix test` invocation — many template compiles in one BEAM process can exceed
@@ -102,6 +104,7 @@ These landed as **generic** toolchain work (any app using the same IR):
 | `case` on `a :: … :: []` (fixed N) | `ListSwitch.compile_fixed_length_nil/4` | Distinct lengths + default |
 | `case` on `x :: y :: _` / `[only]` / `[]` | `ListSwitch.compile_triple/4` | Exactly 3 arms, fixed shapes |
 | `case` on `x :: y :: _` + wildcard | `double_cons_wildcard` | 2 arms only |
+| `case` on `a :: b :: … :: _` (depth ≥ 3) + wildcard | `deep_cons_wildcard` | `List Int`: length ≥ N + `nth`; else one peel chain |
 | `record_update` field expr | `Context.for_branch_arm` for fields | Avoids `:fn_out` in `record_update` value slot |
 | Dotted var `model.field` / `a.b.c` | Split → chained `record_get` | Arbitrary depth via `compile_dotted_var_path` |
 | `Plan.Verify` phi | Respect `effects.consumes` only | Live locals after merge |
@@ -114,9 +117,10 @@ Plan `case` dispatch (`Plan.Lower.Case.compile_dispatch/5`) tries, in order:
 
 1. `ListSwitch.fixed_length_nil_branches?` — `a :: … :: []` arms + default
 2. `ListSwitch.triple_branches?` — `::` × 2 + singleton + `[]`
-3. `ListSwitch.double_cons_wildcard_branches?`
-4. `ListSwitch.empty_var_branches?` — `[]` + var / wildcard
-5. `ListSwitch.branches?` — `::` + `[]`
+3. `ListSwitch.deep_cons_wildcard_branches?` — depth ≥ 3 cons + `_`
+4. `ListSwitch.double_cons_wildcard_branches?`
+5. `ListSwitch.empty_var_branches?` — `[]` + var / wildcard
+6. `ListSwitch.branches?` — `::` + `[]`
 6. `TagSwitch` — union / ctor tags
 7. `IntSwitch` — literal int arms
 8. `GuardedSwitch` — tuple / ctor / int / wildcard patterns
@@ -227,6 +231,10 @@ guard on ternary/binary maps).
 | `plan_primary_gap` | error | Reachable function not plan-eligible |
 | `plan_primary_coverage` | info | Stats when primary succeeds |
 | `plan_ir_mode_off_removed` | warning | Explicit `plan_ir_mode: :off` redirected to `:primary` |
+| `unsupported_cmd` | error (strict) | Cmd target has no lowering (`elmc/cmd`) |
+| `unsupported_sub` | error (strict) | Subscription target has no lowering (`elmc/subscriptions`) |
+| `unsupported_expr` | error (strict) | Unsupported IR expr reached codegen without lowering |
+| `dynamic_subscription_layout` | warning | Worker subscription layout could not be compacted |
 
 `Elmc.Backend.Plan.PrimaryCoverage` aggregates reachable/Main lowering stats on
 compile results (`layout_coercion_diagnostics`).
@@ -241,6 +249,68 @@ compile results (`layout_coercion_diagnostics`).
 See [C_CODEGEN_LAYER_AUDIT.md](C_CODEGEN_LAYER_AUDIT.md) for which `CCodegen` modules are legacy-body-only vs still required under plan-primary.
 
 IDE production builds use `plan_ir_mode: :primary` and default `plan_ir_strict: true`
-(`SizeProfile`, `Ide.PebbleToolchain.Elmc`). Apps that hit gaps need either
-toolchain extension or temporary `plan_ir_strict: false` in compile opts (not
-recommended for shipping).
+(`SizeProfile`, `Ide.PebbleToolchain.Elmc`). Apps that hit unsupported surface
+must get a structured diagnostic (`plan_primary_gap`, `unsupported_cmd`, …) —
+never silent placeholders (`"--:--"`, `elmc_int_zero()`, empty cmds).
+
+## Rock-solid compiler gates (2026-07)
+
+| Gate | Test / module | What it proves |
+|------|----------------|----------------|
+| CFG Verify | `Plan.Verify` + `plan_verify_test.exs` | No permanent `:none`; all blocks reachable; no dangling branch targets |
+| CFG fuzz | `plan_cfg_fuzz_test.exs` | Guarded `update` lowers verify-clean across arm/param samples |
+| Emit isolation | `value_slots_test.exs` | `ValueSlots.with_isolated_probe/1` restores parent slots after fusion probes |
+| TEA semantic smoke | `watchface_tea_semantic_smoke_test.exs` (`:slow`) | Host: init → drain time cmds → view ≠ `--:--`; digital, minimal, tangram, smoke_screen, watch_demo_time, analog, color_shapes |
+| App RC balance | `watchface_rc_track_smoke_test.exs` (`:slow` / `:watchface_rc`) | Host `ELMC_RC_TRACK`: init → drain → view → deinit balances; digital, minimal, smoke_screen, tangram, watch_demo_time, analog, color_shapes |
+| Value oracle | `core_compliance_differential_test.exs` (`:slow`) | elmx vs elmc on `CoreCompliance` pure helpers |
+| Corpus parity | `elm_run_corpus_execution_test.exs` (`:corpus_parity`) | elmc/elmx agree on expanded Basics smoke programs |
+| Stdlib RC probes | `generated_rc_track_*` / `plan_rc_track_*` | elm/core probe fixtures balance under `ELMC_RC_TRACK` |
+
+Run heavy gates one template per BEAM process:
+
+```bash
+export TEST_ULIMIT_V_KB=6291456 ELIXIR_ERL_OPTIONS="+S 1:1 +MMscs 256"
+./scripts/mix-test-per-template.sh test/watchface_tea_semantic_smoke_test.exs
+./scripts/mix-test-per-template.sh test/watchface_rc_track_smoke_test.exs
+```
+
+## Published language surface (user contract)
+
+Within this surface, users can depend on elmc for correct TEA + draw behavior **and**
+reference-counting balance on host:
+
+- Plan-primary strict templates in `PlanStrictTemplates`
+- Static ownership/CFG via `Plan.Verify` on every plan-lowered function
+- Runtime RC balance via `watchface_rc_track_smoke_test` (+ stdlib `generated_rc_track_*`)
+- Stdlib paths covered by `CoreCompliance` + corpus parity smoke
+- Pebble cmds/subs with encoded `Msg` tags at the call site
+- IR patterns in the construct / matcher tables above
+
+Outside the surface: compiler must emit **hard diagnostics**, not wrong runtime behavior.
+
+Host canaries intentionally include small watchfaces (`watchface_minimal`, `watchface_smoke_screen`) and
+larger templates (`watchface_yes`, `starter_watch`) remain on specialized companion/render harnesses —
+see `PlanStrictTemplates` vs `host_smoke_names` / `rc_host_smoke_names`.
+
+## Prune vs host RC track (intentional split)
+
+On-device builds use `prune_runtime: true` and omit the full `ELMC_RC_TRACK` registry to save flash.
+Host RC balance smokes (`watchface_rc_track_smoke_test`) compile with `prune_runtime: false` so
+`elmc_rc_track_check_balanced()` can run. Size prune keeps `#if !ELMC_RC_TRACK` host-toggle stubs
+so pruned runtimes still compile when `-DELMC_RC_TRACK=1` is set for probes.
+
+Optional follow-up: a canary with `prune_runtime: true` + `ELMC_RC_TRACK=1` once the pruned
+registry story is complete — not required for published-surface confidence today.
+
+Current gate: `runtime_prune_rc_track_host_toggle_test` proves pruned runtimes keep
+`#if !ELMC_RC_TRACK` wrappers and compile with `-DELMC_RC_TRACK=0`. Compiling the same
+pruned runtime with `-DELMC_RC_TRACK=1` still fails (missing `elmc_rc_track_drop_owned`
+registry under prune) — that is the intentional split above.
+
+## Emulator bug process
+
+When the emulator finds a toolchain bug:
+
+1. Add a **Verify invariant** or **TEA semantic / value oracle** test that fails without the fix.
+2. Optional: C-string shape regex as a secondary guard — not sufficient alone.
+3. Fix the toolchain root cause; do not patch app Elm to dodge codegen.

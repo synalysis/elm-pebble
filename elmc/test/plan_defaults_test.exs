@@ -20,10 +20,11 @@ defmodule Elmc.PlanDefaultsTest do
     assert Defaults.apply_defaults(%{})[:plan_ir_strict] == true
   end
 
-  test "default_plan_ir_mode off still reads as off before apply_defaults" do
-    Application.put_env(:elmc, :default_plan_ir_mode, :off)
-    assert Defaults.plan_ir_mode() == :off
-    assert Shadow.plan_ir_mode([]) == :off
+  test "unknown plan_ir_mode normalizes to primary" do
+    Application.put_env(:elmc, :default_plan_ir_mode, :primary)
+
+    assert Defaults.apply_defaults(%{plan_ir_mode: :off})[:plan_ir_mode] == :primary
+    refute Map.has_key?(Defaults.apply_defaults(%{plan_ir_mode: :off}), :plan_ir_mode_off_deprecated)
   end
 
   test "production default is primary when configured" do
@@ -43,13 +44,5 @@ defmodule Elmc.PlanDefaultsTest do
              plan_ir_strict: false,
              targets: [:c]
            }
-  end
-
-  test "explicit plan_ir_mode off remaps to primary with deprecation marker" do
-    Application.put_env(:elmc, :default_plan_ir_mode, :primary)
-
-    assert Defaults.apply_defaults(%{plan_ir_mode: :off})[:plan_ir_mode] == :primary
-    assert Defaults.apply_defaults(%{plan_ir_mode: :off})[:plan_ir_mode_off_deprecated] == true
-    refute Map.has_key?(Defaults.apply_defaults(%{}), :plan_ir_mode_off_deprecated)
   end
 end

@@ -469,7 +469,11 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
   end
 
   def compile(%{op: :list_literal, items: items}, ctx, b) do
-    List.compile_literal(items, ctx, b)
+    if Context.stream_mode?(ctx) do
+      Elmc.Backend.Plan.Lower.Stream.List.compile(items, ctx, b)
+    else
+      List.compile_literal(items, ctx, b)
+    end
   end
 
   def compile(%{op: :field_access, arg: %{op: :record_literal, fields: fields}, field: field}, ctx, b)
@@ -2965,6 +2969,7 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
     :list_head,
     :int_list_head_int,
     :int_list_head_boxed,
+    :list_nth_int_at,
     :list_is_empty,
     :list_length
   ]
@@ -3007,7 +3012,12 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
               view_peel_args: arg_regs,
               view_peel_extra: extra
             },
-            effects: Types.fallible_effects(owned, arg_regs, [])
+            effects: %{
+              produces: {:owned, owned},
+              consumes: [],
+              borrows: arg_regs,
+              fallible: false
+            }
           })
 
         {:ok, owned, b2}

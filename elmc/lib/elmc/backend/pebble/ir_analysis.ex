@@ -34,14 +34,6 @@ defmodule Elmc.Backend.Pebble.IRAnalysis do
   @spec has_view?(IR.t(), Types.entry_module()) :: boolean()
   defdelegate has_view?(ir, entry_module), to: Msg
 
-  @spec pick_tag(
-          Types.msg_constructor_list(),
-          [Types.msg_constructor_name()],
-          Types.pick_tag_opts()
-        ) :: Types.msg_tag()
-  def pick_tag(msg_constructors, names, opts \\ []),
-    do: Msg.pick_tag(msg_constructors, names, opts)
-
   @spec union_constructors(
           IR.t(),
           Types.union_module(),

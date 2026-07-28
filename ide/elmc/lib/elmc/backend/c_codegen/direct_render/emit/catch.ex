@@ -44,7 +44,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Catch do
 
     """
 
-    CATCH_END;#{cleanup_block}
+    CATCH_END#{cleanup_block}
     return Rc;
     """
   end

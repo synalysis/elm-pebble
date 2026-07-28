@@ -638,7 +638,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.MapLoops do
          env,
          counter
        ) do
-    {list_code, list_var, counter} = Host.compile_expr(list_expr, env, counter)
+    {list_code, list_var, counter} = Elmc.Backend.CCodegen.DirectRender.Emit.Operand.compile(list_expr, env, counter)
 
     head_native = "direct_native_head_#{next}"
 
@@ -674,7 +674,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.MapLoops do
          env,
          counter
        ) do
-    {list_code, list_var, counter} = Host.compile_expr(list_expr, env, counter)
+    {list_code, list_var, counter} = Elmc.Backend.CCodegen.DirectRender.Emit.Operand.compile(list_expr, env, counter)
     prefix_count = length(prefix_vars)
 
     {prefix_setup_code, prefix_slots, prefix_boxed_release_code, counter} =
@@ -706,7 +706,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.MapLoops do
 
   defp compile_arg_values(args, env, counter) do
     Enum.reduce(args, {"", [], counter}, fn arg_expr, {code_acc, vars_acc, c} ->
-      {code, var, c2} = Host.compile_expr(arg_expr, env, c)
+      {code, var, c2} = Elmc.Backend.CCodegen.DirectRender.Emit.Operand.compile(arg_expr, env, c)
       {code_acc <> "\n  " <> code, vars_acc ++ [var], c2}
     end)
   end
@@ -728,7 +728,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.MapLoops do
           {code_acc <> "\n  " <> code, refs_acc ++ [ref], releases_acc ++ cleanup, c2}
 
         :boxed ->
-          {code, ref, c2} = Host.compile_expr(arg_expr, env, c)
+          {code, ref, c2} = Elmc.Backend.CCodegen.DirectRender.Emit.Operand.compile(arg_expr, env, c)
           {code_acc <> "\n  " <> code, refs_acc ++ [ref], releases_acc ++ [ref], c2}
       end
     end)
@@ -1049,7 +1049,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.MapLoops do
          env,
          counter
        ) do
-    {list_code, list_var, counter} = Host.compile_expr(list_expr, env, counter)
+    {list_code, list_var, counter} = Elmc.Backend.CCodegen.DirectRender.Emit.Operand.compile(list_expr, env, counter)
 
     head_native = "direct_native_head_#{next}"
 
@@ -1081,7 +1081,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.MapLoops do
          env,
          counter
        ) do
-    {list_code, list_var, counter} = Host.compile_expr(list_expr, env, counter)
+    {list_code, list_var, counter} = Elmc.Backend.CCodegen.DirectRender.Emit.Operand.compile(list_expr, env, counter)
     prefix_count = length(prefix_vars)
 
     {prefix_setup_code, prefix_slots, prefix_boxed_release_code, counter} =
@@ -1157,7 +1157,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.MapLoops do
 
     {body, counter} =
       Enum.reduce(items, {"", counter}, fn item, {acc, c} ->
-        {item_code, item_var, c2} = Host.compile_expr(item, env, c)
+        {item_code, item_var, c2} = Elmc.Backend.CCodegen.DirectRender.Emit.Operand.compile(item, env, c)
 
         snippet = """
         #{item_code}
@@ -1224,7 +1224,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.MapLoops do
 
     {body, counter} =
       Enum.reduce(Enum.with_index(items), {"", counter}, fn {item, index}, {acc, c} ->
-        {item_code, item_var, c2} = Host.compile_expr(item, env, c)
+        {item_code, item_var, c2} = Elmc.Backend.CCodegen.DirectRender.Emit.Operand.compile(item, env, c)
         index_var = "direct_static_index_#{c2}"
         next_c = c2 + 1
 
@@ -1282,7 +1282,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.MapLoops do
         end)
 
       :error ->
-        {list_code, list_var, counter} = Host.compile_expr(list_expr, env, counter)
+        {list_code, list_var, counter} = Elmc.Backend.CCodegen.DirectRender.Emit.Operand.compile(list_expr, env, counter)
         item_var = "direct_node_#{next}->head"
         body_env = Map.put(env, arg, item_var)
 

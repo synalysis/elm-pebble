@@ -4,7 +4,7 @@ defmodule Elmc.Backend.CCodegen.ListRecordRepr do
 
 
   alias Elmc.Backend.CCodegen.Expr
-  alias Elmc.Backend.CCodegen.FusionSupport
+  alias Elmc.Backend.Plan.Fusion.Matchers.FusionSupport
   alias Elmc.Backend.CCodegen.Host
   alias Elmc.Backend.CCodegen.SchemaRegistry
   alias Elmc.Backend.CCodegen.TypeParsing

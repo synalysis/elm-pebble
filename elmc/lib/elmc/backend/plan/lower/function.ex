@@ -51,6 +51,14 @@ defmodule Elmc.Backend.Plan.Lower.Function do
   defp do_lower(decl, module_name, decl_map, opts) do
     opts = codegen_opts(opts)
 
+    if Keyword.get(opts, :stream_mode) do
+      lower_stream_body(decl, module_name, decl_map, opts)
+    else
+      do_lower_primary(decl, module_name, decl_map, opts)
+    end
+  end
+
+  defp do_lower_primary(decl, module_name, decl_map, opts) do
     # Call sites read arity from decl_map. Sync partial Html.map bindings
     # (`wrap = Html.map f`) to 1-arg so callers use call_fn, not CAF+closure.
     decl_map = Web.rewrite_decl_map(decl_map, opts)
@@ -88,6 +96,69 @@ defmodule Elmc.Backend.Plan.Lower.Function do
   end
 
   defp register_fusion_native_cache(plan, _module_name), do: plan
+
+  @spec lower_stream_body(Types.decl(), String.t(), Types.decl_map(), keyword()) :: Types.lower_result()
+
+  defp lower_stream_body(decl, module_name, decl_map, _opts) do
+    expr = Map.get(decl, :expr) || %{op: :int_literal, value: 0}
+    args = Map.get(decl, :args, []) |> List.wrap()
+    name = Map.get(decl, :name, "anon")
+
+    set = Process.get(:elmc_rc_required, MapSet.new())
+    Process.put(:elmc_rc_required, MapSet.put(set, {module_name, name}))
+
+    ctx =
+      Context.new(
+        module: module_name,
+        function_name: name,
+        decl_map: decl_map,
+        params: args,
+        rc_required: true,
+        fallible: true,
+        function_tail: false,
+        stream_mode: true
+      )
+      |> seed_param_types(decl)
+      |> seed_inferred_param_fields(decl)
+
+    b =
+      Builder.new(module_name, name,
+        args: args,
+        rc_required: true,
+        fallible: true
+      )
+
+    b_entry = preload_params(b, args)
+
+    case TupleParamBind.bind(decl, ctx, b_entry) do
+      {:ok, ctx1, b1} ->
+        case Expr.compile(expr, ctx1, b1) do
+          {:ok, :stream_void, b2} ->
+            b3 = Builder.emit_ret(b2, :stream_void)
+
+            plan =
+              Builder.to_function_plan(b3)
+              |> Map.put(:stream_mode, true)
+              |> EpilogueRelease.run()
+              |> Optimize.run()
+
+            case Verify.run(plan) do
+              :ok -> {:ok, plan}
+              {:error, reason, meta} -> {:error, {:verify, reason, meta}}
+            end
+
+          {:ok, _result_reg, _} ->
+            record_plan_unsupported(module_name, name, expr)
+            :unsupported
+
+          :unsupported ->
+            record_plan_unsupported(module_name, name, expr)
+        end
+
+      :unsupported ->
+        record_plan_unsupported(module_name, name, expr)
+    end
+  end
 
   @spec lower_expr_body(Types.decl(), String.t(), Types.decl_map(), keyword()) :: Types.ir_expr()
 

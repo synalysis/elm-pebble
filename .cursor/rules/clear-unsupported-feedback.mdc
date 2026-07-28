@@ -34,5 +34,11 @@ If a developer would ask “why doesn’t this work?” and the answer is “bec
 - **Bad:** codegen emits `elmc_int_zero()` for an unsupported `Cmd` and the app silently does nothing.
 - **Good:** diagnostic `unsupported_cmd` naming the target and arity; or an explicit runtime “unmapped” path documented in the contract.
 
+- **Bad:** unknown `Pebble.Events.onFoo` subscription lowers to `Sub.none` with no message.
+- **Good:** diagnostic `unsupported_sub` (`elmc/subscriptions`) with target and arity.
+
+- **Bad:** plan lowering miss surfaces only as `unsupported` in coverage stats.
+- **Good:** `plan_primary_fallback` / `plan_primary_gap` name the failing `op` and `target` from `elmc_plan_unsupported_reasons`.
+
 - **Bad:** IDE build succeeds while emulator behavior is wrong because a shim returned a no-op.
 - **Good:** compile panel / manifest shows the warning; user knows to fix Elm or wait for toolchain support before debugging app logic.

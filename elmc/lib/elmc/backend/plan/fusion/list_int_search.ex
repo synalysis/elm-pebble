@@ -5,7 +5,7 @@ defmodule Elmc.Backend.Plan.Fusion.ListIntSearch do
 
   alias Elmc.Backend.CCodegen.{EnvBindings, Host, Util}
   alias Elmc.Backend.CCodegen.Native.ListIntSearch
-  alias Elmc.Backend.Plan.Fusion.{Helper, Tuple2CaseTable}
+  alias Elmc.Backend.Plan.Fusion.Helper
   alias Elmc.Backend.Plan.Types
   alias Elmc.Backend.Plan.Types.FunctionPlan
 
@@ -17,7 +17,7 @@ defmodule Elmc.Backend.Plan.Fusion.ListIntSearch do
 
     with true <- Host.function_return_type(Map.get(decl, :type, "")) == "Int",
          {:ok, helper_c, native_scalar?} <- emit_helper(module_name, decl, decl_map) do
-      base_plan = Tuple2CaseTable.build_fusion_plan(module_name, name, decl, helper_c)
+      base_plan = Helper.build_fusion_plan(module_name, name, decl, helper_c)
       marked_plan = maybe_mark_native_scalar(base_plan, native_scalar?)
       plan = attach_list_int_search_fusion(marked_plan, module_name, decl, decl_map)
 

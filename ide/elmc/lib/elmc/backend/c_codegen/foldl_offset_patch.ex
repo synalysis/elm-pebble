@@ -351,7 +351,7 @@ defmodule Elmc.Backend.CCodegen.FoldlOffsetPatch do
             owned[0] = NULL;
           }
         }
-      CATCH_END;
+      CATCH_END
       elmc_release_array_lifo(owned, DIM(owned));
       return Rc;
     }

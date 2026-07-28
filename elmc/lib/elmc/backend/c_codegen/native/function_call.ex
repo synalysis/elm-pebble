@@ -13,7 +13,7 @@ defmodule Elmc.Backend.CCodegen.Native.FunctionCall do
   alias Elmc.Backend.CCodegen.LayoutCoerceEmit
   alias Elmc.Backend.CCodegen.Native.ListIntReduce
   alias Elmc.Backend.CCodegen.Native.ListIntSearch
-  alias Elmc.Backend.CCodegen.Tuple2CaseTable
+  alias Elmc.Backend.Plan.Fusion.Matchers.Tuple2CaseTable
   alias Elmc.Backend.CCodegen.ValueSlots
   alias Elmc.Backend.CCodegen.RcRuntimeEmit
   alias Elmc.Backend.CCodegen.PlanNativeProjection

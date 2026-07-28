@@ -339,7 +339,7 @@ defmodule Elmc.Backend.CCodegen.CSource do
   @spec catch_end?(pos_integer()) :: boolean()
 
   defp catch_end?(line) do
-    line == "CATCH_END" or line == "CATCH_END;"
+    line == "CATCH_END" or line == "CATCH_END"
   end
 
   @spec case_label?(pos_integer()) :: boolean()

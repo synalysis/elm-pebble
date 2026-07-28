@@ -35,7 +35,7 @@ defmodule Elmc.Backend.C.Lower.Frame do
     """
     CATCH_BEGIN
     #{body}
-    CATCH_END;
+    CATCH_END
     """
   end
 

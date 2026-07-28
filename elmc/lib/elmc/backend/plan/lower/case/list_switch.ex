@@ -57,6 +57,37 @@ defmodule Elmc.Backend.Plan.Lower.Case.ListSwitch do
 
   def double_cons_wildcard_branches?(_), do: false
 
+  @doc """
+  Two-arm case: deep cons spine `a :: b :: … :: rest` (depth >= 3) plus catch-all `_`/`var`.
+
+  For `List Int` subjects, match with one length check and bind heads via
+  `elmc_list_nth_int_default` — avoids GuardedSwitch's repeated Maybe peels.
+  """
+  @spec deep_cons_wildcard_branches?(Types.case_branches()) :: boolean()
+  def deep_cons_wildcard_branches?(branches) when is_list(branches) do
+    length(branches) == 2 and deep_cons_branch(branches) != nil and wildcard_branch(branches) != nil
+  end
+
+  def deep_cons_wildcard_branches?(_), do: false
+
+  @spec compile_deep_cons_wildcard(Types.ir_expr(), Types.case_branches(), Context.t(), Builder.t()) ::
+          {:ok, Types.reg() | :fn_out, Builder.t()} | :unsupported
+  def compile_deep_cons_wildcard(subject, branches, ctx, b) do
+    cons = deep_cons_branch(branches)
+    wild = wildcard_branch(branches)
+
+    with {:ok, head_names, rest_name} <- deep_cons_names(cons),
+         {:ok, subj_reg, b1} <- Expr.compile(subject, ctx, b) do
+      if ListIntType.list_int_subject?(ctx, subject) do
+        compile_deep_cons_list_int(subject, subj_reg, head_names, rest_name, wild, cons, ctx, b1)
+      else
+        compile_deep_cons_sequential(subject, subj_reg, head_names, rest_name, wild, cons, ctx, b1)
+      end
+    else
+      _ -> :unsupported
+    end
+  end
+
   @spec compile_double_cons_wildcard(Types.ir_expr(), Types.case_branches(), Context.t(), Builder.t()) ::
           {:ok, Types.reg() | :fn_out, Builder.t()} | :unsupported
   def compile_double_cons_wildcard(subject, branches, ctx, b) do
@@ -833,6 +864,214 @@ defmodule Elmc.Backend.Plan.Lower.Case.ListSwitch do
       })
 
     {:ok, reg, b2}
+  end
+
+  defp emit_test_list_length_gte(subj_reg, min, b) when is_integer(min) and min >= 0 do
+    {reg, b1} = Builder.fresh_reg(b)
+
+    {_, b2} =
+      Builder.emit(b1, :test_list_length_gte, %{
+        dest: reg,
+        args: %{reg: subj_reg, min: min},
+        effects: %{
+          produces: {:owned, reg},
+          consumes: [],
+          borrows: [subj_reg],
+          fallible: false
+        }
+      })
+
+    {:ok, reg, b2}
+  end
+
+  defp deep_cons_branch(branches), do: Enum.find(branches, &deep_cons_pattern?/1)
+
+  defp deep_cons_pattern?(%{pattern: pattern}), do: deep_cons_pattern?(pattern)
+
+  defp deep_cons_pattern?(pattern) do
+    match?({:ok, heads, _rest} when length(heads) >= 3, parse_deep_cons_wildcard(pattern))
+  end
+
+  defp deep_cons_names(%{pattern: pattern}) do
+    case parse_deep_cons_wildcard(pattern) do
+      {:ok, heads, rest} -> {:ok, Enum.map(heads, &var_name/1), var_name(rest)}
+      :error -> :error
+    end
+  end
+
+  defp parse_deep_cons_wildcard(pattern) do
+    case unwrap_cons_spine(pattern, []) do
+      {:ok, heads, rest} when length(heads) >= 3 ->
+        if Enum.all?(heads, &var_pattern?/1) and var_pattern?(rest) do
+          {:ok, heads, rest}
+        else
+          :error
+        end
+
+      _ ->
+        :error
+    end
+  end
+
+  defp unwrap_cons_spine(pattern, acc) do
+    case unwrap_cons(pattern) do
+      {:cons, head, tail} ->
+        unwrap_cons_spine(tail, [head | acc])
+
+      :empty ->
+        :error
+
+      :not_cons ->
+        if var_pattern?(pattern) do
+          {:ok, Enum.reverse(acc), pattern}
+        else
+          :error
+        end
+    end
+  end
+
+  defp compile_deep_cons_list_int(_subject, subj_reg, head_names, rest_name, wild, cons, ctx, b) do
+    n = length(head_names)
+    saved_pending = Map.get(b, :pending_merge_block)
+
+    with {:ok, long_enough, b1} <- emit_test_list_length_gte(subj_reg, n, b),
+         match_id = b1.next_block,
+         wild_id = match_id + 1,
+         merge_id = skip_reserved(wild_id + 1, saved_pending),
+         b_entry = Builder.finish_block(b1, {:br_if, match_id, wild_id, long_enough}),
+         b_reserved = %{b_entry | next_block: max(b_entry.next_block, merge_id + 1)},
+         {:ok, match_reg, match_exit, b_match} <-
+           compile_deep_cons_int_arm(
+             Map.get(cons, :expr),
+             head_names,
+             rest_name,
+             subj_reg,
+             ctx,
+             b_reserved,
+             match_id
+           ),
+         b_match_done = Builder.patch_terminator(b_match, match_exit, {:br, merge_id}),
+         {:ok, wild_reg, wild_exit, b_wild} <-
+           compile_arm(Map.get(wild, :expr), ctx, b_match_done, wild_id),
+         b_wild_done = Builder.patch_terminator(b_wild, wild_exit, {:br, merge_id}),
+         b_merge = Builder.begin_block(b_wild_done, merge_id),
+         {:ok, merge, b_out} <- emit_merge(long_enough, match_reg, wild_reg, b_merge) do
+      {:ok, merge, %{b_out | pending_merge_block: saved_pending}}
+    else
+      _ -> :unsupported
+    end
+  end
+
+  defp compile_deep_cons_int_arm(expr, head_names, rest_name, subj_reg, ctx, b, block_id) do
+    b_arm = Builder.begin_cfg_arm_block(b, block_id)
+    arm_ctx = Context.for_branch_arm(ctx)
+
+    {arm_ctx, b_bound} =
+      head_names
+      |> Enum.with_index()
+      |> Enum.reduce({arm_ctx, b_arm}, fn
+        {"_", _i}, acc ->
+          acc
+
+        {name, i}, {c_acc, b_acc} ->
+          {:ok, reg, b1} =
+            Expr.compile_runtime_builtin(:list_nth_int_at, [subj_reg], c_acc, b_acc, %{
+              index: i,
+              default: 0
+            })
+
+          {Context.put_local(c_acc, name, reg), Builder.bind_local(b1, name, reg)}
+      end)
+
+    with {:ok, arm_ctx, b_rest} <-
+           maybe_bind_int_rest(rest_name, subj_reg, length(head_names), arm_ctx, b_bound),
+         {:ok, reg, b1} <- Expr.compile(expr, arm_ctx, b_rest) do
+      exit = b1.current_block.id
+      {:ok, reg, exit, Builder.finish_block(b1, :none)}
+    else
+      _ -> :unsupported
+    end
+  end
+
+  defp maybe_bind_int_rest("_", _subj, _n, ctx, b), do: {:ok, ctx, b}
+
+  defp maybe_bind_int_rest(rest_name, subj_reg, n, ctx, b) when is_binary(rest_name) do
+    {n_reg, b1} = Builder.emit_const_int(b, n)
+    {:ok, rest_reg, b2} = Expr.compile_runtime_builtin(:list_drop, [n_reg, subj_reg], ctx, b1)
+    {:ok, Context.put_local(ctx, rest_name, rest_reg), Builder.bind_local(b2, rest_name, rest_reg)}
+  end
+
+  defp compile_deep_cons_sequential(subject, subj_reg, head_names, rest_name, wild, cons, ctx, b) do
+    n = length(head_names)
+    saved_pending = Map.get(b, :pending_merge_block)
+
+    with {:ok, long_enough, b1} <- emit_test_list_length_gte(subj_reg, n, b),
+         match_id = b1.next_block,
+         wild_id = match_id + 1,
+         merge_id = skip_reserved(wild_id + 1, saved_pending),
+         b_entry = Builder.finish_block(b1, {:br_if, match_id, wild_id, long_enough}),
+         b_reserved = %{b_entry | next_block: max(b_entry.next_block, merge_id + 1)},
+         {:ok, match_reg, match_exit, b_match} <-
+           compile_deep_cons_seq_arm(
+             Map.get(cons, :expr),
+             head_names,
+             rest_name,
+             subject,
+             subj_reg,
+             ctx,
+             b_reserved,
+             match_id
+           ),
+         b_match_done = Builder.patch_terminator(b_match, match_exit, {:br, merge_id}),
+         {:ok, wild_reg, wild_exit, b_wild} <-
+           compile_arm(Map.get(wild, :expr), ctx, b_match_done, wild_id),
+         b_wild_done = Builder.patch_terminator(b_wild, wild_exit, {:br, merge_id}),
+         b_merge = Builder.begin_block(b_wild_done, merge_id),
+         {:ok, merge, b_out} <- emit_merge(long_enough, match_reg, wild_reg, b_merge) do
+      {:ok, merge, %{b_out | pending_merge_block: saved_pending}}
+    else
+      _ -> :unsupported
+    end
+  end
+
+  defp compile_deep_cons_seq_arm(expr, head_names, rest_name, subject, subj_reg, ctx, b, block_id) do
+    b_arm = Builder.begin_cfg_arm_block(b, block_id)
+    arm_ctx = Context.for_branch_arm(ctx)
+    peel = if ListIntType.list_int_subject?(ctx, subject), do: :int_list, else: :maybe_list
+    {:ok, arm_ctx, b_bound} = peel_deep_cons_seq(peel, head_names, rest_name, subj_reg, arm_ctx, b_arm)
+
+    case Expr.compile(expr, arm_ctx, b_bound) do
+      {:ok, reg, b1} ->
+        exit = b1.current_block.id
+        {:ok, reg, exit, Builder.finish_block(b1, :none)}
+
+      :unsupported ->
+        :unsupported
+    end
+  end
+
+  defp peel_deep_cons_seq(peel, head_names, rest_name, list_reg, ctx, b) do
+    {c_acc, b_acc, rest_reg} =
+      Enum.reduce(head_names, {ctx, b, list_reg}, fn name, {c_acc, b_acc, cur} ->
+        {[head_arg, tail_arg], b_dup} = Builder.dup_regs_for_consume(b_acc, [cur, cur])
+        {:ok, head_reg, tail_reg, b1} = peel_cons_regs(peel, head_arg, tail_arg, c_acc, b_dup)
+
+        {c_acc, b1} =
+          if name == "_" do
+            {c_acc, b1}
+          else
+            {Context.put_local(c_acc, name, head_reg), Builder.bind_local(b1, name, head_reg)}
+          end
+
+        {c_acc, b1, tail_reg}
+      end)
+
+    if rest_name == "_" do
+      {:ok, c_acc, b_acc}
+    else
+      {:ok, Context.put_local(c_acc, rest_name, rest_reg),
+       Builder.bind_local(b_acc, rest_name, rest_reg)}
+    end
   end
 
   @spec skip_reserved(Types.ir_expr(), Types.ir_expr() | term()) :: Types.ir_expr()

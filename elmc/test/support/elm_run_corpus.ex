@@ -18,6 +18,10 @@ defmodule Elmc.Test.ElmRunCorpus do
     "Basics/BoolIntrinsicWrappers.elm",
     "Basics/DecTest.elm",
     "Basics/MainLiteral.elm",
+    "Basics/AsBound.elm",
+    "List/FoldlSum.elm",
+    "Dict/InsertGet.elm",
+    "Bitwise/BitwiseSpec.elm",
     "Advanced/MainRecordUpdateNested.elm",
     "Unicode/CharLiterals.elm",
     "TailDef/Main.elm"

@@ -462,14 +462,17 @@ defmodule Elmc.PlanLowerIrTest do
     assert length(plan.blocks) >= 4
     assert dump =~ "terminator switch_tag"
     assert dump =~ "terminator br"
-    assert dump =~ "builtin: :retain"
+    # Consuming retain coalesces into arm producers writing the merge reg directly.
+    refute dump =~ "builtin: :retain"
+    assert dump =~ "publish → fn_out"
     assert :ok = Verify.run(plan)
 
     c = CLowerFunction.emit(plan)
     assert c =~ "elmc_union_tag_matches"
     assert c =~ "goto elmc_plan_block_"
-    assert c =~ "*out = owned[1];"
+    assert c =~ "*out = owned[0];" or c =~ ~r/\*out = owned\[\d+\];/
     refute c =~ "elmc_retain(owned["
+    refute c =~ ~r/owned\[\d+\] = owned\[\d+\];/
   end
 
   test "lowers int add_const for record/cmd tuple sharing" do
@@ -690,12 +693,20 @@ defmodule Elmc.PlanLowerIrTest do
     assert {:ok, plan} = Function.lower(decl, "Main", %{}, rc_required: true)
     block_ids = MapSet.new(Enum.map(plan.blocks, & &1.id))
 
-    assert Enum.any?(plan.blocks, fn block ->
-             match?({:br, _}, block.terminator) and
-               Enum.any?(block.instrs, fn
-                 %{op: :call_runtime, args: %{builtin: :retain}} -> true
-                 _ -> false
-               end)
+    # Arms jump to a shared merge; consuming retains coalesce into producers that
+    # write the merge register directly (no retain juggling required).
+    # view_peel retains (Maybe Just payload) are still required and must remain.
+    assert Enum.any?(plan.blocks, fn block -> match?({:br, _}, block.terminator) end)
+
+    refute Enum.any?(plan.blocks, fn block ->
+             Enum.any?(block.instrs, fn
+               %{op: :call_runtime, args: %{builtin: :retain} = args, effects: effects} ->
+                 not Map.has_key?(args, :view_peel) and
+                   match?([_ | _], List.wrap(Map.get(effects, :consumes, [])))
+
+               _ ->
+                 false
+             end)
            end)
 
     refute dangling_branch_target?(plan.blocks, block_ids)
@@ -761,7 +772,10 @@ defmodule Elmc.PlanLowerIrTest do
 
     entry = Enum.find(plan.blocks, &(&1.id == plan.entry_block))
     refute match?(:none, entry.terminator), "entry must not halt before Msg tag tests"
-    assert match?({:br, _}, entry.terminator)
+
+    assert match?({:br, _}, entry.terminator) or
+             match?({:switch_tag, _, _, _}, entry.terminator),
+           "entry must branch into tag tests, got #{inspect(entry.terminator)}"
 
     c = CLowerFunction.emit(plan)
     refute Regex.match?(

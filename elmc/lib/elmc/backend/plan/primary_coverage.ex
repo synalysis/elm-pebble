@@ -6,7 +6,7 @@ defmodule Elmc.Backend.Plan.PrimaryCoverage do
   alias Elmc.Backend.CCodegen.Types, as: CCodegenTypes
   alias Elmc.Backend.CCodegen.{DirectRender.Analysis, GenericReachability, RcRequired}
   alias Elmc.Backend.Plan.Lower.Function, as: PlanLower
-  alias Elmc.Backend.Plan.StrictPolicy
+  alias Elmc.Backend.Plan.{StrictPolicy, UnsupportedReason}
   alias Elmc.Backend.Plan.Types, as: PlanTypes
   alias Elmc.Types
 
@@ -146,7 +146,14 @@ defmodule Elmc.Backend.Plan.PrimaryCoverage do
       "ratio" => coverage_ratio(total, lowered),
       "failed_preview" =>
         Enum.map(Enum.take(failed, 12), fn {mod, name, reason} ->
-          %{"module" => mod, "name" => name, "reason" => reason_string(reason)}
+          detail =
+            case reason do
+              :unsupported -> UnsupportedReason.lookup(mod, name) || :unsupported
+              {:unsupported, meta} -> meta
+              other -> other
+            end
+
+          %{"module" => mod, "name" => name, "reason" => reason_string(detail)}
         end)
     }
   end
@@ -259,5 +266,6 @@ defmodule Elmc.Backend.Plan.PrimaryCoverage do
 
   defp reason_string(:unsupported), do: "unsupported"
   defp reason_string({:verify, reason, _}), do: "verify:#{reason}"
+  defp reason_string(%{} = meta), do: UnsupportedReason.format(meta)
   defp reason_string(other), do: inspect(other)
 end

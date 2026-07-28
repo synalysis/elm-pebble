@@ -28,7 +28,8 @@ defmodule Elmc.Backend.Plan.Context do
     :letrec_capture_indices,
     :lambda_plan,
     :curried_type_offset,
-    :expected_fn_type
+    :expected_fn_type,
+    :stream_mode
   ]
 
   @type t :: %__MODULE__{
@@ -49,7 +50,8 @@ defmodule Elmc.Backend.Plan.Context do
           letrec_capture_indices: %{String.t() => non_neg_integer()},
           lambda_plan: boolean(),
           curried_type_offset: non_neg_integer(),
-          expected_fn_type: String.t() | nil
+          expected_fn_type: String.t() | nil,
+          stream_mode: boolean()
         }
 
   @type dest :: :scratch | :fn_out | :branch_out
@@ -76,7 +78,8 @@ defmodule Elmc.Backend.Plan.Context do
       letrec_capture_indices: Keyword.get(opts, :letrec_capture_indices, %{}),
       lambda_plan: Keyword.get(opts, :lambda_plan, false),
       curried_type_offset: Keyword.get(opts, :curried_type_offset, 0),
-      expected_fn_type: Keyword.get(opts, :expected_fn_type)
+      expected_fn_type: Keyword.get(opts, :expected_fn_type),
+      stream_mode: Keyword.get(opts, :stream_mode, false)
     }
   end
 
@@ -171,6 +174,9 @@ defmodule Elmc.Backend.Plan.Context do
 
   @spec function_tail?(t()) :: boolean()
   def function_tail?(ctx), do: ctx.function_tail or dest_for_call(ctx) == :fn_out
+
+  @spec stream_mode?(t()) :: boolean()
+  def stream_mode?(ctx), do: Map.get(ctx, :stream_mode, false) == true
 
   @spec put_local(t(), String.t(), Types.reg()) :: t()
   def put_local(ctx, name, reg) when is_binary(name) do

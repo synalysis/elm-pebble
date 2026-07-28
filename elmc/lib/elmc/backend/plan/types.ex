@@ -112,6 +112,7 @@ defmodule Elmc.Backend.Plan.Types do
           :const_int
           | :const_c_expr
           | :platform_static_int
+          | :platform_static_bool
           | :const_static_list
           | :const_immortal_string
           | :load_param
@@ -136,6 +137,7 @@ defmodule Elmc.Backend.Plan.Types do
           | :boxed_tag_peel
           | :test_maybe_nothing
           | :test_list_empty
+          | :test_list_length_gte
           | :test_ctor_tag
           | :test_bool
           | :test_string_literal
@@ -244,7 +246,8 @@ defmodule Elmc.Backend.Plan.Types do
       :fusion_data,
       :native_scalar_return,
       :native_scalar_value_return,
-      :fusion_emit
+      :fusion_emit,
+      :stream_mode
     ]
 
     @type t :: %__MODULE__{
@@ -268,7 +271,8 @@ defmodule Elmc.Backend.Plan.Types do
             fusion_data: Elmc.Backend.Plan.Types.fusion_data() | nil,
             native_scalar_return: :native_int | :native_bool | nil,
             native_scalar_value_return: boolean(),
-            fusion_emit: :helper_only | :public_native | nil
+            fusion_emit: :helper_only | :public_native | nil,
+            stream_mode: boolean()
           }
   end
 

@@ -164,7 +164,7 @@ defmodule Ide.PebbleToolchain.Elmc do
        ) do
     cond do
       reuse_cached_compile?(project_root, compile_out_dir, compile_opts, target_platforms) ->
-        Logger.debug(
+        Logger.info(
           "[elmc] reusing cached compile tree for #{project_root} (stamp match)"
         )
 
@@ -178,6 +178,12 @@ defmodule Ide.PebbleToolchain.Elmc do
         copy_compile_tree!(compile_out_dir, stage_out_dir)
 
       true ->
+        if Keyword.get(opts, :reuse_elmc_build, false) do
+          Logger.warning(
+            "[elmc] could not reuse .elmc-build for #{project_root}; recompiling for PBW packaging"
+          )
+        end
+
         with :ok <- reset_generated_dir(compile_out_dir),
              {:ok, _} <- map_compile_failure(compile_project_artifacts(project_root, compile_opts)),
              :ok <- write_compile_stamp(project_root, compile_out_dir, compile_opts, target_platforms),

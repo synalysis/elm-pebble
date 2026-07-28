@@ -1142,7 +1142,7 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
 
     core =
       if needs_catch? do
-        ["", "CATCH_BEGIN"] ++ [body_text] ++ ["CATCH_END;", ""]
+        ["", "CATCH_BEGIN"] ++ [body_text] ++ ["CATCH_END", ""]
       else
         ["" , body_text, ""]
       end
@@ -2123,7 +2123,7 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
         """
         CATCH_BEGIN
         #{catch_body_with_out}
-        CATCH_END;
+        CATCH_END
         """
       else
         catch_body
@@ -2228,7 +2228,7 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
         """
         CATCH_BEGIN
         #{catch_body_with_out}
-        CATCH_END;
+        CATCH_END
         """
       else
         catch_body
@@ -3061,7 +3061,7 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
       CHECK_RC(Rc);
       Rc = elmc_new_bool(out, native_result);
       CHECK_RC(Rc);
-    CATCH_END;
+    CATCH_END
     return Rc;
     """
     |> String.trim()
@@ -3076,7 +3076,7 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
     CATCH_BEGIN
       Rc = #{call};
       CHECK_RC(Rc);
-    CATCH_END;
+    CATCH_END
     return Rc;
     """
     |> String.trim()
@@ -3091,7 +3091,7 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
     RC Rc = RC_SUCCESS;
     CATCH_BEGIN
       *out = #{call};
-    CATCH_END;
+    CATCH_END
     return Rc;
     """
     |> String.trim()
@@ -3108,7 +3108,7 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
     CATCH_BEGIN
       Rc = #{call};
       CHECK_RC(Rc);
-    CATCH_END;
+    CATCH_END
     return (Rc == RC_SUCCESS) ? result : NULL;
     """
     |> String.trim()

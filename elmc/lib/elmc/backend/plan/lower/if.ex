@@ -36,6 +36,16 @@ defmodule Elmc.Backend.Plan.Lower.If do
   @spec compile_branches_cfg(Types.expr(), Types.expr(), Types.expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
 
   defp compile_branches_cfg(cond, then_expr, else_expr, ctx, b) do
+    if Context.stream_mode?(ctx) do
+      compile_stream_branches_cfg(cond, then_expr, else_expr, ctx, b)
+    else
+      compile_value_branches_cfg(cond, then_expr, else_expr, ctx, b)
+    end
+  end
+
+  @spec compile_value_branches_cfg(Types.expr(), Types.expr(), Types.expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+
+  defp compile_value_branches_cfg(cond, then_expr, else_expr, ctx, b) do
     saved_pending = Map.get(b, :pending_merge_block)
     cond_ctx = Context.for_branch_arm(ctx)
 
@@ -65,9 +75,51 @@ defmodule Elmc.Backend.Plan.Lower.If do
     arm_ctx = Context.for_branch_arm(ctx)
 
     case Expr.compile(expr, arm_ctx, b_arm) do
-      {:ok, reg, b1} ->
+      {:ok, reg, b1} when is_integer(reg) ->
         exit_id = b1.current_block.id
         {:ok, reg, exit_id, Builder.finish_block(b1, :none)}
+
+      :unsupported ->
+        :unsupported
+    end
+  end
+
+  @spec compile_stream_branches_cfg(Types.expr(), Types.expr(), Types.expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+
+  defp compile_stream_branches_cfg(cond, then_expr, else_expr, ctx, b) do
+    saved_pending = Map.get(b, :pending_merge_block)
+    cond_ctx = Context.for_branch_arm(ctx)
+
+    with {:ok, cond_reg, b1} <- Expr.compile(cond, cond_ctx, b),
+         then_id = b1.next_block,
+         else_id = then_id + 1,
+         merge_id = skip_reserved(else_id + 1, saved_pending),
+         b_entry = Builder.finish_block(b1, {:br_if, then_id, else_id, cond_reg}),
+         b_reserved = %{b_entry | next_block: max(b_entry.next_block, merge_id + 1)},
+         {:ok, :stream_void, then_exit, b_then} <-
+           compile_stream_branch(then_expr, ctx, b_reserved, then_id),
+         b_then_done = Builder.patch_terminator(b_then, then_exit, {:br, merge_id}),
+         {:ok, :stream_void, else_exit, b_else} <-
+           compile_stream_branch(else_expr, ctx, b_then_done, else_id),
+         b_else_done = Builder.patch_terminator(b_else, else_exit, {:br, merge_id}),
+         b_merge = Builder.begin_block(b_else_done, merge_id),
+         b_out = Builder.emit_ret(b_merge, :stream_void) do
+      {:ok, :stream_void, %{b_out | pending_merge_block: saved_pending}}
+    else
+      _ -> :unsupported
+    end
+  end
+
+  @spec compile_stream_branch(Types.expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+
+  defp compile_stream_branch(expr, ctx, b, block_id) do
+    b_arm = Builder.begin_cfg_arm_block(b, block_id)
+    arm_ctx = Context.for_branch_arm(ctx)
+
+    case Expr.compile(expr, arm_ctx, b_arm) do
+      {:ok, :stream_void, b1} ->
+        exit_id = b1.current_block.id
+        {:ok, :stream_void, exit_id, Builder.finish_block(b1, :none)}
 
       :unsupported ->
         :unsupported

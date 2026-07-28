@@ -248,8 +248,24 @@ defmodule Elmc.Backend.CCodegen.ValueSlotsTest do
     assert ValueSlots.slot_count() == 2
   end
 
+  test "with_isolated_probe restores full emit state after nested reset" do
+    ValueSlots.reset(epilogue_lifo: true)
+    {ref0, _} = ValueSlots.alloc()
+    ValueSlots.mark_written(ref0)
+    parent_next = ValueSlots.slot_count()
+
+    ValueSlots.with_isolated_probe(fn ->
+      ValueSlots.reset(epilogue_lifo: true)
+      ValueSlots.alloc()
+      :probe_done
+    end)
+
+    assert ValueSlots.slot_count() == parent_next
+    assert ValueSlots.ensure_fresh_assign_target(ref0) == "owned[#{parent_next}]"
+  end
+
   test "TailRecursiveLoop.try_emit restores parent ValueSlots after fusion probe" do
-    alias Elmc.Backend.CCodegen.TailRecursiveLoop
+    alias Elmc.Backend.Plan.Fusion.Matchers.TailRecursiveLoop
 
     ValueSlots.reset(epilogue_lifo: true)
     {ref0, _} = ValueSlots.alloc()

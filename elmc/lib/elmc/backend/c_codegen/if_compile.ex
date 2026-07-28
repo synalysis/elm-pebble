@@ -323,7 +323,7 @@ defmodule Elmc.Backend.CCodegen.IfCompile do
     case complementary_bool_branches(then_expr, else_expr, env) do
       polarity when polarity in [:cond_true, :cond_false] ->
         {out, counter, _declare?} = if_result_out_binding(env, counter)
-        flag = if(polarity == :cond_true, do: "elmc_as_int(#{cond_var})", else: "(elmc_as_int(#{cond_var}) == 0)")
+        flag = if(polarity == :cond_true, do: "elmc_as_bool(#{cond_var})", else: "!elmc_as_bool(#{cond_var})")
 
         assign =
           RcRuntimeEmit.assign_call(env, out, "elmc_new_bool", flag)
@@ -385,7 +385,7 @@ defmodule Elmc.Backend.CCodegen.IfCompile do
         [
           cond_code,
           CaseCompile.result_out_decl(out, declare_out?),
-          "if (elmc_as_int(#{cond_var}) != 0) {",
+          "if (elmc_as_bool(#{cond_var})) {",
           then_body,
           "} else {",
           else_body,

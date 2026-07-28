@@ -1,6 +1,8 @@
 defmodule Elmc.DirectRenderGenericViewPruneTest do
   use ExUnit.Case, async: false
 
+  @moduletag :slow
+
   alias Elmc.Test.CCodegenExtract
 
   test "color-only direct render prunes generic Main.view and faceOps while keeping view_commands_append" do

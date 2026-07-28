@@ -69,21 +69,38 @@ defmodule Elmc.Backend.Plan.Lower.Platform.Pebble do
   def compile_cmd(_, _, _), do: :unsupported
 
   @spec compile_render_cmd(Types.ir_expr(), Context.t(), Builder.t()) ::
-          {:ok, Types.reg() | :fn_out, Builder.t()} | :unsupported
+          {:ok, Types.reg() | :fn_out | :stream_void, Builder.t()} | :unsupported
   def compile_render_cmd(%{kind: kind, params: params}, ctx, b) do
-    compile_native_platform_op(:render_cmd, normalize_kind(kind), params, ctx, b)
+    if Context.stream_mode?(ctx) do
+      with {:ok, param_regs, b1} <- compile_params_scratch(params || [], ctx, b) do
+        emit_stream_platform_op(:render_cmd, normalize_kind(kind), param_regs, ctx, b1)
+      else
+        _ -> :unsupported
+      end
+    else
+      compile_native_platform_op(:render_cmd, normalize_kind(kind), params, ctx, b)
+    end
   end
 
   def compile_render_cmd(_, _, _), do: :unsupported
 
   @spec compile_render_text_cmd(Types.ir_expr(), Context.t(), Builder.t()) ::
-          {:ok, Types.reg() | :fn_out, Builder.t()} | :unsupported
+          {:ok, Types.reg() | :fn_out | :stream_void, Builder.t()} | :unsupported
   def compile_render_text_cmd(%{kind: kind, int_params: int_params, text: text}, ctx, b) do
-    with {:ok, param_regs, b1} <- compile_params_scratch(int_params || [], ctx, b),
-         {:ok, text_reg, b2} <- compile_text_param(text, ctx, b1) do
-      compile_native_text_cmd(:render_text_cmd, normalize_kind(kind), param_regs, text_reg, ctx, b2)
+    if Context.stream_mode?(ctx) do
+      with {:ok, param_regs, b1} <- compile_params_scratch(int_params || [], ctx, b),
+           {:ok, text_reg, b2} <- compile_text_param(text, ctx, b1) do
+        emit_stream_text_cmd(normalize_kind(kind), param_regs, text_reg, ctx, b2)
+      else
+        _ -> :unsupported
+      end
     else
-      _ -> :unsupported
+      with {:ok, param_regs, b1} <- compile_params_scratch(int_params || [], ctx, b),
+           {:ok, text_reg, b2} <- compile_text_param(text, ctx, b1) do
+        compile_native_text_cmd(:render_text_cmd, normalize_kind(kind), param_regs, text_reg, ctx, b2)
+      else
+        _ -> :unsupported
+      end
     end
   end
 
@@ -168,11 +185,51 @@ defmodule Elmc.Backend.Plan.Lower.Platform.Pebble do
   @spec borrow_only_platform_effects(Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
 
   defp borrow_only_platform_effects(dest, param_regs) do
-    if is_integer(dest) do
-      Types.fallible_effects(dest, param_regs, [])
-    else
+    if dest in [:fn_out, :branch_out, :stream_void] or not is_integer(dest) do
       %{produces: nil, consumes: [], borrows: param_regs, fallible: true}
+    else
+      Types.fallible_effects(dest, param_regs, [])
     end
+  end
+
+  @spec emit_stream_platform_op(atom(), map(), [Types.reg()], Context.t(), Builder.t()) ::
+          {:ok, :stream_void, Builder.t()} | :unsupported
+
+  defp emit_stream_platform_op(op, kind_arg, param_regs, ctx, b) do
+    wrap_catch? = Builder.wrap_fallible_instr_catch?(b, ctx, true)
+    b1 = if wrap_catch?, do: Builder.catch_begin(b), else: b
+
+    effects = borrow_only_platform_effects(:stream_void, param_regs)
+
+    {_, b2} =
+      Builder.emit(b1, op, %{
+        dest: :stream_void,
+        args: %{kind: kind_arg, params: param_regs, direct_scene_push: true},
+        effects: effects
+      })
+
+    b3 = if wrap_catch?, do: Builder.catch_end(b2), else: b2
+    {:ok, :stream_void, b3}
+  end
+
+  @spec emit_stream_text_cmd(map(), [Types.reg()], Types.reg(), Context.t(), Builder.t()) ::
+          {:ok, :stream_void, Builder.t()} | :unsupported
+
+  defp emit_stream_text_cmd(kind_arg, param_regs, text_reg, ctx, b) do
+    wrap_catch? = Builder.wrap_fallible_instr_catch?(b, ctx, true)
+    b1 = if wrap_catch?, do: Builder.catch_begin(b), else: b
+    borrow_regs = param_regs ++ [text_reg]
+    effects = borrow_only_platform_effects(:stream_void, borrow_regs)
+
+    {_, b2} =
+      Builder.emit(b1, :render_text_cmd, %{
+        dest: :stream_void,
+        args: %{kind: kind_arg, params: param_regs, text: text_reg, direct_scene_push: true},
+        effects: effects
+      })
+
+    b3 = if wrap_catch?, do: Builder.catch_end(b2), else: b2
+    {:ok, :stream_void, b3}
   end
 
   @spec normalize_kind(map() | term()) :: map()

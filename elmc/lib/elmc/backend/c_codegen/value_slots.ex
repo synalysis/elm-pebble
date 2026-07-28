@@ -9,7 +9,6 @@ defmodule Elmc.Backend.CCodegen.ValueSlots do
 
 
   alias Elmc.Backend.CCodegen.EnvBindings
-  alias Elmc.Backend.CCodegen.OwnershipTransfer
   alias Elmc.Backend.CCodegen.RcRuntimeEmit
   alias Elmc.Backend.CCodegen.Types
 
@@ -42,6 +41,40 @@ defmodule Elmc.Backend.CCodegen.ValueSlots do
     Process.delete(:elmc_result_slot_current)
 
     :ok
+  end
+
+  @doc """
+  Capture the full `:elmc_value_slots` process state before a nested emit probe.
+
+  Mid-emit fusion/analysis must restore this after `reset/1` so parent owned
+  indices are not reused while still referenced by already-emitted C.
+  """
+  @spec capture_emit_state() :: map() | nil
+  def capture_emit_state, do: Process.get(:elmc_value_slots)
+
+  @spec restore_emit_state(map() | nil) :: :ok
+  def restore_emit_state(nil), do: :ok
+
+  def restore_emit_state(state) when is_map(state) do
+    Process.put(:elmc_value_slots, state)
+    :ok
+  end
+
+  @doc """
+  Run `fun` while isolating emit slot state from the caller.
+
+  The parent `:elmc_value_slots` map is restored in an `after` block even when
+  `fun` raises or returns early.
+  """
+  @spec with_isolated_probe((-> result)) :: result when result: var
+  def with_isolated_probe(fun) when is_function(fun, 0) do
+    parent = capture_emit_state()
+
+    try do
+      fun.()
+    after
+      restore_emit_state(parent)
+    end
   end
 
   @spec epilogue_lifo?() :: boolean()
@@ -476,23 +509,19 @@ defmodule Elmc.Backend.CCodegen.ValueSlots do
   @spec transferred?(String.t() | non_neg_integer(), String.t() | nil) :: boolean()
   def transferred?(var, body \\ nil)
 
-  def transferred?(var, body) when is_binary(var) do
+  def transferred?(var, _body) when is_binary(var) do
     if closure_call_arg_consumed?(var) do
       true
     else
       case owned_index(var) do
-        nil ->
-          is_binary(body) and OwnershipTransfer.transferred_in_c_source?(var, body)
-
-        index ->
-          transferred?(index, body)
+        nil -> false
+        index -> transferred?(index)
       end
     end
   end
 
-  def transferred?(index, body) when is_integer(index) do
-    MapSet.member?(slots_state().transferred, index) or
-      (is_binary(body) and OwnershipTransfer.transferred_in_c_source?(ref(index), body))
+  def transferred?(index, _body) when is_integer(index) do
+    MapSet.member?(slots_state().transferred, index)
   end
 
   @spec slot_count() :: non_neg_integer()

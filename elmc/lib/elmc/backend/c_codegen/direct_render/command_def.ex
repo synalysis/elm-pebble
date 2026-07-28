@@ -6,6 +6,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.CommandDef do
   alias Elmc.Backend.CCodegen.DirectRender.Emit.Catch
   alias Elmc.Backend.CCodegen.DirectRender.Emit.DuplicateFieldHoists
   alias Elmc.Backend.CCodegen.DirectRender.Emit.RecordGetHoistPass
+  alias Elmc.Backend.CCodegen.DirectRender.PlanStreamEmit
   alias Elmc.Backend.CCodegen.DirectRender.RecordViewPeel
   alias Elmc.Backend.CCodegen.EnvBindings
   alias Elmc.Backend.CCodegen.FunctionEmit
@@ -129,8 +130,28 @@ defmodule Elmc.Backend.CCodegen.DirectRender.CommandDef do
     try do
       {field_hoist_preamble, start_counter} = DuplicateFieldHoists.preamble(decl.expr, env, 0)
 
-      case Host.direct_emit_expr(decl.expr, env, start_counter) do
-        {:ok, body_code, _counter} ->
+      case emit_commands_body(decl, mod.name, decl_map, env, start_counter) do
+        {:plan_stream, body_code} ->
+          unused_casts = FunctionEmit.unused_arg_casts(c_arg_bindings, [body_code])
+          helper_defs = direct_helper_defs()
+
+          body_code =
+            field_hoist_preamble <> body_code
+            |> Hoist.drop_unused_native_minmax_decls()
+            |> RecordGetHoistPass.run()
+
+          helper_defs <>
+            boxed_body(
+              c_name,
+              arg_bindings,
+              unused_casts,
+              body_code,
+              mod,
+              decl,
+              skip_value_slots_owned: true
+            )
+
+        {:legacy, body_code, _counter} ->
           unused_casts =
             FunctionEmit.unused_arg_casts(c_arg_bindings, [body_code])
 
@@ -164,7 +185,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.CommandDef do
           ElmEx.IR.Module.t(),
           Types.function_declaration()
         ) :: String.t()
-  defp boxed_body(c_name, arg_bindings, unused_casts, body_code, mod, decl) do
+  defp boxed_body(c_name, arg_bindings, unused_casts, body_code, mod, decl, catch_opts \\ []) do
     ValueSlots.ensure_covers_owned_refs(body_code)
 
     """
@@ -173,7 +194,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.CommandDef do
       #{unused_casts}
       if (!writer)
         return RC_ERR_INVALID_ARG;
-      #{Catch.function_body_prefix()}#{body_code}#{Catch.function_body_suffix()}
+      #{Catch.function_body_prefix(catch_opts)}#{body_code}#{Catch.function_body_suffix(catch_opts)}
     }
     #{scene_append_stub(c_name, mod, decl)}
     """
@@ -256,8 +277,32 @@ defmodule Elmc.Backend.CCodegen.DirectRender.CommandDef do
     try do
       {field_hoist_preamble, start_counter} = DuplicateFieldHoists.preamble(decl.expr, native_env, 0)
 
-      case Host.direct_emit_expr(decl.expr, native_env, start_counter) do
-        {:ok, body_code, _counter} ->
+      case emit_commands_body(decl, mod.name, decl_map, native_env, start_counter) do
+        {:plan_stream, body_code} ->
+          wrapper_unused_casts =
+            FunctionEmit.unused_arg_casts(c_arg_bindings, [wrapper_bindings, native_args])
+
+          native_unused_casts =
+            FunctionEmit.unused_arg_casts(c_arg_bindings, [body_code])
+
+          helper_defs = direct_helper_defs()
+
+          helper_defs <>
+            native_body(
+              c_name,
+              wrapper_bindings,
+              native_args,
+              mod,
+              decl,
+              wrapper_unused_casts,
+              native_unused_casts,
+              field_hoist_preamble <> body_code
+              |> Hoist.drop_unused_native_minmax_decls()
+              |> RecordGetHoistPass.run(),
+              skip_value_slots_owned: true
+            )
+
+        {:legacy, body_code, _counter} ->
           wrapper_unused_casts =
             FunctionEmit.unused_arg_casts(c_arg_bindings, [wrapper_bindings, native_args])
 
@@ -322,7 +367,8 @@ defmodule Elmc.Backend.CCodegen.DirectRender.CommandDef do
          decl,
          wrapper_unused_casts,
          native_unused_casts,
-         body_code
+         body_code,
+         catch_opts \\ []
        ) do
     ValueSlots.ensure_covers_owned_refs(body_code)
 
@@ -337,10 +383,50 @@ defmodule Elmc.Backend.CCodegen.DirectRender.CommandDef do
       #{native_unused_casts}
       if (!writer)
         return RC_ERR_INVALID_ARG;
-      #{Catch.function_body_prefix()}#{body_code}#{Catch.function_body_suffix()}
+      #{Catch.function_body_prefix(catch_opts)}#{body_code}#{Catch.function_body_suffix(catch_opts)}
     }
     #{scene_append_stub(c_name, mod, decl)}
     """
+  end
+
+  @spec emit_commands_body(
+          Types.function_declaration(),
+          String.t(),
+          Types.function_decl_map(),
+          Types.compile_env(),
+          non_neg_integer()
+        ) :: {:plan_stream, String.t()} | {:legacy, String.t(), non_neg_integer()} | :error
+  defp emit_commands_body(decl, module_name, decl_map, env, start_counter) do
+    case PlanStreamEmit.try_emit_body(decl, module_name, decl_map) do
+      {:ok, body_code} ->
+        {:plan_stream, body_code}
+
+      :error ->
+        case Host.direct_emit_expr(decl.expr, env, start_counter) do
+          {:ok, body_code, counter} ->
+            record_plan_stream_fallback(module_name, decl)
+            {:legacy, body_code, counter}
+
+          :error ->
+            :error
+        end
+    end
+  end
+
+  defp record_plan_stream_fallback(module_name, decl) do
+    cache = Process.get(:elmc_plan_unsupported_reasons, %{})
+
+    reason = %{
+      source: "elmc/direct_render",
+      code: "plan_stream_fallback",
+      op: Map.get(decl.expr || %{}, :op),
+      target: Map.get(decl.expr || %{}, :target) || Map.get(decl.expr || %{}, :name)
+    }
+
+    Process.put(
+      :elmc_plan_unsupported_reasons,
+      Map.put_new(cache, {module_name, decl.name}, reason)
+    )
   end
 
   defp scene_append_stub(c_name, mod, decl) do

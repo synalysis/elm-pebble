@@ -13,7 +13,7 @@ defmodule Elmc.Backend.CCodegen.BuiltinOperators do
   alias Elmc.Backend.CCodegen.Native.TypedReturn
   alias Elmc.Backend.CCodegen.OwnershipCompile
   alias Elmc.Backend.CCodegen.RuntimeCall
-  alias Elmc.Backend.CCodegen.SpecialValues
+  alias Elmc.Backend.Plan.Lower.SpecialValues
   alias Elmc.Backend.CCodegen.Types
   alias Elmc.Backend.CCodegen.ValueSlots
 
@@ -451,7 +451,7 @@ defmodule Elmc.Backend.CCodegen.BuiltinOperators do
         %{op: :int_literal, value: left},
         %{op: :int_literal, value: right},
         operator,
-        _env,
+        env,
         counter
       )
       when operator in ["+", "-", "*"] do
@@ -462,7 +462,7 @@ defmodule Elmc.Backend.CCodegen.BuiltinOperators do
         "*" -> left * right
       end
 
-    Host.compile_expr(%{op: :int_literal, value: value}, %{}, counter)
+    Host.compile_expr(%{op: :int_literal, value: value}, env, counter)
   end
 
   def int_binop(left, right, "-", env, counter) do
@@ -960,7 +960,7 @@ defmodule Elmc.Backend.CCodegen.BuiltinOperators do
 
     {out, next} = compare_bool_out_slot(env, counter)
 
-    {RcRuntimeEmit.assign_call(env, out, "elmc_new_bool", if(result, do: "1", else: "0")), out,
+    {RcRuntimeEmit.assign_call(env, out, "elmc_new_bool", if(result, do: "true", else: "false")), out,
      next}
   end
 

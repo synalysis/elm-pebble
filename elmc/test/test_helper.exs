@@ -5,6 +5,9 @@ Application.put_env(:elmc, :default_plan_ir_strict, true)
 
 ExUnit.configure(
   exclude: [
+    # Heavy template / wasm / plan-surface suites — opt in via `mix test.slow`
+    # or `--include slow` / `--only slow`.
+    :slow,
     :corpus,
     :corpus_run,
     :corpus_elmx,

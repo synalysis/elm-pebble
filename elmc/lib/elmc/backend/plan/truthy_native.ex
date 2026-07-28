@@ -39,13 +39,20 @@ defmodule Elmc.Backend.Plan.TruthyNative do
   defp shape_from_instr(%{op: :compare, args: %{kind: kind, left: left, right: right}}),
     do: {:compare, kind || :eq, left, right}
 
-  defp shape_from_instr(%{op: op, dest: dest, args: %{left: _left, right: _right}})
-       when op in [:bool_and, :test_maybe_nothing, :test_list_empty, :test_ctor_tag, :test_bool] and is_integer(dest),
+  defp shape_from_instr(%{op: :bool_and, dest: dest}) when is_integer(dest),
+    do: {:reg, dest}
+
+  defp shape_from_instr(%{op: op, dest: dest})
+       when op in [:test_maybe_nothing, :test_list_empty, :test_list_length_gte, :test_ctor_tag, :test_bool] and
+              is_integer(dest),
        do: {:reg, dest}
 
   defp shape_from_instr(%{op: :call_runtime, args: %{builtin: :new_bool, literal: value}})
        when value in [0, 1],
        do: {:const_int, value}
+
+  defp shape_from_instr(%{op: :platform_static_bool, dest: dest}) when is_integer(dest),
+    do: {:reg, dest}
 
   defp shape_from_instr(_), do: :unknown
 
@@ -107,13 +114,28 @@ defmodule Elmc.Backend.Plan.TruthyNative do
     |> Enum.flat_map(& &1.instrs)
     |> Enum.filter(&match?(%{op: :phi, args: %{truthy_native: true}}, &1))
     |> Enum.flat_map(fn %{args: args} ->
-      [
-        {args.then, Map.fetch!(args, :then_arm_block)},
-        {args.else, Map.fetch!(args, :else_arm_block)}
-      ]
+      # Only drop arms whose shape is fully reconstructed at the phi
+      # (`const_int` / `compare`). `{:reg, N}` still needs the defining
+      # instruction — dropping it leaves undeclared `tmp_N` in C.
+      []
+      |> maybe_drop_arm(args.then, Map.fetch!(args, :then_arm_block), Map.get(args, :then_shape))
+      |> maybe_drop_arm(args.else, Map.fetch!(args, :else_arm_block), Map.get(args, :else_shape))
     end)
     |> MapSet.new()
   end
+
+  defp maybe_drop_arm(acc, reg, block_id, shape)
+       when is_integer(reg) and is_integer(block_id) and is_list(acc) do
+    if reconstructible_phi_arm_shape?(shape) do
+      [{reg, block_id} | acc]
+    else
+      acc
+    end
+  end
+
+  defp reconstructible_phi_arm_shape?({:const_int, value}) when value in [0, 1], do: true
+  defp reconstructible_phi_arm_shape?({:compare, _, _, _}), do: true
+  defp reconstructible_phi_arm_shape?(_), do: false
 
   @doc false
   @spec phi_arm_drop_regs(Types.block_list()) :: MapSet.t(non_neg_integer())

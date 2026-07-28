@@ -489,7 +489,7 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
             ElmcValue *rec_values[#{field_count}] = { #{values_array} };
           #{CSource.indent(record_return, 2)}
           #{CSource.indent(field_nulls, 2)}
-            CATCH_END;
+            CATCH_END
             #{failure_cleanup}
             return Rc;
           }

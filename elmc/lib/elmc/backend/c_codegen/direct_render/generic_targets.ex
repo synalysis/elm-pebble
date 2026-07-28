@@ -7,7 +7,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.GenericTargets do
   alias Elmc.Backend.CCodegen.DirectRender.Emit.NativeRecord
   alias Elmc.Backend.CCodegen.DirectRender.RecordViewPeel
   alias Elmc.Backend.CCodegen.Expr
-  alias Elmc.Backend.CCodegen.FusionSupport
+  alias Elmc.Backend.Plan.Fusion.Matchers.FusionSupport
   alias Elmc.Backend.CCodegen.FunctionCallAbi
   alias Elmc.Backend.CCodegen.FunctionEmit
   alias Elmc.Backend.CCodegen.GenericReachability

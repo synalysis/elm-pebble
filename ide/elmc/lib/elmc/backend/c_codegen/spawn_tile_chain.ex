@@ -203,7 +203,7 @@ defmodule Elmc.Backend.CCodegen.SpawnTileChain do
         CHECK_RC(Rc);
         owned[0] = NULL;
         owned[1] = NULL;
-      CATCH_END;
+      CATCH_END
       elmc_release_array_lifo(owned, DIM(owned));
       return Rc;
     }

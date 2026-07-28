@@ -39,7 +39,6 @@ defmodule Elmc.Backend.Pebble.Types do
   @type msg_constructor_arities :: Core.msg_constructor_arities()
   @type msg_constructor_payload_specs :: Core.msg_constructor_payload_specs()
   @type msg_tag :: Core.msg_tag()
-  @type pick_tag_opts :: Core.pick_tag_opts()
   @type entry_module :: Core.entry_module()
   @type entry_lifecycle_fn :: Core.entry_lifecycle_fn()
   @type reachability_function_entry :: Core.reachability_function_entry()

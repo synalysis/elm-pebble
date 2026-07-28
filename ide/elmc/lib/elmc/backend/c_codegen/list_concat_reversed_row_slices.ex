@@ -197,7 +197,7 @@ defmodule Elmc.Backend.CCodegen.ListConcatReversedRowSlices do
         }
         Rc = elmc_list_from_int_array(out, flat, #{count});
         CHECK_RC(Rc);
-      CATCH_END;
+      CATCH_END
       return Rc;
     }
     """

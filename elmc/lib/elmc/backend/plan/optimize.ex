@@ -26,7 +26,7 @@ defmodule Elmc.Backend.Plan.Optimize do
         instrs =
           block.instrs
           |> Enum.reject(&dead_retain?(&1, used))
-          |> Enum.reject(&dead_phi_arm_value?(&1, phi_arm_drops))
+          |> then(fn is -> if System.get_env("ELMC_SKIP_PHI_ARM_DROP") == "1", do: is, else: Enum.reject(is, &dead_phi_arm_value?(&1, phi_arm_drops)) end)
           |> drop_unread_overwritten_defs(block.terminator)
 
         %{block | instrs: instrs}
@@ -38,9 +38,21 @@ defmodule Elmc.Backend.Plan.Optimize do
     blocks =
       blocks
       |> Enum.map(&rewrite_block_transfers(&1, last_reads, owned_defs))
+      # Fold consuming retain moves into the producer dest so C emit does not
+      # juggle distinct owned[] slots (`owned[a]=owned[b]; owned[b]=NULL`).
+      |> Enum.map(&coalesce_consuming_retain_block/1)
       |> simplify_branch_targets()
+      |> prune_unreachable_empty_blocks(plan.entry_block)
 
     %{plan | blocks: blocks}
+  end
+
+  defp prune_unreachable_empty_blocks(blocks, entry) do
+    reachable = Elmc.Backend.Plan.Cfg.reachable_ids(blocks, entry)
+
+    Enum.reject(blocks, fn %Block{id: id, instrs: instrs} ->
+      instrs == [] and not MapSet.member?(reachable, id)
+    end)
   end
 
   @spec coalesce_arm_publish_block(map()) :: Types.ir_expr()
@@ -94,6 +106,112 @@ defmodule Elmc.Backend.Plan.Optimize do
       |> drop_releases_of_already_consumed()
 
     %{block | instrs: instrs}
+  end
+
+  @spec coalesce_consuming_retain_block(Block.t()) :: Block.t()
+  defp coalesce_consuming_retain_block(%Block{instrs: instrs} = block) do
+    %{block | instrs: coalesce_consuming_retain_instrs(instrs)}
+  end
+
+  @spec coalesce_consuming_retain_instrs([map()]) :: [map()]
+  defp coalesce_consuming_retain_instrs(instrs) when is_list(instrs) do
+    case find_coalesceable_retain(instrs) do
+      {:ok, producer_idx, retain_idx, src, dest} ->
+        producer = Enum.at(instrs, producer_idx)
+        producer = rewrite_producer_dest(producer, src, dest)
+
+        instrs
+        |> List.replace_at(producer_idx, producer)
+        |> List.delete_at(retain_idx)
+        |> coalesce_consuming_retain_instrs()
+
+      :none ->
+        instrs
+    end
+  end
+
+  defp find_coalesceable_retain(instrs) do
+    instrs
+    |> Enum.with_index()
+    |> Enum.find_value(fn
+      {%{
+         op: :call_runtime,
+         dest: dest,
+         args: %{builtin: :retain, args: [src]} = args,
+         effects: effects
+       }, retain_idx}
+      when is_integer(dest) and is_integer(src) and dest != src ->
+        consumes = List.wrap(Map.get(effects, :consumes, []))
+
+        cond do
+          Map.has_key?(args, :view_peel) ->
+            nil
+
+          src not in consumes ->
+            nil
+
+          true ->
+            case find_unique_producer(instrs, src, retain_idx) do
+              {:ok, producer_idx} ->
+                if src_unused_between?(instrs, producer_idx, retain_idx, src) do
+                  {:ok, producer_idx, retain_idx, src, dest}
+                end
+
+              :none ->
+                nil
+            end
+        end
+
+      _ ->
+        nil
+    end)
+    |> case do
+      nil -> :none
+      other -> other
+    end
+  end
+
+  defp find_unique_producer(instrs, src, before_idx) do
+    matches =
+      instrs
+      |> Enum.with_index()
+      |> Enum.filter(fn {instr, idx} ->
+        idx < before_idx and Map.get(instr, :dest) == src and coalescable_producer?(instr)
+      end)
+
+    case matches do
+      [{_instr, idx}] -> {:ok, idx}
+      _ -> :none
+    end
+  end
+
+  defp coalescable_producer?(%{op: :call_runtime, args: %{builtin: :retain, view_peel: _}}), do: false
+  defp coalescable_producer?(%{op: :phi}), do: false
+  defp coalescable_producer?(%{dest: dest}) when is_integer(dest), do: true
+  defp coalescable_producer?(_), do: false
+
+  defp src_unused_between?(instrs, producer_idx, retain_idx, src) do
+    if retain_idx <= producer_idx + 1 do
+      true
+    else
+      instrs
+      |> Enum.slice((producer_idx + 1)..(retain_idx - 1)//1)
+      |> Enum.all?(fn instr ->
+        src not in operand_regs(instr) and Map.get(instr, :dest) != src
+      end)
+    end
+  end
+
+  defp rewrite_producer_dest(instr, src, dest) do
+    instr = %{instr | dest: dest}
+
+    case Map.get(instr, :effects) do
+      %{produces: {:owned, ^src}} = effects ->
+        %{instr | effects: %{effects | produces: {:owned, dest}}}
+
+      _ ->
+        instr
+    end
   end
 
   # When `retain(src)` is the last read of an owned `src` in the function, emit a
@@ -369,13 +487,21 @@ defmodule Elmc.Backend.Plan.Optimize do
 
   defp operand_regs(%{op: :phi, args: %{then: then_r, else: else_r}}), do: [then_r, else_r]
 
+  defp operand_regs(%{op: :forward_ref_set, args: %{value: value}}) when is_integer(value),
+    do: [value]
+
   defp operand_regs(%{effects: %{borrows: borrows, consumes: consumes}}) do
     (borrows || []) ++ (consumes || [])
   end
 
   defp operand_regs(%{args: %{args: args}}) when is_list(args), do: args
   defp operand_regs(%{args: %{lhs: lhs, rhs: rhs}}), do: [lhs, rhs]
+  defp operand_regs(%{args: %{base: base, value: value}})
+       when is_integer(base) and is_integer(value),
+       do: [base, value]
+
   defp operand_regs(%{args: %{base: base}}) when is_integer(base), do: [base]
+  defp operand_regs(%{args: %{value: value}}) when is_integer(value), do: [value]
   defp operand_regs(%{args: %{source: source}}) when is_integer(source), do: [source]
   defp operand_regs(%{args: %{subject: subject}}) when is_integer(subject), do: [subject]
   defp operand_regs(%{args: %{regs: regs}}) when is_list(regs), do: regs

@@ -3,7 +3,7 @@ defmodule Elmc.Backend.CCodegen.OperatorCallRewriteTest do
 
   alias Elmc.Backend.CCodegen.Host
   alias Elmc.Backend.CCodegen.Native.Bool, as: NativeBool
-  alias Elmc.Backend.CCodegen.SpecialValues.Core
+  alias Elmc.Backend.Plan.Lower.SpecialValues.Core
 
   test "operator_call_rewrite does not identity-rewrite kernel operator calls" do
     left = %{op: :int_literal, value: 1}

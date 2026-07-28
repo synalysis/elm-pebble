@@ -1,6 +1,8 @@
 defmodule Elmc.ConstructorTagCaseFnOutTest do
   use ExUnit.Case, async: false
 
+  @moduletag :slow
+
   alias Elmc.Test.CCodegenExtract
 
   test "SecondChanged update branch writes function out once after tuple assembly" do

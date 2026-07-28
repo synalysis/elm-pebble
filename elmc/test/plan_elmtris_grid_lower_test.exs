@@ -1,6 +1,8 @@
 defmodule Elmc.PlanElmtrisGridLowerTest do
   use ExUnit.Case, async: false
 
+  @moduletag :slow
+
   alias Elmc.Backend.Plan.Lower.Function
   alias Elmc.Backend.Plan.Verify
   alias Elmc.TestSupport.TemplateCompile

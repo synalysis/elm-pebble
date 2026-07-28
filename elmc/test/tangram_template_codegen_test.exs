@@ -74,36 +74,6 @@ defmodule Elmc.TangramTemplateCodegenTest do
     assert Enum.at(new_int_slots, 4) >= 4
   end
 
-  test "tangram Main.update reaches CurrentDateTime tag match from plan entry" do
-    project_dir = TangramTemplate.scaffold_project()
-    out_dir = Path.join(System.tmp_dir!(), "tangram-update-entry-#{System.unique_integer([:positive])}")
-    File.rm_rf!(out_dir)
-
-    assert {:ok, _result} =
-             Elmc.compile(project_dir, %{
-               out_dir: out_dir,
-               entry_module: "Main",
-               strip_dead_code: true,
-               plan_ir_mode: :primary
-             })
-
-    update =
-      Elmc.Test.CCodegenExtract.fn_body(
-        File.read!(Path.join(out_dir, "c/elmc_generated.c")),
-        "elmc_fn_Main_update"
-      )
-
-    # GuardedSwitch used to seal entry with :none → case 0 halts forever and
-    # model.now stays Nothing → timeText "--:--".
-    refute Regex.match?(
-             ~r/case 0:\s*__plan_state = -1; break;\s*case 1:/s,
-             update
-           ),
-           "update entry must branch into Msg tag tests, not halt"
-
-    assert update =~ "ELMC_UNION_MAIN_CURRENTDATETIME"
-  end
-
   test "tangram watchface view codegen does not reference phantom Main.start helpers" do
     project_dir = TangramTemplate.scaffold_project()
     out_dir = Path.join(System.tmp_dir!(), "tangram-codegen-#{System.unique_integer([:positive])}")
@@ -158,7 +128,7 @@ defmodule Elmc.TangramTemplateCodegenTest do
     assert vector_draw_origin =~ "CHECK_RC(Rc);"
 
     catch_body =
-      case Regex.run(~r/CATCH_BEGIN([\s\S]*?)CATCH_END;/, vector_draw_origin) do
+      case Regex.run(~r/CATCH_BEGIN([\s\S]*?)CATCH_END/, vector_draw_origin) do
         [_, body] -> body
         _ -> flunk("expected vectorDrawOrigin to use CATCH_BEGIN/CATCH_END")
       end

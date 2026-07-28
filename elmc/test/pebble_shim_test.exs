@@ -202,6 +202,73 @@ defmodule Elmc.PebbleShimTest do
     assert run_code == 0
   end
 
+  test "storage read string uses call-site Msg tag not constructor-name guessing" do
+    cc = System.find_executable("cc")
+    if is_nil(cc), do: flunk("cc not available for pebble shim C test")
+
+    source_fixture = Path.expand("fixtures/simple_project", __DIR__)
+    project_dir = Path.expand("tmp/storage_my_string_loaded_project", __DIR__)
+    out_dir = Path.expand("tmp/storage_my_string_loaded_codegen", __DIR__)
+    File.rm_rf!(project_dir)
+    File.rm_rf!(out_dir)
+    File.cp_r!(source_fixture, project_dir)
+    write_storage_read_string_app!(project_dir, "MyStringLoaded")
+
+    {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+
+    harness_path = Path.join(out_dir, "c/storage_my_string_loaded_harness.c")
+
+    File.write!(
+      harness_path,
+      """
+      #include "elmc_pebble.h"
+
+      int main(void) {
+        ElmcPebbleApp app = {0};
+        ElmcValue *flags = elmc_new_int_take(0);
+        if (elmc_pebble_init(&app, flags) != 0) return 2;
+        elmc_release(flags);
+
+        ElmcPebbleCmd cmd = {0};
+        if (elmc_pebble_take_cmd(&app, &cmd) != 0) return 3;
+        if (cmd.kind != ELMC_PEBBLE_CMD_STORAGE_READ_STRING) return 4;
+        if (cmd.p1 != ELMC_PEBBLE_MSG_MYSTRINGLOADED) return 5;
+        if (elmc_pebble_dispatch_tag_string(&app, cmd.p1, "42") != 0) return 6;
+
+        elmc_pebble_deinit(&app);
+        return 0;
+      }
+      """
+    )
+
+    binary_path = Path.join(out_dir, "storage_my_string_loaded_harness")
+
+    {compile_out, compile_code} =
+      System.cmd(cc, [
+        "-std=c11",
+        "-Wall",
+        "-Wextra",
+        "-include", Path.expand("support/elmc_host_stubs.h", __DIR__),
+        "-I#{Path.join(out_dir, "runtime")}",
+        "-I#{Path.join(out_dir, "ports")}",
+        "-I#{Path.join(out_dir, "c")}",
+        Path.join(out_dir, "runtime/elmc_runtime.c"),
+        Path.join(out_dir, "ports/elmc_ports.c"),
+        Path.join(out_dir, "c/elmc_generated.c"),
+        Path.join(out_dir, "c/elmc_worker.c"),
+        Path.join(out_dir, "c/elmc_pebble.c"),
+        harness_path,
+        "-lm",
+        "-o",
+        binary_path
+      ])
+
+    assert compile_code == 0, compile_out
+
+    {_run_out, run_code} = System.cmd(binary_path, [])
+    assert run_code == 0
+  end
+
   test "scene command stream supports views larger than prior chunk size" do
     cc = System.find_executable("cc")
     if is_nil(cc), do: flunk("cc not available for pebble shim C test")
@@ -1869,7 +1936,8 @@ defmodule Elmc.PebbleShimTest do
         elmc_pebble_deinit(&app);
         uint64_t alloc = elmc_rc_allocated_count();
         uint64_t rel = elmc_rc_released_count();
-        return alloc > rel && (alloc - rel) <= 24 ? 0 : 12;
+        /* Balanced (delta 0) is success; allow a small immortal residual. */
+        return alloc >= rel && (alloc - rel) <= 24 ? 0 : 12;
       }
       
       
@@ -2946,7 +3014,7 @@ defmodule Elmc.PebbleShimTest do
     """)
   end
 
-  defp write_storage_read_string_app!(project_dir) do
+  defp write_storage_read_string_app!(project_dir, msg_ctor \\ "BestLoaded") do
     File.write!(Path.join(project_dir, "src/Main.elm"), """
     module Main exposing (main)
 
@@ -2958,7 +3026,7 @@ defmodule Elmc.PebbleShimTest do
 
 
     type Msg
-        = BestLoaded String
+        = #{msg_ctor} String
 
 
     main : Program Decode.Value Int Msg
@@ -2972,12 +3040,12 @@ defmodule Elmc.PebbleShimTest do
 
 
     init _ =
-        ( 0, Storage.readString 2048 BestLoaded )
+        ( 0, Storage.readString 2048 #{msg_ctor} )
 
 
     update msg _ =
         case msg of
-            BestLoaded value ->
+            #{msg_ctor} value ->
                 ( Maybe.withDefault 0 (String.toInt value), Cmd.none )
 
 

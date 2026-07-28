@@ -9,7 +9,7 @@ defmodule Elmc.PlanStrictPolicyTest do
     assert StrictPolicy.strict?(plan_ir_mode: :primary)
     refute StrictPolicy.strict?(%{plan_ir_mode: :primary, plan_ir_strict: false})
     refute StrictPolicy.strict?(%{plan_ir_mode: :shadow})
-    refute StrictPolicy.strict?(%{plan_ir_mode: :off})
+    refute StrictPolicy.strict?(%{plan_ir_mode: :shadow})
   end
 
   test "gap and reachable fallback severities follow strict policy" do

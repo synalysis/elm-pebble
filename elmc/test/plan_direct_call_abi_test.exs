@@ -110,7 +110,7 @@ defmodule Elmc.PlanDirectCallAbiTest do
     project_dir = Path.expand("fixtures/companion_weather_worker", __DIR__)
 
     assert {:ok, _} =
-             Elmc.compile(project_dir, %{
+             Elmc.TestSupport.CachedCompile.compile(project_dir, %{
                out_dir: out_dir,
                entry_module: "Main",
                strip_dead_code: true,

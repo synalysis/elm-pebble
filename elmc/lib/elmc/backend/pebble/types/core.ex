@@ -40,7 +40,6 @@ defmodule Elmc.Backend.Pebble.Types.Core do
         }
 
   @type msg_tag :: integer()
-  @type pick_tag_opts :: [fallback: msg_tag()]
 
   @type entry_module :: String.t()
   @type entry_lifecycle_fn :: :init | :update | :subscriptions | :view | :main

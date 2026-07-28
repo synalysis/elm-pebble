@@ -19,6 +19,14 @@ defmodule Elmc.Backend.Plan.Lower.List do
   end
 
   def compile_literal(items, ctx, b) when is_list(items) do
+    if Context.stream_mode?(ctx) do
+      Elmc.Backend.Plan.Lower.Stream.List.compile(items, ctx, b)
+    else
+      compile_literal_primary(items, ctx, b)
+    end
+  end
+
+  defp compile_literal_primary(items, ctx, b) when is_list(items) do
     cond do
       match?({:ok, _}, static_int_literal_values(items)) ->
         {:ok, values} = static_int_literal_values(items)

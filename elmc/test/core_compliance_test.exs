@@ -154,7 +154,7 @@ defmodule Elmc.CoreComplianceTest do
       }
 
       static void print_result_i(const char *label, ElmcValue *value) {
-        ElmcValue *forced = elmc_task_force(value);
+        ElmcValue *forced = elmc_task_force_take(value);
         ElmcValue *result = forced ? forced : value;
         int is_ok = result &&
                     result->tag == ELMC_TAG_RESULT &&

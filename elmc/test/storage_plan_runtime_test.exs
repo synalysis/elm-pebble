@@ -26,8 +26,12 @@ defmodule Elmc.StoragePlanRuntimeTest do
         ElmcValue *compact = elmc_harness_list_from_int_array(items, 4);
         elmc_int_t hit = elmc_array_get_with_default_int(-1, 2, compact);
         elmc_int_t miss = elmc_array_get_with_default_int(-1, 9, compact);
-        elmc_int_t len = elmc_as_int(elmc_array_length(compact));
-        ElmcValue *set = elmc_array_set(elmc_harness_new_int(1), elmc_harness_new_int(99), compact);
+        ElmcValue *len_v = NULL;
+        if (elmc_array_length(&len_v, compact) != RC_SUCCESS) return 1;
+        elmc_int_t len = elmc_as_int(len_v);
+        elmc_release(len_v);
+        ElmcValue *set = NULL;
+        if (elmc_array_set(&set, elmc_harness_new_int(1), elmc_harness_new_int(99), compact) != RC_SUCCESS) return 1;
         elmc_int_t after_set = elmc_array_get_with_default_int(-1, 1, set);
 
         printf("hit=%ld miss=%ld len=%ld after_set=%ld\\n",

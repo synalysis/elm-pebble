@@ -695,7 +695,7 @@ defmodule Elmc.Backend.CCodegen.PermuteMergeInversePipeline do
         CHECK_RC(Rc);
         elmc_release(save_cmd);
       }
-      CATCH_END;
+      CATCH_END
       return Rc;
     }
     """

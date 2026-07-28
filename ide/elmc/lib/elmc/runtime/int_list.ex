@@ -107,7 +107,7 @@ defmodule Elmc.Runtime.IntList do
           *out = &cell->value;
           cell = NULL;
         }
-      CATCH_END;
+      CATCH_END
       if (cell) {
         if (cell->data.values) elmc_free(cell->data.values);
         elmc_free(cell);
@@ -182,7 +182,7 @@ defmodule Elmc.Runtime.IntList do
             cell = NULL;
           }
         }
-      CATCH_END;
+      CATCH_END
       elmc_release(cell);
       return rc;
     }
@@ -207,7 +207,7 @@ defmodule Elmc.Runtime.IntList do
           rc = elmc_int_list_alloc_copy(out, reversed, payload->length);
           CHECK_RC(rc);
         }
-      CATCH_END;
+      CATCH_END
       if (reversed) elmc_free(reversed);
       return rc;
     }
@@ -242,7 +242,7 @@ defmodule Elmc.Runtime.IntList do
             CHECK_RC(rc);
           }
         }
-      CATCH_END;
+      CATCH_END
       if (merged) elmc_free(merged);
       return rc;
     }
@@ -297,7 +297,7 @@ defmodule Elmc.Runtime.IntList do
           rc = elmc_int_list_alloc_copy(out, kept, kept_count);
           CHECK_RC(rc);
         }
-      CATCH_END;
+      CATCH_END
       if (kept) elmc_free(kept);
       return rc;
     }
@@ -363,7 +363,7 @@ defmodule Elmc.Runtime.IntList do
           rc = elmc_int_list_alloc_copy(out, kept, kept_count);
           CHECK_RC(rc);
         }
-      CATCH_END;
+      CATCH_END
       if (kept) elmc_free(kept);
       return rc;
     }
@@ -392,7 +392,7 @@ defmodule Elmc.Runtime.IntList do
         }
         *out = result;
         result = NULL;
-      CATCH_END;
+      CATCH_END
       elmc_release(cell);
       elmc_release(result);
       return rc;
@@ -442,7 +442,7 @@ defmodule Elmc.Runtime.IntList do
           rc = elmc_int_list_alloc_copy(out, mapped, payload->length);
           CHECK_RC(rc);
         }
-      CATCH_END;
+      CATCH_END
       if (mapped) elmc_free(mapped);
       return rc;
     }
@@ -481,7 +481,7 @@ defmodule Elmc.Runtime.IntList do
         }
         *out = result;
         result = NULL;
-      CATCH_END;
+      CATCH_END
       elmc_release(result);
       return rc;
     }
@@ -499,7 +499,7 @@ defmodule Elmc.Runtime.IntList do
         CHECK_RC(rc);
         rc = elmc_list_foldr(out, function, acc, cons);
         CHECK_RC(rc);
-      CATCH_END;
+      CATCH_END
       elmc_release(cons);
       return rc;
     }
@@ -552,7 +552,7 @@ defmodule Elmc.Runtime.IntList do
           rc = elmc_int_list_alloc_copy(out, mapped, payload->length);
           CHECK_RC(rc);
         }
-      CATCH_END;
+      CATCH_END
       if (mapped) elmc_free(mapped);
       return rc;
     }
@@ -608,7 +608,7 @@ defmodule Elmc.Runtime.IntList do
             CHECK_RC(rc);
           }
         }
-      CATCH_END;
+      CATCH_END
       if (buf) elmc_free(buf);
       return rc;
     }
@@ -647,7 +647,7 @@ defmodule Elmc.Runtime.IntList do
             }
           }
         }
-      CATCH_END;
+      CATCH_END
       if (buf) elmc_free(buf);
       return rc;
     }
@@ -667,7 +667,7 @@ defmodule Elmc.Runtime.IntList do
             CHECK_RC(rc);
           }
         }
-      CATCH_END;
+      CATCH_END
       return rc;
     }
 
@@ -685,7 +685,7 @@ defmodule Elmc.Runtime.IntList do
           rc = elmc_int_list_drop_int(out, 1, list);
           CHECK_RC(rc);
         }
-      CATCH_END;
+      CATCH_END
       return rc;
     }
     """
@@ -729,7 +729,7 @@ defmodule Elmc.Runtime.IntList do
           *out = result;
           result = NULL;
         }
-      CATCH_END;
+      CATCH_END
       if (cell) elmc_free(cell);
       elmc_release(result);
       return rc;
@@ -757,7 +757,7 @@ defmodule Elmc.Runtime.IntList do
           rc = elmc_new_int(out, ((ElmcIntSpine *)list->payload)->head);
           CHECK_RC(rc);
         }
-      CATCH_END;
+      CATCH_END
       return rc;
     }
 
@@ -769,7 +769,7 @@ defmodule Elmc.Runtime.IntList do
         } else {
           *out = elmc_retain(((ElmcIntSpine *)list->payload)->tail);
         }
-      CATCH_END;
+      CATCH_END
       return rc;
     }
     """

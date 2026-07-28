@@ -753,7 +753,7 @@ defmodule Elmc.Backend.CCodegen.RowSliceAdjacentMerge do
           owned[0] = NULL;
           owned[1] = NULL;
         }
-      CATCH_END;
+      CATCH_END
       elmc_release_array_lifo(owned, DIM(owned));
       return Rc;
     }

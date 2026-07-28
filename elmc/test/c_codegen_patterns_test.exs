@@ -75,6 +75,18 @@ defmodule Elmc.CCodegenPatternsTest do
     body
   end
 
+
+  alias Elmc.TestSupport.SnippetProject
+
+  defp compile_snippet!(name, source, compile \\ %{}) when is_binary(name) and is_binary(source) do
+    SnippetProject.compile_main!(source,
+      name: name,
+      compile: compile,
+      out_dir: Path.expand("tmp/#{name}_codegen", __DIR__)
+    )
+  end
+
+
   test "maybe_unwrap_just_case? recognizes Nothing + bare var branches" do
     branches = [
       %{pattern: %{kind: :constructor, name: "Nothing", bind: nil, arg_pattern: nil}},
@@ -243,19 +255,7 @@ defmodule Elmc.CCodegenPatternsTest do
 
     """
 
-    project_dir = Path.expand("tmp/list_all_neq_zero", __DIR__)
-    out_dir = Path.expand("tmp/list_all_neq_zero_codegen", __DIR__)
-    File.rm_rf!(project_dir)
-    File.rm_rf!(out_dir)
-    File.mkdir_p!(Path.join(project_dir, "src"))
-    File.write!(Path.join(project_dir, "src/Main.elm"), source)
-
-    File.write!(
-      Path.join(project_dir, "elm.json"),
-      File.read!(Path.expand("fixtures/simple_project/elm.json", __DIR__))
-    )
-
-    assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+    out_dir = compile_snippet!("list_all_neq_zero", source)
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
     body = assert_plan_fn!(generated_c, "rowHasValue")
@@ -296,19 +296,7 @@ defmodule Elmc.CCodegenPatternsTest do
 
     """
 
-    project_dir = Path.expand("tmp/list_int_eq", __DIR__)
-    out_dir = Path.expand("tmp/list_int_eq_codegen", __DIR__)
-    File.rm_rf!(project_dir)
-    File.rm_rf!(out_dir)
-    File.mkdir_p!(Path.join(project_dir, "src"))
-    File.write!(Path.join(project_dir, "src/Main.elm"), source)
-
-    File.write!(
-      Path.join(project_dir, "elm.json"),
-      File.read!(Path.expand("fixtures/simple_project/elm.json", __DIR__))
-    )
-
-    assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+    out_dir = compile_snippet!("list_int_eq", source)
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
     runtime_c = File.read!(Path.join(out_dir, "runtime/elmc_runtime.c"))
 
@@ -342,19 +330,7 @@ defmodule Elmc.CCodegenPatternsTest do
     """
 
     suffix = System.unique_integer([:positive])
-    project_dir = Path.expand("tmp/list_concat_segments_no_nil_fallback_#{suffix}", __DIR__)
-    out_dir = Path.expand("tmp/list_concat_segments_no_nil_fallback_codegen_#{suffix}", __DIR__)
-    File.rm_rf!(project_dir)
-    File.rm_rf!(out_dir)
-    File.mkdir_p!(Path.join(project_dir, "src"))
-    File.write!(Path.join(project_dir, "src/Main.elm"), source)
-
-    File.write!(
-      Path.join(project_dir, "elm.json"),
-      File.read!(Path.expand("fixtures/simple_project/elm.json", __DIR__))
-    )
-
-    assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+    out_dir = compile_snippet!("list_concat_segments_no_nil_fallback_#{suffix}", source)
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
     runtime_c = File.read!(Path.join(out_dir, "runtime/elmc_runtime.c"))
 
@@ -424,19 +400,7 @@ defmodule Elmc.CCodegenPatternsTest do
 
     """
 
-    project_dir = Path.expand("tmp/list_foldl_range_list_acc", __DIR__)
-    out_dir = Path.expand("tmp/list_foldl_range_list_acc_codegen", __DIR__)
-    File.rm_rf!(project_dir)
-    File.rm_rf!(out_dir)
-    File.mkdir_p!(Path.join(project_dir, "src"))
-    File.write!(Path.join(project_dir, "src/Main.elm"), source)
-
-    File.write!(
-      Path.join(project_dir, "elm.json"),
-      File.read!(Path.expand("fixtures/simple_project/elm.json", __DIR__))
-    )
-
-    assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+    out_dir = compile_snippet!("list_foldl_range_list_acc", source)
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
     body = assert_plan_fn!(generated_c, "collect")
@@ -506,19 +470,7 @@ defmodule Elmc.CCodegenPatternsTest do
 
     """
 
-    project_dir = Path.expand("tmp/list_filter_neq_zero", __DIR__)
-    out_dir = Path.expand("tmp/list_filter_neq_zero_codegen", __DIR__)
-    File.rm_rf!(project_dir)
-    File.rm_rf!(out_dir)
-    File.mkdir_p!(Path.join(project_dir, "src"))
-    File.write!(Path.join(project_dir, "src/Main.elm"), source)
-
-    File.write!(
-      Path.join(project_dir, "elm.json"),
-      File.read!(Path.expand("fixtures/simple_project/elm.json", __DIR__))
-    )
-
-    assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+    out_dir = compile_snippet!("list_filter_neq_zero", source)
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
     body = assert_plan_fn!(generated_c, "nonzero")
@@ -551,14 +503,7 @@ defmodule Elmc.CCodegenPatternsTest do
     main = Platform.application { init = init, update = update, view = view, subscriptions = subscriptions }
     """
 
-    project_dir = Path.expand("tmp/list_find_first", __DIR__)
-    out_dir = Path.expand("tmp/list_find_first_codegen", __DIR__)
-    File.rm_rf!(project_dir)
-    File.rm_rf!(out_dir)
-    File.cp_r!(Path.expand("fixtures/simple_project", __DIR__), project_dir)
-    File.write!(Path.join(project_dir, "src/Main.elm"), source)
-
-    assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+    out_dir = compile_snippet!("list_find_first", source)
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
     body = assert_plan_fn!(generated_c, "pickExclusive")
@@ -593,14 +538,7 @@ defmodule Elmc.CCodegenPatternsTest do
     main = Platform.application { init = init, update = update, view = view, subscriptions = subscriptions }
     """
 
-    project_dir = Path.expand("tmp/model_to_string_borrow_arg", __DIR__)
-    out_dir = Path.expand("tmp/model_to_string_borrow_arg_codegen", __DIR__)
-    File.rm_rf!(project_dir)
-    File.rm_rf!(out_dir)
-    File.cp_r!(Path.expand("fixtures/simple_project", __DIR__), project_dir)
-    File.write!(Path.join(project_dir, "src/Main.elm"), source)
-
-    assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+    out_dir = compile_snippet!("model_to_string_borrow_arg", source)
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
     assert generated_c =~ "elmc_fn_Main_timeString"
     body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_timeString")
@@ -644,14 +582,7 @@ defmodule Elmc.CCodegenPatternsTest do
     main = Platform.application { init = init, update = update, view = view, subscriptions = subscriptions }
     """
 
-    project_dir = Path.expand("tmp/pick_slot_fusion", __DIR__)
-    out_dir = Path.expand("tmp/pick_slot_fusion_codegen", __DIR__)
-    File.rm_rf!(project_dir)
-    File.rm_rf!(out_dir)
-    File.cp_r!(Path.expand("fixtures/simple_project", __DIR__), project_dir)
-    File.write!(Path.join(project_dir, "src/Main.elm"), source)
-
-    assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+    out_dir = compile_snippet!("pick_slot_fusion", source)
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
     body = assert_plan_fn!(generated_c, "pickSlot")
@@ -684,14 +615,7 @@ defmodule Elmc.CCodegenPatternsTest do
     main = Platform.application { init = init, update = update, view = view, subscriptions = subscriptions }
     """
 
-    project_dir = Path.expand("tmp/list_filter_map_fields", __DIR__)
-    out_dir = Path.expand("tmp/list_filter_map_fields_codegen", __DIR__)
-    File.rm_rf!(project_dir)
-    File.rm_rf!(out_dir)
-    File.cp_r!(Path.expand("fixtures/simple_project", __DIR__), project_dir)
-    File.write!(Path.join(project_dir, "src/Main.elm"), source)
-
-    assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+    out_dir = compile_snippet!("list_filter_map_fields", source)
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
     body = assert_plan_fn!(generated_c, "pickIds")
@@ -728,19 +652,7 @@ defmodule Elmc.CCodegenPatternsTest do
 
     """
 
-    project_dir = Path.expand("tmp/list_filter_map_range", __DIR__)
-    out_dir = Path.expand("tmp/list_filter_map_range_codegen", __DIR__)
-    File.rm_rf!(project_dir)
-    File.rm_rf!(out_dir)
-    File.mkdir_p!(Path.join(project_dir, "src"))
-    File.write!(Path.join(project_dir, "src/Main.elm"), source)
-
-    File.write!(
-      Path.join(project_dir, "elm.json"),
-      File.read!(Path.expand("fixtures/simple_project/elm.json", __DIR__))
-    )
-
-    assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+    out_dir = compile_snippet!("list_filter_map_range", source)
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
     body = assert_plan_fn!(generated_c, "keepSmall")
@@ -768,19 +680,7 @@ defmodule Elmc.CCodegenPatternsTest do
 
     """
 
-    project_dir = Path.expand("tmp/list_repeat_inline", __DIR__)
-    out_dir = Path.expand("tmp/list_repeat_inline_codegen", __DIR__)
-    File.rm_rf!(project_dir)
-    File.rm_rf!(out_dir)
-    File.mkdir_p!(Path.join(project_dir, "src"))
-    File.write!(Path.join(project_dir, "src/Main.elm"), source)
-
-    File.write!(
-      Path.join(project_dir, "elm.json"),
-      File.read!(Path.expand("fixtures/simple_project/elm.json", __DIR__))
-    )
-
-    assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+    out_dir = compile_snippet!("list_repeat_inline", source)
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
     assert generated_c =~ "elmc_fn_Main_blankRow"
@@ -811,19 +711,7 @@ defmodule Elmc.CCodegenPatternsTest do
 
     """
 
-    project_dir = Path.expand("tmp/list_repeat_zero_hoist", __DIR__)
-    out_dir = Path.expand("tmp/list_repeat_zero_hoist_codegen", __DIR__)
-    File.rm_rf!(project_dir)
-    File.rm_rf!(out_dir)
-    File.mkdir_p!(Path.join(project_dir, "src"))
-    File.write!(Path.join(project_dir, "src/Main.elm"), source)
-
-    File.write!(
-      Path.join(project_dir, "elm.json"),
-      File.read!(Path.expand("fixtures/simple_project/elm.json", __DIR__))
-    )
-
-    assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+    out_dir = compile_snippet!("list_repeat_zero_hoist", source)
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
     assert generated_c =~ "elmc_fn_Main_emptyBoard"
@@ -853,19 +741,7 @@ defmodule Elmc.CCodegenPatternsTest do
 
     """
 
-    project_dir = Path.expand("tmp/list_repeat_static_int", __DIR__)
-    out_dir = Path.expand("tmp/list_repeat_static_int_codegen", __DIR__)
-    File.rm_rf!(project_dir)
-    File.rm_rf!(out_dir)
-    File.mkdir_p!(Path.join(project_dir, "src"))
-    File.write!(Path.join(project_dir, "src/Main.elm"), source)
-
-    File.write!(
-      Path.join(project_dir, "elm.json"),
-      File.read!(Path.expand("fixtures/simple_project/elm.json", __DIR__))
-    )
-
-    assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+    out_dir = compile_snippet!("list_repeat_static_int", source)
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
     assert generated_c =~ "elmc_fn_Main_row"
@@ -896,19 +772,7 @@ defmodule Elmc.CCodegenPatternsTest do
 
     """
 
-    project_dir = Path.expand("tmp/list_length_inline", __DIR__)
-    out_dir = Path.expand("tmp/list_length_inline_codegen", __DIR__)
-    File.rm_rf!(project_dir)
-    File.rm_rf!(out_dir)
-    File.mkdir_p!(Path.join(project_dir, "src"))
-    File.write!(Path.join(project_dir, "src/Main.elm"), source)
-
-    File.write!(
-      Path.join(project_dir, "elm.json"),
-      File.read!(Path.expand("fixtures/simple_project/elm.json", __DIR__))
-    )
-
-    assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+    out_dir = compile_snippet!("list_length_inline", source)
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
     body = assert_plan_fn!(generated_c, "countItems")
@@ -944,19 +808,7 @@ defmodule Elmc.CCodegenPatternsTest do
 
     """
 
-    project_dir = Path.expand("tmp/list_repeat_boxed_count", __DIR__)
-    out_dir = Path.expand("tmp/list_repeat_boxed_count_codegen", __DIR__)
-    File.rm_rf!(project_dir)
-    File.rm_rf!(out_dir)
-    File.mkdir_p!(Path.join(project_dir, "src"))
-    File.write!(Path.join(project_dir, "src/Main.elm"), source)
-
-    File.write!(
-      Path.join(project_dir, "elm.json"),
-      File.read!(Path.expand("fixtures/simple_project/elm.json", __DIR__))
-    )
-
-    assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+    out_dir = compile_snippet!("list_repeat_boxed_count", source)
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
     body = assert_plan_fn!(generated_c, "padRows")
@@ -992,19 +844,7 @@ defmodule Elmc.CCodegenPatternsTest do
 
     """
 
-    project_dir = Path.expand("tmp/hybrid_int_let_repeat", __DIR__)
-    out_dir = Path.expand("tmp/hybrid_int_let_repeat_codegen", __DIR__)
-    File.rm_rf!(project_dir)
-    File.rm_rf!(out_dir)
-    File.mkdir_p!(Path.join(project_dir, "src"))
-    File.write!(Path.join(project_dir, "src/Main.elm"), source)
-
-    File.write!(
-      Path.join(project_dir, "elm.json"),
-      File.read!(Path.expand("fixtures/simple_project/elm.json", __DIR__))
-    )
-
-    assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+    out_dir = compile_snippet!("hybrid_int_let_repeat", source)
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
     body = assert_plan_fn!(generated_c, "padAndCount")
@@ -1043,19 +883,7 @@ defmodule Elmc.CCodegenPatternsTest do
 
     """
 
-    project_dir = Path.expand("tmp/list_foldl_reverse", __DIR__)
-    out_dir = Path.expand("tmp/list_foldl_reverse_codegen", __DIR__)
-    File.rm_rf!(project_dir)
-    File.rm_rf!(out_dir)
-    File.mkdir_p!(Path.join(project_dir, "src"))
-    File.write!(Path.join(project_dir, "src/Main.elm"), source)
-
-    File.write!(
-      Path.join(project_dir, "elm.json"),
-      File.read!(Path.expand("fixtures/simple_project/elm.json", __DIR__))
-    )
-
-    assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+    out_dir = compile_snippet!("list_foldl_reverse", source)
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
     body = assert_plan_fn!(generated_c, "collect")
@@ -1092,19 +920,7 @@ defmodule Elmc.CCodegenPatternsTest do
 
     """
 
-    project_dir = Path.expand("tmp/homogeneous_pipe_chain", __DIR__)
-    out_dir = Path.expand("tmp/homogeneous_pipe_chain_codegen", __DIR__)
-    File.rm_rf!(project_dir)
-    File.rm_rf!(out_dir)
-    File.mkdir_p!(Path.join(project_dir, "src"))
-    File.write!(Path.join(project_dir, "src/Main.elm"), source)
-
-    File.write!(
-      Path.join(project_dir, "elm.json"),
-      File.read!(Path.expand("fixtures/simple_project/elm.json", __DIR__))
-    )
-
-    assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+    out_dir = compile_snippet!("homogeneous_pipe_chain", source)
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
     main_body = fn_body!(generated_c, "main")
@@ -1138,19 +954,7 @@ defmodule Elmc.CCodegenPatternsTest do
 
     """
 
-    project_dir = Path.expand("tmp/native_int_sub_length", __DIR__)
-    out_dir = Path.expand("tmp/native_int_sub_length_codegen", __DIR__)
-    File.rm_rf!(project_dir)
-    File.rm_rf!(out_dir)
-    File.mkdir_p!(Path.join(project_dir, "src"))
-    File.write!(Path.join(project_dir, "src/Main.elm"), source)
-
-    File.write!(
-      Path.join(project_dir, "elm.json"),
-      File.read!(Path.expand("fixtures/simple_project/elm.json", __DIR__))
-    )
-
-    assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+    out_dir = compile_snippet!("native_int_sub_length", source)
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
     body = assert_plan_fn!(generated_c, "remaining")
@@ -1241,25 +1045,7 @@ defmodule Elmc.CCodegenPatternsTest do
 
     """
 
-    project_dir = Path.expand("tmp/list_concat_row_order", __DIR__)
-    out_dir = Path.expand("tmp/list_concat_row_order_codegen", __DIR__)
-    File.rm_rf!(project_dir)
-    File.rm_rf!(out_dir)
-    File.mkdir_p!(Path.join(project_dir, "src"))
-    File.write!(Path.join(project_dir, "src/Main.elm"), source)
-
-    File.write!(
-      Path.join(project_dir, "elm.json"),
-      File.read!(Path.expand("fixtures/simple_project/elm.json", __DIR__))
-    )
-
-    assert {:ok, _} =
-             Elmc.compile(project_dir, %{
-               out_dir: out_dir,
-               entry_module: "Main",
-               prune_native_wrappers: true
-             })
-
+    out_dir = compile_snippet!("list_concat_row_order", source, %{prune_native_wrappers: true})
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
     collapse_rows_body = assert_plan_fn!(generated_c, "collapseRows")
@@ -1290,19 +1076,7 @@ defmodule Elmc.CCodegenPatternsTest do
 
     """
 
-    project_dir = Path.expand("tmp/list_concat_literal_segments", __DIR__)
-    out_dir = Path.expand("tmp/list_concat_literal_segments_codegen", __DIR__)
-    File.rm_rf!(project_dir)
-    File.rm_rf!(out_dir)
-    File.mkdir_p!(Path.join(project_dir, "src"))
-    File.write!(Path.join(project_dir, "src/Main.elm"), source)
-
-    File.write!(
-      Path.join(project_dir, "elm.json"),
-      File.read!(Path.expand("fixtures/simple_project/elm.json", __DIR__))
-    )
-
-    assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+    out_dir = compile_snippet!("list_concat_literal_segments", source)
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
     body = assert_plan_fn!(generated_c, "mergeRows")
@@ -1331,19 +1105,7 @@ defmodule Elmc.CCodegenPatternsTest do
     """
 
     suffix = System.unique_integer([:positive])
-    project_dir = Path.expand("tmp/string_concat_segments_#{suffix}", __DIR__)
-    out_dir = Path.expand("tmp/string_concat_segments_codegen_#{suffix}", __DIR__)
-    File.rm_rf!(project_dir)
-    File.rm_rf!(out_dir)
-    File.mkdir_p!(Path.join(project_dir, "src"))
-    File.write!(Path.join(project_dir, "src/Main.elm"), source)
-
-    File.write!(
-      Path.join(project_dir, "elm.json"),
-      File.read!(Path.expand("fixtures/simple_project/elm.json", __DIR__))
-    )
-
-    assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+    out_dir = compile_snippet!("string_concat_segments_#{suffix}", source)
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
     body = assert_plan_fn!(generated_c, "timeLabel")
@@ -1375,19 +1137,7 @@ defmodule Elmc.CCodegenPatternsTest do
 
     """
 
-    project_dir = Path.expand("tmp/list_concat_flatten", __DIR__)
-    out_dir = Path.expand("tmp/list_concat_flatten_codegen", __DIR__)
-    File.rm_rf!(project_dir)
-    File.rm_rf!(out_dir)
-    File.mkdir_p!(Path.join(project_dir, "src"))
-    File.write!(Path.join(project_dir, "src/Main.elm"), source)
-
-    File.write!(
-      Path.join(project_dir, "elm.json"),
-      File.read!(Path.expand("fixtures/simple_project/elm.json", __DIR__))
-    )
-
-    assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+    out_dir = compile_snippet!("list_concat_flatten", source)
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
     body = assert_plan_fn!(generated_c, "padRows")
@@ -1415,19 +1165,7 @@ defmodule Elmc.CCodegenPatternsTest do
 
     """
 
-    project_dir = Path.expand("tmp/list_map_captured_env", __DIR__)
-    out_dir = Path.expand("tmp/list_map_captured_env_codegen", __DIR__)
-    File.rm_rf!(project_dir)
-    File.rm_rf!(out_dir)
-    File.mkdir_p!(Path.join(project_dir, "src"))
-    File.write!(Path.join(project_dir, "src/Main.elm"), source)
-
-    File.write!(
-      Path.join(project_dir, "elm.json"),
-      File.read!(Path.expand("fixtures/simple_project/elm.json", __DIR__))
-    )
-
-    assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+    out_dir = compile_snippet!("list_map_captured_env", source)
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
     body = assert_plan_fn!(generated_c, "tagItems")
@@ -1465,19 +1203,7 @@ defmodule Elmc.CCodegenPatternsTest do
 
     """
 
-    project_dir = Path.expand("tmp/tuple_map_cursor", __DIR__)
-    out_dir = Path.expand("tmp/tuple_map_cursor_codegen", __DIR__)
-    File.rm_rf!(project_dir)
-    File.rm_rf!(out_dir)
-    File.mkdir_p!(Path.join(project_dir, "src"))
-    File.write!(Path.join(project_dir, "src/Main.elm"), source)
-
-    File.write!(
-      Path.join(project_dir, "elm.json"),
-      File.read!(Path.expand("fixtures/simple_project/elm.json", __DIR__))
-    )
-
-    assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+    out_dir = compile_snippet!("tuple_map_cursor", source)
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
     body = assert_plan_fn!(generated_c, "slots")
@@ -1513,19 +1239,7 @@ defmodule Elmc.CCodegenPatternsTest do
 
     """
 
-    project_dir = Path.expand("tmp/constant_int_fold", __DIR__)
-    out_dir = Path.expand("tmp/constant_int_fold_codegen", __DIR__)
-    File.rm_rf!(project_dir)
-    File.rm_rf!(out_dir)
-    File.mkdir_p!(Path.join(project_dir, "src"))
-    File.write!(Path.join(project_dir, "src/Main.elm"), source)
-
-    File.write!(
-      Path.join(project_dir, "elm.json"),
-      File.read!(Path.expand("fixtures/simple_project/elm.json", __DIR__))
-    )
-
-    assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+    out_dir = compile_snippet!("constant_int_fold", source)
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
     area_impl = CCodegenExtract.fn_body(generated_c, "elmc_fn_Main_area")
@@ -1558,19 +1272,7 @@ defmodule Elmc.CCodegenPatternsTest do
 
     """
 
-    project_dir = Path.expand("tmp/native_const_range", __DIR__)
-    out_dir = Path.expand("tmp/native_const_range_codegen", __DIR__)
-    File.rm_rf!(project_dir)
-    File.rm_rf!(out_dir)
-    File.mkdir_p!(Path.join(project_dir, "src"))
-    File.write!(Path.join(project_dir, "src/Main.elm"), source)
-
-    File.write!(
-      Path.join(project_dir, "elm.json"),
-      File.read!(Path.expand("fixtures/simple_project/elm.json", __DIR__))
-    )
-
-    assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+    out_dir = compile_snippet!("native_const_range", source)
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
     rows_body = assert_plan_fn!(generated_c, "rows")
@@ -1608,19 +1310,7 @@ defmodule Elmc.CCodegenPatternsTest do
 
     """
 
-    project_dir = Path.expand("tmp/annotated_int_constants", __DIR__)
-    out_dir = Path.expand("tmp/annotated_int_constants_codegen", __DIR__)
-    File.rm_rf!(project_dir)
-    File.rm_rf!(out_dir)
-    File.mkdir_p!(Path.join(project_dir, "src"))
-    File.write!(Path.join(project_dir, "src/Main.elm"), source)
-
-    File.write!(
-      Path.join(project_dir, "elm.json"),
-      File.read!(Path.expand("fixtures/simple_project/elm.json", __DIR__))
-    )
-
-    assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+    out_dir = compile_snippet!("annotated_int_constants", source)
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
     fits_body = assert_plan_fn!(generated_c, "fits")
@@ -1739,19 +1429,7 @@ defmodule Elmc.CCodegenPatternsTest do
 
     """
 
-    project_dir = Path.expand("tmp/list_map_inline_reverse", __DIR__)
-    out_dir = Path.expand("tmp/list_map_inline_reverse_codegen", __DIR__)
-    File.rm_rf!(project_dir)
-    File.rm_rf!(out_dir)
-    File.mkdir_p!(Path.join(project_dir, "src"))
-    File.write!(Path.join(project_dir, "src/Main.elm"), source)
-
-    File.write!(
-      Path.join(project_dir, "elm.json"),
-      File.read!(Path.expand("fixtures/simple_project/elm.json", __DIR__))
-    )
-
-    assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+    out_dir = compile_snippet!("list_map_inline_reverse", source)
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
     body = assert_plan_fn!(generated_c, "double")
@@ -1777,19 +1455,7 @@ defmodule Elmc.CCodegenPatternsTest do
     main = Platform.application { init = init, update = update, view = view, subscriptions = subscriptions }
     """
 
-    project_dir = Path.expand("tmp/list_filter_map_identity", __DIR__)
-    out_dir = Path.expand("tmp/list_filter_map_identity_codegen", __DIR__)
-    File.rm_rf!(project_dir)
-    File.rm_rf!(out_dir)
-    File.mkdir_p!(Path.join(project_dir, "src"))
-    File.write!(Path.join(project_dir, "src/Main.elm"), source)
-
-    File.write!(
-      Path.join(project_dir, "elm.json"),
-      File.read!(Path.expand("fixtures/simple_project/elm.json", __DIR__))
-    )
-
-    assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+    out_dir = compile_snippet!("list_filter_map_identity", source)
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
     body = assert_plan_fn!(generated_c, "modes")
@@ -1815,19 +1481,7 @@ defmodule Elmc.CCodegenPatternsTest do
     main = Platform.application { init = init, update = update, view = view, subscriptions = subscriptions }
     """
 
-    project_dir = Path.expand("tmp/list_filter_map_identity_vars", __DIR__)
-    out_dir = Path.expand("tmp/list_filter_map_identity_vars_codegen", __DIR__)
-    File.rm_rf!(project_dir)
-    File.rm_rf!(out_dir)
-    File.mkdir_p!(Path.join(project_dir, "src"))
-    File.write!(Path.join(project_dir, "src/Main.elm"), source)
-
-    File.write!(
-      Path.join(project_dir, "elm.json"),
-      File.read!(Path.expand("fixtures/simple_project/elm.json", __DIR__))
-    )
-
-    assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+    out_dir = compile_snippet!("list_filter_map_identity_vars", source)
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
     body = assert_plan_fn!(generated_c, "pick")
@@ -1859,19 +1513,7 @@ defmodule Elmc.CCodegenPatternsTest do
     main = Platform.application { init = init, update = update, view = view, subscriptions = subscriptions }
     """
 
-    project_dir = Path.expand("tmp/list_filter_map_identity_tmp_null", __DIR__)
-    out_dir = Path.expand("tmp/list_filter_map_identity_tmp_null_codegen", __DIR__)
-    File.rm_rf!(project_dir)
-    File.rm_rf!(out_dir)
-    File.mkdir_p!(Path.join(project_dir, "src"))
-    File.write!(Path.join(project_dir, "src/Main.elm"), source)
-
-    File.write!(
-      Path.join(project_dir, "elm.json"),
-      File.read!(Path.expand("fixtures/simple_project/elm.json", __DIR__))
-    )
-
-    assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+    out_dir = compile_snippet!("list_filter_map_identity_tmp_null", source)
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
     body = fn_body!(generated_c, "modes")
@@ -1898,19 +1540,7 @@ defmodule Elmc.CCodegenPatternsTest do
     main = Platform.application { init = init, update = update, view = view, subscriptions = subscriptions }
     """
 
-    project_dir = Path.expand("tmp/list_concat_map_range", __DIR__)
-    out_dir = Path.expand("tmp/list_concat_map_range_codegen", __DIR__)
-    File.rm_rf!(project_dir)
-    File.rm_rf!(out_dir)
-    File.mkdir_p!(Path.join(project_dir, "src"))
-    File.write!(Path.join(project_dir, "src/Main.elm"), source)
-
-    File.write!(
-      Path.join(project_dir, "elm.json"),
-      File.read!(Path.expand("fixtures/simple_project/elm.json", __DIR__))
-    )
-
-    assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+    out_dir = compile_snippet!("list_concat_map_range", source)
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
     body = assert_plan_fn!(generated_c, "pairs")
@@ -1946,19 +1576,7 @@ defmodule Elmc.CCodegenPatternsTest do
     main = Platform.application { init = init, update = update, view = view, subscriptions = subscriptions }
     """
 
-    project_dir = Path.expand("tmp/list_concat_map_if_render", __DIR__)
-    out_dir = Path.expand("tmp/list_concat_map_if_render_codegen", __DIR__)
-    File.rm_rf!(project_dir)
-    File.rm_rf!(out_dir)
-    File.mkdir_p!(Path.join(project_dir, "src"))
-    File.write!(Path.join(project_dir, "src/Main.elm"), source)
-
-    File.write!(
-      Path.join(project_dir, "elm.json"),
-      File.read!(Path.expand("fixtures/simple_project/elm.json", __DIR__))
-    )
-
-    assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+    out_dir = compile_snippet!("list_concat_map_if_render", source)
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
     body = assert_plan_fn!(generated_c, "ticks")
@@ -1991,19 +1609,7 @@ defmodule Elmc.CCodegenPatternsTest do
     main = Platform.application { init = init, update = update, view = view, subscriptions = subscriptions }
     """
 
-    project_dir = Path.expand("tmp/maybe_map_field", __DIR__)
-    out_dir = Path.expand("tmp/maybe_map_field_codegen", __DIR__)
-    File.rm_rf!(project_dir)
-    File.rm_rf!(out_dir)
-    File.mkdir_p!(Path.join(project_dir, "src"))
-    File.write!(Path.join(project_dir, "src/Main.elm"), source)
-
-    File.write!(
-      Path.join(project_dir, "elm.json"),
-      File.read!(Path.expand("fixtures/simple_project/elm.json", __DIR__))
-    )
-
-    assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+    out_dir = compile_snippet!("maybe_map_field", source)
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
     body = assert_plan_fn!(generated_c, "pick")
@@ -2182,19 +1788,7 @@ defmodule Elmc.CCodegenPatternsTest do
 
     """
 
-    project_dir = Path.expand("tmp/filter_map_row_drop_renamed", __DIR__)
-    out_dir = Path.expand("tmp/filter_map_row_drop_renamed_codegen", __DIR__)
-    File.rm_rf!(project_dir)
-    File.rm_rf!(out_dir)
-    File.mkdir_p!(Path.join(project_dir, "src"))
-    File.write!(Path.join(project_dir, "src/Main.elm"), source)
-
-    File.write!(
-      Path.join(project_dir, "elm.json"),
-      File.read!(Path.expand("fixtures/simple_project/elm.json", __DIR__))
-    )
-
-    assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+    out_dir = compile_snippet!("filter_map_row_drop_renamed", source)
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
     body = assert_plan_fn!(generated_c, "dropFullRows")
@@ -2275,19 +1869,7 @@ defmodule Elmc.CCodegenPatternsTest do
 
     """
 
-    project_dir = Path.expand("tmp/reverse_foldl_occupied_renamed", __DIR__)
-    out_dir = Path.expand("tmp/reverse_foldl_occupied_renamed_codegen", __DIR__)
-    File.rm_rf!(project_dir)
-    File.rm_rf!(out_dir)
-    File.mkdir_p!(Path.join(project_dir, "src"))
-    File.write!(Path.join(project_dir, "src/Main.elm"), source)
-
-    File.write!(
-      Path.join(project_dir, "elm.json"),
-      File.read!(Path.expand("fixtures/simple_project/elm.json", __DIR__))
-    )
-
-    assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+    out_dir = compile_snippet!("reverse_foldl_occupied_renamed", source)
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
     assert generated_c =~ "elmc_fn_Main_occupiedIndices"
@@ -2327,19 +1909,7 @@ defmodule Elmc.CCodegenPatternsTest do
 
     """
 
-    project_dir = Path.expand("tmp/list_map_static_index_at_renamed", __DIR__)
-    out_dir = Path.expand("tmp/list_map_static_index_at_renamed_codegen", __DIR__)
-    File.rm_rf!(project_dir)
-    File.rm_rf!(out_dir)
-    File.mkdir_p!(Path.join(project_dir, "src"))
-    File.write!(Path.join(project_dir, "src/Main.elm"), source)
-
-    File.write!(
-      Path.join(project_dir, "elm.json"),
-      File.read!(Path.expand("fixtures/simple_project/elm.json", __DIR__))
-    )
-
-    assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+    out_dir = compile_snippet!("list_map_static_index_at_renamed", source)
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
     assert generated_c =~ "elmc_fn_Main_gatherAt"
@@ -2427,19 +1997,7 @@ defmodule Elmc.CCodegenPatternsTest do
 
     """
 
-    project_dir = Path.expand("tmp/row_slice_adjacent_merge_renamed", __DIR__)
-    out_dir = Path.expand("tmp/row_slice_adjacent_merge_renamed_codegen", __DIR__)
-    File.rm_rf!(project_dir)
-    File.rm_rf!(out_dir)
-    File.mkdir_p!(Path.join(project_dir, "src"))
-    File.write!(Path.join(project_dir, "src/Main.elm"), source)
-
-    File.write!(
-      Path.join(project_dir, "elm.json"),
-      File.read!(Path.expand("fixtures/simple_project/elm.json", __DIR__))
-    )
-
-    assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+    out_dir = compile_snippet!("row_slice_adjacent_merge_renamed", source)
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
     assert generated_c =~ "elmc_fn_Main_collapseGrid"
@@ -2478,19 +2036,7 @@ defmodule Elmc.CCodegenPatternsTest do
 
     """
 
-    project_dir = Path.expand("tmp/list_concat_reversed_row_slices_renamed", __DIR__)
-    out_dir = Path.expand("tmp/list_concat_reversed_row_slices_renamed_codegen", __DIR__)
-    File.rm_rf!(project_dir)
-    File.rm_rf!(out_dir)
-    File.mkdir_p!(Path.join(project_dir, "src"))
-    File.write!(Path.join(project_dir, "src/Main.elm"), source)
-
-    File.write!(
-      Path.join(project_dir, "elm.json"),
-      File.read!(Path.expand("fixtures/simple_project/elm.json", __DIR__))
-    )
-
-    assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+    out_dir = compile_snippet!("list_concat_reversed_row_slices_renamed", source)
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
     assert generated_c =~ "elmc_fn_Main_flipRows"
@@ -2561,19 +2107,7 @@ defmodule Elmc.CCodegenPatternsTest do
 
     """
 
-    project_dir = Path.expand("tmp/union_case_four_perm_renamed", __DIR__)
-    out_dir = Path.expand("tmp/union_case_four_perm_renamed_codegen", __DIR__)
-    File.rm_rf!(project_dir)
-    File.rm_rf!(out_dir)
-    File.mkdir_p!(Path.join(project_dir, "src"))
-    File.write!(Path.join(project_dir, "src/Main.elm"), source)
-
-    File.write!(
-      Path.join(project_dir, "elm.json"),
-      File.read!(Path.expand("fixtures/simple_project/elm.json", __DIR__))
-    )
-
-    assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+    out_dir = compile_snippet!("union_case_four_perm_renamed", source)
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
     assert generated_c =~ "elmc_fn_Main_remapPack"
@@ -2783,25 +2317,7 @@ defmodule Elmc.CCodegenPatternsTest do
 
     """
 
-    project_dir = Path.expand("tmp/permute_merge_inverse_pipeline_renamed", __DIR__)
-    out_dir = Path.expand("tmp/permute_merge_inverse_pipeline_renamed_codegen", __DIR__)
-    File.rm_rf!(project_dir)
-    File.rm_rf!(out_dir)
-    File.mkdir_p!(Path.join(project_dir, "src"))
-    File.write!(Path.join(project_dir, "src/Main.elm"), source)
-
-    File.write!(
-      Path.join(project_dir, "elm.json"),
-      File.read!(Path.expand("fixtures/simple_project/elm.json", __DIR__))
-    )
-
-    assert {:ok, _} =
-             Elmc.compile(project_dir, %{
-               out_dir: out_dir,
-               entry_module: "Main",
-               strip_dead_code: false
-             })
-
+    out_dir = compile_snippet!("permute_merge_inverse_pipeline_renamed", source, %{strip_dead_code: false})
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
     assert generated_c =~ "elmc_fn_Main_slideGrid"
@@ -3145,19 +2661,7 @@ defmodule Elmc.CCodegenPatternsTest do
 
     """
 
-    project_dir = Path.expand("tmp/watchface_init_codegen", __DIR__)
-    out_dir = Path.expand("tmp/watchface_init_codegen_out", __DIR__)
-    File.rm_rf!(project_dir)
-    File.rm_rf!(out_dir)
-    File.mkdir_p!(Path.join(project_dir, "src"))
-    File.write!(Path.join(project_dir, "src/Main.elm"), source)
-
-    File.write!(
-      Path.join(project_dir, "elm.json"),
-      File.read!(Path.expand("fixtures/simple_project/elm.json", __DIR__))
-    )
-
-    assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+    out_dir = compile_snippet!("watchface_init_codegen", source)
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
     init_body = fn_body!(generated_c, "init")
@@ -3259,19 +2763,7 @@ defmodule Elmc.CCodegenPatternsTest do
             }
     """
 
-    project_dir = Path.expand("tmp/watchface_analog_update_payload", __DIR__)
-    out_dir = Path.expand("tmp/watchface_analog_update_payload_out", __DIR__)
-    File.rm_rf!(project_dir)
-    File.rm_rf!(out_dir)
-    File.mkdir_p!(Path.join(project_dir, "src"))
-    File.write!(Path.join(project_dir, "src/Main.elm"), source)
-
-    File.write!(
-      Path.join(project_dir, "elm.json"),
-      File.read!(Path.expand("fixtures/simple_project/elm.json", __DIR__))
-    )
-
-    assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+    out_dir = compile_snippet!("watchface_analog_update_payload", source)
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
     update_body = fn_body!(generated_c, "update")
@@ -3318,19 +2810,7 @@ defmodule Elmc.CCodegenPatternsTest do
 
     """
 
-    project_dir = Path.expand("tmp/record_zero_cse_codegen", __DIR__)
-    out_dir = Path.expand("tmp/record_zero_cse_codegen_out", __DIR__)
-    File.rm_rf!(project_dir)
-    File.rm_rf!(out_dir)
-    File.mkdir_p!(Path.join(project_dir, "src"))
-    File.write!(Path.join(project_dir, "src/Main.elm"), source)
-
-    File.write!(
-      Path.join(project_dir, "elm.json"),
-      File.read!(Path.expand("fixtures/simple_project/elm.json", __DIR__))
-    )
-
-    assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+    out_dir = compile_snippet!("record_zero_cse_codegen", source)
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
     init_body = fn_body!(generated_c, "init")
@@ -3387,19 +2867,7 @@ defmodule Elmc.CCodegenPatternsTest do
 
     """
 
-    project_dir = Path.expand("tmp/record_screen_cse_codegen", __DIR__)
-    out_dir = Path.expand("tmp/record_screen_cse_codegen_out", __DIR__)
-    File.rm_rf!(project_dir)
-    File.rm_rf!(out_dir)
-    File.mkdir_p!(Path.join(project_dir, "src"))
-    File.write!(Path.join(project_dir, "src/Main.elm"), source)
-
-    File.write!(
-      Path.join(project_dir, "elm.json"),
-      File.read!(Path.expand("fixtures/simple_project/elm.json", __DIR__))
-    )
-
-    assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+    out_dir = compile_snippet!("record_screen_cse_codegen", source)
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
     init_body = fn_body!(generated_c, "init")
@@ -3471,25 +2939,7 @@ defmodule Elmc.CCodegenPatternsTest do
 
     """
 
-    project_dir = Path.expand("tmp/direct_boxed_helper_codegen", __DIR__)
-    out_dir = Path.expand("tmp/direct_boxed_helper_codegen_out", __DIR__)
-    File.rm_rf!(project_dir)
-    File.rm_rf!(out_dir)
-    File.mkdir_p!(Path.join(project_dir, "src"))
-    File.write!(Path.join(project_dir, "src/Main.elm"), source)
-
-    File.write!(
-      Path.join(project_dir, "elm.json"),
-      File.read!(Path.expand("fixtures/simple_project/elm.json", __DIR__))
-    )
-
-    assert {:ok, _} =
-             Elmc.compile(project_dir, %{
-               out_dir: out_dir,
-               entry_module: "Main",
-               prune_native_wrappers: true
-             })
-
+    out_dir = compile_snippet!("direct_boxed_helper_codegen", source, %{prune_native_wrappers: true})
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
     direct_body = fn_body!(generated_c, "directHelper")
@@ -3548,25 +2998,7 @@ defmodule Elmc.CCodegenPatternsTest do
 
     """
 
-    project_dir = Path.expand("tmp/borrowed_call_operand_codegen", __DIR__)
-    out_dir = Path.expand("tmp/borrowed_call_operand_codegen_out", __DIR__)
-    File.rm_rf!(project_dir)
-    File.rm_rf!(out_dir)
-    File.mkdir_p!(Path.join(project_dir, "src"))
-    File.write!(Path.join(project_dir, "src/Main.elm"), source)
-
-    File.write!(
-      Path.join(project_dir, "elm.json"),
-      File.read!(Path.expand("fixtures/simple_project/elm.json", __DIR__))
-    )
-
-    assert {:ok, _} =
-             Elmc.compile(project_dir, %{
-               out_dir: out_dir,
-               entry_module: "Main",
-               prune_native_wrappers: true
-             })
-
+    out_dir = compile_snippet!("borrowed_call_operand_codegen", source, %{prune_native_wrappers: true})
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
     forward_body =
@@ -3639,25 +3071,7 @@ defmodule Elmc.CCodegenPatternsTest do
 
     """
 
-    project_dir = Path.expand("tmp/borrow_local_call_operand_codegen", __DIR__)
-    out_dir = Path.expand("tmp/borrow_local_call_operand_codegen_out", __DIR__)
-    File.rm_rf!(project_dir)
-    File.rm_rf!(out_dir)
-    File.mkdir_p!(Path.join(project_dir, "src"))
-    File.write!(Path.join(project_dir, "src/Main.elm"), source)
-
-    File.write!(
-      Path.join(project_dir, "elm.json"),
-      File.read!(Path.expand("fixtures/simple_project/elm.json", __DIR__))
-    )
-
-    assert {:ok, _} =
-             Elmc.compile(project_dir, %{
-               out_dir: out_dir,
-               entry_module: "Main",
-               prune_native_wrappers: true
-             })
-
+    out_dir = compile_snippet!("borrow_local_call_operand_codegen", source, %{prune_native_wrappers: true})
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
     spawn_body = fn_body!(generated_c, "spawnTile")
@@ -3678,7 +3092,9 @@ defmodule Elmc.CCodegenPatternsTest do
       |> String.split(rc_direct_fn_def_marker("spawnTile"), parts: 2)
       |> hd()
 
-    assert set_cell_body =~ "elmc_list_replace_nth_int(cells, index,"
+    assert set_cell_body =~ "elmc_list_replace_nth_int("
+    assert set_cell_body =~ "CHECK_RC"
+    refute set_cell_body =~ "if (!result)"
     refute set_cell_body =~ "elmc_retain(cells)"
     refute set_cell_body =~ "elmc_release(cells)"
   end
@@ -3737,26 +3153,7 @@ defmodule Elmc.CCodegenPatternsTest do
 
     """
 
-    project_dir = Path.expand("tmp/if_branch_direct_assign_codegen", __DIR__)
-    out_dir = Path.expand("tmp/if_branch_direct_assign_codegen_out", __DIR__)
-    File.rm_rf!(project_dir)
-    File.rm_rf!(out_dir)
-    File.mkdir_p!(Path.join(project_dir, "src"))
-    File.write!(Path.join(project_dir, "src/Main.elm"), source)
-
-    File.write!(
-      Path.join(project_dir, "elm.json"),
-      File.read!(Path.expand("fixtures/simple_project/elm.json", __DIR__))
-    )
-
-    assert {:ok, _} =
-             Elmc.compile(project_dir, %{
-               out_dir: out_dir,
-               entry_module: "Main",
-               prune_native_wrappers: true,
-               strip_dead_code: false
-             })
-
+    out_dir = compile_snippet!("if_branch_direct_assign_codegen", source, %{prune_native_wrappers: true, strip_dead_code: false})
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
     pick_body = fn_body!(generated_c, "pickTile")
@@ -3857,19 +3254,7 @@ defmodule Elmc.CCodegenPatternsTest do
 
     """
 
-    project_dir = Path.expand("tmp/watchface_custom_msg_cmd", __DIR__)
-    out_dir = Path.expand("tmp/watchface_custom_msg_cmd_out", __DIR__)
-    File.rm_rf!(project_dir)
-    File.rm_rf!(out_dir)
-    File.mkdir_p!(Path.join(project_dir, "src"))
-    File.write!(Path.join(project_dir, "src/Main.elm"), source)
-
-    File.write!(
-      Path.join(project_dir, "elm.json"),
-      File.read!(Path.expand("fixtures/simple_project/elm.json", __DIR__))
-    )
-
-    assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+    out_dir = compile_snippet!("watchface_custom_msg_cmd", source)
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
     pebble_h = File.read!(Path.join(out_dir, "c/elmc_pebble.h"))
 
@@ -3933,19 +3318,7 @@ defmodule Elmc.CCodegenPatternsTest do
 
     """
 
-    project_dir = Path.expand("tmp/union_constructor_macro_codegen", __DIR__)
-    out_dir = Path.expand("tmp/union_constructor_macro_codegen_out", __DIR__)
-    File.rm_rf!(project_dir)
-    File.rm_rf!(out_dir)
-    File.mkdir_p!(Path.join(project_dir, "src"))
-    File.write!(Path.join(project_dir, "src/Main.elm"), source)
-
-    File.write!(
-      Path.join(project_dir, "elm.json"),
-      File.read!(Path.expand("fixtures/simple_project/elm.json", __DIR__))
-    )
-
-    assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+    out_dir = compile_snippet!("union_constructor_macro_codegen", source)
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
     assert generated_c =~ "#define ELMC_UNION_LEFT 1"
@@ -3992,19 +3365,7 @@ defmodule Elmc.CCodegenPatternsTest do
 
     """
 
-    project_dir = Path.expand("tmp/storage_write_string_cmd_codegen", __DIR__)
-    out_dir = Path.expand("tmp/storage_write_string_cmd_codegen_out", __DIR__)
-    File.rm_rf!(project_dir)
-    File.rm_rf!(out_dir)
-    File.mkdir_p!(Path.join(project_dir, "src"))
-    File.write!(Path.join(project_dir, "src/Main.elm"), source)
-
-    File.write!(
-      Path.join(project_dir, "elm.json"),
-      File.read!(Path.expand("fixtures/simple_project/elm.json", __DIR__))
-    )
-
-    assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+    out_dir = compile_snippet!("storage_write_string_cmd_codegen", source)
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
     init_body = fn_body!(generated_c, "init")
@@ -4053,25 +3414,7 @@ defmodule Elmc.CCodegenPatternsTest do
 
     """
 
-    project_dir = Path.expand("tmp/direct_text_literal_prefix_append", __DIR__)
-    out_dir = Path.expand("tmp/direct_text_literal_prefix_append_out", __DIR__)
-    File.rm_rf!(project_dir)
-    File.rm_rf!(out_dir)
-    File.mkdir_p!(Path.join(project_dir, "src"))
-    File.write!(Path.join(project_dir, "src/Main.elm"), source)
-
-    File.write!(
-      Path.join(project_dir, "elm.json"),
-      File.read!(Path.expand("fixtures/simple_project/elm.json", __DIR__))
-    )
-
-    assert {:ok, _} =
-             Elmc.compile(project_dir, %{
-               out_dir: out_dir,
-               entry_module: "Main",
-               direct_render_only: true
-             })
-
+    out_dir = compile_snippet!("direct_text_literal_prefix_append", source, %{direct_render_only: true})
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
     assert generated_c =~ "scene_cmd.text[0] = 'B';"
@@ -4129,25 +3472,7 @@ defmodule Elmc.CCodegenPatternsTest do
 
     """
 
-    project_dir = Path.expand("tmp/direct_render_known_inverse_cond", __DIR__)
-    out_dir = Path.expand("tmp/direct_render_known_inverse_cond_out", __DIR__)
-    File.rm_rf!(project_dir)
-    File.rm_rf!(out_dir)
-    File.mkdir_p!(Path.join(project_dir, "src"))
-    File.write!(Path.join(project_dir, "src/Main.elm"), source)
-
-    File.write!(
-      Path.join(project_dir, "elm.json"),
-      File.read!(Path.expand("fixtures/simple_project/elm.json", __DIR__))
-    )
-
-    assert {:ok, _} =
-             Elmc.compile(project_dir, %{
-               out_dir: out_dir,
-               entry_module: "Main",
-               direct_render_only: true
-             })
-
+    out_dir = compile_snippet!("direct_render_known_inverse_cond", source, %{direct_render_only: true})
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
     assert generated_c =~ ~r/if \(!(\(native_cmp_\d+\)|\(elmc_as_int\((tmp_\d+|owned\[\d+\])\) != 0\))\)/
@@ -4213,25 +3538,7 @@ defmodule Elmc.CCodegenPatternsTest do
 
     """
 
-    project_dir = Path.expand("tmp/direct_affine_text_nonzero_guard", __DIR__)
-    out_dir = Path.expand("tmp/direct_affine_text_nonzero_guard_out", __DIR__)
-    File.rm_rf!(project_dir)
-    File.rm_rf!(out_dir)
-    File.mkdir_p!(Path.join(project_dir, "src"))
-    File.write!(Path.join(project_dir, "src/Main.elm"), source)
-
-    File.write!(
-      Path.join(project_dir, "elm.json"),
-      File.read!(Path.expand("fixtures/simple_project/elm.json", __DIR__))
-    )
-
-    assert {:ok, _} =
-             Elmc.compile(project_dir, %{
-               out_dir: out_dir,
-               entry_module: "Main",
-               direct_render_only: true
-             })
-
+    out_dir = compile_snippet!("direct_affine_text_nonzero_guard", source, %{direct_render_only: true})
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
     assert generated_c =~ "scene_cmd.text[0] = '.';"
@@ -4281,19 +3588,7 @@ defmodule Elmc.CCodegenPatternsTest do
 
     """
 
-    project_dir = Path.expand("tmp/maybe_case_record_field_indices", __DIR__)
-    out_dir = Path.expand("tmp/maybe_case_record_field_indices_out", __DIR__)
-    File.rm_rf!(project_dir)
-    File.rm_rf!(out_dir)
-    File.mkdir_p!(Path.join(project_dir, "src"))
-    File.write!(Path.join(project_dir, "src/Main.elm"), source)
-
-    File.write!(
-      Path.join(project_dir, "elm.json"),
-      File.read!(Path.expand("fixtures/simple_project/elm.json", __DIR__))
-    )
-
-    assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+    out_dir = compile_snippet!("maybe_case_record_field_indices", source)
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
     assert generated_c =~ "ELMC_FIELD_MAIN_PIECE_KIND"
@@ -4339,25 +3634,13 @@ defmodule Elmc.CCodegenPatternsTest do
 
     """
 
-    project_dir = Path.expand("tmp/record_update_index_codegen", __DIR__)
-    out_dir = Path.expand("tmp/record_update_index_codegen_out", __DIR__)
-    File.rm_rf!(project_dir)
-    File.rm_rf!(out_dir)
-    File.mkdir_p!(Path.join(project_dir, "src"))
-    File.write!(Path.join(project_dir, "src/Main.elm"), source)
-
-    File.write!(
-      Path.join(project_dir, "elm.json"),
-      File.read!(Path.expand("fixtures/simple_project/elm.json", __DIR__))
-    )
-
-    assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+    out_dir = compile_snippet!("record_update_index_codegen", source)
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
     update_body = fn_body!(generated_c, "update")
 
     assert update_body =~
-             ~r/elmc_record_update_index_cow_drop\(owned\[\d+\], ELMC_FIELD_MAIN_MODEL_TIMESTRING, owned\[\d+\]\)/
+             ~r/Rc = elmc_record_update_index_cow_drop\(&owned\[\d+\], .*, ELMC_FIELD_MAIN_MODEL_TIMESTRING, owned\[\d+\]\)/
     assert update_body =~ "elmc_retain(model)"
     refute update_body =~ ~s/elmc_record_update(tmp_2, "timeString"/
   end
@@ -4397,25 +3680,13 @@ defmodule Elmc.CCodegenPatternsTest do
 
     """
 
-    project_dir = Path.expand("tmp/record_update_nothing_inline", __DIR__)
-    out_dir = Path.expand("tmp/record_update_nothing_inline_out", __DIR__)
-    File.rm_rf!(project_dir)
-    File.rm_rf!(out_dir)
-    File.mkdir_p!(Path.join(project_dir, "src"))
-    File.write!(Path.join(project_dir, "src/Main.elm"), source)
-
-    File.write!(
-      Path.join(project_dir, "elm.json"),
-      File.read!(Path.expand("fixtures/simple_project/elm.json", __DIR__))
-    )
-
-    assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+    out_dir = compile_snippet!("record_update_nothing_inline", source)
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
     update_body = fn_body!(generated_c, "update")
 
     assert update_body =~
-             ~r/elmc_record_update_index_cow_drop\(owned\[\d+\], ELMC_FIELD_MAIN_MODEL_TIDE, owned\[\d+\]\)/
+             ~r/Rc = elmc_record_update_index_cow_drop\(&owned\[\d+\], .*, ELMC_FIELD_MAIN_MODEL_TIDE, owned\[\d+\]\)/
 
     assert update_body =~ "elmc_maybe_nothing()"
 
@@ -4468,26 +3739,14 @@ defmodule Elmc.CCodegenPatternsTest do
 
     """
 
-    project_dir = Path.expand("tmp/tuple2_pre_update_field_read", __DIR__)
-    out_dir = Path.expand("tmp/tuple2_pre_update_field_read_out", __DIR__)
-    File.rm_rf!(project_dir)
-    File.rm_rf!(out_dir)
-    File.mkdir_p!(Path.join(project_dir, "src"))
-    File.write!(Path.join(project_dir, "src/Main.elm"), source)
-
-    File.write!(
-      Path.join(project_dir, "elm.json"),
-      File.read!(Path.expand("fixtures/simple_project/elm.json", __DIR__))
-    )
-
-    assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+    out_dir = compile_snippet!("tuple2_pre_update_field_read", source)
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
     update_body = fn_body!(generated_c, "update")
     field_read = "elmc_record_get_index(model, ELMC_FIELD_MAIN_MODEL_FLAG)"
 
     record_update =
-      ~r/elmc_record_update_index_cow_drop\(owned\[\d+\], ELMC_FIELD_MAIN_MODEL_FLAG, owned\[\d+\]\)/
+      ~r/Rc = elmc_record_update_index_cow_drop\(&owned\[\d+\], .*, ELMC_FIELD_MAIN_MODEL_FLAG, owned\[\d+\]\)/
 
     assert update_body =~ field_read
     assert update_body =~ record_update
@@ -4924,19 +4183,7 @@ defmodule Elmc.CCodegenPatternsTest do
 
     """
 
-    project_dir = Path.expand("tmp/msg_case_macro_codegen", __DIR__)
-    out_dir = Path.expand("tmp/msg_case_macro_codegen_out", __DIR__)
-    File.rm_rf!(project_dir)
-    File.rm_rf!(out_dir)
-    File.mkdir_p!(Path.join(project_dir, "src"))
-    File.write!(Path.join(project_dir, "src/Main.elm"), source)
-
-    File.write!(
-      Path.join(project_dir, "elm.json"),
-      File.read!(Path.expand("fixtures/simple_project/elm.json", __DIR__))
-    )
-
-    assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+    out_dir = compile_snippet!("msg_case_macro_codegen", source)
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
     update_body = fn_body!(generated_c, "update")
@@ -4982,19 +4229,7 @@ defmodule Elmc.CCodegenPatternsTest do
 
     """
 
-    project_dir = Path.expand("tmp/subscription_macro_codegen", __DIR__)
-    out_dir = Path.expand("tmp/subscription_macro_codegen_out", __DIR__)
-    File.rm_rf!(project_dir)
-    File.rm_rf!(out_dir)
-    File.mkdir_p!(Path.join(project_dir, "src"))
-    File.write!(Path.join(project_dir, "src/Main.elm"), source)
-
-    File.write!(
-      Path.join(project_dir, "elm.json"),
-      File.read!(Path.expand("fixtures/simple_project/elm.json", __DIR__))
-    )
-
-    assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+    out_dir = compile_snippet!("subscription_macro_codegen", source)
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
     subscriptions_body = fn_body!(generated_c, "subscriptions")
@@ -5041,19 +4276,7 @@ defmodule Elmc.CCodegenPatternsTest do
 
     """
 
-    project_dir = Path.expand("tmp/button_sub_codegen", __DIR__)
-    out_dir = Path.expand("tmp/button_sub_codegen_out", __DIR__)
-    File.rm_rf!(project_dir)
-    File.rm_rf!(out_dir)
-    File.mkdir_p!(Path.join(project_dir, "src"))
-    File.write!(Path.join(project_dir, "src/Main.elm"), source)
-
-    File.write!(
-      Path.join(project_dir, "elm.json"),
-      File.read!(Path.expand("fixtures/simple_project/elm.json", __DIR__))
-    )
-
-    assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+    out_dir = compile_snippet!("button_sub_codegen", source)
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
     subscriptions_body = fn_body!(generated_c, "subscriptions")

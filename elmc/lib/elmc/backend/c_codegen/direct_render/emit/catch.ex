@@ -12,14 +12,24 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Catch do
 
   @spec function_body_prefix() :: String.t()
   def function_body_prefix do
+    function_body_prefix([])
+  end
+
+  @spec function_body_prefix(keyword()) :: String.t()
+  def function_body_prefix(opts) when is_list(opts) do
     RecordCompile.reset_borrowed_field_refs()
-    owned = ValueSlots.owned_declaration()
-    ValueSlots.set_emit_owned_epilogue(owned != "")
 
     owned_line =
-      case owned do
-        "" -> ""
-        decl -> decl <> "\n\n"
+      if Keyword.get(opts, :skip_value_slots_owned, false) do
+        ""
+      else
+        owned = ValueSlots.owned_declaration()
+        ValueSlots.set_emit_owned_epilogue(owned != "")
+
+        case owned do
+          "" -> ""
+          decl -> decl <> "\n\n"
+        end
       end
 
     """
@@ -34,7 +44,17 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Catch do
 
   @spec function_body_suffix() :: String.t()
   def function_body_suffix do
-    cleanup = ValueSlots.epilogue_cleanup()
+    function_body_suffix([])
+  end
+
+  @spec function_body_suffix(keyword()) :: String.t()
+  def function_body_suffix(opts) when is_list(opts) do
+    cleanup =
+      if Keyword.get(opts, :skip_value_slots_owned, false) do
+        ""
+      else
+        ValueSlots.epilogue_cleanup()
+      end
 
     cleanup_block =
       case cleanup do
@@ -44,7 +64,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Catch do
 
     """
 
-    CATCH_END;#{cleanup_block}
+    CATCH_END#{cleanup_block}
     return Rc;
     """
   end

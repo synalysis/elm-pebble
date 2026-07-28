@@ -220,7 +220,7 @@ defmodule Elmc.Backend.CCodegen.FunctionSplit do
       RC Rc = RC_SUCCESS;
       CATCH_BEGIN
       #{orchestrator}
-      CATCH_END;
+      CATCH_END
       return Rc;
     }
     """
@@ -288,7 +288,7 @@ defmodule Elmc.Backend.CCodegen.FunctionSplit do
         """
         CATCH_BEGIN
         #{catch_body}
-        CATCH_END;
+        CATCH_END
         """
       else
         catch_body

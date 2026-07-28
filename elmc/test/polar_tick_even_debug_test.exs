@@ -1,6 +1,8 @@
 defmodule Elmc.PolarTickEvenDebugTest do
   use ExUnit.Case, async: false
 
+  @moduletag :slow
+
   alias Elmc.Backend.CCodegen.DirectRender.ListLoopPlans
   alias Elmc.Backend.CCodegen.IRQueries
   alias Elmc.TestSupport.TemplateCompile

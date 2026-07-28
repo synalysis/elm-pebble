@@ -36,6 +36,18 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
     body != "" and body =~ native_name and not plan_primary_body?(body)
   end
 
+
+  alias Elmc.TestSupport.SnippetProject
+
+  defp compile_snippet!(name, source, compile \\ %{}) when is_binary(name) and is_binary(source) do
+    SnippetProject.compile_main!(source,
+      name: name,
+      compile: compile,
+      out_dir: Path.expand("tmp/#{name}_codegen", __DIR__)
+    )
+  end
+
+
   defp assert_plan_native_body!(body) do
     assert plan_primary_body?(body) or body =~ "plan_native_" or body =~ "*out =",
            "expected plan-primary native body, got: #{String.slice(body, 0, 200)}"
@@ -61,23 +73,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
   end
 
   test "complete Basics numeric surface lowers to runtime builtins" do
-    source_fixture = Path.expand("fixtures/simple_project", __DIR__)
-    project_dir = Path.expand("tmp/complete_basics_project", __DIR__)
-    out_dir = Path.expand("tmp/complete_basics_codegen", __DIR__)
-    File.rm_rf!(project_dir)
-    File.rm_rf!(out_dir)
-    File.mkdir_p!(Path.dirname(project_dir))
-    File.cp_r!(source_fixture, project_dir)
-    File.write!(Path.join(project_dir, "src/Main.elm"), complete_basics_source())
-
-    assert {:ok, _result} =
-             Elmc.compile(project_dir, %{
-               out_dir: out_dir,
-               entry_module: "Main",
-               strip_dead_code: false,
-               plan_ir_mode: :primary,
-               plan_ir_strict: true
-             })
+    out_dir = compile_snippet!("complete_basics_project", complete_basics_source(), %{strip_dead_code: false, plan_ir_mode: :primary, plan_ir_strict: true})
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
     refute generated_c =~ "elmc_fn_Basics___mul__"
@@ -89,20 +85,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
   end
 
   test "operator sections and list cons compile to runtime builtins" do
-    source_fixture = Path.expand("fixtures/simple_project", __DIR__)
-    project_dir = Path.expand("tmp/operator_section_cons_project", __DIR__)
-    out_dir = Path.expand("tmp/operator_section_cons_codegen", __DIR__)
-    File.rm_rf!(project_dir)
-    File.rm_rf!(out_dir)
-    File.mkdir_p!(Path.dirname(project_dir))
-    File.cp_r!(source_fixture, project_dir)
-    File.write!(Path.join(project_dir, "src/Main.elm"), operator_section_cons_source())
-
-    assert {:ok, _result} =
-             Elmc.compile(project_dir, %{
-               out_dir: out_dir,
-               entry_module: "Main"
-             })
+    out_dir = compile_snippet!("operator_section_cons_project", operator_section_cons_source())
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
     refute generated_c =~ "elmc_fn_Main___neq__"
@@ -141,23 +124,8 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
   end
 
   test "typed Int arguments feed native record literals without retain boxing" do
-    source_fixture = Path.expand("fixtures/simple_project", __DIR__)
-    project_dir = Path.expand("tmp/typed_int_arg_project", __DIR__)
-    out_dir = Path.expand("tmp/typed_int_arg_codegen", __DIR__)
-    File.rm_rf!(project_dir)
-    File.rm_rf!(out_dir)
-    File.mkdir_p!(Path.dirname(project_dir))
-    File.cp_r!(source_fixture, project_dir)
-
-    main_path = Path.join(project_dir, "src/Main.elm")
-    File.write!(main_path, File.read!(main_path) <> typed_int_arg_source())
-
-    assert {:ok, _result} =
-             Elmc.compile(project_dir, %{
-               out_dir: out_dir,
-               entry_module: "Main",
-               strip_dead_code: false
-             })
+    base_main = File.read!(Path.expand("fixtures/simple_project/src/Main.elm", __DIR__))
+    out_dir = compile_snippet!("typed_int_arg_project", base_main <> typed_int_arg_source(), %{strip_dead_code: false})
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
@@ -178,23 +146,8 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
   end
 
   test "native Int case subjects avoid boxed pattern checks" do
-    source_fixture = Path.expand("fixtures/simple_project", __DIR__)
-    project_dir = Path.expand("tmp/native_int_case_project", __DIR__)
-    out_dir = Path.expand("tmp/native_int_case_codegen", __DIR__)
-    File.rm_rf!(project_dir)
-    File.rm_rf!(out_dir)
-    File.mkdir_p!(Path.dirname(project_dir))
-    File.cp_r!(source_fixture, project_dir)
-
-    main_path = Path.join(project_dir, "src/Main.elm")
-    File.write!(main_path, File.read!(main_path) <> native_int_case_source())
-
-    assert {:ok, _result} =
-             Elmc.compile(project_dir, %{
-               out_dir: out_dir,
-               entry_module: "Main",
-               strip_dead_code: false
-             })
+    base_main = File.read!(Path.expand("fixtures/simple_project/src/Main.elm", __DIR__))
+    out_dir = compile_snippet!("native_int_case_project", base_main <> native_int_case_source(), %{strip_dead_code: false})
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
@@ -216,23 +169,8 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
   end
 
   test "native Int case string branches assign result directly" do
-    source_fixture = Path.expand("fixtures/simple_project", __DIR__)
-    project_dir = Path.expand("tmp/native_int_case_string_project", __DIR__)
-    out_dir = Path.expand("tmp/native_int_case_string_codegen", __DIR__)
-    File.rm_rf!(project_dir)
-    File.rm_rf!(out_dir)
-    File.mkdir_p!(Path.dirname(project_dir))
-    File.cp_r!(source_fixture, project_dir)
-
-    main_path = Path.join(project_dir, "src/Main.elm")
-    File.write!(main_path, File.read!(main_path) <> native_int_case_string_source())
-
-    assert {:ok, _result} =
-             Elmc.compile(project_dir, %{
-               out_dir: out_dir,
-               entry_module: "Main",
-               strip_dead_code: false
-             })
+    base_main = File.read!(Path.expand("fixtures/simple_project/src/Main.elm", __DIR__))
+    out_dir = compile_snippet!("native_int_case_string_project", base_main <> native_int_case_string_source(), %{strip_dead_code: false})
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
@@ -247,23 +185,8 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
   end
 
   test "boxed constructor case string branches assign result directly" do
-    source_fixture = Path.expand("fixtures/simple_project", __DIR__)
-    project_dir = Path.expand("tmp/boxed_constructor_case_string_project", __DIR__)
-    out_dir = Path.expand("tmp/boxed_constructor_case_string_codegen", __DIR__)
-    File.rm_rf!(project_dir)
-    File.rm_rf!(out_dir)
-    File.mkdir_p!(Path.dirname(project_dir))
-    File.cp_r!(source_fixture, project_dir)
-
-    main_path = Path.join(project_dir, "src/Main.elm")
-    File.write!(main_path, File.read!(main_path) <> boxed_constructor_case_string_source())
-
-    assert {:ok, _result} =
-             Elmc.compile(project_dir, %{
-               out_dir: out_dir,
-               entry_module: "Main",
-               strip_dead_code: false
-             })
+    base_main = File.read!(Path.expand("fixtures/simple_project/src/Main.elm", __DIR__))
+    out_dir = compile_snippet!("boxed_constructor_case_string_project", base_main <> boxed_constructor_case_string_source(), %{strip_dead_code: false})
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
@@ -283,23 +206,8 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
   end
 
   test "Basics.round on bound trig product stays native in scoring-style expressions" do
-    source_fixture = Path.expand("fixtures/simple_project", __DIR__)
-    project_dir = Path.expand("tmp/trig_round_native_project", __DIR__)
-    out_dir = Path.expand("tmp/trig_round_native_codegen", __DIR__)
-    File.rm_rf!(project_dir)
-    File.rm_rf!(out_dir)
-    File.mkdir_p!(Path.dirname(project_dir))
-    File.cp_r!(source_fixture, project_dir)
-
-    main_path = Path.join(project_dir, "src/Main.elm")
-    File.write!(main_path, File.read!(main_path) <> trig_round_native_source())
-
-    assert {:ok, _result} =
-             Elmc.compile(project_dir, %{
-               out_dir: out_dir,
-               entry_module: "Main",
-               strip_dead_code: false
-             })
+    base_main = File.read!(Path.expand("fixtures/simple_project/src/Main.elm", __DIR__))
+    out_dir = compile_snippet!("trig_round_native_project", base_main <> trig_round_native_source(), %{strip_dead_code: false})
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
@@ -312,23 +220,8 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
   end
 
   test "boolean record fields in conditions use native bool accessors" do
-    source_fixture = Path.expand("fixtures/simple_project", __DIR__)
-    project_dir = Path.expand("tmp/native_bool_field_project", __DIR__)
-    out_dir = Path.expand("tmp/native_bool_field_codegen", __DIR__)
-    File.rm_rf!(project_dir)
-    File.rm_rf!(out_dir)
-    File.mkdir_p!(Path.dirname(project_dir))
-    File.cp_r!(source_fixture, project_dir)
-
-    main_path = Path.join(project_dir, "src/Main.elm")
-    File.write!(main_path, File.read!(main_path) <> native_bool_field_source())
-
-    assert {:ok, _result} =
-             Elmc.compile(project_dir, %{
-               out_dir: out_dir,
-               entry_module: "Main",
-               strip_dead_code: false
-             })
+    base_main = File.read!(Path.expand("fixtures/simple_project/src/Main.elm", __DIR__))
+    out_dir = compile_snippet!("native_bool_field_project", base_main <> native_bool_field_source(), %{strip_dead_code: false})
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
@@ -381,23 +274,8 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
   end
 
   test "boxed Int variables in equality are not coerced to Bool" do
-    source_fixture = Path.expand("fixtures/simple_project", __DIR__)
-    project_dir = Path.expand("tmp/boxed_int_equality_project", __DIR__)
-    out_dir = Path.expand("tmp/boxed_int_equality_codegen", __DIR__)
-    File.rm_rf!(project_dir)
-    File.rm_rf!(out_dir)
-    File.mkdir_p!(Path.dirname(project_dir))
-    File.cp_r!(source_fixture, project_dir)
-
-    main_path = Path.join(project_dir, "src/Main.elm")
-    File.write!(main_path, File.read!(main_path) <> boxed_int_equality_source())
-
-    assert {:ok, _result} =
-             Elmc.compile(project_dir, %{
-               out_dir: out_dir,
-               entry_module: "Main",
-               strip_dead_code: false
-             })
+    base_main = File.read!(Path.expand("fixtures/simple_project/src/Main.elm", __DIR__))
+    out_dir = compile_snippet!("boxed_int_equality_project", base_main <> boxed_int_equality_source(), %{strip_dead_code: false})
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
@@ -408,23 +286,8 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
   end
 
   test "integer lets are not promoted to Float in Int arithmetic" do
-    source_fixture = Path.expand("fixtures/simple_project", __DIR__)
-    project_dir = Path.expand("tmp/integer_let_arithmetic_project", __DIR__)
-    out_dir = Path.expand("tmp/integer_let_arithmetic_codegen", __DIR__)
-    File.rm_rf!(project_dir)
-    File.rm_rf!(out_dir)
-    File.mkdir_p!(Path.dirname(project_dir))
-    File.cp_r!(source_fixture, project_dir)
-
-    main_path = Path.join(project_dir, "src/Main.elm")
-    File.write!(main_path, File.read!(main_path) <> integer_let_arithmetic_source())
-
-    assert {:ok, _result} =
-             Elmc.compile(project_dir, %{
-               out_dir: out_dir,
-               entry_module: "Main",
-               strip_dead_code: false
-             })
+    base_main = File.read!(Path.expand("fixtures/simple_project/src/Main.elm", __DIR__))
+    out_dir = compile_snippet!("integer_let_arithmetic_project", base_main <> integer_let_arithmetic_source(), %{strip_dead_code: false})
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
@@ -442,23 +305,8 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
   end
 
   test "min over record Int fields lowers to native C comparison" do
-    source_fixture = Path.expand("fixtures/simple_project", __DIR__)
-    project_dir = Path.expand("tmp/native_min_record_fields_project", __DIR__)
-    out_dir = Path.expand("tmp/native_min_record_fields_codegen", __DIR__)
-    File.rm_rf!(project_dir)
-    File.rm_rf!(out_dir)
-    File.mkdir_p!(Path.dirname(project_dir))
-    File.cp_r!(source_fixture, project_dir)
-
-    main_path = Path.join(project_dir, "src/Main.elm")
-    File.write!(main_path, File.read!(main_path) <> native_min_record_fields_source())
-
-    assert {:ok, _result} =
-             Elmc.compile(project_dir, %{
-               out_dir: out_dir,
-               entry_module: "Main",
-               strip_dead_code: false
-             })
+    base_main = File.read!(Path.expand("fixtures/simple_project/src/Main.elm", __DIR__))
+    out_dir = compile_snippet!("native_min_record_fields_project", base_main <> native_min_record_fields_source(), %{strip_dead_code: false})
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
@@ -478,23 +326,8 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
   end
 
   test "record field indices follow alphabetical record literal order" do
-    source_fixture = Path.expand("fixtures/simple_project", __DIR__)
-    project_dir = Path.expand("tmp/record_field_order_project", __DIR__)
-    out_dir = Path.expand("tmp/record_field_order_codegen", __DIR__)
-    File.rm_rf!(project_dir)
-    File.rm_rf!(out_dir)
-    File.mkdir_p!(Path.dirname(project_dir))
-    File.cp_r!(source_fixture, project_dir)
-
-    main_path = Path.join(project_dir, "src/Main.elm")
-    File.write!(main_path, File.read!(main_path) <> record_field_order_source())
-
-    assert {:ok, _result} =
-             Elmc.compile(project_dir, %{
-               out_dir: out_dir,
-               entry_module: "Main",
-               strip_dead_code: false
-             })
+    base_main = File.read!(Path.expand("fixtures/simple_project/src/Main.elm", __DIR__))
+    out_dir = compile_snippet!("record_field_order_project", base_main <> record_field_order_source(), %{strip_dead_code: false})
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
@@ -505,21 +338,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
   end
 
   test "Pebble.Ui.Rect literals in Main use canonical x y w h codegen order" do
-    source_fixture = Path.expand("fixtures/simple_project", __DIR__)
-    project_dir = Path.expand("tmp/ui_rect_field_order_project", __DIR__)
-    out_dir = Path.expand("tmp/ui_rect_field_order_codegen", __DIR__)
-    File.rm_rf!(project_dir)
-    File.rm_rf!(out_dir)
-    File.mkdir_p!(Path.dirname(project_dir))
-    File.cp_r!(source_fixture, project_dir)
-    File.write!(Path.join(project_dir, "src/Main.elm"), ui_rect_field_order_source())
-
-    assert {:ok, _result} =
-             Elmc.compile(project_dir, %{
-               out_dir: out_dir,
-               entry_module: "Main",
-               strip_dead_code: false
-             })
+    out_dir = compile_snippet!("ui_rect_field_order_project", ui_rect_field_order_source(), %{strip_dead_code: false})
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
     body = lowered_fn_body!(generated_c, "elmc_fn_Main_drawOuterScale_closure_0")
@@ -534,23 +353,8 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
   end
 
   test "String.fromInt over native Int avoids temporary boxed integer" do
-    source_fixture = Path.expand("fixtures/simple_project", __DIR__)
-    project_dir = Path.expand("tmp/native_string_from_int_project", __DIR__)
-    out_dir = Path.expand("tmp/native_string_from_int_codegen", __DIR__)
-    File.rm_rf!(project_dir)
-    File.rm_rf!(out_dir)
-    File.mkdir_p!(Path.dirname(project_dir))
-    File.cp_r!(source_fixture, project_dir)
-
-    main_path = Path.join(project_dir, "src/Main.elm")
-    File.write!(main_path, File.read!(main_path) <> native_string_from_int_source())
-
-    assert {:ok, _result} =
-             Elmc.compile(project_dir, %{
-               out_dir: out_dir,
-               entry_module: "Main",
-               strip_dead_code: false
-             })
+    base_main = File.read!(Path.expand("fixtures/simple_project/src/Main.elm", __DIR__))
+    out_dir = compile_snippet!("native_string_from_int_project", base_main <> native_string_from_int_source(), %{strip_dead_code: false})
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
@@ -574,23 +378,8 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
   end
 
   test "flattened append chains fuse int literal and boxed segments with snprintf" do
-    source_fixture = Path.expand("fixtures/simple_project", __DIR__)
-    project_dir = Path.expand("tmp/duration_string_project", __DIR__)
-    out_dir = Path.expand("tmp/duration_string_codegen", __DIR__)
-    File.rm_rf!(project_dir)
-    File.rm_rf!(out_dir)
-    File.mkdir_p!(Path.dirname(project_dir))
-    File.cp_r!(source_fixture, project_dir)
-
-    main_path = Path.join(project_dir, "src/Main.elm")
-    File.write!(main_path, File.read!(main_path) <> duration_string_source())
-
-    assert {:ok, _result} =
-             Elmc.compile(project_dir, %{
-               out_dir: out_dir,
-               entry_module: "Main",
-               strip_dead_code: false
-             })
+    base_main = File.read!(Path.expand("fixtures/simple_project/src/Main.elm", __DIR__))
+    out_dir = compile_snippet!("duration_string_project", base_main <> duration_string_source(), %{strip_dead_code: false})
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
@@ -606,23 +395,8 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
   end
 
   test "boxed String if lets avoid default initialization and nullable retain fallback" do
-    source_fixture = Path.expand("fixtures/simple_project", __DIR__)
-    project_dir = Path.expand("tmp/boxed_string_if_project", __DIR__)
-    out_dir = Path.expand("tmp/boxed_string_if_codegen", __DIR__)
-    File.rm_rf!(project_dir)
-    File.rm_rf!(out_dir)
-    File.mkdir_p!(Path.dirname(project_dir))
-    File.cp_r!(source_fixture, project_dir)
-
-    main_path = Path.join(project_dir, "src/Main.elm")
-    File.write!(main_path, File.read!(main_path) <> boxed_string_if_source())
-
-    assert {:ok, _result} =
-             Elmc.compile(project_dir, %{
-               out_dir: out_dir,
-               entry_module: "Main",
-               strip_dead_code: false
-             })
+    base_main = File.read!(Path.expand("fixtures/simple_project/src/Main.elm", __DIR__))
+    out_dir = compile_snippet!("boxed_string_if_project", base_main <> boxed_string_if_source(), %{strip_dead_code: false})
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
@@ -721,23 +495,8 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
   end
 
   test "typed Bool helper arguments stay native through control flow" do
-    source_fixture = Path.expand("fixtures/simple_project", __DIR__)
-    project_dir = Path.expand("tmp/native_bool_arg_project", __DIR__)
-    out_dir = Path.expand("tmp/native_bool_arg_codegen", __DIR__)
-    File.rm_rf!(project_dir)
-    File.rm_rf!(out_dir)
-    File.mkdir_p!(Path.dirname(project_dir))
-    File.cp_r!(source_fixture, project_dir)
-
-    main_path = Path.join(project_dir, "src/Main.elm")
-    File.write!(main_path, File.read!(main_path) <> native_bool_arg_source())
-
-    assert {:ok, _result} =
-             Elmc.compile(project_dir, %{
-               out_dir: out_dir,
-               entry_module: "Main",
-               strip_dead_code: false
-             })
+    base_main = File.read!(Path.expand("fixtures/simple_project/src/Main.elm", __DIR__))
+    out_dir = compile_snippet!("native_bool_arg_project", base_main <> native_bool_arg_source(), %{strip_dead_code: false})
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
@@ -771,23 +530,8 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
   end
 
   test "let Int expressions passed to native helper Int args stay unboxed" do
-    source_fixture = Path.expand("fixtures/simple_project", __DIR__)
-    project_dir = Path.expand("tmp/native_helper_arg_let_project", __DIR__)
-    out_dir = Path.expand("tmp/native_helper_arg_let_codegen", __DIR__)
-    File.rm_rf!(project_dir)
-    File.rm_rf!(out_dir)
-    File.mkdir_p!(Path.dirname(project_dir))
-    File.cp_r!(source_fixture, project_dir)
-
-    main_path = Path.join(project_dir, "src/Main.elm")
-    File.write!(main_path, File.read!(main_path) <> native_helper_arg_let_source())
-
-    assert {:ok, _result} =
-             Elmc.compile(project_dir, %{
-               out_dir: out_dir,
-               entry_module: "Main",
-               strip_dead_code: false
-             })
+    base_main = File.read!(Path.expand("fixtures/simple_project/src/Main.elm", __DIR__))
+    out_dir = compile_snippet!("native_helper_arg_let_project", base_main <> native_helper_arg_let_source(), %{strip_dead_code: false})
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
@@ -812,23 +556,8 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
   end
 
   test "enum arguments compare constructor tags natively" do
-    source_fixture = Path.expand("fixtures/simple_project", __DIR__)
-    project_dir = Path.expand("tmp/enum_compare_project", __DIR__)
-    out_dir = Path.expand("tmp/enum_compare_codegen", __DIR__)
-    File.rm_rf!(project_dir)
-    File.rm_rf!(out_dir)
-    File.mkdir_p!(Path.dirname(project_dir))
-    File.cp_r!(source_fixture, project_dir)
-
-    main_path = Path.join(project_dir, "src/Main.elm")
-    File.write!(main_path, File.read!(main_path) <> enum_compare_source())
-
-    assert {:ok, _result} =
-             Elmc.compile(project_dir, %{
-               out_dir: out_dir,
-               entry_module: "Main",
-               strip_dead_code: false
-             })
+    base_main = File.read!(Path.expand("fixtures/simple_project/src/Main.elm", __DIR__))
+    out_dir = compile_snippet!("enum_compare_project", base_main <> enum_compare_source(), %{strip_dead_code: false})
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
@@ -848,23 +577,8 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
   end
 
   test "Basics abs and negate over native Int avoid boxed runtime calls" do
-    source_fixture = Path.expand("fixtures/simple_project", __DIR__)
-    project_dir = Path.expand("tmp/native_abs_negate_project", __DIR__)
-    out_dir = Path.expand("tmp/native_abs_negate_codegen", __DIR__)
-    File.rm_rf!(project_dir)
-    File.rm_rf!(out_dir)
-    File.mkdir_p!(Path.dirname(project_dir))
-    File.cp_r!(source_fixture, project_dir)
-
-    main_path = Path.join(project_dir, "src/Main.elm")
-    File.write!(main_path, File.read!(main_path) <> native_abs_negate_source())
-
-    assert {:ok, _result} =
-             Elmc.compile(project_dir, %{
-               out_dir: out_dir,
-               entry_module: "Main",
-               strip_dead_code: false
-             })
+    base_main = File.read!(Path.expand("fixtures/simple_project/src/Main.elm", __DIR__))
+    out_dir = compile_snippet!("native_abs_negate_project", base_main <> native_abs_negate_source(), %{strip_dead_code: false})
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
@@ -880,23 +594,8 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
   end
 
   test "division by nonzero literal omits denominator guard" do
-    source_fixture = Path.expand("fixtures/simple_project", __DIR__)
-    project_dir = Path.expand("tmp/native_literal_division_project", __DIR__)
-    out_dir = Path.expand("tmp/native_literal_division_codegen", __DIR__)
-    File.rm_rf!(project_dir)
-    File.rm_rf!(out_dir)
-    File.mkdir_p!(Path.dirname(project_dir))
-    File.cp_r!(source_fixture, project_dir)
-
-    main_path = Path.join(project_dir, "src/Main.elm")
-    File.write!(main_path, File.read!(main_path) <> native_literal_division_source())
-
-    assert {:ok, _result} =
-             Elmc.compile(project_dir, %{
-               out_dir: out_dir,
-               entry_module: "Main",
-               strip_dead_code: false
-             })
+    base_main = File.read!(Path.expand("fixtures/simple_project/src/Main.elm", __DIR__))
+    out_dir = compile_snippet!("native_literal_division_project", base_main <> native_literal_division_source(), %{strip_dead_code: false})
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
@@ -910,23 +609,8 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
   end
 
   test "record fields from helper calls inline helper body once per field" do
-    source_fixture = Path.expand("fixtures/simple_project", __DIR__)
-    project_dir = Path.expand("tmp/helper_record_field_project", __DIR__)
-    out_dir = Path.expand("tmp/helper_record_field_codegen", __DIR__)
-    File.rm_rf!(project_dir)
-    File.rm_rf!(out_dir)
-    File.mkdir_p!(Path.dirname(project_dir))
-    File.cp_r!(source_fixture, project_dir)
-
-    main_path = Path.join(project_dir, "src/Main.elm")
-    File.write!(main_path, File.read!(main_path) <> helper_record_field_source())
-
-    assert {:ok, _result} =
-             Elmc.compile(project_dir, %{
-               out_dir: out_dir,
-               entry_module: "Main",
-               strip_dead_code: false
-             })
+    base_main = File.read!(Path.expand("fixtures/simple_project/src/Main.elm", __DIR__))
+    out_dir = compile_snippet!("helper_record_field_project", base_main <> helper_record_field_source(), %{strip_dead_code: false})
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
@@ -1097,23 +781,8 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
   end
 
   test "direct command Int lets stay native inside bounds records" do
-    source_fixture = Path.expand("fixtures/simple_project", __DIR__)
-    project_dir = Path.expand("tmp/direct_native_let_bounds_project", __DIR__)
-    out_dir = Path.expand("tmp/direct_native_let_bounds_codegen", __DIR__)
-    File.rm_rf!(project_dir)
-    File.rm_rf!(out_dir)
-    File.mkdir_p!(Path.dirname(project_dir))
-    File.cp_r!(source_fixture, project_dir)
-
-    main_path = Path.join(project_dir, "src/Main.elm")
-    File.write!(main_path, File.read!(main_path) <> direct_native_let_bounds_source())
-
-    assert {:ok, _result} =
-             Elmc.compile(project_dir, %{
-               out_dir: out_dir,
-               entry_module: "Main",
-               strip_dead_code: false
-             })
+    base_main = File.read!(Path.expand("fixtures/simple_project/src/Main.elm", __DIR__))
+    out_dir = compile_snippet!("direct_native_let_bounds_project", base_main <> direct_native_let_bounds_source(), %{strip_dead_code: false})
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
@@ -1128,23 +797,8 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
   end
 
   test "direct command Int lets stay native for circle radius args" do
-    source_fixture = Path.expand("fixtures/simple_project", __DIR__)
-    project_dir = Path.expand("tmp/direct_native_let_circle_radius_project", __DIR__)
-    out_dir = Path.expand("tmp/direct_native_let_circle_radius_codegen", __DIR__)
-    File.rm_rf!(project_dir)
-    File.rm_rf!(out_dir)
-    File.mkdir_p!(Path.dirname(project_dir))
-    File.cp_r!(source_fixture, project_dir)
-
-    main_path = Path.join(project_dir, "src/Main.elm")
-    File.write!(main_path, File.read!(main_path) <> direct_native_let_circle_radius_source())
-
-    assert {:ok, _result} =
-             Elmc.compile(project_dir, %{
-               out_dir: out_dir,
-               entry_module: "Main",
-               strip_dead_code: false
-             })
+    base_main = File.read!(Path.expand("fixtures/simple_project/src/Main.elm", __DIR__))
+    out_dir = compile_snippet!("direct_native_let_circle_radius_project", base_main <> direct_native_let_circle_radius_source(), %{strip_dead_code: false})
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
@@ -1156,23 +810,8 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
   end
 
   test "direct command radius lets hoist for analog marker hand positions" do
-    source_fixture = Path.expand("fixtures/simple_project", __DIR__)
-    project_dir = Path.expand("tmp/direct_native_let_analog_markers_project", __DIR__)
-    out_dir = Path.expand("tmp/direct_native_let_analog_markers_codegen", __DIR__)
-    File.rm_rf!(project_dir)
-    File.rm_rf!(out_dir)
-    File.mkdir_p!(Path.dirname(project_dir))
-    File.cp_r!(source_fixture, project_dir)
-
-    main_path = Path.join(project_dir, "src/Main.elm")
-    File.write!(main_path, File.read!(main_path) <> direct_native_let_analog_markers_source())
-
-    assert {:ok, _result} =
-             Elmc.compile(project_dir, %{
-               out_dir: out_dir,
-               entry_module: "Main",
-               strip_dead_code: false
-             })
+    base_main = File.read!(Path.expand("fixtures/simple_project/src/Main.elm", __DIR__))
+    out_dir = compile_snippet!("direct_native_let_analog_markers_project", base_main <> direct_native_let_analog_markers_source(), %{strip_dead_code: false})
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
@@ -1188,23 +827,8 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
   end
 
   test "native lookup tables return elmc_int_t without boxing case branches" do
-    source_fixture = Path.expand("fixtures/simple_project", __DIR__)
-    project_dir = Path.expand("tmp/native_unit12_lookup_project", __DIR__)
-    out_dir = Path.expand("tmp/native_unit12_lookup_codegen", __DIR__)
-    File.rm_rf!(project_dir)
-    File.rm_rf!(out_dir)
-    File.mkdir_p!(Path.dirname(project_dir))
-    File.cp_r!(source_fixture, project_dir)
-
-    main_path = Path.join(project_dir, "src/Main.elm")
-    File.write!(main_path, File.read!(main_path) <> native_unit12_lookup_source())
-
-    assert {:ok, _result} =
-             Elmc.compile(project_dir, %{
-               out_dir: out_dir,
-               entry_module: "Main",
-               strip_dead_code: false
-             })
+    base_main = File.read!(Path.expand("fixtures/simple_project/src/Main.elm", __DIR__))
+    out_dir = compile_snippet!("native_unit12_lookup_project", base_main <> native_unit12_lookup_source(), %{strip_dead_code: false})
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
@@ -1219,23 +843,8 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
   end
 
   test "direct render folds literal unit12 lookups and hoists variable ones" do
-    source_fixture = Path.expand("fixtures/simple_project", __DIR__)
-    project_dir = Path.expand("tmp/direct_unit12_dedup_project", __DIR__)
-    out_dir = Path.expand("tmp/direct_unit12_dedup_codegen", __DIR__)
-    File.rm_rf!(project_dir)
-    File.rm_rf!(out_dir)
-    File.mkdir_p!(Path.dirname(project_dir))
-    File.cp_r!(source_fixture, project_dir)
-
-    main_path = Path.join(project_dir, "src/Main.elm")
-    File.write!(main_path, File.read!(main_path) <> direct_unit12_dedup_source())
-
-    assert {:ok, _result} =
-             Elmc.compile(project_dir, %{
-               out_dir: out_dir,
-               entry_module: "Main",
-               strip_dead_code: false
-             })
+    base_main = File.read!(Path.expand("fixtures/simple_project/src/Main.elm", __DIR__))
+    out_dir = compile_snippet!("direct_unit12_dedup_project", base_main <> direct_unit12_dedup_source(), %{strip_dead_code: false})
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
@@ -1259,23 +868,8 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
   end
 
   test "curried let-bound Ui.text helpers keep string args boxed in lambdas" do
-    source_fixture = Path.expand("fixtures/simple_project", __DIR__)
-    project_dir = Path.expand("tmp/calendar_label_helper_project", __DIR__)
-    out_dir = Path.expand("tmp/calendar_label_helper_codegen", __DIR__)
-    File.rm_rf!(project_dir)
-    File.rm_rf!(out_dir)
-    File.mkdir_p!(Path.dirname(project_dir))
-    File.cp_r!(source_fixture, project_dir)
-
-    main_path = Path.join(project_dir, "src/Main.elm")
-    File.write!(main_path, File.read!(main_path) <> calendar_label_helper_source())
-
-    assert {:ok, _result} =
-             Elmc.compile(project_dir, %{
-               out_dir: out_dir,
-               entry_module: "Main",
-               strip_dead_code: false
-             })
+    base_main = File.read!(Path.expand("fixtures/simple_project/src/Main.elm", __DIR__))
+    out_dir = compile_snippet!("calendar_label_helper_project", base_main <> calendar_label_helper_source(), %{strip_dead_code: false})
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
@@ -1291,23 +885,8 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
   end
 
   test "record helper inlining does not recursively substitute self-referential offsets" do
-    source_fixture = Path.expand("fixtures/simple_project", __DIR__)
-    project_dir = Path.expand("tmp/self_referential_substitution_project", __DIR__)
-    out_dir = Path.expand("tmp/self_referential_substitution_codegen", __DIR__)
-    File.rm_rf!(project_dir)
-    File.rm_rf!(out_dir)
-    File.mkdir_p!(Path.dirname(project_dir))
-    File.cp_r!(source_fixture, project_dir)
-
-    main_path = Path.join(project_dir, "src/Main.elm")
-    File.write!(main_path, File.read!(main_path) <> self_referential_substitution_source())
-
-    assert {:ok, _result} =
-             Elmc.compile(project_dir, %{
-               out_dir: out_dir,
-               entry_module: "Main",
-               strip_dead_code: false
-             })
+    base_main = File.read!(Path.expand("fixtures/simple_project/src/Main.elm", __DIR__))
+    out_dir = compile_snippet!("self_referential_substitution_project", base_main <> self_referential_substitution_source(), %{strip_dead_code: false})
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
     assert generated_c =~ "static RC elmc_fn_Main_selfReferentialOps_commands_append_native"
@@ -1315,23 +894,8 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
   end
 
   test "direct command Int if lets stay native through both branches" do
-    source_fixture = Path.expand("fixtures/simple_project", __DIR__)
-    project_dir = Path.expand("tmp/direct_native_if_let_project", __DIR__)
-    out_dir = Path.expand("tmp/direct_native_if_let_codegen", __DIR__)
-    File.rm_rf!(project_dir)
-    File.rm_rf!(out_dir)
-    File.mkdir_p!(Path.dirname(project_dir))
-    File.cp_r!(source_fixture, project_dir)
-
-    main_path = Path.join(project_dir, "src/Main.elm")
-    File.write!(main_path, File.read!(main_path) <> direct_native_if_let_source())
-
-    assert {:ok, _result} =
-             Elmc.compile(project_dir, %{
-               out_dir: out_dir,
-               entry_module: "Main",
-               strip_dead_code: false
-             })
+    base_main = File.read!(Path.expand("fixtures/simple_project/src/Main.elm", __DIR__))
+    out_dir = compile_snippet!("direct_native_if_let_project", base_main <> direct_native_if_let_source(), %{strip_dead_code: false})
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
@@ -1345,23 +909,8 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
   end
 
   test "direct command Bool conditions avoid retained condition temporaries" do
-    source_fixture = Path.expand("fixtures/simple_project", __DIR__)
-    project_dir = Path.expand("tmp/direct_native_bool_condition_project", __DIR__)
-    out_dir = Path.expand("tmp/direct_native_bool_condition_codegen", __DIR__)
-    File.rm_rf!(project_dir)
-    File.rm_rf!(out_dir)
-    File.mkdir_p!(Path.dirname(project_dir))
-    File.cp_r!(source_fixture, project_dir)
-
-    main_path = Path.join(project_dir, "src/Main.elm")
-    File.write!(main_path, File.read!(main_path) <> direct_native_bool_condition_source())
-
-    assert {:ok, _result} =
-             Elmc.compile(project_dir, %{
-               out_dir: out_dir,
-               entry_module: "Main",
-               strip_dead_code: false
-             })
+    base_main = File.read!(Path.expand("fixtures/simple_project/src/Main.elm", __DIR__))
+    out_dir = compile_snippet!("direct_native_bool_condition_project", base_main <> direct_native_bool_condition_source(), %{strip_dead_code: false})
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
@@ -1395,23 +944,8 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
   end
 
   test "wildcard case branches do not emit constant if conditions" do
-    source_fixture = Path.expand("fixtures/simple_project", __DIR__)
-    project_dir = Path.expand("tmp/wildcard_case_condition_project", __DIR__)
-    out_dir = Path.expand("tmp/wildcard_case_condition_codegen", __DIR__)
-    File.rm_rf!(project_dir)
-    File.rm_rf!(out_dir)
-    File.mkdir_p!(Path.dirname(project_dir))
-    File.cp_r!(source_fixture, project_dir)
-
-    main_path = Path.join(project_dir, "src/Main.elm")
-    File.write!(main_path, File.read!(main_path) <> wildcard_case_condition_source())
-
-    assert {:ok, _result} =
-             Elmc.compile(project_dir, %{
-               out_dir: out_dir,
-               entry_module: "Main",
-               strip_dead_code: false
-             })
+    base_main = File.read!(Path.expand("fixtures/simple_project/src/Main.elm", __DIR__))
+    out_dir = compile_snippet!("wildcard_case_condition_project", base_main <> wildcard_case_condition_source(), %{strip_dead_code: false})
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
@@ -1430,23 +964,8 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
   end
 
   test "direct command Maybe.withDefault Int stays native through helper args" do
-    source_fixture = Path.expand("fixtures/simple_project", __DIR__)
-    project_dir = Path.expand("tmp/direct_maybe_default_helper_arg_project", __DIR__)
-    out_dir = Path.expand("tmp/direct_maybe_default_helper_arg_codegen", __DIR__)
-    File.rm_rf!(project_dir)
-    File.rm_rf!(out_dir)
-    File.mkdir_p!(Path.dirname(project_dir))
-    File.cp_r!(source_fixture, project_dir)
-
-    main_path = Path.join(project_dir, "src/Main.elm")
-    File.write!(main_path, File.read!(main_path) <> direct_maybe_default_helper_arg_source())
-
-    assert {:ok, _result} =
-             Elmc.compile(project_dir, %{
-               out_dir: out_dir,
-               entry_module: "Main",
-               strip_dead_code: false
-             })
+    base_main = File.read!(Path.expand("fixtures/simple_project/src/Main.elm", __DIR__))
+    out_dir = compile_snippet!("direct_maybe_default_helper_arg_project", base_main <> direct_maybe_default_helper_arg_source(), %{strip_dead_code: false})
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
@@ -1471,23 +990,8 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
   end
 
   test "lambda Int args bind once as native ints when only used natively" do
-    source_fixture = Path.expand("fixtures/simple_project", __DIR__)
-    project_dir = Path.expand("tmp/native_lambda_arg_project", __DIR__)
-    out_dir = Path.expand("tmp/native_lambda_arg_codegen", __DIR__)
-    File.rm_rf!(project_dir)
-    File.rm_rf!(out_dir)
-    File.mkdir_p!(Path.dirname(project_dir))
-    File.cp_r!(source_fixture, project_dir)
-
-    main_path = Path.join(project_dir, "src/Main.elm")
-    File.write!(main_path, File.read!(main_path) <> native_lambda_arg_source())
-
-    assert {:ok, _result} =
-             Elmc.compile(project_dir, %{
-               out_dir: out_dir,
-               entry_module: "Main",
-               strip_dead_code: false
-             })
+    base_main = File.read!(Path.expand("fixtures/simple_project/src/Main.elm", __DIR__))
+    out_dir = compile_snippet!("native_lambda_arg_project", base_main <> native_lambda_arg_source(), %{strip_dead_code: false})
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
@@ -1498,23 +1002,8 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
   end
 
   test "boxed Int record fields compare natively without Basics.compare" do
-    source_fixture = Path.expand("fixtures/simple_project", __DIR__)
-    project_dir = Path.expand("tmp/native_boxed_record_compare_project", __DIR__)
-    out_dir = Path.expand("tmp/native_boxed_record_compare_codegen", __DIR__)
-    File.rm_rf!(project_dir)
-    File.rm_rf!(out_dir)
-    File.mkdir_p!(Path.dirname(project_dir))
-    File.cp_r!(source_fixture, project_dir)
-
-    main_path = Path.join(project_dir, "src/Main.elm")
-    File.write!(main_path, File.read!(main_path) <> native_boxed_record_compare_source())
-
-    assert {:ok, _result} =
-             Elmc.compile(project_dir, %{
-               out_dir: out_dir,
-               entry_module: "Main",
-               strip_dead_code: false
-             })
+    base_main = File.read!(Path.expand("fixtures/simple_project/src/Main.elm", __DIR__))
+    out_dir = compile_snippet!("native_boxed_record_compare_project", base_main <> native_boxed_record_compare_source(), %{strip_dead_code: false})
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
@@ -1530,21 +1019,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
   end
 
   test "native-only callees omit boxed wrappers in stripped builds" do
-    source_fixture = Path.expand("fixtures/simple_project", __DIR__)
-    project_dir = Path.expand("tmp/native_only_wrapper_project", __DIR__)
-    out_dir = Path.expand("tmp/native_only_wrapper_codegen", __DIR__)
-    File.rm_rf!(project_dir)
-    File.rm_rf!(out_dir)
-    File.mkdir_p!(Path.dirname(project_dir))
-    File.cp_r!(source_fixture, project_dir)
-    File.write!(Path.join(project_dir, "src/Main.elm"), native_only_wrapper_source())
-
-    assert {:ok, _result} =
-             Elmc.compile(project_dir, %{
-               out_dir: out_dir,
-               entry_module: "Main",
-               prune_native_wrappers: true
-             })
+    out_dir = compile_snippet!("native_only_wrapper_project", native_only_wrapper_source(), %{prune_native_wrappers: true})
 
     generated_h = File.read!(Path.join(out_dir, "c/elmc_generated.h"))
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
@@ -1557,22 +1032,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
   end
 
   test "native callees forward-declare non-native top-level constants in stripped builds" do
-    source_fixture = Path.expand("fixtures/simple_project", __DIR__)
-    project_dir = Path.expand("tmp/native_constant_forward_decl_project", __DIR__)
-    out_dir = Path.expand("tmp/native_constant_forward_decl_codegen", __DIR__)
-    File.rm_rf!(project_dir)
-    File.rm_rf!(out_dir)
-    File.mkdir_p!(Path.dirname(project_dir))
-    File.cp_r!(source_fixture, project_dir)
-    File.write!(Path.join(project_dir, "src/Main.elm"), native_constant_forward_decl_source())
-
-    assert {:ok, _result} =
-             Elmc.compile(project_dir, %{
-               out_dir: out_dir,
-               entry_module: "Main",
-               direct_render_only: true,
-               prune_native_wrappers: true
-             })
+    out_dir = compile_snippet!("native_constant_forward_decl_project", native_constant_forward_decl_source(), %{direct_render_only: true, prune_native_wrappers: true})
 
     generated_h = File.read!(Path.join(out_dir, "c/elmc_generated.h"))
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
@@ -1592,22 +1052,8 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
   end
 
   test "unreachable direct command helpers are not emitted in stripped builds" do
-    source_fixture = Path.expand("fixtures/simple_project", __DIR__)
-    project_dir = Path.expand("tmp/unreachable_direct_command_project", __DIR__)
-    out_dir = Path.expand("tmp/unreachable_direct_command_codegen", __DIR__)
-    File.rm_rf!(project_dir)
-    File.rm_rf!(out_dir)
-    File.mkdir_p!(Path.dirname(project_dir))
-    File.cp_r!(source_fixture, project_dir)
-
-    main_path = Path.join(project_dir, "src/Main.elm")
-    File.write!(main_path, File.read!(main_path) <> unreachable_direct_command_source())
-
-    assert {:ok, _result} =
-             Elmc.compile(project_dir, %{
-               out_dir: out_dir,
-               entry_module: "Main"
-             })
+    base_main = File.read!(Path.expand("fixtures/simple_project/src/Main.elm", __DIR__))
+    out_dir = compile_snippet!("unreachable_direct_command_project", base_main <> unreachable_direct_command_source())
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
@@ -3845,43 +3291,11 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
   end
 
   test "direct textAt with defaultTextOptions is supported in view" do
-    source_fixture = Path.expand("fixtures/simple_project", __DIR__)
-    project_dir = Path.expand("tmp/direct_textat_default_project", __DIR__)
-    out_dir = Path.expand("tmp/direct_textat_default_codegen", __DIR__)
-    File.rm_rf!(project_dir)
-    File.rm_rf!(out_dir)
-    File.mkdir_p!(Path.dirname(project_dir))
-    File.cp_r!(source_fixture, project_dir)
-    File.write!(Path.join(project_dir, "src/Main.elm"), direct_textat_default_options_source())
-
-    assert {:ok, _result} =
-             Elmc.compile(project_dir, %{
-               out_dir: out_dir,
-               entry_module: "Main",
-               direct_render_only: true,
-               prune_runtime: true,
-               prune_native_wrappers: true
-             })
+    out_dir = compile_snippet!("direct_textat_default_project", direct_textat_default_options_source(), %{direct_render_only: true, prune_runtime: true, prune_native_wrappers: true})
   end
 
   test "direct view composes helpers that call other direct command targets" do
-    source_fixture = Path.expand("fixtures/simple_project", __DIR__)
-    project_dir = Path.expand("tmp/direct_helper_chain_project", __DIR__)
-    out_dir = Path.expand("tmp/direct_helper_chain_codegen", __DIR__)
-    File.rm_rf!(project_dir)
-    File.rm_rf!(out_dir)
-    File.mkdir_p!(Path.dirname(project_dir))
-    File.cp_r!(source_fixture, project_dir)
-    File.write!(Path.join(project_dir, "src/Main.elm"), direct_helper_chain_source())
-
-    assert {:ok, _result} =
-             Elmc.compile(project_dir, %{
-               out_dir: out_dir,
-               entry_module: "Main",
-               direct_render_only: true,
-               prune_runtime: true,
-               prune_native_wrappers: true
-             })
+    out_dir = compile_snippet!("direct_helper_chain_project", direct_helper_chain_source(), %{direct_render_only: true, prune_runtime: true, prune_native_wrappers: true})
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
     view_body = lowered_fn_body!(generated_c, "elmc_fn_Main_view_commands_append")
@@ -3894,23 +3308,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
   end
 
   test "direct List.concatMap over range inlines watchface-style hour ticks" do
-    source_fixture = Path.expand("fixtures/simple_project", __DIR__)
-    project_dir = Path.expand("tmp/direct_concatmap_ticks_project", __DIR__)
-    out_dir = Path.expand("tmp/direct_concatmap_ticks_codegen", __DIR__)
-    File.rm_rf!(project_dir)
-    File.rm_rf!(out_dir)
-    File.mkdir_p!(Path.dirname(project_dir))
-    File.cp_r!(source_fixture, project_dir)
-    File.write!(Path.join(project_dir, "src/Main.elm"), direct_concatmap_range_ticks_source())
-
-    assert {:ok, _result} =
-             Elmc.compile(project_dir, %{
-               out_dir: out_dir,
-               entry_module: "Main",
-               direct_render_only: true,
-               prune_runtime: true,
-               prune_native_wrappers: true
-             })
+    out_dir = compile_snippet!("direct_concatmap_ticks_project", direct_concatmap_range_ticks_source(), %{direct_render_only: true, prune_runtime: true, prune_native_wrappers: true})
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
     view_body = lowered_fn_body!(generated_c, "elmc_fn_Main_view_commands_append")
@@ -3920,23 +3318,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
   end
 
   test "direct render supports drawVectorAt in weather icon helper" do
-    source_fixture = Path.expand("fixtures/simple_project", __DIR__)
-    project_dir = Path.expand("tmp/direct_draw_vector_project", __DIR__)
-    out_dir = Path.expand("tmp/direct_draw_vector_codegen", __DIR__)
-    File.rm_rf!(project_dir)
-    File.rm_rf!(out_dir)
-    File.mkdir_p!(Path.dirname(project_dir))
-    File.cp_r!(source_fixture, project_dir)
-    File.write!(Path.join(project_dir, "src/Main.elm"), direct_draw_vector_weather_source())
-
-    assert {:ok, _result} =
-             Elmc.compile(project_dir, %{
-               out_dir: out_dir,
-               entry_module: "Main",
-               direct_render_only: true,
-               prune_runtime: true,
-               prune_native_wrappers: true
-             })
+    out_dir = compile_snippet!("direct_draw_vector_project", direct_draw_vector_weather_source(), %{direct_render_only: true, prune_runtime: true, prune_native_wrappers: true})
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
     assert generated_c =~ "view_commands_append"
@@ -3950,23 +3332,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
   end
 
   test "direct List.concatMap over range inlines tick lines from lambda" do
-    source_fixture = Path.expand("fixtures/simple_project", __DIR__)
-    project_dir = Path.expand("tmp/direct_concatmap_range_project", __DIR__)
-    out_dir = Path.expand("tmp/direct_concatmap_range_codegen", __DIR__)
-    File.rm_rf!(project_dir)
-    File.rm_rf!(out_dir)
-    File.mkdir_p!(Path.dirname(project_dir))
-    File.cp_r!(source_fixture, project_dir)
-    File.write!(Path.join(project_dir, "src/Main.elm"), direct_concatmap_range_source())
-
-    assert {:ok, _result} =
-             Elmc.compile(project_dir, %{
-               out_dir: out_dir,
-               entry_module: "Main",
-               direct_render_only: true,
-               prune_runtime: true,
-               prune_native_wrappers: true
-             })
+    out_dir = compile_snippet!("direct_concatmap_range_project", direct_concatmap_range_source(), %{direct_render_only: true, prune_runtime: true, prune_native_wrappers: true})
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
@@ -4105,22 +3471,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
   end
 
   test "direct view List.cons and append compose chrome with inlined indexedMap cells" do
-    source_fixture = Path.expand("fixtures/simple_project", __DIR__)
-    project_dir = Path.expand("tmp/direct_view_cons_project", __DIR__)
-    out_dir = Path.expand("tmp/direct_view_cons_codegen", __DIR__)
-    File.rm_rf!(project_dir)
-    File.rm_rf!(out_dir)
-    File.mkdir_p!(Path.dirname(project_dir))
-    File.cp_r!(source_fixture, project_dir)
-    File.write!(Path.join(project_dir, "src/Main.elm"), direct_view_cons_cells_source())
-
-    assert {:ok, _result} =
-             Elmc.compile(project_dir, %{
-               out_dir: out_dir,
-               entry_module: "Main",
-               direct_render_only: true,
-               prune_native_wrappers: true
-             })
+    out_dir = compile_snippet!("direct_view_cons_project", direct_view_cons_cells_source(), %{direct_render_only: true, prune_native_wrappers: true})
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
@@ -4220,23 +3571,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
   end
 
   test "direct view reuses hoisted displayShapeIsRound across layout and chrome lets" do
-    source_fixture = Path.expand("fixtures/simple_project", __DIR__)
-    project_dir = Path.expand("tmp/direct_display_shape_hoist_project", __DIR__)
-    out_dir = Path.expand("tmp/direct_display_shape_hoist_codegen", __DIR__)
-    File.rm_rf!(project_dir)
-    File.rm_rf!(out_dir)
-    File.mkdir_p!(Path.dirname(project_dir))
-    File.cp_r!(source_fixture, project_dir)
-    File.write!(Path.join(project_dir, "src/Main.elm"), direct_display_shape_hoist_view_source())
-
-    assert {:ok, _result} =
-             Elmc.compile(project_dir, %{
-               out_dir: out_dir,
-               entry_module: "Main",
-               direct_render_only: true,
-               prune_runtime: true,
-               prune_native_wrappers: true
-             })
+    out_dir = compile_snippet!("direct_display_shape_hoist_project", direct_display_shape_hoist_view_source(), %{direct_render_only: true, prune_runtime: true, prune_native_wrappers: true})
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
@@ -4250,23 +3585,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
   end
 
   test "direct view reuses hoisted min screen dimensions across layout and chrome" do
-    source_fixture = Path.expand("fixtures/simple_project", __DIR__)
-    project_dir = Path.expand("tmp/direct_min_hoist_project", __DIR__)
-    out_dir = Path.expand("tmp/direct_min_hoist_codegen", __DIR__)
-    File.rm_rf!(project_dir)
-    File.rm_rf!(out_dir)
-    File.mkdir_p!(Path.dirname(project_dir))
-    File.cp_r!(source_fixture, project_dir)
-    File.write!(Path.join(project_dir, "src/Main.elm"), direct_min_hoist_view_source())
-
-    assert {:ok, _result} =
-             Elmc.compile(project_dir, %{
-               out_dir: out_dir,
-               entry_module: "Main",
-               direct_render_only: true,
-               prune_runtime: true,
-               prune_native_wrappers: true
-             })
+    out_dir = compile_snippet!("direct_min_hoist_project", direct_min_hoist_view_source(), %{direct_render_only: true, prune_runtime: true, prune_native_wrappers: true})
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
@@ -4287,23 +3606,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
   end
 
   test "direct view uses native packed textOptions without record allocation" do
-    source_fixture = Path.expand("fixtures/simple_project", __DIR__)
-    project_dir = Path.expand("tmp/direct_text_options_project", __DIR__)
-    out_dir = Path.expand("tmp/direct_text_options_codegen", __DIR__)
-    File.rm_rf!(project_dir)
-    File.rm_rf!(out_dir)
-    File.mkdir_p!(Path.dirname(project_dir))
-    File.cp_r!(source_fixture, project_dir)
-    File.write!(Path.join(project_dir, "src/Main.elm"), direct_text_options_view_source())
-
-    assert {:ok, _result} =
-             Elmc.compile(project_dir, %{
-               out_dir: out_dir,
-               entry_module: "Main",
-               direct_render_only: true,
-               prune_runtime: true,
-               prune_native_wrappers: true
-             })
+    out_dir = compile_snippet!("direct_text_options_project", direct_text_options_view_source(), %{direct_render_only: true, prune_runtime: true, prune_native_wrappers: true})
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
@@ -4319,23 +3622,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
   end
 
   test "direct view inlines boardLayout helper into native record layout fields" do
-    source_fixture = Path.expand("fixtures/simple_project", __DIR__)
-    project_dir = Path.expand("tmp/direct_board_layout_helper_project", __DIR__)
-    out_dir = Path.expand("tmp/direct_board_layout_helper_codegen", __DIR__)
-    File.rm_rf!(project_dir)
-    File.rm_rf!(out_dir)
-    File.mkdir_p!(Path.dirname(project_dir))
-    File.cp_r!(source_fixture, project_dir)
-    File.write!(Path.join(project_dir, "src/Main.elm"), direct_board_layout_helper_source())
-
-    assert {:ok, _result} =
-             Elmc.compile(project_dir, %{
-               out_dir: out_dir,
-               entry_module: "Main",
-               direct_render_only: true,
-               prune_runtime: true,
-               prune_native_wrappers: true
-             })
+    out_dir = compile_snippet!("direct_board_layout_helper_project", direct_board_layout_helper_source(), %{direct_render_only: true, prune_runtime: true, prune_native_wrappers: true})
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 

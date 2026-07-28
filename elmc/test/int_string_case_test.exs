@@ -1,7 +1,7 @@
 defmodule Elmc.IntStringCaseTest do
   use ExUnit.Case, async: true
 
-  alias Elmc.Backend.CCodegen.IntStringCase
+  alias Elmc.Backend.Plan.Fusion.Matchers.IntStringCase
 
   test "try_emit recognizes int to string lookup case IR" do
     branches =

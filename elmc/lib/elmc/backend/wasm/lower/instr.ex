@@ -115,6 +115,9 @@ defmodule Elmc.Backend.Wasm.Lower.Instr do
       :test_list_empty ->
         emit_test_list_empty(instr, slots, rc?)
 
+      :test_list_length_gte ->
+        emit_test_list_length_gte(instr, slots, rc?)
+
       :test_ctor_tag ->
         emit_test_ctor_tag(instr, slots, rc?)
 
@@ -1158,6 +1161,17 @@ defmodule Elmc.Backend.Wasm.Lower.Instr do
 
   defp emit_test_list_empty(%{dest: dest_reg, args: %{reg: reg}}, slots, rc?) do
     emit_runtime_call(:list_is_empty, [Slots.reg_name(slots, reg)], dest_reg, slots, rc?)
+  end
+
+  defp emit_test_list_length_gte(%{dest: dest_reg, args: %{reg: reg, min: min}}, slots, rc?)
+       when is_integer(min) do
+    emit_runtime_call(
+      :list_length_gte,
+      [Slots.reg_name(slots, reg), int_const(min)],
+      dest_reg,
+      slots,
+      rc?
+    )
   end
 
   defp emit_test_ctor_tag(%{dest: dest_reg, args: args}, slots, rc?) do

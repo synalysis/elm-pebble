@@ -75,11 +75,31 @@ jobs:
       - name: Run plan template strict gate
         run: |
           export TEST_ULIMIT_V_KB=6291456 ELIXIR_ERL_OPTIONS="+S 1:1 +MMscs 256"
-          ./scripts/mix-test-limited.sh elmc test/plan_template_strict_gate_test.exs
+          ./scripts/mix-test-limited.sh elmc test/plan_template_strict_gate_test.exs --include slow
 
       - name: Run 2048 RC integration gates
         working-directory: elmc
         run: mix test.rc_2048
+
+      - name: Run elm-run corpus parity gate
+        if: steps.elm-run-corpus.outputs.available == 'true'
+        working-directory: elmc
+        run: mix test.corpus_parity
+
+      - name: Run core compliance differential oracle
+        run: |
+          export TEST_ULIMIT_V_KB=6291456 ELIXIR_ERL_OPTIONS="+S 1:1 +MMscs 256"
+          ./scripts/mix-test-limited.sh elmc test/core_compliance_differential_test.exs --include slow
+
+      - name: Run watchface RC balance smoke
+        run: |
+          export TEST_ULIMIT_V_KB=6291456 ELIXIR_ERL_OPTIONS="+S 1:1 +MMscs 256"
+          ./scripts/mix-test-per-template.sh test/watchface_rc_track_smoke_test.exs
+
+      - name: Run watchface TEA semantic smoke
+        run: |
+          export TEST_ULIMIT_V_KB=6291456 ELIXIR_ERL_OPTIONS="+S 1:1 +MMscs 256"
+          ./scripts/mix-test-per-template.sh test/watchface_tea_semantic_smoke_test.exs
 
       - name: Run elm-run corpus compile gate
         if: steps.elm-run-corpus.outputs.available == 'true'
@@ -135,7 +155,7 @@ jobs:
       - name: Run elm_pebble_dev wasm compile gate (ulimit)
         run: |
           export TEST_ULIMIT_V_KB=6291456 ELIXIR_ERL_OPTIONS="+S 1:1 +MMscs 256"
-          ./scripts/mix-test-limited.sh elmc test/wasm_elm_pebble_dev_gate_test.exs
+          ./scripts/mix-test-limited.sh elmc test/wasm_elm_pebble_dev_gate_test.exs --include slow
 
       - name: Run elm_ex let layout tests
         run: |

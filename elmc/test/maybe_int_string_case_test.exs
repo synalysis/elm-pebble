@@ -1,7 +1,7 @@
 defmodule Elmc.MaybeIntStringCaseTest do
   use ExUnit.Case, async: true
 
-  alias Elmc.Backend.CCodegen.MaybeIntStringCase
+  alias Elmc.Backend.Plan.Fusion.Matchers.MaybeIntStringCase
 
   test "try_emit recognizes maybe field threshold int suffix IR" do
     expr = %{

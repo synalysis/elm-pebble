@@ -72,7 +72,7 @@ defmodule Elmc.Runtime.RecordSeq do
           *out = &cell->value;
           cell = NULL;
         }
-      CATCH_END;
+      CATCH_END
       if (cell) {
         if (cell->data.items) elmc_free(cell->data.items);
         elmc_free(cell);
@@ -105,7 +105,7 @@ defmodule Elmc.Runtime.RecordSeq do
           *out = result;
           result = NULL;
         }
-      CATCH_END;
+      CATCH_END
       elmc_release(next);
       elmc_release(result);
       return rc;
@@ -133,7 +133,7 @@ defmodule Elmc.Runtime.RecordSeq do
         } else {
           *out = elmc_retain(payload->items[0]);
         }
-      CATCH_END;
+      CATCH_END
       return rc;
     }
 
@@ -142,7 +142,7 @@ defmodule Elmc.Runtime.RecordSeq do
       CATCH_BEGIN
         rc = elmc_record_seq_drop(out, 1, list);
         CHECK_RC(rc);
-      CATCH_END;
+      CATCH_END
       return rc;
     }
     """

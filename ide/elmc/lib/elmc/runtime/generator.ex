@@ -2761,7 +2761,7 @@ defmodule Elmc.Runtime.Generator do
           *out = rev;
           rev = NULL;
         }
-      CATCH_END;
+      CATCH_END
       elmc_release(next);
       elmc_release(rev);
       return rc;
@@ -2792,7 +2792,7 @@ defmodule Elmc.Runtime.Generator do
           rc = elmc_alloc_scalar(out, ELMC_TAG_INT, value);
           CHECK_RC(rc);
         }
-      CATCH_END;
+      CATCH_END
       return rc;
     }
 
@@ -2800,7 +2800,7 @@ defmodule Elmc.Runtime.Generator do
       RC rc = RC_SUCCESS;
       CATCH_BEGIN
         *out = value ? &ELMC_BOOL_TRUE : &ELMC_BOOL_FALSE;
-      CATCH_END;
+      CATCH_END
       return rc;
     }
 
@@ -2829,7 +2829,7 @@ defmodule Elmc.Runtime.Generator do
       CATCH_BEGIN
         rc = elmc_alloc_scalar(out, ELMC_TAG_ORDER, value);
         CHECK_RC(rc);
-      CATCH_END;
+      CATCH_END
       return rc;
     }
 
@@ -2857,7 +2857,7 @@ defmodule Elmc.Runtime.Generator do
           allocated->scalar = (elmc_int_t)len;
           *out = allocated;
         }
-      CATCH_END;
+      CATCH_END
       if (ptr) elmc_free(ptr);
       return rc;
     }
@@ -2903,7 +2903,7 @@ defmodule Elmc.Runtime.Generator do
           allocated->scalar = (elmc_int_t)len;
           *out = allocated;
         }
-      CATCH_END;
+      CATCH_END
       if (ptr) elmc_free(ptr);
       return rc;
     }
@@ -2926,7 +2926,7 @@ defmodule Elmc.Runtime.Generator do
         }
         rc = elmc_list_cell_alloc(out, head, use_tail, 0);
         CHECK_RC(rc);
-      CATCH_END;
+      CATCH_END
       elmc_release(owned_tail);
       return rc;
     }
@@ -2970,7 +2970,7 @@ defmodule Elmc.Runtime.Generator do
           *out = list;
           list = NULL;
         }
-      CATCH_END;
+      CATCH_END
       elmc_release(next);
       elmc_release(list);
       return rc;
@@ -2995,7 +2995,7 @@ defmodule Elmc.Runtime.Generator do
           *out = list;
           list = NULL;
         }
-      CATCH_END;
+      CATCH_END
       elmc_release(next);
       elmc_release(list);
       return rc;
@@ -3026,7 +3026,7 @@ defmodule Elmc.Runtime.Generator do
         if (!kind_v) { rc = RC_ERR_OUT_OF_MEMORY; CHECK_RC(rc); }
         rc = elmc_tuple2_take(out, kind_v, tail);
         CHECK_RC(rc);
-      CATCH_END;
+      CATCH_END
       return rc;
     }
 
@@ -3048,7 +3048,7 @@ defmodule Elmc.Runtime.Generator do
         if (!kind_v) { rc = RC_ERR_OUT_OF_MEMORY; CHECK_RC(rc); }
         rc = elmc_tuple2_take(out, kind_v, tail);
         CHECK_RC(rc);
-      CATCH_END;
+      CATCH_END
       return rc;
     }
 
@@ -3078,7 +3078,7 @@ defmodule Elmc.Runtime.Generator do
           *out = list;
           list = NULL;
         }
-      CATCH_END;
+      CATCH_END
       elmc_release(item);
       elmc_release(next);
       elmc_release(list);
@@ -3152,7 +3152,7 @@ defmodule Elmc.Runtime.Generator do
         ELMC_RC_TRACK_REGISTER(&cell->value, __func__);
         *out = &cell->value;
         cell = NULL;
-      CATCH_END;
+      CATCH_END
       if (cell) elmc_release(&cell->value);
       return rc;
     }
@@ -3176,7 +3176,7 @@ defmodule Elmc.Runtime.Generator do
         ELMC_RC_TRACK_REGISTER(&cell->value, __func__);
         *out = &cell->value;
         cell = NULL;
-      CATCH_END;
+      CATCH_END
       if (cell) {
         elmc_release(value);
         elmc_release(&cell->value);
@@ -3223,7 +3223,7 @@ defmodule Elmc.Runtime.Generator do
         ELMC_RC_TRACK_REGISTER(&cell->value, __func__);
         *out = &cell->value;
         cell = NULL;
-      CATCH_END;
+      CATCH_END
       if (cell) elmc_release(&cell->value);
       return rc;
     }
@@ -3247,7 +3247,7 @@ defmodule Elmc.Runtime.Generator do
         ELMC_RC_TRACK_REGISTER(&cell->value, __func__);
         *out = &cell->value;
         cell = NULL;
-      CATCH_END;
+      CATCH_END
       if (cell) elmc_release(&cell->value);
       return rc;
     }
@@ -3271,7 +3271,7 @@ defmodule Elmc.Runtime.Generator do
         ELMC_RC_TRACK_REGISTER(&cell->value, __func__);
         *out = &cell->value;
         cell = NULL;
-      CATCH_END;
+      CATCH_END
       if (cell) {
         elmc_release(value);
         elmc_release(&cell->value);
@@ -3298,7 +3298,7 @@ defmodule Elmc.Runtime.Generator do
         ELMC_RC_TRACK_REGISTER(&cell->value, __func__);
         *out = &cell->value;
         cell = NULL;
-      CATCH_END;
+      CATCH_END
       if (cell) {
         elmc_release(value);
         elmc_release(&cell->value);
@@ -3325,7 +3325,7 @@ defmodule Elmc.Runtime.Generator do
         ELMC_RC_TRACK_REGISTER(&cell->value, __func__);
         *out = &cell->value;
         cell = NULL;
-      CATCH_END;
+      CATCH_END
       if (cell) elmc_release(&cell->value);
       return rc;
     }
@@ -3352,7 +3352,7 @@ defmodule Elmc.Runtime.Generator do
         ELMC_RC_TRACK_REGISTER(&cell->value, __func__);
         *out = &cell->value;
         cell = NULL;
-      CATCH_END;
+      CATCH_END
       if (cell) {
         elmc_release(&cell->value);
       } else if (rc != RC_SUCCESS) {
@@ -3385,7 +3385,7 @@ defmodule Elmc.Runtime.Generator do
         CHECK_RC(rc);
         f = NULL;
         s = NULL;
-      CATCH_END;
+      CATCH_END
       elmc_release(f);
       elmc_release(s);
       return rc;
@@ -4496,7 +4496,7 @@ defmodule Elmc.Runtime.Generator do
           elmc_release(part);
           part = NULL;
         }
-      CATCH_END;
+      CATCH_END
       elmc_release(part);
       return rc;
     }
@@ -4818,7 +4818,7 @@ defmodule Elmc.Runtime.Generator do
             CHECK_RC(rc);
             break;
         }
-      CATCH_END;
+      CATCH_END
       if (escaped) elmc_free(escaped);
       elmc_release(part);
       return rc;
@@ -4880,7 +4880,7 @@ defmodule Elmc.Runtime.Generator do
         }
         result->scalar = (elmc_int_t)(len_a + len_b);
         *out = result;
-      CATCH_END;
+      CATCH_END
       if (buf) elmc_free(buf);
       return rc;
     }
@@ -4909,7 +4909,7 @@ defmodule Elmc.Runtime.Generator do
         }
         result->scalar = (elmc_int_t)(len_a + len_b);
         *out = result;
-      CATCH_END;
+      CATCH_END
       if (buf) elmc_free(buf);
       return rc;
     }
@@ -4956,7 +4956,7 @@ defmodule Elmc.Runtime.Generator do
         }
         *out = acc;
         acc = NULL;
-      CATCH_END;
+      CATCH_END
       elmc_release(next);
       elmc_release(acc);
       return rc;
@@ -5045,7 +5045,7 @@ defmodule Elmc.Runtime.Generator do
         rc = elmc_list_reverse_transfer(out, &rev);
         CHECK_RC(rc);
         if (*out) elmc_dict_mark_spine(*out);
-      CATCH_END;
+      CATCH_END
       elmc_release(new_head);
       elmc_release(pair);
       elmc_release(next_rev);
@@ -5074,7 +5074,7 @@ defmodule Elmc.Runtime.Generator do
         if (!found) {
           *out = elmc_maybe_nothing();
         }
-      CATCH_END;
+      CATCH_END
       return rc;
     }
 
@@ -5157,7 +5157,7 @@ defmodule Elmc.Runtime.Generator do
         }
         *out = acc;
         acc = NULL;
-      CATCH_END;
+      CATCH_END
       elmc_release(owned);
       elmc_release(next);
       elmc_release(acc);
@@ -5252,7 +5252,7 @@ defmodule Elmc.Runtime.Generator do
           rc = elmc_list_reverse_transfer(out, &rev);
           CHECK_RC(rc);
         }
-      CATCH_END;
+      CATCH_END
       elmc_release(key_box);
       elmc_release(next);
       elmc_release(rev);
@@ -5282,7 +5282,7 @@ defmodule Elmc.Runtime.Generator do
         }
         rc = elmc_list_reverse_transfer(out, &rev);
         CHECK_RC(rc);
-      CATCH_END;
+      CATCH_END
       elmc_release(next);
       elmc_release(rev);
       return rc;
@@ -5342,7 +5342,7 @@ defmodule Elmc.Runtime.Generator do
           rc = elmc_list_reverse_transfer(out, &rev);
           CHECK_RC(rc);
         }
-      CATCH_END;
+      CATCH_END
       elmc_release(exists);
       elmc_release(order);
       elmc_release(next);
@@ -5852,7 +5852,7 @@ defmodule Elmc.Runtime.Generator do
           CHECK_RC(rc);
         }
         *out = allocated;
-      CATCH_END;
+      CATCH_END
       if (ptr) elmc_free(ptr);
       return rc;
     }
@@ -5869,7 +5869,7 @@ defmodule Elmc.Runtime.Generator do
       CATCH_BEGIN
         rc = elmc_record_cell_alloc(out, field_count, field_names, field_values, 0);
         CHECK_RC(rc);
-      CATCH_END;
+      CATCH_END
       return rc;
     }
 
@@ -5878,7 +5878,7 @@ defmodule Elmc.Runtime.Generator do
       CATCH_BEGIN
         rc = elmc_record_cell_alloc(out, field_count, field_names, field_values, 1);
         CHECK_RC(rc);
-      CATCH_END;
+      CATCH_END
       return rc;
     }
 
@@ -5892,7 +5892,7 @@ defmodule Elmc.Runtime.Generator do
         }
         rc = elmc_record_new_take(out, field_count, field_names, values);
         CHECK_RC(rc);
-      CATCH_END;
+      CATCH_END
       if (rc != RC_SUCCESS) {
         for (int i = 0; i < field_count; i++) {
           elmc_release(values[i]);
@@ -5906,7 +5906,7 @@ defmodule Elmc.Runtime.Generator do
       CATCH_BEGIN
         rc = elmc_record_cell_alloc_static(out, field_count, field_names, field_values, 0);
         CHECK_RC(rc);
-      CATCH_END;
+      CATCH_END
       return rc;
     }
 
@@ -5915,7 +5915,7 @@ defmodule Elmc.Runtime.Generator do
       CATCH_BEGIN
         rc = elmc_record_cell_alloc_static(out, field_count, field_names, field_values, 1);
         CHECK_RC(rc);
-      CATCH_END;
+      CATCH_END
       return rc;
     }
 
@@ -5929,7 +5929,7 @@ defmodule Elmc.Runtime.Generator do
         }
         rc = elmc_record_new_static_take(out, field_count, field_names, values);
         CHECK_RC(rc);
-      CATCH_END;
+      CATCH_END
       if (rc != RC_SUCCESS) {
         for (int i = 0; i < field_count; i++) {
           elmc_release(values[i]);
@@ -5943,7 +5943,7 @@ defmodule Elmc.Runtime.Generator do
       CATCH_BEGIN
         rc = elmc_record_cell_alloc_values(out, field_count, field_values, 0);
         CHECK_RC(rc);
-      CATCH_END;
+      CATCH_END
       return rc;
     }
 
@@ -5952,7 +5952,7 @@ defmodule Elmc.Runtime.Generator do
       CATCH_BEGIN
         rc = elmc_record_cell_alloc_values(out, field_count, field_values, 1);
         CHECK_RC(rc);
-      CATCH_END;
+      CATCH_END
       return rc;
     }
 
@@ -5966,7 +5966,7 @@ defmodule Elmc.Runtime.Generator do
         }
         rc = elmc_record_new_values_take(out, field_count, values);
         CHECK_RC(rc);
-      CATCH_END;
+      CATCH_END
       if (rc != RC_SUCCESS) {
         for (int i = 0; i < field_count; i++) {
           elmc_release(values[i]);
@@ -6237,7 +6237,7 @@ defmodule Elmc.Runtime.Generator do
         ((ElmcClosure *)cell->value.payload)->fn = fn;
         *out = &cell->value;
         cell = NULL;
-      CATCH_END;
+      CATCH_END
       if (cell) elmc_release(&cell->value);
       return rc;
     }
@@ -6263,7 +6263,7 @@ defmodule Elmc.Runtime.Generator do
         clo->rc_fn = rc_fn;
         *out = &cell->value;
         cell = NULL;
-      CATCH_END;
+      CATCH_END
       if (cell) elmc_release(&cell->value);
       return rc;
     }
@@ -6410,7 +6410,7 @@ defmodule Elmc.Runtime.Generator do
             next = NULL;
           }
         }
-      CATCH_END;
+      CATCH_END
       elmc_release(value);
       elmc_release(next);
       return rc;
@@ -6557,7 +6557,7 @@ defmodule Elmc.Runtime.Generator do
           rc = elmc_list_reverse_transfer(out, &reversed);
           CHECK_RC(rc);
         }
-      CATCH_END;
+      CATCH_END
       elmc_release(reversed);
       return rc;
     }
@@ -6610,7 +6610,7 @@ defmodule Elmc.Runtime.Generator do
           rc = elmc_list_reverse_transfer(out, &rev);
           CHECK_RC(rc);
         }
-      CATCH_END;
+      CATCH_END
       elmc_release(mapped);
       elmc_release(next);
       elmc_release(rev);
@@ -6628,7 +6628,7 @@ defmodule Elmc.Runtime.Generator do
           rc = RC_ERR_OUT_OF_MEMORY;
           CHECK_RC(rc);
         }
-      CATCH_END;
+      CATCH_END
       elmc_release(filtered);
       return rc;
     }
@@ -6671,7 +6671,7 @@ defmodule Elmc.Runtime.Generator do
           rc = elmc_list_reverse_transfer(out, &rev);
           CHECK_RC(rc);
         }
-      CATCH_END;
+      CATCH_END
       elmc_release(owned);
       elmc_release(keep);
       elmc_release(next);
@@ -6707,7 +6707,7 @@ defmodule Elmc.Runtime.Generator do
           rc = elmc_list_reverse_transfer(out, &rev);
           CHECK_RC(rc);
         }
-      CATCH_END;
+      CATCH_END
       elmc_release(owned);
       elmc_release(next);
       elmc_release(rev);
@@ -6743,7 +6743,7 @@ defmodule Elmc.Runtime.Generator do
           rc = elmc_list_reverse_transfer(out, &rev);
           CHECK_RC(rc);
         }
-      CATCH_END;
+      CATCH_END
       elmc_release(owned);
       elmc_release(next);
       elmc_release(rev);
@@ -6780,7 +6780,7 @@ defmodule Elmc.Runtime.Generator do
           rc = elmc_list_reverse_transfer(out, &rev);
           CHECK_RC(rc);
         }
-      CATCH_END;
+      CATCH_END
       elmc_release(owned);
       elmc_release(mapped);
       elmc_release(next);
@@ -6812,7 +6812,7 @@ defmodule Elmc.Runtime.Generator do
           *out = result;
           result = NULL;
         }
-      CATCH_END;
+      CATCH_END
       elmc_release(next);
       elmc_release(result);
       return rc;
@@ -6845,7 +6845,7 @@ defmodule Elmc.Runtime.Generator do
           *out = result;
           result = NULL;
         }
-      CATCH_END;
+      CATCH_END
       elmc_release(reversed);
       elmc_release(next);
       elmc_release(result);
@@ -6862,7 +6862,7 @@ defmodule Elmc.Runtime.Generator do
           RC rc = RC_SUCCESS;
           CATCH_BEGIN
             *out = elmc_retain(a);
-          CATCH_END;
+          CATCH_END
           return rc;
         }
         RC rc = RC_SUCCESS;
@@ -6898,7 +6898,7 @@ defmodule Elmc.Runtime.Generator do
             *out = result;
             result = NULL;
           }
-        CATCH_END;
+        CATCH_END
         elmc_release(cell);
         elmc_release(result);
         return rc;
@@ -6942,7 +6942,7 @@ defmodule Elmc.Runtime.Generator do
           *out = result;
           result = NULL;
         }
-      CATCH_END;
+      CATCH_END
       elmc_release(cell);
       elmc_release(result);
       return rc;
@@ -6995,7 +6995,7 @@ defmodule Elmc.Runtime.Generator do
           if (rc == RC_SUCCESS) result = NULL;
         }
         CHECK_RC(rc);
-      CATCH_END;
+      CATCH_END
       elmc_release(owned_outer);
       elmc_release(cell);
       elmc_release(result);
@@ -7022,7 +7022,7 @@ defmodule Elmc.Runtime.Generator do
           *out = acc;
           acc = NULL;
         }
-      CATCH_END;
+      CATCH_END
       elmc_release(merged);
       elmc_release(acc);
       return rc;
@@ -7036,7 +7036,7 @@ defmodule Elmc.Runtime.Generator do
         CHECK_RC(rc);
         rc = elmc_list_concat(out, mapped);
         CHECK_RC(rc);
-      CATCH_END;
+      CATCH_END
       elmc_release(mapped);
       return rc;
     }
@@ -7079,7 +7079,7 @@ defmodule Elmc.Runtime.Generator do
           rc = elmc_list_reverse_transfer(out, &rev);
           CHECK_RC(rc);
         }
-      CATCH_END;
+      CATCH_END
       elmc_release(index_val);
       elmc_release(mapped);
       elmc_release(next);
@@ -7127,7 +7127,7 @@ defmodule Elmc.Runtime.Generator do
           rc = elmc_list_reverse_transfer(out, &rev);
           CHECK_RC(rc);
         }
-      CATCH_END;
+      CATCH_END
       elmc_release(maybe_val);
       elmc_release(next);
       elmc_release(rev);
@@ -7146,7 +7146,7 @@ defmodule Elmc.Runtime.Generator do
         }
         rc = elmc_new_int(out, sum);
         CHECK_RC(rc);
-      CATCH_END;
+      CATCH_END
       return rc;
     }
 
@@ -7162,7 +7162,7 @@ defmodule Elmc.Runtime.Generator do
         }
         rc = elmc_new_int(out, prod);
         CHECK_RC(rc);
-      CATCH_END;
+      CATCH_END
       return rc;
     }
 
@@ -7193,7 +7193,7 @@ defmodule Elmc.Runtime.Generator do
           CHECK_RC(rc);
           best = NULL;
         }
-      CATCH_END;
+      CATCH_END
       elmc_release(best);
       return rc;
     }
@@ -7225,7 +7225,7 @@ defmodule Elmc.Runtime.Generator do
           CHECK_RC(rc);
           best = NULL;
         }
-      CATCH_END;
+      CATCH_END
       elmc_release(best);
       return rc;
     }
@@ -7257,7 +7257,7 @@ defmodule Elmc.Runtime.Generator do
           rc = elmc_new_bool(out, answer);
           CHECK_RC(rc);
         }
-      CATCH_END;
+      CATCH_END
       elmc_release(result);
       return rc;
     }
@@ -7289,7 +7289,7 @@ defmodule Elmc.Runtime.Generator do
           rc = elmc_new_bool(out, answer);
           CHECK_RC(rc);
         }
-      CATCH_END;
+      CATCH_END
       elmc_release(result);
       return rc;
     }
@@ -7311,7 +7311,7 @@ defmodule Elmc.Runtime.Generator do
           rc = elmc_list_sort_with_fn(out, materialized, NULL, 2);
           CHECK_RC(rc);
         }
-      CATCH_END;
+      CATCH_END
       elmc_release(materialized);
       return rc;
     }
@@ -7348,7 +7348,7 @@ defmodule Elmc.Runtime.Generator do
           CHECK_RC(rc);
           *cmp_out = elmc_order_cmp(order);
         }
-      CATCH_END;
+      CATCH_END
       elmc_release(key_left);
       elmc_release(key_right);
       elmc_release(order);
@@ -7399,7 +7399,7 @@ defmodule Elmc.Runtime.Generator do
           rc = elmc_list_reverse_transfer(out, &rev);
           CHECK_RC(rc);
         }
-      CATCH_END;
+      CATCH_END
       elmc_release(item_copy);
       elmc_release(next);
       elmc_release(rev);
@@ -7426,7 +7426,7 @@ defmodule Elmc.Runtime.Generator do
           *out = sorted;
           sorted = NULL;
         }
-      CATCH_END;
+      CATCH_END
       elmc_release(next_sorted);
       elmc_release(sorted);
       return rc;
@@ -7444,7 +7444,7 @@ defmodule Elmc.Runtime.Generator do
           rc = elmc_list_sort_with_fn(out, materialized, f, 1);
           CHECK_RC(rc);
         }
-      CATCH_END;
+      CATCH_END
       elmc_release(materialized);
       return rc;
     }
@@ -7461,7 +7461,7 @@ defmodule Elmc.Runtime.Generator do
           rc = elmc_list_sort_with_fn(out, materialized, f, 0);
           CHECK_RC(rc);
         }
-      CATCH_END;
+      CATCH_END
       elmc_release(materialized);
       return rc;
     }
@@ -7472,7 +7472,7 @@ defmodule Elmc.Runtime.Generator do
       CATCH_BEGIN
         rc = elmc_list_cons(out, value, nil);
         CHECK_RC(rc);
-      CATCH_END;
+      CATCH_END
       elmc_release(nil);
       return rc;
     }
@@ -7502,7 +7502,7 @@ defmodule Elmc.Runtime.Generator do
           *out = acc;
           acc = NULL;
         }
-      CATCH_END;
+      CATCH_END
       elmc_release(val);
       elmc_release(next);
       elmc_release(acc);
@@ -7527,7 +7527,7 @@ defmodule Elmc.Runtime.Generator do
           *out = acc;
           acc = NULL;
         }
-      CATCH_END;
+      CATCH_END
       elmc_release(item);
       elmc_release(cons);
       elmc_release(acc);
@@ -7576,7 +7576,7 @@ defmodule Elmc.Runtime.Generator do
           if (rc == RC_SUCCESS) result = NULL;
         }
         CHECK_RC(rc);
-      CATCH_END;
+      CATCH_END
       elmc_release(cell);
       elmc_release(result);
       return rc;
@@ -7597,7 +7597,7 @@ defmodule Elmc.Runtime.Generator do
         CHECK_RC(rc);
         rc = elmc_list_take_int(out, take, dropped);
         CHECK_RC(rc);
-      CATCH_END;
+      CATCH_END
       elmc_release(dropped);
       return rc;
     }
@@ -7639,7 +7639,7 @@ defmodule Elmc.Runtime.Generator do
           if (rc == RC_SUCCESS) result = NULL;
         }
         CHECK_RC(rc);
-      CATCH_END;
+      CATCH_END
       elmc_release(cell);
       elmc_release(result);
       return rc;
@@ -7692,7 +7692,7 @@ defmodule Elmc.Runtime.Generator do
           yes = NULL;
           no = NULL;
         }
-      CATCH_END;
+      CATCH_END
       elmc_release(keep);
       elmc_release(next);
       elmc_release(rev_yes);
@@ -7743,7 +7743,7 @@ defmodule Elmc.Runtime.Generator do
           a = NULL;
           b = NULL;
         }
-      CATCH_END;
+      CATCH_END
       elmc_release(na);
       elmc_release(nb);
       elmc_release(rev_a);
@@ -7788,7 +7788,7 @@ defmodule Elmc.Runtime.Generator do
             CHECK_RC(rc);
           }
         }
-      CATCH_END;
+      CATCH_END
       elmc_release(ns);
       elmc_release(nh);
       elmc_release(rev);
@@ -7838,7 +7838,7 @@ defmodule Elmc.Runtime.Generator do
           rc = elmc_list_reverse_transfer(out, &rev);
           CHECK_RC(rc);
         }
-      CATCH_END;
+      CATCH_END
       elmc_release(owned_a);
       elmc_release(owned_b);
       elmc_release(mapped);
@@ -7900,7 +7900,7 @@ defmodule Elmc.Runtime.Generator do
           rc = elmc_list_reverse_transfer(out, &rev);
           CHECK_RC(rc);
         }
-      CATCH_END;
+      CATCH_END
       elmc_release(owned_a);
       elmc_release(owned_b);
       elmc_release(owned_c);
@@ -7973,7 +7973,7 @@ defmodule Elmc.Runtime.Generator do
           rc = elmc_list_reverse_transfer(out, &rev);
           CHECK_RC(rc);
         }
-      CATCH_END;
+      CATCH_END
       elmc_release(owned_a);
       elmc_release(owned_b);
       elmc_release(owned_c);
@@ -8057,7 +8057,7 @@ defmodule Elmc.Runtime.Generator do
           rc = elmc_list_reverse_transfer(out, &rev);
           CHECK_RC(rc);
         }
-      CATCH_END;
+      CATCH_END
       elmc_release(owned_a);
       elmc_release(owned_b);
       elmc_release(owned_c);
@@ -8123,7 +8123,7 @@ defmodule Elmc.Runtime.Generator do
             CHECK_RC(rc);
           }
         }
-      CATCH_END;
+      CATCH_END
       elmc_release(mapped);
       return rc;
     }
@@ -8147,7 +8147,7 @@ defmodule Elmc.Runtime.Generator do
             CHECK_RC(rc);
           }
         }
-      CATCH_END;
+      CATCH_END
       elmc_release(mapped);
       return rc;
     }
@@ -8172,7 +8172,7 @@ defmodule Elmc.Runtime.Generator do
             elmc_release(maybe);
           }
         }
-      CATCH_END;
+      CATCH_END
       return rc;
     }
 
@@ -8202,7 +8202,7 @@ defmodule Elmc.Runtime.Generator do
             CHECK_RC(rc);
           }
         }
-      CATCH_END;
+      CATCH_END
       elmc_release(msg);
       elmc_release(mapped);
       return rc;
@@ -8226,7 +8226,7 @@ defmodule Elmc.Runtime.Generator do
             CHECK_RC(rc);
           }
         }
-      CATCH_END;
+      CATCH_END
       elmc_release(mapped);
       return rc;
     }
@@ -8254,7 +8254,7 @@ defmodule Elmc.Runtime.Generator do
             elmc_release(result);
           }
         }
-      CATCH_END;
+      CATCH_END
       elmc_release(msg);
       return rc;
     }
@@ -8357,7 +8357,7 @@ defmodule Elmc.Runtime.Generator do
             *out = allocated;
           }
         }
-      CATCH_END;
+      CATCH_END
       if (cps) elmc_free(cps);
       if (buf) elmc_free(buf);
       return rc;
@@ -8391,7 +8391,7 @@ defmodule Elmc.Runtime.Generator do
           }
           *out = allocated;
         }
-      CATCH_END;
+      CATCH_END
       if (buf) elmc_free(buf);
       return rc;
     }
@@ -8465,7 +8465,7 @@ defmodule Elmc.Runtime.Generator do
             *out = allocated;
           }
         }
-      CATCH_END;
+      CATCH_END
       if (buf) elmc_free(buf);
       return rc;
     }
@@ -8481,7 +8481,7 @@ defmodule Elmc.Runtime.Generator do
         snprintf(buf, sizeof(buf), "%lld", (long long)n);
         rc = elmc_new_string(out, buf);
         CHECK_RC(rc);
-      CATCH_END;
+      CATCH_END
       return rc;
     }
 
@@ -8563,7 +8563,7 @@ defmodule Elmc.Runtime.Generator do
         }
         rc = elmc_new_string(out, buf);
         CHECK_RC(rc);
-      CATCH_END;
+      CATCH_END
       return rc;
     }
 
@@ -8634,7 +8634,7 @@ defmodule Elmc.Runtime.Generator do
           }
           *out = allocated;
         }
-      CATCH_END;
+      CATCH_END
       if (buf) elmc_free(buf);
       return rc;
     }
@@ -8666,7 +8666,7 @@ defmodule Elmc.Runtime.Generator do
           }
           *out = allocated;
         }
-      CATCH_END;
+      CATCH_END
       if (buf) elmc_free(buf);
       return rc;
     }
@@ -8700,7 +8700,7 @@ defmodule Elmc.Runtime.Generator do
           }
           *out = allocated;
         }
-      CATCH_END;
+      CATCH_END
       if (buf) elmc_free(buf);
       return rc;
     }
@@ -8718,7 +8718,7 @@ defmodule Elmc.Runtime.Generator do
           rc = elmc_new_string(out, src + start);
           CHECK_RC(rc);
         }
-      CATCH_END;
+      CATCH_END
       return rc;
     }
 
@@ -8747,7 +8747,7 @@ defmodule Elmc.Runtime.Generator do
           }
           *out = allocated;
         }
-      CATCH_END;
+      CATCH_END
       if (buf) elmc_free(buf);
       return rc;
     }
@@ -8933,7 +8933,7 @@ defmodule Elmc.Runtime.Generator do
             CHECK_RC(rc);
           }
         }
-      CATCH_END;
+      CATCH_END
       if (buf) elmc_free(buf);
       elmc_release(ch);
       elmc_release(part);
@@ -8994,7 +8994,7 @@ defmodule Elmc.Runtime.Generator do
           }
           *out = allocated;
         }
-      CATCH_END;
+      CATCH_END
       if (buf) elmc_free(buf);
       return rc;
     }
@@ -9054,7 +9054,7 @@ defmodule Elmc.Runtime.Generator do
             *out = allocated;
           }
         }
-      CATCH_END;
+      CATCH_END
       if (buf) elmc_free(buf);
       return rc;
     }
@@ -9151,7 +9151,7 @@ defmodule Elmc.Runtime.Generator do
             }
           }
         }
-      CATCH_END;
+      CATCH_END
       elmc_release(ch);
       elmc_release(rest);
       elmc_release(pair);
@@ -9191,7 +9191,7 @@ defmodule Elmc.Runtime.Generator do
           CHECK_RC(rc);
           rev = NULL;
         }
-      CATCH_END;
+      CATCH_END
       elmc_release(ch);
       elmc_release(next);
       elmc_release(rev);
@@ -9241,7 +9241,7 @@ defmodule Elmc.Runtime.Generator do
           CHECK_RC(rc);
         }
         *out = allocated;
-      CATCH_END;
+      CATCH_END
       if (buf) elmc_free(buf);
       return rc;
     }
@@ -9252,7 +9252,7 @@ defmodule Elmc.Runtime.Generator do
         char buf[1] = { (char)elmc_as_int(ch) };
         rc = elmc_new_string_len(out, buf, 1);
         CHECK_RC(rc);
-      CATCH_END;
+      CATCH_END
       return rc;
     }
 
@@ -9292,7 +9292,7 @@ defmodule Elmc.Runtime.Generator do
             *out = allocated;
           }
         }
-      CATCH_END;
+      CATCH_END
       if (buf) elmc_free(buf);
       return rc;
     }
@@ -9329,7 +9329,7 @@ defmodule Elmc.Runtime.Generator do
             *out = allocated;
           }
         }
-      CATCH_END;
+      CATCH_END
       if (buf) elmc_free(buf);
       return rc;
     }
@@ -9397,7 +9397,7 @@ defmodule Elmc.Runtime.Generator do
           }
           *out = allocated;
         }
-      CATCH_END;
+      CATCH_END
       elmc_release(ch);
       elmc_release(mapped);
       if (buf) elmc_free(buf);
@@ -9453,7 +9453,7 @@ defmodule Elmc.Runtime.Generator do
           }
           *out = allocated;
         }
-      CATCH_END;
+      CATCH_END
       elmc_release(ch);
       elmc_release(keep);
       if (buf) elmc_free(buf);
@@ -9492,7 +9492,7 @@ defmodule Elmc.Runtime.Generator do
           *out = result;
           result = NULL;
         }
-      CATCH_END;
+      CATCH_END
       elmc_release(ch);
       elmc_release(next);
       elmc_release(result);
@@ -9541,7 +9541,7 @@ defmodule Elmc.Runtime.Generator do
           *out = result;
           result = NULL;
         }
-      CATCH_END;
+      CATCH_END
       if (cps) elmc_free(cps);
       elmc_release(ch);
       elmc_release(next);
@@ -9587,7 +9587,7 @@ defmodule Elmc.Runtime.Generator do
           rc = elmc_new_bool(out, answer);
           CHECK_RC(rc);
         }
-      CATCH_END;
+      CATCH_END
       elmc_release(ch);
       elmc_release(result);
       return rc;
@@ -9631,7 +9631,7 @@ defmodule Elmc.Runtime.Generator do
           rc = elmc_new_bool(out, answer);
           CHECK_RC(rc);
         }
-      CATCH_END;
+      CATCH_END
       elmc_release(ch);
       elmc_release(result);
       return rc;
@@ -9675,7 +9675,7 @@ defmodule Elmc.Runtime.Generator do
             }
           }
         }
-      CATCH_END;
+      CATCH_END
       elmc_release(idx);
       elmc_release(next);
       elmc_release(rev);
@@ -9700,7 +9700,7 @@ defmodule Elmc.Runtime.Generator do
           rc = elmc_tuple2(out, mapped, tuple->second);
           CHECK_RC(rc);
         }
-      CATCH_END;
+      CATCH_END
       elmc_release(mapped);
       return rc;
     }
@@ -9719,7 +9719,7 @@ defmodule Elmc.Runtime.Generator do
           rc = elmc_tuple2(out, tuple->first, mapped);
           CHECK_RC(rc);
         }
-      CATCH_END;
+      CATCH_END
       elmc_release(mapped);
       return rc;
     }
@@ -9742,7 +9742,7 @@ defmodule Elmc.Runtime.Generator do
           rc = elmc_tuple2(out, mf, mg);
           CHECK_RC(rc);
         }
-      CATCH_END;
+      CATCH_END
       elmc_release(mf);
       elmc_release(mg);
       return rc;
@@ -10308,7 +10308,7 @@ defmodule Elmc.Runtime.Generator do
         }
         rc = elmc_list_reverse_transfer(out, &rev);
         CHECK_RC(rc);
-      CATCH_END;
+      CATCH_END
       elmc_release(next);
       elmc_release(rev);
       return rc;
@@ -10348,7 +10348,7 @@ defmodule Elmc.Runtime.Generator do
         }
         rc = elmc_list_reverse_transfer(out, &rev);
         CHECK_RC(rc);
-      CATCH_END;
+      CATCH_END
       elmc_release(next);
       elmc_release(rev);
       return rc;
@@ -10375,7 +10375,7 @@ defmodule Elmc.Runtime.Generator do
         }
         rc = elmc_list_reverse_transfer(out, &rev);
         CHECK_RC(rc);
-      CATCH_END;
+      CATCH_END
       elmc_release(next);
       elmc_release(rev);
       return rc;
@@ -10422,7 +10422,7 @@ defmodule Elmc.Runtime.Generator do
         }
         rc = elmc_list_reverse_transfer(out, &rev);
         CHECK_RC(rc);
-      CATCH_END;
+      CATCH_END
       elmc_release(mapped);
       elmc_release(new_pair);
       elmc_release(next);
@@ -10452,7 +10452,7 @@ defmodule Elmc.Runtime.Generator do
         }
         *out = result;
         result = NULL;
-      CATCH_END;
+      CATCH_END
       elmc_release(next);
       elmc_release(result);
       return rc;
@@ -10483,7 +10483,7 @@ defmodule Elmc.Runtime.Generator do
         }
         *out = result;
         result = NULL;
-      CATCH_END;
+      CATCH_END
       elmc_release(reversed);
       elmc_release(next);
       elmc_release(result);
@@ -10520,7 +10520,7 @@ defmodule Elmc.Runtime.Generator do
         }
         rc = elmc_list_reverse_transfer(out, &rev);
         CHECK_RC(rc);
-      CATCH_END;
+      CATCH_END
       elmc_release(keep);
       elmc_release(next);
       elmc_release(rev);
@@ -10575,7 +10575,7 @@ defmodule Elmc.Runtime.Generator do
         elmc_release(no);
         yes = NULL;
         no = NULL;
-      CATCH_END;
+      CATCH_END
       elmc_release(keep);
       elmc_release(next);
       elmc_release(rev_yes);
@@ -10606,7 +10606,7 @@ defmodule Elmc.Runtime.Generator do
         }
         *out = result;
         result = NULL;
-      CATCH_END;
+      CATCH_END
       elmc_release(next);
       elmc_release(result);
       return rc;
@@ -10637,7 +10637,7 @@ defmodule Elmc.Runtime.Generator do
         }
         rc = elmc_list_reverse_transfer(out, &rev);
         CHECK_RC(rc);
-      CATCH_END;
+      CATCH_END
       elmc_release(next);
       elmc_release(rev);
       return rc;
@@ -10668,7 +10668,7 @@ defmodule Elmc.Runtime.Generator do
         }
         rc = elmc_list_reverse_transfer(out, &rev);
         CHECK_RC(rc);
-      CATCH_END;
+      CATCH_END
       elmc_release(next);
       elmc_release(rev);
       return rc;
@@ -10768,7 +10768,7 @@ defmodule Elmc.Runtime.Generator do
         }
         *out = sorted;
         sorted = NULL;
-      CATCH_END;
+      CATCH_END
       elmc_release(rev_before);
       elmc_release(rebuilt);
       elmc_release(tmp);
@@ -10864,7 +10864,7 @@ defmodule Elmc.Runtime.Generator do
         }
         *out = acc;
         acc = NULL;
-      CATCH_END;
+      CATCH_END
       elmc_release(left);
       elmc_release(right);
       elmc_release(next);
@@ -10894,7 +10894,7 @@ defmodule Elmc.Runtime.Generator do
           rc = elmc_dict_remove(out, key, dict);
           CHECK_RC(rc);
         }
-      CATCH_END;
+      CATCH_END
       elmc_release(old_val);
       elmc_release(new_maybe);
       return rc;
@@ -10938,7 +10938,7 @@ defmodule Elmc.Runtime.Generator do
         }
         rc = elmc_list_reverse_transfer(out, &rev);
         CHECK_RC(rc);
-      CATCH_END;
+      CATCH_END
       elmc_release(next);
       elmc_release(rev);
       return rc;
@@ -10990,7 +10990,7 @@ defmodule Elmc.Runtime.Generator do
         }
         *out = result;
         result = NULL;
-      CATCH_END;
+      CATCH_END
       elmc_release(next);
       elmc_release(result);
       return rc;
@@ -11018,7 +11018,7 @@ defmodule Elmc.Runtime.Generator do
         }
         rc = elmc_list_reverse_transfer(out, &rev);
         CHECK_RC(rc);
-      CATCH_END;
+      CATCH_END
       elmc_release(next);
       elmc_release(rev);
       return rc;
@@ -11046,7 +11046,7 @@ defmodule Elmc.Runtime.Generator do
         }
         rc = elmc_list_reverse_transfer(out, &rev);
         CHECK_RC(rc);
-      CATCH_END;
+      CATCH_END
       elmc_release(next);
       elmc_release(rev);
       return rc;
@@ -11077,7 +11077,7 @@ defmodule Elmc.Runtime.Generator do
         }
         *out = acc;
         acc = NULL;
-      CATCH_END;
+      CATCH_END
       elmc_release(mapped);
       elmc_release(next);
       elmc_release(acc);
@@ -11103,7 +11103,7 @@ defmodule Elmc.Runtime.Generator do
         }
         *out = result;
         result = NULL;
-      CATCH_END;
+      CATCH_END
       elmc_release(next);
       elmc_release(result);
       return rc;
@@ -11131,7 +11131,7 @@ defmodule Elmc.Runtime.Generator do
         }
         *out = result;
         result = NULL;
-      CATCH_END;
+      CATCH_END
       elmc_release(reversed);
       elmc_release(next);
       elmc_release(result);
@@ -11165,7 +11165,7 @@ defmodule Elmc.Runtime.Generator do
         }
         rc = elmc_list_reverse_transfer(out, &rev);
         CHECK_RC(rc);
-      CATCH_END;
+      CATCH_END
       elmc_release(keep);
       elmc_release(next);
       elmc_release(rev);
@@ -11217,7 +11217,7 @@ defmodule Elmc.Runtime.Generator do
         elmc_release(no);
         yes = NULL;
         no = NULL;
-      CATCH_END;
+      CATCH_END
       elmc_release(keep);
       elmc_release(next);
       elmc_release(rev_yes);

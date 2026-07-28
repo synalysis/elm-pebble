@@ -5,7 +5,7 @@ defmodule Elmc.Backend.CCodegen.Host do
 
   alias Elmc.Backend.CCodegen.EnvBindings
   alias Elmc.Backend.CCodegen.FunctionEmit
-  alias Elmc.Backend.CCodegen.SpecialValues
+  alias Elmc.Backend.Plan.Lower.SpecialValues
   alias Elmc.Backend.CCodegen.Subscriptions
   alias Elmc.Backend.CCodegen.Expr
   alias Elmc.Backend.CCodegen.Hoist
@@ -33,9 +33,20 @@ defmodule Elmc.Backend.CCodegen.Host do
   alias Elmc.Backend.CCodegen.DirectRender.UseSites
   alias Elmc.Backend.CCodegen.Types
 
+  alias Elmc.Backend.CCodegen.DirectRender.Emit.ExprDispatch
+  alias Elmc.Backend.CCodegen.DirectRender.Emit.Operand, as: DirectRenderOperand
+
   @spec compile_expr(Types.ir_expr() | nil, Types.compile_env(), Types.compile_counter()) ::
           Types.compile_result()
-  defdelegate compile_expr(expr, env, counter), to: Elmc.Backend.CCodegen.ExprCompile, as: :compile
+  def compile_expr(expr, env, counter) do
+    env = Map.put_new(env, :__direct_render_emit__, true)
+
+    if Map.get(env, :__operand_take_marking__) == true do
+      DirectRenderOperand.compile(expr, env, counter)
+    else
+      ExprDispatch.compile(expr, env, counter)
+    end
+  end
 
   @spec face_ops_append_probe(Types.compile_env(), String.t(), String.t(), Types.compile_counter()) ::
           String.t()

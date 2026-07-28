@@ -253,7 +253,7 @@ defmodule Elmc.Backend.CCodegen.LambdaCompile do
             CATCH_BEGIN
               #{body_code}
               #{publish_out}
-            CATCH_END;#{epilogue_block}
+            CATCH_END#{epilogue_block}
             return Rc;
           }
           """
