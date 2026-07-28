@@ -129,14 +129,15 @@ keeping compact scene-writer push (no boxed `List RenderOp` tails).
 ## Worker / subscriptions host glue
 
 App `subscriptions()` bodies are Plan SSA (`:pebble_sub` → `elmc_subN`). The TEA host
-adapter (`elmc_worker.{h,c}`) is **not** plan-lowered; it consumes Plan metadata:
+adapter (`elmc_worker.{h,c}`) uses `Plan.Worker.HostPlan` (not FunctionPlan SSA):
 
 | Piece | Owner |
 |-------|--------|
+| App `init` / `update` / `subscriptions` bodies | FunctionPlan → C.Lower |
+| TEA host shell (`init` / `dispatch` / `compute_subscriptions`) | `Plan.Worker.HostPlan` → `Host.Lower` + `Host.Emit` |
 | `subscriptions()` / `Sub.batch` IR rewrite | `Plan.Worker.Subscriptions` (+ Plan special-values) |
 | Compact slot layout (`sub_tag_slots`, `slot_map`, `frame_slot`) | `Plan.Worker.Layout` |
-| Slot table + `apply_sub` / `sub_msg_tag` emit | `Plan.Worker.Emit` |
-| TEA init/dispatch/cmd queue C | `Plan.Worker.Emit` (shared); `Worker` wires entry calls |
+| Slot table + `apply_sub` / `sub_msg_tag` + cmd-queue runtime C | `Plan.Worker.Emit` |
 | Pebble event dispatch + host cmd/view wrappers | `pebble/source_writer/event_dispatch` (`Registry` + `Emit`) |
 
 **Layout ABI:** `sub_tag_slots`, `button_raw_subs`, `slot_map`, `frame_slot`,

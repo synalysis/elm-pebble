@@ -1,8 +1,7 @@
 defmodule Elmc.Backend.Plan.Worker.Emit do
   @moduledoc """
-  Table-driven worker subscription slot emit and shared TEA/cmd-queue C from
-  `Plan.Worker.Layout` metadata. App-specific init/update/subscriptions entry
-  calls stay in `Elmc.Backend.Worker`.
+  Shared worker subscription slot and cmd-queue runtime C from `Plan.Worker.Layout`.
+  TEA host shells (`init` / `dispatch`) emit from `Plan.Worker.Host.Emit`.
   """
   alias Elmc.Backend.CCodegen.Emit
   alias Elmc.Backend.Plan.Worker.Layout
@@ -675,116 +674,6 @@ defmodule Elmc.Backend.Plan.Worker.Emit do
       state->last_dispatch_cmd_count = 0;
     #endif
       state->subscriptions = 0;
-    }
-    """
-  end
-
-  @spec init_fn(String.t(), String.t()) :: String.t()
-  def init_fn(init_call, init_missing_guard) do
-    """
-    int elmc_worker_init(ElmcWorkerState *state, ElmcValue *flags) {
-      if (!state) return -1;
-      state->subscriptions = 0;
-      elmc_worker_clear_sub_tags(state);
-      elmc_worker_heap_log("init:start");
-    #{init_missing_guard}#{init_call}
-      ElmcValue *next_model = extract_model_take(result);
-      if (!next_model) {
-        elmc_release(result);
-        return -2;
-      }
-      state->model = next_model;
-      state->dispatch_needs_render = 1;
-      {
-        ElmcValue *pending = NULL;
-        ElmcValue *raw_cmd = extract_cmd_take(result);
-        RC pending_rc = elmc_cmd_queue_normalize(&pending, raw_cmd);
-        if (pending_rc != RC_SUCCESS) {
-          ELMC_WORKER_LOG_RC_FAIL("worker init pending cmd", pending_rc);
-          elmc_release(result);
-          return -2;
-        }
-    #if ELMC_WORKER_LAST_DISPATCH_CMD_CAP > 0
-        elmc_worker_snapshot_last_dispatch_cmds(state, pending);
-    #endif
-        state->pending_cmd = pending;
-      }
-      elmc_release(result);
-      state->subscriptions = compute_subscriptions(state);
-      elmc_worker_heap_log("init:end");
-      return 0;
-    }
-    """
-  end
-
-  @spec dispatch_fn(String.t(), String.t(), String.t()) :: String.t()
-  def dispatch_fn(update_call, update_missing_guard, dispatch_subscriptions_refresh) do
-    """
-    int elmc_worker_dispatch(ElmcWorkerState *state, ElmcValue *msg) {
-      if (!state || !state->model) return -1;
-      state->dispatch_needs_render = 0;
-      elmc_worker_heap_log("update:start");
-      ElmcValue *prev_model = state->model;
-      uint32_t prev_mut_gen = elmc_record_mutation_gen(prev_model);
-    #{update_missing_guard}#{update_call}
-      ElmcValue *next_model = extract_model_take(result);
-      if (!next_model) {
-        elmc_release(result);
-        return -2;
-      }
-      int model_changed = (next_model != prev_model);
-      if (model_changed) {
-        elmc_release(state->model);
-      } else if (next_model->rc > 1) {
-        elmc_release(next_model);
-      }
-      state->model = next_model;
-      if (model_changed || elmc_record_mutation_gen(next_model) != prev_mut_gen) {
-        state->dispatch_needs_render = 1;
-      }
-      {
-        ElmcValue *next_cmd = NULL;
-        ElmcValue *raw_cmd = extract_cmd_take(result);
-        RC next_rc = elmc_cmd_queue_normalize(&next_cmd, raw_cmd);
-        if (next_rc != RC_SUCCESS) {
-          ELMC_WORKER_LOG_RC_FAIL("worker update pending cmd", next_rc);
-          elmc_release(result);
-          return -2;
-        }
-    #if ELMC_WORKER_LAST_DISPATCH_CMD_CAP > 0
-        elmc_worker_snapshot_last_dispatch_cmds(state, next_cmd);
-    #endif
-        if (!elmc_cmd_is_none(next_cmd)) {
-          state->dispatch_needs_render = 1;
-        }
-        ElmcValue *merged = NULL;
-        RC merge_rc = elmc_cmd_queue_concat_take(&merged, state->pending_cmd, next_cmd);
-        if (merge_rc != RC_SUCCESS) {
-          elmc_release(next_cmd);
-          ELMC_WORKER_LOG_RC_FAIL("worker update cmd concat", merge_rc);
-          elmc_release(result);
-          return -2;
-        }
-        state->pending_cmd = merged;
-      }
-      elmc_release(result);
-    #{dispatch_subscriptions_refresh}  elmc_worker_heap_log("update:end");
-      return 0;
-    }
-    """
-  end
-
-  @spec compute_subscriptions_fn(String.t()) :: String.t()
-  def compute_subscriptions_fn(subscriptions_call) do
-    """
-    static int64_t compute_subscriptions(ElmcWorkerState *state) {
-      if (!state || !state->model) return 0;
-    #{subscriptions_call}
-      elmc_worker_clear_sub_tags(state);
-      state->subscriptions = 0;
-      if (result) elmc_worker_apply_sub(state, result);
-      elmc_release(result);
-      return state->subscriptions;
     }
     """
   end
