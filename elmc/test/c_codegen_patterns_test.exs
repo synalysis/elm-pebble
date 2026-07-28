@@ -3179,12 +3179,10 @@ defmodule Elmc.CCodegenPatternsTest do
              "elmc_record_get_index(context, ELMC_FIELD_PEBBLE_PLATFORM_LAUNCHCONTEXT_SCREEN)"
 
     assert init_body =~
-             "ELMC_RECORD_GET_INDEX_INT(owned[5], ELMC_FIELD_PEBBLE_PLATFORM_LAUNCHSCREEN_WIDTH)" or
-             init_body =~ "ELMC_RECORD_GET_INDEX_INT(owned[8], ELMC_FIELD_PEBBLE_PLATFORM_LAUNCHSCREEN_WIDTH)"
+             ~r/ELMC_RECORD_GET_INDEX_INT\(owned\[\d+\], ELMC_FIELD_PEBBLE_PLATFORM_LAUNCHSCREEN_WIDTH\)/
 
     assert init_body =~
-             "ELMC_RECORD_GET_INDEX_INT(owned[8], ELMC_FIELD_PEBBLE_PLATFORM_LAUNCHSCREEN_HEIGHT)" or
-             init_body =~ "ELMC_RECORD_GET_INDEX_INT(owned[5], ELMC_FIELD_PEBBLE_PLATFORM_LAUNCHSCREEN_HEIGHT)"
+             ~r/ELMC_RECORD_GET_INDEX_INT\(owned\[\d+\], ELMC_FIELD_PEBBLE_PLATFORM_LAUNCHSCREEN_HEIGHT\)/
 
     assert init_body =~
              "elmc_cmd1(&owned[11], ELMC_PEBBLE_CMD_GET_CURRENT_DATE_TIME, ELMC_PEBBLE_MSG_CURRENTDATETIME)" or
@@ -5282,7 +5280,7 @@ defmodule Elmc.CCodegenPatternsTest do
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
     pebble_h = File.read!(Path.join(out_dir, "c/elmc_pebble.h"))
 
-    assert pebble_h =~ "#define ELMC_PEBBLE_SCENE_POOL_SLOTS 10"
+    assert pebble_h =~ "#define ELMC_PEBBLE_SCENE_POOL_SLOTS 4"
     assert pebble_h =~ "#define ELMC_PEBBLE_SCENE_STATIC_CAPACITY 0"
     assert pebble_h =~ "#define ELMC_PEBBLE_SCENE_CHUNK_SIZE 0"
     assert pebble_h =~ "#define ELMC_PEBBLE_SCENE_CACHE_ENABLED 0"
@@ -5300,6 +5298,8 @@ defmodule Elmc.CCodegenPatternsTest do
     refute generated_c =~ "rec_names_"
     refute generated_c =~ "elmc_record_new_static_take"
     refute generated_c =~ ~r/static const char \* const rec_names/
+    # Unbound :sub_vars in boardLayout inlining collapsed to (0-0)//2 → layout.x = 0.
+    refute generated_c =~ ~r/owned\[\d+\] = elmc_int_zero\(\);\s*\n\s*owned\[\d+\] = elmc_int_zero\(\);\s*\n\s*ElmcValue \*tmp_\d+ = NULL;\s*\n\s*Rc = elmc_new_int\(&tmp_\d+, elmc_as_int\(owned\[\d+\]\) - elmc_as_int\(owned\[\d+\]\)\)/
 
     harness_path = Path.join(out_dir, "c/game_2048_scene_harness.c")
 
@@ -5353,6 +5353,19 @@ defmodule Elmc.CCodegenPatternsTest do
         return max_right;
       }
 
+      static int min_rect_x(ElmcPebbleApp *app) {
+        int min_x = 100000;
+        ElmcPebbleDrawCmd cmd;
+        elmc_pebble_scene_reset_draw_cursor(app);
+        for (int i = 0; i < 256; i++) {
+          if (elmc_pebble_scene_commands_next(app, &cmd, 1) <= 0) break;
+          if (cmd.kind == ELMC_PEBBLE_DRAW_RECT) {
+            if ((int)cmd.p0 < min_x) min_x = (int)cmd.p0;
+          }
+        }
+        return (min_x == 100000) ? -1 : min_x;
+      }
+
       int main(void) {
         ElmcPebbleApp app = {0};
         ElmcValue *flags = aplite_launch_context();
@@ -5366,6 +5379,7 @@ defmodule Elmc.CCodegenPatternsTest do
         int rects = count_kind(&app, ELMC_PEBBLE_DRAW_RECT);
         int texts = count_kind(&app, ELMC_PEBBLE_DRAW_TEXT);
         int max_right = max_rect_right(&app);
+        int min_x = min_rect_x(&app);
         if (rects < 16) {
           fprintf(stderr, "expected >=16 rects, got %d (texts=%d)\\n", rects, texts);
           elmc_pebble_deinit(&app);
@@ -5381,9 +5395,15 @@ defmodule Elmc.CCodegenPatternsTest do
           elmc_pebble_deinit(&app);
           return 6;
         }
+        /* boardLayout centers with (panelWidth - boardWidth) // 2 ≈ 15 on 144px */
+        if (min_x < 8) {
+          fprintf(stderr, "expected centered board min_x >= 8 on 144px screen, got %d\\n", min_x);
+          elmc_pebble_deinit(&app);
+          return 8;
+        }
 
         elmc_pebble_deinit(&app);
-        printf("ok rects=%d texts=%d max_right=%d\\n", rects, texts, max_right);
+        printf("ok rects=%d texts=%d max_right=%d min_x=%d\\n", rects, texts, max_right, min_x);
         return 0;
       }
 

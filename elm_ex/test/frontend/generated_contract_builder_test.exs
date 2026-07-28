@@ -264,4 +264,26 @@ defmodule ElmEx.Frontend.GeneratedContractBuilderTest do
     assert LetExprHelpers.let_expr?(compare.expr)
     refute match?(%{op: :unsupported}, compare.expr)
   end
+
+  test "triple-quoted string lines that look like signatures are not declarations" do
+    source = """
+    module Main exposing (example)
+
+    example : String
+    example =
+        \"\"\"web : Completed 500 Internal Server Error
+    web :
+    web : ActionView::MissingTemplate
+    \"\"\"
+    """
+
+    decls =
+      "Main.elm"
+      |> GeneratedContractBuilder.build(source, "Main", [])
+      |> Map.get(:declarations)
+
+    refute Enum.any?(decls, &(&1.kind == :function_signature and &1.name == "web"))
+    assert Enum.any?(decls, &(&1.kind == :function_definition and &1.name == "example"))
+    assert {:ok, _} = ElmEx.Frontend.GeneratedParser.parse_source("Main.elm", source)
+  end
 end

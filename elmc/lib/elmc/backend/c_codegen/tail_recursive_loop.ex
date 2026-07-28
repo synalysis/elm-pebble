@@ -22,25 +22,36 @@ defmodule Elmc.Backend.CCodegen.TailRecursiveLoop do
           {:ok, String.t(), [], :rc_native} | :error
   def try_emit(module_name, name, expr, decl_map)
       when is_binary(module_name) and is_binary(name) and is_map(decl_map) do
-    with %{expr: _} = decl <- fetch_decl(decl_map, module_name, name, expr),
-         true <- supported_return?(decl),
-         arg_kinds when is_list(arg_kinds) and arg_kinds != [] <-
-           FunctionCall.arg_kinds(decl, module_name, decl_map),
-         true <- tail_loop_arg_kinds?(arg_kinds, decl),
-         env <- fusion_env(module_name, decl, decl_map),
-         :ok <- ValueSlots.reset(epilogue_lifo: true),
-         {:ok, code, result_var} <-
-           FunctionEmit.compile_tail_recursive_fusion(
-             decl,
-             module_name,
-             env,
-             arg_kinds,
-             :boxed
-           ) do
-      helper = wrap_rc_native_helper(module_name, decl, decl_map, arg_kinds, code, result_var)
-      {:ok, helper, [], :rc_native}
-    else
-      _ -> :error
+    # Fusion probes run while another function may be mid-emit (e.g. direct-render
+    # `commands_append` analyzing callees). Resetting owned slots without restore
+    # reuses indices still referenced by already-emitted C (blank Tangram dial).
+    parent_slots = Process.get(:elmc_value_slots)
+
+    try do
+      with %{expr: _} = decl <- fetch_decl(decl_map, module_name, name, expr),
+           true <- supported_return?(decl),
+           arg_kinds when is_list(arg_kinds) and arg_kinds != [] <-
+             FunctionCall.arg_kinds(decl, module_name, decl_map),
+           true <- tail_loop_arg_kinds?(arg_kinds, decl),
+           env <- fusion_env(module_name, decl, decl_map),
+           :ok <- ValueSlots.reset(epilogue_lifo: true),
+           {:ok, code, result_var} <-
+             FunctionEmit.compile_tail_recursive_fusion(
+               decl,
+               module_name,
+               env,
+               arg_kinds,
+               :boxed
+             ) do
+        helper = wrap_rc_native_helper(module_name, decl, decl_map, arg_kinds, code, result_var)
+        {:ok, helper, [], :rc_native}
+      else
+        _ -> :error
+      end
+    after
+      if is_map(parent_slots) do
+        Process.put(:elmc_value_slots, parent_slots)
+      end
     end
   end
 

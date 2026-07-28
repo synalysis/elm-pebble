@@ -92,4 +92,53 @@ defmodule Ide.Debugger.SurfaceCompileArtifactsTest do
     assert SurfaceCompileArtifacts.artifacts_for_source_root(state, "watch", ctx) ==
              inline_artifacts
   end
+
+  test "artifacts_for_source_root prefers reload precompiled over stored versioned elmx" do
+    precompiled = %{
+      "debugger_contract" => %{
+        "module" => "Main",
+        "subscription_calls" => [%{"op" => "onFinished"}]
+      },
+      "elmx_manifest" => %{"contract" => "elmx.runtime_executor.v1"},
+      "elmx_revision" => "main-rev"
+    }
+
+    state = %{
+      __reload_precompiled_artifacts__: %{
+        source_root: "watch",
+        artifacts: precompiled
+      },
+      watch: %{
+        model: %{
+          "last_source" => "module Main exposing (..)\n",
+          "last_path" => "watch/src/Main.elm",
+          "source_root" => "watch",
+          "elmx_manifest" => %{"contract" => "elmx.runtime_executor.v1"},
+          "elmx_revision" => "stale-rev",
+          "debugger_contract" => %{
+            "module" => "Resources",
+            "subscription_calls" => []
+          }
+        },
+        shell: %{
+          "debugger_contract" => %{
+            "module" => "Resources",
+            "subscription_calls" => []
+          }
+        }
+      }
+    }
+
+    ctx = %{
+      session_key_from_state: fn _ -> raise "project compile must not run" end,
+      source_root_for_target: fn :watch -> "watch" end,
+      merge_runtime_artifacts: fn st, _target, _fields -> st end
+    }
+
+    assert SurfaceCompileArtifacts.artifacts_for_source_root(state, "watch", ctx) == precompiled
+
+    contract = SurfaceCompileArtifacts.debugger_contract_for_reload(state, :watch, ctx)
+    assert contract["module"] == "Main"
+    assert contract["subscription_calls"] == [%{"op" => "onFinished"}]
+  end
 end

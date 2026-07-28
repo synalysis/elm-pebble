@@ -287,6 +287,9 @@ defmodule Ide.CompanionProtocolGenerator do
         ""
       end
 
+    inbox_required = app_message_inbox_size_required(schema)
+    outbox_required = app_message_outbox_size_required(schema)
+
     """
     #ifndef COMPANION_PROTOCOL_H
     #define COMPANION_PROTOCOL_H
@@ -302,6 +305,9 @@ defmodule Ide.CompanionProtocolGenerator do
 
     #define COMPANION_PROTOCOL_MAX_FIELDS #{max_fields}
     #{list_macros}#{companion_simulator_weather_macros(schema, uses_union_payloads?)}
+    /* dict_calc_buffer_size-style estimate: 1 + n * (7 + sizeof(int32_t)). */
+    #define ELMC_PEBBLE_APP_MESSAGE_INBOX_SIZE_REQUIRED #{inbox_required}
+    #define ELMC_PEBBLE_APP_MESSAGE_OUTBOX_SIZE_REQUIRED #{outbox_required}
 
     typedef enum {
       COMPANION_PROTOCOL_PHONE_TO_WATCH_KIND_UNKNOWN = 0,
@@ -521,12 +527,53 @@ defmodule Ide.CompanionProtocolGenerator do
     end)
   end
 
+  # Pebble dictionary buffer estimate used by dict_calc_buffer_size for int32 tuples:
+  # 1 byte header + per-tuple (7 byte header + 4 byte value).
+  @dict_int32_tuple_bytes 11
+  @dict_header_bytes 1
+  # Extra headroom for uint/cstring mixes and alignment.
+  @dict_size_pad_bytes 32
+
+  @spec app_message_inbox_size_required(schema()) :: pos_integer()
+  defp app_message_inbox_size_required(schema) do
+    schema.phone_to_watch
+    |> Enum.map(&message_dict_key_count/1)
+    |> Enum.max(fn -> 1 end)
+    |> dict_buffer_size_for_int_keys()
+  end
+
+  @spec app_message_outbox_size_required(schema()) :: pos_integer()
+  defp app_message_outbox_size_required(schema) do
+    # Watch→phone messages are small, but the SDK guarantees a large minimum outbox;
+    # stay at least at that floor so outbox_begin does not fail on companion apps.
+    schema.watch_to_phone
+    |> Enum.map(&message_dict_key_count/1)
+    |> Enum.max(fn -> 1 end)
+    |> dict_buffer_size_for_int_keys()
+    |> max(636)
+  end
+
+  @spec message_dict_key_count(message()) :: pos_integer()
+  defp message_dict_key_count(msg) when is_map(msg) do
+    field_keys =
+      Enum.reduce(msg.fields || [], 0, fn
+        %{wire_type: {:list, _elem}}, acc -> acc + 1 + @list_max_elements
+        _field, acc -> acc + 1
+      end)
+
+    1 + field_keys
+  end
+
+  @spec dict_buffer_size_for_int_keys(non_neg_integer()) :: pos_integer()
+  defp dict_buffer_size_for_int_keys(key_count) when is_integer(key_count) and key_count >= 0 do
+    @dict_header_bytes + key_count * @dict_int32_tuple_bytes + @dict_size_pad_bytes
+  end
+
   @spec companion_protocol_uses_payload_type?(schema(), WireSchema.wire_type()) :: boolean()
   defp companion_protocol_uses_payload_type?(schema, wire_type) do
     schema_fields(schema)
     |> Enum.any?(&(&1.wire_type == wire_type))
   end
-
   @spec schema_fields(schema()) :: [field()]
   defp schema_fields(schema) do
     (schema.watch_to_phone ++ schema.phone_to_watch)

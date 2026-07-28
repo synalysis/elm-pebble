@@ -31,6 +31,27 @@ defmodule Ide.Mcp.ToolsTest do
            end)
   end
 
+  test "accepts project_slug alias for slug on debugger and screenshots tools" do
+    assert {:ok, project} =
+             Projects.create_project(%{
+               "name" => "SlugAlias",
+               "slug" => "slug-alias-#{System.unique_integer([:positive])}",
+               "template" => "starter"
+             })
+
+    on_exit(fn -> Projects.delete_project(project) end)
+
+    assert {:ok, _} = Tools.call("debugger.start", %{"project_slug" => project.slug}, [:edit])
+
+    assert {:ok, %{slug: slug}} =
+             Tools.call("debugger.render_tree", %{"project_slug" => project.slug}, [:read])
+
+    assert slug == project.slug
+
+    assert {:ok, %{slug: ^slug}} =
+             Tools.call("screenshots.list", %{"project_slug" => project.slug}, [:read, :build])
+  end
+
   test "lists tools for provided capability scope" do
     tool_defs = Tools.tool_definitions([:read, :build])
     tool_names = Enum.map(tool_defs, & &1.name)

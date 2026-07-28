@@ -46,6 +46,16 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Helpers do
     |> Enum.find_value(fn types -> Map.get(types, field) end)
   end
 
+  def var_ref(name, env) when name in ["true", "false", "True", "False"] do
+    # Elm bool literals / nullary ctors often lower as `:var`. Emit Elixir booleans
+    # unless this name is an actual parameter binding (then keep `elmx_true`/`elmx_false`).
+    if parameter_binding?(name, env) do
+      binding_ref(name, env)
+    else
+      if name in ["true", "True"], do: "true", else: "false"
+    end
+  end
+
   def var_ref(name, env) when is_binary(name) do
     if parameter_binding?(name, env) do
       binding_ref(name, env)

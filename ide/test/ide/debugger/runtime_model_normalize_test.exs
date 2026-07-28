@@ -66,6 +66,35 @@ defmodule Ide.Debugger.RuntimeModelNormalizeTest do
            }
   end
 
+  test "against_introspect keeps Just scalars when init shape is Nothing" do
+    model = %{
+      "debugger_contract" => %{
+        "init_model" => %{"batteryLevel" => %{"ctor" => "Nothing", "args" => []}}
+      }
+    }
+
+    runtime_model = %{"batteryLevel" => %{"ctor" => "Just", "args" => [88]}}
+
+    assert RuntimeModelNormalize.against_introspect(runtime_model, model) == %{
+             "batteryLevel" => %{"ctor" => "Just", "args" => [88]}
+           }
+  end
+
+  test "against_introspect keeps Just scalars when init shape is missing" do
+    runtime_model = %{"batteryLevel" => %{"ctor" => "Just", "args" => [88]}}
+
+    # Field absent from init_model is dropped by against_introspect; use normalize path via patch.
+    patch = %{"runtime_model" => runtime_model}
+
+    assert RuntimeModelNormalize.patch_values(
+             %{
+               "runtime_model" => %{},
+               "elm_introspect" => %{"init_model" => %{}}
+             },
+             patch
+           ) == %{"runtime_model" => %{"batteryLevel" => %{"ctor" => "Just", "args" => [88]}}}
+  end
+
   test "patch_values keeps prior runtime_model fields when patch only updates one key" do
     model = %{
       "runtime_model" => %{"screenW" => 144, "screenH" => 168, "now" => %{"ctor" => "Nothing", "args" => []}},

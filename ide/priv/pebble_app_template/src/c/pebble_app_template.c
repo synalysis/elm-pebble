@@ -245,10 +245,18 @@ static void emulator_storage_snapshot_callback(void *data) {
 #endif
 
 #ifndef ELMC_PEBBLE_APP_MESSAGE_INBOX_SIZE
-#define ELMC_PEBBLE_APP_MESSAGE_INBOX_SIZE 128
+#ifdef ELMC_PEBBLE_APP_MESSAGE_INBOX_SIZE_REQUIRED
+#define ELMC_PEBBLE_APP_MESSAGE_INBOX_SIZE ELMC_PEBBLE_APP_MESSAGE_INBOX_SIZE_REQUIRED
+#else
+#define ELMC_PEBBLE_APP_MESSAGE_INBOX_SIZE 256
+#endif
 #endif
 #ifndef ELMC_PEBBLE_APP_MESSAGE_OUTBOX_SIZE
-#define ELMC_PEBBLE_APP_MESSAGE_OUTBOX_SIZE 64
+#ifdef ELMC_PEBBLE_APP_MESSAGE_OUTBOX_SIZE_REQUIRED
+#define ELMC_PEBBLE_APP_MESSAGE_OUTBOX_SIZE ELMC_PEBBLE_APP_MESSAGE_OUTBOX_SIZE_REQUIRED
+#else
+#define ELMC_PEBBLE_APP_MESSAGE_OUTBOX_SIZE 636
+#endif
 #endif
 #ifndef ELMC_PEBBLE_STARTUP_SERVICE_SUBSCRIPTIONS
 #define ELMC_PEBBLE_STARTUP_SERVICE_SUBSCRIPTIONS 1
@@ -4555,8 +4563,32 @@ static void complete_elm_init(void) {
     app_message_register_inbox_dropped(inbox_dropped_handler);
     app_message_register_outbox_sent(outbox_sent_handler);
     app_message_register_outbox_failed(outbox_failed_handler);
-    AppMessageResult app_message_rc = app_message_open(ELMC_PEBBLE_APP_MESSAGE_INBOX_SIZE, ELMC_PEBBLE_APP_MESSAGE_OUTBOX_SIZE);
-    (void)app_message_rc;
+    {
+      uint32_t inbox_size = ELMC_PEBBLE_APP_MESSAGE_INBOX_SIZE;
+      uint32_t outbox_size = ELMC_PEBBLE_APP_MESSAGE_OUTBOX_SIZE;
+#ifdef APP_MESSAGE_INBOX_SIZE_MINIMUM
+      if (inbox_size < APP_MESSAGE_INBOX_SIZE_MINIMUM) {
+        inbox_size = APP_MESSAGE_INBOX_SIZE_MINIMUM;
+      }
+#endif
+#ifdef APP_MESSAGE_OUTBOX_SIZE_MINIMUM
+      if (outbox_size < APP_MESSAGE_OUTBOX_SIZE_MINIMUM) {
+        outbox_size = APP_MESSAGE_OUTBOX_SIZE_MINIMUM;
+      }
+#endif
+      uint32_t inbox_max = app_message_inbox_size_maximum();
+      uint32_t outbox_max = app_message_outbox_size_maximum();
+      if (inbox_size > inbox_max) {
+        inbox_size = inbox_max;
+      }
+      if (outbox_size > outbox_max) {
+        outbox_size = outbox_max;
+      }
+      AppMessageResult app_message_rc = app_message_open(inbox_size, outbox_size);
+      APP_LOG(APP_LOG_LEVEL_INFO, "app_message_open inbox=%lu outbox=%lu rc=%d",
+              (unsigned long)inbox_size, (unsigned long)outbox_size, (int)app_message_rc);
+      (void)app_message_rc;
+    }
 #if ELMC_PEBBLE_FEATURE_CMD_COMPANION_SEND
     {
       static const uint32_t companion_resync_delays_ms[] = {3000, 10000};

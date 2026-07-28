@@ -176,7 +176,17 @@ defmodule Ide.Debugger.DebuggerContractSnapshot do
         end
 
       true ->
-        analyze_contract_fallback(source, virtual_path)
+        # Non-entrypoint reloads must not replace the shell entrypoint contract
+        # (e.g. Resources.elm analyzed alone has empty subscription_calls).
+        surface = Map.get(state, target, %{})
+
+        case RuntimeArtifacts.introspect(surface) do
+          %{} = existing when map_size(existing) > 0 ->
+            {:ok, existing}
+
+          _ ->
+            analyze_contract_fallback(source, virtual_path)
+        end
     end
   end
 

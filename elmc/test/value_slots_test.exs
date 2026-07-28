@@ -248,6 +248,38 @@ defmodule Elmc.Backend.CCodegen.ValueSlotsTest do
     assert ValueSlots.slot_count() == 2
   end
 
+  test "TailRecursiveLoop.try_emit restores parent ValueSlots after fusion probe" do
+    alias Elmc.Backend.CCodegen.TailRecursiveLoop
+
+    ValueSlots.reset(epilogue_lifo: true)
+    {ref0, _} = ValueSlots.alloc()
+    ValueSlots.mark_written(ref0)
+    {ref1, _} = ValueSlots.alloc()
+    ValueSlots.mark_written(ref1)
+    assert ValueSlots.slot_count() == 2
+
+    decl_map = %{
+      {"Main", "notALoop"} => %{
+        name: "notALoop",
+        args: ["n"],
+        type: "Int -> Int",
+        kind: :function,
+        expr: %{op: :int_literal, value: 1}
+      }
+    }
+
+    assert :error =
+             TailRecursiveLoop.try_emit(
+               "Main",
+               "notALoop",
+               Map.fetch!(decl_map, {"Main", "notALoop"}).expr,
+               decl_map
+             )
+
+    assert ValueSlots.slot_count() == 2
+    assert ValueSlots.ensure_fresh_assign_target(ref0) == "owned[2]"
+  end
+
   test "ensure_fresh_assign_target allocates owned slot after function out was written" do
     ValueSlots.reset(epilogue_lifo: true)
     ValueSlots.mark_function_out_written()

@@ -19,7 +19,8 @@ defmodule Elmx.FnArgPatternEmitTest do
                entry_module: "Main",
                mode: :ide_runtime,
                ir_sha256: "fn-arg-pattern",
-               user_module_names: MapSet.new(["Main"])
+               # Include Pebble.Ui so the desugared pattern helper is emitted for the assert.
+               user_module_names: MapSet.new(["Main", "Pebble.Ui"])
              })
 
     source =
@@ -27,7 +28,9 @@ defmodule Elmx.FnArgPatternEmitTest do
       |> Enum.map(& &1.source)
       |> Enum.join("\n")
 
-    assert source =~ "def elmx_fn_Pebble_Ui_rotationToPebbleAngle({:Rotation, angle})"
+    # FnArgDesugar rewrites `(Rotation angle)` params into a case on `patternArg`.
+    assert source =~ "def elmx_fn_Pebble_Ui_rotationToPebbleAngle(patternArg)"
+    assert source =~ "{:Rotation, angle}"
     refute source =~ "def elmx_fn_Pebble_Ui_rotationToPebbleAngle(_unused0)"
   end
 end

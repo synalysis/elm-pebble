@@ -366,7 +366,7 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
   def structural_expr?(%{op: :int_literal, union_ctor: ctor}) when is_binary(ctor), do: false
 
   def structural_expr?(%{op: op})
-      when op in [:int_literal, :char_literal, :add_const, :sub_const, :add_vars],
+      when op in [:int_literal, :char_literal, :add_const, :sub_const, :add_vars, :sub_vars, :mul_vars],
       do: true
 
   def structural_expr?(%{op: :call, name: name, args: args})

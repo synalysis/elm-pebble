@@ -45,7 +45,7 @@ defmodule Elmc.Backend.SizeProfile do
     |> Map.put_new(:plan_ir_mode, :primary)
     |> Map.put_new(:plan_ir_strict, true)
     |> Map.put_new(:enum_tag_peel, true)
-    |> Map.put_new(:plan_emit, :state_switch)
+    |> Map.put_new(:plan_emit, :goto)
     |> Map.put_new(:fusion_supersede_native, true)
     |> Map.put_new(:size_mod_by_fast, true)
     |> Map.put_new(:size_native_compare, true)

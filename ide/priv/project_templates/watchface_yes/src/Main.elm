@@ -588,9 +588,6 @@ hasWind model =
             wind.speed /= 0
 
 
-                pickBottomRight : Model -> BottomRightCorner
-
-
 pickBottomRight model =
     Maybe.withDefault SunCorner (pickSlot model (bottomRightSlots model))
 

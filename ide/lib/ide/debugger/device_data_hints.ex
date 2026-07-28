@@ -156,7 +156,7 @@ defmodule Ide.Debugger.DeviceDataHints do
     with true <- device_response_constructor_declared?(model, Map.get(req, :response_message)),
          {:ok, key} <-
            scalar_runtime_model_key_for_device_response(model, runtime_model, req, kind) do
-      Map.put(runtime_model, key, value)
+      Map.put(runtime_model, key, wrap_scalar_for_model_field(runtime_model, model, key, value))
     else
       _ -> runtime_model
     end
@@ -164,6 +164,41 @@ defmodule Ide.Debugger.DeviceDataHints do
 
   defp merge_declared_scalar_device_response(runtime_model, _model, _req, _value, _kind),
     do: runtime_model
+
+  @spec wrap_scalar_for_model_field(
+          Types.inner_runtime_model(),
+          Types.execution_model(),
+          String.t(),
+          String.t() | integer() | boolean()
+        ) :: Types.protocol_wire_arg()
+  defp wrap_scalar_for_model_field(runtime_model, model, key, value)
+       when is_map(runtime_model) and is_map(model) and is_binary(key) do
+    init = RuntimeModelNormalize.init_model(model)
+    shape = Map.get(init, key)
+    existing = Map.get(runtime_model, key)
+
+    cond do
+      maybe_wire_value?(existing) or maybe_wire_value?(shape) ->
+        %{"ctor" => "Just", "args" => [value]}
+
+      true ->
+        value
+    end
+  end
+
+  defp maybe_wire_value?(%{"ctor" => ctor, "args" => args})
+       when ctor in ["Nothing", "Just"] and is_list(args),
+       do: true
+
+  defp maybe_wire_value?(%{"$ctor" => ctor, "$args" => args})
+       when ctor in ["Nothing", "Just"] and is_list(args),
+       do: true
+
+  defp maybe_wire_value?(%{ctor: ctor, args: args})
+       when ctor in ["Nothing", "Just", :Nothing, :Just] and is_list(args),
+       do: true
+
+  defp maybe_wire_value?(_), do: false
 
   @spec scalar_runtime_model_key_for_device_response(
           Types.execution_model(),
@@ -189,6 +224,8 @@ defmodule Ide.Debugger.DeviceDataHints do
           String.t() | nil,
           scalar_kind()
         ) :: {:ok, String.t()} | :error
+  # Prefer declared field names for a device kind. Treat Maybe wire shapes as matching
+  # the scalar kind of their payload so batteryLevel : Maybe Int still maps.
   defp device_kind_runtime_model_key(model, runtime_model, device_kind, kind)
        when is_map(model) and is_map(runtime_model) and kind in [:string, :integer, :boolean] do
     init_model = RuntimeModelNormalize.init_model(model)
@@ -200,7 +237,9 @@ defmodule Ide.Debugger.DeviceDataHints do
         else: []
     end)
     |> Enum.filter(fn key ->
-      Map.has_key?(runtime_model, key) and scalar_kind?(Map.get(init_model, key), kind)
+      Map.has_key?(runtime_model, key) and
+        (scalar_kind?(Map.get(init_model, key), kind) or
+           maybe_scalar_field?(Map.get(init_model, key), Map.get(runtime_model, key), kind))
     end)
     |> case do
       [key] -> {:ok, key}
@@ -209,6 +248,10 @@ defmodule Ide.Debugger.DeviceDataHints do
   end
 
   defp device_kind_runtime_model_key(_model, _runtime_model, _device_kind, _kind), do: :error
+
+  defp maybe_scalar_field?(shape, existing, kind) do
+    maybe_wire_value?(shape) or maybe_wire_value?(existing) or scalar_kind?(existing, kind)
+  end
 
   @spec device_response_constructor_declared?(Types.execution_model(), String.t() | nil) ::
           boolean()

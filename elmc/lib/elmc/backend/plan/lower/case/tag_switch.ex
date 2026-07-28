@@ -409,8 +409,19 @@ defmodule Elmc.Backend.Plan.Lower.Case.TagSwitch do
 
   @spec tag_switch_payload?(Types.ir_expr() | map() | term()) :: boolean()
 
+  # Discriminant-only payloads: nullary, wildcard, var bind, or flat tuples of
+  # those. Nested constructor patterns stay on GuardedSwitch (needs full match).
+  # Accepting `:var` / var-tuples matters for size: companion `case message of
+  # ProvideTimezone offset -> …` otherwise falls into sequential plan-state
+  # `union_tag_matches` chains that GCC cannot share across callers.
   defp tag_switch_payload?(nil), do: true
   defp tag_switch_payload?(%{kind: :wildcard}), do: true
+  defp tag_switch_payload?(%{kind: :var}), do: true
+
+  defp tag_switch_payload?(%{kind: :tuple, elements: elements}) when is_list(elements) do
+    Enum.all?(elements, &tag_switch_payload?/1)
+  end
+
   defp tag_switch_payload?(_), do: false
 
   @spec pattern_tag(map() | term(), Types.ir_expr() | term()) :: Types.ir_expr()

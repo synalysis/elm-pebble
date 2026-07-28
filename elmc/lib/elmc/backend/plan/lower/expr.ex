@@ -1661,28 +1661,59 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
         :unsupported
 
       true ->
-        case split_pattern_bind_reorder(bindings, tail_expr) do
-          {:ok, bind_name, bind_value, pattern, deferred, case_tail, prefix_bindings} ->
-            compile_pattern_bind_reordered(
-              prefix_bindings,
-              bind_name,
-              bind_value,
-              pattern,
-              deferred,
-              case_tail,
-              ctx,
-              b
-            )
+        case peel_tuple2_maybe_pair_case(bindings, tail_expr) do
+          {:ok, case_expr} ->
+            Case.compile(case_expr, ctx, b)
 
           :error ->
-            if let_bindings_need_recursion?(bindings, tail_expr) do
-              compile_let_block_letrec_or_sequential(bindings, tail_expr, ctx, b)
-            else
-              compile_let_block_sequential(bindings, tail_expr, ctx, b)
+            case split_pattern_bind_reorder(bindings, tail_expr) do
+              {:ok, bind_name, bind_value, pattern, deferred, case_tail, prefix_bindings} ->
+                compile_pattern_bind_reordered(
+                  prefix_bindings,
+                  bind_name,
+                  bind_value,
+                  pattern,
+                  deferred,
+                  case_tail,
+                  ctx,
+                  b
+                )
+
+              :error ->
+                if let_bindings_need_recursion?(bindings, tail_expr) do
+                  compile_let_block_letrec_or_sequential(bindings, tail_expr, ctx, b)
+                else
+                  compile_let_block_sequential(bindings, tail_expr, ctx, b)
+                end
             end
         end
     end
   end
+
+  # `let caseSubject = (a, b) in case caseSubject of (Just …, Just …) / _`
+  # → case (a, b) of … so Case can avoid heap tuple2 + GuardedSwitch.
+  @spec peel_tuple2_maybe_pair_case(list(), Types.expr()) :: {:ok, map()} | :error
+
+  defp peel_tuple2_maybe_pair_case([{bind_name, %{op: :tuple2} = tup}], %{op: :case} = case_expr)
+       when is_binary(bind_name) do
+    subj = Map.get(case_expr, :subject)
+    branches = Map.get(case_expr, :branches)
+
+    subj_name =
+      cond do
+        is_binary(subj) -> subj
+        match?(%{op: :var, name: _}, subj) -> subj.name
+        true -> nil
+      end
+
+    if subj_name == bind_name and is_list(branches) and Case.tuple2_maybe_pair_branches?(branches) do
+      {:ok, %{case_expr | subject: tup}}
+    else
+      :error
+    end
+  end
+
+  defp peel_tuple2_maybe_pair_case(_, _), do: :error
 
   @spec split_pattern_bind_reorder(Types.ir_expr(), Types.expr()) :: Types.ir_expr()
 

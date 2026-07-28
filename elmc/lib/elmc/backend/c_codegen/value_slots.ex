@@ -126,17 +126,35 @@ defmodule Elmc.Backend.CCodegen.ValueSlots do
   @spec alloc() :: {String.t(), non_neg_integer()}
   def alloc do
     slots = slots_state()
-    index = slots.next
+
+    # Reuse the lowest non-live index so mid-function transfers/nulls shrink the
+    # owned[] high-water mark. Without this, fusion-probe restores (correctly)
+    # leave holes that force owned[N] growth (e.g. yes drawDial 8 → 15).
+    index =
+      case find_reusable_slot(slots) do
+        {:ok, free} -> free
+        :none -> slots.next
+      end
+
     live = MapSet.put(slots.live, index)
+    next = max(slots.next, index + 1)
 
     Process.put(:elmc_value_slots, %{
       slots
-      | next: index + 1,
+      | next: next,
         live: live
     })
 
     {ref(index), index}
   end
+
+  defp find_reusable_slot(%{next: next, live: live}) when next > 0 do
+    Enum.find_value(0..(next - 1), :none, fn i ->
+      if MapSet.member?(live, i), do: nil, else: {:ok, i}
+    end)
+  end
+
+  defp find_reusable_slot(_), do: :none
 
   @spec ref(non_neg_integer()) :: String.t()
   def ref(index) when is_integer(index) and index >= 0, do: "owned[#{index}]"

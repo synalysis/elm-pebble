@@ -104,13 +104,33 @@ defmodule Ide.Packages.ModuleDoc do
           if type == "" do
             ""
           else
-            "\n\n```elm\ntype alias #{name}#{args_txt} =\n    #{type}\n```\n"
+            "\n\n```elm\ntype alias #{name}#{args_txt} =\n#{indent_alias_type(type)}\n```\n"
           end
 
         "### `#{name}`#{args_txt}\n#{comment}#{sig}"
       end)
 
     "## Type aliases\n\n" <> Enum.join(blocks, "\n\n")
+  end
+
+  # Docs JSON may store a single-line type, a pre-indented record from elm_ex, or a
+  # multiline body whose leading spaces were stripped. Indent every non-empty line
+  # so leading-comma record fields stay aligned in the markdown fence.
+  @spec indent_alias_type(String.t()) :: String.t()
+  defp indent_alias_type(type) when is_binary(type) do
+    type
+    |> String.trim_trailing()
+    |> String.split("\n")
+    |> Enum.map(fn line ->
+      trimmed = String.trim(line)
+
+      cond do
+        trimmed == "" -> ""
+        String.starts_with?(line, "    ") -> String.trim_trailing(line)
+        true -> "    " <> trimmed
+      end
+    end)
+    |> Enum.join("\n")
   end
 
   @spec values_section(String.t(), [Types.docs_json_module()] | nil) :: String.t()

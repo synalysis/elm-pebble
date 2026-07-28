@@ -18,9 +18,26 @@ defmodule Elmc.Backend.Plan.Optimize do
         IntPhiNative.phi_arm_drop_instrs(blocks)
       )
 
+    # Drop dead retains before last-use→transfer rewriting. Otherwise a dead
+    # retain can be rewritten to consume its src, the matching `:release` is
+    # removed, then the retain itself is deleted — leaving a leaked owned reg.
+    blocks =
+      Enum.map(blocks, fn block ->
+        instrs =
+          block.instrs
+          |> Enum.reject(&dead_retain?(&1, used))
+          |> Enum.reject(&dead_phi_arm_value?(&1, phi_arm_drops))
+          |> drop_unread_overwritten_defs(block.terminator)
+
+        %{block | instrs: instrs}
+      end)
+
+    last_reads = last_read_indices(blocks)
+    owned_defs = owned_produced_regs_all(blocks)
+
     blocks =
       blocks
-      |> Enum.map(&optimize_block(&1, used, phi_arm_drops))
+      |> Enum.map(&rewrite_block_transfers(&1, last_reads, owned_defs))
       |> simplify_branch_targets()
 
     %{plan | blocks: blocks}
@@ -70,17 +87,135 @@ defmodule Elmc.Backend.Plan.Optimize do
     end
   end
 
-  @spec optimize_block(map(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
-
-  defp optimize_block(%Block{} = block, used, phi_arm_drops) do
+  defp rewrite_block_transfers(%Block{} = block, last_reads, owned_defs) do
     instrs =
       block.instrs
-      |> Enum.reject(&dead_retain?(&1, used))
-      |> Enum.reject(&dead_phi_arm_value?(&1, phi_arm_drops))
-      |> drop_unread_overwritten_defs(block.terminator)
+      |> rewrite_last_use_retains(block.id, last_reads, owned_defs)
+      |> drop_releases_of_already_consumed()
 
     %{block | instrs: instrs}
   end
+
+  # When `retain(src)` is the last read of an owned `src` in the function, emit a
+  # consuming transfer instead of retain+later release/reassign. That lowers to
+  # a pointer move (`owned[d]=owned[s]; owned[s]=NULL`) instead of retain/release.
+  defp rewrite_last_use_retains(instrs, block_id, last_reads, owned_defs) when is_list(instrs) do
+    Enum.map(instrs, fn instr ->
+      maybe_consume_last_use_retain(instr, block_id, last_reads, owned_defs)
+    end)
+  end
+
+  defp maybe_consume_last_use_retain(
+         %{
+           id: instr_id,
+           op: :call_runtime,
+           dest: dest,
+           args: %{builtin: :retain, args: [src]},
+           effects: effects
+         } = instr,
+         block_id,
+         last_reads,
+         owned_defs
+       )
+       when is_integer(dest) and is_integer(src) and dest != src and is_map(effects) do
+    consumes = List.wrap(Map.get(effects, :consumes, []))
+    key = {block_id, instr_id}
+
+    cond do
+      src in consumes ->
+        instr
+
+      Map.has_key?(Map.get(instr, :args, %{}), :view_peel) ->
+        instr
+
+      not MapSet.member?(owned_defs, src) ->
+        instr
+
+      Map.get(last_reads, src) != key ->
+        instr
+
+      true ->
+        borrows = List.wrap(Map.get(effects, :borrows, []))
+
+        %{
+          instr
+          | effects: %{
+              effects
+              | consumes: [src],
+                borrows: Enum.reject(borrows, &(&1 == src))
+            }
+        }
+    end
+  end
+
+  defp maybe_consume_last_use_retain(instr, _block_id, _last_reads, _owned_defs), do: instr
+
+  defp owned_produced_regs_all(blocks) when is_list(blocks) do
+    blocks
+    |> Enum.flat_map(fn %Block{instrs: instrs} ->
+      Enum.flat_map(instrs, fn
+        %{effects: %{produces: {:owned, reg}}} when is_integer(reg) -> [reg]
+        _ -> []
+      end)
+    end)
+    |> MapSet.new()
+  end
+
+  # Last *read* of each reg as `{block_id, instr_id}` (releases ignored so a
+  # trailing `:release` does not block transferring the prior retain).
+  defp last_read_indices(blocks) when is_list(blocks) do
+    Enum.reduce(blocks, %{}, fn %Block{id: block_id, instrs: instrs, terminator: term}, acc ->
+      acc =
+        Enum.reduce(instrs, acc, fn
+          %{op: :release}, acc_inner ->
+            acc_inner
+
+          %{id: instr_id} = instr, acc_inner when is_integer(instr_id) ->
+            Enum.reduce(operand_regs(instr), acc_inner, fn
+              reg, a when is_integer(reg) -> Map.put(a, reg, {block_id, instr_id})
+              _, a -> a
+            end)
+
+          _, acc_inner ->
+            acc_inner
+        end)
+
+      Enum.reduce(terminator_uses(term), acc, fn
+        reg, a when is_integer(reg) -> Map.put(a, reg, {block_id, :terminator})
+        _, a -> a
+      end)
+    end)
+  end
+
+  defp drop_releases_of_already_consumed(instrs) when is_list(instrs) do
+    {kept, _consumed} =
+      Enum.reduce(instrs, {[], MapSet.new()}, fn instr, {acc, consumed} ->
+        case instr do
+          %{op: :release, args: %{reg: reg}} when is_integer(reg) ->
+            # Do not mark this release's own consumes before the check — otherwise
+            # every epilogue `:release` looks "already consumed" and is dropped.
+            if MapSet.member?(consumed, reg) do
+              {acc, consumed}
+            else
+              {acc ++ [instr], mark_instr_consumes(instr, consumed)}
+            end
+
+          _ ->
+            {acc ++ [instr], mark_instr_consumes(instr, consumed)}
+        end
+      end)
+
+    kept
+  end
+
+  defp mark_instr_consumes(%{effects: %{consumes: consumes}}, consumed) when is_list(consumes) do
+    Enum.reduce(consumes, consumed, fn
+      reg, acc when is_integer(reg) -> MapSet.put(acc, reg)
+      _, acc -> acc
+    end)
+  end
+
+  defp mark_instr_consumes(_, consumed), do: consumed
 
   @spec drop_unread_overwritten_defs(list(), Types.ir_expr()) :: Types.ir_expr()
 

@@ -6,6 +6,7 @@ defmodule Ide.Mcp.Tools do
 
   alias Ide.Mcp.{VectorResources}
   alias Ide.Mcp.ToolCatalog
+  alias Ide.Mcp.ToolSupport
   alias Ide.Mcp.Handlers.Build, as: BuildHandler
   alias Ide.Mcp.Handlers.Compiler, as: CompilerHandler
   alias Ide.Mcp.Handlers.Debugger, as: DebuggerHandler
@@ -27,9 +28,10 @@ defmodule Ide.Mcp.Tools do
   @spec call(String.t(), ToolTypes.tool_args(), [capability()]) :: tool_result()
   def call(name, args, capabilities) when is_binary(name) and is_map(args) do
     internal_name = ToolCatalog.internal_tool_name(name)
+    normalized_args = ToolSupport.normalize_tool_args(args)
 
     if ToolCatalog.authorized?(internal_name, capabilities) do
-      do_call(internal_name, args)
+      do_call(internal_name, normalized_args)
     else
       {:error, "tool not permitted by current capability scope"}
     end
@@ -39,7 +41,7 @@ defmodule Ide.Mcp.Tools do
   def audit_arguments(name, args) when is_binary(name) and is_map(args) do
     name
     |> ToolCatalog.internal_tool_name()
-    |> do_audit_arguments(args)
+    |> do_audit_arguments(ToolSupport.normalize_tool_args(args))
   end
 
   @spec do_audit_arguments(String.t(), ToolTypes.tool_args()) :: ToolTypes.tool_audit_args()

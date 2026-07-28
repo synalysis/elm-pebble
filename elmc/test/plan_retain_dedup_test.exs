@@ -219,6 +219,132 @@ defmodule Elmc.PlanRetainDedupTest do
     assert hd(new_ints).args[:literal] == 42
   end
 
+  test "optimize pass turns last-use retain into a consuming transfer" do
+    plan = %FunctionPlan{
+      module: "Main",
+      name: "last_use_retain",
+      params: [],
+      return_type: nil,
+      fallible: true,
+      rc_required: true,
+      reg_count: 3,
+      entry_block: 0,
+      blocks: [
+        %Block{
+          id: 0,
+          instrs: [
+            %{
+              id: 0,
+              op: :tuple_proj,
+              dest: 1,
+              args: %{base: 0, which: :second},
+              effects: %{produces: {:owned, 1}, consumes: [], borrows: [0], fallible: false},
+              block_id: 0,
+              span: nil
+            },
+            %{
+              id: 1,
+              op: :call_runtime,
+              dest: 2,
+              args: %{builtin: :retain, args: [1]},
+              effects: %{produces: {:owned, 2}, consumes: [], borrows: [1], fallible: false},
+              block_id: 0,
+              span: nil
+            },
+            %{
+              id: 2,
+              op: :release,
+              dest: nil,
+              args: %{reg: 1},
+              effects: %{produces: nil, consumes: [1], borrows: [], fallible: false},
+              block_id: 0,
+              span: nil
+            }
+          ],
+          terminator: {:ret, 2}
+        }
+      ],
+      lambdas: [],
+      lambda_arg_count: nil
+    }
+
+    optimized = Optimize.run(plan)
+    [block] = optimized.blocks
+
+    assert [
+             %{op: :tuple_proj, dest: 1},
+             %{
+               op: :call_runtime,
+               dest: 2,
+               args: %{builtin: :retain, args: [1]},
+               effects: %{consumes: [1], borrows: []}
+             }
+           ] = block.instrs
+  end
+
+  test "optimize pass keeps epilogue releases that are not transfer-consumed" do
+    plan = %FunctionPlan{
+      module: "Main",
+      name: "keep_epilogue_release",
+      params: [],
+      return_type: nil,
+      fallible: true,
+      rc_required: true,
+      reg_count: 3,
+      entry_block: 0,
+      blocks: [
+        %Block{
+          id: 0,
+          instrs: [
+            %{
+              id: 0,
+              op: :call_runtime,
+              dest: 1,
+              args: %{builtin: :new_int, literal: 1},
+              effects: %{produces: {:owned, 1}, consumes: [], borrows: [], fallible: true},
+              block_id: 0,
+              span: nil
+            },
+            %{
+              id: 1,
+              op: :const_int,
+              dest: 2,
+              args: %{value: 0},
+              effects: %{produces: {:owned, 2}, consumes: [], borrows: [], fallible: false},
+              block_id: 0,
+              span: nil
+            },
+            %{
+              id: 2,
+              op: :compare,
+              dest: 0,
+              args: %{mode: :int_boxed, left: 1, right: 2, kind: :eq},
+              effects: %{produces: {:owned, 0}, consumes: [2], borrows: [1], fallible: false},
+              block_id: 0,
+              span: nil
+            },
+            %{
+              id: 3,
+              op: :release,
+              dest: nil,
+              args: %{reg: 1},
+              effects: %{produces: nil, consumes: [1], borrows: [], fallible: false},
+              block_id: 0,
+              span: nil
+            }
+          ],
+          terminator: {:ret, 0}
+        }
+      ],
+      lambdas: [],
+      lambda_arg_count: nil
+    }
+
+    optimized = Optimize.run(plan)
+    [block] = optimized.blocks
+    assert Enum.any?(block.instrs, &match?(%{op: :release, args: %{reg: 1}}, &1))
+  end
+
   defp retain_instrs(b) do
     b.current_block.instrs
     |> Enum.filter(&match?(%{op: :call_runtime, args: %{builtin: :retain}}, &1))

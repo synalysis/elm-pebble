@@ -1014,16 +1014,21 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
       lowered_fn_body!(generated_c, "elmc_fn_Main_nativeTextExplicitAliasIf_commands_append")
 
     assert native_explicit_alias_if_body =~ "ELMC_RENDER_OP_TEXT_COLOR"
+
     assert native_explicit_alias_if_body =~ "scene_cmd.p0 = (owned[0] ? elmc_as_int(owned[0]) : 0)" or
-             native_explicit_alias_if_body =~ "scene_cmd.p0 = elmc_as_int(owned[0])"
+             native_explicit_alias_if_body =~ "scene_cmd.p0 = elmc_as_int(owned[0])" or
+             native_explicit_alias_if_body =~ "scene_cmd.p0 = direct_native_let_color_"
+
     refute native_explicit_alias_if_body =~ "elmc_fn_PebbleColor_black("
 
     native_exposed_type_if_body =
       lowered_fn_body!(generated_c, "elmc_fn_Main_nativeTextExposedTypeIf_commands_append")
 
     assert native_exposed_type_if_body =~ "ELMC_RENDER_OP_TEXT_COLOR"
+
     assert native_exposed_type_if_body =~ "scene_cmd.p0 = (owned[0] ? elmc_as_int(owned[0]) : 0)" or
-             native_exposed_type_if_body =~ "scene_cmd.p0 = elmc_as_int(owned[0])"
+             native_exposed_type_if_body =~ "scene_cmd.p0 = elmc_as_int(owned[0])" or
+             native_exposed_type_if_body =~ "scene_cmd.p0 = direct_native_let_color_"
 
     native_bounds_body =
       lowered_fn_body!(generated_c, "elmc_fn_Main_nativeTextBounds_commands_append")
@@ -3049,7 +3054,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
     view _ =
         Ui.toUiNode
             [ Ui.text Resources.DefaultFont (Ui.alignLeft Ui.defaultTextOptions) { x = 0, y = 0, w = 30, h = 12 } "Left"
-            , Ui.text Resources.DefaultFont (Ui.trailingEllipsis Ui.defaultTextOptions) { x = 0, y = 12, w = 30, h = 12 } "Center"
+            , Ui.text Resources.DefaultFont (Ui.trailingEllipsis (Ui.alignCenter Ui.defaultTextOptions)) { x = 0, y = 12, w = 30, h = 12 } "Center"
             , Ui.text Resources.DefaultFont (Ui.fillOverflow (Ui.alignRight Ui.defaultTextOptions)) { x = 0, y = 24, w = 30, h = 12 } "Right"
             ]
 
@@ -4304,8 +4309,12 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     view_body = lowered_fn_body!(generated_c, "elmc_fn_Main_view_commands_append")
 
-    assert view_body =~ "scene_cmd.p5 = elmc_as_int(owned[0])" or view_body =~ "direct_native_let_textOptions_"
-    assert view_body =~ "ELMC_TEXT_ALIGN_CENTER" or view_body =~ "ELMC_TEXT_OVERFLOW_SHIFT"
+    assert view_body =~ "direct_native_let_textOptions_"
+    assert view_body =~ "ELMC_TEXT_ALIGN_CENTER"
+    assert view_body =~ "ELMC_TEXT_OVERFLOW_SHIFT"
+    refute view_body =~ ~r/scene_cmd\.p5 = elmc_as_int\(owned\[/
+    refute view_body =~ ~r/scene_cmd\.p5 = elmc_text_options_packed\(owned\[/
+    refute view_body =~ ~r/elmc_record_update_index\(tmp_/
     refute view_body =~ "elmc_record_new_ints"
   end
 
@@ -4338,6 +4347,9 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
     assert view_body =~ "direct_native_record_layout_x_"
     assert view_body =~ "direct_native_record_layout_cell_"
     assert view_body =~ "ELMC_RENDER_OP_RECT"
+    # Centering uses (screenW - boardSize) // 2; unbound :sub_vars used to become
+    # paired elmc_int_zero() and force layout.x = 0 / negative cell on round.
+    refute view_body =~ ~r/owned\[\d+\] = elmc_int_zero\(\);\s*\n\s*owned\[\d+\] = elmc_int_zero\(\);\s*\n\s*ElmcValue \*tmp_\d+ = NULL;\s*\n\s*Rc = elmc_new_int\(&tmp_\d+, elmc_as_int\(owned\[\d+\]\) - elmc_as_int\(owned\[\d+\]\)\)/
     assert Hoist.unused_native_minmax_refs(view_body) == []
   end
 
@@ -5983,5 +5995,98 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
       )
 
     assert compile_code == 0, compile_out
+  end
+
+  test "native bool lambda returned as ElmcValue boxes plan_native_bool" do
+    repo_root = Path.expand("../../..", __DIR__)
+    project_dir = Path.expand("tmp/native_bool_boxed_return_project", __DIR__)
+    out_dir = Path.expand("tmp/native_bool_boxed_return", __DIR__)
+    File.rm_rf!(project_dir)
+    File.rm_rf!(out_dir)
+    File.mkdir_p!(Path.join(project_dir, "src"))
+
+    File.write!(
+      Path.join(project_dir, "elm.json"),
+      Jason.encode!(
+        %{
+          "type" => "application",
+          "source-directories" => [
+            "src",
+            Path.join(repo_root, "packages/elm-pebble/elm-watch/src"),
+            Path.join(repo_root, "shared/elm"),
+            Path.join(repo_root, "ide/priv/bundled_elm/pebble-watch-src"),
+            Path.join(repo_root, "ide/priv/internal_packages/elm-random/src")
+          ],
+          "elm-version" => "0.19.1",
+          "dependencies" => %{
+            "direct" => %{
+              "elm/core" => "1.0.5",
+              "elm/json" => "1.1.3",
+              "elm/random" => "1.0.0"
+            },
+            "indirect" => %{}
+          },
+          "test-dependencies" => %{"direct" => %{}, "indirect" => %{}}
+        },
+        pretty: true
+      )
+    )
+
+    File.write!(Path.join(project_dir, "src/Main.elm"), """
+    module Main exposing (main)
+
+    import Json.Decode as Decode
+    import Pebble.Platform as Platform
+    import Pebble.Ui as Ui
+    import Random
+
+    type alias Model =
+        {}
+
+    type Msg
+        = NoOp
+
+    init : Platform.LaunchContext -> ( Model, Cmd Msg )
+    init _ =
+        ( {}, Cmd.none )
+
+    update : Msg -> Model -> ( Model, Cmd Msg )
+    update _ model =
+        ( model, Cmd.none )
+
+    subscriptions : Model -> Sub Msg
+    subscriptions _ =
+        Sub.none
+
+    view : Model -> Ui.UiNode
+    view _ =
+        Ui.empty
+
+    seed : Random.Generator Bool
+    seed =
+        Random.bool
+
+    main : Program Decode.Value Model Msg
+    main =
+        Platform.worker
+            { init = init
+            , update = update
+            , subscriptions = subscriptions
+            , view = view
+            }
+    """)
+
+    assert {:ok, _} =
+             Elmc.compile(project_dir, %{
+               out_dir: out_dir,
+               entry_module: "Main",
+               strip_dead_code: false,
+               plan_ir_mode: :primary
+             })
+
+    generated = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+    assert generated =~ "elmc_fn_Random_bool_closure_0"
+    assert generated =~ "elmc_new_bool_take(plan_native_bool_"
+    refute generated =~ ~r/return elmc_retain\(tmp_\d+\);/
   end
 end

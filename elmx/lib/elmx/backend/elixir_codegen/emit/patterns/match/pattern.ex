@@ -174,10 +174,17 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Patterns.Match.Pattern do
   end
 
   @spec bool_case_pattern(String.t(), String.t()) :: String.t()
+  # Top-level case heads only: `when` is valid as the whole match pattern.
   # Accept both Elixir booleans and atom constructors (`:True` / `:False`).
   def bool_case_pattern("True", _default), do: "x when x in [true, :True]"
   def bool_case_pattern("False", _default), do: "x when x in [false, :False]"
   def bool_case_pattern(_ctor, default), do: default
+
+  # Nested constructor / tuple / list elements cannot embed `x when …`.
+  # Runtime bool payloads are normalized to Elixir booleans.
+  defp nested_bool_or_ctor("True", _default), do: "true"
+  defp nested_bool_or_ctor("False", _default), do: "false"
+  defp nested_bool_or_ctor(_ctor, default), do: default
 
   @spec cons_list_case_pattern(Types.ir_pattern(), env()) :: String.t()
   def cons_list_case_pattern(%{kind: :tuple, elements: [head, tail]}, env) do
@@ -321,10 +328,11 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Patterns.Match.Pattern do
             nil ->
               case Map.get(pat, :bind) do
                 bind when is_binary(bind) and bind != "" ->
-                  bool_case_pattern(ctor, "{:#{ctor}, #{Helpers.pattern_var_name(bind, env)}}")
+                  # Nested patterns cannot use `x when …` (invalid inside tuples).
+                  nested_bool_or_ctor(ctor, "{:#{ctor}, #{Helpers.pattern_var_name(bind, env)}}")
 
                 _ ->
-                  bool_case_pattern(ctor, safe_ctor_atom_pattern(ctor))
+                  nested_bool_or_ctor(ctor, safe_ctor_atom_pattern(ctor))
               end
 
             other ->

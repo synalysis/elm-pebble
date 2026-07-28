@@ -122,7 +122,7 @@ defmodule Elmc.Backend.CCodegen.SpecialValues.Draw do
     do: %{
       op: :record_literal,
       fields: [
-        %{name: "alignment", expr: Helpers.text_alignment_expr(:center)},
+        %{name: "alignment", expr: Helpers.text_alignment_expr(:left)},
         %{name: "overflow", expr: Helpers.text_overflow_expr(:word_wrap)}
       ]
     }

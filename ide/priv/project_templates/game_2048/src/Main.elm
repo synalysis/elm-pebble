@@ -392,33 +392,50 @@ view model =
             min model.screenW model.screenH
 
         textOptions =
-            if Platform.displayShapeIsRound model.displayShape then
-                Ui.alignCenter Ui.defaultTextOptions
-
-            else
-                Ui.defaultTextOptions
+            Ui.alignCenter Ui.defaultTextOptions
 
         chromeOps =
             if Platform.displayShapeIsRound model.displayShape then
                 let
-                    topBand =
+                    -- Match boardLayout chrome bands so title / best sit symmetrically
+                    -- above and below the grid with equal text-to-board gaps.
+                    chromeBand =
                         diameter // 6
 
-                    bottomBand =
-                        diameter // 5
+                    textH =
+                        14
 
                     textW =
                         diameter * 4 // 9
 
                     textX =
                         (model.screenW - textW) // 2
+
+                    -- Keep equal text↔board gaps; leftover chrome pixels go to the
+                    -- outer bezel (important when chromeBand is odd).
+                    chromePad =
+                        (chromeBand - textH) // 2
+
+                    titleY =
+                        max 4 (chromeBand - textH - chromePad)
+
+                    bestY =
+                        model.screenH - chromeBand + chromePad
                 in
-                [ Ui.text Resources.DefaultFont textOptions { x = textX, y = max 4 (topBand - 16), w = textW, h = 14 } "2048"
-                , Ui.text Resources.DefaultFont textOptions { x = textX, y = model.screenH - bottomBand + 6, w = textW, h = 14 } ("Best " ++ String.fromInt model.best)
+                [ Ui.text Resources.DefaultFont textOptions { x = textX, y = titleY, w = textW, h = textH } "2048"
+                , Ui.text Resources.DefaultFont textOptions { x = textX, y = bestY, w = textW, h = textH } ("Best " ++ String.fromInt model.best)
                 ]
 
             else
-                [ Ui.text Resources.DefaultFont textOptions { x = 4, y = 4, w = 132, h = 16 } ("2048  Best " ++ String.fromInt model.best)
+                let
+                    -- Match the centered board: full panel width minus a small inset.
+                    textW =
+                        diameter - 12
+
+                    textX =
+                        (model.screenW - textW) // 2
+                in
+                [ Ui.text Resources.DefaultFont textOptions { x = textX, y = 4, w = textW, h = 16 } ("2048  Best " ++ String.fromInt model.best)
                 ]
     in
     Ui.clear Color.white
@@ -443,20 +460,21 @@ boardLayout model =
             diameter =
                 min model.screenW model.screenH
 
-            -- Round watches clip to a circle. Reserve top/bottom bands for score
-            -- chrome and cap board size by the inscribed square (diameter × √2/2
-            -- ≈ diameter × 707/1000) and the vertical gap between the bands.
-            topBand =
+            -- Round watches clip to a circle. Reserve equal top/bottom chrome
+            -- bands for title/score, then center the board in the remaining
+            -- middle strip. Cap board size by the inscribed square
+            -- (diameter × √2/2 ≈ diameter × 707/1000).
+            chromeBand =
                 diameter // 6
 
-            bottomBand =
-                diameter // 5
+            availableH =
+                diameter - chromeBand * 2
 
             gap =
                 max 1 (diameter // 90)
 
             targetBoardSize =
-                min (diameter * 707 // 1000) (diameter - topBand - bottomBand)
+                min (diameter * 707 // 1000) availableH
 
             cell =
                 (targetBoardSize - gap * 3) // 4
@@ -465,7 +483,7 @@ boardLayout model =
                 cell * 4 + gap * 3
         in
         { x = (model.screenW - boardSize) // 2
-        , y = topBand
+        , y = chromeBand + ((availableH - boardSize) // 2)
         , cell = cell
         , gap = gap
         }

@@ -4056,6 +4056,7 @@ defmodule Elmc.Backend.C.Lower.Instr do
     rc? = Keyword.get(opts, :rc_required, false)
     src = slot_ref(reg, slots, opts)
     native_int? = MapSet.member?(Keyword.get(opts, :native_int_only_regs, MapSet.new()), reg)
+    native_bool? = MapSet.member?(Keyword.get(opts, :native_bool_only_regs, MapSet.new()), reg)
 
     cond do
       rc? ->
@@ -4063,6 +4064,9 @@ defmodule Elmc.Backend.C.Lower.Instr do
 
       native_int? ->
         publish_native_int_return(src, opts)
+
+      native_bool? ->
+        publish_native_bool_return(src, opts)
 
       true ->
         publish_fn_out_value(reg, slots, src, opts)
@@ -4102,6 +4106,25 @@ defmodule Elmc.Backend.C.Lower.Instr do
       |> String.trim()
     else
       "return elmc_new_int_take(#{src});"
+    end
+  end
+
+  @spec publish_native_bool_return(Types.ir_expr(), keyword()) :: Types.ir_expr()
+
+  defp publish_native_bool_return(src, opts) do
+    slot_count = Keyword.get(opts, :owned_slot_count, 0)
+
+    if slot_count > 0 do
+      """
+      {
+        ElmcValue *__ret = elmc_new_bool_take(#{src} ? 1 : 0);
+        elmc_release_array_lifo(owned, #{slot_count});
+        return __ret;
+      }
+      """
+      |> String.trim()
+    else
+      "return elmc_new_bool_take(#{src} ? 1 : 0);"
     end
   end
 

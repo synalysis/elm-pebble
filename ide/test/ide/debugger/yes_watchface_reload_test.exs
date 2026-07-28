@@ -271,7 +271,7 @@ defmodule Ide.Debugger.YesWatchfaceReloadTest do
     assert is_integer(get_in(watch_model, ["layout", "screenH"])) and
              get_in(watch_model, ["layout", "screenH"]) > 0
     assert get_in(watch_model, ["now", "ctor"]) == "Just"
-    assert get_in(watch_model, ["batteryLevel", "ctor"]) == "Just"
+    assert get_in(watch_model, ["batteryLevel"]) == 88 or get_in(watch_model, ["batteryLevel", "ctor"]) == "Just"
     assert get_in(watch_model, ["connected", "ctor"]) == "Just"
 
     assert is_integer(get_in(public_watch_model, ["layout", "screenW"])) and

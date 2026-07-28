@@ -1,7 +1,7 @@
 {
   "preview_diagnostics": {
     "render_source": "runtime_view_output",
-    "root_type": "windowStack",
+    "root_type": "previewUnavailable",
     "runtime_view_output_kinds": [
       "clear",
       "round_rect",
@@ -31,50 +31,6 @@
     },
     {
       "antialiased": true,
-      "compositing_mode": 0,
-      "end_angle": 0,
-      "h": 36,
-      "kind": "arc",
-      "start_angle": 0,
-      "stroke_color": 192,
-      "stroke_width": 1,
-      "w": 36,
-      "x": 20,
-      "y": 16
-    },
-    {
-      "antialiased": true,
-      "compositing_mode": 0,
-      "kind": "path_outline",
-      "offset_x": 86,
-      "offset_y": 16,
-      "rotation": 0,
-      "stroke_color": 192,
-      "stroke_width": 1
-    },
-    {
-      "antialiased": true,
-      "compositing_mode": 0,
-      "fill_color": 192,
-      "kind": "path_filled",
-      "offset_x": 108,
-      "offset_y": 26,
-      "rotation": 0,
-      "stroke_color": 192,
-      "stroke_width": 1
-    },
-    {
-      "antialiased": true,
-      "compositing_mode": 0,
-      "kind": "path_outline_open",
-      "offset_x": 10,
-      "offset_y": 78,
-      "rotation": 0,
-      "stroke_color": 192,
-      "stroke_width": 1
-    },
-    {
-      "antialiased": true,
       "color": 192,
       "compositing_mode": 0,
       "kind": "line",
@@ -98,57 +54,28 @@
     {
       "antialiased": true,
       "compositing_mode": 0,
-      "kind": "text_int",
-      "text": "21",
-      "text_color": 192,
+      "kind": "text_label",
+      "text": "Waiting for companion app",
+      "text_color": null,
       "x": 0,
       "y": 28
-    },
-    {
-      "antialiased": true,
-      "compositing_mode": 0,
-      "kind": "text_int",
-      "text": "1",
-      "text_color": 192,
-      "x": 0,
-      "y": 56
     }
   ],
-  "preview_ops_sha256": "15b20fba4ec2d4ffdf8e75b885123c877626ade8ac1b687a614bb0a55b61a1a7",
+  "preview_ops_sha256": "e008d786f1f86b8dd4b72848bf3b04404172256d59fc82ab83db413c480e4398",
   "render_tree": {
-    "node_count": 16,
+    "node_count": 1,
     "node_types": [
-      "arc",
-      "canvasLayer",
-      "clear",
-      "line",
-      "pathFilled",
-      "pathOutline",
-      "pathOutlineOpen",
-      "pixel",
-      "roundRect",
-      "style",
-      "style",
-      "style",
-      "textInt",
-      "textInt",
-      "window",
-      "windowStack"
+      "previewUnavailable"
     ],
-    "root_type": "windowStack"
+    "root_type": "previewUnavailable"
   },
   "runtime_model": {
     "runtime_view_output": [],
     "temperature": {
       "args": [
-        {
-          "args": [
-            21
-          ],
-          "ctor": "Celsius"
-        }
+        21
       ],
-      "ctor": "Just"
+      "ctor": "Celsius"
     },
     "timeString": null,
     "value": 1
@@ -164,7 +91,7 @@
     "update:HttpResponse (Err (BadStatus { body = \"\", status = { code = 404, message = \"\" }, url = \"\" }))",
     "update:TimezoneIsSet True",
     "update:TimezoneName \"UTC\"",
-    "update:WatchModelName PebbleOriginal",
+    "update:WatchModelName PebbleTime",
     "update:WeatherReceived (Ok {condition=Clear,temperature=21})"
   ],
   "view_tree_type": "windowStack",
@@ -177,19 +104,14 @@
     "runtime_model": {
       "temperature": {
         "args": [
-          {
-            "args": [
-              21
-            ],
-            "ctor": "Celsius"
-          }
+          21
         ],
-        "ctor": "Just"
+        "ctor": "Celsius"
       },
       "value": 1
     },
     "runtime_view_output": [],
     "timeString": null,
-    "watch_profile_id": "aplite"
+    "watch_profile_id": "basalt"
   }
 }

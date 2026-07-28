@@ -53,8 +53,8 @@ defmodule Elmc.PokeBattlePlanGapsTest do
     assert {:ok, _plan} = Function.lower(decl, "Main", decl_map, rc_required: true)
   end
 
-  test "playerLevelFromSteps lowers", %{decl_map: decl_map} do
-    decl = Map.fetch!(decl_map, {"Main", "playerLevelFromSteps"})
+  test "opponentPickIndex lowers", %{decl_map: decl_map} do
+    decl = Map.fetch!(decl_map, {"Main", "opponentPickIndex"})
     assert {:ok, _plan} = Function.lower(decl, "Main", decl_map, rc_required: true)
   end
 

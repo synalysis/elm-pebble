@@ -313,6 +313,9 @@ defmodule Ide.CompanionProtocolGeneratorTest do
       assert generated_header =~ "list_counts[COMPANION_PROTOCOL_MAX_FIELDS]"
       assert generated_header =~ "COMPANION_PROTOCOL_KEY_PROVIDE_PIECE_FIELD2_COUNT"
       assert generated_header =~ "COMPANION_PROTOCOL_KEY_PROVIDE_PIECE_FIELD2_0"
+      # ProvidePiece: tag + Int + (count + 16 list slots) = 19 keys → 1 + 19*11 + 32 = 242
+      assert generated_header =~ "ELMC_PEBBLE_APP_MESSAGE_INBOX_SIZE_REQUIRED 242"
+      assert generated_header =~ "ELMC_PEBBLE_APP_MESSAGE_OUTBOX_SIZE_REQUIRED 636"
 
       assert generated_source =~ "companion_protocol_decode_list_wire_int"
       assert generated_source =~ "elmc_list_from_int_array_take(message->list_values[1]"

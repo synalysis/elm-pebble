@@ -48,6 +48,7 @@ defmodule ElmEx.Frontend.GeneratedContractBuilder do
       |> GeneratedDeclarationParser.scan_lines()
       |> hydrate_multiline_non_function_decls()
       |> hydrate_multiline_function_headers()
+      |> suppress_decls_inside_multiline_strings()
 
     %{type_aliases: type_aliases, unions: unions, signatures: signatures} =
       collect_non_function_declarations(scanned_lines)
@@ -95,6 +96,31 @@ defmodule ElmEx.Frontend.GeneratedContractBuilder do
     else
       source
     end
+  end
+
+  @spec suppress_decls_inside_multiline_strings([scanned_line()]) :: [scanned_line()]
+  defp suppress_decls_inside_multiline_strings(scanned_lines) do
+    {lines, _state} =
+      Enum.map_reduce(scanned_lines, false, fn line_info, in_string? ->
+        cleared =
+          if in_string? do
+            line_info
+            |> Map.put(:decl, :none)
+            |> Map.put(:function_header, :none)
+            |> Map.drop([
+              :signature_source,
+              :signature_end_line,
+              :type_alias_source,
+              :type_alias_end_line
+            ])
+          else
+            line_info
+          end
+
+        {cleared, update_multiline_string_state(in_string?, line_info.raw_line)}
+      end)
+
+    lines
   end
 
   @spec leading_whitespace_count(String.t()) :: non_neg_integer()

@@ -1960,58 +1960,79 @@ defmodule Elmc.Backend.C.Lower.Function do
         native_int? =
           MapSet.member?(Keyword.get(instr_opts, :native_int_only_regs, MapSet.new()), reg)
 
-        if native_int? do
-          src = native_int_result_ref(reg, slots, instr_opts)
+        native_bool? =
+          MapSet.member?(Keyword.get(instr_opts, :native_bool_only_regs, MapSet.new()), reg)
 
-          if slot_count > 0 do
-            """
-            {
-              ElmcValue *__ret = elmc_new_int_take(#{src});
-              elmc_release_array_lifo(owned, #{slot_count});
-              return __ret;
-            }
-            """
-            |> String.trim()
-          else
-            "return elmc_new_int_take(#{src});"
-          end
-        else
-          ref = slot_ref(reg, slots, instr_opts)
+        cond do
+          native_int? ->
+            src = native_int_result_ref(reg, slots, instr_opts)
 
-          case Map.get(slots, reg) do
-            idx when is_integer(idx) and slot_count > 0 ->
-              borrow_cleanup =
-                borrow_nulls
-                |> Enum.reject(&(&1 == "owned[#{idx}] = NULL;"))
-                |> borrow_null_cleanup_lines()
-
+            if slot_count > 0 do
               """
               {
-                ElmcValue *__ret = #{ref};
-                elmc_owned_null_aliases(owned, #{slot_count}, __ret);
-                #{borrow_cleanup}
+                ElmcValue *__ret = elmc_new_int_take(#{src});
                 elmc_release_array_lifo(owned, #{slot_count});
                 return __ret;
               }
               """
               |> String.trim()
+            else
+              "return elmc_new_int_take(#{src});"
+            end
 
-            _ when slot_count > 0 ->
-              # Borrowed param/capture return: caller owns the result.
+          native_bool? ->
+            src = native_bool_result_ref(reg, instr_opts)
+
+            if slot_count > 0 do
               """
               {
-                ElmcValue *__ret = elmc_retain(#{ref});
-                #{borrow_cleanup}
+                ElmcValue *__ret = elmc_new_bool_take(#{src} ? 1 : 0);
                 elmc_release_array_lifo(owned, #{slot_count});
                 return __ret;
               }
               """
               |> String.trim()
+            else
+              "return elmc_new_bool_take(#{src} ? 1 : 0);"
+            end
 
-            _ ->
-              # Identity / passthrough closures (e.g. Array.initialize identity).
-              "return elmc_retain(#{ref});"
-          end
+          true ->
+            ref = slot_ref(reg, slots, instr_opts)
+
+            case Map.get(slots, reg) do
+              idx when is_integer(idx) and slot_count > 0 ->
+                borrow_cleanup =
+                  borrow_nulls
+                  |> Enum.reject(&(&1 == "owned[#{idx}] = NULL;"))
+                  |> borrow_null_cleanup_lines()
+
+                """
+                {
+                  ElmcValue *__ret = #{ref};
+                  elmc_owned_null_aliases(owned, #{slot_count}, __ret);
+                  #{borrow_cleanup}
+                  elmc_release_array_lifo(owned, #{slot_count});
+                  return __ret;
+                }
+                """
+                |> String.trim()
+
+              _ when slot_count > 0 ->
+                # Borrowed param/capture return: caller owns the result.
+                """
+                {
+                  ElmcValue *__ret = elmc_retain(#{ref});
+                  #{borrow_cleanup}
+                  elmc_release_array_lifo(owned, #{slot_count});
+                  return __ret;
+                }
+                """
+                |> String.trim()
+
+              _ ->
+                # Identity / passthrough closures (e.g. Array.initialize identity).
+                "return elmc_retain(#{ref});"
+            end
         end
 
       _ ->
@@ -2820,6 +2841,7 @@ defmodule Elmc.Backend.C.Lower.Function do
   @spec build_native_int_only_regs(map(), Types.decl_map()) :: Types.ir_expr()
 
   defp build_native_int_only_regs(%FunctionPlan{} = plan, decl_map) do
+    _ = native_publish_reach_set(plan)
     expand_native_int_regs(plan, decl_map, MapSet.new(), 0)
   end
 
@@ -3152,12 +3174,16 @@ defmodule Elmc.Backend.C.Lower.Function do
           {:native_int_call | :native_operand | :boxed | :publish_fn_out, non_neg_integer()}
         ]
   def plan_use_refs(%FunctionPlan{} = plan, reg, decl_map, native_set) do
+    # Seed once per plan: phi→publish reachability used by phi_operand_use_kind.
+    # Without this, huge bool/if trees re-walk the CFG for every phi on every reg.
+    _ = native_publish_reach_set(plan)
+
     Enum.flat_map(plan.blocks, fn %{instrs: instrs, terminator: term} ->
       instr_refs =
         instrs
         |> Enum.reject(fn instr -> instr.op in [:release, :catch_begin, :catch_end] end)
         |> Enum.reject(fn instr -> defining_reg?(instr, reg) end)
-        |> Enum.flat_map(&instr_use_refs(&1, decl_map, native_set, plan))
+        |> Enum.flat_map(&instr_use_refs_for_reg(&1, reg, decl_map, native_set, plan))
 
       term_refs =
         case term do
@@ -3171,18 +3197,42 @@ defmodule Elmc.Backend.C.Lower.Function do
             []
         end
 
-      Enum.filter(instr_refs ++ term_refs, fn {_, ref} -> ref == reg end)
+      instr_refs ++ term_refs
     end)
   end
 
-  @spec instr_use_refs(map() | Types.ir_expr(), Types.decl_map(), Types.ir_expr(), integer()) :: Types.ir_expr()
-
-  defp instr_use_refs(%{op: :phi, dest: dest, args: args = %{then: then_r, else: else_r}}, decl_map, native_set, plan) do
-    [
-      phi_operand_use_kind(plan, dest, args, then_r, native_set, decl_map),
-      phi_operand_use_kind(plan, dest, args, else_r, native_set, decl_map)
-    ]
+  # Only classify uses of `reg`. Phi arms are expensive (native_int_value_reg? +
+  # publish reachability); evaluating both arms for every phi on every query was
+  # O(phis × regs × CFG) and hung on RegisterExhaustion-scale || chains.
+  @spec instr_use_refs_for_reg(map(), non_neg_integer(), Types.decl_map(), MapSet.t(), FunctionPlan.t()) ::
+          [{atom(), non_neg_integer()}]
+  defp instr_use_refs_for_reg(
+         %{op: :phi, dest: dest, args: args = %{then: then_r, else: else_r}},
+         reg,
+         decl_map,
+         native_set,
+         plan
+       ) do
+    []
+    |> then(fn refs ->
+      if then_r == reg,
+        do: [phi_operand_use_kind(plan, dest, args, then_r, native_set, decl_map) | refs],
+        else: refs
+    end)
+    |> then(fn refs ->
+      if else_r == reg,
+        do: [phi_operand_use_kind(plan, dest, args, else_r, native_set, decl_map) | refs],
+        else: refs
+    end)
   end
+
+  defp instr_use_refs_for_reg(instr, reg, decl_map, native_set, plan) do
+    instr
+    |> instr_use_refs(decl_map, native_set, plan)
+    |> Enum.filter(fn {_, ref} -> ref == reg end)
+  end
+
+  @spec instr_use_refs(map() | Types.ir_expr(), Types.decl_map(), Types.ir_expr(), integer()) :: Types.ir_expr()
 
   defp instr_use_refs(
          %{op: :call_runtime, dest: dest, args: %{builtin: :retain, args: [src]}},
@@ -3241,44 +3291,77 @@ defmodule Elmc.Backend.C.Lower.Function do
 
   defp native_phi_dest_publishes_scalar?(plan, reg) when is_integer(reg) do
     case Map.get(plan, :native_scalar_return) do
-      :native_int -> reg_reaches_native_scalar_publish?(plan, reg, MapSet.new())
+      :native_int -> MapSet.member?(native_publish_reach_set(plan), reg)
       _ -> false
     end
   end
 
-  @spec reg_reaches_native_scalar_publish?(integer(), integer(), Types.ir_expr()) :: boolean()
+  # Regs that flow forward through phi arms to a `:publish`/`:fn_out` source.
+  # Computed once per plan (Process cache) — the old per-query DFS rescanned all
+  # instructions at every phi hop and hung on deep || desugarings.
+  @spec native_publish_reach_set(FunctionPlan.t()) :: MapSet.t(non_neg_integer())
+  defp native_publish_reach_set(%FunctionPlan{} = plan) do
+    key =
+      {plan.module, plan.name, length(plan.blocks),
+       Enum.reduce(plan.blocks, 0, fn b, n -> n + length(b.instrs) end)}
 
-  defp reg_reaches_native_scalar_publish?(plan, reg, visited) when is_integer(reg) do
-    if MapSet.member?(visited, reg) do
-      false
-    else
-      visited = MapSet.put(visited, reg)
+    case Process.get(:elmc_native_publish_reach) do
+      {^key, set} ->
+        set
 
-      direct_native_publish?(plan, reg) or
-        Enum.any?(phi_successors(plan, reg), &reg_reaches_native_scalar_publish?(plan, &1, visited))
+      _ ->
+        set = compute_native_publish_reach(plan)
+        Process.put(:elmc_native_publish_reach, {key, set})
+        set
     end
   end
 
-  @spec direct_native_publish?(integer(), integer()) :: boolean()
+  @spec compute_native_publish_reach(FunctionPlan.t()) :: MapSet.t(non_neg_integer())
+  defp compute_native_publish_reach(%FunctionPlan{blocks: blocks}) do
+    instrs = Enum.flat_map(blocks, & &1.instrs)
 
+    published =
+      Enum.flat_map(instrs, fn
+        %{op: :publish, dest: :fn_out, args: %{source: reg}} when is_integer(reg) -> [reg]
+        _ -> []
+      end)
+
+    # Reverse CFG edge: phi dest → arms that flow into it.
+    reverse =
+      Enum.reduce(instrs, %{}, fn
+        %{op: :phi, dest: dest, args: %{then: then_r, else: else_r}}, acc when is_integer(dest) ->
+          arms = for r <- [then_r, else_r], is_integer(r), do: r
+          Map.update(acc, dest, arms, &(arms ++ &1))
+
+        _, acc ->
+          acc
+      end)
+
+    expand_publish_reach(published, MapSet.new(published), reverse)
+  end
+
+  defp expand_publish_reach([], reach, _reverse), do: reach
+
+  defp expand_publish_reach([reg | rest], reach, reverse) do
+    {reach, rest} =
+      Enum.reduce(Map.get(reverse, reg, []), {reach, rest}, fn arm, {reach, rest} ->
+        if MapSet.member?(reach, arm) do
+          {reach, rest}
+        else
+          {MapSet.put(reach, arm), [arm | rest]}
+        end
+      end)
+
+    expand_publish_reach(rest, reach, reverse)
+  end
+
+  @spec direct_native_publish?(FunctionPlan.t(), non_neg_integer()) :: boolean()
   defp direct_native_publish?(plan, reg) when is_integer(reg) do
     Enum.any?(plan.blocks, fn %{instrs: instrs} ->
       Enum.any?(instrs, fn
         %{op: :publish, dest: :fn_out, args: %{source: ^reg}} -> true
         _ -> false
       end)
-    end)
-  end
-
-  @spec phi_successors(integer(), integer()) :: Types.ir_expr()
-
-  defp phi_successors(plan, reg) when is_integer(reg) do
-    plan.blocks
-    |> Enum.flat_map(& &1.instrs)
-    |> Enum.flat_map(fn
-      %{op: :phi, dest: dest, args: %{then: ^reg}} -> [dest]
-      %{op: :phi, dest: dest, args: %{else: ^reg}} -> [dest]
-      _ -> []
     end)
   end
 

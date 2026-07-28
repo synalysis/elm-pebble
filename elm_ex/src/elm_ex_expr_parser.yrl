@@ -222,7 +222,7 @@ ctor_pattern_args -> pattern_arg : ['$1'].
 
 pattern_arg -> wildcard : #{kind => wildcard}.
 pattern_arg -> lower_qid : build_pattern_var(token_value('$1')).
-pattern_arg -> int_lit : #{kind => int, value => token_value('$1')}.
+pattern_arg -> int_lit : build_pattern_int_literal('$1').
 pattern_arg -> char_lit : #{kind => char, value => parse_char(token_value('$1'))}.
 pattern_arg -> string_lit : #{kind => string, value => parse_string(token_value('$1'))}.
 pattern_arg -> upper_qid : build_pattern_ctor(token_value('$1'), none).

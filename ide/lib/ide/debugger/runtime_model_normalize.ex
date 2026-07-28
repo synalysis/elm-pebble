@@ -262,21 +262,13 @@ defmodule Ide.Debugger.RuntimeModelNormalize do
   defp coerce_invalid_nil_ctor(value, _shape), do: value
 
   @spec unwrap_just_scalar(Types.wire_input(), Types.wire_input()) :: Types.wire_input()
-  defp unwrap_just_scalar(%{"ctor" => "Just", "args" => [inner]}, %{
-         "ctor" => "Just",
-         "args" => [_]
-       }),
-       do: %{"ctor" => "Just", "args" => [inner]}
-
-  defp unwrap_just_scalar(%{"ctor" => "Just", "args" => [inner]}, %{ctor: "Just", args: [_]}),
-    do: %{"ctor" => "Just", "args" => [inner]}
-
-  defp unwrap_just_scalar(%{"ctor" => "Just", "args" => [inner]}, _shape)
-       when is_integer(inner) or is_float(inner) or is_boolean(inner) or is_binary(inner),
-       do: inner
-
+  # Always keep Maybe wire form. Never collapse `Just` scalars to bare values —
+  # that erased `Maybe Int` fields (e.g. batteryLevel) after device followups.
   defp unwrap_just_scalar(%{"ctor" => "Just", "args" => [inner]}, _shape),
     do: %{"ctor" => "Just", "args" => [inner]}
+
+  defp unwrap_just_scalar(%{"$ctor" => "Just", "$args" => [inner]}, _shape),
+    do: %{"$ctor" => "Just", "$args" => [inner]}
 
   defp unwrap_just_scalar(value, _shape), do: value
 

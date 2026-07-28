@@ -33,7 +33,7 @@
       "font_size": 18,
       "h": 18,
       "kind": "text_label",
-      "text": "0C ?",
+      "text": "21C clear",
       "text_align": "center",
       "text_color": null,
       "text_overflow": "word_wrap",
@@ -47,7 +47,7 @@
       "font_size": 18,
       "h": 18,
       "kind": "text_label",
-      "text": "Sun 0:00-0:00",
+      "text": "Sun 7:00-20:00",
       "text_align": "center",
       "text_color": null,
       "text_overflow": "word_wrap",
@@ -61,7 +61,7 @@
       "font_size": 18,
       "h": 18,
       "kind": "text_label",
-      "text": "Moon 0%",
+      "text": "Moon 50%",
       "text_align": "center",
       "text_color": null,
       "text_overflow": "word_wrap",
@@ -70,7 +70,7 @@
       "y": 90
     }
   ],
-  "preview_ops_sha256": "78d6d1221a041c1ed221a735137c4f1e8de60001fd9c270ba366db0c168e6ee3",
+  "preview_ops_sha256": "7ec862a3e0d9dca9a34807cf473011827face42f06d28679c95d481d1a51d9d5",
   "render_tree": {
     "node_count": 8,
     "node_types": [
@@ -83,158 +83,54 @@
       "window",
       "windowStack"
     ],
-    "root_type": "windowStack",
-    "tree": {
-      "box": {
-        "h": 168,
-        "text": null,
-        "w": 144,
-        "x": 0,
-        "y": 0
-      },
-      "children": [
-        {
-          "children": [
-            {
-              "children": [
-                {
-                  "children": [],
-                  "color": 255,
-                  "kind": "clear",
-                  "label": "clear",
-                  "text": null,
-                  "type": "clear"
-                },
-                {
-                  "bounds": {
-                    "h": 18,
-                    "text": null,
-                    "w": 128,
-                    "x": 8,
-                    "y": 54
-                  },
-                  "children": [],
-                  "font": "DefaultFont",
-                  "kind": "text",
-                  "label": "0C ?",
-                  "options": [],
-                  "text": "0C ?",
-                  "text_align": "center",
-                  "text_overflow": "word_wrap",
-                  "type": "text"
-                },
-                {
-                  "bounds": {
-                    "h": 18,
-                    "text": null,
-                    "w": 128,
-                    "x": 8,
-                    "y": 36
-                  },
-                  "children": [],
-                  "font": "DefaultFont",
-                  "kind": "text",
-                  "label": "08:53",
-                  "options": [],
-                  "text": "<TIME>",
-                  "text_align": "center",
-                  "text_overflow": "word_wrap",
-                  "type": "text"
-                },
-                {
-                  "bounds": {
-                    "h": 18,
-                    "text": null,
-                    "w": 128,
-                    "x": 8,
-                    "y": 90
-                  },
-                  "children": [],
-                  "font": "DefaultFont",
-                  "kind": "text",
-                  "label": "Moon 0%",
-                  "options": [],
-                  "text": "Moon 0%",
-                  "text_align": "center",
-                  "text_overflow": "word_wrap",
-                  "type": "text"
-                },
-                {
-                  "bounds": {
-                    "h": 18,
-                    "text": null,
-                    "w": 128,
-                    "x": 8,
-                    "y": 72
-                  },
-                  "children": [],
-                  "font": "DefaultFont",
-                  "kind": "text",
-                  "label": "Sun 0:00-0:00",
-                  "options": [],
-                  "text": "Sun 0:00-0:00",
-                  "text_align": "center",
-                  "text_overflow": "word_wrap",
-                  "type": "text"
-                }
-              ],
-              "id": "1",
-              "kind": "canvasLayer",
-              "label": "",
-              "text": null,
-              "type": "canvasLayer"
-            }
-          ],
-          "id": "1",
-          "kind": "window",
-          "label": "",
-          "text": null,
-          "type": "window"
-        }
-      ],
-      "kind": "windowStack",
-      "label": "",
-      "text": null,
-      "type": "windowStack"
-    }
+    "root_type": "windowStack"
   },
   "runtime_model": {
     "condition": {
       "args": [],
-      "ctor": "UnknownWeather"
+      "ctor": "Clear"
     },
-    "moonPhaseE6": 0,
+    "moonPhaseE6": 500000,
     "runtime_view_output": [],
     "screenH": 168,
     "screenW": 144,
-    "sunriseMin": 0,
-    "sunsetMin": 0,
-    "temperatureC": 0,
+    "sunriseMin": 420,
+    "sunsetMin": 1200,
+    "temperatureC": 21,
     "timeString": "<TIME>"
   },
   "template": "companion-demo-weather-env",
   "timeline_init_messages": [
+    "init:init",
     "update:CurrentTimeString \"08:53\"",
-    "init:init"
+    "update:FromPhone (ProvideEnvironment 420 1200 500000)",
+    "update:FromPhone (ProvideWeather 21 Clear)",
+    "update:FromWatch (Ok RequestWeatherEnv)",
+    "update:GotEnvironment (Ok {moon=Just { moonriseMin = Just 900,moonsetmin=Just 300,phasee6=500000,sun=Just { polarDay = False,sunrisemin=420,sunsetmin=1200,tide=Nothing})",
+    "update:GotWeather (Ok (Current { condition = Clear, humidityPercent = Just 50, pressureHpa = Just 1013, temperatureC = 21, windDirectionDeg = Just 0, windKph = Just 8 }))"
   ],
   "view_tree_type": "windowStack",
   "watch_model": {
     "debugger_init_complete": true,
+    "protocol_last_inbound_from": "companion",
+    "protocol_last_inbound_message": "ProvideEnvironment 420 1200 500000",
+    "protocol_last_trigger": "companion_bridge_command",
+    "protocol_last_view_message": "ProvideEnvironment 420 1200 500000",
     "runtime_model": {
       "condition": {
         "args": [],
-        "ctor": "UnknownWeather"
+        "ctor": "Clear"
       },
-      "moonPhaseE6": 0,
+      "moonPhaseE6": 500000,
       "screenH": 168,
       "screenW": 144,
-      "sunriseMin": 0,
-      "sunsetMin": 0,
-      "temperatureC": 0,
+      "sunriseMin": 420,
+      "sunsetMin": 1200,
+      "temperatureC": 21,
       "timeString": "08:53"
     },
     "runtime_view_output": [],
     "timeString": null,
-    "watch_profile_id": "aplite"
+    "watch_profile_id": "basalt"
   }
 }

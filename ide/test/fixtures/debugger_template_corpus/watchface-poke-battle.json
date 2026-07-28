@@ -96,7 +96,7 @@
       "kind": "fill_rect",
       "stroke_color": 204,
       "stroke_width": 1,
-      "w": 39,
+      "w": 38,
       "x": 86,
       "y": 138
     },
@@ -122,7 +122,7 @@
       "stroke_width": 1,
       "w": 136,
       "x": 4,
-      "y": 16
+      "y": 4
     },
     {
       "antialiased": true,
@@ -147,7 +147,7 @@
       "stroke_width": 1,
       "w": 132,
       "x": 6,
-      "y": 18
+      "y": 6
     },
     {
       "antialiased": true,
@@ -195,7 +195,7 @@
       "y": 87
     }
   ],
-  "preview_ops_sha256": "1fe15a83a0b6e718ecefef29bca572e99ad451bf821a5f4814a0b94a9ba58de4",
+  "preview_ops_sha256": "2b3255ecfc46e50a4c125be96bb1fa12208e53188fba41fba1d3dcdf7945cf97",
   "render_tree": {
     "node_count": 32,
     "node_types": [
@@ -236,12 +236,7 @@
   },
   "runtime_model": {
     "animating": false,
-    "batteryLevel": {
-      "args": [
-        88
-      ],
-      "ctor": "Just"
-    },
+    "batteryLevel": 88,
     "battleNonce": 0,
     "customName": "",
     "displayShape": {
@@ -261,7 +256,10 @@
       "args": [
         {
           "day": 27,
-          "dayOfWeek": "Wednesday",
+          "dayOfWeek": {
+            "args": [],
+            "ctor": "Wednesday"
+          },
           "hour": 8,
           "minute": 53,
           "month": 5,
@@ -285,7 +283,7 @@
       "x": 108,
       "y": 52
     },
-    "opponentHealth": 1,
+    "opponentHealth": 1000,
     "opponentPick": 0,
     "opponentYOffset": 0,
     "player": {
@@ -341,12 +339,7 @@
     "debugger_init_complete": true,
     "runtime_model": {
       "animating": false,
-      "batteryLevel": {
-        "args": [
-          88
-        ],
-        "ctor": "Just"
-      },
+      "batteryLevel": 88,
       "battleNonce": 0,
       "customName": "",
       "displayShape": {
@@ -366,7 +359,10 @@
         "args": [
           {
             "day": 27,
-            "dayOfWeek": "Wednesday",
+            "dayOfWeek": {
+              "args": [],
+              "ctor": "Wednesday"
+            },
             "hour": 8,
             "minute": 53,
             "month": 5,
@@ -390,7 +386,7 @@
         "x": 108,
         "y": 52
       },
-      "opponentHealth": 1,
+      "opponentHealth": 1000,
       "opponentPick": 0,
       "opponentYOffset": 0,
       "player": {

@@ -725,6 +725,148 @@ defmodule Elmc.PlanLowerIrTest do
     end)
   end
 
+  test "guarded Msg case with param loads branches from entry into tag tests" do
+    # Reproduces Tangram Main.update: GuardedSwitch sealed the entry (param loads)
+    # with :none → C `__plan_state = -1` on case 0, so CurrentDateTime never ran
+    # and timeText stayed "--:--".
+    decl = %{
+      name: "update",
+      args: ["msg", "model"],
+      expr: %{
+        op: :case,
+        subject: %{op: :var, name: "msg"},
+        branches: [
+          %{
+            pattern: %{
+              kind: :constructor,
+              name: "GotTime",
+              tag: 1,
+              arg_pattern: %{kind: :var, name: "t"}
+            },
+            expr: %{op: :var, name: "t"}
+          },
+          %{
+            pattern: %{kind: :constructor, name: "Tick", tag: 2, arg_pattern: nil},
+            expr: %{op: :var, name: "model"}
+          }
+        ]
+      }
+    }
+
+    Process.put(:elmc_constructor_tags, %{"GotTime" => 1, "Tick" => 2})
+    on_exit(fn -> Process.delete(:elmc_constructor_tags) end)
+
+    assert {:ok, plan} = Function.lower(decl, "Main", %{}, rc_required: true)
+    assert :ok = Verify.run(plan)
+
+    entry = Enum.find(plan.blocks, &(&1.id == plan.entry_block))
+    refute match?(:none, entry.terminator), "entry must not halt before Msg tag tests"
+    assert match?({:br, _}, entry.terminator)
+
+    c = CLowerFunction.emit(plan)
+    refute Regex.match?(
+             ~r/case 0:\s*__plan_state = -1; break;\s*case 1:/s,
+             c
+           ),
+           "entry case must fall through to tag-match chain, not halt"
+
+    assert c =~ "elmc_union_tag_matches"
+  end
+
+  test "Just-Just tuple case peels without heap tuple2 or plan_state" do
+    decl = %{
+      name: "bothJust",
+      args: ["maybeRise", "maybeSet"],
+      expr: %{
+        op: :let_in,
+        name: "caseSubject",
+        value_expr: %{
+          op: :tuple2,
+          left: %{op: :var, name: "maybeRise"},
+          right: %{op: :var, name: "maybeSet"}
+        },
+        in_expr: %{
+          op: :case,
+          subject: "caseSubject",
+          branches: [
+            %{
+              pattern: %{
+                kind: :tuple,
+                elements: [
+                  %{kind: :constructor, name: "Just", bind: "rise", arg_pattern: nil},
+                  %{kind: :constructor, name: "Just", bind: "set", arg_pattern: nil}
+                ]
+              },
+              expr: %{op: :var, name: "rise"}
+            },
+            %{pattern: %{kind: :wildcard}, expr: %{op: :int_literal, value: 0}}
+          ]
+        }
+      }
+    }
+
+    Process.put(:elmc_constructor_tags, %{"Just" => 1, "Nothing" => 0})
+    on_exit(fn -> Process.delete(:elmc_constructor_tags) end)
+
+    assert {:ok, plan} = Function.lower(decl, "Main", %{}, rc_required: true)
+    c = CLowerFunction.emit(plan)
+    refute c =~ "elmc_tuple2("
+    refute c =~ "__plan_state"
+    assert c =~ "elmc_maybe_is_nothing"
+  end
+
+  test "multi-ctor case with var and tuple payloads lowers to switch_tag" do
+    # Companion-style arms bind payloads via arg_pattern vars/tuples. TagSwitch
+    # must accept those or GuardedSwitch emits huge sequential plan-state chains.
+    decl = %{
+      name: "fromPhone",
+      args: ["message"],
+      expr: %{
+        op: :case,
+        subject: %{op: :var, name: "message"},
+        branches: [
+          %{
+            pattern: %{
+              kind: :constructor,
+              name: "ProvideTimezone",
+              tag: 1,
+              arg_pattern: %{kind: :var, name: "offset"}
+            },
+            expr: %{op: :var, name: "offset"}
+          },
+          %{
+            pattern: %{
+              kind: :constructor,
+              name: "ProvideSun",
+              tag: 2,
+              arg_pattern: %{
+                kind: :tuple,
+                elements: [
+                  %{kind: :var, name: "rise"},
+                  %{kind: :var, name: "set"},
+                  %{kind: :var, name: "mode"}
+                ]
+              }
+            },
+            expr: %{op: :var, name: "rise"}
+          },
+          %{pattern: %{kind: :wildcard}, expr: %{op: :int_literal, value: 0}}
+        ]
+      }
+    }
+
+    Process.put(:elmc_constructor_tags, %{"ProvideTimezone" => 1, "ProvideSun" => 2})
+    on_exit(fn -> Process.delete(:elmc_constructor_tags) end)
+
+    assert {:ok, plan} = Function.lower(decl, "Main", %{}, rc_required: true)
+    assert Enum.any?(plan.blocks, fn block -> match?({:switch_tag, _, _, _}, block.terminator) end)
+
+    c = CLowerFunction.emit(plan)
+    # switch_tag emits if/goto tag matches — not a __plan_state interpreter.
+    assert c =~ "elmc_union_tag_matches"
+    refute c =~ "__plan_state"
+  end
+
   test "Result Ok Err case lowers to switch_tag not sequential arms" do
     decl = %{
       name: "pick",

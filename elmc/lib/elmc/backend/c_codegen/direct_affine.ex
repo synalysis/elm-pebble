@@ -662,22 +662,46 @@ defmodule Elmc.Backend.CCodegen.DirectAffine do
     case Host.normalize_special_target(target) do
       "Pebble.Ui.defaultTextOptions" ->
         {:ok,
-         "(ELMC_TEXT_ALIGN_CENTER + (ELMC_TEXT_OVERFLOW_WORD_WRAP * (1 << ELMC_TEXT_OVERFLOW_SHIFT)))"}
+         "(ELMC_TEXT_ALIGN_LEFT + (ELMC_TEXT_OVERFLOW_WORD_WRAP * (1 << ELMC_TEXT_OVERFLOW_SHIFT)))"}
 
       _ ->
         :error
     end
   end
 
-  defp affine_text_options_ref_literal(%{op: :qualified_call, target: target, args: [inner]}, env) do
+  defp affine_text_options_ref_literal(%{op: :qualified_call, target: target, args: [inner]} = options, env) do
     case Host.normalize_special_target(target) do
-      "Pebble.Ui.alignCenter" -> affine_text_options_ref(inner, env)
-      _ -> :error
+      name
+      when name in [
+             "Pebble.Ui.alignLeft",
+             "Pebble.Ui.alignCenter",
+             "Pebble.Ui.alignRight",
+             "Pebble.Ui.wordWrap",
+             "Pebble.Ui.trailingEllipsis",
+             "Pebble.Ui.fillOverflow"
+           ] ->
+        case Elmc.Backend.CCodegen.DirectRender.Emit.TextOptions.packed_expr(options) do
+          {:ok, %{op: :c_int_expr, value: value}} when is_binary(value) ->
+            {:ok, value}
+
+          _ ->
+            affine_text_options_ref(inner, env)
+        end
+
+      _ ->
+        :error
     end
   end
 
-  defp affine_text_options_ref_literal(options, env),
-    do: direct_must_literal_int(Host.text_options_expr(options), env)
+  defp affine_text_options_ref_literal(options, env) do
+    case Elmc.Backend.CCodegen.DirectRender.Emit.TextOptions.packed_expr(options) do
+      {:ok, %{op: :c_int_expr, value: value}} when is_binary(value) ->
+        {:ok, value}
+
+      _ ->
+        direct_must_literal_int(Host.text_options_expr(options), env)
+    end
+  end
 
   defp affine_bound_dimension(field_expr, index_param, item_param, bindings, env) do
     case affine_bounds_field_param(field_expr, index_param, item_param, bindings, env) do

@@ -31,11 +31,18 @@ defmodule Elmc.Backend.Plan.Lower.Case.GuardedSwitch do
     end
   end
 
+  # When the current block already has param loads / subject setup, seal it
+  # with a fall-through branch into the first tag-test block. Using `:none`
+  # here permanently halts (C: `__plan_state = -1`) while the test chain
+  # starts on the *next* block — so Msg cases like CurrentDateTime never run.
+  # TagSwitch seals with a temporary `:none` then patch_terminator; we have no
+  # later patch, so the terminator must be a real `{:br, next}` up front.
   @spec seal_entry_block(Types.ir_expr()) :: Types.ir_expr()
 
   defp seal_entry_block(b) do
     if b.current_block.instrs != [] or b.current_block.terminator != :none do
-      Builder.finish_block(b, :none)
+      next_id = Builder.reserved_next_block_id(b)
+      Builder.finish_block(b, {:br, next_id})
     else
       b
     end

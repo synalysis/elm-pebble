@@ -1,7 +1,10 @@
 alias ElmEx.Frontend.GeneratedExpressionParser
 
 frag =
-  "/home/ape/projects/elm-pebble/elm_pebble_dev/node_modules/elm-pages/src/Pages/Internal/Platform.elm"
+  Path.expand(
+    "../../elm_pebble_dev/node_modules/elm-pages/src/Pages/Internal/Platform.elm",
+    __DIR__
+  )
   |> File.read!()
   |> String.split("update config appMsg model =", parts: 2)
   |> Enum.at(1)
@@ -31,6 +34,7 @@ end
 
 # full body
 IO.puts("\nfull parse:")
+
 case GeneratedExpressionParser.parse(frag) do
   {:ok, %{op: op}} -> IO.puts("OK op=#{op}")
   {:error, err} -> IO.inspect(err, limit: 3)

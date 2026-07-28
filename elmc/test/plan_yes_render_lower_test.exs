@@ -166,10 +166,13 @@ defmodule Elmc.PlanYesRenderLowerTest do
     refute temp_body =~ "goto elmc_plan_block_"
 
     steps_body = CCodegenExtract.fn_body(generated_c, "elmc_fn_Main_stepsString")
-    assert steps_body =~ "plan block"
-    assert steps_body =~ "10000"
-    assert steps_body =~ "elmc_string_from_int"
-    assert steps_body =~ "elmc_string_append"
+    assert steps_body =~ "stepsString_native(out, model)"
+    refute steps_body =~ "elmc_as_int(model)"
+
+    steps_native = CCodegenExtract.fn_body(generated_c, "elmc_fn_Main_stepsString_native")
+    assert steps_native =~ "10000"
+    assert steps_native =~ "snprintf"
+    assert steps_native =~ "elmc_new_string"
 
     battery_body = CCodegenExtract.fn_body(generated_c, "elmc_fn_Main_batteryPercentString_native")
     assert battery_body =~ "elmc_maybe_with_default_int(0"
@@ -210,7 +213,9 @@ defmodule Elmc.PlanYesRenderLowerTest do
 
     assert pick_native_body =~ "elmc_fn_Main_bottomRightSlots"
     assert pick_native_body =~ "elmc_maybe_with_default"
-    refute pick_native_body =~ "goto elmc_plan_block_"
-    refute slot_body =~ "goto elmc_plan_block_"
+    # Size profile emits plans with goto (denser than state_switch for this app).
+    assert slot_body =~ "switch (elmc_union_tag_as_int"
+    assert slot_body =~ "elmc_fn_Main_sunBottomRightSlot"
+    assert slot_body =~ "elmc_fn_Main_moonBottomRightSlot"
   end
 end

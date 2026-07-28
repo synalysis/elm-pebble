@@ -21,7 +21,7 @@ probe = fn label, path, start_marker, stop_marker ->
       IO.puts("FAIL #{inspect(reason, limit: 4)}")
       prep = GeneratedExpressionParser.prepare_for_debug(fragment)
       slug = label |> String.replace(".", "_") |> String.replace(" ", "_")
-      File.write!("/tmp/stub_probe_#{slug}.prep", prep)
+      File.write!(Path.join(System.tmp_dir!(), "stub_probe_#{slug}.prep"), prep)
 
       prep
       |> String.split("\n")
@@ -32,7 +32,10 @@ probe = fn label, path, start_marker, stop_marker ->
 end
 
 platform =
-  "/home/ape/projects/elm-pebble/elm_pebble_dev/node_modules/elm-pages/src/Pages/Internal/Platform.elm"
+  Path.expand(
+    "../../elm_pebble_dev/node_modules/elm-pages/src/Pages/Internal/Platform.elm",
+    __DIR__
+  )
 
 platform_frag =
   platform
@@ -51,11 +54,13 @@ case GeneratedExpressionParser.parse(platform_frag) do
   {:error, reason} ->
     IO.puts("FAIL #{inspect(reason, limit: 4)}")
     prep = GeneratedExpressionParser.prepare_for_debug(platform_frag)
-    File.write!("/tmp/stub_probe_Platform_update.prep", prep)
+    File.write!(Path.join(System.tmp_dir!(), "stub_probe_Platform_update.prep"), prep)
 end
 
 layout_path =
-  "/home/ape/.elm/0.19.1/packages/jcberentsen/elm-wiring-diagrams/5.4.7/src/Internal/Cartesian/Layout.elm"
+  Path.expand(
+    "~/.elm/0.19.1/packages/jcberentsen/elm-wiring-diagrams/5.4.7/src/Internal/Cartesian/Layout.elm"
+  )
 
 probe.(
   "Cartesian.Layout.layout",
@@ -64,7 +69,8 @@ probe.(
   "\n\n\ncomposeLayout"
 )
 
-pattern_path = "/home/ape/.elm/0.19.1/packages/justinmimbs/date/4.1.0/src/Pattern.elm"
+pattern_path =
+  Path.expand("~/.elm/0.19.1/packages/justinmimbs/date/4.1.0/src/Pattern.elm")
 
 probe.(
   "Pattern.finalize",

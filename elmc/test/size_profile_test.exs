@@ -14,7 +14,7 @@ defmodule Elmc.SizeProfileTest do
     assert sized[:prune_runtime] == true
     assert sized[:plan_ir_mode] == :primary
     assert sized[:enum_tag_peel] == true
-    assert sized[:plan_emit] == :state_switch
+    assert sized[:plan_emit] == :goto
     assert sized[:fusion_supersede_native] == true
     assert sized[:size_mod_by_fast] == true
     assert sized[:size_prune_capabilities] == true

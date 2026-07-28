@@ -257,8 +257,7 @@ defmodule Ide.Debugger.CompiledElixirDeviceFollowupsTest do
 
       assert get_in(final_model, ["use24Hour"]) == true
 
-      assert get_in(final_model, ["batteryLevel", "ctor"]) == "Just" and
-               get_in(final_model, ["batteryLevel", "args", Access.at(0)]) == 88
+      assert final_model["batteryLevel"] in [88, %{"ctor" => "Just", "args" => [88]}]
 
       assert get_in(final_model, ["now", "ctor"]) == "Just"
       assert is_map(get_in(final_model, ["now", "args", Access.at(0)]))
@@ -310,7 +309,7 @@ defmodule Ide.Debugger.CompiledElixirDeviceFollowupsTest do
            end)
 
     assert get_in(runtime_model, ["use24Hour"]) == true
-    assert get_in(runtime_model, ["batteryLevel", "ctor"]) == "Just"
+    assert runtime_model["batteryLevel"] in [88, %{"ctor" => "Just", "args" => [88]}]
     assert get_in(runtime_model, ["now", "ctor"]) == "Just"
 
     rows = DebuggerSupport.debugger_rows(state, 50) |> Enum.filter(&(&1.target == "watch"))

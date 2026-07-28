@@ -5,7 +5,6 @@ defmodule Ide.Debugger.SurfaceCompileArtifacts do
   alias Ide.Debugger.CompileContract
   alias Ide.Debugger.CompanionPhoneCompile
   alias Ide.Debugger.RuntimeArtifacts
-  alias Ide.Debugger.Surface
   alias Ide.Debugger.SurfaceTargets
   alias Ide.Debugger.Types
   alias Ide.Debugger.Types.ElmcSurfaceFields
@@ -67,27 +66,35 @@ defmodule Ide.Debugger.SurfaceCompileArtifacts do
 
   def surface_has_versioned_runtime_artifacts?(_state, _target), do: false
 
-  @spec artifacts_for_source_root(Types.runtime_state(), String.t(), attach_ctx()) ::
-          Types.runtime_artifacts()
   @doc false
   @spec debugger_contract_for_reload(Types.runtime_state(), Types.surface_target(), attach_ctx()) ::
           Types.elm_introspect() | nil
   def debugger_contract_for_reload(state, target, ctx)
       when is_map(state) and target in [:watch, :companion, :phone] and is_map(ctx) do
-    surface = Map.get(state, target, %{})
-    execution_model = RuntimeArtifacts.execution_model(surface)
+    source_root = ctx.source_root_for_target.(target)
 
-    cond do
-      RuntimeArtifacts.versioned_elmx_artifacts?(execution_model) ->
-        RuntimeArtifacts.introspect(surface) ||
-          (state
-           |> surface_stored_runtime_artifacts(ctx.source_root_for_target.(target))
-           |> CompileContract.from_artifacts())
+    # Prefer this reload's precompiled entry artifacts over a stale surface contract
+    # left by an earlier non-entrypoint reload (empty subscription_calls).
+    case reload_precompiled_artifacts(state, source_root) do
+      precompiled when is_map(precompiled) and map_size(precompiled) > 0 ->
+        CompileContract.from_artifacts(precompiled)
 
-      true ->
-        state
-        |> artifacts_for_source_root(ctx.source_root_for_target.(target), ctx)
-        |> CompileContract.from_artifacts()
+      _ ->
+        surface = Map.get(state, target, %{})
+        execution_model = RuntimeArtifacts.execution_model(surface)
+
+        cond do
+          RuntimeArtifacts.versioned_elmx_artifacts?(execution_model) ->
+            RuntimeArtifacts.introspect(surface) ||
+              (state
+               |> surface_stored_runtime_artifacts(source_root)
+               |> CompileContract.from_artifacts())
+
+          true ->
+            state
+            |> artifacts_for_source_root(source_root, ctx)
+            |> CompileContract.from_artifacts()
+        end
     end
   end
 
@@ -97,14 +104,20 @@ defmodule Ide.Debugger.SurfaceCompileArtifacts do
           Types.runtime_artifacts()
   def artifacts_for_source_root(state, source_root, ctx)
       when is_map(state) and is_binary(source_root) and is_map(ctx) do
-    stored_artifacts = surface_stored_runtime_artifacts(state, source_root)
+    case reload_precompiled_artifacts(state, source_root) do
+      precompiled when is_map(precompiled) and map_size(precompiled) > 0 ->
+        precompiled
 
-    cond do
-      versioned_runtime_artifacts?(stored_artifacts) ->
-        stored_artifacts
+      _ ->
+        stored_artifacts = surface_stored_runtime_artifacts(state, source_root)
 
-      true ->
-        resolve_artifacts_for_source_root(state, source_root, ctx)
+        cond do
+          versioned_runtime_artifacts?(stored_artifacts) ->
+            stored_artifacts
+
+          true ->
+            resolve_artifacts_for_source_root(state, source_root, ctx)
+        end
     end
   end
 
@@ -232,35 +245,25 @@ defmodule Ide.Debugger.SurfaceCompileArtifacts do
           Types.runtime_state()
   defp attach_missing_debugger_contract(state, target, ctx)
        when is_map(state) and target in [:watch, :companion, :phone] and is_map(ctx) do
-    surface = Surface.from_state(state, target)
+    source_root = ctx.source_root_for_target.(target)
 
-    if blank_introspect?(surface) do
-      source_root = ctx.source_root_for_target.(target)
-
-      artifacts =
-        state
-        |> artifacts_for_source_root(source_root, ctx)
-        |> debugger_contract_artifacts_only()
-
-      if map_size(artifacts) > 0 do
-        ctx.merge_runtime_artifacts.(state, target, artifacts)
-      else
-        state
-      end
-    else
+    artifacts =
       state
+      |> artifacts_for_source_root(source_root, ctx)
+      |> debugger_contract_artifacts_only()
+
+    cond do
+      map_size(artifacts) == 0 ->
+        state
+
+      # Always refresh when we have contract artifacts so a prior non-entry reload
+      # (empty subscription_calls) cannot stick after Main is reloaded.
+      true ->
+        ctx.merge_runtime_artifacts.(state, target, artifacts)
     end
   end
 
   defp attach_missing_debugger_contract(state, _target, _ctx), do: state
-
-  @spec blank_introspect?(Surface.t() | Surface.surface_map()) :: boolean()
-  defp blank_introspect?(surface) do
-    case RuntimeArtifacts.introspect(surface) do
-      ei when is_map(ei) and map_size(ei) > 0 -> false
-      _ -> true
-    end
-  end
 
   @spec debugger_contract_artifacts_only(Types.runtime_artifacts()) :: Types.runtime_artifacts()
   defp debugger_contract_artifacts_only(artifacts) when is_map(artifacts) do

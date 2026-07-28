@@ -695,6 +695,11 @@ defmodule Ide.Mcp.Handlers.Debugger do
     end
   end
 
+  def call(name, args) when is_binary(name) and is_map(args) do
+    {:error,
+     "debugger tool #{name} requires a project slug (pass \"slug\", or \"project_slug\" alias); got keys=#{inspect(Map.keys(args))}"}
+  end
+
   @spec debugger_auto_fire_payload(
           String.t(),
           ProjectsTypes.debugger_settings(),

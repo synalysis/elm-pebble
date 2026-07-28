@@ -350,9 +350,6 @@ landedOnTile offset previousPlayerY player tile =
     horizontalOverlap && playerBottom >= platform.y - 1 && (landingFromAbove || ridingPlatform)
 
 
-        obstacleCollision : { x : Int, y : Int, w : Int, h : Int } -> Int -> Obstacle -> Bool
-
-
 obstacleCollision player offset obstacle =
     rectsOverlap player (obstacleRect offset obstacle)
 

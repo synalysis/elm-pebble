@@ -145,7 +145,8 @@ defmodule Elmc.PlanDirectCallAbiTest do
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
     append_body = CCodegenExtract.fn_body(generated_c, "elmc_fn_Main_view_commands_append")
 
-    assert append_body =~ "elmc_closure_new(&owned[2], elmc_top_level_ref_"
+    assert append_body =~ "elmc_closure_new(&owned["
+    assert append_body =~ "elmc_top_level_ref_"
     assert generated_c =~ "Rc = elmc_fn_Main_watchColorLabel(&out, closure_direct_arg_0);"
     refute generated_c =~ "elmc_fn_Main_watchColorLabel(&out, args, argc)"
   end

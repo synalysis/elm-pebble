@@ -2,6 +2,7 @@ defmodule Ide.Debugger.RuntimeApi do
   @moduledoc false
 
   alias Ide.Debugger.AgentSession
+  alias Ide.Debugger.CompileContract
   alias Ide.Debugger.DebuggerContractSnapshot
   alias Ide.Debugger.DebuggerStep
   alias Ide.Debugger.EmulatorRcFailApply
@@ -41,7 +42,10 @@ defmodule Ide.Debugger.RuntimeApi do
         if reload_skip_precompile?(project_slug, attrs) do
           %{}
         else
-          if DebuggerContractSnapshot.elm_introspect?(rel_path, source, source_root) do
+          # Only entrypoint modules produce a valid debugger contract / elmx program.
+          # Compiling Resources.elm (etc.) as the entry wipes subscription_calls.
+          if DebuggerContractSnapshot.elm_introspect?(rel_path, source, source_root) and
+               CompileContract.entrypoint_path?(source_root, rel_path) do
             SurfaceCompileArtifacts.precompile_inline_artifacts(
               project_slug,
               source,

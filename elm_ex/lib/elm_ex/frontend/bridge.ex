@@ -256,21 +256,28 @@ defmodule ElmEx.Frontend.Bridge do
   @spec dependency_package_src_dirs(Types.t(), Types.expr(), Types.expr()) :: Types.expr()
 
   defp dependency_package_src_dirs(project_dir, pkg, ver) do
-    case String.split(pkg, "/", parts: 2) do
-      [author, name] ->
-        [
-          Path.join([project_dir, "elm-stuff", "packages", author, name, ver, "src"]),
-          Path.join([System.user_home!(), ".elm", "0.19.1", "packages", author, name, ver, "src"])
-        ]
-        |> Enum.map(&Path.expand/1)
-        |> Enum.find(&File.dir?/1)
-        |> case do
-          nil -> []
-          dir -> [dir]
-        end
+    # Prefer internal Pebble replacements over ~/.elm official packages. Official
+    # elm/time is an effect module whose synthetic `subscription` helper is not
+    # injected by elm_ex; dual-loading it as Pkg.elm_time_* breaks C emit.
+    if internal_package_src_dirs(project_dir, pkg) != [] do
+      []
+    else
+      case String.split(pkg, "/", parts: 2) do
+        [author, name] ->
+          [
+            Path.join([project_dir, "elm-stuff", "packages", author, name, ver, "src"]),
+            Path.join([System.user_home!(), ".elm", "0.19.1", "packages", author, name, ver, "src"])
+          ]
+          |> Enum.map(&Path.expand/1)
+          |> Enum.find(&File.dir?/1)
+          |> case do
+            nil -> []
+            dir -> [dir]
+          end
 
-      _ ->
-        []
+        _ ->
+          []
+      end
     end
   end
 
@@ -560,17 +567,22 @@ defmodule ElmEx.Frontend.Bridge do
       |> Map.get("dependencies", %{})
       |> dependency_names()
 
-    if "elm/random" in deps do
-      elm_random_src_dirs(project_dir)
-    else
-      []
-    end
+    Enum.flat_map(deps, fn pkg -> internal_package_src_dirs(project_dir, pkg) end)
   end
 
-  @spec elm_random_src_dirs(String.t()) :: [String.t()]
-  defp elm_random_src_dirs(project_dir) when is_binary(project_dir) do
-    rel = "ide/priv/internal_packages/elm-random/src"
+  @spec internal_package_src_dirs(String.t(), String.t()) :: [String.t()]
+  defp internal_package_src_dirs(project_dir, "elm/random") when is_binary(project_dir) do
+    internal_package_rel_src_dirs(project_dir, "ide/priv/internal_packages/elm-random/src")
+  end
 
+  defp internal_package_src_dirs(project_dir, "elm/time") when is_binary(project_dir) do
+    internal_package_rel_src_dirs(project_dir, "ide/priv/internal_packages/elm-time/src")
+  end
+
+  defp internal_package_src_dirs(_project_dir, _pkg), do: []
+
+  @spec internal_package_rel_src_dirs(String.t(), String.t()) :: [String.t()]
+  defp internal_package_rel_src_dirs(project_dir, rel) when is_binary(project_dir) and is_binary(rel) do
     ([Path.expand("../../../../#{rel}", __DIR__)] ++
        Enum.map(ancestor_dirs(project_dir), &Path.join(&1, rel)))
     |> Enum.map(&Path.expand/1)

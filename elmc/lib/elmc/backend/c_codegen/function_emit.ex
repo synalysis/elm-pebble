@@ -122,6 +122,7 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
        ) do
     Process.put(:elmc_generic_helper_defs, [])
     Process.put(:elmc_generic_helper_counter, 0)
+    Process.put(:elmc_plan_fn_noinline, false)
     direct_args? =
       FunctionCallAbi.direct_entry_abi?(decl, module_name, decl_map) or
         not worker_rc_abi?(emit_wrapper?, module_name, decl.name, decl_map)
@@ -178,6 +179,7 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
       end
 
     linkage = function_linkage_prefix(module_name, decl.name)
+    Process.put(:elmc_plan_fn_noinline, false)
 
     native_projection =
       if PlanNativeProjection.eligible?(decl, module_name, decl_map) do
@@ -278,7 +280,16 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
       Process.get(:elmc_exported_targets, MapSet.new())
       |> MapSet.member?({module_name, decl_name})
 
-    if exported?, do: "", else: "static "
+    # Large plan bodies (many CFG blocks) must not be inlined into update /
+    # cornerSlots: after GuardedSwitch entry seals, those arms are live and
+    # -Os was duplicating multi-KiB helpers into each caller.
+    noinline? = Process.get(:elmc_plan_fn_noinline, false) == true
+
+    cond do
+      exported? -> ""
+      noinline? -> "static __attribute__((noinline, noclone)) "
+      true -> "static "
+    end
   end
 
   @spec rc_function_params(
@@ -900,6 +911,16 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
 
         {:ok, plan} ->
           result_probe = DebugProbes.result_probe(module_name, decl.name, "*out")
+
+          # Large CFGs are shared across callers; inlining duplicates them after
+          # GuardedSwitch seals made previously-dead arms reachable (APP 64KiB).
+          block_count =
+            case plan do
+              %{blocks: blocks} when is_list(blocks) -> length(blocks)
+              _ -> 0
+            end
+
+          Process.put(:elmc_plan_fn_noinline, block_count >= 10)
 
           plan_core =
             plan

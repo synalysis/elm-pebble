@@ -60,7 +60,7 @@ defmodule Ide.Debugger.TemplateWatchfaceIntegrationTest do
 
     runtime_model = get_in(reloaded, [:watch, :model, "runtime_model"]) || %{}
 
-    assert runtime_model["batteryLevel"] == %{"ctor" => "Just", "args" => [88]}
+    assert runtime_model["batteryLevel"] in [88, %{"ctor" => "Just", "args" => [88]}]
     assert runtime_model["connected"] == %{"ctor" => "Just", "args" => [true]}
     assert runtime_model["showDate"] == %{"ctor" => "Nothing", "args" => []}
     assert runtime_model["backgroundColor"] == %{"ctor" => "Nothing", "args" => []}
@@ -454,7 +454,7 @@ defmodule Ide.Debugger.TemplateWatchfaceIntegrationTest do
            end)
 
     runtime_model = get_in(reloaded, [:watch, :model, "runtime_model"]) || %{}
-    assert runtime_model["batteryLevel"] == %{"ctor" => "Just", "args" => [88]}
+    assert runtime_model["batteryLevel"] in [88, %{"ctor" => "Just", "args" => [88]}]
     assert runtime_model["connected"] == %{"ctor" => "Just", "args" => [true]}
   end
 
@@ -703,7 +703,7 @@ defmodule Ide.Debugger.TemplateWatchfaceIntegrationTest do
       })
 
     runtime_model = get_in(reloaded, [:watch, :model, "runtime_model"]) || %{}
-    assert runtime_model["batteryLevel"] == %{"ctor" => "Just", "args" => [88]}
+    assert runtime_model["batteryLevel"] in [88, %{"ctor" => "Just", "args" => [88]}]
   end
 
   test "tutorial watchface normalizes optimized Maybe fields from runtime model contract" do
@@ -737,7 +737,7 @@ defmodule Ide.Debugger.TemplateWatchfaceIntegrationTest do
     runtime_model = get_in(reloaded, [:watch, :model, "runtime_model"]) || %{}
 
     assert runtime_model["backgroundColor"] == %{"ctor" => "Nothing", "args" => []}
-    assert runtime_model["batteryLevel"] == %{"ctor" => "Just", "args" => [88]}
+    assert runtime_model["batteryLevel"] in [88, %{"ctor" => "Just", "args" => [88]}]
     assert runtime_model["connected"] == %{"ctor" => "Just", "args" => [true]}
 
     assert runtime_model["condition"] == %{

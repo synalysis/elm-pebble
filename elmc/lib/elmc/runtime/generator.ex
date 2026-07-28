@@ -1825,6 +1825,7 @@ defmodule Elmc.Runtime.Generator do
     RC elmc_sub5(ElmcValue **out, elmc_int_t mask, elmc_int_t p0, elmc_int_t p1, elmc_int_t p2, elmc_int_t p3, elmc_int_t p4);
 
     elmc_int_t elmc_as_int(ElmcValue *value);
+    elmc_int_t elmc_text_options_packed(ElmcValue *value);
     elmc_int_t elmc_as_int_number(ElmcValue *value);
     int elmc_value_is_unit(ElmcValue *value);
     elmc_int_t elmc_int_idiv(elmc_int_t numerator, elmc_int_t denominator);
@@ -3677,6 +3678,22 @@ defmodule Elmc.Runtime.Generator do
       if (!value || (value->tag != ELMC_TAG_INT && value->tag != ELMC_TAG_BOOL && value->tag != ELMC_TAG_CHAR && value->tag != ELMC_TAG_ORDER)) return 0;
       if (value->tag == ELMC_TAG_INT && value->scalar == ELMC_UNIT_SCALAR) return 0;
       return value->scalar;
+    }
+
+    /* Packed text options for scene TEXT cmds (alignment + overflow << 2).
+     * Never use elmc_as_int() on a TextOptions record — that always yields 0 (left). */
+    elmc_int_t elmc_text_options_packed(ElmcValue *value) {
+      if (!value) return 0;
+      if (value->tag == ELMC_TAG_INT || value->tag == ELMC_TAG_BOOL || value->tag == ELMC_TAG_CHAR ||
+          value->tag == ELMC_TAG_ORDER) {
+        return elmc_as_int(value);
+      }
+      if (value->tag == ELMC_TAG_RECORD && value->payload) {
+        elmc_int_t alignment = ELMC_RECORD_GET_INDEX_INT(value, 0);
+        elmc_int_t overflow = ELMC_RECORD_GET_INDEX_INT(value, 1);
+        return alignment + (overflow * (elmc_int_t)4);
+      }
+      return 0;
     }
 
     elmc_int_t elmc_as_int_number(ElmcValue *value) {

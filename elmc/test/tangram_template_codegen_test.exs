@@ -39,6 +39,71 @@ defmodule Elmc.TangramTemplateCodegenTest do
     refute generated =~ ~r/ElmcValue \*owned\[\d+\] = elmc_fn_/
   end
 
+  test "tangramFaceOps CIRCLE keeps distinct center and radius slots after fusion probes" do
+    project_dir = TangramTemplate.scaffold_project()
+    out_dir = Path.join(System.tmp_dir!(), "tangram-circle-slots-#{System.unique_integer([:positive])}")
+    File.rm_rf!(out_dir)
+
+    assert {:ok, _result} =
+             Elmc.compile(project_dir, %{
+               out_dir: out_dir,
+               entry_module: "Main",
+               strip_dead_code: true,
+               plan_ir_mode: :primary
+             })
+
+    generated = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+
+    body =
+      Elmc.Test.CCodegenExtract.fn_body(generated, "elmc_fn_Main_tangramFaceOps_commands_append")
+
+    # Fusion probes (TailRecursiveLoop.try_emit) used to ValueSlots.reset mid-emit,
+    # so clockRadius reused owned[0] (cx) and CIRCLE drew a degenerate circle.
+    refute Regex.match?(
+             ~r/ELMC_RENDER_OP_CIRCLE[\s\S]{0,400}?scene_cmd\.p0 = elmc_as_int\(owned\[(\d+)\]\);[\s\S]{0,120}?scene_cmd\.p2 = elmc_as_int\(owned\[\1\]\);/,
+             body
+           ),
+           "CIRCLE center x and radius must not share one owned slot"
+
+    new_int_slots =
+      Regex.scan(~r/Rc = elmc_new_int\(&owned\[(\d+)\],/, body)
+      |> Enum.map(fn [_, idx] -> String.to_integer(idx) end)
+
+    assert length(new_int_slots) >= 5
+    assert Enum.take(new_int_slots, 4) == [0, 1, 2, 3]
+    assert Enum.at(new_int_slots, 4) >= 4
+  end
+
+  test "tangram Main.update reaches CurrentDateTime tag match from plan entry" do
+    project_dir = TangramTemplate.scaffold_project()
+    out_dir = Path.join(System.tmp_dir!(), "tangram-update-entry-#{System.unique_integer([:positive])}")
+    File.rm_rf!(out_dir)
+
+    assert {:ok, _result} =
+             Elmc.compile(project_dir, %{
+               out_dir: out_dir,
+               entry_module: "Main",
+               strip_dead_code: true,
+               plan_ir_mode: :primary
+             })
+
+    update =
+      Elmc.Test.CCodegenExtract.fn_body(
+        File.read!(Path.join(out_dir, "c/elmc_generated.c")),
+        "elmc_fn_Main_update"
+      )
+
+    # GuardedSwitch used to seal entry with :none → case 0 halts forever and
+    # model.now stays Nothing → timeText "--:--".
+    refute Regex.match?(
+             ~r/case 0:\s*__plan_state = -1; break;\s*case 1:/s,
+             update
+           ),
+           "update entry must branch into Msg tag tests, not halt"
+
+    assert update =~ "ELMC_UNION_MAIN_CURRENTDATETIME"
+  end
+
   test "tangram watchface view codegen does not reference phantom Main.start helpers" do
     project_dir = TangramTemplate.scaffold_project()
     out_dir = Path.join(System.tmp_dir!(), "tangram-codegen-#{System.unique_integer([:positive])}")

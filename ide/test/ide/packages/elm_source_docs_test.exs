@@ -40,4 +40,33 @@ defmodule Ide.Packages.ElmSourceDocsTest do
     assert markdown =~ "### `LaunchReason`"
     assert markdown =~ "### `application`"
   end
+
+  test "formats multiline record type aliases with leading commas aligned" do
+    assert {:ok, markdown} =
+             ElmSourceDocs.module_doc_markdown(
+               InternalPackages.pebble_elm_src_abs(),
+               "Pebble.Accel"
+             )
+
+    assert markdown =~ """
+           ```elm
+           type alias Config =
+               { samplesPerUpdate : Int
+               , samplingRate : SamplingRate
+               }
+           ```
+           """
+
+    assert markdown =~ """
+           ```elm
+           type alias Sample =
+               { x : Int
+               , y : Int
+               , z : Int
+               }
+           ```
+           """
+
+    refute markdown =~ ~r/type alias Config =\n    \{ samplesPerUpdate : Int\n, samplingRate/
+  end
 end

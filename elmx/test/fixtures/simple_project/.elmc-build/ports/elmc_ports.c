@@ -1,7 +1,12 @@
 #include "elmc_ports.h"
 #include <string.h>
 
+/* Pebble watch apps never wire Elm ports; keep a tiny table for ABI only. */
+#ifdef ELMC_PEBBLE_PLATFORM
+#define ELMC_MAX_PORTS 2
+#else
 #define ELMC_MAX_PORTS 32
+#endif
 
 typedef struct {
   const char *name;

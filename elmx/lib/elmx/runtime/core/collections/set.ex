@@ -23,8 +23,11 @@ defmodule Elmx.Runtime.Core.Collections.Set do
   # Bare Dict / RB tree mistaken for a Set (partial kernel rewrite paths).
   defp unwrap({:elmx_dict, _} = dict), do: Dict.dict_keys(dict)
   defp unwrap(:RBEmpty_elm_builtin), do: []
-  defp unwrap({:RBEmpty_elm_builtin, _} = tree), do: Dict.dict_keys(tree)
-  defp unwrap({:RBNode_elm_builtin, _, _, _, _, _} = tree), do: Dict.dict_keys(tree)
+  defp unwrap({:RBEmpty_elm_builtin, _}), do: []
+
+  defp unwrap({:RBNode_elm_builtin, _color, key, _value, left, right}) do
+    Enum.uniq(unwrap(left) ++ [key | unwrap(right)])
+  end
   @spec set_empty() :: set()
   def set_empty, do: wrap([])
 

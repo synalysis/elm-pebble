@@ -398,9 +398,15 @@ RC elmc_sub4(ElmcValue **out, elmc_int_t mask, elmc_int_t p0, elmc_int_t p1, elm
 RC elmc_sub5(ElmcValue **out, elmc_int_t mask, elmc_int_t p0, elmc_int_t p1, elmc_int_t p2, elmc_int_t p3, elmc_int_t p4);
 
 elmc_int_t elmc_as_int(ElmcValue *value);
+elmc_int_t elmc_text_options_packed(ElmcValue *value);
 elmc_int_t elmc_as_int_number(ElmcValue *value);
 int elmc_value_is_unit(ElmcValue *value);
 elmc_int_t elmc_int_idiv(elmc_int_t numerator, elmc_int_t denominator);
+static inline elmc_int_t elmc_int_mod_by(elmc_int_t base, elmc_int_t value) {
+  if (base == 0) return 0;
+  elmc_int_t r = value % base;
+  return r < 0 ? r + (base < 0 ? -base : base) : r;
+}
 static inline elmc_int_t elmc_angle_from_minute(elmc_int_t minute) {
   elmc_int_t angle = elmc_int_idiv(((minute - (elmc_int_t)720) * (elmc_int_t)65536), (elmc_int_t)1440) % (elmc_int_t)65536;
   return angle < 0 ? angle + (elmc_int_t)65536 : angle;
@@ -436,6 +442,8 @@ ElmcValue *elmc_char_to_code(ElmcValue *value);
 ElmcValue *elmc_debug_log(ElmcValue *label, ElmcValue *value);
 ElmcValue *elmc_debug_todo(ElmcValue *label);
 ElmcValue *elmc_debug_to_string(ElmcValue *value);
+/* Defined by generated C (union ctor table); declared here so runtime.c compiles alone. */
+const char *elmc_debug_union_ctor_name(elmc_int_t tag);
 ElmcValue *elmc_debug_set_to_string(ElmcValue *set);
 ElmcValue *elmc_append(ElmcValue *left, ElmcValue *right);
 RC elmc_string_append(ElmcValue **out, ElmcValue *left, ElmcValue *right);
@@ -450,6 +458,9 @@ ElmcValue *elmc_dict_member(ElmcValue *key, ElmcValue *dict);
 ElmcValue *elmc_dict_size(ElmcValue *dict);
 RC elmc_set_from_list(ElmcValue **out, ElmcValue *items);
 RC elmc_set_insert(ElmcValue **out, ElmcValue *value, ElmcValue *set);
+RC elmc_set_insert_int(ElmcValue **out, elmc_int_t key, ElmcValue *set);
+RC elmc_set_remove_int(ElmcValue **out, elmc_int_t key, ElmcValue *set);
+int elmc_set_member_int(elmc_int_t key, ElmcValue *set);
 ElmcValue *elmc_set_member(ElmcValue *value, ElmcValue *set);
 ElmcValue *elmc_set_size(ElmcValue *set);
 ElmcValue *elmc_array_empty(void);
@@ -485,6 +496,7 @@ RC elmc_list_copy(ElmcValue **out, ElmcValue *list);
 ElmcValue *elmc_list_member(ElmcValue *value, ElmcValue *list);
 RC elmc_list_map(ElmcValue **out, ElmcValue *f, ElmcValue *list);
 RC elmc_list_filter(ElmcValue **out, ElmcValue *f, ElmcValue *list);
+RC elmc_list_find_first(ElmcValue **out, ElmcValue *f, ElmcValue *list);
 RC elmc_list_filter_record_field(ElmcValue **out, ElmcValue *list, elmc_int_t field_index);
 RC elmc_list_filter_record_and(ElmcValue **out, ElmcValue *list, elmc_int_t field_a, elmc_int_t field_b);
 RC elmc_list_map_record_field(ElmcValue **out, ElmcValue *list, elmc_int_t field_index);
@@ -552,6 +564,8 @@ RC elmc_string_trim_left(ElmcValue **out, ElmcValue *s);
 RC elmc_string_trim_right(ElmcValue **out, ElmcValue *s);
 ElmcValue *elmc_string_contains(ElmcValue *sub, ElmcValue *s);
 int elmc_string_equals_cstr(ElmcValue *value, const char *literal);
+int elmc_string_equals(ElmcValue *left, ElmcValue *right);
+int elmc_string_compare(ElmcValue *left, ElmcValue *right);
 ElmcValue *elmc_string_starts_with(ElmcValue *prefix, ElmcValue *s);
 ElmcValue *elmc_string_ends_with(ElmcValue *suffix, ElmcValue *s);
 RC elmc_string_split(ElmcValue **out, ElmcValue *sep, ElmcValue *s);
@@ -1508,6 +1522,8 @@ static inline bool elmc_maybe_just_false(ElmcValue *v) {
 
 static inline elmc_int_t elmc_union_tag_as_int(ElmcValue *v) {
   if (!v) return -1;
+  /* Order is a dedicated scalar tag with runtime values LT=-1, EQ=0, GT=1. */
+  if (v->tag == ELMC_TAG_ORDER) return elmc_as_int(v);
   if (v->tag == ELMC_TAG_INT) return elmc_as_int(v);
   if (v->tag == ELMC_TAG_TUPLE2 && v->payload != NULL)
     return elmc_as_int(((ElmcTuple2 *)v->payload)->first);
@@ -1524,6 +1540,7 @@ static inline bool elmc_union_tag_matches(ElmcValue *v, elmc_int_t tag) {
     ElmcMaybe *m = (ElmcMaybe *)v->payload;
     return m->is_just ? (tag == 1) : (tag == 2);
   }
+  if (v->tag == ELMC_TAG_ORDER) return elmc_as_int(v) == tag;
   return (v->tag == ELMC_TAG_INT && elmc_as_int(v) == tag) ||
          (v->tag == ELMC_TAG_TUPLE2 && v->payload != NULL &&
           elmc_as_int(((ElmcTuple2 *)v->payload)->first) == tag);
@@ -1639,18 +1656,24 @@ void elmc_release(ElmcValue *value);
 void elmc_release_deep(ElmcValue *value);
 
 
+/* Release each owned slot independently. Do not coalesce by pointer equality:
+   phi/retain chains legitimately store the same pointer in multiple slots, each
+   with its own rc credit. Coalescing under-releases (rc_track 2048 merge).
+   Transfer assigns must null the source slot so true aliases are not double-freed. */
 static inline void elmc_release_array_lifo(ElmcValue **slots, size_t count) {
-  size_t n = count;
   while (count-- > 0) {
     ElmcValue *value = slots[count];
     if (value) {
+      slots[count] = NULL;
       elmc_release(value);
-      for (size_t i = 0; i < n; i++) {
-        if (slots[i] == value) {
-          slots[i] = NULL;
-        }
-      }
     }
+  }
+}
+
+static inline void elmc_owned_null_aliases(ElmcValue **slots, size_t count, ElmcValue *value) {
+  if (!value) return;
+  for (size_t i = 0; i < count; i++) {
+    if (slots[i] == value) slots[i] = NULL;
   }
 }
 

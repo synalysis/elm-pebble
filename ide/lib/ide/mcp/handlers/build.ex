@@ -110,6 +110,11 @@ defmodule Ide.Mcp.Handlers.Build do
     end
   end
 
+  def call(name, args) when is_binary(name) and is_map(args) do
+    {:error,
+     "build tool #{name} requires a project slug (pass \"slug\", or \"project_slug\" alias); got keys=#{inspect(Map.keys(args))}"}
+  end
+
   @spec mcp_tools_config() :: term()
 
   defp mcp_tools_config, do: Application.get_env(:ide, Ide.Mcp.Tools, [])
