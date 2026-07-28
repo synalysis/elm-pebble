@@ -6,7 +6,7 @@ defmodule Elmc.Backend.Plan.Lower.SpecialValues.Events do
   alias Elmc.Backend.Plan.Lower.SpecialValues.Helpers
   alias Elmc.Backend.Plan.Lower.SpecialValues.Dispatcher
   alias Elmc.Backend.CCodegen.Types
-  alias Elmc.Backend.CCodegen.Subscriptions
+  alias Elmc.Backend.Plan.Worker.Subscriptions
 
   @behaviour Elmc.Backend.Plan.Lower.SpecialValues.Handler
 

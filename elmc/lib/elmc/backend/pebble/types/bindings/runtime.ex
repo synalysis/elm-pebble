@@ -6,8 +6,8 @@ defmodule Elmc.Backend.Pebble.Types.Bindings.Runtime do
 
   @type event_dispatch_bindings :: %{
           required(:msg) => Msg.msg_fragments(),
-          required(:random_generate_tag) => Core.msg_tag(),
-          required(:compass_dispatch_source) => Core.c_source()
+          optional(:compass_events?) => boolean(),
+          optional(:random_generate_tag) => Core.msg_tag()
         }
 
   @type source_bindings :: %{
@@ -17,7 +17,7 @@ defmodule Elmc.Backend.Pebble.Types.Bindings.Runtime do
           required(:entry_view_fn) => Core.c_symbol(),
           required(:random_generate_tag) => Core.msg_tag(),
           required(:has_view) => boolean(),
-          required(:compass_dispatch_source) => Core.c_source(),
+          required(:compass_events?) => boolean(),
           required(:scene_writer_source) => Core.c_source(),
           optional(:append_fallback_enabled?) => boolean(),
           optional(:entry_view_direct_abi?) => boolean()

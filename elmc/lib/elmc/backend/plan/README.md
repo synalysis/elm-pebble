@@ -34,6 +34,29 @@ existing `CommandDef` + `Emit.Catch` writer shell.
 List/map loop peels use `Plan.Stream.ListLoop` until full stream fusions exist;
 static draw tables remain on legacy DR emit (see `Plan.Stream.ListLoop.tracked_gaps/0`).
 
+## Worker subscription layout
+
+`Plan.Worker.Subscriptions` owns `:pebble_sub` IR rewrite and mask analysis.
+`Plan.Worker.Layout.analyze/2` derives compact subscription slot metadata from
+`subscriptions` IR. `Plan.Worker.Emit`
+emits table-driven `elmc_sub_tag_slot` lookup and shared `apply_sub` helpers into
+generated `elmc_worker.c`. TEA init/dispatch/cmd-queue shells also emit from
+`Plan.Worker.Emit`; `Worker` only injects app `init`/`update`/`subscriptions`
+entry calls and `model_dependent?` refresh policy. Pebble subscription event
+dispatch (including tick, compass when enabled, app-message decode,
+storage/random cmd stubs, and take_cmd/view_commands host wrappers) is
+table-driven in `pebble/source_writer/event_dispatch/` (`Registry` + `Emit`).
+AppMessage key/value decode switch arms come from MsgCodegen fragments.
+
+
+**Layout fields:** `sub_tag_slots`, `button_raw_subs`, `slot_map`, `frame_slot`,
+`model_dependent?`, `compact` (32/16 BSS fallback when `dynamic_subscription_layout`).
+
+**Diagnostics:** `dynamic_subscription_layout`, `unsupported_sub` — no silent stubs.
+
+**Compile order:** worker adapter runs before C codegen; Layout seeds Msg constructor
+names for bare `constructor_ref` tags during compact analysis.
+
   ## Ownership verification
 
   `Elmc.Backend.Plan.Verify` runs before any backend. Invariants:

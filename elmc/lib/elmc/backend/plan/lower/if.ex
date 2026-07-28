@@ -121,6 +121,9 @@ defmodule Elmc.Backend.Plan.Lower.If do
         exit_id = b1.current_block.id
         {:ok, :stream_void, exit_id, Builder.finish_block(b1, :none)}
 
+      {:ok, _reg, _b1} ->
+        :unsupported
+
       :unsupported ->
         :unsupported
     end

@@ -106,7 +106,7 @@ Shared `*_compile` modules back `DirectRender.Emit.ExprDispatch` and native peel
 - `ProjectWriter`, `GeneratedSource`, `BuildArtifacts`, `PerModuleArtifacts`
 - `Emit`, `Constants`, `UnionMacros`, `RecordFieldMacros`, `ResourceSlotMacros`
 - `StackEstimate`, `Types`, `CSource`
-- `Subscriptions` (worker/sub lowering)
+- `Subscriptions` (worker/sub IR rewrite + layout analysis input)
 - `MacroReachability`, `LinkedBinaryReport`, `DebugProbes`
 - `FunctionSplit`, `Hoist`, `EnvBindings`, `OwnershipTransfer`
 - `PlatformStatic`, `ProdMode`
@@ -125,6 +125,28 @@ It runs under plan-primary (`direct_render_only`, `prune_direct_generic`,
 
 Not a replacement for Plan IR on `update`/`init`; it supersede-emits view helpers while
 keeping compact scene-writer push (no boxed `List RenderOp` tails).
+
+## Worker / subscriptions host glue
+
+App `subscriptions()` bodies are Plan SSA (`:pebble_sub` → `elmc_subN`). The TEA host
+adapter (`elmc_worker.{h,c}`) is **not** plan-lowered; it consumes Plan metadata:
+
+| Piece | Owner |
+|-------|--------|
+| `subscriptions()` / `Sub.batch` IR rewrite | `Plan.Worker.Subscriptions` (+ Plan special-values) |
+| Compact slot layout (`sub_tag_slots`, `slot_map`, `frame_slot`) | `Plan.Worker.Layout` |
+| Slot table + `apply_sub` / `sub_msg_tag` emit | `Plan.Worker.Emit` |
+| TEA init/dispatch/cmd queue C | `Plan.Worker.Emit` (shared); `Worker` wires entry calls |
+| Pebble event dispatch + host cmd/view wrappers | `pebble/source_writer/event_dispatch` (`Registry` + `Emit`) |
+
+**Layout ABI:** `sub_tag_slots`, `button_raw_subs`, `slot_map`, `frame_slot`,
+`model_dependent?`, `compact` (fallback 32/16 when not compact).
+
+**Diagnostics:** `dynamic_subscription_layout` (`elmc/subscriptions`) and
+`unsupported_sub` only — no silent `Sub.none`.
+
+**Msg seed order:** `Worker.write_worker_adapter` runs before full C codegen;
+`Plan.Worker.Layout` seeds `:elmc_pebble_msg_names` for compact analysis.
 
 ## Recommended removal sequence
 

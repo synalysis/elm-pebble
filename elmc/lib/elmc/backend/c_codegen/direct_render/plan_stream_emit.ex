@@ -34,6 +34,8 @@ defmodule Elmc.Backend.CCodegen.DirectRender.PlanStreamEmit do
             :error -> :error
           end
       end
+    rescue
+      _ -> :error
     after
       if prev_decls == nil do
         Process.delete(:elmc_program_decls)

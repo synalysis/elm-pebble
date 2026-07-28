@@ -6,7 +6,7 @@ defmodule Elmc.Backend.CCodegen.Host do
   alias Elmc.Backend.CCodegen.EnvBindings
   alias Elmc.Backend.CCodegen.FunctionEmit
   alias Elmc.Backend.Plan.Lower.SpecialValues
-  alias Elmc.Backend.CCodegen.Subscriptions
+  alias Elmc.Backend.Plan.Worker.Subscriptions
   alias Elmc.Backend.CCodegen.Expr
   alias Elmc.Backend.CCodegen.Hoist
   alias Elmc.Backend.CCodegen.DebugProbes

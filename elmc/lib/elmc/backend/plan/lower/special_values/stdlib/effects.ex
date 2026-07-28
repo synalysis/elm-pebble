@@ -3,10 +3,11 @@ defmodule Elmc.Backend.Plan.Lower.SpecialValues.Stdlib.Effects do
   alias Elmc.Backend.CCodegen.Types, as: Types
 
 
-  alias Elmc.Backend.CCodegen.{ConstantInt, Subscriptions, UnsupportedSurface}
+  alias Elmc.Backend.CCodegen.{ConstantInt, UnsupportedSurface}
   alias Elmc.Backend.Plan.Lower.SpecialValues.Helpers
   alias Elmc.Backend.CCodegen.Types
   alias Elmc.Backend.Plan.Lower.Platform.Web, as: PlatformWeb
+  alias Elmc.Backend.Plan.Worker.Subscriptions
 
   @behaviour Elmc.Backend.Plan.Lower.SpecialValues.Handler
 

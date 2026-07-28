@@ -5,8 +5,9 @@ defmodule Elmc.Backend.Plan.Lower.SpecialValues.Helpers do
 
   alias Elmc.Backend.CCodegen.IRQueries
   alias Elmc.Backend.CCodegen.PebbleMsgTag
-  alias Elmc.Backend.CCodegen.{Subscriptions, UnsupportedSurface}
+  alias Elmc.Backend.CCodegen.UnsupportedSurface
   alias Elmc.Backend.Plan.Lower.SpecialValues.Core
+  alias Elmc.Backend.Plan.Worker.Subscriptions
   alias Elmc.Backend.CCodegen.Types
 
   @spec draw_kind(atom()) :: Types.ir_expr()
