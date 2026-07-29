@@ -66,11 +66,13 @@ defmodule Elmc.Backend.CCodegen.DirectRender.CommandDef do
     args
     |> Enum.with_index()
     |> Enum.map(fn {_arg, index} ->
-      case Enum.at(arg_types, index) |> Host.normalize_type_name() do
-        "Int" -> :native_int
-        "Pebble.Ui.Color.Color" -> :native_int
-        "String" -> :native_string
-        _other -> :boxed
+      ty = Enum.at(arg_types, index)
+
+      cond do
+        Host.color_type?(ty) -> :native_int
+        Host.signature_param_kind(ty) == :native_int -> :native_int
+        Host.signature_param_kind(ty) == :native_string -> :native_string
+        true -> :boxed
       end
     end)
   end

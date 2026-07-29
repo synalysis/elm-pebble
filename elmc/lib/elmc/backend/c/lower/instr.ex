@@ -2485,6 +2485,10 @@ defmodule Elmc.Backend.C.Lower.Instr do
     # Also treat self-recursion inside an RC plan as out-param (unit tests seed
     # plan.rc_required without always populating `:elmc_rc_required`).
     rc_callee? = RcRequired.rc_required?(mod, name) or native_scalar_rc_out_callee?(callee, opts)
+    # NativeReturn may cache :native_int while FunctionEmit still emits
+    # `RC fn(ElmcValue **out, …)` (native-boxed RC). Call sites must match the
+    # emitted out pointer, not the optimistic NativeReturn cache alone.
+    boxed_rc_out? = rc_callee? and not value_return? and callee_boxed_rc_out?(callee)
 
     cond do
       value_return? and is_integer(dest_reg) and MapSet.member?(native_only, dest_reg) ->
@@ -2500,6 +2504,9 @@ defmodule Elmc.Backend.C.Lower.Instr do
       not value_return? and not rc_callee? ->
         emit_boxed_value_callee_as_native_int(rc?, dest, dest_reg, c_name, call_arg_s, opts)
 
+      boxed_rc_out? and is_integer(dest_reg) and MapSet.member?(native_only, dest_reg) ->
+        emit_boxed_rc_out_as_native_int(rc?, dest_reg, c_name, call_arg_s)
+
       is_integer(dest_reg) and MapSet.member?(native_only, dest_reg) ->
         out = "plan_native_int_#{dest_reg}"
         rc_scalar_assign_call(rc?, c_name, out, call_arg_s, fallback: "0")
@@ -2513,6 +2520,7 @@ defmodule Elmc.Backend.C.Lower.Instr do
     value_return? = NativeReturn.value_return?(callee)
     native_only = Keyword.get(opts, :native_bool_only_regs, MapSet.new())
     rc_callee? = RcRequired.rc_required?(mod, name) or native_scalar_rc_out_callee?(callee, opts)
+    boxed_rc_out? = rc_callee? and not value_return? and callee_boxed_rc_out?(callee)
 
     cond do
       value_return? and is_integer(dest_reg) and MapSet.member?(native_only, dest_reg) ->
@@ -2525,6 +2533,9 @@ defmodule Elmc.Backend.C.Lower.Instr do
 
       not value_return? and not rc_callee? ->
         emit_boxed_value_callee_as_native_bool(rc?, dest, dest_reg, c_name, call_arg_s, opts)
+
+      boxed_rc_out? and is_integer(dest_reg) and MapSet.member?(native_only, dest_reg) ->
+        emit_boxed_rc_out_as_native_bool(rc?, dest_reg, c_name, call_arg_s)
 
       is_integer(dest_reg) and MapSet.member?(native_only, dest_reg) ->
         out = "plan_native_bool_#{dest_reg}"
@@ -2549,6 +2560,44 @@ defmodule Elmc.Backend.C.Lower.Instr do
       _ ->
         false
     end
+  end
+
+  # True when FunctionEmit registered `RC fn(ElmcValue **out, …)` for this
+  # callee (native-arg / fusion helpers with a boxed return).
+  defp callee_boxed_rc_out?({mod, name}) do
+    Process.get(:elmc_native_boxed_rc_abi, %{}) |> Map.get({mod, name}) == true
+  end
+
+  defp emit_boxed_rc_out_as_native_int(rc?, dest_reg, c_name, call_arg_s) do
+    tmp = "plan_box_out_#{dest_reg}"
+
+    """
+    ElmcValue *#{tmp} = NULL;
+    #{rc_assign_call(rc?, c_name, tmp, call_arg_s)}
+    plan_native_int_#{dest_reg} = elmc_as_int(#{tmp});
+    elmc_release(#{tmp});
+    """
+    |> String.trim()
+  end
+
+  defp emit_boxed_rc_out_as_native_bool(rc?, dest_reg, c_name, call_arg_s) do
+    tmp = "plan_box_out_#{dest_reg}"
+
+    """
+    ElmcValue *#{tmp} = NULL;
+    #{rc_assign_call(rc?, c_name, tmp, call_arg_s)}
+    plan_native_bool_#{dest_reg} = elmc_as_bool(#{tmp});
+    elmc_release(#{tmp});
+    """
+    |> String.trim()
+  end
+
+  defp rc_assign_call(true, c_name, out_var, call_arg_s) do
+    "Rc = #{c_name}(&#{out_var}#{native_call_suffix(call_arg_s)});\nCHECK_RC(Rc);"
+  end
+
+  defp rc_assign_call(false, c_name, out_var, call_arg_s) do
+    "#{out_var} = NULL;\nif (#{c_name}(&#{out_var}#{native_call_suffix(call_arg_s)}) != RC_SUCCESS) #{out_var} = NULL;"
   end
 
   # Callee is `ElmcValue *fn(...)` but the caller wants a native scalar result.
@@ -3159,14 +3208,9 @@ defmodule Elmc.Backend.C.Lower.Instr do
                           _ ->
                             case Enum.at(Keyword.get(opts, :param_kinds, []), index) do
                               :native_int ->
-                                c_arg =
-                                  FunctionCallAbi.param_c_arg(index, Keyword.get(opts, :params, []))
-
-                                if Map.has_key?(Keyword.get(opts, :borrow_param_regs, %{}), reg) do
-                                  "elmc_as_int(#{c_arg})"
-                                else
-                                  c_arg
-                                end
+                                # Already an `elmc_int_t` C param — never wrap with elmc_as_int
+                                # (borrow_param_regs is for boxed params only).
+                                FunctionCallAbi.param_c_arg(index, Keyword.get(opts, :params, []))
 
                               _ ->
                                 :no_native_param

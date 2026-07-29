@@ -1,21 +1,23 @@
 defmodule Elmc.PlanTemplateStrictGateTest do
   @moduledoc """
-  Smoke gate: selected watch templates must compile with `plan_ir_strict: true`.
+  Smoke gate: selected watch templates must compile with `plan_ir_strict: true`
+  and the generated C must typecheck under host `cc` (`-Werror=int-conversion`).
 
-  Templates are fixtures only. Failures indicate missing **generic** plan lowering,
-  not app bugs. See `docs/PLAN_IR_COVERAGE.md` for the coverage matrix and how to
-  extend it.
+  Templates are fixtures only. Failures indicate missing **generic** plan lowering
+  or unsafe C emit, not app bugs. See `docs/PLAN_IR_COVERAGE.md`.
   """
 
   use ExUnit.Case, async: false
 
-  alias Elmc.TestSupport.{PlanStrictTemplates, TemplateCompile}
+  alias Elmc.TestSupport.{GeneratedCTypecheck, HostSmoke, PlanStrictTemplates, TemplateCompile}
 
   @moduletag :slow
 
   # Templates verified to pass strict plan-primary (zero plan_primary_fallback).
   # Add a name here only after `plan_ir_strict: true` compiles cleanly.
-  @strict_pass PlanStrictTemplates.names()
+  # Filtered by `ELMC_HOST_SMOKE_TEMPLATE` so `mix-test-per-template.sh` runs one
+  # template per BEAM (without the filter, each invocation would compile all 46).
+  @strict_pass HostSmoke.templates(PlanStrictTemplates.names())
 
   for template <- @strict_pass do
     @tag template: template
@@ -27,6 +29,7 @@ defmodule Elmc.PlanTemplateStrictGateTest do
                TemplateCompile.compile_watch_template(template,
                  plan_ir_mode: :primary,
                  plan_ir_strict: true,
+                 pebble_int32: true,
                  out_dir: out_dir
                )
 
@@ -48,6 +51,8 @@ defmodule Elmc.PlanTemplateStrictGateTest do
 
         assert unknown_count == 0,
                "expected zero elmc_unknown in #{template}, got #{unknown_count}"
+
+        GeneratedCTypecheck.assert_typechecks!(out_dir)
       end
     end
   end

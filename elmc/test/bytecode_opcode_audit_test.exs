@@ -6,14 +6,18 @@ defmodule Elmc.BytecodeOpcodeAuditTest do
   use ExUnit.Case, async: false
 
   alias Elmc.Backend.Bytecode.{Loader, Lower, Opcodes}
-  alias Elmc.TestSupport.{PlanStrictTemplates, TemplateCompile}
+  alias Elmc.TestSupport.{HostSmoke, PlanStrictTemplates, TemplateCompile}
 
   @moduletag :plan_surface
 
   @quick_templates ~w(game_2048 game_elmtris watchface_yes watchface_poke_battle game_basic)
-  @slow_templates Enum.reject(PlanStrictTemplates.names(), &(&1 in @quick_templates))
+  @all_strict PlanStrictTemplates.names()
+  # Filtered by `ELMC_HOST_SMOKE_TEMPLATE` for `mix-test-per-template.sh`.
+  @selected HostSmoke.templates(@all_strict)
+  @quick_selected Enum.filter(@selected, &(&1 in @quick_templates))
+  @slow_selected Enum.reject(@selected, &(&1 in @quick_templates))
 
-  for template <- @quick_templates do
+  for template <- @quick_selected do
     @tag template: template
 
     test "bytecode opcodes for #{template} are all implemented", %{template: template} do
@@ -21,7 +25,7 @@ defmodule Elmc.BytecodeOpcodeAuditTest do
     end
   end
 
-  for template <- @slow_templates do
+  for template <- @slow_selected do
     @tag :slow
     @tag template: template
 

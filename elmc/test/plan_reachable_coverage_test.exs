@@ -2,12 +2,13 @@ defmodule Elmc.PlanReachableCoverageTest do
   use ExUnit.Case, async: false
 
   alias Elmc.Backend.Plan.PrimaryCoverage
-  alias Elmc.TestSupport.{PlanStrictTemplates, TemplateCompile}
+  alias Elmc.TestSupport.{HostSmoke, PlanStrictTemplates, TemplateCompile}
 
   @moduletag :plan_surface
   @moduletag :slow
 
-  for template <- PlanStrictTemplates.names() do
+  # Filtered by `ELMC_HOST_SMOKE_TEMPLATE` for `mix-test-per-template.sh`.
+  for template <- HostSmoke.templates(PlanStrictTemplates.names()) do
     @tag template: template
 
     test "strict reachable plan coverage for #{template}", %{template: template} do

@@ -1717,6 +1717,12 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
     native_env = native_env(decl, module_name, function_arities, decl_map, return_kind)
     skip_native? = skip_native_def?(decl, module_name, decl_map)
 
+    # Fusion / native-arg helpers with a boxed return keep `ElmcValue **out`.
+    # Clear NativeReturn's scalar cache so plan call sites match that ABI.
+    if return_kind == :boxed and RcRequired.rc_required?(module_name, decl.name) do
+      register_native_boxed_rc_abi!(module_name, decl.name, true)
+    end
+
     collect_generic_helpers? = return_kind == :boxed and not skip_native?
 
     if collect_generic_helpers? do
@@ -2532,6 +2538,12 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
   defp register_native_boxed_rc_abi!(module_name, name, rc_abi?) do
     table = Process.get(:elmc_native_boxed_rc_abi, %{})
     Process.put(:elmc_native_boxed_rc_abi, Map.put(table, {module_name, name}, rc_abi?))
+
+    # Public ABI is `ElmcValue **out` — drop any optimistic NativeReturn scalar
+    # cache so later call sites do not emit `elmc_int_t *out` arguments.
+    if rc_abi? do
+      NativeReturn.uncache_scalar_return(module_name, name)
+    end
   end
 
   @spec register_native_bool_rc_abi!(String.t(), String.t(), boolean()) :: Types.ir_expr()

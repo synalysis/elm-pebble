@@ -127,6 +127,18 @@ defmodule Elmc.Backend.C.Lower.NativeReturn do
     :ok
   end
 
+  @doc """
+  Drop a cached scalar-return kind when the emitted public ABI uses
+  `ElmcValue **out` instead of `elmc_int_t *out` / `bool *out`.
+  """
+  @spec uncache_scalar_return(String.t(), String.t()) :: :ok
+  def uncache_scalar_return(module, name)
+      when is_binary(module) and is_binary(name) do
+    uncache_kind(module, name)
+    uncache_value_return(module, name)
+    :ok
+  end
+
   @spec cache_scalar_value_return(String.t(), String.t()) :: :ok
   def cache_scalar_value_return(module, name) do
     cache_value_return(module, name)

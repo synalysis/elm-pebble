@@ -33,6 +33,42 @@ defmodule Elmc.Backend.CCodegen.TypeParsing do
 
   def normalize_type_name(_type), do: ""
 
+  @doc """
+  Classify a function-parameter type for the general plan/native call ABI.
+
+  `Pebble.Ui.Color.Color` stays **boxed** here so RC helpers like
+  `encodeColorCode` keep a boxed `out` / `ElmcValue*` Color arg. Direct-render
+  scene-stream wrappers treat Color as `elmc_int_t` via
+  `Elmc.Backend.CCodegen.DirectRender.CommandDef` + `color_type?/1`.
+  """
+  @spec signature_param_kind(String.t()) :: :native_int | :native_bool | :native_string | :boxed
+  def signature_param_kind(type) when is_binary(type) do
+    case normalize_type_name(type) do
+      "Int" -> :native_int
+      "Bool" -> :native_bool
+      "String" -> :native_string
+      _name -> :boxed
+    end
+  end
+
+  def signature_param_kind(_type), do: :boxed
+
+  @doc """
+  True when `type` is `Pebble.Ui.Color.Color` (or a short alias).
+
+  Used by DirectRender `CommandDef` so scene-stream params are `elmc_int_t`
+  while general call ABI still boxes Color.
+  """
+  @spec color_type?(String.t()) :: boolean()
+  def color_type?(type) when is_binary(type) do
+    name = normalize_type_name(type)
+
+    name in ["Color", "Color.Color", "Pebble.Ui.Color.Color"] or
+      String.ends_with?(name, ".Color.Color")
+  end
+
+  def color_type?(_), do: false
+
   @spec set_type?(String.t()) :: boolean()
   def set_type?(type) when is_binary(type) do
     type = normalize_type_name(type)

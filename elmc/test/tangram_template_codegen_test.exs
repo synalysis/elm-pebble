@@ -94,13 +94,26 @@ defmodule Elmc.TangramTemplateCodegenTest do
 
     assert generated =~ "ELMC_RENDER_OP_FILL_CIRCLE"
     assert generated =~ "elmc_fn_Main_tangramFaceOps"
+
+    hour_markers_native =
+      Elmc.Test.CCodegenExtract.fn_body(
+        generated,
+        "elmc_fn_Main_hourMarkers_commands_append_native"
+      )
+
+    # Color params are `elmc_int_t`; wrapping them with elmc_as_int fails under
+    # Pebble SDK `-Werror=int-conversion` (CommandDef vs Plan param_kinds drift).
+    refute hour_markers_native =~ "elmc_as_int(color)",
+           "native Color param must not be passed through elmc_as_int"
+
+    assert hour_markers_native =~ "scene_cmd.p3 = color;"
     # Native Int ABI may be `clockPoint_native(... const elmc_int_t ...)` or plan-primary
     # `elmc_fn_Main_clockPoint(... elmc_int_t ...)` without the `_native` suffix.
     assert generated =~
              ~r/(?:clockPoint_native|elmc_fn_Main_clockPoint)\(ElmcValue \*\*out, (?:const )?elmc_int_t cx, (?:const )?elmc_int_t cy, (?:const )?elmc_int_t slot, (?:const )?elmc_int_t radius\)/
     assert generated =~ ~r/elmc_fn_Main_hourMarkers(?:_native)?\b/
     assert generated =~
-             ~r/(?:Rc = elmc_fn_Main_hourMarkers(?:_native)?\(&(?:tmp_\d+|owned\[\d+\]), (?:native_let_cx_\d+|plan_native_int_\d+), (?:native_let_cy_\d+|plan_native_int_\d+), (?:native_let_markerRadius_\d+|plan_native_int_\d+), owned\[\d+\]\)|ElmcValue \*tmp_\d+ = elmc_fn_Main_hourMarkers(?:_native)?\((?:native_let_cx_\d+|plan_native_int_\d+), (?:native_let_cy_\d+|plan_native_int_\d+), (?:native_let_markerRadius_\d+|plan_native_int_\d+), owned\[\d+\]\))/
+             ~r/(?:Rc = elmc_fn_Main_hourMarkers(?:_native)?\(&(?:tmp_\d+|owned\[\d+\]), (?:native_let_cx_\d+|plan_native_int_\d+), (?:native_let_cy_\d+|plan_native_int_\d+), (?:native_let_markerRadius_\d+|plan_native_int_\d+), (?:owned\[\d+\]|elmc_as_int\(owned\[\d+\]\))\)|ElmcValue \*tmp_\d+ = elmc_fn_Main_hourMarkers(?:_native)?\((?:native_let_cx_\d+|plan_native_int_\d+), (?:native_let_cy_\d+|plan_native_int_\d+), (?:native_let_markerRadius_\d+|plan_native_int_\d+), (?:owned\[\d+\]|elmc_as_int\(owned\[\d+\]\))\))/
     refute generated =~
              ~r/elmc_new_int\(&owned\[\d+\], native_let_cx_\d+\);\s*\n\s*CHECK_RC\(Rc\);\s*\n\s*\n\s*Rc = elmc_new_int\(&owned\[\d+\], native_let_cy_\d+\);\s*\n\s*CHECK_RC\(Rc\);\s*\n\s*\n\s*Rc = elmc_new_int\(&owned\[\d+\], native_let_markerRadius_\d+\);\s*\n\s*CHECK_RC\(Rc\);\s*\n\s*\n\s*ElmcValue \*call_args_\d+\[1\] = \{ model \};\s*\n\s*Rc = elmc_fn_Main_foregroundColor\(&owned\[\d+\], call_args_\d+, 1\);\s*\n\s*CHECK_RC\(Rc\);\s*\n\s*\n\s*ElmcValue \*call_args_\d+\[4\] = \{ owned\[\d+\], owned\[\d+\], owned\[\d+\], owned\[\d+\] \};\s*\n\s*Rc = elmc_fn_Main_hourMarkers/
     # Direct-call ABI: `tangramFaceOps(&owned[i], model)` (no argc/call_args wrapper).
@@ -237,6 +250,7 @@ defmodule Elmc.TangramTemplateCodegenTest do
         "-std=c11",
         "-Wall",
         "-Wextra",
+        "-Werror=int-conversion",
         "-include",
         prelude_path,
         "-I#{Path.join(out_dir, "runtime")}",

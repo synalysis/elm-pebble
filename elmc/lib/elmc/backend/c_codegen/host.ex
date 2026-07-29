@@ -331,6 +331,12 @@ defmodule Elmc.Backend.CCodegen.Host do
   @spec normalize_type_name(String.t()) :: String.t()
   defdelegate normalize_type_name(type), to: Elmc.Backend.CCodegen.TypeParsing
 
+  @spec signature_param_kind(String.t()) :: :native_int | :native_bool | :native_string | :boxed
+  defdelegate signature_param_kind(type), to: Elmc.Backend.CCodegen.TypeParsing
+
+  @spec color_type?(String.t()) :: boolean()
+  defdelegate color_type?(type), to: Elmc.Backend.CCodegen.TypeParsing
+
   @spec split_qualified_function_target(String.t()) :: Types.qualified_function_target()
   defdelegate split_qualified_function_target(target), to: Util
 

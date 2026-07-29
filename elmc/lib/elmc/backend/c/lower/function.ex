@@ -7,6 +7,7 @@ defmodule Elmc.Backend.C.Lower.Function do
 
   alias Elmc.Backend.C.Lower.{Frame, Instr, Lambda, NativeIntFold, NativeReturn, StringConcat, TagRefs}
   alias Elmc.Backend.CCodegen.{FunctionCallAbi, FunctionEmit, Fusion}
+  alias Elmc.Backend.CCodegen.DirectRender.CommandDef
   alias Elmc.Backend.CCodegen.Native.FunctionCall, as: NativeFunctionCall
   alias Elmc.Backend.CCodegen.Util
   alias Elmc.Backend.Plan
@@ -2244,6 +2245,13 @@ defmodule Elmc.Backend.C.Lower.Function do
       end
 
     cond do
+      # Scene-stream `*_commands_append_native` bodies (CommandDef) treat Color as
+      # elmc_int_t. Only use those kinds while emitting under the DirectRender
+      # writer flag — never for ordinary list-returning helpers that keep Color boxed.
+      effective_decl && Process.get(:elmc_direct_scene_writer) == true &&
+          CommandDef.native_args?(effective_decl) ->
+        CommandDef.arg_kinds(effective_decl)
+
       effective_decl && FunctionEmit.mixed_direct_abi?(effective_decl, plan.module, decl_map) ->
         NativeFunctionCall.arg_kinds(effective_decl, plan.module, decl_map)
 
