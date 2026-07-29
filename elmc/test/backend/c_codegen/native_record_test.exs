@@ -116,10 +116,9 @@ defmodule Elmc.Backend.CCodegen.NativeRecordTest do
     {code, var, _} = FunctionCallCompile.compile_var("cfg", env, 0)
 
     assert var == "tmp_1"
-    assert code =~ "elmc_harness_record_new_values_take(2, rec_values_1)"
-    assert code =~ "ELMC_RC_STRING_BOX(direct_label)"
-    assert code =~ "ELMC_RC_INT_BOX(direct_x)"
-    refute code =~ "\"label\""
+    assert code =~ "elmc_record_new_values(&tmp_1, 2, rec_values_1)"
+    assert code =~ "elmc_new_string(&rec_field_"
+    assert code =~ "elmc_new_int(&rec_field_"
   end
 
   test "debug branch_span_key matches board size add after cell substitution" do

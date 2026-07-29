@@ -4,7 +4,7 @@ defmodule Elmc.Backend.C.Lower.Lambda do
 
 
   alias Elmc.Backend.C.Lower.{Frame, Function}
-  alias Elmc.Backend.CCodegen.Util
+  alias Elmc.Backend.CCodegen.{RecordCompile, Util}
   alias Elmc.Backend.Plan.Types.FunctionPlan
 
   @emitted_key :elmc_plan_closure_emitted
@@ -50,6 +50,8 @@ defmodule Elmc.Backend.C.Lower.Lambda do
     lambda = Enum.at(parent.lambdas, idx)
     closure_name = closure_fn_name(parent, idx)
     capture_count = capture_count(lambda)
+    parent_borrowed = Process.get(:elmc_borrowed_field_refs, MapSet.new())
+    RecordCompile.reset_borrowed_field_refs()
 
     {core, slots} =
       Function.emit_core_with_slots(lambda,
@@ -61,7 +63,13 @@ defmodule Elmc.Backend.C.Lower.Lambda do
     slot_indices = if slot_count > 0, do: Enum.to_list(0..(slot_count - 1)), else: []
 
     owned = Frame.owned_declaration(lambda, slots)
-    epilogue = Frame.epilogue_release(slot_indices, slot_count)
+
+    epilogue =
+      [RecordCompile.borrowed_owned_refs_null_stmt(), Frame.epilogue_release(slot_indices, slot_count)]
+      |> Enum.reject(&(&1 == ""))
+      |> Enum.join("\n")
+
+    Process.put(:elmc_borrowed_field_refs, parent_borrowed)
     capture_indices = Map.get(lambda, :letrec_capture_indices) || %{}
 
     all_ref_names =

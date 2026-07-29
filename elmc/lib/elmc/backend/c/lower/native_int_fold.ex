@@ -3,6 +3,7 @@ defmodule Elmc.Backend.C.Lower.NativeIntFold do
   alias Elmc.Types, as: Types
 
 
+  alias Elmc.Backend.C.Lower.Function, as: CLowerFunction
   alias Elmc.Backend.C.Lower.Instr
   alias Elmc.Backend.Plan.Types
   alias Elmc.Backend.Plan.Types.FunctionPlan
@@ -61,6 +62,16 @@ defmodule Elmc.Backend.C.Lower.NativeIntFold do
   @spec inlineable_reg?(map(), Types.ir_expr()) :: boolean()
 
   defp inlineable_reg?(%FunctionPlan{} = plan, reg) do
+    case CLowerFunction.all_defining_instrs(plan, reg) do
+      [_single] ->
+        inlineable_single_def_reg?(plan, reg)
+
+      _ ->
+        false
+    end
+  end
+
+  defp inlineable_single_def_reg?(%FunctionPlan{} = plan, reg) do
     case defining_instr(plan, reg) do
       %{op: :const_int} ->
         true

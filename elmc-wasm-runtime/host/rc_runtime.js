@@ -253,10 +253,18 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
   const asBoolForWasm = (ptr) => {
     const p = ptr | 0;
     const payload = readHandle(p);
-    // Bool temps may pass raw i32 0/1 that collide with early immortal Int handles.
-    if (payload?.tag === TAG_INT && payload.immortal && p <= 255) {
+    // Bool/predicate temps may pass raw i32 0/1 that collide with early immortal
+    // Int handles (UNIT is handle 1 = Int 0). Prefer the raw value in that case.
+    if (
+      payload?.tag === TAG_INT &&
+      payload.immortal &&
+      p <= 255 &&
+      (payload.value | 0) !== p
+    ) {
       return p;
     }
+    if (payload?.tag === TAG_INT) return payload.value | 0;
+    if (!payload) return p;
     return intValue(p);
   };
 
@@ -3736,7 +3744,7 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
       const { rc, value } = invokeClosure(closurePtr, [arg]);
       release(arg);
       if (rc !== RC_SUCCESS) return rc;
-      if (intValue(value) !== 0) kept.push(ch);
+      if (asBoolForWasm(value) !== 0) kept.push(ch);
       release(value);
     }
     return writeString(outPtr, kept.join(""));
@@ -4081,18 +4089,11 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
     if (!handles.has(p)) {
       return newIntHandle(wasmScalarArg(p));
     }
-    const payload = readHandle(p);
-    // WASM tuple2 often passes constructor tags as raw i32.const N. Those collide
-    // with early immortal handles (UNIT is handle 1 = Int 0), which would make
-    // union_tag_as_int read tag 0 instead of N.
-    if (
-      payload?.tag === TAG_INT &&
-      payload.immortal &&
-      p <= 255 &&
-      (payload.value | 0) !== p
-    ) {
-      return newIntHandle(p);
-    }
+    // Do NOT rewrite existing immortal Int handles (e.g. UNIT handle 1 = Int 0,
+    // or memoized Int(0) at handle 2). Treating handle id as the int value made
+    // Browser.sandbox `{ count = 0 }` render as "count: 2".
+    // Raw constructor-tag collisions are handled in wasmScalarArg / asBoolForWasm
+    // / unionTagAsInt — not when storing real record/closure field handles.
     return p;
   };
 
@@ -4277,6 +4278,9 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
   };
 
   const valuesEqual = (leftPtr, rightPtr) => valuesEqualDeep(leftPtr, rightPtr, new Set());
+
+  const listEqualInt = (outPtr, leftPtr, rightPtr) =>
+    newInt(outPtr, valuesEqual(leftPtr, rightPtr) ? 1 : 0);
 
   const compareValuesDeep = (leftPtr, rightPtr, seen) => {
     if (leftPtr === rightPtr) return 0;
@@ -4516,7 +4520,7 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
       release(args[0]);
       release(args[1]);
       if (rc !== RC_SUCCESS) return rc;
-      if (intValue(out) !== 0) kept.push(entryPtr);
+      if (asBoolForWasm(out) !== 0) kept.push(entryPtr);
       release(out);
     }
     return writeList(outPtr, kept);
@@ -4533,7 +4537,7 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
       release(args[0]);
       release(args[1]);
       if (rc !== RC_SUCCESS) return rc;
-      if (intValue(out) !== 0) yes.push(entryPtr);
+      if (asBoolForWasm(out) !== 0) yes.push(entryPtr);
       else no.push(entryPtr);
       release(out);
     }
@@ -4806,7 +4810,7 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
       const { rc, value } = invokeClosure(closurePtr, [arg]);
       release(arg);
       if (rc !== RC_SUCCESS) return rc;
-      if (intValue(value) !== 0) kept.push(item);
+      if (asBoolForWasm(value) !== 0) kept.push(item);
       release(value);
     }
     return writeList(outPtr, kept);
@@ -4819,7 +4823,7 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
       const { rc, value } = invokeClosure(closurePtr, [arg]);
       release(arg);
       if (rc !== RC_SUCCESS) return rc;
-      if (intValue(value) !== 0) yes.push(item);
+      if (asBoolForWasm(value) !== 0) yes.push(item);
       else no.push(item);
       release(value);
     }
@@ -4938,7 +4942,7 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
       const { rc, value } = invokeClosure(closurePtr, [arg]);
       release(arg);
       if (rc !== RC_SUCCESS) return rc;
-      if (intValue(value) !== 0) kept.push(item);
+      if (asBoolForWasm(value) !== 0) kept.push(item);
       release(value);
     }
     return writeList(outPtr, kept);
@@ -5149,7 +5153,7 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
       const arg = asHandle(item);
       const { rc, value } = invokeClosure(closurePtr, [arg]);
       if (rc !== RC_SUCCESS) return rc;
-      if (intValue(value) !== 0) {
+      if (asBoolForWasm(value) !== 0) {
         retain(null, item);
         kept.push(item);
       }
@@ -5336,6 +5340,11 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
     resultErrOwn,
     asHandle,
     release,
+    retain,
+    addOwner,
+    retainHandle: (ptr) => {
+      retain(0, ptr | 0);
+    },
     TAG_INT,
     TAG_FLOAT,
     TAG_STRING,
@@ -5856,6 +5865,7 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
     list_singleton: listSingleton,
     list_cons: listCons,
     list_member: listMember,
+    list_equal_int: listEqualInt,
     list_is_empty: listIsEmpty,
     list_maximum: listMaximum,
     list_minimum: listMinimum,

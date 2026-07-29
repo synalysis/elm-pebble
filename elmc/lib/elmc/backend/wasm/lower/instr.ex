@@ -6,6 +6,7 @@ defmodule Elmc.Backend.Wasm.Lower.Instr do
   import Bitwise
 
   alias Elmc.Backend.Bytecode.FnTable
+  alias Elmc.Backend.C.Lower.Function, as: CLowerFunction
   alias Elmc.Backend.Plan.RuntimeBuiltins
   alias Elmc.Backend.Plan.Types
   alias Elmc.Backend.Plan.Types.FunctionPlan
@@ -36,6 +37,90 @@ defmodule Elmc.Backend.Wasm.Lower.Instr do
       end
 
     lines ++ nulls
+  end
+
+  @spec publish_fn_out(Slots.t(), non_neg_integer(), emit_opts()) :: [binary()]
+  def publish_fn_out(slots, reg, opts) when is_integer(reg) do
+    rc? = Keyword.get(opts, :rc_required, true)
+    native? = Keyword.get(opts, :native_scalar_out) in [:native_int, :native_bool]
+    raw? =
+      raw_native_int_fn_out_reg?(opts, reg) or
+        raw_scalar_int_operand?(opts, reg, MapSet.new())
+    # Always box raw native scalars into $fn_out. Also box when this function is
+    # annotated native_int/bool. Do NOT box arbitrary RC values (lists/records).
+    box? = native? or raw?
+
+    cond do
+      box? ->
+        builtin =
+          case Keyword.get(opts, :native_scalar_out) do
+            :native_bool -> :new_bool
+            _ -> :new_int
+          end
+
+        emit_runtime_call(builtin, [int_operand_wat(reg, slots, opts)], :fn_out, slots, rc?, opts)
+
+      rc? ->
+        Slots.publish_reg_to_fn_out(slots, reg)
+
+      true ->
+        [
+          WasmTypes.line(
+            WasmTypes.sexpr("local.set", [
+              slots.fn_out_local,
+              " ",
+              WasmTypes.sexpr("local.get", [Slots.reg_name(slots, reg)])
+            ])
+          )
+        ]
+    end
+  end
+
+  defp raw_native_int_fn_out_reg?(opts, reg, visited \\ MapSet.new()) when is_integer(reg) do
+    if MapSet.member?(visited, reg) do
+      false
+    else
+      case Keyword.get(opts, :parent_plan) do
+        %FunctionPlan{} = plan ->
+          visited = MapSet.put(visited, reg)
+
+          instrs = CLowerFunction.all_defining_instrs(plan, reg)
+
+          # Every definition must be a raw scalar. `Enum.any?` wrongly treated
+          # multi-block regs (const_int Ok arm + tuple_proj Err arm) as raw,
+          # so publish boxed the Err handle id as an Int (probeFail → 2).
+          instrs != [] and
+            Enum.all?(instrs, fn
+              %{op: op}
+              when op in [
+                     :const_int,
+                     :compare,
+                     :bool_and,
+                     :bool_or,
+                     :int_arith,
+                     :test_maybe_nothing,
+                     :test_list_empty,
+                     :test_list_length_gte,
+                     :test_ctor_tag,
+                     :test_bool
+                   ] ->
+                true
+
+              %{op: :phi, args: args} ->
+                then_r = Map.fetch!(args, :then)
+                else_r = Map.fetch!(args, :else)
+
+                raw_native_int_fn_out_reg?(opts, then_r, visited) and
+                  raw_native_int_fn_out_reg?(opts, else_r, visited)
+
+              _ ->
+                false
+            end)
+
+        _ ->
+          false
+      end
+    end
   end
 
   defp emit_impl(%Types{} = instr, slots, opts) do
@@ -232,14 +317,7 @@ defmodule Elmc.Backend.Wasm.Lower.Instr do
   end
 
   defp emit_publish(%{args: %{source: reg}}, slots, opts) when is_integer(reg) do
-    rc? = Keyword.get(opts, :rc_required, true)
-    native? = Keyword.get(opts, :native_scalar_out) in [:native_int, :native_bool]
-
-    if rc? and not native? do
-      Slots.publish_reg_to_fn_out(slots, reg)
-    else
-      emit_runtime_call(:new_int, [int_operand_wat(reg, slots, opts)], :fn_out, slots, rc?, opts)
-    end
+    publish_fn_out(slots, reg, opts)
   end
 
   defp emit_publish(%{dest: :fn_out}, _slots, _opts), do: []
@@ -254,7 +332,7 @@ defmodule Elmc.Backend.Wasm.Lower.Instr do
 
     cond do
       dest_reg in [:fn_out, :branch_out] and rc? ->
-        Slots.publish_reg_to_fn_out(slots, source)
+        publish_fn_out(slots, source, opts)
 
       rc? and is_integer(dest_reg) ->
         # Match Builder.copy_reg_owned: owned local scratch must retain.
@@ -512,6 +590,19 @@ defmodule Elmc.Backend.Wasm.Lower.Instr do
           slots,
           false
         ) ++
+          emit_runtime_call(
+            :basics_not,
+            [Slots.reg_name(slots, dest_reg)],
+            dest_reg,
+            slots,
+            false
+          )
+
+      {:list_int, :eq} ->
+        emit_runtime_call(:list_equal_int, [left, right], dest_reg, slots, false)
+
+      {:list_int, :neq} ->
+        emit_runtime_call(:list_equal_int, [left, right], dest_reg, slots, false) ++
           emit_runtime_call(
             :basics_not,
             [Slots.reg_name(slots, dest_reg)],
@@ -1286,8 +1377,11 @@ defmodule Elmc.Backend.Wasm.Lower.Instr do
       reg == :fn_out ->
         []
 
-      rc? and is_integer(reg) ->
-        Slots.publish_reg_to_fn_out(slots, reg)
+      is_integer(reg) ->
+        # Zero-arity memoized values may have rc_required=false but still use the
+        # (rc, fn_out) ABI. Always publish via publish_fn_out so native/raw
+        # scalars are boxed (raw i32 0/1 collides with immortal UNIT/bool handles).
+        publish_fn_out(slots, reg, opts)
 
       rc? ->
         emit_runtime_call(:new_int, [int_operand_wat(reg, slots, opts)], :fn_out, slots, rc?, opts)
@@ -1911,31 +2005,49 @@ defmodule Elmc.Backend.Wasm.Lower.Instr do
         false
 
       true ->
-        _visited = MapSet.put(visited, reg)
+        visited = MapSet.put(visited, reg)
 
-        case defining_plan_instr(Keyword.get(opts, :parent_plan), reg) do
-          %{op: :const_int} ->
-            true
+        case Keyword.get(opts, :parent_plan) do
+          %FunctionPlan{} = plan ->
+            instrs = CLowerFunction.all_defining_instrs(plan, reg)
 
-          # int_arith only stays raw when the dest is in native_int_only_regs.
-          # Otherwise emit_int_arith boxes via new_int — treating the handle id as
-          # an i32 made `1+10+100` become `handle(11)+100` (113) in probeCompare.
-          %{op: :int_arith, dest: dest} when is_integer(dest) ->
-            MapSet.member?(Keyword.get(opts, :native_int_only_regs, MapSet.new()), dest)
-
-          %{op: :compare, args: args} ->
-            compare_produces_raw_scalar_int?(args, opts)
-
-          %{op: :phi, args: %{native_int_phi: true}} ->
-            true
-
-          %{op: :load_param, args: %{index: index}} ->
-            param_kinds = Keyword.get(opts, :param_kinds, [])
-            Enum.at(param_kinds, index, :boxed) == :native_int
+            # Same rule as raw_native_int_fn_out_reg?: mixed multi-block defs
+            # (raw const Ok arm + boxed tuple_proj Err arm) are not raw.
+            instrs != [] and Enum.all?(instrs, &raw_scalar_defining_instr?(&1, opts, visited))
 
           _ ->
             false
         end
+    end
+  end
+
+  defp raw_scalar_defining_instr?(instr, opts, visited) do
+    case instr do
+      %{op: :const_int} ->
+        true
+
+      # int_arith only stays raw when the dest is in native_int_only_regs.
+      # Otherwise emit_int_arith boxes via new_int — treating the handle id as
+      # an i32 made `1+10+100` become `handle(11)+100` (113) in probeCompare.
+      %{op: :int_arith, dest: dest} when is_integer(dest) ->
+        MapSet.member?(Keyword.get(opts, :native_int_only_regs, MapSet.new()), dest)
+
+      %{op: :compare, args: args} ->
+        compare_produces_raw_scalar_int?(args, opts)
+
+      %{op: :phi, args: %{native_int_phi: true}} ->
+        true
+
+      %{op: :phi, args: %{then: then_r, else: else_r}} ->
+        raw_scalar_int_operand?(opts, then_r, visited) and
+          raw_scalar_int_operand?(opts, else_r, visited)
+
+      %{op: :load_param, args: %{index: index}} ->
+        param_kinds = Keyword.get(opts, :param_kinds, [])
+        Enum.at(param_kinds, index, :boxed) == :native_int
+
+      _ ->
+        false
     end
   end
 

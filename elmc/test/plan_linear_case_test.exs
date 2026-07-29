@@ -369,12 +369,24 @@ defmodule Elmc.PlanLinearCaseTest do
 
     assert {:ok, plan} = Function.lower(decl, "Probe", decl_map, rc_required: true)
 
+    switch_arms =
+      plan.blocks
+      |> Enum.find_value(fn block ->
+        case block.terminator do
+          {:switch_tag, _subject, arms, _default} -> arms
+          _ -> nil
+        end
+      end)
+
+    # Exhaustive constructor arms use native switch dispatch (not linear br_if chains).
+    assert switch_arms |> Enum.map(&elem(&1, 0)) == [1, 6, 7]
+    assert length(switch_arms) == 3
+
     br_ifs =
       plan.blocks
       |> Enum.count(fn block -> match?({:br_if, _, _, _}, block.terminator) end)
 
-    # Exhaustive arms are all guarded — Empty, Group, and Transformed each get a br_if.
-    assert br_ifs == 3
+    assert br_ifs == 0
   end
 
   test "single-constructor peel does not tag-test (untyped unwrap)" do

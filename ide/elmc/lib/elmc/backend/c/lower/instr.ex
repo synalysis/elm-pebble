@@ -4,7 +4,7 @@ defmodule Elmc.Backend.C.Lower.Instr do
 
 
   alias Elmc.Backend.C.Lower.{Function, Lambda, NativeReturn, NativeIntFold, TagRefs}
-  alias Elmc.Backend.CCodegen.{FunctionCallAbi, FunctionEmit, Fusion, ImmortalStringLiteral, PlanNativeProjection, RcRequired, RcRuntimeEmit, RowMajorLayout}
+  alias Elmc.Backend.CCodegen.{FunctionCallAbi, FunctionEmit, Fusion, ImmortalStringLiteral, PlanNativeProjection, RecordCompile, RcRequired, RcRuntimeEmit, RowMajorLayout}
   alias Elmc.Backend.CCodegen.Native.FunctionCall, as: NativeFunctionCall
   alias Elmc.Backend.Plan.Lower.SpecialValues.ElmCore
   alias Elmc.Backend.CCodegen.Util
@@ -143,15 +143,18 @@ defmodule Elmc.Backend.C.Lower.Instr do
           if rc? do
             rc_assign(true, dest, "elmc_record_update_index_cow_drop", [base, index, value])
           else
-            call_expr =
-              "elmc_record_update_index_cow_drop_take(#{base}, #{index}, #{value})"
-
             fn_out_tail? = instr.dest in [:fn_out, :branch_out]
 
             if fn_out_tail? do
-              assign_value_return_tail(false, dest, call_expr, instr, slots, opts)
+              wrap_non_rc_rc_allocator_return(
+                "elmc_record_update_index_cow_drop",
+                [base, index, value],
+                instr,
+                slots,
+                opts
+              )
             else
-              assign_value_return(false, dest, call_expr)
+              rc_assign(false, dest, "elmc_record_update_index_cow_drop", [base, index, value])
             end
           end
 
@@ -263,13 +266,38 @@ defmodule Elmc.Backend.C.Lower.Instr do
       :tuple_proj ->
         base = slot_ref(instr.args.base, slots, opts)
 
-        call =
+        base_borrowed? =
+          instr
+          |> Map.get(:effects, %{})
+          |> Map.get(:borrows, [])
+          |> then(&(instr.args.base in &1))
+
+        {proj_fn, native_proj_fn} =
           case instr.args.which do
-            :first -> "elmc_tuple_first(#{base})"
-            :second -> "elmc_tuple_second(#{base})"
+            :first ->
+              if base_borrowed? do
+                {"elmc_tuple_first_borrow", "elmc_as_int(elmc_tuple_first_borrow(#{base}))"}
+              else
+                {"elmc_tuple_first", "elmc_as_int(elmc_tuple_first(#{base}))"}
+              end
+
+            :second ->
+              if base_borrowed? do
+                {"elmc_tuple_second_borrow", "elmc_as_int(elmc_tuple_second_borrow(#{base}))"}
+              else
+                {"elmc_tuple_second", "elmc_as_int(elmc_tuple_second(#{base}))"}
+              end
           end
 
-        assign_value_return(rc?, dest, call)
+        if base_borrowed? do
+          RecordCompile.mark_borrowed_owned_ref(slot_var(instr.dest, slots))
+        end
+
+        if MapSet.member?(Keyword.get(opts, :native_int_only_regs, MapSet.new()), instr.dest) do
+          emit_native_store(instr.dest, dest, native_proj_fn, opts)
+        else
+          assign_value_return(rc?, dest, "#{proj_fn}(#{base})")
+        end
 
       :make_closure ->
         emit_make_closure(instr, slots, opts, rc?, dest)
@@ -1603,6 +1631,26 @@ defmodule Elmc.Backend.C.Lower.Instr do
     end
   end
 
+  defp emit_call_runtime(
+         %{args: %{builtin: :maybe_just_own, args: [arg_reg]}} = instr,
+         slots,
+         rc?,
+         dest,
+         opts
+       )
+       when is_integer(arg_reg) do
+    arg_ref = slot_ref(arg_reg, slots, opts)
+
+    sym =
+      if RecordCompile.borrowed_owned_ref?(arg_ref) do
+        "elmc_maybe_just"
+      else
+        "elmc_maybe_just_own"
+      end
+
+    elm_core_runtime_comment(:maybe_just_own) <> rc_assign(rc?, dest, sym, [arg_ref])
+  end
+
   defp emit_call_runtime(%{args: %{builtin: id, args: args}} = instr, slots, rc?, dest, opts) do
     sym = runtime_builtin_sym(id, args, slots, opts) || "elmc_unknown"
     core_comment = elm_core_runtime_comment(id)
@@ -1658,11 +1706,21 @@ defmodule Elmc.Backend.C.Lower.Instr do
             {c_args, prep_lines, cleanup_lines} = build_runtime_call_args(id, args, slots, opts)
 
             assign =
-              if not rc? and dest == "*out" do
-                call_expr = "#{value_return_allocator(sym)}(#{Enum.join(c_args, ", ")})"
-                assign_value_return_tail(false, dest, call_expr, instr, slots, opts)
-              else
-                rc_assign(rc?, dest, sym, c_args)
+              cond do
+                # RC allocators must keep the out-pointer ABI even inside
+                # `ElmcValue *`-returning (non-RC) wrappers — never `return elmc_foo(args)`.
+                RcRuntimeEmit.rc_allocator?(sym) and not rc? and dest == "*out" ->
+                  wrap_non_rc_rc_allocator_return(sym, c_args, instr, slots, opts)
+
+                RcRuntimeEmit.rc_allocator?(sym) ->
+                  rc_assign(rc?, dest, sym, c_args)
+
+                not rc? and dest == "*out" ->
+                  call_expr = "#{sym}(#{Enum.join(c_args, ", ")})"
+                  assign_value_return_tail(false, dest, call_expr, instr, slots, opts)
+
+                true ->
+                  rc_assign(rc?, dest, sym, c_args)
               end
 
             emit_with_ephemeral_cleanup(prep_lines, core_comment <> assign, cleanup_lines)
@@ -2709,15 +2767,25 @@ defmodule Elmc.Backend.C.Lower.Instr do
   defp emit_pebble_cmd(%{args: %{builtin: id, kind: kind, params: params}} = _instr, slots, rc?, dest, opts) do
     sym = RuntimeBuiltins.c_symbol(id) || "elmc_cmd0"
     kind_s = Map.get(kind, :c_expr, "0")
-    args = Enum.join([kind_s | native_int_param_refs(params, slots, opts)], ", ")
+    params = params || []
 
-    if rc? do
-      rc_call(true, if(dest == "*out", do: "out", else: dest), sym, args)
+    if sym == "elmc_cmd0" and params == [] and cmd_none_kind?(kind_s) do
+      assign_value_return(rc?, dest, "elmc_cmd_none()")
     else
-      dest_out = if(dest == "*out", do: "*out", else: dest)
-      RcRuntimeEmit.non_rc_allocator_stmt(dest_out, sym, args, return_on_fail?: dest == "*out")
+      args = Enum.join([kind_s | native_int_param_refs(params, slots, opts)], ", ")
+
+      if rc? do
+        rc_call(true, if(dest == "*out", do: "out", else: dest), sym, args)
+      else
+        dest_out = if(dest == "*out", do: "*out", else: dest)
+        RcRuntimeEmit.non_rc_allocator_stmt(dest_out, sym, args, return_on_fail?: dest == "*out")
+      end
     end
   end
+
+  defp cmd_none_kind?("0"), do: true
+  defp cmd_none_kind?("ELMC_PEBBLE_CMD_NONE"), do: true
+  defp cmd_none_kind?(_), do: false
 
   @spec emit_render_cmd(map(), Types.ir_expr(), boolean(), Types.ir_expr(), keyword()) :: Types.ir_expr()
 
@@ -3750,10 +3818,6 @@ defmodule Elmc.Backend.C.Lower.Instr do
     RcRuntimeEmit.non_rc_allocator_stmt(dest, fn_name, arg_s, return_on_fail?: dest == "*out")
   end
 
-  @spec value_return_allocator(Types.ir_expr() | String.t()) :: Types.ir_expr()
-
-  defp value_return_allocator(fn_name), do: fn_name
-
   defp emit_load_local(%{dest: dest_reg, args: %{source: src_reg}}, slots, rc?, dest, opts)
        when is_integer(dest_reg) and is_integer(src_reg) do
     src = slot_ref(src_reg, slots, opts)
@@ -3809,6 +3873,55 @@ defmodule Elmc.Backend.C.Lower.Instr do
 
   defp assign_value_return_tail(rc?, dest, call_expr, _instr, _slots, _opts),
     do: assign_value_return(rc?, dest, call_expr)
+
+  @spec wrap_non_rc_rc_allocator_return(String.t(), [String.t()], Types.ir_expr(), Types.ir_expr(), keyword()) ::
+          String.t()
+
+  defp wrap_non_rc_rc_allocator_return(sym, c_args, instr, slots, opts)
+       when is_binary(sym) and is_list(c_args) do
+    slot_count = Keyword.get(opts, :owned_slot_count, 0)
+    cleanup = owned_consume_cleanup_lines(instr, slots, opts)
+    cow_drop = non_rc_record_update_cow_drop(instr, slots, opts)
+    call_args = Enum.join(c_args, ", ")
+
+    alloc_call =
+      if call_args == "" do
+        "#{sym}(&__rc_ret)"
+      else
+        "#{sym}(&__rc_ret, #{call_args})"
+      end
+
+    failure_cleanup =
+      if slot_count > 0 do
+        "elmc_release_array_lifo(owned, #{slot_count});"
+      else
+        ""
+      end
+
+    success_epilogue =
+      [
+        if(slot_count > 0, do: "elmc_owned_null_aliases(owned, #{slot_count}, __rc_ret);", else: nil),
+        Enum.join(cleanup ++ List.wrap(cow_drop), "\n"),
+        if(slot_count > 0, do: "elmc_release_array_lifo(owned, #{slot_count});", else: nil)
+      ]
+      |> Enum.reject(&(&1 in [nil, ""]))
+      |> Enum.join("\n")
+
+    """
+    {
+      ElmcValue *__rc_ret = NULL;
+      RC __alloc_rc = #{alloc_call};
+      if (__alloc_rc != RC_SUCCESS) {
+        ELMC_RC_LOG_FAIL(__alloc_rc, "#{sym}", "allocation failed");
+        #{failure_cleanup}
+        return NULL;
+      }
+      #{success_epilogue}
+      return __rc_ret;
+    }
+    """
+    |> String.trim()
+  end
 
   @spec wrap_non_rc_fn_out_return(Types.expr(), Types.ir_expr(), Types.ir_expr(), keyword()) :: Types.ir_expr()
 
@@ -4439,10 +4552,17 @@ defmodule Elmc.Backend.C.Lower.Instr do
         # Deduplicate by C ref (owned slot), not only by plan reg — slot packing can map
         # two field regs onto the same owned[i]; take must not steal one pointer twice.
         entry =
-          if is_binary(ref) and ref in prior_refs do
-            "elmc_retain(#{ref})"
-          else
-            ref
+          cond do
+            is_binary(ref) and ref in prior_refs ->
+              "elmc_retain(#{ref})"
+
+            is_binary(ref) and RecordCompile.borrowed_owned_ref?(ref) ->
+              # record_new_values_take moves pointers without retain; borrowed tuple/field
+              # projections must bump rc before take or the record aliases message payload.
+              "elmc_retain(#{ref})"
+
+            true ->
+              ref
           end
 
         {entry, [ref | prior_refs]}

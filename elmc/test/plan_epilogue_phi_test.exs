@@ -89,7 +89,8 @@ defmodule Elmc.PlanEpiloguePhiTest do
     assert {:ok, plan} = PlanLower.lower(decl, "Main", %{}, rc_required: false)
     c = CLowerFunction.emit(plan)
 
-    assert c =~ "elmc_closure_new_take"
+    assert c =~ "elmc_closure_new("
+    assert c =~ "__alloc_rc != RC_SUCCESS"
     assert c =~ "owned["
     refute c =~ ~r/owned\[\d+\] = owned\[\d+\];\n\s*elmc_release\(owned\[\d+\]\);\n\s*owned\[\d+\] = NULL;\n\s*\{\n\s*ElmcValue \*__ret = owned\[\d+\];/
   end

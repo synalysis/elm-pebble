@@ -120,7 +120,7 @@ defmodule Elmc.PlanRetainDedupTest do
     view_body = CCodegenExtract.fn_body(c, "elmc_fn_Main_view")
 
     assert view_body =~ "elmc_string_append(&owned"
-    assert view_body =~ "elmc_string_from_int(owned"
+    assert view_body =~ ~r/elmc_string_from_int\(&owned\[\d+\], owned\[\d+\]\)/
     assert view_body =~ "ELMC_RECORD_GET_INDEX_INT(model, ELMC_FIELD_MAIN_MODEL_BEST)"
 
     refute view_body =~ ~r/snprintf\([^;]+plan_native_int_\d+\)/

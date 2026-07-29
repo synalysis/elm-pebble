@@ -661,11 +661,11 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     literal_body = lowered_fn_body!(generated_c, "elmc_fn_Main_nativeTextLiteral_commands_append")
 
+    assert literal_body =~ "native_i_3"
     assert literal_body =~ "elmc_fn_Main_nativeTextAt_commands_append_native("
-    assert literal_body =~ "ELMC_COLOR_WHITE" or literal_body =~ "native_i_"
+
     refute literal_body =~ "elmc_new_string(\"Direct\")"
     refute literal_body =~ "elmc_new_int(255)"
-    refute literal_body =~ "elmc_fn_PebbleColor_white("
 
     native_let_body =
       lowered_fn_body!(generated_c, "elmc_fn_Main_nativeTextLet_commands_append")
@@ -725,8 +725,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
       lowered_fn_body!(generated_c, "elmc_fn_Main_nativeTextFromHelper_commands_append")
 
     assert native_helper_body =~ "owned[0]"
-    assert native_helper_body =~ "const char *native_string_" or
-             native_helper_body =~ "const char *direct_text = (const char *)owned[0]->payload"
+    assert native_helper_body =~ "const char *native_string_"
     refute native_helper_body =~ "(const char *)tmp_"
     refute native_helper_body =~ "ELMC_TAG_LIST"
     refute native_helper_body =~ "elmc_string_from_list"

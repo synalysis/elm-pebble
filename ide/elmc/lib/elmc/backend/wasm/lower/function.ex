@@ -92,7 +92,8 @@ defmodule Elmc.Backend.Wasm.Lower.Function do
       fn_table: fn_table,
       catch_id: catch_id,
       slots: slots,
-      parent_plan: plan
+      parent_plan: plan,
+      native_scalar_out: Map.get(plan, :native_scalar_return)
     ]
 
     {imports, import_arities} = ImportCollect.collect(plan)
@@ -748,22 +749,8 @@ defmodule Elmc.Backend.Wasm.Lower.Function do
 
   defp emit_state_switch_terminator({:ret, reg}, slots, instr_opts) when is_integer(reg) do
     plan_state = slots.plan_state_local
-    rc? = Keyword.get(instr_opts, :rc_required, true)
 
-    publish =
-      if rc? do
-        Slots.publish_reg_to_fn_out(slots, reg)
-      else
-        [
-          WasmTypes.line(
-            WasmTypes.sexpr("local.set", [
-              slots.fn_out_local,
-              " ",
-              WasmTypes.sexpr("local.get", [Slots.reg_name(slots, reg)])
-            ])
-          )
-        ]
-      end
+    publish = Instr.publish_fn_out(slots, reg, instr_opts)
 
     publish ++
       [

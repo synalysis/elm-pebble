@@ -6,7 +6,7 @@ defmodule Elmc.Backend.C.Lower.Function do
 
 
   alias Elmc.Backend.C.Lower.{Frame, Instr, Lambda, NativeIntFold, NativeReturn, StringConcat, TagRefs}
-  alias Elmc.Backend.CCodegen.{FunctionCallAbi, FunctionEmit, Fusion}
+  alias Elmc.Backend.CCodegen.{FunctionCallAbi, FunctionEmit, Fusion, RecordCompile}
   alias Elmc.Backend.CCodegen.DirectRender.CommandDef
   alias Elmc.Backend.CCodegen.Native.FunctionCall, as: NativeFunctionCall
   alias Elmc.Backend.CCodegen.Util
@@ -309,7 +309,7 @@ defmodule Elmc.Backend.C.Lower.Function do
       (body_lines ++ List.wrap(ret_line) ++ List.wrap(deferred_cleanup))
       |> Enum.reject(&(&1 == ""))
       |> Enum.flat_map(&String.split(&1, "\n"))
-      |> cleanup_cfg_lines()
+      |> cleanup_cfg_lines(explicit_targets)
       |> then(fn lines ->
         missing_native_int_decl_lines(lines, native_int_locals) ++ lines
       end)
@@ -691,14 +691,14 @@ defmodule Elmc.Backend.C.Lower.Function do
   defp state_switch_c_default_line(target_id, opts),
     do: "default: __plan_state = #{plan_state_c_ref(opts, target_id)}; break;"
 
-  @spec cleanup_cfg_lines(Types.ir_expr()) :: Types.ir_expr()
+  @spec cleanup_cfg_lines(Types.ir_expr(), MapSet.t()) :: Types.ir_expr()
 
-  defp cleanup_cfg_lines(lines) do
+  defp cleanup_cfg_lines(lines, protected_block_ids \\ MapSet.new()) do
     lines
     |> Enum.flat_map(&String.split(&1, "\n"))
     |> Enum.map(&String.trim_trailing/1)
     |> Enum.reject(&(&1 == ""))
-    |> coalesce_consecutive_block_labels()
+    |> coalesce_consecutive_block_labels(protected_block_ids)
     |> remove_redundant_cfg_jumps()
     |> remove_unused_block_labels()
   end
@@ -728,9 +728,9 @@ defmodule Elmc.Backend.C.Lower.Function do
     end)
   end
 
-  @spec coalesce_consecutive_block_labels(Types.ir_expr()) :: Types.ir_expr()
+  @spec coalesce_consecutive_block_labels(Types.ir_expr(), MapSet.t()) :: Types.ir_expr()
 
-  defp coalesce_consecutive_block_labels(lines) do
+  defp coalesce_consecutive_block_labels(lines, protected_block_ids) do
     {out, aliases, pending} =
       Enum.reduce(lines, {[], %{}, []}, fn line, {out, aliases, pending} ->
         case block_label_id(line) do
@@ -738,29 +738,44 @@ defmodule Elmc.Backend.C.Lower.Function do
             {out, Map.put(aliases, id, id), pending ++ [id]}
 
           _ ->
-            {out, aliases} = flush_pending_labels(out, aliases, pending)
+            {out, aliases} = flush_pending_labels(out, aliases, pending, protected_block_ids)
             {out ++ [line], aliases, []}
         end
       end)
 
-    {out, aliases} = flush_pending_labels(out, aliases, pending)
+    {out, aliases} = flush_pending_labels(out, aliases, pending, protected_block_ids)
     rewrite_block_label_refs(out, aliases)
   end
 
-  @spec flush_pending_labels(Types.ir_expr(), Types.ir_expr(), term() | Types.ir_expr()) :: Types.ir_expr()
+  @spec flush_pending_labels(Types.ir_expr(), Types.ir_expr(), term() | Types.ir_expr(), MapSet.t()) ::
+          Types.ir_expr()
 
-  defp flush_pending_labels(out, aliases, []), do: {out, aliases}
+  defp flush_pending_labels(out, aliases, [], _protected_block_ids), do: {out, aliases}
 
-  defp flush_pending_labels(out, aliases, pending) do
+  defp flush_pending_labels(out, aliases, pending, protected_block_ids) do
     pending = Enum.reverse(pending)
-    keeper = List.last(pending)
 
-    aliases =
-      Enum.reduce(pending, aliases, fn id, map ->
-        if id == keeper, do: map, else: Map.put(map, id, keeper)
-      end)
+    if coalesce_pending_block_labels?(pending, protected_block_ids) do
+      keeper = List.last(pending)
 
-    {out ++ [block_label(keeper)], aliases}
+      aliases =
+        Enum.reduce(pending, aliases, fn id, map ->
+          if id == keeper, do: map, else: Map.put(map, id, keeper)
+        end)
+
+      {out ++ [block_label(keeper)], aliases}
+    else
+      {out ++ Enum.map(pending, &block_label/1), aliases}
+    end
+  end
+
+  @spec coalesce_pending_block_labels?(Types.ir_expr(), MapSet.t()) :: boolean()
+
+  defp coalesce_pending_block_labels?([_single], _protected_block_ids), do: false
+
+  defp coalesce_pending_block_labels?(pending, protected_block_ids) when is_list(pending) do
+    length(pending) > 1 and
+      not Enum.any?(pending, &MapSet.member?(protected_block_ids, &1))
   end
 
   @spec block_label_id(Types.ir_expr() | String.t()) :: Types.ir_expr()
@@ -1683,7 +1698,11 @@ defmodule Elmc.Backend.C.Lower.Function do
     slot_count = owned_slot_count(slots)
     owned = Frame.owned_declaration(plan, slots)
     slot_indices = if slot_count > 0, do: Enum.to_list(0..(slot_count - 1)), else: []
-    epilogue = Frame.epilogue_release(slot_indices, slot_count)
+
+    epilogue =
+      [RecordCompile.borrowed_owned_refs_null_stmt(), Frame.epilogue_release(slot_indices, slot_count)]
+      |> Enum.reject(&(&1 == ""))
+      |> Enum.join("\n")
     prefix = if rc?, do: ["RC Rc = RC_SUCCESS;", owned], else: List.wrap(owned)
     letrec_decls = letrec_decl_lines(plan.letrec_refs || [])
     letrec_free = letrec_free_lines(plan.letrec_refs || [])
@@ -2873,7 +2892,18 @@ defmodule Elmc.Backend.C.Lower.Function do
       _ ->
         []
     end)
+    |> single_def_const_int_entries()
     |> Map.new()
+  end
+
+  @spec single_def_const_int_entries(list()) :: list()
+  defp single_def_const_int_entries(entries) do
+    entries
+    |> Enum.group_by(fn {reg, _} -> reg end)
+    |> Enum.flat_map(fn
+      {_reg, [single]} -> [single]
+      {_reg, _multiple} -> []
+    end)
   end
 
   @spec build_const_c_expr_regs(map()) :: Types.ir_expr()
@@ -2882,7 +2912,12 @@ defmodule Elmc.Backend.C.Lower.Function do
     plan.blocks
     |> Enum.flat_map(& &1.instrs)
     |> Enum.filter(&(&1.op == :const_c_expr))
-    |> Map.new(fn %{dest: reg, args: %{value: value}} -> {reg, value} end)
+    |> Enum.group_by(& &1.dest)
+    |> Enum.flat_map(fn
+      {reg, [%{args: %{value: value}}]} -> [{reg, value}]
+      {_reg, _multiple} -> []
+    end)
+    |> Map.new()
   end
 
   @spec build_native_int_only_regs(map(), Types.decl_map()) :: Types.ir_expr()
@@ -3787,9 +3822,24 @@ defmodule Elmc.Backend.C.Lower.Function do
         expr
 
       nil ->
-        case const_int_literal_from_plan(Keyword.get(instr_opts, :parent_plan), reg) do
-          value when is_integer(value) -> Integer.to_string(value)
-          _ -> "plan_native_int_#{reg}"
+        plan = Keyword.get(instr_opts, :parent_plan)
+        mutable? = MapSet.member?(Keyword.get(instr_opts, :native_int_mutable_regs, MapSet.new()), reg)
+
+        multi_def? =
+          case plan do
+            %FunctionPlan{} = p -> length(all_defining_instrs(p, reg)) > 1
+            _ -> false
+          end
+
+        cond do
+          mutable? or multi_def? ->
+            "plan_native_int_#{reg}"
+
+          true ->
+            case const_int_literal_from_plan(plan, reg) do
+              value when is_integer(value) -> Integer.to_string(value)
+              _ -> "plan_native_int_#{reg}"
+            end
         end
     end
   end

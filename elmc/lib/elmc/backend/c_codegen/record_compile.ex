@@ -1359,7 +1359,7 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
     case Host.inline_record_field_expr(arg_expr, field, env) do
       nil ->
         {arg_code, arg_var, counter} = Host.compile_expr(arg_expr, env, counter)
-        {var, next} = CaseCompile.fresh_var(counter, env)
+        {var, next} = CaseCompile.fresh_owned_assign_target(counter, env)
         getter = record_field_get_expr(arg_var, field, arg_expr, env)
         :ok = Expr.put_subexpr_record_meta(var, subexpr_record_meta_for_field_access(env, arg_expr, field))
 
@@ -1388,7 +1388,7 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
         ) :: Types.compile_result()
   defp compile_bound_field_get(record_name, source, field, env, counter)
        when is_binary(source) do
-    {var, next} = CaseCompile.fresh_var(counter, env)
+    {var, next} = CaseCompile.fresh_owned_assign_target(counter, env)
 
     getter =
       record_field_get_expr(
@@ -1744,6 +1744,35 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
     Process.put(:elmc_borrowed_field_refs, MapSet.new())
     reset_record_field_sources()
     :ok
+  end
+
+  @doc false
+  @spec borrowed_owned_ref?(String.t()) :: boolean()
+  def borrowed_owned_ref?(var) when is_binary(var) do
+    MapSet.member?(Process.get(:elmc_borrowed_field_refs, MapSet.new()), var)
+  end
+
+  @doc false
+  @spec mark_borrowed_owned_ref(String.t()) :: :ok
+  def mark_borrowed_owned_ref(var) when is_binary(var) do
+    if String.starts_with?(var, "owned[") do
+      Process.put(
+        :elmc_borrowed_field_refs,
+        MapSet.put(Process.get(:elmc_borrowed_field_refs, MapSet.new()), var)
+      )
+    end
+
+    :ok
+  end
+
+  @doc false
+  @spec borrowed_owned_refs_null_stmt() :: String.t()
+  def borrowed_owned_refs_null_stmt do
+    Process.get(:elmc_borrowed_field_refs, MapSet.new())
+    |> Enum.filter(&String.starts_with?(&1, "owned["))
+    |> Enum.sort()
+    |> Enum.map(fn ref -> "#{ref} = NULL;" end)
+    |> Enum.join("\n")
   end
 
   @spec reset_record_field_sources() :: :ok

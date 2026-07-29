@@ -106,7 +106,9 @@ defmodule Elmc.Backend.SizeProfile do
   @spec plan_state_switch_thresholds(compile_options()) ::
           %{min_blocks: pos_integer(), max_owned_slots: pos_integer()}
   def plan_state_switch_thresholds(_opts) do
-    %{min_blocks: 8, max_owned_slots: 12}
+    # Nested compare/if plans commonly need ~13 owned slots under RC boxing;
+    # keep headroom so explicit `:state_switch` fixtures stay on the switch path.
+    %{min_blocks: 8, max_owned_slots: 16}
   end
 
   @spec plan_union_tag_switch_min_arms(compile_options()) :: pos_integer()

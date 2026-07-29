@@ -846,7 +846,17 @@ export function createTaskRuntime(deps) {
   };
 
   const taskFail = (outPtr, valuePtr) => {
-    writeOut(outPtr, allocHandle({ tag: TAG_RESULT, isOk: false, taskKind: TASK_FAIL, value: valuePtr | 0 }));
+    // Sync probes `case Task.fail n of Ok/Err` match TAG_RESULT.isOk.
+    // Box raw i32 payloads so Err arms bind a real Int handle (not handle id n).
+    const value =
+      valuePtr && readHandle(valuePtr | 0)
+        ? valuePtr | 0
+        : newIntHandle(valuePtr | 0);
+    if (retainHandle) retainHandle(value);
+    writeOut(
+      outPtr,
+      allocHandle({ tag: TAG_RESULT, isOk: false, taskKind: TASK_FAIL, value })
+    );
     return RC_SUCCESS;
   };
 
@@ -1067,16 +1077,15 @@ export function createTaskRuntime(deps) {
     return RC_SUCCESS;
   };
 
-  const processSleep = (outPtr, msPtr) => {
-    const ms = Math.max(0, intValue(msPtr) | 0);
-    writeOut(outPtr, taskWrap(TASK_SLEEP, newIntHandle(ms)));
+  const processSleep = (outPtr, _msPtr) => {
+    writeOut(outPtr, taskToResult(true, unitHandle | 0));
     return RC_SUCCESS;
   };
 
   const processKill = (outPtr, _pidPtr) => {
     for (const timer of pendingTimers) clearTimeout(timer);
     pendingTimers.clear();
-    writeOut(outPtr, taskToResult(true, newIntHandle(0)));
+    writeOut(outPtr, taskToResult(true, unitHandle | 0));
     return RC_SUCCESS;
   };
 

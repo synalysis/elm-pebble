@@ -60,7 +60,8 @@ defmodule Elmc.LaunchContextInitCodegenTest do
 
     init_body = CCodegenExtract.fn_impl_body(File.read!(Path.join(out_dir, "c/elmc_generated.c")), "elmc_fn_Main_init")
 
-    assert init_body =~ "elmc_new_int(&owned["
+    assert init_body =~ "ELMC_RC_INT_BOX("
+    refute init_body =~ "elmc_new_int(&owned["
     refute init_body =~ "elmc_new_int(&tmp_3_boxed_int"
 
     assert length(
@@ -70,8 +71,9 @@ defmodule Elmc.LaunchContextInitCodegenTest do
              )
            ) == 3
 
-    assert init_body =~ "ELMC_RECORD_GET_INDEX_INT(owned[3], ELMC_FIELD_PEBBLE_PLATFORM_LAUNCHSCREEN_WIDTH)"
-    assert init_body =~ "ELMC_RECORD_GET_INDEX_INT(owned[6], ELMC_FIELD_PEBBLE_PLATFORM_LAUNCHSCREEN_HEIGHT)"
+    assert init_body =~ "ELMC_RECORD_GET_INDEX_INT(owned[0], ELMC_FIELD_PEBBLE_PLATFORM_LAUNCHSCREEN_WIDTH)"
+    assert init_body =~ "ELMC_RECORD_GET_INDEX_INT(owned[1], ELMC_FIELD_PEBBLE_PLATFORM_LAUNCHSCREEN_HEIGHT)"
+    assert init_body =~ "elmc_record_new_values_take("
     assert init_body =~ "ELMC_FIELD_PEBBLE_PLATFORM_LAUNCHSCREEN_SHAPE"
   end
 end

@@ -32,7 +32,7 @@ defmodule Elmc.PlanCoreBuiltinsTest do
   end
 
   test "special_values runtime symbols are registered in RuntimeBuiltins" do
-    special_dir = Path.expand("../lib/elmc/backend/c_codegen/special_values", __DIR__)
+    special_dir = Path.expand("../lib/elmc/backend/plan/lower/special_values", __DIR__)
 
     symbols =
       Path.wildcard(special_dir <> "/**/*.ex")

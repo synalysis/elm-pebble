@@ -210,6 +210,7 @@ defmodule Elmc.Backend.Plan.Worker.Emit do
       if (!pair->first) return NULL;
       ElmcValue *model = pair->first;
       pair->first = NULL;
+      if (model->rc > 1) elmc_release(model);
       return model;
     }
 
@@ -220,6 +221,7 @@ defmodule Elmc.Backend.Plan.Worker.Emit do
       if (!pair->second) return elmc_int_zero();
       ElmcValue *cmd = pair->second;
       pair->second = NULL;
+      if (cmd->rc > 1) elmc_release(cmd);
       return cmd;
     }
 

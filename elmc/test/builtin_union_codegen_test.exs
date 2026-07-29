@@ -133,7 +133,7 @@ defmodule Elmc.BuiltinUnionCodegenTest do
     fn_body = CCodegenExtract.fn_body(generated_c, "elmc_fn_Main_maybePiece")
 
     assert fn_body =~ "plan block"
-    assert fn_body =~ "elmc_maybe_just_take"
+    assert fn_body =~ "elmc_maybe_just_own"
     refute fn_body =~ "*out = elmc_maybe_just("
     assert fn_body =~ "elmc_maybe_nothing()"
   end

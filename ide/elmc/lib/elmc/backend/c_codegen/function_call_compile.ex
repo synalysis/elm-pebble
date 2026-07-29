@@ -497,12 +497,25 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
             {ValueSlots.boxed_decl(var, "elmc_forward_ref_get(#{slot})", env), var, next}
 
           {:ok, {:direct_fragment, fragment}} ->
-            {frag_code, frag_var, next2} = Host.compile_expr(fragment, env, next)
-            retain_next = next2 + 1
-            retain_var = "tmp_#{retain_next}"
+            case ephemeral_int_fragment(fragment) do
+              {:ok, value} ->
+                frag_var = "tmp_#{next + 1}"
+                retain_var = "tmp_#{next + 2}"
 
-            {"#{frag_code}  ElmcValue *#{retain_var} = elmc_retain(#{frag_var});\n  #{ValueSlots.release_stmt(frag_var)}",
-             retain_var, retain_next}
+                {
+                  "ElmcValue *#{frag_var} = ELMC_RC_INT_BOX(#{value});\n  ElmcValue *#{retain_var} = elmc_retain(#{frag_var});",
+                  retain_var,
+                  next + 2
+                }
+
+              :no ->
+                {frag_code, frag_var, next2} = Host.compile_expr(fragment, env, next)
+                retain_next = next2 + 1
+                retain_var = "tmp_#{retain_next}"
+
+                {"#{frag_code}  ElmcValue *#{retain_var} = elmc_retain(#{frag_var});\n  #{ValueSlots.release_stmt(frag_var)}",
+                 retain_var, retain_next}
+            end
 
           {:ok, source} when is_binary(source) ->
             c_source = RcRuntimeEmit.value_expr(source)
@@ -1779,4 +1792,10 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
 
     Process.put(:elmc_lambda_emitted_names, emitted)
   end
+
+  @spec ephemeral_int_fragment(Types.ir_expr()) :: {:ok, integer()} | :no
+  defp ephemeral_int_fragment(%{op: :int_literal, value: value}) when is_integer(value),
+    do: {:ok, value}
+
+  defp ephemeral_int_fragment(_), do: :no
 end

@@ -199,6 +199,7 @@ defmodule Elmc.Backend.Plan.RuntimeBuiltins.Extra do
     string_split: "elmc_string_split",
     string_equals: "elmc_string_equals",
     string_equals_literal: "elmc_string_equals_cstr",
+    list_equal_int: "elmc_list_equal_int",
     string_to_list: "elmc_string_to_list",
     string_to_lower: "elmc_string_to_lower",
     string_to_upper: "elmc_string_to_upper",
@@ -334,7 +335,7 @@ defmodule Elmc.Backend.Plan.RuntimeBuiltins.Extra do
   @extra_value_return ~w(
     array_empty array_from_list array_is_empty char_is_alpha char_is_alpha_num
     char_is_digit char_is_hex_digit char_is_lower char_is_oct_digit char_is_upper
-    dict_is_empty dict_member list_member set_is_empty set_member
+    dict_is_empty dict_member list_member list_equal_int set_is_empty set_member
     basics_is_infinite basics_is_nan basics_xor string_contains
     task_on_error task_perform
   )a

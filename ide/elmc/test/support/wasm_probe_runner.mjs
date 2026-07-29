@@ -23,10 +23,19 @@ const { helpers, callExport } = await loadElmcWasm({
   wasmBytes,
   manifestImports: manifest.imports || [],
   manifestClosures: manifest.closures || [],
-    closureCount: manifest.closure_count ?? null,
-    closureCount: manifest.closure_count ?? null,
+  closureCount: manifest.closure_count ?? null,
   immortalStrings: manifest.immortal_strings || {},
 });
+
+const probeChecksum = (handle) => {
+  const p = handle | 0;
+  const payload = helpers.readHandle(p);
+  // Native-int wasm exports may return raw i32 0/1 that collide with immortal Int handles.
+  if (payload?.tag === 1 && payload.immortal && p <= 255 && (payload.value | 0) !== p) {
+    return p;
+  }
+  return helpers.unboxInt(handle);
+};
 
 const { rc, value: resultHandle } = callExport(exportName, []);
 
@@ -35,7 +44,7 @@ if (rc !== RC_SUCCESS) {
   process.exit(1);
 }
 
-const checksum = helpers.unboxInt(resultHandle);
+const checksum = probeChecksum(resultHandle);
 helpers.buildImport("release")(resultHandle);
 
 if (!helpers.checkBalanced()) {

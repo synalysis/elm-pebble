@@ -10,6 +10,8 @@ defmodule Elmc.WorkerAdapterTest do
     File.rm_rf!(out_dir)
     {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
 
+    alias Elmc.Test.RcTrackHarness
+
     harness_path = Path.join(out_dir, "c/worker_harness.c")
 
     File.write!(
@@ -18,6 +20,8 @@ defmodule Elmc.WorkerAdapterTest do
       #include "elmc_worker.h"
       #include "elmc_runtime.h"
       #include <stdio.h>
+
+      #{RcTrackHarness.harness_prelude()}
 
       static ElmcValue *launch_context(void) {
         ElmcValue *reason = ELMC_RC_INT_BOX(1); /* Pebble.Platform.LaunchSystem constructor tag */

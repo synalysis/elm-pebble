@@ -122,6 +122,16 @@ defmodule Elmc.Backend.Wasm.ImportCollect do
     end
   end
 
+  defp collect_instr(%{op: :compare, args: %{mode: :list_int} = args}, acc) do
+    acc = put_import_elem(acc, RuntimeImports.import_name(:list_equal_int), 3)
+
+    if Map.get(args, :kind) == :neq do
+      put_import_elem(acc, RuntimeImports.import_name(:basics_not), 2)
+    else
+      acc
+    end
+  end
+
   defp collect_instr(%{op: :compare, args: %{mode: :float_boxed}}, acc),
     do: put_import_elem(acc, "runtime.as_float", 1)
 

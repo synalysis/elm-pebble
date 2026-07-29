@@ -31,6 +31,8 @@ defmodule Elmc.GeneratedRcTrackFusionAllocProbeTest do
       #include "elmc_pebble.h"
       #include <stdio.h>
 
+      #{RcTrackHarness.harness_prelude()}
+
       static ElmcValue *launch_context(void) {
         ElmcValue *reason = ELMC_RC_INT_BOX(1);
         ElmcValue *width = ELMC_RC_INT_BOX(144);

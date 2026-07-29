@@ -214,9 +214,11 @@ defmodule Elmc.RcRequiredAllocAnalysisTest do
     refute generated_c =~ "static RC elmc_fn_Yes_Render_angleFromMinute("
 
     square_body = CCodegenExtract.fn_body(generated_c, "elmc_fn_Yes_Layout_centerSquare")
-    assert square_body =~ "ElmcValue *owned["
-    assert square_body =~ "Rc = elmc_new_int(&owned["
-    assert square_body =~ "elmc_release_array_lifo(owned,"
+    assert square_body =~ "CATCH_BEGIN"
+    assert square_body =~ "CHECK_RC(Rc)"
+    assert square_body =~ "Rc = elmc_record_new_values_ints(out,"
+    refute square_body =~ "ElmcValue *owned["
+    refute square_body =~ "Rc = elmc_new_int(&owned["
     refute square_body =~ "tmp_1_boxed_int"
     refute square_body =~ "if (owned[0])"
     refute square_body =~ "if (owned[1])"

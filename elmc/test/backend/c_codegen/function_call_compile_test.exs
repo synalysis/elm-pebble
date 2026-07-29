@@ -22,7 +22,7 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompileTest do
 
     assert var == "tmp_11"
     assert next == 12
-    assert code =~ "elmc_record_new_values_ints_take(4, rec_values_1)"
+    assert code =~ "elmc_record_new_values_ints(&tmp_11, 4, rec_values_1)"
     refute code =~ "rec_field_ids_"
     assert code =~ "direct_native_record_layout_x_1"
     refute code =~ "\"x\""
@@ -45,9 +45,9 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompileTest do
       {code, var, _} = FunctionCallCompile.compile_var("layout", env, 0)
 
       assert var == "tmp_1"
-      assert code =~ "elmc_harness_record_new_values_take(2, rec_values_1)"
-      assert code =~ "ELMC_RC_STRING_BOX(direct_label)"
-      refute code =~ "\"label\""
+      assert code =~ "elmc_record_new_values(&tmp_1, 2, rec_values_1)"
+      assert code =~ "elmc_new_string(&rec_field_"
+      assert code =~ "elmc_new_int(&rec_field_"
     after
       Process.delete(:elmc_record_alias_shapes)
       Process.delete(:elmc_record_field_types)
@@ -74,10 +74,9 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompileTest do
       {code, var, _} = FunctionCallCompile.compile_var("layout", env, 0)
 
       assert var == "tmp_1"
-      assert code =~ "elmc_harness_record_new_values_take(2, rec_values_1)"
-      assert code =~ "ELMC_RC_INT_BOX(direct_x)"
-      assert code =~ "ELMC_RC_STRING_BOX(direct_label)"
-      refute code =~ "\"label\""
+      assert code =~ "elmc_record_new_values(&tmp_1, 2, rec_values_1)"
+      assert code =~ "elmc_new_int(&rec_field_"
+      assert code =~ "elmc_new_string(&rec_field_"
     after
       Process.delete(:elmc_record_field_types)
     end

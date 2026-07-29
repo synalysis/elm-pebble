@@ -1,6 +1,8 @@
 defmodule Elmc.RuntimeStdlibGapsTest do
   use ExUnit.Case
 
+  alias Elmc.Test.RcTrackHarness
+
   @tag :runtime_c
   test "list sortBy sorts by mapped keys" do
     run_harness(
@@ -20,9 +22,9 @@ defmodule Elmc.RuntimeStdlibGapsTest do
         ElmcValue *n2 = ELMC_RC_INT_BOX(2);
         list = elmc_harness_list_cons(n2, list);
 
-        ElmcValue *cap[1] = { NULL };
-        ElmcValue *f = elmc_closure_new_take(by_identity, 1, 0, cap);
-        ElmcValue *sorted = elmc_list_sort_by_take(f, list);
+        ElmcValue *f = elmc_harness_closure_new(by_identity, 1);
+        ElmcValue *sorted = NULL;
+        if (elmc_list_sort_by(&sorted, f, list) != RC_SUCCESS) return 1;
         ElmcValue *cursor = sorted;
         printf("%lld", (long long)elmc_as_int(((ElmcCons *)cursor->payload)->head));
         cursor = ((ElmcCons *)cursor->payload)->tail;
@@ -35,8 +37,6 @@ defmodule Elmc.RuntimeStdlibGapsTest do
         elmc_release(list);
         return 0;
       }
-      
-      
       """,
       "1 2 3"
     )
@@ -46,10 +46,10 @@ defmodule Elmc.RuntimeStdlibGapsTest do
   test "list sortWith orders by comparison function" do
     run_harness(
       """
-      static ElmcValue *compare_ints(ElmcValue **args, int argc, ElmcValue **captures, int capture_count) {
+      static RC compare_ints(ElmcValue **out, ElmcValue **args, int argc, ElmcValue **captures, int capture_count) {
         (void)captures; (void)capture_count;
-        if (argc < 2) return elmc_int_zero();
-        return elmc_basics_compare_take(args[0], args[1]);
+        if (argc < 2) return elmc_new_int(out, 0);
+        return elmc_basics_compare(out, args[0], args[1]);
       }
 
       int main(void) {
@@ -61,9 +61,9 @@ defmodule Elmc.RuntimeStdlibGapsTest do
         ElmcValue *n2 = ELMC_RC_INT_BOX(2);
         list = elmc_harness_list_cons(n2, list);
 
-        ElmcValue *cap[1] = { NULL };
-        ElmcValue *f = elmc_closure_new_take(compare_ints, 2, 0, cap);
-        ElmcValue *sorted = elmc_list_sort_with_take(f, list);
+        ElmcValue *f = elmc_harness_closure_new_rc(compare_ints, 2, 0, NULL);
+        ElmcValue *sorted = NULL;
+        if (elmc_list_sort_with(&sorted, f, list) != RC_SUCCESS) return 1;
         ElmcValue *cursor = sorted;
         printf("%lld", (long long)elmc_as_int(((ElmcCons *)cursor->payload)->head));
         cursor = ((ElmcCons *)cursor->payload)->tail;
@@ -76,8 +76,6 @@ defmodule Elmc.RuntimeStdlibGapsTest do
         elmc_release(list);
         return 0;
       }
-      
-      
       """,
       "1 2 3"
     )
@@ -91,7 +89,8 @@ defmodule Elmc.RuntimeStdlibGapsTest do
         ElmcValue *s = ELMC_RC_STRING_BOX("a-b-a");
         ElmcValue *dash = ELMC_RC_STRING_BOX("-");
         ElmcValue *plus = ELMC_RC_STRING_BOX("+");
-        ElmcValue *out = elmc_string_replace_take(dash, plus, s);
+        ElmcValue *out = NULL;
+        if (elmc_string_replace(&out, dash, plus, s) != RC_SUCCESS) return 1;
         printf("%s\\n", (const char *)out->payload);
         elmc_release(out);
         elmc_release(plus);
@@ -99,8 +98,6 @@ defmodule Elmc.RuntimeStdlibGapsTest do
         elmc_release(s);
         return 0;
       }
-      
-      
       """,
       "a+b+a"
     )
@@ -114,7 +111,8 @@ defmodule Elmc.RuntimeStdlibGapsTest do
         ElmcValue *empty = elmc_list_nil();
         ElmcValue *key = ELMC_RC_STRING_BOX("name");
         ElmcValue *val = ELMC_RC_INT_BOX(42);
-        ElmcValue *dict = elmc_dict_insert_take(key, val, empty);
+        ElmcValue *dict = NULL;
+        if (elmc_dict_insert(&dict, key, val, empty) != RC_SUCCESS) return 1;
         elmc_release(val);
         ElmcValue *lookup_key = ELMC_RC_STRING_BOX("name");
         elmc_int_t found = elmc_dict_get_with_default_int_value(0, lookup_key, dict);
@@ -128,8 +126,6 @@ defmodule Elmc.RuntimeStdlibGapsTest do
         elmc_release(empty);
         return (found == 42 && missing == 7) ? 0 : 1;
       }
-      
-      
       """,
       "42 7"
     )
@@ -143,10 +139,12 @@ defmodule Elmc.RuntimeStdlibGapsTest do
         ElmcValue *empty = elmc_list_nil();
         ElmcValue *key = ELMC_RC_STRING_BOX("name");
         ElmcValue *val = ELMC_RC_INT_BOX(42);
-        ElmcValue *dict = elmc_dict_insert_take(key, val, empty);
+        ElmcValue *dict = NULL;
+        if (elmc_dict_insert(&dict, key, val, empty) != RC_SUCCESS) return 1;
         elmc_release(val);
         ElmcValue *lookup_key = ELMC_RC_STRING_BOX("name");
-        ElmcValue *found = elmc_dict_get_take(lookup_key, dict);
+        ElmcValue *found = NULL;
+        if (elmc_dict_get(&found, lookup_key, dict) != RC_SUCCESS) return 1;
         int ok = found && found->tag == ELMC_TAG_MAYBE && found->payload &&
                  ((ElmcMaybe *)found->payload)->is_just &&
                  elmc_as_int(((ElmcMaybe *)found->payload)->value) == 42;
@@ -158,8 +156,6 @@ defmodule Elmc.RuntimeStdlibGapsTest do
         elmc_release(empty);
         return ok ? 0 : 1;
       }
-      
-      
       """,
       "1"
     )
@@ -237,19 +233,22 @@ defmodule Elmc.RuntimeStdlibGapsTest do
         ElmcValue *b = dict_from_pairs(pair("y", 10), pair("z", 30));
         if (!a || !b) return 1;
 
-        ElmcValue *cap[1] = { NULL };
-        ElmcValue *lf = elmc_closure_new_take(left_only, 3, 0, cap);
-        ElmcValue *bf = elmc_closure_new_take(both, 4, 0, cap);
-        ElmcValue *rf = elmc_closure_new_take(right_only, 3, 0, cap);
+        ElmcValue *lf = elmc_harness_closure_new(left_only, 3);
+        ElmcValue *bf = elmc_harness_closure_new(both, 4);
+        ElmcValue *rf = elmc_harness_closure_new(right_only, 3);
         ElmcValue *empty = elmc_list_nil();
 
-        ElmcValue *merged = elmc_dict_merge_take(lf, bf, rf, a, b, empty);
+        ElmcValue *merged = NULL;
+        if (elmc_dict_merge(&merged, lf, bf, rf, a, b, empty) != RC_SUCCESS) return 1;
         ElmcValue *kx = ELMC_RC_STRING_BOX("x");
         ElmcValue *ky = ELMC_RC_STRING_BOX("y");
         ElmcValue *kz = ELMC_RC_STRING_BOX("z");
-        ElmcValue *mx = elmc_dict_get_take(kx, merged);
-        ElmcValue *my = elmc_dict_get_take(ky, merged);
-        ElmcValue *mz = elmc_dict_get_take(kz, merged);
+        ElmcValue *mx = NULL;
+        ElmcValue *my = NULL;
+        ElmcValue *mz = NULL;
+        if (elmc_dict_get(&mx, kx, merged) != RC_SUCCESS) return 1;
+        if (elmc_dict_get(&my, ky, merged) != RC_SUCCESS) return 1;
+        if (elmc_dict_get(&mz, kz, merged) != RC_SUCCESS) return 1;
         printf("%lld %lld %lld\\n",
           (long long)elmc_as_int(((ElmcMaybe *)mx->payload)->value),
           (long long)elmc_as_int(((ElmcMaybe *)my->payload)->value),
@@ -269,8 +268,6 @@ defmodule Elmc.RuntimeStdlibGapsTest do
         elmc_release(empty);
         return 0;
       }
-      
-      
       """,
       "1 10 33"
     )
@@ -293,9 +290,9 @@ defmodule Elmc.RuntimeStdlibGapsTest do
       #include "elmc_runtime.h"
       #include <stdio.h>
 
+      #{RcTrackHarness.harness_prelude()}
+
       #{body}
-      
-      
       """
     )
 
@@ -308,7 +305,7 @@ defmodule Elmc.RuntimeStdlibGapsTest do
         "-Wextra",
         "-I#{runtime_dir}",
         Path.join(runtime_dir, "elmc_runtime.c"),
-        Elmc.Test.RcTrackHarness.runtime_link_stub(),
+        RcTrackHarness.runtime_link_stub(),
         harness_path,
         "-lm",
         "-o",

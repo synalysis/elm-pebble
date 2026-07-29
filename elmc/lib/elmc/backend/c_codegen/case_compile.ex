@@ -86,7 +86,7 @@ defmodule Elmc.Backend.CCodegen.CaseCompile do
 
   def branch_assignment(%{op: :cmd_none}, out, env, counter) do
     if function_returns_cmd?(env) do
-      branch_assignment_rc(env, out, "elmc_cmd0", "ELMC_PEBBLE_CMD_NONE", counter)
+      {"", RcRuntimeEmit.assign_stmt(rc_zero_assignment_target(out, env), "elmc_cmd_none()"), counter}
     else
       {"", RcRuntimeEmit.assign_stmt(rc_zero_assignment_target(out, env), "elmc_int_zero()"), counter}
     end
@@ -552,6 +552,13 @@ defmodule Elmc.Backend.CCodegen.CaseCompile do
       true ->
         counter
     end
+  end
+
+  @spec fresh_owned_assign_target(Types.compile_counter(), Types.compile_env()) ::
+          {String.t(), Types.compile_counter()}
+  def fresh_owned_assign_target(counter, env) do
+    {var, next} = fresh_var(counter, env)
+    {ValueSlots.ensure_fresh_assign_target(var), next}
   end
 
   @spec fresh_var(Types.compile_counter(), Types.compile_env()) ::

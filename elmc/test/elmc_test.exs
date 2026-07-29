@@ -383,7 +383,7 @@ defmodule ElmcTest do
     assert runtime =~ "static ElmcValue ELMC_MAYBE_NOTHING"
     assert runtime =~ "return &ELMC_MAYBE_NOTHING;"
     assert runtime =~ "rc = elmc_alloc_scalar(out, ELMC_TAG_INT, value)"
-    assert runtime =~ "*out = value ? &ELMC_BOOL_TRUE : &ELMC_BOOL_FALSE"
+    assert runtime =~ "*out = elmc_bool(value)"
     assert runtime =~ "return value->scalar;"
     refute runtime =~ "malloc(sizeof(elmc_int_t))"
   end

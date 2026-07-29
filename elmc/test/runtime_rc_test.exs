@@ -555,8 +555,11 @@ defmodule Elmc.RuntimeRCTest do
       static ElmcValue *row_of_four(void) {
         ElmcValue *out = elmc_list_nil();
         for (int i = 3; i >= 0; i--) {
-          ElmcValue *n = ELMC_RC_INT_BOX(i + 1);
-          out = elmc_harness_list_cons(n, out);
+          ElmcValue *n = elmc_harness_new_int(i + 1);
+          ElmcValue *cell = elmc_harness_list_cons(n, out);
+          elmc_release(out);
+          elmc_release(n);
+          out = cell;
         }
         return out;
       }
@@ -568,7 +571,10 @@ defmodule Elmc.RuntimeRCTest do
           for (int i = 0; i < 4; i++) rows[i] = row_of_four();
           ElmcValue *lists = elmc_list_nil();
           for (int i = 3; i >= 0; i--) {
-            lists = elmc_harness_list_cons(rows[i], lists);
+            ElmcValue *cell = elmc_harness_list_cons(rows[i], lists);
+            elmc_release(lists);
+            elmc_release(rows[i]);
+            lists = cell;
           }
           ElmcValue *flat = elmc_harness_list_concat(lists);
           elmc_release(flat);

@@ -532,7 +532,7 @@ defmodule Elmc.PlanListSliceLowerTest do
     refute c =~ ~r/elmc_new_int\(&owned\[\d+\], [01]\)/
     assert c =~ "plan_native_int_"
     assert c =~ "plan_native_int_3 = (elmc_as_bool(owned[0])) ? 1 : 0"
-    assert c =~ "const bool plan_native_bool_5 = (plan_native_int_3 == 0);"
+    assert c =~ "plan_native_bool_5 = (plan_native_int_3 == 0);"
     assert c =~ "plan_native_int_8 = (plan_native_bool_5) ? 10 : 20;"
   end
 
@@ -619,7 +619,7 @@ defmodule Elmc.PlanListSliceLowerTest do
     refute draw_body =~ "elmc_new_int(&owned[1], index)"
     refute draw_body =~ "ELMC_TAG_FLOAT"
     refute draw_body =~ "elmc_new_bool"
-    assert draw_body =~ "const bool plan_native_bool_20 = (value == 0);"
+    assert draw_body =~ "plan_native_bool_20 = (value == 0);"
     assert draw_body =~ "(value == 0)"
     assert draw_body =~ "if (!plan_native_bool_"
     assert draw_body =~ "if (plan_native_bool_"

@@ -72,6 +72,8 @@ export function createJsonRuntime(deps) {
     resultErrOwn,
     asHandle,
     release,
+    retainHandle = null,
+    addOwner = null,
     TAG_INT,
     TAG_FLOAT,
     TAG_STRING,
@@ -164,8 +166,53 @@ export function createJsonRuntime(deps) {
     return union ?? newStringHandle(items.map((ptr) => decodeErrorToString(ptr)).join(" > "));
   };
 
-  const newDecoder = (payload) => allocHandle({ tag: TAG_JSON_DECODER, ...payload });
+  const newDecoder = (payload) => {
+    const handle = allocHandle({ tag: TAG_JSON_DECODER, ...payload });
+    linkDecoderChildren(handle, payload);
+    return handle;
+  };
   const newJsonValue = (value) => allocHandle({ tag: TAG_JSON_VALUE, value });
+
+  const ownDecoderChild = (parentHandle, childPtr) => {
+    const child = childPtr | 0;
+    if (!child) return;
+    if (retainHandle) retainHandle(child);
+    if (addOwner && parentHandle) addOwner(child, parentHandle);
+  };
+
+  const linkDecoderChildren = (handle, payload) => {
+    if (!payload) return;
+
+    switch (payload.kind) {
+      case DEC_LIST:
+      case DEC_ARRAY:
+      case DEC_FIELD:
+      case DEC_INDEX:
+      case DEC_KEY_VALUE:
+        ownDecoderChild(handle, payload.decoder);
+        break;
+      case DEC_MAP:
+        ownDecoderChild(handle, payload.func);
+        for (const decoder of payload.decoders ?? []) {
+          ownDecoderChild(handle, decoder);
+        }
+        break;
+      case DEC_AND_THEN:
+        ownDecoderChild(handle, payload.decoder);
+        ownDecoderChild(handle, payload.callback);
+        break;
+      case DEC_ONE_OF:
+        for (const decoder of payload.decoders ?? []) {
+          ownDecoderChild(handle, decoder);
+        }
+        break;
+      case DEC_NULL:
+        ownDecoderChild(handle, payload.defaultHandle);
+        break;
+      default:
+        break;
+    }
+  };
 
   const decoderPayload = (ptr) => {
     const payload = readHandle(ptr);

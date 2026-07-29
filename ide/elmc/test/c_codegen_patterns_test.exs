@@ -3842,8 +3842,7 @@ defmodule Elmc.CCodegenPatternsTest do
     refute fn_body == ""
     refute fn_body =~ "ELMC_FN_OUT"
     refute fn_body =~ "elmc_maybe_just(out,"
-    # Borrowed tuple payload: retain via elmc_maybe_just (not _own).
-    assert fn_body =~ ~r/elmc_maybe_just\(&owned\[[0-9]+\],/
+    assert fn_body =~ ~r/elmc_maybe_just_own\(&owned\[[0-9]+\],/
   end
 
   test "nested maybe case on callee uses owned slot not function out mid-branch" do

@@ -95,7 +95,7 @@ defmodule Elmc.PlanSizeReductionTest do
     assert c =~ "elmc_tuple2("
   end
 
-  test "tuple2_ints in non-RC functions uses take_value wrapper" do
+  test "tuple2_ints in non-RC functions uses RC out-pointer wrapper" do
     decl = %{
       name: "pair",
       args: [],
@@ -108,7 +108,9 @@ defmodule Elmc.PlanSizeReductionTest do
 
     assert {:ok, plan} = PlanLower.lower(decl, "Pebble.Ui", %{}, rc_required: false)
     c = CLowerFunction.emit(plan)
-    assert c =~ "elmc_tuple2_ints_take_value"
+    assert c =~ "__rc_ret"
+    assert c =~ "elmc_tuple2_ints(&__rc_ret"
+    assert c =~ "__alloc_rc != RC_SUCCESS"
     refute c =~ "elmc_tuple2_ints(1"
   end
 
@@ -586,7 +588,10 @@ defmodule Elmc.PlanSizeReductionTest do
     refute plan.rc_required
     c = CLowerFunction.emit(plan)
 
-    assert c =~ "return ELMC_RC_TUPLE2_BOX(ELMC_RC_INT_BOX(1),"
+    assert c =~ "__rc_ret"
+    assert c =~ "elmc_tuple2(&__rc_ret"
+    assert c =~ "__alloc_rc != RC_SUCCESS"
+    assert c =~ "ELMC_RC_INT_BOX(1)"
     refute c =~ "*out"
     refute c =~ "ElmcValue **out"
   end
@@ -750,7 +755,9 @@ defmodule Elmc.PlanSizeReductionTest do
     assert {:ok, plan} = PlanLower.lower(decl, "Pebble.Ui", %{{"Pebble.Ui", "window"} => decl}, rc_required: false)
     c = CLowerFunction.emit(plan)
 
-    assert c =~ "elmc_tuple2_take_value"
+    assert c =~ "elmc_tuple2(&"
+    assert c =~ "__rc_ret"
+    assert c =~ "__alloc_rc != RC_SUCCESS"
     assert c =~ "ELMC_RC_INT_BOX(1)"
     refute c =~ "return __ret"
   end

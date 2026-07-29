@@ -2,7 +2,7 @@ defmodule Elmc.Test.RcTrackMatrix do
   @moduledoc false
 
   @matrix_path Path.expand("../../docs/CODEGEN_COVERAGE_MATRIX.md", __DIR__)
-  @special_values_dir Path.expand("../../lib/elmc/backend/c_codegen/special_values", __DIR__)
+  @special_values_dir Path.expand("../../lib/elmc/backend/plan/lower/special_values", __DIR__)
 
   @elm_core_prefixes ~w(
     Basics Bitwise List Maybe Result String Char Tuple Dict Set Array Debug Task Process

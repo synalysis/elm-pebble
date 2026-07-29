@@ -282,6 +282,8 @@ defmodule Elmc.GeneratedRcTrack2048WorkerTest do
       #include "elmc_pebble.h"
       #include <stdio.h>
 
+      #{RcTrackHarness.harness_prelude()}
+
       enum { MODEL_FIELD_TURN = 4 };
 
       static ElmcValue *launch_context(void) {
@@ -382,6 +384,8 @@ defmodule Elmc.GeneratedRcTrack2048WorkerTest do
       #include "elmc_pebble.h"
       #include "elmc_generated.h"
       #include <stdio.h>
+
+      #{RcTrackHarness.harness_prelude()}
 
       static ElmcValue *launch_context(void) {
         ElmcValue *shape = ELMC_RC_INT_BOX(1);

@@ -1,7 +1,5 @@
 defmodule Elmc.Backend.Wasm.Lower.Frame do
   @moduledoc false
-  alias Elmc.Types, as: Types
-
 
   alias Elmc.Backend.Plan.Types.FunctionPlan
   alias Elmc.Backend.Wasm.Slots
@@ -24,9 +22,6 @@ defmodule Elmc.Backend.Wasm.Lower.Frame do
   def epilogue_release(%{owned_count: 0}), do: []
 
   def epilogue_release(slots) do
-    # Still required: leftover `$ownedN` aliases under `$fn_out` (projections /
-    # platform nests) make plain `runtime.release` corrupt page-data boot.
-    # Prefer fixing ownership so this can become C-style LIFO release+dedupe.
     import_name =
       "runtime.release_unless_reachable_from_roots"
       |> WasmTypes.import_ident()
@@ -73,8 +68,6 @@ defmodule Elmc.Backend.Wasm.Lower.Frame do
     store_roots ++ releases
   end
 
-  @spec emit_epilogue_roots(Types.ir_expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
-
   defp emit_epilogue_roots(slots, scratch, fn_out) do
     fn_out_store =
       WasmTypes.line(
@@ -105,18 +98,82 @@ defmodule Elmc.Backend.Wasm.Lower.Frame do
 
   @spec box_native_scalar_return(Elmc.Backend.Plan.Types.FunctionPlan.t(), Slots.t()) :: iodata()
   def box_native_scalar_return(%{native_scalar_return: :native_int} = plan, slots) do
-    if plan_publishes_boxed_int?(plan) do
-      []
-    else
-      box_native_scalar_return_impl(:native_int, slots)
-    end
+    # `publish_fn_out` may already have boxed via runtime.new_int; only box here
+    # when $fn_out still holds a raw native i32 (compare / const / arith / etc.).
+    maybe_box_fn_out_tail(plan, slots, :native_int)
   end
 
-  def box_native_scalar_return(%{native_scalar_return: kind}, slots) when kind in [:native_bool] do
-    box_native_scalar_return_impl(kind, slots)
+  def box_native_scalar_return(%{native_scalar_return: :native_bool} = plan, slots) do
+    maybe_box_fn_out_tail(plan, slots, :native_bool)
   end
 
   def box_native_scalar_return(_plan, _slots), do: []
+
+  defp maybe_box_fn_out_tail(plan, slots, kind) do
+    if plan_tail_boxes_fn_out?(plan) do
+      []
+    else
+      box_native_scalar_return_impl(kind, slots)
+    end
+  end
+
+  defp plan_tail_boxes_fn_out?(%FunctionPlan{} = plan) do
+    native? = Map.get(plan, :native_scalar_return) in [:native_int, :native_bool]
+
+    # Skip epilogue boxing only when the body already placed a boxed handle in
+    # $fn_out. `Instr.publish_fn_out/3` boxes on `{:ret, reg}` / `:publish` when
+    # native_scalar_return is set. `{:ret, :fn_out}` means a prior instr wrote
+    # $fn_out and may still hold a raw i32 (constant-folded probeNot).
+    case last_fn_out_write(plan.blocks) do
+      {:call_runtime, builtin} when builtin in [:new_int, :new_bool] -> true
+      {:call_runtime, _} -> true
+      {:publish, _} -> native?
+      {:ret, reg} when is_integer(reg) -> native?
+      {:ret, :fn_out} -> fn_out_already_boxed_in_instrs?(plan.blocks)
+      _ -> false
+    end
+  end
+
+  defp last_fn_out_write(blocks) do
+    from_instrs =
+      blocks
+      |> Enum.flat_map(& &1.instrs)
+      |> Enum.reverse()
+      |> Enum.find_value(fn
+        %{op: :call_runtime, dest: dest, args: %{builtin: builtin}}
+        when dest in [:fn_out, :branch_out] and is_atom(builtin) ->
+          {:call_runtime, builtin}
+
+        %{op: :publish, dest: dest, args: %{source: reg}}
+        when dest in [:fn_out, :branch_out] and is_integer(reg) ->
+          {:publish, reg}
+
+        _ ->
+          nil
+      end)
+
+    from_instrs ||
+      blocks
+      |> Enum.reverse()
+      |> Enum.find_value(fn
+        %{terminator: {:ret, :fn_out}} -> {:ret, :fn_out}
+        %{terminator: {:ret, reg}} when is_integer(reg) -> {:ret, reg}
+        _ -> nil
+      end)
+  end
+
+  defp fn_out_already_boxed_in_instrs?(blocks) do
+    blocks
+    |> Enum.flat_map(& &1.instrs)
+    |> Enum.any?(fn
+      %{op: :call_runtime, dest: dest, args: %{builtin: builtin}}
+      when dest in [:fn_out, :branch_out] and builtin in [:new_int, :new_bool] ->
+        true
+
+      _ ->
+        false
+    end)
+  end
 
   defp box_native_scalar_return_impl(kind, slots) do
     import_sym =
@@ -146,16 +203,6 @@ defmodule Elmc.Backend.Wasm.Lower.Frame do
         ])
       )
     ]
-  end
-
-  defp plan_publishes_boxed_int?(%FunctionPlan{blocks: blocks}) do
-    blocks
-    |> Enum.flat_map(& &1.instrs)
-    |> Enum.any?(fn
-      %{op: :call_runtime, args: %{builtin: :new_int}} -> true
-      %{op: :int_arith, dest: dest} when is_integer(dest) -> true
-      _ -> false
-    end)
   end
 
   @spec return_rc(Slots.t()) :: iodata()

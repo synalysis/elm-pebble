@@ -189,8 +189,9 @@ defmodule Elmc.PlanCLowerTest do
     refute c =~ ~r/const elmc_int_t \d+\s*=/
     assert c =~ "ELMC_COLOR_RED"
     assert c =~ "ELMC_COLOR_BLUE"
-    # Native merge (`plan_native_int_N = …`) or boxed owned slot — both valid.
-    assert c =~ "plan_native_int_" or c =~ "owned["
+    assert c =~ "ELMC_COLOR_BLACK"
+    assert c =~ "elmc_new_int(&owned[0], ELMC_COLOR_RED)"
+    assert c =~ "elmc_new_int(&owned[0], ELMC_COLOR_BLUE)"
   end
 
   test "RC emit never mid-body releases owned slots after retain-style consumes" do

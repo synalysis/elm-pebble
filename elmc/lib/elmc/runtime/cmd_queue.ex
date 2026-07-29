@@ -57,6 +57,11 @@ defmodule Elmc.Runtime.CmdQueue do
           cmd = NULL;
           *out = queue ? queue : elmc_cmd_none();
           queue = NULL;
+        } else if (!queue || elmc_cmd_is_none(queue)) {
+          elmc_release(queue);
+          queue = NULL;
+          *out = cmd;
+          cmd = NULL;
         } else {
           rc = elmc_cmd_queue_cons_take(&cell, cmd, elmc_list_nil());
           cmd = NULL;
@@ -64,11 +69,6 @@ defmodule Elmc.Runtime.CmdQueue do
           if (!cell || elmc_cmd_is_none(cell)) {
             *out = queue ? queue : elmc_cmd_none();
             queue = NULL;
-            cell = NULL;
-          } else if (!queue || elmc_cmd_is_none(queue)) {
-            elmc_release(queue);
-            queue = NULL;
-            *out = cell;
             cell = NULL;
           } else if (queue->tag == ELMC_TAG_CMD) {
             rc = elmc_cmd_queue_cons_take(&head_cell, queue, cell);

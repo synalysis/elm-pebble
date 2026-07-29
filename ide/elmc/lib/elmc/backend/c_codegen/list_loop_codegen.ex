@@ -235,24 +235,37 @@ defmodule Elmc.Backend.CCodegen.ListLoopCodegen do
       )
 
     slow_path_assign =
-      if native_head do
-        head_box = "int_list_cons_head_#{loop_id}"
+      cond do
+        native_head ->
+          head_box = "int_list_cons_head_#{loop_id}"
 
-        """
-        ElmcValue *#{head_box} = NULL;
-        Rc = elmc_new_int(&#{head_box}, #{native_head});
-        CHECK_RC(Rc);
-        #{RcRuntimeEmit.mutually_exclusive_allocator_assign(env, out, "elmc_list_cons", "#{head_box}, #{tail}", declare_out?: false)}
-        elmc_release(#{head_box});
-        """
-      else
-        RcRuntimeEmit.mutually_exclusive_allocator_assign(
-          env,
-          out,
-          "elmc_list_cons",
-          "#{head}, #{tail}",
-          declare_out?: false
-        )
+          """
+          ElmcValue *#{head_box} = NULL;
+          Rc = elmc_new_int(&#{head_box}, #{native_head});
+          CHECK_RC(Rc);
+          #{RcRuntimeEmit.mutually_exclusive_allocator_assign(env, out, "elmc_list_cons", "#{head_box}, #{tail}", declare_out?: false)}
+          elmc_release(#{head_box});
+          """
+
+        head == out ->
+          # Loop bodies may reuse one owned slot for the cons head and result; retain
+          # the head before owned_reassign_prefix releases the destination slot.
+          head_box = "int_list_cons_head_#{loop_id}"
+
+          """
+          ElmcValue *#{head_box} = elmc_retain(#{head});
+          #{RcRuntimeEmit.mutually_exclusive_allocator_assign(env, out, "elmc_list_cons", "#{head_box}, #{tail}", declare_out?: false)}
+          elmc_release(#{head_box});
+          """
+
+        true ->
+          RcRuntimeEmit.mutually_exclusive_allocator_assign(
+            env,
+            out,
+            "elmc_list_cons",
+            "#{head}, #{tail}",
+            declare_out?: false
+          )
       end
 
     fast_path_guard =

@@ -69,7 +69,7 @@ defmodule Elmc.SizeProfileTest do
   end
 
   test "plan state switch thresholds are stable" do
-    assert %{min_blocks: 8, max_owned_slots: 12} ==
+    assert %{min_blocks: 8, max_owned_slots: 16} ==
              SizeProfile.plan_state_switch_thresholds(%{codegen_profile: :size})
   end
 end

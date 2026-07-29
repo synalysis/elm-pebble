@@ -61,6 +61,10 @@ defmodule Elmc.GeneratedRcTrackTest do
         ElmcValue *r1 = elmc_harness_list_from_int_array(row1, 2);
         ElmcValue *inner = elmc_harness_list_cons(r1, elmc_list_nil());
         ElmcValue *outer = elmc_harness_list_cons(r0, inner);
+        /* list_cons retains head/tail; drop locals so only outer owns the spine. */
+        elmc_release(inner);
+        elmc_release(r0);
+        elmc_release(r1);
         ElmcValue *args[] = { outer };
         ElmcValue *out = #{concat_rows_call};
         elmc_release(outer);

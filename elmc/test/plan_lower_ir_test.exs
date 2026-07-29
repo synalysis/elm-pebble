@@ -1104,7 +1104,7 @@ defmodule Elmc.PlanLowerIrTest do
 
     c = CLowerFunction.emit(plan)
     assert c =~ "elmc_unit()"
-    assert c =~ "elmc_cmd0"
+    assert c =~ "elmc_cmd_none()"
   end
 
   test "Sub.none lowers to pebble_sub with zero mask" do

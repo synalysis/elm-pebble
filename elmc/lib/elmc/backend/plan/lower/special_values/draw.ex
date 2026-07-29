@@ -183,10 +183,7 @@ defmodule Elmc.Backend.Plan.Lower.SpecialValues.Draw do
       do: Helpers.rotation_expr(%{op: :int_literal, value: Helpers.pebble_angle_from_degrees(degrees)})
 
   def special_value_from_target("Pebble.Ui.Color." <> name, []) do
-    case Map.fetch(Constants.pebble_color_constants(), name) do
-      {:ok, _value} -> %{op: :c_int_expr, value: Emit.generated_color_macro(name)}
-      :error -> nil
-    end
+    pebble_color_constant(name)
   end
 
   def special_value_from_target("Pebble.Time.Monday", []), do: %{op: :int_literal, value: 0}
@@ -396,7 +393,31 @@ defmodule Elmc.Backend.Plan.Lower.SpecialValues.Draw do
     }
 
 
+  def special_value_from_target(target, []) when is_binary(target) do
+    pebble_color_import_alias_constant(target)
+  end
+
   def special_value_from_target(_target, _args), do: nil
+
+  defp pebble_color_constant(name) do
+    case Map.fetch(Constants.pebble_color_constants(), name) do
+      {:ok, _value} -> %{op: :c_int_expr, value: Emit.generated_color_macro(name)}
+      :error -> nil
+    end
+  end
+
+  defp pebble_color_import_alias_constant(target) do
+    decl_map = Process.get(:elmc_program_decls, %{})
+
+    with [module, name] <- String.split(target, ".", parts: 2),
+         expr when not is_nil(expr) <- pebble_color_constant(name),
+         true <- Map.has_key?(decl_map, {"Pebble.Ui.Color", name}),
+         false <- Map.has_key?(decl_map, {module, name}) do
+      expr
+    else
+      _ -> nil
+    end
+  end
 
   defp ui_label_expr(%{op: op, target: target} = expr)
        when op in [:constructor_call, :qualified_call, :constructor_ref, :qualified_ref, :qualified_var] and
