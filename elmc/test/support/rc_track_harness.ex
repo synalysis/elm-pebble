@@ -262,43 +262,43 @@ defmodule Elmc.Test.RcTrackHarness do
     """
     static ElmcValue *elmc_harness_new_int(elmc_int_t value) {
       ElmcValue *out = NULL;
-      if (elmc_new_int(&out, value) != RC_SUCCESS) return elmc_int_zero();
+      if (elmc_new_int(&out, value) != RC_SUCCESS) return NULL;
       return out;
     }
 
     static ElmcValue *elmc_harness_list_from_int_array(const elmc_int_t *items, int count) {
       ElmcValue *out = NULL;
-      if (elmc_list_from_int_array(&out, items, count) != RC_SUCCESS) return elmc_int_zero();
+      if (elmc_list_from_int_array(&out, items, count) != RC_SUCCESS) return NULL;
       return out;
     }
 
     static ElmcValue *elmc_harness_new_string(const char *value) {
       ElmcValue *out = NULL;
-      if (elmc_new_string(&out, value) != RC_SUCCESS) return elmc_int_zero();
+      if (elmc_new_string(&out, value) != RC_SUCCESS) return NULL;
       return out;
     }
 
     static ElmcValue *elmc_harness_tuple2_take(ElmcValue *first, ElmcValue *second) {
       ElmcValue *out = NULL;
-      if (elmc_tuple2_take(&out, first, second) != RC_SUCCESS) return elmc_int_zero();
+      if (elmc_tuple2_take(&out, first, second) != RC_SUCCESS) return NULL;
       return out;
     }
 
     static ElmcValue *elmc_harness_result_ok(ElmcValue *value) {
       ElmcValue *out = NULL;
-      if (elmc_result_ok(&out, value) != RC_SUCCESS) return elmc_int_zero();
+      if (elmc_result_ok(&out, value) != RC_SUCCESS) return NULL;
       return out;
     }
 
     static ElmcValue *elmc_harness_result_err(ElmcValue *value) {
       ElmcValue *out = NULL;
-      if (elmc_result_err(&out, value) != RC_SUCCESS) return elmc_int_zero();
+      if (elmc_result_err(&out, value) != RC_SUCCESS) return NULL;
       return out;
     }
 
     static ElmcValue *elmc_harness_maybe_just(ElmcValue *value) {
       ElmcValue *out = NULL;
-      if (elmc_maybe_just(&out, value) != RC_SUCCESS) return elmc_int_zero();
+      if (elmc_maybe_just(&out, value) != RC_SUCCESS) return NULL;
       return out;
     }
 
@@ -306,7 +306,51 @@ defmodule Elmc.Test.RcTrackHarness do
         ElmcValue *(*fn)(ElmcValue **args, int argc, ElmcValue **captures, int capture_count),
         int arity) {
       ElmcValue *out = NULL;
-      if (elmc_closure_new(&out, fn, arity, 0, NULL) != RC_SUCCESS) return elmc_int_zero();
+      if (elmc_closure_new(&out, fn, arity, 0, NULL) != RC_SUCCESS) return NULL;
+      return out;
+    }
+
+    static ElmcValue *elmc_harness_closure_new_rc(
+        RC (*fn)(ElmcValue **out, ElmcValue **args, int argc, ElmcValue **captures, int capture_count),
+        int arity, int capture_count, ElmcValue **captures) {
+      ElmcValue *out = NULL;
+      if (elmc_closure_new_rc(&out, fn, arity, capture_count, captures) != RC_SUCCESS) return NULL;
+      return out;
+    }
+
+    static ElmcValue *elmc_harness_list_cons(ElmcValue *head, ElmcValue *tail) {
+      ElmcValue *out = NULL;
+      if (elmc_list_cons(&out, head, tail) != RC_SUCCESS) return NULL;
+      return out;
+    }
+
+    static ElmcValue *elmc_harness_list_concat(ElmcValue *lists) {
+      ElmcValue *out = NULL;
+      if (elmc_list_concat(&out, lists) != RC_SUCCESS) return NULL;
+      return out;
+    }
+
+    static ElmcValue *elmc_harness_new_float(double value) {
+      ElmcValue *out = NULL;
+      if (elmc_new_float(&out, value) != RC_SUCCESS) return NULL;
+      return out;
+    }
+
+    static ElmcValue *elmc_harness_record_new_values_take(int count, ElmcValue **values) {
+      ElmcValue *out = NULL;
+      if (elmc_record_new_values_take(&out, count, values) != RC_SUCCESS) return NULL;
+      return out;
+    }
+
+    static ElmcValue *elmc_harness_record_new_take(int count, const char **names, ElmcValue **values) {
+      ElmcValue *out = NULL;
+      if (elmc_record_new_take(&out, count, names, values) != RC_SUCCESS) return NULL;
+      return out;
+    }
+
+    static ElmcValue *elmc_harness_record_update_index(ElmcValue *record, elmc_int_t index, ElmcValue *value) {
+      ElmcValue *out = NULL;
+      if (elmc_record_update_index(&out, record, index, value) != RC_SUCCESS) return NULL;
       return out;
     }
     """
@@ -333,21 +377,21 @@ defmodule Elmc.Test.RcTrackHarness do
         ElmcValue **args,
         int argc) {
       ElmcValue *out = NULL;
-      return fn(&out, args, argc) == RC_SUCCESS ? out : elmc_int_zero();
+      return fn(&out, args, argc) == RC_SUCCESS ? out : NULL;
     }
 
     static ElmcValue *elmc_harness_direct_rc_1_int(
         RC (*fn)(ElmcValue **out, elmc_int_t),
         elmc_int_t a0) {
       ElmcValue *out = NULL;
-      return fn(&out, a0) == RC_SUCCESS ? out : elmc_int_zero();
+      return fn(&out, a0) == RC_SUCCESS ? out : NULL;
     }
 
     static ElmcValue *elmc_harness_direct_rc_1_box(
         RC (*fn)(ElmcValue **out, ElmcValue *),
         ElmcValue *a0) {
       ElmcValue *out = NULL;
-      return fn(&out, a0) == RC_SUCCESS ? out : elmc_int_zero();
+      return fn(&out, a0) == RC_SUCCESS ? out : NULL;
     }
 
     static ElmcValue *elmc_harness_direct_rc_int_box(
@@ -355,7 +399,7 @@ defmodule Elmc.Test.RcTrackHarness do
         elmc_int_t a0,
         ElmcValue *a1) {
       ElmcValue *out = NULL;
-      return fn(&out, a0, a1) == RC_SUCCESS ? out : elmc_int_zero();
+      return fn(&out, a0, a1) == RC_SUCCESS ? out : NULL;
     }
 
     static ElmcValue *elmc_harness_direct_rc_2_box(
@@ -363,13 +407,13 @@ defmodule Elmc.Test.RcTrackHarness do
         ElmcValue *a0,
         ElmcValue *a1) {
       ElmcValue *out = NULL;
-      return fn(&out, a0, a1) == RC_SUCCESS ? out : elmc_int_zero();
+      return fn(&out, a0, a1) == RC_SUCCESS ? out : NULL;
     }
 
     static ElmcValue *elmc_harness_direct_rc_out_only(
         RC (*fn)(ElmcValue **out)) {
       ElmcValue *out = NULL;
-      return fn(&out) == RC_SUCCESS ? out : elmc_int_zero();
+      return fn(&out) == RC_SUCCESS ? out : NULL;
     }
 
     static ElmcValue *elmc_harness_direct_value_void(
@@ -626,9 +670,9 @@ defmodule Elmc.Test.RcTrackHarness do
     """
     static ElmcValue *#{symbol}_probe(void) {
       elmc_int_t value = 0;
-      if (#{c_name}(&value) != RC_SUCCESS) return elmc_int_zero();
+      if (#{c_name}(&value) != RC_SUCCESS) return NULL;
       ElmcValue *out = NULL;
-      if (elmc_new_int(&out, value) != RC_SUCCESS) return elmc_int_zero();
+      if (elmc_new_int(&out, value) != RC_SUCCESS) return NULL;
       return out;
     }
     """
@@ -842,7 +886,7 @@ defmodule Elmc.Test.RcTrackHarness do
         static ElmcValue *#{symbol}_probe(void) {
           elmc_int_t value = #{c_name}();
           ElmcValue *out = NULL;
-          if (elmc_new_int(&out, value) != RC_SUCCESS) return elmc_int_zero();
+          if (elmc_new_int(&out, value) != RC_SUCCESS) return NULL;
           return out;
         }
         """
@@ -854,7 +898,7 @@ defmodule Elmc.Test.RcTrackHarness do
         """
         static ElmcValue *#{symbol}_probe(void) {
           ElmcValue *out = NULL;
-          if (#{c_name}(&out) != RC_SUCCESS) return elmc_int_zero();
+          if (#{c_name}(&out) != RC_SUCCESS) return NULL;
           return out;
         }
         """

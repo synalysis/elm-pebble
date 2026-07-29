@@ -19,7 +19,9 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
   alias Elmc.Backend.CCodegen.RcRuntimeEmit
   alias Elmc.Backend.CCodegen.RecordCompile
   alias Elmc.Backend.CCodegen.RowMajorLayout
+  alias Elmc.Backend.CCodegen.TailRecursiveLoopEmit
   alias Elmc.Backend.CCodegen.TypeParsing
+  alias Elmc.Backend.CCodegen.UnsupportedSurface
   alias Elmc.Backend.CCodegen.Fusion
   alias Elmc.Backend.CCodegen.FunctionCallAbi
   alias Elmc.Backend.CCodegen.FunctionSplit
@@ -28,7 +30,7 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
   alias Elmc.Backend.CCodegen.PlanNativeProjection
   alias Elmc.Backend.CCodegen.ValueSlots
   alias Elmc.Backend.CCodegen.ImmortalStaticList
-  alias Elmc.Backend.CCodegen.Tuple2CaseTable
+  alias Elmc.Backend.Plan.Fusion.Matchers.Tuple2CaseTable
   alias Elmc.Backend.CCodegen.Types
   alias Elmc.Backend.CCodegen.Util
   alias Elmc.Backend.C.Lower.Function, as: CLowerFunction
@@ -122,6 +124,7 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
        ) do
     Process.put(:elmc_generic_helper_defs, [])
     Process.put(:elmc_generic_helper_counter, 0)
+    Process.put(:elmc_plan_fn_noinline, false)
     direct_args? =
       FunctionCallAbi.direct_entry_abi?(decl, module_name, decl_map) or
         not worker_rc_abi?(emit_wrapper?, module_name, decl.name, decl_map)
@@ -178,6 +181,7 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
       end
 
     linkage = function_linkage_prefix(module_name, decl.name)
+    Process.put(:elmc_plan_fn_noinline, false)
 
     native_projection =
       if PlanNativeProjection.eligible?(decl, module_name, decl_map) do
@@ -278,7 +282,16 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
       Process.get(:elmc_exported_targets, MapSet.new())
       |> MapSet.member?({module_name, decl_name})
 
-    if exported?, do: "", else: "static "
+    # Large plan bodies (many CFG blocks) must not be inlined into update /
+    # cornerSlots: after GuardedSwitch entry seals, those arms are live and
+    # -Os was duplicating multi-KiB helpers into each caller.
+    noinline? = Process.get(:elmc_plan_fn_noinline, false) == true
+
+    cond do
+      exported? -> ""
+      noinline? -> "static __attribute__((noinline, noclone)) "
+      true -> "static "
+    end
   end
 
   @spec rc_function_params(
@@ -798,7 +811,7 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
       {:ok, body} ->
         body
 
-      :legacy ->
+      :gap ->
         record_plan_primary_fallback(module_name, decl.name)
         emit_plan_lowering_gap_body(decl, module_name, decl_map, rc_required?, direct_args?)
     end
@@ -901,6 +914,16 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
         {:ok, plan} ->
           result_probe = DebugProbes.result_probe(module_name, decl.name, "*out")
 
+          # Large CFGs are shared across callers; inlining duplicates them after
+          # GuardedSwitch seals made previously-dead arms reachable (APP 64KiB).
+          block_count =
+            case plan do
+              %{blocks: blocks} when is_list(blocks) -> length(blocks)
+              _ -> 0
+            end
+
+          Process.put(:elmc_plan_fn_noinline, block_count >= 10)
+
           plan_core =
             plan
             |> CLowerFunction.emit()
@@ -933,10 +956,10 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
           {:ok, body}
 
         _ ->
-          :legacy
+          :gap
       end
     else
-      :legacy
+      :gap
     end
   end
 
@@ -1126,6 +1149,7 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
          direct_args?
        ) do
     body_text = Enum.join(List.wrap(core_body), "\n")
+    ValueSlots.ensure_covers_owned_refs(body_text)
     owned_decls = ValueSlots.owned_declaration()
     failure_cleanup = ValueSlots.failure_cleanup()
     unused_casts = unused_arg_casts(arg_bindings, core_body)
@@ -1692,6 +1716,12 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
     return_kind = NativeFunctionCall.return_kind(decl, module_name, decl_map)
     native_env = native_env(decl, module_name, function_arities, decl_map, return_kind)
     skip_native? = skip_native_def?(decl, module_name, decl_map)
+
+    # Fusion / native-arg helpers with a boxed return keep `ElmcValue **out`.
+    # Clear NativeReturn's scalar cache so plan call sites match that ABI.
+    if return_kind == :boxed and RcRequired.rc_required?(module_name, decl.name) do
+      register_native_boxed_rc_abi!(module_name, decl.name, true)
+    end
 
     collect_generic_helpers? = return_kind == :boxed and not skip_native?
 
@@ -2412,40 +2442,56 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
             {code, result_var, 0}
 
           :error ->
-            case compile_tail_recursive_native(decl, module_name, env, return_kind, arg_kinds) do
+            case TailRecursiveLoopEmit.compile(
+                   decl,
+                   module_name,
+                   env,
+                   c_arg_bindings(decl.args || []),
+                   arg_kinds,
+                   return_kind
+                 ) do
               {:ok, code, result_var} ->
                 {code, result_var, 0}
 
-          :error ->
-            expr_env =
-              if Map.get(env, :__native_rc_out__) do
-                env |> RecordCompile.with_subexpr_cache()
-              else
-                env
-              end
+              :error ->
+                expr_env =
+                  if Map.get(env, :__native_rc_out__) do
+                    env |> RecordCompile.with_subexpr_cache()
+                  else
+                    env
+                  end
 
-            compile_scalar_native_expr(expr, expr_env, return_kind, 0)
+                compile_scalar_native_expr(expr, expr_env, return_kind, 0)
+            end
         end
     end
-  end
   end
 
   defp compile_native_body(decl, module_name, _decl_map, env, :boxed, arg_kinds) do
     c_arg_bindings = c_arg_bindings(decl.args || [])
 
-    case compile_tail_recursive(decl, module_name, env, c_arg_bindings, arg_kinds, :boxed) do
+    case TailRecursiveLoopEmit.compile(
+           decl,
+           module_name,
+           env,
+           c_arg_bindings,
+           arg_kinds,
+           :boxed
+         ) do
       {:ok, code, result_var} ->
         {code, result_var, 0}
 
       :error ->
-        env = RecordCompile.with_subexpr_cache(env)
+        UnsupportedSurface.record_expr(%{
+          kind: :expr,
+          op: :native_boxed_body,
+          reason_op: :native_boxed_body,
+          detail: "native boxed body lowering retired under plan-primary"
+        })
 
-        expr_env =
-          if Map.get(env, :__native_rc_out__),
-            do: RcRuntimeEmit.function_tail_env(env),
-            else: env
-
-        Host.compile_expr(decl.expr || %{op: :int_literal, value: 0}, expr_env, 0)
+        next = 0 + 1
+        var = "tmp_#{next}"
+        {"ElmcValue *#{var} = elmc_int_zero();", var, next}
     end
   end
 
@@ -2487,521 +2533,17 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
   defp compile_scalar_native_expr(expr, env, :native_bool, counter),
     do: NativeBool.compile_expr(expr, env, counter)
 
-  @spec compile_tail_recursive_fusion(
-          Types.decl(),
-          String.t(),
-          Types.compile_env(),
-          [atom()],
-          atom()
-        ) :: {:ok, String.t(), String.t()} | :error
-  def compile_tail_recursive_fusion(decl, module_name, env, arg_kinds, return_kind)
-      when return_kind in [:boxed, :native_int, :native_bool] and is_list(arg_kinds) do
-    c_arg_bindings = c_arg_bindings(decl.args || [])
-    compile_tail_recursive(decl, module_name, env, c_arg_bindings, arg_kinds, return_kind)
-  end
-
-  @spec compile_tail_recursive_native(Types.decl(), String.t(), Types.compile_env(), atom(), Types.ir_expr()) :: Types.ir_expr()
-
-  defp compile_tail_recursive_native(decl, module_name, env, return_kind, arg_kinds) do
-    c_arg_bindings = c_arg_bindings(decl.args || [])
-    compile_tail_recursive(decl, module_name, env, c_arg_bindings, arg_kinds, return_kind)
-  end
-
-  @spec compile_tail_recursive(Types.decl(), String.t(), Types.compile_env(), Types.ir_expr(), Types.ir_expr(), atom()) :: Types.ir_expr()
-
-  defp compile_tail_recursive(decl, module_name, env, arg_bindings, arg_kinds, return_kind) do
-    arg_names = decl.args || []
-    arg_types = if is_binary(decl.type), do: Host.function_arg_types(decl.type), else: []
-
-    with true <- arg_names != [],
-         true <- tail_recursive_arg_kinds?(arg_kinds, arg_types),
-         {:if_tail, cond_expr, base_expr, recursive_args, recurse_on_truthy?, let_prelude} <-
-           tail_recursive_if(decl.expr, module_name, decl.name),
-         true <- length(recursive_args) == length(arg_names) do
-      c_arg_bindings =
-        case arg_bindings do
-          bindings when bindings != [] -> bindings
-          _ -> c_arg_bindings(arg_names)
-        end
-
-      loop_bindings =
-        c_arg_bindings
-        |> Enum.with_index()
-        |> Enum.zip(arg_kinds)
-        |> Enum.map_join("\n  ", fn {{{_arg, c_arg, _index}, index}, kind} ->
-          loop = loop_arg_name(c_arg)
-
-          case {kind, Enum.at(arg_types, index) |> Host.normalize_type_name()} do
-            {:native_int, _} ->
-              "elmc_int_t #{loop} = #{c_arg};"
-
-            {:boxed, "Int"} ->
-              "elmc_int_t #{loop} = elmc_as_int(#{c_arg});"
-
-            {:native_bool, _} ->
-              "bool #{loop} = #{c_arg};"
-
-            {:boxed, _} ->
-              "ElmcValue *#{loop} = #{c_arg} ? elmc_retain(#{c_arg}) : elmc_int_zero();"
-
-            _ ->
-              "elmc_int_t #{loop} = #{c_arg};"
-          end
-        end)
-
-      loop_env =
-        c_arg_bindings
-        |> Enum.with_index()
-        |> Enum.zip(arg_kinds)
-        |> Enum.reduce(env, fn {{{source_arg, c_arg, _index}, index}, kind}, acc ->
-          loop = loop_arg_name(c_arg)
-
-          case {kind, Enum.at(arg_types, index) |> Host.normalize_type_name()} do
-            {:native_int, _} ->
-              EnvBindings.put_native_int_binding(acc, source_arg, loop)
-
-            {:boxed, "Int"} ->
-              EnvBindings.put_native_int_binding(acc, source_arg, loop)
-
-            {:native_bool, _} ->
-              EnvBindings.put_native_bool_binding(acc, source_arg, loop)
-
-            {:boxed, _} ->
-              Map.put(acc, source_arg, loop)
-
-            _ ->
-              acc
-          end
-        end)
-
-      {hoist_code, loop_env, counter, hoisted_refs} =
-        hoist_tail_recursive_top_level_vars(
-          recursive_args,
-          let_prelude,
-          loop_env,
-          0,
-          module_name
-        )
-
-      loop_env =
-        Map.put(loop_env, :__tail_loop_invariant_refs__, MapSet.new(hoisted_refs))
-
-      ValueSlots.push_loop()
-
-      {cond_code, cond_ref, counter} = NativeBool.compile_expr(cond_expr, loop_env, counter)
-
-      {base_code, base_ref, counter} =
-        if return_kind == :boxed do
-          Host.compile_expr(base_expr, loop_env, counter)
-        else
-          compile_scalar_native_expr(base_expr, loop_env, return_kind, counter)
-        end
-
-      {update_code, int_update_refs, boxed_update_refs, boxed_int_refresh_refs, _loop_env} =
-        compile_tail_recursive_continue_updates(
-          recursive_args,
-          c_arg_bindings,
-          arg_kinds,
-          arg_types,
-          loop_env,
-          counter,
-          let_prelude
-        )
-
-      result_var = "tail_result"
-      continue_branch =
-        tail_continue_branch(
-          update_code,
-          int_update_refs,
-          boxed_update_refs,
-          boxed_int_refresh_refs,
-          loop_env
-        )
-
-      base_branch =
-        if return_kind == :boxed do
-          tail_base_branch_boxed(
-            base_code,
-            result_var,
-            base_ref,
-            c_arg_bindings,
-            arg_kinds,
-            arg_types
-          )
-        else
-          tail_base_branch(base_code, result_var, base_ref)
-        end
-
-      {then_branch, else_branch} =
-        if recurse_on_truthy?,
-          do: {continue_branch, base_branch},
-          else: {base_branch, continue_branch}
-
-      ValueSlots.pop_loop()
-
-      result_decl =
-        if return_kind == :boxed,
-          do: "ElmcValue *#{result_var} = NULL;",
-          else: "elmc_int_t #{result_var} = 0;"
-
-      code = """
-      #{loop_bindings}
-      #{hoist_code}
-        #{result_decl}
-        while (1) {
-      #{CSource.indent(cond_code, 4)}
-          if (#{cond_ref}) {
-      #{CSource.indent(then_branch, 6)}
-          } else {
-      #{CSource.indent(else_branch, 6)}
-          }
-        }
-      """
-
-      _ = module_name
-      {:ok, code, result_var}
-    else
-      _ -> :error
-    end
-  end
-
-  @spec compile_tail_recursive_continue_updates([String.t()], Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.compile_env(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
-
-  defp compile_tail_recursive_continue_updates(
-         recursive_args,
-         c_arg_bindings,
-         arg_kinds,
-         arg_types,
-         loop_env,
-         counter,
-         let_prelude
-       ) do
-    {loop_env, counter, let_code} =
-      Enum.reduce(let_prelude, {loop_env, counter, ""}, fn {let_name, let_value},
-                                                            {env, ctr, code_acc} ->
-        {let_code, let_ref, ctr2} =
-          case NativeInt.compile_expr(let_value, env, ctr) do
-            {_, ref, _} = native_result ->
-              if native_int_loop_let_ref?(ref),
-                do: native_result,
-                else: Host.compile_expr(let_value, env, ctr)
-          end
-
-        env =
-          if native_int_loop_let_ref?(let_ref) do
-            env
-            |> Map.put(let_name, let_ref)
-            |> EnvBindings.put_native_int_binding(let_name, let_ref)
-          else
-            Map.put(env, let_name, let_ref)
-          end
-
-        {env, ctr2, code_acc <> "\n" <> let_code}
-      end)
-
-    {_counter, update_code, int_refs, boxed_refs, boxed_int_refs} =
-      recursive_args
-      |> Enum.zip(c_arg_bindings)
-      |> Enum.zip(arg_kinds)
-      |> Enum.with_index()
-      |> Enum.reduce({counter, let_code, [], [], []}, fn {{{arg_expr, {_source_arg, c_arg, _index}}, kind}, index},
-                                                    {ctr, code_acc, int_refs, boxed_refs, boxed_int_refs} ->
-        loop = loop_arg_name(c_arg)
-        type_name = Enum.at(arg_types, index) |> Host.normalize_type_name()
-        loop_kind = effective_tail_loop_kind(kind, type_name)
-
-        {arg_code, arg_ref, ctr2} =
-          compile_tail_recursive_step_arg(arg_expr, loop_env, loop_kind, ctr)
-
-        case loop_kind do
-          :boxed ->
-            {ctr2, code_acc <> "\n" <> arg_code, int_refs, boxed_refs ++ [{loop, arg_ref}],
-             boxed_int_refs}
-
-          _ ->
-            next_ref = "#{loop}_next"
-
-            {ctr2,
-             code_acc <> "\n" <> arg_code <> "\n      elmc_int_t #{next_ref} = #{arg_ref};",
-             int_refs ++ [{loop, next_ref}], boxed_refs, boxed_int_refs}
-        end
-      end)
-
-    {update_code, int_refs, boxed_refs, boxed_int_refs, loop_env}
-  end
-
-  @spec effective_tail_loop_kind(Types.ir_expr() | atom(), Types.ir_expr() | String.t()) :: Types.ir_expr()
-
-  defp effective_tail_loop_kind(:boxed, "Int"), do: :native_int
-  defp effective_tail_loop_kind(kind, _type_name), do: kind
-
-  defp native_int_loop_let_ref?(ref) when is_binary(ref) do
-    not Regex.match?(~r/^(owned|tmp)_\d+$/, ref) and
-      not Regex.match?(~r/^native_i_\d+$/, ref) and
-      (String.starts_with?(ref, "native_") or String.starts_with?(ref, "(") or
-         Regex.match?(~r/^[a-z_]*_loop(?:_next)?$/, ref))
-  end
-
-  defp native_int_loop_let_ref?(_), do: false
-
-  @spec compile_tail_recursive_step_arg(Types.expr(), Types.compile_env(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
-
-  defp compile_tail_recursive_step_arg(expr, loop_env, :boxed, counter),
-    do: Host.compile_expr(expr, loop_env, counter)
-
-  defp compile_tail_recursive_step_arg(expr, loop_env, :native_bool, counter),
-    do: NativeBool.compile_expr(expr, loop_env, counter)
-
-  defp compile_tail_recursive_step_arg(expr, loop_env, :native_int, counter),
-    do: NativeInt.compile_expr(expr, loop_env, counter)
-
-  @spec hoist_tail_recursive_top_level_vars([String.t()], Types.ir_expr(), Types.compile_env(), Types.ir_expr(), String.t()) :: Types.ir_expr()
-
-  defp hoist_tail_recursive_top_level_vars(recursive_args, let_prelude, env, counter, module_name) do
-    vars =
-      recursive_args
-      |> Enum.flat_map(&collect_ir_var_names/1)
-      |> Enum.concat(Enum.flat_map(let_prelude, fn {_name, value} -> collect_ir_var_names(value) end))
-      |> Enum.uniq()
-      |> Enum.filter(fn name ->
-        not Map.has_key?(env, name) and
-          match?(
-            %{args: args} when is_list(args),
-            Map.get(Map.get(env, :__program_decls__, %{}), {module_name, name})
-          ) and
-          EnvBindings.function_arity(env, module_name, name, []) == 0
-      end)
-
-    Enum.reduce(vars, {"", env, counter, []}, fn name, {code_acc, env_acc, ctr, refs_acc} ->
-      {var_code, ref, ctr2} = FunctionCallCompile.compile_var(name, env_acc, ctr)
-
-      refs_acc =
-        if ValueSlots.owned_ref?(ref) do
-          [ref | refs_acc]
-        else
-          refs_acc
-        end
-
-      {code_acc <> var_code <> "\n", Map.put(env_acc, name, ref), ctr2, refs_acc}
-    end)
-  end
-
-  @spec collect_ir_var_names(map() | list() | term()) :: Types.ir_expr()
-
-  defp collect_ir_var_names(%{op: :var, name: name}) when is_binary(name), do: [name]
-
-  defp collect_ir_var_names(map) when is_map(map) do
-    map |> Map.values() |> Enum.flat_map(&collect_ir_var_names/1)
-  end
-
-  defp collect_ir_var_names(list) when is_list(list) do
-    Enum.flat_map(list, &collect_ir_var_names/1)
-  end
-
-  defp collect_ir_var_names(_), do: []
-
-  @spec tail_recursive_if(map() | Types.expr(), String.t(), String.t()) :: Types.ir_expr()
-
-  defp tail_recursive_if(
-         %{op: :if, cond: cond, then_expr: then_expr, else_expr: else_expr},
-         module_name,
-         name
-       ) do
-    case tail_recursive_branch(then_expr, module_name, name) do
-      {:tail, args, let_prelude} ->
-        {:if_tail, cond, else_expr, args, true, let_prelude}
-
-      :error ->
-        case tail_recursive_branch(else_expr, module_name, name) do
-          {:tail, args, let_prelude} ->
-            {:if_tail, cond, then_expr, args, false, let_prelude}
-
-          :error ->
-            :error
-        end
-    end
-  end
-
-  defp tail_recursive_if(_expr, _module_name, _name), do: :error
-
-  @spec tail_recursive_branch(Types.expr(), String.t(), String.t()) :: Types.ir_expr()
-
-  defp tail_recursive_branch(expr, module_name, name) do
-    {let_prelude, core} = peel_tail_recursive_lets(expr, [])
-
-    if Util.local_function_call?(core, module_name, name) do
-      {:tail, core.args || [], let_prelude}
-    else
-      :error
-    end
-  end
-
-  @spec peel_tail_recursive_lets(map() | Types.expr(), term()) :: Types.ir_expr()
-
-  defp peel_tail_recursive_lets(
-         %{op: :let_in, name: let_name, value_expr: let_value, in_expr: in_expr},
-         acc
-       ) do
-    peel_tail_recursive_lets(in_expr, acc ++ [{let_name, let_value}])
-  end
-
-  defp peel_tail_recursive_lets(expr, acc), do: {acc, expr}
-
-  @spec tail_recursive_arg_kinds?(Types.ir_expr(), Types.ir_expr()) :: boolean()
-
-  defp tail_recursive_arg_kinds?(arg_kinds, arg_types) do
-    arg_kinds
-    |> Enum.with_index()
-    |> Enum.all?(fn {kind, index} ->
-      case {kind, Enum.at(arg_types, index) |> Host.normalize_type_name()} do
-        {:native_int, _} -> true
-        {:native_bool, _} -> true
-        {:boxed, _} -> true
-        _ -> false
-      end
-    end)
-  end
-
-  @spec loop_arg_name(Types.ir_expr()) :: Types.ir_expr()
-
-  defp loop_arg_name(c_arg), do: "#{c_arg}_loop"
-
-  @spec tail_loop_caller_rc?(Types.compile_env()) :: boolean()
-
-  defp tail_loop_caller_rc?(env) do
-    Map.get(env, :__rc_catch__, false) or Map.get(env, :__rc_required__, false) or
-      Map.get(env, :__native_rc_out__, false)
-  end
-
-  @spec tail_int_box_new_stmt(Types.ir_expr(), atom(), Types.compile_env()) :: Types.ir_expr()
-
-  defp tail_int_box_new_stmt(box, loop, env) do
-    if tail_loop_caller_rc?(env) do
-      "Rc = elmc_new_int(&#{box}, #{loop});\n  CHECK_RC(Rc);"
-    else
-      """
-      {
-        RC __box_rc = elmc_new_int(&#{box}, #{loop});
-        if (__box_rc != RC_SUCCESS) {
-          ELMC_RC_LOG_FAIL(__box_rc, "elmc_new_int", "allocation failed");
-          return 0;
-        }
-      }
-      """
-      |> String.trim()
-    end
-  end
-
-  @spec tail_continue_branch(Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.compile_env()) :: Types.ir_expr()
-
-  defp tail_continue_branch(
-         update_code,
-         int_update_refs,
-         boxed_update_refs,
-         boxed_int_refresh_refs,
-         env
-       ) do
-    int_assignments =
-      int_update_refs
-      |> Enum.map_join("\n      ", fn {target, next_ref} -> "#{target} = #{next_ref};" end)
-
-    boxed_int_refresh =
-      boxed_int_refresh_refs
-      |> Enum.map_join("\n      ", fn {box, loop} ->
-        "elmc_release(#{box});\n      #{box} = NULL;\n      #{tail_int_box_new_stmt(box, loop, env)}"
-      end)
-
-    boxed_releases =
-      boxed_update_refs
-      |> Enum.map_join("\n      ", fn {loop, _ref} -> "elmc_release(#{loop});" end)
-
-    boxed_assignments =
-      boxed_update_refs
-      |> Enum.map_join("\n      ", fn {loop, ref} ->
-        if ValueSlots.owned_ref?(ref) do
-          """
-          #{loop} = #{ref};
-          #{ValueSlots.transfer_and_null(ref)}
-          """
-        else
-          "#{loop} = #{ref};"
-        end
-      end)
-
-    """
-    #{update_code}
-      #{boxed_releases}
-      #{int_assignments}
-      #{boxed_int_refresh}
-      #{boxed_assignments}
-      continue;
-    """
-  end
-
-  @spec tail_base_branch_boxed(Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
-
-  defp tail_base_branch_boxed(base_code, result_var, base_ref, arg_bindings, arg_kinds, arg_types) do
-    loop_boxed_names =
-      arg_bindings
-      |> Enum.zip(arg_kinds)
-      |> Enum.with_index()
-      |> Enum.flat_map(fn {{{_source, c_arg, _arg_index}, kind}, index} ->
-        type_name = Enum.at(arg_types, index) |> Host.normalize_type_name()
-
-        cond do
-          effective_tail_loop_kind(kind, type_name) == :boxed ->
-            [loop_arg_name(c_arg)]
-
-          true ->
-            []
-        end
-      end)
-
-    {result_assign, skip_release} =
-      cond do
-        ValueSlots.owned_ref?(base_ref) ->
-          {"""
-           #{result_var} = #{base_ref};
-           #{ValueSlots.transfer_and_null(base_ref)}
-           """, MapSet.new()}
-
-        base_ref in loop_boxed_names ->
-          # Base case returns a loop accumulator: transfer the loop retain into
-          # the result instead of releasing the same pointer underneath *out.
-          {"#{result_var} = #{base_ref};\n      #{base_ref} = NULL;", MapSet.new([base_ref])}
-
-        true ->
-          {"#{result_var} = #{base_ref};", MapSet.new()}
-      end
-
-    releases =
-      loop_boxed_names
-      |> Enum.reject(&MapSet.member?(skip_release, &1))
-      |> Enum.map_join("\n      ", fn name -> "elmc_release(#{name});" end)
-
-    """
-    #{base_code}
-      #{result_assign}
-      #{releases}
-      break;
-    """
-  end
-
-  @spec tail_base_branch(Types.ir_expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
-
-  defp tail_base_branch(base_code, result_var, base_ref) do
-    """
-    #{base_code}
-      #{result_var} = #{base_ref};
-      break;
-    """
-  end
-
   @spec register_native_boxed_rc_abi!(String.t(), String.t(), boolean()) :: Types.ir_expr()
 
   defp register_native_boxed_rc_abi!(module_name, name, rc_abi?) do
     table = Process.get(:elmc_native_boxed_rc_abi, %{})
     Process.put(:elmc_native_boxed_rc_abi, Map.put(table, {module_name, name}, rc_abi?))
+
+    # Public ABI is `ElmcValue **out` — drop any optimistic NativeReturn scalar
+    # cache so later call sites do not emit `elmc_int_t *out` arguments.
+    if rc_abi? do
+      NativeReturn.uncache_scalar_return(module_name, name)
+    end
   end
 
   @spec register_native_bool_rc_abi!(String.t(), String.t(), boolean()) :: Types.ir_expr()

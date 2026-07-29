@@ -82,7 +82,7 @@ defmodule Elmc.PebbleShimTest do
 
       int main(void) {
         ElmcPebbleApp app = {0};
-        ElmcValue *flags = elmc_new_int_take(0);
+        ElmcValue *flags = ELMC_RC_INT_BOX(0);
         if (elmc_pebble_init(&app, flags) != 0) return 2;
         elmc_release(flags);
 
@@ -153,7 +153,7 @@ defmodule Elmc.PebbleShimTest do
 
       int main(void) {
         ElmcPebbleApp app = {0};
-        ElmcValue *flags = elmc_new_int_take(0);
+        ElmcValue *flags = ELMC_RC_INT_BOX(0);
         if (elmc_pebble_init(&app, flags) != 0) return 2;
         elmc_release(flags);
 
@@ -225,7 +225,7 @@ defmodule Elmc.PebbleShimTest do
 
       int main(void) {
         ElmcPebbleApp app = {0};
-        ElmcValue *flags = elmc_new_int_take(0);
+        ElmcValue *flags = ELMC_RC_INT_BOX(0);
         if (elmc_pebble_init(&app, flags) != 0) return 2;
         elmc_release(flags);
 
@@ -292,7 +292,7 @@ defmodule Elmc.PebbleShimTest do
 
       int main(void) {
         ElmcPebbleApp app = {0};
-        ElmcValue *flags = elmc_new_int_take(0);
+        ElmcValue *flags = ELMC_RC_INT_BOX(0);
         if (elmc_pebble_init(&app, flags) != 0) return 2;
         elmc_release(flags);
 
@@ -364,7 +364,7 @@ defmodule Elmc.PebbleShimTest do
 
       int main(void) {
         ElmcPebbleApp app = {0};
-        ElmcValue *flags = elmc_new_int_take(0);
+        ElmcValue *flags = ELMC_RC_INT_BOX(0);
         if (elmc_pebble_init(&app, flags) != 0) return 2;
         elmc_release(flags);
 
@@ -437,7 +437,7 @@ defmodule Elmc.PebbleShimTest do
 
       int main(void) {
         ElmcPebbleApp app = {0};
-        ElmcValue *flags = elmc_new_int_take(0);
+        ElmcValue *flags = ELMC_RC_INT_BOX(0);
         if (elmc_pebble_init(&app, flags) != 0) return 2;
         elmc_release(flags);
 
@@ -511,7 +511,7 @@ defmodule Elmc.PebbleShimTest do
 
       int main(void) {
         ElmcPebbleApp app = {0};
-        ElmcValue *flags = elmc_new_int_take(0);
+        ElmcValue *flags = ELMC_RC_INT_BOX(0);
         if (elmc_pebble_init(&app, flags) != 0) return 2;
         elmc_release(flags);
 
@@ -585,7 +585,7 @@ defmodule Elmc.PebbleShimTest do
 
       int main(void) {
         ElmcPebbleApp app = {0};
-        ElmcValue *flags = elmc_new_int_take(0);
+        ElmcValue *flags = ELMC_RC_INT_BOX(0);
         if (elmc_pebble_init(&app, flags) != 0) return 2;
         elmc_release(flags);
 
@@ -671,7 +671,7 @@ defmodule Elmc.PebbleShimTest do
 
       int main(void) {
         ElmcPebbleApp app = {0};
-        ElmcValue *flags = elmc_new_int_take(0);
+        ElmcValue *flags = ELMC_RC_INT_BOX(0);
         if (elmc_pebble_init(&app, flags) != 0) return 2;
         elmc_release(flags);
 
@@ -752,7 +752,7 @@ defmodule Elmc.PebbleShimTest do
 
       int main(void) {
         ElmcPebbleApp app = {0};
-        ElmcValue *flags = elmc_new_int_take(0);
+        ElmcValue *flags = ELMC_RC_INT_BOX(0);
         if (elmc_pebble_init(&app, flags) != 0) return 2;
         elmc_release(flags);
 
@@ -833,7 +833,7 @@ defmodule Elmc.PebbleShimTest do
 
       int main(void) {
         ElmcPebbleApp app = {0};
-        ElmcValue *flags = elmc_new_int_take(0);
+        ElmcValue *flags = ELMC_RC_INT_BOX(0);
         if (elmc_pebble_init(&app, flags) != 0) return 2;
         elmc_release(flags);
 
@@ -928,7 +928,7 @@ defmodule Elmc.PebbleShimTest do
 
       int main(void) {
         ElmcPebbleApp app = {0};
-        ElmcValue *flags = elmc_new_int_take(0);
+        ElmcValue *flags = ELMC_RC_INT_BOX(0);
         if (elmc_pebble_init(&app, flags) != 0) return 2;
         elmc_release(flags);
 
@@ -998,7 +998,7 @@ defmodule Elmc.PebbleShimTest do
 
       int main(void) {
         ElmcPebbleApp app = {0};
-        ElmcValue *flags = elmc_new_int_take(0);
+        ElmcValue *flags = ELMC_RC_INT_BOX(0);
         if (elmc_pebble_init(&app, flags) != 0) return 2;
         elmc_release(flags);
 
@@ -1080,7 +1080,7 @@ defmodule Elmc.PebbleShimTest do
 
       int main(void) {
         ElmcPebbleApp app = {0};
-        ElmcValue *flags = elmc_new_int_take(0);
+        ElmcValue *flags = ELMC_RC_INT_BOX(0);
         if (elmc_pebble_init(&app, flags) != 0) return 2;
         elmc_release(flags);
 
@@ -1120,7 +1120,7 @@ defmodule Elmc.PebbleShimTest do
         if (second_count != cmd_count) return 32;
 
         ElmcPebbleApp watchface_app = {0};
-        ElmcValue *watchface_flags = elmc_new_int_take(0);
+        ElmcValue *watchface_flags = ELMC_RC_INT_BOX(0);
         if (elmc_pebble_init_with_mode(&watchface_app, watchface_flags, ELMC_PEBBLE_MODE_WATCHFACE) != 0) return 33;
         elmc_release(watchface_flags);
         if (elmc_pebble_run_mode(&watchface_app) != ELMC_PEBBLE_MODE_WATCHFACE) return 34;
@@ -1212,7 +1212,7 @@ defmodule Elmc.PebbleShimTest do
 
       int main(void) {
         ElmcPebbleApp app = {0};
-        ElmcValue *flags = elmc_new_int_take(0);
+        ElmcValue *flags = ELMC_RC_INT_BOX(0);
         if (elmc_pebble_init(&app, flags) != 0) return 2;
         elmc_release(flags);
 
@@ -1290,7 +1290,7 @@ defmodule Elmc.PebbleShimTest do
 
       int main(void) {
         ElmcPebbleApp app = {0};
-        ElmcValue *flags = elmc_new_int_take(0);
+        ElmcValue *flags = ELMC_RC_INT_BOX(0);
         if (elmc_pebble_init(&app, flags) != 0) return 2;
         elmc_release(flags);
 
@@ -1366,7 +1366,7 @@ defmodule Elmc.PebbleShimTest do
 
       int main(void) {
         ElmcPebbleApp app = {0};
-        ElmcValue *flags = elmc_new_int_take(0);
+        ElmcValue *flags = ELMC_RC_INT_BOX(0);
         if (elmc_pebble_init(&app, flags) != 0) return 2;
         elmc_release(flags);
 
@@ -1460,7 +1460,7 @@ defmodule Elmc.PebbleShimTest do
 
       int main(void) {
         ElmcPebbleApp app = {0};
-        ElmcValue *flags = elmc_new_int_take(0);
+        ElmcValue *flags = ELMC_RC_INT_BOX(0);
         if (elmc_pebble_init(&app, flags) != 0) return 2;
         elmc_release(flags);
 
@@ -1582,7 +1582,7 @@ defmodule Elmc.PebbleShimTest do
 
       int main(void) {
         ElmcPebbleApp app = {0};
-        ElmcValue *flags = elmc_new_int_take(0);
+        ElmcValue *flags = ELMC_RC_INT_BOX(0);
         if (elmc_pebble_init(&app, flags) != 0) return 2;
         elmc_release(flags);
 
@@ -1677,17 +1677,19 @@ defmodule Elmc.PebbleShimTest do
       #include <stdio.h>
 
       static ElmcValue *launch_context(void) {
-        ElmcValue *shape = elmc_new_int_take(1);
-        ElmcValue *height = elmc_new_int_take(168);
-        ElmcValue *width = elmc_new_int_take(144);
-        ElmcValue *color_mode = elmc_new_int_take(1);
+        ElmcValue *shape = ELMC_RC_INT_BOX(1);
+        ElmcValue *height = ELMC_RC_INT_BOX(168);
+        ElmcValue *width = ELMC_RC_INT_BOX(144);
+        ElmcValue *color_mode = ELMC_RC_INT_BOX(1);
         const char *screen_names[] = {"color_mode", "height", "shape", "width"};
         ElmcValue *screen_values[] = {color_mode, height, width, shape};
-        ElmcValue *screen = elmc_record_new_take_value(4, screen_names, screen_values);
-        ElmcValue *reason = elmc_new_int_take(1);
+        ElmcValue *screen = NULL;
+        if (elmc_record_new_take(&screen, 4, screen_names, screen_values) != RC_SUCCESS) return NULL;
+        ElmcValue *reason = ELMC_RC_INT_BOX(1);
         const char *names[] = {"reason", "screen"};
         ElmcValue *values[] = {reason, screen};
-        ElmcValue *__ret = elmc_record_new_take_value(2, names, values);
+        ElmcValue *__ret = NULL;
+        if (elmc_record_new_take(&__ret, 2, names, values) != RC_SUCCESS) return NULL;
         return __ret;
       }
 
@@ -1738,17 +1740,19 @@ defmodule Elmc.PebbleShimTest do
       #include <stdio.h>
 
       static ElmcValue *launch_context(void) {
-        ElmcValue *shape = elmc_new_int_take(1);
-        ElmcValue *height = elmc_new_int_take(168);
-        ElmcValue *width = elmc_new_int_take(144);
-        ElmcValue *color_mode = elmc_new_int_take(1);
+        ElmcValue *shape = ELMC_RC_INT_BOX(1);
+        ElmcValue *height = ELMC_RC_INT_BOX(168);
+        ElmcValue *width = ELMC_RC_INT_BOX(144);
+        ElmcValue *color_mode = ELMC_RC_INT_BOX(1);
         const char *screen_names[] = {"color_mode", "height", "shape", "width"};
         ElmcValue *screen_values[] = {color_mode, height, width, shape};
-        ElmcValue *screen = elmc_record_new_take_value(4, screen_names, screen_values);
-        ElmcValue *reason = elmc_new_int_take(1);
+        ElmcValue *screen = NULL;
+        if (elmc_record_new_take(&screen, 4, screen_names, screen_values) != RC_SUCCESS) return NULL;
+        ElmcValue *reason = ELMC_RC_INT_BOX(1);
         const char *names[] = {"reason", "screen"};
         ElmcValue *values[] = {reason, screen};
-        ElmcValue *__ret = elmc_record_new_take_value(2, names, values);
+        ElmcValue *__ret = NULL;
+        if (elmc_record_new_take(&__ret, 2, names, values) != RC_SUCCESS) return NULL;
         return __ret;
       }
 
@@ -1898,7 +1902,7 @@ defmodule Elmc.PebbleShimTest do
 
       int main(void) {
         ElmcPebbleApp app = {0};
-        ElmcValue *flags = elmc_new_int_take(0);
+        ElmcValue *flags = ELMC_RC_INT_BOX(0);
         if (elmc_pebble_init(&app, flags) != 0) return 2;
         elmc_release(flags);
 
@@ -1997,7 +2001,7 @@ defmodule Elmc.PebbleShimTest do
 
       int main(void) {
         ElmcPebbleApp app = {0};
-        ElmcValue *flags = elmc_new_int_take(0);
+        ElmcValue *flags = ELMC_RC_INT_BOX(0);
         if (elmc_pebble_init(&app, flags) != 0) return 2;
         elmc_release(flags);
 
@@ -2078,7 +2082,7 @@ defmodule Elmc.PebbleShimTest do
 
       int main(void) {
         ElmcPebbleApp app = {0};
-        ElmcValue *flags = elmc_new_int_take(0);
+        ElmcValue *flags = ELMC_RC_INT_BOX(0);
         if (elmc_pebble_init(&app, flags) != 0) return 2;
         elmc_release(flags);
 
@@ -2201,18 +2205,19 @@ defmodule Elmc.PebbleShimTest do
       #include "elmc_generated.h"
 
       static ElmcValue *test_launch_context(void) {
-        ElmcValue *screen_width = elmc_new_int_take(144);
-        ElmcValue *screen_height = elmc_new_int_take(168);
-        ElmcValue *screen_shape = elmc_new_int_take(1);
-        ElmcValue *screen_color_mode = elmc_new_int_take(2);
+        ElmcValue *screen_width = ELMC_RC_INT_BOX(144);
+        ElmcValue *screen_height = ELMC_RC_INT_BOX(168);
+        ElmcValue *screen_shape = ELMC_RC_INT_BOX(1);
+        ElmcValue *screen_color_mode = ELMC_RC_INT_BOX(2);
         ElmcValue *screen_values[] = {screen_width, screen_height, screen_shape, screen_color_mode};
-        ElmcValue *screen = elmc_record_new_values_take_value(4, screen_values);
-        ElmcValue *reason = elmc_new_int_take(2);
-        ElmcValue *watch_model = elmc_new_string_take("");
-        ElmcValue *watch_profile_id = elmc_new_string_take("flint");
-        ElmcValue *has_microphone = elmc_new_bool_take(1);
-        ElmcValue *has_compass = elmc_new_bool_take(0);
-        ElmcValue *supports_health = elmc_new_bool_take(1);
+        ElmcValue *screen = NULL;
+        if (elmc_record_new_values_take(&screen, 4, screen_values) != RC_SUCCESS) return NULL;
+        ElmcValue *reason = ELMC_RC_INT_BOX(2);
+        ElmcValue *watch_model = ELMC_RC_STRING_BOX("");
+        ElmcValue *watch_profile_id = ELMC_RC_STRING_BOX("flint");
+        ElmcValue *has_microphone = ELMC_RC_BOOL_BOX(1);
+        ElmcValue *has_compass = ELMC_RC_BOOL_BOX(0);
+        ElmcValue *supports_health = ELMC_RC_BOOL_BOX(1);
         ElmcValue *context_values[] = {reason, watch_model, watch_profile_id, screen, has_microphone,
                                        has_compass, supports_health};
         ElmcValue *context = NULL;

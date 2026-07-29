@@ -5,11 +5,11 @@ defmodule Elmc.Backend.CCodegen.ListIntRepr do
 
   alias Elmc.Backend.CCodegen.Expr
   alias Elmc.Backend.CCodegen.Fusion
-  alias Elmc.Backend.CCodegen.FusionSupport
+  alias Elmc.Backend.Plan.Fusion.Matchers.FusionSupport
   alias Elmc.Backend.CCodegen.Host
   alias Elmc.Backend.CCodegen.ImmortalStaticList
   alias Elmc.Backend.CCodegen.LayoutSolver
-  alias Elmc.Backend.CCodegen.RowSliceAdjacentMerge
+  alias Elmc.Backend.Plan.Fusion.Matchers.RowSliceAdjacentMerge
   alias Elmc.Backend.CCodegen.TypeParsing
   alias Elmc.Backend.CCodegen.Types
 

@@ -8,7 +8,7 @@ defmodule Elmc.Backend.CCodegen.CmdCompile do
   alias Elmc.Backend.CCodegen.Native.Int, as: NativeInt
   alias Elmc.Backend.CCodegen.Native.String, as: NativeString
   alias Elmc.Backend.CCodegen.RcRuntimeEmit
-  alias Elmc.Backend.CCodegen.SpecialValues
+  alias Elmc.Backend.Plan.Lower.SpecialValues
   alias Elmc.Backend.CCodegen.Types
   alias Elmc.Backend.Pebble.Util
 

@@ -470,8 +470,11 @@ defmodule Elmc.Backend.CCodegen.Native.Bool do
                   """
                 else
                   """
-                  ElmcValue *#{cmp_var} = elmc_basics_compare_take(#{RcRuntimeEmit.call_arg_list([left_var, right_var])});
-                  const #{@native_bool_c_type} #{out} = elmc_as_int(#{cmp_var}) #{comparison} 0;
+                  ElmcValue *#{cmp_var} = NULL;
+                  if (elmc_basics_compare(&#{cmp_var}, #{RcRuntimeEmit.call_arg_list([left_var, right_var])}) != RC_SUCCESS) {
+                    #{cmp_var} = NULL;
+                  }
+                  const #{@native_bool_c_type} #{out} = #{cmp_var} ? elmc_as_int(#{cmp_var}) #{comparison} 0 : false;
                   """
                 end
 

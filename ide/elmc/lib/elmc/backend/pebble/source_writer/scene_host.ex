@@ -1,14 +1,10 @@
 defmodule Elmc.Backend.Pebble.SourceWriter.SceneHost do
   @moduledoc false
-  alias Elmc.Types, as: Types
-
-
   alias Elmc.Backend.Pebble.Types
   alias Elmc.Backend.Pebble.SourceWriter.SceneHost.{
     CmdFromValue,
     DirtyRegion,
     SceneDecode,
-    SubHelpers,
     VirtualUi,
     WindowDrawEmit
   }
@@ -20,8 +16,7 @@ defmodule Elmc.Backend.Pebble.SourceWriter.SceneHost do
       DirtyRegion.body(),
       WindowDrawEmit.body(),
       CmdFromValue.body(),
-      VirtualUi.body(),
-      SubHelpers.body()
+      VirtualUi.body()
     ]
     |> IO.iodata_to_binary()
   end

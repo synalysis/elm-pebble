@@ -18,14 +18,16 @@ defmodule Elmc.Backend.Pebble.SourceWriter.DispatchCore.TagDispatch.Records.Reco
           if (!app || !app->initialized) ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_dispatch_tag_record_int_fields", -1);
           if (field_count <= 0 || !field_names || !field_values) ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_dispatch_tag_record_int_fields", -3);
 
-          ElmcValue *tag_value = elmc_new_int_take(tag);
-          if (!tag_value) ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_dispatch_tag_record_int_fields", -2);
-
+          RC Rc = RC_SUCCESS;
+          ElmcValue *tag_value = NULL;
+          ElmcValue *payload_value = NULL;
+          ElmcValue *msg = NULL;
           ElmcValue **record_values = (ElmcValue **)malloc(sizeof(ElmcValue *) * field_count);
           if (!record_values) {
-            elmc_release(tag_value);
             ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_dispatch_tag_record_int_fields", -2);
           }
+          for (int i = 0; i < field_count; i++) record_values[i] = NULL;
+          int built = 0;
 
     """
   end

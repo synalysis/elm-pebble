@@ -146,13 +146,20 @@ defmodule Elmc.Backend.C.Lower.Function do
 
     slots = Map.drop(slots, MapSet.to_list(tail_inline_skip_regs))
 
-    native_int_mutable_regs =
-      native_int_mutable_regs(plan, native_int_only_regs)
-      |> MapSet.difference(unused_native_int_skip_regs)
+    # Hoist non-literal native ints as mutable locals. Mid-block `const elmc_int_t`
+    # breaks under goto CFG and state-switch (`if (c) goto L; const x = …; L: use(x)`).
+    # Keep `const_int` / `const_c_expr` regs as use-site literals — forcing them into
+    # mutable locals yields `plan_native_int_N = 8` with no reads (-Wunused-but-set).
+    const_like_native_int_regs =
+      MapSet.new(Map.keys(const_int_regs) ++ Map.keys(const_c_expr_regs))
 
-    # Mutable regs have multiple defining writes (phi/coalesce merge). They must keep
-    # real `plan_native_int_N` locals — never treat them as single-def const inline text
-    # (`"2"`, `ELMC_COLOR_…`), or stores become `const elmc_int_t ELMC_COLOR_X = …` / skip.
+    native_int_mutable_regs =
+      native_int_only_regs
+      |> MapSet.difference(unused_native_int_skip_regs)
+      |> MapSet.difference(const_like_native_int_regs)
+
+    # Mutable regs must keep real `plan_native_int_N` locals — never treat them as
+    # single-def const inline text (`"2"`, `ELMC_COLOR_…`).
     const_int_regs = Map.drop(const_int_regs, MapSet.to_list(native_int_mutable_regs))
     const_c_expr_regs = Map.drop(const_c_expr_regs, MapSet.to_list(native_int_mutable_regs))
 
@@ -161,7 +168,8 @@ defmodule Elmc.Backend.C.Lower.Function do
       |> MapSet.difference(native_int_only_regs)
       |> maybe_add_native_scalar_ret_bool_reg(ret_reg, native_scalar_out)
 
-    native_bool_mutable_regs = native_bool_mutable_regs(plan, native_bool_only_regs)
+    # Same hoist rule for native bools (goto / state-switch safe).
+    native_bool_mutable_regs = native_bool_only_regs
 
     native_int_locals =
       native_int_only_regs
@@ -1894,14 +1902,14 @@ defmodule Elmc.Backend.C.Lower.Function do
     if slot_count > 0 do
       """
       {
-        ElmcValue *__ret = elmc_new_int_take(#{src});
+        ElmcValue *__ret = ELMC_RC_INT_BOX(#{src});
         elmc_release_array_lifo(owned, #{slot_count});
         return __ret;
       }
       """
       |> String.trim()
     else
-      "return elmc_new_int_take(#{src});"
+      "return ELMC_RC_INT_BOX(#{src});"
     end
   end
 
@@ -1918,14 +1926,14 @@ defmodule Elmc.Backend.C.Lower.Function do
     if slot_count > 0 do
       """
       {
-        ElmcValue *__ret = elmc_new_bool_take(#{src});
+        ElmcValue *__ret = ELMC_RC_BOOL_BOX(#{src});
         elmc_release_array_lifo(owned, #{slot_count});
         return __ret;
       }
       """
       |> String.trim()
     else
-      "return elmc_new_bool_take(#{src});"
+      "return ELMC_RC_BOOL_BOX(#{src});"
     end
   end
 
@@ -1975,14 +1983,14 @@ defmodule Elmc.Backend.C.Lower.Function do
             if slot_count > 0 do
               """
               {
-                ElmcValue *__ret = elmc_new_int_take(#{src});
+                ElmcValue *__ret = ELMC_RC_INT_BOX(#{src});
                 elmc_release_array_lifo(owned, #{slot_count});
                 return __ret;
               }
               """
               |> String.trim()
             else
-              "return elmc_new_int_take(#{src});"
+              "return ELMC_RC_INT_BOX(#{src});"
             end
 
           native_bool? ->
@@ -1991,14 +1999,14 @@ defmodule Elmc.Backend.C.Lower.Function do
             if slot_count > 0 do
               """
               {
-                ElmcValue *__ret = elmc_new_bool_take(#{src});
+                ElmcValue *__ret = ELMC_RC_BOOL_BOX(#{src});
                 elmc_release_array_lifo(owned, #{slot_count});
                 return __ret;
               }
               """
               |> String.trim()
             else
-              "return elmc_new_bool_take(#{src});"
+              "return ELMC_RC_BOOL_BOX(#{src});"
             end
 
           true ->
@@ -2902,31 +2910,6 @@ defmodule Elmc.Backend.C.Lower.Function do
     end
   end
 
-  @spec native_int_mutable_regs(map(), Types.ir_expr()) :: Types.ir_expr()
-
-  defp native_int_mutable_regs(%FunctionPlan{} = plan, native_int_only_regs) do
-    native_int_only_regs
-    |> Enum.filter(fn reg ->
-      defs = all_defining_instrs(plan, reg)
-
-      length(defs) > 1 or
-        Enum.any?(defs, fn
-          %{op: :phi} ->
-            true
-
-          %{op: :call_runtime, args: %{builtin: :retain}} ->
-            true
-
-          %{op: :call_fn, args: %{module: mod, name: name}} ->
-            NativeReturn.cached_kind({mod, name}) == :native_int
-
-          _ ->
-            false
-        end)
-    end)
-    |> MapSet.new()
-  end
-
   @spec native_int_decl_lines(Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
 
   defp native_int_decl_lines(native_int_locals, native_int_mutable_regs) do
@@ -2965,6 +2948,7 @@ defmodule Elmc.Backend.C.Lower.Function do
 
       [%{op: :call_fn, args: %{module: mod, name: name}} | _] ->
         NativeReturn.cached_kind({mod, name}) == :native_int and
+          not native_boxed_rc_out_callee?(mod, name, decl_map) and
           native_int_uses_only?(plan, reg, decl_map, native_set)
 
       [%{op: :phi, args: %{native_int_phi: true}} | _] ->
@@ -3023,12 +3007,28 @@ defmodule Elmc.Backend.C.Lower.Function do
           true
 
         %{op: :call_fn, args: %{module: mod, name: name}} ->
-          NativeReturn.cached_kind({mod, name}) == :native_int
+          NativeReturn.cached_kind({mod, name}) == :native_int and
+            not native_boxed_rc_out_callee?(mod, name, Process.get(:elmc_program_decls, %{}))
 
         _ ->
           false
       end
   end
+
+  defp native_boxed_rc_out_callee?(mod, name, decl_map) when is_binary(mod) and is_binary(name) do
+    case Map.get(decl_map, {mod, name}) do
+      %{__struct__: _} = decl ->
+        NativeFunctionCall.native_boxed_rc_abi?(decl, mod, decl_map)
+
+      decl when is_map(decl) ->
+        NativeFunctionCall.native_boxed_rc_abi?(decl, mod, decl_map)
+
+      _ ->
+        false
+    end
+  end
+
+  defp native_boxed_rc_out_callee?(_, _, _), do: false
 
   @doc false
   @spec all_defining_instrs(FunctionPlan.t(), non_neg_integer()) :: Types.instr_list()
@@ -3071,28 +3071,6 @@ defmodule Elmc.Backend.C.Lower.Function do
       end
 
     use_kinds == [] or Enum.all?(use_kinds, &(&1 in allowed))
-  end
-
-  @spec native_bool_mutable_regs(map(), Types.ir_expr()) :: Types.ir_expr()
-
-  defp native_bool_mutable_regs(%FunctionPlan{} = plan, native_bool_only_regs) do
-    native_bool_only_regs
-    |> Enum.filter(fn reg ->
-      defs = all_defining_instrs(plan, reg)
-
-      length(defs) > 1 or
-        Enum.any?(defs, fn
-          %{op: :phi} ->
-            true
-
-          %{op: :call_fn, args: %{module: mod, name: name}} ->
-            NativeReturn.cached_kind({mod, name}) == :native_bool
-
-          _ ->
-            false
-        end)
-    end)
-    |> MapSet.new()
   end
 
   @spec native_bool_mutable_decl_lines(Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()

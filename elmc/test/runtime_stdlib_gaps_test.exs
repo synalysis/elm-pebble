@@ -13,12 +13,12 @@ defmodule Elmc.RuntimeStdlibGapsTest do
 
       int main(void) {
         ElmcValue *list = elmc_list_nil();
-        ElmcValue *n3 = elmc_new_int_take(3);
-        list = elmc_list_cons_take(n3, list);
-        ElmcValue *n1 = elmc_new_int_take(1);
-        list = elmc_list_cons_take(n1, list);
-        ElmcValue *n2 = elmc_new_int_take(2);
-        list = elmc_list_cons_take(n2, list);
+        ElmcValue *n3 = ELMC_RC_INT_BOX(3);
+        list = elmc_harness_list_cons(n3, list);
+        ElmcValue *n1 = ELMC_RC_INT_BOX(1);
+        list = elmc_harness_list_cons(n1, list);
+        ElmcValue *n2 = ELMC_RC_INT_BOX(2);
+        list = elmc_harness_list_cons(n2, list);
 
         ElmcValue *cap[1] = { NULL };
         ElmcValue *f = elmc_closure_new_take(by_identity, 1, 0, cap);
@@ -54,12 +54,12 @@ defmodule Elmc.RuntimeStdlibGapsTest do
 
       int main(void) {
         ElmcValue *list = elmc_list_nil();
-        ElmcValue *n3 = elmc_new_int_take(3);
-        list = elmc_list_cons_take(n3, list);
-        ElmcValue *n1 = elmc_new_int_take(1);
-        list = elmc_list_cons_take(n1, list);
-        ElmcValue *n2 = elmc_new_int_take(2);
-        list = elmc_list_cons_take(n2, list);
+        ElmcValue *n3 = ELMC_RC_INT_BOX(3);
+        list = elmc_harness_list_cons(n3, list);
+        ElmcValue *n1 = ELMC_RC_INT_BOX(1);
+        list = elmc_harness_list_cons(n1, list);
+        ElmcValue *n2 = ELMC_RC_INT_BOX(2);
+        list = elmc_harness_list_cons(n2, list);
 
         ElmcValue *cap[1] = { NULL };
         ElmcValue *f = elmc_closure_new_take(compare_ints, 2, 0, cap);
@@ -88,9 +88,9 @@ defmodule Elmc.RuntimeStdlibGapsTest do
     run_harness(
       """
       int main(void) {
-        ElmcValue *s = elmc_new_string_take("a-b-a");
-        ElmcValue *dash = elmc_new_string_take("-");
-        ElmcValue *plus = elmc_new_string_take("+");
+        ElmcValue *s = ELMC_RC_STRING_BOX("a-b-a");
+        ElmcValue *dash = ELMC_RC_STRING_BOX("-");
+        ElmcValue *plus = ELMC_RC_STRING_BOX("+");
         ElmcValue *out = elmc_string_replace_take(dash, plus, s);
         printf("%s\\n", (const char *)out->payload);
         elmc_release(out);
@@ -112,13 +112,13 @@ defmodule Elmc.RuntimeStdlibGapsTest do
       """
       int main(void) {
         ElmcValue *empty = elmc_list_nil();
-        ElmcValue *key = elmc_new_string_take("name");
-        ElmcValue *val = elmc_new_int_take(42);
+        ElmcValue *key = ELMC_RC_STRING_BOX("name");
+        ElmcValue *val = ELMC_RC_INT_BOX(42);
         ElmcValue *dict = elmc_dict_insert_take(key, val, empty);
         elmc_release(val);
-        ElmcValue *lookup_key = elmc_new_string_take("name");
+        ElmcValue *lookup_key = ELMC_RC_STRING_BOX("name");
         elmc_int_t found = elmc_dict_get_with_default_int_value(0, lookup_key, dict);
-        ElmcValue *other = elmc_new_string_take("other");
+        ElmcValue *other = ELMC_RC_STRING_BOX("other");
         elmc_int_t missing = elmc_dict_get_with_default_int_value(7, other, dict);
         printf("%lld %lld\\n", (long long)found, (long long)missing);
         elmc_release(other);
@@ -141,11 +141,11 @@ defmodule Elmc.RuntimeStdlibGapsTest do
       """
       int main(void) {
         ElmcValue *empty = elmc_list_nil();
-        ElmcValue *key = elmc_new_string_take("name");
-        ElmcValue *val = elmc_new_int_take(42);
+        ElmcValue *key = ELMC_RC_STRING_BOX("name");
+        ElmcValue *val = ELMC_RC_INT_BOX(42);
         ElmcValue *dict = elmc_dict_insert_take(key, val, empty);
         elmc_release(val);
-        ElmcValue *lookup_key = elmc_new_string_take("name");
+        ElmcValue *lookup_key = ELMC_RC_STRING_BOX("name");
         ElmcValue *found = elmc_dict_get_take(lookup_key, dict);
         int ok = found && found->tag == ELMC_TAG_MAYBE && found->payload &&
                  ((ElmcMaybe *)found->payload)->is_just &&
@@ -244,9 +244,9 @@ defmodule Elmc.RuntimeStdlibGapsTest do
         ElmcValue *empty = elmc_list_nil();
 
         ElmcValue *merged = elmc_dict_merge_take(lf, bf, rf, a, b, empty);
-        ElmcValue *kx = elmc_new_string_take("x");
-        ElmcValue *ky = elmc_new_string_take("y");
-        ElmcValue *kz = elmc_new_string_take("z");
+        ElmcValue *kx = ELMC_RC_STRING_BOX("x");
+        ElmcValue *ky = ELMC_RC_STRING_BOX("y");
+        ElmcValue *kz = ELMC_RC_STRING_BOX("z");
         ElmcValue *mx = elmc_dict_get_take(kx, merged);
         ElmcValue *my = elmc_dict_get_take(ky, merged);
         ElmcValue *mz = elmc_dict_get_take(kz, merged);

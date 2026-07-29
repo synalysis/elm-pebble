@@ -51,12 +51,15 @@ defmodule Elmc.RuntimeRCTest do
       #include "../runtime/elmc_runtime.h"
       #include <stdio.h>
 
+      #{RcTrackHarness.harness_prelude()}
+
       static ElmcValue *list_of_n_ints(int count) {
         ElmcValue *out = elmc_list_nil();
         ElmcValue **tail_slot = &out;
         for (int i = 0; i < count; i++) {
-          ElmcValue *head = elmc_new_int_take(i);
-          ElmcValue *cell = elmc_list_cons_take(head, elmc_list_nil());
+          ElmcValue *head = ELMC_RC_INT_BOX(i);
+          ElmcValue *cell = NULL;
+          if (elmc_list_cons(&cell, head, elmc_list_nil()) != RC_SUCCESS) return NULL;
           elmc_release(head);
           *tail_slot = cell;
           tail_slot = &((ElmcCons *)cell->payload)->tail;
@@ -119,8 +122,10 @@ defmodule Elmc.RuntimeRCTest do
       #include "../runtime/elmc_runtime.h"
       #include <stdio.h>
 
+      #{RcTrackHarness.harness_prelude()}
+
       int main(void) {
-        ElmcValue *v = elmc_new_int_take(420);
+        ElmcValue *v = ELMC_RC_INT_BOX(420);
         elmc_retain(v);
         elmc_release(v);
         elmc_release(v);
@@ -172,19 +177,22 @@ defmodule Elmc.RuntimeRCTest do
       #include "elmc_runtime.h"
       #include <stdio.h>
 
+      #{RcTrackHarness.harness_prelude()}
+
       static uint64_t rc_delta(void) {
         return elmc_rc_allocated_count() - elmc_rc_released_count();
       }
 
       static void set_sun_field(ElmcValue *model, int index, int i) {
-        ElmcValue *a = elmc_new_int_take(360 + i);
-        ElmcValue *b = elmc_new_int_take(1080 + i);
-        ElmcValue *c = elmc_new_int_take(1);
+        ElmcValue *a = ELMC_RC_INT_BOX(360 + i);
+        ElmcValue *b = ELMC_RC_INT_BOX(1080 + i);
+        ElmcValue *c = ELMC_RC_INT_BOX(1);
         ElmcValue *vals[] = {a, b, c};
-        ElmcValue *sun = elmc_record_new_values_take_value(3, vals);
+        ElmcValue *sun = elmc_harness_record_new_values_take(3, vals);
         ElmcValue *just = NULL;
         if (elmc_maybe_just_own(&just, sun) != RC_SUCCESS) return;
-        ElmcValue *next = elmc_record_update_index_cow_drop_take(model, index, just);
+        ElmcValue *next = NULL;
+        if (elmc_record_update_index_cow_drop(&next, model, index, just) != RC_SUCCESS) return;
         elmc_release(just);
         (void)next;
       }
@@ -192,7 +200,7 @@ defmodule Elmc.RuntimeRCTest do
       int main(void) {
         uint64_t baseline = rc_delta();
         ElmcValue *fields[2] = {elmc_maybe_nothing(), elmc_maybe_nothing()};
-        ElmcValue *model = elmc_record_new_values_take_value(2, fields);
+        ElmcValue *model = elmc_harness_record_new_values_take(2, fields);
 
         for (int i = 0; i < 40; i++) {
           set_sun_field(model, 1, i);
@@ -245,16 +253,18 @@ defmodule Elmc.RuntimeRCTest do
       #include "elmc_runtime.h"
       #include <stdio.h>
 
+      #{RcTrackHarness.harness_prelude()}
+
       int main(void) {
         elmc_rc_track_reset();
-        ElmcValue *kind = elmc_new_int_take(7);
-        ElmcValue *x = elmc_new_int_take(3);
-        ElmcValue *y = elmc_new_int_take(10);
+        ElmcValue *kind = ELMC_RC_INT_BOX(7);
+        ElmcValue *x = ELMC_RC_INT_BOX(3);
+        ElmcValue *y = ELMC_RC_INT_BOX(10);
         ElmcValue *fields[] = {kind, x, y};
-        ElmcValue *piece = elmc_record_new_values_take_value(3, fields);
+        ElmcValue *piece = elmc_harness_record_new_values_take(3, fields);
 
-        ElmcValue *next_y = elmc_new_int_take(11);
-        ElmcValue *updated = elmc_record_update_index_take(piece, 2, next_y);
+        ElmcValue *next_y = ELMC_RC_INT_BOX(11);
+        ElmcValue *updated = elmc_harness_record_update_index(piece, 2, next_y);
         elmc_release(next_y);
         elmc_release(piece);
 
@@ -311,8 +321,10 @@ defmodule Elmc.RuntimeRCTest do
       #include "elmc_runtime.h"
       #include <stdio.h>
 
+      #{RcTrackHarness.harness_prelude()}
+
       int main(void) {
-        ElmcValue *inner = elmc_new_int_take(42);
+        ElmcValue *inner = ELMC_RC_INT_BOX(42);
         ElmcValue *just = NULL;
         if (elmc_maybe_just_own(&just, inner) != RC_SUCCESS) return 1;
         elmc_release(inner);
@@ -395,11 +407,11 @@ defmodule Elmc.RuntimeRCTest do
       #{RcTrackHarness.harness_prelude()}
 
       int main(void) {
-        ElmcValue *n = elmc_new_int_take(4);
-        ElmcValue *m = elmc_new_int_take(5);
-        ElmcValue *ok = elmc_result_ok_take(n);
-        ElmcValue *just = elmc_maybe_just_take(m);
-        ElmcValue *pair = elmc_tuple2_take_value(ok, just);
+        ElmcValue *n = ELMC_RC_INT_BOX(4);
+        ElmcValue *m = ELMC_RC_INT_BOX(5);
+        ElmcValue *ok = elmc_harness_result_ok(n);
+        ElmcValue *just = elmc_harness_maybe_just(m);
+        ElmcValue *pair = ELMC_RC_TUPLE2_BOX(ok, just);
 
         elmc_release(n);
         elmc_release(m);
@@ -464,6 +476,8 @@ defmodule Elmc.RuntimeRCTest do
       #include "elmc_runtime.h"
       #include <stdio.h>
 
+      #{RcTrackHarness.harness_prelude()}
+
       static RC fail_alloc_lambda(
           ElmcValue **out,
           ElmcValue **args,
@@ -480,8 +494,8 @@ defmodule Elmc.RuntimeRCTest do
 
       int main(void) {
         ElmcValue *cap[1] = { NULL };
-        ElmcValue *f = elmc_closure_new_rc_take(fail_alloc_lambda, 1, 0, cap);
-        ElmcValue *just = elmc_maybe_just_take(elmc_new_int_take(7));
+        ElmcValue *f = elmc_harness_closure_new_rc(fail_alloc_lambda, 1, 0, cap);
+        ElmcValue *just = elmc_harness_maybe_just(ELMC_RC_INT_BOX(7));
         ElmcValue *mapped = NULL;
         RC rc = elmc_maybe_map(&mapped, f, just);
         int ok = rc == RC_ERR_OUT_OF_MEMORY && mapped == NULL;
@@ -536,11 +550,13 @@ defmodule Elmc.RuntimeRCTest do
       #include "../runtime/elmc_runtime.h"
       #include <stdio.h>
 
+      #{RcTrackHarness.harness_prelude()}
+
       static ElmcValue *row_of_four(void) {
         ElmcValue *out = elmc_list_nil();
         for (int i = 3; i >= 0; i--) {
-          ElmcValue *n = elmc_new_int_take(i + 1);
-          out = elmc_list_cons_take(n, out);
+          ElmcValue *n = ELMC_RC_INT_BOX(i + 1);
+          out = elmc_harness_list_cons(n, out);
         }
         return out;
       }
@@ -552,9 +568,9 @@ defmodule Elmc.RuntimeRCTest do
           for (int i = 0; i < 4; i++) rows[i] = row_of_four();
           ElmcValue *lists = elmc_list_nil();
           for (int i = 3; i >= 0; i--) {
-            lists = elmc_list_cons_take(rows[i], lists);
+            lists = elmc_harness_list_cons(rows[i], lists);
           }
-          ElmcValue *flat = elmc_list_concat_take(lists);
+          ElmcValue *flat = elmc_harness_list_concat(lists);
           elmc_release(flat);
           elmc_release(lists);
         }
@@ -611,9 +627,11 @@ defmodule Elmc.RuntimeRCTest do
       #include "../runtime/elmc_runtime.h"
       #include <stdio.h>
 
+      #{RcTrackHarness.harness_prelude()}
+
       int main(void) {
-        ElmcValue *fx = elmc_new_float_take(121.9);
-        ElmcValue *fy = elmc_new_float_take(-14.2);
+        ElmcValue *fx = elmc_harness_new_float(121.9);
+        ElmcValue *fy = elmc_harness_new_float(-14.2);
         ElmcValue *fields[2] = { fx, fy };
         ElmcValue *rect = NULL;
         if (elmc_record_new_values(&rect, 2, fields) != RC_SUCCESS) return 1;

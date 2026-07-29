@@ -162,7 +162,7 @@ defmodule Elmc.TangramTemplateCodegenTest do
 
     # Native int color table — value-return helper (not RC out-ptr).
     assert piece_color =~ "ELMC_COLOR_"
-    assert piece_color =~ "elmc_new_int_take("
+    assert piece_color =~ "ELMC_RC_INT_BOX("
     refute piece_color =~ "ELMC_RC_LOG_FAIL(__call_rc"
   end
 
@@ -214,16 +214,16 @@ defmodule Elmc.TangramTemplateCodegenTest do
         ElmcValue *watch_profile_id = elmc_harness_new_string("basalt");
         ElmcValue *width = elmc_harness_new_int(144);
         ElmcValue *height = elmc_harness_new_int(168);
-        ElmcValue *shape = elmc_new_int_take(1);
+        ElmcValue *shape = ELMC_RC_INT_BOX(1);
         ElmcValue *color_mode = elmc_harness_new_int(1);
         ElmcValue *screen_values[] = {width, height, shape, color_mode};
-        ElmcValue *screen = elmc_record_new_values_take_value(4, screen_values);
+        ElmcValue *screen = elmc_harness_record_new_values_take(4, screen_values);
         ElmcValue *has_microphone = elmc_harness_new_int(0);
         ElmcValue *has_compass = elmc_harness_new_int(0);
         ElmcValue *supports_health = elmc_harness_new_int(0);
         ElmcValue *context_values[] = {reason, watch_model, watch_profile_id, screen, has_microphone,
                                        has_compass, supports_health};
-        ElmcValue *ret = elmc_record_new_values_take_value(7, context_values);
+        ElmcValue *ret = elmc_harness_record_new_values_take(7, context_values);
         return ret;
       }
 

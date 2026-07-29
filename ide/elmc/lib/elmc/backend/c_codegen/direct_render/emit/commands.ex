@@ -9,7 +9,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Commands do
   alias Elmc.Backend.CCodegen.EnvBindings
   alias Elmc.Backend.CCodegen.Host
   alias Elmc.Backend.CCodegen.PlatformStatic
-  alias Elmc.Backend.CCodegen.SpecialValues
+  alias Elmc.Backend.Plan.Lower.SpecialValues
   alias Elmc.Backend.CCodegen.StaticString
   alias Elmc.Backend.CCodegen.Types
   alias Elmc.Backend.CCodegen.Util
@@ -183,7 +183,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Commands do
           end)
 
         _ ->
-          {bounds_code, bounds_var, counter} = Host.compile_expr(bounds, env, counter)
+          {bounds_code, bounds_var, counter} = Elmc.Backend.CCodegen.DirectRender.Emit.Operand.compile(bounds, env, counter)
           next = counter + 1
           shape = Host.record_shape(bounds, env)
 
@@ -267,14 +267,31 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Commands do
     end
   end
 
-  defp text_copy_code(%{op: :constructor_call, target: target, args: args}, env, counter)
-       when args in [[], nil] do
+  defp text_copy_code(%{op: op, target: target} = expr, env, counter)
+       when op in [:constructor_call, :qualified_call] and is_binary(target) do
+    args = Map.get(expr, :args)
+
+    if args in [[], nil] do
+      case ui_label_literal(target) do
+        text when is_binary(text) ->
+          text_copy_code(%{op: :string_literal, value: text}, env, counter)
+
+        _ ->
+          text_copy_boxed_code(expr, env, counter)
+      end
+    else
+      text_copy_boxed_code(expr, env, counter)
+    end
+  end
+
+  defp text_copy_code(%{op: op, target: target}, env, counter)
+       when op in [:constructor_ref, :qualified_ref, :qualified_var] and is_binary(target) do
     case ui_label_literal(target) do
       text when is_binary(text) ->
         text_copy_code(%{op: :string_literal, value: text}, env, counter)
 
       _ ->
-        text_copy_boxed_code(%{op: :constructor_call, target: target, args: args}, env, counter)
+        text_copy_boxed_code(%{op: op, target: target}, env, counter)
     end
   end
 
@@ -455,7 +472,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Commands do
   @spec text_copy_boxed_code(Types.ir_expr(), Types.compile_env(), Types.compile_counter()) ::
           text_copy_result()
   defp text_copy_boxed_code(text_expr, env, counter) do
-    {text_code, text_var, counter} = Host.compile_expr(text_expr, env, counter)
+    {text_code, text_var, counter} = Elmc.Backend.CCodegen.DirectRender.Emit.Operand.compile(text_expr, env, counter)
 
     copy_code = """
     if (#{text_var} && #{text_var}->tag == ELMC_TAG_STRING && #{text_var}->payload) {

@@ -4,6 +4,7 @@ defmodule Elmc.Backend.CCodegen.CallCompile do
 
 
   alias Elmc.Backend.CCodegen.BuiltinOperators
+  alias Elmc.Backend.CCodegen.BuiltinUnion
   alias Elmc.Backend.CCodegen.EnvBindings
   alias Elmc.Backend.CCodegen.FunctionCallCompile
   alias Elmc.Backend.CCodegen.Host
@@ -12,8 +13,8 @@ defmodule Elmc.Backend.CCodegen.CallCompile do
   alias Elmc.Backend.CCodegen.RecordCompile
   alias Elmc.Backend.CCodegen.RcRuntimeEmit
   alias Elmc.Backend.CCodegen.ResourceUnion
-  alias Elmc.Backend.CCodegen.SpecialValues
-  alias Elmc.Backend.CCodegen.SpecialValues.ElmCore
+  alias Elmc.Backend.Plan.Lower.SpecialValues
+  alias Elmc.Backend.Plan.Lower.SpecialValues.ElmCore
   alias Elmc.Backend.CCodegen.TypeParsing
   alias Elmc.Backend.CCodegen.Types
   alias Elmc.Backend.CCodegen.Util
@@ -42,10 +43,15 @@ defmodule Elmc.Backend.CCodegen.CallCompile do
   def compile(%{op: :constructor_call, target: target, args: args}, env, counter) do
     case SpecialValues.special_value_from_target(target, args) do
       nil ->
-        if ResourceUnion.constructor?(target, args) do
-          Host.compile_expr(ResourceUnion.index_expr(target), env, counter)
-        else
-          compile_constructor_call(target, args, env, counter)
+        cond do
+          BuiltinUnion.maybe_nothing_literal?(%{op: :constructor_call, target: target, args: args}) ->
+            BuiltinUnion.compile_maybe_nothing(env, counter)
+
+          ResourceUnion.constructor?(target, args) ->
+            Host.compile_expr(ResourceUnion.index_expr(target), env, counter)
+
+          true ->
+            compile_constructor_call(target, args, env, counter)
         end
 
       expr ->
@@ -125,6 +131,13 @@ defmodule Elmc.Backend.CCodegen.CallCompile do
       case SpecialValues.special_value_from_target(target, args) do
         nil ->
           cond do
+            BuiltinUnion.maybe_nothing_literal?(%{
+              op: :qualified_call,
+              target: target,
+              args: args
+            }) ->
+              BuiltinUnion.compile_maybe_nothing(env, counter)
+
             ResourceUnion.constructor?(target, args) ->
               Host.compile_expr(ResourceUnion.index_expr(target), env, counter)
 

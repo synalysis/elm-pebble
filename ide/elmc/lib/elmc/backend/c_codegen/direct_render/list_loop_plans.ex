@@ -475,7 +475,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.ListLoopPlans do
       |> EnvBindings.put_native_int_binding(param, item_var)
       |> EnvBindings.put_boxed_int_binding(param, false)
 
-    {item_code, item_ref, counter} = Host.compile_expr(body, body_env, counter)
+    {item_code, item_ref, counter} = Elmc.Backend.CCodegen.DirectRender.Emit.Operand.compile(body, body_env, counter)
     releases = Release.release_var(item_ref, "        ")
     {item_code, item_ref, releases, counter}
   end

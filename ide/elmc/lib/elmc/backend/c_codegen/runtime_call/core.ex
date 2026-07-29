@@ -740,7 +740,7 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
 
       code = """
       #{left_code}#{right_code}
-        #{inline_value_assign(out, "elmc_append(#{left_var}, #{right_var})")}
+        #{inline_value_assign(out, "elmc_append_take(#{left_var}, #{right_var})")}
       """
 
       {code, out, next}
@@ -909,7 +909,7 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
       (segment_releases ++ segment_boxes ++ temp_refs)
       |> Enum.uniq()
       |> Enum.reject(&(&1 == out_ref))
-      |> Enum.map_join("\n  ", &ValueSlots.release_stmt/1)
+      |> Enum.map_join("\n  ", &release_concat_segment_var/1)
 
     code = """
     #{segment_code}#{fold_code}
@@ -918,6 +918,14 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
     """
 
     {:ok, code, out_ref, next}
+  end
+
+  defp release_concat_segment_var(var) when is_binary(var) do
+    if ValueSlots.owned_ref?(var) do
+      ValueSlots.release_owned_eager(var)
+    else
+      ValueSlots.release_stmt(var)
+    end
   end
 
   @spec compile_boxed_string_append_chain(
@@ -966,7 +974,7 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
             )
           else
             """
-              #{inline_value_assign(out, "elmc_append(#{acc_ref}, #{var})")}
+              #{inline_value_assign(out, "elmc_append_take(#{acc_ref}, #{var})")}
             """
           end
 
@@ -2868,7 +2876,7 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
 
       code = """
       #{target_code}#{value_code}#{list_code}
-        #{inline_value_assign(out, "elmc_list_replace_nth_int(#{RcRuntimeEmit.value_expr(list_var)}, #{target_ref}, #{value_ref})")}
+        #{RcRuntimeEmit.assign_call(env, out, "elmc_list_replace_nth_int", "#{RcRuntimeEmit.value_expr(list_var)}, #{target_ref}, #{value_ref}")}
         #{list_release}
       """
 

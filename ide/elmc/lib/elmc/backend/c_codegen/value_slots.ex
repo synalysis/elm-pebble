@@ -9,7 +9,6 @@ defmodule Elmc.Backend.CCodegen.ValueSlots do
 
 
   alias Elmc.Backend.CCodegen.EnvBindings
-  alias Elmc.Backend.CCodegen.OwnershipTransfer
   alias Elmc.Backend.CCodegen.RcRuntimeEmit
   alias Elmc.Backend.CCodegen.Types
 
@@ -42,6 +41,40 @@ defmodule Elmc.Backend.CCodegen.ValueSlots do
     Process.delete(:elmc_result_slot_current)
 
     :ok
+  end
+
+  @doc """
+  Capture the full `:elmc_value_slots` process state before a nested emit probe.
+
+  Mid-emit fusion/analysis must restore this after `reset/1` so parent owned
+  indices are not reused while still referenced by already-emitted C.
+  """
+  @spec capture_emit_state() :: map() | nil
+  def capture_emit_state, do: Process.get(:elmc_value_slots)
+
+  @spec restore_emit_state(map() | nil) :: :ok
+  def restore_emit_state(nil), do: :ok
+
+  def restore_emit_state(state) when is_map(state) do
+    Process.put(:elmc_value_slots, state)
+    :ok
+  end
+
+  @doc """
+  Run `fun` while isolating emit slot state from the caller.
+
+  The parent `:elmc_value_slots` map is restored in an `after` block even when
+  `fun` raises or returns early.
+  """
+  @spec with_isolated_probe((-> result)) :: result when result: var
+  def with_isolated_probe(fun) when is_function(fun, 0) do
+    parent = capture_emit_state()
+
+    try do
+      fun.()
+    after
+      restore_emit_state(parent)
+    end
   end
 
   @spec epilogue_lifo?() :: boolean()
@@ -126,17 +159,35 @@ defmodule Elmc.Backend.CCodegen.ValueSlots do
   @spec alloc() :: {String.t(), non_neg_integer()}
   def alloc do
     slots = slots_state()
-    index = slots.next
+
+    # Reuse the lowest non-live index so mid-function transfers/nulls shrink the
+    # owned[] high-water mark. Without this, fusion-probe restores (correctly)
+    # leave holes that force owned[N] growth (e.g. yes drawDial 8 → 15).
+    index =
+      case find_reusable_slot(slots) do
+        {:ok, free} -> free
+        :none -> slots.next
+      end
+
     live = MapSet.put(slots.live, index)
+    next = max(slots.next, index + 1)
 
     Process.put(:elmc_value_slots, %{
       slots
-      | next: index + 1,
+      | next: next,
         live: live
     })
 
     {ref(index), index}
   end
+
+  defp find_reusable_slot(%{next: next, live: live}) when next > 0 do
+    Enum.find_value(0..(next - 1), :none, fn i ->
+      if MapSet.member?(live, i), do: nil, else: {:ok, i}
+    end)
+  end
+
+  defp find_reusable_slot(_), do: :none
 
   @spec ref(non_neg_integer()) :: String.t()
   def ref(index) when is_integer(index) and index >= 0, do: "owned[#{index}]"
@@ -458,42 +509,24 @@ defmodule Elmc.Backend.CCodegen.ValueSlots do
   @spec transferred?(String.t() | non_neg_integer(), String.t() | nil) :: boolean()
   def transferred?(var, body \\ nil)
 
-  def transferred?(var, body) when is_binary(var) do
+  def transferred?(var, _body) when is_binary(var) do
     if closure_call_arg_consumed?(var) do
       true
     else
       case owned_index(var) do
-        nil ->
-          is_binary(body) and OwnershipTransfer.transferred_in_c_source?(var, body)
-
-        index ->
-          transferred?(index, body)
+        nil -> false
+        index -> transferred?(index)
       end
     end
   end
 
-  def transferred?(index, body) when is_integer(index) do
-    MapSet.member?(slots_state().transferred, index) or
-      (is_binary(body) and OwnershipTransfer.transferred_in_c_source?(ref(index), body))
+  def transferred?(index, _body) when is_integer(index) do
+    MapSet.member?(slots_state().transferred, index)
   end
 
   @spec slot_count() :: non_neg_integer()
   def slot_count do
-    slots = slots_state()
-    from_next = Map.get(slots, :next, 0)
-
-    from_idx =
-      [
-        Map.get(slots, :live, MapSet.new()),
-        Map.get(slots, :written, MapSet.new()),
-        Map.get(slots, :transferred, MapSet.new()),
-        MapSet.new(Map.keys(Map.get(slots, :tuple_projections, %{})))
-      ]
-      |> Enum.reduce(MapSet.new(), &MapSet.union/2)
-      |> Enum.max(fn -> -1 end)
-      |> then(&(&1 + 1))
-
-    max(from_next, from_idx)
+    Map.get(slots_state(), :next, 0)
   end
 
   @doc """
@@ -783,18 +816,15 @@ defmodule Elmc.Backend.CCodegen.ValueSlots do
         fresh
 
       not epilogue_lifo?() ->
-        track(var)
         var
 
       not owned_ref?(var) ->
         var
 
       in_c_loop?() ->
-        track(var)
         var
 
       not slot_written?(var) ->
-        track(var)
         var
 
       true ->
@@ -919,13 +949,7 @@ defmodule Elmc.Backend.CCodegen.ValueSlots do
     case owned_index(var) do
       index when is_integer(index) ->
         slots = slots_state()
-        next = max(Map.get(slots, :next, 0), index + 1)
-
-        Process.put(:elmc_value_slots, %{
-          slots
-          | written: MapSet.put(slots.written, index),
-            next: next
-        })
+        Process.put(:elmc_value_slots, %{slots | written: MapSet.put(slots.written, index)})
 
       _ ->
         :ok

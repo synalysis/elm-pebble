@@ -116,9 +116,9 @@ defmodule Elmc.Backend.CCodegen.NativeRecordTest do
     {code, var, _} = FunctionCallCompile.compile_var("cfg", env, 0)
 
     assert var == "tmp_1"
-    assert code =~ "elmc_record_new_values_take_value(2, rec_values_1)"
-    assert code =~ "elmc_new_string_take(direct_label)"
-    assert code =~ "elmc_new_int_take(direct_x)"
+    assert code =~ "elmc_harness_record_new_values_take(2, rec_values_1)"
+    assert code =~ "ELMC_RC_STRING_BOX(direct_label)"
+    assert code =~ "ELMC_RC_INT_BOX(direct_x)"
     refute code =~ "\"label\""
   end
 

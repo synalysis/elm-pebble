@@ -580,7 +580,7 @@ defmodule Ide.PebbleToolchainTest do
 
     assert launch_body =~ "GRect bounds = compile_display_bounds();"
     refute launch_body =~ "GRect bounds = display_bounds();"
-    assert launch_body =~ "elmc_record_new_values_take_value(4, screen_values)"
+    assert launch_body =~ "elmc_record_new_values_take(&"
     assert launch_body =~ "screen_values[] = {screen_width, screen_height, screen_shape, screen_color_mode}"
     assert launch_body =~ "ELMC_PLATFORM_COLOR_CAPABILITY_COLOR"
     assert launch_body =~ "context_values[] = {reason, watch_model, watch_profile_id, screen, has_microphone,"

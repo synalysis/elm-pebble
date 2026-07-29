@@ -12,7 +12,6 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
   alias Elmc.Backend.CCodegen.FunctionCallCompile
   alias Elmc.Backend.CCodegen.Host
   alias Elmc.Backend.CCodegen.CaseCompile
-  alias Elmc.Backend.CCodegen.OwnershipTransfer
   alias Elmc.Backend.CCodegen.OwnershipCompile
   alias Elmc.Backend.CCodegen.RcRuntimeEmit
   alias Elmc.Backend.CCodegen.Native.RecordFields
@@ -2403,8 +2402,7 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
   @spec orphan_cache_release?(String.t() | Types.ir_expr(), String.t() | Types.ir_expr()) :: boolean()
 
   defp orphan_cache_release?(ref, field_code) when is_binary(ref) and is_binary(field_code) do
-    not declared_boxed_var?(ref, field_code) or
-      OwnershipTransfer.transferred_in_c_source?(ref, field_code)
+    not declared_boxed_var?(ref, field_code) or ValueSlots.transferred?(ref)
   end
 
   defp orphan_cache_release?(_ref, _field_code), do: false

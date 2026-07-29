@@ -41,6 +41,10 @@ defmodule Elmc.Backend.CCodegen.Expr do
     end
   end
 
+  def record_field_expr(%{op: :qualified_ref, target: target}, field) when is_binary(target) do
+    record_field_expr(%{op: :qualified_call, target: target, args: []}, field)
+  end
+
   def record_field_expr(%{op: :call, name: name, args: args}, field) when is_binary(name) do
     case Host.special_value_from_target(name, args || []) do
       nil -> nil
@@ -126,16 +130,24 @@ defmodule Elmc.Backend.CCodegen.Expr do
     end
   end
 
-  def substitute_expr(%{op: :add_vars, left: left, right: right}, substitutions) do
-    left_expr = Map.get(substitutions, left, %{op: :var, name: left})
-    right_expr = Map.get(substitutions, right, %{op: :var, name: right})
+  def substitute_expr(%{op: op, left: left, right: right}, substitutions)
+      when op in [:add_vars, :sub_vars, :mul_vars] do
+    call_name =
+      case op do
+        :add_vars -> "__add__"
+        :sub_vars -> "__sub__"
+        :mul_vars -> "__mul__"
+      end
+
+    {left_expr, left_key} = substitute_var_arith_operand(left, substitutions)
+    {right_expr, right_key} = substitute_var_arith_operand(right, substitutions)
 
     %{
       op: :call,
-      name: "__add__",
+      name: call_name,
       args: [
-        substitute_expr(left_expr, Map.delete(substitutions, left)),
-        substitute_expr(right_expr, Map.delete(substitutions, right))
+        substitute_expr(left_expr, Map.delete(substitutions, left_key)),
+        substitute_expr(right_expr, Map.delete(substitutions, right_key))
       ]
     }
   end
@@ -328,8 +340,7 @@ defmodule Elmc.Backend.CCodegen.Expr do
     end)
   end
 
-  @spec lookup_let_binding(map(), String.t()) :: Types.ir_expr()
-
+  @spec lookup_let_binding(map(), String.t()) :: {:ok, Types.ir_expr()} | :error
   defp lookup_let_binding(let_bindings, name) when is_map(let_bindings) do
     key = Host.binding_key(name)
 
@@ -338,6 +349,25 @@ defmodule Elmc.Backend.CCodegen.Expr do
       :error -> Map.fetch(let_bindings, name)
     end
   end
+
+  @spec substitute_var_arith_operand(Types.binding_name() | Types.ir_expr(), map()) ::
+          {Types.ir_expr(), Types.binding_name() | nil}
+  defp substitute_var_arith_operand(name, substitutions)
+       when is_binary(name) or is_atom(name) do
+    key = Host.binding_key(name)
+
+    case lookup_let_binding(substitutions, name) do
+      {:ok, bound} -> {bound, key}
+      :error -> {%{op: :var, name: name}, key}
+    end
+  end
+
+  defp substitute_var_arith_operand(%{op: :var, name: name}, substitutions)
+       when is_binary(name) or is_atom(name) do
+    substitute_var_arith_operand(name, substitutions)
+  end
+
+  defp substitute_var_arith_operand(expr, _substitutions) when is_map(expr), do: {expr, nil}
 
   @spec resolve_branch_let_bindings(Types.expr() | map() | list(), Types.ir_expr()) :: Types.ir_expr()
 

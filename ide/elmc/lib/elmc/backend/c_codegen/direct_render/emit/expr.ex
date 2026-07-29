@@ -238,7 +238,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Expr do
                 end
 
               true ->
-                {value_code, value_var, counter} = Host.compile_expr(value_expr, env, counter)
+                {value_code, value_var, counter} = Elmc.Backend.CCodegen.DirectRender.Emit.Operand.compile(value_expr, env, counter)
 
                 body_env =
                   env
@@ -423,7 +423,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Expr do
     {arg_code, arg_refs, release_refs, counter} =
       Enum.reduce(args, {"", [], [], counter}, fn arg_expr,
                                                   {code_acc, refs_acc, releases_acc, c} ->
-        {code, ref, c2} = Host.compile_expr(arg_expr, env, c)
+        {code, ref, c2} = Elmc.Backend.CCodegen.DirectRender.Emit.Operand.compile(arg_expr, env, c)
         {code_acc <> "\n  " <> code, refs_acc ++ [ref], releases_acc ++ [ref], c2}
       end)
 
@@ -1059,8 +1059,8 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Expr do
           {code, ref, c} = Host.compile_native_bool_expr(inner_then, env, counter)
           {code, ref, "", c}
         else
-          {code, var, c} = Host.compile_expr(inner_then, env, counter)
-          {code, "elmc_as_int(#{var}) != 0", Release.release_var(var, "  "), c}
+          {code, var, c} = Elmc.Backend.CCodegen.DirectRender.Emit.Operand.compile(inner_then, env, counter)
+            {code, "(bool)elmc_as_bool(#{var})", Release.release_var(var, "  "), c}
         end
 
       active_branch =
@@ -1119,8 +1119,8 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Expr do
         {code, ref, counter} = Host.compile_native_bool_expr(cond_expr, env, counter)
         {code, ref, "", counter}
       else
-        {code, var, counter} = Host.compile_expr(cond_expr, env, counter)
-        {code, "elmc_as_int(#{var}) != 0", Release.release_var(var, "  "), counter}
+        {code, var, counter} = Elmc.Backend.CCodegen.DirectRender.Emit.Operand.compile(cond_expr, env, counter)
+        {code, "(bool)elmc_as_bool(#{var})", Release.release_var(var, "  "), counter}
       end
 
     then_env = Hoist.put_hoisted_native_bool(env, cond_expr, "1")

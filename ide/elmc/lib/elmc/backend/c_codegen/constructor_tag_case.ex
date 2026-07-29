@@ -9,7 +9,7 @@ defmodule Elmc.Backend.CCodegen.ConstructorTagCase do
   alias Elmc.Backend.CCodegen.CSource
   alias Elmc.Backend.CCodegen.FunctionCallCompile
   alias Elmc.Backend.CCodegen.IntLiteralRef
-  alias Elmc.Backend.CCodegen.OwnershipTransfer
+  alias Elmc.Backend.CCodegen.BranchCleanup
   alias Elmc.Backend.CCodegen.RcRuntimeEmit
   alias Elmc.Backend.CCodegen.ValueSlots
   alias Elmc.Backend.CCodegen.PebbleMsgTag
@@ -665,8 +665,8 @@ defmodule Elmc.Backend.CCodegen.ConstructorTagCase do
       |> Enum.map(fn [_, name] -> name end)
       |> MapSet.new()
 
-    cow_drop_skip = OwnershipTransfer.cow_drop_chain_sources_to_skip(body, out)
-    out_transfer_rhs = OwnershipTransfer.assignment_rhs_to_out(body, out)
+    cow_drop_skip = BranchCleanup.cow_drop_chain_sources_to_skip(body, out)
+    out_transfer_rhs = BranchCleanup.assignment_rhs_to_out(body, out)
 
     assigned
     |> Enum.reject(fn name ->
@@ -679,8 +679,7 @@ defmodule Elmc.Backend.CCodegen.ConstructorTagCase do
         MapSet.member?(cow_drop_skip, name) or
         MapSet.member?(block_scoped, name) or
         MapSet.member?(out_transfer_rhs, name) or
-        ValueSlots.transferred?(name, body) or
-        OwnershipTransfer.transferred_in_c_source?(name, body)
+        ValueSlots.transferred?(name)
     end)
     |> Enum.map_join("\n", &ValueSlots.release_stmt/1)
   end

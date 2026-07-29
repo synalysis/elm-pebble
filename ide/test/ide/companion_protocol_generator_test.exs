@@ -318,7 +318,7 @@ defmodule Ide.CompanionProtocolGeneratorTest do
       assert generated_header =~ "ELMC_PEBBLE_APP_MESSAGE_OUTBOX_SIZE_REQUIRED 636"
 
       assert generated_source =~ "companion_protocol_decode_list_wire_int"
-      assert generated_source =~ "elmc_list_from_int_array_take(message->list_values[1]"
+      assert generated_source =~ "elmc_list_from_int_array(&__elmc_rc_box, message->list_values[1]"
       refute generated_source =~ "elmc_pebble_dispatch_tag_int_values(app"
 
       assert generated_js =~ "encodeListIntField"
@@ -373,7 +373,7 @@ defmodule Ide.CompanionProtocolGeneratorTest do
       assert generated_header =~ "int32_t wire_set_origin_field1_x;"
       assert generated_header =~ "bool saw_wire_set_origin_field1_x;"
       assert generated_source =~ "companion_protocol_build_set_origin_field1"
-      assert generated_source =~ "elmc_record_new_take_value"
+      assert generated_source =~ "elmc_record_new_take(&v_out"
       assert generated_source =~ ~s<const char *v_names[] = { "x", "y" };>
 
       assert generated_js =~
@@ -579,7 +579,7 @@ defmodule Ide.CompanionProtocolGeneratorTest do
       generated_source = File.read!(source)
 
       assert generated_source =~ "COMPANION_PROTOCOL_PHONE_TO_WATCH_KIND_PONG"
-      assert generated_source =~ "ElmcValue *payload = elmc_new_int_take(1);"
+      assert generated_source =~ "ElmcValue *payload = ELMC_RC_INT_BOX(1);"
       assert generated_source =~
                "elmc_pebble_dispatch_tag_payload(app, ELMC_PEBBLE_MSG_PHONE_TO_WATCH_TARGET, payload);"
 

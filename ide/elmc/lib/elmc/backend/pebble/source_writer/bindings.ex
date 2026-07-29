@@ -1,9 +1,6 @@
 defmodule Elmc.Backend.Pebble.SourceWriter.Bindings do
   @moduledoc false
-  alias Elmc.Types, as: Types
-
-
-  alias Elmc.Backend.Pebble.{DispatchEmit, MsgCodegen, SceneWriter, Types, Util}
+  alias Elmc.Backend.Pebble.{MsgCodegen, SceneWriter, Types, Util}
 
   @type t :: Types.source_bindings()
 
@@ -24,7 +21,7 @@ defmodule Elmc.Backend.Pebble.SourceWriter.Bindings do
       entry_view_fn: Util.entry_fn_name(entry_module, "view"),
       random_generate_tag: random_generate_tag,
       has_view: has_view,
-      compass_dispatch_source: DispatchEmit.compass_source(feature_flags),
+      compass_events?: Map.get(feature_flags, :compass_events, false) == true,
       scene_writer_source: SceneWriter.source_implementation()
     }
   end

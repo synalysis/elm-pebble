@@ -749,36 +749,34 @@ static int dispatch_compass_current_result(int64_t target, double degrees, bool 
     return -6;
   }
 
-  if (is_valid) {
-    ElmcValue *values[2];
-    values[0] = elmc_new_float_take(degrees);
-    values[1] = elmc_new_bool_take(1);
-    if (!values[0] || !values[1]) {
-      if (values[0]) elmc_release(values[0]);
-      if (values[1]) elmc_release(values[1]);
-      return -2;
+  RC Rc = RC_SUCCESS;
+  ElmcValue *owned[3] = {0};
+  ElmcValue *result = NULL;
+  CATCH_BEGIN
+    if (is_valid) {
+      Rc = elmc_new_float(&owned[0], degrees);
+      CHECK_RC(Rc);
+      Rc = elmc_new_bool(&owned[1], 1);
+      CHECK_RC(Rc);
+      ElmcValue *values[2] = {owned[0], owned[1]};
+      Rc = elmc_record_new_values_take(&owned[2], 2, values);
+      owned[0] = NULL;
+      owned[1] = NULL;
+      CHECK_RC(Rc);
+      Rc = elmc_result_ok_own(&result, owned[2]);
+      owned[2] = NULL;
+      CHECK_RC(Rc);
+    } else {
+      Rc = elmc_new_int(&owned[0], error_code);
+      CHECK_RC(Rc);
+      Rc = elmc_result_err_own(&result, owned[0]);
+      owned[0] = NULL;
+      CHECK_RC(Rc);
     }
-    ElmcValue *heading = elmc_record_new_values_take_value(2, values);
-    if (!heading) {
-      return -2;
-    }
-    ElmcValue *result = elmc_result_ok_take(heading);
-    elmc_release(heading);
-    if (!result) {
-      return -2;
-    }
-    int rc = elmc_pebble_dispatch_tag_payload(&s_elm_app, target, result);
+  CATCH_END
+  elmc_release_array_lifo(owned, 3);
+  if (Rc != RC_SUCCESS) {
     elmc_release(result);
-    return rc;
-  }
-
-  ElmcValue *error_value = elmc_new_int_take(error_code);
-  if (!error_value) {
-    return -2;
-  }
-  ElmcValue *result = elmc_result_err_take(error_value);
-  elmc_release(error_value);
-  if (!result) {
     return -2;
   }
   int rc = elmc_pebble_dispatch_tag_payload(&s_elm_app, target, result);
@@ -4245,22 +4243,28 @@ static int dispatch_unobstructed_bounds_result(int64_t target, GRect bounds) {
     return -6;
   }
 
-  ElmcValue *values[4];
-  values[0] = elmc_new_int_take(bounds.origin.x);
-  values[1] = elmc_new_int_take(bounds.origin.y);
-  values[2] = elmc_new_int_take(bounds.size.w);
-  values[3] = elmc_new_int_take(bounds.size.h);
-  if (!values[0] || !values[1] || !values[2] || !values[3]) {
-    for (int i = 0; i < 4; i++) {
-      if (values[i]) {
-        elmc_release(values[i]);
-      }
-    }
-    return -2;
-  }
-
-  ElmcValue *record = elmc_record_new_values_take_value(4, values);
-  if (!record) {
+  RC Rc = RC_SUCCESS;
+  ElmcValue *values[4] = {0};
+  ElmcValue *record = NULL;
+  CATCH_BEGIN
+    Rc = elmc_new_int(&values[0], bounds.origin.x);
+    CHECK_RC(Rc);
+    Rc = elmc_new_int(&values[1], bounds.origin.y);
+    CHECK_RC(Rc);
+    Rc = elmc_new_int(&values[2], bounds.size.w);
+    CHECK_RC(Rc);
+    Rc = elmc_new_int(&values[3], bounds.size.h);
+    CHECK_RC(Rc);
+    Rc = elmc_record_new_values_take(&record, 4, values);
+    values[0] = NULL;
+    values[1] = NULL;
+    values[2] = NULL;
+    values[3] = NULL;
+    CHECK_RC(Rc);
+  CATCH_END
+  elmc_release_array_lifo(values, 4);
+  if (Rc != RC_SUCCESS) {
+    elmc_release(record);
     return -2;
   }
 
@@ -4752,61 +4756,107 @@ static ElmcValue *build_launch_context(AppLaunchReason launch) {
   ELMC_PEBBLE_DEBUG_LOG(APP_LOG_LEVEL_INFO, "launch context screen w=%d h=%d",
                         (int)bounds.size.w, (int)bounds.size.h);
 
-  ElmcValue *screen_width = elmc_new_int_take(bounds.size.w);
-  ElmcValue *screen_height = elmc_new_int_take(bounds.size.h);
-  ElmcValue *screen_shape = elmc_new_int_take(
-      PBL_IF_ROUND_ELSE(ELMC_PLATFORM_DISPLAY_SHAPE_ROUND, ELMC_PLATFORM_DISPLAY_SHAPE_RECTANGULAR));
-  ElmcValue *screen_color_mode = elmc_new_int_take(
-      PBL_IF_COLOR_ELSE(ELMC_PLATFORM_COLOR_CAPABILITY_COLOR, ELMC_PLATFORM_COLOR_CAPABILITY_BLACK_WHITE));
-  /* Pebble.Platform.LaunchScreen: width, height, shape, colorMode (indices 0..3). */
-  ElmcValue *screen_values[] = {screen_width, screen_height, screen_shape, screen_color_mode};
-  ElmcValue *screen = elmc_record_new_values_take_value(4, screen_values);
+  RC Rc = RC_SUCCESS;
+  ElmcValue *owned[13] = {0};
+  ElmcValue *context = NULL;
+  CATCH_BEGIN
+    Rc = elmc_new_int(&owned[0], bounds.size.w);
+    CHECK_RC(Rc);
+    Rc = elmc_new_int(&owned[1], bounds.size.h);
+    CHECK_RC(Rc);
+    Rc = elmc_new_int(
+        &owned[2],
+        PBL_IF_ROUND_ELSE(ELMC_PLATFORM_DISPLAY_SHAPE_ROUND, ELMC_PLATFORM_DISPLAY_SHAPE_RECTANGULAR));
+    CHECK_RC(Rc);
+    Rc = elmc_new_int(
+        &owned[3],
+        PBL_IF_COLOR_ELSE(ELMC_PLATFORM_COLOR_CAPABILITY_COLOR, ELMC_PLATFORM_COLOR_CAPABILITY_BLACK_WHITE));
+    CHECK_RC(Rc);
+    /* Pebble.Platform.LaunchScreen: width, height, shape, colorMode (indices 0..3). */
+    {
+      ElmcValue *screen_values[] = {owned[0], owned[1], owned[2], owned[3]};
+      Rc = elmc_record_new_values_take(&owned[4], 4, screen_values);
+      owned[0] = NULL;
+      owned[1] = NULL;
+      owned[2] = NULL;
+      owned[3] = NULL;
+      CHECK_RC(Rc);
+    }
 
-  ElmcValue *reason = elmc_new_int_take(launch_reason_to_elm_tag(launch));
-  ElmcValue *watch_model = elmc_new_string_take("");
-  ElmcValue *watch_profile_id = elmc_new_string_take("");
-  ElmcValue *has_microphone = elmc_new_bool_take(
+    Rc = elmc_new_int(&owned[5], launch_reason_to_elm_tag(launch));
+    CHECK_RC(Rc);
+    Rc = elmc_new_string(&owned[6], "");
+    CHECK_RC(Rc);
+    Rc = elmc_new_string(&owned[7], "");
+    CHECK_RC(Rc);
+    Rc = elmc_new_bool(
+        &owned[8],
 #ifdef PBL_MICROPHONE
-      1
+        1
 #else
-      0
+        0
 #endif
-  );
-  ElmcValue *has_compass = elmc_new_bool_take(
+    );
+    CHECK_RC(Rc);
+    Rc = elmc_new_bool(
+        &owned[9],
 #ifdef PBL_COMPASS
-      1
+        1
 #else
-      0
+        0
 #endif
-  );
-  ElmcValue *supports_health = elmc_new_bool_take(
+    );
+    CHECK_RC(Rc);
+    Rc = elmc_new_bool(
+        &owned[10],
 #ifdef PBL_HEALTH
-      1
+        1
 #else
-      0
+        0
 #endif
-  );
-  /* launchButton: -1 = Maybe Nothing; quickLaunchAction: 0 = QuickLaunchNone */
-  int launch_button_tag = -1;
+    );
+    CHECK_RC(Rc);
+    /* launchButton: -1 = Maybe Nothing; quickLaunchAction: 0 = QuickLaunchNone */
+    int launch_button_tag = -1;
 #ifdef PBL_LAUNCH_BUTTON
-  if (launch == APP_LAUNCH_USER || launch == APP_LAUNCH_QUICK_LAUNCH) {
-    launch_button_tag = (int)launch_button();
-  }
+    if (launch == APP_LAUNCH_USER || launch == APP_LAUNCH_QUICK_LAUNCH) {
+      launch_button_tag = (int)launch_button();
+    }
 #endif
-  int quick_launch_action_tag = 0;
+    int quick_launch_action_tag = 0;
 #ifdef PBL_QUICK_LAUNCH_ACTION
-  if (launch == APP_LAUNCH_QUICK_LAUNCH) {
-    quick_launch_action_tag = (int)launch_get_quick_launch_action();
-  }
+    if (launch == APP_LAUNCH_QUICK_LAUNCH) {
+      quick_launch_action_tag = (int)launch_get_quick_launch_action();
+    }
 #endif
-  ElmcValue *launch_button_value = elmc_new_int_take(launch_button_tag);
-  ElmcValue *quick_launch_action_value = elmc_new_int_take(quick_launch_action_tag);
-  /* Pebble.Platform.LaunchContext: reason, watchModel, watchProfileId, screen,
-     hasMicrophone, hasCompass, supportsHealth, launchButton, quickLaunchAction (indices 0..8). */
-  ElmcValue *context_values[] = {reason, watch_model, watch_profile_id, screen, has_microphone,
-                                 has_compass, supports_health, launch_button_value,
-                                 quick_launch_action_value};
-  ElmcValue *context = elmc_record_new_values_take_value(9, context_values);
+    Rc = elmc_new_int(&owned[11], launch_button_tag);
+    CHECK_RC(Rc);
+    Rc = elmc_new_int(&owned[12], quick_launch_action_tag);
+    CHECK_RC(Rc);
+    /* Pebble.Platform.LaunchContext: reason, watchModel, watchProfileId, screen,
+       hasMicrophone, hasCompass, supportsHealth, launchButton, quickLaunchAction (indices 0..8). */
+    {
+      ElmcValue *context_values[] = {owned[5], owned[6], owned[7], owned[4], owned[8],
+                                     owned[9], owned[10], owned[11], owned[12]};
+      Rc = elmc_record_new_values_take(&context, 9, context_values);
+      owned[4] = NULL;
+      owned[5] = NULL;
+      owned[6] = NULL;
+      owned[7] = NULL;
+      owned[8] = NULL;
+      owned[9] = NULL;
+      owned[10] = NULL;
+      owned[11] = NULL;
+      owned[12] = NULL;
+      CHECK_RC(Rc);
+    }
+  CATCH_END
+  elmc_release_array_lifo(owned, 13);
+  if (Rc != RC_SUCCESS) {
+    elmc_release(context);
+    ELMC_PEBBLE_TRACE_EXIT("build_launch_context");
+    return NULL;
+  }
   ELMC_PEBBLE_TRACE_EXIT("build_launch_context");
   return context;
 }

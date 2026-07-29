@@ -35,8 +35,6 @@ defmodule Elmc.Backend.CCodegen.RcRuntimeEmit do
     "elmc_new_string_len",
     "elmc_new_float",
     "elmc_list_cons",
-    "elmc_list_cons_take",
-    "elmc_list_cons_head_take",
     "elmc_list_head",
     "elmc_list_tail",
     "elmc_list_length",
@@ -392,350 +390,8 @@ defmodule Elmc.Backend.CCodegen.RcRuntimeEmit do
     "elmc_list_from_int_array_take"
   ])
 
-  @take_wrappers %{
-    "elmc_new_int" => "elmc_new_int_take",
-    "elmc_new_bool" => "elmc_new_bool_take",
-    "elmc_new_order" => "elmc_new_order_take",
-    "elmc_basics_compare" => "elmc_basics_compare_take",
-    "elmc_cmd0" => "elmc_cmd0_take",
-    "elmc_cmd1" => "elmc_cmd1_take",
-    "elmc_cmd1_string" => "elmc_cmd1_string_take",
-    "elmc_cmd2" => "elmc_cmd2_take",
-    "elmc_cmd3" => "elmc_cmd3_take",
-    "elmc_cmd4" => "elmc_cmd4_take",
-    "elmc_cmd5" => "elmc_cmd5_take",
-    "elmc_sub0" => "elmc_sub0_take",
-    "elmc_sub1" => "elmc_sub1_take",
-    "elmc_sub2" => "elmc_sub2_take",
-    "elmc_sub3" => "elmc_sub3_take",
-    "elmc_sub4" => "elmc_sub4_take",
-    "elmc_sub5" => "elmc_sub5_take",
-    "elmc_new_string" => "elmc_new_string_take",
-    "elmc_new_string_len" => "elmc_new_string_len_take",
-    "elmc_new_float" => "elmc_new_float_take",
-    "elmc_list_cons" => "elmc_list_cons_take",
-    "elmc_list_head" => "elmc_list_head_take",
-    "elmc_list_tail" => "elmc_list_tail_take",
-    "elmc_list_length" => "elmc_list_length_take",
-    "elmc_list_replace_nth_int" => "elmc_list_replace_nth_int_take",
-    "elmc_string_to_int" => "elmc_string_to_int_take",
-    "elmc_string_to_float" => "elmc_string_to_float_take",
-    "elmc_string_length_val" => "elmc_string_length_val_take",
-    "elmc_basics_mod_by" => "elmc_basics_mod_by_take",
-    "elmc_basics_remainder_by" => "elmc_basics_remainder_by_take",
-    "elmc_basics_pow" => "elmc_basics_pow_take",
-    "elmc_basics_negate" => "elmc_basics_negate_take",
-    "elmc_basics_abs" => "elmc_basics_abs_take",
-    "elmc_basics_round" => "elmc_basics_round_take",
-    "elmc_basics_floor" => "elmc_basics_floor_take",
-    "elmc_basics_ceiling" => "elmc_basics_ceiling_take",
-    "elmc_basics_truncate" => "elmc_basics_truncate_take",
-    "elmc_bitwise_and" => "elmc_bitwise_and_take",
-    "elmc_bitwise_or" => "elmc_bitwise_or_take",
-    "elmc_bitwise_xor" => "elmc_bitwise_xor_take",
-    "elmc_bitwise_complement" => "elmc_bitwise_complement_take",
-    "elmc_bitwise_shift_left_by" => "elmc_bitwise_shift_left_by_take",
-    "elmc_bitwise_shift_right_by" => "elmc_bitwise_shift_right_by_take",
-    "elmc_bitwise_shift_right_zf_by" => "elmc_bitwise_shift_right_zf_by_take",
-    "elmc_char_to_code" => "elmc_char_to_code_take",
-    "elmc_dict_size" => "elmc_dict_size_take",
-    "elmc_set_size" => "elmc_set_size_take",
-    "elmc_array_length" => "elmc_array_length_take",
-    "elmc_time_now_millis" => "elmc_time_now_millis_take",
-    "elmc_time_zone_offset_minutes" => "elmc_time_zone_offset_minutes_take",
-    "elmc_result_inc_or_zero" => "elmc_result_inc_or_zero_take",
-    "elmc_new_char" => "elmc_new_char_take",
-    "elmc_char_from_code" => "elmc_char_from_code_take",
-    "elmc_char_from_code_int" => "elmc_char_from_code_int_take",
-    "elmc_char_to_upper" => "elmc_char_to_upper_take",
-    "elmc_char_to_lower" => "elmc_char_to_lower_take",
-    "elmc_debug_to_string" => "elmc_debug_to_string_take",
-    "elmc_debug_set_to_string" => "elmc_debug_set_to_string_take",
-    "elmc_debug_todo" => "elmc_debug_todo_take",
-    "elmc_basics_to_float" => "elmc_basics_to_float_take",
-    "elmc_basics_sin" => "elmc_basics_sin_take",
-    "elmc_basics_cos" => "elmc_basics_cos_take",
-    "elmc_basics_tan" => "elmc_basics_tan_take",
-    "elmc_basics_sqrt" => "elmc_basics_sqrt_take",
-    "elmc_basics_log" => "elmc_basics_log_take",
-    "elmc_basics_log_base" => "elmc_basics_log_base_take",
-    "elmc_basics_atan" => "elmc_basics_atan_take",
-    "elmc_basics_atan2" => "elmc_basics_atan2_take",
-    "elmc_basics_asin" => "elmc_basics_asin_take",
-    "elmc_basics_acos" => "elmc_basics_acos_take",
-    "elmc_basics_degrees" => "elmc_basics_degrees_take",
-    "elmc_basics_radians" => "elmc_basics_radians_take",
-    "elmc_basics_turns" => "elmc_basics_turns_take",
-    "elmc_basics_from_polar" => "elmc_basics_from_polar_take",
-    "elmc_basics_to_polar" => "elmc_basics_to_polar_take",
-    "elmc_string_from_int" => "elmc_string_from_int_take",
-    "elmc_string_left" => "elmc_string_left_take",
-    "elmc_string_right" => "elmc_string_right_take",
-    "elmc_string_drop_left" => "elmc_string_drop_left_take",
-    "elmc_string_drop_right" => "elmc_string_drop_right_take",
-    "elmc_string_cons" => "elmc_string_cons_take",
-    "elmc_string_words" => "elmc_string_words_take",
-    "elmc_string_lines" => "elmc_string_lines_take",
-    "elmc_string_pad" => "elmc_string_pad_take",
-    "elmc_array_set" => "elmc_array_set_take",
-    "elmc_array_push" => "elmc_array_push_take",
-    "elmc_result_to_maybe" => "elmc_result_to_maybe_take",
-    "elmc_result_from_maybe" => "elmc_result_from_maybe_take",
-    "elmc_basics_min" => "elmc_basics_min_take",
-    "elmc_basics_max" => "elmc_basics_max_take",
-    "elmc_basics_clamp" => "elmc_basics_clamp_take",
-    "elmc_debug_log" => "elmc_debug_log_take",
-    "elmc_append" => "elmc_append_take",
-    "elmc_array_get" => "elmc_array_get_take",
-    "elmc_cmd_backlight_from_maybe" => "elmc_cmd_backlight_from_maybe_take",
-    "elmc_dict_singleton" => "elmc_dict_singleton_take",
-    "elmc_set_singleton" => "elmc_set_singleton_take",
-    "elmc_set_to_list" => "elmc_set_to_list_take",
-    "elmc_array_initialize" => "elmc_array_initialize_take",
-    "elmc_array_repeat" => "elmc_array_repeat_take",
-    "elmc_array_to_list" => "elmc_array_to_list_take",
-    "elmc_array_to_indexed_list" => "elmc_array_to_indexed_list_take",
-    "elmc_array_map" => "elmc_array_map_take",
-    "elmc_array_indexed_map" => "elmc_array_indexed_map_take",
-    "elmc_array_foldl" => "elmc_array_foldl_take",
-    "elmc_array_foldr" => "elmc_array_foldr_take",
-    "elmc_array_filter" => "elmc_array_filter_take",
-    "elmc_array_append" => "elmc_array_append_take",
-    "elmc_array_slice" => "elmc_array_slice_take",
-    "elmc_dict_to_list" => "elmc_dict_to_list_take",
-    "elmc_json_encode_string" => "elmc_json_encode_string_take",
-    "elmc_json_encode_int" => "elmc_json_encode_int_take",
-    "elmc_json_encode_float" => "elmc_json_encode_float_take",
-    "elmc_json_encode_bool" => "elmc_json_encode_bool_take",
-    "elmc_json_encode_null" => "elmc_json_encode_null_take",
-    "elmc_json_encode_list" => "elmc_json_encode_list_take",
-    "elmc_json_encode_array" => "elmc_json_encode_array_take",
-    "elmc_json_encode_set" => "elmc_json_encode_set_take",
-    "elmc_json_encode_object" => "elmc_json_encode_object_take",
-    "elmc_json_encode_add_field" => "elmc_json_encode_add_field_take",
-    "elmc_json_encode_add_entry" => "elmc_json_encode_add_entry_take",
-    "elmc_json_encode_dict" => "elmc_json_encode_dict_take",
-    "elmc_json_encode_encode" => "elmc_json_encode_encode_take",
-    "elmc_task_succeed" => "elmc_task_succeed_take",
-    "elmc_task_fail" => "elmc_task_fail_take",
-    "elmc_task_map" => "elmc_task_map_take",
-    "elmc_task_map2" => "elmc_task_map2_take",
-    "elmc_task_and_then" => "elmc_task_and_then_take",
-    "elmc_task_command" => "elmc_task_command_take",
-    "elmc_process_spawn" => "elmc_process_spawn_take",
-    "elmc_process_sleep" => "elmc_process_sleep_take",
-    "elmc_process_kill" => "elmc_process_kill_take",
-    "elmc_json_decode_value" => "elmc_json_decode_value_take",
-    "elmc_json_decode_string" => "elmc_json_decode_string_take",
-    "elmc_json_decode_string_decoder" => "elmc_json_decode_string_decoder_take",
-    "elmc_json_decode_int_decoder" => "elmc_json_decode_int_decoder_take",
-    "elmc_json_decode_float_decoder" => "elmc_json_decode_float_decoder_take",
-    "elmc_json_decode_bool_decoder" => "elmc_json_decode_bool_decoder_take",
-    "elmc_json_decode_null" => "elmc_json_decode_null_take",
-    "elmc_json_decode_nullable" => "elmc_json_decode_nullable_take",
-    "elmc_json_decode_list" => "elmc_json_decode_list_take",
-    "elmc_json_decode_array" => "elmc_json_decode_array_take",
-    "elmc_json_decode_field" => "elmc_json_decode_field_take",
-    "elmc_json_decode_at" => "elmc_json_decode_at_take",
-    "elmc_json_decode_index" => "elmc_json_decode_index_take",
-    "elmc_json_decode_map" => "elmc_json_decode_map_take",
-    "elmc_json_decode_map2" => "elmc_json_decode_map2_take",
-    "elmc_json_decode_map3" => "elmc_json_decode_map3_take",
-    "elmc_json_decode_map4" => "elmc_json_decode_map4_take",
-    "elmc_json_decode_map5" => "elmc_json_decode_map5_take",
-    "elmc_json_decode_map6" => "elmc_json_decode_map6_take",
-    "elmc_json_decode_map7" => "elmc_json_decode_map7_take",
-    "elmc_json_decode_succeed" => "elmc_json_decode_succeed_take",
-    "elmc_json_decode_fail" => "elmc_json_decode_fail_take",
-    "elmc_json_decode_and_then" => "elmc_json_decode_and_then_take",
-    "elmc_json_decode_one_of" => "elmc_json_decode_one_of_take",
-    "elmc_json_decode_maybe" => "elmc_json_decode_maybe_take",
-    "elmc_json_decode_lazy" => "elmc_json_decode_lazy_take",
-    "elmc_json_decode_value_decoder" => "elmc_json_decode_value_decoder_take",
-    "elmc_json_decode_error_to_string" => "elmc_json_decode_error_to_string_take",
-    "elmc_json_decode_key_value_pairs" => "elmc_json_decode_key_value_pairs_take",
-    "elmc_json_decode_dict" => "elmc_json_decode_dict_take",
-    "elmc_task_force" => "elmc_task_force_take",
-    "elmc_cmd_batch" => "elmc_cmd_batch_take",
-    "elmc_cmd_map" => "elmc_cmd_map_take",
-    "elmc_sub_batch" => "elmc_sub_batch_take",
-    "elmc_sub_map" => "elmc_sub_map_take",
-    "elmc_port_outgoing" => "elmc_port_outgoing_take",
-    "elmc_port_incoming_sub" => "elmc_port_incoming_sub_take",
-    "elmc_build_constructor_payload" => "elmc_build_constructor_payload_take",
-    "elmc_record_update" => "elmc_record_update_take",
-    "elmc_record_update_index" => "elmc_record_update_index_take",
-    "elmc_record_update_index_cow" => "elmc_record_update_index_cow_take",
-    "elmc_record_update_index_cow_drop" => "elmc_record_update_index_cow_drop_take",
-    "elmc_record_update_index_int_cow" => "elmc_record_update_index_int_cow_take",
-    "elmc_record_update_index_int_cow_drop" => "elmc_record_update_index_int_cow_drop_take",
-    "elmc_record_update_index_bool_cow" => "elmc_record_update_index_bool_cow_take",
-    "elmc_record_update_index_bool_cow_drop" => "elmc_record_update_index_bool_cow_drop_take",
-    "elmc_record_update_index_float_cow" => "elmc_record_update_index_float_cow_take",
-    "elmc_record_update_index_float_cow_drop" => "elmc_record_update_index_float_cow_drop_take",
-    "elmc_string_chop_end" => "elmc_string_chop_end_take",
-    "elmc_string_chop_start" => "elmc_string_chop_start_take",
-    "elmc_string_chop_forward_slashes" => "elmc_string_chop_forward_slashes_take",
-    "elmc_url_percent_encode" => "elmc_url_percent_encode_take",
-    "elmc_url_percent_decode" => "elmc_url_percent_decode_take",
-    "elmc_url_from_string" => "elmc_url_from_string_take",
-    "elmc_http_empty_body" => "elmc_http_empty_body_take",
-    "elmc_http_pair" => "elmc_http_pair_take",
-    "elmc_http_to_data_view" => "elmc_http_to_data_view_take",
-    "elmc_http_expect" => "elmc_http_expect_take",
-    "elmc_http_command" => "elmc_http_command_take",
-    "elmc_http_cancel" => "elmc_http_cancel_take",
-    "elmc_backend_task_http_get_json" => "elmc_backend_task_http_get_json_take",
-    "elmc_backend_task_http_get" => "elmc_backend_task_http_get_take",
-    "elmc_backend_task_http_get_with_options" => "elmc_backend_task_http_get_with_options_take",
-    "elmc_backend_task_http_expect_json" => "elmc_backend_task_http_expect_json_take",
-    "elmc_backend_task_http_expect_string" => "elmc_backend_task_http_expect_string_take",
-    "elmc_backend_task_http_expect_whatever" => "elmc_backend_task_http_expect_whatever_take",
-    "elmc_backend_task_http_expect_bytes" => "elmc_backend_task_http_expect_bytes_take",
-    "elmc_backend_task_http_with_metadata" => "elmc_backend_task_http_with_metadata_take",
-    "elmc_backend_task_http_empty_body" => "elmc_backend_task_http_empty_body_take",
-    "elmc_backend_task_http_string_body" => "elmc_backend_task_http_string_body_take",
-    "elmc_backend_task_http_json_body" => "elmc_backend_task_http_json_body_take",
-    "elmc_backend_task_http_bytes_body" => "elmc_backend_task_http_bytes_body_take",
-    "elmc_bytes_encode_sequence" => "elmc_bytes_encode_sequence_take",
-    "elmc_backend_task_http_request" => "elmc_backend_task_http_request_take",
-    "elmc_backend_task_http_post" => "elmc_backend_task_http_post_take",
-    "elmc_file_download_task" => "elmc_file_download_task_take",
-    "elmc_file_select" => "elmc_file_select_take",
-    "elmc_file_download" => "elmc_file_download_take",
-    "elmc_random_generate" => "elmc_random_generate_take",
-    "elmc_regex_from_string" => "elmc_regex_from_string_take",
-    "elmc_regex_find" => "elmc_regex_find_take",
-    "elmc_regex_contains" => "elmc_regex_contains_take",
-    "elmc_regex_replace" => "elmc_regex_replace_take",
-    "elmc_time_here" => "elmc_time_here_take",
-    "elmc_browser_get_viewport" => "elmc_browser_get_viewport_take",
-    "elmc_list_nth_maybe" => "elmc_list_nth_maybe_take",
-    "elmc_list_nth_int_default_boxed" => "elmc_list_nth_int_default_boxed_take",
-    "elmc_int_list_head_boxed" => "elmc_int_list_head_boxed_take",
-    "elmc_int_list_tail" => "elmc_int_list_tail_take",
-    "elmc_float_list_head_boxed" => "elmc_float_list_head_boxed_take",
-    "elmc_float_list_tail" => "elmc_float_list_tail_take",
-    "elmc_record_seq_head_boxed" => "elmc_record_seq_head_boxed_take",
-    "elmc_record_seq_tail" => "elmc_record_seq_tail_take",
-    "elmc_int_spine_head_boxed" => "elmc_int_spine_head_boxed_take",
-    "elmc_int_spine_tail" => "elmc_int_spine_tail_take",
-    "elmc_list_reverse" => "elmc_list_reverse_take",
-    "elmc_list_copy" => "elmc_list_copy_take",
-    "elmc_list_map" => "elmc_list_map_take",
-    "elmc_list_filter" => "elmc_list_filter_take",
-    "elmc_list_foldl" => "elmc_list_foldl_take",
-    "elmc_list_append" => "elmc_list_append_take",
-    "elmc_list_foldr" => "elmc_list_foldr_take",
-    "elmc_list_concat" => "elmc_list_concat_take",
-    "elmc_list_concat_map" => "elmc_list_concat_map_take",
-    "elmc_list_concat_array" => "elmc_list_concat_array_take",
-    "elmc_list_indexed_map" => "elmc_list_indexed_map_take",
-    "elmc_list_filter_map" => "elmc_list_filter_map_take",
-    "elmc_list_singleton" => "elmc_list_singleton_take",
-    "elmc_list_range" => "elmc_list_range_take",
-    "elmc_list_repeat" => "elmc_list_repeat_take",
-    "elmc_list_take" => "elmc_list_take_take",
-    "elmc_list_take_int" => "elmc_list_take_int_take",
-    "elmc_list_drop" => "elmc_list_drop_take",
-    "elmc_list_drop_int" => "elmc_list_drop_int_take",
-    "elmc_list_partition" => "elmc_list_partition_take",
-    "elmc_list_unzip" => "elmc_list_unzip_take",
-    "elmc_list_intersperse" => "elmc_list_intersperse_take",
-    "elmc_list_map2" => "elmc_list_map2_take",
-    "elmc_list_map3" => "elmc_list_map3_take",
-    "elmc_list_map4" => "elmc_list_map4_take",
-    "elmc_list_map5" => "elmc_list_map5_take",
-    "elmc_list_sum" => "elmc_list_sum_take",
-    "elmc_list_product" => "elmc_list_product_take",
-    "elmc_list_maximum" => "elmc_list_maximum_take",
-    "elmc_list_minimum" => "elmc_list_minimum_take",
-    "elmc_list_any" => "elmc_list_any_take",
-    "elmc_list_all" => "elmc_list_all_take",
-    "elmc_list_sort" => "elmc_list_sort_take",
-    "elmc_list_sort_by" => "elmc_list_sort_by_take",
-    "elmc_list_sort_with" => "elmc_list_sort_with_take",
-    "elmc_string_append" => "elmc_string_append_take",
-    "elmc_string_append_native" => "elmc_string_append_native_take",
-    "elmc_string_replace" => "elmc_string_replace_take",
-    "elmc_string_reverse" => "elmc_string_reverse_take",
-    "elmc_string_repeat" => "elmc_string_repeat_take",
-    "elmc_string_from_float" => "elmc_string_from_float_take",
-    "elmc_string_to_upper" => "elmc_string_to_upper_take",
-    "elmc_string_to_lower" => "elmc_string_to_lower_take",
-    "elmc_string_trim" => "elmc_string_trim_take",
-    "elmc_string_trim_left" => "elmc_string_trim_left_take",
-    "elmc_string_trim_right" => "elmc_string_trim_right_take",
-    "elmc_string_split" => "elmc_string_split_take",
-    "elmc_string_join" => "elmc_string_join_take",
-    "elmc_string_slice" => "elmc_string_slice_take",
-    "elmc_string_from_list" => "elmc_string_from_list_take",
-    "elmc_string_from_char" => "elmc_string_from_char_take",
-    "elmc_string_pad_left" => "elmc_string_pad_left_take",
-    "elmc_string_pad_right" => "elmc_string_pad_right_take",
-    "elmc_string_map" => "elmc_string_map_take",
-    "elmc_string_filter" => "elmc_string_filter_take",
-    "elmc_string_foldl" => "elmc_string_foldl_take",
-    "elmc_string_foldr" => "elmc_string_foldr_take",
-    "elmc_string_any" => "elmc_string_any_take",
-    "elmc_string_all" => "elmc_string_all_take",
-    "elmc_string_indexes" => "elmc_string_indexes_take",
-    "elmc_string_uncons" => "elmc_string_uncons_take",
-    "elmc_string_to_list" => "elmc_string_to_list_take",
-    "elmc_dict_from_list" => "elmc_dict_from_list_take",
-    "elmc_dict_insert" => "elmc_dict_insert_take",
-    "elmc_dict_get" => "elmc_dict_get_take",
-    "elmc_dict_remove" => "elmc_dict_remove_take",
-    "elmc_dict_keys" => "elmc_dict_keys_take",
-    "elmc_dict_values" => "elmc_dict_values_take",
-    "elmc_dict_map" => "elmc_dict_map_take",
-    "elmc_dict_foldl" => "elmc_dict_foldl_take",
-    "elmc_dict_foldr" => "elmc_dict_foldr_take",
-    "elmc_dict_filter" => "elmc_dict_filter_take",
-    "elmc_dict_partition" => "elmc_dict_partition_take",
-    "elmc_dict_intersect" => "elmc_dict_intersect_take",
-    "elmc_dict_diff" => "elmc_dict_diff_take",
-    "elmc_dict_union" => "elmc_dict_union_take",
-    "elmc_dict_merge" => "elmc_dict_merge_take",
-    "elmc_dict_update" => "elmc_dict_update_take",
-    "elmc_set_from_list" => "elmc_set_from_list_take",
-    "elmc_set_insert" => "elmc_set_insert_take",
-    "elmc_set_remove" => "elmc_set_remove_take",
-    "elmc_set_foldl" => "elmc_set_foldl_take",
-    "elmc_set_foldr" => "elmc_set_foldr_take",
-    "elmc_set_filter" => "elmc_set_filter_take",
-    "elmc_set_partition" => "elmc_set_partition_take",
-    "elmc_set_union" => "elmc_set_union_take",
-    "elmc_set_intersect" => "elmc_set_intersect_take",
-    "elmc_set_diff" => "elmc_set_diff_take",
-    "elmc_set_map" => "elmc_set_map_take",
-    "elmc_string_from_native_int" => "elmc_string_from_native_int_take",
-    "elmc_maybe_map" => "elmc_maybe_map_take",
-    "elmc_maybe_map2" => "elmc_maybe_map2_take",
-    "elmc_maybe_and_then" => "elmc_maybe_and_then_take",
-    "elmc_result_map" => "elmc_result_map_take",
-    "elmc_result_map_error" => "elmc_result_map_error_take",
-    "elmc_result_and_then" => "elmc_result_and_then_take",
-    "elmc_tuple_map_first" => "elmc_tuple_map_first_take",
-    "elmc_tuple_map_second" => "elmc_tuple_map_second_take",
-    "elmc_tuple_map_both" => "elmc_tuple_map_both_take",
-    "elmc_list_from_int_array" => "elmc_list_from_int_array_take",
-    "elmc_list_from_float_array" => "elmc_list_from_float_array_take",
-    "elmc_list_from_record_array" => "elmc_list_from_record_array_take",
-    "elmc_list_from_tuple2_int_array" => "elmc_list_from_tuple2_int_array_take",
-    "elmc_list_from_values_take" => "elmc_list_from_values_take_value",
-    "elmc_tuple2_take" => "elmc_tuple2_take_value",
-    "elmc_record_new_take" => "elmc_record_new_take_value",
-    "elmc_record_new" => "elmc_record_new_take_value",
-    "elmc_record_new_static_take" => "elmc_record_new_static_take_value",
-    "elmc_record_new_static" => "elmc_record_new_static_take_value",
-    "elmc_record_new_values_take" => "elmc_record_new_values_take_value",
-    "elmc_record_new_values" => "elmc_record_new_values_take_value",
-    "elmc_record_new_values_ints" => "elmc_record_new_values_ints_take",
-    "elmc_closure_new" => "elmc_closure_new_take"
-  }
-
-  @function_out_marker "ELMC_FN_OUT"
+  @function_out_marker "ELMC_FN_OUT_PLACEHOLDER_REMOVE_START"
+    @function_out_marker "ELMC_FN_OUT"
 
   @fresh_owned_slot ~r/^(tmp_\d+(?:_[a-z0-9_]+)?|head_\d+|owned\[\d+\]|call_args_\d+|list_items_\d+|rec_values_\d+|list_map_item_\d+|list_indexed_map_item_\d+|list_map_cons_\d+|list_map_rev_\d+|list_fwd_cell_\d+|list_repeat_cons_\d+|string_segment_\d+|string_concat_acc_\d+|list_case_suffix_\d+)$/
 
@@ -940,6 +596,7 @@ defmodule Elmc.Backend.CCodegen.RcRuntimeEmit do
   def allocator_out_arg(out) when is_binary(out) do
     cond do
       function_out_ref?(out) -> function_out_param()
+      out == "*out" -> "out"
       ValueSlots.owned_ref?(out) -> "&#{out}"
       true -> "&#{out}"
     end
@@ -1199,8 +856,14 @@ defmodule Elmc.Backend.CCodegen.RcRuntimeEmit do
       """
       |> String.trim()
     else
-      fusion_assign(out, alloc_fn, call_args, env, opts)
+      non_rc_allocator_stmt(out, alloc_fn, call_args, opts)
     end
+  end
+
+  @doc "RC allocator assign outside CATCH (propagates RC, no value-returning shim)."
+  @spec non_rc_allocator_stmt(String.t(), String.t(), String.t(), keyword()) :: String.t()
+  def non_rc_allocator_stmt(out, function, call_args, opts \\ []) do
+    legacy_rc_allocator_stmt(out, function, call_args, opts)
   end
 
   @spec rc_allocator?(String.t()) :: boolean()
@@ -1418,31 +1081,13 @@ defmodule Elmc.Backend.CCodegen.RcRuntimeEmit do
     end
   end
 
-  @doc false
-  @spec take_wrapper_for(String.t()) :: Types.ir_expr()
-
-  def take_wrapper_for(function) when is_binary(function), do: Map.get(@take_wrappers, function)
-
-  @doc "RC allocator assign for fused/native C snippets (never uses break)."
+  @doc "RC allocator assign for fused/native C snippets."
   @spec fusion_assign(String.t(), String.t(), String.t(), Types.compile_env(), keyword()) :: String.t()
   def fusion_assign(out, function, call_args, env \\ %{}, opts \\ []) do
-    cond do
-      rc_allocator_emit_mode?(env) ->
-        allocator_assign(env, out, function, call_args, opts)
-
-      Map.has_key?(@take_wrappers, function) and predeclared_out_slot?(env, out) ->
-        out = ValueSlots.ensure_fresh_assign_target(out)
-        take_fn = Map.fetch!(@take_wrappers, function)
-        stmt = ValueSlots.owned_reassign_prefix(out) <> "#{assignment_lhs(out)} = #{take_fn}(#{call_args});"
-        ValueSlots.mark_written(out)
-        stmt
-
-      Map.has_key?(@take_wrappers, function) ->
-        take_fn = Map.fetch!(@take_wrappers, function)
-        ValueSlots.boxed_decl(out, "#{take_fn}(#{call_args})")
-
-      true ->
-        legacy_rc_allocator_stmt(out, function, call_args, Keyword.merge(opts, env: env))
+    if rc_allocator_emit_mode?(env) do
+      allocator_assign(env, out, function, call_args, opts)
+    else
+      non_rc_allocator_stmt(out, function, call_args, Keyword.merge(opts, env: env))
     end
   end
 
@@ -1479,6 +1124,16 @@ defmodule Elmc.Backend.CCodegen.RcRuntimeEmit do
 
   @spec legacy_rc_allocator_stmt(String.t(), String.t(), String.t(), keyword()) :: String.t()
   defp legacy_rc_allocator_stmt(out, function, call_args, opts) do
+    # Plan dest `*out` on ElmcValue*-returning (non-RC) functions means "return the
+    # allocation", not a real `out` parameter.
+    if out == "*out" and Keyword.get(opts, :return_on_fail?, true) do
+      fusion_return(out, function, call_args, Keyword.get(opts, :env, %{}))
+    else
+      legacy_rc_allocator_assign_stmt(out, function, call_args, opts)
+    end
+  end
+
+  defp legacy_rc_allocator_assign_stmt(out, function, call_args, opts) do
     return_on_fail? = Keyword.get(opts, :return_on_fail?, true)
     declare_out? = legacy_declare_out?(out, opts)
 

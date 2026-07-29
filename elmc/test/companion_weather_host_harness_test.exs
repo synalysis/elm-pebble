@@ -131,7 +131,7 @@ defmodule Elmc.CompanionWeatherHostHarnessTest do
 
     int main(void) {
       ElmcPebbleApp app = {0};
-      ElmcValue *flags = elmc_new_int_take(0);
+      ElmcValue *flags = ELMC_RC_INT_BOX(0);
       if (elmc_pebble_init(&app, flags) != 0) return 2;
       elmc_release(flags);
 
@@ -155,7 +155,7 @@ defmodule Elmc.CompanionWeatherHostHarnessTest do
 
     int main(void) {
       ElmcPebbleApp app = {0};
-      ElmcValue *flags = elmc_new_int_take(0);
+      ElmcValue *flags = ELMC_RC_INT_BOX(0);
       if (elmc_pebble_init(&app, flags) != 0) return 2;
       elmc_release(flags);
 

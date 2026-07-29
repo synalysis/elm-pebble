@@ -101,9 +101,9 @@ defmodule Elmc.Backend.CCodegen.Util do
     escaped = escape_c_string(value)
 
     if String.contains?(value, <<0>>) do
-      "elmc_new_string_len_take(\"#{escaped}\", #{byte_size(value)})"
+      "ELMC_RC_STRING_LEN_BOX(\"#{escaped}\", #{byte_size(value)})"
     else
-      "elmc_new_string_take(\"#{escaped}\")"
+      "ELMC_RC_STRING_BOX(\"#{escaped}\")"
     end
   end
 

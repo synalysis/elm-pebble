@@ -27,8 +27,8 @@ defmodule Elmc.GeneratedRcTrackConcatTest do
         static const elmc_int_t row1[2] = { 3, 4 };
         ElmcValue *r0 = elmc_harness_list_from_int_array(row0, 2);
         ElmcValue *r1 = elmc_harness_list_from_int_array(row1, 2);
-        ElmcValue *inner = elmc_list_cons_take(r1, elmc_list_nil());
-        ElmcValue *outer = elmc_list_cons_take(r0, inner);
+        ElmcValue *inner = elmc_harness_list_cons(r1, elmc_list_nil());
+        ElmcValue *outer = elmc_harness_list_cons(r0, inner);
         elmc_release(inner);
         elmc_release(r0);
         elmc_release(r1);

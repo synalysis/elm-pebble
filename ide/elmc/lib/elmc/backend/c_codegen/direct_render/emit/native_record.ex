@@ -239,8 +239,8 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.NativeRecord do
                 {code, ref, c} = Host.compile_native_bool_expr(cond, env, counter)
                 {code, ref, "", c}
               else
-                {code, var, c} = Host.compile_expr(cond, env, counter)
-                {code, "elmc_as_int(#{var}) != 0", Release.release_var(var, "  ") <> "\n", c}
+                {code, var, c} = Elmc.Backend.CCodegen.DirectRender.Emit.Operand.compile(cond, env, counter)
+                {code, "(bool)elmc_as_bool(#{var})", Release.release_var(var, "  ") <> "\n", c}
               end
 
             {cond_code, cond_ref, cond_cleanup, counter, nil}

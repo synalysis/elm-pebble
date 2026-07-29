@@ -586,7 +586,7 @@ defmodule Elmc.PlanSizeReductionTest do
     refute plan.rc_required
     c = CLowerFunction.emit(plan)
 
-    assert c =~ "return elmc_tuple2_take_value(elmc_new_int_take(1),"
+    assert c =~ "return ELMC_RC_TUPLE2_BOX(ELMC_RC_INT_BOX(1),"
     refute c =~ "*out"
     refute c =~ "ElmcValue **out"
   end
@@ -751,7 +751,7 @@ defmodule Elmc.PlanSizeReductionTest do
     c = CLowerFunction.emit(plan)
 
     assert c =~ "elmc_tuple2_take_value"
-    assert c =~ "elmc_new_int_take(1)"
+    assert c =~ "ELMC_RC_INT_BOX(1)"
     refute c =~ "return __ret"
   end
 

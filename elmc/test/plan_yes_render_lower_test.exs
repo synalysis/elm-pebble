@@ -128,8 +128,8 @@ defmodule Elmc.PlanYesRenderLowerTest do
     refute from_screen_body =~ "tmp_"
     refute from_screen_body =~ "Rc = elmc_new_int(out,"
     assert from_screen_body =~ "elmc_int_idiv"
-    assert from_screen_body =~ "elmc_new_int_take(screenW)"
-    assert from_screen_body =~ "elmc_new_int_take(screenH)"
+    assert from_screen_body =~ "ELMC_RC_INT_BOX(screenW)"
+    assert from_screen_body =~ "ELMC_RC_INT_BOX(screenH)"
 
     direction_body = CCodegenExtract.fn_body(generated_c, "elmc_fn_Main_directionString_native")
     assert direction_body =~ "switch ("

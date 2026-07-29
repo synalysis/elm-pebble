@@ -388,7 +388,7 @@ defmodule Elmc.Backend.CCodegen.ListLoopCodegen do
     {cons_body, release_owned} =
       if transfer_owned_head? and ValueSlots.owned_ref?(item_expr) do
         take_body = """
-        #{cons} = elmc_list_cons_take(#{item_expr}, elmc_list_nil());
+        #{RcRuntimeEmit.non_rc_allocator_stmt(cons, "elmc_list_cons", "#{item_expr}, elmc_list_nil()", return_on_fail?: false)}
         #{ValueSlots.transfer_and_null(item_expr)}
         """
 
@@ -636,7 +636,7 @@ defmodule Elmc.Backend.CCodegen.ListLoopCodegen do
     if RcRuntimeEmit.rc_allocator_emit_mode?(env) do
       RcRuntimeEmit.check_rc_take(head_var, "elmc_new_int", list_expr, env, declare_out?: false)
     else
-      RcRuntimeEmit.assign_stmt(head_var, "elmc_new_int_take(#{list_expr})")
+      RcRuntimeEmit.assign_stmt(head_var, "ELMC_RC_INT_BOX(#{list_expr})")
     end
   end
 

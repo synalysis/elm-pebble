@@ -1454,7 +1454,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     int main(void) {
       ElmcPebbleApp app = {0};
-        ElmcValue *flags = elmc_new_int_take(0);
+        ElmcValue *flags = ELMC_RC_INT_BOX(0);
       int init_rc = elmc_pebble_init_with_mode(&app, flags, ELMC_PEBBLE_MODE_WATCHFACE);
       elmc_release(flags);
       if (init_rc != 0) return 10;
@@ -1540,7 +1540,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     int main(void) {
       ElmcPebbleApp app = {0};
-        ElmcValue *flags = elmc_new_int_take(0);
+        ElmcValue *flags = ELMC_RC_INT_BOX(0);
       int init_rc = elmc_pebble_init_with_mode(&app, flags, ELMC_PEBBLE_MODE_APP);
       elmc_release(flags);
       if (init_rc != 0) return 10;
@@ -1579,7 +1579,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     int main(void) {
       ElmcPebbleApp app = {0};
-        ElmcValue *flags = elmc_new_int_take(0);
+        ElmcValue *flags = ELMC_RC_INT_BOX(0);
       int init_rc = elmc_pebble_init_with_mode(&app, flags, ELMC_PEBBLE_MODE_WATCHFACE);
       elmc_release(flags);
       if (init_rc != 0) return 10;
@@ -1760,7 +1760,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     int main(void) {
       ElmcPebbleApp app = {0};
-        ElmcValue *flags = elmc_new_int_take(0);
+        ElmcValue *flags = ELMC_RC_INT_BOX(0);
       int rc = elmc_pebble_init_with_mode(&app, flags, ELMC_PEBBLE_MODE_APP);
       elmc_release(flags);
       elmc_pebble_deinit(&app);
@@ -5373,7 +5373,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     generated = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
     assert generated =~ "elmc_fn_Random_bool_closure_0"
-    assert generated =~ "elmc_new_bool_take(plan_native_bool_"
+    assert generated =~ "ELMC_RC_BOOL_BOX(plan_native_bool_"
     refute generated =~ ~r/return elmc_retain\(tmp_\d+\);/
   end
 end

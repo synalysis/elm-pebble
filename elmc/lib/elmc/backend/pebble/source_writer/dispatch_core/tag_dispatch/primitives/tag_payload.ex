@@ -12,12 +12,22 @@ defmodule Elmc.Backend.Pebble.SourceWriter.DispatchCore.TagDispatch.Primitives.T
           ELMC_PEBBLE_GENERATED_TRACE_ENTER("elmc_pebble_dispatch_tag_payload");
           if (!app || !app->initialized) ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_dispatch_tag_payload", -1);
           if (!payload) ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_dispatch_tag_payload", -3);
-          ElmcValue *tag_value = elmc_new_int_take(tag);
-          if (!tag_value) ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_dispatch_tag_payload", -2);
-
-          ElmcValue *msg = elmc_tuple2_take_value(tag_value, payload);
-          if (!msg) ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_dispatch_tag_payload", -2);
-
+          RC Rc = RC_SUCCESS;
+          ElmcValue *tag_value = NULL;
+          ElmcValue *msg = NULL;
+          CATCH_BEGIN
+            Rc = elmc_new_int(&tag_value, tag);
+            CHECK_RC(Rc);
+            Rc = elmc_tuple2_take(&msg, tag_value, payload);
+            tag_value = NULL;
+            payload = NULL;
+            CHECK_RC(Rc);
+          CATCH_END
+          if (Rc != RC_SUCCESS) {
+            elmc_release(tag_value);
+            elmc_release(payload);
+            ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_dispatch_tag_payload", -2);
+          }
           elmc_pebble_prepare_dispatch(app);
           int rc = elmc_worker_dispatch(&app->worker, msg);
           elmc_release(msg);

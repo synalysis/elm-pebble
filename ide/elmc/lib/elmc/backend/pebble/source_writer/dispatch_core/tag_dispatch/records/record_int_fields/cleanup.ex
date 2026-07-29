@@ -10,10 +10,12 @@ defmodule Elmc.Backend.Pebble.SourceWriter.DispatchCore.TagDispatch.Records.Reco
     """
         cleanup_values:
           for (int i = 0; i < built; i++) {
-            if (record_values[i]) elmc_release(record_values[i]);
+            if (record_values && record_values[i]) elmc_release(record_values[i]);
           }
-          free(record_values);
+          if (record_values) free(record_values);
           elmc_release(tag_value);
+          elmc_release(payload_value);
+          elmc_release(msg);
           ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_dispatch_tag_record_int_fields", -2);
         }
     """

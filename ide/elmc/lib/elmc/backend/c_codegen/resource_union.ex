@@ -3,7 +3,7 @@ defmodule Elmc.Backend.CCodegen.ResourceUnion do
   alias Elmc.Backend.CCodegen.Types, as: Types
 
 
-  alias Elmc.Backend.CCodegen.SpecialValues
+  alias Elmc.Backend.Plan.Lower.SpecialValues
   alias Elmc.Backend.CCodegen.Types
 
   @spec constructor?(String.t(), [Types.ir_expr()]) :: boolean()

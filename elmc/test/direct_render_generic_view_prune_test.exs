@@ -63,7 +63,7 @@ defmodule Elmc.DirectRenderGenericViewPruneTest do
     assert generated =~ "elmc_fn_Yes_Layout_centerSquare"
     assert generated =~ "static RC elmc_fn_Main_cornerSlots"
     assert generated =~ "str_immortal_"
-    refute generated =~ "elmc_new_string_take(\"Jan\")"
+    refute generated =~ "ELMC_RC_STRING_BOX(\"Jan\")"
     refute generated =~ "elmc_new_string(&owned[0], \"N\")"
     refute generated =~ "elmc_fn_Main_weatherSlot_closure_0"
     refute generated =~ "elmc_fn_Main_availableWeatherModes_closure_0"

@@ -19,11 +19,11 @@ defmodule Elmc.RuntimeMaybeTest do
       #include <stdio.h>
 
       int main(void) {
-        ElmcValue *default_value = elmc_new_int_take(0);
-        ElmcValue *just_tag = elmc_new_int_take(1);
-        ElmcValue *payload = elmc_new_int_take(42);
-        ElmcValue *lowered_just = elmc_tuple2_take_value(just_tag, payload);
-        ElmcValue *lowered_nothing = elmc_new_int_take(0);
+        ElmcValue *default_value = ELMC_RC_INT_BOX(0);
+        ElmcValue *just_tag = ELMC_RC_INT_BOX(1);
+        ElmcValue *payload = ELMC_RC_INT_BOX(42);
+        ElmcValue *lowered_just = ELMC_RC_TUPLE2_BOX(just_tag, payload);
+        ElmcValue *lowered_nothing = ELMC_RC_INT_BOX(0);
         ElmcValue *just_result = elmc_maybe_with_default(default_value, lowered_just);
         ElmcValue *nothing_result = elmc_maybe_with_default(default_value, lowered_nothing);
 

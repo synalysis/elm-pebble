@@ -61,7 +61,9 @@ defmodule Elmc.Backend.C.Lower.StringConcat do
       ptr = if String.starts_with?(dest, "owned["), do: "&#{dest}", else: "&#{dest_ref}"
       "Rc = elmc_new_string(#{ptr}, \"#{escaped}\");\nCHECK_RC(Rc);"
     else
-      "#{dest} = elmc_new_string_take(\"#{escaped}\");"
+      Elmc.Backend.CCodegen.RcRuntimeEmit.non_rc_allocator_stmt(dest, "elmc_new_string", "\"#{escaped}\"",
+        return_on_fail?: dest == "*out"
+      )
     end
     |> String.trim()
   end
@@ -93,7 +95,9 @@ defmodule Elmc.Backend.C.Lower.StringConcat do
         ptr = if String.starts_with?(dest, "owned["), do: "&#{dest}", else: "&#{dest_ref}"
         "Rc = elmc_new_string(#{ptr}, #{buffer});\nCHECK_RC(Rc);"
       else
-        "#{dest} = elmc_new_string_take(#{buffer});"
+        Elmc.Backend.CCodegen.RcRuntimeEmit.non_rc_allocator_stmt(dest, "elmc_new_string", buffer,
+          return_on_fail?: dest == "*out"
+        )
       end
 
     """

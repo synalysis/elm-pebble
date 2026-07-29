@@ -523,7 +523,8 @@ defmodule Elmc.Backend.Worker do
     static RC elmc_cmd_queue_cons_take(ElmcValue **out, ElmcValue *head, ElmcValue *tail) {
       RC rc = RC_SUCCESS;
       CATCH_BEGIN
-        *out = elmc_list_cons_take(head, tail);
+        rc = elmc_list_cons(out, head, tail);
+        CHECK_RC(rc);
       CATCH_END
       return rc;
     }

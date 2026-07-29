@@ -247,20 +247,22 @@ defmodule Elmc.Runtime.IntList do
       return rc;
     }
 
-    static ElmcValue *elmc_int_list_replace_nth_int(ElmcValue *list, elmc_int_t index, elmc_int_t value) {
+    static RC elmc_int_list_replace_nth_int(ElmcValue **out, ElmcValue *list, elmc_int_t index, elmc_int_t value) {
       ElmcIntListPayload *payload = elmc_int_list_payload(list);
-      if (!payload || index < 0 || index >= payload->length) return elmc_retain(list);
-      ElmcValue *out = NULL;
-      if (elmc_int_list_alloc_copy(&out, payload->values, payload->length) != RC_SUCCESS || !out) {
-        return elmc_retain(list);
+      if (!payload || index < 0 || index >= payload->length) {
+        *out = elmc_retain(list);
+        return RC_SUCCESS;
       }
-      ElmcIntListPayload *copy = elmc_int_list_payload(out);
+      RC rc = elmc_int_list_alloc_copy(out, payload->values, payload->length);
+      if (rc != RC_SUCCESS) return rc;
+      ElmcIntListPayload *copy = elmc_int_list_payload(*out);
       if (!copy || !copy->values) {
-        elmc_release(out);
-        return elmc_retain(list);
+        elmc_release(*out);
+        *out = NULL;
+        return RC_ERR_OUT_OF_MEMORY;
       }
       copy->values[index] = value;
-      return out;
+      return RC_SUCCESS;
     }
 
     static RC elmc_int_list_filter(ElmcValue **out, ElmcValue *predicate, ElmcValue *list) {

@@ -5,51 +5,51 @@ defmodule Elmc.Runtime.JsonSections do
   def runtime_header_declarations do
     """
     /* --- Json.Decode --- */
-    ElmcValue *elmc_json_decode_value(ElmcValue *decoder, ElmcValue *value);
-    ElmcValue *elmc_json_decode_string(ElmcValue *decoder, ElmcValue *s);
-    ElmcValue *elmc_json_decode_string_decoder(void);
-    ElmcValue *elmc_json_decode_int_decoder(void);
-    ElmcValue *elmc_json_decode_float_decoder(void);
-    ElmcValue *elmc_json_decode_bool_decoder(void);
-    ElmcValue *elmc_json_decode_null(ElmcValue *default_val);
-    ElmcValue *elmc_json_decode_nullable(ElmcValue *decoder);
-    ElmcValue *elmc_json_decode_list(ElmcValue *decoder);
-    ElmcValue *elmc_json_decode_array(ElmcValue *decoder);
-    ElmcValue *elmc_json_decode_field(ElmcValue *name, ElmcValue *decoder);
-    ElmcValue *elmc_json_decode_at(ElmcValue *path, ElmcValue *decoder);
-    ElmcValue *elmc_json_decode_index(ElmcValue *idx, ElmcValue *decoder);
-    ElmcValue *elmc_json_decode_map(ElmcValue *f, ElmcValue *decoder);
-    ElmcValue *elmc_json_decode_map2(ElmcValue *f, ElmcValue *d1, ElmcValue *d2);
-    ElmcValue *elmc_json_decode_map3(ElmcValue *f, ElmcValue *d1, ElmcValue *d2, ElmcValue *d3);
-    ElmcValue *elmc_json_decode_map4(ElmcValue *f, ElmcValue *d1, ElmcValue *d2, ElmcValue *d3, ElmcValue *d4);
-    ElmcValue *elmc_json_decode_map5(ElmcValue *f, ElmcValue *d1, ElmcValue *d2, ElmcValue *d3, ElmcValue *d4, ElmcValue *d5);
-    ElmcValue *elmc_json_decode_map6(ElmcValue *f, ElmcValue *d1, ElmcValue *d2, ElmcValue *d3, ElmcValue *d4, ElmcValue *d5, ElmcValue *d6);
-    ElmcValue *elmc_json_decode_map7(ElmcValue *f, ElmcValue *d1, ElmcValue *d2, ElmcValue *d3, ElmcValue *d4, ElmcValue *d5, ElmcValue *d6, ElmcValue *d7);
-    ElmcValue *elmc_json_decode_succeed(ElmcValue *value);
-    ElmcValue *elmc_json_decode_fail(ElmcValue *msg);
-    ElmcValue *elmc_json_decode_and_then(ElmcValue *f, ElmcValue *decoder);
-    ElmcValue *elmc_json_decode_one_of(ElmcValue *decoders);
-    ElmcValue *elmc_json_decode_maybe(ElmcValue *decoder);
-    ElmcValue *elmc_json_decode_lazy(ElmcValue *thunk);
-    ElmcValue *elmc_json_decode_value_decoder(void);
-    ElmcValue *elmc_json_decode_error_to_string(ElmcValue *err);
-    ElmcValue *elmc_json_decode_key_value_pairs(ElmcValue *decoder);
-    ElmcValue *elmc_json_decode_dict(ElmcValue *decoder);
+    RC elmc_json_decode_value(ElmcValue **out, ElmcValue *decoder, ElmcValue *value);
+    RC elmc_json_decode_string(ElmcValue **out, ElmcValue *decoder, ElmcValue *s);
+    RC elmc_json_decode_string_decoder(ElmcValue **out);
+    RC elmc_json_decode_int_decoder(ElmcValue **out);
+    RC elmc_json_decode_float_decoder(ElmcValue **out);
+    RC elmc_json_decode_bool_decoder(ElmcValue **out);
+    RC elmc_json_decode_null(ElmcValue **out, ElmcValue *default_val);
+    RC elmc_json_decode_nullable(ElmcValue **out, ElmcValue *decoder);
+    RC elmc_json_decode_list(ElmcValue **out, ElmcValue *decoder);
+    RC elmc_json_decode_array(ElmcValue **out, ElmcValue *decoder);
+    RC elmc_json_decode_field(ElmcValue **out, ElmcValue *name, ElmcValue *decoder);
+    RC elmc_json_decode_at(ElmcValue **out, ElmcValue *path, ElmcValue *decoder);
+    RC elmc_json_decode_index(ElmcValue **out, ElmcValue *idx, ElmcValue *decoder);
+    RC elmc_json_decode_map(ElmcValue **out, ElmcValue *f, ElmcValue *decoder);
+    RC elmc_json_decode_map2(ElmcValue **out, ElmcValue *f, ElmcValue *d1, ElmcValue *d2);
+    RC elmc_json_decode_map3(ElmcValue **out, ElmcValue *f, ElmcValue *d1, ElmcValue *d2, ElmcValue *d3);
+    RC elmc_json_decode_map4(ElmcValue **out, ElmcValue *f, ElmcValue *d1, ElmcValue *d2, ElmcValue *d3, ElmcValue *d4);
+    RC elmc_json_decode_map5(ElmcValue **out, ElmcValue *f, ElmcValue *d1, ElmcValue *d2, ElmcValue *d3, ElmcValue *d4, ElmcValue *d5);
+    RC elmc_json_decode_map6(ElmcValue **out, ElmcValue *f, ElmcValue *d1, ElmcValue *d2, ElmcValue *d3, ElmcValue *d4, ElmcValue *d5, ElmcValue *d6);
+    RC elmc_json_decode_map7(ElmcValue **out, ElmcValue *f, ElmcValue *d1, ElmcValue *d2, ElmcValue *d3, ElmcValue *d4, ElmcValue *d5, ElmcValue *d6, ElmcValue *d7);
+    RC elmc_json_decode_succeed(ElmcValue **out, ElmcValue *value);
+    RC elmc_json_decode_fail(ElmcValue **out, ElmcValue *msg);
+    RC elmc_json_decode_and_then(ElmcValue **out, ElmcValue *f, ElmcValue *decoder);
+    RC elmc_json_decode_one_of(ElmcValue **out, ElmcValue *decoders);
+    RC elmc_json_decode_maybe(ElmcValue **out, ElmcValue *decoder);
+    RC elmc_json_decode_lazy(ElmcValue **out, ElmcValue *thunk);
+    RC elmc_json_decode_value_decoder(ElmcValue **out);
+    RC elmc_json_decode_error_to_string(ElmcValue **out, ElmcValue *err);
+    RC elmc_json_decode_key_value_pairs(ElmcValue **out, ElmcValue *decoder);
+    RC elmc_json_decode_dict(ElmcValue **out, ElmcValue *decoder);
 
     /* --- Json.Encode --- */
-    ElmcValue *elmc_json_encode_string(ElmcValue *s);
-    ElmcValue *elmc_json_encode_int(ElmcValue *n);
-    ElmcValue *elmc_json_encode_float(ElmcValue *f);
-    ElmcValue *elmc_json_encode_bool(ElmcValue *b);
-    ElmcValue *elmc_json_encode_null(void);
-    ElmcValue *elmc_json_encode_list(ElmcValue *f, ElmcValue *items);
-    ElmcValue *elmc_json_encode_array(ElmcValue *f, ElmcValue *items);
-    ElmcValue *elmc_json_encode_set(ElmcValue *f, ElmcValue *items);
-    ElmcValue *elmc_json_encode_object(ElmcValue *pairs);
-    ElmcValue *elmc_json_encode_add_field(ElmcValue *key, ElmcValue *value, ElmcValue *obj);
-    ElmcValue *elmc_json_encode_add_entry(ElmcValue *func, ElmcValue *value, ElmcValue *arr);
-    ElmcValue *elmc_json_encode_dict(ElmcValue *key_fn, ElmcValue *val_fn, ElmcValue *dict);
-    ElmcValue *elmc_json_encode_encode(ElmcValue *indent, ElmcValue *value);
+    RC elmc_json_encode_string(ElmcValue **out, ElmcValue *s);
+    RC elmc_json_encode_int(ElmcValue **out, ElmcValue *n);
+    RC elmc_json_encode_float(ElmcValue **out, ElmcValue *f);
+    RC elmc_json_encode_bool(ElmcValue **out, ElmcValue *b);
+    RC elmc_json_encode_null(ElmcValue **out);
+    RC elmc_json_encode_list(ElmcValue **out, ElmcValue *f, ElmcValue *items);
+    RC elmc_json_encode_array(ElmcValue **out, ElmcValue *f, ElmcValue *items);
+    RC elmc_json_encode_set(ElmcValue **out, ElmcValue *f, ElmcValue *items);
+    RC elmc_json_encode_object(ElmcValue **out, ElmcValue *pairs);
+    RC elmc_json_encode_add_field(ElmcValue **out, ElmcValue *key, ElmcValue *value, ElmcValue *obj);
+    RC elmc_json_encode_add_entry(ElmcValue **out, ElmcValue *func, ElmcValue *value, ElmcValue *arr);
+    RC elmc_json_encode_dict(ElmcValue **out, ElmcValue *key_fn, ElmcValue *val_fn, ElmcValue *dict);
+    RC elmc_json_encode_encode(ElmcValue **out, ElmcValue *indent, ElmcValue *value);
 
     /* Internal Json parser/encoder structs (kept in header so pruned runtimes compile). */
     #define ELMC_JSON_DECODER_STRING 1
@@ -148,14 +148,13 @@ defmodule Elmc.Runtime.JsonSections do
       return tuple->second;
     }
 
-    static ElmcValue *elmc_json_decoder_wrap(int64_t tag, ElmcValue *payload) {
+    static RC elmc_json_decoder_wrap(ElmcValue **out, int64_t tag, ElmcValue *payload) {
       ElmcValue *tag_value = NULL;
-      if (elmc_new_int(&tag_value, tag) != RC_SUCCESS) tag_value = NULL;
-      if (!tag_value) return NULL;
-      ElmcValue *wrapped = NULL;
-      if (elmc_tuple2(&wrapped, tag_value, payload ? payload : elmc_list_nil()) != RC_SUCCESS) wrapped = NULL;
+      RC rc = elmc_new_int(&tag_value, tag);
+      if (rc != RC_SUCCESS) return rc;
+      rc = elmc_tuple2(out, tag_value, payload ? payload : elmc_list_nil());
       elmc_release(tag_value);
-      return wrapped;
+      return rc;
     }
 
     static int elmc_json_is_ws(char c) {
@@ -211,24 +210,17 @@ defmodule Elmc.Runtime.JsonSections do
       return elmc_json_buf_append_bytes(buf, data ? data : "", data ? strlen(data) : 0);
     }
 
-    static ElmcValue *elmc_json_buf_to_string(ElmcJsonBuffer *buf) {
-      ElmcValue *out = NULL;
-      if (elmc_new_string(&out, buf->data ? buf->data : "") != RC_SUCCESS) out = NULL;
+    static RC elmc_json_buf_to_string(ElmcValue **out, ElmcJsonBuffer *buf) {
+      RC rc = elmc_new_string(out, buf->data ? buf->data : "");
       elmc_json_buf_free(buf);
-      return out;
+      return rc;
     }
 
     static ElmcJsonValue *elmc_json_new_value(ElmcJsonKind kind) {
       ElmcJsonValue *value = (ElmcJsonValue *)elmc_malloc(sizeof(ElmcJsonValue), "json_value");
       if (!value) return NULL;
+      memset(value, 0, sizeof(ElmcJsonValue));
       value->kind = kind;
-      value->bool_value = 0;
-      value->int_value = 0;
-      value->float_value = 0.0;
-      value->string_value = NULL;
-      value->key = NULL;
-      value->child = NULL;
-      value->next = NULL;
       return value;
     }
 
@@ -730,35 +722,46 @@ defmodule Elmc.Runtime.JsonSections do
       }
     }
 
-    static ElmcValue *elmc_json_value_to_string(const ElmcJsonValue *value) {
+    static RC elmc_json_value_to_string(ElmcValue **out, const ElmcJsonValue *value) {
       ElmcJsonBuffer buf;
       elmc_json_buf_init(&buf);
       if (!elmc_json_encode_value_to_buffer(value, &buf)) {
         elmc_json_buf_free(&buf);
-        {
-          ElmcValue *_elmc_rc_out = NULL;
-          if (elmc_new_string(&_elmc_rc_out, "null") != RC_SUCCESS) return NULL;
-          return _elmc_rc_out;
-        }
+        return elmc_new_string(out, "null");
       }
-      return elmc_json_buf_to_string(&buf);
+      return elmc_json_buf_to_string(out, &buf);
     }
 
-    static ElmcValue *elmc_json_decode_with_value(ElmcValue *decoder, const ElmcJsonValue *node, const char **error_out);
+    /* Decode miss: RC_SUCCESS + *out=NULL (+ optional error_out).
+       OOM / allocator failure: propagate RC_ERR_*. */
+    static RC elmc_json_decode_miss(ElmcValue **out, const char **error_out, const char *msg) {
+      if (error_out) *error_out = msg;
+      *out = NULL;
+      return RC_SUCCESS;
+    }
 
-    static ElmcValue *elmc_json_decode_map_with_value(ElmcValue *payload, const ElmcJsonValue *node, const char **error_out) {
+    static RC elmc_json_decode_with_value(ElmcValue **out, ElmcValue *decoder, const ElmcJsonValue *node, const char **error_out);
+
+    static RC elmc_json_decode_map_with_value(ElmcValue **out, ElmcValue *payload, const ElmcJsonValue *node, const char **error_out) {
       if (!payload || payload->tag != ELMC_TAG_TUPLE2 || payload->payload == NULL) {
-        if (error_out) *error_out = "Invalid map decoder";
-        return NULL;
+        return elmc_json_decode_miss(out, error_out, "Invalid map decoder");
       }
       ElmcTuple2 *tuple = (ElmcTuple2 *)payload->payload;
-      ElmcValue *decoded = elmc_json_decode_with_value(tuple->second, node, error_out);
-      if (!decoded) return NULL;
+      ElmcValue *decoded = NULL;
+      RC rc = elmc_json_decode_with_value(&decoded, tuple->second, node, error_out);
+      if (rc != RC_SUCCESS) return rc;
+      if (!decoded) {
+        *out = NULL;
+        return RC_SUCCESS;
+      }
       ElmcValue *args[] = { decoded };
       ElmcValue *mapped = elmc_closure_call(tuple->first, args, 1);
       elmc_release(decoded);
-      if (!mapped && error_out) *error_out = "Failed to map decoded value";
-      return mapped;
+      if (!mapped) {
+        return elmc_json_decode_miss(out, error_out, "Failed to map decoded value");
+      }
+      *out = mapped;
+      return RC_SUCCESS;
     }
 
     static int elmc_json_is_decoder_value(ElmcValue *value) {
@@ -790,15 +793,15 @@ defmodule Elmc.Runtime.JsonSections do
       return count;
     }
 
-    static ElmcValue *elmc_json_decode_mapn_with_value(
+    static RC elmc_json_decode_mapn_with_value(
+      ElmcValue **out,
       ElmcValue *payload,
       const ElmcJsonValue *node,
       int expected_count,
       const char **error_out
     ) {
       if (!payload || payload->tag != ELMC_TAG_TUPLE2 || payload->payload == NULL) {
-        if (error_out) *error_out = "Invalid map decoder";
-        return NULL;
+        return elmc_json_decode_miss(out, error_out, "Invalid map decoder");
       }
 
       ElmcTuple2 *outer = (ElmcTuple2 *)payload->payload;
@@ -806,31 +809,38 @@ defmodule Elmc.Runtime.JsonSections do
       int count = elmc_json_decode_collect_decoders(outer->second, decoder_slots, 7);
 
       if (count != expected_count) {
-        if (error_out) *error_out = "Invalid map decoder";
-        return NULL;
+        return elmc_json_decode_miss(out, error_out, "Invalid map decoder");
       }
 
       ElmcValue *args[7];
       int i;
 
       for (i = 0; i < count; i++) {
-        args[i] = elmc_json_decode_with_value(decoder_slots[i], node, error_out);
+        args[i] = NULL;
+        RC rc = elmc_json_decode_with_value(&args[i], decoder_slots[i], node, error_out);
+        if (rc != RC_SUCCESS) {
+          for (int j = 0; j < i; j++) elmc_release(args[j]);
+          return rc;
+        }
         if (!args[i]) {
           for (int j = 0; j < i; j++) elmc_release(args[j]);
-          return NULL;
+          *out = NULL;
+          return RC_SUCCESS;
         }
       }
 
       ElmcValue *mapped = elmc_closure_call(outer->first, args, count);
       for (i = 0; i < count; i++) elmc_release(args[i]);
-      if (!mapped && error_out) *error_out = "Failed to map decoded value";
-      return mapped;
+      if (!mapped) {
+        return elmc_json_decode_miss(out, error_out, "Failed to map decoded value");
+      }
+      *out = mapped;
+      return RC_SUCCESS;
     }
 
-    static ElmcValue *elmc_json_decode_map7_with_value(ElmcValue *payload, const ElmcJsonValue *node, const char **error_out) {
+    static RC elmc_json_decode_map7_with_value(ElmcValue **out, ElmcValue *payload, const ElmcJsonValue *node, const char **error_out) {
       if (!payload || payload->tag != ELMC_TAG_TUPLE2 || payload->payload == NULL) {
-        if (error_out) *error_out = "Invalid map decoder";
-        return NULL;
+        return elmc_json_decode_miss(out, error_out, "Invalid map decoder");
       }
 
       ElmcTuple2 *outer = (ElmcTuple2 *)payload->payload;
@@ -838,25 +848,24 @@ defmodule Elmc.Runtime.JsonSections do
       int count = elmc_json_decode_collect_decoders(outer->second, decoder_slots, 7);
 
       if (count < 2 || count > 7) {
-        if (error_out) *error_out = "Invalid map decoder";
-        return NULL;
+        return elmc_json_decode_miss(out, error_out, "Invalid map decoder");
       }
 
-      return elmc_json_decode_mapn_with_value(payload, node, count, error_out);
+      return elmc_json_decode_mapn_with_value(out, payload, node, count, error_out);
     }
 
-    static ElmcValue *elmc_json_decode_map2_with_value(ElmcValue *payload, const ElmcJsonValue *node, const char **error_out) {
-      return elmc_json_decode_mapn_with_value(payload, node, 2, error_out);
+    static RC elmc_json_decode_map2_with_value(ElmcValue **out, ElmcValue *payload, const ElmcJsonValue *node, const char **error_out) {
+      return elmc_json_decode_mapn_with_value(out, payload, node, 2, error_out);
     }
 
-    static ElmcValue *elmc_json_decode_key_value_pairs_with_value(
+    static RC elmc_json_decode_key_value_pairs_with_value(
+      ElmcValue **out,
       ElmcValue *decoder,
       const ElmcJsonValue *node,
       const char **error_out
     ) {
       if (!node || node->kind != ELMC_JSON_OBJECT) {
-        if (error_out) *error_out = "Expected OBJECT for key-value pairs";
-        return NULL;
+        return elmc_json_decode_miss(out, error_out, "Expected OBJECT for key-value pairs");
       }
 
       ElmcValue *rev = elmc_list_nil();
@@ -864,88 +873,81 @@ defmodule Elmc.Runtime.JsonSections do
 
       while (child) {
         ElmcValue *key = NULL;
-        if (elmc_new_string(&key, child->key ? child->key : "") != RC_SUCCESS) key = NULL;
-        ElmcValue *decoded = elmc_json_decode_with_value(decoder, child, error_out);
-
-        if (!key || !decoded) {
+        RC rc = elmc_new_string(&key, child->key ? child->key : "");
+        if (rc != RC_SUCCESS) {
           elmc_release(rev);
-          if (key) elmc_release(key);
-          if (decoded) elmc_release(decoded);
-          return NULL;
+          return rc;
+        }
+        ElmcValue *decoded = NULL;
+        rc = elmc_json_decode_with_value(&decoded, decoder, child, error_out);
+        if (rc != RC_SUCCESS) {
+          elmc_release(rev);
+          elmc_release(key);
+          return rc;
+        }
+        if (!decoded) {
+          elmc_release(rev);
+          elmc_release(key);
+          *out = NULL;
+          return RC_SUCCESS;
         }
 
         ElmcValue *pair = NULL;
-        if (elmc_tuple2(&pair, key, decoded) != RC_SUCCESS) pair = NULL;
+        rc = elmc_tuple2(&pair, key, decoded);
         elmc_release(key);
         elmc_release(decoded);
-
-        if (!pair) {
+        if (rc != RC_SUCCESS) {
           elmc_release(rev);
-          return NULL;
+          return rc;
         }
 
         ElmcValue *next = NULL;
-        if (elmc_list_cons(&next, pair, rev) != RC_SUCCESS) next = NULL;
+        rc = elmc_list_cons(&next, pair, rev);
         elmc_release(pair);
         elmc_release(rev);
+        if (rc != RC_SUCCESS) return rc;
         rev = next;
         child = child->next;
       }
 
-      ElmcValue *out = elmc_list_reverse_copy(rev);
+      RC rc = elmc_list_reverse_into(out, rev);
       elmc_release(rev);
-      return out;
+      return rc;
     }
 
-    static ElmcValue *elmc_json_decode_with_value(ElmcValue *decoder, const ElmcJsonValue *node, const char **error_out) {
+    static RC elmc_json_decode_with_value(ElmcValue **out, ElmcValue *decoder, const ElmcJsonValue *node, const char **error_out) {
       int64_t tag = elmc_json_decoder_tag(decoder);
       ElmcValue *payload = elmc_json_decoder_payload(decoder);
 
       switch (tag) {
         case ELMC_JSON_DECODER_STRING:
           if (!node || node->kind != ELMC_JSON_STRING) {
-            if (error_out) *error_out = "Expected STRING";
-            return NULL;
+            return elmc_json_decode_miss(out, error_out, "Expected STRING");
           }
-          {
-            ElmcValue *_elmc_rc_out = NULL;
-            if (elmc_new_string(&_elmc_rc_out, node->string_value ? node->string_value : "") != RC_SUCCESS) return NULL;
-            return _elmc_rc_out;
-          }
+          return elmc_new_string(out, node->string_value ? node->string_value : "");
         case ELMC_JSON_DECODER_INT:
           if (!node || node->kind != ELMC_JSON_INT) {
-            if (error_out) *error_out = "Expected INT";
-            return NULL;
+            return elmc_json_decode_miss(out, error_out, "Expected INT");
           }
-          {
-            ElmcValue *_elmc_rc_out = NULL;
-            if (elmc_new_int(&_elmc_rc_out, node->int_value) != RC_SUCCESS) return NULL;
-            return _elmc_rc_out;
-          }
+          return elmc_new_int(out, node->int_value);
         #if ELMC_JSON_FLOAT_NUMBERS
         case ELMC_JSON_DECODER_FLOAT:
           if (!node || (node->kind != ELMC_JSON_INT && node->kind != ELMC_JSON_FLOAT)) {
-            if (error_out) *error_out = "Expected FLOAT";
-            return NULL;
+            return elmc_json_decode_miss(out, error_out, "Expected FLOAT");
           }
-          return elmc_new_float_take(node->kind == ELMC_JSON_INT ? (double)node->int_value : node->float_value);
+          return elmc_new_float(out, node->kind == ELMC_JSON_INT ? (double)node->int_value : node->float_value);
         #endif
         case ELMC_JSON_DECODER_BOOL:
           if (!node || node->kind != ELMC_JSON_BOOL) {
-            if (error_out) *error_out = "Expected BOOL";
-            return NULL;
+            return elmc_json_decode_miss(out, error_out, "Expected BOOL");
           }
-          {
-            ElmcValue *_elmc_rc_out = NULL;
-            (void)elmc_new_bool(&_elmc_rc_out, node->bool_value);
-            return _elmc_rc_out;
-          }
+          *out = elmc_bool(node->bool_value);
+          return RC_SUCCESS;
         case ELMC_JSON_DECODER_VALUE:
-          return elmc_json_value_to_string(node);
+          return elmc_json_value_to_string(out, node);
         case ELMC_JSON_DECODER_FIELD:
           if (!payload || payload->tag != ELMC_TAG_TUPLE2 || payload->payload == NULL || !node || node->kind != ELMC_JSON_OBJECT) {
-            if (error_out) *error_out = "Expected OBJECT field";
-            return NULL;
+            return elmc_json_decode_miss(out, error_out, "Expected OBJECT field");
           } else {
             ElmcTuple2 *field_tuple = (ElmcTuple2 *)payload->payload;
             const char *field_name =
@@ -953,419 +955,411 @@ defmodule Elmc.Runtime.JsonSections do
                 ? (const char *)field_tuple->first->payload
                 : NULL;
             if (!field_name) {
-              if (error_out) *error_out = "Invalid field decoder";
-              return NULL;
+              return elmc_json_decode_miss(out, error_out, "Invalid field decoder");
             }
             ElmcJsonValue *child = elmc_json_object_get(node, field_name);
             if (!child) {
-              if (error_out) *error_out = "Missing field";
-              return NULL;
+              return elmc_json_decode_miss(out, error_out, "Missing field");
             }
-            return elmc_json_decode_with_value(field_tuple->second, child, error_out);
+            return elmc_json_decode_with_value(out, field_tuple->second, child, error_out);
           }
         case ELMC_JSON_DECODER_INDEX:
           if (!payload || payload->tag != ELMC_TAG_TUPLE2 || payload->payload == NULL || !node || node->kind != ELMC_JSON_ARRAY) {
-            if (error_out) *error_out = "Expected ARRAY index";
-            return NULL;
+            return elmc_json_decode_miss(out, error_out, "Expected ARRAY index");
           } else {
             ElmcTuple2 *index_tuple = (ElmcTuple2 *)payload->payload;
             int idx = (int)elmc_as_int(index_tuple->first);
             ElmcJsonValue *child = elmc_json_array_get(node, idx);
             if (!child) {
-              if (error_out) *error_out = "Index out of range";
-              return NULL;
+              return elmc_json_decode_miss(out, error_out, "Index out of range");
             }
-            return elmc_json_decode_with_value(index_tuple->second, child, error_out);
+            return elmc_json_decode_with_value(out, index_tuple->second, child, error_out);
           }
         case ELMC_JSON_DECODER_LIST:
         case ELMC_JSON_DECODER_ARRAY:
           if (!payload || !node || node->kind != ELMC_JSON_ARRAY) {
-            if (error_out) *error_out = "Expected ARRAY";
-            return NULL;
+            return elmc_json_decode_miss(out, error_out, "Expected ARRAY");
           } else {
             ElmcValue *rev = elmc_list_nil();
-            if (!rev) {
-              if (error_out) *error_out = "Out of memory";
-              return NULL;
-            }
             ElmcJsonValue *child = node->child;
             while (child) {
-              ElmcValue *decoded = elmc_json_decode_with_value(payload, child, error_out);
+              ElmcValue *decoded = NULL;
+              RC rc = elmc_json_decode_with_value(&decoded, payload, child, error_out);
+              if (rc != RC_SUCCESS) {
+                elmc_release(rev);
+                return rc;
+              }
               if (!decoded) {
                 elmc_release(rev);
-                return NULL;
+                *out = NULL;
+                return RC_SUCCESS;
               }
               ElmcValue *next = NULL;
-              if (elmc_list_cons(&next, decoded, rev) != RC_SUCCESS) next = NULL;
+              rc = elmc_list_cons(&next, decoded, rev);
               elmc_release(decoded);
               elmc_release(rev);
+              if (rc != RC_SUCCESS) return rc;
               rev = next;
               child = child->next;
             }
-            ElmcValue *out = elmc_list_reverse_copy(rev);
+            RC rc = elmc_list_reverse_into(out, rev);
             elmc_release(rev);
-            return out;
+            return rc;
           }
         case ELMC_JSON_DECODER_NULL:
-          if (node && node->kind == ELMC_JSON_NULL) return payload ? elmc_retain(payload) : elmc_list_nil();
-          if (error_out) *error_out = "Expected NULL";
-          return NULL;
+          if (node && node->kind == ELMC_JSON_NULL) {
+            *out = payload ? elmc_retain(payload) : elmc_list_nil();
+            return RC_SUCCESS;
+          }
+          return elmc_json_decode_miss(out, error_out, "Expected NULL");
         case ELMC_JSON_DECODER_MAYBE: {
-          ElmcValue *decoded = elmc_json_decode_with_value(payload, node, NULL);
-          if (!decoded) return elmc_maybe_nothing();
-          ElmcValue *out = NULL;
-          if (elmc_maybe_just(&out, decoded) != RC_SUCCESS) out = NULL;
+          ElmcValue *decoded = NULL;
+          RC rc = elmc_json_decode_with_value(&decoded, payload, node, NULL);
+          if (rc != RC_SUCCESS) return rc;
+          if (!decoded) {
+            *out = elmc_maybe_nothing();
+            return RC_SUCCESS;
+          }
+          rc = elmc_maybe_just(out, decoded);
           elmc_release(decoded);
-          return out;
+          return rc;
         }
         case ELMC_JSON_DECODER_ONE_OF:
           if (!payload || payload->tag != ELMC_TAG_LIST) {
-            if (error_out) *error_out = "Invalid oneOf decoder";
-            return NULL;
+            return elmc_json_decode_miss(out, error_out, "Invalid oneOf decoder");
           } else {
             ElmcValue *cursor = payload;
             while (cursor && cursor->tag == ELMC_TAG_LIST && cursor->payload != NULL) {
               ElmcCons *cons = (ElmcCons *)cursor->payload;
-              ElmcValue *decoded = elmc_json_decode_with_value(cons->head, node, NULL);
-              if (decoded) return decoded;
+              ElmcValue *decoded = NULL;
+              RC rc = elmc_json_decode_with_value(&decoded, cons->head, node, NULL);
+              if (rc != RC_SUCCESS) return rc;
+              if (decoded) {
+                *out = decoded;
+                return RC_SUCCESS;
+              }
               cursor = cons->tail;
             }
-            if (error_out) *error_out = "oneOf failed";
-            return NULL;
+            return elmc_json_decode_miss(out, error_out, "oneOf failed");
           }
         case ELMC_JSON_DECODER_SUCCEED:
-          return payload ? elmc_retain(payload) : elmc_list_nil();
+          *out = payload ? elmc_retain(payload) : elmc_list_nil();
+          return RC_SUCCESS;
         case ELMC_JSON_DECODER_FAIL:
-          if (error_out) *error_out = "Decoder forced failure";
-          return NULL;
+          return elmc_json_decode_miss(out, error_out, "Decoder forced failure");
         case ELMC_JSON_DECODER_MAP:
-          return elmc_json_decode_map_with_value(payload, node, error_out);
+          return elmc_json_decode_map_with_value(out, payload, node, error_out);
         case ELMC_JSON_DECODER_MAP2:
-          return elmc_json_decode_map2_with_value(payload, node, error_out);
+          return elmc_json_decode_map2_with_value(out, payload, node, error_out);
         case ELMC_JSON_DECODER_MAP7:
-          return elmc_json_decode_map7_with_value(payload, node, error_out);
+          return elmc_json_decode_map7_with_value(out, payload, node, error_out);
         case ELMC_JSON_DECODER_KEY_VALUE_PAIRS:
           if (!payload) {
-            if (error_out) *error_out = "Invalid keyValuePairs decoder";
-            return NULL;
+            return elmc_json_decode_miss(out, error_out, "Invalid keyValuePairs decoder");
           }
-          return elmc_json_decode_key_value_pairs_with_value(payload, node, error_out);
+          return elmc_json_decode_key_value_pairs_with_value(out, payload, node, error_out);
         case ELMC_JSON_DECODER_AND_THEN:
           if (!payload || payload->tag != ELMC_TAG_TUPLE2 || payload->payload == NULL) {
-            if (error_out) *error_out = "Invalid andThen decoder";
-            return NULL;
+            return elmc_json_decode_miss(out, error_out, "Invalid andThen decoder");
           } else {
             ElmcTuple2 *and_then_tuple = (ElmcTuple2 *)payload->payload;
-            ElmcValue *step = elmc_json_decode_with_value(and_then_tuple->second, node, error_out);
-            if (!step) return NULL;
+            ElmcValue *step = NULL;
+            RC rc = elmc_json_decode_with_value(&step, and_then_tuple->second, node, error_out);
+            if (rc != RC_SUCCESS) return rc;
+            if (!step) {
+              *out = NULL;
+              return RC_SUCCESS;
+            }
             ElmcValue *args[] = { step };
             ElmcValue *next_decoder = elmc_closure_call(and_then_tuple->first, args, 1);
             elmc_release(step);
             if (!next_decoder) {
-              if (error_out) *error_out = "Failed to resolve andThen decoder";
-              return NULL;
+              return elmc_json_decode_miss(out, error_out, "Failed to resolve andThen decoder");
             }
-            ElmcValue *decoded = elmc_json_decode_with_value(next_decoder, node, error_out);
+            rc = elmc_json_decode_with_value(out, next_decoder, node, error_out);
             elmc_release(next_decoder);
-            return decoded;
+            return rc;
           }
         default:
-          if (error_out) *error_out = "Unsupported decoder";
-          return NULL;
+          return elmc_json_decode_miss(out, error_out, "Unsupported decoder");
       }
     }
 
-    ElmcValue *elmc_json_decode_value(ElmcValue *decoder, ElmcValue *value) {
+    RC elmc_json_decode_value(ElmcValue **out, ElmcValue *decoder, ElmcValue *value) {
       if (!value || value->tag != ELMC_TAG_STRING || value->payload == NULL) {
-        {
-          ElmcValue *_elmc_rc_msg = NULL;
-          if (elmc_new_string(&_elmc_rc_msg, "Expected JSON string value") != RC_SUCCESS) return NULL;
-          ElmcValue *_elmc_rc_out = NULL;
-          if (elmc_result_err(&_elmc_rc_out, _elmc_rc_msg) != RC_SUCCESS) {
-            elmc_release(_elmc_rc_msg);
-            return NULL;
-          }
-          elmc_release(_elmc_rc_msg);
-          return _elmc_rc_out;
-        }
+        ElmcValue *msg = NULL;
+        RC rc = elmc_new_string(&msg, "Expected JSON string value");
+        if (rc != RC_SUCCESS) return rc;
+        rc = elmc_result_err(out, msg);
+        elmc_release(msg);
+        return rc;
       }
       const char *raw = (const char *)value->payload;
       const char *parse_error = "Invalid JSON";
       ElmcJsonValue *parsed = elmc_json_parse_document(raw, &parse_error);
       if (!parsed) {
-        {
-          ElmcValue *_elmc_rc_msg = NULL;
-          if (elmc_new_string(&_elmc_rc_msg, parse_error ? parse_error : "Invalid JSON") != RC_SUCCESS) return NULL;
-          ElmcValue *_elmc_rc_out = NULL;
-          if (elmc_result_err(&_elmc_rc_out, _elmc_rc_msg) != RC_SUCCESS) {
-            elmc_release(_elmc_rc_msg);
-            return NULL;
-          }
-          elmc_release(_elmc_rc_msg);
-          return _elmc_rc_out;
-        }
+        ElmcValue *msg = NULL;
+        RC rc = elmc_new_string(&msg, parse_error ? parse_error : "Invalid JSON");
+        if (rc != RC_SUCCESS) return rc;
+        rc = elmc_result_err(out, msg);
+        elmc_release(msg);
+        return rc;
       }
       const char *decode_error = "Decode failed";
-      ElmcValue *decoded = elmc_json_decode_with_value(decoder, parsed, &decode_error);
+      ElmcValue *decoded = NULL;
+      RC rc = elmc_json_decode_with_value(&decoded, decoder, parsed, &decode_error);
       elmc_json_free_value(parsed);
+      if (rc != RC_SUCCESS) return rc;
       if (!decoded) {
-        ElmcValue *_elmc_rc_msg = NULL;
-        if (elmc_new_string(&_elmc_rc_msg, decode_error ? decode_error : "Decode failed") != RC_SUCCESS) return NULL;
-        ElmcValue *_elmc_rc_out = NULL;
-        if (elmc_result_err(&_elmc_rc_out, _elmc_rc_msg) != RC_SUCCESS) {
-          elmc_release(_elmc_rc_msg);
-          return NULL;
-        }
-        elmc_release(_elmc_rc_msg);
-        return _elmc_rc_out;
+        ElmcValue *msg = NULL;
+        rc = elmc_new_string(&msg, decode_error ? decode_error : "Decode failed");
+        if (rc != RC_SUCCESS) return rc;
+        rc = elmc_result_err(out, msg);
+        elmc_release(msg);
+        return rc;
       }
-      ElmcValue *ok = NULL;
-      if (elmc_result_ok(&ok, decoded) != RC_SUCCESS) ok = NULL;
+      rc = elmc_result_ok(out, decoded);
       elmc_release(decoded);
-      return ok;
+      return rc;
     }
 
-    ElmcValue *elmc_json_decode_string(ElmcValue *decoder, ElmcValue *s) {
-      return elmc_json_decode_value(decoder, s);
+    RC elmc_json_decode_string(ElmcValue **out, ElmcValue *decoder, ElmcValue *s) {
+      return elmc_json_decode_value(out, decoder, s);
     }
 
-    ElmcValue *elmc_json_decode_string_decoder(void) {
-      {
-        ElmcValue *_elmc_rc_out = NULL;
-        if (elmc_new_int(&_elmc_rc_out, ELMC_JSON_DECODER_STRING) != RC_SUCCESS) return NULL;
-        return _elmc_rc_out;
-      }
+    RC elmc_json_decode_string_decoder(ElmcValue **out) {
+      return elmc_new_int(out, ELMC_JSON_DECODER_STRING);
     }
 
-    ElmcValue *elmc_json_decode_int_decoder(void) {
-      {
-        ElmcValue *_elmc_rc_out = NULL;
-        if (elmc_new_int(&_elmc_rc_out, ELMC_JSON_DECODER_INT) != RC_SUCCESS) return NULL;
-        return _elmc_rc_out;
-      }
+    RC elmc_json_decode_int_decoder(ElmcValue **out) {
+      return elmc_new_int(out, ELMC_JSON_DECODER_INT);
     }
 
     #if ELMC_JSON_FLOAT_NUMBERS
-    ElmcValue *elmc_json_decode_float_decoder(void) {
-      {
-        ElmcValue *_elmc_rc_out = NULL;
-        if (elmc_new_int(&_elmc_rc_out, ELMC_JSON_DECODER_FLOAT) != RC_SUCCESS) return NULL;
-        return _elmc_rc_out;
-      }
+    RC elmc_json_decode_float_decoder(ElmcValue **out) {
+      return elmc_new_int(out, ELMC_JSON_DECODER_FLOAT);
     }
     #endif
 
-    ElmcValue *elmc_json_decode_bool_decoder(void) {
-      {
-        ElmcValue *_elmc_rc_out = NULL;
-        if (elmc_new_int(&_elmc_rc_out, ELMC_JSON_DECODER_BOOL) != RC_SUCCESS) return NULL;
-        return _elmc_rc_out;
-      }
+    RC elmc_json_decode_bool_decoder(ElmcValue **out) {
+      return elmc_new_int(out, ELMC_JSON_DECODER_BOOL);
     }
 
-    ElmcValue *elmc_json_decode_null(ElmcValue *default_val) {
-      return elmc_json_decoder_wrap(ELMC_JSON_DECODER_NULL, default_val);
+    RC elmc_json_decode_null(ElmcValue **out, ElmcValue *default_val) {
+      return elmc_json_decoder_wrap(out, ELMC_JSON_DECODER_NULL, default_val);
     }
 
-    ElmcValue *elmc_json_decode_nullable(ElmcValue *decoder) {
-      return elmc_json_decode_maybe(decoder);
+    RC elmc_json_decode_nullable(ElmcValue **out, ElmcValue *decoder) {
+      return elmc_json_decode_maybe(out, decoder);
     }
 
-    ElmcValue *elmc_json_decode_list(ElmcValue *decoder) {
-      return elmc_json_decoder_wrap(ELMC_JSON_DECODER_LIST, decoder);
+    RC elmc_json_decode_list(ElmcValue **out, ElmcValue *decoder) {
+      return elmc_json_decoder_wrap(out, ELMC_JSON_DECODER_LIST, decoder);
     }
 
-    ElmcValue *elmc_json_decode_array(ElmcValue *decoder) {
-      return elmc_json_decoder_wrap(ELMC_JSON_DECODER_ARRAY, decoder);
+    RC elmc_json_decode_array(ElmcValue **out, ElmcValue *decoder) {
+      return elmc_json_decoder_wrap(out, ELMC_JSON_DECODER_ARRAY, decoder);
     }
 
-    ElmcValue *elmc_json_decode_field(ElmcValue *name, ElmcValue *decoder) {
+    RC elmc_json_decode_field(ElmcValue **out, ElmcValue *name, ElmcValue *decoder) {
       ElmcValue *payload = NULL;
-      if (elmc_tuple2(&payload, name, decoder) != RC_SUCCESS) payload = NULL;
-      if (!payload) return NULL;
-      ElmcValue *wrapped = elmc_json_decoder_wrap(ELMC_JSON_DECODER_FIELD, payload);
+      RC rc = elmc_tuple2(&payload, name, decoder);
+      if (rc != RC_SUCCESS) return rc;
+      rc = elmc_json_decoder_wrap(out, ELMC_JSON_DECODER_FIELD, payload);
       elmc_release(payload);
-      return wrapped;
+      return rc;
     }
 
-    ElmcValue *elmc_json_decode_at(ElmcValue *path, ElmcValue *decoder) {
-      if (!path) return elmc_retain(decoder);
-      ElmcValue *reversed = elmc_list_reverse_copy(path);
+    RC elmc_json_decode_at(ElmcValue **out, ElmcValue *path, ElmcValue *decoder) {
+      if (!path) {
+        *out = elmc_retain(decoder);
+        return RC_SUCCESS;
+      }
+      ElmcValue *reversed = NULL;
+      RC rc = elmc_list_reverse_into(&reversed, path);
+      if (rc != RC_SUCCESS) return rc;
       ElmcValue *current = elmc_retain(decoder);
       ElmcValue *cursor = reversed;
       while (cursor && cursor->tag == ELMC_TAG_LIST && cursor->payload != NULL) {
         ElmcCons *node = (ElmcCons *)cursor->payload;
-        ElmcValue *next = elmc_json_decode_field(node->head, current);
+        ElmcValue *next = NULL;
+        rc = elmc_json_decode_field(&next, node->head, current);
         elmc_release(current);
+        if (rc != RC_SUCCESS) {
+          elmc_release(reversed);
+          return rc;
+        }
         current = next;
         cursor = node->tail;
       }
       elmc_release(reversed);
-      return current;
+      *out = current;
+      return RC_SUCCESS;
     }
 
-    ElmcValue *elmc_json_decode_index(ElmcValue *idx, ElmcValue *decoder) {
+    RC elmc_json_decode_index(ElmcValue **out, ElmcValue *idx, ElmcValue *decoder) {
       ElmcValue *payload = NULL;
-      if (elmc_tuple2(&payload, idx, decoder) != RC_SUCCESS) payload = NULL;
-      if (!payload) return NULL;
-      ElmcValue *wrapped = elmc_json_decoder_wrap(ELMC_JSON_DECODER_INDEX, payload);
+      RC rc = elmc_tuple2(&payload, idx, decoder);
+      if (rc != RC_SUCCESS) return rc;
+      rc = elmc_json_decoder_wrap(out, ELMC_JSON_DECODER_INDEX, payload);
       elmc_release(payload);
-      return wrapped;
+      return rc;
     }
 
-    ElmcValue *elmc_json_decode_map(ElmcValue *f, ElmcValue *decoder) {
+    RC elmc_json_decode_map(ElmcValue **out, ElmcValue *f, ElmcValue *decoder) {
       ElmcValue *payload = NULL;
-      if (elmc_tuple2(&payload, f, decoder) != RC_SUCCESS) payload = NULL;
-      if (!payload) return NULL;
-      ElmcValue *wrapped = elmc_json_decoder_wrap(ELMC_JSON_DECODER_MAP, payload);
+      RC rc = elmc_tuple2(&payload, f, decoder);
+      if (rc != RC_SUCCESS) return rc;
+      rc = elmc_json_decoder_wrap(out, ELMC_JSON_DECODER_MAP, payload);
       elmc_release(payload);
-      return wrapped;
+      return rc;
     }
 
-    ElmcValue *elmc_json_decode_map2(ElmcValue *f, ElmcValue *d1, ElmcValue *d2) {
+    RC elmc_json_decode_map2(ElmcValue **out, ElmcValue *f, ElmcValue *d1, ElmcValue *d2) {
       ElmcValue *pair = NULL;
-      if (elmc_tuple2(&pair, d1, d2) != RC_SUCCESS) pair = NULL;
-      if (!pair) return NULL;
+      RC rc = elmc_tuple2(&pair, d1, d2);
+      if (rc != RC_SUCCESS) return rc;
       ElmcValue *payload = NULL;
-      if (elmc_tuple2(&payload, f, pair) != RC_SUCCESS) payload = NULL;
+      rc = elmc_tuple2(&payload, f, pair);
       elmc_release(pair);
-      if (!payload) return NULL;
-      ElmcValue *wrapped = elmc_json_decoder_wrap(ELMC_JSON_DECODER_MAP2, payload);
+      if (rc != RC_SUCCESS) return rc;
+      rc = elmc_json_decoder_wrap(out, ELMC_JSON_DECODER_MAP2, payload);
       elmc_release(payload);
-      return wrapped;
+      return rc;
     }
 
-    static ElmcValue *elmc_json_decode_map_build_payload(ElmcValue *f, ElmcValue **decoders, int count) {
+    static RC elmc_json_decode_map_build_payload(ElmcValue **out, ElmcValue *f, ElmcValue **decoders, int count) {
       ElmcValue *tail = NULL;
       int i;
 
-      if (!f || count < 2 || count > 7) return NULL;
+      if (!f || count < 2 || count > 7) return RC_ERR_INVALID_ARG;
 
-      if (elmc_tuple2(&tail, decoders[count - 2], decoders[count - 1]) != RC_SUCCESS) tail = NULL;
-      if (!tail) return NULL;
+      RC rc = elmc_tuple2(&tail, decoders[count - 2], decoders[count - 1]);
+      if (rc != RC_SUCCESS) return rc;
 
       for (i = count - 3; i >= 0; i--) {
         ElmcValue *next = NULL;
-        if (elmc_tuple2(&next, decoders[i], tail) != RC_SUCCESS) next = NULL;
+        rc = elmc_tuple2(&next, decoders[i], tail);
         elmc_release(tail);
-        if (!next) return NULL;
+        if (rc != RC_SUCCESS) return rc;
         tail = next;
       }
 
-      ElmcValue *payload = NULL;
-      if (elmc_tuple2(&payload, f, tail) != RC_SUCCESS) payload = NULL;
+      rc = elmc_tuple2(out, f, tail);
       elmc_release(tail);
-      return payload;
+      return rc;
     }
 
-    ElmcValue *elmc_json_decode_map3(ElmcValue *f, ElmcValue *d1, ElmcValue *d2, ElmcValue *d3) {
+    RC elmc_json_decode_map3(ElmcValue **out, ElmcValue *f, ElmcValue *d1, ElmcValue *d2, ElmcValue *d3) {
       ElmcValue *decoders[] = {d1, d2, d3};
-      ElmcValue *payload = elmc_json_decode_map_build_payload(f, decoders, 3);
-      if (!payload) return NULL;
-      ElmcValue *wrapped = elmc_json_decoder_wrap(ELMC_JSON_DECODER_MAP7, payload);
-      elmc_release(payload);
-      return wrapped;
-    }
-
-    ElmcValue *elmc_json_decode_map4(ElmcValue *f, ElmcValue *d1, ElmcValue *d2, ElmcValue *d3, ElmcValue *d4) {
-      ElmcValue *decoders[] = {d1, d2, d3, d4};
-      ElmcValue *payload = elmc_json_decode_map_build_payload(f, decoders, 4);
-      if (!payload) return NULL;
-      ElmcValue *wrapped = elmc_json_decoder_wrap(ELMC_JSON_DECODER_MAP7, payload);
-      elmc_release(payload);
-      return wrapped;
-    }
-
-    ElmcValue *elmc_json_decode_map5(ElmcValue *f, ElmcValue *d1, ElmcValue *d2, ElmcValue *d3, ElmcValue *d4, ElmcValue *d5) {
-      ElmcValue *decoders[] = {d1, d2, d3, d4, d5};
-      ElmcValue *payload = elmc_json_decode_map_build_payload(f, decoders, 5);
-      if (!payload) return NULL;
-      ElmcValue *wrapped = elmc_json_decoder_wrap(ELMC_JSON_DECODER_MAP7, payload);
-      elmc_release(payload);
-      return wrapped;
-    }
-
-    ElmcValue *elmc_json_decode_map6(ElmcValue *f, ElmcValue *d1, ElmcValue *d2, ElmcValue *d3, ElmcValue *d4, ElmcValue *d5, ElmcValue *d6) {
-      ElmcValue *decoders[] = {d1, d2, d3, d4, d5, d6};
-      ElmcValue *payload = elmc_json_decode_map_build_payload(f, decoders, 6);
-      if (!payload) return NULL;
-      ElmcValue *wrapped = elmc_json_decoder_wrap(ELMC_JSON_DECODER_MAP7, payload);
-      elmc_release(payload);
-      return wrapped;
-    }
-
-    ElmcValue *elmc_json_decode_map7(ElmcValue *f, ElmcValue *d1, ElmcValue *d2, ElmcValue *d3, ElmcValue *d4, ElmcValue *d5, ElmcValue *d6, ElmcValue *d7) {
-      ElmcValue *decoders[] = {d1, d2, d3, d4, d5, d6, d7};
-      ElmcValue *payload = elmc_json_decode_map_build_payload(f, decoders, 7);
-      if (!payload) return NULL;
-      ElmcValue *wrapped = elmc_json_decoder_wrap(ELMC_JSON_DECODER_MAP7, payload);
-      elmc_release(payload);
-      return wrapped;
-    }
-
-    ElmcValue *elmc_json_decode_succeed(ElmcValue *value) {
-      return elmc_json_decoder_wrap(ELMC_JSON_DECODER_SUCCEED, value);
-    }
-
-    ElmcValue *elmc_json_decode_fail(ElmcValue *msg) {
-      return elmc_json_decoder_wrap(ELMC_JSON_DECODER_FAIL, msg);
-    }
-
-    ElmcValue *elmc_json_decode_and_then(ElmcValue *f, ElmcValue *decoder) {
       ElmcValue *payload = NULL;
-      if (elmc_tuple2(&payload, f, decoder) != RC_SUCCESS) payload = NULL;
-      if (!payload) return NULL;
-      ElmcValue *wrapped = elmc_json_decoder_wrap(ELMC_JSON_DECODER_AND_THEN, payload);
+      RC rc = elmc_json_decode_map_build_payload(&payload, f, decoders, 3);
+      if (rc != RC_SUCCESS) return rc;
+      rc = elmc_json_decoder_wrap(out, ELMC_JSON_DECODER_MAP7, payload);
       elmc_release(payload);
-      return wrapped;
+      return rc;
     }
 
-    ElmcValue *elmc_json_decode_one_of(ElmcValue *decoders) {
-      return elmc_json_decoder_wrap(ELMC_JSON_DECODER_ONE_OF, decoders);
+    RC elmc_json_decode_map4(ElmcValue **out, ElmcValue *f, ElmcValue *d1, ElmcValue *d2, ElmcValue *d3, ElmcValue *d4) {
+      ElmcValue *decoders[] = {d1, d2, d3, d4};
+      ElmcValue *payload = NULL;
+      RC rc = elmc_json_decode_map_build_payload(&payload, f, decoders, 4);
+      if (rc != RC_SUCCESS) return rc;
+      rc = elmc_json_decoder_wrap(out, ELMC_JSON_DECODER_MAP7, payload);
+      elmc_release(payload);
+      return rc;
     }
 
-    ElmcValue *elmc_json_decode_maybe(ElmcValue *decoder) {
-      return elmc_json_decoder_wrap(ELMC_JSON_DECODER_MAYBE, decoder);
+    RC elmc_json_decode_map5(ElmcValue **out, ElmcValue *f, ElmcValue *d1, ElmcValue *d2, ElmcValue *d3, ElmcValue *d4, ElmcValue *d5) {
+      ElmcValue *decoders[] = {d1, d2, d3, d4, d5};
+      ElmcValue *payload = NULL;
+      RC rc = elmc_json_decode_map_build_payload(&payload, f, decoders, 5);
+      if (rc != RC_SUCCESS) return rc;
+      rc = elmc_json_decoder_wrap(out, ELMC_JSON_DECODER_MAP7, payload);
+      elmc_release(payload);
+      return rc;
     }
 
-    ElmcValue *elmc_json_decode_lazy(ElmcValue *thunk) {
+    RC elmc_json_decode_map6(ElmcValue **out, ElmcValue *f, ElmcValue *d1, ElmcValue *d2, ElmcValue *d3, ElmcValue *d4, ElmcValue *d5, ElmcValue *d6) {
+      ElmcValue *decoders[] = {d1, d2, d3, d4, d5, d6};
+      ElmcValue *payload = NULL;
+      RC rc = elmc_json_decode_map_build_payload(&payload, f, decoders, 6);
+      if (rc != RC_SUCCESS) return rc;
+      rc = elmc_json_decoder_wrap(out, ELMC_JSON_DECODER_MAP7, payload);
+      elmc_release(payload);
+      return rc;
+    }
+
+    RC elmc_json_decode_map7(ElmcValue **out, ElmcValue *f, ElmcValue *d1, ElmcValue *d2, ElmcValue *d3, ElmcValue *d4, ElmcValue *d5, ElmcValue *d6, ElmcValue *d7) {
+      ElmcValue *decoders[] = {d1, d2, d3, d4, d5, d6, d7};
+      ElmcValue *payload = NULL;
+      RC rc = elmc_json_decode_map_build_payload(&payload, f, decoders, 7);
+      if (rc != RC_SUCCESS) return rc;
+      rc = elmc_json_decoder_wrap(out, ELMC_JSON_DECODER_MAP7, payload);
+      elmc_release(payload);
+      return rc;
+    }
+
+    RC elmc_json_decode_succeed(ElmcValue **out, ElmcValue *value) {
+      return elmc_json_decoder_wrap(out, ELMC_JSON_DECODER_SUCCEED, value);
+    }
+
+    RC elmc_json_decode_fail(ElmcValue **out, ElmcValue *msg) {
+      return elmc_json_decoder_wrap(out, ELMC_JSON_DECODER_FAIL, msg);
+    }
+
+    RC elmc_json_decode_and_then(ElmcValue **out, ElmcValue *f, ElmcValue *decoder) {
+      ElmcValue *payload = NULL;
+      RC rc = elmc_tuple2(&payload, f, decoder);
+      if (rc != RC_SUCCESS) return rc;
+      rc = elmc_json_decoder_wrap(out, ELMC_JSON_DECODER_AND_THEN, payload);
+      elmc_release(payload);
+      return rc;
+    }
+
+    RC elmc_json_decode_one_of(ElmcValue **out, ElmcValue *decoders) {
+      return elmc_json_decoder_wrap(out, ELMC_JSON_DECODER_ONE_OF, decoders);
+    }
+
+    RC elmc_json_decode_maybe(ElmcValue **out, ElmcValue *decoder) {
+      return elmc_json_decoder_wrap(out, ELMC_JSON_DECODER_MAYBE, decoder);
+    }
+
+    RC elmc_json_decode_lazy(ElmcValue **out, ElmcValue *thunk) {
       if (!thunk || thunk->tag != ELMC_TAG_CLOSURE) {
-        ElmcValue *_elmc_rc_out = NULL;
-        if (elmc_new_int(&_elmc_rc_out, 0) != RC_SUCCESS) return NULL;
-        return _elmc_rc_out;
+        return elmc_new_int(out, 0);
       }
-      ElmcValue *forced = elmc_closure_call(thunk, NULL, 0);
-      {
-        if (forced) return forced;
-        ElmcValue *_elmc_rc_out = NULL;
-        if (elmc_new_int(&_elmc_rc_out, 0) != RC_SUCCESS) return NULL;
-        return _elmc_rc_out;
+      ElmcValue *forced = NULL;
+      RC rc = elmc_closure_call_rc(&forced, thunk, NULL, 0);
+      if (rc != RC_SUCCESS) {
+        elmc_release(forced);
+        return rc;
       }
+      if (forced) {
+        *out = forced;
+        return RC_SUCCESS;
+      }
+      return elmc_new_int(out, 0);
     }
 
-    ElmcValue *elmc_json_decode_value_decoder(void) {
-      {
-        ElmcValue *_elmc_rc_out = NULL;
-        if (elmc_new_int(&_elmc_rc_out, ELMC_JSON_DECODER_VALUE) != RC_SUCCESS) return NULL;
-        return _elmc_rc_out;
+    RC elmc_json_decode_value_decoder(ElmcValue **out) {
+      return elmc_new_int(out, ELMC_JSON_DECODER_VALUE);
+    }
+
+    RC elmc_json_decode_error_to_string(ElmcValue **out, ElmcValue *err) {
+      if (err && err->tag == ELMC_TAG_STRING && err->payload) {
+        *out = elmc_retain(err);
+        return RC_SUCCESS;
       }
+      return elmc_new_string(out, "Json.Decode.Error");
     }
 
-    ElmcValue *elmc_json_decode_error_to_string(ElmcValue *err) {
-      if (err && err->tag == ELMC_TAG_STRING && err->payload) return elmc_retain(err);
-      {
-        ElmcValue *_elmc_rc_out = NULL;
-        if (elmc_new_string(&_elmc_rc_out, "Json.Decode.Error") != RC_SUCCESS) return NULL;
-        return _elmc_rc_out;
-      }
+    RC elmc_json_decode_key_value_pairs(ElmcValue **out, ElmcValue *decoder) {
+      return elmc_json_decoder_wrap(out, ELMC_JSON_DECODER_KEY_VALUE_PAIRS, decoder);
     }
 
-    ElmcValue *elmc_json_decode_key_value_pairs(ElmcValue *decoder) {
-      return elmc_json_decoder_wrap(ELMC_JSON_DECODER_KEY_VALUE_PAIRS, decoder);
-    }
-
-    ElmcValue *elmc_json_decode_dict(ElmcValue *decoder) {
-      return elmc_json_decode_key_value_pairs(decoder);
+    RC elmc_json_decode_dict(ElmcValue **out, ElmcValue *decoder) {
+      return elmc_json_decode_key_value_pairs(out, decoder);
     }
 
     /* ================================================================
@@ -1414,63 +1408,48 @@ defmodule Elmc.Runtime.JsonSections do
       return elmc_json_buf_append_cstr(buf, "null");
     }
 
-    ElmcValue *elmc_json_encode_string(ElmcValue *s) {
+    RC elmc_json_encode_string(ElmcValue **out, ElmcValue *s) {
       const char *raw = (s && s->tag == ELMC_TAG_STRING && s->payload) ? (const char *)s->payload : "";
       ElmcJsonBuffer buf;
       elmc_json_buf_init(&buf);
       if (!elmc_json_encode_string_to_buffer(raw, &buf)) {
         elmc_json_buf_free(&buf);
-        {
-          ElmcValue *_elmc_rc_out = NULL;
-          if (elmc_new_string(&_elmc_rc_out, "\"\"") != RC_SUCCESS) return NULL;
-          return _elmc_rc_out;
-        }
+        return elmc_new_string(out, "\"\"");
       }
-      return elmc_json_buf_to_string(&buf);
+      return elmc_json_buf_to_string(out, &buf);
     }
 
-    ElmcValue *elmc_json_encode_int(ElmcValue *n) {
-      return elmc_string_from_int(n);
+    RC elmc_json_encode_int(ElmcValue **out, ElmcValue *n) {
+      return elmc_string_from_int(out, n);
     }
 
     #if ELMC_JSON_FLOAT_NUMBERS
-    ElmcValue *elmc_json_encode_float(ElmcValue *f) {
-      return elmc_string_from_float_take(f);
+    RC elmc_json_encode_float(ElmcValue **out, ElmcValue *f) {
+      return elmc_string_from_float(out, f);
     }
     #endif
 
-    ElmcValue *elmc_json_encode_bool(ElmcValue *b) {
-      {
-        ElmcValue *_elmc_rc_out = NULL;
-        if (elmc_new_string(&_elmc_rc_out, elmc_as_int(b) ? "true" : "false") != RC_SUCCESS) return NULL;
-        return _elmc_rc_out;
-      }
+    RC elmc_json_encode_bool(ElmcValue **out, ElmcValue *b) {
+      return elmc_new_string(out, elmc_as_int(b) ? "true" : "false");
     }
 
-    ElmcValue *elmc_json_encode_null(void) {
-      {
-        ElmcValue *_elmc_rc_out = NULL;
-        if (elmc_new_string(&_elmc_rc_out, "null") != RC_SUCCESS) return NULL;
-        return _elmc_rc_out;
-      }
+    RC elmc_json_encode_null(ElmcValue **out) {
+      return elmc_new_string(out, "null");
     }
 
-    ElmcValue *elmc_json_encode_list(ElmcValue *f, ElmcValue *items) {
+    RC elmc_json_encode_list(ElmcValue **out, ElmcValue *f, ElmcValue *items) {
       ElmcJsonBuffer buf;
       elmc_json_buf_init(&buf);
       if (!elmc_json_buf_append_char(&buf, '[')) {
-        ElmcValue *_elmc_rc_out = NULL;
-        if (elmc_new_string(&_elmc_rc_out, "[]") != RC_SUCCESS) return NULL;
-        return _elmc_rc_out;
+        elmc_json_buf_free(&buf);
+        return elmc_new_string(out, "[]");
       }
       ElmcValue *owned_items = NULL;
       ElmcValue *cursor = items;
-      /* Compact INT_LIST / RECORD_SEQ must materialize to cons cells before walk. */
       if (cursor && cursor->tag != ELMC_TAG_LIST) {
         if (elmc_list_materialize_cons(&owned_items, cursor) != RC_SUCCESS) {
-          ElmcValue *_elmc_rc_out = NULL;
-          if (elmc_new_string(&_elmc_rc_out, "[]") != RC_SUCCESS) return NULL;
-          return _elmc_rc_out;
+          elmc_json_buf_free(&buf);
+          return elmc_new_string(out, "[]");
         }
         cursor = owned_items;
       }
@@ -1478,7 +1457,13 @@ defmodule Elmc.Runtime.JsonSections do
       while (cursor && cursor->tag == ELMC_TAG_LIST && cursor->payload != NULL) {
         ElmcCons *node = (ElmcCons *)cursor->payload;
         ElmcValue *args[] = { node->head };
-        ElmcValue *mapped = elmc_closure_call(f, args, 1);
+        ElmcValue *mapped = NULL;
+        if (elmc_closure_call_rc(&mapped, f, args, 1) != RC_SUCCESS) {
+          elmc_release(mapped);
+          if (owned_items) elmc_release(owned_items);
+          elmc_json_buf_free(&buf);
+          return RC_ERR_OUT_OF_MEMORY;
+        }
         if (!first) elmc_json_buf_append_char(&buf, ',');
         elmc_json_encoded_to_buffer(mapped, &buf);
         first = 0;
@@ -1487,24 +1472,23 @@ defmodule Elmc.Runtime.JsonSections do
       }
       if (owned_items) elmc_release(owned_items);
       elmc_json_buf_append_char(&buf, ']');
-      return elmc_json_buf_to_string(&buf);
+      return elmc_json_buf_to_string(out, &buf);
     }
 
-    ElmcValue *elmc_json_encode_array(ElmcValue *f, ElmcValue *items) {
-      return elmc_json_encode_list(f, items);
+    RC elmc_json_encode_array(ElmcValue **out, ElmcValue *f, ElmcValue *items) {
+      return elmc_json_encode_list(out, f, items);
     }
 
-    ElmcValue *elmc_json_encode_set(ElmcValue *f, ElmcValue *items) {
-      return elmc_json_encode_list(f, items);
+    RC elmc_json_encode_set(ElmcValue **out, ElmcValue *f, ElmcValue *items) {
+      return elmc_json_encode_list(out, f, items);
     }
 
-    ElmcValue *elmc_json_encode_object(ElmcValue *pairs) {
+    RC elmc_json_encode_object(ElmcValue **out, ElmcValue *pairs) {
       ElmcJsonBuffer buf;
       elmc_json_buf_init(&buf);
       if (!elmc_json_buf_append_char(&buf, '{')) {
-        ElmcValue *_elmc_rc_out = NULL;
-        if (elmc_new_string(&_elmc_rc_out, "{}") != RC_SUCCESS) return NULL;
-        return _elmc_rc_out;
+        elmc_json_buf_free(&buf);
+        return elmc_new_string(out, "{}");
       }
       ElmcValue *cursor = pairs;
       int first = 1;
@@ -1527,34 +1511,37 @@ defmodule Elmc.Runtime.JsonSections do
         cursor = node->tail;
       }
       elmc_json_buf_append_char(&buf, '}');
-      return elmc_json_buf_to_string(&buf);
+      return elmc_json_buf_to_string(out, &buf);
     }
 
-    ElmcValue *elmc_json_encode_add_field(ElmcValue *key, ElmcValue *value, ElmcValue *obj) {
+    RC elmc_json_encode_add_field(ElmcValue **out, ElmcValue *key, ElmcValue *value, ElmcValue *obj) {
       ElmcValue *pair = NULL;
-      if (elmc_tuple2(&pair, key, value) != RC_SUCCESS) pair = NULL;
-      ElmcValue *out = NULL;
-      if (elmc_list_cons(&out, pair, obj) != RC_SUCCESS) out = NULL;
-      if (pair) elmc_release(pair);
-      return out;
+      RC rc = elmc_tuple2(&pair, key, value);
+      if (rc != RC_SUCCESS) return rc;
+      rc = elmc_list_cons(out, pair, obj);
+      elmc_release(pair);
+      return rc;
     }
 
-    ElmcValue *elmc_json_encode_add_entry(ElmcValue *func, ElmcValue *value, ElmcValue *arr) {
+    RC elmc_json_encode_add_entry(ElmcValue **out, ElmcValue *func, ElmcValue *value, ElmcValue *arr) {
       ElmcValue *args[] = { value };
-      ElmcValue *encoded = elmc_closure_call(func, args, 1);
-      ElmcValue *out = NULL;
-      if (elmc_list_cons(&out, encoded, arr) != RC_SUCCESS) out = NULL;
-      if (encoded) elmc_release(encoded);
-      return out;
+      ElmcValue *encoded = NULL;
+      RC rc = elmc_closure_call_rc(&encoded, func, args, 1);
+      if (rc != RC_SUCCESS) {
+        elmc_release(encoded);
+        return rc;
+      }
+      rc = elmc_list_cons(out, encoded, arr);
+      elmc_release(encoded);
+      return rc;
     }
 
-    ElmcValue *elmc_json_encode_dict(ElmcValue *key_fn, ElmcValue *val_fn, ElmcValue *dict) {
+    RC elmc_json_encode_dict(ElmcValue **out, ElmcValue *key_fn, ElmcValue *val_fn, ElmcValue *dict) {
       ElmcJsonBuffer buf;
       elmc_json_buf_init(&buf);
       if (!elmc_json_buf_append_char(&buf, '{')) {
-        ElmcValue *_elmc_rc_out = NULL;
-        if (elmc_new_string(&_elmc_rc_out, "{}") != RC_SUCCESS) return NULL;
-        return _elmc_rc_out;
+        elmc_json_buf_free(&buf);
+        return elmc_new_string(out, "{}");
       }
       ElmcValue *cursor = dict;
       int first = 1;
@@ -1565,8 +1552,19 @@ defmodule Elmc.Runtime.JsonSections do
           ElmcTuple2 *tuple = (ElmcTuple2 *)entry->payload;
           ElmcValue *key_args[] = { tuple->first };
           ElmcValue *val_args[] = { tuple->second };
-          ElmcValue *key_text = elmc_closure_call(key_fn, key_args, 1);
-          ElmcValue *val_enc = elmc_closure_call(val_fn, val_args, 1);
+          ElmcValue *key_text = NULL;
+          ElmcValue *val_enc = NULL;
+          if (elmc_closure_call_rc(&key_text, key_fn, key_args, 1) != RC_SUCCESS) {
+            elmc_release(key_text);
+            elmc_json_buf_free(&buf);
+            return RC_ERR_OUT_OF_MEMORY;
+          }
+          if (elmc_closure_call_rc(&val_enc, val_fn, val_args, 1) != RC_SUCCESS) {
+            elmc_release(key_text);
+            elmc_release(val_enc);
+            elmc_json_buf_free(&buf);
+            return RC_ERR_OUT_OF_MEMORY;
+          }
           const char *key = (key_text && key_text->tag == ELMC_TAG_STRING && key_text->payload)
                               ? (const char *)key_text->payload
                               : NULL;
@@ -1577,20 +1575,21 @@ defmodule Elmc.Runtime.JsonSections do
             elmc_json_encoded_to_buffer(val_enc, &buf);
             first = 0;
           }
-          if (key_text) elmc_release(key_text);
-          if (val_enc) elmc_release(val_enc);
+          elmc_release(key_text);
+          elmc_release(val_enc);
         }
         cursor = node->tail;
       }
       elmc_json_buf_append_char(&buf, '}');
-      return elmc_json_buf_to_string(&buf);
+      return elmc_json_buf_to_string(out, &buf);
     }
 
-    ElmcValue *elmc_json_encode_encode(ElmcValue *indent, ElmcValue *value) {
+    RC elmc_json_encode_encode(ElmcValue **out, ElmcValue *indent, ElmcValue *value) {
       int spaces = (int)elmc_as_int(indent);
       if (spaces <= 0) {
         if (value && value->tag == ELMC_TAG_STRING && value->payload) {
-          return elmc_retain(value);
+          *out = elmc_retain(value);
+          return RC_SUCCESS;
         }
       }
       if (value && value->tag == ELMC_TAG_STRING && value->payload) {
@@ -1606,26 +1605,18 @@ defmodule Elmc.Runtime.JsonSections do
           elmc_json_free_value(parsed);
           if (!ok) {
             elmc_json_buf_free(&buf);
-            {
-              ElmcValue *_elmc_rc_out = NULL;
-              if (elmc_new_string(&_elmc_rc_out, "null") != RC_SUCCESS) return NULL;
-              return _elmc_rc_out;
-            }
+            return elmc_new_string(out, "null");
           }
-          return elmc_json_buf_to_string(&buf);
+          return elmc_json_buf_to_string(out, &buf);
         }
       }
       ElmcJsonBuffer buf;
       elmc_json_buf_init(&buf);
       if (!elmc_json_encoded_to_buffer(value, &buf)) {
         elmc_json_buf_free(&buf);
-        {
-          ElmcValue *_elmc_rc_out = NULL;
-          if (elmc_new_string(&_elmc_rc_out, "null") != RC_SUCCESS) return NULL;
-          return _elmc_rc_out;
-        }
+        return elmc_new_string(out, "null");
       }
-      return elmc_json_buf_to_string(&buf);
+      return elmc_json_buf_to_string(out, &buf);
     }
     """
   end

@@ -68,7 +68,7 @@ defmodule Elmc.Backend.CCodegen.LiteralCompile do
 
   def compile(%{op: :bool_literal, value: value}, env, counter) do
     {var, counter} = literal_out_slot(env, counter)
-    flag = if value, do: "1", else: "0"
+    flag = if value, do: "true", else: "false"
 
     {RcRuntimeEmit.assign_call(env, var, "elmc_new_bool", flag) <> "\n", var, counter}
   end

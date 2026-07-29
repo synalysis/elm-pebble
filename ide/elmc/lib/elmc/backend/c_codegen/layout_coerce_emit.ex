@@ -3,7 +3,7 @@ defmodule Elmc.Backend.CCodegen.LayoutCoerceEmit do
   alias Elmc.Backend.CCodegen.Types, as: Types
 
 
-  alias Elmc.Backend.CCodegen.FusionSupport
+  alias Elmc.Backend.Plan.Fusion.Matchers.FusionSupport
   alias Elmc.Backend.CCodegen.Host
   alias Elmc.Backend.CCodegen.LayoutSolver
   alias Elmc.Backend.CCodegen.StoragePlan

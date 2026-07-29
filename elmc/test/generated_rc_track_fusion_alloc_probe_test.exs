@@ -32,15 +32,15 @@ defmodule Elmc.GeneratedRcTrackFusionAllocProbeTest do
       #include <stdio.h>
 
       static ElmcValue *launch_context(void) {
-        ElmcValue *reason = elmc_new_int_take(1);
-        ElmcValue *width = elmc_new_int_take(144);
-        ElmcValue *height = elmc_new_int_take(168);
-        ElmcValue *shape = elmc_new_int_take(1);
-        ElmcValue *color_mode = elmc_new_int_take(1);
+        ElmcValue *reason = ELMC_RC_INT_BOX(1);
+        ElmcValue *width = ELMC_RC_INT_BOX(144);
+        ElmcValue *height = ELMC_RC_INT_BOX(168);
+        ElmcValue *shape = ELMC_RC_INT_BOX(1);
+        ElmcValue *color_mode = ELMC_RC_INT_BOX(1);
         ElmcValue *screen_values[] = {width, height, shape, color_mode};
-        ElmcValue *screen = elmc_record_new_values_take_value(4, screen_values);
+        ElmcValue *screen = elmc_harness_record_new_values_take(4, screen_values);
         ElmcValue *context_values[] = {reason, screen};
-        return elmc_record_new_values_take_value(2, context_values);
+        return elmc_harness_record_new_values_take(2, context_values);
       }
 
       static void drain_cmds(ElmcPebbleApp *app) {

@@ -509,7 +509,7 @@ defmodule Elmc.PlanCLowerTest do
     Process.put(:elmc_program_decls, decl_map)
     c = CLowerFunction.emit(plan)
     assert c =~ "elmc_basics_mod_by("
-    assert c =~ "elmc_small_int(index)" or c =~ "elmc_new_int_take(index)" or
+    assert c =~ "elmc_small_int(index)" or c =~ "ELMC_RC_INT_BOX(index)" or
              c =~ ~r/elmc_new_int\(&owned\[\d+\], index\)/
     refute c =~ "(void)index;"
   end

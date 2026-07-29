@@ -13,7 +13,7 @@ defmodule Elmc.Backend.CCodegen.Native.FunctionCall do
   alias Elmc.Backend.CCodegen.LayoutCoerceEmit
   alias Elmc.Backend.CCodegen.Native.ListIntReduce
   alias Elmc.Backend.CCodegen.Native.ListIntSearch
-  alias Elmc.Backend.CCodegen.Tuple2CaseTable
+  alias Elmc.Backend.Plan.Fusion.Matchers.Tuple2CaseTable
   alias Elmc.Backend.CCodegen.ValueSlots
   alias Elmc.Backend.CCodegen.RcRuntimeEmit
   alias Elmc.Backend.CCodegen.PlanNativeProjection
@@ -532,15 +532,15 @@ defmodule Elmc.Backend.CCodegen.Native.FunctionCall do
     args
     |> Enum.with_index()
     |> Enum.map(fn {arg, index} ->
-      case Enum.at(arg_types, index) |> Host.normalize_type_name() do
-        "Int" ->
+      case Enum.at(arg_types, index) |> Host.signature_param_kind() do
+        :native_int ->
           if int_arg_safe?(arg, expr, module_name, decl_map) do
             :native_int
           else
             :boxed
           end
 
-        "Bool" ->
+        :native_bool ->
           if bool_arg_safe?(arg, expr, module_name, decl_map) do
             :native_bool
           else
@@ -570,9 +570,9 @@ defmodule Elmc.Backend.CCodegen.Native.FunctionCall do
     args
     |> Enum.with_index()
     |> Enum.map(fn {_arg, index} ->
-      case Enum.at(arg_types, index) |> Host.normalize_type_name() do
-        "Int" -> :native_int
-        "Bool" -> :native_bool
+      case Enum.at(arg_types, index) |> Host.signature_param_kind() do
+        :native_int -> :native_int
+        :native_bool -> :native_bool
         _other -> :boxed
       end
     end)
@@ -602,9 +602,9 @@ defmodule Elmc.Backend.CCodegen.Native.FunctionCall do
     type
     |> Host.function_arg_types()
     |> Enum.map(fn ty ->
-      case Host.normalize_type_name(ty) do
-        "Int" -> :native_int
-        "Bool" -> :native_bool
+      case Host.signature_param_kind(ty) do
+        :native_int -> :native_int
+        :native_bool -> :native_bool
         _other -> :boxed
       end
     end)

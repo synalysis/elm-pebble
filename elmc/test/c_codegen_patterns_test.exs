@@ -164,7 +164,7 @@ defmodule Elmc.CCodegenPatternsTest do
 
     assert out == "tmp_3"
     assert counter == 3
-    assert code =~ "elmc_new_int_take(42)"
+    assert code =~ "ELMC_RC_INT_BOX(42)"
     assert code =~ "ElmcValue *tmp_3 = elmc_retain(tmp_2);"
     refute code =~ ~r/ElmcValue \*tmp_1 = elmc_retain\(tmp_1\);/
   end
@@ -1671,7 +1671,7 @@ defmodule Elmc.CCodegenPatternsTest do
         |> File.read!()
 
       assert generated_c =~ "elmc_record_new_static_take"
-      refute generated_c =~ "return elmc_record_new_values_take_value(23, rec_values);"
+      refute generated_c =~ "return elmc_harness_record_new_values_take(23, rec_values);"
     else
       assert true
     end
@@ -2457,21 +2457,21 @@ defmodule Elmc.CCodegenPatternsTest do
       };
 
       static ElmcValue *basalt_launch_context(void) {
-        ElmcValue *reason = elmc_new_int_take(2);
-        ElmcValue *watch_model = elmc_new_string_take("");
-        ElmcValue *watch_profile_id = elmc_new_string_take("");
-        ElmcValue *width = elmc_new_int_take(144);
-        ElmcValue *height = elmc_new_int_take(168);
-        ElmcValue *shape = elmc_new_int_take(2);
-        ElmcValue *color_mode = elmc_new_int_take(2);
+        ElmcValue *reason = ELMC_RC_INT_BOX(2);
+        ElmcValue *watch_model = ELMC_RC_STRING_BOX("");
+        ElmcValue *watch_profile_id = ELMC_RC_STRING_BOX("");
+        ElmcValue *width = ELMC_RC_INT_BOX(144);
+        ElmcValue *height = ELMC_RC_INT_BOX(168);
+        ElmcValue *shape = ELMC_RC_INT_BOX(2);
+        ElmcValue *color_mode = ELMC_RC_INT_BOX(2);
         ElmcValue *screen_values[] = {width, height, shape, color_mode};
-        ElmcValue *screen = elmc_record_new_values_take_value(4, screen_values);
-        ElmcValue *has_microphone = elmc_new_int_take(0);
-        ElmcValue *has_compass = elmc_new_int_take(0);
-        ElmcValue *supports_health = elmc_new_int_take(0);
+        ElmcValue *screen = elmc_harness_record_new_values_take(4, screen_values);
+        ElmcValue *has_microphone = ELMC_RC_INT_BOX(0);
+        ElmcValue *has_compass = ELMC_RC_INT_BOX(0);
+        ElmcValue *supports_health = ELMC_RC_INT_BOX(0);
         ElmcValue *context_values[] = {reason, watch_model, watch_profile_id, screen, has_microphone,
                                        has_compass, supports_health};
-        return elmc_record_new_values_take_value(7, context_values);
+        return elmc_harness_record_new_values_take(7, context_values);
       }
 
       static elmc_int_t list_length(ElmcValue *list) {
@@ -4533,21 +4533,21 @@ defmodule Elmc.CCodegenPatternsTest do
       #include <stdio.h>
 
       static ElmcValue *aplite_launch_context(void) {
-        ElmcValue *reason = elmc_new_int_take(2);
-        ElmcValue *watch_model = elmc_new_string_take("");
-        ElmcValue *watch_profile_id = elmc_new_string_take("aplite");
-        ElmcValue *width = elmc_new_int_take(144);
-        ElmcValue *height = elmc_new_int_take(168);
-        ElmcValue *shape = elmc_new_int_take(1);
-        ElmcValue *color_mode = elmc_new_int_take(1);
+        ElmcValue *reason = ELMC_RC_INT_BOX(2);
+        ElmcValue *watch_model = ELMC_RC_STRING_BOX("");
+        ElmcValue *watch_profile_id = ELMC_RC_STRING_BOX("aplite");
+        ElmcValue *width = ELMC_RC_INT_BOX(144);
+        ElmcValue *height = ELMC_RC_INT_BOX(168);
+        ElmcValue *shape = ELMC_RC_INT_BOX(1);
+        ElmcValue *color_mode = ELMC_RC_INT_BOX(1);
         ElmcValue *screen_values[] = {width, height, shape, color_mode};
-        ElmcValue *screen = elmc_record_new_values_take_value(4, screen_values);
-        ElmcValue *has_microphone = elmc_new_int_take(0);
-        ElmcValue *has_compass = elmc_new_int_take(0);
-        ElmcValue *supports_health = elmc_new_int_take(0);
+        ElmcValue *screen = elmc_harness_record_new_values_take(4, screen_values);
+        ElmcValue *has_microphone = ELMC_RC_INT_BOX(0);
+        ElmcValue *has_compass = ELMC_RC_INT_BOX(0);
+        ElmcValue *supports_health = ELMC_RC_INT_BOX(0);
         ElmcValue *context_values[] = {reason, watch_model, watch_profile_id, screen, has_microphone,
                                        has_compass, supports_health};
-        return elmc_record_new_values_take_value(7, context_values);
+        return elmc_harness_record_new_values_take(7, context_values);
       }
 
       static int count_kind(ElmcPebbleApp *app, int kind) {

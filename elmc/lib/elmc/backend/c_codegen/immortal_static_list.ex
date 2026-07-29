@@ -175,7 +175,7 @@ defmodule Elmc.Backend.CCodegen.ImmortalStaticList do
             |> String.trim()
           else
             """
-            #{RcRuntimeEmit.assign_call(env, out, "elmc_new_int_take", "#{spec.sym}_values[#{index_use}]")}
+            #{RcRuntimeEmit.assign_call(env, out, "elmc_new_int", "#{spec.sym}_values[#{index_use}]")}
             """
             |> String.trim()
           end

@@ -6,7 +6,6 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.TextOptions do
   alias Elmc.Backend.CCodegen.EnvBindings
   alias Elmc.Backend.CCodegen.Expr
   alias Elmc.Backend.CCodegen.Host
-  alias Elmc.Backend.CCodegen.SpecialValues
   alias Elmc.Backend.CCodegen.Types
 
   @spec packed_expr(Types.ir_expr()) :: Types.packed_text_options_result()
@@ -45,6 +44,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.TextOptions do
           Types.compile_env()
         ) :: boolean()
   def let?(_name, value_expr, _in_expr, _env) do
+    # Require text-options shape so board/layout records are never packed as ints.
     value_shape?(value_expr) and match?({:ok, _}, packed_expr(value_expr))
   end
 
@@ -56,6 +56,8 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.TextOptions do
     do: value_shape?(value_expr) and match?({:ok, _}, packed_expr(value_expr))
 
   @spec expr(Types.ir_expr()) :: Types.ir_expr()
+  def expr(%{op: :c_int_expr, value: value} = expr) when is_binary(value), do: expr
+
   def expr(%{op: :qualified_call, target: target, args: args}) when is_binary(target) do
     case Host.special_value_from_target(Host.normalize_special_target(target), args || []) do
       nil ->
@@ -83,14 +85,48 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.TextOptions do
   @spec arg(Types.ir_expr(), Types.compile_env(), Types.compile_counter()) :: Types.ir_expr()
   def arg(%{op: :var, name: name}, env, _counter) do
     case EnvBindings.native_int_binding(env, name) do
-      ref when is_binary(ref) -> %{op: :c_int_expr, value: ref}
-      _ -> expr(%{op: :var, name: name})
+      ref when is_binary(ref) ->
+        %{op: :c_int_expr, value: ref}
+
+      _ ->
+        case Map.get(env, name) do
+          {:direct_fragment, frag} ->
+            case packed_expr(frag) do
+              {:ok, packed} -> packed
+              :error -> packed_from_boxed_ref(name, env)
+            end
+
+          ref when is_binary(ref) ->
+            %{op: :c_int_expr, value: "elmc_text_options_packed(#{ref})"}
+
+          _ ->
+            packed_from_boxed_ref(name, env)
+        end
     end
   end
 
-  def arg(options, _env, _counter), do: expr(options)
+  def arg(options, _env, _counter) do
+    case packed_expr(options) do
+      {:ok, packed} -> packed
+      :error -> expr(options)
+    end
+  end
 
-  @spec packed_c_value(Types.expr()) :: Types.ir_expr()
+  @spec packed_from_boxed_ref(Types.binding_name(), Types.compile_env()) :: Types.ir_expr()
+  defp packed_from_boxed_ref(name, env) do
+    case Map.get(env, name) do
+      ref when is_binary(ref) ->
+        %{op: :c_int_expr, value: "elmc_text_options_packed(#{ref})"}
+
+      _ ->
+        # Fall back to left-aligned rather than elmc_as_int(record) → 0 with no overflow bits.
+        %{op: :c_int_expr, value: "ELMC_TEXT_ALIGN_LEFT"}
+    end
+  end
+
+  @spec packed_c_value(Types.expr()) :: {:ok, String.t()} | :error
+
+  defp packed_c_value(%{op: :c_int_expr, value: value}) when is_binary(value), do: {:ok, value}
 
   defp packed_c_value(expr) do
     expr =
@@ -99,8 +135,17 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.TextOptions do
           Host.special_value_from_target(Host.normalize_special_target(target), args || []) ||
             expr
 
+        %{op: :qualified_ref, target: target} when is_binary(target) ->
+          Host.special_value_from_target(Host.normalize_special_target(target), []) || expr
+
         %{op: :call, name: name, args: args} when is_binary(name) ->
           Host.special_value_from_target(name, args || []) || expr
+
+        %{op: :record_update, base: base, fields: fields} = update ->
+          case expand_text_options_base(base) do
+            ^base -> update
+            expanded -> %{update | base: expanded, fields: fields}
+          end
 
         _ ->
           expr
@@ -112,7 +157,20 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.TextOptions do
     end
   end
 
+  defp expand_text_options_base(%{op: :qualified_ref, target: target} = base) when is_binary(target) do
+    Host.special_value_from_target(Host.normalize_special_target(target), []) || base
+  end
+
+  defp expand_text_options_base(%{op: :qualified_call, target: target, args: args} = base)
+       when is_binary(target) do
+    Host.special_value_from_target(Host.normalize_special_target(target), args || []) || base
+  end
+
+  defp expand_text_options_base(base), do: base
+
   @spec value_shape?(map() | term()) :: boolean()
+
+  defp value_shape?(%{op: :c_int_expr, value: value}) when is_binary(value), do: true
 
   defp value_shape?(%{op: :qualified_call, target: target, args: args}) when is_binary(target) do
     case Host.normalize_special_target(target) do
@@ -212,9 +270,18 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.TextOptions do
   @spec expr_from_static_record(keyword()) :: Types.ir_expr()
 
   defp expr_from_static_record(options) do
-    alignment = Expr.record_field_expr(options, "alignment")
-    overflow = Expr.record_field_expr(options, "overflow")
+    alignment =
+      options
+      |> Expr.record_field_expr("alignment")
+      |> normalize_text_option_field(:alignment)
 
+    overflow =
+      options
+      |> Expr.record_field_expr("overflow")
+      |> normalize_text_option_field(:overflow)
+
+    # Missing fields must not default — arbitrary records (board layout, etc.)
+    # would otherwise pack as LEFT+WORD_WRAP.
     case {alignment, overflow} do
       {%{op: :c_int_expr, value: align_value}, %{op: :c_int_expr, value: overflow_value}}
       when is_binary(align_value) and is_binary(overflow_value) ->
@@ -224,17 +291,23 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.TextOptions do
             "(#{align_value} + (#{overflow_value} * (1 << ELMC_TEXT_OVERFLOW_SHIFT)))"
         }
 
+      {nil, _} ->
+        %{op: :unsupported}
+
+      {_, nil} ->
+        %{op: :unsupported}
+
       _ ->
         %{
           op: :call,
           name: "__add__",
           args: [
-            alignment || SpecialValues.field_access_expr(options, "alignment"),
+            alignment,
             %{
               op: :call,
               name: "__mul__",
               args: [
-                overflow || SpecialValues.field_access_expr(options, "overflow"),
+                overflow,
                 %{op: :c_int_expr, value: "(1 << ELMC_TEXT_OVERFLOW_SHIFT)"}
               ]
             }
@@ -242,4 +315,30 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.TextOptions do
         }
     end
   end
+
+  defp normalize_text_option_field(nil, _kind), do: nil
+
+  defp normalize_text_option_field(%{op: :c_int_expr, value: value} = expr, _kind)
+       when is_binary(value),
+       do: expr
+
+  defp normalize_text_option_field(%{op: :int_literal, value: 0}, :alignment),
+    do: %{op: :c_int_expr, value: "ELMC_TEXT_ALIGN_LEFT"}
+
+  defp normalize_text_option_field(%{op: :int_literal, value: 1}, :alignment),
+    do: %{op: :c_int_expr, value: "ELMC_TEXT_ALIGN_CENTER"}
+
+  defp normalize_text_option_field(%{op: :int_literal, value: 2}, :alignment),
+    do: %{op: :c_int_expr, value: "ELMC_TEXT_ALIGN_RIGHT"}
+
+  defp normalize_text_option_field(%{op: :int_literal, value: 0}, :overflow),
+    do: %{op: :c_int_expr, value: "ELMC_TEXT_OVERFLOW_WORD_WRAP"}
+
+  defp normalize_text_option_field(%{op: :int_literal, value: 1}, :overflow),
+    do: %{op: :c_int_expr, value: "ELMC_TEXT_OVERFLOW_TRAILING_ELLIPSIS"}
+
+  defp normalize_text_option_field(%{op: :int_literal, value: 2}, :overflow),
+    do: %{op: :c_int_expr, value: "ELMC_TEXT_OVERFLOW_FILL"}
+
+  defp normalize_text_option_field(expr, _kind), do: expr
 end

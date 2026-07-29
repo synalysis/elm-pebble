@@ -1,7 +1,6 @@
-defmodule Elmc.Backend.CCodegen.ExprCompile do
+defmodule Elmc.Backend.CCodegen.DirectRender.Emit.ExprDispatch do
   @moduledoc false
   alias Elmc.Backend.CCodegen.Types, as: Types
-
 
   alias Elmc.Backend.CCodegen.CallCompile
   alias Elmc.Backend.CCodegen.CaseCompile
@@ -16,7 +15,8 @@ defmodule Elmc.Backend.CCodegen.ExprCompile do
   alias Elmc.Backend.CCodegen.LiteralCompile
   alias Elmc.Backend.CCodegen.RecordCompile
   alias Elmc.Backend.CCodegen.RuntimeCall
-  alias Elmc.Backend.CCodegen.Types
+  alias Elmc.Backend.Plan.Lower.SpecialValues.Helpers
+  alias Elmc.Backend.CCodegen.UnsupportedSurface
   alias Elmc.Backend.CCodegen.VarArithCompile
   alias Elmc.Backend.CCodegen.VarCompile
   alias Elmc.Backend.CCodegen.PipeChainCompile
@@ -50,6 +50,7 @@ defmodule Elmc.Backend.CCodegen.ExprCompile do
   ]
   @call_ops [:qualified_call, :constructor_call, :partial_constructor, :call]
   @record_ops [:record_literal, :record_update, :field_access, :field_call]
+  @zero_arg_ref_ops [:constructor_ref, :qualified_ref, :qualified_var]
 
   @spec compile(Types.ir_expr(), Types.compile_env(), Types.compile_counter()) ::
           Types.compile_result()
@@ -63,6 +64,14 @@ defmodule Elmc.Backend.CCodegen.ExprCompile do
   def compile(%{op: :render_cmd} = expr, env, counter),
     do: RenderCmdCompile.compile(expr, env, counter)
 
+  def compile(%{op: :render_text_cmd, kind: kind, int_params: params, text: text}, env, counter) do
+    compile(
+      %{op: :tuple2, left: kind, right: Helpers.tuple_chain(List.wrap(params) ++ [text])},
+      env,
+      counter
+    )
+  end
+
   def compile(%{op: op} = expr, env, counter) when op in @sub_ops,
     do: SubCompile.compile(expr, env, counter)
 
@@ -74,6 +83,12 @@ defmodule Elmc.Backend.CCodegen.ExprCompile do
 
   def compile(%{op: op} = expr, env, counter) when op in @call_ops,
     do: CallCompile.compile(expr, env, counter)
+
+  def compile(%{op: op, target: target}, env, counter)
+      when op in @zero_arg_ref_ops and is_binary(target) do
+    call_op = if op == :constructor_ref, do: :constructor_call, else: :qualified_call
+    compile(%{op: call_op, target: target, args: []}, env, counter)
+  end
 
   def compile(%{op: :var} = expr, env, counter),
     do: VarCompile.compile(expr, env, counter)
@@ -102,11 +117,33 @@ defmodule Elmc.Backend.CCodegen.ExprCompile do
   def compile(%{op: :pipe_chain} = expr, env, counter),
     do: PipeChainCompile.compile(expr, env, counter)
 
-  def compile(%{op: :unsupported}, _env, counter),
-    do: compile_zero(counter)
+  def compile(%{op: :unsupported} = expr, _env, counter) do
+    UnsupportedSurface.record_from_expr(expr)
+    compile_zero(counter)
+  end
 
-  def compile(_expr, _env, counter),
-    do: compile_zero(counter)
+  def compile(%{op: op} = expr, _env, counter) when is_atom(op) do
+    UnsupportedSurface.record_expr(%{
+      kind: :expr,
+      op: op,
+      reason_op: op,
+      target: Map.get(expr, :target) || Map.get(expr, :name),
+      detail: "unhandled expr in DirectRender.Emit.ExprDispatch"
+    })
+
+    compile_zero(counter)
+  end
+
+  def compile(expr, _env, counter) do
+    UnsupportedSurface.record_expr(%{
+      kind: :expr,
+      op: :non_map,
+      reason_op: :non_map,
+      detail: "unhandled expr in DirectRender.Emit.ExprDispatch (#{inspect(expr, limit: 8)})"
+    })
+
+    compile_zero(counter)
+  end
 
   @spec compile_zero(Types.compile_counter()) :: Types.compile_result()
   defp compile_zero(counter) do

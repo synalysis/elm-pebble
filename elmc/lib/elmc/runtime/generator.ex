@@ -1793,7 +1793,6 @@ defmodule Elmc.Runtime.Generator do
     ElmcValue *elmc_unit(void);
     ElmcValue *elmc_list_nil(void);
     RC elmc_list_cons(ElmcValue **out, ElmcValue *head, ElmcValue *tail);
-    ElmcValue *elmc_list_cons_take(ElmcValue *head, ElmcValue *tail);
     RC elmc_list_from_values(ElmcValue **out, ElmcValue **items, int count);
     RC elmc_list_from_values_take(ElmcValue **out, ElmcValue **items, int count);
     int elmc_int_list_is_empty(ElmcValue *list);
@@ -2179,7 +2178,7 @@ defmodule Elmc.Runtime.Generator do
     RC elmc_record_update_index_float_cow(ElmcValue **out, ElmcValue *record, int index, double new_value);
     RC elmc_record_update_index_float_cow_drop(ElmcValue **out, ElmcValue *record, int index, double new_value);
 
-    #{RcMacros.take_wrapper_declarations()}
+    #{RcMacros.rc_alloc_expr_macros()}
 
     #{RcMacros.maybe_pattern_helpers()}
 
@@ -2199,7 +2198,6 @@ defmodule Elmc.Runtime.Generator do
 
     RC elmc_closure_new(ElmcValue **out, ElmcValue *(*fn)(ElmcValue **args, int argc, ElmcValue **captures, int capture_count), int arity, int capture_count, ElmcValue **captures);
     RC elmc_closure_new_rc(ElmcValue **out, RC (*rc_fn)(ElmcValue **out, ElmcValue **args, int argc, ElmcValue **captures, int capture_count), int arity, int capture_count, ElmcValue **captures);
-    #{RcMacros.closure_new_take_wrapper()}
     ElmcValue *elmc_closure_call(ElmcValue *closure, ElmcValue **args, int argc);
     RC elmc_closure_call_rc(ElmcValue **out, ElmcValue *closure, ElmcValue **args, int argc);
     ElmcValue *elmc_apply_extra(ElmcValue *value, ElmcValue **args, int argc);
@@ -2968,25 +2966,6 @@ defmodule Elmc.Runtime.Generator do
       return rc;
     }
 
-    ElmcValue *elmc_list_cons_take(ElmcValue *head, ElmcValue *tail) {
-      ElmcValue *out = NULL;
-      ElmcValue *owned_tail = NULL;
-      ElmcValue *use_tail = tail;
-      if (tail && tail->tag != ELMC_TAG_LIST) {
-        if (elmc_list_materialize_cons(&owned_tail, tail) != RC_SUCCESS) {
-          elmc_release(head);
-          elmc_release(tail);
-          return NULL;
-        }
-        elmc_release(tail);
-        use_tail = owned_tail;
-      }
-      if (elmc_list_cell_alloc(&out, head, use_tail, 1) != RC_SUCCESS) {
-        return NULL;
-      }
-      return out;
-    }
-
     RC elmc_list_from_values(ElmcValue **out, ElmcValue **items, int count) {
       RC rc = RC_SUCCESS;
       ElmcValue *list = elmc_list_nil();
@@ -3052,14 +3031,14 @@ defmodule Elmc.Runtime.Generator do
       CATCH_BEGIN
         ElmcValue *tail = elmc_int_zero();
         for (int i = 5; i >= 0; i--) {
-          ElmcValue *pv = elmc_new_int_take(ps[i]);
+          ElmcValue *pv = ELMC_RC_INT_BOX(ps[i]);
           if (!pv) { rc = RC_ERR_OUT_OF_MEMORY; CHECK_RC(rc); }
           ElmcValue *pair = NULL;
           rc = elmc_tuple2_take(&pair, pv, tail);
           CHECK_RC(rc);
           tail = pair;
         }
-        ElmcValue *kind_v = elmc_new_int_take(kind);
+        ElmcValue *kind_v = ELMC_RC_INT_BOX(kind);
         if (!kind_v) { rc = RC_ERR_OUT_OF_MEMORY; CHECK_RC(rc); }
         rc = elmc_tuple2_take(out, kind_v, tail);
         CHECK_RC(rc);
@@ -3074,14 +3053,14 @@ defmodule Elmc.Runtime.Generator do
         ElmcValue *tail = text ? elmc_retain(text) : elmc_int_zero();
         if (!tail) { rc = RC_ERR_OUT_OF_MEMORY; CHECK_RC(rc); }
         for (int i = 5; i >= 0; i--) {
-          ElmcValue *pv = elmc_new_int_take(ps[i]);
+          ElmcValue *pv = ELMC_RC_INT_BOX(ps[i]);
           if (!pv) { rc = RC_ERR_OUT_OF_MEMORY; CHECK_RC(rc); }
           ElmcValue *pair = NULL;
           rc = elmc_tuple2_take(&pair, pv, tail);
           CHECK_RC(rc);
           tail = pair;
         }
-        ElmcValue *kind_v = elmc_new_int_take(kind);
+        ElmcValue *kind_v = ELMC_RC_INT_BOX(kind);
         if (!kind_v) { rc = RC_ERR_OUT_OF_MEMORY; CHECK_RC(rc); }
         rc = elmc_tuple2_take(out, kind_v, tail);
         CHECK_RC(rc);
@@ -4040,7 +4019,7 @@ defmodule Elmc.Runtime.Generator do
           return RC_SUCCESS;
         }
         {
-          ElmcValue *boxed = elmc_new_int_take(payload->values[0]);
+          ElmcValue *boxed = ELMC_RC_INT_BOX(payload->values[0]);
           if (!boxed) return RC_ERR_OUT_OF_MEMORY;
           return elmc_maybe_just(out, boxed);
         }
@@ -4072,7 +4051,7 @@ defmodule Elmc.Runtime.Generator do
           return RC_SUCCESS;
         }
         {
-          ElmcValue *boxed = elmc_new_int_take(payload->values[idx]);
+          ElmcValue *boxed = ELMC_RC_INT_BOX(payload->values[idx]);
           if (!boxed) return RC_ERR_OUT_OF_MEMORY;
           return elmc_maybe_just(out, boxed);
         }
@@ -5108,11 +5087,8 @@ defmodule Elmc.Runtime.Generator do
                 skip = 1;
               }
             } else if (!inserted && tp->first) {
-              order = elmc_basics_compare_take(key, tp->first);
-              if (!order) {
-                rc = RC_ERR_INVALID_ARG;
-                CHECK_RC(rc);
-              }
+              rc = elmc_basics_compare(&order, key, tp->first);
+              CHECK_RC(rc);
               elmc_int_t cmp = elmc_as_int(order);
               elmc_release(order);
               order = NULL;
@@ -5210,7 +5186,8 @@ defmodule Elmc.Runtime.Generator do
 
     elmc_int_t elmc_dict_get_with_default_int_value(elmc_int_t default_val, ElmcValue *key, ElmcValue *dict) {
       if (!key) return default_val;
-      ElmcValue *found = elmc_dict_get_take(key, dict);
+      ElmcValue *found = NULL;
+      if (elmc_dict_get(&found, key, dict) != RC_SUCCESS) found = NULL;
       elmc_int_t out = default_val;
       if (found && found->tag == ELMC_TAG_MAYBE && found->payload != NULL) {
         ElmcMaybe *maybe = (ElmcMaybe *)found->payload;
@@ -5221,7 +5198,8 @@ defmodule Elmc.Runtime.Generator do
     }
 
     ElmcValue *elmc_dict_member(ElmcValue *key, ElmcValue *dict) {
-      ElmcValue *found = elmc_dict_get_take(key, dict);
+      ElmcValue *found = NULL;
+      if (elmc_dict_get(&found, key, dict) != RC_SUCCESS) found = NULL;
       int present = 0;
       if (found && found->tag == ELMC_TAG_MAYBE && found->payload != NULL) {
         present = ((ElmcMaybe *)found->payload)->is_just;
@@ -5410,11 +5388,8 @@ defmodule Elmc.Runtime.Generator do
           while (cursor && cursor->tag == ELMC_TAG_LIST && cursor->payload != NULL) {
             ElmcCons *node = (ElmcCons *)cursor->payload;
             if (!inserted) {
-              order = elmc_basics_compare_take(value, node->head);
-              if (!order) {
-                rc = RC_ERR_INVALID_ARG;
-                CHECK_RC(rc);
-              }
+              rc = elmc_basics_compare(&order, value, node->head);
+              CHECK_RC(rc);
               elmc_int_t cmp = elmc_as_int(order);
               elmc_release(order);
               order = NULL;
@@ -7292,8 +7267,10 @@ defmodule Elmc.Runtime.Generator do
           ElmcValue *cursor = first->tail;
           while (cursor && cursor->tag == ELMC_TAG_LIST && cursor->payload != NULL) {
             ElmcCons *node = (ElmcCons *)cursor->payload;
-            ElmcValue *order = elmc_basics_compare_take(node->head, best);
-            int is_gt = order && elmc_as_int(order) > 0;
+            ElmcValue *order = NULL;
+            rc = elmc_basics_compare(&order, node->head, best);
+            CHECK_RC(rc);
+            int is_gt = elmc_as_int(order) > 0;
             elmc_release(order);
             if (is_gt) {
               elmc_release(best);
@@ -7324,8 +7301,10 @@ defmodule Elmc.Runtime.Generator do
           ElmcValue *cursor = first->tail;
           while (cursor && cursor->tag == ELMC_TAG_LIST && cursor->payload != NULL) {
             ElmcCons *node = (ElmcCons *)cursor->payload;
-            ElmcValue *order = elmc_basics_compare_take(node->head, best);
-            int is_lt = order && elmc_as_int(order) < 0;
+            ElmcValue *order = NULL;
+            rc = elmc_basics_compare(&order, node->head, best);
+            CHECK_RC(rc);
+            int is_lt = elmc_as_int(order) < 0;
             elmc_release(order);
             if (is_lt) {
               elmc_release(best);
@@ -7451,7 +7430,8 @@ defmodule Elmc.Runtime.Generator do
           CHECK_RC(rc);
           rc = elmc_closure_call_rc(&key_right, f, args_right, 1);
           CHECK_RC(rc);
-          order = elmc_basics_compare_take(key_left, key_right);
+          rc = elmc_basics_compare(&order, key_left, key_right);
+          CHECK_RC(rc);
           *cmp_out = elmc_order_cmp(order);
           elmc_release(order);
           order = NULL;
@@ -10779,7 +10759,8 @@ defmodule Elmc.Runtime.Generator do
     }
 
     static int elmc_dict_key_cmp(ElmcValue *left_key, ElmcValue *right_key) {
-      ElmcValue *order = elmc_basics_compare_take(left_key, right_key);
+      ElmcValue *order = NULL;
+      if (elmc_basics_compare(&order, left_key, right_key) != RC_SUCCESS) return 0;
       int cmp = (int)elmc_as_int(order);
       elmc_release(order);
       return cmp;
@@ -10971,7 +10952,8 @@ defmodule Elmc.Runtime.Generator do
       ElmcValue *old_val = NULL;
       ElmcValue *new_maybe = NULL;
       CATCH_BEGIN
-        old_val = elmc_dict_get_take(key, dict);
+        rc = elmc_dict_get(&old_val, key, dict);
+        CHECK_RC(rc);
         ElmcValue *args[1] = { old_val };
         rc = elmc_closure_call_rc(&new_maybe, f, args, 1);
         CHECK_RC(rc);

@@ -3,6 +3,7 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
   alias Elmc.Backend.CCodegen.Types, as: Types
 
 
+  alias Elmc.Backend.CCodegen.DirectRender.Emit.BoxedOperand
   alias Elmc.Backend.CCodegen.DirectRender.RecordViewPeel
   alias Elmc.Backend.CCodegen.ConstantInt
   alias Elmc.Backend.CCodegen.CSource
@@ -366,7 +367,7 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
   def structural_expr?(%{op: :int_literal, union_ctor: ctor}) when is_binary(ctor), do: false
 
   def structural_expr?(%{op: op})
-      when op in [:int_literal, :char_literal, :add_const, :sub_const, :add_vars],
+      when op in [:int_literal, :char_literal, :add_const, :sub_const, :add_vars, :sub_vars, :mul_vars],
       do: true
 
   def structural_expr?(%{op: :call, name: name, args: args})
@@ -614,7 +615,7 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
             {"", getter, counter}
 
           nil ->
-            {arg_code, arg_var, counter} = Host.compile_expr(arg_expr, env, counter)
+            {arg_code, arg_var, counter} = BoxedOperand.compile(arg_expr, env, counter)
             next = counter + 1
             out = "native_field_#{next}"
             getter =
@@ -1096,7 +1097,7 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
             )
 
         :error ->
-          {list_code, list_var, _counter} = Host.compile_expr(list, env, counter)
+          {list_code, list_var, _counter} = BoxedOperand.compile(list, env, counter)
 
           """
           #{list_code}#{index_code}#{default_code}
@@ -1151,17 +1152,17 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
     {maybe_code, maybe_ref, release_maybe, counter} =
       case maybe do
         %{op: :qualified_call, target: "List.head", args: [list]} ->
-          {code, var, counter} = Host.compile_expr(list, env, counter)
+          {code, var, counter} = BoxedOperand.compile(list, env, counter)
           # Borrow the list — do not release it after the peek.
           {code, "elmc_list_head_with_default_int(#{default_ref}, #{var})", false, counter}
 
         %{op: :runtime_call, function: "elmc_list_head", args: [list]} ->
-          {code, var, counter} = Host.compile_expr(list, env, counter)
+          {code, var, counter} = BoxedOperand.compile(list, env, counter)
           {code, "elmc_list_head_with_default_int(#{default_ref}, #{var})", false, counter}
 
         %{op: :qualified_call, target: "Array.get", args: [index, array]} ->
           {index_code, index_ref, counter} = compile_expr(index, env, counter)
-          {array_code, array_var, counter} = Host.compile_expr(array, env, counter)
+          {array_code, array_var, counter} = BoxedOperand.compile(array, env, counter)
 
           {
             index_code <> array_code,
@@ -1172,7 +1173,7 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
 
         %{op: :runtime_call, function: "elmc_array_get", args: [index, array]} ->
           {index_code, index_ref, counter} = compile_expr(index, env, counter)
-          {array_code, array_var, counter} = Host.compile_expr(array, env, counter)
+          {array_code, array_var, counter} = BoxedOperand.compile(array, env, counter)
 
           {
             index_code <> array_code,
@@ -1201,7 +1202,7 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
               {"", getter, false, counter}
 
             :error ->
-              {code, var, counter} = Host.compile_expr(maybe, env, counter)
+              {code, var, counter} = BoxedOperand.compile(maybe, env, counter)
               {code, "elmc_maybe_with_default_int(#{default_ref}, #{RcRuntimeEmit.value_expr(var)})", var, counter}
           end
 
@@ -1219,12 +1220,12 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
               {"", getter, false, counter}
 
             :error ->
-              {code, var, counter} = Host.compile_expr(maybe, env, counter)
+              {code, var, counter} = BoxedOperand.compile(maybe, env, counter)
               {code, "elmc_maybe_with_default_int(#{default_ref}, #{RcRuntimeEmit.value_expr(var)})", var, counter}
           end
 
         _ ->
-          {code, var, counter} = Host.compile_expr(maybe, env, counter)
+          {code, var, counter} = BoxedOperand.compile(maybe, env, counter)
           {code, "elmc_maybe_with_default_int(#{default_ref}, #{RcRuntimeEmit.value_expr(var)})", var, counter}
       end
 
@@ -1563,7 +1564,7 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
                 {"", ref, counter, true}
 
               nil ->
-                {code, var, c} = Host.compile_expr(list, operand_env, counter)
+                {code, var, c} = BoxedOperand.compile(list, operand_env, counter)
                 {code, var, c, false}
             end
 
@@ -1941,7 +1942,7 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
           Types.compile_counter()
         ) :: Types.native_scalar_compile_result()
   defp compile_fallback_boxed(expr, env, counter) do
-    {code, var, counter} = Host.compile_expr(expr, env, counter)
+    {code, var, counter} = BoxedOperand.compile(expr, env, counter)
     next = counter + 1
     out = "native_i_#{next}"
 
@@ -1967,7 +1968,7 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
   @spec compile_dict_get_with_default(Types.ir_expr(), String.t(), Types.ir_expr(), Types.compile_env(), Types.ir_expr()) :: Types.ir_expr()
 
   defp compile_dict_get_with_default(default_ref, key, dict, env, counter) do
-    {dict_code, dict_var, counter} = Host.compile_expr(dict, env, counter)
+    {dict_code, dict_var, counter} = BoxedOperand.compile(dict, env, counter)
 
     if expr?(key, env) do
       {key_code, key_ref, counter} = compile_expr(key, env, counter)
@@ -1980,7 +1981,7 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
         counter
       }
     else
-      {key_code, key_var, counter} = Host.compile_expr(key, env, counter)
+      {key_code, key_var, counter} = BoxedOperand.compile(key, env, counter)
       # Release only a freshly boxed key temp — never the dict, and never a
       # still-live let-bound key (reassigned next iteration via owned_reassign).
       release_key =

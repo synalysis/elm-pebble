@@ -7,7 +7,7 @@ defmodule Elmc.Backend.CCodegen.SubCompile do
   alias Elmc.Backend.CCodegen.Host
   alias Elmc.Backend.CCodegen.Native.Int, as: NativeInt
   alias Elmc.Backend.CCodegen.RcRuntimeEmit
-  alias Elmc.Backend.CCodegen.SpecialValues
+  alias Elmc.Backend.Plan.Lower.SpecialValues
   alias Elmc.Backend.CCodegen.Types
 
   @max_native_params 5

@@ -8,26 +8,27 @@ defmodule Elmc.Backend.Pebble.SourceWriter.DispatchCore.TagDispatch.Records.Reco
   @spec body() :: Types.c_source()
   def body do
     """
-          int built = 0;
-          for (int i = 0; i < field_count; i++) {
-            record_values[i] = elmc_new_int_take(field_values[i]);
-            if (!record_values[i]) {
-              built = i;
-              goto cleanup_values;
+          CATCH_BEGIN
+            Rc = elmc_new_int(&tag_value, tag);
+            CHECK_RC(Rc);
+            for (int i = 0; i < field_count; i++) {
+              Rc = elmc_new_int(&record_values[i], field_values[i]);
+              CHECK_RC(Rc);
+              built = i + 1;
             }
+            Rc = elmc_record_new_take(&payload_value, field_count, field_names, record_values);
+            CHECK_RC(Rc);
+            free(record_values);
+            record_values = NULL;
+            built = 0;
+            Rc = elmc_tuple2_take(&msg, tag_value, payload_value);
+            CHECK_RC(Rc);
+            tag_value = NULL;
+            payload_value = NULL;
+          CATCH_END
+          if (Rc != RC_SUCCESS) {
+            goto cleanup_values;
           }
-          built = field_count;
-
-          ElmcValue *payload_value = elmc_record_new_take_value(field_count, field_names, record_values);
-          free(record_values);
-
-          if (!payload_value) {
-            elmc_release(tag_value);
-            ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_dispatch_tag_record_int_fields", -2);
-          }
-
-          ElmcValue *msg = elmc_tuple2_take_value(tag_value, payload_value);
-          if (!msg) ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_dispatch_tag_record_int_fields", -2);
 
           elmc_pebble_prepare_dispatch(app);
           int rc = elmc_worker_dispatch(&app->worker, msg);

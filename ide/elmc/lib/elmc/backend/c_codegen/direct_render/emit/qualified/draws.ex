@@ -5,7 +5,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Qualified.Draws do
 
   alias Elmc.Backend.CCodegen.DirectRender.Emit.Commands
   alias Elmc.Backend.CCodegen.Host
-  alias Elmc.Backend.CCodegen.SpecialValues
+  alias Elmc.Backend.Plan.Lower.SpecialValues
   alias Elmc.Backend.CCodegen.Types
 
   @type emit_result :: Types.direct_emit_result() | :no_match

@@ -79,8 +79,8 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Values do
             {code, ref, c} = Host.compile_native_bool_expr(cond, env, counter)
             {code, ref, "", c}
           else
-            {code, var, c} = Host.compile_expr(cond, env, counter)
-            {code, "elmc_as_int(#{var}) != 0", Release.release_var(var, "  "), c}
+            {code, var, c} = Elmc.Backend.CCodegen.DirectRender.Emit.Operand.compile(cond, env, counter)
+            {code, "(bool)elmc_as_bool(#{var})", Release.release_var(var, "  "), c}
           end
 
         {then_code, then_ref, counter} = int_value(then_expr, env, counter)
@@ -553,7 +553,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Values do
             Host.compile_native_int_fallback(expr, env, counter)
 
           true ->
-            {expr_code, expr_var, counter} = Host.compile_expr(expr, env, counter)
+            {expr_code, expr_var, counter} = Elmc.Backend.CCodegen.DirectRender.Emit.Operand.compile(expr, env, counter)
             next = counter + 1
             int_var = "direct_i_#{next}"
 

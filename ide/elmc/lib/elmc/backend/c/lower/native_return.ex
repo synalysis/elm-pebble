@@ -5,6 +5,7 @@ defmodule Elmc.Backend.C.Lower.NativeReturn do
 
   alias Elmc.Backend.C.Lower.Function, as: CLowerFunction
   alias Elmc.Backend.CCodegen.Host
+  alias Elmc.Backend.CCodegen.Native.FunctionCall, as: NativeFunctionCall
   alias Elmc.Backend.CCodegen.Types
   alias Elmc.Backend.Plan.Types.{Block, FunctionPlan}
 
@@ -42,27 +43,38 @@ defmodule Elmc.Backend.C.Lower.NativeReturn do
         plan
 
       kind ->
-        # Bootstrap the cache before analyzing recursive call_fn sites in the same function.
-        _ = cache_kind(plan, plan.module, plan.name, kind)
-        ret_reg = ret_source_reg(plan)
+        decl_map = Process.get(:elmc_program_decls, %{})
 
-        if is_integer(ret_reg) and native_return_reg?(plan, ret_reg, kind) do
-          plan =
-            plan
-            |> Map.put(:native_scalar_return, kind)
-            |> maybe_mark_value_return()
-
-          if Map.get(plan, :native_scalar_value_return) do
-            cache_value_return(plan.module, plan.name)
-          else
-            uncache_value_return(plan.module, plan.name)
-          end
-
-          plan
-        else
+        # NativeReturn must not advertise `elmc_int_t *out` when the public emit
+        # path still uses boxed `ElmcValue **out` (e.g. Color→Int case helpers).
+        # Otherwise call sites write `&plan_native_int_N` into a boxed-out callee.
+        if NativeFunctionCall.return_kind(decl, plan.module, decl_map) != kind do
           uncache_kind(plan.module, plan.name)
           uncache_value_return(plan.module, plan.name)
           plan
+        else
+          # Bootstrap the cache before analyzing recursive call_fn sites in the same function.
+          _ = cache_kind(plan, plan.module, plan.name, kind)
+          ret_reg = ret_source_reg(plan)
+
+          if is_integer(ret_reg) and native_return_reg?(plan, ret_reg, kind) do
+            plan =
+              plan
+              |> Map.put(:native_scalar_return, kind)
+              |> maybe_mark_value_return()
+
+            if Map.get(plan, :native_scalar_value_return) do
+              cache_value_return(plan.module, plan.name)
+            else
+              uncache_value_return(plan.module, plan.name)
+            end
+
+            plan
+          else
+            uncache_kind(plan.module, plan.name)
+            uncache_value_return(plan.module, plan.name)
+            plan
+          end
         end
     end
   end
@@ -94,11 +106,9 @@ defmodule Elmc.Backend.C.Lower.NativeReturn do
   def ret_reg_allows_native?(_, _, _), do: false
 
   defp maybe_mark_value_return(%FunctionPlan{} = plan) do
-    if native_scalar_value_return?(plan) do
-      Map.put(plan, :native_scalar_value_return, true)
-    else
-      Map.delete(plan, :native_scalar_value_return)
-    end
+    # Keep the struct key present — Map.delete would drop it and later
+    # `%{plan | native_scalar_value_return: …}` updates KeyError (wasm lambda annotate).
+    Map.put(plan, :native_scalar_value_return, native_scalar_value_return?(plan))
   end
 
   @spec native_scalar_value_return?(FunctionPlan.t()) :: boolean()
@@ -126,6 +136,18 @@ defmodule Elmc.Backend.C.Lower.NativeReturn do
   @spec cache_scalar_return(String.t(), String.t(), scalar_kind()) :: :ok
   def cache_scalar_return(module, name, kind) when kind in [:native_int, :native_bool] do
     cache_kind(nil, module, name, kind)
+    :ok
+  end
+
+  @doc """
+  Drop a cached scalar-return kind when the emitted public ABI uses
+  `ElmcValue **out` instead of `elmc_int_t *out` / `bool *out`.
+  """
+  @spec uncache_scalar_return(String.t(), String.t()) :: :ok
+  def uncache_scalar_return(module, name)
+      when is_binary(module) and is_binary(name) do
+    uncache_kind(module, name)
+    uncache_value_return(module, name)
     :ok
   end
 
@@ -231,7 +253,7 @@ defmodule Elmc.Backend.C.Lower.NativeReturn do
   defp native_bool_value_reg?(plan, reg) do
     case CLowerFunction.all_defining_instrs(plan, reg) do
       [%{op: op} | _]
-      when op in [:compare, :bool_and, :test_maybe_nothing, :test_list_empty, :test_ctor_tag, :test_bool] ->
+      when op in [:compare, :bool_and, :test_maybe_nothing, :test_list_empty, :test_list_length_gte, :test_ctor_tag, :test_bool] ->
         true
 
       [%{op: :phi, args: %{truthy_native: true}}] ->

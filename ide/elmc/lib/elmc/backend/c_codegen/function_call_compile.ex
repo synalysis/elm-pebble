@@ -122,7 +122,9 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
           ElmcValue *all_args[#{max(full_arity, 1)}] = {0};
           #{merge_lines}
           #{arg_lines}
-          ElmcValue *payload = elmc_build_constructor_payload(all_args, #{full_arity});
+          ElmcValue *payload = NULL;
+          Rc = elmc_build_constructor_payload(&payload, all_args, #{full_arity});
+          CHECK_RC(Rc);
           ElmcValue *tag = captures[0] ? elmc_retain(captures[0]) : elmc_int_zero();
           Rc = elmc_tuple2_take(&result, tag, payload);
           CHECK_RC(Rc);

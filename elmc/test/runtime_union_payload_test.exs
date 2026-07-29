@@ -25,19 +25,19 @@ defmodule Elmc.RuntimeUnionPayloadTest do
       }
 
       int main(void) {
-        ElmcValue *plain = elmc_new_int_take(220);
+        ElmcValue *plain = ELMC_RC_INT_BOX(220);
         if (expect_int(plain, 220) != 0) return 2;
         elmc_release(plain);
 
-        ElmcValue *tag = elmc_new_int_take(1);
-        ElmcValue *payload = elmc_new_int_take(185);
-        ElmcValue *union_value = elmc_tuple2_take_value(tag, payload);
+        ElmcValue *tag = ELMC_RC_INT_BOX(1);
+        ElmcValue *payload = ELMC_RC_INT_BOX(185);
+        ElmcValue *union_value = ELMC_RC_TUPLE2_BOX(tag, payload);
         if (expect_int(union_value, 185) != 0) return 3;
         elmc_release(union_value);
 
-        ElmcValue *just_tag = elmc_new_int_take(1);
-        ElmcValue *just_payload = elmc_new_int_take(72);
-        ElmcValue *just_inner = elmc_tuple2_take_value(just_tag, just_payload);
+        ElmcValue *just_tag = ELMC_RC_INT_BOX(1);
+        ElmcValue *just_payload = ELMC_RC_INT_BOX(72);
+        ElmcValue *just_inner = ELMC_RC_TUPLE2_BOX(just_tag, just_payload);
         ElmcValue *just = NULL;
         if (elmc_maybe_just_own(&just, just_inner) != RC_SUCCESS) return 4;
         if (expect_int(elmc_maybe_or_tuple_just_payload_borrow(just), 72) != 0) return 5;

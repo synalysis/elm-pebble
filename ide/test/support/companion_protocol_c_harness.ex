@@ -723,14 +723,34 @@ defmodule Ide.CompanionProtocolCTestHarness do
 
     #define ELMC_PEBBLE_MSG_PHONE_TO_WATCH_TARGET 3
 
-    ElmcValue *elmc_new_int_take(int64_t value);
-    ElmcValue *elmc_new_bool_take(bool value);
-    ElmcValue *elmc_new_string_take(const char *value);
-    ElmcValue *elmc_tuple2_take_value(ElmcValue *left, ElmcValue *right);
-    ElmcValue *elmc_record_new_take_value(int field_count, const char **names, ElmcValue **values);
-    ElmcValue *elmc_list_from_int_array_take(const int32_t *values, int count);
-    ElmcValue *elmc_list_from_values_take_value(ElmcValue **values, int count);
-    ElmcValue *elmc_dict_from_list_take(ElmcValue *pairs);
+    typedef int RC;
+    #define RC_SUCCESS 0
+    #define RC_ERR_OUT_OF_MEMORY -1
+
+    RC elmc_new_int(ElmcValue **out, int64_t value);
+    RC elmc_new_bool(ElmcValue **out, bool value);
+    RC elmc_new_string(ElmcValue **out, const char *value);
+    RC elmc_tuple2_take(ElmcValue **out, ElmcValue *left, ElmcValue *right);
+    RC elmc_record_new_take(ElmcValue **out, int field_count, const char **names, ElmcValue **values);
+    RC elmc_list_from_int_array(ElmcValue **out, const int32_t *values, int count);
+    RC elmc_list_from_values_take(ElmcValue **out, ElmcValue **values, int count);
+    RC elmc_dict_from_list(ElmcValue **out, ElmcValue *pairs);
+
+    #define ELMC_RC_INT_BOX(value) \\
+      ({ ElmcValue *__elmc_rc_box = NULL; \\
+         elmc_new_int(&__elmc_rc_box, (value)) == RC_SUCCESS ? __elmc_rc_box : NULL; })
+
+    #define ELMC_RC_BOOL_BOX(value) \\
+      ({ ElmcValue *__elmc_rc_box = NULL; \\
+         elmc_new_bool(&__elmc_rc_box, (value)) == RC_SUCCESS ? __elmc_rc_box : NULL; })
+
+    #define ELMC_RC_STRING_BOX(value) \\
+      ({ ElmcValue *__elmc_rc_box = NULL; \\
+         elmc_new_string(&__elmc_rc_box, (value)) == RC_SUCCESS ? __elmc_rc_box : NULL; })
+
+    #define ELMC_RC_TUPLE2_BOX(left, right) \\
+      ({ ElmcValue *__elmc_rc_box = NULL; \\
+         elmc_tuple2_take(&__elmc_rc_box, (left), (right)) == RC_SUCCESS ? __elmc_rc_box : NULL; })
     void elmc_release(ElmcValue *value);
     int elmc_pebble_dispatch_tag_payload(ElmcPebbleApp *app, int64_t tag, ElmcValue *payload);
     int elmc_pebble_dispatch_tag_int_values(
@@ -759,52 +779,70 @@ defmodule Ide.CompanionProtocolCTestHarness do
       int initialized;
     };
 
-    ElmcValue *elmc_new_int_take(int64_t value) {
+    RC elmc_new_int(ElmcValue **out, int64_t value) {
       ElmcValue *v = calloc(1, sizeof(ElmcValue));
-      if (v) {
-        v->tag = 1;
-        v->payload = (void *)(intptr_t)value;
-      }
-      return v;
+      if (!v) return RC_ERR_OUT_OF_MEMORY;
+      v->tag = 1;
+      v->payload = (void *)(intptr_t)value;
+      *out = v;
+      return RC_SUCCESS;
     }
 
-    ElmcValue *elmc_new_bool_take(bool value) {
-      return elmc_new_int_take(value ? 1 : 0);
+    RC elmc_new_bool(ElmcValue **out, bool value) {
+      return elmc_new_int(out, value ? 1 : 0);
     }
 
-    ElmcValue *elmc_new_string_take(const char *value) {
+    RC elmc_new_string(ElmcValue **out, const char *value) {
       (void)value;
-      return calloc(1, sizeof(ElmcValue));
+      ElmcValue *v = calloc(1, sizeof(ElmcValue));
+      if (!v) return RC_ERR_OUT_OF_MEMORY;
+      *out = v;
+      return RC_SUCCESS;
     }
 
-    ElmcValue *elmc_tuple2_take_value(ElmcValue *left, ElmcValue *right) {
+    RC elmc_tuple2_take(ElmcValue **out, ElmcValue *left, ElmcValue *right) {
       (void)left;
       (void)right;
-      return calloc(1, sizeof(ElmcValue));
+      ElmcValue *v = calloc(1, sizeof(ElmcValue));
+      if (!v) return RC_ERR_OUT_OF_MEMORY;
+      *out = v;
+      return RC_SUCCESS;
     }
 
-    ElmcValue *elmc_record_new_take_value(int field_count, const char **names, ElmcValue **values) {
+    RC elmc_record_new_take(ElmcValue **out, int field_count, const char **names, ElmcValue **values) {
       (void)field_count;
       (void)names;
       (void)values;
-      return calloc(1, sizeof(ElmcValue));
+      ElmcValue *v = calloc(1, sizeof(ElmcValue));
+      if (!v) return RC_ERR_OUT_OF_MEMORY;
+      *out = v;
+      return RC_SUCCESS;
     }
 
-    ElmcValue *elmc_list_from_int_array_take(const int32_t *values, int count) {
+    RC elmc_list_from_int_array(ElmcValue **out, const int32_t *values, int count) {
       (void)values;
       (void)count;
-      return calloc(1, sizeof(ElmcValue));
+      ElmcValue *v = calloc(1, sizeof(ElmcValue));
+      if (!v) return RC_ERR_OUT_OF_MEMORY;
+      *out = v;
+      return RC_SUCCESS;
     }
 
-    ElmcValue *elmc_list_from_values_take_value(ElmcValue **values, int count) {
+    RC elmc_list_from_values_take(ElmcValue **out, ElmcValue **values, int count) {
       (void)values;
       (void)count;
-      return calloc(1, sizeof(ElmcValue));
+      ElmcValue *v = calloc(1, sizeof(ElmcValue));
+      if (!v) return RC_ERR_OUT_OF_MEMORY;
+      *out = v;
+      return RC_SUCCESS;
     }
 
-    ElmcValue *elmc_dict_from_list_take(ElmcValue *pairs) {
+    RC elmc_dict_from_list(ElmcValue **out, ElmcValue *pairs) {
       (void)pairs;
-      return calloc(1, sizeof(ElmcValue));
+      ElmcValue *v = calloc(1, sizeof(ElmcValue));
+      if (!v) return RC_ERR_OUT_OF_MEMORY;
+      *out = v;
+      return RC_SUCCESS;
     }
 
     void elmc_release(ElmcValue *value) {

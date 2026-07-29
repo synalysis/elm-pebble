@@ -285,17 +285,17 @@ defmodule Elmc.GeneratedRcTrack2048WorkerTest do
       enum { MODEL_FIELD_TURN = 4 };
 
       static ElmcValue *launch_context(void) {
-        ElmcValue *shape = elmc_new_int_take(1);
-        ElmcValue *height = elmc_new_int_take(168);
-        ElmcValue *width = elmc_new_int_take(144);
-        ElmcValue *color_mode = elmc_new_int_take(1);
+        ElmcValue *shape = ELMC_RC_INT_BOX(1);
+        ElmcValue *height = ELMC_RC_INT_BOX(168);
+        ElmcValue *width = ELMC_RC_INT_BOX(144);
+        ElmcValue *color_mode = ELMC_RC_INT_BOX(1);
         const char *screen_names[] = {"color_mode", "height", "shape", "width"};
         ElmcValue *screen_values[] = {color_mode, height, width, shape};
-        ElmcValue *screen = elmc_record_new_take_value(4, screen_names, screen_values);
-        ElmcValue *reason = elmc_new_int_take(1);
+        ElmcValue *screen = elmc_harness_record_new_take(4, screen_names, screen_values);
+        ElmcValue *reason = ELMC_RC_INT_BOX(1);
         const char *names[] = {"reason", "screen"};
         ElmcValue *values[] = {reason, screen};
-        return elmc_record_new_take_value(2, names, values);
+        return elmc_harness_record_new_take(2, names, values);
       }
 
       static void drain_cmds(ElmcWorkerState *state) {
@@ -323,7 +323,7 @@ defmodule Elmc.GeneratedRcTrack2048WorkerTest do
         elmc_release(context);
 
         for (int i = 0; i < 100; i++) {
-          ElmcValue *msg = elmc_new_int_take(dir_msgs[i % 4]);
+          ElmcValue *msg = ELMC_RC_INT_BOX(dir_msgs[i % 4]);
           if (elmc_worker_dispatch(&state, msg) != 0) {
             elmc_release(msg);
             return 3;
@@ -384,17 +384,17 @@ defmodule Elmc.GeneratedRcTrack2048WorkerTest do
       #include <stdio.h>
 
       static ElmcValue *launch_context(void) {
-        ElmcValue *shape = elmc_new_int_take(1);
-        ElmcValue *height = elmc_new_int_take(168);
-        ElmcValue *width = elmc_new_int_take(144);
-        ElmcValue *color_mode = elmc_new_int_take(1);
+        ElmcValue *shape = ELMC_RC_INT_BOX(1);
+        ElmcValue *height = ELMC_RC_INT_BOX(168);
+        ElmcValue *width = ELMC_RC_INT_BOX(144);
+        ElmcValue *color_mode = ELMC_RC_INT_BOX(1);
         const char *screen_names[] = {"color_mode", "height", "shape", "width"};
         ElmcValue *screen_values[] = {color_mode, height, width, shape};
-        ElmcValue *screen = elmc_record_new_take_value(4, screen_names, screen_values);
-        ElmcValue *reason = elmc_new_int_take(1);
+        ElmcValue *screen = elmc_harness_record_new_take(4, screen_names, screen_values);
+        ElmcValue *reason = ELMC_RC_INT_BOX(1);
         const char *names[] = {"reason", "screen"};
         ElmcValue *values[] = {reason, screen};
-        return elmc_record_new_take_value(2, names, values);
+        return elmc_harness_record_new_take(2, names, values);
       }
 
       static void drain_cmds(ElmcPebbleApp *app) {

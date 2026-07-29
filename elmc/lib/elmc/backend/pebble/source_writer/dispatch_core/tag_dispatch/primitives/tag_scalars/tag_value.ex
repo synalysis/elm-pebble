@@ -21,6 +21,8 @@ defmodule Elmc.Backend.Pebble.SourceWriter.DispatchCore.TagDispatch.Primitives.T
             Rc = elmc_new_int(&payload_value, value);
             CHECK_RC(Rc);
             Rc = elmc_tuple2_take(&msg, tag_value, payload_value);
+            tag_value = NULL;
+            payload_value = NULL;
             CHECK_RC(Rc);
           CATCH_END
           if (Rc != RC_SUCCESS) {

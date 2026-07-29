@@ -136,7 +136,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.CommandCall do
                         {code_acc, Map.put(env_acc, arg_name, peel_binding), releases_acc, c}
 
                       nil ->
-                        {code, ref, c2} = Host.compile_expr(arg_expr, env, c)
+                        {code, ref, c2} = Elmc.Backend.CCodegen.DirectRender.Emit.Operand.compile(arg_expr, env, c)
                         env_acc = Map.put(env_acc, arg_name, ref)
                         {code_acc <> "\n  " <> code, env_acc, releases_acc ++ [ref], c2}
                     end
@@ -282,7 +282,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.CommandCall do
     if hoisted_scope?, do: Process.delete(:elmc_hoisted_native_ints_scope)
 
     try do
-      {code, ref, counter} = Host.compile_expr(arg_expr, env, counter)
+      {code, ref, counter} = Elmc.Backend.CCodegen.DirectRender.Emit.Operand.compile(arg_expr, env, counter)
       {code, ref, [ref], counter}
     after
       if hoisted_scope?, do: Process.put(:elmc_hoisted_native_ints_scope, true)

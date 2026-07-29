@@ -209,7 +209,7 @@ defmodule Elmc.RcRequiredAllocAnalysisTest do
     assert body =~ "Rc = elmc_new_int(&"
     assert body =~ "Rc = elmc_record_new_values_take(out,"
     refute body =~ "_take_value"
-    refute body =~ "Rc = elmc_new_int_take("
+    refute body =~ "Rc = ELMC_RC_INT_BOX("
 
     refute generated_c =~ "static RC elmc_fn_Yes_Render_angleFromMinute("
 
@@ -248,8 +248,8 @@ defmodule Elmc.RcRequiredAllocAnalysisTest do
     assert generated_c =~ "RC elmc_fn_Main_batteryAlert("
     assert body =~ "CHECK_RC(Rc)"
     assert body =~ "elmc_as_int(owned[2])"
-    refute body =~ "Rc = elmc_new_int_take("
-    refute body =~ "Rc = elmc_new_bool_take("
+    refute body =~ "Rc = ELMC_RC_INT_BOX("
+    refute body =~ "Rc = ELMC_RC_BOOL_BOX("
     refute body =~ "ELMC_RELEASE(owned["
     refute body =~ "__cmp_"
     refute body =~ "owned[1] = tmp_"

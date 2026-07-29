@@ -3,6 +3,7 @@ defmodule Elmc.Backend.CCodegen.Native.Float do
   alias Elmc.Backend.CCodegen.Types, as: Types
 
 
+  alias Elmc.Backend.CCodegen.DirectRender.Emit.BoxedOperand
   alias Elmc.Backend.CCodegen.EnvBindings
   alias Elmc.Backend.CCodegen.Host
   alias Elmc.Backend.CCodegen.Native.RecordFields
@@ -199,7 +200,7 @@ defmodule Elmc.Backend.CCodegen.Native.Float do
   @spec compile_fallback(Types.ir_expr(), Types.compile_env(), Types.compile_counter()) ::
           compile_result()
   defp compile_fallback(expr, env, counter) do
-    {code, var, counter} = Host.compile_expr(expr, env, counter)
+    {code, var, counter} = BoxedOperand.compile(expr, env, counter)
     next = counter + 1
     out = "native_f_#{next}"
 

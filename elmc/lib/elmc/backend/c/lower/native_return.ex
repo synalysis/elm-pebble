@@ -5,6 +5,7 @@ defmodule Elmc.Backend.C.Lower.NativeReturn do
 
   alias Elmc.Backend.C.Lower.Function, as: CLowerFunction
   alias Elmc.Backend.CCodegen.Host
+  alias Elmc.Backend.CCodegen.Native.FunctionCall, as: NativeFunctionCall
   alias Elmc.Backend.CCodegen.Types
   alias Elmc.Backend.Plan.Types.{Block, FunctionPlan}
 
@@ -42,27 +43,38 @@ defmodule Elmc.Backend.C.Lower.NativeReturn do
         plan
 
       kind ->
-        # Bootstrap the cache before analyzing recursive call_fn sites in the same function.
-        _ = cache_kind(plan, plan.module, plan.name, kind)
-        ret_reg = ret_source_reg(plan)
+        decl_map = Process.get(:elmc_program_decls, %{})
 
-        if is_integer(ret_reg) and native_return_reg?(plan, ret_reg, kind) do
-          plan =
-            plan
-            |> Map.put(:native_scalar_return, kind)
-            |> maybe_mark_value_return()
-
-          if Map.get(plan, :native_scalar_value_return) do
-            cache_value_return(plan.module, plan.name)
-          else
-            uncache_value_return(plan.module, plan.name)
-          end
-
-          plan
-        else
+        # NativeReturn must not advertise `elmc_int_t *out` when the public emit
+        # path still uses boxed `ElmcValue **out` (e.g. Color→Int case helpers).
+        # Otherwise call sites write `&plan_native_int_N` into a boxed-out callee.
+        if NativeFunctionCall.return_kind(decl, plan.module, decl_map) != kind do
           uncache_kind(plan.module, plan.name)
           uncache_value_return(plan.module, plan.name)
           plan
+        else
+          # Bootstrap the cache before analyzing recursive call_fn sites in the same function.
+          _ = cache_kind(plan, plan.module, plan.name, kind)
+          ret_reg = ret_source_reg(plan)
+
+          if is_integer(ret_reg) and native_return_reg?(plan, ret_reg, kind) do
+            plan =
+              plan
+              |> Map.put(:native_scalar_return, kind)
+              |> maybe_mark_value_return()
+
+            if Map.get(plan, :native_scalar_value_return) do
+              cache_value_return(plan.module, plan.name)
+            else
+              uncache_value_return(plan.module, plan.name)
+            end
+
+            plan
+          else
+            uncache_kind(plan.module, plan.name)
+            uncache_value_return(plan.module, plan.name)
+            plan
+          end
         end
     end
   end
