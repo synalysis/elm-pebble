@@ -70,6 +70,10 @@ defmodule Elmc.WatchfaceTeaSemanticSmokeTest do
     if profile[:require_circles?] do
       assert out =~ "circle_ok=1"
     end
+
+    if profile[:require_fill_rects?] do
+      assert out =~ "fill_rect_ok=1"
+    end
   end
 
   defp pebble_harness_sources(out_dir, harness_path) do
@@ -85,6 +89,7 @@ defmodule Elmc.WatchfaceTeaSemanticSmokeTest do
 
   defp tea_harness_c(template, profile) do
     require_circles? = profile[:require_circles?]
+    require_fill_rects? = profile[:require_fill_rects?]
     require_time? = profile[:require_time?]
 
     circle_loop =
@@ -99,6 +104,19 @@ defmodule Elmc.WatchfaceTeaSemanticSmokeTest do
         ""
       end
 
+    fill_rect_loop =
+      if require_fill_rects? do
+        """
+            if (cmd.kind == ELMC_PEBBLE_DRAW_FILL_RECT) {
+              saw_fill_rect = 1;
+              /* FILL_RECT layout: p0=x p1=y p2=w p3=h */
+              if (cmd.p2 > 0 && cmd.p3 > 0) fill_rect_ok = 1;
+            }
+        """
+      else
+        ""
+      end
+
     circle_report =
       if require_circles? do
         ~s|printf("circle_ok=%d\\n", saw_circle && circle_ok);\n|
@@ -106,9 +124,23 @@ defmodule Elmc.WatchfaceTeaSemanticSmokeTest do
         ""
       end
 
+    fill_rect_report =
+      if require_fill_rects? do
+        ~s|printf("fill_rect_ok=%d\\n", saw_fill_rect && fill_rect_ok);\n|
+      else
+        ""
+      end
+
     circle_fail =
       if require_circles? do
         "if (require_circles && (!saw_circle || !circle_ok)) return 31;"
+      else
+        ""
+      end
+
+    fill_rect_fail =
+      if require_fill_rects? do
+        "if (require_fill_rects && (!saw_fill_rect || !fill_rect_ok)) return 32;"
       else
         ""
       end
@@ -209,12 +241,14 @@ defmodule Elmc.WatchfaceTeaSemanticSmokeTest do
       return 0;
     }
 
-    static int scene_semantics_ok(ElmcPebbleApp *app, int require_circles) {
+    static int scene_semantics_ok(ElmcPebbleApp *app, int require_circles, int require_fill_rects) {
       if (elmc_pebble_ensure_scene(app) != 0) return 20;
       int placeholder_time = 0;
       int time_text_ok = 0;
       int saw_circle = 0;
       int circle_ok = 0;
+      int saw_fill_rect = 0;
+      int fill_rect_ok = 0;
       int byte_offset = 0;
       while (byte_offset < app->scene.byte_count) {
         ElmcPebbleDrawCmd cmd = {0};
@@ -226,18 +260,22 @@ defmodule Elmc.WatchfaceTeaSemanticSmokeTest do
           if (strstr(cmd.text, "10:30") != NULL) time_text_ok = 1;
         }
     #{circle_loop}
+    #{fill_rect_loop}
       }
       printf("placeholder_time=%d\\n", placeholder_time);
       printf("time_text_ok=%d\\n", time_text_ok);
     #{circle_report}
+    #{fill_rect_report}
       if (placeholder_time) return 22;
     #{time_fail}
     #{circle_fail}
+    #{fill_rect_fail}
       return 0;
     }
 
     int main(void) {
       const int require_circles = #{if require_circles?, do: 1, else: 0};
+      const int require_fill_rects = #{if require_fill_rects?, do: 1, else: 0};
       ElmcPebbleApp app = {0};
       ElmcValue *flags = launch_context();
       if (!flags) return 1;
@@ -250,7 +288,7 @@ defmodule Elmc.WatchfaceTeaSemanticSmokeTest do
       ElmcPebbleDrawCmd view_cmds[8] = {0};
       if (elmc_pebble_view_commands(&app, view_cmds, 8) < 1) return 24;
 
-      int sem_rc = scene_semantics_ok(&app, require_circles);
+      int sem_rc = scene_semantics_ok(&app, require_circles, require_fill_rects);
       if (sem_rc != 0) return sem_rc;
 
       elmc_pebble_deinit(&app);

@@ -120,17 +120,10 @@ static void elmc_worker_snapshot_last_dispatch_cmds(ElmcWorkerState *state, Elmc
 }
 #endif
 
-static const struct { int64_t mask; int slot; } elmc_worker_sub_slot_table[] = {
-  { 16, 0 },
-  { 1, 1 },
-};
 static int elmc_sub_tag_slot(int64_t mask) {
   if (mask == 0) return -1;
-  for (unsigned int i = 0; i < sizeof(elmc_worker_sub_slot_table) / sizeof(elmc_worker_sub_slot_table[0]); i++) {
-    if (elmc_worker_sub_slot_table[i].mask == mask) return elmc_worker_sub_slot_table[i].slot;
-  }
+  (void)mask;
   return -1;
-
 }
 
 static void elmc_worker_clear_sub_tags(ElmcWorkerState *state) {
@@ -193,13 +186,7 @@ elmc_int_t elmc_worker_button_raw_msg_tag(ElmcWorkerState *state, elmc_int_t but
 
 static int64_t compute_subscriptions(ElmcWorkerState *state) {
   if (!state || !state->model) return 0;
-  ElmcValue *result = NULL;
-  RC sub_rc = elmc_fn_Main_subscriptions(&result, state->model);
-  if (sub_rc != RC_SUCCESS) {
-    ELMC_WORKER_LOG_RC_FAIL("worker subscriptions", sub_rc);
-    elmc_release(result);
-    return 0;
-  }
+  ElmcValue *result = elmc_int_zero();
 
   elmc_worker_clear_sub_tags(state);
   state->subscriptions = 0;
@@ -213,13 +200,9 @@ int elmc_worker_init(ElmcWorkerState *state, ElmcValue *flags) {
   state->subscriptions = 0;
   elmc_worker_clear_sub_tags(state);
   elmc_worker_heap_log("init:start");
-  ElmcValue *result = NULL;
-  RC init_rc = elmc_fn_Main_init(&result, flags);
-  if (init_rc != RC_SUCCESS) {
-    ELMC_WORKER_LOG_RC_FAIL("worker init", init_rc);
-    elmc_release(result);
-    return -2;
-  }
+  return -3;
+  (void)flags;
+  ElmcValue *result = elmc_int_zero();
 
   ElmcValue *next_model = extract_model_take(result);
   if (!next_model) {
@@ -254,13 +237,9 @@ int elmc_worker_dispatch(ElmcWorkerState *state, ElmcValue *msg) {
   elmc_worker_heap_log("update:start");
   ElmcValue *prev_model = state->model;
   uint32_t prev_mut_gen = elmc_record_mutation_gen(prev_model);
-  ElmcValue *result = NULL;
-  RC update_rc = elmc_fn_Main_update(&result, msg, state->model);
-  if (update_rc != RC_SUCCESS) {
-    ELMC_WORKER_LOG_RC_FAIL("worker update", update_rc);
-    elmc_release(result);
-    return -2;
-  }
+  return -4;
+  (void)msg;
+  ElmcValue *result = elmc_int_zero();
 
   ElmcValue *next_model = extract_model_take(result);
   if (!next_model) {

@@ -14,17 +14,21 @@ defmodule Elmc.TestSupport.HostSmoke do
   @spec default_tea_profile(String.t()) :: map()
   def default_tea_profile(template) do
     cond do
-      template in ~w(watchface_tangram_time watchface_analog watchface_color_shapes watchface_smoke_screen) ->
-        %{require_circles?: true, require_time?: false}
+      # Checkerboard of fillRect — no time/circle APIs (see watchface_smoke_screen Main.elm).
+      template == "watchface_smoke_screen" ->
+        %{require_circles?: false, require_fill_rects?: true, require_time?: false}
+
+      template in ~w(watchface_tangram_time watchface_analog watchface_color_shapes) ->
+        %{require_circles?: true, require_fill_rects?: false, require_time?: false}
 
       template in ~w(watchface_minimal app_minimal) ->
-        %{require_circles?: false, require_time?: false}
+        %{require_circles?: false, require_fill_rects?: false, require_time?: false}
 
       String.starts_with?(template, "watch_demo_") ->
-        %{require_circles?: false, require_time?: false}
+        %{require_circles?: false, require_fill_rects?: false, require_time?: false}
 
       true ->
-        %{require_circles?: false, require_time?: true}
+        %{require_circles?: false, require_fill_rects?: false, require_time?: true}
     end
   end
 

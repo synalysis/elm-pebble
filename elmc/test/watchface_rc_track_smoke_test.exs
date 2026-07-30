@@ -149,9 +149,9 @@ defmodule Elmc.WatchfaceRcTrackSmokeTest do
 
     /* Capability-based drain: answer cmds by kind + encoded msg tag (cmd.p0). */
     static int drain_init_cmds(ElmcPebbleApp *app) {
-      for (int round = 0; round < 4; round++) {
+      for (int round = 0; round < 8; round++) {
         int progressed = 0;
-        for (int j = 0; j < 16; j++) {
+        for (int j = 0; j < 32; j++) {
           ElmcPebbleCmd cmd = {0};
           if (elmc_pebble_take_cmd(app, &cmd) != 0) return 10;
           if (cmd.kind == ELMC_PEBBLE_CMD_NONE) return 0;
@@ -168,6 +168,30 @@ defmodule Elmc.WatchfaceRcTrackSmokeTest do
     #if ELMC_PEBBLE_FEATURE_CMD_GET_CURRENT_TIME_STRING
           if (cmd.kind == ELMC_PEBBLE_CMD_GET_CURRENT_TIME_STRING) {
             if (elmc_pebble_dispatch_tag_string(app, cmd.p0, "10:30") != 0) return 13;
+            continue;
+          }
+    #endif
+    #if ELMC_PEBBLE_FEATURE_CMD_GET_CLOCK_STYLE_24H
+          if (cmd.kind == ELMC_PEBBLE_CMD_GET_CLOCK_STYLE_24H) {
+            ElmcValue *flag = harness_int(1);
+            if (!flag) return 14;
+            if (elmc_pebble_dispatch_tag_payload(app, cmd.p0, flag) != 0) return 15;
+            elmc_release(flag);
+            continue;
+          }
+    #endif
+    #if ELMC_PEBBLE_FEATURE_CMD_GET_TIMEZONE_IS_SET
+          if (cmd.kind == ELMC_PEBBLE_CMD_GET_TIMEZONE_IS_SET) {
+            ElmcValue *flag = harness_int(1);
+            if (!flag) return 16;
+            if (elmc_pebble_dispatch_tag_payload(app, cmd.p0, flag) != 0) return 17;
+            elmc_release(flag);
+            continue;
+          }
+    #endif
+    #if ELMC_PEBBLE_FEATURE_CMD_GET_TIMEZONE
+          if (cmd.kind == ELMC_PEBBLE_CMD_GET_TIMEZONE) {
+            if (elmc_pebble_dispatch_tag_string(app, cmd.p0, "UTC") != 0) return 18;
             continue;
           }
     #endif

@@ -43,6 +43,9 @@ defmodule Elmc.Runtime.CmdQueue do
       CATCH_BEGIN
         rc = elmc_list_cons(out, head, tail);
         CHECK_RC(rc);
+        /* elmc_list_cons retains head/tail; take semantics drop caller ownership. */
+        elmc_release(head);
+        elmc_release(tail);
       CATCH_END
       return rc;
     }

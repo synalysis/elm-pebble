@@ -838,7 +838,7 @@
       "level": "ok",
       "score": 0,
       "reasons": [],
-      "c_boxed_locals": 1,
+      "c_boxed_locals": 2,
       "c_tmp_max": 0
     },
     {
@@ -846,7 +846,7 @@
       "level": "ok",
       "score": 0,
       "reasons": [],
-      "c_boxed_locals": 1,
+      "c_boxed_locals": 2,
       "c_tmp_max": 0
     },
     {
@@ -854,7 +854,7 @@
       "level": "ok",
       "score": 0,
       "reasons": [],
-      "c_boxed_locals": 1,
+      "c_boxed_locals": 2,
       "c_tmp_max": 0
     }
   ],
@@ -864,20 +864,20 @@
     "risk": 4
   },
   "code_size_indicators": {
-    "boxed_tmp_declarations": 4,
+    "boxed_tmp_declarations": 0,
     "closure_allocations": 0,
-    "commands_append_bytes": 6473,
-    "direct_command_defs": 2,
+    "commands_append_bytes": 6726,
+    "direct_command_defs": 4,
     "fusion_native_count": 12,
-    "generated_c_bytes": 81336,
-    "generated_c_lines": 2410,
+    "generated_c_bytes": 58290,
+    "generated_c_lines": 1603,
     "generic_function_defs": 9,
     "linked_binary": {
       "reason": "binary size is available after platform or host linking, not during C source generation",
       "available": false
     },
-    "owned_slot_max": 119,
-    "plan_function_count": 9,
+    "owned_slot_max": 60,
+    "plan_function_count": 16,
     "runtime_calls": {
       "elmc_list_all": 0,
       "elmc_list_any": 0,

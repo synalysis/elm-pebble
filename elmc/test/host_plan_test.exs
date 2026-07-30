@@ -100,6 +100,9 @@ defmodule Elmc.HostPlanTest do
     assert header =~ "int elmc_cmd_is_none(ElmcValue *value);"
     assert source =~ "RC elmc_cmd_queue_normalize(ElmcValue **out, ElmcValue *cmd)"
     assert source =~ "RC elmc_cmd_queue_concat_take(ElmcValue **out, ElmcValue *left, ElmcValue *right)"
+    # `_take` must drop caller ownership after list_cons retains head/tail.
+    assert source =~ "RC elmc_cmd_queue_cons_take(ElmcValue **out, ElmcValue *head, ElmcValue *tail)"
+    assert source =~ ~r/elmc_list_cons\(out, head, tail\);[\s\S]*?elmc_release\(head\);[\s\S]*?elmc_release\(tail\);/
     refute source =~ "static RC elmc_cmd_queue_normalize"
   end
 end
