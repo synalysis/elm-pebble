@@ -10,11 +10,11 @@ BASELINE_JSON="${ELMC_DIR}/docs/conformance_baseline.json"
 CURRENT_JSON="${ELMC_DIR}/test/tmp/conformance/scorecard.json"
 REPORT_MD="${ELMC_DIR}/test/tmp/conformance/guardrail_report.md"
 
+# shellcheck source=../ci-elmc-test-env.sh
+. "${ROOT_DIR}/scripts/ci-elmc-test-env.sh"
+
 echo "[conformance-guardrails] generating current scorecard..."
-(
-  cd "${ELMC_DIR}"
-  mix test test/conformance_scorecard_test.exs
-)
+"${ROOT_DIR}/scripts/mix-test-limited.sh" elmc test/conformance_scorecard_test.exs
 
 echo "[conformance-guardrails] comparing with baseline..."
 python3 "${ELMC_DIR}/scripts/compare_conformance_scorecard.py" \

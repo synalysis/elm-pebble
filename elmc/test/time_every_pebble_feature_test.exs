@@ -1,6 +1,8 @@
 defmodule Elmc.TimeEveryPebbleFeatureTest do
   use ExUnit.Case
 
+  alias Elmc.TestSupport.CachedCompile
+
   test "Time.every enables Pebble tick event feature flag" do
     uniq = System.unique_integer([:positive])
     project_dir = Path.join(System.tmp_dir!(), "elmc_time_every_#{uniq}")
@@ -67,7 +69,7 @@ defmodule Elmc.TimeEveryPebbleFeatureTest do
       """
     )
 
-    assert {:ok, _result} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+    assert {:ok, _result} = CachedCompile.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
 
     header = File.read!(Path.join(out_dir, "c/elmc_pebble.h"))
     assert header =~ "#define ELMC_PEBBLE_FEATURE_TICK_EVENTS 1"

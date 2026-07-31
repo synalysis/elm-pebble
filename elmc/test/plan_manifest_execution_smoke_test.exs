@@ -6,6 +6,7 @@ defmodule Elmc.PlanManifestExecutionSmokeTest do
 
   use ExUnit.Case, async: false
 
+  alias Elmc.TestSupport.CachedCompile
   alias Elmc.Backend.Bytecode.Loader
   alias Elmc.TestSupport.TemplateCompile
 
@@ -94,7 +95,7 @@ defmodule Elmc.PlanManifestExecutionSmokeTest do
     )
 
     assert {:ok, _} =
-             Elmc.compile(project_dir, %{
+             CachedCompile.compile(project_dir, %{
                out_dir: out_dir,
                entry_module: "Main",
                strip_dead_code: false

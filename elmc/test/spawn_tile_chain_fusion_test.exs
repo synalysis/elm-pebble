@@ -1,6 +1,8 @@
 defmodule Elmc.SpawnTileChainFusionTest do
   use ExUnit.Case, async: true
 
+  alias Elmc.TestSupport.CachedCompile
+
   @template_main Path.expand("../../ide/priv/project_templates/game_2048/src/Main.elm", __DIR__)
 
   test "initialBoard lowers spawnTileWithSeed chain under plan-primary" do
@@ -14,7 +16,7 @@ defmodule Elmc.SpawnTileChainFusionTest do
     File.write!(Path.join(project_dir, "src/Main.elm"), File.read!(@template_main))
 
     assert {:ok, _} =
-             Elmc.compile(project_dir, %{
+             CachedCompile.compile(project_dir, %{
                out_dir: out_dir,
                entry_module: "Main",
                strip_dead_code: false,

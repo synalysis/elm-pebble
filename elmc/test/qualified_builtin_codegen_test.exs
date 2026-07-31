@@ -37,6 +37,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
   end
 
 
+  alias Elmc.TestSupport.CachedCompile
   alias Elmc.TestSupport.SnippetProject
 
   defp compile_snippet!(name, source, compile \\ %{}) when is_binary(name) and is_binary(source) do
@@ -59,7 +60,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
     File.rm_rf!(out_dir)
 
     assert {:ok, _result} =
-             Elmc.compile(project_dir, %{
+             CachedCompile.compile(project_dir, %{
                out_dir: out_dir,
                entry_module: "Main",
                strip_dead_code: false
@@ -447,7 +448,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
     File.write!(main_path, source <> native_maybe_default_string_source())
 
     assert {:ok, _result} =
-             Elmc.compile(project_dir, %{
+             CachedCompile.compile(project_dir, %{
                out_dir: out_dir,
                entry_module: "Main",
                strip_dead_code: false
@@ -745,7 +746,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
     File.write!(main_path, text_options_source())
 
     assert {:ok, _result} =
-             Elmc.compile(project_dir, %{
+             CachedCompile.compile(project_dir, %{
                out_dir: out_dir,
                entry_module: "Main",
                direct_render_only: true,
@@ -1068,7 +1069,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
     File.cp_r!(source_fixture, project_dir)
 
     assert {:ok, _result} =
-             Elmc.compile(project_dir, %{
+             CachedCompile.compile(project_dir, %{
                out_dir: out_dir,
                entry_module: "Main",
                direct_render_only: true,
@@ -1109,7 +1110,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
     File.cp_r!(source_fixture, project_dir)
     File.write!(Path.join(project_dir, "src/Main.elm"), cmd_batch_main_source())
 
-    assert {:ok, _result} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+    assert {:ok, _result} = CachedCompile.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
     assert generated_c =~ "elmc_list_from_values"
@@ -1165,7 +1166,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
     File.cp_r!(source_fixture, project_dir)
     File.write!(Path.join(project_dir, "src/Main.elm"), generic_ui_main_source())
 
-    assert {:ok, _result} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+    assert {:ok, _result} = CachedCompile.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
     assert generated_c =~ "elmc_fn_Pebble_Ui_toUiNode"
@@ -1223,7 +1224,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
     File.cp_r!(source_fixture, project_dir)
     File.write!(Path.join(project_dir, "src/Main.elm"), top_level_function_reference_source())
 
-    assert {:ok, _result} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+    assert {:ok, _result} = CachedCompile.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
     refute generated_c =~ "elmc_fn_Main_drawCell(NULL, 0)"
@@ -3064,7 +3065,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
     File.cp_r!(source_fixture, project_dir)
     File.write!(Path.join(project_dir, "src/Main.elm"), maybe_tuple_case_source())
 
-    assert {:ok, _result} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+    assert {:ok, _result} = CachedCompile.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
@@ -3173,7 +3174,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
     )
 
     assert {:ok, _result} =
-             Elmc.compile(project_dir, %{
+             CachedCompile.compile(project_dir, %{
                out_dir: out_dir,
                entry_module: "Main",
                strip_dead_code: false
@@ -3226,7 +3227,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
     )
 
     assert {:ok, _result} =
-             Elmc.compile(project_dir, %{
+             CachedCompile.compile(project_dir, %{
                out_dir: out_dir,
                entry_module: "Main",
                strip_dead_code: false
@@ -3277,7 +3278,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
     File.cp_r!(source_fixture, project_dir)
     File.write!(Path.join(project_dir, "src/Main.elm"), direct_map_range_native_source())
 
-    assert {:ok, _result} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+    assert {:ok, _result} = CachedCompile.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
@@ -3353,7 +3354,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
     File.cp_r!(source_fixture, project_dir)
     File.write!(Path.join(project_dir, "src/Main.elm"), direct_map_affine_source())
 
-    assert {:ok, _result} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+    assert {:ok, _result} = CachedCompile.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
@@ -3375,7 +3376,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
     File.cp_r!(source_fixture, project_dir)
     File.write!(Path.join(project_dir, "src/Main.elm"), direct_indexed_map_affine_source())
 
-    assert {:ok, _result} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+    assert {:ok, _result} = CachedCompile.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
@@ -3398,7 +3399,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
     File.cp_r!(source_fixture, project_dir)
     File.write!(Path.join(project_dir, "src/Main.elm"), direct_indexed_map_affine_cells_source())
 
-    assert {:ok, _result} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+    assert {:ok, _result} = CachedCompile.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
@@ -3428,7 +3429,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
       direct_indexed_map_affine_cells_text_source()
     )
 
-    assert {:ok, _result} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+    assert {:ok, _result} = CachedCompile.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
@@ -3457,7 +3458,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
       direct_indexed_map_affine_cells_fill_skip_source()
     )
 
-    assert {:ok, _result} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+    assert {:ok, _result} = CachedCompile.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
@@ -3496,7 +3497,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
       direct_indexed_map_affine_layout_cells_source()
     )
 
-    assert {:ok, _result} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+    assert {:ok, _result} = CachedCompile.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
@@ -3554,7 +3555,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
     File.write!(Path.join(project_dir, "src/Main.elm"), source)
 
     assert {:ok, _result} =
-             Elmc.compile(project_dir, %{
+             CachedCompile.compile(project_dir, %{
                out_dir: out_dir,
                entry_module: "Main",
                direct_render_only: true
@@ -3650,7 +3651,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
     File.cp_r!(source_fixture, project_dir)
     File.write!(Path.join(project_dir, "src/Main.elm"), direct_indexed_map_affine_rect_source())
 
-    assert {:ok, _result} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+    assert {:ok, _result} = CachedCompile.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
@@ -3672,7 +3673,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
     File.cp_r!(source_fixture, project_dir)
     File.write!(Path.join(project_dir, "src/Main.elm"), direct_indexed_pass_through_source())
 
-    assert {:ok, _result} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+    assert {:ok, _result} = CachedCompile.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
@@ -3693,7 +3694,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
     File.cp_r!(source_fixture, project_dir)
     File.write!(Path.join(project_dir, "src/Main.elm"), direct_static_table_source())
 
-    assert {:ok, _result} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+    assert {:ok, _result} = CachedCompile.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
@@ -3713,7 +3714,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
     File.cp_r!(source_fixture, project_dir)
     File.write!(Path.join(project_dir, "src/Main.elm"), direct_concat_literal_source())
 
-    assert {:ok, _result} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+    assert {:ok, _result} = CachedCompile.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
@@ -3735,7 +3736,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
     File.write!(main_path, File.read!(main_path) <> constructor_switch_threshold_source())
 
     assert {:ok, _result} =
-             Elmc.compile(project_dir, %{
+             CachedCompile.compile(project_dir, %{
                out_dir: out_dir,
                entry_module: "Main",
                strip_dead_code: false
@@ -3765,7 +3766,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
     )
 
     assert {:ok, _result} =
-             Elmc.compile(project_dir, %{
+             CachedCompile.compile(project_dir, %{
                out_dir: out_dir,
                entry_module: "CoreCompliance",
                strip_dead_code: false
@@ -3792,7 +3793,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
     File.mkdir_p!(Path.dirname(project_dir))
     File.cp_r!(source_fixture, project_dir)
 
-    assert {:ok, _result} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+    assert {:ok, _result} = CachedCompile.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
 
     runtime_h = File.read!(Path.join(out_dir, "runtime/elmc_runtime.h"))
 
@@ -5242,7 +5243,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
     File.write!(Path.join(project_dir, "src/Main.elm"), File.read!(elmtris_main))
 
     assert {:ok, _result} =
-             Elmc.compile(project_dir, %{
+             CachedCompile.compile(project_dir, %{
                out_dir: out_dir,
                entry_module: "Main",
                strip_dead_code: true
@@ -5364,7 +5365,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
     """)
 
     assert {:ok, _} =
-             Elmc.compile(project_dir, %{
+             CachedCompile.compile(project_dir, %{
                out_dir: out_dir,
                entry_module: "Main",
                strip_dead_code: false,

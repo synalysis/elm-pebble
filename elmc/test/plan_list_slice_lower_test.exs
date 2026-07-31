@@ -3,6 +3,7 @@ defmodule Elmc.PlanListSliceLowerTest do
 
   @moduletag timeout: 360_000
 
+  alias Elmc.TestSupport.CachedCompile
   alias Elmc.Test.CCodegenExtract
   alias Elmc.Backend.CCodegen.GeneratedSource
   alias Elmc.Backend.Plan.Lower.Function, as: PlanLower
@@ -29,7 +30,7 @@ defmodule Elmc.PlanListSliceLowerTest do
     )
 
     assert {:ok, result} =
-             Elmc.compile(project_dir, %{
+             CachedCompile.compile(project_dir, %{
                out_dir: out_dir,
                entry_module: "Main",
                strip_dead_code: false,
@@ -98,7 +99,7 @@ defmodule Elmc.PlanListSliceLowerTest do
     )
 
     assert {:ok, result} =
-             Elmc.compile(project_dir, %{
+             CachedCompile.compile(project_dir, %{
                out_dir: out_dir,
                entry_module: "Main",
                strip_dead_code: false,
@@ -170,7 +171,7 @@ defmodule Elmc.PlanListSliceLowerTest do
     )
 
     assert {:ok, result} =
-             Elmc.compile(project_dir, %{
+             CachedCompile.compile(project_dir, %{
                out_dir: out_dir,
                entry_module: "Main",
                strip_dead_code: false,
@@ -230,7 +231,7 @@ defmodule Elmc.PlanListSliceLowerTest do
     )
 
     assert {:ok, result} =
-             Elmc.compile(project_dir, %{
+             CachedCompile.compile(project_dir, %{
                out_dir: out_dir,
                entry_module: "Main",
                strip_dead_code: false,
@@ -290,7 +291,7 @@ defmodule Elmc.PlanListSliceLowerTest do
     )
 
     assert {:ok, result} =
-             Elmc.compile(project_dir, %{
+             CachedCompile.compile(project_dir, %{
                out_dir: out_dir,
                entry_module: "Main",
                strip_dead_code: false,
@@ -336,7 +337,7 @@ defmodule Elmc.PlanListSliceLowerTest do
     File.write!(Path.join(project_dir, "src/Main.elm"), File.read!(template_main))
 
     assert {:ok, _} =
-             Elmc.compile(project_dir, %{
+             CachedCompile.compile(project_dir, %{
                out_dir: out_dir,
                entry_module: "Main",
                strip_dead_code: true,
@@ -386,7 +387,7 @@ defmodule Elmc.PlanListSliceLowerTest do
     )
 
     assert {:ok, _} =
-             Elmc.compile(project_dir, %{
+             CachedCompile.compile(project_dir, %{
                out_dir: out_dir,
                entry_module: "Main",
                strip_dead_code: false,
@@ -414,7 +415,7 @@ defmodule Elmc.PlanListSliceLowerTest do
     File.write!(Path.join(project_dir, "src/Main.elm"), File.read!(template_main))
 
     assert {:ok, _} =
-             Elmc.compile(project_dir, %{
+             CachedCompile.compile(project_dir, %{
                out_dir: out_dir,
                entry_module: "Main",
                strip_dead_code: true,
@@ -442,7 +443,7 @@ defmodule Elmc.PlanListSliceLowerTest do
     File.write!(Path.join(project_dir, "src/Main.elm"), File.read!(template_main))
 
     assert {:ok, _} =
-             Elmc.compile(project_dir, %{
+             CachedCompile.compile(project_dir, %{
                out_dir: out_dir,
                entry_module: "Main",
                strip_dead_code: true,
@@ -469,7 +470,7 @@ defmodule Elmc.PlanListSliceLowerTest do
     File.write!(Path.join(project_dir, "src/Main.elm"), File.read!(template_main))
 
     assert {:ok, _} =
-             Elmc.compile(project_dir, %{
+             CachedCompile.compile(project_dir, %{
                out_dir: out_dir,
                entry_module: "Main",
                strip_dead_code: true,
@@ -514,7 +515,7 @@ defmodule Elmc.PlanListSliceLowerTest do
     )
 
     assert {:ok, result} =
-             Elmc.compile(project_dir, %{
+             CachedCompile.compile(project_dir, %{
                out_dir: out_dir,
                entry_module: "Main",
                strip_dead_code: false,
@@ -568,7 +569,7 @@ defmodule Elmc.PlanListSliceLowerTest do
     )
 
     assert {:ok, _result} =
-             Elmc.compile(project_dir, %{
+             CachedCompile.compile(project_dir, %{
                out_dir: out_dir,
                entry_module: "Main",
                strip_dead_code: false,
@@ -606,7 +607,7 @@ defmodule Elmc.PlanListSliceLowerTest do
     File.write!(Path.join(project_dir, "src/Main.elm"), File.read!(template_main))
 
     assert {:ok, _} =
-             Elmc.compile(project_dir, %{
+             CachedCompile.compile(project_dir, %{
                out_dir: out_dir,
                entry_module: "Main",
                strip_dead_code: true,
@@ -641,7 +642,7 @@ defmodule Elmc.PlanListSliceLowerTest do
     File.write!(Path.join(project_dir, "src/Main.elm"), File.read!(template_main))
 
     assert {:ok, _} =
-             Elmc.compile(project_dir, %{
+             CachedCompile.compile(project_dir, %{
                out_dir: out_dir,
                entry_module: "Main",
                strip_dead_code: false,

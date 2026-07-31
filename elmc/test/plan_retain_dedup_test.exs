@@ -1,6 +1,7 @@
 defmodule Elmc.PlanRetainDedupTest do
   use ExUnit.Case, async: false
 
+  alias Elmc.TestSupport.CachedCompile
   alias Elmc.Backend.Plan.Builder
   alias Elmc.Backend.Plan.Optimize
   alias Elmc.Backend.Plan.Types.{Block, FunctionPlan}
@@ -29,7 +30,7 @@ defmodule Elmc.PlanRetainDedupTest do
     File.write!(Path.join(project_dir, "src/Main.elm"), File.read!(template_main))
 
     assert {:ok, _} =
-             Elmc.compile(project_dir, %{
+             CachedCompile.compile(project_dir, %{
                out_dir: out_dir,
                entry_module: "Main",
                strip_dead_code: true,
@@ -56,7 +57,7 @@ defmodule Elmc.PlanRetainDedupTest do
     File.write!(Path.join(project_dir, "src/Main.elm"), File.read!(template_main))
 
     assert {:ok, _} =
-             Elmc.compile(project_dir, %{
+             CachedCompile.compile(project_dir, %{
                out_dir: out_dir,
                entry_module: "Main",
                strip_dead_code: true,
@@ -82,7 +83,7 @@ defmodule Elmc.PlanRetainDedupTest do
     File.write!(Path.join(project_dir, "src/Main.elm"), File.read!(template_main))
 
     assert {:ok, _} =
-             Elmc.compile(project_dir, %{
+             CachedCompile.compile(project_dir, %{
                out_dir: out_dir,
                entry_module: "Main",
                strip_dead_code: false,
@@ -109,7 +110,7 @@ defmodule Elmc.PlanRetainDedupTest do
     File.write!(Path.join(project_dir, "src/Main.elm"), File.read!(template_main))
 
     assert {:ok, _} =
-             Elmc.compile(project_dir, %{
+             CachedCompile.compile(project_dir, %{
                out_dir: out_dir,
                entry_module: "Main",
                strip_dead_code: false,

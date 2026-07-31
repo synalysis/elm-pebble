@@ -1,6 +1,7 @@
 defmodule Elmc.RuntimeUnionPayloadTest do
   use ExUnit.Case, async: true
 
+  alias Elmc.TestSupport.CachedCompile
   alias Elmc.Test.RcTrackHarness
 
   test "elmc_union_payload_int handles plain int and union tuple payloads" do
@@ -10,7 +11,7 @@ defmodule Elmc.RuntimeUnionPayloadTest do
     project_dir = Path.expand("fixtures/simple_project", __DIR__)
     out_dir = Path.expand("tmp/union_payload_runtime", __DIR__)
     File.rm_rf!(out_dir)
-    {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, strip_dead_code: false})
+    {:ok, _} = CachedCompile.compile(project_dir, %{out_dir: out_dir, strip_dead_code: false})
 
     harness_path = Path.join(out_dir, "union_payload_harness.c")
 

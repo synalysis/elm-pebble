@@ -55,8 +55,12 @@ fi
 if [[ ${RUN_ELMC} -eq 1 ]]; then
   echo "[core-oracle] running elmc core conformance tests..."
   (
-    cd "${ELMC_DIR}"
-    mix test test/core_compliance_test.exs test/core_differential_conformance_test.exs --trace --color > "${ELMC_LOG}"
+    # shellcheck source=../../scripts/ci-elmc-test-env.sh
+    . "${ROOT_DIR}/scripts/ci-elmc-test-env.sh"
+    "${ROOT_DIR}/scripts/mix-test-limited.sh" elmc \
+      test/core_compliance_test.exs \
+      test/core_differential_conformance_test.exs \
+      --trace --color > "${ELMC_LOG}"
   ) || ELMC_STATUS=$?
   echo "[core-oracle] elmc exit code: ${ELMC_STATUS}"
 fi

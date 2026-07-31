@@ -1,6 +1,8 @@
 defmodule Elmc.PebbleShimTest do
   use Elmc.TestSupport.PrimaryCodegenCase
 
+  alias Elmc.TestSupport.CachedCompile
+
   @companion_fixture Path.expand("fixtures/companion_project", __DIR__)
   @ide_dir Path.expand("../../ide", __DIR__)
 
@@ -71,7 +73,7 @@ defmodule Elmc.PebbleShimTest do
       """
     )
 
-    {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+    {:ok, _} = CachedCompile.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
 
     harness_path = Path.join(out_dir, "c/random_harness.c")
 
@@ -142,7 +144,7 @@ defmodule Elmc.PebbleShimTest do
     File.cp_r!(source_fixture, project_dir)
     write_storage_read_string_app!(project_dir)
 
-    {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+    {:ok, _} = CachedCompile.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
 
     harness_path = Path.join(out_dir, "c/storage_read_string_harness.c")
 
@@ -214,7 +216,7 @@ defmodule Elmc.PebbleShimTest do
     File.cp_r!(source_fixture, project_dir)
     write_storage_read_string_app!(project_dir, "MyStringLoaded")
 
-    {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+    {:ok, _} = CachedCompile.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
 
     harness_path = Path.join(out_dir, "c/storage_my_string_loaded_harness.c")
 
@@ -281,7 +283,7 @@ defmodule Elmc.PebbleShimTest do
     File.cp_r!(source_fixture, project_dir)
     write_many_draw_commands_app!(project_dir, 99)
 
-    {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+    {:ok, _} = CachedCompile.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
 
     harness_path = Path.join(out_dir, "c/scene_stream_harness.c")
 
@@ -350,7 +352,7 @@ defmodule Elmc.PebbleShimTest do
     File.cp_r!(source_fixture, project_dir)
     write_non_direct_multi_command_view_app!(project_dir)
 
-    {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+    {:ok, _} = CachedCompile.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
 
     refute File.read!(Path.join(out_dir, "c/elmc_pebble.h")) =~
              "ELMC_HAVE_DIRECT_COMMANDS_MAIN_VIEW"
@@ -426,7 +428,7 @@ defmodule Elmc.PebbleShimTest do
     File.cp_r!(source_fixture, project_dir)
     write_many_draw_commands_app!(project_dir, 99)
 
-    {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+    {:ok, _} = CachedCompile.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
 
     harness_path = Path.join(out_dir, "c/scene_cursor_harness.c")
 
@@ -500,7 +502,7 @@ defmodule Elmc.PebbleShimTest do
     File.cp_r!(source_fixture, project_dir)
     write_grid_scene_app!(project_dir)
 
-    {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+    {:ok, _} = CachedCompile.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
 
     harness_path = Path.join(out_dir, "c/scene_grid_chunk_harness.c")
 
@@ -574,7 +576,7 @@ defmodule Elmc.PebbleShimTest do
     File.cp_r!(source_fixture, project_dir)
     write_moving_rect_app!(project_dir)
 
-    {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+    {:ok, _} = CachedCompile.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
 
     harness_path = Path.join(out_dir, "c/scene_dirty_rect_harness.c")
 
@@ -654,7 +656,7 @@ defmodule Elmc.PebbleShimTest do
     write_midpoint_view_app!(project_dir)
 
     assert {:ok, _} =
-             Elmc.compile(project_dir, %{
+             CachedCompile.compile(project_dir, %{
                out_dir: out_dir,
                entry_module: "Main",
                direct_render_only: true,
@@ -731,7 +733,7 @@ defmodule Elmc.PebbleShimTest do
     write_digital_watchface_scene_app!(project_dir)
 
     assert {:ok, _} =
-             Elmc.compile(project_dir, %{
+             CachedCompile.compile(project_dir, %{
                out_dir: out_dir,
                entry_module: "Main",
                direct_render_only: true,
@@ -815,7 +817,7 @@ defmodule Elmc.PebbleShimTest do
     write_digital_watch_multi_clear_scene_app!(project_dir, 3)
 
     assert {:ok, _} =
-             Elmc.compile(project_dir, %{
+             CachedCompile.compile(project_dir, %{
                out_dir: out_dir,
                entry_module: "Main",
                direct_render_only: true,
@@ -901,7 +903,7 @@ defmodule Elmc.PebbleShimTest do
     write_centered_text_view_app!(project_dir)
 
     assert {:ok, _} =
-             Elmc.compile(project_dir, %{
+             CachedCompile.compile(project_dir, %{
                out_dir: out_dir,
                entry_module: "Main",
                direct_render_only: true,
@@ -987,7 +989,7 @@ defmodule Elmc.PebbleShimTest do
     File.cp_r!(source_fixture, project_dir)
     write_context_group_text_view_app!(project_dir)
 
-    assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+    assert {:ok, _} = CachedCompile.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
 
     harness_path = Path.join(out_dir, "c/context_group_text_harness.c")
 
@@ -1067,7 +1069,7 @@ defmodule Elmc.PebbleShimTest do
     File.rm_rf!(project_dir)
     File.rm_rf!(out_dir)
     File.cp_r!(source_fixture, project_dir)
-    {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+    {:ok, _} = CachedCompile.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
 
     harness_path = Path.join(out_dir, "c/pebble_harness.c")
 
@@ -1201,7 +1203,7 @@ defmodule Elmc.PebbleShimTest do
     File.cp_r!(source_fixture, project_dir)
     write_minimal_watchface!(project_dir)
 
-    assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+    assert {:ok, _} = CachedCompile.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
 
     harness_path = Path.join(out_dir, "c/portable_harness.c")
 
@@ -1271,7 +1273,7 @@ defmodule Elmc.PebbleShimTest do
     File.cp_r!(source_fixture, project_dir)
     write_frame_subscription_app!(project_dir)
 
-    assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+    assert {:ok, _} = CachedCompile.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
 
     generated = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
     refute String.contains?(generated, "141733928960")
@@ -1348,7 +1350,7 @@ defmodule Elmc.PebbleShimTest do
     File.cp_r!(source_fixture, project_dir)
     write_indexed_map_view!(project_dir)
 
-    assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+    assert {:ok, _} = CachedCompile.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
 
     generated = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
     assert String.contains?(generated, "elmc_fn_Main_view_scene_append")
@@ -1431,7 +1433,7 @@ defmodule Elmc.PebbleShimTest do
     File.cp_r!(source_fixture, project_dir)
     write_partial_collision_view!(project_dir)
 
-    assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+    assert {:ok, _} = CachedCompile.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
 
     generated = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
     assert String.contains?(generated, "elmc_closure_new_rc")
@@ -1563,7 +1565,7 @@ defmodule Elmc.PebbleShimTest do
     )
 
     assert {:ok, _} =
-             Elmc.compile(project_dir, %{
+             CachedCompile.compile(project_dir, %{
                out_dir: out_dir,
                entry_module: "Main",
                strip_dead_code: true
@@ -1662,7 +1664,7 @@ defmodule Elmc.PebbleShimTest do
     )
 
     assert {:ok, _} =
-             Elmc.compile(project_dir, %{
+             CachedCompile.compile(project_dir, %{
                out_dir: out_dir,
                entry_module: "Main",
                strip_dead_code: true
@@ -1856,7 +1858,7 @@ defmodule Elmc.PebbleShimTest do
     File.rm_rf!(rich_out)
     File.cp_r!(rich_fixture, rich_project)
 
-    assert {:ok, _} = Elmc.compile(rich_project, %{out_dir: rich_out, entry_module: "Main"})
+    assert {:ok, _} = CachedCompile.compile(rich_project, %{out_dir: rich_out, entry_module: "Main"})
 
     rich_header = File.read!(Path.join(rich_out, "c/elmc_pebble.h"))
     assert draw_feature?(rich_header, "ARC")
@@ -1871,7 +1873,7 @@ defmodule Elmc.PebbleShimTest do
     File.cp_r!(minimal_fixture, minimal_project)
     write_minimal_watchface!(minimal_project)
 
-    assert {:ok, _} = Elmc.compile(minimal_project, %{out_dir: minimal_out, entry_module: "Main"})
+    assert {:ok, _} = CachedCompile.compile(minimal_project, %{out_dir: minimal_out, entry_module: "Main"})
 
     minimal_header = File.read!(Path.join(minimal_out, "c/elmc_pebble.h"))
     assert draw_feature?(minimal_header, "CLEAR")
@@ -1891,7 +1893,7 @@ defmodule Elmc.PebbleShimTest do
     File.rm_rf!(out_dir)
     File.cp_r!(source_fixture, project_dir)
 
-    assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+    assert {:ok, _} = CachedCompile.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
 
     harness_path = Path.join(out_dir, "c/compact_scene_harness.c")
 
@@ -1990,7 +1992,7 @@ defmodule Elmc.PebbleShimTest do
     File.cp_r!(source_fixture, project_dir)
     write_grid_scene_app!(project_dir)
 
-    assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+    assert {:ok, _} = CachedCompile.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
 
     harness_path = Path.join(out_dir, "c/scene_dispatch_dirty_harness.c")
 
@@ -2071,7 +2073,7 @@ defmodule Elmc.PebbleShimTest do
     File.cp_r!(source_fixture, project_dir)
     write_grid_scene_app!(project_dir)
 
-    assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+    assert {:ok, _} = CachedCompile.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
 
     harness_path = Path.join(out_dir, "c/scene_dirty_direct_harness.c")
 
@@ -2180,7 +2182,7 @@ defmodule Elmc.PebbleShimTest do
 
     generate_companion_internal!(project_dir)
 
-    assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+    assert {:ok, _} = CachedCompile.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
 
     generated = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
@@ -2325,7 +2327,7 @@ defmodule Elmc.PebbleShimTest do
     generate_companion_internal!(project_dir)
 
     assert {:ok, _} =
-             Elmc.compile(project_dir, %{
+             CachedCompile.compile(project_dir, %{
                out_dir: out_dir,
                entry_module: "Main",
                direct_render_only: true,
@@ -2374,7 +2376,7 @@ defmodule Elmc.PebbleShimTest do
     File.cp_r!(source_fixture, project_dir)
     write_light_command_app!(project_dir)
 
-    assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+    assert {:ok, _} = CachedCompile.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
 
     header = File.read!(Path.join(out_dir, "c/elmc_pebble.h"))
     assert String.contains?(header, "#define ELMC_PEBBLE_FEATURE_CMD_BACKLIGHT 1")
@@ -2389,7 +2391,7 @@ defmodule Elmc.PebbleShimTest do
     File.cp_r!(source_fixture, project_dir)
     write_unreachable_feature_app!(project_dir)
 
-    assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+    assert {:ok, _} = CachedCompile.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
 
     header = File.read!(Path.join(out_dir, "c/elmc_pebble.h"))
     generated = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
@@ -2409,7 +2411,7 @@ defmodule Elmc.PebbleShimTest do
     write_direct_helper_feature_app!(project_dir)
 
     assert {:ok, _} =
-             Elmc.compile(project_dir, %{
+             CachedCompile.compile(project_dir, %{
                out_dir: out_dir,
                entry_module: "Main",
                direct_render_only: true,
@@ -2439,7 +2441,7 @@ defmodule Elmc.PebbleShimTest do
     File.cp_r!(source_fixture, project_dir)
     write_direct_helper_feature_app!(project_dir)
 
-    assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+    assert {:ok, _} = CachedCompile.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
 
     header = File.read!(Path.join(out_dir, "c/elmc_pebble.h"))
     generated = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
@@ -2461,7 +2463,7 @@ defmodule Elmc.PebbleShimTest do
     File.cp_r!(source_fixture, project_dir)
     write_fill_radial_feature_app!(project_dir)
 
-    assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+    assert {:ok, _} = CachedCompile.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
 
     header = File.read!(Path.join(out_dir, "c/elmc_pebble.h"))
 
@@ -2476,7 +2478,7 @@ defmodule Elmc.PebbleShimTest do
     File.rm_rf!(out_dir)
     File.cp_r!(source_fixture, project_dir)
 
-    assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+    assert {:ok, _} = CachedCompile.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
 
     header = File.read!(Path.join(out_dir, "c/elmc_pebble.h"))
     assert String.contains?(header, "#define ELMC_PEBBLE_ACCEL_SAMPLES_PER_UPDATE 2")
@@ -2491,7 +2493,7 @@ defmodule Elmc.PebbleShimTest do
     File.rm_rf!(out_dir)
     File.cp_r!(source_fixture, project_dir)
 
-    assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+    assert {:ok, _} = CachedCompile.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
 
     header = File.read!(Path.join(out_dir, "c/elmc_pebble.h"))
 
@@ -3624,7 +3626,7 @@ defmodule Elmc.PebbleShimTest do
     File.rm_rf!(out_dir)
 
     assert {:ok, _} =
-             Elmc.compile(source_fixture, %{out_dir: out_dir, entry_module: "Main"})
+             CachedCompile.compile(source_fixture, %{out_dir: out_dir, entry_module: "Main"})
 
     pebble_c = File.read!(Path.join(out_dir, "c/elmc_pebble.c"))
 
@@ -3643,7 +3645,7 @@ defmodule Elmc.PebbleShimTest do
     File.rm_rf!(out_dir)
 
     assert {:ok, _} =
-             Elmc.compile(source_fixture, %{out_dir: out_dir, entry_module: "Main"})
+             CachedCompile.compile(source_fixture, %{out_dir: out_dir, entry_module: "Main"})
 
     worker_c = File.read!(Path.join(out_dir, "c/elmc_worker.c"))
     runtime_c = File.read!(Path.join(out_dir, "runtime/elmc_runtime.c"))

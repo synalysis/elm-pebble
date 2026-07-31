@@ -18,7 +18,7 @@ defmodule Elmc.Test.RcTrackHarness do
         opts
       )
 
-    case Elmc.compile(project_dir, compile_opts) do
+    case Elmc.TestSupport.CachedCompile.compile(project_dir, compile_opts) do
       {:ok, _} -> :ok
       {:error, reason} -> flunk("compile failed: #{inspect(reason)}")
     end
@@ -133,16 +133,17 @@ defmodule Elmc.Test.RcTrackHarness do
 
     binary_path = Path.join(out_dir, binary_name)
 
-    {compile_out, compile_code} =
-      System.cmd(cc, compile_and_link_args(out_dir, sources, binary_path, opts),
-        stderr_to_stdout: true
-      )
+    Elmc.TestSupport.HostBinaryCache.fetch_or_build!(binary_path, sources, opts, fn ->
+      {compile_out, compile_code} =
+        System.cmd(cc, compile_and_link_args(out_dir, sources, binary_path, opts),
+          stderr_to_stdout: true
+        )
 
-    if compile_code != 0, do: flunk("harness compile failed:\n#{compile_out}")
+      if compile_code != 0, do: flunk("harness compile failed:\n#{compile_out}")
+      :ok
+    end)
 
-    {run_out, run_code} = System.cmd(binary_path, [], stderr_to_stdout: true)
-
-    {run_out, run_code}
+    System.cmd(binary_path, [], stderr_to_stdout: true)
   end
 
   @spec assert_balanced!(String.t()) :: :ok
@@ -309,6 +310,50 @@ defmodule Elmc.Test.RcTrackHarness do
       if (elmc_closure_new(&out, fn, arity, 0, NULL) != RC_SUCCESS) return NULL;
       return out;
     }
+
+    static ElmcValue *elmc_harness_closure_new_rc(
+        RC (*fn)(ElmcValue **out, ElmcValue **args, int argc, ElmcValue **captures, int capture_count),
+        int arity, int capture_count, ElmcValue **captures) {
+      ElmcValue *out = NULL;
+      if (elmc_closure_new_rc(&out, fn, arity, capture_count, captures) != RC_SUCCESS) return NULL;
+      return out;
+    }
+
+    static ElmcValue *elmc_harness_list_cons(ElmcValue *head, ElmcValue *tail) {
+      ElmcValue *out = NULL;
+      if (elmc_list_cons(&out, head, tail) != RC_SUCCESS) return NULL;
+      return out;
+    }
+
+    static ElmcValue *elmc_harness_list_concat(ElmcValue *lists) {
+      ElmcValue *out = NULL;
+      if (elmc_list_concat(&out, lists) != RC_SUCCESS) return NULL;
+      return out;
+    }
+
+    static ElmcValue *elmc_harness_new_float(double value) {
+      ElmcValue *out = NULL;
+      if (elmc_new_float(&out, value) != RC_SUCCESS) return NULL;
+      return out;
+    }
+
+    static ElmcValue *elmc_harness_record_new_values_take(int count, ElmcValue **values) {
+      ElmcValue *out = NULL;
+      if (elmc_record_new_values_take(&out, count, values) != RC_SUCCESS) return NULL;
+      return out;
+    }
+
+    static ElmcValue *elmc_harness_record_new_take(int count, const char **names, ElmcValue **values) {
+      ElmcValue *out = NULL;
+      if (elmc_record_new_take(&out, count, names, values) != RC_SUCCESS) return NULL;
+      return out;
+    }
+
+    static ElmcValue *elmc_harness_record_update_index(ElmcValue *record, elmc_int_t index, ElmcValue *value) {
+      ElmcValue *out = NULL;
+      if (elmc_record_update_index(&out, record, index, value) != RC_SUCCESS) return NULL;
+      return out;
+    }
     """
   end
 
@@ -333,21 +378,21 @@ defmodule Elmc.Test.RcTrackHarness do
         ElmcValue **args,
         int argc) {
       ElmcValue *out = NULL;
-      return fn(&out, args, argc) == RC_SUCCESS ? out : elmc_int_zero();
+      return fn(&out, args, argc) == RC_SUCCESS ? out : NULL;
     }
 
     static ElmcValue *elmc_harness_direct_rc_1_int(
         RC (*fn)(ElmcValue **out, elmc_int_t),
         elmc_int_t a0) {
       ElmcValue *out = NULL;
-      return fn(&out, a0) == RC_SUCCESS ? out : elmc_int_zero();
+      return fn(&out, a0) == RC_SUCCESS ? out : NULL;
     }
 
     static ElmcValue *elmc_harness_direct_rc_1_box(
         RC (*fn)(ElmcValue **out, ElmcValue *),
         ElmcValue *a0) {
       ElmcValue *out = NULL;
-      return fn(&out, a0) == RC_SUCCESS ? out : elmc_int_zero();
+      return fn(&out, a0) == RC_SUCCESS ? out : NULL;
     }
 
     static ElmcValue *elmc_harness_direct_rc_int_box(
@@ -355,7 +400,7 @@ defmodule Elmc.Test.RcTrackHarness do
         elmc_int_t a0,
         ElmcValue *a1) {
       ElmcValue *out = NULL;
-      return fn(&out, a0, a1) == RC_SUCCESS ? out : elmc_int_zero();
+      return fn(&out, a0, a1) == RC_SUCCESS ? out : NULL;
     }
 
     static ElmcValue *elmc_harness_direct_rc_2_box(
@@ -363,13 +408,13 @@ defmodule Elmc.Test.RcTrackHarness do
         ElmcValue *a0,
         ElmcValue *a1) {
       ElmcValue *out = NULL;
-      return fn(&out, a0, a1) == RC_SUCCESS ? out : elmc_int_zero();
+      return fn(&out, a0, a1) == RC_SUCCESS ? out : NULL;
     }
 
     static ElmcValue *elmc_harness_direct_rc_out_only(
         RC (*fn)(ElmcValue **out)) {
       ElmcValue *out = NULL;
-      return fn(&out) == RC_SUCCESS ? out : elmc_int_zero();
+      return fn(&out) == RC_SUCCESS ? out : NULL;
     }
 
     static ElmcValue *elmc_harness_direct_value_void(

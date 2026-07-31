@@ -25,12 +25,16 @@ defmodule Elmc.TestSupport.TemplateCompile do
       Path.join(System.tmp_dir!(), "elmc-template-out-#{template_name}-#{System.unique_integer([:positive])}")
     end)
 
-    compile_opts = build_compile_opts(opts, out_dir)
+    compile_opts =
+      opts
+      |> then(&build_compile_opts(&1, out_dir))
+      |> CompileCache.inject_compile_opts()
+
     cache_key = cache_key(template_name, template_src, compile_opts)
 
     case CompileCache.fetch(cache_key) do
       {:hit, result, out_cache} ->
-        CompileCache.materialize_out(out_cache, out_dir)
+        CompileCache.materialize_out(out_cache, out_dir, :auto)
         {:ok, result}
 
       :miss ->
@@ -111,10 +115,10 @@ defmodule Elmc.TestSupport.TemplateCompile do
   end
 
   defp cache_key(template_name, template_src, compile_opts) do
-    opts_fingerprint = Map.drop(compile_opts, [:out_dir])
+    opts_fingerprint = Map.drop(compile_opts, [:out_dir, :ir_cache_dir])
 
     fingerprint = {
-      :template_compile_v1,
+      :template_compile_v2,
       template_name,
       opts_fingerprint,
       CompileCache.dir_stamp(Path.join(template_src, "src")),

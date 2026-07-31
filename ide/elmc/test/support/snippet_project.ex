@@ -31,19 +31,22 @@ defmodule Elmc.TestSupport.SnippetProject do
       }
       |> Map.merge(normalize_compile_opts(Keyword.get(opts, :compile, %{})))
       |> Map.put(:out_dir, out_dir)
+      |> CompileCache.inject_compile_opts()
+
+    materialize = Keyword.get(opts, :materialize, :auto)
 
     cache_key =
       CompileCache.key({
-        :snippet_project_v1,
+        :snippet_project_v2,
         CompileCache.content_hash(main_source),
-        Map.drop(compile_opts, [:out_dir]),
+        Map.drop(compile_opts, [:out_dir, :ir_cache_dir]),
         platform_stamp(),
         CompileCache.compiler_identity()
       })
 
     case CompileCache.fetch(cache_key) do
       {:hit, result, out_cache} ->
-        CompileCache.materialize_out(out_cache, out_dir)
+        CompileCache.materialize_out(out_cache, out_dir, materialize)
         {:ok, enrich_result(result, out_dir)}
 
       :miss ->
@@ -63,11 +66,38 @@ defmodule Elmc.TestSupport.SnippetProject do
     end
   end
 
-  @doc "Compiles and returns `c/elmc_generated.c` contents."
+  @doc "Compiles and returns `c/elmc_generated.c` contents (no full out materialize on hit)."
   @spec generated_c!(String.t(), keyword()) :: String.t()
   def generated_c!(main_source, opts \\ []) do
-    out_dir = compile_main!(main_source, opts)
-    File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+    name = Keyword.get(opts, :name, "snippet")
+
+    compile_opts =
+      %{
+        entry_module: "Main"
+      }
+      |> Map.merge(normalize_compile_opts(Keyword.get(opts, :compile, %{})))
+      |> CompileCache.inject_compile_opts()
+
+    cache_key =
+      CompileCache.key({
+        :snippet_project_v2,
+        CompileCache.content_hash(main_source),
+        Map.drop(compile_opts, [:out_dir, :ir_cache_dir]),
+        platform_stamp(),
+        CompileCache.compiler_identity()
+      })
+
+    case CompileCache.fetch(cache_key) do
+      {:hit, _result, out_cache} ->
+        case CompileCache.read_generated_c(out_cache) do
+          {:ok, body} -> body
+          :error -> raise "cached snippet missing elmc_generated.c for #{name}"
+        end
+
+      :miss ->
+        out_dir = compile_main!(main_source, opts)
+        File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+    end
   end
 
   defp normalize_compile_opts(%{} = map), do: map
@@ -101,7 +131,9 @@ defmodule Elmc.TestSupport.SnippetProject do
 
       case Elmc.compile(tmp, compile_opts) do
         {:ok, result} ->
-          CompileCache.store(cache_key, result, compile_opts.out_dir)
+          # Snippet tests almost never need the full IR in the ETF; drop it to
+          # shrink cache entries (generated C + runtime still stored under out/).
+          CompileCache.store(cache_key, result, compile_opts.out_dir, drop_ir: true)
           {:ok, enrich_result(result, compile_opts.out_dir)}
 
         other ->

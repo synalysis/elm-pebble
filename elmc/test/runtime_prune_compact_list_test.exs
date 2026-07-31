@@ -1,6 +1,7 @@
 defmodule Elmc.RuntimePruneCompactListTest do
   use Elmc.TestSupport.PrimaryCodegenCase, async: false
 
+  alias Elmc.TestSupport.CachedCompile
   alias Elmc.Test.CCodegenExtract
 
   @moduletag timeout: 360_000
@@ -17,7 +18,7 @@ defmodule Elmc.RuntimePruneCompactListTest do
     File.write!(Path.join(project_dir, "src/Main.elm"), File.read!(@template_main))
 
     assert {:ok, _} =
-             Elmc.compile(project_dir, %{
+             CachedCompile.compile(project_dir, %{
                out_dir: out_dir,
                entry_module: "Main",
                strip_dead_code: false,

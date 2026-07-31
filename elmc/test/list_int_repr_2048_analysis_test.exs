@@ -1,6 +1,7 @@
 defmodule Elmc.ListIntRepr2048AnalysisTest do
   use ExUnit.Case, async: true
 
+  alias Elmc.TestSupport.CachedCompile
   alias Elmc.Test.CCodegenExtract
 
   @moduletag timeout: 360_000
@@ -15,7 +16,7 @@ defmodule Elmc.ListIntRepr2048AnalysisTest do
     File.write!(Path.join(project_dir, "src/Main.elm"), File.read!(@template_main))
 
     assert {:ok, result} =
-             Elmc.compile(project_dir, %{
+             CachedCompile.compile(project_dir, %{
                out_dir: Path.expand("tmp/list_int_repr_2048_analysis_out", __DIR__),
                entry_module: "Main",
                strip_dead_code: true
@@ -42,7 +43,7 @@ defmodule Elmc.ListIntRepr2048AnalysisTest do
     File.write!(Path.join(project_dir, "src/Main.elm"), File.read!(@template_main))
 
     assert {:ok, _} =
-             Elmc.compile(project_dir, %{
+             CachedCompile.compile(project_dir, %{
                out_dir: out_dir,
                entry_module: "Main",
                strip_dead_code: false,

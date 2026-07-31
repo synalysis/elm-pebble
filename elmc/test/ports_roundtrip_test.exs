@@ -1,6 +1,8 @@
 defmodule Elmc.PortsRoundtripTest do
   use Elmc.TestSupport.PrimaryCodegenCase
 
+  alias Elmc.TestSupport.CachedCompile
+
   test "host harness receives outgoing callback" do
     cc = System.find_executable("cc")
     if is_nil(cc), do: flunk("cc not available for ports roundtrip C test")
@@ -8,7 +10,7 @@ defmodule Elmc.PortsRoundtripTest do
     project_dir = Path.expand("fixtures/simple_project", __DIR__)
     out_dir = Path.expand("tmp/ports_roundtrip", __DIR__)
     File.rm_rf!(out_dir)
-    {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir})
+    {:ok, _} = CachedCompile.compile(project_dir, %{out_dir: out_dir})
 
     binary_path = Path.join(out_dir, "ports_harness")
 

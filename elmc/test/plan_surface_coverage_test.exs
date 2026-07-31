@@ -1,6 +1,8 @@
 defmodule Elmc.PlanSurfaceCoverageTest do
   use ExUnit.Case, async: false
 
+  alias Elmc.TestSupport.CachedCompile
+
   @moduletag :plan_surface
 
   @fixture Path.expand("fixtures/pebble_surface_project", __DIR__)
@@ -10,7 +12,7 @@ defmodule Elmc.PlanSurfaceCoverageTest do
     File.rm_rf!(out_dir)
 
     assert {:ok, result} =
-             Elmc.compile(@fixture, %{
+             CachedCompile.compile(@fixture, %{
                out_dir: out_dir,
                entry_module: "Main",
                strip_dead_code: true,
@@ -42,7 +44,7 @@ defmodule Elmc.PlanSurfaceCoverageTest do
     File.rm_rf!(out_dir)
 
     assert {:ok, result} =
-             Elmc.compile(@fixture, %{
+             CachedCompile.compile(@fixture, %{
                out_dir: out_dir,
                entry_module: "Main",
                strip_dead_code: true,
@@ -86,7 +88,7 @@ defmodule Elmc.PlanSurfaceCoverageTest do
     File.rm_rf!(out_dir)
 
     assert {:ok, result} =
-             Elmc.compile(@fixture, %{
+             CachedCompile.compile(@fixture, %{
                out_dir: out_dir,
                entry_module: "Main",
                strip_dead_code: true,

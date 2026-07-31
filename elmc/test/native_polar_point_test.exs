@@ -1,6 +1,8 @@
 defmodule Elmc.NativePolarPointTest do
   use ExUnit.Case
 
+  alias Elmc.TestSupport.CachedCompile
+
   @fixture_elm_json Path.expand("fixtures/simple_project/elm.json", __DIR__)
 
   test "fillCircle with record literal center compiles to elmc_render_cmd6" do
@@ -185,7 +187,7 @@ defmodule Elmc.NativePolarPointTest do
       %{out_dir: out_dir, entry_module: "Main"}
       |> Map.merge(extra_opts)
 
-    assert {:ok, _} = Elmc.compile(project_dir, opts)
+    assert {:ok, _} = CachedCompile.compile(project_dir, opts)
     File.read!(Path.join(out_dir, "c/elmc_generated.c"))
   end
 end

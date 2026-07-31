@@ -1,6 +1,7 @@
 defmodule Elmc.LaunchContextInitCodegenTest do
   use ExUnit.Case, async: false
 
+  alias Elmc.TestSupport.CachedCompile
   alias Elmc.Test.CCodegenExtract
 
   @fixture_elm_json Path.expand("fixtures/simple_project/elm.json", __DIR__)
@@ -51,7 +52,7 @@ defmodule Elmc.LaunchContextInitCodegenTest do
     File.write!(Path.join(project_dir, "elm.json"), File.read!(@fixture_elm_json))
 
     assert {:ok, _} =
-             Elmc.compile(project_dir, %{
+             CachedCompile.compile(project_dir, %{
                out_dir: out_dir,
                entry_module: "Main",
                direct_render_only: true,

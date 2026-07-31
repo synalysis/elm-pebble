@@ -306,7 +306,7 @@ defmodule Elmc.Test.ElmRunCorpus do
     task =
       Task.async(fn ->
         with {:ok, _} <-
-               Elmc.compile(project_dir, %{
+               Elmc.TestSupport.CachedCompile.compile(project_dir, %{
                  out_dir: out_dir,
                  strip_dead_code: false,
                  entry_module: entry_module,
@@ -539,6 +539,44 @@ defmodule Elmc.Test.ElmRunCorpus do
 
       File.write!(harness_path, elmc_execution_harness_source(entry_module, out_dir))
 
+      sources = [
+        Path.join(out_dir, "runtime/elmc_runtime.c"),
+        Path.join(out_dir, "ports/elmc_ports.c"),
+        Path.join(out_dir, "c/elmc_generated.c"),
+        harness_path
+      ]
+
+      link_opts = [rc_track: false, alloc_track: false, extra_flags: ["-Wall", "-Wextra"]]
+
+      case ensure_corpus_binary(cc, out_dir, sources, harness_path, binary_path, link_opts) do
+        {:error, _} = err ->
+          err
+
+        :ok ->
+          run_script = Path.expand("../../../scripts/run-with-ulimit.sh", __DIR__)
+          ulimit_kb = System.get_env("TEST_ULIMIT_V_KB", "4194304")
+
+          {run_out, run_code} =
+            System.cmd(
+              run_script,
+              [binary_path],
+              stderr_to_stdout: true,
+              env: [{"TEST_ULIMIT_V_KB", ulimit_kb}]
+            )
+
+          if run_code == 0 do
+            {:ok, run_out}
+          else
+            {:error, {:harness_run, run_code, run_out}}
+          end
+      end
+    end
+  end
+
+  defp ensure_corpus_binary(cc, out_dir, sources, harness_path, binary_path, link_opts) do
+    alias Elmc.TestSupport.HostBinaryCache
+
+    build = fn ->
       {compile_out, compile_code} =
         System.cmd(
           cc,
@@ -559,26 +597,36 @@ defmodule Elmc.Test.ElmRunCorpus do
           stderr_to_stdout: true
         )
 
-        if compile_code != 0 or not File.exists?(binary_path) do
-          {:error, {:harness_compile, compile_out}}
-        else
-          run_script = Path.expand("../../../scripts/run-with-ulimit.sh", __DIR__)
-          ulimit_kb = System.get_env("TEST_ULIMIT_V_KB", "4194304")
+      if compile_code != 0 or not File.exists?(binary_path) do
+        {:error, {:harness_compile, compile_out}}
+      else
+        :ok
+      end
+    end
 
-          {run_out, run_code} =
-            System.cmd(
-              run_script,
-              [binary_path],
-              stderr_to_stdout: true,
-              env: [{"TEST_ULIMIT_V_KB", ulimit_kb}]
-            )
+    if not HostBinaryCache.enabled?() do
+      build.()
+    else
+      key = HostBinaryCache.fingerprint(sources, link_opts)
+      cached = HostBinaryCache.cached_path(key)
 
-          if run_code == 0 do
-            {:ok, run_out}
-          else
-            {:error, {:harness_run, run_code, run_out}}
-          end
+      if File.regular?(cached) do
+        File.mkdir_p!(Path.dirname(binary_path))
+        File.cp!(cached, binary_path)
+        _ = File.chmod(binary_path, 0o755)
+        :ok
+      else
+        case build.() do
+          :ok ->
+            File.mkdir_p!(Path.dirname(cached))
+            File.cp!(binary_path, cached)
+            _ = File.chmod(cached, 0o755)
+            :ok
+
+          other ->
+            other
         end
+      end
     end
   end
 
@@ -705,7 +753,7 @@ defmodule Elmc.Test.ElmRunCorpus do
 
     out_dir = Path.join(tmp_dir, "out")
 
-    case Elmc.compile(tmp_dir, %{
+    case Elmc.TestSupport.CachedCompile.compile(tmp_dir, %{
            out_dir: out_dir,
            strip_dead_code: false,
            entry_module: module,

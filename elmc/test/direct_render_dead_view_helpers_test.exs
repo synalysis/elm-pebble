@@ -1,6 +1,7 @@
 defmodule Elmc.DirectRenderDeadViewHelpersTest do
   use ExUnit.Case, async: false
 
+  alias Elmc.TestSupport.CachedCompile
   alias Elmc.Test.CCodegenExtract
 
   @source_fixture Path.expand("fixtures/simple_project", __DIR__)
@@ -15,7 +16,7 @@ defmodule Elmc.DirectRenderDeadViewHelpersTest do
     File.write!(Path.join(@project_dir, "src/Main.elm"), File.read!(@template_main))
 
     assert {:ok, _} =
-             Elmc.compile(@project_dir, %{
+             CachedCompile.compile(@project_dir, %{
                out_dir: @out_dir,
                entry_module: "Main",
                strip_dead_code: true,
@@ -42,7 +43,7 @@ defmodule Elmc.DirectRenderDeadViewHelpersTest do
     File.rm_rf!(out)
 
     assert {:ok, _} =
-             Elmc.compile(@project_dir, %{
+             CachedCompile.compile(@project_dir, %{
                out_dir: out,
                entry_module: "Main",
                strip_dead_code: true,
@@ -96,7 +97,7 @@ defmodule Elmc.DirectRenderDeadViewHelpersTest do
     File.rm_rf!(out)
 
     assert {:ok, _} =
-             Elmc.compile(@project_dir, %{
+             CachedCompile.compile(@project_dir, %{
                out_dir: out,
                entry_module: "Main",
                strip_dead_code: true,

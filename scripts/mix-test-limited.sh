@@ -1,11 +1,18 @@
 #!/usr/bin/env bash
 # Run mix test with a virtual memory cap so a runaway suite does not OOM the host.
 # Override via TEST_ULIMIT_V_KB, ELIXIR_ERL_OPTIONS.
+# Loads shared elmc test cache env (compile / IR / host-bin) when available.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PKG="${1:-ide}"
 shift || true
+
+# shellcheck source=./ci-elmc-test-env.sh
+if [ -f "${ROOT}/scripts/ci-elmc-test-env.sh" ]; then
+  # shellcheck disable=SC1091
+  . "${ROOT}/scripts/ci-elmc-test-env.sh"
+fi
 
 ULIMIT_V_KB="${TEST_ULIMIT_V_KB:-6291456}"   # 6 GiB virtual (override for heavy suites)
 

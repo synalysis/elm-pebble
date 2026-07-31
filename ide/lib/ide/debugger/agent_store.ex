@@ -42,6 +42,7 @@ defmodule Ide.Debugger.AgentStore do
         timeout
       )
 
+    maybe_garbage_collect_agent(agent)
     {:ok, updated}
   end
 
@@ -76,19 +77,23 @@ defmodule Ide.Debugger.AgentStore do
 
     :ok = ensure_started(agent)
 
-    Agent.get_and_update(
-      agent,
-      fn store ->
-        case Map.get(store, session_key) do
-          previous when is_map(previous) -> on_previous.(previous)
-          _ -> :ok
-        end
+    result =
+      Agent.get_and_update(
+        agent,
+        fn store ->
+          case Map.get(store, session_key) do
+            previous when is_map(previous) -> on_previous.(previous)
+            _ -> :ok
+          end
 
-        prepared = prepare.(state)
-        {prepared, Map.put(store, session_key, prepared)}
-      end,
-      timeout
-    )
+          prepared = prepare.(state)
+          {prepared, Map.put(store, session_key, prepared)}
+        end,
+        timeout
+      )
+
+    maybe_garbage_collect_agent(agent)
+    result
   end
 
   @spec forget(String.t(), keyword()) :: :ok
@@ -113,6 +118,38 @@ defmodule Ide.Debugger.AgentStore do
       end,
       timeout
     )
+
+    # Corpus / multi-project sweeps leave large unreclaimed Agent heap after
+    # forget; force GC so the next template does not OOM under CI ulimit.
+    garbage_collect_agent(agent)
+    :ok
+  end
+
+  # Test suites mutate large debugger timelines repeatedly; reclaim Agent heap
+  # after each write so multi-file mix invocations stay under CI ulimit.
+  defp maybe_garbage_collect_agent(agent) do
+    if test_env?(), do: garbage_collect_agent(agent)
+    :ok
+  end
+
+  defp test_env? do
+    function_exported?(Mix, :env, 0) and Mix.env() == :test
+  rescue
+    _ -> false
+  end
+
+  defp garbage_collect_agent(pid) when is_pid(pid) do
+    if Process.alive?(pid), do: :erlang.garbage_collect(pid)
+    :ok
+  end
+
+  defp garbage_collect_agent(agent) when is_atom(agent) do
+    case Process.whereis(agent) do
+      pid when is_pid(pid) -> :erlang.garbage_collect(pid)
+      _ -> :ok
+    end
+
+    :ok
   end
 
   @spec fetch_or_default(store(), String.t(), default_state_fn()) :: Types.runtime_state()

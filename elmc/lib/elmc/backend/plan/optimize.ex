@@ -439,12 +439,14 @@ defmodule Elmc.Backend.Plan.Optimize do
          %{
            op: :call_runtime,
            dest: dest,
-           args: %{builtin: :retain, args: [_src]}
+           args: %{builtin: :retain, args: [_src]} = args
          },
          used
        )
        when is_integer(dest) do
-    not MapSet.member?(used, dest)
+    # view_peel retains encode peels (e.g. maybe_just_payload) — keep them even if
+    # the peeled dest looks unread in this block (downstream arms / inspect gates).
+    not Map.has_key?(args, :view_peel) and not MapSet.member?(used, dest)
   end
 
   defp dead_retain?(_, _), do: false
@@ -461,13 +463,9 @@ defmodule Elmc.Backend.Plan.Optimize do
 
   @spec instr_uses([map()]) :: [Types.reg()]
   defp instr_uses(instrs) do
-    Enum.flat_map(instrs, fn
-      %{dest: dest} = instr when is_integer(dest) ->
-        operand_regs(instr) ++ [dest]
-
-      instr ->
-        operand_regs(instr)
-    end)
+    # Destinations are definitions, not uses — including them would mark every
+    # produced reg "live" and defeat dead_retain? / DCE.
+    Enum.flat_map(instrs, &operand_regs/1)
   end
 
   @spec terminator_uses(term()) :: [Types.reg()]
@@ -485,24 +483,34 @@ defmodule Elmc.Backend.Plan.Optimize do
   defp operand_regs(%{op: :forward_ref_set, args: %{value: value}}) when is_integer(value),
     do: [value]
 
-  defp operand_regs(%{effects: %{borrows: borrows, consumes: consumes}}) do
-    (borrows || []) ++ (consumes || [])
+  defp operand_regs(instr) do
+    # Prefer effects when present, but also walk `args` so uses that are missing
+    # from borrows/consumes (e.g. some record_update COW shapes) stay live.
+    effect_regs =
+      case instr do
+        %{effects: %{borrows: borrows, consumes: consumes}} ->
+          (borrows || []) ++ (consumes || [])
+
+        _ ->
+          []
+      end
+
+    (effect_regs ++ args_regs(instr))
+    |> Enum.filter(&is_integer/1)
+    |> Enum.uniq()
   end
 
-  defp operand_regs(%{args: %{args: args}}) when is_list(args), do: args
-  defp operand_regs(%{args: %{lhs: lhs, rhs: rhs}}), do: [lhs, rhs]
+  @spec args_regs(term()) :: [Types.reg()]
+  defp args_regs(%{args: args}) when is_map(args), do: collect_regs(Map.values(args))
+  defp args_regs(_), do: []
 
-  defp operand_regs(%{args: %{base: base, value: value}})
-       when is_integer(base) and is_integer(value),
-       do: [base, value]
-
-  defp operand_regs(%{args: %{base: base}}) when is_integer(base), do: [base]
-  defp operand_regs(%{args: %{value: value}}) when is_integer(value), do: [value]
-  defp operand_regs(%{args: %{source: source}}) when is_integer(source), do: [source]
-  defp operand_regs(%{args: %{subject: subject}}) when is_integer(subject), do: [subject]
-  defp operand_regs(%{args: %{regs: regs}}) when is_list(regs), do: regs
-  defp operand_regs(%{args: %{params: params}}) when is_list(params), do: params
-  defp operand_regs(_), do: []
+  @spec collect_regs(term()) :: [Types.reg()]
+  defp collect_regs(n) when is_integer(n), do: [n]
+  defp collect_regs(list) when is_list(list), do: Enum.flat_map(list, &collect_regs/1)
+  defp collect_regs(%{reg: r}) when is_integer(r), do: [r]
+  defp collect_regs(%{args: nested}) when is_list(nested), do: collect_regs(nested)
+  defp collect_regs(map) when is_map(map), do: collect_regs(Map.values(map))
+  defp collect_regs(_), do: []
 
   @spec simplify_branch_targets([Block.t()]) :: [Block.t()]
   defp simplify_branch_targets(blocks) when is_list(blocks) do

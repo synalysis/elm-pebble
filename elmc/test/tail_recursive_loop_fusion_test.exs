@@ -1,6 +1,8 @@
 defmodule Elmc.TailRecursiveLoopFusionTest do
   use ExUnit.Case, async: false
 
+  alias Elmc.TestSupport.CachedCompile
+
   @elm_json %{
     "type" => "application",
     "source-directories" => ["src"],
@@ -51,7 +53,7 @@ defmodule Elmc.TailRecursiveLoopFusionTest do
     )
 
     assert {:ok, _} =
-             Elmc.compile(project_dir, %{
+             CachedCompile.compile(project_dir, %{
                out_dir: out_dir,
                entry_module: "Main",
                strip_dead_code: false,
@@ -130,7 +132,7 @@ defmodule Elmc.TailRecursiveLoopFusionTest do
     )
 
     assert {:ok, _} =
-             Elmc.compile(project_dir, %{
+             CachedCompile.compile(project_dir, %{
                out_dir: out_dir,
                entry_module: "Main",
                strip_dead_code: false,

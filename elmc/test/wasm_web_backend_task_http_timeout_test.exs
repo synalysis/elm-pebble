@@ -1,6 +1,7 @@
 defmodule Elmc.WasmWebBackendTaskHttpTimeoutTest do
   use ExUnit.Case, async: false
 
+  alias Elmc.TestSupport.CachedCompile
   alias Elmc.Backend.Wasm.ProjectWriter
   alias Elmc.Test.WasmRcTrackHarness
 
@@ -16,7 +17,7 @@ defmodule Elmc.WasmWebBackendTaskHttpTimeoutTest do
         File.rm_rf!(out_dir)
 
         assert {:ok, _result} =
-                 Elmc.compile(root, %{
+                 CachedCompile.compile(root, %{
                    out_dir: out_dir,
                    targets: [:wasm],
                    web: true,

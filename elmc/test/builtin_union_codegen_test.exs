@@ -1,6 +1,7 @@
 defmodule Elmc.BuiltinUnionCodegenTest do
   use ExUnit.Case, async: true
 
+  alias Elmc.TestSupport.CachedCompile
   alias Elmc.Test.CCodegenExtract
 
   test "Pebble.Light helpers emit compact backlight commands" do
@@ -32,7 +33,7 @@ defmodule Elmc.BuiltinUnionCodegenTest do
     File.write!(Path.join(project_dir, "src/Main.elm"), main)
 
     assert {:ok, _} =
-             Elmc.compile(project_dir, %{
+             CachedCompile.compile(project_dir, %{
                out_dir: out_dir,
                entry_module: "Main"
              })
@@ -78,7 +79,7 @@ defmodule Elmc.BuiltinUnionCodegenTest do
     File.write!(Path.join(project_dir, "src/Main.elm"), main)
 
     assert {:ok, _} =
-             Elmc.compile(project_dir, %{
+             CachedCompile.compile(project_dir, %{
                out_dir: out_dir,
                entry_module: "Main"
              })
@@ -123,7 +124,7 @@ defmodule Elmc.BuiltinUnionCodegenTest do
     File.write!(Path.join(project_dir, "src/Main.elm"), main)
 
     assert {:ok, _} =
-             Elmc.compile(project_dir, %{
+             CachedCompile.compile(project_dir, %{
                out_dir: out_dir,
                entry_module: "Main"
              })

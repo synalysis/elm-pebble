@@ -560,6 +560,8 @@ defmodule ElmEx.Frontend.GeneratedExpressionParser do
       {:ok, normalize(expr)}
     else
       {:error, {:inline_let_in, line}} -> {:error, LetLayout.parse_error(line)}
+      # Leex returns {:error, Reason, EndLine}; normalize to a 2-tuple for callers.
+      {:error, reason, _end_line} -> {:error, reason}
       {:error, reason} -> {:error, reason}
     end
   end

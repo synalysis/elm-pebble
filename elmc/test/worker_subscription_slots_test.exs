@@ -3,6 +3,7 @@ defmodule Elmc.WorkerSubscriptionSlotsTest do
 
   @moduletag timeout: 180_000
 
+  alias Elmc.TestSupport.CachedCompile
   alias Elmc.Backend.Worker
 
   @simple_project Path.expand("fixtures/simple_project", __DIR__)
@@ -14,7 +15,7 @@ defmodule Elmc.WorkerSubscriptionSlotsTest do
     File.rm_rf!(out_dir)
 
     {:ok, _} =
-      Elmc.compile(
+      CachedCompile.compile(
         project_dir,
         Map.merge(
           %{out_dir: out_dir, entry_module: "Main", plan_ir_mode: :primary},
@@ -81,7 +82,7 @@ defmodule Elmc.WorkerSubscriptionSlotsTest do
   end
 
   test "subscription analysis derives compact layout from subscriptions IR" do
-    {:ok, %{ir: ir}} = Elmc.compile(@simple_project, %{out_dir: "build/worker_slots_analysis"})
+    {:ok, %{ir: ir}} = CachedCompile.compile(@simple_project, %{out_dir: "build/worker_slots_analysis"})
     layout = Worker.subscription_analysis(ir, "Main")
 
     assert layout.compact
@@ -135,7 +136,7 @@ defmodule Elmc.WorkerSubscriptionSlotsTest do
     )
 
     {:ok, %{ir: ir}} =
-      Elmc.compile(project_dir, %{
+      CachedCompile.compile(project_dir, %{
         out_dir: out_dir,
         entry_module: "Main",
         strip_dead_code: false,

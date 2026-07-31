@@ -15,8 +15,8 @@ defmodule Elmc.PlanTemplateStrictGateTest do
 
   # Templates verified to pass strict plan-primary (zero plan_primary_fallback).
   # Add a name here only after `plan_ir_strict: true` compiles cleanly.
-  # Filtered by `ELMC_HOST_SMOKE_TEMPLATE` so `mix-test-per-template.sh` runs one
-  # template per BEAM (without the filter, each invocation would compile all 46).
+  # Filtered by `ELMC_HOST_SMOKE_TEMPLATE` so `mix-test-per-template.sh` can
+  # batch a few templates per BEAM (default 4) without compiling the full list.
   @strict_pass HostSmoke.templates(PlanStrictTemplates.names())
 
   for template <- @strict_pass do

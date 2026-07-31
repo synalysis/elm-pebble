@@ -1,6 +1,7 @@
 defmodule Elmc.NativeIntInlineSizeCapTest do
   use ExUnit.Case, async: true
 
+  alias Elmc.TestSupport.CachedCompile
   alias Elmc.TestSupport.TangramTemplate
 
   test "tangram text scoring avoids inlined pointPenalty expansions" do
@@ -10,7 +11,7 @@ defmodule Elmc.NativeIntInlineSizeCapTest do
     File.rm_rf!(out_dir)
 
     assert {:ok, _result} =
-             Elmc.compile(project_dir, %{
+             CachedCompile.compile(project_dir, %{
                out_dir: out_dir,
                entry_module: "Main",
                strip_dead_code: true

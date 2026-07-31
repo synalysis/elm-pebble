@@ -1,6 +1,7 @@
 defmodule Elmc.WasmMinifyManifestTest do
   use ExUnit.Case, async: false
 
+  alias Elmc.TestSupport.CachedCompile
   alias Elmc.Backend.Wasm.ProjectWriter
 
   @fixture Path.expand("fixtures/wasm_web_div_project", __DIR__)
@@ -10,7 +11,7 @@ defmodule Elmc.WasmMinifyManifestTest do
     File.rm_rf!(out_dir)
 
     assert {:ok, _} =
-             Elmc.compile(@fixture, %{
+             CachedCompile.compile(@fixture, %{
                out_dir: out_dir,
                targets: [:wasm],
                web: true,
@@ -63,7 +64,7 @@ defmodule Elmc.WasmMinifyManifestTest do
     File.rm_rf!(out_dir)
 
     assert {:ok, _} =
-             Elmc.compile(@fixture, %{
+             CachedCompile.compile(@fixture, %{
                out_dir: out_dir,
                targets: [:wasm],
                web: true,

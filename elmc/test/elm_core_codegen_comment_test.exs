@@ -3,6 +3,7 @@ defmodule Elmc.ElmCoreCodegenCommentTest do
 
   @moduletag timeout: 120_000
 
+  alias Elmc.TestSupport.CachedCompile
   alias Elmc.Backend.CCodegen.CallCompile
 
   @env %{"__module__" => "Main"}
@@ -45,7 +46,7 @@ defmodule Elmc.ElmCoreCodegenCommentTest do
     File.rm_rf!(out_dir)
 
     assert {:ok, _} =
-             Elmc.compile(project_dir, %{
+             CachedCompile.compile(project_dir, %{
                out_dir: out_dir,
                strip_dead_code: false,
                plan_ir_mode: :primary

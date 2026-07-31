@@ -1,6 +1,8 @@
 defmodule Elmc.WorkerRcFailTest do
   use ExUnit.Case, async: false
 
+  alias Elmc.TestSupport.CachedCompile
+
   @fixture_elm_json Path.expand("fixtures/simple_project/elm.json", __DIR__)
   @game_2048_main Path.expand("../../ide/priv/project_templates/game_2048/src/Main.elm", __DIR__)
 
@@ -14,7 +16,7 @@ defmodule Elmc.WorkerRcFailTest do
     File.write!(Path.join(project_dir, "elm.json"), File.read!(@fixture_elm_json))
 
     assert {:ok, _} =
-             Elmc.compile(project_dir, %{
+             CachedCompile.compile(project_dir, %{
                out_dir: out_dir,
                entry_module: "Main",
                direct_render_only: true,

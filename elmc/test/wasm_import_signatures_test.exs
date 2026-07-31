@@ -1,6 +1,7 @@
 defmodule Elmc.WasmImportSignaturesTest do
   use ExUnit.Case, async: false
 
+  alias Elmc.TestSupport.CachedCompile
   alias Elmc.Backend.Wasm.ProjectWriter
 
   @fixture Path.expand("fixtures/rc_track_list_project", __DIR__)
@@ -10,7 +11,7 @@ defmodule Elmc.WasmImportSignaturesTest do
     File.rm_rf!(out_dir)
 
     assert {:ok, _} =
-             Elmc.compile(@fixture, %{
+             CachedCompile.compile(@fixture, %{
                out_dir: out_dir,
                entry_module: "Main",
                strip_dead_code: true,
@@ -36,7 +37,7 @@ defmodule Elmc.WasmImportSignaturesTest do
     File.rm_rf!(out_dir)
 
     assert {:ok, _} =
-             Elmc.compile(@fixture, %{
+             CachedCompile.compile(@fixture, %{
                out_dir: out_dir,
                entry_module: "Main",
                strip_dead_code: true,
@@ -58,7 +59,7 @@ defmodule Elmc.WasmImportSignaturesTest do
     File.rm_rf!(out_dir)
 
     assert {:ok, _} =
-             Elmc.compile(fixture, %{
+             CachedCompile.compile(fixture, %{
                out_dir: out_dir,
                entry_module: "Main",
                strip_dead_code: true,

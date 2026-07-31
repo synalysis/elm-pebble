@@ -18,7 +18,7 @@ defmodule Elmc.Test.RcTrackHarness do
         opts
       )
 
-    case Elmc.compile(project_dir, compile_opts) do
+    case Elmc.TestSupport.CachedCompile.compile(project_dir, compile_opts) do
       {:ok, _} -> :ok
       {:error, reason} -> flunk("compile failed: #{inspect(reason)}")
     end
@@ -133,16 +133,17 @@ defmodule Elmc.Test.RcTrackHarness do
 
     binary_path = Path.join(out_dir, binary_name)
 
-    {compile_out, compile_code} =
-      System.cmd(cc, compile_and_link_args(out_dir, sources, binary_path, opts),
-        stderr_to_stdout: true
-      )
+    Elmc.TestSupport.HostBinaryCache.fetch_or_build!(binary_path, sources, opts, fn ->
+      {compile_out, compile_code} =
+        System.cmd(cc, compile_and_link_args(out_dir, sources, binary_path, opts),
+          stderr_to_stdout: true
+        )
 
-    if compile_code != 0, do: flunk("harness compile failed:\n#{compile_out}")
+      if compile_code != 0, do: flunk("harness compile failed:\n#{compile_out}")
+      :ok
+    end)
 
-    {run_out, run_code} = System.cmd(binary_path, [], stderr_to_stdout: true)
-
-    {run_out, run_code}
+    System.cmd(binary_path, [], stderr_to_stdout: true)
   end
 
   @spec assert_balanced!(String.t()) :: :ok

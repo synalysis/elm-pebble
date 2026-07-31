@@ -1,6 +1,7 @@
 defmodule Elmc.CompileArtifactsTest do
   use ExUnit.Case, async: false
 
+  alias Elmc.TestSupport.CachedCompile
   alias Elmc.CLI
 
   @fixture_dir Path.expand("fixtures/simple_project", __DIR__)
@@ -10,7 +11,7 @@ defmodule Elmc.CompileArtifactsTest do
     File.rm_rf!(out_dir)
 
     assert {:ok, result} =
-             Elmc.compile(@fixture_dir, %{
+             CachedCompile.compile(@fixture_dir, %{
                out_dir: out_dir,
                entry_module: "Main",
                strip_dead_code: true,

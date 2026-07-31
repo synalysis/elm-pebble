@@ -1,15 +1,18 @@
 defmodule Elmc.Backend.CCodegen.NativeBoolUnionCaseTest do
-  use ExUnit.Case, async: true
+  use ExUnit.Case, async: false
 
+  alias Elmc.TestSupport.CachedCompile
   alias Elmc.Test.CCodegenExtract
 
   @source_fixture Path.expand("../../fixtures/simple_project", __DIR__)
   @project_dir Path.expand("../../tmp/native_bool_union_case_project", __DIR__)
   @out_dir Path.expand("../../tmp/native_bool_union_case_codegen", __DIR__)
 
+  @moduletag :sequential
+
   setup do
-    File.rm_rf!(@project_dir)
-    File.rm_rf!(@out_dir)
+    File.rm_rf(@project_dir)
+    File.rm_rf(@out_dir)
     File.mkdir_p!(Path.dirname(@project_dir))
     File.cp_r!(@source_fixture, @project_dir)
 
@@ -79,7 +82,7 @@ defmodule Elmc.Backend.CCodegen.NativeBoolUnionCaseTest do
     )
 
     assert {:ok, _result} =
-             Elmc.compile(@project_dir, %{
+             CachedCompile.compile(@project_dir, %{
                out_dir: @out_dir,
                entry_module: "Main",
                direct_render_only: true,
@@ -114,8 +117,8 @@ defmodule Elmc.Backend.CCodegen.NativeBoolUnionCaseTest do
   test "lte-style bool conditions compile to native bool without boxed temps" do
     project_dir = Path.expand("../../tmp/native_bool_lte_project", __DIR__)
     out_dir = Path.expand("../../tmp/native_bool_lte_codegen", __DIR__)
-    File.rm_rf!(project_dir)
-    File.rm_rf!(out_dir)
+    File.rm_rf(project_dir)
+    File.rm_rf(out_dir)
     File.mkdir_p!(Path.join(project_dir, "src"))
     File.cp_r!(@source_fixture, project_dir)
 
@@ -147,7 +150,7 @@ defmodule Elmc.Backend.CCodegen.NativeBoolUnionCaseTest do
     )
 
     assert {:ok, _} =
-             Elmc.compile(project_dir, %{
+             CachedCompile.compile(project_dir, %{
                out_dir: out_dir,
                entry_module: "Main",
                prune_native_wrappers: true

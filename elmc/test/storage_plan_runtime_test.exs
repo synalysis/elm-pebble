@@ -1,6 +1,8 @@
 defmodule Elmc.StoragePlanRuntimeTest do
   use ExUnit.Case
 
+  alias Elmc.TestSupport.CachedCompile
+
   test "compact int list array get uses O(1) indexed access" do
     cc = System.find_executable("cc")
     if is_nil(cc), do: flunk("cc not available for storage plan runtime harness")
@@ -8,7 +10,7 @@ defmodule Elmc.StoragePlanRuntimeTest do
     project_dir = Path.expand("fixtures/simple_project", __DIR__)
     out_dir = Path.expand("tmp/storage_plan_runtime", __DIR__)
     File.rm_rf!(out_dir)
-    assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, strip_dead_code: false})
+    assert {:ok, _} = CachedCompile.compile(project_dir, %{out_dir: out_dir, strip_dead_code: false})
 
     runtime_dir = Path.join(out_dir, "runtime")
     harness_path = Path.join(out_dir, "c/storage_plan_runtime_harness.c")

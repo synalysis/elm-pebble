@@ -1,6 +1,8 @@
 defmodule Elmc.WatchfaceDirectBisectTest do
   use ExUnit.Case, async: false
 
+  alias Elmc.TestSupport.CachedCompile
+
   @fixture Path.expand("fixtures/simple_project", __DIR__)
 
   defp compile_direct!(source) do
@@ -12,7 +14,7 @@ defmodule Elmc.WatchfaceDirectBisectTest do
     File.write!(Path.join(project_dir, "src/Main.elm"), source)
 
     assert {:ok, _} =
-             Elmc.compile(project_dir, %{
+             CachedCompile.compile(project_dir, %{
                out_dir: out_dir,
                entry_module: "Main",
                direct_render_only: true,

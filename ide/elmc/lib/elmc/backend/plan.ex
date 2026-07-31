@@ -14,7 +14,9 @@ defmodule Elmc.Backend.Plan do
 
   @spec primary_lowered?(Types.function_decl(), String.t(), Types.function_decl_map(), keyword()) ::
           boolean()
-  def primary_lowered?(decl, module_name, decl_map, opts \\ []) do
+  def primary_lowered?(decl, module_name, decl_map, opts \\ [])
+
+  def primary_lowered?(decl, module_name, decl_map, opts) when is_map(decl) do
     opts = if opts == [], do: Process.get(:elmc_codegen_opts, []), else: opts
     name = Map.get(decl, :name, "")
     key = {module_name, name}
@@ -49,6 +51,8 @@ defmodule Elmc.Backend.Plan do
         end
     end
   end
+
+  def primary_lowered?(_decl, _module_name, _decl_map, _opts), do: false
 
   @type primary_cache_key :: {String.t(), String.t()}
   @type primary_cache_entry :: {:ok, boolean()} | :pending

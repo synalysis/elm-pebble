@@ -1,6 +1,8 @@
 defmodule Elmc.CodegenCorpusTest do
   use ExUnit.Case
 
+  alias Elmc.TestSupport.CachedCompile
+
   @moduledoc """
   Corpus-driven end-to-end test: parse → lower → codegen on all fixture projects.
   Tracks counters for parse failures, lowering diagnostics, unsupported backend nodes,
@@ -63,7 +65,7 @@ defmodule Elmc.CodegenCorpusTest do
                 unsupported_ops: unsupported
             }
 
-            case Elmc.compile(project_dir, %{out_dir: out_dir, strip_dead_code: true}) do
+            case CachedCompile.compile(project_dir, %{out_dir: out_dir, strip_dead_code: true}) do
               {:ok, _} -> %{result | codegen: :ok}
               {:error, _} -> %{result | codegen: :error}
             end

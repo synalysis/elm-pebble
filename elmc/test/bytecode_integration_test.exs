@@ -3,6 +3,7 @@ defmodule Elmc.BytecodeIntegrationTest do
 
   @moduletag timeout: 360_000
 
+  alias Elmc.TestSupport.CachedCompile
   alias Elmc.Backend.Bytecode.Program
   alias Elmc.Backend.Bytecode.Runtime
   alias Elmc.Backend.Plan.Builder
@@ -43,7 +44,7 @@ defmodule Elmc.BytecodeIntegrationTest do
 
   test "linked program runs probeAdvanced via nested helper plan" do
     {:ok, result} =
-      Elmc.compile(@fixture, %{
+      CachedCompile.compile(@fixture, %{
         out_dir: Path.expand("tmp/bytecode_link_codegen", __DIR__),
         entry_module: "Main",
         strip_dead_code: false
@@ -68,7 +69,7 @@ defmodule Elmc.BytecodeIntegrationTest do
 
   test "linked program runs probeScoreOf through record field access" do
     {:ok, result} =
-      Elmc.compile(@fixture, %{
+      CachedCompile.compile(@fixture, %{
         out_dir: Path.expand("tmp/bytecode_counter_codegen", __DIR__),
         entry_module: "Main",
         strip_dead_code: false

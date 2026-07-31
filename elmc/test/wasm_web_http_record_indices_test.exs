@@ -1,6 +1,7 @@
 defmodule Elmc.WasmWebHttpRecordIndicesTest do
   use ExUnit.Case, async: false
 
+  alias Elmc.TestSupport.CachedCompile
   alias Elmc.Backend.Wasm.ProjectWriter
 
   @tag :wasm_execute
@@ -10,7 +11,7 @@ defmodule Elmc.WasmWebHttpRecordIndicesTest do
     File.rm_rf!(out_dir)
 
     assert {:ok, _} =
-             Elmc.compile(root, %{
+             CachedCompile.compile(root, %{
                out_dir: out_dir,
                targets: [:wasm],
                web: true,

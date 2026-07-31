@@ -7,6 +7,7 @@ defmodule Elmc.PebbleAngleLetAnalysisTest do
   alias ElmEx.Frontend.Project
   alias ElmEx.IR.Lowerer
   alias ElmEx.IR.PipeChain
+  alias Elmc.TestSupport.CachedCompile
   alias Elmc.Backend.CCodegen.Native.BindingAnalysis
   alias Elmc.Backend.CCodegen.Native.UsageAnalysis
 
@@ -59,7 +60,7 @@ defmodule Elmc.PebbleAngleLetAnalysisTest do
     File.cp!(Path.expand("fixtures/simple_project/elm.json", __DIR__), Path.join(project_dir, "elm.json"))
 
     assert {:ok, %{ir: ir}} =
-             Elmc.compile(project_dir, %{
+             CachedCompile.compile(project_dir, %{
                out_dir: Path.expand("tmp/pebble_trig_ir_probe_out", __DIR__),
                entry_module: "Main",
                plan_ir_mode: :primary,
@@ -111,7 +112,7 @@ defmodule Elmc.PebbleAngleLetAnalysisTest do
     File.cp!(Path.expand("fixtures/simple_project/elm.json", __DIR__), Path.join(project_dir, "elm.json"))
 
     assert {:ok, %{ir: ir}} =
-             Elmc.compile(project_dir, %{
+             CachedCompile.compile(project_dir, %{
                out_dir: out_dir,
                entry_module: "Main",
                plan_ir_mode: :primary,

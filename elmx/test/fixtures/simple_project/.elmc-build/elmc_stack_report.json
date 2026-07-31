@@ -869,14 +869,14 @@
     "commands_append_bytes": 6726,
     "direct_command_defs": 4,
     "fusion_native_count": 12,
-    "generated_c_bytes": 58290,
-    "generated_c_lines": 1603,
+    "generated_c_bytes": 58476,
+    "generated_c_lines": 1614,
     "generic_function_defs": 9,
     "linked_binary": {
       "reason": "binary size is available after platform or host linking, not during C source generation",
       "available": false
     },
-    "owned_slot_max": 60,
+    "owned_slot_max": 65,
     "plan_function_count": 16,
     "runtime_calls": {
       "elmc_list_all": 0,

@@ -1,6 +1,7 @@
 defmodule Elmc.PlanCLowerTest do
   use ExUnit.Case, async: true
 
+  alias Elmc.TestSupport.CachedCompile
   alias Elmc.Backend.C.Lower.Function, as: CLowerFunction
   alias Elmc.Backend.Plan.{Builder, Verify}
 
@@ -319,7 +320,7 @@ defmodule Elmc.PlanCLowerTest do
     """)
 
     assert {:ok, _} =
-             Elmc.compile(project_dir, %{
+             CachedCompile.compile(project_dir, %{
                out_dir: out_dir,
                entry_module: "Main",
                strip_dead_code: true,
@@ -367,7 +368,7 @@ defmodule Elmc.PlanCLowerTest do
     """)
 
     assert {:ok, _} =
-             Elmc.compile(project_dir, %{
+             CachedCompile.compile(project_dir, %{
                out_dir: out_dir,
                entry_module: "Main",
                strip_dead_code: true,
@@ -403,7 +404,7 @@ defmodule Elmc.PlanCLowerTest do
     )
 
     assert {:ok, _result} =
-             Elmc.compile(tmp, %{
+             CachedCompile.compile(tmp, %{
                out_dir: out_dir,
                strip_dead_code: false,
                entry_module: "RecordFieldTest",
@@ -453,7 +454,7 @@ defmodule Elmc.PlanCLowerTest do
     File.write!(Path.join(project_dir, "src/Main.elm"), File.read!(template_main))
 
     assert {:ok, _} =
-             Elmc.compile(project_dir, %{
+             CachedCompile.compile(project_dir, %{
                out_dir: out_dir,
                entry_module: "Main",
                strip_dead_code: true,
@@ -592,7 +593,7 @@ defmodule Elmc.PlanCLowerTest do
     )
 
     assert {:ok, _} =
-             Elmc.compile(tmp, %{
+             CachedCompile.compile(tmp, %{
                out_dir: out_dir,
                strip_dead_code: false,
                entry_module: "RcTrackResultProbe",

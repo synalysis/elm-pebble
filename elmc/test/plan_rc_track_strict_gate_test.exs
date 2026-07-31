@@ -5,6 +5,7 @@ defmodule Elmc.PlanRcTrackStrictGateTest do
 
   use ExUnit.Case, async: false
 
+  alias Elmc.TestSupport.CachedCompile
   alias Elmc.Test.RcTrackMatrix
 
   @moduletag :plan_surface
@@ -20,7 +21,7 @@ defmodule Elmc.PlanRcTrackStrictGateTest do
       out_dir = Path.expand("tmp/plan_rc_strict/#{fixture_rel}", __DIR__)
 
       assert {:ok, result} =
-               Elmc.compile(root, %{
+               CachedCompile.compile(root, %{
                  out_dir: out_dir,
                  entry_module: "Main",
                  strip_dead_code: false,

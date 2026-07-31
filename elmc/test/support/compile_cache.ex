@@ -15,9 +15,55 @@ defmodule Elmc.TestSupport.CompileCache do
   @spec cache_root() :: String.t()
   def cache_root do
     case System.get_env("ELMC_TEST_COMPILE_CACHE_DIR") do
-      dir when is_binary(dir) and dir != "" -> dir
-      _ -> Path.join(System.tmp_dir!(), "elmc-test-compile-cache")
+      dir when is_binary(dir) and dir != "" ->
+        dir
+
+      _ ->
+        # Prefer a disk-backed home cache: /tmp tmpfs inode limits are easy to
+        # exhaust with thousands of full out/ trees (seen at ~4.5k entries).
+        xdg = System.get_env("XDG_CACHE_HOME")
+
+        base =
+          if is_binary(xdg) and xdg != "" do
+            xdg
+          else
+            Path.join(System.user_home!(), ".cache")
+          end
+
+        Path.join([base, "elm-pebble", "elmc-test-compile-cache"])
     end
+  end
+
+  @doc """
+  Stable shared IR module cache for tests.
+
+  Ephemeral snippet/template project dirs would otherwise write `.elmc-cache/ir`
+  under a tmp tree and delete it. Package sources use absolute paths in elm.json,
+  so a shared dir reuses Pebble/shared/elm-core module IR across compiles.
+  """
+  @spec ir_cache_dir() :: String.t()
+  def ir_cache_dir do
+    case System.get_env("ELMC_TEST_IR_CACHE_DIR") do
+      dir when is_binary(dir) and dir != "" -> dir
+      _ -> Path.join(cache_root(), "ir")
+    end
+  end
+
+  @doc """
+  Injects the shared test IR cache dir unless the caller already set one.
+  """
+  @spec inject_compile_opts(map()) :: map()
+  def inject_compile_opts(opts) when is_map(opts) do
+    if Map.has_key?(opts, :ir_cache_dir) or Map.get(opts, :ir_cache) == false do
+      opts
+    else
+      Map.put(opts, :ir_cache_dir, ir_cache_dir())
+    end
+  end
+
+  @spec inject_compile_opts(keyword()) :: map()
+  def inject_compile_opts(opts) when is_list(opts) do
+    opts |> Map.new() |> inject_compile_opts()
   end
 
   @spec ensure_table!() :: :ok
@@ -55,6 +101,12 @@ defmodule Elmc.TestSupport.CompileCache do
 
   @spec store(String.t(), term(), String.t()) :: :ok
   def store(key, result, out_dir) when is_binary(key) and is_binary(out_dir) do
+    store(key, result, out_dir, [])
+  end
+
+  @spec store(String.t(), term(), String.t(), keyword()) :: :ok
+  def store(key, result, out_dir, opts)
+      when is_binary(key) and is_binary(out_dir) and is_list(opts) do
     if not enabled?() do
       :ok
     else
@@ -65,19 +117,71 @@ defmodule Elmc.TestSupport.CompileCache do
       File.mkdir_p!(entry)
       # Destination must not exist yet — otherwise Elixir nests basename(out_dir) under it.
       File.cp_r!(out_dir, out_cache)
-      File.write!(Path.join(entry, "result.etf"), :erlang.term_to_binary(result, compressed: 1))
-      :ets.insert(@table, {key, result, out_cache})
+
+      stored =
+        if Keyword.get(opts, :drop_ir, false) and is_map(result) do
+          Map.delete(result, :ir)
+        else
+          result
+        end
+
+      File.write!(Path.join(entry, "result.etf"), :erlang.term_to_binary(stored, compressed: 1))
+      :ets.insert(@table, {key, stored, out_cache})
       :ok
     end
   end
 
+  @doc """
+  Copies a cached `out/` tree into `dest_out`.
+
+  Modes:
+  - `:auto` (default) — hardlink (`cp -al`) when possible, else full copy
+  - `:full` — always `File.cp_r!`
+  - `:c_only` — only `c/elmc_generated.c` (and parent dirs)
+  """
   @spec materialize_out(String.t(), String.t()) :: :ok
-  def materialize_out(out_cache, dest_out) when is_binary(out_cache) and is_binary(dest_out) do
+  def materialize_out(out_cache, dest_out), do: materialize_out(out_cache, dest_out, :auto)
+
+  @spec materialize_out(String.t(), String.t(), :auto | :full | :c_only) :: :ok
+  def materialize_out(out_cache, dest_out, mode)
+      when is_binary(out_cache) and is_binary(dest_out) and mode in [:auto, :full, :c_only] do
     File.rm_rf!(dest_out)
     File.mkdir_p!(Path.dirname(dest_out))
-    # Destination must not exist yet — otherwise Elixir nests basename(out_cache) under it.
-    File.cp_r!(out_cache, dest_out)
-    :ok
+
+    case mode do
+      :c_only ->
+        src = Path.join(out_cache, "c/elmc_generated.c")
+        dest = Path.join(dest_out, "c/elmc_generated.c")
+        File.mkdir_p!(Path.dirname(dest))
+        File.cp!(src, dest)
+        :ok
+
+      :full ->
+        File.cp_r!(out_cache, dest_out)
+        :ok
+
+      :auto ->
+        case System.cmd("cp", ["-al", out_cache, dest_out], stderr_to_stdout: true) do
+          {_, 0} ->
+            :ok
+
+          _ ->
+            File.rm_rf!(dest_out)
+            File.cp_r!(out_cache, dest_out)
+            :ok
+        end
+    end
+  end
+
+  @doc "Read generated C from a cache out tree without materializing."
+  @spec read_generated_c(String.t()) :: {:ok, String.t()} | :error
+  def read_generated_c(out_cache) when is_binary(out_cache) do
+    path = Path.join(out_cache, "c/elmc_generated.c")
+
+    case File.read(path) do
+      {:ok, body} -> {:ok, body}
+      _ -> :error
+    end
   end
 
   @spec key(term()) :: String.t()
@@ -183,10 +287,13 @@ defmodule Elmc.TestSupport.CompileCache do
         path
         |> Path.join("*.beam")
         |> Path.wildcard()
+        |> Enum.sort()
         |> Enum.reduce({0, 0}, fn beam, {count, hash} ->
-          case File.stat(beam) do
-            {:ok, %{mtime: mtime, size: size}} ->
-              {count + 1, :erlang.phash2({hash, Path.basename(beam), mtime, size})}
+          # Content hash (not mtime) so restored CI caches still hit after a no-op
+          # `mix compile` retouches beam mtimes.
+          case File.read(beam) do
+            {:ok, bin} ->
+              {count + 1, :erlang.phash2({hash, Path.basename(beam), :erlang.phash2(bin)})}
 
             _ ->
               {count, hash}

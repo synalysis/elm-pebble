@@ -1,6 +1,8 @@
 defmodule ElmcTest do
   use ExUnit.Case
 
+  alias Elmc.TestSupport.CachedCompile
+
   @moduletag timeout: 120_000
 
   test "compile writes runtime, ports, and c outputs" do
@@ -9,7 +11,7 @@ defmodule ElmcTest do
 
     File.rm_rf!(out_dir)
 
-    assert {:ok, %{ir: ir}} = Elmc.compile(project_dir, %{out_dir: out_dir})
+    assert {:ok, %{ir: ir}} = CachedCompile.compile(project_dir, %{out_dir: out_dir})
     assert length(ir.modules) > 0
 
     assert File.exists?(Path.join(out_dir, "runtime/elmc_runtime.h"))
@@ -32,7 +34,7 @@ defmodule ElmcTest do
     out_dir = Path.expand("tmp/build_stripped", __DIR__)
     File.rm_rf!(out_dir)
 
-    assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir})
+    assert {:ok, _} = CachedCompile.compile(project_dir, %{out_dir: out_dir})
     generated = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
     assert String.contains?(generated, "elmc_fn_Main_init")
@@ -47,7 +49,7 @@ defmodule ElmcTest do
     out_dir = Path.expand("tmp/build_no_trig_fallback", __DIR__)
     File.rm_rf!(out_dir)
 
-    assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir})
+    assert {:ok, _} = CachedCompile.compile(project_dir, %{out_dir: out_dir})
 
     generated = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
@@ -94,7 +96,7 @@ defmodule ElmcTest do
     File.cp!(Path.expand("fixtures/simple_project/elm.json", __DIR__), Path.join(project_dir, "elm.json"))
 
     assert {:ok, result} =
-             Elmc.compile(
+             CachedCompile.compile(
                project_dir,
                %{
                  out_dir: out_dir,

@@ -1,6 +1,8 @@
 defmodule Elmc.PrunedViewTextHelpersTest do
   use ExUnit.Case, async: false
 
+  alias Elmc.TestSupport.CachedCompile
+
   @source_fixture Path.expand("fixtures/simple_project", __DIR__)
   @template_main Path.expand("../../ide/priv/project_templates/watch_demo_wakeup/src/Main.elm", __DIR__)
   @project_dir Path.expand("tmp/pruned_view_text_helpers_project", __DIR__)
@@ -13,7 +15,7 @@ defmodule Elmc.PrunedViewTextHelpersTest do
     File.write!(Path.join(@project_dir, "src/Main.elm"), File.read!(@template_main))
 
     assert {:ok, _} =
-             Elmc.compile(@project_dir, %{
+             CachedCompile.compile(@project_dir, %{
                out_dir: @out_dir,
                entry_module: "Main",
                strip_dead_code: true,

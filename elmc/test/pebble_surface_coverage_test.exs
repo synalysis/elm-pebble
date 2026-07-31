@@ -1,6 +1,8 @@
 defmodule Elmc.PebbleSurfaceCoverageTest do
   use ExUnit.Case
 
+  alias Elmc.TestSupport.CachedCompile
+
   @fixture_main Path.expand("fixtures/pebble_surface_project/src/Main.elm", __DIR__)
   @fixture_project Path.expand("fixtures/pebble_surface_project", __DIR__)
 
@@ -68,7 +70,7 @@ defmodule Elmc.PebbleSurfaceCoverageTest do
     File.rm_rf!(out_dir)
 
     assert {:ok, _} =
-             Elmc.compile(@fixture_project, %{
+             CachedCompile.compile(@fixture_project, %{
                out_dir: out_dir,
                entry_module: "Main",
                strip_dead_code: false

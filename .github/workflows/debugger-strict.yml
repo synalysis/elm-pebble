@@ -7,6 +7,10 @@ on:
       - main
       - master
 
+env:
+  TEST_ULIMIT_V_KB: "6291456"
+  ELIXIR_ERL_OPTIONS: "+S 1:1 +MMscs 256"
+
 jobs:
   ide-debugger:
     name: IDE debugger/runtime suites
@@ -32,20 +36,22 @@ jobs:
         run: mix deps.get
 
       - name: Run IDE debugger/runtime suites
-        working-directory: ide
         run: |
-          mix test test/ide/debugger_test.exs \
+          for f in \
+            test/ide/debugger_test.exs \
             test/ide/debugger/runtime_executor_request_test.exs \
             test/ide/debugger/surface_compile_elmx_test.exs \
             test/ide/debugger/auto_fire_message_order_test.exs
+          do
+            echo "==> ${f}"
+            ./scripts/mix-test-limited.sh ide "${f}"
+          done
 
       - name: Run debugger template corpus
-        working-directory: ide
-        run: mix test test/ide/mcp/debugger_template_corpus_test.exs --only template_corpus --max-cases 1
+        run: ./scripts/mix-test-limited.sh ide test/ide/mcp/debugger_template_corpus_test.exs --only template_corpus
 
       - name: Run debugger template corpus subscription steps
-        working-directory: ide
-        run: mix test test/ide/mcp/debugger_template_corpus_test.exs --only template_corpus_step --max-cases 1
+        run: ./scripts/mix-test-limited.sh ide test/ide/mcp/debugger_template_corpus_test.exs --only template_corpus_step
 
   ide-debugger-integration:
     name: IDE debugger integration
@@ -72,12 +78,12 @@ jobs:
         run: mix deps.get
 
       - name: Run debugger integration suite
-        working-directory: ide
         run: |
-          mix test test/ide/debugger/integration \
+          ./scripts/mix-test-limited.sh ide \
+            test/ide/debugger/integration \
             test/ide/debugger/configuration_callback_probe_test.exs \
             test/ide/debugger/deferred_companion_bootstrap_test.exs \
-            --only integration --include slow --max-cases 1
+            --only integration --include slow
 
   elmx-compiled-elixir:
     name: elmx compile + compiled_elixir corpus
@@ -121,37 +127,33 @@ jobs:
         run: mix deps.get
 
       - name: Run elmx unit tests
-        working-directory: elmx
-        run: mix test
+        run: ./scripts/mix-test-limited.sh elmx
 
       - name: Run elmx Dialyzer
         working-directory: elmx
         run: mix dialyzer
 
       - name: Run elmx coverage and qualified-call gate tests
-        working-directory: elmx
         run: |
-          mix test test/backend_coverage_gate_test.exs \
+          ./scripts/mix-test-limited.sh elmx \
+            test/backend_coverage_gate_test.exs \
             test/qualified_call_audit_test.exs \
             test/phone_template_audit_test.exs
 
       - name: Run tree-sitter corpus smoke parse gate
         if: steps.tree-sitter-corpus.outputs.available == 'true'
-        working-directory: elmx
-        run: mix test.ts_corpus_smoke
+        run: ./scripts/mix-test-limited.sh elm_ex --only ts_corpus_smoke
 
       - name: Install IDE dependencies
         working-directory: ide
         run: mix deps.get
 
       - name: Run compiled_elixir template corpus
-        working-directory: ide
         env:
           ELMX_TEMPLATE_CORPUS: "1"
-        run: mix test --only compiled_elixir_corpus --max-cases 1
+        run: ./scripts/mix-test-limited.sh ide --only compiled_elixir_corpus
 
       - name: Run elmx template compile gate
-        working-directory: ide
         env:
           ELMX_TEMPLATE_COMPILE_GATE: "1"
-        run: mix test test/ide/mcp/debugger_template_compile_gate_test.exs --only template_compile_gate
+        run: ./scripts/mix-test-limited.sh ide test/ide/mcp/debugger_template_compile_gate_test.exs --only template_compile_gate

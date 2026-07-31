@@ -1,6 +1,7 @@
 defmodule Elmc.StoragePlanCodegenTest do
   use ExUnit.Case, async: true
 
+  alias Elmc.TestSupport.CachedCompile
   alias Elmc.Test.CCodegenExtract
 
   defp compile_main!(source, project_name) do
@@ -13,7 +14,7 @@ defmodule Elmc.StoragePlanCodegenTest do
     File.write!(Path.join(project_dir, "src/Main.elm"), source)
 
     assert {:ok, _} =
-             Elmc.compile(project_dir, %{
+             CachedCompile.compile(project_dir, %{
                out_dir: out_dir,
                entry_module: "Main",
                strip_dead_code: true
@@ -94,7 +95,7 @@ defmodule Elmc.StoragePlanCodegenTest do
     File.rm_rf!(out_dir)
 
     assert {:ok, _} =
-             Elmc.compile(fixture, %{
+             CachedCompile.compile(fixture, %{
                out_dir: out_dir,
                entry_module: "Main",
                strip_dead_code: true

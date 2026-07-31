@@ -1,6 +1,7 @@
 defmodule Elmc.PlanCoverageDiagnosticsTest do
   use ExUnit.Case, async: false
 
+  alias Elmc.TestSupport.CachedCompile
   alias Elmc.Backend.Plan.PrimaryCoverage
 
   test "primary emits info diagnostic when reachable coverage is complete" do
@@ -90,7 +91,7 @@ defmodule Elmc.PlanCoverageDiagnosticsTest do
     File.rm_rf!(out_dir)
 
     assert {:ok, result} =
-             Elmc.compile(Path.expand("fixtures/simple_project", __DIR__), %{
+             CachedCompile.compile(Path.expand("fixtures/simple_project", __DIR__), %{
                out_dir: out_dir,
                entry_module: "Main",
                strip_dead_code: true,

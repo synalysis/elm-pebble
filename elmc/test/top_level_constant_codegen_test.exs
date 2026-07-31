@@ -1,6 +1,8 @@
 defmodule Elmc.TopLevelConstantCodegenTest do
   use ExUnit.Case
 
+  alias Elmc.TestSupport.CachedCompile
+
   @moduletag timeout: 300_000
   @repo_root Path.expand("../..", __DIR__)
 
@@ -38,7 +40,7 @@ defmodule Elmc.TopLevelConstantCodegenTest do
     }))
 
     assert {:ok, _result} =
-             Elmc.compile(project_dir, %{
+             CachedCompile.compile(project_dir, %{
                out_dir: out_dir,
                entry_module: "Main",
                plan_ir_mode: :primary,

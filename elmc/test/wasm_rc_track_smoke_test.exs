@@ -1,6 +1,7 @@
 defmodule Elmc.WasmRcTrackSmokeTest do
   use ExUnit.Case, async: false
 
+  alias Elmc.TestSupport.CachedCompile
   alias Elmc.Backend.Wasm.ProjectWriter
   alias Elmc.Test.WasmRcTrackHarness
 
@@ -23,7 +24,7 @@ defmodule Elmc.WasmRcTrackSmokeTest do
       File.rm_rf!(out_dir)
 
       assert {:ok, _} =
-               Elmc.compile(root, %{
+               CachedCompile.compile(root, %{
                  out_dir: out_dir,
                  entry_module: "Main",
                  strip_dead_code: false,

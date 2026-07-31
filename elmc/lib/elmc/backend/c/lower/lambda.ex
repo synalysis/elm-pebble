@@ -74,7 +74,7 @@ defmodule Elmc.Backend.C.Lower.Lambda do
     capture_indices = Map.get(lambda, :letrec_capture_indices) || %{}
 
     all_ref_names =
-      (lambda.letrec_refs ++ Function.forward_ref_names_in_plan(lambda))
+      ((lambda.letrec_refs || []) ++ Function.forward_ref_names_in_plan(lambda))
       |> Enum.uniq()
 
     {captured_refs, local_refs} =

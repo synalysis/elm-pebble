@@ -1,13 +1,15 @@
 defmodule Elmc.PlanShadowCoverageTest do
   use ExUnit.Case, async: false
 
+  alias Elmc.TestSupport.CachedCompile
+
   @moduletag :plan_shadow
 
   @fixture Path.expand("fixtures/simple_project", __DIR__)
 
   setup do
     {:ok, result} =
-      Elmc.compile(@fixture, %{
+      CachedCompile.compile(@fixture, %{
         out_dir: Path.expand("tmp/plan_coverage_codegen", __DIR__),
         entry_module: "Main",
         strip_dead_code: true

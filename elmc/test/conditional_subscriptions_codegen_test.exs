@@ -1,6 +1,7 @@
 defmodule Elmc.ConditionalSubscriptionsCodegenTest do
   use ExUnit.Case, async: true
 
+  alias Elmc.TestSupport.CachedCompile
   alias Elmc.Test.CCodegenExtract
 
   @drawing_template Path.expand(
@@ -40,7 +41,7 @@ defmodule Elmc.ConditionalSubscriptionsCodegenTest do
     out_dir: out_dir
   } do
     assert {:ok, %{ir: ir}} =
-             Elmc.compile(project_dir, %{
+             CachedCompile.compile(project_dir, %{
                out_dir: out_dir,
                entry_module: "Main",
                strip_dead_code: false

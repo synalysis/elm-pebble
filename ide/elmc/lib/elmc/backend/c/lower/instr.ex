@@ -2484,7 +2484,7 @@ defmodule Elmc.Backend.C.Lower.Instr do
   defp legacy_argv_value_callee?(decl, module, native_ret) do
     decl_map = Process.get(:elmc_program_decls, %{})
 
-    native_ret not in [:native_int, :native_bool] and
+    is_map(decl) and native_ret not in [:native_int, :native_bool] and
       FunctionCallAbi.argv_abi?(decl, module, decl_map) and
       not RcRequired.rc_required?(module, Map.get(decl, :name))
   end
@@ -2494,7 +2494,8 @@ defmodule Elmc.Backend.C.Lower.Instr do
   defp direct_plan_value_return_callee?(decl, module) do
     decl_map = Process.get(:elmc_program_decls, %{})
 
-    FunctionCallAbi.direct_plan_call_abi?(decl, module, decl_map) and
+    is_map(decl) and
+      FunctionCallAbi.direct_plan_call_abi?(decl, module, decl_map) and
       not RcRequired.rc_required?(module, Map.get(decl, :name))
   end
 
@@ -3859,12 +3860,14 @@ defmodule Elmc.Backend.C.Lower.Instr do
 
   @spec assign_value_return(boolean(), String.t(), String.t()) :: String.t()
 
-  defp assign_value_return(_false_arm, "*out", call_expr), do: "return #{call_expr};"
+  # Non-RC `ElmcValue *` ABI: function result is a returned pointer.
+  # RC ABI: `*out` is the result slot — never `return` a pointer from an RC function.
+  defp assign_value_return(false, "*out", call_expr), do: "return #{call_expr};"
   defp assign_value_return(_rc?, dest, call_expr), do: "#{dest} = #{call_expr};"
 
   @spec assign_value_return_tail(boolean(), String.t(), String.t(), Types.t() | map(), Types.slot_map(), keyword()) :: String.t()
 
-  defp assign_value_return_tail(_false_arm, "*out", call_expr, instr, slots, opts),
+  defp assign_value_return_tail(false, "*out", call_expr, instr, slots, opts),
     do: wrap_non_rc_fn_out_return(call_expr, instr, slots, opts)
 
   defp assign_value_return_tail(rc?, dest, call_expr, _instr, _slots, _opts),
@@ -4016,8 +4019,8 @@ defmodule Elmc.Backend.C.Lower.Instr do
     |> String.trim()
   end
 
-  defp assign_owned(_false_arm, "*out", call_expr), do: "return #{call_expr};"
-  defp assign_owned(_false_arm, dest, call_expr), do: "#{dest} = #{call_expr};"
+  defp assign_owned(false, "*out", call_expr), do: "return #{call_expr};"
+  defp assign_owned(_rc?, dest, call_expr), do: "#{dest} = #{call_expr};"
 
   @spec retain_into_owned(String.t(), String.t()) :: String.t()
 

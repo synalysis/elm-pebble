@@ -3,6 +3,7 @@ defmodule Elmc.BytecodePlatformOpsTest do
 
   @moduletag timeout: 120_000
 
+  alias Elmc.TestSupport.CachedCompile
   alias Elmc.Backend.Bytecode.Loader
 
   @fixture Path.expand("fixtures/simple_project", __DIR__)
@@ -12,7 +13,7 @@ defmodule Elmc.BytecodePlatformOpsTest do
     File.rm_rf!(out_dir)
 
     assert {:ok, _} =
-             Elmc.compile(@fixture, %{
+             CachedCompile.compile(@fixture, %{
                out_dir: out_dir,
                entry_module: "Main",
                strip_dead_code: false,

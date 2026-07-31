@@ -1,6 +1,7 @@
 defmodule Elmc.MacroReachabilityTest do
   use ExUnit.Case, async: false
 
+  alias Elmc.TestSupport.CachedCompile
   alias Elmc.Backend.CCodegen.{IRQueries, MacroReachability, UnionMacros}
   alias Elmc.Backend.CCodegen.DirectRender.GenericTargets
   alias Elmc.Backend.CCodegen.Host
@@ -15,7 +16,7 @@ defmodule Elmc.MacroReachabilityTest do
     File.write!(Path.join(project_dir, "elm.json"), File.read!(Path.expand("fixtures/simple_project/elm.json", __DIR__)))
 
     assert {:ok, %{ir: ir}} =
-             Elmc.compile(project_dir, %{
+             CachedCompile.compile(project_dir, %{
                entry_module: "Main",
                out_dir: Path.join(project_dir, "out")
              })

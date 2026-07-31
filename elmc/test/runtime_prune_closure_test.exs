@@ -1,6 +1,8 @@
 defmodule Elmc.RuntimePruneClosureTest do
   use Elmc.TestSupport.PrimaryCodegenCase, async: false
 
+  alias Elmc.TestSupport.CachedCompile
+
   @source_fixture Path.expand("fixtures/simple_project", __DIR__)
   @project_dir Path.expand("tmp/runtime_prune_closure_project", __DIR__)
   @out_dir Path.expand("tmp/runtime_prune_closure_out", __DIR__)
@@ -55,7 +57,7 @@ defmodule Elmc.RuntimePruneClosureTest do
 
   test "pruned runtime keeps multi-line static closure helpers referenced from elmc_closure_new" do
     assert {:ok, _} =
-             Elmc.compile(@project_dir, %{
+             CachedCompile.compile(@project_dir, %{
                out_dir: @out_dir,
                entry_module: "Main",
                direct_render_only: true,

@@ -1,6 +1,7 @@
 defmodule Elmc.PlanCompanionPrimaryTest do
   use ExUnit.Case, async: false
 
+  alias Elmc.TestSupport.CachedCompile
   alias Elmc.Backend.Plan.PrimaryCoverage
 
   @moduletag :plan_surface
@@ -26,7 +27,7 @@ defmodule Elmc.PlanCompanionPrimaryTest do
       out_dir = Path.expand("tmp/plan_companion_primary_#{fixture}", __DIR__)
       File.rm_rf!(out_dir)
 
-      assert {:ok, result} = Elmc.compile(project_dir, Map.put(@compile_opts, :out_dir, out_dir))
+      assert {:ok, result} = CachedCompile.compile(project_dir, Map.put(@compile_opts, :out_dir, out_dir))
 
       Process.put(:elmc_constructor_tags, Elmc.Backend.CCodegen.IRQueries.constructor_tag_map(result.ir))
 

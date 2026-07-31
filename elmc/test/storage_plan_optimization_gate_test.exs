@@ -4,6 +4,7 @@ defmodule Elmc.StoragePlanOptimizationGateTest do
   """
   use ExUnit.Case, async: false
 
+  alias Elmc.TestSupport.CachedCompile
   alias Elmc.Test.{CCodegenExtract, FixtureCodegen}
 
   @template_main Path.expand("../../ide/priv/project_templates/game_2048/src/Main.elm", __DIR__)
@@ -21,7 +22,7 @@ defmodule Elmc.StoragePlanOptimizationGateTest do
     File.write!(Path.join(project_dir, "src/Main.elm"), File.read!(@template_main))
 
     assert {:ok, result} =
-             Elmc.compile(project_dir, %{
+             CachedCompile.compile(project_dir, %{
                out_dir: out_dir,
                entry_module: "Main",
                strip_dead_code: true,
@@ -70,7 +71,7 @@ defmodule Elmc.StoragePlanOptimizationGateTest do
     File.rm_rf!(out_dir)
 
     assert {:ok, _} =
-             Elmc.compile(FixtureCodegen.project_dir("storage_plan_record_grid_project"), %{
+             CachedCompile.compile(FixtureCodegen.project_dir("storage_plan_record_grid_project"), %{
                out_dir: out_dir,
                entry_module: "Main",
                strip_dead_code: true

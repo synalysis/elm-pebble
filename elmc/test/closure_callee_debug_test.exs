@@ -1,6 +1,7 @@
 defmodule Elmc.ClosureCalleeDebugTest do
   use Elmc.TestSupport.PrimaryCodegenCase, async: false
 
+  alias Elmc.TestSupport.CachedCompile
   alias Elmc.Test.ElmRunCorpus
 
   test "top_level_ref for RC callee uses wrapper" do
@@ -26,7 +27,7 @@ defmodule Elmc.ClosureCalleeDebugTest do
     File.write!(Path.join(project_dir, "src/ListFilterMap.elm"), source)
     File.write!(Path.join(project_dir, "elm.json"), File.read!(Path.expand("fixtures/simple_project/elm.json", __DIR__)))
 
-    assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "ListFilterMap"})
+    assert {:ok, _} = CachedCompile.compile(project_dir, %{out_dir: out_dir, entry_module: "ListFilterMap"})
     c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
     assert c =~ "static RC elmc_fn_ListFilterMap_toPositive(ElmcValue **out, ElmcValue *x)",
@@ -65,7 +66,7 @@ defmodule Elmc.ClosureCalleeDebugTest do
     File.write!(Path.join(project_dir, "src/ListFilterMap.elm"), source)
     File.write!(Path.join(project_dir, "elm.json"), File.read!(Path.expand("fixtures/simple_project/elm.json", __DIR__)))
 
-    assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "ListFilterMap"})
+    assert {:ok, _} = CachedCompile.compile(project_dir, %{out_dir: out_dir, entry_module: "ListFilterMap"})
     c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
     assert c =~ "static RC elmc_fn_ListFilterMap_toPositive(ElmcValue **out, ElmcValue *x)",
@@ -83,7 +84,7 @@ defmodule Elmc.ClosureCalleeDebugTest do
       out_dir = Path.join(project_dir, "out")
 
       assert {:ok, _} =
-               Elmc.compile(project_dir, %{
+               CachedCompile.compile(project_dir, %{
                  out_dir: out_dir,
                  strip_dead_code: false,
                  entry_module: "CorpusHost",

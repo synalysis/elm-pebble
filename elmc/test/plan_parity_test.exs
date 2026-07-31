@@ -3,6 +3,7 @@ defmodule Elmc.PlanParityTest do
 
   @moduletag :plan_parity
 
+  alias Elmc.TestSupport.CachedCompile
   alias Elmc.Test.CCodegenExtract
 
   test "primary plan path emits RC shell for init with Cmd.none" do
@@ -74,7 +75,7 @@ defmodule Elmc.PlanParityTest do
 
   test "primary coverage lowers all simple_project Main helpers" do
     {:ok, result} =
-      Elmc.compile(
+      CachedCompile.compile(
         Path.expand("fixtures/simple_project", __DIR__),
         %{
           out_dir: Path.expand("tmp/plan_primary_coverage_codegen", __DIR__),
@@ -126,7 +127,7 @@ defmodule Elmc.PlanParityTest do
     File.cp_r!(source_fixture, project_dir)
 
     assert {:ok, _} =
-             Elmc.compile(
+             CachedCompile.compile(
                project_dir,
                Map.merge(
                  %{
@@ -167,7 +168,7 @@ defmodule Elmc.PlanParityTest do
     File.write!(Path.join(project_dir, "src/Main.elm"), main_src)
 
     assert {:ok, _} =
-             Elmc.compile(
+             CachedCompile.compile(
                project_dir,
                Map.merge(
                  %{

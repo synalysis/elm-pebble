@@ -1703,8 +1703,8 @@ defmodule Elmc.Backend.C.Lower.Function do
       |> Enum.reject(&(&1 == ""))
       |> Enum.join("\n")
     prefix = if rc?, do: ["RC Rc = RC_SUCCESS;", owned], else: List.wrap(owned)
-    letrec_decls = letrec_decl_lines(plan.letrec_refs)
-    letrec_free = letrec_free_lines(plan.letrec_refs)
+    letrec_decls = letrec_decl_lines(plan.letrec_refs || [])
+    letrec_free = letrec_free_lines(plan.letrec_refs || [])
 
     suffix =
       cond do

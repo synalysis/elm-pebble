@@ -1,6 +1,8 @@
 defmodule Elmc.PlanShadowIntegrationTest do
   use ExUnit.Case, async: false
 
+  alias Elmc.TestSupport.CachedCompile
+
   @moduletag :plan_shadow
 
   @source_fixture Path.expand("fixtures/simple_project", __DIR__)
@@ -14,7 +16,7 @@ defmodule Elmc.PlanShadowIntegrationTest do
     File.cp_r!(@source_fixture, project_dir)
 
     assert {:ok, _result} =
-             Elmc.compile(project_dir, %{
+             CachedCompile.compile(project_dir, %{
                out_dir: out_dir,
                entry_module: "Main",
                strip_dead_code: true,
@@ -44,7 +46,7 @@ defmodule Elmc.PlanShadowIntegrationTest do
     File.cp_r!(@source_fixture, project_dir)
 
     assert {:ok, result} =
-             Elmc.compile(project_dir, %{
+             CachedCompile.compile(project_dir, %{
                out_dir: out_dir,
                entry_module: "Main",
                strip_dead_code: true,

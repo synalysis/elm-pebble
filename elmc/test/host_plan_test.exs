@@ -1,6 +1,7 @@
 defmodule Elmc.HostPlanTest do
   use ExUnit.Case, async: true
 
+  alias Elmc.TestSupport.CachedCompile
   alias Elmc.Backend.Plan.Worker.Host.Emit, as: HostEmit
   alias Elmc.Backend.Plan.Worker.Host.Lower, as: HostLower
   alias Elmc.Backend.Plan.Worker.Host.Verify, as: HostVerify
@@ -12,7 +13,7 @@ defmodule Elmc.HostPlanTest do
 
   defp lower_simple!(opts \\ []) do
     {:ok, %{ir: ir}} =
-      Elmc.compile(@simple_project, %{out_dir: "build/host_plan_test", entry_module: "Main"})
+      CachedCompile.compile(@simple_project, %{out_dir: "build/host_plan_test", entry_module: "Main"})
 
     layout = Worker.subscription_analysis(ir, "Main")
     HostLower.lower(ir, "Main", layout, opts)

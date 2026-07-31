@@ -1,6 +1,8 @@
 defmodule Elmc.DataLogTagCodegenTest do
   use ExUnit.Case, async: true
 
+  alias Elmc.TestSupport.CachedCompile
+
   @moduletag timeout: 300_000
 
   @source_fixture Path.expand("fixtures/simple_project", __DIR__)
@@ -19,7 +21,7 @@ defmodule Elmc.DataLogTagCodegenTest do
     )
 
     assert {:ok, _result} =
-             Elmc.compile(project_dir, %{
+             CachedCompile.compile(project_dir, %{
                out_dir: out_dir,
                entry_module: "Main",
                strip_dead_code: false,

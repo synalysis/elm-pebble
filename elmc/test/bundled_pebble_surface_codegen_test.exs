@@ -1,6 +1,7 @@
 defmodule Elmc.BundledPebbleSurfaceCodegenTest do
   use ExUnit.Case
 
+  alias Elmc.TestSupport.CachedCompile
   alias Elmc.Test.CCodegenExtract
 
   @source """
@@ -88,7 +89,7 @@ defmodule Elmc.BundledPebbleSurfaceCodegenTest do
     File.write!(Path.join(project_dir, "src/Main.elm"), @source)
 
     assert {:ok, _result} =
-             Elmc.compile(project_dir, %{
+             CachedCompile.compile(project_dir, %{
                out_dir: out_dir,
                entry_module: "Main",
                strip_dead_code: false

@@ -1,6 +1,7 @@
 defmodule Elmc.ListIntReprCodegenTest do
   use ExUnit.Case, async: true
 
+  alias Elmc.TestSupport.CachedCompile
   alias Elmc.Backend.CCodegen.{LayoutSolver, SchemaRegistry, StoragePlan}
   alias Elmc.Test.CCodegenExtract
 
@@ -15,7 +16,7 @@ defmodule Elmc.ListIntReprCodegenTest do
     File.write!(Path.join(project_dir, "src/Main.elm"), source)
 
     assert {:ok, result} =
-             Elmc.compile(project_dir, %{
+             CachedCompile.compile(project_dir, %{
                out_dir: out_dir,
                entry_module: "Main",
                strip_dead_code: true

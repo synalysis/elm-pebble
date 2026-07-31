@@ -3,6 +3,7 @@ defmodule Elmc.TangramTemplateCodegenTest do
 
   @moduletag timeout: 300_000
 
+  alias Elmc.TestSupport.CachedCompile
   alias Elmc.Test.RcTrackHarness
   alias Elmc.TestSupport.TangramTemplate
 
@@ -27,7 +28,7 @@ defmodule Elmc.TangramTemplateCodegenTest do
     File.rm_rf!(out_dir)
 
     assert {:ok, _result} =
-             Elmc.compile(project_dir, %{
+             CachedCompile.compile(project_dir, %{
                out_dir: out_dir,
                entry_module: "Main",
                strip_dead_code: true,
@@ -45,7 +46,7 @@ defmodule Elmc.TangramTemplateCodegenTest do
     File.rm_rf!(out_dir)
 
     assert {:ok, _result} =
-             Elmc.compile(project_dir, %{
+             CachedCompile.compile(project_dir, %{
                out_dir: out_dir,
                entry_module: "Main",
                strip_dead_code: true,
@@ -80,7 +81,7 @@ defmodule Elmc.TangramTemplateCodegenTest do
     File.rm_rf!(out_dir)
 
     assert {:ok, _result} =
-             Elmc.compile(project_dir, %{
+             CachedCompile.compile(project_dir, %{
                out_dir: out_dir,
                entry_module: "Main",
                strip_dead_code: true,
@@ -174,7 +175,7 @@ defmodule Elmc.TangramTemplateCodegenTest do
     File.rm_rf!(out_dir)
 
     assert {:ok, _result} =
-             Elmc.compile(project_dir, %{
+             CachedCompile.compile(project_dir, %{
                out_dir: out_dir,
                entry_module: "Main",
                strip_dead_code: false,

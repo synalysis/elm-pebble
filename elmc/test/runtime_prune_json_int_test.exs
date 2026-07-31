@@ -1,6 +1,8 @@
 defmodule Elmc.RuntimePruneJsonIntTest do
   use ExUnit.Case, async: false
 
+  alias Elmc.TestSupport.CachedCompile
+
   @smoke_screen_main Path.expand("../../ide/priv/project_templates/watchface_smoke_screen/src/Main.elm", __DIR__)
 
   test "int-only json runtime disables float number parsing and omits float helpers" do
@@ -48,7 +50,7 @@ defmodule Elmc.RuntimePruneJsonIntTest do
     File.write!(Path.join(project_dir, "src/Main.elm"), File.read!(@smoke_screen_main))
 
     assert {:ok, _} =
-             Elmc.compile(project_dir, %{
+             CachedCompile.compile(project_dir, %{
                out_dir: out_dir,
                entry_module: "Main",
                prune_runtime: true,

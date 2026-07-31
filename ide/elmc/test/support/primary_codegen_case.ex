@@ -2,8 +2,8 @@ defmodule Elmc.TestSupport.PrimaryCodegenCase do
   @moduledoc """
   Tests that compile through the production plan-primary pipeline.
 
-  Uses a process-local plan mode (not Application env) so async tests that
-  rely on `test_helper`'s `:off` default are not poisoned.
+  Uses a process-local plan mode (not Application env) so async tests are not
+  affected by other suites toggling `:elmc_plan_ir_mode`.
   """
 
   use ExUnit.CaseTemplate
@@ -36,11 +36,12 @@ defmodule Elmc.TestSupport.PrimaryCodegen do
   @primary_compile_opts %{plan_ir_mode: :primary, plan_ir_strict: true}
 
   alias Elmc.CLI.Types, as: ElmcCliTypes
+  alias Elmc.TestSupport.CachedCompile
 
   @spec compile(String.t(), Elmc.TestSupport.Types.compile_opts()) ::
           {:ok, ElmcCliTypes.compile_result()} | {:error, ElmcCliTypes.compile_error()}
   def compile(project_dir, opts \\ %{}) when is_map(opts) do
-    Elmc.compile(project_dir, Map.merge(@primary_compile_opts, opts))
+    CachedCompile.compile(project_dir, Map.merge(@primary_compile_opts, opts))
   end
 
   @spec compile_opts(Elmc.TestSupport.Types.compile_opts()) :: Elmc.TestSupport.Types.compile_opts()

@@ -1,6 +1,7 @@
 defmodule Elmc.Backend.CCodegen.StaticStringFoldTest do
   use ExUnit.Case, async: false
 
+  alias Elmc.TestSupport.CachedCompile
   alias Elmc.Backend.CCodegen.StaticString
   alias Elmc.Test.CCodegenExtract
 
@@ -52,7 +53,7 @@ defmodule Elmc.Backend.CCodegen.StaticStringFoldTest do
     File.write!(Path.join(@project_dir, "src/Main.elm"), source())
 
     assert {:ok, _result} =
-             Elmc.compile(@project_dir, %{
+             CachedCompile.compile(@project_dir, %{
                out_dir: @out_dir,
                entry_module: "Main",
                direct_render_only: true

@@ -13,6 +13,7 @@ defmodule Elmc.CoreComplianceDifferentialTest do
   alias Elmx.Backend.ElixirCodegen
   alias Elmx.IRDigest
   alias Elmx.Runtime.Loader, as: ElmxLoader
+  alias Elmc.TestSupport.CachedCompile
   alias Elmc.Backend.Bytecode.Loader
 
   @elmx_project Path.expand("../../elmx/test/fixtures/simple_project", __DIR__)
@@ -57,7 +58,7 @@ defmodule Elmc.CoreComplianceDifferentialTest do
     File.rm_rf!(out_dir)
 
     assert {:ok, _} =
-             Elmc.compile(@elmc_fixture, %{
+             CachedCompile.compile(@elmc_fixture, %{
                out_dir: out_dir,
                entry_module: "Main",
                strip_dead_code: false,

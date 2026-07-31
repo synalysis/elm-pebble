@@ -1,6 +1,7 @@
 defmodule Elmc.DrawFieldCmdEncodingTest do
   use ExUnit.Case
 
+  alias Elmc.TestSupport.CachedCompile
   alias Elmc.Backend.CCodegen.Emit
   alias Elmc.Backend.Plan.Lower.SpecialValues
   alias Elmc.Backend.Pebble.Kinds
@@ -56,7 +57,7 @@ defmodule Elmc.DrawFieldCmdEncodingTest do
       File.read!(Path.expand("fixtures/simple_project/elm.json", __DIR__))
     )
 
-    assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+    assert {:ok, _} = CachedCompile.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
     assert Regex.match?(

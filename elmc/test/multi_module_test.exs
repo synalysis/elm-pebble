@@ -1,6 +1,8 @@
 defmodule Elmc.MultiModuleTest do
   use ExUnit.Case
 
+  alias Elmc.TestSupport.CachedCompile
+
   @moduletag timeout: 120_000
 
   alias ElmEx.IR.TopoSort
@@ -28,7 +30,7 @@ defmodule Elmc.MultiModuleTest do
     project_dir = Path.expand("fixtures/simple_project", __DIR__)
     out_dir = Path.expand("tmp/multi_module", __DIR__)
     File.rm_rf!(out_dir)
-    assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, strip_dead_code: false, plan_ir_mode: :primary})
+    assert {:ok, _} = CachedCompile.compile(project_dir, %{out_dir: out_dir, strip_dead_code: false, plan_ir_mode: :primary})
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
@@ -57,7 +59,7 @@ defmodule Elmc.MultiModuleTest do
     project_dir = Path.expand("fixtures/qualified_constructor_project", __DIR__)
     out_dir = Path.expand("tmp/multi_module_qual", __DIR__)
     File.rm_rf!(out_dir)
-    assert {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, strip_dead_code: false, plan_ir_mode: :primary})
+    assert {:ok, _} = CachedCompile.compile(project_dir, %{out_dir: out_dir, strip_dead_code: false, plan_ir_mode: :primary})
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 

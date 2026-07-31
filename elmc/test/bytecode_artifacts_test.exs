@@ -1,6 +1,7 @@
 defmodule Elmc.BytecodeArtifactsTest do
   use ExUnit.Case, async: false
 
+  alias Elmc.TestSupport.CachedCompile
   alias Elmc.Backend.Bytecode.Artifacts
 
   @fixture Path.expand("fixtures/simple_project", __DIR__)
@@ -10,7 +11,7 @@ defmodule Elmc.BytecodeArtifactsTest do
     File.rm_rf!(out_dir)
 
     assert {:ok, _} =
-             Elmc.compile(@fixture, %{
+             CachedCompile.compile(@fixture, %{
                out_dir: out_dir,
                entry_module: "Main",
                strip_dead_code: true,

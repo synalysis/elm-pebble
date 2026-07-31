@@ -3,6 +3,7 @@ defmodule Elmc.DebugUsageTest do
 
   @moduletag timeout: 300_000
 
+  alias Elmc.TestSupport.CachedCompile
   alias Elmc.Backend.DebugUsage
 
   @fixture Path.expand("fixtures/rc_track_debug_project", __DIR__)
@@ -33,7 +34,7 @@ defmodule Elmc.DebugUsageTest do
     opts = compile_opts(%{})
 
     assert {:error, {:compile_diagnostics, diagnostics}} =
-             Elmc.compile(@fixture, opts)
+             CachedCompile.compile(@fixture, opts)
 
     codes = Enum.map(diagnostics, & &1["code"])
     assert "debug_usage_not_allowed" in codes
@@ -44,7 +45,7 @@ defmodule Elmc.DebugUsageTest do
   test "prod warn policy succeeds and reports debug_usage_in_build diagnostics" do
     opts = compile_opts(%{debug_usage_policy: :warn})
 
-    assert {:ok, result} = Elmc.compile(@fixture, opts)
+    assert {:ok, result} = CachedCompile.compile(@fixture, opts)
     diagnostics = Map.get(result, :debug_usage_diagnostics, [])
     assert length(diagnostics) == 3
     assert Enum.all?(diagnostics, &(&1["severity"] == "warning"))
@@ -54,7 +55,7 @@ defmodule Elmc.DebugUsageTest do
   test "non-prod mode allows Debug usage and emits debug C support" do
     opts = compile_opts(%{prod: false})
 
-    assert {:ok, _} = Elmc.compile(@fixture, opts)
+    assert {:ok, _} = CachedCompile.compile(@fixture, opts)
 
     generated = File.read!(Path.join(opts.out_dir, "c/elmc_generated.c"))
 
@@ -65,10 +66,10 @@ defmodule Elmc.DebugUsageTest do
 
   test "prod mode omits debug ctor table cases and agent probes from generated C" do
     opts = compile_opts(%{prod: false})
-    assert {:ok, _} = Elmc.compile(@fixture, opts)
+    assert {:ok, _} = CachedCompile.compile(@fixture, opts)
 
     prod_opts = %{opts | prod: true, debug_usage_policy: :warn}
-    assert {:ok, _} = Elmc.compile(@fixture, prod_opts)
+    assert {:ok, _} = CachedCompile.compile(@fixture, prod_opts)
 
     generated = File.read!(Path.join(prod_opts.out_dir, "c/elmc_generated.c"))
     refute generated =~ "elmc_agent_generated_probe"

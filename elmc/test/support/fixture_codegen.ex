@@ -63,9 +63,7 @@ defmodule Elmc.Test.FixtureCodegen do
     project_dir = project_dir(fixture_name)
     out_dir = Keyword.get(opts, :out_dir, Path.join(System.tmp_dir!(), "elmc_fixture_#{fixture_name}"))
 
-    File.rm_rf!(out_dir)
-
-    case Elmc.compile(project_dir, %{
+    case Elmc.TestSupport.CachedCompile.compile(project_dir, %{
            out_dir: out_dir,
            strip_dead_code: false,
            entry_module: Keyword.get(opts, :entry_module, "Main")

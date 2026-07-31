@@ -1,6 +1,7 @@
 defmodule Elmc.NativeMaybeIntCaseCodegenTest do
   use ExUnit.Case
 
+  alias Elmc.TestSupport.CachedCompile
   alias Elmc.Test.CCodegenExtract
 
   @moduletag timeout: 180_000
@@ -18,7 +19,7 @@ defmodule Elmc.NativeMaybeIntCaseCodegenTest do
     File.write!(main_path, File.read!(main_path) <> maybe_record_int_case_source())
 
     assert {:ok, _result} =
-             Elmc.compile(project_dir, %{
+             CachedCompile.compile(project_dir, %{
                out_dir: out_dir,
                entry_module: "Main",
                plan_ir_mode: :primary,
@@ -52,7 +53,7 @@ defmodule Elmc.NativeMaybeIntCaseCodegenTest do
     File.write!(main_path, File.read!(main_path) <> maybe_int_case_source())
 
     assert {:ok, _result} =
-             Elmc.compile(project_dir, %{
+             CachedCompile.compile(project_dir, %{
                out_dir: out_dir,
                entry_module: "Main",
                plan_ir_mode: :primary,

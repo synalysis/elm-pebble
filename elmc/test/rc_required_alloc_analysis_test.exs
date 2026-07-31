@@ -3,6 +3,7 @@ defmodule Elmc.RcRequiredAllocAnalysisTest do
 
   @moduletag timeout: 180_000
 
+  alias Elmc.TestSupport.CachedCompile
   alias Elmc.Backend.CCodegen.{Host, IRQueries, RcRequired}
   alias Elmc.Test.CCodegenExtract
   alias Elmc.TestSupport.TemplateCompile
@@ -58,7 +59,7 @@ defmodule Elmc.RcRequiredAllocAnalysisTest do
     File.write!(Path.join(project_dir, "elm.json"), File.read!(@fixture_elm_json))
 
     assert {:ok, %{ir: ir}} =
-             Elmc.compile(project_dir, %{
+             CachedCompile.compile(project_dir, %{
                entry_module: "Main",
                out_dir: Path.expand("tmp/rc_required_2048_ir_out", __DIR__)
              })
@@ -171,7 +172,7 @@ defmodule Elmc.RcRequiredAllocAnalysisTest do
     File.write!(Path.join(project_dir, "src/Main.elm"), patched_main)
 
     assert {:ok, %{ir: ir}} =
-             Elmc.compile(project_dir, %{
+             CachedCompile.compile(project_dir, %{
                entry_module: "Main",
                out_dir: out_dir,
                strip_dead_code: false,

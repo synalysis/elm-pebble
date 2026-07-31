@@ -1,6 +1,7 @@
 defmodule Elmc.PlanSimpleProjectCoverageTest do
   use ExUnit.Case, async: false
 
+  alias Elmc.TestSupport.CachedCompile
   alias Elmc.Backend.Bytecode.Loader
   alias Elmc.Backend.Plan.PrimaryCoverage
 
@@ -13,7 +14,7 @@ defmodule Elmc.PlanSimpleProjectCoverageTest do
     File.rm_rf!(out_dir)
 
     assert {:ok, result} =
-             Elmc.compile(@fixture, %{
+             CachedCompile.compile(@fixture, %{
                out_dir: out_dir,
                entry_module: "Main",
                strip_dead_code: false,

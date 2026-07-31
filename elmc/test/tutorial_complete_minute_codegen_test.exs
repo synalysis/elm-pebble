@@ -1,6 +1,7 @@
 defmodule Elmc.TutorialCompleteMinuteCodegenTest do
   use ExUnit.Case, async: false
 
+  alias Elmc.TestSupport.CachedCompile
   alias Elmc.Test.CCodegenExtract
 
   @moduletag timeout: 300_000
@@ -37,7 +38,7 @@ defmodule Elmc.TutorialCompleteMinuteCodegenTest do
     )
 
     assert {:ok, _} =
-             Elmc.compile(project_dir, %{
+             CachedCompile.compile(project_dir, %{
                out_dir: out_dir,
                entry_module: "Main",
                direct_render_only: false,

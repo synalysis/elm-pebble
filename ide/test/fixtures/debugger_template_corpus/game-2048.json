@@ -27,7 +27,7 @@
       "text_color": null,
       "text_overflow": "word_wrap",
       "w": 132,
-      "x": 4,
+      "x": 6,
       "y": 4
     },
     {
@@ -447,7 +447,7 @@
       "y": 117
     }
   ],
-  "preview_ops_sha256": "6ad08d7a4efe58bfb24846a6188e977a7c22d77227c8e04c148f71559b16d4bb",
+  "preview_ops_sha256": "6e4805a987c53ffc534398954349af95831317c28b05a676d02225eead3eb352",
   "render_tree": {
     "node_count": 69,
     "node_types": [

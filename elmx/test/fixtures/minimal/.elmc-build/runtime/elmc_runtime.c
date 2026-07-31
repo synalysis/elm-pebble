@@ -699,6 +699,9 @@ RC elmc_cmd_queue_cons_take(ElmcValue **out, ElmcValue *head, ElmcValue *tail) {
   CATCH_BEGIN
     rc = elmc_list_cons(out, head, tail);
     CHECK_RC(rc);
+    /* elmc_list_cons retains head/tail; take semantics drop caller ownership. */
+    elmc_release(head);
+    elmc_release(tail);
   CATCH_END
   return rc;
 }

@@ -1,6 +1,8 @@
 defmodule Elmc.CoreDifferentialConformanceTest do
   use ExUnit.Case
 
+  alias Elmc.TestSupport.CachedCompile
+
   @required_runtime_symbols [
     "elmc_basics_max",
     "elmc_basics_min",
@@ -42,7 +44,7 @@ defmodule Elmc.CoreDifferentialConformanceTest do
     File.rm_rf!(out_dir)
 
     assert {:ok, _} =
-             Elmc.compile(project_dir, %{
+             CachedCompile.compile(project_dir, %{
                out_dir: out_dir,
                strip_dead_code: false,
                entry_module: "Main"
@@ -80,7 +82,7 @@ defmodule Elmc.CoreDifferentialConformanceTest do
     File.rm_rf!(out_dir)
 
     assert {:ok, _} =
-             Elmc.compile(project_dir, %{
+             CachedCompile.compile(project_dir, %{
                out_dir: out_dir,
                strip_dead_code: false,
                entry_module: "Main"
@@ -128,7 +130,7 @@ defmodule Elmc.CoreDifferentialConformanceTest do
     File.rm_rf!(out_dir)
 
     assert {:ok, _} =
-             Elmc.compile(project_dir, %{
+             CachedCompile.compile(project_dir, %{
                out_dir: out_dir,
                strip_dead_code: false,
                entry_module: "Main"

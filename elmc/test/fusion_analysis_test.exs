@@ -1,6 +1,8 @@
 defmodule Elmc.FusionAnalysisTest do
   use ExUnit.Case, async: true
 
+  alias Elmc.TestSupport.CachedCompile
+
   @template_main Path.expand("../../ide/priv/project_templates/game_2048/src/Main.elm", __DIR__)
 
   test "permute merge fusion resolves model field macros from record field types alone" do
@@ -11,7 +13,7 @@ defmodule Elmc.FusionAnalysisTest do
     File.write!(Path.join(project_dir, "src/Main.elm"), File.read!(@template_main))
 
     assert {:ok, result} =
-             Elmc.compile(project_dir, %{
+             CachedCompile.compile(project_dir, %{
                out_dir: Path.expand("tmp/fusion_analysis_field_macros_out", __DIR__),
                entry_module: "Main",
                strip_dead_code: true
@@ -63,7 +65,7 @@ defmodule Elmc.FusionAnalysisTest do
     File.write!(Path.join(project_dir, "src/Main.elm"), File.read!(@template_main))
 
     assert {:ok, result} =
-             Elmc.compile(project_dir, %{
+             CachedCompile.compile(project_dir, %{
                out_dir: Path.expand("tmp/fusion_analysis_spawn_sites_out", __DIR__),
                entry_module: "Main",
                strip_dead_code: true
@@ -109,7 +111,7 @@ defmodule Elmc.FusionAnalysisTest do
     File.write!(Path.join(project_dir, "src/Main.elm"), File.read!(@template_main))
 
     assert {:ok, _} =
-             Elmc.compile(project_dir, %{
+             CachedCompile.compile(project_dir, %{
                out_dir: out_dir,
                entry_module: "Main",
                direct_render_only: true,

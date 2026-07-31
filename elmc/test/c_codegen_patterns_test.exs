@@ -76,6 +76,7 @@ defmodule Elmc.CCodegenPatternsTest do
   end
 
 
+  alias Elmc.TestSupport.CachedCompile
   alias Elmc.TestSupport.SnippetProject
 
   defp compile_snippet!(name, source, compile \\ %{}) when is_binary(name) and is_binary(source) do
@@ -185,7 +186,7 @@ defmodule Elmc.CCodegenPatternsTest do
     File.write!(Path.join(project_dir, "src/Main.elm"), File.read!(elmtris_main))
 
     assert {:ok, _result} =
-             Elmc.compile(project_dir, %{
+             CachedCompile.compile(project_dir, %{
                out_dir: out_dir,
                entry_module: "Main",
                strip_dead_code: false
@@ -1333,7 +1334,7 @@ defmodule Elmc.CCodegenPatternsTest do
     File.write!(Path.join(project_dir, "src/Main.elm"), File.read!(elmtris_main))
 
     assert {:ok, _} =
-             Elmc.compile(project_dir, %{
+             CachedCompile.compile(project_dir, %{
                out_dir: out_dir,
                entry_module: "Main",
                strip_dead_code: true
@@ -1366,7 +1367,7 @@ defmodule Elmc.CCodegenPatternsTest do
     File.write!(Path.join(project_dir, "src/Main.elm"), File.read!(elmtris_main))
 
     assert {:ok, _} =
-             Elmc.compile(project_dir, %{
+             CachedCompile.compile(project_dir, %{
                out_dir: out_dir,
                entry_module: "Main",
                strip_dead_code: true
@@ -1396,7 +1397,7 @@ defmodule Elmc.CCodegenPatternsTest do
     File.write!(Path.join(project_dir, "src/Main.elm"), File.read!(elmtris_main))
 
     assert {:ok, _} =
-             Elmc.compile(project_dir, %{
+             CachedCompile.compile(project_dir, %{
                out_dir: out_dir,
                entry_module: "Main",
                strip_dead_code: true
@@ -2344,7 +2345,7 @@ defmodule Elmc.CCodegenPatternsTest do
     File.write!(Path.join(project_dir, "src/Main.elm"), File.read!(elmtris_main))
 
     assert {:ok, _} =
-             Elmc.compile(project_dir, %{
+             CachedCompile.compile(project_dir, %{
                out_dir: out_dir,
                entry_module: "Main",
                strip_dead_code: true
@@ -2352,7 +2353,7 @@ defmodule Elmc.CCodegenPatternsTest do
 
     pebble_out_dir = Path.join(out_dir, "pebble_int32")
     assert {:ok, _} =
-             Elmc.compile(project_dir, %{
+             CachedCompile.compile(project_dir, %{
                out_dir: pebble_out_dir,
                entry_module: "Main",
                strip_dead_code: true,
@@ -4410,7 +4411,7 @@ defmodule Elmc.CCodegenPatternsTest do
     )
 
     assert {:ok, _result} =
-             Elmc.compile(project_dir, %{
+             CachedCompile.compile(project_dir, %{
                out_dir: out_dir,
                entry_module: "Main",
                strip_dead_code: true
@@ -4473,7 +4474,7 @@ defmodule Elmc.CCodegenPatternsTest do
     )
 
     assert {:ok, _result} =
-             Elmc.compile(project_dir, %{
+             CachedCompile.compile(project_dir, %{
                out_dir: out_dir,
                entry_module: "Main",
                strip_dead_code: true
@@ -4499,7 +4500,7 @@ defmodule Elmc.CCodegenPatternsTest do
     File.write!(Path.join(project_dir, "src/Main.elm"), File.read!(elm_2048))
 
     assert {:ok, _} =
-             Elmc.compile(project_dir, %{
+             CachedCompile.compile(project_dir, %{
                out_dir: out_dir,
                entry_module: "Main",
                direct_render_only: true,
@@ -4988,7 +4989,7 @@ defmodule Elmc.CCodegenPatternsTest do
     File.write!(Path.join(project_dir, "elm.json"), Jason.encode!(elm_json, pretty: true))
 
     assert {:ok, _result} =
-             Elmc.compile(
+             CachedCompile.compile(
                project_dir,
                Map.merge(
                  %{

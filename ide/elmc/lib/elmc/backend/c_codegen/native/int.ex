@@ -892,7 +892,8 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
 
   defp dispatch(%{op: :call, name: "modBy", args: [base, value]}, env, counter) do
     case static_nonzero_int_value(base, env) do
-      base_value when base_value > 0 ->
+      # Guard must use is_integer/1: in Elixir, `nil > 0` is true (atom > number).
+      base_value when is_integer(base_value) and base_value > 0 ->
         {value_code, value_ref, counter} = compile_expr(value, env, counter)
 
         if power_of_two_mod_base?(base_value) do
@@ -901,7 +902,7 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
           emit_general_mod(value_code, value_ref, base_value, base, env, counter)
         end
 
-      nil ->
+      _ ->
         {base_code, base_ref, counter} = compile_expr(base, env, counter)
         {value_code, value_ref, counter} = compile_expr(value, env, counter)
         next = counter + 1

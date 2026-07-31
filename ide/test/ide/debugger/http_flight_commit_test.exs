@@ -73,6 +73,54 @@ defmodule Ide.Debugger.HttpFlightCommitTest do
     assert get_in(committed, [:companion, :model, "runtime_model", "lastResponse"]) == 21
   end
 
+  test "commit renumbers flight timeline past concurrent watch auto-fire seqs" do
+    basis = %{
+      debugger_seq: 10,
+      seq: 10,
+      debugger_timeline: [],
+      events: [],
+      app_message_queues: %{watch: [], companion: [], phone: []},
+      watch: %{model: %{}},
+      companion: %{model: %{}},
+      phone: %{model: %{}}
+    }
+
+    # Watch auto-fire advanced current while the unlocked HTTP flight still
+    # numbered from basis (both would otherwise claim seq 11).
+    current = %{
+      basis
+      | debugger_seq: 11,
+        seq: 11,
+        debugger_timeline: [
+          %{seq: 11, type: "update", target: "watch", message: "MinuteChanged 58"}
+        ]
+    }
+
+    applied = %{
+      basis
+      | debugger_seq: 11,
+        seq: 11,
+        debugger_timeline: [
+          %{seq: 11, type: "update", target: "phone", message: "SvgReceived (Ok \"…\")"}
+        ],
+        events: [%{seq: 11, type: "update", target: "phone"}]
+    }
+
+    committed = HttpFlightCommit.commit(current, applied, basis, :phone)
+
+    assert committed.debugger_seq == 12
+    assert committed.seq == 12
+
+    assert [
+             %{seq: 12, target: "phone", message: "SvgReceived (Ok \"…\")"},
+             %{seq: 11, target: "watch", message: "MinuteChanged 58"}
+           ] = committed.debugger_timeline
+
+    refute Enum.any?(committed.debugger_timeline, fn row ->
+             Enum.count(committed.debugger_timeline, &(&1.seq == row.seq)) > 1
+           end)
+  end
+
   test "commit appends protocol deliveries instead of replacing in-flight queue" do
     basis = %{
       debugger_seq: 1,

@@ -1,6 +1,7 @@
 defmodule Elmc.DirectRenderListLoopPlansTest do
   use ExUnit.Case, async: true
 
+  alias Elmc.TestSupport.CachedCompile
   alias Elmc.Backend.CCodegen.IRQueries
   alias Elmc.Backend.CCodegen.DirectRender.ListLoopPlans
   alias Elmc.Backend.CCodegen.IRQueries
@@ -158,7 +159,7 @@ defmodule Elmc.DirectRenderListLoopPlansTest do
     File.write!(Path.join(project_dir, "src/Main.elm"), source)
 
     assert {:ok, result} =
-             Elmc.compile(project_dir, %{
+             CachedCompile.compile(project_dir, %{
                out_dir: out_dir,
                entry_module: "Main",
                direct_render_only: true,
@@ -292,7 +293,7 @@ defmodule Elmc.DirectRenderListLoopPlansTest do
     File.write!(Path.join(project_dir, "src/Main.elm"), source)
 
     assert {:ok, result} =
-             Elmc.compile(project_dir, %{
+             CachedCompile.compile(project_dir, %{
                out_dir: out_dir,
                entry_module: "Main",
                direct_render_only: true,

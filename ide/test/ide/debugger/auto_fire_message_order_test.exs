@@ -171,7 +171,11 @@ defmodule Ide.Debugger.AutoFireMessageOrderTest do
 
   defp find_row_message(%{debugger_timeline: timeline}, seq) do
     timeline
-    |> Enum.find_value(fn row -> if row.seq == seq, do: row.message end)
+    |> Enum.find_value(fn row ->
+      if row.seq == seq and row.target == "watch" and row.type == "update" do
+        row.message
+      end
+    end)
     |> to_string()
   end
 end

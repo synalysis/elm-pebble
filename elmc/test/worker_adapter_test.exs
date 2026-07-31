@@ -1,6 +1,8 @@
 defmodule Elmc.WorkerAdapterTest do
   use Elmc.TestSupport.PrimaryCodegenCase
 
+  alias Elmc.TestSupport.CachedCompile
+
   test "generated worker adapter runs init and update loop" do
     cc = System.find_executable("cc")
     if is_nil(cc), do: flunk("cc not available for worker adapter C test")
@@ -8,7 +10,7 @@ defmodule Elmc.WorkerAdapterTest do
     project_dir = Path.expand("fixtures/simple_project", __DIR__)
     out_dir = Path.expand("tmp/worker_adapter", __DIR__)
     File.rm_rf!(out_dir)
-    {:ok, _} = Elmc.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
+    {:ok, _} = CachedCompile.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
 
     alias Elmc.Test.RcTrackHarness
 

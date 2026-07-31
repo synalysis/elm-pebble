@@ -1,6 +1,8 @@
 defmodule Elmc.ConformanceScorecardTest do
   use ExUnit.Case
 
+  alias Elmc.TestSupport.CachedCompile
+
   @moduletag timeout: 300_000
 
   @guardrails %{
@@ -41,7 +43,7 @@ defmodule Elmc.ConformanceScorecardTest do
     File.rm_rf!(out_dir)
 
     assert {:ok, _} =
-             Elmc.compile(project_dir, %{
+             CachedCompile.compile(project_dir, %{
                out_dir: out_dir,
                strip_dead_code: false,
                entry_module: "Main"

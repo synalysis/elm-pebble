@@ -1,6 +1,7 @@
 defmodule Elmc.WasmImportAuditTest do
   use ExUnit.Case, async: false
 
+  alias Elmc.TestSupport.CachedCompile
   alias Elmc.Backend.Plan.RuntimeBuiltins
   alias Elmc.Backend.Wasm.{ProjectWriter, RuntimeImports}
 
@@ -20,7 +21,7 @@ defmodule Elmc.WasmImportAuditTest do
     File.rm_rf!(out_dir)
 
     assert {:ok, _} =
-             Elmc.compile(@fixture, %{
+             CachedCompile.compile(@fixture, %{
                out_dir: out_dir,
                entry_module: "Main",
                strip_dead_code: true,

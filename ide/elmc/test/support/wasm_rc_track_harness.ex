@@ -22,7 +22,7 @@ defmodule Elmc.Test.WasmRcTrackHarness do
         opts
       )
 
-    case Elmc.compile(fixture_dir, compile_opts) do
+    case Elmc.TestSupport.CachedCompile.compile(fixture_dir, compile_opts) do
       {:ok, _} -> :ok
       {:error, reason} -> flunk("wasm compile failed: #{inspect(reason)}")
     end
