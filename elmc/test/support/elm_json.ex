@@ -7,7 +7,9 @@ defmodule Elmc.TestSupport.ElmJson do
   """
 
   @default_core_version "1.0.5"
-  @default_json_version "1.1.4"
+  # Match templates / simple_project pins; Bridge also vendors this under
+  # ide/priv/internal_packages/elm-json for CI without ~/.elm.
+  @default_json_version "1.1.3"
   @default_elm_version "0.19.1"
 
   @type source_directories :: [String.t()]

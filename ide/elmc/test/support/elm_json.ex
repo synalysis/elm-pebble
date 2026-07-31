@@ -7,7 +7,7 @@ defmodule Elmc.TestSupport.ElmJson do
   """
 
   @default_core_version "1.0.5"
-  @default_json_version "1.1.4"
+  @default_json_version "1.1.3"
   @default_elm_version "0.19.1"
 
   @type source_directories :: [String.t()]

@@ -573,6 +573,10 @@ defmodule ElmEx.Frontend.Bridge do
     internal_package_rel_src_dirs(project_dir, "ide/priv/internal_packages/elm-time/src")
   end
 
+  defp internal_package_src_dirs(project_dir, "elm/json") when is_binary(project_dir) do
+    internal_package_rel_src_dirs(project_dir, "ide/priv/internal_packages/elm-json/src")
+  end
+
   defp internal_package_src_dirs(_project_dir, _pkg), do: []
 
   @spec internal_package_rel_src_dirs(String.t(), String.t()) :: [String.t()]
