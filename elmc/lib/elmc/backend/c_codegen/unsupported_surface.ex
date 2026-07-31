@@ -105,7 +105,7 @@ defmodule Elmc.Backend.CCodegen.UnsupportedSurface do
 
   def record_from_expr(_), do: :ok
 
-  @spec compile_warnings(keyword()) :: [map()]
+  @spec compile_warnings(keyword() | map()) :: [map()]
   def compile_warnings(opts \\ []) do
     Process.get(:elmc_compile_warnings, [])
     |> Enum.filter(fn

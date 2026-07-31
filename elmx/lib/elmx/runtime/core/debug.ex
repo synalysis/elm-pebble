@@ -20,7 +20,7 @@ defmodule Elmx.Runtime.Core.Debug do
   @spec to_string(Types.string_like() | Types.wire_input()) :: String.t()
   def to_string(value), do: format_value(value)
 
-  @spec format_value(integer()) :: Types.elm_value()
+  @spec format_value(term()) :: String.t()
 
   defp format_value(value) do
     case wire_shape(value) do
@@ -416,7 +416,7 @@ defmodule Elmx.Runtime.Core.Debug do
       " }"
   end
 
-  @spec format_scientific_float(integer()) :: Types.elm_value()
+  @spec format_scientific_float(float()) :: String.t()
 
   defp format_scientific_float(value) do
     value
@@ -492,7 +492,7 @@ defmodule Elmx.Runtime.Core.Debug do
     end
   end
 
-  @spec escape_elm_string(integer()) :: Types.elm_value()
+  @spec escape_elm_string(String.t()) :: String.t()
 
   defp escape_elm_string(value) do
     value

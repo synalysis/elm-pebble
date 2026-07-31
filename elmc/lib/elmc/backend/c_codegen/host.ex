@@ -133,13 +133,14 @@ defmodule Elmc.Backend.CCodegen.Host do
   @spec normalize_special_target(String.t()) :: String.t()
   defdelegate normalize_special_target(target), to: SpecialValues
 
-  @spec special_value_from_target(String.t(), [Types.ir_expr()]) :: Types.ir_expr() | nil
+  @spec special_value_from_target(String.t(), Types.special_value_args()) ::
+          Types.special_value_result()
   defdelegate special_value_from_target(target, args), to: SpecialValues
 
   @spec generated_draw_kind_macro(atom() | non_neg_integer()) :: String.t()
   defdelegate generated_draw_kind_macro(kind), to: SpecialValues
 
-  @spec subscription_batch_expr([Types.ir_expr()]) :: Types.ir_expr()
+  @spec subscription_batch_expr([Types.ir_expr()]) :: Subscriptions.subscription_batch_rewrite()
   defdelegate subscription_batch_expr(args), to: Subscriptions
 
   @spec direct_append_command(

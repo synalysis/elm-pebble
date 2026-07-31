@@ -2,16 +2,15 @@ defmodule Elmc.Backend.Plan.Fusion.Registry do
   @moduledoc """
   Registry for generic whole-function C fusion emitters.
 
-  IR matchers live under `Elmc.Backend.CCodegen.*`; this module owns provider
+  IR matchers live under `Elmc.Backend.Plan.Fusion.Matchers.*`; this module owns provider
   ordering and runtime metadata caches for plan-primary fusion.
   """
-
 
   alias ElmEx.IR.PipeChain
 
   alias Elmc.Backend.CCodegen.Types, as: CCodegenTypes
 
-  alias Elmc.Backend.CCodegen.{
+  alias Elmc.Backend.Plan.Fusion.Matchers.{
     FilterMapRowDrop,
     FoldlOffsetPatch,
     FusionSupport,
@@ -58,18 +57,18 @@ defmodule Elmc.Backend.Plan.Fusion.Registry do
   def providers, do: @providers
 
   @spec try_emit(String.t(), String.t(), CCodegenTypes.ir_expr() | nil, CCodegenTypes.function_decl_map()) ::
-          {:ok, String.t(), [FusionSupport.callee_key()]}
-          | {:ok, String.t(), [FusionSupport.callee_key()], :rc_native}
+          {:ok, String.t(), [FusionSupport.runtime_callee()]}
+          | {:ok, String.t(), [FusionSupport.runtime_callee()], :rc_native}
           | :error
   def try_emit(module_name, name, expr, decl_map) do
     expr = fusion_expr(expr)
 
-    Enum.find_value(@providers, :error, fn {mod, arity} ->
+    Enum.reduce_while(@providers, :error, fn {mod, arity}, _acc ->
       case apply(mod, :try_emit, apply_args(arity, module_name, name, expr, decl_map)) do
-        {:ok, code, callees, :rc_native} -> {:ok, code, callees, :rc_native}
-        {:ok, code, callees} -> {:ok, code, callees}
-        {:ok, code} -> {:ok, code, []}
-        :error -> nil
+        {:ok, code, callees, :rc_native} -> {:halt, {:ok, code, callees, :rc_native}}
+        {:ok, code, callees} -> {:halt, {:ok, code, callees}}
+        {:ok, code} -> {:halt, {:ok, code, []}}
+        :error -> {:cont, :error}
       end
     end)
   end

@@ -103,7 +103,7 @@ defmodule Elmx.Types do
         ]
 
   @typedoc "Result of rewriting a qualified call to a smaller IR subtree."
-  @type rewrite_result :: {:ok, ir_expr()} | :error
+  @type rewrite_result :: {:ok, ir_expr() | map()} | :error
 
   @typedoc "Dispatcher module result before kernel fallback."
   @type dispatch_result :: rewrite_result() | :unmatched

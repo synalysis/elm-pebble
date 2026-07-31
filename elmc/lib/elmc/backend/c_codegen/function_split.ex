@@ -137,7 +137,17 @@ defmodule Elmc.Backend.CCodegen.FunctionSplit do
     end
   end
 
-  @spec build_split_native(Types.decl(), String.t(), Types.decl_map(), Types.compile_env(), String.t(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+  @spec build_split_native(
+          Types.decl(),
+          String.t(),
+          Types.decl_map(),
+          Types.compile_env(),
+          String.t(),
+          [Types.ir_expr()],
+          String.t(),
+          String.t(),
+          String.t()
+        ) :: {:ok, String.t()}
 
   defp build_split_native(
          decl,
@@ -228,7 +238,18 @@ defmodule Elmc.Backend.CCodegen.FunctionSplit do
     {:ok, native_def}
   end
 
-  @spec emit_part_native(Types.decl(), String.t(), Types.decl_map(), Types.compile_env(), String.t(), String.t(), Types.expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+  @spec emit_part_native(
+          Types.decl(),
+          String.t(),
+          Types.decl_map(),
+          Types.compile_env(),
+          String.t(),
+          String.t(),
+          Types.ir_expr(),
+          String.t(),
+          String.t(),
+          String.t()
+        ) :: String.t()
 
   defp emit_part_native(
          decl,
@@ -315,7 +336,7 @@ defmodule Elmc.Backend.CCodegen.FunctionSplit do
     """
   end
 
-  @spec fused_call_args(Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+  @spec fused_call_args([Types.c_arg_binding()], [Types.native_function_arg_kind()]) :: String.t()
 
   defp fused_call_args(arg_bindings, arg_kinds) do
     arg_bindings
@@ -329,7 +350,7 @@ defmodule Elmc.Backend.CCodegen.FunctionSplit do
     end)
   end
 
-  @spec prepare_catch_body(String.t(), Types.ir_expr()) :: Types.ir_expr()
+  @spec prepare_catch_body(String.t(), String.t()) :: {String.t(), String.t()}
 
   defp prepare_catch_body(body_text, body_var) do
     body_text =
@@ -354,7 +375,8 @@ defmodule Elmc.Backend.CCodegen.FunctionSplit do
       String.contains?(body_text, "owned[")
   end
 
-  @spec peel_lets(map() | Types.expr()) :: Types.ir_expr()
+  @spec peel_lets(Types.ir_expr()) ::
+          {Types.ir_expr(), [{Types.binding_name(), Types.ir_expr()}]}
 
   defp peel_lets(%{op: :let_in, name: name, value_expr: value_expr, in_expr: in_expr}) do
     {body, lets} = peel_lets(in_expr)
@@ -363,7 +385,8 @@ defmodule Elmc.Backend.CCodegen.FunctionSplit do
 
   defp peel_lets(expr), do: {expr, []}
 
-  @spec rebuild_lets(term() | Types.ir_expr(), Types.expr()) :: Types.ir_expr()
+  @spec rebuild_lets([{Types.binding_name(), Types.ir_expr()}], Types.ir_expr()) ::
+          Types.ir_expr()
 
   defp rebuild_lets([], body), do: body
 
@@ -375,7 +398,7 @@ defmodule Elmc.Backend.CCodegen.FunctionSplit do
     end)
   end
 
-  @spec fold_append(term() | Types.ir_expr()) :: Types.ir_expr()
+  @spec fold_append([Types.ir_expr()]) :: Types.ir_expr()
 
   defp fold_append([segment]), do: segment
 
@@ -385,7 +408,11 @@ defmodule Elmc.Backend.CCodegen.FunctionSplit do
     end)
   end
 
-  @spec required_lets(Types.ir_expr(), Types.ir_expr(), String.t()) :: Types.ir_expr()
+  @spec required_lets(
+          [{Types.binding_name(), Types.ir_expr()}],
+          [Types.ir_expr()],
+          [String.t()]
+        ) :: [{Types.binding_name(), Types.ir_expr()}]
 
   defp required_lets(all_lets, segments, arg_names) do
     bound =
@@ -401,7 +428,11 @@ defmodule Elmc.Backend.CCodegen.FunctionSplit do
     expand_required_lets(all_lets, needed, bound)
   end
 
-  @spec expand_required_lets(Types.ir_expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+  @spec expand_required_lets(
+          [{Types.binding_name(), Types.ir_expr()}],
+          MapSet.t(String.t()),
+          MapSet.t(String.t())
+        ) :: [{Types.binding_name(), Types.ir_expr()}]
 
   defp expand_required_lets(all_lets, needed, bound) do
     lets_by_name =
@@ -425,7 +456,7 @@ defmodule Elmc.Backend.CCodegen.FunctionSplit do
     end
   end
 
-  @spec free_vars(map() | list() | Types.expr(), Types.ir_expr()) :: Types.ir_expr()
+  @spec free_vars(Types.ir_expr() | list(), MapSet.t(String.t())) :: MapSet.t(String.t())
 
   defp free_vars(%{op: :var, name: name}, bound) when is_binary(name) or is_atom(name) do
     key = EnvBindings.binding_key(name)

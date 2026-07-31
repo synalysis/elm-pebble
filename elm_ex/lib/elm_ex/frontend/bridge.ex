@@ -239,7 +239,7 @@ defmodule ElmEx.Frontend.Bridge do
     end
   end
 
-  @spec dependency_package_source_dirs(Types.t(), integer()) :: Types.expr()
+  @spec dependency_package_source_dirs(String.t(), Types.elm_json()) :: [String.t()]
 
   defp dependency_package_source_dirs(project_dir, elm_json)
        when is_binary(project_dir) and is_map(elm_json) do
@@ -253,7 +253,7 @@ defmodule ElmEx.Frontend.Bridge do
 
   defp dependency_package_source_dirs(_project_dir, _elm_json), do: []
 
-  @spec dependency_package_src_dirs(Types.t(), Types.expr(), Types.expr()) :: Types.expr()
+  @spec dependency_package_src_dirs(String.t(), String.t(), String.t()) :: [String.t()]
 
   defp dependency_package_src_dirs(project_dir, pkg, ver) do
     # Prefer internal Pebble replacements over ~/.elm official packages. Official
@@ -281,7 +281,8 @@ defmodule ElmEx.Frontend.Bridge do
     end
   end
 
-  @spec collect_dependency_version_pairs(Types.t(), integer(), Types.expr()) :: Types.expr()
+  @spec collect_dependency_version_pairs(String.t(), Types.elm_json(), MapSet.t({String.t(), String.t()})) ::
+          {MapSet.t({String.t(), String.t()}), %{String.t() => String.t() | nil}}
 
   defp collect_dependency_version_pairs(project_dir, elm_json, visited \\ MapSet.new()) do
     elm_json
@@ -308,7 +309,8 @@ defmodule ElmEx.Frontend.Bridge do
     end)
   end
 
-  @spec package_elm_json(Types.t(), Types.expr(), Types.expr()) :: Types.expr()
+  @spec package_elm_json(String.t(), String.t(), String.t()) ::
+          {:ok, Types.elm_json()} | :error
 
   defp package_elm_json(project_dir, pkg, ver) do
     case String.split(pkg, "/", parts: 2) do
@@ -345,7 +347,7 @@ defmodule ElmEx.Frontend.Bridge do
     end
   end
 
-  @spec dependency_version_pairs(map() | term()) :: Types.expr()
+  @spec dependency_version_pairs(map() | term()) :: [{String.t(), String.t() | nil}]
 
   defp dependency_version_pairs(%{"direct" => direct, "indirect" => indirect})
        when is_map(direct) and is_map(indirect) do
@@ -362,22 +364,16 @@ defmodule ElmEx.Frontend.Bridge do
 
   defp dependency_version_pairs(_), do: []
 
-  @spec application_dependency_pins(integer()) :: Types.expr()
+  @spec application_dependency_pins(Types.elm_json()) :: %{String.t() => String.t() | nil}
 
-  defp application_dependency_pins(elm_json) do
-    case elm_json do
-      %{} = json ->
-        json
-        |> Map.get("dependencies", %{})
-        |> dependency_version_pairs()
-        |> Map.new()
-
-      _ ->
-        %{}
-    end
+  defp application_dependency_pins(elm_json) when is_map(elm_json) do
+    elm_json
+    |> Map.get("dependencies", %{})
+    |> dependency_version_pairs()
+    |> Map.new()
   end
 
-  @spec dependency_exact_version(String.t() | term()) :: Types.expr()
+  @spec dependency_exact_version(String.t() | term()) :: String.t() | nil
 
   defp dependency_exact_version(range) when is_binary(range) do
     range |> String.split() |> List.first()
@@ -509,9 +505,7 @@ defmodule ElmEx.Frontend.Bridge do
     end
   end
 
-  defp disambiguate_package_module_collisions(modules), do: modules
-
-  @spec rewrite_collision_import_entry(map() | Types.expr(), Types.expr(), Types.expr()) :: map()
+  @spec rewrite_collision_import_entry(map(), String.t(), map()) :: map()
 
   defp rewrite_collision_import_entry(entry, importer_pkg, collisions) when is_map(entry) do
     module_name = Map.get(entry, "module") || Map.get(entry, :module)
@@ -617,7 +611,7 @@ defmodule ElmEx.Frontend.Bridge do
     end
   end
 
-  @spec parser_backend() :: Types.expr()
+  @spec parser_backend() :: module()
 
   defp parser_backend do
     backend =
@@ -647,7 +641,7 @@ defmodule ElmEx.Frontend.Bridge do
     end
   end
 
-  @spec attach_missing_import_diagnostics(map()) :: Types.expr()
+  @spec attach_missing_import_diagnostics(Project.t()) :: Project.t()
 
   defp attach_missing_import_diagnostics(%Project{} = project) do
     available =

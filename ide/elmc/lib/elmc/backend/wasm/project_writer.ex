@@ -20,7 +20,7 @@ defmodule Elmc.Backend.Wasm.ProjectWriter do
   @manifest_contract "elmc.wasm_manifest.v1"
   @wat_name "elmc_generated.wat"
 
-  @spec maybe_write(IR.t(), String.t(), Elmc.Types.compile_options()) :: :ok
+  @spec maybe_write(IR.t(), String.t(), Elmc.Types.compile_options() | map()) :: :ok
   def maybe_write(%IR{} = ir, out_dir, opts) when is_map(opts) do
     if Targets.emit_wasm?(opts) and Plan.plan_ir_mode(opts) in [:shadow, :primary] do
       write(ir, out_dir, opts)
@@ -29,7 +29,7 @@ defmodule Elmc.Backend.Wasm.ProjectWriter do
     end
   end
 
-  @spec write(IR.t(), String.t(), Elmc.Types.compile_options()) :: :ok
+  @spec write(IR.t(), String.t(), Elmc.Types.compile_options() | map()) :: :ok
   def write(%IR{} = ir, out_dir, opts \\ %{}) do
     wasm_dir = Path.join(out_dir, "wasm")
     File.mkdir_p!(wasm_dir)
@@ -274,7 +274,7 @@ defmodule Elmc.Backend.Wasm.ProjectWriter do
     end
   end
 
-  @spec slim_runtime_manifest(Types.ir_expr()) :: Types.ir_expr()
+  @spec slim_runtime_manifest(map()) :: map()
 
   defp slim_runtime_manifest(full) do
     closures = Map.get(full, "closures", [])
@@ -294,7 +294,8 @@ defmodule Elmc.Backend.Wasm.ProjectWriter do
     }
   end
 
-  @spec lower_plan(Types.decl(), String.t(), String.t(), Types.decl_map()) :: Types.ir_expr()
+  @spec lower_plan(Types.decl(), String.t(), String.t(), Types.decl_map()) ::
+          {:ok, Elmc.Backend.Plan.Types.function_plan()} | {:fusion, Elmc.Backend.Plan.Types.function_plan()} | {:skip, term()}
 
   defp lower_plan(decl, module, name, decl_map) do
     rc_required? = RcRequired.rc_required?(module, name)
@@ -329,7 +330,12 @@ defmodule Elmc.Backend.Wasm.ProjectWriter do
     end
   end
 
-  @spec lower_function_plan(Types.decl(), String.t(), Types.decl_map(), boolean()) :: Types.ir_expr()
+  @spec lower_function_plan(Types.decl(), String.t(), Types.decl_map(), boolean()) ::
+          {:ok, Elmc.Backend.Plan.Types.function_plan()}
+          | {:fusion, Elmc.Backend.Plan.Types.function_plan()}
+          | {:skip, term()}
+          | :unsupported
+          | {:error, Elmc.Backend.Plan.Types.lower_error()}
 
   defp lower_function_plan(decl, module, decl_map, rc_required?) do
     lower_opts = [rc_required: rc_required?]
@@ -343,7 +349,13 @@ defmodule Elmc.Backend.Wasm.ProjectWriter do
     end
   end
 
-  @spec classify_lowered_plan(integer(), Types.decl(), String.t(), Types.decl_map(), boolean()) :: Types.ir_expr()
+  @spec classify_lowered_plan(
+          Elmc.Backend.Plan.Types.function_plan(),
+          Types.decl(),
+          String.t(),
+          Types.decl_map(),
+          boolean()
+        ) :: {:ok, Elmc.Backend.Plan.Types.function_plan()} | {:fusion, Elmc.Backend.Plan.Types.function_plan()} | {:skip, term()}
 
   defp classify_lowered_plan(plan, decl, module, decl_map, rc_required?) do
     cond do
@@ -361,7 +373,13 @@ defmodule Elmc.Backend.Wasm.ProjectWriter do
     end
   end
 
-  @spec retry_without_c_fusion(Types.decl(), String.t(), Types.decl_map(), boolean(), integer()) :: Types.ir_expr()
+  @spec retry_without_c_fusion(
+          Types.decl(),
+          String.t(),
+          Types.decl_map(),
+          boolean(),
+          Elmc.Backend.Plan.Types.function_plan()
+        ) :: {:ok, Elmc.Backend.Plan.Types.function_plan()} | {:fusion, Elmc.Backend.Plan.Types.function_plan()}
 
   defp retry_without_c_fusion(decl, module, decl_map, rc_required?, fusion_plan) do
     case Plan.lower_function(decl, module, decl_map, rc_required: rc_required?, skip_c_fusion: true) do
@@ -375,7 +393,9 @@ defmodule Elmc.Backend.Wasm.ProjectWriter do
 
   # Minified builds use dense 0..n-1 ids (array in the manifesto). Non-minified
   # keeps phash2 object keys for historical probe compatibility.
-  @spec prepare_immortal_strings(Types.ir_expr(), boolean()) :: Types.ir_expr()
+  @spec prepare_immortal_strings([Elmc.Backend.Plan.Types.function_plan()], boolean()) ::
+          {[String.t()], %{optional(String.t()) => non_neg_integer()}}
+          | {%{optional(String.t()) => String.t()}, nil}
 
   defp prepare_immortal_strings(plans, minify?) do
     values =
@@ -402,7 +422,7 @@ defmodule Elmc.Backend.Wasm.ProjectWriter do
     end
   end
 
-  @spec flatten_plans_with_lambdas(list()) :: Types.ir_expr()
+  @spec flatten_plans_with_lambdas([Elmc.Backend.Plan.Types.function_plan()]) :: [Elmc.Backend.Plan.Types.function_plan()]
 
   defp flatten_plans_with_lambdas(plans) when is_list(plans) do
     Enum.flat_map(plans, fn plan ->
@@ -410,7 +430,7 @@ defmodule Elmc.Backend.Wasm.ProjectWriter do
     end)
   end
 
-  @spec reason_string(integer() | Types.ir_expr() | term()) :: Types.ir_expr()
+  @spec reason_string(term()) :: String.t()
 
   defp reason_string(:empty_plan), do: "empty_plan"
   defp reason_string(:unsupported), do: "unsupported"
@@ -418,7 +438,7 @@ defmodule Elmc.Backend.Wasm.ProjectWriter do
   defp reason_string({:verify, reason, _}), do: "verify:#{reason}"
   defp reason_string(other), do: inspect(other)
 
-  @spec fusion_manifest_entry(String.t(), String.t(), Types.decl(), integer()) :: Types.ir_expr()
+  @spec fusion_manifest_entry(String.t(), String.t(), Types.decl(), Elmc.Backend.Plan.Types.function_plan()) :: map()
 
   defp fusion_manifest_entry(module, name, decl, plan) do
     %{
@@ -430,7 +450,7 @@ defmodule Elmc.Backend.Wasm.ProjectWriter do
     }
   end
 
-  @spec wire_fusion_data(map() | Types.ir_expr()) :: Types.ir_expr()
+  @spec wire_fusion_data(map() | term()) :: map() | term()
 
   defp wire_fusion_data(data) when is_map(data) do
     data
@@ -443,7 +463,7 @@ defmodule Elmc.Backend.Wasm.ProjectWriter do
 
   defp wire_fusion_data(other), do: other
 
-  @spec wire_fusion_value(term() | list() | map() | atom() | Types.ir_expr()) :: Types.ir_expr()
+  @spec wire_fusion_value(term()) :: term()
 
   defp wire_fusion_value({mod, name}) when is_binary(mod) and is_binary(name),
     do: %{"module" => mod, "name" => name}
@@ -453,7 +473,7 @@ defmodule Elmc.Backend.Wasm.ProjectWriter do
   defp wire_fusion_value(atom) when is_atom(atom), do: Atom.to_string(atom)
   defp wire_fusion_value(other), do: other
 
-  @spec coverage_opts(keyword()) :: Types.ir_expr()
+  @spec coverage_opts(map()) :: keyword()
 
   defp coverage_opts(opts) do
     [
@@ -464,7 +484,7 @@ defmodule Elmc.Backend.Wasm.ProjectWriter do
     ]
   end
 
-  @spec emit_decl_map(Types.decl_map(), keyword()) :: Types.ir_expr()
+  @spec emit_decl_map(Types.decl_map(), keyword()) :: Types.decl_map()
 
   defp emit_decl_map(decl_map, coverage_opts) do
     strip? = Keyword.get(coverage_opts, :strip_dead_code, true)
@@ -489,7 +509,7 @@ defmodule Elmc.Backend.Wasm.ProjectWriter do
     end
   end
 
-  @spec inject_web_wire3_helpers(map(), keyword()) :: Types.ir_expr()
+  @spec inject_web_wire3_helpers(Types.decl_map(), map()) :: Types.decl_map()
 
   defp inject_web_wire3_helpers(decl_map, opts) when is_map(decl_map) do
     if Map.get(opts, :web, false) != true do
@@ -513,7 +533,7 @@ defmodule Elmc.Backend.Wasm.ProjectWriter do
     end)
   end
 
-  @spec web_wire3_synthetic_decls(Types.decl_map()) :: Types.ir_expr()
+  @spec web_wire3_synthetic_decls(Types.decl_map()) :: [{String.t(), String.t(), Types.decl()}]
 
   defp web_wire3_synthetic_decls(decl_map) do
     succeed =
@@ -547,7 +567,7 @@ defmodule Elmc.Backend.Wasm.ProjectWriter do
     web_wire3_synthetic_decls(decl_map)
   end
 
-  @spec web_wire3_decls(Types.decl_map()) :: Types.ir_expr()
+  @spec web_wire3_decls(Types.decl_map()) :: Types.decl_map()
 
   defp web_wire3_decls(decl_map) do
     wire3 =
@@ -565,7 +585,7 @@ defmodule Elmc.Backend.Wasm.ProjectWriter do
     Map.merge(support, wire3)
   end
 
-  @spec wire3_support_keys() :: Types.ir_expr()
+  @spec wire3_support_keys() :: [{String.t(), String.t()}]
 
   defp wire3_support_keys do
     [
@@ -579,7 +599,7 @@ defmodule Elmc.Backend.Wasm.ProjectWriter do
     ]
   end
 
-  @spec plan_coverage_manifest(Types.decl_map(), keyword(), keyword()) :: Types.ir_expr()
+  @spec plan_coverage_manifest(Types.decl_map(), keyword(), map()) :: Types.plan_coverage()
 
   defp plan_coverage_manifest(decl_map, coverage_opts, compile_opts) do
     coverage_report_opts = coverage_report_opts(coverage_opts, compile_opts)
@@ -602,7 +622,7 @@ defmodule Elmc.Backend.Wasm.ProjectWriter do
     }
   end
 
-  @spec coverage_report_opts(keyword(), keyword()) :: Types.ir_expr()
+  @spec coverage_report_opts(keyword(), map()) :: map()
 
   defp coverage_report_opts(coverage_opts, compile_opts) do
     base =
@@ -613,7 +633,7 @@ defmodule Elmc.Backend.Wasm.ProjectWriter do
     Map.put_new(base, :plan_ir_mode, Plan.plan_ir_mode(base))
   end
 
-  @spec plan_toolchain_manifest(keyword()) :: Types.ir_expr()
+  @spec plan_toolchain_manifest(map() | keyword()) :: Types.plan_toolchain()
 
   defp plan_toolchain_manifest(opts) do
     %{
@@ -623,12 +643,12 @@ defmodule Elmc.Backend.Wasm.ProjectWriter do
     }
   end
 
-  @spec opt_bool(map(), String.t(), Types.ir_expr()) :: Types.ir_expr()
+  @spec opt_bool(map(), atom(), boolean()) :: boolean()
 
   defp opt_bool(opts, key, default) when is_map(opts),
     do: Map.get(opts, key, default) == true
 
-  @spec maybe_put_wasm_binary(Types.ir_expr(), Types.t(), keyword()) :: Types.ir_expr() | nil
+  @spec maybe_put_wasm_binary(map(), String.t(), map()) :: map()
 
   defp maybe_put_wasm_binary(manifest, wasm_dir, opts) do
     if Map.get(opts, :wasm_binary, false) == true do
@@ -644,7 +664,7 @@ defmodule Elmc.Backend.Wasm.ProjectWriter do
     end
   end
 
-  @spec run_wat2wasm(String.t(), String.t()) :: Types.ir_expr()
+  @spec run_wat2wasm(String.t(), String.t()) :: :ok | {:error, String.t()}
 
   defp run_wat2wasm(wat_path, wasm_path) do
     case System.find_executable("wat2wasm") do
@@ -657,12 +677,12 @@ defmodule Elmc.Backend.Wasm.ProjectWriter do
     end
   end
 
-  @spec strip_dollar(Types.ir_expr()) :: Types.ir_expr()
+  @spec strip_dollar(String.t()) :: String.t()
 
   defp strip_dollar("$" <> rest), do: rest
   defp strip_dollar(other), do: other
 
-  @spec macro_index_map(map(), map()) :: Types.ir_expr()
+  @spec macro_index_map(map(), map()) :: %{optional(String.t()) => non_neg_integer()}
 
   defp macro_index_map(record_field_macros, shapes) when is_map(record_field_macros) and is_map(shapes) do
     Map.new(record_field_macros, fn {{mod, type, field}, macro} ->

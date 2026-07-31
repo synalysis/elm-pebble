@@ -87,10 +87,7 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.MaybeWithDefaultPickSlot do
     end
   end
 
-  @spec parse_default_tag(integer() | String.t()) :: Types.ir_expr()
-
-  defp parse_default_tag(tag) when is_integer(tag), do: tag
-
+  @spec parse_default_tag(String.t()) :: integer() | :error
   defp parse_default_tag(tag) when is_binary(tag) do
     case Integer.parse(tag) do
       {n, ""} -> n
@@ -98,8 +95,8 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.MaybeWithDefaultPickSlot do
     end
   end
 
-  @spec parse(Types.expr(), String.t()) :: Types.ir_expr()
-
+  @spec parse(Types.expr(), String.t()) ::
+          {:ok, String.t(), String.t(), String.t(), String.t(), Types.ir_expr()} | :error
   defp parse(expr, module_name) do
     case parse_with_default(expr) do
       {:ok, _model, _default, _pick_mod, _pick_name, _slots} = ok ->
@@ -110,8 +107,8 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.MaybeWithDefaultPickSlot do
     end
   end
 
-  @spec parse_with_default(map() | term()) :: Types.ir_expr()
-
+  @spec parse_with_default(map() | term()) ::
+          {:ok, String.t(), String.t(), String.t(), String.t(), Types.ir_expr()} | :error
   defp parse_with_default(%{op: :qualified_call, target: "Maybe.withDefault", args: [default, pick_call]}) do
     with {:ok, default_tag} <- default_ctor_tag(default),
          {:ok, model_var, pick_mod, pick_name, slots_expr} <- parse_pick_slot_call(pick_call) do
@@ -121,7 +118,8 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.MaybeWithDefaultPickSlot do
 
   defp parse_with_default(_), do: :error
 
-  @spec parse_case_default(map() | term(), String.t() | term()) :: Types.ir_expr()
+  @spec parse_case_default(map() | term(), String.t() | term()) ::
+          {:ok, String.t(), String.t(), String.t(), String.t(), Types.ir_expr()} | :error
 
   defp parse_case_default(
          %{
@@ -157,7 +155,7 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.MaybeWithDefaultPickSlot do
 
   defp nothing_ctor?(name), do: short_name(name) == "Nothing"
 
-  @spec just_arm_acceptable?(map() | Types.expr(), Types.ir_expr(), Types.ir_expr()) :: boolean()
+  @spec just_arm_acceptable?(map() | Types.expr(), map(), String.t()) :: boolean()
 
   defp just_arm_acceptable?(%{op: :var, name: name}, _just_pat, model_var) when name == model_var, do: true
   defp just_arm_acceptable?(%{op: :var, name: "_"}, _just_pat, _model_var), do: true
@@ -168,11 +166,13 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.MaybeWithDefaultPickSlot do
   defp payload_var_just?(%{arg_pattern: %{kind: :var}}), do: true
   defp payload_var_just?(_), do: false
 
-  @spec parse_pick_slot_call(Types.expr()) :: Types.ir_expr()
+  @spec parse_pick_slot_call(Types.expr()) ::
+          {:ok, String.t(), String.t(), String.t(), Types.ir_expr()} | :error
 
   defp parse_pick_slot_call(expr), do: parse_pick_slot_subject(expr)
 
-  @spec parse_pick_slot_subject(map() | term()) :: Types.ir_expr()
+  @spec parse_pick_slot_subject(map() | term()) ::
+          {:ok, String.t(), String.t(), String.t(), Types.ir_expr()} | :error
 
   defp parse_pick_slot_subject(%{op: :qualified_call, target: target, args: [model, slots]})
        when is_binary(target) do
@@ -202,7 +202,8 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.MaybeWithDefaultPickSlot do
 
   defp parse_pick_slot_subject(_), do: :error
 
-  @spec parse_pick_slot_target(String.t(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+  @spec parse_pick_slot_target(String.t(), Types.ir_expr(), Types.ir_expr()) ::
+          {:ok, String.t(), String.t(), String.t(), Types.ir_expr()} | :error
 
   defp parse_pick_slot_target(target, model, slots) do
     if short_name(target) in @pick_slot_names do
@@ -215,7 +216,7 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.MaybeWithDefaultPickSlot do
     end
   end
 
-  @spec callee_module_name(String.t()) :: Types.ir_expr()
+  @spec callee_module_name(String.t()) :: {String.t(), String.t()}
 
   defp callee_module_name(target) do
     case String.split(target, ".", parts: 2) do
@@ -224,7 +225,7 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.MaybeWithDefaultPickSlot do
     end
   end
 
-  @spec default_ctor_tag(map() | term()) :: Types.ir_expr()
+  @spec default_ctor_tag(map() | term()) :: {:ok, String.t()} | :error
 
   defp default_ctor_tag(%{op: :int_literal, value: tag, union_ctor: ctor}) when is_integer(tag) do
     {:ok, ctor_tag_literal(tag, ctor)}
@@ -244,7 +245,7 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.MaybeWithDefaultPickSlot do
 
   defp default_ctor_tag(_), do: :error
 
-  @spec lookup_ctor_tag(String.t()) :: Types.ir_expr()
+  @spec lookup_ctor_tag(String.t()) :: {:ok, String.t()} | :error
 
   defp lookup_ctor_tag(name) when is_binary(name) do
     tags = Process.get(:elmc_constructor_tags, %{})
@@ -255,7 +256,7 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.MaybeWithDefaultPickSlot do
     end
   end
 
-  @spec ctor_tag_literal(String.t(), String.t() | term()) :: Types.ir_expr()
+  @spec ctor_tag_literal(integer(), String.t() | term()) :: String.t()
 
   defp ctor_tag_literal(tag, ctor) when is_binary(ctor) do
     case lookup_ctor_tag(ctor) do
@@ -266,7 +267,8 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.MaybeWithDefaultPickSlot do
 
   defp ctor_tag_literal(tag, _), do: Integer.to_string(tag)
 
-  @spec emit_slots_call(Types.ir_expr(), String.t(), Types.ir_expr(), Types.ir_expr(), Types.decl_map()) :: Types.ir_expr()
+  @spec emit_slots_call(String.t(), String.t(), String.t(), String.t(), Types.decl_map()) ::
+          {String.t(), String.t()}
 
   defp emit_slots_call(slots_mod, slots_name, c_prefix, model_param, decl_map) do
     case Map.get(decl_map, {slots_mod, slots_name}) do
@@ -283,7 +285,7 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.MaybeWithDefaultPickSlot do
     end
   end
 
-  @spec slots_callee(map() | term(), String.t()) :: Types.ir_expr()
+  @spec slots_callee(map() | term(), String.t()) :: {String.t(), String.t()}
 
   defp slots_callee(%{op: :qualified_call, target: target, args: _}, _module_name) do
     callee_module_name(target)
@@ -295,7 +297,7 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.MaybeWithDefaultPickSlot do
 
   defp slots_callee(_, module_name), do: {module_name, "slots"}
 
-  @spec fusion_param_name(String.t(), String.t(), Types.decl_map()) :: Types.ir_expr()
+  @spec fusion_param_name(String.t(), String.t(), Types.decl_map()) :: String.t() | nil
 
   defp fusion_param_name(module_name, name, decl_map) do
     case Map.get(decl_map, {module_name, name}) do
@@ -304,7 +306,7 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.MaybeWithDefaultPickSlot do
     end
   end
 
-  @spec short_name(String.t()) :: Types.ir_expr()
+  @spec short_name(String.t()) :: String.t()
 
   defp short_name(name), do: name |> String.split(".") |> List.last()
 end

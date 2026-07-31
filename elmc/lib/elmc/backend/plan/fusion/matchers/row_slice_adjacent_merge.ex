@@ -7,11 +7,16 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.RowSliceAdjacentMerge do
   """
   alias Elmc.Backend.CCodegen.Types, as: Types
 
-
-  alias Elmc.Backend.CCodegen.Types
-
   alias Elmc.Backend.Plan.Fusion.Matchers.FusionSupport
   alias Elmc.Backend.CCodegen.{Util}
+
+  @type field_name :: String.t()
+  @type var_name :: String.t()
+  @type target_name :: String.t()
+  @type row_calls :: [Types.expr()]
+  @type record_fields :: [map()]
+  @type field_expr_ok :: {:ok, field_name(), Types.expr()}
+  @type row_at_ok :: {:ok, target_name(), target_name(), integer(), var_name()}
 
   @spec try_emit(String.t(), String.t(), Types.ir_expr() | nil, Types.function_decl_map()) ::
           {:ok, String.t(), [FusionSupport.callee_key()]}
@@ -28,7 +33,8 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.RowSliceAdjacentMerge do
          {:ok, ^width} <- row_slice_width(decl_map, module_name, row_at),
          {:ok, ^merge, ^cells_field, ^score_field} <-
            collapse_row_shape(decl_map, module_name, collapse_row, width),
-         true <- adjacent_pair_merge_record?(decl_map, module_name, merge, cells_field, score_field),
+         true <-
+           adjacent_pair_merge_record?(decl_map, module_name, merge, cells_field, score_field),
          {:ok, _record_type} <- result_record_type(decl_map, module_name, name) do
       callees = [
         FusionSupport.callee_key(module_name, collapse_row),
@@ -45,7 +51,8 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.RowSliceAdjacentMerge do
     end
   end
 
-  @spec parse_collapse_rows(Types.expr()) :: Types.ir_expr()
+  @spec parse_collapse_rows(Types.expr()) ::
+          {:ok, row_calls(), field_name(), field_name(), var_name()} | :error
 
   defp parse_collapse_rows(expr) do
     with {:ok, row_calls, cells_var} <- parse_row_lets(expr, []),
@@ -54,7 +61,7 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.RowSliceAdjacentMerge do
     end
   end
 
-  @spec parse_row_lets(map() | term(), term()) :: Types.ir_expr()
+  @spec parse_row_lets(Types.expr(), row_calls()) :: {:ok, row_calls(), var_name()} | :error
 
   defp parse_row_lets(%{op: :let_in, value_expr: row_call, in_expr: rest}, acc) do
     parse_row_lets(rest, acc ++ [row_call])
@@ -68,7 +75,7 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.RowSliceAdjacentMerge do
 
   defp parse_row_lets(_, _), do: :error
 
-  @spec cells_var_from_row_calls(term()) :: Types.ir_expr()
+  @spec cells_var_from_row_calls(row_calls()) :: {:ok, var_name()} | :error
 
   defp cells_var_from_row_calls([first | _]) do
     case row_at_call(first) do
@@ -77,7 +84,7 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.RowSliceAdjacentMerge do
     end
   end
 
-  @spec row_at_call(map() | term()) :: Types.ir_expr()
+  @spec row_at_call(Types.expr()) :: row_at_ok() | :error
 
   defp row_at_call(%{
          op: :qualified_call,
@@ -100,11 +107,12 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.RowSliceAdjacentMerge do
 
   defp row_at_call(_), do: :error
 
-  @spec parse_result_record(Types.expr()) :: Types.ir_expr()
+  @spec parse_result_record(Types.expr()) :: {:ok, field_name(), field_name()} | :error
 
   defp parse_result_record(expr), do: unwrap_result_record(expr) |> parse_result_fields()
 
-  @spec unwrap_result_record(Types.expr()) :: Types.ir_expr()
+  @spec unwrap_result_record(Types.expr()) ::
+          {:ok, field_name(), field_name(), Types.expr(), Types.expr()} | :error
 
   defp unwrap_result_record(expr) do
     case expr do
@@ -128,7 +136,9 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.RowSliceAdjacentMerge do
     end
   end
 
-  @spec parse_result_fields(term() | Types.ir_expr()) :: Types.ir_expr()
+  @spec parse_result_fields(
+          {:ok, field_name(), field_name(), Types.expr(), Types.expr()} | :error
+        ) :: {:ok, field_name(), field_name()} | :error
 
   defp parse_result_fields({:ok, cells_field, score_field, cells_expr, score_expr}) do
     with true <- append_chain_fields?(cells_expr),
@@ -141,7 +151,7 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.RowSliceAdjacentMerge do
 
   defp parse_result_fields(:error), do: :error
 
-  @spec find_padded_cells_field(list(), Types.ir_expr()) :: Types.ir_expr()
+  @spec find_padded_cells_field(record_fields(), integer()) :: field_expr_ok() | :error
 
   defp find_padded_cells_field(fields, width) do
     Enum.find_value(fields, :error, fn
@@ -153,7 +163,7 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.RowSliceAdjacentMerge do
     end)
   end
 
-  @spec padded_row_cells?(map() | term(), Types.ir_expr() | term(), Types.ir_expr() | term()) :: boolean()
+  @spec padded_row_cells?(Types.expr(), field_name(), integer()) :: boolean()
 
   defp padded_row_cells?(
          %{op: :call, name: op, args: [left, right]},
@@ -174,7 +184,7 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.RowSliceAdjacentMerge do
 
   defp padded_row_cells?(_, _, _), do: false
 
-  @spec find_append_field(list()) :: Types.ir_expr()
+  @spec find_append_field(record_fields()) :: field_expr_ok() | :error
 
   defp find_append_field(fields) do
     Enum.find_value(fields, :error, fn
@@ -199,7 +209,7 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.RowSliceAdjacentMerge do
 
   defp append_chain_root?(_), do: false
 
-  @spec find_add_field(list()) :: Types.ir_expr()
+  @spec find_add_field(record_fields()) :: field_expr_ok() | :error
 
   defp find_add_field(fields) do
     Enum.find_value(fields, :error, fn
@@ -211,7 +221,7 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.RowSliceAdjacentMerge do
     end)
   end
 
-  @spec find_score_field(list()) :: Types.ir_expr()
+  @spec find_score_field(record_fields()) :: field_expr_ok() | :error
 
   defp find_score_field(fields) do
     Enum.find_value(fields, :error, fn
@@ -248,7 +258,7 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.RowSliceAdjacentMerge do
   defp field_access?(%{op: :field_access, field: field}) when is_binary(field), do: true
   defp field_access?(_), do: false
 
-  @spec field_access_field(map() | term()) :: Types.ir_expr()
+  @spec field_access_field(Types.expr()) :: field_name() | nil
 
   defp field_access_field(%{op: :field_access, field: field}) when is_binary(field), do: field
   defp field_access_field(_), do: nil
@@ -273,7 +283,8 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.RowSliceAdjacentMerge do
 
   defp sum_side?(expr), do: field_access?(expr) or add_chain_fields?(expr)
 
-  @spec row_width_from_calls(Types.decl_map(), String.t(), Types.ir_expr()) :: Types.ir_expr()
+  @spec row_width_from_calls(Types.decl_map(), String.t(), row_calls()) ::
+          {:ok, integer()} | :error
 
   defp row_width_from_calls(decl_map, module_name, row_calls) do
     with [first | _] <- row_calls,
@@ -295,7 +306,8 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.RowSliceAdjacentMerge do
     end
   end
 
-  @spec call_targets_from(Types.decl_map(), String.t(), Types.ir_expr()) :: Types.ir_expr()
+  @spec call_targets_from(Types.decl_map(), String.t(), row_calls()) ::
+          {:ok, target_name(), target_name(), target_name()} | :error
 
   defp call_targets_from(decl_map, module_name, row_calls) do
     with [first | _] <- row_calls,
@@ -305,7 +317,8 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.RowSliceAdjacentMerge do
     end
   end
 
-  @spec row_slice_width(Types.decl_map(), String.t(), String.t()) :: Types.ir_expr()
+  @spec row_slice_width(Types.decl_map(), String.t(), target_name()) ::
+          {:ok, integer()} | :error
 
   defp row_slice_width(decl_map, module_name, row_at_target) do
     case Map.get(decl_map, FusionSupport.callee_key(module_name, row_at_target)) do
@@ -324,7 +337,7 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.RowSliceAdjacentMerge do
     end
   end
 
-  @spec row_drop_stride?(map() | term(), Types.ir_expr() | term()) :: boolean()
+  @spec row_drop_stride?(Types.expr(), integer()) :: boolean()
 
   defp row_drop_stride?(
          %{
@@ -339,9 +352,16 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.RowSliceAdjacentMerge do
 
   defp row_drop_stride?(_, _), do: false
 
-  @spec row_mul_width?(map() | term(), Types.ir_expr() | term()) :: boolean()
+  @spec row_mul_width?(Types.expr(), integer()) :: boolean()
 
-  defp row_mul_width?(%{op: :call, name: op, args: [%{op: :var, name: "row"}, %{op: :int_literal, value: width}]}, width)
+  defp row_mul_width?(
+         %{
+           op: :call,
+           name: op,
+           args: [%{op: :var, name: "row"}, %{op: :int_literal, value: width}]
+         },
+         width
+       )
        when op in ["__mul__", "*"],
        do: true
 
@@ -358,7 +378,8 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.RowSliceAdjacentMerge do
 
   defp row_mul_width?(_, _), do: false
 
-  @spec collapse_row_merge(Types.decl_map(), String.t(), String.t()) :: Types.ir_expr()
+  @spec collapse_row_merge(Types.decl_map(), String.t(), target_name()) ::
+          {:ok, target_name()} | :error
 
   defp collapse_row_merge(decl_map, module_name, collapse_row_target) do
     case Map.get(decl_map, FusionSupport.callee_key(module_name, collapse_row_target)) do
@@ -408,7 +429,8 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.RowSliceAdjacentMerge do
 
   defp nonzero_filter?(_), do: false
 
-  @spec collapse_row_shape(Types.decl_map(), String.t(), String.t(), Types.ir_expr()) :: Types.ir_expr()
+  @spec collapse_row_shape(Types.decl_map(), String.t(), target_name(), integer()) ::
+          {:ok, target_name(), field_name(), field_name()} | :error
 
   defp collapse_row_shape(decl_map, module_name, collapse_row_target, width) do
     case Map.get(decl_map, FusionSupport.callee_key(module_name, collapse_row_target)) do
@@ -432,7 +454,7 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.RowSliceAdjacentMerge do
     end
   end
 
-  @spec repeat_pad?(map() | term(), Types.ir_expr() | term(), Types.ir_expr() | term()) :: boolean()
+  @spec repeat_pad?(Types.expr(), field_name(), integer()) :: boolean()
 
   defp repeat_pad?(
          %{
@@ -481,19 +503,37 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.RowSliceAdjacentMerge do
 
   defp repeat_pad?(_, _, _), do: false
 
-  @spec adjacent_pair_merge_record?(Types.decl_map(), String.t(), String.t(), Types.ir_expr(), Types.ir_expr()) :: boolean()
+  @spec adjacent_pair_merge_record?(
+          Types.decl_map(),
+          String.t(),
+          target_name(),
+          field_name(),
+          field_name()
+        ) :: boolean()
 
   defp adjacent_pair_merge_record?(decl_map, module_name, merge_target, cells_field, score_field) do
     case Map.get(decl_map, FusionSupport.callee_key(module_name, merge_target)) do
       %{expr: %{op: :case, subject: "values", branches: branches}} ->
-        adjacent_pair_merge_branches?(branches, module_name, merge_target, cells_field, score_field)
+        adjacent_pair_merge_branches?(
+          branches,
+          module_name,
+          merge_target,
+          cells_field,
+          score_field
+        )
 
       _ ->
         false
     end
   end
 
-  @spec adjacent_pair_merge_branches?(term(), String.t() | term(), String.t() | term(), Types.ir_expr() | term(), Types.ir_expr() | term()) :: boolean()
+  @spec adjacent_pair_merge_branches?(
+          list(),
+          String.t(),
+          target_name(),
+          field_name(),
+          field_name()
+        ) :: boolean()
 
   defp adjacent_pair_merge_branches?(
          [
@@ -511,7 +551,7 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.RowSliceAdjacentMerge do
 
   defp adjacent_pair_merge_branches?(_, _, _, _, _), do: false
 
-  @spec adjacent_pair_merge_default?(map() | term(), Types.ir_expr() | term(), Types.ir_expr() | term()) :: boolean()
+  @spec adjacent_pair_merge_default?(Types.expr(), field_name(), field_name()) :: boolean()
 
   defp adjacent_pair_merge_default?(
          %{op: :record_literal, fields: fields},
@@ -528,7 +568,14 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.RowSliceAdjacentMerge do
 
   defp adjacent_pair_merge_default?(_, _, _), do: false
 
-  @spec equal_merge_branch?(Types.expr(), String.t(), String.t(), Types.ir_expr(), Types.ir_expr(), term()) :: boolean()
+  @spec equal_merge_branch?(
+          Types.expr(),
+          String.t(),
+          target_name(),
+          field_name(),
+          field_name(),
+          atom()
+        ) :: boolean()
 
   defp equal_merge_branch?(expr, module_name, merge_target, cells_field, score_field, _) do
     case expr do
@@ -538,15 +585,33 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.RowSliceAdjacentMerge do
         then_expr: then_expr,
         else_expr: else_expr
       } ->
-        adjacent_pair_merge_equal_then?(then_expr, module_name, merge_target, cells_field, score_field) and
-          adjacent_pair_merge_unequal_else?(else_expr, module_name, merge_target, cells_field, score_field)
+        adjacent_pair_merge_equal_then?(
+          then_expr,
+          module_name,
+          merge_target,
+          cells_field,
+          score_field
+        ) and
+          adjacent_pair_merge_unequal_else?(
+            else_expr,
+            module_name,
+            merge_target,
+            cells_field,
+            score_field
+          )
 
       _ ->
         false
     end
   end
 
-  @spec adjacent_pair_merge_equal_then?(map() | term(), String.t() | term(), String.t() | term(), Types.ir_expr() | term(), Types.ir_expr() | term()) :: boolean()
+  @spec adjacent_pair_merge_equal_then?(
+          Types.expr(),
+          String.t(),
+          target_name(),
+          field_name(),
+          field_name()
+        ) :: boolean()
 
   defp adjacent_pair_merge_equal_then?(
          %{
@@ -569,7 +634,13 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.RowSliceAdjacentMerge do
 
   defp adjacent_pair_merge_equal_then?(_, _, _, _, _), do: false
 
-  @spec adjacent_pair_merge_unequal_else?(map() | term(), String.t() | term(), String.t() | term(), Types.ir_expr() | term(), Types.ir_expr() | term()) :: boolean()
+  @spec adjacent_pair_merge_unequal_else?(
+          Types.expr(),
+          String.t(),
+          target_name(),
+          field_name(),
+          field_name()
+        ) :: boolean()
 
   defp adjacent_pair_merge_unequal_else?(
          %{
@@ -588,15 +659,19 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.RowSliceAdjacentMerge do
 
   defp adjacent_pair_merge_unequal_else?(_, _, _, _, _), do: false
 
-  @spec merge_rest_call?(map() | term(), String.t() | term(), Types.ir_expr() | term()) :: boolean()
+  @spec merge_rest_call?(Types.expr(), target_name(), String.t()) :: boolean()
 
-  defp merge_rest_call?(%{op: :qualified_call, target: target, args: [%{name: "rest"}]}, merge_target, "rest") do
+  defp merge_rest_call?(
+         %{op: :qualified_call, target: target, args: [%{name: "rest"}]},
+         merge_target,
+         "rest"
+       ) do
     target == merge_target
   end
 
   defp merge_rest_call?(_, _, _), do: false
 
-  @spec merge_cons_rest_call?(map() | term(), String.t() | term()) :: boolean()
+  @spec merge_cons_rest_call?(Types.expr(), target_name()) :: boolean()
 
   defp merge_cons_rest_call?(
          %{
@@ -617,7 +692,13 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.RowSliceAdjacentMerge do
 
   defp merge_cons_rest_call?(_, _), do: false
 
-  @spec adjacent_pair_merge_cons_record?(Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), boolean()) :: boolean()
+  @spec adjacent_pair_merge_cons_record?(
+          Types.expr(),
+          String.t(),
+          field_name(),
+          field_name(),
+          boolean()
+        ) :: boolean()
 
   defp adjacent_pair_merge_cons_record?(record, head_var, cells_field, score_field, add_score?) do
     case record do
@@ -636,7 +717,7 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.RowSliceAdjacentMerge do
     end
   end
 
-  @spec cons_matches?(map() | term(), Types.ir_expr() | term(), Types.ir_expr() | term()) :: boolean()
+  @spec cons_matches?(Types.expr(), String.t(), field_name()) :: boolean()
 
   defp cons_matches?(
          %{
@@ -653,7 +734,7 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.RowSliceAdjacentMerge do
 
   defp cons_matches?(_, _, _), do: false
 
-  @spec score_field_expr?(Types.expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr()) :: boolean()
+  @spec score_field_expr?(Types.expr(), field_name(), String.t(), boolean()) :: boolean()
 
   defp score_field_expr?(expr, score_field, head_var, true) do
     case expr do
@@ -677,7 +758,8 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.RowSliceAdjacentMerge do
     field_access_field(expr) == score_field
   end
 
-  @spec result_record_type(Types.decl_map(), String.t(), String.t()) :: Types.ir_expr()
+  @spec result_record_type(Types.decl_map(), String.t(), String.t()) ::
+          {:ok, String.t()} | :error
 
   defp result_record_type(decl_map, module_name, name) do
     case Map.get(decl_map, {module_name, name}) do
@@ -692,7 +774,7 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.RowSliceAdjacentMerge do
     end
   end
 
-  @spec result_type_name(Types.ir_expr()) :: Types.ir_expr()
+  @spec result_type_name(String.t()) :: String.t()
 
   defp result_type_name(type) do
     type
@@ -701,7 +783,7 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.RowSliceAdjacentMerge do
     |> List.last()
   end
 
-  @spec emit(String.t(), String.t(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+  @spec emit(String.t(), String.t(), var_name(), pos_integer(), pos_integer()) :: String.t()
 
   defp emit(module_name, name, cells_var, rows, width) do
     c_prefix = Util.module_fn_name(module_name, name)
@@ -762,7 +844,12 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.RowSliceAdjacentMerge do
   end
 
   @doc false
-  @spec extract_fusion_data(String.t(), String.t(), Types.ir_expr() | nil, Types.function_decl_map()) ::
+  @spec extract_fusion_data(
+          String.t(),
+          String.t(),
+          Types.ir_expr() | nil,
+          Types.function_decl_map()
+        ) ::
           {:ok, :row_slice_adjacent_merge, Types.fusion_metadata()} | :error
   def extract_fusion_data(module_name, _name, expr, decl_map) do
     with {:ok, row_calls, _cells_field, _score_field, _cells_var} <- parse_collapse_rows(expr),

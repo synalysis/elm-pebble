@@ -28,11 +28,12 @@ defmodule Ide.Debugger.ProtocolContexts do
                                                String.t(),
                                                Types.surface_target(),
                                                String.t(),
-                                               String.t() ->
+                                               String.t(),
+                                               Types.timeline_step_message_value() ->
                                                  Types.runtime_state()),
           required(:append_runtime_exec_event_for_target) => (Types.runtime_state(),
                                                               Types.surface_target(),
-                                                              Types.debugger_timeline_payload() ->
+                                                              Types.RuntimeExecEventPayload.extra() ->
                                                                 Types.runtime_state()),
           required(:source_root_for_target) => (Types.surface_target() -> String.t()),
           required(:introspect_for) => (Types.runtime_state(), Types.surface_target() ->

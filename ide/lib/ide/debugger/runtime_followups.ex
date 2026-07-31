@@ -393,7 +393,7 @@ defmodule Ide.Debugger.RuntimeFollowups do
         ) :: Types.runtime_state()
   defp maybe_apply_runtime_followup_step(state, target, step_message, message_value, ctx)
        when is_map(state) and target in [:watch, :companion, :phone] and is_map(ctx) do
-    if is_binary(step_message) and String.trim(step_message) != "" do
+    if String.trim(step_message) != "" do
       ctx.apply_step_once.(
         state,
         target,

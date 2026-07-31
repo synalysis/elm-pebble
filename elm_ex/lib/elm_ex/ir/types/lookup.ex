@@ -13,12 +13,12 @@ defmodule ElmEx.IR.Types.Lookup do
   @type import_unqualified_map :: %{String.t() => unqualified_target()}
 
   @type import_resolution_t :: %{
-          optional(:alias_map) => name_map(),
-          optional(:alias_member_map) => alias_member_map(),
-          optional(:import_unqualified_map) => import_unqualified_map(),
-          optional(:local_call_names) => MapSet.t(String.t()),
-          optional(:current_module) => String.t(),
-          optional(:type_unqualified_map) => name_map()
+          optional(:alias_map) => map(),
+          optional(:alias_member_map) => map(),
+          optional(:import_unqualified_map) => map(),
+          optional(:local_call_names) => map() | MapSet.t(term()),
+          optional(:current_module) => term(),
+          optional(:type_unqualified_map) => map()
         }
 
   @type tag_map :: %{String.t() => integer()}
@@ -39,21 +39,27 @@ defmodule ElmEx.IR.Types.Lookup do
           optional(:alias_map) => name_map()
         }
 
+  # Value types are intentionally wide (`map()` / `term()`): Dialyzer widens
+  # MapSet and nested tag maps through map updates, and success typing must
+  # remain a subtype of this contract.
   @type rewrite_t :: %{
-          optional(:local) => tag_map(),
-          optional(:unqualified) => tag_map(),
-          optional(:qualified) => tag_map(),
-          optional(:payload_arity_local) => arity_map(),
-          optional(:payload_arity_unqualified) => arity_map(),
-          optional(:payload_arity_qualified) => arity_map(),
-          optional(:current_module) => String.t(),
-          optional(:alias_map) => name_map(),
-          optional(:alias_member_map) => alias_member_map(),
-          optional(:import_unqualified_map) => import_unqualified_map(),
-          optional(:type_unqualified_map) => name_map(),
-          optional(:wildcard_import_modules) => [String.t()] | list(),
-          optional(:local_call_names) => MapSet.t(String.t()),
-          optional(:let_bound_names) => MapSet.t(String.t())
+          optional(:local) => map(),
+          optional(:unqualified) => map(),
+          optional(:qualified) => map(),
+          optional(:payload_arity_local) => map(),
+          optional(:payload_arity_unqualified) => map(),
+          optional(:payload_arity_qualified) => map(),
+          optional(:current_module) => term(),
+          optional(:alias_map) => map(),
+          optional(:alias_member_map) => map(),
+          optional(:import_unqualified_map) => map(),
+          optional(:type_unqualified_map) => map(),
+          optional(:wildcard_import_modules) => list(),
+          optional(:local_call_names) => map() | MapSet.t(term()),
+          optional(:let_bound_names) => map() | MapSet.t(term()),
+          optional(:record_alias_fields_local) => map(),
+          optional(:record_alias_fields_unqualified) => map(),
+          optional(:record_alias_fields_qualified) => map()
         }
 
   @type t :: rewrite_t() | constructor_t() | payload_kind_t() | import_resolution_t()

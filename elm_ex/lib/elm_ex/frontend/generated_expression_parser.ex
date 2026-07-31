@@ -297,7 +297,7 @@ defmodule ElmEx.Frontend.GeneratedExpressionParser do
     |> Enum.join("\n")
   end
 
-  @spec drop_local_type_annotation_lines(term(), term(), Types.expr()) :: Types.expr()
+  @spec drop_local_type_annotation_lines([line()], [line()], :keep | :dropping) :: [line()]
 
   defp drop_local_type_annotation_lines([], acc, _mode), do: acc
 
@@ -381,7 +381,7 @@ defmodule ElmEx.Frontend.GeneratedExpressionParser do
     |> count_paren_balance(:code, 0)
   end
 
-  @spec count_paren_balance(term(), Types.expr(), term()) :: Types.expr()
+  @spec count_paren_balance(charlist(), :code | :string | :char, integer()) :: integer()
 
   defp count_paren_balance([], _state, acc), do: acc
 
@@ -419,7 +419,7 @@ defmodule ElmEx.Frontend.GeneratedExpressionParser do
     |> count_bracket_balance(:code, 0)
   end
 
-  @spec count_bracket_balance(term(), Types.expr(), term()) :: Types.expr()
+  @spec count_bracket_balance(charlist(), :code | :string | :char, integer()) :: integer()
 
   defp count_bracket_balance([], _state, acc), do: acc
 
@@ -476,7 +476,7 @@ defmodule ElmEx.Frontend.GeneratedExpressionParser do
     |> Enum.join("\n")
   end
 
-  @spec do_collapse_standalone_record_update_bars(term(), term()) :: Types.expr()
+  @spec do_collapse_standalone_record_update_bars([line()], [line()]) :: [line()]
 
   defp do_collapse_standalone_record_update_bars([], acc), do: acc
 
@@ -561,7 +561,6 @@ defmodule ElmEx.Frontend.GeneratedExpressionParser do
     else
       {:error, {:inline_let_in, line}} -> {:error, LetLayout.parse_error(line)}
       {:error, reason} -> {:error, reason}
-      {:error, reason, _line} -> {:error, reason}
     end
   end
 
@@ -598,7 +597,7 @@ defmodule ElmEx.Frontend.GeneratedExpressionParser do
     Application.get_env(:elm_ex, :expr_layout_lexer, true)
   end
 
-  @spec layout_lexer_eligible?(Types.expr()) :: boolean()
+  @spec layout_lexer_eligible?(source()) :: boolean()
 
   defp layout_lexer_eligible?(prepared) do
     String.contains?(prepared, "\n") and not String.contains?(prepared, ";;") and

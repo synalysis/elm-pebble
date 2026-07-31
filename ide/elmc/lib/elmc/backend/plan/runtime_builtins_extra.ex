@@ -1,6 +1,5 @@
 defmodule Elmc.Backend.Plan.RuntimeBuiltins.Extra do
   @moduledoc false
-  alias Elmc.Backend.Plan.Types, as: Types
 
 
   @extra_builtins %{
@@ -340,19 +339,19 @@ defmodule Elmc.Backend.Plan.RuntimeBuiltins.Extra do
     task_on_error task_perform
   )a
 
-  @spec builtins() :: Types.ir_expr()
+  @spec builtins() :: %{atom() => String.t()}
 
   def builtins, do: @extra_builtins
-  @spec symbol_aliases() :: Types.ir_expr()
+  @spec symbol_aliases() :: %{String.t() => atom()}
 
   def symbol_aliases, do: @symbol_aliases
-  @spec fallible_ids() :: Types.ir_expr()
+  @spec fallible_ids() :: [atom()]
 
   def fallible_ids, do: @extra_fallible
-  @spec c_value_return_ids() :: Types.ir_expr()
+  @spec c_value_return_ids() :: [atom()]
 
   def c_value_return_ids, do: @extra_c_value_return
-  @spec value_return_ids() :: Types.ir_expr()
+  @spec value_return_ids() :: [atom()]
 
   def value_return_ids, do: @extra_value_return
 end

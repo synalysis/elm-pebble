@@ -53,7 +53,20 @@ defmodule Elmc.Types do
           optional(:target) => String.t() | :c | :wasm,
           optional(:web) => boolean(),
           optional(:wasm_strict) => boolean(),
-          optional(:wasm_binary) => boolean()
+          optional(:wasm_binary) => boolean(),
+          optional(:wasm_runtime) => boolean(),
+          optional(:wasm_host) => boolean(),
+          optional(:emit_bytecode) => boolean(),
+          optional(:project) => FrontendProject.t(),
+          optional(:generated_c) => String.t(),
+          optional(:svg_attribute_dom_names) => %{optional(String.t()) => String.t()},
+          optional(:svg_attribute_names) => MapSet.t(String.t()),
+          optional(:fast) => boolean(),
+          optional(:ir_parallel) => pos_integer(),
+          optional(:ir_cache) => boolean(),
+          optional(:ir_cache_dir) => String.t() | nil,
+          optional(:ir_reachable_only) => boolean(),
+          optional(:ir_progress) => boolean()
         }
 
   @type cli_diagnostic :: %{
@@ -111,8 +124,8 @@ defmodule Elmc.Types do
           optional(:function_count) => non_neg_integer(),
           optional(:skipped_count) => non_neg_integer(),
           optional(:pruned_count) => non_neg_integer(),
-          optional(:plan_toolchain) => plan_toolchain() | nil,
-          optional(:plan_coverage) => plan_coverage() | nil,
+          optional(:plan_toolchain) => plan_toolchain() | map() | nil,
+          optional(:plan_coverage) => plan_coverage() | map() | nil,
           optional(:functions) => [bytecode_function_row()],
           optional(:skipped) => [bytecode_skipped_row()]
         }
@@ -175,8 +188,8 @@ defmodule Elmc.Types do
           optional(:skipped_count) => non_neg_integer(),
           optional(:pruned_count) => non_neg_integer(),
           optional(:imports) => [String.t()],
-          optional(:plan_toolchain) => plan_toolchain() | nil,
-          optional(:plan_coverage) => plan_coverage() | nil,
+          optional(:plan_toolchain) => plan_toolchain() | map() | nil,
+          optional(:plan_coverage) => plan_coverage() | map() | nil,
           optional(:functions) => [map()],
           optional(:skipped) => [map()]
         }
@@ -195,8 +208,8 @@ defmodule Elmc.Types do
           optional(:layout_coercion_diagnostics) => [cli_diagnostic()],
           optional(:blocking_diagnostics) => [cli_diagnostic()],
           optional(:informational_diagnostics) => [cli_diagnostic()],
-          optional(:plan_coverage) => plan_coverage() | nil,
-          optional(:plan_toolchain) => plan_toolchain() | nil,
+          optional(:plan_coverage) => plan_coverage() | map() | nil,
+          optional(:plan_toolchain) => plan_toolchain() | map() | nil,
           optional(:elmc_bytecode_summary) => bytecode_summary(),
           optional(:elmc_wasm_summary) => wasm_summary()
         }

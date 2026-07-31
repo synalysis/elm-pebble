@@ -47,7 +47,8 @@ defmodule ElmEx.DebuggerContract.EffectAnalysis do
     end
   end
 
-  @spec scrutinee_case_analysis(term() | Types.expr(), term() | list()) :: term()
+  @spec scrutinee_case_analysis(Types.ast_expr() | nil, Types.param_list()) ::
+          Types.case_branch_labels()
 
   def scrutinee_case_analysis(nil, _), do: {[], nil}
 

@@ -137,7 +137,7 @@ defmodule Ide.PebbleToolchain.BuildDiagnostics do
     end)
   end
 
-  @spec memory_overflow_hint(term(), String.t()) :: term()
+  @spec memory_overflow_hint(String.t(), [String.t()]) :: String.t() | nil
 
   defp memory_overflow_hint(output, targets) do
     normalized = String.downcase(output)
@@ -231,7 +231,7 @@ defmodule Ide.PebbleToolchain.BuildDiagnostics do
 
   defp first_pebble_app_target(output), do: pebble_app_target_from_line(output)
 
-  @spec pebble_app_target_from_line(pos_integer()) :: term()
+  @spec pebble_app_target_from_line(String.t()) :: String.t() | nil
 
   defp pebble_app_target_from_line(line) do
     case Regex.run(~r/build\/([a-z0-9_-]+)\/pebble-app\.elf/i, line) do

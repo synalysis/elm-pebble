@@ -2,7 +2,7 @@ defmodule IdeWeb.WorkspaceLive.ResourcesPage do
   @moduledoc false
   use IdeWeb, :html
 
-  import IdeWeb.WorkspaceLive.ProjectSettingsPage, only: [settings_nav: 1, settings_tab_class: 2]
+  import IdeWeb.WorkspaceLive.ProjectSettingsPage, only: [settings_nav: 1]
 
   import IdeWeb.WorkspaceLive.ResourcesFlow,
     only: [filter_vectors: 2, format_upload_error: 1, upload_ready?: 1]
@@ -117,13 +117,13 @@ defmodule IdeWeb.WorkspaceLive.ResourcesPage do
         </.link>
         <.link
           patch={~p"/projects/#{@project.slug}/resources/fonts"}
-          class={settings_tab_class(@resource_view, "fonts")}
+          class={resource_family_class(@resource_view, "fonts")}
         >
           Fonts
         </.link>
         <.link
           patch={~p"/projects/#{@project.slug}/resources/speaker-samples"}
-          class={settings_tab_class(@resource_view, "speaker-samples")}
+          class={resource_family_class(@resource_view, "speaker-samples")}
         >
           Speaker samples
         </.link>
@@ -754,6 +754,8 @@ defmodule IdeWeb.WorkspaceLive.ResourcesPage do
   defp resource_family("bitmaps-animated"), do: "bitmaps"
   defp resource_family("vectors-static"), do: "vectors"
   defp resource_family("vectors-animated"), do: "vectors"
+  defp resource_family("fonts"), do: "fonts"
+  defp resource_family("speaker-samples"), do: "speaker-samples"
   defp resource_family(_), do: nil
 
   defp resource_family_class(active, family) do

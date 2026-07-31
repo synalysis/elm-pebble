@@ -606,8 +606,6 @@ defmodule ElmEx.Frontend.GeneratedExpressionParser.Layout do
   end
 
   @spec normalize_let_source(source(), non_neg_integer()) :: source()
-  defp normalize_let_source(source, passes) when passes >= 20, do: source
-
   defp normalize_let_source(source, passes) do
     normalize_let_source(source, passes, MapSet.new())
   end

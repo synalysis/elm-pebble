@@ -1,8 +1,5 @@
 defmodule ElmEx.Frontend.Pretty.PreserveNormalize do
   @moduledoc false
-  alias ElmEx.Frontend.AstContract.Types, as: Types
-
-
   alias ElmEx.Frontend.Module
 
   @spec normalize_regions(map(), Module.t()) :: map()
@@ -79,7 +76,7 @@ defmodule ElmEx.Frontend.Pretty.PreserveNormalize do
 
     Enum.join(lines, "\n")
   end
-  @spec candidate_union_exposing_types(String.t()) :: Types.expr()
+  @spec candidate_union_exposing_types(String.t()) :: [String.t()]
 
   defp candidate_union_exposing_types(text) when is_binary(text) do
     ~r/\b([A-Z][A-Za-z0-9_']*)\b\s*(?:\((?!\.\.)|\n[ \t]*\()/u
@@ -223,7 +220,7 @@ defmodule ElmEx.Frontend.Pretty.PreserveNormalize do
     do_consume_gap(text, pos, "")
   end
 
-  @spec do_consume_gap(String.t(), Types.expr(), term()) :: Types.expr()
+  @spec do_consume_gap(String.t(), non_neg_integer(), String.t()) :: {String.t(), non_neg_integer()}
 
   defp do_consume_gap(text, pos, acc) do
     case String.at(text, pos) do
@@ -255,7 +252,7 @@ defmodule ElmEx.Frontend.Pretty.PreserveNormalize do
     do_consume_comment_only_gap(text, pos, "")
   end
 
-  @spec do_consume_comment_only_gap(String.t(), Types.expr(), term()) :: Types.expr()
+  @spec do_consume_comment_only_gap(String.t(), non_neg_integer(), String.t()) :: {String.t(), non_neg_integer()}
 
   defp do_consume_comment_only_gap(text, pos, acc) do
     case String.at(text, pos) do
@@ -309,7 +306,7 @@ defmodule ElmEx.Frontend.Pretty.PreserveNormalize do
     end
   end
 
-  @spec do_take_balanced(String.t(), Types.expr(), non_neg_integer() | Types.expr(), term()) :: Types.expr()
+  @spec do_take_balanced(String.t(), non_neg_integer(), pos_integer(), String.t()) :: {String.t(), non_neg_integer()} | :error
 
   defp do_take_balanced(text, pos, depth, acc) when depth > 0 do
     case String.at(text, pos) do
@@ -379,7 +376,7 @@ defmodule ElmEx.Frontend.Pretty.PreserveNormalize do
   end
 
   @spec normalize_multiline_exposing_blocks(String.t()) :: String.t()
-  defp normalize_multiline_exposing_blocks(text) when text in ["", nil], do: text || ""
+  defp normalize_multiline_exposing_blocks(""), do: ""
 
   defp normalize_multiline_exposing_blocks(text) when is_binary(text) do
     text
@@ -466,7 +463,7 @@ defmodule ElmEx.Frontend.Pretty.PreserveNormalize do
     do_find_close_paren_line(lines, open_idx + 1, 1)
   end
 
-  @spec do_find_close_paren_line(Types.expr(), Types.expr(), Types.expr() | non_neg_integer()) :: Types.expr()
+  @spec do_find_close_paren_line([String.t()], non_neg_integer(), non_neg_integer()) :: non_neg_integer() | nil
 
   defp do_find_close_paren_line(_lines, _idx, 0), do: nil
 

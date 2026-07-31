@@ -1,8 +1,5 @@
 defmodule ElmEx.Frontend.Pretty.Literal do
   @moduledoc false
-  alias ElmEx.Frontend.AstContract.Types, as: Types
-
-
   @spec string_literal(String.t()) :: String.t()
   def string_literal(value) when is_binary(value) do
     "\"#{value |> normalize_source_escapes() |> escape_string()}\""
@@ -32,7 +29,7 @@ defmodule ElmEx.Frontend.Pretty.Literal do
     end)
   end
 
-  @spec codepoint_to_binary(Types.expr()) :: Types.expr()
+  @spec codepoint_to_binary(non_neg_integer()) :: String.t()
 
   defp codepoint_to_binary(codepoint) when codepoint in 0..0x10FFFF,
     do: <<codepoint::utf8>>

@@ -89,7 +89,7 @@ defmodule Ide.Formatter.Semantics.UnionAlign do
   defp emit_blanks(acc, 0), do: acc
   defp emit_blanks(acc, n) when n > 0, do: emit_blanks(["" | acc], n - 1)
 
-  @spec normalize_union_constructor_line(pos_integer(), term(), term()) :: pos_integer()
+  @spec normalize_union_constructor_line(String.t(), non_neg_integer(), String.t()) :: String.t()
 
   defp normalize_union_constructor_line(line, indent, marker) do
     trimmed = String.trim_leading(line)
@@ -124,13 +124,13 @@ defmodule Ide.Formatter.Semantics.UnionAlign do
     end
   end
 
-  @spec starts_with_trimmed?(pos_integer(), String.t()) :: boolean()
+  @spec starts_with_trimmed?(String.t(), String.t()) :: boolean()
 
   defp starts_with_trimmed?(line, marker) when is_binary(marker) do
     String.trim_leading(line) |> String.starts_with?(marker)
   end
 
-  @spec type_declaration_line?(pos_integer()) :: boolean()
+  @spec type_declaration_line?(String.t()) :: boolean()
 
   defp type_declaration_line?(line) do
     trimmed = String.trim_leading(line)
@@ -148,7 +148,7 @@ defmodule Ide.Formatter.Semantics.UnionAlign do
     end
   end
 
-  @spec collapse_spaces(integer()) :: term()
+  @spec collapse_spaces(String.t()) :: String.t()
 
   defp collapse_spaces(value) do
     value
@@ -239,7 +239,7 @@ defmodule Ide.Formatter.Semantics.UnionAlign do
   defp delimiter_char_match?(?{, ?}), do: true
   defp delimiter_char_match?(_, _), do: false
 
-  @spec leading_indent(pos_integer()) :: term()
+  @spec leading_indent(String.t()) :: integer()
 
   defp leading_indent(line) do
     String.length(line) - String.length(String.trim_leading(line))

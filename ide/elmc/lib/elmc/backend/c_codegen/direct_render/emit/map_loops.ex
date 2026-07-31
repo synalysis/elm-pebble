@@ -224,7 +224,14 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.MapLoops do
     end
   end
 
-  @spec transparent_lambda_map_range_loop(map() | Types.expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.compile_env(), Types.ir_expr()) :: Types.ir_expr()
+  @spec transparent_lambda_map_range_loop(
+          Types.expr(),
+          String.t(),
+          String.t(),
+          String.t(),
+          Types.compile_env(),
+          Types.compile_counter()
+        ) :: Types.direct_emit_result()
 
   defp transparent_lambda_map_range_loop(
          %{op: :lambda, args: [arg_name], body: body},
@@ -259,7 +266,14 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.MapLoops do
   defp transparent_lambda_map_range_loop(_fun_expr, _range_code, _first_ref, _last_ref, _env, _counter),
     do: :error
 
-  @spec transparent_lambda_indexed_map_range_loop(map() | Types.expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.compile_env(), Types.ir_expr()) :: Types.ir_expr()
+  @spec transparent_lambda_indexed_map_range_loop(
+          Types.expr(),
+          String.t(),
+          String.t(),
+          String.t(),
+          Types.compile_env(),
+          Types.compile_counter()
+        ) :: Types.direct_emit_result()
 
   defp transparent_lambda_indexed_map_range_loop(
          %{op: :lambda, args: [index_name, item_name], body: body},
@@ -414,7 +428,14 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.MapLoops do
     end
   end
 
-  @spec emit_map_loop_transparent(Types.expr(), Types.expr(), Types.ir_expr(), Types.ir_expr(), Types.compile_env(), Types.ir_expr()) :: Types.ir_expr()
+  @spec emit_map_loop_transparent(
+          Types.expr(),
+          Types.expr(),
+          String.t(),
+          String.t(),
+          Types.compile_env(),
+          Types.compile_counter()
+        ) :: Types.direct_emit_result()
 
   defp emit_map_loop_transparent(fun_expr, list_expr, prefix_code, prefix_release_code, env, counter) do
     case Host.direct_static_list_items(list_expr) do
@@ -441,7 +462,20 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.MapLoops do
     end
   end
 
-  @spec emit_map_loop_default(Types.expr(), Types.expr(), String.t(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), boolean(), String.t(), Types.ir_expr(), Types.compile_env(), Types.ir_expr(), Types.decl_map()) :: Types.ir_expr()
+  @spec emit_map_loop_default(
+          Types.expr(),
+          Types.expr(),
+          Types.direct_emit_target(),
+          String.t(),
+          [String.t()],
+          String.t(),
+          boolean(),
+          String.t() | nil,
+          non_neg_integer(),
+          Types.compile_env(),
+          Types.compile_counter(),
+          Types.decl_map()
+        ) :: Types.direct_emit_result()
 
   defp emit_map_loop_default(
          _fun_expr,
@@ -549,7 +583,18 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.MapLoops do
     end
   end
 
-  @spec indexed_map_range_loop(Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), String.t(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+  @spec indexed_map_range_loop(
+          boolean(),
+          String.t(),
+          [String.t()],
+          String.t(),
+          String.t(),
+          String.t(),
+          String.t(),
+          String.t(),
+          non_neg_integer(),
+          Types.compile_counter()
+        ) :: Types.direct_emit_result()
 
   defp indexed_map_range_loop(
          true,
@@ -625,7 +670,17 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.MapLoops do
      """, counter}
   end
 
-  @spec indexed_map_list_loop(Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.expr(), String.t(), Types.ir_expr(), Types.compile_env(), Types.ir_expr()) :: Types.ir_expr()
+  @spec indexed_map_list_loop(
+          boolean(),
+          String.t(),
+          [String.t()],
+          String.t(),
+          Types.expr(),
+          String.t(),
+          non_neg_integer(),
+          Types.compile_env(),
+          Types.compile_counter()
+        ) :: Types.direct_emit_result()
 
   defp indexed_map_list_loop(
          true,
@@ -702,7 +757,8 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.MapLoops do
   end
 
 
-  @spec compile_arg_values([String.t()], Types.compile_env(), Types.ir_expr()) :: Types.ir_expr()
+  @spec compile_arg_values([Types.expr()], Types.compile_env(), Types.compile_counter()) ::
+          {String.t(), [String.t()], Types.compile_counter()}
 
   defp compile_arg_values(args, env, counter) do
     Enum.reduce(args, {"", [], counter}, fn arg_expr, {code_acc, vars_acc, c} ->
@@ -711,7 +767,12 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.MapLoops do
     end)
   end
 
-  @spec compile_mixed_arg_values([String.t()], Types.ir_expr(), Types.compile_env(), Types.ir_expr()) :: Types.ir_expr()
+  @spec compile_mixed_arg_values(
+          [Types.expr()],
+          [Types.direct_command_arg_kind()],
+          Types.compile_env(),
+          Types.compile_counter()
+        ) :: {String.t(), [String.t()], [String.t()], Types.compile_counter()}
 
   defp compile_mixed_arg_values(args, kinds, env, counter) do
     args
@@ -734,7 +795,12 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.MapLoops do
     end)
   end
 
-  @spec compile_indexed_map_prefix([String.t()], Types.ir_expr(), Types.compile_env(), Types.ir_expr()) :: Types.ir_expr()
+  @spec compile_indexed_map_prefix(
+          [Types.expr()],
+          [Types.direct_command_arg_kind()],
+          Types.compile_env(),
+          Types.compile_counter()
+        ) :: {String.t(), [String.t()], [String.t()], map() | nil, Types.compile_counter()}
 
   defp compile_indexed_map_prefix(prefix_args, arg_kinds, env, counter) do
     case {prefix_args, arg_kinds} do
@@ -775,7 +841,12 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.MapLoops do
     end
   end
 
-  @spec compile_indexed_map_prefix_fallback([String.t()], Types.ir_expr(), Types.compile_env(), Types.ir_expr()) :: Types.ir_expr()
+  @spec compile_indexed_map_prefix_fallback(
+          [Types.expr()],
+          [Types.direct_command_arg_kind()],
+          Types.compile_env(),
+          Types.compile_counter()
+        ) :: {String.t(), [String.t()], [String.t()], map() | nil, Types.compile_counter()}
 
   defp compile_indexed_map_prefix_fallback(prefix_args, arg_kinds, env, counter) do
     case {prefix_args, arg_kinds} do
@@ -794,7 +865,18 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.MapLoops do
     end
   end
 
-  @spec materialize_prefix_for_native_append(Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), [String.t()], Types.ir_expr(), Types.ir_expr(), Types.compile_env(), Types.ir_expr()) :: Types.ir_expr()
+  @spec materialize_prefix_for_native_append(
+          boolean(),
+          String.t(),
+          [String.t()],
+          [String.t()],
+          map() | nil,
+          [Types.expr()],
+          String.t(),
+          (String.t(), [String.t()], String.t() -> Types.direct_emit_result()),
+          Types.compile_env(),
+          Types.compile_counter()
+        ) :: Types.direct_emit_result()
 
   defp materialize_prefix_for_native_append(
          false,
@@ -838,7 +920,15 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.MapLoops do
     emit_fallback.(prefix_code, prefix_refs, prefix_release_code)
   end
 
-  @spec maybe_materialize_native_prefix_refs(Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), [String.t()], Types.compile_env(), Types.ir_expr()) :: Types.ir_expr() | nil
+  @spec maybe_materialize_native_prefix_refs(
+          String.t(),
+          [String.t()],
+          [String.t()],
+          map() | nil,
+          [Types.expr()],
+          Types.compile_env(),
+          Types.compile_counter()
+        ) :: {String.t(), [String.t()], [String.t()], Types.compile_counter()}
 
   defp maybe_materialize_native_prefix_refs(
          prefix_code,
@@ -870,7 +960,14 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.MapLoops do
     end
   end
 
-  @spec materialize_native_prefix_refs(Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), [String.t()], Types.compile_env(), Types.ir_expr()) :: Types.ir_expr()
+  @spec materialize_native_prefix_refs(
+          String.t(),
+          [String.t()],
+          map(),
+          [Types.expr()],
+          Types.compile_env(),
+          Types.compile_counter()
+        ) :: {String.t(), [String.t()], [String.t()], Types.compile_counter()}
 
   defp materialize_native_prefix_refs(
          prefix_code,
@@ -900,14 +997,14 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.MapLoops do
     {code, [layout_var], prefix_releases ++ [layout_var], next}
   end
 
-  @spec prefix_layout_binding_name(term() | [String.t()]) :: Types.ir_expr()
+  @spec prefix_layout_binding_name([Types.expr()] | term()) :: String.t()
 
   defp prefix_layout_binding_name([%{op: :var, name: name} | _]) when not is_nil(name),
     do: EnvBindings.binding_key(name)
 
   defp prefix_layout_binding_name(_prefix_args), do: "layout"
 
-  @spec native_prefix_field_names(String.t(), Types.ir_expr(), Types.compile_env()) :: Types.ir_expr()
+  @spec native_prefix_field_names(String.t(), map(), Types.compile_env()) :: [String.t()]
 
   defp native_prefix_field_names(layout_name, native_fields, env) do
     shapes = Map.get(env, :__record_shapes__, %{})
@@ -937,7 +1034,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.MapLoops do
     end
   end
 
-  @spec indexed_map_arg_kinds(Types.decl_map(), term()) :: Types.ir_expr()
+  @spec indexed_map_arg_kinds(Types.decl_map(), term()) :: [Types.direct_command_arg_kind()]
 
   defp indexed_map_arg_kinds(decl_map, {target_module, target_name, _prefix_args}) do
     case Map.get(decl_map, {target_module, target_name}) do
@@ -959,7 +1056,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.MapLoops do
     end
   end
 
-  @spec map_arg_kinds(Types.decl_map(), term()) :: Types.ir_expr()
+  @spec map_arg_kinds(Types.decl_map(), term()) :: [Types.direct_command_arg_kind()]
 
   defp map_arg_kinds(decl_map, {target_module, target_name, _prefix_args}) do
     case Map.get(decl_map, {target_module, target_name}) do
@@ -968,7 +1065,18 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.MapLoops do
     end
   end
 
-  @spec map_range_loop(Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), String.t(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+  @spec map_range_loop(
+          boolean(),
+          String.t(),
+          [String.t()],
+          String.t(),
+          String.t(),
+          String.t(),
+          String.t(),
+          String.t(),
+          non_neg_integer(),
+          Types.compile_counter()
+        ) :: Types.direct_emit_result()
 
   defp map_range_loop(
          true,
@@ -1036,7 +1144,17 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.MapLoops do
      """, counter}
   end
 
-  @spec map_list_loop(Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.expr(), String.t(), Types.ir_expr(), Types.compile_env(), Types.ir_expr()) :: Types.ir_expr()
+  @spec map_list_loop(
+          boolean(),
+          String.t(),
+          [String.t()],
+          String.t(),
+          Types.expr(),
+          String.t(),
+          non_neg_integer(),
+          Types.compile_env(),
+          Types.compile_counter()
+        ) :: Types.direct_emit_result()
 
   defp map_list_loop(
          true,
@@ -1108,7 +1226,17 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.MapLoops do
      """, counter}
   end
 
-  @spec map_static_list_loop(Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), list(), String.t(), Types.ir_expr(), Types.compile_env(), Types.ir_expr()) :: Types.ir_expr()
+  @spec map_static_list_loop(
+          boolean(),
+          String.t(),
+          [String.t()],
+          String.t(),
+          [Types.expr()],
+          String.t(),
+          non_neg_integer(),
+          Types.compile_env(),
+          Types.compile_counter()
+        ) :: Types.direct_emit_result()
 
   defp map_static_list_loop(
          true,
@@ -1175,7 +1303,17 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.MapLoops do
     {:ok, prefix_code <> body <> prefix_release_code, counter}
   end
 
-  @spec indexed_map_static_list_loop(Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), list(), String.t(), Types.ir_expr(), Types.compile_env(), Types.ir_expr()) :: Types.ir_expr()
+  @spec indexed_map_static_list_loop(
+          boolean(),
+          String.t(),
+          [String.t()],
+          String.t(),
+          [Types.expr()],
+          String.t(),
+          non_neg_integer(),
+          Types.compile_env(),
+          Types.compile_counter()
+        ) :: Types.direct_emit_result()
 
   defp indexed_map_static_list_loop(
          true,
@@ -1306,7 +1444,12 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.MapLoops do
     end
   end
 
-  @spec emit_loop_body(Types.expr(), Types.compile_env(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+  @spec emit_loop_body(
+          Types.expr(),
+          Types.compile_env(),
+          Types.compile_counter(),
+          (String.t(), Types.compile_counter() -> Types.direct_emit_result())
+        ) :: Types.direct_emit_result()
 
   defp emit_loop_body(body, body_env, counter, builder) when is_function(builder, 2) do
     ValueSlots.push_loop()
@@ -1321,7 +1464,8 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.MapLoops do
     end
   end
 
-  @spec boxed_prefix_call_args(Types.ir_expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+  @spec boxed_prefix_call_args([String.t()], non_neg_integer(), Types.compile_counter()) ::
+          {String.t(), [String.t()], String.t(), Types.compile_counter()}
 
   defp boxed_prefix_call_args(prefix_vars, loop_id, counter) do
     Enum.reduce(prefix_vars, {"", [], "", counter}, fn var, {setup_acc, slots_acc, release_acc, c} ->
@@ -1356,7 +1500,8 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.MapLoops do
 
   defp boxed_elmc_value_ref?(_), do: false
 
-  @spec direct_list_walk_native_int_head(Types.ir_expr(), Types.ir_expr(), boolean(), Types.ir_expr()) :: Types.ir_expr()
+  @spec direct_list_walk_native_int_head(String.t(), non_neg_integer(), boolean(), String.t()) ::
+          String.t()
 
   defp direct_list_walk_native_int_head(list_var, next, indexed?, loop_body)
        when is_binary(list_var) and is_binary(loop_body) do
@@ -1387,7 +1532,15 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.MapLoops do
     """
   end
 
-  @spec direct_list_walk_indexed_boxed_head(Types.ir_expr(), Types.ir_expr(), non_neg_integer(), Types.ir_expr(), non_neg_integer(), String.t(), Types.ir_expr()) :: Types.ir_expr()
+  @spec direct_list_walk_indexed_boxed_head(
+          String.t(),
+          non_neg_integer(),
+          non_neg_integer(),
+          String.t(),
+          non_neg_integer(),
+          String.t(),
+          String.t()
+        ) :: String.t()
 
   defp direct_list_walk_indexed_boxed_head(
          list_var,
@@ -1448,7 +1601,16 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.MapLoops do
     """
   end
 
-  @spec direct_record_seq_boxed_head_loop(Types.ir_expr(), Types.ir_expr(), non_neg_integer(), Types.ir_expr(), non_neg_integer(), String.t(), Types.ir_expr(), boolean()) :: Types.ir_expr()
+  @spec direct_record_seq_boxed_head_loop(
+          String.t(),
+          non_neg_integer(),
+          non_neg_integer(),
+          String.t(),
+          non_neg_integer(),
+          String.t(),
+          String.t(),
+          boolean()
+        ) :: String.t()
 
   defp direct_record_seq_boxed_head_loop(
          list_var,
@@ -1497,7 +1659,15 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.MapLoops do
     """
   end
 
-  @spec direct_list_walk_boxed_head(Types.ir_expr(), Types.ir_expr(), non_neg_integer(), Types.ir_expr(), non_neg_integer(), String.t(), Types.ir_expr()) :: Types.ir_expr()
+  @spec direct_list_walk_boxed_head(
+          String.t(),
+          non_neg_integer(),
+          non_neg_integer(),
+          String.t(),
+          non_neg_integer(),
+          String.t(),
+          String.t()
+        ) :: String.t()
 
   defp direct_list_walk_boxed_head(
          list_var,
@@ -1548,7 +1718,13 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.MapLoops do
     """
   end
 
-  @spec direct_list_walk_lambda_body(Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+  @spec direct_list_walk_lambda_body(
+          String.t(),
+          non_neg_integer(),
+          String.t(),
+          String.t(),
+          String.t()
+        ) :: String.t()
 
   defp direct_list_walk_lambda_body(list_var, next, item_boxed, cons_body, int_body) do
     int_item_decl =

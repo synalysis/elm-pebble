@@ -1,11 +1,10 @@
 defmodule Elmc.Backend.Pebble.IRAnalysis do
   @moduledoc false
-  alias Elmc.Types, as: Types
-
 
   alias ElmEx.IR
   alias Elmc.Backend.Pebble.Types
   alias Elmc.Backend.Pebble.IRAnalysis.{Build, Msg, RandomGenerate}
+  alias Elmc.Types, as: ElmcTypes
 
   @spec msg_constructors(IR.t(), Types.entry_module()) :: Types.msg_constructor_list()
   defdelegate msg_constructors(ir, entry_module), to: Msg, as: :constructors
@@ -43,6 +42,9 @@ defmodule Elmc.Backend.Pebble.IRAnalysis do
 
   @spec analyze(IR.t(), Types.entry_module()) :: Types.shim_analysis()
   defdelegate analyze(ir, entry_module), to: Build
+
+  @spec analyze(IR.t(), Types.entry_module(), ElmcTypes.compile_options() | map()) ::
+          Types.shim_analysis()
   defdelegate analyze(ir, entry_module, opts), to: Build
 
   @spec random_generate_target_tag(IR.t(), Types.msg_constructor_list()) :: Types.msg_tag()

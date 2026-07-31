@@ -101,7 +101,12 @@ defmodule Elmc.Backend.CCodegen.Native.UsageAnalysis do
     end)
   end
 
-  @spec collect_native_function_arg_contexts(String.t(), Types.expr(), String.t(), Types.decl_map()) :: Types.ir_expr()
+  @spec collect_native_function_arg_contexts(
+          Types.binding_name(),
+          Types.expr() | list() | map(),
+          String.t(),
+          Types.decl_map()
+        ) :: [Types.var_usage_context()]
 
   defp collect_native_function_arg_contexts(name, expr, module_name, decl_map)
        when is_map(expr) do
@@ -139,7 +144,12 @@ defmodule Elmc.Backend.CCodegen.Native.UsageAnalysis do
 
   # Callee bodies may capture Int params in lambdas (for example canPlace x/y inside
   # List.all), so default arg_kinds stay :boxed even though call sites pass native ints.
-  @spec collect_call_site_signature_native_int_arg_contexts(String.t(), Types.expr(), String.t(), Types.decl_map()) :: Types.ir_expr()
+  @spec collect_call_site_signature_native_int_arg_contexts(
+          Types.binding_name(),
+          Types.expr() | list() | map(),
+          String.t(),
+          Types.decl_map()
+        ) :: [Types.var_usage_context()]
 
   defp collect_call_site_signature_native_int_arg_contexts(name, expr, module_name, decl_map)
        when is_map(expr) and is_binary(module_name) do
@@ -177,7 +187,12 @@ defmodule Elmc.Backend.CCodegen.Native.UsageAnalysis do
   defp collect_call_site_signature_native_int_arg_contexts(_name, _expr, _module_name, _decl_map),
     do: []
 
-  @spec call_site_signature_native_int_var_contexts(String.t(), String.t(), [String.t()], Types.decl_map()) :: Types.ir_expr()
+  @spec call_site_signature_native_int_var_contexts(
+          Types.binding_name(),
+          Types.function_decl_key(),
+          [Types.ir_expr()],
+          Types.decl_map()
+        ) :: [Types.var_usage_context()]
 
   defp call_site_signature_native_int_var_contexts(name, target, args, decl_map) do
     case Map.get(decl_map, target) do
@@ -195,7 +210,12 @@ defmodule Elmc.Backend.CCodegen.Native.UsageAnalysis do
     end
   end
 
-  @spec collect_record_update_int_field_contexts(String.t(), Types.expr(), String.t(), Types.decl_map()) :: Types.ir_expr()
+  @spec collect_record_update_int_field_contexts(
+          Types.binding_name(),
+          Types.expr() | list() | map(),
+          String.t(),
+          Types.decl_map()
+        ) :: [Types.var_usage_context()]
 
   defp collect_record_update_int_field_contexts(name, expr, module_name, decl_map)
        when is_map(expr) do
@@ -246,7 +266,7 @@ defmodule Elmc.Backend.CCodegen.Native.UsageAnalysis do
 
   defp collect_record_update_int_field_contexts(_name, _expr, _module_name, _decl_map), do: []
 
-  @spec analysis_env(String.t(), Types.decl_map()) :: Types.ir_expr()
+  @spec analysis_env(String.t(), Types.decl_map()) :: Types.compile_env()
 
   defp analysis_env(module_name, decl_map) do
     %{
@@ -256,7 +276,7 @@ defmodule Elmc.Backend.CCodegen.Native.UsageAnalysis do
     }
   end
 
-  @spec infer_record_type_from_int_field_names(String.t(), String.t()) :: Types.ir_expr()
+  @spec infer_record_type_from_int_field_names([String.t()], String.t()) :: String.t() | nil
 
   defp infer_record_type_from_int_field_names(field_names, module_name)
        when is_list(field_names) and is_binary(module_name) do
@@ -265,7 +285,8 @@ defmodule Elmc.Backend.CCodegen.Native.UsageAnalysis do
 
   defp infer_record_type_from_int_field_names(_field_names, _module_name), do: nil
 
-  @spec infer_record_type_from_scalar_field_names(String.t(), String.t(), Types.ir_expr()) :: Types.ir_expr()
+  @spec infer_record_type_from_scalar_field_names([String.t()], String.t(), String.t()) ::
+          String.t() | nil
 
   defp infer_record_type_from_scalar_field_names(field_names, module_name, scalar_type)
        when is_list(field_names) and is_binary(module_name) and is_binary(scalar_type) do
@@ -286,7 +307,7 @@ defmodule Elmc.Backend.CCodegen.Native.UsageAnalysis do
 
   defp infer_record_type_from_scalar_field_names(_field_names, _module_name, _scalar_type), do: nil
 
-  @spec record_field_is_scalar?(String.t(), Types.ir_expr(), String.t(), Types.ir_expr()) :: boolean()
+  @spec record_field_is_scalar?(String.t(), String.t() | nil, String.t(), String.t()) :: boolean()
 
   defp record_field_is_scalar?(field_name, record_type, module_name, scalar_type)
        when is_binary(field_name) and is_binary(record_type) and is_binary(module_name) and
@@ -314,7 +335,7 @@ defmodule Elmc.Backend.CCodegen.Native.UsageAnalysis do
 
   defp record_field_is_scalar?(_field_name, _record_type, _module_name, _scalar_type), do: false
 
-  @spec record_field_is_int?(String.t(), Types.ir_expr(), String.t()) :: boolean()
+  @spec record_field_is_int?(String.t(), String.t() | nil, String.t()) :: boolean()
 
   defp record_field_is_int?(field_name, record_type, module_name) do
     record_field_is_scalar?(field_name, record_type, module_name, "Int")
@@ -341,7 +362,11 @@ defmodule Elmc.Backend.CCodegen.Native.UsageAnalysis do
 
   def function_call_arg_kinds(_expr, _module_name, _decl_map), do: nil
 
-  @spec native_function_arg_kinds_for(Types.ir_expr() | String.t(), [String.t()], Types.decl_map()) :: Types.ir_expr()
+  @spec native_function_arg_kinds_for(
+          Types.function_decl_key() | nil,
+          [Types.ir_expr()],
+          Types.decl_map()
+        ) :: {[Types.ir_expr()], [Types.native_function_arg_kind()]} | nil
 
   defp native_function_arg_kinds_for(nil, _args, _decl_map), do: nil
 
@@ -361,7 +386,8 @@ defmodule Elmc.Backend.CCodegen.Native.UsageAnalysis do
     end
   end
 
-  @spec native_function_arg_kinds_for_analysis(Types.decl(), String.t(), Types.decl_map()) :: Types.ir_expr()
+  @spec native_function_arg_kinds_for_analysis(Types.decl(), String.t(), Types.decl_map()) ::
+          [Types.native_function_arg_kind()]
 
   defp native_function_arg_kinds_for_analysis(decl, module_name, decl_map) do
     cache_key = :elmc_native_arg_kinds_analysis_cache
@@ -500,7 +526,12 @@ defmodule Elmc.Backend.CCodegen.Native.UsageAnalysis do
     end)
   end
 
-  @spec collect_call_site_signature_native_float_arg_contexts(String.t(), Types.expr(), String.t(), Types.decl_map()) :: Types.ir_expr()
+  @spec collect_call_site_signature_native_float_arg_contexts(
+          Types.binding_name(),
+          Types.expr() | list() | map(),
+          String.t(),
+          Types.decl_map()
+        ) :: [Types.var_usage_context()]
 
   defp collect_call_site_signature_native_float_arg_contexts(name, expr, module_name, decl_map)
        when is_map(expr) and is_binary(module_name) do
@@ -540,7 +571,12 @@ defmodule Elmc.Backend.CCodegen.Native.UsageAnalysis do
   defp collect_call_site_signature_native_float_arg_contexts(_name, _expr, _module_name, _decl_map),
     do: []
 
-  @spec call_site_signature_native_float_var_contexts(String.t(), String.t(), [String.t()], Types.decl_map()) :: Types.ir_expr()
+  @spec call_site_signature_native_float_var_contexts(
+          Types.binding_name(),
+          Types.function_decl_key(),
+          [Types.ir_expr()],
+          Types.decl_map()
+        ) :: [Types.var_usage_context()]
 
   defp call_site_signature_native_float_var_contexts(name, target, args, decl_map) do
     case Map.get(decl_map, target) do
@@ -563,7 +599,12 @@ defmodule Elmc.Backend.CCodegen.Native.UsageAnalysis do
     end
   end
 
-  @spec collect_record_update_float_field_contexts(String.t(), Types.expr(), String.t(), Types.decl_map()) :: Types.ir_expr()
+  @spec collect_record_update_float_field_contexts(
+          Types.binding_name(),
+          Types.expr() | list() | map(),
+          String.t(),
+          Types.decl_map()
+        ) :: [Types.var_usage_context()]
 
   defp collect_record_update_float_field_contexts(name, expr, module_name, decl_map)
        when is_map(expr) do
@@ -625,7 +666,12 @@ defmodule Elmc.Backend.CCodegen.Native.UsageAnalysis do
 
   def native_float_only_usage?(_usage), do: false
 
-  @spec collect_native_float_function_arg_contexts(String.t(), Types.expr(), String.t(), Types.decl_map()) :: Types.ir_expr()
+  @spec collect_native_float_function_arg_contexts(
+          Types.binding_name(),
+          Types.expr() | list() | map(),
+          String.t(),
+          Types.decl_map()
+        ) :: [Types.var_usage_context()]
 
   defp collect_native_float_function_arg_contexts(name, expr, module_name, decl_map)
        when is_binary(name) or is_atom(name) do
@@ -779,7 +825,7 @@ defmodule Elmc.Backend.CCodegen.Native.UsageAnalysis do
     end)
   end
 
-  @spec collect_string_var_contexts(String.t(), map() | Types.expr(), String.t()) :: Types.ir_expr()
+  @spec collect_string_var_contexts(Types.binding_name(), Types.expr() | map(), Types.var_usage_context()) :: [Types.var_usage_context()]
 
   defp collect_string_var_contexts(name, %{op: :var, name: var_name}, context) do
     if EnvBindings.same_binding?(name, var_name), do: [context], else: []
@@ -817,7 +863,12 @@ defmodule Elmc.Backend.CCodegen.Native.UsageAnalysis do
   defp collect_string_var_contexts(name, expr, _context),
     do: collect_var_contexts(name, expr, :boxed)
 
-  @spec collect_native_string_function_arg_contexts(String.t(), Types.expr(), String.t(), Types.decl_map()) :: Types.ir_expr()
+  @spec collect_native_string_function_arg_contexts(
+          Types.binding_name(),
+          Types.expr(),
+          String.t(),
+          Types.decl_map()
+        ) :: [Types.var_usage_context()]
 
   defp collect_native_string_function_arg_contexts(name, expr, module_name, decl_map) do
     case expr do
@@ -943,7 +994,12 @@ defmodule Elmc.Backend.CCodegen.Native.UsageAnalysis do
 
   def native_bool_only_usage?(_usage), do: false
 
-  @spec collect_call_site_signature_native_bool_arg_contexts(String.t(), Types.expr(), String.t(), Types.decl_map()) :: Types.ir_expr()
+  @spec collect_call_site_signature_native_bool_arg_contexts(
+          Types.binding_name(),
+          Types.expr() | list() | map(),
+          String.t(),
+          Types.decl_map()
+        ) :: [Types.var_usage_context()]
 
   defp collect_call_site_signature_native_bool_arg_contexts(name, expr, module_name, decl_map)
        when is_map(expr) and is_binary(module_name) do
@@ -983,7 +1039,12 @@ defmodule Elmc.Backend.CCodegen.Native.UsageAnalysis do
   defp collect_call_site_signature_native_bool_arg_contexts(_name, _expr, _module_name, _decl_map),
     do: []
 
-  @spec call_site_signature_native_bool_var_contexts(String.t(), String.t(), [String.t()], Types.decl_map()) :: Types.ir_expr()
+  @spec call_site_signature_native_bool_var_contexts(
+          Types.binding_name(),
+          Types.function_decl_key(),
+          [Types.ir_expr()],
+          Types.decl_map()
+        ) :: [Types.var_usage_context()]
 
   defp call_site_signature_native_bool_var_contexts(name, target, args, decl_map) do
     case Map.get(decl_map, target) do
@@ -1001,7 +1062,12 @@ defmodule Elmc.Backend.CCodegen.Native.UsageAnalysis do
     end
   end
 
-  @spec collect_record_update_bool_field_contexts(String.t(), Types.expr(), String.t(), Types.decl_map()) :: Types.ir_expr()
+  @spec collect_record_update_bool_field_contexts(
+          Types.binding_name(),
+          Types.expr() | list() | map(),
+          String.t(),
+          Types.decl_map()
+        ) :: [Types.var_usage_context()]
 
   defp collect_record_update_bool_field_contexts(name, expr, module_name, decl_map)
        when is_map(expr) do
@@ -1054,7 +1120,12 @@ defmodule Elmc.Backend.CCodegen.Native.UsageAnalysis do
 
   defp collect_record_update_bool_field_contexts(_name, _expr, _module_name, _decl_map), do: []
 
-  @spec collect_native_bool_function_arg_contexts(String.t(), Types.expr(), String.t(), Types.decl_map()) :: Types.ir_expr()
+  @spec collect_native_bool_function_arg_contexts(
+          Types.binding_name(),
+          Types.expr() | list() | map(),
+          String.t(),
+          Types.decl_map()
+        ) :: [Types.var_usage_context()]
 
   defp collect_native_bool_function_arg_contexts(name, expr, module_name, decl_map)
        when is_map(expr) do
@@ -1092,7 +1163,7 @@ defmodule Elmc.Backend.CCodegen.Native.UsageAnalysis do
 
   defp collect_native_bool_function_arg_contexts(_name, _expr, _module_name, _decl_map), do: []
 
-  @spec collect_bool_contexts(String.t(), map() | list() | Types.expr(), String.t()) :: Types.ir_expr()
+  @spec collect_bool_contexts(Types.binding_name(), Types.expr() | list() | map(), Types.var_usage_context()) :: [Types.var_usage_context()]
 
   defp collect_bool_contexts(name, %{op: :var, name: var_name}, context) do
     if EnvBindings.same_binding?(name, var_name), do: [context], else: []
@@ -1178,7 +1249,7 @@ defmodule Elmc.Backend.CCodegen.Native.UsageAnalysis do
 
   defp collect_bool_contexts(_name, _expr, _context), do: []
 
-  @spec collect_bool_contexts_from_map(String.t(), Types.expr(), String.t()) :: Types.ir_expr()
+  @spec collect_bool_contexts_from_map(Types.binding_name(), Types.expr(), Types.var_usage_context()) :: [Types.var_usage_context()]
 
   defp collect_bool_contexts_from_map(name, expr, context) do
     expr
@@ -1186,7 +1257,13 @@ defmodule Elmc.Backend.CCodegen.Native.UsageAnalysis do
     |> Enum.flat_map(&collect_bool_contexts(name, &1, context))
   end
 
-  @spec collect_qualified_call_var_contexts(String.t(), String.t(), [String.t()], Types.expr(), String.t()) :: Types.ir_expr()
+  @spec collect_qualified_call_var_contexts(
+          Types.binding_name(),
+          String.t(),
+          [Types.ir_expr()],
+          Types.expr(),
+          Types.var_usage_context()
+        ) :: [Types.var_usage_context()]
 
   defp collect_qualified_call_var_contexts(name, target, args, expr, context) do
     normalized = Host.normalize_special_target(target)
@@ -1217,7 +1294,7 @@ defmodule Elmc.Backend.CCodegen.Native.UsageAnalysis do
     end
   end
 
-  @spec collect_var_contexts(String.t(), map() | list() | Types.expr(), String.t()) :: Types.ir_expr()
+  @spec collect_var_contexts(Types.binding_name(), Types.expr() | list() | map(), Types.var_usage_context()) :: [Types.var_usage_context()]
 
   defp collect_var_contexts(name, %{op: :var, name: var_name}, context) do
     if EnvBindings.same_binding?(name, var_name), do: [context], else: []
@@ -1433,7 +1510,12 @@ defmodule Elmc.Backend.CCodegen.Native.UsageAnalysis do
 
   defp collect_var_contexts(_name, _expr, _context), do: []
 
-  @spec text_command_var_contexts(String.t(), Types.ir_expr() | String.t(), [String.t()], String.t()) :: Types.ir_expr()
+  @spec text_command_var_contexts(
+          Types.binding_name(),
+          String.t(),
+          [Types.ir_expr()],
+          Types.var_usage_context()
+        ) :: [Types.var_usage_context()] | :skip
 
   defp text_command_var_contexts(name, "Pebble.Ui.text", args, context) when length(args) == 4 do
     collect_var_contexts_for_function_args(name, args, [:boxed, :boxed, :boxed, :boxed], context)
@@ -1451,7 +1533,12 @@ defmodule Elmc.Backend.CCodegen.Native.UsageAnalysis do
 
   defp text_command_var_contexts(_name, _target, _args, _context), do: :skip
 
-  @spec collect_var_contexts_for_function_args(String.t(), [String.t()], Types.ir_expr(), String.t()) :: Types.ir_expr()
+  @spec collect_var_contexts_for_function_args(
+          Types.binding_name(),
+          [Types.ir_expr()],
+          [Types.var_usage_context()],
+          Types.var_usage_context()
+        ) :: [Types.var_usage_context()]
 
   defp collect_var_contexts_for_function_args(name, args, kinds, default_context) do
     args
@@ -1468,7 +1555,7 @@ defmodule Elmc.Backend.CCodegen.Native.UsageAnalysis do
     end)
   end
 
-  @spec collect_var_contexts_from_map(String.t(), Types.expr(), String.t()) :: Types.ir_expr()
+  @spec collect_var_contexts_from_map(Types.binding_name(), Types.expr(), Types.var_usage_context()) :: [Types.var_usage_context()]
 
   defp collect_var_contexts_from_map(name, expr, context) do
     expr
@@ -1476,7 +1563,7 @@ defmodule Elmc.Backend.CCodegen.Native.UsageAnalysis do
     |> Enum.flat_map(&collect_var_contexts(name, &1, context))
   end
 
-  @spec collect_float_contexts(String.t(), map() | list() | Types.expr(), String.t()) :: Types.ir_expr()
+  @spec collect_float_contexts(Types.binding_name(), Types.expr() | list() | map(), Types.var_usage_context()) :: [Types.var_usage_context()]
 
   defp collect_float_contexts(name, %{op: :var, name: var_name}, context) do
     if EnvBindings.same_binding?(name, var_name), do: [context], else: []
@@ -1573,7 +1660,7 @@ defmodule Elmc.Backend.CCodegen.Native.UsageAnalysis do
 
   defp collect_float_contexts(_name, _expr, _context), do: []
 
-  @spec collect_float_contexts_from_map(String.t(), Types.expr(), String.t()) :: Types.ir_expr()
+  @spec collect_float_contexts_from_map(Types.binding_name(), Types.expr(), Types.var_usage_context()) :: [Types.var_usage_context()]
 
   defp collect_float_contexts_from_map(name, expr, context) do
     expr
@@ -1639,7 +1726,8 @@ defmodule Elmc.Backend.CCodegen.Native.UsageAnalysis do
 
   def int_candidate_for_analysis?(_name, expr), do: NativeInt.structural_expr?(expr)
 
-  @spec int_candidate_for_analysis_from_qualified_call(String.t(), String.t(), [String.t()]) :: Types.ir_expr()
+  @spec int_candidate_for_analysis_from_qualified_call(Types.binding_name(), String.t(), [Types.ir_expr()]) ::
+          boolean()
 
   defp int_candidate_for_analysis_from_qualified_call(name, target, args) do
     case Host.special_value_from_target(Host.normalize_special_target(target), args || []) do
@@ -1652,7 +1740,7 @@ defmodule Elmc.Backend.CCodegen.Native.UsageAnalysis do
     end
   end
 
-  @spec equality_operand_context(Types.ir_expr()) :: Types.ir_expr()
+  @spec equality_operand_context(Types.ir_expr()) :: Types.var_usage_context()
 
   defp equality_operand_context(other) do
     if non_int_equality_operand?(other), do: :boxed, else: :native

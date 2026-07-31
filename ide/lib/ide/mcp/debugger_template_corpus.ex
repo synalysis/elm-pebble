@@ -216,8 +216,7 @@ defmodule Ide.Mcp.DebuggerTemplateCorpus do
     end
   end
 
-  @spec apply_simulator_settings(String.t(), String.t()) ::
-          {:ok, ToolTypes.debugger_simulator_settings_result()} | {:error, CorpusTypes.corpus_error()}
+  @spec apply_simulator_settings(String.t(), String.t()) :: ToolTypes.tool_result()
   defp apply_simulator_settings(slug, template_key) do
     settings =
       %{
@@ -263,8 +262,7 @@ defmodule Ide.Mcp.DebuggerTemplateCorpus do
 
   defp after_bootstrap(_slug, _template_key), do: :ok
 
-  @spec fetch_render_tree(String.t(), pos_integer()) ::
-          {:ok, ToolTypes.render_tree_result()} | {:error, CorpusTypes.corpus_error()}
+  @spec fetch_render_tree(String.t(), pos_integer()) :: ToolTypes.tool_result()
   defp fetch_render_tree(slug, attempts \\ 8)
 
   defp fetch_render_tree(slug, attempts) when is_binary(slug) and attempts > 0 do
@@ -1037,9 +1035,6 @@ defmodule Ide.Mcp.DebuggerTemplateCorpus do
           true ->
             {:skip, "unexpected operation_source #{inspect(operation_source)}"}
         end
-
-      {:error, reason} ->
-        {:skip, "inject error #{inspect(reason)}"}
     end
   end
 

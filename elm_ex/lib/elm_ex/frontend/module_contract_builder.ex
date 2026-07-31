@@ -366,7 +366,7 @@ defmodule ElmEx.Frontend.GeneratedContractBuilder do
       next_line != nil and next_line.indented?
   end
 
-  @spec hydrate_multiline_signature_decl(scanned_line(), [scanned_line()]) :: scanned_line()
+  @spec hydrate_multiline_signature_decl(scanned_line(), [scanned_line()]) :: map()
   defp hydrate_multiline_signature_decl(line_info, continuation) do
     raw_source =
       ([line_info | continuation] |> Enum.map(& &1.raw_line) |> Enum.join("\n"))
@@ -798,7 +798,7 @@ defmodule ElmEx.Frontend.GeneratedContractBuilder do
           [String.t()],
           String.t(),
           integer(),
-          nil | integer()
+          nil | String.t()
         ) :: [String.t()]
 
   defp do_split_top_level(<<>>, _separator, acc, current, _depth, _quote) do
@@ -991,7 +991,7 @@ defmodule ElmEx.Frontend.GeneratedContractBuilder do
     generated_expr || unsupported_expr(body)
   end
 
-  @spec unsupported_expr(String.t()) :: Types.expr()
+  @spec unsupported_expr(String.t()) :: AstTypes.expr()
 
   defp unsupported_expr(body) when is_binary(body) do
     case GeneratedExpressionParser.parse(body) do
@@ -1339,12 +1339,12 @@ defmodule ElmEx.Frontend.GeneratedContractBuilder do
 
   defp allow_generated_expr?(_), do: false
 
-  @spec allow_compose_side?(String.t() | Types.expr()) :: boolean()
+  @spec allow_compose_side?(String.t() | AstTypes.expr()) :: boolean()
 
   defp allow_compose_side?(side) when is_binary(side), do: true
   defp allow_compose_side?(side), do: allow_generated_expr?(side)
 
-  @spec bool_intrinsic_lambda(Types.expr()) :: Types.expr()
+  @spec bool_intrinsic_lambda(:and | :or) :: AstTypes.expr()
 
   defp bool_intrinsic_lambda(:and) do
     %{
@@ -1569,7 +1569,7 @@ defmodule ElmEx.Frontend.GeneratedContractBuilder do
     do_take_consecutive_comment_raw_lines(rest, [line])
   end
 
-  @spec do_take_consecutive_comment_raw_lines(term(), term()) :: Types.expr()
+  @spec do_take_consecutive_comment_raw_lines([scanned_line()], [scanned_line()]) :: {[scanned_line()], [scanned_line()]}
 
   defp do_take_consecutive_comment_raw_lines([], acc), do: {Enum.reverse(acc), []}
 

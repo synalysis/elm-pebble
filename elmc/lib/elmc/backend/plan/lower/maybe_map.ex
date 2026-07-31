@@ -7,6 +7,11 @@ defmodule Elmc.Backend.Plan.Lower.MaybeMap do
   alias Elmc.Backend.Plan.Lower.{Call, Expr, Record}
   alias Elmc.Backend.Plan.{Builder, Context, Types}
 
+  @type cfg_arm_result :: {:ok, Types.reg(), non_neg_integer(), Builder.t()} | :unsupported
+
+  @type just_mapper ::
+          (Types.reg(), Context.t(), Builder.t() -> cfg_arm_result())
+
   @spec try_compile(Types.ir_expr(), Context.t(), Builder.t()) ::
           {:ok, Types.reg() | :fn_out, Builder.t()} | :unsupported
   def try_compile(%{function: "elmc_maybe_map", args: [fun, maybe]}, ctx, b) do
@@ -27,7 +32,8 @@ defmodule Elmc.Backend.Plan.Lower.MaybeMap do
 
   def try_compile(_, _, _), do: :unsupported
 
-  @spec compile_field_map(String.t(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+  @spec compile_field_map(String.t(), Types.expr(), Context.t(), Builder.t()) ::
+          Types.compile_result() | :unsupported
 
   defp compile_field_map(field, maybe, ctx, b) when is_binary(field) do
     maybe_ctx = Context.for_branch_arm(ctx)
@@ -47,7 +53,14 @@ defmodule Elmc.Backend.Plan.Lower.MaybeMap do
     end
   end
 
-  @spec compile_partial_call_map(String.t(), String.t(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+  @spec compile_partial_call_map(
+          String.t(),
+          String.t(),
+          [Types.expr()],
+          Types.expr(),
+          Context.t(),
+          Builder.t()
+        ) :: Types.compile_result() | :unsupported
 
   defp compile_partial_call_map(module, name, bound, maybe, ctx, b) do
     maybe_ctx = Context.for_branch_arm(ctx)
@@ -93,12 +106,16 @@ defmodule Elmc.Backend.Plan.Lower.MaybeMap do
   # Partial Tuple.map* applied inside Maybe.map already compiled its bound args
   # to regs. Route through runtime builtins instead of `call_fn` — re-entering
   # SpecialValues with a synthetic `__payload` var fails and falls back.
+  @spec core_partial_runtime_builtin(String.t(), String.t(), non_neg_integer()) ::
+          {:ok, :tuple_map_both | :tuple_map_first | :tuple_map_second} | :error
+
   defp core_partial_runtime_builtin("Tuple", "mapBoth", 3), do: {:ok, :tuple_map_both}
   defp core_partial_runtime_builtin("Tuple", "mapFirst", 2), do: {:ok, :tuple_map_first}
   defp core_partial_runtime_builtin("Tuple", "mapSecond", 2), do: {:ok, :tuple_map_second}
   defp core_partial_runtime_builtin(_, _, _), do: :error
 
-  @spec compile_maybe_branch_map(Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+  @spec compile_maybe_branch_map(Types.reg(), just_mapper(), Context.t(), Builder.t()) ::
+          {:ok, Types.reg(), Builder.t()} | :unsupported
 
   defp compile_maybe_branch_map(maybe_reg, just_mapper, ctx, b) do
     saved_pending = Map.get(b, :pending_merge_block)
@@ -127,7 +144,8 @@ defmodule Elmc.Backend.Plan.Lower.MaybeMap do
     end
   end
 
-  @spec compile_record_field_map(Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+  @spec compile_record_field_map(Types.reg(), String.t(), Context.t(), Builder.t()) ::
+          cfg_arm_result()
 
   defp compile_record_field_map(payload_reg, field, ctx, b) do
     with {:ok, field_reg, b1} <- compile_record_get(payload_reg, field, ctx, b) do
@@ -135,7 +153,8 @@ defmodule Elmc.Backend.Plan.Lower.MaybeMap do
     end
   end
 
-  @spec compile_record_get(integer(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+  @spec compile_record_get(Types.reg(), String.t(), Context.t(), Builder.t()) ::
+          {:ok, Types.reg(), Builder.t()}
 
   defp compile_record_get(base_reg, field, ctx, b) when is_integer(base_reg) do
     {reg, b1} = Builder.fresh_reg(b)
@@ -154,7 +173,7 @@ defmodule Elmc.Backend.Plan.Lower.MaybeMap do
     {:ok, reg, b2}
   end
 
-  @spec wrap_just_payload(integer(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+  @spec wrap_just_payload(Types.reg(), Context.t(), Builder.t()) :: cfg_arm_result()
 
   defp wrap_just_payload(payload_reg, ctx, b) when is_integer(payload_reg) do
     {owned_payload, b_owned} = Builder.copy_reg_owned(b, payload_reg)
@@ -177,7 +196,7 @@ defmodule Elmc.Backend.Plan.Lower.MaybeMap do
     {:ok, dest, exit_id, Builder.finish_block(b4, :none)}
   end
 
-  @spec compile_nothing_result(Types.ir_expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+  @spec compile_nothing_result(Context.t(), Builder.t(), non_neg_integer()) :: cfg_arm_result()
 
   defp compile_nothing_result(ctx, b, block_id) do
     b_arm = Builder.begin_cfg_arm_block(b, block_id)
@@ -197,11 +216,11 @@ defmodule Elmc.Backend.Plan.Lower.MaybeMap do
     end
   end
 
-  @spec dest_for_map_result_tuple(Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+  @spec dest_for_map_result_tuple(Context.t(), Builder.t()) :: {Types.reg(), Builder.t()}
 
   defp dest_for_map_result_tuple(_ctx, b), do: Builder.fresh_reg(b)
 
-  @spec emit_test_maybe_nothing(Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+  @spec emit_test_maybe_nothing(Types.reg(), Builder.t()) :: {:ok, Types.reg(), Builder.t()}
 
   defp emit_test_maybe_nothing(subject_reg, b) do
     {reg, b1} = Builder.fresh_reg(b)
@@ -221,7 +240,8 @@ defmodule Elmc.Backend.Plan.Lower.MaybeMap do
     {:ok, reg, b2}
   end
 
-  @spec emit_merge(Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+  @spec emit_merge(Types.reg(), Types.reg(), Types.reg(), Builder.t()) ::
+          {:ok, Types.reg(), Builder.t()}
 
   defp emit_merge(cond_reg, then_reg, else_reg, b) do
     {merge, b1} = Builder.fresh_reg(b)
@@ -242,13 +262,14 @@ defmodule Elmc.Backend.Plan.Lower.MaybeMap do
     {:ok, merge, b2}
   end
 
-  @spec skip_reserved(Types.ir_expr(), Types.ir_expr() | term()) :: Types.ir_expr()
+  @spec skip_reserved(non_neg_integer(), non_neg_integer() | nil) :: non_neg_integer()
 
   defp skip_reserved(id, nil), do: id
   defp skip_reserved(id, reserved) when id == reserved, do: id + 1
   defp skip_reserved(id, _), do: id
 
-  @spec parse_partial_call(integer(), Types.ir_expr()) :: Types.ir_expr()
+  @spec parse_partial_call(Types.expr(), Context.t()) ::
+          {:ok, String.t(), String.t(), [Types.expr()]} | :error
 
   defp parse_partial_call(fun, ctx) do
     case fun do
@@ -281,7 +302,7 @@ defmodule Elmc.Backend.Plan.Lower.MaybeMap do
   end
 
   @doc false
-  @spec field_accessor_lambda(map() | term()) :: Types.ir_expr()
+  @spec field_accessor_lambda(Types.expr() | term()) :: {:ok, String.t()} | :error
 
   def field_accessor_lambda(%{op: :lambda, args: [arg], body: %{op: :field_access, arg: arg_name, field: field}})
        when is_binary(arg) and is_binary(field) and arg == arg_name,

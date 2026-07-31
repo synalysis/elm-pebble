@@ -15,9 +15,16 @@ defmodule Elmc.Backend.Bytecode.Loader do
 
   @spec load_manifest(String.t()) :: {:ok, manifest()} | {:error, load_error()}
   def load_manifest(path) when is_binary(path) do
-    with {:ok, bin} <- File.read(path),
-         {:ok, decoded} <- Jason.decode(bin) do
-      {:ok, decoded}
+    case File.read(path) do
+      {:ok, bin} ->
+        case Jason.decode(bin) do
+          {:ok, %{} = decoded} -> {:ok, decoded}
+          {:ok, _} -> {:error, :invalid_manifest}
+          {:error, reason} -> {:error, reason}
+        end
+
+      {:error, reason} ->
+        {:error, reason}
     end
   end
 
@@ -64,12 +71,12 @@ defmodule Elmc.Backend.Bytecode.Loader do
 
   @spec load_section(String.t(), ArtifactTypes.manifest_function_entry()) ::
           {:ok, Lower.section()} | {:error, load_error()}
-  def load_section(build_dir, %{"file" => file} = entry) do
+  def load_section(build_dir, %{"file" => file}) do
     path = Path.join([build_dir, "bytecode", file])
 
-    with {:ok, bin} <- File.read(path) do
-      section = Lower.decode_section(bin)
-      {:ok, Map.put(section, :entry, entry)}
+    case File.read(path) do
+      {:ok, bin} -> {:ok, Lower.decode_section(bin)}
+      {:error, reason} -> {:error, reason}
     end
   end
 

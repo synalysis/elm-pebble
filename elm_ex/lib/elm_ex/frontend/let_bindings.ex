@@ -71,7 +71,7 @@ defmodule ElmEx.Frontend.LetBindings do
     %{op: :let_in, name: tmp, value_expr: expand(value), in_expr: case_expr}
   end
 
-  @spec expand_tuple_bind(String.t(), integer(), Types.expr()) :: Types.expr()
+  @spec expand_tuple_bind([String.t()], Types.expr(), Types.expr()) :: Types.expr()
 
   defp expand_tuple_bind(names, value, in_expr) do
     tmp = tuple_bind_name(names)
@@ -87,7 +87,7 @@ defmodule ElmEx.Frontend.LetBindings do
     |> then(&%{op: :let_in, name: tmp, value_expr: value, in_expr: &1})
   end
 
-  @spec tuple_projections(Types.expr(), term()) :: Types.expr()
+  @spec tuple_projections(Types.expr(), [String.t()]) :: [Types.expr()]
 
   defp tuple_projections(tmp_var, [_left, _right]) do
     [tuple_call("Tuple.first", tmp_var), tuple_call("Tuple.second", tmp_var)]

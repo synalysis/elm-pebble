@@ -19,7 +19,7 @@ defmodule Elmc.Backend.CCodegen.IfCompile do
   alias Elmc.Backend.CCodegen.Util
   alias Elmc.Backend.CCodegen.ValueSlots
 
-  @spec if_result_out_binding(Types.compile_env(), Types.ir_expr()) :: Types.ir_expr()
+  @spec if_result_out_binding(Types.compile_env(), Types.compile_counter()) :: {String.t(), Types.compile_counter(), boolean()}
 
   defp if_result_out_binding(env, counter) do
     CaseCompile.result_out_binding(env, counter)
@@ -66,7 +66,8 @@ defmodule Elmc.Backend.CCodegen.IfCompile do
     end
   end
 
-  @spec int_if_chain_parse(Types.expr(), Types.expr(), Types.expr(), Types.compile_env()) :: Types.ir_expr()
+  @spec int_if_chain_parse(Types.expr(), Types.expr(), Types.expr(), Types.compile_env()) ::
+          {:ok, Types.expr(), [map()]} | :error
 
   defp int_if_chain_parse(cond_expr, then_expr, else_expr, env) do
     case IntIfChain.parse_if_chain(cond_expr, then_expr, else_expr, env) do
@@ -95,7 +96,12 @@ defmodule Elmc.Backend.CCodegen.IfCompile do
     end
   end
 
-  @spec dispatch_int_if_chain(Types.expr(), list(), Types.compile_env(), Types.ir_expr()) :: Types.ir_expr()
+  @spec dispatch_int_if_chain(
+          Types.expr(),
+          [map()],
+          Types.compile_env(),
+          Types.compile_counter()
+        ) :: Types.compile_result()
 
   defp dispatch_int_if_chain(subject, branches, env, counter) do
     if native_scalar_int_case?(env, branches) do
@@ -114,7 +120,13 @@ defmodule Elmc.Backend.CCodegen.IfCompile do
     end
   end
 
-  @spec compile_branches_fallback(Types.expr(), Types.expr(), Types.expr(), Types.compile_env(), Types.ir_expr()) :: Types.ir_expr()
+  @spec compile_branches_fallback(
+          Types.expr(),
+          Types.expr(),
+          Types.expr(),
+          Types.compile_env(),
+          Types.compile_counter()
+        ) :: Types.compile_result()
 
   defp compile_branches_fallback(cond_expr, then_expr, else_expr, env, counter) do
     case PlatformStatic.platform_static_branch(cond_expr) do
@@ -126,7 +138,13 @@ defmodule Elmc.Backend.CCodegen.IfCompile do
     end
   end
 
-  @spec compile_branches_fallback_runtime(Types.expr(), Types.expr(), Types.expr(), Types.compile_env(), Types.ir_expr()) :: Types.ir_expr()
+  @spec compile_branches_fallback_runtime(
+          Types.expr(),
+          Types.expr(),
+          Types.expr(),
+          Types.compile_env(),
+          Types.compile_counter()
+        ) :: Types.compile_result()
 
   defp compile_branches_fallback_runtime(cond_expr, then_expr, else_expr, env, counter) do
     cond do
@@ -170,7 +188,13 @@ defmodule Elmc.Backend.CCodegen.IfCompile do
     end
   end
 
-  @spec compile_runtime_native_bool_branches(Types.expr(), Types.expr(), Types.expr(), Types.compile_env(), Types.ir_expr()) :: Types.ir_expr()
+  @spec compile_runtime_native_bool_branches(
+          Types.expr(),
+          Types.expr(),
+          Types.expr(),
+          Types.compile_env(),
+          Types.compile_counter()
+        ) :: Types.compile_result()
 
   defp compile_runtime_native_bool_branches(cond_expr, then_expr, else_expr, env, counter) do
     cond_env =
@@ -245,7 +269,14 @@ defmodule Elmc.Backend.CCodegen.IfCompile do
     end
   end
 
-  @spec compile_platform_static_branches(Types.ir_expr(), non_neg_integer(), Types.expr(), Types.expr(), Types.compile_env(), Types.ir_expr()) :: Types.ir_expr()
+  @spec compile_platform_static_branches(
+          String.t(),
+          :when_defined | :when_not_defined,
+          Types.expr(),
+          Types.expr(),
+          Types.compile_env(),
+          Types.compile_counter()
+        ) :: Types.compile_result()
 
   defp compile_platform_static_branches(macro, polarity, then_expr, else_expr, env, counter) do
     {out, branch_counter, declare_out?} = if_result_out_binding(env, counter)
@@ -343,7 +374,14 @@ defmodule Elmc.Backend.CCodegen.IfCompile do
     end
   end
 
-  @spec compile_boxed_cond_branches(Types.ir_expr(), Types.ir_expr(), Types.expr(), Types.expr(), Types.compile_env(), Types.ir_expr()) :: Types.ir_expr()
+  @spec compile_boxed_cond_branches(
+          String.t(),
+          String.t(),
+          Types.expr(),
+          Types.expr(),
+          Types.compile_env(),
+          Types.compile_counter()
+        ) :: Types.compile_result()
 
   defp compile_boxed_cond_branches(cond_code, cond_var, then_expr, else_expr, env, counter) do
     {out, branch_counter, declare_out?} = if_result_out_binding(env, counter)
@@ -398,7 +436,8 @@ defmodule Elmc.Backend.CCodegen.IfCompile do
     {code, out, counter}
   end
 
-  @spec complementary_bool_branches(Types.expr(), Types.expr(), Types.compile_env()) :: Types.ir_expr()
+  @spec complementary_bool_branches(Types.expr(), Types.expr(), Types.compile_env()) ::
+          :cond_true | :cond_false | nil
 
   defp complementary_bool_branches(then_expr, else_expr, env) do
     if function_returns_int?(env) and int_zero_one_branch_literals?(then_expr, else_expr) do
@@ -438,7 +477,7 @@ defmodule Elmc.Backend.CCodegen.IfCompile do
     end
   end
 
-  @spec bool_branch_polarity(map() | term()) :: Types.ir_expr()
+  @spec bool_branch_polarity(map() | term()) :: boolean() | nil
 
   defp bool_branch_polarity(%{op: :bool_literal, value: value}), do: value
 
@@ -462,7 +501,7 @@ defmodule Elmc.Backend.CCodegen.IfCompile do
     normalize_branch_expr(left) == normalize_branch_expr(right)
   end
 
-  @spec normalize_branch_expr(map() | Types.ir_expr()) :: map()
+  @spec normalize_branch_expr(term()) :: term()
 
   defp normalize_branch_expr(%{op: :var, name: name}), do: {:var, name}
 
@@ -482,7 +521,7 @@ defmodule Elmc.Backend.CCodegen.IfCompile do
 
   defp normalize_branch_expr(other), do: other
 
-  @spec branch_env(Types.compile_env(), Types.ir_expr()) :: Types.ir_expr()
+  @spec branch_env(Types.compile_env(), String.t()) :: Types.compile_env()
 
   defp branch_env(env, out) do
     ValueSlots.reset_function_out_written()
@@ -514,13 +553,19 @@ defmodule Elmc.Backend.CCodegen.IfCompile do
     end
   end
 
-  @spec format_if_branch_body(Types.expr()) :: Types.ir_expr()
+  @spec format_if_branch_body(String.t()) :: String.t()
 
   defp format_if_branch_body(body) do
     CSource.format_block(body, 4)
   end
 
-  @spec maybe_extract_if_branch_helper(Types.expr(), Types.compile_env(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr() | nil
+  @spec maybe_extract_if_branch_helper(
+          Types.expr(),
+          Types.compile_env(),
+          String.t(),
+          String.t(),
+          String.t()
+        ) :: String.t()
 
   defp maybe_extract_if_branch_helper(expr, env, out, branch_code, assignment_code) do
     inline_body = format_if_branch_body(Enum.join([branch_code, assignment_code], "\n"))
@@ -564,18 +609,23 @@ defmodule Elmc.Backend.CCodegen.IfCompile do
     end
   end
 
-  @spec extract_if_branch_helper?(Types.compile_env(), Types.expr()) :: boolean()
+  @spec extract_if_branch_helper?(Types.compile_env(), String.t()) :: boolean()
 
   defp extract_if_branch_helper?(env, body) do
     RcRuntimeEmit.generic_helper_extraction_allowed?(env, body) and
       Process.get(:elmc_generic_helper_defs) != nil and emitted_line_count(body) >= 70
   end
 
-  @spec emitted_line_count(Types.ir_expr()) :: Types.ir_expr()
+  @spec emitted_line_count(String.t()) :: non_neg_integer()
 
   defp emitted_line_count(code), do: code |> String.split("\n") |> length()
 
-  @spec if_branch_helper_params(Types.expr(), Types.compile_env(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+  @spec if_branch_helper_params(
+          Types.expr(),
+          Types.compile_env(),
+          String.t(),
+          String.t()
+        ) :: {:ok, [{String.t(), {:native_int | :native_bool | :boxed, String.t()}}]} | :error
 
   defp if_branch_helper_params(expr, env, branch_code, assignment_code) do
     code = Enum.join([branch_code, assignment_code], "\n")
@@ -593,7 +643,8 @@ defmodule Elmc.Backend.CCodegen.IfCompile do
     |> HelperParams.collect(env)
   end
 
-  @spec external_vars(Types.expr() | map() | list(), Types.ir_expr()) :: Types.ir_expr()
+  @spec external_vars(Types.expr() | map() | list()) :: MapSet.t(String.t())
+  @spec external_vars(Types.expr() | map() | list(), MapSet.t(String.t())) :: MapSet.t(String.t())
 
   defp external_vars(expr), do: external_vars(expr, MapSet.new())
 
@@ -640,7 +691,8 @@ defmodule Elmc.Backend.CCodegen.IfCompile do
   # When a native list-equality test guards an if/else, compare operands may still
   # be needed in only one branch (for example restored cells in moveBoard's else).
   # Release dead operands at branch entry instead of immediately after compare.
-  @spec inject_compare_operand_branch_releases(Types.ir_expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+  @spec inject_compare_operand_branch_releases(String.t(), String.t(), String.t()) ::
+          {String.t(), String.t()}
 
   defp inject_compare_operand_branch_releases(cond_code, then_body, else_body) do
     case list_equal_compare_operands(cond_code) do
@@ -655,7 +707,7 @@ defmodule Elmc.Backend.CCodegen.IfCompile do
     end
   end
 
-  @spec list_equal_compare_operands(String.t()) :: Types.ir_expr()
+  @spec list_equal_compare_operands(String.t()) :: [String.t()]
 
   defp list_equal_compare_operands(cond_code) when is_binary(cond_code) do
     case Regex.run(~r/elmc_list_equal_int\(([^,]+), ([^)]+)\)/, cond_code) do
@@ -664,7 +716,7 @@ defmodule Elmc.Backend.CCodegen.IfCompile do
     end
   end
 
-  @spec compare_operand_branch_release_prefix(Types.ir_expr(), Types.ir_expr(), boolean()) :: Types.ir_expr()
+  @spec compare_operand_branch_release_prefix([String.t()], String.t(), boolean()) :: String.t()
 
   defp compare_operand_branch_release_prefix(operands, branch_body, then_branch?)
        when is_binary(branch_body) do
@@ -677,7 +729,7 @@ defmodule Elmc.Backend.CCodegen.IfCompile do
     end
   end
 
-  @spec operands_to_release_for_branch(Types.ir_expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+  @spec operands_to_release_for_branch([String.t()], String.t(), boolean()) :: [String.t()]
 
   defp operands_to_release_for_branch(operands, _branch_body, true) do
     case operands do
@@ -693,7 +745,7 @@ defmodule Elmc.Backend.CCodegen.IfCompile do
     Enum.reject(operands, &String.contains?(branch_body, &1))
   end
 
-  @spec compare_operand_release_stmt(Types.ir_expr()) :: Types.ir_expr()
+  @spec compare_operand_release_stmt(String.t()) :: String.t()
 
   defp compare_operand_release_stmt(var) do
     cond do

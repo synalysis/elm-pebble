@@ -136,7 +136,7 @@ defmodule Ide.Resources.ResourceStore.SpeakerSamples do
     end
   end
 
-  @spec normalized_filename(String.t()) :: String.t()
+  @spec normalized_filename(String.t()) :: {:ok, String.t()} | {:error, :unsupported_speaker_sample_type}
 
   defp normalized_filename(original_name) do
     ext = original_name |> Path.basename() |> Path.extname() |> String.downcase()

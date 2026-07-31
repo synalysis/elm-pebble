@@ -2,7 +2,6 @@ defmodule Elmc.Backend.Pebble.FeatureFlags.DrawFlags.Compact do
   @moduledoc false
   alias Elmc.Types, as: ElmcTypes
   alias Elmc.Backend.SizeProfile
-  alias Elmc.Backend.Pebble.Types
   alias Elmc.Backend.Pebble.Types.FeatureFlags.Keys.Draw, as: DrawKeys
 
   @legacy_required_keys ~w(
@@ -84,12 +83,11 @@ defmodule Elmc.Backend.Pebble.FeatureFlags.DrawFlags.Compact do
     draw_antialiased
   )a)
 
-  @spec compute(Types.draw_feature_flags()) :: %{compact_draw: boolean()}
+  # Input may be draw-only (no :compact_draw yet) or full feature_flags.
+  @spec compute(map()) :: %{compact_draw: boolean()}
   def compute(%{} = flags), do: compute(flags, %{})
 
-  @spec compute(Types.draw_feature_flags(), ElmcTypes.compile_options() | map()) :: %{
-          compact_draw: boolean()
-        }
+  @spec compute(map(), ElmcTypes.compile_options() | map()) :: %{compact_draw: boolean()}
   def compute(%{} = flags, opts) when is_map(opts) do
     legacy_compact? =
       Enum.all?(@legacy_required_keys, &Map.fetch!(flags, &1)) and

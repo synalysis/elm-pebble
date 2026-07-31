@@ -2,7 +2,6 @@ defmodule Elmc.Backend.CCodegen.GeneratedSource do
   @moduledoc false
   alias Elmc.Backend.CCodegen.Types, as: Types
 
-
   @function_emit_batch_size 16
 
   alias Elmc.Backend.C.StubFunctions
@@ -31,8 +30,7 @@ defmodule Elmc.Backend.CCodegen.GeneratedSource do
   alias Elmc.Backend.CCodegen.ValueSlots
   alias Elmc.Backend.Pebble.IRAnalysis
 
-  @spec finalize_source(String.t()) :: Types.ir_expr()
-
+  @spec finalize_source(String.t()) :: String.t()
   defp finalize_source(source), do: CSource.format(source)
 
   @spec reset_process_state!() :: :ok
@@ -132,8 +130,7 @@ defmodule Elmc.Backend.CCodegen.GeneratedSource do
   defp delete_emit_probe_process_key?({:elmc_subexpr_shared, _}), do: true
   defp delete_emit_probe_process_key?(_), do: false
 
-  @spec delete_codegen_process_key?([Types.diagnostic()] | Types.ir_expr() | atom() | term()) :: boolean()
-
+  @spec delete_codegen_process_key?(term()) :: boolean()
   defp delete_codegen_process_key?(:elmc_layout_coercion_diagnostics), do: false
   defp delete_codegen_process_key?(:elmc_plan_primary_fallbacks), do: false
 
@@ -148,16 +145,16 @@ defmodule Elmc.Backend.CCodegen.GeneratedSource do
   defp delete_codegen_process_key?({:elmc_subexpr_shared, _}), do: true
   defp delete_codegen_process_key?(_), do: false
 
-  @spec rc_required_opts(list() | map(), String.t()) :: Types.ir_expr()
-
-  defp rc_required_opts(opts, direct_command_targets) when is_list(opts),
-    do: Keyword.put(opts, :direct_command_targets, direct_command_targets)
-
+  @spec rc_required_opts(map(), term()) :: map()
   defp rc_required_opts(%{} = opts, direct_command_targets),
     do: Map.put(opts, :direct_command_targets, direct_command_targets)
 
-  @spec record_field_reachability_targets(String.t(), String.t(), Types.decl_map(), keyword()) :: Types.ir_expr()
-
+  @spec record_field_reachability_targets(
+          MapSet.t(),
+          MapSet.t(),
+          Types.decl_map(),
+          keyword() | map()
+        ) :: MapSet.t()
   defp record_field_reachability_targets(generic_targets, direct_command_targets, decl_map, opts) do
     direct_emit_targets =
       if opts[:direct_render_only] == true do
@@ -173,8 +170,7 @@ defmodule Elmc.Backend.CCodegen.GeneratedSource do
   end
 
   # Direct scene helpers are linked for every Pebble platform, including aplite.
-  @spec direct_scene_guard(String.t(), keyword(), Types.t()) :: Types.ir_expr()
-
+  @spec direct_scene_guard(String.t(), keyword() | map(), ElmEx.IR.t()) :: String.t()
   defp direct_scene_guard(content, _opts, _ir) when is_binary(content) do
     String.trim_trailing(content)
   end
@@ -251,6 +247,7 @@ defmodule Elmc.Backend.CCodegen.GeneratedSource do
 
     constructor_tags = IRQueries.constructor_tag_map(ir)
     opts_map = Map.new(opts)
+
     decl_map =
       ir
       |> IRQueries.function_decl_map()
@@ -265,7 +262,12 @@ defmodule Elmc.Backend.CCodegen.GeneratedSource do
     generic_targets = GenericTargets.function_targets(ir, opts)
 
     reachable_for_fields =
-      record_field_reachability_targets(generic_targets, Host.direct_command_targets(ir, opts, decl_map), decl_map, opts)
+      record_field_reachability_targets(
+        generic_targets,
+        Host.direct_command_targets(ir, opts, decl_map),
+        decl_map,
+        opts
+      )
 
     used_record_fields =
       if opts[:strip_dead_code] == false do
@@ -276,17 +278,28 @@ defmodule Elmc.Backend.CCodegen.GeneratedSource do
 
     {_record_field_defines, record_field_macros} =
       RecordFieldMacros.definitions(ir, used_fields: used_record_fields)
+
     Process.put(:elmc_constructor_tags, constructor_tags)
     Process.put(:elmc_record_field_macros, record_field_macros)
     Process.put(:elmc_vector_resource_slots, IRQueries.pebble_vector_resource_slot_map(ir))
     Process.put(:elmc_bitmap_resource_slots, IRQueries.pebble_bitmap_resource_slot_map(ir))
     Process.put(:elmc_animation_resource_slots, IRQueries.pebble_animation_resource_slot_map(ir))
     Process.put(:elmc_font_resource_slots, IRQueries.pebble_font_resource_slot_map(ir))
-    Process.put(:elmc_speaker_sample_resource_slots, IRQueries.pebble_speaker_sample_resource_slot_map(ir))
+
+    Process.put(
+      :elmc_speaker_sample_resource_slots,
+      IRQueries.pebble_speaker_sample_resource_slot_map(ir)
+    )
+
     Process.put(:elmc_enum_types, IRQueries.enum_type_set(ir))
     Process.put(:elmc_record_alias_shapes, IRQueries.record_alias_shape_map(ir))
     Process.put(:elmc_inline_record_literal_shapes, IRQueries.inline_record_literal_shape_map(ir))
-    Process.put(:elmc_union_constructor_payload_specs, IRQueries.union_constructor_payload_specs_map(ir))
+
+    Process.put(
+      :elmc_union_constructor_payload_specs,
+      IRQueries.union_constructor_payload_specs_map(ir)
+    )
+
     Process.put(:elmc_record_field_types, IRQueries.record_alias_field_types_map(ir))
     Process.put(:elmc_union_type_names, IRQueries.union_type_name_set(ir))
 
@@ -393,7 +406,12 @@ defmodule Elmc.Backend.CCodegen.GeneratedSource do
     )
 
     Process.put(:elmc_codegen_opts, opts)
-    Process.put(:elmc_plan_ir_mode, Map.get(opts, :plan_ir_mode, Elmc.Backend.Plan.Defaults.plan_ir_mode()))
+
+    Process.put(
+      :elmc_plan_ir_mode,
+      Map.get(opts, :plan_ir_mode, Elmc.Backend.Plan.Defaults.plan_ir_mode())
+    )
+
     Process.put(:elmc_plan_primary_fallbacks, [])
     Process.put(:elmc_plan_primary_lowered_cache, %{})
     Process.put(:elmc_plan_native_returns, %{})
@@ -408,7 +426,8 @@ defmodule Elmc.Backend.CCodegen.GeneratedSource do
     :ok
   end
 
-  @spec with_emit_session(ElmEx.IR.t(), Types.codegen_opts(), (-> result)) :: result when result: var
+  @spec with_emit_session(ElmEx.IR.t(), Types.codegen_opts(), (-> result)) :: result
+        when result: var
   def with_emit_session(ir, opts, fun) when is_function(fun, 0) do
     prepare_emit_session!(ir, opts)
 
@@ -442,8 +461,7 @@ defmodule Elmc.Backend.CCodegen.GeneratedSource do
     end
   end
 
-  @spec source_without_session_setup(Types.t(), keyword()) :: Types.ir_expr()
-
+  @spec source_without_session_setup(ElmEx.IR.t(), Types.codegen_opts()) :: String.t()
   defp source_without_session_setup(ir, opts) do
     generic_targets = GenericTargets.function_targets(ir, opts)
     decl_map = IRQueries.function_decl_map(ir)
@@ -460,7 +478,9 @@ defmodule Elmc.Backend.CCodegen.GeneratedSource do
       else
         direct_emit_targets =
           if opts[:direct_render_only] == true do
-            {_def_targets, emit_targets, _pruned} = DirectRenderAnalysis.target_sets(decl_map, opts)
+            {_def_targets, emit_targets, _pruned} =
+              DirectRenderAnalysis.target_sets(decl_map, opts)
+
             emit_targets
           else
             MapSet.new()
@@ -481,7 +501,12 @@ defmodule Elmc.Backend.CCodegen.GeneratedSource do
       else
         RecordFieldMacros.used_field_keys(
           decl_map,
-          record_field_reachability_targets(generic_targets, direct_command_targets, decl_map, opts)
+          record_field_reachability_targets(
+            generic_targets,
+            direct_command_targets,
+            decl_map,
+            opts
+          )
         )
       end
 
@@ -629,9 +654,21 @@ defmodule Elmc.Backend.CCodegen.GeneratedSource do
     |> finalize_source()
   end
 
-  @spec emit_function_defs_batched(Types.t(), String.t(), Types.ir_expr(), String.t(), Types.decl_map()) :: Types.ir_expr()
+  @spec emit_function_defs_batched(
+          ElmEx.IR.t(),
+          MapSet.t(),
+          map(),
+          MapSet.t(),
+          Types.decl_map()
+        ) :: String.t()
 
-  defp emit_function_defs_batched(ir, generic_targets, function_arities, wrapper_targets, decl_map) do
+  defp emit_function_defs_batched(
+         ir,
+         generic_targets,
+         function_arities,
+         wrapper_targets,
+         decl_map
+       ) do
     sorted_function_decls(ir, generic_targets)
     |> Enum.chunk_every(@function_emit_batch_size)
     |> Enum.map(fn batch ->
@@ -659,8 +696,7 @@ defmodule Elmc.Backend.CCodegen.GeneratedSource do
     |> IO.iodata_to_binary()
   end
 
-  @spec sorted_function_decls(Types.t(), String.t()) :: Types.ir_expr()
-
+  @spec sorted_function_decls(ElmEx.IR.t(), MapSet.t()) :: [{ElmEx.IR.Module.t(), map()}]
   defp sorted_function_decls(ir, generic_targets) do
     ir.modules
     |> Enum.flat_map(fn mod ->
@@ -675,8 +711,7 @@ defmodule Elmc.Backend.CCodegen.GeneratedSource do
     end)
   end
 
-  @spec dedupe_lambda_defs_by_name(list()) :: Types.ir_expr()
-
+  @spec dedupe_lambda_defs_by_name([String.t()]) :: [String.t()]
   defp dedupe_lambda_defs_by_name(lambda_defs) when is_list(lambda_defs) do
     {deduped, _seen} =
       Enum.reduce(lambda_defs, {[], MapSet.new()}, fn defn, {acc, seen} ->
@@ -696,8 +731,8 @@ defmodule Elmc.Backend.CCodegen.GeneratedSource do
     Enum.reverse(deduped)
   end
 
-  @spec prune_unreferenced_lambda_defs(term() | Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
-
+  @spec prune_unreferenced_lambda_defs([String.t()], iodata() | String.t() | [String.t()]) ::
+          [String.t()]
   defp prune_unreferenced_lambda_defs([], _root_chunks), do: []
 
   defp prune_unreferenced_lambda_defs(lambda_defs, root_chunks) do
@@ -721,8 +756,8 @@ defmodule Elmc.Backend.CCodegen.GeneratedSource do
     end)
   end
 
-  @spec reachable_lambda_names(Types.ir_expr(), String.t()) :: Types.ir_expr()
-
+  @spec reachable_lambda_names(MapSet.t(String.t()), %{String.t() => String.t()}) ::
+          MapSet.t(String.t())
   defp reachable_lambda_names(roots, by_name) do
     Stream.iterate(roots, fn seen ->
       seen
@@ -736,8 +771,7 @@ defmodule Elmc.Backend.CCodegen.GeneratedSource do
     end)
   end
 
-  @spec lambda_definition_name(String.t()) :: Types.ir_expr()
-
+  @spec lambda_definition_name(String.t()) :: String.t() | nil
   defp lambda_definition_name(defn) when is_binary(defn) do
     case Regex.run(lambda_symbol_regex(), defn) do
       [name] -> name
@@ -745,22 +779,21 @@ defmodule Elmc.Backend.CCodegen.GeneratedSource do
     end
   end
 
-  @spec referenced_lambda_names(list() | String.t()) :: Types.ir_expr()
-
+  @spec referenced_lambda_names([String.t()]) :: MapSet.t(String.t())
   defp referenced_lambda_names(chunks) when is_list(chunks) do
     chunks
     |> Enum.flat_map(&referenced_lambda_names/1)
     |> MapSet.new()
   end
 
+  @spec referenced_lambda_names(String.t()) :: [String.t()]
   defp referenced_lambda_names(chunk) when is_binary(chunk) do
     lambda_symbol_regex()
     |> Regex.scan(chunk)
     |> Enum.map(fn [name] -> name end)
   end
 
-  @spec lambda_symbol_regex() :: Types.ir_expr()
-
+  @spec lambda_symbol_regex() :: Regex.t()
   defp lambda_symbol_regex,
     do:
       ~r/\belmc_(?:(?:fn_[A-Za-z0-9_]+_closure_\d+)|(?:lambda|partial_ref|top_level_ref|partial_union)_\d+)\b/

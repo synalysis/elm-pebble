@@ -363,7 +363,7 @@ defmodule Ide.Debugger.SimulatorSettings do
   defp normalize_weather_settings(_value, default) when is_map(default), do: default
   defp normalize_weather_settings(_value, _default), do: %{}
 
-  @spec normalize_float(float() | integer() | String.t(), term(), integer(), integer()) :: float() | integer() | String.t()
+  @spec normalize_float(term(), term(), float(), float()) :: term()
 
   defp normalize_float(value, _default, min_value, max_value) when is_float(value),
     do: value |> max(min_value) |> min(max_value)

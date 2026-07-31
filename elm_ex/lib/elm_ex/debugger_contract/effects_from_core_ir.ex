@@ -150,7 +150,7 @@ defmodule ElmEx.DebuggerContract.EffectsFromCoreIR do
   end
 
   @doc false
-  @spec effect_field_keys() :: Types.expr()
+  @spec effect_field_keys() :: [atom()]
 
   def effect_field_keys, do: @effect_field_keys
 end

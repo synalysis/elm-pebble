@@ -149,7 +149,7 @@ defmodule Elmx.Runtime.Pebble.SpecialValues.Helpers do
   defp string_literal_ir_value(%{op: :string_literal, value: value}) when is_binary(value), do: {:ok, value}
   defp string_literal_ir_value(_), do: :error
 
-  @spec command_envelope_record(Types.elm_value(), integer(), atom(), Types.elm_value()) :: Types.elm_value()
+  @spec command_envelope_record(String.t(), String.t(), String.t(), Types.ir_expr()) :: map()
 
   defp command_envelope_record(id, api, op, payload)
        when is_binary(id) and is_binary(api) and is_binary(op) do

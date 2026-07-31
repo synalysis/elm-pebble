@@ -29,7 +29,13 @@ defmodule Elmc.Backend.CCodegen.GenericReachability do
     do_wrapper_reachable(roots, decl_map, excluded_targets, seen)
   end
 
-  @spec do_reachable(term(), Types.decl_map(), String.t(), integer(), Types.ir_expr()) :: Types.ir_expr()
+  @spec do_reachable(
+          [Types.function_decl_key()],
+          Types.function_decl_map(),
+          MapSet.t(Types.function_decl_key()),
+          MapSet.t(Types.function_decl_key()),
+          MapSet.t(Types.function_decl_key())
+        ) :: MapSet.t(Types.function_decl_key())
 
   defp do_reachable([], _decl_map, _excluded_targets, seen, _excluded_skip_callees), do: seen
 
@@ -68,7 +74,12 @@ defmodule Elmc.Backend.CCodegen.GenericReachability do
     end
   end
 
-  @spec do_wrapper_reachable(term(), Types.decl_map(), String.t(), integer()) :: Types.ir_expr()
+  @spec do_wrapper_reachable(
+          [Types.function_decl_key()],
+          Types.function_decl_map(),
+          MapSet.t(Types.function_decl_key()),
+          MapSet.t(Types.function_decl_key())
+        ) :: MapSet.t(Types.function_decl_key())
 
   defp do_wrapper_reachable([], _decl_map, _excluded_targets, seen), do: seen
 
@@ -121,7 +132,9 @@ defmodule Elmc.Backend.CCodegen.GenericReachability do
     |> Enum.uniq()
   end
 
-  @spec merged_callees(String.t(), Types.expr(), Types.decl_map()) :: Types.ir_expr()
+  @spec merged_callees(Types.function_decl_key(), Types.expr(), Types.decl_map()) :: [
+          Types.function_decl_key()
+        ]
 
   defp merged_callees(target, expr, decl_map) do
     module_name = elem(target, 0)
@@ -135,7 +148,9 @@ defmodule Elmc.Backend.CCodegen.GenericReachability do
     end
   end
 
-  @spec merged_wrapper_callees(String.t(), Types.expr(), Types.decl_map()) :: Types.ir_expr()
+  @spec merged_wrapper_callees(Types.function_decl_key(), Types.expr(), Types.decl_map()) :: [
+          Types.function_decl_key()
+        ]
 
   defp merged_wrapper_callees(target, expr, decl_map) do
     module_name = elem(target, 0)
@@ -149,7 +164,9 @@ defmodule Elmc.Backend.CCodegen.GenericReachability do
     end
   end
 
-  @spec expr_wrapper_callees_list(map() | list() | integer(), String.t(), Types.decl_map()) :: Types.ir_expr()
+  @spec expr_wrapper_callees_list(Types.expr() | list() | term(), String.t(), Types.decl_map()) :: [
+          Types.function_decl_key()
+        ]
 
   defp expr_wrapper_callees_list(
          %{op: :qualified_call, target: target, args: args},
@@ -202,7 +219,9 @@ defmodule Elmc.Backend.CCodegen.GenericReachability do
 
   defp expr_wrapper_callees_list(_value, _module_name, _decl_map), do: []
 
-  @spec expr_callees_list(map() | list() | integer(), String.t(), Types.decl_map()) :: Types.ir_expr()
+  @spec expr_callees_list(Types.expr() | list() | term(), String.t(), Types.decl_map()) :: [
+          Types.function_decl_key()
+        ]
 
   defp expr_callees_list(
          %{op: :qualified_ref, target: target},
@@ -269,7 +288,7 @@ defmodule Elmc.Backend.CCodegen.GenericReachability do
 
   defp expr_callees_list(_value, _module_name, _decl_map), do: []
 
-  @spec local_decl_callee(String.t() | term(), String.t() | term(), Types.decl_map() | term()) :: Types.ir_expr()
+  @spec local_decl_callee(String.t(), String.t(), Types.decl_map()) :: [Types.function_decl_key()]
 
   defp local_decl_callee(module_name, name, decl_map)
        when is_binary(module_name) and is_binary(name) do
@@ -278,7 +297,7 @@ defmodule Elmc.Backend.CCodegen.GenericReachability do
   end
 
   defp local_decl_callee(_, _, _), do: []
-  @spec wrapper_callee_child_values(map() | Types.expr()) :: Types.ir_expr()
+  @spec wrapper_callee_child_values(Types.expr()) :: [term()]
 
   defp wrapper_callee_child_values(%{op: op, args: args})
        when op in [:call, :qualified_call, :runtime_call, :constructor_call, :field_call] and
@@ -287,7 +306,9 @@ defmodule Elmc.Backend.CCodegen.GenericReachability do
 
   defp wrapper_callee_child_values(expr), do: Map.values(expr)
 
-  @spec qualified_wrapper_callees(String.t(), [String.t()], String.t(), Types.decl_map()) :: Types.ir_expr()
+  @spec qualified_wrapper_callees(String.t(), [Types.ir_expr()], String.t(), Types.decl_map()) :: [
+          Types.function_decl_key()
+        ]
 
   defp qualified_wrapper_callees(target, args, module_name, decl_map) do
     own =
@@ -303,7 +324,7 @@ defmodule Elmc.Backend.CCodegen.GenericReachability do
     own ++ child_callees
   end
 
-  @spec qualified_callees(String.t(), Types.decl_map()) :: Types.ir_expr()
+  @spec qualified_callees(String.t(), Types.decl_map()) :: [Types.function_decl_key()]
 
   defp qualified_callees(target, decl_map) do
     parts = String.split(target, ".")
@@ -328,7 +349,9 @@ defmodule Elmc.Backend.CCodegen.GenericReachability do
     Enum.uniq(prefix_keys ++ own)
   end
 
-  @spec wrapper_callee_target(String.t(), [String.t()], Types.decl_map()) :: Types.ir_expr()
+  @spec wrapper_callee_target(Types.function_decl_key(), [Types.ir_expr()], Types.decl_map()) :: [
+          Types.function_decl_key()
+        ]
 
   defp wrapper_callee_target(target, args, decl_map) do
     cond do

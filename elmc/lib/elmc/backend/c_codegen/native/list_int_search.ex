@@ -399,8 +399,10 @@ defmodule Elmc.Backend.CCodegen.Native.ListIntSearch do
   @spec help_call(Types.ir_expr(), String.t()) ::
           {:ok, String.t(), String.t(), String.t(), Types.ir_expr(), String.t()} | :error
   defp help_call(%{op: :qualified_call, target: target, args: [target_arg, zero, list_arg]}, module_name) do
-    with {help_module, help_name} <- split_target(target, module_name) do
-      {:ok, help_module, help_name, target_arg, zero, list_arg}
+    with {help_module, help_name} <- split_target(target, module_name),
+         target_name when is_binary(target_name) <- extract_var_name(target_arg),
+         list_name when is_binary(list_name) <- extract_var_name(list_arg) do
+      {:ok, help_module, help_name, target_name, zero, list_name}
     else
       _ -> :error
     end
@@ -408,10 +410,20 @@ defmodule Elmc.Backend.CCodegen.Native.ListIntSearch do
 
   defp help_call(%{op: :call, name: name, args: [target_arg, zero, list_arg]}, module_name)
        when is_binary(name) do
-    {:ok, module_name, name, target_arg, zero, list_arg}
+    with target_name when is_binary(target_name) <- extract_var_name(target_arg),
+         list_name when is_binary(list_name) <- extract_var_name(list_arg) do
+      {:ok, module_name, name, target_name, zero, list_name}
+    else
+      _ -> :error
+    end
   end
 
   defp help_call(_expr, _module_name), do: :error
+
+  @spec extract_var_name(term()) :: String.t() | nil
+  defp extract_var_name(%{op: :var, name: name}) when is_binary(name), do: name
+  defp extract_var_name(name) when is_binary(name), do: name
+  defp extract_var_name(_), do: nil
 
   @spec split_target(String.t(), String.t()) :: {String.t(), String.t()} | :error
   defp split_target(target, default_module) when is_binary(target) do
@@ -496,10 +508,6 @@ defmodule Elmc.Backend.CCodegen.Native.ListIntSearch do
   defp tail_var?(name, tail) when is_binary(name) and is_binary(tail), do: name == tail
   defp tail_var?(_expr, _tail), do: false
 
-  @spec var_name?(Types.ir_expr() | String.t(), String.t()) :: boolean()
+  @spec var_name?(String.t(), String.t()) :: boolean()
   defp var_name?(name, expected) when is_binary(name) and is_binary(expected), do: name == expected
-  defp var_name?(%{op: :var, name: name}, expected) when is_binary(name) and is_binary(expected),
-    do: name == expected
-
-  defp var_name?(_name, _expected), do: false
 end

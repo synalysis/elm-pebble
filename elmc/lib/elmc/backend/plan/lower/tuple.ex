@@ -22,8 +22,8 @@ defmodule Elmc.Backend.Plan.Lower.Tuple do
 
   def compile(_, _, _), do: :unsupported
 
-  @spec compile_proj(Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
-
+  @spec compile_proj(:first | :second, term(), Context.t(), Builder.t()) ::
+          Types.compile_result_required()
   defp compile_proj(which, arg, ctx, b) do
     with {:ok, base, b1} <- resolve_arg(arg, ctx, b) do
       {dest, b2} = dest_for(ctx, b1)
@@ -50,8 +50,8 @@ defmodule Elmc.Backend.Plan.Lower.Tuple do
     end
   end
 
-  @spec resolve_arg(map() | term(), Types.ir_expr() | term(), Types.ir_expr() | term()) :: Types.ir_expr()
-
+  @spec resolve_arg(term(), Context.t(), Builder.t()) ::
+          {:ok, Types.reg(), Builder.t()} | :unsupported
   defp resolve_arg(%{op: :var, name: name}, ctx, b) when is_binary(name) do
     case Context.local_reg(ctx, name) do
       reg when is_integer(reg) -> {:ok, reg, b}
@@ -62,8 +62,8 @@ defmodule Elmc.Backend.Plan.Lower.Tuple do
   defp resolve_arg(arg, ctx, b) when is_map(arg), do: Expr.compile(arg, ctx, b)
   defp resolve_arg(_, _, _), do: :unsupported
 
-  @spec dest_for(Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
-
+  @spec dest_for(Context.t(), Builder.t()) ::
+          {Types.reg() | :fn_out | :branch_out, Builder.t()}
   defp dest_for(ctx, b) do
     case Context.dest_for_call(ctx) do
       :fn_out -> {:fn_out, b}

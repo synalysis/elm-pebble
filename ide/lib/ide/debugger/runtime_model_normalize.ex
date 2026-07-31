@@ -283,10 +283,9 @@ defmodule Ide.Debugger.RuntimeModelNormalize do
   defp coerce_singleton_int_list([n], shape) when is_integer(shape) and is_integer(n), do: n
   defp coerce_singleton_int_list(value, _shape), do: value
 
-  @spec char_list_string?(Types.wire_input()) :: boolean()
-  defp char_list_string?(list) do
-    is_list(list) and
-      list != [] and
+  @spec char_list_string?(list()) :: boolean()
+  defp char_list_string?(list) when is_list(list) do
+    list != [] and
       Enum.all?(list, &((is_integer(&1) and &1 >= 32 and &1 <= 126) or &1 == 9))
   end
 end

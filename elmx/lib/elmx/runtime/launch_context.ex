@@ -254,7 +254,7 @@ defmodule Elmx.Runtime.LaunchContext do
   defp color_mode_ctor(%{ctor: ctor, args: args}) when is_binary(ctor), do: %{"ctor" => ctor, "args" => args || []}
   defp color_mode_ctor(_), do: %{"ctor" => "Color", "args" => []}
 
-  @spec map_value(map(), String.t()) :: Types.elm_value()
+  @spec map_value(map(), atom() | String.t()) :: term()
 
   defp map_value(map, key) when is_map(map) and (is_atom(key) or is_binary(key)) do
     Map.get(map, key) || Map.get(map, to_string(key))

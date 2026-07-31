@@ -45,14 +45,9 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
         expr?(field_expr, env)
 
       nil ->
-        case PolarPoint.native_field_expr?(arg, env) do
-          true ->
-            true
-
-          false ->
-            RecordFields.int_field?(env, arg, field) and
-              not RecordFields.union_tag_field?(env, arg, field)
-        end
+        PolarPoint.native_field_expr?(arg, env) or
+          (RecordFields.int_field?(env, arg, field) and
+             not RecordFields.union_tag_field?(env, arg, field))
     end
   end
 
@@ -218,12 +213,18 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
             Host.qualified_builtin_operator_member?(target, ["abs", "negate"]) and length(args) == 1 ->
               Enum.all?(args, &expr?(&1, env))
 
-            target_key = Host.split_qualified_function_target(Host.normalize_special_target(target)) ->
-              inline_function_expr?(target_key, args, env) or
-                typed_expr?(%{op: :qualified_call, target: target, args: args}, env)
-
             true ->
-              false
+              # `split_qualified_function_target/1` often success-types as a tuple
+              # (never nil) for qualified targets — avoid `key = split(...) ->`
+              # which makes the `true -> false` arm a dead `false` match.
+              case Host.split_qualified_function_target(Host.normalize_special_target(target)) do
+                nil ->
+                  false
+
+                target_key ->
+                  inline_function_expr?(target_key, args, env) or
+                    typed_expr?(%{op: :qualified_call, target: target, args: args}, env)
+              end
           end
 
         expr ->
@@ -309,30 +310,38 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
     decl_map = Map.get(env, :__program_decls__, %{})
     inline_stack = Map.get(env, :__native_int_inline_stack__, MapSet.new())
 
-    with %{args: arg_names, expr: body} when is_list(arg_names) <- Map.get(decl_map, target_key),
-         true <- length(arg_names) == length(args),
-         false <- MapSet.member?(inline_stack, target_key),
-         false <- decl_self_recursive?(target_key, decl_map),
-         false <- fused_native_helper?(target_key, body, decl_map),
-         substituted <- Host.substitute_expr(body, Map.new(Enum.zip(arg_names, args))) do
-      env =
-        Map.put(
-          env,
-          :__native_int_inline_stack__,
-          MapSet.put(inline_stack, target_key)
-        )
+    case Map.get(decl_map, target_key) do
+      %{args: arg_names, expr: body} when is_list(arg_names) and length(arg_names) == length(args) ->
+        if MapSet.member?(inline_stack, target_key) or
+             decl_self_recursive?(target_key, decl_map) or
+             fused_native_helper?(target_key, body, decl_map) do
+          false
+        else
+          substituted = Host.substitute_expr(body, Map.new(Enum.zip(arg_names, args)))
 
-      expr?(substituted, env)
-    else
-      _ -> false
+          env =
+            Map.put(
+              env,
+              :__native_int_inline_stack__,
+              MapSet.put(inline_stack, target_key)
+            )
+
+          expr?(substituted, env)
+        end
+
+      _ ->
+        false
     end
   end
 
   @spec fused_native_helper?(term(), Types.expr(), Types.decl_map()) :: boolean()
 
   defp fused_native_helper?({module_name, name}, body, decl_map) do
-    match?({:ok, _, _}, Fusion.try_emit(module_name, name, body, decl_map)) or
-      match?({:ok, _, _, :rc_native}, Fusion.try_emit(module_name, name, body, decl_map))
+    case Fusion.try_emit(module_name, name, body, decl_map) do
+      {:ok, _, _, :rc_native} -> true
+      {:ok, _, _} -> true
+      :error -> false
+    end
   end
 
   @spec decl_self_recursive?(term(), Types.decl_map()) :: boolean()
@@ -472,7 +481,11 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
     end
   end
 
-  @spec compile_literal_or_dispatch(Types.expr(), Types.compile_env(), Types.ir_expr()) :: Types.ir_expr()
+  @spec compile_literal_or_dispatch(
+          Types.expr(),
+          Types.compile_env(),
+          Types.compile_counter()
+        ) :: Types.native_scalar_compile_result()
 
   defp compile_literal_or_dispatch(expr, env, counter) do
     case UnionMacros.literal_ref(expr, env) do
@@ -490,7 +503,14 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
     end
   end
 
-  @spec register_minmax_operand_hoists(Types.expr(), Types.ir_expr(), Types.ir_expr(), Types.expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+  @spec register_minmax_operand_hoists(
+          Types.expr(),
+          String.t(),
+          String.t(),
+          Types.expr(),
+          String.t(),
+          String.t()
+        ) :: :ok | nil
 
   defp register_minmax_operand_hoists(left, left_ref, left_var, right, right_ref, right_var) do
     if record_field_access?(left) do
@@ -504,7 +524,7 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
     end
   end
 
-  @spec maybe_register_operand_hoist_init(Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr() | nil
+  @spec maybe_register_operand_hoist_init(String.t(), String.t()) :: :ok
 
   defp maybe_register_operand_hoist_init(ref, init)
        when is_binary(ref) and is_binary(init) do
@@ -520,7 +540,8 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
   defp record_field_access?(%{op: :field_access}), do: true
   defp record_field_access?(_), do: false
 
-  @spec dispatch_field_access(map(), Types.compile_env(), Types.ir_expr()) :: Types.ir_expr()
+  @spec dispatch_field_access(map(), Types.compile_env(), Types.compile_counter()) ::
+          Types.native_scalar_compile_result()
 
   defp dispatch_field_access(%{op: :field_access, arg: arg, field: field}, env, counter)
        when is_binary(arg) do
@@ -654,7 +675,8 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
     end
   end
 
-  @spec dispatch(map() | Types.expr(), Types.compile_env(), Types.ir_expr()) :: Types.ir_expr()
+  @spec dispatch(map() | Types.expr(), Types.compile_env(), Types.compile_counter()) ::
+          Types.native_scalar_compile_result()
 
   defp dispatch(%{op: :int_literal, value: value}, _env, counter),
     do: {"", "#{value}", counter}
@@ -870,7 +892,7 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
 
   defp dispatch(%{op: :call, name: "modBy", args: [base, value]}, env, counter) do
     case static_nonzero_int_value(base, env) do
-      base_value when is_integer(base_value) and base_value > 0 ->
+      base_value when base_value > 0 ->
         {value_code, value_ref, counter} = compile_expr(value, env, counter)
 
         if power_of_two_mod_base?(base_value) do
@@ -1312,7 +1334,12 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
   defp power_of_two_mod_base?(base_value) when is_integer(base_value),
     do: base_value > 0 and Bitwise.band(base_value, base_value - 1) == 0
 
-  @spec emit_power_of_two_mod(Types.ir_expr(), Types.ir_expr(), integer(), Types.ir_expr()) :: Types.ir_expr()
+  @spec emit_power_of_two_mod(
+          String.t(),
+          String.t(),
+          integer(),
+          Types.compile_counter()
+        ) :: Types.native_scalar_compile_result()
 
   defp emit_power_of_two_mod(value_code, value_ref, base_value, counter) do
     next = counter + 1
@@ -1327,7 +1354,14 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
     {code, out, next}
   end
 
-  @spec emit_general_mod(Types.ir_expr(), Types.ir_expr(), integer(), Types.ir_expr(), Types.compile_env(), Types.ir_expr()) :: Types.ir_expr()
+  @spec emit_general_mod(
+          String.t(),
+          String.t(),
+          integer(),
+          Types.expr(),
+          Types.compile_env(),
+          Types.compile_counter()
+        ) :: Types.native_scalar_compile_result()
 
   defp emit_general_mod(value_code, value_ref, base_value, base, env, counter) do
     next = counter + 1
@@ -1344,7 +1378,13 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
     {code, out, next}
   end
 
-  @spec compile_native_int_if(Types.expr(), Types.expr(), Types.expr(), Types.compile_env(), Types.ir_expr()) :: Types.ir_expr()
+  @spec compile_native_int_if(
+          Types.expr(),
+          Types.expr(),
+          Types.expr(),
+          Types.compile_env(),
+          Types.compile_counter()
+        ) :: Types.native_scalar_compile_result()
 
   defp compile_native_int_if(cond_expr, then_expr, else_expr, env, counter) do
     hoisted_before = Process.get(:elmc_hoisted_native_int_inits, %{})
@@ -1372,7 +1412,13 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
     {code, out, next}
   end
 
-  @spec compile_native_int_let(String.t(), Types.expr(), Types.expr(), Types.compile_env(), Types.ir_expr()) :: Types.ir_expr()
+  @spec compile_native_int_let(
+          String.t(),
+          Types.expr(),
+          Types.expr(),
+          Types.compile_env(),
+          Types.compile_counter()
+        ) :: Types.native_scalar_compile_result()
 
   defp compile_native_int_let(name, value_expr, in_expr, env, counter) do
     let_expr = %{op: :let_in, name: name, value_expr: value_expr, in_expr: in_expr}
@@ -1406,7 +1452,13 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
     end
   end
 
-  @spec compile_pebble_angle_native_int_let(String.t(), Types.expr(), Types.expr(), Types.compile_env(), Types.ir_expr()) :: Types.ir_expr()
+  @spec compile_pebble_angle_native_int_let(
+          String.t(),
+          Types.expr(),
+          Types.expr(),
+          Types.compile_env(),
+          Types.compile_counter()
+        ) :: Types.native_scalar_compile_result()
 
   defp compile_pebble_angle_native_int_let(name, value_expr, in_expr, env, counter) do
     body_env =
@@ -1423,7 +1475,13 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
     compile_expr(in_expr, body_env, counter)
   end
 
-  @spec compile_native_int_let_body(String.t(), Types.expr(), Types.expr(), Types.compile_env(), Types.ir_expr()) :: Types.ir_expr()
+  @spec compile_native_int_let_body(
+          String.t(),
+          Types.expr(),
+          Types.expr(),
+          Types.compile_env(),
+          Types.compile_counter()
+        ) :: Types.native_scalar_compile_result()
 
   defp compile_native_int_let_body(name, value_expr, in_expr, env, counter) do
     value_env = RcRuntimeEmit.strip_function_tail_scope(env)
@@ -1477,7 +1535,15 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
     end
   end
 
-  @spec compile_native_int_let_bindings(String.t(), Types.ir_expr(), Types.ir_expr(), Types.expr(), Types.expr(), Types.compile_env(), Types.ir_expr()) :: Types.ir_expr()
+  @spec compile_native_int_let_bindings(
+          String.t(),
+          String.t(),
+          String.t(),
+          Types.expr(),
+          Types.expr(),
+          Types.compile_env(),
+          Types.compile_counter()
+        ) :: Types.native_scalar_compile_result()
 
   defp compile_native_int_let_bindings(
          name,
@@ -1511,7 +1577,7 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
     {code, body_ref, counter}
   end
 
-  @spec native_int_binding_ref(Types.ir_expr(), Types.expr(), Types.compile_env()) :: Types.ir_expr()
+  @spec native_int_binding_ref(String.t(), Types.expr(), Types.compile_env()) :: String.t()
 
   defp native_int_binding_ref(value_ref, value_expr, env) do
     case ImmortalStaticList.length_heritage_comment(value_expr, env) do
@@ -1526,7 +1592,7 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
           Types.ir_expr(),
           Types.compile_env(),
           Types.compile_counter()
-        ) :: Types.compile_result()
+        ) :: Types.native_scalar_compile_result()
   defp compile_binary_int_op(op, left, right, env, counter) do
     case ConstantInt.literal_binop(op, left, right, env) do
       {:ok, value} ->
@@ -1591,7 +1657,12 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
     end
   end
 
-  @spec float_to_int_expr(integer(), integer(), Types.compile_env(), Types.ir_expr()) :: Types.ir_expr()
+  @spec float_to_int_expr(
+          String.t(),
+          Types.expr(),
+          Types.compile_env(),
+          Types.compile_counter()
+        ) :: Types.native_scalar_compile_result()
 
   defp float_to_int_expr(function, value, env, counter) do
     if Host.native_float_expr?(value, env) do
@@ -1631,7 +1702,8 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
     end
   end
 
-  @spec pebble_trig_round(map() | Types.expr(), Types.compile_env(), Types.ir_expr()) :: Types.ir_expr()
+  @spec pebble_trig_round(map() | Types.expr(), Types.compile_env(), Types.compile_counter()) ::
+          {:ok, String.t(), String.t(), Types.compile_counter()} | :error
 
   defp pebble_trig_round(
          %{op: :call, name: "__mul__", args: [left, right]},
@@ -1652,7 +1724,12 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
 
   defp pebble_trig_round(_expr, _env, _counter), do: :error
 
-  @spec pebble_trig_round_expr(term(), Types.expr(), Types.compile_env(), Types.ir_expr()) :: Types.ir_expr()
+  @spec pebble_trig_round_expr(
+          {:sin | :cos, Types.expr()},
+          Types.expr(),
+          Types.compile_env(),
+          Types.compile_counter()
+        ) :: {:ok, String.t(), String.t(), Types.compile_counter()} | :error
 
   defp pebble_trig_round_expr(
          {trig_function, angle_expr},
@@ -1705,7 +1782,8 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
     end
   end
 
-  @spec pebble_bound_trig_expr(map() | Types.expr(), Types.compile_env()) :: Types.ir_expr()
+  @spec pebble_bound_trig_expr(map() | Types.expr(), Types.compile_env()) ::
+          {:sin | :cos, Types.expr()} | nil
 
   defp pebble_bound_trig_expr(
          %{op: :qualified_call, target: target, args: [%{op: :var, name: name}]},
@@ -1747,7 +1825,7 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
   @spec pebble_bound_trig_round_expr?(Types.ir_expr(), Types.compile_env()) :: boolean()
   def pebble_bound_trig_round_expr?(_expr, _env), do: false
 
-  @spec to_float_arg(map() | Types.expr()) :: Types.ir_expr()
+  @spec to_float_arg(map() | Types.expr()) :: {:ok, Types.expr()} | :error
 
   defp to_float_arg(%{op: :qualified_call, target: target, args: [value]})
        when target in ["Basics.toFloat", "toFloat"],
@@ -1761,7 +1839,7 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
 
   defp to_float_arg(_expr), do: :error
 
-  @spec pebble_angle_source(map() | Types.expr()) :: Types.ir_expr()
+  @spec pebble_angle_source(map() | Types.expr()) :: {:ok, Types.expr()} | :error
 
   defp pebble_angle_source(%{
          op: :call,
@@ -1772,7 +1850,7 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
 
   defp pebble_angle_source(_expr), do: :error
 
-  @spec pebble_angle_numerator_source(map() | Types.expr()) :: Types.ir_expr()
+  @spec pebble_angle_numerator_source(map() | Types.expr()) :: {:ok, Types.expr()} | :error
 
   defp pebble_angle_numerator_source(%{op: :call, name: "__mul__", args: [left, right]}) do
     cond do
@@ -1784,7 +1862,7 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
 
   defp pebble_angle_numerator_source(_expr), do: :error
 
-  @spec double_to_float_source(map() | Types.expr()) :: Types.ir_expr()
+  @spec double_to_float_source(map() | Types.expr()) :: {:ok, Types.expr()} | :error
 
   defp double_to_float_source(%{
          op: :call,
@@ -1823,45 +1901,66 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
     end
   end
 
-  @spec inline_function_default(String.t(), [String.t()], Types.compile_env(), Types.ir_expr(), Types.decl_map(), Types.ir_expr()) :: Types.ir_expr()
+  @spec inline_function_default(
+          Types.function_decl_key(),
+          [Types.ir_expr()],
+          Types.compile_env(),
+          Types.compile_counter(),
+          Types.decl_map(),
+          MapSet.t()
+        ) :: {:ok, String.t(), String.t(), Types.compile_counter()} | :error
 
   defp inline_function_default(target_key, args, env, counter, decl_map, inline_stack) do
-    with %{args: arg_names, expr: body} when is_list(arg_names) <- Map.get(decl_map, target_key),
-         true <- length(arg_names) == length(args),
-         false <- MapSet.member?(inline_stack, target_key),
-         false <- decl_self_recursive?(target_key, decl_map),
-         false <- fused_native_helper?(target_key, body, decl_map),
-         substituted <- Host.substitute_expr(body, Map.new(Enum.zip(arg_names, args))),
-         true <- expr?(substituted, env) do
-      env =
-        Map.put(
-          env,
-          :__native_int_inline_stack__,
-          MapSet.put(inline_stack, target_key)
-        )
+    case Map.get(decl_map, target_key) do
+      %{args: arg_names, expr: body} when is_list(arg_names) and length(arg_names) == length(args) ->
+        if MapSet.member?(inline_stack, target_key) or
+             decl_self_recursive?(target_key, decl_map) or
+             fused_native_helper?(target_key, body, decl_map) do
+          :error
+        else
+          substituted = Host.substitute_expr(body, Map.new(Enum.zip(arg_names, args)))
 
-      {code, value_ref, counter} = dispatch(substituted, env, counter)
+          if expr?(substituted, env) do
+            env =
+              Map.put(
+                env,
+                :__native_int_inline_stack__,
+                MapSet.put(inline_stack, target_key)
+              )
 
-      if emitted_line_count(code) > @max_native_int_inline_lines do
+            {code, value_ref, counter} = dispatch(substituted, env, counter)
+
+            if emitted_line_count(code) > @max_native_int_inline_lines do
+              :error
+            else
+              code = code <> "  // inlined #{format_function_target(target_key)}\n"
+              call_expr = %{op: :call, name: elem(target_key, 1), args: args}
+
+              Host.maybe_promote_hoisted_native_int(call_expr, env, code, value_ref, counter)
+              |> then(fn {code, value_ref, counter} -> {:ok, code, value_ref, counter} end)
+            end
+          else
+            :error
+          end
+        end
+
+      _ ->
         :error
-      else
-        code = code <> "  // inlined #{format_function_target(target_key)}\n"
-        call_expr = %{op: :call, name: elem(target_key, 1), args: args}
-
-        Host.maybe_promote_hoisted_native_int(call_expr, env, code, value_ref, counter)
-        |> then(fn {code, value_ref, counter} -> {:ok, code, value_ref, counter} end)
-      end
-    else
-      _ -> :error
     end
   end
 
-  @spec emitted_line_count(String.t()) :: Types.ir_expr()
+  @spec emitted_line_count(String.t()) :: non_neg_integer()
 
   defp emitted_line_count(code) when is_binary(code),
     do: code |> String.split("\n", trim: true) |> length()
 
-  @spec try_compile_native_scalar_call(String.t(), String.t(), [String.t()], Types.compile_env(), Types.ir_expr()) :: Types.ir_expr() | nil
+  @spec try_compile_native_scalar_call(
+          String.t(),
+          String.t(),
+          [Types.expr()],
+          Types.compile_env(),
+          Types.compile_counter()
+        ) :: {:ok, String.t(), String.t(), Types.compile_counter()} | :error
 
   defp try_compile_native_scalar_call(module_name, name, args, env, counter) do
     Enum.reduce_while([:native_bool, :native_int], :error, fn kind, _acc ->
@@ -1872,7 +1971,7 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
     end)
   end
 
-  @spec format_function_target(term()) :: Types.ir_expr()
+  @spec format_function_target(Types.function_decl_key()) :: String.t()
 
   defp format_function_target({module_name, function_name}), do: "#{module_name}.#{function_name}"
 
@@ -1965,47 +2064,68 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
     end
   end
 
-  @spec compile_dict_get_with_default(Types.ir_expr(), String.t(), Types.ir_expr(), Types.compile_env(), Types.ir_expr()) :: Types.ir_expr()
+  @spec compile_dict_get_with_default(
+          String.t(),
+          Types.expr(),
+          Types.expr(),
+          Types.compile_env(),
+          Types.compile_counter()
+        ) ::
+          {String.t(), String.t(), boolean() | String.t(), Types.compile_counter()}
 
   defp compile_dict_get_with_default(default_ref, key, dict, env, counter) do
     {dict_code, dict_var, counter} = BoxedOperand.compile(dict, env, counter)
 
-    if expr?(key, env) do
-      {key_code, key_ref, counter} = compile_expr(key, env, counter)
-
-      {
-        key_code <> dict_code,
-        "elmc_dict_get_with_default_int(#{default_ref}, #{key_ref}, #{RcRuntimeEmit.value_expr(dict_var)})",
-        # Dict.get borrows the dict; never release it after the peek.
-        false,
-        counter
-      }
-    else
-      {key_code, key_var, counter} = BoxedOperand.compile(key, env, counter)
-      # Release only a freshly boxed key temp — never the dict, and never a
-      # still-live let-bound key (reassigned next iteration via owned_reassign).
-      release_key =
-        cond do
-          match?(%{op: :var}, key) -> false
-          is_binary(key_var) and ValueSlots.owned_ref?(key_var) -> key_var
-          true -> false
-        end
-
-      {
-        key_code <> dict_code,
-        "elmc_dict_get_with_default_int_value(#{default_ref}, #{key_var}, #{RcRuntimeEmit.value_expr(dict_var)})",
-        release_key,
-        counter
-      }
-    end
+    # Clause-split on expr?/2 so Dialyzer does not emit Pattern false / Type true
+    # when dict keys are success-typed as always-native ints.
+    compile_dict_get_with_default_key(
+      expr?(key, env),
+      default_ref,
+      key,
+      dict_code,
+      dict_var,
+      env,
+      counter
+    )
   end
 
-  @spec release_maybe_code(String.t() | term()) :: Types.ir_expr()
+  defp compile_dict_get_with_default_key(true, default_ref, key, dict_code, dict_var, env, counter) do
+    {key_code, key_ref, counter} = compile_expr(key, env, counter)
+
+    {
+      key_code <> dict_code,
+      "elmc_dict_get_with_default_int(#{default_ref}, #{key_ref}, #{RcRuntimeEmit.value_expr(dict_var)})",
+      # Dict.get borrows the dict; never release it after the peek.
+      false,
+      counter
+    }
+  end
+
+  defp compile_dict_get_with_default_key(_native_key?, default_ref, key, dict_code, dict_var, env, counter) do
+    {key_code, key_var, counter} = BoxedOperand.compile(key, env, counter)
+    # Release only a freshly boxed key temp — never the dict, and never a
+    # still-live let-bound key (reassigned next iteration via owned_reassign).
+    release_key =
+      cond do
+        match?(%{op: :var}, key) -> false
+        ValueSlots.owned_ref?(key_var) -> key_var
+        true -> false
+      end
+
+    {
+      key_code <> dict_code,
+      "elmc_dict_get_with_default_int_value(#{default_ref}, #{key_var}, #{RcRuntimeEmit.value_expr(dict_var)})",
+      release_key,
+      counter
+    }
+  end
+
+  @spec release_maybe_code(String.t() | term()) :: String.t()
 
   defp release_maybe_code(var) when is_binary(var), do: "\n  " <> release_maybe_var(var)
   defp release_maybe_code(_), do: ""
 
-  @spec release_maybe_var(String.t()) :: Types.ir_expr()
+  @spec release_maybe_var(String.t()) :: String.t()
 
   defp release_maybe_var(var) when is_binary(var) do
     ValueSlots.release_consumed(var)
@@ -2013,7 +2133,7 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
 
   @tuple_union_payload_int_ref ~r/\(\(\(ElmcTuple2 \*\)(.+?)->payload\)->second \? elmc_as_int\(\(\(ElmcTuple2 \*\)\1->payload\)->second\) : 0\)/
 
-  @spec coerce_union_payload_int_ref(String.t() | Types.ir_expr()) :: Types.ir_expr()
+  @spec coerce_union_payload_int_ref(String.t()) :: String.t()
 
   defp coerce_union_payload_int_ref(ref) when is_binary(ref) do
     Regex.replace(@tuple_union_payload_int_ref, ref, fn _, union_ref ->

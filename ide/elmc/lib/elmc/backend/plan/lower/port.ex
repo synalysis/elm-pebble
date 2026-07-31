@@ -5,7 +5,7 @@ defmodule Elmc.Backend.Plan.Lower.Port do
   alias Elmc.Backend.Plan.Context
   alias Elmc.Backend.Plan.Lower.Expr
   alias Elmc.Backend.Plan.Lower.Platform.Web, as: PlatformWeb
-  alias Elmc.Backend.Plan.Lower.Types, as: Types
+  alias Elmc.Backend.Plan.Types, as: PlanTypes
 
   @type direction :: :incoming | :outgoing
 
@@ -41,7 +41,7 @@ defmodule Elmc.Backend.Plan.Lower.Port do
   def direction_from_type(_), do: :unknown
 
   @spec compile_call(String.t(), String.t(), [map()], Context.t(), Builder.t()) ::
-          {:ok, Types.reg() | :fn_out, Builder.t()} | :unsupported
+          {:ok, PlanTypes.reg() | :fn_out, Builder.t()} | :unsupported
   def compile_call(module, name, args, ctx, b) do
     if port_signature?(ctx, module, name) do
       decl = Map.get(ctx.decl_map, {module, name}, %{})

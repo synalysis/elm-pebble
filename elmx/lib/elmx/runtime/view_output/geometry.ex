@@ -226,7 +226,7 @@ defmodule Elmx.Runtime.ViewOutput.Geometry do
     {x, y, w, h}
   end
 
-  @spec screen_dimension(list(), String.t()) :: Types.elm_value()
+  @spec screen_dimension(keyword(), atom()) :: pos_integer() | nil
 
   def screen_dimension(opts, key) when is_list(opts) do
     case Keyword.get(opts, key) do

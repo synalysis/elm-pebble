@@ -22,6 +22,7 @@ defmodule ElmEx.IR.Types.FunctionCallCheck do
 
   @type import_lookup :: %{
           required(:alias_map) => Lookup.name_map(),
+          required(:alias_member_map) => Lookup.alias_member_map(),
           required(:import_unqualified_map) => Lookup.import_unqualified_map(),
           required(:type_unqualified_map) => Lookup.name_map(),
           required(:local_call_names) => MapSet.t(String.t()),

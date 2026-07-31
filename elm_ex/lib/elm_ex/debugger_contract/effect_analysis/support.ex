@@ -75,7 +75,7 @@ defmodule ElmEx.DebuggerContract.EffectAnalysis.Support do
   def peel_lets(%{op: :let_bindings, in_expr: inner}), do: peel_lets(inner)
   def peel_lets(%{op: :let_in, in_expr: inner}), do: peel_lets(inner)
   def peel_lets(other), do: other
-  @spec inline_let_bindings(Types.expr() | map(), term(), integer(), non_neg_integer()) :: term()
+  @spec inline_let_bindings(term(), term(), MapSet.t() | map(), number()) :: term()
 
   def inline_let_bindings(expr, _bindings, _seen, depth) when depth > 12, do: expr
 
@@ -248,7 +248,9 @@ defmodule ElmEx.DebuggerContract.EffectAnalysis.Support do
 
   def record_update_param_field_map(_body, _bindings), do: %{}
 
-  @spec peel_update_result_model(Types.ast_expr()) :: Types.ast_expr() | nil
+  @type record_update_fields :: [map()]
+
+  @spec peel_update_result_model(Types.ast_expr()) :: record_update_fields() | nil
   defp peel_update_result_model(%{op: :tuple2, left: left}), do: peel_update_result_model(left)
 
   defp peel_update_result_model(%{

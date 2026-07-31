@@ -1,6 +1,5 @@
 defmodule Elmc.Backend.Wasm.HostKernels do
   @moduledoc false
-  alias Elmc.Types, as: Types
 
 
   # Replace deep recursive Elm kernels with thin host-backed bodies.
@@ -31,7 +30,7 @@ defmodule Elmc.Backend.Wasm.HostKernels do
 
   def maybe_override(fun), do: fun
 
-  @spec grid_face_indices_body() :: Types.ir_expr()
+  @spec grid_face_indices_body() :: String.t()
 
   defp grid_face_indices_body do
     """

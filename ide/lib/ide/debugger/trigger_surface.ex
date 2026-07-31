@@ -52,21 +52,17 @@ defmodule Ide.Debugger.TriggerSurface do
   def candidates(_state, _target, _ctx), do: []
 
   defp incomplete_runtime_manifest?(state, target, ei) do
-    if is_map(ei) do
-      catalog_count =
-        ei
-        |> IntrospectAccess.cmd_calls("subscription_calls")
-        |> length()
+    catalog_count =
+      ei
+      |> IntrospectAccess.cmd_calls("subscription_calls")
+      |> length()
 
-      runtime_count =
-        state
-        |> RuntimeActiveSubscriptions.for_surface(target)
-        |> length()
+    runtime_count =
+      state
+      |> RuntimeActiveSubscriptions.for_surface(target)
+      |> length()
 
-      catalog_count > runtime_count
-    else
-      false
-    end
+    catalog_count > runtime_count
   end
 
   defp merge_catalog_runtime_trigger_candidates(catalog_rows, runtime_rows) do

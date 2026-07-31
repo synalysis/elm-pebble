@@ -1,27 +1,3 @@
-# Residual Dialyzer warnings; logic covered by tests.
+# No residual Dialyzer ignores — keep empty list so --list-unused-filters stays green.
 [
-  {"lib/elmx/backend/cross_module_call.ex", :unknown_type},
-  {"lib/elmx/backend/elixir_codegen.ex", :pattern_match},
-  {"lib/elmx/backend/elixir_codegen/emit/calls.ex", :unknown_type},
-  {"lib/elmx/backend/elixir_codegen/emit/expr.ex", :unknown_type},
-  {"lib/elmx/backend/elixir_codegen/emit/records.ex", :unknown_type},
-  {"lib/elmx/backend/qualified_partials.ex", :call},
-  {"lib/elmx/backend/qualified_partials.ex", :invalid_contract},
-  {"lib/elmx/backend/qualified_rewrite.ex", :call},
-  {"lib/elmx/backend/qualified_rewrite.ex", :invalid_contract},
-  {"lib/elmx/backend/worker.ex", :unknown_type},
-  {"lib/elmx/runtime/core/debug.ex", :call},
-  {"lib/elmx/runtime/core/debug.ex", :invalid_contract},
-  {"lib/elmx/runtime/core/maybe_result.ex", :invalid_contract},
-  {"lib/elmx/runtime/executor.ex", :no_return},
-  {"lib/elmx/runtime/executor.ex", :unused_fun},
-  {"lib/elmx/runtime/launch_context.ex", :call},
-  {"lib/elmx/runtime/launch_context.ex", :invalid_contract},
-  {"lib/elmx/runtime/launch_context.ex", :unused_fun},
-  {"lib/elmx/runtime/pebble/special_values.ex", :invalid_contract},
-  {"lib/elmx/runtime/pebble/special_values/helpers.ex", :invalid_contract},
-  {"lib/elmx/runtime/stdlib.ex", :call},
-  {"lib/elmx/runtime/stdlib.ex", :invalid_contract},
-  {"lib/elmx/runtime/values.ex", :invalid_contract},
-  {"lib/elmx/runtime/view_output/geometry.ex", :invalid_contract},
 ]

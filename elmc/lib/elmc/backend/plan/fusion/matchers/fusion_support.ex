@@ -8,6 +8,8 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.FusionSupport do
   alias Elmc.Backend.CCodegen.Util
 
   @type callee_key :: {String.t(), String.t()}
+  # Runtime builtins are bare C symbol strings; app helpers are {module, name}.
+  @type runtime_callee :: callee_key() | String.t()
   @type callee_key_set :: MapSet.t(callee_key())
   @type var_name_set :: MapSet.t(String.t())
 
@@ -16,10 +18,11 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.FusionSupport do
           | %{optional(atom()) => Types.ir_field_value()}
           | [fusion_tree_expr()]
 
-  @spec ok(String.t(), [callee_key()]) :: {:ok, String.t(), [callee_key()]}
+  @spec ok(String.t(), [runtime_callee()]) :: {:ok, String.t(), [runtime_callee()]}
   def ok(code, runtime_callees \\ []), do: {:ok, code, runtime_callees}
 
-  @spec ok_rc(String.t(), [callee_key()]) :: {:ok, String.t(), [callee_key()], :rc_native}
+  @spec ok_rc(String.t(), [runtime_callee()]) ::
+          {:ok, String.t(), [runtime_callee()], :rc_native}
   def ok_rc(code, runtime_callees \\ []), do: {:ok, code, runtime_callees, :rc_native}
 
   @spec field_index(String.t(), String.t(), String.t()) :: non_neg_integer() | nil
@@ -274,8 +277,7 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.FusionSupport do
       {{^module_name, name}, %{expr: expr}} ->
         case Tuple2CaseTable.try_emit(module_name, name, expr) do
           {:ok, _, _, _} -> name
-          {:ok, _, _} -> name
-          _ -> nil
+          :error -> nil
         end
 
       _ ->

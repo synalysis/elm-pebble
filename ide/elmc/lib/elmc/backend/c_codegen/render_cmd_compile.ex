@@ -34,7 +34,12 @@ defmodule Elmc.Backend.CCodegen.RenderCmdCompile do
     end
   end
 
-  @spec compile_native_render_cmd(atom(), Types.ir_expr(), Types.compile_env(), Types.ir_expr()) :: Types.ir_expr()
+  @spec compile_native_render_cmd(
+          Types.ir_expr(),
+          [Types.ir_expr()],
+          Types.compile_env(),
+          Types.compile_counter()
+        ) :: Types.compile_result()
 
   defp compile_native_render_cmd(kind, params, env, counter) do
     {kind_code, kind_ref, counter} = compile_kind_ref(kind, env, counter)
@@ -71,7 +76,8 @@ defmodule Elmc.Backend.CCodegen.RenderCmdCompile do
     {code, out, next}
   end
 
-  @spec compile_kind_ref(map() | atom(), Types.compile_env(), Types.ir_expr()) :: Types.ir_expr()
+  @spec compile_kind_ref(Types.ir_expr(), Types.compile_env(), Types.compile_counter()) ::
+          {String.t(), String.t(), Types.compile_counter()}
 
   defp compile_kind_ref(%{op: :c_int_expr, value: value}, _env, counter) when is_binary(value),
     do: {"", value, counter}
@@ -84,7 +90,8 @@ defmodule Elmc.Backend.CCodegen.RenderCmdCompile do
     {code, "elmc_as_int(#{var})", counter}
   end
 
-  @spec compile_param_ref(map() | Types.expr(), Types.compile_env(), Types.ir_expr()) :: Types.ir_expr()
+  @spec compile_param_ref(Types.expr(), Types.compile_env(), Types.compile_counter()) ::
+          {String.t(), String.t(), Types.compile_counter()}
 
   defp compile_param_ref(%{op: :c_int_expr, value: value}, _env, counter) when is_binary(value),
     do: {"", value, counter}
@@ -109,7 +116,8 @@ defmodule Elmc.Backend.CCodegen.RenderCmdCompile do
     compile_param_ref_fallback(expr, env, counter)
   end
 
-  @spec compile_param_ref_fallback(map() | Types.expr(), Types.compile_env(), Types.ir_expr()) :: Types.ir_expr()
+  @spec compile_param_ref_fallback(Types.expr(), Types.compile_env(), Types.compile_counter()) ::
+          {String.t(), String.t(), Types.compile_counter()}
 
   defp compile_param_ref_fallback(%{op: :field_access, arg: arg, field: field}, env, counter)
        when is_binary(field) do

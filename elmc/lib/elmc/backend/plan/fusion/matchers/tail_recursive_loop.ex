@@ -143,7 +143,6 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.TailRecursiveLoop do
     case Host.function_return_type(Map.get(decl, :type, "")) do
       ret when ret in ["Int", "Bool"] -> true
       ret when is_binary(ret) -> list_type?(ret)
-      _ -> false
     end
   end
 
@@ -175,6 +174,7 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.TailRecursiveLoop do
   # Boxed accumulators / worksets that TailRecursiveLoop can own across iterations.
   # List builders (BigListGC) plus Set/Dict worksets (BenchSetIntWorkset).
   # Still reject Array/JsArray/function/record — those stay on plan CFG.
+  @spec collection_loop_type?(String.t()) :: boolean()
   defp collection_loop_type?(type) when is_binary(type) do
     type = Host.normalize_type_name(type)
 
@@ -183,8 +183,7 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.TailRecursiveLoop do
       type == "Dict" or String.starts_with?(type, "Dict ") or String.starts_with?(type, "Dict.")
   end
 
-  defp collection_loop_type?(_), do: false
-
+  @spec list_type?(String.t()) :: boolean()
   defp list_type?(type) when is_binary(type) do
     type = Host.normalize_type_name(type)
     type == "List" or String.starts_with?(type, "List ") or String.starts_with?(type, "List.")

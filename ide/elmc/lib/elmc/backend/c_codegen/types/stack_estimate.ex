@@ -27,13 +27,17 @@ defmodule Elmc.Backend.CCodegen.Types.StackEstimate do
 
   @type code_size_indicators :: %{
           required(:generated_c_bytes) => non_neg_integer(),
-          required(:generated_c_lines) => pos_integer(),
+          required(:generated_c_lines) => non_neg_integer(),
           required(:generic_function_defs) => non_neg_integer(),
           required(:direct_command_defs) => non_neg_integer(),
+          required(:commands_append_bytes) => non_neg_integer(),
+          required(:fusion_native_count) => non_neg_integer(),
+          required(:plan_function_count) => non_neg_integer(),
+          required(:owned_slot_max) => non_neg_integer(),
           required(:boxed_tmp_declarations) => non_neg_integer(),
           required(:closure_allocations) => non_neg_integer(),
           required(:runtime_calls) => runtime_call_counts(),
-          required(:linked_binary) => linked_binary_slot()
+          required(:linked_binary) => linked_binary_slot() | map()
         }
 
   @type report_scalar :: integer() | boolean() | String.t() | nil

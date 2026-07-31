@@ -41,7 +41,7 @@ defmodule Elmx.Runtime.Values do
   def port_incoming_sub(port_key, callback) when is_binary(port_key),
     do: Manager.port(port_key, callback)
 
-  @spec manager_value(integer()) :: Types.elm_value()
+  @spec manager_value(term()) :: term()
 
   defp manager_value(value), do: value
 

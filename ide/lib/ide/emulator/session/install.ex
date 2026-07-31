@@ -37,7 +37,7 @@ defmodule Ide.Emulator.Session.Install do
   def retryable_install_error?({:blob_insert_failed, _response}), do: true
   def retryable_install_error?(_reason), do: false
 
-  @spec maybe_retry_install(term(), integer(), term(), term()) :: term() | nil
+  @spec maybe_retry_install(GenServer.server(), term(), non_neg_integer(), term()) :: term()
 
   defp maybe_retry_install(pid, reason, retries_left, error) when retries_left > 0 do
     if retryable_install_error?(reason) do

@@ -7,7 +7,6 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.PermuteMergeInversePipeline do
   """
   alias Elmc.Backend.CCodegen.Types, as: Types
 
-
   alias Elmc.Backend.CCodegen.Types
 
   alias Elmc.Backend.Plan.Fusion.Matchers.{
@@ -15,17 +14,48 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.PermuteMergeInversePipeline do
     RowSliceAdjacentMerge,
     UnionCaseFourPerm
   }
+
   alias Elmc.Backend.CCodegen.{RowMajorLayout, SpawnTileInline, Util}
 
+  @type pipeline :: %{
+          required(:permute_fn) => String.t(),
+          required(:merge_fn) => String.t(),
+          required(:inverse_fn) => String.t(),
+          required(:tag_var) => String.t(),
+          required(:perm_buf_var) => String.t(),
+          required(:model_var) => String.t(),
+          required(:cells_field) => String.t(),
+          required(:merge_buf_var) => String.t(),
+          required(:merge_cells_field) => String.t(),
+          required(:else_expr) => Types.ir_expr(),
+          required(:output_var) => String.t()
+        }
+
+  @type field_map :: %{String.t() => String.t()}
+
+  @type else_info :: %{
+          required(:spawn) => String.t(),
+          required(:seed_field) => String.t(),
+          required(:output_var) => String.t(),
+          required(:score_field) => String.t(),
+          required(:best_field) => String.t(),
+          required(:storage_key) => integer(),
+          required(:turn_field) => String.t(),
+          required(:update_fields) => field_map()
+        }
+
   @spec try_emit(String.t(), String.t(), Types.ir_expr() | nil, Types.function_decl_map()) ::
-          {:ok, String.t(), [FusionSupport.callee_key()]} | {:ok, String.t(), [FusionSupport.callee_key()], :rc_native} | :error
+          {:ok, String.t(), [FusionSupport.callee_key()]}
+          | {:ok, String.t(), [FusionSupport.callee_key()], :rc_native}
+          | :error
 
   def try_emit(_module_name, _name, nil, _decl_map), do: :error
 
   def try_emit(module_name, name, expr, decl_map) do
     with {:ok, pipeline} <- parse_pipeline(expr),
          {:ok, width, rows} <- merge_dims(decl_map, module_name, pipeline.merge_fn),
-         true <- permute_inverse_shape?(decl_map, module_name, pipeline.permute_fn, pipeline.inverse_fn),
+         true <-
+           permute_inverse_shape?(decl_map, module_name, pipeline.permute_fn, pipeline.inverse_fn),
          {:ok, else_info} <- parse_else_branch(pipeline.else_expr, pipeline),
          {:ok, model_type} <- model_type_name(decl_map, module_name, name),
          true <- model_field_macros?(module_name, model_type, pipeline, else_info),
@@ -40,7 +70,12 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.PermuteMergeInversePipeline do
     end
   end
 
-  @spec compact_list_field_keys(String.t(), String.t(), Types.ir_expr() | nil, Types.function_decl_map()) ::
+  @spec compact_list_field_keys(
+          String.t(),
+          String.t(),
+          Types.ir_expr() | nil,
+          Types.function_decl_map()
+        ) ::
           [{String.t(), String.t(), String.t()}]
   def compact_list_field_keys(_module_name, _name, nil, _decl_map), do: []
 
@@ -53,7 +88,8 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.PermuteMergeInversePipeline do
     end
   end
 
-  @spec pipeline_callees(String.t(), pos_integer(), Types.ir_expr(), Types.decl_map()) :: Types.ir_expr()
+  @spec pipeline_callees(String.t(), pipeline(), else_info(), Types.decl_map()) ::
+          [FusionSupport.callee_key()]
 
   defp pipeline_callees(module_name, pipeline, else_info, decl_map) do
     base = [
@@ -67,9 +103,8 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.PermuteMergeInversePipeline do
       case Map.get(decl_map, {module_name, pipeline.merge_fn}) do
         %{expr: expr} ->
           case RowSliceAdjacentMerge.try_emit(module_name, pipeline.merge_fn, expr, decl_map) do
-            {:ok, _, callees} -> callees
             {:ok, _, callees, _} -> callees
-            _ -> []
+            :error -> []
           end
 
         _ ->
@@ -79,7 +114,7 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.PermuteMergeInversePipeline do
     Enum.uniq(base ++ merge_extra)
   end
 
-  @spec parse_pipeline(Types.expr()) :: Types.ir_expr()
+  @spec parse_pipeline(Types.expr()) :: {:ok, pipeline()} | :error
 
   defp parse_pipeline(expr) do
     with {:ok, permute_call, merge_call, inverse_call, if_expr} <- three_lets(expr),
@@ -107,18 +142,23 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.PermuteMergeInversePipeline do
     end
   end
 
-  @spec three_lets(map() | term()) :: Types.ir_expr()
+  @spec three_lets(Types.expr()) ::
+          {:ok, Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr()} | :error
 
   defp three_lets(%{
          op: :let_in,
          value_expr: e1,
-         in_expr: %{op: :let_in, value_expr: e2, in_expr: %{op: :let_in, value_expr: e3, in_expr: body}}
+         in_expr: %{
+           op: :let_in,
+           value_expr: e2,
+           in_expr: %{op: :let_in, value_expr: e3, in_expr: body}
+         }
        }),
        do: {:ok, e1, e2, e3, body}
 
   defp three_lets(_), do: :error
 
-  @spec pipeline_output_var(map() | term()) :: Types.ir_expr()
+  @spec pipeline_output_var(Types.expr()) :: String.t()
 
   defp pipeline_output_var(%{
          op: :if,
@@ -134,7 +174,8 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.PermuteMergeInversePipeline do
 
   defp pipeline_output_var(_), do: "out_buf"
 
-  @spec parse_permute_call(map() | term()) :: Types.ir_expr()
+  @spec parse_permute_call(Types.ir_expr()) ::
+          {:ok, String.t(), String.t(), {String.t(), String.t()}} | :error
 
   defp parse_permute_call(%{
          op: :qualified_call,
@@ -147,7 +188,7 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.PermuteMergeInversePipeline do
 
   defp parse_permute_call(_), do: :error
 
-  @spec parse_unary_call(map() | term()) :: Types.ir_expr()
+  @spec parse_unary_call(Types.ir_expr()) :: {:ok, String.t(), String.t()} | :error
 
   defp parse_unary_call(%{op: :qualified_call, target: target, args: [%{op: :var, name: arg}]})
        when is_binary(target) and is_binary(arg) do
@@ -156,7 +197,8 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.PermuteMergeInversePipeline do
 
   defp parse_unary_call(_), do: :error
 
-  @spec parse_inverse_call(map() | term()) :: Types.ir_expr()
+  @spec parse_inverse_call(Types.ir_expr()) ::
+          {:ok, String.t(), String.t(), String.t(), String.t()} | :error
 
   defp parse_inverse_call(%{
          op: :qualified_call,
@@ -173,20 +215,20 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.PermuteMergeInversePipeline do
 
   defp parse_inverse_call(_), do: :error
 
-  @spec if_else(map() | term()) :: Types.ir_expr()
+  @spec if_else(Types.ir_expr()) :: {:ok, Types.ir_expr()} | :error
 
   defp if_else(%{op: :if, else_expr: else_expr}), do: {:ok, else_expr}
   defp if_else(_), do: :error
 
-  @spec merge_dims(Types.decl_map(), String.t(), integer()) :: Types.ir_expr()
+  @spec merge_dims(Types.decl_map(), String.t(), String.t()) ::
+          {:ok, pos_integer(), pos_integer()} | :error
 
   defp merge_dims(decl_map, module_name, merge_fn) do
     case Map.get(decl_map, {module_name, merge_fn}) do
       %{expr: expr} ->
         case RowSliceAdjacentMerge.try_emit(module_name, merge_fn, expr, decl_map) do
-          :error -> :error
           {:ok, _, _, _} -> merge_fn_dims(expr, decl_map, module_name)
-          {:ok, _, _} -> merge_fn_dims(expr, decl_map, module_name)
+          :error -> :error
         end
 
       _ ->
@@ -194,7 +236,8 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.PermuteMergeInversePipeline do
     end
   end
 
-  @spec merge_fn_dims(Types.expr(), Types.decl_map(), String.t()) :: Types.ir_expr()
+  @spec merge_fn_dims(Types.expr(), Types.decl_map(), String.t()) ::
+          {:ok, pos_integer(), pos_integer()} | :error
 
   defp merge_fn_dims(expr, decl_map, module_name) do
     with {:ok, row_calls} <- merge_row_calls(expr, []),
@@ -203,7 +246,8 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.PermuteMergeInversePipeline do
     end
   end
 
-  @spec merge_row_calls(map() | term(), term()) :: Types.ir_expr()
+  @spec merge_row_calls(Types.ir_expr(), [Types.ir_expr()]) ::
+          {:ok, [Types.ir_expr()]} | :error
 
   defp merge_row_calls(%{op: :let_in, value_expr: call, in_expr: rest}, acc),
     do: merge_row_calls(rest, acc ++ [call])
@@ -212,7 +256,8 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.PermuteMergeInversePipeline do
 
   defp merge_row_calls(_, _), do: :error
 
-  @spec row_width(term(), Types.decl_map(), String.t()) :: Types.ir_expr()
+  @spec row_width([Types.ir_expr()], Types.decl_map(), String.t()) ::
+          {:ok, pos_integer()} | :error
 
   defp row_width([first | _], decl_map, module_name) do
     case first do
@@ -230,7 +275,8 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.PermuteMergeInversePipeline do
     end
   end
 
-  @spec row_slice_width(Types.decl_map(), String.t(), String.t()) :: Types.ir_expr()
+  @spec row_slice_width(Types.decl_map(), String.t(), String.t()) ::
+          {:ok, pos_integer()} | :error
 
   defp row_slice_width(decl_map, module_name, row_at_target) do
     case Map.get(decl_map, FusionSupport.callee_key(module_name, row_at_target)) do
@@ -249,7 +295,7 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.PermuteMergeInversePipeline do
     end
   end
 
-  @spec row_drop_stride?(map() | term(), Types.ir_expr() | term()) :: boolean()
+  @spec row_drop_stride?(Types.ir_expr(), pos_integer()) :: boolean()
 
   defp row_drop_stride?(
          %{
@@ -263,10 +309,14 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.PermuteMergeInversePipeline do
 
   defp row_drop_stride?(_, _), do: false
 
-  @spec row_mul_width?(map() | term(), Types.ir_expr() | term()) :: boolean()
+  @spec row_mul_width?(Types.ir_expr(), pos_integer()) :: boolean()
 
   defp row_mul_width?(
-         %{op: :call, name: op, args: [%{op: :var, name: "row"}, %{op: :int_literal, value: width}]},
+         %{
+           op: :call,
+           name: op,
+           args: [%{op: :var, name: "row"}, %{op: :int_literal, value: width}]
+         },
          width
        )
        when op in ["__mul__", "*"],
@@ -285,7 +335,7 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.PermuteMergeInversePipeline do
 
   defp row_mul_width?(_, _), do: false
 
-  @spec permute_inverse_shape?(Types.decl_map(), String.t(), integer(), integer()) :: boolean()
+  @spec permute_inverse_shape?(Types.decl_map(), String.t(), String.t(), String.t()) :: boolean()
 
   defp permute_inverse_shape?(decl_map, module_name, permute_fn, inverse_fn) do
     permute_ok?(decl_map, module_name, permute_fn) and
@@ -297,18 +347,15 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.PermuteMergeInversePipeline do
   defp permute_ok?(decl_map, module_name, fn_name) do
     case Map.get(decl_map, {module_name, fn_name}) do
       %{expr: expr} ->
-        case UnionCaseFourPerm.try_emit(module_name, fn_name, expr, decl_map) do
-          {:ok, _, _, _} -> true
-          {:ok, _, _} -> true
-          _ -> false
-        end
+        match?({:ok, _, _, _}, UnionCaseFourPerm.try_emit(module_name, fn_name, expr, decl_map))
 
       _ ->
         false
     end
   end
 
-  @spec permute_case_tags(Types.decl_map(), String.t(), integer()) :: Types.ir_expr()
+  @spec permute_case_tags(Types.decl_map(), String.t(), String.t()) ::
+          {:ok, [integer()]} | :error
 
   defp permute_case_tags(decl_map, module_name, permute_fn) do
     case Map.get(decl_map, {module_name, permute_fn}) do
@@ -317,7 +364,7 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.PermuteMergeInversePipeline do
     end
   end
 
-  @spec parse_else_branch(Types.expr(), pos_integer()) :: Types.ir_expr()
+  @spec parse_else_branch(Types.ir_expr(), pipeline()) :: {:ok, else_info()} | :error
 
   defp parse_else_branch(expr, pipeline) do
     with {:ok, spawn, seed_field, output_var} <- parse_spawn(expr, pipeline.output_var),
@@ -342,7 +389,8 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.PermuteMergeInversePipeline do
     end
   end
 
-  @spec parse_spawn(map() | term(), Types.ir_expr() | term()) :: Types.ir_expr()
+  @spec parse_spawn(Types.ir_expr(), String.t()) ::
+          {:ok, String.t(), String.t(), String.t()} | :error
 
   defp parse_spawn(%{op: :let_in, value_expr: spawn_call, in_expr: rest}, output_var) do
     case spawn_call do
@@ -361,7 +409,7 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.PermuteMergeInversePipeline do
 
   defp parse_spawn(_, _), do: :error
 
-  @spec parse_score_add(Types.expr()) :: Types.ir_expr()
+  @spec parse_score_add(Types.expr()) :: {:ok, String.t(), String.t()} | :error
 
   defp parse_score_add(expr) do
     find_let_value(expr, fn
@@ -392,7 +440,7 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.PermuteMergeInversePipeline do
     end)
   end
 
-  @spec parse_best(Types.expr()) :: Types.ir_expr()
+  @spec parse_best(Types.expr()) :: {:ok, String.t()} | :error
 
   defp parse_best(expr) do
     find_let_value(expr, fn
@@ -409,7 +457,7 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.PermuteMergeInversePipeline do
     end)
   end
 
-  @spec parse_storage(Types.expr()) :: Types.ir_expr()
+  @spec parse_storage(Types.expr()) :: {:ok, integer()} | :error
 
   defp parse_storage(expr) do
     find_let_value(expr, fn
@@ -429,7 +477,7 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.PermuteMergeInversePipeline do
     end)
   end
 
-  @spec parse_turn_field(Types.expr()) :: Types.ir_expr()
+  @spec parse_turn_field(Types.expr()) :: {:ok, String.t()} | :error
 
   defp parse_turn_field(expr) do
     case find_record_update(expr) do
@@ -474,12 +522,12 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.PermuteMergeInversePipeline do
     end
   end
 
-  @spec turn_field_or_default(term() | Types.ir_expr()) :: Types.ir_expr()
+  @spec turn_field_or_default({:ok, String.t()} | :error) :: String.t()
 
   defp turn_field_or_default({:ok, field}), do: field
   defp turn_field_or_default(:error), do: "turn"
 
-  @spec parse_record_update(Types.expr()) :: Types.ir_expr()
+  @spec parse_record_update(Types.expr()) :: {:ok, field_map()} | :error
 
   defp parse_record_update(expr) do
     case find_record_update(expr) do
@@ -491,7 +539,7 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.PermuteMergeInversePipeline do
     end
   end
 
-  @spec find_record_update(map() | term()) :: Types.ir_expr()
+  @spec find_record_update(Types.expr()) :: Types.ir_expr() | nil
 
   defp find_record_update(%{op: :record_update, fields: _} = expr), do: expr
 
@@ -501,7 +549,7 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.PermuteMergeInversePipeline do
 
   defp find_record_update(_), do: nil
 
-  @spec record_field_map(list()) :: Types.ir_expr()
+  @spec record_field_map([Types.ir_record_field()]) :: {:ok, field_map()} | :error
 
   defp record_field_map(fields) do
     field_map =
@@ -512,7 +560,7 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.PermuteMergeInversePipeline do
     if map_size(field_map) >= 4, do: {:ok, field_map}, else: :error
   end
 
-  @spec record_updates_match?(map(), pos_integer(), Types.ir_expr()) :: boolean()
+  @spec record_updates_match?(field_map(), pipeline(), else_info()) :: boolean()
 
   defp record_updates_match?(field_map, pipeline, else_info) do
     Enum.all?(
@@ -521,7 +569,7 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.PermuteMergeInversePipeline do
     )
   end
 
-  @spec find_let_value(map() | term(), Types.ir_expr() | term()) :: Types.ir_expr()
+  @spec find_let_value(Types.expr(), (Types.ir_expr() -> term())) :: term()
 
   defp find_let_value(%{op: :let_in, value_expr: value, in_expr: rest}, matcher) do
     case matcher.(value) do
@@ -534,7 +582,7 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.PermuteMergeInversePipeline do
   defp find_let_value(%{op: :let_in, in_expr: rest}, matcher), do: find_let_value(rest, matcher)
   defp find_let_value(_, _), do: :error
 
-  @spec model_type_name(Types.decl_map(), String.t(), String.t()) :: Types.ir_expr()
+  @spec model_type_name(Types.decl_map(), String.t(), String.t()) :: {:ok, String.t()} | :error
 
   defp model_type_name(decl_map, module_name, name) do
     case Map.get(decl_map, {module_name, name}) do
@@ -551,7 +599,7 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.PermuteMergeInversePipeline do
     end
   end
 
-  @spec model_field_macros?(String.t(), Types.ir_expr(), pos_integer(), Types.ir_expr()) :: boolean()
+  @spec model_field_macros?(String.t(), String.t(), pipeline(), else_info()) :: boolean()
 
   defp model_field_macros?(module_name, model_type, pipeline, else_info) do
     fields = [
@@ -567,13 +615,22 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.PermuteMergeInversePipeline do
     end)
   end
 
-  @spec type_basename(Types.ir_expr()) :: Types.ir_expr()
+  @spec type_basename(String.t()) :: String.t()
 
   defp type_basename(type) do
     type |> String.trim() |> String.split(".") |> List.last()
   end
 
-  @spec emit(String.t(), String.t(), pos_integer(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.decl_map()) :: Types.ir_expr()
+  @spec emit(
+          String.t(),
+          String.t(),
+          pipeline(),
+          else_info(),
+          pos_integer(),
+          pos_integer(),
+          String.t(),
+          Types.decl_map()
+        ) :: String.t()
 
   defp emit(module_name, name, pipeline, else_info, width, rows, model_type, decl_map) do
     c_prefix = Util.module_fn_name(module_name, name)
@@ -611,7 +668,20 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.PermuteMergeInversePipeline do
     end
   end
 
-  @spec emit_body(Types.ir_expr(), non_neg_integer(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), non_neg_integer(), String.t()) :: Types.ir_expr()
+  @spec emit_body(
+          String.t(),
+          non_neg_integer(),
+          String.t(),
+          String.t(),
+          String.t(),
+          String.t(),
+          String.t(),
+          else_info(),
+          pos_integer(),
+          pos_integer(),
+          String.t(),
+          String.t()
+        ) :: String.t()
 
   defp emit_body(
          c_prefix,
@@ -705,28 +775,34 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.PermuteMergeInversePipeline do
     """
   end
 
-  @spec emit_inline_spawn_tile(String.t(), Types.ir_expr(), non_neg_integer()) :: Types.ir_expr()
+  @spec emit_inline_spawn_tile(String.t(), String.t(), non_neg_integer()) :: String.t()
 
   defp emit_inline_spawn_tile(_module_name, seed_macro, count) do
-  """
-  #{SpawnTileInline.emit("spawn", "out_buf", count, "ELMC_RECORD_GET_INDEX_INT(model, #{seed_macro})")}
-  ElmcValue *next_seed = NULL;
-  Rc = elmc_new_int(&next_seed, spawn_after_tile);
-  CHECK_RC(Rc);
-  ElmcValue *next_cells = NULL;
-  Rc = elmc_list_from_int_array_reuse(&next_cells, model_cells, out_buf, #{count});
-  CHECK_RC(Rc);
-  """
-  |> String.trim()
+    """
+    #{SpawnTileInline.emit("spawn", "out_buf", count, "ELMC_RECORD_GET_INDEX_INT(model, #{seed_macro})")}
+    ElmcValue *next_seed = NULL;
+    Rc = elmc_new_int(&next_seed, spawn_after_tile);
+    CHECK_RC(Rc);
+    ElmcValue *next_cells = NULL;
+    Rc = elmc_list_from_int_array_reuse(&next_cells, model_cells, out_buf, #{count});
+    CHECK_RC(Rc);
+    """
+    |> String.trim()
   end
 
   @doc false
-  @spec extract_fusion_data(String.t(), String.t(), Types.ir_expr() | nil, Types.function_decl_map()) ::
+  @spec extract_fusion_data(
+          String.t(),
+          String.t(),
+          Types.ir_expr() | nil,
+          Types.function_decl_map()
+        ) ::
           {:ok, :permute_merge_inverse_pipeline, Types.fusion_metadata()} | :error
   def extract_fusion_data(module_name, name, expr, decl_map) do
     with {:ok, pipeline} <- parse_pipeline(expr),
          {:ok, width, rows} <- merge_dims(decl_map, module_name, pipeline.merge_fn),
-         true <- permute_inverse_shape?(decl_map, module_name, pipeline.permute_fn, pipeline.inverse_fn),
+         true <-
+           permute_inverse_shape?(decl_map, module_name, pipeline.permute_fn, pipeline.inverse_fn),
          {:ok, else_info} <- parse_else_branch(pipeline.else_expr, pipeline),
          {:ok, model_type} <- model_type_name(decl_map, module_name, name),
          true <- model_field_macros?(module_name, model_type, pipeline, else_info),
@@ -736,8 +812,7 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.PermuteMergeInversePipeline do
          {:ok, score_idx} <- field_idx(module_name, model_type, else_info.score_field),
          {:ok, best_idx} <- field_idx(module_name, model_type, else_info.best_field),
          {:ok, turn_idx} <- field_idx(module_name, model_type, else_info.turn_field) do
-      {:ok,
-       :permute_merge_inverse_pipeline,
+      {:ok, :permute_merge_inverse_pipeline,
        %{
          width: width,
          rows: rows,
@@ -756,7 +831,7 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.PermuteMergeInversePipeline do
     end
   end
 
-  @spec field_idx(String.t(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+  @spec field_idx(String.t(), String.t(), String.t()) :: {:ok, integer()} | :error
 
   defp field_idx(module_name, model_type, field) do
     case FusionSupport.field_index(module_name, model_type, field) do

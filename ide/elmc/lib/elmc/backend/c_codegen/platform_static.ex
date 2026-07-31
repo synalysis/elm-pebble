@@ -74,7 +74,7 @@ defmodule Elmc.Backend.CCodegen.PlatformStatic do
 
   defp platform_static_and_if_form(_expr), do: nil
 
-  defp false_else?(%{op: :bool_literal, value: false}), do: true
+  defp false_else?(%{op: :bool_literal, value: value}) when is_boolean(value), do: not value
   defp false_else?(%{op: :int_literal, value: 0}), do: true
 
   defp false_else?(%{op: :constructor_call, target: target, args: []}) when is_binary(target),
@@ -93,7 +93,7 @@ defmodule Elmc.Backend.CCodegen.PlatformStatic do
   defp normalize_platform_static_expr(%{op: :qualified_call, target: target, args: args}) do
     case Host.special_value_from_target(Host.normalize_special_target(target), args) do
       nil ->
-        normalized_args = Enum.map(args || [], &normalize_platform_static_expr/1)
+        normalized_args = Enum.map(List.wrap(args), &normalize_platform_static_expr/1)
         %{op: :qualified_call, target: target, args: normalized_args}
 
       rewritten ->
@@ -104,7 +104,7 @@ defmodule Elmc.Backend.CCodegen.PlatformStatic do
   defp normalize_platform_static_expr(%{op: :call, name: name, args: args}) when is_binary(name) do
     case Host.special_value_from_target(name, args) do
       nil ->
-        normalized_args = Enum.map(args || [], &normalize_platform_static_expr/1)
+        normalized_args = Enum.map(List.wrap(args), &normalize_platform_static_expr/1)
         %{op: :call, name: name, args: normalized_args}
 
       rewritten ->

@@ -34,7 +34,7 @@ defmodule Elmx.Runtime.Pebble.SpecialValues do
   @spec dispatchers() :: [module()]
   def dispatchers, do: @dispatchers
 
-  @spec rewrite_qualified(String.t(), [String.t()]) :: String.t()
+  @spec rewrite_qualified(String.t(), [String.t()]) :: Types.rewrite_result()
 
   defp rewrite_qualified(target, args) do
     case dispatch_rewrite(target, args) do

@@ -118,7 +118,12 @@ defmodule Elmc.Backend.CCodegen.CollectionCompile do
     {code, var, next}
   end
 
-  @spec compile_generic_tuple2(Types.expr(), Types.expr(), Types.compile_env(), Types.ir_expr()) :: Types.ir_expr()
+  @spec compile_generic_tuple2(
+          Types.expr(),
+          Types.expr(),
+          Types.compile_env(),
+          Types.compile_counter()
+        ) :: Types.compile_result()
 
   defp compile_generic_tuple2(left, right, env, counter) do
     child_env = RcRuntimeEmit.strip_function_tail_scope(env)
@@ -276,7 +281,11 @@ defmodule Elmc.Backend.CCodegen.CollectionCompile do
 
   defp expr_reads_var_field?(_, _), do: false
 
-  @spec compile_dynamic_list_literal(list(), Types.compile_env(), Types.ir_expr()) :: Types.ir_expr()
+  @spec compile_dynamic_list_literal(
+          list(Types.expr()),
+          Types.compile_env(),
+          Types.compile_counter()
+        ) :: Types.compile_result()
 
   defp compile_dynamic_list_literal(items, env, counter) do
     item_env = RcRuntimeEmit.strip_function_tail_scope(env)
@@ -293,7 +302,12 @@ defmodule Elmc.Backend.CCodegen.CollectionCompile do
     end
   end
 
-  @spec compile_generic_list_literal(list(), Types.compile_env(), Types.compile_env(), Types.ir_expr()) :: Types.ir_expr()
+  @spec compile_generic_list_literal(
+          list(Types.expr()),
+          Types.compile_env(),
+          Types.compile_env(),
+          Types.compile_counter()
+        ) :: Types.compile_result()
 
   defp compile_generic_list_literal(items, item_env, env, counter) do
     nested_item_env =
@@ -375,7 +389,11 @@ defmodule Elmc.Backend.CCodegen.CollectionCompile do
     {code, out, max(next, list_items_id + 1)}
   end
 
-  @spec static_record_list_literal(list() | Types.ir_expr(), Types.compile_env(), Types.ir_expr()) :: Types.ir_expr()
+  @spec static_record_list_literal(
+          list(Types.expr()),
+          Types.compile_env(),
+          Types.compile_counter()
+        ) :: {:ok, Types.compile_result()} | :error
 
   defp static_record_list_literal(items, env, counter) when is_list(items) and items != [] do
     if Enum.all?(items, &all_native_primitive_record_literal?/1) do
@@ -387,7 +405,12 @@ defmodule Elmc.Backend.CCodegen.CollectionCompile do
 
   defp static_record_list_literal(_items, _env, _counter), do: :error
 
-  @spec compile_record_array_list_literal(list(), Types.compile_env(), Types.compile_env(), Types.ir_expr()) :: Types.ir_expr()
+  @spec compile_record_array_list_literal(
+          list(Types.expr()),
+          Types.compile_env(),
+          Types.compile_env(),
+          Types.compile_counter()
+        ) :: Types.compile_result()
 
   defp compile_record_array_list_literal(items, item_env, env, counter) do
     nested_item_env =
@@ -444,7 +467,11 @@ defmodule Elmc.Backend.CCodegen.CollectionCompile do
 
   defp all_native_primitive_record_literal?(_), do: false
 
-  @spec static_list_literal(list() | Types.ir_expr(), Types.compile_env(), Types.ir_expr()) :: Types.ir_expr()
+  @spec static_list_literal(
+          list(Types.expr()),
+          Types.compile_env(),
+          Types.compile_counter()
+        ) :: {:ok, Types.compile_result()} | :error
 
   defp static_list_literal(items, env, counter) when length(items) >= 4 do
     cond do
@@ -461,7 +488,11 @@ defmodule Elmc.Backend.CCodegen.CollectionCompile do
 
   defp static_list_literal(_items, _env, _counter), do: :error
 
-  @spec compile_static_int_list(list(), Types.compile_env(), Types.ir_expr()) :: Types.ir_expr()
+  @spec compile_static_int_list(
+          list(Types.expr()),
+          Types.compile_env(),
+          Types.compile_counter()
+        ) :: Types.compile_result()
 
   defp compile_static_int_list(items, env, counter) do
     env = RcRuntimeEmit.strip_function_tail_scope(env)
@@ -485,7 +516,11 @@ defmodule Elmc.Backend.CCodegen.CollectionCompile do
     {code, out, max(next, values_id + 1)}
   end
 
-  @spec compile_static_tuple2_int_list(list(), Types.compile_env(), Types.ir_expr()) :: Types.ir_expr()
+  @spec compile_static_tuple2_int_list(
+          list(Types.expr()),
+          Types.compile_env(),
+          Types.compile_counter()
+        ) :: Types.compile_result()
 
   defp compile_static_tuple2_int_list(items, env, counter) do
     env = RcRuntimeEmit.strip_function_tail_scope(env)
@@ -640,11 +675,11 @@ defmodule Elmc.Backend.CCodegen.CollectionCompile do
     {code, var, next}
   end
 
-  @spec boxed_slot_assign(Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+  @spec boxed_slot_assign(String.t(), String.t()) :: String.t()
 
   defp boxed_slot_assign(var, rhs), do: ValueSlots.boxed_decl(var, rhs)
 
-  @spec multi_use_elm_var_names(list()) :: Types.ir_expr()
+  @spec multi_use_elm_var_names(list(Types.expr())) :: MapSet.t(String.t())
 
   defp multi_use_elm_var_names(items) when is_list(items) do
     items
@@ -657,7 +692,11 @@ defmodule Elmc.Backend.CCodegen.CollectionCompile do
     |> MapSet.new()
   end
 
-  @spec emit_multi_use_owned_copies(Types.ir_expr(), map(), Types.ir_expr()) :: Types.ir_expr()
+  @spec emit_multi_use_owned_copies(
+          MapSet.t(String.t()),
+          Types.compile_env(),
+          Types.compile_counter()
+        ) :: {String.t(), %{String.t() => String.t()}, Types.compile_counter()}
 
   defp emit_multi_use_owned_copies(multi_use, env, counter) when is_map(env) do
     Enum.reduce(multi_use, {"", %{}, counter}, fn name, {code, copy_map, c} ->
@@ -680,7 +719,11 @@ defmodule Elmc.Backend.CCodegen.CollectionCompile do
     end)
   end
 
-  @spec item_env_for_multi_use(Types.compile_env(), Types.ir_expr(), map()) :: Types.ir_expr()
+  @spec item_env_for_multi_use(
+          Types.compile_env(),
+          MapSet.t(String.t()),
+          %{String.t() => String.t()}
+        ) :: Types.compile_env()
 
   defp item_env_for_multi_use(env, consumed, copy_map)
        when is_map(env) and is_map(copy_map) do
@@ -693,7 +736,7 @@ defmodule Elmc.Backend.CCodegen.CollectionCompile do
     end)
   end
 
-  @spec list_literal_result_out_env(Types.compile_env()) :: Types.ir_expr()
+  @spec list_literal_result_out_env(Types.compile_env()) :: Types.compile_env()
 
   defp list_literal_result_out_env(env) do
     if RcRuntimeEmit.function_tail_compile?(env) or

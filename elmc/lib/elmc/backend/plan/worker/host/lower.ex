@@ -10,7 +10,7 @@ defmodule Elmc.Backend.Plan.Worker.Host.Lower do
 
   @worker_entry_rc_vars %{"subscriptions" => "sub_rc"}
 
-  @spec lower(IR.t(), String.t(), Layout.t(), keyword()) :: HostPlan.t()
+  @spec lower(IR.t(), String.t(), Layout.t(), map() | keyword()) :: HostPlan.t()
   def lower(%IR{} = ir, entry_module, %{} = layout, opts) do
     opts = Map.new(opts)
     safe_module = entry_module |> String.replace(".", "_")

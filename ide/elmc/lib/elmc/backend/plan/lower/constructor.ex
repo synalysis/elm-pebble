@@ -113,15 +113,16 @@ defmodule Elmc.Backend.Plan.Lower.Constructor do
     end
   end
 
-  @spec compile(map() | term(), Types.ir_expr() | term(), Types.ir_expr() | term()) :: Types.ir_expr()
+  @spec compile(Types.constructor_target_input() | map(), Context.t(), Builder.t()) ::
+          Types.compile_result()
 
   def compile(%{target: target} = expr, ctx, b) when is_binary(target) do
-    args = Map.get(expr, :args, [])
+    args = expr |> Map.get(:args, []) |> List.wrap()
     short = target |> String.split(".") |> List.last()
 
     cond do
       record_alias_ctor?(target, args, ctx) ->
-        compile_record_alias_ctor(target, args || [], ctx, b)
+        compile_record_alias_ctor(target, args, ctx, b)
 
       ResourceUnion.constructor?(target, args) ->
         compile_resource_union_index(target, ctx, b)
@@ -142,13 +143,13 @@ defmodule Elmc.Backend.Plan.Lower.Constructor do
         compile_bool_literal(target, ctx, b)
 
       true ->
-        compile_union_value(target, args || [], Map.get(expr, :value), ctx, b)
+        compile_union_value(target, args, Map.get(expr, :value), ctx, b)
     end
   end
 
   def compile(_, _, _), do: :unsupported
 
-  @spec record_alias_ctor?(String.t(), [String.t()], Types.ir_expr()) :: boolean()
+  @spec record_alias_ctor?(String.t(), [Types.expr()], Context.t()) :: boolean()
 
   defp record_alias_ctor?(target, args, ctx) when is_binary(target) do
     arity = args |> List.wrap() |> length()
@@ -166,7 +167,7 @@ defmodule Elmc.Backend.Plan.Lower.Constructor do
     end
   end
 
-  @spec record_alias_key(String.t(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+  @spec record_alias_key(String.t(), Context.t(), map()) :: {String.t(), String.t()} | nil
 
   defp record_alias_key(target, ctx, shapes) do
     case String.split(target, ".", trim: true) do
@@ -181,7 +182,8 @@ defmodule Elmc.Backend.Plan.Lower.Constructor do
     end
   end
 
-  @spec compile_record_alias_ctor(String.t(), list(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+  @spec compile_record_alias_ctor(String.t(), [Types.expr()], Context.t(), Builder.t()) ::
+          Types.compile_result()
 
   defp compile_record_alias_ctor(target, args, ctx, b) when is_binary(target) and is_list(args) do
     shapes = Process.get(:elmc_record_alias_shapes, %{})
@@ -204,14 +206,15 @@ defmodule Elmc.Backend.Plan.Lower.Constructor do
     end
   end
 
-  @spec compile_resource_union_index(String.t(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+  @spec compile_resource_union_index(String.t(), Context.t(), Builder.t()) ::
+          Types.compile_reg_result()
 
   defp compile_resource_union_index(target, _ctx, b) do
     {reg, b1} = Builder.emit_const_int(b, ResourceUnion.slot_index(target))
     {:ok, reg, b1}
   end
 
-  @spec compile_nothing(Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+  @spec compile_nothing(Context.t(), Builder.t()) :: Types.compile_result()
 
   defp compile_nothing(ctx, b) do
     {dest, b1} = dest_for_ctor(ctx, b)
@@ -230,10 +233,10 @@ defmodule Elmc.Backend.Plan.Lower.Constructor do
     {:ok, dest, b2}
   end
 
-  @spec compile_just([String.t()], Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+  @spec compile_just([Types.expr()], Context.t(), Builder.t()) :: Types.compile_result()
 
   defp compile_just(args, ctx, b) do
-    payload = List.first(args || [])
+    payload = List.first(args)
 
     with {:ok, payload_reg, b1} <- Expr.compile(payload, ctx, b),
          {owned_payload, b_owned} = Builder.copy_reg_owned(b1, payload_reg) do
@@ -264,7 +267,7 @@ defmodule Elmc.Backend.Plan.Lower.Constructor do
     end
   end
 
-  @spec unit_ctor?(String.t(), Types.ir_expr()) :: boolean()
+  @spec unit_ctor?(String.t(), String.t()) :: boolean()
 
   defp unit_ctor?(target, short) do
     short == "()" or target in ["()", "Basics.()"]
@@ -278,14 +281,14 @@ defmodule Elmc.Backend.Plan.Lower.Constructor do
       String.ends_with?(target, ".False")
   end
 
-  @spec compile_order_literal(Types.ir_expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+  @spec compile_order_literal(String.t(), Context.t(), Builder.t()) :: Types.compile_result()
 
   defp compile_order_literal(short, ctx, b) do
     value = Map.fetch!(@order_values, short_name(short))
     Expr.compile_runtime_builtin(:new_order, [], ctx, b, %{literal: value})
   end
 
-  @spec compile_bool_literal(String.t(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+  @spec compile_bool_literal(String.t(), Context.t(), Builder.t()) :: Types.compile_reg_result()
 
   defp compile_bool_literal(target, _ctx, b) do
     # Native-bool returns / compares use raw 0/1 in i32 locals, then box at the
@@ -302,7 +305,8 @@ defmodule Elmc.Backend.Plan.Lower.Constructor do
     |> then(fn {reg, b1} -> {:ok, reg, b1} end)
   end
 
-  @spec compile_union_tag_int(String.t(), integer(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+  @spec compile_union_tag_int(String.t(), integer() | nil, Context.t(), Builder.t()) ::
+          Types.compile_reg_result()
 
   defp compile_union_tag_int(target, value, ctx, b) do
     qualified = UnionCtor.qualify(target, ctx)
@@ -323,7 +327,13 @@ defmodule Elmc.Backend.Plan.Lower.Constructor do
   # - the single value for unary ctors
   # - right-nested tuple2s for n-ary ctors (n > 1), matching PatternBind
   #   (`Pair x y` → tuple2(x, y); `T a b c` → tuple2(a, tuple2(b, c)))
-  @spec compile_union_value(String.t(), list(), integer(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+  @spec compile_union_value(
+          String.t(),
+          [Types.expr()],
+          integer() | nil,
+          Context.t(),
+          Builder.t()
+        ) :: Types.compile_result()
 
   defp compile_union_value(target, args, value, ctx, b) when is_binary(target) and is_list(args) do
     scratch_ctx = %{ctx | dest_stack: [:scratch], function_tail: false}
@@ -336,7 +346,7 @@ defmodule Elmc.Backend.Plan.Lower.Constructor do
     end
   end
 
-  @spec compile_union_payload(term(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+  @spec compile_union_payload([Types.expr()], Context.t(), Builder.t()) :: Types.compile_result()
 
   defp compile_union_payload([], ctx, b) do
     Expr.compile_runtime_builtin(:unit, [], ctx, b)
@@ -355,7 +365,7 @@ defmodule Elmc.Backend.Plan.Lower.Constructor do
     end
   end
 
-  @spec lookup_constructor_tag(String.t(), integer()) :: Types.ir_expr()
+  @spec lookup_constructor_tag(String.t(), integer() | nil) :: integer() | false | nil
 
   defp lookup_constructor_tag(target, value) do
     tags = Process.get(:elmc_constructor_tags, %{})
@@ -364,11 +374,12 @@ defmodule Elmc.Backend.Plan.Lower.Constructor do
       (is_integer(value) && value)
   end
 
-  @spec short_name(String.t()) :: Types.ir_expr()
+  @spec short_name(String.t()) :: String.t()
 
   defp short_name(name), do: name |> String.split(".") |> List.last()
 
-  @spec dest_for_ctor(Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+  @spec dest_for_ctor(Context.t(), Builder.t()) ::
+          {Types.result_slot() | Types.reg(), Builder.t()}
 
   defp dest_for_ctor(ctx, b) do
     case Context.dest_for_call(ctx) do

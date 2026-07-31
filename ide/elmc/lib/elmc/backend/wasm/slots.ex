@@ -47,7 +47,7 @@ defmodule Elmc.Backend.Wasm.Slots do
         %{}
       end
 
-    plan_state? = length(plan.blocks || []) > 1
+    plan_state? = length(plan.blocks) > 1
 
     owned_base = params + 2
 
@@ -228,7 +228,7 @@ defmodule Elmc.Backend.Wasm.Slots do
   defp max_plan_reg(%FunctionPlan{} = plan) do
     plan.blocks
     |> Enum.flat_map(& &1.instrs)
-    |> Enum.reduce(plan.reg_count || 0, fn instr, acc ->
+    |> Enum.reduce(plan.reg_count, fn instr, acc ->
       regs =
         [Map.get(instr, :dest)]
         |> Kernel.++(phi_regs(Map.get(instr, :args)))

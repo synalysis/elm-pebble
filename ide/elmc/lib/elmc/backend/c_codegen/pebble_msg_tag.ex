@@ -26,7 +26,7 @@ defmodule Elmc.Backend.CCodegen.PebbleMsgTag do
     MapSet.member?(Process.get(:elmc_pebble_msg_names, MapSet.new()), name)
   end
 
-  @spec constructor_short_name(map() | term()) :: Types.ir_expr()
+  @spec constructor_short_name(map() | term()) :: String.t() | nil
 
   defp constructor_short_name(%{name: name}) when is_binary(name), do: name
 

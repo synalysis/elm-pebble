@@ -37,7 +37,7 @@ defmodule Ide.Resources.GifToApng do
 
   # gif2apng 1.9: no -o flag; pass `gif2apng -z0 input.gif output.png`.
   # It only opens relative input paths, so run with cwd = input directory.
-  @spec convert_with_bin(integer(), String.t(), String.t()) :: term()
+  @spec convert_with_bin(String.t(), String.t(), String.t()) :: :ok | {:error, atom()}
 
   defp convert_with_bin(bin, input_path, output_path) do
     input_dir = Path.dirname(Path.expand(input_path))

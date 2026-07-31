@@ -41,14 +41,13 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.DuplicateFieldHoists do
     end
   end
 
-  @spec record_get_hoist_init?(String.t() | term()) :: boolean()
+  @spec record_get_hoist_init?(String.t()) :: boolean()
 
   defp record_get_hoist_init?(init) when is_binary(init),
     do: String.starts_with?(init, "ELMC_RECORD_GET_INDEX_INT(")
 
-  defp record_get_hoist_init?(_), do: false
-
-  @spec canonical_field_access(map() | Types.expr(), Types.compile_env()) :: Types.ir_expr()
+  @spec canonical_field_access(map() | Types.ir_expr(), Types.compile_env()) ::
+          map() | Types.ir_expr()
 
   defp canonical_field_access(%{op: :field_access, arg: arg, field: field} = expr, env) do
     %{expr | arg: canonical_field_arg(arg, env), field: field}
@@ -56,7 +55,8 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.DuplicateFieldHoists do
 
   defp canonical_field_access(expr, _env), do: expr
 
-  @spec canonical_field_arg(map() | Types.ir_expr(), Types.compile_env()) :: Types.ir_expr()
+  @spec canonical_field_arg(map() | Types.ir_expr(), Types.compile_env()) ::
+          map() | Types.ir_expr()
 
   defp canonical_field_arg(%{op: :var, name: name}, env) do
     key = EnvBindings.binding_key(name)
@@ -84,7 +84,11 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.DuplicateFieldHoists do
 
   defp canonical_field_arg(arg, _env), do: arg
 
-  @spec collect_native_field_accesses(map() | list() | Types.expr(), Types.compile_env(), term()) :: Types.ir_expr()
+  @spec collect_native_field_accesses(
+          map() | list() | Types.ir_expr(),
+          Types.compile_env(),
+          [Types.ir_expr()]
+        ) :: [Types.ir_expr()]
 
   defp collect_native_field_accesses(expr, env, acc) when is_map(expr) do
     acc =
@@ -107,7 +111,8 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.DuplicateFieldHoists do
 
   defp collect_native_field_accesses(_expr, _env, acc), do: acc
 
-  @spec native_field_int_access(map() | Types.expr(), Types.compile_env()) :: Types.ir_expr()
+  @spec native_field_int_access(map() | Types.ir_expr(), Types.compile_env()) ::
+          Types.ir_expr() | nil
 
   defp native_field_int_access(%{op: :field_access, field: field} = expr, env)
        when is_binary(field) do

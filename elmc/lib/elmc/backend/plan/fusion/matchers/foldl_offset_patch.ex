@@ -41,8 +41,8 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.FoldlOffsetPatch do
     end
   end
 
-  @spec parse_function(Types.decl_map(), String.t(), String.t()) :: Types.ir_expr()
-
+  @spec parse_function(Types.decl_map(), String.t(), String.t()) ::
+          {:ok, String.t(), String.t()} | :error
   defp parse_function(decl_map, module_name, name) do
     case Map.get(decl_map, {module_name, name}) do
       %{type: type, args: [piece_var, _board_var | _]} when is_binary(type) ->
@@ -56,8 +56,7 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.FoldlOffsetPatch do
     end
   end
 
-  @spec parse(map() | term()) :: Types.ir_expr()
-
+  @spec parse(map() | term()) :: {:ok, String.t(), String.t(), String.t()} | :error
   defp parse(%{op: :qualified_call, target: "List.foldl", args: [lambda, %{op: :var, name: _board}, offsets]}) do
     with {:ok, piece_var, set_cell_target} <- parse_foldl_lambda(lambda),
          {:ok, offsets_target} <- piece_offsets_call(offsets, piece_var) do
@@ -67,8 +66,7 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.FoldlOffsetPatch do
 
   defp parse(_), do: :error
 
-  @spec parse_foldl_lambda(map() | term()) :: Types.ir_expr()
-
+  @spec parse_foldl_lambda(map() | term()) :: {:ok, String.t(), String.t()} | :error
   defp parse_foldl_lambda(%{
          op: :lambda,
          args: [tuple_arg],
@@ -94,8 +92,7 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.FoldlOffsetPatch do
 
   defp parse_foldl_lambda(_), do: :error
 
-  @spec parse_set_cell_call(map() | term()) :: Types.ir_expr()
-
+  @spec parse_set_cell_call(map() | term()) :: {:ok, String.t(), String.t()} | :error
   defp parse_set_cell_call(%{
          op: :let_in,
          name: "value",
@@ -130,8 +127,7 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.FoldlOffsetPatch do
 
   defp parse_set_cell_call(_), do: :error
 
-  @spec piece_offsets_call(map() | term(), Types.ir_expr() | term()) :: Types.ir_expr()
-
+  @spec piece_offsets_call(map() | term(), String.t()) :: {:ok, String.t()} | :error
   defp piece_offsets_call(
          %{
            op: :qualified_call,
@@ -148,8 +144,8 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.FoldlOffsetPatch do
 
   defp piece_offsets_call(_, _), do: :error
 
-  @spec grid_dims_from_set_cell(Types.decl_map(), String.t(), String.t()) :: Types.ir_expr()
-
+  @spec grid_dims_from_set_cell(Types.decl_map(), String.t(), String.t()) ::
+          {:ok, String.t(), String.t()} | :error
   defp grid_dims_from_set_cell(decl_map, module_name, set_cell_target) do
     case Map.get(decl_map, FusionSupport.callee_key(module_name, set_cell_target)) do
       %{expr: %{op: :if, else_expr: else_expr} = expr} ->
@@ -165,8 +161,7 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.FoldlOffsetPatch do
     end
   end
 
-  @spec axis_dim_vars_from_bounds(Types.expr()) :: Types.ir_expr()
-
+  @spec axis_dim_vars_from_bounds(Types.expr()) :: {String.t(), String.t()} | :error
   defp axis_dim_vars_from_bounds(expr) do
     compares = collect_compares(expr)
 
@@ -178,8 +173,7 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.FoldlOffsetPatch do
     end
   end
 
-  @spec axis_dim_var(Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
-
+  @spec axis_dim_var([Types.expr()], String.t()) :: String.t() | nil
   defp axis_dim_var(compares, axis) do
     Enum.find_value(compares, fn
       %{left: %{op: :var, name: ^axis}, right: %{op: :var, name: var}, kind: kind}
@@ -191,8 +185,7 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.FoldlOffsetPatch do
     end)
   end
 
-  @spec collect_compares(map() | term()) :: Types.ir_expr()
-
+  @spec collect_compares(map() | term()) :: [Types.expr()]
   defp collect_compares(%{op: :compare} = expr), do: [expr]
 
   defp collect_compares(%{op: :if, cond: cond, then_expr: then_expr, else_expr: else_expr}),
@@ -200,7 +193,7 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.FoldlOffsetPatch do
 
   defp collect_compares(_), do: []
 
-  @spec flat_indexed_map_update?(Types.expr(), Types.ir_expr()) :: boolean()
+  @spec flat_indexed_map_update?(Types.expr(), String.t()) :: boolean()
 
   defp flat_indexed_map_update?(expr, cols_var) do
     case expr do
@@ -229,7 +222,7 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.FoldlOffsetPatch do
     end
   end
 
-  @spec index_uses_cols?(Types.expr(), Types.ir_expr()) :: boolean()
+  @spec index_uses_cols?(Types.expr(), String.t()) :: boolean()
 
   defp index_uses_cols?(expr, cols_var) do
     case FusionSupport.cols_from_y_mul_plus_x(expr) do
@@ -252,7 +245,7 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.FoldlOffsetPatch do
     end
   end
 
-  @spec flat_set_cell?(Types.decl_map(), String.t(), String.t(), Types.ir_expr()) :: boolean()
+  @spec flat_set_cell?(Types.decl_map(), String.t(), String.t(), String.t()) :: boolean()
 
   defp flat_set_cell?(decl_map, module_name, set_cell_target, cols_var) do
     case Map.get(decl_map, FusionSupport.callee_key(module_name, set_cell_target)) do
@@ -264,8 +257,7 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.FoldlOffsetPatch do
     end
   end
 
-  @spec emit(String.t(), String.t(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), String.t()) :: Types.ir_expr()
-
+  @spec emit(String.t(), String.t(), String.t(), integer(), integer(), String.t()) :: String.t()
   defp emit(module_name, name, piece_type, cols, rows, offsets_fn_name) do
     c_prefix = Util.module_fn_name(module_name, name)
     table_type = FusionSupport.table_type(offsets_fn_name)
@@ -391,8 +383,7 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.FoldlOffsetPatch do
     end
   end
 
-  @spec field_macro(String.t(), String.t(), Types.ir_expr()) :: Types.ir_expr()
-
+  @spec field_macro(String.t(), String.t(), String.t()) :: String.t()
   defp field_macro(module_name, type_name, field) do
     case Map.get(Process.get(:elmc_record_field_macros, %{}), {module_name, type_name, field}) do
       macro when is_binary(macro) -> macro

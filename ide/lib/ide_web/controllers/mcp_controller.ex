@@ -13,7 +13,7 @@ defmodule IdeWeb.McpController do
   Clients that include `Accept: text/event-stream` receive a long-lived SSE
   listener stream. JSON-only probes receive HTTP 405.
   """
-  @spec show(integer(), term()) :: term()
+  @spec show(Plug.Conn.t(), map()) :: Plug.Conn.t()
 
   def show(conn, _params) do
     cond do
@@ -49,7 +49,7 @@ defmodule IdeWeb.McpController do
   @doc """
   Handles MCP JSON-RPC over Streamable HTTP POST requests.
   """
-  @spec create(integer(), map() | list() | term()) :: term()
+  @spec create(Plug.Conn.t(), map() | list() | term()) :: Plug.Conn.t()
 
   def create(conn, %{"_json" => request_body}) when is_list(request_body) do
     create(conn, request_body)
@@ -104,7 +104,7 @@ defmodule IdeWeb.McpController do
     })
   end
 
-  @spec ensure_post_acceptable(integer()) :: term()
+  @spec ensure_post_acceptable(Plug.Conn.t()) :: :ok | {:error, :invalid_origin | :not_acceptable}
 
   defp ensure_post_acceptable(conn) do
     cond do
@@ -119,11 +119,11 @@ defmodule IdeWeb.McpController do
     end
   end
 
-  @spec valid_origin?(integer()) :: boolean()
+  @spec valid_origin?(Plug.Conn.t()) :: boolean()
 
   defp valid_origin?(conn), do: StreamableHttp.valid_origin?(conn)
 
-  @spec maybe_attach_initialize_session(integer(), list() | term()) :: term() | nil
+  @spec maybe_attach_initialize_session(Plug.Conn.t(), list() | term()) :: Plug.Conn.t()
 
   defp maybe_attach_initialize_session(conn, request_body) when is_list(request_body) do
     if Enum.any?(request_body, &initialize_request?/1) do
@@ -146,7 +146,7 @@ defmodule IdeWeb.McpController do
   defp initialize_request?(%{"method" => "initialize"}), do: true
   defp initialize_request?(_request), do: false
 
-  @spec http_capabilities(integer()) :: term()
+  @spec http_capabilities(Plug.Conn.t()) :: {:ok, [String.t()]} | {:error, :disabled}
 
   defp http_capabilities(conn) do
     if Auth.mcp_enabled?() do
@@ -169,7 +169,7 @@ defmodule IdeWeb.McpController do
     end
   end
 
-  @spec disabled_response(integer()) :: term()
+  @spec disabled_response(Plug.Conn.t()) :: Plug.Conn.t()
 
   defp disabled_response(conn) do
     conn
@@ -181,7 +181,7 @@ defmodule IdeWeb.McpController do
     })
   end
 
-  @spec invalid_origin_response(integer()) :: term()
+  @spec invalid_origin_response(Plug.Conn.t()) :: Plug.Conn.t()
 
   defp invalid_origin_response(conn) do
     conn
@@ -193,7 +193,7 @@ defmodule IdeWeb.McpController do
     })
   end
 
-  @spec not_acceptable_response(integer()) :: term()
+  @spec not_acceptable_response(Plug.Conn.t()) :: Plug.Conn.t()
 
   defp not_acceptable_response(conn) do
     conn
@@ -209,7 +209,7 @@ defmodule IdeWeb.McpController do
     })
   end
 
-  @spec with_current_user(integer(), integer()) :: term()
+  @spec with_current_user(Plug.Conn.t(), (-> term())) :: term()
 
   defp with_current_user(conn, fun) do
     previous = Process.get(:ide_current_user)

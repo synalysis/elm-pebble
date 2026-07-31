@@ -49,7 +49,7 @@ defmodule ElmEx.IR.LowererCache do
 
   def default_cache_dir(_), do: Path.join(System.tmp_dir!(), "elmc-ir-cache")
 
-  @spec fetch(t(), FrontendModule.t() | map()) :: {:hit, IRModule.t()} | :miss
+  @spec fetch(t(), map()) :: {:hit, ElmEx.IR.Module.t()} | :miss
   def fetch(:disabled, _), do: :miss
 
   def fetch(%{} = cache, %{name: _, path: _} = mod) do
@@ -64,7 +64,7 @@ defmodule ElmEx.IR.LowererCache do
     end
   end
 
-  @spec put(t(), FrontendModule.t() | map(), IRModule.t()) :: :ok
+  @spec put(t(), map(), ElmEx.IR.Module.t()) :: :ok
   def put(:disabled, _, _), do: :ok
 
   def put(%{} = cache, %{name: _, path: _} = mod, %IRModule{} = ir_mod) do

@@ -302,9 +302,9 @@ defmodule Ide.Debugger.AutoFireRuntime do
     )
   end
 
-  @spec resolved_auto_fire_message(String.t() | nil, String.t() | nil) :: String.t()
+  @spec resolved_auto_fire_message(String.t(), String.t() | nil) :: String.t()
   defp resolved_auto_fire_message(resolved, fallback) do
-    if is_binary(resolved) and String.trim(resolved) != "" do
+    if String.trim(resolved) != "" do
       resolved
     else
       fallback || ""

@@ -1021,7 +1021,7 @@ defmodule Ide.Mcp.Handlers.Debugger do
           String.t(),
           WireTypes.debugger_setting_value()
         ) ::
-          :ok
+          :ok | {:error, ToolTypes.tool_persist_error()}
   defp maybe_persist_project_debugger_setting(project, key, value)
        when is_map(project) and is_binary(key) do
     case persist_project_debugger_setting(project, key, value) do
@@ -2092,7 +2092,6 @@ defmodule Ide.Mcp.Handlers.Debugger do
 
     case Debugger.snapshot(scope_key) do
       {:ok, state} -> DebuggerBootstrapFlow.companion_bootstrapped?(state)
-      _ -> false
     end
   rescue
     _ -> false

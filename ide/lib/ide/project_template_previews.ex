@@ -85,52 +85,43 @@ defmodule Ide.ProjectTemplatePreviews do
   defp maybe_apply_preview_watch_profile!(slug, template_key) when is_binary(slug) do
     case Map.get(@preview_watch_profiles, template_key) do
       profile_id when is_binary(profile_id) ->
-        case Debugger.set_watch_profile(slug, %{watch_profile_id: profile_id}) do
-          {:ok, _} ->
-            :ok
-
-          {:error, reason} ->
-            raise "could not set preview watch profile #{profile_id} for #{template_key}: #{inspect(reason)}"
-        end
+        {:ok, _} = Debugger.set_watch_profile(slug, %{watch_profile_id: profile_id})
+        :ok
 
       _ ->
         :ok
     end
   end
 
-  @spec write_preview_for_project!(String.t(), term()) :: term()
+  @spec write_preview_for_project!(String.t(), term()) :: :ok
 
   defp write_preview_for_project!(template_key, project) do
     slug = project.slug
 
     try do
-      case Debugger.snapshot(slug, event_limit: 200) do
-        {:ok, state} ->
-          runtime = Map.get(state, :watch) || %{}
-          tree = Preview.preview_tree(runtime)
-          color_mode = Preview.watch_color_mode(runtime)
+      {:ok, state} = Debugger.snapshot(slug, event_limit: 200)
+      runtime = Map.get(state, :watch) || %{}
+      tree = Preview.preview_tree(runtime)
+      color_mode = Preview.watch_color_mode(runtime)
 
-          svg_ops =
-            tree
-            |> DebuggerPreview.svg_ops(runtime)
-            |> DebuggerPreview.resolve_bitmap_svg_ops(project)
-            |> BitmapHydration.hydrate_svg_ops(project, color_mode)
-            |> DebuggerPreview.hydrate_animation_svg_ops(project)
-            |> DebuggerPreview.hydrate_vector_svg_ops(project)
+      svg_ops =
+        tree
+        |> DebuggerPreview.svg_ops(runtime)
+        |> DebuggerPreview.resolve_bitmap_svg_ops(project)
+        |> BitmapHydration.hydrate_svg_ops(project, color_mode)
+        |> DebuggerPreview.hydrate_animation_svg_ops(project)
+        |> DebuggerPreview.hydrate_vector_svg_ops(project)
 
-          {width, height} = DebuggerPreview.screen_dimensions(runtime, tree)
-          screen_round? = DebuggerPreview.screen_round?(runtime, tree)
+      {width, height} = DebuggerPreview.screen_dimensions(runtime, tree)
+      screen_round? = DebuggerPreview.screen_round?(runtime, tree)
 
-          svg =
-            Svg.document(svg_ops, width, height,
-              round: screen_round?
-            )
+      svg =
+        Svg.document(svg_ops, width, height,
+          round: screen_round?
+        )
 
-          write_png!(svg, screenshot_path(template_key))
-
-        {:error, reason} ->
-          raise "could not generate preview for #{template_key}: #{inspect(reason)}"
-      end
+      write_png!(svg, screenshot_path(template_key))
+      :ok
     after
       _ = Projects.delete_project(project)
     end

@@ -1,9 +1,10 @@
 defmodule Elmc.Backend.Wasm.FunctionOrder do
   @moduledoc false
-  alias Elmc.Types, as: Types
-
 
   alias Elmc.Backend.Plan.Types.FunctionPlan
+
+  @type plan_key :: {String.t(), String.t()}
+  @type dep_graph :: %{optional(plan_key()) => [plan_key()]}
 
   @spec sort([FunctionPlan.t()]) :: [FunctionPlan.t()]
   def sort(plans) when is_list(plans) do
@@ -14,15 +15,15 @@ defmodule Elmc.Backend.Wasm.FunctionOrder do
 
     sorted_keys = topo_sort(Map.keys(graph), graph)
 
-    by_key = Map.new(plans, fn %FunctionPlan{module: mod, name: name} = plan ->
-      {{mod, name}, plan}
-    end)
+    by_key =
+      Map.new(plans, fn %FunctionPlan{module: mod, name: name} = plan ->
+        {{mod, name}, plan}
+      end)
 
     Enum.map(sorted_keys, &Map.fetch!(by_key, &1))
   end
 
-  @spec deps(map()) :: Types.ir_expr()
-
+  @spec deps(FunctionPlan.t()) :: [plan_key()]
   defp deps(%FunctionPlan{} = plan) do
     blocks = plan.blocks ++ Enum.flat_map(Map.get(plan, :lambdas) || [], & &1.blocks)
 
@@ -35,8 +36,7 @@ defmodule Elmc.Backend.Wasm.FunctionOrder do
     |> Enum.uniq()
   end
 
-  @spec topo_sort(Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
-
+  @spec topo_sort([plan_key()], dep_graph()) :: [plan_key()]
   defp topo_sort(keys, graph) do
     {sorted, _} =
       Enum.reduce(keys, {[], MapSet.new()}, fn key, {acc, visited} ->
@@ -46,8 +46,13 @@ defmodule Elmc.Backend.Wasm.FunctionOrder do
     sorted
   end
 
-  @spec visit(String.t(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), term()) :: Types.ir_expr()
-
+  @spec visit(
+          plan_key(),
+          dep_graph(),
+          MapSet.t(plan_key()),
+          MapSet.t(plan_key()),
+          [plan_key()]
+        ) :: {[plan_key()], MapSet.t(plan_key())}
   defp visit(key, graph, visited, stack, acc) do
     cond do
       not Map.has_key?(graph, key) ->

@@ -1,32 +1,40 @@
 defmodule Elmc.Backend.Pebble.FeatureFlags do
   @moduledoc false
-  alias Elmc.Types, as: Types
-
 
   alias ElmEx.IR
   alias Elmc.Backend.Pebble.{Reachability, Types}
   alias Elmc.Backend.Pebble.FeatureFlags.{CommandFlags, DrawFlags, EventFlags, MacroTable}
   alias Elmc.Backend.Pebble.FeatureFlags.DrawFlags.Compact
   alias Elmc.Backend.Pebble.Kinds.{CNames, Tables}
+  alias Elmc.Types, as: ElmcTypes
 
-  @spec compute(IR.t(), Types.msg_constructor_list(), Types.entry_module()) :: Types.feature_flags()
+  @spec compute(IR.t(), Types.msg_constructor_list(), Types.entry_module()) ::
+          Types.feature_flags()
   def compute(%IR{} = ir, msg_constructors, entry_module) do
     compute(ir, msg_constructors, entry_module, %{})
   end
 
-  @spec compute(IR.t(), Types.msg_constructor_list(), Types.entry_module(), map()) ::
-          Types.feature_flags()
+  @spec compute(
+          IR.t(),
+          Types.msg_constructor_list(),
+          Types.entry_module(),
+          ElmcTypes.compile_options() | map()
+        ) :: Types.feature_flags()
   def compute(%IR{} = ir, msg_constructors, entry_module, opts) when is_map(opts) do
     ir
     |> Reachability.reachable_call_targets(entry_module)
     |> compute_from(msg_constructors, opts)
   end
 
-  @spec compute_from(Types.call_target_set(), Types.msg_constructor_list()) :: Types.feature_flags()
+  @spec compute_from(Types.call_target_set(), Types.msg_constructor_list()) ::
+          Types.feature_flags()
   def compute_from(targets, msg_constructors), do: compute_from(targets, msg_constructors, %{})
 
-  @spec compute_from(Types.call_target_set(), Types.msg_constructor_list(), map()) ::
-          Types.feature_flags()
+  @spec compute_from(
+          Types.call_target_set(),
+          Types.msg_constructor_list(),
+          ElmcTypes.compile_options() | map()
+        ) :: Types.feature_flags()
   def compute_from(targets, msg_constructors, opts) when is_map(opts) do
     targets
     |> CommandFlags.compute()
@@ -35,21 +43,27 @@ defmodule Elmc.Backend.Pebble.FeatureFlags do
   end
 
   @spec augment_from_generated_c(Types.feature_flags(), String.t()) :: Types.feature_flags()
-  def augment_from_generated_c(flags, generated_c), do: augment_from_generated_c(flags, generated_c, %{})
+  def augment_from_generated_c(flags, generated_c),
+    do: augment_from_generated_c(flags, generated_c, %{})
 
-  @spec augment_from_generated_c(Types.feature_flags(), String.t(), map()) :: Types.feature_flags()
+  @spec augment_from_generated_c(
+          Types.feature_flags(),
+          String.t(),
+          ElmcTypes.compile_options() | map()
+        ) :: Types.feature_flags()
   def augment_from_generated_c(flags, generated_c, opts)
       when is_binary(generated_c) and is_map(opts) do
-    flags
-    |> augment_draw_from_generated_c(generated_c)
-    |> augment_command_flags_from_generated_c(generated_c)
-    |> then(fn updated -> Map.merge(updated, Compact.compute(updated, opts)) end)
+    updated =
+      flags
+      |> augment_draw_from_generated_c(generated_c)
+      |> augment_command_flags_from_generated_c(generated_c)
+
+    Map.merge(updated, Compact.compute(updated, opts))
   end
 
   def augment_from_generated_c(flags, _, _), do: flags
 
-  @spec augment_draw_from_generated_c(Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
-
+  @spec augment_draw_from_generated_c(Types.feature_flags(), String.t()) :: Types.feature_flags()
   defp augment_draw_from_generated_c(flags, generated_c) do
     if String.contains?(generated_c, "ELMC_RENDER_OP_TEXT_INT_WITH_FONT") do
       flags
@@ -60,8 +74,8 @@ defmodule Elmc.Backend.Pebble.FeatureFlags do
     end
   end
 
-  @spec augment_command_flags_from_generated_c(Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
-
+  @spec augment_command_flags_from_generated_c(Types.feature_flags(), String.t()) ::
+          Types.feature_flags()
   defp augment_command_flags_from_generated_c(flags, generated_c) do
     Tables.command_kinds()
     |> Enum.reduce(flags, fn {kind, _id}, acc ->

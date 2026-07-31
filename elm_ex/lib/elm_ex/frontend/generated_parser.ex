@@ -720,8 +720,6 @@ defmodule ElmEx.Frontend.GeneratedParser do
     end
   end
 
-  defp module_exposing_from_source(_source), do: nil
-
   @spec take_balanced_source(String.t(), non_neg_integer(), String.t()) ::
           {:ok, String.t(), String.t()} | :error
   defp take_balanced_source("", 0, acc), do: {:ok, acc, ""}

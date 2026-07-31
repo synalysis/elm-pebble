@@ -32,7 +32,13 @@ defmodule Elmc.Backend.C.Lower.NativeIntFold do
     |> propagate_inlines(plan, opts, uses, ret_reg)
   end
 
-  @spec propagate_inlines(Types.ir_expr(), integer(), keyword(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+  @spec propagate_inlines(
+          %{non_neg_integer() => String.t()},
+          FunctionPlan.t(),
+          keyword(),
+          %{non_neg_integer() => non_neg_integer()},
+          non_neg_integer() | nil
+        ) :: %{non_neg_integer() => String.t()}
 
   defp propagate_inlines(inlines, plan, opts, uses, ret_reg) do
     native_int_only = Keyword.get(opts, :native_int_only_regs, MapSet.new())
@@ -59,7 +65,7 @@ defmodule Elmc.Backend.C.Lower.NativeIntFold do
     end
   end
 
-  @spec inlineable_reg?(map(), Types.ir_expr()) :: boolean()
+  @spec inlineable_reg?(FunctionPlan.t(), non_neg_integer()) :: boolean()
 
   defp inlineable_reg?(%FunctionPlan{} = plan, reg) do
     case CLowerFunction.all_defining_instrs(plan, reg) do
@@ -111,7 +117,7 @@ defmodule Elmc.Backend.C.Lower.NativeIntFold do
 
   defp int_arith_operand_regs(_), do: []
 
-  @spec native_int_chain_operand?(map(), Types.ir_expr()) :: boolean()
+  @spec native_int_chain_operand?(FunctionPlan.t(), non_neg_integer()) :: boolean()
 
   defp native_int_chain_operand?(%FunctionPlan{} = plan, reg) when is_integer(reg) do
     case defining_instr(plan, reg) do
@@ -137,7 +143,8 @@ defmodule Elmc.Backend.C.Lower.NativeIntFold do
   @spec int_arith_c_expr(Types.instr_args(), Types.slot_map(), keyword()) :: String.t() | nil
   def int_arith_c_expr(args, slots, opts), do: int_arith_c_expr_dispatch(args, slots, opts)
 
-  @spec inline_expr(integer(), Types.ir_expr(), Types.ir_expr(), keyword()) :: Types.ir_expr()
+  @spec inline_expr(FunctionPlan.t(), non_neg_integer(), %{non_neg_integer() => String.t()}, keyword()) ::
+          String.t() | nil
 
   defp inline_expr(plan, reg, inlines, opts) do
     slots = Keyword.get(opts, :slots, %{})
@@ -157,7 +164,7 @@ defmodule Elmc.Backend.C.Lower.NativeIntFold do
     end
   end
 
-  @spec int_arith_c_expr_dispatch(map() | term(), Types.ir_expr() | term(), keyword() | term()) :: Types.ir_expr()
+  @spec int_arith_c_expr_dispatch(Types.instr_args(), Types.slot_map(), keyword()) :: String.t() | nil
 
   defp int_arith_c_expr_dispatch(%{kind: :add_const, lhs: lhs, value: value}, slots, opts) do
     "#{Instr.int_operand_ref(lhs, slots, opts)} + #{value}"
@@ -227,7 +234,11 @@ defmodule Elmc.Backend.C.Lower.NativeIntFold do
        else: "(#{trimmed})"
   end
 
-  @spec count_operand_uses(map(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+  @spec count_operand_uses(
+          FunctionPlan.t(),
+          MapSet.t(non_neg_integer()),
+          MapSet.t(non_neg_integer())
+        ) :: %{non_neg_integer() => non_neg_integer()}
 
   defp count_operand_uses(%FunctionPlan{blocks: blocks}, native_int_only, native_bool_only) do
     arith_uses =
@@ -273,7 +284,7 @@ defmodule Elmc.Backend.C.Lower.NativeIntFold do
     end)
   end
 
-  @spec operand_regs(map() | term(), Types.ir_expr() | term(), Types.ir_expr() | term()) :: Types.ir_expr()
+  @spec operand_regs(Types.t(), MapSet.t(non_neg_integer()), MapSet.t(non_neg_integer())) :: [non_neg_integer()]
 
   defp operand_regs(%{op: :int_arith, args: args}, native_int_only, _native_bool_only) do
     []
@@ -312,7 +323,9 @@ defmodule Elmc.Backend.C.Lower.NativeIntFold do
 
   defp operand_regs(_, _, _), do: []
 
-  @spec maybe_reg(Types.ir_expr(), [String.t()], String.t(), Types.ir_expr()) :: Types.ir_expr() | nil
+  @spec maybe_reg([non_neg_integer()], Types.instr_args(), atom(), MapSet.t(non_neg_integer())) :: [
+          non_neg_integer()
+        ]
 
   defp maybe_reg(regs, args, key, native_set) do
     case Map.get(args, key) do
@@ -324,7 +337,7 @@ defmodule Elmc.Backend.C.Lower.NativeIntFold do
     end
   end
 
-  @spec defining_instr(map(), Types.ir_expr()) :: Types.ir_expr()
+  @spec defining_instr(FunctionPlan.t(), non_neg_integer()) :: Types.t() | nil
 
   defp defining_instr(%FunctionPlan{blocks: blocks}, reg) do
     Enum.find_value(blocks, fn %{instrs: instrs} ->

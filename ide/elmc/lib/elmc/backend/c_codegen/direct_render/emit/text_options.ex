@@ -8,7 +8,29 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.TextOptions do
   alias Elmc.Backend.CCodegen.Host
   alias Elmc.Backend.CCodegen.Types
 
-  @spec packed_expr(Types.ir_expr()) :: Types.packed_text_options_result()
+  @type c_int_expr :: %{required(:op) => :c_int_expr, required(:value) => String.t()}
+
+  @type direct_native_if_expr :: %{
+          required(:op) => :direct_native_if,
+          required(:cond) => Types.ir_expr(),
+          required(:then_expr) => c_int_expr(),
+          required(:else_expr) => c_int_expr()
+        }
+
+  @type packed_text_option_expr :: c_int_expr() | direct_native_if_expr()
+
+  @type text_option_emit_expr ::
+          packed_text_option_expr()
+          | %{required(:op) => :unsupported}
+          | Types.ir_var_expr()
+          | %{required(:op) => :call, required(:name) => String.t(), required(:args) => [Types.ir_expr()]}
+
+  @type static_record_emit_expr ::
+          c_int_expr()
+          | %{required(:op) => :unsupported}
+          | %{required(:op) => :call, required(:name) => String.t(), required(:args) => [Types.ir_expr()]}
+
+  @spec packed_expr(Types.ir_expr()) :: {:ok, packed_text_option_expr()} | :error
   def packed_expr(value_expr) do
     case value_expr do
       %{op: :if, cond: cond, then_expr: then_expr, else_expr: else_expr} ->
@@ -55,7 +77,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.TextOptions do
   def packable_value?(value_expr),
     do: value_shape?(value_expr) and match?({:ok, _}, packed_expr(value_expr))
 
-  @spec expr(Types.ir_expr()) :: Types.ir_expr()
+  @spec expr(Types.ir_expr()) :: text_option_emit_expr()
   def expr(%{op: :c_int_expr, value: value} = expr) when is_binary(value), do: expr
 
   def expr(%{op: :qualified_call, target: target, args: args}) when is_binary(target) do
@@ -82,7 +104,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.TextOptions do
   def expr(%{op: :unsupported}), do: %{op: :unsupported}
   def expr(_options), do: %{op: :unsupported}
 
-  @spec arg(Types.ir_expr(), Types.compile_env(), Types.compile_counter()) :: Types.ir_expr()
+  @spec arg(Types.ir_expr(), Types.compile_env(), Types.compile_counter()) :: text_option_emit_expr()
   def arg(%{op: :var, name: name}, env, _counter) do
     case EnvBindings.native_int_binding(env, name) do
       ref when is_binary(ref) ->
@@ -112,7 +134,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.TextOptions do
     end
   end
 
-  @spec packed_from_boxed_ref(Types.binding_name(), Types.compile_env()) :: Types.ir_expr()
+  @spec packed_from_boxed_ref(Types.binding_name(), Types.compile_env()) :: c_int_expr()
   defp packed_from_boxed_ref(name, env) do
     case Map.get(env, name) do
       ref when is_binary(ref) ->
@@ -223,7 +245,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.TextOptions do
     :ok
   end
 
-  @spec register_packed_value_aliases(Types.expr(), Types.ir_expr()) :: Types.ir_expr()
+  @spec register_packed_value_aliases(Types.expr(), String.t()) :: :ok
 
   defp register_packed_value_aliases(expr, ref) do
     case packed_expr(expr) do
@@ -244,7 +266,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.TextOptions do
     end
   end
 
-  @spec hoisted_alias_exprs(map() | Types.expr()) :: Types.ir_expr()
+  @spec hoisted_alias_exprs(Types.expr()) :: [Types.expr()]
 
   defp hoisted_alias_exprs(%{op: :if, then_expr: then_expr, else_expr: else_expr}) do
     case {packed_c_value(then_expr), packed_c_value(else_expr)} do
@@ -267,7 +289,8 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.TextOptions do
     |> Kernel.==(["alignment", "overflow"])
   end
 
-  @spec expr_from_static_record(keyword()) :: Types.ir_expr()
+  @spec expr_from_static_record(%{optional(atom()) => term(), op: :record_literal | :record_update}) ::
+          static_record_emit_expr()
 
   defp expr_from_static_record(options) do
     alignment =

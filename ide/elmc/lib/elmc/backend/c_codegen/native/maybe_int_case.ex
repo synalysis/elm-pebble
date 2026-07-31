@@ -124,7 +124,7 @@ defmodule Elmc.Backend.CCodegen.Native.MaybeIntCase do
     end
   end
 
-  @spec build_just_branch_env(Types.compile_env(), Types.ir_expr(), Types.ir_expr(), Types.expr(), list(), Types.ir_expr()) :: Types.ir_expr()
+  @spec build_just_branch_env(Types.compile_env(), Types.case_branch(), String.t(), Types.expr(), Types.case_branches(), Types.compile_counter()) :: {Types.compile_env(), String.t(), Types.compile_counter()}
 
   defp build_just_branch_env(env, branch, subject_ref, subject_expr, branches, counter) do
     if Patterns.maybe_unwrap_just_case?(branches) and var_branch?(branch) do
@@ -148,7 +148,7 @@ defmodule Elmc.Backend.CCodegen.Native.MaybeIntCase do
     end
   end
 
-  @spec put_case_subject_payload_type(Types.compile_env(), Types.expr()) :: Types.ir_expr()
+  @spec put_case_subject_payload_type(Types.compile_env(), Types.expr()) :: Types.compile_env()
 
   defp put_case_subject_payload_type(env, subject_expr) do
     case Expr.maybe_unwrapped_record_type(subject_expr, env) do

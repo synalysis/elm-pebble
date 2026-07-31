@@ -375,15 +375,10 @@ defmodule Elmc.Backend.Plan.Lower.Lambda do
     Enum.reduce_while(Enum.with_index(names), {:ok, ctx, b}, fn {name, idx}, {:ok, ctx_acc, b_acc} ->
       param = "__letrec_cap_#{idx}__"
 
-      case Builder.get_or_load_param(b_acc, idx, param) do
-        {reg, b1} when is_integer(reg) ->
-          ctx1 = Context.put_local(ctx_acc, name, reg)
-          b2 = Builder.bind_local(b1, name, reg)
-          {:cont, {:ok, ctx1, b2}}
-
-        _ ->
-          {:halt, :unsupported}
-      end
+      {reg, b1} = Builder.get_or_load_param(b_acc, idx, param)
+      ctx1 = Context.put_local(ctx_acc, name, reg)
+      b2 = Builder.bind_local(b1, name, reg)
+      {:cont, {:ok, ctx1, b2}}
     end)
   end
 
@@ -483,7 +478,7 @@ defmodule Elmc.Backend.Plan.Lower.Lambda do
          root when is_binary(root) <- Context.root_function_name(parent_ctx),
          %{type: type} <- Map.get(parent_ctx.decl_map, {module, root}, %{}),
          arg_types when is_list(arg_types) <- TypeParsing.function_arg_types(type),
-         offset when is_integer(offset) <- parent_ctx.curried_type_offset || 0 do
+         offset when is_integer(offset) <- parent_ctx.curried_type_offset do
       bind_lambda_arg_types(lambda_args, arg_types, offset)
     else
       _ -> %{}

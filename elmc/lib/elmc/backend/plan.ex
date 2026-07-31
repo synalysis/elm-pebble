@@ -6,7 +6,6 @@ defmodule Elmc.Backend.Plan do
   """
   alias Elmc.Backend.Plan.Types, as: Types
 
-
   alias Elmc.Backend.C.Lower.NativeReturn
   alias Elmc.Backend.CCodegen.Native.FunctionCall, as: NativeFunctionCall
   alias Elmc.Backend.CCodegen.RcRequired
@@ -51,8 +50,11 @@ defmodule Elmc.Backend.Plan do
     end
   end
 
-  @spec primary_lowered_cache_get(String.t()) :: Types.ir_expr()
+  @type primary_cache_key :: {String.t(), String.t()}
+  @type primary_cache_entry :: {:ok, boolean()} | :pending
 
+  @spec primary_lowered_cache_get(primary_cache_key()) ::
+          {:ok, boolean()} | :pending | :miss
   defp primary_lowered_cache_get(key) do
     case Map.get(Process.get(:elmc_plan_primary_lowered_cache, %{}), key) do
       {:ok, _} = hit -> hit
@@ -61,8 +63,7 @@ defmodule Elmc.Backend.Plan do
     end
   end
 
-  @spec primary_lowered_cache_put(String.t(), integer()) :: Types.ir_expr()
-
+  @spec primary_lowered_cache_put(primary_cache_key(), primary_cache_entry()) :: term()
   defp primary_lowered_cache_put(key, value) do
     cache = Process.get(:elmc_plan_primary_lowered_cache, %{})
     Process.put(:elmc_plan_primary_lowered_cache, Map.put(cache, key, value))
@@ -72,8 +73,7 @@ defmodule Elmc.Backend.Plan do
   # leaving native return metadata uncached even though the function value-returns.
   # Refresh at most once per key: annotate may uncache non-native functions, and
   # re-lowering those on every primary_lowered? hit is pathological (O(n) emit hang).
-  @spec maybe_refresh_native_scalar_metadata(map(), String.t(), Types.decl_map()) :: Types.ir_expr() | nil
-
+  @spec maybe_refresh_native_scalar_metadata(map(), String.t(), Types.decl_map()) :: :ok
   defp maybe_refresh_native_scalar_metadata(decl, module_name, decl_map) when is_map(decl) do
     name = Map.get(decl, :name, "")
     key = {module_name, name}
@@ -111,7 +111,11 @@ defmodule Elmc.Backend.Plan do
   defdelegate plan_ir_mode(opts), to: Elmc.Backend.Plan.Shadow, as: :plan_ir_mode
   defdelegate strict_primary?(opts), to: Elmc.Backend.Plan.StrictPolicy, as: :strict?
   defdelegate default_plan_ir_mode(), to: Elmc.Backend.Plan.Defaults, as: :plan_ir_mode
-  defdelegate shadow_verify(decl, module, decl_map, opts), to: Elmc.Backend.Plan.Shadow, as: :maybe_verify_function
+
+  defdelegate shadow_verify(decl, module, decl_map, opts),
+    to: Elmc.Backend.Plan.Shadow,
+    as: :maybe_verify_function
+
   defdelegate shadow_stats(), to: Elmc.Backend.Plan.Shadow, as: :shadow_stats
   defdelegate reset_shadow_stats(), to: Elmc.Backend.Plan.Shadow, as: :reset_stats
 

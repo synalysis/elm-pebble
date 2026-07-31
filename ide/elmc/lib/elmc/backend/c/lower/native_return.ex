@@ -36,7 +36,13 @@ defmodule Elmc.Backend.C.Lower.NativeReturn do
                                 :catch_end
                               ])
 
-  @spec annotate(FunctionPlan.t(), Types.function_decl()) :: FunctionPlan.t()
+  # Wasm lower passes a lightweight `%{type: "Int" | "Bool"}` probe; C lower
+  # passes a full IR declaration. Both only need `:type` for scalar_return_kind/1.
+  @type annotate_decl ::
+          Types.function_decl()
+          | %{optional(:type) => String.t() | nil, optional(atom()) => term()}
+
+  @spec annotate(FunctionPlan.t(), annotate_decl()) :: FunctionPlan.t()
   def annotate(%FunctionPlan{} = plan, decl) do
     case scalar_return_kind(decl) do
       nil ->

@@ -183,7 +183,7 @@ defmodule Ide.Debugger.PendingHttpFollowups do
     end
   end
 
-  @spec run_flight_locked(term(), String.t(), String.t(), term(), term(), term(), term()) :: term()
+  @spec run_flight_locked(String.t(), atom(), String.t(), term(), map(), term(), term()) :: :ok
 
   defp run_flight_locked(
          project_slug,
@@ -227,7 +227,7 @@ defmodule Ide.Debugger.PendingHttpFollowups do
   @spec flight_fetch_timeout_ms() :: pos_integer()
   defp flight_fetch_timeout_ms, do: @flight_fetch_timeout_ms
 
-  @spec execute_flight_http(term(), String.t(), term(), term()) :: term()
+  @spec execute_flight_http(map(), atom(), map(), term()) :: term()
 
   defp execute_flight_http(state, target, command, ctx) do
     RuntimeFollowups.execute_http_command(state, target, command, ctx)
@@ -292,7 +292,7 @@ defmodule Ide.Debugger.PendingHttpFollowups do
     end
   end
 
-  @spec completed_flight?(term(), String.t()) :: boolean()
+  @spec completed_flight?(String.t(), {String.t(), String.t() | nil}) :: boolean()
 
   defp completed_flight?(project_slug, key) do
     project_slug
@@ -329,7 +329,7 @@ defmodule Ide.Debugger.PendingHttpFollowups do
     :ok
   end
 
-  @spec http_in_flight?(String.t()) :: boolean()
+  @spec http_in_flight?({String.t(), String.t() | nil}) :: boolean()
 
   defp http_in_flight?(key) do
     ensure_in_flight_table()
@@ -340,14 +340,14 @@ defmodule Ide.Debugger.PendingHttpFollowups do
     end
   end
 
-  @spec mark_http_in_flight(String.t()) :: term()
+  @spec mark_http_in_flight({String.t(), String.t() | nil}) :: true
 
   defp mark_http_in_flight(key) do
     ensure_in_flight_table()
     :ets.insert(@in_flight_table, {key, true})
   end
 
-  @spec clear_http_in_flight(String.t()) :: term()
+  @spec clear_http_in_flight({String.t(), String.t() | nil}) :: true
 
   defp clear_http_in_flight(key) do
     case :ets.whereis(@in_flight_table) do

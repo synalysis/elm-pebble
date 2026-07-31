@@ -60,7 +60,7 @@ defmodule Elmc.Backend.Plan.ThinDelegate do
   defp kernel_call?(name) when is_binary(name),
     do: name in @kernel_call_names or String.starts_with?(name, "__")
 
-  @spec parse_qualified_target(String.t() | term()) :: Types.ir_expr()
+  @spec parse_qualified_target(String.t() | term()) :: {String.t(), String.t()} | :error
 
   defp parse_qualified_target(target) when is_binary(target) do
     case String.split(target, ".") do

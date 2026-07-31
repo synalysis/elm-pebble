@@ -1,7 +1,5 @@
 defmodule Elmc.Backend.Wasm.ImportSignatures do
   @moduledoc false
-  alias Elmc.Types, as: Types
-
 
   alias Elmc.Backend.Wasm.Types, as: WasmTypes
 
@@ -199,7 +197,7 @@ defmodule Elmc.Backend.Wasm.ImportSignatures do
   @spec function_result_sexpr() :: String.t()
   def function_result_sexpr, do: "(result i32 i32)"
 
-  @spec builtin_import_param_count(Types.ir_expr() | term()) :: Types.ir_expr()
+  @spec builtin_import_param_count(String.t() | term()) :: non_neg_integer()
 
   defp builtin_import_param_count("runtime." <> suffix) do
     case builtin_default_arity("runtime." <> suffix) do
@@ -210,7 +208,7 @@ defmodule Elmc.Backend.Wasm.ImportSignatures do
 
   defp builtin_import_param_count(_), do: 2
 
-  @spec builtin_default_arity(Types.ir_expr()) :: Types.ir_expr()
+  @spec builtin_default_arity(String.t()) :: non_neg_integer() | nil
 
   defp builtin_default_arity("runtime." <> suffix) do
     suffix
@@ -223,7 +221,7 @@ defmodule Elmc.Backend.Wasm.ImportSignatures do
     end)
   end
 
-  @spec safe_atom(String.t()) :: Types.ir_expr()
+  @spec safe_atom(String.t()) :: {:ok, atom()} | :error
 
   defp safe_atom(name) do
     atom = String.to_existing_atom(name)

@@ -40,7 +40,7 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.FilterMapRowDrop do
   end
 
 
-  @spec parse(map() | term()) :: Types.ir_expr()
+  @spec parse(map() | term()) :: {:ok, String.t(), String.t(), String.t(), String.t()} | :error
 
   defp parse(%{op: :let_in, name: "kept", value_expr: kept_expr, in_expr: rest}) do
     with {:ok, rows_var, row_full, row_cells} <- parse_filter_map_rows(kept_expr),
@@ -51,7 +51,7 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.FilterMapRowDrop do
 
   defp parse(_), do: :error
 
-  @spec parse_filter_map_rows(map() | term()) :: Types.ir_expr()
+  @spec parse_filter_map_rows(map() | term()) :: {:ok, String.t(), String.t(), String.t()} | :error
 
   defp parse_filter_map_rows(%{
          op: :qualified_call,
@@ -67,7 +67,7 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.FilterMapRowDrop do
 
   defp parse_filter_map_rows(_), do: :error
 
-  @spec parse_filter_lambda(map() | term()) :: Types.ir_expr()
+  @spec parse_filter_lambda(map() | term()) :: {:ok, String.t(), String.t()} | :error
 
   defp parse_filter_lambda(%{
          op: :lambda,
@@ -96,7 +96,7 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.FilterMapRowDrop do
 
   defp parse_filter_lambda(_), do: :error
 
-  @spec parse_range_zero_to_rows_minus_one(map() | term()) :: Types.ir_expr()
+  @spec parse_range_zero_to_rows_minus_one(map() | term()) :: {:ok, String.t()} | :error
 
   defp parse_range_zero_to_rows_minus_one(%{
          op: :qualified_call,
@@ -116,7 +116,7 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.FilterMapRowDrop do
 
   defp parse_range_zero_to_rows_minus_one(_), do: :error
 
-  @spec parse_cleared_concat(map() | term()) :: Types.ir_expr()
+  @spec parse_cleared_concat(map() | term()) :: {:ok, String.t()} | :error
 
   defp parse_cleared_concat(%{
          op: :let_in,
@@ -143,7 +143,7 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.FilterMapRowDrop do
 
   defp parse_cleared_concat(_), do: :error
 
-  @spec parse_concat_repeat_zero_rows(map() | term()) :: Types.ir_expr()
+  @spec parse_concat_repeat_zero_rows(map() | term()) :: {:ok, String.t()} | :error
 
   defp parse_concat_repeat_zero_rows(%{
          op: :qualified_call,
@@ -170,7 +170,7 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.FilterMapRowDrop do
 
   defp parse_concat_repeat_zero_rows(_), do: :error
 
-  @spec parse_zero_row_repeat(map() | term()) :: Types.ir_expr()
+  @spec parse_zero_row_repeat(map() | term()) :: {:ok, String.t()} | :error
 
   defp parse_zero_row_repeat(%{
          op: :qualified_call,
@@ -182,7 +182,7 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.FilterMapRowDrop do
 
   defp parse_zero_row_repeat(_), do: :error
 
-  @spec row_full_matches?(Types.decl_map(), String.t(), Types.ir_expr(), Types.ir_expr()) :: boolean()
+  @spec row_full_matches?(Types.decl_map(), String.t(), String.t(), String.t()) :: boolean()
 
   defp row_full_matches?(decl_map, module_name, row_full, row_cells) do
     case Map.get(decl_map, FusionSupport.callee_key(module_name, row_full)) do
@@ -207,7 +207,8 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.FilterMapRowDrop do
     end
   end
 
-  @spec row_cells_matches?(Types.decl_map(), String.t(), Types.ir_expr(), Types.ir_expr()) :: boolean()
+  @spec row_cells_matches?(Types.decl_map(), String.t(), String.t(), String.t()) ::
+          {:ok, String.t()} | :error
 
   defp row_cells_matches?(decl_map, module_name, row_cells, cols_var) do
     case Map.get(decl_map, FusionSupport.callee_key(module_name, row_cells)) do
@@ -242,7 +243,7 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.FilterMapRowDrop do
     end
   end
 
-  @spec range_zero_to_cols_minus_one?(map() | term(), Types.ir_expr() | term()) :: boolean()
+  @spec range_zero_to_cols_minus_one?(map() | term(), String.t() | term()) :: boolean()
 
   defp range_zero_to_cols_minus_one?(%{
          op: :qualified_call,
@@ -262,7 +263,7 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.FilterMapRowDrop do
 
   defp range_zero_to_cols_minus_one?(_, _), do: false
 
-  @spec emit(String.t(), String.t(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+  @spec emit(String.t(), String.t(), integer(), integer()) :: String.t()
 
   defp emit(module_name, name, rows, cols) do
     c_prefix = Util.module_fn_name(module_name, name)

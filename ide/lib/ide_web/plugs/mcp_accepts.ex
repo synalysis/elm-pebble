@@ -20,7 +20,7 @@ defmodule IdeWeb.Plugs.McpAccepts do
     end
   end
 
-  @spec not_acceptable_body(integer()) :: term()
+  @spec not_acceptable_body(Plug.Conn.t()) :: map()
 
   defp not_acceptable_body(conn) do
     %{

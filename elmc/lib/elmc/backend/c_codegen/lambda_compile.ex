@@ -394,7 +394,7 @@ defmodule Elmc.Backend.CCodegen.LambdaCompile do
     Regex.match?(~r/(?:\W|^)#{Regex.escape(param)}(?:\W|$)/, body)
   end
 
-  @spec propagate_lambda_metadata(Types.compile_env(), Types.compile_env(), list()) :: Types.ir_expr()
+  @spec propagate_lambda_metadata(Types.compile_env(), Types.compile_env(), [String.t()]) :: Types.compile_env()
 
   defp propagate_lambda_metadata(body_env, parent_env, names) when is_list(names) do
     keys = Enum.map(names, &EnvBindings.binding_key/1)
@@ -425,7 +425,7 @@ defmodule Elmc.Backend.CCodegen.LambdaCompile do
     |> Map.put(:__boxed_string_bindings__, boxed_strings)
   end
 
-  @spec normalize_lambda_type(Types.ir_expr() | String.t()) :: Types.ir_expr()
+  @spec normalize_lambda_type(term() | String.t()) :: String.t() | nil
 
   defp normalize_lambda_type(nil), do: nil
 
@@ -445,7 +445,7 @@ defmodule Elmc.Backend.CCodegen.LambdaCompile do
     end
   end
 
-  @spec identity_arg_release_stmts(Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+  @spec identity_arg_release_stmts(list(), Types.expr()) :: String.t()
 
   defp identity_arg_release_stmts(_lambda_arg_bindings, _body), do: ""
 end

@@ -58,7 +58,7 @@ defmodule Elmc.Backend.Plan.Lower.List do
     end
   end
 
-  @spec compile_static_record_array(list(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+  @spec compile_static_record_array(list(), Context.t(), Builder.t()) :: Types.compile_result_required()
 
   defp compile_static_record_array(items, ctx, b) do
     scratch = Context.for_branch_arm(ctx)
@@ -68,7 +68,7 @@ defmodule Elmc.Backend.Plan.Lower.List do
     end
   end
 
-  @spec compile_static_values_array(list(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+  @spec compile_static_values_array(list(), Context.t(), Builder.t()) :: Types.compile_result_required()
 
   defp compile_static_values_array(items, ctx, b) do
     scratch = Context.for_branch_arm(ctx)
@@ -78,7 +78,7 @@ defmodule Elmc.Backend.Plan.Lower.List do
     end
   end
 
-  @spec compile_item_regs(list(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+  @spec compile_item_regs(list(), Context.t(), Builder.t()) :: {:ok, [Types.reg()], Builder.t()} | :unsupported
 
   defp compile_item_regs(items, ctx, b) do
     operand_ctx = Context.for_branch_arm(ctx)
@@ -91,7 +91,7 @@ defmodule Elmc.Backend.Plan.Lower.List do
     end)
   end
 
-  @spec compile_literal_cons(list(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+  @spec compile_literal_cons(list(), Context.t(), Builder.t()) :: Types.compile_result_required()
 
   defp compile_literal_cons(items, ctx, b) do
     operand_ctx = Context.for_branch_arm(ctx)
@@ -113,7 +113,7 @@ defmodule Elmc.Backend.Plan.Lower.List do
     end
   end
 
-  @spec static_int_literal_values(list()) :: Types.ir_expr()
+  @spec static_int_literal_values(list()) :: {:ok, [integer()]} | :error
 
   defp static_int_literal_values(items) do
     items
@@ -130,7 +130,7 @@ defmodule Elmc.Backend.Plan.Lower.List do
     end
   end
 
-  @spec static_float_literal_values(list()) :: Types.ir_expr()
+  @spec static_float_literal_values(list()) :: {:ok, [float()]} | :error
 
   defp static_float_literal_values(items) do
     items
@@ -147,7 +147,7 @@ defmodule Elmc.Backend.Plan.Lower.List do
     end
   end
 
-  @spec static_tuple2_int_literal_values(list()) :: Types.ir_expr()
+  @spec static_tuple2_int_literal_values(list()) :: {:ok, [{integer(), integer()}]} | :error
 
   defp static_tuple2_int_literal_values(items) do
     items

@@ -283,7 +283,7 @@ defmodule Elmx.Backend.QualifiedPartials do
     end
   end
 
-  @spec unary(integer(), Types.elm_value()) :: Types.elm_value()
+  @spec unary(String.t(), String.t()) :: Types.rewrite_result()
 
   defp unary(function, param) do
     {:ok,
@@ -298,7 +298,7 @@ defmodule Elmx.Backend.QualifiedPartials do
      }}
   end
 
-  @spec unary_bound(integer(), Types.elm_value(), Types.elm_value()) :: Types.elm_value()
+  @spec unary_bound(String.t(), [Types.ir_expr()], String.t()) :: Types.rewrite_result()
 
   defp unary_bound(function, fixed, param) do
     {:ok,
@@ -313,7 +313,7 @@ defmodule Elmx.Backend.QualifiedPartials do
      }}
   end
 
-  @spec binary(integer(), Types.elm_value(), Types.elm_value()) :: Types.elm_value()
+  @spec binary(String.t(), String.t(), String.t()) :: Types.rewrite_result()
 
   defp binary(function, p1, p2) do
     {:ok,
@@ -328,7 +328,7 @@ defmodule Elmx.Backend.QualifiedPartials do
      }}
   end
 
-  @spec binary_bound(integer(), Types.elm_value(), Types.elm_value()) :: Types.elm_value()
+  @spec binary_bound(String.t(), [Types.ir_expr()], String.t()) :: Types.rewrite_result()
 
   defp binary_bound(function, fixed, param) do
     {:ok,
@@ -343,7 +343,7 @@ defmodule Elmx.Backend.QualifiedPartials do
      }}
   end
 
-  @spec ternary(integer(), Types.elm_value(), Types.elm_value(), Types.elm_value()) :: Types.elm_value()
+  @spec ternary(String.t(), String.t(), String.t(), String.t()) :: Types.rewrite_result()
 
   defp ternary(function, p1, p2, p3) do
     {:ok,
@@ -362,7 +362,7 @@ defmodule Elmx.Backend.QualifiedPartials do
      }}
   end
 
-  @spec ternary_bound(integer(), Types.elm_value(), Types.elm_value()) :: Types.elm_value()
+  @spec ternary_bound(String.t(), [Types.ir_expr()], String.t() | [String.t()]) :: Types.rewrite_result()
 
   defp ternary_bound(function, fixed, params) do
     {:ok,

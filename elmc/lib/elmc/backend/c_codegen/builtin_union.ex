@@ -115,7 +115,7 @@ defmodule Elmc.Backend.CCodegen.BuiltinUnion do
 
   def try_compile_tuple2(_expr, _env, _counter), do: :error
 
-  @spec union_out_target(Types.compile_env(), Types.ir_expr()) :: Types.ir_expr()
+  @spec union_out_target(Types.compile_env(), Types.compile_counter()) :: {String.t(), Types.compile_counter(), boolean()}
 
   defp union_out_target(env, counter) do
     {out, counter} = RcRuntimeEmit.compile_result_slot(env, counter)

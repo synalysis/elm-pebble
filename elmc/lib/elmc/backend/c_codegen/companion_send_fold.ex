@@ -1,8 +1,5 @@
 defmodule Elmc.Backend.CCodegen.CompanionSendFold do
   @moduledoc false
-  alias Elmc.Backend.CCodegen.Types, as: Types
-
-
   alias Elmc.Backend.CCodegen.Types
 
   @spec fold_wire_params(Types.ir_expr()) :: {:ok, integer(), integer()} | :error
@@ -20,7 +17,7 @@ defmodule Elmc.Backend.CCodegen.CompanionSendFold do
     end
   end
 
-  @spec union_tag_from_msg(map() | term()) :: Types.ir_expr()
+  @spec union_tag_from_msg(map() | term()) :: {:ok, integer()} | :error
 
   defp union_tag_from_msg(%{op: :int_literal, value: tag}) when is_integer(tag), do: {:ok, tag}
 
@@ -39,7 +36,7 @@ defmodule Elmc.Backend.CCodegen.CompanionSendFold do
 
   defp union_tag_from_msg(_), do: :error
 
-  @spec lookup_constructor_tag(String.t()) :: Types.ir_expr()
+  @spec lookup_constructor_tag(String.t()) :: {:ok, integer()} | :error
 
   defp lookup_constructor_tag(target) do
     tags = Process.get(:elmc_constructor_tags, %{})
@@ -50,7 +47,8 @@ defmodule Elmc.Backend.CCodegen.CompanionSendFold do
     end
   end
 
-  @spec fold_union_int_lookup(String.t(), String.t(), String.t(), Types.decl_map()) :: Types.ir_expr()
+  @spec fold_union_int_lookup(String.t(), String.t(), integer(), Types.decl_map()) ::
+          {:ok, integer()} | :error
 
   defp fold_union_int_lookup(module, name, union_tag, decl_map) do
     with %{expr: expr} <- Map.get(decl_map, {module, name}),
@@ -64,7 +62,7 @@ defmodule Elmc.Backend.CCodegen.CompanionSendFold do
     end
   end
 
-  @spec parse_case(map() | term()) :: Types.ir_expr()
+  @spec parse_case(map() | term()) :: {:ok, list()} | :error
 
   defp parse_case(%{op: :case, branches: branches}), do: {:ok, branches}
   defp parse_case(%{op: :let_in, in_expr: body}), do: parse_case(body)
@@ -79,6 +77,4 @@ defmodule Elmc.Backend.CCodegen.CompanionSendFold do
         _ -> false
       end)
   end
-
-  defp int_literal_branches?(_), do: false
 end

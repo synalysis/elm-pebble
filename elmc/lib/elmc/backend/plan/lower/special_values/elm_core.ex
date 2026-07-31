@@ -42,7 +42,7 @@ defmodule Elmc.Backend.Plan.Lower.SpecialValues.ElmCore do
     end
   end
 
-  @spec display_name(String.t()) :: Types.ir_expr()
+  @spec display_name(String.t()) :: String.t()
 
   defp display_name(target) do
     case String.split(target, ".") do

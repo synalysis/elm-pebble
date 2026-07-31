@@ -5,6 +5,7 @@ defmodule Elmc.Backend.CCodegen.SchemaRegistry do
 
   alias Elmc.Backend.CCodegen.Host
   alias Elmc.Backend.CCodegen.IRQueries
+  alias Elmc.Backend.CCodegen.StoragePlan
   alias Elmc.Backend.CCodegen.Types
   alias ElmEx.IR
 

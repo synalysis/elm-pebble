@@ -1,16 +1,16 @@
 defmodule Elmc.Backend.Pebble.IRAnalysis.Build do
   @moduledoc false
-  alias Elmc.Types, as: Types
-
 
   alias ElmEx.IR
   alias Elmc.Backend.Pebble.{AccelConfig, FeatureFlags, Types}
   alias Elmc.Backend.Pebble.IRAnalysis.Msg
+  alias Elmc.Types, as: ElmcTypes
 
   @spec analyze(IR.t(), Types.entry_module()) :: Types.shim_analysis()
   def analyze(%IR{} = ir, entry_module), do: analyze(ir, entry_module, %{})
 
-  @spec analyze(IR.t(), Types.entry_module(), map()) :: Types.shim_analysis()
+  @spec analyze(IR.t(), Types.entry_module(), ElmcTypes.compile_options() | map()) ::
+          Types.shim_analysis()
   def analyze(%IR{} = ir, entry_module, opts) when is_map(opts) do
     msg_constructors = Msg.constructors(ir, entry_module)
 

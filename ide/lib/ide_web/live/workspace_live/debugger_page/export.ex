@@ -174,20 +174,14 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage.Export do
     })
   end
 
-  @spec session_running?(debugger_state_map() | nil) :: boolean() | nil
-  defp session_running?(state) do
-    if is_map(state), do: SessionState.running?(state)
-  end
+  @spec session_running?(debugger_state_map()) :: boolean()
+  defp session_running?(state), do: SessionState.running?(state)
 
-  @spec session_event_count(debugger_state_map() | nil) :: non_neg_integer() | nil
-  defp session_event_count(state) do
-    if is_map(state), do: length(state.events)
-  end
+  @spec session_event_count(debugger_state_map()) :: non_neg_integer()
+  defp session_event_count(state), do: length(state.events)
 
-  @spec watch_profile_id(debugger_state_map() | nil, Project.t() | nil) :: String.t() | nil
-  defp watch_profile_id(state, project) do
-    if is_map(state), do: WatchProfiles.state_id(state, project)
-  end
+  @spec watch_profile_id(debugger_state_map(), Project.t() | nil) :: String.t() | nil
+  defp watch_profile_id(state, project), do: WatchProfiles.state_id(state, project)
 
   @spec selected_seq_from_assigns(assigns()) :: non_neg_integer() | nil
   defp selected_seq_from_assigns(assigns) do

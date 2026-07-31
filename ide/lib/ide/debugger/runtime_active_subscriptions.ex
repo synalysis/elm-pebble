@@ -81,7 +81,7 @@ defmodule Ide.Debugger.RuntimeActiveSubscriptions do
 
     Enum.filter(active, fn command ->
       target = command_target(command)
-      is_binary(target) and target_matches_patterns?(target, normalized_patterns)
+      target_matches_patterns?(target, normalized_patterns)
     end)
   end
 

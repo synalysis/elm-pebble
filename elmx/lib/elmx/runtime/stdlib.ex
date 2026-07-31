@@ -322,7 +322,7 @@ defmodule Elmx.Runtime.Stdlib do
   def call("__append__", arg_code), do: binary_op("++", arg_code)
   def call(name, arg_code), do: "raise \"unsupported internal call #{name}(#{arg_code})\""
 
-  @spec binary_op(atom(), Types.elm_value()) :: Types.elm_value()
+  @spec binary_op(String.t(), String.t()) :: String.t()
 
   defp binary_op(op, arg_code) do
     case split_top_level_args(arg_code) do

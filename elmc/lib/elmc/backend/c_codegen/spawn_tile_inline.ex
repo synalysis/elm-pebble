@@ -1,6 +1,5 @@
 defmodule Elmc.Backend.CCodegen.SpawnTileInline do
   @moduledoc false
-  alias Elmc.Backend.CCodegen.Types, as: Types
 
 
   @spec emit(String.t(), String.t(), pos_integer(), String.t() | nil) :: String.t()
@@ -25,7 +24,7 @@ defmodule Elmc.Backend.CCodegen.SpawnTileInline do
     |> String.trim()
   end
 
-  @spec emit_cycle_body(Types.ir_expr(), non_neg_integer(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+  @spec emit_cycle_body(String.t(), non_neg_integer(), String.t(), String.t()) :: String.t()
 
   defp emit_cycle_body(buf_var, count, seed_src, prefix) do
     """

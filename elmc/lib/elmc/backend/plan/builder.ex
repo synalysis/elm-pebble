@@ -579,7 +579,7 @@ defmodule Elmc.Backend.Plan.Builder do
     b1
   end
 
-  @spec emit_ret(t(), Types.reg() | :fn_out) :: t()
+  @spec emit_ret(t(), Types.reg() | Types.result_slot()) :: t()
   def emit_ret(b, reg) do
     current = %{b.current_block | terminator: {:ret, reg}}
     %{b | current_block: current}
@@ -677,7 +677,7 @@ defmodule Elmc.Backend.Plan.Builder do
     %{b1 | catch_depth: max(0, b.catch_depth - 1)}
   end
 
-  @spec to_function_plan(t()) :: FunctionPlan.t()
+  @spec to_function_plan(t()) :: FunctionPlan.t() | map()
   def to_function_plan(b) do
     sealed_current = seal_block_instrs(b.current_block)
 

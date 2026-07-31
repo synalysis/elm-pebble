@@ -202,6 +202,8 @@ defmodule Elmc.Backend.CCodegen.Types do
           optional(:__pattern_bind_cleanup__) => String.t(),
           optional(:__bind_counter__) => non_neg_integer(),
           optional(:__letrec_forward_refs__) => %{String.t() => String.t()},
+          optional(:__direct_param_refs__) => MapSet.t(String.t()),
+          optional(:__direct_emit_target__) => direct_emit_target(),
           optional(atom()) => ir_field_value()
         }
 
@@ -370,11 +372,11 @@ defmodule Elmc.Backend.CCodegen.Types do
   @type native_function_arg_kind :: :native_int | :native_bool | :boxed
 
   @type function_target :: {String.t(), String.t(), [ir_expr()]}
-  @type direct_emit_target :: {String.t(), String.t() | nil, [ir_expr()]}
+  @type direct_emit_target :: {String.t(), String.t() | nil, [String.t()] | [ir_expr()]}
   @type qualified_function_target :: {String.t(), String.t()} | nil
   @type qualified_type_target :: {String.t(), String.t()} | nil
 
-  @type codegen_opts :: Elmc.Types.compile_options()
+  @type codegen_opts :: Elmc.Types.compile_options() | map()
   @type file_error :: Elmc.Types.file_error()
 
   @type msg_constructor_pair :: {String.t(), non_neg_integer()}

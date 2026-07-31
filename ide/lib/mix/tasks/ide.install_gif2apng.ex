@@ -34,7 +34,7 @@ defmodule Mix.Tasks.Ide.InstallGif2apng do
     end
   end
 
-  @spec check!(integer()) :: term()
+  @spec check!(String.t()) :: :ok
 
   defp check!(bin) do
     if File.exists?(bin) and not File.dir?(bin) do
@@ -48,7 +48,7 @@ defmodule Mix.Tasks.Ide.InstallGif2apng do
     end
   end
 
-  @spec install!(term(), term(), integer()) :: term()
+  @spec install!(String.t(), String.t(), String.t()) :: :ok
 
   defp install!(root, script, bin) do
     {output, status} = System.cmd("bash", [script], cd: root, stderr_to_stdout: true)

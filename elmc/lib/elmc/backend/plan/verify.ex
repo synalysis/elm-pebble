@@ -289,5 +289,6 @@ defmodule Elmc.Backend.Plan.Verify do
     end
   end
 
+  @spec verify_fail!(atom(), keyword()) :: no_return()
   defp verify_fail!(reason, meta), do: throw({:verify_fail, reason, meta})
 end

@@ -1,16 +1,15 @@
 defmodule Elmc.Backend.Pebble.FeatureFlags.DrawFlags do
   @moduledoc false
-  alias Elmc.Types, as: Types
-
 
   alias Elmc.Backend.Pebble.FeatureFlags.DrawFlags.{Compact, Context, Primitives, Text}
   alias Elmc.Backend.Pebble.FeatureFlags.TargetSet
   alias Elmc.Backend.Pebble.Types
+  alias Elmc.Types, as: ElmcTypes
 
   @spec compute(Types.call_target_set()) :: Types.draw_feature_flags()
   def compute(targets), do: compute(targets, %{})
 
-  @spec compute(Types.call_target_set(), Types.compile_options() | map()) ::
+  @spec compute(Types.call_target_set(), ElmcTypes.compile_options() | map()) ::
           Types.draw_feature_flags()
   def compute(targets, opts) when is_map(opts) do
     context? =

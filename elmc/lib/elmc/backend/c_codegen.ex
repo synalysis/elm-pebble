@@ -9,11 +9,19 @@ defmodule Elmc.Backend.CCodegen do
 
   alias Elmc.Backend.CCodegen.ProjectWriter
 
-  @spec write_project(ElmEx.IR.t(), String.t(), Elmc.Backend.CCodegen.Types.codegen_opts()) ::
+  @spec write_project(
+          ElmEx.IR.t(),
+          String.t(),
+          Elmc.Backend.CCodegen.Types.codegen_opts() | map()
+        ) ::
           :ok | {:error, Elmc.Backend.CCodegen.Types.file_error()}
   defdelegate write_project(ir, out_dir, opts \\ %{}), to: ProjectWriter, as: :write
 
-  @spec write_project_multi(ElmEx.IR.t(), String.t(), Elmc.Backend.CCodegen.Types.codegen_opts()) ::
+  @spec write_project_multi(
+          ElmEx.IR.t(),
+          String.t(),
+          Elmc.Backend.CCodegen.Types.codegen_opts() | map()
+        ) ::
           :ok | {:error, Elmc.Backend.CCodegen.Types.file_error()}
   defdelegate write_project_multi(ir, out_dir, opts \\ %{}), to: ProjectWriter, as: :write_multi
 end

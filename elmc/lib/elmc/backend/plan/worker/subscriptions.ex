@@ -34,6 +34,36 @@ defmodule Elmc.Backend.Plan.Worker.Subscriptions do
           | [subscription_tree_expr()]
           | nil
 
+  @type c_int_ir :: %{required(:op) => :c_int_expr, required(:value) => String.t()}
+
+  @type int_literal_ir :: %{
+          required(:op) => :int_literal,
+          required(:value) => integer(),
+          optional(:union_ctor) => String.t()
+        }
+
+  @type msg_tag_ir :: %{required(:op) => :msg_tag_expr, required(:name) => String.t()}
+
+  @type pebble_sub_param :: c_int_ir() | int_literal_ir() | msg_tag_ir()
+
+  @type pebble_sub_rewrite :: %{
+          required(:op) => :pebble_sub,
+          required(:mask) => c_int_ir(),
+          required(:params) => [pebble_sub_param()]
+        }
+
+  @type unsupported_surface :: map()
+
+  @type subscription_item_rewrite ::
+          pebble_sub_rewrite() | unsupported_surface() | nil
+
+  @type subscription_batch_rewrite ::
+          Types.ir_list_literal_expr() | unsupported_surface() | nil
+
+  @type button_code_ir :: c_int_ir() | int_literal_ir()
+
+  @type button_code_result :: button_code_ir() | nil
+
   @spec clamp_frame_interval_ms(integer()) :: pos_integer()
   def clamp_frame_interval_ms(ms) when is_integer(ms) do
     ms
@@ -41,12 +71,12 @@ defmodule Elmc.Backend.Plan.Worker.Subscriptions do
     |> min(32_767)
   end
 
-  @spec single_subscription_expr(String.t(), [Types.ir_expr()]) :: Types.ir_expr() | nil
+  @spec single_subscription_expr(String.t(), [Types.ir_expr()]) :: subscription_item_rewrite()
   def single_subscription_expr(target, args \\ []) when is_binary(target) do
     subscription_sub_expr(target, args)
   end
 
-  @spec subscription_sub_expr(String.t(), [Types.ir_expr()]) :: Types.ir_expr() | nil
+  @spec subscription_sub_expr(String.t(), [Types.ir_expr()]) :: subscription_item_rewrite()
   def subscription_sub_expr(target, args \\ []) when is_binary(target) do
     case subscription_mask_c_expr(target, args) do
       nil ->
@@ -76,7 +106,7 @@ defmodule Elmc.Backend.Plan.Worker.Subscriptions do
     end
   end
 
-  @spec subscription_batch_expr([Types.ir_expr()]) :: Types.ir_expr() | nil
+  @spec subscription_batch_expr([Types.ir_expr()]) :: subscription_batch_rewrite()
   def subscription_batch_expr([%{op: :list_literal, items: items}]) do
     batch_items = Enum.flat_map(items, &batch_list_item_expr/1)
 
@@ -148,7 +178,7 @@ defmodule Elmc.Backend.Plan.Worker.Subscriptions do
   defp subscription_item_sub_expr(_), do: nil
 
   @spec merge_optional_subscription_item(optional_sub_item(), optional_sub_item()) ::
-          Types.ir_expr() | nil
+          subscription_item_rewrite()
   defp merge_optional_subscription_item(:none, sub) when is_map(sub), do: sub
   defp merge_optional_subscription_item(sub, :none) when is_map(sub), do: sub
   defp merge_optional_subscription_item(sub, sub) when is_map(sub), do: sub
@@ -160,7 +190,7 @@ defmodule Elmc.Backend.Plan.Worker.Subscriptions do
     Pebble.Button.onLongPress
   )
 
-  @spec subscription_sub_params(String.t(), [Types.ir_expr()]) :: [Types.ir_expr()]
+  @spec subscription_sub_params(String.t(), [Types.ir_expr()]) :: [pebble_sub_param()]
   def subscription_sub_params(target, args) when is_binary(target) and is_list(args) do
     case SpecialValues.normalize_special_target(target) do
       normalized when normalized in @button_event_sub_targets ->
@@ -185,7 +215,7 @@ defmodule Elmc.Backend.Plan.Worker.Subscriptions do
   defp button_event_for_target("Pebble.Button.onRelease"), do: :released
   defp button_event_for_target("Pebble.Button.onLongPress"), do: :long_pressed
 
-  @spec button_event_sub_params([Types.ir_expr()], button_event()) :: [Types.ir_expr()]
+  @spec button_event_sub_params([Types.ir_expr()], button_event()) :: [pebble_sub_param()]
   defp button_event_sub_params([button, msg], event) do
     with btn when not is_nil(btn) <- button_int_expr(button),
          %{op: :msg_tag_expr} = tag <- SpecialValues.msg_tag_param(msg) do
@@ -195,7 +225,7 @@ defmodule Elmc.Backend.Plan.Worker.Subscriptions do
     end
   end
 
-  @spec button_raw_sub_params([Types.ir_expr()]) :: [Types.ir_expr()]
+  @spec button_raw_sub_params([Types.ir_expr()]) :: [pebble_sub_param()]
   defp button_raw_sub_params([button, event, msg]) do
     with btn when not is_nil(btn) <- button_int_expr(button),
          evt when not is_nil(evt) <- button_event_int_expr(event),
@@ -208,12 +238,12 @@ defmodule Elmc.Backend.Plan.Worker.Subscriptions do
 
   defp button_raw_sub_params(_), do: []
 
-  @spec button_event_expr(button_event()) :: Types.ir_expr()
+  @spec button_event_expr(button_event()) :: c_int_ir()
   defp button_event_expr(:pressed), do: %{op: :c_int_expr, value: "ELMC_BUTTON_EVENT_PRESSED"}
   defp button_event_expr(:released), do: %{op: :c_int_expr, value: "ELMC_BUTTON_EVENT_RELEASED"}
   defp button_event_expr(:long_pressed), do: %{op: :c_int_expr, value: "ELMC_BUTTON_EVENT_LONG_PRESSED"}
 
-  @spec button_int_expr(Types.ir_expr()) :: Types.ir_expr() | nil
+  @spec button_int_expr(Types.ir_expr()) :: button_code_result()
   defp button_int_expr(%{op: :c_int_expr, value: value}) when is_binary(value),
     do: %{op: :c_int_expr, value: value}
 
@@ -227,13 +257,13 @@ defmodule Elmc.Backend.Plan.Worker.Subscriptions do
     end
   end
 
-  @spec button_plain_int_expr(Types.ir_expr()) :: Types.ir_expr() | nil
+  @spec button_plain_int_expr(Types.ir_expr()) :: int_literal_ir() | nil
   defp button_plain_int_expr(%{op: :int_literal, value: value}) when is_integer(value),
     do: %{op: :int_literal, value: value}
 
   defp button_plain_int_expr(_), do: nil
 
-  @spec button_event_int_expr(Types.ir_expr()) :: Types.ir_expr() | nil
+  @spec button_event_int_expr(Types.ir_expr()) :: button_code_result()
   defp button_event_int_expr(%{op: :int_literal, value: value}) when is_integer(value),
     do: %{op: :int_literal, value: value}
 
@@ -272,7 +302,7 @@ defmodule Elmc.Backend.Plan.Worker.Subscriptions do
     subscription_item_c_expr(%{op: :qualified_call, target: target, args: args})
   end
 
-  @spec subscription_params_valid?([Types.ir_expr()], [Types.ir_expr()]) :: boolean()
+  @spec subscription_params_valid?([Types.ir_expr()], [pebble_sub_param()]) :: boolean()
   defp subscription_params_valid?([], []), do: true
 
   defp subscription_params_valid?(args, params) when args != [] do
@@ -282,12 +312,12 @@ defmodule Elmc.Backend.Plan.Worker.Subscriptions do
     end
   end
 
-  @spec pebble_sub_eligible?([Types.ir_expr()]) :: boolean()
+  @spec pebble_sub_eligible?([pebble_sub_param()]) :: boolean()
   defp pebble_sub_eligible?(params) do
     length(params) <= 5 and Enum.all?(params, &pebble_sub_param?/1)
   end
 
-  @spec pebble_sub_param?(Types.ir_expr()) :: boolean()
+  @spec pebble_sub_param?(pebble_sub_param()) :: boolean()
   defp pebble_sub_param?(%{op: op}) when op in [:int_literal, :c_int_expr, :msg_tag_expr], do: true
   defp pebble_sub_param?(_), do: false
 
@@ -410,7 +440,7 @@ defmodule Elmc.Backend.Plan.Worker.Subscriptions do
           model_dependent?: boolean()
         }
 
-  @type optional_sub_item :: Types.ir_expr() | nil | :none
+  @type optional_sub_item :: subscription_item_rewrite() | :none
 
   @type button_event :: :pressed | :released | :long_pressed
 

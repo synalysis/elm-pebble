@@ -15,6 +15,7 @@ defmodule Elmc.Backend.Bytecode.Runtime do
 
   @type value ::
           integer()
+          | float()
           | list()
           | value_map()
           | nil
@@ -26,6 +27,9 @@ defmodule Elmc.Backend.Bytecode.Runtime do
           | {:pebble_cmd, atom(), non_neg_integer(), [value()]}
           | {:just, value()}
           | {:record, [value()]}
+          | {:union, integer(), value()}
+          | {:ok, value()}
+          | {:err, value()}
   @type fn_registry :: %{optional({String.t(), String.t()}) => ([value()] -> value())}
 
   @type frame :: %{
@@ -66,7 +70,7 @@ defmodule Elmc.Backend.Bytecode.Runtime do
       |> Keyword.put(:plans, merged_plans)
       |> Keyword.put(:plan_key, {plan.module, plan.name})
       |> Keyword.put_new_lazy(:forward_refs, fn ->
-        (plan.letrec_refs || [])
+        plan.letrec_refs
         |> Enum.map(&{&1, nil})
         |> Map.new()
       end)
@@ -352,7 +356,7 @@ defmodule Elmc.Backend.Bytecode.Runtime do
       :switch_tag ->
         <<default_id::16, arms_size::16, rest2::binary>> = rest
         <<arms_bin::binary-size(^arms_size), _::binary>> = rest2
-        tag = union_tag(local_int(frame.locals, dest))
+        tag = union_tag(get_local(frame.locals, dest))
 
         target =
           arms_bin
@@ -558,18 +562,16 @@ defmodule Elmc.Backend.Bytecode.Runtime do
         {mod, name} ->
           case Map.get(frame.plans, {mod, name}) do
             %FunctionPlan{} = plan ->
-              case run_function(plan, params: args, plans: frame.plans) do
-                {:ok, val} -> val
-                _ -> nil
-              end
+              {:ok, val} = run_function(plan, params: args, plans: frame.plans)
+              val
 
             %{code: _} = section ->
-              case run_section(section,
-                     Keyword.merge([params: args], plans: frame.plans, plan_key: {mod, name})
-                   ) do
-                {:ok, val} -> val
-                _ -> nil
-              end
+              {:ok, val} =
+                run_section(section,
+                  Keyword.merge([params: args], plans: frame.plans, plan_key: {mod, name})
+                )
+
+              val
 
             _ ->
               Map.get(frame.fn_registry, {mod, name}, fn _args -> 0 end).(args)
@@ -592,18 +594,16 @@ defmodule Elmc.Backend.Bytecode.Runtime do
           {mod, name} ->
             case Map.get(frame.plans, {mod, name}) do
               %FunctionPlan{} = plan ->
-                case run_function(plan, params: [acc], plans: frame.plans) do
-                  {:ok, val} -> val
-                  _ -> acc
-                end
+                {:ok, val} = run_function(plan, params: [acc], plans: frame.plans)
+                val
 
               %{code: _} = section ->
-                case run_section(section,
-                       Keyword.merge([params: [acc]], plans: frame.plans, plan_key: {mod, name})
-                     ) do
-                  {:ok, val} -> val
-                  _ -> acc
-                end
+                {:ok, val} =
+                  run_section(section,
+                    Keyword.merge([params: [acc]], plans: frame.plans, plan_key: {mod, name})
+                  )
+
+                val
 
               _ ->
                 Map.get(frame.fn_registry, {mod, name}, fn _args -> acc end).([acc])
@@ -636,7 +636,7 @@ defmodule Elmc.Backend.Bytecode.Runtime do
 
   defp eval_switch_ctor_tag(<<subject::16, default::16, arms_size::16, rest::binary>>, locals) do
     <<arms_bin::binary-size(^arms_size), tail::binary>> = rest
-    tag = union_tag(local_int(locals, subject))
+    tag = union_tag(get_local(locals, subject))
 
     chosen =
       arms_bin
@@ -1257,15 +1257,15 @@ defmodule Elmc.Backend.Bytecode.Runtime do
       %FunctionPlan{lambdas: lambdas} = _parent when is_list(lambdas) and lambdas != [] ->
         case Enum.at(lambdas, idx) do
           %FunctionPlan{} = lambda ->
-            case run_function(lambda,
-                   params: caps ++ call_args,
-                   plans: frame.plans,
-                   plan_key: {lambda.module, lambda.name},
-                   forward_refs: frame.forward_refs
-                 ) do
-              {:ok, val} -> val
-              _ -> 0
-            end
+            {:ok, val} =
+              run_function(lambda,
+                params: caps ++ call_args,
+                plans: frame.plans,
+                plan_key: {lambda.module, lambda.name},
+                forward_refs: frame.forward_refs
+              )
+
+            val
 
           _ ->
             0
@@ -1274,16 +1274,16 @@ defmodule Elmc.Backend.Bytecode.Runtime do
       %{lambdas: lambda_sections} = _parent when is_list(lambda_sections) and lambda_sections != [] ->
         case Enum.at(lambda_sections, idx) do
           %{code: _} = lambda_section ->
-            case run_section(
-                   lambda_section,
-                   params: caps ++ call_args,
-                   plans: frame.plans,
-                   plan_key: parent_key,
-                   forward_refs: frame.forward_refs
-                 ) do
-              {:ok, val} -> val
-              _ -> 0
-            end
+            {:ok, val} =
+              run_section(
+                lambda_section,
+                params: caps ++ call_args,
+                plans: frame.plans,
+                plan_key: parent_key,
+                forward_refs: frame.forward_refs
+              )
+
+            val
 
           _ ->
             0
@@ -1292,15 +1292,15 @@ defmodule Elmc.Backend.Bytecode.Runtime do
       %FunctionPlan{} = parent ->
         case Enum.at(parent.lambdas || [], idx) do
           %FunctionPlan{} = lambda ->
-            case run_function(lambda,
-                   params: caps ++ call_args,
-                   plans: frame.plans,
-                   plan_key: {lambda.module, lambda.name},
-                   forward_refs: frame.forward_refs
-                 ) do
-              {:ok, val} -> val
-              _ -> 0
-            end
+            {:ok, val} =
+              run_function(lambda,
+                params: caps ++ call_args,
+                plans: frame.plans,
+                plan_key: {lambda.module, lambda.name},
+                forward_refs: frame.forward_refs
+              )
+
+            val
 
           _ ->
             0

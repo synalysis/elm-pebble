@@ -36,6 +36,7 @@ defmodule Elmc.Backend.Plan.Types do
   @type compile_env :: CCodegenTypes.compile_env()
   @type special_value_args :: CCodegenTypes.special_value_args()
   @type special_value_expr :: CCodegenTypes.ir_expr() | nil
+  @type special_value_result :: CCodegenTypes.special_value_result()
 
   @type ir_field_value :: CCodegenTypes.ir_field_value()
   @type plan_span :: %{optional(atom()) => integer() | String.t()} | nil
@@ -67,7 +68,7 @@ defmodule Elmc.Backend.Plan.Types do
           optional(atom()) => ir_field_value()
         }
 
-  @type lower_result_slot :: reg() | :fn_out | :branch_out | nil
+  @type lower_result_slot :: reg() | :fn_out | :branch_out | :stream_void | nil
   @type compile_result :: {:ok, lower_result_slot(), Builder.t()} | :unsupported
   @type compile_result_required :: {:ok, reg() | :fn_out, Builder.t()} | :unsupported
   @type compile_reg_result :: {:ok, reg(), Builder.t()} | :unsupported
@@ -97,7 +98,7 @@ defmodule Elmc.Backend.Plan.Types do
   @type reg :: non_neg_integer()
 
   @typedoc "Function result slot (single per success path)."
-  @type result_slot :: :fn_out | :branch_out
+  @type result_slot :: :fn_out | :branch_out | :stream_void
 
   @type owned :: {:owned, reg()}
 
@@ -265,14 +266,14 @@ defmodule Elmc.Backend.Plan.Types do
             lambdas: [FunctionPlan.t()],
             lambda_arg_count: non_neg_integer() | nil,
             letrec_refs: [String.t()],
-            letrec_capture_indices: %{String.t() => non_neg_integer()},
+            letrec_capture_indices: %{String.t() => non_neg_integer()} | nil,
             fusion_c: String.t() | nil,
             fusion_kind: atom() | nil,
             fusion_data: Elmc.Backend.Plan.Types.fusion_data() | nil,
             native_scalar_return: :native_int | :native_bool | nil,
-            native_scalar_value_return: boolean(),
+            native_scalar_value_return: boolean() | nil,
             fusion_emit: :helper_only | :public_native | nil,
-            stream_mode: boolean()
+            stream_mode: boolean() | nil
           }
   end
 

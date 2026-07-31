@@ -2,11 +2,19 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.UnionIntCase do
   @moduledoc false
   alias Elmc.Backend.CCodegen.Types, as: Types
 
-
   alias Elmc.Backend.CCodegen.Types
 
   alias Elmc.Backend.Plan.Fusion.Matchers.FusionSupport
-  alias Elmc.Backend.CCodegen.{ConstructorTagCase, CSource, EnvBindings, Fusion, IntLiteralRef, RcRuntimeEmit, Util}
+
+  alias Elmc.Backend.CCodegen.{
+    ConstructorTagCase,
+    CSource,
+    EnvBindings,
+    Fusion,
+    IntLiteralRef,
+    RcRuntimeEmit,
+    Util
+  }
 
   @spec try_emit(String.t(), String.t(), Types.ir_expr() | nil, Types.function_decl_map()) ::
           {:ok, String.t(), [FusionSupport.callee_key()], :rc_native} | :error
@@ -45,11 +53,12 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.UnionIntCase do
     end
   end
 
-  @spec emit_native_int_tag_switch(list(), Types.compile_env(), Types.ir_expr()) :: Types.ir_expr()
-
+  @spec emit_native_int_tag_switch([map()], Types.compile_env(), String.t()) :: String.t()
   defp emit_native_int_tag_switch(branches, env, param) do
     int_scratch = "case_int_1"
-    exhaustive? = Enum.all?(branches, fn %{pattern: pattern} -> not match?(%{kind: :wildcard}, pattern) end)
+
+    exhaustive? =
+      Enum.all?(branches, fn %{pattern: pattern} -> not match?(%{kind: :wildcard}, pattern) end)
 
     branch_code =
       branches
@@ -112,8 +121,7 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.UnionIntCase do
     """
   end
 
-  @spec case_label(map(), Types.compile_env()) :: Types.ir_expr()
-
+  @spec case_label(map(), Types.compile_env()) :: String.t()
   defp case_label(%{kind: :wildcard}, _env), do: "default"
 
   defp case_label(%{kind: :constructor, tag: tag} = pattern, env) when is_integer(tag) do
@@ -131,22 +139,19 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.UnionIntCase do
     "case #{ref || Integer.to_string(tag)}"
   end
 
-  @spec branch_int_spec(map(), Types.compile_env()) :: Types.ir_expr()
-
+  @spec branch_int_spec(map(), Types.compile_env()) :: {:slot, String.t()} | :complex
   defp branch_int_spec(%{expr: expr}, env) do
     int_expr_spec(expr, env)
   end
 
-  @spec parse_case(map() | term()) :: Types.ir_expr()
-
+  @spec parse_case(term()) :: {:ok, term(), list()} | :error
   defp parse_case(%{op: :case, subject: subject, branches: branches}),
     do: {:ok, subject, branches}
 
   defp parse_case(%{op: :let_in, in_expr: body}), do: parse_case(body)
   defp parse_case(_), do: :error
 
-  @spec union_int_case_eligible?(list()) :: boolean()
-
+  @spec union_int_case_eligible?([map()]) :: boolean()
   defp union_int_case_eligible?(branches) when is_list(branches) do
     int_count = Enum.count(branches, &int_literal_branch?/1)
     int_count >= 2 and Enum.all?(branches, &int_literal_branch?/1)
@@ -173,24 +178,21 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.UnionIntCase do
     end)
   end
 
-  @spec int_literal_branch?(map() | term()) :: boolean()
-
+  @spec int_literal_branch?(term()) :: boolean()
   defp int_literal_branch?(%{pattern: %{tag: tag}, expr: %{op: :int_literal, value: value}})
        when is_integer(tag) and is_integer(value),
        do: true
 
   defp int_literal_branch?(_), do: false
 
-  @spec union_int_lut(list()) :: Types.ir_expr()
-
+  @spec union_int_lut([map()]) :: %{integer() => integer()}
   defp union_int_lut(branches) do
     Map.new(branches, fn %{pattern: %{tag: tag}, expr: %{op: :int_literal, value: wire}} ->
       {tag, wire}
     end)
   end
 
-  @spec int_expr_spec(map() | Types.expr(), Types.compile_env()) :: Types.ir_expr()
-
+  @spec int_expr_spec(Types.expr(), Types.compile_env()) :: {:slot, String.t()} | :complex
   defp int_expr_spec(%{op: :int_literal, value: value} = expr, env)
        when is_integer(value) do
     {:slot, IntLiteralRef.ref(expr, env)}
@@ -198,8 +200,7 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.UnionIntCase do
 
   defp int_expr_spec(_expr, _env), do: :complex
 
-  @spec fusion_param_name(String.t(), String.t(), Types.decl_map()) :: Types.ir_expr()
-
+  @spec fusion_param_name(String.t(), String.t(), Types.decl_map()) :: String.t() | nil
   defp fusion_param_name(module_name, name, decl_map) do
     case Map.get(decl_map, {module_name, name}) do
       %{args: [param | _]} when is_binary(param) -> param
@@ -216,14 +217,14 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.UnionIntCase do
     end
   end
 
-  defp subject_is_param?(%{op: :var, name: name}, param) when is_binary(name) and is_binary(param),
-    do: name == param
+  defp subject_is_param?(%{op: :var, name: name}, param)
+       when is_binary(name) and is_binary(param),
+       do: name == param
 
   defp subject_is_param?(name, param) when is_binary(name) and is_binary(param), do: name == param
   defp subject_is_param?(_, _), do: false
 
-  @spec fusion_env(String.t(), String.t(), String.t()) :: Types.ir_expr()
-
+  @spec fusion_env(String.t(), String.t(), String.t()) :: Types.compile_env()
   defp fusion_env(module_name, name, param) when is_binary(param) do
     %{
       :__rc_required__ => true,
@@ -238,7 +239,12 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.UnionIntCase do
   end
 
   @doc false
-  @spec extract_fusion_data(String.t(), String.t(), Types.ir_expr() | nil, Types.function_decl_map()) ::
+  @spec extract_fusion_data(
+          String.t(),
+          String.t(),
+          Types.ir_expr() | nil,
+          Types.function_decl_map()
+        ) ::
           {:ok, :union_int_lut, Types.fusion_metadata()} | :error
   def extract_fusion_data(module_name, name, expr, decl_map) do
     with {:ok, subject, branches} <- parse_case(expr),

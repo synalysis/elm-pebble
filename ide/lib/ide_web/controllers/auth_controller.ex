@@ -276,7 +276,7 @@ defmodule IdeWeb.AuthController do
     _ -> "0.0.0.0"
   end
 
-  @spec renew_session(integer()) :: term()
+  @spec renew_session(Plug.Conn.t()) :: Plug.Conn.t()
 
   defp renew_session(conn) do
     conn

@@ -2,8 +2,6 @@ defmodule Elmc.Backend.Pebble do
   @moduledoc """
   Generates a Pebble-oriented host shim around the worker adapter.
   """
-  alias Elmc.Types, as: Types
-
 
   alias ElmEx.IR
   alias Elmc.Backend.Plan
@@ -36,22 +34,24 @@ defmodule Elmc.Backend.Pebble do
   @spec ui_node_kind_id!(Kinds.ui_node_kind()) :: non_neg_integer()
   defdelegate ui_node_kind_id!(kind), to: Kinds
 
-  @spec write_pebble_shim(IR.t(), String.t(), PebbleTypes.entry_module(), Types.compile_options()) ::
+  @spec write_pebble_shim(
+          IR.t(),
+          String.t(),
+          PebbleTypes.entry_module(),
+          Types.compile_options() | map()
+        ) ::
           :ok | {:error, Types.file_error()}
   def write_pebble_shim(%IR{} = ir, out_dir, entry_module, opts \\ %{}) do
     c_dir = Path.join(out_dir, "c")
     generated_c = Map.get(opts, :generated_c, "")
 
-    analysis =
-      ir
-      |> IRAnalysis.analyze(entry_module, opts)
-      |> then(fn analysis ->
-        %{
-          analysis
-          | feature_flags:
-              FeatureFlags.augment_from_generated_c(analysis.feature_flags, generated_c, opts)
-        }
-      end)
+    analysis = IRAnalysis.analyze(ir, entry_module, opts)
+
+    analysis = %{
+      analysis
+      | feature_flags:
+          FeatureFlags.augment_from_generated_c(analysis.feature_flags, generated_c, opts)
+    }
 
     decl_map = IRQueries.function_decl_map(ir)
     direct_targets = Host.direct_command_targets(ir, opts, decl_map)
@@ -94,7 +94,12 @@ defmodule Elmc.Backend.Pebble do
   end
 
   @doc false
-  @spec stream_view_fallback_needed?(IR.t(), String.t(), PebbleTypes.entry_module(), Types.compile_options()) ::
+  @spec stream_view_fallback_needed?(
+          IR.t(),
+          String.t(),
+          PebbleTypes.entry_module(),
+          Types.compile_options() | map()
+        ) ::
           boolean()
   def stream_view_fallback_needed?(ir, generated_c, entry_module, opts) do
     # Color-only and aplite pruned builds commit to streamed direct-scene commands.
@@ -106,14 +111,17 @@ defmodule Elmc.Backend.Pebble do
     end
   end
 
-  @spec prune_generic_view_for_direct_scene?(keyword()) :: boolean()
-
+  @spec prune_generic_view_for_direct_scene?(keyword() | map()) :: boolean()
   defp prune_generic_view_for_direct_scene?(opts) do
     opts[:direct_render_only] == true or opts[:prune_direct_generic] == true
   end
 
-  @spec stream_view_fallback_needed_for_dual_codegen?(Types.t(), Types.ir_expr(), String.t(), keyword()) :: boolean()
-
+  @spec stream_view_fallback_needed_for_dual_codegen?(
+          IR.t(),
+          String.t(),
+          String.t(),
+          keyword() | map()
+        ) :: boolean()
   defp stream_view_fallback_needed_for_dual_codegen?(ir, generated_c, entry_module, opts) do
     decl_map = IRQueries.function_decl_map(ir)
     direct_targets = Host.direct_command_targets(ir, opts, decl_map)
@@ -147,8 +155,13 @@ defmodule Elmc.Backend.Pebble do
 
   # C codegen runs inside `with_emit_session`, which clears `:elmc_codegen_opts`
   # before the pebble shim is written. Read the emitted view prototype instead.
-  @spec entry_view_uses_direct_abi?(String.t(), Types.t(), Types.decl(), Types.decl_map(), keyword()) :: boolean()
-
+  @spec entry_view_uses_direct_abi?(
+          String.t(),
+          String.t(),
+          map() | nil,
+          map(),
+          keyword() | map()
+        ) :: boolean()
   defp entry_view_uses_direct_abi?(entry_module, c_dir, view_decl, decl_map, opts) do
     header_path = Path.join(c_dir, "elmc_generated.h")
     view_fn = Util.module_fn_name(entry_module, "view")

@@ -5,7 +5,7 @@ defmodule Ide.Emulator.PBWInstaller.PostInstall do
   alias Ide.Emulator.PebbleProtocol.Router
 
   @type observed_frame :: %{
-          required(:endpoint) => String.t(),
+          required(:endpoint) => String.t() | non_neg_integer(),
           required(:payload_bytes) => non_neg_integer(),
           required(:payload_prefix) => String.t(),
           optional(:data_logging_tag_hex) => String.t(),

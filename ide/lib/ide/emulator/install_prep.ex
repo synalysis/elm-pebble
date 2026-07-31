@@ -148,7 +148,7 @@ defmodule Ide.Emulator.InstallPrep do
 
   defp now_ms, do: System.monotonic_time(:millisecond)
 
-  @spec config(String.t(), term()) :: term()
+  @spec config(atom(), term()) :: term()
 
   defp config(key, default), do: Config.config(key, default)
 end

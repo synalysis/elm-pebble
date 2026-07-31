@@ -15,7 +15,8 @@ defmodule Elmc.Backend.Plan.Lower.PatternMatch do
 
   def match_condition(_, _, _), do: :unsupported
 
-  @spec do_match_condition(map() | term(), Types.ir_expr() | term(), Types.ir_expr() | term()) :: Types.ir_expr()
+  @spec do_match_condition(Types.pattern() | map(), Types.reg(), Builder.t()) ::
+          Types.match_condition_result()
 
   defp do_match_condition(%{kind: :wildcard}, _subject_reg, b),
     do: const_true(b)
@@ -108,7 +109,8 @@ defmodule Elmc.Backend.Plan.Lower.PatternMatch do
 
   defp do_match_condition(_, _, _), do: :unsupported
 
-  @spec match_cons_pattern(Types.pattern(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+  @spec match_cons_pattern(Types.pattern(), Types.reg(), Builder.t()) ::
+          Types.match_condition_result()
 
   defp match_cons_pattern(pattern, subject_reg, b) do
     case cons_head_tail(pattern) do
@@ -129,14 +131,14 @@ defmodule Elmc.Backend.Plan.Lower.PatternMatch do
     end
   end
 
-  @spec cons_head_tail(map() | term()) :: Types.ir_expr()
+  @spec cons_head_tail(map() | term()) :: {:ok, Types.pattern(), Types.pattern()} | :error
 
   defp cons_head_tail(%{arg_pattern: %{kind: :tuple, elements: [head, tail]}}),
     do: {:ok, head, tail}
 
   defp cons_head_tail(_), do: :error
 
-  @spec peel_list_head(Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+  @spec peel_list_head(Types.reg(), Builder.t()) :: Types.compile_reg_result()
 
   defp peel_list_head(subject_reg, b) do
     with {:ok, maybe_reg, b1} <- emit_owned_list_op(:list_head, subject_reg, b),
@@ -145,7 +147,7 @@ defmodule Elmc.Backend.Plan.Lower.PatternMatch do
     end
   end
 
-  @spec peel_list_tail(Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+  @spec peel_list_tail(Types.reg(), Builder.t()) :: Types.compile_reg_result()
 
   defp peel_list_tail(subject_reg, b) do
     with {:ok, maybe_reg, b1} <- emit_owned_list_op(:list_tail, subject_reg, b),
@@ -157,7 +159,7 @@ defmodule Elmc.Backend.Plan.Lower.PatternMatch do
   # `elmc_list_head` / `elmc_list_tail` return an owned Maybe. Peeling the Just
   # payload must retain it before the Maybe is released — otherwise match
   # conditions like `'n' :: 'u' :: rest` use a dangling payload (heap corruption).
-  @spec emit_maybe_just_payload_retain(integer(), Types.ir_expr()) :: Types.ir_expr()
+  @spec emit_maybe_just_payload_retain(Types.reg(), Builder.t()) :: Types.compile_reg_result()
 
   defp emit_maybe_just_payload_retain(maybe_reg, b) when is_integer(maybe_reg) do
     {dest, b1} = Builder.fresh_reg(b)
@@ -182,7 +184,8 @@ defmodule Elmc.Backend.Plan.Lower.PatternMatch do
     {:ok, dest, b2}
   end
 
-  @spec emit_owned_list_op(integer(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+  @spec emit_owned_list_op(:list_head | :list_tail, Types.reg(), Builder.t()) ::
+          Types.compile_reg_result()
 
   defp emit_owned_list_op(builtin, arg_reg, b)
        when builtin in [:list_head, :list_tail] and is_integer(arg_reg) do
@@ -198,7 +201,8 @@ defmodule Elmc.Backend.Plan.Lower.PatternMatch do
     {:ok, dest, b2}
   end
 
-  @spec match_ctor_with_arg_pattern(map() | Types.pattern(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+  @spec match_ctor_with_arg_pattern(Types.pattern() | map(), Types.reg(), Builder.t()) ::
+          Types.match_condition_result()
 
   defp match_ctor_with_arg_pattern(%{arg_pattern: arg_pattern} = pattern, subject_reg, b)
        when is_map(arg_pattern) do
@@ -214,7 +218,7 @@ defmodule Elmc.Backend.Plan.Lower.PatternMatch do
   defp match_ctor_with_arg_pattern(pattern, subject_reg, b),
     do: test_ctor_tag(pattern, subject_reg, b)
 
-  @spec emit_union_payload_view(Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+  @spec emit_union_payload_view(Types.reg(), Builder.t()) :: Types.compile_reg_result()
 
   defp emit_union_payload_view(subject_reg, b) do
     # Must retain into an owned slot. The C helper `elmc_union_payload` returns a
@@ -238,7 +242,7 @@ defmodule Elmc.Backend.Plan.Lower.PatternMatch do
     {:ok, dest, b2}
   end
 
-  @spec emit_char_code(Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+  @spec emit_char_code(Types.reg(), Builder.t()) :: Types.compile_reg_result()
 
   defp emit_char_code(subject_reg, b) do
     {dest, b1} = Builder.fresh_reg(b)
@@ -258,7 +262,7 @@ defmodule Elmc.Backend.Plan.Lower.PatternMatch do
     {:ok, dest, b2}
   end
 
-  @spec const_true(Types.ir_expr()) :: Types.ir_expr()
+  @spec const_true(Builder.t()) :: Types.compile_reg_result()
 
   defp const_true(b) do
     {reg, b1} = Builder.fresh_reg(b)
@@ -278,14 +282,14 @@ defmodule Elmc.Backend.Plan.Lower.PatternMatch do
     {:ok, reg, b2}
   end
 
-  @spec const_int(integer(), Types.ir_expr()) :: Types.ir_expr()
+  @spec const_int(integer(), Builder.t()) :: Types.compile_reg_result()
 
   defp const_int(value, b) do
     {reg, b1} = Builder.emit_const_int(b, value)
     {:ok, reg, b1}
   end
 
-  @spec bool_and(Types.expr(), Types.expr(), Types.ir_expr()) :: Types.ir_expr()
+  @spec bool_and(Types.reg(), Types.reg(), Builder.t()) :: Types.compile_reg_result()
 
   defp bool_and(left, right, b) do
     {dest, b1} = Builder.fresh_reg(b)
@@ -305,7 +309,7 @@ defmodule Elmc.Backend.Plan.Lower.PatternMatch do
     {:ok, dest, b2}
   end
 
-  @spec compare_eq(Types.expr(), Types.expr(), Types.ir_expr()) :: Types.ir_expr()
+  @spec compare_eq(Types.reg(), Types.reg(), Builder.t()) :: Types.compile_reg_result()
 
   defp compare_eq(left, right, b) do
     {dest, b1} = Builder.fresh_reg(b)
@@ -325,7 +329,7 @@ defmodule Elmc.Backend.Plan.Lower.PatternMatch do
     {:ok, dest, b2}
   end
 
-  @spec tuple_proj(Types.ir_expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+  @spec tuple_proj(Types.reg(), :first | :second, Builder.t()) :: Types.compile_reg_result()
 
   defp tuple_proj(base_reg, which, b) do
     {dest, b1} = Builder.fresh_reg(b)
@@ -345,7 +349,7 @@ defmodule Elmc.Backend.Plan.Lower.PatternMatch do
     {:ok, dest, b2}
   end
 
-  @spec test_string_literal(Types.ir_expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+  @spec test_string_literal(Types.reg(), String.t(), Builder.t()) :: Types.compile_reg_result()
 
   defp test_string_literal(subject_reg, literal, b) do
     {dest, b1} = Builder.fresh_reg(b)
@@ -365,7 +369,7 @@ defmodule Elmc.Backend.Plan.Lower.PatternMatch do
     {:ok, dest, b2}
   end
 
-  @spec test_maybe_nothing(Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+  @spec test_maybe_nothing(Types.reg(), Builder.t()) :: Types.compile_reg_result()
 
   defp test_maybe_nothing(subject_reg, b) do
     {dest, b1} = Builder.fresh_reg(b)
@@ -385,7 +389,7 @@ defmodule Elmc.Backend.Plan.Lower.PatternMatch do
     {:ok, dest, b2}
   end
 
-  @spec test_maybe_just(Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+  @spec test_maybe_just(Types.reg(), Builder.t()) :: Types.compile_reg_result()
 
   defp test_maybe_just(subject_reg, b) do
     with {:ok, nothing_reg, b1} <- test_maybe_nothing(subject_reg, b),
@@ -394,7 +398,7 @@ defmodule Elmc.Backend.Plan.Lower.PatternMatch do
     end
   end
 
-  @spec test_list_empty(Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+  @spec test_list_empty(Types.reg(), Builder.t()) :: Types.compile_reg_result()
 
   defp test_list_empty(subject_reg, b) do
     {dest, b1} = Builder.fresh_reg(b)
@@ -414,7 +418,8 @@ defmodule Elmc.Backend.Plan.Lower.PatternMatch do
     {:ok, dest, b2}
   end
 
-  @spec test_ctor_tag(Types.pattern(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+  @spec test_ctor_tag(Types.pattern(), Types.reg(), Builder.t()) ::
+          Types.match_condition_result()
 
   defp test_ctor_tag(pattern, subject_reg, b) do
     tag = pattern_tag(pattern)
@@ -458,7 +463,7 @@ defmodule Elmc.Backend.Plan.Lower.PatternMatch do
   defp unit_ctor?(name) when is_binary(name), do: short_ctor(name) == "()"
   defp unit_ctor?(_), do: false
 
-  @spec test_bool_ctor(String.t(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+  @spec test_bool_ctor(String.t(), Types.reg(), Builder.t()) :: Types.compile_reg_result()
 
   defp test_bool_ctor(name, subject_reg, b) do
     {dest, b1} = Builder.fresh_reg(b)
@@ -478,24 +483,24 @@ defmodule Elmc.Backend.Plan.Lower.PatternMatch do
     {:ok, dest, b2}
   end
 
-  @spec maybe_nothing?(Types.ir_expr(), String.t()) :: boolean()
+  @spec maybe_nothing?(term(), term()) :: boolean()
 
   defp maybe_nothing?(resolved, name) do
     short_ctor(resolved || name) == "Nothing"
   end
 
-  @spec maybe_just?(Types.ir_expr(), String.t()) :: boolean()
+  @spec maybe_just?(term(), term()) :: boolean()
 
   defp maybe_just?(resolved, name) do
     short_ctor(resolved || name) == "Just"
   end
 
-  @spec short_ctor(String.t() | term()) :: Types.ir_expr()
+  @spec short_ctor(String.t() | term()) :: String.t()
 
   defp short_ctor(name) when is_binary(name), do: name |> String.split(".") |> List.last()
   defp short_ctor(_), do: ""
 
-  @spec pattern_tag(map() | Types.pattern()) :: Types.ir_expr()
+  @spec pattern_tag(map() | Types.pattern()) :: integer() | nil
 
   defp pattern_tag(%{tag: tag} = pattern) when is_integer(tag) do
     # Re-resolve ambiguous short names even when IR baked a tag (Group poison).
@@ -519,7 +524,7 @@ defmodule Elmc.Backend.Plan.Lower.PatternMatch do
     end
   end
 
-  @spec nest_tuple_elements(term()) :: Types.ir_expr()
+  @spec nest_tuple_elements([Types.pattern()]) :: [Types.pattern()]
 
   defp nest_tuple_elements([left, right]), do: [left, right]
 
@@ -543,7 +548,7 @@ defmodule Elmc.Backend.Plan.Lower.PatternMatch do
 
   defp cons_pattern?(_), do: false
 
-  @spec test_list_nonempty(Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+  @spec test_list_nonempty(Types.reg(), Builder.t()) :: Types.compile_reg_result()
 
   defp test_list_nonempty(subject_reg, b) do
     with {:ok, empty_reg, b1} <- test_list_empty(subject_reg, b),

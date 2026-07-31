@@ -2,7 +2,6 @@ defmodule Elmc.Backend.Plan.ParamFieldInference do
   @moduledoc false
   alias Elmc.Backend.Plan.Types, as: Types
 
-
   @spec infer(map() | struct()) :: %{String.t() => [String.t()]}
   def infer(%{expr: expr, args: args}) when is_map(expr) and is_list(args) do
     infer_names(expr, args)
@@ -26,8 +25,8 @@ defmodule Elmc.Backend.Plan.ParamFieldInference do
 
   def infer_names(_, _), do: %{}
 
-  @spec collect_field_accesses(Types.expr(), Types.ir_expr(), term()) :: Types.ir_expr()
-
+  @spec collect_field_accesses(Types.expr(), MapSet.t(String.t()), %{String.t() => [String.t()]}) ::
+          %{String.t() => [String.t()]}
   defp collect_field_accesses(expr, params, acc) do
     case expr do
       %{op: :field_access, arg: param, field: field}
@@ -113,8 +112,8 @@ defmodule Elmc.Backend.Plan.ParamFieldInference do
     end
   end
 
-  @spec append_field(term(), String.t(), String.t()) :: Types.ir_expr()
-
+  @spec append_field(%{String.t() => [String.t()]}, String.t(), String.t()) ::
+          %{String.t() => [String.t()]}
   defp append_field(acc, param, field) when is_binary(param) and is_binary(field) do
     fields = Map.get(acc, param, [])
 

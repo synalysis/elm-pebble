@@ -471,10 +471,8 @@ defmodule IdeWeb.WorkspaceLive.DebuggerFlow.Core do
 
         socket =
           if focus_changed? do
-            case inject_simulator_watch_trigger(project, "app_focus") do
-              {:ok, _state} -> socket |> DebuggerSupport.refresh()
-              {:error, _} -> socket
-            end
+            {:ok, _state} = inject_simulator_watch_trigger(project, "app_focus")
+            socket |> DebuggerSupport.refresh()
           else
             socket
           end
@@ -496,38 +494,31 @@ defmodule IdeWeb.WorkspaceLive.DebuggerFlow.Core do
         {:noreply, socket}
 
       project ->
-        case inject_simulator_watch_trigger(project, kind) do
-          {:ok, _state} ->
-            socket =
-              socket
-              |> DebuggerSupport.refresh()
-              |> DebuggerSupport.jump_latest()
-              |> then(fn s ->
-                if flash? and is_binary(flash_message),
-                  do: put_flash(s, :info, flash_message),
-                  else: s
-              end)
+        {:ok, _state} = inject_simulator_watch_trigger(project, kind)
 
-            {:ok, socket}
+        socket =
+          socket
+          |> DebuggerSupport.refresh()
+          |> DebuggerSupport.jump_latest()
+          |> then(fn s ->
+            if flash? and is_binary(flash_message),
+              do: put_flash(s, :info, flash_message),
+              else: s
+          end)
 
-          {:error, _} ->
-            {:noreply, put_flash(socket, :error, "Could not inject #{kind} simulator trigger.")}
-        end
+        {:ok, socket}
     end
   end
 
   @spec inject_simulator_watch_trigger(Project.t(), String.t()) ::
-          {:ok, Ide.Debugger.Types.RuntimeState.t()} | {:error, :trigger_not_found}
+          {:ok, Ide.Debugger.Types.RuntimeState.t()}
   defp inject_simulator_watch_trigger(%Project{} = project, kind) when is_binary(kind) do
     slug = Projects.scope_key(project)
 
-    with {:ok, rows} <- Ide.Debugger.available_triggers(slug, %{"target" => "watch"}),
-         row <- find_simulator_trigger_row(rows, kind),
-         {:ok, attrs} <- simulator_trigger_attrs(row, kind) do
-      Ide.Debugger.inject_trigger(slug, attrs)
-    else
-      _ -> {:error, :trigger_not_found}
-    end
+    {:ok, rows} = Ide.Debugger.available_triggers(slug, %{"target" => "watch"})
+    row = find_simulator_trigger_row(rows, kind)
+    {:ok, attrs} = simulator_trigger_attrs(row, kind)
+    Ide.Debugger.inject_trigger(slug, attrs)
   end
 
   defp find_simulator_trigger_row(rows, kind) when is_list(rows) do

@@ -124,14 +124,14 @@ defmodule Elmc.Backend.CCodegen.IRQueries do
     end)
   end
 
-  @spec virtual_dom_attribute_key_from_decl(map() | term()) :: Types.ir_expr()
+  @spec virtual_dom_attribute_key_from_decl(map() | term()) :: {:ok, String.t()} | :error
 
   defp virtual_dom_attribute_key_from_decl(%{expr: expr}),
     do: virtual_dom_attribute_key_from_expr(expr)
 
   defp virtual_dom_attribute_key_from_decl(_), do: :error
 
-  @spec virtual_dom_attribute_key_from_expr(map() | term()) :: Types.ir_expr()
+  @spec virtual_dom_attribute_key_from_expr(map() | term()) :: {:ok, String.t()} | :error
 
   defp virtual_dom_attribute_key_from_expr(%{
          op: :qualified_call,
@@ -204,7 +204,7 @@ defmodule Elmc.Backend.CCodegen.IRQueries do
   end
 
   # Aliases that must match Elm 0.19 alphabetical record layout end-to-end.
-  @spec elm_alphabetical_alias?(Types.ir_expr(), Types.ir_expr() | String.t(), String.t()) :: boolean()
+  @spec elm_alphabetical_alias?(String.t(), String.t(), [String.t()]) :: boolean()
 
   defp elm_alphabetical_alias?("Scene3d.Types", "Transformation", _names), do: true
 
@@ -385,7 +385,7 @@ defmodule Elmc.Backend.CCodegen.IRQueries do
     end)
   end
 
-  @spec union_payload_embedded_record_shapes(map()) :: Types.ir_expr()
+  @spec union_payload_embedded_record_shapes(IR.t()) :: [{{String.t(), String.t()}, [String.t()]}]
 
   defp union_payload_embedded_record_shapes(%IR{} = ir) do
     ir.modules
@@ -440,7 +440,7 @@ defmodule Elmc.Backend.CCodegen.IRQueries do
     end)
   end
 
-  @spec embedded_record_types(String.t()) :: Types.ir_expr()
+  @spec embedded_record_types(String.t()) :: [[String.t()]]
 
   defp embedded_record_types(type) when is_binary(type) do
     type
@@ -463,7 +463,7 @@ defmodule Elmc.Backend.CCodegen.IRQueries do
     |> Enum.uniq()
   end
 
-  @spec brace_record_fragments(binary(), term()) :: Types.ir_expr()
+  @spec brace_record_fragments(binary(), [binary()]) :: [binary()]
 
   defp brace_record_fragments(<<>>, acc), do: Enum.reverse(acc)
 
@@ -578,7 +578,11 @@ defmodule Elmc.Backend.CCodegen.IRQueries do
 
   def lookup_tag(_tags, _target), do: nil
 
-  @spec lookup_suffix_tag(Types.ir_expr(), String.t(), Types.ir_expr()) :: Types.ir_expr()
+  @spec lookup_suffix_tag(
+          %{optional(String.t()) => non_neg_integer()},
+          String.t(),
+          String.t()
+        ) :: non_neg_integer() | nil
 
   defp lookup_suffix_tag(tags, target, short) do
     suffix = "." <> short
@@ -623,7 +627,7 @@ defmodule Elmc.Backend.CCodegen.IRQueries do
     end
   end
 
-  @spec shared_prefix_len(Types.expr(), Types.expr()) :: Types.ir_expr()
+  @spec shared_prefix_len([String.t()], [String.t()]) :: non_neg_integer()
 
   defp shared_prefix_len(left, right) do
     left
@@ -632,7 +636,7 @@ defmodule Elmc.Backend.CCodegen.IRQueries do
     |> length()
   end
 
-  @spec constructor_short_name(String.t()) :: Types.ir_expr()
+  @spec constructor_short_name(String.t()) :: String.t()
 
   defp constructor_short_name(name), do: name |> String.split(".") |> List.last()
 

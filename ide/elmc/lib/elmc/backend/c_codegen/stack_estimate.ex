@@ -57,7 +57,7 @@ defmodule Elmc.Backend.CCodegen.StackEstimate do
     }
   end
 
-  @spec code_size_indicators(String.t()) :: Types.ir_expr()
+  @spec code_size_indicators(String.t()) :: map()
 
   defp code_size_indicators(source) do
     %{
@@ -87,7 +87,7 @@ defmodule Elmc.Backend.CCodegen.StackEstimate do
     }
   end
 
-  @spec commands_append_body_bytes(String.t()) :: Types.ir_expr()
+  @spec commands_append_body_bytes(String.t()) :: non_neg_integer()
 
   defp commands_append_body_bytes(source) do
     ~r/static RC elmc_fn_[A-Za-z0-9_]+_commands_append\([^{]*\{([\s\S]*?)\n\}/
@@ -96,7 +96,7 @@ defmodule Elmc.Backend.CCodegen.StackEstimate do
     |> Enum.sum()
   end
 
-  @spec owned_slot_max(String.t()) :: Types.ir_expr()
+  @spec owned_slot_max(String.t()) :: non_neg_integer()
 
   defp owned_slot_max(source) do
     case Regex.scan(~r/owned\[(\d+)\]/, source) do
@@ -122,7 +122,7 @@ defmodule Elmc.Backend.CCodegen.StackEstimate do
     Map.put(report, "code_size_indicators", indicators)
   end
 
-  @spec runtime_call_counts(String.t()) :: Types.ir_expr()
+  @spec runtime_call_counts(String.t()) :: %{String.t() => non_neg_integer()}
 
   defp runtime_call_counts(source) do
     @risk_runtime_calls
@@ -133,7 +133,7 @@ defmodule Elmc.Backend.CCodegen.StackEstimate do
     |> Map.new()
   end
 
-  @spec ir_entries(Types.t()) :: Types.ir_expr()
+  @spec ir_entries(ElmEx.IR.t()) :: %{String.t() => map()}
 
   defp ir_entries(ir) do
     ir.modules
@@ -149,11 +149,11 @@ defmodule Elmc.Backend.CCodegen.StackEstimate do
     |> Map.new()
   end
 
-  @spec score_expr(Types.expr(), String.t()) :: Types.ir_expr()
+  @spec score_expr(Types.expr() | map(), String.t()) :: {non_neg_integer(), [atom()]}
 
   defp score_expr(expr, function_name), do: score_node(expr, function_name, 0)
 
-  @spec score_node(map() | list() | integer(), String.t(), non_neg_integer()) :: Types.ir_expr()
+  @spec score_node(term(), String.t(), non_neg_integer()) :: {non_neg_integer(), [atom()]}
 
   defp score_node(%{op: :runtime_call, function: function, args: args}, function_name, depth) do
     {child_score, child_reasons} = score_many(args || [], function_name, depth + 1)
@@ -206,7 +206,7 @@ defmodule Elmc.Backend.CCodegen.StackEstimate do
 
   defp score_node(_value, _function_name, _depth), do: {0, []}
 
-  @spec score_many(Types.ir_expr(), String.t(), non_neg_integer()) :: Types.ir_expr()
+  @spec score_many(term(), String.t(), non_neg_integer()) :: {non_neg_integer(), [atom()]}
 
   defp score_many(values, function_name, depth) do
     values
@@ -217,12 +217,12 @@ defmodule Elmc.Backend.CCodegen.StackEstimate do
     end)
   end
 
-  @spec depth_score(non_neg_integer()) :: Types.ir_expr()
+  @spec depth_score(non_neg_integer()) :: non_neg_integer()
 
   defp depth_score(depth) when depth >= 6, do: 1
   defp depth_score(_depth), do: 0
 
-  @spec c_entries(String.t()) :: Types.ir_expr()
+  @spec c_entries(String.t()) :: %{String.t() => map()}
 
   defp c_entries(source) do
     ~r/(?:static\s+)?(?:ElmcValue\s+\*|elmc_int_t)\s+(elmc_fn_[A-Za-z0-9_]+)(?:_native)?\([^)]*\)\s*\{/
@@ -235,7 +235,7 @@ defmodule Elmc.Backend.CCodegen.StackEstimate do
     |> Map.new()
   end
 
-  @spec function_body(String.t(), Types.ir_expr()) :: Types.ir_expr()
+  @spec function_body(String.t(), non_neg_integer()) :: String.t()
 
   defp function_body(source, offset) do
     source
@@ -244,7 +244,7 @@ defmodule Elmc.Backend.CCodegen.StackEstimate do
     |> hd()
   end
 
-  @spec c_entry(String.t(), Types.expr()) :: Types.ir_expr()
+  @spec c_entry(String.t(), String.t()) :: map()
 
   defp c_entry(name, body) do
     tmp_count =
@@ -279,12 +279,12 @@ defmodule Elmc.Backend.CCodegen.StackEstimate do
     }
   end
 
-  @spec maybe_reason(Types.ir_expr(), Types.ir_expr(), integer()) :: Types.ir_expr() | nil
+  @spec maybe_reason([atom()], boolean(), atom()) :: [atom()]
 
   defp maybe_reason(reasons, true, reason), do: [reason | reasons]
   defp maybe_reason(reasons, false, _reason), do: reasons
 
-  @spec level(Types.ir_expr()) :: Types.ir_expr()
+  @spec level(non_neg_integer()) :: StackEstimateTypes.risk_level()
 
   defp level(score) when score >= 10, do: :risk
   defp level(score) when score >= 5, do: :warn
@@ -299,11 +299,11 @@ defmodule Elmc.Backend.CCodegen.StackEstimate do
 
   def ir_function_score(_decl), do: 0
 
-  @spec base_entry(String.t()) :: Types.ir_expr()
+  @spec base_entry(String.t()) :: map()
 
   defp base_entry(name), do: %{function: name, score: 0, reasons: []}
 
-  @spec adjust_fused_ir_entry(Types.ir_expr(), String.t(), String.t()) :: Types.ir_expr()
+  @spec adjust_fused_ir_entry(map(), String.t(), String.t()) :: map()
 
   defp adjust_fused_ir_entry(entry, name, c_source) do
     with [module, function] <- String.split(name, ".", parts: 2),
@@ -321,7 +321,7 @@ defmodule Elmc.Backend.CCodegen.StackEstimate do
     end
   end
 
-  @spec fused_native_defined?(String.t(), integer(), String.t()) :: boolean()
+  @spec fused_native_defined?(String.t(), String.t(), String.t()) :: boolean()
 
   defp fused_native_defined?(module, function, c_source) do
     native = "elmc_fn_#{Util.safe_c_suffix(module)}_#{Util.safe_c_suffix(function)}_native"
@@ -343,7 +343,7 @@ defmodule Elmc.Backend.CCodegen.StackEstimate do
     list_concat_flat_acc_
   )
 
-  @spec adjust_cursor_loop_entry(Types.ir_expr(), String.t(), String.t(), Types.ir_expr()) :: Types.ir_expr()
+  @spec adjust_cursor_loop_entry(map(), String.t(), String.t(), %{String.t() => String.t()}) :: map()
 
   defp adjust_cursor_loop_entry(entry, name, _c_source, body_cache) do
     c_fn =
@@ -369,7 +369,7 @@ defmodule Elmc.Backend.CCodegen.StackEstimate do
     end
   end
 
-  @spec function_body_cache(String.t()) :: Types.ir_expr()
+  @spec function_body_cache(String.t()) :: %{String.t() => String.t()}
 
   defp function_body_cache(source) do
     pattern =
@@ -396,13 +396,14 @@ defmodule Elmc.Backend.CCodegen.StackEstimate do
     end)
   end
 
-  @spec find_matching_brace(String.t(), Types.ir_expr()) :: Types.ir_expr()
+  @spec find_matching_brace(String.t(), non_neg_integer()) :: {:ok, non_neg_integer()} | {:error, :unbalanced}
 
   defp find_matching_brace(source, open_idx) do
     do_find_matching_brace(source, open_idx + 1, byte_size(source), 1)
   end
 
-  @spec do_find_matching_brace(String.t(), Types.ir_expr(), Types.ir_expr(), non_neg_integer()) :: Types.ir_expr()
+  @spec do_find_matching_brace(String.t(), non_neg_integer(), non_neg_integer(), non_neg_integer()) ::
+          {:ok, non_neg_integer()} | {:error, :unbalanced}
 
   defp do_find_matching_brace(_source, idx, size, _depth) when idx >= size, do: {:error, :unbalanced}
 
@@ -442,7 +443,8 @@ defmodule Elmc.Backend.CCodegen.StackEstimate do
     end
   end
 
-  @spec scan_brace_token(String.t(), Types.ir_expr(), Types.ir_expr(), non_neg_integer()) :: Types.ir_expr()
+  @spec scan_brace_token(String.t(), non_neg_integer(), non_neg_integer(), non_neg_integer()) ::
+          {:ok, non_neg_integer()} | {:error, :unbalanced}
 
   defp scan_brace_token(source, idx, size, depth) do
     ch = :binary.at(source, idx)
@@ -462,7 +464,7 @@ defmodule Elmc.Backend.CCodegen.StackEstimate do
     end
   end
 
-  @spec skip_c_string(String.t(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+  @spec skip_c_string(String.t(), non_neg_integer(), non_neg_integer()) :: {:ok, non_neg_integer()} | :error
 
   defp skip_c_string(_source, idx, size) when idx >= size, do: :error
 
@@ -474,7 +476,7 @@ defmodule Elmc.Backend.CCodegen.StackEstimate do
     end
   end
 
-  @spec skip_c_char_literal(String.t(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+  @spec skip_c_char_literal(String.t(), non_neg_integer(), non_neg_integer()) :: {:ok, non_neg_integer()} | :error
 
   defp skip_c_char_literal(_source, idx, size) when idx >= size, do: :error
 
@@ -486,7 +488,7 @@ defmodule Elmc.Backend.CCodegen.StackEstimate do
     end
   end
 
-  @spec skip_line_comment(String.t(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+  @spec skip_line_comment(String.t(), non_neg_integer(), non_neg_integer()) :: non_neg_integer()
 
   defp skip_line_comment(source, idx, size) do
     case :binary.match(source, "\n", [{:scope, {idx, size - idx}}]) do
@@ -495,7 +497,7 @@ defmodule Elmc.Backend.CCodegen.StackEstimate do
     end
   end
 
-  @spec skip_block_comment(String.t(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+  @spec skip_block_comment(String.t(), non_neg_integer(), non_neg_integer()) :: {:ok, non_neg_integer()} | :error
 
   defp skip_block_comment(_source, idx, size) when idx >= size, do: :error
 
@@ -506,7 +508,7 @@ defmodule Elmc.Backend.CCodegen.StackEstimate do
     end
   end
 
-  @spec cursor_loop_optimized?(Types.expr()) :: boolean()
+  @spec cursor_loop_optimized?(String.t()) :: boolean()
 
   defp cursor_loop_optimized?(body) do
     Enum.any?(@cursor_loop_markers, &String.contains?(body, &1)) and

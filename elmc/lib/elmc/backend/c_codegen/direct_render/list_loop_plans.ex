@@ -40,7 +40,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.ListLoopPlans do
 
   def fusion_plans?(_), do: false
 
-  @spec pipeline_fragment?(Types.ir_expr(), Types.compile_env()) :: boolean()
+  @spec pipeline_fragment?(term(), Types.compile_env()) :: boolean()
   def pipeline_fragment?(list_expr, env) do
     case analyze(list_expr, env) do
       {:ok, _} -> true
@@ -48,7 +48,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.ListLoopPlans do
     end
   end
 
-  @spec analyze(Types.ir_expr(), Types.compile_env()) :: {:ok, [plan()]} | :error
+  @spec analyze(term(), Types.compile_env()) :: {:ok, [plan()]} | :error
   def analyze(list_expr, env) do
     case resolve_expr(list_expr, env) do
       nil -> :error

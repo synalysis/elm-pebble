@@ -8,7 +8,12 @@ defmodule Ide.Debugger.RuntimeHost do
              Types.runtime_state())
 
   @type append_debugger_event_fn ::
-          (Types.runtime_state(), String.t(), Types.surface_target(), String.t(), String.t() ->
+          (Types.runtime_state(),
+           String.t(),
+           Types.surface_target(),
+           String.t(),
+           String.t(),
+           Types.timeline_step_message_value() ->
              Types.runtime_state())
 
   @type apply_step_once_fn ::

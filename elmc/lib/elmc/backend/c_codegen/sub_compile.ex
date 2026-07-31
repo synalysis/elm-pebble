@@ -24,19 +24,21 @@ defmodule Elmc.Backend.CCodegen.SubCompile do
     end
   end
 
-  @spec native_params?(Types.ir_expr(), Types.compile_env()) :: boolean()
-
+  @spec native_params?([Types.expr()], Types.compile_env()) :: boolean()
   defp native_params?(params, env) do
     Enum.all?(params, &native_param?(&1, env))
   end
 
-  @spec native_param?(map() | Types.expr(), Types.compile_env()) :: boolean()
-
+  @spec native_param?(term(), Types.compile_env()) :: boolean()
   defp native_param?(%{op: op}, _env) when op in [:int_literal, :c_int_expr, :msg_tag_expr], do: true
   defp native_param?(expr, env), do: NativeInt.expr?(expr, env)
 
-  @spec compile_native_sub(Types.ir_expr(), Types.ir_expr(), Types.compile_env(), Types.ir_expr()) :: Types.ir_expr()
-
+  @spec compile_native_sub(
+          Types.ir_expr(),
+          [Types.expr()],
+          Types.compile_env(),
+          Types.compile_counter()
+        ) :: Types.compile_result()
   defp compile_native_sub(mask, params, env, counter) do
     {mask_code, mask_ref, counter} = compile_mask_ref(mask, env, counter)
 
@@ -71,8 +73,8 @@ defmodule Elmc.Backend.CCodegen.SubCompile do
     {code, out, next}
   end
 
-  @spec compile_mask_ref(map() | Types.ir_expr(), Types.compile_env(), Types.ir_expr()) :: Types.ir_expr()
-
+  @spec compile_mask_ref(term(), Types.compile_env(), Types.compile_counter()) ::
+          Types.compile_result()
   defp compile_mask_ref(%{op: :c_int_expr, value: value}, _env, counter) when is_binary(value),
     do: {"", value, counter}
 
@@ -84,8 +86,8 @@ defmodule Elmc.Backend.CCodegen.SubCompile do
     {code, "elmc_as_int(#{var})", counter}
   end
 
-  @spec compile_param_ref(map() | Types.expr(), Types.compile_env(), Types.ir_expr()) :: Types.ir_expr()
-
+  @spec compile_param_ref(term(), Types.compile_env(), Types.compile_counter()) ::
+          Types.compile_result()
   defp compile_param_ref(%{op: :msg_tag_expr, name: name}, _env, counter) when is_binary(name) do
     {"", msg_tag_macro(name), counter}
   end
@@ -102,8 +104,7 @@ defmodule Elmc.Backend.CCodegen.SubCompile do
     end
   end
 
-  @spec msg_tag_macro(String.t()) :: Types.ir_expr()
-
+  @spec msg_tag_macro(String.t()) :: String.t()
   defp msg_tag_macro(name) do
     "ELMC_PEBBLE_MSG_#{Elmc.Backend.Pebble.Util.macro_name(name)}"
   end

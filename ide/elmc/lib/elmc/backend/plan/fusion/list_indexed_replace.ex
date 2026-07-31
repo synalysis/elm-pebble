@@ -3,14 +3,16 @@ defmodule Elmc.Backend.Plan.Fusion.ListIndexedReplace do
   alias Elmc.Backend.Plan.Types, as: Types
 
 
-  alias Elmc.Backend.CCodegen.{FusionSupport, Host, Util}
-  alias Elmc.Backend.Plan.Fusion.{Helper, Registry, Tuple2CaseTable}
+  alias Elmc.Backend.CCodegen.{Host, Util}
+  alias Elmc.Backend.Plan.Fusion.Matchers.FusionSupport
+  alias Elmc.Backend.Plan.Fusion.{Helper, Registry}
   alias Elmc.Backend.Plan.Types
+  alias Elmc.Backend.Plan.Types.FunctionPlan
 
   @indexed_map_targets ~w(List.indexedMap Elm.Kernel.List.indexedMap)
 
   @spec try_plan(String.t(), Types.function_decl(), Types.function_decl_map(), keyword()) ::
-          {:ok, Types.FunctionPlan.t()} | :error
+          {:ok, FunctionPlan.t()} | :error
   def try_plan(module_name, decl, _decl_map, _opts) do
     name = Map.get(decl, :name, "")
 
@@ -30,8 +32,7 @@ defmodule Elmc.Backend.Plan.Fusion.ListIndexedReplace do
           Registry.register_rc_native_arg_kinds(module_name, name, kinds)
 
           plan =
-            module_name
-            |> Tuple2CaseTable.build_fusion_plan(name, decl, c_body)
+            Helper.build_fusion_plan(module_name, name, decl, c_body)
             |> Helper.maybe_put_fusion_arg_kinds(kinds)
             |> Helper.attach_bytecode_fusion(:list_indexed_replace)
 
@@ -42,8 +43,8 @@ defmodule Elmc.Backend.Plan.Fusion.ListIndexedReplace do
     end
   end
 
-  @spec parse_indexed_replace(map() | term(), Types.ir_expr() | term(), Types.ir_expr() | term(), Types.ir_expr() | term()) :: Types.ir_expr()
-
+  @spec parse_indexed_replace(term(), String.t(), String.t(), String.t()) ::
+          {:ok, String.t(), String.t()} | :error
   defp parse_indexed_replace(
          %{
            op: :qualified_call,
@@ -75,16 +76,15 @@ defmodule Elmc.Backend.Plan.Fusion.ListIndexedReplace do
 
   defp parse_indexed_replace(_, _, _, _), do: :error
 
-  @spec list_int_return?(String.t() | term()) :: boolean()
-
+  @spec list_int_return?(term()) :: boolean()
   defp list_int_return?(type) when is_binary(type) do
     Host.normalize_type_name(Host.function_return_type(type)) == "List Int"
   end
 
   defp list_int_return?(_), do: false
 
-  @spec parse_replace_lambda(map() | term(), Types.ir_expr() | term(), Types.ir_expr() | term()) :: Types.ir_expr()
-
+  @spec parse_replace_lambda(term(), String.t(), String.t()) ::
+          {:ok, String.t(), String.t()} | :error
   defp parse_replace_lambda(
          %{op: :lambda, args: [index_param, item_param], body: body},
          index_arg,
@@ -105,8 +105,8 @@ defmodule Elmc.Backend.Plan.Fusion.ListIndexedReplace do
 
   defp parse_replace_lambda(_, _, _), do: :error
 
-  @spec parse_replace_lambda_body(Types.expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
-
+  @spec parse_replace_lambda_body(Types.expr(), String.t(), String.t(), String.t(), String.t()) ::
+          {:ok, String.t(), String.t()} | :error
   defp parse_replace_lambda_body(body, index_param, item_param, index_arg, value_arg) do
     case body do
       %{
@@ -132,8 +132,14 @@ defmodule Elmc.Backend.Plan.Fusion.ListIndexedReplace do
     end
   end
 
-  @spec match_replace_target(Types.ir_expr(), Types.expr(), Types.expr(), Types.expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
-
+  @spec match_replace_target(
+          String.t(),
+          Types.expr(),
+          Types.expr(),
+          Types.expr(),
+          String.t(),
+          String.t()
+        ) :: {:ok, String.t(), String.t()} | :error
   defp match_replace_target(index_param, left, right, value_expr, index_arg, value_arg) do
     if compare_is_index_replace?(left, right, index_param, index_arg) and
          match_value?(value_expr, value_arg) do
@@ -143,25 +149,21 @@ defmodule Elmc.Backend.Plan.Fusion.ListIndexedReplace do
     end
   end
 
-  @spec compare_is_index_replace?(Types.expr(), Types.expr(), Types.ir_expr(), Types.ir_expr()) :: boolean()
-
+  @spec compare_is_index_replace?(Types.expr(), Types.expr(), String.t(), String.t()) :: boolean()
   defp compare_is_index_replace?(left, right, index_param, index_arg) do
     (var_name?(left, index_param) and var_name?(right, index_arg)) or
       (var_name?(right, index_param) and var_name?(left, index_arg))
   end
 
-  @spec var_name?(map() | term(), Types.ir_expr() | term()) :: boolean()
-
+  @spec var_name?(term(), String.t()) :: boolean()
   defp var_name?(%{op: :var, name: name}, expected), do: name == expected
   defp var_name?(_, _), do: false
 
-  @spec match_value?(map() | term(), Types.ir_expr() | term()) :: boolean()
-
+  @spec match_value?(term(), String.t()) :: boolean()
   defp match_value?(%{op: :var, name: name}, value_arg), do: name == value_arg
   defp match_value?(_, _), do: false
 
-  @spec emit(String.t(), String.t(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
-
+  @spec emit(String.t(), String.t(), String.t(), String.t(), String.t()) :: String.t()
   defp emit(module_name, name, index_arg, value_arg, list_arg) do
     c_prefix = Util.module_fn_name(module_name, name)
 
@@ -169,12 +171,8 @@ defmodule Elmc.Backend.Plan.Fusion.ListIndexedReplace do
     static RC #{c_prefix}_native(ElmcValue **out, const elmc_int_t #{index_arg}, const elmc_int_t #{value_arg}, ElmcValue * const #{list_arg}) {
       RC Rc = RC_SUCCESS;
       CATCH_BEGIN
-        ElmcValue *result = elmc_list_replace_nth_int(#{list_arg}, #{index_arg}, #{value_arg});
-        if (!result) {
-          Rc = RC_ERR_OUT_OF_MEMORY;
-          CHECK_RC(Rc);
-        }
-        *out = result;
+        Rc = elmc_list_replace_nth_int(out, #{list_arg}, #{index_arg}, #{value_arg});
+        CHECK_RC(Rc);
       CATCH_END
       return Rc;
     }

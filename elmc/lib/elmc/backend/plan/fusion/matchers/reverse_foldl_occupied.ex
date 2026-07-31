@@ -31,8 +31,7 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.ReverseFoldlOccupied do
     end
   end
 
-  @spec parse(map() | term()) :: Types.ir_expr()
-
+  @spec parse(term()) :: {:ok, String.t(), String.t(), String.t()} | :error
   defp parse(%{
          op: :qualified_call,
          target: "List.reverse",
@@ -52,8 +51,7 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.ReverseFoldlOccupied do
 
   defp parse(_), do: :error
 
-  @spec parse_foldl_lambda(map() | term()) :: Types.ir_expr()
-
+  @spec parse_foldl_lambda(term()) :: {:ok, String.t(), String.t()} | :error
   defp parse_foldl_lambda(%{
          op: :lambda,
          args: ["index"],
@@ -82,8 +80,7 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.ReverseFoldlOccupied do
 
   defp parse_foldl_lambda(_), do: :error
 
-  @spec flat_index_from_cell_at(map() | term()) :: Types.ir_expr()
-
+  @spec flat_index_from_cell_at(term()) :: {:ok, String.t(), String.t()} | :error
   defp flat_index_from_cell_at(%{
          op: :qualified_call,
          target: cell_reader,
@@ -103,8 +100,7 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.ReverseFoldlOccupied do
 
   defp flat_index_from_cell_at(_), do: :error
 
-  @spec mod_by_cols(map() | term()) :: Types.ir_expr()
-
+  @spec mod_by_cols(term()) :: {:ok, String.t()} | :error
   defp mod_by_cols(%{
          op: :qualified_call,
          target: target,
@@ -115,8 +111,7 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.ReverseFoldlOccupied do
 
   defp mod_by_cols(_), do: :error
 
-  @spec row_from_index_div(map() | term(), Types.ir_expr() | term()) :: Types.ir_expr()
-
+  @spec row_from_index_div(term(), String.t()) :: String.t() | false
   defp row_from_index_div(%{op: :call, name: "__idiv__", args: [%{op: :var, name: "index"}, %{op: :var, name: cols_var}]}, cols_var),
     do: cols_var
 
@@ -125,8 +120,7 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.ReverseFoldlOccupied do
 
   defp row_from_index_div(_, _), do: false
 
-  @spec range_zero_to_exclusive_upper?(map() | term()) :: boolean()
-
+  @spec range_zero_to_exclusive_upper?(term()) :: {:ok, String.t()} | :error
   defp range_zero_to_exclusive_upper?(%{
          op: :qualified_call,
          target: "List.range",
@@ -137,8 +131,7 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.ReverseFoldlOccupied do
 
   defp range_zero_to_exclusive_upper?(_), do: :error
 
-  @spec emit(String.t(), String.t(), Types.ir_expr()) :: Types.ir_expr()
-
+  @spec emit(String.t(), String.t(), integer()) :: String.t()
   defp emit(module_name, name, size) do
     c_prefix = Util.module_fn_name(module_name, name)
 

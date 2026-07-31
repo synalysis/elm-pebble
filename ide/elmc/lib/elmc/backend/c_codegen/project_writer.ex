@@ -2,7 +2,6 @@ defmodule Elmc.Backend.CCodegen.ProjectWriter do
   @moduledoc false
   alias Elmc.Backend.CCodegen.Types, as: Types
 
-
   alias ElmEx.IR
   alias Elmc.Backend.CCodegen.BuildArtifacts
   alias Elmc.Backend.CCodegen.GeneratedSource
@@ -10,7 +9,8 @@ defmodule Elmc.Backend.CCodegen.ProjectWriter do
   alias Elmc.Backend.CCodegen.StackEstimate
   alias Elmc.Backend.CCodegen.Types
 
-  @spec write(IR.t(), String.t(), Types.codegen_opts()) :: :ok | {:error, Types.file_error()}
+  @spec write(IR.t(), String.t(), Types.codegen_opts() | map()) ::
+          :ok | {:error, Types.file_error()}
   def write(%IR{} = ir, out_dir, opts \\ %{}) do
     opts = normalize_codegen_opts(opts)
     c_dir = Path.join(out_dir, "c")
@@ -29,7 +29,8 @@ defmodule Elmc.Backend.CCodegen.ProjectWriter do
     end
   end
 
-  @spec write_multi(IR.t(), String.t(), Types.codegen_opts()) :: :ok | {:error, Types.file_error()}
+  @spec write_multi(IR.t(), String.t(), Types.codegen_opts()) ::
+          :ok | {:error, Types.file_error()}
   def write_multi(%IR{} = ir, out_dir, opts \\ %{}) do
     opts = normalize_codegen_opts(opts)
     c_dir = Path.join(out_dir, "c")
@@ -44,15 +45,18 @@ defmodule Elmc.Backend.CCodegen.ProjectWriter do
          :ok <- File.write(Path.join(c_dir, "host_harness.c"), BuildArtifacts.host_harness()),
          :ok <- File.write(Path.join(out_dir, "CMakeLists.txt"), BuildArtifacts.cmake()),
          :ok <- File.write(Path.join(out_dir, "Makefile"), BuildArtifacts.makefile()),
-         :ok <- File.write(Path.join(out_dir, "link_manifest.json"), PerModuleArtifacts.link_manifest(ir)),
+         :ok <-
+           File.write(
+             Path.join(out_dir, "link_manifest.json"),
+             PerModuleArtifacts.link_manifest(ir)
+           ),
          :ok <- Elmc.Backend.Bytecode.ProjectWriter.maybe_write(ir, out_dir, opts),
          :ok <- Elmc.Backend.Wasm.ProjectWriter.maybe_write(ir, out_dir, opts) do
       :ok
     end
   end
 
-  @spec write_stack_report(Types.t(), Types.t(), String.t()) :: Types.ir_expr()
-
+  @spec write_stack_report(String.t(), IR.t(), String.t()) :: :ok | {:error, File.posix()}
   defp write_stack_report(out_dir, ir, generated_source) do
     report =
       ir
@@ -62,8 +66,7 @@ defmodule Elmc.Backend.CCodegen.ProjectWriter do
     File.write(Path.join(out_dir, "elmc_stack_report.json"), report)
   end
 
-  @spec normalize_codegen_opts(list() | map()) :: list() | map()
-
+  @spec normalize_codegen_opts(keyword() | map()) :: map()
   defp normalize_codegen_opts(opts) when is_list(opts) do
     opts |> Map.new() |> normalize_codegen_opts()
   end
@@ -76,8 +79,7 @@ defmodule Elmc.Backend.CCodegen.ProjectWriter do
     end
   end
 
-  @spec pebble_production_build?(keyword()) :: boolean()
-
+  @spec pebble_production_build?(map()) :: boolean()
   defp pebble_production_build?(opts) do
     opts[:pebble_int32] == true or opts[:prune_runtime] == true
   end

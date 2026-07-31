@@ -11,6 +11,7 @@ defmodule ElmEx.IR.FunctionCallCheck do
   alias ElmEx.IR.Types.Diagnostic
   alias ElmEx.IR.Types.Expr
   alias ElmEx.IR.Types.FunctionCallCheck, as: FCC
+  alias ElmEx.IR.Types.Lookup
 
   @skip_call_prefixes ~w(__)
 
@@ -117,8 +118,6 @@ defmodule ElmEx.IR.FunctionCallCheck do
 
   defp relative_module_file(%{name: name}, _project_dir) when is_binary(name),
     do: "src/#{name}.elm"
-
-  defp relative_module_file(_, _), do: nil
 
   @spec build_signature_lookup([FCC.frontend_module()]) :: FCC.signature_lookup()
   defp build_signature_lookup(frontend_modules) do
@@ -825,9 +824,6 @@ defmodule ElmEx.IR.FunctionCallCheck do
           {line, column} -> {line, column}
           _ -> call_site_position_from_body(decl, pattern, occurrence)
         end
-
-      _ ->
-        call_site_position_from_body(decl, pattern, occurrence)
     end
   end
 
@@ -1059,7 +1055,7 @@ defmodule ElmEx.IR.FunctionCallCheck do
 
   # Bare references (`Tuple.pair`, `List.map`) keep the full function type so HOFs like
   # `Decode.map2` accept them. Applied calls report the result type.
-  @spec applied_or_value_type(String.t(), term() | list()) :: Types.expr()
+  @spec applied_or_value_type(String.t(), term() | list()) :: String.t() | nil
 
   defp applied_or_value_type(type, []) when is_binary(type), do: String.trim(type)
 
@@ -1533,7 +1529,11 @@ defmodule ElmEx.IR.FunctionCallCheck do
   defp build_import_resolution(_import_entries, _project_module_exports),
     do: {%{}, %{}, %{}, [], %{}}
 
-  @spec put_alias_binding(term(), String.t(), String.t()) :: Types.expr()
+  @spec put_alias_binding(
+          {Lookup.name_map(), %{String.t() => [String.t()]}},
+          String.t(),
+          String.t()
+        ) :: {Lookup.name_map(), %{String.t() => [String.t()]}}
 
   defp put_alias_binding({alias_acc, alias_modules_acc}, alias_name, module_name)
        when is_binary(alias_name) and alias_name != "" and is_binary(module_name) do
@@ -1547,7 +1547,10 @@ defmodule ElmEx.IR.FunctionCallCheck do
 
   defp put_alias_binding(acc, _alias_name, _module_name), do: acc
 
-  @spec build_alias_member_map(String.t() | term(), String.t() | term()) :: Types.expr()
+  @spec build_alias_member_map(
+          %{String.t() => [String.t()]},
+          FCC.project_module_exports()
+        ) :: Lookup.alias_member_map()
 
   defp build_alias_member_map(alias_modules, project_module_exports)
        when is_map(alias_modules) and is_map(project_module_exports) do

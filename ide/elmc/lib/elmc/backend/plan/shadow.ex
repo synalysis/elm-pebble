@@ -1,9 +1,8 @@
 defmodule Elmc.Backend.Plan.Shadow do
   @moduledoc """
-  Shadow-mode plan lowering alongside legacy C emission.
+  Plan lowering verification alongside primary C emission.
   """
   alias Elmc.Backend.Plan.Types, as: Types
-
 
   alias Elmc.Backend.Plan.Lower.Function
 
@@ -11,21 +10,24 @@ defmodule Elmc.Backend.Plan.Shadow do
 
   @stats_key :elmc_plan_shadow_stats
 
-  @spec maybe_verify_function(Types.function_decl(), String.t(), Types.function_decl_map(), keyword()) ::
+  @spec maybe_verify_function(
+          Types.function_decl(),
+          String.t(),
+          Types.function_decl_map(),
+          keyword()
+        ) ::
           :ok | :skipped | {:error, Types.lower_error()}
   def maybe_verify_function(decl, module_name, decl_map, opts) do
-    case plan_ir_mode(opts) do
-      :off ->
-        :skipped
-
-      mode when mode in [:shadow, :primary] ->
-        result = run_shadow(decl, module_name, decl_map, opts)
-        record_stat(result, module_name, Map.get(decl, :name, "anon"))
-        result
-    end
+    result = run_shadow(decl, module_name, decl_map, opts)
+    record_stat(result, module_name, Map.get(decl, :name, "anon"))
+    result
   end
 
-  @spec shadow_stats() :: %{ok: non_neg_integer(), skipped: non_neg_integer(), error: non_neg_integer()}
+  @spec shadow_stats() :: %{
+          ok: non_neg_integer(),
+          skipped: non_neg_integer(),
+          error: non_neg_integer()
+        }
   def shadow_stats do
     Process.get(@stats_key, %{ok: 0, skipped: 0, error: 0})
   end
@@ -36,8 +38,8 @@ defmodule Elmc.Backend.Plan.Shadow do
     :ok
   end
 
-  @spec run_shadow(Types.decl(), String.t(), Types.decl_map(), keyword()) :: Types.ir_expr()
-
+  @spec run_shadow(Types.decl(), String.t(), Types.decl_map(), keyword()) ::
+          :ok | :skipped | {:error, Types.lower_error()}
   defp run_shadow(decl, module_name, decl_map, opts) do
     try do
       case Function.lower(decl, module_name, decl_map, opts) do
@@ -58,8 +60,7 @@ defmodule Elmc.Backend.Plan.Shadow do
     end
   end
 
-  @spec record_stat(Types.ir_expr(), String.t(), String.t()) :: Types.ir_expr()
-
+  @spec record_stat(:ok | :skipped | {:error, term()}, String.t(), String.t()) :: term()
   defp record_stat(result, module, name) do
     stats = shadow_stats()
 
@@ -73,7 +74,7 @@ defmodule Elmc.Backend.Plan.Shadow do
     Process.put(@stats_key, Map.put(updated, :last, {module, name, result}))
   end
 
-  @spec plan_ir_mode(keyword() | Types.compile_env()) :: :off | :shadow | :primary
+  @spec plan_ir_mode(keyword() | map()) :: Elmc.Types.plan_ir_mode()
   def plan_ir_mode(opts) do
     mode =
       cond do
@@ -86,16 +87,14 @@ defmodule Elmc.Backend.Plan.Shadow do
     |> normalize_mode()
   end
 
-  @spec normalize_mode(Types.ir_expr() | term()) :: Types.ir_expr()
-
+  @spec normalize_mode(term()) :: Elmc.Types.plan_ir_mode()
   defp normalize_mode(:primary), do: :primary
   defp normalize_mode(:shadow), do: :shadow
   defp normalize_mode("primary"), do: :primary
   defp normalize_mode("shadow"), do: :shadow
-  defp normalize_mode(_), do: :off
+  defp normalize_mode(_), do: :primary
 
-  @spec raise_on_failure?(list() | term()) :: boolean()
-
+  @spec raise_on_failure?(keyword() | term()) :: boolean()
   defp raise_on_failure?(opts) when is_list(opts), do: Keyword.get(opts, :plan_ir_raise, false)
   defp raise_on_failure?(_), do: Application.get_env(:elmc, :plan_ir_raise, false)
 end

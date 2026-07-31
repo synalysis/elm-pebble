@@ -241,7 +241,7 @@ defmodule Ide.Settings do
   Returns the on-disk settings path for `user` in public mode, or the global
   settings path in local mode.
   """
-  @spec user_settings_path(User.t() | integer()) :: String.t() | nil
+  @spec user_settings_path(User.t() | integer()) :: String.t()
   def user_settings_path(%User{id: id}), do: user_settings_path(id)
 
   def user_settings_path(id) when is_integer(id) do
@@ -260,7 +260,7 @@ defmodule Ide.Settings do
     if Auth.public_mode?() do
       path = user_settings_path(id)
 
-      if is_binary(path) and File.exists?(path) do
+      if File.exists?(path) do
         File.rm(path)
       end
 

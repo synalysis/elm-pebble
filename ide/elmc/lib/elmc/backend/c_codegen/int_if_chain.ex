@@ -66,7 +66,7 @@ defmodule Elmc.Backend.CCodegen.IntIfChain do
       int_branch_count(branches) >= @min_branches
   end
 
-  @spec int_branch_count(list()) :: Types.ir_expr()
+  @spec int_branch_count(list()) :: non_neg_integer()
 
   defp int_branch_count(branches) do
     Enum.count(branches, fn %{pattern: pattern} ->
@@ -74,7 +74,7 @@ defmodule Elmc.Backend.CCodegen.IntIfChain do
     end)
   end
 
-  @spec parse_else_chain(map() | Types.expr(), Types.expr(), Types.compile_env()) :: Types.ir_expr()
+  @spec parse_else_chain(map() | Types.expr(), Types.expr(), Types.compile_env()) :: {:ok, Types.expr(), Types.int_case_branches()} | :error
 
   defp parse_else_chain(%{op: :if, cond: cond, then_expr: then_expr, else_expr: else_expr}, subject, env) do
     with {:ok, branch_subject, value} <- int_equality(cond, env),
@@ -92,7 +92,7 @@ defmodule Elmc.Backend.CCodegen.IntIfChain do
 
   # `if x == 10 || x == 30 || x == 60 then x else 5` lowers to nested bool ifs:
   # if (x == 10) then True else if (x == 30) then True else (x == 60)
-  @spec collect_or_equalities(map() | Types.expr(), Types.compile_env(), term()) :: Types.ir_expr()
+  @spec collect_or_equalities(map() | Types.expr(), Types.compile_env(), list()) :: {:ok, Types.expr(), [integer()]} | :error
 
   defp collect_or_equalities(
          %{op: :if, cond: cond, then_expr: then_expr, else_expr: else_expr},
@@ -141,7 +141,7 @@ defmodule Elmc.Backend.CCodegen.IntIfChain do
     Enum.all?(acc, fn {entry_subject, _} -> same_subject?(entry_subject, subject) end)
   end
 
-  @spec int_equality(Types.expr(), Types.compile_env()) :: Types.ir_expr()
+  @spec int_equality(Types.expr(), Types.compile_env()) :: {:ok, Types.expr(), integer()} | :error
 
   defp int_equality(cond_expr, env) do
     case cond_expr do
@@ -156,7 +156,7 @@ defmodule Elmc.Backend.CCodegen.IntIfChain do
     end
   end
 
-  @spec int_equality_pair(Types.expr(), Types.expr(), Types.compile_env()) :: Types.ir_expr()
+  @spec int_equality_pair(Types.expr(), Types.expr(), Types.compile_env()) :: {:ok, Types.expr(), integer()} | :error
 
   defp int_equality_pair(left, right, env) do
     with subject when not is_nil(subject) <- subject_expr(left, env),
@@ -173,13 +173,13 @@ defmodule Elmc.Backend.CCodegen.IntIfChain do
     end
   end
 
-  @spec subject_expr(Types.expr(), Types.compile_env()) :: Types.ir_expr()
+  @spec subject_expr(Types.expr(), Types.compile_env()) :: Types.expr() | nil
 
   defp subject_expr(expr, env) do
     if NativeInt.expr?(expr, env), do: expr, else: nil
   end
 
-  @spec int_literal(map() | Types.expr()) :: Types.ir_expr()
+  @spec int_literal(map() | Types.expr()) :: integer() | nil
 
   defp int_literal(%{op: :int_literal, value: value}) when is_integer(value), do: value
   defp int_literal(_expr), do: nil

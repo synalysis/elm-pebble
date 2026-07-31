@@ -8,7 +8,7 @@ defmodule IdeWeb.WellKnownController do
   probe `/.well-known/oauth-protected-resource` before connecting; return a clean
   JSON 404 so discovery fails without the Phoenix HTML debugger page.
   """
-  @spec oauth_protected_resource(integer(), term()) :: term()
+  @spec oauth_protected_resource(Plug.Conn.t(), map()) :: Plug.Conn.t()
 
   def oauth_protected_resource(conn, _params) do
     conn

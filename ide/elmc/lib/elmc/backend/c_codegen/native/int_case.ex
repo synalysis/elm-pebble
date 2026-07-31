@@ -74,7 +74,13 @@ defmodule Elmc.Backend.CCodegen.Native.IntCase do
     compile(subject_expr, branches, env, counter, :native_int)
   end
 
-  @spec compile(Types.expr(), list(), Types.compile_env(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+  @spec compile(
+          Types.ir_expr(),
+          Types.int_case_branches(),
+          Types.compile_env(),
+          Types.compile_counter(),
+          :boxed | :native_int
+        ) :: Types.compile_result()
 
   defp compile(subject_expr, branches, env, counter, :boxed) do
     cond do
@@ -105,7 +111,12 @@ defmodule Elmc.Backend.CCodegen.Native.IntCase do
     end
   end
 
-  @spec compile_boxed_switch(Types.expr(), list(), Types.compile_env(), Types.ir_expr()) :: Types.ir_expr()
+  @spec compile_boxed_switch(
+          Types.ir_expr(),
+          Types.int_case_branches(),
+          Types.compile_env(),
+          Types.compile_counter()
+        ) :: Types.compile_result()
 
   defp compile_boxed_switch(subject_expr, branches, env, counter) do
     {subject_code, subject_ref, counter} = NativeInt.compile_expr(subject_expr, env, counter)
@@ -166,7 +177,7 @@ defmodule Elmc.Backend.CCodegen.Native.IntCase do
     {code, out, final_counter}
   end
 
-  @spec format_lut_initializer(list()) :: Types.ir_expr()
+  @spec format_lut_initializer([String.t()]) :: {:inline, String.t()} | {:multiline, String.t()}
 
   defp format_lut_initializer(values) when is_list(values) do
     flat = Enum.join(values, ", ")
@@ -184,7 +195,8 @@ defmodule Elmc.Backend.CCodegen.Native.IntCase do
     end
   end
 
-  @spec lut_array_decl(Types.ir_expr(), Types.ir_expr(), term()) :: Types.ir_expr()
+  @spec lut_array_decl(String.t(), integer(), {:inline, String.t()} | {:multiline, String.t()}) ::
+          String.t()
 
   defp lut_array_decl(lut, size, {:inline, values}) do
     "static const elmc_int_t #{lut}[#{size}] = { #{values} };"
@@ -199,7 +211,12 @@ defmodule Elmc.Backend.CCodegen.Native.IntCase do
     |> String.trim_trailing()
   end
 
-  @spec compile_string_lookup_table(Types.expr(), list(), Types.compile_env(), Types.ir_expr()) :: Types.ir_expr()
+  @spec compile_string_lookup_table(
+          Types.ir_expr(),
+          Types.int_case_branches(),
+          Types.compile_env(),
+          Types.compile_counter()
+        ) :: Types.compile_result()
 
   defp compile_string_lookup_table(subject_expr, branches, env, counter) do
     {entries, size, has_wildcard?} = string_lut_entries(branches)
@@ -240,7 +257,12 @@ defmodule Elmc.Backend.CCodegen.Native.IntCase do
     end
   end
 
-  @spec compile_boxed_lookup_table(Types.expr(), list(), Types.compile_env(), Types.ir_expr()) :: Types.ir_expr()
+  @spec compile_boxed_lookup_table(
+          Types.ir_expr(),
+          Types.int_case_branches(),
+          Types.compile_env(),
+          Types.compile_counter()
+        ) :: Types.compile_result()
 
   defp compile_boxed_lookup_table(subject_expr, branches, env, counter) do
     {literal_entries, size, int_count, has_wildcard?} = lookup_table_boxed_entries(branches)
@@ -286,7 +308,12 @@ defmodule Elmc.Backend.CCodegen.Native.IntCase do
     end
   end
 
-  @spec compile_scalar_switch(Types.expr(), list(), Types.compile_env(), Types.ir_expr()) :: Types.ir_expr()
+  @spec compile_scalar_switch(
+          Types.ir_expr(),
+          Types.int_case_branches(),
+          Types.compile_env(),
+          Types.compile_counter()
+        ) :: Types.native_scalar_compile_result()
 
   defp compile_scalar_switch(subject_expr, branches, env, counter) do
     cond do
@@ -298,7 +325,12 @@ defmodule Elmc.Backend.CCodegen.Native.IntCase do
     end
   end
 
-  @spec compile_scalar_switch_branches(Types.expr(), list(), Types.compile_env(), Types.ir_expr()) :: Types.ir_expr()
+  @spec compile_scalar_switch_branches(
+          Types.ir_expr(),
+          Types.int_case_branches(),
+          Types.compile_env(),
+          Types.compile_counter()
+        ) :: Types.native_scalar_compile_result()
 
   defp compile_scalar_switch_branches(subject_expr, branches, env, counter) do
     {subject_code, subject_ref, counter} = NativeInt.compile_expr(subject_expr, env, counter)
@@ -335,7 +367,12 @@ defmodule Elmc.Backend.CCodegen.Native.IntCase do
     {code, out, final_counter}
   end
 
-  @spec compile_scalar_identity_switch(Types.expr(), list(), Types.compile_env(), Types.ir_expr()) :: Types.ir_expr()
+  @spec compile_scalar_identity_switch(
+          Types.ir_expr(),
+          Types.int_case_branches(),
+          Types.compile_env(),
+          Types.compile_counter()
+        ) :: Types.native_scalar_compile_result()
 
   defp compile_scalar_identity_switch(subject_expr, branches, env, counter) do
     {subject_code, subject_ref, counter} = NativeInt.compile_expr(subject_expr, env, counter)
@@ -393,7 +430,12 @@ defmodule Elmc.Backend.CCodegen.Native.IntCase do
 
   defp subjects_equivalent?(left, right), do: left == right
 
-  @spec compile_lookup_table(Types.expr(), list(), Types.compile_env(), Types.ir_expr()) :: Types.ir_expr()
+  @spec compile_lookup_table(
+          Types.ir_expr(),
+          Types.int_case_branches(),
+          Types.compile_env(),
+          Types.compile_counter()
+        ) :: Types.native_scalar_compile_result()
 
   defp compile_lookup_table(subject_expr, branches, env, counter) do
     {entries, size} = lookup_table_entries(branches)
@@ -441,7 +483,7 @@ defmodule Elmc.Backend.CCodegen.Native.IntCase do
     end
   end
 
-  @spec lookup_table_value(Types.ir_expr(), Types.ir_expr(), integer()) :: Types.ir_expr()
+  @spec lookup_table_value([integer() | nil], integer(), integer()) :: integer() | nil
 
   defp lookup_table_value(entries, size, subject_value) when size > 0 do
     index = rem(subject_value, size)
@@ -487,7 +529,8 @@ defmodule Elmc.Backend.CCodegen.Native.IntCase do
 
   defp string_literal_branch?(_expr), do: false
 
-  @spec string_lut_entries(list()) :: Types.ir_expr()
+  @spec string_lut_entries(Types.int_case_branches()) ::
+          {[String.t()], non_neg_integer(), boolean()}
 
   defp string_lut_entries(branches) do
     default_string =
@@ -528,7 +571,7 @@ defmodule Elmc.Backend.CCodegen.Native.IntCase do
     {entries, size, has_wildcard?}
   end
 
-  @spec string_lut_index(Types.ir_expr(), Types.ir_expr(), boolean() | Types.ir_expr()) :: Types.ir_expr()
+  @spec string_lut_index(String.t(), integer(), boolean()) :: String.t()
 
   defp string_lut_index(_subject_ref, 1, _has_wildcard?), do: "0"
 
@@ -541,7 +584,7 @@ defmodule Elmc.Backend.CCodegen.Native.IntCase do
     "((#{subject_ref}) >= 0 && (#{subject_ref}) < #{size}) ? (#{subject_ref}) : 0"
   end
 
-  @spec string_lut_index_value(integer(), Types.ir_expr(), boolean() | Types.ir_expr()) :: Types.ir_expr()
+  @spec string_lut_index_value(integer(), integer(), boolean()) :: integer()
 
   defp string_lut_index_value(_subject_value, 1, _has_wildcard?), do: 0
 
@@ -566,7 +609,8 @@ defmodule Elmc.Backend.CCodegen.Native.IntCase do
       end)
   end
 
-  @spec lookup_table_branch_ref(Types.expr(), Types.compile_env()) :: Types.ir_expr()
+  @spec lookup_table_branch_ref(Types.ir_expr(), Types.compile_env()) ::
+          {:ok, String.t()} | :error
 
   defp lookup_table_branch_ref(expr, env) do
     case normalize_lookup_branch_expr(expr) do
@@ -615,7 +659,8 @@ defmodule Elmc.Backend.CCodegen.Native.IntCase do
     keys == Enum.to_list(0..(length(keys) - 1))
   end
 
-  @spec lookup_table_boxed_entries(list()) :: Types.ir_expr()
+  @spec lookup_table_boxed_entries(Types.int_case_branches()) ::
+          {[Types.ir_expr() | nil], non_neg_integer(), non_neg_integer(), boolean()}
 
   defp lookup_table_boxed_entries(branches) do
     default_expr =
@@ -660,23 +705,22 @@ defmodule Elmc.Backend.CCodegen.Native.IntCase do
     {entries, size, int_count, has_wildcard?}
   end
 
-  @spec bounded_lookup_index(Types.ir_expr(), non_neg_integer(), boolean() | Types.ir_expr()) :: Types.ir_expr()
-
+  @spec bounded_lookup_index(String.t(), non_neg_integer(), boolean()) :: String.t()
   defp bounded_lookup_index(subject_ref, int_count, has_wildcard?) when has_wildcard? do
     "((#{subject_ref}) >= 0 && (#{subject_ref}) < #{int_count}) ? (#{subject_ref}) : #{int_count}"
   end
 
   defp bounded_lookup_index(subject_ref, _int_count, false), do: subject_ref
 
-  @spec bounded_lookup_index_value(integer(), non_neg_integer(), boolean() | Types.ir_expr()) :: Types.ir_expr()
-
+  @spec bounded_lookup_index_value(integer(), non_neg_integer(), boolean()) :: integer()
   defp bounded_lookup_index_value(subject_value, int_count, has_wildcard?) when has_wildcard? do
     if subject_value >= 0 and subject_value < int_count, do: subject_value, else: int_count
   end
 
   defp bounded_lookup_index_value(subject_value, _int_count, false), do: subject_value
 
-  @spec lookup_table_entries(list()) :: Types.ir_expr()
+  @spec lookup_table_entries(Types.int_case_branches()) ::
+          {[integer() | nil], non_neg_integer()}
 
   defp lookup_table_entries(branches) do
     default =
@@ -723,7 +767,7 @@ defmodule Elmc.Backend.CCodegen.Native.IntCase do
     {entries, size}
   end
 
-  @spec lookup_table_index(Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+  @spec lookup_table_index(String.t(), integer()) :: String.t()
 
   defp lookup_table_index(_subject_ref, 1), do: "0"
 
@@ -731,7 +775,12 @@ defmodule Elmc.Backend.CCodegen.Native.IntCase do
     "((#{subject_ref}) % #{size} + #{size}) % #{size}"
   end
 
-  @spec scalar_branch_assignment(map() | Types.expr(), Types.ir_expr(), Types.compile_env(), Types.ir_expr()) :: Types.ir_expr()
+  @spec scalar_branch_assignment(
+          Types.ir_expr(),
+          String.t(),
+          Types.compile_env(),
+          Types.compile_counter()
+        ) :: {String.t(), String.t(), Types.compile_counter()}
 
   defp scalar_branch_assignment(%{op: :int_literal, value: value}, out, _env, counter)
        when is_integer(value) do

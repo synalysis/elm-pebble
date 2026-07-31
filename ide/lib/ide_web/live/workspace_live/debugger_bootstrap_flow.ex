@@ -28,7 +28,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerBootstrapFlow do
   @bootstrap_step_count 5
 
   @type progress_event :: {pos_integer(), pos_integer(), String.t()}
-  @type progress :: (progress_event() -> :ok)
+  @type progress :: (progress_event() | String.t() -> :ok)
 
   @spec bootstrap_step_count() :: pos_integer()
   def bootstrap_step_count, do: @bootstrap_step_count
@@ -165,7 +165,6 @@ defmodule IdeWeb.WorkspaceLive.DebuggerBootstrapFlow do
 
         case reload do
           {:ok, _} -> :ok
-          {:error, reason} -> {:error, "Watch bootstrap failed: #{inspect(reason)}"}
         end
 
       :error ->
@@ -209,16 +208,13 @@ defmodule IdeWeb.WorkspaceLive.DebuggerBootstrapFlow do
 
         {:ok, %{reload: reload}}
 
-      {:error, _} = err ->
-        err
-
       :skipped ->
         {:ok, %{reload: :skipped}}
     end
   end
 
   @spec companion_reload(Project.t()) ::
-          {:ok, debugger_state_map()} | {:error, Compiler.compiler_error() | String.t()} | :skipped
+          {:ok, debugger_state_map()} | :skipped
   def companion_reload(%Project{} = project) do
     companion_reload(project, fn _ -> :ok end)
   end
@@ -229,16 +225,13 @@ defmodule IdeWeb.WorkspaceLive.DebuggerBootstrapFlow do
 
     case Projects.read_source_file(project, "phone", "src/CompanionApp.elm") do
       {:ok, content} ->
-        result =
-          Ide.Debugger.reload(scope_key, %{
-            rel_path: "src/CompanionApp.elm",
-            source: content,
-            reason: "debugger_companion_bootstrap",
-            source_root: "phone",
-            skip_precompile: true
-          })
-
-        result
+        Ide.Debugger.reload(scope_key, %{
+          rel_path: "src/CompanionApp.elm",
+          source: content,
+          reason: "debugger_companion_bootstrap",
+          source_root: "phone",
+          skip_precompile: true
+        })
 
       {:error, _} ->
         :skipped
@@ -349,16 +342,16 @@ defmodule IdeWeb.WorkspaceLive.DebuggerBootstrapFlow do
     progress.({step, @bootstrap_step_count, message})
   end
 
-  @spec start_session(Project.t(), String.t(), progress()) :: :ok | {:error, String.t()}
+  @spec start_session(Project.t(), String.t(), progress()) :: :ok
   defp start_session(project, watch_profile_id, progress) do
     emit_progress(progress, 1, "Starting debugger session...")
 
-    case Ide.Debugger.start_session(Projects.scope_key(project), %{
-           watch_profile_id: watch_profile_id
-         }) do
-      {:ok, _} -> :ok
-      {:error, reason} -> {:error, "Could not start debugger: #{inspect(reason)}"}
-    end
+    {:ok, _} =
+      Ide.Debugger.start_session(Projects.scope_key(project), %{
+        watch_profile_id: watch_profile_id
+      })
+
+    :ok
   end
 
   @spec warm_compile(Project.t(), progress()) ::
@@ -477,8 +470,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerBootstrapFlow do
     ingest_compile_result(scope_key, result, "phone")
   end
 
-  @spec bootstrap_watch_preview(Project.t(), bootstrap_tab(), progress()) ::
-          {:ok, String.t()} | {:error, String.t()}
+  @spec bootstrap_watch_preview(Project.t(), bootstrap_tab(), progress()) :: {:ok, String.t()}
   defp bootstrap_watch_preview(project, bootstrap_tab, progress) do
     emit_progress(progress, 5, "Loading watch preview...")
     scope_key = Projects.scope_key(project)
@@ -500,9 +492,6 @@ defmodule IdeWeb.WorkspaceLive.DebuggerBootstrapFlow do
           {:ok, _} ->
             {:ok,
              "Debugger started. Loaded #{display_path(rel_path)}; watch preview uses parser snapshots when the view outline parses."}
-
-          {:error, reason} ->
-            {:error, "Debugger started but watch preview failed: #{inspect(reason)}"}
         end
 
       :error ->

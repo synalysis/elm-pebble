@@ -10,6 +10,7 @@ defmodule Elmc.Backend.CCodegen.StoragePlan do
   @type layout :: :compact | :native_linked | :boxed_cons | :mixed | :unboxed
   @type length_info :: :known | :unknown
   @type access :: :sequential | :random
+  @type loop_repr :: :compact | :float_list | :record_seq | :native_linked | :cons | :dual
 
   @type t :: %__MODULE__{
           elem: elem_schema() | nil,

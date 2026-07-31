@@ -15,7 +15,7 @@ defmodule Elmc.Backend.Bytecode.ProjectWriter do
   @manifest_name "elmc_bytecode.manifest.json"
   @manifest_contract "elmc.bytecode_manifest.v1"
 
-  @spec maybe_write(IR.t(), String.t(), Elmc.Types.compile_options()) :: :ok
+  @spec maybe_write(IR.t(), String.t(), Elmc.Types.compile_options() | map()) :: :ok
   def maybe_write(%IR{} = ir, out_dir, opts) when is_map(opts) do
     if emit_bytecode?(opts) do
       write(ir, out_dir, opts)
@@ -32,14 +32,14 @@ defmodule Elmc.Backend.Bytecode.ProjectWriter do
 
   # Pebble watch PBW builds already lower Plan IR to C; emitting bytecode sections
   # duplicates the full plan-lowering pass. Keep bytecode for WASM/shadow/audits.
-  @spec skip_pebble_bytecode?(keyword()) :: boolean()
+  @spec skip_pebble_bytecode?(Elmc.Types.compile_options() | map()) :: boolean()
 
   defp skip_pebble_bytecode?(opts) do
     Plan.plan_ir_mode(opts) == :primary and Targets.emit_c?(opts) and not Targets.emit_wasm?(opts) and
       Map.get(opts, :pebble_int32, false) == true and Map.get(opts, :emit_bytecode, false) != true
   end
 
-  @spec write(IR.t(), String.t(), Elmc.Types.compile_options()) :: :ok
+  @spec write(IR.t(), String.t(), Elmc.Types.compile_options() | map()) :: :ok
   def write(%IR{} = ir, out_dir, opts \\ %{}) do
     bc_dir = Path.join(out_dir, "bytecode")
     File.mkdir_p!(bc_dir)
@@ -120,7 +120,10 @@ defmodule Elmc.Backend.Bytecode.ProjectWriter do
   @spec manifest_path(String.t()) :: String.t()
   def manifest_path(out_dir), do: Path.join([out_dir, "bytecode", @manifest_name])
 
-  @spec lower_plan(Types.decl(), String.t(), String.t(), Types.decl_map()) :: Types.ir_expr()
+  @spec lower_plan(Types.decl(), String.t(), String.t(), Types.decl_map()) ::
+          {:ok, Elmc.Backend.Plan.Types.function_plan(), Elmc.Backend.Bytecode.Lower.section()}
+          | {:fusion, Elmc.Backend.Plan.Types.function_plan()}
+          | {:skip, term()}
 
   defp lower_plan(decl, module, name, decl_map) do
     rc_required? = RcRequired.rc_required?(module, name)
@@ -142,19 +145,19 @@ defmodule Elmc.Backend.Bytecode.ProjectWriter do
       :unsupported ->
         {:skip, :unsupported}
 
-      {:error, reason} ->
-        {:skip, reason}
+      other ->
+        {:skip, other}
     end
   end
 
-  @spec section_filename(String.t(), String.t()) :: Types.ir_expr()
+  @spec section_filename(String.t(), String.t()) :: String.t()
 
   defp section_filename(module, name) do
     safe_mod = module |> String.replace(".", "_")
     "#{safe_mod}_#{name}.elmcbc"
   end
 
-  @spec reason_string(integer() | Types.ir_expr() | term()) :: Types.ir_expr()
+  @spec reason_string(term()) :: String.t()
 
   defp reason_string(:empty_plan), do: "empty_plan"
   defp reason_string(:encode_error), do: "encode_error"
@@ -162,7 +165,12 @@ defmodule Elmc.Backend.Bytecode.ProjectWriter do
   defp reason_string({:verify, reason, _}), do: "verify:#{reason}"
   defp reason_string(other), do: inspect(other)
 
-  @spec fusion_manifest_entry(String.t(), String.t(), Types.decl(), integer()) :: Types.ir_expr()
+  @spec fusion_manifest_entry(
+          String.t(),
+          String.t(),
+          Types.decl(),
+          Elmc.Backend.Plan.Types.function_plan()
+        ) :: Types.manifest_function_entry()
 
   defp fusion_manifest_entry(module, name, decl, plan) do
     %{
@@ -174,7 +182,7 @@ defmodule Elmc.Backend.Bytecode.ProjectWriter do
     }
   end
 
-  @spec wire_fusion_data(map() | Types.ir_expr()) :: Types.ir_expr()
+  @spec wire_fusion_data(map() | term()) :: Types.manifest_value()
 
   defp wire_fusion_data(data) when is_map(data) do
     data
@@ -187,7 +195,7 @@ defmodule Elmc.Backend.Bytecode.ProjectWriter do
 
   defp wire_fusion_data(other), do: other
 
-  @spec wire_fusion_value(term() | list() | map() | atom() | Types.ir_expr()) :: Types.ir_expr()
+  @spec wire_fusion_value(term()) :: Types.manifest_value()
 
   defp wire_fusion_value({mod, name}) when is_binary(mod) and is_binary(name),
     do: %{"module" => mod, "name" => name}
@@ -197,7 +205,7 @@ defmodule Elmc.Backend.Bytecode.ProjectWriter do
   defp wire_fusion_value(atom) when is_atom(atom), do: Atom.to_string(atom)
   defp wire_fusion_value(other), do: other
 
-  @spec coverage_opts(keyword()) :: Types.ir_expr()
+  @spec coverage_opts(map()) :: keyword()
 
   defp coverage_opts(opts) do
     [
@@ -207,7 +215,7 @@ defmodule Elmc.Backend.Bytecode.ProjectWriter do
     ]
   end
 
-  @spec emit_decl_map(Types.decl_map(), keyword()) :: Types.ir_expr()
+  @spec emit_decl_map(Types.decl_map(), keyword()) :: Types.decl_map()
 
   defp emit_decl_map(decl_map, coverage_opts) do
     if Keyword.get(coverage_opts, :strip_dead_code, true) do
@@ -217,7 +225,7 @@ defmodule Elmc.Backend.Bytecode.ProjectWriter do
     end
   end
 
-  @spec plan_coverage_manifest(Types.decl_map(), keyword(), keyword()) :: Types.ir_expr()
+  @spec plan_coverage_manifest(Types.decl_map(), keyword(), map()) :: Types.plan_coverage()
 
   defp plan_coverage_manifest(decl_map, coverage_opts, compile_opts) do
     coverage_report_opts = coverage_report_opts(coverage_opts, compile_opts)
@@ -233,7 +241,7 @@ defmodule Elmc.Backend.Bytecode.ProjectWriter do
     }
   end
 
-  @spec all_coverage_report(Types.decl_map(), keyword()) :: Types.ir_expr()
+  @spec all_coverage_report(Types.decl_map(), keyword() | map()) :: map()
 
   defp all_coverage_report(decl_map, coverage_report_opts) do
     if Plan.plan_ir_mode(coverage_report_opts) == :primary and
@@ -244,7 +252,7 @@ defmodule Elmc.Backend.Bytecode.ProjectWriter do
     end
   end
 
-  @spec coverage_report_opts(keyword(), keyword()) :: Types.ir_expr()
+  @spec coverage_report_opts(keyword(), map()) :: map()
 
   defp coverage_report_opts(coverage_opts, compile_opts) do
     base =
@@ -255,7 +263,7 @@ defmodule Elmc.Backend.Bytecode.ProjectWriter do
     Map.put_new(base, :plan_ir_mode, Plan.plan_ir_mode(base))
   end
 
-  @spec plan_toolchain_manifest(keyword()) :: Types.ir_expr()
+  @spec plan_toolchain_manifest(map() | keyword()) :: Types.plan_toolchain()
 
   defp plan_toolchain_manifest(opts) do
     %{
@@ -264,10 +272,7 @@ defmodule Elmc.Backend.Bytecode.ProjectWriter do
     }
   end
 
-  @spec opt_bool(list() | map(), String.t(), Types.ir_expr()) :: Types.ir_expr()
-
-  defp opt_bool(opts, key, default) when is_list(opts),
-    do: Keyword.get(opts, key, default) == true
+  @spec opt_bool(map(), atom(), boolean()) :: boolean()
 
   defp opt_bool(opts, key, default) when is_map(opts),
     do: Map.get(opts, key, default) == true

@@ -72,19 +72,17 @@ defmodule Elmc.Backend.CCodegen.Patterns do
     "#{subject_ref} && #{subject_ref}->tag == ELMC_TAG_RESULT && ((ElmcResult *)#{subject_ref}->payload)->is_ok == 0#{arg_cond}"
   end
 
-  defp pattern_condition_for(subject_ref, %{
-        kind: :constructor,
-        name: "Just",
-        arg_pattern: arg_pattern
-      }, env) do
+  defp pattern_condition_for(subject_ref, %{kind: :constructor, name: "Just"} = pattern, env) do
+    arg_pattern = Map.get(pattern, :arg_pattern)
+
     cond do
-      just_arg_is_true?(arg_pattern) ->
+      is_map(arg_pattern) and just_arg_is_true?(arg_pattern) ->
         "elmc_maybe_just_true(#{subject_ref})"
 
-      just_arg_is_false?(arg_pattern) ->
+      is_map(arg_pattern) and just_arg_is_false?(arg_pattern) ->
         "elmc_maybe_just_false(#{subject_ref})"
 
-      bare_just_pattern?(arg_pattern) ->
+      not is_map(arg_pattern) or bare_just_pattern?(arg_pattern) ->
         "elmc_maybe_is_just(#{subject_ref})"
 
       true ->
@@ -912,11 +910,10 @@ defmodule Elmc.Backend.CCodegen.Patterns do
     end
   end
 
+  @spec simple_binding_name(String.t()) :: String.t() | nil
   defp simple_binding_name(subject_ref) when is_binary(subject_ref) do
     if Regex.match?(~r/^[A-Za-z_][A-Za-z0-9_]*$/, subject_ref), do: subject_ref, else: nil
   end
-
-  defp simple_binding_name(_), do: nil
 
   @spec int_spine_access_expr?(String.t()) :: boolean()
   defp int_spine_access_expr?(subject_ref) do
@@ -931,8 +928,6 @@ defmodule Elmc.Backend.CCodegen.Patterns do
   defp constructor_arg_condition(value_ref, arg_pattern, env) when is_map(arg_pattern) do
     " && (#{pattern_condition(value_ref, arg_pattern, env)})"
   end
-
-  defp constructor_arg_condition(_value_ref, _arg_pattern, _env), do: ""
 
   @spec put_pattern_field_record_shape(
           Types.compile_env(),
@@ -953,10 +948,12 @@ defmodule Elmc.Backend.CCodegen.Patterns do
 
   defp just_arg_is_true?(pattern), do: bool_constructor_name(pattern) == "True"
   defp just_arg_is_false?(pattern), do: bool_constructor_name(pattern) == "False"
-  defp bare_just_pattern?(nil), do: true
+
+  # Just with no nested payload pattern (wildcard / bare var).
+  @spec bare_just_pattern?(Types.pattern()) :: boolean()
   defp bare_just_pattern?(%{kind: :wildcard}), do: true
   defp bare_just_pattern?(%{kind: :var}), do: true
-  defp bare_just_pattern?(_), do: false
+  defp bare_just_pattern?(%{}), do: false
 
   @spec order_constructor_name(Types.pattern()) :: String.t() | nil
   defp order_constructor_name(%{resolved_name: name}) when name in ["LT", "EQ", "GT"], do: name

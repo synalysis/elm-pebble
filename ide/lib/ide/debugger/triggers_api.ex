@@ -30,17 +30,14 @@ defmodule Ide.Debugger.TriggersApi do
   @spec inject_trigger(String.t(), Types.inject_trigger_attrs()) :: {:ok, runtime_state()}
   def inject_trigger(project_slug, attrs \\ %{}) when is_binary(project_slug) and is_map(attrs) do
     AgentSession.with_hosts(fn hosts ->
-      case AgentSession.mutate(
-             project_slug,
-             &TriggerInjectionSession.apply(&1, attrs, hosts.trigger_injection)
-           ) do
-        {:ok, state} ->
-          RuntimeBackgroundDrains.schedule_all(project_slug, state)
-          {:ok, state}
+      {:ok, state} =
+        AgentSession.mutate(
+          project_slug,
+          &TriggerInjectionSession.apply(&1, attrs, hosts.trigger_injection)
+        )
 
-        other ->
-          other
-      end
+      RuntimeBackgroundDrains.schedule_all(project_slug, state)
+      {:ok, state}
     end)
   end
 

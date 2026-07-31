@@ -88,13 +88,22 @@ defmodule Elmc do
         Process.get(:elmc_plan_primary_fallbacks, [])
         |> Enum.map(fn {mod, name} ->
           reachable? = PrimaryCoverage.reachable_function?(decl_map, mod, name, opts)
+          reason = Elmc.Backend.Plan.UnsupportedReason.lookup(mod, name)
+
+          message =
+            case reason do
+              nil ->
+                "Function #{mod}.#{name} could not be lowered via Plan IR; emitted unsupported stub (legacy C codegen removed)."
+
+              _ ->
+                Elmc.Backend.CCodegen.UnsupportedSurface.fallback_message(mod, name, reason)
+            end
 
           %{
             "source" => "elmc/plan",
             "code" => "plan_primary_fallback",
             "severity" => StrictPolicy.fallback_severity(opts, reachable?),
-            "message" =>
-              "Function #{mod}.#{name} could not be lowered via Plan IR; emitted unsupported stub (legacy C codegen removed)."
+            "message" => message
           }
         end)
 
@@ -105,16 +114,31 @@ defmodule Elmc do
         Elmc.Backend.Plan.PrimaryCoverage.compile_diagnostics(bytecode_summary, opts) ++
           wasm_plan_coverage_diagnostics(wasm_summary, opts)
 
-      plan_legacy_diagnostics = plan_legacy_codegen_diagnostics(opts)
-
       web_kernel_diagnostics = WebKernelDiagnostics.compile_diagnostics()
+
+      subscription_layout_diagnostics =
+        Process.get(:elmc_compile_warnings, [])
+        |> Enum.filter(fn
+          %{"source" => "elmc/subscriptions", "code" => "dynamic_subscription_layout"} -> true
+          %{source: source, code: code}
+          when source in ["elmc/subscriptions", :elmc_subscriptions] and
+                 code == "dynamic_subscription_layout" ->
+            true
+
+          _ ->
+            false
+        end)
+
+      unsupported_surface_diagnostics =
+        Elmc.Backend.CCodegen.UnsupportedSurface.compile_warnings(opts)
 
       layout_and_plan_diagnostics =
         layout_coercion_diagnostics ++
           plan_primary_fallbacks ++
-          plan_legacy_diagnostics ++
           plan_coverage_diagnostics ++
-          web_kernel_diagnostics
+          web_kernel_diagnostics ++
+          subscription_layout_diagnostics ++
+          unsupported_surface_diagnostics
 
       wasm_empty_export_diagnostics = wasm_empty_export_diagnostics(wasm_summary, opts)
 
@@ -143,6 +167,7 @@ defmodule Elmc do
       Process.delete(:elmc_layout_coercion_diagnostics)
       Process.delete(:elmc_plan_primary_fallbacks)
       Process.delete(:elmc_web_kernel_diagnostics)
+      Process.delete(:elmc_compile_warnings)
 
       {:ok,
        %{
@@ -182,8 +207,6 @@ defmodule Elmc do
       {:error, {:compile_diagnostics, diagnostics}}
     end
   end
-
-  defp check_missing_imports(_project, _opts), do: :ok
 
   @spec normalize_compile_opts(compile_options() | keyword()) :: compile_options()
   defp normalize_compile_opts(opts) when is_list(opts),
@@ -265,6 +288,7 @@ defmodule Elmc do
   @spec seed_codegen_process_state(ElmEx.IR.t(), map()) :: :ok
   defp seed_codegen_process_state(ir, opts) when is_map(opts) do
     Process.put(:elmc_codegen_opts, opts)
+    Process.put(:elmc_compile_warnings, [])
     Process.put(:elmc_svg_attribute_names, Map.get(opts, :svg_attribute_names, MapSet.new()))
     Process.put(
       :elmc_svg_attribute_dom_names,
@@ -306,28 +330,10 @@ defmodule Elmc do
 
   @spec project_for_compile(String.t(), compile_options()) ::
           {:ok, ElmEx.Frontend.Project.t()} | {:error, RootTypes.frontend_bridge_error()}
-  defp project_for_compile(_project_dir, %{project: %ElmEx.Frontend.Project{} = project}),
-    do: {:ok, project}
-
-  defp project_for_compile(_project_dir, %{"project" => %ElmEx.Frontend.Project{} = project}),
-    do: {:ok, project}
-
-  defp project_for_compile(project_dir, _opts),
-    do: Bridge.load_project(project_dir, lowerer_diagnostics: false)
-
-  defp plan_legacy_codegen_diagnostics(opts) when is_map(opts) do
-    if Map.get(opts, :plan_ir_mode_off_deprecated) == true do
-      [
-        %{
-          "source" => "elmc/plan",
-          "code" => "plan_ir_mode_off_removed",
-          "severity" => "warning",
-          "message" =>
-            "plan_ir_mode: :off is no longer supported (legacy C codegen removed). Compiling with plan_ir_mode: :primary."
-        }
-      ]
-    else
-      []
+  defp project_for_compile(project_dir, opts) when is_map(opts) do
+    case Map.get(opts, :project) do
+      %ElmEx.Frontend.Project{} = project -> {:ok, project}
+      _ -> Bridge.load_project(project_dir, lowerer_diagnostics: false)
     end
   end
 
@@ -537,40 +543,35 @@ defmodule Elmc do
   defp wasm_empty_export_diagnostics(_summary, _opts), do: []
 
   defp plan_toolchain_summary(bytecode_summary, wasm_summary, opts) do
-    case wasm_summary do
-      %{plan_toolchain: %{} = toolchain} ->
-        normalize_plan_toolchain(toolchain)
-
-      %{"plan_toolchain" => %{} = toolchain} ->
+    case plan_toolchain_from_summary(wasm_summary) || plan_toolchain_from_summary(bytecode_summary) do
+      %{} = toolchain ->
         normalize_plan_toolchain(toolchain)
 
       _ ->
-        case bytecode_summary do
-          %{plan_toolchain: %{} = toolchain} ->
-            normalize_plan_toolchain(toolchain)
-
-          %{"plan_toolchain" => %{} = toolchain} ->
-            normalize_plan_toolchain(toolchain)
-
-          _ ->
-            %{
-              mode: Plan.plan_ir_mode(opts),
-              strict: Plan.strict_primary?(opts),
-              targets: Targets.normalize(opts)
-            }
-        end
+        %{
+          mode: Plan.plan_ir_mode(opts),
+          strict: Plan.strict_primary?(opts),
+          targets: Targets.normalize(opts)
+        }
     end
   end
 
-  defp normalize_plan_toolchain(%{"mode" => mode, "strict" => strict}),
-    do: %{mode: normalize_plan_mode(mode), strict: strict}
+  defp plan_toolchain_from_summary(summary) when is_map(summary) do
+    case Map.get(summary, :plan_toolchain) do
+      %{} = toolchain -> toolchain
+      _ -> nil
+    end
+  end
 
-  defp normalize_plan_toolchain(%{mode: mode, strict: strict}),
-    do: %{mode: normalize_plan_mode(mode), strict: strict}
+  defp normalize_plan_toolchain(toolchain) when is_map(toolchain) do
+    mode = Map.get(toolchain, :mode) || Map.get(toolchain, "mode") || :primary
+    strict = Map.get(toolchain, :strict) || Map.get(toolchain, "strict") || false
+    %{mode: normalize_plan_mode(mode), strict: strict == true}
+  end
 
-  defp normalize_plan_mode(mode) when is_atom(mode), do: mode
   defp normalize_plan_mode("primary"), do: :primary
   defp normalize_plan_mode("shadow"), do: :shadow
-  defp normalize_plan_mode("off"), do: :off
-  defp normalize_plan_mode(mode) when is_binary(mode), do: String.to_existing_atom(mode)
+  defp normalize_plan_mode("off"), do: :primary
+  defp normalize_plan_mode(mode) when is_atom(mode) and mode in [:primary, :shadow], do: mode
+  defp normalize_plan_mode(_), do: :primary
 end

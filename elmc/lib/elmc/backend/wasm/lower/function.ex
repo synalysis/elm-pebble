@@ -160,8 +160,8 @@ defmodule Elmc.Backend.Wasm.Lower.Function do
   # computed once. Without memoization, Entity.sphere rebuilds a 72×72 mesh
   # on every call (HeroScene: 23 spheres → 23× collectBumpy).
   # Note: some value plans have rc_required=false but still use the RC ABI.
-  defp top_level_value_memoizable?(%FunctionPlan{} = plan) do
-    length(plan.params || []) == 0
+  defp top_level_value_memoizable?(%FunctionPlan{params: params}) do
+    params == []
   end
 
   defp value_cache_id(%FunctionPlan{module: mod, name: name}) do
@@ -248,7 +248,7 @@ defmodule Elmc.Backend.Wasm.Lower.Function do
   end
 
   defp emit_state_switch_body(blocks, slots, instr_opts) do
-    plan_state = slots.plan_state_local || flunk_plan_state!(slots)
+    plan_state = require_plan_state_local!(slots)
     entry_id = blocks |> List.first() |> Map.get(:id, 0)
     plan = Keyword.fetch!(instr_opts, :parent_plan)
 
@@ -807,8 +807,15 @@ defmodule Elmc.Backend.Wasm.Lower.Function do
   defp switch_arm_target({_, block_id}), do: block_id
   defp switch_arm_target({_, block_id, _}), do: block_id
 
-  defp flunk_plan_state!(slots) do
-    raise "missing plan_state local for multi-block wasm function: #{inspect(slots)}"
+  @spec require_plan_state_local!(Slots.t()) :: String.t()
+  defp require_plan_state_local!(slots) do
+    case slots.plan_state_local do
+      local when is_binary(local) ->
+        local
+
+      _ ->
+        raise "missing plan_state local for multi-block wasm function: #{inspect(slots)}"
+    end
   end
 
   defp bool_cond_wat(reg_name) do
@@ -830,7 +837,7 @@ defmodule Elmc.Backend.Wasm.Lower.Function do
   defp export_name(%FunctionPlan{module: mod, name: name}), do: WasmTypes.fn_ident(mod, name)
 
   defp param_names(%FunctionPlan{params: params}) do
-    Enum.map(params || [], fn
+    Enum.map(params, fn
       name when is_binary(name) -> name
       %{name: name} -> name
       other -> inspect(other)

@@ -372,7 +372,7 @@ defmodule Elmc.Backend.CCodegen.EnvBindings do
 
   def callee_borrow_args?(_env, _module_name, _name), do: false
 
-  @spec decl_arity(Types.compile_env(), String.t(), String.t(), [String.t()]) :: Types.ir_expr()
+  @spec decl_arity(Types.compile_env(), String.t(), String.t(), [String.t()]) :: non_neg_integer()
 
   defp decl_arity(env, module_name, name, call_args) do
     case Map.get(effective_program_decls(env), {module_name, name}) do

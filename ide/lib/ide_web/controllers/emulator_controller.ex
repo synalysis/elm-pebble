@@ -233,7 +233,7 @@ defmodule IdeWeb.EmulatorController do
   @spec ws_phone(Plug.Conn.t(), Types.wire_params()) :: Plug.Conn.t()
   def ws_phone(conn, %{"id" => id}), do: proxy(conn, id, :phone)
 
-  @spec proxy(integer(), term(), atom()) :: term()
+  @spec proxy(Plug.Conn.t(), term(), atom()) :: Plug.Conn.t()
 
   defp proxy(conn, id, kind) do
     if websocket_upgrade?(conn) do
@@ -246,7 +246,7 @@ defmodule IdeWeb.EmulatorController do
     end
   end
 
-  @spec do_proxy(integer(), term(), atom()) :: term()
+  @spec do_proxy(Plug.Conn.t(), term(), atom()) :: Plug.Conn.t()
 
   defp do_proxy(conn, id, kind) do
     with {:ok, info} <- Emulator.info(id),
@@ -269,7 +269,7 @@ defmodule IdeWeb.EmulatorController do
     end
   end
 
-  @spec websocket_upgrade?(integer()) :: boolean()
+  @spec websocket_upgrade?(Plug.Conn.t()) :: boolean()
 
   defp websocket_upgrade?(conn) do
     conn.method == "GET" and

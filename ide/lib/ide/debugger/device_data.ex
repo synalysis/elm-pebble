@@ -466,9 +466,7 @@ defmodule Ide.Debugger.DeviceData do
 
     kind
     |> then(fn device_kind_key ->
-      if is_binary(device_kind_key),
-        do: Map.get(@device_kind_runtime_fields, device_kind_key, []),
-        else: []
+      Map.get(@device_kind_runtime_fields, device_kind_key, [])
     end)
     |> Enum.any?(fn field ->
       Map.has_key?(init, field) and
@@ -745,7 +743,7 @@ defmodule Ide.Debugger.DeviceData do
     if is_function(filter_fn, 2), do: filter_fn.(calls, current_ctor), else: calls
   end
 
-  @spec expand_cmd_calls(list(), integer(), integer()) :: term()
+  @spec expand_cmd_calls(list(), term(), (list(), term() -> list()) | term()) :: list()
 
   defp expand_cmd_calls(calls, ei, expand_fn) when is_list(calls) do
     if is_function(expand_fn, 2), do: expand_fn.(calls, ei), else: calls

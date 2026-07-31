@@ -26,7 +26,7 @@ defmodule IdeWeb.Plugs.LogEmulatorWebSocket do
       (String.ends_with?(path, "/ws/vnc") or String.ends_with?(path, "/ws/phone"))
   end
 
-  @spec upgrade_request?(integer()) :: boolean()
+  @spec upgrade_request?(Plug.Conn.t()) :: boolean()
 
   defp upgrade_request?(conn) do
     conn.method == "GET" and
@@ -35,7 +35,7 @@ defmodule IdeWeb.Plugs.LogEmulatorWebSocket do
       end)
   end
 
-  @spec header(integer(), String.t()) :: term()
+  @spec header(Plug.Conn.t(), String.t()) :: String.t()
 
   defp header(conn, name), do: conn |> get_req_header(name) |> List.first() |> Kernel.||("-")
 end

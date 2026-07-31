@@ -108,7 +108,7 @@ defmodule Elmc.Backend.CCodegen.Native.AngleMinute do
   defp mod_by_65536_base?(%{op: :int_literal, value: 65_536}), do: true
   defp mod_by_65536_base?(_), do: false
 
-  @spec idiv_numerator(map() | term(), Types.ir_expr() | term()) :: Types.ir_expr()
+  @spec idiv_numerator(map() | term(), integer()) :: {:ok, Types.ir_expr()} | :error
 
   defp idiv_numerator(%{op: :call, name: name, args: [num, %{op: :int_literal, value: denom}]}, denom) do
     if op_name?(name, @idiv_ops), do: {:ok, num}, else: :error
@@ -122,7 +122,7 @@ defmodule Elmc.Backend.CCodegen.Native.AngleMinute do
 
   defp idiv_numerator(_, _), do: :error
 
-  @spec minute_expr_from_scaled(map() | term()) :: Types.ir_expr()
+  @spec minute_expr_from_scaled(map() | term()) :: {:ok, Types.ir_expr()} | :error
 
   defp minute_expr_from_scaled(%{op: :call, name: name, args: [left, %{op: :int_literal, value: 65_536}]}) do
     if op_name?(name, @mul_ops), do: minute_expr_from_minus_720(left), else: :error
@@ -133,7 +133,7 @@ defmodule Elmc.Backend.CCodegen.Native.AngleMinute do
 
   defp minute_expr_from_scaled(_), do: :error
 
-  @spec minute_expr_from_minus_720(map() | term()) :: Types.ir_expr()
+  @spec minute_expr_from_minus_720(map() | term()) :: {:ok, Types.ir_expr()} | :error
 
   defp minute_expr_from_minus_720(%{op: :call, name: name, args: [minute, %{op: :int_literal, value: 720}]}) do
     if op_name?(name, @sub_ops), do: {:ok, minute}, else: :error

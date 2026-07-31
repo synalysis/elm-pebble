@@ -34,7 +34,7 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.ListConcatReversedRowSlices do
     end
   end
 
-  @spec parse(map() | term()) :: Types.ir_expr()
+  @spec parse(map() | term()) :: {:ok, String.t(), String.t(), [integer()]} | :error
 
   defp parse(%{op: :qualified_call, target: "List.concat", args: [list_expr]}) do
     parse_list_literal(list_expr)
@@ -62,7 +62,7 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.ListConcatReversedRowSlices do
 
   defp parse(_), do: :error
 
-  @spec parse_list_literal(map() | term()) :: Types.ir_expr()
+  @spec parse_list_literal(map() | term()) :: {:ok, String.t(), String.t(), [integer()]} | :error
 
   defp parse_list_literal(%{op: :list_literal, items: items}) when is_list(items) do
     items
@@ -90,7 +90,7 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.ListConcatReversedRowSlices do
 
   defp parse_list_literal(_), do: :error
 
-  @spec parse_row_reverse(map() | term()) :: Types.ir_expr()
+  @spec parse_row_reverse(map() | term()) :: {:ok, String.t(), String.t(), integer()} | :error
 
   defp parse_row_reverse(%{
          op: :qualified_call,
@@ -102,7 +102,7 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.ListConcatReversedRowSlices do
 
   defp parse_row_reverse(_), do: :error
 
-  @spec parse_row_at_call(map() | term()) :: Types.ir_expr()
+  @spec parse_row_at_call(map() | term()) :: {:ok, String.t(), String.t(), integer()} | :error
 
   defp parse_row_at_call(%{
          op: :qualified_call,
@@ -124,7 +124,7 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.ListConcatReversedRowSlices do
 
   defp parse_row_at_call(_), do: :error
 
-  @spec row_slice_width(Types.decl_map(), String.t(), String.t()) :: Types.ir_expr()
+  @spec row_slice_width(Types.decl_map(), String.t(), String.t()) :: {:ok, pos_integer()} | :error
 
   defp row_slice_width(decl_map, module_name, row_at_target) do
     case Map.get(decl_map, FusionSupport.callee_key(module_name, row_at_target)) do
@@ -179,7 +179,7 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.ListConcatReversedRowSlices do
 
   defp row_mul_width?(_, _), do: false
 
-  @spec emit(String.t(), String.t(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+  @spec emit(String.t(), String.t(), String.t(), pos_integer(), pos_integer()) :: String.t()
 
   defp emit(module_name, name, cells_var, width, rows) do
     c_prefix = Util.module_fn_name(module_name, name)
@@ -220,7 +220,7 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.ListConcatReversedRowSlices do
     end
   end
 
-  @spec row_at_from_parse(Types.expr(), Types.ir_expr()) :: Types.ir_expr()
+  @spec row_at_from_parse(Types.expr(), [integer()]) :: String.t() | nil
 
   defp row_at_from_parse(expr, _row_indices) do
     case parse(expr) do

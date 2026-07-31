@@ -178,7 +178,7 @@ defmodule ElmEx.IR.Lowerer do
     end)
   end
 
-  @spec progress_log(list(), String.t()) :: Types.expr()
+  @spec progress_log(keyword(), String.t()) :: :ok
 
   defp progress_log(opts, message) when is_list(opts) and is_binary(message) do
     if Keyword.get(opts, :progress, false) do
@@ -188,7 +188,7 @@ defmodule ElmEx.IR.Lowerer do
     :ok
   end
 
-  @spec build_global_tables(list()) :: Types.expr()
+  @spec build_global_tables([FrontendModule.t()]) :: map()
 
   defp build_global_tables(modules) when is_list(modules) do
     init = %{
@@ -296,7 +296,14 @@ defmodule ElmEx.IR.Lowerer do
     }
   end
 
-  @spec lower_all_modules(String.t(), Types.expr(), String.t(), Types.expr(), Types.expr(), keyword()) :: Types.expr()
+  @spec lower_all_modules(
+          [FrontendModule.t()],
+          map(),
+          ModuleExports.project_exports(),
+          :all | MapSet.t(String.t()),
+          term(),
+          keyword()
+        ) :: [Module.t()]
 
   defp lower_all_modules(modules, globals, project_module_exports, reachable, cache, opts) do
     total = length(modules)
@@ -343,7 +350,12 @@ defmodule ElmEx.IR.Lowerer do
     end
   end
 
-  @spec lower_frontend_module(String.t(), Types.expr(), String.t(), Types.expr()) :: Types.expr()
+  @spec lower_frontend_module(
+          FrontendModule.t(),
+          map(),
+          ModuleExports.project_exports(),
+          :all | MapSet.t(String.t())
+        ) :: Module.t()
 
   defp lower_frontend_module(frontend_module, globals, project_module_exports, reachable) do
     ports = Map.get(frontend_module, :ports, []) || []
@@ -563,7 +575,12 @@ defmodule ElmEx.IR.Lowerer do
     }
   end
 
-  @spec function_reachable?(Types.expr() | map(), Types.expr(), String.t(), Types.expr()) :: boolean()
+  @spec function_reachable?(
+          :all | MapSet.t(String.t()),
+          String.t(),
+          String.t(),
+          [String.t()]
+        ) :: boolean()
 
   defp function_reachable?(:all, _mod, _name, _ports), do: true
 
@@ -580,7 +597,14 @@ defmodule ElmEx.IR.Lowerer do
   # After reachable-only lower + Wire3 synthesis, IR may reference frontend
   # functions that were never walked. Re-lower those modules with an expanded
   # reachable set until referenced frontend callees are present (or give up).
-  @spec close_missing_callees(String.t(), Types.expr(), Types.expr(), Types.expr() | String.t(), Types.expr() | map(), keyword()) :: Types.expr()
+  @spec close_missing_callees(
+          [Module.t()],
+          Project.t(),
+          map(),
+          ModuleExports.project_exports(),
+          :all | MapSet.t(String.t()),
+          keyword()
+        ) :: [Module.t()]
 
   defp close_missing_callees(modules, _project, _globals, _exports, :all, _opts), do: modules
 
@@ -608,7 +632,16 @@ defmodule ElmEx.IR.Lowerer do
     )
   end
 
-  @spec do_close_missing_callees(String.t(), String.t(), Types.expr(), Types.expr(), String.t(), Types.expr(), keyword(), Types.expr()) :: Types.expr()
+  @spec do_close_missing_callees(
+          [Module.t()],
+          %{String.t() => FrontendModule.t()},
+          MapSet.t(String.t()),
+          map(),
+          ModuleExports.project_exports(),
+          MapSet.t(String.t()),
+          keyword(),
+          non_neg_integer()
+        ) :: [Module.t()]
 
   defp do_close_missing_callees(
          modules,
@@ -700,7 +733,7 @@ defmodule ElmEx.IR.Lowerer do
     end
   end
 
-  @spec frontend_function_keys(list()) :: Types.expr()
+  @spec frontend_function_keys([FrontendModule.t()]) :: MapSet.t(String.t())
 
   defp frontend_function_keys(modules) when is_list(modules) do
     modules
@@ -712,7 +745,7 @@ defmodule ElmEx.IR.Lowerer do
     |> MapSet.new()
   end
 
-  @spec module_of_function_key(String.t()) :: Types.expr()
+  @spec module_of_function_key(String.t()) :: String.t()
 
   defp module_of_function_key(key) when is_binary(key) do
     case String.split(key, ".") do
@@ -724,7 +757,7 @@ defmodule ElmEx.IR.Lowerer do
     end
   end
 
-  @spec merge_module_declarations(map(), map()) :: Types.expr()
+  @spec merge_module_declarations(Module.t(), Module.t()) :: Module.t()
 
   defp merge_module_declarations(%Module{} = existing, %Module{} = fresh) do
     by_name = Map.new(existing.declarations, &{&1.name, &1})
@@ -745,7 +778,7 @@ defmodule ElmEx.IR.Lowerer do
     %{existing | declarations: merged_decls, ports: ports}
   end
 
-  @spec unions_from_modules(list()) :: Types.expr()
+  @spec unions_from_modules([Module.t()]) :: map()
 
   defp unions_from_modules(modules) when is_list(modules) do
     Enum.reduce(modules, %{}, fn mod, acc ->
@@ -753,8 +786,8 @@ defmodule ElmEx.IR.Lowerer do
     end)
   end
 
-  @spec lower_declaration(AstDeclaration.t(), AstDeclaration.t() | nil, Lookup.t()) ::
-          Declaration.t() | nil
+  @spec lower_declaration(AstDeclaration.t(), AstDeclaration.t() | nil, Lookup.rewrite_t()) ::
+          Declaration.t() | map() | nil
   defp lower_declaration(decl, definition, lookup)
 
   defp lower_declaration(
@@ -831,7 +864,7 @@ defmodule ElmEx.IR.Lowerer do
     }
   end
 
-  @spec type_alias_expr(list() | Types.expr(), Types.expr()) :: Types.expr()
+  @spec type_alias_expr([term()], map()) :: Expr.t() | nil
 
   defp type_alias_expr(fields, field_types) when is_list(fields) and fields != [] do
     %{
@@ -872,7 +905,7 @@ defmodule ElmEx.IR.Lowerer do
     end
   end
 
-  @spec function_result_type(String.t()) :: Types.expr()
+  @spec function_result_type(String.t()) :: String.t()
 
   defp function_result_type(type) when is_binary(type) do
     type
@@ -881,7 +914,7 @@ defmodule ElmEx.IR.Lowerer do
     |> String.trim()
   end
 
-  @spec ownership_result_for_type(String.t()) :: Types.expr()
+  @spec ownership_result_for_type(String.t()) :: :retain_result | :borrow_result
 
   defp ownership_result_for_type(result) when is_binary(result) do
     cond do
@@ -1254,7 +1287,7 @@ defmodule ElmEx.IR.Lowerer do
 
   defp rewrite_expr(expr, _lookup), do: expr
 
-  @spec imported_value_reference?(String.t(), Types.expr()) :: boolean()
+  @spec imported_value_reference?(String.t(), Lookup.t()) :: boolean()
 
   defp imported_value_reference?(name, lookup) when is_binary(name) do
     let_bound = Map.get(lookup, :let_bound_names, MapSet.new())
@@ -1267,7 +1300,7 @@ defmodule ElmEx.IR.Lowerer do
       end
   end
 
-  @spec put_let_bound_name(Types.expr(), String.t()) :: Types.expr()
+  @spec put_let_bound_name(Lookup.t(), String.t()) :: Lookup.t()
 
   defp put_let_bound_name(lookup, name) when is_binary(name) do
     bound = Map.get(lookup, :let_bound_names, MapSet.new())
@@ -1276,7 +1309,7 @@ defmodule ElmEx.IR.Lowerer do
 
   defp put_let_bound_name(lookup, _name), do: lookup
 
-  @spec extend_lookup_with_pattern(Types.pattern(), Types.expr()) :: Types.expr()
+  @spec extend_lookup_with_pattern(Pattern.t() | map(), Lookup.t()) :: Lookup.t()
 
   defp extend_lookup_with_pattern(pattern, lookup) do
     Enum.reduce(pattern_bound_names(pattern), lookup, fn name, acc ->
@@ -1284,7 +1317,7 @@ defmodule ElmEx.IR.Lowerer do
     end)
   end
 
-  @spec pattern_bound_names(map() | Types.pattern()) :: Types.expr()
+  @spec pattern_bound_names(map() | Pattern.t()) :: [String.t()]
 
   defp pattern_bound_names(%{kind: :var, name: name}) when name not in ["_", ""], do: [name]
   defp pattern_bound_names(%{kind: :wildcard}), do: []
@@ -1312,14 +1345,14 @@ defmodule ElmEx.IR.Lowerer do
 
   defp pattern_bound_names(_pattern), do: []
 
-  @spec constructor_reference?(String.t(), Types.expr()) :: boolean()
+  @spec constructor_reference?(String.t(), Lookup.t()) :: boolean()
 
   defp constructor_reference?(name, lookup) when is_binary(name) do
     Map.has_key?(Map.get(lookup, :local, %{}), name) or
       Map.has_key?(Map.get(lookup, :unqualified, %{}), name)
   end
 
-  @spec apply_expr_to_arg(map() | Types.expr(), String.t()) :: Types.expr()
+  @spec apply_expr_to_arg(Expr.t() | map(), String.t()) :: Expr.t()
 
   defp apply_expr_to_arg(%{op: :qualified_call, args: args} = expr, arg_name) do
     %{expr | args: args ++ [%{op: :var, name: arg_name}]}
@@ -1356,7 +1389,7 @@ defmodule ElmEx.IR.Lowerer do
     %{op: :call, name: "__apply__", args: [expr, %{op: :var, name: arg_name}]}
   end
 
-  @spec apply_expr_to_operand(map() | Types.expr(), Types.expr()) :: Types.expr()
+  @spec apply_expr_to_operand(Expr.t() | map(), Expr.t()) :: Expr.t()
 
   defp apply_expr_to_operand(%{op: :qualified_call, args: args} = expr, operand) do
     %{expr | args: args ++ [operand]}
@@ -1396,8 +1429,8 @@ defmodule ElmEx.IR.Lowerer do
 
   defp rewrite_case_subject(subject, _lookup), do: subject
 
-  @spec canonicalize_record_field_types(ModuleExports.record_field_types() | nil, Lookup.t()) ::
-          ModuleExports.record_field_types()
+  @spec canonicalize_record_field_types(ModuleExports.record_field_types() | nil, Lookup.rewrite_t()) ::
+          %{String.t() => String.t() | term()}
   defp canonicalize_record_field_types(field_types, lookup) when is_map(field_types) do
     Map.new(field_types, fn {field, type} ->
       {field, canonicalize_type_annotation(type, lookup)}
@@ -1406,7 +1439,7 @@ defmodule ElmEx.IR.Lowerer do
 
   defp canonicalize_record_field_types(_field_types, _lookup), do: %{}
 
-  @spec canonicalize_type_annotation(String.t() | nil, Lookup.t()) :: String.t() | nil
+  @spec canonicalize_type_annotation(String.t() | nil, Lookup.rewrite_t()) :: String.t() | term()
   defp canonicalize_type_annotation(type, lookup) when is_binary(type) do
     alias_map = Map.get(lookup, :alias_map, %{})
     type_unqualified_map = Map.get(lookup, :type_unqualified_map, %{})
@@ -1418,7 +1451,7 @@ defmodule ElmEx.IR.Lowerer do
 
   defp canonicalize_type_annotation(type, _lookup), do: type
 
-  @spec canonicalize_qualified_type_aliases(Types.expr(), map()) :: Types.expr()
+  @spec canonicalize_qualified_type_aliases(String.t(), map()) :: String.t()
 
   defp canonicalize_qualified_type_aliases(type, alias_map) when is_map(alias_map) do
     alias_map
@@ -1430,7 +1463,7 @@ defmodule ElmEx.IR.Lowerer do
 
   defp canonicalize_qualified_type_aliases(type, _alias_map), do: type
 
-  @spec canonicalize_unqualified_type_names(Types.expr(), map()) :: Types.expr()
+  @spec canonicalize_unqualified_type_names(String.t(), map()) :: String.t()
 
   defp canonicalize_unqualified_type_names(type, type_unqualified_map)
        when is_map(type_unqualified_map) do
@@ -1448,7 +1481,7 @@ defmodule ElmEx.IR.Lowerer do
 
   defp canonicalize_unqualified_type_names(type, _type_unqualified_map), do: type
 
-  @spec replace_type_alias_prefix(Types.expr(), String.t(), String.t()) :: Types.expr()
+  @spec replace_type_alias_prefix(String.t(), String.t(), String.t()) :: String.t()
 
   defp replace_type_alias_prefix(type, alias_name, module_name)
        when is_binary(type) and is_binary(alias_name) and is_binary(module_name) do
@@ -1459,7 +1492,7 @@ defmodule ElmEx.IR.Lowerer do
     end)
   end
 
-  @spec replace_unqualified_type_name(Types.expr(), String.t(), String.t()) :: Types.expr()
+  @spec replace_unqualified_type_name(String.t(), String.t(), String.t()) :: String.t()
 
   defp replace_unqualified_type_name(type, name, module_name)
        when is_binary(type) and is_binary(name) and is_binary(module_name) do
@@ -1504,7 +1537,7 @@ defmodule ElmEx.IR.Lowerer do
 
   defp resolve_alias(target, _lookup), do: target
 
-  @spec redirect_diagram_init_peer(String.t()) :: Types.expr()
+  @spec redirect_diagram_init_peer(String.t()) :: String.t()
 
   defp redirect_diagram_init_peer(target) when is_binary(target) do
     Map.get(@internal_diagram_peer_redirects, target, target)
@@ -1584,7 +1617,11 @@ defmodule ElmEx.IR.Lowerer do
   defp build_import_resolution(_import_entries, _project_module_exports),
     do: {%{}, %{}, %{}, [], %{}}
 
-  @spec put_alias_binding(term(), String.t(), String.t()) :: Types.expr()
+  @spec put_alias_binding(
+          {Lookup.name_map(), %{String.t() => [String.t()]}},
+          String.t(),
+          String.t()
+        ) :: {Lookup.name_map(), %{String.t() => [String.t()]}}
 
   defp put_alias_binding({alias_acc, alias_modules_acc}, alias_name, module_name)
        when is_binary(alias_name) and alias_name != "" and is_binary(module_name) do
@@ -1599,7 +1636,10 @@ defmodule ElmEx.IR.Lowerer do
 
   defp put_alias_binding(acc, _alias_name, _module_name), do: acc
 
-  @spec build_alias_member_map(String.t() | term(), String.t() | term()) :: Types.expr()
+  @spec build_alias_member_map(
+          %{String.t() => [String.t()]},
+          ModuleExports.project_exports()
+        ) :: Lookup.alias_member_map()
 
   defp build_alias_member_map(alias_modules, project_module_exports)
        when is_map(alias_modules) and is_map(project_module_exports) do
@@ -1687,7 +1727,7 @@ defmodule ElmEx.IR.Lowerer do
     }
   end
 
-  @spec module_type_names(map()) :: Types.expr()
+  @spec module_type_names(FrontendModule.t() | map()) :: [String.t()]
 
   defp module_type_names(frontend_module) when is_map(frontend_module) do
     frontend_module
@@ -1700,7 +1740,7 @@ defmodule ElmEx.IR.Lowerer do
     end)
   end
 
-  @spec exposed_type_names(list() | Types.expr(), list() | String.t()) :: Types.expr()
+  @spec exposed_type_names([String.t()], [String.t()]) :: [String.t()]
 
   defp exposed_type_names(exposing, type_names) when is_list(exposing) and is_list(type_names) do
     exposing
@@ -1843,7 +1883,7 @@ defmodule ElmEx.IR.Lowerer do
     import_entries ++ default_entries
   end
 
-  @spec add_unique_string(list() | Types.expr(), String.t() | integer()) :: Types.expr()
+  @spec add_unique_string([String.t()], String.t()) :: [String.t()]
 
   defp add_unique_string(values, value) when is_list(values) and is_binary(value) do
     if value in values, do: values, else: values ++ [value]
@@ -2038,7 +2078,7 @@ defmodule ElmEx.IR.Lowerer do
     end
   end
 
-  @spec rewrite_record_alias_constructor(String.t(), [String.t()], Types.expr()) :: String.t()
+  @spec rewrite_record_alias_constructor(String.t(), [Expr.t()], Lookup.t()) :: Expr.t() | nil
 
   defp rewrite_record_alias_constructor(resolved_target, rewritten_args, lookup)
        when is_binary(resolved_target) and is_list(rewritten_args) do
@@ -2076,7 +2116,7 @@ defmodule ElmEx.IR.Lowerer do
     end
   end
 
-  @spec record_alias_record_literal(Types.expr(), list(), Types.expr()) :: Types.expr()
+  @spec record_alias_record_literal(String.t(), [String.t()], [Expr.t()]) :: Expr.t()
 
   defp record_alias_record_literal(qualified, fields, arg_exprs)
        when is_binary(qualified) and is_list(fields) and is_list(arg_exprs) do
@@ -2090,7 +2130,7 @@ defmodule ElmEx.IR.Lowerer do
     }
   end
 
-  @spec resolve_record_alias_fields(Types.expr(), String.t(), Types.expr()) :: Types.expr()
+  @spec resolve_record_alias_fields(String.t(), String.t(), Lookup.t()) :: [String.t()] | nil
 
   defp resolve_record_alias_fields(qualified, resolved_target, lookup)
        when is_binary(qualified) and is_binary(resolved_target) do
@@ -2113,7 +2153,7 @@ defmodule ElmEx.IR.Lowerer do
     end
   end
 
-  @spec local_record_alias_field_lookup(map() | term()) :: Types.expr()
+  @spec local_record_alias_field_lookup(FrontendModule.t() | map()) :: %{String.t() => [String.t()]}
 
   defp local_record_alias_field_lookup(%{declarations: declarations}) when is_list(declarations) do
     declarations
@@ -2249,7 +2289,7 @@ defmodule ElmEx.IR.Lowerer do
     end
   end
 
-  @spec import_module_for_ctor(map() | term(), String.t() | term()) :: Types.expr()
+  @spec import_module_for_ctor(Lookup.t() | map(), String.t()) :: String.t() | nil
 
   defp import_module_for_ctor(lookup, name) when is_map(lookup) and is_binary(name) do
     case Map.get(lookup, :import_unqualified_map, %{}) |> Map.get(name) do
@@ -2263,7 +2303,7 @@ defmodule ElmEx.IR.Lowerer do
   # When short names collide across packages, prefer the candidate that shares the
   # most module-path prefix with the call-site module (Scene3d.Entity + Group →
   # Scene3d.Types.Group), never an unrelated Internal.Compiler.Group.
-  @spec lookup_qualified_affinity(Types.expr() | term(), String.t() | term(), String.t() | term()) :: Types.expr()
+  @spec lookup_qualified_affinity(map(), String.t(), String.t()) :: integer() | nil
 
   defp lookup_qualified_affinity(qualified, current_module, short_name)
        when is_map(qualified) and is_binary(short_name) do
@@ -2310,14 +2350,14 @@ defmodule ElmEx.IR.Lowerer do
 
   defp lookup_qualified_affinity(_, _, _), do: nil
 
-  @spec shared_prefix_len(Types.expr() | term(), Types.expr() | term(), integer()) :: Types.expr()
+  @spec shared_prefix_len(list(), list(), non_neg_integer()) :: non_neg_integer()
 
   defp shared_prefix_len(a, b), do: shared_prefix_len(a, b, 0)
   defp shared_prefix_len([x | as], [x | bs], n), do: shared_prefix_len(as, bs, n + 1)
   defp shared_prefix_len(_, _, n), do: n
 
   # Keep only short names that map to a single tag across the project.
-  @spec unique_short_name_map(list() | term()) :: Types.expr()
+  @spec unique_short_name_map([{String.t(), term()}]) :: map()
 
   defp unique_short_name_map(pairs) when is_list(pairs) do
     pairs

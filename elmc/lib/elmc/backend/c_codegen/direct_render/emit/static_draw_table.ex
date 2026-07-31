@@ -195,7 +195,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.StaticDrawTable do
     {:ok, code, counter}
   end
 
-  @spec draw_kind(atom()) :: Types.ir_expr()
+  @spec draw_kind(atom()) :: integer()
 
   defp draw_kind(kind), do: Elmc.Backend.Pebble.draw_kind_id!(kind)
 end

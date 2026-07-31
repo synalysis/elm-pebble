@@ -44,7 +44,7 @@ defmodule Elmx.Backend.QualifiedRewrite do
 
   defp strip_pkg_mangle_prefix(target), do: target
 
-  @spec rewrite_qualified(String.t(), [String.t()]) :: String.t()
+  @spec rewrite_qualified(String.t(), [String.t()]) :: Types.rewrite_result()
 
   defp rewrite_qualified(target, args) do
     case {target, args} do
@@ -859,7 +859,7 @@ defmodule Elmx.Backend.QualifiedRewrite do
     end
   end
 
-  @spec unary_bound_task(integer(), [String.t()], Types.elm_value()) :: Types.elm_value()
+  @spec unary_bound_task(String.t(), [Types.ir_expr()], String.t()) :: Types.rewrite_result()
 
   defp unary_bound_task(function, fixed_args, param) do
     {:ok,
@@ -904,7 +904,7 @@ defmodule Elmx.Backend.QualifiedRewrite do
 
   # Elm operators often lower as `Elm.Kernel.Basics.*` / `Elm.Kernel.Utils.*` qualified calls.
   # Emit already handles the `__add__` / `__eq__` family via `:call` nodes.
-  @spec operator_call_rewrite(String.t(), list()) :: Types.elm_value()
+  @spec operator_call_rewrite(String.t(), list()) :: Types.rewrite_result()
 
   defp operator_call_rewrite(target, args) when is_binary(target) and is_list(args) do
     case operator_call_name(target) do
@@ -943,7 +943,7 @@ defmodule Elmx.Backend.QualifiedRewrite do
   defp denormalize_utils_alias("Utils.compare"), do: "Basics.compare"
   defp denormalize_utils_alias(target), do: target
 
-  @spec curried(integer(), [String.t()], Types.elm_value()) :: Types.elm_value()
+  @spec curried(String.t(), [Types.ir_expr()], String.t()) :: Types.rewrite_result()
 
   defp curried(function, fixed_args, param) do
     {:ok,
@@ -958,31 +958,31 @@ defmodule Elmx.Backend.QualifiedRewrite do
      }}
   end
 
-  @spec runtime2(integer(), [String.t()]) :: Types.elm_value()
+  @spec runtime2(String.t(), [Types.ir_expr()]) :: Types.rewrite_result()
 
   defp runtime2(function, args) do
     {:ok, %{op: :runtime_call, function: function, args: args}}
   end
 
-  @spec runtime3(integer(), [String.t()]) :: Types.elm_value()
+  @spec runtime3(String.t(), [Types.ir_expr()]) :: Types.rewrite_result()
 
   defp runtime3(function, args) do
     {:ok, %{op: :runtime_call, function: function, args: args}}
   end
 
-  @spec runtime4(integer(), [String.t()]) :: Types.elm_value()
+  @spec runtime4(String.t(), [Types.ir_expr()]) :: Types.rewrite_result()
 
   defp runtime4(function, args) do
     {:ok, %{op: :runtime_call, function: function, args: args}}
   end
 
-  @spec runtime5(integer(), [String.t()]) :: Types.elm_value()
+  @spec runtime5(String.t(), [Types.ir_expr()]) :: Types.rewrite_result()
 
   defp runtime5(function, args) do
     {:ok, %{op: :runtime_call, function: function, args: args}}
   end
 
-  @spec runtime6(integer(), [String.t()]) :: Types.elm_value()
+  @spec runtime6(String.t(), [Types.ir_expr()]) :: Types.rewrite_result()
 
   defp runtime6(function, args) do
     {:ok, %{op: :runtime_call, function: function, args: args}}

@@ -21,7 +21,7 @@ defmodule Elmc.Backend.Plan.Lower.ListIntType do
     end
   end
 
-  @spec var_type_name(map() | term(), String.t() | term()) :: Types.ir_expr()
+  @spec var_type_name(Context.t(), String.t()) :: String.t() | nil
 
   defp var_type_name(%Context{module: mod, function_name: fun, decl_map: decl_map}, name)
        when is_binary(mod) and is_binary(fun) and is_binary(name) do

@@ -576,7 +576,7 @@ defmodule Elmc.Backend.CCodegen.RcRuntimeEmit do
     end
   end
 
-  @spec join_stmts(list()) :: Types.ir_expr()
+  @spec join_stmts([String.t()]) :: String.t()
 
   defp join_stmts(stmts) when is_list(stmts) do
     stmts
@@ -585,7 +585,7 @@ defmodule Elmc.Backend.CCodegen.RcRuntimeEmit do
     |> Enum.join("\n")
   end
 
-  @spec abandon_owned_source(Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+  @spec abandon_owned_source(String.t(), String.t()) :: String.t()
 
   defp abandon_owned_source(ref, stmt) do
     ValueSlots.transfer(ref)
@@ -657,7 +657,8 @@ defmodule Elmc.Backend.CCodegen.RcRuntimeEmit do
     end
   end
 
-  @spec compile_result_slot_branch(Types.compile_env(), Types.ir_expr()) :: Types.ir_expr()
+  @spec compile_result_slot_branch(Types.compile_env(), non_neg_integer()) ::
+          {String.t(), non_neg_integer()}
 
   defp compile_result_slot_branch(env, counter) do
     branch_out = Map.get(env, :__branch_out__)
@@ -681,7 +682,7 @@ defmodule Elmc.Backend.CCodegen.RcRuntimeEmit do
   @spec compile_call_result_slot(Types.compile_env(), non_neg_integer()) :: {String.t(), non_neg_integer()}
   def compile_call_result_slot(env, counter), do: compile_result_slot(env, counter)
 
-  @spec branch_out_slot?(Types.compile_env(), Types.ir_expr()) :: boolean()
+  @spec branch_out_slot?(Types.compile_env(), String.t()) :: boolean()
 
   defp branch_out_slot?(env, out) do
     (function_out_ref?(out) and function_tail_compile?(env)) or ValueSlots.owned_ref?(out) or
@@ -1008,7 +1009,8 @@ defmodule Elmc.Backend.CCodegen.RcRuntimeEmit do
     end
   end
 
-  @spec rc_function_out_stmt(Types.compile_env(), Types.ir_expr(), integer(), [String.t()], keyword()) :: Types.ir_expr()
+  @spec rc_function_out_stmt(Types.compile_env(), String.t(), String.t(), String.t(), keyword()) ::
+          String.t()
 
   defp rc_function_out_stmt(_env, out, function, call_args, opts) do
     fresh_out? = Keyword.get(opts, :fresh_out?, false)
@@ -1048,7 +1050,7 @@ defmodule Elmc.Backend.CCodegen.RcRuntimeEmit do
     end
   end
 
-  @spec int_list_cons_assign(Types.compile_env(), Types.ir_expr(), [String.t()], Types.ir_expr()) :: Types.ir_expr()
+  @spec int_list_cons_assign(Types.compile_env(), String.t(), String.t(), keyword()) :: String.t()
 
   defp int_list_cons_assign(env, out, call_args, opts \\ []) do
     loop_id = Keyword.get(opts, :loop_id, 0)
@@ -1062,7 +1064,7 @@ defmodule Elmc.Backend.CCodegen.RcRuntimeEmit do
     end
   end
 
-  @spec parse_call_args_pair(String.t()) :: Types.ir_expr()
+  @spec parse_call_args_pair(String.t()) :: {String.t(), String.t()} | :error
 
   defp parse_call_args_pair(call_args) when is_binary(call_args) do
     case String.split(call_args, ", ", parts: 2) do
@@ -1169,13 +1171,13 @@ defmodule Elmc.Backend.CCodegen.RcRuntimeEmit do
     |> String.trim()
   end
 
-  @spec rc_failure_return(keyword()) :: Types.ir_expr()
+  @spec rc_failure_return(keyword()) :: String.t()
 
   defp rc_failure_return(opts) do
     failure_return(Keyword.get(opts, :env, %{}))
   end
 
-  @spec legacy_declare_out?(Types.ir_expr(), keyword()) :: boolean()
+  @spec legacy_declare_out?(String.t(), keyword()) :: boolean()
 
   defp legacy_declare_out?(out, opts) do
     case Keyword.get(opts, :declare_out?) do
@@ -1192,7 +1194,7 @@ defmodule Elmc.Backend.CCodegen.RcRuntimeEmit do
     end
   end
 
-  @spec failure_return(Types.compile_env()) :: Types.ir_expr()
+  @spec failure_return(Types.compile_env()) :: String.t()
 
   def failure_return(env) do
     cond do
@@ -1283,26 +1285,24 @@ defmodule Elmc.Backend.CCodegen.RcRuntimeEmit do
     |> String.trim()
   end
 
-  @spec fusion_owned_slot_addr(Types.ir_expr() | String.t()) :: Types.ir_expr()
+  @spec fusion_owned_slot_addr(String.t()) :: String.t()
 
   defp fusion_owned_slot_addr("owned[" <> _ = slot), do: "&#{slot}"
   defp fusion_owned_slot_addr(slot) when is_binary(slot), do: "&#{slot}"
 
-  @spec declared_out_slot?(Types.compile_env(), Types.ir_expr()) :: boolean()
-
+  @spec declared_out_slot?(Types.compile_env(), String.t()) :: boolean()
   defp declared_out_slot?(env, out) do
     MapSet.member?(Map.get(env, :__declared_outs__, MapSet.new()), out)
   end
 
   @doc false
-  @spec predeclared_out_slot?(Types.compile_env(), Types.ir_expr()) :: boolean()
-
+  @spec predeclared_out_slot?(Types.compile_env(), String.t()) :: boolean()
   def predeclared_out_slot?(env, out) do
     declared_out_slot?(env, out) or Map.get(env, :__into_out__) == out or
       Map.get(env, :__branch_out__) == out
   end
 
-  @spec rc_owned_slot?(Types.ir_expr()) :: boolean()
+  @spec rc_owned_slot?(String.t()) :: boolean()
 
   defp rc_owned_slot?(out), do: ValueSlots.owned_ref?(out)
 
@@ -1360,7 +1360,7 @@ defmodule Elmc.Backend.CCodegen.RcRuntimeEmit do
     stmt
   end
 
-  @spec allocator_same_slot_transfer?(Types.ir_expr(), integer(), [String.t()]) :: boolean()
+  @spec allocator_same_slot_transfer?(String.t(), String.t(), String.t()) :: boolean()
 
   defp allocator_same_slot_transfer?(out, function, call_args)
        when is_binary(out) and is_binary(function) and is_binary(call_args) do
@@ -1376,7 +1376,7 @@ defmodule Elmc.Backend.CCodegen.RcRuntimeEmit do
     MapSet.member?(@array_source_transfer_allocators, function) and not ValueSlots.in_c_loop?()
   end
 
-  @spec function_out_assign(Types.compile_env(), String.t(), String.t()) :: Types.ir_expr()
+  @spec function_out_assign(Types.compile_env(), String.t(), String.t()) :: String.t()
 
   defp function_out_assign(_env, out, rhs) when is_binary(out) and is_binary(rhs) do
     if function_out_ref?(out) and ValueSlots.owned_ref?(rhs) do
@@ -1396,7 +1396,7 @@ defmodule Elmc.Backend.CCodegen.RcRuntimeEmit do
     end
   end
 
-  @spec result_payload_owned_release(integer(), [String.t()]) :: Types.ir_expr()
+  @spec result_payload_owned_release(String.t(), String.t()) :: String.t()
 
   defp result_payload_owned_release(function, _call_args)
        when function in ["elmc_result_ok_own", "elmc_result_err_own"], do: ""

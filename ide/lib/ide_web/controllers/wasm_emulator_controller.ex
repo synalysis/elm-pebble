@@ -1203,7 +1203,7 @@ defmodule IdeWeb.WasmEmulatorController do
     """
   end
 
-  @spec require_wasm_enabled(integer(), keyword()) :: term()
+  @spec require_wasm_enabled(Plug.Conn.t(), keyword()) :: Plug.Conn.t()
 
   defp require_wasm_enabled(conn, _opts) do
     if EmulatorSupport.wasm_mode_enabled?() do

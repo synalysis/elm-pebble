@@ -183,7 +183,7 @@ defmodule ElmEx.DebuggerContract.EffectAnalysis.CmdCalls do
 
   def maybe_put_branch_constructor(row, _constructor), do: row
 
-  @spec extract_cmd_op_items(map() | Types.expr()) :: term()
+  @spec extract_cmd_op_items(Types.ast_expr() | map()) :: Types.string_list()
 
   def extract_cmd_op_items(%{
         op: :qualified_call,
@@ -223,7 +223,7 @@ defmodule ElmEx.DebuggerContract.EffectAnalysis.CmdCalls do
     end
   end
 
-  @spec extract_cmd_calls(Types.expr() | map() | term(), term() | map()) :: term()
+  @spec extract_cmd_calls(Types.ast_expr() | map() | term(), Types.binding_map() | map()) :: Types.cmd_call_list()
 
   def extract_cmd_calls(expr), do: extract_cmd_calls(expr, %{})
 

@@ -1222,9 +1222,7 @@ defmodule ElmEx.Frontend.Pretty.Expr do
   defp tuple2_tail(%{op: :tuple2, left: left, right: right}), do: [left | tuple2_tail(right)]
   defp tuple2_tail(other), do: [other]
 
-  @spec format_tuple_elements([map()], opts()) :: Doc.t()
-  defp format_tuple_elements([], _opts), do: Doc.text("()")
-
+  @spec format_tuple_elements([map(), ...], opts()) :: Doc.t()
   defp format_tuple_elements([single], opts) do
     Doc.parens(format(single, opts))
   end

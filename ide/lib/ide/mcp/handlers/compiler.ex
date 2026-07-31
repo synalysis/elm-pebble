@@ -480,7 +480,7 @@ defmodule Ide.Mcp.Handlers.Compiler do
   end
 
   defp resolve_publish_validation_package(project, args) do
-    if is_map(args) and package_disabled?(args) do
+    if package_disabled?(args) do
       {:ok,
        %{
          status: :unknown,

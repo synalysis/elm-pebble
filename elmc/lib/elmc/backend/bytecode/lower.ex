@@ -60,7 +60,7 @@ defmodule Elmc.Backend.Bytecode.Lower do
   # Bytecode uses virtual register indices from the plan builder (`reg_count`), not
   # the greedy owned-slot count from `Plan.allocate_slots/1` (that map is for C).
   defp bytecode_locals(%FunctionPlan{reg_count: reg_count, params: params}) do
-    max(max(reg_count, length(params || [])), 1)
+    max(max(reg_count, length(params)), 1)
   end
 
   defp encode_blocks(blocks, fn_table) do

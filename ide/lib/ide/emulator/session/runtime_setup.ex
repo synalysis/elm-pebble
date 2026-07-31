@@ -141,7 +141,7 @@ defmodule Ide.Emulator.Session.RuntimeSetup do
     component(:qemu, "Pebble QEMU", false, inspect(reason), true)
   end
 
-  @spec install_steps_for_component(term() | integer() | Types.compile_env() | String.t(), term()) :: term()
+  @spec install_steps_for_component(atom(), term()) :: [map()]
 
   defp install_steps_for_component(id, platform)
        when id in [:qemu, :qemu_micro_flash, :qemu_spi_flash] do

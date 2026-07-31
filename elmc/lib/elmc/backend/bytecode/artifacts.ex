@@ -40,8 +40,8 @@ defmodule Elmc.Backend.Bytecode.Artifacts do
       function_count: length(functions),
       skipped_count: length(skipped),
       pruned_count: Map.get(manifest, "pruned_count", 0),
-      plan_toolchain: Map.get(manifest, "plan_toolchain"),
-      plan_coverage: Map.get(manifest, "plan_coverage"),
+      plan_toolchain: map_or_nil(Map.get(manifest, "plan_toolchain")),
+      plan_coverage: map_or_nil(Map.get(manifest, "plan_coverage")),
       functions:
         Enum.map(functions, fn entry ->
           %{
@@ -61,4 +61,7 @@ defmodule Elmc.Backend.Bytecode.Artifacts do
         end)
     }
   end
+
+  defp map_or_nil(%{} = map), do: map
+  defp map_or_nil(_), do: nil
 end

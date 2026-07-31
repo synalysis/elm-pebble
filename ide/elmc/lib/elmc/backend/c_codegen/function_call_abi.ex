@@ -104,9 +104,15 @@ defmodule Elmc.Backend.CCodegen.FunctionCallAbi do
     end
   end
 
-  @spec direct_entry_abi?(Types.function_declaration(), String.t(), Types.function_decl_map(), keyword()) ::
-          boolean()
+  @spec direct_entry_abi?(
+          Types.function_declaration(),
+          String.t(),
+          Types.function_decl_map(),
+          keyword() | map()
+        ) :: boolean()
   def direct_entry_abi?(decl, module_name, decl_map, opts \\ []) do
+    opts = if is_map(opts), do: Map.to_list(opts), else: opts
+
     direct_plan_call_abi?(decl, module_name, decl_map) or
       (decl.name in @worker_entry_points and
          Plan.primary_lowered?(decl, module_name, decl_map, opts))

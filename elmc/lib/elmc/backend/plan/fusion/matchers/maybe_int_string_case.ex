@@ -12,6 +12,15 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.MaybeIntStringCase do
 
   @buf_size 22
 
+  @type format :: {:plain, String.t()} | {:threshold, integer(), integer(), String.t()}
+
+  @type wire_format_map ::
+          %{kind: :plain, suffix: String.t()}
+          | %{kind: :threshold, threshold: integer(), divisor: integer(), suffix: String.t()}
+
+  @type with_default_field_parse ::
+          {:ok, integer(), String.t(), String.t()} | :error
+
   @spec try_emit(String.t(), String.t(), Types.ir_expr() | nil, Types.function_decl_map()) ::
           {:ok, String.t(), [FusionSupport.callee_key()], :rc_native} | :error
   def try_emit(_module_name, _name, nil, _decl_map), do: :error
@@ -48,7 +57,8 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.MaybeIntStringCase do
     end
   end
 
-  @spec try_emit_with_default_append(String.t(), String.t(), Types.expr(), Types.decl_map()) :: Types.ir_expr() | nil
+  @spec try_emit_with_default_append(String.t(), String.t(), Types.expr(), Types.decl_map()) ::
+          {:ok, String.t()} | :error
 
   defp try_emit_with_default_append(module_name, name, expr, decl_map) do
     with param when is_binary(param) <- fusion_param_name(module_name, name, decl_map),
@@ -84,7 +94,8 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.MaybeIntStringCase do
     end
   end
 
-  @spec parse_maybe_with_default_append(Types.expr()) :: Types.ir_expr()
+  @spec parse_maybe_with_default_append(Types.expr()) ::
+          {:ok, String.t(), String.t(), integer(), String.t()} | :error
 
   defp parse_maybe_with_default_append(expr) do
     with {:ok, left, right} <- append_parts(expr),
@@ -96,7 +107,7 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.MaybeIntStringCase do
     end
   end
 
-  @spec string_literal_suffix(map() | term()) :: Types.ir_expr()
+  @spec string_literal_suffix(map() | term()) :: {:ok, String.t()} | :error
 
   defp string_literal_suffix(%{op: :string_literal, value: value}) when is_binary(value) do
     if String.contains?(value, <<0>>), do: :error, else: {:ok, value}
@@ -104,7 +115,7 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.MaybeIntStringCase do
 
   defp string_literal_suffix(_), do: :error
 
-  @spec parse_with_default_int_field(map() | Types.expr()) :: Types.ir_expr()
+  @spec parse_with_default_int_field(map() | Types.expr()) :: with_default_field_parse()
 
   defp parse_with_default_int_field(%{op: :qualified_call, target: "String.fromInt", args: [inner]}),
     do: parse_with_default_int_field(inner)
@@ -114,7 +125,7 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.MaybeIntStringCase do
 
   defp parse_with_default_int_field(expr), do: parse_with_default_call(expr)
 
-  @spec parse_with_default_call(map() | term()) :: Types.ir_expr()
+  @spec parse_with_default_call(map() | term()) :: with_default_field_parse()
 
   defp parse_with_default_call(%{op: :qualified_call, target: "Maybe.withDefault", args: [default, maybe]}) do
     parse_with_default_args(default, maybe)
@@ -130,7 +141,7 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.MaybeIntStringCase do
 
   defp parse_with_default_call(_), do: :error
 
-  @spec parse_with_default_args(Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+  @spec parse_with_default_args(Types.ir_expr(), Types.ir_expr()) :: with_default_field_parse()
 
   defp parse_with_default_args(default, maybe) do
     with %{op: :int_literal, value: value} when is_integer(value) <- default,
@@ -141,7 +152,8 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.MaybeIntStringCase do
     end
   end
 
-  @spec emit_maybe_int_string_core(Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), String.t(), Types.ir_expr()) :: Types.ir_expr()
+  @spec emit_maybe_int_string_core(String.t(), String.t(), String.t(), String.t(), format()) ::
+          String.t()
 
   defp emit_maybe_int_string_core(param, field_macro, int_var, nothing_text, format) do
     default_lit = "\"#{Util.escape_c_string(nothing_text)}\""
@@ -184,7 +196,8 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.MaybeIntStringCase do
     """
   end
 
-  @spec parse_maybe_int_case(map() | term()) :: Types.ir_expr()
+  @spec parse_maybe_int_case(map() | term()) ::
+          {:ok, String.t(), String.t(), Types.case_branches()} | :error
 
   defp parse_maybe_int_case(%{op: :let_in, value_expr: source, in_expr: %{op: :case, branches: branches}}) do
     case parse_maybe_field_source(source) do
@@ -202,7 +215,7 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.MaybeIntStringCase do
 
   defp parse_maybe_int_case(_), do: :error
 
-  @spec parse_maybe_field_source(map() | term()) :: Types.ir_expr()
+  @spec parse_maybe_field_source(map() | term()) :: {:ok, String.t(), String.t()} | :error
 
   defp parse_maybe_field_source(%{op: :field_access, arg: param, field: field})
        when is_binary(param) and is_binary(field),
@@ -214,7 +227,7 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.MaybeIntStringCase do
 
   defp parse_maybe_field_source(_), do: :error
 
-  @spec parse_just_int_format(list()) :: Types.ir_expr()
+  @spec parse_just_int_format(Types.case_branches()) :: {:ok, String.t(), format()} | :error
 
   defp parse_just_int_format(branches) do
     case Enum.find(branches, &just_branch?/1) do
@@ -239,7 +252,7 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.MaybeIntStringCase do
 
   defp just_branch?(_), do: false
 
-  @spec parse_just_int_expr(Types.expr(), Types.ir_expr()) :: Types.ir_expr()
+  @spec parse_just_int_expr(Types.expr(), String.t()) :: {:ok, String.t(), format()} | :error
 
   defp parse_just_int_expr(expr, var) do
     with {:ok, threshold, divisor, suffix} <- parse_threshold_format(expr, var) do
@@ -259,7 +272,8 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.MaybeIntStringCase do
     end
   end
 
-  @spec parse_threshold_format(Types.expr(), Types.ir_expr()) :: Types.ir_expr()
+  @spec parse_threshold_format(Types.expr(), String.t()) ::
+          {:ok, integer(), integer(), String.t()} | :error
 
   defp parse_threshold_format(expr, var) do
     with {:ok, threshold} <- parse_ge_threshold(expr, var),
@@ -274,7 +288,7 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.MaybeIntStringCase do
     end
   end
 
-  @spec parse_ge_threshold(map() | term(), Types.ir_expr() | term()) :: Types.ir_expr()
+  @spec parse_ge_threshold(map() | term(), String.t()) :: {:ok, integer()} | :error
 
   defp parse_ge_threshold(%{op: :if, cond: cond}, var) do
     ge_compare_threshold(cond, var)
@@ -286,7 +300,7 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.MaybeIntStringCase do
 
   defp parse_ge_threshold(_, _), do: :error
 
-  @spec ge_compare_threshold(map() | term(), Types.ir_expr() | term()) :: Types.ir_expr()
+  @spec ge_compare_threshold(map() | term(), String.t()) :: {:ok, integer()} | :error
 
   defp ge_compare_threshold(
          %{op: :if,
@@ -316,12 +330,13 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.MaybeIntStringCase do
 
   defp bool_true?(_expr), do: false
 
-  @spec expand_let_bindings(map() | Types.expr()) :: Types.ir_expr()
+  @spec expand_let_bindings(map() | Types.expr()) :: Types.expr()
 
   defp expand_let_bindings(%{op: :let_bindings} = expr), do: ElmEx.Frontend.LetBindings.expand(expr)
   defp expand_let_bindings(expr), do: expr
 
-  @spec parse_threshold_suffix_arm(Types.expr(), Types.ir_expr()) :: Types.ir_expr()
+  @spec parse_threshold_suffix_arm(Types.expr(), String.t()) ::
+          {:ok, integer(), String.t()} | :error
 
   defp parse_threshold_suffix_arm(expr, var) do
     with {:ok, left, right} <- append_parts(expr),
@@ -334,7 +349,7 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.MaybeIntStringCase do
     end
   end
 
-  @spec parse_plain_suffix_format(Types.expr(), Types.ir_expr()) :: Types.ir_expr()
+  @spec parse_plain_suffix_format(Types.expr(), String.t()) :: {:ok, format()} | :error
 
   defp parse_plain_suffix_format(expr, var) do
     with {:ok, left, right} <- append_parts(expr),
@@ -351,7 +366,7 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.MaybeIntStringCase do
     end
   end
 
-  @spec parse_plain_from_int(map() | term(), Types.ir_expr() | term()) :: Types.ir_expr()
+  @spec parse_plain_from_int(map() | term(), String.t()) :: :ok | :error
 
   defp parse_plain_from_int(%{op: :qualified_call, target: "String.fromInt", args: [%{op: :var, name: var}]}, var),
     do: :ok
@@ -361,7 +376,7 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.MaybeIntStringCase do
 
   defp parse_plain_from_int(_, _), do: :error
 
-  @spec idiv_divisor(map() | term(), Types.ir_expr() | term()) :: Types.ir_expr()
+  @spec idiv_divisor(map() | term(), String.t()) :: {:ok, integer()} | :error
 
   defp idiv_divisor(%{op: :call, name: "__idiv__", args: [%{op: :var, name: var}, %{op: :int_literal, value: divisor}]}, var)
        when is_integer(divisor),
@@ -374,7 +389,7 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.MaybeIntStringCase do
 
   defp idiv_divisor(_, _), do: :error
 
-  @spec int_expr_references_var?(map() | term(), Types.ir_expr() | term()) :: boolean()
+  @spec int_expr_references_var?(map() | term(), String.t()) :: boolean()
 
   defp int_expr_references_var?(%{op: :var, name: name}, var), do: name == var
 
@@ -389,11 +404,11 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.MaybeIntStringCase do
 
   defp int_expr_references_var?(_, _), do: false
 
-  @spec int_env(Types.ir_expr()) :: Types.ir_expr()
+  @spec int_env(String.t()) :: Types.compile_env()
 
   defp int_env(var), do: EnvBindings.put_native_int_binding(%{}, var, var)
 
-  @spec append_parts(map() | term()) :: Types.ir_expr()
+  @spec append_parts(map() | term()) :: {:ok, Types.ir_expr(), Types.ir_expr()} | :error
 
   defp append_parts(%{op: :call, name: "__append__", args: [left, right]}), do: {:ok, left, right}
 
@@ -407,7 +422,7 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.MaybeIntStringCase do
 
   defp append_parts(_), do: :error
 
-  @spec nothing_branch_text(list()) :: Types.ir_expr()
+  @spec nothing_branch_text(Types.case_branches()) :: {:ok, String.t()} | :error
 
   defp nothing_branch_text(branches) do
     case Enum.find(branches, &nothing_branch?/1) do
@@ -426,7 +441,8 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.MaybeIntStringCase do
 
   defp nothing_branch?(_), do: false
 
-  @spec field_macro(String.t(), String.t(), Types.ir_expr(), Types.ir_expr(), Types.decl_map()) :: Types.ir_expr()
+  @spec field_macro(String.t(), String.t(), String.t(), String.t(), Types.decl_map()) ::
+          String.t() | nil
 
   defp field_macro(module_name, fn_name, _param, field, decl_map) do
     with {:ok, model_type} <- record_param_type(module_name, fn_name, decl_map),
@@ -437,7 +453,7 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.MaybeIntStringCase do
     end
   end
 
-  @spec record_param_type(String.t(), String.t(), Types.decl_map()) :: Types.ir_expr()
+  @spec record_param_type(String.t(), String.t(), Types.decl_map()) :: {:ok, String.t()} | :error
 
   defp record_param_type(module_name, fn_name, decl_map) do
     case Map.get(decl_map, {module_name, fn_name}) do
@@ -452,13 +468,13 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.MaybeIntStringCase do
     end
   end
 
-  @spec type_basename(String.t()) :: Types.ir_expr()
+  @spec type_basename(String.t()) :: String.t()
 
   defp type_basename(type) when is_binary(type) do
     type |> String.split(".") |> List.last()
   end
 
-  @spec fusion_param_name(String.t(), String.t(), Types.decl_map()) :: Types.ir_expr()
+  @spec fusion_param_name(String.t(), String.t(), Types.decl_map()) :: String.t() | nil
 
   defp fusion_param_name(module_name, name, decl_map) do
     case Map.get(decl_map, {module_name, name}) do
@@ -467,7 +483,7 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.MaybeIntStringCase do
     end
   end
 
-  @spec escape_snprintf_literal(Types.ir_expr()) :: Types.ir_expr()
+  @spec escape_snprintf_literal(String.t()) :: String.t()
 
   defp escape_snprintf_literal(""), do: ""
 
@@ -493,7 +509,14 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.MaybeIntStringCase do
     end
   end
 
-  @spec extract_default_append_fusion(String.t(), String.t(), Types.expr(), Types.decl_map()) :: Types.ir_expr()
+  @spec extract_default_append_fusion(String.t(), String.t(), Types.expr(), Types.decl_map()) ::
+          {:ok,
+           %{
+             mode: :default_append,
+             field: integer(),
+             default: integer(),
+             suffix: String.t()
+           }} | :error
 
   defp extract_default_append_fusion(module_name, name, expr, decl_map) do
     with param when is_binary(param) <- fusion_param_name(module_name, name, decl_map),
@@ -506,7 +529,14 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.MaybeIntStringCase do
     end
   end
 
-  @spec extract_maybe_case_fusion(String.t(), String.t(), Types.expr(), Types.decl_map()) :: Types.ir_expr()
+  @spec extract_maybe_case_fusion(String.t(), String.t(), Types.expr(), Types.decl_map()) ::
+          {:ok,
+           %{
+             mode: :maybe_case,
+             field: integer(),
+             nothing: String.t(),
+             format: wire_format_map()
+           }} | :error
 
   defp extract_maybe_case_fusion(module_name, name, expr, decl_map) do
     with param when is_binary(param) <- fusion_param_name(module_name, name, decl_map),
@@ -527,7 +557,7 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.MaybeIntStringCase do
     end
   end
 
-  @spec wire_format(term()) :: Types.ir_expr()
+  @spec wire_format(format()) :: wire_format_map()
 
   defp wire_format({:plain, suffix}), do: %{kind: :plain, suffix: suffix}
 

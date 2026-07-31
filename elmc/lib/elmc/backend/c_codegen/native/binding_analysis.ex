@@ -80,27 +80,23 @@ defmodule Elmc.Backend.CCodegen.Native.BindingAnalysis do
 
   defp reference_count_node(_name, _expr), do: 0
 
-  @spec pebble_angle_optimized_reference_count_node(
-          Types.binding_name(),
-          Types.ir_expr() | [Types.ir_expr()]
-        ) :: non_neg_integer()
-  defp pebble_angle_optimized_reference_count_node(name, expr) do
-    cond do
-      pebble_trig_round_expr?(expr, name) ->
-        1
-
-      is_map(expr) ->
-        pebble_angle_optimized_reference_count_node(name, Map.values(expr))
-
-      is_list(expr) ->
-        Enum.reduce(expr, 0, fn value, acc ->
-          acc + pebble_angle_optimized_reference_count_node(name, value)
-        end)
-
-      true ->
-        0
+  @spec pebble_angle_optimized_reference_count_node(Types.binding_name(), term()) ::
+          non_neg_integer()
+  defp pebble_angle_optimized_reference_count_node(name, expr) when is_map(expr) do
+    if pebble_trig_round_expr?(expr, name) do
+      1
+    else
+      pebble_angle_optimized_reference_count_node(name, Map.values(expr))
     end
   end
+
+  defp pebble_angle_optimized_reference_count_node(name, exprs) when is_list(exprs) do
+    Enum.reduce(exprs, 0, fn value, acc ->
+      acc + pebble_angle_optimized_reference_count_node(name, value)
+    end)
+  end
+
+  defp pebble_angle_optimized_reference_count_node(_name, _expr), do: 0
 
   @spec referenced?(String.t(), map() | String.t() | list() | Types.expr()) :: boolean()
 
@@ -121,7 +117,7 @@ defmodule Elmc.Backend.CCodegen.Native.BindingAnalysis do
 
   defp referenced?(_name, _expr), do: false
 
-  @spec pebble_trig_round_expr?(map() | Types.expr(), String.t()) :: boolean()
+  @spec pebble_trig_round_expr?(term(), String.t()) :: boolean()
 
   defp pebble_trig_round_expr?(
          %{op: :qualified_call, target: target, args: [value]},

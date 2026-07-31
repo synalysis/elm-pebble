@@ -94,7 +94,7 @@ defmodule Elmc.Backend.Plan.Context do
   def with_expected_fn_type(ctx, _),
     do: %{ctx | expected_fn_type: nil}
 
-  @spec from_compile_env(Types.compile_env()) :: t()
+  @spec from_compile_env(Types.compile_env()) :: t() | map()
   def from_compile_env(env) when is_map(env) do
     function_tail =
       Map.get(env, :__function_tail_compile__, false) or
@@ -188,11 +188,11 @@ defmodule Elmc.Backend.Plan.Context do
 
   @spec put_local_type(t(), String.t(), String.t()) :: t()
   def put_local_type(ctx, name, type) when is_binary(name) and is_binary(type) do
-    %{ctx | local_types: Map.put(ctx.local_types || %{}, name, type)}
+    %{ctx | local_types: Map.put(ctx.local_types, name, type)}
   end
 
   @spec local_type(t(), String.t()) :: String.t() | nil
-  def local_type(ctx, name) when is_binary(name), do: Map.get(ctx.local_types || %{}, name)
+  def local_type(ctx, name) when is_binary(name), do: Map.get(ctx.local_types, name)
 
   @spec fresh_locals(t()) :: t()
   def fresh_locals(ctx), do: %{ctx | locals: %{}, local_types: %{}}
@@ -204,7 +204,7 @@ defmodule Elmc.Backend.Plan.Context do
 
   @spec advance_curried_type_offset(t(), non_neg_integer()) :: t()
   def advance_curried_type_offset(ctx, count) when is_integer(count) and count >= 0 do
-    %{ctx | curried_type_offset: (ctx.curried_type_offset || 0) + count}
+    %{ctx | curried_type_offset: ctx.curried_type_offset + count}
   end
 
   @spec root_function_name(t()) :: String.t() | nil

@@ -2,7 +2,6 @@ defmodule Elmc.Backend.CCodegen.Native.String do
   @moduledoc false
   alias Elmc.Backend.CCodegen.Types, as: Types
 
-
   alias Elmc.Backend.CCodegen.DirectRender.Emit.BoxedOperand
   alias Elmc.Backend.CCodegen.CaseCompile
   alias Elmc.Backend.CCodegen.EnvBindings
@@ -16,14 +15,22 @@ defmodule Elmc.Backend.CCodegen.Native.String do
 
   @fused_literal_int_buf_size 96
 
+  @type snprintf_seg ::
+          {:literal, String.t()}
+          | {:int, Types.ir_expr()}
+          | {:boxed_int, Types.ir_expr()}
+          | {:cstr, Types.ir_expr()}
+          | {:boxed_cstr, Types.ir_expr()}
+  @type snprintf_arg :: {:int | :boxed_int | :cstr, String.t()}
+
   @spec compile_expr(Types.ir_expr(), Types.compile_env(), Types.compile_counter()) ::
           Types.native_string_compile_result()
   def compile_expr(expr, env, counter) do
     compile_expr_impl(StaticString.fold_append_literals(expr), env, counter)
   end
 
-  @spec compile_expr_impl(map() | Types.expr(), Types.compile_env(), Types.ir_expr()) :: Types.ir_expr()
-
+  @spec compile_expr_impl(Types.expr(), Types.compile_env(), Types.compile_counter()) ::
+          Types.native_string_compile_result()
   defp compile_expr_impl(%{op: :string_literal, value: value}, _env, counter) do
     {"", "\"#{Util.escape_c_string(value)}\"", [], counter}
   end
@@ -48,10 +55,10 @@ defmodule Elmc.Backend.CCodegen.Native.String do
   end
 
   defp compile_expr_impl(
-        %{op: :if, cond: cond_expr, then_expr: then_expr, else_expr: else_expr} = expr,
-        env,
-        counter
-      ) do
+         %{op: :if, cond: cond_expr, then_expr: then_expr, else_expr: else_expr} = expr,
+         env,
+         counter
+       ) do
     if expr?(then_expr, env) and expr?(else_expr, env) do
       {cond_code, cond_ref, counter} = Host.compile_native_bool_expr(cond_expr, env, counter)
 
@@ -90,10 +97,10 @@ defmodule Elmc.Backend.CCodegen.Native.String do
   end
 
   defp compile_expr_impl(
-        %{op: :runtime_call, function: "elmc_string_from_int", args: [value]} = expr,
-        env,
-        counter
-      ) do
+         %{op: :runtime_call, function: "elmc_string_from_int", args: [value]} = expr,
+         env,
+         counter
+       ) do
     if Host.native_int_expr?(value, env) do
       {value_code, value_ref, counter} = Host.compile_native_int_expr(value, env, counter)
       next = counter + 1
@@ -114,10 +121,10 @@ defmodule Elmc.Backend.CCodegen.Native.String do
   end
 
   defp compile_expr_impl(
-        %{op: :runtime_call, function: "elmc_append", args: [left, right]} = expr,
-        env,
-        counter
-      ) do
+         %{op: :runtime_call, function: "elmc_append", args: [left, right]} = expr,
+         env,
+         counter
+       ) do
     case try_compile_literal_int_append(left, right, env, counter) do
       {:ok, fuse_code, buf_ref, counter} ->
         next = counter + 1
@@ -212,7 +219,8 @@ defmodule Elmc.Backend.CCodegen.Native.String do
           Types.compile_counter()
         ) ::
           {:ok, String.t(), String.t(), Types.compile_counter()} | :error
-  def try_compile_snprintf_concat(segments, env, counter) when is_list(segments) and length(segments) >= 2 do
+  def try_compile_snprintf_concat(segments, env, counter)
+      when is_list(segments) and length(segments) >= 2 do
     with {:ok, classified} <- classify_snprintf_segments(segments, env),
          buf_size when is_integer(buf_size) <- fused_snprintf_buf_size(classified),
          {:ok, segment_code, snprintf_args, cleanup, counter} <-
@@ -262,8 +270,8 @@ defmodule Elmc.Backend.CCodegen.Native.String do
 
   def try_compile_snprintf_concat(_segments, _env, _counter), do: :error
 
-  @spec classify_snprintf_segments(Types.ir_expr(), Types.compile_env()) :: Types.ir_expr()
-
+  @spec classify_snprintf_segments([Types.ir_expr()], Types.compile_env()) ::
+          {:ok, [snprintf_seg()]} | :error
   defp classify_snprintf_segments(segments, env) do
     Enum.reduce_while(segments, {:ok, []}, fn segment, {:ok, acc} ->
       case classify_snprintf_segment(segment, env) do
@@ -273,8 +281,8 @@ defmodule Elmc.Backend.CCodegen.Native.String do
     end)
   end
 
-  @spec classify_snprintf_segment(map() | Types.expr(), Types.compile_env()) :: Types.ir_expr()
-
+  @spec classify_snprintf_segment(Types.expr(), Types.compile_env()) ::
+          {:ok, snprintf_seg()} | :error
   defp classify_snprintf_segment(%{op: :string_literal, value: value}, _env),
     do: {:ok, {:literal, value}}
 
@@ -295,8 +303,7 @@ defmodule Elmc.Backend.CCodegen.Native.String do
     end
   end
 
-  @spec fused_snprintf_format(Types.ir_expr()) :: Types.ir_expr()
-
+  @spec fused_snprintf_format([snprintf_seg()]) :: String.t()
   defp fused_snprintf_format(classified) do
     classified
     |> Enum.map_join("", fn
@@ -312,8 +319,7 @@ defmodule Elmc.Backend.CCodegen.Native.String do
   # Snprintf uses C-string %s semantics (stops at NUL) and a fixed stack buffer — only fuse
   # when the estimated result fits. Variable string operands are unbounded (loops, params);
   # fall back to elmc_string_append so growing accumulators stay correct.
-  @spec fused_snprintf_buf_size(Types.ir_expr()) :: Types.ir_expr()
-
+  @spec fused_snprintf_buf_size([snprintf_seg()]) :: non_neg_integer() | :error
   defp fused_snprintf_buf_size(classified) do
     if Enum.any?(classified, fn
          {:cstr, _} -> true
@@ -335,8 +341,12 @@ defmodule Elmc.Backend.CCodegen.Native.String do
     end
   end
 
-  @spec compile_snprintf_segment_args(Types.ir_expr(), Types.compile_env(), Types.ir_expr()) :: Types.ir_expr()
-
+  @spec compile_snprintf_segment_args(
+          [snprintf_seg()],
+          Types.compile_env(),
+          Types.compile_counter()
+        ) ::
+          {:ok, String.t(), [snprintf_arg()], [String.t()], Types.compile_counter()} | :error
   defp compile_snprintf_segment_args(classified, env, counter) do
     Enum.reduce_while(classified, {:ok, "", [], [], counter}, fn
       {:literal, _}, {:ok, code_acc, args_acc, cleanup_acc, c} ->
@@ -350,12 +360,15 @@ defmodule Elmc.Backend.CCodegen.Native.String do
         {value_code, value_ref, c2} = BoxedOperand.compile(expr, env, c)
 
         {:cont,
-         {:ok, code_acc <> value_code, args_acc ++ [{:boxed_int, value_ref}], cleanup_acc ++ [value_ref],
-          c2}}
+         {:ok, code_acc <> value_code, args_acc ++ [{:boxed_int, value_ref}],
+          cleanup_acc ++ [value_ref], c2}}
 
       {:cstr, expr}, {:ok, code_acc, args_acc, cleanup_acc, c} ->
         {segment_code, cstr_ref, segment_cleanup, c2} = compile_expr(expr, env, c)
-        {:cont, {:ok, code_acc <> segment_code, args_acc ++ [{:cstr, cstr_ref}], cleanup_acc ++ segment_cleanup, c2}}
+
+        {:cont,
+         {:ok, code_acc <> segment_code, args_acc ++ [{:cstr, cstr_ref}],
+          cleanup_acc ++ segment_cleanup, c2}}
 
       {:boxed_cstr, expr}, {:ok, code_acc, args_acc, cleanup_acc, c} ->
         {boxed_code, boxed_ref, c2} = BoxedOperand.compile(expr, env, c)
@@ -383,8 +396,8 @@ defmodule Elmc.Backend.CCodegen.Native.String do
     end)
   end
 
-  @spec literal_int_append_parts(Types.expr(), Types.expr(), Types.compile_env()) :: Types.ir_expr()
-
+  @spec literal_int_append_parts(Types.expr(), Types.expr(), Types.compile_env()) ::
+          {:ok, String.t(), String.t(), Types.ir_expr()} | :error
   defp literal_int_append_parts(left, right, env) do
     case left do
       %{op: :string_literal, value: prefix} ->
@@ -407,8 +420,8 @@ defmodule Elmc.Backend.CCodegen.Native.String do
     end
   end
 
-  @spec native_int_string_operand(Types.expr(), Types.compile_env()) :: Types.ir_expr()
-
+  @spec native_int_string_operand(Types.expr(), Types.compile_env()) ::
+          {:ok, Types.ir_expr()} | :error
   defp native_int_string_operand(expr, env) do
     case unwrap_string_from_int(expr, env) do
       {:ok, value} ->
@@ -419,8 +432,8 @@ defmodule Elmc.Backend.CCodegen.Native.String do
     end
   end
 
-  @spec unwrap_string_from_int(map() | term(), Types.compile_env() | term()) :: Types.ir_expr()
-
+  @spec unwrap_string_from_int(term(), Types.compile_env() | term()) ::
+          {:ok, Types.ir_expr()} | :error
   defp unwrap_string_from_int(
          %{op: :runtime_call, function: "elmc_string_from_int", args: [value]},
          _env
@@ -436,14 +449,12 @@ defmodule Elmc.Backend.CCodegen.Native.String do
 
   defp unwrap_string_from_int(_, _), do: :error
 
-  @spec fused_int_snprintf_format(Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
-
+  @spec fused_int_snprintf_format(String.t(), String.t()) :: String.t()
   defp fused_int_snprintf_format(prefix, suffix) do
     "\"#{escape_snprintf_literal(prefix)}%lld#{escape_snprintf_literal(suffix)}\""
   end
 
-  @spec escape_snprintf_literal(Types.ir_expr()) :: Types.ir_expr()
-
+  @spec escape_snprintf_literal(String.t()) :: String.t()
   defp escape_snprintf_literal(""), do: ""
 
   defp escape_snprintf_literal(literal) do

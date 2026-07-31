@@ -164,7 +164,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Timeline.DebuggerRows do
 
   def debugger_timeline_text(_rows), do: ""
 
-  @spec newest_first(Types.events()) :: Types.events()
+  @spec newest_first([debugger_row()]) :: [debugger_row()]
   defp newest_first(rows) when is_list(rows),
     do: Enum.sort_by(rows, &Map.get(&1, :seq, 0), :desc)
 

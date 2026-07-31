@@ -1,7 +1,5 @@
 defmodule Elmc.Backend.Pebble.FeatureFlags.DrawFlags do
   @moduledoc false
-  alias Elmc.Types, as: Types
-
 
   alias Elmc.Backend.Pebble.FeatureFlags.DrawFlags.{Compact, Context, Primitives, Text}
   alias Elmc.Backend.Pebble.FeatureFlags.TargetSet

@@ -110,7 +110,8 @@ defmodule Elmc.Backend.CCodegen.Native.PolarPoint do
 
   def try_compile_field(_arg, _field, _env, _counter), do: :error
 
-  @spec native_record_field_ref(map() | Types.ir_expr(), Types.ir_expr(), Types.compile_env()) :: Types.ir_expr()
+  @spec native_record_field_ref(map() | Types.ir_expr(), String.t(), Types.compile_env()) ::
+          {:ok, Types.native_ref()} | :error
 
   defp native_record_field_ref(%{op: :var, name: name}, field, env)
        when (is_binary(name) or is_atom(name)) and field in ["x", "y"] do
@@ -188,7 +189,8 @@ defmodule Elmc.Backend.CCodegen.Native.PolarPoint do
 
   def resolve_let_arg(arg, _env), do: arg
 
-  @spec call_target(map() | Types.expr(), Types.compile_env()) :: Types.ir_expr()
+  @spec call_target(map() | Types.ir_expr(), Types.compile_env()) ::
+          {:ok, Types.function_decl_key(), [Types.ir_expr()]} | :error
 
   defp call_target(%{op: :call, name: name, args: args}, env) when is_binary(name) do
     {:ok, {Map.get(env, :__module__, "Main"), name}, List.wrap(args)}
@@ -204,7 +206,8 @@ defmodule Elmc.Backend.CCodegen.Native.PolarPoint do
 
   defp call_target(_expr, _env), do: :error
 
-  @spec polar_point_call?(String.t(), [String.t()], Types.compile_env()) :: boolean()
+  @spec polar_point_call?(Types.function_decl_key(), [Types.ir_expr()], Types.compile_env()) ::
+          boolean()
 
   defp polar_point_call?(target, args, env) do
     length(args) == 4 and Enum.all?(args, &polar_coord_arg?(&1, env)) and
@@ -212,7 +215,7 @@ defmodule Elmc.Backend.CCodegen.Native.PolarPoint do
       polar_point_body?(target, env)
   end
 
-  @spec polar_point_body?(String.t(), Types.compile_env()) :: boolean()
+  @spec polar_point_body?(Types.function_decl_key(), Types.compile_env()) :: boolean()
 
   defp polar_point_body?(target, env) do
     case Map.get(Map.get(env, :__program_decls__, %{}), target) do
@@ -281,7 +284,7 @@ defmodule Elmc.Backend.CCodegen.Native.PolarPoint do
 
   defp int_var_arg?(_arg, _env), do: false
 
-  @spec point_return?(String.t(), Types.compile_env()) :: boolean()
+  @spec point_return?(Types.function_decl_key(), Types.compile_env()) :: boolean()
 
   defp point_return?(target, env) do
     case Map.get(Map.get(env, :__program_decls__, %{}), target) do
@@ -297,7 +300,8 @@ defmodule Elmc.Backend.CCodegen.Native.PolarPoint do
     end
   end
 
-  @spec xy_record_return?(String.t() | Types.ir_expr(), String.t(), Types.compile_env()) :: boolean()
+  @spec xy_record_return?(String.t() | nil, Types.function_decl_key(), Types.compile_env()) ::
+          boolean()
 
   defp xy_record_return?(return_type, _target, env) when is_binary(return_type) do
     case CExpr.record_shape_for_type(return_type, env) do
@@ -319,7 +323,7 @@ defmodule Elmc.Backend.CCodegen.Native.PolarPoint do
     fields |> Enum.map(&to_string/1) |> Enum.sort() == ["x", "y"]
   end
 
-  @spec point_type?(String.t() | term()) :: boolean()
+  @spec point_type?(String.t()) :: boolean()
 
   defp point_type?(type) when is_binary(type) do
     normalized = Host.normalize_type_name(type)
@@ -328,15 +332,18 @@ defmodule Elmc.Backend.CCodegen.Native.PolarPoint do
       Enum.any?(@point_suffixes, &String.ends_with?(normalized, &1))
   end
 
-  defp point_type?(_), do: false
-
   @spec polar_field_only_uses?(String.t(), Types.expr(), Types.compile_env()) :: boolean()
 
   defp polar_field_only_uses?(name, expr, env) do
     invalid_uses(expr, name, nil, env) == []
   end
 
-  @spec invalid_uses(map() | list() | Types.expr(), String.t(), Types.ir_expr(), Types.compile_env()) :: Types.ir_expr()
+  @spec invalid_uses(
+          map() | list() | Types.expr(),
+          Types.binding_name(),
+          term(),
+          Types.compile_env()
+        ) :: [:bare_var | :non_xy_field]
 
   defp invalid_uses(%{op: :var, name: var_name}, target, parent, env) do
     cond do
@@ -397,7 +404,7 @@ defmodule Elmc.Backend.CCodegen.Native.PolarPoint do
 
   defp point_var_parent?(_parent, _env), do: false
 
-  @spec direct_render_point_arg?(String.t(), Types.ir_expr(), Types.compile_env()) :: boolean()
+  @spec direct_render_point_arg?(String.t(), integer(), Types.compile_env()) :: boolean()
 
   defp direct_render_point_arg?(target, idx, env) when is_binary(target) do
     with {module_name, function_name} <- Host.split_qualified_function_target(target),
@@ -421,7 +428,7 @@ defmodule Elmc.Backend.CCodegen.Native.PolarPoint do
 
   defp direct_render_point_arg?(_target, _idx, _env), do: false
 
-  @spec draw_point_arg_index?(Types.ir_expr() | String.t(), Types.ir_expr()) :: boolean()
+  @spec draw_point_arg_index?(String.t(), integer()) :: boolean()
 
   defp draw_point_arg_index?("Pebble.Ui.line", idx) when idx in [0, 1], do: true
   defp draw_point_arg_index?("Pebble.Ui.fillCircle", 0), do: true
@@ -429,7 +436,12 @@ defmodule Elmc.Backend.CCodegen.Native.PolarPoint do
   defp draw_point_arg_index?("Pebble.Ui.pixel", 0), do: true
   defp draw_point_arg_index?(_target, _idx), do: false
 
-  @spec compile_field([String.t()], Types.ir_expr(), Types.compile_env(), Types.ir_expr()) :: Types.ir_expr()
+  @spec compile_field(
+          [Types.ir_expr()],
+          String.t(),
+          Types.compile_env(),
+          Types.compile_counter()
+        ) :: {:ok, String.t(), String.t(), Types.compile_counter()}
 
   defp compile_field(args, field, env, counter) do
     fn_name = if field == "x", do: "elmc_polar_point_x", else: "elmc_polar_point_y"

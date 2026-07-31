@@ -1,7 +1,5 @@
 defmodule Elmc.Backend.Pebble.Kinds.Tables.DrawKindLuts do
   @moduledoc false
-  alias Elmc.Types, as: Types
-
 
   alias Elmc.Backend.Pebble.Kinds.CNames
   alias Elmc.Backend.Pebble.Kinds.Tables.DrawKinds
@@ -165,11 +163,11 @@ defmodule Elmc.Backend.Pebble.Kinds.Tables.DrawKindLuts do
     |> Enum.max()
   end
 
-  @spec slot(non_neg_integer(), integer()) :: Types.ir_expr()
+  @spec slot(integer(), integer()) :: String.t()
 
   defp slot(index, value), do: "  [#{index}] = #{value},"
 
-  @spec setting_tag_slot(non_neg_integer(), integer(), Types.ir_expr()) :: Types.ir_expr()
+  @spec setting_tag_slot(integer(), String.t(), String.t()) :: String.t()
 
   defp setting_tag_slot(index, value, feature) do
     """

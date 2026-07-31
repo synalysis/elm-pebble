@@ -20,12 +20,11 @@ defmodule Ide.Debugger.ProtocolRx do
                                                Types.surface_target(),
                                                String.t(),
                                                String.t(),
-                                               Types.debugger_timeline_payload()
-                                               | nil ->
+                                               Types.timeline_step_message_value() ->
                                                  Types.runtime_state()),
           required(:append_runtime_exec_event_for_target) => (Types.runtime_state(),
                                                               Types.surface_target(),
-                                                              Types.debugger_timeline_payload() ->
+                                                              Types.RuntimeExecEventPayload.extra() ->
                                                                 Types.runtime_state()),
           required(:source_root_for_target) => (Types.surface_target() -> String.t()),
           required(:introspect_for) => (Types.runtime_state(), Types.surface_target() ->
@@ -143,7 +142,7 @@ defmodule Ide.Debugger.ProtocolRx do
           |> protocol_surface_key()
 
         cond do
-          defer_init_cmd_delivery?(payload) and recipient in [:watch, :companion, :phone] ->
+          defer_init_cmd_delivery?(payload) and recipient in [:watch, :companion] ->
             if rx_ctx.runtime_ready_for_delivery?.(acc, recipient) do
               PendingProtocolDelivery.enqueue(acc, recipient, payload)
             else
@@ -244,7 +243,7 @@ defmodule Ide.Debugger.ProtocolRx do
   defp handle_protocol_rx_event(state, payload, rx_ctx) when is_map(payload) and is_map(rx_ctx) do
     recipient = protocol_surface_key(Map.get(payload, :to) || Map.get(payload, "to"))
 
-    if recipient in [:watch, :companion, :phone] do
+    if recipient in [:watch, :companion] do
       cond do
         not rx_ctx.runtime_ready_for_delivery?.(state, recipient) ->
           AppMessageQueue.enqueue(state, recipient, payload)
@@ -289,7 +288,7 @@ defmodule Ide.Debugger.ProtocolRx do
        when is_map(payload) and is_map(rx_ctx) do
     {next_state, recipient, meta} = apply_protocol_rx_effect(state, payload, rx_ctx)
 
-    if recipient in [:watch, :companion, :phone] do
+    if recipient in [:watch, :companion] do
       next_state =
         next_state
         |> rx_ctx.append_event.("debugger.protocol_rx", protocol_rx_event_payload(payload))
@@ -395,7 +394,7 @@ defmodule Ide.Debugger.ProtocolRx do
     message_source = "protocol_rx"
     inbound_display_message = ProtocolEvents.inbound_display_message(message, message_value)
 
-    if recipient in [:watch, :companion, :phone] and is_binary(message) do
+    if recipient in [:watch, :companion] and is_binary(message) do
       row = %{
         "from" => if(is_binary(sender), do: sender, else: "unknown"),
         "to" => surface_label(recipient),
@@ -490,7 +489,7 @@ defmodule Ide.Debugger.ProtocolRx do
       |> put_in([recipient, :model, "protocol_last_inbound_from"], Map.get(meta, :from))
       |> put_in([recipient, :model, "protocol_inbound_count"], Map.get(meta, :inbound_count))
 
-    if recipient in [:companion, :phone] do
+    if recipient == :companion do
       update_in(state, [recipient, :model, "runtime_model"], fn runtime_model ->
         runtime_model = if is_map(runtime_model), do: runtime_model, else: %{}
 
@@ -522,7 +521,7 @@ defmodule Ide.Debugger.ProtocolRx do
 
         protocol_callback_message(callback, message, message_value, false)
 
-      recipient in [:companion, :phone] and from == "watch" ->
+      recipient == :companion and from == "watch" ->
         callback =
           protocol_rx_subscription_callback(state, recipient, "on_watch_to_phone", rx_ctx) ||
             "FromWatch"
@@ -790,7 +789,7 @@ defmodule Ide.Debugger.ProtocolRx do
     )
   end
 
-  @spec protocol_surface_key(Types.surface_label_input()) :: :watch | :companion | :phone
+  @spec protocol_surface_key(Types.surface_label_input()) :: :watch | :companion
   defp protocol_surface_key("watch"), do: :watch
   defp protocol_surface_key(label), do: SurfaceTargets.normalize(label)
 

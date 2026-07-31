@@ -95,16 +95,6 @@ defmodule Ide.Formatter do
   end
 
   @spec parse_error_from_reason(term()) :: Types.parse_error()
-  defp parse_error_from_reason(%{kind: _, reason: reason, path: path}) when is_binary(reason) do
-    %{
-      severity: "error",
-      source: "formatter/parser",
-      message: "Cannot format #{path}: #{inspect(reason)}",
-      line: nil,
-      column: nil
-    }
-  end
-
   defp parse_error_from_reason(reason) do
     %{
       severity: "error",

@@ -5,9 +5,6 @@ defmodule Elmc.Backend.CCodegen.CSource do
   Emitters should build C fragments with `indent/2` or `format_block/2`, then
   pass assembled translation units through `format/1` before writing files.
   """
-  alias Elmc.Backend.CCodegen.Types, as: Types
-
-
   @indent_unit 2
 
   @spec format(String.t()) :: String.t()
@@ -73,7 +70,7 @@ defmodule Elmc.Backend.CCodegen.CSource do
     join_fragments([left, right])
   end
 
-  @spec expand_compound_statement_line(pos_integer()) :: Types.ir_expr()
+  @spec expand_compound_statement_line(String.t()) :: [String.t()]
 
   defp expand_compound_statement_line(line) do
     trimmed = String.trim_trailing(line)
@@ -115,7 +112,7 @@ defmodule Elmc.Backend.CCodegen.CSource do
     end
   end
 
-  @spec expand_compact_if_assignment_line(pos_integer()) :: Types.ir_expr()
+  @spec expand_compact_if_assignment_line(String.t()) :: [String.t()]
 
   defp expand_compact_if_assignment_line(line) do
     case Regex.run(~r/^(\s*)if \((.+)\) (.+);$/, line) do
@@ -131,7 +128,7 @@ defmodule Elmc.Backend.CCodegen.CSource do
     end
   end
 
-  @spec remove_adjacent_retain_release(Types.ir_expr()) :: Types.ir_expr()
+  @spec remove_adjacent_retain_release([String.t()]) :: [String.t()]
 
   defp remove_adjacent_retain_release(lines) do
     lines
@@ -150,7 +147,7 @@ defmodule Elmc.Backend.CCodegen.CSource do
     |> Enum.reverse()
   end
 
-  @spec adjacent_retain_release?(pos_integer(), pos_integer()) :: boolean()
+  @spec adjacent_retain_release?(String.t(), String.t()) :: boolean()
 
   defp adjacent_retain_release?(retain_line, release_line) do
     with [_, tmp] <-
@@ -165,7 +162,7 @@ defmodule Elmc.Backend.CCodegen.CSource do
     end
   end
 
-  @spec borrow_arg_callees(String.t()) :: Types.ir_expr()
+  @spec borrow_arg_callees(String.t()) :: MapSet.t(String.t())
 
   defp borrow_arg_callees(source) do
     ~r/(?:static\s+)?ElmcValue \*(elmc_fn_[A-Za-z0-9_]+)\([^)]*\)\s*\{\s*\n\s*\/\* Ownership policy: [^*]*\bborrow_arg\b[^*]*\*\//
@@ -174,7 +171,7 @@ defmodule Elmc.Backend.CCodegen.CSource do
     |> MapSet.new()
   end
 
-  @spec compact_borrowed_record_field_call_temps(String.t(), Types.ir_expr()) :: Types.ir_expr()
+  @spec compact_borrowed_record_field_call_temps(String.t(), MapSet.t(String.t())) :: String.t()
 
   defp compact_borrowed_record_field_call_temps(source, callees) do
     Enum.reduce(callees, source, fn callee, acc ->
@@ -184,7 +181,7 @@ defmodule Elmc.Backend.CCodegen.CSource do
     end)
   end
 
-  @spec compact_wrapper_borrowed_record_field_temp(String.t(), Types.ir_expr()) :: Types.ir_expr()
+  @spec compact_wrapper_borrowed_record_field_temp(String.t(), String.t()) :: String.t()
 
   defp compact_wrapper_borrowed_record_field_temp(source, callee) do
     pattern =
@@ -209,7 +206,7 @@ defmodule Elmc.Backend.CCodegen.CSource do
     end)
   end
 
-  @spec compact_direct_borrowed_record_field_temp(String.t(), Types.ir_expr()) :: Types.ir_expr()
+  @spec compact_direct_borrowed_record_field_temp(String.t(), String.t()) :: String.t()
 
   defp compact_direct_borrowed_record_field_temp(source, callee) do
     pattern =
@@ -231,7 +228,7 @@ defmodule Elmc.Backend.CCodegen.CSource do
     end)
   end
 
-  @spec compact_unit_increment(pos_integer()) :: Types.ir_expr()
+  @spec compact_unit_increment(String.t()) :: String.t()
 
   defp compact_unit_increment(line) do
     cond do
@@ -248,7 +245,7 @@ defmodule Elmc.Backend.CCodegen.CSource do
     end
   end
 
-  @spec compact_if_assignment_body?(Types.expr()) :: boolean()
+  @spec compact_if_assignment_body?(String.t()) :: boolean()
 
   defp compact_if_assignment_body?(body) do
     Regex.match?(
@@ -257,7 +254,7 @@ defmodule Elmc.Backend.CCodegen.CSource do
     )
   end
 
-  @spec format_lines(Types.ir_expr()) :: Types.ir_expr()
+  @spec format_lines([String.t()]) :: [String.t()]
 
   defp format_lines(lines) do
     {reversed, _depth, _switch_depth, _pending_if_body} =
@@ -316,7 +313,7 @@ defmodule Elmc.Backend.CCodegen.CSource do
     Enum.reverse(reversed)
   end
 
-  @spec braceless_if_opener?(Types.ir_expr()) :: boolean()
+  @spec braceless_if_opener?(String.t()) :: boolean()
 
   defp braceless_if_opener?(content) do
     # Avoid `^if\s*\(.+\)$` — greedy `.+` is catastrophic on long `if (...)` lines.
@@ -326,35 +323,35 @@ defmodule Elmc.Backend.CCodegen.CSource do
       Regex.match?(~r/^if\s*\(/, content)
   end
 
-  @spec preprocessor_line?(pos_integer()) :: boolean()
+  @spec preprocessor_line?(String.t()) :: boolean()
 
   defp preprocessor_line?(line) do
     String.starts_with?(line, "#")
   end
 
-  @spec catch_begin?(pos_integer()) :: boolean()
+  @spec catch_begin?(String.t()) :: boolean()
 
   defp catch_begin?(line), do: line == "CATCH_BEGIN"
 
-  @spec catch_end?(pos_integer()) :: boolean()
+  @spec catch_end?(String.t()) :: boolean()
 
   defp catch_end?(line) do
     line == "CATCH_END" or line == "CATCH_END"
   end
 
-  @spec case_label?(pos_integer()) :: boolean()
+  @spec case_label?(String.t()) :: boolean()
 
   defp case_label?(line) do
     Regex.match?(~r/^case\s+.+:/, line) or Regex.match?(~r/^default:/, line)
   end
 
-  @spec switch_opener?(pos_integer()) :: boolean()
+  @spec switch_opener?(String.t()) :: boolean()
 
   defp switch_opener?(line) do
     Regex.match?(~r/\bswitch\s*\(/, line) and String.contains?(line, "{")
   end
 
-  @spec effective_indent(non_neg_integer(), non_neg_integer(), Types.ir_expr()) :: Types.ir_expr()
+  @spec effective_indent(non_neg_integer(), non_neg_integer() | nil, String.t()) :: non_neg_integer()
 
   defp effective_indent(depth, switch_depth, content) do
     cond do
@@ -369,7 +366,8 @@ defmodule Elmc.Backend.CCodegen.CSource do
     end
   end
 
-  @spec update_switch_depth(Types.ir_expr(), Types.ir_expr(), non_neg_integer()) :: Types.ir_expr()
+  @spec update_switch_depth(String.t(), non_neg_integer(), non_neg_integer() | nil) ::
+          non_neg_integer() | nil
 
   defp update_switch_depth(content, depth_after, switch_depth) do
     cond do
@@ -384,7 +382,7 @@ defmodule Elmc.Backend.CCodegen.CSource do
     end
   end
 
-  @spec leading_close_braces(pos_integer()) :: Types.ir_expr()
+  @spec leading_close_braces(String.t()) :: non_neg_integer()
 
   defp leading_close_braces(line) do
     line
@@ -393,7 +391,7 @@ defmodule Elmc.Backend.CCodegen.CSource do
     |> length()
   end
 
-  @spec net_brace_delta(pos_integer()) :: Types.ir_expr()
+  @spec net_brace_delta(String.t()) :: integer()
 
   defp net_brace_delta(line) do
     opens = count_char(line, ?{)
@@ -402,12 +400,12 @@ defmodule Elmc.Backend.CCodegen.CSource do
     opens - (closes - leading)
   end
 
-  @spec count_char(pos_integer(), Types.ir_expr()) :: Types.ir_expr()
+  @spec count_char(String.t(), char()) :: non_neg_integer()
 
   defp count_char(line, ?{), do: line |> String.codepoints() |> Enum.count(&(&1 == "{"))
   defp count_char(line, ?}), do: line |> String.codepoints() |> Enum.count(&(&1 == "}"))
 
-  @spec trim_blank_edges(Types.ir_expr()) :: Types.ir_expr()
+  @spec trim_blank_edges([String.t()]) :: [String.t()]
 
   defp trim_blank_edges(lines) do
     lines
@@ -417,7 +415,7 @@ defmodule Elmc.Backend.CCodegen.CSource do
     |> Enum.reverse()
   end
 
-  @spec collapse_blank_run(Types.ir_expr(), integer()) :: Types.ir_expr()
+  @spec collapse_blank_run([String.t()], integer()) :: [String.t()]
 
   defp collapse_blank_run(lines, max_run) when is_integer(max_run) and max_run >= 0 do
     Enum.reduce(lines, {[], 0}, fn line, {acc, blank_run} ->
@@ -435,7 +433,7 @@ defmodule Elmc.Backend.CCodegen.CSource do
     |> Enum.reverse()
   end
 
-  @spec reindent_lines(Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+  @spec reindent_lines([String.t()], String.t()) :: [String.t()]
 
   defp reindent_lines(lines, base_pad) do
     min_indent =
@@ -457,7 +455,7 @@ defmodule Elmc.Backend.CCodegen.CSource do
     end)
   end
 
-  @spec leading_spaces(pos_integer()) :: Types.ir_expr()
+  @spec leading_spaces(String.t()) :: non_neg_integer()
 
   defp leading_spaces(line) do
     line

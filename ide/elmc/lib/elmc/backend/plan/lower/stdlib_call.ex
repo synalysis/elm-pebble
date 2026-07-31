@@ -43,7 +43,7 @@ defmodule Elmc.Backend.Plan.Lower.StdlibCall do
 
   def compile_maybe_with_default(_, _, _), do: :unsupported
 
-  @spec compile_with_default(Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+  @spec compile_with_default(Types.expr(), Types.reg(), Types.reg(), Context.t(), Builder.t()) :: LowerTypes.compile_result() | :unsupported
 
   defp compile_with_default(default_val, default_reg, maybe_reg, ctx, b) do
     builtin =
@@ -54,7 +54,7 @@ defmodule Elmc.Backend.Plan.Lower.StdlibCall do
     Expr.compile_runtime_builtin(builtin, [default_reg, maybe_reg], ctx, b)
   end
 
-  @spec list_at_index_list(map() | term()) :: Types.ir_expr()
+  @spec list_at_index_list(map() | term()) :: {:ok, Types.expr(), Types.expr()} | :error
 
   defp list_at_index_list(%{
          op: :qualified_call,

@@ -312,15 +312,11 @@ defmodule Elmc.Backend.Bytecode.FusionRunner do
               {:ok, string_field(data, "nothing") || ""}
 
             {:just, {:record, fields}} ->
-              case record_union_field({:record, fields}, inner_idx) do
-                {:union, tag, payload} ->
-                  case suffix_branch_for_tag(data, tag) do
-                    branch when is_map(branch) -> {:ok, format_suffix_branch(branch, payload)}
-                    _ -> :unsupported
-                  end
+              {:union, tag, payload} = record_union_field({:record, fields}, inner_idx)
 
-                _ ->
-                  :unsupported
+              case suffix_branch_for_tag(data, tag) do
+                branch when is_map(branch) -> {:ok, format_suffix_branch(branch, payload)}
+                _ -> :unsupported
               end
 
             _ ->
@@ -398,7 +394,6 @@ defmodule Elmc.Backend.Bytecode.FusionRunner do
       picked =
         case invoke_callee(opts, {pick_mod, pick_name}, [model, slots]) do
           nil -> default
-          :nothing -> default
           {:just, v} -> as_int(v)
           v when is_integer(v) -> v
           _ -> default
@@ -492,7 +487,7 @@ defmodule Elmc.Backend.Bytecode.FusionRunner do
 
   def run(%FunctionPlan{}, _opts), do: :unsupported
 
-  @spec list_int_search_walk(String.t(), non_neg_integer(), term(), Types.ir_expr()) :: Types.ir_expr()
+  @spec list_int_search_walk(integer(), non_neg_integer(), list(), integer()) :: integer()
 
   defp list_int_search_walk(_target, _index, [], not_found), do: not_found
 
@@ -508,7 +503,8 @@ defmodule Elmc.Backend.Bytecode.FusionRunner do
     end
   end
 
-  @spec collapse_adjacent_rows(Types.ir_expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+  @spec collapse_adjacent_rows([integer()], pos_integer(), pos_integer()) ::
+          {[integer()], non_neg_integer()}
 
   defp collapse_adjacent_rows(board, width, rows) do
     Enum.reduce(0..(rows - 1), {[], 0}, fn row, {acc_cells, acc_score} ->
@@ -524,13 +520,14 @@ defmodule Elmc.Backend.Bytecode.FusionRunner do
     end)
   end
 
-  @spec merge_adjacent_row(Types.ir_expr()) :: Types.ir_expr()
+  @spec merge_adjacent_row([integer()]) :: {[integer()], non_neg_integer()}
 
   defp merge_adjacent_row(cells) do
     merge_adjacent_walk(cells, [], 0)
   end
 
-  @spec merge_adjacent_walk(term(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+  @spec merge_adjacent_walk([integer()], [integer()], non_neg_integer()) ::
+          {[integer()], non_neg_integer()}
 
   defp merge_adjacent_walk([], merged, score), do: {Enum.reverse(merged), score}
 
@@ -543,7 +540,7 @@ defmodule Elmc.Backend.Bytecode.FusionRunner do
     merge_adjacent_walk(rest, [a | merged], score)
   end
 
-  @spec union_suffix_mode(Types.ir_expr()) :: Types.ir_expr()
+  @spec union_suffix_mode(map()) :: :direct | :maybe_map_field | :maybe_field | nil
 
   defp union_suffix_mode(data) do
     case map_field(data, "mode") || map_field(data, :mode) do
@@ -557,7 +554,7 @@ defmodule Elmc.Backend.Bytecode.FusionRunner do
     end
   end
 
-  @spec suffix_branch_for_tag(Types.ir_expr(), String.t()) :: Types.ir_expr()
+  @spec suffix_branch_for_tag(map(), term()) :: map() | nil
 
   defp suffix_branch_for_tag(data, tag) do
     branches = map_field(data, "branches") || map_field(data, :branches) || []
@@ -568,7 +565,7 @@ defmodule Elmc.Backend.Bytecode.FusionRunner do
     end)
   end
 
-  @spec format_suffix_branch(Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+  @spec format_suffix_branch(map(), term()) :: String.t()
 
   defp format_suffix_branch(branch, payload) do
     prefix = string_field(branch, "prefix") || ""
@@ -577,7 +574,7 @@ defmodule Elmc.Backend.Bytecode.FusionRunner do
     prefix <> Integer.to_string(int_val) <> suffix
   end
 
-  @spec eval_suffix_int(Types.ir_expr(), Types.expr()) :: Types.ir_expr()
+  @spec eval_suffix_int(term(), map()) :: integer()
 
   defp eval_suffix_int(payload, expr) do
     n = union_int_payload(payload)
@@ -598,13 +595,13 @@ defmodule Elmc.Backend.Bytecode.FusionRunner do
   defp normalize_union({:union, tag, payload}), do: {:union, as_int(tag), payload}
   defp normalize_union(other), do: {:union, as_int(other), 0}
 
-  @spec union_int_payload(integer() | term() | Types.ir_expr()) :: Types.ir_expr()
+  @spec union_int_payload(term()) :: integer()
 
   defp union_int_payload(payload) when is_integer(payload), do: payload
   defp union_int_payload({:just, v}), do: as_int(v)
   defp union_int_payload(v), do: as_int(v)
 
-  @spec record_union_field(term(), integer() | term()) :: Types.ir_expr()
+  @spec record_union_field({:record, [term()]}, integer()) :: {:union, integer(), term()}
 
   defp record_union_field({:record, fields}, idx) when is_integer(idx) do
     case Enum.at(fields, idx) do
@@ -613,9 +610,7 @@ defmodule Elmc.Backend.Bytecode.FusionRunner do
     end
   end
 
-  defp record_union_field(_, _), do: :error
-
-  @spec perm_mode(Types.ir_expr()) :: Types.ir_expr()
+  @spec perm_mode(map()) :: :forward | :inverse
 
   defp perm_mode(data) do
     case map_field(data, "mode") || map_field(data, :mode) do
@@ -625,7 +620,7 @@ defmodule Elmc.Backend.Bytecode.FusionRunner do
     end
   end
 
-  @spec tags_field(Types.ir_expr()) :: Types.ir_expr()
+  @spec tags_field(map()) :: [term()] | nil
 
   defp tags_field(data) do
     case map_field(data, "tags") || map_field(data, :tags) do
@@ -634,7 +629,7 @@ defmodule Elmc.Backend.Bytecode.FusionRunner do
     end
   end
 
-  @spec tag_to_perm_case(String.t(), Types.ir_expr()) :: Types.ir_expr()
+  @spec tag_to_perm_case(term(), [term()]) :: non_neg_integer()
 
   defp tag_to_perm_case(tag, tags) do
     wanted = as_int(tag)
@@ -645,7 +640,7 @@ defmodule Elmc.Backend.Bytecode.FusionRunner do
     end
   end
 
-  @spec maybe_int_mode(Types.ir_expr()) :: Types.ir_expr() | nil
+  @spec maybe_int_mode(map()) :: :default_append | :maybe_case | nil
 
   defp maybe_int_mode(data) do
     case map_field(data, "mode") || map_field(data, :mode) do
@@ -657,7 +652,8 @@ defmodule Elmc.Backend.Bytecode.FusionRunner do
     end
   end
 
-  @spec record_maybe_field(term(), integer() | term()) :: Types.ir_expr()
+  @spec record_maybe_field(term(), integer() | term()) ::
+          {:just, term()} | :nothing
 
   defp record_maybe_field({:record, fields}, idx) when is_integer(idx) do
     case Enum.at(fields, idx) do
@@ -670,12 +666,12 @@ defmodule Elmc.Backend.Bytecode.FusionRunner do
 
   defp record_maybe_field(_, _), do: :nothing
 
-  @spec maybe_with_default_int(Types.ir_expr() | term(), Types.ir_expr()) :: Types.ir_expr() | nil
+  @spec maybe_with_default_int(term(), integer()) :: integer()
 
   defp maybe_with_default_int(:nothing, default), do: default
   defp maybe_with_default_int({:just, n}, _default), do: as_int(n)
 
-  @spec format_maybe_int(integer(), map() | term()) :: Types.ir_expr()
+  @spec format_maybe_int(integer(), map() | term()) :: {:ok, String.t()} | :unsupported
 
   defp format_maybe_int(n, format) when is_map(format) do
     kind = map_field(format, "kind") || map_field(format, :kind)
@@ -702,7 +698,7 @@ defmodule Elmc.Backend.Bytecode.FusionRunner do
 
   defp format_maybe_int(n, _), do: {:ok, Integer.to_string(n)}
 
-  @spec fusion_mode(Types.ir_expr()) :: Types.ir_expr()
+  @spec fusion_mode(map()) :: :help | :delegate | nil
 
   defp fusion_mode(data) do
     case map_field(data, "mode") || map_field(data, :mode) do
@@ -714,7 +710,7 @@ defmodule Elmc.Backend.Bytecode.FusionRunner do
     end
   end
 
-  @spec load_spawn_board(Types.ir_expr(), non_neg_integer(), keyword()) :: Types.ir_expr()
+  @spec load_spawn_board(map(), non_neg_integer(), keyword()) :: [integer()]
 
   defp load_spawn_board(data, count, opts) do
     case board_source(data) do
@@ -729,7 +725,7 @@ defmodule Elmc.Backend.Bytecode.FusionRunner do
     end
   end
 
-  @spec board_source(Types.ir_expr()) :: Types.ir_expr()
+  @spec board_source(map()) :: :zeros | {String.t(), String.t()}
 
   defp board_source(data) do
     case map_field(data, "board") || map_field(data, :board) do
@@ -742,7 +738,8 @@ defmodule Elmc.Backend.Bytecode.FusionRunner do
     end
   end
 
-  @spec spawn_tile_chained(Types.ir_expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+  @spec spawn_tile_chained([integer()], integer(), pos_integer()) ::
+          {[integer()], integer()}
 
   defp spawn_tile_chained(buf, seed, passes) when passes >= 1 do
     Enum.reduce(1..passes, {buf, seed}, fn _pass, {cells, seed_work} ->
@@ -750,7 +747,7 @@ defmodule Elmc.Backend.Bytecode.FusionRunner do
     end)
   end
 
-  @spec spawn_tile_once(Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+  @spec spawn_tile_once([integer()], integer()) :: {[integer()], integer()}
 
   defp spawn_tile_once(cells, seed) do
     after_choice = lcg(seed)
@@ -771,7 +768,7 @@ defmodule Elmc.Backend.Bytecode.FusionRunner do
     {updated, after_tile}
   end
 
-  @spec nth_empty_index(Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+  @spec nth_empty_index([integer()], non_neg_integer()) :: non_neg_integer()
 
   defp nth_empty_index(cells, pick) do
     cells
@@ -784,13 +781,13 @@ defmodule Elmc.Backend.Bytecode.FusionRunner do
     end
   end
 
-  @spec lcg(Types.ir_expr()) :: Types.ir_expr()
+  @spec lcg(integer()) :: integer()
 
   defp lcg(seed) do
     rem(seed * 16807 + 11, 2147483647)
   end
 
-  @spec normalize_lut(Types.ir_expr()) :: Types.ir_expr()
+  @spec normalize_lut(map()) :: %{integer() => integer()} | nil
 
   defp normalize_lut(data) do
     case map_field(data, "lut") || map_field(data, :lut) do
@@ -811,7 +808,7 @@ defmodule Elmc.Backend.Bytecode.FusionRunner do
     end
   end
 
-  @spec normalize_string_lut(Types.ir_expr()) :: Types.ir_expr()
+  @spec normalize_string_lut(map()) :: %{integer() => String.t()} | nil
 
   defp normalize_string_lut(data) do
     case map_field(data, "lut") || map_field(data, :lut) do
@@ -832,7 +829,7 @@ defmodule Elmc.Backend.Bytecode.FusionRunner do
     end
   end
 
-  @spec indices_field(Types.ir_expr()) :: Types.ir_expr()
+  @spec indices_field(map()) :: [term()] | nil
 
   defp indices_field(data) do
     case map_field(data, "indices") || map_field(data, :indices) do
@@ -841,12 +838,12 @@ defmodule Elmc.Backend.Bytecode.FusionRunner do
     end
   end
 
-  @spec string_field(Types.ir_expr(), Types.ir_expr() | String.t()) :: Types.ir_expr()
+  @spec string_field(map(), String.t()) :: term()
 
   defp string_field(data, "default"), do: map_field(data, "default") || map_field(data, :default)
   defp string_field(data, key) when is_binary(key), do: map_field(data, key)
 
-  @spec normalize_table(map() | term()) :: map()
+  @spec normalize_table(map() | term()) :: {:ok, map()} | :error
 
   defp normalize_table(%{"outer_mod" => outer_mod, "rows" => rows}) do
     {:ok, %{outer_mod: outer_mod, rows: normalize_rows(rows)}}
@@ -874,7 +871,7 @@ defmodule Elmc.Backend.Bytecode.FusionRunner do
     end)
   end
 
-  @spec lookup_pairs(map(), atom(), Types.ir_expr()) :: Types.ir_expr()
+  @spec lookup_pairs(map(), term(), term()) :: list()
 
   defp lookup_pairs(%{outer_mod: outer_mod, rows: rows}, kind, rot) do
     k = positive_mod(as_int(kind), outer_mod)
@@ -892,19 +889,19 @@ defmodule Elmc.Backend.Bytecode.FusionRunner do
     end
   end
 
-  @spec count_full_rows(Types.ir_expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+  @spec count_full_rows([integer()], pos_integer(), pos_integer()) :: non_neg_integer()
 
   defp count_full_rows(board, rows, cols) do
     Enum.count(0..(rows - 1), &row_full?(board, &1, cols))
   end
 
-  @spec row_full?(Types.ir_expr(), Types.ir_expr(), Types.ir_expr()) :: boolean()
+  @spec row_full?([integer()], non_neg_integer(), pos_integer()) :: boolean()
 
   defp row_full?(board, row, cols) do
     Enum.all?(0..(cols - 1), fn col -> cell_at(board, row, cols, col) != 0 end)
   end
 
-  @spec cell_at(Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), non_neg_integer()) :: Types.ir_expr()
+  @spec cell_at([integer()], non_neg_integer(), pos_integer(), non_neg_integer()) :: integer()
 
   defp cell_at(board, row, cols, col) do
     index = row * cols + col
@@ -916,14 +913,14 @@ defmodule Elmc.Backend.Bytecode.FusionRunner do
   defp normalize_board(list) when is_list(list), do: Enum.map(list, &as_int/1)
   defp normalize_board(_), do: []
 
-  @spec record_field(term(), integer() | term()) :: Types.ir_expr()
+  @spec record_field(term(), integer() | term()) :: integer()
 
   defp record_field({:record, fields}, idx) when is_integer(idx),
     do: Enum.at(fields, idx, 0) |> as_int()
 
   defp record_field(_, _), do: 0
 
-  @spec record_field_list(term(), integer() | term()) :: Types.ir_expr()
+  @spec record_field_list(term(), integer() | term()) :: [integer()]
 
   defp record_field_list({:record, fields}, idx) when is_integer(idx) do
     case Enum.at(fields, idx) do
@@ -934,7 +931,7 @@ defmodule Elmc.Backend.Bytecode.FusionRunner do
 
   defp record_field_list(_, _), do: []
 
-  @spec record_set_field(term() | Types.ir_expr(), integer(), integer()) :: Types.ir_expr()
+  @spec record_set_field(term(), integer(), term()) :: {:record, list()}
 
   defp record_set_field({:record, fields} = _model, idx, value) when is_integer(idx) do
     {:record, List.replace_at(pad_record_fields(fields, idx + 1), idx, value)}
@@ -944,12 +941,12 @@ defmodule Elmc.Backend.Bytecode.FusionRunner do
     {:record, List.replace_at(List.duplicate(nil, idx + 1), idx, value)}
   end
 
-  @spec pad_record_fields(list(), Types.ir_expr()) :: Types.ir_expr()
+  @spec pad_record_fields(list(), non_neg_integer()) :: list()
 
   defp pad_record_fields(fields, size) when length(fields) >= size, do: fields
   defp pad_record_fields(fields, size), do: fields ++ List.duplicate(nil, size - length(fields))
 
-  @spec apply_row_major_perm(Types.ir_expr(), Types.ir_expr(), non_neg_integer()) :: Types.ir_expr()
+  @spec apply_row_major_perm([integer()], [integer()], non_neg_integer()) :: [integer()]
 
   defp apply_row_major_perm(board, perm, count) do
     Enum.map(0..(count - 1), fn dest ->
@@ -958,30 +955,28 @@ defmodule Elmc.Backend.Bytecode.FusionRunner do
     end)
   end
 
-  @spec invoke_callee(keyword(), term(), Types.ir_expr()) :: Types.ir_expr()
+  @spec invoke_callee(keyword(), {String.t(), String.t()}, list()) :: term()
 
   defp invoke_callee(opts, {mod, name}, params) do
     plans = Keyword.get(opts, :plans, %{})
 
     case Map.get(plans, {mod, name}) do
       %FunctionPlan{} = plan ->
-        case Runtime.run_function(plan, Keyword.merge(opts, params: params)) do
-          {:ok, val} -> val
-          _ -> nil
-        end
+        {:ok, val} = Runtime.run_function(plan, Keyword.merge(opts, params: params))
+        val
 
       _ ->
         nil
     end
   end
 
-  @spec int_field(map(), String.t()) :: Types.ir_expr()
+  @spec int_field(map(), String.t()) :: term()
 
   defp int_field(map, key) when is_map(map) do
     Map.get(map, key) || Map.get(map, String.to_atom(key))
   end
 
-  @spec map_field(map(), String.t() | atom()) :: Types.ir_expr()
+  @spec map_field(map(), String.t() | atom()) :: term()
 
   defp map_field(map, key) when is_map(map) and is_binary(key) do
     Map.get(map, key) || Map.get(map, String.to_atom(key))
@@ -991,7 +986,7 @@ defmodule Elmc.Backend.Bytecode.FusionRunner do
     Map.get(map, key) || Map.get(map, Atom.to_string(key))
   end
 
-  @spec callee_field(Types.ir_expr(), String.t()) :: Types.ir_expr()
+  @spec callee_field(map(), String.t()) :: {String.t(), String.t()} | :error
 
   defp callee_field(map, key) do
     case map_field(map, key) do
@@ -1002,14 +997,14 @@ defmodule Elmc.Backend.Bytecode.FusionRunner do
     end
   end
 
-  @spec as_int(integer() | float() | term()) :: Types.ir_expr()
+  @spec as_int(term()) :: integer()
 
   defp as_int(n) when is_integer(n), do: n
   defp as_int(n) when is_float(n), do: trunc(n)
   defp as_int({:tuple2, a, _}), do: as_int(a)
   defp as_int(_), do: 0
 
-  @spec positive_mod(integer(), Types.ir_expr()) :: Types.ir_expr()
+  @spec positive_mod(integer(), pos_integer()) :: non_neg_integer()
 
   defp positive_mod(value, base) when base > 0 do
     rem = rem(value, base)

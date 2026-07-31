@@ -139,7 +139,7 @@ defmodule Elmc.Backend.CCodegen.CaseCompile do
     branch_assignment_finish(expr_code, expr_var, out, env, counter)
   end
 
-  @spec branch_assignment_env(Types.compile_env(), Types.ir_expr()) :: Types.ir_expr()
+  @spec branch_assignment_env(Types.compile_env(), String.t()) :: Types.compile_env()
 
   defp branch_assignment_env(env, out) do
     ValueSlots.reset_function_out_written()
@@ -170,7 +170,13 @@ defmodule Elmc.Backend.CCodegen.CaseCompile do
     end
   end
 
-  @spec branch_assignment_finish(Types.expr(), Types.expr(), Types.ir_expr(), Types.compile_env(), Types.ir_expr()) :: Types.ir_expr()
+  @spec branch_assignment_finish(
+          String.t(),
+          String.t(),
+          String.t(),
+          Types.compile_env(),
+          Types.compile_counter()
+        ) :: Types.compile_result()
 
   defp branch_assignment_finish(expr_code, expr_var, out, env, counter) do
     result =
@@ -209,7 +215,7 @@ defmodule Elmc.Backend.CCodegen.CaseCompile do
     apply_pattern_bind_wrapper(result, env)
   end
 
-  @spec apply_pattern_bind_wrapper(term(), Types.compile_env()) :: Types.ir_expr()
+  @spec apply_pattern_bind_wrapper(Types.compile_result(), Types.compile_env()) :: Types.compile_result()
 
   defp apply_pattern_bind_wrapper({expr_code, assignment_code, counter}, env) do
     setup = Patterns.pattern_bind_setup(env)
@@ -239,14 +245,14 @@ defmodule Elmc.Backend.CCodegen.CaseCompile do
       String.contains?(expr_code, "&#{out},") or String.contains?(expr_code, "&#{out})")
   end
 
-  @spec strip_orphan_tmp_decl(Types.expr(), Types.expr()) :: Types.ir_expr()
+  @spec strip_orphan_tmp_decl(String.t(), String.t()) :: String.t()
 
   defp strip_orphan_tmp_decl(expr_code, expr_var)
        when is_binary(expr_code) and is_binary(expr_var) do
     Regex.replace(~r/^[ \t]*ElmcValue \*#{Regex.escape(expr_var)} = NULL;\n/m, expr_code, "")
   end
 
-  @spec rename_result_var(Types.expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+  @spec rename_result_var(String.t(), String.t(), String.t()) :: {:ok, String.t()} | :error
 
   defp rename_result_var(expr_code, from, to), do: fold_result_binding(expr_code, from, to)
 
@@ -298,7 +304,12 @@ defmodule Elmc.Backend.CCodegen.CaseCompile do
     end
   end
 
-  @spec fold_rc_allocator_binding_legacy(Types.expr(), Types.expr(), Types.ir_expr(), Types.compile_env()) :: Types.ir_expr()
+  @spec fold_rc_allocator_binding_legacy(
+          String.t(),
+          String.t(),
+          String.t(),
+          Types.compile_env()
+        ) :: {:ok, String.t()} | :error
 
   defp fold_rc_allocator_binding_legacy(expr_code, expr_var, out, env) do
     trimmed = String.trim(expr_code)
@@ -315,7 +326,12 @@ defmodule Elmc.Backend.CCodegen.CaseCompile do
     end
   end
 
-  @spec fold_rc_allocator_binding_emit(Types.expr(), Types.expr(), Types.ir_expr(), Types.compile_env()) :: Types.ir_expr()
+  @spec fold_rc_allocator_binding_emit(
+          String.t(),
+          String.t(),
+          String.t(),
+          Types.compile_env()
+        ) :: {:ok, String.t()} | :error
 
   defp fold_rc_allocator_binding_emit(expr_code, expr_var, out, env) do
     var = Regex.escape(expr_var)
@@ -335,7 +351,15 @@ defmodule Elmc.Backend.CCodegen.CaseCompile do
     end
   end
 
-  @spec fold_rc_allocator_into(Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.compile_env(), Types.expr(), integer(), [String.t()]) :: Types.ir_expr()
+  @spec fold_rc_allocator_into(
+          String.t(),
+          String.t(),
+          String.t(),
+          Types.compile_env(),
+          String.t(),
+          String.t(),
+          String.t()
+        ) :: {:ok, String.t()} | :error
 
   defp fold_rc_allocator_into(prefix, suffix, out, env, expr_var, function, call_args) do
     if RcRuntimeEmit.rc_allocator?(function) or RcRuntimeEmit.function_out_ref?(out) do
@@ -352,7 +376,8 @@ defmodule Elmc.Backend.CCodegen.CaseCompile do
     end
   end
 
-  @spec split_branch_final_allocator(Types.expr(), Types.expr()) :: Types.ir_expr()
+  @spec split_branch_final_allocator(String.t(), String.t()) ::
+          {:ok, [String.t()], [String.t()], [String.t()]} | :error
 
   defp split_branch_final_allocator(expr_code, expr_var) do
     lines =
@@ -519,7 +544,8 @@ defmodule Elmc.Backend.CCodegen.CaseCompile do
     end
   end
 
-  @spec alloc_result_out_binding(Types.compile_env(), Types.ir_expr()) :: Types.ir_expr()
+  @spec alloc_result_out_binding(Types.compile_env(), Types.compile_counter()) ::
+          {String.t(), Types.compile_counter(), boolean()}
 
   defp alloc_result_out_binding(env, counter) do
     if RcRuntimeEmit.rc_allocator_emit_mode?(env) do
@@ -590,7 +616,7 @@ defmodule Elmc.Backend.CCodegen.CaseCompile do
     end
   end
 
-  @spec if_branch_snippet(Types.ir_expr(), Types.ir_expr(), boolean()) :: Types.ir_expr()
+  @spec if_branch_snippet(String.t(), String.t(), boolean()) :: String.t()
 
   defp if_branch_snippet(cond_code, branch_body, first_branch?) do
     keyword = if first_branch?, do: "if", else: "else if"
@@ -603,7 +629,7 @@ defmodule Elmc.Backend.CCodegen.CaseCompile do
     """
   end
 
-  @spec else_branch_snippet(Types.ir_expr()) :: Types.ir_expr()
+  @spec else_branch_snippet(String.t()) :: String.t()
 
   defp else_branch_snippet(branch_body) do
     """
@@ -613,7 +639,7 @@ defmodule Elmc.Backend.CCodegen.CaseCompile do
     """
   end
 
-  @spec terminal_branch_snippet(Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+  @spec terminal_branch_snippet(String.t(), String.t()) :: String.t()
 
   defp terminal_branch_snippet("1", branch_body), do: else_branch_snippet(branch_body)
 
@@ -625,13 +651,24 @@ defmodule Elmc.Backend.CCodegen.CaseCompile do
     """
   end
 
-  @spec format_branch_body(Types.expr()) :: Types.ir_expr()
+  @spec format_branch_body(String.t()) :: String.t()
 
   defp format_branch_body(body) do
     CSource.format_block(body, 4)
   end
 
-  @spec maybe_extract_branch_helper(Types.ir_expr(), Types.compile_env(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.expr(), Types.expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr() | nil
+  @spec maybe_extract_branch_helper(
+          Types.case_branch(),
+          Types.compile_env(),
+          String.t(),
+          String.t(),
+          String.t(),
+          String.t(),
+          String.t(),
+          String.t(),
+          String.t(),
+          String.t()
+        ) :: String.t()
 
   defp maybe_extract_branch_helper(
          branch,
@@ -706,18 +743,18 @@ defmodule Elmc.Backend.CCodegen.CaseCompile do
     end
   end
 
-  @spec extract_branch_helper?(Types.compile_env(), Types.expr()) :: boolean()
+  @spec extract_branch_helper?(Types.compile_env(), String.t()) :: boolean()
 
   defp extract_branch_helper?(branch_env, body) do
     RcRuntimeEmit.generic_helper_extraction_allowed?(branch_env, body) and
       Process.get(:elmc_generic_helper_defs) != nil and emitted_line_count(body) >= 60
   end
 
-  @spec emitted_line_count(Types.ir_expr()) :: Types.ir_expr()
+  @spec emitted_line_count(String.t()) :: non_neg_integer()
 
   defp emitted_line_count(code), do: code |> String.split("\n") |> length()
 
-  @spec helper_params_collide_with_locals?(Types.ir_expr(), String.t()) :: boolean()
+  @spec helper_params_collide_with_locals?([{String.t(), {:native_int | :native_bool | :boxed, String.t()}}], String.t()) :: boolean()
 
   defp helper_params_collide_with_locals?(params, body) when is_binary(body) do
     param_refs =
@@ -736,7 +773,13 @@ defmodule Elmc.Backend.CCodegen.CaseCompile do
     not MapSet.disjoint?(param_refs, local_decls)
   end
 
-  @spec branch_helper_params(Types.ir_expr(), Types.compile_env(), Types.ir_expr(), Types.expr(), Types.ir_expr()) :: Types.ir_expr()
+  @spec branch_helper_params(
+          Types.case_branch(),
+          Types.compile_env(),
+          String.t(),
+          String.t(),
+          String.t()
+        ) :: {:ok, [{String.t(), {:native_int | :native_bool | :boxed, String.t()}}]} | :error
 
   defp branch_helper_params(branch, branch_env, subject_ref, expr_code, assignment_code) do
     excluded =
@@ -774,7 +817,7 @@ defmodule Elmc.Backend.CCodegen.CaseCompile do
     end
   end
 
-  @spec maybe_add_subject_param(Types.ir_expr(), String.t()) :: Types.ir_expr() | nil
+  @spec maybe_add_subject_param([{String.t(), {:native_int | :native_bool | :boxed, String.t()}}], String.t()) :: [{String.t(), {:native_int | :native_bool | :boxed, String.t()}}]
 
   defp maybe_add_subject_param(params, subject_ref) when is_binary(subject_ref) do
     if Regex.match?(~r/^[A-Za-z_][A-Za-z0-9_]*$/, subject_ref) do
@@ -784,7 +827,12 @@ defmodule Elmc.Backend.CCodegen.CaseCompile do
     end
   end
 
-  @spec pattern_condition_code(Types.expr(), Types.ir_expr(), Types.pattern(), Types.compile_env()) :: Types.ir_expr()
+  @spec pattern_condition_code(
+          Types.case_subject() | Types.expr(),
+          String.t(),
+          Types.pattern(),
+          Types.compile_env()
+        ) :: String.t()
 
   defp pattern_condition_code(subject, subject_ref, pattern, env) do
     case native_bool_pattern_condition(subject, pattern, env) do
@@ -793,7 +841,11 @@ defmodule Elmc.Backend.CCodegen.CaseCompile do
     end
   end
 
-  @spec native_bool_pattern_condition(Types.expr(), Types.pattern(), Types.compile_env()) :: Types.ir_expr()
+  @spec native_bool_pattern_condition(
+          Types.case_subject() | Types.expr(),
+          Types.pattern(),
+          Types.compile_env()
+        ) :: String.t() | nil
 
   defp native_bool_pattern_condition(subject, pattern, env) do
     with name when is_binary(name) <- case_subject_name(subject),
@@ -809,13 +861,14 @@ defmodule Elmc.Backend.CCodegen.CaseCompile do
     end
   end
 
-  @spec case_subject_name(String.t() | map() | term()) :: Types.ir_expr()
+  @spec case_subject_name(String.t() | map() | term()) :: String.t() | nil
 
   defp case_subject_name(subject) when is_binary(subject), do: subject
   defp case_subject_name(%{op: :var, name: name}) when is_binary(name), do: name
   defp case_subject_name(_), do: nil
 
-  @spec external_vars(Types.expr() | map() | list(), Types.ir_expr()) :: Types.ir_expr()
+  @spec external_vars(Types.expr() | map() | list()) :: MapSet.t(String.t())
+  @spec external_vars(Types.expr() | map() | list(), MapSet.t(String.t())) :: MapSet.t(String.t())
 
   defp external_vars(expr), do: external_vars(expr, MapSet.new())
 
@@ -859,13 +912,24 @@ defmodule Elmc.Backend.CCodegen.CaseCompile do
   @spec battery_alert_case_probe(Types.compile_env(), non_neg_integer() | :case, atom()) :: String.t()
   defp battery_alert_case_probe(_env, _branch_index, _position), do: ""
 
-  @spec branch_assignment_rc(Types.compile_env(), Types.ir_expr(), integer(), [String.t()], Types.ir_expr()) :: Types.ir_expr()
+  @spec branch_assignment_rc(
+          Types.compile_env(),
+          String.t(),
+          String.t(),
+          String.t(),
+          Types.compile_counter()
+        ) :: Types.compile_result()
 
   defp branch_assignment_rc(env, out, function, call_args, counter) do
     apply_pattern_bind_wrapper({"", RcRuntimeEmit.assign_into(env, out, function, call_args), counter}, env)
   end
 
-  @spec branch_assignment_int_literal(map(), Types.ir_expr(), Types.compile_env(), Types.ir_expr()) :: Types.ir_expr()
+  @spec branch_assignment_int_literal(
+          Types.ir_expr(),
+          String.t(),
+          Types.compile_env(),
+          Types.compile_counter()
+        ) :: Types.compile_result()
 
   defp branch_assignment_int_literal(%{op: :int_literal, value: 0}, out, env, counter) do
     {"", RcRuntimeEmit.assign_stmt(rc_zero_assignment_target(out, env), "elmc_int_zero()"), counter}
@@ -876,7 +940,7 @@ defmodule Elmc.Backend.CCodegen.CaseCompile do
     {"", RcRuntimeEmit.assign_into(env, out, "elmc_new_int", ref), counter}
   end
 
-  @spec rc_zero_assignment_target(Types.ir_expr(), Types.compile_env()) :: Types.ir_expr()
+  @spec rc_zero_assignment_target(String.t(), Types.compile_env()) :: String.t()
 
   defp rc_zero_assignment_target(out, env) do
     if is_binary(Map.get(env, :__function_rc_out_param__)) &&
@@ -887,7 +951,8 @@ defmodule Elmc.Backend.CCodegen.CaseCompile do
     end
   end
 
-  @spec special_branch_literal_expr(Types.expr(), Types.compile_env()) :: Types.ir_expr()
+  @spec special_branch_literal_expr(Types.expr(), Types.compile_env()) ::
+          {:ok, Types.ir_expr()} | :error
 
   defp special_branch_literal_expr(expr, env) do
     with {:ok, special} <- special_value_expr(expr),
@@ -898,7 +963,7 @@ defmodule Elmc.Backend.CCodegen.CaseCompile do
     end
   end
 
-  @spec special_value_expr(map() | Types.expr()) :: Types.ir_expr()
+  @spec special_value_expr(map() | Types.expr()) :: {:ok, Types.ir_expr() | nil} | :error
 
   defp special_value_expr(%{op: :qualified_call, target: target, args: args}),
     do: {:ok, Host.special_value_from_target(Host.normalize_special_target(target), args)}
@@ -970,13 +1035,14 @@ defmodule Elmc.Backend.CCodegen.CaseCompile do
     end
   end
 
-  @spec put_declared_out(Types.compile_env(), Types.ir_expr()) :: Types.ir_expr()
+  @spec put_declared_out(Types.compile_env(), String.t()) :: Types.compile_env()
 
   defp put_declared_out(env, out) do
     Map.update(env, :__declared_outs__, MapSet.new([out]), &MapSet.put(&1, out))
   end
 
-  @spec put_case_subject_payload_type(Types.compile_env(), Types.expr()) :: Types.ir_expr()
+  @spec put_case_subject_payload_type(Types.compile_env(), Types.case_subject() | Types.expr()) ::
+          Types.compile_env()
 
   defp put_case_subject_payload_type(env, subject) do
     subject_expr = subject_expr(subject)
@@ -995,7 +1061,8 @@ defmodule Elmc.Backend.CCodegen.CaseCompile do
     end
   end
 
-  @spec case_subject_payload_type_from_field_access(map() | Types.expr(), Types.compile_env()) :: Types.ir_expr()
+  @spec case_subject_payload_type_from_field_access(map() | Types.expr(), Types.compile_env()) ::
+          String.t() | nil
 
   defp case_subject_payload_type_from_field_access(
          %{op: :field_access, arg: arg, field: field},

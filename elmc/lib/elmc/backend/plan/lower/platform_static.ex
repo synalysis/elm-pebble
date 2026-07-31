@@ -20,7 +20,7 @@ defmodule Elmc.Backend.Plan.Lower.PlatformStatic do
 
   def compile_case(_, _, _, _), do: :unsupported
 
-  @spec static_branch_values(term()) :: Types.ir_expr()
+  @spec static_branch_values(term()) :: {:ok, boolean(), boolean()} | :error
 
   defp static_branch_values([
          %{pattern: %{kind: :constructor}, expr: %{op: :bool_literal, value: then_val}},
@@ -39,7 +39,7 @@ defmodule Elmc.Backend.Plan.Lower.PlatformStatic do
 
   defp static_branch_values(_), do: :error
 
-  @spec emit_static_bool(Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+  @spec emit_static_bool(String.t(), boolean(), boolean(), Context.t(), Builder.t()) :: Types.compile_result()
 
   defp emit_static_bool(macro, then_val, else_val, ctx, b) do
     wrap_catch? = Builder.wrap_fallible_instr_catch?(b, ctx, true)

@@ -38,7 +38,7 @@ defmodule Elmc.Backend.Plan.Lower.Function do
     end
   end
 
-  @spec codegen_opts(keyword()) :: Types.ir_expr()
+  @spec codegen_opts(keyword()) :: keyword()
 
   defp codegen_opts(opts) do
     Process.get(:elmc_codegen_opts, %{})
@@ -46,7 +46,7 @@ defmodule Elmc.Backend.Plan.Lower.Function do
     |> Map.to_list()
   end
 
-  @spec do_lower(Types.decl(), String.t(), Types.decl_map(), keyword()) :: Types.ir_expr()
+  @spec do_lower(Types.decl(), String.t(), Types.decl_map(), keyword()) :: Types.lower_result()
 
   defp do_lower(decl, module_name, decl_map, opts) do
     opts = codegen_opts(opts)
@@ -75,14 +75,12 @@ defmodule Elmc.Backend.Plan.Lower.Function do
 
           :not_intrinsic ->
             lower_expr_body(decl, module_name, decl_map, opts)
-
-          {:error, _, _} = err ->
-            err
         end
     end
   end
 
-  @spec register_fusion_native_cache(map() | integer(), String.t()) :: Types.ir_expr()
+  @spec register_fusion_native_cache(Types.function_plan() | map(), String.t()) ::
+          Types.function_plan() | map()
 
   defp register_fusion_native_cache(%{fusion_c: c, native_scalar_return: kind} = plan, module_name)
        when is_binary(c) and kind in [:native_int, :native_bool] do
@@ -160,7 +158,8 @@ defmodule Elmc.Backend.Plan.Lower.Function do
     end
   end
 
-  @spec lower_expr_body(Types.decl(), String.t(), Types.decl_map(), keyword()) :: Types.ir_expr()
+  @spec lower_expr_body(Types.decl(), String.t(), Types.decl_map(), keyword()) ::
+          Types.lower_result()
 
   defp lower_expr_body(decl, module_name, decl_map, opts) do
     expr = Map.get(decl, :expr) || %{op: :int_literal, value: 0}
@@ -244,7 +243,7 @@ defmodule Elmc.Backend.Plan.Lower.Function do
     :unsupported
   end
 
-  @spec seed_param_types(map() | Types.ir_expr(), map() | term()) :: Types.ir_expr()
+  @spec seed_param_types(Context.t(), Types.decl()) :: Context.t()
 
   defp seed_param_types(%Context{} = ctx, decl) when is_map(decl) do
     type = Map.get(decl, :type)
@@ -261,15 +260,13 @@ defmodule Elmc.Backend.Plan.Lower.Function do
           end
         end)
 
-      %{ctx | local_types: Map.merge(ctx.local_types || %{}, types)}
+      %{ctx | local_types: Map.merge(ctx.local_types, types)}
     else
       _ -> ctx
     end
   end
 
-  defp seed_param_types(ctx, _), do: ctx
-
-  @spec seed_inferred_param_fields(map() | Types.ir_expr(), map() | term()) :: Types.ir_expr()
+  @spec seed_inferred_param_fields(Context.t(), Types.decl()) :: Context.t()
 
   defp seed_inferred_param_fields(%Context{} = ctx, decl) when is_map(decl) do
     case ParamFieldInference.infer(decl) do
@@ -278,9 +275,8 @@ defmodule Elmc.Backend.Plan.Lower.Function do
     end
   end
 
-  defp seed_inferred_param_fields(ctx, _), do: ctx
-
-  @spec finalize_result(Types.ir_expr(), Types.ir_expr() | integer(), Types.ir_expr() | term()) :: Types.ir_expr()
+  @spec finalize_result(Builder.t(), Types.reg() | :fn_out | term(), boolean() | term()) ::
+          {Builder.t(), Types.reg() | :fn_out | term()}
 
   defp finalize_result(b, :fn_out, true), do: {b, :fn_out}
   defp finalize_result(b, :fn_out, false), do: {b, :fn_out}
@@ -292,7 +288,7 @@ defmodule Elmc.Backend.Plan.Lower.Function do
   defp finalize_result(b, result_reg, false) when is_integer(result_reg), do: {b, result_reg}
   defp finalize_result(b, result_reg, _), do: {b, result_reg}
 
-  @spec preload_params(Types.ir_expr(), [String.t()]) :: Types.ir_expr()
+  @spec preload_params(Builder.t(), [String.t()]) :: Builder.t()
 
   defp preload_params(b, args) do
     Enum.reduce(Enum.with_index(args), b, fn {name, idx}, b_acc ->
@@ -301,7 +297,8 @@ defmodule Elmc.Backend.Plan.Lower.Function do
     end)
   end
 
-  @spec verify_lambda_plans(list()) :: Types.ir_expr()
+  @spec verify_lambda_plans([Types.function_plan() | map()]) ::
+          :ok | {:error, term(), term()}
 
   defp verify_lambda_plans(lambdas) when is_list(lambdas) do
     Enum.reduce_while(lambdas, :ok, fn lam, :ok ->

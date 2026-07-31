@@ -1,11 +1,10 @@
 defmodule Elmc.Backend.Pebble.IRAnalysis do
   @moduledoc false
-  alias Elmc.Types, as: Types
-
 
   alias ElmEx.IR
   alias Elmc.Backend.Pebble.Types
   alias Elmc.Backend.Pebble.IRAnalysis.{Build, Msg, RandomGenerate}
+  alias Elmc.Types, as: ElmcTypes
 
   @spec msg_constructors(IR.t(), Types.entry_module()) :: Types.msg_constructor_list()
   defdelegate msg_constructors(ir, entry_module), to: Msg, as: :constructors
@@ -34,14 +33,6 @@ defmodule Elmc.Backend.Pebble.IRAnalysis do
   @spec has_view?(IR.t(), Types.entry_module()) :: boolean()
   defdelegate has_view?(ir, entry_module), to: Msg
 
-  @spec pick_tag(
-          Types.msg_constructor_list(),
-          [Types.msg_constructor_name()],
-          Types.pick_tag_opts()
-        ) :: Types.msg_tag()
-  def pick_tag(msg_constructors, names, opts \\ []),
-    do: Msg.pick_tag(msg_constructors, names, opts)
-
   @spec union_constructors(
           IR.t(),
           Types.union_module(),
@@ -51,6 +42,9 @@ defmodule Elmc.Backend.Pebble.IRAnalysis do
 
   @spec analyze(IR.t(), Types.entry_module()) :: Types.shim_analysis()
   defdelegate analyze(ir, entry_module), to: Build
+
+  @spec analyze(IR.t(), Types.entry_module(), ElmcTypes.compile_options() | map()) ::
+          Types.shim_analysis()
   defdelegate analyze(ir, entry_module, opts), to: Build
 
   @spec random_generate_target_tag(IR.t(), Types.msg_constructor_list()) :: Types.msg_tag()

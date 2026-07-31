@@ -12,7 +12,8 @@ defmodule Elmc.Backend.Wasm.Module do
           closures: [map()],
           imports: MapSet.t(String.t()),
           import_arities: %{String.t() => non_neg_integer()},
-          wat: binary()
+          wat: binary(),
+          stub_functions: [map()]
         }
 
   @type build_opts :: [

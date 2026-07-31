@@ -1,7 +1,5 @@
 defmodule Elmc.Backend.Plan.Lower.CallCoerce do
   @moduledoc false
-  alias Elmc.Backend.CCodegen.Types, as: Types
-
 
   alias Elmc.Backend.CCodegen.{Host, TypeParsing}
   alias Elmc.Backend.CCodegen.Native.FunctionCall, as: NativeFunctionCall
@@ -78,8 +76,12 @@ defmodule Elmc.Backend.Plan.Lower.CallCoerce do
   Box raw Int literals so WASM closure applications pass heap handles.
   Used when the callee arrow type is unknown (cannot run typed Float/Int coerce).
   """
-  @spec box_int_literal_args(Types.ir_expr(), [String.t()], Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
-
+  @spec box_int_literal_args(
+          [non_neg_integer()],
+          [map()],
+          Context.t(),
+          Elmc.Backend.Plan.Builder.t()
+        ) :: {[non_neg_integer()], Elmc.Backend.Plan.Builder.t()}
   def box_int_literal_args(arg_regs, args, ctx, b)
       when is_list(arg_regs) and is_list(args) and length(arg_regs) == length(args) do
     expected = List.duplicate("Int", length(args))
@@ -88,8 +90,14 @@ defmodule Elmc.Backend.Plan.Lower.CallCoerce do
 
   def box_int_literal_args(arg_regs, _args, _ctx, b), do: {arg_regs, b}
 
-  @spec maybe_coerce_arg(Types.ir_expr(), Types.expr(), Types.ir_expr(), atom() | Types.ir_expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr() | nil
-
+  @spec maybe_coerce_arg(
+          non_neg_integer(),
+          map() | nil,
+          String.t() | nil,
+          atom() | nil,
+          Context.t(),
+          Elmc.Backend.Plan.Builder.t()
+        ) :: {:ok, non_neg_integer(), Elmc.Backend.Plan.Builder.t()} | :skip
   defp maybe_coerce_arg(reg, arg_expr, "Float", _kind, ctx, b) do
     cond do
       float_expr?(arg_expr, ctx) ->
@@ -156,8 +164,7 @@ defmodule Elmc.Backend.Plan.Lower.CallCoerce do
 
   defp maybe_coerce_arg(_reg, _arg_expr, _param_type, _kind, _ctx, _b), do: :skip
 
-  @spec bool_const_value(map() | term()) :: Types.ir_expr()
-
+  @spec bool_const_value(term()) :: {:ok, 0 | 1} | :error
   defp bool_const_value(%{op: :constructor_call, target: target, args: args})
        when args in [nil, []] and is_binary(target) do
     cond do
@@ -169,8 +176,7 @@ defmodule Elmc.Backend.Plan.Lower.CallCoerce do
 
   defp bool_const_value(_), do: :error
 
-  @spec float_expr?(map() | Types.expr(), Types.ir_expr()) :: boolean()
-
+  @spec float_expr?(term(), Context.t()) :: boolean()
   defp float_expr?(%{op: :float_literal}, _ctx), do: true
 
   defp float_expr?(expr, ctx) do
@@ -180,8 +186,7 @@ defmodule Elmc.Backend.Plan.Lower.CallCoerce do
     end
   end
 
-  @spec int_typed_expr?(Types.expr(), Types.ir_expr()) :: boolean()
-
+  @spec int_typed_expr?(term(), Context.t()) :: boolean()
   defp int_typed_expr?(expr, ctx) do
     case TypedReturn.expr_type(expr, type_env(ctx)) do
       "Int" -> true
@@ -189,8 +194,7 @@ defmodule Elmc.Backend.Plan.Lower.CallCoerce do
     end
   end
 
-  @spec boxed_int_expr?(map() | Types.expr(), Types.ir_expr()) :: boolean()
-
+  @spec boxed_int_expr?(term(), Context.t()) :: boolean()
   defp boxed_int_expr?(%{op: :runtime_call, args: %{builtin: :new_int}}, _ctx), do: true
 
   defp boxed_int_expr?(%{op: :runtime_call, function: function}, _ctx)
@@ -215,19 +219,16 @@ defmodule Elmc.Backend.Plan.Lower.CallCoerce do
 
   defp boxed_int_expr?(_expr, _ctx), do: false
 
-  @spec function_param_var?(String.t(), map()) :: boolean()
-
+  @spec function_param_var?(String.t(), Context.t()) :: boolean()
   defp function_param_var?(name, %Context{params: params}) when is_list(params),
     do: name in params
 
-  @spec int_literal_expr?(map() | term()) :: boolean()
-
+  @spec int_literal_expr?(term()) :: boolean()
   defp int_literal_expr?(%{op: :int_literal, union_ctor: _}), do: false
   defp int_literal_expr?(%{op: :int_literal, value: value}) when is_integer(value), do: true
   defp int_literal_expr?(_), do: false
 
-  @spec type_env(map()) :: Types.ir_expr()
-
+  @spec type_env(Context.t()) :: map()
   defp type_env(%Context{} = ctx) do
     %{
       __module__: ctx.module || "Main",

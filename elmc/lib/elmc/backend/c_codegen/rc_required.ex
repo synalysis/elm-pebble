@@ -62,7 +62,7 @@ defmodule Elmc.Backend.CCodegen.RcRequired do
     "elmc_forward_ref_capture"
   ])
 
-  @type run_opts :: keyword() | Elmc.Types.compile_options()
+  @type run_opts :: keyword() | map()
 
   @spec run!(Types.function_decl_map(), run_opts()) :: MapSet.t(Types.function_decl_key())
   def run!(decl_map, opts \\ []) do

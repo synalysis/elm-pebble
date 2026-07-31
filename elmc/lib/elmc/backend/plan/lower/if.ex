@@ -18,7 +18,8 @@ defmodule Elmc.Backend.Plan.Lower.If do
 
   def compile(_, _, _), do: :unsupported
 
-  @spec compile_branches(Types.expr(), Types.expr(), Types.expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+  @spec compile_branches(Types.expr(), Types.expr(), Types.expr(), Context.t(), Builder.t()) ::
+          Types.compile_result()
 
   defp compile_branches(cond, then_expr, else_expr, ctx, b) do
     case ConstantFold.bool_value(cond, ctx) do
@@ -33,7 +34,8 @@ defmodule Elmc.Backend.Plan.Lower.If do
     end
   end
 
-  @spec compile_branches_cfg(Types.expr(), Types.expr(), Types.expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+  @spec compile_branches_cfg(Types.expr(), Types.expr(), Types.expr(), Context.t(), Builder.t()) ::
+          Types.compile_result()
 
   defp compile_branches_cfg(cond, then_expr, else_expr, ctx, b) do
     if Context.stream_mode?(ctx) do
@@ -43,7 +45,8 @@ defmodule Elmc.Backend.Plan.Lower.If do
     end
   end
 
-  @spec compile_value_branches_cfg(Types.expr(), Types.expr(), Types.expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+  @spec compile_value_branches_cfg(Types.expr(), Types.expr(), Types.expr(), Context.t(), Builder.t()) ::
+          Types.compile_result()
 
   defp compile_value_branches_cfg(cond, then_expr, else_expr, ctx, b) do
     saved_pending = Map.get(b, :pending_merge_block)
@@ -68,7 +71,8 @@ defmodule Elmc.Backend.Plan.Lower.If do
     end
   end
 
-  @spec compile_branch(Types.expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+  @spec compile_branch(Types.expr(), Context.t(), Builder.t(), non_neg_integer()) ::
+          {:ok, Types.reg(), non_neg_integer(), Builder.t()} | :unsupported
 
   defp compile_branch(expr, ctx, b, block_id) do
     b_arm = Builder.begin_cfg_arm_block(b, block_id)
@@ -84,7 +88,8 @@ defmodule Elmc.Backend.Plan.Lower.If do
     end
   end
 
-  @spec compile_stream_branches_cfg(Types.expr(), Types.expr(), Types.expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+  @spec compile_stream_branches_cfg(Types.expr(), Types.expr(), Types.expr(), Context.t(), Builder.t()) ::
+          {:ok, :stream_void, Builder.t()} | :unsupported
 
   defp compile_stream_branches_cfg(cond, then_expr, else_expr, ctx, b) do
     saved_pending = Map.get(b, :pending_merge_block)
@@ -110,7 +115,8 @@ defmodule Elmc.Backend.Plan.Lower.If do
     end
   end
 
-  @spec compile_stream_branch(Types.expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+  @spec compile_stream_branch(Types.expr(), Context.t(), Builder.t(), non_neg_integer()) ::
+          {:ok, :stream_void, non_neg_integer(), Builder.t()} | :unsupported
 
   defp compile_stream_branch(expr, ctx, b, block_id) do
     b_arm = Builder.begin_cfg_arm_block(b, block_id)
@@ -129,7 +135,14 @@ defmodule Elmc.Backend.Plan.Lower.If do
     end
   end
 
-  @spec emit_phi(Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+  @spec emit_phi(
+          Types.reg(),
+          Types.reg(),
+          Types.reg(),
+          non_neg_integer(),
+          non_neg_integer(),
+          Builder.t()
+        ) :: {:ok, Types.reg(), Builder.t()}
 
   defp emit_phi(cond_reg, then_reg, else_reg, then_arm_block, else_arm_block, b) do
     {merge, b1} = Builder.fresh_reg(b)
@@ -182,7 +195,14 @@ defmodule Elmc.Backend.Plan.Lower.If do
     {:ok, merge, b2}
   end
 
-  @spec maybe_put_truthy_native([String.t()], Types.ir_expr(), term() | Types.ir_expr(), term() | Types.ir_expr(), term() | Types.ir_expr(), term() | Types.ir_expr()) :: Types.ir_expr() | nil
+  @spec maybe_put_truthy_native(
+          Types.instr_args(),
+          boolean(),
+          term(),
+          term(),
+          non_neg_integer(),
+          non_neg_integer()
+        ) :: Types.instr_args()
 
   defp maybe_put_truthy_native(args, false, _, _, _, _), do: args
 
@@ -196,7 +216,14 @@ defmodule Elmc.Backend.Plan.Lower.If do
     })
   end
 
-  @spec maybe_put_native_int_phi([String.t()], Types.ir_expr(), term() | Types.ir_expr(), term() | Types.ir_expr(), term() | Types.ir_expr(), term() | Types.ir_expr()) :: Types.ir_expr() | nil
+  @spec maybe_put_native_int_phi(
+          Types.instr_args(),
+          boolean(),
+          term(),
+          term(),
+          non_neg_integer(),
+          non_neg_integer()
+        ) :: Types.instr_args()
 
   defp maybe_put_native_int_phi(args, false, _, _, _, _), do: args
 
@@ -210,14 +237,14 @@ defmodule Elmc.Backend.Plan.Lower.If do
     })
   end
 
-  @spec builder_instrs(Types.ir_expr()) :: Types.ir_expr()
+  @spec builder_instrs(Builder.t()) :: Types.instr_list()
 
   defp builder_instrs(b) do
     (Map.get(b, :blocks, []) ++ [Map.get(b, :current_block)])
     |> Enum.flat_map(&Map.get(&1, :instrs, []))
   end
 
-  @spec skip_reserved(Types.ir_expr(), Types.ir_expr() | term()) :: Types.ir_expr()
+  @spec skip_reserved(non_neg_integer(), non_neg_integer() | nil) :: non_neg_integer()
 
   defp skip_reserved(id, nil), do: id
   defp skip_reserved(id, reserved) when id == reserved, do: id + 1

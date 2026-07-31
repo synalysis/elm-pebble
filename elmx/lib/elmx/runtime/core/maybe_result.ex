@@ -219,7 +219,7 @@ defmodule Elmx.Runtime.Core.MaybeResult do
   defp normalize_maybe_strict(%{ctor: :Just, args: [value]}), do: {:Just, value}
   defp normalize_maybe_strict(_), do: :Nothing
 
-  @spec maybe_map_n(integer(), Types.elm_value()) :: Types.elm_value() | nil
+  @spec maybe_map_n(Types.elm_hof() | function(), [Types.maybe_like()]) :: Types.maybe_like()
 
   defp maybe_map_n(fun, maybes) do
     case collect_maybe_values(maybes) do
@@ -239,7 +239,7 @@ defmodule Elmx.Runtime.Core.MaybeResult do
     end)
   end
 
-  @spec result_map_n(integer(), Types.elm_value()) :: Types.elm_value()
+  @spec result_map_n(Types.elm_hof() | function(), [Types.result_like()]) :: Types.result_like()
 
   defp result_map_n(fun, results) do
     case collect_result_values(results) do

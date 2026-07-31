@@ -50,7 +50,7 @@ defmodule Elmc.Backend.CCodegen.OwnershipCompile do
   recursive list algorithms (for example 2048 `merge`). Copy to a fresh list instead.
   """
   @spec retain_owned_expr(Types.compile_env(), Types.binding_name(), String.t()) ::
-          String.t() | nil
+          String.t() | {:list_copy, String.t()} | nil
   def retain_owned_expr(env, name, source) when is_binary(name) and is_binary(source) do
     cond do
       tuple_projection = ValueSlots.tuple_projection_retain_c_expr(source) ->

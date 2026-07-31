@@ -23,7 +23,7 @@ defmodule Ide.Debugger.CompanionBridgeContext do
                                          String.t(),
                                          String.t() ->
                                            Types.runtime_state()),
-          required(:settings) => (Types.runtime_state() -> Types.runtime_state())
+          required(:settings) => (Types.runtime_state() -> Types.simulator_settings())
         }
 
   @spec build(host()) :: CompanionBridgeRuntime.ctx()

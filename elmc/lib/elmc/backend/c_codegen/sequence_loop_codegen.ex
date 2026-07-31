@@ -2,14 +2,29 @@ defmodule Elmc.Backend.CCodegen.SequenceLoopCodegen do
   @moduledoc false
   alias Elmc.Backend.CCodegen.Types, as: Types
 
-
   alias Elmc.Backend.CCodegen.LayoutSolver
   alias Elmc.Backend.CCodegen.ListLoopCodegen
   alias Elmc.Backend.CCodegen.Types
 
-  @spec emit_native_head_loop(String.t(), pos_integer(), String.t(), String.t(), Types.compile_env(), String.t(), keyword()) ::
+  @spec emit_native_head_loop(
+          String.t(),
+          pos_integer(),
+          String.t(),
+          String.t(),
+          Types.compile_env(),
+          String.t(),
+          keyword()
+        ) ::
           String.t()
-  def emit_native_head_loop(list_ref, loop_id, head_native_var, inner_body, env, list_arg, opts \\ [])
+  def emit_native_head_loop(
+        list_ref,
+        loop_id,
+        head_native_var,
+        inner_body,
+        env,
+        list_arg,
+        opts \\ []
+      )
       when is_binary(list_ref) and is_binary(head_native_var) and is_binary(inner_body) and
              is_binary(list_arg) do
     repr = loop_repr_option(env, list_arg, opts)
@@ -23,7 +38,15 @@ defmodule Elmc.Backend.CCodegen.SequenceLoopCodegen do
     )
   end
 
-  @spec emit_boxed_head_walk(String.t(), pos_integer(), String.t(), String.t(), Types.compile_env(), String.t(), keyword()) ::
+  @spec emit_boxed_head_walk(
+          String.t(),
+          pos_integer(),
+          String.t(),
+          String.t(),
+          Types.compile_env(),
+          String.t(),
+          keyword()
+        ) ::
           String.t()
   def emit_boxed_head_walk(list_ref, loop_id, head_var, inner_body, env, list_arg, opts \\ [])
       when is_binary(list_ref) and is_binary(head_var) and is_binary(inner_body) and
@@ -43,8 +66,9 @@ defmodule Elmc.Backend.CCodegen.SequenceLoopCodegen do
     ListLoopCodegen.emit_length_native_count(list_var, loop_id, repr: repr)
   end
 
-  @spec loop_repr_option(Types.compile_env(), Types.ir_expr(), keyword()) :: Types.ir_expr()
+  @type loop_repr :: :int_list | :float_list | :record_seq | :native_linked | :cons | :dual
 
+  @spec loop_repr_option(Types.compile_env(), String.t(), keyword()) :: loop_repr()
   defp loop_repr_option(env, list_arg, opts) do
     case Keyword.get(opts, :repr) do
       nil ->

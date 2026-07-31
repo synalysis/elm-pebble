@@ -340,7 +340,6 @@ defmodule IdeWeb.WorkspaceLive.EmulatorFlow do
              watch_profile_id: target
            }) do
         {:ok, _} -> socket
-        _ -> socket
       end
 
     {:noreply, socket}

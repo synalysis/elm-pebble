@@ -126,7 +126,6 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.ExprDispatch do
     UnsupportedSurface.record_expr(%{
       kind: :expr,
       op: op,
-      reason_op: op,
       target: Map.get(expr, :target) || Map.get(expr, :name),
       detail: "unhandled expr in DirectRender.Emit.ExprDispatch"
     })
@@ -138,7 +137,6 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.ExprDispatch do
     UnsupportedSurface.record_expr(%{
       kind: :expr,
       op: :non_map,
-      reason_op: :non_map,
       detail: "unhandled expr in DirectRender.Emit.ExprDispatch (#{inspect(expr, limit: 8)})"
     })
 

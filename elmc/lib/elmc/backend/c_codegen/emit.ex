@@ -33,7 +33,7 @@ defmodule Elmc.Backend.CCodegen.Emit do
     end
   end
 
-  @spec all_magic_number_defines() :: Types.ir_expr()
+  @spec all_magic_number_defines() :: String.t()
 
   defp all_magic_number_defines do
     """
@@ -56,7 +56,7 @@ defmodule Elmc.Backend.CCodegen.Emit do
 
   defp prod_mode?(_), do: ProdMode.enabled?()
 
-  @spec pebble_debug_probe_prelude_impl() :: Types.ir_expr()
+  @spec pebble_debug_probe_prelude_impl() :: String.t()
 
   defp pebble_debug_probe_prelude_impl do
     """
@@ -161,7 +161,7 @@ defmodule Elmc.Backend.CCodegen.Emit do
     |> then(&"ELMC_COLOR_#{&1}")
   end
 
-  @spec generated_color_defines(Types.ir_expr()) :: Types.ir_expr()
+  @spec generated_color_defines(term()) :: String.t()
 
   defp generated_color_defines(used_tokens \\ nil) do
     Constants.pebble_color_constants()
@@ -174,7 +174,7 @@ defmodule Elmc.Backend.CCodegen.Emit do
     end)
   end
 
-  @spec generated_render_op_defines(Types.ir_expr()) :: Types.ir_expr()
+  @spec generated_render_op_defines(term()) :: String.t()
 
   defp generated_render_op_defines(used_tokens \\ nil) do
     Kinds.draw_kinds()
@@ -187,14 +187,14 @@ defmodule Elmc.Backend.CCodegen.Emit do
     end)
   end
 
-  @spec render_op_macro(atom()) :: Types.ir_expr()
+  @spec render_op_macro(atom()) :: String.t()
 
   defp render_op_macro(kind) do
     macro = kind |> Atom.to_string() |> Util.macro_name()
     "ELMC_RENDER_OP_#{macro}"
   end
 
-  @spec fixed_magic_number_defines() :: Types.ir_expr()
+  @spec fixed_magic_number_defines() :: String.t()
 
   defp fixed_magic_number_defines do
     fixed_magic_number_lines()
@@ -221,7 +221,7 @@ defmodule Elmc.Backend.CCodegen.Emit do
     |> Enum.map_join("\n", fn {macro, value} -> "#define #{macro} #{value}" end)
   end
 
-  @spec used_fixed_magic_number_defines(Types.ir_expr()) :: Types.ir_expr()
+  @spec used_fixed_magic_number_defines(term()) :: String.t()
 
   defp used_fixed_magic_number_defines(used_tokens) do
     fixed_magic_number_lines()
@@ -229,7 +229,7 @@ defmodule Elmc.Backend.CCodegen.Emit do
     |> Enum.map_join("\n", fn {macro, value} -> "#define #{macro} #{value}" end)
   end
 
-  @spec used_macro_tokens(String.t()) :: Types.ir_expr()
+  @spec used_macro_tokens(String.t()) :: MapSet.t(String.t())
 
   defp used_macro_tokens(source) do
     ~r/\bELMC_[A-Z0-9_]+\b/
@@ -259,7 +259,7 @@ defmodule Elmc.Backend.CCodegen.Emit do
     end
   end
 
-  @spec resolve_pebble_msg_macro(Types.ir_expr() | term()) :: Types.ir_expr()
+  @spec resolve_pebble_msg_macro(String.t() | term()) :: {:ok, integer()} | :error
 
   defp resolve_pebble_msg_macro("ELMC_PEBBLE_MSG_" <> _ = macro) do
     tags = Process.get(:elmc_constructor_tags, %{})
@@ -280,7 +280,7 @@ defmodule Elmc.Backend.CCodegen.Emit do
   @spec magic_number_literals() :: %{String.t() => String.t()}
   def magic_number_literals, do: Map.new(fixed_magic_number_lines())
 
-  @spec parse_int_literal(String.t()) :: Types.ir_expr()
+  @spec parse_int_literal(String.t()) :: {:ok, integer()} | :error
 
   defp parse_int_literal(str) when is_binary(str) do
     case Integer.parse(str) do
@@ -289,7 +289,7 @@ defmodule Elmc.Backend.CCodegen.Emit do
     end
   end
 
-  @spec fixed_magic_number_lines() :: Types.ir_expr()
+  @spec fixed_magic_number_lines() :: [{String.t(), String.t()}]
 
   defp fixed_magic_number_lines do
     [

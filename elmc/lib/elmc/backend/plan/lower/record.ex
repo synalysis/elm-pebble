@@ -67,7 +67,14 @@ defmodule Elmc.Backend.Plan.Lower.Record do
     compile_record_field_get(base_reg, field, ctx, b, base_expr, opts)
   end
 
-  @spec compile_record_field_get(Types.ir_expr() | integer(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.expr(), keyword()) :: Types.ir_expr()
+  @spec compile_record_field_get(
+          Types.reg(),
+          String.t(),
+          Context.t(),
+          Builder.t(),
+          Types.expr() | nil,
+          keyword()
+        ) :: Types.compile_reg_result()
 
   defp compile_record_field_get(base_reg, field, ctx, b, base_expr),
     do: compile_record_field_get(base_reg, field, ctx, b, base_expr, [])
@@ -103,7 +110,7 @@ defmodule Elmc.Backend.Plan.Lower.Record do
     {:ok, reg, b2}
   end
 
-  @spec resolve_base(map() | String.t() | term(), Types.ir_expr() | term(), Types.ir_expr() | term()) :: Types.ir_expr()
+  @spec resolve_base(Types.expr() | String.t(), Context.t(), Builder.t()) :: Types.compile_result()
 
   defp resolve_base(%{op: :var, name: name}, ctx, b) when is_binary(name),
     do: Expr.compile(%{op: :var, name: name}, ctx, b)
@@ -114,7 +121,13 @@ defmodule Elmc.Backend.Plan.Lower.Record do
 
   defp resolve_base(_, _, _), do: :unsupported
 
-  @spec apply_field_updates(term(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.expr()) :: Types.ir_expr()
+  @spec apply_field_updates(
+          Types.ir_record_fields(),
+          Context.t(),
+          Builder.t(),
+          Types.reg() | Types.result_slot(),
+          Types.expr()
+        ) :: {:ok, Builder.t(), Types.reg() | Types.result_slot()} | :unsupported
 
   defp apply_field_updates([field | rest], ctx, b, current_reg, base_expr) do
     field_name = Map.get(field, :field) || Map.get(field, :name)
@@ -135,7 +148,14 @@ defmodule Elmc.Backend.Plan.Lower.Record do
 
   defp apply_field_updates([], _ctx, b, current_reg, _base_expr), do: {:ok, b, current_reg}
 
-  @spec cow_drop_update(Types.ir_expr(), String.t(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.expr()) :: Types.ir_expr()
+  @spec cow_drop_update(
+          Types.reg(),
+          String.t(),
+          Types.reg(),
+          Context.t(),
+          Builder.t(),
+          Types.expr()
+        ) :: Types.compile_result()
 
   defp cow_drop_update(base_reg, field_name, value_reg, ctx, b, base_expr)
        when is_binary(field_name) do
@@ -180,8 +200,7 @@ defmodule Elmc.Backend.Plan.Lower.Record do
 
     b4 = if wrap_catch?, do: Builder.catch_end(b3), else: b3
 
-    result = if is_integer(dest), do: dest, else: dest
-    {:ok, result, b4}
+    {:ok, dest, b4}
   end
 
   @doc false
@@ -225,7 +244,7 @@ defmodule Elmc.Backend.Plan.Lower.Record do
   # `{axis, radius, length}`, and padding `axis = 0` at index 0 makes centeredOn
   # read int-0 as radius → zero preScale / EmptyMesh fallout on HeroScene.
   # Middle pads (Arrow.meander) remain allowed when they are the unique +1 slot.
-  @spec unique_superset_shape(list()) :: Types.ir_expr()
+  @spec unique_superset_shape([String.t()]) :: {:ok, [String.t()]} | :none
 
   defp unique_superset_shape(names) when is_list(names) do
     name_set = MapSet.new(Enum.map(names, &to_string/1))
@@ -255,7 +274,7 @@ defmodule Elmc.Backend.Plan.Lower.Record do
     end
   end
 
-  @spec record_shapes_for_superset() :: Types.ir_expr()
+  @spec record_shapes_for_superset() :: [[String.t()]]
 
   defp record_shapes_for_superset do
     Process.get(:elmc_record_alias_shapes, %{})
@@ -264,7 +283,7 @@ defmodule Elmc.Backend.Plan.Lower.Record do
     |> Enum.filter(&(is_list(&1) and &1 != []))
   end
 
-  @spec expand_fields_to_shape(list(), list()) :: Types.ir_expr()
+  @spec expand_fields_to_shape(Types.ir_record_fields(), [String.t()]) :: Types.ir_record_fields()
 
   defp expand_fields_to_shape(fields, shape) when is_list(fields) and is_list(shape) do
     by_name = Map.new(fields, fn f -> {to_string(field_name(f)), f} end)
@@ -300,7 +319,7 @@ defmodule Elmc.Backend.Plan.Lower.Record do
     end
   end
 
-  @spec field_type_from_access(String.t(), Types.ir_expr(), Types.expr()) :: Types.ir_expr()
+  @spec field_type_from_access(String.t(), Context.t() | nil, Types.expr() | nil) :: String.t() | nil
 
   defp field_type_from_access(field_name, ctx, base_expr) when is_binary(field_name) do
     case resolve_field_type_key(field_name, ctx, base_expr) do
@@ -350,7 +369,7 @@ defmodule Elmc.Backend.Plan.Lower.Record do
     end
   end
 
-  @spec field_name(Types.ir_expr()) :: Types.ir_expr()
+  @spec field_name(map()) :: String.t() | nil
 
   defp field_name(field), do: Map.get(field, :name) || Map.get(field, :field)
 
@@ -358,7 +377,8 @@ defmodule Elmc.Backend.Plan.Lower.Record do
   # literals in IR. When lowering `Shared.template.view`, the base expression is the
   # zero-arg call — resolve field indices in the same order as record_new
   # (`canonicalize_literal_fields`), not raw IR source order.
-  @spec field_index_from_callee_record_literal(String.t(), Types.ir_expr(), Types.expr()) :: Types.ir_expr()
+  @spec field_index_from_callee_record_literal(String.t(), Context.t() | nil, Types.expr() | nil) ::
+          integer() | nil
 
   defp field_index_from_callee_record_literal(field_name, ctx, base_expr)
        when is_binary(field_name) do
@@ -373,7 +393,8 @@ defmodule Elmc.Backend.Plan.Lower.Record do
     end
   end
 
-  @spec callee_decl_for_base_expr(map() | term(), Types.ir_expr() | term()) :: Types.ir_expr()
+  @spec callee_decl_for_base_expr(Types.expr() | map() | term(), Context.t() | nil) ::
+          Types.decl() | nil
 
   defp callee_decl_for_base_expr(%{op: :field_access, arg: inner}, ctx) when is_map(inner) do
     callee_decl_for_base_expr(inner, ctx)
@@ -411,7 +432,8 @@ defmodule Elmc.Backend.Plan.Lower.Record do
   # Top-level bindings like `Route.Index.route : StatelessRoute …` are not record
   # literals in IR, but field access must use the alias record shape (StatefulRoute),
   # not unrelated inline shapes that happen to mention the same field name.
-  @spec field_index_from_binding_decl_type(String.t(), Types.ir_expr(), Types.expr()) :: Types.ir_expr()
+  @spec field_index_from_binding_decl_type(String.t(), Context.t() | nil, Types.expr() | nil) ::
+          integer() | nil
 
   defp field_index_from_binding_decl_type(field_name, ctx, base_expr) when is_binary(field_name) do
     case callee_decl_for_base_expr(base_expr, ctx) do
@@ -435,7 +457,7 @@ defmodule Elmc.Backend.Plan.Lower.Record do
     end
   end
 
-  @spec record_shape_key_from_decl_type(String.t(), Types.ir_expr()) :: Types.ir_expr()
+  @spec record_shape_key_from_decl_type(String.t(), Context.t() | nil) :: {String.t(), String.t()} | nil
 
   defp record_shape_key_from_decl_type(type, ctx) when is_binary(type) do
     shapes = Process.get(:elmc_record_alias_shapes, %{})
@@ -454,7 +476,7 @@ defmodule Elmc.Backend.Plan.Lower.Record do
     end
   end
 
-  @spec record_shape_key_or_synonym(term(), Types.ir_expr()) :: Types.ir_expr()
+  @spec record_shape_key_or_synonym({String.t() | nil, String.t()}, map()) :: {String.t(), String.t()} | nil
 
   defp record_shape_key_or_synonym({mod, name}, shapes) when is_binary(name) do
     key = if is_binary(mod), do: {mod, name}, else: shape_key_by_name(shapes, name, %{module: mod})
@@ -474,7 +496,7 @@ defmodule Elmc.Backend.Plan.Lower.Record do
     end
   end
 
-  @spec shape_key_by_record_name(map(), String.t()) :: Types.ir_expr()
+  @spec shape_key_by_record_name(map(), String.t()) :: {String.t(), String.t()} | nil
 
   defp shape_key_by_record_name(shapes, record_name) when is_binary(record_name) and is_map(shapes) do
     case Enum.filter(shapes, fn {{_mod, name}, _fields} -> name == record_name end) do
@@ -484,7 +506,7 @@ defmodule Elmc.Backend.Plan.Lower.Record do
     end
   end
 
-  @spec callee_decl_for_qualified_target(String.t(), Types.ir_expr()) :: Types.ir_expr()
+  @spec callee_decl_for_qualified_target(String.t(), Context.t() | nil) :: Types.decl() | nil
 
   defp callee_decl_for_qualified_target(target, ctx) when is_binary(target) do
     case Host.split_qualified_function_target(Host.normalize_special_target(target)) do
@@ -497,7 +519,7 @@ defmodule Elmc.Backend.Plan.Lower.Record do
     end
   end
 
-  @spec canonical_shape_for_names(list(), String.t()) :: Types.ir_expr()
+  @spec canonical_shape_for_names([String.t()], String.t() | nil) :: [String.t()] | nil
 
   defp canonical_shape_for_names(field_names, module) when is_list(field_names) do
     normalized = field_names |> Enum.map(&to_string/1) |> Enum.sort()
@@ -536,7 +558,7 @@ defmodule Elmc.Backend.Plan.Lower.Record do
     end
   end
 
-  @spec field_index_ref(String.t(), Types.ir_expr(), Types.expr()) :: Types.ir_expr()
+  @spec field_index_ref(String.t(), Context.t() | nil, Types.expr() | nil) :: String.t()
 
   defp field_index_ref(field_name, ctx, base_expr) when is_binary(field_name) do
     case field_index_from_mjs_to_record(field_name, base_expr) do
@@ -570,7 +592,7 @@ defmodule Elmc.Backend.Plan.Lower.Record do
   # alphabetical order (see elmc-wasm-runtime/host/mjs_runtime.js). Without this
   # shape, `Matrix4.toRecord m |> .m44` fell back to index 0 (m11) and Scene3d
   # treated perspective cameras as orthographic (solid-white lighting).
-  @spec field_index_from_mjs_to_record(String.t(), Types.expr()) :: Types.ir_expr()
+  @spec field_index_from_mjs_to_record(String.t(), Types.expr() | nil) :: integer() | nil
 
   defp field_index_from_mjs_to_record(field_name, base_expr) when is_binary(field_name) do
     case mjs_to_record_fields(base_expr) do
@@ -582,7 +604,7 @@ defmodule Elmc.Backend.Plan.Lower.Record do
     end
   end
 
-  @spec mjs_to_record_fields(map() | term()) :: Types.ir_expr()
+  @spec mjs_to_record_fields(Types.expr() | map() | term()) :: [String.t()] | nil
 
   defp mjs_to_record_fields(%{op: :qualified_call, target: target}) when is_binary(target),
     do: mjs_to_record_fields_for_target(target)
@@ -599,7 +621,7 @@ defmodule Elmc.Backend.Plan.Lower.Record do
 
   defp mjs_to_record_fields(_), do: nil
 
-  @spec mjs_to_record_fields_for_target(String.t()) :: Types.ir_expr()
+  @spec mjs_to_record_fields_for_target(String.t()) :: [String.t()] | nil
 
   defp mjs_to_record_fields_for_target(target) when is_binary(target) do
     short = target |> String.split(".") |> List.last()
@@ -634,13 +656,14 @@ defmodule Elmc.Backend.Plan.Lower.Record do
     end
   end
 
-  @spec mat4_to_record_fields() :: Types.ir_expr()
+  @spec mat4_to_record_fields() :: [String.t()]
 
   defp mat4_to_record_fields do
     for i <- 1..4, j <- 1..4, do: "m#{i}#{j}"
   end
 
-  @spec param_or_typed_var_field_index(String.t(), Types.ir_expr(), Types.expr()) :: Types.ir_expr()
+  @spec param_or_typed_var_field_index(String.t(), Context.t() | nil, Types.expr()) ::
+          {{String.t(), String.t()} | nil, integer()} | nil
 
   defp param_or_typed_var_field_index(field_name, ctx, base_expr) when is_binary(field_name) do
     if param_var_base?(base_expr, ctx) do
@@ -679,7 +702,7 @@ defmodule Elmc.Backend.Plan.Lower.Record do
     end
   end
 
-  @spec extensible_param_var?(Types.expr(), Types.ir_expr()) :: boolean()
+  @spec extensible_param_var?(Types.expr(), Context.t() | nil) :: boolean()
 
   defp extensible_param_var?(base_expr, ctx) do
     case base_expr do
@@ -698,7 +721,13 @@ defmodule Elmc.Backend.Plan.Lower.Record do
     end
   end
 
-  @spec reconcile_param_field_indices(pos_integer(), term(), String.t(), Types.ir_expr(), Types.expr()) :: Types.ir_expr()
+  @spec reconcile_param_field_indices(
+          term(),
+          {{String.t(), String.t()}, integer()},
+          String.t(),
+          Context.t() | nil,
+          Types.expr()
+        ) :: term()
 
   defp reconcile_param_field_indices(inline, {key, alias_idx} = alias_result, field_name, ctx, base_expr)
        when is_integer(alias_idx) do
@@ -721,7 +750,13 @@ defmodule Elmc.Backend.Plan.Lower.Record do
     end
   end
 
-  @spec prefer_alias_field_index?(String.t() | term(), Types.ir_expr() | term(), map() | term(), String.t() | term(), Types.ir_expr() | term()) :: boolean()
+  @spec prefer_alias_field_index?(
+          String.t() | term(),
+          Context.t() | nil | term(),
+          Types.expr() | map() | term(),
+          {String.t(), String.t()} | term(),
+          integer() | term()
+        ) :: boolean()
 
   defp prefer_alias_field_index?(field_name, ctx, %{op: :var, name: param}, key, _alias_idx)
        when is_binary(field_name) and is_binary(param) do
@@ -772,7 +807,11 @@ defmodule Elmc.Backend.Plan.Lower.Record do
 
   defp prefer_alias_field_index?(_, _, _, _, _), do: false
 
-  @spec param_typed_as_alias_key?(Types.ir_expr() | term(), Types.ir_expr() | term(), String.t() | term()) :: boolean()
+  @spec param_typed_as_alias_key?(
+          Context.t() | nil | term(),
+          String.t() | term(),
+          {String.t(), String.t()} | term()
+        ) :: boolean()
 
   defp param_typed_as_alias_key?(ctx, param, key)
        when is_binary(param) and is_tuple(key) do
@@ -787,7 +826,11 @@ defmodule Elmc.Backend.Plan.Lower.Record do
 
   defp param_typed_as_alias_key?(_, _, _), do: false
 
-  @spec alias_field_index_for_param(String.t() | term(), Types.ir_expr() | term(), map() | term()) :: Types.ir_expr()
+  @spec alias_field_index_for_param(
+          String.t() | term(),
+          Context.t() | nil | term(),
+          Types.expr() | map() | term()
+        ) :: {{String.t(), String.t()}, integer()} | :error
 
   defp alias_field_index_for_param(field_name, ctx, %{op: :var, name: param_name})
        when is_binary(field_name) and is_binary(param_name) do
@@ -852,7 +895,7 @@ defmodule Elmc.Backend.Plan.Lower.Record do
 
   defp alias_field_index_for_param(_, _, _), do: :error
 
-  @spec min_alias_field_index(String.t(), Types.ir_expr()) :: Types.ir_expr()
+  @spec min_alias_field_index(String.t(), map()) :: {{String.t(), String.t()}, integer()} | :error
 
   defp min_alias_field_index(field_name, shapes) when is_binary(field_name) do
     case min_field_index_among_shapes(field_name, shapes) do
@@ -861,7 +904,7 @@ defmodule Elmc.Backend.Plan.Lower.Record do
     end
   end
 
-  @spec field_index_ref_from_type(String.t(), Types.ir_expr(), Types.expr()) :: Types.ir_expr()
+  @spec field_index_ref_from_type(String.t(), Context.t() | nil, Types.expr() | nil) :: String.t()
 
   defp field_index_ref_from_type(field_name, ctx, base_expr) when is_binary(field_name) do
     case resolve_field_type_key(field_name, ctx, base_expr) do
@@ -875,11 +918,7 @@ defmodule Elmc.Backend.Plan.Lower.Record do
         shapes = Process.get(:elmc_record_alias_shapes, %{})
         env = compile_env(ctx)
 
-        container_type =
-          case base_expr do
-            expr when is_map(expr) -> CExpr.record_container_type_for_expr(expr, env)
-            _ -> nil
-          end
+        container_type = CExpr.record_container_type_for_expr(base_expr, env)
 
         cond do
           is_binary(container_type) and extensible_record_type?(container_type) ->
@@ -887,7 +926,7 @@ defmodule Elmc.Backend.Plan.Lower.Record do
               {key, idx} when is_integer(idx) ->
                 RecordFieldMacros.format_index(idx, field_name, key)
 
-              _ ->
+              nil ->
                 field_index_macro_fallback(field_name, ctx, base_expr)
             end
 
@@ -896,7 +935,7 @@ defmodule Elmc.Backend.Plan.Lower.Record do
               {key, idx} when is_integer(idx) ->
                 RecordFieldMacros.format_index(idx, field_name, key)
 
-              _ ->
+              nil ->
                 case ambiguous_field_candidates(field_name, shapes) do
                   [] ->
                     field_index_macro_fallback(field_name, ctx, base_expr)
@@ -905,20 +944,15 @@ defmodule Elmc.Backend.Plan.Lower.Record do
                     RecordFieldMacros.format_index(idx, field_name, key)
 
                   many ->
-                    case pick_ambiguous_field_type_key(many, ctx, base_expr) do
-                      {key, idx} when is_integer(idx) ->
-                        RecordFieldMacros.format_index(idx, field_name, key)
-
-                      _ ->
-                        field_index_macro_fallback(field_name, ctx, base_expr)
-                    end
+                    {key, idx} = pick_ambiguous_field_type_key(many, ctx, base_expr)
+                    RecordFieldMacros.format_index(idx, field_name, key)
                 end
             end
         end
     end
   end
 
-  @spec field_index_macro_fallback(String.t(), Types.ir_expr(), Types.expr()) :: Types.ir_expr()
+  @spec field_index_macro_fallback(String.t(), Context.t() | nil, Types.expr() | nil) :: String.t()
 
   defp field_index_macro_fallback(field_name, ctx, base_expr) when is_binary(field_name) do
     shapes = Process.get(:elmc_record_alias_shapes, %{})
@@ -931,17 +965,12 @@ defmodule Elmc.Backend.Plan.Lower.Record do
         "#{idx} /* #{field_name} */"
 
       many ->
-        case pick_ambiguous_field_type_key(many, ctx, base_expr) do
-          {key, idx} when is_integer(idx) ->
-            RecordFieldMacros.format_index(idx, field_name, key)
-
-          _ ->
-            numeric_field_index_fallback(field_name)
-        end
+        {key, idx} = pick_ambiguous_field_type_key(many, ctx, base_expr)
+        RecordFieldMacros.format_index(idx, field_name, key)
     end
   end
 
-  @spec numeric_field_index_fallback(String.t()) :: Types.ir_expr()
+  @spec numeric_field_index_fallback(String.t()) :: String.t()
 
   defp numeric_field_index_fallback(field_name) when is_binary(field_name) do
     case Process.get(:elmc_record_field_macros, %{}) do
@@ -958,7 +987,8 @@ defmodule Elmc.Backend.Plan.Lower.Record do
     end
   end
 
-  @spec resolve_field_type_key(String.t(), Types.ir_expr(), Types.expr()) :: Types.ir_expr()
+  @spec resolve_field_type_key(String.t(), Context.t() | nil, Types.expr() | nil) ::
+          {:inline, integer()} | {{String.t(), String.t()}, integer()} | nil
 
   defp resolve_field_type_key(field_name, ctx, base_expr) when is_binary(field_name) do
     env = compile_env(ctx)
@@ -983,7 +1013,8 @@ defmodule Elmc.Backend.Plan.Lower.Record do
     end
   end
 
-  @spec resolve_field_type_key_concrete(String.t(), Types.ir_expr(), Types.expr()) :: Types.ir_expr()
+  @spec resolve_field_type_key_concrete(String.t(), Context.t() | nil, Types.expr() | nil) ::
+          {:inline, integer()} | {{String.t(), String.t()}, integer()} | nil
 
   defp resolve_field_type_key_concrete(field_name, ctx, base_expr) when is_binary(field_name) do
     case inline_field_index_from_base(field_name, ctx, base_expr) do
@@ -1001,14 +1032,15 @@ defmodule Elmc.Backend.Plan.Lower.Record do
     end
   end
 
-  @spec inline_field_index_from_container_type(String.t(), Types.ir_expr(), Types.expr()) :: Types.ir_expr()
+  @spec inline_field_index_from_container_type(String.t(), Context.t() | nil, Types.expr()) ::
+          {:inline, integer()} | :error
 
   defp inline_field_index_from_container_type(field_name, ctx, base_expr)
        when is_binary(field_name) do
     env = compile_env(ctx)
 
     with type when is_binary(type) <- CExpr.record_container_type_for_expr(base_expr, env),
-         false <- extensible_record_type?(type),
+         true <- not extensible_record_type?(type),
          true <- TypeSignature.record_type?(type),
          declared_fields when is_list(declared_fields) and declared_fields != [] <-
            TypeSignature.record_field_names(type),
@@ -1017,7 +1049,7 @@ defmodule Elmc.Backend.Plan.Lower.Record do
     else
       _ ->
         with type when is_binary(type) <- CExpr.record_container_type_for_expr(base_expr, env),
-             false <- extensible_record_type?(type),
+             true <- not extensible_record_type?(type),
              true <- TypeSignature.record_type?(type),
              fields when is_list(fields) and fields != [] <- elm_inline_record_field_names(type),
              idx when is_integer(idx) <- Enum.find_index(fields, &(&1 == field_name)) do
@@ -1033,13 +1065,13 @@ defmodule Elmc.Backend.Plan.Lower.Record do
   defp extensible_record_type?(type) when is_binary(type), do: String.contains?(type, "|")
 
   # Elm stores record fields in alphabetical order at runtime.
-  @spec elm_inline_record_field_names(String.t()) :: Types.ir_expr()
+  @spec elm_inline_record_field_names(String.t()) :: [String.t()]
 
   defp elm_inline_record_field_names(type) when is_binary(type) do
     type |> TypeSignature.record_field_names() |> Enum.sort()
   end
 
-  @spec inline_literal_shapes_field_index(String.t(), Types.decl()) :: Types.ir_expr()
+  @spec inline_literal_shapes_field_index(String.t(), [String.t()]) :: integer() | nil
 
   defp inline_literal_shapes_field_index(field_name, declared_fields)
        when is_binary(field_name) and is_list(declared_fields) do
@@ -1061,7 +1093,8 @@ defmodule Elmc.Backend.Plan.Lower.Record do
     end
   end
 
-  @spec inline_field_index_from_base(String.t(), Types.ir_expr(), map() | Types.expr()) :: Types.ir_expr()
+  @spec inline_field_index_from_base(String.t(), Context.t() | nil, Types.expr() | map()) ::
+          {:inline, integer()} | {{String.t(), String.t()}, integer()} | :error
 
   defp inline_field_index_from_base(field_name, ctx, %{op: :var, name: name})
        when is_binary(field_name) and is_binary(name) do
@@ -1081,7 +1114,8 @@ defmodule Elmc.Backend.Plan.Lower.Record do
 
   defp inline_field_index_from_base(_field_name, _ctx, _base_expr), do: :error
 
-  @spec inline_field_index_from_concrete_var(String.t(), Types.ir_expr(), String.t()) :: Types.ir_expr()
+  @spec inline_field_index_from_concrete_var(String.t(), Context.t() | nil, String.t()) ::
+          {:inline, integer()} | {{String.t(), String.t()}, integer()} | :error
 
   defp inline_field_index_from_concrete_var(field_name, ctx, name)
        when is_binary(field_name) and is_binary(name) do
@@ -1104,7 +1138,8 @@ defmodule Elmc.Backend.Plan.Lower.Record do
     end
   end
 
-  @spec inline_field_index_from_declared_param_type(String.t(), Types.ir_expr(), String.t()) :: Types.ir_expr()
+  @spec inline_field_index_from_declared_param_type(String.t(), Context.t() | nil, String.t()) ::
+          {:inline, integer()} | {{String.t(), String.t()}, integer()} | :error
 
   defp inline_field_index_from_declared_param_type(field_name, ctx, name)
        when is_binary(field_name) and is_binary(name) do
@@ -1119,7 +1154,7 @@ defmodule Elmc.Backend.Plan.Lower.Record do
     else
       _ ->
         with type when is_binary(type) <- Map.get(env, :__var_types__, %{}) |> Map.get(name),
-             false <- extensible_record_type?(type),
+             true <- not extensible_record_type?(type),
              declared_fields when is_list(declared_fields) and declared_fields != [] <-
                TypeSignature.record_field_names(type),
              idx when is_integer(idx) <-
@@ -1128,7 +1163,7 @@ defmodule Elmc.Backend.Plan.Lower.Record do
         else
           _ ->
             with type when is_binary(type) <- Map.get(env, :__var_types__, %{}) |> Map.get(name),
-                 false <- extensible_record_type?(type),
+                 true <- not extensible_record_type?(type),
                  fields when is_list(fields) and fields != [] <- elm_inline_record_field_names(type),
                  idx when is_integer(idx) <- Enum.find_index(fields, &(&1 == field_name)) do
               {:inline, idx}
@@ -1139,7 +1174,8 @@ defmodule Elmc.Backend.Plan.Lower.Record do
     end
   end
 
-  @spec inline_field_index_from_inferred_param(String.t(), Types.ir_expr(), String.t()) :: Types.ir_expr()
+  @spec inline_field_index_from_inferred_param(String.t(), Context.t() | nil, String.t()) ::
+          {:inline, integer()} | {{String.t(), String.t()}, integer()} | :error
 
   defp inline_field_index_from_inferred_param(field_name, ctx, name)
        when is_binary(field_name) and is_binary(name) do
@@ -1229,7 +1265,12 @@ defmodule Elmc.Backend.Plan.Lower.Record do
   # When the param's declared type is an anonymous record whose field *set* equals
   # the inferred accesses, use that layout (alphabetical). Do not let a larger
   # same-module alias (StatefulRoute for `{view}`) steal the index.
-  @spec exact_declared_inline_record_field_index(String.t(), Types.ir_expr(), Types.ir_expr(), String.t()) :: Types.ir_expr()
+  @spec exact_declared_inline_record_field_index(
+          String.t(),
+          [String.t()],
+          Context.t() | nil,
+          String.t()
+        ) :: {:inline, integer()} | :error
 
   defp exact_declared_inline_record_field_index(field_name, inferred_fields, ctx, name)
        when is_binary(field_name) and is_list(inferred_fields) and is_binary(name) do
@@ -1238,12 +1279,12 @@ defmodule Elmc.Backend.Plan.Lower.Record do
     shapes = Process.get(:elmc_record_alias_shapes, %{})
 
     with type when is_binary(type) <- Map.get(env, :__var_types__, %{}) |> Map.get(name),
-         false <- extensible_record_type?(type),
+         true <- not extensible_record_type?(type),
          true <- TypeSignature.record_type?(type),
          # Named aliases registered in shapes (`Model`, `StatefulRoute`) keep
          # proper-superset recovery. `record_key_from_type` invents synthetic keys
          # for `{view : …}` strings, so only treat as named when the key exists.
-         false <- named_registered_record_alias?(type, ctx, shapes),
+         true <- not named_registered_record_alias?(type, ctx, shapes),
          declared when is_list(declared) and declared != [] <- elm_inline_record_field_names(type),
          true <- MapSet.equal?(inferred_set, MapSet.new(declared)),
          idx when is_integer(idx) <- Enum.find_index(declared, &(&1 == field_name)) do
@@ -1253,7 +1294,7 @@ defmodule Elmc.Backend.Plan.Lower.Record do
     end
   end
 
-  @spec named_registered_record_alias?(Types.ir_expr(), Types.ir_expr(), Types.ir_expr()) :: boolean()
+  @spec named_registered_record_alias?(String.t(), Context.t() | nil, map()) :: boolean()
 
   defp named_registered_record_alias?(type, ctx, shapes)
        when is_binary(type) and is_map(shapes) do
@@ -1273,7 +1314,8 @@ defmodule Elmc.Backend.Plan.Lower.Record do
   # 2-field vertex) and shreds cylinder caps / tangram faces. Prefer the exact
   # `VertexWithNormal` layout instead. Platform.Model `{pageData, url}` has no exact
   # match, so same-module supersets still recover declaration indices there.
-  @spec same_module_proper_superset_field_index(String.t(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+  @spec same_module_proper_superset_field_index(String.t(), [String.t()], Context.t() | nil) ::
+          {{String.t(), String.t()}, integer()} | :error
 
   defp same_module_proper_superset_field_index(field_name, inferred_fields, ctx)
        when is_binary(field_name) and is_list(inferred_fields) do
@@ -1330,7 +1372,12 @@ defmodule Elmc.Backend.Plan.Lower.Record do
   # (`{init, view, update}` but only `init`/`view` accessed), use that type's
   # alphabetical indices. Named aliases use same_module_proper_superset instead
   # (Platform.Model keeps declaration order).
-  @spec declared_param_type_proper_superset_field_index(String.t(), Types.ir_expr(), Types.ir_expr(), String.t()) :: Types.ir_expr()
+  @spec declared_param_type_proper_superset_field_index(
+          String.t(),
+          [String.t()],
+          Context.t() | nil,
+          String.t()
+        ) :: {:inline, integer()} | :error
 
   defp declared_param_type_proper_superset_field_index(field_name, inferred_fields, ctx, name)
        when is_binary(field_name) and is_list(inferred_fields) and is_binary(name) do
@@ -1338,7 +1385,7 @@ defmodule Elmc.Backend.Plan.Lower.Record do
     inferred_set = MapSet.new(inferred_fields, &to_string/1)
 
     with type when is_binary(type) <- Map.get(env, :__var_types__, %{}) |> Map.get(name),
-         false <- extensible_record_type?(type),
+         true <- not extensible_record_type?(type),
          declared when is_list(declared) and declared != [] <- elm_inline_record_field_names(type),
          declared_set = MapSet.new(declared),
          true <- MapSet.subset?(inferred_set, declared_set),
@@ -1352,7 +1399,8 @@ defmodule Elmc.Backend.Plan.Lower.Record do
 
   # Anonymous records are stored alphabetically; access-order inference alone is
   # wrong for `scene.lights` vs `scene.entities` when both are inferred.
-  @spec alphabetical_inferred_field_index(String.t(), Types.ir_expr()) :: Types.ir_expr()
+  @spec alphabetical_inferred_field_index(String.t(), [String.t()]) ::
+          {:inline, integer()} | :error
 
   defp alphabetical_inferred_field_index(field_name, list)
        when is_binary(field_name) and is_list(list) do
@@ -1364,7 +1412,8 @@ defmodule Elmc.Backend.Plan.Lower.Record do
     end
   end
 
-  @spec shape_key_for_inferred_fields(list() | term(), Types.ir_expr() | term()) :: Types.ir_expr()
+  @spec shape_key_for_inferred_fields(list() | term(), Context.t() | nil | term()) ::
+          {{String.t(), String.t()}, [String.t()]} | nil
 
   defp shape_key_for_inferred_fields(inferred_fields, ctx) when is_list(inferred_fields) do
     inferred_set = MapSet.new(inferred_fields, &to_string/1)
@@ -1415,7 +1464,6 @@ defmodule Elmc.Backend.Plan.Lower.Record do
             case picked do
               {key, shape} when is_list(shape) -> {key, shape}
               key when is_tuple(key) -> {key, Map.get(shapes, key)}
-              _ -> nil
             end
         end
     end
@@ -1423,7 +1471,10 @@ defmodule Elmc.Backend.Plan.Lower.Record do
 
   defp shape_key_for_inferred_fields(_, _), do: nil
 
-  @spec pick_most_specific_shape_candidate(list(), Types.ir_expr()) :: Types.ir_expr()
+  @spec pick_most_specific_shape_candidate(
+          [{{String.t(), String.t()}, [String.t()]}],
+          map()
+        ) :: {String.t(), String.t()}
 
   defp pick_most_specific_shape_candidate(candidates, inferred_set) when is_list(candidates) do
     exact =
@@ -1448,7 +1499,8 @@ defmodule Elmc.Backend.Plan.Lower.Record do
     fields |> Enum.map(&to_string/1) |> Enum.sort()
   end
 
-  @spec resolve_field_type_key_from_shapes(String.t(), Types.ir_expr(), Types.expr()) :: Types.ir_expr()
+  @spec resolve_field_type_key_from_shapes(String.t(), Context.t() | nil, Types.expr() | nil) ::
+          {{String.t(), String.t()}, integer()} | {nil, integer()} | nil
 
   defp resolve_field_type_key_from_shapes(field_name, ctx, base_expr) when is_binary(field_name) do
     shapes = Process.get(:elmc_record_alias_shapes, %{})
@@ -1471,7 +1523,8 @@ defmodule Elmc.Backend.Plan.Lower.Record do
     end
   end
 
-  @spec ambiguous_field_type_key(String.t(), Types.ir_expr(), Types.ir_expr(), Types.expr()) :: Types.ir_expr()
+  @spec ambiguous_field_type_key(String.t(), Context.t() | nil, map(), Types.expr() | nil) ::
+          {{String.t(), String.t()} | nil, integer()} | nil
 
   defp ambiguous_field_type_key(field_name, ctx, shapes, base_expr) do
     case prefer_inline_shape_field_index(field_name, shapes, ctx, base_expr) do
@@ -1483,7 +1536,8 @@ defmodule Elmc.Backend.Plan.Lower.Record do
     end
   end
 
-  @spec prefer_inline_shape_field_index(String.t(), Types.ir_expr(), Types.ir_expr(), Types.expr()) :: Types.ir_expr()
+  @spec prefer_inline_shape_field_index(String.t(), map(), Context.t() | nil, Types.expr() | nil) ::
+          {{String.t(), String.t()} | nil, integer()} | nil
 
   defp prefer_inline_shape_field_index(field_name, shapes, ctx, base_expr)
        when is_binary(field_name) do
@@ -1526,7 +1580,7 @@ defmodule Elmc.Backend.Plan.Lower.Record do
     end
   end
 
-  @spec param_var_base?(map() | term(), Types.ir_expr() | term()) :: boolean()
+  @spec param_var_base?(Types.expr() | map() | term(), Context.t() | nil | term()) :: boolean()
 
   defp param_var_base?(%{op: :var, name: name}, ctx) when is_binary(name) do
     params = (ctx && Map.get(ctx, :params)) || []
@@ -1538,7 +1592,7 @@ defmodule Elmc.Backend.Plan.Lower.Record do
 
   defp param_var_base?(_, _), do: false
 
-  @spec prefer_inline_shape_when_container_unknown(String.t(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+  @spec prefer_inline_shape_when_container_unknown(String.t(), map(), map()) :: {{String.t(), String.t()}, integer()} | nil
 
   defp prefer_inline_shape_when_container_unknown(field_name, shapes, inline_shapes)
        when is_binary(field_name) and is_map(shapes) and is_map(inline_shapes) do
@@ -1650,7 +1704,12 @@ defmodule Elmc.Backend.Plan.Lower.Record do
     end
   end
 
-  @spec ambiguous_field_type_key_from_alias(String.t(), Types.ir_expr(), Types.ir_expr(), Types.expr()) :: Types.ir_expr()
+  @spec ambiguous_field_type_key_from_alias(
+          String.t(),
+          Context.t() | nil,
+          map(),
+          Types.expr() | nil
+        ) :: {{String.t(), String.t()}, integer()} | nil
 
   defp ambiguous_field_type_key_from_alias(field_name, ctx, shapes, base_expr) do
     candidates =
@@ -1679,7 +1738,7 @@ defmodule Elmc.Backend.Plan.Lower.Record do
     end
   end
 
-  @spec pick_ambiguous_field_type_key(list(), Types.ir_expr(), Types.expr()) :: Types.ir_expr()
+  @spec pick_ambiguous_field_type_key([{{String.t(), String.t()}, integer()}], Context.t() | nil, Types.expr() | nil) :: {{String.t(), String.t()}, integer()}
 
   defp pick_ambiguous_field_type_key(many, ctx, _base_expr) when is_list(many) do
     module = ctx && Map.get(ctx, :module)
@@ -1772,14 +1831,14 @@ defmodule Elmc.Backend.Plan.Lower.Record do
     end)
   end
 
-  @spec all_record_shapes() :: Types.ir_expr()
+  @spec all_record_shapes() :: map()
 
   defp all_record_shapes do
     Process.get(:elmc_record_alias_shapes, %{})
     |> Map.merge(Process.get(:elmc_inline_record_literal_shapes, %{}))
   end
 
-  @spec max_field_index_among_shapes(String.t(), Types.ir_expr()) :: Types.ir_expr()
+  @spec max_field_index_among_shapes(String.t(), map()) :: {{String.t(), String.t()}, integer()} | nil
 
   defp max_field_index_among_shapes(field_name, shapes) when is_binary(field_name) do
     shape_field_index_candidates(field_name, shapes)
@@ -1799,7 +1858,7 @@ defmodule Elmc.Backend.Plan.Lower.Record do
   # init as Index/ErrorPage while view rewrites field 0 and reports Wasm
   # (Model mismatch). Prefer an exact field-set match, then min-length for
   # multi-field rows (Extent), else the highest path index (Url/PageUrl @3).
-  @spec field_index_among_extensible_shapes(String.t(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+  @spec field_index_among_extensible_shapes(String.t(), String.t(), map()) :: {{String.t(), String.t()}, integer()} | nil
 
   defp field_index_among_extensible_shapes(field_name, extensible_type, shapes)
        when is_binary(field_name) and is_binary(extensible_type) and is_map(shapes) do
@@ -1836,7 +1895,11 @@ defmodule Elmc.Backend.Plan.Lower.Record do
     end
   end
 
-  @spec pick_extensible_shape_candidate(Types.ir_expr(), integer(), String.t()) :: Types.ir_expr()
+  @spec pick_extensible_shape_candidate(
+          [{{String.t(), String.t()}, [String.t()]}],
+          [String.t()],
+          String.t()
+        ) :: {{String.t(), String.t()}, [String.t()]}
 
   defp pick_extensible_shape_candidate(candidates, known, field_name) do
     known_set = MapSet.new(known)
@@ -1869,7 +1932,7 @@ defmodule Elmc.Backend.Plan.Lower.Record do
     end
   end
 
-  @spec min_field_index_among_shapes(String.t(), Types.ir_expr()) :: Types.ir_expr()
+  @spec min_field_index_among_shapes(String.t(), map()) :: {{String.t(), String.t()}, integer()} | nil
 
   defp min_field_index_among_shapes(field_name, shapes) when is_binary(field_name) do
     shape_field_index_candidates(field_name, shapes)
@@ -1879,13 +1942,13 @@ defmodule Elmc.Backend.Plan.Lower.Record do
     end
   end
 
-  @spec ambiguous_field_candidates(String.t(), Types.ir_expr()) :: Types.ir_expr()
+  @spec ambiguous_field_candidates(String.t(), map()) :: [{{String.t(), String.t()}, integer()}]
 
   defp ambiguous_field_candidates(field_name, shapes) when is_binary(field_name) do
     shape_field_index_candidates(field_name, shapes)
   end
 
-  @spec shape_field_index_candidates(String.t(), Types.ir_expr()) :: Types.ir_expr()
+  @spec shape_field_index_candidates(String.t(), map()) :: [{{String.t(), String.t()}, integer()}]
 
   defp shape_field_index_candidates(field_name, shapes) when is_binary(field_name) do
     shapes
@@ -1894,7 +1957,7 @@ defmodule Elmc.Backend.Plan.Lower.Record do
     |> Enum.filter(fn {_key, idx} -> is_integer(idx) end)
   end
 
-  @spec container_record_key(Types.expr(), Types.ir_expr()) :: Types.ir_expr()
+  @spec container_record_key(Types.expr(), Context.t() | nil) :: {String.t(), String.t()} | nil
 
   defp container_record_key(base_expr, ctx) do
     env = compile_env(ctx)
@@ -1908,7 +1971,7 @@ defmodule Elmc.Backend.Plan.Lower.Record do
     end
   end
 
-  @spec record_key_from_type(Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+  @spec record_key_from_type(String.t(), Context.t() | nil) :: {String.t(), String.t()} | nil
 
   defp record_key_from_type(type, ctx) do
     normalized = Host.normalize_type_name(type)
@@ -1931,7 +1994,7 @@ defmodule Elmc.Backend.Plan.Lower.Record do
     end
   end
 
-  @spec type_constructor_name(String.t()) :: Types.ir_expr()
+  @spec type_constructor_name(String.t()) :: String.t()
 
   defp type_constructor_name(type) when is_binary(type) do
     case String.split(type, ~r/\s+/, parts: 2) do
@@ -1940,7 +2003,7 @@ defmodule Elmc.Backend.Plan.Lower.Record do
     end
   end
 
-  @spec shape_key_by_name(Types.ir_expr(), String.t(), Types.ir_expr()) :: Types.ir_expr()
+  @spec shape_key_by_name(map(), String.t(), Context.t() | nil | map()) :: {String.t(), String.t()} | nil
 
   defp shape_key_by_name(shapes, name, ctx) when is_binary(name) do
     module = ctx && Map.get(ctx, :module)
@@ -1967,7 +2030,7 @@ defmodule Elmc.Backend.Plan.Lower.Record do
     end
   end
 
-  @spec compile_env(Types.ir_expr()) :: Types.ir_expr()
+  @spec compile_env(Context.t() | nil) :: Types.compile_env()
 
   defp compile_env(ctx) do
     var_types =
@@ -1983,12 +2046,12 @@ defmodule Elmc.Backend.Plan.Lower.Record do
     }
   end
 
-  @spec local_param_types(map() | term()) :: Types.ir_expr()
+  @spec local_param_types(Context.t() | map() | term()) :: map()
 
   defp local_param_types(%Context{local_types: types}) when is_map(types), do: types
   defp local_param_types(_), do: %{}
 
-  @spec param_var_types(Types.ir_expr()) :: Types.ir_expr()
+  @spec param_var_types(Context.t() | nil) :: map()
 
   defp param_var_types(ctx) do
     with %Context{decl_map: decl_map, module: module, params: params, function_name: fun} <- ctx,
@@ -2009,13 +2072,14 @@ defmodule Elmc.Backend.Plan.Lower.Record do
     end
   end
 
-  @spec compile_field_expr(Types.expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+  @spec compile_field_expr(Types.expr(), Context.t(), Builder.t()) :: Types.compile_result()
 
   defp compile_field_expr(expr, ctx, b) do
     Expr.compile(expr, Context.for_branch_arm(ctx), b)
   end
 
-  @spec dest_for_update(Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+  @spec dest_for_update(Context.t(), Builder.t()) ::
+          {Types.reg() | Types.result_slot(), Builder.t()}
 
   defp dest_for_update(ctx, b) do
     case Context.dest_for_call(ctx) do
@@ -2025,7 +2089,8 @@ defmodule Elmc.Backend.Plan.Lower.Record do
     end
   end
 
-  @spec partition_update_args(Types.ir_expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+  @spec partition_update_args(Builder.t(), Types.reg(), Types.reg()) ::
+          {[Types.reg()], [Types.reg()]}
 
   defp partition_update_args(b, base_reg, value_reg) do
     base_effects =

@@ -395,7 +395,7 @@ defmodule Ide.Debugger.RuntimeSurfaces do
     end
   end
 
-  @spec merge_launch_context_view_tree(term() | map(), String.t()) :: term()
+  @spec merge_launch_context_view_tree(map() | term(), map() | term()) :: map()
 
   defp merge_launch_context_view_tree(view_tree, launch_context)
        when is_map(view_tree) and is_map(launch_context) do

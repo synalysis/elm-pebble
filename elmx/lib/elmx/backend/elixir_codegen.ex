@@ -323,7 +323,7 @@ defmodule Elmx.Backend.ElixirCodegen do
         end
 
       %{op: :var, name: name} = var when is_binary(name) ->
-        if arity > 0 and Map.get(callable_arities, name, 0) == arity do
+        if Map.get(callable_arities, name, 0) == arity do
           {:apply_saturated, var, arity}
         else
           expr

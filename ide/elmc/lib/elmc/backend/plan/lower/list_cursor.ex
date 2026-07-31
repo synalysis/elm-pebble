@@ -2,7 +2,6 @@ defmodule Elmc.Backend.Plan.Lower.ListCursor do
   @moduledoc false
   alias Elmc.Backend.Plan.Types, as: Types
 
-
   alias Elmc.Backend.Plan.Types
   alias Elmc.Backend.Plan.Lower.Lambda
   alias Elmc.Backend.Plan.{Builder, Context, Types}
@@ -57,8 +56,8 @@ defmodule Elmc.Backend.Plan.Lower.ListCursor do
 
   def try_compile_map(_, _, _), do: :unsupported
 
-  @spec parse_range(map() | term()) :: Types.ir_expr()
-
+  @spec parse_range(term()) ::
+          {:ok, integer(), integer(), {:literal, integer(), integer()}} | :unsupported
   defp parse_range(%{op: :qualified_call, target: target, args: [start, end_expr]})
        when target in @list_range_targets do
     case {literal_int(start), literal_int(end_expr)} do
@@ -76,20 +75,18 @@ defmodule Elmc.Backend.Plan.Lower.ListCursor do
 
   defp parse_range(_), do: :unsupported
 
-  @spec literal_int(map() | term()) :: Types.ir_expr()
-
+  @spec literal_int(term()) :: {:ok, integer()} | :error
   defp literal_int(%{op: :int_literal, value: v}) when is_integer(v), do: {:ok, v}
   defp literal_int(_), do: :error
 
-  @spec map_lambda(map() | term()) :: Types.ir_expr()
-
+  @spec map_lambda(term()) :: {:ok, String.t(), term()} | :error
   defp map_lambda(%{op: :lambda, args: [param], body: body}) when is_binary(param),
     do: {:ok, param, body}
 
   defp map_lambda(_), do: :error
 
-  @spec compile_loop_lambda(integer(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
-
+  @spec compile_loop_lambda(term(), Context.t(), Builder.t()) ::
+          {:ok, non_neg_integer(), Builder.t()} | :unsupported
   defp compile_loop_lambda(fun, ctx, b) do
     case Lambda.compile(fun, ctx, b) do
       {:ok, _reg, b1} ->
@@ -101,8 +98,8 @@ defmodule Elmc.Backend.Plan.Lower.ListCursor do
     end
   end
 
-  @spec dest_for_call(Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
-
+  @spec dest_for_call(Context.t(), Builder.t()) ::
+          {Types.reg() | :fn_out | :branch_out, Builder.t()}
   defp dest_for_call(ctx, b) do
     case Context.dest_for_call(ctx) do
       :fn_out -> {:fn_out, b}

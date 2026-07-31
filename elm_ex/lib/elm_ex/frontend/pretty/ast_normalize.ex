@@ -104,6 +104,4 @@ defmodule ElmEx.Frontend.Pretty.AstNormalize do
   defp normalize_node(expr) when is_map(expr) do
     Map.new(expr, fn {key, value} -> {key, normalize(value)} end)
   end
-
-  defp normalize_node(expr), do: expr
 end

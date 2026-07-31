@@ -222,7 +222,7 @@ defmodule Ide.Mcp.VectorResources do
     end
   end
 
-  @spec format_error(String.t() | integer()) :: term()
+  @spec format_error(term()) :: String.t()
 
   defp format_error(reason) when is_binary(reason), do: reason
   defp format_error(reason), do: inspect(reason)

@@ -10,7 +10,9 @@ defmodule ElmEx.Frontend.ExprLayoutLexer do
 
   alias ElmEx.Frontend.{Layout, LayoutRules}
 
-  @type token() :: {atom(), non_neg_integer(), term()}
+  @type layout_token() ::
+          {:indent | :dedent | :newline | :semicolon | :case_sep, pos_integer()}
+  @type token() :: {atom(), non_neg_integer(), term()} | {atom(), non_neg_integer()} | layout_token()
   @type line_info() :: %{
           line_no: pos_integer(),
           indent: non_neg_integer(),

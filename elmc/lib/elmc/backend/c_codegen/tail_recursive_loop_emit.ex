@@ -30,8 +30,8 @@ defmodule Elmc.Backend.CCodegen.TailRecursiveLoopEmit do
           Types.decl(),
           String.t(),
           Types.compile_env(),
-          Types.ir_expr(),
-          Types.ir_expr(),
+          [Types.c_arg_binding()],
+          [atom()],
           atom()
         ) :: {:ok, String.t(), String.t()} | :error
   def compile(decl, module_name, env, arg_bindings, arg_kinds, return_kind) do
@@ -275,8 +275,6 @@ defmodule Elmc.Backend.CCodegen.TailRecursiveLoopEmit do
       (String.starts_with?(ref, "native_") or String.starts_with?(ref, "(") or
          Regex.match?(~r/^[a-z_]*_loop(?:_next)?$/, ref))
   end
-
-  defp native_int_loop_let_ref?(_), do: false
 
   defp compile_tail_recursive_step_arg(expr, loop_env, :boxed, counter),
     do: Operand.compile(expr, loop_env, counter)

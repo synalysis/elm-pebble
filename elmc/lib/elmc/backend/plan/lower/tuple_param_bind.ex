@@ -2,7 +2,6 @@ defmodule Elmc.Backend.Plan.TupleParamBind do
   @moduledoc false
   alias Elmc.Backend.Plan.Types, as: Types
 
-
   alias Elmc.Backend.CCodegen.{Host, TypeParsing, VarAnalysis}
   alias Elmc.Backend.Plan.{Builder, Context}
   alias Elmc.Backend.Plan.Lower.Tuple
@@ -18,12 +17,14 @@ defmodule Elmc.Backend.Plan.TupleParamBind do
     param_set = MapSet.new(args)
 
     result =
-      Enum.reduce_while(Enum.with_index(args), {:ok, bind_ctx, b}, fn {param, idx}, {:ok, ctx_acc, b_acc} ->
+      Enum.reduce_while(Enum.with_index(args), {:ok, bind_ctx, b}, fn {param, idx},
+                                                                      {:ok, ctx_acc, b_acc} ->
         case Map.get(param_types, param) do
           type when is_binary(type) ->
             elem_types = TypeSignature.tuple_element_types(type)
 
-            with names when is_list(names) and names != [] <- tuple_element_names(param, length(elem_types)),
+            with names when is_list(names) and names != [] <-
+                   tuple_element_names(param, length(elem_types)),
                  used_names <-
                    Enum.filter(names, fn name ->
                      MapSet.member?(body_used, name) and not MapSet.member?(param_set, name)
@@ -118,8 +119,15 @@ defmodule Elmc.Backend.Plan.TupleParamBind do
 
   def tuple_element_names(_, _), do: nil
 
-  @spec bind_projections(String.t(), String.t(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
-
+  @spec bind_projections(
+          [String.t()],
+          [String.t()],
+          [String.t()],
+          String.t(),
+          non_neg_integer(),
+          Context.t(),
+          Builder.t()
+        ) :: {:ok, Context.t(), Builder.t()} | :unsupported
   defp bind_projections(names, used_names, elem_types, param, idx, ctx, b) do
     {param_reg, b0} = Builder.get_or_load_param(b, idx, param)
     ctx0 = Context.put_local(ctx, param, param_reg)
@@ -151,16 +159,14 @@ defmodule Elmc.Backend.Plan.TupleParamBind do
     end)
   end
 
-  @spec put_elem_binding(Types.ir_expr(), String.t(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
-
+  @spec put_elem_binding(Context.t(), String.t(), Types.reg(), String.t() | nil) :: Context.t()
   defp put_elem_binding(ctx, name, reg, type) do
     ctx
     |> Context.put_local(name, reg)
     |> maybe_put_elem_type(name, type)
   end
 
-  @spec maybe_put_elem_type(Types.ir_expr(), String.t(), String.t() | Types.ir_expr()) :: Types.ir_expr() | nil
-
+  @spec maybe_put_elem_type(Context.t(), String.t(), String.t() | nil) :: Context.t()
   defp maybe_put_elem_type(ctx, name, type) when is_binary(type) and type != "" do
     Context.put_local_type(ctx, name, Host.normalize_type_name(type))
   end

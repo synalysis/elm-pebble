@@ -17,7 +17,7 @@ defmodule Elmc.Backend.CCodegen.MacroReachability do
     |> MapSet.new()
   end
 
-  @spec union_ctors_in_expr(map() | list() | term()) :: Types.ir_expr()
+  @spec union_ctors_in_expr(map() | list() | term()) :: [String.t()]
 
   defp union_ctors_in_expr(%{op: :int_literal, union_ctor: ctor}) when is_binary(ctor), do: [ctor]
 

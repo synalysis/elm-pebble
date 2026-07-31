@@ -5,6 +5,40 @@ defmodule Elmc.Backend.Bytecode.PhiShapes do
 
   alias Elmc.Backend.Plan.Types
 
+  @type compare_fn :: (Types.compare_kind(), integer(), integer() -> boolean())
+
+  @type truthy_shape ::
+          {:const_int, 0 | 1}
+          | {:compare, Types.compare_kind(), Types.reg(), Types.reg()}
+          | {:reg, Types.reg()}
+
+  @type int_arith_kind ::
+          :add_const
+          | :sub_const
+          | :add_vars
+          | :mul_vars
+          | :sub_vars
+          | :idiv_vars
+          | :min_vars
+          | :max_vars
+          | :mod_vars
+          | :rem_vars
+
+  @type int_arith_args ::
+          %{
+            required(:kind) => int_arith_kind(),
+            required(:lhs) => Types.reg(),
+            optional(:rhs) => Types.reg(),
+            optional(:value) => integer()
+          }
+
+  @type int_shape ::
+          {:const_int, integer()}
+          | {:int_arith, int_arith_args()}
+          | {:new_int, integer() | String.t()}
+
+  @type encoded_reg :: 0xFFFD | 0xFFFE | 0xFFFF | Types.reg()
+
   @truthy_const0 0
   @truthy_const1 1
   @truthy_compare 2
@@ -68,7 +102,7 @@ defmodule Elmc.Backend.Bytecode.PhiShapes do
     end
   end
 
-  @spec encode_truthy_shape(term()) :: Types.ir_expr()
+  @spec encode_truthy_shape(truthy_shape() | term()) :: binary()
 
   defp encode_truthy_shape({:const_int, 0}), do: <<@truthy_const0::8>>
   defp encode_truthy_shape({:const_int, 1}), do: <<@truthy_const1::8>>
@@ -80,7 +114,7 @@ defmodule Elmc.Backend.Bytecode.PhiShapes do
   defp encode_truthy_shape({:reg, reg}), do: <<@truthy_reg::8, encode_reg(reg)::16>>
   defp encode_truthy_shape(_), do: <<@truthy_const0::8>>
 
-  @spec decode_truthy_shape(binary() | Types.ir_expr()) :: Types.ir_expr()
+  @spec decode_truthy_shape(binary()) :: {truthy_shape(), binary()}
 
   defp decode_truthy_shape(<<@truthy_const0::8, rest::binary>>), do: {{:const_int, 0}, rest}
   defp decode_truthy_shape(<<@truthy_const1::8, rest::binary>>), do: {{:const_int, 1}, rest}
@@ -92,7 +126,7 @@ defmodule Elmc.Backend.Bytecode.PhiShapes do
   defp decode_truthy_shape(<<@truthy_reg::8, reg::16, rest::binary>>), do: {{:reg, reg}, rest}
   defp decode_truthy_shape(rest), do: {{:const_int, 0}, rest}
 
-  @spec eval_truthy_shape(term(), Types.ir_expr(), integer()) :: Types.ir_expr()
+  @spec eval_truthy_shape(truthy_shape(), [Runtime.value()], compare_fn()) :: 0 | 1
 
   defp eval_truthy_shape({:const_int, 0}, _locals, _compare_fn), do: 0
   defp eval_truthy_shape({:const_int, 1}, _locals, _compare_fn), do: 1
@@ -105,9 +139,7 @@ defmodule Elmc.Backend.Bytecode.PhiShapes do
     if truthy?(get_local(locals, reg)), do: 1, else: 0
   end
 
-  defp eval_truthy_shape(_, _locals, _compare_fn), do: 0
-
-  @spec encode_int_shape(term()) :: Types.ir_expr()
+  @spec encode_int_shape(int_shape() | term()) :: binary()
 
   defp encode_int_shape({:const_int, value}) when value in [0, 1] do
     if value == 0, do: <<@int_const0::8>>, else: <<@int_const1::8>>
@@ -130,7 +162,7 @@ defmodule Elmc.Backend.Bytecode.PhiShapes do
 
   defp encode_int_shape(_), do: <<@int_const0::8>>
 
-  @spec encode_int_arith_shape([String.t()]) :: Types.ir_expr()
+  @spec encode_int_arith_shape(int_arith_args() | Types.instr_args()) :: binary()
 
   defp encode_int_arith_shape(args) do
     kind = Map.fetch!(args, :kind)
@@ -163,7 +195,7 @@ defmodule Elmc.Backend.Bytecode.PhiShapes do
     <<@int_arith::8, kind_n::8, payload::binary>>
   end
 
-  @spec decode_int_shape(binary() | Types.ir_expr()) :: Types.ir_expr()
+  @spec decode_int_shape(binary()) :: {int_shape(), binary()}
 
   defp decode_int_shape(<<@int_const0::8, rest::binary>>), do: {{:const_int, 0}, rest}
   defp decode_int_shape(<<@int_const1::8, rest::binary>>), do: {{:const_int, 1}, rest}
@@ -177,7 +209,7 @@ defmodule Elmc.Backend.Bytecode.PhiShapes do
 
   defp decode_int_shape(rest), do: {{:const_int, 0}, rest}
 
-  @spec decode_int_arith_payload(atom(), binary()) :: Types.ir_expr()
+  @spec decode_int_arith_payload(non_neg_integer(), binary()) :: {int_arith_args(), binary()}
 
   defp decode_int_arith_payload(kind, <<lhs::16, rest::binary>>) do
     kind_atom = int_arith_kind(kind)
@@ -193,7 +225,7 @@ defmodule Elmc.Backend.Bytecode.PhiShapes do
     end
   end
 
-  @spec eval_int_shape(term(), Types.ir_expr(), integer()) :: Types.ir_expr()
+  @spec eval_int_shape(int_shape() | term(), [Runtime.value()], compare_fn()) :: integer()
 
   defp eval_int_shape({:const_int, value}, _locals, _compare_fn), do: value
 
@@ -203,7 +235,7 @@ defmodule Elmc.Backend.Bytecode.PhiShapes do
     eval_int_arith_args(args, locals)
   end
 
-  @spec eval_int_arith_args(map(), Types.ir_expr()) :: Types.ir_expr()
+  @spec eval_int_arith_args(int_arith_args(), [Runtime.value()]) :: integer()
 
   defp eval_int_arith_args(%{kind: kind, lhs: lhs} = args, locals) do
     left = local_int(locals, lhs)
@@ -222,11 +254,10 @@ defmodule Elmc.Backend.Bytecode.PhiShapes do
       :max_vars -> max(left, local_int(locals, Map.fetch!(args, :rhs)))
       :mod_vars -> elm_mod_by(left, local_int(locals, Map.fetch!(args, :rhs)))
       :rem_vars -> elm_rem_by(left, local_int(locals, Map.fetch!(args, :rhs)))
-      _ -> left
     end
   end
 
-  @spec compare_kind(Types.ir_expr() | term()) :: Types.ir_expr()
+  @spec compare_kind(Types.compare_kind() | term()) :: non_neg_integer()
 
   defp compare_kind(:eq), do: 0
   defp compare_kind(:neq), do: 1
@@ -236,7 +267,7 @@ defmodule Elmc.Backend.Bytecode.PhiShapes do
   defp compare_kind(:lte), do: 5
   defp compare_kind(_), do: 0
 
-  @spec decode_compare_kind(Types.ir_expr() | term()) :: Types.ir_expr()
+  @spec decode_compare_kind(non_neg_integer()) :: Types.compare_kind()
 
   defp decode_compare_kind(0), do: :eq
   defp decode_compare_kind(1), do: :neq
@@ -246,7 +277,7 @@ defmodule Elmc.Backend.Bytecode.PhiShapes do
   defp decode_compare_kind(5), do: :lte
   defp decode_compare_kind(_), do: :eq
 
-  @spec int_arith_kind(Types.ir_expr() | term()) :: Types.ir_expr()
+  @spec int_arith_kind(non_neg_integer()) :: int_arith_kind()
 
   defp int_arith_kind(0), do: :add_const
   defp int_arith_kind(1), do: :sub_const
@@ -260,23 +291,23 @@ defmodule Elmc.Backend.Bytecode.PhiShapes do
   defp int_arith_kind(9), do: :rem_vars
   defp int_arith_kind(_), do: :add_const
 
-  @spec encode_reg(Types.ir_expr() | integer()) :: Types.ir_expr()
+  @spec encode_reg(nil | Types.result_slot() | Types.reg()) :: encoded_reg()
 
   defp encode_reg(nil), do: 0xFFFD
   defp encode_reg(:fn_out), do: 0xFFFF
   defp encode_reg(:branch_out), do: 0xFFFE
   defp encode_reg(reg) when is_integer(reg), do: reg
 
-  @spec get_local(Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+  @spec get_local([Runtime.value()], encoded_reg() | Types.reg()) :: Runtime.value()
 
   defp get_local(locals, 0xFFFF), do: List.last(locals)
   defp get_local(locals, idx), do: Enum.at(locals, idx)
 
-  @spec local_int(Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+  @spec local_int([Runtime.value()], encoded_reg() | Types.reg()) :: integer()
 
   defp local_int(locals, idx), do: get_local(locals, idx) |> to_int()
 
-  @spec to_int(integer() | float() | Types.ir_expr() | term()) :: Types.ir_expr()
+  @spec to_int(Runtime.value() | term()) :: integer()
 
   defp to_int(n) when is_integer(n), do: n
   defp to_int(n) when is_float(n), do: trunc(n)
@@ -285,7 +316,7 @@ defmodule Elmc.Backend.Bytecode.PhiShapes do
   defp to_int({:just, v}), do: to_int(v)
   defp to_int(_), do: 0
 
-  @spec truthy?(Types.ir_expr() | term()) :: boolean()
+  @spec truthy?(Runtime.value() | term()) :: boolean()
 
   defp truthy?(v) when v in [false, 0, nil], do: false
   defp truthy?({:just, inner}), do: truthy?(inner)
@@ -293,7 +324,7 @@ defmodule Elmc.Backend.Bytecode.PhiShapes do
 
   # Plan `:mod_vars` / `:rem_vars` store lhs = modulus (first Elm arg), rhs = value.
   # Match C `elm_mod_by_c_expr(base, value)` and Runtime.elm_mod_by/2: rem(value, base).
-  @spec elm_mod_by(Types.ir_expr(), integer()) :: Types.ir_expr()
+  @spec elm_mod_by(integer(), integer()) :: integer()
 
   defp elm_mod_by(0, _value), do: 0
 
@@ -302,7 +333,7 @@ defmodule Elmc.Backend.Bytecode.PhiShapes do
     if r < 0, do: r + abs(base), else: r
   end
 
-  @spec elm_rem_by(Types.ir_expr(), integer()) :: Types.ir_expr()
+  @spec elm_rem_by(integer(), integer()) :: integer()
 
   defp elm_rem_by(0, _value), do: 0
   defp elm_rem_by(base, value), do: rem(value, base)

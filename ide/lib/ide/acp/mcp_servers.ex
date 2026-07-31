@@ -60,7 +60,7 @@ defmodule Ide.Acp.McpServers do
 
   defp normalize_capabilities(_capabilities), do: "read"
 
-  @spec env_variables(map() | list() | Types.compile_env()) :: term()
+  @spec env_variables(map() | list() | term()) :: [map()]
 
   defp env_variables(env) when is_map(env) do
     Enum.map(env, fn {name, value} ->
@@ -109,7 +109,7 @@ defmodule Ide.Acp.McpServers do
     end
   end
 
-  @spec shell_quote(integer()) :: term()
+  @spec shell_quote(term()) :: String.t()
 
   defp shell_quote(value) do
     "'" <> String.replace(to_string(value), "'", "'\"'\"'") <> "'"

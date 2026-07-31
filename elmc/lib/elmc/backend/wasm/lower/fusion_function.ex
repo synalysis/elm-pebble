@@ -1,7 +1,5 @@
 defmodule Elmc.Backend.Wasm.Lower.FusionFunction do
   @moduledoc false
-  alias Elmc.Types, as: Types
-
 
   alias Elmc.Backend.Plan.Types.FunctionPlan
   alias Elmc.Backend.Wasm.Lower.Frame
@@ -21,8 +19,8 @@ defmodule Elmc.Backend.Wasm.Lower.FusionFunction do
     lower_list_indexed_replace(plan)
   end
 
-  @spec lower_list_indexed_replace(map()) :: Types.ir_expr()
-
+  @spec lower_list_indexed_replace(FunctionPlan.t()) ::
+          Elmc.Backend.Wasm.Lower.Function.function_unit()
   defp lower_list_indexed_replace(%FunctionPlan{} = plan) do
     slots = Slots.build(plan)
     import_name = RuntimeImports.import_name(:list_replace_nth_int)
@@ -94,10 +92,9 @@ defmodule Elmc.Backend.Wasm.Lower.FusionFunction do
     }
   end
 
-  @spec param_names(map()) :: Types.ir_expr()
-
+  @spec param_names(FunctionPlan.t()) :: [String.t()]
   defp param_names(%FunctionPlan{params: params}) do
-    Enum.map(params || [], fn
+    Enum.map(params, fn
       name when is_binary(name) -> name
       %{name: name} -> name
       other -> inspect(other)

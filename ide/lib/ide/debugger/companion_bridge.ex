@@ -303,7 +303,7 @@ defmodule Ide.Debugger.CompanionBridge do
   defp maybe_put(map, _key, nil), do: map
   defp maybe_put(map, key, value), do: Map.put(map, key, value)
 
-  @spec wire_just(integer()) :: term()
+  @spec wire_just(term()) :: map()
 
   defp wire_just(value), do: %{"ctor" => "Just", "args" => [value]}
   @spec wire_nothing() :: term()

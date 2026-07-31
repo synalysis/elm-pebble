@@ -44,9 +44,7 @@ defmodule Ide.Debugger.IntrospectContexts do
                                                 Types.surface_target(),
                                                 [Types.runtime_followup_row()] ->
                                                   Types.runtime_state()),
-          required(:protocol_rx_ctx) => (-> ProtocolRx.ctx()),
-          required(:drain_app_message_queue) => (Types.runtime_state(), Types.surface_target() ->
-                                                   Types.runtime_state())
+          required(:protocol_rx_ctx) => (-> ProtocolRx.ctx())
         }
 
   @type merge_host :: %{

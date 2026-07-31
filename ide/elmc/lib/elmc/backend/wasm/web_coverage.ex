@@ -1,7 +1,5 @@
 defmodule Elmc.Backend.Wasm.WebCoverage do
   @moduledoc false
-  alias Elmc.Types, as: Types
-
 
   alias Elmc.Backend.CCodegen.Types, as: CCodegenTypes
   alias Elmc.Backend.Plan.PrimaryCoverage
@@ -57,8 +55,7 @@ defmodule Elmc.Backend.Wasm.WebCoverage do
     end)
   end
 
-  @spec drop_server_only(Types.decl_map()) :: Types.ir_expr()
-
+  @spec drop_server_only(CCodegenTypes.function_decl_map()) :: CCodegenTypes.function_decl_map()
   defp drop_server_only(decl_map) do
     decl_map
     |> Enum.reject(fn {key, _} -> server_only?(key) end)

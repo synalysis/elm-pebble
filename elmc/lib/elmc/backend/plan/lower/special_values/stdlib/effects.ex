@@ -517,7 +517,8 @@ defmodule Elmc.Backend.Plan.Lower.SpecialValues.Stdlib.Effects do
 
   def special_value_from_target(_target, _args), do: nil
 
-  @spec browser_events_mysub(map() | term()) :: Types.ir_expr()
+  @spec browser_events_mysub(map() | term()) ::
+          {:ok, Types.ir_expr(), Types.ir_expr(), Types.ir_expr()} | :error
 
   defp browser_events_mysub(%{
          op: :constructor_call,

@@ -88,14 +88,11 @@ defmodule Elmc.Backend.Plan.Lower.PipeChain do
 
         :unsupported ->
           {:halt, :unsupported}
-
-        other ->
-          {:halt, other}
       end
     end)
     |> case do
       {:ok, final_reg, b_final} -> finalize_pipe_result(final_reg, ctx, b_final)
-      other -> other
+      :unsupported -> :unsupported
     end
   end
 

@@ -2,7 +2,6 @@ defmodule Elmc.Backend.CCodegen.PipeChainCompile do
   @moduledoc false
   alias Elmc.Backend.CCodegen.Types, as: Types
 
-
   alias Elmc.Backend.CCodegen.{EnvBindings, Host, RcRequired, Types, Util, ValueSlots}
   alias ElmEx.IR.PipeChain
 
@@ -16,7 +15,14 @@ defmodule Elmc.Backend.CCodegen.PipeChainCompile do
 
     cond do
       length(homogeneous_prefix) >= @pipeline_flatten_threshold ->
-        compile_homogeneous_steps(hd(homogeneous_prefix), length(homogeneous_prefix), base, rest, env, counter)
+        compile_homogeneous_steps(
+          hd(homogeneous_prefix),
+          length(homogeneous_prefix),
+          base,
+          rest,
+          env,
+          counter
+        )
 
       length(steps) < @pipeline_flatten_threshold ->
         Host.compile_expr(
@@ -30,8 +36,8 @@ defmodule Elmc.Backend.CCodegen.PipeChainCompile do
     end
   end
 
-  @spec compile_iterative(Types.ir_expr(), Types.ir_expr(), Types.compile_env(), Types.ir_expr()) :: Types.ir_expr()
-
+  @spec compile_iterative([Types.ir_expr()], Types.ir_expr(), Types.compile_env(), Types.compile_counter()) ::
+          Types.compile_result()
   defp compile_iterative(steps, base, env, counter) do
     {base_code, acc_var, counter} = Host.compile_expr(base, env, counter)
 
@@ -44,8 +50,14 @@ defmodule Elmc.Backend.CCodegen.PipeChainCompile do
     end)
   end
 
-  @spec compile_homogeneous_steps(Types.ir_expr(), non_neg_integer(), Types.ir_expr(), Types.ir_expr(), Types.compile_env(), Types.ir_expr()) :: Types.ir_expr()
-
+  @spec compile_homogeneous_steps(
+          Types.ir_expr(),
+          non_neg_integer(),
+          Types.ir_expr(),
+          [Types.ir_expr()],
+          Types.compile_env(),
+          Types.compile_counter()
+        ) :: Types.compile_result()
   defp compile_homogeneous_steps(step, count, base, rest, env, counter) do
     {base_code, base_var, c0} = Host.compile_expr(base, env, counter)
     acc_var = "pipe_acc_#{c0 + 1}"
@@ -92,7 +104,7 @@ defmodule Elmc.Backend.CCodegen.PipeChainCompile do
           compile_homogeneous_closure_loop(step, count, base_var, acc_var, loop_id, env, c0)
       end
 
-    prefix = IO.iodata_to_binary([base_code | loop_code])
+    prefix = IO.iodata_to_binary([base_code, loop_code])
 
     case rest do
       [] ->
@@ -112,27 +124,35 @@ defmodule Elmc.Backend.CCodegen.PipeChainCompile do
     end
   end
 
-  @spec compile_homogeneous_closure_loop(Types.ir_expr(), non_neg_integer(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.compile_env(), Types.ir_expr()) :: Types.ir_expr()
-
+  @spec compile_homogeneous_closure_loop(
+          Types.ir_expr(),
+          non_neg_integer(),
+          String.t(),
+          String.t(),
+          Types.compile_counter(),
+          Types.compile_env(),
+          Types.compile_counter()
+        ) :: Types.compile_result()
   defp compile_homogeneous_closure_loop(step, count, base_var, acc_var, loop_id, env, counter) do
     {fun_code, fun_var, c1} = Host.compile_expr(step, env, counter + 2)
 
-    code = IO.iodata_to_binary([
-      fun_code,
-      "  ElmcValue *#{acc_var} = #{base_var};\n",
-      "  for (elmc_int_t pipe_i_#{loop_id} = 0; pipe_i_#{loop_id} < #{count}; pipe_i_#{loop_id}++) {\n",
-      "    ElmcValue *pipe_args_#{loop_id}[1] = { #{acc_var} };\n",
-      "    ElmcValue *pipe_next_#{loop_id} = elmc_closure_call(#{fun_var}, pipe_args_#{loop_id}, 1);\n",
-      "    " <> ValueSlots.release_stmt(acc_var) <> "\n",
-      "    #{acc_var} = pipe_next_#{loop_id};\n",
-      "  }\n"
-    ])
+    code =
+      IO.iodata_to_binary([
+        fun_code,
+        "  ElmcValue *#{acc_var} = #{base_var};\n",
+        "  for (elmc_int_t pipe_i_#{loop_id} = 0; pipe_i_#{loop_id} < #{count}; pipe_i_#{loop_id}++) {\n",
+        "    ElmcValue *pipe_args_#{loop_id}[1] = { #{acc_var} };\n",
+        "    ElmcValue *pipe_next_#{loop_id} = elmc_closure_call(#{fun_var}, pipe_args_#{loop_id}, 1);\n",
+        "    " <> ValueSlots.release_stmt(acc_var) <> "\n",
+        "    #{acc_var} = pipe_next_#{loop_id};\n",
+        "  }\n"
+      ])
 
     {code, acc_var, c1}
   end
 
-  @spec direct_top_level_fn(map() | Types.ir_expr(), Types.compile_env()) :: Types.ir_expr()
-
+  @spec direct_top_level_fn(term(), Types.compile_env()) ::
+          {String.t(), String.t(), String.t()} | :error
   defp direct_top_level_fn(%{op: :call, name: name, args: []}, env) when is_binary(name) do
     module = Map.get(env, :__module__, "Main")
     {Util.module_fn_name(module, name), module, name}
@@ -145,8 +165,7 @@ defmodule Elmc.Backend.CCodegen.PipeChainCompile do
 
   defp direct_top_level_fn(_step, _env), do: :error
 
-  @spec split_homogeneous_prefix_steps(term()) :: Types.ir_expr()
-
+  @spec split_homogeneous_prefix_steps([term()]) :: {[term()], [term()]}
   defp split_homogeneous_prefix_steps([]), do: {[], []}
 
   defp split_homogeneous_prefix_steps([first | rest]) do

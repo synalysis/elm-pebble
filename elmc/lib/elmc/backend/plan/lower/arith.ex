@@ -119,7 +119,7 @@ defmodule Elmc.Backend.Plan.Lower.Arith do
     end
   end
 
-  @spec emit_boxed_binop_from_vars(atom(), Types.expr(), Types.expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+  @spec emit_boxed_binop_from_vars(atom(), Types.expr(), Types.expr(), Context.t(), Builder.t()) :: Types.compile_result_required()
 
   def emit_boxed_binop_from_vars(kind, left, right, ctx, b)
       when kind in [:add_vars, :sub_vars, :mul_vars, :fdiv_vars] do
@@ -127,14 +127,14 @@ defmodule Elmc.Backend.Plan.Lower.Arith do
   end
 
   @doc false
-  @spec emit_int_arith_regs(atom(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+  @spec emit_int_arith_regs(atom(), Types.reg(), Types.reg(), Context.t(), Builder.t()) :: Types.compile_result_required()
 
   def emit_int_arith_regs(kind, lhs, rhs, ctx, b)
       when kind in [:add_vars, :mul_vars, :sub_vars, :idiv_vars, :mod_vars, :rem_vars, :min_vars, :max_vars] do
     emit_int_arith(kind, lhs, rhs, ctx, b)
   end
 
-  @spec emit_int_arith(atom(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+  @spec emit_int_arith(atom(), Types.reg(), Types.reg() | integer(), Context.t(), Builder.t()) :: Types.compile_result_required()
 
   defp emit_int_arith(kind, lhs, rhs, ctx, b)
        when kind in [:add_vars, :mul_vars, :sub_vars, :idiv_vars, :mod_vars, :rem_vars, :min_vars, :max_vars] do
@@ -190,7 +190,7 @@ defmodule Elmc.Backend.Plan.Lower.Arith do
     {:ok, dest, b4}
   end
 
-  @spec dest_for(Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+  @spec dest_for(Context.t(), Builder.t()) :: {:branch_out | Types.reg(), Builder.t()}
 
   defp dest_for(ctx, b) do
     case Context.dest_for_call(ctx) do

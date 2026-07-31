@@ -2,7 +2,6 @@ defmodule Elmc.Backend.Plan.Lower.SpecialValues.Dispatcher do
   @moduledoc false
   alias Elmc.Backend.CCodegen.Types, as: Types
 
-
   alias Elmc.Backend.CCodegen.UnsupportedSurface
 
   alias Elmc.Backend.Plan.Lower.SpecialValues.{
@@ -84,7 +83,7 @@ defmodule Elmc.Backend.Plan.Lower.SpecialValues.Dispatcher do
     result
   end
 
-  @spec handlers_for(keyword()) :: Types.ir_expr()
+  @spec handlers_for(keyword()) :: [module()]
 
   defp handlers_for(opts) do
     if PlatformWeb.web_target?(opts) do

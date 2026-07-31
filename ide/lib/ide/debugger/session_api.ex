@@ -55,18 +55,14 @@ defmodule Ide.Debugger.SessionApi do
     settings = SettingsApi.normalize(attrs)
 
     AgentSession.with_hosts(fn hosts ->
-      AgentSession.mutate(
-        project_slug,
-        &SettingsApi.apply_to_state(&1, settings, hosts.simulator_settings)
-      )
-      |> case do
-        {:ok, state} ->
-          RuntimeBackgroundDrains.schedule_all(project_slug, state)
-          {:ok, state}
+      {:ok, state} =
+        AgentSession.mutate(
+          project_slug,
+          &SettingsApi.apply_to_state(&1, settings, hosts.simulator_settings)
+        )
 
-        other ->
-          other
-      end
+      RuntimeBackgroundDrains.schedule_all(project_slug, state)
+      {:ok, state}
     end)
   end
 end

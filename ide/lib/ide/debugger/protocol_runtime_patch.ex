@@ -644,14 +644,14 @@ defmodule Ide.Debugger.ProtocolRuntimePatch do
     keys == ["args", "ctor"] or keys == ["$args", "$ctor"]
   end
 
-  @spec runtime_patch_for_message(term(), integer()) :: term()
+  @spec runtime_patch_for_message(term(), term()) :: map()
 
   def runtime_patch_for_message(introspect, message_value) do
     subscription_payload_model_patch(introspect, message_value)
     |> Map.merge(patch_from_message_value(introspect, message_value))
   end
 
-  @spec patch_from_message_value(term(), integer()) :: term()
+  @spec patch_from_message_value(term(), term()) :: map()
 
   def patch_from_message_value(introspect, message_value),
     do: protocol_runtime_model_patch_from_message_value(introspect, message_value)
@@ -669,7 +669,7 @@ defmodule Ide.Debugger.ProtocolRuntimePatch do
 
   def patch_watch(state, _recipient, _message_value, _introspect), do: state
 
-  @spec watch_online_from_message(integer()) :: term()
+  @spec watch_online_from_message(term()) :: boolean() | nil
 
   def watch_online_from_message(message_value),
     do: protocol_watch_online_from_message_value(message_value)

@@ -61,7 +61,7 @@ defmodule Ide.Mcp.StreamableHttp do
     end
   end
 
-  @spec run_listen_loop(integer(), term()) :: term()
+  @spec run_listen_loop(Plug.Conn.t(), String.t()) :: Plug.Conn.t()
 
   defp run_listen_loop(conn, session_id) do
     case stream_loop_override() do
@@ -70,7 +70,7 @@ defmodule Ide.Mcp.StreamableHttp do
     end
   end
 
-  @spec default_listen_loop(integer(), term()) :: term()
+  @spec default_listen_loop(Plug.Conn.t(), String.t()) :: Plug.Conn.t()
 
   defp default_listen_loop(conn, session_id) do
     receive do
@@ -91,7 +91,7 @@ defmodule Ide.Mcp.StreamableHttp do
     Application.get_env(:ide, IdeWeb.McpController, [])[:stream_loop]
   end
 
-  @spec chunk!(integer(), term()) :: term()
+  @spec chunk!(Plug.Conn.t(), iodata()) :: Plug.Conn.t()
 
   defp chunk!(conn, data) do
     case chunk(conn, data) do
@@ -100,7 +100,7 @@ defmodule Ide.Mcp.StreamableHttp do
     end
   end
 
-  @spec accept_header(integer()) :: term()
+  @spec accept_header(Plug.Conn.t()) :: String.t()
 
   defp accept_header(conn) do
     conn
@@ -109,7 +109,7 @@ defmodule Ide.Mcp.StreamableHttp do
     |> String.downcase()
   end
 
-  @spec localhost_origin?(integer(), term()) :: boolean()
+  @spec localhost_origin?(String.t(), String.t() | nil) :: boolean()
 
   defp localhost_origin?(origin, host) do
     case URI.parse(origin) do

@@ -1,6 +1,5 @@
 defmodule Elmc.Backend.CCodegen.RowMajorLayout do
   @moduledoc false
-  alias Elmc.Backend.CCodegen.Types, as: Types
 
 
   @spec identity_perm(non_neg_integer()) :: [non_neg_integer()]
@@ -187,7 +186,7 @@ defmodule Elmc.Backend.CCodegen.RowMajorLayout do
     """
   end
 
-  @spec compact_perm_table_rows(Types.ir_expr()) :: Types.ir_expr()
+  @spec compact_perm_table_rows([[integer()]]) :: String.t()
 
   defp compact_perm_table_rows(perms) do
     perms
@@ -198,7 +197,7 @@ defmodule Elmc.Backend.CCodegen.RowMajorLayout do
     end)
   end
 
-  @spec fourth_branch_src_index(Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+  @spec fourth_branch_src_index(:forward | :inverse, pos_integer()) :: String.t()
 
   defp fourth_branch_src_index(:forward, width) do
     """

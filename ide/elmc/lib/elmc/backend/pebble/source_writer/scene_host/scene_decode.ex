@@ -14,7 +14,7 @@ defmodule Elmc.Backend.Pebble.SourceWriter.SceneHost.SceneDecode do
     """
   end
 
-  @spec body_without_guard() :: Types.ir_expr()
+  @spec body_without_guard() :: Types.c_source()
 
   defp body_without_guard do
     """

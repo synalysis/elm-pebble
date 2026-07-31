@@ -122,7 +122,8 @@ defmodule Elmc.Backend.CCodegen.CallCompile do
     end
   end
 
-  @spec compile_qualified_call(String.t(), [String.t()], Types.compile_env(), Types.ir_expr()) :: Types.ir_expr()
+  @spec compile_qualified_call(String.t(), [String.t()], Types.compile_env(), Types.compile_counter()) ::
+          Types.compile_result()
 
   defp compile_qualified_call(target, args, env, counter) do
     args = ListHofResolve.resolve_list_hof_call_args(target, args, env)
@@ -168,7 +169,8 @@ defmodule Elmc.Backend.CCodegen.CallCompile do
     ElmCore.with_comment(result, target)
   end
 
-  @spec typed_debug_to_string_expr(Types.ir_expr() | String.t(), term() | [String.t()], Types.expr(), Types.compile_env()) :: Types.ir_expr()
+  @spec typed_debug_to_string_expr(String.t(), [Types.ir_expr()], Types.ir_expr(), Types.compile_env()) ::
+          Types.ir_expr()
 
   defp typed_debug_to_string_expr("Debug.toString", [value], _expr, env) do
     function =
@@ -183,7 +185,7 @@ defmodule Elmc.Backend.CCodegen.CallCompile do
 
   defp typed_debug_to_string_expr(_target, _args, expr, _env), do: expr
 
-  @spec set_debug_value?(integer(), Types.compile_env()) :: boolean()
+  @spec set_debug_value?(Types.ir_expr(), Types.compile_env()) :: boolean()
 
   defp set_debug_value?(value, env) do
     case TypedReturn.expr_type(value, env) do
@@ -195,7 +197,7 @@ defmodule Elmc.Backend.CCodegen.CallCompile do
     end
   end
 
-  @spec function_param_set_type?(map() | integer(), Types.compile_env()) :: boolean()
+  @spec function_param_set_type?(Types.ir_expr(), Types.compile_env()) :: boolean()
 
   defp function_param_set_type?(%{op: :var, name: name}, env) when is_binary(name) do
     module = Map.get(env, :__module__, "Main")
@@ -223,7 +225,8 @@ defmodule Elmc.Backend.CCodegen.CallCompile do
 
   defp function_param_set_type?(_value, _env), do: false
 
-  @spec let_bound_closure_call(String.t(), [String.t()], Types.compile_env(), Types.ir_expr()) :: Types.ir_expr()
+  @spec let_bound_closure_call(String.t(), [String.t()], Types.compile_env(), Types.compile_counter()) ::
+          {:ok, Types.compile_result()} | :error
 
   defp let_bound_closure_call(target, args, env, counter) do
     with {module_name, name} <- Host.split_qualified_function_target(target),
@@ -235,7 +238,7 @@ defmodule Elmc.Backend.CCodegen.CallCompile do
     end
   end
 
-  @spec let_bound_closure_var(Types.compile_env(), String.t()) :: Types.ir_expr()
+  @spec let_bound_closure_var(Types.compile_env(), String.t()) :: String.t() | nil
 
   defp let_bound_closure_var(env, name) do
     key = Host.binding_key(name)
@@ -299,7 +302,8 @@ defmodule Elmc.Backend.CCodegen.CallCompile do
     {code, out, max(next, call_args_id + 1)}
   end
 
-  @spec forward_ref_call(String.t(), [String.t()], Types.compile_env(), Types.ir_expr()) :: Types.ir_expr()
+  @spec forward_ref_call(String.t(), [String.t()], Types.compile_env(), Types.compile_counter()) ::
+          Types.compile_result()
 
   defp forward_ref_call(name, args, env, counter) do
     ref_expr =
@@ -340,7 +344,7 @@ defmodule Elmc.Backend.CCodegen.CallCompile do
     {code, out, out_counter}
   end
 
-  @spec resolve_local_zero_arg_let_name(String.t(), Types.compile_env()) :: Types.ir_expr()
+  @spec resolve_local_zero_arg_let_name(String.t(), Types.compile_env()) :: {:ok, Types.ir_expr()} | :error
 
   defp resolve_local_zero_arg_let_name(name, env) when is_binary(name) do
     module_name = Map.get(env, :__module__, "Main")

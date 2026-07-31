@@ -35,11 +35,8 @@ defmodule Elmc.Backend.CCodegen.Native.Bool do
       compile_expr_uncached(expr, env, counter)
     else
       case Hoist.hoisted_native_bool_ref(env, expr) do
-        ref when is_binary(ref) ->
-          {"", ref, counter}
-
-        nil ->
-          compile_expr_uncached(expr, env, counter)
+        ref when is_binary(ref) -> {"", ref, counter}
+        _ -> compile_expr_uncached(expr, env, counter)
       end
     end
   end
@@ -221,7 +218,12 @@ defmodule Elmc.Backend.CCodegen.Native.Bool do
         [left, right] = args
 
         compile_expr(
-          %{op: :if, cond: left, then_expr: right, else_expr: %{op: :bool_literal, value: false}},
+          %{
+            op: :if,
+            cond: left,
+            then_expr: right,
+            else_expr: %{op: :bool_literal, value: false}
+          },
           env,
           counter
         )
@@ -283,11 +285,16 @@ defmodule Elmc.Backend.CCodegen.Native.Bool do
         PlatformStatic.compile_native_bool(macro, PlatformStatic.invert_polarity(polarity), counter)
 
       nil ->
-        with {:ok, left, right} <- maybe_nothing_equality?(value),
-             true <- maybe_field_vs_nothing_compare_safe?("__eq__", left, right, env) do
-          compile_maybe_field_vs_nothing_compare(left, right, "__neq__", env, counter)
-        else
-          _ ->
+        case maybe_nothing_equality?(value) do
+          {:ok, left, right} ->
+            if maybe_field_vs_nothing_compare_safe?("__eq__", left, right, env) do
+              compile_maybe_field_vs_nothing_compare(left, right, "__neq__", env, counter)
+            else
+              {code, ref, counter} = compile_expr(value, env, counter)
+              {code, "!(#{ref})", counter}
+            end
+
+          :error ->
             {code, ref, counter} = compile_expr(value, env, counter)
             {code, "!(#{ref})", counter}
         end
@@ -707,13 +714,19 @@ defmodule Elmc.Backend.CCodegen.Native.Bool do
 
   defp maybe_nothing_literal?(_expr), do: false
 
-  defp maybe_maybe_expr?(%{op: :field_access, arg: arg, field: field}, env) do
-    maybe_type?(RecordFields.field_type(env, arg, field)) or
-      (is_binary(field) and maybe_field_name_in_program?(field))
+  @spec maybe_maybe_expr?(term(), Types.compile_env()) :: boolean()
+  defp maybe_maybe_expr?(%{op: :field_access, arg: arg, field: field}, env) when is_binary(field) do
+    case RecordFields.field_type(env, arg, field) do
+      type when is_binary(type) -> String.starts_with?(type, "Maybe ")
+      _ -> maybe_field_name_in_program?(field)
+    end
   end
 
   defp maybe_maybe_expr?(%{op: :var, name: name}, env) when is_binary(name) do
-    maybe_type?(Map.get(Map.get(env, :__var_types__, %{}), name))
+    case Map.get(Map.get(env, :__var_types__, %{}), name) do
+      type when is_binary(type) -> String.starts_with?(type, "Maybe ")
+      _ -> false
+    end
   end
 
   defp maybe_maybe_expr?(_expr, _env), do: false
@@ -726,19 +739,21 @@ defmodule Elmc.Backend.CCodegen.Native.Bool do
 
   defp maybe_nothing_equality?(_expr), do: :error
 
+  @spec maybe_field_name_in_program?(String.t()) :: boolean()
   defp maybe_field_name_in_program?(field) when is_binary(field) do
-    Process.get(:elmc_record_field_types, %{})
-    |> Map.values()
-    |> Enum.any?(fn fields ->
-      case Map.get(fields, field) do
-        "Maybe " <> _ -> true
-        _ -> false
-      end
+    types = Process.get(:elmc_record_field_types, %{})
+
+    Enum.any?(Map.values(types), fn
+      fields when is_map(fields) ->
+        case Map.get(fields, field) do
+          type when is_binary(type) -> String.starts_with?(type, "Maybe ")
+          _ -> false
+        end
+
+      _ ->
+        false
     end)
   end
-
-  defp maybe_type?(type) when is_binary(type), do: String.starts_with?(type, "Maybe ")
-  defp maybe_type?(_), do: false
 
   defp compile_maybe_field_vs_nothing_compare(left, right, operator, env, counter) do
     maybe_expr =
@@ -827,9 +842,11 @@ defmodule Elmc.Backend.CCodegen.Native.Bool do
 
   defp compile_bool_branch(%{op: :constructor_call, target: target, args: []}, env, counter) do
     case constructor_bool_literal(target) do
-      {:ok, true} -> {"", "true", counter}
-      {:ok, false} -> {"", "false", counter}
-      :error -> compile_expr(%{op: :constructor_call, target: target, args: []}, env, counter)
+      {:ok, value} when is_boolean(value) ->
+        {"", if(value, do: "true", else: "false"), counter}
+
+      :error ->
+        compile_expr(%{op: :constructor_call, target: target, args: []}, env, counter)
     end
   end
 
@@ -838,9 +855,8 @@ defmodule Elmc.Backend.CCodegen.Native.Bool do
   @spec constructor_bool_literal(String.t()) :: {:ok, boolean()} | :error
   defp constructor_bool_literal(target) when is_binary(target) do
     case Host.special_value_from_target(target, []) do
-      %{op: :bool_literal, value: value} -> {:ok, value}
-      %{op: :int_literal, value: 1} -> {:ok, true}
-      %{op: :int_literal, value: 0} -> {:ok, false}
+      %{op: :bool_literal, value: value} when is_boolean(value) -> {:ok, value}
+      %{op: :int_literal, value: value} when value in [0, 1] -> {:ok, value == 1}
       _ -> :error
     end
   end
@@ -848,50 +864,62 @@ defmodule Elmc.Backend.CCodegen.Native.Bool do
   # Elm lowers `a <= b` to `if a < b then False else a == b` (and similarly for >=).
   # Emit the direct native compare so tail loops avoid boxing a fresh Bool each iteration.
   defp try_compile_threshold_compare_if(cond_expr, then_expr, else_expr, env, counter) do
-    with {:ok, op, left, right} <- threshold_compare_if_pattern(cond_expr, then_expr, else_expr),
-         true <- Host.native_int_compare_safe?(threshold_compare_operator(op), left, right, env) do
-      {left_code, left_ref, counter} = Host.compile_native_int_expr(left, env, counter)
-      {right_code, right_ref, counter} = Host.compile_native_int_expr(right, env, counter)
-      comparison = threshold_compare_operator_c(op)
-      code = CSource.join_fragments([left_code, right_code])
-      {:ok, code, "(#{left_ref} #{comparison} #{right_ref})", counter}
-    else
-      _ -> :error
+    case threshold_compare_if_pattern(cond_expr, then_expr, else_expr) do
+      {:ok, op, left, right} ->
+        if Host.native_int_compare_safe?(threshold_compare_operator(op), left, right, env) do
+          {left_code, left_ref, counter} = Host.compile_native_int_expr(left, env, counter)
+          {right_code, right_ref, counter} = Host.compile_native_int_expr(right, env, counter)
+          comparison = threshold_compare_operator_c(op)
+          code = CSource.join_fragments([left_code, right_code])
+          {:ok, code, "(#{left_ref} #{comparison} #{right_ref})", counter}
+        else
+          :error
+        end
+
+      :error ->
+        :error
     end
   end
 
   defp threshold_compare_if_pattern(cond_expr, then_expr, else_expr) do
-    with {:ok, :lt, left, right} <- compare_side_pattern(cond_expr, :lt),
-         true <- true_bool_branch?(then_expr),
-         {:ok, :eq, eq_left, eq_right} <- compare_side_pattern(else_expr, :eq),
-         true <- same_compare_operands?(left, right, eq_left, eq_right) do
-      {:ok, :lte, left, right}
-    else
-      _ ->
-        with {:ok, :lt, left, right} <- compare_side_pattern(cond_expr, :lt),
-             true <- false_bool_branch?(then_expr),
-             {:ok, :eq, eq_left, eq_right} <- compare_side_pattern(else_expr, :eq),
-             true <- same_compare_operands?(left, right, eq_left, eq_right) do
-          {:ok, :lte, left, right}
-        else
-          _ ->
-            with {:ok, :gt, left, right} <- compare_side_pattern(cond_expr, :gt),
-                 true <- true_bool_branch?(then_expr),
-                 {:ok, :eq, eq_left, eq_right} <- compare_side_pattern(else_expr, :eq),
-                 true <- same_compare_operands?(left, right, eq_left, eq_right) do
+    case compare_side_pattern(cond_expr, :lt) do
+      {:ok, :lt, left, right} ->
+        case compare_side_pattern(else_expr, :eq) do
+          {:ok, :eq, eq_left, eq_right} ->
+            if (true_bool_branch?(then_expr) or false_bool_branch?(then_expr)) and
+                 same_compare_operands?(left, right, eq_left, eq_right) do
+              {:ok, :lte, left, right}
+            else
+              threshold_compare_if_pattern_gte(cond_expr, then_expr, else_expr)
+            end
+
+          :error ->
+            threshold_compare_if_pattern_gte(cond_expr, then_expr, else_expr)
+        end
+
+      :error ->
+        threshold_compare_if_pattern_gte(cond_expr, then_expr, else_expr)
+    end
+  end
+
+  defp threshold_compare_if_pattern_gte(cond_expr, then_expr, else_expr) do
+    case compare_side_pattern(cond_expr, :gt) do
+      {:ok, :gt, left, right} ->
+        case compare_side_pattern(else_expr, :eq) do
+          {:ok, :eq, eq_left, eq_right} ->
+            if (true_bool_branch?(then_expr) or false_bool_branch?(then_expr)) and
+                 same_compare_operands?(left, right, eq_left, eq_right) do
               {:ok, :gte, left, right}
             else
-              _ ->
-                with {:ok, :gt, left, right} <- compare_side_pattern(cond_expr, :gt),
-                     true <- false_bool_branch?(then_expr),
-                     {:ok, :eq, eq_left, eq_right} <- compare_side_pattern(else_expr, :eq),
-                     true <- same_compare_operands?(left, right, eq_left, eq_right) do
-                  {:ok, :gte, left, right}
-                else
-                  _ -> :error
-                end
+              :error
             end
+
+          :error ->
+            :error
         end
+
+      :error ->
+        :error
     end
   end
 
@@ -915,30 +943,32 @@ defmodule Elmc.Backend.CCodegen.Native.Bool do
 
   defp compare_side_pattern(_expr, _expected), do: :error
 
-  defp false_bool_branch?(%{op: :bool_literal, value: false}), do: true
+  defp false_bool_branch?(%{op: :bool_literal, value: value}) when is_boolean(value), do: not value
   defp false_bool_branch?(%{op: :int_literal, value: 0}), do: true
 
-  defp false_bool_branch?(%{op: :constructor_ref, target: target}),
-    do: match?({:ok, false}, constructor_bool_literal(target))
+  defp false_bool_branch?(%{op: :constructor_ref, target: target}) do
+    match?({:ok, value} when not value, constructor_bool_literal(target))
+  end
 
   defp false_bool_branch?(%{op: :qualified_call, target: target, args: args}) do
-    args == [] and match?({:ok, false}, constructor_bool_literal(target))
+    args == [] and match?({:ok, value} when not value, constructor_bool_literal(target))
   end
 
   defp false_bool_branch?(_expr), do: false
 
-  defp true_bool_branch?(%{op: :bool_literal, value: true}), do: true
+  defp true_bool_branch?(%{op: :bool_literal, value: value}) when is_boolean(value), do: value
   defp true_bool_branch?(%{op: :int_literal, value: 1}), do: true
 
   defp true_bool_branch?(%{op: :constructor_call, target: target, args: args}) do
-    args == [] and match?({:ok, true}, constructor_bool_literal(target))
+    args == [] and match?({:ok, value} when value, constructor_bool_literal(target))
   end
 
-  defp true_bool_branch?(%{op: :constructor_ref, target: target}),
-    do: match?({:ok, true}, constructor_bool_literal(target))
+  defp true_bool_branch?(%{op: :constructor_ref, target: target}) do
+    match?({:ok, value} when value, constructor_bool_literal(target))
+  end
 
   defp true_bool_branch?(%{op: :qualified_call, target: target, args: args}) do
-    args == [] and match?({:ok, true}, constructor_bool_literal(target))
+    args == [] and match?({:ok, value} when value, constructor_bool_literal(target))
   end
 
   defp true_bool_branch?(_expr), do: false
@@ -1172,11 +1202,11 @@ defmodule Elmc.Backend.CCodegen.Native.Bool do
     end
   end
 
+  @spec apply_native_compare(String.t(), term(), term()) :: boolean()
   defp apply_native_compare("__eq__", left, right), do: left == right
   defp apply_native_compare("__neq__", left, right), do: left != right
   defp apply_native_compare("__lt__", left, right), do: left < right
   defp apply_native_compare("__lte__", left, right), do: left <= right
   defp apply_native_compare("__gt__", left, right), do: left > right
   defp apply_native_compare("__gte__", left, right), do: left >= right
-  defp apply_native_compare(_, _left, _right), do: false
 end

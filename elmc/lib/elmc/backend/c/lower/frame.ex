@@ -41,7 +41,7 @@ defmodule Elmc.Backend.C.Lower.Frame do
 
   def wrap_catch(false, body), do: body
 
-  @spec owned_slot_count(Types.ir_expr()) :: Types.ir_expr()
+  @spec owned_slot_count(map()) :: non_neg_integer()
 
   defp owned_slot_count(slots) do
     case Map.values(slots) do
@@ -62,7 +62,7 @@ defmodule Elmc.Backend.C.Lower.Frame do
     Process.get(:elmc_codegen_opts, %{})[:pebble_int32] == true
   end
 
-  @spec heap_owned_declaration(non_neg_integer(), boolean()) :: Types.ir_expr()
+  @spec heap_owned_declaration(non_neg_integer(), boolean()) :: String.t()
 
   defp heap_owned_declaration(slot_count, rc?) do
     ret =

@@ -23,16 +23,23 @@ defmodule Elmc.Backend.Plan.Stream.ListLoop do
   @spec try_emit_body(Types.function_declaration(), String.t(), Types.function_decl_map()) ::
           {:ok, String.t()} | :error
   def try_emit_body(decl, module_name, decl_map) do
-    expr = Map.get(decl, :expr)
+    arg_names = List.wrap(decl.args)
+    target = {module_name, decl.name, arg_names}
 
     env =
-      stream_env(module_name, decl, decl_map)
-      |> Map.put(:__direct_emit_target__, {module_name, decl.name, decl.args || []})
+      stream_env(module_name, decl, decl_map, arg_names)
+      |> Map.put(:__direct_emit_target__, target)
 
-    if ListLoopPlans.pipeline_fragment?(expr, env) do
-      emit_list_loop(expr, {module_name, decl.name, decl.args || []}, env)
-    else
-      :error
+    case Map.get(decl, :expr) do
+      %{op: _} = expr ->
+        if ListLoopPlans.pipeline_fragment?(expr, env) do
+          emit_list_loop(expr, target, env)
+        else
+          :error
+        end
+
+      _ ->
+        :error
     end
   end
 
@@ -49,10 +56,13 @@ defmodule Elmc.Backend.Plan.Stream.ListLoop do
     end
   end
 
-  @spec stream_env(String.t(), Types.function_declaration(), Types.function_decl_map()) ::
-          Types.compile_env()
-  defp stream_env(module_name, decl, decl_map) do
-    arg_names = decl.args || []
+  @spec stream_env(
+          String.t(),
+          Types.function_declaration(),
+          Types.function_decl_map(),
+          [String.t()]
+        ) :: Types.compile_env()
+  defp stream_env(module_name, decl, decl_map, arg_names) do
     c_bindings = Host.c_arg_bindings(arg_names)
 
     c_bindings

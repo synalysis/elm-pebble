@@ -334,7 +334,7 @@ defmodule ElmEx.DebuggerContract.ViewTree.Structure do
       function_name = Enum.join(function_parts, ".")
       module_name = Map.get(aliases, qualifier, qualifier)
 
-      if is_binary(function_name) and function_name != "" do
+      if function_name != "" do
         {module_name, function_name}
       end
     end)

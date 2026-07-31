@@ -307,8 +307,8 @@ defmodule Elmc.Backend.CCodegen.VarAnalysis do
 
   defp free_vars(_, _bound, _stop_at_nested?), do: MapSet.new()
 
-  @spec free_vars_subject(String.t() | map() | term(), Types.ir_expr() | term(), boolean()) :: Types.ir_expr()
-
+  @spec free_vars_subject(String.t() | map() | term(), Types.var_name_set(), boolean()) ::
+          Types.var_name_set()
   defp free_vars_subject(name, bound, _stop_at_nested?) when is_binary(name) do
     if MapSet.member?(bound, name), do: MapSet.new(), else: MapSet.new([name])
   end
@@ -318,8 +318,8 @@ defmodule Elmc.Backend.CCodegen.VarAnalysis do
 
   defp free_vars_subject(_, _, _stop_at_nested?), do: MapSet.new()
 
-  @spec free_vars_value(map() | String.t() | list() | term(), Types.ir_expr() | term(), boolean()) :: Types.ir_expr()
-
+  @spec free_vars_value(map() | String.t() | list() | term(), Types.var_name_set(), boolean()) ::
+          Types.var_name_set()
   defp free_vars_value(value, bound, stop_at_nested?) when is_map(value),
     do: free_vars(value, bound, stop_at_nested?)
 
@@ -334,22 +334,19 @@ defmodule Elmc.Backend.CCodegen.VarAnalysis do
 
   defp free_vars_value(_, _, _stop_at_nested?), do: MapSet.new()
 
-  @spec free_vars_args(list(), Types.ir_expr(), boolean()) :: Types.ir_expr()
-
+  @spec free_vars_args([term()], Types.var_name_set(), boolean()) :: Types.var_name_set()
   defp free_vars_args(args, bound, stop_at_nested?) when is_list(args) do
     free_vars_call_args(args, bound, stop_at_nested?)
   end
 
-  @spec free_vars_call_args(list(), Types.ir_expr(), boolean()) :: Types.ir_expr()
-
+  @spec free_vars_call_args([term()], Types.var_name_set(), boolean()) :: Types.var_name_set()
   defp free_vars_call_args(args, bound, stop_at_nested?) when is_list(args) do
     Enum.reduce(args, MapSet.new(), fn arg, acc ->
       MapSet.union(acc, free_vars_call_arg(arg, bound, stop_at_nested?))
     end)
   end
 
-  @spec free_vars_call_arg(map() | Types.expr(), Types.ir_expr(), boolean()) :: Types.ir_expr()
-
+  @spec free_vars_call_arg(term(), Types.var_name_set(), boolean()) :: Types.var_name_set()
   defp free_vars_call_arg(%{op: :lambda, args: inner_args, body: body}, bound, _stop_at_nested?) do
     inner_bound = MapSet.union(bound, MapSet.new(inner_args || []))
     free_vars(body, inner_bound, true)
@@ -359,8 +356,7 @@ defmodule Elmc.Backend.CCodegen.VarAnalysis do
     free_vars(expr, bound, stop_at_nested?)
   end
 
-  @spec free_vars_peel_curried_lambda(map() | term(), Types.ir_expr()) :: Types.ir_expr()
-
+  @spec free_vars_peel_curried_lambda(term(), Types.var_name_set()) :: Types.var_name_set()
   defp free_vars_peel_curried_lambda(%{op: :lambda, args: args, body: body}, bound) do
     inner_bound = MapSet.union(bound, MapSet.new(args || []))
     free_vars_peel_curried_lambda(body, inner_bound)
@@ -372,8 +368,7 @@ defmodule Elmc.Backend.CCodegen.VarAnalysis do
 
   defp free_vars_peel_curried_lambda(_, _bound), do: MapSet.new()
 
-  @spec pattern_bound_names(map() | term()) :: Types.ir_expr()
-
+  @spec pattern_bound_names(term()) :: [String.t()]
   defp pattern_bound_names(%{kind: :var, name: name}) when is_binary(name), do: [name]
 
   defp pattern_bound_names(%{kind: :constructor, bind: bind}) when is_binary(bind), do: [bind]
@@ -408,14 +403,12 @@ defmodule Elmc.Backend.CCodegen.VarAnalysis do
   defp compose_side_vars(_), do: MapSet.new()
 
   @spec call_name_is_var_ref?(String.t()) :: boolean()
-
   defp call_name_is_var_ref?(name) when is_binary(name) do
     name not in @call_operator_names and not String.starts_with?(name, "__")
   end
 
   # Record field chains lowered to qualified_ref (e.g. hull.lo.x) are not module paths.
-  @spec dotted_var_ref_root(String.t()) :: Types.ir_expr()
-
+  @spec dotted_var_ref_root(String.t()) :: String.t() | nil
   defp dotted_var_ref_root(target) when is_binary(target) do
     case String.split(target, ".", parts: 2) do
       [root, _rest] when root != "" -> if var_like_root?(root), do: root, else: nil
@@ -424,7 +417,6 @@ defmodule Elmc.Backend.CCodegen.VarAnalysis do
   end
 
   @spec var_like_root?(String.t()) :: boolean()
-
   defp var_like_root?(root) when is_binary(root) do
     case root do
       <<first::utf8, _::binary>> -> first in ?a..?z or first in ?_..?_

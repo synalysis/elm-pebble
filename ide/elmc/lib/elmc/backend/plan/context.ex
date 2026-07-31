@@ -28,7 +28,8 @@ defmodule Elmc.Backend.Plan.Context do
     :letrec_capture_indices,
     :lambda_plan,
     :curried_type_offset,
-    :expected_fn_type
+    :expected_fn_type,
+    :stream_mode
   ]
 
   @type t :: %__MODULE__{
@@ -49,7 +50,8 @@ defmodule Elmc.Backend.Plan.Context do
           letrec_capture_indices: %{String.t() => non_neg_integer()},
           lambda_plan: boolean(),
           curried_type_offset: non_neg_integer(),
-          expected_fn_type: String.t() | nil
+          expected_fn_type: String.t() | nil,
+          stream_mode: boolean()
         }
 
   @type dest :: :scratch | :fn_out | :branch_out
@@ -76,7 +78,8 @@ defmodule Elmc.Backend.Plan.Context do
       letrec_capture_indices: Keyword.get(opts, :letrec_capture_indices, %{}),
       lambda_plan: Keyword.get(opts, :lambda_plan, false),
       curried_type_offset: Keyword.get(opts, :curried_type_offset, 0),
-      expected_fn_type: Keyword.get(opts, :expected_fn_type)
+      expected_fn_type: Keyword.get(opts, :expected_fn_type),
+      stream_mode: Keyword.get(opts, :stream_mode, false)
     }
   end
 
@@ -91,7 +94,7 @@ defmodule Elmc.Backend.Plan.Context do
   def with_expected_fn_type(ctx, _),
     do: %{ctx | expected_fn_type: nil}
 
-  @spec from_compile_env(Types.compile_env()) :: t()
+  @spec from_compile_env(Types.compile_env()) :: t() | map()
   def from_compile_env(env) when is_map(env) do
     function_tail =
       Map.get(env, :__function_tail_compile__, false) or
@@ -172,6 +175,9 @@ defmodule Elmc.Backend.Plan.Context do
   @spec function_tail?(t()) :: boolean()
   def function_tail?(ctx), do: ctx.function_tail or dest_for_call(ctx) == :fn_out
 
+  @spec stream_mode?(t()) :: boolean()
+  def stream_mode?(ctx), do: Map.get(ctx, :stream_mode, false) == true
+
   @spec put_local(t(), String.t(), Types.reg()) :: t()
   def put_local(ctx, name, reg) when is_binary(name) do
     %{ctx | locals: Map.put(ctx.locals, name, reg)}
@@ -182,11 +188,11 @@ defmodule Elmc.Backend.Plan.Context do
 
   @spec put_local_type(t(), String.t(), String.t()) :: t()
   def put_local_type(ctx, name, type) when is_binary(name) and is_binary(type) do
-    %{ctx | local_types: Map.put(ctx.local_types || %{}, name, type)}
+    %{ctx | local_types: Map.put(ctx.local_types, name, type)}
   end
 
   @spec local_type(t(), String.t()) :: String.t() | nil
-  def local_type(ctx, name) when is_binary(name), do: Map.get(ctx.local_types || %{}, name)
+  def local_type(ctx, name) when is_binary(name), do: Map.get(ctx.local_types, name)
 
   @spec fresh_locals(t()) :: t()
   def fresh_locals(ctx), do: %{ctx | locals: %{}, local_types: %{}}
@@ -198,7 +204,7 @@ defmodule Elmc.Backend.Plan.Context do
 
   @spec advance_curried_type_offset(t(), non_neg_integer()) :: t()
   def advance_curried_type_offset(ctx, count) when is_integer(count) and count >= 0 do
-    %{ctx | curried_type_offset: (ctx.curried_type_offset || 0) + count}
+    %{ctx | curried_type_offset: ctx.curried_type_offset + count}
   end
 
   @spec root_function_name(t()) :: String.t() | nil

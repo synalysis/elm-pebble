@@ -2,21 +2,24 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.Tuple2CaseTable do
   @moduledoc false
   alias Elmc.Backend.CCodegen.Types, as: Types
 
-
   alias Elmc.Backend.CCodegen.Types
 
   alias Elmc.Backend.Plan.Fusion.Matchers.FusionSupport
   alias Elmc.Backend.CCodegen.Util
 
   @spec try_emit(String.t(), String.t(), Types.ir_expr() | nil) ::
-          {:ok, String.t(), [FusionSupport.callee_key()]} | {:ok, String.t(), [FusionSupport.callee_key()], :rc_native} | :error
+          {:ok, String.t(), [FusionSupport.runtime_callee()]}
+          | {:ok, String.t(), [FusionSupport.runtime_callee()], :rc_native}
+          | :error
   def try_emit(_module_name, _name, nil), do: :error
 
   def try_emit(module_name, name, expr) do
     with {:ok, outer_mod, outer_branches} <- parse_outer_case(expr),
          {:ok, rows} <- parse_rows(outer_branches),
          true <- length(rows) > 0 do
-      FusionSupport.ok_rc(emit(module_name, name, outer_mod, rows), ["elmc_list_from_tuple2_int_array"])
+      FusionSupport.ok_rc(emit(module_name, name, outer_mod, rows), [
+        "elmc_list_from_tuple2_int_array"
+      ])
     else
       _ -> :error
     end
@@ -24,10 +27,7 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.Tuple2CaseTable do
 
   @spec recognized?(String.t(), String.t(), Types.ir_expr() | nil) :: boolean()
   def recognized?(module_name, name, expr) do
-    case try_emit(module_name, name, expr) do
-      {:ok, _, _, _} -> true
-      _ -> false
-    end
+    match?({:ok, _, _, _}, try_emit(module_name, name, expr))
   end
 
   @spec table_shape(Types.ir_expr() | nil) :: {:ok, integer(), integer()} | :error
@@ -74,8 +74,11 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.Tuple2CaseTable do
     end
   end
 
-  @spec parse_outer_case(map() | term()) :: Types.ir_expr()
+  @type int_pair :: {integer(), integer()}
+  @type rot_cell :: {integer() | :default, [int_pair()]}
+  @type kind_row :: {integer() | :default, [rot_cell()]}
 
+  @spec parse_outer_case(term()) :: {:ok, integer(), list()} | :error
   defp parse_outer_case(%{
          op: :let_in,
          value_expr: value,
@@ -96,19 +99,21 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.Tuple2CaseTable do
 
   defp parse_outer_case(_), do: :error
 
-  @spec mod_base(map() | term()) :: Types.ir_expr()
-
+  @spec mod_base(term()) :: {:ok, integer()} | :error
   defp mod_base(%{op: :call, name: "modBy", args: [%{op: :int_literal, value: mod}, _]}),
     do: {:ok, mod}
 
-  defp mod_base(%{op: :qualified_call, target: target, args: [%{op: :int_literal, value: mod}, _]})
+  defp mod_base(%{
+         op: :qualified_call,
+         target: target,
+         args: [%{op: :int_literal, value: mod}, _]
+       })
        when target in ["Basics.modBy", "modBy"],
        do: {:ok, mod}
 
   defp mod_base(_), do: :error
 
-  @spec parse_rows(list()) :: Types.ir_expr()
-
+  @spec parse_rows([map()]) :: {:ok, [kind_row()]} | :error
   defp parse_rows(branches) do
     rows =
       Enum.map(branches, fn branch ->
@@ -125,8 +130,7 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.Tuple2CaseTable do
     if normalized == [], do: :error, else: {:ok, normalized}
   end
 
-  @spec parse_inner_cells(Types.expr()) :: Types.ir_expr()
-
+  @spec parse_inner_cells(Types.expr()) :: {:ok, [rot_cell()]} | :error
   defp parse_inner_cells(expr) do
     case parse_inner_case(expr) do
       {:ok, cells} -> {:ok, cells}
@@ -134,8 +138,7 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.Tuple2CaseTable do
     end
   end
 
-  @spec flat_rot_cells(Types.expr()) :: Types.ir_expr()
-
+  @spec flat_rot_cells(Types.expr()) :: {:ok, [rot_cell()]} | :error
   defp flat_rot_cells(expr) do
     case static_pairs(expr) do
       {:ok, pairs} -> {:ok, Enum.map(0..3, fn rot -> {rot, pairs} end)}
@@ -143,8 +146,7 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.Tuple2CaseTable do
     end
   end
 
-  @spec normalize_rows(Types.ir_expr()) :: Types.ir_expr()
-
+  @spec normalize_rows([term()]) :: [kind_row()]
   defp normalize_rows(rows) do
     rows
     |> Enum.map(fn
@@ -161,8 +163,7 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.Tuple2CaseTable do
     end)
   end
 
-  @spec normalize_rot_cells(Types.ir_expr()) :: Types.ir_expr()
-
+  @spec normalize_rot_cells([term()]) :: [rot_cell()] | nil
   defp normalize_rot_cells(cells) do
     cells
     |> Enum.map(fn
@@ -181,14 +182,12 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.Tuple2CaseTable do
     end)
   end
 
-  @spec int_pattern_index(map() | term()) :: Types.ir_expr()
-
+  @spec int_pattern_index(term()) :: integer() | :default | nil
   defp int_pattern_index(%{kind: :int, value: n}) when is_integer(n), do: n
   defp int_pattern_index(%{kind: :wildcard}), do: :default
   defp int_pattern_index(_), do: nil
 
-  @spec parse_inner_case(map() | term()) :: Types.ir_expr()
-
+  @spec parse_inner_case(term()) :: {:ok, [rot_cell()]} | :error
   defp parse_inner_case(%{
          op: :let_in,
          value_expr: value,
@@ -208,8 +207,7 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.Tuple2CaseTable do
 
   defp parse_inner_case(_), do: :error
 
-  @spec parse_cells(list()) :: Types.ir_expr()
-
+  @spec parse_cells([map()]) :: {:ok, [rot_cell()]} | :error
   defp parse_cells(branches) do
     cells =
       Enum.map(branches, fn branch ->
@@ -224,8 +222,7 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.Tuple2CaseTable do
     if Enum.any?(cells, &is_nil/1), do: :error, else: {:ok, cells}
   end
 
-  @spec static_pairs(map() | term()) :: Types.ir_expr()
-
+  @spec static_pairs(term()) :: {:ok, [int_pair()]} | :error
   defp static_pairs(%{op: :list_literal, items: items}) do
     pairs =
       Enum.map(items, fn
@@ -241,8 +238,7 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.Tuple2CaseTable do
 
   defp static_pairs(_), do: :error
 
-  @spec emit(String.t(), String.t(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
-
+  @spec emit(String.t(), String.t(), integer(), [kind_row()]) :: String.t()
   defp emit(module_name, name, outer_mod, rows) do
     c_prefix = Util.module_fn_name(module_name, name)
     safe = Util.safe_c_suffix(name)

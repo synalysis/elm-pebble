@@ -134,7 +134,7 @@ defmodule Mix.Tasks.Ide.McpTemplateHealth do
       Map.merge(base, %{status: :error, issues: [Exception.message(error)]})
   end
 
-  @spec step(map() | term(), String.t(), integer()) :: term()
+  @spec step(map(), atom(), (map() -> map())) :: map()
 
   defp step(%{status: :error} = acc, _name, _fun), do: acc
 
@@ -142,7 +142,7 @@ defmodule Mix.Tasks.Ide.McpTemplateHealth do
     fun.(Map.update!(acc, :steps, &[name | &1]))
   end
 
-  @spec fail(term(), term(), integer()) :: term()
+  @spec fail(map(), String.t(), String.t()) :: map()
 
   defp fail(acc, step, reason) do
     %{acc | status: :error, issues: acc.issues ++ ["#{step}: #{reason}"]}
@@ -416,7 +416,7 @@ defmodule Mix.Tasks.Ide.McpTemplateHealth do
     end
   end
 
-  @spec mcp(String.t(), [String.t()]) :: term()
+  @spec mcp(String.t(), map()) :: {:ok, term()} | {:error, term()}
 
   defp mcp(name, args) do
     request = %{
@@ -499,7 +499,7 @@ defmodule Mix.Tasks.Ide.McpTemplateHealth do
     IO.puts("\nSummary: #{ok}/#{length(results)} passed\n")
   end
 
-  @spec optional_field(term(), String.t(), String.t()) :: term()
+  @spec optional_field(map(), atom(), String.t()) :: String.t()
 
   defp optional_field(row, key, label) do
     case Map.get(row, key) do

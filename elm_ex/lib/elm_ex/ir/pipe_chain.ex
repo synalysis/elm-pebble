@@ -42,7 +42,7 @@ defmodule ElmEx.IR.PipeChain do
 
   def desugar_project(ir), do: ir
 
-  @spec desugar_module(map() | Types.expr()) :: map()
+  @spec desugar_module(map()) :: map()
 
   defp desugar_module(%{declarations: decls} = mod) when is_list(decls) do
     %{mod | declarations: Enum.map(decls, &desugar_declaration/1)}
@@ -50,7 +50,7 @@ defmodule ElmEx.IR.PipeChain do
 
   defp desugar_module(mod), do: mod
 
-  @spec desugar_declaration(map() | Types.decl()) :: map()
+  @spec desugar_declaration(map()) :: map()
 
   defp desugar_declaration(%{expr: expr} = decl) when is_map(expr) do
     %{decl | expr: desugar_expr(expr)}
@@ -70,7 +70,7 @@ defmodule ElmEx.IR.PipeChain do
     end)
   end
 
-  @spec desugar_child(map() | Types.expr()) :: map()
+  @spec desugar_child(map() | term()) :: Expr.t() | term()
 
   defp desugar_child(%{} = child), do: desugar_expr(child)
   defp desugar_child(child), do: child
@@ -127,7 +127,7 @@ defmodule ElmEx.IR.PipeChain do
     %{op: :call, name: "__apply__", args: [step, acc]}
   end
 
-  @spec split_homogeneous_prefix(term()) :: Types.expr()
+  @spec split_homogeneous_prefix([Expr.t()]) :: {[Expr.t()], [Expr.t()]}
 
   defp split_homogeneous_prefix([]), do: {[], []}
 

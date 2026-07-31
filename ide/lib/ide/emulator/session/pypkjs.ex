@@ -92,7 +92,7 @@ defmodule Ide.Emulator.Session.Pypkjs do
 
   def handle_local_port(state), do: {:reply, state.phone_ws_port, state}
 
-  @spec python_from_shebang(integer()) :: term()
+  @spec python_from_shebang(String.t()) :: {:ok, String.t()} | {:error, :pypkjs_python_not_found}
 
   defp python_from_shebang(pypkjs_bin) do
     with {:ok, <<"#!", rest::binary>>} <- File.read(pypkjs_bin),

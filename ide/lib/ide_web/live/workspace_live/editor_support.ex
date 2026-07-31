@@ -894,7 +894,7 @@ defmodule IdeWeb.WorkspaceLive.EditorSupport do
          Regex.match?(~r/^\([^)]+\)\s+.*=\s*/, trimmed))
   end
 
-  @spec last_non_blank_line([String.t()], pos_integer()) :: pos_integer()
+  @spec last_non_blank_line([String.t()], pos_integer()) :: pos_integer() | nil
   def last_non_blank_line(lines, from_line) when is_list(lines) and is_integer(from_line) do
     max_line = min(from_line, length(lines))
 

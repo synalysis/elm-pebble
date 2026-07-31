@@ -1,7 +1,5 @@
 defmodule ElmEx.Frontend.Pretty.BodyLayout do
   @moduledoc false
-  alias ElmEx.Frontend.AstContract.Types, as: Types
-
 
   alias ElmEx.Frontend.Layout
   alias ElmEx.Frontend.Pretty.Literal
@@ -165,13 +163,13 @@ defmodule ElmEx.Frontend.Pretty.BodyLayout do
     end)
   end
 
-  @spec special_string_literal?(Types.expr()) :: boolean()
+  @spec special_string_literal?(String.t()) :: boolean()
 
   defp special_string_literal?(inner) do
     String.contains?(inner, "\\x") or String.contains?(inner, [<<0xA0::utf8>>])
   end
 
-  @spec decode_string_literal(Types.expr()) :: Types.expr()
+  @spec decode_string_literal(String.t()) :: String.t()
 
   defp decode_string_literal(inner) do
     Regex.replace(~r/\\x([0-9A-Fa-f]+)/u, inner, fn _, hex ->
@@ -192,7 +190,7 @@ defmodule ElmEx.Frontend.Pretty.BodyLayout do
     end)
   end
 
-  @spec special_char_literal?(Types.expr()) :: boolean()
+  @spec special_char_literal?(String.t()) :: boolean()
 
   defp special_char_literal?(inner) do
     String.contains?(inner, "\\x") or
@@ -202,7 +200,7 @@ defmodule ElmEx.Frontend.Pretty.BodyLayout do
       |> Enum.any?(fn cp -> cp in [0xA0, 0x2000, 0x205F] end)
   end
 
-  @spec decode_char_literal(Types.expr()) :: Types.expr()
+  @spec decode_char_literal(String.t()) :: String.t()
 
   defp decode_char_literal(inner) do
     inner

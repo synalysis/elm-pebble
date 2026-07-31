@@ -17,7 +17,7 @@ defmodule Elmc.Backend.Worker do
   alias Elmc.Backend.Plan.Worker.Host.Verify, as: HostVerify
   alias Elmc.Backend.Plan.Worker.Layout, as: WorkerLayout
 
-  @spec write_worker_adapter(IR.t(), String.t(), String.t(), keyword()) ::
+  @spec write_worker_adapter(IR.t(), String.t(), String.t(), map() | keyword()) ::
           :ok | {:error, Types.file_error()}
   def write_worker_adapter(%IR{} = ir, out_dir, entry_module, opts \\ []) do
     c_dir = Path.join(out_dir, "c")
@@ -114,14 +114,4 @@ defmodule Elmc.Backend.Worker do
   end
 
   defp last_dispatch_cmd_cap(%{last_dispatch_cmd_cap: cap}, _opts) when is_integer(cap), do: cap
-
-  defp last_dispatch_cmd_cap(_host_plan, opts) do
-    opts = Map.new(opts)
-
-    if Map.get(opts, :pebble_int32) == true and Map.get(opts, :prod) == true do
-      0
-    else
-      8
-    end
-  end
 end

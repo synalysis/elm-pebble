@@ -34,7 +34,7 @@ defmodule Elmc.Backend.Bytecode.Artifacts.Types do
         }
 
   @type plan_toolchain :: %{
-          optional(:mode) => :off | :shadow | :primary | String.t(),
+          optional(:mode) => :shadow | :primary | String.t(),
           optional(:strict) => boolean(),
           optional(String.t()) => coverage_stat(),
           optional(atom()) => coverage_stat()
@@ -48,8 +48,8 @@ defmodule Elmc.Backend.Bytecode.Artifacts.Types do
           optional(:function_count) => non_neg_integer(),
           optional(:skipped_count) => non_neg_integer(),
           optional(:pruned_count) => non_neg_integer(),
-          optional(:plan_toolchain) => plan_toolchain() | nil,
-          optional(:plan_coverage) => plan_coverage() | nil,
+          optional(:plan_toolchain) => plan_toolchain() | map() | nil,
+          optional(:plan_coverage) => plan_coverage() | map() | nil,
           optional(:functions) => [function_row()],
           optional(:skipped) => [skipped_row()]
         }

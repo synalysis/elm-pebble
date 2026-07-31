@@ -208,8 +208,6 @@ defmodule Elmc do
     end
   end
 
-  defp check_missing_imports(_project, _opts), do: :ok
-
   @spec normalize_compile_opts(compile_options() | keyword()) :: compile_options()
   defp normalize_compile_opts(opts) when is_list(opts),
     do: opts |> Map.new() |> normalize_compile_opts()
@@ -332,14 +330,12 @@ defmodule Elmc do
 
   @spec project_for_compile(String.t(), compile_options()) ::
           {:ok, ElmEx.Frontend.Project.t()} | {:error, RootTypes.frontend_bridge_error()}
-  defp project_for_compile(_project_dir, %{project: %ElmEx.Frontend.Project{} = project}),
-    do: {:ok, project}
-
-  defp project_for_compile(_project_dir, %{"project" => %ElmEx.Frontend.Project{} = project}),
-    do: {:ok, project}
-
-  defp project_for_compile(project_dir, _opts),
-    do: Bridge.load_project(project_dir, lowerer_diagnostics: false)
+  defp project_for_compile(project_dir, opts) when is_map(opts) do
+    case Map.get(opts, :project) do
+      %ElmEx.Frontend.Project{} = project -> {:ok, project}
+      _ -> Bridge.load_project(project_dir, lowerer_diagnostics: false)
+    end
+  end
 
   defp maybe_write_c_artifacts(ir, out_dir, _entry_module, opts, true = _wasm_only?) do
     with :ok <- Elmc.Backend.Wasm.ProjectWriter.write(ir, out_dir, opts),
@@ -547,39 +543,35 @@ defmodule Elmc do
   defp wasm_empty_export_diagnostics(_summary, _opts), do: []
 
   defp plan_toolchain_summary(bytecode_summary, wasm_summary, opts) do
-    case wasm_summary do
-      %{plan_toolchain: %{} = toolchain} ->
-        normalize_plan_toolchain(toolchain)
-
-      %{"plan_toolchain" => %{} = toolchain} ->
+    case plan_toolchain_from_summary(wasm_summary) || plan_toolchain_from_summary(bytecode_summary) do
+      %{} = toolchain ->
         normalize_plan_toolchain(toolchain)
 
       _ ->
-        case bytecode_summary do
-          %{plan_toolchain: %{} = toolchain} ->
-            normalize_plan_toolchain(toolchain)
-
-          %{"plan_toolchain" => %{} = toolchain} ->
-            normalize_plan_toolchain(toolchain)
-
-          _ ->
-            %{
-              mode: Plan.plan_ir_mode(opts),
-              strict: Plan.strict_primary?(opts),
-              targets: Targets.normalize(opts)
-            }
-        end
+        %{
+          mode: Plan.plan_ir_mode(opts),
+          strict: Plan.strict_primary?(opts),
+          targets: Targets.normalize(opts)
+        }
     end
   end
 
-  defp normalize_plan_toolchain(%{"mode" => mode, "strict" => strict}),
-    do: %{mode: normalize_plan_mode(mode), strict: strict}
+  defp plan_toolchain_from_summary(summary) when is_map(summary) do
+    case Map.get(summary, :plan_toolchain) do
+      %{} = toolchain -> toolchain
+      _ -> nil
+    end
+  end
 
-  defp normalize_plan_toolchain(%{mode: mode, strict: strict}),
-    do: %{mode: normalize_plan_mode(mode), strict: strict}
+  defp normalize_plan_toolchain(toolchain) when is_map(toolchain) do
+    mode = Map.get(toolchain, :mode) || Map.get(toolchain, "mode") || :primary
+    strict = Map.get(toolchain, :strict) || Map.get(toolchain, "strict") || false
+    %{mode: normalize_plan_mode(mode), strict: strict == true}
+  end
 
   defp normalize_plan_mode("primary"), do: :primary
   defp normalize_plan_mode("shadow"), do: :shadow
   defp normalize_plan_mode("off"), do: :primary
   defp normalize_plan_mode(mode) when is_atom(mode) and mode in [:primary, :shadow], do: mode
+  defp normalize_plan_mode(_), do: :primary
 end

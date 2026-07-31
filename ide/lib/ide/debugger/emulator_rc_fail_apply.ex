@@ -25,7 +25,7 @@ defmodule Ide.Debugger.EmulatorRcFailApply do
     end)
   end
 
-  @spec maybe_put_line(list(), integer() | term()) :: term() | nil
+  @spec maybe_put_line(map(), integer() | nil) :: map()
 
   defp maybe_put_line(fields, line) when is_integer(line) and line > 0 do
     Map.put(fields, "elmc_last_fail_line", line)

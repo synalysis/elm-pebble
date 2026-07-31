@@ -6,11 +6,12 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.SpawnTileChain do
   """
   alias Elmc.Backend.CCodegen.Types, as: Types
 
-
-  alias Elmc.Backend.CCodegen.Types
-
   alias Elmc.Backend.Plan.Fusion.Matchers.FusionSupport
   alias Elmc.Backend.CCodegen.{ImmortalStaticList, Native.FunctionCall, SpawnTileInline, Util}
+
+  @type let_binding :: {String.t(), Types.expr()}
+  @type let_bindings :: [let_binding()]
+  @type board_source_t :: :zeros | {String.t(), String.t()}
 
   @spec try_emit(String.t(), String.t(), Types.ir_expr() | nil, Types.function_decl_map()) ::
           {:ok, String.t(), [FusionSupport.callee_key()]} | {:ok, String.t(), [FusionSupport.callee_key()], :rc_native} | :error
@@ -47,7 +48,8 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.SpawnTileChain do
     end
   end
 
-  @spec parse_chain(Types.expr(), Types.decl_map(), String.t(), Types.compile_env()) :: Types.ir_expr()
+  @spec parse_chain(Types.expr(), Types.decl_map(), String.t(), Types.compile_env()) ::
+          {:ok, String.t(), String.t(), Types.expr(), non_neg_integer()} | :error
 
   defp parse_chain(expr, decl_map, module_name, env) do
     {bindings, body} = flatten_lets(expr)
@@ -63,7 +65,7 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.SpawnTileChain do
     end
   end
 
-  @spec flatten_lets(Types.expr() | map(), Types.ir_expr() | term()) :: Types.ir_expr()
+  @spec flatten_lets(Types.expr(), let_bindings()) :: {let_bindings(), Types.expr()}
 
   defp flatten_lets(expr, acc \\ [])
 
@@ -74,7 +76,8 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.SpawnTileChain do
 
   defp flatten_lets(expr, acc), do: {Enum.reverse(acc), expr}
 
-  @spec find_first_spawn(Types.ir_expr(), String.t()) :: Types.ir_expr()
+  @spec find_first_spawn(let_bindings(), String.t()) ::
+          {:ok, String.t(), Types.expr(), String.t()} | :error
 
   defp find_first_spawn(bindings, module_name) do
     Enum.find_value(bindings, :error, fn {name, value} ->
@@ -85,7 +88,8 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.SpawnTileChain do
     end)
   end
 
-  @spec find_tuple_destructure(Types.ir_expr(), String.t()) :: Types.ir_expr()
+  @spec find_tuple_destructure(let_bindings(), String.t()) ::
+          {:ok, String.t(), String.t()} | :error
 
   defp find_tuple_destructure(bindings, tuple_bind) when is_binary(tuple_bind) do
     cells_bind =
@@ -111,7 +115,8 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.SpawnTileChain do
     end
   end
 
-  @spec parse_second_spawn(Types.expr(), integer(), Types.ir_expr(), Types.ir_expr(), String.t()) :: Types.ir_expr()
+  @spec parse_second_spawn(Types.expr(), String.t(), String.t(), String.t(), String.t()) ::
+          :ok | :error
 
   defp parse_second_spawn(body, spawn_fn, seed_bind, cells_bind, module_name) do
     case parse_spawn_call(body, module_name) do
@@ -127,13 +132,12 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.SpawnTileChain do
     end
   end
 
-  @spec var_ref?(map() | String.t() | term(), Types.ir_expr() | term()) :: boolean()
-
+  @spec var_ref?(Types.expr(), String.t()) :: boolean()
   defp var_ref?(%{op: :var, name: name}, bind), do: name == bind
-  defp var_ref?(name, bind) when is_binary(name), do: name == bind
   defp var_ref?(_, _), do: false
 
-  @spec parse_spawn_call(map() | term(), String.t() | term()) :: Types.ir_expr()
+  @spec parse_spawn_call(Types.expr(), String.t()) ::
+          {:ok, String.t(), Types.expr(), Types.expr()} | :error
 
   defp parse_spawn_call(%{op: :qualified_call, target: target, args: args}, _module_name) do
     with [seed, cells] <- args || [],
@@ -150,7 +154,7 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.SpawnTileChain do
 
   defp parse_spawn_call(_, _), do: :error
 
-  @spec seed_param_name(map() | term()) :: Types.ir_expr()
+  @spec seed_param_name(Types.expr()) :: {:ok, String.t()} | :error
 
   defp seed_param_name(%{op: :qualified_call, args: [seed, _]}) do
     case seed do
@@ -169,13 +173,21 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.SpawnTileChain do
 
   defp seed_param_name(_), do: :error
 
-  @spec board_expr_from_spawn(map() | term()) :: Types.ir_expr()
+  @spec board_expr_from_spawn(Types.expr()) :: {:ok, Types.expr()} | :error
 
   defp board_expr_from_spawn(%{op: :qualified_call, args: [_, board]}), do: {:ok, board}
   defp board_expr_from_spawn(%{op: :call, args: [_, board]}), do: {:ok, board}
   defp board_expr_from_spawn(_), do: :error
 
-  @spec emit(String.t(), String.t(), integer(), Types.ir_expr(), Types.expr(), non_neg_integer(), Types.decl_map()) :: Types.ir_expr()
+  @spec emit(
+          String.t(),
+          String.t(),
+          String.t(),
+          String.t(),
+          Types.expr(),
+          non_neg_integer(),
+          Types.decl_map()
+        ) :: String.t()
 
   defp emit(module_name, name, _spawn_fn, seed_param, board_expr, count, decl_map) do
     c_prefix = Util.module_fn_name(module_name, name)
@@ -205,7 +217,8 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.SpawnTileChain do
     """
   end
 
-  @spec seed_param_emit(Types.decl_map(), String.t(), String.t(), Types.ir_expr()) :: Types.ir_expr()
+  @spec seed_param_emit(Types.decl_map(), String.t(), String.t(), String.t()) ::
+          {String.t(), String.t()}
 
   defp seed_param_emit(decl_map, module_name, fn_name, seed_param) do
     case Map.get(decl_map, {module_name, fn_name}) do
@@ -226,7 +239,8 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.SpawnTileChain do
     end
   end
 
-  @spec emit_board_load(Types.expr(), non_neg_integer(), Types.decl_map(), String.t()) :: Types.ir_expr()
+  @spec emit_board_load(Types.expr(), non_neg_integer(), Types.decl_map(), String.t()) ::
+          String.t()
 
   defp emit_board_load(board_expr, count, _decl_map, module_name) do
     case board_expr do
@@ -287,7 +301,7 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.SpawnTileChain do
     end
   end
 
-  @spec board_source(map() | term(), String.t()) :: Types.ir_expr()
+  @spec board_source(Types.expr(), String.t()) :: board_source_t()
 
   defp board_source(%{op: :var, name: _}, _module_name), do: :zeros
 

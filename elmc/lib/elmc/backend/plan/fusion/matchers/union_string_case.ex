@@ -38,7 +38,7 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.UnionStringCase do
     end
   end
 
-  @spec parse_case(map() | term()) :: Types.ir_expr()
+  @spec parse_case(map() | term()) :: {:ok, Types.expr(), Types.case_branches()} | :error
 
   defp parse_case(%{op: :case, subject: subject, branches: branches}),
     do: {:ok, subject, branches}
@@ -64,11 +64,11 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.UnionStringCase do
       end)
   end
 
-  @spec branch_string_spec(map()) :: Types.ir_expr()
+  @spec branch_string_spec(map()) :: {:string, String.t()} | :zero | :complex
 
   defp branch_string_spec(%{expr: expr}), do: string_expr_spec(expr)
 
-  @spec string_expr_spec(map() | term()) :: Types.ir_expr()
+  @spec string_expr_spec(map() | term()) :: {:string, String.t()} | :zero | :complex
 
   defp string_expr_spec(%{op: :int_literal, value: 0}), do: :zero
 
@@ -81,7 +81,6 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.UnionStringCase do
   @spec subject_param_name(map() | term()) :: String.t() | nil
 
   defp subject_param_name(%{op: :var, name: name}) when is_binary(name), do: name
-  defp subject_param_name(name) when is_binary(name), do: name
   # Computed subjects are not function params — refuse fusion rather than inventing one.
   defp subject_param_name(_), do: nil
 
@@ -106,7 +105,7 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.UnionStringCase do
     end
   end
 
-  @spec fusion_env(String.t(), String.t(), String.t()) :: Types.ir_expr()
+  @spec fusion_env(String.t(), String.t(), String.t()) :: Types.compile_env()
 
   defp fusion_env(module_name, name, param) when is_binary(param) do
     %{
@@ -134,7 +133,7 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.UnionStringCase do
     end
   end
 
-  @spec union_string_lut(list()) :: Types.ir_expr()
+  @spec union_string_lut(Types.case_branches()) :: %{term() => String.t()}
 
   defp union_string_lut(branches) do
     Map.new(branches, fn branch ->

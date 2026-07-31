@@ -51,7 +51,7 @@ defmodule Ide.Resources.BitmapMonochrome do
 
   defp executable_file?(_), do: false
 
-  @spec convert_with_bin(integer(), String.t(), String.t()) :: term()
+  @spec convert_with_bin(String.t(), String.t(), String.t()) :: :ok | {:error, :conversion_failed}
 
   defp convert_with_bin(bin, input_path, output_path) do
     input_path = Path.expand(input_path)

@@ -36,7 +36,7 @@ defmodule Elmc.Backend.CCodegen.CmdCompile do
     end
   end
 
-  @spec native_params?(Types.ir_expr(), Types.compile_env()) :: boolean()
+  @spec native_params?([Types.expr()], Types.compile_env()) :: boolean()
 
   defp native_params?(params, env) do
     Enum.all?(params, &native_param?(&1, env))
@@ -49,7 +49,12 @@ defmodule Elmc.Backend.CCodegen.CmdCompile do
 
   defp native_param?(expr, env), do: NativeInt.expr?(expr, env)
 
-  @spec compile_native_cmd(atom(), Types.ir_expr(), Types.compile_env(), Types.ir_expr()) :: Types.ir_expr()
+  @spec compile_native_cmd(
+          Types.ir_expr(),
+          [Types.expr()],
+          Types.compile_env(),
+          Types.compile_counter()
+        ) :: Types.compile_result()
 
   defp compile_native_cmd(kind, params, env, counter) do
     {kind_code, kind_ref, counter} = compile_kind_ref(kind, env, counter)
@@ -85,7 +90,12 @@ defmodule Elmc.Backend.CCodegen.CmdCompile do
     {code, out, next}
   end
 
-  @spec compile_native_string_cmd(map() | atom(), term() | Types.ir_expr(), Types.compile_env(), Types.ir_expr()) :: Types.ir_expr()
+  @spec compile_native_string_cmd(
+          Types.ir_expr(),
+          [Types.expr()],
+          Types.compile_env(),
+          Types.compile_counter()
+        ) :: Types.compile_ok_result()
 
   defp compile_native_string_cmd(
          %{op: :c_int_expr, value: "ELMC_PEBBLE_CMD_STORAGE_WRITE_STRING"} = kind,
@@ -122,7 +132,8 @@ defmodule Elmc.Backend.CCodegen.CmdCompile do
 
   defp compile_native_string_cmd(_kind, _params, _env, _counter), do: :error
 
-  @spec compile_kind_ref(map() | atom(), Types.compile_env(), Types.ir_expr()) :: Types.ir_expr()
+  @spec compile_kind_ref(Types.ir_expr(), Types.compile_env(), Types.compile_counter()) ::
+          {String.t(), String.t(), Types.compile_counter()}
 
   defp compile_kind_ref(%{op: :c_int_expr, value: value}, _env, counter) when is_binary(value),
     do: {"", value, counter}
@@ -135,7 +146,8 @@ defmodule Elmc.Backend.CCodegen.CmdCompile do
     {code, "elmc_as_int(#{var})", counter}
   end
 
-  @spec compile_param_ref(map() | Types.expr(), Types.compile_env(), Types.ir_expr()) :: Types.ir_expr()
+  @spec compile_param_ref(Types.expr(), Types.compile_env(), Types.compile_counter()) ::
+          {String.t(), String.t(), Types.compile_counter()}
 
   defp compile_param_ref(%{op: :msg_tag_expr, name: name}, _env, counter) when is_binary(name) do
     {"", msg_tag_macro(name), counter}
@@ -155,7 +167,7 @@ defmodule Elmc.Backend.CCodegen.CmdCompile do
     end
   end
 
-  @spec msg_tag_macro(String.t()) :: Types.ir_expr()
+  @spec msg_tag_macro(String.t()) :: String.t()
 
   defp msg_tag_macro(name) do
     "ELMC_PEBBLE_MSG_#{Util.macro_name(name)}"

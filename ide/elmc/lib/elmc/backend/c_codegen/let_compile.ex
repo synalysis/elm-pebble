@@ -304,7 +304,13 @@ defmodule Elmc.Backend.CCodegen.LetCompile do
     {code, body_var, counter}
   end
 
-  @spec compile_native_string_let(String.t(), Types.expr(), Types.expr(), Types.compile_env(), Types.ir_expr()) :: Types.ir_expr()
+  @spec compile_native_string_let(
+          Types.binding_name(),
+          Types.ir_expr(),
+          Types.ir_expr(),
+          Types.compile_env(),
+          Types.compile_counter()
+        ) :: Types.compile_result()
 
   defp compile_native_string_let(name, value_expr, in_expr, env, counter) do
     {value_code, value_ref, cleanup_refs, counter} =
@@ -396,7 +402,8 @@ defmodule Elmc.Backend.CCodegen.LetCompile do
     {code, body_var, counter}
   end
 
-  @spec put_boxed_record_shape(Types.compile_env(), String.t(), list() | Types.ir_expr()) :: Types.ir_expr()
+  @spec put_boxed_record_shape(Types.compile_env(), String.t(), Types.record_shape()) ::
+          Types.compile_env()
 
   defp put_boxed_record_shape(env, name, fields) when is_list(fields) do
     shapes = Map.get(env, :__record_shapes__, %{})
@@ -405,7 +412,12 @@ defmodule Elmc.Backend.CCodegen.LetCompile do
 
   defp put_boxed_record_shape(env, _name, _fields), do: env
 
-  @spec put_boxed_var_type(Types.compile_env(), String.t(), Types.expr(), Types.compile_env()) :: Types.ir_expr()
+  @spec put_boxed_var_type(
+          Types.compile_env(),
+          String.t(),
+          Types.ir_expr(),
+          Types.compile_env()
+        ) :: Types.compile_env()
 
   defp put_boxed_var_type(body_env, name, value_expr, env) do
     case TypedReturn.expr_type(value_expr, env) do
@@ -450,7 +462,13 @@ defmodule Elmc.Backend.CCodegen.LetCompile do
     EnvBindings.put_hybrid_loop_native_ref(env, name, native_ref)
   end
 
-  @spec maybe_extract_boxed_let_body(Types.expr(), Types.compile_env(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr() | nil
+  @spec maybe_extract_boxed_let_body(
+          Types.ir_expr(),
+          Types.compile_env(),
+          String.t(),
+          String.t(),
+          Types.compile_counter()
+        ) :: Types.compile_result()
 
   defp maybe_extract_boxed_let_body(in_expr, body_env, body_code, body_var, counter) do
     if extract_boxed_let_body?(body_env, body_code) do
@@ -494,7 +512,7 @@ defmodule Elmc.Backend.CCodegen.LetCompile do
     end
   end
 
-  @spec extract_boxed_let_body?(Types.compile_env(), Types.ir_expr()) :: boolean()
+  @spec extract_boxed_let_body?(Types.compile_env(), String.t()) :: boolean()
 
   defp extract_boxed_let_body?(env, body_code) do
     RcRuntimeEmit.generic_helper_extraction_allowed?(env, body_code) and
@@ -502,11 +520,11 @@ defmodule Elmc.Backend.CCodegen.LetCompile do
       Process.get(:elmc_generic_helper_defs) != nil and emitted_line_count(body_code) >= 100
   end
 
-  @spec emitted_line_count(Types.ir_expr()) :: Types.ir_expr()
+  @spec emitted_line_count(String.t()) :: non_neg_integer()
 
   defp emitted_line_count(code), do: code |> String.split("\n") |> length()
 
-  @spec sanitize_let_helper_body(String.t()) :: Types.ir_expr()
+  @spec sanitize_let_helper_body(String.t()) :: String.t()
 
   defp sanitize_let_helper_body(code) when is_binary(code) do
     code
@@ -514,7 +532,8 @@ defmodule Elmc.Backend.CCodegen.LetCompile do
     |> String.replace("return Rc;", "return NULL;")
   end
 
-  @spec boxed_let_body_helper_params(Types.expr(), Types.compile_env(), Types.ir_expr()) :: Types.ir_expr()
+  @spec boxed_let_body_helper_params(Types.ir_expr(), Types.compile_env(), String.t()) ::
+          {:ok, [{String.t(), HelperParams.param_spec()}]} | :error
 
   defp boxed_let_body_helper_params(expr, env, body_code) do
     vars =
@@ -530,7 +549,7 @@ defmodule Elmc.Backend.CCodegen.LetCompile do
     end
   end
 
-  @spec helper_vars_from_body_code(String.t(), Types.compile_env()) :: Types.ir_expr()
+  @spec helper_vars_from_body_code(String.t(), Types.compile_env()) :: MapSet.t(String.t())
 
   defp helper_vars_from_body_code(body_code, env) when is_binary(body_code) do
     env
@@ -553,7 +572,7 @@ defmodule Elmc.Backend.CCodegen.LetCompile do
     end)
   end
 
-  @spec case_subject_vars(map() | list() | term()) :: Types.ir_expr()
+  @spec case_subject_vars(Types.ir_expr() | list() | term()) :: MapSet.t(String.t())
 
   defp case_subject_vars(expr) when is_map(expr) do
     own =
@@ -577,7 +596,9 @@ defmodule Elmc.Backend.CCodegen.LetCompile do
 
   defp case_subject_vars(_), do: MapSet.new()
 
-  @spec external_vars(Types.expr() | map() | list(), Types.ir_expr()) :: Types.ir_expr()
+  @spec external_vars(Types.ir_expr() | map() | list()) :: MapSet.t(String.t())
+  @spec external_vars(Types.ir_expr() | map() | list(), MapSet.t(String.t())) ::
+          MapSet.t(String.t())
 
   defp external_vars(expr), do: external_vars(expr, MapSet.new())
 
@@ -630,7 +651,7 @@ defmodule Elmc.Backend.CCodegen.LetCompile do
 
   defp flatten_let_chain(body), do: {[], body}
 
-  @spec let_body_live_bindings(Types.compile_env(), Types.expr()) :: Types.ir_expr()
+  @spec let_body_live_bindings(Types.compile_env(), Types.ir_expr()) :: MapSet.t(String.t())
 
   defp let_body_live_bindings(env, in_expr) do
     used = MapSet.new(VarAnalysis.used_vars(in_expr))
@@ -640,7 +661,13 @@ defmodule Elmc.Backend.CCodegen.LetCompile do
     |> MapSet.intersection(used)
   end
 
-  @spec let_value_release(Types.compile_env(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.expr()) :: Types.ir_expr()
+  @spec let_value_release(
+          Types.compile_env(),
+          String.t(),
+          String.t(),
+          String.t(),
+          Types.ir_expr()
+        ) :: String.t()
 
   defp let_value_release(env, value_var, value_code, body_code, value_expr)
        when is_binary(value_var) do
@@ -673,7 +700,7 @@ defmodule Elmc.Backend.CCodegen.LetCompile do
     end
   end
 
-  @spec release_consumed_value(String.t()) :: Types.ir_expr()
+  @spec release_consumed_value(String.t()) :: String.t()
 
   defp release_consumed_value(var) when is_binary(var) do
     if ValueSlots.owned_ref?(var) and ValueSlots.epilogue_lifo?() do
@@ -683,7 +710,8 @@ defmodule Elmc.Backend.CCodegen.LetCompile do
     end
   end
 
-  @spec payload_borrow_projection?(Types.compile_env(), Types.ir_expr(), Types.ir_expr(), Types.expr()) :: boolean()
+  @spec payload_borrow_projection?(Types.compile_env(), String.t(), String.t(), Types.ir_expr()) ::
+          boolean()
 
   defp payload_borrow_projection?(env, value_var, value_code, value_expr) do
     EnvBindings.tuple_projection_ref?(env, value_var) or
@@ -691,7 +719,7 @@ defmodule Elmc.Backend.CCodegen.LetCompile do
       String.contains?(value_code, "elmc_maybe_or_tuple_just_payload_borrow(")
   end
 
-  @spec tuple_first_second_binding?(Types.ir_expr(), Types.ir_expr()) :: boolean()
+  @spec tuple_first_second_binding?(String.t(), String.t()) :: boolean()
 
   defp tuple_first_second_binding?(value_var, value_code)
        when is_binary(value_var) and is_binary(value_code) do
@@ -701,7 +729,7 @@ defmodule Elmc.Backend.CCodegen.LetCompile do
 
   defp tuple_first_second_binding?(_value_var, _value_code), do: false
 
-  @spec tuple_first_second_release(String.t()) :: Types.ir_expr()
+  @spec tuple_first_second_release(String.t()) :: String.t()
 
   defp tuple_first_second_release(var) when is_binary(var) do
     if ValueSlots.owned_ref?(var) do
@@ -712,7 +740,13 @@ defmodule Elmc.Backend.CCodegen.LetCompile do
     end
   end
 
-  @spec maybe_put_tuple_projection_ref(Types.compile_env(), String.t(), Types.ir_expr(), Types.ir_expr(), Types.expr()) :: Types.ir_expr() | nil
+  @spec maybe_put_tuple_projection_ref(
+          Types.compile_env(),
+          String.t(),
+          String.t(),
+          String.t(),
+          Types.ir_expr()
+        ) :: Types.compile_env()
 
   defp maybe_put_tuple_projection_ref(env, _name, value_var, value_code, value_expr) do
     if payload_borrow_projection?(env, value_var, value_code, value_expr) do
@@ -730,7 +764,7 @@ defmodule Elmc.Backend.CCodegen.LetCompile do
 
   defp tuple_projection_expr?(_expr), do: false
 
-  @spec released_in_let_body?(String.t() | Types.ir_expr(), String.t() | Types.ir_expr()) :: boolean()
+  @spec released_in_let_body?(String.t(), String.t()) :: boolean()
 
   defp released_in_let_body?(var, body_code) when is_binary(var) and is_binary(body_code) do
     String.contains?(body_code, "elmc_release(#{var})") or

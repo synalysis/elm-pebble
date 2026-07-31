@@ -1042,8 +1042,7 @@ defmodule Elmc.Backend.CCodegen.ListIntRepr do
   defp fused_record_cells_field?({mod, name}, decl, decl_map) do
     case decl do
       %{expr: expr} ->
-        match?({:ok, _, _}, RowSliceAdjacentMerge.try_emit(mod, name, expr, decl_map)) or
-          match?({:ok, _, _, _}, RowSliceAdjacentMerge.try_emit(mod, name, expr, decl_map))
+        match?({:ok, _, _, _}, RowSliceAdjacentMerge.try_emit(mod, name, expr, decl_map))
 
       _ ->
         false
@@ -1052,7 +1051,7 @@ defmodule Elmc.Backend.CCodegen.ListIntRepr do
 
   defp indexed_map_preserves_int_list?(%{op: :qualified_call, target: target, args: args})
        when target in @indexed_map_targets do
-    case List.last(args || []) do
+    case List.last(args) do
       %{name: name, op: :var} when is_binary(name) -> true
       _ -> false
     end
@@ -1060,14 +1059,14 @@ defmodule Elmc.Backend.CCodegen.ListIntRepr do
 
   defp indexed_map_preserves_int_list?(_expr), do: false
 
-  defp record_type_for_arg(name, locals, env) when is_binary(name) do
-    record_type_for_arg(%{op: :var, name: name}, locals, env)
-  end
-
+  @spec record_type_for_arg(Types.ir_expr() | String.t(), map(), Types.compile_env()) ::
+          String.t() | nil
   defp record_type_for_arg(%{op: :var, name: name}, locals, env) when is_binary(name) do
     case Map.get(locals, name) do
       type when is_binary(type) ->
-        if type != list_type(), do: type, else: Expr.record_container_type_for_expr(%{op: :var, name: name}, env)
+        if type != list_type(),
+          do: type,
+          else: Expr.record_container_type_for_expr(%{op: :var, name: name}, env)
 
       _ ->
         Expr.record_container_type_for_expr(%{op: :var, name: name}, env)

@@ -23,7 +23,7 @@ defmodule Elmc.Backend.CCodegen.VarCompile do
     end
   end
 
-  @spec compile_var_expr(map(), Types.compile_env(), Types.ir_expr()) :: Types.ir_expr()
+  @spec compile_var_expr(map(), Types.compile_env(), Types.compile_counter()) :: Types.compile_result()
 
   defp compile_var_expr(%{op: :var, name: name}, env, counter) when is_binary(name) do
     case String.split(name, ".", parts: 2) do

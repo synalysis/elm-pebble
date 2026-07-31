@@ -13,13 +13,11 @@ defmodule Elmc.Backend.Plan.EpilogueRelease do
     %{plan | blocks: Enum.map(blocks, &maybe_insert_releases/1)}
   end
 
-  @spec maybe_insert_releases(map() | Types.ir_expr()) :: Types.ir_expr() | nil
-
+  @spec maybe_insert_releases(Block.t()) :: Block.t()
   defp maybe_insert_releases(%Block{terminator: {:ret, _}} = block), do: insert_releases(block)
   defp maybe_insert_releases(block), do: block
 
-  @spec insert_releases(map()) :: Types.ir_expr()
-
+  @spec insert_releases(Block.t()) :: Block.t()
   defp insert_releases(%Block{instrs: instrs, terminator: term} = block) do
     live = live_owned(instrs)
     ret_reg = ret_reg(term)
@@ -46,8 +44,7 @@ defmodule Elmc.Backend.Plan.EpilogueRelease do
     %{block | instrs: instrs ++ renumber_releases(release_instrs, instrs)}
   end
 
-  @spec renumber_releases(Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
-
+  @spec renumber_releases([Types.t()], [Types.t()]) :: [Types.t()]
   defp renumber_releases(releases, instrs) do
     next_id =
       case List.last(instrs) do
@@ -58,8 +55,7 @@ defmodule Elmc.Backend.Plan.EpilogueRelease do
     Enum.with_index(releases, fn instr, i -> %{instr | id: next_id + i} end)
   end
 
-  @spec live_owned(Types.ir_expr()) :: Types.ir_expr()
-
+  @spec live_owned([Types.t()]) :: MapSet.t(Types.reg())
   defp live_owned(instrs) do
     Enum.reduce(instrs, MapSet.new(), fn instr, owned ->
       case instr do
@@ -76,8 +72,7 @@ defmodule Elmc.Backend.Plan.EpilogueRelease do
     end)
   end
 
-  @spec track_produces(Types.ir_expr(), map() | term()) :: Types.ir_expr()
-
+  @spec track_produces(MapSet.t(Types.reg()), term()) :: MapSet.t(Types.reg())
   defp track_produces(owned, %Types{effects: %{produces: {:owned, _reg}}, dest: dest}) do
     case dest do
       r when is_integer(r) -> MapSet.put(owned, r)
@@ -87,14 +82,12 @@ defmodule Elmc.Backend.Plan.EpilogueRelease do
 
   defp track_produces(owned, _), do: owned
 
-  @spec mark_consumed(Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
-
+  @spec mark_consumed(MapSet.t(Types.reg()), [Types.reg()]) :: MapSet.t(Types.reg())
   defp mark_consumed(owned, consumes) do
     Enum.reduce(consumes, owned, &MapSet.delete(&2, &1))
   end
 
-  @spec ret_reg(term()) :: Types.ir_expr()
-
+  @spec ret_reg(term()) :: Types.reg() | nil
   defp ret_reg({:ret, reg}) when is_integer(reg), do: reg
   defp ret_reg(_), do: nil
 end

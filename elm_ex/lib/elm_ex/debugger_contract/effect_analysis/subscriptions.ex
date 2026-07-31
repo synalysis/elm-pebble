@@ -9,7 +9,7 @@ defmodule ElmEx.DebuggerContract.EffectAnalysis.Subscriptions do
   alias ElmEx.DebuggerContract.EffectAnalysis.Support
   alias ElmEx.DebuggerContract.CmdCall
 
-  @spec subscriptions_outline(term() | Types.expr(), term() | list()) :: term()
+  @spec subscriptions_outline(Types.ast_expr() | nil | term(), Types.param_list() | list()) :: Types.string_list()
 
   def subscriptions_outline(nil, _), do: []
 
@@ -377,7 +377,7 @@ defmodule ElmEx.DebuggerContract.EffectAnalysis.Subscriptions do
 
   defp call_param_bindings(_param_names, _args, bindings), do: bindings
 
-  @spec subscription_call_rows(String.t(), [String.t()], term(), term()) :: term()
+  @spec subscription_call_rows(String.t(), [Types.ast_expr()], Types.binding_map(), list()) :: Types.cmd_call_list()
 
   def subscription_call_rows(target, args, bindings, guards)
       when is_binary(target) and is_list(args) and is_map(bindings) and is_list(guards) do

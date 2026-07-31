@@ -153,7 +153,7 @@ defmodule Elmc.Backend.Plan.Lower.SpecialValues.Core do
     end
   end
 
-  @spec compare_op_kind(Types.ir_expr()) :: Types.ir_expr()
+  @spec compare_op_kind(String.t()) :: Types.compare_kind()
 
   defp compare_op_kind("__eq__"), do: :eq
   defp compare_op_kind("__neq__"), do: :neq
@@ -162,7 +162,7 @@ defmodule Elmc.Backend.Plan.Lower.SpecialValues.Core do
   defp compare_op_kind("__gt__"), do: :gt
   defp compare_op_kind("__gte__"), do: :gte
 
-  @spec operator_call_name(Types.ir_expr() | String.t()) :: Types.ir_expr()
+  @spec operator_call_name(String.t()) :: String.t() | nil
 
   defp operator_call_name("Basics.add"), do: "__add__"
   defp operator_call_name("Basics.sub"), do: "__sub__"
@@ -196,7 +196,7 @@ defmodule Elmc.Backend.Plan.Lower.SpecialValues.Core do
     end
   end
 
-  @spec denormalize_kernel_shorthand(Types.ir_expr() | String.t()) :: Types.ir_expr()
+  @spec denormalize_kernel_shorthand(String.t()) :: String.t()
 
   defp denormalize_kernel_shorthand("Elm.Kernel." <> rest) do
     case String.split(rest, ".", parts: 2) do
@@ -220,7 +220,7 @@ defmodule Elmc.Backend.Plan.Lower.SpecialValues.Core do
 
   defp denormalize_kernel_shorthand(target), do: target
 
-  @spec denormalize_utils_alias(Types.ir_expr() | String.t()) :: Types.ir_expr()
+  @spec denormalize_utils_alias(String.t()) :: String.t()
 
   defp denormalize_utils_alias("Utils.compare"), do: "Basics.compare"
   defp denormalize_utils_alias(target), do: target

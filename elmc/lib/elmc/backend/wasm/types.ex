@@ -1,7 +1,9 @@
 defmodule Elmc.Backend.Wasm.Types do
   @moduledoc false
 
-  @type wat :: iodata()
+  # Wider than Erlang iodata(): flatten_iodata/1 accepts i32 immediates
+  # (including negatives and values > 255) and atoms used in WAT fragments.
+  @type wat :: binary() | integer() | atom() | float() | [wat()]
 
   @spec sexpr(String.t() | atom(), wat()) :: binary()
   def sexpr(name, body \\ []) do

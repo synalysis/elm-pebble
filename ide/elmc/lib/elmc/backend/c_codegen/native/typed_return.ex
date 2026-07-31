@@ -153,7 +153,8 @@ defmodule Elmc.Backend.CCodegen.Native.TypedReturn do
 
   def expr_type(_expr, _env), do: nil
 
-  @spec function_return_type(Types.ir_expr() | String.t(), Types.compile_env(), non_neg_integer()) :: Types.ir_expr()
+  @spec function_return_type(Types.function_decl_key() | nil, Types.compile_env(), non_neg_integer()) ::
+          String.t() | nil
 
   defp function_return_type(nil, _env, _arg_count), do: nil
 
@@ -169,7 +170,7 @@ defmodule Elmc.Backend.CCodegen.Native.TypedReturn do
     end
   end
 
-  @spec type_from_env(Types.compile_env(), String.t()) :: Types.ir_expr()
+  @spec type_from_env(Types.compile_env(), String.t() | atom()) :: String.t() | nil
 
   defp type_from_env(env, name) when is_binary(name) or is_atom(name) do
     env

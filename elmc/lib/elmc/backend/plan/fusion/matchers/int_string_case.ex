@@ -43,7 +43,7 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.IntStringCase do
     end
   end
 
-  @spec parse_int_string_case(map() | term()) :: Types.ir_expr()
+  @spec parse_int_string_case(map() | term()) :: {:ok, Types.case_branches()} | :error
 
   defp parse_int_string_case(%{op: :case, branches: branches}) when is_list(branches),
     do: {:ok, branches}
@@ -51,7 +51,7 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.IntStringCase do
   defp parse_int_string_case(%{op: :let_in, in_expr: body}), do: parse_int_string_case(body)
   defp parse_int_string_case(_), do: :error
 
-  @spec int_case_branches(list()) :: Types.ir_expr()
+  @spec int_case_branches(Types.case_branches()) :: Types.int_case_branches()
 
   defp int_case_branches(branches) do
     Enum.map(branches, fn branch ->
@@ -59,7 +59,7 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.IntStringCase do
     end)
   end
 
-  @spec int_pattern(map() | term()) :: Types.ir_expr()
+  @spec int_pattern(map() | term()) :: map()
 
   defp int_pattern(%{kind: :int} = pattern), do: pattern
   defp int_pattern(%{kind: :wildcard} = pattern), do: pattern
@@ -84,7 +84,7 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.IntStringCase do
       end)
   end
 
-  @spec fusion_param_name(String.t(), String.t(), Types.decl_map()) :: Types.ir_expr()
+  @spec fusion_param_name(String.t(), String.t(), Types.decl_map()) :: String.t() | nil
 
   defp fusion_param_name(module_name, name, decl_map) do
     case Map.get(decl_map, {module_name, name}) do
@@ -93,7 +93,7 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.IntStringCase do
     end
   end
 
-  @spec fusion_env(String.t(), String.t(), String.t()) :: Types.ir_expr()
+  @spec fusion_env(String.t(), String.t(), String.t()) :: Types.compile_env()
 
   defp fusion_env(module_name, name, param) when is_binary(param) do
     %{
@@ -124,7 +124,7 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.IntStringCase do
     end
   end
 
-  @spec int_string_lut(list()) :: Types.ir_expr()
+  @spec int_string_lut(Types.int_case_branches()) :: {%{integer() => String.t()}, String.t() | nil} | :error
 
   defp int_string_lut(branches) do
     lut =

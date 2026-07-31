@@ -415,7 +415,12 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Expr do
     end
   end
 
-  @spec emit_closure_command_call(String.t(), [String.t()], Types.compile_env(), Types.ir_expr()) :: Types.ir_expr()
+  @spec emit_closure_command_call(
+          String.t(),
+          [Types.ir_expr()],
+          Types.compile_env(),
+          Types.compile_counter()
+        ) :: Types.direct_emit_result()
 
   defp emit_closure_command_call(name, args, env, counter) do
     closure_var = Map.fetch!(env, Host.binding_key(name))
@@ -444,7 +449,13 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Expr do
      """, next}
   end
 
-  @spec emit_direct_command_native_int_let(String.t(), Types.expr(), Types.expr(), Types.compile_env(), Types.ir_expr()) :: Types.ir_expr()
+  @spec emit_direct_command_native_int_let(
+          String.t(),
+          Types.expr(),
+          Types.expr(),
+          Types.compile_env(),
+          Types.compile_counter()
+        ) :: Types.direct_emit_result()
 
   defp emit_direct_command_native_int_let(name, value_expr, in_expr, env, counter)
        when is_binary(name) or is_atom(name) do
@@ -564,7 +575,8 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Expr do
 
   defp pebble_angle_let_binding?(_name, _value_expr, _in_expr, _env), do: false
 
-  @spec native_float_usage(String.t(), Types.expr(), Types.compile_env()) :: Types.ir_expr()
+  @spec native_float_usage(String.t(), Types.expr(), Types.compile_env()) ::
+          %{total: non_neg_integer(), boxed: non_neg_integer(), native: non_neg_integer()}
 
   defp native_float_usage(name, expr, env) do
     name
@@ -578,7 +590,12 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Expr do
     end)
   end
 
-  @spec native_string_usage(String.t(), Types.expr(), Types.compile_env()) :: Types.ir_expr()
+  @spec native_string_usage(String.t(), Types.expr(), Types.compile_env()) ::
+          %{
+            total: non_neg_integer(),
+            boxed: non_neg_integer(),
+            native_string: non_neg_integer()
+          }
 
   defp native_string_usage(name, expr, env) do
     name
@@ -592,7 +609,8 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Expr do
     end)
   end
 
-  @spec native_int_usage(String.t(), Types.expr(), Types.compile_env()) :: Types.ir_expr()
+  @spec native_int_usage(String.t(), Types.expr(), Types.compile_env()) ::
+          %{total: non_neg_integer(), boxed: non_neg_integer()}
 
   defp native_int_usage(name, expr, env) do
     name
@@ -605,7 +623,12 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Expr do
     end)
   end
 
-  @spec collect_direct_var_contexts(String.t(), map() | list() | Types.expr(), String.t(), Types.compile_env()) :: Types.ir_expr()
+  @spec collect_direct_var_contexts(
+          String.t(),
+          Types.expr() | list() | map(),
+          Types.var_usage_context(),
+          Types.compile_env()
+        ) :: [Types.var_usage_context()]
 
   defp collect_direct_var_contexts(name, %{op: :var, name: var_name}, context, _env) do
     if EnvBindings.same_binding?(name, var_name), do: [context], else: []
@@ -865,7 +888,8 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Expr do
 
   defp collect_direct_var_contexts(_name, _expr, _context, _env), do: []
 
-  @spec record_literal_field_expr(map() | Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+  @spec record_literal_field_expr(Types.ir_expr(), String.t()) ::
+          {:ok, Types.ir_expr()} | :error
 
   defp record_literal_field_expr(%{op: :record_literal, fields: fields}, field)
        when is_list(fields) and is_binary(field) do
@@ -877,7 +901,12 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Expr do
 
   defp record_literal_field_expr(_arg, _field), do: :error
 
-  @spec collect_direct_var_contexts_from_map(String.t(), Types.expr(), String.t(), Types.compile_env()) :: Types.ir_expr()
+  @spec collect_direct_var_contexts_from_map(
+          String.t(),
+          Types.expr(),
+          Types.var_usage_context(),
+          Types.compile_env()
+        ) :: [Types.var_usage_context()]
 
   defp collect_direct_var_contexts_from_map(name, expr, context, env) do
     expr
@@ -885,7 +914,12 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Expr do
     |> Enum.flat_map(&collect_direct_var_contexts(name, &1, context, env))
   end
 
-  @spec collect_direct_command_arg_contexts(String.t(), String.t(), [String.t()], Types.compile_env()) :: Types.ir_expr()
+  @spec collect_direct_command_arg_contexts(
+          String.t(),
+          Types.function_decl_key(),
+          [Types.ir_expr()],
+          Types.compile_env()
+        ) :: [Types.var_usage_context()]
 
   defp collect_direct_command_arg_contexts(name, target_key, args, env) do
     decl = env |> Map.get(:__program_decls__, %{}) |> Map.get(target_key)
@@ -896,7 +930,12 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Expr do
     collect_direct_function_arg_contexts(name, args, arg_kinds, env)
   end
 
-  @spec collect_direct_function_arg_contexts(String.t(), [String.t()], Types.ir_expr(), Types.compile_env()) :: Types.ir_expr()
+  @spec collect_direct_function_arg_contexts(
+          String.t(),
+          [Types.ir_expr()],
+          [Types.direct_command_arg_kind() | Types.native_function_arg_kind()],
+          Types.compile_env()
+        ) :: [Types.var_usage_context()]
 
   defp collect_direct_function_arg_contexts(name, args, arg_kinds, env) do
     args
@@ -991,8 +1030,6 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Expr do
     String.starts_with?(name, "__patternBind_") or String.starts_with?(name, "__tupleBind_")
   end
 
-  defp pattern_bind_let_name?(_name), do: false
-
   @spec qualified_direct_fragment?(String.t(), Types.compile_env()) :: boolean()
 
   defp qualified_direct_fragment?(target, env) do
@@ -1047,7 +1084,15 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Expr do
     end
   end
 
-  @spec emit_platform_static_and_if(Types.ir_expr(), non_neg_integer(), integer(), Types.expr(), Types.expr(), Types.compile_env(), Types.ir_expr()) :: Types.ir_expr()
+  @spec emit_platform_static_and_if(
+          String.t(),
+          :when_defined | :when_not_defined,
+          Types.expr(),
+          Types.expr(),
+          Types.expr(),
+          Types.compile_env(),
+          Types.compile_counter()
+        ) :: Types.direct_emit_result()
 
   defp emit_platform_static_and_if(macro, polarity, inner_then, then_expr, else_expr, env, counter) do
     hoisted_before = Process.get(:elmc_hoisted_native_int_inits, %{})
@@ -1089,7 +1134,14 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Expr do
     end
   end
 
-  @spec emit_platform_static_expr(Types.ir_expr(), non_neg_integer(), Types.expr(), Types.expr(), Types.compile_env(), Types.ir_expr()) :: Types.ir_expr()
+  @spec emit_platform_static_expr(
+          String.t(),
+          :when_defined | :when_not_defined,
+          Types.expr(),
+          Types.expr(),
+          Types.compile_env(),
+          Types.compile_counter()
+        ) :: Types.direct_emit_result()
 
   defp emit_platform_static_expr(macro, polarity, then_expr, else_expr, env, counter) do
     hoisted_before = Process.get(:elmc_hoisted_native_int_inits, %{})
@@ -1111,7 +1163,13 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Expr do
     end
   end
 
-  @spec emit_runtime_if_expr(Types.expr(), Types.expr(), Types.expr(), Types.compile_env(), Types.ir_expr()) :: Types.ir_expr()
+  @spec emit_runtime_if_expr(
+          Types.expr(),
+          Types.expr(),
+          Types.expr(),
+          Types.compile_env(),
+          Types.compile_counter()
+        ) :: Types.direct_emit_result()
 
   defp emit_runtime_if_expr(cond_expr, then_expr, else_expr, env, counter) do
     {cond_code, cond_ref, cond_release, counter} =
@@ -1141,7 +1199,13 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Expr do
     end
   end
 
-  @spec emit_polar_point_let(String.t(), Types.expr(), Types.expr(), Types.compile_env(), Types.ir_expr()) :: Types.ir_expr()
+  @spec emit_polar_point_let(
+          String.t(),
+          Types.expr(),
+          Types.expr(),
+          Types.compile_env(),
+          Types.compile_counter()
+        ) :: Types.direct_emit_result()
 
   defp emit_polar_point_let(name, value_expr, in_expr, env, counter) do
     case PolarPoint.compile_polar_native_record(value_expr, env, counter) do
@@ -1169,7 +1233,13 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Expr do
     end
   end
 
-  @spec emit_xy_draw_center_let(String.t(), Types.expr(), Types.expr(), Types.compile_env(), Types.ir_expr()) :: Types.ir_expr()
+  @spec emit_xy_draw_center_let(
+          String.t(),
+          Types.expr(),
+          Types.expr(),
+          Types.compile_env(),
+          Types.compile_counter()
+        ) :: Types.direct_emit_result()
 
   defp emit_xy_draw_center_let(name, value_expr, in_expr, env, counter) do
     case PolarPoint.compile_xy_draw_center_native_record(value_expr, env, counter) do

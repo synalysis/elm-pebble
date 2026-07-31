@@ -32,7 +32,7 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.ListMapStaticIndexAt do
     end
   end
 
-  @spec parse(map() | term()) :: Types.ir_expr()
+  @spec parse(map() | term()) :: {:ok, integer(), String.t(), String.t(), [integer()]} | :error
 
   defp parse(%{
          op: :qualified_call,
@@ -47,7 +47,7 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.ListMapStaticIndexAt do
 
   defp parse(_), do: :error
 
-  @spec parse_lambda(map() | term()) :: Types.ir_expr()
+  @spec parse_lambda(map() | term()) :: {:ok, integer(), String.t(), String.t()} | :error
 
   defp parse_lambda(%{op: :lambda, args: [index_var], body: body}) do
     parse_with_default_list_at(body, index_var)
@@ -55,7 +55,7 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.ListMapStaticIndexAt do
 
   defp parse_lambda(_), do: :error
 
-  @spec parse_with_default_list_at(map() | term(), Types.ir_expr() | term()) :: Types.ir_expr()
+  @spec parse_with_default_list_at(map() | term(), String.t()) :: {:ok, integer(), String.t(), String.t()} | :error
 
   defp parse_with_default_list_at(
          %{op: :qualified_call, target: "Maybe.withDefault", args: [default_expr, list_at_call]},
@@ -71,7 +71,7 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.ListMapStaticIndexAt do
 
   defp parse_with_default_list_at(_, _), do: :error
 
-  @spec parse_list_at_call(map() | term(), Types.ir_expr() | term()) :: Types.ir_expr()
+  @spec parse_list_at_call(map() | term(), String.t()) :: {:ok, String.t(), String.t()} | :error
 
   defp parse_list_at_call(
          %{op: :qualified_call, target: list_at_target, args: args},
@@ -103,7 +103,7 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.ListMapStaticIndexAt do
 
   defp parse_list_at_call(_, _), do: :error
 
-  @spec parse_static_int_list(map() | term()) :: Types.ir_expr()
+  @spec parse_static_int_list(map() | term()) :: {:ok, [integer()]} | :error
 
   defp parse_static_int_list(%{op: :list_literal, items: items}) when is_list(items) and items != [] do
     items
@@ -122,7 +122,7 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.ListMapStaticIndexAt do
 
   defp parse_static_int_list(_), do: :error
 
-  @spec emit(String.t(), String.t(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+  @spec emit(String.t(), String.t(), String.t(), integer(), [integer()]) :: String.t()
 
   defp emit(module_name, name, list_var, default, indices) do
     c_prefix = Util.module_fn_name(module_name, name)

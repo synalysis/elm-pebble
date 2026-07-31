@@ -21,7 +21,8 @@ defmodule Elmc.Backend.Plan.Lower.MaybeAndThen do
 
   def try_compile(_, _, _), do: :unsupported
 
-  @spec compile_field_and_then(String.t(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+  @spec compile_field_and_then(String.t(), Types.expr(), Context.t(), Builder.t()) ::
+          Types.compile_result_required()
 
   defp compile_field_and_then(field, maybe, ctx, b) when is_binary(field) do
     maybe_ctx = Context.for_branch_arm(ctx)
@@ -41,7 +42,13 @@ defmodule Elmc.Backend.Plan.Lower.MaybeAndThen do
     end
   end
 
-  @spec compile_maybe_branch_and_then(Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+  @spec compile_maybe_branch_and_then(
+          Types.reg(),
+          (Types.reg(), Context.t(), Builder.t() ->
+             {:ok, Types.reg(), non_neg_integer(), Builder.t()} | :unsupported),
+          Context.t(),
+          Builder.t()
+        ) :: Types.compile_result_required()
 
   defp compile_maybe_branch_and_then(maybe_reg, just_mapper, ctx, b) do
     saved_pending = Map.get(b, :pending_merge_block)
@@ -70,7 +77,8 @@ defmodule Elmc.Backend.Plan.Lower.MaybeAndThen do
     end
   end
 
-  @spec compile_record_field_and_then(integer(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+  @spec compile_record_field_and_then(Types.reg(), String.t(), Context.t(), Builder.t()) ::
+          {:ok, Types.reg(), non_neg_integer(), Builder.t()} | :unsupported
 
   defp compile_record_field_and_then(payload_reg, field, ctx, b) when is_integer(payload_reg) do
     with {:ok, field_reg, b1} <- compile_record_get(payload_reg, field, ctx, b) do
@@ -79,7 +87,8 @@ defmodule Elmc.Backend.Plan.Lower.MaybeAndThen do
     end
   end
 
-  @spec compile_record_get(integer(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+  @spec compile_record_get(Types.reg(), String.t(), Context.t(), Builder.t()) ::
+          Types.compile_reg_result()
 
   defp compile_record_get(base_reg, field, ctx, b) when is_integer(base_reg) do
     {reg, b1} = Builder.fresh_reg(b)
@@ -98,7 +107,8 @@ defmodule Elmc.Backend.Plan.Lower.MaybeAndThen do
     {:ok, reg, b2}
   end
 
-  @spec compile_nothing_result(Types.ir_expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+  @spec compile_nothing_result(Context.t(), Builder.t(), non_neg_integer()) ::
+          {:ok, Types.reg(), non_neg_integer(), Builder.t()} | :unsupported
 
   defp compile_nothing_result(ctx, b, block_id) do
     b_arm = Builder.begin_cfg_arm_block(b, block_id)
@@ -118,11 +128,11 @@ defmodule Elmc.Backend.Plan.Lower.MaybeAndThen do
     end
   end
 
-  @spec dest_for_result(Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+  @spec dest_for_result(Context.t(), Builder.t()) :: {Types.reg(), Builder.t()}
 
   defp dest_for_result(_ctx, b), do: Builder.fresh_reg(b)
 
-  @spec emit_test_maybe_nothing(Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+  @spec emit_test_maybe_nothing(Types.reg(), Builder.t()) :: Types.compile_reg_result()
 
   defp emit_test_maybe_nothing(subject_reg, b) do
     {reg, b1} = Builder.fresh_reg(b)
@@ -142,7 +152,8 @@ defmodule Elmc.Backend.Plan.Lower.MaybeAndThen do
     {:ok, reg, b2}
   end
 
-  @spec emit_merge(Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+  @spec emit_merge(Types.reg(), Types.reg(), Types.reg(), Builder.t()) ::
+          Types.compile_reg_result()
 
   defp emit_merge(cond_reg, then_reg, else_reg, b) do
     {merge, b1} = Builder.fresh_reg(b)
@@ -163,7 +174,7 @@ defmodule Elmc.Backend.Plan.Lower.MaybeAndThen do
     {:ok, merge, b2}
   end
 
-  @spec skip_reserved(Types.ir_expr(), Types.ir_expr() | term()) :: Types.ir_expr()
+  @spec skip_reserved(non_neg_integer(), non_neg_integer() | nil) :: non_neg_integer()
 
   defp skip_reserved(id, nil), do: id
   defp skip_reserved(id, reserved) when id == reserved, do: id + 1

@@ -18,7 +18,8 @@ defmodule Elmc.Backend.Plan.Lower.If do
 
   def compile(_, _, _), do: :unsupported
 
-  @spec compile_branches(Types.expr(), Types.expr(), Types.expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+  @spec compile_branches(Types.expr(), Types.expr(), Types.expr(), Context.t(), Builder.t()) ::
+          Types.compile_result()
 
   defp compile_branches(cond, then_expr, else_expr, ctx, b) do
     case ConstantFold.bool_value(cond, ctx) do
@@ -33,9 +34,21 @@ defmodule Elmc.Backend.Plan.Lower.If do
     end
   end
 
-  @spec compile_branches_cfg(Types.expr(), Types.expr(), Types.expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+  @spec compile_branches_cfg(Types.expr(), Types.expr(), Types.expr(), Context.t(), Builder.t()) ::
+          Types.compile_result()
 
   defp compile_branches_cfg(cond, then_expr, else_expr, ctx, b) do
+    if Context.stream_mode?(ctx) do
+      compile_stream_branches_cfg(cond, then_expr, else_expr, ctx, b)
+    else
+      compile_value_branches_cfg(cond, then_expr, else_expr, ctx, b)
+    end
+  end
+
+  @spec compile_value_branches_cfg(Types.expr(), Types.expr(), Types.expr(), Context.t(), Builder.t()) ::
+          Types.compile_result()
+
+  defp compile_value_branches_cfg(cond, then_expr, else_expr, ctx, b) do
     saved_pending = Map.get(b, :pending_merge_block)
     cond_ctx = Context.for_branch_arm(ctx)
 
@@ -58,14 +71,15 @@ defmodule Elmc.Backend.Plan.Lower.If do
     end
   end
 
-  @spec compile_branch(Types.expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+  @spec compile_branch(Types.expr(), Context.t(), Builder.t(), non_neg_integer()) ::
+          {:ok, Types.reg(), non_neg_integer(), Builder.t()} | :unsupported
 
   defp compile_branch(expr, ctx, b, block_id) do
     b_arm = Builder.begin_cfg_arm_block(b, block_id)
     arm_ctx = Context.for_branch_arm(ctx)
 
     case Expr.compile(expr, arm_ctx, b_arm) do
-      {:ok, reg, b1} ->
+      {:ok, reg, b1} when is_integer(reg) ->
         exit_id = b1.current_block.id
         {:ok, reg, exit_id, Builder.finish_block(b1, :none)}
 
@@ -74,7 +88,61 @@ defmodule Elmc.Backend.Plan.Lower.If do
     end
   end
 
-  @spec emit_phi(Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+  @spec compile_stream_branches_cfg(Types.expr(), Types.expr(), Types.expr(), Context.t(), Builder.t()) ::
+          {:ok, :stream_void, Builder.t()} | :unsupported
+
+  defp compile_stream_branches_cfg(cond, then_expr, else_expr, ctx, b) do
+    saved_pending = Map.get(b, :pending_merge_block)
+    cond_ctx = Context.for_branch_arm(ctx)
+
+    with {:ok, cond_reg, b1} <- Expr.compile(cond, cond_ctx, b),
+         then_id = b1.next_block,
+         else_id = then_id + 1,
+         merge_id = skip_reserved(else_id + 1, saved_pending),
+         b_entry = Builder.finish_block(b1, {:br_if, then_id, else_id, cond_reg}),
+         b_reserved = %{b_entry | next_block: max(b_entry.next_block, merge_id + 1)},
+         {:ok, :stream_void, then_exit, b_then} <-
+           compile_stream_branch(then_expr, ctx, b_reserved, then_id),
+         b_then_done = Builder.patch_terminator(b_then, then_exit, {:br, merge_id}),
+         {:ok, :stream_void, else_exit, b_else} <-
+           compile_stream_branch(else_expr, ctx, b_then_done, else_id),
+         b_else_done = Builder.patch_terminator(b_else, else_exit, {:br, merge_id}),
+         b_merge = Builder.begin_block(b_else_done, merge_id),
+         b_out = Builder.emit_ret(b_merge, :stream_void) do
+      {:ok, :stream_void, %{b_out | pending_merge_block: saved_pending}}
+    else
+      _ -> :unsupported
+    end
+  end
+
+  @spec compile_stream_branch(Types.expr(), Context.t(), Builder.t(), non_neg_integer()) ::
+          {:ok, :stream_void, non_neg_integer(), Builder.t()} | :unsupported
+
+  defp compile_stream_branch(expr, ctx, b, block_id) do
+    b_arm = Builder.begin_cfg_arm_block(b, block_id)
+    arm_ctx = Context.for_branch_arm(ctx)
+
+    case Expr.compile(expr, arm_ctx, b_arm) do
+      {:ok, :stream_void, b1} ->
+        exit_id = b1.current_block.id
+        {:ok, :stream_void, exit_id, Builder.finish_block(b1, :none)}
+
+      {:ok, _reg, _b1} ->
+        :unsupported
+
+      :unsupported ->
+        :unsupported
+    end
+  end
+
+  @spec emit_phi(
+          Types.reg(),
+          Types.reg(),
+          Types.reg(),
+          non_neg_integer(),
+          non_neg_integer(),
+          Builder.t()
+        ) :: {:ok, Types.reg(), Builder.t()}
 
   defp emit_phi(cond_reg, then_reg, else_reg, then_arm_block, else_arm_block, b) do
     {merge, b1} = Builder.fresh_reg(b)
@@ -127,7 +195,14 @@ defmodule Elmc.Backend.Plan.Lower.If do
     {:ok, merge, b2}
   end
 
-  @spec maybe_put_truthy_native([String.t()], Types.ir_expr(), term() | Types.ir_expr(), term() | Types.ir_expr(), term() | Types.ir_expr(), term() | Types.ir_expr()) :: Types.ir_expr() | nil
+  @spec maybe_put_truthy_native(
+          Types.instr_args(),
+          boolean(),
+          term(),
+          term(),
+          non_neg_integer(),
+          non_neg_integer()
+        ) :: Types.instr_args()
 
   defp maybe_put_truthy_native(args, false, _, _, _, _), do: args
 
@@ -141,7 +216,14 @@ defmodule Elmc.Backend.Plan.Lower.If do
     })
   end
 
-  @spec maybe_put_native_int_phi([String.t()], Types.ir_expr(), term() | Types.ir_expr(), term() | Types.ir_expr(), term() | Types.ir_expr(), term() | Types.ir_expr()) :: Types.ir_expr() | nil
+  @spec maybe_put_native_int_phi(
+          Types.instr_args(),
+          boolean(),
+          term(),
+          term(),
+          non_neg_integer(),
+          non_neg_integer()
+        ) :: Types.instr_args()
 
   defp maybe_put_native_int_phi(args, false, _, _, _, _), do: args
 
@@ -155,14 +237,14 @@ defmodule Elmc.Backend.Plan.Lower.If do
     })
   end
 
-  @spec builder_instrs(Types.ir_expr()) :: Types.ir_expr()
+  @spec builder_instrs(Builder.t()) :: Types.instr_list()
 
   defp builder_instrs(b) do
     (Map.get(b, :blocks, []) ++ [Map.get(b, :current_block)])
     |> Enum.flat_map(&Map.get(&1, :instrs, []))
   end
 
-  @spec skip_reserved(Types.ir_expr(), Types.ir_expr() | term()) :: Types.ir_expr()
+  @spec skip_reserved(non_neg_integer(), non_neg_integer() | nil) :: non_neg_integer()
 
   defp skip_reserved(id, nil), do: id
   defp skip_reserved(id, reserved) when id == reserved, do: id + 1

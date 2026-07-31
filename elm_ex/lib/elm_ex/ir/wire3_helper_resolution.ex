@@ -56,7 +56,7 @@ defmodule ElmEx.IR.Wire3HelperResolution do
     %{constructor_tags: constructor_tags, constructor_arity: constructor_arity}
   end
 
-  @spec payload_arity_for_kind(Types.expr() | term()) :: Types.expr()
+  @spec payload_arity_for_kind(term()) :: non_neg_integer()
 
   defp payload_arity_for_kind(:unit), do: 0
   defp payload_arity_for_kind(:record), do: 1
@@ -64,7 +64,7 @@ defmodule ElmEx.IR.Wire3HelperResolution do
   defp payload_arity_for_kind(:custom), do: 1
   defp payload_arity_for_kind(_), do: 1
 
-  @spec synthesize_helper(String.t() | Types.expr(), String.t() | Types.expr(), String.t(), Types.expr()) :: Types.expr()
+  @spec synthesize_helper(String.t(), String.t(), map(), map()) :: [map()]
 
   defp synthesize_helper(module_name, "w3_encode_" <> type_name = helper_name, defs_by_name, _union_meta) do
     for_client = "encode#{type_name}ForClient"
@@ -132,7 +132,7 @@ defmodule ElmEx.IR.Wire3HelperResolution do
 
   defp synthesize_helper(_module_name, _helper_name, _defs_by_name, _union_meta), do: []
 
-  @spec delegate_definition(String.t(), String.t(), String.t(), Types.expr()) :: Types.expr()
+  @spec delegate_definition(String.t(), String.t(), String.t(), map()) :: map()
 
   defp delegate_definition(module_name, helper_name, target_name, source_def) do
     param = first_param_name(source_def)
@@ -144,7 +144,7 @@ defmodule ElmEx.IR.Wire3HelperResolution do
     )
   end
 
-  @spec wire3_definition(String.t(), Types.expr(), Types.expr()) :: Types.expr()
+  @spec wire3_definition(String.t(), Types.expr(), map()) :: map()
 
   defp wire3_definition(name, expr, source_def) do
     %{
@@ -156,7 +156,7 @@ defmodule ElmEx.IR.Wire3HelperResolution do
     }
   end
 
-  @spec build_tagged_encoder_from_plain(map() | term()) :: Types.expr()
+  @spec build_tagged_encoder_from_plain(map() | term()) :: {:ok, Types.expr()} | :error
 
   defp build_tagged_encoder_from_plain(%{expr: %{op: :case, branches: branches}} = source_def)
        when is_list(branches) and branches != [] do
@@ -184,7 +184,7 @@ defmodule ElmEx.IR.Wire3HelperResolution do
 
   defp build_tagged_encoder_from_plain(_), do: :error
 
-  @spec build_tag_decoder(map() | term(), String.t() | term(), Types.expr() | term()) :: Types.expr()
+  @spec build_tag_decoder(map() | term(), String.t(), map()) :: {:ok, [map()]} | :error
 
   defp build_tag_decoder(%{op: :case, branches: branches}, helper_name, union_meta)
        when is_list(branches) do
@@ -261,7 +261,7 @@ defmodule ElmEx.IR.Wire3HelperResolution do
 
   defp build_tag_decoder(_, _, _), do: :error
 
-  @spec decoder_constructor_value(String.t(), Types.expr(), Types.expr()) :: Types.expr()
+  @spec decoder_constructor_value(String.t(), map(), non_neg_integer() | nil) :: Types.expr()
 
   defp decoder_constructor_value(name, union_meta, callback_arity \\ nil) when is_binary(name) do
     tags = Map.get(union_meta, :constructor_tags, %{})
@@ -294,7 +294,7 @@ defmodule ElmEx.IR.Wire3HelperResolution do
   end
 
 
-  @spec parse_tagged_encode_branch(map()) :: Types.expr()
+  @spec parse_tagged_encode_branch(map()) :: {:tag_only, integer(), String.t() | nil} | {:tagged_payload, integer(), String.t() | nil, String.t()} | nil
 
   defp parse_tagged_encode_branch(%{pattern: pattern, expr: expr}) do
     constructor = constructor_name(pattern)
@@ -326,7 +326,7 @@ defmodule ElmEx.IR.Wire3HelperResolution do
   defp match_tagged_payload?(_), do: false
 
 
-  @spec extract_tagged_payload(map()) :: Types.expr()
+  @spec extract_tagged_payload(map()) :: {integer() | nil, String.t() | nil}
 
   defp extract_tagged_payload(%{
          op: :qualified_call,
@@ -344,19 +344,19 @@ defmodule ElmEx.IR.Wire3HelperResolution do
   defp match_tag_only?(_), do: false
 
 
-  @spec extract_tag_only(map()) :: Types.expr()
+  @spec extract_tag_only(map()) :: integer() | nil
 
   defp extract_tag_only(%{op: :qualified_call, target: "Bytes.Encode.unsignedInt8", args: [tag_expr]}),
     do: int_literal_value(tag_expr)
 
-  @spec extract_payload_encode_target(map() | term()) :: Types.expr()
+  @spec extract_payload_encode_target(map() | term()) :: String.t() | nil
 
   defp extract_payload_encode_target(%{op: :qualified_call, target: target, args: _}),
     do: target
 
   defp extract_payload_encode_target(_), do: nil
 
-  @spec wrap_with_tag(Types.expr(), String.t()) :: Types.expr()
+  @spec wrap_with_tag(Types.expr(), integer()) :: Types.expr()
 
   defp wrap_with_tag(expr, tag) do
     qualified_call("Lamdera.Wire3.encodeSequenceWithoutLength", [
@@ -370,7 +370,7 @@ defmodule ElmEx.IR.Wire3HelperResolution do
     ])
   end
 
-  @spec alphabetical_tags(list()) :: Types.expr()
+  @spec alphabetical_tags([map()]) :: %{optional(String.t()) => non_neg_integer()}
 
   defp alphabetical_tags(branches) do
     branches
@@ -381,17 +381,17 @@ defmodule ElmEx.IR.Wire3HelperResolution do
     |> Map.new()
   end
 
-  @spec constructor_name(map() | term()) :: Types.expr()
+  @spec constructor_name(map() | term()) :: String.t() | nil
 
   defp constructor_name(%{kind: :constructor, name: name}) when is_binary(name), do: name
   defp constructor_name(_), do: nil
 
-  @spec wire_encode_to_decode_target(String.t()) :: Types.expr()
+  @spec wire_encode_to_decode_target(String.t()) :: String.t()
 
   defp wire_encode_to_decode_target(target) when is_binary(target),
     do: String.replace(target, "w3_encode_", "w3_decode_")
 
-  @spec collect_wire3_refs(Types.declaration()) :: Types.expr()
+  @spec collect_wire3_refs([map()]) :: MapSet.t(String.t())
 
   defp collect_wire3_refs(decls) do
     decls
@@ -402,7 +402,7 @@ defmodule ElmEx.IR.Wire3HelperResolution do
     |> MapSet.new()
   end
 
-  @spec collect_wire3_refs_from_expr(map() | list() | term()) :: Types.expr()
+  @spec collect_wire3_refs_from_expr(map() | list() | term()) :: [String.t()]
 
   defp collect_wire3_refs_from_expr(expr) when is_map(expr) do
     base =
@@ -452,7 +452,7 @@ defmodule ElmEx.IR.Wire3HelperResolution do
     end)
   end
 
-  @spec module_wire3_call_targets(map() | term()) :: Types.expr()
+  @spec module_wire3_call_targets(map() | term()) :: [{String.t(), String.t()}]
 
   defp module_wire3_call_targets(%{name: _name, declarations: decls}) when is_list(decls) do
     decls
@@ -467,7 +467,7 @@ defmodule ElmEx.IR.Wire3HelperResolution do
 
   defp module_wire3_call_targets(_), do: []
 
-  @spec collect_cross_module_wire3_targets(Types.expr() | map() | term(), term()) :: Types.expr()
+  @spec collect_cross_module_wire3_targets(Types.expr() | map() | term() | nil, [{String.t(), String.t()}]) :: [{String.t(), String.t()}]
 
   defp collect_cross_module_wire3_targets(nil, acc), do: acc
 
@@ -483,7 +483,7 @@ defmodule ElmEx.IR.Wire3HelperResolution do
 
   defp collect_cross_module_wire3_targets(_, acc), do: acc
 
-  @spec traverse_expr_children(map(), term()) :: Types.expr()
+  @spec traverse_expr_children(map(), [{String.t(), String.t()}]) :: [{String.t(), String.t()}]
 
   defp traverse_expr_children(expr, acc) when is_map(expr) do
     Enum.reduce(expr, acc, fn
@@ -501,7 +501,7 @@ defmodule ElmEx.IR.Wire3HelperResolution do
     end)
   end
 
-  @spec ensure_module_wire3_helpers(Types.expr(), map(), Types.expr()) :: Types.expr()
+  @spec ensure_module_wire3_helpers(map(), MapSet.t(String.t()), map()) :: map()
 
   defp ensure_module_wire3_helpers(mod, %MapSet{} = required, union_meta) do
     existing =
@@ -533,7 +533,7 @@ defmodule ElmEx.IR.Wire3HelperResolution do
     end
   end
 
-  @spec module_defs_by_name(Types.expr()) :: Types.expr()
+  @spec module_defs_by_name(map()) :: map()
 
   defp module_defs_by_name(mod) do
     mod.declarations
@@ -550,13 +550,13 @@ defmodule ElmEx.IR.Wire3HelperResolution do
   end
 
 
-  @spec frontend_def_to_ir_decl(map()) :: Types.expr()
+  @spec frontend_def_to_ir_decl(map()) :: map()
 
   defp frontend_def_to_ir_decl(%{name: name, args: args, expr: expr}) do
     %{kind: :function, name: name, args: args || [], type: nil, expr: expr}
   end
 
-  @spec trivial_wire3_decl(Types.expr(), String.t()) :: Types.expr()
+  @spec trivial_wire3_decl(map(), String.t()) :: [map()]
 
   defp trivial_wire3_decl(_mod, "w3_decode_" <> type_name) do
     [
@@ -590,7 +590,7 @@ defmodule ElmEx.IR.Wire3HelperResolution do
 
   defp trivial_wire3_decl(_mod, _helper_name), do: []
 
-  @spec response_sketch_wire3_decode(String.t(), Types.expr()) :: Types.expr()
+  @spec response_sketch_wire3_decode(String.t(), map()) :: [map()]
 
   defp response_sketch_wire3_decode(helper_name, union_meta) do
     data = var("w3_x_c_data")
@@ -679,7 +679,7 @@ defmodule ElmEx.IR.Wire3HelperResolution do
     ]
   end
 
-  @spec wire3_qualified_target(String.t()) :: Types.expr()
+  @spec wire3_qualified_target(String.t()) :: [{String.t(), String.t()}]
 
   defp wire3_qualified_target(target) when is_binary(target) do
     parts = String.split(target, ".")
@@ -703,7 +703,7 @@ defmodule ElmEx.IR.Wire3HelperResolution do
     end
   end
 
-  @spec first_param_name(map() | term()) :: Types.expr()
+  @spec first_param_name(map() | term()) :: String.t()
 
   defp first_param_name(%{args: [param | _]}) when is_binary(param), do: param
   defp first_param_name(%{args: []}), do: "value"
@@ -713,12 +713,12 @@ defmodule ElmEx.IR.Wire3HelperResolution do
 
   defp var(name), do: %{op: :var, name: name}
 
-  @spec qualified_call(String.t(), [String.t()]) :: Types.expr()
+  @spec qualified_call(String.t(), [Types.expr()]) :: Types.expr()
 
   defp qualified_call(target, args),
     do: %{op: :qualified_call, target: target, args: args}
 
-  @spec int_literal_value(map() | term()) :: Types.expr()
+  @spec int_literal_value(map() | term()) :: integer() | nil
 
   defp int_literal_value(%{op: :int_literal, value: value}) when is_integer(value), do: value
   defp int_literal_value(_), do: nil

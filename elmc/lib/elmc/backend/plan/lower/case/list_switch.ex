@@ -305,19 +305,19 @@ defmodule Elmc.Backend.Plan.Lower.Case.ListSwitch do
     end
   end
 
-  @spec cons_branch(list()) :: Types.ir_expr()
+  @spec cons_branch(Types.case_branches()) :: Types.case_branch() | nil
 
   defp cons_branch(branches) do
     Enum.find(branches, &cons_pattern?/1)
   end
 
-  @spec empty_branch(list()) :: Types.ir_expr()
+  @spec empty_branch(Types.case_branches()) :: Types.case_branch() | nil
 
   defp empty_branch(branches) do
     Enum.find(branches, &empty_pattern?/1)
   end
 
-  @spec single_cons_empty_tail_branch(list()) :: Types.ir_expr()
+  @spec single_cons_empty_tail_branch(Types.case_branches()) :: Types.case_branch() | nil
 
   defp single_cons_empty_tail_branch(branches) do
     Enum.find(branches, &single_cons_empty_tail_pattern?/1)
@@ -351,7 +351,7 @@ defmodule Elmc.Backend.Plan.Lower.Case.ListSwitch do
   defp empty_list_pattern?(%{resolved_name: "[]"}), do: true
   defp empty_list_pattern?(_), do: false
 
-  @spec single_cons_only_name(map()) :: Types.ir_expr()
+  @spec single_cons_only_name(map()) :: {:ok, String.t()} | :error
 
   defp single_cons_only_name(%{pattern: pattern}) do
     case pattern do
@@ -360,13 +360,13 @@ defmodule Elmc.Backend.Plan.Lower.Case.ListSwitch do
     end
   end
 
-  @spec wildcard_branch(list()) :: Types.ir_expr()
+  @spec wildcard_branch(Types.case_branches()) :: Types.case_branch() | nil
 
   defp wildcard_branch(branches) do
     Enum.find(branches, fn branch -> wildcard_pattern?(Map.get(branch, :pattern)) end)
   end
 
-  @spec var_branch(list()) :: Types.ir_expr()
+  @spec var_branch(Types.case_branches()) :: Types.case_branch() | nil
 
   defp var_branch(branches) do
     Enum.find(branches, fn branch -> var_pattern_only?(Map.get(branch, :pattern)) end)
@@ -377,7 +377,7 @@ defmodule Elmc.Backend.Plan.Lower.Case.ListSwitch do
   defp var_pattern_only?(%{kind: :var, name: name}) when is_binary(name), do: true
   defp var_pattern_only?(_), do: false
 
-  @spec double_cons_branch(list()) :: Types.ir_expr()
+  @spec double_cons_branch(Types.case_branches()) :: Types.case_branch() | nil
 
   defp double_cons_branch(branches) do
     Enum.find(branches, &double_cons_pattern?/1)
@@ -435,7 +435,7 @@ defmodule Elmc.Backend.Plan.Lower.Case.ListSwitch do
   defp var_pattern?(%{kind: :wildcard}), do: true
   defp var_pattern?(_), do: false
 
-  @spec double_cons_names(map()) :: Types.ir_expr()
+  @spec double_cons_names(map()) :: {:ok, String.t(), String.t(), String.t()} | :error
 
   defp double_cons_names(%{pattern: pattern}) do
     case nested_cons_elements(pattern) do
@@ -444,7 +444,7 @@ defmodule Elmc.Backend.Plan.Lower.Case.ListSwitch do
     end
   end
 
-  @spec nested_cons_elements(map() | term()) :: Types.ir_expr()
+  @spec nested_cons_elements(map() | term()) :: [Types.pattern()] | :error
 
   defp nested_cons_elements(%{arg_pattern: %{elements: [head, tail]}}) do
     case tail do
@@ -478,7 +478,7 @@ defmodule Elmc.Backend.Plan.Lower.Case.ListSwitch do
   defp empty_pattern?(%{pattern: %{resolved_name: "[]"}}), do: true
   defp empty_pattern?(_), do: false
 
-  @spec short_name(Types.ir_expr() | String.t()) :: Types.ir_expr()
+  @spec short_name(String.t()) :: String.t()
 
   defp short_name("::"), do: "::"
   defp short_name("[]"), do: "[]"
@@ -487,13 +487,14 @@ defmodule Elmc.Backend.Plan.Lower.Case.ListSwitch do
     name |> String.split(".") |> List.last()
   end
 
-  @spec var_name(map() | term()) :: Types.ir_expr()
+  @spec var_name(map() | term()) :: String.t()
 
   defp var_name(%{kind: :var, name: name}) when is_binary(name), do: name
   defp var_name(%{kind: :wildcard}), do: "_"
   defp var_name(_), do: "head"
 
-  @spec compile_arm(Types.expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+  @spec compile_arm(Types.expr(), Context.t(), Builder.t(), non_neg_integer()) ::
+          {:ok, Types.reg() | Types.result_slot(), non_neg_integer(), Builder.t()} | :unsupported
 
   defp compile_arm(expr, ctx, b, block_id) do
     b_arm = Builder.begin_cfg_arm_block(b, block_id)
@@ -509,7 +510,15 @@ defmodule Elmc.Backend.Plan.Lower.Case.ListSwitch do
     end
   end
 
-  @spec compile_cons_arm(Types.expr(), Types.pattern(), Types.expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+  @spec compile_cons_arm(
+          Types.expr(),
+          Types.pattern(),
+          Types.expr(),
+          Types.reg(),
+          Context.t(),
+          Builder.t(),
+          non_neg_integer()
+        ) :: {:ok, Types.reg() | Types.result_slot(), non_neg_integer(), Builder.t()} | :unsupported
 
   defp compile_cons_arm(expr, pattern, subject, subj_reg, ctx, b, block_id) do
     b_arm = Builder.begin_cfg_arm_block(b, block_id)
@@ -536,7 +545,8 @@ defmodule Elmc.Backend.Plan.Lower.Case.ListSwitch do
     end
   end
 
-  @spec cons_element_patterns(map() | term()) :: Types.ir_expr()
+  @spec cons_element_patterns(map() | term()) ::
+          {:ok, Types.pattern(), Types.pattern()} | :error
 
   defp cons_element_patterns(%{arg_pattern: %{kind: :tuple, elements: [head, tail]}}),
     do: {:ok, head, tail}
@@ -546,7 +556,14 @@ defmodule Elmc.Backend.Plan.Lower.Case.ListSwitch do
 
   defp cons_element_patterns(_), do: :error
 
-  @spec compile_nonempty_var_arm(map() | term(), Types.ir_expr() | Types.expr() | term(), Types.ir_expr() | term(), Types.ir_expr() | term(), Types.ir_expr() | term(), Types.ir_expr() | term()) :: Types.ir_expr()
+  @spec compile_nonempty_var_arm(
+          Types.case_branch() | Types.pattern() | term(),
+          Types.expr() | Types.reg() | term(),
+          Types.reg() | Context.t() | term(),
+          Context.t() | Builder.t() | term(),
+          Builder.t() | non_neg_integer() | term(),
+          non_neg_integer() | term()
+        ) :: {:ok, Types.reg() | Types.result_slot(), non_neg_integer(), Builder.t()} | :unsupported
 
   defp compile_nonempty_var_arm(%{pattern: pattern, expr: expr}, subj_reg, ctx, b, block_id) do
     compile_nonempty_var_arm(pattern, expr, subj_reg, ctx, b, block_id)
@@ -576,14 +593,26 @@ defmodule Elmc.Backend.Plan.Lower.Case.ListSwitch do
 
   defp compile_nonempty_var_arm(_, _, _, _, _, _), do: :unsupported
 
-  @spec peel_cons_regs(Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+  @spec peel_cons_regs(
+          :int_list | :maybe_list,
+          Types.reg(),
+          Types.reg(),
+          Context.t(),
+          Builder.t()
+        ) :: {:ok, Types.reg(), Types.reg(), Builder.t()} | :unsupported
 
   defp peel_cons_regs(peel, head_arg, tail_arg, ctx, b) do
     ctx = Context.for_branch_arm(ctx)
     peel_cons_regs_impl(peel, head_arg, tail_arg, ctx, b)
   end
 
-  @spec peel_cons_regs_impl(Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+  @spec peel_cons_regs_impl(
+          :int_list | :maybe_list,
+          Types.reg(),
+          Types.reg(),
+          Context.t(),
+          Builder.t()
+        ) :: {:ok, Types.reg(), Types.reg(), Builder.t()} | :unsupported
 
   defp peel_cons_regs_impl(:int_list, head_arg, tail_arg, ctx, b) do
     with {:ok, head_reg, b1} <-
@@ -605,14 +634,16 @@ defmodule Elmc.Backend.Plan.Lower.Case.ListSwitch do
 
   @spec compile_double_cons_peek(
           Types.expr(),
-          Types.ir_expr(),
+          Types.reg(),
           String.t(),
-          Types.ir_expr(),
-          Types.ir_expr(),
-          Types.ir_expr(),
-          Types.ir_expr(),
-          Types.ir_expr()
-        ) :: Types.ir_expr()
+          non_neg_integer(),
+          non_neg_integer(),
+          Context.t(),
+          Builder.t(),
+          non_neg_integer()
+        ) ::
+          {:ok, Types.reg(), Types.reg(), Types.reg(), non_neg_integer(), Builder.t()}
+          | :unsupported
 
   defp compile_double_cons_peek(
          subject,
@@ -638,7 +669,8 @@ defmodule Elmc.Backend.Plan.Lower.Case.ListSwitch do
     end
   end
 
-  @spec split_fixed_nil_and_default(list()) :: Types.ir_expr()
+  @spec split_fixed_nil_and_default(Types.case_branches()) ::
+          {Types.case_branches(), Types.case_branch() | nil}
 
   defp split_fixed_nil_and_default(branches) do
     fixed =
@@ -651,7 +683,8 @@ defmodule Elmc.Backend.Plan.Lower.Case.ListSwitch do
     {fixed, default}
   end
 
-  @spec fixed_nil_arms_by_length(Types.ir_expr()) :: Types.ir_expr()
+  @spec fixed_nil_arms_by_length(Types.case_branches()) ::
+          {:ok, %{non_neg_integer() => {[String.t()], Types.expr()}}} | :error
 
   defp fixed_nil_arms_by_length(fixed_branches) do
   arms =
@@ -678,11 +711,11 @@ defmodule Elmc.Backend.Plan.Lower.Case.ListSwitch do
   end
   end
 
-  @spec parse_cons_nil_vars(Types.pattern()) :: Types.ir_expr()
+  @spec parse_cons_nil_vars(Types.pattern()) :: {:ok, [String.t()]} | :error
 
   defp parse_cons_nil_vars(pattern), do: parse_cons_nil_chain(pattern, true)
 
-  @spec parse_cons_nil_chain(Types.pattern(), boolean()) :: Types.ir_expr()
+  @spec parse_cons_nil_chain(Types.pattern(), boolean()) :: {:ok, [String.t()]} | :error
 
   defp parse_cons_nil_chain(pattern, top_level?) do
     case unwrap_cons(pattern) do
@@ -700,7 +733,8 @@ defmodule Elmc.Backend.Plan.Lower.Case.ListSwitch do
     end
   end
 
-  @spec unwrap_cons(map() | term()) :: Types.ir_expr()
+  @spec unwrap_cons(map() | term()) ::
+          {:cons, Types.pattern(), Types.pattern()} | :empty | :not_cons
 
   defp unwrap_cons(%{resolved_name: "List.::", arg_pattern: %{kind: :tuple, elements: [head, tail]}}),
     do: {:cons, head, tail}
@@ -721,18 +755,39 @@ defmodule Elmc.Backend.Plan.Lower.Case.ListSwitch do
 
   defp unwrap_cons(_), do: :not_cons
 
-  @spec pattern_var_name(map() | term()) :: Types.ir_expr()
+  @spec pattern_var_name(map() | term()) :: {:ok, String.t()} | :error
 
   defp pattern_var_name(%{kind: :var, name: name}) when is_binary(name), do: {:ok, name}
   defp pattern_var_name(_), do: :error
 
-  @spec compile_fixed_nil_peel_chain(integer(), integer(), Types.expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+  @spec compile_fixed_nil_peel_chain(
+          map(),
+          integer(),
+          Types.expr(),
+          Types.reg(),
+          Context.t(),
+          Builder.t(),
+          non_neg_integer(),
+          non_neg_integer()
+        ) :: {:ok, list(), Builder.t()} | :unsupported
 
   defp compile_fixed_nil_peel_chain(arms_by_len, max_len, subject, subj_reg, ctx, b, block_id, default_id) do
   peel_to_depth(arms_by_len, max_len, subject, subj_reg, ctx, b, block_id, default_id, 1, subj_reg, [])
   end
 
-  @spec peel_to_depth(integer(), integer(), Types.ir_expr() | Types.expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), non_neg_integer(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+  @spec peel_to_depth(
+          map(),
+          integer(),
+          Types.expr(),
+          Types.reg(),
+          Context.t(),
+          Builder.t(),
+          non_neg_integer(),
+          non_neg_integer(),
+          non_neg_integer(),
+          Types.reg(),
+          list()
+        ) :: {:ok, list(), Builder.t()} | :unsupported
 
   defp peel_to_depth(_arms_by_len, _max_len, _subject, _subj_reg, _ctx, b, _block_id, _default_id, depth, _tail_reg, _bound)
        when depth > 64 do
@@ -781,7 +836,16 @@ defmodule Elmc.Backend.Plan.Lower.Case.ListSwitch do
   end
   end
 
-  @spec compile_fixed_nil_match_arm(integer(), non_neg_integer(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+  @spec compile_fixed_nil_match_arm(
+          map(),
+          non_neg_integer(),
+          list(),
+          Context.t(),
+          Builder.t(),
+          non_neg_integer(),
+          non_neg_integer(),
+          Types.reg()
+        ) :: {:ok, list(), Builder.t()} | :unsupported
 
   defp compile_fixed_nil_match_arm(arms_by_len, depth, bound, ctx, b, match_id, default_id, empty_tail) do
   b_match = Builder.begin_cfg_arm_block(b, match_id)
@@ -798,7 +862,19 @@ defmodule Elmc.Backend.Plan.Lower.Case.ListSwitch do
   end
   end
 
-  @spec compile_fixed_nil_continue_peel(integer(), integer(), Types.expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), non_neg_integer(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+  @spec compile_fixed_nil_continue_peel(
+          map(),
+          integer(),
+          Types.expr(),
+          Types.reg(),
+          Context.t(),
+          Builder.t(),
+          non_neg_integer(),
+          non_neg_integer(),
+          non_neg_integer(),
+          Types.reg(),
+          list()
+        ) :: {:ok, list(), Builder.t()} | :unsupported
 
   defp compile_fixed_nil_continue_peel(arms_by_len, max_len, subject, subj_reg, ctx, b, continue_id, default_id, depth, next_tail, bound) do
   b_cont = Builder.begin_cfg_arm_block(b, continue_id)
@@ -811,7 +887,14 @@ defmodule Elmc.Backend.Plan.Lower.Case.ListSwitch do
   end
   end
 
-  @spec compile_fixed_nil_bound_arm(Types.expr(), String.t(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+  @spec compile_fixed_nil_bound_arm(
+          Types.expr(),
+          [String.t()],
+          list(),
+          Context.t(),
+          Builder.t(),
+          non_neg_integer()
+        ) :: {:ok, Types.reg() | Types.result_slot(), non_neg_integer(), Builder.t()} | :unsupported
 
   defp compile_fixed_nil_bound_arm(expr, names, bound, ctx, b, block_id) do
   b_arm = if b.current_block.id == block_id, do: b, else: Builder.begin_cfg_arm_block(b, block_id)
@@ -832,7 +915,8 @@ defmodule Elmc.Backend.Plan.Lower.Case.ListSwitch do
   end
   end
 
-  @spec emit_fixed_nil_merge(Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+  @spec emit_fixed_nil_merge(Types.reg(), list(), Types.reg(), Builder.t()) ::
+          {:ok, Types.reg(), Builder.t()}
 
   defp emit_fixed_nil_merge(empty_cond, arm_results, default_reg, b) do
   sorted = Enum.sort_by(arm_results, fn {len, _, _, _} -> len end, :desc)
@@ -846,7 +930,7 @@ defmodule Elmc.Backend.Plan.Lower.Case.ListSwitch do
   emit_merge(empty_cond, default_reg, inner_reg, b_inner)
   end
 
-  @spec emit_test_list_empty(Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+  @spec emit_test_list_empty(Types.reg(), Builder.t()) :: {:ok, Types.reg(), Builder.t()}
 
   defp emit_test_list_empty(subj_reg, b) do
     {reg, b1} = Builder.fresh_reg(b)
@@ -1074,13 +1158,14 @@ defmodule Elmc.Backend.Plan.Lower.Case.ListSwitch do
     end
   end
 
-  @spec skip_reserved(Types.ir_expr(), Types.ir_expr() | term()) :: Types.ir_expr()
+  @spec skip_reserved(non_neg_integer(), non_neg_integer() | nil | term()) :: non_neg_integer()
 
   defp skip_reserved(id, nil), do: id
   defp skip_reserved(id, reserved) when id == reserved, do: id + 1
   defp skip_reserved(id, _), do: id
 
-  @spec emit_merge(Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+  @spec emit_merge(Types.reg(), Types.reg(), Types.reg(), Builder.t()) ::
+          {:ok, Types.reg(), Builder.t()}
 
   defp emit_merge(cond_reg, empty_reg, cons_reg, b) do
     {merge, b1} = Builder.fresh_reg(b)
@@ -1103,7 +1188,24 @@ defmodule Elmc.Backend.Plan.Lower.Case.ListSwitch do
     {:ok, merge, b2}
   end
 
-  @spec compile_triple_nonempty_arms(Types.expr(), Types.expr(), String.t(), String.t(), String.t(), String.t(), Types.expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+  @spec compile_triple_nonempty_arms(
+          Types.expr(),
+          Types.expr(),
+          String.t(),
+          String.t(),
+          String.t(),
+          String.t(),
+          Types.expr(),
+          Types.reg(),
+          Context.t(),
+          Builder.t(),
+          non_neg_integer(),
+          non_neg_integer(),
+          non_neg_integer()
+        ) ::
+          {:ok, Types.reg(), Types.reg() | Types.result_slot(), non_neg_integer(),
+           Types.reg() | Types.result_slot(), non_neg_integer(), Builder.t()}
+          | :unsupported
 
   defp compile_triple_nonempty_arms(
          single_expr,
@@ -1156,7 +1258,18 @@ defmodule Elmc.Backend.Plan.Lower.Case.ListSwitch do
     end
   end
 
-  @spec compile_double_cons_tail_arm(Types.expr(), String.t(), String.t(), String.t(), Types.ir_expr(), Types.ir_expr(), Types.expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+  @spec compile_double_cons_tail_arm(
+          Types.expr(),
+          String.t(),
+          String.t(),
+          String.t(),
+          Types.reg(),
+          Types.reg(),
+          Types.expr(),
+          Context.t(),
+          Builder.t(),
+          non_neg_integer()
+        ) :: {:ok, Types.reg() | Types.result_slot(), non_neg_integer(), Builder.t()} | :unsupported
 
   defp compile_double_cons_tail_arm(
          expr,
@@ -1193,7 +1306,14 @@ defmodule Elmc.Backend.Plan.Lower.Case.ListSwitch do
     end
   end
 
-  @spec emit_nested_merge(Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr(), Types.ir_expr()) :: Types.ir_expr()
+  @spec emit_nested_merge(
+          Types.reg(),
+          Types.reg(),
+          Types.reg(),
+          Types.reg(),
+          Types.reg(),
+          Builder.t()
+        ) :: {:ok, Types.reg(), Builder.t()} | :unsupported
 
   defp emit_nested_merge(empty_subj_reg, wild_reg, empty_tail_reg, wild2_reg, cons_reg, b) do
     with {:ok, inner, b1} <- emit_merge(empty_tail_reg, wild2_reg, cons_reg, b),
