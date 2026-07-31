@@ -54,8 +54,8 @@ defmodule Ide.ProjectTemplatesTest do
     assert ProjectTemplates.picker_title("game-2048") == "2048"
   end
 
-  test "every watch demo template key has a static preview screenshot" do
-    for key <- ProjectTemplates.template_keys(), String.starts_with?(key, "watch-demo-") do
+  test "every template key has a static preview screenshot" do
+    for key <- ProjectTemplates.template_keys() do
       assert Ide.ProjectTemplatePreviews.screenshot_available?(key),
              "missing preview screenshot for #{key}"
     end
