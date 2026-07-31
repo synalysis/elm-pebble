@@ -266,7 +266,7 @@ defmodule ElmEx.Frontend.Bridge do
         [author, name] ->
           [
             Path.join([project_dir, "elm-stuff", "packages", author, name, ver, "src"]),
-            Path.join([System.user_home!(), ".elm", "0.19.1", "packages", author, name, ver, "src"])
+            Path.join([elm_home_packages_root(), author, name, ver, "src"])
           ]
           |> Enum.map(&Path.expand/1)
           |> Enum.find(&File.dir?/1)
@@ -279,6 +279,19 @@ defmodule ElmEx.Frontend.Bridge do
           []
       end
     end
+  end
+
+  @doc false
+  @spec elm_home_root() :: String.t()
+  def elm_home_root do
+    case System.get_env("ELM_HOME") do
+      path when is_binary(path) and path != "" -> Path.expand(path)
+      _ -> Path.join(System.user_home!(), ".elm")
+    end
+  end
+
+  defp elm_home_packages_root do
+    Path.join([elm_home_root(), "0.19.1", "packages"])
   end
 
   @spec collect_dependency_version_pairs(String.t(), Types.elm_json(), MapSet.t({String.t(), String.t()})) ::
@@ -317,7 +330,7 @@ defmodule ElmEx.Frontend.Bridge do
       [author, name] ->
         candidates = [
           Path.join([project_dir, "elm-stuff", "packages", author, name, ver, "elm.json"]),
-          Path.join([System.user_home!(), ".elm", "0.19.1", "packages", author, name, ver, "elm.json"])
+          Path.join([elm_home_packages_root(), author, name, ver, "elm.json"])
         ]
 
         candidates

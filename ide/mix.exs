@@ -76,7 +76,7 @@ defmodule Ide.MixProject do
       # SMTP adapter (runtime when SMTP_RELAY is set) needs gen_smtp for :gen_smtp_client and :mimemail
       {:gen_smtp, "~> 1.0"},
       {:finch, "~> 0.23"},
-      {:req, "~> 0.6.2"},
+      {:req, "~> 0.7"},
       {:muontrap, "~> 1.7"},
       {:lazy_html, ">= 0.1.0", only: :test},
       {:elixir_make, "~> 0.10", override: true},

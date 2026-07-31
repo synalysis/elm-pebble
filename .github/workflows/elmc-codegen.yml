@@ -13,6 +13,7 @@ env:
   XDG_CACHE_HOME: ${{ github.workspace }}/.cache
   ELMC_TEST_COMPILE_CACHE_DIR: ${{ github.workspace }}/.cache/elm-pebble/elmc-test-compile-cache
   ELMC_TEST_IR_CACHE_DIR: ${{ github.workspace }}/.cache/elm-pebble/elmc-test-compile-cache/ir
+  ELM_HOME: ${{ github.workspace }}/.elm-home
 
 jobs:
   elmc:
@@ -62,6 +63,17 @@ jobs:
           hexpm-mirrors: |
             https://builds.hex.pm
             https://cdn.jsdelivr.net/hex
+
+      - name: Cache elm packages
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.ELM_HOME }}
+          key: elm-packages-0.19.1-${{ hashFiles('scripts/seed-elm-packages.sh') }}
+          restore-keys: |
+            elm-packages-0.19.1-
+
+      - name: Seed elm packages for cold CI
+        run: ./scripts/seed-elm-packages.sh
 
       - name: Cache mix deps and builds
         uses: actions/cache@v4
