@@ -9,7 +9,7 @@ defmodule Elmc.Backend.CCodegen.BindingPlans do
   alias Elmc.Backend.CCodegen.StoragePlan
   alias Elmc.Backend.CCodegen.Types
 
-  @scalar_kinds ~w(int float bool char)a
+  @scalar_kinds ~w(int float bool char maybe_int)a
 
   @type binding_key :: {String.t(), String.t(), String.t()}
 
@@ -75,9 +75,25 @@ defmodule Elmc.Backend.CCodegen.BindingPlans do
       NativeUsageAnalysis.bool_let?(name, value_expr, in_expr, env) ->
         StoragePlan.scalar_unboxed(:bool)
 
+      maybe_int_let?(name, value_expr, in_expr, env) ->
+        StoragePlan.maybe_int_unboxed()
+
       true ->
         nil
     end
+  end
+
+  defp maybe_int_let?(name, value_expr, in_expr, env) do
+    usage =
+      NativeUsageAnalysis.int_usage(
+        name,
+        in_expr,
+        Map.get(env, :__module__),
+        Map.get(env, :__program_decls__, %{})
+      )
+
+    NativeUsageAnalysis.native_int_only_usage?(usage) and
+      match?(%{op: :union_ctor, tag: "Just"}, value_expr)
   end
 
   defp native_usage_let?(:int, name, value_expr, in_expr, env) do
@@ -113,6 +129,8 @@ defmodule Elmc.Backend.CCodegen.BindingPlans do
       when is_binary(module) and is_binary(fun) and is_binary(name) and kind in @scalar_kinds do
     case binding_plan(module, fun, name) do
       %StoragePlan{elem: {:primitive, ^kind}, layout: :unboxed} -> true
+      %StoragePlan{elem: {:optional, :int}, layout: :unboxed} when kind == :maybe_int -> true
+      %StoragePlan{elem: {:optional, :int}, layout: :unboxed} when kind == :int -> true
       _ -> false
     end
   end

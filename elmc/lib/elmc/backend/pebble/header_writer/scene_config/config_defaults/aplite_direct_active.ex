@@ -8,14 +8,13 @@ defmodule Elmc.Backend.Pebble.HeaderWriter.SceneConfig.ConfigDefaults.ApliteDire
   @spec body() :: Types.c_source()
   def body do
     """
-    /* Dual-target headers may define ELMC_PEBBLE_APLITE_DIRECT_VIEW_SCENE for codegen,
-       but aplite-only scene settings apply only when building the aplite binary. */
+    /* Formerly enabled a separate aplite path (512B static scene, CACHE=0, sync
+       ensure on the draw stack). Aplite now uses the same deferred malloc-backed
+       scene cache as other platforms — keep ACTIVE=0 so one control-flow path
+       is maintained. ELMC_PEBBLE_APLITE_DIRECT_VIEW_SCENE remains a codegen flag
+       for dual-target headers / direct encode, not a runtime scene-cache split. */
     #ifndef ELMC_PEBBLE_APLITE_DIRECT_VIEW_ACTIVE
-    #if defined(ELMC_PEBBLE_APLITE_DIRECT_VIEW_SCENE) && defined(PBL_PLATFORM_APLITE)
-    #define ELMC_PEBBLE_APLITE_DIRECT_VIEW_ACTIVE 1
-    #else
     #define ELMC_PEBBLE_APLITE_DIRECT_VIEW_ACTIVE 0
-    #endif
     #endif
 
     """

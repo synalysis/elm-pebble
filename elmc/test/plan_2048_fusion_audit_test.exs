@@ -1,8 +1,11 @@
 defmodule Elmc.Plan2048FusionAuditTest do
   use ExUnit.Case, async: true
 
+  alias Elmc.Backend.CCodegen.FunctionEmit
+  alias Elmc.Backend.CCodegen.Util
   alias Elmc.Backend.Plan.Fusion.ListIndexedReplace
   alias Elmc.Backend.Plan.Fusion.ListIntSearch
+  alias Elmc.Backend.Plan.Lower.Function, as: PlanLower
 
   test "ListIndexedReplace recognizes Elm.Kernel.List.indexedMap replace shape" do
     decl = %{
@@ -35,6 +38,58 @@ defmodule Elmc.Plan2048FusionAuditTest do
 
     assert {:ok, %{fusion_c: fusion}} = ListIndexedReplace.try_plan("Main", decl, %{}, [])
     assert fusion =~ "elmc_list_replace_nth_int"
+  end
+
+  test "ListIndexedReplace direct wrapper peels boxed Int args into _native" do
+    decl = %{
+      name: "setCell",
+      args: ["index", "newValue", "cells"],
+      type: "Int -> Int -> List Int -> List Int",
+      ownership: [:borrow_arg, :retain_result],
+      expr: %{
+        op: :qualified_call,
+        target: "Elm.Kernel.List.indexedMap",
+        args: [
+          %{
+            op: :lambda,
+            args: ["i", "value"],
+            body: %{
+              op: :if,
+              cond: %{
+                op: :compare,
+                kind: :eq,
+                left: %{op: :var, name: "i"},
+                right: %{op: :var, name: "index"}
+              },
+              then_expr: %{op: :var, name: "newValue"},
+              else_expr: %{op: :var, name: "value"}
+            }
+          },
+          %{op: :var, name: "cells"}
+        ]
+      }
+    }
+
+    decl_map = %{{"Main", "setCell"} => decl}
+    Process.put(:elmc_program_decls, decl_map)
+    Process.put(:elmc_codegen_opts, %{plan_ir_mode: :primary})
+    Process.put(:elmc_rc_required, MapSet.new([{"Main", "setCell"}]))
+
+    assert {:ok, _plan} = PlanLower.lower(decl, "Main", decl_map, rc_required: true)
+
+    c =
+      FunctionEmit.emit_function_def(
+        decl,
+        "Main",
+        Util.module_fn_name("Main", "setCell"),
+        %{},
+        decl_map,
+        false
+      )
+
+    assert c =~ "elmc_fn_Main_setCell_native(ElmcValue **out, const elmc_int_t index"
+    assert c =~ "ElmcValue *index"
+    assert c =~ "return elmc_fn_Main_setCell_native(out, elmc_as_int(index), elmc_as_int(newValue), cells);"
   end
 
   test "ListIndexedReplace recognizes curried indexedMap lambda" do

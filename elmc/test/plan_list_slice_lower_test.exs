@@ -532,9 +532,9 @@ defmodule Elmc.PlanListSliceLowerTest do
 
     refute c =~ ~r/elmc_new_int\(&owned\[\d+\], [01]\)/
     assert c =~ "plan_native_int_"
-    assert c =~ "plan_native_int_3 = (elmc_as_bool(owned[0])) ? 1 : 0"
-    assert c =~ "plan_native_bool_5 = (plan_native_int_3 == 0);"
-    assert c =~ "plan_native_int_8 = (plan_native_bool_5) ? 10 : 20;"
+    assert c =~ "const elmc_int_t plan_native_int_3 = (elmc_as_bool(owned[0])) ? 1 : 0"
+    assert c =~ "const bool plan_native_bool_5 = (plan_native_int_3 == 0);"
+    assert c =~ "const elmc_int_t plan_native_int_8 = (plan_native_bool_5) ? 10 : 20;"
   end
 
   test "record literal and field access use index-only alloc and ELMC_FIELD macros" do

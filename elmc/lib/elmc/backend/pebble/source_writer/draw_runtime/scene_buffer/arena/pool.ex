@@ -46,7 +46,17 @@ defmodule Elmc.Backend.Pebble.SourceWriter.DrawRuntime.SceneBuffer.Arena.Pool do
         }
       }
       unsigned char *grown = (unsigned char *)malloc((size_t)next_capacity);
-      if (!grown) return -2;
+      if (!grown) {
+    #if defined(ELMC_PEBBLE_PLATFORM)
+        APP_LOG(APP_LOG_LEVEL_ERROR,
+                "elmc scene buffer alloc failed need=%d have=%d used=%d free=%lu",
+                next_capacity,
+                slot->capacity,
+                scene->byte_count,
+                (unsigned long)heap_bytes_free());
+    #endif
+        return -2;
+      }
       if (slot->bytes && scene->byte_count > 0) {
         memcpy(grown, slot->bytes, (size_t)scene->byte_count);
       }

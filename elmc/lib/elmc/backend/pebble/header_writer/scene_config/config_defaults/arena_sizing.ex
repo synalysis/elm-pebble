@@ -8,12 +8,14 @@ defmodule Elmc.Backend.Pebble.HeaderWriter.SceneConfig.ConfigDefaults.ArenaSizin
   @spec body() :: Types.c_source()
   def body do
     """
+    /* Platform sizing only — all targets use the malloc scene pool (STATIC=0).
+       Aplite keeps a smaller grow/pool footprint, but INITIAL must clear the
+       mid-encode realloc cliff: a ~540B view (e.g. 16-cell grid + chrome text)
+       overflows a 512B first slot; growing 512→1024 while the old buffer is still
+       live needs ~1.5KiB contiguous and fails on tight aplite heaps without an
+       OOM APP_LOG (mapped as SCENE_BUFFER_OVERFLOW → blank white draw). */
     #ifndef ELMC_PEBBLE_SCENE_INITIAL_CAPACITY
-    #if ELMC_PEBBLE_APLITE_DIRECT_VIEW_ACTIVE
-    #define ELMC_PEBBLE_SCENE_INITIAL_CAPACITY 256
-    #else
     #define ELMC_PEBBLE_SCENE_INITIAL_CAPACITY 1024
-    #endif
     #endif
 
     #ifndef ELMC_PEBBLE_SCENE_GROW_CHUNK
@@ -32,19 +34,15 @@ defmodule Elmc.Backend.Pebble.HeaderWriter.SceneConfig.ConfigDefaults.ArenaSizin
        Each slot is ~8B BSS on pebble_int32. Watchfaces typically keep 1–2 live scenes;
        4 leaves headroom under flint's 64KiB APP virtual-size uint16 limit. */
     #ifndef ELMC_PEBBLE_SCENE_POOL_SLOTS
-    #if ELMC_PEBBLE_APLITE_DIRECT_VIEW_ACTIVE
-    #define ELMC_PEBBLE_SCENE_POOL_SLOTS 0
+    #if defined(PBL_PLATFORM_APLITE)
+    #define ELMC_PEBBLE_SCENE_POOL_SLOTS 2
     #else
     #define ELMC_PEBBLE_SCENE_POOL_SLOTS 4
     #endif
     #endif
 
     #ifndef ELMC_PEBBLE_SCENE_STATIC_CAPACITY
-    #if ELMC_PEBBLE_APLITE_DIRECT_VIEW_ACTIVE
-    #define ELMC_PEBBLE_SCENE_STATIC_CAPACITY 512
-    #else
     #define ELMC_PEBBLE_SCENE_STATIC_CAPACITY 0
-    #endif
     #endif
 
     #ifndef ELMC_PEBBLE_SCENE_CHUNK_SIZE

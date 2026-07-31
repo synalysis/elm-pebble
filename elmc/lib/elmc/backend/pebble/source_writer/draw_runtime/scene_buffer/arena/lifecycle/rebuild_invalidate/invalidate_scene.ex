@@ -10,7 +10,7 @@ defmodule Elmc.Backend.Pebble.SourceWriter.DrawRuntime.SceneBuffer.Arena.Lifecyc
     """
     void elmc_pebble_invalidate_scene(ElmcPebbleApp *app) {
       if (!app) return;
-    #if ELMC_PEBBLE_SCENE_CACHE_ENABLED || ELMC_PEBBLE_APLITE_DIRECT_VIEW_ACTIVE
+    #if ELMC_PEBBLE_SCENE_CACHE_ENABLED
       elmc_pebble_mark_scene_dirty(app);
       app->scene_draw_byte_offset = 0;
     #endif

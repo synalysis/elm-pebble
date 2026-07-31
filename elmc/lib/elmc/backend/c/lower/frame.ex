@@ -22,11 +22,13 @@ defmodule Elmc.Backend.C.Lower.Frame do
   @spec epilogue_release([non_neg_integer()], non_neg_integer()) :: String.t()
   def epilogue_release([], _slot_count), do: ""
 
-  def epilogue_release(slot_indices, slot_count) do
+  def epilogue_release(_slot_indices, slot_count) do
     if heap_owned?(slot_count) do
       "elmc_release_array_lifo(owned, ELMC_OWNED_SLOT_COUNT);\nelmc_free(owned);"
     else
-      "elmc_release_array_lifo(owned, #{length(slot_indices)});"
+      # Prefer DIM(owned) so the compiler can share a single call site shape
+      # across functions with the same owned-array declaration.
+      "elmc_release_array_lifo(owned, DIM(owned));"
     end
   end
 

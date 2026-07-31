@@ -300,7 +300,7 @@ defmodule Elmc.PlanCLowerTest do
     refute c =~ "RC_ERR_OUT_OF_MEMORY"
   end
 
-  test "tuple projection lowering skips OOM null checks" do
+  test "local (Int,Int) destructure unboxes without heap tuple or OOM null checks" do
     out_dir = Path.expand("tmp/tuple_proj_null_check_out", __DIR__)
     project_dir = Path.expand("tmp/tuple_proj_null_check_project", __DIR__)
     File.rm_rf!(out_dir)
@@ -328,8 +328,42 @@ defmodule Elmc.PlanCLowerTest do
              })
 
     c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
-    assert c =~ "elmc_tuple_first("
-    assert c =~ "elmc_tuple_second("
+    # Local (Int,Int) is scalar-replaced: no heap pair and no tuple_proj peels.
+    refute c =~ "elmc_tuple2_ints"
+    refute c =~ "elmc_tuple_first"
+    refute c =~ "elmc_tuple_second"
+    assert c =~ "1 + 2"
+  end
+
+  test "escaping tuple param projections skip OOM null checks" do
+    out_dir = Path.expand("tmp/tuple_param_proj_oom_out", __DIR__)
+    project_dir = Path.expand("tmp/tuple_param_proj_oom_project", __DIR__)
+    File.rm_rf!(out_dir)
+    File.rm_rf!(project_dir)
+    File.mkdir_p!(Path.join(project_dir, "src"))
+    File.cp!(Path.expand("fixtures/simple_project/elm.json", __DIR__), Path.join(project_dir, "elm.json"))
+
+    File.write!(Path.join(project_dir, "src/Main.elm"), """
+    module Main exposing (main)
+
+    sumPair : ( Int, Int ) -> Int
+    sumPair ( x, y ) =
+        x + y
+
+    main =
+        sumPair ( 1, 2 )
+    """)
+
+    assert {:ok, _} =
+             CachedCompile.compile(project_dir, %{
+               out_dir: out_dir,
+               entry_module: "Main",
+               strip_dead_code: true,
+               plan_ir_mode: :primary
+             })
+
+    c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+    assert c =~ "elmc_tuple_first" or c =~ "elmc_tuple_second"
     refute Regex.match?(~r/elmc_tuple_first\([^)]+\);\s*if \(!owned\[/, c)
     refute Regex.match?(~r/elmc_tuple_second\([^)]+\);\s*if \(!owned\[/, c)
   end

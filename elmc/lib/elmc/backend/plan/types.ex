@@ -158,6 +158,7 @@ defmodule Elmc.Backend.Plan.Types do
           | :render_cmd
           | :render_text_cmd
           | :list_cursor_map
+          | :list_walk_map
           | :pipe_apply_repeat
           | :pebble_sub
           | :forward_ref_set
@@ -246,6 +247,9 @@ defmodule Elmc.Backend.Plan.Types do
       :fusion_kind,
       :fusion_data,
       :native_scalar_return,
+      :native_pair_ret,
+      :native_list_int_pair_arms,
+      :native_list_int_pair_pair_regs,
       :native_scalar_value_return,
       :fusion_emit,
       :stream_mode
@@ -270,7 +274,12 @@ defmodule Elmc.Backend.Plan.Types do
             fusion_c: String.t() | nil,
             fusion_kind: atom() | nil,
             fusion_data: Elmc.Backend.Plan.Types.fusion_data() | nil,
-            native_scalar_return: :native_int | :native_bool | nil,
+            native_scalar_return:
+              :native_int | :native_bool | :native_int_pair | :native_list_int_pair | nil,
+            native_pair_ret: {Elmc.Backend.Plan.Types.reg(), Elmc.Backend.Plan.Types.reg()} | nil,
+            native_list_int_pair_arms:
+              [{Elmc.Backend.Plan.Types.reg(), Elmc.Backend.Plan.Types.reg()}] | nil,
+            native_list_int_pair_pair_regs: MapSet.t(Elmc.Backend.Plan.Types.reg()) | nil,
             native_scalar_value_return: boolean() | nil,
             fusion_emit: :helper_only | :public_native | nil,
             stream_mode: boolean() | nil

@@ -495,6 +495,18 @@ defmodule Elmc.Backend.CCodegen.EnvBindings do
 
   def native_float_binding(_env, _name), do: nil
 
+  @spec native_scalar_context?(Types.compile_env()) :: boolean()
+  def native_scalar_context?(env) when is_map(env),
+    do: Map.get(env, :__native_scalar_context__, false) == true
+
+  def native_scalar_context?(_env), do: false
+
+  @spec with_native_scalar_context(Types.compile_env()) :: Types.compile_env()
+  def with_native_scalar_context(env) when is_map(env),
+    do: Map.put(env, :__native_scalar_context__, true)
+
+  def with_native_scalar_context(env), do: env
+
   @spec put_pebble_angle_binding(Types.compile_env(), Types.binding_name(), Types.ir_expr()) :: Types.compile_env()
   def put_pebble_angle_binding(env, name, expr)
        when (is_binary(name) or is_atom(name)) and is_map(expr) do

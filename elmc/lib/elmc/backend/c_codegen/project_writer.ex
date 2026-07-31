@@ -20,6 +20,7 @@ defmodule Elmc.Backend.CCodegen.ProjectWriter do
          :ok <- GeneratedSource.write_source!(Path.join(c_dir, "elmc_generated.c"), ir, opts),
          {:ok, generated_source} <- File.read(Path.join(c_dir, "elmc_generated.c")),
          :ok <- write_stack_report(out_dir, ir, generated_source),
+         :ok <- write_flash_vs_heap_report(out_dir, opts),
          :ok <- File.write(Path.join(c_dir, "host_harness.c"), BuildArtifacts.host_harness()),
          :ok <- File.write(Path.join(out_dir, "CMakeLists.txt"), BuildArtifacts.cmake()),
          :ok <- File.write(Path.join(out_dir, "Makefile"), BuildArtifacts.makefile()),
@@ -42,6 +43,7 @@ defmodule Elmc.Backend.CCodegen.ProjectWriter do
          :ok <- GeneratedSource.write_source!(Path.join(c_dir, "elmc_generated.c"), ir, opts),
          {:ok, generated_source} <- File.read(Path.join(c_dir, "elmc_generated.c")),
          :ok <- write_stack_report(out_dir, ir, generated_source),
+         :ok <- write_flash_vs_heap_report(out_dir, opts),
          :ok <- File.write(Path.join(c_dir, "host_harness.c"), BuildArtifacts.host_harness()),
          :ok <- File.write(Path.join(out_dir, "CMakeLists.txt"), BuildArtifacts.cmake()),
          :ok <- File.write(Path.join(out_dir, "Makefile"), BuildArtifacts.makefile()),
@@ -64,6 +66,10 @@ defmodule Elmc.Backend.CCodegen.ProjectWriter do
       |> Jason.encode!(pretty: true)
 
     File.write(Path.join(out_dir, "elmc_stack_report.json"), report)
+  end
+
+  defp write_flash_vs_heap_report(out_dir, opts) do
+    Elmc.Backend.FlashVsHeap.Report.write!(out_dir, compile_opts: opts)
   end
 
   @spec normalize_codegen_opts(keyword() | map()) :: map()

@@ -65,7 +65,7 @@ defmodule Elmc.PlanCoreBuiltinsTest do
     assert inspect(plan.blocks) =~ "basics_sqrt"
   end
 
-  test "Tuple.mapFirst qualified call lowers through plan runtime builtin" do
+  test "Tuple.mapFirst on immediate tuple2 specializes without elmc_tuple_map_first" do
     plan =
       lower_expr(
         %{
@@ -79,7 +79,9 @@ defmodule Elmc.PlanCoreBuiltinsTest do
         ["f", "t"]
       )
 
-    assert inspect(plan.blocks) =~ "tuple_map_first"
+    blocks = inspect(plan.blocks)
+    refute blocks =~ "tuple_map_first"
+    assert blocks =~ "tuple2_ints"
   end
 
   test "Tuple.mapFirst elm/core decl lowers via runtime intrinsic rewrite" do

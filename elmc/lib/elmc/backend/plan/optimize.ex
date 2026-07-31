@@ -2,13 +2,18 @@ defmodule Elmc.Backend.Plan.Optimize do
   @moduledoc false
   alias Elmc.Backend.Plan.Types, as: Types
 
-  alias Elmc.Backend.Plan.{IntPhiNative, TruthyNative}
+  alias Elmc.Backend.Plan.{CommonConstCallArms, IntPhiNative, TruthyNative, Tuple2IntsUnbox}
   alias Elmc.Backend.Plan.Types
   alias Elmc.Backend.Plan.Types.{Block, FunctionPlan}
 
   @spec run(FunctionPlan.t()) :: FunctionPlan.t()
-  def run(%FunctionPlan{blocks: blocks} = plan) do
-    blocks = Enum.map(blocks, &coalesce_arm_publish_block/1)
+  def run(%FunctionPlan{} = plan) do
+    # Unbox local (Int,Int) before DCE/transfer rewrites so dead heap pairs and
+    # their projection releases disappear cleanly.
+    plan = Tuple2IntsUnbox.run(plan)
+    blocks = Enum.map(plan.blocks, &coalesce_arm_publish_block/1)
+    plan = CommonConstCallArms.run(%{plan | blocks: blocks})
+    blocks = plan.blocks
 
     used = used_regs(blocks)
 

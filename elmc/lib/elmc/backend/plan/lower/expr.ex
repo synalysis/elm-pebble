@@ -1141,6 +1141,17 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
     Elmc.Backend.Plan.Lower.ListRecord.try_compile_filter(expr, ctx, b)
   end
 
+  defp try_ir_specialized_runtime_call(%{function: fun, args: [left, right]}, ctx, b)
+       when fun in ["elmc_basics_max", "elmc_basics_min"] do
+    name = if fun == "elmc_basics_max", do: "Basics.max", else: "Basics.min"
+    Elmc.Backend.Plan.Lower.IntCall.compile(%{op: :call, name: name, args: [left, right]}, ctx, b)
+  end
+
+  defp try_ir_specialized_runtime_call(%{function: fun} = expr, ctx, b)
+       when fun in ["elmc_tuple_map_first", "elmc_tuple_map_second", "elmc_tuple_map_both"] do
+    Elmc.Backend.Plan.Lower.TupleMap.try_compile(expr, ctx, b)
+  end
+
   defp try_ir_specialized_runtime_call(_, _, _), do: :unsupported
 
   @spec retain_last_hof_operand_if_borrowed(Builder.t(), [Types.reg()]) ::
@@ -2938,6 +2949,14 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
     end
   end
 
+  defp compile_runtime_call(%{function: fun} = expr, ctx, b)
+       when fun in ["elmc_tuple_map_first", "elmc_tuple_map_second", "elmc_tuple_map_both"] do
+    case Elmc.Backend.Plan.Lower.TupleMap.try_compile(expr, ctx, b) do
+      {:ok, reg, b1} -> {:ok, reg, b1}
+      :unsupported -> compile_runtime_call_default(expr, ctx, b)
+    end
+  end
+
   defp compile_runtime_call(expr, ctx, b), do: compile_runtime_call_default(expr, ctx, b)
 
   @spec compile_runtime_call_default(map() | term(), Context.t(), Builder.t()) ::
@@ -3282,7 +3301,10 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
 
     with {:ok, l, b1} <- compile(left, operand_ctx, b),
          {:ok, r, b2} <- compile(right, operand_ctx, b1) do
-      if tuple2_ints_eligible?(left, right, ctx) do
+      # Prefer tuple2_ints when IR is int-shaped OR both compiled regs are already
+      # native-int producers (e.g. Int params through `__add__`).
+      if tuple2_ints_eligible?(left, right, ctx) or
+           (native_int_reg_producer?(b2, l, ctx) and native_int_reg_producer?(b2, r, ctx)) do
         compile_runtime_builtin(:tuple2_ints, [l, r], ctx, b2)
       else
         compile_runtime_builtin(:tuple2, [l, r], ctx, b2)
@@ -3291,6 +3313,30 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
       _ -> :unsupported
     end
   end
+
+  defp native_int_reg_producer?(b, reg, ctx) when is_integer(reg) do
+    instrs =
+      Enum.flat_map(b.blocks || [], fn
+        %{instrs: is} when is_list(is) -> is
+        _ -> []
+      end) ++ (Map.get(b.current_block || %{}, :instrs) || [])
+
+    case Enum.find(instrs, &(&1.dest == reg)) do
+      %{op: op} when op in [:const_int, :int_arith, :record_get_int, :boxed_tag_peel] ->
+        true
+
+      %{op: :load_param, args: %{index: idx}} when is_integer(idx) ->
+        native_int_param_index?(idx, ctx)
+
+      %{op: :call_runtime, args: %{builtin: :new_int}} ->
+        true
+
+      _ ->
+        false
+    end
+  end
+
+  defp native_int_reg_producer?(_, _, _), do: false
 
   @spec tuple2_ints_eligible?(Types.expr(), Types.expr(), Context.t()) :: boolean()
 

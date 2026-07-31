@@ -306,6 +306,7 @@ defmodule Mix.Tasks.Ide.SizeReport do
     base
     |> maybe_merge_stack_report(stack_report_path)
     |> maybe_add_object_text_estimate(out_dir)
+    |> maybe_add_flash_vs_heap(out_dir)
     |> maybe_add_symbol_categories(symbol_categories?, out_dir)
   end
 
@@ -314,6 +315,18 @@ defmodule Mix.Tasks.Ide.SizeReport do
     case Elmc.object_text_estimate(out_dir, []) do
       %{"available" => true} = estimate ->
         Map.put(report, :object_text, estimate)
+
+      _ ->
+        report
+    end
+  end
+
+  defp maybe_add_flash_vs_heap(report, out_dir) do
+    path = Path.join(out_dir, "flash_vs_heap.json")
+
+    case File.read(path) do
+      {:ok, contents} ->
+        Map.put(report, :flash_vs_heap, Jason.decode!(contents))
 
       _ ->
         report

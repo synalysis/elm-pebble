@@ -833,16 +833,7 @@ defmodule Elmc.Backend.CCodegen.ListIntRepr do
     with {callee_mod, name} <- resolve_callee(target, mod),
          %{} = decl <- Map.get(decl_map, {callee_mod, name}) do
       cond do
-        name == "spawnTileWithSeed" ->
-          case spawn_cells_arg(args) do
-            cells when is_map(cells) ->
-              if expr_repr_impl(cells, decl_map, ctx) == compact_repr(), do: compact_repr(), else: :mixed
-
-            _ ->
-              :mixed
-          end
-
-        tuple_pair_first_is_list_int?(decl.type) ->
+        tuple_pair_first_is_list_int?(function_return_type(decl.type)) ->
           tuple_fn_first_component_repr(decl, args, decl_map, ctx)
 
         true ->
@@ -854,12 +845,46 @@ defmodule Elmc.Backend.CCodegen.ListIntRepr do
   end
 
   defp tuple_fn_first_component_repr(%{type: type, expr: body, args: param_names}, args, decl_map, ctx) do
-    if int_list_args_satisfied?(args, param_names || [], type, decl_map, ctx) and
-         tuple_body_first_component_int_list?(body, decl_map, ctx) do
-      :int_list
+    param_names = param_names || []
+
+    if int_list_args_satisfied?(args, param_names, type, decl_map, ctx) do
+      # Bind compact List Int call args into the callee body locals so `var`
+      # lookups (e.g. `cells` in `(cells, seed)`) do not depend on the caller's
+      # param_repr keys.
+      body_ctx = bind_compact_list_arg_locals(param_names, args, type, decl_map, ctx)
+
+      if tuple_body_first_component_int_list?(body, decl_map, body_ctx) do
+        :int_list
+      else
+        :mixed
+      end
     else
       :mixed
     end
+  end
+
+  defp bind_compact_list_arg_locals(param_names, args, type, decl_map, ctx) do
+    arg_types = TypeParsing.function_arg_types(type)
+
+    locals =
+      param_names
+      |> Enum.zip(args || [])
+      |> Enum.zip(arg_types)
+      |> Enum.reduce(ctx_locals(ctx), fn
+        {{name, arg}, arg_type}, acc when is_binary(name) ->
+          if list_elem_type?(arg_type) and expr_repr_impl(arg, decl_map, ctx) == compact_repr() do
+            acc
+            |> Map.put(name, list_type())
+            |> Map.put({:binding_repr, name}, compact_repr())
+          else
+            acc
+          end
+
+        _, acc ->
+          acc
+      end)
+
+    ctx_put_locals(ctx, locals)
   end
 
   defp tuple_body_first_component_int_list?(%{op: :qualified_call, target: target, args: spawn_args}, decl_map, ctx) do
@@ -876,6 +901,15 @@ defmodule Elmc.Backend.CCodegen.ListIntRepr do
     tuple_body_first_component_int_list?(body, decl_map, ctx)
   end
 
+  defp tuple_body_first_component_int_list?(%{op: :if, then_expr: then_expr, else_expr: else_expr}, decl_map, ctx) do
+    tuple_body_first_component_int_list?(then_expr, decl_map, ctx) and
+      tuple_body_first_component_int_list?(else_expr, decl_map, ctx)
+  end
+
+  defp tuple_body_first_component_int_list?(%{op: :tuple2, left: left}, decl_map, ctx) do
+    expr_repr_impl(left, decl_map, ctx) == compact_repr()
+  end
+
   defp tuple_body_first_component_int_list?(_body, _decl_map, _ctx), do: false
 
   defp tuple_pair_first_is_list_int?(type) when is_binary(type) do
@@ -885,9 +919,6 @@ defmodule Elmc.Backend.CCodegen.ListIntRepr do
   end
 
   defp tuple_pair_first_is_list_int?(_), do: false
-
-  defp spawn_cells_arg([_seed, cells | _]), do: cells
-  defp spawn_cells_arg(_), do: nil
 
   defp follow_binding_expr(%{op: :var, name: name}, ctx) when is_binary(name) do
     case Map.get(ctx_locals(ctx), {:binding_expr, name}) do

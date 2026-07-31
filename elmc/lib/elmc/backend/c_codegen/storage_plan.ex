@@ -4,6 +4,7 @@ defmodule Elmc.Backend.CCodegen.StoragePlan do
   @type primitive :: :int | :float | :char | :bool
   @type elem_schema ::
           {:primitive, primitive()}
+          | {:optional, :int}
           | {:record, String.t(), String.t()}
           | {:boxed, :value}
 
@@ -76,6 +77,20 @@ defmodule Elmc.Backend.CCodegen.StoragePlan do
       access: :sequential
     }
   end
+
+  @spec maybe_int_unboxed() :: t()
+  def maybe_int_unboxed do
+    %__MODULE__{
+      elem: {:optional, :int},
+      layout: :unboxed,
+      length: :known,
+      access: :sequential
+    }
+  end
+
+  @spec maybe_int_unboxed?(t()) :: boolean()
+  def maybe_int_unboxed?(%__MODULE__{elem: {:optional, :int}, layout: :unboxed}), do: true
+  def maybe_int_unboxed?(_), do: false
 
   @spec unboxed_scalar?(t()) :: boolean()
   def unboxed_scalar?(%__MODULE__{layout: :unboxed, elem: {:primitive, _}}), do: true

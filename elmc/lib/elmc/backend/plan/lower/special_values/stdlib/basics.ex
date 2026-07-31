@@ -229,16 +229,24 @@ defmodule Elmc.Backend.Plan.Lower.SpecialValues.Stdlib.Basics do
     }
 
   def special_value_from_target("Tuple.first", [t]),
-    do: %{op: :runtime_call, function: "elmc_tuple_first", args: [t]}
+    do: %{op: :tuple_first_expr, arg: t}
 
   def special_value_from_target("Tuple.second", [t]),
-    do: %{op: :runtime_call, function: "elmc_tuple_second", args: [t]}
+    do: %{op: :tuple_second_expr, arg: t}
 
   def special_value_from_target("Tuple.first", []),
-    do: Helpers.runtime_fn_lambda("elmc_tuple_first", ["__t"])
+    do: %{
+      op: :lambda,
+      args: ["__t"],
+      body: %{op: :tuple_first_expr, arg: %{op: :var, name: "__t"}}
+    }
 
   def special_value_from_target("Tuple.second", []),
-    do: Helpers.runtime_fn_lambda("elmc_tuple_second", ["__t"])
+    do: %{
+      op: :lambda,
+      args: ["__t"],
+      body: %{op: :tuple_second_expr, arg: %{op: :var, name: "__t"}}
+    }
 
   def special_value_from_target("Tuple.mapFirst", [f, t]),
     do: %{op: :runtime_call, function: "elmc_tuple_map_first", args: [f, t]}

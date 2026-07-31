@@ -24,6 +24,12 @@ defmodule Elmc.Backend.Plan.Lower.Tuple do
 
   @spec compile_proj(:first | :second, term(), Context.t(), Builder.t()) ::
           Types.compile_result_required()
+  defp compile_proj(which, %{op: :tuple2, left: left, right: right}, ctx, b) do
+    # `Tuple.first (a, b)` / `Tuple.second (a, b)` — never heap-allocate the pair.
+    side = if which == :first, do: left, else: right
+    Expr.compile(side, ctx, b)
+  end
+
   defp compile_proj(which, arg, ctx, b) do
     with {:ok, base, b1} <- resolve_arg(arg, ctx, b) do
       {dest, b2} = dest_for(ctx, b1)

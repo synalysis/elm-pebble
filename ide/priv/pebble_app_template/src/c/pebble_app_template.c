@@ -2252,6 +2252,28 @@ static void draw_update_proc(Layer *layer, GContext *ctx) {
         break;
       }
 #endif
+#if ELMC_PEBBLE_FEATURE_DRAW_CIRCLE
+      case ELMC_PEBBLE_DRAW_CIRCLE: {
+        int16_t x = (int16_t)cmd->p0;
+        int16_t y = (int16_t)cmd->p1;
+        int16_t r = (int16_t)cmd->p2;
+        graphics_context_set_stroke_color(ctx, color_from_code(cmd->p3));
+        graphics_draw_circle(ctx, GPoint(x, y), r);
+        graphics_context_set_stroke_color(ctx, s_draw_style_stack[s_draw_style_top].stroke_color);
+        break;
+      }
+#endif
+#if ELMC_PEBBLE_FEATURE_DRAW_FILL_CIRCLE
+      case ELMC_PEBBLE_DRAW_FILL_CIRCLE: {
+        int16_t x = (int16_t)cmd->p0;
+        int16_t y = (int16_t)cmd->p1;
+        int16_t r = (int16_t)cmd->p2;
+        graphics_context_set_fill_color(ctx, color_from_code(cmd->p3));
+        graphics_fill_circle(ctx, GPoint(x, y), r);
+        graphics_context_set_fill_color(ctx, s_draw_style_stack[s_draw_style_top].fill_color);
+        break;
+      }
+#endif
       default:
         break;
     }
@@ -2965,7 +2987,14 @@ static void scene_prep_timer_callback(void *data) {
     }
 #endif
   } else if (scene_rc != 0) {
-    APP_LOG(APP_LOG_LEVEL_ERROR, "elmc scene prep failed rc=%d", scene_rc);
+    APP_LOG(APP_LOG_LEVEL_ERROR,
+            "elmc scene prep failed rc=%d dirty=%d cmds=%d bytes=%d cap=%d free=%lu",
+            scene_rc,
+            s_elm_app.scene.dirty,
+            s_elm_app.scene.command_count,
+            s_elm_app.scene.byte_count,
+            s_elm_app.scene.byte_capacity,
+            (unsigned long)heap_bytes_free());
     ELMC_RC_LOG_FAIL(RC_ERR_RENDER_ABORT, "elmc_scene_prep", "scene prep failed");
 #if ELMC_PEBBLE_SCENE_CACHE_ENABLED
     schedule_scene_prep();

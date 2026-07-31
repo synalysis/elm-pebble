@@ -5,7 +5,7 @@ defmodule Elmc.Backend.Bytecode.ProjectWriter do
   alias Elmc.Backend.Bytecode.Artifacts.Types, as: Types
 
 
-  alias Elmc.Backend.Bytecode.{FusionRunner, Lower}
+  alias Elmc.Backend.Bytecode.{FusionRunner, Lower, TierGate}
   alias Elmc.Backend.CCodegen.{IRQueries, RcRequired}
   alias Elmc.Backend.Plan
   alias Elmc.Backend.Plan.PrimaryCoverage
@@ -27,7 +27,14 @@ defmodule Elmc.Backend.Bytecode.ProjectWriter do
   @doc false
   @spec emit_bytecode?(Elmc.Types.compile_options()) :: boolean()
   def emit_bytecode?(opts) when is_map(opts) do
-    Plan.plan_ir_mode(opts) in [:shadow, :primary] and not skip_pebble_bytecode?(opts)
+    Plan.plan_ir_mode(opts) in [:shadow, :primary] and
+      (not skip_pebble_bytecode?(opts) or selective_pebble_bytecode?(opts))
+  end
+
+  @spec selective_pebble_bytecode?(Elmc.Types.compile_options() | map()) :: boolean()
+  def selective_pebble_bytecode?(opts) when is_map(opts) do
+    Map.get(opts, :emit_bytecode, false) == true or
+      TierGate.eligible?(Map.get(opts, :bytecode_tier_metrics, %{}))
   end
 
   # Pebble watch PBW builds already lower Plan IR to C; emitting bytecode sections
@@ -36,7 +43,7 @@ defmodule Elmc.Backend.Bytecode.ProjectWriter do
 
   defp skip_pebble_bytecode?(opts) do
     Plan.plan_ir_mode(opts) == :primary and Targets.emit_c?(opts) and not Targets.emit_wasm?(opts) and
-      Map.get(opts, :pebble_int32, false) == true and Map.get(opts, :emit_bytecode, false) != true
+      Map.get(opts, :pebble_int32, false) == true and not selective_pebble_bytecode?(opts)
   end
 
   @spec write(IR.t(), String.t(), Elmc.Types.compile_options() | map()) :: :ok

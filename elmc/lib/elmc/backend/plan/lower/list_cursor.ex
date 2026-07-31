@@ -11,16 +11,67 @@ defmodule Elmc.Backend.Plan.Lower.ListCursor do
   @spec try_compile_map(Types.ir_expr(), Context.t(), Builder.t()) ::
           {:ok, Types.reg() | :fn_out, Builder.t()} | :unsupported
   def try_compile_map(%{function: "elmc_list_map", args: [fun, list]}, ctx, b) do
-    with {:ok, _start, _end_val, range_regs} <- parse_range(list),
-         {:ok, _lambda, _body} <- map_lambda(fun),
-         {:ok, lambda_idx, b1} <- compile_loop_lambda(fun, ctx, b) do
-      {dest, b2} = dest_for_call(ctx, b1)
+    case try_range_map(fun, list, ctx, b) do
+      {:ok, _, _} = ok ->
+        ok
 
-      {start_reg, end_reg, b3} =
-        case range_regs do
-          {:literal, s, e} ->
-            {s, e, b2}
+      :unsupported ->
+        case int_list_literal_range(list) do
+          {:ok, start, end_val} -> try_range_literals(fun, start, end_val, ctx, b)
+          :error -> :unsupported
         end
+    end
+  end
+
+  def try_compile_map(_, _, _), do: :unsupported
+
+  @spec int_list_literal_range(term()) :: {:ok, integer(), integer()} | :error
+  defp int_list_literal_range(%{op: :static_list, elements: elements}) when is_list(elements) do
+    values =
+      elements
+      |> Enum.map(&literal_int/1)
+      |> Enum.reduce_while([], fn
+        {:ok, value}, acc -> {:cont, acc ++ [value]}
+        :error, _ -> {:halt, :error}
+      end)
+
+    case values do
+      :error -> :error
+      [] -> :error
+      [single] -> {:ok, single, single}
+      ints -> if consecutive_ints?(ints), do: {:ok, hd(ints), List.last(ints)}, else: :error
+    end
+  end
+
+  defp int_list_literal_range(%{op: :list_literal, elements: elements}) when is_list(elements),
+    do: int_list_literal_range(%{op: :static_list, elements: elements})
+
+  defp int_list_literal_range(_), do: :error
+
+  defp consecutive_ints?([_]), do: true
+
+  defp consecutive_ints?(ints) do
+    Enum.chunk_every(ints, 2, 1, :discard)
+    |> Enum.all?(fn [left, right] -> right == left + 1 end)
+  end
+
+  defp try_range_map(fun, list, ctx, b) do
+    with {:ok, start, end_val, {:literal, s, e}} <- parse_range(list),
+         {:ok, dest, b_out} <- emit_range_map(fun, s, e, start, end_val, ctx, b) do
+      {:ok, dest, b_out}
+    else
+      _ -> :unsupported
+    end
+  end
+
+  defp try_range_literals(fun, start, end_val, ctx, b) do
+    emit_range_map(fun, start, end_val, start, end_val, ctx, b)
+  end
+
+  defp emit_range_map(fun, start_reg, end_reg, _start, _end_val, ctx, b) do
+    with {:ok, _lambda, _body} <- map_lambda(fun),
+         {:ok, lambda_idx, _capture_regs, b1} <- Lambda.compile_for_direct_call(fun, ctx, b) do
+      {dest, b2} = dest_for_call(ctx, b1)
 
       args = %{
         start: start_reg,
@@ -37,8 +88,8 @@ defmodule Elmc.Backend.Plan.Lower.ListCursor do
           Types.fallible_transfer([], [])
         end
 
-      wrap_catch? = Builder.wrap_fallible_instr_catch?(b3, ctx, true)
-      b4 = if wrap_catch?, do: Builder.catch_begin(b3), else: b3
+      wrap_catch? = Builder.wrap_fallible_instr_catch?(b2, ctx, true)
+      b4 = if wrap_catch?, do: Builder.catch_begin(b2), else: b2
 
       {_, b5} =
         Builder.emit(b4, :list_cursor_map, %{
@@ -53,8 +104,6 @@ defmodule Elmc.Backend.Plan.Lower.ListCursor do
       _ -> :unsupported
     end
   end
-
-  def try_compile_map(_, _, _), do: :unsupported
 
   @spec parse_range(term()) ::
           {:ok, integer(), integer(), {:literal, integer(), integer()}} | :unsupported
@@ -84,19 +133,6 @@ defmodule Elmc.Backend.Plan.Lower.ListCursor do
     do: {:ok, param, body}
 
   defp map_lambda(_), do: :error
-
-  @spec compile_loop_lambda(term(), Context.t(), Builder.t()) ::
-          {:ok, non_neg_integer(), Builder.t()} | :unsupported
-  defp compile_loop_lambda(fun, ctx, b) do
-    case Lambda.compile(fun, ctx, b) do
-      {:ok, _reg, b1} ->
-        idx = max(length(b1.lambdas) - 1, 0)
-        {:ok, idx, b1}
-
-      _ ->
-        :unsupported
-    end
-  end
 
   @spec dest_for_call(Context.t(), Builder.t()) ::
           {Types.reg() | :fn_out | :branch_out, Builder.t()}

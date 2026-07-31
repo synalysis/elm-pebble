@@ -6,6 +6,7 @@ defmodule Elmc.Backend.Plan.Worker.HostPlan do
   describes the host adapter that calls them and manages `ElmcWorkerState`.
   """
   alias Elmc.Backend.Plan.Worker.Layout
+  alias Elmc.Backend.Plan.Worker.ModelNative
 
   @type entry_abi :: :direct | :argc
 
@@ -33,7 +34,8 @@ defmodule Elmc.Backend.Plan.Worker.HostPlan do
           update: entry(),
           subscriptions: entry(),
           model_dependent_subs?: boolean(),
-          last_dispatch_cmd_cap: non_neg_integer()
+          last_dispatch_cmd_cap: non_neg_integer(),
+          model_native: ModelNative.layout() | nil
         }
 
   defstruct [
@@ -43,6 +45,7 @@ defmodule Elmc.Backend.Plan.Worker.HostPlan do
     :update,
     :subscriptions,
     model_dependent_subs?: false,
-    last_dispatch_cmd_cap: 8
+    last_dispatch_cmd_cap: 8,
+    model_native: nil
   ]
 end

@@ -67,7 +67,12 @@ defmodule Elmc.DirectRenderDeadViewHelpersTest do
     assert pebble_c =~ "#define ELMC_PEBBLE_APPEND_FALLBACK_SCENE 1"
     assert pebble_h =~ "#define ELMC_PEBBLE_APLITE_DIRECT_VIEW_SCENE 1"
     assert pebble_h =~ "#define ELMC_PEBBLE_APLITE_DIRECT_VIEW_ACTIVE 0"
+    refute pebble_h =~ "#define ELMC_PEBBLE_APLITE_DIRECT_VIEW_ACTIVE 1"
     assert pebble_h =~ "#define ELMC_PEBBLE_SCENE_CACHE_ENABLED 1"
+    assert pebble_h =~ "#define ELMC_PEBBLE_SCENE_STATIC_CAPACITY 0"
+    # Aplite shares the malloc pool path; only INITIAL/POOL/GROW are platform-sized.
+    assert pebble_h =~ "#define ELMC_PEBBLE_SCENE_POOL_SLOTS 2"
+    assert pebble_h =~ "#define ELMC_PEBBLE_SCENE_POOL_SLOTS 4"
     assert pebble_h =~ "#define ELMC_PEBBLE_SCENE_BUILD_VERIFY 0"
     assert pebble_h =~ "#define ELMC_PEBBLE_FEATURE_COMPACT_DRAW 1"
     assert worker_h =~ "#define ELMC_WORKER_LAST_DISPATCH_CMD_CAP 0"
@@ -114,7 +119,9 @@ defmodule Elmc.DirectRenderDeadViewHelpersTest do
   end
 
   test "update calls initialBoard with native seed operand", %{generated: generated} do
-    assert generated =~ "elmc_fn_Main_initialBoard(&owned["
+    # Dual-out (List Int, Int): list/int outs + native seed peel.
+    assert generated =~ "elmc_fn_Main_initialBoard(&plan_list_int_pair_"
     assert generated =~ "elmc_as_int(owned["
   end
 end
+

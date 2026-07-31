@@ -95,6 +95,22 @@ defmodule Elmc.Backend.Plan.Lower.IntCall do
             kind = if name == "Basics.min", do: :min_vars, else: :max_vars
             Arith.emit_binary(kind, left, right, ctx, b)
 
+          # Same soft-int fallback as `__add__`: after compiling both sides the regs are
+          # often native ints (`Basics.max 10 (r // 5)`) even when IR shape is not yet
+          # proven — avoid boxing into `elmc_basics_max` on size-sensitive layouts.
+          # Exclude bare field access / vars: those may be Float (Extent.combine).
+          name in ["Basics.min", "Basics.max"] and not float_mixture?(left, right, ctx) and
+              soft_int_minmax_operands?(left, right) ->
+            kind = if name == "Basics.min", do: :min_vars, else: :max_vars
+            operand_ctx = Context.for_branch_arm(ctx)
+
+            with {:ok, l, b1} <- Expr.compile(left, operand_ctx, b),
+                 {:ok, r, b2} <- Expr.compile(right, operand_ctx, b1) do
+              Arith.emit_int_arith_regs(kind, l, r, ctx, b2)
+            else
+              _ -> compile_runtime_binop_with_native_box(target, left, right, ctx, b)
+            end
+
           # Prefer native mod/rem whenever both operands are int-shaped, including
           # native-int params (`modBy 4 index`). Mixed boxed ops (e.g. List.length)
           # fail `int_binop_operands?` and still box via the runtime path below.
@@ -240,6 +256,43 @@ defmodule Elmc.Backend.Plan.Lower.IntCall do
   @spec int_binop_operands?(Types.expr(), Types.expr()) :: boolean()
 
   defp int_binop_operands?(left, right), do: int_operand?(left) and int_operand?(right)
+
+  # Soft min/max may lower via i32 only when operands are already int-shaped
+  # (literals, int arith, int calls). Bare vars / field_access stay boxed.
+  @spec soft_int_minmax_operands?(Types.expr(), Types.expr()) :: boolean()
+
+  defp soft_int_minmax_operands?(left, right),
+    do: soft_int_minmax_operand?(left) and soft_int_minmax_operand?(right)
+
+  defp soft_int_minmax_operand?(%{op: :int_literal}), do: true
+
+  defp soft_int_minmax_operand?(%{op: op})
+       when op in [
+              :add_const,
+              :sub_const,
+              :add_vars,
+              :sub_vars,
+              :mul_vars,
+              :idiv_vars,
+              :mod_vars,
+              :rem_vars,
+              :min_vars,
+              :max_vars
+            ],
+       do: true
+
+  defp soft_int_minmax_operand?(%{op: :call, name: name, args: args}) when is_list(args) do
+    name in ["__add__", "__sub__", "__mul__", "__idiv__", "modBy", "remainderBy", "max", "min"] and
+      Enum.all?(args, &soft_int_minmax_operand?/1)
+  end
+
+  defp soft_int_minmax_operand?(%{op: :qualified_call, target: target, args: args})
+       when is_binary(target) and is_list(args) do
+    (String.starts_with?(target, "Basics.") or target in ["modBy", "remainderBy"]) and
+      Enum.all?(args, &soft_int_minmax_operand?/1)
+  end
+
+  defp soft_int_minmax_operand?(_), do: false
 
   @spec proven_native_int_binop?(Types.expr(), Types.expr(), Context.t()) :: boolean()
 

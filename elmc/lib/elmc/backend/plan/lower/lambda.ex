@@ -19,6 +19,21 @@ defmodule Elmc.Backend.Plan.Lower.Lambda do
 
   def compile(_, _, _), do: :unsupported
 
+  @doc """
+  Lower a lambda to a nested plan + capture regs without emitting `make_closure`.
+
+  Used by open `List.map` loops that call the static closure function directly
+  (avoids heap closure cells and `elmc_list_map` when the mapper is a lambda).
+  """
+  @spec compile_for_direct_call(Types.ir_expr(), Context.t(), Builder.t()) ::
+          {:ok, non_neg_integer(), [Types.reg()], Builder.t()} | :unsupported
+  def compile_for_direct_call(%{op: :lambda, args: lambda_args, body: body}, ctx, b) do
+    {args, flat_body, tuple_prelude} = flatten_curried(lambda_args || [], body, [])
+    compile_lambda_direct(args, flat_body, tuple_prelude, ctx, b)
+  end
+
+  def compile_for_direct_call(_, _, _), do: :unsupported
+
   @partial_ops %{
     "__neq__" => :neq,
     "__eq__" => :eq
@@ -119,6 +134,19 @@ defmodule Elmc.Backend.Plan.Lower.Lambda do
           {:ok, Types.reg() | :fn_out, Builder.t()} | :unsupported
   def compile_lambda(lambda_args, body, tuple_prelude, ctx, b)
       when is_list(lambda_args) and is_map(body) and is_list(tuple_prelude) do
+    case compile_lambda_direct(lambda_args, body, tuple_prelude, ctx, b) do
+      {:ok, idx, capture_regs, b1} ->
+        emit_closure(idx, capture_regs, lambda_args, ctx, b1)
+
+      :unsupported ->
+        :unsupported
+    end
+  end
+
+  def compile_lambda(_, _, _, _, _), do: :unsupported
+
+  defp compile_lambda_direct(lambda_args, body, tuple_prelude, ctx, b)
+       when is_list(lambda_args) and is_map(body) and is_list(tuple_prelude) do
     free_vars =
       body
       |> VarAnalysis.lambda_capture_free_vars(lambda_args)
@@ -137,7 +165,7 @@ defmodule Elmc.Backend.Plan.Lower.Lambda do
           {:ok, child_plan, b2} ->
             idx = length(b2.lambdas)
             b3 = %{b2 | lambdas: b2.lambdas ++ [child_plan]}
-            emit_closure(idx, capture_regs2, lambda_args, ctx, b3)
+            {:ok, idx, capture_regs2, b3}
 
           _ ->
             record_lambda_unsupported(ctx, :lower_lambda_plan)
@@ -149,8 +177,6 @@ defmodule Elmc.Backend.Plan.Lower.Lambda do
         :unsupported
     end
   end
-
-  def compile_lambda(_, _, _, _, _), do: :unsupported
 
   defp compile_captures(vars, ctx, b) do
     capture_ctx = %{ctx | dest_stack: [:scratch], function_tail: false}

@@ -52,10 +52,11 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
   end
 
   # Tuple accessors yield boxed Elm values (lists, records, nested tuples). Treating them as
-  # native ints would truncate pointers on 32-bit targets.
-  def expr?(%{op: op, arg: _arg}, _env)
+  # native ints would truncate pointers on 32-bit targets — unless the subject is typed as
+  # `(Int, Int)` / `Tuple Int Int`, in which case both elements are scalars.
+  def expr?(%{op: op, arg: arg}, env)
       when op in [:tuple_first, :tuple_first_expr, :tuple_second_expr],
-      do: false
+      do: typed_int_tuple_subject?(arg, env)
 
   def expr?(%{op: :c_int_expr}, _env), do: true
   def expr?(%{op: :msg_tag_expr}, _env), do: true
@@ -721,9 +722,17 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
     end
   end
 
-  defp dispatch(%{op: op} = expr, env, counter)
-       when op in [:tuple_first, :tuple_first_expr, :tuple_second_expr],
-       do: compile_fallback(expr, env, counter)
+  defp dispatch(%{op: op, arg: arg} = expr, env, counter)
+       when op in [:tuple_first, :tuple_first_expr, :tuple_second_expr] do
+    if typed_int_tuple_subject?(arg, env) do
+      {arg_code, arg_ref, counter} = Host.compile_expr(arg, env, counter)
+      field = if op in [:tuple_second, :tuple_second_expr], do: "second", else: "first"
+      peel = "elmc_as_int(((ElmcTuple2 *)(#{arg_ref})->payload)->#{field})"
+      {arg_code, peel, counter}
+    else
+      compile_fallback(expr, env, counter)
+    end
+  end
 
   defp dispatch(%{op: :var, name: name} = expr, env, counter) do
     case EnvBindings.native_int_binding(env, name) do
@@ -2017,6 +2026,49 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
 
   defp pi_expr?(%{op: :float_literal, value: value}) when value == 3.141592653589793, do: true
   defp pi_expr?(_expr), do: false
+
+  defp typed_int_tuple_subject?(%{op: :var, name: name}, env) do
+    env
+    |> Map.get(:__var_types__, %{})
+    |> Map.get(EnvBindings.binding_key(name))
+    |> int_tuple2_type?()
+  end
+
+  defp typed_int_tuple_subject?(%{op: :tuple2, left: left, right: right}, env) do
+    expr?(left, env) and expr?(right, env)
+  end
+
+  defp typed_int_tuple_subject?(_expr, _env), do: false
+
+  @doc false
+  @spec int_tuple2_type?(String.t() | term()) :: boolean()
+  def int_tuple2_type?(type) when is_binary(type) do
+    normalized = Host.normalize_type_name(type)
+
+    normalized in ["( Int, Int )", "(Int, Int)", "Tuple Int Int"] or
+      match?([_ | _], Regex.run(~r/^\(\s*Int\s*,\s*Int\s*\)$/, normalized))
+  end
+
+  def int_tuple2_type?(_), do: false
+
+  @doc false
+  @spec list_int_tuple2_type?(String.t() | term()) :: boolean()
+  def list_int_tuple2_type?(type) when is_binary(type) do
+    normalized = Host.normalize_type_name(type)
+
+    normalized in [
+      "( List Int, Int )",
+      "(List Int, Int)",
+      "Tuple (List Int) Int",
+      "Tuple List Int Int"
+    ] or
+      match?(
+        [_ | _],
+        Regex.run(~r/^\(\s*List\s+Int\s*,\s*Int\s*\)$/, normalized)
+      )
+  end
+
+  def list_int_tuple2_type?(_), do: false
 
   @spec compile_fallback(Types.ir_expr(), Types.compile_env(), Types.compile_counter()) ::
           Types.native_scalar_compile_result()

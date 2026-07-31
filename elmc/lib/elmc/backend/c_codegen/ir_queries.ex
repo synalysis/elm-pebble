@@ -723,6 +723,39 @@ defmodule Elmc.Backend.CCodegen.IRQueries do
     MapSet.new(qualified ++ unqualified)
   end
 
+  @doc """
+  Constructor names belonging to all-nullary enum unions.
+
+  Used by plan Constructor to emit scalar tags (`const_int`) instead of
+  `tuple2(tag, ())`. Mixed unions with some nullary ctors are excluded —
+  those nullaries stay `tuple2(tag, unit)` for nested payload spines.
+  """
+  @spec enum_constructor_set(IR.t()) :: MapSet.t(String.t())
+  def enum_constructor_set(%IR{} = ir) do
+    qualified =
+      Enum.flat_map(ir.modules, fn mod ->
+        mod.unions
+        |> Enum.filter(fn {_type_name, union} -> enum_union?(union) end)
+        |> Enum.flat_map(fn {_type_name, union} ->
+          union.tags
+          |> Map.keys()
+          |> Enum.map(fn name -> "#{mod.name}.#{name}" end)
+        end)
+      end)
+
+    unqualified =
+      qualified
+      |> Enum.group_by(fn qualified_name ->
+        qualified_name |> String.split(".") |> List.last()
+      end)
+      |> Enum.flat_map(fn
+        {ctor_name, [_qualified_name]} -> [ctor_name]
+        {_ctor_name, _duplicates} -> []
+      end)
+
+    MapSet.new(qualified ++ unqualified)
+  end
+
   @spec union_ctor_names(Module.t(), String.t()) :: [String.t()]
   defp union_ctor_names(mod, union_name) when is_map(mod) and is_binary(union_name) do
     case Map.get(mod.unions, union_name) do

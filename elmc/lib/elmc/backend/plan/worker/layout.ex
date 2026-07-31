@@ -14,7 +14,9 @@ defmodule Elmc.Backend.Plan.Worker.Layout do
   alias ElmEx.IR
 
   @fallback_sub_tag_slots 32
-  @fallback_button_raw_subs 16
+  # Dynamic layouts used to reserve 16 button-raw slots (~192 B BSS). Watch apps
+  # rarely need that many concurrent raw button bindings.
+  @fallback_button_raw_subs 4
 
   @type t :: Subscriptions.worker_subscription_layout()
 

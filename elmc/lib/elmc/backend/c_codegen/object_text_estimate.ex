@@ -67,11 +67,20 @@ defmodule Elmc.Backend.CCodegen.ObjectTextEstimate do
             _ -> nil
           end
 
+        runtime_text =
+          rows
+          |> Enum.find(fn row -> row["source"] == "runtime/elmc_runtime.c" end)
+          |> case do
+            %{"text" => text} -> text
+            _ -> nil
+          end
+
         %{
           "available" => true,
           "elmc_app_text" => total,
           "elmc_stack_text" => total,
           "generated_text" => generated_text,
+          "runtime_text" => runtime_text,
           "sources" => rows
         }
       end
@@ -80,18 +89,23 @@ defmodule Elmc.Backend.CCodegen.ObjectTextEstimate do
     end
   end
 
+  @doc false
+  @spec app_source_paths(String.t()) :: [String.t()]
+  def app_source_paths(out_dir), do: app_source_paths_impl(out_dir)
+
   defp list_sources(out_dir) do
     out_dir
-    |> app_source_paths()
+    |> app_source_paths_impl()
     |> Enum.filter(&File.regular?/1)
   end
 
-  defp app_source_paths(out_dir) do
+  defp app_source_paths_impl(out_dir) do
     [
       Path.join(out_dir, "c/elmc_generated.c"),
       Path.join(out_dir, "c/elmc_pebble.c"),
       Path.join(out_dir, "c/elmc_worker.c"),
-      Path.join(out_dir, "c/elmc_ports.c")
+      Path.join(out_dir, "c/elmc_ports.c"),
+      Path.join(out_dir, "runtime/elmc_runtime.c")
     ]
   end
 

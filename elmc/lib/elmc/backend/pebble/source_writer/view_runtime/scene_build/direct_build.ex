@@ -27,6 +27,15 @@ defmodule Elmc.Backend.Pebble.SourceWriter.ViewRuntime.SceneBuild.DirectBuild do
                 (unsigned)rc, writer.command_count);
         if (rc != RC_SUCCESS) {
           ELMC_RC_LOG_FAIL(rc, "elmc_pebble_ensure_scene", "view_scene_append");
+    #if defined(ELMC_PEBBLE_PLATFORM)
+          APP_LOG(APP_LOG_LEVEL_ERROR,
+                  "elmc scene encode failed rc=%u cmds=%d bytes=%d cap=%d free=%lu",
+                  (unsigned)rc,
+                  writer.command_count,
+                  app->scene.byte_count,
+                  app->scene.byte_capacity,
+                  (unsigned long)heap_bytes_free());
+    #endif
           elmc_pebble_scene_abort_build(app);
           ELMC_DRAW_PATH_PROBE(ELMC_DRAW_PATH_ENSURE_SCENE_EXIT);
           ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_ensure_scene", -1);

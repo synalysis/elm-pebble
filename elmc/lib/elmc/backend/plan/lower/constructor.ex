@@ -323,10 +323,15 @@ defmodule Elmc.Backend.Plan.Lower.Constructor do
 
   # Generic custom type constructors are represented as (tag, payload) tuple2.
   # Payload is:
-  # - `()` for nullary ctors
+  # - `()` for nullary ctors on *mixed* unions (some payload-bearing ctors)
   # - the single value for unary ctors
   # - right-nested tuple2s for n-ary ctors (n > 1), matching PatternBind
   #   (`Pair x y` → tuple2(x, y); `T a b c` → tuple2(a, tuple2(b, c)))
+  #
+  # All-nullary enum unions (every ctor payload `:none`) are scalar tags —
+  # bare `const_int` with `union_ctor`, like Bool's 0/1. Match/`elmc_union_tag_as_int`
+  # already accept INT; fusion `:boxed_int_tag` call sites fold the const without
+  # building `tuple2(tag, ())` then peeling it.
   @spec compile_union_value(
           String.t(),
           [Types.expr()],
@@ -335,7 +340,27 @@ defmodule Elmc.Backend.Plan.Lower.Constructor do
           Builder.t()
         ) :: Types.compile_result()
 
+  defp compile_union_value(target, [], value, ctx, b) when is_binary(target) do
+    if enum_scalar_ctor?(target) do
+      compile_union_tag_int(target, value, ctx, b)
+    else
+      compile_union_tuple2(target, [], value, ctx, b)
+    end
+  end
+
   defp compile_union_value(target, args, value, ctx, b) when is_binary(target) and is_list(args) do
+    compile_union_tuple2(target, args, value, ctx, b)
+  end
+
+  @spec compile_union_tuple2(
+          String.t(),
+          [Types.expr()],
+          integer() | nil,
+          Context.t(),
+          Builder.t()
+        ) :: Types.compile_result()
+
+  defp compile_union_tuple2(target, args, value, ctx, b) do
     scratch_ctx = %{ctx | dest_stack: [:scratch], function_tail: false}
 
     with {:ok, tag_reg, b1} <- compile_union_tag_int(target, value, scratch_ctx, b),
@@ -344,6 +369,15 @@ defmodule Elmc.Backend.Plan.Lower.Constructor do
     else
       _ -> :unsupported
     end
+  end
+
+  @spec enum_scalar_ctor?(String.t()) :: boolean()
+
+  defp enum_scalar_ctor?(target) when is_binary(target) do
+    enums = Process.get(:elmc_enum_ctors, MapSet.new())
+    short = short_name(target)
+
+    MapSet.member?(enums, target) or MapSet.member?(enums, short)
   end
 
   @spec compile_union_payload([Types.expr()], Context.t(), Builder.t()) :: Types.compile_result()

@@ -211,13 +211,13 @@ defmodule Elmc.Backend.C.Lower.NativeIntFold do
   defp int_arith_c_expr_dispatch(%{kind: :min_vars, lhs: lhs, rhs: rhs}, slots, opts) do
     lhs_s = Instr.int_operand_ref(lhs, slots, opts)
     rhs_s = Instr.int_operand_ref(rhs, slots, opts)
-    "(#{lhs_s} <= #{rhs_s}) ? #{lhs_s} : #{rhs_s}"
+    "((#{lhs_s} <= #{rhs_s}) ? #{lhs_s} : #{rhs_s})"
   end
 
   defp int_arith_c_expr_dispatch(%{kind: :max_vars, lhs: lhs, rhs: rhs}, slots, opts) do
     lhs_s = Instr.int_operand_ref(lhs, slots, opts)
     rhs_s = Instr.int_operand_ref(rhs, slots, opts)
-    "(#{lhs_s} >= #{rhs_s}) ? #{lhs_s} : #{rhs_s}"
+    "((#{lhs_s} >= #{rhs_s}) ? #{lhs_s} : #{rhs_s})"
   end
 
   defp int_arith_c_expr_dispatch(_, _, _), do: nil
@@ -227,11 +227,46 @@ defmodule Elmc.Backend.C.Lower.NativeIntFold do
   def parenthesize_int_expr(expr) when is_binary(expr) do
     trimmed = String.trim(expr)
 
-    if trimmed == "" or String.starts_with?(trimmed, "(") or String.starts_with?(trimmed, "elmc_int_idiv(") or
-         String.starts_with?(trimmed, "elmc_basics_") or String.match?(trimmed, ~r/^-?\d+$/) or
-         String.match?(trimmed, ~r/^plan_native_int_\d+$/) or String.match?(trimmed, ~r/^[a-zA-Z_][\w]*$/),
-       do: trimmed,
-       else: "(#{trimmed})"
+    cond do
+      trimmed == "" ->
+        trimmed
+
+      # `(a >= b) ? a : b` starts with `(` but `?:` still needs an outer wrap for
+      # use under `-`/`+` (ternary binds looser than arithmetic).
+      String.contains?(trimmed, "?") ->
+        if outer_parens_cover_all?(trimmed), do: trimmed, else: "(#{trimmed})"
+
+      String.starts_with?(trimmed, "(") or String.starts_with?(trimmed, "elmc_int_idiv(") or
+          String.starts_with?(trimmed, "elmc_basics_") or String.match?(trimmed, ~r/^-?\d+$/) or
+          String.match?(trimmed, ~r/^plan_native_int_\d+$/) or
+          String.match?(trimmed, ~r/^[a-zA-Z_][\w]*$/) ->
+        trimmed
+
+      true ->
+        "(#{trimmed})"
+    end
+  end
+
+  defp outer_parens_cover_all?(expr) do
+    chars = String.to_charlist(expr)
+    last = length(chars) - 1
+
+    String.starts_with?(expr, "(") and String.ends_with?(expr, ")") and
+      Enum.reduce_while(Enum.with_index(chars), 0, fn {ch, idx}, depth ->
+        depth =
+          case ch do
+            ?( -> depth + 1
+            ?) -> depth - 1
+            _ -> depth
+          end
+
+        cond do
+          depth < 0 -> {:halt, :unbalanced}
+          depth == 0 and idx < last -> {:halt, :early_close}
+          idx == last -> {:halt, if(depth == 0, do: :ok, else: :unbalanced)}
+          true -> {:cont, depth}
+        end
+      end) == :ok
   end
 
   @spec count_operand_uses(

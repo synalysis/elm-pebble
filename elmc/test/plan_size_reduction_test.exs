@@ -511,7 +511,7 @@ defmodule Elmc.PlanSizeReductionTest do
 
     spawn_fn =
       case Regex.run(
-             ~r/static RC elmc_fn_Main_spawnTileWithSeed\(ElmcValue \*\*out, elmc_int_t seed, ElmcValue \*cells\) \{[\s\S]*?\n\}/,
+             ~r/static RC elmc_fn_Main_spawnTileWithSeed\(ElmcValue \*\*out_list, elmc_int_t \*out_int, elmc_int_t seed, ElmcValue \*cells\) \{[\s\S]*?\n\}/,
              generated_c
            ) do
         [fn_text] -> fn_text
@@ -524,6 +524,12 @@ defmodule Elmc.PlanSizeReductionTest do
     refute spawn_fn =~ ~r/elmc_fn_Main_advanceSeed\([^;]+;\s*CHECK_RC\(Rc\);\s*Rc = elmc_new_int/
     refute spawn_fn =~ ~r/elmc_fn_Main_randomIndex\([^;]+;\s*CHECK_RC\(Rc\);\s*Rc = elmc_new_int/
     assert spawn_fn =~ "elmc_fn_Main_countEmpty(&plan_native_int_"
+    # countEmpty is RC out-param — keep one mutable hoist for the out slot.
+    assert spawn_fn =~ ~r/elmc_int_t plan_native_int_\d+ = 0;/
+    # Single-def value-return / arith SSA temps emit as const at the def site.
+    assert spawn_fn =~ ~r/const elmc_int_t plan_native_int_\d+ = elmc_fn_Main_advanceSeed\(seed\);/
+    assert spawn_fn =~ ~r/const elmc_int_t plan_native_int_\d+ = elmc_fn_Main_randomIndex\(/
+    assert spawn_fn =~ ~r/const bool plan_native_bool_\d+ = \(plan_native_int_\d+ == 0\);/
     refute spawn_fn =~ "elmc_list_repeat("
   end
 
@@ -1099,6 +1105,8 @@ defmodule Elmc.PlanSizeReductionTest do
     {_defines, macros} = UnionMacros.definitions(result.ir)
 
     Process.put(:elmc_constructor_tags, Elmc.Backend.CCodegen.IRQueries.constructor_tag_map(result.ir))
+    Process.put(:elmc_enum_types, Elmc.Backend.CCodegen.IRQueries.enum_type_set(result.ir))
+    Process.put(:elmc_enum_ctors, Elmc.Backend.CCodegen.IRQueries.enum_constructor_set(result.ir))
     Process.put(:elmc_union_constructor_macros, macros)
     Process.put(:elmc_program_decls, decl_map)
     Process.put(:elmc_codegen_opts, %{codegen_profile: :size, plan_ir_mode: :primary, plan_emit: :state_switch})
@@ -1111,6 +1119,7 @@ defmodule Elmc.PlanSizeReductionTest do
     assert c =~ "ELMC_UNION_MAIN_DOWN"
     refute c =~ "moveBoard_native(&owned[3], 3, model)"
     refute c =~ "moveBoard_native(&owned[3], 4, model)"
+    refute c =~ ~r/elmc_unit\(\);\s*\n\s*Rc = elmc_tuple2\([^)]+\);\s*\n\s*CHECK_RC\(Rc\);\s*\n\s*Rc = elmc_fn_Main_moveBoard_native/s
   end
 
   test "size profile state_switch uses compact numeric plan states" do

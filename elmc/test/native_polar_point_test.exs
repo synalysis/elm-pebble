@@ -79,6 +79,32 @@ defmodule Elmc.NativePolarPointTest do
              generated_c =~ "elmc_fn_Main_pointAt("
   end
 
+  @tag :slow
+  test "size profile drops superseded polar float CAFs when polar is inlined" do
+    # Minimal line+pointAt fixtures often keep boxed pointAt calls under :size even
+    # when polar supersede drops the helper body. Use the yes dial path that actually
+    # inlines elmc_polar_point_* and must not keep Basics.pi / soft-float seeds.
+    out_dir = Path.expand("tmp/polar_no_float_caf_yes", __DIR__)
+    File.rm_rf!(out_dir)
+
+    assert {:ok, _} =
+             Elmc.TestSupport.TemplateCompile.compile_watch_template("watchface_yes",
+               out_dir: out_dir,
+               codegen_profile: :size,
+               direct_render_only: true,
+               prune_runtime: true,
+               pebble_int32: true,
+               strip_dead_code: true
+             )
+
+    generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+
+    assert generated_c =~ "elmc_polar_point_x(" or generated_c =~ "elmc_polar_point_y("
+    refute generated_c =~ "elmc_fn_Yes_Render_pointAt("
+    refute generated_c =~ "elmc_fn_Basics_pi"
+    refute generated_c =~ "elmc_new_float"
+  end
+
   test "let-bound pointAt and moonCenter compile without pointAt calls in native draw hand" do
     source = """
     module Main exposing (main)

@@ -103,6 +103,7 @@ defmodule Elmc.Backend.CCodegen.GeneratedSource do
     elmc_union_constructor_macros
     elmc_constructor_tags
     elmc_enum_types
+    elmc_enum_ctors
     elmc_pebble_msg_names
     elmc_msg_constructor_payload_specs
     elmc_named_record_literals
@@ -292,6 +293,7 @@ defmodule Elmc.Backend.CCodegen.GeneratedSource do
     )
 
     Process.put(:elmc_enum_types, IRQueries.enum_type_set(ir))
+    Process.put(:elmc_enum_ctors, IRQueries.enum_constructor_set(ir))
     Process.put(:elmc_record_alias_shapes, IRQueries.record_alias_shape_map(ir))
     Process.put(:elmc_inline_record_literal_shapes, IRQueries.inline_record_literal_shape_map(ir))
 

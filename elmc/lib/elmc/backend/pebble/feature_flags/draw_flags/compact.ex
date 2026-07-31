@@ -69,7 +69,7 @@ defmodule Elmc.Backend.Pebble.FeatureFlags.DrawFlags.Compact do
   )a
 
   # Features implemented by the compact `draw_update_proc` path in pebble_app_template.c
-  # (medium switch: context/colors/clear/rect/text/fill_rect).
+  # (medium switch: context/colors/clear/rect/text/fill_rect/circles).
   @subset_capable_keys MapSet.new(~w(
     draw_clear
     draw_fill_rect
@@ -81,6 +81,26 @@ defmodule Elmc.Backend.Pebble.FeatureFlags.DrawFlags.Compact do
     draw_fill_color
     draw_stroke_width
     draw_antialiased
+    draw_circle
+    draw_fill_circle
+  )a)
+
+  # Draw primitives that force the full draw matrix when enabled.
+  @subset_forbidden_keys MapSet.new(~w(
+    draw_text_int
+    draw_text_label
+    draw_pixel
+    draw_line
+    draw_round_rect
+    draw_arc
+    draw_path
+    draw_fill_radial
+    draw_bitmap_in_rect
+    draw_vector_at
+    draw_vector_sequence_at
+    draw_bitmap_sequence_at
+    draw_rotated_bitmap
+    draw_compositing_mode
   )a)
 
   # Input may be draw-only (no :compact_draw yet) or full feature_flags.
@@ -109,6 +129,8 @@ defmodule Elmc.Backend.Pebble.FeatureFlags.DrawFlags.Compact do
       |> Enum.reject(&(&1 in [:compact_draw, :draw_text_any]))
       |> Enum.filter(&(Map.get(flags, &1) == true))
 
-    enabled != [] and Enum.all?(enabled, &MapSet.member?(@subset_capable_keys, &1))
+    enabled != [] and
+      Enum.all?(enabled, &MapSet.member?(@subset_capable_keys, &1)) and
+      Enum.all?(@subset_forbidden_keys, &(not Map.fetch!(flags, &1)))
   end
 end

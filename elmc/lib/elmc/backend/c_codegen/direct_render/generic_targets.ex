@@ -96,7 +96,10 @@ defmodule Elmc.Backend.CCodegen.DirectRender.GenericTargets do
         decl_map,
         direct_render_excluded_targets(opts, direct_targets, decl_map, view_fallback),
         MapSet.new(),
-        pruned_generic_view_skip_callees(pruned_view?, entry_module)
+        MapSet.union(
+          pruned_generic_view_skip_callees(pruned_view?, entry_module),
+          polar_point_skip_callees(opts, decl_map)
+        )
       )
       |> MapSet.difference(direct_targets)
       |> MapSet.union(view_fallback)
@@ -241,9 +244,60 @@ defmodule Elmc.Backend.CCodegen.DirectRender.GenericTargets do
 
       MapSet.difference(render_op_defs, required_boxed)
       |> MapSet.union(polar_point_superseded_boxed(opts, decl_map, reachable_core, direct_targets))
+      |> expand_polar_superseded_float_orphans(reachable_core, decl_map, direct_targets)
     else
       MapSet.new()
     end
+  end
+
+  # When polar helpers are superseded (inlined via elmc_polar_point_*), drop their
+  # exclusive float CAFs (`Basics.pi`) so soft-float is not seeded. Keep the set
+  # narrow — do not orphan-expand arbitrary helpers that direct emit may still call.
+  defp expand_polar_superseded_float_orphans(superseded, reachable_core, decl_map, direct_targets) do
+    polar_superseded =
+      superseded
+      |> Enum.filter(&Elmc.Backend.CCodegen.Native.PolarPoint.polar_point_target?(&1, decl_map))
+      |> MapSet.new()
+
+    if MapSet.size(polar_superseded) == 0 do
+      superseded
+    else
+      polar_callees =
+        polar_superseded
+        |> Enum.flat_map(fn {module_name, _} = target ->
+          case Map.fetch(decl_map, target) do
+            {:ok, decl} -> GenericReachability.expr_callees(decl.expr, module_name, decl_map)
+            :error -> []
+          end
+        end)
+        |> MapSet.new()
+
+      # Keep float CAFs still required by non-direct (worker/update) code.
+      still_required =
+        plan_required_direct_boxed_callees(reachable_core, decl_map, direct_targets)
+
+      universe = MapSet.union(reachable_core, superseded)
+      callers_of = fusion_caller_map(universe, decl_map)
+      seeded = MapSet.union(superseded, polar_superseded)
+
+      orphans =
+        polar_callees
+        |> MapSet.difference(polar_superseded)
+        |> MapSet.difference(still_required)
+        |> Enum.filter(&polar_float_orphan_candidate?(&1, decl_map))
+        |> Enum.filter(fn target ->
+          callers = Map.get(callers_of, target, [])
+          external = Enum.reject(callers, &(&1 == target))
+          external != [] and Enum.all?(external, &MapSet.member?(seeded, &1))
+        end)
+        |> MapSet.new()
+
+      MapSet.union(superseded, orphans)
+    end
+  end
+
+  defp polar_float_orphan_candidate?({module_name, name}, _decl_map) do
+    module_name == "Basics" and name in ["pi", "e"]
   end
 
   # Native-int helpers such as angleFromMinute are inlined via elmc_angle_from_minute (or
@@ -694,6 +748,21 @@ defmodule Elmc.Backend.CCodegen.DirectRender.GenericTargets do
 
   defp pruned_generic_view_skip_callees(true, entry_module),
     do: MapSet.new([{entry_module, "view"}])
+
+  # Excluded polar helpers still sit on the reachability frontier (callers may
+  # mention them), but direct `_commands_append` inlines `elmc_polar_point_*`
+  # and supersedes the boxed body. Walking their callees would keep dead float
+  # CAFs (`Basics.pi`, `sin`/`cos`) and soft-float runtime in int-only faces.
+  defp polar_point_skip_callees(opts, decl_map) do
+    if supersede_direct_render_op_boxed?(opts) do
+      decl_map
+      |> Map.keys()
+      |> Enum.filter(&Elmc.Backend.CCodegen.Native.PolarPoint.polar_point_target?(&1, decl_map))
+      |> MapSet.new()
+    else
+      MapSet.new()
+    end
+  end
 
   defp direct_targets_for_generic_runtime_roots(direct_targets, opts, decl_map) do
     entry_module = opts[:entry_module] || "Main"
@@ -1165,6 +1234,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.GenericTargets do
     |> Enum.reject(&render_helper_target?/1)
     |> Enum.reject(&MapSet.member?(inlined_record_helpers, &1))
     |> Enum.reject(&MapSet.member?(render_op_def_targets, &1))
+    |> Enum.reject(&polar_point_boxed_callee?(&1, decl_map, opts))
   end
 
   defp generic_wrapper_callees_from_direct_targets(direct_targets, decl_map, opts) do
@@ -1182,6 +1252,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.GenericTargets do
     |> Enum.reject(&render_helper_target?/1)
     |> Enum.reject(&MapSet.member?(inlined_record_helpers, &1))
     |> Enum.reject(&MapSet.member?(render_op_def_targets, &1))
+    |> Enum.reject(&polar_point_boxed_callee?(&1, decl_map, opts))
   end
 
   defp direct_render_op_def_targets(decl_map, opts) do

@@ -16,6 +16,7 @@ defmodule Elmc.Backend.Worker do
   alias Elmc.Backend.Plan.Worker.Host.Lower, as: HostLower
   alias Elmc.Backend.Plan.Worker.Host.Verify, as: HostVerify
   alias Elmc.Backend.Plan.Worker.Layout, as: WorkerLayout
+  alias Elmc.Backend.Plan.Worker.ModelNative
 
   @spec write_worker_adapter(IR.t(), String.t(), String.t(), map() | keyword()) ::
           :ok | {:error, Types.file_error()}
@@ -48,6 +49,19 @@ defmodule Elmc.Backend.Worker do
     analysis = Map.get(host_plan, :layout, host_plan)
     last_dispatch_cmd_cap = last_dispatch_cmd_cap(host_plan, opts)
     slot_defines = WorkerEmit.worker_slot_defines(analysis)
+    model_native = Map.get(host_plan, :model_native)
+    model_native_typedef = if model_native, do: ModelNative.typedef_c(model_native) <> "\n", else: ""
+    model_native_define = if model_native, do: "#define ELMC_WORKER_NATIVE_MODEL 1\n", else: ""
+
+    model_fields =
+      if model_native do
+        """
+          ElmcValue *model;
+          ElmcWorkerModelNative model_native;
+        """
+      else
+        "  ElmcValue *model;"
+      end
 
     """
     #ifndef ELMC_WORKER_H
@@ -55,6 +69,7 @@ defmodule Elmc.Backend.Worker do
 
     #include "elmc_generated.h"
 
+    #{model_native_define}#{model_native_typedef}
     #define ELMC_WORKER_MAX_BUTTON_RAW_SUBS #{analysis.button_raw_subs}
     #define ELMC_WORKER_SUB_TAG_SLOTS #{analysis.sub_tag_slots}
     #{slot_defines}
@@ -77,11 +92,12 @@ defmodule Elmc.Backend.Worker do
       int64_t p3;
       int64_t p4;
       int64_t p5;
-      char text[128];
+      /* Compact text slot for debugger snapshots (was 128). */
+      char text[48];
     } ElmcWorkerDispatchCmd;
 
     typedef struct {
-      ElmcValue *model;
+    #{model_fields}
       ElmcValue *pending_cmd;
     #if ELMC_WORKER_LAST_DISPATCH_CMD_CAP > 0
       ElmcWorkerDispatchCmd last_dispatch_cmds[ELMC_WORKER_LAST_DISPATCH_CMD_CAP];

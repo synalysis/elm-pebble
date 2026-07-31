@@ -1245,7 +1245,12 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
           arg_binding_code
       end
 
-    wrapper_args_unboxed? = direct_args? or binding_code != ""
+    # Only true when the wrapper introduced unboxed locals (`elmc_as_int` bindings).
+    # `direct_args?` alone is not enough: direct-entry public params may still be
+    # `ElmcValue *` while `_native` expects `elmc_int_t` (e.g. list_indexed_replace).
+    # Per-arg peel vs pass-through is decided in `rc_native_fusion_call_args/7`
+    # from `NativeFunctionCall.arg_kinds/3` under direct entry.
+    wrapper_args_unboxed? = binding_code != ""
 
     fused_args =
       rc_native_fusion_call_args(

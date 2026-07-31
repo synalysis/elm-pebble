@@ -98,6 +98,28 @@ defmodule Elmc.Backend.CCodegen.SchemaRegistry do
     Map.get(records, {mod, name})
   end
 
+  @spec flattenable?(t(), String.t(), String.t()) :: boolean()
+  def flattenable?(registry, mod, name) do
+    all_native?(registry, mod, name) or optional_native_flattenable?(registry, mod, name)
+  end
+
+  @spec optional_native_flattenable?(t(), String.t(), String.t()) :: boolean()
+  def optional_native_flattenable?(registry, mod, name) do
+    case record(registry, mod, name) do
+      %{fields: fields} when map_size(fields) > 0 ->
+        Enum.all?(fields, fn {_field, type} ->
+          optional_native_field_type?(Host.normalize_type_name(type))
+        end)
+
+      _ ->
+        false
+    end
+  end
+
+  defp optional_native_field_type?(type) do
+    type in ["Int", "Bool", "Char", "Float", "Maybe Int"]
+  end
+
   @spec all_native?(t(), String.t(), String.t()) :: boolean()
   def all_native?(registry, mod, name) do
     case record(registry, mod, name) do
