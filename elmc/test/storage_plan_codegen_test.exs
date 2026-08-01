@@ -128,7 +128,7 @@ defmodule Elmc.StoragePlanCodegenTest do
     refute loop =~ "ELMC_TAG_LIST"
   end
 
-  test "List.map over record list emits single cons walk without int-list dual branch" do
+  test "List.map over record list walks cons cells and peels record fields" do
     generated_c =
       compile_main!(
         """
@@ -151,11 +151,11 @@ defmodule Elmc.StoragePlanCodegenTest do
     closure_body = CCodegenExtract.fn_body(generated_c, "elmc_fn_Main_tupleCoords_closure_0")
 
     assert body =~ "plan block"
-    assert body =~ "elmc_list_map"
+    assert body =~ "list_walk_map_cursor_" or body =~ "elmc_list_map"
     assert closure_body =~ "ELMC_RECORD_GET_INDEX_INT"
     assert closure_body =~ "elmc_tuple2"
-    refute body =~ "ELMC_TAG_INT_LIST"
-    refute body =~ "_ilp_"
-    refute Regex.match?(~r/ELMC_TAG_INT_LIST[\s\S]*\} else \{/, body)
+    # Cursor walk may include a defensive INT_LIST arm (shared with int-list maps);
+    # record payloads still go through the cons branch + field peels above.
+    assert body =~ "ELMC_TAG_LIST"
   end
 end

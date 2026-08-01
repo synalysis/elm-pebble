@@ -1431,24 +1431,54 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
           MapSet.t(Types.function_decl_key()),
           Types.function_decl_map()
         ) :: String.t()
-  def generic_rc_native_fusion_prototypes(ir, generic_targets, _decl_map) do
-    ir.modules
-    |> Enum.flat_map(fn mod ->
-      mod.declarations
-      |> Enum.filter(fn decl ->
-        target = {mod.name, decl.name}
+  def generic_rc_native_fusion_prototypes(ir, generic_targets, decl_map) do
+    preregister_rc_native_fusion_kinds(ir, generic_targets, decl_map)
 
-        decl.kind == :function and MapSet.member?(generic_targets, target) and
-          Fusion.rc_native_fusion_arg_kinds(target) != nil
-      end)
-      |> Enum.map(fn decl ->
-        c_name = Util.module_fn_name(mod.name, decl.name)
-        kinds = Fusion.rc_native_fusion_arg_kinds({mod.name, decl.name})
-        params = rc_native_fusion_proto_params(decl, kinds, mod.name)
+    from_registry =
+      ir.modules
+      |> Enum.flat_map(fn mod ->
+        mod.declarations
+        |> Enum.filter(fn decl ->
+          target = {mod.name, decl.name}
 
-        "static RC #{c_name}_native(#{params});"
+          decl.kind == :function and MapSet.member?(generic_targets, target) and
+            Fusion.rc_native_fusion_arg_kinds(target) != nil
+        end)
+        |> Enum.map(fn decl ->
+          c_name = Util.module_fn_name(mod.name, decl.name)
+          kinds = Fusion.rc_native_fusion_arg_kinds({mod.name, decl.name})
+          params = rc_native_fusion_proto_params(decl, kinds, mod.name)
+
+          "static RC #{c_name}_native(#{params});"
+        end)
       end)
-    end)
+
+    from_fusion_plans =
+      ir.modules
+      |> Enum.flat_map(fn mod ->
+        mod.declarations
+        |> Enum.filter(fn decl ->
+          decl.kind == :function and MapSet.member?(generic_targets, {mod.name, decl.name})
+        end)
+        |> Enum.map(fn decl ->
+          with {:ok, %{fusion_c: fusion_c}} <-
+                 Plan.lower_function(decl, mod.name, decl_map, rc_required?: true),
+               true <- is_binary(fusion_c) and String.contains?(fusion_c, "_native(ElmcValue **out"),
+               kinds when is_list(kinds) <-
+                 Fusion.rc_native_fusion_arg_kinds({mod.name, decl.name}) ||
+                   Fusion.infer_native_tag_fusion_arg_kinds(fusion_c, decl) do
+            c_name = Util.module_fn_name(mod.name, decl.name)
+            params = rc_native_fusion_proto_params(decl, kinds, mod.name)
+            "static RC #{c_name}_native(#{params});"
+          else
+            _ -> nil
+          end
+        end)
+        |> Enum.reject(&is_nil/1)
+      end)
+
+    (from_registry ++ from_fusion_plans)
+    |> Enum.uniq()
     |> Enum.join("\n")
   end
 
@@ -1490,6 +1520,43 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
     end)
     |> Enum.reject(&(&1 == ""))
     |> Enum.join("\n")
+  end
+
+  @spec preregister_rc_native_fusion_kinds(
+          ElmEx.IR.t(),
+          MapSet.t(Types.function_decl_key()),
+          Types.function_decl_map()
+        ) :: :ok
+  def preregister_rc_native_fusion_kinds(ir, generic_targets, decl_map) do
+    ir.modules
+    |> Enum.flat_map(fn mod ->
+      mod.declarations
+      |> Enum.filter(fn decl ->
+        decl.kind == :function and MapSet.member?(generic_targets, {mod.name, decl.name})
+      end)
+      |> Enum.map(&{mod, &1})
+    end)
+    |> Enum.each(fn {mod, decl} ->
+      case Plan.lower_function(decl, mod.name, decl_map, rc_required?: true) do
+        {:ok, %{fusion_c: fusion_c} = plan} when is_binary(fusion_c) ->
+          if Map.get(plan, :fusion_emit) in [:helper_only, :public_native] do
+            Fusion.register_rc_native_only(mod.name, decl.name)
+          end
+
+          case Fusion.infer_native_tag_fusion_arg_kinds(fusion_c, decl) do
+            kinds when is_list(kinds) ->
+              Fusion.register_rc_native_arg_kinds(mod.name, decl.name, kinds)
+
+            _ ->
+              :ok
+          end
+
+        _ ->
+          :ok
+      end
+    end)
+
+    :ok
   end
 
   @spec prelower_plan_native_returns(ElmEx.IR.t(), MapSet.t(Types.function_decl_key()), Types.function_decl_map()) ::

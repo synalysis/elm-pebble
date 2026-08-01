@@ -12,6 +12,7 @@ defmodule Elmc.Backend.Plan.RuntimeBuiltins do
     list_replace_nth_int: [1, 2],
     list_take: [0],
     list_drop: [0],
+    list_nth_maybe: [1],
     string_from_int: [0],
     tuple2_ints: [0, 1],
     list_filter_record_field: [1],

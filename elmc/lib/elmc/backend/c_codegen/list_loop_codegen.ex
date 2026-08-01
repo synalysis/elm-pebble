@@ -682,7 +682,7 @@ defmodule Elmc.Backend.CCodegen.ListLoopCodegen do
     if RcRuntimeEmit.rc_allocator_emit_mode?(env) do
       RcRuntimeEmit.check_rc_take(head_var, "elmc_new_int", list_expr, env, declare_out?: false)
     else
-      RcRuntimeEmit.assign_stmt(head_var, "ELMC_RC_INT_BOX(#{list_expr})")
+      RcRuntimeEmit.non_rc_allocator_stmt(head_var, "elmc_new_int", list_expr)
     end
   end
 

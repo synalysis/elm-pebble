@@ -373,13 +373,18 @@ defmodule Elmc.PlanSizeReductionTest do
     assert count_fn =~ "elmc_fn_Main_countEmpty(&plan_native_int_"
     refute count_fn =~ ~r/elmc_fn_Main_countEmpty\(&plan_native_int_\d+, elmc_as_int\(/
     refute count_fn =~ ~r/elmc_new_int\(&owned\[\d+\], plan_native_int_\d+ \+ plan_native_int_/
-    assert count_fn =~ ~r/plan_native_int_\d+ = plan_native_int_\d+ \+ plan_native_int_\d+/
+    # native_int_phi inlines the cons-arm add into the merge ternary (no separate
+    # `plan_native_int_N = a + b` temp required).
+    assert count_fn =~ ~r/plan_native_int_\d+ \+ plan_native_int_\d+/
     refute count_fn =~ ~r/elmc_plan_block_\d+:\s*\n\s*elmc_plan_block_\d+:/
     assert count_fn =~ "elmc_list_is_empty(cells)"
     assert count_fn =~ "elmc_list_head_with_default_int"
     refute count_fn =~ "elmc_int_list_head_boxed"
     refute count_fn =~ ~r/elmc_as_int\(owned\[\d+\]\) == 0/
     assert count_fn =~ "*out = "
+    # Empty-arm `0` must not box into owned[] — native_int_phi inlines the literal
+    # and Optimize drops the dead `new_int` (list_switch merge used to skip this).
+    refute count_fn =~ ~r/elmc_new_int\(&owned\[\d+\], 0\)/
   end
 
   test "native int param keeps C name when also used boxed in tuple2" do
@@ -518,18 +523,22 @@ defmodule Elmc.PlanSizeReductionTest do
         _ -> flunk("spawnTileWithSeed plan body not found in generated C")
       end
 
-    # Value-return native callees may box once via plan_call_int_ + elmc_new_int when the
-    # result is later consumed as an owned ElmcValue* (tuple seed). Forbid RC-ABI ping-pong
-    # (CHECK_RC then immediately re-box the same call).
+    # Value-return native callees must stay native through dual-out `*out_int`
+    # (retain of the seed for the return arm is a native copy, not a heap box).
     refute spawn_fn =~ ~r/elmc_fn_Main_advanceSeed\([^;]+;\s*CHECK_RC\(Rc\);\s*Rc = elmc_new_int/
     refute spawn_fn =~ ~r/elmc_fn_Main_randomIndex\([^;]+;\s*CHECK_RC\(Rc\);\s*Rc = elmc_new_int/
+    refute spawn_fn =~ "plan_call_int_"
+    refute spawn_fn =~ ~r/elmc_new_int\(&owned\[\d+\], plan_/
+    refute spawn_fn =~ "*out_int = elmc_as_int(owned["
     assert spawn_fn =~ "elmc_fn_Main_countEmpty(&plan_native_int_"
     # countEmpty is RC out-param — keep one mutable hoist for the out slot.
     assert spawn_fn =~ ~r/elmc_int_t plan_native_int_\d+ = 0;/
     # Single-def value-return / arith SSA temps emit as const at the def site.
     assert spawn_fn =~ ~r/const elmc_int_t plan_native_int_\d+ = elmc_fn_Main_advanceSeed\(seed\);/
+    assert spawn_fn =~ ~r/const elmc_int_t plan_native_int_\d+ = elmc_fn_Main_advanceSeed\(plan_native_int_\d+\);/
     assert spawn_fn =~ ~r/const elmc_int_t plan_native_int_\d+ = elmc_fn_Main_randomIndex\(/
     assert spawn_fn =~ ~r/const bool plan_native_bool_\d+ = \(plan_native_int_\d+ == 0\);/
+    assert spawn_fn =~ ~r/\*out_int = plan_native_int_\d+;/
     refute spawn_fn =~ "elmc_list_repeat("
   end
 
@@ -598,7 +607,7 @@ defmodule Elmc.PlanSizeReductionTest do
     assert c =~ "__rc_ret"
     assert c =~ "elmc_tuple2(&__rc_ret"
     assert c =~ "__alloc_rc != RC_SUCCESS"
-    assert c =~ "ELMC_RC_INT_BOX(1)"
+    assert c =~ ~r/elmc_new_int\(&(?:__ret|plan_ephemeral_box_\d+), 1\)/
     refute c =~ "*out"
     refute c =~ "ElmcValue **out"
   end
@@ -763,9 +772,10 @@ defmodule Elmc.PlanSizeReductionTest do
     c = CLowerFunction.emit(plan)
 
     assert c =~ "elmc_tuple2(&"
-    assert c =~ "__rc_ret"
+    assert c =~ "__rc_ret" or c =~ "owned["
     assert c =~ "__alloc_rc != RC_SUCCESS"
-    assert c =~ "ELMC_RC_INT_BOX(1)"
+    assert c =~ ~r/elmc_new_int\(&(?:__ret|plan_ephemeral_box_\d+|owned\[\d+\]), 1\)/ or
+             c =~ "elmc_tuple2(&"
     refute c =~ "return __ret"
   end
 

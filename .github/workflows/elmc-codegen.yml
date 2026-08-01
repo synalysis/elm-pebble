@@ -107,6 +107,14 @@ jobs:
         working-directory: elmc
         run: mix deps.get
 
+      - name: Install wasm probe Node dependencies
+        working-directory: elmc/test/support
+        run: npm install --omit=dev --no-audit --no-fund
+
+      - name: Install IDE dependencies (companion protocol generation)
+        working-directory: ide
+        run: mix do deps.get, compile --no-start
+
       - name: Compile elmc with warnings as errors
         working-directory: elmc
         run: mix compile --warnings-as-errors

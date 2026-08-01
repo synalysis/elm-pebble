@@ -16,14 +16,15 @@ defmodule Elmc.RuntimeMaybeTest do
       harness_path,
       """
       #include "elmc_runtime.h"
+      #include "elmc_harness_helpers.h"
       #include <stdio.h>
 
       int main(void) {
-        ElmcValue *default_value = ELMC_RC_INT_BOX(0);
-        ElmcValue *just_tag = ELMC_RC_INT_BOX(1);
-        ElmcValue *payload = ELMC_RC_INT_BOX(42);
-        ElmcValue *lowered_just = ELMC_RC_TUPLE2_BOX(just_tag, payload);
-        ElmcValue *lowered_nothing = ELMC_RC_INT_BOX(0);
+        ElmcValue *default_value = elmc_harness_new_int(0);
+        ElmcValue *just_tag = elmc_harness_new_int(1);
+        ElmcValue *payload = elmc_harness_new_int(42);
+        ElmcValue *lowered_just = elmc_harness_tuple2_take(just_tag, payload);
+        ElmcValue *lowered_nothing = elmc_harness_new_int(0);
         ElmcValue *just_result = elmc_maybe_with_default(default_value, lowered_just);
         ElmcValue *nothing_result = elmc_maybe_with_default(default_value, lowered_nothing);
 
@@ -51,8 +52,10 @@ defmodule Elmc.RuntimeMaybeTest do
         "-Wall",
         "-Wextra",
         "-I#{runtime_dir}",
+        "-I#{Path.expand("support", __DIR__)}",
         Path.join(runtime_dir, "elmc_runtime.c"),
         Elmc.Test.RcTrackHarness.runtime_link_stub(),
+        Elmc.Test.RcTrackHarness.harness_helpers_source(),
         harness_path,
         "-lm",
         "-o",

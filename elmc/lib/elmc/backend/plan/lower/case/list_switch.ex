@@ -3,7 +3,7 @@ defmodule Elmc.Backend.Plan.Lower.Case.ListSwitch do
   alias Elmc.Backend.Plan.Types, as: Types
 
 
-  alias Elmc.Backend.Plan.{Builder, Context}
+  alias Elmc.Backend.Plan.{Builder, Context, IntPhiNative, TruthyNative}
   alias Elmc.Backend.Plan.Lower.{Expr, ListIntType, PatternBind}
   alias Elmc.Backend.Plan.Types
 
@@ -713,20 +713,32 @@ defmodule Elmc.Backend.Plan.Lower.Case.ListSwitch do
 
   @spec parse_cons_nil_vars(Types.pattern()) :: {:ok, [String.t()]} | :error
 
-  defp parse_cons_nil_vars(pattern), do: parse_cons_nil_chain(pattern, true)
-
-  @spec parse_cons_nil_chain(Types.pattern(), boolean()) :: {:ok, [String.t()]} | :error
-
-  defp parse_cons_nil_chain(pattern, top_level?) do
+  # Top-level `[]` is not a cons/nil chain; only nested tails may be empty.
+  defp parse_cons_nil_vars(pattern) do
     case unwrap_cons(pattern) do
       {:cons, head, tail} ->
         with {:ok, head_name} <- pattern_var_name(head),
-             {:ok, rest} <- parse_cons_nil_chain(tail, false) do
+             {:ok, rest} <- parse_cons_nil_tail(tail) do
+          {:ok, [head_name | rest]}
+        end
+
+      _ ->
+        :error
+    end
+  end
+
+  @spec parse_cons_nil_tail(Types.pattern()) :: {:ok, [String.t()]} | :error
+
+  defp parse_cons_nil_tail(pattern) do
+    case unwrap_cons(pattern) do
+      {:cons, head, tail} ->
+        with {:ok, head_name} <- pattern_var_name(head),
+             {:ok, rest} <- parse_cons_nil_tail(tail) do
           {:ok, [head_name | rest]}
         end
 
       :empty ->
-        if top_level?, do: :error, else: {:ok, []}
+        {:ok, []}
 
       :not_cons ->
         :error
@@ -1167,25 +1179,77 @@ defmodule Elmc.Backend.Plan.Lower.Case.ListSwitch do
   @spec emit_merge(Types.reg(), Types.reg(), Types.reg(), Builder.t()) ::
           {:ok, Types.reg(), Builder.t()}
 
-  defp emit_merge(cond_reg, empty_reg, cons_reg, b) do
+  defp emit_merge(cond_reg, then_reg, else_reg, b) do
     {merge, b1} = Builder.fresh_reg(b)
+    instrs = builder_instrs(b1)
+    then_arm_block = instr_block_id(instrs, then_reg)
+    else_arm_block = instr_block_id(instrs, else_reg)
+    known_arms? = is_integer(then_arm_block) and is_integer(else_arm_block)
 
-    phi_consumes =
-      Builder.phi_branch_consumes(b1, [empty_reg, cons_reg, cond_reg])
+    # Prefer truthy-native phi annotation; otherwise native-int when both arms qualify.
+    # native_int_phi inlines arm shapes into the merge ternary; Optimize drops the
+    # arm defs. Require known arm block ids so dead_phi_arm_value? can match.
+    args =
+      case {TruthyNative.phi_shapes?(instrs, then_reg, else_reg),
+            IntPhiNative.native_int_phi_shapes?(instrs, then_reg, else_reg), known_arms?} do
+        {{true, then_shape, else_shape}, _int, true} ->
+          %{
+            then: then_reg,
+            else: else_reg,
+            cond: cond_reg,
+            truthy_native: true,
+            then_shape: then_shape,
+            else_shape: else_shape,
+            then_arm_block: then_arm_block,
+            else_arm_block: else_arm_block
+          }
+
+        {_truthy, {true, then_shape, else_shape}, true} ->
+          %{
+            then: then_reg,
+            else: else_reg,
+            cond: cond_reg,
+            native_int_phi: true,
+            then_shape: then_shape,
+            else_shape: else_shape,
+            then_arm_block: then_arm_block,
+            else_arm_block: else_arm_block
+          }
+
+        _ ->
+          %{then: then_reg, else: else_reg, cond: cond_reg}
+      end
 
     {_, b2} =
       Builder.emit(b1, :phi, %{
         dest: merge,
-        args: %{then: empty_reg, else: cons_reg, cond: cond_reg},
+        args: args,
         effects: %{
           produces: {:owned, merge},
-          consumes: phi_consumes,
+          consumes: Builder.phi_branch_consumes(b1, [cond_reg]),
           borrows: [],
           fallible: false
         }
       })
 
     {:ok, merge, b2}
+  end
+
+  defp builder_instrs(b) do
+    (Map.get(b, :blocks, []) ++ [Map.get(b, :current_block)])
+    |> Enum.reject(&is_nil/1)
+    |> Enum.flat_map(&Map.get(&1, :instrs, []))
+  end
+
+  defp instr_block_id(instrs, reg) do
+    if is_integer(reg) do
+      case Enum.find(instrs, &(&1.dest == reg)) do
+        %{block_id: id} when is_integer(id) -> id
+        _ -> nil
+      end
+    else
+      nil
+    end
   end
 
   @spec compile_triple_nonempty_arms(

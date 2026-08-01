@@ -8,6 +8,48 @@ defmodule Elmc.PlanListSliceLowerTest do
   alias Elmc.Backend.CCodegen.GeneratedSource
   alias Elmc.Backend.Plan.Lower.Function, as: PlanLower
 
+  test "listAt index stays native — no dead new_int before list_nth_maybe_int" do
+    source = """
+    module Main exposing (listAt)
+
+    listAt : Int -> List a -> Maybe a
+    listAt index values =
+        if index < 0 then
+            Nothing
+        else
+            List.head (List.drop index values)
+    """
+
+    project_dir = Path.expand("tmp/plan_list_at_native", __DIR__)
+    out_dir = Path.expand("tmp/plan_list_at_native_out", __DIR__)
+    File.rm_rf!(project_dir)
+    File.rm_rf!(out_dir)
+    File.mkdir_p!(Path.join(project_dir, "src"))
+    File.write!(Path.join(project_dir, "src/Main.elm"), source)
+
+    File.write!(
+      Path.join(project_dir, "elm.json"),
+      File.read!(Path.expand("fixtures/simple_project/elm.json", __DIR__))
+    )
+
+    assert {:ok, _} =
+             CachedCompile.compile(project_dir, %{
+               out_dir: out_dir,
+               entry_module: "Main",
+               strip_dead_code: false,
+               plan_ir_mode: :primary
+             })
+
+    c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+    body = CCodegenExtract.fn_body(c, "elmc_fn_Main_listAt")
+
+    assert body =~ "elmc_list_nth_maybe_int"
+    refute body =~ "elmc_new_int(&owned["
+    refute body =~ "ELMC_RC_INT_BOX"
+    refute body =~ "elmc_harness_new_int(index)"
+    assert body =~ ~r/elmc_list_nth_maybe_int\([^,]+, values, index\)/
+  end
+
   test "rowAt lowers List.take + List.drop slice to list_slice_int" do
     source = """
     module Main exposing (rowAt)

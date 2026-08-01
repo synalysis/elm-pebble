@@ -458,16 +458,21 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
           Types.native_scalar_compile_result()
   def compile_boxed(expr, env, counter) do
     {code, value_ref, counter} = compile_expr(expr, env, counter)
-    {out, next} = RcRuntimeEmit.compile_result_slot(env, counter)
 
-    {
-      """
-      #{code}
-        #{RcRuntimeEmit.assign_call(env, out, "elmc_new_int", value_ref)}
-      """,
-      out,
-      next
-    }
+    if EnvBindings.native_scalar_context?(env) do
+      {code, value_ref, counter}
+    else
+      {out, next} = RcRuntimeEmit.compile_result_slot(env, counter)
+
+      {
+        """
+        #{code}
+          #{RcRuntimeEmit.assign_call(env, out, "elmc_new_int", value_ref)}
+        """,
+        out,
+        next
+      }
+    end
   end
 
   @spec compile_expr(Types.ir_expr(), Types.compile_env(), Types.compile_counter()) ::
@@ -723,7 +728,7 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
   end
 
   defp dispatch(%{op: op, arg: arg} = expr, env, counter)
-       when op in [:tuple_first, :tuple_first_expr, :tuple_second_expr] do
+       when op in [:tuple_first, :tuple_first_expr, :tuple_second, :tuple_second_expr] do
     if typed_int_tuple_subject?(arg, env) do
       {arg_code, arg_ref, counter} = Host.compile_expr(arg, env, counter)
       field = if op in [:tuple_second, :tuple_second_expr], do: "second", else: "first"
@@ -740,21 +745,25 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
         {"", native_ref, counter}
 
       nil ->
-        case Map.fetch(env, name) do
-          {:ok, source} when is_binary(source) ->
-            source_expr = RcRuntimeEmit.value_expr(source)
+        if EnvBindings.function_int_param?(env, name) do
+          {"", "elmc_as_int_number(#{name})", counter}
+        else
+          case Map.fetch(env, name) do
+            {:ok, source} when is_binary(source) ->
+              source_expr = RcRuntimeEmit.value_expr(source)
 
-            if EnvBindings.boxed_int_binding?(env, name) do
-              {"", "elmc_as_int(#{source_expr})", counter}
-            else
-              {"", coerce_union_payload_int_ref("(#{source} ? elmc_as_int(#{source_expr}) : 0)"), counter}
-            end
+              if EnvBindings.boxed_int_binding?(env, name) do
+                {"", "elmc_as_int(#{source_expr})", counter}
+              else
+                {"", coerce_union_payload_int_ref("(#{source} ? elmc_as_int(#{source_expr}) : 0)"), counter}
+              end
 
-          _ ->
-            case ConstantInt.native_ref(expr, env) do
-              {:ok, ref} -> {"", ref, counter}
-              :error -> compile_fallback(expr, env, counter)
-            end
+            _ ->
+              case ConstantInt.native_ref(expr, env) do
+                {:ok, ref} -> {"", ref, counter}
+                :error -> compile_fallback(expr, env, counter)
+              end
+          end
         end
     end
   end
@@ -2095,25 +2104,30 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
         ) :: Types.native_scalar_compile_result()
   defp compile_fallback_boxed(expr, env, counter) do
     {code, var, counter} = BoxedOperand.compile(expr, env, counter)
-    next = counter + 1
-    out = "native_i_#{next}"
 
-    operand_release = ValueSlots.release_consumed(var)
+    if Util.direct_render_native_int_operand?(var) do
+      {code, var, counter}
+    else
+      next = counter + 1
+      out = "native_i_#{next}"
 
-    result =
-      {"""
-       #{code}
-         const elmc_int_t #{out} = elmc_as_int(#{RcRuntimeEmit.value_expr(var)});
-         #{operand_release}
-       """, out, next}
+      operand_release = ValueSlots.release_consumed(var)
 
-    case expr do
-      %{op: :call, args: []} ->
-        {code, ref, c} = result
-        Host.maybe_promote_hoisted_native_int(expr, env, code, ref, c)
+      result =
+        {"""
+         #{code}
+           const elmc_int_t #{out} = elmc_as_int(#{RcRuntimeEmit.value_expr(var)});
+           #{operand_release}
+         """, out, next}
 
-      _ ->
-        result
+      case expr do
+        %{op: :call, args: []} ->
+          {code, ref, c} = result
+          Host.maybe_promote_hoisted_native_int(expr, env, code, ref, c)
+
+        _ ->
+          result
+      end
     end
   end
 

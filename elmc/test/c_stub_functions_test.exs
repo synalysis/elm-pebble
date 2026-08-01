@@ -36,8 +36,8 @@ defmodule Elmc.CStubFunctionsTest do
     impl = """
     static ElmcValue native_str = { ELMC_RC_IMMORTAL, ELMC_TAG_STRING, (void *)"ßΩ🙂", 8 };
     (void)native_str;
-    Rc = elmc_fn_Elm_Kernel_Basics_and(&owned[2], ELMC_RC_BOOL_BOX(1), ELMC_RC_BOOL_BOX(0));
-    return elmc_fn_Elm_Kernel_JsArray_initialize(ELMC_RC_INT_BOX(1), ELMC_RC_INT_BOX(0), fn);
+    Rc = elmc_fn_Elm_Kernel_Basics_and(&owned[2], owned[0], owned[1]);
+    return elmc_fn_Elm_Kernel_JsArray_initialize(owned[3], owned[4], fn);
     """
 
     %{prototypes: protos, definitions: defs} = StubFunctions.missing_callee_stubs([impl], [])

@@ -234,34 +234,7 @@ defmodule Elmc.Runtime.RcMacros do
   end
 
   @spec rc_alloc_expr_macros() :: String.t()
-  def rc_alloc_expr_macros do
-    """
-    /* GCC statement-expression helpers for inline boxed alloc in arg lists (outside CATCH). */
-    #define ELMC_RC_INT_BOX(value) \\
-      ({ ElmcValue *__elmc_rc_box = NULL; \\
-         elmc_new_int(&__elmc_rc_box, (value)) == RC_SUCCESS ? __elmc_rc_box : NULL; })
-
-    #define ELMC_RC_BOOL_BOX(value) \\
-      ({ ElmcValue *__elmc_rc_box = NULL; \\
-         elmc_new_bool(&__elmc_rc_box, (value)) == RC_SUCCESS ? __elmc_rc_box : NULL; })
-
-    #define ELMC_RC_TUPLE2_BOX(left, right) \\
-      ({ ElmcValue *__elmc_rc_box = NULL; \\
-         elmc_tuple2_take(&__elmc_rc_box, (left), (right)) == RC_SUCCESS ? __elmc_rc_box : NULL; })
-
-    #define ELMC_RC_TUPLE2_INTS_BOX(first, second) \\
-      ({ ElmcValue *__elmc_rc_box = NULL; \\
-         elmc_tuple2_ints(&__elmc_rc_box, (first), (second)) == RC_SUCCESS ? __elmc_rc_box : NULL; })
-
-    #define ELMC_RC_STRING_BOX(value) \\
-      ({ ElmcValue *__elmc_rc_box = NULL; \\
-         elmc_new_string(&__elmc_rc_box, (value)) == RC_SUCCESS ? __elmc_rc_box : NULL; })
-
-    #define ELMC_RC_STRING_LEN_BOX(value, len) \\
-      ({ ElmcValue *__elmc_rc_box = NULL; \\
-         elmc_new_string_len(&__elmc_rc_box, (value), (len)) == RC_SUCCESS ? __elmc_rc_box : NULL; })
-    """
-  end
+  def rc_alloc_expr_macros, do: ""
 
   @spec fail_stash_source_impl() :: String.t()
   def fail_stash_source_impl do

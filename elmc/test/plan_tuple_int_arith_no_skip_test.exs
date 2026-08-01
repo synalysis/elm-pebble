@@ -56,7 +56,7 @@ defmodule Elmc.PlanTupleIntArithNoSkipTest do
     refute body =~
              ~r/elmc_release\(owned\[\d+\]\);\s*\n\s*ElmcValue \*\w+ = elmc_new_int_take\(elmc_as_int\(owned\[\d+\]\) \+ 1\)/
 
-    assert body =~ "elmc_tuple2"
+    assert body =~ "elmc_tuple2" or body =~ ~r/\*out[01]\s*=/
     # Prefer a native int chain or a boxed mul that stays live until add/tuple2.
     assert body =~ ~r/\*\s*3\s*\+\s*1/ or body =~ ~r/elmc_new_int\([^;]+,\s*[^;]*\*\s*3/
   end

@@ -130,6 +130,23 @@ defmodule Elmc.Backend.CCodegen.Native.TypedReturn do
     end
   end
 
+  # `let next = case msg of … -> Board.step …` must carry the arm return type
+  # (e.g. Model) so `next.best` uses the alias field index, not access-inferred
+  # singleton `{best}` → index 0.
+  def expr_type(%{op: :case, branches: branches}, env) when is_list(branches) do
+    types =
+      branches
+      |> Enum.map(fn
+        %{expr: expr} when is_map(expr) -> expr_type(expr, env)
+        _ -> nil
+      end)
+
+    case Enum.uniq(types) do
+      [type] when is_binary(type) -> type
+      _ -> nil
+    end
+  end
+
   # `let model = Tuple.first patternArg` (performUserMsg) must carry Model so
   # `model.pageData` resolves to Platform.Model @4, not nested Ok-payload @1.
   def expr_type(%{op: op, arg: arg}, env)

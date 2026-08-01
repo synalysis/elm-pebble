@@ -346,7 +346,10 @@ defmodule Elmc.Runtime.Generator do
 
 
   defp int_only_float_coercions?(direct_refs) do
-    MapSet.disjoint?(direct_refs, @float_alloc_refs)
+    # `ELMC_RECORD_GET_INDEX_FLOAT` seeds `elmc_as_float` without any float
+    # allocator — keep the coercion when field macros need it.
+    MapSet.disjoint?(direct_refs, @float_alloc_refs) and
+      not MapSet.member?(direct_refs, "elmc_as_float")
   end
 
   defp json_float_disabled?(source) when is_binary(source) do
@@ -923,7 +926,8 @@ defmodule Elmc.Runtime.Generator do
       |> Enum.join("\n")
 
     if String.contains?(joined, "elmc_new_float") or String.contains?(joined, "elmc_as_float") or
-         String.contains?(joined, "elmc_basics_round") do
+         String.contains?(joined, "elmc_basics_round") or
+         String.contains?(joined, "ELMC_RECORD_GET_INDEX_FLOAT") do
       (expanded ++ ["elmc_new_float", "elmc_as_float"]) |> Enum.uniq()
     else
       expanded
@@ -1961,6 +1965,7 @@ defmodule Elmc.Runtime.Generator do
     int elmc_string_length(ElmcValue *value);
     RC elmc_list_head(ElmcValue **out, ElmcValue *list);
     RC elmc_list_nth_maybe(ElmcValue **out, ElmcValue *list, ElmcValue *index);
+    RC elmc_list_nth_maybe_int(ElmcValue **out, ElmcValue *list, elmc_int_t index);
     elmc_int_t elmc_list_nth_int_default(ElmcValue *list, elmc_int_t index, elmc_int_t default_value);
     RC elmc_list_nth_int_default_boxed(ElmcValue **out, ElmcValue *list, ElmcValue *index, ElmcValue *default_value);
     elmc_int_t elmc_list_head_with_default_int(elmc_int_t default_val, ElmcValue *list);
@@ -2263,7 +2268,6 @@ defmodule Elmc.Runtime.Generator do
     RC elmc_record_update_index_float_cow(ElmcValue **out, ElmcValue *record, int index, double new_value);
     RC elmc_record_update_index_float_cow_drop(ElmcValue **out, ElmcValue *record, int index, double new_value);
 
-    #{RcMacros.rc_alloc_expr_macros()}
 
     #{RcMacros.maybe_pattern_helpers()}
 
@@ -3116,15 +3120,17 @@ defmodule Elmc.Runtime.Generator do
       CATCH_BEGIN
         ElmcValue *tail = elmc_int_zero();
         for (int i = 5; i >= 0; i--) {
-          ElmcValue *pv = ELMC_RC_INT_BOX(ps[i]);
-          if (!pv) { rc = RC_ERR_OUT_OF_MEMORY; CHECK_RC(rc); }
+          ElmcValue *pv = NULL;
+          rc = elmc_new_int(&pv, ps[i]);
+          CHECK_RC(rc);
           ElmcValue *pair = NULL;
           rc = elmc_tuple2_take(&pair, pv, tail);
           CHECK_RC(rc);
           tail = pair;
         }
-        ElmcValue *kind_v = ELMC_RC_INT_BOX(kind);
-        if (!kind_v) { rc = RC_ERR_OUT_OF_MEMORY; CHECK_RC(rc); }
+        ElmcValue *kind_v = NULL;
+        rc = elmc_new_int(&kind_v, kind);
+        CHECK_RC(rc);
         rc = elmc_tuple2_take(out, kind_v, tail);
         CHECK_RC(rc);
       CATCH_END
@@ -3138,15 +3144,17 @@ defmodule Elmc.Runtime.Generator do
         ElmcValue *tail = text ? elmc_retain(text) : elmc_int_zero();
         if (!tail) { rc = RC_ERR_OUT_OF_MEMORY; CHECK_RC(rc); }
         for (int i = 5; i >= 0; i--) {
-          ElmcValue *pv = ELMC_RC_INT_BOX(ps[i]);
-          if (!pv) { rc = RC_ERR_OUT_OF_MEMORY; CHECK_RC(rc); }
+          ElmcValue *pv = NULL;
+          rc = elmc_new_int(&pv, ps[i]);
+          CHECK_RC(rc);
           ElmcValue *pair = NULL;
           rc = elmc_tuple2_take(&pair, pv, tail);
           CHECK_RC(rc);
           tail = pair;
         }
-        ElmcValue *kind_v = ELMC_RC_INT_BOX(kind);
-        if (!kind_v) { rc = RC_ERR_OUT_OF_MEMORY; CHECK_RC(rc); }
+        ElmcValue *kind_v = NULL;
+        rc = elmc_new_int(&kind_v, kind);
+        CHECK_RC(rc);
         rc = elmc_tuple2_take(out, kind_v, tail);
         CHECK_RC(rc);
       CATCH_END
@@ -3914,6 +3922,25 @@ defmodule Elmc.Runtime.Generator do
         }
         return 1;
       }
+      /* INT_LIST vs cons (or either empty): compare by int elements. */
+      if ((left && left->tag == ELMC_TAG_INT_LIST) || (right && right->tag == ELMC_TAG_INT_LIST)) {
+        ElmcValue *int_list = (left && left->tag == ELMC_TAG_INT_LIST) ? left : right;
+        ElmcValue *other = (int_list == left) ? right : left;
+        ElmcIntListPayload *payload = elmc_int_list_payload(int_list);
+        if (!payload) return other == NULL || (other->tag == ELMC_TAG_LIST && other->payload == NULL);
+        if (!other) return payload->length == 0;
+        if (other->tag == ELMC_TAG_LIST) {
+          ElmcValue *cursor = other;
+          for (int i = 0; i < payload->length; i++) {
+            if (!cursor || cursor->tag != ELMC_TAG_LIST || cursor->payload == NULL) return 0;
+            ElmcCons *node = (ElmcCons *)cursor->payload;
+            if (elmc_as_int(node->head) != payload->values[i]) return 0;
+            cursor = node->tail;
+          }
+          return cursor == NULL || (cursor->tag == ELMC_TAG_LIST && cursor->payload == NULL);
+        }
+        return 0;
+      }
       ElmcValue *a = left;
       ElmcValue *b = right;
       while (a && b && a->tag == ELMC_TAG_LIST && b->tag == ELMC_TAG_LIST) {
@@ -4104,8 +4131,9 @@ defmodule Elmc.Runtime.Generator do
           return RC_SUCCESS;
         }
         {
-          ElmcValue *boxed = ELMC_RC_INT_BOX(payload->values[0]);
-          if (!boxed) return RC_ERR_OUT_OF_MEMORY;
+          ElmcValue *boxed = NULL;
+          RC rc = elmc_new_int(&boxed, payload->values[0]);
+          if (rc != RC_SUCCESS) return rc;
           return elmc_maybe_just(out, boxed);
         }
       }
@@ -4127,8 +4155,7 @@ defmodule Elmc.Runtime.Generator do
       return elmc_maybe_just(out, node->head);
     }
 
-    RC elmc_list_nth_maybe(ElmcValue **out, ElmcValue *list, ElmcValue *index) {
-      elmc_int_t idx = elmc_as_int(index);
+    RC elmc_list_nth_maybe_int(ElmcValue **out, ElmcValue *list, elmc_int_t idx) {
       if (list && list->tag == ELMC_TAG_INT_LIST) {
         ElmcIntListPayload *payload = elmc_int_list_payload(list);
         if (!payload || idx < 0 || idx >= payload->length) {
@@ -4136,8 +4163,9 @@ defmodule Elmc.Runtime.Generator do
           return RC_SUCCESS;
         }
         {
-          ElmcValue *boxed = ELMC_RC_INT_BOX(payload->values[idx]);
-          if (!boxed) return RC_ERR_OUT_OF_MEMORY;
+          ElmcValue *boxed = NULL;
+          RC rc = elmc_new_int(&boxed, payload->values[idx]);
+          if (rc != RC_SUCCESS) return rc;
           return elmc_maybe_just(out, boxed);
         }
       }
@@ -4160,6 +4188,10 @@ defmodule Elmc.Runtime.Generator do
       }
       ElmcCons *node = (ElmcCons *)cursor->payload;
       return elmc_maybe_just(out, node->head);
+    }
+
+    RC elmc_list_nth_maybe(ElmcValue **out, ElmcValue *list, ElmcValue *index) {
+      return elmc_list_nth_maybe_int(out, list, elmc_as_int(index));
     }
 
     elmc_int_t elmc_list_nth_int_default(ElmcValue *list, elmc_int_t index, elmc_int_t default_value) {

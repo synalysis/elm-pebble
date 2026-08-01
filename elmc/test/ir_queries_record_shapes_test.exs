@@ -539,6 +539,43 @@ defmodule Elmc.IRQueriesRecordShapesTest do
              {:ok, 4}
   end
 
+  test "case arms unify to callee return type (let next = case … -> step)" do
+    alias Elmc.Backend.CCodegen.Native.TypedReturn
+
+    env = %{
+      __module__: "Main",
+      __var_types__: %{"model" => "Model"},
+      __program_decls__: %{
+        {"Main", "step"} => %{type: "Int -> Model -> Model"}
+      }
+    }
+
+    case_expr = %{
+      op: :case,
+      subject: %{op: :var, name: "msg"},
+      branches: [
+        %{
+          pattern: %{op: :int_literal, value: 0},
+          expr: %{
+            op: :call,
+            name: "step",
+            args: [%{op: :int_literal, value: 0}, %{op: :var, name: "model"}]
+          }
+        },
+        %{
+          pattern: %{op: :int_literal, value: 1},
+          expr: %{
+            op: :call,
+            name: "step",
+            args: [%{op: :int_literal, value: 1}, %{op: :var, name: "model"}]
+          }
+        }
+      ]
+    }
+
+    assert TypedReturn.expr_type(case_expr, env) == "Model"
+  end
+
   test "tuple_first let-bound model keeps Platform.Model pageData @4 (performUserMsg)" do
     # performUserMsg desugars `(model, effect)` as:
     #   let model = Tuple.first patternArg3

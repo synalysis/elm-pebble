@@ -119,8 +119,9 @@ defmodule Elmc.DirectRenderDeadViewHelpersTest do
   end
 
   test "update calls initialBoard with native seed operand", %{generated: generated} do
-    # Dual-out (List Int, Int): list/int outs + native seed peel.
-    assert generated =~ "elmc_fn_Main_initialBoard(&plan_list_int_pair_"
+    # Dual-out (List Int, Int): list into owned slot, int into plan_list_int_pair_*_int,
+    # seed arg peels via elmc_as_int.
+    assert generated =~ ~r/elmc_fn_Main_initialBoard\(&owned\[\d+\], &plan_list_int_pair_\d+_int,/
     assert generated =~ "elmc_as_int(owned["
   end
 end

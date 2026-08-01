@@ -96,15 +96,10 @@ defmodule Elmc.Backend.CCodegen.Util do
     |> String.replace("\0", "\\0")
   end
 
-  @spec string_literal_c_expr(String.t()) :: String.t()
+  @spec string_literal_c_expr(String.t()) :: no_return()
   def string_literal_c_expr(value) when is_binary(value) do
-    escaped = escape_c_string(value)
-
-    if String.contains?(value, <<0>>) do
-      "ELMC_RC_STRING_LEN_BOX(\"#{escaped}\", #{byte_size(value)})"
-    else
-      "ELMC_RC_STRING_BOX(\"#{escaped}\")"
-    end
+    raise ArgumentError,
+          "string_literal_c_expr/1 is deprecated; allocate with elmc_new_string/elmc_new_string_len and CHECK_RC"
   end
 
   @spec parse_compile_time_int_ref(String.t()) :: integer() | nil
@@ -163,6 +158,34 @@ defmodule Elmc.Backend.CCodegen.Util do
     do: Regex.match?(~r/^tmp_\d+(_[a-zA-Z_][a-zA-Z0-9_]*)?$/, var)
 
   def boxed_temp_var?(_var), do: false
+
+  @boxed_value_ref ~r/^(?:owned\[\d+\]|tmp_\d+|cap_\d+|args\[\d+\])$/
+
+  @doc """
+  True when `ref` is already an `elmc_int_t` / native draw scalar, not an `ElmcValue *`
+  slot (`owned[]`, `tmp_*`, …) or runtime boxed accessor (`elmc_*`).
+  """
+  @spec native_scalar_c_ref?(String.t()) :: boolean()
+  def native_scalar_c_ref?(ref) when is_binary(ref) do
+    ref != "" and
+      not Regex.match?(@boxed_value_ref, ref) and
+      not String.starts_with?(ref, "elmc_") and
+      ref not in ["model", "writer", "NULL"]
+  end
+
+  def native_scalar_c_ref?(_ref), do: false
+
+  @doc """
+  True when `ref` is a native `elmc_int_t` expression in direct-render emit
+  (identifier, literal, or parenthesized arithmetic), not an `ElmcValue *`.
+  """
+  @spec direct_render_native_int_operand?(String.t()) :: boolean()
+  def direct_render_native_int_operand?(ref) when is_binary(ref) do
+    native_scalar_c_ref?(ref) or
+      (String.starts_with?(ref, "(") and not String.contains?(ref, "elmc_"))
+  end
+
+  def direct_render_native_int_operand?(_ref), do: false
 
   @spec direct_command_macro(String.t(), String.t()) :: String.t()
   def direct_command_macro(module_name, decl_name) do

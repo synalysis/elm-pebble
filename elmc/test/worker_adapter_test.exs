@@ -26,13 +26,13 @@ defmodule Elmc.WorkerAdapterTest do
       #{RcTrackHarness.harness_prelude()}
 
       static ElmcValue *launch_context(void) {
-        ElmcValue *reason = ELMC_RC_INT_BOX(1); /* Pebble.Platform.LaunchSystem constructor tag */
-        ElmcValue *watch_model = ELMC_RC_STRING_BOX("");
-        ElmcValue *watch_profile_id = ELMC_RC_STRING_BOX("");
+        ElmcValue *reason = elmc_harness_new_int(1); /* Pebble.Platform.LaunchSystem constructor tag */
+        ElmcValue *watch_model = elmc_harness_new_string("");
+        ElmcValue *watch_profile_id = elmc_harness_new_string("");
         ElmcValue *screen = elmc_int_zero();
-        ElmcValue *has_microphone = ELMC_RC_INT_BOX(0);
-        ElmcValue *has_compass = ELMC_RC_INT_BOX(0);
-        ElmcValue *supports_health = ELMC_RC_INT_BOX(0);
+        ElmcValue *has_microphone = elmc_harness_new_int(0);
+        ElmcValue *has_compass = elmc_harness_new_int(0);
+        ElmcValue *supports_health = elmc_harness_new_int(0);
         const char *names[] = {
           "hasCompass", "hasMicrophone", "reason", "screen",
           "supportsHealth", "watchModel", "watchProfileId"
@@ -64,7 +64,7 @@ defmodule Elmc.WorkerAdapterTest do
         elmc_int_t init_value = ELMC_RECORD_GET_INDEX_INT(model_after_init, 0);
         elmc_release(model_after_init);
 
-        ElmcValue *increment = ELMC_RC_INT_BOX(1);
+        ElmcValue *increment = elmc_harness_new_int(1);
         if (elmc_worker_dispatch(&state, increment) != 0) return 3;
         elmc_release(increment);
 

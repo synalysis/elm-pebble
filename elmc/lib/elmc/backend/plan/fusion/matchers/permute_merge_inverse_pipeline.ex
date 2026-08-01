@@ -737,9 +737,6 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.PermuteMergeInversePipeline do
         const elmc_int_t next_score = model_score + merge_score;
         const elmc_int_t next_best = (model_best >= next_score) ? model_best : next_score;
         const elmc_int_t next_turn = model_turn + 1;
-        ElmcValue *next_best_val = NULL;
-        Rc = elmc_new_int(&next_best_val, next_best);
-        CHECK_RC(Rc);
         ElmcValue *save_cmd = NULL;
         if (next_best > model_best) {
           char best_buf[32];
@@ -750,19 +747,17 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.PermuteMergeInversePipeline do
           save_cmd = elmc_int_zero();
         }
         ElmcValue *next_model = NULL;
-        Rc = elmc_record_update_index_cow_drop(&next_model, model, #{best_macro}, next_best_val);
+        Rc = elmc_record_update_index_int_cow_drop(&next_model, model, #{best_macro}, next_best);
         CHECK_RC(Rc);
         Rc = elmc_record_update_index_cow_drop(&next_model, next_model, #{cells_macro}, next_cells);
         CHECK_RC(Rc);
         Rc = elmc_record_update_index_int_cow_drop(&next_model, next_model, #{score_macro}, next_score);
         CHECK_RC(Rc);
-        Rc = elmc_record_update_index_cow_drop(&next_model, next_model, #{seed_macro}, next_seed);
+        Rc = elmc_record_update_index_int_cow_drop(&next_model, next_model, #{seed_macro}, spawn_after_tile);
         CHECK_RC(Rc);
         Rc = elmc_record_update_index_int_cow_drop(&next_model, next_model, #{turn_macro}, next_turn);
         CHECK_RC(Rc);
         elmc_release(next_cells);
-        elmc_release(next_seed);
-        elmc_release(next_best_val);
         ElmcValue *cmd_copy = save_cmd ? elmc_retain(save_cmd) : elmc_int_zero();
         ElmcValue *next_model_for_tuple = (next_model == model) ? elmc_retain(next_model) : next_model;
         Rc = elmc_tuple2_take(out, next_model_for_tuple, cmd_copy);
@@ -780,9 +775,6 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.PermuteMergeInversePipeline do
   defp emit_inline_spawn_tile(_module_name, seed_macro, count) do
     """
     #{SpawnTileInline.emit("spawn", "out_buf", count, "ELMC_RECORD_GET_INDEX_INT(model, #{seed_macro})")}
-    ElmcValue *next_seed = NULL;
-    Rc = elmc_new_int(&next_seed, spawn_after_tile);
-    CHECK_RC(Rc);
     ElmcValue *next_cells = NULL;
     Rc = elmc_list_from_int_array_reuse(&next_cells, model_cells, out_buf, #{count});
     CHECK_RC(Rc);

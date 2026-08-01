@@ -51,7 +51,7 @@ defmodule Elmc.GeneratedRcTrackWorkerModelSwapTest do
         ElmcValue *watch_profile_id = elmc_harness_new_string("aplite");
         ElmcValue *width = elmc_harness_new_int(144);
         ElmcValue *height = elmc_harness_new_int(168);
-        ElmcValue *shape = ELMC_RC_INT_BOX(1);
+        ElmcValue *shape = elmc_harness_new_int(1);
         ElmcValue *color_mode = elmc_harness_new_int(1);
         ElmcValue *screen_values[] = {width, height, shape, color_mode};
         ElmcValue *screen = elmc_harness_record_new_values_take(4, screen_values);

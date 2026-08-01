@@ -120,6 +120,7 @@ defmodule Elmc.CompanionWeatherHostHarnessTest do
     """
     #include <string.h>
     #include "elmc_pebble.h"
+    #include "elmc_harness_helpers.h"
 
     static int scene_text_contains(const ElmcPebbleDrawCmd *cmds, int count, const char *needle) {
       for (int i = 0; i < count; i++) {
@@ -131,7 +132,7 @@ defmodule Elmc.CompanionWeatherHostHarnessTest do
 
     int main(void) {
       ElmcPebbleApp app = {0};
-      ElmcValue *flags = ELMC_RC_INT_BOX(0);
+      ElmcValue *flags = elmc_harness_new_int(0);
       if (elmc_pebble_init(&app, flags) != 0) return 2;
       elmc_release(flags);
 
@@ -152,10 +153,11 @@ defmodule Elmc.CompanionWeatherHostHarnessTest do
   defp companion_weather_flood_harness_c(iterations) do
     """
     #include "elmc_pebble.h"
+    #include "elmc_harness_helpers.h"
 
     int main(void) {
       ElmcPebbleApp app = {0};
-      ElmcValue *flags = ELMC_RC_INT_BOX(0);
+      ElmcValue *flags = elmc_harness_new_int(0);
       if (elmc_pebble_init(&app, flags) != 0) return 2;
       elmc_release(flags);
 

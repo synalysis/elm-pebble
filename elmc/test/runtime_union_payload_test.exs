@@ -19,6 +19,7 @@ defmodule Elmc.RuntimeUnionPayloadTest do
       harness_path,
       """
       #include "elmc_runtime.h"
+      #include "elmc_harness_helpers.h"
       #include <stdio.h>
 
       static int expect_int(ElmcValue *value, elmc_int_t expected) {
@@ -26,19 +27,19 @@ defmodule Elmc.RuntimeUnionPayloadTest do
       }
 
       int main(void) {
-        ElmcValue *plain = ELMC_RC_INT_BOX(220);
+        ElmcValue *plain = elmc_harness_new_int(220);
         if (expect_int(plain, 220) != 0) return 2;
         elmc_release(plain);
 
-        ElmcValue *tag = ELMC_RC_INT_BOX(1);
-        ElmcValue *payload = ELMC_RC_INT_BOX(185);
-        ElmcValue *union_value = ELMC_RC_TUPLE2_BOX(tag, payload);
+        ElmcValue *tag = elmc_harness_new_int(1);
+        ElmcValue *payload = elmc_harness_new_int(185);
+        ElmcValue *union_value = elmc_harness_tuple2_take(tag, payload);
         if (expect_int(union_value, 185) != 0) return 3;
         elmc_release(union_value);
 
-        ElmcValue *just_tag = ELMC_RC_INT_BOX(1);
-        ElmcValue *just_payload = ELMC_RC_INT_BOX(72);
-        ElmcValue *just_inner = ELMC_RC_TUPLE2_BOX(just_tag, just_payload);
+        ElmcValue *just_tag = elmc_harness_new_int(1);
+        ElmcValue *just_payload = elmc_harness_new_int(72);
+        ElmcValue *just_inner = elmc_harness_tuple2_take(just_tag, just_payload);
         ElmcValue *just = NULL;
         if (elmc_maybe_just_own(&just, just_inner) != RC_SUCCESS) return 4;
         if (expect_int(elmc_maybe_or_tuple_just_payload_borrow(just), 72) != 0) return 5;
@@ -62,8 +63,10 @@ defmodule Elmc.RuntimeUnionPayloadTest do
         "-Wall",
         "-Wextra",
         "-I#{runtime_dir}",
+        "-I#{Path.expand("support", __DIR__)}",
         Path.join(runtime_dir, "elmc_runtime.c"),
         RcTrackHarness.runtime_link_stub(),
+        RcTrackHarness.harness_helpers_source(),
         harness_path,
         "-lm",
         "-o",

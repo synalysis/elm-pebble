@@ -422,8 +422,6 @@ defmodule Elmc.Backend.C.Lower.NativeReturn do
     end
   end
 
-  defp peelable_boxed_int_reg?(_, _, _), do: false
-
   defp ret_source_reg(%FunctionPlan{blocks: blocks}) do
     case List.last(blocks) do
       %Block{terminator: {:ret, :fn_out}} ->

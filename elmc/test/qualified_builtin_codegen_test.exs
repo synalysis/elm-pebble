@@ -3,6 +3,9 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
   @moduletag timeout: 180_000
 
+  @support_dir Path.expand("support", __DIR__)
+  @harness_helpers_c Path.join(@support_dir, "elmc_harness_helpers.c")
+
   alias Elmc.Backend.CCodegen.Hoist
   alias Elmc.Test.CCodegenExtract
 
@@ -107,12 +110,14 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
           "-Iruntime",
           "-Iports",
           "-Ic",
+          "-I#{@support_dir}",
           "runtime/elmc_runtime.c",
           "ports/elmc_ports.c",
           "c/elmc_generated.c",
           "c/elmc_worker.c",
           "c/elmc_pebble.c",
           "c/operator_section_cons_harness.c",
+          @harness_helpers_c,
           "-lm",
           "-o",
           "operator_section_cons_harness"
@@ -161,9 +166,10 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
     assert native_case_body =~ "switch (elmc_union_tag_as_int(" or
              native_case_body =~ ~r/switch\s*\(\s*plan_native_int_\d+\s*\)/,
            "expected native int switch, got: #{String.slice(native_case_body, 0, 400)}"
-    assert native_case_body =~ "plan_native_int_3 = 1;"
-    assert native_case_body =~ "plan_native_int_3 = 4;"
-    assert native_case_body =~ "return plan_native_int_3;"
+    assert native_case_body =~ "elmc_new_int(&owned[1], 1)" or native_case_body =~ "plan_native_int_3 = 1;"
+    assert native_case_body =~ "elmc_new_int(&owned[1], 2)" or native_case_body =~ "plan_native_int_3 = 2;"
+    assert native_case_body =~ "elmc_new_int(&owned[0], 4)" or native_case_body =~ "plan_native_int_3 = 4;"
+    assert native_case_body =~ "*out = owned[0]" or native_case_body =~ "return plan_native_int_3;"
     refute native_case_body =~ "->tag == ELMC_TAG_INT"
     refute native_case_body =~ "switch (native_let_caseSubject_"
     refute native_case_body =~ "elmc_as_int(native_let_caseSubject_"
@@ -796,7 +802,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
     use_body = lowered_fn_body!(generated_c, "elmc_fn_Main_directNativeLetCircleRadius_commands_append")
 
     assert use_body =~ ~r/native_max_\d+/
-    assert use_body =~ ~r/scene_cmd\.p2 = elmc_as_int\(owned\[0\]\)/
+    assert use_body =~ ~r/scene_cmd\.p2 = (?:elmc_as_int\(owned\[0\]\)|native_max_\d+)/
     refute use_body =~ "elmc_basics_max("
   end
 
@@ -914,6 +920,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     assert condition_body =~ "if ((bool)elmc_as_bool(enabled))" or
              condition_body =~ "if (elmc_as_bool(enabled))" or
+             condition_body =~ "if (!elmc_as_bool(enabled))" or
              condition_body =~ "if (!elmc_as_bool(owned[0]))" or
              condition_body =~ "if (elmc_as_bool(owned[0]))"
     assert condition_body =~ "elmc_draw_cmd_init(&scene_cmd, ELMC_RENDER_OP_CLEAR)"
@@ -1130,12 +1137,14 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
           "-Iruntime",
           "-Iports",
           "-Ic",
+          "-I#{@support_dir}",
           "runtime/elmc_runtime.c",
           "ports/elmc_ports.c",
           "c/elmc_generated.c",
           "c/elmc_worker.c",
           "c/elmc_pebble.c",
           "c/cmd_batch_harness.c",
+          @harness_helpers_c,
           "-lm",
           "-o",
           "cmd_batch_harness"
@@ -1190,12 +1199,14 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
           "-Iruntime",
           "-Iports",
           "-Ic",
+          "-I#{@support_dir}",
           "runtime/elmc_runtime.c",
           "ports/elmc_ports.c",
           "c/elmc_generated.c",
           "c/elmc_worker.c",
           "c/elmc_pebble.c",
           "c/generic_ui_harness.c",
+          @harness_helpers_c,
           "-lm",
           "-o",
           "generic_ui_harness"
@@ -1253,12 +1264,14 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
           "-Iruntime",
           "-Iports",
           "-Ic",
+          "-I#{@support_dir}",
           "runtime/elmc_runtime.c",
           "ports/elmc_ports.c",
           "c/elmc_generated.c",
           "c/elmc_worker.c",
           "c/elmc_pebble.c",
           "c/top_level_function_reference_harness.c",
+          @harness_helpers_c,
           "-lm",
           "-o",
           "top_level_function_reference_harness"
@@ -1450,10 +1463,11 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
     """
     #include "elmc_pebble.h"
     #include <stdio.h>
+    #include "elmc_harness_helpers.h"
 
     int main(void) {
       ElmcPebbleApp app = {0};
-        ElmcValue *flags = ELMC_RC_INT_BOX(0);
+        ElmcValue *flags = elmc_harness_new_int(0);
       int init_rc = elmc_pebble_init_with_mode(&app, flags, ELMC_PEBBLE_MODE_WATCHFACE);
       elmc_release(flags);
       if (init_rc != 0) return 10;
@@ -1536,10 +1550,11 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
     #include "elmc_pebble.h"
     #include <stdio.h>
     #include <string.h>
+    #include "elmc_harness_helpers.h"
 
     int main(void) {
       ElmcPebbleApp app = {0};
-        ElmcValue *flags = ELMC_RC_INT_BOX(0);
+        ElmcValue *flags = elmc_harness_new_int(0);
       int init_rc = elmc_pebble_init_with_mode(&app, flags, ELMC_PEBBLE_MODE_APP);
       elmc_release(flags);
       if (init_rc != 0) return 10;
@@ -1575,10 +1590,11 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
     """
     #include "elmc_pebble.h"
     #include <stdio.h>
+    #include "elmc_harness_helpers.h"
 
     int main(void) {
       ElmcPebbleApp app = {0};
-        ElmcValue *flags = ELMC_RC_INT_BOX(0);
+        ElmcValue *flags = elmc_harness_new_int(0);
       int init_rc = elmc_pebble_init_with_mode(&app, flags, ELMC_PEBBLE_MODE_WATCHFACE);
       elmc_release(flags);
       if (init_rc != 0) return 10;
@@ -1756,10 +1772,11 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
   defp minimal_harness_source do
     """
     #include "elmc_pebble.h"
+    #include "elmc_harness_helpers.h"
 
     int main(void) {
       ElmcPebbleApp app = {0};
-        ElmcValue *flags = ELMC_RC_INT_BOX(0);
+        ElmcValue *flags = elmc_harness_new_int(0);
       int rc = elmc_pebble_init_with_mode(&app, flags, ELMC_PEBBLE_MODE_APP);
       elmc_release(flags);
       elmc_pebble_deinit(&app);
@@ -5268,12 +5285,14 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
           "-Iruntime",
           "-Iports",
           "-Ic",
+          "-I#{@support_dir}",
           "runtime/elmc_runtime.c",
           "ports/elmc_ports.c",
           "c/elmc_generated.c",
           "c/elmc_worker.c",
           "c/elmc_pebble.c",
           "c/game_elmtris_harness.c",
+          @harness_helpers_c,
           "-lm",
           "-o",
           "game_elmtris_harness"
@@ -5374,7 +5393,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     generated = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
     assert generated =~ "elmc_fn_Random_bool_closure_0"
-    assert generated =~ "ELMC_RC_BOOL_BOX(plan_native_bool_"
+    assert generated =~ "Rc = elmc_new_bool(&plan_ephemeral_box_"
     refute generated =~ ~r/return elmc_retain\(tmp_\d+\);/
   end
 end

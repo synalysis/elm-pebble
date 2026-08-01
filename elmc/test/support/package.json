@@ -1,0 +1,8 @@
+{
+  "name": "elmc-wasm-probes",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "linkedom": "^0.18.9"
+  }
+}

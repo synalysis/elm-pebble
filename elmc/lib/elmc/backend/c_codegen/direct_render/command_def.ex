@@ -128,6 +128,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.CommandDef do
     Process.put(:elmc_direct_borrow_refs, borrow_refs)
     Process.put(:elmc_direct_helper_defs, [])
     ValueSlots.reset(epilogue_lifo: true)
+    Process.put(:elmc_direct_scene_boxed_argv, true)
 
     try do
       {field_hoist_preamble, start_counter} = DuplicateFieldHoists.preamble(decl.expr, env, 0)
@@ -171,6 +172,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.CommandDef do
                 "direct Pebble command generation failed for #{mod.name}.#{decl.name}"
       end
     after
+      Process.delete(:elmc_direct_scene_boxed_argv)
       Process.delete(:elmc_direct_borrow_refs)
       Process.delete(:elmc_hoisted_native_ints_scope)
       Process.delete(:elmc_hoisted_native_ints)
@@ -275,6 +277,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.CommandDef do
     Process.put(:elmc_direct_borrow_refs, borrow_refs)
     Process.put(:elmc_direct_helper_defs, [])
     ValueSlots.reset(epilogue_lifo: true)
+    Process.put(:elmc_direct_scene_boxed_argv, false)
 
     try do
       {field_hoist_preamble, start_counter} = DuplicateFieldHoists.preamble(decl.expr, native_env, 0)
@@ -332,6 +335,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.CommandDef do
                 "direct Pebble command generation failed for #{mod.name}.#{decl.name}"
       end
     after
+      Process.delete(:elmc_direct_scene_boxed_argv)
       Process.delete(:elmc_direct_borrow_refs)
       Process.delete(:elmc_hoisted_native_ints_scope)
       Process.delete(:elmc_hoisted_native_ints)

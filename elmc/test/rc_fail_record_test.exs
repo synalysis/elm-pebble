@@ -80,7 +80,7 @@ defmodule Elmc.RcFailRecordTest do
       """
       #include "elmc_runtime.h"
       void elmc_alloc_probe(void) {
-        ElmcValue *v = ELMC_RC_INT_BOX(1);
+        ElmcValue *v = elmc_harness_new_int(1);
         elmc_release(v);
       }
       """

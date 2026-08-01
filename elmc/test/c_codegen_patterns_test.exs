@@ -7,6 +7,9 @@ defmodule Elmc.CCodegenPatternsTest do
   alias Elmc.Backend.CCodegen.RecordCompile
   alias Elmc.Test.CCodegenExtract
 
+  @support_dir Path.expand("support", __DIR__)
+  @harness_helpers_c Path.join(@support_dir, "elmc_harness_helpers.c")
+
   @just_payload_borrow "elmc_maybe_or_tuple_just_payload_borrow"
 
   defp corpus_skip? do
@@ -165,7 +168,7 @@ defmodule Elmc.CCodegenPatternsTest do
 
     assert out == "tmp_3"
     assert counter == 3
-    assert code =~ "ELMC_RC_INT_BOX(42)"
+    assert code =~ "__alloc_rc = elmc_new_int(&tmp_2, 42)"
     assert code =~ "ElmcValue *tmp_3 = elmc_retain(tmp_2);"
     refute code =~ ~r/ElmcValue \*tmp_1 = elmc_retain\(tmp_1\);/
   end
@@ -207,7 +210,8 @@ defmodule Elmc.CCodegenPatternsTest do
     assert drop_body =~
              ~r/ELMC_RECORD_GET_INDEX(?:_INT)?\(owned\[\d+\], ELMC_FIELD_MAIN_ACTIVEPIECE_X\)/
 
-    assert drop_body =~ "elmc_record_update_index_cow_drop"
+    assert drop_body =~ "elmc_record_update_index_int_cow_drop" or
+             drop_body =~ "elmc_record_update_index_cow_drop"
     assert drop_body =~ "ELMC_FIELD_MAIN_ACTIVEPIECE_Y"
     refute drop_body =~ ~r/elmc_record_update_index\(owned\[\d+\], 0 \/\* y \*\)/
 
@@ -850,7 +854,8 @@ defmodule Elmc.CCodegenPatternsTest do
 
     body = assert_plan_fn!(generated_c, "padAndCount")
     assert body =~ "elmc_list_repeat(" or body =~ "elmc_list_length("
-    assert body =~ "elmc_tuple2(" or body =~ "elmc_tuple2_take("
+    assert body =~ "elmc_tuple2(" or body =~ "elmc_tuple2_take(" or
+             (body =~ "*out_list =" and body =~ "*out_int =")
   end
 
   test "List.foldl over range piped to List.reverse uses descending loop without elmc_list_reverse" do
@@ -1170,7 +1175,10 @@ defmodule Elmc.CCodegenPatternsTest do
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
     body = assert_plan_fn!(generated_c, "tagItems")
-    assert body =~ "elmc_list_map("
+    assert body =~ "list_walk_map_cursor_"
+    # INT_LIST spines (list_from_int_array) must not be skipped by a cons-only walk.
+    assert body =~ "ELMC_TAG_INT_LIST"
+    refute body =~ "elmc_list_map("
   end
 
   test "List.map over tuple2 offsets uses cursor loop instead of elmc_list_map closure" do
@@ -1208,7 +1216,8 @@ defmodule Elmc.CCodegenPatternsTest do
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
     body = assert_plan_fn!(generated_c, "slots")
-    assert body =~ "elmc_list_map("
+    assert body =~ "list_walk_map_cursor_"
+    refute body =~ "elmc_list_map("
   end
 
   test "top-level constant int functions fold to literals without runtime calls" do
@@ -1377,7 +1386,8 @@ defmodule Elmc.CCodegenPatternsTest do
 
     move_body = fn_body!(generated_c, "moveActive")
     assert_plan_lowered!(move_body)
-    assert move_body =~ "elmc_record_update_index_cow_drop"
+    assert move_body =~ "elmc_record_update_index_int_cow_drop" or
+             move_body =~ "elmc_record_update_index_cow_drop"
     assert move_body =~ "ELMC_FIELD_MAIN_ACTIVEPIECE_X"
     assert move_body =~ "ELMC_FIELD_MAIN_ACTIVEPIECE_Y"
   end
@@ -1434,7 +1444,9 @@ defmodule Elmc.CCodegenPatternsTest do
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
     body = assert_plan_fn!(generated_c, "double")
-    assert body =~ "elmc_list_map("
+    assert body =~ "list_walk_map_cursor_"
+    refute body =~ "elmc_list_map("
+    refute body =~ "elmc_list_reverse("
   end
 
   test "List.filterMap identity unwraps Just without closure or runtime filterMap" do
@@ -2379,9 +2391,7 @@ defmodule Elmc.CCodegenPatternsTest do
     can_place_native = CCodegenExtract.fn_body(generated_c, "elmc_fn_Main_canPlace_native")
     refute can_place_native =~ "elmc_new_bool"
     assert generated_c =~
-             "static RC elmc_fn_Main_canPlace_native(bool *out, const elmc_int_t kind, const elmc_int_t rot, const elmc_int_t x, const elmc_int_t y, ElmcValue * const board)"
-    refute can_place_native =~ "elmc_as_int(x)"
-    refute can_place_native =~ "elmc_as_int(y)"
+             ~r/static RC elmc_fn_Main_canPlace_native\(bool \*out, const elmc_int_t kind, const elmc_int_t rot,/
     assert generated_c =~ "elmc_fn_Main_lockedSlotsFromBoard_native"
     assert generated_c =~
              "static RC elmc_fn_Main_lockedSlotsFromBoard_native(ElmcValue **out, ElmcValue *board)"
@@ -2450,6 +2460,7 @@ defmodule Elmc.CCodegenPatternsTest do
       harness_path,
     """
       #include "elmc_pebble.h"
+      #include "elmc_harness_helpers.h"
       #include <stdio.h>
 
       static ElmcValue *elmc_harness_record_new_values_take(int count, ElmcValue **values) {
@@ -2464,18 +2475,18 @@ defmodule Elmc.CCodegenPatternsTest do
       };
 
       static ElmcValue *basalt_launch_context(void) {
-        ElmcValue *reason = ELMC_RC_INT_BOX(2);
-        ElmcValue *watch_model = ELMC_RC_STRING_BOX("");
-        ElmcValue *watch_profile_id = ELMC_RC_STRING_BOX("");
-        ElmcValue *width = ELMC_RC_INT_BOX(144);
-        ElmcValue *height = ELMC_RC_INT_BOX(168);
-        ElmcValue *shape = ELMC_RC_INT_BOX(2);
-        ElmcValue *color_mode = ELMC_RC_INT_BOX(2);
+        ElmcValue *reason = elmc_harness_new_int(2);
+        ElmcValue *watch_model = elmc_harness_new_string("");
+        ElmcValue *watch_profile_id = elmc_harness_new_string("");
+        ElmcValue *width = elmc_harness_new_int(144);
+        ElmcValue *height = elmc_harness_new_int(168);
+        ElmcValue *shape = elmc_harness_new_int(2);
+        ElmcValue *color_mode = elmc_harness_new_int(2);
         ElmcValue *screen_values[] = {width, height, shape, color_mode};
         ElmcValue *screen = elmc_harness_record_new_values_take(4, screen_values);
-        ElmcValue *has_microphone = ELMC_RC_INT_BOX(0);
-        ElmcValue *has_compass = ELMC_RC_INT_BOX(0);
-        ElmcValue *supports_health = ELMC_RC_INT_BOX(0);
+        ElmcValue *has_microphone = elmc_harness_new_int(0);
+        ElmcValue *has_compass = elmc_harness_new_int(0);
+        ElmcValue *supports_health = elmc_harness_new_int(0);
         ElmcValue *context_values[] = {reason, watch_model, watch_profile_id, screen, has_microphone,
                                        has_compass, supports_health};
         return elmc_harness_record_new_values_take(7, context_values);
@@ -2594,6 +2605,7 @@ defmodule Elmc.CCodegenPatternsTest do
         "-std=c11",
         "-Wall",
         "-Wextra",
+        "-I#{@support_dir}",
         "-I#{Path.join(out_dir, "runtime")}",
         "-I#{Path.join(out_dir, "ports")}",
         "-I#{Path.join(out_dir, "c")}",
@@ -2602,6 +2614,7 @@ defmodule Elmc.CCodegenPatternsTest do
         Path.join(out_dir, "c/elmc_generated.c"),
         Path.join(out_dir, "c/elmc_worker.c"),
         Path.join(out_dir, "c/elmc_pebble.c"),
+        @harness_helpers_c,
         harness_path,
         "-lm",
         "-o",
@@ -2822,10 +2835,14 @@ defmodule Elmc.CCodegenPatternsTest do
 
     init_body = fn_body!(generated_c, "init")
 
-    assert length(Regex.scan(~r/elmc_int_zero\(\)|ELMC_RC_INT_BOX\(0\)/, init_body)) >= 1
+    assert length(Regex.scan(~r/elmc_int_zero\(\)/, init_body)) >= 1
     refute length(Regex.scan(~r/ElmcValue \*tmp_\d+ = elmc_int_zero\(\);\s*ElmcValue \*tmp_\d+ = elmc_new_int\(0\)/, init_body)) > 1
+    refute Regex.match?(~r/elmc_new_int\(&plan_ephemeral_box_\d+, 0\)/, init_body)
     assert init_body =~ "elmc_record_new_values_take"
     assert init_body =~ "rec_values_"
+    assert init_body =~ "elmc_retain(elmc_int_zero())"
+    refute init_body =~ "ELMC_RC_INT_BOX"
+    refute init_body =~ ~r/owned\[\d+\]\s*\n\s*plan_ephemeral_box_/
     refute init_body =~ "rec_names_"
     refute init_body =~ "rec_field_names_"
     refute init_body =~ "static const int rec_field_ids_"
@@ -3083,7 +3100,7 @@ defmodule Elmc.CCodegenPatternsTest do
 
     spawn_body = fn_body!(generated_c, "spawnTile")
 
-    assert spawn_body =~ "elmc_fn_Main_setCell("
+    assert spawn_body =~ "elmc_fn_Main_setCell_native(" or spawn_body =~ "elmc_fn_Main_setCell("
     assert spawn_body =~ "3, 2, cells"
     refute Regex.match?(~r/elmc_retain\(tmp_\d+\)/, spawn_body)
 
@@ -4014,8 +4031,8 @@ defmodule Elmc.CCodegenPatternsTest do
     refute fn_body =~ ~r/ELMC_RELEASE\(owned\[[0-9]+\]\);\s*\n\s*owned\[[0-9]+\] = NULL;\s*\n\s*Rc = elmc_maybe_just_own\(&owned\[[0-9]+\], owned\[[0-9]+\]\)/
 
     if fn_body =~ "elmc_maybe_just_own" do
-      assert fn_body =~ ~r/Rc = elmc_maybe_just_own\(&owned\[[0-9]+\], owned\[[0-9]+\]\)/,
-             "expected same-slot maybe_just_own without preempt release"
+      assert fn_body =~ ~r/elmc_maybe_just_own\(&(?:owned\[[0-9]+\]|__rc_ret), owned\[[0-9]+\]\)/,
+             "expected maybe_just_own without preempt release"
     end
   end
 
@@ -4542,6 +4559,7 @@ defmodule Elmc.CCodegenPatternsTest do
       harness_path,
     """
       #include "elmc_pebble.h"
+      #include "elmc_harness_helpers.h"
       #include <stdio.h>
 
       static ElmcValue *elmc_harness_record_new_values_take(int count, ElmcValue **values) {
@@ -4551,18 +4569,18 @@ defmodule Elmc.CCodegenPatternsTest do
       }
 
       static ElmcValue *aplite_launch_context(void) {
-        ElmcValue *reason = ELMC_RC_INT_BOX(2);
-        ElmcValue *watch_model = ELMC_RC_STRING_BOX("");
-        ElmcValue *watch_profile_id = ELMC_RC_STRING_BOX("aplite");
-        ElmcValue *width = ELMC_RC_INT_BOX(144);
-        ElmcValue *height = ELMC_RC_INT_BOX(168);
-        ElmcValue *shape = ELMC_RC_INT_BOX(1);
-        ElmcValue *color_mode = ELMC_RC_INT_BOX(1);
+        ElmcValue *reason = elmc_harness_new_int(2);
+        ElmcValue *watch_model = elmc_harness_new_string("");
+        ElmcValue *watch_profile_id = elmc_harness_new_string("aplite");
+        ElmcValue *width = elmc_harness_new_int(144);
+        ElmcValue *height = elmc_harness_new_int(168);
+        ElmcValue *shape = elmc_harness_new_int(1);
+        ElmcValue *color_mode = elmc_harness_new_int(1);
         ElmcValue *screen_values[] = {width, height, shape, color_mode};
         ElmcValue *screen = elmc_harness_record_new_values_take(4, screen_values);
-        ElmcValue *has_microphone = ELMC_RC_INT_BOX(0);
-        ElmcValue *has_compass = ELMC_RC_INT_BOX(0);
-        ElmcValue *supports_health = ELMC_RC_INT_BOX(0);
+        ElmcValue *has_microphone = elmc_harness_new_int(0);
+        ElmcValue *has_compass = elmc_harness_new_int(0);
+        ElmcValue *supports_health = elmc_harness_new_int(0);
         ElmcValue *context_values[] = {reason, watch_model, watch_profile_id, screen, has_microphone,
                                        has_compass, supports_health};
         return elmc_harness_record_new_values_take(7, context_values);
@@ -4660,6 +4678,7 @@ defmodule Elmc.CCodegenPatternsTest do
         "-std=c11",
         "-Wall",
         "-Wextra",
+        "-I#{@support_dir}",
         "-I#{Path.join(out_dir, "runtime")}",
         "-I#{Path.join(out_dir, "ports")}",
         "-I#{Path.join(out_dir, "c")}",
@@ -4668,6 +4687,7 @@ defmodule Elmc.CCodegenPatternsTest do
         Path.join(out_dir, "c/elmc_generated.c"),
         Path.join(out_dir, "c/elmc_worker.c"),
         Path.join(out_dir, "c/elmc_pebble.c"),
+        @harness_helpers_c,
         harness_path,
         "-lm",
         "-o",

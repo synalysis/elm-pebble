@@ -16,6 +16,7 @@ defmodule Elmc.RuntimeOomAbiTest do
     elmc_list_tail
     elmc_list_length
     elmc_list_nth_maybe
+    elmc_list_nth_maybe_int
     elmc_list_nth_int_default_boxed
   )
 

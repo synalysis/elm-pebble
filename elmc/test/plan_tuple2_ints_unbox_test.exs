@@ -108,4 +108,72 @@ defmodule Elmc.PlanTuple2IntsUnboxTest do
     refute c =~ "elmc_tuple_map_first"
     assert c =~ "elmc_tuple2_ints"
   end
+
+  test "case on (msg, model) tuple unbox rewrites ctor-tag subjects" do
+    # Regression: Tuple2IntsUnbox dropped projs of caseSubject but left
+    # test_ctor_tag.subject pointing at phantom regs (tmp_N undeclared in C).
+    decl = %{
+      name: "update",
+      args: ["msg", "model"],
+      type: "Msg -> Model -> Model",
+      expr: %{
+        op: :let_in,
+        name: "caseSubject",
+        value_expr: %{
+          op: :tuple2,
+          left: %{op: :var, name: "msg"},
+          right: %{op: :var, name: "model"}
+        },
+        in_expr: %{
+          op: :case,
+          subject: "caseSubject",
+          branches: [
+            %{
+              pattern: %{
+                kind: :tuple,
+                elements: [
+                  %{
+                    kind: :constructor,
+                    name: "GotItem",
+                    tag: 1,
+                    resolved_name: "GotItem",
+                    arg_pattern: nil
+                  },
+                  %{
+                    kind: :constructor,
+                    name: "Ready",
+                    tag: 1,
+                    resolved_name: "Ready",
+                    arg_pattern: nil
+                  }
+                ]
+              },
+              expr: %{op: :var, name: "model"}
+            },
+            %{
+              pattern: %{kind: :wildcard},
+              expr: %{op: :var, name: "model"}
+            }
+          ]
+        }
+      }
+    }
+
+    assert {:ok, plan} = PlanLower.lower(decl, "Main", %{}, rc_required: true)
+
+    for block <- plan.blocks, instr <- block.instrs, instr.op == :test_ctor_tag do
+      subject = Map.fetch!(instr.args, :subject)
+      defined? =
+        Enum.any?(plan.blocks, fn b ->
+          Enum.any?(b.instrs, fn i -> i.dest == subject end)
+        end)
+
+      assert defined?,
+             "test_ctor_tag subject r#{subject} must resolve after tuple SROA (got #{inspect(instr.args)})"
+    end
+
+    c = CLowerFunction.emit(plan)
+    refute c =~ ~r/\btmp_\d+\b/
+    assert c =~ "elmc_union_tag_matches"
+  end
 end

@@ -55,8 +55,8 @@ defmodule Elmc.Backend.CCodegen.Native.FunctionCall do
             NativeReturn.cached_kind({module_name, name}) != :native_int_pair ->
           :boxed
 
-        return_kind == :native_list_int_pair and
-            NativeReturn.cached_kind({module_name, name}) != :native_list_int_pair ->
+        # IR call path always boxes list/int pairs; plan lower emits dual-out.
+        return_kind == :native_list_int_pair ->
           :boxed
 
         true ->
@@ -170,7 +170,9 @@ defmodule Elmc.Backend.CCodegen.Native.FunctionCall do
           Types.function_declaration(),
           Types.function_decl_map(),
           native_return_kind()
-        ) :: {String.t(), String.t(), Types.compile_counter(), native_return_kind()}
+        ) ::
+          {String.t(), String.t() | {String.t(), String.t()}, Types.compile_counter(),
+           native_return_kind()}
   defp compile_native_result(module_name, name, args, env, counter, decl, decl_map, :native_int_pair) do
     arg_kinds = arg_kinds(decl, module_name, decl_map)
     arg_env = RcRuntimeEmit.strip_function_tail_scope(env)
@@ -772,21 +774,15 @@ defmodule Elmc.Backend.CCodegen.Native.FunctionCall do
 
   @spec int_arg_safe?(
           Types.binding_name(),
-          Types.ir_expr() | nil,
+          Types.ir_expr(),
           String.t(),
           Types.function_decl_map()
         ) :: boolean()
-  defp int_arg_safe?(arg, expr, module_name, decl_map) do
+  defp int_arg_safe?(arg, expr, module_name, decl_map) when is_map(expr) do
     if Process.get(:elmc_skip_int_usage_recursion) do
       not Host.binding_used_in_lambda?(arg, expr)
     else
-      usage =
-        Host.native_int_usage(
-          arg,
-          expr || %{op: :int_literal, value: 0},
-          module_name,
-          decl_map
-        )
+      usage = Host.native_int_usage(arg, expr, module_name, decl_map)
 
       native_only? =
         usage.total == 0 or usage.boxed == 0 or usage.native_container >= usage.boxed

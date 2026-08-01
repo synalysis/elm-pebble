@@ -540,6 +540,8 @@ defmodule Elmc.Backend.CCodegen.GeneratedSource do
 
     FunctionEmit.prelower_plan_native_returns(ir, generic_targets, decl_map)
 
+    FunctionEmit.preregister_rc_native_fusion_kinds(ir, generic_targets, decl_map)
+
     generic_plan_projection_prototypes =
       FunctionEmit.generic_plan_native_projection_prototypes(ir, generic_targets, decl_map)
 

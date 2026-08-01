@@ -918,8 +918,6 @@ defmodule Elmc.Backend.CCodegen.ListIntRepr do
     |> String.starts_with?("(ListInt,")
   end
 
-  defp tuple_pair_first_is_list_int?(_), do: false
-
   defp follow_binding_expr(%{op: :var, name: name}, ctx) when is_binary(name) do
     case Map.get(ctx_locals(ctx), {:binding_expr, name}) do
       nil -> %{op: :var, name: name}

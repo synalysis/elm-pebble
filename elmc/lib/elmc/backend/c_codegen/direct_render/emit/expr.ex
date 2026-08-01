@@ -238,13 +238,11 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Expr do
                 end
 
               true ->
-                {value_code, value_var, counter} = Elmc.Backend.CCodegen.DirectRender.Emit.Operand.compile(value_expr, env, counter)
+                {value_code, value_var, counter} =
+                  Elmc.Backend.CCodegen.DirectRender.Emit.Operand.compile(value_expr, env, counter)
 
-                body_env =
-                  env
-                  |> Map.put(name, value_var)
-                  |> EnvBindings.put_boxed_int_binding(name, Host.native_int_expr?(value_expr, env))
-                  |> EnvBindings.put_record_shape(name, Host.record_shape(value_expr, env))
+                {value_code, _value_var, body_env, release_code, counter} =
+                  direct_render_native_int_let_operand(name, value_expr, value_code, value_var, env, counter)
 
                 case emit_expr(in_expr, body_env, counter) do
                   {:ok, body_code, counter} ->
@@ -252,7 +250,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Expr do
                      """
                      #{value_code}
                        #{body_code}
-                       #{Release.release_var(value_var, "                   ")}
+                       #{release_code}
                      """, counter}
 
                   :error ->
@@ -507,6 +505,57 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Expr do
 
   defp emit_direct_command_native_int_let(_name, _value_expr, _in_expr, _env, _counter),
     do: :error
+
+  @spec direct_render_native_int_let_operand(
+          Types.binding_name(),
+          Types.ir_expr(),
+          String.t(),
+          String.t(),
+          Types.compile_env(),
+          Types.compile_counter()
+        ) :: {String.t(), String.t(), Types.compile_env(), String.t(), Types.compile_counter()}
+
+  defp direct_render_native_int_let_operand(name, value_expr, value_code, value_var, env, counter) do
+    cond do
+      Util.direct_render_native_int_operand?(value_var) and not Util.native_scalar_c_ref?(value_var) ->
+        next = counter + 1
+        native_var = "direct_native_let_#{Util.safe_c_suffix(name)}_#{next}"
+
+        body_env =
+          env
+          |> Map.put(name, native_var)
+          |> EnvBindings.put_native_int_binding(name, native_var)
+          |> EnvBindings.put_boxed_int_binding(name, false)
+          |> EnvBindings.put_record_shape(name, Host.record_shape(value_expr, env))
+
+        {
+          value_code <> "  const elmc_int_t #{native_var} = #{value_var};\n",
+          native_var,
+          body_env,
+          "",
+          next
+        }
+
+      Util.direct_render_native_int_operand?(value_var) ->
+        body_env =
+          env
+          |> Map.put(name, value_var)
+          |> EnvBindings.put_native_int_binding(name, value_var)
+          |> EnvBindings.put_boxed_int_binding(name, false)
+          |> EnvBindings.put_record_shape(name, Host.record_shape(value_expr, env))
+
+        {value_code, value_var, body_env, "", counter}
+
+      true ->
+        body_env =
+          env
+          |> Map.put(name, value_var)
+          |> EnvBindings.put_boxed_int_binding(name, Host.native_int_expr?(value_expr, env))
+          |> EnvBindings.put_record_shape(name, Host.record_shape(value_expr, env))
+
+        {value_code, value_var, body_env, Release.release_var(value_var, "                   "), counter}
+    end
+  end
 
   @spec direct_command_native_int_ref?(String.t()) :: boolean()
 

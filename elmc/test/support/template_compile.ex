@@ -183,13 +183,29 @@ defmodule Elmc.TestSupport.TemplateCompile do
   end
 
   defp ensure_ide_deps(ide_dir) do
-    if File.regular?(Path.join(ide_dir, "deps/phoenix/mix.exs")) do
-      :ok
-    else
-      case System.cmd("mix", ["deps.get"], cd: ide_dir, stderr_to_stdout: true) do
-        {_, 0} -> :ok
-        {output, _} -> {:error, String.slice(output, -2000, 2000)}
-      end
+    ide_app = Path.join(ide_dir, "_build/dev/lib/ide/ebin/ide.app")
+
+    cond do
+      File.regular?(ide_app) ->
+        :ok
+
+      File.regular?(Path.join(ide_dir, "deps/phoenix/mix.exs")) ->
+        compile_ide(ide_dir)
+
+      true ->
+        with {_, 0} <- System.cmd("mix", ["deps.get"], cd: ide_dir, stderr_to_stdout: true),
+             :ok <- compile_ide(ide_dir) do
+          :ok
+        else
+          {output, _} -> {:error, String.slice(output, -2000, 2000)}
+        end
+    end
+  end
+
+  defp compile_ide(ide_dir) do
+    case System.cmd("mix", ["compile", "--no-start"], cd: ide_dir, stderr_to_stdout: true) do
+      {_, 0} -> :ok
+      {output, _} -> {:error, String.slice(output, -2000, 2000)}
     end
   end
 

@@ -103,7 +103,11 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Values do
   def int_value(%{op: :var, name: name} = expr, env, counter) do
     cond do
       is_binary(EnvBindings.native_int_binding(env, name)) ->
-        {"", EnvBindings.native_int_binding(env, name), counter}
+        ref =
+          EnvBindings.native_int_binding(env, name)
+          |> peel_boxed_scene_argv_int_ref()
+
+        {"", ref, counter}
 
       true ->
         case Map.fetch(env, name) do
@@ -111,7 +115,19 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Values do
             int_value(fragment, env, counter)
 
           {:ok, source} when is_binary(source) ->
-            {"", "elmc_as_int(#{source})", counter}
+            ref =
+              cond do
+                boxed_scene_argv_param_ref?(source) ->
+                  "elmc_as_int_number(#{source})"
+
+                Util.direct_render_native_int_operand?(source) ->
+                  source
+
+                true ->
+                  "elmc_as_int(#{source})"
+              end
+
+            {"", ref, counter}
 
           _ ->
             case Elmc.Backend.CCodegen.ConstantInt.native_ref(expr, env) do
@@ -565,6 +581,10 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Values do
 
       :error ->
         cond do
+          match?({:ok, _}, literal_native_int_ref(expr, env)) ->
+            {:ok, ref} = literal_native_int_ref(expr, env)
+            {"", ref, counter}
+
           Host.native_int_expr?(expr, env) ->
             Host.compile_native_int_expr(expr, env, counter)
 
@@ -572,22 +592,85 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Values do
             Host.compile_native_int_fallback(expr, env, counter)
 
           true ->
-            {expr_code, expr_var, counter} = Elmc.Backend.CCodegen.DirectRender.Emit.Operand.compile(expr, env, counter)
-            next = counter + 1
-            int_var = "direct_i_#{next}"
+            {expr_code, expr_var, counter} =
+              Elmc.Backend.CCodegen.DirectRender.Emit.Operand.compile(expr, env, counter)
 
-            {
-              """
-              #{expr_code}
-                int64_t #{int_var} = elmc_as_int_number(#{expr_var});
-                #{Release.release_var(expr_var, "                ")}
-              """,
-              int_var,
-              next
-            }
+            if Util.direct_render_native_int_operand?(expr_var) do
+              {expr_code, expr_var, counter}
+            else
+              next = counter + 1
+              int_var = "direct_i_#{next}"
+
+              {
+                """
+                #{expr_code}
+                  int64_t #{int_var} = elmc_as_int_number(#{expr_var});
+                  #{Release.release_var(expr_var, "                ")}
+                """,
+                int_var,
+                next
+              }
+            end
         end
     end
   end
+
+  @spec literal_native_int_ref(Types.ir_expr(), Types.compile_env()) ::
+          {:ok, String.t()} | :error
+
+  defp literal_native_int_ref(%{op: :int_literal} = expr, _env),
+    do: {:ok, "#{Host.int_literal_compile_value(expr)}"}
+
+  defp literal_native_int_ref(%{op: :char_literal, value: value}, _env), do: {:ok, "#{value}"}
+
+  defp literal_native_int_ref(%{op: :c_int_expr, value: value}, _env) when is_binary(value),
+    do: {:ok, value}
+
+  defp literal_native_int_ref(%{op: :qualified_call, target: target, args: args}, _env) do
+    cond do
+      Host.resource_union_constructor?(target, args) ->
+        {:ok, "#{Host.pebble_resource_slot_index(target)}"}
+
+      true ->
+        case Host.special_value_from_target(target, args) do
+          %{op: :int_literal, value: value} -> {:ok, "#{value}"}
+          %{op: :c_int_expr, value: value} when is_binary(value) -> {:ok, value}
+          _ -> :error
+        end
+    end
+  end
+
+  defp literal_native_int_ref(%{op: :qualified_ref, target: target}, _env) when is_binary(target) do
+    cond do
+      Host.resource_union_constructor?(target, []) ->
+        {:ok, "#{Host.pebble_resource_slot_index(target)}"}
+
+      true ->
+        case Host.special_value_from_target(target, []) do
+          %{op: :int_literal, value: value} -> {:ok, "#{value}"}
+          %{op: :c_int_expr, value: value} when is_binary(value) -> {:ok, value}
+          _ -> :error
+        end
+    end
+  end
+
+  defp literal_native_int_ref(%{op: :qualified_var, target: target}, _env) when is_binary(target) do
+    if Host.resource_union_constructor?(target, []) do
+      {:ok, "#{Host.pebble_resource_slot_index(target)}"}
+    else
+      :error
+    end
+  end
+
+  defp literal_native_int_ref(%{op: :constructor_ref, target: target}, _env) when is_binary(target) do
+    if Host.resource_union_constructor?(target, []) do
+      {:ok, "#{Host.pebble_resource_slot_index(target)}"}
+    else
+      :error
+    end
+  end
+
+  defp literal_native_int_ref(_, _), do: :error
 
   @spec zero_arg_native_int_call?(Types.ir_expr(), Types.compile_env()) :: boolean()
   defp zero_arg_native_int_call?(%{op: :call, name: name, args: []}, env) when is_binary(name) do
@@ -621,5 +704,22 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Values do
       _ ->
         false
     end
+  end
+
+  @spec peel_boxed_scene_argv_int_ref(String.t()) :: String.t()
+
+  defp peel_boxed_scene_argv_int_ref(ref) when is_binary(ref) do
+    if boxed_scene_argv_param_ref?(ref) do
+      "elmc_as_int_number(#{ref})"
+    else
+      ref
+    end
+  end
+
+  @spec boxed_scene_argv_param_ref?(String.t()) :: boolean()
+
+  defp boxed_scene_argv_param_ref?(ref) when is_binary(ref) do
+    Process.get(:elmc_direct_scene_boxed_argv) == true and
+      MapSet.member?(Process.get(:elmc_direct_borrow_refs, MapSet.new()), ref)
   end
 end

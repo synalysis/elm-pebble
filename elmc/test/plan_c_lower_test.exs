@@ -129,10 +129,50 @@ defmodule Elmc.PlanCLowerTest do
 
     c = CLowerFunction.emit(plan)
     assert c =~ "elmc_retain(model)"
-    assert c =~ "Rc = elmc_record_update_index_cow_drop("
+    assert c =~ "Rc = elmc_record_update_index_int_cow_drop("
+    refute c =~ "elmc_record_update_index_cow_drop("
     assert c =~ "owned[1] = NULL;"
     refute c =~ ~r/elmc_release\(owned\[\d+\]\)/
     refute c =~ ~r/owned\[1\] = NULL;\s*elmc_release\(owned\[1\]\);\s*owned\[1\] = NULL;\s*Rc = elmc_cmd0\(&owned\[1\]/
+  end
+
+  test "maybe_with_default_int into Int record field stays native" do
+    Process.put(:elmc_record_field_types, %{"Model" => %{"best" => "Int"}})
+
+    on_exit(fn -> Process.delete(:elmc_record_field_types) end)
+
+    decl = %{
+      name: "loadBest",
+      args: ["model", "parsed"],
+      type: "Model -> Maybe Int -> Model",
+      ownership: [:borrow_arg, :retain_result],
+      expr: %{
+        op: :record_update,
+        base: %{op: :var, name: "model"},
+        fields: [
+          %{
+            field: "best",
+            expr: %{
+              op: :qualified_call,
+              target: "Maybe.withDefault",
+              args: [
+                %{op: :int_literal, value: 0},
+                %{op: :var, name: "parsed"}
+              ]
+            }
+          }
+        ]
+      }
+    }
+
+    assert {:ok, plan} =
+             Elmc.Backend.Plan.Lower.Function.lower(decl, "Main", %{}, rc_required: true)
+
+    c = CLowerFunction.emit(plan)
+    assert c =~ "elmc_maybe_with_default_int(0"
+    assert c =~ "elmc_record_update_index_int_cow_drop"
+    refute c =~ ~r/elmc_new_int\(&owned\[\d+\], elmc_maybe_with_default_int/
+    refute c =~ "elmc_record_update_index_cow_drop("
   end
 
   test "inlined native const ints do not emit invalid C bindings" do
@@ -545,7 +585,7 @@ defmodule Elmc.PlanCLowerTest do
     Process.put(:elmc_program_decls, decl_map)
     c = CLowerFunction.emit(plan)
     assert c =~ "elmc_basics_mod_by("
-    assert c =~ "elmc_small_int(index)" or c =~ "ELMC_RC_INT_BOX(index)" or
+    assert c =~ "elmc_small_int(index)" or c =~ "elmc_harness_new_int(index)" or
              c =~ ~r/elmc_new_int\(&owned\[\d+\], index\)/
     refute c =~ "(void)index;"
   end

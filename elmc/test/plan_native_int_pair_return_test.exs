@@ -119,7 +119,7 @@ defmodule Elmc.PlanNativeIntPairReturnTest do
     refute c =~ "elmc_tuple_first"
     assert c =~ "plan_native_pair_1_0 + 1" or c =~ "plan_native_pair_1_0+1"
     # Native Int param — caller must not box `n` for the dual-out callee.
-    refute c =~ "ELMC_RC_INT_BOX(n)"
+    refute c =~ "elmc_harness_new_int(n)"
   end
 
   test "caller of native_int_pair packs with elmc_tuple2_ints when pair escapes" do

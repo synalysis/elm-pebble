@@ -8,8 +8,9 @@ defmodule Elmc.Backend.Plan.Tuple2IntsUnbox do
   # - `:native_int_pair` `call_fn` results when projections are native-int-only
   #   (call-site SROA: keep dual `elmc_int_t` outs, skip `elmc_tuple2_ints`)
   # - `:native_list_int_pair` `call_fn` results when every projection is only
-  #   passed into later `call_fn` args or used as a native int (not record
-  #   fields / other boxed sinks). List stays in the call dest owned slot.
+  #   passed into later `call_fn` args, used as a native int, or written into a
+  #   `record_update` value (list → boxed COW, Int → `*_int_cow_drop`). List
+  #   stays in the call dest owned slot.
   # Box at escape remains via other uses of the pair reg (return, call args, …).
   # Passthrough dual-out (caller also `:native_list_int_pair`) skips the pack.
 
@@ -18,6 +19,10 @@ defmodule Elmc.Backend.Plan.Tuple2IntsUnbox do
   alias Elmc.Backend.CCodegen.Native.Int, as: NativeInt
   alias Elmc.Backend.Plan.RuntimeBuiltins
   alias Elmc.Backend.Plan.Types.{Block, FunctionPlan}
+
+  # Integer arg fields rewritten when SROA aliases a dropped projection.
+  # Do not include `:value` — const_int/string literals use that key.
+  @subst_arg_reg_keys [:subject, :reg, :source, :base, :left, :right, :lhs, :rhs, :cond]
 
   @type rewrite :: %{
           pair: non_neg_integer(),
@@ -34,10 +39,12 @@ defmodule Elmc.Backend.Plan.Tuple2IntsUnbox do
 
     heap_rewrites = heap_pair_rewrites(instrs, terms)
 
-    {call_rewrites, native_pair_out, native_list_int_pair_out, _} =
+    {call_rewrites, native_pair_out, native_list_int_pair_out, next_reg} =
       native_pair_call_rewrites(instrs, terms, max_reg + 1)
 
-    rewrites = heap_rewrites ++ call_rewrites
+    rewrites =
+      (heap_rewrites ++ call_rewrites)
+      |> expand_retain_aliases(instrs)
 
     case rewrites do
       [] ->
@@ -58,7 +65,11 @@ defmodule Elmc.Backend.Plan.Tuple2IntsUnbox do
           |> Enum.map(&annotate_native_pair_calls(&1, native_pair_out))
           |> Enum.map(&annotate_native_list_int_pair_calls(&1, native_list_int_pair_out))
 
-        %{plan | blocks: blocks}
+        # Dual-out int regs are only referenced via annotations / alias maps —
+        # they never appear as instr dests. Bump reg_count so later passes
+        # (CommonConstCallArms uses `plan.reg_count` for shared tags) do not
+        # reuse those phantom registers.
+        %{plan | blocks: blocks, reg_count: max(plan.reg_count, next_reg)}
     end
   end
 
@@ -124,26 +135,22 @@ defmodule Elmc.Backend.Plan.Tuple2IntsUnbox do
             native_list_int_pair_callee?(mod, name) ->
               case pair_use_shape(pair, pair, nil, :list_int_pair_call, instrs, terms) do
                 {:unbox, proj_aliases} ->
-                  if sroa_proj_aliases_safe?(proj_aliases, instrs) do
-                    int_reg = next
+                  int_reg = next
 
-                    new_rewrites =
-                      Enum.map(proj_aliases, fn {proj, which} ->
-                        src =
-                          case which do
-                            :first -> pair
-                            :second -> int_reg
-                            other when is_integer(other) -> other
-                          end
+                  new_rewrites =
+                    Enum.map(proj_aliases, fn {proj, which} ->
+                      src =
+                        case which do
+                          :first -> pair
+                          :second -> int_reg
+                          other when is_integer(other) -> other
+                        end
 
-                        %{pair: pair, proj: proj, src: src, drop_pair?: false}
-                      end)
+                      %{pair: pair, proj: proj, src: src, drop_pair?: false}
+                    end)
 
-                    {rewrites ++ new_rewrites, int_out, Map.put(list_int_out, pair, int_reg),
-                     int_reg + 1}
-                  else
-                    {rewrites, int_out, list_int_out, next}
-                  end
+                  {rewrites ++ new_rewrites, int_out, Map.put(list_int_out, pair, int_reg),
+                   int_reg + 1}
 
                 :keep ->
                   {rewrites, int_out, list_int_out, next}
@@ -160,7 +167,24 @@ defmodule Elmc.Backend.Plan.Tuple2IntsUnbox do
   end
 
   defp native_list_int_pair_callee?(mod, name) when is_binary(mod) and is_binary(name) do
-    NativeReturn.cached_kind({mod, name}) == :native_list_int_pair
+    case NativeReturn.cached_kind({mod, name}) do
+      :native_list_int_pair ->
+        true
+
+      _ ->
+        # Callers may be optimized before the callee is annotated into the cache
+        # (declaration order). Fall back to the declared return type, same as
+        # `:native_int_pair` callees.
+        decl_map = Process.get(:elmc_program_decls, %{})
+
+        case Map.get(decl_map, {mod, name}) do
+          %{type: type} when is_binary(type) ->
+            NativeInt.list_int_tuple2_type?(Host.function_return_type(type))
+
+          _ ->
+            false
+        end
+    end
   end
 
   @spec native_int_pair_callee?(String.t(), String.t()) :: boolean()
@@ -174,10 +198,7 @@ defmodule Elmc.Backend.Plan.Tuple2IntsUnbox do
 
         case Map.get(decl_map, {mod, name}) do
           %{type: type} when is_binary(type) ->
-            case Host.function_return_type(type) do
-              ret when is_binary(ret) -> NativeInt.int_tuple2_type?(ret)
-              _ -> false
-            end
+            NativeInt.int_tuple2_type?(Host.function_return_type(type))
 
           _ ->
             false
@@ -234,29 +255,98 @@ defmodule Elmc.Backend.Plan.Tuple2IntsUnbox do
   defp proj_dest_ok?(dest, :tuple2, instrs, terms),
     do: borrow_only_proj_dest?(dest, instrs, terms) or native_only_proj_dest?(dest, instrs, terms)
 
-  # Strict: only later `call_fn` args or native-int ops — never record fields.
+  # Later `call_fn` args, native-int ops, or `record_update` values (Int fields
+  # lower via `elmc_record_update_index_int_cow_drop`; list fields stay boxed).
   defp proj_dest_ok?(dest, :list_int_pair_call, instrs, terms),
-    do: native_only_proj_dest?(dest, instrs, terms) or call_fn_arg_only_proj_dest?(dest, instrs, terms)
+    do:
+      native_only_proj_dest?(dest, instrs, terms) or
+        call_fn_or_record_update_proj_dest?(dest, instrs, terms)
 
-  defp call_fn_arg_only_proj_dest?(dest, instrs, terms) do
+  defp call_fn_or_record_update_proj_dest?(dest, instrs, terms) do
     not Enum.any?(terms, &terminator_uses_reg?(&1, dest)) and
-      (instrs
-       |> Enum.filter(&instr_references_reg?(&1, dest))
-       |> Enum.reject(fn
-         %{dest: d} when d == dest -> true
-         %{op: :release, args: %{reg: r}} when r == dest -> true
-         _ -> false
-       end)
-       |> case do
-         [] ->
-           false
+      list_int_pair_sink_ok?(dest, instrs, MapSet.new())
+  end
 
-         uses ->
-           Enum.all?(uses, fn
-             %{op: :call_fn, args: %{args: args}} when is_list(args) -> dest in args
-             other -> native_int_operand_use?(other, dest)
-           end)
-       end)
+  # Pattern `let (a, b) = pair` names the projections; field updates then
+  # `retain` those locals before `record_update`. Follow retain chains.
+  defp list_int_pair_sink_ok?(dest, instrs, visited) when is_integer(dest) do
+    if MapSet.member?(visited, dest) do
+      false
+    else
+      visited = MapSet.put(visited, dest)
+
+      uses =
+        instrs
+        |> Enum.filter(&instr_references_reg?(&1, dest))
+        |> Enum.reject(fn
+          %{dest: d} when d == dest -> true
+          %{op: :release, args: %{reg: r}} when r == dest -> true
+          _ -> false
+        end)
+
+      case uses do
+        [] ->
+          false
+
+        uses ->
+          Enum.all?(uses, fn
+            %{op: :record_update, args: %{value: ^dest}} ->
+              true
+
+            %{op: :call_fn, args: %{args: args}} when is_list(args) ->
+              dest in args
+
+            %{op: :call_runtime, dest: retained, args: %{builtin: :retain, args: [^dest]}}
+            when is_integer(retained) ->
+              list_int_pair_sink_ok?(retained, instrs, visited)
+
+            other ->
+              native_int_operand_use?(other, dest)
+          end)
+      end
+    end
+  end
+
+  defp list_int_pair_sink_ok?(_, _, _), do: false
+
+  # When a dropped projection is retained into a fresh local (named let bind),
+  # alias that local onto the same SROA source so `record_update` sees it.
+  defp expand_retain_aliases([], _instrs), do: []
+
+  defp expand_retain_aliases(rewrites, instrs) do
+    alias_map = Map.new(rewrites, &{&1.proj, &1.src})
+    pair_by_proj = Map.new(rewrites, &{&1.proj, &1.pair})
+
+    {expanded, _, _} =
+      Enum.reduce(instrs, {rewrites, alias_map, pair_by_proj}, fn
+        %{op: :call_runtime, dest: retained, args: %{builtin: :retain, args: [src]}},
+        {acc, map, pairs}
+        when is_integer(retained) and is_integer(src) ->
+          case Map.get(map, src) do
+            ultimate when is_integer(ultimate) ->
+              if Map.has_key?(map, retained) do
+                {acc, map, pairs}
+              else
+                pair = Map.get(pairs, src)
+
+                if is_integer(pair) do
+                  rw = %{pair: pair, proj: retained, src: ultimate, drop_pair?: false}
+
+                  {[rw | acc], Map.put(map, retained, ultimate), Map.put(pairs, retained, pair)}
+                else
+                  {acc, map, pairs}
+                end
+              end
+
+            _ ->
+              {acc, map, pairs}
+          end
+
+        _, acc ->
+          acc
+      end)
+
+    expanded
   end
 
   defp native_only_proj_dest?(dest, instrs, terms) do
@@ -441,6 +531,20 @@ defmodule Elmc.Backend.Plan.Tuple2IntsUnbox do
     subst_effects(%{instr | args: %{args | source: map_reg(alias_map, source)}}, alias_map)
   end
 
+  # Pattern tests / bool ops store subjects in args (not only effects.borrows).
+  # After SROA drops tuple_proj, rewrite those fields or C emit sees phantom tmp_N.
+  defp subst_instr(%{args: args} = instr, alias_map) when is_map(args) do
+    mapped =
+      Enum.reduce(@subst_arg_reg_keys, args, fn key, acc ->
+        case Map.fetch(acc, key) do
+          {:ok, reg} when is_integer(reg) -> Map.put(acc, key, map_reg(alias_map, reg))
+          _ -> acc
+        end
+      end)
+
+    subst_effects(%{instr | args: mapped}, alias_map)
+  end
+
   defp subst_instr(instr, alias_map), do: subst_effects(instr, alias_map)
 
   defp subst_effects(%{effects: effects} = instr, alias_map) when is_map(effects) do
@@ -507,18 +611,6 @@ defmodule Elmc.Backend.Plan.Tuple2IntsUnbox do
   end
 
   defp operand_regs(_), do: []
-
-  defp sroa_proj_aliases_safe?(proj_aliases, instrs) do
-    # After dropping projs, every aliased proj reg must not still appear as a
-    # record_update/call_runtime value that we failed to classify as a use.
-    drop = MapSet.new(proj_aliases, fn {proj, _} -> proj end)
-
-    not Enum.any?(instrs, fn
-      %{op: :record_update, args: %{value: v}} -> MapSet.member?(drop, v)
-      %{op: :record_update, args: %{base: b}} -> MapSet.member?(drop, b)
-      _ -> false
-    end)
-  end
 
   defp max_reg_index(blocks) do
     blocks

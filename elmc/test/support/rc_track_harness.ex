@@ -4,6 +4,14 @@ defmodule Elmc.Test.RcTrackHarness do
   import ExUnit.Assertions, only: [assert: 2, flunk: 1]
 
   @runtime_link_stub Path.join(__DIR__, "elmc_runtime_link_stubs.c")
+  @harness_helpers_c Path.join(__DIR__, "elmc_harness_helpers.c")
+  @support_dir __DIR__
+
+  @spec harness_helpers_source() :: String.t()
+  def harness_helpers_source, do: @harness_helpers_c
+
+  @spec harness_helpers_include() :: String.t()
+  def harness_helpers_include, do: ~s(#include "elmc_harness_helpers.h"\n)
 
   @spec runtime_link_stub() :: String.t()
   def runtime_link_stub, do: @runtime_link_stub
@@ -59,7 +67,8 @@ defmodule Elmc.Test.RcTrackHarness do
       "-Wextra"
     ] ++ rc_track_flag ++ alloc_track_flag ++ alloc_probe_flag ++ [
       "-include",
-      Path.expand("elmc_host_stubs.h", __DIR__),
+      Path.join(@support_dir, "elmc_host_stubs.h"),
+      "-I#{@support_dir}",
       "-I#{Path.join(out_dir, "runtime")}",
       "-I#{Path.join(out_dir, "ports")}",
       "-I#{Path.join(out_dir, "c")}"
@@ -71,7 +80,43 @@ defmodule Elmc.Test.RcTrackHarness do
 
   @spec compile_and_link_args(String.t(), [String.t()], String.t(), keyword()) :: [String.t()]
   defp compile_and_link_args(out_dir, sources, binary_path, opts) do
-    cc_flags(out_dir, opts) ++ with_runtime_link_stub(sources) ++ link_flags(opts) ++ ["-o", binary_path]
+    cc_flags(out_dir, opts) ++ with_harness_helpers_c(sources) ++ link_flags(opts) ++ ["-o", binary_path]
+  end
+
+  @spec with_harness_helpers_c([String.t()]) :: [String.t()]
+  def with_harness_helpers_c(sources) do
+    sources = with_runtime_link_stub(sources)
+
+    if Enum.any?(sources, &harness_needs_rc_helpers?/1) do
+      sources ++ [@harness_helpers_c]
+    else
+      sources
+    end
+  end
+
+  defp harness_needs_rc_helpers?(path) do
+    cond do
+      not String.ends_with?(path, ".c") ->
+        false
+
+      String.contains?(path, "harness") ->
+        case File.read(path) do
+          {:ok, source} ->
+            String.contains?(source, "elmc_harness_new") or
+              String.contains?(source, "elmc_harness_tuple2") or
+              String.contains?(source, "elmc_harness_list_") or
+              String.contains?(source, "elmc_harness_result_") or
+              String.contains?(source, "elmc_harness_maybe_") or
+              String.contains?(source, "elmc_harness_closure_") or
+              String.contains?(source, "elmc_harness_record_")
+
+          _ ->
+            false
+        end
+
+      true ->
+        false
+    end
   end
 
   @spec with_runtime_link_stub([String.t()]) :: [String.t()]
@@ -261,9 +306,17 @@ defmodule Elmc.Test.RcTrackHarness do
   @spec harness_rc_helpers() :: String.t()
   def harness_rc_helpers do
     """
+    #pragma GCC diagnostic push
+    #pragma GCC diagnostic ignored "-Wunused-function"
     static ElmcValue *elmc_harness_new_int(elmc_int_t value) {
       ElmcValue *out = NULL;
       if (elmc_new_int(&out, value) != RC_SUCCESS) return NULL;
+      return out;
+    }
+
+    static ElmcValue *elmc_harness_new_bool(int value) {
+      ElmcValue *out = NULL;
+      if (elmc_new_bool(&out, value) != RC_SUCCESS) return NULL;
       return out;
     }
 
@@ -354,6 +407,7 @@ defmodule Elmc.Test.RcTrackHarness do
       if (elmc_record_update_index(&out, record, index, value) != RC_SUCCESS) return NULL;
       return out;
     }
+    #pragma GCC diagnostic pop
     """
   end
 

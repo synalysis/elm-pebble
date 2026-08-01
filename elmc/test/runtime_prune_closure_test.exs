@@ -15,13 +15,13 @@ defmodule Elmc.RuntimePruneClosureTest do
   import Pebble.Ui as Ui
   import Pebble.Ui.Color as Color
 
-  bump : Int -> Int
-  bump n =
-      n + 1
+  makeBump : Int -> (Int -> Int)
+  makeBump offset =
+      \\n -> n + offset
 
   values : List Int
   values =
-      List.map bump [ 0, 1, 2, 3 ]
+      List.map (makeBump 1) [ 0, 1, 2, 3 ]
 
   init _ =
       ( { count = List.length values }

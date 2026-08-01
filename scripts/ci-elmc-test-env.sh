@@ -15,3 +15,12 @@ ELMC_TEST_IR_CACHE_DIR="${ELMC_TEST_IR_CACHE_DIR:-${ELMC_TEST_COMPILE_CACHE_DIR}
 set +a
 
 mkdir -p "${ELMC_TEST_COMPILE_CACHE_DIR}" "${ELMC_TEST_IR_CACHE_DIR}"
+
+# Wasm browser probes import linkedom from elmc/test/support/node_modules.
+_elmc_probe_npm_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/elmc/test/support"
+if command -v npm >/dev/null 2>&1 && [ -f "${_elmc_probe_npm_dir}/package.json" ]; then
+  if [ ! -d "${_elmc_probe_npm_dir}/node_modules/linkedom" ]; then
+    (cd "${_elmc_probe_npm_dir}" && npm install --omit=dev --no-audit --no-fund)
+  fi
+fi
+unset _elmc_probe_npm_dir

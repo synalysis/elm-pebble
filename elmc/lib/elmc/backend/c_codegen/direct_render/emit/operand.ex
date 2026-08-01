@@ -9,6 +9,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Operand do
   alias Elmc.Backend.CCodegen.Types, as: Types
 
   alias Elmc.Backend.CCodegen.DirectRender.Emit.ExprDispatch
+  alias Elmc.Backend.CCodegen.EnvBindings
   alias Elmc.Backend.CCodegen.ValueSlots
 
   @take_call ~r/\b(elmc_(?:tuple2|list_cons|list_from_values|record_new(?:_static|_values)?|cmd_batch))(?:_take)?\s*\([^;]*\b([A-Za-z_][A-Za-z0-9_]*)\b/
@@ -20,6 +21,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Operand do
       env
       |> Map.put_new(:__direct_render_emit__, true)
       |> Map.put(:__operand_take_marking__, true)
+      |> EnvBindings.with_native_scalar_context()
 
     {code, var, next} = ExprDispatch.compile(expr, env, counter)
     {code, var, next} = maybe_mark_take_transfers(code, var, next)

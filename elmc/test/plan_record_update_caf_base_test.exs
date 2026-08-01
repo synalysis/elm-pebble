@@ -63,7 +63,8 @@ defmodule Elmc.PlanRecordUpdateCafBaseTest do
     generated = File.read!(Path.join(out, "c/elmc_generated.c"))
     updated = CCodegenExtract.fn_body(generated, "elmc_fn_Main_updated")
 
-    assert updated =~ "elmc_record_update_index_cow_drop"
+    assert updated =~ "elmc_record_update_index_int_cow_drop" or
+             updated =~ "elmc_record_update_index_cow_drop"
     refute updated =~ ~r/return __rc_call_0;\s*\}\s*\z/
   end
 end

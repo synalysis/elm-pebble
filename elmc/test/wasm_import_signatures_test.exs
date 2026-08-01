@@ -1,6 +1,7 @@
 defmodule Elmc.WasmImportSignaturesTest do
   use ExUnit.Case, async: false
 
+  alias Elmc.Test.WasmRcTrackHarness
   alias Elmc.TestSupport.CachedCompile
   alias Elmc.Backend.Wasm.ProjectWriter
 
@@ -71,12 +72,9 @@ defmodule Elmc.WasmImportSignaturesTest do
     wasm_path = Path.join(out_dir, "wasm/elmc_generated.wasm")
     assert File.regular?(wat_path)
 
-    case System.cmd("wat2wasm", [wat_path, "-o", wasm_path], stderr_to_stdout: true) do
-      {_, 0} ->
-        assert File.regular?(wasm_path)
-
-      {output, _} ->
-        flunk("wat2wasm failed after import padding:\n#{String.slice(output, 0, 2000)}")
+    if WasmRcTrackHarness.execution_tools_available?() do
+      WasmRcTrackHarness.run_wat2wasm!(wat_path, wasm_path)
+      assert File.regular?(wasm_path)
     end
   end
 end

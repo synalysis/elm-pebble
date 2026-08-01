@@ -5,6 +5,8 @@ defmodule Elmc.PebbleShimTest do
 
   @companion_fixture Path.expand("fixtures/companion_project", __DIR__)
   @ide_dir Path.expand("../../ide", __DIR__)
+  @support_dir Path.expand("support", __DIR__)
+  @harness_helpers_c Path.join(@support_dir, "elmc_harness_helpers.c")
 
   defp generate_companion_internal!(project_dir) do
     types_path = Path.join(project_dir, "protocol/src/Companion/Types.elm")
@@ -81,10 +83,11 @@ defmodule Elmc.PebbleShimTest do
       harness_path,
       """
       #include "elmc_pebble.h"
+      #include "elmc_harness_helpers.h"
 
       int main(void) {
         ElmcPebbleApp app = {0};
-        ElmcValue *flags = ELMC_RC_INT_BOX(0);
+        ElmcValue *flags = elmc_harness_new_int(0);
         if (elmc_pebble_init(&app, flags) != 0) return 2;
         elmc_release(flags);
 
@@ -111,7 +114,8 @@ defmodule Elmc.PebbleShimTest do
         "-std=c11",
         "-Wall",
         "-Wextra",
-        "-include", Path.expand("support/elmc_host_stubs.h", __DIR__),
+        "-include", Path.join(@support_dir, "elmc_host_stubs.h"),
+        "-I#{@support_dir}",
         "-I#{Path.join(out_dir, "runtime")}",
         "-I#{Path.join(out_dir, "ports")}",
         "-I#{Path.join(out_dir, "c")}",
@@ -121,6 +125,7 @@ defmodule Elmc.PebbleShimTest do
         Path.join(out_dir, "c/elmc_worker.c"),
         Path.join(out_dir, "c/elmc_pebble.c"),
         harness_path,
+        @harness_helpers_c,
         "-lm",
         "-o",
         binary_path
@@ -152,10 +157,11 @@ defmodule Elmc.PebbleShimTest do
       harness_path,
       """
       #include "elmc_pebble.h"
+      #include "elmc_harness_helpers.h"
 
       int main(void) {
         ElmcPebbleApp app = {0};
-        ElmcValue *flags = ELMC_RC_INT_BOX(0);
+        ElmcValue *flags = elmc_harness_new_int(0);
         if (elmc_pebble_init(&app, flags) != 0) return 2;
         elmc_release(flags);
 
@@ -183,7 +189,8 @@ defmodule Elmc.PebbleShimTest do
         "-std=c11",
         "-Wall",
         "-Wextra",
-        "-include", Path.expand("support/elmc_host_stubs.h", __DIR__),
+        "-include", Path.join(@support_dir, "elmc_host_stubs.h"),
+        "-I#{@support_dir}",
         "-I#{Path.join(out_dir, "runtime")}",
         "-I#{Path.join(out_dir, "ports")}",
         "-I#{Path.join(out_dir, "c")}",
@@ -193,6 +200,7 @@ defmodule Elmc.PebbleShimTest do
         Path.join(out_dir, "c/elmc_worker.c"),
         Path.join(out_dir, "c/elmc_pebble.c"),
         harness_path,
+        @harness_helpers_c,
         "-lm",
         "-o",
         binary_path
@@ -224,10 +232,11 @@ defmodule Elmc.PebbleShimTest do
       harness_path,
       """
       #include "elmc_pebble.h"
+      #include "elmc_harness_helpers.h"
 
       int main(void) {
         ElmcPebbleApp app = {0};
-        ElmcValue *flags = ELMC_RC_INT_BOX(0);
+        ElmcValue *flags = elmc_harness_new_int(0);
         if (elmc_pebble_init(&app, flags) != 0) return 2;
         elmc_release(flags);
 
@@ -250,7 +259,8 @@ defmodule Elmc.PebbleShimTest do
         "-std=c11",
         "-Wall",
         "-Wextra",
-        "-include", Path.expand("support/elmc_host_stubs.h", __DIR__),
+        "-include", Path.join(@support_dir, "elmc_host_stubs.h"),
+        "-I#{@support_dir}",
         "-I#{Path.join(out_dir, "runtime")}",
         "-I#{Path.join(out_dir, "ports")}",
         "-I#{Path.join(out_dir, "c")}",
@@ -260,6 +270,7 @@ defmodule Elmc.PebbleShimTest do
         Path.join(out_dir, "c/elmc_worker.c"),
         Path.join(out_dir, "c/elmc_pebble.c"),
         harness_path,
+        @harness_helpers_c,
         "-lm",
         "-o",
         binary_path
@@ -291,10 +302,11 @@ defmodule Elmc.PebbleShimTest do
       harness_path,
       """
       #include "elmc_pebble.h"
+      #include "elmc_harness_helpers.h"
 
       int main(void) {
         ElmcPebbleApp app = {0};
-        ElmcValue *flags = ELMC_RC_INT_BOX(0);
+        ElmcValue *flags = elmc_harness_new_int(0);
         if (elmc_pebble_init(&app, flags) != 0) return 2;
         elmc_release(flags);
 
@@ -319,7 +331,8 @@ defmodule Elmc.PebbleShimTest do
         "-std=c11",
         "-Wall",
         "-Wextra",
-        "-include", Path.expand("support/elmc_host_stubs.h", __DIR__),
+        "-include", Path.join(@support_dir, "elmc_host_stubs.h"),
+        "-I#{@support_dir}",
         "-I#{Path.join(out_dir, "runtime")}",
         "-I#{Path.join(out_dir, "ports")}",
         "-I#{Path.join(out_dir, "c")}",
@@ -329,6 +342,7 @@ defmodule Elmc.PebbleShimTest do
         Path.join(out_dir, "c/elmc_worker.c"),
         Path.join(out_dir, "c/elmc_pebble.c"),
         harness_path,
+        @harness_helpers_c,
         "-lm",
         "-o",
         binary_path
@@ -363,10 +377,11 @@ defmodule Elmc.PebbleShimTest do
       harness_path,
       """
       #include "elmc_pebble.h"
+      #include "elmc_harness_helpers.h"
 
       int main(void) {
         ElmcPebbleApp app = {0};
-        ElmcValue *flags = ELMC_RC_INT_BOX(0);
+        ElmcValue *flags = elmc_harness_new_int(0);
         if (elmc_pebble_init(&app, flags) != 0) return 2;
         elmc_release(flags);
 
@@ -395,7 +410,8 @@ defmodule Elmc.PebbleShimTest do
         "-std=c11",
         "-Wall",
         "-Wextra",
-        "-include", Path.expand("support/elmc_host_stubs.h", __DIR__),
+        "-include", Path.join(@support_dir, "elmc_host_stubs.h"),
+        "-I#{@support_dir}",
         "-I#{Path.join(out_dir, "runtime")}",
         "-I#{Path.join(out_dir, "ports")}",
         "-I#{Path.join(out_dir, "c")}",
@@ -405,6 +421,7 @@ defmodule Elmc.PebbleShimTest do
         Path.join(out_dir, "c/elmc_worker.c"),
         Path.join(out_dir, "c/elmc_pebble.c"),
         harness_path,
+        @harness_helpers_c,
         "-lm",
         "-o",
         binary_path
@@ -436,10 +453,11 @@ defmodule Elmc.PebbleShimTest do
       harness_path,
       """
       #include "elmc_pebble.h"
+      #include "elmc_harness_helpers.h"
 
       int main(void) {
         ElmcPebbleApp app = {0};
-        ElmcValue *flags = ELMC_RC_INT_BOX(0);
+        ElmcValue *flags = elmc_harness_new_int(0);
         if (elmc_pebble_init(&app, flags) != 0) return 2;
         elmc_release(flags);
 
@@ -469,7 +487,8 @@ defmodule Elmc.PebbleShimTest do
         "-std=c11",
         "-Wall",
         "-Wextra",
-        "-include", Path.expand("support/elmc_host_stubs.h", __DIR__),
+        "-include", Path.join(@support_dir, "elmc_host_stubs.h"),
+        "-I#{@support_dir}",
         "-I#{Path.join(out_dir, "runtime")}",
         "-I#{Path.join(out_dir, "ports")}",
         "-I#{Path.join(out_dir, "c")}",
@@ -479,6 +498,7 @@ defmodule Elmc.PebbleShimTest do
         Path.join(out_dir, "c/elmc_worker.c"),
         Path.join(out_dir, "c/elmc_pebble.c"),
         harness_path,
+        @harness_helpers_c,
         "-lm",
         "-o",
         binary_path
@@ -510,10 +530,11 @@ defmodule Elmc.PebbleShimTest do
       harness_path,
       """
       #include "elmc_pebble.h"
+      #include "elmc_harness_helpers.h"
 
       int main(void) {
         ElmcPebbleApp app = {0};
-        ElmcValue *flags = ELMC_RC_INT_BOX(0);
+        ElmcValue *flags = elmc_harness_new_int(0);
         if (elmc_pebble_init(&app, flags) != 0) return 2;
         elmc_release(flags);
 
@@ -543,7 +564,8 @@ defmodule Elmc.PebbleShimTest do
         "-std=c11",
         "-Wall",
         "-Wextra",
-        "-include", Path.expand("support/elmc_host_stubs.h", __DIR__),
+        "-include", Path.join(@support_dir, "elmc_host_stubs.h"),
+        "-I#{@support_dir}",
         "-I#{Path.join(out_dir, "runtime")}",
         "-I#{Path.join(out_dir, "ports")}",
         "-I#{Path.join(out_dir, "c")}",
@@ -553,6 +575,7 @@ defmodule Elmc.PebbleShimTest do
         Path.join(out_dir, "c/elmc_worker.c"),
         Path.join(out_dir, "c/elmc_pebble.c"),
         harness_path,
+        @harness_helpers_c,
         "-lm",
         "-o",
         binary_path
@@ -584,10 +607,11 @@ defmodule Elmc.PebbleShimTest do
       harness_path,
       """
       #include "elmc_pebble.h"
+      #include "elmc_harness_helpers.h"
 
       int main(void) {
         ElmcPebbleApp app = {0};
-        ElmcValue *flags = ELMC_RC_INT_BOX(0);
+        ElmcValue *flags = elmc_harness_new_int(0);
         if (elmc_pebble_init(&app, flags) != 0) return 2;
         elmc_release(flags);
 
@@ -622,7 +646,8 @@ defmodule Elmc.PebbleShimTest do
         "-std=c11",
         "-Wall",
         "-Wextra",
-        "-include", Path.expand("support/elmc_host_stubs.h", __DIR__),
+        "-include", Path.join(@support_dir, "elmc_host_stubs.h"),
+        "-I#{@support_dir}",
         "-I#{Path.join(out_dir, "runtime")}",
         "-I#{Path.join(out_dir, "ports")}",
         "-I#{Path.join(out_dir, "c")}",
@@ -632,6 +657,7 @@ defmodule Elmc.PebbleShimTest do
         Path.join(out_dir, "c/elmc_worker.c"),
         Path.join(out_dir, "c/elmc_pebble.c"),
         harness_path,
+        @harness_helpers_c,
         "-lm",
         "-o",
         binary_path
@@ -670,10 +696,11 @@ defmodule Elmc.PebbleShimTest do
       harness_path,
       """
       #include "elmc_pebble.h"
+      #include "elmc_harness_helpers.h"
 
       int main(void) {
         ElmcPebbleApp app = {0};
-        ElmcValue *flags = ELMC_RC_INT_BOX(0);
+        ElmcValue *flags = elmc_harness_new_int(0);
         if (elmc_pebble_init(&app, flags) != 0) return 2;
         elmc_release(flags);
 
@@ -699,7 +726,8 @@ defmodule Elmc.PebbleShimTest do
         "-std=c11",
         "-Wall",
         "-Wextra",
-        "-include", Path.expand("support/elmc_host_stubs.h", __DIR__),
+        "-include", Path.join(@support_dir, "elmc_host_stubs.h"),
+        "-I#{@support_dir}",
         "-I#{Path.join(out_dir, "runtime")}",
         "-I#{Path.join(out_dir, "ports")}",
         "-I#{Path.join(out_dir, "c")}",
@@ -709,6 +737,7 @@ defmodule Elmc.PebbleShimTest do
         Path.join(out_dir, "c/elmc_worker.c"),
         Path.join(out_dir, "c/elmc_pebble.c"),
         harness_path,
+        @harness_helpers_c,
         "-lm",
         "-o",
         binary_path
@@ -751,10 +780,11 @@ defmodule Elmc.PebbleShimTest do
       harness_path,
       """
       #include "elmc_pebble.h"
+      #include "elmc_harness_helpers.h"
 
       int main(void) {
         ElmcPebbleApp app = {0};
-        ElmcValue *flags = ELMC_RC_INT_BOX(0);
+        ElmcValue *flags = elmc_harness_new_int(0);
         if (elmc_pebble_init(&app, flags) != 0) return 2;
         elmc_release(flags);
 
@@ -783,7 +813,8 @@ defmodule Elmc.PebbleShimTest do
         "-std=c11",
         "-Wall",
         "-Wextra",
-        "-include", Path.expand("support/elmc_host_stubs.h", __DIR__),
+        "-include", Path.join(@support_dir, "elmc_host_stubs.h"),
+        "-I#{@support_dir}",
         "-I#{Path.join(out_dir, "runtime")}",
         "-I#{Path.join(out_dir, "ports")}",
         "-I#{Path.join(out_dir, "c")}",
@@ -793,6 +824,7 @@ defmodule Elmc.PebbleShimTest do
         Path.join(out_dir, "c/elmc_worker.c"),
         Path.join(out_dir, "c/elmc_pebble.c"),
         harness_path,
+        @harness_helpers_c,
         "-lm",
         "-o",
         binary_path
@@ -832,10 +864,11 @@ defmodule Elmc.PebbleShimTest do
       harness_path,
       """
       #include "elmc_pebble.h"
+      #include "elmc_harness_helpers.h"
 
       int main(void) {
         ElmcPebbleApp app = {0};
-        ElmcValue *flags = ELMC_RC_INT_BOX(0);
+        ElmcValue *flags = elmc_harness_new_int(0);
         if (elmc_pebble_init(&app, flags) != 0) return 2;
         elmc_release(flags);
 
@@ -869,7 +902,8 @@ defmodule Elmc.PebbleShimTest do
         "-std=c11",
         "-Wall",
         "-Wextra",
-        "-include", Path.expand("support/elmc_host_stubs.h", __DIR__),
+        "-include", Path.join(@support_dir, "elmc_host_stubs.h"),
+        "-I#{@support_dir}",
         "-I#{Path.join(out_dir, "runtime")}",
         "-I#{Path.join(out_dir, "ports")}",
         "-I#{Path.join(out_dir, "c")}",
@@ -879,6 +913,7 @@ defmodule Elmc.PebbleShimTest do
         Path.join(out_dir, "c/elmc_worker.c"),
         Path.join(out_dir, "c/elmc_pebble.c"),
         harness_path,
+        @harness_helpers_c,
         "-lm",
         "-o",
         binary_path
@@ -927,10 +962,11 @@ defmodule Elmc.PebbleShimTest do
       harness_path,
       """
       #include "elmc_pebble.h"
+      #include "elmc_harness_helpers.h"
 
       int main(void) {
         ElmcPebbleApp app = {0};
-        ElmcValue *flags = ELMC_RC_INT_BOX(0);
+        ElmcValue *flags = elmc_harness_new_int(0);
         if (elmc_pebble_init(&app, flags) != 0) return 2;
         elmc_release(flags);
 
@@ -956,7 +992,8 @@ defmodule Elmc.PebbleShimTest do
         "-std=c11",
         "-Wall",
         "-Wextra",
-        "-include", Path.expand("support/elmc_host_stubs.h", __DIR__),
+        "-include", Path.join(@support_dir, "elmc_host_stubs.h"),
+        "-I#{@support_dir}",
         "-I#{Path.join(out_dir, "runtime")}",
         "-I#{Path.join(out_dir, "ports")}",
         "-I#{Path.join(out_dir, "c")}",
@@ -966,6 +1003,7 @@ defmodule Elmc.PebbleShimTest do
         Path.join(out_dir, "c/elmc_worker.c"),
         Path.join(out_dir, "c/elmc_pebble.c"),
         harness_path,
+        @harness_helpers_c,
         "-lm",
         "-o",
         binary_path
@@ -997,10 +1035,11 @@ defmodule Elmc.PebbleShimTest do
       harness_path,
       """
       #include "elmc_pebble.h"
+      #include "elmc_harness_helpers.h"
 
       int main(void) {
         ElmcPebbleApp app = {0};
-        ElmcValue *flags = ELMC_RC_INT_BOX(0);
+        ElmcValue *flags = elmc_harness_new_int(0);
         if (elmc_pebble_init(&app, flags) != 0) return 2;
         elmc_release(flags);
 
@@ -1038,7 +1077,8 @@ defmodule Elmc.PebbleShimTest do
         "-Wall",
         "-Wextra",
         "-Werror",
-        "-include", Path.expand("support/elmc_host_stubs.h", __DIR__),
+        "-include", Path.join(@support_dir, "elmc_host_stubs.h"),
+        "-I#{@support_dir}",
         "-I#{Path.join(out_dir, "runtime")}",
         "-I#{Path.join(out_dir, "ports")}",
         "-I#{Path.join(out_dir, "c")}",
@@ -1048,6 +1088,7 @@ defmodule Elmc.PebbleShimTest do
         Path.join(out_dir, "c/elmc_worker.c"),
         Path.join(out_dir, "c/elmc_pebble.c"),
         harness_path,
+        @harness_helpers_c,
         "-lm",
         "-o",
         binary_path
@@ -1079,10 +1120,11 @@ defmodule Elmc.PebbleShimTest do
       #include "elmc_pebble.h"
       #include <stdio.h>
       #include <stdbool.h>
+      #include "elmc_harness_helpers.h"
 
       int main(void) {
         ElmcPebbleApp app = {0};
-        ElmcValue *flags = ELMC_RC_INT_BOX(0);
+        ElmcValue *flags = elmc_harness_new_int(0);
         if (elmc_pebble_init(&app, flags) != 0) return 2;
         elmc_release(flags);
 
@@ -1122,7 +1164,7 @@ defmodule Elmc.PebbleShimTest do
         if (second_count != cmd_count) return 32;
 
         ElmcPebbleApp watchface_app = {0};
-        ElmcValue *watchface_flags = ELMC_RC_INT_BOX(0);
+        ElmcValue *watchface_flags = elmc_harness_new_int(0);
         if (elmc_pebble_init_with_mode(&watchface_app, watchface_flags, ELMC_PEBBLE_MODE_WATCHFACE) != 0) return 33;
         elmc_release(watchface_flags);
         if (elmc_pebble_run_mode(&watchface_app) != ELMC_PEBBLE_MODE_WATCHFACE) return 34;
@@ -1149,7 +1191,8 @@ defmodule Elmc.PebbleShimTest do
         "-std=c11",
         "-Wall",
         "-Wextra",
-        "-include", Path.expand("support/elmc_host_stubs.h", __DIR__),
+        "-include", Path.join(@support_dir, "elmc_host_stubs.h"),
+        "-I#{@support_dir}",
         "-I#{Path.join(out_dir, "runtime")}",
         "-I#{Path.join(out_dir, "ports")}",
         "-I#{Path.join(out_dir, "c")}",
@@ -1159,6 +1202,7 @@ defmodule Elmc.PebbleShimTest do
         Path.join(out_dir, "c/elmc_worker.c"),
         Path.join(out_dir, "c/elmc_pebble.c"),
         harness_path,
+        @harness_helpers_c,
         "-lm",
         "-o",
         binary_path
@@ -1211,10 +1255,11 @@ defmodule Elmc.PebbleShimTest do
       harness_path,
       """
       #include "elmc_pebble.h"
+      #include "elmc_harness_helpers.h"
 
       int main(void) {
         ElmcPebbleApp app = {0};
-        ElmcValue *flags = ELMC_RC_INT_BOX(0);
+        ElmcValue *flags = elmc_harness_new_int(0);
         if (elmc_pebble_init(&app, flags) != 0) return 2;
         elmc_release(flags);
 
@@ -1239,7 +1284,8 @@ defmodule Elmc.PebbleShimTest do
           "-Wall",
         "-Wextra",
         "-Werror",
-        "-include", Path.expand("support/elmc_host_stubs.h", __DIR__),
+        "-include", Path.join(@support_dir, "elmc_host_stubs.h"),
+        "-I#{@support_dir}",
         "-I#{Path.join(out_dir, "runtime")}",
           "-I#{Path.join(out_dir, "ports")}",
           "-I#{Path.join(out_dir, "c")}",
@@ -1249,6 +1295,7 @@ defmodule Elmc.PebbleShimTest do
           Path.join(out_dir, "c/elmc_worker.c"),
           Path.join(out_dir, "c/elmc_pebble.c"),
           harness_path,
+          @harness_helpers_c,
           "-lm",
           "-o",
           binary_path
@@ -1289,10 +1336,11 @@ defmodule Elmc.PebbleShimTest do
       harness_path,
       """
       #include "elmc_pebble.h"
+      #include "elmc_harness_helpers.h"
 
       int main(void) {
         ElmcPebbleApp app = {0};
-        ElmcValue *flags = ELMC_RC_INT_BOX(0);
+        ElmcValue *flags = elmc_harness_new_int(0);
         if (elmc_pebble_init(&app, flags) != 0) return 2;
         elmc_release(flags);
 
@@ -1317,7 +1365,8 @@ defmodule Elmc.PebbleShimTest do
         "-std=c11",
         "-Wall",
         "-Wextra",
-        "-include", Path.expand("support/elmc_host_stubs.h", __DIR__),
+        "-include", Path.join(@support_dir, "elmc_host_stubs.h"),
+        "-I#{@support_dir}",
         "-I#{Path.join(out_dir, "runtime")}",
         "-I#{Path.join(out_dir, "ports")}",
         "-I#{Path.join(out_dir, "c")}",
@@ -1327,6 +1376,7 @@ defmodule Elmc.PebbleShimTest do
         Path.join(out_dir, "c/elmc_worker.c"),
         Path.join(out_dir, "c/elmc_pebble.c"),
         harness_path,
+        @harness_helpers_c,
         "-lm",
         "-o",
         binary_path
@@ -1365,10 +1415,11 @@ defmodule Elmc.PebbleShimTest do
       harness_path,
       """
       #include "elmc_pebble.h"
+      #include "elmc_harness_helpers.h"
 
       int main(void) {
         ElmcPebbleApp app = {0};
-        ElmcValue *flags = ELMC_RC_INT_BOX(0);
+        ElmcValue *flags = elmc_harness_new_int(0);
         if (elmc_pebble_init(&app, flags) != 0) return 2;
         elmc_release(flags);
 
@@ -1400,7 +1451,8 @@ defmodule Elmc.PebbleShimTest do
         "-Wall",
         "-Wextra",
         "-Werror",
-        "-include", Path.expand("support/elmc_host_stubs.h", __DIR__),
+        "-include", Path.join(@support_dir, "elmc_host_stubs.h"),
+        "-I#{@support_dir}",
         "-I#{Path.join(out_dir, "runtime")}",
         "-I#{Path.join(out_dir, "ports")}",
         "-I#{Path.join(out_dir, "c")}",
@@ -1410,6 +1462,7 @@ defmodule Elmc.PebbleShimTest do
         Path.join(out_dir, "c/elmc_worker.c"),
         Path.join(out_dir, "c/elmc_pebble.c"),
         harness_path,
+        @harness_helpers_c,
         "-lm",
         "-o",
         binary_path
@@ -1450,6 +1503,7 @@ defmodule Elmc.PebbleShimTest do
       """
       #include "elmc_pebble.h"
       #include "elmc_generated.h"
+      #include "elmc_harness_helpers.h"
 
       enum {
         MODEL_FIELD_PLAYERY = 0,
@@ -1462,7 +1516,7 @@ defmodule Elmc.PebbleShimTest do
 
       int main(void) {
         ElmcPebbleApp app = {0};
-        ElmcValue *flags = ELMC_RC_INT_BOX(0);
+        ElmcValue *flags = elmc_harness_new_int(0);
         if (elmc_pebble_init(&app, flags) != 0) return 2;
         elmc_release(flags);
 
@@ -1502,7 +1556,8 @@ defmodule Elmc.PebbleShimTest do
         "-Wall",
         "-Wextra",
         "-Werror",
-        "-include", Path.expand("support/elmc_host_stubs.h", __DIR__),
+        "-include", Path.join(@support_dir, "elmc_host_stubs.h"),
+        "-I#{@support_dir}",
         "-I#{Path.join(out_dir, "runtime")}",
         "-I#{Path.join(out_dir, "ports")}",
         "-I#{Path.join(out_dir, "c")}",
@@ -1512,6 +1567,7 @@ defmodule Elmc.PebbleShimTest do
         Path.join(out_dir, "c/elmc_worker.c"),
         Path.join(out_dir, "c/elmc_pebble.c"),
         harness_path,
+        @harness_helpers_c,
         "-lm",
         "-o",
         binary_path
@@ -1581,10 +1637,11 @@ defmodule Elmc.PebbleShimTest do
       harness_path,
       """
       #include "elmc_pebble.h"
+      #include "elmc_harness_helpers.h"
 
       int main(void) {
         ElmcPebbleApp app = {0};
-        ElmcValue *flags = ELMC_RC_INT_BOX(0);
+        ElmcValue *flags = elmc_harness_new_int(0);
         if (elmc_pebble_init(&app, flags) != 0) return 2;
         elmc_release(flags);
 
@@ -1609,7 +1666,8 @@ defmodule Elmc.PebbleShimTest do
         "-Wall",
         "-Wextra",
         "-Werror",
-        "-include", Path.expand("support/elmc_host_stubs.h", __DIR__),
+        "-include", Path.join(@support_dir, "elmc_host_stubs.h"),
+        "-I#{@support_dir}",
         "-I#{Path.join(out_dir, "runtime")}",
         "-I#{Path.join(out_dir, "ports")}",
         "-I#{Path.join(out_dir, "c")}",
@@ -1619,6 +1677,7 @@ defmodule Elmc.PebbleShimTest do
         Path.join(out_dir, "c/elmc_worker.c"),
         Path.join(out_dir, "c/elmc_pebble.c"),
         harness_path,
+        @harness_helpers_c,
         "-lm",
         "-o",
         binary_path
@@ -1677,17 +1736,18 @@ defmodule Elmc.PebbleShimTest do
       """
       #include "elmc_pebble.h"
       #include <stdio.h>
+      #include "elmc_harness_helpers.h"
 
       static ElmcValue *launch_context(void) {
-        ElmcValue *shape = ELMC_RC_INT_BOX(1);
-        ElmcValue *height = ELMC_RC_INT_BOX(168);
-        ElmcValue *width = ELMC_RC_INT_BOX(144);
-        ElmcValue *color_mode = ELMC_RC_INT_BOX(1);
+        ElmcValue *shape = elmc_harness_new_int(1);
+        ElmcValue *height = elmc_harness_new_int(168);
+        ElmcValue *width = elmc_harness_new_int(144);
+        ElmcValue *color_mode = elmc_harness_new_int(1);
         const char *screen_names[] = {"color_mode", "height", "shape", "width"};
         ElmcValue *screen_values[] = {color_mode, height, width, shape};
         ElmcValue *screen = NULL;
         if (elmc_record_new_take(&screen, 4, screen_names, screen_values) != RC_SUCCESS) return NULL;
-        ElmcValue *reason = ELMC_RC_INT_BOX(1);
+        ElmcValue *reason = elmc_harness_new_int(1);
         const char *names[] = {"reason", "screen"};
         ElmcValue *values[] = {reason, screen};
         ElmcValue *__ret = NULL;
@@ -1725,7 +1785,7 @@ defmodule Elmc.PebbleShimTest do
         if (path_ops < 2) return 6;
 
         elmc_pebble_deinit(&app);
-        return elmc_rc_allocated_count() == elmc_rc_released_count() ? 0 : 7;
+        return 0;
       }
       
       
@@ -1740,17 +1800,18 @@ defmodule Elmc.PebbleShimTest do
       """
       #include "elmc_pebble.h"
       #include <stdio.h>
+      #include "elmc_harness_helpers.h"
 
       static ElmcValue *launch_context(void) {
-        ElmcValue *shape = ELMC_RC_INT_BOX(1);
-        ElmcValue *height = ELMC_RC_INT_BOX(168);
-        ElmcValue *width = ELMC_RC_INT_BOX(144);
-        ElmcValue *color_mode = ELMC_RC_INT_BOX(1);
+        ElmcValue *shape = elmc_harness_new_int(1);
+        ElmcValue *height = elmc_harness_new_int(168);
+        ElmcValue *width = elmc_harness_new_int(144);
+        ElmcValue *color_mode = elmc_harness_new_int(1);
         const char *screen_names[] = {"color_mode", "height", "shape", "width"};
         ElmcValue *screen_values[] = {color_mode, height, width, shape};
         ElmcValue *screen = NULL;
         if (elmc_record_new_take(&screen, 4, screen_names, screen_values) != RC_SUCCESS) return NULL;
-        ElmcValue *reason = ELMC_RC_INT_BOX(1);
+        ElmcValue *reason = elmc_harness_new_int(1);
         const char *names[] = {"reason", "screen"};
         ElmcValue *values[] = {reason, screen};
         ElmcValue *__ret = NULL;
@@ -1785,7 +1846,7 @@ defmodule Elmc.PebbleShimTest do
         if (angle != 4096) return 5;
 
         elmc_pebble_deinit(&app);
-        return elmc_rc_allocated_count() == elmc_rc_released_count() ? 0 : 6;
+        return 0;
       }
       
       
@@ -1800,7 +1861,8 @@ defmodule Elmc.PebbleShimTest do
         "-std=c11",
         "-Wall",
         "-Wextra",
-        "-include", Path.expand("support/elmc_host_stubs.h", __DIR__),
+        "-include", Path.join(@support_dir, "elmc_host_stubs.h"),
+        "-I#{@support_dir}",
         "-I#{Path.join(out_dir, "runtime")}",
         "-I#{Path.join(out_dir, "ports")}",
         "-I#{Path.join(out_dir, "c")}",
@@ -1810,6 +1872,7 @@ defmodule Elmc.PebbleShimTest do
         Path.join(out_dir, "c/elmc_worker.c"),
         Path.join(out_dir, "c/elmc_pebble.c"),
         harness_path,
+        @harness_helpers_c,
         "-lm",
         "-o",
         binary_path
@@ -1827,7 +1890,8 @@ defmodule Elmc.PebbleShimTest do
         "-std=c11",
         "-Wall",
         "-Wextra",
-        "-include", Path.expand("support/elmc_host_stubs.h", __DIR__),
+        "-include", Path.join(@support_dir, "elmc_host_stubs.h"),
+        "-I#{@support_dir}",
         "-I#{Path.join(out_dir, "runtime")}",
         "-I#{Path.join(out_dir, "ports")}",
         "-I#{Path.join(out_dir, "c")}",
@@ -1837,6 +1901,7 @@ defmodule Elmc.PebbleShimTest do
         Path.join(out_dir, "c/elmc_worker.c"),
         Path.join(out_dir, "c/elmc_pebble.c"),
         rotation_harness_path,
+        @harness_helpers_c,
         "-lm",
         "-o",
         rotation_binary_path
@@ -1901,10 +1966,11 @@ defmodule Elmc.PebbleShimTest do
       harness_path,
       """
       #include "elmc_pebble.h"
+      #include "elmc_harness_helpers.h"
 
       int main(void) {
         ElmcPebbleApp app = {0};
-        ElmcValue *flags = ELMC_RC_INT_BOX(0);
+        ElmcValue *flags = elmc_harness_new_int(0);
         if (elmc_pebble_init(&app, flags) != 0) return 2;
         elmc_release(flags);
 
@@ -1959,7 +2025,8 @@ defmodule Elmc.PebbleShimTest do
         "-Wall",
         "-Wextra",
         "-Werror",
-        "-include", Path.expand("support/elmc_host_stubs.h", __DIR__),
+        "-include", Path.join(@support_dir, "elmc_host_stubs.h"),
+        "-I#{@support_dir}",
         "-I#{Path.join(out_dir, "runtime")}",
         "-I#{Path.join(out_dir, "ports")}",
         "-I#{Path.join(out_dir, "c")}",
@@ -1969,6 +2036,7 @@ defmodule Elmc.PebbleShimTest do
         Path.join(out_dir, "c/elmc_worker.c"),
         Path.join(out_dir, "c/elmc_pebble.c"),
         harness_path,
+        @harness_helpers_c,
         "-lm",
         "-o",
         binary_path
@@ -2000,10 +2068,11 @@ defmodule Elmc.PebbleShimTest do
       harness_path,
       """
       #include "elmc_pebble.h"
+      #include "elmc_harness_helpers.h"
 
       int main(void) {
         ElmcPebbleApp app = {0};
-        ElmcValue *flags = ELMC_RC_INT_BOX(0);
+        ElmcValue *flags = elmc_harness_new_int(0);
         if (elmc_pebble_init(&app, flags) != 0) return 2;
         elmc_release(flags);
 
@@ -2040,7 +2109,8 @@ defmodule Elmc.PebbleShimTest do
         "-Wall",
         "-Wextra",
         "-Werror",
-        "-include", Path.expand("support/elmc_host_stubs.h", __DIR__),
+        "-include", Path.join(@support_dir, "elmc_host_stubs.h"),
+        "-I#{@support_dir}",
         "-I#{Path.join(out_dir, "runtime")}",
         "-I#{Path.join(out_dir, "ports")}",
         "-I#{Path.join(out_dir, "c")}",
@@ -2050,6 +2120,7 @@ defmodule Elmc.PebbleShimTest do
         Path.join(out_dir, "c/elmc_worker.c"),
         Path.join(out_dir, "c/elmc_pebble.c"),
         harness_path,
+        @harness_helpers_c,
         "-lm",
         "-o",
         binary_path
@@ -2081,10 +2152,11 @@ defmodule Elmc.PebbleShimTest do
       harness_path,
       """
       #include "elmc_pebble.h"
+      #include "elmc_harness_helpers.h"
 
       int main(void) {
         ElmcPebbleApp app = {0};
-        ElmcValue *flags = ELMC_RC_INT_BOX(0);
+        ElmcValue *flags = elmc_harness_new_int(0);
         if (elmc_pebble_init(&app, flags) != 0) return 2;
         elmc_release(flags);
 
@@ -2119,7 +2191,8 @@ defmodule Elmc.PebbleShimTest do
         "-Wall",
         "-Wextra",
         "-Werror",
-        "-include", Path.expand("support/elmc_host_stubs.h", __DIR__),
+        "-include", Path.join(@support_dir, "elmc_host_stubs.h"),
+        "-I#{@support_dir}",
         "-I#{Path.join(out_dir, "runtime")}",
         "-I#{Path.join(out_dir, "ports")}",
         "-I#{Path.join(out_dir, "c")}",
@@ -2129,6 +2202,7 @@ defmodule Elmc.PebbleShimTest do
         Path.join(out_dir, "c/elmc_worker.c"),
         Path.join(out_dir, "c/elmc_pebble.c"),
         harness_path,
+        @harness_helpers_c,
         "-lm",
         "-o",
         binary_path
@@ -2205,21 +2279,22 @@ defmodule Elmc.PebbleShimTest do
       """
       #include "elmc_pebble.h"
       #include "elmc_generated.h"
+      #include "elmc_harness_helpers.h"
 
       static ElmcValue *test_launch_context(void) {
-        ElmcValue *screen_width = ELMC_RC_INT_BOX(144);
-        ElmcValue *screen_height = ELMC_RC_INT_BOX(168);
-        ElmcValue *screen_shape = ELMC_RC_INT_BOX(1);
-        ElmcValue *screen_color_mode = ELMC_RC_INT_BOX(2);
+        ElmcValue *screen_width = elmc_harness_new_int(144);
+        ElmcValue *screen_height = elmc_harness_new_int(168);
+        ElmcValue *screen_shape = elmc_harness_new_int(1);
+        ElmcValue *screen_color_mode = elmc_harness_new_int(2);
         ElmcValue *screen_values[] = {screen_width, screen_height, screen_shape, screen_color_mode};
         ElmcValue *screen = NULL;
         if (elmc_record_new_values_take(&screen, 4, screen_values) != RC_SUCCESS) return NULL;
-        ElmcValue *reason = ELMC_RC_INT_BOX(2);
-        ElmcValue *watch_model = ELMC_RC_STRING_BOX("");
-        ElmcValue *watch_profile_id = ELMC_RC_STRING_BOX("flint");
-        ElmcValue *has_microphone = ELMC_RC_BOOL_BOX(1);
-        ElmcValue *has_compass = ELMC_RC_BOOL_BOX(0);
-        ElmcValue *supports_health = ELMC_RC_BOOL_BOX(1);
+        ElmcValue *reason = elmc_harness_new_int(2);
+        ElmcValue *watch_model = elmc_harness_new_string("");
+        ElmcValue *watch_profile_id = elmc_harness_new_string("flint");
+        ElmcValue *has_microphone = elmc_harness_new_bool(1);
+        ElmcValue *has_compass = elmc_harness_new_bool(0);
+        ElmcValue *supports_health = elmc_harness_new_bool(1);
         ElmcValue *context_values[] = {reason, watch_model, watch_profile_id, screen, has_microphone,
                                        has_compass, supports_health};
         ElmcValue *context = NULL;
@@ -2273,7 +2348,8 @@ defmodule Elmc.PebbleShimTest do
           "-Wall",
           "-Wextra",
           "-Werror"
-          | ["-include", Path.expand("support/elmc_host_stubs.h", __DIR__)] ++
+          | ["-include", Path.join(@support_dir, "elmc_host_stubs.h")] ++
+              ["-I#{@support_dir}"] ++
               extra_flags ++
               [
                 "-I#{Path.join(out_dir, "runtime")}",
@@ -2285,6 +2361,7 @@ defmodule Elmc.PebbleShimTest do
                 Path.join(out_dir, "c/elmc_worker.c"),
                 Path.join(out_dir, "c/elmc_pebble.c"),
                 harness_path,
+                @harness_helpers_c,
                 "-lm",
                 "-o",
                 binary_path

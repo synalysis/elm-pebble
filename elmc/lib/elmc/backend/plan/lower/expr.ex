@@ -2395,7 +2395,7 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
   end
 
   # List.foldl / List.foldr return the accumulator type.
-  defp record_shape_fields_from_value(%{op: :qualified_call, target: target, args: args}, ctx)
+  defp record_shape_fields_from_value(%{op: :qualified_call, target: target, args: args} = expr, ctx)
        when is_binary(target) and is_list(args) do
     if String.ends_with?(target, ".foldl") or String.ends_with?(target, ".foldr") do
       case args do
@@ -2403,19 +2403,102 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
         _ -> nil
       end
     else
-      nil
+      alias_shape_fields_from_typed_expr(expr, ctx)
     end
   end
 
-  defp record_shape_fields_from_value(%{op: :call, name: name, args: args}, ctx)
-       when name in ["foldl", "foldr"] and is_list(args) do
-    case args do
-      [_, acc, _] -> record_shape_fields_from_value(acc, ctx)
+  defp record_shape_fields_from_value(%{op: :call, name: name, args: args} = expr, ctx)
+       when is_binary(name) and is_list(args) do
+    if name in ["foldl", "foldr"] do
+      case args do
+        [_, acc, _] -> record_shape_fields_from_value(acc, ctx)
+        _ -> nil
+      end
+    else
+      alias_shape_fields_from_typed_expr(expr, ctx)
+    end
+  end
+
+  # `let next = case msg of … -> step …` — seed full Model fields from arm return
+  # type so `next.best` is not access-inferred as singleton `{best}` → index 0.
+  defp record_shape_fields_from_value(%{op: :case} = expr, ctx),
+    do: alias_shape_fields_from_typed_expr(expr, ctx)
+
+  defp record_shape_fields_from_value(%{op: :if} = expr, ctx),
+    do: alias_shape_fields_from_typed_expr(expr, ctx)
+
+  defp record_shape_fields_from_value(_, _ctx), do: nil
+
+  @spec alias_shape_fields_from_typed_expr(Types.expr(), Context.t()) :: [String.t()] | nil
+
+  defp alias_shape_fields_from_typed_expr(expr, ctx) when is_map(expr) do
+    case TypedReturn.expr_type(expr, let_type_env(ctx)) do
+      type when is_binary(type) -> alias_shape_fields_for_type(type, ctx)
       _ -> nil
     end
   end
 
-  defp record_shape_fields_from_value(_, _ctx), do: nil
+  @spec alias_shape_fields_for_type(String.t(), Context.t()) :: [String.t()] | nil
+
+  defp alias_shape_fields_for_type(type, ctx) when is_binary(type) do
+    shapes = Process.get(:elmc_record_alias_shapes, %{})
+    ctor = type |> Host.normalize_type_name() |> String.split(~r/\s+/, parts: 2) |> hd()
+
+    key =
+      case String.split(ctor, ".") do
+        parts when length(parts) >= 2 ->
+          {mod_parts, [name]} = Enum.split(parts, -1)
+          mod = Enum.join(mod_parts, ".")
+
+          if Map.has_key?(shapes, {mod, name}),
+            do: {mod, name},
+            else: shape_key_by_record_name(shapes, name, ctx)
+
+        _ ->
+          shape_key_by_record_name(shapes, ctor, ctx)
+      end
+
+    case key do
+      k when is_tuple(k) ->
+        case Map.get(shapes, k) do
+          fields when is_list(fields) and fields != [] -> Enum.map(fields, &to_string/1)
+          _ -> nil
+        end
+
+      _ ->
+        nil
+    end
+  end
+
+  defp shape_key_by_record_name(shapes, name, %Context{} = ctx)
+       when is_map(shapes) and is_binary(name) do
+    matches = Enum.filter(shapes, fn {{_mod, n}, _} -> n == name end)
+
+    case matches do
+      [{key, _}] ->
+        key
+
+      many when length(many) > 1 ->
+        mod = ctx.module
+
+        case Enum.find(many, fn {{m, _}, _} -> m == mod end) do
+          {key, _} -> key
+          _ -> elem(hd(many), 0)
+        end
+
+      _ ->
+        nil
+    end
+  end
+
+  defp shape_key_by_record_name(shapes, name, _ctx)
+       when is_map(shapes) and is_binary(name) do
+    case Enum.filter(shapes, fn {{_mod, n}, _} -> n == name end) do
+      [{key, _}] -> key
+      [first | _] -> elem(first, 0)
+      _ -> nil
+    end
+  end
 
   @spec compile_letrec_value_bindings([{String.t(), Types.expr()}], Context.t(), Builder.t()) ::
           {:ok, Context.t(), Builder.t()} | :unsupported
@@ -3315,13 +3398,19 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
   end
 
   defp native_int_reg_producer?(b, reg, ctx) when is_integer(reg) do
-    instrs =
-      Enum.flat_map(b.blocks || [], fn
+    block_instrs =
+      Enum.flat_map(b.blocks, fn
         %{instrs: is} when is_list(is) -> is
         _ -> []
-      end) ++ (Map.get(b.current_block || %{}, :instrs) || [])
+      end)
 
-    case Enum.find(instrs, &(&1.dest == reg)) do
+    current_instrs =
+      case Map.get(b, :current_block) do
+        %{instrs: is} when is_list(is) -> is
+        _ -> []
+      end
+
+    case Enum.find(block_instrs ++ current_instrs, &(&1.dest == reg)) do
       %{op: op} when op in [:const_int, :int_arith, :record_get_int, :boxed_tag_peel] ->
         true
 

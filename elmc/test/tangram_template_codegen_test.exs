@@ -69,10 +69,11 @@ defmodule Elmc.TangramTemplateCodegenTest do
     new_int_slots =
       Regex.scan(~r/Rc = elmc_new_int\(&owned\[(\d+)\],/, body)
       |> Enum.map(fn [_, idx] -> String.to_integer(idx) end)
+      |> Enum.uniq()
 
-    assert length(new_int_slots) >= 5
-    assert Enum.take(new_int_slots, 4) == [0, 1, 2, 3]
-    assert Enum.at(new_int_slots, 4) >= 4
+    # Native locals may replace some boxed ints; keep at least distinct center/radius roots.
+    assert length(new_int_slots) >= 2
+    assert Enum.min(new_int_slots) == 0
   end
 
   test "tangram watchface view codegen does not reference phantom Main.start helpers" do
@@ -163,7 +164,8 @@ defmodule Elmc.TangramTemplateCodegenTest do
 
     # Native int color table — value-return helper (not RC out-ptr).
     assert piece_color =~ "ELMC_COLOR_"
-    assert piece_color =~ "ELMC_RC_INT_BOX("
+    assert piece_color =~ "elmc_new_int("
+    refute piece_color =~ "ELMC_RC_INT_BOX("
     refute piece_color =~ "ELMC_RC_LOG_FAIL(__call_rc"
   end
 
@@ -215,7 +217,7 @@ defmodule Elmc.TangramTemplateCodegenTest do
         ElmcValue *watch_profile_id = elmc_harness_new_string("basalt");
         ElmcValue *width = elmc_harness_new_int(144);
         ElmcValue *height = elmc_harness_new_int(168);
-        ElmcValue *shape = ELMC_RC_INT_BOX(1);
+        ElmcValue *shape = elmc_harness_new_int(1);
         ElmcValue *color_mode = elmc_harness_new_int(1);
         ElmcValue *screen_values[] = {width, height, shape, color_mode};
         ElmcValue *screen = elmc_harness_record_new_values_take(4, screen_values);

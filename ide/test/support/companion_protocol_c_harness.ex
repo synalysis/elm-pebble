@@ -736,21 +736,30 @@ defmodule Ide.CompanionProtocolCTestHarness do
     RC elmc_list_from_values_take(ElmcValue **out, ElmcValue **values, int count);
     RC elmc_dict_from_list(ElmcValue **out, ElmcValue *pairs);
 
-    #define ELMC_RC_INT_BOX(value) \\
-      ({ ElmcValue *__elmc_rc_box = NULL; \\
-         elmc_new_int(&__elmc_rc_box, (value)) == RC_SUCCESS ? __elmc_rc_box : NULL; })
+    static ElmcValue *companion_protocol_box_int(int32_t value) {
+      ElmcValue *boxed = NULL;
+      if (elmc_new_int(&boxed, value) != RC_SUCCESS) return NULL;
+      return boxed;
+    }
 
-    #define ELMC_RC_BOOL_BOX(value) \\
-      ({ ElmcValue *__elmc_rc_box = NULL; \\
-         elmc_new_bool(&__elmc_rc_box, (value)) == RC_SUCCESS ? __elmc_rc_box : NULL; })
+    static ElmcValue *companion_protocol_box_bool(int value) {
+      ElmcValue *boxed = NULL;
+      if (elmc_new_bool(&boxed, value) != RC_SUCCESS) return NULL;
+      return boxed;
+    }
 
-    #define ELMC_RC_STRING_BOX(value) \\
-      ({ ElmcValue *__elmc_rc_box = NULL; \\
-         elmc_new_string(&__elmc_rc_box, (value)) == RC_SUCCESS ? __elmc_rc_box : NULL; })
+    static ElmcValue *companion_protocol_box_string(const char *value) {
+      ElmcValue *boxed = NULL;
+      if (elmc_new_string(&boxed, value) != RC_SUCCESS) return NULL;
+      return boxed;
+    }
 
-    #define ELMC_RC_TUPLE2_BOX(left, right) \\
-      ({ ElmcValue *__elmc_rc_box = NULL; \\
-         elmc_tuple2_take(&__elmc_rc_box, (left), (right)) == RC_SUCCESS ? __elmc_rc_box : NULL; })
+    static ElmcValue *companion_protocol_tuple2_take(ElmcValue *left, ElmcValue *right) {
+      ElmcValue *tuple = NULL;
+      if (elmc_tuple2_take(&tuple, left, right) != RC_SUCCESS) return NULL;
+      return tuple;
+    }
+
     void elmc_release(ElmcValue *value);
     int elmc_pebble_dispatch_tag_payload(ElmcPebbleApp *app, int64_t tag, ElmcValue *payload);
     int elmc_pebble_dispatch_tag_int_values(

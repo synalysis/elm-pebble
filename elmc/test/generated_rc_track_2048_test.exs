@@ -287,14 +287,14 @@ defmodule Elmc.GeneratedRcTrack2048WorkerTest do
       enum { MODEL_FIELD_TURN = 4 };
 
       static ElmcValue *launch_context(void) {
-        ElmcValue *shape = ELMC_RC_INT_BOX(1);
-        ElmcValue *height = ELMC_RC_INT_BOX(168);
-        ElmcValue *width = ELMC_RC_INT_BOX(144);
-        ElmcValue *color_mode = ELMC_RC_INT_BOX(1);
+        ElmcValue *shape = elmc_harness_new_int(1);
+        ElmcValue *height = elmc_harness_new_int(168);
+        ElmcValue *width = elmc_harness_new_int(144);
+        ElmcValue *color_mode = elmc_harness_new_int(1);
         const char *screen_names[] = {"color_mode", "height", "shape", "width"};
         ElmcValue *screen_values[] = {color_mode, height, width, shape};
         ElmcValue *screen = elmc_harness_record_new_take(4, screen_names, screen_values);
-        ElmcValue *reason = ELMC_RC_INT_BOX(1);
+        ElmcValue *reason = elmc_harness_new_int(1);
         const char *names[] = {"reason", "screen"};
         ElmcValue *values[] = {reason, screen};
         return elmc_harness_record_new_take(2, names, values);
@@ -325,7 +325,7 @@ defmodule Elmc.GeneratedRcTrack2048WorkerTest do
         elmc_release(context);
 
         for (int i = 0; i < 100; i++) {
-          ElmcValue *msg = ELMC_RC_INT_BOX(dir_msgs[i % 4]);
+          ElmcValue *msg = elmc_harness_new_int(dir_msgs[i % 4]);
           if (elmc_worker_dispatch(&state, msg) != 0) {
             elmc_release(msg);
             return 3;
@@ -388,14 +388,14 @@ defmodule Elmc.GeneratedRcTrack2048WorkerTest do
       #{RcTrackHarness.harness_prelude()}
 
       static ElmcValue *launch_context(void) {
-        ElmcValue *shape = ELMC_RC_INT_BOX(1);
-        ElmcValue *height = ELMC_RC_INT_BOX(168);
-        ElmcValue *width = ELMC_RC_INT_BOX(144);
-        ElmcValue *color_mode = ELMC_RC_INT_BOX(1);
+        ElmcValue *shape = elmc_harness_new_int(1);
+        ElmcValue *height = elmc_harness_new_int(168);
+        ElmcValue *width = elmc_harness_new_int(144);
+        ElmcValue *color_mode = elmc_harness_new_int(1);
         const char *screen_names[] = {"color_mode", "height", "shape", "width"};
         ElmcValue *screen_values[] = {color_mode, height, width, shape};
         ElmcValue *screen = elmc_harness_record_new_take(4, screen_names, screen_values);
-        ElmcValue *reason = ELMC_RC_INT_BOX(1);
+        ElmcValue *reason = elmc_harness_new_int(1);
         const char *names[] = {"reason", "screen"};
         ElmcValue *values[] = {reason, screen};
         return elmc_harness_record_new_take(2, names, values);

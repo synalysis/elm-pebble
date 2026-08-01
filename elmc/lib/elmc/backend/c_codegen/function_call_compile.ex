@@ -503,7 +503,7 @@ defmodule Elmc.Backend.CCodegen.FunctionCallCompile do
                 retain_var = "tmp_#{next + 2}"
 
                 {
-                  "ElmcValue *#{frag_var} = ELMC_RC_INT_BOX(#{value});\n  ElmcValue *#{retain_var} = elmc_retain(#{frag_var});",
+                  "#{RcRuntimeEmit.non_rc_allocator_stmt(frag_var, "elmc_new_int", Integer.to_string(value))}\n  ElmcValue *#{retain_var} = elmc_retain(#{frag_var});",
                   retain_var,
                   next + 2
                 }
