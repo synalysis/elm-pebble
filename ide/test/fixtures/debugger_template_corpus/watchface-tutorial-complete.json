@@ -182,9 +182,9 @@
   "watch_model": {
     "debugger_init_complete": true,
     "protocol_last_inbound_from": "companion",
-    "protocol_last_inbound_message": "ProvideTemperature (Celsius 21)",
+    "protocol_last_inbound_message": "ProvideCondition Clear",
     "protocol_last_trigger": "runtime_followup",
-    "protocol_last_view_message": "ProvideTemperature Celsius 21",
+    "protocol_last_view_message": "ProvideCondition Clear",
     "runtime_model": {
       "backgroundColor": {
         "args": [],

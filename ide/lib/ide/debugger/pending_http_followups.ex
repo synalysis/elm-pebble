@@ -66,18 +66,35 @@ defmodule Ide.Debugger.PendingHttpFollowups do
 
   defp drain_until_empty(project_slug, ctx)
        when is_binary(project_slug) and is_map(ctx) do
-    items = project_slug |> AgentStore.fetch() |> pending()
+    # Claim must be atomic: a fetch-then-clear race lets RequestFigure enqueue
+    # SvgReceived after the snapshot and before clear, then put_pending([]) drops
+    # the SVG forever while only CatalogReceived runs.
+    case claim_pending(project_slug) do
+      [] ->
+        :ok
 
-    if items != [] do
-      {:ok, _} =
-        AgentSession.mutate(project_slug, fn st ->
-          put_pending(st, [])
-        end)
+      items ->
+        Enum.each(items, &run_flight(project_slug, &1, ctx))
+        drain_until_empty(project_slug, ctx)
+    end
+  end
 
-      Enum.each(items, &run_flight(project_slug, &1, ctx))
-      drain_until_empty(project_slug, ctx)
-    else
-      :ok
+  @spec claim_pending(String.t()) :: [Types.pending_http_followup_item()]
+  defp claim_pending(project_slug) when is_binary(project_slug) do
+    parent = self()
+    ref = make_ref()
+
+    {:ok, _} =
+      AgentSession.mutate(project_slug, fn st ->
+        items = pending(st)
+        send(parent, {ref, items})
+        put_pending(st, [])
+      end)
+
+    receive do
+      {^ref, items} when is_list(items) -> items
+    after
+      5_000 -> []
     end
   end
 

@@ -151,7 +151,7 @@
     "update:FromPhone (ProvideCondition Fog)",
     "update:FromPhone (ProvideTemperature (Celsius 18))",
     "update:FromWatch (Ok (RequestWeather CurrentLocation))",
-    "update:GotWeather (Ok (Current { condition = Fog, temperatureC = 18 }))"
+    "update:GotWeather (Ok (Current { condition = Fog, humidityPercent = Nothing, pressureHpa = Nothing, temperatureC = 18, windDirectionDeg = Nothing, windKph = Nothing }))"
   ],
   "view_tree_type": "windowStack",
   "watch_model": {

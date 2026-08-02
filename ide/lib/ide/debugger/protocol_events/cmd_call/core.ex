@@ -850,7 +850,14 @@ defmodule Ide.Debugger.ProtocolEvents.CmdCall.Core do
       _ -> {:error, :missing_project_protocol}
     end
   rescue
+    # Async HTTP / protocol delivery Tasks often hit the SQL sandbox without a
+    # checked-out owner (OwnershipError) or while another process holds the
+    # shared connection (ConnectionError). Fall back so CatalogReceived can
+    # chain into SvgReceived instead of killing the background flight.
     DBConnection.OwnershipError ->
+      {:error, :repo_unavailable}
+
+    DBConnection.ConnectionError ->
       {:error, :repo_unavailable}
 
     error in [RuntimeError] ->
