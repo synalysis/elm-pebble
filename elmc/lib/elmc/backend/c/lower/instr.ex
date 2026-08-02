@@ -1264,18 +1264,23 @@ defmodule Elmc.Backend.C.Lower.Instr do
         other -> raise ArgumentError, "unknown boxed_binop #{inspect(other)}"
       end
 
-    left = slot_ref(lhs, slots, opts)
-    right = slot_ref(rhs, slots, opts)
-
     # Non-fdiv boxed binops are Int in practice when they reach this fallback
     # (Float arithmetic is lowered via float-specific ops / as_float paths).
     # Emitting a dead `elmc_new_float` branch broke Int helpers such as
     # integerLetArithmetic (`refute body =~ "elmc_new_float"`).
+    #
+    # Mixed native-int + boxed operands (e.g. `cx + round (…)`) must use
+    # `int_operand_ref/3` — wrapping a native `elmc_int_t` param with
+    # `elmc_as_int(cx)` is a type error and heap corruption at runtime.
     if op == :fdiv do
+      left = slot_ref(lhs, slots, opts)
+      right = slot_ref(rhs, slots, opts)
       float_expr = "elmc_as_float(#{left}) #{op_sym} elmc_as_float(#{right})"
       rc_assign(rc?, dest, "elmc_new_float", [float_expr])
     else
-      int_expr = "elmc_as_int(#{left}) #{op_sym} elmc_as_int(#{right})"
+      left = int_operand_ref(lhs, slots, opts)
+      right = int_operand_ref(rhs, slots, opts)
+      int_expr = "#{left} #{op_sym} #{right}"
       rc_assign(rc?, dest, "elmc_new_int", [int_expr])
     end
   end

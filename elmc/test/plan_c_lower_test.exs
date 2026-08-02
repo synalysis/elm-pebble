@@ -467,18 +467,11 @@ defmodule Elmc.PlanCLowerTest do
     out_dir = Path.expand("tmp/record_field_main_lower", __DIR__)
     File.rm_rf!(out_dir)
 
-    tmp = Path.expand("tmp/record_field_test_probe", __DIR__)
-    src = Path.join(Elmc.Test.ElmRunCorpus.corpus_dir(), "Basics/RecordFieldTest.elm")
-
-    Elmc.TestSupport.ElmJson.write_probe_project!(
-      tmp,
-      File.read!(src),
-      source_root: ".",
-      rel_path: "RecordFieldTest.elm"
-    )
+    # Vendored from elm-run RecordFieldTest — do not require optional corpus submodule.
+    project_dir = Path.expand("fixtures/record_field_test_project", __DIR__)
 
     assert {:ok, _result} =
-             CachedCompile.compile(tmp, %{
+             CachedCompile.compile(project_dir, %{
                out_dir: out_dir,
                strip_dead_code: false,
                entry_module: "RecordFieldTest",

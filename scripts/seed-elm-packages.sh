@@ -32,7 +32,15 @@ PACKAGES=(
   elm/virtual-dom/1.0.2
   elm/virtual-dom/1.0.3
   elm/virtual-dom/1.0.5
+  ianmackenzie/elm-1d-parameter/1.0.1
+  ianmackenzie/elm-float-extra/1.1.0
+  ianmackenzie/elm-geometry/4.0.0
+  ianmackenzie/elm-interval/3.1.0
+  ianmackenzie/elm-triangular-mesh/1.1.0
+  ianmackenzie/elm-units/2.10.0
+  ianmackenzie/elm-units-interval/3.2.0
   jcberentsen/elm-wiring-diagrams/5.4.7
+  w0rm/elm-physics/6.2.0
 )
 
 seed_one() {

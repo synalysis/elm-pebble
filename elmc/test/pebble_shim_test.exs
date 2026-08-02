@@ -2271,6 +2271,11 @@ defmodule Elmc.PebbleShimTest do
     assert point_at_body =~ "elmc_basics_cos"
     assert point_at_body =~ "elmc_new_float"
     refute point_at_body =~ "native_trig_theta_"
+    # Native int params must not be wrapped with elmc_as_int (int→pointer UB).
+    refute point_at_body =~ "elmc_as_int(cx)"
+    refute point_at_body =~ "elmc_as_int(cy)"
+    assert point_at_body =~ ~r/plan_native_int_\d+ = cx \+ elmc_as_int\(owned\[\d+\]\)/
+    assert point_at_body =~ ~r/plan_native_int_\d+ = cy - \(elmc_as_int\(owned\[\d+\]\)\)/
 
     harness_path = Path.join(out_dir, "c/watchface_yes_host_harness.c")
 
