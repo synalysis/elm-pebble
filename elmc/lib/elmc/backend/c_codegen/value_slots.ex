@@ -181,9 +181,11 @@ defmodule Elmc.Backend.CCodegen.ValueSlots do
     {ref(index), index}
   end
 
-  defp find_reusable_slot(%{next: next, live: live}) when next > 0 do
+  defp find_reusable_slot(%{next: next, live: live, written: written}) when next > 0 do
     Enum.find_value(0..(next - 1), :none, fn i ->
-      if MapSet.member?(live, i), do: nil, else: {:ok, i}
+      # Written-but-not-live is an invariant hole (e.g. loop reassign prefix cleared
+      # `live` during one-shot body emit). Never hand that index to a new value.
+      if MapSet.member?(live, i) or MapSet.member?(written, i), do: nil, else: {:ok, i}
     end)
   end
 
@@ -488,6 +490,7 @@ defmodule Elmc.Backend.CCodegen.ValueSlots do
             stmt = owned_reassign_prefix(var) <> "#{RcRuntimeEmit.assignment_lhs(var)} = #{RcRuntimeEmit.value_expr(rhs)};"
             register_record_field_retain_from_rhs(var, rhs)
             mark_written(var)
+            track(var)
             stmt
 
           true ->
@@ -817,11 +820,15 @@ defmodule Elmc.Backend.CCodegen.ValueSlots do
   end
 
   @doc """
-  Before writing a new value into an owned slot under epilogue lifo outside loops,
-  allocate a fresh owned slot instead of reusing the same index.
+  Before writing a new value into an owned slot under epilogue lifo, allocate a
+  fresh owned slot instead of reusing the same index while it still holds a live
+  value.
 
-  Dynamic C loops may still reuse one slot per iteration; callers use
-  `owned_reassign_prefix/1` there to release the prior iteration value.
+  This applies inside C loops too: a single iteration of `acc ++ [x]` needs the
+  accumulator, singleton, and append result live at once. Reusing `owned[0]` for
+  each step produced `elmc_list_append(&owned[0], owned[0], owned[0])`. Callers
+  still use `owned_reassign_prefix/1` when intentionally overwriting a loop slot
+  after an eager release / transfer.
   """
   @spec ensure_fresh_assign_target(String.t()) :: String.t()
   def ensure_fresh_assign_target(var) when is_binary(var) do
@@ -836,9 +843,6 @@ defmodule Elmc.Backend.CCodegen.ValueSlots do
         var
 
       not owned_ref?(var) ->
-        var
-
-      in_c_loop?() ->
         var
 
       not slot_written?(var) ->
@@ -918,7 +922,12 @@ defmodule Elmc.Backend.CCodegen.ValueSlots do
   end
 
   @doc """
-  Release a prior loop-iteration value before reusing an owned slot inside a C loop.
+  Emit a runtime release before reusing an owned slot inside a C loop body.
+
+  The loop body is compiled once: do **not** clear ValueSlots `live` here.
+  `release_owned_eager/1` would mark the slot free for `alloc/0` while it still
+  holds a value in this emit (e.g. `acc ++ [n]` retained `acc` into `owned[i]`,
+  then the singleton reused `owned[i]` as its out name and wrote elsewhere).
   Sequential assigns outside loops use `ensure_fresh_assign_target/1` instead.
   """
   @spec owned_reassign_prefix(String.t()) :: String.t()
@@ -926,7 +935,7 @@ defmodule Elmc.Backend.CCodegen.ValueSlots do
     with true <- owned_ref?(var),
          true <- epilogue_lifo?(),
          true <- in_c_loop?() do
-      release_owned_eager(var) <> "\n"
+      "ELMC_RELEASE(#{var});\n#{null_assignment(var)}\n"
     else
       _ -> ""
     end

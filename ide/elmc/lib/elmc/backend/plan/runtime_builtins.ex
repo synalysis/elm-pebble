@@ -451,8 +451,8 @@ defmodule Elmc.Backend.Plan.RuntimeBuiltins do
   @spec retains_operand_result_c?(String.t()) :: boolean()
   def retains_operand_result_c?(sym) when is_binary(sym) do
     case from_c_symbol(sym) do
-      id when is_atom(id) -> retains_operand_result?(id)
-      _ -> false
+      nil -> false
+      id -> retains_operand_result?(id)
     end
   end
 

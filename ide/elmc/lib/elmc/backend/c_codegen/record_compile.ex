@@ -1821,6 +1821,21 @@ defmodule Elmc.Backend.CCodegen.RecordCompile do
   end
 
   @doc false
+  @spec clear_borrowed_owned_ref(String.t()) :: :ok
+  def clear_borrowed_owned_ref(var) when is_binary(var) do
+    if String.starts_with?(var, "owned[") do
+      Process.put(
+        :elmc_borrowed_field_refs,
+        MapSet.delete(Process.get(:elmc_borrowed_field_refs, MapSet.new()), var)
+      )
+    end
+
+    :ok
+  end
+
+  def clear_borrowed_owned_ref(_), do: :ok
+
+  @doc false
   @spec borrowed_owned_refs_null_stmt() :: String.t()
   def borrowed_owned_refs_null_stmt do
     Process.get(:elmc_borrowed_field_refs, MapSet.new())

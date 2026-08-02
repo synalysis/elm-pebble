@@ -363,8 +363,18 @@ defmodule Elmc.Backend.Plan.Lower.Compare do
       # shapes, but never for Maybe/Result/List/tuple/record — `elmc_as_int`
       # returns 0 for those tags, so `Nothing /= Just day` became `0 == 0`
       # and YES never requested sun/weather.
+      #
+      # If either side is an Int (literal or typed), keep `:int_boxed`. Nested
+      # HOF params can be mis-typed as the enclosing function's `List Int` arg
+      # (`lambda_param_types_from_root`), which would otherwise force `:value`
+      # and emit `elmc_value_equal(n, 0)` — a null pointer, not Int zero.
       mode == :pointer and kind in [:eq, :neq] ->
-        if structural_equality_pair?(left, right, env), do: :value, else: :int_boxed
+        if structural_equality_pair?(left, right, env) and
+             not (int_equality_operand?(left, env) or int_equality_operand?(right, env)) do
+          :value
+        else
+          :int_boxed
+        end
 
       true ->
         mode

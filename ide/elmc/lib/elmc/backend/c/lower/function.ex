@@ -67,6 +67,11 @@ defmodule Elmc.Backend.C.Lower.Function do
   def emit_core_with_slots(%FunctionPlan{} = plan, opts) do
     Process.put(:elmc_plan_rec_values_suffix, 0)
     Process.put(:elmc_rc_call_tmp_counter, 0)
+    # Borrow marks are process-local and must not accumulate across functions —
+    # stale owned[i] marks from earlier fns would null live slots in this epilogue
+    # and leak (2048 collapseRows / step RC imbalance).
+    RecordCompile.reset_borrowed_field_refs()
+
     unless Keyword.get(opts, :closure_mode) do
       Lambda.ensure_emitted!(plan)
     end
@@ -1295,7 +1300,13 @@ defmodule Elmc.Backend.C.Lower.Function do
          instr_opts
        )
        when is_list(aliases) and aliases != [] do
-    RetainOperandAlias.emit_for_plan_dest(dest, aliases, slots, instr_opts)
+    # Non-RC `ElmcValue *` tails fold alias-drop into wrap_non_rc_* (`__rc_ret` /
+    # `__ret`). Emitting `*out` here is dead code after `return` and fails to compile.
+    if dest in [:fn_out, :branch_out] and not Keyword.get(instr_opts, :rc_required, true) do
+      ""
+    else
+      RetainOperandAlias.emit_for_plan_dest(dest, aliases, slots, instr_opts)
+    end
   end
 
   defp emit_result_alias_transfer(_, _, _), do: ""
@@ -3157,24 +3168,36 @@ defmodule Elmc.Backend.C.Lower.Function do
     |> Enum.filter(&Map.has_key?(native_int_locals, &1))
     |> Enum.map(fn reg ->
       name = Map.fetch!(native_int_locals, reg)
-      "elmc_int_t #{name} = 0;"
+      # unused attr: plan-state cross-block analysis can hoist a local that emit
+      # later folds away; Pebble builds use -Werror=unused-but-set-variable.
+      "elmc_int_t #{name} __attribute__((unused)) = 0;"
     end)
   end
 
-  # Mutable lvalue required for RC `elmc_int_t *out` callees (`&plan_native_int_N`)
-  # or when the reg has multiple defining instrs (reassign / non-SSA merge).
+  # Mutable lvalue required for RC `elmc_int_t *out` callees (`&plan_native_int_N`),
+  # multiple defining instrs (reassign / non-SSA merge), or uses outside the def
+  # block. Plan-state `switch` emission does not preserve SSA dominance the way
+  # labeled goto CFG does — a `const` def in one case used from another is
+  # `-Wmaybe-uninitialized` (e.g. game-jump-n-run `plan_native_int_131`).
   @spec native_int_needs_mutable_local?(FunctionPlan.t(), Types.reg(), Types.decl_map()) :: boolean()
 
   defp native_int_needs_mutable_local?(plan, reg, decl_map) do
     defs = all_defining_instrs(plan, reg)
-    length(defs) > 1 or Enum.any?(defs, &native_int_rc_out_param_def?(&1, decl_map, plan))
+
+    # Plan-state `switch` shares one C scope across cases: a `const` def in case A
+    # is not initialized when entering case B, even when SSA says A dominates B.
+    # Hoist all non-const-like native temps as mutable locals in that emit mode.
+    length(defs) > 1 or Enum.any?(defs, &native_int_rc_out_param_def?(&1, decl_map, plan)) or
+      state_switch_emit?(plan)
   end
 
   @spec native_bool_needs_mutable_local?(FunctionPlan.t(), Types.reg(), Types.decl_map()) :: boolean()
 
   defp native_bool_needs_mutable_local?(plan, reg, decl_map) do
     defs = all_defining_instrs(plan, reg)
-    length(defs) > 1 or Enum.any?(defs, &native_bool_rc_out_param_def?(&1, decl_map, plan))
+
+    length(defs) > 1 or Enum.any?(defs, &native_bool_rc_out_param_def?(&1, decl_map, plan)) or
+      state_switch_emit?(plan)
   end
 
   defp native_int_rc_out_param_def?(%{op: :call_fn, args: %{module: mod, name: name}}, decl_map, plan)
@@ -3207,6 +3230,9 @@ defmodule Elmc.Backend.C.Lower.Function do
   defp native_int_candidate?(plan, reg, decl_map, native_set) do
     case all_defining_instrs(plan, reg) do
       [] ->
+        false
+
+      [%{op: :const_int, args: %{bool_lit: true}} | _] ->
         false
 
       [%{op: op} | _] when op in [:const_int, :const_c_expr, :record_get_int, :int_arith, :boxed_tag_peel] ->
@@ -3268,6 +3294,9 @@ defmodule Elmc.Backend.C.Lower.Function do
       case defining_instr(plan, reg) do
         %{op: :load_param, args: %{index: index}} ->
           Enum.at(param_kinds_for_plan(plan), index) == :native_int
+
+        %{op: :const_int, args: %{bool_lit: true}} ->
+          false
 
         %{op: op} when op in [:const_int, :const_c_expr, :record_get_int, :int_arith, :boxed_tag_peel] ->
           true

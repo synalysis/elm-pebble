@@ -1229,13 +1229,9 @@ defmodule Elmc.Backend.CCodegen.Native.Bool do
     ) or Regex.match?(~r/^-?\d+$/, ref)
   end
 
-  defp native_int_temp_ref?(_), do: false
-
   defp native_float_temp_ref?(ref) when is_binary(ref) do
     Regex.match?(~r/^(?:native_f|direct_(?:native_float|f)|tmp_f_)\w*$/, ref)
   end
-
-  defp native_float_temp_ref?(_), do: false
 
   @spec apply_native_compare(String.t(), term(), term()) :: boolean()
   defp apply_native_compare("__eq__", left, right), do: left == right

@@ -4,7 +4,18 @@ defmodule Elmc.Backend.C.Lower.Instr do
 
 
   alias Elmc.Backend.C.Lower.{EphemeralBox, Function, Lambda, NativeReturn, NativeIntFold, TagRefs}
-  alias Elmc.Backend.CCodegen.{FunctionCallAbi, FunctionEmit, Fusion, ImmortalStringLiteral, PlanNativeProjection, RecordCompile, RcRequired, RcRuntimeEmit, RowMajorLayout}
+  alias Elmc.Backend.CCodegen.{
+    FunctionCallAbi,
+    FunctionEmit,
+    Fusion,
+    ImmortalStringLiteral,
+    PlanNativeProjection,
+    RecordCompile,
+    RcRequired,
+    RcRuntimeEmit,
+    RetainOperandAlias,
+    RowMajorLayout
+  }
   alias Elmc.Backend.CCodegen.Native.FunctionCall, as: NativeFunctionCall
   alias Elmc.Backend.Plan.Lower.SpecialValues.ElmCore
   alias Elmc.Backend.CCodegen.Util
@@ -77,6 +88,11 @@ defmodule Elmc.Backend.C.Lower.Instr do
           fusion_skip? ->
             ""
 
+          # Bool True/False must box as TAG_BOOL even if a reg was also marked
+          # native-int (CommonConstCallArms / phi demotion must not win here).
+          Map.get(instr.args, :bool_lit) == true ->
+            rc_assign(rc?, dest, "elmc_new_bool", [bool_c_literal(instr.args.value)])
+
           native_only? ->
             value =
               case Map.get(instr.args, :union_ctor) do
@@ -88,9 +104,6 @@ defmodule Elmc.Backend.C.Lower.Instr do
               end
 
             emit_native_const_def(instr.dest, dest, value, opts)
-
-          Map.get(instr.args, :bool_lit) == true ->
-            rc_assign(rc?, dest, "elmc_new_bool", [bool_c_literal(instr.args.value)])
 
           true ->
             rc_assign(rc?, dest, "elmc_new_int", [Integer.to_string(instr.args.value)])
@@ -137,14 +150,11 @@ defmodule Elmc.Backend.C.Lower.Instr do
         base = slot_ref(instr.args.base, slots, opts)
         field = instr.args.field
         index = record_get_index_ref(field, Map.get(instr.args, :field_index, "0"))
-        # elmc_record_get_index returns a borrow; plan effects mark produces {:owned, dest}
-        # so the epilogue will release this slot. Retain or the frame frees a live field
-        # still owned by `base` (YES scheduleCompanionFetches → MinuteChanged UAF).
-        assign_value_return(
-          rc?,
-          dest,
-          "elmc_retain(elmc_record_get_index(#{base}, #{index}))"
-        )
+        # Borrow into the plan-owned slot. Do not retain/mark here: retaining every
+        # field get leaks 2048 list spines, and blanket borrow-marks null live
+        # append intermediates. Callers that cow_drop a borrowed record base use
+        # emit_record_update_borrow_base/5 instead.
+        assign_value_return(rc?, dest, "elmc_record_get_index(#{base}, #{index})")
 
       :record_update ->
         emit_record_update(instr, slots, rc?, dest, opts)
@@ -266,14 +276,17 @@ defmodule Elmc.Backend.C.Lower.Instr do
               end
           end
 
-        if base_borrowed? do
-          RecordCompile.mark_borrowed_owned_ref(slot_var(instr.dest, slots))
-        end
-
         if MapSet.member?(Keyword.get(opts, :native_int_only_regs, MapSet.new()), instr.dest) do
           emit_native_store(instr.dest, dest, native_proj_fn, opts)
         else
-          assign_value_return(rc?, dest, "#{proj_fn}(#{base})")
+          # Mark after assign: assign_value_return clears stale borrow marks on slot reuse.
+          assign = assign_value_return(rc?, dest, "#{proj_fn}(#{base})")
+
+          if base_borrowed? and owned_slot_dest?(dest) do
+            RecordCompile.mark_borrowed_owned_ref(dest)
+          end
+
+          assign
         end
 
       :make_closure ->
@@ -485,6 +498,17 @@ defmodule Elmc.Backend.C.Lower.Instr do
     use_transfer? =
       merge_dead? and src_owned? and retain? and not borrow_retain? and merge != src and
         not src_live?
+
+    cond do
+      use_transfer? and RecordCompile.borrowed_owned_ref?(src) ->
+        RecordCompile.mark_borrowed_owned_ref(merge)
+
+      owned_slot_dest?(merge) ->
+        RecordCompile.clear_borrowed_owned_ref(merge)
+
+      true ->
+        :ok
+    end
 
     assign =
       cond do
@@ -3439,7 +3463,7 @@ defmodule Elmc.Backend.C.Lower.Instr do
         #{fwd_head} = next;
       }
     }
-    #{dest_slot} = #{fwd_head};
+    #{owned_slot_take_assign(dest_slot, fwd_head)}
     """
     |> String.trim()
   end
@@ -3529,7 +3553,7 @@ defmodule Elmc.Backend.C.Lower.Instr do
         #{cursor} = #{node}->tail;
       }
     }
-    #{dest_slot} = #{fwd_head};
+    #{owned_slot_take_assign(dest_slot, fwd_head)}
     """
 
     body
@@ -3717,7 +3741,7 @@ defmodule Elmc.Backend.C.Lower.Instr do
           retain_into_owned(dest_slot, acc)
 
         true ->
-          "#{dest_slot} = #{acc};"
+          owned_slot_take_assign(dest_slot, acc)
       end
 
     String.trim(loop_body <> "\n" <> assign)
@@ -4462,12 +4486,14 @@ defmodule Elmc.Backend.C.Lower.Instr do
   @spec rc_assign(boolean(), String.t(), String.t(), [String.t()]) :: String.t()
 
   defp rc_assign(true, dest, fn_name, args) do
+    if owned_slot_dest?(dest), do: RecordCompile.clear_borrowed_owned_ref(dest)
     dest_ref = if String.starts_with?(dest, "*"), do: "out", else: dest
     call_args = format_call_args(dest_arg(dest_ref, dest), Enum.join(args, ", "))
     "Rc = #{fn_name}(#{call_args});\nCHECK_RC(Rc);"
   end
 
   defp rc_assign(_false_arm, dest, fn_name, args) do
+    if owned_slot_dest?(dest), do: RecordCompile.clear_borrowed_owned_ref(dest)
     arg_s = Enum.join(args, ", ")
     RcRuntimeEmit.non_rc_allocator_stmt(dest, fn_name, arg_s, return_on_fail?: dest == "*out")
   end
@@ -4484,10 +4510,20 @@ defmodule Elmc.Backend.C.Lower.Instr do
           if rc? do
             retain_into_owned(dest, src)
           else
+            RecordCompile.clear_borrowed_owned_ref(dest)
             "#{dest} = elmc_retain(#{src});"
           end
 
         _ ->
+          # Propagate or clear borrow marks when aliasing into an owned slot.
+          if owned_slot_dest?(dest) do
+            if RecordCompile.borrowed_owned_ref?(src) do
+              RecordCompile.mark_borrowed_owned_ref(dest)
+            else
+              RecordCompile.clear_borrowed_owned_ref(dest)
+            end
+          end
+
           "#{dest} = #{src};"
       end
 
@@ -4496,7 +4532,21 @@ defmodule Elmc.Backend.C.Lower.Instr do
 
   defp emit_load_local(%{args: %{source: src_reg}}, slots, _rc?, dest, opts) do
     {src, prep, cleanup} = materialize_owned_assign_src(src_reg, slots, opts)
-    emit_with_ephemeral_cleanup(prep, "#{dest} = #{src};", cleanup)
+
+    body =
+      if owned_slot_dest?(dest) do
+        if RecordCompile.borrowed_owned_ref?(src) do
+          RecordCompile.mark_borrowed_owned_ref(dest)
+        else
+          RecordCompile.clear_borrowed_owned_ref(dest)
+        end
+
+        "#{dest} = #{src};"
+      else
+        "#{dest} = #{src};"
+      end
+
+    emit_with_ephemeral_cleanup(prep, body, cleanup)
   end
 
   @spec materialize_owned_assign_src(Types.reg(), Types.slot_map(), keyword()) ::
@@ -4529,9 +4579,18 @@ defmodule Elmc.Backend.C.Lower.Instr do
         ""
 
       {dest_idx, src_idx} when is_integer(dest_idx) and is_integer(src_idx) and dest_idx != src_idx ->
+        src_ref = "owned[#{src_idx}]"
+        dest_ref = "owned[#{dest_idx}]"
+
+        if RecordCompile.borrowed_owned_ref?(src_ref) do
+          RecordCompile.mark_borrowed_owned_ref(dest_ref)
+        else
+          RecordCompile.clear_borrowed_owned_ref(dest_ref)
+        end
+
         """
-        owned[#{dest_idx}] = owned[#{src_idx}];
-        owned[#{src_idx}] = NULL;
+        #{dest_ref} = #{src_ref};
+        #{src_ref} = NULL;
         """
 
       _ ->
@@ -4550,7 +4609,13 @@ defmodule Elmc.Backend.C.Lower.Instr do
   # Non-RC `ElmcValue *` ABI: function result is a returned pointer.
   # RC ABI: `*out` is the result slot — never `return` a pointer from an RC function.
   defp assign_value_return(false, "*out", call_expr), do: "return #{call_expr};"
-  defp assign_value_return(_rc?, dest, call_expr), do: "#{dest} = #{call_expr};"
+
+  defp assign_value_return(_rc?, dest, call_expr) do
+    # Slot reuse: a later owned write must clear a stale borrow mark or epilogue
+    # will null-without-release a real owned value (2048 list leaks).
+    if owned_slot_dest?(dest), do: RecordCompile.clear_borrowed_owned_ref(dest)
+    "#{dest} = #{call_expr};"
+  end
 
   @spec assign_value_return_tail(boolean(), String.t(), String.t(), Types.t() | map(), Types.slot_map(), keyword()) :: String.t()
 
@@ -4583,9 +4648,26 @@ defmodule Elmc.Backend.C.Lower.Instr do
         ""
       end
 
+    # Drop retain-operand result aliases against `__rc_ret` inside this block.
+    # Post-instr RetainOperandAlias on `*out` is unreachable here (ElmcValue* ABI)
+    # and does not compile.
+    alias_drop = non_rc_result_alias_drop(instr, slots, opts, "__rc_ret")
+
+    alias_or_null =
+      cond do
+        alias_drop != "" ->
+          alias_drop
+
+        slot_count > 0 ->
+          "elmc_owned_null_aliases(owned, #{slot_count}, __rc_ret);"
+
+        true ->
+          nil
+      end
+
     success_epilogue =
       [
-        if(slot_count > 0, do: "elmc_owned_null_aliases(owned, #{slot_count}, __rc_ret);", else: nil),
+        alias_or_null,
         Enum.join(cleanup ++ List.wrap(cow_drop), "\n"),
         if(slot_count > 0, do: "elmc_release_array_lifo(owned, #{slot_count});", else: nil)
       ]
@@ -4608,18 +4690,47 @@ defmodule Elmc.Backend.C.Lower.Instr do
     |> String.trim()
   end
 
+  @spec non_rc_result_alias_drop(Types.t() | map(), Types.slot_map(), keyword(), String.t()) ::
+          String.t()
+
+  defp non_rc_result_alias_drop(%{effects: %{result_aliases: aliases}}, slots, _opts, ret_var)
+       when is_list(aliases) and aliases != [] and is_binary(ret_var) do
+    alias_refs =
+      aliases
+      |> Enum.filter(&is_integer/1)
+      |> Enum.map(fn reg ->
+        case Map.get(slots, reg) do
+          i when is_integer(i) -> "owned[#{i}]"
+          _ -> nil
+        end
+      end)
+      |> Enum.filter(&is_binary/1)
+
+    RetainOperandAlias.emit(ret_var, alias_refs, drop_result_retain?: true)
+  end
+
+  defp non_rc_result_alias_drop(_, _, _, _), do: ""
+
   @spec wrap_non_rc_fn_out_return(String.t(), Types.t() | map(), Types.slot_map(), keyword()) :: String.t()
 
   defp wrap_non_rc_fn_out_return(call_expr, instr, slots, opts) do
     slot_count = Keyword.get(opts, :owned_slot_count, 0)
     cleanup = owned_consume_cleanup_lines(instr, slots, opts)
     cow_drop = non_rc_record_update_cow_drop(instr, slots, opts, "__ret")
+    alias_drop = non_rc_result_alias_drop(instr, slots, opts, "__ret")
 
-    if slot_count > 0 or cleanup != [] or cow_drop != "" do
+    alias_or_null =
+      cond do
+        alias_drop != "" -> alias_drop
+        slot_count > 0 -> "elmc_owned_null_aliases(owned, #{slot_count}, __ret);"
+        true -> ""
+      end
+
+    if slot_count > 0 or cleanup != [] or cow_drop != "" or alias_drop != "" do
       """
       {
         ElmcValue *__ret = #{call_expr};
-        elmc_owned_null_aliases(owned, #{slot_count}, __ret);
+        #{alias_or_null}
         #{Enum.join(cleanup ++ List.wrap(cow_drop), "\n")}
         elmc_release_array_lifo(owned, #{slot_count});
         return __ret;
@@ -4727,7 +4838,10 @@ defmodule Elmc.Backend.C.Lower.Instr do
 
   @spec retain_into_owned(String.t(), String.t()) :: String.t()
 
-  defp retain_into_owned(dest, src), do: "#{dest} = elmc_retain(#{src});"
+  defp retain_into_owned(dest, src) do
+    if owned_slot_dest?(dest), do: RecordCompile.clear_borrowed_owned_ref(dest)
+    "#{dest} = elmc_retain(#{src});"
+  end
 
   @spec emit_forward_ref_set(map(), Types.slot_map(), keyword()) :: String.t()
 
@@ -4813,6 +4927,17 @@ defmodule Elmc.Backend.C.Lower.Instr do
   @spec owned_slot_dest?(String.t() | term()) :: boolean()
 
   defp owned_slot_dest?(dest) when is_binary(dest), do: Regex.match?(~r/^owned\[\d+\]$/, dest)
+  defp owned_slot_dest?(_), do: false
+
+  # Transfer ownership of a uniquely owned local into an owned[] dest. Clears any
+  # stale borrow mark so epilogue LIFO will release the new value (list map heads).
+  @spec owned_slot_take_assign(String.t(), String.t()) :: String.t()
+
+  defp owned_slot_take_assign(dest, src)
+       when is_binary(dest) and is_binary(src) do
+    if owned_slot_dest?(dest), do: RecordCompile.clear_borrowed_owned_ref(dest)
+    "#{dest} = #{src};"
+  end
 
   @spec rc_call_tmp_var(String.t(), keyword()) :: String.t()
 
@@ -5096,7 +5221,15 @@ defmodule Elmc.Backend.C.Lower.Instr do
   defp publish_fn_out_rc(reg, slots, src, opts) do
     case Map.get(slots, reg) do
       i when is_integer(i) ->
-        "*out = #{src};\nowned[#{i}] = NULL;"
+        # Tuple/record peels mark the dest as borrowed. Publishing that pointer as
+        # the function result must retain: the base tuple is released in the
+        # epilogue (compose `foldl >> Tuple.first` otherwise use-after-frees to []).
+        if RecordCompile.borrowed_owned_ref?(src) do
+          RecordCompile.clear_borrowed_owned_ref(src)
+          "*out = elmc_retain(#{src});\nowned[#{i}] = NULL;"
+        else
+          "*out = #{src};\nowned[#{i}] = NULL;"
+        end
 
       nil ->
         # Direct borrow-param publish: *out is owned by the caller.

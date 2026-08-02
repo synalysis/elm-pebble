@@ -14,7 +14,7 @@ defmodule Elmx.TeaPlaybookSmokeTest do
   @moduletag :slow
   @moduletag :tea_playbook
 
-  @templates begin
+  @templates (
     default = TemplateProject.tea_playbook_template_dirs()
 
     case System.get_env("ELMC_HOST_SMOKE_TEMPLATE") || System.get_env("ELMX_TEA_PLAYBOOK_TEMPLATE") do
@@ -30,7 +30,7 @@ defmodule Elmx.TeaPlaybookSmokeTest do
 
         Enum.filter(default, &(&1 in selected))
     end
-  end
+  )
 
   for template <- @templates do
     @tag template: template

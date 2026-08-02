@@ -171,4 +171,85 @@ defmodule Elmc.PlanCommonConstCallArmsTest do
     out = CommonConstCallArms.run(plan)
     assert length(out.blocks) == length(plan.blocks)
   end
+
+  test "does not factor Bool True/False const_int arms (preserves bool_lit)" do
+    # Result.isOk-shaped arms: bool_lit const used by retain. Factoring used to
+    # rewrite stubs as bare `%{value: 0|1}` → Debug.toString printed `1` not True.
+    blocks = [
+      %Block{
+        id: 0,
+        instrs: [],
+        terminator: {:switch_tag, 0, [{1, 1, "Ok"}, {2, 2, "Err"}], 3}
+      },
+      %Block{
+        id: 1,
+        instrs: [
+          %Types{
+            id: 1,
+            op: :const_int,
+            dest: 10,
+            args: %{value: 1, bool_lit: true},
+            effects: %{fallible: false, borrows: [], consumes: [], produces: nil},
+            block_id: 1,
+            span: nil
+          },
+          %Types{
+            id: 2,
+            op: :call_runtime,
+            dest: 20,
+            args: %{builtin: :retain, args: [10]},
+            effects: %{fallible: false, borrows: [], consumes: [], produces: {:owned, 20}},
+            block_id: 1,
+            span: nil
+          }
+        ],
+        terminator: {:br, 3}
+      },
+      %Block{
+        id: 2,
+        instrs: [
+          %Types{
+            id: 3,
+            op: :const_int,
+            dest: 11,
+            args: %{value: 0, bool_lit: true},
+            effects: %{fallible: false, borrows: [], consumes: [], produces: nil},
+            block_id: 2,
+            span: nil
+          },
+          %Types{
+            id: 4,
+            op: :call_runtime,
+            dest: 20,
+            args: %{builtin: :retain, args: [11]},
+            effects: %{fallible: false, borrows: [], consumes: [], produces: {:owned, 20}},
+            block_id: 2,
+            span: nil
+          }
+        ],
+        terminator: {:br, 3}
+      },
+      %Block{id: 3, instrs: [], terminator: {:ret, 20}}
+    ]
+
+    plan = %FunctionPlan{
+      module: "Result",
+      name: "isOk",
+      params: [],
+      blocks: blocks,
+      entry_block: 0,
+      reg_count: 30,
+      rc_required: false
+    }
+
+    out = CommonConstCallArms.run(plan)
+    assert length(out.blocks) == length(plan.blocks)
+
+    bool_lits =
+      out.blocks
+      |> Enum.flat_map(& &1.instrs)
+      |> Enum.filter(&match?(%{op: :const_int, args: %{bool_lit: true}}, &1))
+
+    assert length(bool_lits) == 2
+  end
 end

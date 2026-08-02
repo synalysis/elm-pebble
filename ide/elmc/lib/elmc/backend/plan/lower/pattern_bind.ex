@@ -513,19 +513,15 @@ defmodule Elmc.Backend.Plan.Lower.PatternBind do
        when is_map(decl_map) and is_binary(module) and is_binary(fun) and is_list(params) do
     case Map.get(decl_map, {module, fun}) do
       %{type: type} when is_binary(type) ->
-        case TypeParsing.function_arg_types(type) do
-          arg_types when is_list(arg_types) ->
-            arg_types
-            |> Enum.zip(params)
-            |> Enum.reduce(%{}, fn {arg_type, name}, acc ->
-              if is_binary(name) and is_binary(arg_type),
-                do: Map.put(acc, name, arg_type),
-                else: acc
-            end)
+        arg_types = TypeParsing.function_arg_types(type)
 
-          _ ->
-            %{}
-        end
+        arg_types
+        |> Enum.zip(params)
+        |> Enum.reduce(%{}, fn {arg_type, name}, acc ->
+          if is_binary(name) and is_binary(arg_type),
+            do: Map.put(acc, name, arg_type),
+            else: acc
+        end)
 
       _ ->
         %{}

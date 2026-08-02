@@ -383,7 +383,7 @@ basicsFromPolar5 : Int -> Int
 basicsFromPolar5 _ =
     let
         ( x, y ) =
-            Basics.fromPolar ( 5, 0 )
+            Basics.fromPolar ( 5.0, 0.0 )
     in
     Basics.truncate x + Basics.truncate y
 
@@ -392,7 +392,7 @@ basicsToPolarRadius : Int -> Int
 basicsToPolarRadius _ =
     let
         ( r, _ ) =
-            Basics.toPolar ( 3, 4 )
+            Basics.toPolar ( 3.0, 4.0 )
     in
     Basics.truncate r
 

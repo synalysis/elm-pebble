@@ -33,6 +33,11 @@ defmodule Elmc.TestSupport.HostSmoke do
       String.starts_with?(template, "watch_demo_") ->
         %{require_circles?: false, require_fill_rects?: false, require_time?: false}
 
+      # Games are in the host-smoke set for TEA drain/view, but they do not render
+      # clock time strings the way watchfaces do.
+      String.starts_with?(template, "game_") ->
+        %{require_circles?: false, require_fill_rects?: false, require_time?: false}
+
       true ->
         %{require_circles?: false, require_fill_rects?: false, require_time?: true}
     end

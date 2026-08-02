@@ -76,6 +76,72 @@ defmodule Elmc.TailRecursiveLoopFusionTest do
     assert list_native =~ "elmc_list_cons"
   end
 
+  test "plan-primary snoc loop (acc ++ [n]) keeps distinct append operands" do
+    project_dir = Path.expand("tmp/tail_recursive_loop_snoc", __DIR__)
+    out_dir = Path.expand("tmp/tail_recursive_loop_snoc_out", __DIR__)
+    File.rm_rf!(project_dir)
+    File.rm_rf!(out_dir)
+    File.mkdir_p!(Path.join(project_dir, "src"))
+    File.write!(Path.join(project_dir, "elm.json"), Jason.encode!(@elm_json))
+
+    File.write!(
+      Path.join(project_dir, "src/Main.elm"),
+      """
+      module Main exposing (main)
+
+
+      countUp : Int -> Int -> List Int -> List Int
+      countUp lo hi acc =
+          if lo > hi then
+              acc
+
+          else
+              countUp (lo + 1) hi (acc ++ [ lo ])
+
+
+      main : String
+      main =
+          Debug.toString (countUp 1 5 [])
+      """
+    )
+
+    assert {:ok, _} =
+             CachedCompile.compile(project_dir, %{
+               out_dir: out_dir,
+               entry_module: "Main",
+               strip_dead_code: false,
+               plan_ir_mode: :primary
+             })
+
+    generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+    count_native = extract_fn!(generated_c, "elmc_fn_Main_countUp_native")
+
+    assert count_native =~ "while (1)"
+    assert count_native =~ "elmc_list_append"
+    assert count_native =~ "elmc_new_int"
+    assert count_native =~ "elmc_list_from_values_take"
+
+    # Singleton list item must be the boxed int, not the retained left operand.
+    assert [_, item_slot] =
+             Regex.run(~r/ElmcValue \*list_items_\d+\[1\] = \{ (owned\[\d+\]) \};/, count_native)
+
+    assert [_, int_slot] = Regex.run(~r/elmc_new_int\(&(owned\[\d+\]),/, count_native)
+    assert item_slot == int_slot
+
+    assert [_, append_out, append_left, append_right] =
+             Regex.run(
+               ~r/elmc_list_append\(&(owned\[\d+\]),\s*([^,]+),\s*(owned\[\d+\])\)/,
+               count_native
+             )
+
+    # Never append(out, out, out) / alias left with right.
+    assert append_left != append_right
+    assert append_out != String.trim(append_left)
+    assert append_out != append_right
+    # Continue must publish the append result, not a nulled intermediate.
+    assert count_native =~ ~r/acc_loop = #{Regex.escape(append_out)};/
+  end
+
   test "tail loop keeps Set insert/remove results as ElmcValue pointers" do
     project_dir = Path.expand("tmp/tail_recursive_loop_set_workset", __DIR__)
     out_dir = Path.expand("tmp/tail_recursive_loop_set_workset_out", __DIR__)

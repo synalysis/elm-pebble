@@ -67,6 +67,11 @@ defmodule Elmc.Backend.C.Lower.Function do
   def emit_core_with_slots(%FunctionPlan{} = plan, opts) do
     Process.put(:elmc_plan_rec_values_suffix, 0)
     Process.put(:elmc_rc_call_tmp_counter, 0)
+    # Borrow marks are process-local and must not accumulate across functions —
+    # stale owned[i] marks from earlier fns would null live slots in this epilogue
+    # and leak (2048 collapseRows / step RC imbalance).
+    RecordCompile.reset_borrowed_field_refs()
+
     unless Keyword.get(opts, :closure_mode) do
       Lambda.ensure_emitted!(plan)
     end
@@ -153,9 +158,9 @@ defmodule Elmc.Backend.C.Lower.Function do
 
     slots = Map.drop(slots, MapSet.to_list(tail_inline_skip_regs))
 
-    # Hoist only natives that need a mutable lvalue: RC out-param (`&plan_native_int_N`)
-    # or multiple defs. Single-def SSA temps emit `const elmc_int_t … = …` at the def
-    # site — safe under goto CFG because the def dominates uses.
+    # Hoist natives that need a mutable lvalue: RC out-param (`&plan_native_int_N`),
+    # multiple defs, plan-state switch, or a use outside the def block (goto can
+    # skip a `const` initializer while a join phi shape still names the temp).
     # Keep `const_int` / `const_c_expr` regs as use-site literals — forcing them into
     # mutable locals yields `plan_native_int_N = 8` with no reads (-Wunused-but-set).
     const_like_native_int_regs =
@@ -1295,7 +1300,13 @@ defmodule Elmc.Backend.C.Lower.Function do
          instr_opts
        )
        when is_list(aliases) and aliases != [] do
-    RetainOperandAlias.emit_for_plan_dest(dest, aliases, slots, instr_opts)
+    # Non-RC `ElmcValue *` tails fold alias-drop into wrap_non_rc_* (`__rc_ret` /
+    # `__ret`). Emitting `*out` here is dead code after `return` and fails to compile.
+    if dest in [:fn_out, :branch_out] and not Keyword.get(instr_opts, :rc_required, true) do
+      ""
+    else
+      RetainOperandAlias.emit_for_plan_dest(dest, aliases, slots, instr_opts)
+    end
   end
 
   defp emit_result_alias_transfer(_, _, _), do: ""
@@ -3157,25 +3168,106 @@ defmodule Elmc.Backend.C.Lower.Function do
     |> Enum.filter(&Map.has_key?(native_int_locals, &1))
     |> Enum.map(fn reg ->
       name = Map.fetch!(native_int_locals, reg)
-      "elmc_int_t #{name} = 0;"
+      # unused attr: plan-state cross-block analysis can hoist a local that emit
+      # later folds away; Pebble builds use -Werror=unused-but-set-variable.
+      "elmc_int_t #{name} __attribute__((unused)) = 0;"
     end)
   end
 
-  # Mutable lvalue required for RC `elmc_int_t *out` callees (`&plan_native_int_N`)
-  # or when the reg has multiple defining instrs (reassign / non-SSA merge).
+  # Mutable lvalue required for RC `elmc_int_t *out` callees (`&plan_native_int_N`),
+  # multiple defining instrs (reassign / non-SSA merge), plan-state `switch` emit,
+  # or a use (including native_int_phi shape operands) in a block other than the
+  # def. Goto CFG labels share one C scope: `if (c) goto join; const x = …; join:
+  # use(x)` is `-Wmaybe-uninitialized` even when the use is under a ternary that
+  # is dynamically dead on the skip path (game-jump-n-run `plan_native_int_131`).
   @spec native_int_needs_mutable_local?(FunctionPlan.t(), Types.reg(), Types.decl_map()) :: boolean()
 
   defp native_int_needs_mutable_local?(plan, reg, decl_map) do
     defs = all_defining_instrs(plan, reg)
-    length(defs) > 1 or Enum.any?(defs, &native_int_rc_out_param_def?(&1, decl_map, plan))
+
+    length(defs) > 1 or Enum.any?(defs, &native_int_rc_out_param_def?(&1, decl_map, plan)) or
+      state_switch_emit?(plan) or native_int_cross_block_use?(plan, reg)
   end
 
   @spec native_bool_needs_mutable_local?(FunctionPlan.t(), Types.reg(), Types.decl_map()) :: boolean()
 
   defp native_bool_needs_mutable_local?(plan, reg, decl_map) do
     defs = all_defining_instrs(plan, reg)
-    length(defs) > 1 or Enum.any?(defs, &native_bool_rc_out_param_def?(&1, decl_map, plan))
+
+    length(defs) > 1 or Enum.any?(defs, &native_bool_rc_out_param_def?(&1, decl_map, plan)) or
+      state_switch_emit?(plan) or native_bool_cross_block_use?(plan, reg)
   end
+
+  @spec native_int_cross_block_use?(FunctionPlan.t(), Types.reg()) :: boolean()
+
+  defp native_int_cross_block_use?(%FunctionPlan{} = plan, reg) do
+    case defining_block_id(plan, reg) do
+      nil ->
+        false
+
+      def_id ->
+        Enum.any?(native_scalar_use_block_ids(plan, reg), &(&1 != def_id))
+    end
+  end
+
+  @spec native_bool_cross_block_use?(FunctionPlan.t(), Types.reg()) :: boolean()
+
+  defp native_bool_cross_block_use?(%FunctionPlan{} = plan, reg) do
+    case defining_block_id(plan, reg) do
+      nil ->
+        false
+
+      def_id ->
+        Enum.any?(native_scalar_use_block_ids(plan, reg), &(&1 != def_id))
+    end
+  end
+
+  @spec defining_block_id(FunctionPlan.t(), Types.reg()) :: non_neg_integer() | nil
+
+  defp defining_block_id(%FunctionPlan{blocks: blocks}, reg) when is_integer(reg) do
+    Enum.find_value(blocks, fn %{id: id, instrs: instrs} ->
+      if Enum.any?(instrs, &defining_reg?(&1, reg)), do: id
+    end)
+  end
+
+  @spec native_scalar_use_block_ids(FunctionPlan.t(), Types.reg()) :: [non_neg_integer()]
+
+  defp native_scalar_use_block_ids(%FunctionPlan{blocks: blocks}, reg) when is_integer(reg) do
+    Enum.flat_map(blocks, fn %{id: id, instrs: instrs} ->
+      if Enum.any?(instrs, &native_scalar_instr_uses_reg?(&1, reg)), do: [id], else: []
+    end)
+  end
+
+  @spec native_scalar_instr_uses_reg?(Types.t() | map(), Types.reg()) :: boolean()
+
+  defp native_scalar_instr_uses_reg?(instr, reg) do
+    reg in plan_value_operand_regs(instr) or phi_shape_uses_reg?(instr, reg)
+  end
+
+  @spec phi_shape_uses_reg?(Types.t() | map(), Types.reg()) :: boolean()
+
+  defp phi_shape_uses_reg?(%{op: :phi, args: args}, reg) when is_map(args) do
+    (Map.get(args, :native_int_phi) == true or Map.get(args, :truthy_native) == true) and
+      (reg in phi_shape_regs(Map.get(args, :then_shape)) or
+         reg in phi_shape_regs(Map.get(args, :else_shape)))
+  end
+
+  defp phi_shape_uses_reg?(_, _), do: false
+
+  @spec phi_shape_regs(term()) :: [Types.reg()]
+
+  defp phi_shape_regs({:int_arith, args}) when is_map(args) do
+    [:lhs, :rhs, :base, :value]
+    |> Enum.map(&Map.get(args, &1))
+    |> Enum.filter(&is_integer/1)
+  end
+
+  defp phi_shape_regs({:compare, _kind, left, right}) do
+    Enum.filter([left, right], &is_integer/1)
+  end
+
+  defp phi_shape_regs({:reg, reg}) when is_integer(reg), do: [reg]
+  defp phi_shape_regs(_), do: []
 
   defp native_int_rc_out_param_def?(%{op: :call_fn, args: %{module: mod, name: name}}, decl_map, plan)
        when is_binary(mod) and is_binary(name) do
@@ -3207,6 +3299,9 @@ defmodule Elmc.Backend.C.Lower.Function do
   defp native_int_candidate?(plan, reg, decl_map, native_set) do
     case all_defining_instrs(plan, reg) do
       [] ->
+        false
+
+      [%{op: :const_int, args: %{bool_lit: true}} | _] ->
         false
 
       [%{op: op} | _] when op in [:const_int, :const_c_expr, :record_get_int, :int_arith, :boxed_tag_peel] ->
@@ -3268,6 +3363,9 @@ defmodule Elmc.Backend.C.Lower.Function do
       case defining_instr(plan, reg) do
         %{op: :load_param, args: %{index: index}} ->
           Enum.at(param_kinds_for_plan(plan), index) == :native_int
+
+        %{op: :const_int, args: %{bool_lit: true}} ->
+          false
 
         %{op: op} when op in [:const_int, :const_c_expr, :record_get_int, :int_arith, :boxed_tag_peel] ->
           true

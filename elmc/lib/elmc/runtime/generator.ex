@@ -317,7 +317,8 @@ defmodule Elmc.Runtime.Generator do
   end
 
   # Int-only apps keep Basics.abs/negate for integers, but float branches still call
-  # elmc_new_float_take after header float-take wrappers are pruned.
+  # elmc_as_float after the float coercion / allocator was pruned (legacy `_take`
+  # and current RC `elmc_new_float(out, …)` shapes).
   defp stub_int_only_basics_abs_negate(source) do
     source
     |> then(
@@ -329,7 +330,21 @@ defmodule Elmc.Runtime.Generator do
     )
     |> then(
       &Regex.replace(
+        ~r/^[ \t]*if \(x && x->tag == ELMC_TAG_FLOAT\) \{\n[ \t]*return elmc_new_float\(out, -elmc_as_float\(x\)\);\n[ \t]*\}\n/m,
+        &1,
+        ""
+      )
+    )
+    |> then(
+      &Regex.replace(
         ~r/^[ \t]*if \(x && x->tag == ELMC_TAG_FLOAT\) \{\n[ \t]*double v = elmc_as_float\(x\);\n[ \t]*return elmc_new_float_take\(v < 0 \? -v : v\);\n[ \t]*\}\n/m,
+        &1,
+        ""
+      )
+    )
+    |> then(
+      &Regex.replace(
+        ~r/^[ \t]*if \(x && x->tag == ELMC_TAG_FLOAT\) \{\n[ \t]*double v = elmc_as_float\(x\);\n[ \t]*return elmc_new_float\(out, v < 0 \? -v : v\);\n[ \t]*\}\n/m,
         &1,
         ""
       )
@@ -3951,7 +3966,9 @@ defmodule Elmc.Runtime.Generator do
         a = ca->tail;
         b = cb->tail;
       }
-      return 0;
+      return (a == b) ||
+             ((!a || (a->tag == ELMC_TAG_LIST && a->payload == NULL)) &&
+              (!b || (b->tag == ELMC_TAG_LIST && b->payload == NULL)));
     }
 
     int elmc_value_equal(ElmcValue *left, ElmcValue *right) {
@@ -3963,6 +3980,11 @@ defmodule Elmc.Runtime.Generator do
             (right->tag == ELMC_TAG_INT || right->tag == ELMC_TAG_BOOL ||
              right->tag == ELMC_TAG_CHAR || right->tag == ELMC_TAG_ORDER)) {
           return elmc_as_int(left) == elmc_as_int(right);
+        }
+        /* Cons List vs packed INT_LIST (e.g. Dict.values == [100, 200]). */
+        if ((left->tag == ELMC_TAG_LIST || left->tag == ELMC_TAG_INT_LIST) &&
+            (right->tag == ELMC_TAG_LIST || right->tag == ELMC_TAG_INT_LIST)) {
+          return elmc_list_equal_int(left, right);
         }
         if (left->tag == ELMC_TAG_MAYBE && left->payload && right->tag == ELMC_TAG_INT) {
           ElmcMaybe *maybe = (ElmcMaybe *)left->payload;
@@ -4014,20 +4036,14 @@ defmodule Elmc.Runtime.Generator do
             a = ca->tail;
             b = cb->tail;
           }
-          return 0;
+          /* Equal spines leave both cursors at nil / empty list. */
+          return (a == b) ||
+                 ((!a || (a->tag == ELMC_TAG_LIST && a->payload == NULL)) &&
+                  (!b || (b->tag == ELMC_TAG_LIST && b->payload == NULL)));
         }
 
-        case ELMC_TAG_INT_LIST: {
-          if (left->tag != ELMC_TAG_INT_LIST || right->tag != ELMC_TAG_INT_LIST) return 0;
-          ElmcIntListPayload *a = elmc_int_list_payload(left);
-          ElmcIntListPayload *b = elmc_int_list_payload(right);
-          if (!a || !b) return a == b;
-          if (a->length != b->length) return 0;
-          for (int i = 0; i < a->length; i++) {
-            if (a->values[i] != b->values[i]) return 0;
-          }
-          return 1;
-        }
+        case ELMC_TAG_INT_LIST:
+          return elmc_list_equal_int(left, right);
 
         case ELMC_TAG_TUPLE2: {
           if (!left->payload || !right->payload) return left->payload == right->payload;

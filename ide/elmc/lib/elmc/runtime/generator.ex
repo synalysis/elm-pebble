@@ -108,18 +108,6 @@ defmodule Elmc.Runtime.Generator do
     ]
   end
 
-  @elmc_as_float_impl """
-      if (!value) return 0.0;
-      if (value->tag == ELMC_TAG_FLOAT) return *((double *)value->payload);
-      if (value->tag == ELMC_TAG_INT || value->tag == ELMC_TAG_BOOL) return (double)elmc_as_int(value);
-      return 0.0;
-  """
-
-  @elmc_as_float_stub """
-      (void)value;
-      return 0.0;
-  """
-
   @elmc_as_int_number_impl """
       if (!value) return 0;
       if (value->tag == ELMC_TAG_FLOAT) return (elmc_int_t)elmc_as_float(value);
@@ -139,25 +127,11 @@ defmodule Elmc.Runtime.Generator do
       }
   """
 
-  @elmc_as_float_fn_stub """
-      double elmc_as_float(ElmcValue *value) {
-        (void)value;
-        return 0.0;
-      }
-  """
-
   @elmc_as_float_fn_impl_unindented """
   double elmc_as_float(ElmcValue *value) {
     if (!value) return 0.0;
     if (value->tag == ELMC_TAG_FLOAT) return *((double *)value->payload);
     if (value->tag == ELMC_TAG_INT || value->tag == ELMC_TAG_BOOL) return (double)elmc_as_int(value);
-    return 0.0;
-  }
-  """
-
-  @elmc_as_float_fn_stub_unindented """
-  double elmc_as_float(ElmcValue *value) {
-    (void)value;
     return 0.0;
   }
   """
@@ -287,18 +261,7 @@ defmodule Elmc.Runtime.Generator do
         """,
         ""
       )
-      |> String.replace(
-        """
-          if (a && b && (a->tag == ELMC_TAG_FLOAT || b->tag == ELMC_TAG_FLOAT)) {
-            double fa = elmc_as_float(a);
-            double fb = elmc_as_float(b);
-            if (fa < fb) return elmc_new_int(out, -1);
-            if (fa > fb) return elmc_new_int(out, 1);
-            return elmc_int_zero();
-          }
-        """,
-        ""
-      )
+      |> strip_basics_compare_float_branch()
     else
       source
     end
@@ -307,20 +270,55 @@ defmodule Elmc.Runtime.Generator do
   defp maybe_stub_int_only_float_coercions(source, direct_refs) do
     if int_only_float_coercions?(direct_refs) do
       source
-      |> String.replace(@elmc_as_float_impl, @elmc_as_float_stub)
-      |> String.replace(@elmc_as_int_number_impl, @elmc_as_int_number_stub)
-      |> String.replace(@elmc_as_float_fn_impl, @elmc_as_float_fn_stub)
-      |> String.replace(@elmc_as_float_fn_impl_unindented, @elmc_as_float_fn_stub_unindented)
+      # Drop whole float coercion defs first (empty body replace would break matching).
+      |> String.replace(@elmc_as_float_fn_impl, "")
+      |> String.replace(@elmc_as_float_fn_impl_unindented, "")
       |> String.replace(@elmc_as_int_number_fn_impl, @elmc_as_int_number_fn_stub)
       |> String.replace(@elmc_as_int_number_fn_impl_unindented, @elmc_as_int_number_fn_stub_unindented)
+      # Body-only forms (if definition layout differs from module attributes).
+      |> String.replace(@elmc_as_int_number_impl, @elmc_as_int_number_stub)
+      |> strip_remaining_elmc_as_float_definition()
       |> stub_int_only_basics_abs_negate()
+      |> stub_int_only_float_compare_branches()
     else
       source
     end
   end
 
+  # value_equal / basics_compare still mention elmc_as_float in FLOAT arms; strip
+  # those arms when the float allocator was never seeded (int-only apps).
+  defp stub_int_only_float_compare_branches(source) do
+    source
+    |> String.replace(
+      """
+
+            case ELMC_TAG_FLOAT:
+              return elmc_as_float(left) == elmc_as_float(right);
+        """,
+      ""
+    )
+    |> strip_basics_compare_float_branch()
+  end
+
+  defp strip_basics_compare_float_branch(source) do
+    Regex.replace(
+      ~r/[ \t]*if \(a && b && \(a->tag == ELMC_TAG_FLOAT \|\| b->tag == ELMC_TAG_FLOAT\)\) \{\n[ \t]*double fa = elmc_as_float\(a\);\n[ \t]*double fb = elmc_as_float\(b\);\n[ \t]*if \(fa < fb\) \{\n[ \t]*rc = elmc_new_order\(out, -1\);\n[ \t]*CHECK_RC\(rc\);\n[ \t]*\} else if \(fa > fb\) \{\n[ \t]*rc = elmc_new_order\(out, 1\);\n[ \t]*CHECK_RC\(rc\);\n[ \t]*\} else \{\n[ \t]*rc = elmc_new_order\(out, 0\);\n[ \t]*CHECK_RC\(rc\);\n[ \t]*\}\n[ \t]*\} else if/,
+      source,
+      "    if"
+    )
+  end
+
+  defp strip_remaining_elmc_as_float_definition(source) do
+    Regex.replace(
+      ~r/\n[ \t]*double elmc_as_float\(ElmcValue \*value\) \{\n(?:[ \t]*[^\n]*\n)*?[ \t]*\}\n/,
+      source,
+      "\n"
+    )
+  end
+
   # Int-only apps keep Basics.abs/negate for integers, but float branches still call
-  # elmc_new_float_take after header float-take wrappers are pruned.
+  # elmc_as_float after the float coercion / allocator was pruned (legacy `_take`
+  # and current RC `elmc_new_float(out, …)` shapes).
   defp stub_int_only_basics_abs_negate(source) do
     source
     |> then(
@@ -332,7 +330,21 @@ defmodule Elmc.Runtime.Generator do
     )
     |> then(
       &Regex.replace(
+        ~r/^[ \t]*if \(x && x->tag == ELMC_TAG_FLOAT\) \{\n[ \t]*return elmc_new_float\(out, -elmc_as_float\(x\)\);\n[ \t]*\}\n/m,
+        &1,
+        ""
+      )
+    )
+    |> then(
+      &Regex.replace(
         ~r/^[ \t]*if \(x && x->tag == ELMC_TAG_FLOAT\) \{\n[ \t]*double v = elmc_as_float\(x\);\n[ \t]*return elmc_new_float_take\(v < 0 \? -v : v\);\n[ \t]*\}\n/m,
+        &1,
+        ""
+      )
+    )
+    |> then(
+      &Regex.replace(
+        ~r/^[ \t]*if \(x && x->tag == ELMC_TAG_FLOAT\) \{\n[ \t]*double v = elmc_as_float\(x\);\n[ \t]*return elmc_new_float\(out, v < 0 \? -v : v\);\n[ \t]*\}\n/m,
         &1,
         ""
       )
@@ -341,28 +353,18 @@ defmodule Elmc.Runtime.Generator do
 
   @spec maybe_inject_pruned_c_coercion_decls(Types.runtime_source(), MapSet.t(String.t())) ::
           Types.runtime_source()
-  defp maybe_inject_pruned_c_coercion_decls(source, direct_refs) do
-    if int_only_float_coercions?(direct_refs) and String.contains?(source, "elmc_as_float(") do
-      inject_after_runtime_include(
-        source,
-        "double elmc_as_float(ElmcValue *value);\n"
-      )
-    else
-      source
-    end
+  defp maybe_inject_pruned_c_coercion_decls(source, _direct_refs) do
+    # Int-only builds omit elmc_as_float entirely (no soft-float). Call sites
+    # are stubbed to int paths, so do not re-inject a double prototype.
+    source
   end
 
-  @spec inject_after_runtime_include(Types.runtime_source(), Types.runtime_source()) ::
-          Types.runtime_source()
-  defp inject_after_runtime_include(source, decls) do
-    case String.split(source, "#include \"elmc_runtime.h\"\n", parts: 2) do
-      [before, rest] -> before <> "#include \"elmc_runtime.h\"\n" <> decls <> rest
-      _ -> source
-    end
-  end
 
   defp int_only_float_coercions?(direct_refs) do
-    MapSet.disjoint?(direct_refs, @float_alloc_refs)
+    # `ELMC_RECORD_GET_INDEX_FLOAT` seeds `elmc_as_float` without any float
+    # allocator — keep the coercion when field macros need it.
+    MapSet.disjoint?(direct_refs, @float_alloc_refs) and
+      not MapSet.member?(direct_refs, "elmc_as_float")
   end
 
   defp json_float_disabled?(source) when is_binary(source) do
@@ -487,11 +489,16 @@ defmodule Elmc.Runtime.Generator do
   end
 
   defp collect_direct_runtime_references(dir) do
-    dir
-    |> collect_prune_contents()
-    |> Enum.reduce(MapSet.new(), fn content, acc ->
+    contents = collect_prune_contents(dir)
+
+    macros =
+      contents
+      |> Enum.reduce(%{}, fn content, acc -> Map.merge(acc, preprocessor_bool_macros(content)) end)
+      |> Map.merge(collect_prune_header_macros(dir))
+
+    Enum.reduce(contents, MapSet.new(), fn content, acc ->
       content
-      |> runtime_reference_names()
+      |> runtime_reference_names(macros)
       |> Enum.reduce(acc, &MapSet.put(&2, &1))
     end)
   end
@@ -533,7 +540,7 @@ defmodule Elmc.Runtime.Generator do
       end)
 
     refs
-    |> expand_runtime_prune_refs(contents)
+    |> expand_runtime_prune_refs(contents, macros)
     |> Map.new(fn name -> {name, true} end)
   end
 
@@ -620,6 +627,77 @@ defmodule Elmc.Runtime.Generator do
     |> maybe_drop_float_list_runtime(joined)
     |> maybe_drop_record_seq_runtime(joined)
     |> maybe_drop_int_spine_runtime(joined)
+    |> maybe_strip_unused_list_layout_branches(joined)
+  end
+
+  defp maybe_strip_unused_list_layout_branches(source, joined) do
+    int_list? = compact_int_list_used?(joined)
+    cons_list? = compact_cons_list_used?(joined)
+
+    cond do
+      int_list? and not cons_list? ->
+        source
+        |> strip_cons_list_materialize_branches()
+        |> strip_cons_list_length_branches()
+
+      cons_list? and not int_list? ->
+        strip_int_list_only_helper_branches(source)
+
+      true ->
+        source
+    end
+  end
+
+  defp compact_cons_list_used?(joined) do
+    String.contains?(joined, "ELMC_TAG_LIST") or
+      String.contains?(joined, "elmc_list_cons") or
+      String.contains?(joined, "elmc_list_nil") or
+      String.contains?(joined, "elmc_list_append")
+  end
+
+  defp compact_int_list_used?(joined) do
+    String.contains?(joined, "ELMC_TAG_INT_LIST") or
+      String.contains?(joined, "elmc_list_from_int_array") or
+      String.contains?(joined, "elmc_int_list_")
+  end
+
+  defp strip_cons_list_materialize_branches(source) do
+    source
+    |> String.replace(
+      ~r/\s*if \(list && list->tag == ELMC_TAG_LIST\) \{\s*return elmc_list_materialize_cons\(out, list\);\s*\}\s*/s,
+      ""
+    )
+    |> String.replace(
+      ~r/\s*if \(list && list->tag != ELMC_TAG_INT_LIST\) \{\s*return elmc_list_materialize_cons\(out, list\);\s*\}\s*/s,
+      ""
+    )
+  end
+
+  defp strip_cons_list_length_branches(source) do
+    Regex.replace(
+      ~r/\s*if \(list && list->tag == ELMC_TAG_LIST\) \{\s*return elmc_list_length_cons\(list\);\s*\}\s*/s,
+      source,
+      ""
+    )
+  end
+
+  defp strip_int_list_only_helper_branches(source) do
+    source
+    |> String.replace(
+      ~r/\s*if \(list && list->tag == ELMC_TAG_INT_LIST\) \{\s*return \(elmc_int_t\)elmc_int_list_length\(list\);\s*\}\s*/s,
+      ""
+    )
+    |> String.replace(
+      ~r/\s*if \(list && list->tag == ELMC_TAG_INT_LIST\) \{\s*return elmc_int_list_length\(list\);\s*\}\s*/s,
+      ""
+    )
+  end
+
+  @spec strip_c_line_comments(String.t()) :: String.t()
+  defp strip_c_line_comments(content) when is_binary(content) do
+    content
+    |> String.replace(~r/\/\*.*?\*\//s, "")
+    |> String.replace(~r/\/\/[^\n]*/, "")
   end
 
   defp maybe_drop_int_spine_runtime(source, joined) do
@@ -798,8 +876,9 @@ defmodule Elmc.Runtime.Generator do
     ~r/if \(value->tag == ELMC_TAG_RECORD_SEQ && elmc_record_seq_cell_release\(value\)\) \{\s*ELMC_RELEASED \+= 1;\s*return;\s*\}/s
   end
 
-  @spec expand_runtime_prune_refs(Types.runtime_ref_map(), [String.t()]) :: [String.t()]
-  defp expand_runtime_prune_refs(refs, contents) do
+  @spec expand_runtime_prune_refs(Types.runtime_ref_map(), [String.t()], %{String.t() => boolean()}) ::
+          [String.t()]
+  defp expand_runtime_prune_refs(refs, contents, macros) do
     seeds = Map.keys(refs)
 
     expanded =
@@ -811,16 +890,24 @@ defmodule Elmc.Runtime.Generator do
     |> maybe_seed_speaker_serialize_refs(contents)
     |> maybe_seed_json_runtime_refs(contents)
     |> maybe_seed_compact_list_release_stub_refs(contents)
-    |> maybe_seed_float_runtime_refs(contents)
+    |> maybe_seed_float_runtime_refs(contents, macros)
     |> maybe_seed_header_pattern_helper_refs(contents)
-    |> maybe_seed_protocol_list_array_refs()
+    |> maybe_seed_protocol_list_array_refs(contents)
   end
 
-  # Companion protocol (and other take-wrapper callers) may live outside prune_from_dir
-  # but still link against header inlines that call these allocators.
-  defp maybe_seed_protocol_list_array_refs(expanded) do
-    (expanded ++ ["elmc_list_from_int_array", "elmc_calloc_impl", "elmc_malloc_impl"])
-    |> Enum.uniq()
+  # Only seed list-array helpers when generated sources actually reference them.
+  # Companion protocol C under `prune_from_dir` is picked up by normal reference
+  # scanning; unconditional seeds kept float/json-sized helpers alive without use.
+  defp maybe_seed_protocol_list_array_refs(expanded, contents) do
+    joined = Enum.join(contents, "\n")
+
+    seeds =
+      []
+      |> then(fn acc ->
+        if String.contains?(joined, "elmc_list_from_int_array"), do: ["elmc_list_from_int_array" | acc], else: acc
+      end)
+
+    (expanded ++ seeds) |> Enum.uniq()
   end
 
   defp maybe_seed_header_pattern_helper_refs(expanded, contents) do
@@ -838,11 +925,24 @@ defmodule Elmc.Runtime.Generator do
     end
   end
 
-  defp maybe_seed_float_runtime_refs(expanded, contents) do
-    joined = Enum.join(contents, "\n")
+  defp maybe_seed_float_runtime_refs(expanded, contents, macros) do
+    # Only seed from active preprocessor regions — compass/dictation template
+    # arms mention elmc_new_float behind feature flags that are often 0.
+    # `macros` must include feature flags from generated headers (elmc_pebble.h).
+    content_macros =
+      contents
+      |> Enum.reduce(%{}, fn content, acc -> Map.merge(acc, preprocessor_bool_macros(content)) end)
 
-    if String.contains?(joined, "elmc_new_float_take") or String.contains?(joined, "elmc_as_float") or
-         String.contains?(joined, "elmc_basics_round") do
+    macros = Map.merge(content_macros, macros)
+
+    joined =
+      contents
+      |> Enum.map(&drop_inactive_preprocessor_blocks(&1, macros))
+      |> Enum.join("\n")
+
+    if String.contains?(joined, "elmc_new_float") or String.contains?(joined, "elmc_as_float") or
+         String.contains?(joined, "elmc_basics_round") or
+         String.contains?(joined, "ELMC_RECORD_GET_INDEX_FLOAT") do
       (expanded ++ ["elmc_new_float", "elmc_as_float"]) |> Enum.uniq()
     else
       expanded
@@ -1075,6 +1175,8 @@ defmodule Elmc.Runtime.Generator do
 
   @spec runtime_reference_names(String.t()) :: [String.t()]
   defp runtime_reference_names(content) do
+    content = strip_c_line_comments(content)
+
     direct =
       Regex.scan(~r/\belmc_[A-Za-z0-9_]+\b/, content)
       |> Enum.map(&hd/1)
@@ -1396,6 +1498,8 @@ defmodule Elmc.Runtime.Generator do
 
   @spec called_functions(Types.runtime_source(), Types.def_map()) :: [String.t()]
   defp called_functions(body, def_map) when is_binary(body) do
+    body = strip_c_line_comments(body)
+
     call_deps =
       Regex.scan(~r/\b([A-Za-z_][A-Za-z0-9_]*)\s*\(/, body)
       |> Enum.map(fn [_, name] -> name end)
@@ -1876,6 +1980,7 @@ defmodule Elmc.Runtime.Generator do
     int elmc_string_length(ElmcValue *value);
     RC elmc_list_head(ElmcValue **out, ElmcValue *list);
     RC elmc_list_nth_maybe(ElmcValue **out, ElmcValue *list, ElmcValue *index);
+    RC elmc_list_nth_maybe_int(ElmcValue **out, ElmcValue *list, elmc_int_t index);
     elmc_int_t elmc_list_nth_int_default(ElmcValue *list, elmc_int_t index, elmc_int_t default_value);
     RC elmc_list_nth_int_default_boxed(ElmcValue **out, ElmcValue *list, ElmcValue *index, ElmcValue *default_value);
     elmc_int_t elmc_list_head_with_default_int(elmc_int_t default_val, ElmcValue *list);
@@ -2178,7 +2283,6 @@ defmodule Elmc.Runtime.Generator do
     RC elmc_record_update_index_float_cow(ElmcValue **out, ElmcValue *record, int index, double new_value);
     RC elmc_record_update_index_float_cow_drop(ElmcValue **out, ElmcValue *record, int index, double new_value);
 
-    #{RcMacros.rc_alloc_expr_macros()}
 
     #{RcMacros.maybe_pattern_helpers()}
 
@@ -3031,15 +3135,17 @@ defmodule Elmc.Runtime.Generator do
       CATCH_BEGIN
         ElmcValue *tail = elmc_int_zero();
         for (int i = 5; i >= 0; i--) {
-          ElmcValue *pv = ELMC_RC_INT_BOX(ps[i]);
-          if (!pv) { rc = RC_ERR_OUT_OF_MEMORY; CHECK_RC(rc); }
+          ElmcValue *pv = NULL;
+          rc = elmc_new_int(&pv, ps[i]);
+          CHECK_RC(rc);
           ElmcValue *pair = NULL;
           rc = elmc_tuple2_take(&pair, pv, tail);
           CHECK_RC(rc);
           tail = pair;
         }
-        ElmcValue *kind_v = ELMC_RC_INT_BOX(kind);
-        if (!kind_v) { rc = RC_ERR_OUT_OF_MEMORY; CHECK_RC(rc); }
+        ElmcValue *kind_v = NULL;
+        rc = elmc_new_int(&kind_v, kind);
+        CHECK_RC(rc);
         rc = elmc_tuple2_take(out, kind_v, tail);
         CHECK_RC(rc);
       CATCH_END
@@ -3053,15 +3159,17 @@ defmodule Elmc.Runtime.Generator do
         ElmcValue *tail = text ? elmc_retain(text) : elmc_int_zero();
         if (!tail) { rc = RC_ERR_OUT_OF_MEMORY; CHECK_RC(rc); }
         for (int i = 5; i >= 0; i--) {
-          ElmcValue *pv = ELMC_RC_INT_BOX(ps[i]);
-          if (!pv) { rc = RC_ERR_OUT_OF_MEMORY; CHECK_RC(rc); }
+          ElmcValue *pv = NULL;
+          rc = elmc_new_int(&pv, ps[i]);
+          CHECK_RC(rc);
           ElmcValue *pair = NULL;
           rc = elmc_tuple2_take(&pair, pv, tail);
           CHECK_RC(rc);
           tail = pair;
         }
-        ElmcValue *kind_v = ELMC_RC_INT_BOX(kind);
-        if (!kind_v) { rc = RC_ERR_OUT_OF_MEMORY; CHECK_RC(rc); }
+        ElmcValue *kind_v = NULL;
+        rc = elmc_new_int(&kind_v, kind);
+        CHECK_RC(rc);
         rc = elmc_tuple2_take(out, kind_v, tail);
         CHECK_RC(rc);
       CATCH_END
@@ -3829,6 +3937,25 @@ defmodule Elmc.Runtime.Generator do
         }
         return 1;
       }
+      /* INT_LIST vs cons (or either empty): compare by int elements. */
+      if ((left && left->tag == ELMC_TAG_INT_LIST) || (right && right->tag == ELMC_TAG_INT_LIST)) {
+        ElmcValue *int_list = (left && left->tag == ELMC_TAG_INT_LIST) ? left : right;
+        ElmcValue *other = (int_list == left) ? right : left;
+        ElmcIntListPayload *payload = elmc_int_list_payload(int_list);
+        if (!payload) return other == NULL || (other->tag == ELMC_TAG_LIST && other->payload == NULL);
+        if (!other) return payload->length == 0;
+        if (other->tag == ELMC_TAG_LIST) {
+          ElmcValue *cursor = other;
+          for (int i = 0; i < payload->length; i++) {
+            if (!cursor || cursor->tag != ELMC_TAG_LIST || cursor->payload == NULL) return 0;
+            ElmcCons *node = (ElmcCons *)cursor->payload;
+            if (elmc_as_int(node->head) != payload->values[i]) return 0;
+            cursor = node->tail;
+          }
+          return cursor == NULL || (cursor->tag == ELMC_TAG_LIST && cursor->payload == NULL);
+        }
+        return 0;
+      }
       ElmcValue *a = left;
       ElmcValue *b = right;
       while (a && b && a->tag == ELMC_TAG_LIST && b->tag == ELMC_TAG_LIST) {
@@ -3839,7 +3966,9 @@ defmodule Elmc.Runtime.Generator do
         a = ca->tail;
         b = cb->tail;
       }
-      return 0;
+      return (a == b) ||
+             ((!a || (a->tag == ELMC_TAG_LIST && a->payload == NULL)) &&
+              (!b || (b->tag == ELMC_TAG_LIST && b->payload == NULL)));
     }
 
     int elmc_value_equal(ElmcValue *left, ElmcValue *right) {
@@ -3851,6 +3980,11 @@ defmodule Elmc.Runtime.Generator do
             (right->tag == ELMC_TAG_INT || right->tag == ELMC_TAG_BOOL ||
              right->tag == ELMC_TAG_CHAR || right->tag == ELMC_TAG_ORDER)) {
           return elmc_as_int(left) == elmc_as_int(right);
+        }
+        /* Cons List vs packed INT_LIST (e.g. Dict.values == [100, 200]). */
+        if ((left->tag == ELMC_TAG_LIST || left->tag == ELMC_TAG_INT_LIST) &&
+            (right->tag == ELMC_TAG_LIST || right->tag == ELMC_TAG_INT_LIST)) {
+          return elmc_list_equal_int(left, right);
         }
         if (left->tag == ELMC_TAG_MAYBE && left->payload && right->tag == ELMC_TAG_INT) {
           ElmcMaybe *maybe = (ElmcMaybe *)left->payload;
@@ -3902,20 +4036,14 @@ defmodule Elmc.Runtime.Generator do
             a = ca->tail;
             b = cb->tail;
           }
-          return 0;
+          /* Equal spines leave both cursors at nil / empty list. */
+          return (a == b) ||
+                 ((!a || (a->tag == ELMC_TAG_LIST && a->payload == NULL)) &&
+                  (!b || (b->tag == ELMC_TAG_LIST && b->payload == NULL)));
         }
 
-        case ELMC_TAG_INT_LIST: {
-          if (left->tag != ELMC_TAG_INT_LIST || right->tag != ELMC_TAG_INT_LIST) return 0;
-          ElmcIntListPayload *a = elmc_int_list_payload(left);
-          ElmcIntListPayload *b = elmc_int_list_payload(right);
-          if (!a || !b) return a == b;
-          if (a->length != b->length) return 0;
-          for (int i = 0; i < a->length; i++) {
-            if (a->values[i] != b->values[i]) return 0;
-          }
-          return 1;
-        }
+        case ELMC_TAG_INT_LIST:
+          return elmc_list_equal_int(left, right);
 
         case ELMC_TAG_TUPLE2: {
           if (!left->payload || !right->payload) return left->payload == right->payload;
@@ -4019,8 +4147,9 @@ defmodule Elmc.Runtime.Generator do
           return RC_SUCCESS;
         }
         {
-          ElmcValue *boxed = ELMC_RC_INT_BOX(payload->values[0]);
-          if (!boxed) return RC_ERR_OUT_OF_MEMORY;
+          ElmcValue *boxed = NULL;
+          RC rc = elmc_new_int(&boxed, payload->values[0]);
+          if (rc != RC_SUCCESS) return rc;
           return elmc_maybe_just(out, boxed);
         }
       }
@@ -4042,8 +4171,7 @@ defmodule Elmc.Runtime.Generator do
       return elmc_maybe_just(out, node->head);
     }
 
-    RC elmc_list_nth_maybe(ElmcValue **out, ElmcValue *list, ElmcValue *index) {
-      elmc_int_t idx = elmc_as_int(index);
+    RC elmc_list_nth_maybe_int(ElmcValue **out, ElmcValue *list, elmc_int_t idx) {
       if (list && list->tag == ELMC_TAG_INT_LIST) {
         ElmcIntListPayload *payload = elmc_int_list_payload(list);
         if (!payload || idx < 0 || idx >= payload->length) {
@@ -4051,8 +4179,9 @@ defmodule Elmc.Runtime.Generator do
           return RC_SUCCESS;
         }
         {
-          ElmcValue *boxed = ELMC_RC_INT_BOX(payload->values[idx]);
-          if (!boxed) return RC_ERR_OUT_OF_MEMORY;
+          ElmcValue *boxed = NULL;
+          RC rc = elmc_new_int(&boxed, payload->values[idx]);
+          if (rc != RC_SUCCESS) return rc;
           return elmc_maybe_just(out, boxed);
         }
       }
@@ -4075,6 +4204,10 @@ defmodule Elmc.Runtime.Generator do
       }
       ElmcCons *node = (ElmcCons *)cursor->payload;
       return elmc_maybe_just(out, node->head);
+    }
+
+    RC elmc_list_nth_maybe(ElmcValue **out, ElmcValue *list, ElmcValue *index) {
+      return elmc_list_nth_maybe_int(out, list, elmc_as_int(index));
     }
 
     elmc_int_t elmc_list_nth_int_default(ElmcValue *list, elmc_int_t index, elmc_int_t default_value) {

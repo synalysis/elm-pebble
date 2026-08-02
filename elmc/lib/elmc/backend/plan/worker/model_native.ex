@@ -97,16 +97,29 @@ defmodule Elmc.Backend.Plan.Worker.ModelNative do
 
         case field.type do
           "Bool" ->
-            "  ElmcValue *f#{idx} = elmc_bool(native->#{field.c_name});"
+            """
+              ElmcValue *f#{idx} = NULL;
+              if (elmc_new_bool(&f#{idx}, native->#{field.c_name}) != RC_SUCCESS) {
+                return RC_ERR_OUT_OF_MEMORY;
+              }
+            """
 
           "Float" ->
-            "  ElmcValue *f#{idx} = elmc_new_float_take(native->#{field.c_name});"
+            """
+              ElmcValue *f#{idx} = NULL;
+              if (elmc_new_float(&f#{idx}, native->#{field.c_name}) != RC_SUCCESS) {
+                return RC_ERR_OUT_OF_MEMORY;
+              }
+            """
 
           "Maybe Int" ->
             """
               ElmcValue *f#{idx} = NULL;
               if (native->has_#{field.c_name}) {
-                ElmcValue *inner = elmc_new_int_take(native->#{field.c_name});
+                ElmcValue *inner = NULL;
+                if (elmc_new_int(&inner, native->#{field.c_name}) != RC_SUCCESS) {
+                  return RC_ERR_OUT_OF_MEMORY;
+                }
                 if (elmc_maybe_just(&f#{idx}, inner) != RC_SUCCESS) {
                   elmc_release(inner);
                   return RC_ERR_OUT_OF_MEMORY;
@@ -117,7 +130,12 @@ defmodule Elmc.Backend.Plan.Worker.ModelNative do
             """
 
           _ ->
-            "  ElmcValue *f#{idx} = elmc_new_int_take(native->#{field.c_name});"
+            """
+              ElmcValue *f#{idx} = NULL;
+              if (elmc_new_int(&f#{idx}, native->#{field.c_name}) != RC_SUCCESS) {
+                return RC_ERR_OUT_OF_MEMORY;
+              }
+            """
         end
       end)
 

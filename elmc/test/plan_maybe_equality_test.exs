@@ -47,6 +47,41 @@ defmodule Elmc.PlanMaybeEqualityTest do
     assert compare.args.mode == :value
   end
 
+  test "List Int == List Int selects :value compare mode" do
+    b = Builder.new("Main", "sameList", args: ["a", "b"], rc_required: true)
+    {a_reg, b} = Builder.fresh_reg(b)
+    {b_reg, b} = Builder.fresh_reg(b)
+
+    ctx =
+      Context.new(
+        module: "Main",
+        function_name: "sameList",
+        params: ["a", "b"],
+        locals: %{"a" => a_reg, "b" => b_reg},
+        local_types: %{"a" => "List Int", "b" => "List Int"}
+      )
+
+    assert {:ok, _reg, b2} =
+             Compare.compile(
+               %{
+                 kind: :eq,
+                 left: %{op: :var, name: "a"},
+                 right: %{op: :var, name: "b"}
+               },
+               ctx,
+               b
+             )
+
+    instrs =
+      (b2.blocks ++ [b2.current_block])
+      |> Enum.flat_map(& &1.instrs)
+
+    compare = Enum.find(instrs, &match?(%{op: :compare}, &1))
+    assert compare
+    # Specialized int-list equality (not pointer / as_int collapse).
+    assert compare.args.mode == :list_int
+  end
+
   test "watchface_yes scheduleCompanionFetches uses structural Maybe equality" do
     out = Path.join(System.tmp_dir!(), "yes-maybe-eq-gate-#{System.unique_integer([:positive])}")
     File.rm_rf!(out)

@@ -69,7 +69,7 @@ defmodule Elmc.PlanReachableCoverageTest do
     decl_map = TemplateCompile.decl_map_from_result(result)
     yes_report = PrimaryCoverage.module_prefix_report(decl_map, "Yes.", ir: result.ir)
 
-    assert yes_report.total == 21
+    assert yes_report.total == 22
     assert yes_report.lowered == yes_report.total
   end
 end

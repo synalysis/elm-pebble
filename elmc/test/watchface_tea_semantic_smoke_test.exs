@@ -46,6 +46,10 @@ defmodule Elmc.WatchfaceTeaSemanticSmokeTest do
 
     assert {:ok, _result} = TemplateCompile.compile_watch_template(template, compile_opts)
 
+    # Host builds pull `sin_lookup`/`cos_lookup` from pruned Pebble trig helpers
+    # (YES dial, etc.). Provide portable stubs like other YES host gates.
+    RcTrackHarness.write_trig_stubs!(out_dir)
+
     binary_name = "tea_smoke_#{template}"
     harness_path = Path.join(out_dir, "c/#{binary_name}_harness.c")
     File.write!(harness_path, tea_harness_c(template, profile))
@@ -55,7 +59,10 @@ defmodule Elmc.WatchfaceTeaSemanticSmokeTest do
         out_dir,
         harness_path,
         binary_name,
-        sources: pebble_harness_sources(out_dir, harness_path),
+        sources:
+          pebble_harness_sources(out_dir, harness_path) ++
+            [Path.join(out_dir, "c/pebble_trig_host_stubs.c")],
+        extra_flags: ["-include", Path.join(out_dir, "c/pebble_trig_host_stubs.h")],
         rc_track: false,
         alloc_track: false
       )

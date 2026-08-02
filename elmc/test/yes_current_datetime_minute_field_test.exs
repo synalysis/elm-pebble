@@ -55,12 +55,15 @@ defmodule Elmc.YesCurrentDatetimeMinuteFieldTest do
 
     refute home_body =~ "ELMC_FIELD_YES_RENDER_TICKSPEC_MINUTE"
 
-    # record_get borrows; plan owns the dest slot — must retain or epilogue frees
-    # model.now / lastSunFetchDayKey while the model still holds them.
+    # record_get borrows into owned[]; Frame must null those slots before LIFO
+    # (retain-into-owned also works, but mark+null matches tuple_proj borrow).
     schedule_body =
       CCodegenExtract.fn_body(generated, "elmc_fn_Main_scheduleCompanionFetches")
 
     assert schedule_body =~
-             ~r/elmc_retain\(elmc_record_get_index\([^;]*ELMC_FIELD_MAIN_MODEL_NOW/
+             ~r/elmc_record_get_index\([^;]*ELMC_FIELD_MAIN_MODEL_NOW/
+
+    # Borrowed field gets must be cleared before epilogue release_array_lifo.
+    assert schedule_body =~ ~r/owned\[\d+\]\s*=\s*NULL;/
   end
 end
