@@ -13,14 +13,21 @@ defmodule Elmc.Backend.Plan.Lower.Intrinsics do
   @spec try_lower(Types.function_decl(), String.t(), Types.function_decl_map(), keyword()) ::
           Types.lower_result() | :not_intrinsic
   def try_lower(decl, module_name, decl_map, opts) do
-    case decl do
-      %{expr: %{op: :tuple2}} = decl ->
+    case {module_name, decl} do
+      {"Basics", %{name: "never"}} ->
+        # elm/core implements `never : Never -> a` as a recursive unwrap of
+        # `JustOneMore`, which GCC rejects under `-Winfinite-recursion` (CI host
+        # harnesses / Pebble -Werror). Never is uninhabited — emit a non-recursive
+        # unit return instead of lowering that self-call.
+        lower_basics_never(decl, decl_map, opts)
+
+      {_, %{expr: %{op: :tuple2}} = decl} ->
         lower_runtime_special_tuple_body(decl, module_name, decl_map, opts)
 
-      %{name: "toInt", args: [param_name], expr: %{op: :case}} ->
+      {_, %{name: "toInt", args: [param_name], expr: %{op: :case}}} ->
         lower_color_to_int_identity(decl, module_name, param_name, decl_map, opts)
 
-      %{expr: %{op: :qualified_call, target: target, args: []}} ->
+      {_, %{expr: %{op: :qualified_call, target: target, args: []}}} ->
         cond do
           batch_kernel_target?(target) ->
             lower_batch_kernel_alias(decl, module_name, decl_map, opts)
@@ -32,11 +39,55 @@ defmodule Elmc.Backend.Plan.Lower.Intrinsics do
             end
         end
 
-      %{expr: %{op: :var, name: target}} = decl when is_binary(target) ->
+      {_, %{expr: %{op: :var, name: target}} = decl} when is_binary(target) ->
         lower_var_delegate_alias(decl, module_name, target, decl_map, opts)
 
       _ ->
         :not_intrinsic
+    end
+  end
+
+  @spec lower_basics_never(Types.function_decl(), Types.function_decl_map(), keyword()) ::
+          Types.lower_result()
+
+  defp lower_basics_never(decl, decl_map, opts) do
+    name = "never"
+    args = FunctionEmit.effective_decl_args(decl, "Basics", decl_map)
+    rc_required? = Keyword.get(opts, :rc_required, false)
+
+    ctx =
+      Context.new(
+        module: "Basics",
+        function_name: name,
+        decl_map: decl_map,
+        params: args,
+        rc_required: rc_required?,
+        fallible: rc_required?,
+        function_tail: true
+      )
+
+    b =
+      Builder.new("Basics", name,
+        args: args,
+        rc_required: rc_required?,
+        fallible: rc_required?
+      )
+
+    # Keep param slots in the plan for ABI; body ignores them and returns unit.
+    b =
+      Enum.reduce(Enum.with_index(args), b, fn {param_name, idx}, acc ->
+        {_reg, acc2} = Builder.get_or_load_param(acc, idx, param_name)
+        acc2
+      end)
+
+    with {:ok, result_reg, b1} <- Expr.compile_runtime_builtin(:unit, [], ctx, b),
+         {b2, ret_reg} <- finalize_result(b1, result_reg, rc_required?),
+         b3 <- Builder.emit_ret(b2, ret_reg),
+         plan <- Builder.to_function_plan(b3) |> EpilogueRelease.run(),
+         :ok <- Verify.run(plan) do
+      {:ok, plan}
+    else
+      {:error, _, _} = err -> err
     end
   end
 
