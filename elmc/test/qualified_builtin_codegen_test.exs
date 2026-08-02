@@ -806,6 +806,31 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
     refute use_body =~ "elmc_basics_max("
   end
 
+  test "direct render boxes native max/abs before elmc_basics_compare" do
+    # Repro: abs (round (float * cos …)) < max 1 (r // 8) inside commands_append.
+    # Native scalar context must not emit `owned[i] = native_max_N` (int→pointer).
+    base_main = File.read!(Path.expand("fixtures/simple_project/src/Main.elm", __DIR__))
+
+    out_dir =
+      compile_snippet!(
+        "direct_compare_native_max_box_project",
+        base_main <> direct_compare_native_max_box_source(),
+        %{strip_dead_code: false}
+      )
+
+    generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+
+    use_body =
+      lowered_fn_body!(generated_c, "elmc_fn_Main_directCompareNativeMaxBox_commands_append")
+
+    refute use_body =~ ~r/owned\[\d+\]\s*=\s*native_max_\d+/
+    refute use_body =~ ~r/owned\[\d+\]\s*=\s*native_abs_\d+/
+
+    if use_body =~ "elmc_basics_compare" do
+      assert use_body =~ ~r/elmc_new_int\(&owned\[\d+\],\s*native_max_\d+\)/
+    end
+  end
+
   test "direct command radius lets hoist for analog marker hand positions" do
     base_main = File.read!(Path.expand("fixtures/simple_project/src/Main.elm", __DIR__))
     out_dir = compile_snippet!("direct_native_let_analog_markers_project", base_main <> direct_native_let_analog_markers_source(), %{strip_dead_code: false})
@@ -2550,7 +2575,29 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
                 max 22 ((min screenW screenH // 2) - 14)
         in
         [ PebbleUi.circle { x = centerX, y = centerY } radius PebbleColor.black ]
-    
+
+    """
+  end
+
+  defp direct_compare_native_max_box_source do
+    """
+
+
+    directCompareNativeMaxBox : Int -> Int -> List PebbleUi.RenderOp
+    directCompareNativeMaxBox r phase =
+        let
+            turn =
+                toFloat phase / 1000000
+
+            offset =
+                round (toFloat r * cos (turns turn))
+        in
+        if abs offset < max 1 (r // 8) then
+            []
+
+        else
+            [ PebbleUi.fillCircle { x = offset, y = 0 } r PebbleColor.black ]
+
     """
   end
 
@@ -3309,7 +3356,21 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
   end
 
   test "direct textAt with defaultTextOptions is supported in view" do
-    _out_dir = compile_snippet!("direct_textat_default_project", direct_textat_default_options_source(), %{direct_render_only: true, prune_runtime: true, prune_native_wrappers: true})
+    out_dir =
+      compile_snippet!("direct_textat_default_project", direct_textat_default_options_source(), %{
+        direct_render_only: true,
+        prune_runtime: true,
+        prune_native_wrappers: true
+      })
+
+    generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+
+    # Pebble.Ui.defaultTextOptions is AlignCenter + WordWrap (not left).
+    assert generated_c =~
+             ~r/ELMC_TEXT_ALIGN_CENTER \+ \(ELMC_TEXT_OVERFLOW_WORD_WRAP \* \(1 << ELMC_TEXT_OVERFLOW_SHIFT\)\)/
+
+    refute generated_c =~
+             ~r/ELMC_TEXT_ALIGN_LEFT \+ \(ELMC_TEXT_OVERFLOW_WORD_WRAP \* \(1 << ELMC_TEXT_OVERFLOW_SHIFT\)\)/
   end
 
   test "direct view composes helpers that call other direct command targets" do

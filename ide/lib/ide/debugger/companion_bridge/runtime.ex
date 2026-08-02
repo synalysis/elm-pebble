@@ -46,6 +46,8 @@ defmodule Ide.Debugger.CompanionBridge.Runtime do
     simulator_settings
     subscription_trigger
     protocol_rx
+    runtime_followup
+    geolocation
   )
 
   @spec maybe_apply_command_responses(
@@ -135,6 +137,7 @@ defmodule Ide.Debugger.CompanionBridge.Runtime do
     Enum.reduce(CompanionBridge.subscription_contracts(), state, fn contract, acc ->
       trigger = Map.fetch!(contract, :source)
 
+      # Weather settings changes are handled by maybe_apply_weather_settings_change/4.
       if trigger == "weather" and source == "simulator_settings" do
         acc
       else

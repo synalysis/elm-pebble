@@ -15,6 +15,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.ListLoopPlans do
   alias Elmc.Backend.CCodegen.RcRuntimeEmit
   alias Elmc.Backend.CCodegen.Types
   alias Elmc.Backend.CCodegen.Util
+  alias Elmc.Backend.CCodegen.ValueSlots
   alias ElmEx.IR.PipeChain
 
   @list_range_targets ~w(List.range Elm.Kernel.List.range)
@@ -495,7 +496,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.ListLoopPlans do
 
     code = """
           Rc = #{c_name}_commands_append_native(#{arg_list}, writer);
-          #{item_releases}
+          #{loop_owned_item_release(item_ref, item_releases, "          ")}
           CHECK_RC(Rc);
     """
 
@@ -517,11 +518,28 @@ defmodule Elmc.Backend.CCodegen.DirectRender.ListLoopPlans do
      #{prefix_bindings}
          direct_call_args_#{next}[#{prefix_count}] = #{item_ref};
          Rc = #{c_name}_commands_append(direct_call_args_#{next}, #{prefix_count + 1}, writer);
-         #{item_releases}
+         #{loop_owned_item_release(item_ref, item_releases, "         ")}
          CHECK_RC(Rc);
     """
 
     {code, next}
+  end
+
+  # Epilogue-lifo Release.release_var/2 skips owned slots, but map/filter range loops
+  # reuse the same owned[] cell each iteration for the mapped record (YES odd ticks).
+  defp loop_owned_item_release(item_ref, item_releases, indent) do
+    cond do
+      item_releases != "" ->
+        item_releases
+
+      ValueSlots.owned_ref?(item_ref) ->
+        ValueSlots.release_owned_eager(item_ref)
+        |> String.split("\n", trim: true)
+        |> Enum.map_join("\n", &"#{indent}#{&1}")
+
+      true ->
+        ""
+    end
   end
 
   defp try_emit_polar_scale_tick_loop(

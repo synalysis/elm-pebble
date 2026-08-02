@@ -439,7 +439,7 @@ defmodule Ide.CompanionProtocolGenerator do
     #include "companion_protocol.h"
     #include <string.h>
 
-    #{c_box_helpers()}
+    #{c_box_helpers(schema)}
 
     #{c_runtime_tag_helpers(schema, runtime_tags)}
 
@@ -682,7 +682,9 @@ defmodule Ide.CompanionProtocolGenerator do
           if (ELMC_PEBBLE_MSG_PHONE_TO_WATCH_TARGET <= 0) return -7;
           ElmcValue *payload = companion_protocol_box_int(#{phone_to_watch_tag});
           if (!payload) return -2;
-          return elmc_pebble_dispatch_tag_payload(app, ELMC_PEBBLE_MSG_PHONE_TO_WATCH_TARGET, payload);
+          int rc = elmc_pebble_dispatch_tag_payload(app, ELMC_PEBBLE_MSG_PHONE_TO_WATCH_TARGET, payload);
+          elmc_release(payload);
+          return rc;
         }
     """
   end
@@ -715,7 +717,9 @@ defmodule Ide.CompanionProtocolGenerator do
               elmc_release(payload);
               return -2;
             }
-            return elmc_pebble_dispatch_tag_payload(app, ELMC_PEBBLE_MSG_PHONE_TO_WATCH_TARGET, phone_to_watch);
+            int rc = elmc_pebble_dispatch_tag_payload(app, ELMC_PEBBLE_MSG_PHONE_TO_WATCH_TARGET, phone_to_watch);
+            elmc_release(phone_to_watch);
+            return rc;
           }
       """
     end
@@ -2628,39 +2632,102 @@ defmodule Ide.CompanionProtocolGenerator do
 
   defp c_runtime_tag_wire_types(_wire_type), do: []
 
-  defp c_box_helpers do
-    """
-    static ElmcValue *companion_protocol_box_int(int32_t value) {
-      ElmcValue *boxed = NULL;
-      if (elmc_new_int(&boxed, value) != RC_SUCCESS) return NULL;
-      return boxed;
-    }
-
-    static ElmcValue *companion_protocol_box_bool(int value) {
-      ElmcValue *boxed = NULL;
-      if (elmc_new_bool(&boxed, value) != RC_SUCCESS) return NULL;
-      return boxed;
-    }
-
-    static ElmcValue *companion_protocol_box_string(const char *value) {
-      ElmcValue *boxed = NULL;
-      if (elmc_new_string(&boxed, value) != RC_SUCCESS) return NULL;
-      return boxed;
-    }
-
-    static ElmcValue *companion_protocol_tuple2_take(ElmcValue *left, ElmcValue *right) {
-      ElmcValue *tuple = NULL;
-      if (elmc_tuple2_take(&tuple, left, right) != RC_SUCCESS) return NULL;
-      return tuple;
-    }
-
-    static ElmcValue *companion_protocol_box_int_list(const int32_t *values, int32_t count) {
-      ElmcValue *list = NULL;
-      if (elmc_list_from_int_array(&list, values, count) != RC_SUCCESS) return NULL;
-      return list;
-    }
-    """
+  defp c_box_helpers(schema) do
+    [
+      """
+      static ElmcValue *companion_protocol_box_int(int32_t value) {
+        ElmcValue *boxed = NULL;
+        if (elmc_new_int(&boxed, value) != RC_SUCCESS) return NULL;
+        return boxed;
+      }
+      """,
+      if companion_protocol_uses_box_helper?(schema, :bool) do
+        """
+        static ElmcValue *companion_protocol_box_bool(int value) {
+          ElmcValue *boxed = NULL;
+          if (elmc_new_bool(&boxed, value) != RC_SUCCESS) return NULL;
+          return boxed;
+        }
+        """
+      end,
+      if companion_protocol_uses_box_helper?(schema, :string) do
+        """
+        static ElmcValue *companion_protocol_box_string(const char *value) {
+          ElmcValue *boxed = NULL;
+          if (elmc_new_string(&boxed, value) != RC_SUCCESS) return NULL;
+          return boxed;
+        }
+        """
+      end,
+      if companion_protocol_uses_tuple2_take?(schema) do
+        """
+        static ElmcValue *companion_protocol_tuple2_take(ElmcValue *left, ElmcValue *right) {
+          ElmcValue *tuple = NULL;
+          if (elmc_tuple2_take(&tuple, left, right) != RC_SUCCESS) return NULL;
+          return tuple;
+        }
+        """
+      end,
+      if companion_protocol_uses_box_helper?(schema, :int_list) do
+        """
+        static ElmcValue *companion_protocol_box_int_list(const int32_t *values, int32_t count) {
+          ElmcValue *list = NULL;
+          if (elmc_list_from_int_array(&list, values, count) != RC_SUCCESS) return NULL;
+          return list;
+        }
+        """
+      end
+    ]
+    |> Enum.reject(&is_nil/1)
+    |> Enum.join("\n")
   end
+
+  @spec companion_protocol_uses_box_helper?(schema(), :bool | :string | :int_list) :: boolean()
+  defp companion_protocol_uses_box_helper?(schema, helper) do
+    schema_fields(schema)
+    |> Enum.any?(&wire_type_needs_box_helper?(&1.wire_type, helper, schema))
+  end
+
+  @spec companion_protocol_uses_tuple2_take?(schema()) :: boolean()
+  defp companion_protocol_uses_tuple2_take?(schema) do
+    companion_protocol_uses_union_payloads?(schema) or
+      companion_protocol_uses_boxed_dispatch?(schema) or
+      Enum.any?(schema.phone_to_watch, &(length(&1.fields) > 1)) or
+      Enum.any?(schema_fields(schema), &c_composite_wire_type?(&1.wire_type))
+  end
+
+  defp wire_type_needs_box_helper?(:bool, :bool, _schema), do: true
+  defp wire_type_needs_box_helper?(:string, :string, _schema), do: true
+  defp wire_type_needs_box_helper?({:list, :int}, :int_list, _schema), do: true
+  defp wire_type_needs_box_helper?({:dict, _elem}, :string, _schema), do: true
+
+  defp wire_type_needs_box_helper?({:list, elem}, helper, schema),
+    do: wire_type_needs_box_helper?(elem, helper, schema)
+
+  defp wire_type_needs_box_helper?({:dict, elem}, helper, schema),
+    do: wire_type_needs_box_helper?(elem, helper, schema)
+
+  defp wire_type_needs_box_helper?({:record, _type, fields}, helper, schema) do
+    Enum.any?(fields, &wire_type_needs_box_helper?(&1.wire_type, helper, schema))
+  end
+
+  defp wire_type_needs_box_helper?({:union, _type, ctors}, helper, schema) do
+    Enum.any?(ctors, fn ctor ->
+      Enum.any?(ctor.args || [], fn arg_type ->
+        resolved =
+          WireFlatten.resolve_type(
+            arg_type,
+            schema.enums,
+            schema.payload_unions,
+            schema.type_aliases
+          )
+
+        wire_type_needs_box_helper?(resolved, helper, schema)
+      end)
+    end)
+  end
+
+  defp wire_type_needs_box_helper?(_wire_type, _helper, _schema), do: false
 
   defp c_runtime_tag_function(type),
     do: "companion_protocol_runtime_tag_#{macro_name(type)}"

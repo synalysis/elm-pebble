@@ -44,6 +44,13 @@ defmodule Elmx.CoreComplianceRuntimeTest do
     assert cc(m, "stringAppendLength", ["a", "bc"]) == 3
   end
 
+  test "Basics angle/trig/math oracles match elm/core", %{compiled: m} do
+    for {name, args, expected} <- Elmx.CoreComplianceBasicsCases.cases() do
+      assert cc(m, Atom.to_string(name), args) == expected,
+             "#{name}#{inspect(args)} expected #{expected}"
+    end
+  end
+
   test "maybe, result, list, tuple", %{compiled: m} do
     assert cc(m, "foldSum", [[1, 2, 3]]) == 6
     assert cc(m, "maybeInc", [{:Just, 4}]) == 5

@@ -12,6 +12,7 @@ defmodule Elmc.Backend.Plan.RuntimeBuiltins do
     list_replace_nth_int: [1, 2],
     list_take: [0],
     list_drop: [0],
+    list_nth_maybe: [1],
     string_from_int: [0],
     tuple2_ints: [0, 1],
     list_filter_record_field: [1],
@@ -36,6 +37,7 @@ defmodule Elmc.Backend.Plan.RuntimeBuiltins do
     list_map_record_field: "elmc_list_map_record_field",
     list_indexed_map: "elmc_list_indexed_map",
     list_length: "elmc_list_length",
+    list_length_gte: "elmc_list_length_gte",
     list_concat: "elmc_list_concat",
     list_slice_int: "elmc_list_slice_int",
     list_take: "elmc_list_take",
@@ -54,6 +56,7 @@ defmodule Elmc.Backend.Plan.RuntimeBuiltins do
     list_is_empty: "elmc_list_is_empty",
     list_nth_maybe: "elmc_list_nth_maybe",
     list_nth_int_default: "elmc_list_nth_int_default_boxed",
+    list_nth_int_at: "elmc_list_nth_int_default",
     list_replace_nth_int: "elmc_list_replace_nth_int",
     maybe_with_default: "elmc_maybe_with_default",
     maybe_with_default_int: "elmc_maybe_with_default_int",
@@ -155,10 +158,13 @@ defmodule Elmc.Backend.Plan.RuntimeBuiltins do
     :list_sort_by,
     :list_sort_with,
     :list_reverse,
+    :list_head,
+    :list_tail,
     :int_list_head_boxed,
     :int_list_tail,
-    :list_is_empty,
     :list_nth_maybe,
+    :list_length,
+    :list_nth_int_default,
     :list_replace_nth_int,
     :maybe_with_default,
     :maybe_map,
@@ -167,10 +173,10 @@ defmodule Elmc.Backend.Plan.RuntimeBuiltins do
     :basics_pow,
     :basics_mod_by,
     :basics_remainder_by,
-    :basics_not,
-    :basics_clamp,
+        :basics_clamp,
     :string_append,
     :string_from_int,
+    :string_to_int,
     :string_to_float,
     :string_left,
     :string_join,
@@ -185,6 +191,11 @@ defmodule Elmc.Backend.Plan.RuntimeBuiltins do
     :new_order,
     :new_bool,
     :new_string,
+    :new_char,
+    :char_from_code,
+    :debug_to_string,
+    :debug_set_to_string,
+    :debug_log,
     :string_length_boxed,
     :tuple2,
     :tuple2_take,
@@ -193,9 +204,9 @@ defmodule Elmc.Backend.Plan.RuntimeBuiltins do
     :result_ok_own,
     :result_err_own,
     :record_new,
+    :record_update_cow_drop,
     :record_new_take,
     :record_new_values_ints,
-    :record_update_cow_drop,
     :cmd0,
     :cmd1,
     :cmd1_string,
@@ -210,28 +221,7 @@ defmodule Elmc.Backend.Plan.RuntimeBuiltins do
   ])
 
   # Runtime calls that return `ElmcValue *` (not `RC` + out-pointer). May return NULL on OOM.
-  @c_value_return MapSet.new([
-    :basics_min,
-    :basics_max,
-    :basics_pow,
-    :basics_mod_by,
-    :basics_remainder_by,
-    :basics_not,
-    :basics_clamp,
-    :basics_floor,
-    :basics_to_float,
-    :basics_sin,
-    :basics_cos,
-    :basics_round,
-    :list_length,
-    :list_nth_maybe,
-    :string_to_int,
-    :list_nth_int_default,
-    :debug_to_string,
-    :debug_set_to_string,
-    :char_from_code,
-    :cmd_backlight_from_maybe
-  ])
+  @c_value_return MapSet.new([])
 
   @value_return MapSet.new([
     :retain,
@@ -240,24 +230,25 @@ defmodule Elmc.Backend.Plan.RuntimeBuiltins do
     :maybe_with_default,
     :maybe_nothing,
     :int_zero,
-    :list_head,
-    :list_tail,
     :list_is_empty,
+    :list_length_gte,
     :string_is_empty,
     :string_starts_with,
     :string_ends_with,
     :tuple_first,
     :tuple_second,
-    :cmd_batch,
-    :sub_batch,
     :record_get,
-    :record_update_cow_drop,
-    :unit
+    :unit,
+    :basics_not,
+    :result_with_default
   ])
 
   # Value-returning runtime calls that never fail with NULL from allocation.
   # (elmc_retain returns NULL only when the input is NULL; record/tuple getters use
-  # elmc_int_zero / retain; cow_drop falls back to elmc_retain(record).)
+  # elmc_int_zero / retain.)
+  # list_head / list_tail / list_length / list_nth_* allocate and return RC instead.
+  # list_length_gte / list_is_empty return immortal bools (never allocate).
+  # record_update_cow_drop is fallible (copy path allocates).
   @direct_value_return MapSet.new([
     :retain,
     :maybe_just_payload,
@@ -266,18 +257,14 @@ defmodule Elmc.Backend.Plan.RuntimeBuiltins do
     :maybe_nothing,
     :int_zero,
     :list_nil,
-    :list_head,
-    :list_tail,
-    :cmd_batch,
-    :sub_batch,
+    :list_is_empty,
+    :list_length_gte,
     :record_get,
-    :record_update_cow_drop,
     :tuple_first,
     :tuple_second,
-    :basics_min,
-    :basics_max,
-    :basics_pow,
-    :unit
+    :unit,
+    :basics_not,
+    :result_with_default
   ])
 
   @builtin_order [
@@ -313,6 +300,7 @@ defmodule Elmc.Backend.Plan.RuntimeBuiltins do
     :list_is_empty,
     :list_nth_maybe,
     :list_nth_int_default,
+    :list_nth_int_at,
     :list_replace_nth_int,
     :maybe_with_default,
     :maybe_with_default_int,
@@ -434,6 +422,39 @@ defmodule Elmc.Backend.Plan.RuntimeBuiltins do
 
   @spec ownership_transfer?(atom()) :: boolean()
   def ownership_transfer?(id), do: MapSet.member?(@ownership_transfer, id)
+
+  # Runtime returns `elmc_retain(chosen_operand)` into the result. Emit may drop that
+  # extra retain only when the result pointer-equals an owned operand (transfer).
+  @retains_operand_result MapSet.new([
+    :maybe_with_default,
+    :basics_min,
+    :basics_max,
+    :basics_clamp
+  ])
+
+  @spec retains_operand_result?(atom()) :: boolean()
+  def retains_operand_result?(id) when is_atom(id),
+    do: MapSet.member?(@retains_operand_result, id)
+
+  def retains_operand_result?(_), do: false
+
+  @spec retains_operand_result_aliases(atom(), [non_neg_integer()]) :: [non_neg_integer()]
+  def retains_operand_result_aliases(:maybe_with_default, [default | _]), do: [default]
+  def retains_operand_result_aliases(:maybe_with_default, _), do: []
+
+  def retains_operand_result_aliases(id, arg_regs)
+      when id in [:basics_min, :basics_max, :basics_clamp] and is_list(arg_regs),
+      do: arg_regs
+
+  def retains_operand_result_aliases(_, _), do: []
+
+  @spec retains_operand_result_c?(String.t()) :: boolean()
+  def retains_operand_result_c?(sym) when is_binary(sym) do
+    case from_c_symbol(sym) do
+      id when is_atom(id) -> retains_operand_result?(id)
+      _ -> false
+    end
+  end
 
   @spec from_c_symbol(String.t()) :: atom() | nil
   def from_c_symbol(sym) when is_binary(sym) do

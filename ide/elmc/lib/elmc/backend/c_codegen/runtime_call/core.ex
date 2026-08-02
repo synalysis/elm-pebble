@@ -29,7 +29,8 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
   alias Elmc.Backend.CCodegen.StaticString
   alias Elmc.Backend.CCodegen.TypeParsing
   alias Elmc.Backend.CCodegen.Types
-  alias Elmc.Backend.CCodegen.ValueSlots
+  alias Elmc.Backend.CCodegen.{RetainOperandAlias, ValueSlots}
+  alias Elmc.Backend.Plan.RuntimeBuiltins
   alias Elmc.Backend.CCodegen.Util
   alias Elmc.Backend.CCodegen.VarAnalysis
 
@@ -67,12 +68,8 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
   @retain_borrow_arg_runtime_functions MapSet.new(~w(elmc_array_from_list))
 
   # Runtime returns `elmc_retain(chosen_arg)`. When an owned operand aliases that
-  # result, codegen nulls the operand (transfer). Drop the retain first so the
-  # remaining refcount is the operand's ownership — otherwise epilogue release
-  # leaves rc=1 (view/layout Basics.min leaks on game-2048).
-  @retains_operand_result_runtime_functions MapSet.new(
-                                             ~w(elmc_basics_min elmc_basics_max elmc_basics_clamp)
-                                           )
+  # result, emit drops the extra retain inside the alias `if` (see RetainOperandAlias).
+  # Plan IR stamps `result_aliases` on the same builtins via RuntimeBuiltins.
 
   # Runtime consumes the last operand when producing a new value (not on transfer *out = input).
   @runtime_consumes_last_operand MapSet.new(~w(elmc_result_and_then elmc_maybe_and_then))
@@ -4270,14 +4267,11 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
           RcRuntimeEmit.assign_call(env, out, function, call_args)
       end
 
-    alias_null = ValueSlots.null_call_operands_aliasing_out(out, arg_vars, env)
-
-    drop_operand_retain =
-      if MapSet.member?(@retains_operand_result_runtime_functions, function) and
-           alias_null != "" do
-        "elmc_release(#{RcRuntimeEmit.value_expr(out)});\n"
+    alias_null =
+      if RuntimeBuiltins.retains_operand_result_c?(function) do
+        RetainOperandAlias.emit_for_runtime_call(out, arg_vars, env)
       else
-        ""
+        ValueSlots.null_call_operands_aliasing_out(out, arg_vars, env)
       end
 
     code = """
@@ -4285,7 +4279,7 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
       #{assign}
       #{releases}
       #{consumed_operand_null}
-      #{drop_operand_retain}#{alias_null}
+      #{alias_null}
       #{Host.face_ops_append_probe(env, function, out, next)}
     """
 

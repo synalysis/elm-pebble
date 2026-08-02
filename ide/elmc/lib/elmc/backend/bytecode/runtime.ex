@@ -16,6 +16,9 @@ defmodule Elmc.Backend.Bytecode.Runtime do
   @type value ::
           integer()
           | float()
+          | :nan
+          | :infinity
+          | :negative_infinity
           | list()
           | value_map()
           | nil
@@ -116,7 +119,7 @@ defmodule Elmc.Backend.Bytecode.Runtime do
 
     case Opcodes.name(opcode) do
       :const_int ->
-        <<value::32, tail::binary>> = rest
+        <<value::signed-32, tail::binary>> = rest
         step(frame, dest, value, rest, tail)
 
       :load_param ->
@@ -390,11 +393,11 @@ defmodule Elmc.Backend.Bytecode.Runtime do
 
     case kind do
       0 ->
-        <<value::32, tail::binary>> = rest
+        <<value::signed-32, tail::binary>> = rest
         {left + value, tail}
 
       1 ->
-        <<value::32, tail::binary>> = rest
+        <<value::signed-32, tail::binary>> = rest
         {left - value, tail}
 
       2 ->
@@ -483,17 +486,35 @@ defmodule Elmc.Backend.Bytecode.Runtime do
         else: to_int(a) * to_int(b)
       )
 
+  # Match Elm/elmx: 0/0 → NaN, ±/0 → ±∞ (not 0.0).
   defp boxed_fdiv(a, b) do
-    denom = boxed_to_float(b)
-    if denom == 0.0, do: 0.0, else: boxed_to_float(a) / denom
+    af = boxed_to_number(a)
+    bf = boxed_to_number(b)
+
+    cond do
+      af == 0 and bf == 0 -> :nan
+      bf == 0 and is_number(af) and af < 0 -> :negative_infinity
+      bf == 0 -> :infinity
+      is_number(af) and is_number(bf) -> af * 1.0 / (bf * 1.0)
+      true -> :nan
+    end
   end
 
   defp floatish?(v) when is_float(v), do: true
+  defp floatish?(:nan), do: true
+  defp floatish?(:infinity), do: true
+  defp floatish?(:negative_infinity), do: true
   defp floatish?(_), do: false
 
   defp boxed_to_float(v) when is_float(v), do: v
   defp boxed_to_float(v) when is_integer(v), do: v * 1.0
   defp boxed_to_float(_), do: 0.0
+
+  defp boxed_to_number(v) when is_number(v), do: v
+  defp boxed_to_number(:nan), do: :nan
+  defp boxed_to_number(:infinity), do: :infinity
+  defp boxed_to_number(:negative_infinity), do: :negative_infinity
+  defp boxed_to_number(_), do: 0.0
 
   defp eval_runtime_call(<<id_idx::16, has_lit::8, rest::binary>>, frame) do
     {literal, rest1} =
@@ -664,6 +685,14 @@ defmodule Elmc.Backend.Bytecode.Runtime do
   defp apply_builtin(:new_int, _args, _locals, _), do: 0
   defp apply_builtin(:new_float, _args, _locals, literal) when is_float(literal), do: literal
   defp apply_builtin(:new_float, _args, _locals, _), do: 0.0
+
+  # Plan bytecode uses Basics.Order constructor tags (LT=1, EQ=2, GT=3).
+  # C runtime keeps ELMC_TAG_ORDER scalars (-1/0/1); map those literals here.
+  defp apply_builtin(:new_order, _args, _locals, literal) when is_integer(literal),
+    do: order_ctor_tag(literal)
+
+  defp apply_builtin(:new_order, _args, _locals, _), do: order_ctor_tag(0)
+
   defp apply_builtin(:maybe_nothing, _args, _locals, _), do: nil
   defp apply_builtin(:maybe_just_own, [payload | _], locals, _), do: {:just, get_local(locals, payload)}
 
@@ -801,25 +830,205 @@ defmodule Elmc.Backend.Bytecode.Runtime do
   end
 
   defp apply_builtin(:basics_floor, [value | _], locals, _) do
-    case get_local(locals, value) do
-      n when is_integer(n) ->
-        n
-
-      n when is_float(n) ->
-        trunc(n)
-
-      {:just, n} when is_integer(n) ->
-        n
-
-      {:just, n} when is_float(n) ->
-        trunc(n)
-
-      other ->
-        case Float.parse(to_string(other || "")) do
-          {f, ""} -> trunc(f)
-          _ -> 0
-        end
+    case local_number(locals, value) do
+      n when is_number(n) -> Kernel.floor(n * 1.0)
+      _ -> 0
     end
+  end
+
+  defp apply_builtin(:basics_ceiling, [value | _], locals, _) do
+    case local_number(locals, value) do
+      n when is_number(n) -> Kernel.ceil(n * 1.0)
+      _ -> 0
+    end
+  end
+
+  defp apply_builtin(:basics_round, [value | _], locals, _) do
+    case local_number(locals, value) do
+      n when is_number(n) -> Kernel.round(n * 1.0)
+      _ -> 0
+    end
+  end
+
+  defp apply_builtin(:basics_truncate, [value | _], locals, _) do
+    case local_number(locals, value) do
+      n when is_number(n) -> trunc(n)
+      _ -> 0
+    end
+  end
+
+  defp apply_builtin(:basics_to_float, [value | _], locals, _) do
+    case get_local(locals, value) do
+      n when is_float(n) -> n
+      n when is_integer(n) -> n * 1.0
+      _ -> 0.0
+    end
+  end
+
+  defp apply_builtin(:basics_abs, [value | _], locals, _) do
+    case get_local(locals, value) do
+      n when is_integer(n) -> abs(n)
+      n when is_float(n) -> abs(n)
+      _ -> 0
+    end
+  end
+
+  defp apply_builtin(:basics_negate, [value | _], locals, _) do
+    case get_local(locals, value) do
+      n when is_integer(n) -> -n
+      n when is_float(n) -> -n
+      _ -> 0
+    end
+  end
+
+  defp apply_builtin(:basics_xor, [a, b | _], locals, _) do
+    left = truthy?(get_local(locals, a))
+    right = truthy?(get_local(locals, b))
+    if left != right, do: 1, else: 0
+  end
+
+  defp apply_builtin(:basics_compare, [a, b | _], locals, _) do
+    av = get_local(locals, a)
+    bv = get_local(locals, b)
+
+    cmp =
+      cond do
+        is_binary(av) and is_binary(bv) ->
+          order_compare(av, bv)
+
+        floatish?(av) or floatish?(bv) ->
+          order_compare(boxed_to_float(av), boxed_to_float(bv))
+
+        true ->
+          order_compare(to_int(av), to_int(bv))
+      end
+
+    order_ctor_tag(cmp)
+  end
+
+  defp apply_builtin(:basics_sqrt, [value | _], locals, _) do
+    case local_number(locals, value) do
+      n when is_number(n) and n >= 0 -> :math.sqrt(n * 1.0)
+      _ -> :nan
+    end
+  end
+
+  defp apply_builtin(:basics_log, [value | _], locals, _) do
+    case local_number(locals, value) do
+      n when is_number(n) and n > 0 -> :math.log(n * 1.0)
+      _ -> :nan
+    end
+  end
+
+  defp apply_builtin(:basics_log_base, [base, value | _], locals, _) do
+    b = local_number(locals, base)
+    v = local_number(locals, value)
+
+    if is_number(b) and is_number(v) and b > 0 and v > 0 do
+      :math.log(v * 1.0) / :math.log(b * 1.0)
+    else
+      0.0
+    end
+  end
+
+  defp apply_builtin(:basics_sin, [value | _], locals, _),
+    do: math_unary(locals, value, &:math.sin/1)
+
+  defp apply_builtin(:basics_cos, [value | _], locals, _),
+    do: math_unary(locals, value, &:math.cos/1)
+
+  defp apply_builtin(:basics_tan, [value | _], locals, _),
+    do: math_unary(locals, value, &:math.tan/1)
+
+  defp apply_builtin(:basics_atan, [value | _], locals, _),
+    do: math_unary(locals, value, &:math.atan/1)
+
+  defp apply_builtin(:basics_asin, [value | _], locals, _) do
+    case local_number(locals, value) do
+      n when is_number(n) and n >= -1.0 and n <= 1.0 -> :math.asin(n * 1.0)
+      _ -> :nan
+    end
+  end
+
+  defp apply_builtin(:basics_acos, [value | _], locals, _) do
+    case local_number(locals, value) do
+      n when is_number(n) and n >= -1.0 and n <= 1.0 -> :math.acos(n * 1.0)
+      _ -> :nan
+    end
+  end
+
+  defp apply_builtin(:basics_atan2, [y, x | _], locals, _) do
+    yv = local_number(locals, y)
+    xv = local_number(locals, x)
+
+    if is_number(yv) and is_number(xv) do
+      :math.atan2(yv * 1.0, xv * 1.0)
+    else
+      :nan
+    end
+  end
+
+  defp apply_builtin(:basics_degrees, [value | _], locals, _) do
+    case local_number(locals, value) do
+      n when is_number(n) -> n * :math.pi() / 180.0
+      _ -> :nan
+    end
+  end
+
+  defp apply_builtin(:basics_radians, [value | _], locals, _) do
+    case local_number(locals, value) do
+      n when is_number(n) -> n * 1.0
+      _ -> :nan
+    end
+  end
+
+  defp apply_builtin(:basics_turns, [value | _], locals, _) do
+    case local_number(locals, value) do
+      n when is_number(n) -> n * 2.0 * :math.pi()
+      _ -> :nan
+    end
+  end
+
+  defp apply_builtin(:basics_from_polar, [polar | _], locals, _) do
+    case get_local(locals, polar) do
+      {:tuple2, r, theta} when is_number(r) and is_number(theta) ->
+        rf = r * 1.0
+        tf = theta * 1.0
+        {:tuple2, rf * :math.cos(tf), rf * :math.sin(tf)}
+
+      {r, theta} when is_number(r) and is_number(theta) ->
+        rf = r * 1.0
+        tf = theta * 1.0
+        {:tuple2, rf * :math.cos(tf), rf * :math.sin(tf)}
+
+      _ ->
+        {:tuple2, 0.0, 0.0}
+    end
+  end
+
+  defp apply_builtin(:basics_to_polar, [point | _], locals, _) do
+    case get_local(locals, point) do
+      {:tuple2, x, y} when is_number(x) and is_number(y) ->
+        xf = x * 1.0
+        yf = y * 1.0
+        {:tuple2, :math.sqrt(xf * xf + yf * yf), :math.atan2(yf, xf)}
+
+      {x, y} when is_number(x) and is_number(y) ->
+        xf = x * 1.0
+        yf = y * 1.0
+        {:tuple2, :math.sqrt(xf * xf + yf * yf), :math.atan2(yf, xf)}
+
+      _ ->
+        {:tuple2, 0.0, 0.0}
+    end
+  end
+
+  defp apply_builtin(:basics_is_nan, [value | _], locals, _) do
+    if float_is_nan?(get_local(locals, value)), do: 1, else: 0
+  end
+
+  defp apply_builtin(:basics_is_infinite, [value | _], locals, _) do
+    if float_is_infinite?(get_local(locals, value)), do: 1, else: 0
   end
 
   defp apply_builtin(:list_reverse, [list | _], locals, _) do
@@ -1166,6 +1375,60 @@ defmodule Elmc.Backend.Bytecode.Runtime do
   defp compare_kind(_, l, r), do: l == r
 
   defp local_int(locals, idx), do: get_local(locals, idx) |> to_int()
+
+  defp local_number(locals, idx) do
+    case get_local(locals, idx) do
+      n when is_number(n) -> n
+      :nan -> :nan
+      :infinity -> :infinity
+      :negative_infinity -> :negative_infinity
+      {:just, inner} ->
+        case inner do
+          n when is_number(n) -> n
+          other -> other
+        end
+
+      other ->
+        case Float.parse(to_string(other || "")) do
+          {f, ""} -> f
+          _ -> 0.0
+        end
+    end
+  end
+
+  defp math_unary(locals, value, fun) do
+    case local_number(locals, value) do
+      n when is_number(n) -> fun.(n * 1.0)
+      _ -> :nan
+    end
+  end
+
+  defp order_compare(a, b) when a < b, do: -1
+  defp order_compare(a, b) when a > b, do: 1
+  defp order_compare(_, _), do: 0
+
+  defp order_ctor_tag(-1), do: 1
+  defp order_ctor_tag(0), do: 2
+  defp order_ctor_tag(1), do: 3
+  defp order_ctor_tag(n) when is_integer(n) and n < 0, do: 1
+  defp order_ctor_tag(_), do: 3
+
+  defp float_is_nan?(:nan), do: true
+  defp float_is_nan?(n) when is_float(n), do: n != n
+  defp float_is_nan?(_), do: false
+
+  defp float_is_infinite?(:infinity), do: true
+  defp float_is_infinite?(:negative_infinity), do: true
+
+  defp float_is_infinite?(n) when is_float(n) do
+    case :erlang.float_to_binary(n, [:compact]) do
+      "inf" -> true
+      "-inf" -> true
+      _ -> false
+    end
+  end
+
+  defp float_is_infinite?(_), do: false
 
   defp local_list(locals, idx) do
     case get_local(locals, idx) do

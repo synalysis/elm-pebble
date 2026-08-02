@@ -192,6 +192,10 @@ defmodule Elmc.PlanSizeReductionTest do
     c = CLowerFunction.emit(plan)
     assert c =~ "list_map_cursor_i_"
     refute c =~ "elmc_list_map"
+    # Uniquely owned map accumulator must transfer into dest, not retain
+    # (retain without releasing the local leaks the spine + mapped values).
+    assert c =~ ~r/(?:\*out|owned\[\d+\]) = list_map_cursor_head_\d+;/
+    refute c =~ ~r/(?:\*out|owned\[\d+\]) = elmc_retain\(list_map_cursor_head_\d+\);/
   end
 
   test "advanceSeed lowers to native int return without boxing" do

@@ -30,29 +30,25 @@ defmodule Ide.Debugger.PendingProtocolDelivery do
     if async?() and pending(state) != [] do
       ensure_drain_lock_table()
 
-      case :ets.lookup(@drain_lock_table, project_slug) do
-        [{^project_slug, true}] ->
-          :ok
+      # insert_new: only one drainer may start; concurrent schedule_all must not
+      # spawn a second drain over the same pending items.
+      if :ets.insert_new(@drain_lock_table, {project_slug, true}) do
+        hosts = AgentSession.hosts()
+        ctx = hosts |> AgentHosts.contexts() |> Map.fetch!(:protocol_rx)
 
-        _ ->
-          :ets.insert(@drain_lock_table, {project_slug, true})
+        RuntimeBackgroundWork.spawn(project_slug, fn ->
+          try do
+            drain_until_empty(project_slug, ctx)
+          after
+            release_drain_lock(project_slug)
 
-          hosts = AgentSession.hosts()
-          ctx = hosts |> AgentHosts.contexts() |> Map.fetch!(:protocol_rx)
+            st = AgentStore.fetch(project_slug)
 
-          RuntimeBackgroundWork.spawn(project_slug, fn ->
-            try do
-              drain_until_empty(project_slug, ctx)
-            after
-              release_drain_lock(project_slug)
-
-              st = AgentStore.fetch(project_slug)
-
-              if pending(st) != [] do
-                maybe_schedule_drain(project_slug, st)
-              end
+            if pending(st) != [] do
+              maybe_schedule_drain(project_slug, st)
             end
-          end)
+          end
+        end)
       end
     end
 
@@ -62,6 +58,8 @@ defmodule Ide.Debugger.PendingProtocolDelivery do
   @spec drain_pending_sync(String.t(), ProtocolRx.ctx()) :: :ok
   def drain_pending_sync(project_slug, ctx)
       when is_binary(project_slug) and is_map(ctx) do
+    # Safe alongside async drain: claim_pending/1 atomically takes ownership of
+    # the queue so two drainers cannot deliver the same AppMessages.
     drain_until_empty(project_slug, ctx)
     :ok
   end
@@ -70,18 +68,34 @@ defmodule Ide.Debugger.PendingProtocolDelivery do
 
   defp drain_until_empty(project_slug, ctx)
        when is_binary(project_slug) and is_map(ctx) do
-    items = project_slug |> AgentStore.fetch() |> pending()
+    case claim_pending(project_slug) do
+      [] ->
+        :ok
 
-    if items != [] do
-      {:ok, _} =
-        AgentSession.mutate(project_slug, fn st ->
-          put_pending(st, [])
-        end)
+      items ->
+        run_drain_batch(project_slug, items, ctx)
+        drain_until_empty(project_slug, ctx)
+    end
+  end
 
-      run_drain_batch(project_slug, items, ctx)
-      drain_until_empty(project_slug, ctx)
-    else
-      :ok
+  # Claim must be atomic: a prior fetch+clear race let two drainers deliver the
+  # same AppMessages (consecutive duplicate FromPhone timeline rows in live IDE).
+  @spec claim_pending(String.t()) :: [Types.pending_protocol_delivery_item()]
+  defp claim_pending(project_slug) when is_binary(project_slug) do
+    parent = self()
+    ref = make_ref()
+
+    {:ok, _} =
+      AgentSession.mutate(project_slug, fn st ->
+        items = pending(st)
+        send(parent, {ref, items})
+        put_pending(st, [])
+      end)
+
+    receive do
+      {^ref, items} when is_list(items) -> items
+    after
+      5_000 -> []
     end
   end
 

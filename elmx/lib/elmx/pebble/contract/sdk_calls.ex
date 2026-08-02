@@ -1,0 +1,97 @@
+defmodule Elmx.Pebble.Contract.SdkCalls do
+  @moduledoc """
+  Pebble SDK symbols invoked from `pebble_app_template.c` for each contract Cmd/Sub id.
+  """
+
+  @cmd %{
+    none: [],
+    timer_after_ms: ["app_timer_register"],
+    storage_write_int: ["persist_write_int"],
+    storage_read_int: ["persist_read_int"],
+    storage_delete: ["persist_delete"],
+    companion_send: ["send_companion_request"],
+    backlight: ["light_enable"],
+    get_current_time_string: ["clock_copy_time_string"],
+    get_clock_style_24h: ["clock_is_24h_style"],
+    get_timezone_is_set: ["time("],
+    get_timezone: ["elmc_pebble_dispatch_tag_string"],
+    get_watch_model: ["watch_info_get_model"],
+    get_firmware_version: ["watch_info_get_firmware_version"],
+    vibes_cancel: ["vibes_cancel"],
+    vibes_short_pulse: ["vibes_short_pulse"],
+    vibes_long_pulse: ["vibes_long_pulse"],
+    vibes_double_pulse: ["vibes_double_pulse"],
+    get_watch_color: ["watch_info_get_color"],
+    wakeup_schedule_after_seconds: ["wakeup_schedule"],
+    wakeup_cancel: ["wakeup_cancel"],
+    log_info_code: ["APP_LOG"],
+    log_warn_code: ["APP_LOG"],
+    log_error_code: ["APP_LOG"],
+    get_current_date_time: ["deliver_current_date_time"],
+    get_battery_level: ["battery_state_service_peek"],
+    get_connection_status: ["connection_service_peek_pebble_app_connection"],
+    storage_write_string: ["persist_write_string"],
+    storage_read_string: ["persist_read_string"],
+    random_generate: ["elmc_pebble_dispatch_tag_value"],
+    health_value: ["health_service_peek_current_value"],
+    health_sum_today: ["health_service_sum_today"],
+    health_sum: ["health_service_sum"],
+    health_accessible: ["health_service_metric_accessible"],
+    vibes_custom_pattern: ["vibes_enqueue_custom_pattern"],
+    data_log_bytes: ["data_logging_create"],
+    data_log_int32: ["data_logging_create"],
+    compass_peek: ["compass_service_peek"],
+    dictation_start: ["dictation_session_start"],
+    dictation_stop: ["dictation_session_stop"],
+    unobstructed_bounds_peek: ["current_unobstructed_bounds"],
+    health_supported: ["elmc_pebble_dispatch_tag_bool"],
+    storage_read_max_size: ["persist_get_max_size", "PERSIST_DATA_MAX_LENGTH"],
+    speaker_is_muted: ["speaker_is_muted"],
+    speaker_play_tone: ["speaker_play_tone"],
+    speaker_play_notes: ["speaker_play_notes"],
+    speaker_play_tracks: ["speaker_play_tracks"],
+    speaker_stop: ["speaker_stop"],
+    speaker_set_volume: ["speaker_set_volume"],
+    speaker_get_status: ["speaker_get_status"],
+    speaker_stream_open: ["speaker_stream_open"],
+    speaker_stream_write: ["speaker_stream_write"],
+    speaker_stream_close: ["speaker_stream_close"]
+  }
+
+  @sub %{
+    second_change: ["tick_timer_service_subscribe"],
+    button_up: ["window_single_click_subscribe"],
+    button_select: ["window_single_click_subscribe"],
+    button_down: ["window_single_click_subscribe"],
+    accel_tap: ["accel_tap_service_subscribe"],
+    battery: ["battery_state_service_subscribe"],
+    connection: ["connection_service_subscribe"],
+    button_long_up: [],
+    button_long_select: [],
+    button_long_down: [],
+    hour_change: ["tick_timer_service_subscribe"],
+    minute_change: ["tick_timer_service_subscribe"],
+    appmessage: ["app_message_register_inbox_received"],
+    frame: ["app_timer_register"],
+    button_raw: ["window_raw_click_subscribe"],
+    accel_data: ["accel_data_service_subscribe"],
+    day_change: ["tick_timer_service_subscribe"],
+    month_change: ["tick_timer_service_subscribe"],
+    year_change: ["tick_timer_service_subscribe"],
+    app_focus: ["app_focus_service_subscribe_handlers"],
+    compass: ["compass_service_subscribe"],
+    dictation: ["dictation_session_create"],
+    unobstructed_area: ["unobstructed_area_service_subscribe"],
+    animation_finished: ["elmc_pebble_dispatch_animation_finished"],
+    backlight: ["backlight_service_subscribe"],
+    screen_change: ["maybe_dispatch_screen_change"],
+    speaker_finished: ["speaker_set_finish_callback"],
+    health: ["health_service_events_subscribe"]
+  }
+
+  @spec cmd(atom()) :: [String.t()]
+  def cmd(id), do: Map.get(@cmd, id, [])
+
+  @spec sub(atom()) :: [String.t()]
+  def sub(id), do: Map.get(@sub, id, [])
+end

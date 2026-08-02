@@ -1590,10 +1590,14 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupportTest do
     assert text.font_size == 56
     assert text.text_align == "center"
     assert IdeWeb.WorkspaceLive.DebuggerPage.SvgRender.text_font_size(text) == 42
-    assert IdeWeb.WorkspaceLive.DebuggerPage.SvgRender.text_y(text) == 80
+    # Top of rect (Pebble), not mid-box.
+    assert IdeWeb.WorkspaceLive.DebuggerPage.SvgRender.text_y(text) == 52
+
+    assert IdeWeb.WorkspaceLive.DebuggerPage.SvgRender.text_baseline(text) ==
+             "text-before-edge"
   end
 
-  test "debugger preview caps SVG font size to text box height when Pebble cap is larger" do
+  test "debugger preview fits SVG font into short text boxes (top-aligned)" do
     runtime = %{
       model: %{
         "runtime_view_output" => [
@@ -1613,7 +1617,13 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupportTest do
     [text] = DebuggerPreview.svg_ops(nil, runtime)
 
     assert text.h == 8
+    # Cap to box height so sans-serif is not mid-glyph clipped; y stays top-of-box.
     assert IdeWeb.WorkspaceLive.DebuggerPage.SvgRender.text_font_size(text) == 8
+    assert IdeWeb.WorkspaceLive.DebuggerPage.SvgRender.text_y(text) == 146
+
+    assert IdeWeb.WorkspaceLive.DebuggerPage.SvgRender.text_baseline(text) ==
+             "text-before-edge"
+
     assert IdeWeb.WorkspaceLive.DebuggerPage.SvgRender.text_clippable?(text)
   end
 

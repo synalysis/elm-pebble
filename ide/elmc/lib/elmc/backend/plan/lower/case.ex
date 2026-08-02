@@ -197,6 +197,7 @@ defmodule Elmc.Backend.Plan.Lower.Case do
              Map.get(other_br, :pattern),
              Map.get(other_br, :expr),
              subj_reg,
+             subject,
              ctx,
              b_then_done,
              else_id
@@ -243,9 +244,9 @@ defmodule Elmc.Backend.Plan.Lower.Case do
          b_reserved = %{b_entry | next_block: max(b_entry.next_block, merge_id + 1)},
          b_then_start = Builder.begin_cfg_arm_block(b_reserved, then_id),
          {:ok, _lp, b_left_bound, just_ctx1} <-
-           bind_maybe_payload(ctx, left_pat, left_reg, b_then_start),
+           bind_maybe_payload(ctx, left_pat, left_reg, left, b_then_start),
          {:ok, _rp, b_right_bound, just_ctx2} <-
-           bind_maybe_payload(just_ctx1, right_pat, right_reg, b_left_bound),
+           bind_maybe_payload(just_ctx1, right_pat, right_reg, right, b_left_bound),
          {:ok, then_reg, then_exit, b_then} <-
            compile_maybe_branch_in_current(Map.get(just_br, :expr), just_ctx2, b_right_bound),
          b_then_done = Builder.patch_terminator(b_then, then_exit, {:br, merge_id}),
@@ -431,16 +432,18 @@ defmodule Elmc.Backend.Plan.Lower.Case do
           Types.pattern(),
           Types.expr(),
           Types.reg(),
+          Types.expr() | nil,
           Context.t(),
           Builder.t(),
           non_neg_integer()
         ) :: {:ok, Types.reg() | Types.result_slot(), non_neg_integer(), Builder.t()} | :unsupported
 
-  defp compile_maybe_else_branch(pattern, expr, subj_reg, ctx, b, block_id) do
+  defp compile_maybe_else_branch(pattern, expr, subj_reg, subject_expr, ctx, b, block_id) do
     b_arm = Builder.begin_cfg_arm_block(b, block_id)
     arm_ctx = Context.for_branch_arm(ctx)
 
-    with {:ok, _payload_reg, b1, else_ctx} <- bind_maybe_payload(arm_ctx, pattern, subj_reg, b_arm),
+    with {:ok, _payload_reg, b1, else_ctx} <-
+           bind_maybe_payload(arm_ctx, pattern, subj_reg, subject_expr, b_arm),
          {:ok, reg, b2} <- Expr.compile(expr, else_ctx, b1) do
       exit_id = b2.current_block.id
       {:ok, reg, exit_id, Builder.finish_block(b2, :none)}
@@ -714,10 +717,15 @@ defmodule Elmc.Backend.Plan.Lower.Case do
   defp bind_pattern_pair(ctx, b, %{kind: :wildcard}, _subj_reg), do: {ctx, b}
   defp bind_pattern_pair(ctx, b, _, _), do: {ctx, b}
 
-  @spec bind_maybe_payload(Context.t(), Types.pattern(), Types.reg(), Builder.t()) ::
-          {:ok, Types.reg(), Builder.t(), Context.t()}
+  @spec bind_maybe_payload(
+          Context.t(),
+          Types.pattern(),
+          Types.reg(),
+          Types.expr() | nil,
+          Builder.t()
+        ) :: {:ok, Types.reg(), Builder.t(), Context.t()}
 
-  defp bind_maybe_payload(ctx, pattern, subj_reg, b) do
+  defp bind_maybe_payload(ctx, pattern, subj_reg, subject_expr, b) do
     cond do
       just_arm_pattern?(pattern) and unused_just_payload?(pattern) ->
         {ctx1, b1} = bind_pattern_alias(ctx, b, pattern, subj_reg)
@@ -725,7 +733,12 @@ defmodule Elmc.Backend.Plan.Lower.Case do
 
       just_arm_pattern?(pattern) ->
         {:ok, payload_reg, b1} = Expr.compile_runtime_builtin(:maybe_just_payload, [subj_reg], ctx, b)
-        {ctx1, b2} = bind_just_payload_pattern(ctx, b1, pattern, payload_reg)
+        # Concrete Maybe payload type (e.g. CurrentDateTime) — not the ctor's
+        # type-var `a`. Without this, `now.minute` after `Just now` picks the
+        # smallest ambiguous shape (TickSpec.minute@0 = year) and MinuteChanged
+        # overwrites year → perpetual companion refetch → double-free.
+        ctx0 = PatternBind.enrich_just_payload_type(ctx, pattern, subject_expr)
+        {ctx1, b2} = bind_just_payload_pattern(ctx0, b1, pattern, payload_reg)
         # `Just x` stores the payload name in `:bind`. Only `(Just …) as alias`
         # should keep the outer Maybe in `:bind` while `:arg_pattern` holds the
         # inner pattern — alias then, otherwise `Tuple.first x` would see the
@@ -741,7 +754,8 @@ defmodule Elmc.Backend.Plan.Lower.Case do
 
       unwrap_just_pattern?(pattern) ->
         {:ok, payload_reg, b1} = Expr.compile_runtime_builtin(:maybe_just_payload, [subj_reg], ctx, b)
-        {ctx1, b2} = bind_pattern_pair(ctx, b1, pattern, payload_reg)
+        ctx0 = PatternBind.enrich_just_payload_type(ctx, pattern, subject_expr)
+        {ctx1, b2} = bind_pattern_pair(ctx0, b1, pattern, payload_reg)
         {:ok, payload_reg, b2, ctx1}
 
       true ->

@@ -42,7 +42,11 @@ defmodule Elmc.PebbleSurfaceCoverageTest do
     "Pebble.DataLog" =>
       Path.expand("../../packages/elm-pebble/elm-watch/src/Pebble/DataLog.elm", __DIR__),
     "Pebble.Dictation" =>
-      Path.expand("../../packages/elm-pebble/elm-watch/src/Pebble/Dictation.elm", __DIR__)
+      Path.expand("../../packages/elm-pebble/elm-watch/src/Pebble/Dictation.elm", __DIR__),
+    "Pebble.Speaker" =>
+      Path.expand("../../packages/elm-pebble/elm-watch/src/Pebble/Speaker.elm", __DIR__),
+    "Pebble.UnobstructedArea" =>
+      Path.expand("../../packages/elm-pebble/elm-watch/src/Pebble/UnobstructedArea.elm", __DIR__)
   }
 
   test "surface fixture coverage stays in sync with Pebble APIs" do

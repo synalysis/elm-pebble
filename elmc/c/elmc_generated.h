@@ -1,0 +1,32 @@
+#ifndef ELMC_GENERATED_H
+#define ELMC_GENERATED_H
+
+#include "../runtime/elmc_runtime.h"
+#include "../ports/elmc_ports.h"
+RC elmc_fn_Main_init(ElmcValue **out, ElmcValue *context);
+RC elmc_fn_Main_update(ElmcValue **out, ElmcValue *msg, ElmcValue *model);
+RC elmc_fn_Main_subscriptions(ElmcValue **out, ElmcValue *model);
+RC elmc_fn_Main_view(ElmcValue **out, ElmcValue *model);
+
+#define ELMC_HAVE_DIRECT_COMMANDS_MAIN_VIEW 1
+
+#define ELMC_HAVE_DIRECT_COMMANDS_YES_RENDER_COLOREDRADIAL 1
+
+#define ELMC_HAVE_DIRECT_COMMANDS_YES_RENDER_COLOREDRADIALWEDGE 1
+
+#define ELMC_HAVE_DIRECT_COMMANDS_YES_RENDER_DRAW24HOURHAND 1
+
+#define ELMC_HAVE_DIRECT_COMMANDS_YES_RENDER_DRAWBOTTOMRIGHT 1
+
+#define ELMC_HAVE_DIRECT_COMMANDS_YES_RENDER_DRAWBOTTOMRIGHTCOUNTDOWN 1
+
+#define ELMC_HAVE_DIRECT_COMMANDS_YES_RENDER_DRAWDIAL 1
+
+#define ELMC_HAVE_DIRECT_COMMANDS_YES_RENDER_DRAWMOONPHASE 1
+
+#define ELMC_HAVE_DIRECT_COMMANDS_YES_RENDER_DRAWSCALETICK 1
+
+#define ELMC_HAVE_DIRECT_COMMANDS_YES_RENDER_TEXTAT 1
+
+
+#endif

@@ -392,9 +392,12 @@ static bool s_forced_backlight = false;
 static int32_t s_random_seed = 1722529;
 #endif
 #if ELMC_PEBBLE_FEATURE_CMD_COMPANION_SEND
-static bool s_pending_companion_request = false;
-static int s_pending_request_tag = 0;
-static int s_pending_request_value = 0;
+#ifndef COMPANION_PENDING_QUEUE_CAP
+#define COMPANION_PENDING_QUEUE_CAP 8
+#endif
+static int s_pending_companion_count = 0;
+static int s_pending_companion_tags[COMPANION_PENDING_QUEUE_CAP];
+static int s_pending_companion_values[COMPANION_PENDING_QUEUE_CAP];
 static bool s_last_companion_request_valid = false;
 static int s_last_companion_request_tag = 0;
 static int s_last_companion_request_value = 0;
@@ -481,6 +484,7 @@ static void deferred_datetime_callback(void *data);
 #endif
 #if ELMC_PEBBLE_FEATURE_CMD_COMPANION_SEND
 static bool send_companion_request(int request_tag, int request_value);
+static void enqueue_pending_companion_request(int request_tag, int request_value);
 static void flush_pending_companion_request(void);
 static void companion_resync_callback(void *data);
 #endif
@@ -855,8 +859,12 @@ static bool deliver_current_date_time(int msg_tag, const char *reason) {
   }
 
   int64_t day_of_week = local->tm_wday == 0 ? 6 : local->tm_wday - 1;
+#if ELMC_PEBBLE_DEBUG_LOGS
   const char *field_names[] = {
       "year", "month", "day", "dayOfWeek", "hour", "minute", "second", "utcOffsetMinutes"};
+#else
+  const char **field_names = NULL;
+#endif
   int64_t field_values[] = {
       local->tm_year + 1900,
       local->tm_mon + 1,
@@ -1199,9 +1207,7 @@ static void apply_pending_cmd(void) {
       s_last_companion_request_value = request_value;
       s_last_companion_request_valid = true;
       if (!send_companion_request(request_tag, request_value)) {
-        s_pending_companion_request = true;
-        s_pending_request_tag = request_tag;
-        s_pending_request_value = request_value;
+        enqueue_pending_companion_request(request_tag, request_value);
       }
       break;
     }
@@ -1418,7 +1424,11 @@ static void apply_pending_cmd(void) {
 #if ELMC_PEBBLE_FEATURE_CMD_GET_FIRMWARE_VERSION
     case ELMC_PEBBLE_CMD_GET_FIRMWARE_VERSION: {
       WatchInfoVersion ver = watch_info_get_firmware_version();
+#if ELMC_PEBBLE_DEBUG_LOGS
       const char *field_names[] = {"major", "minor", "patch"};
+#else
+      const char **field_names = NULL;
+#endif
       int64_t field_values[] = {ver.major, ver.minor, ver.patch};
       int rc = elmc_pebble_dispatch_tag_record_int_fields(
           &s_elm_app, (int)cmd.p0, 3, field_names, field_values);
@@ -3191,14 +3201,45 @@ static bool send_companion_request(int request_tag, int request_value) {
   return ok;
 }
 
+static void enqueue_pending_companion_request(int request_tag, int request_value) {
+  int i;
+  /* Deduplicate consecutive identical tags so a busy outbox does not drop a
+     different follow-up request (e.g. RequestSunData then RequestWeather). */
+  for (i = 0; i < s_pending_companion_count; i++) {
+    if (s_pending_companion_tags[i] == request_tag &&
+        s_pending_companion_values[i] == request_value) {
+      return;
+    }
+  }
+  if (s_pending_companion_count >= COMPANION_PENDING_QUEUE_CAP) {
+    /* Drop the oldest pending entry; keep fresher requests. */
+    for (i = 1; i < s_pending_companion_count; i++) {
+      s_pending_companion_tags[i - 1] = s_pending_companion_tags[i];
+      s_pending_companion_values[i - 1] = s_pending_companion_values[i];
+    }
+    s_pending_companion_count -= 1;
+  }
+  s_pending_companion_tags[s_pending_companion_count] = request_tag;
+  s_pending_companion_values[s_pending_companion_count] = request_value;
+  s_pending_companion_count += 1;
+}
+
 static void flush_pending_companion_request(void) {
   ELMC_PEBBLE_TRACE_ENTER("flush_pending_companion_request");
-  if (!s_pending_companion_request) {
-    ELMC_PEBBLE_TRACE_EXIT("flush_pending_companion_request");
-    return;
-  }
-  if (send_companion_request(s_pending_request_tag, s_pending_request_value)) {
-    s_pending_companion_request = false;
+  while (s_pending_companion_count > 0) {
+    int request_tag = s_pending_companion_tags[0];
+    int request_value = s_pending_companion_values[0];
+    if (!send_companion_request(request_tag, request_value)) {
+      break;
+    }
+    {
+      int i;
+      for (i = 1; i < s_pending_companion_count; i++) {
+        s_pending_companion_tags[i - 1] = s_pending_companion_tags[i];
+        s_pending_companion_values[i - 1] = s_pending_companion_values[i];
+      }
+      s_pending_companion_count -= 1;
+    }
   }
   ELMC_PEBBLE_TRACE_EXIT("flush_pending_companion_request");
 }
@@ -3938,6 +3979,10 @@ static void outbox_sent_handler(DictionaryIterator *iter, void *context) {
   (void)iter;
   (void)context;
   ELMC_PEBBLE_DEBUG_LOG(APP_LOG_LEVEL_INFO, "outbox sent");
+#if ELMC_PEBBLE_FEATURE_CMD_COMPANION_SEND
+  /* Drain queued companion requests once the outbox is free again. */
+  flush_pending_companion_request();
+#endif
   ELMC_PEBBLE_TRACE_EXIT("outbox_sent_handler");
 }
 
@@ -3946,7 +3991,7 @@ static void outbox_failed_handler(DictionaryIterator *iter, AppMessageResult rea
   (void)iter;
   (void)context;
 #if ELMC_PEBBLE_FEATURE_CMD_COMPANION_SEND
-  if (reason == APP_MSG_BUSY && (s_pending_companion_request || s_last_companion_request_valid)) {
+  if (reason == APP_MSG_BUSY && (s_pending_companion_count > 0 || s_last_companion_request_valid)) {
     ELMC_PEBBLE_DEBUG_LOG(APP_LOG_LEVEL_INFO, "outbox busy; retry scheduled");
   } else
 #endif
@@ -3954,7 +3999,7 @@ static void outbox_failed_handler(DictionaryIterator *iter, AppMessageResult rea
     APP_LOG(APP_LOG_LEVEL_WARNING, "outbox failed: %d", reason);
   }
 #if ELMC_PEBBLE_FEATURE_CMD_COMPANION_SEND
-  if (s_pending_companion_request || s_last_companion_request_valid) {
+  if (s_pending_companion_count > 0 || s_last_companion_request_valid) {
     schedule_companion_outbox_retry(500);
   }
 #endif

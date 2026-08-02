@@ -125,23 +125,11 @@ update msg model =
             let
                 modelWithTime =
                     { model | now = Just value }
-
-                dayKey =
-                    calendarDayKey value
-
-                hourKey =
-                    calendarHourKey value
             in
-            if model.lastSunFetchDayKey == Nothing && model.lastWeatherFetchHourKey == Nothing then
-                ( { modelWithTime
-                    | lastSunFetchDayKey = Just dayKey
-                    , lastWeatherFetchHourKey = Just hourKey
-                  }
-                , Cmd.none
-                )
-
-            else
-                scheduleCompanionFetches modelWithTime Cmd.none
+            -- First datetime (and later day/hour changes) schedule companion
+            -- fetches. Do not mark fetch keys without sending — early outbox
+            -- failures would otherwise skip sun/moon until the next day.
+            scheduleCompanionFetches modelWithTime Cmd.none
 
         MinuteChanged minute ->
             case model.now of

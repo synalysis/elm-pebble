@@ -33,11 +33,18 @@ defmodule Elmx.TestSupport.TemplateProject do
     "starter" => "starter_watch",
     "watchface-yes" => "watchface_yes",
     "watchface-analog" => "watchface_analog",
+    "watchface-digital" => "watchface_digital",
+    "watchface-minimal" => "watchface_minimal",
     "watchface-tangram-time" => "watchface_tangram_time",
     "watchface-weather-animated" => "watchface_weather_animated",
     "watchface-tutorial-complete" => "watchface_tutorial_complete",
     "watchface-poke-battle" => "watchface_poke_battle",
+    "watchface-smoke-screen" => "watchface_smoke_screen",
+    "watchface-color-shapes" => "watchface_color_shapes",
+    "watch-demo-time" => "watch_demo_time",
     "watch_demo_drawing_showcase" => "watch_demo_drawing_showcase",
+    "game-2048" => "game_2048",
+    "game-elmtris" => "game_elmtris",
     "game-jump-n-run" => "game_jump_n_run",
     "companion-demo-phone-status" => "companion_demo_phone_status",
     "companion-demo-storage" => "companion_demo_storage",
@@ -48,6 +55,13 @@ defmodule Elmx.TestSupport.TemplateProject do
     "companion-demo-websocket" => "companion_demo_websocket",
     "companion-demo-timeline" => "companion_demo_timeline"
   }
+
+  @tea_playbook_templates ~w(
+    watchface-digital
+    watchface-minimal
+    game-2048
+    game-elmtris
+  )
 
   @protocol_templates MapSet.new([
                         "watchface-yes",
@@ -76,13 +90,36 @@ defmodule Elmx.TestSupport.TemplateProject do
   @spec representative_template_keys() :: [String.t()]
   def representative_template_keys, do: @representative_watch_templates
 
+  @doc """
+  Underscore template names used by `Elmx.TeaPlaybook` / elmc host smokes.
+  """
+  @spec tea_playbook_template_dirs() :: [String.t()]
+  def tea_playbook_template_dirs do
+    Enum.map(@tea_playbook_templates, &Map.fetch!(@template_dirs, &1))
+  end
+
+  @spec tea_playbook_template_keys() :: [String.t()]
+  def tea_playbook_template_keys, do: @tea_playbook_templates
+
+  @spec scaffold_playbook_template(String.t(), keyword()) ::
+          {:ok, String.t()} | {:error, SupportTypes.scaffold_error()}
+  def scaffold_playbook_template(template_dir, opts \\ []) when is_binary(template_dir) do
+    key =
+      @template_dirs
+      |> Enum.find_value(fn {k, dir} -> if dir == template_dir, do: k end)
+
+    if is_binary(key) do
+      scaffold_template(key, opts)
+    else
+      {:error, {:missing_template, template_dir}}
+    end
+  end
+
   @spec representative_phone_template_keys() :: [String.t()]
   def representative_phone_template_keys, do: @representative_phone_templates
 
   @spec repo_root() :: String.t()
   def repo_root, do: @repo_root
-
-  alias Elmx.TestSupport.Types, as: SupportTypes
 
   @spec scaffold_template(String.t(), keyword()) ::
           {:ok, String.t()} | {:error, SupportTypes.scaffold_error()}
@@ -170,7 +207,7 @@ defmodule Elmx.TestSupport.TemplateProject do
     }
 
     deps =
-      if template_key in ["game-jump-n-run", "watchface-poke-battle"],
+      if template_key in ["game-jump-n-run", "watchface-poke-battle", "game-2048", "game-elmtris"],
         do: Map.put(deps, "elm/random", "1.0.0"),
         else: deps
 

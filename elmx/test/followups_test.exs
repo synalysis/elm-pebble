@@ -3,6 +3,27 @@ defmodule Elmx.FollowupsTest do
 
   alias Elmx.Runtime.{Cmd, Followups}
 
+  test "task perform produces task_command followup row" do
+    cmd = Elmx.Runtime.Core.Task.perform(fn n -> {:Tick, n} end, {:Ok, 42})
+
+    assert [%{"source" => "task_command", "package" => "elm/core", "message" => "Tick"} = row] =
+             Followups.from_commands(cmd)
+
+    assert get_in(row, ["message_value", "args"]) == [42]
+    assert row["command"]["kind"] == "cmd.task.immediate"
+  end
+
+  test "task attempt produces task_command followup row for Ok and Err" do
+    ok_cmd =
+      Elmx.Runtime.Core.Task.attempt(fn result -> {:Got, result} end, {:Ok, 1})
+
+    err_cmd =
+      Elmx.Runtime.Core.Task.attempt(fn result -> {:Got, result} end, {:Err, :bad})
+
+    assert [%{"source" => "task_command", "message" => "Got"}] = Followups.from_commands(ok_cmd)
+    assert [%{"source" => "task_command", "message" => "Got"}] = Followups.from_commands(err_cmd)
+  end
+
   test "timer_after produces timer_command followup row" do
     cmd = Cmd.timer_after(1000, :Tick)
 

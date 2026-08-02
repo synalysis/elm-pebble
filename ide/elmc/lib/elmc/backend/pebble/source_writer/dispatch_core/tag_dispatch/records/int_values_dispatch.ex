@@ -40,6 +40,7 @@ defmodule Elmc.Backend.Pebble.SourceWriter.DispatchCore.TagDispatch.Records.IntV
           }
 
           int rc = elmc_pebble_dispatch_tag_payload(app, outer_tag, inner_msg);
+          elmc_release(inner_msg);
           ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_dispatch_tag_int_values", rc);
         }
 

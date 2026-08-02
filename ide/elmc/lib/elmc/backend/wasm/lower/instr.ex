@@ -624,6 +624,15 @@ defmodule Elmc.Backend.Wasm.Lower.Instr do
         right_wat = int_operand_wat(right_reg, slots, opts)
         [set_reg(dest_reg, binop(pred, left_wat, right_wat), slots)]
 
+      # Structural equality for Maybe/Result/… — host has no value_equal import yet,
+      # so compare handles. Immortal Nothing vs distinct Just boxes still works;
+      # same-day Just/Just refetch is a known wasm gap until value_equal lands.
+      {:value, :eq} ->
+        [set_reg(dest_reg, binop("i32.eq", left, right), slots)]
+
+      {:value, :neq} ->
+        [set_reg(dest_reg, binop("i32.ne", left, right), slots)]
+
       {:bool_scalar, _} ->
         pred =
           case kind do

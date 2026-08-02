@@ -232,14 +232,38 @@ defmodule Elmc.WatchfaceYesCompanionHostHarnessTest do
       if (elmc_pebble_init_with_mode(&app, flags, ELMC_PEBBLE_MODE_WATCHFACE) != 0) return 2;
       elmc_release(flags);
 
-      if (elmc_pebble_dispatch_tag_payload(&app, ELMC_PEBBLE_MSG_CURRENTDATETIME, current_datetime()) != 0) return 3;
+      {
+        ElmcValue *dt = current_datetime();
+        if (!dt) return 3;
+        if (elmc_pebble_dispatch_tag_payload(&app, ELMC_PEBBLE_MSG_CURRENTDATETIME, dt) != 0) {
+          elmc_release(dt);
+          return 3;
+        }
+        elmc_release(dt);
+      }
       if (elmc_pebble_dispatch_tag_value(&app, ELMC_PEBBLE_MSG_BATTERYLEVELCHANGED, 80) != 0) return 4;
       if (elmc_pebble_dispatch_tag_bool(&app, ELMC_PEBBLE_MSG_CONNECTIONCHANGED, 1) != 0) return 5;
       if (elmc_pebble_dispatch_tag_bool(&app, ELMC_PEBBLE_MSG_GOTHEALTHSUPPORTED, 1) != 0) return 6;
       if (refresh_view(&app, "after_init") < 2) return 10;
 
-      if (elmc_pebble_dispatch_tag_payload(&app, ELMC_PEBBLE_MSG_FROMPHONE, provide_sun()) != 0) return 12;
-      if (elmc_pebble_dispatch_tag_payload(&app, ELMC_PEBBLE_MSG_FROMPHONE, provide_weather()) != 0) return 14;
+      {
+        ElmcValue *sun = provide_sun();
+        if (!sun) return 12;
+        if (elmc_pebble_dispatch_tag_payload(&app, ELMC_PEBBLE_MSG_FROMPHONE, sun) != 0) {
+          elmc_release(sun);
+          return 12;
+        }
+        elmc_release(sun);
+      }
+      {
+        ElmcValue *weather = provide_weather();
+        if (!weather) return 14;
+        if (elmc_pebble_dispatch_tag_payload(&app, ELMC_PEBBLE_MSG_FROMPHONE, weather) != 0) {
+          elmc_release(weather);
+          return 14;
+        }
+        elmc_release(weather);
+      }
 
       int first = refresh_view(&app, "first_view");
       int repeat = refresh_view(&app, "repeat_view");
@@ -265,8 +289,20 @@ defmodule Elmc.WatchfaceYesCompanionHostHarnessTest do
       }
 
       for (int i = 0; i < 16; i++) {
-        if (elmc_pebble_dispatch_tag_payload(&app, ELMC_PEBBLE_MSG_FROMPHONE, provide_weather()) != 0) return 20 + i;
-        if (elmc_pebble_dispatch_tag_payload(&app, ELMC_PEBBLE_MSG_FROMPHONE, provide_sun()) != 0) return 40 + i;
+        ElmcValue *weather = provide_weather();
+        if (!weather) return 20 + i;
+        if (elmc_pebble_dispatch_tag_payload(&app, ELMC_PEBBLE_MSG_FROMPHONE, weather) != 0) {
+          elmc_release(weather);
+          return 20 + i;
+        }
+        elmc_release(weather);
+        ElmcValue *sun = provide_sun();
+        if (!sun) return 40 + i;
+        if (elmc_pebble_dispatch_tag_payload(&app, ELMC_PEBBLE_MSG_FROMPHONE, sun) != 0) {
+          elmc_release(sun);
+          return 40 + i;
+        }
+        elmc_release(sun);
       }
       if (refresh_view(&app, "after_flood") < 2) return 70;
 

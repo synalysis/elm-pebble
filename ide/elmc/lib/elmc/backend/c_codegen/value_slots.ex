@@ -647,10 +647,20 @@ defmodule Elmc.Backend.CCodegen.ValueSlots do
   @doc """
   After a direct call writes through an owned out-slot, clear owned operands that alias
   the same pointer so epilogue lifo does not release the returned value twice.
+
+  Options:
+  - `:drop_result_retain?` — for runtimes that `retain` a chosen operand into `out`
+    (`elmc_maybe_with_default`, `elmc_basics_min`, …), drop that extra retain **inside**
+    the alias `if`. An unconditional `elmc_release(out)` before the check frees a
+    borrowed Just payload (YES `Maybe.withDefault default model.sun`) while the model
+    still owns it — later cow_drop double-frees.
   """
-  @spec null_call_operands_aliasing_out(String.t(), [String.t()], Types.compile_env()) :: String.t()
-  def null_call_operands_aliasing_out(out, arg_vars, env \\ %{})
-      when is_binary(out) and is_list(arg_vars) do
+  @spec null_call_operands_aliasing_out(String.t(), [String.t()], Types.compile_env(), keyword()) ::
+          String.t()
+  def null_call_operands_aliasing_out(out, arg_vars, env \\ %{}, opts \\ [])
+      when is_binary(out) and is_list(arg_vars) and is_map(env) and is_list(opts) do
+    drop_result_retain? = Keyword.get(opts, :drop_result_retain?, false)
+
     invariant =
       env
       |> Map.get(:__tail_loop_invariant_refs__, MapSet.new())
@@ -666,9 +676,16 @@ defmodule Elmc.Backend.CCodegen.ValueSlots do
         owned_ref?(arg) and arg != out and not MapSet.member?(invariant, arg)
       end)
       |> Enum.map(fn arg ->
+        body =
+          if drop_result_retain? do
+            "elmc_release(#{RcRuntimeEmit.value_expr(out)});\n  #{null_assignment(arg)}"
+          else
+            null_assignment(arg)
+          end
+
         """
         if (#{RcRuntimeEmit.value_expr(out)} == #{RcRuntimeEmit.value_expr(arg)}) {
-          #{null_assignment(arg)}
+          #{body}
         }
         """
       end)

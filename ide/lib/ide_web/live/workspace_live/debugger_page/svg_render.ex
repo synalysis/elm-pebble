@@ -31,13 +31,18 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage.SvgRender do
   def text_x(%{x: x}) when is_number(x), do: x
   def text_x(_op), do: 0
 
+  # Pebble `graphics_draw_text` draws the first line against the **top** of the
+  # rect (`GRect.y`). Match that — do not vertically center in the box.
   @spec text_y(svg_op()) :: number()
-  def text_y(%{y: y, h: h}) when is_number(y) and is_number(h) and h > 0, do: y + h / 2
   def text_y(%{y: y}) when is_number(y), do: y
   def text_y(_op), do: 0
 
   @spec text_font_size(svg_op()) :: pos_integer()
   def text_font_size(op) do
+    # Bucket mirrors `system_font_for_height`, but SVG sans-serif at full Gothic
+    # 18 inside a short box (e.g. YES dial h=12) clips through mid-glyph. Cap to
+    # box height so the whole digit stays visible; top-of-box placement still
+    # matches Pebble. Bitmap Gothic in a short GRect reads smaller similarly.
     cap =
       op
       |> box_text_height()
@@ -87,8 +92,9 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage.SvgRender do
   def text_anchor(%{text_align: "right", w: w}) when is_number(w), do: "end"
   def text_anchor(_op), do: nil
 
+  # SVG: top of the em box at `text_y` ≈ Pebble first-line-at-top-of-rect.
   @spec text_baseline(svg_op()) :: String.t() | nil
-  def text_baseline(%{h: h}) when is_number(h) and h > 0, do: "middle"
+  def text_baseline(%{h: h}) when is_number(h) and h > 0, do: "text-before-edge"
   def text_baseline(_op), do: nil
 
   @spec color(integer() | nil, String.t()) :: String.t()

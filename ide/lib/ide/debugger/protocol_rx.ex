@@ -223,21 +223,11 @@ defmodule Ide.Debugger.ProtocolRx do
         ) :: Types.runtime_state()
   defp deliver_inline_protocol_payloads(state, deliveries, rx_ctx)
        when is_map(state) and is_list(deliveries) and is_map(rx_ctx) do
-    deliveries
-    |> Enum.uniq_by(&inline_delivery_key/1)
-    |> Enum.reduce(state, fn payload, acc ->
+    # No uniq/dedupe: duplicate enqueue is a toolchain bug and must surface
+    # as duplicate timeline updates (caught by debugger reliability tests).
+    Enum.reduce(deliveries, state, fn payload, acc ->
       handle_protocol_rx_event(acc, payload, rx_ctx)
     end)
-  end
-
-  @spec inline_delivery_key(Types.protocol_tx_rx_payload()) ::
-          {String.t() | nil, String.t() | nil, Types.subscription_payload() | nil}
-  defp inline_delivery_key(payload) when is_map(payload) do
-    {
-      Map.get(payload, :to) || Map.get(payload, "to"),
-      Map.get(payload, :message) || Map.get(payload, "message"),
-      Map.get(payload, :message_value) || Map.get(payload, "message_value")
-    }
   end
 
   defp handle_protocol_rx_event(state, payload, rx_ctx) when is_map(payload) and is_map(rx_ctx) do

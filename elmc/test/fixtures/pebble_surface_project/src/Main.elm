@@ -1,5 +1,7 @@
 module Main exposing (coveredSurfaceFunctions, main)
 
+import Companion.Types as CompanionTypes
+import Companion.Watch as CompanionWatch
 import Json.Decode as Decode
 import Pebble.Accel as PebbleAccel
 import Pebble.AppFocus as PebbleAppFocus
@@ -14,15 +16,18 @@ import Pebble.Health as PebbleHealth
 import Pebble.Light as PebbleLight
 import Pebble.Log as PebbleLog
 import Pebble.Platform as PebblePlatform
+import Pebble.Speaker as PebbleSpeaker
 import Pebble.Storage as PebbleStorage
 import Pebble.System as PebbleSystem
 import Pebble.Time as PebbleTime
 import Pebble.Ui as PebbleUi
 import Pebble.Ui.Color as PebbleColor
 import Pebble.Ui.Resources as UiResources
+import Pebble.UnobstructedArea as PebbleUnobstructed
 import Pebble.Vibes as PebbleVibes
 import Pebble.Wakeup as PebbleWakeup
 import Pebble.WatchInfo as PebbleWatchInfo
+import Random
 
 
 type alias Model =
@@ -68,6 +73,8 @@ type Msg
     | GotHealthSumToday Int
     | GotHealthSum Int
     | GotHealthAccessible Bool
+    | GotHealthSupported Bool
+    | GotRandom Int
     | HealthEvent PebbleHealth.Event
     | LightChanged PebbleLight.State
     | AppFocusChanged PebbleAppFocus.State
@@ -76,6 +83,15 @@ type Msg
     | DictationStatus PebbleDictation.Status
     | DictationResult (Result PebbleDictation.Error String)
     | AnimationFinished PebbleUi.AnimationId
+    | GotBounds PebbleUi.Rect
+    | WillChangeBounds PebbleUi.Rect
+    | ChangingBounds Int
+    | DidChangeBounds
+    | ScreenChanged PebblePlatform.LaunchScreen
+    | SpeakerFinished PebbleSpeaker.FinishReason
+    | GotSpeakerMuted Bool
+    | GotSpeakerStatus PebbleSpeaker.Status
+    | GotPhoneMsg CompanionTypes.PhoneToWatch
 
 
 coveredSurfaceFunctions : List String
@@ -123,6 +139,23 @@ coveredSurfaceFunctions =
     , "Pebble.Log.errorCode"
     , "Pebble.Log.infoCode"
     , "Pebble.Log.warnCode"
+    , "Pebble.Speaker.isMuted"
+    , "Pebble.Speaker.onFinished"
+    , "Pebble.Speaker.playNotes"
+    , "Pebble.Speaker.playTone"
+    , "Pebble.Speaker.playTracks"
+    , "Pebble.Speaker.setVolume"
+    , "Pebble.Speaker.status"
+    , "Pebble.Speaker.stop"
+    , "Pebble.Speaker.streamClose"
+    , "Pebble.Speaker.streamOpen"
+    , "Pebble.Speaker.streamWrite"
+    , "Pebble.Speaker.limits"
+    , "Pebble.Speaker.maxNotes"
+    , "Pebble.Speaker.maxSampleBytesTotal"
+    , "Pebble.Speaker.maxTracks"
+    , "Pebble.Speaker.pcmFormatToInt"
+    , "Pebble.Speaker.waveformToInt"
     , "Pebble.Storage.delete"
     , "Pebble.Storage.maxSize"
     , "Pebble.Storage.readInt"
@@ -138,6 +171,10 @@ coveredSurfaceFunctions =
     , "Pebble.Time.currentTimeString"
     , "Pebble.Time.timezone"
     , "Pebble.Time.timezoneIsSet"
+    , "Pebble.UnobstructedArea.currentBounds"
+    , "Pebble.UnobstructedArea.onChanging"
+    , "Pebble.UnobstructedArea.onDidChange"
+    , "Pebble.UnobstructedArea.onWillChange"
     , "Pebble.Vibes.cancel"
     , "Pebble.Vibes.doublePulse"
     , "Pebble.Vibes.longPulse"
@@ -163,6 +200,15 @@ highRateAccelConfig : PebbleAccel.Config
 highRateAccelConfig =
     { samplesPerUpdate = 2
     , samplingRate = PebbleAccel.Hz100
+    }
+
+
+demoSpeakerNote : PebbleSpeaker.Note
+demoSpeakerNote =
+    { midiNote = 60
+    , waveform = PebbleSpeaker.Sine
+    , durationMs = 100
+    , velocity = 80
     }
 
 
@@ -195,10 +241,12 @@ init launchContext =
         , PebbleWatchInfo.getFirmwareVersion GotFirmwareVersion
         , PebbleSystem.batteryLevel GotBatteryLevel
         , PebbleSystem.connectionStatus GotConnectionStatus
+        , PebbleHealth.supported GotHealthSupported
         , PebbleHealth.value PebbleHealth.StepCount GotHealthValue
         , PebbleHealth.sumToday PebbleHealth.StepCount GotHealthSumToday
         , PebbleHealth.sum PebbleHealth.WalkedDistanceMeters 0 3600 GotHealthSum
         , PebbleHealth.accessible PebbleHealth.ActiveSeconds 0 3600 GotHealthAccessible
+        , Random.generate GotRandom (Random.int 1 100)
         , PebbleLight.interaction
         , PebbleLight.disable
         , PebbleLight.enable
@@ -210,8 +258,20 @@ init launchContext =
         , PebbleDataLog.logBytes (PebbleDataLog.tag 42) [ 1, 2, 3 ]
         , PebbleDataLog.logInt32 (PebbleDataLog.tag 43) 9001
         , PebbleCompass.current GotCompassHeading
+        , PebbleUnobstructed.currentBounds GotBounds
         , PebbleDictation.start
         , PebbleDictation.stop
+        , PebbleSpeaker.isMuted GotSpeakerMuted
+        , PebbleSpeaker.playTone 440 100 80 PebbleSpeaker.Sine
+        , PebbleSpeaker.playNotes [ demoSpeakerNote ] 80
+        , PebbleSpeaker.playTracks [ { notes = [ demoSpeakerNote ], sample = Nothing } ] 80
+        , PebbleSpeaker.stop
+        , PebbleSpeaker.setVolume 50
+        , PebbleSpeaker.status GotSpeakerStatus
+        , PebbleSpeaker.streamOpen PebbleSpeaker.Pcm8kHz8bit 80
+        , PebbleSpeaker.streamWrite [ 1, 2, 3 ]
+        , PebbleSpeaker.streamClose
+        , CompanionWatch.sendWatchToPhone (CompanionTypes.RequestWeather CompanionTypes.Berlin)
         , PebbleWakeup.scheduleAfterSeconds 60
         , PebbleWakeup.cancel 1
         , PebbleLog.infoCode 101
@@ -336,6 +396,16 @@ update msg model =
             in
             ( model, Cmd.none )
 
+        GotHealthSupported value ->
+            let
+                _ =
+                    value
+            in
+            ( model, Cmd.none )
+
+        GotRandom value ->
+            ( { model | ticks = value }, Cmd.none )
+
         HealthEvent event ->
             let
                 _ =
@@ -388,6 +458,49 @@ update msg model =
         AnimationFinished _ ->
             ( model, Cmd.none )
 
+        GotBounds rect ->
+            ( { model | ticks = rect.x + rect.y }, Cmd.none )
+
+        WillChangeBounds rect ->
+            ( { model | ticks = rect.width + rect.height }, Cmd.none )
+
+        ChangingBounds progress ->
+            ( { model | ticks = progress }, Cmd.none )
+
+        DidChangeBounds ->
+            ( { model | ticks = model.ticks + 1 }, Cmd.none )
+
+        ScreenChanged screen ->
+            ( { model | ticks = screen.width }, Cmd.none )
+
+        SpeakerFinished reason ->
+            let
+                _ =
+                    reason
+            in
+            ( model, Cmd.none )
+
+        GotSpeakerMuted value ->
+            let
+                _ =
+                    value
+            in
+            ( model, Cmd.none )
+
+        GotSpeakerStatus status ->
+            let
+                _ =
+                    status
+            in
+            ( model, Cmd.none )
+
+        GotPhoneMsg phoneMsg ->
+            let
+                _ =
+                    phoneMsg
+            in
+            ( model, Cmd.none )
+
         GotClockStyle24h _ ->
             ( model, Cmd.none )
 
@@ -438,6 +551,12 @@ subscriptions _ =
         , PebbleHealth.onEvent HealthEvent
         , PebbleLight.onChange LightChanged
         , PebbleEvents.onAnimationFinished AnimationFinished
+        , PebblePlatform.onScreenChange ScreenChanged
+        , PebbleUnobstructed.onWillChange WillChangeBounds
+        , PebbleUnobstructed.onChanging ChangingBounds
+        , PebbleUnobstructed.onDidChange DidChangeBounds
+        , PebbleSpeaker.onFinished SpeakerFinished
+        , CompanionWatch.onPhoneToWatch GotPhoneMsg
         ]
 
 

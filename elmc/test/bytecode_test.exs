@@ -199,6 +199,107 @@ defmodule Elmc.BytecodeTest do
     assert {:ok, []} = Runtime.run_function(plan)
   end
 
+  test "const_int preserves negative values through encode/decode" do
+    b = Builder.new("Main", "neg", args: [])
+    {reg, b1} = Builder.emit_const_int(b, -6)
+    plan = Builder.to_function_plan(Builder.emit_ret(b1, reg))
+    section = Lower.lower(plan)
+    roundtrip = Lower.decode_section(Lower.encode_section(section))
+
+    assert {:ok, -6} = Runtime.run_section(roundtrip)
+  end
+
+  test "basics math builtins match elm/core angles and Order tags" do
+    b = Builder.new("Main", "trig", args: [])
+    {deg, b1} = Builder.fresh_reg(b)
+
+    {_, b2} =
+      Builder.emit(b1, :call_runtime, %{
+        dest: deg,
+        args: %{builtin: :new_float, args: [], literal: 180.0},
+        effects: %{produces: {:owned, deg}, consumes: [], borrows: [], fallible: false}
+      })
+
+    {rad, b3} = Builder.fresh_reg(b2)
+
+    {_, b4} =
+      Builder.emit(b3, :call_runtime, %{
+        dest: rad,
+        args: %{builtin: :basics_degrees, args: [deg]},
+        effects: %{produces: {:owned, rad}, consumes: [deg], borrows: [], fallible: false}
+      })
+
+    {milli, b5} = Builder.fresh_reg(b4)
+
+    {_, b6} =
+      Builder.emit(b5, :call_runtime, %{
+        dest: milli,
+        args: %{builtin: :new_float, args: [], literal: 1000.0},
+        effects: %{produces: {:owned, milli}, consumes: [], borrows: [], fallible: false}
+      })
+
+    {scaled, b7} = Builder.fresh_reg(b6)
+
+    {_, b8} =
+      Builder.emit(b7, :boxed_binop, %{
+        dest: scaled,
+        args: %{op: :mul, lhs: rad, rhs: milli},
+        effects: %{
+          produces: {:owned, scaled},
+          consumes: [rad, milli],
+          borrows: [],
+          fallible: false
+        }
+      })
+
+    {out, b9} = Builder.fresh_reg(b8)
+
+    {_, b10} =
+      Builder.emit(b9, :call_runtime, %{
+        dest: out,
+        args: %{builtin: :basics_truncate, args: [scaled]},
+        effects: %{produces: {:owned, out}, consumes: [scaled], borrows: [], fallible: false}
+      })
+
+    plan = Builder.to_function_plan(Builder.emit_ret(b10, out))
+    assert {:ok, 3141} = Runtime.run_function(plan)
+
+    abs_b = Builder.new("Main", "absNeg", args: [])
+    {neg, abs_b1} = Builder.emit_const_int(abs_b, -6)
+    {abs_out, abs_b2} = Builder.fresh_reg(abs_b1)
+
+    {_, abs_b3} =
+      Builder.emit(abs_b2, :call_runtime, %{
+        dest: abs_out,
+        args: %{builtin: :basics_abs, args: [neg]},
+        effects: %{produces: {:owned, abs_out}, consumes: [neg], borrows: [], fallible: false}
+      })
+
+    abs_plan = Builder.to_function_plan(Builder.emit_ret(abs_b3, abs_out))
+    assert {:ok, 6} = Runtime.run_function(abs_plan)
+
+    cmp_b = Builder.new("Main", "cmp", args: [])
+    {one, cmp_b1} = Builder.emit_const_int(cmp_b, 1)
+    {two, cmp_b2} = Builder.emit_const_int(cmp_b1, 2)
+    {order, cmp_b3} = Builder.fresh_reg(cmp_b2)
+
+    {_, cmp_b4} =
+      Builder.emit(cmp_b3, :call_runtime, %{
+        dest: order,
+        args: %{builtin: :basics_compare, args: [one, two]},
+        effects: %{
+          produces: {:owned, order},
+          consumes: [one, two],
+          borrows: [],
+          fallible: false
+        }
+      })
+
+    # Basics.Order constructor tags: LT=1, EQ=2, GT=3
+    cmp_plan = Builder.to_function_plan(Builder.emit_ret(cmp_b4, order))
+    assert {:ok, 1} = Runtime.run_function(cmp_plan)
+  end
+
   defp simple_project_decl_map! do
     {:ok, project} = Bridge.load_project(@fixture)
     {:ok, ir} = Lowerer.lower_project(project)

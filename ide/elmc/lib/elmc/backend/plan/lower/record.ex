@@ -1740,7 +1740,23 @@ defmodule Elmc.Backend.Plan.Lower.Record do
 
   @spec pick_ambiguous_field_type_key([{{String.t(), String.t()}, integer()}], Context.t() | nil, Types.expr() | nil) :: {{String.t(), String.t()}, integer()}
 
-  defp pick_ambiguous_field_type_key(many, ctx, _base_expr) when is_list(many) do
+  defp pick_ambiguous_field_type_key(many, ctx, base_expr) when is_list(many) do
+    # Prefer the container type of the base expression when known (e.g. typed
+    # `now : CurrentDateTime` after `Just now`). Falling through to "smallest
+    # shape" otherwise picks TickSpec.minute@0 over CurrentDateTime.minute@5.
+    case container_record_key(base_expr, ctx) do
+      key when is_tuple(key) ->
+        case Enum.find(many, fn {candidate, _idx} -> candidate == key end) do
+          {^key, idx} = hit when is_integer(idx) -> hit
+          _ -> pick_ambiguous_field_type_key_heuristic(many, ctx)
+        end
+
+      _ ->
+        pick_ambiguous_field_type_key_heuristic(many, ctx)
+    end
+  end
+
+  defp pick_ambiguous_field_type_key_heuristic(many, ctx) when is_list(many) do
     module = ctx && Map.get(ctx, :module)
     shapes = all_record_shapes()
 

@@ -66,6 +66,10 @@ defmodule Elmc.TestSupport.PlanStrictTemplates do
     watch_demo_time
     watchface_analog
     watchface_color_shapes
+    watchface_yes
+    watchface_weather_animated
+    game_2048
+    game_elmtris
   )
 
   @rc_host_smoke_templates ~w(
@@ -76,6 +80,7 @@ defmodule Elmc.TestSupport.PlanStrictTemplates do
     watchface_color_shapes
     watchface_smoke_screen
     watchface_tangram_time
+    watchface_yes
   )
 
   @spec host_smoke_names() :: [String.t()]

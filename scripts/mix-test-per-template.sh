@@ -28,7 +28,19 @@ TEST_FILE="${1:?usage: mix-test-per-template.sh <test_file.exs> [template …]}"
 shift
 
 case "${TEST_FILE}" in
-  *watchface_rc_track_smoke_test.exs|*watchface_tea_semantic_smoke_test.exs)
+  elmx/*|*tea_playbook_smoke_test.exs)
+    PKG=elmx
+    ;;
+  ide/*)
+    PKG=ide
+    ;;
+  *)
+    PKG=elmc
+    ;;
+esac
+
+case "${TEST_FILE}" in
+  *watchface_rc_track_smoke_test.exs|*watchface_tea_semantic_smoke_test.exs|*template_tea_scenario_smoke_test.exs|*tea_playbook_smoke_test.exs)
     DEFAULT_BATCH=1
     ;;
   *)
@@ -38,7 +50,7 @@ esac
 BATCH="${ELMC_TEST_TEMPLATE_BATCH:-${DEFAULT_BATCH}}"
 
 # Compile once up front. Never --force in the per-template loop (cache identity).
-(cd "${ROOT}/elmc" && MIX_ENV=test mix compile) >/dev/null
+(cd "${ROOT}/${PKG}" && MIX_ENV=test mix compile) >/dev/null
 
 if [ "$#" -gt 0 ]; then
   templates=("$@")
@@ -51,9 +63,15 @@ else
     *watchface_tea_semantic_smoke_test.exs)
       NAMES_EXPR='Elmc.TestSupport.PlanStrictTemplates.host_smoke_names()'
       ;;
+    *template_tea_scenario_smoke_test.exs)
+      NAMES_EXPR='Elmc.TestSupport.TeaScenario.enabled_names()'
+      ;;
+    *tea_playbook_smoke_test.exs)
+      NAMES_EXPR='Elmx.TestSupport.TemplateProject.tea_playbook_template_dirs()'
+      ;;
   esac
   mapfile -t templates < <(
-    cd "${ROOT}/elmc"
+    cd "${ROOT}/${PKG}"
     MIX_ENV=test mix run --no-compile --no-start -e "
       ${NAMES_EXPR}
       |> Enum.each(&IO.puts/1)
@@ -79,7 +97,8 @@ run_mix_templates() {
   shift
   # Remaining args are extra mix test flags (e.g. empty, or none).
   ELMC_HOST_SMOKE_TEMPLATE="${joined}" \
-    "${ROOT}/scripts/mix-test-limited.sh" elmc "${TEST_FILE}" --include slow "$@"
+  ELMX_TEA_PLAYBOOK_TEMPLATE="${joined}" \
+    "${ROOT}/scripts/mix-test-limited.sh" "${PKG}" "${TEST_FILE}" --include slow "$@"
 }
 
 # Join templates with commas for HostSmoke multi-select when batching.

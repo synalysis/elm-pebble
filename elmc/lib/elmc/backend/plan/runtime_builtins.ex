@@ -423,6 +423,39 @@ defmodule Elmc.Backend.Plan.RuntimeBuiltins do
   @spec ownership_transfer?(atom()) :: boolean()
   def ownership_transfer?(id), do: MapSet.member?(@ownership_transfer, id)
 
+  # Runtime returns `elmc_retain(chosen_operand)` into the result. Emit may drop that
+  # extra retain only when the result pointer-equals an owned operand (transfer).
+  @retains_operand_result MapSet.new([
+    :maybe_with_default,
+    :basics_min,
+    :basics_max,
+    :basics_clamp
+  ])
+
+  @spec retains_operand_result?(atom()) :: boolean()
+  def retains_operand_result?(id) when is_atom(id),
+    do: MapSet.member?(@retains_operand_result, id)
+
+  def retains_operand_result?(_), do: false
+
+  @spec retains_operand_result_aliases(atom(), [non_neg_integer()]) :: [non_neg_integer()]
+  def retains_operand_result_aliases(:maybe_with_default, [default | _]), do: [default]
+  def retains_operand_result_aliases(:maybe_with_default, _), do: []
+
+  def retains_operand_result_aliases(id, arg_regs)
+      when id in [:basics_min, :basics_max, :basics_clamp] and is_list(arg_regs),
+      do: arg_regs
+
+  def retains_operand_result_aliases(_, _), do: []
+
+  @spec retains_operand_result_c?(String.t()) :: boolean()
+  def retains_operand_result_c?(sym) when is_binary(sym) do
+    case from_c_symbol(sym) do
+      id when is_atom(id) -> retains_operand_result?(id)
+      _ -> false
+    end
+  end
+
   @spec from_c_symbol(String.t()) :: atom() | nil
   def from_c_symbol(sym) when is_binary(sym) do
     Map.get(@symbol_aliases, sym) ||

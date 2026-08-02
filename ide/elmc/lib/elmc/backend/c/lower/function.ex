@@ -5,8 +5,8 @@ defmodule Elmc.Backend.C.Lower.Function do
   alias Elmc.Types, as: Types
 
 
-  alias Elmc.Backend.C.Lower.{Frame, Instr, Lambda, NativeIntFold, NativeReturn, StringConcat, TagRefs}
-  alias Elmc.Backend.CCodegen.{FunctionCallAbi, FunctionEmit, Fusion, RecordCompile}
+  alias Elmc.Backend.C.Lower.{EphemeralBox, Frame, Instr, Lambda, NativeIntFold, NativeReturn, StringConcat, TagRefs}
+  alias Elmc.Backend.CCodegen.{FunctionCallAbi, FunctionEmit, Fusion, RecordCompile, RcRequired, RetainOperandAlias}
   alias Elmc.Backend.CCodegen.DirectRender.CommandDef
   alias Elmc.Backend.CCodegen.Native.FunctionCall, as: NativeFunctionCall
   alias Elmc.Backend.CCodegen.Util
@@ -89,6 +89,13 @@ defmodule Elmc.Backend.C.Lower.Function do
     native_scalar_out = Map.get(plan, :native_scalar_return)
     ret_reg = ret_source_reg(plan)
     native_int_only_regs = build_native_int_only_regs(plan, decl_map)
+    native_pair_regs = build_native_pair_component_regs(plan)
+    native_list_int_pair_int_regs = build_native_list_int_pair_int_regs(plan)
+
+    native_int_only_regs =
+      native_int_only_regs
+      |> MapSet.union(MapSet.new(Map.keys(native_pair_regs)))
+      |> MapSet.union(MapSet.new(Map.keys(native_list_int_pair_int_regs)))
 
     # Allocate native-int param → C-arg aliases after native_int_only is known.
     # `retain` of a native-int param is counted in boxed_uses, but when the param
@@ -146,8 +153,9 @@ defmodule Elmc.Backend.C.Lower.Function do
 
     slots = Map.drop(slots, MapSet.to_list(tail_inline_skip_regs))
 
-    # Hoist non-literal native ints as mutable locals. Mid-block `const elmc_int_t`
-    # breaks under goto CFG and state-switch (`if (c) goto L; const x = …; L: use(x)`).
+    # Hoist only natives that need a mutable lvalue: RC out-param (`&plan_native_int_N`)
+    # or multiple defs. Single-def SSA temps emit `const elmc_int_t … = …` at the def
+    # site — safe under goto CFG because the def dominates uses.
     # Keep `const_int` / `const_c_expr` regs as use-site literals — forcing them into
     # mutable locals yields `plan_native_int_N = 8` with no reads (-Wunused-but-set).
     const_like_native_int_regs =
@@ -157,6 +165,8 @@ defmodule Elmc.Backend.C.Lower.Function do
       native_int_only_regs
       |> MapSet.difference(unused_native_int_skip_regs)
       |> MapSet.difference(const_like_native_int_regs)
+      |> Enum.filter(&native_int_needs_mutable_local?(plan, &1, decl_map))
+      |> MapSet.new()
 
     # Mutable regs must keep real `plan_native_int_N` locals — never treat them as
     # single-def const inline text (`"2"`, `ELMC_COLOR_…`).
@@ -168,14 +178,19 @@ defmodule Elmc.Backend.C.Lower.Function do
       |> MapSet.difference(native_int_only_regs)
       |> maybe_add_native_scalar_ret_bool_reg(ret_reg, native_scalar_out)
 
-    # Same hoist rule for native bools (goto / state-switch safe).
-    native_bool_mutable_regs = native_bool_only_regs
+    # Same rule for native bools: mutable only when address-taken or multi-def.
+    native_bool_mutable_regs =
+      native_bool_only_regs
+      |> Enum.filter(&native_bool_needs_mutable_local?(plan, &1, decl_map))
+      |> MapSet.new()
 
     native_int_locals =
       native_int_only_regs
       |> MapSet.difference(MapSet.new(Map.keys(const_int_regs)))
       |> MapSet.difference(MapSet.new(Map.keys(const_c_expr_regs)))
       |> MapSet.difference(MapSet.new(Map.keys(native_int_regs)))
+      |> MapSet.difference(MapSet.new(Map.keys(native_pair_regs)))
+      |> MapSet.difference(MapSet.new(Map.keys(native_list_int_pair_int_regs)))
       |> MapSet.difference(unused_native_int_skip_regs)
       |> MapSet.to_list()
       |> Enum.sort()
@@ -191,6 +206,8 @@ defmodule Elmc.Backend.C.Lower.Function do
       native_int_regs
       |> Map.merge(Map.new(const_int_regs, fn {reg, entry} -> {reg, const_int_c_ref_for_inline(entry, plan.module)} end))
       |> Map.merge(const_c_expr_regs)
+      |> Map.merge(native_pair_regs)
+      |> Map.merge(native_list_int_pair_int_regs)
       |> Map.merge(native_int_locals)
 
     slots =
@@ -226,7 +243,8 @@ defmodule Elmc.Backend.C.Lower.Function do
         closure_mode: closure_mode,
         param_kinds: param_kinds,
         params: param_names(plan.params),
-        parent_plan: plan
+        parent_plan: plan,
+        boxed_direct_scene_argv?: boxed_direct_scene_argv?(plan, decl_map)
       )
 
     native_ret_deferred_regs =
@@ -273,10 +291,13 @@ defmodule Elmc.Backend.C.Lower.Function do
       native_ret_deferred_regs: native_ret_deferred_regs,
       native_scalar_out: native_scalar_out,
       native_ret_reg: ret_reg,
+      native_list_int_pair_pair_regs:
+        Map.get(plan, :native_list_int_pair_pair_regs) || MapSet.new(),
       fused_string_roots: string_fusion.roots,
       fused_string_skip_regs: string_fusion.skip_regs,
       tail_inline_skip_regs: tail_inline_skip_regs,
       direct_scene_writer: Process.get(:elmc_direct_scene_writer, false),
+      boxed_direct_scene_argv?: boxed_direct_scene_argv?(plan, decl_map),
       scene_writer_var: "writer",
       ownership: Map.get(lookup_decl(plan.module, plan.name) || %{}, :ownership, []),
       lambdas: plan.lambdas,
@@ -305,8 +326,17 @@ defmodule Elmc.Backend.C.Lower.Function do
 
     deferred_cleanup = emit_deferred_consume_releases(instr_opts, slots)
 
+    # Only emit when a mid-CFG `{:ret, _}` will `goto` here — unused labels
+    # fail pebble builds under -Werror=unused-label.
+    epilogue =
+      if not state_switch_emit?(plan) and needs_plan_epilogue_label?(plan) do
+        ["elmc_plan_epilogue:"]
+      else
+        []
+      end
+
     core =
-      (body_lines ++ List.wrap(ret_line) ++ List.wrap(deferred_cleanup))
+      (body_lines ++ epilogue ++ List.wrap(ret_line) ++ List.wrap(deferred_cleanup))
       |> Enum.reject(&(&1 == ""))
       |> Enum.flat_map(&String.split(&1, "\n"))
       |> cleanup_cfg_lines(explicit_targets)
@@ -363,7 +393,9 @@ defmodule Elmc.Backend.C.Lower.Function do
            # when only a different arm wrote them.
            Process.put(:elmc_plan_owned_live, MapSet.new())
 
-           Enum.flat_map(block_instrs, &emit_instr_lines(&1, slots, instr_opts))
+           block_instrs
+           |> fuse_open_list_map_loops()
+           |> Enum.flat_map(&emit_instr_lines(&1, slots, instr_opts))
          end).()
 
       (if labeled_block?(id, explicit_targets), do: [block_label(id)], else: []) ++
@@ -406,6 +438,7 @@ defmodule Elmc.Backend.C.Lower.Function do
              Process.put(:elmc_plan_owned_live, MapSet.new())
 
              instrs
+             |> fuse_open_list_map_loops()
              |> Enum.flat_map(&emit_instr_lines(&1, slots, instr_opts))
              |> Enum.reject(&(&1 == ""))
              |> Enum.map(&("    " <> &1))
@@ -938,6 +971,13 @@ defmodule Elmc.Backend.C.Lower.Function do
     {reassignment, live} = owned_reassign_prefix(instr, slots, instr_opts, live)
     Process.put(:elmc_plan_owned_live, live)
     code = Instr.emit(instr, slots, instr_opts)
+
+    alias_xfer =
+      case emit_result_alias_transfer(instr, slots, instr_opts) do
+        "" -> []
+        line -> [line]
+      end
+
     nulls =
       cond do
         # Dest skipped for later reconstruction: do not release its boxed operands here.
@@ -957,9 +997,141 @@ defmodule Elmc.Backend.C.Lower.Function do
     live = clear_record_update_cow_drop_base_live(instr, slots, live)
     Process.put(:elmc_plan_owned_live, live)
 
-    [reassignment, code, nulls]
+    [reassignment, code, alias_xfer, nulls]
     |> List.flatten()
     |> Enum.reject(&(&1 == ""))
+  end
+
+  # C-only: `make_closure` + `list_map` → open loop calling the static closure fn
+  # with stack captures (no heap closure cell, no `elmc_list_map` runtime).
+  # Intervening instrs that do not touch the closure dest are kept (e.g. record_get
+  # for the list operand between make_closure and list_map).
+  @spec fuse_open_list_map_loops([map()]) :: [map()]
+  defp fuse_open_list_map_loops(instrs) when is_list(instrs) do
+    case find_fusible_closure_list_map(instrs) do
+      {:ok, before, mid, walk, rest_instrs} ->
+        fuse_open_list_map_loops(before ++ mid ++ [walk] ++ rest_instrs)
+
+      :none ->
+        instrs
+    end
+  end
+
+  defp find_fusible_closure_list_map(instrs) do
+    instrs
+    |> Enum.with_index()
+    |> Enum.find_value(:none, fn {_instr, i} ->
+      case unwrap_make_closure(instrs, i) do
+        {:ok, clos_dest, idx, caps, mc_span} ->
+          case find_list_map_after(instrs, mc_span.last + 1, clos_dest) do
+            {:ok, map_span, map_dest, list_reg, map} ->
+              mid = Enum.slice(instrs, (mc_span.last + 1)..(map_span.first - 1)//1)
+
+              if closure_dest_untouched?(mid, clos_dest) do
+                before = Enum.take(instrs, mc_span.first)
+                rest_instrs = Enum.drop(instrs, map_span.last + 1)
+                walk = list_walk_map_instr(map_dest, list_reg, idx, caps, map, clos_dest)
+                {:ok, before, mid, walk, rest_instrs}
+              else
+                nil
+              end
+
+            :none ->
+              nil
+          end
+
+        :none ->
+          nil
+      end
+    end)
+  end
+
+  defp unwrap_make_closure(instrs, i) do
+    case Enum.at(instrs, i) do
+      %{op: :catch_begin} ->
+        case Enum.slice(instrs, i, 3) do
+          [
+            %{op: :catch_begin},
+            %{op: :make_closure, dest: dest, args: %{index: idx, captures: caps}},
+            %{op: :catch_end}
+          ]
+          when is_integer(dest) ->
+            {:ok, dest, idx, caps, %{first: i, last: i + 2}}
+
+          _ ->
+            :none
+        end
+
+      %{op: :make_closure, dest: dest, args: %{index: idx, captures: caps}} when is_integer(dest) ->
+        {:ok, dest, idx, caps, %{first: i, last: i}}
+
+      _ ->
+        :none
+    end
+  end
+
+  defp find_list_map_after(instrs, start, clos_dest) do
+    instrs
+    |> Enum.with_index()
+    |> Enum.drop(start)
+    |> Enum.find_value(:none, fn {instr, i} ->
+      case instr do
+        %{op: :catch_begin} ->
+          case Enum.slice(instrs, i, 3) do
+            [
+              %{op: :catch_begin},
+              %{op: :call_runtime, dest: map_dest, args: %{builtin: :list_map, args: [c, list]}} = map,
+              %{op: :catch_end}
+            ]
+            when c == clos_dest and is_integer(list) ->
+              {:ok, %{first: i, last: i + 2}, map_dest, list, map}
+
+            _ ->
+              nil
+          end
+
+        %{op: :call_runtime, dest: map_dest, args: %{builtin: :list_map, args: [c, list]}} = map
+        when c == clos_dest and is_integer(list) ->
+          {:ok, %{first: i, last: i}, map_dest, list, map}
+
+        _ ->
+          nil
+      end
+    end)
+  end
+
+  defp closure_dest_untouched?(mid, clos_dest) do
+    Enum.all?(mid, fn instr ->
+      dest = Map.get(instr, :dest)
+      effects = Map.get(instr, :effects) || %{}
+      consumes = Map.get(effects, :consumes) || []
+      dest != clos_dest and clos_dest not in consumes
+    end)
+  end
+
+  defp list_walk_map_instr(map_dest, list_reg, idx, caps, map, _clos_dest) do
+    caps = List.wrap(caps)
+
+    effects = %{
+      produces: if(is_integer(map_dest), do: {:owned, map_dest}, else: nil),
+      consumes: [],
+      borrows: Enum.uniq([list_reg | caps]),
+      fallible: true
+    }
+
+    %Types{
+      op: :list_walk_map,
+      dest: map_dest,
+      args: %{
+        list: list_reg,
+        lambda_idx: idx,
+        captures: caps
+      },
+      effects: effects,
+      id: Map.get(map, :id),
+      block_id: Map.get(map, :block_id),
+      span: Map.get(map, :span)
+    }
   end
 
   @spec skipped_dest_instr?(map() | term(), keyword()) :: boolean()
@@ -1115,6 +1287,19 @@ defmodule Elmc.Backend.C.Lower.Function do
 
   defp emit_null_consumed_slots(_, _slots, _instr_opts), do: []
 
+  @spec emit_result_alias_transfer(Types.t() | map(), Types.slot_map(), keyword()) :: String.t()
+
+  defp emit_result_alias_transfer(
+         %{op: :call_runtime, dest: dest, effects: %{result_aliases: aliases}},
+         slots,
+         instr_opts
+       )
+       when is_list(aliases) and aliases != [] do
+    RetainOperandAlias.emit_for_plan_dest(dest, aliases, slots, instr_opts)
+  end
+
+  defp emit_result_alias_transfer(_, _, _), do: ""
+
   @spec emit_null_consumed_slots_from_effects(Types.t() | map(), Types.slot_map(), keyword()) :: [String.t()]
 
   defp emit_null_consumed_slots_from_effects(%{effects: %{consumes: consumes}} = instr, slots, instr_opts)
@@ -1213,10 +1398,6 @@ defmodule Elmc.Backend.C.Lower.Function do
   defp retain_owned_transfer_null?(_, _), do: false
 
   @spec transferring_consume_instr?(map() | term(), keyword()) :: boolean()
-
-  defp transferring_consume_instr?(%{op: :const_static_list, args: %{kind: kind}}, _instr_opts)
-       when kind in [:values, :record_array],
-       do: true
 
   defp transferring_consume_instr?(
          %{
@@ -1359,9 +1540,33 @@ defmodule Elmc.Backend.C.Lower.Function do
     end
   end
 
-  defp emit_terminator({:ret, _}, _slots, _rc?, _opts), do: ""
+  defp emit_terminator({:ret, _}, _slots, _rc?, opts) do
+    # Goto CFG relies on fallthrough into CATCH_END when the ret block is last.
+    # If a later block exists (e.g. a shared arm body inserted after merge), jump
+    # past it to the function epilogue label.
+    case Keyword.get(opts, :next_id) do
+      next when is_integer(next) -> "goto elmc_plan_epilogue;"
+      _ -> ""
+    end
+  end
+
   defp emit_terminator(:none, _slots, _rc?, _opts), do: ""
   defp emit_terminator(_, _slots, _rc?, _opts), do: ""
+
+  @spec needs_plan_epilogue_label?(FunctionPlan.t()) :: boolean()
+
+  defp needs_plan_epilogue_label?(%FunctionPlan{blocks: blocks}) do
+    last_id =
+      case List.last(blocks) do
+        %Block{id: id} -> id
+        _ -> nil
+      end
+
+    Enum.any?(blocks, fn
+      %Block{id: id, terminator: {:ret, _}} -> id != last_id
+      _ -> false
+    end)
+  end
 
   @spec ctor_int_tag_switch_subject?(integer(), keyword()) :: boolean()
 
@@ -1917,18 +2122,7 @@ defmodule Elmc.Backend.C.Lower.Function do
         _ -> "0"
       end
 
-    if slot_count > 0 do
-      """
-      {
-        ElmcValue *__ret = ELMC_RC_INT_BOX(#{src});
-        elmc_release_array_lifo(owned, #{slot_count});
-        return __ret;
-      }
-      """
-      |> String.trim()
-    else
-      "return ELMC_RC_INT_BOX(#{src});"
-    end
+    EphemeralBox.non_rc_scalar_return("elmc_new_int", src, slot_count)
   end
 
   defp emit_return(%FunctionPlan{rc_required: false, blocks: blocks} = plan, slots, :native_bool, _borrow_nulls, instr_opts) do
@@ -1941,18 +2135,7 @@ defmodule Elmc.Backend.C.Lower.Function do
         _ -> "false"
       end
 
-    if slot_count > 0 do
-      """
-      {
-        ElmcValue *__ret = ELMC_RC_BOOL_BOX(#{src});
-        elmc_release_array_lifo(owned, #{slot_count});
-        return __ret;
-      }
-      """
-      |> String.trim()
-    else
-      "return ELMC_RC_BOOL_BOX(#{src});"
-    end
+    EphemeralBox.non_rc_scalar_return("elmc_new_bool", src, slot_count)
   end
 
   defp emit_return(%FunctionPlan{blocks: blocks} = plan, slots, :native_int, _borrow_nulls, instr_opts) do
@@ -1965,6 +2148,24 @@ defmodule Elmc.Backend.C.Lower.Function do
       _ ->
         "*out = 0;"
     end
+  end
+
+  defp emit_return(%FunctionPlan{} = plan, slots, :native_int_pair, _borrow_nulls, instr_opts) do
+    case NativeReturn.pair_ret_operands(plan) do
+      {a, b} ->
+        # Prefer `int_operand_ref` so native Int params resolve to C arg names
+        # (`x`) rather than an uninitialized `plan_native_int_N` temp.
+        "*out0 = #{Instr.int_operand_ref(a, slots, instr_opts)};\n*out1 = #{Instr.int_operand_ref(b, slots, instr_opts)};"
+
+      _ ->
+        "*out0 = 0;\n*out1 = 0;"
+    end
+  end
+
+  defp emit_return(%FunctionPlan{} = _plan, _slots, :native_list_int_pair, _borrow_nulls, _instr_opts) do
+    # Each contributing `tuple2` writes `*out_list`/`*out_int` in the body
+    # (including direct `:fn_out` and phi arms).
+    ""
   end
 
   defp emit_return(%FunctionPlan{blocks: blocks} = plan, _slots, :native_bool, _borrow_nulls, instr_opts) do
@@ -1997,35 +2198,11 @@ defmodule Elmc.Backend.C.Lower.Function do
         cond do
           native_int? ->
             src = native_int_result_ref(reg, slots, instr_opts)
-
-            if slot_count > 0 do
-              """
-              {
-                ElmcValue *__ret = ELMC_RC_INT_BOX(#{src});
-                elmc_release_array_lifo(owned, #{slot_count});
-                return __ret;
-              }
-              """
-              |> String.trim()
-            else
-              "return ELMC_RC_INT_BOX(#{src});"
-            end
+            EphemeralBox.non_rc_scalar_return("elmc_new_int", src, slot_count)
 
           native_bool? ->
             src = native_bool_result_ref(reg, instr_opts)
-
-            if slot_count > 0 do
-              """
-              {
-                ElmcValue *__ret = ELMC_RC_BOOL_BOX(#{src});
-                elmc_release_array_lifo(owned, #{slot_count});
-                return __ret;
-              }
-              """
-              |> String.trim()
-            else
-              "return ELMC_RC_BOOL_BOX(#{src});"
-            end
+            EphemeralBox.non_rc_scalar_return("elmc_new_bool", src, slot_count)
 
           true ->
             ref = slot_ref(reg, slots, instr_opts)
@@ -2259,6 +2436,13 @@ defmodule Elmc.Backend.C.Lower.Function do
     end)
   end
 
+  @spec boxed_direct_scene_argv?(FunctionPlan.t(), Types.decl_map()) :: boolean()
+
+  defp boxed_direct_scene_argv?(_plan, _decl_map) do
+    Process.get(:elmc_direct_scene_writer) == true and
+      Process.get(:elmc_direct_scene_boxed_argv) == true
+  end
+
   @spec param_kinds_for_plan(FunctionPlan.t()) :: [atom()]
 
   defp param_kinds_for_plan(%FunctionPlan{} = plan) do
@@ -2271,11 +2455,9 @@ defmodule Elmc.Backend.C.Lower.Function do
       end
 
     cond do
-      # Scene-stream `*_commands_append_native` bodies (CommandDef) treat Color as
-      # elmc_int_t. Only use those kinds while emitting under the DirectRender
-      # writer flag — never for ordinary list-returning helpers that keep Color boxed.
-      effective_decl && Process.get(:elmc_direct_scene_writer) == true &&
-          CommandDef.native_args?(effective_decl) ->
+      # Scene-stream `*_commands_append` bodies use CommandDef arg kinds (Int params
+      # as native_int) even when the argv wrapper is still boxed `ElmcValue *`.
+      effective_decl && Process.get(:elmc_direct_scene_writer) == true ->
         CommandDef.arg_kinds(effective_decl)
 
       effective_decl && FunctionEmit.mixed_direct_abi?(effective_decl, plan.module, decl_map) ->
@@ -2301,25 +2483,17 @@ defmodule Elmc.Backend.C.Lower.Function do
          param_kinds,
          decl_map,
          closure_mode,
-         native_int_only_regs
+         _native_int_only_regs
        ) do
     all_native_int_regs =
       build_native_int_param_regs(plan, param_kinds, decl_map, closure_mode)
 
-    boxed_uses = boxed_use_regs(plan, decl_map)
-
-    # Params that are retained / captured still keep owned slots and are boxed
-    # at `load_param` (`elmc_new_int`). Only pure native params are direct
-    # `elmc_int_t` regs with no owned slot.
-    #
-    # Exception: when the param is already `native_int_only` (including retains
-    # into other native-int temps), the C argument is the value — do not force
-    # boxing just because `retain` appears in boxed_uses.
-    pure_native_param_regs =
-      Map.keys(all_native_int_regs)
-      |> Enum.reject(fn reg ->
-        MapSet.member?(boxed_uses, reg) and not MapSet.member?(native_int_only_regs, reg)
-      end)
+    # Native-int params are always the C `elmc_int_t` argument — never materialize
+    # `elmc_new_int(&owned[i], param)` at `load_param`. Borrowed heap uses peel via
+    # Ephemeral int boxing (or a `*_int` runtime ABI); consuming uses materialize
+    # an ephemeral box at the call site. Boxing here was dead whenever
+    # `boxed_value_ref` peeled via `native_param_c_ref` (e.g. `list_nth_maybe` index).
+    pure_native_param_regs = Map.keys(all_native_int_regs)
 
     slots = Map.drop(slots, pure_native_param_regs)
     {Map.take(all_native_int_regs, pure_native_param_regs), slots}
@@ -2869,27 +3043,34 @@ defmodule Elmc.Backend.C.Lower.Function do
     plan.blocks
     |> Enum.flat_map(& &1.instrs)
     |> Enum.flat_map(fn
-      %{op: :const_int, dest: reg, args: %{value: value} = args} ->
+      %{op: :const_int, dest: reg, args: %{value: value} = args} when is_integer(reg) ->
         [{reg, {value, Map.get(args, :union_ctor), Map.get(args, :bool_lit) == true}}]
 
       %{op: :call_runtime, dest: reg, args: %{builtin: :new_int, literal: value}}
-      when is_integer(value) ->
+      when is_integer(reg) and is_integer(value) ->
         [{reg, {value, nil}}]
 
       _ ->
         []
     end)
-    |> single_def_const_int_entries()
+    |> single_def_const_int_entries(plan)
     |> Map.new()
   end
 
-  @spec single_def_const_int_entries(list()) :: list()
-  defp single_def_const_int_entries(entries) do
+  @spec single_def_const_int_entries(list(), FunctionPlan.t()) :: list()
+  defp single_def_const_int_entries(entries, plan) do
     entries
     |> Enum.group_by(fn {reg, _} -> reg end)
     |> Enum.flat_map(fn
-      {_reg, [single]} -> [single]
-      {_reg, _multiple} -> []
+      # One const_int is not enough: branch joins reuse the same dest for
+      # `int_arith` / other defs (`Ready -> cursor+cmd; _ -> -1`). Treating that
+      # reg as a literal `"-1"` makes native stores into a non-lvalue and drops
+      # the success arm (fallthrough always yields -1).
+      {reg, [single]} when is_integer(reg) ->
+        if length(all_defining_instrs(plan, reg)) == 1, do: [single], else: []
+
+      {_reg, _multiple} ->
+        []
     end)
   end
 
@@ -2912,6 +3093,41 @@ defmodule Elmc.Backend.C.Lower.Function do
   defp build_native_int_only_regs(%FunctionPlan{} = plan, decl_map) do
     _ = native_publish_reach_set(plan)
     expand_native_int_regs(plan, decl_map, MapSet.new(), 0)
+  end
+
+  @spec build_native_pair_component_regs(FunctionPlan.t()) :: %{Types.reg() => String.t()}
+
+  defp build_native_pair_component_regs(%FunctionPlan{blocks: blocks}) do
+    blocks
+    |> Enum.flat_map(& &1.instrs)
+    |> Enum.flat_map(fn
+      %{op: :call_fn, dest: dest, args: %{native_pair_out: {first, second}}}
+      when is_integer(dest) and is_integer(first) and is_integer(second) ->
+        [
+          {first, "plan_native_pair_#{dest}_0"},
+          {second, "plan_native_pair_#{dest}_1"}
+        ]
+
+      _ ->
+        []
+    end)
+    |> Map.new()
+  end
+
+  @spec build_native_list_int_pair_int_regs(FunctionPlan.t()) :: %{Types.reg() => String.t()}
+
+  defp build_native_list_int_pair_int_regs(%FunctionPlan{blocks: blocks}) do
+    blocks
+    |> Enum.flat_map(& &1.instrs)
+    |> Enum.flat_map(fn
+      %{op: :call_fn, dest: dest, args: %{native_list_int_pair_out: int_reg}}
+      when is_integer(dest) and is_integer(int_reg) ->
+        [{int_reg, "plan_list_int_pair_#{dest}_int"}]
+
+      _ ->
+        []
+    end)
+    |> Map.new()
   end
 
   @spec expand_native_int_regs(FunctionPlan.t(), Types.decl_map(), MapSet.t(Types.reg()), non_neg_integer()) :: MapSet.t(Types.reg())
@@ -2945,6 +3161,47 @@ defmodule Elmc.Backend.C.Lower.Function do
     end)
   end
 
+  # Mutable lvalue required for RC `elmc_int_t *out` callees (`&plan_native_int_N`)
+  # or when the reg has multiple defining instrs (reassign / non-SSA merge).
+  @spec native_int_needs_mutable_local?(FunctionPlan.t(), Types.reg(), Types.decl_map()) :: boolean()
+
+  defp native_int_needs_mutable_local?(plan, reg, decl_map) do
+    defs = all_defining_instrs(plan, reg)
+    length(defs) > 1 or Enum.any?(defs, &native_int_rc_out_param_def?(&1, decl_map, plan))
+  end
+
+  @spec native_bool_needs_mutable_local?(FunctionPlan.t(), Types.reg(), Types.decl_map()) :: boolean()
+
+  defp native_bool_needs_mutable_local?(plan, reg, decl_map) do
+    defs = all_defining_instrs(plan, reg)
+    length(defs) > 1 or Enum.any?(defs, &native_bool_rc_out_param_def?(&1, decl_map, plan))
+  end
+
+  defp native_int_rc_out_param_def?(%{op: :call_fn, args: %{module: mod, name: name}}, decl_map, plan)
+       when is_binary(mod) and is_binary(name) do
+    NativeReturn.cached_kind({mod, name}) == :native_int and
+      not NativeReturn.value_return?({mod, name}) and
+      not native_boxed_rc_out_callee?(mod, name, decl_map) and
+      (RcRequired.rc_required?(mod, name) or native_scalar_self_rc_out?(plan, mod, name))
+  end
+
+  defp native_int_rc_out_param_def?(_, _, _), do: false
+
+  defp native_bool_rc_out_param_def?(%{op: :call_fn, args: %{module: mod, name: name}}, decl_map, plan)
+       when is_binary(mod) and is_binary(name) do
+    NativeReturn.cached_kind({mod, name}) == :native_bool and
+      not NativeReturn.value_return?({mod, name}) and
+      not native_boxed_rc_out_callee?(mod, name, decl_map) and
+      (RcRequired.rc_required?(mod, name) or native_scalar_self_rc_out?(plan, mod, name))
+  end
+
+  defp native_bool_rc_out_param_def?(_, _, _), do: false
+
+  defp native_scalar_self_rc_out?(%FunctionPlan{module: mod, name: name, rc_required: true}, mod, name),
+    do: true
+
+  defp native_scalar_self_rc_out?(_, _, _), do: false
+
   @spec native_int_candidate?(FunctionPlan.t(), Types.reg(), Types.decl_map(), MapSet.t(Types.reg())) :: boolean()
 
   defp native_int_candidate?(plan, reg, decl_map, native_set) do
@@ -2954,6 +3211,11 @@ defmodule Elmc.Backend.C.Lower.Function do
 
       [%{op: op} | _] when op in [:const_int, :const_c_expr, :record_get_int, :int_arith, :boxed_tag_peel] ->
         native_int_uses_only?(plan, reg, decl_map, native_set)
+
+      # Only projections of `tuple2_ints` pairs are known Int elements. Nested
+      # Dict/List tuple spines stay boxed (tag tests need ElmcValue*).
+      [%{op: :tuple_proj, args: %{base: base}} | _] ->
+        tuple2_ints_reg?(plan, base) and native_int_uses_only?(plan, reg, decl_map, native_set)
 
       [%{op: :call_runtime, args: %{builtin: :new_int, literal: value}} | _]
       when is_integer(value) ->
@@ -3010,6 +3272,9 @@ defmodule Elmc.Backend.C.Lower.Function do
         %{op: op} when op in [:const_int, :const_c_expr, :record_get_int, :int_arith, :boxed_tag_peel] ->
           true
 
+        %{op: :tuple_proj, args: %{base: base}} ->
+          tuple2_ints_reg?(plan, base)
+
         %{op: :call_runtime, args: %{builtin: :new_int, literal: value}} when is_integer(value) ->
           true
 
@@ -3048,6 +3313,15 @@ defmodule Elmc.Backend.C.Lower.Function do
   end
 
   defp native_boxed_rc_out_callee?(_, _, _), do: false
+
+  defp tuple2_ints_reg?(%FunctionPlan{} = plan, reg) when is_integer(reg) do
+    match?(
+      %{op: :call_runtime, args: %{builtin: :tuple2_ints}},
+      defining_instr(plan, reg)
+    )
+  end
+
+  defp tuple2_ints_reg?(_, _), do: false
 
   @doc false
   @spec all_defining_instrs(FunctionPlan.t(), non_neg_integer()) :: Types.instr_list()
@@ -3287,12 +3561,26 @@ defmodule Elmc.Backend.C.Lower.Function do
 
   defp instr_use_refs(
          %{op: :call_runtime, dest: dest, args: %{builtin: :retain, args: [src]}},
-         _decl_map,
+         decl_map,
          native_set,
-         _plan
+         plan
        )
        when is_integer(dest) and is_integer(src) do
-    kind = if MapSet.member?(native_set, dest), do: :native_operand, else: :boxed
+    # Retain of a known Int producer is a native copy (dual-out `*out_int`,
+    # native callees). Do not require `dest` to already be in `native_set` —
+    # that chicken-egg forced `advanceSeed` results to box via `elmc_new_int`.
+    kind =
+      cond do
+        MapSet.member?(native_set, dest) ->
+          :native_operand
+
+        native_int_value_reg?(plan, src, native_set, decl_map) ->
+          :native_operand
+
+        true ->
+          :boxed
+      end
+
     [{kind, src}]
   end
 
@@ -3446,6 +3734,9 @@ defmodule Elmc.Backend.C.Lower.Function do
           %{op: :call_runtime, args: %{builtin: :maybe_with_default_int}} ->
             true
 
+          %{op: :call_runtime, args: %{builtin: :retain, args: [src]}} when is_integer(src) ->
+            native_int_value_reg?(plan, src, native_set, decl_map, visited)
+
           %{op: :phi, args: %{native_int_phi: true}} ->
             true
 
@@ -3481,12 +3772,17 @@ defmodule Elmc.Backend.C.Lower.Function do
 
   defp instr_reg_refs(%{op: :call_fn, args: %{module: mod, name: name, args: args}}, decl_map)
        when is_list(args) do
-    kinds = callee_arg_kinds(mod, name, decl_map)
+    kinds =
+      case Fusion.rc_native_fusion_arg_kinds({mod, name}) do
+        fusion_kinds when is_list(fusion_kinds) -> fusion_kinds
+        _ -> callee_arg_kinds(mod, name, decl_map)
+      end
 
     Enum.with_index(args)
     |> Enum.map(fn {reg, idx} ->
       kind = Enum.at(kinds, idx, :boxed)
-      ref_kind = if kind == :native_int, do: :native_int_call, else: :boxed
+      # :boxed_int_tag is an elmc_int_t peel/arg, not a heap handle.
+      ref_kind = if kind in [:native_int, :boxed_int_tag], do: :native_int_call, else: :boxed
       {ref_kind, reg}
     end)
   end
@@ -3586,13 +3882,28 @@ defmodule Elmc.Backend.C.Lower.Function do
 
   defp instr_reg_refs(%{op: :record_get, args: %{base: base}}, _decl_map), do: [{:boxed, base}]
 
-  defp instr_reg_refs(%{op: :record_update, args: args}, _decl_map),
-    do: [{:boxed, Map.get(args, :base)}, {:boxed, Map.get(args, :value)}]
+  defp instr_reg_refs(%{op: :record_update, args: args}, _decl_map) do
+    # Int fields lower via `elmc_record_update_index_int_cow_drop`, so the value
+    # is a native-int sink (same contract as `record_new` Int fields).
+    field = Map.get(args, :field)
+
+    value_kind =
+      if is_binary(field) and record_field_int?(field), do: :native_operand, else: :boxed
+
+    [{:boxed, Map.get(args, :base)}, {value_kind, Map.get(args, :value)}]
+  end
 
   defp instr_reg_refs(%{op: :tuple_proj, args: %{base: base}}, _decl_map), do: [{:boxed, base}]
 
   defp instr_reg_refs(%{op: :make_closure, args: %{captures: caps}}, _decl_map) when is_list(caps),
        do: Enum.map(caps, &{:boxed, &1})
+
+  defp instr_reg_refs(%{op: :list_walk_map, args: args}, _decl_map) do
+    list = Map.get(args, :list)
+    caps = Map.get(args, :captures, [])
+    list_refs = if is_integer(list), do: [{:boxed, list}], else: []
+    list_refs ++ Enum.map(caps, &{:boxed, &1})
+  end
 
   defp instr_reg_refs(%{op: :const_static_list, args: %{regs: regs}}, _decl_map) when is_list(regs),
        do: Enum.map(regs, &{:boxed, &1})
@@ -3655,7 +3966,13 @@ defmodule Elmc.Backend.C.Lower.Function do
   @spec boxed_use_regs(FunctionPlan.t(), Types.decl_map()) :: MapSet.t(Types.reg())
 
   defp boxed_use_regs(%FunctionPlan{} = plan, decl_map) do
-    skip_publish_fn_out? = Map.get(plan, :native_scalar_return) in [:native_int, :native_bool]
+    skip_publish_fn_out? =
+      Map.get(plan, :native_scalar_return) in [
+        :native_int,
+        :native_bool,
+        :native_int_pair,
+        :native_list_int_pair
+      ]
 
     plan.blocks
     |> Enum.flat_map(fn %Block{instrs: instrs} ->
@@ -3693,6 +4010,13 @@ defmodule Elmc.Backend.C.Lower.Function do
   defp boxed_operand_regs(%{op: :make_closure, args: %{captures: captures}}, _decl_map)
        when is_list(captures),
        do: captures
+
+  defp boxed_operand_regs(%{op: :list_walk_map, args: args}, _decl_map) do
+    list = Map.get(args, :list)
+    caps = Map.get(args, :captures, [])
+    list_regs = if is_integer(list), do: [list], else: []
+    list_regs ++ caps
+  end
 
   defp boxed_operand_regs(%{op: :phi, args: %{then: then_r, else: else_r}}, _decl_map),
     do: [then_r, else_r]
@@ -3739,16 +4063,29 @@ defmodule Elmc.Backend.C.Lower.Function do
        when is_list(args) do
     decl = Map.get(decl_map, {mod, name})
 
-    if decl && FunctionCallAbi.direct_plan_call_abi?(decl, mod, decl_map) &&
-         FunctionEmit.mixed_direct_abi?(decl, mod, decl_map) do
-      kinds = NativeFunctionCall.arg_kinds(decl, mod, decl_map)
+    kinds =
+      case Fusion.rc_native_fusion_arg_kinds({mod, name}) do
+        fusion_kinds when is_list(fusion_kinds) ->
+          fusion_kinds
 
-      args
-      |> Enum.zip(kinds)
-      |> Enum.reject(fn {_, kind} -> kind in [:native_int, :native_bool] end)
-      |> Enum.map(fn {reg, _} -> reg end)
-    else
-      Enum.filter(args, &is_integer/1)
+        _ ->
+          if decl && FunctionCallAbi.direct_plan_call_abi?(decl, mod, decl_map) &&
+               FunctionEmit.mixed_direct_abi?(decl, mod, decl_map) do
+            NativeFunctionCall.arg_kinds(decl, mod, decl_map)
+          else
+            nil
+          end
+      end
+
+    cond do
+      is_list(kinds) ->
+        args
+        |> Enum.zip(kinds)
+        |> Enum.reject(fn {_, kind} -> kind in [:native_int, :native_bool, :boxed_int_tag] end)
+        |> Enum.map(fn {reg, _} -> reg end)
+
+      true ->
+        Enum.filter(args, &is_integer/1)
     end
   end
 
@@ -3761,7 +4098,14 @@ defmodule Elmc.Backend.C.Lower.Function do
   defp boxed_operand_regs(%{op: :record_get, args: %{base: base}}, _decl_map), do: [base]
 
   defp boxed_operand_regs(%{op: :record_update, args: args}, _decl_map) do
-    [Map.get(args, :base), Map.get(args, :value)]
+    base = Map.get(args, :base)
+    field = Map.get(args, :field)
+
+    if is_binary(field) and record_field_int?(field) do
+      [base]
+    else
+      [base, Map.get(args, :value)]
+    end
   end
 
   defp boxed_operand_regs(%{op: :boxed_binop, args: %{lhs: lhs, rhs: rhs}}, _decl_map),
@@ -3879,7 +4223,39 @@ defmodule Elmc.Backend.C.Lower.Function do
     end
   end
 
+  defp maybe_add_native_ret_reg(regs, plan, _reg, :native_int_pair) do
+    case NativeReturn.pair_ret_operands(plan) do
+      {a, b} ->
+        Enum.reduce([a, b], regs, fn r, acc ->
+          if pair_ret_operand_needs_native_temp?(plan, r) do
+            MapSet.put(acc, r)
+          else
+            acc
+          end
+        end)
+
+      _ ->
+        regs
+    end
+  end
+
   defp maybe_add_native_ret_reg(regs, _plan, _reg, _kind), do: regs
+
+  defp pair_ret_operand_needs_native_temp?(plan, reg) when is_integer(reg) do
+    case defining_instr(plan, reg) do
+      %{op: :load_param, args: %{index: index}} ->
+        # Native Int params already alias via `native_int_regs` (C arg name).
+        Enum.at(param_kinds_for_plan(plan), index) != :native_int
+
+      %{op: :const_int} ->
+        false
+
+      _ ->
+        true
+    end
+  end
+
+  defp pair_ret_operand_needs_native_temp?(_, _), do: false
 
   @spec maybe_add_native_scalar_ret_bool_reg(MapSet.t(Types.reg()), Types.reg() | nil, atom() | term()) :: MapSet.t(Types.reg())
 

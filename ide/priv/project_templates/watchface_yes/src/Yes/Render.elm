@@ -88,15 +88,9 @@ drawDial layout display =
            , Ui.circle center layout.innerRadius Color.darkGray
            ]
         ++ drawOuterScale layout
-        ++ (case display.moonPhaseE6 of
-                Just _ ->
-                    drawMoonPhase layout
-
-                Nothing ->
-                    []
-           )
         ++ draw24HourHand layout display.homeMinute
-        ++ [ textAt Color.white layout.timeTextBand display.timeText ]
+        ++ drawMoonGlyph layout display.moonPhaseE6
+        ++ [ textAt Color.black layout.timeTextBand display.timeText ]
 
 
 draw24HourHand : Layout -> Int -> List Ui.RenderOp
@@ -107,13 +101,8 @@ draw24HourHand layout nowMin =
 
         tip =
             pointAt layout.cx layout.cy layout.handLen handAngle
-
-        moonCenter =
-            { x = layout.cx, y = layout.moonY }
     in
-    [ Ui.fillCircle moonCenter layout.moonRingR Color.black
-    , Ui.circle moonCenter layout.moonRingR Color.white
-    , Ui.line { x = layout.cx, y = layout.cy } tip Color.white
+    [ Ui.line { x = layout.cx, y = layout.cy } tip Color.white
     , Ui.fillCircle { x = layout.cx, y = layout.cy } layout.hubR Color.black
     , Ui.circle { x = layout.cx, y = layout.cy } layout.hubR Color.white
     ]
@@ -204,15 +193,90 @@ drawSunWindow center radius bounds sunriseAngle sunsetAngle sunWindow =
             coloredRadialWedge bounds Color.chromeYellow sunriseAngle sunsetAngle
 
 
-drawMoonPhase : Layout -> List Ui.RenderOp
-drawMoonPhase layout =
+drawMoonGlyph : Layout -> Maybe Int -> List Ui.RenderOp
+drawMoonGlyph layout maybePhase =
+    case maybePhase of
+        Just phaseE6 ->
+            drawMoonPhase layout phaseE6
+
+        Nothing ->
+            let
+                center =
+                    { x = layout.cx, y = layout.moonY }
+            in
+            [ Ui.fillCircle center layout.moonPhaseRadius Color.black
+            , Ui.circle center layout.moonPhaseRadius Color.white
+            ]
+
+
+{-| Northern-hemisphere style disk from `phaseE6` (0 = new, 500000 ≈ full).
+-}
+drawMoonPhase : Layout -> Int -> List Ui.RenderOp
+drawMoonPhase layout phaseE6 =
     let
         center =
             { x = layout.cx, y = layout.moonY }
+
+        r =
+            layout.moonPhaseRadius
+
+        bounds =
+            { x = center.x - r, y = center.y - r, w = r * 2, h = r * 2 }
+
+        phase =
+            clamp 0 1000000 phaseE6
+
+        -- Cycle fraction 0..1; illumination 0 at new, 1 at full.
+        turn =
+            toFloat phase / 1000000
+
+        illum =
+            (1 - cos (turns turn)) / 2
+
+        waxing =
+            phase < 500000
+
+        -- Terminator offset: 0 near quarters, ±r near new/full.
+        offset =
+            round (toFloat r * cos (turns turn))
     in
-    [ Ui.fillCircle center layout.moonPhaseRadius Color.lightGray
-    , Ui.circle center layout.moonPhaseRadius Color.white
-    ]
+    if abs (phase - 500000) <= 20000 then
+        [ Ui.fillCircle center r Color.lightGray
+        , Ui.circle center r Color.white
+        ]
+
+    else if phase <= 20000 || phase >= 980000 then
+        [ Ui.fillCircle center r Color.black
+        , Ui.circle center r Color.white
+        ]
+
+    else
+        let
+            litHalf =
+                if waxing then
+                    -- Right half lit while waxing.
+                    coloredRadial bounds Color.lightGray 0 32768
+
+                else
+                    -- Left half lit while waning.
+                    coloredRadial bounds Color.lightGray 32768 65536
+
+            overlay =
+                if abs offset < max 1 (r // 8) then
+                    []
+
+                else if illum < 0.5 then
+                    -- Crescent: dark disk eats the lit half.
+                    [ Ui.fillCircle { x = center.x + offset, y = center.y } r Color.black ]
+
+                else
+                    -- Gibbous: lit disk fills past the half.
+                    [ Ui.fillCircle { x = center.x + offset, y = center.y } r Color.lightGray ]
+        in
+        [ Ui.fillCircle center r Color.black ]
+            ++ litHalf
+            ++ overlay
+            ++ [ Ui.circle center r Color.white ]
 
 
 drawCorners : Layout -> CornerSlots -> List Ui.RenderOp

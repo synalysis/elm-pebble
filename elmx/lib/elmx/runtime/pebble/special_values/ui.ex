@@ -56,6 +56,12 @@ defmodule Elmx.Runtime.Pebble.SpecialValues.Ui do
       "Pebble.Ui.pathOutline" -> ui_call("elmx_ui_path_outline", args)
       "Pebble.Ui.pathFilled" -> ui_call("elmx_ui_path_filled", args)
       "Pebble.Ui.pathOutlineOpen" -> ui_call("elmx_ui_path_outline_open", args)
+      "Pebble.Ui.WaitingForCompanion" ->
+        {:ok, %{op: :string_literal, value: "Waiting for companion app"}}
+
+      "Pebble.Ui.rotationToPebbleAngle" ->
+        passthrough_arg(args)
+
       "Pebble.Ui.rotationFromPebbleAngle" -> ui_call("elmx_ui_rotation_from_pebble_angle", args)
       "Pebble.Ui.root" -> ui_call("elmx_ui_to_ui_node", args)
       "Pebble.Ui.toUiNode" -> ui_call("elmx_ui_to_ui_node", args)

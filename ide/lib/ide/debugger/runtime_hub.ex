@@ -43,11 +43,31 @@ defmodule Ide.Debugger.RuntimeHub do
           required(:append_event) => append_event_fn(),
           required(:append_debugger_event) => append_debugger_event_fn(),
           required(:update) => update_fn(),
-          required(:default_auto_fire_interval_ms) => pos_integer()
+          required(:default_auto_fire_interval_ms) => pos_integer(),
+          optional(:wiring_id) => reference()
         }
 
+  @contexts_table :ide_debugger_runtime_hub_contexts
+
   @spec contexts(config()) :: RuntimeContexts.t()
-  def contexts(%{} = config) do
+  def contexts(%{wiring_id: wiring_id} = config) when is_reference(wiring_id) do
+    ensure_contexts_table!()
+
+    case :ets.lookup(@contexts_table, wiring_id) do
+      [{^wiring_id, ctx}] ->
+        ctx
+
+      [] ->
+        ctx = build_contexts(config)
+        true = :ets.insert(@contexts_table, {wiring_id, ctx})
+        ctx
+    end
+  end
+
+  def contexts(%{} = config), do: build_contexts(config)
+
+  @spec build_contexts(config()) :: RuntimeContexts.t()
+  defp build_contexts(%{} = config) do
     stub_ctx =
       config
       |> then(&runtime_host_callbacks_impl(&1, :stub))
@@ -61,6 +81,31 @@ defmodule Ide.Debugger.RuntimeHub do
 
     ctx = RuntimeContexts.build(host)
     finalize_step_wiring(host, ctx)
+  end
+
+  defp ensure_contexts_table! do
+    case :ets.whereis(@contexts_table) do
+      :undefined ->
+        :ets.new(@contexts_table, [
+          :named_table,
+          :public,
+          :set,
+          read_concurrency: true,
+          write_concurrency: false
+        ])
+
+      _tid ->
+        @contexts_table
+    end
+  rescue
+    ArgumentError ->
+      :ets.new(@contexts_table, [
+        :named_table,
+        :public,
+        :set,
+        read_concurrency: true,
+        write_concurrency: false
+      ])
   end
 
   @spec operation_deps(config()) :: OperationHosts.deps()
@@ -188,6 +233,22 @@ defmodule Ide.Debugger.RuntimeHub do
         %{step_apply: step_apply, companion_bridge: companion_bridge, protocol_rx: protocol_rx}
       )
       when target in [:watch, :companion, :phone] and is_list(opts) do
+    # Deferred bridge steps must use this step_apply (not a stale closure from wiring).
+    # Parent still owns inline protocol flush when nesting unwinds.
+    deferred_apply =
+      fn deferred_state, deferred_target, message, deferred_value, source, deferred_trigger ->
+        StepApply.apply(
+          deferred_state,
+          deferred_target,
+          message,
+          deferred_value,
+          source,
+          deferred_trigger,
+          [],
+          step_apply
+        )
+      end
+
     StepDepth.enter()
 
     state =
@@ -201,7 +262,10 @@ defmodule Ide.Debugger.RuntimeHub do
         opts,
         step_apply
       )
-      |> Ide.Debugger.CompanionBridge.Runtime.flush_deferred_steps(companion_bridge)
+      |> Ide.Debugger.CompanionBridge.Runtime.flush_deferred_steps(%{
+        companion_bridge
+        | apply_step: deferred_apply
+      })
 
     if StepDepth.leave() == 0 do
       ProtocolRx.flush_inline_protocol_deliveries(state, protocol_rx)
@@ -212,15 +276,17 @@ defmodule Ide.Debugger.RuntimeHub do
 
   @spec finalize_step_wiring(RuntimeHost.callbacks(), RuntimeContexts.t()) ::
           RuntimeContexts.t()
-  defp finalize_step_wiring(host, ctx) do
-    step_apply = Map.fetch!(ctx, :step_apply)
-    protocol_rx = Map.fetch!(ctx, :protocol_rx)
-    companion_bridge = Map.fetch!(ctx, :companion_bridge)
+  defp finalize_step_wiring(host, _ctx) do
+    # apply_step_once / deferred_apply must observe the *rebuilt* step_apply whose
+    # followup callbacks close over this same apply_step_once. A one-shot capture of
+    # the pre-rebuild step_apply drops Task.perform followups (e.g. CurrentTime after
+    # CurrentPosition) because nested apply_step_once becomes a stub no-op.
+    {:ok, wiring_agent} = Agent.start_link(fn -> nil end)
 
-    # Deferred bridge steps only run Elm update; the parent step flushes inline
-    # protocol deliveries after all deferred work completes.
     deferred_apply =
       fn state, target, message, message_value, source, trigger ->
+        ctx = Agent.get(wiring_agent, & &1)
+
         StepApply.apply(
           state,
           target,
@@ -229,12 +295,13 @@ defmodule Ide.Debugger.RuntimeHub do
           source,
           trigger,
           [],
-          step_apply
+          ctx.step_apply
         )
       end
 
     apply_step_once =
       fn state, target, message, message_value, source, trigger ->
+        ctx = Agent.get(wiring_agent, & &1)
         StepDepth.enter()
 
         state =
@@ -246,15 +313,15 @@ defmodule Ide.Debugger.RuntimeHub do
             source,
             trigger,
             [],
-            step_apply
+            ctx.step_apply
           )
           |> Ide.Debugger.CompanionBridge.Runtime.flush_deferred_steps(%{
-            companion_bridge
+            ctx.companion_bridge
             | apply_step: deferred_apply
           })
 
         if StepDepth.leave() == 0 do
-          ProtocolRx.flush_inline_protocol_deliveries(state, protocol_rx)
+          ProtocolRx.flush_inline_protocol_deliveries(state, ctx.protocol_rx)
         else
           state
         end
@@ -270,7 +337,13 @@ defmodule Ide.Debugger.RuntimeHub do
 
     ctx = RuntimeContexts.build(host)
 
-    %{ctx | companion_bridge: %{Map.fetch!(ctx, :companion_bridge) | apply_step: deferred_apply}}
+    ctx = %{
+      ctx
+      | companion_bridge: %{Map.fetch!(ctx, :companion_bridge) | apply_step: deferred_apply}
+    }
+
+    :ok = Agent.update(wiring_agent, fn _ -> ctx end)
+    ctx
   end
 
   @spec trigger_message_for_surface(

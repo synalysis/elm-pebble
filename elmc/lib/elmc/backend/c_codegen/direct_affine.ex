@@ -662,7 +662,7 @@ defmodule Elmc.Backend.CCodegen.DirectAffine do
     case Host.normalize_special_target(target) do
       "Pebble.Ui.defaultTextOptions" ->
         {:ok,
-         "(ELMC_TEXT_ALIGN_LEFT + (ELMC_TEXT_OVERFLOW_WORD_WRAP * (1 << ELMC_TEXT_OVERFLOW_SHIFT)))"}
+         "(ELMC_TEXT_ALIGN_CENTER + (ELMC_TEXT_OVERFLOW_WORD_WRAP * (1 << ELMC_TEXT_OVERFLOW_SHIFT)))"}
 
       _ ->
         :error

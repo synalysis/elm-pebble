@@ -145,17 +145,18 @@ defmodule Elmc.Backend.Bytecode.PhiShapes do
     if value == 0, do: <<@int_const0::8>>, else: <<@int_const1::8>>
   end
 
-  defp encode_int_shape({:const_int, value}), do: <<@int_const::8, value::32>>
+  defp encode_int_shape({:const_int, value}), do: <<@int_const::8, value::signed-32>>
 
   defp encode_int_shape({:int_arith, args}) do
     encode_int_arith_shape(args)
   end
 
-  defp encode_int_shape({:new_int, value}) when is_integer(value), do: <<@int_new::8, value::32>>
+  defp encode_int_shape({:new_int, value}) when is_integer(value),
+    do: <<@int_new::8, value::signed-32>>
 
   defp encode_int_shape({:new_int, expr}) when is_binary(expr) do
     case Elmc.Backend.CCodegen.Emit.resolve_c_int_expr(expr) do
-      {:ok, n} -> <<@int_new::8, n::32>>
+      {:ok, n} -> <<@int_new::8, n::signed-32>>
       :error -> <<@int_const0::8>>
     end
   end
@@ -189,7 +190,7 @@ defmodule Elmc.Backend.Bytecode.PhiShapes do
           <<encode_reg(lhs)::16, encode_reg(Map.fetch!(args, :rhs))::16>>
 
         _ ->
-          <<encode_reg(lhs)::16, Map.fetch!(args, :value)::32>>
+          <<encode_reg(lhs)::16, Map.fetch!(args, :value)::signed-32>>
       end
 
     <<@int_arith::8, kind_n::8, payload::binary>>
@@ -199,8 +200,12 @@ defmodule Elmc.Backend.Bytecode.PhiShapes do
 
   defp decode_int_shape(<<@int_const0::8, rest::binary>>), do: {{:const_int, 0}, rest}
   defp decode_int_shape(<<@int_const1::8, rest::binary>>), do: {{:const_int, 1}, rest}
-  defp decode_int_shape(<<@int_const::8, value::32, rest::binary>>), do: {{:const_int, value}, rest}
-  defp decode_int_shape(<<@int_new::8, value::32, rest::binary>>), do: {{:new_int, value}, rest}
+
+  defp decode_int_shape(<<@int_const::8, value::signed-32, rest::binary>>),
+    do: {{:const_int, value}, rest}
+
+  defp decode_int_shape(<<@int_new::8, value::signed-32, rest::binary>>),
+    do: {{:new_int, value}, rest}
 
   defp decode_int_shape(<<@int_arith::8, kind::8, rest::binary>>) do
     {args, rest} = decode_int_arith_payload(kind, rest)
@@ -220,7 +225,7 @@ defmodule Elmc.Backend.Bytecode.PhiShapes do
         {%{kind: k, lhs: lhs, rhs: rhs}, tail}
 
       _ ->
-        <<value::32, tail::binary>> = rest
+        <<value::signed-32, tail::binary>> = rest
         {%{kind: kind_atom, lhs: lhs, value: value}, tail}
     end
   end

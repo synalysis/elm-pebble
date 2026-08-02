@@ -255,7 +255,7 @@ defmodule Elmc.Backend.Bytecode.Lower do
         <<kind_n::8, encode_reg_word(lhs)::16, encode_reg_word(rhs)::16>>
 
       _ ->
-        <<kind_n::8, encode_reg_word(lhs)::16, Map.fetch!(args, :value)::32>>
+        <<kind_n::8, encode_reg_word(lhs)::16, Map.fetch!(args, :value)::signed-32>>
     end
   end
 
@@ -386,7 +386,7 @@ defmodule Elmc.Backend.Bytecode.Lower do
 
   defp encode_args(:publish, %{source: reg}, _fn_table), do: <<encode_dest(reg)::16>>
 
-  defp encode_args(:const_int, %{value: v}, _fn_table), do: <<v::32>>
+  defp encode_args(:const_int, %{value: v}, _fn_table), do: <<v::signed-32>>
 
   defp encode_args(:const_static_list, args, _fn_table) do
     kind = Map.fetch!(args, :kind)

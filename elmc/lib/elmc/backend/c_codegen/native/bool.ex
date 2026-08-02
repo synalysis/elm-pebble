@@ -1174,8 +1174,12 @@ defmodule Elmc.Backend.CCodegen.Native.Bool do
     if RcRuntimeEmit.rc_allocator_emit_mode?(env) do
       {slot, next} = RcRuntimeEmit.compile_result_slot(operand_env, counter)
 
+      # Boxed compare needs ElmcValue* operands. Direct-render sets native scalar
+      # context so min/max/abs stay as elmc_int_t; clear it here so compile_boxed
+      # emits elmc_new_int into the owned slot (never `owned[i] = native_max_…`).
       branch_env =
         operand_env
+        |> EnvBindings.without_native_scalar_context()
         |> Map.put(:__branch_out__, slot)
         |> Map.put(:__declared_outs__, MapSet.new([slot]))
 
@@ -1190,6 +1194,22 @@ defmodule Elmc.Backend.CCodegen.Native.Bool do
           ValueSlots.owned_ref?(ref) ->
             {code, ref, final_counter}
 
+          Host.native_int_expr?(expr, env) or native_int_temp_ref?(ref) ->
+            boxed = """
+            #{code}
+              #{RcRuntimeEmit.assign_call(env, slot, "elmc_new_int", ref)}
+            """
+
+            {boxed, slot, final_counter}
+
+          Host.native_float_expr?(expr, env) or native_float_temp_ref?(ref) ->
+            boxed = """
+            #{code}
+              #{RcRuntimeEmit.assign_call(env, slot, "elmc_new_float", ref)}
+            """
+
+            {boxed, slot, final_counter}
+
           true ->
             transfer = RcRuntimeEmit.transfer_assignment(slot, ref)
 
@@ -1201,6 +1221,21 @@ defmodule Elmc.Backend.CCodegen.Native.Bool do
       BoxedOperand.compile(expr, operand_env, counter)
     end
   end
+
+  defp native_int_temp_ref?(ref) when is_binary(ref) do
+    Regex.match?(
+      ~r/^(?:native_(?:max|min|abs|i|if)|direct_(?:native_let|i|hoisted_int)|tmp_)\w*$/,
+      ref
+    ) or Regex.match?(~r/^-?\d+$/, ref)
+  end
+
+  defp native_int_temp_ref?(_), do: false
+
+  defp native_float_temp_ref?(ref) when is_binary(ref) do
+    Regex.match?(~r/^(?:native_f|direct_(?:native_float|f)|tmp_f_)\w*$/, ref)
+  end
+
+  defp native_float_temp_ref?(_), do: false
 
   @spec apply_native_compare(String.t(), term(), term()) :: boolean()
   defp apply_native_compare("__eq__", left, right), do: left == right

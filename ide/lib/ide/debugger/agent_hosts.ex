@@ -105,7 +105,9 @@ defmodule Ide.Debugger.AgentHosts do
       append_event: Keyword.fetch!(opts, :append_event),
       append_debugger_event: Keyword.fetch!(opts, :append_debugger_event),
       update: Keyword.fetch!(opts, :update),
-      default_auto_fire_interval_ms: Keyword.fetch!(opts, :default_auto_fire_interval_ms)
+      default_auto_fire_interval_ms: Keyword.fetch!(opts, :default_auto_fire_interval_ms),
+      # Stable id so RuntimeHub.contexts/1 rebuilds wiring once (not per call).
+      wiring_id: make_ref()
     }
 
     operation_deps = RuntimeHub.operation_deps(hub)

@@ -491,7 +491,6 @@ defmodule Elmc.Backend.Pebble.SourceWriter.EventDispatch.Registry do
       if (tag <= 0) ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_dispatch_compass_heading", -6);
 
       RC Rc = RC_SUCCESS;
-      const char *names[] = {"degrees", "isValid"};
       ElmcValue *values[2];
       ElmcValue *record = NULL;
       ElmcValue *tag_value = NULL;
@@ -499,7 +498,14 @@ defmodule Elmc.Backend.Pebble.SourceWriter.EventDispatch.Registry do
       CATCH_BEGIN
         CHECK_RC_TO(Rc, elmc_new_float(&values[0], degrees));
         CHECK_RC_TO(Rc, elmc_new_bool(&values[1], is_valid ? 1 : 0));
-        CHECK_RC_TO(Rc, elmc_record_new_take(&record, 2, names, values));
+        #if ELMC_PEBBLE_DEBUG_LOGS
+        {
+          const char *names[] = {"degrees", "isValid"};
+          CHECK_RC_TO(Rc, elmc_record_new_take(&record, 2, names, values));
+        }
+        #else
+        CHECK_RC_TO(Rc, elmc_record_new_values_take(&record, 2, values));
+        #endif
         CHECK_RC_TO(Rc, elmc_new_int(&tag_value, tag));
         CHECK_RC_TO(Rc, elmc_tuple2_take(&msg, tag_value, record));
       CATCH_END

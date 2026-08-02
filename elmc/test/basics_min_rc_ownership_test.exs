@@ -30,8 +30,8 @@ defmodule Elmc.BasicsMinRcOwnershipTest do
 
     assert source =~ "elmc_basics_min(&#{out}, owned[0], owned[1])"
     assert source =~ "CHECK_RC(Rc)"
-    assert source =~ "elmc_release(#{out});"
-    assert source =~ "if (#{out} == owned[0])"
-    assert source =~ "if (#{out} == owned[1])"
+    assert source =~ ~r/if \(#{Regex.escape(out)} == owned\[0\]\) \{\s*elmc_release\(#{Regex.escape(out)}\);/
+    assert source =~ ~r/if \(#{Regex.escape(out)} == owned\[1\]\) \{\s*elmc_release\(#{Regex.escape(out)}\);/
+    refute source =~ ~r/elmc_release\(#{Regex.escape(out)}\);\s*if \(#{Regex.escape(out)} == owned\[0\]\)/
   end
 end

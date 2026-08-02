@@ -66,7 +66,7 @@ defmodule Elmc.ConditionalSubscriptionsCodegenTest do
     assert subs_body =~ "ELMC_PEBBLE_MSG_DOWNPRESSED"
     assert subs_body =~ "ELMC_SUBSCRIPTION_FRAME_BASE"
     assert subs_body =~ "ELMC_PEBBLE_MSG_FRAMETICK"
-    assert subs_body =~ "elmc_list_from_values_take"
+    assert subs_body =~ "elmc_list_from_values"
     assert subs_body =~ "elmc_fn_Main_currentPage("
     assert subs_body =~ "ELMC_FIELD_MAIN_MODEL_PAGEINDEX"
 

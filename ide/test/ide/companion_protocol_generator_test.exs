@@ -248,6 +248,11 @@ defmodule Ide.CompanionProtocolGeneratorTest do
       refute generated_header =~ "union_value_fields"
       refute generated_header =~ "saw_union_value_fields"
       refute generated_source =~ "saw_union_value_fields"
+      assert generated_source =~ "companion_protocol_box_int("
+      assert generated_source =~ "companion_protocol_tuple2_take("
+      refute generated_source =~ "companion_protocol_box_bool("
+      refute generated_source =~ "companion_protocol_box_string("
+      refute generated_source =~ "companion_protocol_box_int_list("
     after
       File.rm_rf(tmp)
     end
@@ -532,6 +537,7 @@ defmodule Ide.CompanionProtocolGeneratorTest do
       assert generated_header =~ "COMPANION_PROTOCOL_KEY_SET_SHAPE_FIELD1_LABEL_ARG1"
       assert generated_header =~ "COMPANION_PROTOCOL_KEY_SET_SHAPE_FIELD1_LABEL_ARG2"
       assert generated_source =~ "companion_protocol_build_set_shape_field1"
+      assert generated_source =~ "companion_protocol_box_string("
       assert generated_source =~ "case 3:"
       assert generated_internal =~ "decodeShapeWire : String -> Decode.Decoder Shape"
 
@@ -582,6 +588,8 @@ defmodule Ide.CompanionProtocolGeneratorTest do
       assert generated_source =~ "ElmcValue *payload = companion_protocol_box_int(1);"
       assert generated_source =~
                "elmc_pebble_dispatch_tag_payload(app, ELMC_PEBBLE_MSG_PHONE_TO_WATCH_TARGET, payload);"
+
+      assert generated_source =~ "elmc_release(payload);"
 
       refute generated_source =~
                "COMPANION_PROTOCOL_PHONE_TO_WATCH_KIND_PONG: {\n          if (ELMC_PEBBLE_MSG_PHONE_TO_WATCH_TARGET <= 0) return -7;\n      return elmc_pebble_dispatch_tag_int_values"
@@ -700,11 +708,25 @@ defmodule Ide.CompanionProtocolGeneratorTest do
       assert generated_js =~ "encodePhoneToWatchPayload(\"ProvideWeather\""
       assert generated_js =~ "encodePhoneToWatchPayload(\"ProvideWind\""
 
-      refute generated_c =~ "elmc_release(phone_to_watch);"
+      assert generated_c =~ "elmc_release(phone_to_watch);"
       refute generated_c =~
                "companion_protocol_new_phone_to_watch_message(6, payload);\n            elmc_release(payload);"
     after
       File.rm_rf(tmp)
     end
+  end
+
+  test "IDE companion harness stub borrows payload (parity with elmc dispatch)" do
+    # Must match elmc_pebble_dispatch_tag_payload borrow semantics; taking/releasing
+    # here would hide double-frees that emery catches after companion ingest.
+    source =
+      File.read!(
+        Path.expand("../../test/support/companion_protocol_c_harness.ex", __DIR__)
+      )
+
+    assert source =~ "Borrow semantics: caller retains ownership of payload"
+    # Stub body must not free the caller's payload (generator releases after dispatch).
+    refute source =~
+             ~r/int elmc_pebble_dispatch_tag_payload\([\s\S]*?elmc_release\(\s*payload\s*\)/
   end
 end

@@ -3125,11 +3125,11 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
   @spec compile_const_static_list(term(), Context.t(), Builder.t()) :: Types.compile_result()
 
   def compile_const_static_list(spec, ctx, b) do
-    # List builders take ownership of element regs. Retain-dup first so values that
-    # are still live after the list (e.g. Nonempty extentA [extentB] then use
-    # extentA/extentB again) do not verify as read_after_consume.
-    {spec, b0} = prepare_static_list_consume(spec, b)
-    {dest, b1} = dest_for_builtin(ctx, b0)
+    # Value/record-array list builders borrow elements and retain inside the runtime
+    # (`elmc_list_from_values` / `elmc_list_from_record_array`). Do not retain-dup
+    # + consume — that added a retain hop only so take-based builders could null
+    # copies while originals stayed live.
+    {dest, b1} = dest_for_builtin(ctx, b)
     wrap_catch? = Builder.wrap_fallible_instr_catch?(b1, ctx, true)
 
     b2 = if wrap_catch?, do: Builder.catch_begin(b1), else: b1
@@ -3147,20 +3147,6 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
     {:ok, result, b4}
   end
 
-  @spec prepare_static_list_consume(term(), Builder.t()) :: {term(), Builder.t()}
-
-  defp prepare_static_list_consume({:values, regs}, b) when is_list(regs) do
-    {regs2, b1} = Builder.dup_all_regs_for_record_new_consume(b, regs)
-    {{:values, regs2}, b1}
-  end
-
-  defp prepare_static_list_consume({:record_array, regs}, b) when is_list(regs) do
-    {regs2, b1} = Builder.dup_all_regs_for_record_new_consume(b, regs)
-    {{:record_array, regs2}, b1}
-  end
-
-  defp prepare_static_list_consume(spec, b), do: {spec, b}
-
   @spec static_list_instr(term(), Types.reg() | Types.result_slot()) ::
           {Types.instr_args(), Types.effects()}
 
@@ -3177,11 +3163,11 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
   end
 
   defp static_list_instr({:values, regs}, dest) when is_list(regs) do
-    {%{kind: :values, regs: regs}, Types.fallible_effects(dest, [], regs)}
+    {%{kind: :values, regs: regs}, Types.fallible_effects(dest, regs, [])}
   end
 
   defp static_list_instr({:record_array, regs}, dest) when is_list(regs) do
-    {%{kind: :record_array, regs: regs}, Types.fallible_effects(dest, [], regs)}
+    {%{kind: :record_array, regs: regs}, Types.fallible_effects(dest, regs, [])}
   end
 
   @doc false
@@ -3300,6 +3286,9 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
 
     {borrows, consumes} =
       cond do
+        RuntimeBuiltins.retains_operand_result?(id) ->
+          {arg_regs, []}
+
         id in @borrow_list_view_builtins and length(arg_regs) == 1 ->
           {arg_regs, []}
 
@@ -3337,15 +3326,41 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
           Builder.partition_call_args(b2a, arg_regs)
       end
 
-    effects =
-      if is_integer(dest) do
-        if fallible? do
-          Types.fallible_effects(dest, borrows, consumes)
-        else
-          %{produces: {:owned, dest}, consumes: consumes, borrows: borrows, fallible: false}
-        end
+    result_aliases =
+      if RuntimeBuiltins.retains_operand_result?(id) do
+        RuntimeBuiltins.retains_operand_result_aliases(id, arg_regs)
       else
-        %{produces: nil, consumes: consumes, borrows: borrows, fallible: fallible?}
+        []
+      end
+
+    effects =
+      cond do
+        is_integer(dest) and RuntimeBuiltins.retains_operand_result?(id) ->
+          Types.retains_operand_effects(dest, borrows, result_aliases, consumes, fallible?)
+
+        is_integer(dest) and fallible? ->
+          Types.fallible_effects(dest, borrows, consumes)
+
+        is_integer(dest) ->
+          %{
+            produces: {:owned, dest},
+            consumes: consumes,
+            borrows: borrows,
+            result_aliases: [],
+            fallible: false
+          }
+
+        RuntimeBuiltins.retains_operand_result?(id) ->
+          %{
+            produces: nil,
+            consumes: consumes,
+            borrows: borrows,
+            result_aliases: result_aliases,
+            fallible: fallible?
+          }
+
+        true ->
+          %{produces: nil, consumes: consumes, borrows: borrows, result_aliases: [], fallible: fallible?}
       end
 
     {_, b3} =

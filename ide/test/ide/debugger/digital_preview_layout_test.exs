@@ -77,8 +77,11 @@ defmodule Ide.Debugger.DigitalPreviewLayoutTest do
              text_op.h,
            "debugger SVG text should use Pebble cap height, not full box height"
 
-    assert IdeWeb.WorkspaceLive.DebuggerPage.SvgRender.text_y(text_op) ==
-             text_op.y + text_op.h / 2
+    # Pebble top-of-box: SVG y is rect.y with text-before-edge baseline.
+    assert IdeWeb.WorkspaceLive.DebuggerPage.SvgRender.text_y(text_op) == text_op.y
+
+    assert IdeWeb.WorkspaceLive.DebuggerPage.SvgRender.text_baseline(text_op) ==
+             "text-before-edge"
   end
 
   test "semantic view preview evaluates centered cardY for digital template" do

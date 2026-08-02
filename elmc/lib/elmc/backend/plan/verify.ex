@@ -222,11 +222,39 @@ defmodule Elmc.Backend.Plan.Verify do
   end
 
   defp apply_value_effects(%Types{effects: effects, dest: dest}, st) do
-    st
-    |> check_borrows_not_consumed(effects.borrows || [])
-    |> track_produces(effects.produces, dest)
-    |> mark_consumed(effects.consumes || [])
+    with :ok <- verify_produces_kind(effects.produces),
+         :ok <- verify_result_aliases(effects, dest) do
+      st
+      |> check_borrows_not_consumed(effects.borrows || [])
+      |> track_produces(effects.produces, dest)
+      |> mark_consumed(effects.consumes || [])
+    else
+      {:error, reason, meta} -> verify_fail!(reason, meta)
+    end
   end
+
+  defp verify_produces_kind(nil), do: :ok
+  defp verify_produces_kind({:owned, _}), do: :ok
+  defp verify_produces_kind({:immortal, _}), do: :ok
+  defp verify_produces_kind({:native_int, _}), do: :ok
+  defp verify_produces_kind({:native_bool, _}), do: :ok
+  defp verify_produces_kind(other), do: {:error, :unknown_produce_kind, [produces: other]}
+
+  defp verify_result_aliases(%{result_aliases: aliases, consumes: consumes}, dest)
+       when is_list(aliases) and aliases != [] do
+    cond do
+      Enum.any?(aliases, &(&1 in consumes)) ->
+        {:error, :result_alias_consumed, [aliases: aliases, consumes: consumes]}
+
+      is_integer(dest) and dest in aliases ->
+        {:error, :result_alias_includes_dest, [dest: dest, aliases: aliases]}
+
+      true ->
+        :ok
+    end
+  end
+
+  defp verify_result_aliases(_, _), do: :ok
 
   defp check_borrows_not_consumed(st, borrows) do
     Enum.each(borrows, fn reg ->
@@ -240,6 +268,9 @@ defmodule Elmc.Backend.Plan.Verify do
     %{st | owned: MapSet.put(st.owned, reg)}
   end
 
+  defp track_produces(st, {:immortal, _reg}, _dest), do: st
+  defp track_produces(st, {:native_int, _reg}, _dest), do: st
+  defp track_produces(st, {:native_bool, _reg}, _dest), do: st
   defp track_produces(st, _, _dest), do: st
 
   defp mark_consumed(st, consumes) do

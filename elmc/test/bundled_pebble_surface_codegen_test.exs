@@ -108,6 +108,6 @@ defmodule Elmc.BundledPebbleSurfaceCodegenTest do
              init_fn =~ "ELMC_UNION_LAUNCHWAKEUP" or
              init_fn =~ "elmc_new_int(4)"
     assert init_fn =~
-             ~r/elmc_list_from_values_take\(&(?:tmp_\d+|owned\[\d+\]), (?:plan_)?list_items_\d+, 2\)/
+             ~r/elmc_list_from_values\(&(?:tmp_\d+|owned\[\d+\]), (?:plan_)?list_items_\d+, 2\)/
   end
 end

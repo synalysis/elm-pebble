@@ -205,6 +205,30 @@ Single return of `out`; no nested `if (__call_rc != RC_SUCCESS) return NULL;`.
 
 Same CATCH + single-`return Rc` shell. Final native bool/int is written with `*out = …` inside CATCH (see `wrap_native_bool_rc_function_body/…` in `function_emit.ex`).
 
+## Plan IR ownership (`effects.produces` + `result_aliases`)
+
+Plan IR is the source of truth for retain/release policy before C emit. `Plan.Types.effects` includes:
+
+- `produces`: `{:owned, reg}` | `{:immortal, reg}` | `{:native_int, reg}` | `{:native_bool, reg}` | `nil`
+- `result_aliases`: operand regs whose owned retain may be transferred into `dest` when pointers are equal
+
+**`result_aliases` semantics**
+
+- Runtimes like `elmc_maybe_with_default` / `elmc_basics_min` return `elmc_retain(chosen_operand)` into `dest`.
+- Emit may drop the extra retain **only inside** `if (dest == alias_operand)` when `alias_operand` is an **owned** slot being transferred (null that slot).
+- If the chosen operand is a borrow (Just payload / param field), **no** pre-use `elmc_release(dest)`; epilogue owns the retain on `dest`.
+
+Builtin contracts live in `Plan.RuntimeBuiltins` (`retains_operand_result?/1`, `retains_operand_result_aliases/2`). Plan lower stamps `result_aliases` for `maybe_with_default`, `basics_min`/`max`/`clamp`.
+
+**Emit helper (one policy)**
+
+`RetainOperandAlias` (`retain_operand_alias.ex`) is the only place that may emit alias-null + conditional retain-drop for these ops:
+
+- Plan-primary C lower (`c/lower/function.ex` → `emit_result_alias_transfer`)
+- Legacy direct-render / `RuntimeCall` (`runtime_call/core.ex` → `emit_for_runtime_call`)
+
+**Hard rule:** no bare `elmc_release(dest)` immediately before the alias `if` for retains-operand builtins. Structural tests (`yes_view_rc_balance_test.exs`) enforce this.
+
 ## Tests
 
 When changing codegen shape, add or update tests under `elmc/test/` that assert **generated C text** (not only “compiles”):
@@ -212,6 +236,8 @@ When changing codegen shape, add or update tests under `elmc/test/` that assert 
 - `constructor_tag_case_fn_out_test.exs` — tail `out`, no double publish.
 - `companion_cmd_param_slots_test.exs` — intermediates in `owned[]`, final cmd into `out`.
 - Focused RC tests for list append, patterns, cmds.
+- `plan_retains_operand_runtime_test.exs` — `result_aliases` on plan IR + `RetainOperandAlias` emit shape.
+- `yes_provide_sun_double_view_test.exs` — ProvideSun×2 + view host gate (no double-free).
 
 Rebuild a template (for example yes watchface) and spot-check `elmc_generated.c` for the patterns above.
 
@@ -225,3 +251,4 @@ Rebuild a template (for example yes watchface) and spot-check `elmc_generated.c`
 6. **Nested `case` / `if` on a callee result uses `&owned[i]`, not `out` / `(*out)`?**
 7. `owned[]` omitted when empty?
 8. No `_take`, no `__call_rc` early returns, no `tmp_` releases in RC epilogue-LIFO paths?
+9. Retains-operand builtins use `RetainOperandAlias` (release inside alias `if` only, never bare `elmc_release(dest)` before the `if`)?

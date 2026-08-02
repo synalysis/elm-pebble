@@ -261,13 +261,37 @@ defmodule Elmc.YesWatchfaceTickLeakTest do
       if (elmc_pebble_init_with_mode(&app, flags, ELMC_PEBBLE_MODE_WATCHFACE) != 0) return 2;
       elmc_release(flags);
 
-      if (elmc_pebble_dispatch_tag_payload(&app, ELMC_PEBBLE_MSG_CURRENTDATETIME, current_datetime()) != 0) return 3;
+      {
+        ElmcValue *dt = current_datetime();
+        if (!dt) return 3;
+        if (elmc_pebble_dispatch_tag_payload(&app, ELMC_PEBBLE_MSG_CURRENTDATETIME, dt) != 0) {
+          elmc_release(dt);
+          return 3;
+        }
+        elmc_release(dt);
+      }
       if (elmc_pebble_dispatch_tag_value(&app, ELMC_PEBBLE_MSG_BATTERYLEVELCHANGED, 80) != 0) return 4;
       if (elmc_pebble_dispatch_tag_bool(&app, ELMC_PEBBLE_MSG_CONNECTIONCHANGED, 1) != 0) return 5;
       if (elmc_pebble_dispatch_tag_bool(&app, ELMC_PEBBLE_MSG_GOTHEALTHSUPPORTED, 1) != 0) return 6;
       if (drain_view(&app) < 2) return 10;
-      if (elmc_pebble_dispatch_tag_payload(&app, ELMC_PEBBLE_MSG_FROMPHONE, provide_sun()) != 0) return 7;
-      if (elmc_pebble_dispatch_tag_payload(&app, ELMC_PEBBLE_MSG_FROMPHONE, provide_weather()) != 0) return 8;
+      {
+        ElmcValue *sun = provide_sun();
+        if (!sun) return 7;
+        if (elmc_pebble_dispatch_tag_payload(&app, ELMC_PEBBLE_MSG_FROMPHONE, sun) != 0) {
+          elmc_release(sun);
+          return 7;
+        }
+        elmc_release(sun);
+      }
+      {
+        ElmcValue *weather = provide_weather();
+        if (!weather) return 8;
+        if (elmc_pebble_dispatch_tag_payload(&app, ELMC_PEBBLE_MSG_FROMPHONE, weather) != 0) {
+          elmc_release(weather);
+          return 8;
+        }
+        elmc_release(weather);
+      }
       if (drain_view(&app) < 2) return 11;
 
       int leaks = 0;

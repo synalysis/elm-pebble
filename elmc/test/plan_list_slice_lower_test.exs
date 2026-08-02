@@ -307,7 +307,7 @@ defmodule Elmc.PlanListSliceLowerTest do
     refute c =~ ~r/elmc_list_cons\(&owned/
   end
 
-  test "static String list literal lowers to elmc_list_from_values_take" do
+  test "static String list literal lowers to elmc_list_from_values" do
     source = """
     module Main exposing (joinLabels)
 
@@ -362,7 +362,8 @@ defmodule Elmc.PlanListSliceLowerTest do
 
     c = Elmc.Backend.C.Lower.Function.emit(plan, shell: true)
 
-    assert c =~ "elmc_list_from_values_take"
+    assert c =~ "elmc_list_from_values"
+    refute c =~ "elmc_list_from_values_take"
     assert c =~ "plan_list_items_"
     refute c =~ ~r/elmc_list_cons\(&owned/
   end

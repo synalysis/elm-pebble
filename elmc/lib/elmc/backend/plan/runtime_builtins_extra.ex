@@ -131,7 +131,7 @@ defmodule Elmc.Backend.Plan.RuntimeBuiltins.Extra do
     list_drop_int: "elmc_list_drop_int",
     list_find_first: "elmc_list_find_first",
     list_foldr: "elmc_list_foldr",
-    list_from_values: "elmc_list_from_values_take",
+    list_from_values: "elmc_list_from_values",
     list_intersperse: "elmc_list_intersperse",
     list_map2: "elmc_list_map2",
     list_map3: "elmc_list_map3",

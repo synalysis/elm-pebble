@@ -542,6 +542,23 @@ defmodule Ide.PebbleToolchainTest do
     assert schedule_body =~ "deferred_elm_init_callback"
   end
 
+  test "pebble app template queues multiple pending companion requests" do
+    template = File.read!("priv/pebble_app_template/src/c/pebble_app_template.c")
+
+    assert template =~ "COMPANION_PENDING_QUEUE_CAP"
+    assert template =~ "enqueue_pending_companion_request"
+    assert template =~ "s_pending_companion_tags["
+    refute template =~ "static bool s_pending_companion_request = false;"
+
+    outbox_sent =
+      case Regex.run(~r/static void outbox_sent_handler\(.*?\) \{(.*?)^\}/ms, template) do
+        [_, body] -> body
+        _ -> flunk("outbox_sent_handler body not found")
+      end
+
+    assert outbox_sent =~ "flush_pending_companion_request();"
+  end
+
   test "pebble app template applies antialiased style and disables mono stroke dither" do
     template = File.read!("priv/pebble_app_template/src/c/pebble_app_template.c")
 

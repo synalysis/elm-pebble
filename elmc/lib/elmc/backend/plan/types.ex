@@ -101,11 +101,22 @@ defmodule Elmc.Backend.Plan.Types do
   @type result_slot :: :fn_out | :branch_out | :stream_void
 
   @type owned :: {:owned, reg()}
+  @type immortal :: {:immortal, reg()}
+  @type native_int_produce :: {:native_int, reg()}
+  @type native_bool_produce :: {:native_bool, reg()}
+
+  @type produce ::
+          owned()
+          | immortal()
+          | native_int_produce()
+          | native_bool_produce()
+          | nil
 
   @type effects :: %{
-          optional(:produces) => owned() | nil,
+          optional(:produces) => produce(),
           optional(:consumes) => [reg()],
           optional(:borrows) => [reg()],
+          optional(:result_aliases) => [reg()],
           required(:fallible) => boolean()
         }
 
@@ -291,14 +302,30 @@ defmodule Elmc.Backend.Plan.Types do
   @type lower_result :: {:ok, function_plan()} | :unsupported | {:error, lower_error()}
 
   @spec empty_effects() :: effects()
-  def empty_effects, do: %{produces: nil, consumes: [], borrows: [], fallible: false}
+  def empty_effects, do: %{produces: nil, consumes: [], borrows: [], result_aliases: [], fallible: false}
 
   @spec owned_effects(reg()) :: effects()
   def owned_effects(reg) when is_integer(reg),
-    do: %{produces: {:owned, reg}, consumes: [], borrows: [], fallible: false}
+    do: %{produces: {:owned, reg}, consumes: [], borrows: [], result_aliases: [], fallible: false}
 
   def owned_effects(_),
-    do: %{produces: nil, consumes: [], borrows: [], fallible: false}
+    do: %{produces: nil, consumes: [], borrows: [], result_aliases: [], fallible: false}
+
+  @spec retains_operand_effects(reg(), [reg()], [reg()], [reg()], boolean()) :: effects()
+  def retains_operand_effects(dest, borrows, alias_regs, consumes \\ [], fallible? \\ false)
+
+  def retains_operand_effects(dest, borrows, alias_regs, consumes, fallible?)
+      when is_integer(dest) do
+    %{
+      produces: {:owned, dest},
+      consumes: consumes,
+      borrows: borrows,
+      result_aliases: alias_regs,
+      fallible: fallible?
+    }
+  end
+
+  def retains_operand_effects(_, _, _, _, _), do: empty_effects()
 
   @spec fallible_effects(reg() | result_slot(), [reg()], [reg()]) :: effects()
   def fallible_effects(reg, borrows \\ [], consumes \\ []) do
@@ -308,6 +335,7 @@ defmodule Elmc.Backend.Plan.Types do
       produces: produces,
       consumes: consumes,
       borrows: borrows,
+      result_aliases: [],
       fallible: true
     }
   end
@@ -318,6 +346,7 @@ defmodule Elmc.Backend.Plan.Types do
       produces: nil,
       consumes: consumes,
       borrows: borrows,
+      result_aliases: [],
       fallible: true
     }
   end

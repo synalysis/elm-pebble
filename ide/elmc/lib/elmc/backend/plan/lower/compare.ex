@@ -358,12 +358,13 @@ defmodule Elmc.Backend.Plan.Lower.Compare do
         if float_compare_pair?(left, right, env), do: :float_boxed, else: :int_boxed
 
       # Elm `==` on Int/Bool is by value. Pointer `i32.eq` breaks
-      # `Transformation.compose`'s `t1.isRightHanded == t2.isRightHanded`:
-      # identity stores a True Int box and placeIn stores `new_int(1)` from
-      # Frame3d.isRightHanded — distinct handles → always False → modelScale.w=-1.
-      # For non-Int tags, `as_int` falls back to the handle id (≈ pointer).
+      # `Transformation.compose`'s `t1.isRightHanded == t2.isRightHanded`
+      # (distinct True Int boxes). Prefer `:int_boxed` for unknown pointer
+      # shapes, but never for Maybe/Result/List/tuple/record — `elmc_as_int`
+      # returns 0 for those tags, so `Nothing /= Just day` became `0 == 0`
+      # and YES never requested sun/weather.
       mode == :pointer and kind in [:eq, :neq] ->
-        :int_boxed
+        if structural_equality_pair?(left, right, env), do: :value, else: :int_boxed
 
       true ->
         mode
@@ -510,6 +511,48 @@ defmodule Elmc.Backend.Plan.Lower.Compare do
       "String" -> :string
       "Int" -> :non_string
       _ -> :unknown
+    end
+  end
+
+  @spec structural_equality_pair?(Types.expr(), Types.expr(), Types.compile_env()) :: boolean()
+
+  defp structural_equality_pair?(left, right, env) do
+    structural_equality_operand?(left, env) or structural_equality_operand?(right, env)
+  end
+
+  @spec structural_equality_operand?(map() | Types.expr(), Types.compile_env()) :: boolean()
+
+  defp structural_equality_operand?(%{op: :constructor, name: name}, _env)
+       when name in ["Just", "Nothing", "Ok", "Err", "Maybe.Just", "Maybe.Nothing", "Result.Ok", "Result.Err"],
+       do: true
+
+  defp structural_equality_operand?(%{op: :call, name: name}, _env)
+       when name in ["Just", "Nothing", "Ok", "Err"],
+       do: true
+
+  defp structural_equality_operand?(%{op: :qualified_call, target: target}, _env)
+       when target in ["Maybe.Just", "Maybe.Nothing", "Result.Ok", "Result.Err"],
+       do: true
+
+  defp structural_equality_operand?(%{op: :runtime_call, function: function}, _env)
+       when function in [
+              "elmc_maybe_just",
+              "elmc_maybe_just_own",
+              "elmc_maybe_nothing",
+              "maybe_just",
+              "maybe_just_own",
+              "maybe_nothing"
+            ],
+       do: true
+
+  defp structural_equality_operand?(expr, env) do
+    case TypedReturn.expr_type(expr, env) do
+      "Maybe" <> _ -> true
+      "Result" <> _ -> true
+      "List" <> _ -> true
+      "(" <> _ -> true
+      type when is_binary(type) -> String.contains?(type, "{")
+      _ -> false
     end
   end
 

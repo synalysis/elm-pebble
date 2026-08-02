@@ -2,7 +2,6 @@ defmodule Elmc.Backend.Pebble.SourceWriter.DispatchCore.TagDispatch.Records.Reco
   @moduledoc false
   alias Elmc.Types, as: Types
 
-
   alias Elmc.Backend.Pebble.Types
 
   @spec body() :: Types.c_source()
@@ -16,7 +15,12 @@ defmodule Elmc.Backend.Pebble.SourceWriter.DispatchCore.TagDispatch.Records.Reco
             const int64_t *field_values) {
           ELMC_PEBBLE_GENERATED_TRACE_ENTER("elmc_pebble_dispatch_tag_record_int_fields");
           if (!app || !app->initialized) ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_dispatch_tag_record_int_fields", -1);
-          if (field_count <= 0 || !field_names || !field_values) ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_dispatch_tag_record_int_fields", -3);
+          if (field_count <= 0 || !field_values) ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_dispatch_tag_record_int_fields", -3);
+          #if ELMC_PEBBLE_DEBUG_LOGS
+          if (!field_names) ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_dispatch_tag_record_int_fields", -3);
+          #else
+          (void)field_names;
+          #endif
 
           RC Rc = RC_SUCCESS;
           ElmcValue *tag_value = NULL;

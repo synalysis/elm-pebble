@@ -196,6 +196,7 @@ defmodule Elmc.DirectRenderListLoopPlansTest do
 
     assert view_body =~ "direct_item_i_"
     assert draw_body =~ "ELMC_RENDER_OP_LINE"
+    assert view_body =~ ~r/drawTick_commands_append\([^\n]+\);\s*\n\s*ELMC_RELEASE\(owned\[\d+\]\)/
     refute view_body =~ "elmc_list_range"
     refute view_body =~ "elmc_list_filter"
     refute view_body =~ "elmc_list_from_int_array"

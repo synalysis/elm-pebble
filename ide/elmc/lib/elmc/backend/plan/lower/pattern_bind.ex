@@ -6,6 +6,8 @@ defmodule Elmc.Backend.Plan.Lower.PatternBind do
   alias Elmc.Backend.Plan.Types
   alias Elmc.Backend.Plan.{Builder, Context}
   alias Elmc.Backend.Plan.Lower.{Expr, Record}
+  alias Elmc.Backend.CCodegen.Native.RecordFields
+  alias Elmc.Backend.CCodegen.TypeParsing
   alias ElmEx.IR.TypeSignature
 
   @spec bind(Types.pattern(), Context.t(), Builder.t(), integer()) ::
@@ -413,6 +415,134 @@ defmodule Elmc.Backend.Plan.Lower.PatternBind do
   end
 
   defp maybe_enrich_payload_arg_ctx(ctx, _arg_pattern, _pattern), do: ctx
+
+  @doc """
+  Attach the concrete Maybe payload type to a `Just x` / catch-all payload bind.
+
+  `Maybe.Just`'s ctor payload spec is the type variable `a`, which
+  `enrich_constructor_bind_ctx/3` correctly rejects. Without the outer
+  `Maybe T` from the subject (`model.now`), field access on `x` falls back to
+  the smallest ambiguous shape (YES: `TickSpec.minute@0` instead of
+  `CurrentDateTime.minute@5`).
+  """
+  @spec enrich_just_payload_type(Context.t(), Types.pattern(), Types.expr() | nil) :: Context.t()
+  def enrich_just_payload_type(ctx, pattern, subject_expr)
+      when is_map(ctx) and is_map(pattern) do
+    case just_payload_bind_name(pattern) do
+      name when is_binary(name) ->
+        case maybe_payload_type_from_subject(ctx, subject_expr) do
+          type when is_binary(type) ->
+            if useful_payload_type_spec?(type) do
+              ctx
+              |> Context.put_local_type(name, type)
+              |> maybe_put_inferred_param_fields(name, type)
+            else
+              ctx
+            end
+
+          _ ->
+            ctx
+        end
+
+      _ ->
+        ctx
+    end
+  end
+
+  def enrich_just_payload_type(ctx, _pattern, _subject_expr), do: ctx
+
+  @spec just_payload_bind_name(Types.pattern()) :: String.t() | nil
+  defp just_payload_bind_name(%{kind: :constructor, arg_pattern: %{kind: :var, name: name}})
+       when is_binary(name),
+       do: name
+
+  defp just_payload_bind_name(%{kind: :constructor, bind: bind} = pattern)
+       when is_binary(bind) do
+    # `Just x` stores the payload name in `:bind` with no/nil arg_pattern.
+    # `(Just …) as alias` keeps `:bind` for the outer Maybe — skip that here.
+    if is_map(Map.get(pattern, :arg_pattern)), do: nil, else: bind
+  end
+
+  defp just_payload_bind_name(%{kind: :var, name: name}) when is_binary(name), do: name
+
+  defp just_payload_bind_name(%{kind: :qualified_constructor} = pattern) do
+    pattern
+    |> Map.put(:kind, :constructor)
+    |> Map.put_new(:resolved_name, Map.get(pattern, :name))
+    |> just_payload_bind_name()
+  end
+
+  defp just_payload_bind_name(_), do: nil
+
+  @spec maybe_payload_type_from_subject(Context.t(), Types.expr() | nil) :: String.t() | nil
+  defp maybe_payload_type_from_subject(ctx, subject_expr) when is_map(subject_expr) do
+    env = field_type_env(ctx)
+
+    case subject_expr do
+      %{op: :var, name: name} when is_binary(name) ->
+        unwrap_maybe_type(Context.local_type(ctx, name) || Map.get(env.__var_types__, name))
+
+      %{op: :field_access, arg: arg, field: field} when is_binary(field) ->
+        unwrap_maybe_type(RecordFields.field_type(env, arg, field))
+
+      _ ->
+        nil
+    end
+  end
+
+  defp maybe_payload_type_from_subject(_ctx, _), do: nil
+
+  @spec field_type_env(Context.t()) :: map()
+  defp field_type_env(%Context{} = ctx) do
+    var_types =
+      (ctx.local_types || %{})
+      |> Map.merge(param_types_from_decl(ctx))
+
+    %{
+      __module__: ctx.module || "Main",
+      __var_types__: var_types,
+      __record_field_types__: Process.get(:elmc_record_field_types, %{}),
+      __record_field_kinds__: Process.get(:elmc_record_field_kinds, %{})
+    }
+  end
+
+  defp field_type_env(_), do: %{__module__: "Main", __var_types__: %{}, __record_field_types__: %{}, __record_field_kinds__: %{}}
+
+  @spec param_types_from_decl(Context.t()) :: map()
+  defp param_types_from_decl(%Context{decl_map: decl_map, module: module, params: params, function_name: fun})
+       when is_map(decl_map) and is_binary(module) and is_binary(fun) and is_list(params) do
+    case Map.get(decl_map, {module, fun}) do
+      %{type: type} when is_binary(type) ->
+        case TypeParsing.function_arg_types(type) do
+          arg_types when is_list(arg_types) ->
+            arg_types
+            |> Enum.zip(params)
+            |> Enum.reduce(%{}, fn {arg_type, name}, acc ->
+              if is_binary(name) and is_binary(arg_type),
+                do: Map.put(acc, name, arg_type),
+                else: acc
+            end)
+
+          _ ->
+            %{}
+        end
+
+      _ ->
+        %{}
+    end
+  end
+
+  defp param_types_from_decl(_), do: %{}
+
+  @spec unwrap_maybe_type(String.t() | nil) :: String.t() | nil
+  defp unwrap_maybe_type(type) when is_binary(type) do
+    case Regex.run(~r/^Maybe\s+(.+)$/s, String.trim(type)) do
+      [_, inner] -> String.trim(inner)
+      _ -> nil
+    end
+  end
+
+  defp unwrap_maybe_type(_), do: nil
 
   @spec enrich_constructor_bind_ctx(Context.t(), String.t(), Types.pattern()) :: Context.t()
 

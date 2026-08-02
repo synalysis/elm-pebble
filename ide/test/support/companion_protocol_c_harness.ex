@@ -861,7 +861,8 @@ defmodule Ide.CompanionProtocolCTestHarness do
     int elmc_pebble_dispatch_tag_payload(ElmcPebbleApp *app, int64_t tag, ElmcValue *payload) {
       (void)app;
       (void)tag;
-      elmc_release(payload);
+      (void)payload;
+      /* Borrow semantics: caller retains ownership of payload. */
       return 0;
     }
 

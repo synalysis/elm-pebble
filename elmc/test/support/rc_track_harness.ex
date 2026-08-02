@@ -5,7 +5,59 @@ defmodule Elmc.Test.RcTrackHarness do
 
   @runtime_link_stub Path.join(__DIR__, "elmc_runtime_link_stubs.c")
   @harness_helpers_c Path.join(__DIR__, "elmc_harness_helpers.c")
+  @spy_c Path.join(__DIR__, "pebble_sdk_spy.c")
+  @replay_c Path.join(__DIR__, "elmc_scene_sdk_replay.c")
   @support_dir __DIR__
+
+  @spec tea_scenario_support_sources() :: [String.t()]
+  def tea_scenario_support_sources, do: [@spy_c, @replay_c]
+
+  @spec pebble_harness_sources(String.t(), String.t(), [String.t()]) :: [String.t()]
+  def pebble_harness_sources(out_dir, harness_path, extra \\ []) do
+    [
+      Path.join(out_dir, "runtime/elmc_runtime.c"),
+      Path.join(out_dir, "ports/elmc_ports.c"),
+      Path.join(out_dir, "c/elmc_generated.c"),
+      Path.join(out_dir, "c/elmc_worker.c"),
+      Path.join(out_dir, "c/elmc_pebble.c")
+    ] ++ extra ++ tea_scenario_support_sources() ++ [harness_path]
+  end
+
+  @spec write_trig_stubs!(String.t()) :: :ok
+  def write_trig_stubs!(out_dir) do
+    File.write!(
+      Path.join(out_dir, "c/pebble_trig_host_stubs.h"),
+      """
+      #ifndef PEBBLE_TRIG_HOST_STUBS_H
+      #define PEBBLE_TRIG_HOST_STUBS_H
+      #include <stdint.h>
+      #ifndef TRIG_MAX_RATIO
+      #define TRIG_MAX_RATIO 16384
+      #endif
+      int32_t sin_lookup(int32_t angle);
+      int32_t cos_lookup(int32_t angle);
+      #endif
+      """
+    )
+
+    File.write!(
+      Path.join(out_dir, "c/pebble_trig_host_stubs.c"),
+      """
+      #include <math.h>
+      #include "pebble_trig_host_stubs.h"
+      int32_t sin_lookup(int32_t angle) {
+        double rad = (double)angle * 2.0 * 3.141592653589793 / 65536.0;
+        return (int32_t)(sin(rad) * (double)TRIG_MAX_RATIO);
+      }
+      int32_t cos_lookup(int32_t angle) {
+        double rad = (double)angle * 2.0 * 3.141592653589793 / 65536.0;
+        return (int32_t)(cos(rad) * (double)TRIG_MAX_RATIO);
+      }
+      """
+    )
+
+    :ok
+  end
 
   @spec harness_helpers_source() :: String.t()
   def harness_helpers_source, do: @harness_helpers_c
@@ -188,7 +240,61 @@ defmodule Elmc.Test.RcTrackHarness do
       :ok
     end)
 
-    System.cmd(binary_path, [], stderr_to_stdout: true)
+    case Keyword.get(opts, :valgrind) do
+      true ->
+        run_under_valgrind(binary_path, opts)
+
+      vg_opts when is_list(vg_opts) ->
+        run_under_valgrind(binary_path, Keyword.merge(opts, vg_opts))
+
+      _ ->
+        System.cmd(binary_path, [], stderr_to_stdout: true)
+    end
+  end
+
+  @doc """
+  Run a host harness binary under valgrind.
+
+  Defaults target ownership/double-free bugs (`Invalid free`), not leak accounting
+  (RC track covers leaks). Pass `valgrind: true` or a keyword list to `run_harness!/4`.
+  """
+  @spec run_under_valgrind(String.t(), keyword()) :: {String.t(), non_neg_integer()}
+  def run_under_valgrind(binary_path, opts \\ []) do
+    valgrind = System.find_executable("valgrind") || flunk("valgrind not available")
+
+    extra_args = Keyword.get(opts, :valgrind_args, [])
+
+    args =
+      [
+        "--error-exitcode=99",
+        "--track-origins=yes",
+        "--leak-check=no",
+        "--show-leak-kinds=none"
+      ] ++ extra_args ++ [binary_path]
+
+    System.cmd(valgrind, args, stderr_to_stdout: true)
+  end
+
+  @spec assert_no_invalid_free!(String.t()) :: :ok
+  def assert_no_invalid_free!(out) do
+    cond do
+      String.contains?(out, "Invalid free") or String.contains?(out, "Invalid write") or
+          String.contains?(out, "Invalid read") ->
+        flunk("valgrind reported memory errors (ownership/DF class):\n#{out}")
+
+      valgrind_error_count(out) > 0 ->
+        flunk("valgrind ERROR SUMMARY non-zero:\n#{out}")
+
+      true ->
+        :ok
+    end
+  end
+
+  defp valgrind_error_count(out) do
+    case Regex.run(~r|ERROR SUMMARY:\s*(\d+)|, out) do
+      [_, count] -> String.to_integer(count)
+      _ -> 0
+    end
   end
 
   @spec assert_balanced!(String.t()) :: :ok

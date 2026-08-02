@@ -137,7 +137,14 @@ defmodule Elmc.Backend.C.Lower.Instr do
         base = slot_ref(instr.args.base, slots, opts)
         field = instr.args.field
         index = record_get_index_ref(field, Map.get(instr.args, :field_index, "0"))
-        assign_value_return(rc?, dest, "elmc_record_get_index(#{base}, #{index})")
+        # elmc_record_get_index returns a borrow; plan effects mark produces {:owned, dest}
+        # so the epilogue will release this slot. Retain or the frame frees a live field
+        # still owned by `base` (YES scheduleCompanionFetches → MinuteChanged UAF).
+        assign_value_return(
+          rc?,
+          dest,
+          "elmc_retain(elmc_record_get_index(#{base}, #{index}))"
+        )
 
       :record_update ->
         emit_record_update(instr, slots, rc?, dest, opts)
@@ -845,6 +852,15 @@ defmodule Elmc.Backend.C.Lower.Instr do
         eq_expr = "(#{left} == #{right})"
         if kind == :eq, do: eq_expr, else: "(!#{eq_expr})"
 
+      # Structural Maybe/Result/List/… equality only. Bare `:pointer` (default when
+      # mode is omitted — e.g. emit_test_maybe_just's native-bool vs 0) must keep
+      # the int/pointer fallthrough; elmc_value_equal requires ElmcValue*.
+      kind in [:eq, :neq] and compare_mode == :value ->
+        left = slot_ref(left_reg, slots, opts)
+        right = slot_ref(right_reg, slots, opts)
+        eq_expr = "elmc_value_equal(#{left}, #{right})"
+        if kind == :eq, do: eq_expr, else: "(!#{eq_expr})"
+
       compare_mode == :float_boxed ->
         compare_native_c_expr(
           kind,
@@ -1072,7 +1088,8 @@ defmodule Elmc.Backend.C.Lower.Instr do
 
   @spec emit_record_update(map(), Types.slot_map(), boolean(), String.t(), keyword()) :: String.t()
   defp emit_record_update(instr, slots, rc?, dest, opts) do
-    base = slot_ref(instr.args.base, slots, opts)
+    base_reg = instr.args.base
+    base = slot_ref(base_reg, slots, opts)
     field = Map.get(instr.args, :field)
     index = record_get_index_ref(field, Map.get(instr.args, :field_index, "0"))
     value_reg = instr.args.value
@@ -1086,35 +1103,68 @@ defmodule Elmc.Backend.C.Lower.Instr do
           {"elmc_record_update_index_cow_drop", slot_ref(value_reg, slots, opts)}
       end
 
-    assign =
-      if rc? do
-        rc_assign(true, dest, fn_name, [base, index, value])
-      else
-        fn_out_tail? = instr.dest in [:fn_out, :branch_out]
+    # Borrowed params / non-owned bases must not be passed to *_cow_drop directly:
+    # the copy path releases `record`, which would free the caller's value (YES
+    # scheduleCompanionFetches → second MinuteChanged → heap corruption).
+    borrow_base? = is_integer(base_reg) and not is_integer(Map.get(slots, base_reg))
 
-        if fn_out_tail? do
-          wrap_non_rc_rc_allocator_return(fn_name, [base, index, value], instr, slots, opts)
+    if borrow_base? and rc? and instr.dest not in [:fn_out, :branch_out] do
+      emit_record_update_borrow_base(fn_name, dest, base, index, value)
+    else
+      assign =
+        if rc? do
+          rc_assign(true, dest, fn_name, [base, index, value])
         else
-          rc_assign(false, dest, fn_name, [base, index, value])
+          fn_out_tail? = instr.dest in [:fn_out, :branch_out]
+
+          if fn_out_tail? do
+            wrap_non_rc_rc_allocator_return(fn_name, [base, index, value], instr, slots, opts)
+          else
+            rc_assign(false, dest, fn_name, [base, index, value])
+          end
         end
-      end
 
-    alias_guard =
-      if instr.dest in [:fn_out, :branch_out] and not rc? do
-        ""
-      else
-        cow_drop_alias_null(
-          instr.dest,
-          instr.args.base,
-          Map.get(instr.args, :retain_copy, false),
-          slots,
-          opts
-        )
-      end
+      alias_guard =
+        if instr.dest in [:fn_out, :branch_out] and not rc? do
+          ""
+        else
+          cow_drop_alias_null(
+            instr.dest,
+            base_reg,
+            Map.get(instr.args, :retain_copy, false),
+            slots,
+            opts
+          )
+        end
 
-    [assign, alias_guard]
-    |> Enum.reject(&(&1 == ""))
-    |> Enum.join("\n")
+      [assign, alias_guard]
+      |> Enum.reject(&(&1 == ""))
+      |> Enum.join("\n")
+    end
+  end
+
+  # Retain a borrowed record into a local, cow_drop that local, then transfer or
+  # drop the local without a second release (cow_drop already released on copy).
+  @spec emit_record_update_borrow_base(String.t(), String.t(), String.t(), String.t(), String.t()) ::
+          String.t()
+
+  defp emit_record_update_borrow_base(fn_name, dest, base, index, value)
+       when is_binary(fn_name) and is_binary(dest) and is_binary(base) and is_binary(index) and
+              is_binary(value) do
+    """
+    {
+      ElmcValue *__cow_base = elmc_retain(#{base});
+      Rc = #{fn_name}(&#{dest}, __cow_base, #{index}, #{value});
+      if (Rc == RC_SUCCESS) {
+        /* in-place: transfer retain to dest; copy: cow_drop already released */
+        __cow_base = NULL;
+      } else {
+        elmc_release(__cow_base);
+      }
+      CHECK_RC(Rc);
+    }
+    """
+    |> String.trim()
   end
 
   # Prefer an already-lowered native int name; do not invent `plan_native_int_N`
@@ -3328,7 +3378,7 @@ defmodule Elmc.Backend.C.Lower.Instr do
 
   @spec emit_list_cursor_map(map(), Types.slot_map(), boolean(), String.t(), keyword()) :: String.t()
 
-  defp emit_list_cursor_map(%{dest: dest_reg, args: args}, slots, rc?, dest, opts) do
+  defp emit_list_cursor_map(%{dest: dest_reg, args: args}, slots, _rc?, _dest, opts) do
     start_s =
       if Map.get(args, :start_literal?) do
         Integer.to_string(args.start)
@@ -3361,7 +3411,11 @@ defmodule Elmc.Backend.C.Lower.Instr do
     # or `List.map f (List.range lo hi)` silently keeps only the last mapped
     # element instead of the full list (TcoCaptureClober: `String.join`
     # over a 6-element mapped list saw only a 1-element "list").
-    body = """
+    #
+    # Result list is uniquely owned by #{fwd_head} — transfer into dest (no
+    # retain). Retaining without releasing the local leaks the spine and every
+    # mapped element (YES drawOuterScale TickSpec Int/Record orphans).
+    """
     ElmcValue *#{fwd_head} = elmc_list_nil();
     for (elmc_int_t #{idx} = #{start_s}; #{idx} <= #{end_s}; #{idx}++) {
       ElmcValue *#{item} = NULL;
@@ -3385,13 +3439,9 @@ defmodule Elmc.Backend.C.Lower.Instr do
         #{fwd_head} = next;
       }
     }
+    #{dest_slot} = #{fwd_head};
     """
-
-    if rc? and dest != "*out" do
-      body <> "\n#{retain_into_owned(dest_slot, fwd_head)}"
-    else
-      body <> "\n#{dest_slot} = #{fwd_head};"
-    end
+    |> String.trim()
   end
 
   @spec emit_list_walk_map(map(), Types.slot_map(), boolean(), String.t(), keyword()) :: String.t()
@@ -4280,7 +4330,7 @@ defmodule Elmc.Backend.C.Lower.Instr do
         decl <> "\n" <> call
 
       :values ->
-        emit_const_static_list_from_regs(args, slots, dest, rc?, values_id, "plan_list_items", "elmc_list_from_values_take", opts)
+        emit_const_static_list_from_regs(args, slots, dest, rc?, values_id, "plan_list_items", "elmc_list_from_values", opts)
 
       :record_array ->
         emit_const_static_list_from_regs(
@@ -4633,10 +4683,6 @@ defmodule Elmc.Backend.C.Lower.Instr do
 
   @spec owned_transferring_consume_instr?(map() | term()) :: boolean()
 
-  defp owned_transferring_consume_instr?(%{op: :const_static_list, args: %{kind: kind}})
-       when kind in [:values, :record_array],
-       do: true
-
   defp owned_transferring_consume_instr?(%{op: :call_runtime, args: %{builtin: id}}) do
     id in [:record_new, :record_new_take, :record_new_values_ints, :tuple2_take] or
       RuntimeBuiltins.ownership_transfer?(id)
@@ -4829,29 +4875,36 @@ defmodule Elmc.Backend.C.Lower.Instr do
 
   defp cow_drop_alias_null(dest, base_reg, retain_copy?, slots, opts)
        when is_integer(base_reg) and is_boolean(retain_copy?) do
-    case Map.get(slots, base_reg) do
-      base_idx when is_integer(base_idx) ->
-        dest_s = format_dest(dest, slots, opts)
-        base_s = slot_ref(base_reg, slots, opts)
+    dest_s = format_dest(dest, slots, opts)
+    base_s = slot_ref(base_reg, slots, opts)
 
-        if dest_s != base_s do
-          if retain_copy? do
-            """
-            if (#{dest_s} == #{base_s}) {
-              #{dest_s} = elmc_retain(#{dest_s});
-            }
-            #{base_s} = NULL;
-            """
-            |> String.trim()
-          else
-            "#{base_s} = NULL;"
-          end
+    cond do
+      dest_s == "" or dest_s == base_s ->
+        ""
+
+      is_integer(Map.get(slots, base_reg)) ->
+        if retain_copy? do
+          """
+          if (#{dest_s} == #{base_s}) {
+            #{dest_s} = elmc_retain(#{dest_s});
+          }
+          #{base_s} = NULL;
+          """
+          |> String.trim()
         else
-          ""
+          "#{base_s} = NULL;"
         end
 
-      _ ->
-        ""
+      true ->
+        # Borrowed param / non-owned base: in-place cow_drop aliases `dest` to
+        # `base` without a retain. Epilogue LIFO would then steal a retain and
+        # free the caller's model while the result tuple still points at it.
+        """
+        if (#{dest_s} == #{base_s}) {
+          #{dest_s} = elmc_retain(#{dest_s});
+        }
+        """
+        |> String.trim()
     end
   end
 

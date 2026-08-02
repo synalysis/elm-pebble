@@ -1141,6 +1141,17 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
     Elmc.Backend.Plan.Lower.ListRecord.try_compile_filter(expr, ctx, b)
   end
 
+  defp try_ir_specialized_runtime_call(%{function: fun, args: [left, right]}, ctx, b)
+       when fun in ["elmc_basics_max", "elmc_basics_min"] do
+    name = if fun == "elmc_basics_max", do: "Basics.max", else: "Basics.min"
+    Elmc.Backend.Plan.Lower.IntCall.compile(%{op: :call, name: name, args: [left, right]}, ctx, b)
+  end
+
+  defp try_ir_specialized_runtime_call(%{function: fun} = expr, ctx, b)
+       when fun in ["elmc_tuple_map_first", "elmc_tuple_map_second", "elmc_tuple_map_both"] do
+    Elmc.Backend.Plan.Lower.TupleMap.try_compile(expr, ctx, b)
+  end
+
   defp try_ir_specialized_runtime_call(_, _, _), do: :unsupported
 
   @spec retain_last_hof_operand_if_borrowed(Builder.t(), [Types.reg()]) ::
@@ -2384,7 +2395,7 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
   end
 
   # List.foldl / List.foldr return the accumulator type.
-  defp record_shape_fields_from_value(%{op: :qualified_call, target: target, args: args}, ctx)
+  defp record_shape_fields_from_value(%{op: :qualified_call, target: target, args: args} = expr, ctx)
        when is_binary(target) and is_list(args) do
     if String.ends_with?(target, ".foldl") or String.ends_with?(target, ".foldr") do
       case args do
@@ -2392,19 +2403,102 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
         _ -> nil
       end
     else
-      nil
+      alias_shape_fields_from_typed_expr(expr, ctx)
     end
   end
 
-  defp record_shape_fields_from_value(%{op: :call, name: name, args: args}, ctx)
-       when name in ["foldl", "foldr"] and is_list(args) do
-    case args do
-      [_, acc, _] -> record_shape_fields_from_value(acc, ctx)
+  defp record_shape_fields_from_value(%{op: :call, name: name, args: args} = expr, ctx)
+       when is_binary(name) and is_list(args) do
+    if name in ["foldl", "foldr"] do
+      case args do
+        [_, acc, _] -> record_shape_fields_from_value(acc, ctx)
+        _ -> nil
+      end
+    else
+      alias_shape_fields_from_typed_expr(expr, ctx)
+    end
+  end
+
+  # `let next = case msg of … -> step …` — seed full Model fields from arm return
+  # type so `next.best` is not access-inferred as singleton `{best}` → index 0.
+  defp record_shape_fields_from_value(%{op: :case} = expr, ctx),
+    do: alias_shape_fields_from_typed_expr(expr, ctx)
+
+  defp record_shape_fields_from_value(%{op: :if} = expr, ctx),
+    do: alias_shape_fields_from_typed_expr(expr, ctx)
+
+  defp record_shape_fields_from_value(_, _ctx), do: nil
+
+  @spec alias_shape_fields_from_typed_expr(Types.expr(), Context.t()) :: [String.t()] | nil
+
+  defp alias_shape_fields_from_typed_expr(expr, ctx) when is_map(expr) do
+    case TypedReturn.expr_type(expr, let_type_env(ctx)) do
+      type when is_binary(type) -> alias_shape_fields_for_type(type, ctx)
       _ -> nil
     end
   end
 
-  defp record_shape_fields_from_value(_, _ctx), do: nil
+  @spec alias_shape_fields_for_type(String.t(), Context.t()) :: [String.t()] | nil
+
+  defp alias_shape_fields_for_type(type, ctx) when is_binary(type) do
+    shapes = Process.get(:elmc_record_alias_shapes, %{})
+    ctor = type |> Host.normalize_type_name() |> String.split(~r/\s+/, parts: 2) |> hd()
+
+    key =
+      case String.split(ctor, ".") do
+        parts when length(parts) >= 2 ->
+          {mod_parts, [name]} = Enum.split(parts, -1)
+          mod = Enum.join(mod_parts, ".")
+
+          if Map.has_key?(shapes, {mod, name}),
+            do: {mod, name},
+            else: shape_key_by_record_name(shapes, name, ctx)
+
+        _ ->
+          shape_key_by_record_name(shapes, ctor, ctx)
+      end
+
+    case key do
+      k when is_tuple(k) ->
+        case Map.get(shapes, k) do
+          fields when is_list(fields) and fields != [] -> Enum.map(fields, &to_string/1)
+          _ -> nil
+        end
+
+      _ ->
+        nil
+    end
+  end
+
+  defp shape_key_by_record_name(shapes, name, %Context{} = ctx)
+       when is_map(shapes) and is_binary(name) do
+    matches = Enum.filter(shapes, fn {{_mod, n}, _} -> n == name end)
+
+    case matches do
+      [{key, _}] ->
+        key
+
+      many when length(many) > 1 ->
+        mod = ctx.module
+
+        case Enum.find(many, fn {{m, _}, _} -> m == mod end) do
+          {key, _} -> key
+          _ -> elem(hd(many), 0)
+        end
+
+      _ ->
+        nil
+    end
+  end
+
+  defp shape_key_by_record_name(shapes, name, _ctx)
+       when is_map(shapes) and is_binary(name) do
+    case Enum.filter(shapes, fn {{_mod, n}, _} -> n == name end) do
+      [{key, _}] -> key
+      [first | _] -> elem(first, 0)
+      _ -> nil
+    end
+  end
 
   @spec compile_letrec_value_bindings([{String.t(), Types.expr()}], Context.t(), Builder.t()) ::
           {:ok, Context.t(), Builder.t()} | :unsupported
@@ -2938,6 +3032,14 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
     end
   end
 
+  defp compile_runtime_call(%{function: fun} = expr, ctx, b)
+       when fun in ["elmc_tuple_map_first", "elmc_tuple_map_second", "elmc_tuple_map_both"] do
+    case Elmc.Backend.Plan.Lower.TupleMap.try_compile(expr, ctx, b) do
+      {:ok, reg, b1} -> {:ok, reg, b1}
+      :unsupported -> compile_runtime_call_default(expr, ctx, b)
+    end
+  end
+
   defp compile_runtime_call(expr, ctx, b), do: compile_runtime_call_default(expr, ctx, b)
 
   @spec compile_runtime_call_default(map() | term(), Context.t(), Builder.t()) ::
@@ -3023,11 +3125,11 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
   @spec compile_const_static_list(term(), Context.t(), Builder.t()) :: Types.compile_result()
 
   def compile_const_static_list(spec, ctx, b) do
-    # List builders take ownership of element regs. Retain-dup first so values that
-    # are still live after the list (e.g. Nonempty extentA [extentB] then use
-    # extentA/extentB again) do not verify as read_after_consume.
-    {spec, b0} = prepare_static_list_consume(spec, b)
-    {dest, b1} = dest_for_builtin(ctx, b0)
+    # Value/record-array list builders borrow elements and retain inside the runtime
+    # (`elmc_list_from_values` / `elmc_list_from_record_array`). Do not retain-dup
+    # + consume — that added a retain hop only so take-based builders could null
+    # copies while originals stayed live.
+    {dest, b1} = dest_for_builtin(ctx, b)
     wrap_catch? = Builder.wrap_fallible_instr_catch?(b1, ctx, true)
 
     b2 = if wrap_catch?, do: Builder.catch_begin(b1), else: b1
@@ -3045,20 +3147,6 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
     {:ok, result, b4}
   end
 
-  @spec prepare_static_list_consume(term(), Builder.t()) :: {term(), Builder.t()}
-
-  defp prepare_static_list_consume({:values, regs}, b) when is_list(regs) do
-    {regs2, b1} = Builder.dup_all_regs_for_record_new_consume(b, regs)
-    {{:values, regs2}, b1}
-  end
-
-  defp prepare_static_list_consume({:record_array, regs}, b) when is_list(regs) do
-    {regs2, b1} = Builder.dup_all_regs_for_record_new_consume(b, regs)
-    {{:record_array, regs2}, b1}
-  end
-
-  defp prepare_static_list_consume(spec, b), do: {spec, b}
-
   @spec static_list_instr(term(), Types.reg() | Types.result_slot()) ::
           {Types.instr_args(), Types.effects()}
 
@@ -3075,11 +3163,11 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
   end
 
   defp static_list_instr({:values, regs}, dest) when is_list(regs) do
-    {%{kind: :values, regs: regs}, Types.fallible_effects(dest, [], regs)}
+    {%{kind: :values, regs: regs}, Types.fallible_effects(dest, regs, [])}
   end
 
   defp static_list_instr({:record_array, regs}, dest) when is_list(regs) do
-    {%{kind: :record_array, regs: regs}, Types.fallible_effects(dest, [], regs)}
+    {%{kind: :record_array, regs: regs}, Types.fallible_effects(dest, regs, [])}
   end
 
   @doc false
@@ -3198,6 +3286,9 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
 
     {borrows, consumes} =
       cond do
+        RuntimeBuiltins.retains_operand_result?(id) ->
+          {arg_regs, []}
+
         id in @borrow_list_view_builtins and length(arg_regs) == 1 ->
           {arg_regs, []}
 
@@ -3235,15 +3326,41 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
           Builder.partition_call_args(b2a, arg_regs)
       end
 
-    effects =
-      if is_integer(dest) do
-        if fallible? do
-          Types.fallible_effects(dest, borrows, consumes)
-        else
-          %{produces: {:owned, dest}, consumes: consumes, borrows: borrows, fallible: false}
-        end
+    result_aliases =
+      if RuntimeBuiltins.retains_operand_result?(id) do
+        RuntimeBuiltins.retains_operand_result_aliases(id, arg_regs)
       else
-        %{produces: nil, consumes: consumes, borrows: borrows, fallible: fallible?}
+        []
+      end
+
+    effects =
+      cond do
+        is_integer(dest) and RuntimeBuiltins.retains_operand_result?(id) ->
+          Types.retains_operand_effects(dest, borrows, result_aliases, consumes, fallible?)
+
+        is_integer(dest) and fallible? ->
+          Types.fallible_effects(dest, borrows, consumes)
+
+        is_integer(dest) ->
+          %{
+            produces: {:owned, dest},
+            consumes: consumes,
+            borrows: borrows,
+            result_aliases: [],
+            fallible: false
+          }
+
+        RuntimeBuiltins.retains_operand_result?(id) ->
+          %{
+            produces: nil,
+            consumes: consumes,
+            borrows: borrows,
+            result_aliases: result_aliases,
+            fallible: fallible?
+          }
+
+        true ->
+          %{produces: nil, consumes: consumes, borrows: borrows, result_aliases: [], fallible: fallible?}
       end
 
     {_, b3} =
@@ -3282,7 +3399,10 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
 
     with {:ok, l, b1} <- compile(left, operand_ctx, b),
          {:ok, r, b2} <- compile(right, operand_ctx, b1) do
-      if tuple2_ints_eligible?(left, right, ctx) do
+      # Prefer tuple2_ints when IR is int-shaped OR both compiled regs are already
+      # native-int producers (e.g. Int params through `__add__`).
+      if tuple2_ints_eligible?(left, right, ctx) or
+           (native_int_reg_producer?(b2, l, ctx) and native_int_reg_producer?(b2, r, ctx)) do
         compile_runtime_builtin(:tuple2_ints, [l, r], ctx, b2)
       else
         compile_runtime_builtin(:tuple2, [l, r], ctx, b2)
@@ -3291,6 +3411,36 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
       _ -> :unsupported
     end
   end
+
+  defp native_int_reg_producer?(b, reg, ctx) when is_integer(reg) do
+    block_instrs =
+      Enum.flat_map(b.blocks, fn
+        %{instrs: is} when is_list(is) -> is
+        _ -> []
+      end)
+
+    current_instrs =
+      case Map.get(b, :current_block) do
+        %{instrs: is} when is_list(is) -> is
+        _ -> []
+      end
+
+    case Enum.find(block_instrs ++ current_instrs, &(&1.dest == reg)) do
+      %{op: op} when op in [:const_int, :int_arith, :record_get_int, :boxed_tag_peel] ->
+        true
+
+      %{op: :load_param, args: %{index: idx}} when is_integer(idx) ->
+        native_int_param_index?(idx, ctx)
+
+      %{op: :call_runtime, args: %{builtin: :new_int}} ->
+        true
+
+      _ ->
+        false
+    end
+  end
+
+  defp native_int_reg_producer?(_, _, _), do: false
 
   @spec tuple2_ints_eligible?(Types.expr(), Types.expr(), Context.t()) :: boolean()
 

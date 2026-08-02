@@ -11,6 +11,7 @@ defmodule Elmc.CoreComplianceDifferentialTest do
   alias ElmEx.Frontend.Bridge
   alias ElmEx.IR.Lowerer
   alias Elmx.Backend.ElixirCodegen
+  alias Elmx.CoreComplianceBasicsCases
   alias Elmx.IRDigest
   alias Elmx.Runtime.Loader, as: ElmxLoader
   alias Elmc.TestSupport.CachedCompile
@@ -19,10 +20,12 @@ defmodule Elmc.CoreComplianceDifferentialTest do
   @elmx_project Path.expand("../../elmx/test/fixtures/simple_project", __DIR__)
   @elmc_fixture Path.expand("fixtures/simple_project", __DIR__)
 
-  # Bytecode-safe cases only. Zero-arity Dict/Set/Array CAFs and string ABI still
-  # return nil from the bytecode loader — expand when those ABIs stabilize.
+  # Bytecode-safe cases only. Dict/Set/Array CAFs and string ABI still return nil
+  # from the bytecode loader — expand when those ABIs stabilize.
+  # Basics Int oracles take a dummy Int arg (CAF-safe) and share expected values
+  # with elmx via CoreComplianceBasicsCases.
   # Maybe.Just: elmx uses {:Just, n}; elmc bytecode uses {:just, n}.
-  @cases [
+  @legacy_cases [
     {:foldSum, [[1, 2, 3]], [[1, 2, 3]], 6},
     {:tuplePairFirst, [7, 9], [7, 9], 7},
     {:maybeInc, [nil], [nil], 0},
@@ -66,9 +69,16 @@ defmodule Elmc.CoreComplianceDifferentialTest do
                plan_ir_strict: false
              })
 
-    for {name, elmx_args, elmc_args, expected} <- @cases do
+    basics_cases =
+      for {name, args, expected} <- CoreComplianceBasicsCases.cases() do
+        {name, args, args, expected}
+      end
+
+    for {name, elmx_args, elmc_args, expected} <- @legacy_cases ++ basics_cases do
       elmx_result = apply(elmx, String.to_atom("elmx_fn_CoreCompliance_#{name}"), elmx_args)
-      assert elmx_result == expected
+
+      assert elmx_result == expected,
+             "elmx #{name}#{inspect(elmx_args)} expected #{expected}, got #{inspect(elmx_result)}"
 
       assert {:ok, elmc_result} =
                Loader.run_manifest_entry(out_dir, {"CoreCompliance", Atom.to_string(name)},

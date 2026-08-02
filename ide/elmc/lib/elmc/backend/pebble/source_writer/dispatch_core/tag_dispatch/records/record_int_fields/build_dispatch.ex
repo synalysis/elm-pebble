@@ -2,7 +2,6 @@ defmodule Elmc.Backend.Pebble.SourceWriter.DispatchCore.TagDispatch.Records.Reco
   @moduledoc false
   alias Elmc.Types, as: Types
 
-
   alias Elmc.Backend.Pebble.Types
 
   @spec body() :: Types.c_source()
@@ -16,7 +15,11 @@ defmodule Elmc.Backend.Pebble.SourceWriter.DispatchCore.TagDispatch.Records.Reco
               CHECK_RC(Rc);
               built = i + 1;
             }
+            #if ELMC_PEBBLE_DEBUG_LOGS
             Rc = elmc_record_new_take(&payload_value, field_count, field_names, record_values);
+            #else
+            Rc = elmc_record_new_values_take(&payload_value, field_count, record_values);
+            #endif
             CHECK_RC(Rc);
             free(record_values);
             record_values = NULL;

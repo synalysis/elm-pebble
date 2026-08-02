@@ -156,16 +156,37 @@ defmodule Ide.Debugger.CompanionBridge do
     |> normalize_weather_info_fields()
   end
 
-  def weather_info(_weather), do: %{}
+  def weather_info(_weather), do: normalize_weather_info_fields(%{})
 
   @spec normalize_weather_info_fields(Types.wire_map()) :: Types.wire_map()
   defp normalize_weather_info_fields(info) when is_map(info) do
     info
+    |> ensure_weather_temperature_c()
     |> normalize_weather_condition_field()
     |> wrap_optional_weather_int_field("humidityPercent")
     |> wrap_optional_weather_int_field("pressureHpa")
     |> wrap_optional_weather_int_field("windKph")
     |> wrap_optional_weather_int_field("windDirectionDeg")
+  end
+
+  @spec ensure_weather_temperature_c(map()) :: map()
+  defp ensure_weather_temperature_c(info) when is_map(info) do
+    case Map.get(info, "temperatureC") do
+      value when is_integer(value) ->
+        info
+
+      value when is_float(value) ->
+        Map.put(info, "temperatureC", trunc(value))
+
+      value when is_binary(value) ->
+        case Integer.parse(value) do
+          {n, _} -> Map.put(info, "temperatureC", n)
+          :error -> Map.put(info, "temperatureC", 0)
+        end
+
+      _ ->
+        Map.put(info, "temperatureC", 0)
+    end
   end
 
   @spec normalize_weather_condition_field(term()) :: term()
@@ -186,7 +207,7 @@ defmodule Ide.Debugger.CompanionBridge do
         )
 
       _ ->
-        info
+        Map.put(info, "condition", %{"ctor" => "UnknownWeather", "args" => []})
     end
   end
 
@@ -194,9 +215,21 @@ defmodule Ide.Debugger.CompanionBridge do
 
   defp wrap_optional_weather_int_field(info, key) when is_map(info) and is_binary(key) do
     case Map.get(info, key) do
-      value when is_integer(value) -> Map.put(info, key, wire_just(value))
-      %{"ctor" => _} = value -> Map.put(info, key, value)
-      _ -> info
+      value when is_integer(value) ->
+        Map.put(info, key, wire_just(value))
+
+      %{"ctor" => "Just", "args" => [_]} = value ->
+        Map.put(info, key, value)
+
+      %{"ctor" => "Nothing", "args" => []} = value ->
+        Map.put(info, key, value)
+
+      %{"ctor" => _} = value ->
+        Map.put(info, key, value)
+
+      _ ->
+        # elmx record field access expects Maybe wire values, not missing/nil slots.
+        Map.put(info, key, wire_nothing())
     end
   end
 

@@ -4,6 +4,7 @@ defmodule Ide.Debugger.YesWatchfaceReloadTest do
   alias Ide.Debugger
   alias Ide.Debugger.RuntimeExecutor
   alias Ide.Projects
+  alias Ide.Test.DebuggerTimelineAssertions, as: TimelineAssertions
   alias IdeWeb.WorkspaceLive.DebuggerPage.ModelMetadata
 
   test "companion CurrentTime step emits phone_to_watch protocol followups" do
@@ -159,6 +160,18 @@ defmodule Ide.Debugger.YesWatchfaceReloadTest do
 
   @tag timeout: 300_000
   test "yes watchface reload keeps companion preferences bridge and delivers timezone and weather" do
+    previous_async_protocol = Application.get_env(:ide, :debugger_async_protocol_delivery)
+    # Match live/dev: async protocol delivery is on by default and must not double-apply.
+    Application.put_env(:ide, :debugger_async_protocol_delivery, true)
+
+    on_exit(fn ->
+      if is_nil(previous_async_protocol) do
+        Application.delete_env(:ide, :debugger_async_protocol_delivery)
+      else
+        Application.put_env(:ide, :debugger_async_protocol_delivery, previous_async_protocol)
+      end
+    end)
+
     slug = "yes-reload-#{System.unique_integer([:positive])}"
 
     assert {:ok, project} =
@@ -214,6 +227,25 @@ defmodule Ide.Debugger.YesWatchfaceReloadTest do
              row.target == "phone" and
                is_binary(row.message) and String.starts_with?(row.message, "CurrentTime")
            end)
+
+    bridge_current_time_rows =
+      (state.debugger_timeline || [])
+      |> Enum.filter(fn row ->
+        row.target in ["phone", "companion"] and row.type == "update" and
+          is_binary(row.message) and String.starts_with?(row.message, "CurrentTime") and
+          row.message_source in ["companion_bridge_command", "runtime_followup"]
+      end)
+
+    assert bridge_current_time_rows != [],
+           "CurrentTime must arrive via companion bridge/runtime followup after geolocation"
+
+    timeline = state.debugger_timeline || []
+
+    # Live/dev uses async protocol delivery; consecutive identical updates mean the
+    # debugger applied the same AppMessage twice (watch would not).
+    TimelineAssertions.refute_consecutive_duplicate_updates(timeline)
+    TimelineAssertions.refute_consecutive_duplicate_updates(timeline, "watch")
+    TimelineAssertions.refute_consecutive_duplicate_updates(timeline, "phone")
 
     current_time_errors =
       (state.debugger_timeline || [])

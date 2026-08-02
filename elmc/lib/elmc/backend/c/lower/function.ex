@@ -6,7 +6,7 @@ defmodule Elmc.Backend.C.Lower.Function do
 
 
   alias Elmc.Backend.C.Lower.{EphemeralBox, Frame, Instr, Lambda, NativeIntFold, NativeReturn, StringConcat, TagRefs}
-  alias Elmc.Backend.CCodegen.{FunctionCallAbi, FunctionEmit, Fusion, RecordCompile, RcRequired}
+  alias Elmc.Backend.CCodegen.{FunctionCallAbi, FunctionEmit, Fusion, RecordCompile, RcRequired, RetainOperandAlias}
   alias Elmc.Backend.CCodegen.DirectRender.CommandDef
   alias Elmc.Backend.CCodegen.Native.FunctionCall, as: NativeFunctionCall
   alias Elmc.Backend.CCodegen.Util
@@ -971,6 +971,13 @@ defmodule Elmc.Backend.C.Lower.Function do
     {reassignment, live} = owned_reassign_prefix(instr, slots, instr_opts, live)
     Process.put(:elmc_plan_owned_live, live)
     code = Instr.emit(instr, slots, instr_opts)
+
+    alias_xfer =
+      case emit_result_alias_transfer(instr, slots, instr_opts) do
+        "" -> []
+        line -> [line]
+      end
+
     nulls =
       cond do
         # Dest skipped for later reconstruction: do not release its boxed operands here.
@@ -990,7 +997,7 @@ defmodule Elmc.Backend.C.Lower.Function do
     live = clear_record_update_cow_drop_base_live(instr, slots, live)
     Process.put(:elmc_plan_owned_live, live)
 
-    [reassignment, code, nulls]
+    [reassignment, code, alias_xfer, nulls]
     |> List.flatten()
     |> Enum.reject(&(&1 == ""))
   end
@@ -1280,6 +1287,19 @@ defmodule Elmc.Backend.C.Lower.Function do
 
   defp emit_null_consumed_slots(_, _slots, _instr_opts), do: []
 
+  @spec emit_result_alias_transfer(Types.t() | map(), Types.slot_map(), keyword()) :: String.t()
+
+  defp emit_result_alias_transfer(
+         %{op: :call_runtime, dest: dest, effects: %{result_aliases: aliases}},
+         slots,
+         instr_opts
+       )
+       when is_list(aliases) and aliases != [] do
+    RetainOperandAlias.emit_for_plan_dest(dest, aliases, slots, instr_opts)
+  end
+
+  defp emit_result_alias_transfer(_, _, _), do: ""
+
   @spec emit_null_consumed_slots_from_effects(Types.t() | map(), Types.slot_map(), keyword()) :: [String.t()]
 
   defp emit_null_consumed_slots_from_effects(%{effects: %{consumes: consumes}} = instr, slots, instr_opts)
@@ -1378,10 +1398,6 @@ defmodule Elmc.Backend.C.Lower.Function do
   defp retain_owned_transfer_null?(_, _), do: false
 
   @spec transferring_consume_instr?(map() | term(), keyword()) :: boolean()
-
-  defp transferring_consume_instr?(%{op: :const_static_list, args: %{kind: kind}}, _instr_opts)
-       when kind in [:values, :record_array],
-       do: true
 
   defp transferring_consume_instr?(
          %{

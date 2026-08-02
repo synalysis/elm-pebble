@@ -101,11 +101,22 @@ defmodule Elmc.Backend.Plan.Types do
   @type result_slot :: :fn_out | :branch_out | :stream_void
 
   @type owned :: {:owned, reg()}
+  @type immortal :: {:immortal, reg()}
+  @type native_int_produce :: {:native_int, reg()}
+  @type native_bool_produce :: {:native_bool, reg()}
+
+  @type produce ::
+          owned()
+          | immortal()
+          | native_int_produce()
+          | native_bool_produce()
+          | nil
 
   @type effects :: %{
-          optional(:produces) => owned() | nil,
+          optional(:produces) => produce(),
           optional(:consumes) => [reg()],
           optional(:borrows) => [reg()],
+          optional(:result_aliases) => [reg()],
           required(:fallible) => boolean()
         }
 
@@ -158,6 +169,7 @@ defmodule Elmc.Backend.Plan.Types do
           | :render_cmd
           | :render_text_cmd
           | :list_cursor_map
+          | :list_walk_map
           | :pipe_apply_repeat
           | :pebble_sub
           | :forward_ref_set
@@ -246,6 +258,9 @@ defmodule Elmc.Backend.Plan.Types do
       :fusion_kind,
       :fusion_data,
       :native_scalar_return,
+      :native_pair_ret,
+      :native_list_int_pair_arms,
+      :native_list_int_pair_pair_regs,
       :native_scalar_value_return,
       :fusion_emit,
       :stream_mode
@@ -270,7 +285,12 @@ defmodule Elmc.Backend.Plan.Types do
             fusion_c: String.t() | nil,
             fusion_kind: atom() | nil,
             fusion_data: Elmc.Backend.Plan.Types.fusion_data() | nil,
-            native_scalar_return: :native_int | :native_bool | nil,
+            native_scalar_return:
+              :native_int | :native_bool | :native_int_pair | :native_list_int_pair | nil,
+            native_pair_ret: {Elmc.Backend.Plan.Types.reg(), Elmc.Backend.Plan.Types.reg()} | nil,
+            native_list_int_pair_arms:
+              [{Elmc.Backend.Plan.Types.reg(), Elmc.Backend.Plan.Types.reg()}] | nil,
+            native_list_int_pair_pair_regs: MapSet.t(Elmc.Backend.Plan.Types.reg()) | nil,
             native_scalar_value_return: boolean() | nil,
             fusion_emit: :helper_only | :public_native | nil,
             stream_mode: boolean() | nil
@@ -282,14 +302,30 @@ defmodule Elmc.Backend.Plan.Types do
   @type lower_result :: {:ok, function_plan()} | :unsupported | {:error, lower_error()}
 
   @spec empty_effects() :: effects()
-  def empty_effects, do: %{produces: nil, consumes: [], borrows: [], fallible: false}
+  def empty_effects, do: %{produces: nil, consumes: [], borrows: [], result_aliases: [], fallible: false}
 
   @spec owned_effects(reg()) :: effects()
   def owned_effects(reg) when is_integer(reg),
-    do: %{produces: {:owned, reg}, consumes: [], borrows: [], fallible: false}
+    do: %{produces: {:owned, reg}, consumes: [], borrows: [], result_aliases: [], fallible: false}
 
   def owned_effects(_),
-    do: %{produces: nil, consumes: [], borrows: [], fallible: false}
+    do: %{produces: nil, consumes: [], borrows: [], result_aliases: [], fallible: false}
+
+  @spec retains_operand_effects(reg(), [reg()], [reg()], [reg()], boolean()) :: effects()
+  def retains_operand_effects(dest, borrows, alias_regs, consumes \\ [], fallible? \\ false)
+
+  def retains_operand_effects(dest, borrows, alias_regs, consumes, fallible?)
+      when is_integer(dest) do
+    %{
+      produces: {:owned, dest},
+      consumes: consumes,
+      borrows: borrows,
+      result_aliases: alias_regs,
+      fallible: fallible?
+    }
+  end
+
+  def retains_operand_effects(_, _, _, _, _), do: empty_effects()
 
   @spec fallible_effects(reg() | result_slot(), [reg()], [reg()]) :: effects()
   def fallible_effects(reg, borrows \\ [], consumes \\ []) do
@@ -299,6 +335,7 @@ defmodule Elmc.Backend.Plan.Types do
       produces: produces,
       consumes: consumes,
       borrows: borrows,
+      result_aliases: [],
       fallible: true
     }
   end
@@ -309,6 +346,7 @@ defmodule Elmc.Backend.Plan.Types do
       produces: nil,
       consumes: consumes,
       borrows: borrows,
+      result_aliases: [],
       fallible: true
     }
   end

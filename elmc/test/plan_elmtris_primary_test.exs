@@ -240,7 +240,7 @@ defmodule Elmc.PlanElmtrisPrimaryTest do
     assert subs_body =~ "elmc_sub1" or subs_body =~ "elmc_sub3",
            "plan-primary subscriptions must lower batch items to pebble_sub calls"
 
-    assert subs_body =~ "elmc_list_from_values_take",
+    assert subs_body =~ "elmc_list_from_values",
            "plan-primary subscriptions must return a Sub list, not Cmd.batch"
 
     refute subs_body =~ "elmc_cmd_batch",

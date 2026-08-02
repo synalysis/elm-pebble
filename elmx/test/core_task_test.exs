@@ -2,6 +2,7 @@ defmodule Elmx.CoreTaskTest do
   use ExUnit.Case, async: true
 
   alias Elmx.Runtime.Core.Task
+  alias Elmx.Runtime.Followups
 
   test "map, map2, map3, andThen, sequence, onError, mapError, and attempt on resolved tasks" do
     assert {:Ok, 22} = Task.map(&(&1 * 2), {:Ok, 11})
@@ -36,5 +37,19 @@ defmodule Elmx.CoreTaskTest do
     assert cmd["kind"] == "cmd.task.immediate"
     assert cmd["message"] == "Tick"
     assert get_in(cmd, ["message_value", "args"]) == [1_234_567_890]
+  end
+
+  test "Followups.from_commands maps perform and attempt cmds to task_command rows" do
+    perform_cmd = Task.perform(fn n -> {:Tick, n} end, {:Ok, 7})
+
+    assert [%{"source" => "task_command", "package" => "elm/core", "message" => "Tick"}] =
+             Followups.from_commands(perform_cmd, source_root: "phone")
+
+    attempt_cmd = Task.attempt(fn result -> {:Got, result} end, {:Err, :missing})
+
+    assert [%{"source" => "task_command", "package" => "elm/core", "message" => "Got"} = row] =
+             Followups.from_commands(attempt_cmd, source_root: "phone")
+
+    assert get_in(row, ["message_value", "ctor"]) == "Got"
   end
 end

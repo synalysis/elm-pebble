@@ -164,10 +164,16 @@ defmodule Elmc.Backend.Pebble.SourceWriter.EventDispatch.Emit do
     count = length(fields)
 
     """
+    #if ELMC_PEBBLE_DEBUG_LOGS
     const char *names[] = {#{names}};
+    #else
+    const char **names = NULL;
+    #endif
     const int64_t values[] = {#{values}};
     return elmc_pebble_dispatch_tag_record_int_fields(app, tag, #{count}, names, values);
     """
     |> String.trim()
   end
 end
+
+

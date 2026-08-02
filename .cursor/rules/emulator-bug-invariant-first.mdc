@@ -13,7 +13,8 @@ When a watchface/app bug traces to elmc codegen (dead `update`, `--:--`, blank d
 ## Required
 
 1. **Plan.Verify** — CFG / ownership invariant (`:permanent_none_terminator`, `:unreachable_block`, `:leaked_owned_regs`, …) when the bug is dead CFG or static RC.
-2. **TEA host smoke** — `watchface_tea_semantic_smoke_test.exs` property (time drain, non-placeholder text, geometry) when the bug is init/update/view behavior.
+2. **TEA host smoke** — shared `Elmx.TeaPlaybook` scenarios via `template_tea_scenario_smoke_test.exs` (elmc scene/SDK spy) and/or `elmx` `tea_playbook_smoke_test.exs` (debugger Executor). Prefer the same playbook for both when proving debugger and real app stay aligned. Legacy `watchface_tea_semantic_smoke_test.exs` remains for geometry/time drains.
+2b. **Cmd/Sub contract** — `Elmx.Pebble.Contract.CmdSub` + `pebble_contract_cmd_sub_*` tests when the bug is Elm API ↔ `ELMC_PEBBLE_CMD_*` / `ELMC_SUBSCRIPTION_*` ↔ elmx wire/mask drift.
 3. **App RC balance** — `watchface_rc_track_smoke_test.exs` (`ELMC_RC_TRACK` after init/drain/view/deinit) when the bug is a retain/release leak in app TEA.
 4. **Value oracle** — `core_compliance_differential_test.exs` or corpus parity when the bug is wrong pure-helper semantics.
 5. **Emit isolation** — `ValueSlots.with_isolated_probe/1` when mid-emit probes clobber parent owned slots.

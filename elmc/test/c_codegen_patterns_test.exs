@@ -1531,7 +1531,7 @@ defmodule Elmc.CCodegenPatternsTest do
 
     body = fn_body!(generated_c, "modes")
     assert_plan_lowered!(body)
-    assert body =~ "elmc_list_from_values_take" or body =~ "elmc_list_cons("
+    assert body =~ "elmc_list_from_values" or body =~ "elmc_list_cons("
   end
 
   test "List.concatMap over range inlines loop without closure or runtime concatMap" do

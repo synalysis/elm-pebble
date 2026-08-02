@@ -13,6 +13,38 @@ module CoreCompliance exposing
     , arraySetInRangeGet
     , arraySetNegativeLength
     , arraySetOutOfRangeLength
+    , basicsAbs
+    , basicsAcos1Trunc
+    , basicsAlways
+    , basicsAsin0Trunc
+    , basicsAtan2QuarterTrunc
+    , basicsCeiling
+    , basicsCompareOrder
+    , basicsCos0Round
+    , basicsDegrees180Milli
+    , basicsDegreesPiTrunc
+    , basicsEMilli
+    , basicsFloor
+    , basicsFromPolar5
+    , basicsIdentity
+    , basicsIsInfinite
+    , basicsIsNan
+    , basicsLogBase2Of8
+    , basicsNegate
+    , basicsNot
+    , basicsPiMilli
+    , basicsRadians180Trunc
+    , basicsRadiansPiMilli
+    , basicsRemainderBy
+    , basicsRound
+    , basicsSin0Round
+    , basicsSin90Milli
+    , basicsSqrt16
+    , basicsToFloatTrunc
+    , basicsToPolarRadius
+    , basicsTruncate
+    , basicsTurns1Trunc
+    , basicsXor
     , branchTupleOut
     , branchTupleOutNested
     , bitwiseExtras
@@ -145,6 +177,221 @@ bitwiseExtras value =
 modByNeg : Int -> Int
 modByNeg value =
     Basics.modBy 5 value
+
+
+{-| Integer oracles for Basics — milli-scaled where floats matter so elmx and
+elmc bytecode can agree without float ABI drift.
+-}
+basicsDegreesPiTrunc : Int -> Int
+basicsDegreesPiTrunc _ =
+    -- 3.141592653589793 ≈ π (bare `pi`/`e` CAF emit still incomplete in elmx)
+    Basics.truncate (Basics.degrees 3.141592653589793)
+
+
+basicsDegrees180Milli : Int -> Int
+basicsDegrees180Milli _ =
+    Basics.truncate (Basics.degrees 180 * 1000)
+
+
+basicsRadians180Trunc : Int -> Int
+basicsRadians180Trunc _ =
+    Basics.truncate (Basics.radians 180)
+
+
+basicsRadiansPiMilli : Int -> Int
+basicsRadiansPiMilli _ =
+    Basics.truncate (Basics.radians 3.141592653589793 * 1000)
+
+
+basicsTurns1Trunc : Int -> Int
+basicsTurns1Trunc _ =
+    Basics.truncate (Basics.turns 1)
+
+
+basicsSin0Round : Int -> Int
+basicsSin0Round _ =
+    Basics.round (Basics.sin 0)
+
+
+basicsCos0Round : Int -> Int
+basicsCos0Round _ =
+    Basics.round (Basics.cos 0)
+
+
+basicsSin90Milli : Int -> Int
+basicsSin90Milli _ =
+    Basics.truncate (Basics.sin (Basics.degrees 90) * 1000)
+
+
+basicsAsin0Trunc : Int -> Int
+basicsAsin0Trunc _ =
+    Basics.truncate (Basics.asin 0)
+
+
+basicsAcos1Trunc : Int -> Int
+basicsAcos1Trunc _ =
+    Basics.truncate (Basics.acos 1)
+
+
+basicsAtan2QuarterTrunc : Int -> Int
+basicsAtan2QuarterTrunc _ =
+    Basics.truncate (Basics.atan2 1 1)
+
+
+basicsSqrt16 : Int -> Int
+basicsSqrt16 _ =
+    Basics.truncate (Basics.sqrt 16)
+
+
+basicsLogBase2Of8 : Int -> Int
+basicsLogBase2Of8 _ =
+    Basics.truncate (Basics.logBase 2 8)
+
+
+basicsPiMilli : Int -> Int
+basicsPiMilli _ =
+    Basics.truncate (3.141592653589793 * 1000)
+
+
+basicsEMilli : Int -> Int
+basicsEMilli _ =
+    Basics.truncate (2.718281828459045 * 1000)
+
+
+basicsRound : Int -> Int
+basicsRound _ =
+    Basics.round 3.6
+
+
+basicsFloor : Int -> Int
+basicsFloor _ =
+    Basics.floor 3.9
+
+
+basicsCeiling : Int -> Int
+basicsCeiling _ =
+    Basics.ceiling 3.1
+
+
+basicsTruncate : Int -> Int
+basicsTruncate _ =
+    Basics.truncate 3.9
+
+
+basicsToFloatTrunc : Int -> Int
+basicsToFloatTrunc _ =
+    Basics.truncate (Basics.toFloat 9)
+
+
+basicsAbs : Int -> Int
+basicsAbs _ =
+    Basics.abs -6
+
+
+basicsNegate : Int -> Int
+basicsNegate _ =
+    Basics.negate -4
+
+
+basicsNot : Int -> Int
+basicsNot _ =
+    if Basics.not False then
+        1
+
+    else
+        0
+
+
+basicsXor : Int -> Int
+basicsXor _ =
+    if Basics.xor True False then
+        1
+
+    else
+        0
+
+
+basicsRemainderBy : Int -> Int
+basicsRemainderBy _ =
+    Basics.remainderBy 3 10
+
+
+basicsIdentity : Int -> Int
+basicsIdentity _ =
+    Basics.identity 42
+
+
+basicsAlways : Int -> Int
+basicsAlways _ =
+    Basics.always 99 0
+
+
+basicsCompareOrder : Int -> Int
+basicsCompareOrder _ =
+    let
+        a =
+            Basics.compare 1 2
+
+        b =
+            Basics.compare 2 2
+
+        c =
+            Basics.compare 3 2
+    in
+    (if a == Basics.LT then
+        1
+
+     else
+        0
+    )
+        + (if b == Basics.EQ then
+            10
+
+           else
+            0
+          )
+        + (if c == Basics.GT then
+            100
+
+           else
+            0
+          )
+
+
+basicsIsNan : Int -> Int
+basicsIsNan _ =
+    if Basics.isNaN (0 / 0) then
+        1
+
+    else
+        0
+
+
+basicsIsInfinite : Int -> Int
+basicsIsInfinite _ =
+    if Basics.isInfinite (1 / 0) then
+        1
+
+    else
+        0
+
+
+basicsFromPolar5 : Int -> Int
+basicsFromPolar5 _ =
+    let
+        ( x, y ) =
+            Basics.fromPolar ( 5, 0 )
+    in
+    Basics.truncate x + Basics.truncate y
+
+
+basicsToPolarRadius : Int -> Int
+basicsToPolarRadius _ =
+    let
+        ( r, _ ) =
+            Basics.toPolar ( 3, 4 )
+    in
+    Basics.truncate r
 
 
 debugEcho : Int -> Int

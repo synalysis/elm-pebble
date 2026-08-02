@@ -67,11 +67,12 @@ defmodule Elmc.PlanRetainDedupTest do
     c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
     draw_body = CCodegenExtract.fn_body(c, "elmc_fn_Main_drawCell")
 
-    assert draw_body =~ "elmc_list_from_values_take"
+    assert draw_body =~ "elmc_list_from_values"
+    refute draw_body =~ "elmc_list_from_values_take"
     refute draw_body =~ "elmc_list_cons(&owned"
   end
 
-  test "toUiNode builds singleton window and layer lists with list_from_values_take" do
+  test "toUiNode builds singleton window and layer lists with list_from_values" do
     out_dir = Path.expand("tmp/plan_to_ui_node_list", __DIR__)
     project_dir = Path.expand("tmp/plan_to_ui_node_list_project", __DIR__)
     template_main = Path.expand("../../ide/priv/project_templates/game_2048/src/Main.elm", __DIR__)
@@ -93,7 +94,8 @@ defmodule Elmc.PlanRetainDedupTest do
     c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
     body = CCodegenExtract.fn_body(c, "elmc_fn_Pebble_Ui_toUiNode")
 
-    assert body =~ "elmc_list_from_values_take"
+    assert body =~ "elmc_list_from_values"
+    refute body =~ "elmc_list_from_values_take"
     refute body =~ "elmc_list_cons(&owned"
     refute body =~ "elmc_list_nil()"
   end

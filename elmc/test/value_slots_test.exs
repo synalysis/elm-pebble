@@ -344,6 +344,29 @@ defmodule Elmc.Backend.CCodegen.ValueSlotsTest do
              """
   end
 
+  test "null_call_operands_aliasing_out drop_result_retain? releases inside alias if" do
+    ValueSlots.reset(epilogue_lifo: true)
+
+    assert ValueSlots.null_call_operands_aliasing_out(
+             "owned[2]",
+             ["owned[0]", "owned[1]"],
+             %{},
+             drop_result_retain?: true
+           ) ==
+             """
+             if (owned[2] == owned[0]) {
+               elmc_release(owned[2]);
+               owned[0] = NULL;
+             }
+
+             if (owned[2] == owned[1]) {
+               elmc_release(owned[2]);
+               owned[1] = NULL;
+             }
+
+             """
+  end
+
   test "abandon_owned_call_args_after_recursive nulls owned param aliases without releasing them" do
     ValueSlots.reset(epilogue_lifo: true)
     :ok = ValueSlots.track_direct_param_owned("model", "owned[11]")

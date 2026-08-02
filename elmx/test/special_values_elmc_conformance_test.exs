@@ -4,8 +4,11 @@ defmodule Elmx.SpecialValuesElmcConformanceTest do
   alias Elmx.Runtime.Pebble.KernelTargets
   alias Elmx.Runtime.Pebble.SpecialValues
 
-  @elmc_codegen Path.expand("../../elmc/lib/elmc/backend/c_codegen.ex", __DIR__)
-  @target_re ~r/defp special_value_from_target\("([^"]+)"/
+  @elmc_special_values_glob Path.expand(
+                              "../../elmc/lib/elmc/backend/plan/lower/special_values/**/*.ex",
+                              __DIR__
+                            )
+  @target_re ~r/def special_value_from_target\("([^"]+)"/
 
   # Handled by `Elmx.Runtime.Stdlib.Qualified` / `Elmx.Runtime.Json.Decode`, not `SpecialValues`.
   @emit_or_stdlib_targets MapSet.new([
@@ -63,10 +66,14 @@ defmodule Elmx.SpecialValuesElmcConformanceTest do
   end
 
   defp elmc_special_value_targets do
-    @elmc_codegen
-    |> File.read!()
-    |> then(&Regex.scan(@target_re, &1, capture: :all_but_first))
-    |> List.flatten()
+    @elmc_special_values_glob
+    |> Path.wildcard()
+    |> Enum.flat_map(fn path ->
+      path
+      |> File.read!()
+      |> then(&Regex.scan(@target_re, &1, capture: :all_but_first))
+      |> List.flatten()
+    end)
     |> Enum.uniq()
     |> Enum.sort()
   end
@@ -132,6 +139,13 @@ defmodule Elmx.SpecialValuesElmcConformanceTest do
   defp conformance_args("Platform.Sub.batch"), do: [%{op: :list_literal, items: []}]
   defp conformance_args("Cmd.batch"), do: [%{op: :list_literal, items: []}]
   defp conformance_args("Sub.batch"), do: [%{op: :list_literal, items: []}]
+  defp conformance_args("Cmd.map"), do: [%{op: :var, name: "f"}, %{op: :var, name: "cmd"}]
+  defp conformance_args("Platform.Cmd.map"), do: [%{op: :var, name: "f"}, %{op: :var, name: "cmd"}]
+  defp conformance_args("Pebble.Cmd.map"), do: [%{op: :var, name: "f"}, %{op: :var, name: "cmd"}]
+  defp conformance_args("Sub.map"), do: [%{op: :var, name: "f"}, %{op: :var, name: "sub"}]
+  defp conformance_args("Platform.Sub.map"), do: [%{op: :var, name: "f"}, %{op: :var, name: "sub"}]
+  defp conformance_args("Pebble.Sub.map"), do: [%{op: :var, name: "f"}, %{op: :var, name: "sub"}]
+  defp conformance_args("Pebble.Ui.rotationToPebbleAngle"), do: [%{op: :int_literal, value: 0}]
   defp conformance_args("Pebble.Ui.windowStack"), do: [%{op: :list_literal, items: []}]
   defp conformance_args("Pebble.Ui.window"), do: [%{op: :int_literal, value: 0}, %{op: :list_literal, items: []}]
   defp conformance_args("Pebble.Ui.canvasLayer"), do: [%{op: :int_literal, value: 0}, %{op: :list_literal, items: []}]
