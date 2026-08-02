@@ -105,6 +105,60 @@ defmodule Ide.PebbleToolchain.Command do
     end
   end
 
+  @doc """
+  Installed official Elm compiler version (`elm --version`), e.g. `"0.19.1"` or `"0.19.2"`.
+
+  Application `elm.json` must match this exactly or `elm make` fails with
+  `ELM VERSION MISMATCH`. Override via `config :ide, :elm_compiler_version_override`.
+  """
+  @spec elm_compiler_version() :: {:ok, String.t()} | {:error, term()}
+  def elm_compiler_version do
+    case Application.get_env(:ide, :elm_compiler_version_override) do
+      version when is_binary(version) and version != "" ->
+        {:ok, version}
+
+      _ ->
+        with {:ok, bin} <- elm_bin() do
+          cached_elm_compiler_version(bin)
+        end
+    end
+  end
+
+  @doc """
+  Rewrite a project's application `elm.json` `elm-version` to match the installed
+  Elm compiler when they differ. No-op for package projects or matching versions.
+  """
+  @spec sync_project_elm_version(String.t()) :: :ok | {:error, term()}
+  def sync_project_elm_version(project_dir) when is_binary(project_dir) do
+    path = Path.join(project_dir, "elm.json")
+
+    with {:ok, version} <- elm_compiler_version(),
+         {:ok, body} <- File.read(path),
+         {:ok, %{} = data} <- Jason.decode(body) do
+      cond do
+        data["type"] != "application" ->
+          :ok
+
+        data["elm-version"] == version ->
+          :ok
+
+        true ->
+          encoded =
+            data
+            |> Map.put("elm-version", version)
+            |> Jason.encode!(pretty: true)
+
+          case File.write(path, encoded <> "\n") do
+            :ok -> :ok
+            {:error, reason} -> {:error, {:elm_json_write_failed, path, reason}}
+          end
+      end
+    else
+      {:error, reason} -> {:error, reason}
+      error -> {:error, error}
+    end
+  end
+
   @spec elm_bin_candidates() :: [String.t()]
   def elm_bin_candidates do
     configured =
@@ -142,6 +196,47 @@ defmodule Ide.PebbleToolchain.Command do
   end
 
   def working_elm_bin(_), do: nil
+
+  @spec cached_elm_compiler_version(String.t()) :: {:ok, String.t()} | {:error, term()}
+  defp cached_elm_compiler_version(bin) do
+    key = {:ide_elm_compiler_version, bin}
+
+    case :persistent_term.get(key, :missing) do
+      version when is_binary(version) ->
+        {:ok, version}
+
+      :missing ->
+        case detect_elm_compiler_version(bin) do
+          {:ok, version} = ok ->
+            :persistent_term.put(key, version)
+            ok
+
+          error ->
+            error
+        end
+    end
+  end
+
+  @spec detect_elm_compiler_version(String.t()) :: {:ok, String.t()} | {:error, term()}
+  defp detect_elm_compiler_version(bin) do
+    case System.cmd(bin, ["--version"], stderr_to_stdout: true, env: [{"LC_ALL", "C"}]) do
+      {output, 0} ->
+        version =
+          output
+          |> String.trim()
+          |> String.split(~r/\s+/, trim: true)
+          |> List.first()
+
+        if is_binary(version) and Regex.match?(~r/^\d+\.\d+\.\d+$/, version) do
+          {:ok, version}
+        else
+          {:error, {:unrecognized_elm_version, String.trim(output)}}
+        end
+
+      {output, code} ->
+        {:error, {:elm_version_failed, code, String.trim(output)}}
+    end
+  end
 
   @spec template_app_root() :: {:ok, String.t()} | {:error, :template_app_root_not_found}
   def template_app_root do

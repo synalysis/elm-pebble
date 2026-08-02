@@ -89,6 +89,7 @@ defmodule Ide.PebbleToolchain.Companion do
         with {:ok, elm_bin} <- Command.elm_bin(),
              :ok <- File.mkdir_p(Path.dirname(out_file)) do
           phone_root = Path.expand("../..", phone_app)
+          _ = Command.sync_project_elm_version(phone_root)
 
           {output, exit_code} =
             System.cmd(
@@ -98,7 +99,6 @@ defmodule Ide.PebbleToolchain.Companion do
               stderr_to_stdout: true,
               env: [{"LC_ALL", "C"}]
             )
-
           if exit_code == 0 do
             :ok
           else

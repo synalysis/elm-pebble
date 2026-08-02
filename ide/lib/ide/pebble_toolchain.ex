@@ -49,4 +49,6 @@ defmodule Ide.PebbleToolchain do
   defdelegate companion_index_js_for_preferences(preferences_schema), to: Companion
   defdelegate deterministic_app_uuid(slug), to: Package
   defdelegate elm_bin(), to: Command
+  defdelegate elm_compiler_version(), to: Command
+  defdelegate sync_project_elm_version(project_dir), to: Command
 end

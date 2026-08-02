@@ -484,7 +484,7 @@ defmodule Ide.ProjectTemplates do
     elm_json = %{
       "type" => "application",
       "source-directories" => ["src"],
-      "elm-version" => "0.19.1",
+      "elm-version" => application_elm_version(),
       "dependencies" => %{
         "direct" => %{"elm/core" => "1.0.5", "elm/json" => "1.1.3"},
         "indirect" => %{}
@@ -595,12 +595,23 @@ defmodule Ide.ProjectTemplates do
     watch_elm_json_template(source_directories)
   end
 
+  # Match the host's official Elm binary so phone/protocol `elm make` does not
+  # fail with ELM VERSION MISMATCH (templates historically said 0.19.1; some
+  # hosts ship 0.19.2).
+  @spec application_elm_version() :: String.t()
+  defp application_elm_version do
+    case PebbleToolchain.elm_compiler_version() do
+      {:ok, version} when is_binary(version) and version != "" -> version
+      _ -> "0.19.1"
+    end
+  end
+
   @spec watch_elm_json_template([String.t()]) :: TemplateTypes.elm_json()
   defp watch_elm_json_template(source_directories) when is_list(source_directories) do
     %{
       "type" => "application",
       "source-directories" => source_directories,
-      "elm-version" => "0.19.1",
+      "elm-version" => application_elm_version(),
       "dependencies" => %{
         "direct" => %{
           "elm/core" => "1.0.5",
@@ -618,7 +629,7 @@ defmodule Ide.ProjectTemplates do
     %{
       "type" => "application",
       "source-directories" => ["src"],
-      "elm-version" => "0.19.1",
+      "elm-version" => application_elm_version(),
       "dependencies" => %{
         "direct" => %{"elm/core" => "1.0.5", "elm/json" => "1.1.3"},
         "indirect" => %{}
@@ -632,7 +643,7 @@ defmodule Ide.ProjectTemplates do
     %{
       "type" => "application",
       "source-directories" => phone_source_directories(),
-      "elm-version" => "0.19.1",
+      "elm-version" => application_elm_version(),
       "dependencies" => %{
         "direct" => %{
           "elm/core" => "1.0.5",
@@ -765,7 +776,7 @@ defmodule Ide.ProjectTemplates do
     elm_json = %{
       "type" => "application",
       "source-directories" => ["src"],
-      "elm-version" => "0.19.1",
+      "elm-version" => application_elm_version(),
       "dependencies" => %{
         "direct" => %{"elm/core" => "1.0.5", "elm/json" => "1.1.3"},
         "indirect" => %{}
@@ -805,7 +816,7 @@ defmodule Ide.ProjectTemplates do
     elm_json = %{
       "type" => "application",
       "source-directories" => ["src"],
-      "elm-version" => "0.19.1",
+      "elm-version" => application_elm_version(),
       "dependencies" => %{
         "direct" => %{"elm/core" => "1.0.5", "elm/json" => "1.1.3"},
         "indirect" => %{}
@@ -830,7 +841,7 @@ defmodule Ide.ProjectTemplates do
   defp write_protocol_tool_versions(protocol_root) when is_binary(protocol_root) do
     path = Path.join(protocol_root, ".tool-versions")
 
-    case File.write(path, "elm 0.19.1\n") do
+    case File.write(path, "elm #{application_elm_version()}\n") do
       :ok -> :ok
       {:error, reason} -> {:error, {:write_failed, path, reason}}
     end
@@ -1029,7 +1040,7 @@ defmodule Ide.ProjectTemplates do
     elm_json = %{
       "type" => "application",
       "source-directories" => phone_source_directories(),
-      "elm-version" => "0.19.1",
+      "elm-version" => application_elm_version(),
       "dependencies" => %{
         "direct" => %{
           "elm/core" => "1.0.5",

@@ -515,7 +515,8 @@ defmodule Ide.Compiler do
   defp run_elm_check(project_dir) do
     _ = regenerate_companion_internal_elm(project_dir)
 
-    with {:ok, elm_json} <- read_elm_json(project_dir),
+    with :ok <- sync_elm_json_version(project_dir),
+         {:ok, elm_json} <- read_elm_json(project_dir),
          {:ok, elm_bin} <- PebbleToolchain.elm_bin(),
          {:ok, entries} <- elm_make_entries(project_dir, elm_json) do
       case entries do
@@ -543,7 +544,6 @@ defmodule Ide.Compiler do
               cd: project_dir,
               stderr_to_stdout: true
             )
-
           status = if exit_code == 0, do: :ok, else: :error
 
           diagnostics =
@@ -1029,6 +1029,15 @@ defmodule Ide.Compiler do
     |> File.read()
     |> case do
       {:ok, content} -> Jason.decode(content)
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  # Official elm requires elm.json "elm-version" to match the binary exactly
+  # (0.19.1 templates fail on hosts that ship 0.19.2).
+  defp sync_elm_json_version(project_dir) do
+    case PebbleToolchain.sync_project_elm_version(project_dir) do
+      :ok -> :ok
       {:error, reason} -> {:error, reason}
     end
   end
