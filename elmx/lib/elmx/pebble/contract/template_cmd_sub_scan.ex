@@ -62,6 +62,36 @@ defmodule Elmx.Pebble.Contract.TemplateCmdSubScan do
     |> Enum.uniq()
   end
 
+  @doc """
+  `Button.onPress Button.<Id> <MsgCtor>` bindings from template Elm.
+
+  Playbooks use these Msg constructor names at the call site — no guessing.
+  """
+  @spec button_press_bindings(String.t()) :: [%{button: atom(), message: String.t()}]
+  def button_press_bindings(template) when is_binary(template) do
+    template
+    |> elm_sources()
+    |> Enum.flat_map(&parse_button_press_bindings/1)
+    |> Enum.uniq_by(&{&1.button, &1.message})
+  end
+
+  defp parse_button_press_bindings(source) do
+    Regex.scan(
+      ~r/\bButton\.onPress\s+Button\.(Up|Down|Select|Back|Left|Right)\s+([A-Z][A-Za-z0-9_]*)/,
+      source
+    )
+    |> Enum.map(fn [_, button, message] ->
+      %{button: button_atom(button), message: message}
+    end)
+  end
+
+  defp button_atom("Up"), do: :up
+  defp button_atom("Down"), do: :down
+  defp button_atom("Select"), do: :select
+  defp button_atom("Back"), do: :back
+  defp button_atom("Left"), do: :left
+  defp button_atom("Right"), do: :right
+
   defp elm_sources(template) do
     root = Path.join(@templates_root, template)
 

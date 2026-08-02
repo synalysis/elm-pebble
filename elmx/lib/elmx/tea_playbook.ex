@@ -13,6 +13,7 @@ defmodule Elmx.TeaPlaybook do
   Use `to_json_map/1` / `from_json_map/1` to serialize the same playbook for both backends.
   """
 
+  alias Elmx.Pebble.Contract.TemplateCmdSubScan
   alias Elmx.TeaPlaybook.{Protocol, Samples}
 
   @type step_op :: :init | :drain_cmds | :update | :view | :subscriptions
@@ -401,16 +402,18 @@ defmodule Elmx.TeaPlaybook do
         [
           step_init(),
           step_drain([:time, :storage, :random])
-        ] ++ button_probe_steps() ++ phone_steps(template) ++ [step_view()],
+        ] ++ button_probe_steps(template) ++ phone_steps(template) ++ [step_view()],
       expects: %{min_scene_cmds: 1, min_view_rows: 1}
     }
   end
 
-  defp button_probe_steps do
-    [
-      update(:button, button: :select, message: "SelectPressed"),
-      update(:button, button: :down, message: "DownPressed")
-    ]
+  # Only probe buttons the template actually wires via Button.onPress → Msg ctor.
+  defp button_probe_steps(template) do
+    template
+    |> TemplateCmdSubScan.button_press_bindings()
+    |> Enum.map(fn %{button: button, message: message} ->
+      update(:button, button: button, message: message)
+    end)
   end
 
   defp phone_steps(template) do
@@ -468,7 +471,6 @@ defmodule Elmx.TeaPlaybook do
           update(:random, value: 12_345, message: "RandomGenerated"),
           step_drain([:storage, :random]),
           %{id: "dirs", op: :update, action: :direction_cycle, count: 4},
-          update(:button, button: :select, message: "SelectPressed"),
           step_view()
         ],
         expects: %{min_scene_cmds: 4, min_scene_text: 1, min_view_rows: 1}
@@ -479,7 +481,7 @@ defmodule Elmx.TeaPlaybook do
           step_init(),
           step_drain([:time, :storage, :random]),
           %{id: "frames", op: :update, action: :frame, count: 32, dt_ms: 33, message: "FrameTick"},
-          update(:button, button: :select, message: "SelectPressed"),
+          update(:button, button: :up, message: "UpPressed"),
           step_view()
         ],
         expects: %{min_scene_cmds: 4, min_scene_text: 1, min_view_rows: 1}
@@ -502,7 +504,7 @@ defmodule Elmx.TeaPlaybook do
           step_init(),
           step_drain([:time, :storage, :random]),
           %{id: "frames", op: :update, action: :frame, count: 8, dt_ms: 33, message: "FrameTick"},
-          update(:button, button: :select, message: "SelectPressed"),
+          update(:button, button: :up, message: "UpPressed"),
           step_view()
         ],
         expects: %{min_scene_cmds: 1, min_view_rows: 1}
@@ -611,7 +613,7 @@ defmodule Elmx.TeaPlaybook do
         step_init(),
         step_drain([:time, :storage, :random]),
         %{id: "frames", op: :update, action: :frame, count: 16, dt_ms: 33, message: "FrameTick"},
-        update(:button, button: :select, message: "SelectPressed"),
+        update(:button, button: :up, message: "UpPressed"),
         step_view()
       ],
       expects: %{min_scene_cmds: 1, min_view_rows: 1}

@@ -258,6 +258,7 @@ defmodule Elmx.TestSupport.TeaPlaybookRunner do
       followups =
         state.pending_commands
         |> Followups.from_commands(source_root: "watch")
+        |> Enum.filter(&followup_dispatchable?/1)
         |> Enum.filter(&followup_allowed?(&1, kinds))
 
       if followups == [] do
@@ -290,29 +291,38 @@ defmodule Elmx.TestSupport.TeaPlaybookRunner do
     end)
   end
 
+  # Outbound watch→phone protocol rows are timeline events, not app Msg constructors.
+  defp followup_dispatchable?(row) do
+    command = Map.get(row, "command") || %{}
+
+    not (Map.get(command, "kind") == "protocol" and
+           Map.get(command, "direction") == "watch_to_phone")
+  end
+
   defp followup_allowed?(_row, []), do: true
 
   defp followup_allowed?(row, kinds) do
     command = Map.get(row, "command") || %{}
     kind = Map.get(command, "kind") || ""
+    message = to_string(Map.get(row, "message") || "")
 
     Enum.any?(kinds, fn
       :time ->
         String.contains?(kind, "time") or String.contains?(kind, "date") or
-          String.contains?(to_string(Map.get(row, "message")), "Time") or
-          String.contains?(to_string(Map.get(row, "message")), "Date")
+          String.contains?(kind, "current_date") or
+          message in ["CurrentDateTime", "CurrentTimeString", "MinuteChanged", "HourChanged"] or
+          String.ends_with?(message, "TimeString")
 
       :storage ->
         String.contains?(kind, "storage")
 
       :random ->
-        String.contains?(kind, "random") or
-          String.contains?(to_string(Map.get(row, "message")), "Random")
+        String.contains?(kind, "random") or String.contains?(message, "Random")
 
       :health ->
         String.contains?(kind, "health") or
-          String.contains?(to_string(Map.get(row, "message")), "Health") or
-          String.contains?(to_string(Map.get(row, "message")), "Supported")
+          String.contains?(message, "Health") or
+          String.contains?(message, "Supported")
 
       _ ->
         true

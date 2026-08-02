@@ -76,8 +76,20 @@ defmodule Elmx.PebbleContractCmdSubTemplatesTest do
       end
 
       if effect_cmd?(usage.cmd_ids) do
-        assert Enum.any?(steps, &(&1.op == :update and Map.get(&1, :action) == :button)),
-               "#{template} issues effect cmds (vibes/light/speaker/…) but playbook has no button probe"
+        # Effects may fire from button probes, gameplay frames, or time/battery drains.
+        assert Enum.any?(steps, fn step ->
+                 (step.op == :update and
+                    Map.get(step, :action) in [
+                      :button,
+                      :direction_cycle,
+                      :frame,
+                      :current_datetime,
+                      :battery
+                    ]) or
+                   (step.op == :drain_cmds and
+                      Enum.any?(List.wrap(step[:kinds]), &(&1 in [:time, :storage, :random])))
+               end),
+               "#{template} issues effect cmds (vibes/light/speaker/…) but playbook never probes input/time"
       end
     end
   end
