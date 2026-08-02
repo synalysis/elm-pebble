@@ -15,6 +15,7 @@ defmodule Elmc.Backend.Pebble.HeaderWriter.ApiDecls.ViewSceneApi do
     typedef struct GContext GContext;
 
     int elmc_pebble_take_cmd(ElmcPebbleApp *app, ElmcPebbleCmd *out_cmd);
+    void elmc_pebble_cmd_release_value(ElmcPebbleCmd *cmd);
     int elmc_pebble_pending_cmd_count(ElmcPebbleApp *app);
     int elmc_pebble_pending_cmd_at(ElmcPebbleApp *app, int index, ElmcPebbleCmd *out_cmd);
     int elmc_pebble_last_dispatch_cmd_count(ElmcPebbleApp *app);

@@ -24,7 +24,9 @@ defmodule Elmc.Backend.Pebble.FeatureFlags.CommandFlags.Storage do
       cmd_storage_read_max_size:
         TargetSet.member?(targets, "Pebble.Storage.maxSize") or
           TargetSet.member?(targets, "Elm.Kernel.PebbleWatch.storageReadMaxSize"),
-      cmd_companion_send: TargetSet.member?(targets, "Pebble.Internal.Companion.companionSend")
+      cmd_companion_send:
+        TargetSet.member?(targets, "Pebble.Internal.Companion.companionSend") or
+          TargetSet.member?(targets, "Companion.Watch.sendWatchToPhone")
     }
   end
 end

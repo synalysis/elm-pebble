@@ -436,6 +436,40 @@ defmodule Ide.PebbleToolchainTest do
              "#if ELMC_PEBBLE_FEATURE_CMD_COMPANION_SEND || ELMC_PEBBLE_FEATURE_INBOX_EVENTS"
   end
 
+  test "companion inbox decode keeps large protocol structs off the stack" do
+    template = File.read!("priv/pebble_app_template/src/c/pebble_app_template.c")
+
+    assert template =~ "static CompanionProtocolPhoneToWatchDecoder s_companion_inbox_decoder;"
+    assert template =~ "static CompanionProtocolPhoneToWatchMessage s_companion_inbox_message;"
+    assert template =~ "companion_decode_and_dispatch_snapshots"
+    assert template =~ "companion_try_decode_pending"
+
+    decode_fn =
+      case Regex.run(
+             ~r/static bool companion_decode_and_dispatch_snapshots\([^{]*\{(.*?)^\}/ms,
+             template
+           ) do
+        [_, body] -> body
+        _ -> flunk("companion_decode_and_dispatch_snapshots body not found")
+      end
+
+    pending_fn =
+      case Regex.run(~r/static bool companion_try_decode_pending\(void\) \{(.*?)^\}/ms, template) do
+        [_, body] -> body
+        _ -> flunk("companion_try_decode_pending body not found")
+      end
+
+    refute decode_fn =~ "CompanionProtocolPhoneToWatchDecoder decoder;"
+    refute decode_fn =~ "CompanionProtocolPhoneToWatchMessage message = {0};"
+    assert decode_fn =~ "&s_companion_inbox_decoder"
+    assert decode_fn =~ "&s_companion_inbox_message"
+
+    refute pending_fn =~ "CompanionProtocolPhoneToWatchDecoder decoder;"
+    refute pending_fn =~ "CompanionProtocolPhoneToWatchMessage message = {0};"
+    assert pending_fn =~ "&s_companion_inbox_decoder"
+    assert pending_fn =~ "&s_companion_inbox_message"
+  end
+
   test "pebble app template runs startup cmds after init completes" do
     template = File.read!("priv/pebble_app_template/src/c/pebble_app_template.c")
 

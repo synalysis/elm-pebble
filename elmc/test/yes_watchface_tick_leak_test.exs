@@ -69,6 +69,14 @@ defmodule Elmc.YesWatchfaceTickLeakTest do
     refute temp_body =~ "elmc_fn_Main_c10"
     refute temp_body =~ "elmc_fn_Main_f10"
 
+    # BatteryLevelChanged: Basics.clamp of borrowed msg payload must keep the
+    # clamp retain (null borrow slot only). Dropping it UAFs after release(msg).
+    update_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_update")
+
+    assert update_body =~ "elmc_basics_clamp("
+    assert update_body =~
+             ~r/elmc_basics_clamp\([^;]+;\s*CHECK_RC\(Rc\);\s*(?:if \(owned\[\d+\] == owned\[\d+\]\) \{\s*elmc_release\(owned\[\d+\]\);\s*owned\[\d+\] = NULL;\s*\}\s*){0,2}if \(owned\[\d+\] == owned\[\d+\]\) \{\s*owned\[\d+\] = NULL;\s*\}/
+
     sun_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Yes_Render_defaultSunWindow")
     refute sun_body =~ "elmc_fn_Main_SunCycle"
     assert sun_body =~ "elmc_record_new_values_take"

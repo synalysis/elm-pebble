@@ -248,6 +248,7 @@ defmodule Elmc.Backend.CCodegen.RcRuntimeEmit do
     "elmc_append",
     "elmc_array_get",
     "elmc_cmd_backlight_from_maybe",
+    "elmc_cmd_companion_send_value",
     "elmc_dict_singleton",
     "elmc_set_singleton",
     "elmc_set_to_list",

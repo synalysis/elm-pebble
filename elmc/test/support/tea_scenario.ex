@@ -24,6 +24,7 @@ defmodule Elmc.TestSupport.TeaScenario do
       |> TeaPlaybook.to_elmc_steps()
       |> filter_steps(caps)
       |> filter_protocol_steps(template)
+      |> filter_mode_steps(playbook.mode)
 
     expects = filter_expects(playbook.expects || %{}, caps)
 
@@ -86,27 +87,26 @@ defmodule Elmc.TestSupport.TeaScenario do
       {:right, "ELMC_PEBBLE_MSG_RIGHTPRESSED"}
     ]
     |> Enum.filter(fn {_, macro} -> msg?(content, macro) end)
-    |> Enum.map(fn {atom, _} -> {:dispatch_button, atom} end)
+    |> Enum.map(fn {atom, _} -> atom end)
   end
 
   defp filter_protocol_steps(steps, template) do
-    ctors =
+    supported =
       template
-      |> Elmx.TeaPlaybook.Protocol.phone_to_watch_constructors()
+      |> Elmc.TestSupport.TeaScenarioProtocol.phone_to_watch_constructors()
+      |> Enum.filter(&Elmc.TestSupport.TeaScenarioProtocol.supported_ctor?/1)
       |> MapSet.new(& &1.name)
 
     Enum.filter(steps, fn
-      {:from_phone, :provide_sun} -> MapSet.member?(ctors, "ProvideSun")
-      {:from_phone, :provide_weather} -> MapSet.member?(ctors, "ProvideWeather")
-      {:from_phone, :provide_condition} -> MapSet.member?(ctors, "ProvideCondition")
-      {:from_phone, :provide_temperature} -> MapSet.member?(ctors, "ProvideTemperature")
-      {:from_phone, :provide_moon_phase} -> MapSet.member?(ctors, "ProvideMoonPhase")
-      {:from_phone, :provide_moon} -> MapSet.member?(ctors, "ProvideMoon")
+      {:from_phone, ctor} when is_binary(ctor) -> MapSet.member?(supported, ctor)
+      {:from_phone, _} -> false
       _ -> true
     end)
   end
 
   defp filter_steps(steps, caps) do
+    buttons = MapSet.new(caps[:buttons] || [])
+
     Enum.filter(steps, fn
       {:dispatch_clock, _} -> caps[:has_current_datetime]
       {:from_phone, _} -> caps[:has_from_phone]
@@ -115,10 +115,18 @@ defmodule Elmc.TestSupport.TeaScenario do
       {:dispatch_tag_bool, :health, _} -> caps[:has_health]
       {:dispatch_tag_value, :random, _} -> caps[:has_random]
       {:cycle_msgs, :direction, _} -> caps[:has_direction_msgs]
-      {:dispatch_button, _} -> caps[:buttons] != []
+      {:dispatch_button, button} -> MapSet.member?(buttons, button)
+      {:dispatch_frame, _, _} -> caps[:has_frame]
       _ -> true
     end)
   end
+
+  # Generated `elmc_pebble_dispatch_button*` returns -9 on watchfaces.
+  defp filter_mode_steps(steps, :watchface) do
+    Enum.reject(steps, &match?({:dispatch_button, _}, &1))
+  end
+
+  defp filter_mode_steps(steps, _), do: steps
 
   defp filter_expects(expects, caps) do
     expects

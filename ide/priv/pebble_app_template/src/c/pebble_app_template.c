@@ -350,6 +350,11 @@ static uint8_t s_inbox_cstring_tuple_wire[ELMC_INBOX_STRING_MAX + 8];
 #if ELMC_PEBBLE_FEATURE_INBOX_EVENTS
 static ElmcInboxTupleSnapshot s_companion_pending[ELMC_INBOX_MAX_TUPLES];
 static uint8_t s_companion_pending_wire[ELMC_INBOX_MAX_TUPLES][ELMC_INBOX_TUPLE_WIRE_BYTES];
+/* Protocol-matrix-sized PhoneToWatch decoders are ~3KB+. Keep them off the
+   AppMessage callback stack (Basalt app stack is tight; stack locals here
+   fault with PC:0 / LR:0 after phone→watch delivery). */
+static CompanionProtocolPhoneToWatchDecoder s_companion_inbox_decoder;
+static CompanionProtocolPhoneToWatchMessage s_companion_inbox_message;
 #endif
 
 enum {
@@ -398,9 +403,13 @@ static int32_t s_random_seed = 1722529;
 static int s_pending_companion_count = 0;
 static int s_pending_companion_tags[COMPANION_PENDING_QUEUE_CAP];
 static int s_pending_companion_values[COMPANION_PENDING_QUEUE_CAP];
+/* Owned references to the boxed Elm message for full-payload sends; NULL entries
+   fall back to the legacy tag/value encode. */
+static ElmcValue *s_pending_companion_messages[COMPANION_PENDING_QUEUE_CAP];
 static bool s_last_companion_request_valid = false;
 static int s_last_companion_request_tag = 0;
 static int s_last_companion_request_value = 0;
+static ElmcValue *s_last_companion_request_message = NULL;
 static AppTimer *s_companion_outbox_retry_timer = NULL;
 static int64_t s_last_companion_outbox_attempt_ms = 0;
 #define COMPANION_RESYNC_MIN_INTERVAL_MS 2000
@@ -483,8 +492,8 @@ static void display_bounds_diag_callback(void *data);
 static void deferred_datetime_callback(void *data);
 #endif
 #if ELMC_PEBBLE_FEATURE_CMD_COMPANION_SEND
-static bool send_companion_request(int request_tag, int request_value);
-static void enqueue_pending_companion_request(int request_tag, int request_value);
+static bool send_companion_request(int request_tag, int request_value, ElmcValue *message);
+static void enqueue_pending_companion_request(int request_tag, int request_value, ElmcValue *message);
 static void flush_pending_companion_request(void);
 static void companion_resync_callback(void *data);
 #endif
@@ -1203,11 +1212,21 @@ static void apply_pending_cmd(void) {
     case ELMC_PEBBLE_CMD_COMPANION_SEND: {
       int request_tag = (int)cmd.p0;
       int request_value = (int)cmd.p1;
+      /* Take ownership now: nested apply_pending_cmd calls reuse the static cmd. */
+      ElmcValue *request_message = cmd.value;
+      cmd.value = NULL;
       s_last_companion_request_tag = request_tag;
       s_last_companion_request_value = request_value;
+      if (s_last_companion_request_message) {
+        elmc_release(s_last_companion_request_message);
+      }
+      s_last_companion_request_message = request_message ? elmc_retain(request_message) : NULL;
       s_last_companion_request_valid = true;
-      if (!send_companion_request(request_tag, request_value)) {
-        enqueue_pending_companion_request(request_tag, request_value);
+      if (!send_companion_request(request_tag, request_value, request_message)) {
+        enqueue_pending_companion_request(request_tag, request_value, request_message);
+      }
+      if (request_message) {
+        elmc_release(request_message);
       }
       break;
     }
@@ -1643,6 +1662,7 @@ static void apply_pending_cmd(void) {
     default:
       break;
     }
+    elmc_pebble_cmd_release_value(&cmd);
   }
   APP_LOG(APP_LOG_LEVEL_WARNING, "cmd drain guard reached");
   ELMC_PEBBLE_TRACE_EXIT("apply_pending_cmd");
@@ -3177,7 +3197,7 @@ static void tick_handler(struct tm *tick_time, TimeUnits units_changed) {
 #endif
 
 #if ELMC_PEBBLE_FEATURE_CMD_COMPANION_SEND
-static bool send_companion_request(int request_tag, int request_value) {
+static bool send_companion_request(int request_tag, int request_value, ElmcValue *message) {
   ELMC_PEBBLE_TRACE_ENTER("send_companion_request");
   DictionaryIterator *iter = NULL;
   AppMessageResult rc = app_message_outbox_begin(&iter);
@@ -3187,8 +3207,15 @@ static bool send_companion_request(int request_tag, int request_value) {
     return false;
   }
 
-  if (!companion_protocol_encode_watch_to_phone(iter, request_tag, request_value)) {
-    APP_LOG(APP_LOG_LEVEL_WARNING, "protocol encode failed tag=%d value=%d", request_tag, request_value);
+  /* The boxed message carries every payload field; the tag/value pair can only
+     round-trip tag-only and single-scalar constructors. */
+  bool encoded = message != NULL
+      ? companion_protocol_encode_watch_to_phone_value(iter, message)
+      : companion_protocol_encode_watch_to_phone(iter, request_tag, request_value);
+
+  if (!encoded) {
+    APP_LOG(APP_LOG_LEVEL_WARNING, "protocol encode failed tag=%d value=%d boxed=%d",
+            request_tag, request_value, message != NULL ? 1 : 0);
     ELMC_PEBBLE_TRACE_EXIT("send_companion_request");
     return false;
   }
@@ -3201,26 +3228,46 @@ static bool send_companion_request(int request_tag, int request_value) {
   return ok;
 }
 
-static void enqueue_pending_companion_request(int request_tag, int request_value) {
+static void companion_pending_drop_front(void) {
+  int i;
+  if (s_pending_companion_count <= 0) {
+    return;
+  }
+  if (s_pending_companion_messages[0]) {
+    elmc_release(s_pending_companion_messages[0]);
+    s_pending_companion_messages[0] = NULL;
+  }
+  for (i = 1; i < s_pending_companion_count; i++) {
+    s_pending_companion_tags[i - 1] = s_pending_companion_tags[i];
+    s_pending_companion_values[i - 1] = s_pending_companion_values[i];
+    s_pending_companion_messages[i - 1] = s_pending_companion_messages[i];
+  }
+  s_pending_companion_count -= 1;
+  s_pending_companion_messages[s_pending_companion_count] = NULL;
+}
+
+static void enqueue_pending_companion_request(int request_tag, int request_value, ElmcValue *message) {
   int i;
   /* Deduplicate consecutive identical tags so a busy outbox does not drop a
-     different follow-up request (e.g. RequestSunData then RequestWeather). */
-  for (i = 0; i < s_pending_companion_count; i++) {
-    if (s_pending_companion_tags[i] == request_tag &&
-        s_pending_companion_values[i] == request_value) {
-      return;
+     different follow-up request (e.g. RequestSunData then RequestWeather).
+     Boxed messages carry payload the tag/value pair cannot compare, so they are
+     never treated as duplicates. */
+  if (!message) {
+    for (i = 0; i < s_pending_companion_count; i++) {
+      if (s_pending_companion_messages[i] == NULL &&
+          s_pending_companion_tags[i] == request_tag &&
+          s_pending_companion_values[i] == request_value) {
+        return;
+      }
     }
   }
   if (s_pending_companion_count >= COMPANION_PENDING_QUEUE_CAP) {
     /* Drop the oldest pending entry; keep fresher requests. */
-    for (i = 1; i < s_pending_companion_count; i++) {
-      s_pending_companion_tags[i - 1] = s_pending_companion_tags[i];
-      s_pending_companion_values[i - 1] = s_pending_companion_values[i];
-    }
-    s_pending_companion_count -= 1;
+    companion_pending_drop_front();
   }
   s_pending_companion_tags[s_pending_companion_count] = request_tag;
   s_pending_companion_values[s_pending_companion_count] = request_value;
+  s_pending_companion_messages[s_pending_companion_count] = message ? elmc_retain(message) : NULL;
   s_pending_companion_count += 1;
 }
 
@@ -3229,17 +3276,10 @@ static void flush_pending_companion_request(void) {
   while (s_pending_companion_count > 0) {
     int request_tag = s_pending_companion_tags[0];
     int request_value = s_pending_companion_values[0];
-    if (!send_companion_request(request_tag, request_value)) {
+    if (!send_companion_request(request_tag, request_value, s_pending_companion_messages[0])) {
       break;
     }
-    {
-      int i;
-      for (i = 1; i < s_pending_companion_count; i++) {
-        s_pending_companion_tags[i - 1] = s_pending_companion_tags[i];
-        s_pending_companion_values[i - 1] = s_pending_companion_values[i];
-      }
-      s_pending_companion_count -= 1;
-    }
+    companion_pending_drop_front();
   }
   ELMC_PEBBLE_TRACE_EXIT("flush_pending_companion_request");
 }
@@ -3278,7 +3318,8 @@ static void companion_resync_callback(void *data) {
     return;
   }
 
-  (void)send_companion_request(s_last_companion_request_tag, s_last_companion_request_value);
+  (void)send_companion_request(s_last_companion_request_tag, s_last_companion_request_value,
+                               s_last_companion_request_message);
   ELMC_PEBBLE_TRACE_EXIT("companion_resync_callback");
 }
 #endif
@@ -3547,12 +3588,14 @@ static void companion_pending_clear(void);
 static bool companion_simulator_weather_tuple(const Tuple *tuple) {
 #if ELMC_PEBBLE_FEATURE_INBOX_EVENTS && defined(ELMC_COMPANION_SIMULATOR_WEATHER) && ELMC_COMPANION_SIMULATOR_WEATHER
   int32_t wire_value = 0;
-  CompanionProtocolPhoneToWatchMessage message = {0};
+  CompanionProtocolPhoneToWatchMessage *message = &s_companion_inbox_message;
   bool ready_to_dispatch = false;
 
   if (!tuple || !debug_storage_tuple_int((Tuple *)tuple, &wire_value)) {
     return false;
   }
+
+  memset(message, 0, sizeof(*message));
 
 #if defined(ELMC_COMPANION_SIMULATOR_WEATHER_MODE_UNIFIED) && ELMC_COMPANION_SIMULATOR_WEATHER_MODE_UNIFIED
   static int32_t s_pending_temp_c = 0;
@@ -3574,30 +3617,30 @@ static bool companion_simulator_weather_tuple(const Tuple *tuple) {
     return true;
   }
 
-  message.kind = COMPANION_PROTOCOL_PHONE_TO_WATCH_KIND_PROVIDE_WEATHER;
+  message->kind = COMPANION_PROTOCOL_PHONE_TO_WATCH_KIND_PROVIDE_WEATHER;
 #if ELMC_COMPANION_PROTOCOL_HAS_UNION_PAYLOADS
-  message.int_fields[0] = 1;
-  message.union_value_fields[0] = s_pending_temp_c * 10;
+  message->int_fields[0] = 1;
+  message->union_value_fields[0] = s_pending_temp_c * 10;
 #else
-  message.int_fields[0] = s_pending_temp_c;
+  message->int_fields[0] = s_pending_temp_c;
 #endif
-  message.int_fields[1] = s_pending_condition_wire;
+  message->int_fields[1] = s_pending_condition_wire;
   s_has_pending_temp = false;
   s_has_pending_condition = false;
   ready_to_dispatch = true;
 #elif defined(ELMC_COMPANION_SIMULATOR_WEATHER_MODE_LEGACY_SPLIT) && ELMC_COMPANION_SIMULATOR_WEATHER_MODE_LEGACY_SPLIT
   if (tuple->key == ELMC_DEBUG_SIMULATOR_KEY_WEATHER_TEMPERATURE_C) {
-    message.kind = COMPANION_PROTOCOL_PHONE_TO_WATCH_KIND_PROVIDE_TEMPERATURE;
+    message->kind = COMPANION_PROTOCOL_PHONE_TO_WATCH_KIND_PROVIDE_TEMPERATURE;
 #if ELMC_COMPANION_PROTOCOL_HAS_UNION_PAYLOADS
-    message.int_fields[0] = 1;
-    message.union_value_fields[0] = wire_value;
+    message->int_fields[0] = 1;
+    message->union_value_fields[0] = wire_value;
 #else
-    message.int_fields[0] = wire_value;
+    message->int_fields[0] = wire_value;
 #endif
     ready_to_dispatch = true;
   } else if (tuple->key == ELMC_DEBUG_SIMULATOR_KEY_WEATHER_CONDITION_WIRE) {
-    message.kind = COMPANION_PROTOCOL_PHONE_TO_WATCH_KIND_PROVIDE_CONDITION;
-    message.int_fields[0] = wire_value;
+    message->kind = COMPANION_PROTOCOL_PHONE_TO_WATCH_KIND_PROVIDE_CONDITION;
+    message->int_fields[0] = wire_value;
     ready_to_dispatch = true;
   } else {
     return false;
@@ -3607,12 +3650,12 @@ static bool companion_simulator_weather_tuple(const Tuple *tuple) {
     return false;
   }
 
-  message.kind = COMPANION_PROTOCOL_PHONE_TO_WATCH_KIND_PROVIDE_TEMPERATURE;
+  message->kind = COMPANION_PROTOCOL_PHONE_TO_WATCH_KIND_PROVIDE_TEMPERATURE;
 #if ELMC_COMPANION_PROTOCOL_HAS_UNION_PAYLOADS
-  message.int_fields[0] = 1;
-  message.union_value_fields[0] = wire_value;
+  message->int_fields[0] = 1;
+  message->union_value_fields[0] = wire_value;
 #else
-  message.int_fields[0] = wire_value;
+  message->int_fields[0] = wire_value;
 #endif
   ready_to_dispatch = true;
 #else
@@ -3624,7 +3667,7 @@ static bool companion_simulator_weather_tuple(const Tuple *tuple) {
     return false;
   }
 
-  int rc = companion_protocol_dispatch_phone_to_watch(&s_elm_app, &message);
+  int rc = companion_protocol_dispatch_phone_to_watch(&s_elm_app, message);
 #if ELMC_PEBBLE_EMULATOR_STORAGE_LOGS
   companion_inbox_log("simulator weather key=%lu value=%ld rc=%d",
                       (unsigned long)tuple->key, (long)wire_value, rc);
@@ -3659,28 +3702,30 @@ static bool companion_dispatch_needs_render(const CompanionProtocolPhoneToWatchM
 }
 
 static bool companion_decode_and_dispatch_snapshots(const ElmcInboxTupleSnapshot *snapshots, uint8_t wire[][ELMC_INBOX_TUPLE_WIRE_BYTES], int tuple_count) {
-  CompanionProtocolPhoneToWatchDecoder decoder;
-  companion_protocol_phone_to_watch_decoder_init(&decoder);
+  CompanionProtocolPhoneToWatchDecoder *decoder = &s_companion_inbox_decoder;
+  CompanionProtocolPhoneToWatchMessage *message = &s_companion_inbox_message;
+  memset(decoder, 0, sizeof(*decoder));
+  memset(message, 0, sizeof(*message));
+  companion_protocol_phone_to_watch_decoder_init(decoder);
 
   for (int i = 0; i < tuple_count; i++) {
     Tuple *tuple = elmc_inbox_materialize_tuple(&snapshots[i], wire[i]);
     if (!tuple) {
       continue;
     }
-    companion_protocol_phone_to_watch_decoder_push_tuple(&decoder, tuple);
+    companion_protocol_phone_to_watch_decoder_push_tuple(decoder, tuple);
   }
 
-  CompanionProtocolPhoneToWatchMessage message = {0};
-  if (companion_protocol_phone_to_watch_decoder_finish(&decoder, &message) &&
-      message.kind != COMPANION_PROTOCOL_PHONE_TO_WATCH_KIND_UNKNOWN) {
-    int rc = companion_protocol_dispatch_phone_to_watch(&s_elm_app, &message);
+  if (companion_protocol_phone_to_watch_decoder_finish(decoder, message) &&
+      message->kind != COMPANION_PROTOCOL_PHONE_TO_WATCH_KIND_UNKNOWN) {
+    int rc = companion_protocol_dispatch_phone_to_watch(&s_elm_app, message);
 #if ELMC_PEBBLE_EMULATOR_STORAGE_LOGS
-    companion_inbox_log("companion dispatch kind=%d rc=%d", (int)message.kind, rc);
+    companion_inbox_log("companion dispatch kind=%d rc=%d", (int)message->kind, rc);
 #endif
     if (rc == 0) {
       s_agent_after_companion_dispatch = true;
       apply_pending_cmd();
-      if (companion_dispatch_needs_render(&message)) {
+      if (companion_dispatch_needs_render(message)) {
         schedule_render_model();
       }
       return true;
@@ -3691,7 +3736,7 @@ static bool companion_decode_and_dispatch_snapshots(const ElmcInboxTupleSnapshot
 
 #if ELMC_PEBBLE_EMULATOR_STORAGE_LOGS
   companion_inbox_log("companion decode failed saw_tag=%d tag=%ld tuples=%d",
-                      decoder.saw_tag ? 1 : 0, (long)decoder.tag, tuple_count);
+                      decoder->saw_tag ? 1 : 0, (long)decoder->tag, tuple_count);
 #endif
 
   for (int i = 0; i < tuple_count; i++) {
@@ -3742,31 +3787,33 @@ static bool companion_try_decode_pending(void) {
     return false;
   }
 
-  CompanionProtocolPhoneToWatchDecoder decoder;
-  companion_protocol_phone_to_watch_decoder_init(&decoder);
+  CompanionProtocolPhoneToWatchDecoder *decoder = &s_companion_inbox_decoder;
+  CompanionProtocolPhoneToWatchMessage *message = &s_companion_inbox_message;
+  memset(decoder, 0, sizeof(*decoder));
+  memset(message, 0, sizeof(*message));
+  companion_protocol_phone_to_watch_decoder_init(decoder);
 
   for (int i = 0; i < s_companion_pending_count; i++) {
     Tuple *tuple = elmc_inbox_materialize_tuple(&s_companion_pending[i], s_companion_pending_wire[i]);
     if (!tuple) {
       continue;
     }
-    companion_protocol_phone_to_watch_decoder_push_tuple(&decoder, tuple);
+    companion_protocol_phone_to_watch_decoder_push_tuple(decoder, tuple);
   }
 
-  CompanionProtocolPhoneToWatchMessage message = {0};
-  if (!companion_protocol_phone_to_watch_decoder_finish(&decoder, &message) ||
-      message.kind == COMPANION_PROTOCOL_PHONE_TO_WATCH_KIND_UNKNOWN) {
+  if (!companion_protocol_phone_to_watch_decoder_finish(decoder, message) ||
+      message->kind == COMPANION_PROTOCOL_PHONE_TO_WATCH_KIND_UNKNOWN) {
 #if ELMC_PEBBLE_EMULATOR_STORAGE_LOGS
     companion_inbox_log("companion pending decode failed saw_tag=%d tag=%ld tuples=%d",
-                        decoder.saw_tag ? 1 : 0, (long)decoder.tag, s_companion_pending_count);
+                        decoder->saw_tag ? 1 : 0, (long)decoder->tag, s_companion_pending_count);
 #endif
     return false;
   }
 
-  int rc = companion_protocol_dispatch_phone_to_watch(&s_elm_app, &message);
+  int rc = companion_protocol_dispatch_phone_to_watch(&s_elm_app, message);
 #if ELMC_PEBBLE_EMULATOR_STORAGE_LOGS
   companion_inbox_log("companion pending dispatch kind=%d rc=%d tuples=%d",
-                      (int)message.kind, rc, s_companion_pending_count);
+                      (int)message->kind, rc, s_companion_pending_count);
 #endif
   if (rc != 0) {
     return false;
@@ -3774,7 +3821,7 @@ static bool companion_try_decode_pending(void) {
 
   s_agent_after_companion_dispatch = true;
   apply_pending_cmd();
-  if (companion_dispatch_needs_render(&message)) {
+  if (companion_dispatch_needs_render(message)) {
     schedule_render_model();
   }
   return true;

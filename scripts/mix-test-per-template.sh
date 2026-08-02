@@ -40,7 +40,7 @@ case "${TEST_FILE}" in
 esac
 
 case "${TEST_FILE}" in
-  *watchface_rc_track_smoke_test.exs|*watchface_tea_semantic_smoke_test.exs|*template_tea_scenario_smoke_test.exs|*tea_playbook_smoke_test.exs)
+  *watchface_rc_track_smoke_test.exs|*watchface_tea_semantic_smoke_test.exs|*template_tea_scenario_smoke_test.exs|*tea_playbook_smoke_test.exs|*tea_scenario_valgrind_smoke_test.exs)
     DEFAULT_BATCH=1
     ;;
   *)
@@ -63,7 +63,7 @@ else
     *watchface_tea_semantic_smoke_test.exs)
       NAMES_EXPR='Elmc.TestSupport.PlanStrictTemplates.host_smoke_names()'
       ;;
-    *template_tea_scenario_smoke_test.exs)
+    *template_tea_scenario_smoke_test.exs|*tea_scenario_valgrind_smoke_test.exs)
       NAMES_EXPR='Elmc.TestSupport.TeaScenario.enabled_names()'
       ;;
     *tea_playbook_smoke_test.exs)

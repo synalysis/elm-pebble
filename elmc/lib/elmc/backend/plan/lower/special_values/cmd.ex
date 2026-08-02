@@ -111,10 +111,10 @@ defmodule Elmc.Backend.Plan.Lower.SpecialValues.Cmd do
     do: Helpers.encoded_cmd_expr(Helpers.command_kind(:speaker_play_tracks), [volume, tracks], 2)
 
   def special_value_from_target("Pebble.Speaker.stop", _args),
-    do: Helpers.command_kind_expr(:speaker_stop)
+    do: Helpers.zero_arity_cmd(:speaker_stop)
 
   def special_value_from_target("Elm.Kernel.PebbleWatch.speakerStop", _args),
-    do: Helpers.command_kind_expr(:speaker_stop)
+    do: Helpers.zero_arity_cmd(:speaker_stop)
 
   def special_value_from_target("Pebble.Speaker.setVolume", [volume]),
     do: Helpers.encoded_cmd_expr(Helpers.command_kind(:speaker_set_volume), [volume], 1)
@@ -141,10 +141,10 @@ defmodule Elmc.Backend.Plan.Lower.SpecialValues.Cmd do
     do: Helpers.encoded_cmd_expr(Helpers.command_kind(:speaker_stream_write), [bytes], 1)
 
   def special_value_from_target("Pebble.Speaker.streamClose", _args),
-    do: Helpers.command_kind_expr(:speaker_stream_close)
+    do: Helpers.zero_arity_cmd(:speaker_stream_close)
 
   def special_value_from_target("Elm.Kernel.PebbleWatch.speakerStreamClose", _args),
-    do: Helpers.command_kind_expr(:speaker_stream_close)
+    do: Helpers.zero_arity_cmd(:speaker_stream_close)
 
   def special_value_from_target("Pebble.Internal.Companion.companionSend", args),
     do: Helpers.encoded_cmd_expr(Helpers.command_kind(:companion_send), args, 2)
@@ -152,26 +152,10 @@ defmodule Elmc.Backend.Plan.Lower.SpecialValues.Cmd do
   def special_value_from_target("Elm.Kernel.PebbleWatch.companionSend", args),
     do: Helpers.encoded_cmd_expr(Helpers.command_kind(:companion_send), args, 2)
 
-  def special_value_from_target("Companion.Watch.sendWatchToPhone", [msg]) do
-    case Elmc.Backend.CCodegen.CompanionSendFold.fold_wire_params(msg) do
-      {:ok, tag, val} ->
-        Helpers.encoded_cmd_expr(
-          Helpers.command_kind(:companion_send),
-          [%{op: :int_literal, value: tag}, %{op: :int_literal, value: val}],
-          2
-        )
-
-      :error ->
-        Helpers.encoded_cmd_expr(
-          Helpers.command_kind(:companion_send),
-          [
-            %{op: :qualified_call, target: "Companion.Internal.watchToPhoneTag", args: [msg]},
-            %{op: :qualified_call, target: "Companion.Internal.watchToPhoneValue", args: [msg]}
-          ],
-          2
-        )
-    end
-  end
+  # Carry the whole typed message so the host can write every wire key. Folding to
+  # (tag, value) can only round-trip tag-only and single-scalar constructors.
+  def special_value_from_target("Companion.Watch.sendWatchToPhone", [msg]),
+    do: %{op: :runtime_call, function: "elmc_cmd_companion_send_value", args: [msg]}
 
   def special_value_from_target("Pebble.Light.interaction", []),
     do: Helpers.encoded_cmd_expr(Helpers.command_kind(:backlight), [%{op: :int_literal, value: 0}], 1)
@@ -350,40 +334,40 @@ defmodule Elmc.Backend.Plan.Lower.SpecialValues.Cmd do
     do: Helpers.encoded_cmd_expr(Helpers.command_kind(:log_error_code), args, 1)
 
   def special_value_from_target("Pebble.Cmd.vibesCancel", _args),
-    do: Helpers.command_kind_expr(:vibes_cancel)
+    do: Helpers.zero_arity_cmd(:vibes_cancel)
 
   def special_value_from_target("Pebble.Vibes.cancel", _args),
-    do: Helpers.command_kind_expr(:vibes_cancel)
+    do: Helpers.zero_arity_cmd(:vibes_cancel)
 
   def special_value_from_target("Elm.Kernel.PebbleWatch.vibesCancel", _args),
-    do: Helpers.command_kind_expr(:vibes_cancel)
+    do: Helpers.zero_arity_cmd(:vibes_cancel)
 
   def special_value_from_target("Pebble.Cmd.vibesShortPulse", _args),
-    do: Helpers.command_kind_expr(:vibes_short_pulse)
+    do: Helpers.zero_arity_cmd(:vibes_short_pulse)
 
   def special_value_from_target("Pebble.Vibes.shortPulse", _args),
-    do: Helpers.command_kind_expr(:vibes_short_pulse)
+    do: Helpers.zero_arity_cmd(:vibes_short_pulse)
 
   def special_value_from_target("Elm.Kernel.PebbleWatch.vibesShortPulse", _args),
-    do: Helpers.command_kind_expr(:vibes_short_pulse)
+    do: Helpers.zero_arity_cmd(:vibes_short_pulse)
 
   def special_value_from_target("Pebble.Cmd.vibesLongPulse", _args),
-    do: Helpers.command_kind_expr(:vibes_long_pulse)
+    do: Helpers.zero_arity_cmd(:vibes_long_pulse)
 
   def special_value_from_target("Pebble.Vibes.longPulse", _args),
-    do: Helpers.command_kind_expr(:vibes_long_pulse)
+    do: Helpers.zero_arity_cmd(:vibes_long_pulse)
 
   def special_value_from_target("Elm.Kernel.PebbleWatch.vibesLongPulse", _args),
-    do: Helpers.command_kind_expr(:vibes_long_pulse)
+    do: Helpers.zero_arity_cmd(:vibes_long_pulse)
 
   def special_value_from_target("Pebble.Cmd.vibesDoublePulse", _args),
-    do: Helpers.command_kind_expr(:vibes_double_pulse)
+    do: Helpers.zero_arity_cmd(:vibes_double_pulse)
 
   def special_value_from_target("Pebble.Vibes.doublePulse", _args),
-    do: Helpers.command_kind_expr(:vibes_double_pulse)
+    do: Helpers.zero_arity_cmd(:vibes_double_pulse)
 
   def special_value_from_target("Elm.Kernel.PebbleWatch.vibesDoublePulse", _args),
-    do: Helpers.command_kind_expr(:vibes_double_pulse)
+    do: Helpers.zero_arity_cmd(:vibes_double_pulse)
 
   def special_value_from_target("Pebble.Vibes.pattern", [segments]),
     do: Helpers.encoded_cmd_expr(Helpers.command_kind(:vibes_custom_pattern), [segments], 1)
@@ -410,16 +394,16 @@ defmodule Elmc.Backend.Plan.Lower.SpecialValues.Cmd do
     do: Helpers.encoded_cmd_expr(Helpers.command_kind(:compass_peek), [Helpers.constructor_tag_expr(to_msg)], 1)
 
   def special_value_from_target("Pebble.Dictation.start", _args),
-    do: Helpers.command_kind_expr(:dictation_start)
+    do: Helpers.zero_arity_cmd(:dictation_start)
 
   def special_value_from_target("Elm.Kernel.PebbleWatch.dictationStart", _args),
-    do: Helpers.command_kind_expr(:dictation_start)
+    do: Helpers.zero_arity_cmd(:dictation_start)
 
   def special_value_from_target("Pebble.Dictation.stop", _args),
-    do: Helpers.command_kind_expr(:dictation_stop)
+    do: Helpers.zero_arity_cmd(:dictation_stop)
 
   def special_value_from_target("Elm.Kernel.PebbleWatch.dictationStop", _args),
-    do: Helpers.command_kind_expr(:dictation_stop)
+    do: Helpers.zero_arity_cmd(:dictation_stop)
 
   def special_value_from_target("Pebble.Cmd.batch", args),
     do: Effects.special_value_from_target("Cmd.batch", args)

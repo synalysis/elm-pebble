@@ -6,9 +6,14 @@ defmodule Elmc.Backend.CCodegen.RetainOperandAlias do
   The extra retain must be dropped **inside** `if (dest == operand)` when transferring
   an owned operand. Unconditional `elmc_release(dest)` frees borrowed Just payloads
   while the model still owns them (YES `Maybe.withDefault default model.sun`).
+
+  When the chosen operand is a **borrow** stored in an `owned[]` slot (tuple/msg peel),
+  keep the runtime retain on `dest` and only null the borrow slot — dropping the retain
+  leaves the model aliasing memory still owned by the message (YES `BatteryLevelChanged`
+  + `Basics.clamp`).
   """
 
-  alias Elmc.Backend.CCodegen.ValueSlots
+  alias Elmc.Backend.CCodegen.{RecordCompile, ValueSlots}
 
   @doc """
   Emit C for plan-primary lowering. `dest` is an SSA reg or `:fn_out` / `:branch_out`.
@@ -65,12 +70,7 @@ defmodule Elmc.Backend.CCodegen.RetainOperandAlias do
     alias_operand_refs
     |> Enum.filter(&(is_binary(&1) and &1 != dest_ref))
     |> Enum.map(fn arg_ref ->
-      body =
-        if drop? do
-          "elmc_release(#{dest_ref});\n  #{null_ref(arg_ref)}"
-        else
-          null_ref(arg_ref)
-        end
+      body = alias_transfer_body(dest_ref, arg_ref, drop?)
 
       """
       if (#{dest_ref} == #{arg_ref}) {
@@ -91,6 +91,21 @@ defmodule Elmc.Backend.CCodegen.RetainOperandAlias do
   @spec emit_for_runtime_call(String.t(), [String.t()], map()) :: String.t()
   def emit_for_runtime_call(out, arg_vars, env) when is_binary(out) and is_list(arg_vars) do
     ValueSlots.null_call_operands_aliasing_out(out, arg_vars, env, drop_result_retain?: true)
+  end
+
+  @spec alias_transfer_body(String.t(), String.t(), boolean()) :: String.t()
+  defp alias_transfer_body(dest_ref, arg_ref, drop?) do
+    if RecordCompile.borrowed_owned_ref?(arg_ref) do
+      # Borrow peel in owned[]: keep clamp/min/withDefault retain on dest; null only.
+      RecordCompile.clear_borrowed_owned_ref(arg_ref)
+      null_ref(arg_ref)
+    else
+      if drop? do
+        "elmc_release(#{dest_ref});\n  #{null_ref(arg_ref)}"
+      else
+        null_ref(arg_ref)
+      end
+    end
   end
 
   @spec plan_owned_slot_ref(non_neg_integer(), map(), keyword()) :: String.t() | nil

@@ -18,6 +18,7 @@ defmodule Elmc.Backend.Pebble.SourceWriter.SceneHost.CmdFromValue.FromValue.Prol
       out_cmd->p4 = 0;
       out_cmd->p5 = 0;
       out_cmd->text[0] = '\\0';
+      out_cmd->value = NULL;
       if (!value) return -2;
 
       if (value->tag == ELMC_TAG_INT || value->tag == ELMC_TAG_BOOL) {

@@ -149,15 +149,11 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
     end
   end
 
-  def compile(%{op: :c_int_expr, value: "ELMC_PEBBLE_CMD_" <> _} = kind, ctx, b) do
-    if PlatformWeb.web_target?(Process.get(:elmc_codegen_opts, %{})) do
-      record_unsupported(%{op: :pebble_cmd, kind: kind, params: []}, ctx)
-      :unsupported
-    else
-      Cmd.compile(%{op: :pebble_cmd, kind: kind, params: []}, ctx, b)
-    end
-  end
-
+  # Bare `ELMC_PEBBLE_CMD_*` c-int values are integer kind constants (used as the
+  # left of encoded_cmd_as_tuple and similar). Zero-arity commands must be emitted
+  # as `%{op: :pebble_cmd, params: []}` at the special-value site — do not rewrite
+  # every CMD c-int into `elmc_cmd0`, or tuple-encoded cmds become
+  # `tuple2(cmd0, params)` and `elmc_cmd_from_value` loses the payload.
   def compile(%{op: op} = expr, ctx, b) when op in @literal_ops do
     compile_literal(expr, ctx, b)
   end

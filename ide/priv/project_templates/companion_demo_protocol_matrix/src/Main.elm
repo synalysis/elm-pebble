@@ -118,11 +118,19 @@ handlePhone model phoneMsg =
           ( 0, Pong ) ->
             finishCase model idx Pass
 
-          ( 1, EchoColor Red ) ->
-            finishCase model idx Pass
+          ( 1, EchoColor color ) ->
+            if color == Red then
+                finishCase model idx Pass
 
-          ( 2, EchoMeasure (Liters 3) ) ->
-            finishCase model idx Pass
+            else
+                finishCase model idx Fail
+
+          ( 2, EchoMeasure measure ) ->
+            if measure == Liters 3 then
+                finishCase model idx Pass
+
+            else
+                finishCase model idx Fail
 
           ( 3, EchoPoint point ) ->
             if point.x == 1 && point.y == 2 then
@@ -139,7 +147,9 @@ handlePhone model phoneMsg =
                 finishCase model idx Fail
 
           _ ->
-            finishCase model idx Fail
+            -- A reply belonging to another case (for example a boot Pong that
+            -- lands while a later case is Running) is not this case failing.
+            ( model, Cmd.none )
 
 
 handleExtras : Model -> PhoneToWatch -> ( Model, Cmd Msg )

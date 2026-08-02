@@ -126,8 +126,20 @@ defmodule Elmc.TestSupport.TeaScenarioHarness do
     }
 
     static int tea_dispatch_button(ElmcPebbleApp *app, int32_t button_id) {
-      if (elmc_pebble_dispatch_button(app, button_id) != 0) return -1;
+      int dr = elmc_pebble_dispatch_button(app, button_id);
+      if (dr != 0) return -1;
       return tea_drain_cmds(app);
+    }
+
+    static void tea_dump_spy_texts(void) {
+      printf("spy_texts:");
+      for (int i = 0; i < spy_count(); i++) {
+        const SpyRecord *rec = spy_record(i);
+        if (rec && rec->kind == SPY_OP_DRAW_TEXT && rec->text[0] != '\\0') {
+          printf(" | %s", rec->text);
+        }
+      }
+      printf("\\n");
     }
 
     int main(void) {
@@ -277,21 +289,12 @@ defmodule Elmc.TestSupport.TeaScenarioHarness do
     "if (elmc_pebble_dispatch_tag_bool(&app, ELMC_PEBBLE_MSG_GOTHEALTHSUPPORTED, #{bool}) != 0) return #{code};"
   end
 
-  defp emit_step({:from_phone, :provide_sun}, code, _caps) do
-    """
-      {
-        ElmcValue *payload = tea_provide_sun();
-        if (!payload) return #{code};
-        if (elmc_pebble_dispatch_tag_payload(&app, ELMC_PEBBLE_MSG_FROMPHONE, payload) != 0) return #{code + 1};
-        elmc_release(payload);
-      }
-    """
-  end
+  defp emit_step({:from_phone, ctor}, code, _caps) when is_binary(ctor) do
+    fn_name = TeaScenarioProtocol.builder_fn_name(ctor)
 
-  defp emit_step({:from_phone, :provide_weather}, code, _caps) do
     """
       {
-        ElmcValue *payload = tea_provide_weather();
+        ElmcValue *payload = #{fn_name}();
         if (!payload) return #{code};
         if (elmc_pebble_dispatch_tag_payload(&app, ELMC_PEBBLE_MSG_FROMPHONE, payload) != 0) return #{code + 1};
         elmc_release(payload);
@@ -301,50 +304,6 @@ defmodule Elmc.TestSupport.TeaScenarioHarness do
 
   defp emit_step({:dispatch_button, button}, code, _caps) do
     "if (tea_dispatch_button(&app, #{button_macro(button)}) != 0) return #{code};"
-  end
-
-  defp emit_step({:from_phone, :provide_condition}, code, _caps) do
-    """
-      {
-        ElmcValue *payload = tea_provide_condition();
-        if (!payload) return #{code};
-        if (elmc_pebble_dispatch_tag_payload(&app, ELMC_PEBBLE_MSG_FROMPHONE, payload) != 0) return #{code + 1};
-        elmc_release(payload);
-      }
-    """
-  end
-
-  defp emit_step({:from_phone, :provide_temperature}, code, _caps) do
-    """
-      {
-        ElmcValue *payload = tea_provide_temperature();
-        if (!payload) return #{code};
-        if (elmc_pebble_dispatch_tag_payload(&app, ELMC_PEBBLE_MSG_FROMPHONE, payload) != 0) return #{code + 1};
-        elmc_release(payload);
-      }
-    """
-  end
-
-  defp emit_step({:from_phone, :provide_moon_phase}, code, _caps) do
-    """
-      {
-        ElmcValue *payload = tea_provide_moon_phase();
-        if (!payload) return #{code};
-        if (elmc_pebble_dispatch_tag_payload(&app, ELMC_PEBBLE_MSG_FROMPHONE, payload) != 0) return #{code + 1};
-        elmc_release(payload);
-      }
-    """
-  end
-
-  defp emit_step({:from_phone, :provide_moon}, code, _caps) do
-    """
-      {
-        ElmcValue *payload = tea_provide_moon();
-        if (!payload) return #{code};
-        if (elmc_pebble_dispatch_tag_payload(&app, ELMC_PEBBLE_MSG_FROMPHONE, payload) != 0) return #{code + 1};
-        elmc_release(payload);
-      }
-    """
   end
 
   defp emit_step({:cycle_msgs, :direction, count}, code, _caps) do
@@ -390,10 +349,33 @@ defmodule Elmc.TestSupport.TeaScenarioHarness do
 
   defp emit_step(:view, _code, _caps), do: ""
 
+  defp emit_step({:assert_view_texts, texts}, code, _caps) when is_list(texts) do
+    checks =
+      Enum.map_join(texts, "\n", fn text ->
+        escaped = String.replace(text, "\"", "\\\"")
+
+        """
+            if (!spy_find_text("#{escaped}")) {
+              printf("missing_spy_text=#{escaped}\\n");
+              tea_dump_spy_texts();
+              return #{code};
+            }
+        """
+      end)
+
+    """
+      {
+        ElmcSceneSdkReplayStats assert_stats = {0};
+        spy_reset();
+        if (tea_run_view(&app, &assert_stats) != 0) return #{code};
+    #{checks}
+      }
+    """
+  end
+
   defp emit_step(step, code, _caps) do
     "  /* unsupported step #{inspect(step)} */ (void)0; /* code=#{code} */"
   end
-
   defp button_macro(:up), do: "ELMC_PEBBLE_BUTTON_UP"
   defp button_macro(:down), do: "ELMC_PEBBLE_BUTTON_DOWN"
   defp button_macro(:left), do: "ELMC_PEBBLE_BUTTON_LEFT"
@@ -441,6 +423,26 @@ defmodule Elmc.TestSupport.TeaScenarioHarness do
         checks ++ ["printf(\"time_text_ok=%d\\n\", stats.scene_text > 0);"]
       else
         checks
+      end
+
+    checks =
+      case expects[:require_spy_texts] do
+        texts when is_list(texts) and texts != [] ->
+          checks ++
+            Enum.map(texts, fn text ->
+              escaped = String.replace(text, "\"", "\\\"")
+
+              """
+              if (!spy_find_text("#{escaped}")) {
+                printf("missing_spy_text=#{escaped}\\n");
+                tea_dump_spy_texts();
+                return 103;
+              }
+              """
+            end)
+
+        _ ->
+          checks
       end
 
     Enum.join(checks, "\n  ")

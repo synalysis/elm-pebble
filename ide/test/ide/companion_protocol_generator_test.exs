@@ -102,9 +102,12 @@ defmodule Ide.CompanionProtocolGeneratorTest do
       assert generated_internal =~
                "Decode.decodeValue (Decode.field \"send_color_field1\" Decode.int) value"
 
-      assert generated_internal =~ "decodeMeasureWatchScalar : String -> Decode.Decoder Measure"
-      assert generated_internal =~ "Decode.decodeValue (decodeMeasureWatchScalar \"send_measure_field1\") value"
       assert generated_internal =~ "decodeMeasureLegacyWire : String -> Decode.Decoder Measure"
+
+      assert generated_internal =~
+               "Decode.decodeValue (decodeMeasureLegacyWire \"send_measure_field1\") value"
+
+      refute generated_internal =~ "decodeMeasureWatchScalar"
       refute generated_internal =~ "decodeMeasureWire"
 
       assert generated_internal =~
@@ -490,6 +493,9 @@ defmodule Ide.CompanionProtocolGeneratorTest do
       refute generated_internal =~ ~s|"push_labels_field1", Encode.int field1|
       assert generated_source =~ "COMPANION_PROTOCOL_KEY_PUSH_LABELS_FIELD1_COUNT"
       refute generated_source =~ "COMPANION_PROTOCOL_KEY_PUSH_LABELS_FIELD1)"
+
+      # elmc_tuple2_take releases *out when non-NULL; scratch must be zeroed.
+      assert generated_source =~ ~r/ElmcValue \*\w+_pairs\[\d+\] = \{0\};/
     after
       File.rm_rf(tmp)
     end
@@ -679,6 +685,106 @@ defmodule Ide.CompanionProtocolGeneratorTest do
     end
   end
 
+  test "generates watch-to-phone value encode for every payload shape" do
+    tmp =
+      Path.join(
+        System.tmp_dir!(),
+        "elm-pebble-protocol-w2p-value-#{System.unique_integer([:positive])}"
+      )
+
+    types = Path.join(tmp, "Types.elm")
+    header = Path.join(tmp, "companion_protocol.h")
+    source = Path.join(tmp, "companion_protocol.c")
+    js = Path.join(tmp, "companion-protocol.js")
+
+    try do
+      File.mkdir_p!(tmp)
+
+      File.write!(types, """
+      module Companion.Types exposing (Color(..), Measure(..), PhoneToWatch(..), Point, WatchToPhone(..))
+
+      type Color
+          = Red
+          | Green
+
+      type Measure
+          = Liters Int
+          | Pounds Int
+
+      type alias Point =
+          { x : Int, y : Int }
+
+      type WatchToPhone
+          = Ping
+          | SendColor Color
+          | SendMeasure Measure
+          | SendPoint Point
+          | SendCounts (List Int)
+
+      type PhoneToWatch
+          = Pong
+      """)
+
+      runtime_tags = %{
+        "WatchToPhone" => %{
+          "Ping" => 11,
+          "SendColor" => 12,
+          "SendMeasure" => 13,
+          "SendPoint" => 14,
+          "SendCounts" => 15
+        },
+        "Color" => %{"Red" => 21, "Green" => 22},
+        "Measure" => %{"Liters" => 31, "Pounds" => 32}
+      }
+
+      assert :ok =
+               CompanionProtocolGenerator.generate(types, header, source, js,
+                 runtime_tags: runtime_tags
+               )
+
+      generated_h = File.read!(header)
+      generated_c = File.read!(source)
+
+      assert generated_h =~
+               "bool companion_protocol_encode_watch_to_phone_value(DictionaryIterator *iter, ElmcValue *message);"
+
+      # Runtime constructor tags select the case; wire codes go on the wire.
+      assert generated_c =~ "switch ((int32_t)elmc_union_tag_as_int(message)) {"
+      assert generated_c =~ "case 11: {"
+      assert generated_c =~ "case 15: {"
+      assert generated_c =~ "static int32_t companion_protocol_wire_code_COLOR(int32_t runtime_tag)"
+      assert generated_c =~ "case 21: return 1;"
+      assert generated_c =~ "case 32: return 2;"
+
+      # Enum payload.
+      assert generated_c =~
+               "dict_write_int32(iter, COMPANION_PROTOCOL_KEY_SEND_COLOR_FIELD1, companion_protocol_wire_code_COLOR((int32_t)elmc_union_tag_as_int("
+
+      # Legacy union payload writes both tag and value.
+      assert generated_c =~ "COMPANION_PROTOCOL_KEY_SEND_MEASURE_FIELD1_TAG"
+
+      assert generated_c =~
+               "dict_write_int32(iter, COMPANION_PROTOCOL_KEY_SEND_MEASURE_FIELD1_VALUE, (int32_t)elmc_union_payload_int("
+
+      # Record payload writes every field by index (nameless records from plan).
+      assert generated_c =~ "elmc_record_get_index("
+      refute generated_c =~ ~r/elmc_record_get\([^,]+,\s*"/
+      assert generated_c =~ "COMPANION_PROTOCOL_KEY_SEND_POINT_FIELD1_X"
+      assert generated_c =~ "COMPANION_PROTOCOL_KEY_SEND_POINT_FIELD1_Y"
+
+      # List payload writes an offset count plus offset elements.
+      assert generated_c =~ "COMPANION_PROTOCOL_KEY_SEND_COUNTS_FIELD1_COUNT"
+      assert generated_c =~ "elmc_list_nth_int_default("
+      assert generated_c =~ "COMPANION_PROTOCOL_KEY_SEND_COUNTS_FIELD1_15"
+
+      # The legacy scalar entry point still exists for tag/value callers.
+      assert generated_c =~
+               "bool companion_protocol_encode_watch_to_phone(DictionaryIterator *iter, int32_t tag, int32_t value)"
+    after
+      File.rm_rf(tmp)
+    end
+  end
+
   test "wirePhoneToWatchFromElmPayload includes tagged union phone-to-watch messages" do
     tmp =
       Path.join(
@@ -699,14 +805,18 @@ defmodule Ide.CompanionProtocolGeneratorTest do
       generated_js = File.read!(js)
       generated_c = File.read!(source)
 
-      assert generated_js =~ "case 205:"
-      assert generated_js =~ "case 206:"
-      assert generated_js =~ "case 209:"
-      assert generated_js =~ "provide_weather_field1_tag"
-      assert generated_js =~ "provide_weather_field1_value"
-      assert generated_js =~ "provide_wind_field2_tag"
-      assert generated_js =~ "encodePhoneToWatchPayload(\"ProvideWeather\""
-      assert generated_js =~ "encodePhoneToWatchPayload(\"ProvideWind\""
+      # Every phone->watch tag round-trips: the wire helper renames Elm wire keys
+      # to AppMessage ids instead of re-deriving values per constructor.
+      assert generated_js =~ "var PHONE_TO_WATCH_TAGS = {"
+      assert generated_js =~ "  205: true,"
+      assert generated_js =~ "  206: true,"
+      assert generated_js =~ "  209: true,"
+      assert generated_js =~ "PHONE_TO_WATCH_TAGS[tag] !== true"
+      assert generated_js =~ "KEY_PROVIDE_WEATHER_FIELD1_TAG"
+      assert generated_js =~ "KEY_PROVIDE_WEATHER_FIELD1_VALUE"
+      assert generated_js =~ "KEY_PROVIDE_WIND_FIELD2_TAG"
+      assert generated_js =~ "case \"ProvideWeather\":"
+      assert generated_js =~ "case \"ProvideWind\":"
 
       assert generated_c =~ "elmc_release(phone_to_watch);"
       refute generated_c =~

@@ -67,6 +67,28 @@ defmodule Elmx.TestSupport.TeaPlaybookRunner do
       end
     end
 
+    Enum.each(steps, fn step ->
+      texts = Map.get(step, "expect_texts") || []
+
+      Enum.each(List.wrap(texts), fn text ->
+        unless view_contains_text?(Map.get(step, "view_output", []), text) do
+          raise "TeaPlaybook step #{inspect(step["step_id"])} missing view text #{inspect(text)}"
+        end
+      end)
+    end)
+
+    case expects[:require_spy_texts] do
+      texts when is_list(texts) ->
+        Enum.each(texts, fn text ->
+          unless view_contains_text?(view_output, text) do
+            raise "TeaPlaybook expect require_spy_texts missing #{inspect(text)} in final view"
+          end
+        end)
+
+      _ ->
+        :ok
+    end
+
     if Enum.any?(steps, & &1["error"]) do
       errors =
         steps
@@ -78,6 +100,27 @@ defmodule Elmx.TestSupport.TeaPlaybookRunner do
     end
 
     :ok
+  end
+
+  defp view_contains_text?(rows, needle) when is_binary(needle) do
+    rows
+    |> List.wrap()
+    |> Enum.any?(fn row ->
+      text =
+        cond do
+          is_map(row) ->
+            Map.get(row, "text") || Map.get(row, :text) || Map.get(row, "label") ||
+              Map.get(row, :label) || ""
+
+          is_binary(row) ->
+            row
+
+          true ->
+            ""
+        end
+
+      is_binary(text) and String.contains?(text, needle)
+    end)
   end
 
   defp run_step(module, %{op: :init} = step, acc) do
@@ -133,8 +176,25 @@ defmodule Elmx.TestSupport.TeaPlaybookRunner do
       {:ok, payload} ->
         view_output = list_field(payload, :view_output)
         next = %{acc | view_output: view_output}
-        snapshot = ok_snapshot(step, next) |> Map.put("view_output", view_output)
-        {snapshot, next}
+
+        snapshot =
+          ok_snapshot(step, next)
+          |> Map.put("view_output", view_output)
+          |> Map.put("expect_texts", Map.get(step, :expect_texts, []))
+
+        case Map.get(step, :expect_texts, []) do
+          texts when is_list(texts) and texts != [] ->
+            missing = Enum.reject(texts, &view_contains_text?(view_output, &1))
+
+            if missing == [] do
+              {snapshot, next}
+            else
+              {Map.put(snapshot, "error", "missing view text: #{Enum.join(missing, ", ")}"), next}
+            end
+
+          _ ->
+            {snapshot, next}
+        end
 
       {:error, reason} ->
         {Map.merge(ok_snapshot(step, acc), %{"error" => inspect(reason)}), acc}

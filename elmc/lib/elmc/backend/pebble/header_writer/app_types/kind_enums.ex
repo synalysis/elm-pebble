@@ -24,6 +24,10 @@ defmodule Elmc.Backend.Pebble.HeaderWriter.AppTypes.KindEnums do
       int64_t p4;
       int64_t p5;
       char text[128];
+      /* Boxed command payload (e.g. companion send message). Owned by the caller
+         after elmc_pebble_take_cmd; borrowed from the queue in the *_cmd_at
+         inspectors, which clear it. Release with elmc_pebble_cmd_release_value. */
+      ElmcValue *value;
     } ElmcPebbleCmd;
 
     #{draw_kind_enum}

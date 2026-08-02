@@ -308,10 +308,16 @@ defmodule Elmc.Backend.Pebble.SourceWriter.EventDispatch.Registry do
     } else {
       return -3;
     }
-    if (!elmc_pebble_is_subscribed(app, required)) return -8;
-    elmc_int_t tag = elmc_worker_sub_msg_tag(&app->worker, required);
-    if (tag <= 0) return -6;
-    return elmc_pebble_dispatch_int(app, tag);
+    if (elmc_pebble_is_subscribed(app, required)) {
+      elmc_int_t tag = elmc_worker_sub_msg_tag(&app->worker, required);
+      if (tag <= 0) return -6;
+      return elmc_pebble_dispatch_int(app, tag);
+    }
+    /* Button.onPress lowers to BUTTON_RAW — accept the same public dispatch. */
+    if (elmc_pebble_is_subscribed(app, ELMC_PEBBLE_SUB_BUTTON_RAW)) {
+      return elmc_pebble_dispatch_button_raw(app, button_id, 1);
+    }
+    return -8;
     """
   end
 
@@ -523,11 +529,24 @@ defmodule Elmc.Backend.Pebble.SourceWriter.EventDispatch.Registry do
   @spec host_api_body() :: String.t()
   def host_api_body do
     """
+    void elmc_pebble_cmd_release_value(ElmcPebbleCmd *cmd) {
+      if (!cmd || !cmd->value) return;
+      elmc_release(cmd->value);
+      cmd->value = NULL;
+    }
+
     int elmc_pebble_take_cmd(ElmcPebbleApp *app, ElmcPebbleCmd *out_cmd) {
       if (!app || !app->initialized || !out_cmd) return -1;
       ElmcValue *cmd = elmc_worker_take_cmd(&app->worker);
       if (!cmd) return -2;
       int rc = elmc_cmd_from_value(cmd, out_cmd);
+      /* Transfer ownership of the boxed payload to the caller before the queue
+         entry goes away; callers pair this with elmc_pebble_cmd_release_value. */
+      if (rc == 0 && out_cmd->value) {
+        out_cmd->value = elmc_retain(out_cmd->value);
+      } else {
+        out_cmd->value = NULL;
+      }
       elmc_release(cmd);
       return rc;
     }
@@ -543,6 +562,8 @@ defmodule Elmc.Backend.Pebble.SourceWriter.EventDispatch.Registry do
             cmd.kind != ELMC_PEBBLE_CMD_NONE) {
           if (index == target) {
             *out_cmd = cmd;
+            /* Read-only snapshot: do not hand out a borrow of the queued payload. */
+            out_cmd->value = NULL;
             return 0;
           }
           index += 1;
@@ -554,6 +575,7 @@ defmodule Elmc.Backend.Pebble.SourceWriter.EventDispatch.Registry do
         if (elmc_cmd_from_value(cursor, &cmd) == 0 && cmd.kind != ELMC_PEBBLE_CMD_NONE) {
           if (index == target) {
             *out_cmd = cmd;
+            out_cmd->value = NULL;
             return 0;
           }
         }

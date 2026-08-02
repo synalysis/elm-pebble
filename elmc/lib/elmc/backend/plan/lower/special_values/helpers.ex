@@ -22,6 +22,10 @@ defmodule Elmc.Backend.Plan.Lower.SpecialValues.Helpers do
   def command_kind_expr(kind),
     do: %{op: :c_int_expr, value: Elmc.Backend.Pebble.command_kind_c_name!(kind)}
 
+  @spec zero_arity_cmd(atom()) :: Types.ir_expr()
+  def zero_arity_cmd(kind) when is_atom(kind),
+    do: %{op: :pebble_cmd, kind: command_kind_expr(kind), params: []}
+
   @spec encoded_to_msg_cmd(atom(), Types.ir_expr()) :: Types.ir_expr()
 
   def encoded_to_msg_cmd(kind, to_msg),
@@ -151,6 +155,9 @@ defmodule Elmc.Backend.Plan.Lower.SpecialValues.Helpers do
 
   defp pebble_cmd_param?(%{op: :var}), do: true
   defp pebble_cmd_param?(%{op: :constructor_ref}), do: true
+  defp pebble_cmd_param?(%{op: :qualified_ref}), do: true
+  defp pebble_cmd_param?(%{op: :qualified_var}), do: true
+  defp pebble_cmd_param?(%{op: :unit}), do: true
   defp pebble_cmd_param?(%{op: :call}), do: true
   defp pebble_cmd_param?(%{op: :runtime_call}), do: true
   defp pebble_cmd_param?(%{op: :field_access}), do: true
@@ -170,8 +177,22 @@ defmodule Elmc.Backend.Plan.Lower.SpecialValues.Helpers do
   defp pebble_cmd_param?(%{op: :qualified_call, args: args}) when is_list(args),
     do: Enum.all?(args, &pebble_cmd_param?/1)
 
-  defp pebble_cmd_param?(%{op: :record_literal, fields: fields}) when is_list(fields),
-    do: Enum.all?(fields, fn %{expr: expr} -> pebble_cmd_param?(expr) end)
+  defp pebble_cmd_param?(%{op: :tuple2, left: left, right: right}),
+    do: pebble_cmd_param?(left) and pebble_cmd_param?(right)
+
+  defp pebble_cmd_param?(%{op: :list_literal, items: items}) when is_list(items),
+    do: Enum.all?(items, &pebble_cmd_param?/1)
+
+  defp pebble_cmd_param?(%{op: :list_literal, elements: elements}) when is_list(elements),
+    do: Enum.all?(elements, &pebble_cmd_param?/1)
+
+  defp pebble_cmd_param?(%{op: :record_literal, fields: fields}) when is_list(fields) do
+    Enum.all?(fields, fn
+      %{expr: expr} -> pebble_cmd_param?(expr)
+      %{value: value} -> pebble_cmd_param?(value)
+      _ -> false
+    end)
+  end
 
   defp pebble_cmd_param?(_), do: false
 

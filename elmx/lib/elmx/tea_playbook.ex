@@ -28,7 +28,8 @@ defmodule Elmx.TeaPlaybook do
           optional(:button) => atom(),
           optional(:value) => term(),
           optional(:count) => non_neg_integer(),
-          optional(:dt_ms) => non_neg_integer()
+          optional(:dt_ms) => non_neg_integer(),
+          optional(:expect_texts) => [String.t()]
         }
 
   @type t :: %{
@@ -40,19 +41,65 @@ defmodule Elmx.TeaPlaybook do
           optional(:watch_profile_id) => String.t()
         }
 
+  # All plan-strict templates plus API demos. Host/valgrind smokes filter via
+  # `ELMC_HOST_SMOKE_TEMPLATE`; keep this list aligned with
+  # `Elmc.TestSupport.PlanStrictTemplates.names/0`.
   @enabled_templates ~w(
-    watchface_digital
-    watchface_minimal
-    watchface_tangram_time
-    watchface_smoke_screen
-    watch_demo_time
-    watchface_analog
-    watchface_color_shapes
-    watchface_yes
     game_2048
     game_elmtris
+    game_basic
+    game_jump_n_run
+    game_tiny_bird
+    watchface_poke_battle
+    watchface_yes
+    watchface_analog
+    watchface_digital
+    watchface_minimal
     watchface_weather_animated
+    watchface_tangram_time
+    watchface_color_shapes
+    watchface_smoke_screen
+    watchface_tutorial_complete
+    app_minimal
+    watch_demo_accel
+    watch_demo_app_focus
+    watch_demo_compass
+    watch_demo_data_log
+    watch_demo_dictation
+    watch_demo_drawing_showcase
+    watch_demo_frame
+    watch_demo_health
+    watch_demo_launch
+    watch_demo_light
+    watch_demo_log
+    watch_demo_screen_change
+    watch_demo_speaker
+    watch_demo_storage
+    watch_demo_system
+    watch_demo_time
+    watch_demo_unobstructed
+    watch_demo_vibes
+    watch_demo_wakeup
+    watch_demo_watch_info
+    companion_demo_calendar
+    companion_demo_geolocation
+    companion_demo_phone_status
+    companion_demo_protocol_matrix
+    companion_demo_settings
+    companion_demo_storage
+    companion_demo_timeline
+    companion_demo_weather_env
+    companion_demo_websocket
+    starter_watch
   )
+
+  @watchface_modes MapSet.new(~w(
+    companion_demo_phone_status
+    companion_demo_weather_env
+    companion_demo_calendar
+    companion_demo_geolocation
+    watch_demo_time
+  ))
 
   @spec enabled_names() :: [String.t()]
   def enabled_names, do: @enabled_templates
@@ -129,7 +176,8 @@ defmodule Elmx.TeaPlaybook do
         :button,
         :value,
         :count,
-        :dt_ms
+        :dt_ms,
+        :expect_texts
       ])
       |> maybe_fill_wire()
     end)
@@ -182,13 +230,13 @@ defmodule Elmx.TeaPlaybook do
 
   defp wire_for_action(_action, _step), do: {nil, nil}
 
-  defp from_phone_value("ProvideSun"), do: Samples.provide_sun()
-  defp from_phone_value("ProvideWeather"), do: Samples.provide_weather()
-  defp from_phone_value("ProvideCondition"), do: Samples.provide_condition()
-  defp from_phone_value("ProvideTemperature"), do: Samples.provide_temperature()
-  defp from_phone_value("ProvideMoonPhase"), do: Samples.provide_moon_phase()
-  defp from_phone_value("ProvideMoon"), do: Samples.provide_moon()
-  defp from_phone_value(ctor), do: Samples.from_phone(ctor, [])
+  defp from_phone_value(ctor) when is_binary(ctor) do
+    Samples.phone_sample(ctor) || Samples.from_phone(ctor, [])
+  end
+
+  defp from_phone_value(%{name: name, args: args}) do
+    Samples.phone_sample(name, args) || Samples.from_phone(name, [])
+  end
 
   defp button_message(:up), do: "UpPressed"
   defp button_message(:down), do: "DownPressed"
@@ -200,6 +248,11 @@ defmodule Elmx.TeaPlaybook do
 
   defp elmc_step(%{op: :init}), do: []
   defp elmc_step(%{op: :subscriptions}), do: []
+
+  defp elmc_step(%{op: :view, expect_texts: texts}) when is_list(texts) and texts != [] do
+    [{:assert_view_texts, texts}]
+  end
+
   defp elmc_step(%{op: :view}), do: [:view]
 
   defp elmc_step(%{op: :drain_cmds, kinds: kinds}) do
@@ -212,16 +265,8 @@ defmodule Elmx.TeaPlaybook do
   defp elmc_step(%{op: :update, action: :health, value: v}), do: [{:dispatch_tag_bool, :health, v}]
   defp elmc_step(%{op: :update, action: :random, value: v}), do: [{:dispatch_tag_value, :random, v}]
 
-  defp elmc_step(%{op: :update, action: :from_phone, ctor: ctor}) do
-    case ctor do
-      "ProvideSun" -> [{:from_phone, :provide_sun}]
-      "ProvideWeather" -> [{:from_phone, :provide_weather}]
-      "ProvideCondition" -> [{:from_phone, :provide_condition}]
-      "ProvideTemperature" -> [{:from_phone, :provide_temperature}]
-      "ProvideMoonPhase" -> [{:from_phone, :provide_moon_phase}]
-      "ProvideMoon" -> [{:from_phone, :provide_moon}]
-      _ -> []
-    end
+  defp elmc_step(%{op: :update, action: :from_phone, ctor: ctor}) when is_binary(ctor) do
+    [{:from_phone, ctor}]
   end
 
   defp elmc_step(%{op: :update, action: :button, button: button}), do: [{:dispatch_button, button}]
@@ -296,6 +341,7 @@ defmodule Elmx.TeaPlaybook do
     |> maybe_put(step, "value", :value)
     |> maybe_put(step, "count", :count)
     |> maybe_put(step, "dt_ms", :dt_ms)
+    |> maybe_put(step, "expect_texts", :expect_texts)
   end
 
   defp maybe_put(map, src, src_key, dest_key) do
@@ -355,26 +401,35 @@ defmodule Elmx.TeaPlaybook do
         [
           step_init(),
           step_drain([:time, :storage, :random])
-        ] ++ phone_steps(template) ++ [step_view()],
+        ] ++ button_probe_steps() ++ phone_steps(template) ++ [step_view()],
       expects: %{min_scene_cmds: 1, min_view_rows: 1}
     }
   end
 
+  defp button_probe_steps do
+    [
+      update(:button, button: :select, message: "SelectPressed"),
+      update(:button, button: :down, message: "DownPressed")
+    ]
+  end
+
   defp phone_steps(template) do
     Protocol.phone_to_watch_constructors(template)
-    |> Enum.flat_map(fn
-      %{name: "ProvideSun"} -> [from_phone_step("ProvideSun")]
-      %{name: "ProvideWeather"} -> [from_phone_step("ProvideWeather")]
-      %{name: "ProvideCondition"} -> [from_phone_step("ProvideCondition")]
-      %{name: "ProvideTemperature"} -> [from_phone_step("ProvideTemperature")]
-      %{name: "ProvideMoonPhase"} -> [from_phone_step("ProvideMoonPhase")]
-      %{name: "ProvideMoon"} -> [from_phone_step("ProvideMoon")]
-      _ -> []
+    |> Enum.flat_map(fn %{name: name, args: args} = ctor ->
+      if Samples.phone_sample_supported?(name, args) do
+        [from_phone_step(ctor)]
+      else
+        []
+      end
     end)
   end
 
   defp infer_mode(template) do
-    if String.starts_with?(template, "watchface_"), do: :watchface, else: :app
+    cond do
+      String.starts_with?(template, "watchface_") -> :watchface
+      MapSet.member?(@watchface_modes, template) -> :watchface
+      true -> :app
+    end
   end
 
   defp overrides do
@@ -460,8 +515,42 @@ defmodule Elmx.TeaPlaybook do
       },
       "watch_demo_time" => %{
         mode: :watchface,
-        steps: [step_init(), step_drain([:time]), step_view()],
+        steps: [
+          step_init(),
+          step_drain([:time]),
+          step_view()
+        ],
         expects: %{min_scene_cmds: 1, min_view_rows: 1, require_time_text?: true}
+      },
+      "companion_demo_protocol_matrix" => %{
+        mode: :app,
+        needs_trig?: true,
+        steps:
+          [
+            step_init(),
+            step_drain([:time, :storage, :random]),
+            # Boot Ping → Pong marks case 0 without Select.
+            from_phone_step("Pong"),
+            step_view_expect(["Ping OK", "1/6 PASS"])
+          ] ++
+            matrix_case("Enum", "EchoColor", "2/6 PASS") ++
+            matrix_case("Union", "EchoMeasure", "3/6 PASS") ++
+            matrix_case("Record", "EchoPoint", "4/6 PASS") ++
+            matrix_case("List", "EchoCounts", "5/6 PASS") ++
+            [
+              update(:button, button: :down, message: "DownPressed"),
+              update(:button, button: :select, message: "SelectPressed"),
+              from_phone_step("PushBool"),
+              from_phone_step("PushString"),
+              from_phone_step("PushPoints"),
+              from_phone_step("PushLabels"),
+              step_view_expect(["Extras OK", "6/6 PASS"])
+            ],
+        expects: %{
+          min_scene_cmds: 1,
+          min_view_rows: 1,
+          require_spy_texts: ["Extras OK", "6/6 PASS"]
+        }
       }
     }
   end
@@ -500,6 +589,10 @@ defmodule Elmx.TeaPlaybook do
   defp step_init, do: %{id: "init", op: :init}
   defp step_view, do: %{id: "view", op: :view}
 
+  defp step_view_expect(texts) when is_list(texts) do
+    %{id: "view:#{Enum.join(texts, "|")}", op: :view, expect_texts: texts}
+  end
+
   defp step_drain(kinds) do
     %{id: "drain:#{Enum.join(kinds, ",")}", op: :drain_cmds, kinds: kinds}
   end
@@ -509,14 +602,27 @@ defmodule Elmx.TeaPlaybook do
     |> Map.merge(Map.new(opts))
   end
 
-  defp from_phone_step(ctor) do
+  defp matrix_case(label, phone_ctor, summary) do
+    [
+      update(:button, button: :down, message: "DownPressed"),
+      update(:button, button: :select, message: "SelectPressed"),
+      from_phone_step(phone_ctor),
+      step_view_expect(["#{label} OK", summary])
+    ]
+  end
+
+  defp from_phone_step(%{name: name} = ctor) do
     %{
-      id: "from_phone:#{ctor}",
+      id: "from_phone:#{name}",
       op: :update,
       action: :from_phone,
-      ctor: ctor,
+      ctor: name,
       message: "FromPhone",
       message_value: from_phone_value(ctor)
     }
+  end
+
+  defp from_phone_step(ctor) when is_binary(ctor) do
+    from_phone_step(%{name: ctor, args: []})
   end
 end

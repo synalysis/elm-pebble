@@ -680,10 +680,21 @@ defmodule Elmc.Backend.CCodegen.ValueSlots do
       end)
       |> Enum.map(fn arg ->
         body =
-          if drop_result_retain? do
-            "elmc_release(#{RcRuntimeEmit.value_expr(out)});\n  #{null_assignment(arg)}"
-          else
-            null_assignment(arg)
+          cond do
+            # Borrow peel in owned[]: keep the runtime retain on `out`; null only.
+            MapSet.member?(Process.get(:elmc_borrowed_field_refs, MapSet.new()), arg) ->
+              Process.put(
+                :elmc_borrowed_field_refs,
+                MapSet.delete(Process.get(:elmc_borrowed_field_refs, MapSet.new()), arg)
+              )
+
+              null_assignment(arg)
+
+            drop_result_retain? ->
+              "elmc_release(#{RcRuntimeEmit.value_expr(out)});\n  #{null_assignment(arg)}"
+
+            true ->
+              null_assignment(arg)
           end
 
         """

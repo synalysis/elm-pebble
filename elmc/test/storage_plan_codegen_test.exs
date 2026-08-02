@@ -10,6 +10,7 @@ defmodule Elmc.StoragePlanCodegenTest do
     out_dir = Path.expand("tmp/#{project_name}_codegen", __DIR__)
     File.rm_rf!(project_dir)
     File.rm_rf!(out_dir)
+    File.mkdir_p!(Path.dirname(project_dir))
     File.cp_r!(source_fixture, project_dir)
     File.write!(Path.join(project_dir, "src/Main.elm"), source)
 

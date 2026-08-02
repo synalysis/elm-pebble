@@ -308,10 +308,16 @@ defmodule Elmc.Backend.Pebble.SourceWriter.EventDispatch.Registry do
     } else {
       return -3;
     }
-    if (!elmc_pebble_is_subscribed(app, required)) return -8;
-    elmc_int_t tag = elmc_worker_sub_msg_tag(&app->worker, required);
-    if (tag <= 0) return -6;
-    return elmc_pebble_dispatch_int(app, tag);
+    if (elmc_pebble_is_subscribed(app, required)) {
+      elmc_int_t tag = elmc_worker_sub_msg_tag(&app->worker, required);
+      if (tag <= 0) return -6;
+      return elmc_pebble_dispatch_int(app, tag);
+    }
+    /* Button.onPress lowers to BUTTON_RAW — accept the same public dispatch. */
+    if (elmc_pebble_is_subscribed(app, ELMC_PEBBLE_SUB_BUTTON_RAW)) {
+      return elmc_pebble_dispatch_button_raw(app, button_id, 1);
+    }
+    return -8;
     """
   end
 

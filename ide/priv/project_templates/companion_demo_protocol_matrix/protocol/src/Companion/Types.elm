@@ -12,14 +12,12 @@ embedded emulator; every case should show PASS when delivery works end-to-end.
 Supported wire shapes (both directions where noted):
 
   - tag-only (`Ping` / `Pong`)
-  - enum (`Color`) on watch → phone via `companionSend tag value`
-  - nested union (`Measure`), record alias (`Point`), `List Int` on phone → watch
+  - enum (`Color`)
+  - nested union (`Measure`), record alias (`Point`), `List Int`
   - `Bool`, `String`, `List Point`, `Dict String Int` (phone → watch via `RequestPhoneExtras`)
 
-Watch → phone uses `companionSend tag value` (message tag + one scalar int). That
-carries enum payloads and tag-only messages. Union variant tags decode without
-their inner int; record/list/dict payloads cannot round-trip on that path — those
-cases are expected to FAIL until multi-key watch encode exists.
+`Companion.Watch.sendWatchToPhone` carries the whole typed message, so the watch
+writes every wire key for enum, union, record, and list payloads.
 
 Not supported as Elm tuple/`Maybe` payload types — use records or unions instead.
 

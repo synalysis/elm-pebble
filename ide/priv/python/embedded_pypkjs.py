@@ -571,6 +571,25 @@ def appmessage_number_value(value):
     return int(value)
 
 
+def appmessage_log_value(value):
+    """JSON-safe value for logging; preserves cstrings that are not ints."""
+    if hasattr(value, "value"):
+        inner = value.value
+        if isinstance(inner, (bytes, bytearray)):
+            return inner.decode("utf-8", errors="replace").rstrip("\0")
+        return inner
+    if isinstance(value, (bytes, bytearray)):
+        return value.decode("utf-8", errors="replace").rstrip("\0")
+    return value
+
+
+def try_appmessage_int(value):
+    try:
+        return appmessage_number_value(value)
+    except (TypeError, ValueError):
+        return None
+
+
 def weather_condition_wire_code(condition):
     normalized = "".join(ch for ch in str(condition or "clear").lower() if ch.isalnum())
     return WEATHER_CONDITION_WIRE_CODES.get(normalized, WEATHER_CONDITION_WIRE_CODES["clear"])
@@ -995,11 +1014,19 @@ def schedule_simulator_weather_to_watch(runner, reason, delay_seconds=0.35, ws=N
 
 
 def detect_appmessage_key_shift_corruption(dictionary):
+    """Reject a known Int32 key/value scramble; skip payloads with string values.
+
+    Dict String / PushString / PushLabels put cstrings on the wire. Those are
+    valid and must not be forced through `int()` (e.g. key text `"k"`).
+    """
     keys = sorted(int(key) for key in dictionary.keys())
     if len(keys) < 2:
         return
 
-    values = [appmessage_number_value(dictionary[key]) for key in keys]
+    values = [try_appmessage_int(dictionary[key]) for key in keys]
+    if any(value is None for value in values):
+        return
+
     shifted = all(values[index] == keys[index + 1] for index in range(len(keys) - 1))
     if shifted:
         raise ValueError(
@@ -1154,7 +1181,7 @@ def send_wire_appmessage(pebble, message):
     log_payload = {
         "plain": plain,
         "dictionary": {
-            str(key): appmessage_number_value(value) for key, value in dictionary.items()
+            str(key): appmessage_log_value(value) for key, value in dictionary.items()
         },
         "split": False,
     }

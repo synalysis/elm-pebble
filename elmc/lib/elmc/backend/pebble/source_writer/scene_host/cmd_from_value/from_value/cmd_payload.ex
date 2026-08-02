@@ -20,6 +20,10 @@ defmodule Elmc.Backend.Pebble.SourceWriter.SceneHost.CmdFromValue.FromValue.CmdP
         if (cmd->text && cmd->text->tag == ELMC_TAG_STRING && cmd->text->payload) {
           strncpy(out_cmd->text, (const char *)cmd->text->payload, sizeof(out_cmd->text) - 1);
           out_cmd->text[sizeof(out_cmd->text) - 1] = '\\0';
+        } else if (cmd->text) {
+          /* Non-string payload slot: a boxed command argument. Borrowed here;
+             elmc_pebble_take_cmd retains it before the cmd value is dropped. */
+          out_cmd->value = cmd->text;
         }
         return 0;
       }

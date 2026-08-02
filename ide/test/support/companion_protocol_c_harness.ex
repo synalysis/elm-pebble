@@ -19,7 +19,7 @@ defmodule Ide.CompanionProtocolCTestHarness do
 
     generate_sources!(types_elm, schema, out_dir)
     harness_path = Path.join(out_dir, "harness.c")
-    File.write!(harness_path, harness_c(schema))
+    File.write!(harness_path, harness_c(schema, runtime_tags_for_types(types_elm)))
 
     binary = Path.join(out_dir, "companion_protocol_roundtrip")
 
@@ -98,8 +98,12 @@ defmodule Ide.CompanionProtocolCTestHarness do
     ]
   end
 
-  defp harness_c(schema) do
+  defp harness_c(schema, runtime_tags) do
     watch_tests = Enum.map_join(schema.watch_to_phone, "\n\n", &watch_encode_test/1)
+
+    watch_value_tests =
+      Enum.map_join(schema.watch_to_phone, "\n\n", &watch_value_test(&1, schema, runtime_tags))
+
     phone_tests = Enum.map_join(schema.phone_to_watch, "\n\n", &phone_decode_test(&1, schema))
 
     watch_count = length(schema.watch_to_phone)
@@ -215,12 +219,47 @@ defmodule Ide.CompanionProtocolCTestHarness do
       tuple_count = 0;
     }
 
+    static ElmcValue *harness_int(elmc_int_t value) {
+      ElmcValue *boxed = NULL;
+      if (elmc_new_int(&boxed, value) != RC_SUCCESS) return NULL;
+      return boxed;
+    }
+
+    /* Mixed unions lower to tuple2(tag, payload) in elmc; nullary payloads are unit. */
+    static ElmcValue *harness_union(elmc_int_t runtime_tag, ElmcValue *payload) {
+      ElmcValue *tuple = NULL;
+      if (elmc_tuple2_take(&tuple, harness_int(runtime_tag), payload) != RC_SUCCESS) return NULL;
+      return tuple;
+    }
+
+    static ElmcValue *harness_record(int field_count, const char **names, ElmcValue **values) {
+      ElmcValue *record = NULL;
+      if (elmc_record_new_take(&record, field_count, names, values) != RC_SUCCESS) return NULL;
+      return record;
+    }
+
+    /* Matches plan lowering of record literals (`elmc_record_new_values_take`). */
+    static ElmcValue *harness_record_values(int field_count, ElmcValue **values) {
+      ElmcValue *record = NULL;
+      if (elmc_record_new_values_take(&record, field_count, values) != RC_SUCCESS) return NULL;
+      return record;
+    }
+
+    static ElmcValue *harness_int_list(int count, const elmc_int_t *values) {
+      ElmcValue *list = NULL;
+      if (elmc_list_from_elmc_int_array(&list, values, count) != RC_SUCCESS) return NULL;
+      return list;
+    }
+
     #{watch_tests}
+
+    #{watch_value_tests}
 
     #{phone_tests}
 
     int main(void) {
       #{Enum.map_join(schema.watch_to_phone, "\n  ", fn msg -> "test_w2p_#{c_id(msg.name)}();" end)}
+      #{Enum.map_join(schema.watch_to_phone, "\n  ", fn msg -> "test_w2p_value_#{c_id(msg.name)}();" end)}
       #{Enum.map_join(schema.phone_to_watch, "\n  ", fn msg -> "test_p2w_#{c_id(msg.name)}();" end)}
 
       if (failures != 0) {
@@ -291,6 +330,107 @@ defmodule Ide.CompanionProtocolCTestHarness do
 
   defp watch_encode_case(msg) do
     raise "unsupported watch encode case #{inspect(msg.name)}"
+  end
+
+  # --- watch -> phone value encode -------------------------------------------
+
+  defp watch_value_test(msg, schema, runtime_tags) do
+    {build, expectations} = watch_value_case(msg, schema, runtime_tags)
+    checks = Enum.map_join(expectations, "\n  ", &watch_expect_check/1)
+
+    """
+    static void test_w2p_value_#{c_id(msg.name)}(void) {
+      DictionaryIterator iter;
+      dict_reset();
+      ElmcValue *message = #{build};
+      CHECK(companion_protocol_encode_watch_to_phone_value(&iter, message), "w2p value #{msg.name} encode");
+    #{checks}
+      elmc_release(message);
+    }
+    """
+  end
+
+  defp watch_value_case(%{name: name, tag: tag, fields: []}, _schema, runtime_tags) do
+    runtime_tag = runtime_tag_for(runtime_tags, "WatchToPhone", name, tag - @wire_code_base)
+    {"harness_union(#{runtime_tag}, harness_int(0))", [{"message_tag", tag}]}
+  end
+
+  defp watch_value_case(
+         %{name: name, tag: tag, fields: [%{wire_type: {:enum, type}} = field]},
+         _schema,
+         runtime_tags
+       ) do
+    runtime_tag = runtime_tag_for(runtime_tags, "WatchToPhone", name, tag - @wire_code_base)
+    ctor = List.first(enum_constructors(type))
+    ctor_runtime_tag = runtime_tag_for(runtime_tags, type, ctor, @wire_code_base)
+
+    {"harness_union(#{runtime_tag}, harness_int(#{ctor_runtime_tag}))",
+     [{"message_tag", tag}, {field.key, @wire_code_base}]}
+  end
+
+  defp watch_value_case(
+         %{name: name, tag: tag, fields: [%{wire_type: {:union, type}} = field]},
+         _schema,
+         runtime_tags
+       ) do
+    runtime_tag = runtime_tag_for(runtime_tags, "WatchToPhone", name, tag - @wire_code_base)
+    ctor = List.first(union_constructors(type))
+    ctor_runtime_tag = runtime_tag_for(runtime_tags, type, ctor, @wire_code_base)
+
+    {"harness_union(#{runtime_tag}, harness_union(#{ctor_runtime_tag}, harness_int(7)))",
+     [{"message_tag", tag}, {field.key <> "_tag", @wire_code_base}, {field.key <> "_value", 7}]}
+  end
+
+  defp watch_value_case(
+         %{name: name, tag: tag, fields: [%{wire_type: {:record, _type, fields}} = field]},
+         _schema,
+         runtime_tags
+       ) do
+    runtime_tag = runtime_tag_for(runtime_tags, "WatchToPhone", name, tag - @wire_code_base)
+    values = Enum.with_index(fields, 1)
+    boxed = Enum.map_join(values, ", ", fn {_f, v} -> "harness_int(#{v})" end)
+
+    # Nameless record — same shape plan codegen emits for `{ x = 1, y = 2 }`.
+    build =
+      "harness_union(#{runtime_tag}, harness_record_values(#{length(values)}, " <>
+        "(ElmcValue *[]){ #{boxed} }))"
+
+    expectations =
+      [{"message_tag", tag}] ++
+        Enum.map(values, fn {f, v} -> {"#{field.key}_#{f.name}", v} end)
+
+    {build, expectations}
+  end
+
+  defp watch_value_case(
+         %{name: name, tag: tag, fields: [%{wire_type: {:list, :int}} = field]},
+         _schema,
+         runtime_tags
+       ) do
+    runtime_tag = runtime_tag_for(runtime_tags, "WatchToPhone", name, tag - @wire_code_base)
+    values = [1, 2, 3]
+
+    build =
+      "harness_union(#{runtime_tag}, harness_int_list(#{length(values)}, " <>
+        "(elmc_int_t[]){ #{Enum.join(values, ", ")} }))"
+
+    expectations =
+      [{"message_tag", tag}, {field.key <> "_count", length(values) + @wire_code_base}] ++
+        Enum.map(Enum.with_index(values), fn {value, index} ->
+          {"#{field.key}_#{index}", value + @wire_code_base}
+        end)
+
+    {build, expectations}
+  end
+
+  defp watch_value_case(msg, _schema, _runtime_tags) do
+    raise "unsupported watch value encode case #{inspect(msg.name)}"
+  end
+
+  defp runtime_tag_for(runtime_tags, type, ctor_name, fallback) do
+    runtime_tags
+    |> Map.get(type, %{})
+    |> Map.get(ctor_name, fallback)
   end
 
   defp phone_decode_test(msg, schema) do
@@ -717,8 +857,45 @@ defmodule Ide.CompanionProtocolCTestHarness do
 
     #include <stdint.h>
     #include <stdbool.h>
+    #include <stddef.h>
 
-    typedef struct ElmcValue ElmcValue;
+    typedef int64_t elmc_int_t;
+
+    /* Tag values mirror elmc_runtime.h so generated encode code can inspect
+       boxed values the same way it does on device. */
+    enum {
+      ELMC_TAG_INT = 1,
+      ELMC_TAG_STRING = 3,
+      ELMC_TAG_BOOL = 4,
+      ELMC_TAG_LIST = 10,
+      ELMC_TAG_RECORD = 11,
+      ELMC_TAG_TUPLE2 = 12,
+      ELMC_TAG_RECORD_SEQ = 19
+    };
+
+    typedef struct ElmcValue {
+      int tag;
+      void *payload;
+      elmc_int_t scalar;
+      int rc;
+    } ElmcValue;
+
+    typedef struct ElmcCons {
+      ElmcValue *head;
+      ElmcValue *tail;
+    } ElmcCons;
+
+    typedef struct ElmcTuple2 {
+      ElmcValue *first;
+      ElmcValue *second;
+    } ElmcTuple2;
+
+    typedef struct ElmcRecordSeqPayload {
+      ElmcValue **items;
+      int length;
+      unsigned char owns_buffer;
+    } ElmcRecordSeqPayload;
+
     typedef struct ElmcPebbleApp ElmcPebbleApp;
 
     #define ELMC_PEBBLE_MSG_PHONE_TO_WATCH_TARGET 3
@@ -732,33 +909,22 @@ defmodule Ide.CompanionProtocolCTestHarness do
     RC elmc_new_string(ElmcValue **out, const char *value);
     RC elmc_tuple2_take(ElmcValue **out, ElmcValue *left, ElmcValue *right);
     RC elmc_record_new_take(ElmcValue **out, int field_count, const char **names, ElmcValue **values);
+    RC elmc_record_new_values_take(ElmcValue **out, int field_count, ElmcValue **values);
     RC elmc_list_from_int_array(ElmcValue **out, const int32_t *values, int count);
+    RC elmc_list_from_elmc_int_array(ElmcValue **out, const elmc_int_t *values, int count);
     RC elmc_list_from_values_take(ElmcValue **out, ElmcValue **values, int count);
     RC elmc_dict_from_list(ElmcValue **out, ElmcValue *pairs);
 
-    static ElmcValue *companion_protocol_box_int(int32_t value) {
-      ElmcValue *boxed = NULL;
-      if (elmc_new_int(&boxed, value) != RC_SUCCESS) return NULL;
-      return boxed;
-    }
-
-    static ElmcValue *companion_protocol_box_bool(int value) {
-      ElmcValue *boxed = NULL;
-      if (elmc_new_bool(&boxed, value) != RC_SUCCESS) return NULL;
-      return boxed;
-    }
-
-    static ElmcValue *companion_protocol_box_string(const char *value) {
-      ElmcValue *boxed = NULL;
-      if (elmc_new_string(&boxed, value) != RC_SUCCESS) return NULL;
-      return boxed;
-    }
-
-    static ElmcValue *companion_protocol_tuple2_take(ElmcValue *left, ElmcValue *right) {
-      ElmcValue *tuple = NULL;
-      if (elmc_tuple2_take(&tuple, left, right) != RC_SUCCESS) return NULL;
-      return tuple;
-    }
+    elmc_int_t elmc_as_int(ElmcValue *value);
+    bool elmc_value_is_true(ElmcValue *value);
+    elmc_int_t elmc_union_tag_as_int(ElmcValue *value);
+    ElmcValue *elmc_union_payload(ElmcValue *value);
+    elmc_int_t elmc_union_payload_int(ElmcValue *value);
+    ElmcValue *elmc_record_get(ElmcValue *record, const char *field_name);
+    ElmcValue *elmc_record_get_index(ElmcValue *record, int index);
+    elmc_int_t elmc_list_length_native(ElmcValue *list);
+    elmc_int_t elmc_list_nth_int_default(ElmcValue *list, elmc_int_t index, elmc_int_t default_value);
+    ElmcValue *elmc_retain(ElmcValue *value);
 
     void elmc_release(ElmcValue *value);
     int elmc_pebble_dispatch_tag_payload(ElmcPebbleApp *app, int64_t tag, ElmcValue *payload);
@@ -778,84 +944,286 @@ defmodule Ide.CompanionProtocolCTestHarness do
     #include "elmc_pebble.h"
     #include <stdbool.h>
     #include <stdlib.h>
-
-    struct ElmcValue {
-      int tag;
-      void *payload;
-    };
+    #include <string.h>
 
     struct ElmcPebbleApp {
       int initialized;
     };
 
-    RC elmc_new_int(ElmcValue **out, int64_t value) {
+    typedef struct HarnessRecord {
+      int field_count;
+      const char **names;
+      ElmcValue **values;
+    } HarnessRecord;
+
+    static char *harness_strdup(const char *value) {
+      const char *src = value ? value : "";
+      size_t len = strlen(src) + 1;
+      char *copy = malloc(len);
+      if (copy) memcpy(copy, src, len);
+      return copy;
+    }
+
+    static ElmcValue *alloc_value(int tag) {
       ElmcValue *v = calloc(1, sizeof(ElmcValue));
+      if (!v) return NULL;
+      v->tag = tag;
+      v->rc = 1;
+      return v;
+    }
+
+    RC elmc_new_int(ElmcValue **out, int64_t value) {
+      ElmcValue *v = alloc_value(ELMC_TAG_INT);
       if (!v) return RC_ERR_OUT_OF_MEMORY;
-      v->tag = 1;
-      v->payload = (void *)(intptr_t)value;
+      v->scalar = (elmc_int_t)value;
       *out = v;
       return RC_SUCCESS;
     }
 
     RC elmc_new_bool(ElmcValue **out, bool value) {
-      return elmc_new_int(out, value ? 1 : 0);
+      ElmcValue *v = alloc_value(ELMC_TAG_BOOL);
+      if (!v) return RC_ERR_OUT_OF_MEMORY;
+      v->scalar = value ? 1 : 0;
+      *out = v;
+      return RC_SUCCESS;
     }
 
     RC elmc_new_string(ElmcValue **out, const char *value) {
-      (void)value;
-      ElmcValue *v = calloc(1, sizeof(ElmcValue));
+      ElmcValue *v = alloc_value(ELMC_TAG_STRING);
       if (!v) return RC_ERR_OUT_OF_MEMORY;
+      v->payload = harness_strdup(value);
       *out = v;
       return RC_SUCCESS;
     }
 
     RC elmc_tuple2_take(ElmcValue **out, ElmcValue *left, ElmcValue *right) {
-      (void)left;
-      (void)right;
-      ElmcValue *v = calloc(1, sizeof(ElmcValue));
+      ElmcValue *v = alloc_value(ELMC_TAG_TUPLE2);
       if (!v) return RC_ERR_OUT_OF_MEMORY;
+      ElmcTuple2 *tuple = calloc(1, sizeof(ElmcTuple2));
+      if (!tuple) {
+        free(v);
+        return RC_ERR_OUT_OF_MEMORY;
+      }
+      tuple->first = left;
+      tuple->second = right;
+      v->payload = tuple;
       *out = v;
       return RC_SUCCESS;
     }
 
     RC elmc_record_new_take(ElmcValue **out, int field_count, const char **names, ElmcValue **values) {
-      (void)field_count;
-      (void)names;
-      (void)values;
-      ElmcValue *v = calloc(1, sizeof(ElmcValue));
+      ElmcValue *v = alloc_value(ELMC_TAG_RECORD);
       if (!v) return RC_ERR_OUT_OF_MEMORY;
+      HarnessRecord *record = calloc(1, sizeof(HarnessRecord));
+      if (!record) {
+        free(v);
+        return RC_ERR_OUT_OF_MEMORY;
+      }
+      record->field_count = field_count;
+      record->names = calloc((size_t)field_count, sizeof(const char *));
+      record->values = calloc((size_t)field_count, sizeof(ElmcValue *));
+      for (int i = 0; i < field_count; i++) {
+        record->names[i] = harness_strdup(names[i]);
+        record->values[i] = values[i];
+      }
+      v->payload = record;
       *out = v;
       return RC_SUCCESS;
+    }
+
+    RC elmc_record_new_values_take(ElmcValue **out, int field_count, ElmcValue **values) {
+      ElmcValue *v = alloc_value(ELMC_TAG_RECORD);
+      if (!v) return RC_ERR_OUT_OF_MEMORY;
+      HarnessRecord *record = calloc(1, sizeof(HarnessRecord));
+      if (!record) {
+        free(v);
+        return RC_ERR_OUT_OF_MEMORY;
+      }
+      record->field_count = field_count;
+      record->names = NULL;
+      record->values = calloc((size_t)field_count, sizeof(ElmcValue *));
+      for (int i = 0; i < field_count; i++) {
+        record->values[i] = values[i];
+      }
+      v->payload = record;
+      *out = v;
+      return RC_SUCCESS;
+    }
+
+    static RC harness_cons_list(ElmcValue **out, ElmcValue **items, int count) {
+      ElmcValue *tail = alloc_value(ELMC_TAG_LIST);
+      if (!tail) return RC_ERR_OUT_OF_MEMORY;
+      for (int i = count - 1; i >= 0; i--) {
+        ElmcValue *node = alloc_value(ELMC_TAG_LIST);
+        ElmcCons *cons = calloc(1, sizeof(ElmcCons));
+        if (!node || !cons) return RC_ERR_OUT_OF_MEMORY;
+        cons->head = items[i];
+        cons->tail = tail;
+        node->payload = cons;
+        tail = node;
+      }
+      *out = tail;
+      return RC_SUCCESS;
+    }
+
+    RC elmc_list_from_elmc_int_array(ElmcValue **out, const elmc_int_t *values, int count) {
+      ElmcValue **items = calloc((size_t)(count > 0 ? count : 1), sizeof(ElmcValue *));
+      if (!items) return RC_ERR_OUT_OF_MEMORY;
+      for (int i = 0; i < count; i++) {
+        if (elmc_new_int(&items[i], values[i]) != RC_SUCCESS) {
+          free(items);
+          return RC_ERR_OUT_OF_MEMORY;
+        }
+      }
+      RC rc = harness_cons_list(out, items, count);
+      free(items);
+      return rc;
     }
 
     RC elmc_list_from_int_array(ElmcValue **out, const int32_t *values, int count) {
-      (void)values;
-      (void)count;
-      ElmcValue *v = calloc(1, sizeof(ElmcValue));
-      if (!v) return RC_ERR_OUT_OF_MEMORY;
-      *out = v;
-      return RC_SUCCESS;
+      elmc_int_t *widened = calloc((size_t)(count > 0 ? count : 1), sizeof(elmc_int_t));
+      if (!widened) return RC_ERR_OUT_OF_MEMORY;
+      for (int i = 0; i < count; i++) {
+        widened[i] = (elmc_int_t)values[i];
+      }
+      RC rc = elmc_list_from_elmc_int_array(out, widened, count);
+      free(widened);
+      return rc;
     }
 
     RC elmc_list_from_values_take(ElmcValue **out, ElmcValue **values, int count) {
-      (void)values;
-      (void)count;
-      ElmcValue *v = calloc(1, sizeof(ElmcValue));
-      if (!v) return RC_ERR_OUT_OF_MEMORY;
-      *out = v;
-      return RC_SUCCESS;
+      return harness_cons_list(out, values, count);
     }
 
     RC elmc_dict_from_list(ElmcValue **out, ElmcValue *pairs) {
       (void)pairs;
-      ElmcValue *v = calloc(1, sizeof(ElmcValue));
+      ElmcValue *v = alloc_value(ELMC_TAG_LIST);
       if (!v) return RC_ERR_OUT_OF_MEMORY;
       *out = v;
       return RC_SUCCESS;
     }
 
+    ElmcValue *elmc_retain(ElmcValue *value) {
+      if (value) value->rc++;
+      return value;
+    }
+
     void elmc_release(ElmcValue *value) {
+      if (!value) return;
+      if (--value->rc > 0) return;
+
+      switch (value->tag) {
+        case ELMC_TAG_STRING:
+          free(value->payload);
+          break;
+        case ELMC_TAG_TUPLE2: {
+          ElmcTuple2 *tuple = (ElmcTuple2 *)value->payload;
+          if (tuple) {
+            elmc_release(tuple->first);
+            elmc_release(tuple->second);
+            free(tuple);
+          }
+          break;
+        }
+        case ELMC_TAG_RECORD: {
+          HarnessRecord *record = (HarnessRecord *)value->payload;
+          if (record) {
+            for (int i = 0; i < record->field_count; i++) {
+              if (record->names) free((void *)record->names[i]);
+              elmc_release(record->values[i]);
+            }
+            free(record->names);
+            free(record->values);
+            free(record);
+          }
+          break;
+        }
+        case ELMC_TAG_LIST: {
+          ElmcCons *cons = (ElmcCons *)value->payload;
+          if (cons) {
+            elmc_release(cons->head);
+            elmc_release(cons->tail);
+            free(cons);
+          }
+          break;
+        }
+        default:
+          break;
+      }
       free(value);
+    }
+
+    elmc_int_t elmc_as_int(ElmcValue *value) {
+      return value ? value->scalar : 0;
+    }
+
+    bool elmc_value_is_true(ElmcValue *value) {
+      return value && value->scalar != 0;
+    }
+
+    elmc_int_t elmc_union_tag_as_int(ElmcValue *value) {
+      if (!value) return -1;
+      if (value->tag == ELMC_TAG_INT) return value->scalar;
+      if (value->tag == ELMC_TAG_TUPLE2 && value->payload) {
+        return elmc_as_int(((ElmcTuple2 *)value->payload)->first);
+      }
+      return -1;
+    }
+
+    ElmcValue *elmc_union_payload(ElmcValue *value) {
+      if (value && value->tag == ELMC_TAG_TUPLE2 && value->payload) {
+        return ((ElmcTuple2 *)value->payload)->second;
+      }
+      return value;
+    }
+
+    elmc_int_t elmc_union_payload_int(ElmcValue *value) {
+      if (!value) return 0;
+      if (value->tag == ELMC_TAG_INT) return value->scalar;
+      if (value->tag == ELMC_TAG_TUPLE2 && value->payload) {
+        return elmc_as_int(((ElmcTuple2 *)value->payload)->second);
+      }
+      return 0;
+    }
+
+    ElmcValue *elmc_record_get(ElmcValue *record, const char *field_name) {
+      if (!record || record->tag != ELMC_TAG_RECORD || !record->payload) return NULL;
+      HarnessRecord *rec = (HarnessRecord *)record->payload;
+      if (!rec->names) return NULL;
+      for (int i = 0; i < rec->field_count; i++) {
+        if (rec->names[i] && strcmp(rec->names[i], field_name) == 0) {
+          return elmc_retain(rec->values[i]);
+        }
+      }
+      return NULL;
+    }
+
+    ElmcValue *elmc_record_get_index(ElmcValue *record, int index) {
+      if (!record || record->tag != ELMC_TAG_RECORD || !record->payload) return NULL;
+      HarnessRecord *rec = (HarnessRecord *)record->payload;
+      if (index < 0 || index >= rec->field_count) return NULL;
+      return elmc_retain(rec->values[index]);
+    }
+
+    elmc_int_t elmc_list_length_native(ElmcValue *list) {
+      elmc_int_t count = 0;
+      ElmcValue *cursor = list;
+      while (cursor && cursor->tag == ELMC_TAG_LIST && cursor->payload) {
+        count++;
+        cursor = ((ElmcCons *)cursor->payload)->tail;
+      }
+      return count;
+    }
+
+    elmc_int_t elmc_list_nth_int_default(ElmcValue *list, elmc_int_t index, elmc_int_t default_value) {
+      ElmcValue *cursor = list;
+      while (cursor && cursor->tag == ELMC_TAG_LIST && cursor->payload) {
+        ElmcCons *cons = (ElmcCons *)cursor->payload;
+        if (index == 0) return elmc_as_int(cons->head);
+        index--;
+        cursor = cons->tail;
+      }
+      return default_value;
     }
 
     int elmc_pebble_dispatch_tag_payload(ElmcPebbleApp *app, int64_t tag, ElmcValue *payload) {

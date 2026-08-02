@@ -109,16 +109,18 @@ defmodule Ide.Mcp.Handlers.Projects do
     end
   end
 
-  def call("files.read", %{
-        "slug" => slug,
-        "source_root" => source_root,
-        "rel_path" => rel_path
-      }) do
-    with {:ok, project} <- ToolSupport.fetch_project(slug),
-         {:ok, content} <- Projects.read_source_file(project, source_root, rel_path) do
-      {:ok, files_read_payload(slug, source_root, rel_path, content)}
-    else
-      {:error, reason} -> {:error, "read failed: #{inspect(reason)}"}
+  def call("files.read", %{"slug" => slug, "source_root" => source_root, "rel_path" => rel_path}) do
+    files_read(slug, source_root, rel_path)
+  end
+
+  # Convenience alias: path like "watch/src/Main.elm" → source_root + rel_path.
+  def call("files.read", %{"slug" => slug, "path" => path}) when is_binary(path) do
+    case split_source_path(path) do
+      {:ok, source_root, rel_path} ->
+        files_read(slug, source_root, rel_path)
+
+      {:error, reason} ->
+        {:error, reason}
     end
   end
 
@@ -239,6 +241,37 @@ defmodule Ide.Mcp.Handlers.Projects do
        files_patch_payload(slug, source_root, rel_path, sha256_hex(current), sha256_hex(patched))}
     else
       {:error, reason} -> {:error, "patch failed: #{inspect(reason)}"}
+    end
+  end
+
+  def call(name, args) when is_binary(name) and is_map(args) do
+    {:error,
+     "projects tool #{name} has unsupported arguments; got keys=#{inspect(Enum.sort(Map.keys(args)))}. " <>
+       "files.read requires slug + source_root + rel_path (or slug + path like \"watch/src/Main.elm\")."}
+  end
+
+  @spec files_read(String.t(), String.t(), String.t()) ::
+          {:ok, ToolTypes.files_read_result()} | {:error, String.t()}
+  defp files_read(slug, source_root, rel_path) do
+    with {:ok, project} <- ToolSupport.fetch_project(slug),
+         {:ok, content} <- Projects.read_source_file(project, source_root, rel_path) do
+      {:ok, files_read_payload(slug, source_root, rel_path, content)}
+    else
+      {:error, reason} -> {:error, "read failed: #{inspect(reason)}"}
+    end
+  end
+
+  @spec split_source_path(String.t()) :: {:ok, String.t(), String.t()} | {:error, String.t()}
+  defp split_source_path(path) when is_binary(path) do
+    path = path |> String.trim() |> String.trim_leading("/")
+
+    case String.split(path, "/", parts: 2) do
+      [source_root, rel_path] when source_root != "" and rel_path != "" ->
+        {:ok, source_root, rel_path}
+
+      _ ->
+        {:error,
+         "files.read path must look like \"watch/src/Main.elm\" (source_root/rel_path); got #{inspect(path)}"}
     end
   end
 

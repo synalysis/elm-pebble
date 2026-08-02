@@ -129,15 +129,20 @@ defmodule Ide.Mcp.ToolCatalog.Core do
     },
     %{
       name: "files.read",
-      description: "Read a source file from a project root.",
+      description:
+        "Read a source file from a project root. Prefer source_root + rel_path; path (e.g. watch/src/Main.elm) is also accepted.",
       inputSchema: %{
         type: "object",
         additionalProperties: JsonSchema.disallow_extra_properties(),
-        required: ["slug", "source_root", "rel_path"],
+        required: ["slug"],
         properties: %{
           slug: %{type: "string"},
           source_root: %{type: "string"},
-          rel_path: %{type: "string"}
+          rel_path: %{type: "string"},
+          path: %{
+            type: "string",
+            description: "Optional combined path: \"<source_root>/<rel_path>\"."
+          }
         }
       }
     },

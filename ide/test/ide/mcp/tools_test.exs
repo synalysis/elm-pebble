@@ -682,6 +682,23 @@ defmodule Ide.Mcp.ToolsTest do
 
     assert String.contains?(content, "module Main")
 
+    assert {:ok, %{content: content_via_path}} =
+             Tools.call(
+               "files.read",
+               %{"slug" => project.slug, "path" => "watch/src/Main.elm"},
+               [:read]
+             )
+
+    assert content_via_path == content
+
+    assert {:error, bad_args_reason} =
+             Tools.call("files.read", %{"slug" => project.slug, "rel_path" => "src/Main.elm"}, [
+               :read
+             ])
+
+    assert bad_args_reason =~ "unsupported arguments"
+    refute bad_args_reason =~ "FunctionClauseError"
+
     assert {:ok, stat} =
              Tools.call(
                "files.stat",

@@ -52,4 +52,21 @@ defmodule Elmc.PlanRetainsOperandRuntimeTest do
     assert code =~ ~r/if \(owned\[2\] == owned\[0\]\) \{\s*elmc_release\(owned\[2\]\);/
     refute code =~ ~r/elmc_release\(owned\[2\]\);\s*\n\s*if \(owned\[2\] == owned\[0\]\)/
   end
+
+  test "RetainOperandAlias keeps retain when aliasing a borrowed owned slot" do
+    alias Elmc.Backend.CCodegen.RecordCompile
+
+    RecordCompile.mark_borrowed_owned_ref("owned[0]")
+
+    code =
+      RetainOperandAlias.emit("owned[2]", ["owned[0]", "owned[1]"], drop_result_retain?: true)
+
+    # Borrow peel: null only — do not drop clamp/min retain (msg payload still live).
+    assert code =~ ~r/if \(owned\[2\] == owned\[0\]\) \{\s*owned\[0\] = NULL;/
+    refute code =~ ~r/if \(owned\[2\] == owned\[0\]\) \{\s*elmc_release\(owned\[2\]\);/
+
+    # Owned literal operand still transfers.
+    assert code =~ ~r/if \(owned\[2\] == owned\[1\]\) \{\s*elmc_release\(owned\[2\]\);/
+    refute RecordCompile.borrowed_owned_ref?("owned[0]")
+  end
 end

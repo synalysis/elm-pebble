@@ -31,6 +31,7 @@ defmodule Elmx.TestSupport.TemplateProject do
 
   @template_dirs %{
     "starter" => "starter_watch",
+    "app-minimal" => "app_minimal",
     "watchface-yes" => "watchface_yes",
     "watchface-analog" => "watchface_analog",
     "watchface-digital" => "watchface_digital",
@@ -42,10 +43,17 @@ defmodule Elmx.TestSupport.TemplateProject do
     "watchface-smoke-screen" => "watchface_smoke_screen",
     "watchface-color-shapes" => "watchface_color_shapes",
     "watch-demo-time" => "watch_demo_time",
+    "watch-demo-accel" => "watch_demo_accel",
+    "watch-demo-vibes" => "watch_demo_vibes",
+    "watch-demo-storage" => "watch_demo_storage",
+    "watch-demo-health" => "watch_demo_health",
+    "watch-demo-frame" => "watch_demo_frame",
     "watch_demo_drawing_showcase" => "watch_demo_drawing_showcase",
     "game-2048" => "game_2048",
     "game-elmtris" => "game_elmtris",
+    "game-basic" => "game_basic",
     "game-jump-n-run" => "game_jump_n_run",
+    "game-tiny-bird" => "game_tiny_bird",
     "companion-demo-phone-status" => "companion_demo_phone_status",
     "companion-demo-storage" => "companion_demo_storage",
     "companion-demo-weather-env" => "companion_demo_weather_env",
@@ -53,14 +61,30 @@ defmodule Elmx.TestSupport.TemplateProject do
     "companion-demo-settings" => "companion_demo_settings",
     "companion-demo-geolocation" => "companion_demo_geolocation",
     "companion-demo-websocket" => "companion_demo_websocket",
-    "companion-demo-timeline" => "companion_demo_timeline"
+    "companion-demo-timeline" => "companion_demo_timeline",
+    "companion-demo-protocol-matrix" => "companion_demo_protocol_matrix"
   }
 
+  # Underscore dirs that elmx can scaffold for TEA playbook smoke (subset of
+  # `Elmx.TeaPlaybook.enabled_names/0` with protocol/watch sources wired).
   @tea_playbook_templates ~w(
     watchface-digital
     watchface-minimal
+    watchface-yes
+    watchface-weather-animated
     game-2048
     game-elmtris
+    companion-demo-protocol-matrix
+    companion-demo-phone-status
+    companion-demo-storage
+    companion-demo-weather-env
+    companion-demo-calendar
+    companion-demo-settings
+    companion-demo-geolocation
+    companion-demo-websocket
+    companion-demo-timeline
+    watch-demo-time
+    watch-demo-storage
   )
 
   @protocol_templates MapSet.new([
@@ -69,6 +93,14 @@ defmodule Elmx.TestSupport.TemplateProject do
                         "watchface-weather-animated",
                         "watchface-tutorial-complete",
                         "companion-demo-storage",
+                        "companion-demo-phone-status",
+                        "companion-demo-weather-env",
+                        "companion-demo-calendar",
+                        "companion-demo-settings",
+                        "companion-demo-geolocation",
+                        "companion-demo-websocket",
+                        "companion-demo-timeline",
+                        "companion-demo-protocol-matrix",
                         "starter"
                       ])
 

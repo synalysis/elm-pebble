@@ -327,6 +327,7 @@ defmodule Ide.CompanionProtocolGenerator do
     } CompanionProtocolPhoneToWatchDecoder;
 
     bool companion_protocol_encode_watch_to_phone(DictionaryIterator *iter, int32_t tag, int32_t value);
+    bool companion_protocol_encode_watch_to_phone_value(DictionaryIterator *iter, ElmcValue *message);
     void companion_protocol_phone_to_watch_decoder_init(CompanionProtocolPhoneToWatchDecoder *decoder);
     void companion_protocol_phone_to_watch_decoder_push_tuple(
         CompanionProtocolPhoneToWatchDecoder *decoder, const Tuple *tuple);
@@ -443,6 +444,10 @@ defmodule Ide.CompanionProtocolGenerator do
 
     #{c_runtime_tag_helpers(schema, runtime_tags)}
 
+    #{c_wire_code_helpers(schema, runtime_tags)}
+
+    #{c_watch_value_helpers(schema)}
+
     #{union_value_helper}
 
     #{phone_to_watch_helper}
@@ -459,6 +464,8 @@ defmodule Ide.CompanionProtocolGenerator do
           return false;
       }
     }
+
+    #{c_encode_watch_to_phone_value(schema, runtime_tags)}
 
     void companion_protocol_phone_to_watch_decoder_init(CompanionProtocolPhoneToWatchDecoder *decoder) {
       if (!decoder) return;
@@ -818,78 +825,6 @@ defmodule Ide.CompanionProtocolGenerator do
     list_helpers
   end
 
-  defp js_wire_phone_to_watch_from_elm_cases(schema) do
-    schema.phone_to_watch
-    |> Enum.filter(&js_wire_phone_to_watch_from_elm_supported?/1)
-    |> Enum.map_join("\n", &js_wire_phone_to_watch_from_elm_case/1)
-  end
-
-  defp js_wire_phone_to_watch_from_elm_supported?(msg) do
-    Enum.all?(msg.fields, fn field ->
-      case field.wire_type do
-        :int -> true
-        :bool -> true
-        {:enum, _} -> true
-        {:list, :int} -> true
-        {:union, _} -> true
-        _ -> false
-      end
-    end)
-  end
-
-  defp js_wire_phone_to_watch_from_elm_case(msg) do
-    required = js_wire_from_elm_required_checks(msg.fields)
-
-    encode_call = js_wire_phone_to_watch_encode_call(msg)
-
-    """
-        case #{msg.tag}:
-    #{required}      return #{encode_call};
-    """
-  end
-
-  defp js_wire_phone_to_watch_encode_call(%{fields: []} = msg) do
-    "encodePhoneToWatchPayload(\"#{msg.name}\")"
-  end
-
-  defp js_wire_phone_to_watch_encode_call(%{fields: [field]} = msg) do
-    "encodePhoneToWatchPayload(\"#{msg.name}\", #{js_elm_payload_field_arg(field)})"
-  end
-
-  defp js_wire_phone_to_watch_encode_call(%{fields: [first | rest]} = msg) do
-    rest_args =
-      rest
-      |> Enum.map(fn field -> "#{field.name}: #{js_elm_payload_field_arg(field)}" end)
-      |> Enum.join(", ")
-
-    "encodePhoneToWatchPayload(\"#{msg.name}\", #{js_elm_payload_field_arg(first)}, { #{rest_args} })"
-  end
-
-  defp js_wire_from_elm_required_checks(fields) do
-    fields
-    |> Enum.reject(fn field -> match?({:list, _}, field.wire_type) end)
-    |> Enum.map_join("\n", fn field ->
-      case field.wire_type do
-        {:union, _} ->
-          "      if (elmPayloadWireInt(payload, \"#{field.key}_tag\") === null) return null;\n" <>
-            "      if (elmPayloadWireInt(payload, \"#{field.key}_value\") === null) return null;"
-
-        _ ->
-          "      if (elmPayloadWireInt(payload, \"#{field.key}\") === null) return null;"
-      end
-    end)
-  end
-
-  defp js_elm_payload_field_arg(%{wire_type: {:list, :int}, key: key}),
-    do: "elmPayloadListInt(payload, \"#{key}\")"
-
-  defp js_elm_payload_field_arg(%{wire_type: {:union, _}, key: key}) do
-    "{ tag: elmPayloadWireInt(payload, \"#{key}_tag\"), value: elmPayloadWireInt(payload, \"#{key}_value\") }"
-  end
-
-  defp js_elm_payload_field_arg(%{key: key}),
-    do: "elmPayloadWireInt(payload, \"#{key}\")"
-
   @spec js(schema()) :: String.t()
   defp js(schema) do
     constants =
@@ -958,7 +893,9 @@ defmodule Ide.CompanionProtocolGenerator do
       end)
 
     wire_from_elm_helpers = js_wire_from_elm_helpers(schema)
-    wire_from_elm_cases = js_wire_phone_to_watch_from_elm_cases(schema)
+
+    phone_to_watch_tag_entries =
+      Enum.map_join(schema.phone_to_watch, "\n", fn msg -> "  #{msg.tag}: true," end)
 
     exports =
       schema.enums
@@ -1016,6 +953,34 @@ defmodule Ide.CompanionProtocolGenerator do
       }
     }
 
+    var PHONE_TO_WATCH_TAGS = {
+    #{phone_to_watch_tag_entries}
+    };
+
+    var WIRE_KEY_ID_BY_NAME = {};
+    var WIRE_KEY_ID_KNOWN = {};
+    Object.keys(constants).forEach(function (name) {
+      if (name.indexOf("KEY_") !== 0 || typeof constants[name] !== "number") {
+        return;
+      }
+
+      WIRE_KEY_ID_BY_NAME[name.substring(4).toLowerCase()] = constants[name];
+      WIRE_KEY_ID_KNOWN[constants[name]] = true;
+    });
+
+    function wireKeyId(key) {
+      if (Object.prototype.hasOwnProperty.call(WIRE_KEY_ID_BY_NAME, key)) {
+        return WIRE_KEY_ID_BY_NAME[key];
+      }
+
+      var numeric = Number(key);
+      return WIRE_KEY_ID_KNOWN[numeric] === true ? numeric : null;
+    }
+
+    /* `encodePhoneToWatch` in Elm already emits wire-level values under wire key
+       names, so every message shape round-trips by renaming keys to AppMessage
+       ids. Re-deriving values per constructor here would drop any key the
+       generator did not special-case. */
     function wirePhoneToWatchFromElmPayload(payload) {
       if (!payload || typeof payload !== "object") {
         return null;
@@ -1024,15 +989,23 @@ defmodule Ide.CompanionProtocolGenerator do
       var tag = typeof payload.message_tag === "number"
         ? payload.message_tag
         : payload[#{js_payload_key("message_tag")}];
-      if (typeof tag !== "number") {
+      if (typeof tag !== "number" || PHONE_TO_WATCH_TAGS[tag] !== true) {
         return null;
       }
 
-      switch (tag) {
-    #{wire_from_elm_cases}
-        default:
+      var wire = {};
+      var keys = Object.keys(payload);
+      for (var i = 0; i < keys.length; i++) {
+        var id = wireKeyId(keys[i]);
+        if (id === null) {
           return null;
+        }
+
+        wire[id] = payload[keys[i]];
       }
+
+      wire[#{js_payload_key("message_tag")}] = tag;
+      return wire;
     }
 
     var exported = constants;
@@ -1265,7 +1238,9 @@ defmodule Ide.CompanionProtocolGenerator do
   @spec elm_watch_to_phone_field_decoder(WireSchema.schema(), WireSchema.field()) :: String.t()
   defp elm_watch_to_phone_field_decoder(schema, %{wire_type: {:union, type}, key: key}) do
     if WireFlatten.legacy_union?(schema, type) do
-      "decode#{type}WatchScalar \"#{key}\""
+      # The watch now encodes the full payload, so read `_value` instead of
+      # defaulting it to 0 the way the tag-only scalar cmd path had to.
+      "decode#{type}LegacyWire \"#{key}\""
     else
       "decode#{type}Wire \"#{key}\""
     end
@@ -1685,30 +1660,11 @@ defmodule Ide.CompanionProtocolGenerator do
         """
 
       if legacy do
-        legacy_helpers <>
-          "\n\n" <> elm_legacy_union_watch_scalar_helper(type) <>
-          "\n\n" <> elm_legacy_union_wire_helper(type)
+        legacy_helpers <> "\n\n" <> elm_legacy_union_wire_helper(type)
       else
         legacy_helpers <> "\n\n" <> elm_generic_union_helpers(schema, type, ctors)
       end
     end)
-  end
-
-  defp elm_legacy_union_watch_scalar_helper(type) do
-    """
-    decode#{type}WatchScalar : String -> Decode.Decoder #{type}
-    decode#{type}WatchScalar prefix =
-        Decode.field (prefix ++ "_tag") Decode.int
-            |> Decode.andThen
-                (\\tag ->
-                    case #{elm_union_decode_name(type)} tag 0 of
-                        Just decoded ->
-                            Decode.succeed decoded
-
-                        Nothing ->
-                            Decode.fail ("Unknown #{type} tag: " ++ String.fromInt tag)
-                )
-    """
   end
 
   defp elm_legacy_union_wire_helper(type) do
@@ -1933,6 +1889,551 @@ defmodule Ide.CompanionProtocolGenerator do
   end
 
   defp c_write_watch_to_phone_field(_field, _schema), do: ""
+
+  # --- watch -> phone value encode -------------------------------------------
+  #
+  # The scalar `encode_watch_to_phone(iter, tag, value)` API can only carry a
+  # message tag plus one int, so record/list/union payloads were lost. The value
+  # API walks the boxed `ElmcValue` for the whole `WatchToPhone` constructor and
+  # writes every flattened wire key, mirroring `encodePhoneToWatch` in Elm.
+
+  @spec c_encode_watch_to_phone_value(schema(), WireSchema.runtime_tags()) :: String.t()
+  defp c_encode_watch_to_phone_value(schema, runtime_tags) do
+    cases =
+      schema.watch_to_phone
+      |> Enum.map_join("\n", &c_w2p_value_case(&1, schema, runtime_tags))
+
+    """
+    bool companion_protocol_encode_watch_to_phone_value(DictionaryIterator *iter, ElmcValue *message) {
+      if (!iter || !message) return false;
+      switch ((int32_t)elmc_union_tag_as_int(message)) {
+    #{cases}    default:
+          return false;
+      }
+    }
+    """
+  end
+
+  @spec c_w2p_value_case(message(), schema(), WireSchema.runtime_tags()) :: String.t()
+  defp c_w2p_value_case(msg, schema, runtime_tags) do
+    # `message_union/4` numbers watch->phone constructors from 2; the union's own
+    # 1-based constructor index is the fallback when IR runtime tags are absent.
+    runtime_tag = c_runtime_tag_for(runtime_tags, "WatchToPhone", msg.name, msg.tag - 1)
+    var = "m#{msg.tag}"
+
+    body =
+      case c_w2p_value_field_writes(msg, schema, runtime_tags, var) do
+        {:ok, writes} ->
+          """
+                dict_write_int32(iter, COMPANION_PROTOCOL_KEY_MESSAGE_TAG, COMPANION_PROTOCOL_TAG_#{macro_name(msg.name)});
+          #{writes}      return true;
+          """
+
+        {:unsupported, reason} ->
+          """
+                /* #{msg.name}: #{reason} is not supported by watch->phone encode. */
+                return false;
+          """
+      end
+
+    """
+        case #{runtime_tag}: {
+    #{body}    }
+    """
+  end
+
+  @spec c_w2p_value_field_writes(
+          message(),
+          schema(),
+          WireSchema.runtime_tags(),
+          String.t()
+        ) :: {:ok, String.t()} | {:unsupported, String.t()}
+  defp c_w2p_value_field_writes(%{fields: []}, _schema, _runtime_tags, _var), do: {:ok, ""}
+
+  defp c_w2p_value_field_writes(%{fields: fields}, schema, runtime_tags, var) do
+    binds = c_union_arg_binds(length(fields), "message", var, "      ")
+
+    fields
+    |> Enum.with_index(1)
+    |> Enum.reduce_while({:ok, binds}, fn {field, index}, {:ok, acc} ->
+      case c_value_writes(
+             field.wire_type,
+             field.key,
+             "#{var}_arg#{index}",
+             :raw,
+             schema,
+             runtime_tags,
+             "#{var}_a#{index}",
+             "      "
+           ) do
+        {:ok, writes} -> {:cont, {:ok, acc <> writes}}
+        {:unsupported, reason} -> {:halt, {:unsupported, reason}}
+      end
+    end)
+  end
+
+  # Unary constructors box the payload directly; n-ary ones use right-nested
+  # tuple2s, matching `Elmc.Backend.Plan.Lower.Constructor.compile_union_payload/3`.
+  @spec c_union_arg_binds(pos_integer(), String.t(), String.t(), String.t()) :: String.t()
+  defp c_union_arg_binds(1, source, var, indent),
+    do: "#{indent}ElmcValue *#{var}_arg1 = elmc_union_payload(#{source});\n"
+
+  defp c_union_arg_binds(count, source, var, indent) do
+    rest = "#{var}_rest"
+
+    head = "#{indent}ElmcValue *#{rest} = elmc_union_payload(#{source});\n"
+
+    1..count
+    |> Enum.map_join("", fn index ->
+      if index == count do
+        "#{indent}ElmcValue *#{var}_arg#{index} = #{rest};\n"
+      else
+        "#{indent}ElmcValue *#{var}_arg#{index} = companion_protocol_tuple_first(#{rest});\n" <>
+          "#{indent}#{rest} = companion_protocol_tuple_second(#{rest});\n"
+      end
+    end)
+    |> then(&(head <> &1))
+  end
+
+  @spec c_value_writes(
+          WireSchema.wire_type(),
+          String.t(),
+          String.t(),
+          :raw | :offset,
+          schema(),
+          WireSchema.runtime_tags(),
+          String.t(),
+          String.t()
+        ) :: {:ok, String.t()} | {:unsupported, String.t()}
+  defp c_value_writes(:int, key, expr, mode, _schema, _runtime_tags, _var, indent) do
+    {:ok,
+     "#{indent}dict_write_int32(iter, #{c_key_macro(key)}, (int32_t)companion_protocol_value_int(#{expr})#{c_wire_offset_suffix(mode)});\n"}
+  end
+
+  defp c_value_writes(:bool, key, expr, _mode, _schema, _runtime_tags, _var, indent) do
+    {:ok,
+     "#{indent}dict_write_int32(iter, #{c_key_macro(key)}, elmc_value_is_true(#{expr}) ? #{@wire_true_code} : #{@wire_false_code});\n"}
+  end
+
+  defp c_value_writes(:string, key, expr, _mode, _schema, _runtime_tags, _var, indent) do
+    {:ok,
+     "#{indent}dict_write_cstring(iter, #{c_key_macro(key)}, companion_protocol_value_string(#{expr}));\n"}
+  end
+
+  defp c_value_writes({:enum, type}, key, expr, _mode, _schema, _runtime_tags, _var, indent) do
+    {:ok,
+     "#{indent}dict_write_int32(iter, #{c_key_macro(key)}, #{c_wire_code_function(type)}((int32_t)elmc_union_tag_as_int(#{expr})));\n"}
+  end
+
+  defp c_value_writes({:union, type}, key, expr, mode, schema, runtime_tags, var, indent) do
+    ctors = Map.get(schema.payload_unions, type, [])
+
+    if WireFlatten.legacy_union?(schema, type) do
+      {:ok,
+       "#{indent}dict_write_int32(iter, #{c_key_macro(key <> "_tag")}, #{c_wire_code_function(type)}((int32_t)elmc_union_tag_as_int(#{expr})));\n" <>
+         "#{indent}dict_write_int32(iter, #{c_key_macro(key <> "_value")}, (int32_t)elmc_union_payload_int(#{expr}));\n"}
+    else
+      c_union_value_writes(type, ctors, key, expr, mode, schema, runtime_tags, var, indent)
+    end
+  end
+
+  defp c_value_writes({:union, type, ctors}, key, expr, mode, schema, runtime_tags, var, indent),
+    do: c_union_value_writes(type, ctors, key, expr, mode, schema, runtime_tags, var, indent)
+
+  defp c_value_writes({:record, _type, fields}, key, expr, mode, schema, runtime_tags, var, indent) do
+    inner = indent <> "  "
+
+    # Prefer index access: plan/codegen often builds records with
+    # `elmc_record_new_values_take` (no field names). Name lookup would
+    # silently yield 0 for every field and break SendPoint / similar.
+    fields
+    |> Enum.with_index()
+    |> Enum.reduce_while({:ok, ""}, fn {field, index}, {:ok, acc} ->
+      field_var = "#{var}_#{field.name}"
+
+      case c_value_writes(
+             field.wire_type,
+             "#{key}_#{field.name}",
+             field_var,
+             mode,
+             schema,
+             runtime_tags,
+             field_var,
+             inner <> "  "
+           ) do
+        {:ok, writes} ->
+          block =
+            "#{inner}{\n" <>
+              "#{inner}  ElmcValue *#{field_var} = elmc_record_get_index(#{var}_record, #{index});\n" <>
+              writes <>
+              "#{inner}  elmc_release(#{field_var});\n" <>
+              "#{inner}}\n"
+
+          {:cont, {:ok, acc <> block}}
+
+        {:unsupported, reason} ->
+          {:halt, {:unsupported, reason}}
+      end
+    end)
+    |> case do
+      {:ok, body} ->
+        {:ok,
+         "#{indent}{\n" <>
+           "#{inner}ElmcValue *#{var}_record = #{expr};\n" <>
+           body <>
+           "#{indent}}\n"}
+
+      other ->
+        other
+    end
+  end
+
+  defp c_value_writes({:list, :int}, key, expr, _mode, _schema, _runtime_tags, var, indent) do
+    inner = indent <> "  "
+
+    keys =
+      0..(@list_max_elements - 1)
+      |> Enum.map_join(", ", fn index -> c_key_macro("#{key}_#{index}") end)
+
+    {:ok,
+     """
+     #{indent}{
+     #{inner}static const uint32_t #{var}_keys[#{@list_max_elements}] = { #{keys} };
+     #{inner}ElmcValue *#{var}_list = #{expr};
+     #{inner}int32_t #{var}_n = (int32_t)elmc_list_length_native(#{var}_list);
+     #{inner}if (#{var}_n > #{@list_max_elements}) #{var}_n = #{@list_max_elements};
+     #{inner}dict_write_int32(iter, #{c_key_macro(key <> "_count")}, #{var}_n + #{@wire_code_base});
+     #{inner}for (int32_t #{var}_i = 0; #{var}_i < #{var}_n; #{var}_i++) {
+     #{inner}  dict_write_int32(iter, #{var}_keys[#{var}_i], (int32_t)elmc_list_nth_int_default(#{var}_list, #{var}_i, 0) + #{@wire_code_base});
+     #{inner}}
+     #{indent}}
+     """}
+  end
+
+  defp c_value_writes({:list, elem}, key, expr, _mode, schema, runtime_tags, var, indent) do
+    inner = indent <> "  "
+
+    0..(@list_max_elements - 1)
+    |> Enum.reduce_while({:ok, ""}, fn index, {:ok, acc} ->
+      elem_var = "#{var}_e#{index}"
+
+      case c_value_writes(
+             elem,
+             "#{key}_#{index}",
+             elem_var,
+             :offset,
+             schema,
+             runtime_tags,
+             elem_var,
+             inner <> "    "
+           ) do
+        {:ok, writes} ->
+          block =
+            "#{inner}if (#{var}_n > #{index}) {\n" <>
+              "#{inner}  ElmcValue *#{elem_var} = companion_protocol_list_nth(#{var}_list, #{index});\n" <>
+              writes <>
+              "#{inner}}\n"
+
+          {:cont, {:ok, acc <> block}}
+
+        {:unsupported, reason} ->
+          {:halt, {:unsupported, reason}}
+      end
+    end)
+    |> case do
+      {:ok, body} ->
+        {:ok,
+         "#{indent}{\n" <>
+           "#{inner}ElmcValue *#{var}_list = #{expr};\n" <>
+           "#{inner}int32_t #{var}_n = (int32_t)elmc_list_length_native(#{var}_list);\n" <>
+           "#{inner}if (#{var}_n > #{@list_max_elements}) #{var}_n = #{@list_max_elements};\n" <>
+           "#{inner}dict_write_int32(iter, #{c_key_macro(key <> "_count")}, #{var}_n + #{@wire_code_base});\n" <>
+           body <>
+           "#{indent}}\n"}
+
+      other ->
+        other
+    end
+  end
+
+  defp c_value_writes({:dict, _elem}, _key, _expr, _mode, _schema, _runtime_tags, _var, _indent),
+    do: {:unsupported, "Dict payload"}
+
+  defp c_value_writes(wire_type, _key, _expr, _mode, _schema, _runtime_tags, _var, _indent),
+    do: {:unsupported, inspect(wire_type)}
+
+  @spec c_union_value_writes(
+          String.t(),
+          [constructor()],
+          String.t(),
+          String.t(),
+          :raw | :offset,
+          schema(),
+          WireSchema.runtime_tags(),
+          String.t(),
+          String.t()
+        ) :: {:ok, String.t()} | {:unsupported, String.t()}
+  defp c_union_value_writes(type, ctors, key, expr, _mode, schema, runtime_tags, var, indent) do
+    inner = indent <> "  "
+
+    ctors
+    |> Enum.with_index(1)
+    |> Enum.reduce_while({:ok, ""}, fn {ctor, wire_code}, {:ok, acc} ->
+      args = Map.get(ctor, :args, [])
+
+      if args == [] do
+        {:cont, {:ok, acc}}
+      else
+        ctor_var = "#{var}_#{Macro.underscore(ctor.name)}"
+        runtime_tag = c_runtime_tag_for(runtime_tags, type, ctor.name, wire_code)
+
+        args
+        |> Enum.with_index(1)
+        |> Enum.reduce_while({:ok, ""}, fn {arg_type, arg_index}, {:ok, arg_acc} ->
+          arg_wire_type =
+            WireFlatten.resolve_type(
+              arg_type,
+              schema.enums,
+              schema.payload_unions,
+              schema.type_aliases
+            )
+
+          arg_var = "#{ctor_var}_arg#{arg_index}"
+
+          case c_value_writes(
+                 arg_wire_type,
+                 "#{key}_#{Macro.underscore(ctor.name)}_arg#{arg_index}",
+                 arg_var,
+                 :raw,
+                 schema,
+                 runtime_tags,
+                 arg_var,
+                 inner <> "    "
+               ) do
+            {:ok, writes} -> {:cont, {:ok, arg_acc <> writes}}
+            {:unsupported, reason} -> {:halt, {:unsupported, reason}}
+          end
+        end)
+        |> case do
+          {:ok, arg_writes} ->
+            binds = c_union_arg_binds(length(args), "#{var}_union", ctor_var, inner <> "    ")
+
+            block =
+              "#{inner}  case #{runtime_tag}: {\n" <>
+                binds <> arg_writes <> "#{inner}    break;\n#{inner}  }\n"
+
+            {:cont, {:ok, acc <> block}}
+
+          other ->
+            {:halt, other}
+        end
+      end
+    end)
+    |> case do
+      {:ok, ""} ->
+        {:ok,
+         "#{indent}dict_write_int32(iter, #{c_key_macro(key <> "_tag")}, #{c_wire_code_function(type)}((int32_t)elmc_union_tag_as_int(#{expr})));\n"}
+
+      {:ok, variant_cases} ->
+        {:ok,
+         "#{indent}{\n" <>
+           "#{inner}ElmcValue *#{var}_union = #{expr};\n" <>
+           "#{inner}dict_write_int32(iter, #{c_key_macro(key <> "_tag")}, #{c_wire_code_function(type)}((int32_t)elmc_union_tag_as_int(#{var}_union)));\n" <>
+           "#{inner}switch ((int32_t)elmc_union_tag_as_int(#{var}_union)) {\n" <>
+           variant_cases <>
+           "#{inner}  default: break;\n" <>
+           "#{inner}}\n" <>
+           "#{indent}}\n"}
+
+      other ->
+        other
+    end
+  end
+
+  defp c_key_macro(key), do: "COMPANION_PROTOCOL_KEY_#{macro_name(key)}"
+
+  defp c_wire_offset_suffix(:offset), do: " + #{@wire_code_base}"
+  defp c_wire_offset_suffix(_mode), do: ""
+
+  defp c_wire_code_function(type), do: "companion_protocol_wire_code_#{macro_name(type)}"
+
+  @spec c_runtime_tag_for(
+          WireSchema.runtime_tags(),
+          String.t(),
+          String.t(),
+          integer()
+        ) :: integer()
+  defp c_runtime_tag_for(runtime_tags, type, ctor_name, fallback) do
+    runtime_tags
+    |> Map.get(type, %{})
+    |> Map.get(ctor_name, fallback)
+  end
+
+  # Runtime tag -> 1-based wire code, the inverse of `c_runtime_tag_helpers/2`.
+  @spec c_wire_code_helpers(schema(), WireSchema.runtime_tags()) :: String.t()
+  defp c_wire_code_helpers(schema, runtime_tags) do
+    schema
+    |> c_watch_to_phone_tagged_types()
+    |> Enum.map_join("\n\n", fn {type, ctor_names} ->
+      cases =
+        ctor_names
+        |> Enum.with_index(1)
+        |> Enum.map_join("\n", fn {ctor_name, wire_code} ->
+          "    case #{c_runtime_tag_for(runtime_tags, type, ctor_name, wire_code)}: return #{wire_code};"
+        end)
+
+      """
+      static int32_t #{c_wire_code_function(type)}(int32_t runtime_tag) {
+        switch (runtime_tag) {
+      #{cases}
+          default: return 0;
+        }
+      }
+      """
+    end)
+  end
+
+  @spec c_watch_to_phone_tagged_types(schema()) :: [{String.t(), [String.t()]}]
+  defp c_watch_to_phone_tagged_types(schema) do
+    schema.watch_to_phone
+    |> Enum.flat_map(& &1.fields)
+    |> Enum.flat_map(&c_runtime_tag_wire_types(&1.wire_type))
+    |> Enum.uniq()
+    |> Enum.flat_map(fn
+      {:enum, type} ->
+        case Map.fetch(schema.enums, type) do
+          {:ok, ctors} -> [{type, ctors}]
+          :error -> []
+        end
+
+      {:union, type} ->
+        case Map.fetch(schema.payload_unions, type) do
+          {:ok, ctors} -> [{type, Enum.map(ctors, & &1.name)}]
+          :error -> []
+        end
+    end)
+    |> Enum.uniq_by(&elem(&1, 0))
+  end
+
+  @spec c_watch_value_helpers(schema()) :: String.t()
+  defp c_watch_value_helpers(schema) do
+    wire_types = c_watch_to_phone_wire_types(schema)
+
+    [
+      """
+      static elmc_int_t companion_protocol_value_int(ElmcValue *value) {
+        return value ? elmc_as_int(value) : 0;
+      }
+      """,
+      if Enum.any?(wire_types, &(&1 == :string)) do
+        """
+        static const char *companion_protocol_value_string(ElmcValue *value) {
+          if (!value || value->tag != ELMC_TAG_STRING || !value->payload) return "";
+          return (const char *)value->payload;
+        }
+        """
+      end,
+      if Enum.any?(wire_types, &match?({:list, elem} when elem != :int, &1)) do
+        """
+        /* Borrowed element access; int-backed lists use elmc_list_nth_int_default. */
+        static ElmcValue *companion_protocol_list_nth(ElmcValue *list, int32_t index) {
+          if (list && list->tag == ELMC_TAG_RECORD_SEQ && list->payload) {
+            ElmcRecordSeqPayload *seq = (ElmcRecordSeqPayload *)list->payload;
+            if (index < 0 || index >= seq->length) return NULL;
+            return seq->items[index];
+          }
+          ElmcValue *cursor = list;
+          while (cursor && cursor->tag == ELMC_TAG_LIST && cursor->payload) {
+            ElmcCons *node = (ElmcCons *)cursor->payload;
+            if (index == 0) return node->head;
+            index--;
+            cursor = node->tail;
+          }
+          return NULL;
+        }
+        """
+      end,
+      if c_watch_to_phone_multi_arg?(schema) do
+        """
+        static ElmcValue *companion_protocol_tuple_first(ElmcValue *value) {
+          if (!value || value->tag != ELMC_TAG_TUPLE2 || !value->payload) return NULL;
+          return ((ElmcTuple2 *)value->payload)->first;
+        }
+
+        static ElmcValue *companion_protocol_tuple_second(ElmcValue *value) {
+          if (!value || value->tag != ELMC_TAG_TUPLE2 || !value->payload) return NULL;
+          return ((ElmcTuple2 *)value->payload)->second;
+        }
+        """
+      end
+    ]
+    |> Enum.reject(&is_nil/1)
+    |> Enum.join("\n")
+  end
+
+  @spec c_watch_to_phone_multi_arg?(schema()) :: boolean()
+  defp c_watch_to_phone_multi_arg?(schema) do
+    Enum.any?(schema.watch_to_phone, &(length(&1.fields) > 1)) or
+      (schema
+       |> c_watch_to_phone_wire_types()
+       |> Enum.any?(fn
+         {:union, type} ->
+           schema.payload_unions
+           |> Map.get(type, [])
+           |> Enum.any?(&(length(Map.get(&1, :args, [])) > 1))
+
+         _wire_type ->
+           false
+       end))
+  end
+
+  @spec c_watch_to_phone_wire_types(schema()) :: [WireSchema.wire_type()]
+  defp c_watch_to_phone_wire_types(schema) do
+    schema.watch_to_phone
+    |> Enum.flat_map(& &1.fields)
+    |> Enum.flat_map(&c_reachable_wire_types(&1.wire_type, schema))
+    |> Enum.uniq()
+  end
+
+  @spec c_reachable_wire_types(WireSchema.wire_type(), schema(), non_neg_integer()) :: [
+          WireSchema.wire_type()
+        ]
+  defp c_reachable_wire_types(wire_type, schema, depth \\ 0)
+
+  defp c_reachable_wire_types(wire_type, _schema, depth) when depth > 4, do: [wire_type]
+
+  defp c_reachable_wire_types({:record, _type, fields} = wire_type, schema, depth),
+    do: [
+      wire_type | Enum.flat_map(fields, &c_reachable_wire_types(&1.wire_type, schema, depth + 1))
+    ]
+
+  defp c_reachable_wire_types({:list, elem} = wire_type, schema, depth),
+    do: [wire_type | c_reachable_wire_types(elem, schema, depth + 1)]
+
+  defp c_reachable_wire_types({:dict, elem} = wire_type, schema, depth),
+    do: [wire_type | c_reachable_wire_types(elem, schema, depth + 1)]
+
+  defp c_reachable_wire_types({:union, type} = wire_type, schema, depth),
+    do: [wire_type | c_union_arg_wire_types(type, schema, depth)]
+
+  defp c_reachable_wire_types({:union, type, _ctors}, schema, depth),
+    do: [{:union, type} | c_union_arg_wire_types(type, schema, depth)]
+
+  defp c_reachable_wire_types(wire_type, _schema, _depth), do: [wire_type]
+
+  @spec c_union_arg_wire_types(String.t(), schema(), non_neg_integer()) :: [
+          WireSchema.wire_type()
+        ]
+  defp c_union_arg_wire_types(type, schema, depth) do
+    schema.payload_unions
+    |> Map.get(type, [])
+    |> Enum.flat_map(&Map.get(&1, :args, []))
+    |> Enum.flat_map(fn arg_type ->
+      arg_type
+      |> WireFlatten.resolve_type(schema.enums, schema.payload_unions, schema.type_aliases)
+      |> c_reachable_wire_types(schema, depth + 1)
+    end)
+  end
 
   defp c_required_field_expr(%{wire_type: {:union, _type}}, index),
     do: "decoder->saw_fields[#{index}] && decoder->saw_union_value_fields[#{index}]"
@@ -2399,7 +2900,8 @@ defmodule Ide.CompanionProtocolGenerator do
         int32_t #{var_prefix}_count = message->wire.#{count_slot.c_name};
         if (#{var_prefix}_count < 0) #{var_prefix}_count = 0;
         if (#{var_prefix}_count > #{@list_max_elements}) #{var_prefix}_count = #{@list_max_elements};
-        ElmcValue *#{var_prefix}_items[#{@list_max_elements}];
+        /* Zero-init: elmc_tuple2_take / list builders release *out when non-NULL. */
+        ElmcValue *#{var_prefix}_items[#{@list_max_elements}] = {0};
       #{element_builds}
     """
 
@@ -2447,7 +2949,8 @@ defmodule Ide.CompanionProtocolGenerator do
         int32_t #{var_prefix}_count = message->wire.#{count_slot.c_name};
         if (#{var_prefix}_count < 0) #{var_prefix}_count = 0;
         if (#{var_prefix}_count > #{@dict_max_entries}) #{var_prefix}_count = #{@dict_max_entries};
-        ElmcValue *#{var_prefix}_pairs[#{@dict_max_entries}];
+        /* Zero-init: elmc_tuple2_take releases *out when non-NULL (uninitialized = crash). */
+        ElmcValue *#{var_prefix}_pairs[#{@dict_max_entries}] = {0};
       #{entry_builds}
         ElmcValue *#{var_prefix}_pair_list = NULL;
         if (elmc_list_from_values_take(&#{var_prefix}_pair_list, #{var_prefix}_pairs, #{var_prefix}_count) != RC_SUCCESS) return NULL;

@@ -1947,6 +1947,7 @@ defmodule Elmc.Runtime.Generator do
     RC elmc_port_incoming_sub(ElmcValue **out, ElmcValue *port_name, ElmcValue *callback);
     RC elmc_cmd1(ElmcValue **out, elmc_int_t kind, elmc_int_t p0);
     RC elmc_cmd1_string(ElmcValue **out, elmc_int_t kind, elmc_int_t p0, const char *text);
+    RC elmc_cmd_companion_send_value(ElmcValue **out, ElmcValue *message);
     RC elmc_cmd2(ElmcValue **out, elmc_int_t kind, elmc_int_t p0, elmc_int_t p1);
     RC elmc_cmd3(ElmcValue **out, elmc_int_t kind, elmc_int_t p0, elmc_int_t p1, elmc_int_t p2);
     RC elmc_cmd4(ElmcValue **out, elmc_int_t kind, elmc_int_t p0, elmc_int_t p1, elmc_int_t p2, elmc_int_t p3);
@@ -3780,6 +3781,28 @@ defmodule Elmc.Runtime.Generator do
         ElmcCmdPayload *cmd = (ElmcCmdPayload *)(*out)->payload;
         rc = elmc_new_string(&cmd->text, text ? text : "");
         CHECK_RC(rc);
+      CATCH_END
+      if (rc != RC_SUCCESS && out && *out) {
+        elmc_release(*out);
+        *out = NULL;
+      }
+      return rc;
+    }
+
+    /* Companion watch->phone send carrying the whole Elm message value. The host
+       encodes every wire key from the typed payload, so no tag/value fold is needed.
+       cmd->text doubles as the boxed payload slot; elmc_cmd_cell_release frees it. */
+    RC elmc_cmd_companion_send_value(ElmcValue **out, ElmcValue *message) {
+      RC rc = RC_SUCCESS;
+      CATCH_BEGIN
+        rc = elmc_cmd_alloc(out, 0, #{Elmc.Backend.Pebble.command_kind_id!(:companion_send)}, 0, 0, 0, 0, 0, 0);
+        CHECK_RC(rc);
+        if (!*out || (*out)->tag != ELMC_TAG_CMD || !(*out)->payload) {
+          rc = RC_ERR_INVALID_ARG;
+          CHECK_RC(rc);
+        }
+        ElmcCmdPayload *cmd = (ElmcCmdPayload *)(*out)->payload;
+        cmd->text = message ? elmc_retain(message) : NULL;
       CATCH_END
       if (rc != RC_SUCCESS && out && *out) {
         elmc_release(*out);
