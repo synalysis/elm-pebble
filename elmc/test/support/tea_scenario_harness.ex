@@ -244,6 +244,25 @@ defmodule Elmc.TestSupport.TeaScenarioHarness do
         lines
       end
 
+    lines =
+      if caps[:has_health] do
+        lines ++
+          [
+            """
+                  case ELMC_PEBBLE_CMD_HEALTH_SUPPORTED:
+                    if (elmc_pebble_dispatch_tag_bool(app, cmd.p0, 1) == 0) progressed = 1;
+                    break;
+                  case ELMC_PEBBLE_CMD_HEALTH_VALUE:
+                  case ELMC_PEBBLE_CMD_HEALTH_SUM_TODAY:
+                  case ELMC_PEBBLE_CMD_HEALTH_SUM:
+                    if (elmc_pebble_dispatch_tag_value(app, cmd.p0, 100) == 0) progressed = 1;
+                    break;
+            """
+          ]
+      else
+        lines
+      end
+
     Enum.join(lines, "")
   end
 

@@ -139,6 +139,16 @@ defmodule Ide.ProtocolMatrixWireGateTest do
     end
   end
 
+  test "C harness phone decode dispatches PushLabels rebuild through elmc_tuple2_take" do
+    harness =
+      File.read!(Path.expand("../../test/support/companion_protocol_c_harness.ex", __DIR__))
+
+    # Runtime path that faulted on-device: decode → dispatch → dict pair slots → tuple2_take.
+    assert harness =~ "companion_protocol_dispatch_phone_to_watch"
+    assert harness =~ ~s|when name in ["PushLabels"|
+    assert harness =~ "Match runtime: release prior *out"
+  end
+
   test "embedded pypkjs accepts cstring dict keys used by PushLabels" do
     script = Path.join(@ide_root, "priv/python/embedded_pypkjs.py")
     assert File.exists?(script)

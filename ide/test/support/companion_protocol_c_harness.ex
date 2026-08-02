@@ -115,6 +115,11 @@ defmodule Ide.CompanionProtocolCTestHarness do
     #include <string.h>
     #include "companion_protocol.h"
 
+    /* Complete the opaque ElmcPebbleApp from elmc_pebble.h for local stack apps. */
+    struct ElmcPebbleApp {
+      int initialized;
+    };
+
     #define MAX_CAPTURED 48
     #define MAX_TUPLES 48
 
@@ -456,9 +461,25 @@ defmodule Ide.CompanionProtocolCTestHarness do
       CHECK(companion_protocol_phone_to_watch_decoder_finish(&decoder, &message), "p2w #{msg.name} decode");
       CHECK(message.kind == #{kind_macro}, "p2w #{msg.name} kind");
     #{assertions}
+    #{phone_dispatch_assertion(msg)}
     }
     """
   end
+
+  # Rebuild Elm values from wire (Dict / List Point / Record). Exercises
+  # elmc_tuple2_take into scratch slots — the PushLabels stack-fault path.
+  defp phone_dispatch_assertion(%{name: name})
+       when name in ["PushLabels", "PushPoints", "EchoPoint", "EchoCounts", "PushString"] do
+    """
+      {
+        ElmcPebbleApp app = {0};
+        int dispatch_rc = companion_protocol_dispatch_phone_to_watch(&app, &message);
+        CHECK(dispatch_rc == 0, "p2w #{name} dispatch rebuild");
+      }
+    """
+  end
+
+  defp phone_dispatch_assertion(_msg), do: ""
 
   defp phone_tuple_setup({{type, key_name, value}, _index}) do
     key_macro = "COMPANION_PROTOCOL_KEY_#{macro_name(key_name)}"
@@ -997,6 +1018,10 @@ defmodule Ide.CompanionProtocolCTestHarness do
     }
 
     RC elmc_tuple2_take(ElmcValue **out, ElmcValue *left, ElmcValue *right) {
+      /* Match runtime: release prior *out. Uninitialized out slots fault here. */
+      if (out && *out && *out != left && *out != right) {
+        elmc_release(*out);
+      }
       ElmcValue *v = alloc_value(ELMC_TAG_TUPLE2);
       if (!v) return RC_ERR_OUT_OF_MEMORY;
       ElmcTuple2 *tuple = calloc(1, sizeof(ElmcTuple2));
@@ -1092,14 +1117,22 @@ defmodule Ide.CompanionProtocolCTestHarness do
     }
 
     RC elmc_list_from_values_take(ElmcValue **out, ElmcValue **values, int count) {
+      if (out && *out) {
+        elmc_release(*out);
+        *out = NULL;
+      }
       return harness_cons_list(out, values, count);
     }
 
     RC elmc_dict_from_list(ElmcValue **out, ElmcValue *pairs) {
-      (void)pairs;
-      ElmcValue *v = alloc_value(ELMC_TAG_LIST);
-      if (!v) return RC_ERR_OUT_OF_MEMORY;
-      *out = v;
+      /* Keep the pair list as the dict spine so rebuild ownership stays valid. */
+      if (!pairs) {
+        ElmcValue *empty = alloc_value(ELMC_TAG_LIST);
+        if (!empty) return RC_ERR_OUT_OF_MEMORY;
+        *out = empty;
+        return RC_SUCCESS;
+      }
+      *out = elmc_retain(pairs);
       return RC_SUCCESS;
     }
 

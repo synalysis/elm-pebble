@@ -232,12 +232,13 @@ defmodule Elmx.TestSupport.TeaPlaybookRunner do
   defp run_frame_loop(module, step, acc) do
     count = Map.get(step, :count, 1)
     dt = Map.get(step, :dt_ms, 33)
+    message = Map.get(step, :message) || "FrameTick"
 
     Enum.reduce(1..count, {ok_snapshot(step, acc), acc}, fn frame, {_snap, state} ->
       value = Elmx.TeaPlaybook.Samples.frame(frame, dt)
 
       {runtime_model, _source, cmd} =
-        Run.step_execution(module, "FrameTick", value, state.runtime_model)
+        Run.step_execution(module, message, value, state.runtime_model)
 
       commands = commands_from_cmd(cmd)
 
@@ -307,6 +308,11 @@ defmodule Elmx.TestSupport.TeaPlaybookRunner do
       :random ->
         String.contains?(kind, "random") or
           String.contains?(to_string(Map.get(row, "message")), "Random")
+
+      :health ->
+        String.contains?(kind, "health") or
+          String.contains?(to_string(Map.get(row, "message")), "Health") or
+          String.contains?(to_string(Map.get(row, "message")), "Supported")
 
       _ ->
         true

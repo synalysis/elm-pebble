@@ -85,8 +85,19 @@ defmodule Elmc.PebbleContractCmdSubElmPathTest do
 
     for id <- @surface_cmd_ids do
       row = CmdSub.cmd!(id)
-      assert init_body =~ row.c_macro,
-             "elmc_fn_Main_init missing #{row.c_macro} for #{id}"
+
+      present? =
+        case id do
+          # Value encode helper embeds COMPANION_SEND inside elmc_cmd_companion_send_value.
+          :companion_send ->
+            String.contains?(init_body, row.c_macro) or
+              String.contains?(init_body, "elmc_cmd_companion_send_value")
+
+          _ ->
+            String.contains?(init_body, row.c_macro)
+        end
+
+      assert present?, "elmc_fn_Main_init missing #{row.c_macro} for #{id}"
     end
   end
 

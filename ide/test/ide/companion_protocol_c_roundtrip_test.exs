@@ -1,4 +1,13 @@
 defmodule Ide.CompanionProtocolCRoundtripTest do
+  @moduledoc """
+  Host-compiles generated companion_protocol.c against a runtime-faithful harness.
+
+  Phone→watch cases for composite payloads (PushLabels / PushPoints / EchoPoint / …)
+  call `companion_protocol_dispatch_phone_to_watch`, which rebuilds Dict/List/Record
+  values through `elmc_tuple2_take` — the path that faulted when pair scratch slots
+  were uninitialized.
+  """
+
   use ExUnit.Case, async: false
 
   alias Ide.CompanionProtocolCTestHarness

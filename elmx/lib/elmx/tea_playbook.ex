@@ -468,6 +468,7 @@ defmodule Elmx.TeaPlaybook do
           update(:random, value: 12_345, message: "RandomGenerated"),
           step_drain([:storage, :random]),
           %{id: "dirs", op: :update, action: :direction_cycle, count: 4},
+          update(:button, button: :select, message: "SelectPressed"),
           step_view()
         ],
         expects: %{min_scene_cmds: 4, min_scene_text: 1, min_view_rows: 1}
@@ -478,9 +479,57 @@ defmodule Elmx.TeaPlaybook do
           step_init(),
           step_drain([:time, :storage, :random]),
           %{id: "frames", op: :update, action: :frame, count: 32, dt_ms: 33, message: "FrameTick"},
+          update(:button, button: :select, message: "SelectPressed"),
           step_view()
         ],
         expects: %{min_scene_cmds: 4, min_scene_text: 1, min_view_rows: 1}
+      },
+      "game_basic" => frame_game_playbook(),
+      "game_jump_n_run" => frame_game_playbook(),
+      "game_tiny_bird" => frame_game_playbook(),
+      "watch_demo_frame" => %{
+        mode: :app,
+        steps: [
+          step_init(),
+          %{id: "frames", op: :update, action: :frame, count: 8, dt_ms: 100, message: "Tick"},
+          step_view()
+        ],
+        expects: %{min_scene_cmds: 1, min_view_rows: 1}
+      },
+      "watch_demo_drawing_showcase" => %{
+        mode: :app,
+        steps: [
+          step_init(),
+          step_drain([:time, :storage, :random]),
+          %{id: "frames", op: :update, action: :frame, count: 8, dt_ms: 33, message: "FrameTick"},
+          update(:button, button: :select, message: "SelectPressed"),
+          step_view()
+        ],
+        expects: %{min_scene_cmds: 1, min_view_rows: 1}
+      },
+      "watch_demo_health" => %{
+        mode: :app,
+        steps: [
+          step_init(),
+          step_drain([:time, :storage, :random, :health]),
+          update(:health, value: true, message: "GotSupported"),
+          update(:button, button: :select, message: "SelectPressed"),
+          step_drain([:health]),
+          step_view()
+        ],
+        expects: %{min_scene_cmds: 1, min_view_rows: 1}
+      },
+      "watchface_poke_battle" => %{
+        mode: :watchface,
+        steps: [
+          step_init(),
+          step_drain([:time, :storage, :health]),
+          update(:current_datetime, message: "CurrentDateTime"),
+          update(:health, value: true, message: "HealthSupported"),
+          %{id: "frames", op: :update, action: :frame, count: 8, dt_ms: 33, message: "FrameTick"},
+          step_view()
+        ],
+        expects: %{min_scene_cmds: 1, min_view_rows: 1}
       },
       "watchface_smoke_screen" => geometry_watchface(:fill_rect),
       "watchface_tangram_time" => geometry_watchface(:circle),
@@ -552,6 +601,20 @@ defmodule Elmx.TeaPlaybook do
           require_spy_texts: ["Extras OK", "6/6 PASS"]
         }
       }
+    }
+  end
+
+  defp frame_game_playbook do
+    %{
+      mode: :app,
+      steps: [
+        step_init(),
+        step_drain([:time, :storage, :random]),
+        %{id: "frames", op: :update, action: :frame, count: 16, dt_ms: 33, message: "FrameTick"},
+        update(:button, button: :select, message: "SelectPressed"),
+        step_view()
+      ],
+      expects: %{min_scene_cmds: 1, min_view_rows: 1}
     }
   end
 

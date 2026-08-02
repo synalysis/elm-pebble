@@ -179,10 +179,30 @@ defmodule Elmx.Pebble.Contract.CmdSub do
       {:storage, "read_string"}
     ),
     Row.cmd(:random_generate, 28, ~w(Random.generate Elm.Kernel.Random.generate), {:device, "random"}),
-    Row.cmd(:health_value, 29, ~w(Elm.Kernel.PebbleWatch.healthValue), {:device, "health_value"}),
-    Row.cmd(:health_sum_today, 30, ~w(Elm.Kernel.PebbleWatch.healthSumToday), {:device, "health_sum_today"}),
-    Row.cmd(:health_sum, 31, ~w(Elm.Kernel.PebbleWatch.healthSum), {:device, "health_sum"}),
-    Row.cmd(:health_accessible, 32, ~w(Elm.Kernel.PebbleWatch.healthAccessible), {:device, "health_accessible"}),
+    Row.cmd(
+      :health_value,
+      29,
+      ~w(Pebble.Health.value Elm.Kernel.PebbleWatch.healthValue),
+      {:device, "health_value"}
+    ),
+    Row.cmd(
+      :health_sum_today,
+      30,
+      ~w(Pebble.Health.sumToday Elm.Kernel.PebbleWatch.healthSumToday),
+      {:device, "health_sum_today"}
+    ),
+    Row.cmd(
+      :health_sum,
+      31,
+      ~w(Pebble.Health.sum Elm.Kernel.PebbleWatch.healthSum),
+      {:device, "health_sum"}
+    ),
+    Row.cmd(
+      :health_accessible,
+      32,
+      ~w(Pebble.Health.accessible Elm.Kernel.PebbleWatch.healthAccessible),
+      {:device, "health_accessible"}
+    ),
     Row.cmd(
       :vibes_custom_pattern,
       33,
@@ -200,7 +220,12 @@ defmodule Elmx.Pebble.Contract.CmdSub do
       ~w(Pebble.UnobstructedArea.currentBounds Elm.Kernel.PebbleWatch.unobstructedCurrentBounds),
       {:device, "unobstructed_bounds_peek"}
     ),
-    Row.cmd(:health_supported, 40, ~w(Elm.Kernel.PebbleWatch.healthSupported), {:device, "health_supported"}),
+    Row.cmd(
+      :health_supported,
+      40,
+      ~w(Pebble.Health.supported Elm.Kernel.PebbleWatch.healthSupported),
+      {:device, "health_supported"}
+    ),
     Row.cmd(
       :storage_read_max_size,
       41,
