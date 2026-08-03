@@ -55,6 +55,9 @@ defmodule Elmc.Test.ElmPebbleDevWasmCompile do
     out_dir = Keyword.get(opts, :out_dir, @default_out)
     rm_rf? = Keyword.get(opts, :rm_rf, true)
     link_wasm? = Keyword.get(opts, :link_wasm, true)
+    prepare? = Keyword.get(opts, :prepare, true)
+
+    if prepare?, do: ensure_prepared!()
 
     script = if check?, do: @check_script, else: @compile_script
     script_arg = Path.relative_to(script, @elmc_root)
@@ -83,5 +86,34 @@ defmodule Elmc.Test.ElmPebbleDevWasmCompile do
     end
 
     out_dir
+  end
+
+  @doc false
+  @spec ensure_prepared!() :: :ok
+  def ensure_prepared! do
+    app = Path.join(@repo_root, "elm_pebble_dev")
+    main = Path.join(app, ".elm-pages/Main.elm")
+    tw = Path.join(app, ".elm-tailwind/Tailwind.elm")
+    pages_pkg =
+      case System.get_env("ELM_HOME") do
+        path when is_binary(path) and path != "" ->
+          Path.join([Path.expand(path), "0.19.1/packages/dillonkearns/elm-pages"])
+
+        _ ->
+          Path.join([System.user_home!(), ".elm/0.19.1/packages/dillonkearns/elm-pages"])
+      end
+
+    if File.regular?(main) and File.regular?(tw) and File.dir?(pages_pkg) do
+      :ok
+    else
+      script = Path.join(@repo_root, "scripts/prepare-elm-pebble-dev-wasm-gate.sh")
+      {output, code} = System.cmd(script, [], cd: @repo_root, stderr_to_stdout: true)
+
+      if code != 0 do
+        raise "elm_pebble_dev wasm gate prep failed:\n#{output}"
+      end
+
+      :ok
+    end
   end
 end

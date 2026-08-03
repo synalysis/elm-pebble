@@ -5,8 +5,10 @@
 # Usage:
 #   ./scripts/seed-elm-packages.sh
 #   ELM_HOME=/path/to/elm-home ./scripts/seed-elm-packages.sh
+#   SEED_FROM_ELM_JSON=elm_pebble_dev/elm.json ./scripts/seed-elm-packages.sh
 set -euo pipefail
 
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 ELM_HOME="${ELM_HOME:-${HOME}/.elm}"
 PACKAGES_ROOT="${ELM_HOME}/0.19.1/packages"
 mkdir -p "${PACKAGES_ROOT}"
@@ -43,6 +45,30 @@ PACKAGES=(
   w0rm/elm-physics/6.2.0
 )
 
+collect_from_elm_json() {
+  local elm_json="$1"
+  python3 - "$elm_json" <<'PY'
+import json, sys
+from pathlib import Path
+
+data = json.loads(Path(sys.argv[1]).read_text())
+deps = data.get("dependencies", {})
+items = {}
+if isinstance(deps, dict) and ("direct" in deps or "indirect" in deps):
+    items.update(deps.get("direct") or {})
+    items.update(deps.get("indirect") or {})
+elif isinstance(deps, dict):
+    # Package elm.json uses ranges ("1.0.0 <= v < 2.0.0"); skip those.
+    for k, v in deps.items():
+        if isinstance(v, str) and " " not in v and "<" not in v and ">" not in v:
+            items[k] = v
+
+for pkg, ver in sorted(items.items()):
+    if isinstance(ver, str) and " " not in ver and "<" not in ver and ">" not in ver:
+        print(f"{pkg}/{ver}")
+PY
+}
+
 seed_one() {
   local spec="$1"
   local author name ver dest url tmp extract_dir
@@ -53,6 +79,17 @@ seed_one() {
   dest="${PACKAGES_ROOT}/${author}/${name}/${ver}"
 
   if [ -d "${dest}/src" ] && [ -f "${dest}/elm.json" ]; then
+    return 0
+  fi
+
+  # Prefer already-downloaded sources under the user's real ~/.elm when CI ELM_HOME
+  # is a workspace cache (copy is faster/more reliable than GitHub tags).
+  local home_pkg="${HOME}/.elm/0.19.1/packages/${author}/${name}/${ver}"
+  if [ "${ELM_HOME}" != "${HOME}/.elm" ] && [ -d "${home_pkg}/src" ] && [ -f "${home_pkg}/elm.json" ]; then
+    echo "Copying ${spec} from ${home_pkg}..."
+    mkdir -p "$(dirname "${dest}")"
+    rm -rf "${dest}"
+    cp -a "${home_pkg}" "${dest}"
     return 0
   fi
 
@@ -80,8 +117,37 @@ seed_one() {
   rm -rf "${tmp}"
 }
 
+ALL_SPECS=("${PACKAGES[@]}")
+
+if [[ -n "${SEED_FROM_ELM_JSON:-}" ]]; then
+  elm_json_path="${SEED_FROM_ELM_JSON}"
+  if [[ "${elm_json_path}" != /* ]]; then
+    elm_json_path="${ROOT}/${elm_json_path}"
+  fi
+  if [[ ! -f "${elm_json_path}" ]]; then
+    echo "error: SEED_FROM_ELM_JSON not found: ${elm_json_path}" >&2
+    exit 1
+  fi
+
+  # First pass: seed direct+indirect pins from the app elm.json (may miss nested
+  # deps until package elm.json files exist locally).
+  mapfile -t FROM_APP < <(collect_from_elm_json "${elm_json_path}" || true)
+  ALL_SPECS+=("${FROM_APP[@]}")
+fi
+
+# Unique preserve order
+declare -A SEEN=()
+UNIQUE=()
+for spec in "${ALL_SPECS[@]}"; do
+  [[ -n "${spec}" ]] || continue
+  if [[ -z "${SEEN[$spec]+x}" ]]; then
+    SEEN[$spec]=1
+    UNIQUE+=("$spec")
+  fi
+done
+
 failed=0
-for spec in "${PACKAGES[@]}"; do
+for spec in "${UNIQUE[@]}"; do
   if ! seed_one "${spec}"; then
     failed=1
   fi

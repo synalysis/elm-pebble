@@ -64,16 +64,26 @@ jobs:
             https://builds.hex.pm
             https://cdn.jsdelivr.net/hex
 
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: elm_pebble_dev/package-lock.json
+
       - name: Cache elm packages
         uses: actions/cache@v4
         with:
           path: ${{ env.ELM_HOME }}
-          key: elm-packages-0.19.1-${{ hashFiles('scripts/seed-elm-packages.sh') }}
+          key: elm-packages-0.19.1-${{ hashFiles('scripts/seed-elm-packages.sh', 'elm_pebble_dev/elm.json') }}
           restore-keys: |
             elm-packages-0.19.1-
 
       - name: Seed elm packages for cold CI
         run: ./scripts/seed-elm-packages.sh
+
+      - name: Prepare elm_pebble_dev for wasm gate
+        run: ./scripts/prepare-elm-pebble-dev-wasm-gate.sh
 
       - name: Cache mix deps and builds
         uses: actions/cache@v4
