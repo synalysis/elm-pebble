@@ -69,9 +69,51 @@ for pkg, ver in sorted(items.items()):
 PY
 }
 
+# Packages that are not published with GitHub version tags (Lamdera injects
+# lamdera/*; the public repo has no 1.0.0 tag). Prefer vendored copies under
+# elm_pebble_dev/vendor/elm-packages/<author>/<name>/<ver>/.
+vendor_pkg_path() {
+  local author="$1" name="$2" ver="$3"
+  echo "${ROOT}/elm_pebble_dev/vendor/elm-packages/${author}/${name}/${ver}"
+}
+
+install_from_dir() {
+  local src="$1" dest="$2" spec="$3"
+  if [ ! -d "${src}/src" ] || [ ! -f "${src}/elm.json" ]; then
+    return 1
+  fi
+  echo "Copying ${spec} from ${src}..."
+  mkdir -p "$(dirname "${dest}")"
+  rm -rf "${dest}"
+  cp -a "${src}" "${dest}"
+  return 0
+}
+
+download_archive_to_dest() {
+  local url="$1" dest="$2" spec="$3"
+  local tmp extract_dir
+  tmp="$(mktemp -d)"
+  if ! curl -fsSL --retry 3 --retry-delay 1 "${url}" -o "${tmp}/pkg.tar.gz"; then
+    rm -rf "${tmp}"
+    return 1
+  fi
+  tar -xzf "${tmp}/pkg.tar.gz" -C "${tmp}"
+  extract_dir="$(find "${tmp}" -mindepth 1 -maxdepth 1 -type d | head -n 1)"
+  if [ -z "${extract_dir}" ] || [ ! -f "${extract_dir}/elm.json" ]; then
+    rm -rf "${tmp}"
+    return 1
+  fi
+  mkdir -p "$(dirname "${dest}")"
+  rm -rf "${dest}"
+  mv "${extract_dir}" "${dest}"
+  rm -rf "${tmp}"
+  echo "Seeded ${spec} from ${url}"
+  return 0
+}
+
 seed_one() {
   local spec="$1"
-  local author name ver dest url tmp extract_dir
+  local author name ver dest
   author="${spec%%/*}"
   local rest="${spec#*/}"
   name="${rest%%/*}"
@@ -82,39 +124,47 @@ seed_one() {
     return 0
   fi
 
-  # Prefer already-downloaded sources under the user's real ~/.elm when CI ELM_HOME
-  # is a workspace cache (copy is faster/more reliable than GitHub tags).
-  local home_pkg="${HOME}/.elm/0.19.1/packages/${author}/${name}/${ver}"
-  if [ "${ELM_HOME}" != "${HOME}/.elm" ] && [ -d "${home_pkg}/src" ] && [ -f "${home_pkg}/elm.json" ]; then
-    echo "Copying ${spec} from ${home_pkg}..."
-    mkdir -p "$(dirname "${dest}")"
-    rm -rf "${dest}"
-    cp -a "${home_pkg}" "${dest}"
+  # Repo-vendored packages (offline / no GitHub tags).
+  local vendor_pkg
+  vendor_pkg="$(vendor_pkg_path "${author}" "${name}" "${ver}")"
+  if install_from_dir "${vendor_pkg}" "${dest}" "${spec}"; then
     return 0
   fi
 
-  url="https://github.com/${author}/${name}/archive/refs/tags/${ver}.tar.gz"
-  tmp="$(mktemp -d)"
+  # Prefer already-downloaded sources under the user's real ~/.elm when CI ELM_HOME
+  # is a workspace cache (copy is faster/more reliable than GitHub tags).
+  local home_pkg="${HOME}/.elm/0.19.1/packages/${author}/${name}/${ver}"
+  if [ "${ELM_HOME}" != "${HOME}/.elm" ] && install_from_dir "${home_pkg}" "${dest}" "${spec}"; then
+    return 0
+  fi
 
   echo "Seeding ${spec}..."
-  if ! curl -fsSL --retry 3 --retry-delay 1 "${url}" -o "${tmp}/pkg.tar.gz"; then
-    rm -rf "${tmp}"
-    echo "error: failed to download ${url}" >&2
-    return 1
+  # Standard Elm package tags, then v-prefixed tags.
+  if download_archive_to_dest \
+    "https://github.com/${author}/${name}/archive/refs/tags/${ver}.tar.gz" \
+    "${dest}" "${spec}"; then
+    return 0
+  fi
+  if download_archive_to_dest \
+    "https://github.com/${author}/${name}/archive/refs/tags/v${ver}.tar.gz" \
+    "${dest}" "${spec}"; then
+    return 0
   fi
 
-  tar -xzf "${tmp}/pkg.tar.gz" -C "${tmp}"
-  extract_dir="$(find "${tmp}" -mindepth 1 -maxdepth 1 -type d | head -n 1)"
-  if [ -z "${extract_dir}" ] || [ ! -f "${extract_dir}/elm.json" ]; then
-    rm -rf "${tmp}"
-    echo "error: unexpected archive layout for ${spec}" >&2
-    return 1
+  # Last resort for untagged public repos (lamdera/codecs has no version tags).
+  if download_archive_to_dest \
+    "https://github.com/${author}/${name}/archive/refs/heads/master.tar.gz" \
+    "${dest}" "${spec}"; then
+    return 0
+  fi
+  if download_archive_to_dest \
+    "https://github.com/${author}/${name}/archive/refs/heads/main.tar.gz" \
+    "${dest}" "${spec}"; then
+    return 0
   fi
 
-  mkdir -p "$(dirname "${dest}")"
-  rm -rf "${dest}"
-  mv "${extract_dir}" "${dest}"
-  rm -rf "${tmp}"
+  echo "error: failed to seed ${spec} (no vendor copy, ~/.elm cache, or GitHub archive)" >&2
+  return 1
 }
 
 ALL_SPECS=("${PACKAGES[@]}")
