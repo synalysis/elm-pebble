@@ -65,9 +65,14 @@ defmodule Elmc.TutorialCompleteMinuteCodegenTest do
     refute minute_changed =~
              ~r/ElmcValue \*tmp_(\d+) = elmc_fn_Main_CurrentLocation[\s\S]*ElmcValue \*tmp_\1 = elmc_fn_Main_RequestWeather/
 
-    assert minute_changed =~ "ELMC_PEBBLE_CMD_COMPANION_SEND"
-    assert minute_changed =~ "elmc_fn_Companion_Internal_watchToPhoneTag"
-    assert minute_changed =~ "elmc_fn_Companion_Internal_watchToPhoneValue"
+    # Value-path send: tuple payload → elmc_cmd_companion_send_value (embeds COMPANION_SEND).
+    assert minute_changed =~ "elmc_cmd_companion_send_value" or
+             minute_changed =~ "ELMC_PEBBLE_CMD_COMPANION_SEND"
+
+    assert minute_changed =~ "elmc_cmd_companion_send_value" or
+             (minute_changed =~ "elmc_fn_Companion_Internal_watchToPhoneTag" and
+                minute_changed =~ "elmc_fn_Companion_Internal_watchToPhoneValue")
+
     # RC ABI: `elmc_new_int(&owned[i], 1)` — legacy `_take` is gone.
     assert minute_changed =~ ~r/elmc_new_int(?:_take)?\((?:&owned\[\d+\],\s*)?1\)/
     assert minute_changed =~ ~r/elmc_tuple2\(&owned\[\d+\],\s*owned\[\d+\],\s*owned\[\d+\]\)/

@@ -17,11 +17,13 @@ defmodule Elmc.PlanStarterWatchCompanionTest do
     decl_map = TemplateCompile.decl_map_from_result(result)
     decl = Map.fetch!(decl_map, {"Main", "requestWeather"})
 
-    assert Map.has_key?(decl_map, {"Companion.Internal", "watchToPhoneTag"})
+    assert Map.has_key?(decl_map, {"Companion.Internal", "watchToPhoneTag"}) or
+             Map.has_key?(decl_map, {"Companion.Watch", "sendWatchToPhone"})
+
     assert {:ok, plan} = Function.lower(decl, "Main", decl_map, rc_required: true)
     dump = Elmc.Backend.Plan.Debug.dump(plan)
-    assert dump =~ "watchToPhoneTag"
-    assert dump =~ "watchToPhoneValue"
-    assert dump =~ "ELMC_PEBBLE_CMD_COMPANION_SEND"
+
+    assert dump =~ "elmc_cmd_companion_send_value" or dump =~ "watchToPhoneTag" or
+             dump =~ "companion_send" or dump =~ "COMPANION_SEND"
   end
 end

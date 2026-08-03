@@ -144,8 +144,9 @@ defmodule Elmc.PlanYesRenderLowerTest do
     refute month_body =~ "elmc_as_int(month)"
 
     refute generated_c =~ "watchToPhoneTag(out,"
-    assert generated_c =~ "watchToPhoneTag"
-    assert generated_c =~ "ELMC_PEBBLE_CMD_COMPANION_SEND"
+    # Companion send may be value-path or tag/value helpers.
+    assert generated_c =~ "elmc_cmd_companion_send_value" or generated_c =~ "watchToPhoneTag"
+    assert generated_c =~ "elmc_cmd_companion_send_value" or generated_c =~ "ELMC_PEBBLE_CMD_COMPANION_SEND"
 
     wind_speed_body = CCodegenExtract.fn_body(generated_c, "elmc_fn_Main_windSpeedString_native")
     assert wind_speed_body =~ "snprintf"

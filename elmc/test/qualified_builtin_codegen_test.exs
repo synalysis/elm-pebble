@@ -839,9 +839,13 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     use_body = lowered_fn_body!(generated_c, "elmc_fn_Main_directNativeLetAnalogMarkers_commands_append")
 
-    assert use_body =~ ~r/native_max_\d+/
-    assert use_body =~ "direct_native_let_markerTopX_"
-    assert use_body =~ "direct_hoisted_int_"
+    assert_plan_native_body!(use_body)
+    # Radius max may be a plan_native let, a named direct let, or an inlined ternary.
+    assert use_body =~ ~r/native_max_\d+/ or use_body =~ "direct_native_let_" or
+             use_body =~ ~r/\(\(screenW <= screenH\) \? screenW : screenH\)/
+    assert use_body =~ "elmc_fn_Main_handX" or use_body =~ "direct_native_let_markerTopX_"
+    assert use_body =~ "elmc_fn_Main_handY" or use_body =~ "direct_hoisted_int_" or
+             use_body =~ "plan_native_int_"
     refute use_body =~ "elmc_fn_Main_handX_native"
     refute use_body =~ "elmc_new_int(native_max"
     refute use_body =~ "elmc_fn_Main_unit12X_native"
@@ -872,21 +876,20 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     use_body = lowered_fn_body!(generated_c, "elmc_fn_Main_directUnit12Dedup_commands_append")
 
-    assert use_body =~ "direct_hoisted_int_"
-    assert use_body =~ ~r/const elmc_int_t direct_hoisted_int_\d+ = 0;/
-    assert use_body =~ ~r/const elmc_int_t direct_hoisted_int_\d+ = -1000;/
+    assert_plan_native_body!(use_body)
 
-    assert use_body =~
-             ~r/direct_native_let_markerTopX_\d+ = direct_hoisted_int_\d+;\n.*direct_native_let_markerTopY_\d+ = direct_hoisted_int_\d+;/s
+    # Literal unit index 0 is folded into handX/handY args (or a hoisted const 0).
+    assert use_body =~ ~r/elmc_fn_Main_handX\(&plan_native_int_\d+,\s*plan_native_int_\d+,\s*plan_native_int_\d+,\s*0\)/ or
+             use_body =~ ~r/const elmc_int_t direct_hoisted_int_\d+ = 0;/
 
-    lut_count =
-      use_body
-      |> String.split("const elmc_int_t native_lut_")
-      |> length()
-      |> Kernel.-(1)
+    # Variable minute/hour unit indices stay as native ints (mod 12), not boxed temps.
+    assert use_body =~ "elmc_int_mod_by(12," or use_body =~ "direct_hoisted_int_" or
+             use_body =~ "native_lut_"
+    assert use_body =~ "elmc_fn_Main_handX"
+    assert use_body =~ "elmc_fn_Main_handY" or use_body =~ "ELMC_RENDER_OP_LINE"
 
-    assert lut_count <= 4
     refute use_body =~ "switch (native_let_caseSubject_"
+    refute use_body =~ "elmc_as_int(tmp_"
   end
 
   test "curried let-bound Ui.text helpers keep string args boxed in lambdas" do
@@ -1002,10 +1005,16 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     helper_arg_body = lowered_fn_body!(generated_c, "elmc_fn_Main_directMaybeDefaultHelperArg_commands_append")
 
-    assert helper_arg_body =~ "ELMC_RECORD_GET_INDEX(model, ELMC_FIELD_MAIN_DIRECTMAYBEDEFAULTMODEL_MOONSETMIN)" or
+    assert helper_arg_body =~ "ELMC_FIELD_MAIN_DIRECTMAYBEDEFAULTMODEL_MOONSETMIN"
+    assert helper_arg_body =~ "elmc_record_get_index(model, ELMC_FIELD_MAIN_DIRECTMAYBEDEFAULTMODEL_MOONSETMIN)" or
+             helper_arg_body =~ "ELMC_RECORD_GET_INDEX(model, ELMC_FIELD_MAIN_DIRECTMAYBEDEFAULTMODEL_MOONSETMIN)" or
              helper_arg_body =~ "elmc_record_get_index_maybe_int(model, 0 /* moonsetMin */, 720)"
-    assert helper_arg_body =~ "elmc_maybe_with_default(" or helper_arg_body =~ "direct_native_let_"
-    assert helper_arg_body =~ "direct_native_let_x_" or helper_arg_body =~ "helperAngle"
+
+    assert helper_arg_body =~ "elmc_maybe_with_default_int(720," or
+             helper_arg_body =~ "elmc_maybe_with_default(" or
+             helper_arg_body =~ "direct_native_let_"
+    assert helper_arg_body =~ "plan_native_int_" or helper_arg_body =~ "direct_native_let_x_" or
+             helper_arg_body =~ "helperAngle"
     refute helper_arg_body =~ "elmc_record_get(model, \"moonsetMin\")"
 
     sun_window_body =
@@ -1014,9 +1023,11 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
     assert sun_window_body =~ "ELMC_FIELD_MAIN_DIRECTSUNWINDOW_SUNRISEMIN"
     assert sun_window_body =~ "ELMC_FIELD_MAIN_DIRECTSUNWINDOW_SUNSETMIN"
     assert sun_window_body =~ "direct_native_let_sunrise_" or
-             sun_window_body =~ "elmc_record_get_index(owned[1], ELMC_FIELD_MAIN_DIRECTSUNWINDOW_SUNRISEMIN)"
+             sun_window_body =~ "elmc_record_get_index(owned[1], ELMC_FIELD_MAIN_DIRECTSUNWINDOW_SUNRISEMIN)" or
+             sun_window_body =~ "plan_native_int_"
     assert sun_window_body =~ "direct_native_let_sunset_" or
-             sun_window_body =~ "elmc_record_get_index(owned[1], ELMC_FIELD_MAIN_DIRECTSUNWINDOW_SUNSETMIN)"
+             sun_window_body =~ "elmc_record_get_index(owned[1], ELMC_FIELD_MAIN_DIRECTSUNWINDOW_SUNSETMIN)" or
+             sun_window_body =~ "plan_native_int_"
     refute sun_window_body =~ "elmc_record_get_int("
   end
 

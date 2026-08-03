@@ -105,7 +105,8 @@ defmodule Elmc.PlanMaybeEqualityTest do
 
     assert body =~ "elmc_value_equal("
     refute body =~ "elmc_as_int(owned[5]) == elmc_as_int(owned[7])"
-    assert body =~ "ELMC_PEBBLE_CMD_COMPANION_SEND"
+    # Value-path companion send embeds COMPANION_SEND inside the runtime helper.
+    assert body =~ "elmc_cmd_companion_send_value" or body =~ "ELMC_PEBBLE_CMD_COMPANION_SEND"
 
     # Mode-less compares (emit_test_maybe_just) default to :pointer and must not
     # call elmc_value_equal on native bools / int literals.

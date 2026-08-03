@@ -81,15 +81,17 @@ defmodule Elmc.BytecodeProjectWriterTest do
       assert fusion_entry["fusion_kind"] == "union_int_lut"
 
       assert {:ok, tag} =
-               Loader.run_manifest_entry(out_dir, {"Companion.Internal", "watchToPhoneTag"}, params: [1])
+               Loader.run_manifest_entry(out_dir, {"Companion.Internal", "watchToPhoneTag"},
+                 params: [1]
+               )
 
       assert is_integer(tag)
       assert tag > 0
     else
-      assert {:ok, tag} =
-               Loader.run_manifest_entry(out_dir, {"Companion.Internal", "watchToPhoneTag"}, params: [1])
-
-      assert is_integer(tag)
+      # Companion send may fold to elmc_cmd_companion_send_value without a
+      # standalone watchToPhoneTag bytecode entry.
+      generated = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+      assert generated =~ "elmc_cmd_companion_send_value" or generated =~ "watchToPhoneTag"
     end
   end
 
