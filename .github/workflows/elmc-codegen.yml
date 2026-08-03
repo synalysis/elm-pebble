@@ -67,7 +67,8 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          # elm-tailwind-classes → tailwind-resolver requires node >= 21
+          node-version: "22"
           cache: npm
           cache-dependency-path: elm_pebble_dev/package-lock.json
 
