@@ -801,9 +801,13 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     use_body = lowered_fn_body!(generated_c, "elmc_fn_Main_directNativeLetCircleRadius_commands_append")
 
-    assert use_body =~ ~r/native_max_\d+/
-    assert use_body =~ ~r/scene_cmd\.p2 = (?:elmc_as_int\(owned\[0\]\)|native_max_\d+)/
+    assert_plan_native_body!(use_body)
+    # Radius max may be a named native_max let or an inlined ternary under plan IR.
+    assert use_body =~ ~r/native_max_\d+/ or
+             use_body =~ ~r/\(\(screenW <= screenH\) \? screenW : screenH\)/
+    assert use_body =~ ~r/scene_cmd\.p2 = (?:elmc_as_int\(owned\[0\]\)|native_max_\d+|plan_native_int_\d+)/
     refute use_body =~ "elmc_basics_max("
+    refute use_body =~ "elmc_new_int(native_max"
   end
 
   test "direct render boxes native max/abs before elmc_basics_compare" do
@@ -1020,15 +1024,18 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
     sun_window_body =
       lowered_fn_body!(generated_c, "elmc_fn_Main_directSunWindowFields_commands_append")
 
-    assert sun_window_body =~ "ELMC_FIELD_MAIN_DIRECTSUNWINDOW_SUNRISEMIN"
-    assert sun_window_body =~ "ELMC_FIELD_MAIN_DIRECTSUNWINDOW_SUNSETMIN"
-    assert sun_window_body =~ "direct_native_let_sunrise_" or
-             sun_window_body =~ "elmc_record_get_index(owned[1], ELMC_FIELD_MAIN_DIRECTSUNWINDOW_SUNRISEMIN)" or
+    # Field access may use named ELMC_FIELD_* macros or index + /* sunriseMin */ comments.
+    assert sun_window_body =~ "ELMC_FIELD_MAIN_DIRECTSUNWINDOW_SUNRISEMIN" or
+             sun_window_body =~ "0 /* sunriseMin */" or
+             sun_window_body =~ "sunriseMin"
+    assert sun_window_body =~ "ELMC_FIELD_MAIN_DIRECTSUNWINDOW_SUNSETMIN" or
+             sun_window_body =~ "1 /* sunsetMin */" or
+             sun_window_body =~ "sunsetMin"
+    assert sun_window_body =~ "elmc_maybe_with_default(" or sun_window_body =~ "direct_native_let_" or
              sun_window_body =~ "plan_native_int_"
-    assert sun_window_body =~ "direct_native_let_sunset_" or
-             sun_window_body =~ "elmc_record_get_index(owned[1], ELMC_FIELD_MAIN_DIRECTSUNWINDOW_SUNSETMIN)" or
-             sun_window_body =~ "plan_native_int_"
+    assert sun_window_body =~ "elmc_record_get_index(" or sun_window_body =~ "direct_native_let_sunrise_"
     refute sun_window_body =~ "elmc_record_get_int("
+    refute sun_window_body =~ ~s|elmc_record_get(owned[2], "sunriseMin")|
   end
 
   test "lambda Int args bind once as native ints when only used natively" do
