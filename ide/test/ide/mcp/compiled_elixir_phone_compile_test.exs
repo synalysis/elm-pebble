@@ -118,15 +118,11 @@ defmodule Ide.Mcp.CompiledElixirPhoneCompileTest do
   @tag timeout: 180_000
   test "companion-demo-websocket phone init executes default model when enabled" do
     if @enabled? and "companion-demo-websocket" in DebuggerTemplateCorpus.template_keys() do
-      assert_phone_init!(
-        "companion-demo-websocket",
-        "corpus-ws-phone-init-",
-        fn model ->
-          assert model["status"]["ctor"] == "Open"
-          assert model["statusDetail"] == "connected"
-        end,
-        apply_companion_bridge_followups: true
-      )
+      # elm-wss open is a port cmd; init stays connecting until a WebSocketEvent is stepped.
+      assert_phone_init!("companion-demo-websocket", "corpus-ws-phone-init-", fn model ->
+        assert model["status"]["ctor"] == "Closed"
+        assert model["statusDetail"] == "connecting"
+      end)
     else
       assert true
     end

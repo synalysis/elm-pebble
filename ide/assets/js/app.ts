@@ -25,7 +25,7 @@ import {EmbeddedEmulatorHost} from "./emulator/embedded_emulator"
 import {WasmEmulatorHost} from "./emulator/wasm_emulator"
 import {CodeMirrorEditorHost} from "./editor/codemirror_editor_host"
 import type {SimulatorSettings} from "./types/emulator"
-import type {FirebaseNamespace} from "./types/window"
+import type {FirebaseConfig, FirebaseNamespace} from "./types/window"
 import type {HookContext} from "./types/liveview_hook"
 import {errMessage} from "./types/errors"
 import {playSpeakerEffect, setSpeakerSampleCatalog, type SpeakerEffectWire, type SpeakerSampleWire} from "./debugger/speaker_audio"
@@ -531,6 +531,7 @@ async function firebaseLogin(
 
   try {
     const result = await firebase.auth().signInWithPopup(firebaseProvider(firebase, providerName))
+    if (!result.user) throw new Error("Firebase sign-in returned no user.")
     const idToken = await result.user.getIdToken()
     const data = await postJson("/auth/firebase", {id_token: idToken})
     return {...data, id_token: idToken}

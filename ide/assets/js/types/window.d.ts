@@ -7,29 +7,41 @@ type AuthRefreshDetail = {
   redirect_to?: string
 }
 
+type AuthRefreshFailedDetail = {
+  error?: string
+}
+
+export type FirebaseConfig = Record<string, unknown>
+
 type FirebaseUser = {
   getIdToken: (forceRefresh?: boolean) => Promise<string>
 }
 
 type FirebaseAuthResult = {
-  user: FirebaseUser
+  user: FirebaseUser | null
+}
+
+type FirebaseAuthProvider = {
+  addScope: (scope: string) => void
 }
 
 type FirebaseAuthInstance = {
   signInWithPopup: (provider: unknown) => Promise<FirebaseAuthResult>
+  getRedirectResult: () => Promise<FirebaseAuthResult>
+  onAuthStateChanged: (callback: (user: FirebaseUser | null) => void) => () => void
   signOut: () => Promise<void>
   currentUser: FirebaseUser | null
 }
 
 type FirebaseAuthNamespace = {
-  GithubAuthProvider: new () => unknown
-  OAuthProvider: new (providerId: string) => unknown
-  GoogleAuthProvider: new () => unknown
+  GithubAuthProvider: new () => FirebaseAuthProvider
+  OAuthProvider: new (providerId: string) => FirebaseAuthProvider
+  GoogleAuthProvider: new () => FirebaseAuthProvider
 }
 
 export type FirebaseNamespace = {
   apps: unknown[]
-  initializeApp: (config: Record<string, unknown>) => unknown
+  initializeApp: (config: FirebaseConfig) => unknown
   auth: FirebaseAuthNamespace & (() => FirebaseAuthInstance)
 }
 
@@ -46,6 +58,7 @@ declare global {
 
   interface WindowEventMap {
     "elm-pebble-auth-refreshed": CustomEvent<AuthRefreshDetail>
+    "elm-pebble-auth-refresh-failed": CustomEvent<AuthRefreshFailedDetail>
     "phx:ide-theme-changed": CustomEvent<{theme?: string}>
     "phx:open_url": CustomEvent<{url?: string}>
   }

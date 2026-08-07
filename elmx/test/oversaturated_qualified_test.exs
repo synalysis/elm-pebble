@@ -123,4 +123,50 @@ defmodule Elmx.OversaturatedQualifiedTest do
     assert code =~ "Apply.call1(add1, elmx_pipe_slot_"
     refute String.match?(code, ~r/Apply\.call1\(Apply\.call1/)
   end
+
+  test "nested |> pipes use distinct slot series so outer bindings stay used" do
+    inner_steps = Enum.map(1..16, fn i -> %{op: :var, name: if(rem(i, 2) == 0, do: "add1", else: "add2")} end)
+
+    inner =
+      Enum.reduce(inner_steps, %{op: :var, name: "seed"}, fn step, acc ->
+        %{op: :call, name: "|>", args: [acc, step]}
+      end)
+
+    outer_steps = Enum.map(1..16, fn i -> %{op: :var, name: if(rem(i, 2) == 0, do: "add1", else: "add2")} end)
+
+    # Outer chain ends by piping into a lambda that contains another long pipe.
+    outer_prefix =
+      Enum.reduce(Enum.take(outer_steps, 15), %{op: :int_literal, value: 1}, fn step, acc ->
+        %{op: :call, name: "|>", args: [acc, step]}
+      end)
+
+    outer = %{
+      op: :call,
+      name: "|>",
+      args: [
+        outer_prefix,
+        %{
+          op: :lambda,
+          args: ["seed"],
+          body: inner
+        }
+      ]
+    }
+
+    env =
+      Emit.function_env("NestedPipeline", ["add1", "add2"])
+      |> Map.put(:module, "NestedPipeline")
+      |> Map.put(:add1, true)
+      |> Map.put(:add2, true)
+      |> Map.put(:zero_arity_fns, MapSet.new())
+      |> Map.put(:function_arities, %{"add1" => 1, "add2" => 1})
+
+    {emit_code, _, _} = Calls.compile_call(outer, env, 0)
+    code = IO.iodata_to_binary(emit_code)
+
+    assert code =~ "elmx_pipe_slot_0_0"
+    assert code =~ ~r/elmx_pipe_slot_\d+_0/
+    # Legacy flat names must not reappear (nested pipes would shadow them).
+    refute code =~ ~r/(?<![0-9_])elmx_pipe_slot_\d+(?![0-9_])/
+  end
 end

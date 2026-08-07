@@ -191,8 +191,10 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Qualified do
 
   defp compile_qualified_homogeneous_run(target, count, base, rest, env, counter) do
     {base_code, env, c0} = Emit.compile_expr(base, env, counter)
-    slot0 = Helpers.pipe_slot_name(0)
-    slot1 = Helpers.pipe_slot_name(1)
+    series = c0
+    c0 = c0 + 1
+    slot0 = Helpers.pipe_slot_name(0, series)
+    slot1 = Helpers.pipe_slot_name(1, series)
 
     step_expr = %{
       op: :qualified_call,
@@ -225,7 +227,7 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Qualified do
         }
 
         {rest_code, _, c1} = do_compile_qualified_call(rest_step, step_env, c)
-        slot = Helpers.pipe_slot_name(idx)
+        slot = Helpers.pipe_slot_name(idx, series)
         {[ [slot, " = ", rest_code, "\n"] | lines], slot, c1}
       end)
 

@@ -309,9 +309,10 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Helpers do
     Regex.match?(~r/(?:^|[^\w.])(#{escaped})(?:\.(?=\()|[^\w.]|$)/, body_str)
   end
 
-  @spec pipe_slot_name(non_neg_integer()) :: String.t()
-  def pipe_slot_name(index) when is_integer(index) and index >= 0,
-    do: let_emit_name("__pipe_slot_#{index}")
+  @spec pipe_slot_name(non_neg_integer(), non_neg_integer()) :: String.t()
+  def pipe_slot_name(index, series \\ 0)
+      when is_integer(index) and index >= 0 and is_integer(series) and series >= 0,
+      do: let_emit_name("__pipe_slot_#{series}_#{index}")
 
   @spec compile_pipe_iife(
           iodata(),
@@ -320,18 +321,52 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Helpers do
           non_neg_integer()
         ) :: {iodata(), String.t(), non_neg_integer()}
   def compile_pipe_iife(base_code, steps, compile_step, counter) when is_function(compile_step, 3) do
-    slot0 = pipe_slot_name(0)
+    # Nested `|>` IIFEs must not reuse the same slot names or Elixir reports unused
+    # outer bindings after the inner pipe shadows them.
+    series = counter
+    c_start = counter + 1
+    slot0 = pipe_slot_name(0, series)
 
-    {lines, final_slot, c} =
-      Enum.reduce(Enum.with_index(steps, 1), {[[slot0, " = ", base_code, "\n"]], slot0, counter}, fn
-        {step, index}, {lines, prev_slot, c} ->
+    {assigns_rev, final_slot, c} =
+      Enum.reduce(Enum.with_index(steps, 1), {[{slot0, base_code}], slot0, c_start}, fn
+        {step, index}, {assigns, prev_slot, c} ->
           {step_code, c1} = compile_step.(step, prev_slot, c)
-          slot = pipe_slot_name(index)
-          {[ [slot, " = ", step_code, "\n"] | lines], slot, c1}
+          slot = pipe_slot_name(index, series)
+          {[{slot, step_code} | assigns], slot, c1}
       end)
 
-    code = ["(fn ->\n", Enum.reverse(lines), final_slot, "\nend).()"]
-    {code, final_slot, c}
+    assigns = Enum.reverse(assigns_rev)
+    used = used_pipe_slots(assigns, final_slot)
+
+    lines =
+      Enum.map(assigns, fn {slot, code} ->
+        name = if MapSet.member?(used, slot), do: slot, else: unused_var_name(slot)
+        [name, " = ", code, "\n"]
+      end)
+
+    result_name = if MapSet.member?(used, final_slot), do: final_slot, else: unused_var_name(final_slot)
+    code = ["(fn ->\n", lines, result_name, "\nend).()"]
+    {code, result_name, c}
+  end
+
+  defp used_pipe_slots(assigns, final_slot) when is_list(assigns) and is_binary(final_slot) do
+    slot_names = Enum.map(assigns, &elem(&1, 0))
+
+    Enum.reduce(Enum.reverse(assigns), MapSet.new([final_slot]), fn {slot, code}, used ->
+      if MapSet.member?(used, slot) do
+        code_str = IO.iodata_to_binary(code)
+
+        Enum.reduce(slot_names, used, fn other, acc ->
+          if other != slot and binding_referenced_in_body?(code_str, other) do
+            MapSet.put(acc, other)
+          else
+            acc
+          end
+        end)
+      else
+        used
+      end
+    end)
   end
 
   @spec param_var_name(String.t(), Types.emit_env()) :: String.t()
