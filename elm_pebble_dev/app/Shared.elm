@@ -230,14 +230,13 @@ mobileNavMenu items =
 siteNavItems : Maybe Route -> List (Html msg)
 siteNavItems currentRoute =
     [ navLink currentRoute Route.Index "Home"
+    , navLink currentRoute Route.Examples "Examples"
     , navLink currentRoute Route.GettingStarted "Start"
-    , navExternal "https://ide.elm-pebble.dev" "Open IDE"
-    , navLink currentRoute Route.Tutorial__WatchfaceTutorialComplete "Tutorial"
     , navHref "/packages" "Docs"
-    , navLink currentRoute Route.Ide "IDE"
     , navLink currentRoute Route.Articles__WhyElmForPebble "Why Elm"
     , navLink currentRoute Route.FAQ "FAQ"
     , navLink currentRoute Route.Source "Source"
+    , navCta "https://ide.elm-pebble.dev" "Open IDE"
     ]
 
 
@@ -300,6 +299,27 @@ navExternal url label =
         [ text label ]
 
 
+navCta : String -> String -> Html msg
+navCta url label =
+    a
+        [ href url
+        , target "_blank"
+        , rel "noreferrer"
+        , classes
+            [ Tw.text_sm
+            , Tw.font_semibold
+            , Tw.rounded_md
+            , Tw.px s3
+            , Tw.py s2
+            , Tw.bg_color (blue s600)
+            , Tw.text_simple white
+            , Tw.transition_colors
+            , Tw.raw "hover:bg-blue-700"
+            ]
+        ]
+        [ text label ]
+
+
 footerExternalLink : String -> String -> Html msg
 footerExternalLink url label =
     a
@@ -330,6 +350,15 @@ navItemClasses =
         [ Tw.bg_color (gray s100)
         , dark [ Tw.bg_color (slate s800) ]
         ]
+    ]
+
+
+footerLinkClasses : List Tw.Tailwind
+footerLinkClasses =
+    [ Tw.font_medium
+    , Tw.text_color (blue s600)
+    , hover [ Tw.text_color (blue s700) ]
+    , dark [ Tw.text_color (blue s400) ]
     ]
 
 
@@ -370,6 +399,21 @@ siteFooter =
                 , text ". Site built with "
                 , footerExternalLink "https://elm-pages.com/" "elm-pages"
                 , text "."
+                ]
+            , p
+                [ classes [ Tw.mt s3, Tw.flex, Tw.flex_wrap, Tw.gap s4 ] ]
+                [ Route.link
+                    [ classes footerLinkClasses ]
+                    [ text "Tutorial" ]
+                    Route.Tutorial__WatchfaceTutorialComplete
+                , Route.link
+                    [ classes footerLinkClasses ]
+                    [ text "How the IDE works" ]
+                    Route.Ide
+                , Route.link
+                    [ classes footerLinkClasses ]
+                    [ text "Elm → WASM" ]
+                    Route.Wasm
                 ]
             ]
         ]

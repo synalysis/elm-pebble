@@ -493,7 +493,17 @@ static int elmc_pebble_scene_pool_grow_slot(ElmcPebbleSceneBuffer *scene, int mi
     }
   }
   unsigned char *grown = (unsigned char *)malloc((size_t)next_capacity);
-  if (!grown) return -2;
+  if (!grown) {
+#if defined(ELMC_PEBBLE_PLATFORM)
+    APP_LOG(APP_LOG_LEVEL_ERROR,
+            "elmc scene buffer alloc failed need=%d have=%d used=%d free=%lu",
+            next_capacity,
+            slot->capacity,
+            scene->byte_count,
+            (unsigned long)heap_bytes_free());
+#endif
+    return -2;
+  }
   if (slot->bytes && scene->byte_count > 0) {
     memcpy(grown, slot->bytes, (size_t)scene->byte_count);
   }
@@ -626,7 +636,17 @@ static int elmc_pebble_scene_reserve_capacity(ElmcPebbleApp *app, int min_capaci
     }
   }
   unsigned char *next = (unsigned char *)malloc((size_t)next_capacity);
-  if (!next) return -2;
+  if (!next) {
+#if defined(ELMC_PEBBLE_PLATFORM)
+    APP_LOG(APP_LOG_LEVEL_ERROR,
+            "elmc scene buffer alloc failed need=%d have=%d used=%d free=%lu",
+            next_capacity,
+            app->scene.byte_capacity,
+            app->scene.byte_count,
+            (unsigned long)heap_bytes_free());
+#endif
+    return -2;
+  }
   if (app->scene.bytes && app->scene.byte_count > 0) {
     memcpy(next, app->scene.bytes, (size_t)app->scene.byte_count);
   }
@@ -822,6 +842,32 @@ static int elmc_scene_path_extra_size(const ElmcPebbleDrawCmd *cmd) {
     static void elmc_pebble_scene_abort_build(ElmcPebbleApp *app) {
       if (!app) return;
       elmc_pebble_clear_view_cache(app);
+    #if ELMC_PEBBLE_DIRTY_REGION_ENABLED
+      /* Drop the incomplete rebuild slot; restore the previous good frame. */
+      elmc_pebble_scene_buffer_detach(&app->scene);
+      if (app->prev_scene.bytes && app->prev_scene.byte_count > 0) {
+        app->scene = app->prev_scene;
+        app->prev_scene.bytes = NULL;
+        app->prev_scene.byte_count = 0;
+        app->prev_scene.byte_capacity = 0;
+        app->prev_scene.command_count = 0;
+        app->prev_scene.hash = 0;
+        app->prev_scene.dirty = 0;
+        app->scene.dirty = 1;
+        return;
+      }
+    #elif ELMC_PEBBLE_SCENE_POOL_SLOTS >= 2 && ELMC_PEBBLE_SCENE_CACHE_ENABLED
+      if (app->scene_rebuild_fallback_byte_count > 0) {
+        app->scene.pool_slot = app->scene_rebuild_fallback_slot;
+        elmc_pebble_scene_pool_sync_from_slot(&app->scene);
+        app->scene.byte_count = app->scene_rebuild_fallback_byte_count;
+        app->scene.command_count = app->scene_rebuild_fallback_command_count;
+        app->scene.dirty = 1;
+        app->scene_rebuild_fallback_byte_count = 0;
+        app->scene_rebuild_fallback_command_count = 0;
+        return;
+      }
+    #endif
       elmc_pebble_scene_discard_build(app);
       elmc_pebble_scene_buffer_detach(&app->scene);
     }
@@ -853,6 +899,15 @@ static void elmc_pebble_prepare_scene_rebuild(ElmcPebbleApp *app) {
   app->scene.byte_count = 0;
   app->scene.byte_capacity = 0;
   app->scene.pool_slot = app->prev_scene.pool_slot == 0 ? 1 : 0;
+#elif ELMC_PEBBLE_SCENE_POOL_SLOTS >= 2 && ELMC_PEBBLE_SCENE_CACHE_ENABLED
+  /* Flip to an alternate pool slot so a failed rebuild cannot wipe the last
+     good encoded frame (draw clears to white when byte_count==0 → gray face). */
+  app->scene_rebuild_fallback_slot = app->scene.pool_slot;
+  app->scene_rebuild_fallback_byte_count = app->scene.byte_count;
+  app->scene_rebuild_fallback_command_count = app->scene.command_count;
+  app->scene.pool_slot = app->scene.pool_slot == 0 ? 1 : 0;
+  app->scene.byte_count = 0;
+  elmc_pebble_scene_pool_sync_from_slot(&app->scene);
 #else
   app->scene.byte_count = 0;
 #if ELMC_PEBBLE_SCENE_POOL_SLOTS > 0
@@ -887,7 +942,7 @@ static void elmc_pebble_scene_mark_full_dirty(ElmcPebbleApp *app) {
 
 void elmc_pebble_invalidate_scene(ElmcPebbleApp *app) {
   if (!app) return;
-#if ELMC_PEBBLE_SCENE_CACHE_ENABLED || ELMC_PEBBLE_APLITE_DIRECT_VIEW_ACTIVE
+#if ELMC_PEBBLE_SCENE_CACHE_ENABLED
   elmc_pebble_mark_scene_dirty(app);
   app->scene_draw_byte_offset = 0;
 #endif
@@ -2883,6 +2938,7 @@ static void elmc_pebble_scene_compute_dirty_rect(ElmcPebbleApp *app) {
       out_cmd->p4 = 0;
       out_cmd->p5 = 0;
       out_cmd->text[0] = '\0';
+      out_cmd->value = NULL;
       if (!value) return -2;
 
       if (value->tag == ELMC_TAG_INT || value->tag == ELMC_TAG_BOOL) {
@@ -2902,6 +2958,10 @@ static void elmc_pebble_scene_compute_dirty_rect(ElmcPebbleApp *app) {
         if (cmd->text && cmd->text->tag == ELMC_TAG_STRING && cmd->text->payload) {
           strncpy(out_cmd->text, (const char *)cmd->text->payload, sizeof(out_cmd->text) - 1);
           out_cmd->text[sizeof(out_cmd->text) - 1] = '\0';
+        } else if (cmd->text) {
+          /* Non-string payload slot: a boxed command argument. Borrowed here;
+             elmc_pebble_take_cmd retains it before the cmd value is dropped. */
+          out_cmd->value = cmd->text;
         }
         return 0;
       }
@@ -3203,7 +3263,7 @@ static int elmc_msg_constructor_arity(elmc_int_t tag) {
     #endif
     #endif
       elmc_pebble_mark_scene_dirty(app);
-    #if ELMC_PEBBLE_SCENE_CACHE_ENABLED || ELMC_PEBBLE_APLITE_DIRECT_VIEW_ACTIVE
+    #if ELMC_PEBBLE_SCENE_CACHE_ENABLED
       app->scene_draw_byte_offset = 0;
     #endif
     }
@@ -3247,11 +3307,7 @@ int elmc_pebble_init_with_mode(ElmcPebbleApp *app, ElmcValue *flags, int run_mod
 #else
   app->scene.bytes = NULL;
   app->scene.byte_capacity = 0;
-#if ELMC_PEBBLE_APLITE_DIRECT_VIEW_ACTIVE
-  app->scene.pool_slot = -1;
-#else
   app->scene.pool_slot = 0;
-#endif
 #if ELMC_PEBBLE_SCENE_CHUNK_SIZE > 0
   app->scene.chunks = NULL;
 #endif
@@ -3259,8 +3315,11 @@ int elmc_pebble_init_with_mode(ElmcPebbleApp *app, ElmcValue *flags, int run_mod
   app->scene.command_count = 0;
   app->scene.hash = 0;
   app->scene.dirty = 1;
-#if ELMC_PEBBLE_SCENE_CACHE_ENABLED || ELMC_PEBBLE_APLITE_DIRECT_VIEW_ACTIVE
+#if ELMC_PEBBLE_SCENE_CACHE_ENABLED
   app->scene_draw_byte_offset = 0;
+  app->scene_rebuild_fallback_slot = 0;
+  app->scene_rebuild_fallback_byte_count = 0;
+  app->scene_rebuild_fallback_command_count = 0;
 #endif
 #if ELMC_PEBBLE_DIRTY_REGION_ENABLED
   app->prev_scene.bytes = NULL;
@@ -3384,6 +3443,8 @@ int elmc_pebble_init_with_mode(ElmcPebbleApp *app, ElmcValue *flags, int run_mod
       ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_dispatch_tag_string", elmc_pebble_finish_dispatch(app, rc));
     }
 
+        /* Borrows `payload`: retains into the dispatch msg, then drops that retain.
+           Callers keep ownership and must release the payload themselves. */
         int elmc_pebble_dispatch_tag_payload(ElmcPebbleApp *app, int64_t tag, ElmcValue *payload) {
           ELMC_PEBBLE_GENERATED_TRACE_ENTER("elmc_pebble_dispatch_tag_payload");
           if (!app || !app->initialized) ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_dispatch_tag_payload", -1);
@@ -3394,14 +3455,14 @@ int elmc_pebble_init_with_mode(ElmcPebbleApp *app, ElmcValue *flags, int run_mod
           CATCH_BEGIN
             Rc = elmc_new_int(&tag_value, tag);
             CHECK_RC(Rc);
-            Rc = elmc_tuple2_take(&msg, tag_value, payload);
-            tag_value = NULL;
-            payload = NULL;
+            Rc = elmc_tuple2(&msg, tag_value, payload);
             CHECK_RC(Rc);
+            elmc_release(tag_value);
+            tag_value = NULL;
           CATCH_END
           if (Rc != RC_SUCCESS) {
             elmc_release(tag_value);
-            elmc_release(payload);
+            elmc_release(msg);
             ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_dispatch_tag_payload", -2);
           }
           elmc_pebble_prepare_dispatch(app);
@@ -3473,6 +3534,7 @@ int elmc_pebble_init_with_mode(ElmcPebbleApp *app, ElmcValue *flags, int run_mod
           }
 
           int rc = elmc_pebble_dispatch_tag_payload(app, outer_tag, inner_msg);
+          elmc_release(inner_msg);
           ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_dispatch_tag_int_values", rc);
         }
 
@@ -3484,7 +3546,12 @@ int elmc_pebble_init_with_mode(ElmcPebbleApp *app, ElmcValue *flags, int run_mod
         const int64_t *field_values) {
       ELMC_PEBBLE_GENERATED_TRACE_ENTER("elmc_pebble_dispatch_tag_record_int_fields");
       if (!app || !app->initialized) ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_dispatch_tag_record_int_fields", -1);
-      if (field_count <= 0 || !field_names || !field_values) ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_dispatch_tag_record_int_fields", -3);
+      if (field_count <= 0 || !field_values) ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_dispatch_tag_record_int_fields", -3);
+      #if ELMC_PEBBLE_DEBUG_LOGS
+      if (!field_names) ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_dispatch_tag_record_int_fields", -3);
+      #else
+      (void)field_names;
+      #endif
 
       RC Rc = RC_SUCCESS;
       ElmcValue *tag_value = NULL;
@@ -3505,7 +3572,11 @@ int elmc_pebble_init_with_mode(ElmcPebbleApp *app, ElmcValue *flags, int run_mod
           CHECK_RC(Rc);
           built = i + 1;
         }
+        #if ELMC_PEBBLE_DEBUG_LOGS
         Rc = elmc_record_new_take(&payload_value, field_count, field_names, record_values);
+        #else
+        Rc = elmc_record_new_values_take(&payload_value, field_count, record_values);
+        #endif
         CHECK_RC(Rc);
         free(record_values);
         record_values = NULL;
@@ -3643,7 +3714,11 @@ int elmc_pebble_dispatch_frame(ElmcPebbleApp * app, int64_t dt_ms, int64_t elaps
   if (!elmc_pebble_is_subscribed(app, ELMC_PEBBLE_SUB_FRAME)) return -8;
   elmc_int_t tag = elmc_pebble_sub_tag(app, ELMC_PEBBLE_SUB_FRAME);
   if (tag <= 0) return -6;
-  const char *names[] = {"dtMs", "elapsedMs", "frame"};
+  #if ELMC_PEBBLE_DEBUG_LOGS
+const char *names[] = {"dtMs", "elapsedMs", "frame"};
+#else
+const char **names = NULL;
+#endif
 const int64_t values[] = {dt_ms, elapsed_ms, frame};
 return elmc_pebble_dispatch_tag_record_int_fields(app, tag, 3, names, values);
 }
@@ -3661,10 +3736,16 @@ if (button_id == ELMC_PEBBLE_BUTTON_UP) {
 } else {
   return -3;
 }
-if (!elmc_pebble_is_subscribed(app, required)) return -8;
-elmc_int_t tag = elmc_worker_sub_msg_tag(&app->worker, required);
-if (tag <= 0) return -6;
-return elmc_pebble_dispatch_int(app, tag);
+if (elmc_pebble_is_subscribed(app, required)) {
+  elmc_int_t tag = elmc_worker_sub_msg_tag(&app->worker, required);
+  if (tag <= 0) return -6;
+  return elmc_pebble_dispatch_int(app, tag);
+}
+/* Button.onPress lowers to BUTTON_RAW — accept the same public dispatch. */
+if (elmc_pebble_is_subscribed(app, ELMC_PEBBLE_SUB_BUTTON_RAW)) {
+  return elmc_pebble_dispatch_button_raw(app, button_id, 1);
+}
+return -8;
 }
 
 int elmc_pebble_dispatch_button_raw(ElmcPebbleApp * app, int32_t button_id, int32_t pressed) {
@@ -3694,7 +3775,11 @@ int elmc_pebble_dispatch_accel_data(ElmcPebbleApp * app, int32_t x, int32_t y, i
   if (!elmc_pebble_is_subscribed(app, ELMC_PEBBLE_SUB_ACCEL_DATA)) return -8;
   elmc_int_t tag = elmc_pebble_sub_tag(app, ELMC_PEBBLE_SUB_ACCEL_DATA);
   if (tag <= 0) return -6;
-  const char *names[] = {"x", "y", "z"};
+  #if ELMC_PEBBLE_DEBUG_LOGS
+const char *names[] = {"x", "y", "z"};
+#else
+const char **names = NULL;
+#endif
 const int64_t values[] = {x, y, z};
 return elmc_pebble_dispatch_tag_record_int_fields(app, tag, 3, names, values);
 }
@@ -3748,7 +3833,11 @@ int elmc_pebble_dispatch_screen_change(ElmcPebbleApp * app, int width, int heigh
   if (!elmc_pebble_is_subscribed(app, ELMC_PEBBLE_SUB_SCREEN_CHANGE)) return -8;
   elmc_int_t tag = elmc_pebble_sub_tag(app, ELMC_PEBBLE_SUB_SCREEN_CHANGE);
   if (tag <= 0) return -6;
-  const char *names[] = {"width", "height", "shape", "colorMode"};
+  #if ELMC_PEBBLE_DEBUG_LOGS
+const char *names[] = {"width", "height", "shape", "colorMode"};
+#else
+const char **names = NULL;
+#endif
 const int64_t values[] = {width, height, shape, color_mode};
 return elmc_pebble_dispatch_tag_record_int_fields(app, tag, 4, names, values);
 }
@@ -3825,7 +3914,11 @@ int elmc_pebble_dispatch_unobstructed_will_change(ElmcPebbleApp * app, int x, in
   if (!elmc_pebble_is_subscribed(app, ELMC_PEBBLE_SUB_UNOBSTRUCTED_AREA)) return -8;
   elmc_int_t tag = elmc_pebble_sub_tag(app, ELMC_PEBBLE_SUB_UNOBSTRUCTED_AREA);
   if (tag <= 0) return -6;
-  const char *names[] = {"x", "y", "w", "h"};
+  #if ELMC_PEBBLE_DEBUG_LOGS
+const char *names[] = {"x", "y", "w", "h"};
+#else
+const char **names = NULL;
+#endif
 const int64_t values[] = {x, y, w, h};
 return elmc_pebble_dispatch_tag_record_int_fields(app, tag, 4, names, values);
 }
@@ -3877,11 +3970,24 @@ if (tag <= 0) return -6;
 return elmc_pebble_dispatch_int(app, tag);
 }
 
+void elmc_pebble_cmd_release_value(ElmcPebbleCmd *cmd) {
+  if (!cmd || !cmd->value) return;
+  elmc_release(cmd->value);
+  cmd->value = NULL;
+}
+
 int elmc_pebble_take_cmd(ElmcPebbleApp *app, ElmcPebbleCmd *out_cmd) {
   if (!app || !app->initialized || !out_cmd) return -1;
   ElmcValue *cmd = elmc_worker_take_cmd(&app->worker);
   if (!cmd) return -2;
   int rc = elmc_cmd_from_value(cmd, out_cmd);
+  /* Transfer ownership of the boxed payload to the caller before the queue
+     entry goes away; callers pair this with elmc_pebble_cmd_release_value. */
+  if (rc == 0 && out_cmd->value) {
+    out_cmd->value = elmc_retain(out_cmd->value);
+  } else {
+    out_cmd->value = NULL;
+  }
   elmc_release(cmd);
   return rc;
 }
@@ -3897,6 +4003,8 @@ static int elmc_pebble_cmd_queue_index(ElmcValue *queue, int target, ElmcPebbleC
         cmd.kind != ELMC_PEBBLE_CMD_NONE) {
       if (index == target) {
         *out_cmd = cmd;
+        /* Read-only snapshot: do not hand out a borrow of the queued payload. */
+        out_cmd->value = NULL;
         return 0;
       }
       index += 1;
@@ -3908,6 +4016,7 @@ static int elmc_pebble_cmd_queue_index(ElmcValue *queue, int target, ElmcPebbleC
     if (elmc_cmd_from_value(cursor, &cmd) == 0 && cmd.kind != ELMC_PEBBLE_CMD_NONE) {
       if (index == target) {
         *out_cmd = cmd;
+        out_cmd->value = NULL;
         return 0;
       }
     }
@@ -4012,10 +4121,8 @@ int elmc_pebble_view_commands_from(ElmcPebbleApp *app, ElmcPebbleDrawCmd *out_cm
         ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_ensure_scene", -1);
       }
     #if !ELMC_PEBBLE_SCENE_CACHE_ENABLED
-    #if !ELMC_PEBBLE_APLITE_DIRECT_VIEW_ACTIVE
       ELMC_DRAW_PATH_PROBE(ELMC_DRAW_PATH_ENSURE_SCENE_EXIT);
       ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_ensure_scene", -2);
-    #endif
     #endif
       if (!app->scene.dirty) {
         ELMC_PEBBLE_SCENE_LOG("elmc-scene ensure skip clean cmds=%d bytes=%d",
@@ -4045,6 +4152,15 @@ int elmc_pebble_view_commands_from(ElmcPebbleApp *app, ElmcPebbleDrawCmd *out_cm
             (unsigned)rc, writer.command_count);
     if (rc != RC_SUCCESS) {
       ELMC_RC_LOG_FAIL(rc, "elmc_pebble_ensure_scene", "view_scene_append");
+#if defined(ELMC_PEBBLE_PLATFORM)
+      APP_LOG(APP_LOG_LEVEL_ERROR,
+              "elmc scene encode failed rc=%u cmds=%d bytes=%d cap=%d free=%lu",
+              (unsigned)rc,
+              writer.command_count,
+              app->scene.byte_count,
+              app->scene.byte_capacity,
+              (unsigned long)heap_bytes_free());
+#endif
       elmc_pebble_scene_abort_build(app);
       ELMC_DRAW_PATH_PROBE(ELMC_DRAW_PATH_ENSURE_SCENE_EXIT);
       ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_ensure_scene", -1);
@@ -4110,8 +4226,10 @@ int elmc_pebble_view_commands_from(ElmcPebbleApp *app, ElmcPebbleDrawCmd *out_cm
     #endif
       elmc_pebble_clear_view_cache(app);
       app->scene.dirty = 0;
-    #if ELMC_PEBBLE_SCENE_CACHE_ENABLED || ELMC_PEBBLE_APLITE_DIRECT_VIEW_ACTIVE
+    #if ELMC_PEBBLE_SCENE_CACHE_ENABLED
       app->scene_draw_byte_offset = 0;
+      app->scene_rebuild_fallback_byte_count = 0;
+      app->scene_rebuild_fallback_command_count = 0;
     #endif
     #if ELMC_PEBBLE_DIRTY_REGION_ENABLED
       if (!app->prev_scene.bytes || app->prev_scene.byte_count <= 0) {
@@ -4215,7 +4333,7 @@ int elmc_pebble_stream_view_cmds(
 
     void elmc_pebble_scene_reset_draw_cursor(ElmcPebbleApp *app) {
       if (!app) return;
-    #if ELMC_PEBBLE_SCENE_CACHE_ENABLED || ELMC_PEBBLE_APLITE_DIRECT_VIEW_ACTIVE
+    #if ELMC_PEBBLE_SCENE_CACHE_ENABLED
       app->scene_draw_byte_offset = 0;
     #endif
     }
@@ -4228,36 +4346,9 @@ int elmc_pebble_stream_view_cmds(
         ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_scene_commands_next", -1);
       }
     #if !ELMC_PEBBLE_SCENE_CACHE_ENABLED
-    #if defined(ELMC_PEBBLE_APLITE_DIRECT_VIEW_SCENE) && ELMC_PEBBLE_APLITE_DIRECT_VIEW_ACTIVE
-      int build_rc = elmc_pebble_ensure_scene(app);
-      if (build_rc != 0) {
-        ELMC_DRAW_PATH_PROBE(ELMC_DRAW_PATH_SCENE_NEXT_EXIT);
-        ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_scene_commands_next", build_rc);
-      }
-      if (app->scene.byte_count <= 0) {
-        ELMC_DRAW_PATH_PROBE(ELMC_DRAW_PATH_SCENE_NEXT_EXIT);
-        ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_scene_commands_next", 0);
-      }
-      int rc = 0;
-      int byte_offset = app->scene_draw_byte_offset;
-      int count = 0;
-      while (byte_offset < app->scene.byte_count && count < max_cmds) {
-        ElmcPebbleDrawCmd cmd;
-        rc = elmc_pebble_scene_decode_record(app->scene.bytes, app->scene.byte_count, &byte_offset, &cmd);
-        if (rc != 0) {
-          ELMC_DRAW_PATH_PROBE(ELMC_DRAW_PATH_SCENE_NEXT_EXIT);
-          ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_scene_commands_next", rc);
-        }
-        out_cmds[count++] = cmd;
-      }
-      app->scene_draw_byte_offset = byte_offset;
-      ELMC_DRAW_PATH_PROBE(ELMC_DRAW_PATH_SCENE_NEXT_EXIT);
-      ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_scene_commands_next", count);
-    #else
       int direct_count = elmc_pebble_view_commands_raw_impl(app, out_cmds, max_cmds, 0, 0, NULL);
       ELMC_DRAW_PATH_PROBE(ELMC_DRAW_PATH_SCENE_NEXT_EXIT);
       ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_scene_commands_next", direct_count);
-    #endif
     #else
       /* Scene cache is built off the draw stack (deferred timer in the app template).
          While empty, skip drawing rather than calling ensure_scene here. When dirty

@@ -1038,7 +1038,12 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage.Core do
                   :if={SvgRender.text_clippable?(op)}
                   id={SvgRender.text_clip_id(@svg_id, op_index)}
                 >
-                  <rect x={op.x} y={op.y} width={op.w} height={op.h} />
+                  <rect
+                    x={op.x}
+                    y={op.y}
+                    width={op.w}
+                    height={SvgRender.text_clip_height(op)}
+                  />
                 </clipPath>
               <% end %>
             </defs>

@@ -387,10 +387,35 @@ defmodule Ide.Debugger.CompiledElixirCorpusHelpers do
       when is_binary(event_ctor) and is_list(opts) do
     event_args =
       case event_ctor do
-        "Closed" -> [Keyword.get(opts, :code, companion_wire_nothing())]
-        "Message" -> [Keyword.get(opts, :text, "ping")]
-        "Error" -> [Keyword.get(opts, :error, "error")]
-        _ -> []
+        "Disconnected" ->
+          [
+            %{
+              "code" => 1000,
+              "reason" => "",
+              "wasClean" => true,
+              "initiatedLocally" => false
+            }
+          ]
+
+        "Text" ->
+          [Keyword.get(opts, :text, "ping")]
+
+        "Connected" ->
+          [Keyword.get(opts, :protocol, companion_wire_nothing())]
+
+        "TransportError" ->
+          [
+            %{
+              "kind" => "BrowserFailure",
+              "message" => Keyword.get(opts, :error, "error")
+            }
+          ]
+
+        "Binary" ->
+          [Keyword.get(opts, :data, "")]
+
+        _ ->
+          []
       end
 
     %{
@@ -906,9 +931,6 @@ defmodule Ide.Debugger.CompiledElixirCorpusHelpers do
       api == "preferences" ->
         {_settings, result} = SimulatorStore.preferences_result(settings, request)
         {:ok, result}
-
-      api == "webSocket" ->
-        {:ok, {:ok, companion_wire_unit()}}
 
       is_binary(api) ->
         case CompanionBridge.contract_for_source(api) do

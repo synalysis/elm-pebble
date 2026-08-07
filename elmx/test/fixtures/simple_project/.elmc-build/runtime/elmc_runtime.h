@@ -394,6 +394,7 @@ RC elmc_port_outgoing(ElmcValue **out, ElmcValue *port_name, ElmcValue *payload)
 RC elmc_port_incoming_sub(ElmcValue **out, ElmcValue *port_name, ElmcValue *callback);
 RC elmc_cmd1(ElmcValue **out, elmc_int_t kind, elmc_int_t p0);
 RC elmc_cmd1_string(ElmcValue **out, elmc_int_t kind, elmc_int_t p0, const char *text);
+RC elmc_cmd_companion_send_value(ElmcValue **out, ElmcValue *message);
 RC elmc_cmd2(ElmcValue **out, elmc_int_t kind, elmc_int_t p0, elmc_int_t p1);
 RC elmc_cmd3(ElmcValue **out, elmc_int_t kind, elmc_int_t p0, elmc_int_t p1, elmc_int_t p2);
 RC elmc_cmd4(ElmcValue **out, elmc_int_t kind, elmc_int_t p0, elmc_int_t p1, elmc_int_t p2, elmc_int_t p3);
@@ -427,6 +428,7 @@ int elmc_list_equal_int(ElmcValue *left, ElmcValue *right);
 int elmc_string_length(ElmcValue *value);
 RC elmc_list_head(ElmcValue **out, ElmcValue *list);
 RC elmc_list_nth_maybe(ElmcValue **out, ElmcValue *list, ElmcValue *index);
+RC elmc_list_nth_maybe_int(ElmcValue **out, ElmcValue *list, elmc_int_t index);
 elmc_int_t elmc_list_nth_int_default(ElmcValue *list, elmc_int_t index, elmc_int_t default_value);
 RC elmc_list_nth_int_default_boxed(ElmcValue **out, ElmcValue *list, ElmcValue *index, ElmcValue *default_value);
 elmc_int_t elmc_list_head_with_default_int(elmc_int_t default_val, ElmcValue *list);
@@ -833,31 +835,6 @@ RC elmc_record_update_index_int_cow_drop(ElmcValue **out, ElmcValue *record, int
 RC elmc_record_update_index_bool_cow(ElmcValue **out, ElmcValue *record, int index, bool new_value);
 RC elmc_record_update_index_bool_cow_drop(ElmcValue **out, ElmcValue *record, int index, bool new_value);
 
-/* GCC statement-expression helpers for inline boxed alloc in arg lists (outside CATCH). */
-#define ELMC_RC_INT_BOX(value) \
-  ({ ElmcValue *__elmc_rc_box = NULL; \
-     elmc_new_int(&__elmc_rc_box, (value)) == RC_SUCCESS ? __elmc_rc_box : NULL; })
-
-#define ELMC_RC_BOOL_BOX(value) \
-  ({ ElmcValue *__elmc_rc_box = NULL; \
-     elmc_new_bool(&__elmc_rc_box, (value)) == RC_SUCCESS ? __elmc_rc_box : NULL; })
-
-#define ELMC_RC_TUPLE2_BOX(left, right) \
-  ({ ElmcValue *__elmc_rc_box = NULL; \
-     elmc_tuple2_take(&__elmc_rc_box, (left), (right)) == RC_SUCCESS ? __elmc_rc_box : NULL; })
-
-#define ELMC_RC_TUPLE2_INTS_BOX(first, second) \
-  ({ ElmcValue *__elmc_rc_box = NULL; \
-     elmc_tuple2_ints(&__elmc_rc_box, (first), (second)) == RC_SUCCESS ? __elmc_rc_box : NULL; })
-
-#define ELMC_RC_STRING_BOX(value) \
-  ({ ElmcValue *__elmc_rc_box = NULL; \
-     elmc_new_string(&__elmc_rc_box, (value)) == RC_SUCCESS ? __elmc_rc_box : NULL; })
-
-#define ELMC_RC_STRING_LEN_BOX(value, len) \
-  ({ ElmcValue *__elmc_rc_box = NULL; \
-     elmc_new_string_len(&__elmc_rc_box, (value), (len)) == RC_SUCCESS ? __elmc_rc_box : NULL; })
-
 
 static inline bool elmc_value_is_true(ElmcValue *v) {
   return v && ((v->tag == ELMC_TAG_BOOL && elmc_as_int(v) != 0) ||
@@ -1037,6 +1014,10 @@ int elmc_alloc_track_check_balanced(void);
 void elmc_alloc_track_dump_live(FILE *out);
 void elmc_alloc_track_dump_since(uint32_t min_id, FILE *out);
 uint32_t elmc_alloc_track_next_alloc_id(void);
+/* Cumulative heap fallbacks from elmc_owned_slots_acquire (context "owned_slots"). */
+uint32_t elmc_alloc_track_owned_slots_alloc_count(void);
+/* Non-static: owned_slots pool heap-fallback and other paths call elmc_free. */
+void elmc_free_impl(void *ptr, const char *context, const char *file, int line);
 #endif
 
 #ifndef ELMC_ALLOC_TRACE
@@ -1063,6 +1044,22 @@ void *elmc_calloc_impl(size_t nmemb, size_t size, const char *context, const cha
 #define elmc_malloc(size, context) elmc_malloc_impl((size), (context), NULL, 0)
 #define elmc_calloc(nmemb, size, context) elmc_calloc_impl((nmemb), (size), (context), NULL, 0)
 #endif
+
+
+#ifndef ELMC_OWNED_SLOTS_POOL_DEPTH
+#define ELMC_OWNED_SLOTS_POOL_DEPTH 4
+#endif
+#ifndef ELMC_OWNED_SLOTS_POOL_CAP
+#define ELMC_OWNED_SLOTS_POOL_CAP 128
+#endif
+
+typedef struct {
+  ElmcValue *frames[ELMC_OWNED_SLOTS_POOL_DEPTH][ELMC_OWNED_SLOTS_POOL_CAP];
+  int depth;
+} ElmcOwnedSlotsPoolState;
+
+ElmcValue **elmc_owned_slots_acquire(int count);
+void elmc_owned_slots_release(ElmcValue **owned, int count);
 
 
 #ifndef ELMC_ALLOC_PROBE

@@ -121,6 +121,8 @@ defmodule IdeWeb.WorkspaceLive.State do
     |> assign(:prepare_release_output, nil)
     |> assign(:publish_submit_status, :idle)
     |> assign(:publish_submit_output, nil)
+    |> assign(:sideload_status, :idle)
+    |> assign(:sideload_output, nil)
     |> assign(:publish_submit_options, PublishFlow.publish_submit_options(%{}))
     |> assign(:store_assets, %{})
     |> assign(:release_summary, PublishFlow.default_release_summary(nil))

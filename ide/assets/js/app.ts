@@ -36,12 +36,28 @@ type JsonResponse = Record<string, unknown> & {
   id_token?: string
 }
 
-type FirebaseConfig = Record<string, unknown>
+type FirebaseLoginOptions = {
+  liveAuth?: boolean
+  returnTo?: string
+}
+
+type FirebaseRedirectState = FirebaseLoginOptions & {
+  provider?: string
+}
+
+const FIREBASE_REDIRECT_STATE_KEY = "elm-pebble-firebase-redirect"
+const FIREBASE_PENDING_ID_TOKEN_KEY = "elm-pebble-firebase-pending-id-token"
+const FIREBASE_BRIDGE_PENDING_KEY = "elm-pebble-firebase-bridge-pending"
+const FIREBASE_BRIDGE_PATH = "/auth/firebase/bridge"
+/** Providers that prefer popup; redirect is unreliable on modern browsers (3P cookies). */
+const FIREBASE_BRIDGE_FALLBACK_PROVIDERS = new Set(["github", "apple"])
 
 type IdeTheme = "dark" | "light" | "system"
 
 type FirebaseAuthRefreshContext = HookContext & {
   onAuthRefreshed?: (event: CustomEvent<{id_token?: string}>) => void
+  onAuthFailed?: (event: CustomEvent<{error?: string}>) => void
+  syncFirebaseUserToken?: () => Promise<void>
 }
 
 type TokenEditorContext = HookContext & {
@@ -237,17 +253,294 @@ function loadFirebase(config: FirebaseConfig): Promise<FirebaseNamespace> {
 }
 
 function firebaseProvider(firebase: FirebaseNamespace, providerName: string): unknown {
-  if (providerName === "github") return new firebase.auth.GithubAuthProvider()
+  if (providerName === "github") {
+    const provider = new firebase.auth.GithubAuthProvider()
+    provider.addScope("read:user")
+    provider.addScope("user:email")
+    return provider
+  }
   if (providerName === "apple") return new firebase.auth.OAuthProvider("apple.com")
   return new firebase.auth.GoogleAuthProvider()
 }
 
-async function firebaseLogin(config: FirebaseConfig, providerName: string): Promise<JsonResponse> {
+function usesFirebaseBridgeFallback(providerName: string): boolean {
+  return FIREBASE_BRIDGE_FALLBACK_PROVIDERS.has(providerName)
+}
+
+function stashFirebaseRedirectState(providerName: string, options: FirebaseLoginOptions): void {
+  sessionStorage.setItem(
+    FIREBASE_REDIRECT_STATE_KEY,
+    JSON.stringify({
+      liveAuth: options.liveAuth ?? false,
+      returnTo: options.returnTo ?? window.location.href,
+      provider: providerName
+    })
+  )
+}
+
+function peekFirebaseRedirectState(): FirebaseRedirectState | null {
+  const raw = sessionStorage.getItem(FIREBASE_REDIRECT_STATE_KEY)
+  if (!raw) return null
+  try {
+    return JSON.parse(raw) as FirebaseRedirectState
+  } catch {
+    return null
+  }
+}
+
+function readFirebaseRedirectState(): FirebaseRedirectState | null {
+  const state = peekFirebaseRedirectState()
+  sessionStorage.removeItem(FIREBASE_REDIRECT_STATE_KEY)
+  return state
+}
+
+function setFirebaseLoginStatus(text: string) {
+  document.querySelectorAll<HTMLElement>(".firebase-login-status").forEach(el => {
+    el.textContent = text
+  })
+}
+
+async function waitForFirebaseUser(
+  firebase: FirebaseNamespace,
+  timeoutMs = 5000
+): Promise<{getIdToken: (force?: boolean) => Promise<string>} | null> {
+  const existing = firebase.auth().currentUser
+  if (existing) return existing
+
+  return await new Promise(resolve => {
+    let settled = false
+    let unsub: (() => void) | null = null
+    const finish = (user: {getIdToken: (force?: boolean) => Promise<string>} | null) => {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      try {
+        unsub?.()
+      } catch {
+        // ignore
+      }
+      resolve(user)
+    }
+
+    unsub = firebase.auth().onAuthStateChanged(user => {
+      if (user) finish(user)
+    })
+
+    const timer = window.setTimeout(() => finish(firebase.auth().currentUser), timeoutMs)
+  })
+}
+
+async function completeFirebaseRedirect(config: FirebaseConfig): Promise<boolean> {
+  // Bridge page owns OAuth completion for GitHub/Apple fallback.
+  if (window.location.pathname === FIREBASE_BRIDGE_PATH) return false
+
+  const redirectState = peekFirebaseRedirectState()
+  if (!redirectState) return false
+
   const firebase = await loadFirebase(config)
-  const result = await firebase.auth().signInWithPopup(firebaseProvider(firebase, providerName))
-  const idToken = await result.user.getIdToken()
-  const data = await postJson("/auth/firebase", {id_token: idToken})
-  return {...data, id_token: idToken}
+
+  try {
+    const result = await firebase.auth().getRedirectResult()
+    let user = result.user
+
+    if (!user) {
+      user = await waitForFirebaseUser(firebase)
+    }
+
+    if (!user) {
+      readFirebaseRedirectState()
+      return false
+    }
+
+    const idToken = await user.getIdToken()
+    const data = await postJson("/auth/firebase", {id_token: idToken})
+    const state = readFirebaseRedirectState() || redirectState
+
+    sessionStorage.setItem(FIREBASE_PENDING_ID_TOKEN_KEY, idToken)
+    setFirebaseLoginStatus("Logged in. Returning…")
+
+    const base =
+      state?.liveAuth && state.returnTo
+        ? state.returnTo
+        : typeof data.redirect_to === "string" && data.redirect_to
+          ? data.redirect_to
+          : state?.returnTo || window.location.href
+
+    window.location.replace(withAuthReloadParam(base))
+    return true
+  } catch (error) {
+    readFirebaseRedirectState()
+    const message = errMessage(error)
+    setFirebaseLoginStatus(message)
+    window.dispatchEvent(
+      new CustomEvent("elm-pebble-auth-refresh-failed", {detail: {error: message}})
+    )
+    return false
+  }
+}
+
+function toSameOriginPath(url: string, fallback = "/projects"): string {
+  try {
+    const parsed = new URL(url, window.location.origin)
+    if (parsed.origin !== window.location.origin) return fallback
+    return parsed.pathname + parsed.search + parsed.hash
+  } catch {
+    return fallback
+  }
+}
+
+function bridgeReturnTo(fallback = "/projects"): string {
+  const fromQuery = new URLSearchParams(window.location.search).get("return_to")
+  const fromDataset = document.getElementById("firebase-oauth-bridge")?.dataset.returnTo
+  const candidate = fromQuery || fromDataset || fallback
+  return toSameOriginPath(candidate, fallback)
+}
+
+async function finishFirebaseSession(
+  user: {getIdToken: (force?: boolean) => Promise<string>},
+  returnTo: string
+): Promise<void> {
+  const idToken = await user.getIdToken(true)
+  await postJson("/auth/firebase", {id_token: idToken})
+  sessionStorage.setItem(FIREBASE_PENDING_ID_TOKEN_KEY, idToken)
+  sessionStorage.removeItem(FIREBASE_BRIDGE_PENDING_KEY)
+  sessionStorage.removeItem(FIREBASE_REDIRECT_STATE_KEY)
+  setFirebaseLoginStatus("Logged in. Returning…")
+  window.location.replace(withAuthReloadParam(toSameOriginPath(returnTo)))
+}
+
+async function runFirebaseOAuthBridge(config: FirebaseConfig): Promise<void> {
+  const params = new URLSearchParams(window.location.search)
+  const provider =
+    params.get("provider") ||
+    document.getElementById("firebase-oauth-bridge")?.dataset.provider ||
+    "github"
+  const returnTo = bridgeReturnTo()
+  const statusEl = document.getElementById("firebase-oauth-bridge-status")
+  const continueBtn = document.getElementById("firebase-oauth-continue")
+  const setStatus = (text: string) => {
+    if (statusEl) statusEl.textContent = text
+    setFirebaseLoginStatus(text)
+  }
+
+  // Drop stale redirect-pending flags from earlier attempts.
+  sessionStorage.removeItem(FIREBASE_BRIDGE_PENDING_KEY)
+
+  const firebase = await loadFirebase(config)
+
+  try {
+    const result = await firebase.auth().getRedirectResult()
+    if (result.user) {
+      await finishFirebaseSession(result.user, returnTo)
+      return
+    }
+  } catch (error) {
+    setStatus(errMessage(error))
+  }
+
+  const existing = await waitForFirebaseUser(firebase, 1500)
+  if (existing) {
+    try {
+      await finishFirebaseSession(existing, returnTo)
+      return
+    } catch (error) {
+      setStatus(errMessage(error))
+    }
+  }
+
+  const priorError = params.get("error")
+  setStatus(
+    priorError
+      ? `${priorError} Click below to try again in a popup.`
+      : `Click below to continue with ${provider}.`
+  )
+
+  const startPopup = async () => {
+    if (continueBtn instanceof HTMLButtonElement) continueBtn.disabled = true
+    setStatus(`Opening ${provider} login…`)
+    try {
+      const cred = await firebase.auth().signInWithPopup(firebaseProvider(firebase, provider))
+      if (!cred.user) throw new Error("No user returned from login popup.")
+      await finishFirebaseSession(cred.user, returnTo)
+    } catch (error) {
+      setStatus(errMessage(error))
+      if (continueBtn instanceof HTMLButtonElement) continueBtn.disabled = false
+    }
+  }
+
+  if (continueBtn) {
+    continueBtn.addEventListener("click", event => {
+      event.preventDefault()
+      void startPopup()
+    })
+  }
+}
+
+function withAuthReloadParam(url: string): string {
+  try {
+    const parsed = new URL(url, window.location.origin)
+    parsed.searchParams.set("_firebase_auth", String(Date.now()))
+    return parsed.pathname + parsed.search + parsed.hash
+  } catch {
+    const join = url.includes("?") ? "&" : "?"
+    return `${url}${join}_firebase_auth=${Date.now()}`
+  }
+}
+
+function firebasePopupLikelyBroken(): boolean {
+  // Editor/debugger/build set COOP+COEP. LiveView patch to Publish keeps those
+  // headers on the document, and Firebase popups then fail with a generic
+  // "network error" after a white popup. Fresh Publish loads are not isolated.
+  return window.crossOriginIsolated === true
+}
+
+function bridgeFallbackUrl(providerName: string, returnTo: string, error?: string): string {
+  const url = new URL(FIREBASE_BRIDGE_PATH, window.location.origin)
+  url.searchParams.set("provider", providerName)
+  url.searchParams.set("return_to", toSameOriginPath(returnTo))
+  if (error) url.searchParams.set("error", error.slice(0, 300))
+  return url.pathname + url.search
+}
+
+async function firebaseLogin(
+  config: FirebaseConfig,
+  providerName: string,
+  options: FirebaseLoginOptions = {}
+): Promise<JsonResponse> {
+  const firebase = await loadFirebase(config)
+  const returnTo = options.returnTo || window.location.href
+
+  // If Firebase already has a session (earlier OAuth succeeded in-browser), sync.
+  let existing = firebase.auth().currentUser
+  if (!existing && usesFirebaseBridgeFallback(providerName)) {
+    existing = await waitForFirebaseUser(firebase, 1200)
+  }
+  if (existing) {
+    const idToken = await existing.getIdToken(true)
+    const data = await postJson("/auth/firebase", {id_token: idToken})
+    return {...data, id_token: idToken}
+  }
+
+  // GitHub/Apple: always use the COOP-free bridge page. Publish is often reached
+  // via LiveView patch from Editor, which keeps cross-origin isolation and makes
+  // Firebase popups fail with a white window + generic network error.
+  if (usesFirebaseBridgeFallback(providerName) || firebasePopupLikelyBroken()) {
+    window.location.href = bridgeFallbackUrl(providerName, returnTo)
+    return {}
+  }
+
+  try {
+    const result = await firebase.auth().signInWithPopup(firebaseProvider(firebase, providerName))
+    const idToken = await result.user.getIdToken()
+    const data = await postJson("/auth/firebase", {id_token: idToken})
+    return {...data, id_token: idToken}
+  } catch (error) {
+    if (usesFirebaseBridgeFallback(providerName)) {
+      window.location.href = bridgeFallbackUrl(providerName, returnTo, errMessage(error))
+      return {}
+    }
+    throw error
+  }
 }
 
 async function firebaseLogout(config: FirebaseConfig): Promise<JsonResponse> {
@@ -299,25 +592,45 @@ document.addEventListener("click", async event => {
   if (!button) return
 
   const config = authConfigFromElement(button.closest("[data-firebase-config]") || document.body)
-  const status = document.getElementById("firebase-login-status")
+  const statusCard = loginButton?.closest(".rounded.border")
+  const statusElements = statusCard
+    ? Array.from(statusCard.querySelectorAll<HTMLElement>(".firebase-login-status"))
+    : [document.getElementById("firebase-login-status")].filter(
+        (el): el is HTMLElement => el instanceof HTMLElement
+      )
+
+  const setStatus = (text: string) => {
+    for (const el of statusElements) el.textContent = text
+  }
 
   if (loginButton && !config) {
-    if (status) status.textContent = "Firebase configuration is missing."
+    setStatus("Firebase configuration is missing.")
     return
   }
 
   if ("disabled" in button) button.disabled = true
-  if (status) status.textContent = loginButton ? "Opening login..." : "Logging out..."
+  setStatus(loginButton ? "Opening login..." : "Logging out...")
 
   try {
     if (loginButton) {
-      const data = await firebaseLogin(config!, loginButton.dataset.provider || "google")
-      if (status) status.textContent = "Logged in."
+      const returnTo =
+        loginButton.dataset.returnTo ||
+        new URLSearchParams(window.location.search).get("return_to") ||
+        window.location.href
+      const data = await firebaseLogin(config!, loginButton.dataset.provider || "google", {
+        liveAuth: loginButton.dataset.liveAuth === "true",
+        returnTo
+      })
+      setStatus("Logged in.")
       if (loginButton.dataset.liveAuth === "true") {
         window.dispatchEvent(new CustomEvent("elm-pebble-auth-refreshed", {detail: data}))
         if ("disabled" in button) button.disabled = false
       } else {
-        window.location.href = loginButton.dataset.returnTo || data.redirect_to || window.location.href
+        window.location.href =
+          loginButton.dataset.returnTo ||
+          (typeof data.redirect_to === "string" && data.redirect_to) ||
+          toSameOriginPath(returnTo) ||
+          window.location.href
       }
     } else if (sessionLogoutButton) {
       await postJson("/auth/logout", {})
@@ -333,7 +646,7 @@ document.addEventListener("click", async event => {
       window.location.href = "/login"
     }
   } catch (error) {
-    if (status) status.textContent = errMessage(error)
+    setStatus(errMessage(error))
     if ("disabled" in button) button.disabled = false
   }
 })
@@ -342,6 +655,7 @@ async function refreshFirebaseIdToken(
   config: FirebaseConfig,
   providerName?: string
 ): Promise<{id_token?: string}> {
+  const provider = providerName || "google"
   const firebase = await loadFirebase(config)
   const user = firebase.auth().currentUser
 
@@ -350,17 +664,58 @@ async function refreshFirebaseIdToken(
     return {id_token: idToken}
   }
 
-  return firebaseLogin(config, providerName || "google")
+  return firebaseLogin(config, provider, {liveAuth: true, returnTo: window.location.href})
 }
 
 const FirebaseAuthRefresh: ViewHook = {
   mounted(this: FirebaseAuthRefreshContext) {
+    this.syncFirebaseUserToken = async () => {
+      const config = authConfigFromElement(this.el)
+      if (!config) return
+
+      try {
+        const firebase = await loadFirebase(config)
+        const user = (await waitForFirebaseUser(firebase, 8000)) as {
+          getIdToken: (force?: boolean) => Promise<string>
+        } | null
+        if (!user) return
+
+        const idToken = await user.getIdToken(true)
+        // LiveView event verifies the token and updates assigns + ETS (no session renew).
+        sessionStorage.removeItem(FIREBASE_PENDING_ID_TOKEN_KEY)
+        this.pushEvent("firebase-auth-refreshed", {id_token: idToken})
+        setFirebaseLoginStatus("Logged in.")
+      } catch (error) {
+        setFirebaseLoginStatus(errMessage(error))
+      }
+    }
+
     this.onAuthRefreshed = event => {
       const detail = event.detail || {}
-      if (detail.id_token) this.pushEvent("firebase-auth-refreshed", {id_token: detail.id_token})
+      if (detail.id_token) {
+        sessionStorage.removeItem(FIREBASE_PENDING_ID_TOKEN_KEY)
+        this.pushEvent("firebase-auth-refreshed", {id_token: detail.id_token})
+      }
     }
 
     window.addEventListener("elm-pebble-auth-refreshed", this.onAuthRefreshed)
+
+    this.onAuthFailed = event => {
+      const detail = event.detail || {}
+      if (detail.error) this.pushEvent("firebase-auth-refresh-failed", {error: detail.error})
+    }
+
+    window.addEventListener("elm-pebble-auth-refresh-failed", this.onAuthFailed)
+
+    const pendingToken = sessionStorage.getItem(FIREBASE_PENDING_ID_TOKEN_KEY)
+    if (pendingToken) {
+      sessionStorage.removeItem(FIREBASE_PENDING_ID_TOKEN_KEY)
+      this.pushEvent("firebase-auth-refreshed", {id_token: pendingToken})
+    } else if (document.querySelector(".firebase-login")) {
+      // Redirect completion can miss getRedirectResult; Firebase persistence may
+      // still have the user while the Publish page still shows login buttons.
+      void this.syncFirebaseUserToken()
+    }
 
     this.handleEvent("request-firebase-auth-refresh", async payload => {
       const config = authConfigFromElement(this.el)
@@ -394,6 +749,9 @@ const FirebaseAuthRefresh: ViewHook = {
   destroyed(this: FirebaseAuthRefreshContext) {
     if (this.onAuthRefreshed) {
       window.removeEventListener("elm-pebble-auth-refreshed", this.onAuthRefreshed)
+    }
+    if (this.onAuthFailed) {
+      window.removeEventListener("elm-pebble-auth-refresh-failed", this.onAuthFailed)
     }
   }
 }
@@ -1032,7 +1390,18 @@ window.addEventListener("phx:open_url", e => {
 })
 
 // connect if there are any LiveViews on the page
-liveSocket.connect()
+const firebaseBootstrapConfig = authConfigFromElement(document.body)
+const onFirebaseBridge = window.location.pathname === FIREBASE_BRIDGE_PATH
+
+if (onFirebaseBridge && firebaseBootstrapConfig) {
+  void runFirebaseOAuthBridge(firebaseBootstrapConfig)
+} else if (firebaseBootstrapConfig) {
+  completeFirebaseRedirect(firebaseBootstrapConfig).then(navigatingAway => {
+    if (!navigatingAway) liveSocket.connect()
+  })
+} else {
+  liveSocket.connect()
+}
 
 // expose liveSocket on window for web console debug logs and latency simulation:
 // >> liveSocket.enableDebug()

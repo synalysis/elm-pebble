@@ -183,18 +183,83 @@ defmodule IdeWeb.WorkspaceLive.PublishPage do
           :if={@prepare_release_output}
           class="mt-3 max-h-64 overflow-auto rounded bg-zinc-900 p-3 text-xs text-zinc-100"
         ><%= @prepare_release_output %></pre>
-        <div :if={@auth_mode == :public_custom} class="mt-4">
+        <div :if={@project} class="mt-4">
           <.link
-            :if={@project}
             href={~p"/projects/#{@project.slug}/publish/pbw"}
             class="inline-flex rounded-lg bg-zinc-900 px-4 py-2 text-sm font-semibold text-white hover:bg-zinc-800"
           >
             Download PBW
           </.link>
           <p class="mt-2 text-xs text-zinc-600">
-            Upload the downloaded `.pbw` to your app store or sideload it. Automated Rebble App Store submit is not available in this deployment.
+            Download the prepared `.pbw` for manual sideloading or distribution.
+          </p>
+          <p :if={@auth_mode == :public_custom} class="mt-2 text-xs text-zinc-600">
+            Automated Rebble App Store submit is not available in this deployment.
           </p>
         </div>
+      </div>
+
+      <div :if={Auth.cloudpebble_sideload_enabled?()} class="mt-4 rounded border border-zinc-200 p-3">
+        <h3 class="text-sm font-semibold">Install to Watch</h3>
+        <p class="mt-1 text-xs text-zinc-600">
+          Sideload the prepared `.pbw` to your paired watch through CloudPebble Dev Connect.
+          In the Pebble mobile app, enable Dev Connect and sign in with the same Google, GitHub, or Apple account.
+        </p>
+
+        <div
+          :if={app_store_login_needed?(@firebase_id_token, @firebase_id_token_exp)}
+          class="mt-3 rounded border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900"
+        >
+          <p class="font-semibold">
+            {sideload_login_title(@firebase_id_token, @firebase_id_token_exp)}
+          </p>
+          <p class="mt-1">
+            Log in here to connect through CloudPebble. Your release summary stays in place.
+          </p>
+          <div class="mt-2 flex flex-wrap gap-2">
+            <button
+              type="button"
+              class="firebase-login rounded bg-blue-600 px-3 py-1.5 font-semibold text-white"
+              data-provider="google"
+              data-live-auth="true"
+            >
+              Log in with Google
+            </button>
+            <button
+              type="button"
+              class="firebase-login rounded bg-zinc-800 px-3 py-1.5 font-semibold text-white"
+              data-provider="github"
+              data-live-auth="true"
+            >
+              Log in with GitHub
+            </button>
+            <button
+              type="button"
+              class="firebase-login rounded bg-white px-3 py-1.5 font-semibold text-zinc-900 ring-1 ring-amber-300"
+              data-provider="apple"
+              data-live-auth="true"
+            >
+              Log in with Apple
+            </button>
+          </div>
+          <p id="firebase-sideload-login-status" class="firebase-login-status mt-2"></p>
+        </div>
+
+        <div class="mt-3 flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            phx-click="sideload-publish-release"
+            class="rounded bg-zinc-900 px-3 py-1.5 text-sm font-semibold text-white hover:bg-zinc-800 disabled:opacity-50"
+            disabled={@sideload_status == :running}
+          >
+            {if @sideload_status == :running, do: "Sideloading to watch...", else: "Sideload to Watch"}
+          </button>
+          <span class="text-xs text-zinc-600">Status: {status_label(@sideload_status)}</span>
+        </div>
+        <pre
+          :if={@sideload_output}
+          class="mt-3 max-h-64 overflow-auto rounded bg-zinc-900 p-3 text-xs text-zinc-100"
+        ><%= @sideload_output %></pre>
       </div>
 
       <div :if={Auth.app_store_publish_enabled?()} class="mt-4 rounded border border-zinc-200 p-3">
@@ -204,7 +269,7 @@ defmodule IdeWeb.WorkspaceLive.PublishPage do
         </p>
 
         <div
-          :if={app_store_login_needed?(@current_user, @firebase_id_token, @firebase_id_token_exp)}
+          :if={app_store_login_needed?(@firebase_id_token, @firebase_id_token_exp)}
           class="mt-3 rounded border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900"
         >
           <p class="font-semibold">
@@ -240,7 +305,7 @@ defmodule IdeWeb.WorkspaceLive.PublishPage do
               Log in with Apple
             </button>
           </div>
-          <p id="firebase-login-status" class="mt-2"></p>
+          <p id="firebase-login-status" class="firebase-login-status mt-2"></p>
         </div>
 
         <div
@@ -370,8 +435,8 @@ defmodule IdeWeb.WorkspaceLive.PublishPage do
     do:
       "Changelog is sent to the App Store as release notes. Version and tags are edited in Project Settings."
 
-  defp app_store_login_needed?(current_user, firebase_id_token, firebase_id_token_exp) do
-    is_nil(current_user) or is_nil(firebase_id_token) or
+  defp app_store_login_needed?(firebase_id_token, firebase_id_token_exp) do
+    not is_binary(firebase_id_token) or String.trim(firebase_id_token) == "" or
       Ide.Auth.token_expired?(firebase_id_token_exp)
   end
 
@@ -380,6 +445,14 @@ defmodule IdeWeb.WorkspaceLive.PublishPage do
       "App Store login expired"
     else
       "App Store login required for publishing"
+    end
+  end
+
+  defp sideload_login_title(firebase_id_token, firebase_id_token_exp) do
+    if is_binary(firebase_id_token) and Ide.Auth.token_expired?(firebase_id_token_exp) do
+      "CloudPebble login expired"
+    else
+      "CloudPebble login required for sideload"
     end
   end
 end

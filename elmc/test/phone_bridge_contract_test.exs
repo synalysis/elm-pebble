@@ -14,7 +14,7 @@ defmodule Elmc.PhoneBridgeContractTest do
     refute "graphics" in apis
     assert "http" in apis
     assert "storage" in apis
-    assert "webSocket" in apis
+    refute "webSocket" in apis
   end
 
   test "generated JS bridge dispatches supported operations" do

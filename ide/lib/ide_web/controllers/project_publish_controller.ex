@@ -1,6 +1,6 @@
 defmodule IdeWeb.ProjectPublishController do
   @moduledoc """
-  Serves prepared publish artifacts in `public_custom` mode.
+  Serves prepared publish artifacts (PBW download) for authenticated projects.
   """
   use IdeWeb, :controller
 

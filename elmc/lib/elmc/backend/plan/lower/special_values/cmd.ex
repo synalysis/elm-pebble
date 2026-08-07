@@ -214,7 +214,7 @@ defmodule Elmc.Backend.Plan.Lower.SpecialValues.Cmd do
     do:
       Helpers.encoded_cmd_expr(
         Helpers.command_kind(:health_value),
-        [metric, Helpers.constructor_tag_expr(to_msg)],
+        [Helpers.health_metric_to_kernel_expr(metric), Helpers.constructor_tag_expr(to_msg)],
         2
       )
 
@@ -222,7 +222,7 @@ defmodule Elmc.Backend.Plan.Lower.SpecialValues.Cmd do
     do:
       Helpers.encoded_cmd_expr(
         Helpers.command_kind(:health_sum_today),
-        [metric, Helpers.constructor_tag_expr(to_msg)],
+        [Helpers.health_metric_to_kernel_expr(metric), Helpers.constructor_tag_expr(to_msg)],
         2
       )
 
@@ -235,7 +235,12 @@ defmodule Elmc.Backend.Plan.Lower.SpecialValues.Cmd do
       do:
         Helpers.encoded_cmd_expr(
           Helpers.command_kind(:health_sum),
-          [metric, start_seconds, end_seconds, Helpers.constructor_tag_expr(to_msg)],
+          [
+            Helpers.health_metric_to_kernel_expr(metric),
+            start_seconds,
+            end_seconds,
+            Helpers.constructor_tag_expr(to_msg)
+          ],
           4
         )
 
@@ -248,7 +253,12 @@ defmodule Elmc.Backend.Plan.Lower.SpecialValues.Cmd do
       do:
         Helpers.encoded_cmd_expr(
           Helpers.command_kind(:health_accessible),
-          [metric, start_seconds, end_seconds, Helpers.constructor_tag_expr(to_msg)],
+          [
+            Helpers.health_metric_to_kernel_expr(metric),
+            start_seconds,
+            end_seconds,
+            Helpers.constructor_tag_expr(to_msg)
+          ],
           4
         )
 

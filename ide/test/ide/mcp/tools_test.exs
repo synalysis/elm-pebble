@@ -52,6 +52,32 @@ defmodule Ide.Mcp.ToolsTest do
              Tools.call("screenshots.list", %{"project_slug" => project.slug}, [:read, :build])
   end
 
+  test "accepts project alias and ignores force on compiler.compile" do
+    assert {:ok, project} =
+             Projects.create_project(%{
+               "name" => "ProjectAlias",
+               "slug" => "project-alias-#{System.unique_integer([:positive])}",
+               "template" => "starter"
+             })
+
+    on_exit(fn -> Projects.delete_project(project) end)
+
+    Application.put_env(:ide, Ide.Mcp.Tools, compiler_module: MockCompiler)
+
+    on_exit(fn ->
+      Application.put_env(:ide, Ide.Mcp.Tools, [])
+    end)
+
+    assert {:ok, %{slug: slug, status: :ok}} =
+             Tools.call(
+               "compiler.compile",
+               %{"project" => project.slug, "force" => true},
+               [:build]
+             )
+
+    assert slug == project.slug
+  end
+
   test "lists tools for provided capability scope" do
     tool_defs = Tools.tool_definitions([:read, :build])
     tool_names = Enum.map(tool_defs, & &1.name)

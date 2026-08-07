@@ -19,8 +19,7 @@
     "Pebble.Companion.PreferenceStore",
     "Pebble.Companion.Storage",
     "Pebble.Companion.Timeline",
-    "Pebble.Companion.Weather",
-    "Pebble.Companion.WebSocket"
+    "Pebble.Companion.Weather"
   ],
   "license": "MIT",
   "name": "elm-pebble/companion-core",

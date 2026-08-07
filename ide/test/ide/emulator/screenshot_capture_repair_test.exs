@@ -34,7 +34,37 @@ defmodule Ide.Emulator.ScreenshotCaptureRepairTest do
       ScreenshotCaptureRepair.repair_rgb(rgb, width, height, "basalt", normalize: false)
 
     assert pixel_rgb(repaired, width, 0, 0) == {255, 255, 255}
-    assert pixel_rgb(repaired, width, 3, 3) == {255, 0, 0}
+    assert pixel_rgb(repaired, width, 1, 1) == {255, 0, 0}
+  end
+
+  test "shift_top_left_bezel removes multi-pixel Basalt L-bezel" do
+    width = 144
+    height = 168
+    bezel = 3
+
+    rgb =
+      for y <- 0..(height - 1), x <- 0..(width - 1), into: <<>> do
+        cond do
+          x < bezel or y < bezel -> <<0, 0, 0>>
+          x == bezel and y == bezel -> <<255, 0, 0>>
+          x == width - 1 and y == height - 1 -> <<0, 255, 0>>
+          true -> <<255, 255, 255>>
+        end
+      end
+
+    {repaired, ^width, ^height} =
+      ScreenshotCaptureRepair.repair_rgb(rgb, width, height, "basalt", normalize: false)
+
+    assert pixel_rgb(repaired, width, 0, 0) == {255, 0, 0}
+
+    for offset <- 0..(bezel - 1) do
+      assert pixel_rgb(repaired, width, offset, height - 1) != {0, 0, 0}
+      assert pixel_rgb(repaired, width, width - 1, offset) != {0, 0, 0}
+    end
+
+    # Content shifts up-left; bottom-right gets fill white for the vacated band.
+    assert pixel_rgb(repaired, width, width - 1, height - 1) == {255, 255, 255}
+    assert pixel_rgb(repaired, width, width - 1 - bezel, height - 1 - bezel) == {0, 255, 0}
   end
 
   test "repair_rgba preserves interior black that touches a border beyond letterbox depth" do

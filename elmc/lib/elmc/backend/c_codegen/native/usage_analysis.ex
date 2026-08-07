@@ -726,8 +726,12 @@ defmodule Elmc.Backend.CCodegen.Native.UsageAnalysis do
   @spec float_let?(Types.binding_name(), Types.ir_expr(), Types.ir_expr(), Types.compile_env()) ::
           boolean()
   def float_let?(name, value_expr, in_expr, env) when is_binary(name) or is_atom(name) do
-    binding_scalar_unboxed?(env, name, :float) or
-      float_let_without_guard?(name, value_expr, in_expr, env)
+    if pebble_angle_let?(name, value_expr, in_expr) do
+      false
+    else
+      binding_scalar_unboxed?(env, name, :float) or
+        float_let_without_guard?(name, value_expr, in_expr, env)
+    end
   end
 
   def float_let?(_name, _value_expr, _in_expr, _env), do: false
@@ -905,9 +909,8 @@ defmodule Elmc.Backend.CCodegen.Native.UsageAnalysis do
 
   @spec pebble_angle_let?(Types.binding_name(), Types.ir_expr(), Types.ir_expr()) :: boolean()
   def pebble_angle_let?(name, value_expr, in_expr) when is_binary(name) or is_atom(name) do
-    Host.pebble_angle_expr?(value_expr) and Host.binding_reference_count(name, in_expr) > 0 and
-      Host.binding_reference_count(name, in_expr) ==
-        Host.pebble_angle_optimized_reference_count(name, in_expr)
+    Host.pebble_angle_expr?(value_expr) and
+      Host.pebble_angle_optimized_reference_count(name, in_expr) > 0
   end
 
   def pebble_angle_let?(_name, _value_expr, _in_expr), do: false

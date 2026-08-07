@@ -15,7 +15,7 @@ defmodule Elmc.TestSupport.GeneratedCTypecheck do
 
   @host_stubs Path.expand("elmc_host_stubs.h", __DIR__)
   # Bump when cc flags / include contract changes.
-  @cc_flags_version 1
+  @cc_flags_version 3
 
   @spec assert_typechecks!(String.t()) :: :ok
   def assert_typechecks!(out_dir) when is_binary(out_dir) do

@@ -40,6 +40,12 @@ defmodule IdeWeb.ProjectsLive do
   end
 
   @impl true
+  @spec handle_params(Types.wire_params(), String.t(), socket()) :: lv_noreply()
+  def handle_params(params, _uri, socket) do
+    {:noreply, maybe_open_template_from_query(socket, params)}
+  end
+
+  @impl true
   @spec handle_event(String.t(), Types.event_params(), socket()) :: lv_noreply()
   def handle_event("validate", %{"project" => params}, socket) do
     params =
@@ -364,6 +370,29 @@ defmodule IdeWeb.ProjectsLive do
     else
       socket
     end
+  end
+
+  @spec maybe_open_template_from_query(socket(), Types.wire_params()) :: socket()
+  defp maybe_open_template_from_query(socket, params) do
+    template = Map.get(params, "template")
+
+    if is_binary(template) and template in ProjectTemplates.template_keys() do
+      open_create_modal_with_template(socket, template)
+    else
+      socket
+    end
+  end
+
+  @spec open_create_modal_with_template(socket(), String.t()) :: socket()
+  defp open_create_modal_with_template(socket, template_key) do
+    socket
+    |> assign(:show_create_modal, true)
+    |> assign(:selected_template, template_key)
+    |> assign(:create_name_user_edited, false)
+    |> assign(:template_target_filter, "all")
+    |> assign(:template_companion_filter, "all")
+    |> assign(:form, to_form(Project.changeset(%Project{}, default_attrs())))
+    |> autofill_create_name_from_template(template_key)
   end
 
   @spec filtered_template_categories(assigns()) :: [TemplateTypes.picker_category()]

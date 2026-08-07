@@ -224,7 +224,7 @@ defmodule Ide.Mcp.ToolSupport do
   @doc """
   Normalize common MCP argument aliases before handler pattern matches.
 
-  Agents often pass `project_slug` where the catalog documents `slug`.
+  Agents often pass `project_slug` or `project` where the catalog documents `slug`.
   """
   @spec normalize_tool_args(map()) :: map()
   def normalize_tool_args(args) when is_map(args) do
@@ -246,14 +246,24 @@ defmodule Ide.Mcp.ToolSupport do
   defp alias_project_slug(args) do
     slug = Map.get(args, "slug")
     project_slug = Map.get(args, "project_slug")
+    project = Map.get(args, "project")
 
     cond do
       is_binary(slug) and String.trim(slug) != "" ->
         args
+        |> Map.delete("project_slug")
+        |> Map.delete("project")
 
       is_binary(project_slug) and String.trim(project_slug) != "" ->
         args
         |> Map.put("slug", project_slug)
+        |> Map.delete("project_slug")
+        |> Map.delete("project")
+
+      is_binary(project) and String.trim(project) != "" ->
+        args
+        |> Map.put("slug", project)
+        |> Map.delete("project")
         |> Map.delete("project_slug")
 
       true ->

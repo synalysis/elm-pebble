@@ -212,6 +212,13 @@ defmodule Elmc.CLI do
   rescue
     exception in ArgumentError ->
       if direct_render_only_view_error?(exception, opts) do
+        require Logger
+
+        Logger.warning(
+          "[elmc] direct_render_only failed for Main.view (#{Exception.message(exception)}); " <>
+            "retrying without direct render. Expect a larger APP binary and possible PBW linker overflow."
+        )
+
         retry_fun.(project_dir, Map.put(opts, :direct_render_only, false))
       else
         {:error, {:compiler_exception, exception.__struct__, Exception.message(exception)}}

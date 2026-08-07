@@ -951,7 +951,12 @@ defmodule Elmc.Backend.CCodegen.Expr do
         ) :: boolean()
 
   defp field_index_ambiguous?(field, shape, type, env) do
-    resolved_shape = shape || record_shape_from_type(type, env)
+    payload_type = Map.get(env, :__case_subject_payload_type__)
+
+    resolved_shape =
+      shape ||
+        record_shape_from_type(type, env) ||
+        record_shape_from_type(payload_type, env)
 
     resolved_shape == nil and infer_record_shape_from_field(field, env) == nil
   end
@@ -1323,22 +1328,44 @@ defmodule Elmc.Backend.CCodegen.Expr do
       Map.has_key?(alias_shapes, {current_module, type_name}) ->
         Map.get(alias_shapes, {current_module, type_name})
 
+      anonymous_record_type?(type_name) ->
+        anonymous_record_shape(type_name)
+
       String.contains?(type_name, ".") ->
         case split_qualified_type_name(type_name) do
           nil ->
-            nil
+            anonymous_record_shape(type_name)
 
           target_key ->
             Map.get(alias_shapes, target_key) ||
-              record_shape_by_type_suffix(alias_shapes, type_name)
+              record_shape_by_type_suffix(alias_shapes, type_name) ||
+              anonymous_record_shape(type_name)
         end
 
       true ->
-        record_shape_by_type_suffix(alias_shapes, type_name)
+        record_shape_by_type_suffix(alias_shapes, type_name) ||
+          anonymous_record_shape(type_name)
     end
   end
 
   def record_shape_for_type(_type, _env), do: nil
+
+  # Inline `{ field : T, ... }` types are not in alias_shapes. Parse field names in
+  # annotation order so direct-render can emit get_index instead of name lookup
+  # (unnamed values_take records have no field_names for elmc_record_get).
+  @spec anonymous_record_type?(String.t()) :: boolean()
+  defp anonymous_record_type?(type) when is_binary(type) do
+    trimmed = String.trim(type)
+    String.starts_with?(trimmed, "{") and String.ends_with?(trimmed, "}")
+  end
+
+  @spec anonymous_record_shape(String.t()) :: Types.record_shape()
+  defp anonymous_record_shape(type) when is_binary(type) do
+    case ElmEx.IR.TypeSignature.record_field_names(type) do
+      names when is_list(names) and names != [] -> names
+      _ -> nil
+    end
+  end
 
   @spec record_type_for_expr(Types.ir_expr(), Types.compile_env()) :: String.t() | nil
   def record_type_for_expr(%{op: :record_literal, fields: fields}, env) when is_list(fields) do

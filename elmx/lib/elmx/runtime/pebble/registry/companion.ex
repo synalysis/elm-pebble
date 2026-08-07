@@ -20,10 +20,7 @@ defmodule Elmx.Runtime.Pebble.Registry.Companion do
       "elmx_companion_configuration_on_closed" => {Dispatch, :companion_configuration_on_closed},
       "elmx_companion_bridge_cmd" => {Dispatch, :companion_bridge_cmd},
       "elmx_companion_phone_send" => {Dispatch, :companion_phone_send_cmd},
-      "elmx_companion_send_bridge_command" => {Dispatch, :companion_send_bridge_command_cmd},
-      "elmx_companion_websocket_connect" => {Dispatch, :companion_websocket_connect_cmd},
-      "elmx_companion_websocket_disconnect" => {Dispatch, :companion_websocket_disconnect_cmd},
-      "elmx_companion_websocket_send" => {Dispatch, :companion_websocket_send_cmd}
+      "elmx_companion_send_bridge_command" => {Dispatch, :companion_send_bridge_command_cmd}
     }
   end
 end

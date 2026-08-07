@@ -173,15 +173,12 @@ sendSunSnapshot sun =
 
 sendMoonSnapshot : Environment.MoonInfo -> Cmd Msg
 sendMoonSnapshot moon =
-    Cmd.batch
-        [ CompanionPhone.sendPhoneToWatch
-            (ProvideMoon
-                (Maybe.withDefault 0 moon.moonriseMin)
-                (Maybe.withDefault 0 moon.moonsetMin)
-                moon.phaseE6
-            )
-        , CompanionPhone.sendPhoneToWatch (ProvideMoonPhase moon.phaseE6)
-        ]
+    CompanionPhone.sendPhoneToWatch
+        (ProvideMoon
+            (Maybe.withDefault 0 moon.moonriseMin)
+            (Maybe.withDefault 0 moon.moonsetMin)
+            moon.phaseE6
+        )
 
 
 sunModeFromInfo : Environment.SunInfo -> SunMode
@@ -204,6 +201,8 @@ refreshEnvironment =
 sendLocationSnapshot : LocationSnapshot -> Time.Posix -> Cmd Msg
 sendLocationSnapshot location now =
     let
+        -- Offset is only for phone-side sun/moon minute-of-day math at this
+        -- GPS fix. Watch civil time and timezone come from the watch itself.
         tzOffsetMin =
             longitudeTimezoneOffset location.longitude
 
@@ -214,15 +213,13 @@ sendLocationSnapshot location now =
             moonSnapshot location tzOffsetMin now
     in
     Cmd.batch
-        [ CompanionPhone.sendPhoneToWatch (ProvideTimezone tzOffsetMin)
-        , CompanionPhone.sendPhoneToWatch (ProvideSun sun.sunriseMin sun.sunsetMin sun.mode)
+        [ CompanionPhone.sendPhoneToWatch (ProvideSun sun.sunriseMin sun.sunsetMin sun.mode)
         , CompanionPhone.sendPhoneToWatch
             (ProvideMoon
                 (Maybe.withDefault 0 moon.moonriseMin)
                 (Maybe.withDefault 0 moon.moonsetMin)
                 moon.phaseE6
             )
-        , CompanionPhone.sendPhoneToWatch (ProvideMoonPhase moon.phaseE6)
         ]
 
 

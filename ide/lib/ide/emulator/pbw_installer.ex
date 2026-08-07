@@ -8,11 +8,12 @@ defmodule Ide.Emulator.PBWInstaller do
   alias Ide.Emulator.Types
   alias Ide.Emulator.PebbleProtocol.Router
 
-  @default_chunk_size 500
+  # Match libpebble2 PutBytes object chunk size (see libpebble2/services/putbytes.py).
+  @default_chunk_size 2000
   @default_timeout_ms 30_000
   @default_install_timeout_ms 120_000
   @default_putbytes_retries 2
-  @default_chunk_delay_ms 10
+  @default_chunk_delay_ms 5
   @default_install_transition_timeout_ms 30_000
   @default_part_retries 1
   @default_install_retries 2

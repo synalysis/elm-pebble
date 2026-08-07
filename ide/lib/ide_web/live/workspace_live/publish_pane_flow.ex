@@ -18,6 +18,7 @@ defmodule IdeWeb.WorkspaceLive.PublishPaneFlow do
   alias Ide.PublishManifest
   alias Ide.PublishReadiness
   alias Ide.Screenshots
+  alias IdeWeb.WorkspaceLive.BuildFlow
   alias IdeWeb.WorkspaceLive.ProjectSettingsFlow
   alias IdeWeb.WorkspaceLive.PublishFlow
   alias IdeWeb.WorkspaceLive.State
@@ -37,6 +38,7 @@ defmodule IdeWeb.WorkspaceLive.PublishPaneFlow do
     prepare-release
     push-project-snapshot
     submit-publish-release
+    sideload-publish-release
     resolve-publish-check
     prepare-publish-artifact
     export-publish-manifest
@@ -47,6 +49,7 @@ defmodule IdeWeb.WorkspaceLive.PublishPaneFlow do
     :prepare_release,
     :prepare_publish_artifact,
     :submit_publish_release,
+    :sideload_publish_release,
     :push_project_snapshot,
     :export_publish_manifest,
     :export_release_notes
@@ -152,6 +155,19 @@ defmodule IdeWeb.WorkspaceLive.PublishPaneFlow do
        )}
     else
       submit_publish_release(params, socket)
+    end
+  end
+
+  def handle_event("sideload-publish-release", _params, socket) do
+    unless Auth.cloudpebble_sideload_enabled?() do
+      {:noreply,
+       put_flash(
+         socket,
+         :error,
+         "CloudPebble sideload is disabled in this deployment. Download the PBW and sideload manually."
+       )}
+    else
+      sideload_publish_release(socket)
     end
   end
 
@@ -267,6 +283,72 @@ defmodule IdeWeb.WorkspaceLive.PublishPaneFlow do
 
        PublishManifest.export_release_notes(project_slug, markdown)
      end)}
+  end
+
+  defp sideload_publish_release(socket) do
+    firebase_id_token = socket.assigns[:firebase_id_token]
+    firebase_id_token_exp = socket.assigns[:firebase_id_token_exp]
+    project = socket.assigns.project
+
+    cond do
+      match?({:error, _}, resolve_publish_pbw_path(socket)) ->
+        {:noreply,
+         socket
+         |> assign(:sideload_status, :error)
+         |> assign(
+           :sideload_output,
+           "No PBW found. Run Prepare Release first, then sideload again."
+         )}
+
+      not is_binary(firebase_id_token) or firebase_id_token == "" ->
+        {:noreply,
+         socket
+         |> assign(:sideload_status, :error)
+         |> assign(
+           :sideload_output,
+           "CloudPebble login required. Log in on this page before sideloading to your watch."
+         )}
+
+      Ide.Auth.token_expired?(firebase_id_token_exp) ->
+        {:noreply,
+         socket
+         |> assign(:sideload_status, :error)
+         |> assign(
+           :sideload_output,
+           "CloudPebble login expired. Log in again before sideloading to your watch."
+         )}
+
+      true ->
+        {:ok, package_path} = resolve_publish_pbw_path(socket)
+
+        {:noreply,
+         socket
+         |> assign(:sideload_status, :running)
+         |> assign(:sideload_output, nil)
+         |> start_async(:sideload_publish_release, fn ->
+           PebbleToolchain.install_cloudpebble(project.slug,
+             package_path: package_path,
+             firebase_id_token: firebase_id_token
+           )
+         end)}
+    end
+  end
+
+  @spec resolve_publish_pbw_path(socket()) :: {:ok, String.t()} | {:error, :pbw_not_found}
+  defp resolve_publish_pbw_path(socket) do
+    case socket.assigns.publish_artifact_path do
+      path when is_binary(path) and path != "" ->
+        expanded = Path.expand(path)
+
+        if File.regular?(expanded) do
+          {:ok, expanded}
+        else
+          Projects.latest_pbw_path(socket.assigns.project)
+        end
+
+      _ ->
+        Projects.latest_pbw_path(socket.assigns.project)
+    end
   end
 
   defp submit_publish_release(params, socket) do
@@ -426,13 +508,15 @@ defmodule IdeWeb.WorkspaceLive.PublishPaneFlow do
   end
 
   defp do_handle_async(:prepare_release, {:ok, {:error, reason}}, socket) do
+    targets = PublishFlow.target_platforms(socket.assigns.project)
+
     {:noreply,
      socket
      |> assign(:prepare_release_status, :error)
      |> assign(:publish_status, :error)
      |> assign(:manifest_export_status, :error)
      |> assign(:release_notes_status, :error)
-     |> assign(:prepare_release_output, "Prepare release failed: #{inspect(reason)}")}
+     |> assign(:prepare_release_output, prepare_release_failure_output(reason, targets))}
   end
 
   defp do_handle_async(:prepare_release, {:exit, reason}, socket) do
@@ -551,6 +635,27 @@ defmodule IdeWeb.WorkspaceLive.PublishPaneFlow do
      |> assign(:publish_submit_output, "Store publish task exited: #{inspect(reason)}")}
   end
 
+  defp do_handle_async(:sideload_publish_release, {:ok, {:ok, result}}, socket) do
+    {:noreply,
+     socket
+     |> assign(:sideload_status, result.status)
+     |> assign(:sideload_output, ToolchainPresenter.render_toolchain_output(result))}
+  end
+
+  defp do_handle_async(:sideload_publish_release, {:ok, {:error, reason}}, socket) do
+    {:noreply,
+     socket
+     |> assign(:sideload_status, :error)
+     |> assign(:sideload_output, format_sideload_error(reason))}
+  end
+
+  defp do_handle_async(:sideload_publish_release, {:exit, reason}, socket) do
+    {:noreply,
+     socket
+     |> assign(:sideload_status, :error)
+     |> assign(:sideload_output, "Sideload task exited: #{inspect(reason)}")}
+  end
+
   defp do_handle_async(:push_project_snapshot, {:ok, {:ok, result}}, socket) do
     {:noreply,
      socket
@@ -664,6 +769,28 @@ defmodule IdeWeb.WorkspaceLive.PublishPaneFlow do
   end
 
   defp blank?(value), do: is_nil(value) or String.trim(to_string(value)) == ""
+
+  @spec format_sideload_error(term()) :: String.t()
+  defp format_sideload_error(:pbw_not_found),
+    do: "No PBW found. Run Prepare Release first, then sideload again."
+
+  defp format_sideload_error(:firebase_id_token_required),
+    do: "CloudPebble login required. Log in on this page before sideloading to your watch."
+
+  defp format_sideload_error(reason),
+    do: "Sideload failed: #{inspect(reason)}"
+
+  defp prepare_release_failure_output({:pebble_build_failed, _} = reason, targets) do
+    """
+    Prepare release failed.
+    #{BuildFlow.render_package_failure(reason, targets)}
+    """
+    |> String.trim()
+  end
+
+  defp prepare_release_failure_output(reason, _targets) do
+    "Prepare release failed: #{inspect(reason)}"
+  end
 
   @spec to_bool(wire_input()) :: boolean()
   defp to_bool(value) when value in [true, "true", "on", "1", 1], do: true

@@ -6,6 +6,11 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage.SvgRender do
 
   @type svg_op :: SupportTypes.svg_op()
 
+  # CSS sans-serif fills more of the em-square than Pebble Gothic ink. Scale the
+  # selected Gothic bucket down so date/time bands match the emulator visually.
+  @gothic_to_sans_num 3
+  @gothic_to_sans_den 4
+
   @spec arc_path(svg_op()) :: String.t()
   def arc_path(op), do: DebuggerPreview.arc_path(op)
 
@@ -31,27 +36,59 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage.SvgRender do
   def text_x(%{x: x}) when is_number(x), do: x
   def text_x(_op), do: 0
 
-  # Pebble `graphics_draw_text` draws the first line against the **top** of the
-  # rect (`GRect.y`). Match that — do not vertically center in the box.
+  # Pebble draws the first line against the top of the GRect, but Gothic glyphs
+  # sit below the line-box top (internal bearing). Nudge SVG text down so dial
+  # labels and corners line up with the emulator — a constant upward error looks
+  # larger at the top of a circular scale than at the bottom.
   @spec text_y(svg_op()) :: number()
-  def text_y(%{y: y}) when is_number(y), do: y
+  def text_y(%{y: y} = op) when is_number(y) do
+    y + text_box_metrics(op).bearing
+  end
+
   def text_y(_op), do: 0
 
   @spec text_font_size(svg_op()) :: pos_integer()
-  def text_font_size(op) do
-    # Bucket mirrors `system_font_for_height`, but SVG sans-serif at full Gothic
-    # 18 inside a short box (e.g. YES dial h=12) clips through mid-glyph. Cap to
-    # box height so the whole digit stays visible; top-of-box placement still
-    # matches Pebble. Bitmap Gothic in a short GRect reads smaller similarly.
-    cap =
+  def text_font_size(op), do: text_box_metrics(op).font_size
+
+  @type text_box_metrics :: %{font_size: pos_integer(), bearing: number()}
+
+  @spec text_box_metrics(svg_op()) :: text_box_metrics()
+  defp text_box_metrics(op) do
+    gothic =
       op
       |> box_text_height()
       |> pebble_system_font_cap_height()
 
+    approx = gothic_to_sans_px(gothic)
+
     case Map.get(op, :h) do
-      h when is_integer(h) and h > 0 -> min(cap, h)
-      _ -> cap
+      h when is_integer(h) and h > 0 and h < gothic ->
+        tight_text_metrics(gothic, h, approx)
+
+      h when is_integer(h) and h > 0 ->
+        font = min(approx, h)
+        bearing = max(0, min(gothic_top_bearing(gothic), h - font))
+        %{font_size: font, bearing: bearing}
+
+      _ ->
+        %{font_size: approx, bearing: gothic_top_bearing(gothic)}
     end
+  end
+
+  @spec tight_text_metrics(pos_integer(), pos_integer(), pos_integer()) :: text_box_metrics()
+  defp tight_text_metrics(gothic, h, approx) when gothic > h and h > 0 do
+    # Short GRects select a larger Gothic bucket than their height. Emulator ink
+    # for Yes dial labels (h=12) starts ~7px below the box top. CSS sans AA sits
+    # slightly below the em-box top; a half-pixel inset balances top vs bottom
+    # dial labels. The glyph may extend a few px past `h` — `text_clip_height/1`
+    # expands the clip so bottoms are not cut off (sans fills the em-square;
+    # Gothic ink does not).
+    desired = gothic_top_bearing(gothic)
+    sans_aa_inset = 1.5
+    bearing = max(0, min(h - 1, gothic - h + desired - sans_aa_inset))
+    font = max(4, min(approx, h - div(h, 4)))
+
+    %{font_size: font, bearing: bearing}
   end
 
   @spec text_clippable?(svg_op()) :: boolean()
@@ -60,6 +97,20 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage.SvgRender do
       do: true
 
   def text_clippable?(_op), do: false
+
+  @doc """
+  Clip height for a text label. At least the GRect height, and tall enough to
+  include `bearing + font_size` so CSS sans glyphs are not cut off at the bottom
+  when short boxes select a larger Gothic-equivalent face.
+  """
+  @spec text_clip_height(svg_op()) :: number()
+  def text_clip_height(%{h: h} = op) when is_number(h) and h > 0 do
+    metrics = text_box_metrics(op)
+    glyph_extent = metrics.bearing + metrics.font_size
+    max(h, glyph_extent)
+  end
+
+  def text_clip_height(_op), do: 0
 
   @spec text_clip_id(String.t(), non_neg_integer()) :: String.t()
   def text_clip_id(svg_id, index) when is_binary(svg_id) and is_integer(index) and index >= 0 do
@@ -86,13 +137,25 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage.SvgRender do
 
   defp pebble_system_font_cap_height(_height), do: 11
 
+  @spec gothic_to_sans_px(pos_integer()) :: pos_integer()
+  defp gothic_to_sans_px(gothic) when is_integer(gothic) and gothic > 0 do
+    max(1, div(gothic * @gothic_to_sans_num + div(@gothic_to_sans_den, 2), @gothic_to_sans_den))
+  end
+
+  defp gothic_to_sans_px(_gothic), do: 1
+
+  @spec gothic_top_bearing(pos_integer()) :: non_neg_integer()
+  defp gothic_top_bearing(gothic) when is_integer(gothic) and gothic > 0, do: div(gothic, 8)
+  defp gothic_top_bearing(_gothic), do: 0
+
   @spec text_anchor(svg_op()) :: String.t() | nil
   def text_anchor(%{text_align: "left", w: w}) when is_number(w), do: "start"
   def text_anchor(%{text_align: "center", w: w}) when is_number(w), do: "middle"
   def text_anchor(%{text_align: "right", w: w}) when is_number(w), do: "end"
   def text_anchor(_op), do: nil
 
-  # SVG: top of the em box at `text_y` ≈ Pebble first-line-at-top-of-rect.
+  # SVG: top of the em box at `text_y` ≈ Pebble first-line-at-top-of-rect, after
+  # `text_top_bearing/1` accounts for Gothic's internal top padding.
   @spec text_baseline(svg_op()) :: String.t() | nil
   def text_baseline(%{h: h}) when is_number(h) and h > 0, do: "text-before-edge"
   def text_baseline(_op), do: nil

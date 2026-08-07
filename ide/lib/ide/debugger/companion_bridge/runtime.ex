@@ -449,18 +449,6 @@ defmodule Ide.Debugger.CompanionBridge.Runtime do
     end
   end
 
-  defp apply_request(state, target, %{api: "webSocket"} = request, source, ctx) do
-    callback = bridge_callback(request, state, target, %{}, ctx)
-
-    case callback do
-      value when is_binary(value) and value != "" ->
-        apply_callback(state, target, callback, {:ok, %{}}, source, "webSocket", request, ctx)
-
-      _ ->
-        {state, []}
-    end
-  end
-
   defp apply_request(state, target, %{api: api} = request, source, ctx) when is_binary(api) do
     contract =
       Enum.find(CompanionBridge.subscription_contracts(), &(Map.fetch!(&1, :source) == api))

@@ -121,6 +121,14 @@ defmodule Ide.PebbleToolchainTest do
     refute template =~ "s_vector_sequence_anim_origin_resource_id"
   end
 
+  test "current date time fills utcOffsetMinutes from tm_gmtoff" do
+    template = File.read!("priv/pebble_app_template/src/c/pebble_app_template.c")
+
+    assert template =~ "utc_offset_minutes = (int64_t)(local->tm_gmtoff / 60)"
+    assert template =~ "utc_offset_minutes};"
+    refute template =~ ~r/local->tm_sec,\s*0\};/
+  end
+
   test "emulator packaging writes storage log build flags header" do
     source = toolchain_impl_source()
     template = File.read!("priv/pebble_app_template/src/c/pebble_app_template.c")
@@ -326,11 +334,19 @@ defmodule Ide.PebbleToolchainTest do
     assert source =~ "function companionSupportsWeatherPlatform()"
     assert source =~ "function companionSimulatorWeatherModeEnabled"
     assert source =~ "function shouldUseSimulatorWeather()"
+    assert source =~ "companionSimulatorSettingsExplicit"
+    assert source =~ "Real-device companions must hit live Open-Meteo"
+    assert source =~ "Empty on real phones"
     assert source =~ "function weatherFromSettings()"
+    assert source =~ "function geolocationFromSettings("
+    assert source =~ "function resolveGeolocationPosition("
     assert source =~ "function normalizeCompanionSimulatorSettings("
     assert source =~ "function deliverWeatherToWatch()"
     assert source =~ "open-meteo.com"
     assert source =~ "deliverWeatherCurrent"
+    assert source =~ "latitude: 48.137154"
+    assert source =~ "keep simulator"
+    assert source =~ "weather available so Weather.current"
     assert source =~ "applyPendingCompanionSimulatorSettings();"
     refute source =~ "deliverWeatherToWatchWithRetry();"
     refute source =~ "if (!applyPendingCompanionSimulatorSettings())"
@@ -505,7 +521,9 @@ defmodule Ide.PebbleToolchainTest do
     refute startup_body =~ "render_model();"
     refute template =~ "startup_build_scene"
     refute template =~ "elmc_pebble_reserve_startup_scene"
-    assert template =~ "static ElmcPebbleCmd cmd;"
+    # Stack-local cmd so nested apply_pending_cmd cannot clobber an outer cmd.
+    assert template =~ "ElmcPebbleCmd cmd;"
+    refute template =~ "static ElmcPebbleCmd cmd;"
 
     draw_bodies =
       Regex.scan(
@@ -632,9 +650,11 @@ defmodule Ide.PebbleToolchainTest do
     assert launch_body =~ "GRect bounds = compile_display_bounds();"
     refute launch_body =~ "GRect bounds = display_bounds();"
     assert launch_body =~ "elmc_record_new_values_take(&"
-    assert launch_body =~ "screen_values[] = {screen_width, screen_height, screen_shape, screen_color_mode}"
+    assert launch_body =~ "ElmcValue *owned["
+    assert launch_body =~ "screen_values[] = {owned[0], owned[1], owned[2], owned[3]}"
     assert launch_body =~ "ELMC_PLATFORM_COLOR_CAPABILITY_COLOR"
-    assert launch_body =~ "context_values[] = {reason, watch_model, watch_profile_id, screen, has_microphone,"
+    assert launch_body =~
+             "context_values[] = {owned[5], owned[6], owned[7], owned[4], owned[8],"
   end
 
   test "pebble app template draw layer and display_bounds prefer compile size when root layer is undersized" do
@@ -915,17 +935,62 @@ defmodule Ide.PebbleToolchainTest do
     refute generated_h =~ "ELMC_HAVE_DIRECT_COMMANDS_MAIN_VIEW"
   end
 
-  test "vector resource staging preserves manifest order for elm constructor tags" do
-    source = toolchain_impl_source()
+  test "vector resource staging matches Resources.elm slot order even when manifest order differs" do
+    workspace_root =
+      Path.join(System.tmp_dir!(), "ide_vector_slot_order_#{System.unique_integer([:positive])}")
 
-    vector_section =
-      source
-      |> String.split("defp stage_vector_resources")
-      |> Enum.at(1)
-      |> String.split("defp stage_")
-      |> hd()
+    on_exit(fn -> File.rm_rf(workspace_root) end)
 
-    refute vector_section =~ ~s/Enum.sort_by(&to_string(Map.get(&1, "ctor", "")))/
+    vectors_dir = Path.join(workspace_root, "watch/resources/vectors")
+    File.mkdir_p!(vectors_dir)
+
+    template_vectors =
+      Path.expand("../../priv/project_templates/watchface_yes/resources/vectors", __DIR__)
+
+    File.cp!(
+      Path.join(template_vectors, "VectorStaticMountain.pdc"),
+      Path.join(vectors_dir, "VectorStaticMountain.pdc")
+    )
+
+    File.cp!(
+      Path.join(template_vectors, "VectorStaticBattery.pdc"),
+      Path.join(vectors_dir, "VectorStaticBattery.pdc")
+    )
+
+    # Manifest deliberately lists Mountain before Battery — opposite of Resources.elm order.
+    File.write!(
+      Path.join(workspace_root, "watch/resources/vectors.json"),
+      Jason.encode!(%{
+        "entries" => [
+          %{
+            "ctor" => "VectorStaticMountain",
+            "filename" => "VectorStaticMountain.pdc",
+            "base_name" => "Mountain"
+          },
+          %{
+            "ctor" => "VectorStaticBattery",
+            "filename" => "VectorStaticBattery.pdc",
+            "base_name" => "Battery"
+          }
+        ]
+      })
+    )
+
+    app_root = Path.join(workspace_root, "app")
+    File.mkdir_p!(app_root)
+
+    assert {:ok, media_entries} =
+             Ide.PebbleToolchain.Prepare.stage_vector_resources_for_test(workspace_root, app_root)
+
+    assert Enum.map(media_entries, & &1["name"]) == [
+             "VECTOR_VECTORSTATICBATTERY",
+             "VECTOR_VECTORSTATICMOUNTAIN"
+           ]
+
+    assert Enum.map(media_entries, & &1["file"]) == [
+             "vectors/VectorStaticBattery.pdc",
+             "vectors/VectorStaticMountain.pdc"
+           ]
   end
 
   test "package rejects watch Elm roots with compiler check failures" do
@@ -947,8 +1012,8 @@ defmodule Ide.PebbleToolchainTest do
       source_path
       |> File.read!()
       |> String.replace(
-        "Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 96, w = 136, h = 18 } (String.fromInt model.events)",
-        "Ui.textInt Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 96, w = 136, h = 18 } model.events"
+        "import Pebble.Health as Health\n",
+        "import Pebble.Health as Health\nimport Totally.Missing.Module exposing (..)\n"
       )
 
     File.write!(source_path, source)

@@ -119,14 +119,17 @@ defmodule Ide.Emulator.InstallPrep do
     base + extra
   end
 
-  # Larger PBWs on snowy-class QEMU machines need smaller PutBytes chunks and more
-  # time between chunks so the Bluetooth stack keeps up during the binary phase (~5% UI).
+  # PutBytes chunk size matches libpebble2 (2000). We await an ACK per chunk, so
+  # QEMU is naturally paced; snowy-class (emery/flint/gabbro) only needs a short
+  # inter-chunk sleep plus a pause between binary/resources parts.
+  @default_pbw_chunk_size 2000
+
   @spec platform_putbytes_pacing(term()) :: term()
 
   defp platform_putbytes_pacing(platform) when platform in ["emery", "flint", "gabbro"] do
     [
-      chunk_size: config(:pbw_chunk_size, 256),
-      chunk_delay_ms: config(:pbw_chunk_delay_ms, 20),
+      chunk_size: config(:pbw_chunk_size, @default_pbw_chunk_size),
+      chunk_delay_ms: config(:pbw_chunk_delay_ms, 5),
       part_delay_ms: config(:pbw_part_delay_ms, 300),
       putbytes_retries: config(:pbw_putbytes_retries, 3)
     ]
@@ -134,8 +137,8 @@ defmodule Ide.Emulator.InstallPrep do
 
   defp platform_putbytes_pacing(_platform) do
     [
-      chunk_size: config(:pbw_chunk_size, 500),
-      chunk_delay_ms: config(:pbw_chunk_delay_ms, 10)
+      chunk_size: config(:pbw_chunk_size, @default_pbw_chunk_size),
+      chunk_delay_ms: config(:pbw_chunk_delay_ms, 5)
     ]
   end
 

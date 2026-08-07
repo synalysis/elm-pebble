@@ -343,8 +343,7 @@ defmodule Ide.Debugger.ProtocolRuntimePatch do
   @spec provide_ctor_model_field(Types.elm_introspect(), String.t()) :: String.t() | nil
   defp provide_ctor_model_field(introspect, ctor) when is_map(introspect) and is_binary(ctor) do
     init_keys =
-      introspect
-      |> Map.get("init_model", %{})
+      (Map.get(introspect, "init_model") || %{})
       |> Map.keys()
       |> Enum.map(&to_string/1)
 

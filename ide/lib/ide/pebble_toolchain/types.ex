@@ -153,6 +153,7 @@ defmodule Ide.PebbleToolchain.Types do
           | {:companion_protocol_generation_failed, companion_protocol_generator_error()}
           | {:companion_protocol_elm_generation_failed, companion_protocol_generator_error()}
           | {:read_companion_index_template_failed, file_posix()}
+          | {:read_elm_wss_runtime_template_failed, file_posix()}
           | {:phone_companion_elm_make_failed, phone_companion_elm_make_result()}
           | {:runtime_reprune_failed, runtime_reprune_failure()}
           | {:invalid_emulator_target, String.t()}

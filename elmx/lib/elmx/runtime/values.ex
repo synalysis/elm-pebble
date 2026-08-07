@@ -41,6 +41,33 @@ defmodule Elmx.Runtime.Values do
   def port_incoming_sub(port_key, callback) when is_binary(port_key),
     do: Manager.port(port_key, callback)
 
+  @doc """
+  Formats a `WebsocketSimple.TransportErrorDetails` record like the Elm helper.
+  """
+  @spec wss_error_to_string(Types.wire_value()) :: String.t()
+  def wss_error_to_string(error) when is_map(error) do
+    kind = Map.get(error, "kind") || Map.get(error, :kind)
+    message = Map.get(error, "message") || Map.get(error, :message) || ""
+    "[" <> wss_error_kind_to_string(kind) <> "] " <> to_string(message)
+  end
+
+  def wss_error_to_string(other), do: inspect(other)
+
+  @spec wss_error_kind_to_string(Types.wire_value()) :: String.t()
+  def wss_error_kind_to_string(%{"ctor" => ctor}) when is_binary(ctor) do
+    ctor |> String.split(".") |> List.last()
+  end
+
+  def wss_error_kind_to_string(kind) when is_atom(kind), do: Atom.to_string(kind)
+  def wss_error_kind_to_string(kind) when is_binary(kind), do: kind
+  def wss_error_kind_to_string(_), do: "Unknown"
+
+  @doc """
+  Identity decoder for `WebsocketSimple` event ports until full wire decode lands.
+  """
+  @spec wss_decode_event(Types.wire_value()) :: Types.wire_value()
+  def wss_decode_event(raw), do: raw
+
   @spec manager_value(term()) :: term()
 
   defp manager_value(value), do: value

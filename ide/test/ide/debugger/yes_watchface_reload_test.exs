@@ -68,14 +68,18 @@ defmodule Ide.Debugger.YesWatchfaceReloadTest do
 
     assert Enum.any?(followups, fn row ->
              Map.get(row, "package") == "companion-protocol" and
-               Map.get(row, "message") == "ProvideTimezone"
+               Map.get(row, "message") == "ProvideSun"
            end),
-           "expected ProvideTimezone protocol followup, got: #{inspect(followups, limit: 5)}"
+           "expected ProvideSun protocol followup, got: #{inspect(followups, limit: 5)}"
+
+    refute Enum.any?(followups, fn row ->
+             Map.get(row, "message") == "ProvideTimezone"
+           end)
 
     _ = Projects.delete_project(project)
   end
 
-  test "CurrentPosition task chain produces ProvideTimezone followups" do
+  test "CurrentPosition task chain produces ProvideSun followups" do
     slug = "yes-position-chain-#{System.unique_integer([:positive])}"
 
     assert {:ok, project} =
@@ -152,14 +156,18 @@ defmodule Ide.Debugger.YesWatchfaceReloadTest do
 
     assert Enum.any?(followups, fn row ->
              Map.get(row, "package") == "companion-protocol" and
-               Map.get(row, "message") == "ProvideTimezone"
+               Map.get(row, "message") == "ProvideSun"
+           end)
+
+    refute Enum.any?(followups, fn row ->
+             Map.get(row, "message") == "ProvideTimezone"
            end)
 
     _ = Projects.delete_project(project)
   end
 
   @tag timeout: 300_000
-  test "yes watchface reload keeps companion preferences bridge and delivers timezone and weather" do
+  test "yes watchface reload keeps companion preferences bridge and delivers sun and weather" do
     previous_async_protocol = Application.get_env(:ide, :debugger_async_protocol_delivery)
     # Match live/dev: async protocol delivery is on by default and must not double-apply.
     Application.put_env(:ide, :debugger_async_protocol_delivery, true)
@@ -325,9 +333,13 @@ defmodule Ide.Debugger.YesWatchfaceReloadTest do
       |> Enum.map(& &1.message)
 
     assert Enum.any?(watch_rows, fn message ->
-             is_binary(message) and String.contains?(message, "ProvideTimezone")
+             is_binary(message) and String.contains?(message, "ProvideSun")
            end),
-           "geolocation chain should deliver ProvideTimezone to watch: #{inspect(watch_rows)}"
+           "geolocation chain should deliver ProvideSun to watch: #{inspect(watch_rows)}"
+
+    refute Enum.any?(watch_rows, fn message ->
+             is_binary(message) and String.contains?(message, "ProvideTimezone")
+           end)
 
     unknown_weather_rows =
       (state.debugger_timeline || [])
@@ -339,7 +351,7 @@ defmodule Ide.Debugger.YesWatchfaceReloadTest do
     assert unknown_weather_rows == [],
            "weather bridge must not deliver Unknown callbacks: #{inspect(unknown_weather_rows)}"
 
-    assert is_integer(watch_model["homeTzOffsetMin"])
+    refute Map.has_key?(watch_model, "homeTzOffsetMin")
 
     refute Map.has_key?(watch_model, "homeLatE6")
 

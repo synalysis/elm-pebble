@@ -38,7 +38,7 @@
       "fill_color": 204,
       "h": 4,
       "kind": "fill_rect",
-      "stroke_color": 255,
+      "stroke_color": 204,
       "stroke_width": 1,
       "w": 59,
       "x": 38,
@@ -73,7 +73,7 @@
       "y": 136
     }
   ],
-  "preview_ops_sha256": "4d1ed5afb2c847952999a12d86b80d4c79ed6b5bd6112306ded793c4f591063d",
+  "preview_ops_sha256": "2c149047a7e57f63dae2428f43bc2d4a33a7d0ac9d9abacb01c271dfbba55f0e",
   "render_tree": {
     "node_count": 14,
     "node_types": [

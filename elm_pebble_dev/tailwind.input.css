@@ -21,6 +21,21 @@
   display: none !important;
 }
 
+.site-hero-panel {
+  background:
+    radial-gradient(ellipse 80% 60% at 10% 0%, rgba(16, 185, 129, 0.14), transparent 55%),
+    radial-gradient(ellipse 70% 50% at 90% 10%, rgba(37, 99, 235, 0.16), transparent 50%),
+    #ffffff;
+  padding: 2rem 1.75rem 2.25rem;
+}
+
+html.dark .site-hero-panel {
+  background:
+    radial-gradient(ellipse 80% 60% at 10% 0%, rgba(16, 185, 129, 0.18), transparent 55%),
+    radial-gradient(ellipse 70% 50% at 90% 10%, rgba(37, 99, 235, 0.22), transparent 50%),
+    #0f172a;
+}
+
 .site-hero-layout {
   display: flex !important;
   flex-direction: column !important;
@@ -32,8 +47,29 @@
   display: flex !important;
   flex-flow: row nowrap !important;
   align-items: flex-start !important;
-  gap: 1.5rem;
+  gap: 1.75rem;
   width: 100%;
+}
+
+.site-hero-strip {
+  display: flex !important;
+  flex: 0 0 auto !important;
+  flex-flow: row nowrap !important;
+  align-items: flex-end !important;
+  gap: 0.65rem;
+}
+
+.site-hero-strip-shot {
+  display: block;
+  width: 5.5rem !important;
+  height: auto !important;
+  background: #020617;
+}
+
+@media (min-width: 48rem) {
+  .site-hero-strip-shot {
+    width: 6.75rem !important;
+  }
 }
 
 @media (max-width: 47.99rem) {
@@ -48,6 +84,10 @@
   }
 
   .site-hero-headlines .inline-flex {
+    justify-content: center;
+  }
+
+  .site-hero-strip {
     justify-content: center;
   }
 }

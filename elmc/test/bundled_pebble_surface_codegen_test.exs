@@ -109,5 +109,9 @@ defmodule Elmc.BundledPebbleSurfaceCodegenTest do
              init_fn =~ "elmc_new_int(4)"
     assert init_fn =~
              ~r/elmc_list_from_values\(&(?:tmp_\d+|owned\[\d+\]), (?:plan_)?list_items_\d+, 2\)/
+
+    # StepCount must be HealthMetricStepCount (0), not ActiveSeconds (1).
+    assert init_fn =~ ~r/ELMC_PEBBLE_CMD_HEALTH_SUM_TODAY,\s*0\s*,/
+    refute init_fn =~ ~r/ELMC_PEBBLE_CMD_HEALTH_SUM_TODAY,\s*1\s*,/
   end
 end

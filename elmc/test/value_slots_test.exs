@@ -71,7 +71,7 @@ defmodule Elmc.Backend.CCodegen.ValueSlotsTest do
     assert ValueSlots.epilogue_cleanup() == "elmc_release_array_lifo(owned, DIM(owned));"
   end
 
-  test "heap owned slots on pebble_int32 use elmc_calloc without a null-init loop" do
+  test "heap owned slots on pebble_int32 use owned_slots pool acquire/release" do
     on_exit(fn -> Process.delete(:elmc_codegen_opts) end)
     Process.put(:elmc_codegen_opts, %{pebble_int32: true})
     ValueSlots.reset(epilogue_lifo: true)
@@ -80,9 +80,11 @@ defmodule Elmc.Backend.CCodegen.ValueSlotsTest do
 
     decl = ValueSlots.owned_declaration()
 
-    assert decl =~ "elmc_calloc(ELMC_OWNED_SLOT_COUNT, sizeof(ElmcValue *), \"owned_slots\")"
+    assert decl =~ "elmc_owned_slots_acquire(ELMC_OWNED_SLOT_COUNT)"
+    refute decl =~ "elmc_calloc(ELMC_OWNED_SLOT_COUNT"
     refute decl =~ "elmc_owned_i"
-    assert ValueSlots.epilogue_cleanup() =~ "elmc_free(owned)"
+    assert ValueSlots.epilogue_cleanup() =~ "elmc_owned_slots_release(owned, ELMC_OWNED_SLOT_COUNT)"
+    refute ValueSlots.epilogue_cleanup() =~ "elmc_free(owned)"
   end
 
   test "epilogue cleanup uses array lifo when epilogue lifo mode is enabled" do

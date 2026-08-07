@@ -4,8 +4,10 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview.ViewTreeOps do
   alias IdeWeb.WorkspaceLive.DebuggerPreview.{RuntimeAccess, SvgOpNormalize, SvgTextOptions, WireMap}
   alias IdeWeb.WorkspaceLive.DebuggerSupport.Types, as: PreviewTypes
 
-  @default_screen_w 144
-  @default_screen_h 168
+  # Upper bounds for defensive clamping only. Must cover Emery (200x228) and
+  # taller rectangular faces — Basalt 144x168 was truncating corner text/hands.
+  @default_screen_w 400
+  @default_screen_h 400
 
   @type view_tree :: PreviewTypes.view_tree() | nil
   @type view_node :: PreviewTypes.view_node()
@@ -634,7 +636,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview.ViewTreeOps do
                 kind: :circle,
                 cx: clamp(cx, 0, @default_screen_w - 1),
                 cy: clamp(cy, 0, @default_screen_h - 1),
-                r: clamp(r, 1, 80),
+                r: clamp(r, 1, @default_screen_w),
                 color: color
               }
             ]
@@ -658,7 +660,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview.ViewTreeOps do
                 kind: :fill_circle,
                 cx: clamp(cx, 0, @default_screen_w - 1),
                 cy: clamp(cy, 0, @default_screen_h - 1),
-                r: clamp(r, 1, 80),
+                r: clamp(r, 1, @default_screen_w),
                 color: color
               }
             ]

@@ -37,9 +37,13 @@ defmodule Ide.Mcp.Handlers.Build do
          {:ok, package_path} <- resolve_install_package_path(project, args, toolchain),
          {:ok, install_result} <-
            toolchain.run_emulator(slug,
-             emulator_target: Map.get(args, "emulator_target"),
-             package_path: package_path,
-             logs_snapshot_seconds: logs_snapshot_seconds
+             Keyword.merge(
+               [
+                 package_path: package_path,
+                 logs_snapshot_seconds: logs_snapshot_seconds
+               ],
+               optional_emulator_target_opts(args)
+             )
            ) do
       {:ok, pebble_install_payload(slug, package_path, install_result)}
     else
@@ -92,10 +96,7 @@ defmodule Ide.Mcp.Handlers.Build do
 
     with {:ok, _project} <- ToolSupport.fetch_project(slug),
          {:ok, result} <-
-           screenshots.capture(
-             slug,
-             emulator_target: Map.get(args, "emulator_target")
-           ) do
+           screenshots.capture(slug, screenshot_capture_opts(args)) do
       {:ok,
        screenshots_capture_payload(
          slug,
@@ -112,7 +113,7 @@ defmodule Ide.Mcp.Handlers.Build do
 
   def call(name, args) when is_binary(name) and is_map(args) do
     {:error,
-     "build tool #{name} requires a project slug (pass \"slug\", or \"project_slug\" alias); got keys=#{inspect(Map.keys(args))}"}
+     "build tool #{name} requires a project slug (pass \"slug\", or \"project\" / \"project_slug\" alias); got keys=#{inspect(Map.keys(args))}"}
   end
 
   @spec mcp_tools_config() :: term()
@@ -305,4 +306,21 @@ defmodule Ide.Mcp.Handlers.Build do
   end
 
   defp parse_logs_snapshot_seconds(_), do: 4
+
+  @spec optional_emulator_target_opts(map()) :: keyword()
+  defp optional_emulator_target_opts(args) when is_map(args) do
+    case Map.get(args, "emulator_target") do
+      target when is_binary(target) ->
+        case String.trim(target) do
+          "" -> []
+          trimmed -> [emulator_target: trimmed]
+        end
+
+      _ ->
+        []
+    end
+  end
+
+  @spec screenshot_capture_opts(map()) :: keyword()
+  defp screenshot_capture_opts(args), do: optional_emulator_target_opts(args)
 end

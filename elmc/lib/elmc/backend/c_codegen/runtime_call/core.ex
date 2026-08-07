@@ -20,6 +20,7 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
   alias Elmc.Backend.CCodegen.ListHofResolve
   alias Elmc.Backend.CCodegen.Native.Bool, as: NativeBool
   alias Elmc.Backend.CCodegen.Native.Float, as: NativeFloat
+  alias Elmc.Backend.CCodegen.PebbleWatchPhaseScope
   alias Elmc.Backend.CCodegen.Native.Int, as: NativeInt
   alias Elmc.Backend.CCodegen.Native.RecordFields
   alias Elmc.Backend.CCodegen.Native.String, as: NativeString
@@ -549,6 +550,34 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
 
       true ->
         compile_generic(expr, env, counter)
+    end
+  end
+
+  def compile(%{op: :runtime_call, function: "elmc_basics_clamp", args: [low, high, value]} = expr, env, counter) do
+    {code, out, counter} = compile_generic(expr, env, counter)
+    PebbleWatchPhaseScope.register_clamp_result?(low, high, value, out)
+    {code, out, counter}
+  end
+
+  def compile(%{op: :runtime_call, function: function, args: args} = expr, env, counter)
+      when function in ["elmc_basics_sin", "elmc_basics_cos", "elmc_basics_round", "elmc_basics_turns"] do
+    case NativeInt.try_compile_trig_runtime_call(expr, env, counter) do
+      {:ok, code, out, counter} ->
+        {code, out, counter}
+
+      :error ->
+        case PebbleWatchPhaseScope.try_compile_cos_sin(function, env, counter) do
+          {:ok, code, out, counter} ->
+            {code, out, counter}
+
+          :error ->
+            if function in ["elmc_basics_sin", "elmc_basics_cos"] and
+                 match?([_value], args) and NativeFloat.expr?(List.first(args), env) do
+              NativeFloat.compile_boxed(expr, env, counter)
+            else
+              compile_generic(expr, env, counter)
+            end
+        end
     end
   end
 

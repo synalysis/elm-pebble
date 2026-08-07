@@ -5,6 +5,7 @@ defmodule IdeWeb.Plugs.RequireAuth do
   import Plug.Conn
 
   alias Ide.Auth
+  alias IdeWeb.AuthReturnTo
 
   @spec init(keyword()) :: keyword()
   def init(opts), do: opts
@@ -48,9 +49,12 @@ defmodule IdeWeb.Plugs.RequireAuth do
       |> put_status(:unauthorized)
       |> json(%{error: "Log in to use this endpoint."})
     else
+      return_to = AuthReturnTo.from_conn(conn)
+
       conn
+      |> AuthReturnTo.put_session(return_to)
       |> put_flash(:error, "Log in to create and manage projects.")
-      |> redirect(to: "/login")
+      |> redirect(to: AuthReturnTo.login_path(return_to))
     end
   end
 

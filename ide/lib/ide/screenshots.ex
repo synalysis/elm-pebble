@@ -92,8 +92,9 @@ defmodule Ide.Screenshots do
   end
 
   defp capture_external(project_slug, opts) do
-    with {:ok, project_dir} <- project_storage_dir(project_slug, opts),
-         emulator_target <- Keyword.get(opts, :emulator_target, configured_emulator_target()) do
+    emulator_target = emulator_target_from_opts(opts)
+
+    with {:ok, project_dir} <- project_storage_dir(project_slug, opts) do
       target_dir = Path.join(project_dir, emulator_target)
       :ok = File.mkdir_p(target_dir)
 
@@ -122,7 +123,7 @@ defmodule Ide.Screenshots do
   end
 
   defp capture_embedded(project_slug, opts) do
-    emulator_target = Keyword.get(opts, :emulator_target, configured_emulator_target())
+    emulator_target = emulator_target_from_opts(opts)
     progress = Keyword.get(opts, :progress)
     capture_opts = Keyword.take(opts, [:project])
 
@@ -143,6 +144,8 @@ defmodule Ide.Screenshots do
     with {:ok, project_dir} <- project_storage_dir(project_slug, opts),
          {:ok, emulator_target} <- normalize_emulator_target(emulator_target),
          true <- png_signature?(png),
+         {:ok, png} <-
+           Ide.Emulator.SdkScreenshotStyle.process_browser_capture(emulator_target, png),
          {:ok, png} <- Ide.ScreenshotDimensions.normalize_for_store(png, emulator_target) do
       target_dir = Path.join(project_dir, emulator_target)
       :ok = File.mkdir_p(target_dir)
@@ -641,6 +644,23 @@ defmodule Ide.Screenshots do
     Application.get_env(:ide, Ide.PebbleToolchain, [])
     |> Keyword.get(:emulator_target, "basalt")
   end
+
+  @spec emulator_target_from_opts(opts()) :: String.t()
+  defp emulator_target_from_opts(opts) do
+    opts
+    |> Keyword.get(:emulator_target)
+    |> resolve_emulator_target()
+  end
+
+  @spec resolve_emulator_target(term()) :: String.t()
+  defp resolve_emulator_target(target) when is_binary(target) do
+    case String.trim(target) do
+      "" -> configured_emulator_target()
+      trimmed -> trimmed
+    end
+  end
+
+  defp resolve_emulator_target(_), do: configured_emulator_target()
 
   @spec file_name_image?(String.t()) :: boolean()
   defp file_name_image?(name) do

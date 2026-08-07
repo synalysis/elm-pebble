@@ -44,7 +44,6 @@ defmodule Elmc.Backend.SizeProfile do
     |> Map.put_new(:prune_native_wrappers, true)
     |> Map.put_new(:plan_ir_mode, :primary)
     |> Map.put_new(:plan_ir_strict, true)
-    |> Map.put_new(:native_worker_model, true)
     |> Map.put_new(:enum_tag_peel, true)
     |> Map.put_new(:plan_emit, :goto)
     |> Map.put_new(:fusion_supersede_native, true)

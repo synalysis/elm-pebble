@@ -14,6 +14,7 @@ defmodule Elmc.Runtime.Generator do
   alias Elmc.Runtime.RcMacros
   alias Elmc.Runtime.AllocProbe
   alias Elmc.Runtime.AllocTrack
+  alias Elmc.Runtime.OwnedSlotsPool
   alias Elmc.Runtime.RcTrack
 
   @type write_opts :: [prune_from_dir: String.t() | nil, pebble_int32: boolean()]
@@ -1527,6 +1528,23 @@ defmodule Elmc.Runtime.Generator do
   defp runtime_call_dependencies("elmc_calloc"),
     do: ["elmc_calloc", "elmc_calloc_impl", "elmc_log_alloc_failed"]
 
+  defp runtime_call_dependencies("elmc_owned_slots_acquire"),
+    do: [
+      "elmc_owned_slots_acquire",
+      "elmc_owned_slots_release",
+      "elmc_owned_slots_pool_state",
+      "elmc_calloc",
+      "elmc_calloc_impl",
+      "elmc_log_alloc_failed"
+    ]
+
+  defp runtime_call_dependencies("elmc_owned_slots_release"),
+    do: [
+      "elmc_owned_slots_release",
+      "elmc_owned_slots_acquire",
+      "elmc_owned_slots_pool_state"
+    ]
+
   defp runtime_call_dependencies("elmc_realloc"),
     do: ["elmc_realloc", "elmc_realloc_impl", "elmc_log_alloc_failed"]
 
@@ -2325,6 +2343,8 @@ defmodule Elmc.Runtime.Generator do
     #{RcMacros.release_array_lifo_declaration()}
 
     #{AllocTrack.header_declarations()}
+
+    #{OwnedSlotsPool.header_declarations()}
 
     #{AllocProbe.header_declarations()}
 
@@ -11629,6 +11649,8 @@ defmodule Elmc.Runtime.Generator do
     #{RcMacros.source_impl()}
 
     #{AllocTrack.source_impl()}
+
+    #{OwnedSlotsPool.source_impl()}
 
     #{AllocProbe.source_impl()}
 

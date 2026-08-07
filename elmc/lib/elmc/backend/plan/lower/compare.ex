@@ -28,7 +28,17 @@ defmodule Elmc.Backend.Plan.Lower.Compare do
             compile_union_ctor_equality(subject_expr, ctor_name, compare_kind, ctx, b)
 
           :error ->
-            compile_generic_compare(kind, left, right, ctx, b)
+            case Elmc.Backend.Plan.Lower.PebbleWatchTrig.try_compile_compare(
+                   %{kind: kind, left: left, right: right},
+                   ctx,
+                   b
+                 ) do
+              {:ok, reg, b1} ->
+                {:ok, reg, b1}
+
+              :unsupported ->
+                compile_generic_compare(kind, left, right, ctx, b)
+            end
         end
     end
   end

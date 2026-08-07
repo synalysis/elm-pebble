@@ -54,6 +54,7 @@ defmodule IdeWeb.Router do
 
     get "/", PageController, :home
     get "/login", AuthController, :login
+    get "/auth/firebase/bridge", AuthController, :firebase_bridge
     get "/auth/status", AuthController, :status
     post "/auth/firebase", AuthController, :firebase
     post "/auth/email/continue", AuthController, :email_continue

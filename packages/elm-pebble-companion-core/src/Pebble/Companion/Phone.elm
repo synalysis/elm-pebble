@@ -153,12 +153,6 @@ port preferencesPlatformIncoming : (Decode.Value -> msg) -> Sub msg
 port configurationPlatformIncoming : (Decode.Value -> msg) -> Sub msg
 
 
-port webSocketPlatformIncoming : (Decode.Value -> msg) -> Sub msg
-
-
-port webSocketCommandsPlatformIncoming : (Decode.Value -> msg) -> Sub msg
-
-
 port lifecyclePlatformIncoming : (Decode.Value -> msg) -> Sub msg
 
 
@@ -233,12 +227,6 @@ platformIncomingFor handlerId toMsg =
 
         "configuration" ->
             configurationPlatformIncoming toMsg
-
-        "webSocket" ->
-            webSocketPlatformIncoming toMsg
-
-        "webSocket-commands" ->
-            webSocketCommandsPlatformIncoming toMsg
 
         "lifecycle" ->
             lifecyclePlatformIncoming toMsg

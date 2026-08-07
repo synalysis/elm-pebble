@@ -48,6 +48,8 @@ defmodule Elmc.Backend.Pebble.SourceWriter.ViewRuntime.SceneBuild.EnsureFinish d
       app->scene.dirty = 0;
     #if ELMC_PEBBLE_SCENE_CACHE_ENABLED
       app->scene_draw_byte_offset = 0;
+      app->scene_rebuild_fallback_byte_count = 0;
+      app->scene_rebuild_fallback_command_count = 0;
     #endif
     #if ELMC_PEBBLE_DIRTY_REGION_ENABLED
       if (!app->prev_scene.bytes || app->prev_scene.byte_count <= 0) {

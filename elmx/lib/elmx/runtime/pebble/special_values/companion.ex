@@ -20,13 +20,6 @@ defmodule Elmx.Runtime.Pebble.SpecialValues.Companion do
       "Pebble.Companion.Phone.send" -> companion_phone_send(args)
       "Pebble.Companion.Phone.request" -> {:ok, %{op: :cmd_none}}
       "Pebble.Companion.Phone.requestWithPayload" -> {:ok, %{op: :cmd_none}}
-      "Pebble.Companion.WebSocket.setup" -> {:ok, %{op: :cmd_none}}
-      "Pebble.Companion.WebSocket.setupCommands" -> {:ok, %{op: :cmd_none}}
-      "Pebble.Companion.WebSocket.connect" -> ui_call("elmx_companion_websocket_connect", args)
-      "Pebble.Companion.WebSocket.disconnect" -> ui_call("elmx_companion_websocket_disconnect", args)
-      "Pebble.Companion.WebSocket.send" -> ui_call("elmx_companion_websocket_send", args)
-      "Pebble.Companion.WebSocket.onWebSocket" -> companion_subscription_stub(args)
-      "Pebble.Companion.WebSocket.onCommands" -> companion_subscription_stub(args)
       "Pebble.Companion.Timeline.setupToken" -> {:ok, %{op: :cmd_none}}
       "Pebble.Companion.Timeline.setupCommands" -> {:ok, %{op: :cmd_none}}
       "Pebble.Companion.Timeline.getToken" -> companion_bridge_call("timeline", "getToken", args)

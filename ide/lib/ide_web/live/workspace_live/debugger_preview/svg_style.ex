@@ -121,5 +121,11 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview.SvgStyle do
   end
 
   @spec style_color(svg_style(), atom(), wire_value()) :: integer() | nil
-  defp style_color(style, key, fallback), do: Map.get(style, key) || fallback
+  defp style_color(style, key, op_color) do
+    # Drawable-embedded colors win. Sticky stroke_color/fill_color ops only fill
+    # gaps for primitives like fill_radial that omit color and rely on context.
+    # Preferring style over op.color painted Yes's black inner dial as blueMoon
+    # and the 24h hand/hub as chromeYellow after sun-wedge style ops.
+    op_color || Map.get(style, key)
+  end
 end

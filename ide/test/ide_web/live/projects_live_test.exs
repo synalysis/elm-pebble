@@ -163,6 +163,14 @@ defmodule IdeWeb.ProjectsLiveTest do
     refute has_element?(view, "button[form='project-form'][disabled]")
   end
 
+  test "template query opens create modal with selected template", %{conn: conn} do
+    assert {:ok, _view, html} = live(conn, ~p"/projects?template=watchface-yes&new=1")
+
+    assert html =~ "Create project"
+    assert html =~ ~s(value="YES")
+    assert html =~ "phx-value-template=\"watchface-yes\""
+  end
+
   test "create project modal filters templates by type and companion app", %{conn: conn} do
     assert {:ok, view, _html} = live(conn, ~p"/projects")
 

@@ -321,15 +321,38 @@ defmodule Ide.Emulator.SdkScreenshotStyle do
     if byte_size(rgb) < expected do
       {:error, {:invalid_rgb_buffer, byte_size(rgb), expected}}
     else
-      with {:ok, rgba} <- build_rgba(platform, rgb, width, height, []) do
-        Ide.Png.encode_rgba(rgba, width, height)
+      with {:ok, rgba, out_w, out_h} <- build_rgba(platform, rgb, width, height, []) do
+        Ide.Png.encode_rgba(rgba, out_w, out_h)
       end
+    end
+  end
+
+  @doc """
+  Post-processes a browser/embedded canvas PNG.
+
+  Skips SDK colour remapping (already applied by the VNC client) but still
+  repairs top-left bezels and applies roundify / edge cleanup.
+  """
+  @spec process_browser_capture(String.t(), binary()) ::
+          {:ok, binary()} | {:error, Types.screenshot_error() | Ide.Png.png_error()}
+  def process_browser_capture(platform, png) when is_binary(platform) and is_binary(png) do
+    with {:ok, width, height, rgba} <- Ide.Png.load_rgba(png) do
+      rgb = rgba_to_rgb(rgba)
+      {rgb, width, height} = ScreenshotCaptureRepair.repair_rgb(rgb, width, height, platform)
+
+      rgba =
+        rgb
+        |> rgb_to_rgba()
+        |> roundify(platform, width, height)
+        |> ScreenshotCaptureRepair.repair_rgba(width, height, platform)
+
+      Ide.Png.encode_rgba(rgba, width, height)
     end
   end
 
   @doc false
   @spec build_rgba(String.t(), binary(), pos_integer(), pos_integer()) ::
-          {:ok, binary()} | {:error, Types.screenshot_error()}
+          {:ok, binary(), pos_integer(), pos_integer()} | {:error, Types.screenshot_error()}
   def build_rgba(platform, rgb, width, height, opts \\ []) do
     {rgb, width, height} = ScreenshotCaptureRepair.repair_rgb(rgb, width, height, platform, opts)
 
@@ -340,7 +363,7 @@ defmodule Ide.Emulator.SdkScreenshotStyle do
       |> roundify(platform, width, height)
       |> ScreenshotCaptureRepair.repair_rgba(width, height, platform)
 
-    {:ok, rgba}
+    {:ok, rgba, width, height}
   end
 
   @spec correct_colours(binary()) :: binary()
@@ -362,6 +385,13 @@ defmodule Ide.Emulator.SdkScreenshotStyle do
   defp rgb_to_rgba(rgb) do
     for <<r, g, b <- rgb>>, into: <<>> do
       <<r, g, b, 255>>
+    end
+  end
+
+  @spec rgba_to_rgb(binary()) :: binary()
+  defp rgba_to_rgb(rgba) do
+    for <<r, g, b, _a <- rgba>>, into: <<>> do
+      <<r, g, b>>
     end
   end
 

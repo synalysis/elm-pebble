@@ -167,6 +167,29 @@ defmodule Ide.PebbleToolchain.Companion do
     end
   end
 
+  @elm_wss_package "mbr/elm-wss"
+
+  @spec phone_uses_elm_wss?(String.t()) :: boolean()
+  def phone_uses_elm_wss?(workspace_root) when is_binary(workspace_root) do
+    case phone_companion_project_root(workspace_root) do
+      nil ->
+        false
+
+      phone_root ->
+        path = Path.join(phone_root, "elm.json")
+
+        with {:ok, content} <- File.read(path),
+             {:ok, %{"dependencies" => deps}} <- Jason.decode(content) do
+          direct = Map.get(deps, "direct", %{})
+          indirect = Map.get(deps, "indirect", %{})
+
+          Map.has_key?(direct, @elm_wss_package) or Map.has_key?(indirect, @elm_wss_package)
+        else
+          _ -> false
+        end
+    end
+  end
+
   @spec write_index(String.t(), String.t(), PebblePreferences.schema() | nil) ::
           :ok | {:error, toolchain_error()}
   def write_index(workspace_root, app_root, preferences_schema) do
@@ -178,8 +201,9 @@ defmodule Ide.PebbleToolchain.Companion do
         index_path = Path.join(app_root, "src/pkjs/index.js")
 
         with :ok <- File.mkdir_p(Path.dirname(index_path)),
-             {:ok, content} <- companion_index_content(preferences_schema),
-             :ok <- File.write(index_path, content) do
+             {:ok, content} <- companion_index_content(workspace_root, preferences_schema),
+             :ok <- File.write(index_path, content),
+             :ok <- write_elm_wss_runtime(workspace_root, app_root) do
           :ok
         end
     end
@@ -187,7 +211,7 @@ defmodule Ide.PebbleToolchain.Companion do
 
   @doc false
   def companion_index_js_for_preferences(preferences_schema) do
-    case companion_index_content(preferences_schema) do
+    case companion_index_content(nil, preferences_schema) do
       {:ok, content} -> content
       {:error, reason} -> raise "companion_index_content failed: #{inspect(reason)}"
     end
@@ -224,9 +248,12 @@ defmodule Ide.PebbleToolchain.Companion do
     end
   end
 
-  @spec companion_index_content(PebblePreferences.schema() | nil) ::
+  @spec companion_index_content(String.t() | nil, PebblePreferences.schema() | nil) ::
           {:ok, String.t()} | {:error, toolchain_error()}
-  defp companion_index_content(preferences_schema) do
+  defp companion_index_content(workspace_root, preferences_schema) do
+    elm_wss? =
+      is_binary(workspace_root) and phone_uses_elm_wss?(workspace_root)
+
     with {:ok, template_root} <- Command.template_app_root() do
       template_path = Path.join(template_root, "src/pkjs/index.js")
 
@@ -238,17 +265,60 @@ defmodule Ide.PebbleToolchain.Companion do
             end
 
           patched =
-            String.replace(
-              source,
+            source
+            |> String.replace(
               "var generatedConfigurationUrl = null;",
               "var generatedConfigurationUrl = #{Jason.encode!(preferences_url)};"
             )
+            |> String.replace(
+              "var companionElmWssEnabled = false;",
+              "var companionElmWssEnabled = #{elm_wss?};"
+            )
+            |> maybe_strip_elm_wss_require(elm_wss?)
 
           {:ok, patched}
 
         {:error, reason} ->
           {:error, {:read_companion_index_template_failed, reason}}
       end
+    end
+  end
+
+  # Webpack resolves require() statically, so a runtime `if` still fails the PKJS
+  # bundle when elm-websockets.js is absent. Strip the require for non-wss apps.
+  @spec maybe_strip_elm_wss_require(String.t(), boolean()) :: String.t()
+  defp maybe_strip_elm_wss_require(source, true), do: source
+
+  defp maybe_strip_elm_wss_require(source, false) do
+    String.replace(
+      source,
+      """
+      if (companionElmWssEnabled) {
+          require("./elm-websockets.js");
+      }
+
+      """,
+      ""
+    )
+  end
+
+  @spec write_elm_wss_runtime(String.t(), String.t()) :: :ok | {:error, toolchain_error()}
+  defp write_elm_wss_runtime(workspace_root, app_root) do
+    runtime_path = Path.join(app_root, "src/pkjs/elm-websockets.js")
+
+    if phone_uses_elm_wss?(workspace_root) do
+      with {:ok, template_root} <- Command.template_app_root(),
+           {:ok, source} <-
+             File.read(Path.join(template_root, "src/pkjs/elm-websockets.js")),
+           :ok <- File.mkdir_p(Path.dirname(runtime_path)),
+           :ok <- File.write(runtime_path, source) do
+        :ok
+      else
+        {:error, reason} -> {:error, {:read_elm_wss_runtime_template_failed, reason}}
+      end
+    else
+      _ = File.rm(runtime_path)
+      :ok
     end
   end
 end

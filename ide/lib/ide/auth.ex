@@ -12,6 +12,7 @@ defmodule Ide.Auth do
   import Ecto.Query
 
   alias Ide.Auth.Email
+  alias Ide.Auth.FirebaseTokenStore
   alias Ide.Auth.User
   alias Ide.Auth.Types, as: AuthTypes
   alias Ide.Projects
@@ -69,6 +70,14 @@ defmodule Ide.Auth do
   @spec app_store_publish_enabled?() :: boolean()
   def app_store_publish_enabled?, do: mode() in [:local, :public_pebble]
 
+  @doc """
+  True when CloudPebble Dev Connect sideload to a paired watch is available.
+
+  Uses the same Firebase identity as automated App Store publish (`local` and `public_pebble`).
+  """
+  @spec cloudpebble_sideload_enabled?() :: boolean()
+  def cloudpebble_sideload_enabled?, do: app_store_publish_enabled?()
+
   @spec firebase_config() :: AuthTypes.firebase_config()
   def firebase_config do
     config = Application.get_env(:ide, __MODULE__, [])
@@ -88,6 +97,57 @@ defmodule Ide.Auth do
   def get_user(nil), do: nil
   def get_user(id), do: Repo.get(User, id)
 
+  @doc """
+  Resolves the Firebase ID token from session + `FirebaseTokenStore`.
+
+  In local mode the IDE account (`user_id`) stays unset; CloudPebble identity is
+  stored as `firebase_user_id` so project ownership is unchanged.
+  """
+  @spec resolve_firebase_session_token(map()) :: String.t() | nil
+  def resolve_firebase_session_token(session) when is_map(session) do
+    user_id = session_int(session, "user_id")
+    firebase_user_id = session_int(session, "firebase_user_id")
+    session_token = session_string(session, "firebase_id_token")
+
+    store_token =
+      cond do
+        is_integer(user_id) -> FirebaseTokenStore.get(user_id)
+        is_integer(firebase_user_id) -> FirebaseTokenStore.get(firebase_user_id)
+        true -> nil
+      end
+
+    cond do
+      is_binary(store_token) and store_token != "" -> store_token
+      is_binary(session_token) and session_token != "" -> session_token
+      true -> nil
+    end
+  end
+
+  def resolve_firebase_session_token(_), do: nil
+
+  defp session_int(session, key) do
+    case session_get(session, key) do
+      id when is_integer(id) and id > 0 -> id
+      _ -> nil
+    end
+  end
+
+  defp session_string(session, key) do
+    case session_get(session, key) do
+      value when is_binary(value) -> value
+      _ -> nil
+    end
+  end
+
+  defp session_get(session, "user_id"), do: Map.get(session, "user_id") || Map.get(session, :user_id)
+
+  defp session_get(session, "firebase_user_id"),
+    do: Map.get(session, "firebase_user_id") || Map.get(session, :firebase_user_id)
+
+  defp session_get(session, "firebase_id_token"),
+    do: Map.get(session, "firebase_id_token") || Map.get(session, :firebase_id_token)
+
+  defp session_get(session, key), do: Map.get(session, key)
   @spec send_login_link(String.t()) ::
           :ok
           | {:error, :invalid_email | :mailer_not_configured | :delivery_failed}

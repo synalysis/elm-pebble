@@ -1,9 +1,15 @@
-module CompanionApp exposing (main)
+port module CompanionApp exposing (main)
 
 import Companion.Types exposing (PhoneToWatch(..), WatchToPhone(..), WebSocketStatus(..))
 import Pebble.Companion.Phone as Phone
-import Pebble.Companion.WebSocket as WebSocket
 import Platform
+import WebsocketSimple as WebSocket exposing (RawMsg(..))
+
+
+port wsCmd : WebSocket.CommandPort msg
+
+
+port wsMsg : WebSocket.EventPort msg
 
 
 type alias Model =
@@ -14,19 +20,13 @@ type alias Model =
 
 type Msg
     = FromWatch (Result String WatchToPhone)
-    | WebSocketEvent WebSocket.Event
-    | WebSocketCommand (Result String ())
-    | Connected (Result String ())
+    | WebSocketEvent WebSocket.RawMsg
 
 
 init : () -> ( Model, Cmd Msg )
 init _ =
     ( { status = Closed, statusDetail = "connecting" }
-    , Cmd.batch
-        [ WebSocket.setup
-        , WebSocket.setupCommands
-        , WebSocket.connect "wss://echo.websocket.events" Connected
-        ]
+    , WebSocket.open wsCmd "wss://ws.postman-echo.com/raw"
     )
 
 
@@ -38,7 +38,7 @@ update msg model =
 
         FromWatch (Ok PingWebSocket) ->
             if model.status == Open then
-                ( model, WebSocket.send "ping" WebSocketCommand )
+                ( model, WebSocket.send wsCmd (WebSocket.Transmit "ping") )
 
             else
                 ( model, pushStatus model )
@@ -46,70 +46,43 @@ update msg model =
         FromWatch (Err _) ->
             ( model, Cmd.none )
 
-        Connected (Ok ()) ->
+        WebSocketEvent (Connected _) ->
             let
                 next =
-                    { status = Open, statusDetail = "connected" }
+                    { status = Open, statusDetail = "open" }
             in
             ( next, pushStatus next )
 
-        Connected (Err error) ->
+        WebSocketEvent (Disconnected _) ->
             let
                 next =
-                    { status = Error, statusDetail = error }
+                    { status = Closed, statusDetail = "closed" }
             in
             ( next, pushStatus next )
 
-        WebSocketEvent event ->
-            case event of
-                WebSocket.Opened ->
-                    let
-                        next =
-                            { status = Open, statusDetail = "open" }
-                    in
-                    ( next, pushStatus next )
+        WebSocketEvent (Text text) ->
+            let
+                next =
+                    { status = Open, statusDetail = truncate text 24 }
+            in
+            ( next, pushStatus next )
 
-                WebSocket.Closed _ ->
-                    let
-                        next =
-                            { status = Closed, statusDetail = "closed" }
-                    in
-                    ( next, pushStatus next )
+        WebSocketEvent (TransportError error) ->
+            let
+                next =
+                    { status = Error, statusDetail = WebSocket.errorToString error }
+            in
+            ( next, pushStatus next )
 
-                WebSocket.Message text ->
-                    let
-                        next =
-                            { status = Open, statusDetail = truncate text 24 }
-                    in
-                    ( next, pushStatus next )
-
-                WebSocket.Error error ->
-                    let
-                        next =
-                            { status = Error, statusDetail = error }
-                    in
-                    ( next, pushStatus next )
-
-                WebSocket.Unknown _ ->
-                    ( model, Cmd.none )
-
-        WebSocketCommand (Ok ()) ->
+        WebSocketEvent (Binary _) ->
             ( model, Cmd.none )
-
-        WebSocketCommand (Err error) ->
-            let
-                next =
-                    { status = Error, statusDetail = error }
-            in
-            ( next, pushStatus next )
 
 
 subscriptions : Model -> Sub Msg
 subscriptions _ =
     Sub.batch
         [ Phone.onWatchToPhone FromWatch
-        , WebSocket.onWebSocket WebSocketEvent
-        , WebSocket.onCommands WebSocketCommand
+        , Sub.map WebSocketEvent (WebSocket.subscribe wsMsg)
         ]
 
 

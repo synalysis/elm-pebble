@@ -89,7 +89,7 @@ defmodule Ide.MixProject do
       {:jason, "~> 1.2"},
       {:mdex, "~> 0.13"},
       {:mdex_gfm, "~> 0.2"},
-      {:html_sanitize_ex, "~> 1.4"},
+      {:html_sanitize_ex, "~> 1.5.4"},
       {:dns_cluster, "~> 0.1.1"},
       {:bandit, "~> 1.12.1"},
       {:hpax, "~> 1.0.4", override: true},

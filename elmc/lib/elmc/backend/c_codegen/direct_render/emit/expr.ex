@@ -3,6 +3,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Expr do
   alias Elmc.Backend.CCodegen.Types, as: Types
 
 
+  alias Elmc.Backend.CCodegen.CaseCompile
   alias Elmc.Backend.CCodegen.ConstructorTagCase
   alias Elmc.Backend.CCodegen.DirectRender.CommandDef
   alias Elmc.Backend.CCodegen.CSource
@@ -294,9 +295,13 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Expr do
     hoisted_before = Process.get(:elmc_hoisted_native_int_inits, %{})
 
     case_env =
-      if Patterns.maybe_unwrap_just_case?(branches),
-        do: Map.put(env, :maybe_unwrap_just, true),
-        else: env
+      env
+      |> then(fn case_env ->
+        if Patterns.maybe_unwrap_just_case?(branches),
+          do: Map.put(case_env, :maybe_unwrap_just, true),
+          else: case_env
+      end)
+      |> CaseCompile.put_case_subject_payload_type(subject)
 
     result =
       Enum.reduce_while(branches, {:ok, "", counter}, fn branch, {:ok, acc, c} ->
@@ -1036,6 +1041,12 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Expr do
     Enum.all?(items, &fragment_expr?(&1, env))
   end
 
+  defp fragment_expr?(%{op: :let_in, in_expr: in_expr}, env) do
+    # Keep subject/bindings with the deferred fragment so `let subject = … in case …`
+    # of render ops stays emit-able when bound to a command-list var (Yes moon arc).
+    fragment_expr?(in_expr, env)
+  end
+
   defp fragment_expr?(%{op: :case, branches: branches}, env) do
     Enum.all?(branches, &fragment_expr?(&1.expr, env))
   end
@@ -1110,6 +1121,9 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Expr do
       %{op: :let_in, in_expr: in_expr} ->
         render_list_expr?(in_expr, env)
 
+      %{op: :case, branches: branches} ->
+        Enum.all?(branches, &render_list_expr?(&1.expr, env))
+
       %{op: :call, name: "__append__", args: [left, right]} ->
         render_list_expr?(left, env) and render_list_expr?(right, env)
 
@@ -1122,6 +1136,9 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Expr do
             render_list_expr?(head, env) and render_list_expr?(tail, env)
 
           ListLoopPlans.pipeline_fragment?(expr, env) ->
+            true
+
+          qualified_direct_fragment?(normalized, env) ->
             true
 
           true ->

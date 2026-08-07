@@ -19,9 +19,10 @@ type alias Layout =
     , handLen : Int
     , pad : Int
     , topLeftTitle : Ui.Rect
-    , topLeftLabel : Ui.Rect
+    , topLeftIcon : { x : Int, y : Int }
     , topRightDate : Ui.Rect
     , bottomLeftWeather : Ui.Rect
+    , bottomLeftWeatherVector : { x : Int, y : Int }
     , bottomRight : BottomRightLayout
     }
 
@@ -94,16 +95,28 @@ fromScreen screenW screenH =
             max 4 (minDim // 36)
 
         bottomRightX =
-            screenW - 64
+            screenW // 2 + pad
 
         bottomRightBottom =
             screenH - pad
 
         textW =
-            62
+            screenW - bottomRightX - pad
 
+        -- Match FONT_KEY_GOTHIC_18 box height so device glyphs are not clipped away.
         lineH =
-            14
+            18
+
+        -- Weather PDCs are 48x48; text must start to the right of that box or
+        -- white glyphs sit on the white icon and disappear.
+        weatherIconSize =
+            48
+
+        weatherIconX =
+            0
+
+        weatherTextX =
+            weatherIconX + weatherIconSize + 2
     in
     { screenW = screenW
     , screenH = screenH
@@ -119,18 +132,29 @@ fromScreen screenW screenH =
     , moonRingR = moonRingR
     , handLen = handLen
     , pad = pad
-    , topLeftTitle = { x = pad, y = pad, w = 40, h = 16 }
-    , topLeftLabel = { x = pad, y = pad + 16, w = 44, h = 12 }
-    , topRightDate = { x = screenW - 52, y = pad, w = 48, h = lineH }
-    , bottomLeftWeather = { x = pad, y = bottomRightBottom - lineH, w = screenW // 2 - pad, h = lineH }
+    , topLeftTitle = { x = pad, y = pad, w = 40, h = 18 }
+    , topLeftIcon = { x = pad, y = pad + 18 }
+    , topRightDate = { x = screenW // 2, y = pad, w = screenW // 2 - pad, h = lineH }
+    , bottomLeftWeather =
+        { x = weatherTextX
+        , y = bottomRightBottom - lineH
+        , w = max 0 (screenW // 2 - weatherTextX - pad)
+        , h = lineH
+        }
+    , bottomLeftWeatherVector = { x = weatherIconX, y = bottomRightBottom - weatherIconSize }
     , bottomRight =
         { x = bottomRightX
         , bottom = bottomRightBottom
         , textW = textW
         , lineH = lineH
-        , vector = { x = bottomRightX + 3, y = bottomRightBottom - 38 }
-        , singleLine = { x = bottomRightX, y = bottomRightBottom - lineH, w = 60, h = lineH }
-        , countdownLabelH = 12
+        , vector = { x = screenW - pad - 36, y = bottomRightBottom - 40 }
+        , singleLine =
+            { x = bottomRightX
+            , y = bottomRightBottom - lineH
+            , w = textW
+            , h = lineH
+            }
+        , countdownLabelH = 14
         , countdownTimeH = lineH
         }
     }

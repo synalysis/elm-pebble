@@ -114,10 +114,10 @@
       "compositing_mode": 0,
       "cx": 72,
       "cy": 84,
-      "fill_color": 199,
+      "fill_color": 192,
       "kind": "fill_circle",
       "r": 54,
-      "stroke_color": 199,
+      "stroke_color": 192,
       "stroke_width": 1
     },
     {
@@ -140,10 +140,10 @@
       "compositing_mode": 0,
       "cx": 24,
       "cy": 153,
-      "fill_color": 248,
+      "fill_color": 244,
       "kind": "fill_circle",
       "r": 8,
-      "stroke_color": 248,
+      "stroke_color": 244,
       "stroke_width": 1
     },
     {
@@ -152,10 +152,10 @@
       "compositing_mode": 0,
       "cx": 72,
       "cy": 153,
-      "fill_color": 248,
+      "fill_color": 243,
       "kind": "fill_circle",
       "r": 8,
-      "stroke_color": 248,
+      "stroke_color": 243,
       "stroke_width": 1
     },
     {
@@ -164,10 +164,10 @@
       "compositing_mode": 0,
       "cx": 120,
       "cy": 153,
-      "fill_color": 248,
+      "fill_color": 255,
       "kind": "fill_circle",
       "r": 8,
-      "stroke_color": 248,
+      "stroke_color": 255,
       "stroke_width": 1
     },
     {
@@ -178,11 +178,11 @@
       "cy": 84,
       "kind": "circle",
       "r": 54,
-      "stroke_color": 248,
+      "stroke_color": 234,
       "stroke_width": 1
     }
   ],
-  "preview_ops_sha256": "c5149e8c6d3bfff7567d472dbc8a44106b7bdb2a64bdce2a58ae3701b0d22bf9",
+  "preview_ops_sha256": "d8d69b3cd2f21a6414f2ca6062525849a571acb2f3c1d9078d989fd40bdd3485",
   "render_tree": {
     "node_count": 21,
     "node_types": [

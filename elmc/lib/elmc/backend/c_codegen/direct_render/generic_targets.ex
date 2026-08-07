@@ -940,11 +940,11 @@ defmodule Elmc.Backend.CCodegen.DirectRender.GenericTargets do
     case Map.get(decl, :type) do
       type when is_binary(type) ->
         # Direct view streaming still emits boxed calls for scalar helpers under
-        # Ui nodes (String labels, Int for textInt, Bool flags, etc.).
+        # Ui nodes (String labels, Int for textInt, Bool flags, Color for clear/fill).
         not String.contains?(type, "RenderOp") and
           (String.contains?(type, "String") or String.contains?(type, "Int") or
              String.contains?(type, "Bool") or String.contains?(type, "Float") or
-             String.contains?(type, "Char"))
+             String.contains?(type, "Char") or String.contains?(type, "Color"))
 
       _ ->
         false

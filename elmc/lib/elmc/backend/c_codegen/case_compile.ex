@@ -1041,10 +1041,14 @@ defmodule Elmc.Backend.CCodegen.CaseCompile do
     Map.update(env, :__declared_outs__, MapSet.new([out]), &MapSet.put(&1, out))
   end
 
+  @doc """
+  Stamp the unwrapped Maybe/record payload type onto the case env so field
+  access in Just arms can resolve indices (including ambiguous names like
+  `label`) without falling back to `elmc_record_get` by name on unnamed records.
+  """
   @spec put_case_subject_payload_type(Types.compile_env(), Types.case_subject() | Types.expr()) ::
           Types.compile_env()
-
-  defp put_case_subject_payload_type(env, subject) do
+  def put_case_subject_payload_type(env, subject) do
     subject_expr = subject_expr(subject)
 
     payload_type =

@@ -107,6 +107,7 @@ function vncWebSocketReadyStateLabel(readyState: number | null | undefined): str
 
 export class EmulatorVnc {
   private colourCorrectionRaf = 0
+  private pendingCanvasSampleTimers = new Map<string, ReturnType<typeof setTimeout>>()
 
   constructor(host: EmulatorVncHost) {
     this.host = host
@@ -988,7 +989,12 @@ export class EmulatorVnc {
 
   scheduleVncCanvasSample(label: string, delayMs = 0): void {
     if (!this.host.emulatorDebugEnabled()) return
+    // Coalesce rapid phone→watch AppMessages onto one sample per label/delay.
+    const key = `${label}@${delayMs}`
+    if (this.pendingCanvasSampleTimers.has(key)) return
+
     const sample = () => {
+      this.pendingCanvasSampleTimers.delete(key)
       window.requestAnimationFrame(() => {
         window.requestAnimationFrame(() => {
           this.logVncCanvasSample(label)
@@ -996,9 +1002,9 @@ export class EmulatorVnc {
       })
     }
     if (delayMs > 0) {
-      window.setTimeout(sample, delayMs)
+      this.pendingCanvasSampleTimers.set(key, window.setTimeout(sample, delayMs))
     } else {
-      sample()
+      this.pendingCanvasSampleTimers.set(key, window.setTimeout(sample, 0))
     }
   }
 

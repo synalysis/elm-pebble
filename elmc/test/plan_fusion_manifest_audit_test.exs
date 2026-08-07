@@ -103,9 +103,10 @@ defmodule Elmc.PlanFusionManifestAuditTest do
 
     weather = {:record, [{:union, 1, 235}, 0, 0, 0, 0]}
 
+    # Model.weather is field index 10 (after moonPhaseE6).
     assert {:ok, "24C"} =
              Loader.run_manifest_entry(out_dir, {"Main", "temperatureString"},
-               params: [yes_model.([{11, {:just, weather}}])]
+               params: [yes_model.([{10, {:just, weather}}])]
              )
   end
 

@@ -3036,7 +3036,12 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
     end
   end
 
-  defp compile_runtime_call(expr, ctx, b), do: compile_runtime_call_default(expr, ctx, b)
+  defp compile_runtime_call(expr, ctx, b) do
+    case Elmc.Backend.Plan.Lower.PebbleWatchTrig.try_compile_runtime_call(expr, ctx, b) do
+      {:ok, reg, b1} -> {:ok, reg, b1}
+      :unsupported -> compile_runtime_call_default(expr, ctx, b)
+    end
+  end
 
   @spec compile_runtime_call_default(map() | term(), Context.t(), Builder.t()) ::
           Types.compile_result()

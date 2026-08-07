@@ -6,6 +6,9 @@ defmodule Ide.Emulator.ScreenshotCaptureRepair do
 
   @white <<255, 255, 255>>
   @transparent <<0, 0, 0, 0>>
+  # Basalt/QEMU captures commonly show a 2–3px L-bezel; keep a modest cap.
+  @max_top_left_bezel_depth 8
+  @black_edge_fraction 0.85
 
   @doc """
   Repairs common emulator/firmware capture artifacts before SDK colour correction.
@@ -24,7 +27,13 @@ defmodule Ide.Emulator.ScreenshotCaptureRepair do
       end
 
     if top_left_bezel?(rgb, width, height) do
-      {shift_top_left(rgb, width, height, @white), width, height}
+      {dx, dy} = top_left_bezel_offset(rgb, width, height)
+
+      if dx > 0 or dy > 0 do
+        {shift_top_left(rgb, width, height, dx, dy, @white), width, height}
+      else
+        {rgb, width, height}
+      end
     else
       {rgb, width, height}
     end
@@ -66,13 +75,55 @@ defmodule Ide.Emulator.ScreenshotCaptureRepair do
     col_last = black_fraction(rgb, width, height, fn y -> {width - 1, y} end)
 
     uniform_bezel =
-      row0 >= 0.85 and col0 >= 0.85 and row_last < 0.5 and col_last < 0.5
+      row0 >= @black_edge_fraction and col0 >= @black_edge_fraction and row_last < 0.5 and
+        col_last < 0.5
 
     # Round/QEMU captures: a full black left column with a partial top row (shift down-right).
     shifted_capture =
       col0 >= 0.75 and row0 >= 0.2 and row_last < 0.45 and col_last < 0.45
 
     uniform_bezel or shifted_capture
+  end
+
+  @spec top_left_bezel_offset(binary(), pos_integer(), pos_integer()) ::
+          {non_neg_integer(), non_neg_integer()}
+  defp top_left_bezel_offset(rgb, width, height) do
+    {
+      black_edge_depth(rgb, width, height, :left),
+      black_edge_depth(rgb, width, height, :top)
+    }
+  end
+
+  @spec black_edge_depth(binary(), pos_integer(), pos_integer(), :left | :top) ::
+          non_neg_integer()
+  defp black_edge_depth(rgb, width, height, :left) do
+    Enum.find_value(0..@max_top_left_bezel_depth, 0, fn d ->
+      cond do
+        d >= width ->
+          0
+
+        black_fraction(rgb, width, height, fn y -> {d, y} end) < @black_edge_fraction ->
+          d
+
+        true ->
+          nil
+      end
+    end)
+  end
+
+  defp black_edge_depth(rgb, width, height, :top) do
+    Enum.find_value(0..@max_top_left_bezel_depth, 0, fn d ->
+      cond do
+        d >= height ->
+          0
+
+        black_fraction(rgb, width, width, fn x -> {x, d} end) < @black_edge_fraction ->
+          d
+
+        true ->
+          nil
+      end
+    end)
   end
 
   @spec black_fraction(term(), term(), non_neg_integer(), term()) :: term()
@@ -87,17 +138,25 @@ defmodule Ide.Emulator.ScreenshotCaptureRepair do
     black / count
   end
 
-  @spec shift_top_left(term(), term(), term(), term()) :: term()
-
-  defp shift_top_left(rgb, width, height, fill) do
+  @spec shift_top_left(
+          binary(),
+          pos_integer(),
+          pos_integer(),
+          non_neg_integer(),
+          non_neg_integer(),
+          binary()
+        ) :: binary()
+  defp shift_top_left(rgb, width, height, dx, dy, fill)
+       when dx >= 0 and dy >= 0 and (dx > 0 or dy > 0) do
     for y <- 0..(height - 1), x <- 0..(width - 1), into: <<>> do
-      cond do
-        x > 0 and y > 0 ->
-          {r, g, b} = pixel_rgb(rgb, width, x - 1, y - 1)
-          <<r, g, b>>
+      sx = x + dx
+      sy = y + dy
 
-        true ->
-          fill
+      if sx < width and sy < height do
+        {r, g, b} = pixel_rgb(rgb, width, sx, sy)
+        <<r, g, b>>
+      else
+        fill
       end
     end
   end

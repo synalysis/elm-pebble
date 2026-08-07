@@ -318,16 +318,52 @@ defmodule Elmc.Backend.Plan.Lower.SpecialValues.Helpers do
 
   def health_metric_to_kernel_expr(%{op: :constructor_call, target: target, args: []})
       when is_binary(target) do
-    %{
-      op: :int_literal,
-      value: Map.get(IRQueries.bundled_health_metric_kernel_values(), target, 0)
-    }
+    %{op: :int_literal, value: health_metric_kernel_value(target)}
+  end
+
+  def health_metric_to_kernel_expr(%{op: :constructor_ref, target: target})
+      when is_binary(target) do
+    %{op: :int_literal, value: health_metric_kernel_value(target)}
+  end
+
+  def health_metric_to_kernel_expr(%{op: :qualified_ref, target: target})
+      when is_binary(target) do
+    %{op: :int_literal, value: health_metric_kernel_value(target)}
+  end
+
+  def health_metric_to_kernel_expr(%{op: :qualified_var, target: target})
+      when is_binary(target) do
+    %{op: :int_literal, value: health_metric_kernel_value(target)}
+  end
+
+  # Constructor tags may already be lowered to ints (historically 1-based). Prefer the
+  # union_ctor name so StepCount always maps to HealthMetricStepCount (0), not ActiveSeconds.
+  def health_metric_to_kernel_expr(%{op: :int_literal, union_ctor: ctor})
+      when is_binary(ctor) do
+    %{op: :int_literal, value: health_metric_kernel_value(ctor)}
   end
 
   def health_metric_to_kernel_expr(%{op: :int_literal, value: value}) when is_integer(value),
     do: %{op: :int_literal, value: value}
 
   def health_metric_to_kernel_expr(metric) when is_map(metric), do: metric
+
+  @spec health_metric_kernel_value(String.t()) :: non_neg_integer()
+  defp health_metric_kernel_value(target) when is_binary(target) do
+    values = IRQueries.bundled_health_metric_kernel_values()
+
+    cond do
+      Map.has_key?(values, target) ->
+        Map.fetch!(values, target)
+
+      String.contains?(target, ".") ->
+        short = target |> String.split(".") |> List.last()
+        Map.get(values, "Pebble.Health.#{short}", 0)
+
+      true ->
+        Map.get(values, "Pebble.Health.#{target}", 0)
+    end
+  end
 
   @spec runtime_fn_lambda(String.t(), [String.t()]) :: Types.ir_expr()
 

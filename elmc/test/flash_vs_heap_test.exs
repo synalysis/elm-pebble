@@ -70,15 +70,15 @@ defmodule Elmc.FlashVsHeapTest do
 
   test "flash bound when generated text dominates bin with enough large RC fns" do
     flash = %{"generated_text_share" => 0.5}
-    ram = %{"owned_slot_max" => 4, "worker_last_dispatch_cmd_cap" => 0, "native_worker_model" => true}
+    ram = %{"owned_slot_max" => 4, "worker_last_dispatch_cmd_cap" => 0}
     tier = %{eligible: true}
 
     assert Report.classify_constraint(flash, ram, tier) == :flash_bound
   end
 
-  test "heap bound when owned slots are deep and native model is off" do
+  test "heap bound when owned slots are deep and dispatch cmd cap is on" do
     flash = %{"generated_text_share" => 0.1}
-    ram = %{"owned_slot_max" => 24, "worker_last_dispatch_cmd_cap" => 8, "native_worker_model" => false}
+    ram = %{"owned_slot_max" => 24, "worker_last_dispatch_cmd_cap" => 8}
     tier = %{eligible: false}
 
     assert Report.classify_constraint(flash, ram, tier) == :heap_bound

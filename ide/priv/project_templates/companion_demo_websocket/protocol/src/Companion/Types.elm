@@ -2,7 +2,7 @@ module Companion.Types exposing (PhoneToWatch(..), WatchToPhone(..), WebSocketSt
 
 {-| Demo protocol for WebSocket companion APIs.
 
-Shows `Pebble.Companion.WebSocket`.
+Shows `mbr/elm-wss` via application-owned `wsCmd` / `wsMsg` ports.
 -}
 
 

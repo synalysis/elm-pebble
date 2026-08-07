@@ -56,11 +56,60 @@ defmodule Ide.Png do
     end
   end
 
+  @doc """
+  Decodes a truecolor RGBA PNG from a file path or raw bytes.
+  """
+  @spec load_rgba(binary() | String.t()) ::
+          {:ok, pos_integer(), pos_integer(), binary()} | {:error, png_error()}
+  def load_rgba(path_or_bytes) when is_binary(path_or_bytes) do
+    png =
+      if byte_size(path_or_bytes) >= 8 and binary_part(path_or_bytes, 0, 8) == @signature do
+        path_or_bytes
+      else
+        case File.read(path_or_bytes) do
+          {:ok, bytes} -> bytes
+          {:error, reason} -> {:error, reason}
+        end
+      end
+
+    case png do
+      {:error, _} = error ->
+        error
+
+      bytes ->
+        with {:ok, width, height, meta, idat} <- parse_chunks(bytes),
+             {:ok, inflated} <- zlib_uncompress(idat),
+             {:ok, pixels} <- decode_truecolor(inflated, width, height, meta) do
+          {:ok, width, height, pixels}
+        end
+    end
+  end
+
+  @spec decode_truecolor(binary(), pos_integer(), pos_integer(), map() | nil) ::
+          {:ok, binary()} | {:error, png_error()}
+  defp decode_truecolor(inflated, width, height, %{color_type: 2}) do
+    with {:ok, rgb} <- unfilter_rgb(inflated, width, height) do
+      {:ok, rgb_to_rgba(rgb)}
+    end
+  end
+
+  defp decode_truecolor(inflated, width, height, _meta) do
+    unfilter_rgba(inflated, width, height)
+  end
+
+  @spec rgb_to_rgba(binary()) :: binary()
+  defp rgb_to_rgba(rgb) do
+    rgb
+    |> :binary.bin_to_list()
+    |> Enum.chunk_every(3)
+    |> Enum.reduce(<<>>, fn [r, g, b], acc -> acc <> <<r, g, b, 255>> end)
+  end
+
   @spec decode_rgba(binary()) :: {:ok, binary()} | {:error, png_error()}
   defp decode_rgba(png) do
-    with {:ok, width, height, _meta, idat} <- parse_chunks(png),
+    with {:ok, width, height, meta, idat} <- parse_chunks(png),
          {:ok, inflated} <- zlib_uncompress(idat),
-         {:ok, rgba} <- unfilter_rgba(inflated, width, height) do
+         {:ok, rgba} <- decode_truecolor(inflated, width, height, meta) do
       {:ok, rgba}
     end
   end
@@ -95,8 +144,9 @@ defmodule Ide.Png do
     case type do
       "IHDR" ->
         case data do
-          <<w::unsigned-big-32, h::unsigned-big-32, 8, 6, 0, 0, 0>> ->
-            parse_chunks(rest, w, h, meta, idat)
+          <<w::unsigned-big-32, h::unsigned-big-32, 8, color_type, 0, 0, 0>>
+          when color_type in [2, 6] ->
+            parse_chunks(rest, w, h, %{color_type: color_type}, idat)
 
           _ ->
             {:error, :unsupported_png_format}
@@ -135,22 +185,30 @@ defmodule Ide.Png do
   end
 
   defp unfilter_rgba(data, width, height) do
-    row_bytes = width * 4
+    unfilter_truecolor(data, width, height, 4)
+  end
+
+  defp unfilter_rgb(data, width, height) do
+    unfilter_truecolor(data, width, height, 3)
+  end
+
+  defp unfilter_truecolor(data, width, height, bytes_per_pixel) do
+    row_bytes = width * bytes_per_pixel
     expected = height * (row_bytes + 1)
 
     if byte_size(data) < expected do
       {:error, {:png_incomplete_image_data, byte_size(data), expected}}
     else
       try do
-        rgba =
+        pixels =
           Enum.reduce(0..(height - 1), <<>>, fn y, acc ->
             row = :binary.part(data, y * (row_bytes + 1), row_bytes + 1)
-            <<filter, pixels::binary-size(^row_bytes)>> = row
-            unfiltered = unfilter_row(filter, pixels, acc, row_bytes, y)
+            <<filter, row_pixels::binary-size(^row_bytes)>> = row
+            unfiltered = unfilter_row(filter, row_pixels, acc, row_bytes, y)
             acc <> unfiltered
           end)
 
-        {:ok, rgba}
+        {:ok, pixels}
       rescue
         MatchError -> {:error, :invalid_png}
       catch

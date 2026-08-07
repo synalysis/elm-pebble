@@ -11,6 +11,26 @@
       "source": "pdc"
     },
     {
+      "base_name": "Battery",
+      "bytes": 91,
+      "ctor": "VectorStaticBattery",
+      "filename": "VectorStaticBattery.pdc",
+      "id": "vector_vectorstaticbattery",
+      "kind": "image",
+      "mime": "application/octet-stream",
+      "source": "pdc"
+    },
+    {
+      "base_name": "Steps",
+      "bytes": 146,
+      "ctor": "VectorStaticSteps",
+      "filename": "VectorStaticSteps.pdc",
+      "id": "vector_vectorstaticsteps",
+      "kind": "image",
+      "mime": "application/octet-stream",
+      "source": "pdc"
+    },
+    {
       "base_name": "WeatherClear",
       "bytes": 165,
       "ctor": "VectorStaticWeatherClear",
@@ -31,21 +51,21 @@
       "source": "pdc"
     },
     {
-      "base_name": "WeatherFog",
-      "bytes": 91,
-      "ctor": "VectorStaticWeatherFog",
-      "filename": "VectorStaticWeatherFog.pdc",
-      "id": "vector_vectorstaticweatherfog",
-      "kind": "image",
-      "mime": "application/octet-stream",
-      "source": "pdc"
-    },
-    {
       "base_name": "WeatherDrizzle",
       "bytes": 106,
       "ctor": "VectorStaticWeatherDrizzle",
       "filename": "VectorStaticWeatherDrizzle.pdc",
       "id": "vector_vectorstaticweatherdrizzle",
+      "kind": "image",
+      "mime": "application/octet-stream",
+      "source": "pdc"
+    },
+    {
+      "base_name": "WeatherFog",
+      "bytes": 91,
+      "ctor": "VectorStaticWeatherFog",
+      "filename": "VectorStaticWeatherFog.pdc",
+      "id": "vector_vectorstaticweatherfog",
       "kind": "image",
       "mime": "application/octet-stream",
       "source": "pdc"
@@ -61,21 +81,21 @@
       "source": "pdc"
     },
     {
-      "base_name": "WeatherSnow",
-      "bytes": 157,
-      "ctor": "VectorStaticWeatherSnow",
-      "filename": "VectorStaticWeatherSnow.pdc",
-      "id": "vector_vectorstaticweathersnow",
-      "kind": "image",
-      "mime": "application/octet-stream",
-      "source": "pdc"
-    },
-    {
       "base_name": "WeatherShowers",
       "bytes": 123,
       "ctor": "VectorStaticWeatherShowers",
       "filename": "VectorStaticWeatherShowers.pdc",
       "id": "vector_vectorstaticweathershowers",
+      "kind": "image",
+      "mime": "application/octet-stream",
+      "source": "pdc"
+    },
+    {
+      "base_name": "WeatherSnow",
+      "bytes": 157,
+      "ctor": "VectorStaticWeatherSnow",
+      "filename": "VectorStaticWeatherSnow.pdc",
+      "id": "vector_vectorstaticweathersnow",
       "kind": "image",
       "mime": "application/octet-stream",
       "source": "pdc"

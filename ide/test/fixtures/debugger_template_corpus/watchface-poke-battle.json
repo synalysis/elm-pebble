@@ -129,7 +129,7 @@
       "color": 192,
       "compositing_mode": 0,
       "kind": "line",
-      "stroke_color": 2,
+      "stroke_color": 192,
       "stroke_width": 1,
       "x1": 30,
       "x2": 114,
@@ -154,7 +154,7 @@
       "color": 192,
       "compositing_mode": 0,
       "kind": "line",
-      "stroke_color": 1,
+      "stroke_color": 192,
       "stroke_width": 1,
       "x1": 29,
       "x2": 115,
@@ -195,7 +195,7 @@
       "y": 87
     }
   ],
-  "preview_ops_sha256": "2b3255ecfc46e50a4c125be96bb1fa12208e53188fba41fba1d3dcdf7945cf97",
+  "preview_ops_sha256": "907d34b348155dd2365c1fcf08718cefb02e60ecec38a93dfc907256c457a12a",
   "render_tree": {
     "node_count": 32,
     "node_types": [

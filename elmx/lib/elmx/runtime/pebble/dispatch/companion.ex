@@ -74,38 +74,6 @@ defmodule Elmx.Runtime.Pebble.Dispatch.Companion do
   def send_bridge_command_cmd([envelope]), do: bridge_from_envelope("Unknown", envelope)
   def send_bridge_command_cmd(_), do: Cmd.none()
 
-  @spec websocket_connect_cmd(Types.registry_args()) :: Types.wire_cmd()
-  def websocket_connect_cmd([url, callback]) when is_binary(url) do
-    Cmd.companion_bridge("webSocket", "connect",
-      callback: callback,
-      bridge_id: "webSocket-connect",
-      payload: %{"url" => url}
-    )
-  end
-
-  def websocket_connect_cmd(_), do: Cmd.none()
-
-  @spec websocket_disconnect_cmd(Types.registry_args()) :: Types.wire_cmd()
-  def websocket_disconnect_cmd([callback]) do
-    Cmd.companion_bridge("webSocket", "disconnect",
-      callback: callback,
-      bridge_id: "webSocket-disconnect"
-    )
-  end
-
-  def websocket_disconnect_cmd(_), do: Cmd.none()
-
-  @spec websocket_send_cmd(Types.registry_args()) :: Types.wire_cmd()
-  def websocket_send_cmd([message, callback]) when is_binary(message) do
-    Cmd.companion_bridge("webSocket", "send",
-      callback: callback,
-      bridge_id: "webSocket-send",
-      payload: %{"message" => message}
-    )
-  end
-
-  def websocket_send_cmd(_), do: Cmd.none()
-
   @spec bridge_from_envelope(Types.elm_msg(), Types.wire_value()) :: Types.wire_cmd()
   def bridge_from_envelope(callback, request) do
     case command_envelope(request) do

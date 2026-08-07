@@ -180,7 +180,8 @@ defmodule Elmc.WatchfaceYesCompanionHostHarnessTest do
       ElmcValue *payload = harness_tuple2_take(
           harness_int(360),
           harness_tuple2_take(harness_int(1080), harness_int(1)));
-      return harness_phone_union(2, payload);
+      /* PhoneToWatch tags: ProvideSun=1 … ProvideWeather=4 (see elmc_generated.c). */
+      return harness_phone_union(1, payload);
     }
 
     static ElmcValue *provide_weather(void) {
@@ -191,7 +192,7 @@ defmodule Elmc.WatchfaceYesCompanionHostHarnessTest do
               harness_tuple2_take(
                   harness_int(0),
                   harness_tuple2_take(harness_int(0), harness_int(1013)))));
-      return harness_phone_union(5, payload);
+      return harness_phone_union(4, payload);
     }
 
     static ElmcValue *launch_context(void) {
@@ -284,7 +285,8 @@ defmodule Elmc.WatchfaceYesCompanionHostHarnessTest do
           if (cmd.kind == ELMC_PEBBLE_DRAW_TEXT && cmd.p3 > 0 && cmd.p1 == 0 && cmd.p2 == 0) text_at_origin++;
         }
         printf("scene_radial=%d scene_fill_color=%d scene_cmds=%d scene_text_origin=%d\\n", radial, fill_color, app.scene.command_count, text_at_origin);
-        if (radial < 2) return 19;
+        /* ProvideSun paints one daylight wedge when sunrise/sunset do not wrap. */
+        if (radial < 1) return 19;
         if (text_at_origin > 0) return 21;
       }
 

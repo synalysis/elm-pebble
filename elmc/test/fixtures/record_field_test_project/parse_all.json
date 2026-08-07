@@ -1,0 +1,6 @@
+{
+  "elm_make_enabled": true,
+  "elm_make_excluded_modules": [
+    "fixtures/record_field_test_project/src/RecordFieldTest.elm"
+  ]
+}

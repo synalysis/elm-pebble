@@ -451,8 +451,33 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Calls do
     [@rt_values, ".port_incoming_sub(", inspect("#{module}.incoming"), ", ", callback, ")"]
   end
 
-  defp compile_port_call(_module, _name, arg_parts) do
-  [@rt_values, ".port_outgoing(", inspect("unknown.port"), ", ", Enum.at(arg_parts, 0, "nil"), ")"]
+  # App-owned ports (e.g. `wsCmd` / `wsMsg` from mbr/elm-wss). Both Cmd and Sub
+  # ports are one-arg at the call site; the runtime Manager.port key is the
+  # module-qualified port name.
+  defp compile_port_call(module, name, [arg]) when is_binary(name) do
+    [@rt_values, ".port_outgoing(", inspect("#{module}.#{name}"), ", ", arg, ")"]
+  end
+
+  defp compile_port_call(module, name, []) when is_binary(name) do
+    # Port passed as a first-class CommandPort/EventPort value.
+    [
+      "fn elmx_port_payload -> ",
+      @rt_values,
+      ".port_outgoing(",
+      inspect("#{module}.#{name}"),
+      ", elmx_port_payload) end"
+    ]
+  end
+
+  defp compile_port_call(module, name, arg_parts) when is_binary(name) and is_list(arg_parts) do
+    [
+      @rt_values,
+      ".port_outgoing(",
+      inspect("#{module}.#{name}"),
+      ", ",
+      Enum.at(arg_parts, 0, "nil"),
+      ")"
+    ]
   end
 
   @spec unwrap_pipe_pipeline(Types.expr() | map(), term()) :: Types.elm_value()

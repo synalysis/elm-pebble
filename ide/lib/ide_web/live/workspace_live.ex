@@ -414,7 +414,7 @@ defmodule IdeWeb.WorkspaceLive do
           <.link patch={~p"/projects/#{@project.slug}/emulator"} class={pane_class(@pane, :emulator)}>
             Emulator
           </.link>
-          <.link patch={~p"/projects/#{@project.slug}/publish"} class={pane_class(@pane, :publish)}>
+          <.link href={~p"/projects/#{@project.slug}/publish"} class={pane_class(@pane, :publish)}>
             Publish
           </.link>
           <.link patch={~p"/projects/#{@project.slug}/settings"} class={pane_class(@pane, :settings)}>

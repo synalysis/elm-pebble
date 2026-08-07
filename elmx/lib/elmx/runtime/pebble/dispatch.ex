@@ -28,9 +28,6 @@ defmodule Elmx.Runtime.Pebble.Dispatch do
   defdelegate companion_bridge_cmd(args), to: Companion, as: :bridge_cmd
   defdelegate companion_phone_send_cmd(args), to: Companion, as: :phone_send_cmd
   defdelegate companion_send_bridge_command_cmd(args), to: Companion, as: :send_bridge_command_cmd
-  defdelegate companion_websocket_connect_cmd(args), to: Companion, as: :websocket_connect_cmd
-  defdelegate companion_websocket_disconnect_cmd(args), to: Companion, as: :websocket_disconnect_cmd
-  defdelegate companion_websocket_send_cmd(args), to: Companion, as: :websocket_send_cmd
 
   # JSON encode
   defdelegate json_encode_object(args), to: DispatchJson, as: :encode_object

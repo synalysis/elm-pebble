@@ -2,6 +2,7 @@
 #define ELMC_HOST_STUBS_H
 
 #include <stddef.h>
+#include <stdint.h>
 
 #ifndef APP_LOG_LEVEL_ERROR
 #define APP_LOG_LEVEL_ERROR 200
@@ -19,6 +20,15 @@
 #ifndef APP_LOG
 #define APP_LOG(level, ...) ((void)(level))
 #endif
+
+#ifndef TRIG_MAX_RATIO
+#define TRIG_MAX_RATIO 16384
+#endif
+
+/* Declarations only — harness builds link `pebble_trig_host_stubs.c`. Defining
+   bodies here as static inline collided with that .c under `-include`. */
+int32_t sin_lookup(int32_t angle);
+int32_t cos_lookup(int32_t angle);
 
 typedef void *AppTimer;
 typedef void (*AppTimerCallback)(void *data);

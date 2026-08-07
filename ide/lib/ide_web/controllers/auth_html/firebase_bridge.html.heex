@@ -1,0 +1,31 @@
+<section
+  id="firebase-oauth-bridge"
+  class="mx-auto flex min-h-screen max-w-xl flex-col px-6 py-12"
+  data-firebase-config={Jason.encode!(@firebase_config)}
+  data-provider={@provider}
+  data-return-to={@return_to}
+>
+  <div class="flex flex-1 flex-col justify-center">
+    <div class="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
+      <p class="text-xs font-semibold uppercase tracking-wide text-blue-700">elm-pebble IDE</p>
+      <h1 class="mt-2 text-2xl font-semibold text-zinc-900">CloudPebble login</h1>
+      <p id="firebase-oauth-bridge-status" class="firebase-login-status mt-3 text-sm text-zinc-600">
+        Continue with {@provider_label} to connect CloudPebble.
+      </p>
+      <button
+        id="firebase-oauth-continue"
+        type="button"
+        class="mt-5 w-full rounded-lg bg-zinc-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-zinc-800"
+        data-provider={@provider}
+      >
+        Continue with {@provider_label}
+      </button>
+      <p class="mt-4 text-xs text-zinc-500">
+        This page is outside the Editor sandbox so the login popup can finish.
+      </p>
+      <p class="mt-2 text-xs text-zinc-500">
+        <.link href={@return_to} class="font-medium text-blue-700 hover:underline">Cancel and go back</.link>
+      </p>
+    </div>
+  </div>
+</section>

@@ -70,7 +70,7 @@ defmodule Ide.Mcp.Handlers.Compiler do
     end
   end
 
-  def call("compiler.compile", %{"slug" => slug}) do
+  def call("compiler.compile", %{"slug" => slug} = _args) do
     compiler = compiler_module()
 
     with {:ok, project} <- ToolSupport.fetch_project(slug),
@@ -296,6 +296,11 @@ defmodule Ide.Mcp.Handlers.Compiler do
       entries = Audit.recent(limit) |> ToolSupport.filter_since(since)
       {:ok, audit_recent_payload(entries, limit, since)}
     end
+  end
+
+  def call(name, args) when is_binary(name) and is_map(args) do
+    {:error,
+     "compiler tool #{name} requires a project slug (pass \"slug\", or \"project\" / \"project_slug\" alias); got keys=#{inspect(Map.keys(args))}"}
   end
 
   defp compiler_recent_payload(entries, limit, slug, since) do

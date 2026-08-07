@@ -31,7 +31,7 @@ defmodule Ide.Emulator.SessionInstallPrepareTest do
     assert source =~
              ~S/platform_putbytes_pacing(platform) when platform in ["emery", "flint", "gabbro"]/
 
-    assert source =~ "chunk_size: config(:pbw_chunk_size, 256)"
+    assert source =~ "chunk_size: config(:pbw_chunk_size, @default_pbw_chunk_size)"
     assert File.read!("lib/ide/emulator/session/install.ex") =~ "InstallPrep.pacing_opts"
   end
 

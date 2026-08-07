@@ -8,6 +8,7 @@ defmodule Elmc.Backend.CCodegen.CallCompile do
   alias Elmc.Backend.CCodegen.EnvBindings
   alias Elmc.Backend.CCodegen.FunctionCallCompile
   alias Elmc.Backend.CCodegen.Host
+  alias Elmc.Backend.CCodegen.IRQueries
   alias Elmc.Backend.CCodegen.ListHofResolve
   alias Elmc.Backend.CCodegen.Native.TypedReturn
   alias Elmc.Backend.CCodegen.RecordCompile
@@ -255,7 +256,61 @@ defmodule Elmc.Backend.CCodegen.CallCompile do
           Types.compile_env(),
           Types.compile_counter()
         ) :: Types.compile_result()
+  defp compile_constructor_call(target, args, env, counter) when args in [[], nil] do
+    # Nullary custom-type ctors are values (enum tag ints or tuple2(tag, unit)),
+    # not `elmc_fn_*` CAFs. Emitting a function call leaves undefined symbols when
+    # DCE drops the ctor (Maybe.withDefault Black model.color on tutorial).
+    case nullary_constructor_value_expr(target) do
+      {:ok, expr} -> Host.compile_expr(expr, env, counter)
+      :error -> compile_constructor_fn_call(target, [], env, counter)
+    end
+  end
+
   defp compile_constructor_call(target, args, env, counter) do
+    compile_constructor_fn_call(target, args, env, counter)
+  end
+
+  @spec nullary_constructor_value_expr(String.t()) :: {:ok, Types.ir_expr()} | :error
+
+  defp nullary_constructor_value_expr(target) when is_binary(target) do
+    tags = Process.get(:elmc_constructor_tags, %{})
+
+    case IRQueries.lookup_tag(tags, target) do
+      tag when is_integer(tag) ->
+        tag_lit = %{op: :int_literal, value: tag, union_ctor: target}
+
+        if enum_scalar_ctor?(target) do
+          {:ok, tag_lit}
+        else
+          {:ok,
+           %{
+             op: :tuple2,
+             left: tag_lit,
+             right: %{op: :runtime_call, function: "elmc_unit", args: []}
+           }}
+        end
+
+      _ ->
+        :error
+    end
+  end
+
+  @spec enum_scalar_ctor?(String.t()) :: boolean()
+
+  defp enum_scalar_ctor?(target) when is_binary(target) do
+    enums = Process.get(:elmc_enum_ctors, MapSet.new())
+    short = target |> String.split(".") |> List.last()
+    MapSet.member?(enums, target) or MapSet.member?(enums, short)
+  end
+
+  @spec compile_constructor_fn_call(
+          String.t(),
+          [Types.ir_expr()],
+          Types.compile_env(),
+          Types.compile_counter()
+        ) :: Types.compile_result()
+
+  defp compile_constructor_fn_call(target, args, env, counter) do
     c_name = Util.qualified_to_c_name(target)
     operand_env = RcRuntimeEmit.operand_env(env)
 

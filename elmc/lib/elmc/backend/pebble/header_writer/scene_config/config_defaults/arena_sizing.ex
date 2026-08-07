@@ -8,12 +8,11 @@ defmodule Elmc.Backend.Pebble.HeaderWriter.SceneConfig.ConfigDefaults.ArenaSizin
   @spec body() :: Types.c_source()
   def body do
     """
-    /* Platform sizing only — all targets use the malloc scene pool (STATIC=0).
-       Aplite keeps a smaller grow/pool footprint, but INITIAL must clear the
-       mid-encode realloc cliff: a ~540B view (e.g. 16-cell grid + chrome text)
-       overflows a 512B first slot; growing 512→1024 while the old buffer is still
-       live needs ~1.5KiB contiguous and fails on tight aplite heaps without an
-       OOM APP_LOG (mapped as SCENE_BUFFER_OVERFLOW → blank white draw). */
+    /* Platform sizing: INITIAL clears the mid-encode realloc cliff (a ~540B
+       view overflowing a 512B first slot needs ~1.5KiB contiguous on grow and
+       fails on tight heaps as SCENE_BUFFER_OVERFLOW → blank white draw).
+       Pool double-buffering (prepare_rebuild + abort_build) keeps the last good
+       frame when a later rebuild fails, so transient OOM does not gray the face. */
     #ifndef ELMC_PEBBLE_SCENE_INITIAL_CAPACITY
     #define ELMC_PEBBLE_SCENE_INITIAL_CAPACITY 1024
     #endif

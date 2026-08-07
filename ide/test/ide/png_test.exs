@@ -28,6 +28,13 @@ defmodule Ide.PngTest do
     assert {:ok, ^png} = Png.fit(png, 2, 2)
   end
 
+  test "load_rgba decodes truecolor RGBA pngs" do
+    png = sample_png(4, 4)
+
+    assert {:ok, 4, 4, rgba} = Png.load_rgba(png)
+    assert byte_size(rgba) == 4 * 4 * 4
+  end
+
   test "fit decodes browser-style up-filtered pngs and resizes" do
     png = sample_png_with_filter(4, 4, 2)
 

@@ -6,7 +6,6 @@ defmodule Elmc.Backend.Plan.Worker.Host.Lower do
   alias Elmc.Backend.CCodegen.IRQueries
   alias Elmc.Backend.Plan.Worker.HostPlan
   alias Elmc.Backend.Plan.Worker.Layout
-  alias Elmc.Backend.Plan.Worker.ModelNative
   alias ElmEx.IR
 
   @worker_entry_rc_vars %{"subscriptions" => "sub_rc"}
@@ -21,19 +20,16 @@ defmodule Elmc.Backend.Plan.Worker.Host.Lower do
     has_init = has_function?(declarations, "init")
     has_update = has_function?(declarations, "update")
     has_subscriptions = has_function?(declarations, "subscriptions")
-    model_native = ModelNative.analyze(ir, entry_module, opts)
-    model_arg = if model_native, do: "(state->model ? state->model : elmc_worker_model_boxed(state))", else: "state->model"
 
     %HostPlan{
       entry_module: entry_module,
       layout: layout,
-      model_native: model_native,
       init: entry_spec(has_init, safe_module, "init", entry_module, decl_map, ["flags"], opts, -3, """
       (void)flags;
         ElmcValue *result = elmc_int_zero();
       """),
       update:
-        entry_spec(has_update, safe_module, "update", entry_module, decl_map, ["msg", model_arg], opts, -4, """
+        entry_spec(has_update, safe_module, "update", entry_module, decl_map, ["msg", "state->model"], opts, -4, """
         (void)msg;
           ElmcValue *result = elmc_int_zero();
         """),
@@ -44,7 +40,7 @@ defmodule Elmc.Backend.Plan.Worker.Host.Lower do
           "subscriptions",
           entry_module,
           decl_map,
-          [model_arg],
+          ["state->model"],
           opts,
           nil,
           """

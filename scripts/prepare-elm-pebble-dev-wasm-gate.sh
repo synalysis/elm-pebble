@@ -36,6 +36,14 @@ echo "==> gen:tailwind"
 (cd "$APP" && npm run gen:tailwind)
 
 echo "==> elm-pages gen"
+# Drop stale generated routes/fetchers (deleted app routes leave orphans under
+# elm-stuff/elm-pages that elmc still loads via elm.json source-directories).
+rm -rf "$APP/.elm-pages" \
+  "$APP/elm-stuff/elm-pages/.elm-pages" \
+  "$APP/elm-stuff/elm-pages/client/.elm-pages" \
+  "$APP/elm-stuff/elm-pages/server/.elm-pages" \
+  "$APP/elm-stuff/elm-pages/client/app" \
+  "$APP/elm-stuff/elm-pages/server/app"
 (cd "$APP" && npx elm-pages gen)
 
 if [[ ! -f "$APP/.elm-pages/Main.elm" ]]; then

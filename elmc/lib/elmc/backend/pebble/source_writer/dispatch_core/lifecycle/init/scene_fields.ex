@@ -25,6 +25,9 @@ defmodule Elmc.Backend.Pebble.SourceWriter.DispatchCore.Lifecycle.Init.SceneFiel
       app->scene.dirty = 1;
     #if ELMC_PEBBLE_SCENE_CACHE_ENABLED
       app->scene_draw_byte_offset = 0;
+      app->scene_rebuild_fallback_slot = 0;
+      app->scene_rebuild_fallback_byte_count = 0;
+      app->scene_rebuild_fallback_command_count = 0;
     #endif
     """
   end

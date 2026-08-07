@@ -868,6 +868,8 @@ static bool deliver_current_date_time(int msg_tag, const char *reason) {
   }
 
   int64_t day_of_week = local->tm_wday == 0 ? 6 : local->tm_wday - 1;
+  /* Pebble/newlib struct tm includes tm_gmtoff (seconds east of UTC). */
+  int64_t utc_offset_minutes = (int64_t)(local->tm_gmtoff / 60);
 #if ELMC_PEBBLE_DEBUG_LOGS
   const char *field_names[] = {
       "year", "month", "day", "dayOfWeek", "hour", "minute", "second", "utcOffsetMinutes"};
@@ -882,15 +884,15 @@ static bool deliver_current_date_time(int msg_tag, const char *reason) {
       local->tm_hour,
       local->tm_min,
       local->tm_sec,
-      0};
+      utc_offset_minutes};
   int rc = elmc_pebble_dispatch_tag_record_int_fields(
       &s_elm_app,
       msg_tag,
       8,
       field_names,
       field_values);
-  APP_LOG(APP_LOG_LEVEL_INFO, "current_date_time (%s) hour=%d minute=%d rc=%d",
-          reason ? reason : "unknown", local->tm_hour, local->tm_min, rc);
+  APP_LOG(APP_LOG_LEVEL_INFO, "current_date_time (%s) hour=%d minute=%d utc_offset_min=%ld rc=%d",
+          reason ? reason : "unknown", local->tm_hour, local->tm_min, (long)utc_offset_minutes, rc);
   if (rc == 0) {
     apply_pending_cmd();
     render_model();
@@ -908,8 +910,10 @@ static void deferred_datetime_callback(void *data) {
 
 static void apply_pending_cmd(void) {
   ELMC_PEBBLE_TRACE_ENTER("apply_pending_cmd");
-  static ElmcPebbleCmd cmd;
+  /* Stack-local: nested apply_pending_cmd (e.g. GET_CURRENT_DATE_TIME → dispatch →
+     drain) must not overwrite an outer in-flight cmd. */
   for (int cmd_guard = 0; cmd_guard < 32; cmd_guard++) {
+    ElmcPebbleCmd cmd;
     memset(&cmd, 0, sizeof(cmd));
     if (elmc_pebble_take_cmd(&s_elm_app, &cmd) != 0 || cmd.kind == ELMC_PEBBLE_CMD_NONE) {
       ELMC_PEBBLE_DEBUG_LOG(APP_LOG_LEVEL_INFO, "cmd drain complete count=%d", cmd_guard);
@@ -1784,50 +1788,11 @@ static bool rect_params_are_valid(int64_t w, int64_t h) {
 #endif
 
 #if ELMC_PEBBLE_FEATURE_DRAW_FILL_RADIAL
-static void elmc_fill_radial_sector_gpath(GContext *ctx, GRect rect, int32_t angle_start, int32_t angle_end) {
-  if (angle_start == angle_end) {
-    return;
-  }
-  const int16_t r = (int16_t)(rect.size.w < rect.size.h ? rect.size.w / 2 : rect.size.h / 2);
-  if (r <= 0) {
-    return;
-  }
-
-  int32_t span = angle_end - angle_start;
-  if (span <= 0) {
-    return;
-  }
-
-  GPoint center = grect_center_point(&rect);
-  if (span >= TRIG_MAX_ANGLE) {
-    graphics_fill_circle(ctx, center, r);
-    return;
-  }
-
-  enum { kArcSteps = 24 };
-  GPoint points[kArcSteps + 2];
-  int count = 0;
-  points[count++] = center;
-  points[count++] = gpoint_from_polar(rect, GOvalScaleModeFitCircle, angle_start);
-  for (int step = 1; step < kArcSteps; step++) {
-    int32_t angle = angle_start + (int32_t)((int64_t)span * step / kArcSteps);
-    points[count++] = gpoint_from_polar(rect, GOvalScaleModeFitCircle, angle);
-  }
-  points[count++] = gpoint_from_polar(rect, GOvalScaleModeFitCircle, angle_end);
-
-  GPathInfo path_info = {
-      .num_points = (uint32_t)count,
-      .points = points,
-  };
-  GPath *path = gpath_create(&path_info);
-  if (!path) {
-    return;
-  }
-  gpath_draw_filled(ctx, path);
-  gpath_destroy(path);
-}
-
-/* Solid pie wedges via gpath; graphics_fill_radial only draws ring bands from the outer edge. */
+/*
+ * Solid pie wedges via graphics_fill_radial with inset == radius (center → rim).
+ * The older gpath approximation left a 1px dark seam at angle 0 when Yes's sun
+ * window wrapped across noon (two wedges meeting at TRIG_MAX_ANGLE).
+ */
 static void elmc_fill_radial_wedge(GContext *ctx, GRect rect, int32_t angle_start, int32_t angle_end) {
   if (angle_start == angle_end) {
     return;
@@ -1838,25 +1803,57 @@ static void elmc_fill_radial_wedge(GContext *ctx, GRect rect, int32_t angle_star
   }
 
   int32_t s = angle_start % TRIG_MAX_ANGLE;
-  int32_t e = angle_end % TRIG_MAX_ANGLE;
   if (s < 0) {
     s += TRIG_MAX_ANGLE;
   }
+
+  graphics_context_set_fill_color(ctx, s_draw_style_stack[s_draw_style_top].fill_color);
+  const uint16_t inset = (uint16_t)r;
+  GPoint center = grect_center_point(&rect);
+
+  /* end > TRIG_MAX_ANGLE means a single wrapped wedge: s..MAX then 0..(end-MAX). */
+  if (angle_end > TRIG_MAX_ANGLE) {
+    int32_t e_wrap = angle_end - TRIG_MAX_ANGLE;
+    while (e_wrap > TRIG_MAX_ANGLE) {
+      e_wrap -= TRIG_MAX_ANGLE;
+    }
+    if (e_wrap < 0) {
+      e_wrap += TRIG_MAX_ANGLE;
+    }
+    if ((int32_t)(TRIG_MAX_ANGLE - s) + e_wrap >= TRIG_MAX_ANGLE) {
+      graphics_fill_circle(ctx, center, r);
+      return;
+    }
+    if (s < TRIG_MAX_ANGLE) {
+      graphics_fill_radial(ctx, rect, GOvalScaleModeFitCircle, inset, s, TRIG_MAX_ANGLE);
+    }
+    if (e_wrap > 0) {
+      graphics_fill_radial(ctx, rect, GOvalScaleModeFitCircle, inset, 0, e_wrap);
+    }
+    return;
+  }
+
+  int32_t e = angle_end % TRIG_MAX_ANGLE;
   if (e < 0) {
     e += TRIG_MAX_ANGLE;
   }
 
-  graphics_context_set_fill_color(ctx, s_draw_style_stack[s_draw_style_top].fill_color);
-
-  if (angle_end >= TRIG_MAX_ANGLE) {
-    elmc_fill_radial_sector_gpath(ctx, rect, s, TRIG_MAX_ANGLE);
+  if (angle_end == TRIG_MAX_ANGLE) {
+    if (s == 0) {
+      graphics_fill_circle(ctx, center, r);
+    } else {
+      graphics_fill_radial(ctx, rect, GOvalScaleModeFitCircle, inset, s, TRIG_MAX_ANGLE);
+    }
     return;
   }
+
   if (s < e) {
-    elmc_fill_radial_sector_gpath(ctx, rect, s, e);
+    graphics_fill_radial(ctx, rect, GOvalScaleModeFitCircle, inset, s, e);
   } else if (s > e) {
-    elmc_fill_radial_sector_gpath(ctx, rect, s, TRIG_MAX_ANGLE);
-    elmc_fill_radial_sector_gpath(ctx, rect, 0, e);
+    graphics_fill_radial(ctx, rect, GOvalScaleModeFitCircle, inset, s, TRIG_MAX_ANGLE);
+    if (e > 0) {
+      graphics_fill_radial(ctx, rect, GOvalScaleModeFitCircle, inset, 0, e);
+    }
   }
 }
 #endif
@@ -2180,6 +2177,13 @@ static void draw_update_proc(Layer *layer, GContext *ctx) {
   }
 
   elmc_pebble_scene_reset_draw_cursor(&s_elm_app);
+#if ELMC_PEBBLE_SCENE_CACHE_ENABLED
+  if (s_elm_app.scene.byte_count <= 0) {
+    schedule_scene_prep();
+    s_draw_update_active = false;
+    return;
+  }
+#endif
   graphics_context_set_fill_color(ctx, GColorWhite);
   graphics_fill_rect(ctx, paint_rect, 0, GCornerNone);
 
@@ -2435,6 +2439,21 @@ static void draw_update_proc(Layer *layer, GContext *ctx) {
 #endif
 
   elmc_pebble_scene_reset_draw_cursor(&s_elm_app);
+#if ELMC_PEBBLE_SCENE_CACHE_ENABLED
+  /* Failed / not-yet-ready scene prep leaves byte_count==0. Filling white here is
+     what users see as a lasting gray face after heap pressure aborts a rebuild;
+     keep the previous framebuffer until a good scene is available again. */
+  if (s_elm_app.scene.byte_count <= 0) {
+    schedule_scene_prep();
+#if ELMC_PEBBLE_FEATURE_FRAME_EVENTS
+    schedule_frame_timer_if_needed();
+#endif
+    s_draw_update_active = false;
+    ELMC_DRAW_PATH_PROBE(ELMC_DRAW_PATH_DRAW_UPDATE_EXIT);
+    ELMC_PEBBLE_TRACE_EXIT("draw_update_proc");
+    return;
+  }
+#endif
   graphics_context_set_fill_color(ctx, GColorWhite);
   graphics_fill_rect(ctx, paint_rect, 0, GCornerNone);
   // #region agent log

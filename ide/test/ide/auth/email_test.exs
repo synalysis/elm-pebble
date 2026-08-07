@@ -73,6 +73,7 @@ defmodule Ide.Auth.EmailTest do
   test "Auth mode helpers" do
     Application.put_env(:ide, Ide.Auth, mode: :local)
     assert Auth.app_store_publish_enabled?()
+    assert Auth.cloudpebble_sideload_enabled?()
     refute Auth.public_mode?()
 
     Application.put_env(:ide, Ide.Auth, mode: :public_pebble)
@@ -83,5 +84,6 @@ defmodule Ide.Auth.EmailTest do
     Application.put_env(:ide, Ide.Auth, mode: :public_custom)
     assert Auth.public_custom_mode?()
     refute Auth.app_store_publish_enabled?()
+    refute Auth.cloudpebble_sideload_enabled?()
   end
 end

@@ -11,6 +11,7 @@ import Pebble.Platform as Platform
 import Pebble.System as System
 import Pebble.Time as Time
 import Pebble.Ui as Ui
+import Pebble.Ui.Resources as Resources
 import Yes.Layout as Layout
 import Yes.Render as Render
 
@@ -49,7 +50,6 @@ type alias Model =
     , cornerCycle : Int
     , batteryLevel : Maybe Int
     , connected : Maybe Bool
-    , homeTzOffsetMin : Int
     , sun : Maybe SunWindow
     , moonriseMin : Maybe Int
     , moonsetMin : Maybe Int
@@ -90,7 +90,6 @@ init context =
             , cornerCycle = 0
             , batteryLevel = Nothing
             , connected = Nothing
-            , homeTzOffsetMin = 0
             , sun = Nothing
             , moonriseMin = Nothing
             , moonsetMin = Nothing
@@ -112,8 +111,6 @@ init context =
         , System.batteryLevel BatteryLevelChanged
         , System.connectionStatus ConnectionChanged
         , Health.supported GotHealthSupported
-        , CompanionWatch.sendWatchToPhone RequestSunData
-        , CompanionWatch.sendWatchToPhone RequestWeather
         ]
     )
 
@@ -137,9 +134,14 @@ update msg model =
                     ( model, Time.currentDateTime CurrentDateTime )
 
                 Just now ->
-                    scheduleCompanionFetches
-                        { model | now = Just { now | minute = minute } }
-                        (refreshStepsIfSupported model)
+                    -- Do not re-request companion data every minute while waiting for
+                    -- Provide*; that flooded AppMessage and raced sun/moon delivery.
+                    -- Day/hour fetches run from CurrentDateTime and HourChanged.
+                    let
+                        nextModel =
+                            { model | now = Just { now | minute = minute } }
+                    in
+                    ( nextModel, refreshStepsIfSupported nextModel )
 
         HourChanged _ ->
             scheduleCompanionFetches model (Time.currentDateTime CurrentDateTime)
@@ -163,7 +165,15 @@ update msg model =
             ( { model | batteryLevel = Just (clamp 0 100 level) }, Cmd.none )
 
         ConnectionChanged connected ->
-            ( { model | connected = Just connected }, Cmd.none )
+            let
+                nextModel =
+                    { model | connected = Just connected }
+            in
+            if connected && nextModel.sun == Nothing then
+                scheduleCompanionFetches nextModel Cmd.none
+
+            else
+                ( nextModel, Cmd.none )
 
         GotHealthSupported supported ->
             ( { model | healthSupported = Just supported }
@@ -190,11 +200,11 @@ update msg model =
 updateFromPhone : PhoneToWatch -> Model -> Model
 updateFromPhone message model =
     case message of
-        ProvideTimezone offset ->
-            { model | homeTzOffsetMin = offset }
-
         ProvideSun sunrise sunset sunMode ->
-            { model | sun = Just { sunriseMin = sunrise, sunsetMin = sunset, mode = sunMode } }
+            { model
+                | sun = Just { sunriseMin = sunrise, sunsetMin = sunset, mode = sunMode }
+                , lastSunFetchDayKey = Maybe.map calendarDayKey model.now
+            }
 
         ProvideMoon moonrise moonset phase ->
             { model
@@ -216,6 +226,7 @@ updateFromPhone message model =
                         , uv10 = uv
                         , pressureHpa = pressure
                         }
+                , lastWeatherFetchHourKey = Maybe.map calendarHourKey model.now
             }
 
         ProvideWind direction windSpeed ->
@@ -281,24 +292,10 @@ scheduleCompanionFetches model extraCmd =
 
                     else
                         Cmd.none
-
-                nextModel =
-                    { model
-                        | lastSunFetchDayKey =
-                            if needsSun then
-                                Just dayKey
-
-                            else
-                                model.lastSunFetchDayKey
-                        , lastWeatherFetchHourKey =
-                            if needsWeather then
-                                Just hourKey
-
-                            else
-                                model.lastWeatherFetchHourKey
-                    }
             in
-            ( nextModel, Cmd.batch [ extraCmd, sunCmd, weatherCmd ] )
+            -- Fetch keys are stamped in updateFromPhone when Provide* arrives.
+            -- Marking them here made dropped early AppMessages skip sun/moon for a day.
+            ( model, Cmd.batch [ extraCmd, sunCmd, weatherCmd ] )
 
 
 calendarDayKey : Time.CurrentDateTime -> Int
@@ -372,6 +369,8 @@ faceDisplay model =
     , homeMinute = homeMinuteOfDay model
     , timeText = timeString model
     , sun = model.sun
+    , moonriseMin = model.moonriseMin
+    , moonsetMin = model.moonsetMin
     , moonPhaseE6 = model.moonPhaseE6
     , corners = cornerSlots model
     }
@@ -386,14 +385,14 @@ cornerSlots model =
     }
 
 
-topLeftSlot : Model -> { value : String, caption : String }
+topLeftSlot : Model -> { value : String, icon : Resources.StaticVector }
 topLeftSlot model =
     case pickTopLeft model of
         BatteryCorner ->
-            { value = batteryPercentString model, caption = "Battery" }
+            { value = batteryPercentString model, icon = Resources.VectorStaticBattery }
 
         StepsCorner ->
-            { value = stepsString model, caption = "Steps" }
+            { value = stepsString model, icon = Resources.VectorStaticSteps }
 
 
 dateSlot : Model -> Maybe String
@@ -406,9 +405,48 @@ dateSlot model =
             Just (monthString now.month ++ " " ++ String.fromInt now.day)
 
 
-weatherSlot : Model -> Maybe String
+weatherSlot : Model -> Maybe Render.WeatherSlot
 weatherSlot model =
-    Maybe.map (weatherLabel model) (pickWeatherMode model)
+    case ( model.weather, pickWeatherMode model ) of
+        ( Just weather, Just mode ) ->
+            Just
+                { label = weatherLabel model mode
+                , icon = conditionVector weather.condition
+                }
+
+        _ ->
+            Nothing
+
+
+conditionVector : WeatherCondition -> Resources.StaticVector
+conditionVector condition =
+    case condition of
+        Clear ->
+            Resources.VectorStaticWeatherClear
+
+        Cloudy ->
+            Resources.VectorStaticWeatherCloudy
+
+        Fog ->
+            Resources.VectorStaticWeatherFog
+
+        Drizzle ->
+            Resources.VectorStaticWeatherDrizzle
+
+        Rain ->
+            Resources.VectorStaticWeatherRain
+
+        Snow ->
+            Resources.VectorStaticWeatherSnow
+
+        Showers ->
+            Resources.VectorStaticWeatherShowers
+
+        Storm ->
+            Resources.VectorStaticWeatherStorm
+
+        UnknownWeather ->
+            Resources.VectorStaticWeatherUnknown
 
 
 bottomRightSlot : Model -> Render.BottomRightSlot
@@ -600,7 +638,8 @@ homeMinuteOfDay model =
             720
 
         Just now ->
-            modBy 1440 ((now.hour * 60) + now.minute + model.homeTzOffsetMin - now.utcOffsetMinutes)
+            -- Watch civil time only (same source as the clock digits).
+            modBy 1440 ((now.hour * 60) + now.minute)
 
 
 eventMinuteFromPayload : Int -> Int -> Int -> Maybe Int
@@ -614,14 +653,12 @@ eventMinuteFromPayload rise set value =
 
 timeString : Model -> String
 timeString model =
-    let
-        minute =
-            homeMinuteOfDay model
+    case model.now of
+        Nothing ->
+            "--:--"
 
-        hour =
-            minute // 60
-    in
-    pad2 hour ++ ":" ++ pad2 (modBy 60 minute)
+        Just now ->
+            pad2 now.hour ++ ":" ++ pad2 now.minute
 
 
 temperatureString : Model -> String

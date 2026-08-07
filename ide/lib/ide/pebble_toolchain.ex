@@ -5,7 +5,7 @@ defmodule Ide.PebbleToolchain do
   alias Ide.Types, as: Types
 
 
-  alias Ide.PebbleToolchain.{Build, Command, Companion, Emulator, Package, Types}
+  alias Ide.PebbleToolchain.{Build, CloudPebble, Command, Companion, Emulator, Package, Types}
 
   @type project_slug :: Types.project_slug()
   @type opts :: Types.opts()
@@ -34,6 +34,8 @@ defmodule Ide.PebbleToolchain do
               {:ok, command_result()} | {:error, toolchain_error()}
   @callback run_screenshot(project_slug(), String.t(), String.t()) ::
               {:ok, command_result()} | {:error, toolchain_error()}
+  @callback install_cloudpebble(project_slug(), opts()) ::
+              {:ok, command_result()} | {:error, toolchain_error()}
 
   defdelegate build(project_slug, opts), to: Build
   defdelegate package(project_slug, opts), to: Package
@@ -44,9 +46,11 @@ defmodule Ide.PebbleToolchain do
   defdelegate run_emulator_control(project_slug, emulator_target, params), to: Emulator
   defdelegate run_screenshot(project_slug, output_path, emulator_target), to: Emulator
   defdelegate supported_emulator_targets(), to: Emulator
+  defdelegate install_cloudpebble(project_slug, opts), to: CloudPebble
   defdelegate template_app_root_path(), to: Package
   defdelegate infer_package_target_type(project_root, fallback), to: Package
   defdelegate companion_index_js_for_preferences(preferences_schema), to: Companion
+  defdelegate phone_uses_elm_wss?(workspace_root), to: Companion
   defdelegate deterministic_app_uuid(slug), to: Package
   defdelegate elm_bin(), to: Command
   defdelegate elm_compiler_version(), to: Command

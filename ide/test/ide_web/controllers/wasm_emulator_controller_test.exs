@@ -258,6 +258,13 @@ defmodule IdeWeb.WasmEmulatorControllerTest do
     assert get_resp_header(publish_conn, "cross-origin-embedder-policy") == []
   end
 
+  test "firebase oauth bridge is not cross-origin isolated", %{conn: conn} do
+    bridge_conn = get(conn, ~p"/auth/firebase/bridge", %{"provider" => "github", "return_to" => "/projects"})
+    assert html_response(bridge_conn, 200) =~ "firebase-oauth-continue"
+    assert get_resp_header(bridge_conn, "cross-origin-opener-policy") == []
+    assert get_resp_header(bridge_conn, "cross-origin-embedder-policy") == []
+  end
+
   test "screenshot endpoint stores a browser captured png", %{conn: conn} do
     assert {:ok, project} =
              Projects.create_project(%{

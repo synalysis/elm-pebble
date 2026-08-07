@@ -43,15 +43,15 @@ defmodule Ide.Emulator.InstallPrepTest do
            })
   end
 
-  test "pacing_opts uses smaller PutBytes chunks on emery" do
+  test "pacing_opts uses libpebble2-sized PutBytes chunks on emery" do
     opts = InstallPrep.pacing_opts("emery")
-    assert Keyword.get(opts, :chunk_size) == 256
+    assert Keyword.get(opts, :chunk_size) == 2000
     assert Keyword.get(opts, :part_delay_ms) == 300
   end
 
-  test "pacing_opts uses default chunk size on diorite" do
+  test "pacing_opts uses libpebble2-sized PutBytes chunks on diorite" do
     opts = InstallPrep.pacing_opts("diorite")
-    assert Keyword.get(opts, :chunk_size) == 500
+    assert Keyword.get(opts, :chunk_size) == 2000
     refute Keyword.has_key?(opts, :part_delay_ms)
   end
 

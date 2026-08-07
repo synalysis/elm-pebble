@@ -73,7 +73,7 @@ defmodule Elmc.PlanTemplatesPrimaryAuditTest do
   end
 
   test "watchface_yes primary has full Main and reachable coverage" do
-    {report, _} = audit_template("watchface_yes", {55, 55})
+    {report, _} = audit_template("watchface_yes", {56, 56})
     assert report.lowered == report.total
   end
 

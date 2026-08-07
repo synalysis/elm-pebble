@@ -12,7 +12,7 @@ defmodule Elmc.Backend.Bytecode.TierMetrics do
 
   @rc_fn_re ~r/static RC (elmc_fn_[A-Za-z0-9_]+)\([^{]*\{([\s\S]*?)\n\}/
 
-  @spec from_out_dir(String.t(), keyword()) :: t()
+  @spec from_out_dir(String.t(), keyword() | map()) :: t()
   def from_out_dir(out_dir, opts \\ []) when is_binary(out_dir) do
     generated_source = generated_c_source(out_dir)
     object_text = ObjectTextEstimate.estimate(out_dir, opts)
@@ -25,7 +25,7 @@ defmodule Elmc.Backend.Bytecode.TierMetrics do
       |> or_else(fn -> if is_binary(generated_source), do: byte_size(generated_source), else: nil end)
 
     pebble_app_bin_bytes =
-      Keyword.get(opts, :pebble_app_bin_bytes) ||
+      opt_get(opts, :pebble_app_bin_bytes) ||
         linked_elf_size(out_dir) ||
         linked_elf_size_from_opts(opts)
 
@@ -91,8 +91,11 @@ defmodule Elmc.Backend.Bytecode.TierMetrics do
   end
 
   defp linked_elf_size_from_opts(opts) do
-    Keyword.get(opts, :linked_elf_size)
+    opt_get(opts, :linked_elf_size)
   end
+
+  defp opt_get(opts, key) when is_map(opts), do: Map.get(opts, key)
+  defp opt_get(opts, key) when is_list(opts), do: Keyword.get(opts, key)
 
   defp or_else(nil, fun), do: fun.()
   defp or_else(value, _fun), do: value

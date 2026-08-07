@@ -5,6 +5,7 @@ defmodule Elmc.Test.RcTrackHarness do
 
   @runtime_link_stub Path.join(__DIR__, "elmc_runtime_link_stubs.c")
   @harness_helpers_c Path.join(__DIR__, "elmc_harness_helpers.c")
+  @host_trig_stubs_c Path.join(__DIR__, "elmc_host_trig_stubs.c")
   @spy_c Path.join(__DIR__, "pebble_sdk_spy.c")
   @replay_c Path.join(__DIR__, "elmc_scene_sdk_replay.c")
   @support_dir __DIR__
@@ -137,12 +138,23 @@ defmodule Elmc.Test.RcTrackHarness do
 
   @spec with_harness_helpers_c([String.t()]) :: [String.t()]
   def with_harness_helpers_c(sources) do
-    sources = with_runtime_link_stub(sources)
+    sources =
+      sources
+      |> with_runtime_link_stub()
+      |> with_host_trig_stubs()
 
     if Enum.any?(sources, &harness_needs_rc_helpers?/1) do
       sources ++ [@harness_helpers_c]
     else
       sources
+    end
+  end
+
+  defp with_host_trig_stubs(sources) when is_list(sources) do
+    if Enum.any?(sources, &String.ends_with?(&1, "elmc_host_trig_stubs.c")) do
+      sources
+    else
+      sources ++ [@host_trig_stubs_c]
     end
   end
 

@@ -75,10 +75,10 @@ defmodule Ide.Debugger.DigitalPreviewLayoutTest do
 
     assert IdeWeb.WorkspaceLive.DebuggerPage.SvgRender.text_font_size(text_op) <
              text_op.h,
-           "debugger SVG text should use Pebble cap height, not full box height"
+           "debugger SVG text should use Pebble-scaled sans size, not full box height"
 
-    # Pebble top-of-box: SVG y is rect.y with text-before-edge baseline.
-    assert IdeWeb.WorkspaceLive.DebuggerPage.SvgRender.text_y(text_op) == text_op.y
+    # Pebble top-of-box plus Gothic top bearing (not mid-box centering).
+    assert IdeWeb.WorkspaceLive.DebuggerPage.SvgRender.text_y(text_op) >= text_op.y
 
     assert IdeWeb.WorkspaceLive.DebuggerPage.SvgRender.text_baseline(text_op) ==
              "text-before-edge"

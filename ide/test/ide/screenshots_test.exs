@@ -72,6 +72,26 @@ defmodule Ide.ScreenshotsTest do
     assert String.contains?(listed.absolute_path, "/screenshots/basalt/legacy.png")
   end
 
+  test "store_png treats nil emulator target as invalid", %{project: project} do
+    png = sample_png(180, 180)
+    assert {:error, :emulator_target_required} = Screenshots.store_png(project, nil, png)
+  end
+
+  test "capture treats nil emulator_target opt as configured default", %{project: project} do
+    result = Screenshots.capture(project, emulator_target: nil)
+
+    refute match?(%FunctionClauseError{}, result)
+
+    case result do
+      {:ok, %{screenshot: shot}} ->
+        assert is_binary(shot.emulator_target)
+        assert shot.emulator_target != ""
+
+      {:error, reason} ->
+        refute match?(%FunctionClauseError{}, reason)
+    end
+  end
+
   defp restore_env(app, key, nil), do: Application.delete_env(app, key)
   defp restore_env(app, key, value), do: Application.put_env(app, key, value)
 

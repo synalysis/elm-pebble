@@ -2433,7 +2433,8 @@ defmodule Elmc.PebbleShimTest do
     assert pebble_c =~ "#define ELMC_PEBBLE_APPEND_FALLBACK_SCENE 1"
     refute generated =~ "elmc_fn_Main_faceOps("
     refute generated =~ "RC elmc_fn_Main_view("
-    assert generated =~ "elmc_calloc(ELMC_OWNED_SLOT_COUNT, sizeof(ElmcValue *)"
+    assert generated =~ "elmc_owned_slots_acquire(ELMC_OWNED_SLOT_COUNT)"
+    refute generated =~ "elmc_calloc(ELMC_OWNED_SLOT_COUNT, sizeof(ElmcValue *)"
     refute generated =~ "elmc_owned_i"
 
     report = File.read!(Path.join(out_dir, "elmc_stack_report.json")) |> Jason.decode!()

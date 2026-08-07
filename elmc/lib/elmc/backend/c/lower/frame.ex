@@ -24,7 +24,11 @@ defmodule Elmc.Backend.C.Lower.Frame do
 
   def epilogue_release(_slot_indices, slot_count) do
     if heap_owned?(slot_count) do
-      "elmc_release_array_lifo(owned, ELMC_OWNED_SLOT_COUNT);\nelmc_free(owned);"
+      """
+      elmc_release_array_lifo(owned, ELMC_OWNED_SLOT_COUNT);
+      elmc_owned_slots_release(owned, ELMC_OWNED_SLOT_COUNT);
+      """
+      |> String.trim()
     else
       # Prefer DIM(owned) so the compiler can share a single call site shape
       # across functions with the same owned-array declaration.
@@ -76,7 +80,7 @@ defmodule Elmc.Backend.C.Lower.Frame do
 
     """
     enum { ELMC_OWNED_SLOT_COUNT = #{slot_count} };
-    ElmcValue **owned = (ElmcValue **)elmc_calloc(ELMC_OWNED_SLOT_COUNT, sizeof(ElmcValue *), "owned_slots");
+    ElmcValue **owned = elmc_owned_slots_acquire(ELMC_OWNED_SLOT_COUNT);
     if (!owned) #{ret}
     """
     |> String.trim()

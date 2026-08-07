@@ -61,14 +61,15 @@ defmodule Elmc.PlanYesBytecodeTest do
                  params: [yes_model.([])]
                )
 
+      # Model.stepsToday is field index 16.
       assert {:ok, "5000"} =
                Loader.run_manifest_entry(out_dir, {"Main", "stepsString"},
-                 params: [yes_model.([{17, {:just, 5000}}])]
+                 params: [yes_model.([{16, {:just, 5000}}])]
                )
 
       assert {:ok, "15k"} =
                Loader.run_manifest_entry(out_dir, {"Main", "stepsString"},
-                 params: [yes_model.([{17, {:just, 15_000}}])]
+                 params: [yes_model.([{16, {:just, 15_000}}])]
                )
     end
 
@@ -100,9 +101,10 @@ defmodule Elmc.PlanYesBytecodeTest do
                  params: [yes_model.([])]
                )
 
+      # Model.weather is field index 10 (after moonPhaseE6).
       assert {:ok, "24C"} =
                Loader.run_manifest_entry(out_dir, {"Main", "temperatureString"},
-                 params: [yes_model.([{11, {:just, weather}}])]
+                 params: [yes_model.([{10, {:just, weather}}])]
                )
     end
 

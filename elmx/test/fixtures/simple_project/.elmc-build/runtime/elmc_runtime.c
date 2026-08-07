@@ -62,7 +62,6 @@ static ElmcValue ELMC_EMPTY_INT_LIST ELMC_UNUSED = {
   ELMC_INT_LIST_CELL_SCALAR
 };
 ElmcValue ELMC_LIST_NIL = { ELMC_RC_IMMORTAL, ELMC_TAG_LIST, NULL, 0 };
-static ElmcValue ELMC_UNIT = { ELMC_RC_IMMORTAL, ELMC_TAG_INT, NULL, ELMC_UNIT_SCALAR };
 
 typedef struct {
   ElmcValue value;
@@ -224,10 +223,6 @@ static ElmcValue *elmc_small_int(elmc_int_t value) {
 
 ElmcValue *elmc_int_zero(void) {
   return elmc_small_int(0);
-}
-
-ElmcValue *elmc_unit(void) {
-  return &ELMC_UNIT;
 }
 
 static RC elmc_list_cell_alloc(ElmcValue **out, ElmcValue *head, ElmcValue *tail, int take) {
@@ -463,33 +458,69 @@ static RC elmc_int_list_alloc_copy(ElmcValue **out, const elmc_int_t *items, int
   return rc;
 }
 
-static RC elmc_int_list_reverse_into(ElmcValue **out, ElmcValue *list) {
+static RC elmc_int_list_append_to_cons_tail(ElmcValue **tail_slot, ElmcValue *list) {
   ElmcIntListPayload *payload = elmc_int_list_payload(list);
   RC rc = RC_SUCCESS;
-  elmc_int_t *reversed = NULL;
+  ElmcValue *cell = NULL;
   CATCH_BEGIN
-    if (!payload || payload->length <= 0) {
-      rc = elmc_int_list_alloc_copy(out, NULL, 0);
-      CHECK_RC(rc);
-    } else {
-      reversed = (elmc_int_t *)elmc_malloc((size_t)payload->length * sizeof(elmc_int_t), __func__);
-      if (!reversed) {
-        rc = RC_ERR_OUT_OF_MEMORY;
-        CHECK_RC(rc);
-      }
-      for (int i = 0; i < payload->length; i++) {
-        reversed[i] = payload->values[payload->length - 1 - i];
-      }
-      rc = elmc_int_list_alloc_copy(out, reversed, payload->length);
+    if (!tail_slot) {
+      rc = RC_ERR_INVALID_ARG;
       CHECK_RC(rc);
     }
+    if (!payload || payload->length <= 0) {
+      *tail_slot = elmc_list_nil();
+    } else {
+      for (int i = 0; i < payload->length; i++) {
+        ElmcValue *head = NULL;
+        rc = elmc_new_int(&head, payload->values[i]);
+        CHECK_RC(rc);
+        cell = NULL;
+        rc = elmc_list_cons(&cell, head, elmc_list_nil());
+        elmc_release(head);
+        CHECK_RC(rc);
+        *tail_slot = cell;
+        tail_slot = &((ElmcCons *)cell->payload)->tail;
+        cell = NULL;
+      }
+    }
   CATCH_END
-  if (reversed) elmc_free(reversed);
+  elmc_release(cell);
   return rc;
 }
 
-static int elmc_value_is_boxed_int(ElmcValue *value) {
-  return value && (value->tag == ELMC_TAG_INT || value->tag == ELMC_TAG_BOOL || value->tag == ELMC_TAG_CHAR);
+static RC elmc_int_list_append(ElmcValue **out, ElmcValue *left, ElmcValue *right) {
+  ElmcIntListPayload *a = elmc_int_list_payload(left);
+  ElmcIntListPayload *b = elmc_int_list_payload(right);
+  RC rc = RC_SUCCESS;
+  elmc_int_t *merged = NULL;
+  CATCH_BEGIN
+    if (!a && !b) {
+      rc = elmc_int_list_alloc_copy(out, NULL, 0);
+      CHECK_RC(rc);
+    } else if (!a) {
+      *out = elmc_retain(right);
+    } else if (!b) {
+      *out = elmc_retain(left);
+    } else {
+      int total = a->length + b->length;
+      if (total <= 0) {
+        rc = elmc_int_list_alloc_copy(out, NULL, 0);
+        CHECK_RC(rc);
+      } else {
+        merged = (elmc_int_t *)elmc_malloc((size_t)total * sizeof(elmc_int_t), __func__);
+        if (!merged) {
+          rc = RC_ERR_OUT_OF_MEMORY;
+          CHECK_RC(rc);
+        }
+        memcpy(merged, a->values, (size_t)a->length * sizeof(elmc_int_t));
+        memcpy(merged + a->length, b->values, (size_t)b->length * sizeof(elmc_int_t));
+        rc = elmc_int_list_alloc_copy(out, merged, total);
+        CHECK_RC(rc);
+      }
+    }
+  CATCH_END
+  if (merged) elmc_free(merged);
+  return rc;
 }
 
 RC elmc_int_list_to_cons(ElmcValue **out, ElmcValue *list) {
@@ -522,53 +553,9 @@ RC elmc_int_list_to_cons(ElmcValue **out, ElmcValue *list) {
   return rc;
 }
 
-static RC elmc_int_list_map(ElmcValue **out, ElmcValue *function, ElmcValue *list) {
+int elmc_int_list_is_empty(ElmcValue *list) {
   ElmcIntListPayload *payload = elmc_int_list_payload(list);
-  RC rc = RC_SUCCESS;
-  elmc_int_t *mapped = NULL;
-  CATCH_BEGIN
-    if (!payload) {
-      rc = RC_ERR_INVALID_ARG;
-      CHECK_RC(rc);
-    }
-    if (payload->length <= 0) {
-      rc = elmc_int_list_alloc_copy(out, NULL, 0);
-      CHECK_RC(rc);
-    } else {
-      mapped = (elmc_int_t *)elmc_malloc((size_t)payload->length * sizeof(elmc_int_t), __func__);
-      if (!mapped) {
-        rc = RC_ERR_OUT_OF_MEMORY;
-        CHECK_RC(rc);
-      }
-      for (int i = 0; i < payload->length; i++) {
-        ElmcValue *boxed = NULL;
-        rc = elmc_new_int(&boxed, payload->values[i]);
-        CHECK_RC(rc);
-        ElmcValue *args[1] = { boxed };
-        ElmcValue *item = NULL;
-        rc = elmc_closure_call_rc(&item, function, args, 1);
-        elmc_release(boxed);
-        CHECK_RC(rc);
-        if (!elmc_value_is_boxed_int(item)) {
-          ElmcValue *cons = NULL;
-          elmc_release(item);
-          rc = elmc_int_list_to_cons(&cons, list);
-          CHECK_RC(rc);
-          rc = elmc_list_map(out, function, cons);
-          elmc_release(cons);
-          elmc_free(mapped);
-          mapped = NULL;
-          return rc;
-        }
-        mapped[i] = elmc_as_int(item);
-        elmc_release(item);
-      }
-      rc = elmc_int_list_alloc_copy(out, mapped, payload->length);
-      CHECK_RC(rc);
-    }
-  CATCH_END
-  if (mapped) elmc_free(mapped);
-  return rc;
+  return !payload || payload->length <= 0;
 }
 
 static int elmc_int_spine_cell_release(ElmcValue *value) {
@@ -687,45 +674,6 @@ static RC elmc_list_materialize_cons(ElmcValue **out, ElmcValue *list) {
   return RC_SUCCESS;
 }
 
-static RC elmc_list_reverse_into(ElmcValue **out, ElmcValue *list) {
-  if (list && list->tag == ELMC_TAG_INT_LIST) {
-    return elmc_int_list_reverse_into(out, list);
-  }
-  RC rc = RC_SUCCESS;
-  ElmcValue *rev = elmc_list_nil();
-  ElmcValue *next = NULL;
-  CATCH_BEGIN
-    ElmcValue *cursor = list;
-    while (cursor && cursor->tag == ELMC_TAG_LIST && cursor->payload != NULL) {
-      ElmcCons *node = (ElmcCons *)cursor->payload;
-      next = NULL;
-      rc = elmc_list_cons(&next, node->head, rev);
-      CHECK_RC(rc);
-      elmc_release(rev);
-      rev = next;
-      next = NULL;
-      cursor = node->tail;
-    }
-    if (rc == RC_SUCCESS) {
-      *out = rev;
-      rev = NULL;
-    }
-  CATCH_END
-  elmc_release(next);
-  elmc_release(rev);
-  return rc;
-}
-
-static RC elmc_list_reverse_transfer(ElmcValue **out, ElmcValue **src) {
-  ElmcValue *list = src ? *src : NULL;
-  RC rc = elmc_list_reverse_into(out, list);
-  if (rc == RC_SUCCESS && src && *src) {
-    elmc_release(*src);
-    *src = NULL;
-  }
-  return rc;
-}
-
 RC elmc_new_int(ElmcValue **out, elmc_int_t value) {
   RC rc = RC_SUCCESS;
   CATCH_BEGIN
@@ -823,50 +771,23 @@ RC elmc_list_from_values(ElmcValue **out, ElmcValue **items, int count) {
   return rc;
 }
 
-RC elmc_list_from_values_take(ElmcValue **out, ElmcValue **items, int count) {
-  RC rc = RC_SUCCESS;
-  ElmcValue *list = elmc_list_nil();
-  ElmcValue *next = NULL;
-  CATCH_BEGIN
-    if (!items || count <= 0) {
-      *out = list;
-      list = NULL;
-    } else {
-      for (int i = count - 1; i >= 0; i--) {
-        next = NULL;
-        rc = elmc_list_cell_alloc(&next, items[i], list, 1);
-        CHECK_RC(rc);
-        list = next;
-        next = NULL;
-      }
-      *out = list;
-      list = NULL;
-    }
-  CATCH_END
-  elmc_release(next);
-  elmc_release(list);
-  return rc;
-}
-
-RC elmc_list_from_int_array(ElmcValue **out, const elmc_int_t *items, int count) {
-  return elmc_int_list_alloc_copy(out, items, count);
-}
-
 RC elmc_render_cmd6_take(ElmcValue **out, elmc_int_t kind, elmc_int_t p0, elmc_int_t p1, elmc_int_t p2, elmc_int_t p3, elmc_int_t p4, elmc_int_t p5) {
   RC rc = RC_SUCCESS;
   const elmc_int_t ps[6] = { p0, p1, p2, p3, p4, p5 };
   CATCH_BEGIN
     ElmcValue *tail = elmc_int_zero();
     for (int i = 5; i >= 0; i--) {
-      ElmcValue *pv = ELMC_RC_INT_BOX(ps[i]);
-      if (!pv) { rc = RC_ERR_OUT_OF_MEMORY; CHECK_RC(rc); }
+      ElmcValue *pv = NULL;
+      rc = elmc_new_int(&pv, ps[i]);
+      CHECK_RC(rc);
       ElmcValue *pair = NULL;
       rc = elmc_tuple2_take(&pair, pv, tail);
       CHECK_RC(rc);
       tail = pair;
     }
-    ElmcValue *kind_v = ELMC_RC_INT_BOX(kind);
-    if (!kind_v) { rc = RC_ERR_OUT_OF_MEMORY; CHECK_RC(rc); }
+    ElmcValue *kind_v = NULL;
+    rc = elmc_new_int(&kind_v, kind);
+    CHECK_RC(rc);
     rc = elmc_tuple2_take(out, kind_v, tail);
     CHECK_RC(rc);
   CATCH_END
@@ -1073,10 +994,6 @@ static RC elmc_cmd_alloc(ElmcValue **out, uint8_t arity, elmc_int_t kind, elmc_i
   CATCH_END
   if (cell) elmc_free(cell);
   return rc;
-}
-
-RC elmc_cmd0(ElmcValue **out, elmc_int_t kind) {
-  return elmc_cmd_alloc(out, 0, kind, 0, 0, 0, 0, 0, 0);
 }
 
 static RC elmc_platform_manager_tag(ElmcValue **out, elmc_int_t tag_num) {
@@ -1504,6 +1421,25 @@ RC elmc_cmd1(ElmcValue **out, elmc_int_t kind, elmc_int_t p0) {
   return elmc_cmd_alloc(out, 1, kind, p0, 0, 0, 0, 0, 0);
 }
 
+RC elmc_cmd_companion_send_value(ElmcValue **out, ElmcValue *message) {
+  RC rc = RC_SUCCESS;
+  CATCH_BEGIN
+    rc = elmc_cmd_alloc(out, 0, 5, 0, 0, 0, 0, 0, 0);
+    CHECK_RC(rc);
+    if (!*out || (*out)->tag != ELMC_TAG_CMD || !(*out)->payload) {
+      rc = RC_ERR_INVALID_ARG;
+      CHECK_RC(rc);
+    }
+    ElmcCmdPayload *cmd = (ElmcCmdPayload *)(*out)->payload;
+    cmd->text = message ? elmc_retain(message) : NULL;
+  CATCH_END
+  if (rc != RC_SUCCESS && out && *out) {
+    elmc_release(*out);
+    *out = NULL;
+  }
+  return rc;
+}
+
 RC elmc_cmd2(ElmcValue **out, elmc_int_t kind, elmc_int_t p0, elmc_int_t p1) {
   return elmc_cmd_alloc(out, 2, kind, p0, p1, 0, 0, 0, 0);
 }
@@ -1569,24 +1505,6 @@ ElmcValue *elmc_tuple_second_borrow(ElmcValue *tuple) {
   if (tuple->tag != ELMC_TAG_TUPLE2 || tuple->payload == NULL) return elmc_int_zero();
   ElmcTuple2 *data = (ElmcTuple2 *)tuple->payload;
   return data->second ? data->second : elmc_int_zero();
-}
-
-RC elmc_record_new(ElmcValue **out, int field_count, const char **field_names, ElmcValue **field_values) {
-  RC rc = RC_SUCCESS;
-  CATCH_BEGIN
-    rc = elmc_record_cell_alloc(out, field_count, field_names, field_values, 0);
-    CHECK_RC(rc);
-  CATCH_END
-  return rc;
-}
-
-RC elmc_record_new_take(ElmcValue **out, int field_count, const char **field_names, ElmcValue **field_values) {
-  RC rc = RC_SUCCESS;
-  CATCH_BEGIN
-    rc = elmc_record_cell_alloc(out, field_count, field_names, field_values, 1);
-    CHECK_RC(rc);
-  CATCH_END
-  return rc;
 }
 
 RC elmc_record_new_static(ElmcValue **out, int field_count, const char * const *field_names, ElmcValue **field_values) {
@@ -1687,262 +1605,132 @@ uint32_t elmc_record_mutation_gen(ElmcValue *record) {
   return ((ElmcRecord *)record->payload)->mutation_gen;
 }
 
-static RC elmc_closure_cell_init(
-    ElmcClosureCell *cell,
-    int arity,
-    int capture_count,
-    ElmcValue **captures) {
-  ElmcClosure *clo = &cell->closure;
-  clo->fn = NULL;
-  clo->rc_fn = NULL;
-  clo->arity = arity;
-  clo->capture_count = capture_count;
-  clo->is_rc = 0;
-  clo->captures = NULL;
-  if (capture_count > 0) {
-    clo->captures = (ElmcValue **)(cell + 1);
-    for (int i = 0; i < capture_count; i++) {
-      clo->captures[i] = elmc_retain(captures[i]);
+RC elmc_list_append(ElmcValue **out, ElmcValue *a, ElmcValue *b) {
+  if (a && a->tag == ELMC_TAG_INT_LIST) {
+    if (b && b->tag == ELMC_TAG_INT_LIST) {
+      return elmc_int_list_append(out, a, b);
     }
-  }
-  cell->value.rc = 1;
-  cell->value.tag = ELMC_TAG_CLOSURE;
-  cell->value.payload = clo;
-  cell->value.scalar = ELMC_CLOSURE_CELL_SCALAR;
-  ELMC_ALLOCATED += 1;
-  ELMC_RC_TRACK_REGISTER(&cell->value, __func__);
-  return RC_SUCCESS;
-}
-
-RC elmc_closure_new(ElmcValue **out, ElmcValue *(*fn)(ElmcValue **args, int argc, ElmcValue **captures, int capture_count), int arity, int capture_count, ElmcValue **captures) {
-  RC rc = RC_SUCCESS;
-  ElmcClosureCell *cell = NULL;
-  CATCH_BEGIN
-    if (capture_count < 0) {
-      rc = RC_ERR_INVALID_ARG;
-      CHECK_RC(rc);
+    if (!b || (b->tag == ELMC_TAG_LIST && b->payload == NULL) ||
+        (b->tag == ELMC_TAG_INT_LIST && elmc_int_list_is_empty(b))) {
+      RC rc = RC_SUCCESS;
+      CATCH_BEGIN
+        *out = elmc_retain(a);
+      CATCH_END
+      return rc;
     }
-    size_t captures_size = sizeof(ElmcValue *) * (size_t)capture_count;
-    cell = (ElmcClosureCell *)elmc_malloc(sizeof(ElmcClosureCell) + captures_size, __func__);
-    if (!cell) {
-      rc = RC_ERR_OUT_OF_MEMORY;
-      CHECK_RC(rc);
-    }
-    rc = elmc_closure_cell_init(cell, arity, capture_count, captures);
-    CHECK_RC(rc);
-    ((ElmcClosure *)cell->value.payload)->fn = fn;
-    *out = &cell->value;
-    cell = NULL;
-  CATCH_END
-  if (cell) elmc_release(&cell->value);
-  return rc;
-}
-
-RC elmc_closure_new_rc(ElmcValue **out, RC (*rc_fn)(ElmcValue **out, ElmcValue **args, int argc, ElmcValue **captures, int capture_count), int arity, int capture_count, ElmcValue **captures) {
-  RC rc = RC_SUCCESS;
-  ElmcClosureCell *cell = NULL;
-  CATCH_BEGIN
-    if (capture_count < 0) {
-      rc = RC_ERR_INVALID_ARG;
-      CHECK_RC(rc);
-    }
-    size_t captures_size = sizeof(ElmcValue *) * (size_t)capture_count;
-    cell = (ElmcClosureCell *)elmc_malloc(sizeof(ElmcClosureCell) + captures_size, __func__);
-    if (!cell) {
-      rc = RC_ERR_OUT_OF_MEMORY;
-      CHECK_RC(rc);
-    }
-    rc = elmc_closure_cell_init(cell, arity, capture_count, captures);
-    CHECK_RC(rc);
-    ElmcClosure *clo = (ElmcClosure *)cell->value.payload;
-    clo->is_rc = 1;
-    clo->rc_fn = rc_fn;
-    *out = &cell->value;
-    cell = NULL;
-  CATCH_END
-  if (cell) elmc_release(&cell->value);
-  return rc;
-}
-
-static ElmcValue *elmc_closure_pap(ElmcValue **args, int argc, ElmcValue **captures, int capture_count) {
-  if (!captures || capture_count < 1) return elmc_int_zero();
-  ElmcValue *orig = captures[0];
-  int applied = capture_count - 1;
-  int total = applied + argc;
-  if (total <= 0) return elmc_retain(orig);
-  ElmcValue *stack_full[16];
-  ElmcValue **full = stack_full;
-  ElmcValue **heap_full = NULL;
-  if (total > 16) {
-    heap_full = (ElmcValue **)elmc_malloc(sizeof(ElmcValue *) * (size_t)total, __func__);
-    if (!heap_full) return NULL;
-    full = heap_full;
-  }
-  for (int i = 0; i < applied; i++) full[i] = captures[1 + i];
-  for (int i = 0; i < argc; i++) full[applied + i] = args[i];
-  ElmcValue *result = elmc_closure_call(orig, full, total);
-  if (heap_full) elmc_free(heap_full);
-  return result;
-}
-
-static RC elmc_closure_pap_rc(ElmcValue **out, ElmcValue **args, int argc, ElmcValue **captures, int capture_count) {
-  if (!out || !captures || capture_count < 1) return RC_ERR_INVALID_ARG;
-  ElmcValue *orig = captures[0];
-  int applied = capture_count - 1;
-  int total = applied + argc;
-  if (total <= 0) {
-    *out = elmc_retain(orig);
-    return RC_SUCCESS;
-  }
-  ElmcValue *stack_full[16];
-  ElmcValue **full = stack_full;
-  ElmcValue **heap_full = NULL;
-  if (total > 16) {
-    heap_full = (ElmcValue **)elmc_malloc(sizeof(ElmcValue *) * (size_t)total, __func__);
-    if (!heap_full) return RC_ERR_OUT_OF_MEMORY;
-    full = heap_full;
-  }
-  for (int i = 0; i < applied; i++) full[i] = captures[1 + i];
-  for (int i = 0; i < argc; i++) full[applied + i] = args[i];
-  RC rc = elmc_closure_call_rc(out, orig, full, total);
-  if (heap_full) elmc_free(heap_full);
-  return rc;
-}
-
-static RC elmc_closure_make_pap(ElmcValue **out, ElmcValue *closure, ElmcClosure *clo, ElmcValue **args, int argc) {
-  int cap_count = 1 + argc;
-  ElmcValue *stack_caps[17];
-  ElmcValue **caps = stack_caps;
-  ElmcValue **heap_caps = NULL;
-  if (cap_count > 17) {
-    heap_caps = (ElmcValue **)elmc_malloc(sizeof(ElmcValue *) * (size_t)cap_count, __func__);
-    if (!heap_caps) return RC_ERR_OUT_OF_MEMORY;
-    caps = heap_caps;
-  }
-  caps[0] = closure;
-  for (int i = 0; i < argc; i++) caps[1 + i] = args[i];
-  int remaining = clo->arity - argc;
-  RC rc =
-      clo->is_rc
-          ? elmc_closure_new_rc(out, elmc_closure_pap_rc, remaining, cap_count, caps)
-          : elmc_closure_new(out, elmc_closure_pap, remaining, cap_count, caps);
-  if (heap_caps) elmc_free(heap_caps);
-  return rc;
-}
-
-ElmcValue *elmc_closure_call(ElmcValue *closure, ElmcValue **args, int argc) {
-  if (!closure || closure->tag != ELMC_TAG_CLOSURE || !closure->payload) return elmc_int_zero();
-  ElmcClosure *clo = (ElmcClosure *)closure->payload;
-  /* Undersaturated call → PAP (mirrors wasm host invokeClosure). */
-  if (clo->arity > 0 && argc < clo->arity) {
-    if (argc <= 0) return elmc_retain(closure);
-    ElmcValue *pap = NULL;
-    if (elmc_closure_make_pap(&pap, closure, clo, args, argc) != RC_SUCCESS) return NULL;
-    return pap;
-  }
-  int consumed = argc;
-  if (clo->arity > 0 && argc > clo->arity) {
-    consumed = clo->arity;
-  }
-  ElmcValue *result = NULL;
-  if (clo->is_rc) {
-    if (!clo->rc_fn || clo->rc_fn(&result, args, consumed, clo->captures, clo->capture_count) != RC_SUCCESS) {
-      return NULL;
-    }
-  } else {
-    if (!clo->fn) return elmc_int_zero();
-    result = clo->fn(args, consumed, clo->captures, clo->capture_count);
-  }
-  if (consumed < argc) {
-    ElmcValue *next = elmc_closure_call(result, args + consumed, argc - consumed);
-    elmc_release(result);
-    return next;
-  }
-  return result;
-}
-
-RC elmc_closure_call_rc(ElmcValue **out, ElmcValue *closure, ElmcValue **args, int argc) {
-  RC rc = RC_SUCCESS;
-  ElmcValue *value = NULL;
-  ElmcValue *next = NULL;
-  CATCH_BEGIN
-    if (!closure || closure->tag != ELMC_TAG_CLOSURE || !closure->payload) {
-      rc = RC_ERR_INVALID_ARG;
-      CHECK_RC(rc);
-    }
-    ElmcClosure *clo = (ElmcClosure *)closure->payload;
-    if (clo->arity > 0 && argc < clo->arity) {
-      if (argc <= 0) {
-        *out = elmc_retain(closure);
+    RC rc = RC_SUCCESS;
+    ElmcValue *result = NULL;
+    ElmcValue **tail_slot = NULL;
+    ElmcValue *cell = NULL;
+    CATCH_BEGIN
+      ElmcIntListPayload *payload = elmc_int_list_payload(a);
+      if (payload) {
+        for (int i = 0; i < payload->length; i++) {
+          ElmcValue *head = NULL;
+          rc = elmc_new_int(&head, payload->values[i]);
+          CHECK_RC(rc);
+          cell = NULL;
+          rc = elmc_list_cons(&cell, head, elmc_list_nil());
+          elmc_release(head);
+          CHECK_RC(rc);
+          if (tail_slot) {
+            elmc_release(*tail_slot);
+            *tail_slot = cell;
+          } else {
+            result = cell;
+          }
+          tail_slot = &((ElmcCons *)cell->payload)->tail;
+          cell = NULL;
+        }
+      }
+      if (!result) {
+        *out = elmc_retain(b);
       } else {
-        rc = elmc_closure_make_pap(out, closure, clo, args, argc);
-        CHECK_RC(rc);
+        elmc_release(*tail_slot);
+        *tail_slot = elmc_retain(b);
+        *out = result;
+        result = NULL;
       }
-    } else if (!clo->is_rc || !clo->rc_fn) {
-      value = elmc_closure_call(closure, args, argc);
-      if (!value) {
-        rc = RC_ERR_OUT_OF_MEMORY;
-        CHECK_RC(rc);
-      }
-      *out = value;
-      value = NULL;
-    } else {
-      int consumed = argc;
-      if (clo->arity > 0 && argc > clo->arity) {
-        consumed = clo->arity;
-      }
-      rc = clo->rc_fn(out, args, consumed, clo->captures, clo->capture_count);
-      CHECK_RC(rc);
-      if (consumed < argc) {
-        next = NULL;
-        rc = elmc_closure_call_rc(&next, *out, args + consumed, argc - consumed);
-        CHECK_RC(rc);
-        elmc_release(*out);
-        *out = next;
-        next = NULL;
-      }
-    }
-  CATCH_END
-  elmc_release(value);
-  elmc_release(next);
-  return rc;
-}
-
-RC elmc_list_map(ElmcValue **out, ElmcValue *f, ElmcValue *list) {
-  if (list && list->tag == ELMC_TAG_INT_LIST) {
-    return elmc_int_list_map(out, f, list);
+    CATCH_END
+    elmc_release(cell);
+    elmc_release(result);
+    return rc;
   }
   RC rc = RC_SUCCESS;
-  ElmcValue *rev = elmc_list_nil();
-  ElmcValue *mapped = NULL;
-  ElmcValue *next = NULL;
+  ElmcValue *result = NULL;
+  ElmcValue **tail_slot = NULL;
+  ElmcValue *cell = NULL;
   CATCH_BEGIN
-    ElmcValue *cursor = list;
+    ElmcValue *cursor = a;
     while (cursor && cursor->tag == ELMC_TAG_LIST && cursor->payload != NULL) {
       ElmcCons *node = (ElmcCons *)cursor->payload;
-      ElmcValue *args[1] = { node->head };
-      mapped = NULL;
-      rc = elmc_closure_call_rc(&mapped, f, args, 1);
+      cell = NULL;
+      rc = elmc_list_cons(&cell, node->head, elmc_list_nil());
       CHECK_RC(rc);
-      next = NULL;
-      rc = elmc_list_cons(&next, mapped, rev);
-      CHECK_RC(rc);
-      elmc_release(mapped);
-      mapped = NULL;
-      elmc_release(rev);
-      rev = next;
-      next = NULL;
+      if (tail_slot) {
+        elmc_release(*tail_slot);
+        *tail_slot = cell;
+      } else {
+        result = cell;
+      }
+      tail_slot = &((ElmcCons *)cell->payload)->tail;
+      cell = NULL;
       cursor = node->tail;
     }
-    if (rc == RC_SUCCESS) {
-      rc = elmc_list_reverse_transfer(out, &rev);
-      CHECK_RC(rc);
+    if (!result) {
+      if (b && b->tag == ELMC_TAG_INT_LIST) {
+        rc = elmc_int_list_to_cons(out, b);
+        CHECK_RC(rc);
+      } else {
+        *out = elmc_retain(b);
+      }
+    } else {
+      elmc_release(*tail_slot);
+      if (b && b->tag == ELMC_TAG_INT_LIST) {
+        rc = elmc_int_list_append_to_cons_tail(tail_slot, b);
+        CHECK_RC(rc);
+      } else {
+        *tail_slot = elmc_retain(b);
+      }
+      *out = result;
+      result = NULL;
     }
   CATCH_END
-  elmc_release(mapped);
-  elmc_release(next);
-  elmc_release(rev);
+  elmc_release(cell);
+  elmc_release(result);
   return rc;
+}
+
+static ElmcOwnedSlotsPoolState *elmc_owned_slots_pool_state(void) {
+  static ElmcOwnedSlotsPoolState state;
+  return &state;
+}
+
+ElmcValue **elmc_owned_slots_acquire(int count) {
+  ElmcOwnedSlotsPoolState *state;
+  ElmcValue **frame;
+  if (count <= 0) return NULL;
+  state = elmc_owned_slots_pool_state();
+  if (count <= ELMC_OWNED_SLOTS_POOL_CAP && state->depth < ELMC_OWNED_SLOTS_POOL_DEPTH) {
+    frame = state->frames[state->depth];
+    memset(frame, 0, (size_t)count * sizeof(ElmcValue *));
+    state->depth += 1;
+    return frame;
+  }
+  /* Rare: deeper nesting or oversized frame — fall back to heap. */
+  return (ElmcValue **)elmc_calloc((size_t)count, sizeof(ElmcValue *), "owned_slots");
+}
+
+void elmc_owned_slots_release(ElmcValue **owned, int count) {
+  ElmcOwnedSlotsPoolState *state;
+  (void)count;
+  if (!owned) return;
+  state = elmc_owned_slots_pool_state();
+  if (state->depth > 0 && owned == state->frames[state->depth - 1]) {
+    state->depth -= 1;
+    return;
+  }
+  elmc_free(owned);
 }
 
 static ElmcValue *elmc_retain_impl(ElmcValue *value) {

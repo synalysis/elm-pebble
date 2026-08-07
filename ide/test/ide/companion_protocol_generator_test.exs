@@ -256,6 +256,42 @@ defmodule Ide.CompanionProtocolGeneratorTest do
       refute generated_source =~ "companion_protocol_box_bool("
       refute generated_source =~ "companion_protocol_box_string("
       refute generated_source =~ "companion_protocol_box_int_list("
+      # Tag-only WatchToPhone has no int payload writes — omit the encode helper.
+      refute generated_source =~ "companion_protocol_value_int("
+    after
+      File.rm_rf(tmp)
+    end
+  end
+
+  test "emits companion_protocol_value_int only when WatchToPhone carries int fields" do
+    tmp =
+      Path.join(
+        System.tmp_dir!(),
+        "elm-pebble-protocol-value-int-#{System.unique_integer([:positive])}"
+      )
+
+    types = Path.join(tmp, "Types.elm")
+    header = Path.join(tmp, "generated/companion_protocol.h")
+    source = Path.join(tmp, "generated/companion_protocol.c")
+    js = Path.join(tmp, "pkjs/companion-protocol.js")
+
+    try do
+      File.mkdir_p!(Path.dirname(types))
+
+      File.write!(types, """
+      module Companion.Types exposing (PhoneToWatch(..), WatchToPhone(..))
+
+      type WatchToPhone
+          = SendCount Int
+
+      type PhoneToWatch
+          = Ack
+      """)
+
+      assert :ok = CompanionProtocolGenerator.generate(types, header, source, js)
+      generated_source = File.read!(source)
+      assert generated_source =~ "companion_protocol_value_int("
+      assert generated_source =~ "dict_write_int32(iter, COMPANION_PROTOCOL_KEY_SEND_COUNT_FIELD1"
     after
       File.rm_rf(tmp)
     end

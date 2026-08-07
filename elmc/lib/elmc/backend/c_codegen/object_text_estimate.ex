@@ -11,7 +11,7 @@ defmodule Elmc.Backend.CCodegen.ObjectTextEstimate do
   @type estimate_available :: RootTypes.object_text_estimate_available()
   @type t :: RootTypes.object_text_estimate()
 
-  @spec estimate(String.t(), keyword()) :: t()
+  @spec estimate(String.t(), keyword() | map()) :: t()
   def estimate(out_dir, opts \\ []) when is_binary(out_dir) do
     gcc = gcc_bin()
     size_bin = size_bin()
@@ -147,7 +147,12 @@ defmodule Elmc.Backend.CCodegen.ObjectTextEstimate do
 
   defp parse_text_column(_), do: 0
 
-  defp include_flags(opts) do
+  defp include_flags(opts) when is_map(opts) do
+    sdk_root = Map.get(opts, :sdk_root, sdk_core_root())
+    include_flags(sdk_root: sdk_root)
+  end
+
+  defp include_flags(opts) when is_list(opts) do
     sdk_root = Keyword.get(opts, :sdk_root, sdk_core_root())
     elmc_include = Path.expand("../../../../c/include", __DIR__)
 

@@ -1,1 +1,0 @@
-{"revision":"f4d9ef590707fec6f050da1ab050622c466b89cf932849dc9d9529b758156b29","target_platforms":[],"codegen":{"codegen_profile":"size","direct_render_only":false,"entry_module":"Main","pebble_int32":true,"plan_ir_mode":"primary","plan_ir_strict":true,"prod":false,"prune_direct_generic":false,"prune_native_wrappers":true,"prune_runtime":true,"strip_dead_code":true}}

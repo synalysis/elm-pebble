@@ -30,7 +30,7 @@ defmodule IdeWeb.AuthModeTest do
 
     conn = get(conn, ~p"/projects")
 
-    assert redirected_to(conn) == "/login"
+    assert redirected_to(conn) == "/login?return_to=%2Fprojects"
   end
 
   test "public alias maps to public_pebble", %{conn: conn} do
@@ -41,7 +41,7 @@ defmodule IdeWeb.AuthModeTest do
     assert Auth.app_store_publish_enabled?()
 
     conn = get(conn, ~p"/projects")
-    assert redirected_to(conn) == "/login"
+    assert redirected_to(conn) == "/login?return_to=%2Fprojects"
   end
 
   test "public modes disable MCP integration", %{conn: _conn} do
@@ -72,7 +72,39 @@ defmodule IdeWeb.AuthModeTest do
     refute Auth.app_store_publish_enabled?()
 
     conn = get(conn, ~p"/projects")
-    assert redirected_to(conn) == "/login"
+    assert redirected_to(conn) == "/login?return_to=%2Fprojects"
+  end
+
+  test "anonymous template deep link preserves return_to through magic login", %{conn: conn} do
+    Application.put_env(:ide, Ide.Auth, mode: :public_custom)
+
+    target = "/projects?template=game-2048&new=1"
+    conn = get(conn, target)
+    login_path = redirected_to(conn)
+    assert login_path =~ "/login?return_to="
+    assert URI.decode_query(URI.parse(login_path).query || "")["return_to"] == target
+
+    conn =
+      conn
+      |> recycle()
+      |> post(~p"/auth/email/continue", %{
+        "email" => "template-link@example.test",
+        "return_to" => target
+      })
+
+    assert html_response(conn, 200) =~ "Check your email"
+
+    token =
+      assert_email_sent(fn email ->
+        assert email.to == [{"", "template-link@example.test"}]
+        [_, token] = Regex.run(~r/token=([^&\s"]+)/, email.html_body)
+        token
+      end)
+
+    conn = get(conn, ~p"/auth/email/verify?token=#{token}")
+
+    assert redirected_to(conn) == target
+    assert get_session(conn, :user_id)
   end
 
   test "public_pebble allows authenticated firebase user access", %{conn: conn} do
@@ -122,6 +154,8 @@ defmodule IdeWeb.AuthModeTest do
 
     assert html_response(conn, 200) =~ "Email me a login link"
     assert html_response(conn, 200) =~ "only used to sign you in and keep your data separate"
+    assert html_response(conn, 200) =~ "Only a one-way hash of your email is stored"
+    assert html_response(conn, 200) =~ "never at risk of being exposed"
     assert html_response(conn, 200) =~ "run this IDE locally"
     assert html_response(conn, 200) =~ "https://github.com/synalysis/elm-pebble"
     assert html_response(conn, 200) =~ ~p"/auth/email/continue"

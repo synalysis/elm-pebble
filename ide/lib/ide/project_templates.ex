@@ -754,8 +754,45 @@ defmodule Ide.ProjectTemplates do
     with :ok <- seed_template_protocol(workspace_path, template_dir),
          :ok <- seed_phone_companion(workspace_path),
          :ok <- seed_companion_demo_phone(workspace_path, template_dir),
+         :ok <- maybe_seed_phone_elm_wss_dependency(workspace_path, template_dir),
          :ok <- seed_watch_only_workspace(workspace_path, template_dir) do
       :ok
+    end
+  end
+
+  @spec maybe_seed_phone_elm_wss_dependency(workspace_path(), template_dir_name()) ::
+          seed_result()
+  defp maybe_seed_phone_elm_wss_dependency(workspace_path, "companion_demo_websocket") do
+    ensure_phone_elm_wss_dependency(workspace_path)
+  end
+
+  defp maybe_seed_phone_elm_wss_dependency(_workspace_path, _template_dir), do: :ok
+
+  @spec ensure_phone_elm_wss_dependency(workspace_path()) :: seed_result()
+  defp ensure_phone_elm_wss_dependency(workspace_path) do
+    path = Path.join(workspace_path, "phone/elm.json")
+
+    with {:ok, raw} <- File.read(path),
+         {:ok, decoded} <- Jason.decode(raw) do
+      direct = get_in(decoded, ["dependencies", "direct"]) || %{}
+      indirect = get_in(decoded, ["dependencies", "indirect"]) || %{}
+
+      # mbr/elm-wss is direct; elm/bytes is a transitive indirect dep of that package.
+      direct =
+        direct
+        |> Map.delete("elm/bytes")
+        |> Map.put("mbr/elm-wss", "2.0.0")
+
+      indirect = Map.put_new(indirect, "elm/bytes", "1.0.8")
+
+      updated =
+        decoded
+        |> put_in(["dependencies", "direct"], direct)
+        |> put_in(["dependencies", "indirect"], indirect)
+
+      File.write(path, Jason.encode!(updated, pretty: true))
+    else
+      {:error, reason} -> {:error, reason}
     end
   end
 

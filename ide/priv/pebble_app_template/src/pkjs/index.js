@@ -9,6 +9,7 @@ var platformHandlers = {};
 var pendingBridgeResponseIds = {};
 var protocol = require("./companion-protocol.js");
 var generatedConfigurationUrl = null;
+var companionElmWssEnabled = false;
 var configurationStorageKey = "elm-pebble.configuration.response";
 var appMessageKeyNamesById = {};
 var appMessageKeyIdsByName = {};
@@ -41,7 +42,10 @@ function defaultCompanionSimulatorSettings() {
             pressureHpa: 1013,
             windKph: 8,
             windDirectionDeg: 0
-        }
+        },
+        latitude: 48.137154,
+        longitude: 11.576124,
+        accuracy: 25
     };
 }
 
@@ -96,8 +100,11 @@ var companionSimulatorSettings = (function () {
         return normalized;
     }
 
-    return defaultCompanionSimulatorSettings();
+    // Empty on real phones. Defaults are only applied when the IDE/emulator
+    // explicitly injects simulator settings (see companionApplySimulatorSettings).
+    return {};
 })();
+var companionSimulatorSettingsExplicit = !!peekPendingCompanionSimulatorSettings();
 var appMessageOutbox = [];
 var appMessageSending = false;
 var appMessageHeadRetries = 0;
@@ -173,34 +180,40 @@ function hasExplicitCompanionSimulatorWeather(settings) {
 }
 
 function weatherFromSettingsObject(settings) {
+    var defaults = defaultCompanionSimulatorSettings().weather;
     if (!settings || typeof settings !== "object") {
-        return null;
+        settings = defaultCompanionSimulatorSettings();
     }
 
     var weather = settings.weather;
     if (!weather || typeof weather !== "object" || Array.isArray(weather)) {
         if (settings.weather_temperatureC == null && settings.weather_condition == null) {
-            return null;
+            weather = defaults;
+        } else {
+            weather = {
+                temperatureC: settings.weather_temperatureC,
+                condition: settings.weather_condition,
+                humidityPercent: settings.weather_humidityPercent,
+                pressureHpa: settings.weather_pressureHpa,
+                windKph: settings.weather_windKph,
+                windDirectionDeg: settings.weather_windDirectionDeg
+            };
         }
-
-        weather = {
-            temperatureC: settings.weather_temperatureC,
-            condition: settings.weather_condition,
-            humidityPercent: settings.weather_humidityPercent,
-            pressureHpa: settings.weather_pressureHpa,
-            windKph: settings.weather_windKph,
-            windDirectionDeg: settings.weather_windDirectionDeg
-        };
     }
 
     return {
-        temperatureC: Number(weather.temperatureC != null ? weather.temperatureC : 0),
-        condition: String(weather.condition || "clear"),
-        humidityPercent: Number(weather.humidityPercent != null ? weather.humidityPercent : 0),
-        pressureHpa: Number(weather.pressureHpa != null ? weather.pressureHpa : 0),
-        windKph: Number(weather.windKph != null ? weather.windKph : 0),
-        windDirectionDeg:
-            weather.windDirectionDeg != null ? Number(weather.windDirectionDeg) : undefined
+        temperatureC: Number(weather.temperatureC != null ? weather.temperatureC : defaults.temperatureC),
+        condition: String(weather.condition || defaults.condition),
+        humidityPercent: Number(
+            weather.humidityPercent != null ? weather.humidityPercent : defaults.humidityPercent
+        ),
+        pressureHpa: Number(weather.pressureHpa != null ? weather.pressureHpa : defaults.pressureHpa),
+        windKph: Number(weather.windKph != null ? weather.windKph : defaults.windKph),
+        windDirectionDeg: Number(
+            weather.windDirectionDeg != null
+                ? weather.windDirectionDeg
+                : defaults.windDirectionDeg
+        )
     };
 }
 
@@ -506,8 +519,6 @@ var PLATFORM_INCOMING_PORT_NAMES = {
     storage: "storagePlatformIncoming",
     preferences: "preferencesPlatformIncoming",
     configuration: "configurationPlatformIncoming",
-    webSocket: "webSocketPlatformIncoming",
-    "webSocket-commands": "webSocketCommandsPlatformIncoming",
     lifecycle: "lifecyclePlatformIncoming",
     "timeline-token": "timelineTokenPlatformIncoming",
     "timeline-commands": "timelineCommandsPlatformIncoming"
@@ -711,11 +722,33 @@ function finishCompanionBoot() {
     // cannot emit undeclared simulator keys.
 }
 
+var lastWatchInboundTag = null;
+var lastWatchInboundAt = 0;
+var WATCH_INBOUND_DEDUP_MS = 750;
+
 function deliverIncoming(payload) {
     if (isPlatformEnvelope(payload)) {
         deliverPlatformIncoming(payload);
         return;
     }
+
+    var inboundTag =
+        typeof payload.message_tag === "number"
+            ? payload.message_tag
+            : typeof payload["10"] === "number"
+              ? payload["10"]
+              : null;
+    var nowMs = Date.now();
+    if (
+        inboundTag != null &&
+        inboundTag === lastWatchInboundTag &&
+        nowMs - lastWatchInboundAt < WATCH_INBOUND_DEDUP_MS
+    ) {
+        console.log("watch -> Elm companion deduped tag=" + inboundTag);
+        return;
+    }
+    lastWatchInboundTag = inboundTag;
+    lastWatchInboundAt = nowMs;
 
     markCompanionWatchAppReady("watch_inbound");
     console.log("watch -> Elm companion", JSON.stringify(payload));
@@ -747,6 +780,34 @@ function geolocationAvailable() {
     return typeof navigator !== "undefined" && navigator.geolocation;
 }
 
+function geolocationFromSettings(settings) {
+    // Only use injected IDE/emulator coordinates — never hard-coded defaults on a
+    // real phone companion session.
+    if (!companionSimulatorSettingsExplicit) {
+        return null;
+    }
+
+    var source = settings && typeof settings === "object" ? settings : currentCompanionSimulatorSettings();
+    if (!source || typeof source !== "object") {
+        return null;
+    }
+
+    var latitude = Number(source.latitude);
+    var longitude = Number(source.longitude);
+    if (!isFinite(latitude) || !isFinite(longitude)) {
+        return null;
+    }
+
+    var accuracy = Number(source.accuracy);
+    return {
+        coords: {
+            latitude: latitude,
+            longitude: longitude,
+            accuracy: isFinite(accuracy) ? accuracy : 25
+        }
+    };
+}
+
 function deliverGeolocationPosition(position) {
     var coords = position && position.coords ? position.coords : {};
     var payload = {
@@ -768,6 +829,25 @@ function deliverGeolocationError(error) {
         }
     };
     deliverGeolocationIncoming(payload);
+}
+
+function resolveGeolocationPosition(success, error) {
+    var simulated = geolocationFromSettings();
+    if (simulated) {
+        success(simulated);
+        return;
+    }
+
+    if (!geolocationAvailable()) {
+        error({ message: "Geolocation unavailable" });
+        return;
+    }
+
+    navigator.geolocation.getCurrentPosition(success, error, {
+        enableHighAccuracy: false,
+        timeout: 15000,
+        maximumAge: 300000
+    });
 }
 
 
@@ -1030,6 +1110,7 @@ function syncCompanionSimulatorSettingsFromGlobal() {
         return false;
     }
 
+    companionSimulatorSettingsExplicit = true;
     companionSimulatorSettings = normalizeCompanionSimulatorSettings(settings);
     return true;
 }
@@ -1086,10 +1167,23 @@ function normalizeCompanionSimulatorSettings(settings) {
             windKph: Number(weather.windKph != null ? weather.windKph : 8),
             windDirectionDeg: Number(weather.windDirectionDeg != null ? weather.windDirectionDeg : 0)
         };
+    } else {
+        // IDE settings often include lat/long without a weather blob; keep simulator
+        // weather available so Weather.current does not resolve to null.
+        normalized.weather = defaultCompanionSimulatorSettings().weather;
     }
 
     if (!Array.isArray(normalized.calendar_events)) {
         normalized.calendar_events = [];
+    }
+
+    if (!isFinite(Number(normalized.latitude)) || !isFinite(Number(normalized.longitude))) {
+        var defaults = defaultCompanionSimulatorSettings();
+        normalized.latitude = defaults.latitude;
+        normalized.longitude = defaults.longitude;
+        normalized.accuracy = defaults.accuracy;
+    } else if (!isFinite(Number(normalized.accuracy))) {
+        normalized.accuracy = 25;
     }
 
     return normalized;
@@ -1131,7 +1225,16 @@ function deliverWeatherToWatchFromInfo(info) {
         }
     );
 
-    sendImmediateAppMessage(wirePayloadFromObject(encoded), 0);
+    if (!encoded || typeof encoded !== "object") {
+        return false;
+    }
+
+    var wire = wirePayloadFromObject(encoded);
+    if (!wire || Object.keys(wire).length === 0) {
+        return false;
+    }
+
+    sendImmediateAppMessage(wire, 0);
     return true;
 }
 
@@ -1189,6 +1292,13 @@ function companionSimulatorWeatherModeEnabled(settings) {
 }
 
 function shouldUseSimulatorWeather() {
+    // Real-device companions must hit live Open-Meteo unless the IDE/emulator
+    // explicitly injected simulator settings. Defaulting to Munich 21°C made
+    // every sideloaded watchface show fake weather.
+    if (!companionSimulatorSettingsExplicit && !companionSimulatorSettingsPending()) {
+        return false;
+    }
+
     var pending = peekPendingCompanionSimulatorSettings();
     if (pending && !companionSimulatorWeatherModeEnabled(pending)) {
         return false;
@@ -1315,19 +1425,14 @@ function fetchOpenMeteoWeather(latitude, longitude, callback) {
 }
 
 function fetchWeatherFromGeolocation(callback) {
-    if (!geolocationAvailable()) {
-        callback(null);
-        return;
-    }
-
-    navigator.geolocation.getCurrentPosition(
+    resolveGeolocationPosition(
         function (position) {
-            fetchOpenMeteoWeather(position.coords.latitude, position.coords.longitude, callback);
+            var coords = position && position.coords ? position.coords : {};
+            fetchOpenMeteoWeather(coords.latitude, coords.longitude, callback);
         },
         function () {
             callback(null);
-        },
-        { enableHighAccuracy: false, timeout: 15000, maximumAge: 300000 }
+        }
     );
 }
 
@@ -1351,6 +1456,22 @@ function resolveWeatherInfo(callback, attempt) {
 
 function deliverWeatherInfo(requestId, info, eventName) {
     if (!info) {
+        if (requestId) {
+            deliverBridgeResult(requestId, false, null, {
+                message: "Weather unavailable",
+                type: "unavailable",
+                retryable: true
+            });
+        } else {
+            deliverPlatformIncoming({
+                event: "weather.error",
+                payload: {
+                    message: "Weather unavailable",
+                    type: "unavailable",
+                    retryable: true
+                }
+            });
+        }
         return false;
     }
 
@@ -1402,10 +1523,19 @@ function handleWeatherCommand(request) {
     var op = request && request.op;
     var requestId = request && request.id;
 
-    if (op === "current" || op === "subscribe") {
+    // Subscribe only registers push interest. Emitting weather/calendar here made
+    // every Weather.current (watch RequestWeather) re-push calendar + weather twice
+    // (setup runs for both weatherPushInterest and weatherCurrentInterest).
+    if (op === "subscribe") {
+        if (requestId) {
+            deliverBridgeResult(requestId, true, { subscribed: true });
+        }
+        return;
+    }
+
+    if (op === "current") {
         setTimeout(function () {
             syncCompanionSimulatorSettingsFromGlobal();
-            applyPendingCompanionSimulatorSettings();
             deliverWeatherCurrent(requestId);
         }, 150);
         return;
@@ -1414,7 +1544,6 @@ function handleWeatherCommand(request) {
     if (op === "forecast") {
         setTimeout(function () {
             syncCompanionSimulatorSettingsFromGlobal();
-            applyPendingCompanionSimulatorSettings();
             resolveWeatherInfo(function (info) {
                 if (!deliverWeatherInfo(requestId, info, "weather.forecast")) {
                     bridgeCommandError(request, "weather", "Weather unavailable");
@@ -1601,6 +1730,8 @@ function maybeDeliverSimulatorWeatherFromSettings(settings) {
     }, 150);
 }
 
+var lastCompanionSimulatorCalendarKey = null;
+
 function companionApplySimulatorSettings(settings) {
     if (!settings || typeof settings !== "object") {
         return;
@@ -1615,6 +1746,7 @@ function companionApplySimulatorSettings(settings) {
         return;
     }
 
+    companionSimulatorSettingsExplicit = true;
     companionSimulatorSettings = normalizeCompanionSimulatorSettings(settings);
     companionGlobalRoot().__elmPebbleCompanionSimulatorSettings = companionSimulatorSettings;
     markCompanionSimulatorSettingsReady();
@@ -1635,7 +1767,12 @@ function companionApplySimulatorSettings(settings) {
     maybeDeliverSimulatorWeatherFromSettings(settings);
 
     if (companionSupportsCalendarPlatform()) {
-        deliverCalendarUpcoming(null, calendarEventsFromSettings());
+        var calendarEvents = calendarEventsFromSettings();
+        var calendarKey = JSON.stringify(calendarEvents);
+        if (calendarKey !== lastCompanionSimulatorCalendarKey) {
+            lastCompanionSimulatorCalendarKey = calendarKey;
+            deliverCalendarUpcoming(null, calendarEvents);
+        }
     }
 }
 
@@ -1671,17 +1808,28 @@ function handleNotificationsCommand(request) {
 }
 
 function handleGeolocationCommand(payload) {
-    if (!geolocationAvailable()) {
-        deliverGeolocationError({ message: "Geolocation unavailable" });
+    if (payload.op === "register") {
         return;
     }
 
     if (payload.op === "getCurrentPosition") {
-        navigator.geolocation.getCurrentPosition(deliverGeolocationPosition, deliverGeolocationError);
+        resolveGeolocationPosition(deliverGeolocationPosition, deliverGeolocationError);
         return;
     }
 
     if (payload.op === "watch") {
+        var simulated = geolocationFromSettings();
+        if (simulated) {
+            deliverGeolocationPosition(simulated);
+            geolocationWatches[payload.id || "simulator"] = "simulator";
+            return;
+        }
+
+        if (!geolocationAvailable()) {
+            deliverGeolocationError({ message: "Geolocation unavailable" });
+            return;
+        }
+
         var watchId = navigator.geolocation.watchPosition(deliverGeolocationPosition, deliverGeolocationError);
         geolocationWatches[payload.id || String(watchId)] = watchId;
         return;
@@ -1691,6 +1839,14 @@ function handleGeolocationCommand(payload) {
         var requestedId = payload.payload && payload.payload.watchId;
         var watchKey = String(requestedId);
         var storedId = geolocationWatches[watchKey];
+        if (storedId === "simulator") {
+            delete geolocationWatches[watchKey];
+            return;
+        }
+        if (!geolocationAvailable()) {
+            delete geolocationWatches[watchKey];
+            return;
+        }
         navigator.geolocation.clearWatch(typeof storedId === "number" ? storedId : requestedId);
         delete geolocationWatches[watchKey];
     }
@@ -1780,11 +1936,6 @@ function handleOutgoing(payload) {
 
     if (payload && payload.api === "notifications") {
         handleNotificationsCommand(payload);
-        return;
-    }
-
-    if (payload && payload.api === "webSocket") {
-        bridgeCommandError(payload, "webSocket", "WebSocket unavailable from this Pebble companion runtime");
         return;
     }
 
@@ -1954,6 +2105,10 @@ if (generatedConfigurationUrl) {
     });
 }
 
+if (companionElmWssEnabled) {
+    require("./elm-websockets.js");
+}
+
 var elmModule = require("./elm-companion.js");
 
 function initElmCompanionApp() {
@@ -1983,6 +2138,10 @@ function initElmCompanionApp() {
     }
 
     wireCompanionIncomingPorts(app);
+
+    if (companionElmWssEnabled && typeof ElmWebsockets !== "undefined") {
+        ElmWebsockets.initApp(app);
+    }
 
     // Elm init commands run on the next macrotask via Process.sleep(0). Defer boot
     // until handlers are registered and early bridge pushes can be replayed.

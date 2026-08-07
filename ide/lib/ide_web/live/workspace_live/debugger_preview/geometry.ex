@@ -144,10 +144,16 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview.Geometry do
     finish = normalize_pebble_angle(end_angle)
 
     cond do
-      start == finish ->
+      start == finish and end_angle <= @trig_max_angle ->
         []
 
-      end_angle >= @trig_max_angle ->
+      end_angle > @trig_max_angle ->
+        wrap_end = end_angle - @trig_max_angle
+
+        [%{start: start, end: @trig_max_angle}, %{start: 0, end: wrap_end}]
+        |> Enum.reject(fn %{start: a, end: b} -> a >= b end)
+
+      end_angle == @trig_max_angle ->
         [%{start: start, end: @trig_max_angle}]
 
       finish > start ->
@@ -155,6 +161,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview.Geometry do
 
       true ->
         [%{start: start, end: @trig_max_angle}, %{start: 0, end: finish}]
+        |> Enum.reject(fn %{start: a, end: b} -> a >= b end)
     end
   end
 

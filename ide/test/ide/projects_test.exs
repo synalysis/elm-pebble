@@ -895,7 +895,8 @@ defmodule Ide.ProjectsTest do
              Projects.read_source_file(project, "protocol", "src/Companion/Types.elm")
 
     assert String.contains?(protocol_types, "type WeatherCondition")
-    assert String.contains?(protocol_types, "ProvideTimezone Int")
+    assert String.contains?(protocol_types, "ProvideSun Int Int SunMode")
+    refute String.contains?(protocol_types, "ProvideTimezone")
     assert String.contains?(protocol_types, "PolarNight")
     assert String.contains?(protocol_types, "type Temperature")
     assert String.contains?(protocol_types, "type WindSpeed")
@@ -1037,7 +1038,7 @@ defmodule Ide.ProjectsTest do
       {"companion-demo-geolocation", "companion_demo_geolocation", "watchface",
        ["Pebble.Companion.Geolocation", "ProvidePosition"]},
       {"companion-demo-websocket", "companion_demo_websocket", "app",
-       ["Pebble.Companion.WebSocket", "Sub.batch"]},
+       ["WebsocketSimple", "port wsCmd"]},
       {"companion-demo-timeline", "companion_demo_timeline", "app",
        ["Pebble.Companion.Timeline", "Timeline.onToken"]}
     ]
@@ -1065,6 +1066,11 @@ defmodule Ide.ProjectsTest do
 
       for snippet <- snippets do
         assert String.contains?(companion_app, snippet)
+      end
+
+      if template == "companion-demo-websocket" do
+        assert {:ok, phone_elm_json_raw} = File.read(Path.join(base, "phone/elm.json"))
+        assert phone_elm_json_raw =~ "mbr/elm-wss"
       end
 
       assert {:ok, watch_elm_json_raw} = File.read(Path.join(base, "watch/elm.json"))

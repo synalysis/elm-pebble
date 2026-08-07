@@ -1,4 +1,4 @@
-module Yes.Render exposing (CornerSlots, FaceDisplay, SunWindow, face)
+module Yes.Render exposing (CornerSlots, FaceDisplay, SunWindow, WeatherSlot, face)
 
 import Companion.Types exposing (Altitude(..), SunMode(..))
 import List
@@ -20,15 +20,23 @@ type alias FaceDisplay =
     , homeMinute : Int
     , timeText : String
     , sun : Maybe SunWindow
+    , moonriseMin : Maybe Int
+    , moonsetMin : Maybe Int
     , moonPhaseE6 : Maybe Int
     , corners : CornerSlots
     }
 
 
+type alias WeatherSlot =
+    { label : String
+    , icon : Resources.StaticVector
+    }
+
+
 type alias CornerSlots =
-    { topLeft : { value : String, caption : String }
+    { topLeft : { value : String, icon : Resources.StaticVector }
     , date : Maybe String
-    , weather : Maybe String
+    , weather : Maybe WeatherSlot
     , bottomRight : BottomRightSlot
     }
 
@@ -74,16 +82,27 @@ drawDial layout display =
 
         center =
             { x = layout.cx, y = layout.cy }
+
+        moonArc =
+            case ( display.moonriseMin, display.moonsetMin ) of
+                ( Just rise, Just set ) ->
+                    coloredRadialWedge moonBounds
+                        Color.blueMoon
+                        (angleFromMinute rise)
+                        (angleFromMinute set)
+
+                _ ->
+                    []
     in
     [ Ui.fillCircle center layout.outerRadius Color.oxfordBlue ]
+        ++ moonArc
+        ++ [ Ui.fillCircle center layout.innerRadius Color.black ]
         ++ (if hasSunData then
-                coloredRadialWedge moonBounds Color.blueMoon sunriseAngle sunsetAngle
+                drawSunWindow center layout.innerRadius sunBounds sunriseAngle sunsetAngle sunWindow
 
             else
                 []
            )
-        ++ [ Ui.fillCircle center layout.innerRadius Color.black ]
-        ++ drawSunWindow center layout.innerRadius sunBounds sunriseAngle sunsetAngle sunWindow
         ++ [ Ui.circle center layout.outerRadius Color.white
            , Ui.circle center layout.innerRadius Color.darkGray
            ]
@@ -153,7 +172,7 @@ drawScaleTick layout spec =
                     pointAt layout.cx layout.cy (layout.outerRadius + 14) tickAngle
 
                 labelBox =
-                    { x = labelPoint.x - 9, y = labelPoint.y - 14, w = 18, h = 12 }
+                    { x = labelPoint.x - 9, y = labelPoint.y - 12, w = 18, h = 12 }
             in
             [ Ui.line outer inner Color.white
             , textAt Color.white labelBox value
@@ -173,8 +192,9 @@ coloredRadial bounds fill start end =
 coloredRadialWedge : Ui.Rect -> Color.Color -> Int -> Int -> List Ui.RenderOp
 coloredRadialWedge bounds color startAngle endAngle =
     if endAngle < startAngle then
-        coloredRadial bounds color startAngle 65536
-            ++ coloredRadial bounds color 0 endAngle
+        -- Wrapped wedge as one op (end = endAngle + 65536) so firmware can fill
+        -- across noon without a seam between two meeting gpaths.
+        coloredRadial bounds color startAngle (endAngle + 65536)
 
     else
         coloredRadial bounds color startAngle endAngle
@@ -287,10 +307,10 @@ drawCorners layout slots =
         ++ drawBottomRight layout slots.bottomRight
 
 
-drawTopLeft : Layout -> { value : String, caption : String } -> List Ui.RenderOp
+drawTopLeft : Layout -> { value : String, icon : Resources.StaticVector } -> List Ui.RenderOp
 drawTopLeft layout slot =
     [ textAt Color.white layout.topLeftTitle slot.value
-    , textAt Color.darkGray layout.topLeftLabel slot.caption
+    , Ui.drawVectorAt slot.icon layout.topLeftIcon
     ]
 
 
@@ -301,17 +321,19 @@ drawDate layout maybeDate =
             []
 
         Just value ->
-            [ textAt Color.white layout.topRightDate value ]
+            [ textAtRight Color.white layout.topRightDate value ]
 
 
-drawWeatherCorner : Layout -> Maybe String -> List Ui.RenderOp
-drawWeatherCorner layout maybeLabel =
-    case maybeLabel of
+drawWeatherCorner : Layout -> Maybe WeatherSlot -> List Ui.RenderOp
+drawWeatherCorner layout maybeSlot =
+    case maybeSlot of
         Nothing ->
             []
 
-        Just label ->
-            [ textAt Color.white layout.bottomLeftWeather label ]
+        Just slot ->
+            [ Ui.drawVectorAt slot.icon layout.bottomLeftWeatherVector
+            , textAtLeft Color.white layout.bottomLeftWeather slot.label
+            ]
 
 
 drawBottomRight : Layout -> BottomRightSlot -> List Ui.RenderOp
@@ -319,11 +341,11 @@ drawBottomRight layout slot =
     case slot of
         AltitudeSlot value ->
             [ Ui.drawVectorAt Resources.VectorStaticMountain layout.bottomRight.vector
-            , textAt Color.white layout.bottomRight.singleLine value
+            , textAtRight Color.white layout.bottomRight.singleLine value
             ]
 
         SimpleLine value ->
-            [ textAt Color.white layout.bottomRight.singleLine value ]
+            [ textAtRight Color.white layout.bottomRight.singleLine value ]
 
         CountdownSlot label timeLine ->
             drawBottomRightCountdown layout label timeLine
@@ -353,8 +375,8 @@ drawBottomRightCountdown layout label timeLine =
         timeRect =
             { x = br.x, y = topY + labelH - 1, w = br.textW, h = timeH }
     in
-    [ textAt Color.lightGray labelRect label
-    , textAt Color.white timeRect timeLine
+    [ textAtRight Color.lightGray labelRect label
+    , textAtRight Color.white timeRect timeLine
     ]
 
 
@@ -368,10 +390,25 @@ defaultSunWindow =
 
 textAt : Color.Color -> Ui.Rect -> String -> Ui.RenderOp
 textAt color bounds value =
+    textAtOptions Ui.defaultTextOptions color bounds value
+
+
+textAtLeft : Color.Color -> Ui.Rect -> String -> Ui.RenderOp
+textAtLeft color bounds value =
+    textAtOptions (Ui.defaultTextOptions |> Ui.alignLeft) color bounds value
+
+
+textAtRight : Color.Color -> Ui.Rect -> String -> Ui.RenderOp
+textAtRight color bounds value =
+    textAtOptions (Ui.defaultTextOptions |> Ui.alignRight) color bounds value
+
+
+textAtOptions : Ui.TextOptions -> Color.Color -> Ui.Rect -> String -> Ui.RenderOp
+textAtOptions options color bounds value =
     Ui.group
         (Ui.context
             [ Ui.textColor color ]
-            [ Ui.text Resources.DefaultFont Ui.defaultTextOptions bounds value ]
+            [ Ui.text Resources.DefaultFont options bounds value ]
         )
 
 

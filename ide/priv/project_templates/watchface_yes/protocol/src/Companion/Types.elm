@@ -64,8 +64,7 @@ type WatchToPhone
 
 
 type PhoneToWatch
-    = ProvideTimezone Int
-    | ProvideSun Int Int SunMode
+    = ProvideSun Int Int SunMode
     | ProvideMoon Int Int Int
     | ProvideMoonPhase Int
     | ProvideWeather Temperature WeatherCondition Int Int Int

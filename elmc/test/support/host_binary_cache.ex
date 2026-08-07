@@ -59,6 +59,7 @@ defmodule Elmc.TestSupport.HostBinaryCache do
       source_fps,
       Keyword.take(link_opts, [:rc_track, :alloc_track, :alloc_probe, :extra_flags]),
       CompileCache.file_hash(Path.expand("elmc_host_stubs.h", __DIR__)),
+      CompileCache.file_hash(Path.expand("elmc_host_trig_stubs.c", __DIR__)),
       CompileCache.compiler_identity()
     })
   end

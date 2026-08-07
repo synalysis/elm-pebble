@@ -20,7 +20,7 @@ It is intentionally limited to APIs available in the Pebble companion (PebbleKit
 | Timeline token and timeline operations | Pebble timeline APIs | `Pebble.Companion.Timeline` | implemented (contract layer) | `Task`/`Cmd` returning typed token/result records |
 | Open external URL | Pebble open URL API | `Pebble.Navigation` or `Pebble.Browser` | missing | Simple `openUrl : String -> Cmd msg` with explicit error callback variant |
 | HTTP client | Original Elm compiler / debugger substitution | `elm/http` | implemented for companion apps | Use normal `elm/http`; the debugger/runtime bridge substitutes companion execution details |
-| WebSocket client | `WebSocket` | `Pebble.Companion.WebSocket` | implemented (contract layer) | Explicit connection state + `Cmd`/`Sub` split, typed close/error reasons |
+| WebSocket client | `mbr/elm-wss` (`wsCmd` / `wsMsg` ports) | application ports + PKJS runtime | implemented when dependency present | Use `WebsocketSimple` with Pebble-adapted `ElmWebsockets.initApp` |
 | Local companion storage | localStorage/companion persistence | `Pebble.Companion.Storage` | implemented | Key/value API with typed codecs |
 | Geolocation (if enabled in companion runtime) | browser geolocation | `Pebble.Companion.Geolocation` | implemented | `currentPosition` + `onCurrentPosition` with typed coordinates/errors |
 | Phone internet connectivity | browser `navigator.onLine` / connectivity events | `Pebble.Companion.Connectivity` | implemented | `current` command + `onConnectivity` subscription with `Online` / `Offline` |
@@ -85,7 +85,7 @@ Guidance:
 | --- | --- | --- |
 | 1 | Runtime foundation | Generic companion dispatcher, request correlation IDs, error envelope, target diagnostics |
 | 2 | Core APIs | Elm-like HTTP, typed companion protocol, storage, lifecycle subscriptions |
-| 3 | Realtime + platform extras | `Pebble.WebSocket`, configuration flow, timeline token, open URL, network/geolocation |
+| 3 | Realtime + platform extras | `mbr/elm-wss`, configuration flow, timeline token, open URL, network/geolocation |
 | 4 | Quality and parity | Full docs, fixtures, integration tests, wrong-target tests, migration notes |
 
 ## Acceptance Criteria for "Phone API Complete"

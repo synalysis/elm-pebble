@@ -126,25 +126,19 @@ enum {
 #define ELMC_PEBBLE_FEATURE_DRAW_ROTATED_BITMAP 0
 #define ELMC_PEBBLE_FEATURE_DRAW_TEXT 0
 #define ELMC_PEBBLE_FEATURE_COMPACT_DRAW 0
-/* Dual-target headers may define ELMC_PEBBLE_APLITE_DIRECT_VIEW_SCENE for codegen,
-   but aplite-only scene settings apply only when building the aplite binary. */
+/* Formerly enabled a separate aplite path (512B static scene, CACHE=0, sync
+   ensure on the draw stack). Aplite now uses the same deferred malloc-backed
+   scene cache as other platforms — keep ACTIVE=0 so one control-flow path
+   is maintained. ELMC_PEBBLE_APLITE_DIRECT_VIEW_SCENE remains a codegen flag
+   for dual-target headers / direct encode, not a runtime scene-cache split. */
 #ifndef ELMC_PEBBLE_APLITE_DIRECT_VIEW_ACTIVE
-#if defined(ELMC_PEBBLE_APLITE_DIRECT_VIEW_SCENE) && defined(PBL_PLATFORM_APLITE)
-#define ELMC_PEBBLE_APLITE_DIRECT_VIEW_ACTIVE 1
-#else
 #define ELMC_PEBBLE_APLITE_DIRECT_VIEW_ACTIVE 0
-#endif
 #endif
 
 #ifndef ELMC_PEBBLE_SCENE_CACHE_ENABLED
-#if ELMC_PEBBLE_APLITE_DIRECT_VIEW_ACTIVE
-/* Build the view into a compact byte stream once per invalidate; draw decodes with a cursor. */
-#define ELMC_PEBBLE_SCENE_CACHE_ENABLED 0
-#else
-/* Encode the view once into a compact byte stream; draw decodes with a cursor.
-   Incremental dirty regions (prev_scene diff) stay off on Pebble targets until reliable. */
+/* Encode the view once into a compact byte stream (deferred off the draw
+   stack); draw decodes with a cursor. Same path on aplite and color. */
 #define ELMC_PEBBLE_SCENE_CACHE_ENABLED 1
-#endif
 #endif
 
 #ifndef ELMC_PEBBLE_SCENE_STREAM_CMDS
@@ -168,12 +162,13 @@ enum {
 #endif
 #endif
 
+/* Platform sizing: INITIAL clears the mid-encode realloc cliff (a ~540B
+   view overflowing a 512B first slot needs ~1.5KiB contiguous on grow and
+   fails on tight heaps as SCENE_BUFFER_OVERFLOW → blank white draw).
+   Pool double-buffering (prepare_rebuild + abort_build) keeps the last good
+   frame when a later rebuild fails, so transient OOM does not gray the face. */
 #ifndef ELMC_PEBBLE_SCENE_INITIAL_CAPACITY
-#if ELMC_PEBBLE_APLITE_DIRECT_VIEW_ACTIVE
-#define ELMC_PEBBLE_SCENE_INITIAL_CAPACITY 256
-#else
 #define ELMC_PEBBLE_SCENE_INITIAL_CAPACITY 1024
-#endif
 #endif
 
 #ifndef ELMC_PEBBLE_SCENE_GROW_CHUNK
@@ -192,19 +187,15 @@ enum {
    Each slot is ~8B BSS on pebble_int32. Watchfaces typically keep 1–2 live scenes;
    4 leaves headroom under flint's 64KiB APP virtual-size uint16 limit. */
 #ifndef ELMC_PEBBLE_SCENE_POOL_SLOTS
-#if ELMC_PEBBLE_APLITE_DIRECT_VIEW_ACTIVE
-#define ELMC_PEBBLE_SCENE_POOL_SLOTS 0
+#if defined(PBL_PLATFORM_APLITE)
+#define ELMC_PEBBLE_SCENE_POOL_SLOTS 2
 #else
 #define ELMC_PEBBLE_SCENE_POOL_SLOTS 4
 #endif
 #endif
 
 #ifndef ELMC_PEBBLE_SCENE_STATIC_CAPACITY
-#if ELMC_PEBBLE_APLITE_DIRECT_VIEW_ACTIVE
-#define ELMC_PEBBLE_SCENE_STATIC_CAPACITY 512
-#else
 #define ELMC_PEBBLE_SCENE_STATIC_CAPACITY 0
-#endif
 #endif
 
 #ifndef ELMC_PEBBLE_SCENE_CHUNK_SIZE
@@ -283,8 +274,13 @@ typedef struct ElmcPebbleApp {
   uint64_t prev_ops_hash;
   ElmcValue *stream_view_result;
   ElmcPebbleSceneBuffer scene;
-#if ELMC_PEBBLE_SCENE_CACHE_ENABLED || ELMC_PEBBLE_APLITE_DIRECT_VIEW_ACTIVE
+#if ELMC_PEBBLE_SCENE_CACHE_ENABLED
   int scene_draw_byte_offset;
+  /* In-flight rebuild fallback: when pool double-buffering is active, a failed
+     encode restores these so draw keeps the last good frame instead of blanking. */
+  int scene_rebuild_fallback_slot;
+  int scene_rebuild_fallback_byte_count;
+  int scene_rebuild_fallback_command_count;
 #endif
 #if ELMC_PEBBLE_DIRTY_REGION_ENABLED
   ElmcPebbleSceneBuffer prev_scene;
@@ -463,6 +459,10 @@ typedef struct {
   int64_t p4;
   int64_t p5;
   char text[128];
+  /* Boxed command payload (e.g. companion send message). Owned by the caller
+     after elmc_pebble_take_cmd; borrowed from the queue in the *_cmd_at
+     inspectors, which clear it. Release with elmc_pebble_cmd_release_value. */
+  ElmcValue *value;
 } ElmcPebbleCmd;
 
 typedef enum {
@@ -656,6 +656,7 @@ typedef enum {
     int elmc_pebble_dispatch_tag_value(ElmcPebbleApp *app, int64_t tag, int64_t value);
     int elmc_pebble_dispatch_tag_bool(ElmcPebbleApp *app, int64_t tag, int value);
     int elmc_pebble_dispatch_tag_string(ElmcPebbleApp *app, int64_t tag, const char *value);
+    /* Borrows `payload`: caller retains ownership and must elmc_release after return. */
     int elmc_pebble_dispatch_tag_payload(ElmcPebbleApp *app, int64_t tag, ElmcValue *payload);
     int elmc_pebble_dispatch_tag_int_values(
         ElmcPebbleApp *app,
@@ -663,6 +664,7 @@ typedef enum {
         int64_t inner_tag,
         int field_count,
         const int64_t *field_values);
+    /* field_names used only when ELMC_PEBBLE_DEBUG_LOGS; pass NULL in production. */
     int elmc_pebble_dispatch_tag_record_int_fields(
         ElmcPebbleApp *app,
         int64_t tag,
@@ -701,6 +703,7 @@ typedef enum {
     typedef struct GContext GContext;
 
     int elmc_pebble_take_cmd(ElmcPebbleApp *app, ElmcPebbleCmd *out_cmd);
+    void elmc_pebble_cmd_release_value(ElmcPebbleCmd *cmd);
     int elmc_pebble_pending_cmd_count(ElmcPebbleApp *app);
     int elmc_pebble_pending_cmd_at(ElmcPebbleApp *app, int index, ElmcPebbleCmd *out_cmd);
     int elmc_pebble_last_dispatch_cmd_count(ElmcPebbleApp *app);

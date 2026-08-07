@@ -38,6 +38,15 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupportTest do
     assert Enum.all?(paths, &String.ends_with?(&1, " Z"))
   end
 
+  test "fill_radial pie sector accepts end_angle past TRIG_MAX_ANGLE wrap form" do
+    op = %{x: 0, y: 0, w: 100, h: 100, start_angle: 49_152, end_angle: 16_384 + 65_536}
+
+    paths = DebuggerPreview.pie_sector_paths(op)
+
+    assert length(paths) == 2
+    assert Enum.all?(paths, &String.ends_with?(&1, " Z"))
+  end
+
   test "view_tree_outline renders nested watch view_tree" do
     runtime = %{
       view_tree: %{
@@ -1589,9 +1598,9 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupportTest do
     assert text.h == 56
     assert text.font_size == 56
     assert text.text_align == "center"
-    assert IdeWeb.WorkspaceLive.DebuggerPage.SvgRender.text_font_size(text) == 42
-    # Top of rect (Pebble), not mid-box.
-    assert IdeWeb.WorkspaceLive.DebuggerPage.SvgRender.text_y(text) == 52
+    # Gothic 42 bucket → sans approx 3/4, plus top bearing for Gothic ink.
+    assert IdeWeb.WorkspaceLive.DebuggerPage.SvgRender.text_font_size(text) == 32
+    assert IdeWeb.WorkspaceLive.DebuggerPage.SvgRender.text_y(text) == 52 + 5
 
     assert IdeWeb.WorkspaceLive.DebuggerPage.SvgRender.text_baseline(text) ==
              "text-before-edge"
@@ -1617,14 +1626,76 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupportTest do
     [text] = DebuggerPreview.svg_ops(nil, runtime)
 
     assert text.h == 8
-    # Cap to box height so sans-serif is not mid-glyph clipped; y stays top-of-box.
-    assert IdeWeb.WorkspaceLive.DebuggerPage.SvgRender.text_font_size(text) == 8
-    assert IdeWeb.WorkspaceLive.DebuggerPage.SvgRender.text_y(text) == 146
+    # h=8 tight: 6px sans + 7px bearing; clip height expands so bottoms are not cut.
+    assert IdeWeb.WorkspaceLive.DebuggerPage.SvgRender.text_font_size(text) == 6
+    assert IdeWeb.WorkspaceLive.DebuggerPage.SvgRender.text_y(text) == 146 + 7
+
+    assert IdeWeb.WorkspaceLive.DebuggerPage.SvgRender.text_clip_height(text) >=
+             IdeWeb.WorkspaceLive.DebuggerPage.SvgRender.text_font_size(text) + 7
 
     assert IdeWeb.WorkspaceLive.DebuggerPage.SvgRender.text_baseline(text) ==
              "text-before-edge"
 
     assert IdeWeb.WorkspaceLive.DebuggerPage.SvgRender.text_clippable?(text)
+  end
+
+  test "debugger preview scales Yes-like date and dial text toward Gothic ink size" do
+    date = %{kind: :text_label, x: 100, y: 5, w: 90, h: 18, text: "Aug 3", text_align: "right"}
+    dial = %{kind: :text_label, x: 91, y: 8, w: 18, h: 12, text: "12", text_align: "center"}
+    time = %{kind: :text_label, x: 0, y: 61, w: 200, h: 28, text: "23:05", text_align: "center"}
+
+    # Date: Gothic 18 → ~14px sans, bearing 2 (fits in h=18).
+    assert IdeWeb.WorkspaceLive.DebuggerPage.SvgRender.text_font_size(date) == 14
+    assert IdeWeb.WorkspaceLive.DebuggerPage.SvgRender.text_y(date) == 7
+
+    # h=12 dial: ~9px sans + 6.5px bearing; clip expands to the glyph extent.
+    assert IdeWeb.WorkspaceLive.DebuggerPage.SvgRender.text_font_size(dial) == 9
+    assert IdeWeb.WorkspaceLive.DebuggerPage.SvgRender.text_y(dial) == 14.5
+
+    assert IdeWeb.WorkspaceLive.DebuggerPage.SvgRender.text_clip_height(dial) >=
+             9 + 6.5
+
+    # Time band: Gothic 24 → ~18px sans, bearing 3.
+    assert IdeWeb.WorkspaceLive.DebuggerPage.SvgRender.text_font_size(time) == 18
+    assert IdeWeb.WorkspaceLive.DebuggerPage.SvgRender.text_y(time) == 64
+  end
+  test "drawable-embedded colors win over sticky fill_color and stroke_color style ops" do
+    runtime = %{
+      model: %{
+        "runtime_view_output" => [
+          %{"kind" => "fill_color", "color" => 199},
+          %{"kind" => "stroke_color", "color" => 199},
+          %{"kind" => "fill_radial", "x" => 0, "y" => 0, "w" => 100, "h" => 100, "start_angle" => 0, "end_angle" => 1000},
+          %{"kind" => "fill_circle", "cx" => 50, "cy" => 50, "r" => 40, "color" => 192},
+          %{"kind" => "fill_color", "color" => 248},
+          %{"kind" => "stroke_color", "color" => 248},
+          %{"kind" => "fill_radial", "x" => 10, "y" => 10, "w" => 80, "h" => 80, "start_angle" => 0, "end_angle" => 1000},
+          %{"kind" => "line", "x1" => 50, "y1" => 50, "x2" => 50, "y2" => 10, "color" => 255},
+          %{"kind" => "fill_circle", "cx" => 50, "cy" => 50, "r" => 9, "color" => 192},
+          %{"kind" => "circle", "cx" => 50, "cy" => 50, "r" => 9, "color" => 255}
+        ]
+      }
+    }
+
+    ops = DebuggerPreview.svg_ops(nil, runtime)
+
+    assert Enum.at(ops, 0).kind == :fill_radial
+    assert Enum.at(ops, 0).fill_color == 199
+
+    assert Enum.at(ops, 1).kind == :fill_circle
+    assert Enum.at(ops, 1).fill_color == 192
+
+    assert Enum.at(ops, 2).kind == :fill_radial
+    assert Enum.at(ops, 2).fill_color == 248
+
+    assert Enum.at(ops, 3).kind == :line
+    assert Enum.at(ops, 3).stroke_color == 255
+
+    assert Enum.at(ops, 4).kind == :fill_circle
+    assert Enum.at(ops, 4).fill_color == 192
+
+    assert Enum.at(ops, 5).kind == :circle
+    assert Enum.at(ops, 5).stroke_color == 255
   end
 
   test "debugger preview preserves explicit text alignment and overflow" do

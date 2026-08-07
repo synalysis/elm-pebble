@@ -14,6 +14,7 @@ defmodule Ide.PebbleToolchain.Prepare do
   alias Ide.PebbleToolchain.Elmc, as: ToolchainElmc
   alias Ide.Resources.ResourceStore
   alias Ide.Resources.ResourceStore.Coercion
+  alias Ide.Resources.SlotOrder
 
   @type project_slug :: Types.project_slug()
   @type opts :: Types.opts()
@@ -594,7 +595,7 @@ defmodule Ide.PebbleToolchain.Prepare do
   defp stage_manifest_bitmap_entries(entries, assets_root, app_root) do
     entries
     |> Enum.filter(&is_map/1)
-    |> Enum.sort_by(&to_string(Map.get(&1, "ctor", "")))
+    |> SlotOrder.sort_wire_entries(:bitmap)
     |> Enum.reduce_while({:ok, []}, fn row, {:ok, acc} ->
       case stage_bitmap_entry_rows(row, assets_root, app_root) do
         {:ok, rows} -> {:cont, {:ok, acc ++ rows}}
@@ -660,7 +661,7 @@ defmodule Ide.PebbleToolchain.Prepare do
           media_entries =
             entries
             |> Enum.filter(&is_map/1)
-            |> Enum.sort_by(&to_string(Map.get(&1, "ctor", "")))
+            |> SlotOrder.sort_wire_entries(:font)
             |> Enum.map(fn row ->
               ctor = to_string(Map.get(row, "ctor", "Font"))
               source = Map.get(sources_by_id, to_string(Map.get(row, "source_id", "")), row)
@@ -709,6 +710,18 @@ defmodule Ide.PebbleToolchain.Prepare do
   @spec stage_vector_resources(String.t(), String.t()) ::
           {:ok, [pebble_media_entry()]} | {:error, toolchain_error()}
   defp stage_vector_resources(workspace_root, app_root) do
+    do_stage_vector_resources(workspace_root, app_root)
+  end
+
+  # Exposed for focused toolchain tests (slot order vs manifest order).
+  @doc false
+  @spec stage_vector_resources_for_test(String.t(), String.t()) ::
+          {:ok, [pebble_media_entry()]} | {:error, toolchain_error()}
+  def stage_vector_resources_for_test(workspace_root, app_root) do
+    do_stage_vector_resources(workspace_root, app_root)
+  end
+
+  defp do_stage_vector_resources(workspace_root, app_root) do
     manifest_path = Path.join(workspace_root, "watch/resources/vectors.json")
     assets_root = Path.join(workspace_root, "watch/resources/vectors")
 
@@ -719,6 +732,7 @@ defmodule Ide.PebbleToolchain.Prepare do
           media_entries =
             entries
             |> Enum.filter(&is_map/1)
+            |> SlotOrder.sort_wire_entries(:vector)
             |> Enum.flat_map(fn row ->
               ctor = to_string(Map.get(row, "ctor", "Vector"))
               filename = to_string(Map.get(row, "filename", ""))
@@ -769,6 +783,7 @@ defmodule Ide.PebbleToolchain.Prepare do
           media_entries =
             entries
             |> Enum.filter(&is_map/1)
+            |> SlotOrder.sort_wire_entries(:animation)
             |> Enum.flat_map(fn row ->
               ctor = to_string(Map.get(row, "ctor", "Animation"))
               filename = to_string(Map.get(row, "filename", ""))

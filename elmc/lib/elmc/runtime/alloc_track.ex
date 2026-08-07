@@ -24,6 +24,10 @@ defmodule Elmc.Runtime.AllocTrack do
     void elmc_alloc_track_dump_live(FILE *out);
     void elmc_alloc_track_dump_since(uint32_t min_id, FILE *out);
     uint32_t elmc_alloc_track_next_alloc_id(void);
+    /* Cumulative heap fallbacks from elmc_owned_slots_acquire (context "owned_slots"). */
+    uint32_t elmc_alloc_track_owned_slots_alloc_count(void);
+    /* Non-static: owned_slots pool heap-fallback and other paths call elmc_free. */
+    void elmc_free_impl(void *ptr, const char *context, const char *file, int line);
     #endif
 
     #ifndef ELMC_ALLOC_TRACE
@@ -58,7 +62,6 @@ defmodule Elmc.Runtime.AllocTrack do
     """
     #if ELMC_ALLOC_TRACK
     static void elmc_alloc_track_register(void *ptr, size_t size, const char *context, const char *file, int line);
-    static void elmc_free_impl(void *ptr, const char *context, const char *file, int line);
     #endif
     """
   end
@@ -84,6 +87,7 @@ defmodule Elmc.Runtime.AllocTrack do
     static ElmcAllocTrackEntry ELMC_ALLOC_TRACK_ENTRIES[ELMC_ALLOC_TRACK_MAX];
     static uint32_t ELMC_ALLOC_TRACK_COUNT = 0;
     static uint32_t ELMC_ALLOC_TRACK_NEXT_ID = 1;
+    static uint32_t ELMC_ALLOC_TRACK_OWNED_SLOTS_ALLOCS = 0;
 
     static ElmcAllocTrackEntry *elmc_alloc_track_find(void *ptr) {
       if (!ptr) return NULL;
@@ -95,6 +99,9 @@ defmodule Elmc.Runtime.AllocTrack do
 
     static void elmc_alloc_track_register(void *ptr, size_t size, const char *context, const char *file, int line) {
       if (!ptr) return;
+      if (context && strcmp(context, "owned_slots") == 0) {
+        ELMC_ALLOC_TRACK_OWNED_SLOTS_ALLOCS += 1;
+      }
       if (ELMC_ALLOC_TRACK_COUNT >= ELMC_ALLOC_TRACK_MAX) return;
       ElmcAllocTrackEntry *entry = &ELMC_ALLOC_TRACK_ENTRIES[ELMC_ALLOC_TRACK_COUNT++];
       entry->ptr = ptr;
@@ -119,6 +126,7 @@ defmodule Elmc.Runtime.AllocTrack do
     void elmc_alloc_track_reset(void) {
       ELMC_ALLOC_TRACK_COUNT = 0;
       ELMC_ALLOC_TRACK_NEXT_ID = 1;
+      ELMC_ALLOC_TRACK_OWNED_SLOTS_ALLOCS = 0;
     }
 
     uint32_t elmc_alloc_track_live_count(void) {
@@ -127,6 +135,10 @@ defmodule Elmc.Runtime.AllocTrack do
 
     uint32_t elmc_alloc_track_next_alloc_id(void) {
       return ELMC_ALLOC_TRACK_NEXT_ID;
+    }
+
+    uint32_t elmc_alloc_track_owned_slots_alloc_count(void) {
+      return ELMC_ALLOC_TRACK_OWNED_SLOTS_ALLOCS;
     }
 
     void elmc_alloc_track_dump_since(uint32_t min_id, FILE *out) {
@@ -168,7 +180,7 @@ defmodule Elmc.Runtime.AllocTrack do
       return 0;
     }
 
-    static void elmc_free_impl(void *ptr, const char *context, const char *file, int line) {
+    void elmc_free_impl(void *ptr, const char *context, const char *file, int line) {
       (void)context;
       (void)file;
       (void)line;

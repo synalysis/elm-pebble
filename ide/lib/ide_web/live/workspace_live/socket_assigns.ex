@@ -192,6 +192,8 @@ defmodule IdeWeb.WorkspaceLive.SocketAssigns do
           optional(:publish_type_guidance) => PublishFlow.publish_type_guidance(),
           optional(:publish_submit_status) => flow_status(),
           optional(:publish_submit_output) => String.t() | nil,
+          optional(:sideload_status) => flow_status(),
+          optional(:sideload_output) => String.t() | nil,
           optional(:publish_submit_options) => PublishFlow.publish_submit_option_map(),
           optional(:publish_metrics) => PublishFlow.publish_metrics(),
           optional(:prepare_release_status) => flow_status(),

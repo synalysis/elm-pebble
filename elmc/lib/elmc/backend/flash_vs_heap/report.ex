@@ -3,7 +3,6 @@ defmodule Elmc.Backend.FlashVsHeap.Report do
 
   alias Elmc.Backend.Bytecode.{TierGate, TierMetrics}
   alias Elmc.Backend.CCodegen.{ObjectTextEstimate, StackReport}
-  alias Elmc.Backend.SizeProfile
 
   @contract "elmc.flash_vs_heap.v1"
   @report_name "flash_vs_heap.json"
@@ -12,15 +11,15 @@ defmodule Elmc.Backend.FlashVsHeap.Report do
 
   @type constraint :: :flash_bound | :heap_bound | :balanced
 
-  @spec build(String.t(), keyword()) :: map()
+  @spec build(String.t(), keyword() | map()) :: map()
   def build(out_dir, opts \\ []) when is_binary(out_dir) do
     compile_opts = compile_opts(opts)
-    tier_metrics = TierMetrics.from_out_dir(out_dir, opts)
+    tier_metrics = TierMetrics.from_out_dir(out_dir, compile_opts)
     tier_gate = TierGate.report(tier_metrics)
     stack = stack_indicators(out_dir)
-    object_text = ObjectTextEstimate.estimate(out_dir, opts)
+    object_text = ObjectTextEstimate.estimate(out_dir, compile_opts)
     linked = StackReport.read_linked_binary(Path.join(out_dir, "elmc_stack_report.json"))
-    ram = ram_section(out_dir, compile_opts, stack, linked)
+    ram = ram_section(compile_opts, stack, linked)
     flash = flash_section(tier_metrics, object_text, linked)
     constraint = classify_constraint(flash, ram, tier_gate)
 
@@ -38,7 +37,7 @@ defmodule Elmc.Backend.FlashVsHeap.Report do
     }
   end
 
-  @spec write!(String.t(), keyword()) :: :ok
+  @spec write!(String.t(), keyword() | map()) :: {:ok, map()}
   def write!(out_dir, opts \\ []) when is_binary(out_dir) do
     report = build(out_dir, opts)
 
@@ -46,7 +45,7 @@ defmodule Elmc.Backend.FlashVsHeap.Report do
     |> Path.join(@report_name)
     |> then(&File.write(&1, Jason.encode!(report, pretty: true)))
     |> case do
-      :ok -> :ok
+      :ok -> {:ok, report}
       {:error, reason} -> raise "flash_vs_heap write failed: #{inspect(reason)}"
     end
   end
@@ -61,8 +60,7 @@ defmodule Elmc.Backend.FlashVsHeap.Report do
 
     heap_pressure? =
       Map.get(ram, "owned_slot_max", 0) >= @heap_owned_slot_threshold or
-        Map.get(ram, "worker_last_dispatch_cmd_cap", 0) > 0 or
-        not Map.get(ram, "native_worker_model", false)
+        Map.get(ram, "worker_last_dispatch_cmd_cap", 0) > 0
 
     flash_pressure? =
       tier_eligible or
@@ -94,13 +92,12 @@ defmodule Elmc.Backend.FlashVsHeap.Report do
     }
   end
 
-  defp ram_section(out_dir, compile_opts, stack, linked) do
+  defp ram_section(compile_opts, stack, linked) do
     %{
       "owned_slot_max" => Map.get(stack, "owned_slot_max", 0),
       "boxed_tmp_declarations" => Map.get(stack, "boxed_tmp_declarations", 0),
       "closure_allocations" => Map.get(stack, "closure_allocations", 0),
       "worker_last_dispatch_cmd_cap" => worker_last_dispatch_cmd_cap(compile_opts),
-      "native_worker_model" => native_worker_model?(out_dir, compile_opts),
       "elf_bss" => get_in(linked, ["elf_size", "bss"]),
       "elf_data" => get_in(linked, ["elf_size", "data"])
     }
@@ -110,18 +107,12 @@ defmodule Elmc.Backend.FlashVsHeap.Report do
     Elmc.Backend.Plan.Worker.Host.Lower.last_dispatch_cmd_cap_for_test(compile_opts)
   end
 
-  defp native_worker_model?(out_dir, compile_opts) do
-    worker_h = Path.join(out_dir, "c/elmc_worker.h")
-    SizeProfile.size?(compile_opts) and File.regular?(worker_h) and
-      File.read!(worker_h) =~ "ELMC_WORKER_NATIVE_MODEL"
-  end
-
   defp recommendation(:flash_bound) do
     "Prefer size profile, fusion, and native emit before selective bytecode tier."
   end
 
   defp recommendation(:heap_bound) do
-    "Prefer ModelNative, unboxed layouts, BSS caps, and shallower owned frames—not bytecode."
+    "Prefer shallower owned frames, unboxed locals, BSS caps, and size-profile codegen—not bytecode."
   end
 
   defp recommendation(:balanced) do
@@ -160,12 +151,19 @@ defmodule Elmc.Backend.FlashVsHeap.Report do
     end
   end
 
-  defp compile_opts(opts) do
-  opts
-  |> Keyword.get(:compile_opts, %{})
-  |> case do
-    map when is_map(map) -> map
-    _ -> Map.new(opts)
+  defp compile_opts(opts) when is_map(opts) do
+    case Map.get(opts, :compile_opts) do
+      map when is_map(map) -> map
+      _ -> opts
+    end
   end
+
+  defp compile_opts(opts) when is_list(opts) do
+    opts
+    |> Keyword.get(:compile_opts, %{})
+    |> case do
+      map when is_map(map) -> map
+      _ -> Map.new(opts)
+    end
   end
 end

@@ -23,9 +23,10 @@ defmodule Ide.Emulator.SdkScreenshotStyleTest do
     height = 180
     rgb = :binary.copy(<<0, 0, 0>>, width * height * 3)
 
-    assert {:ok, rgba} = SdkScreenshotStyle.build_rgba("chalk", rgb, width, height)
-    assert pixel(rgba, width, 90, 90) == {0, 0, 0, 255}
-    assert pixel(rgba, width, 5, 5) == {0, 0, 0, 0}
+    assert {:ok, rgba, out_w, out_h} = SdkScreenshotStyle.build_rgba("chalk", rgb, width, height)
+    assert {out_w, out_h} == {180, 180}
+    assert pixel(rgba, out_w, 90, 90) == {0, 0, 0, 255}
+    assert pixel(rgba, out_w, 5, 5) == {0, 0, 0, 0}
   end
 
   test "rect monochrome applies sdk colour correction and clears corner letterbox" do
@@ -34,7 +35,7 @@ defmodule Ide.Emulator.SdkScreenshotStyleTest do
         if x == 0 and y == 0, do: <<0, 0, 0>>, else: <<85, 85, 85>>
       end
 
-    assert {:ok, rgba} =
+    assert {:ok, rgba, 2, 2} =
              SdkScreenshotStyle.build_rgba("diorite", rgb, 2, 2, normalize: false)
 
     assert pixel(rgba, 2, 0, 0) == {255, 255, 255, 255}
@@ -44,7 +45,7 @@ defmodule Ide.Emulator.SdkScreenshotStyleTest do
   test "diorite white stays white after sdk colour correction" do
     white = :binary.copy(<<255, 255, 255>>, 2 * 2)
 
-    assert {:ok, rgba} =
+    assert {:ok, rgba, 2, 2} =
              SdkScreenshotStyle.build_rgba("diorite", white, 2, 2, normalize: false)
 
     assert rgba ==
@@ -56,9 +57,10 @@ defmodule Ide.Emulator.SdkScreenshotStyleTest do
     height = 180
     rgb = :binary.copy(<<255, 0, 0>>, width * height * 3)
 
-    assert {:ok, rgba} = SdkScreenshotStyle.build_rgba("gabbro", rgb, width, height)
-    assert pixel(rgba, width, 90, 90) == {227, 84, 98, 255}
-    assert pixel(rgba, width, 0, 0) == {0, 0, 0, 0}
+    assert {:ok, rgba, out_w, out_h} = SdkScreenshotStyle.build_rgba("gabbro", rgb, width, height)
+    assert {out_w, out_h} == {260, 260}
+    assert pixel(rgba, out_w, 130, 130) == {227, 84, 98, 255}
+    assert pixel(rgba, out_w, 0, 0) == {0, 0, 0, 0}
   end
 
   defp pixel(rgba, width, x, y) do

@@ -109,14 +109,25 @@ view _ _ =
                     , paragraph "The IDE includes CodeMirror editing, elmc check/compile, Pebble SDK packaging, a debugger with watch and companion state, embedded and external emulators, optional browser WASM emulation, and MCP/ACP hooks for AI tools."
                     ]
                 , sectionBlock "Pick a project template"
-                    [ paragraph "New projects start from working templates instead of an empty tree. Common starting points include:"
+                    [ paragraph "New projects start from working templates instead of an empty tree. Browse the visual gallery, or jump straight into the IDE create dialog."
+                    , Route.Examples
+                        |> Route.link
+                            [ classes
+                                [ Tw.mt s4
+                                , Tw.inline_flex
+                                , Tw.font_semibold
+                                , Tw.text_color (blue s600)
+                                , dark [ Tw.text_color (blue s400) ]
+                                ]
+                            ]
+                            [ text "Browse examples gallery" ]
                     , bulletList
                         [ "Starter — watch, protocol, and phone roots for a full app."
                         , "Watchface tutorial complete — the weather watchface walked through in the tutorial."
                         , "Watchfaces — digital, analog, YES, Tangram Time, and animated weather samples."
                         , "Companion demos — phone status, weather, calendar, geolocation, storage, settings, WebSocket, and timeline APIs."
                         , "Watch demos — accelerometer, vibes, data logging, app focus, compass, and dictation."
-                        , "Games — basic, Tiny Bird, jump'n run, and 2048 starters."
+                        , "Games — basic, Tiny Bird, jump'n run, 2048, and Elmtris starters."
                         ]
                     , paragraph "Create a project in the IDE, choose a template, then adjust Elm in watch/, protocol/, and phone/ as needed."
                     ]
@@ -237,7 +248,7 @@ hero =
                 , dark [ Tw.text_color (gray s300) ]
                 ]
             ]
-            [ text "Create a Pebble project in the browser, learn the Elm loop on a finished watchface template, and use the docs when you need API details." ]
+            [ text "Create a Pebble project in the browser, browse example templates, learn the Elm loop on a finished watchface, and use the docs when you need API details." ]
         ]
 
 

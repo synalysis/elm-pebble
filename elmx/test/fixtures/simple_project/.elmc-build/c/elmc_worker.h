@@ -16,7 +16,7 @@ typedef struct {
 } ElmcButtonRawSub;
 
 #ifndef ELMC_WORKER_LAST_DISPATCH_CMD_CAP
-#define ELMC_WORKER_LAST_DISPATCH_CMD_CAP 8
+#define ELMC_WORKER_LAST_DISPATCH_CMD_CAP 0
 #endif
 
 typedef struct {
@@ -27,7 +27,8 @@ typedef struct {
   int64_t p3;
   int64_t p4;
   int64_t p5;
-  char text[128];
+  /* Compact text slot for debugger snapshots (was 128). */
+  char text[48];
 } ElmcWorkerDispatchCmd;
 
 typedef struct {

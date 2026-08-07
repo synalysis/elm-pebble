@@ -663,7 +663,7 @@ defmodule Ide.Mcp.DebuggerTemplateCorpusCompiledElixirTest do
 
   @tag :compiled_elixir_corpus
   @tag timeout: 180_000
-  test "companion-demo-websocket phone Connected Ok step updates status when enabled" do
+  test "companion-demo-websocket phone WebSocketEvent Connected step updates status when enabled" do
     if @enabled? and "companion-demo-websocket" in DebuggerTemplateCorpus.template_keys() do
       Corpus.ensure_compiled_elixir_backend!()
 
@@ -676,43 +676,7 @@ defmodule Ide.Mcp.DebuggerTemplateCorpusCompiledElixirTest do
         phone_workspace =
           project |> Ide.Projects.project_workspace_path() |> Path.join("phone")
 
-        message_value = Corpus.companion_connected_ok_value()
-
-        case Corpus.corpus_phone_step_execute!(phone_workspace, "Connected",
-               revision:
-                 "corpus-ws-connected-" <> Integer.to_string(:erlang.unique_integer([:positive])),
-               message_value: message_value
-             ) do
-          {:ok, _manifest, runtime_model} ->
-            assert runtime_model["status"]["ctor"] == "Open"
-
-          {:compile_error, reason} ->
-            flunk("companion-demo-websocket Connected step failed: #{inspect(reason)}")
-        end
-      after
-        _ = Ide.Projects.delete_project(project)
-      end
-    else
-      assert true
-    end
-  end
-
-  @tag :compiled_elixir_corpus
-  @tag timeout: 180_000
-  test "companion-demo-websocket phone WebSocketEvent Opened step updates status when enabled" do
-    if @enabled? and "companion-demo-websocket" in DebuggerTemplateCorpus.template_keys() do
-      Corpus.ensure_compiled_elixir_backend!()
-
-      assert {:ok, %{project: project}} =
-               DebuggerTemplateCorpus.bootstrap_template("companion-demo-websocket",
-                 cleanup: false
-               )
-
-      try do
-        phone_workspace =
-          project |> Ide.Projects.project_workspace_path() |> Path.join("phone")
-
-        message_value = Corpus.companion_websocket_event_value("Opened")
+        message_value = Corpus.companion_websocket_event_value("Connected")
 
         case Corpus.corpus_phone_step_execute!(phone_workspace, "WebSocketEvent",
                revision:
@@ -724,7 +688,7 @@ defmodule Ide.Mcp.DebuggerTemplateCorpusCompiledElixirTest do
             assert runtime_model["statusDetail"] == "open"
 
           {:compile_error, reason} ->
-            flunk("companion-demo-websocket WebSocketEvent Opened failed: #{inspect(reason)}")
+            flunk("companion-demo-websocket WebSocketEvent Connected failed: #{inspect(reason)}")
         end
       after
         _ = Ide.Projects.delete_project(project)

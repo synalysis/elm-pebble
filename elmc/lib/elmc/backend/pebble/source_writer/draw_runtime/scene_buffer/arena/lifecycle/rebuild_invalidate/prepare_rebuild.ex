@@ -17,6 +17,15 @@ defmodule Elmc.Backend.Pebble.SourceWriter.DrawRuntime.SceneBuffer.Arena.Lifecyc
       app->scene.byte_count = 0;
       app->scene.byte_capacity = 0;
       app->scene.pool_slot = app->prev_scene.pool_slot == 0 ? 1 : 0;
+    #elif ELMC_PEBBLE_SCENE_POOL_SLOTS >= 2 && ELMC_PEBBLE_SCENE_CACHE_ENABLED
+      /* Flip to an alternate pool slot so a failed rebuild cannot wipe the last
+         good encoded frame (draw clears to white when byte_count==0 → gray face). */
+      app->scene_rebuild_fallback_slot = app->scene.pool_slot;
+      app->scene_rebuild_fallback_byte_count = app->scene.byte_count;
+      app->scene_rebuild_fallback_command_count = app->scene.command_count;
+      app->scene.pool_slot = app->scene.pool_slot == 0 ? 1 : 0;
+      app->scene.byte_count = 0;
+      elmc_pebble_scene_pool_sync_from_slot(&app->scene);
     #else
       app->scene.byte_count = 0;
     #if ELMC_PEBBLE_SCENE_POOL_SLOTS > 0

@@ -3,7 +3,7 @@ defmodule Ide.Resources.ResourceStore.GeneratedModule do
   alias Ide.Types, as: Types
 
 
-  alias Ide.Resources.{BitmapVariants, CtorNaming, Types}
+  alias Ide.Resources.{BitmapVariants, CtorNaming, SlotOrder, Types}
   alias Ide.Resources.ResourceStore.Coercion
 
   @type generated_bitmap_row :: %{
@@ -446,33 +446,7 @@ defmodule Ide.Resources.ResourceStore.GeneratedModule do
           [generated_bitmap_row() | generated_font_row() | generated_vector_row() | generated_animation_row()]
   defp sort_generated_resource_rows(rows, kind)
        when is_list(rows) and kind in [:bitmap, :font, :vector, :animation] do
-    Enum.sort_by(rows, &resource_row_sort_key(&1, kind))
-  end
-
-  defp resource_row_sort_key(%{ctor: ctor}, :font), do: {0, ctor}
-
-  defp resource_row_sort_key(%{ctor: ctor}, :bitmap) do
-    {resource_prefix_rank(ctor, CtorNaming.prefix(:bitmap_static)), ctor}
-  end
-
-  defp resource_row_sort_key(%{ctor: ctor}, :animation) do
-    {resource_prefix_rank(ctor, CtorNaming.prefix(:bitmap_animated)), ctor}
-  end
-
-  defp resource_row_sort_key(%{ctor: ctor}, :vector) do
-    rank =
-      cond do
-        String.starts_with?(ctor, CtorNaming.prefix(:vector_static)) -> 0
-        String.starts_with?(ctor, CtorNaming.prefix(:vector_animated)) -> 1
-        true -> 2
-      end
-
-    {rank, ctor}
-  end
-
-  defp resource_prefix_rank(ctor, expected_prefix)
-       when is_binary(ctor) and is_binary(expected_prefix) do
-    if String.starts_with?(ctor, expected_prefix), do: 0, else: 1
+    Enum.sort_by(rows, fn %{ctor: ctor} -> SlotOrder.sort_key(ctor, kind) end)
   end
 
   @spec normalize_bitmap_row(Types.manifest_wire_row()) :: generated_bitmap_row()

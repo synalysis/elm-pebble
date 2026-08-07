@@ -208,7 +208,7 @@ defmodule Elmx.TestSupport.TemplateProject do
           copy_dir!(protocol_src, Path.join(tmp, "protocol/src"))
         end
 
-        write_phone_elm_json!(tmp)
+        write_phone_elm_json!(tmp, template_key)
         {:ok, tmp}
       end
     end
@@ -246,7 +246,7 @@ defmodule Elmx.TestSupport.TemplateProject do
     write_elm_json!(Path.join(tmpdir, "elm.json"), sources, deps)
   end
 
-  defp write_phone_elm_json!(phone_dir) do
+  defp write_phone_elm_json!(phone_dir, template_key) do
     sources = ["src", "protocol/src"] ++ @phone_bundled_sources
 
     deps = %{
@@ -256,17 +256,24 @@ defmodule Elmx.TestSupport.TemplateProject do
       "elm/time" => "1.0.0"
     }
 
-    write_elm_json!(Path.join(phone_dir, "elm.json"), sources, deps)
+    {deps, indirect} =
+      if template_key == "companion-demo-websocket" do
+        {Map.put(deps, "mbr/elm-wss", "2.0.0"), %{"elm/bytes" => "1.0.8"}}
+      else
+        {deps, %{}}
+      end
+
+    write_elm_json!(Path.join(phone_dir, "elm.json"), sources, deps, indirect)
   end
 
-  defp write_elm_json!(path, sources, deps) do
+  defp write_elm_json!(path, sources, deps, indirect \\ %{}) do
     elm_json = %{
       "type" => "application",
       "source-directories" => sources,
       "elm-version" => "0.19.1",
       "dependencies" => %{
         "direct" => deps,
-        "indirect" => %{}
+        "indirect" => indirect
       },
       "test-dependencies" => %{"direct" => %{}, "indirect" => %{}}
     }

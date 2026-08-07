@@ -20,6 +20,38 @@ defmodule Elmc.Backend.CCodegen.Native.BindingAnalysis do
       }),
       do: pebble_angle_numerator_expr?(numerator)
 
+  def pebble_angle_expr?(%{
+        op: :call,
+        name: "__fdiv__",
+        args: [numerator, %{op: :int_literal, value: denom}]
+      })
+      when is_integer(denom) and denom > 0,
+      do: watch_phase_fraction_numerator?(numerator)
+
+  def pebble_angle_expr?(%{
+        op: :runtime_call,
+        function: "elmc_basics_fdiv",
+        args: [numerator, %{op: :int_literal, value: denom}]
+      })
+      when is_integer(denom) and denom > 0,
+      do: watch_phase_fraction_numerator?(numerator)
+
+  def pebble_angle_expr?(%{
+        op: :qualified_call,
+        target: target,
+        args: [numerator, %{op: :int_literal, value: denom}]
+      })
+      when target in ["Basics./", "/", "__fdiv__"] and is_integer(denom) and denom > 0,
+      do: watch_phase_fraction_numerator?(numerator)
+
+  def pebble_angle_expr?(%{
+        op: :call,
+        name: name,
+        args: [numerator, %{op: :int_literal, value: denom}]
+      })
+      when name in ["Basics./", "/", "__fdiv__"] and is_integer(denom) and denom > 0,
+      do: watch_phase_fraction_numerator?(numerator)
+
   def pebble_angle_expr?(_expr), do: false
 
   @spec pebble_angle_optimized_reference_count(Types.binding_name(), Types.ir_expr()) ::
@@ -83,7 +115,7 @@ defmodule Elmc.Backend.CCodegen.Native.BindingAnalysis do
   @spec pebble_angle_optimized_reference_count_node(Types.binding_name(), term()) ::
           non_neg_integer()
   defp pebble_angle_optimized_reference_count_node(name, expr) when is_map(expr) do
-    if pebble_trig_round_expr?(expr, name) do
+    if pebble_trig_round_expr?(expr, name) or pebble_trig_call_expr?(expr, name) do
       1
     else
       pebble_angle_optimized_reference_count_node(name, Map.values(expr))
@@ -149,6 +181,14 @@ defmodule Elmc.Backend.CCodegen.Native.BindingAnalysis do
   @spec pebble_trig_call_expr?(map() | Types.expr(), String.t()) :: boolean()
 
   defp pebble_trig_call_expr?(
+         %{op: :runtime_call, function: function, args: [turns_expr]},
+         angle_name
+       )
+       when function in ["elmc_basics_sin", "elmc_basics_cos"] do
+    pebble_turns_var?(turns_expr, angle_name)
+  end
+
+  defp pebble_trig_call_expr?(
          %{op: :qualified_call, target: target, args: [%{op: :var, name: name}]},
          angle_name
        )
@@ -163,6 +203,39 @@ defmodule Elmc.Backend.CCodegen.Native.BindingAnalysis do
        do: EnvBindings.same_binding?(name, angle_name)
 
   defp pebble_trig_call_expr?(_expr, _angle_name), do: false
+
+  defp pebble_turns_var?(%{op: :runtime_call, function: "elmc_basics_turns", args: [%{op: :var, name: name}]}, angle_name),
+    do: EnvBindings.same_binding?(name, angle_name)
+
+  defp pebble_turns_var?(%{op: :call, name: "turns", args: [%{op: :var, name: name}]}, angle_name),
+    do: EnvBindings.same_binding?(name, angle_name)
+
+  defp pebble_turns_var?(
+         %{op: :qualified_call, target: target, args: [%{op: :var, name: name}]},
+         angle_name
+       )
+       when target in ["Basics.turns", "turns"],
+       do: EnvBindings.same_binding?(name, angle_name)
+
+  defp pebble_turns_var?(_expr, _angle_name), do: false
+
+  @spec watch_phase_fraction_numerator?(map() | Types.expr()) :: boolean()
+  defp watch_phase_fraction_numerator?(%{op: :runtime_call, function: "elmc_basics_to_float", args: [_]}),
+    do: true
+
+  defp watch_phase_fraction_numerator?(%{op: :call, name: name, args: [_]})
+       when name in ["toFloat", "Basics.toFloat"],
+       do: true
+
+  defp watch_phase_fraction_numerator?(%{
+         op: :qualified_call,
+         target: target,
+         args: [_]
+       })
+       when target in ["Basics.toFloat", "toFloat"],
+       do: true
+
+  defp watch_phase_fraction_numerator?(_expr), do: false
 
   @spec to_float_expr?(map() | Types.expr()) :: boolean()
 

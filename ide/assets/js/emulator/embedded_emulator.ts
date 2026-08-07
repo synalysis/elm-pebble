@@ -86,7 +86,7 @@ const WEATHER_CONDITION_WIRE_CODES = {
   unknownweather: 9
 }
 
-const EMBEDDED_EMULATOR_UI_BUILD = "v24-display-ready"
+const EMBEDDED_EMULATOR_UI_BUILD = "v25-dedupe-phone-logs"
 const PHOENIX_SOCKET_OPEN_TIMEOUT_MS = 10_000
 const VNC_CHANNEL_JOIN_TIMEOUT_MS = 10_000
 const APP_RUN_STATE_START_DEBOUNCE_MS = 2_000
@@ -1067,11 +1067,9 @@ export class EmbeddedEmulatorHost implements SimulatorDeliveryHost, EmulatorVncH
   logPhoneBridgeFrame(data: Uint8Array): void {
     const opcode = data[0]
 
+    // Opcode 0x02 console text is logged once in handlePhoneMessage's switch.
+    // Do not append here — that doubled every companion/AppMessage log line.
     if (opcode === 0x02) {
-      const text = new TextDecoder().decode(data.slice(1))
-      if (/watch -> Elm companion|Elm companion|AppMessage|not responding|error|failed/i.test(text)) {
-        this.appendLog(this.compactPhoneLog(text))
-      }
       return
     }
 

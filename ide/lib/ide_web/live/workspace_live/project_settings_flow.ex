@@ -11,6 +11,7 @@ defmodule IdeWeb.WorkspaceLive.ProjectSettingsFlow do
 
   alias Ide.AppStore.Listing, as: AppStoreListing
   alias Ide.Auth
+  alias Ide.Auth.FirebaseTokenStore
   alias Ide.GitHub.Push, as: GitHubPush
   alias Ide.GitHub.Types, as: GitHubTypes
   alias Ide.GitHub.Repositories, as: GitHubRepositories
@@ -61,11 +62,14 @@ defmodule IdeWeb.WorkspaceLive.ProjectSettingsFlow do
   def handle_event("firebase-auth-refreshed", %{"id_token" => id_token}, socket) do
     with {:ok, payload} <- Auth.verify_firebase_id_token(id_token),
          {:ok, user} <- Auth.upsert_firebase_user(payload) do
+      token = String.trim(id_token)
+      :ok = FirebaseTokenStore.put(user.id, token)
+
       socket =
         socket
-        |> assign(:current_user, user)
-        |> assign(:firebase_id_token, String.trim(id_token))
-        |> assign(:firebase_id_token_exp, Auth.token_exp(id_token))
+        |> maybe_assign_firebase_ide_user(user)
+        |> assign(:firebase_id_token, token)
+        |> assign(:firebase_id_token_exp, Auth.token_exp(token))
 
       {:noreply, resume_after_firebase_auth_refresh(socket)}
     else
@@ -432,7 +436,19 @@ defmodule IdeWeb.WorkspaceLive.ProjectSettingsFlow do
         socket
         |> assign(:publish_submit_status, :idle)
         |> assign(:publish_submit_output, nil)
+        |> assign(:sideload_status, :idle)
+        |> assign(:sideload_output, nil)
         |> put_flash(:info, "App Store login refreshed.")
+    end
+  end
+
+  # Local mode keeps IDE project scope (often owner_id: nil). Public modes use
+  # the Firebase account as the IDE user.
+  defp maybe_assign_firebase_ide_user(socket, user) do
+    if Auth.public_mode?() do
+      assign(socket, :current_user, user)
+    else
+      socket
     end
   end
 
@@ -442,6 +458,8 @@ defmodule IdeWeb.WorkspaceLive.ProjectSettingsFlow do
         socket
         |> assign(:publish_submit_status, :error)
         |> assign(:publish_submit_output, "App Store login refresh failed: #{message}")
+        |> assign(:sideload_status, :error)
+        |> assign(:sideload_output, "CloudPebble login failed: #{message}")
 
       _ ->
         socket

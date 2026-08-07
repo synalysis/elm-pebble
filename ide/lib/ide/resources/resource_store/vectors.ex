@@ -3,7 +3,7 @@ defmodule Ide.Resources.ResourceStore.Vectors do
 
   alias Ide.Projects
   alias Ide.Projects.Project
-  alias Ide.Resources.{CtorNaming, PdcDecoder, SvgConverter}
+  alias Ide.Resources.{CtorNaming, PdcDecoder, SlotOrder, SvgConverter}
   alias Ide.Resources.ResourceStore.{Coercion, Duplicates, Manifest}
   alias Ide.Resources.Types
 
@@ -18,7 +18,10 @@ defmodule Ide.Resources.ResourceStore.Vectors do
     workspace = Projects.project_workspace_path(project)
 
     with {:ok, manifest} <- read_manifest(workspace) do
-      entries = file_backed_vector_entries(workspace, manifest["entries"] || [])
+      entries =
+        workspace
+        |> file_backed_vector_entries(manifest["entries"] || [])
+        |> SlotOrder.sort_wire_entries(:vector)
 
       {:ok,
        Enum.map(entries, fn row ->

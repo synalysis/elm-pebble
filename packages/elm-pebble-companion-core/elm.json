@@ -19,8 +19,7 @@
         "Pebble.Companion.PreferenceStore",
         "Pebble.Companion.Storage",
         "Pebble.Companion.Timeline",
-        "Pebble.Companion.Weather",
-        "Pebble.Companion.WebSocket"
+        "Pebble.Companion.Weather"
     ],
     "elm-version": "0.19.0 <= v < 0.20.0",
     "dependencies": {

@@ -42,6 +42,7 @@ PACKAGES=(
   ianmackenzie/elm-units/2.10.0
   ianmackenzie/elm-units-interval/3.2.0
   jcberentsen/elm-wiring-diagrams/5.4.7
+  mbr/elm-wss/2.0.0
   w0rm/elm-physics/6.2.0
 )
 

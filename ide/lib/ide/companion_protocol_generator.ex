@@ -2320,11 +2320,13 @@ defmodule Ide.CompanionProtocolGenerator do
     wire_types = c_watch_to_phone_wire_types(schema)
 
     [
-      """
-      static elmc_int_t companion_protocol_value_int(ElmcValue *value) {
-        return value ? elmc_as_int(value) : 0;
-      }
-      """,
+      if Enum.any?(wire_types, &(&1 == :int)) do
+        """
+        static elmc_int_t companion_protocol_value_int(ElmcValue *value) {
+          return value ? elmc_as_int(value) : 0;
+        }
+        """
+      end,
       if Enum.any?(wire_types, &(&1 == :string)) do
         """
         static const char *companion_protocol_value_string(ElmcValue *value) {

@@ -568,6 +568,9 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
             {"", "0", counter}
         end
 
+      {:ok, {:direct_fragment, fragment}} when is_map(fragment) ->
+        compile_expr(%{op: :field_access, arg: fragment, field: field}, Map.delete(env, arg), counter)
+
       {:ok, source} when is_binary(source) ->
         RecordCompile.mark_record_field_container(source)
 
@@ -627,6 +630,9 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
           _ ->
             {"", "0", counter}
         end
+
+      {:direct_fragment, fragment} when is_map(fragment) ->
+        compile_expr(%{op: :field_access, arg: fragment, field: field}, Map.delete(env, name), counter)
 
       _ ->
         compile_expr(%{op: :field_access, arg: name, field: field}, env, counter)
@@ -1161,6 +1167,24 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
       env,
       counter
     )
+  end
+
+  defp dispatch(
+         %{op: :runtime_call, function: function, args: [_value]} = expr,
+         env,
+         counter
+       )
+       when function in ["elmc_basics_sin", "elmc_basics_cos"] do
+    case pebble_bound_trig_expr(expr, env) do
+      {trig_fun, angle_expr} ->
+        case compile_pebble_trig_lookup(trig_fun, angle_expr, env, counter) do
+          {:ok, code, out, counter} -> {code, out, counter}
+          :error -> compile_fallback(expr, env, counter)
+        end
+
+      _ ->
+        compile_fallback(expr, env, counter)
+    end
   end
 
   defp dispatch(
@@ -1756,9 +1780,9 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
          env,
          counter
        ) do
-    with {:ok, radius_expr} <- to_float_arg(radius_float_expr),
-         {:ok, angle_source_expr} <- pebble_angle_source(angle_expr) do
-      {angle_code, angle_ref, counter} = compile_expr(angle_source_expr, env, counter)
+    with {:ok, radius_expr} <- to_float_or_int_arg(radius_float_expr),
+         {:ok, angle_source} <- pebble_angle_source(angle_expr) do
+      {angle_code, angle_ref, counter} = compile_pebble_angle_ref(angle_source, env, counter)
       {radius_code, radius_ref, counter} = compile_expr(radius_expr, env, counter)
       next = counter + 1
       trig_var = "native_trig_#{next}"
@@ -1816,7 +1840,11 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
   end
 
   defp pebble_bound_trig_expr(
-         %{op: :runtime_call, function: function, args: [%{op: :var, name: name}]},
+         %{
+           op: :runtime_call,
+           function: function,
+           args: [%{op: :runtime_call, function: "elmc_basics_turns", args: [%{op: :var, name: name}]}]
+         },
          env
        )
        when function in ["elmc_basics_sin", "elmc_basics_cos"] do
@@ -1826,13 +1854,54 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
     end
   end
 
+  defp pebble_bound_trig_expr(
+         %{
+           op: :runtime_call,
+           function: function,
+           args: [%{op: :call, name: "turns", args: [%{op: :var, name: name}]}]
+         },
+         env
+       )
+       when function in ["elmc_basics_sin", "elmc_basics_cos"] do
+    case EnvBindings.pebble_angle_binding(env, name) do
+      nil -> nil
+      angle_expr -> {if(function == "elmc_basics_sin", do: :sin, else: :cos), angle_expr}
+    end
+  end
+
+  defp pebble_bound_trig_expr(
+         %{op: :runtime_call, function: function, args: [%{op: :var, name: name}]},
+         env
+       )
+       when function in ["elmc_basics_sin", "elmc_basics_cos"] do
+    case EnvBindings.pebble_angle_binding(env, name) do
+      nil ->
+        case EnvBindings.let_value_expr(env, name) do
+          %{op: :runtime_call, function: "elmc_basics_turns", args: [%{op: :var, name: inner}]} ->
+            case EnvBindings.pebble_angle_binding(env, inner) do
+              angle_expr when is_map(angle_expr) ->
+                {if(function == "elmc_basics_sin", do: :sin, else: :cos), angle_expr}
+
+              _ ->
+                nil
+            end
+
+          _ ->
+            nil
+        end
+
+      angle_expr ->
+        {if(function == "elmc_basics_sin", do: :sin, else: :cos), angle_expr}
+    end
+  end
+
   defp pebble_bound_trig_expr(_expr, _env), do: nil
 
   @spec pebble_bound_trig_round_mul_side?(Types.ir_expr(), Types.ir_expr(), Types.compile_env()) :: boolean()
 
   defp pebble_bound_trig_round_mul_side?(trig_side, float_side, env) do
     match?({_fun, _angle}, pebble_bound_trig_expr(trig_side, env)) and
-      match?({:ok, _}, to_float_arg(float_side))
+      match?({:ok, _}, to_float_or_int_arg(float_side))
   end
 
   @spec pebble_bound_trig_round_expr?(Types.ir_expr(), Types.compile_env()) :: boolean()
@@ -1858,6 +1927,106 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
 
   defp to_float_arg(_expr), do: :error
 
+  defp to_float_or_int_arg(expr) do
+    case to_float_arg(expr) do
+      {:ok, inner} -> {:ok, inner}
+      :error -> {:ok, expr}
+    end
+  end
+
+  defp compile_pebble_angle_ref({:watch_frac, phase_expr, denom}, env, counter) do
+    {phase_code, phase_ref, counter} = compile_expr(phase_expr, env, counter)
+    next = counter + 1
+    angle_var = "native_watch_angle_#{next}"
+
+    code = """
+    #{phase_code}
+      const int32_t #{angle_var} = (int32_t)((((int64_t)#{phase_ref}) * 65536LL) / #{denom});
+    """
+
+    {code, angle_var, next}
+  end
+
+  defp compile_pebble_angle_ref(angle_source_expr, env, counter) do
+    compile_expr(angle_source_expr, env, counter)
+  end
+
+  @doc false
+  @spec try_compile_trig_runtime_call(map(), Types.compile_env(), Types.compile_counter()) ::
+          {:ok, String.t(), String.t(), Types.compile_counter()} | :error
+  def try_compile_trig_runtime_call(expr, env, counter) do
+    case expr do
+      %{op: :runtime_call, function: fun, args: [_arg]}
+      when fun in ["elmc_basics_sin", "elmc_basics_cos"] ->
+        case pebble_bound_trig_expr(expr, env) do
+          {trig_fun, angle_expr} -> compile_pebble_trig_lookup(trig_fun, angle_expr, env, counter)
+          _ -> :error
+        end
+
+      %{op: :runtime_call, function: "elmc_basics_round", args: [value]} ->
+        case pebble_trig_round(value, env, counter) do
+          {:ok, code, out, counter} -> {:ok, code, out, counter}
+          _ -> :error
+        end
+
+      %{op: :runtime_call, function: "elmc_basics_turns", args: [arg]} ->
+        case match_watch_turns_input(arg, env) do
+          {:ok, angle_expr} -> compile_pebble_watch_angle_int(angle_expr, env, counter)
+          :error -> :error
+        end
+
+      _ ->
+        :error
+    end
+  end
+
+  defp match_watch_turns_input(%{op: :var, name: name}, env) do
+    case EnvBindings.pebble_angle_binding(env, name) do
+      angle_expr when is_map(angle_expr) -> {:ok, angle_expr}
+      _ -> :error
+    end
+  end
+
+  defp match_watch_turns_input(_expr, _env), do: :error
+
+  defp compile_pebble_watch_angle_int(angle_expr, env, counter) do
+    with {:ok, angle_source} <- pebble_angle_source(angle_expr),
+         {angle_code, angle_ref, counter} <- compile_pebble_angle_ref(angle_source, env, counter) do
+      next = counter + 1
+      out = "native_watch_angle_boxed_#{next}"
+
+      code =
+        angle_code <>
+          "\n" <>
+          RcRuntimeEmit.assign_call(env, out, "elmc_new_int", angle_ref) <>
+          "\n"
+
+      {:ok, code, out, next}
+    else
+      _ -> :error
+    end
+  end
+
+  defp compile_pebble_trig_lookup(trig_fun, angle_expr, env, counter) do
+    with {:ok, angle_source} <- pebble_angle_source(angle_expr) do
+      {angle_code, angle_ref, counter} = compile_pebble_angle_ref(angle_source, env, counter)
+      next = counter + 1
+      trig_var = "native_trig_lookup_#{next}"
+      out = "native_trig_lookup_out_#{next}"
+      c_trig = if trig_fun == :sin, do: "sin_lookup", else: "cos_lookup"
+
+      code = """
+      #{angle_code}
+        const int32_t #{trig_var} = #{c_trig}(#{angle_ref});
+        const elmc_int_t #{out} = (elmc_int_t)#{trig_var};
+      """
+
+      {:ok, code, out, next}
+    else
+      _ -> :error
+    end
+  end
+
   @spec pebble_angle_source(map() | Types.expr()) :: {:ok, Types.expr()} | :error
 
   defp pebble_angle_source(%{
@@ -1867,7 +2036,60 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
        }),
        do: pebble_angle_numerator_source(numerator)
 
+  defp pebble_angle_source(%{
+         op: :call,
+         name: "__fdiv__",
+         args: [numerator, %{op: :int_literal, value: denom}]
+       })
+       when is_integer(denom) and denom > 0 do
+    case watch_phase_int_expr(numerator) do
+      {:ok, phase_expr} -> {:ok, {:watch_frac, phase_expr, denom}}
+      :error -> if(denom == 65_536, do: pebble_angle_numerator_source(numerator), else: :error)
+    end
+  end
+
+  defp pebble_angle_source(%{
+         op: :runtime_call,
+         function: "elmc_basics_fdiv",
+         args: [numerator, %{op: :int_literal, value: denom}]
+       })
+       when is_integer(denom) and denom > 0 do
+    case watch_phase_int_expr(numerator) do
+      {:ok, phase_expr} -> {:ok, {:watch_frac, phase_expr, denom}}
+      :error -> :error
+    end
+  end
+
+  defp pebble_angle_source(%{op: :qualified_call, target: target, args: [numerator, %{op: :int_literal, value: denom}]})
+       when target in ["Basics./", "/", "__fdiv__"] and is_integer(denom) and denom > 0 do
+    case watch_phase_int_expr(numerator) do
+      {:ok, phase_expr} -> {:ok, {:watch_frac, phase_expr, denom}}
+      :error -> :error
+    end
+  end
+
+  defp pebble_angle_source(%{op: :call, name: name, args: [numerator, %{op: :int_literal, value: denom}]})
+       when name in ["Basics./", "/", "__fdiv__"] and is_integer(denom) and denom > 0 do
+    case watch_phase_int_expr(numerator) do
+      {:ok, phase_expr} -> {:ok, {:watch_frac, phase_expr, denom}}
+      :error -> :error
+    end
+  end
+
   defp pebble_angle_source(_expr), do: :error
+
+  defp watch_phase_int_expr(%{op: :runtime_call, function: "elmc_basics_to_float", args: [value]}),
+    do: {:ok, value}
+
+  defp watch_phase_int_expr(%{op: :call, name: name, args: [value]})
+       when name in ["toFloat", "Basics.toFloat"],
+       do: {:ok, value}
+
+  defp watch_phase_int_expr(%{op: :qualified_call, target: target, args: [value]})
+       when target in ["Basics.toFloat", "toFloat"],
+       do: {:ok, value}
+
+  defp watch_phase_int_expr(_expr), do: :error
 
   @spec pebble_angle_numerator_source(map() | Types.expr()) :: {:ok, Types.expr()} | :error
 

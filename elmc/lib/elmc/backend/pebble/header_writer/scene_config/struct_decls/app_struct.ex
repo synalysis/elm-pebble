@@ -20,6 +20,11 @@ defmodule Elmc.Backend.Pebble.HeaderWriter.SceneConfig.StructDecls.AppStruct do
       ElmcPebbleSceneBuffer scene;
     #if ELMC_PEBBLE_SCENE_CACHE_ENABLED
       int scene_draw_byte_offset;
+      /* In-flight rebuild fallback: when pool double-buffering is active, a failed
+         encode restores these so draw keeps the last good frame instead of blanking. */
+      int scene_rebuild_fallback_slot;
+      int scene_rebuild_fallback_byte_count;
+      int scene_rebuild_fallback_command_count;
     #endif
     #if ELMC_PEBBLE_DIRTY_REGION_ENABLED
       ElmcPebbleSceneBuffer prev_scene;

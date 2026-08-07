@@ -191,7 +191,6 @@ defmodule Elmx.CompanionSpecialValuesTest do
           "Pebble.Companion.Weather.onWeather",
           "Pebble.Companion.Environment.onEnvironment",
           "Pebble.Companion.Battery.onBattery",
-          "Pebble.Companion.WebSocket.onWebSocket",
           "Pebble.Companion.Timeline.onToken",
           "Pebble.Companion.Lifecycle.onLifecycle",
           "Pebble.Companion.Geolocation.onCurrentPosition"
@@ -277,27 +276,6 @@ defmodule Elmx.CompanionSpecialValuesTest do
     assert cmd["op"] == "connect"
     assert cmd["callback_constructor"] == "Connected"
     assert cmd["bridge_id"] == "webSocket-connect"
-    assert cmd["payload"] == %{"url" => "wss://example.test"}
-  end
-
-  test "WebSocket.connect rewrites to webSocket bridge command" do
-    callback = %{op: :var, name: "Connected"}
-
-    assert {:ok,
-            %{
-              op: :runtime_call,
-              function: "elmx_companion_websocket_connect",
-              args: ["wss://example.test", ^callback]
-            }} =
-             SpecialValues.rewrite("Pebble.Companion.WebSocket.connect", ["wss://example.test", callback])
-  end
-
-  test "WebSocket.connect runtime emits connect bridge command" do
-    cmd = Pebble.runtime_dispatch("elmx_companion_websocket_connect", ["wss://example.test", "Connected"])
-
-    assert cmd["api"] == "webSocket"
-    assert cmd["op"] == "connect"
-    assert cmd["callback_constructor"] == "Connected"
     assert cmd["payload"] == %{"url" => "wss://example.test"}
   end
 
