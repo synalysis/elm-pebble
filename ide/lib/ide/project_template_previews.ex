@@ -25,7 +25,7 @@ defmodule Ide.ProjectTemplatePreviews do
   Directory under `priv/static` where template preview PNGs are stored.
   """
   @spec previews_dir() :: String.t()
-  def previews_dir, do: Path.expand("../../priv/#{@previews_relative}", __DIR__)
+  def previews_dir, do: Application.app_dir(:ide, "priv/#{@previews_relative}")
 
   @doc """
   Absolute filesystem path for a template preview PNG.

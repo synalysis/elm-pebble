@@ -3,6 +3,7 @@ defmodule Ide.Emulator.Session.Pypkjs do
 
   alias Ide.Emulator.Session.{Bins, Config, ProcessHost, Qemu}
   alias Ide.Emulator.Types
+  alias Ide.Paths
 
   @spec args(Types.pypkjs_args_state()) :: [String.t()]
   def args(state) do
@@ -20,7 +21,7 @@ defmodule Ide.Emulator.Session.Pypkjs do
   @spec command(String.t()) ::
           {:ok, String.t(), [String.t()]} | {:error, Types.session_atom_error()}
   def command(pypkjs_bin) do
-    wrapper_path = Path.expand("../../../../priv/python/embedded_pypkjs.py", __DIR__)
+    wrapper_path = Paths.priv_path("python/embedded_pypkjs.py")
 
     with {:ok, python} <- python_from_shebang(pypkjs_bin),
          true <- File.exists?(wrapper_path) do
