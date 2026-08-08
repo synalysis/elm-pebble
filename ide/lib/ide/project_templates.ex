@@ -1027,7 +1027,8 @@ defmodule Ide.ProjectTemplates do
       "src",
       "../protocol/src",
       InternalPackages.pebble_elm_src_abs(),
-      InternalPackages.elm_time_elm_src_abs()
+      InternalPackages.elm_time_elm_src_abs(),
+      InternalPackages.elm_json_elm_src_abs()
     ]
   end
 
@@ -1059,7 +1060,8 @@ defmodule Ide.ProjectTemplates do
       "../protocol/src",
       InternalPackages.pebble_elm_src_abs(),
       InternalPackages.elm_time_elm_src_abs(),
-      InternalPackages.elm_random_elm_src_abs()
+      InternalPackages.elm_random_elm_src_abs(),
+      InternalPackages.elm_json_elm_src_abs()
     ]
   end
 

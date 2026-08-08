@@ -196,7 +196,24 @@ if config_env() == :prod do
     repo_module: repo_module
 
   config :ide, Ide.Projects, projects_root: projects_root
-  config :ide, Ide.Settings, data_root: data_root
+
+  # config.exs's defaults for these are Path.expand(..., __DIR__), which bakes
+  # in the *build machine's* absolute path (e.g. /app/ide/priv/...) into the
+  # compiled release config. That path doesn't exist in the runtime image
+  # (/opt/ide), so writes here fail with :eacces.
+  config :ide, Ide.Settings, data_root: data_root, settings_path: nil
+
+  # Must stay under the app's own priv/static: Plug.Static serves the public
+  # "/screenshots/*" URLs directly from there (from: :ide), so this has to
+  # resolve at actual boot time via Application.app_dir/2 to match wherever
+  # the release is really installed, rather than the persistent data root.
+  config :ide, Ide.Screenshots,
+    storage_root: Application.app_dir(:ide, "priv/static/screenshots")
+
+  # Just an informational path shown in the UI (not served via a static
+  # route), so it's fine -- and preferable -- to keep it in the persistent
+  # data volume rather than the release's own priv directory.
+  config :ide, Ide.PublishManifest, output_root: Path.join(data_root, "publish_manifests")
 
   config :ide, Ide.GitHub,
     credentials_path: github_credentials_path,

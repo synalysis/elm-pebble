@@ -37,7 +37,7 @@ defmodule Ide.WasmEmulator do
 
       _ ->
         Application.get_env(:ide, __MODULE__, [])
-        |> Keyword.get(:asset_root, Path.expand("../../priv/wasm_emulator", __DIR__))
+        |> Keyword.get(:asset_root, Application.app_dir(:ide, "priv/wasm_emulator"))
     end
   end
 
