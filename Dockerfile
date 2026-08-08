@@ -4,6 +4,15 @@ RUN apt-get update && \
     apt-get install -y --no-install-recommends build-essential git ca-certificates nodejs npm && \
     rm -rf /var/lib/apt/lists/*
 
+# Erlang's JIT (OTP 24+) writes and executes from a dual-mapped memory
+# region. QEMU's user-mode emulation (used here because the runner is
+# pinned to linux/amd64 for Pebble SDK compatibility, while building on an
+# arm64 host) doesn't handle that correctly and crashes with confusing
+# errors such as `undefined function erlang:nif_error/1` in
+# `zlib:open_nif/0` mid-compile. Forcing single-mapped JIT memory avoids it.
+# See https://github.com/erlang/otp/pull/6340.
+ENV ERL_FLAGS="+JPperf true"
+
 ENV MIX_ENV=prod
 WORKDIR /app
 

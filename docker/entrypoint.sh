@@ -24,6 +24,8 @@ case "$AUTH_MODE" in
     ;;
 esac
 
+ensure_pebble_sdk_persist_dir
+
 elm --version >/dev/null
 pebble --version >/dev/null
 
