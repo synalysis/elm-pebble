@@ -14,6 +14,7 @@ defmodule Ide.Debugger.ProtocolEvents.CmdCall.Core do
 
   alias Ide.Debugger.ProtocolEvents
   alias Ide.Debugger.ProtocolEvents.Subscription
+  alias Ide.Paths
 
   @type resolution_ctx :: ProtocolResolutionCtx.t()
   @type ctx :: ProtocolEvents.ctx()
@@ -870,11 +871,7 @@ defmodule Ide.Debugger.ProtocolEvents.CmdCall.Core do
   @spec protocol_schema_from_model(Types.app_model()) ::
           {:ok, Types.protocol_schema()} | {:error, Types.protocol_error()}
   defp protocol_schema_from_model(_model) do
-    path =
-      Path.expand(
-        "../../priv/internal_packages/companion-protocol/src/Companion/Types.elm",
-        __DIR__
-      )
+    path = Paths.priv_path("internal_packages/companion-protocol/src/Companion/Types.elm")
 
     with {:ok, source} <- File.read(path) do
       Ide.CompanionProtocolGenerator.schema_from_source(source)

@@ -43,6 +43,28 @@ pebble_sdk_satisfied() {
   fi
 }
 
+# pebble-tool's get_persist_dir() only uses the legacy ~/.pebble-sdk
+# directory if it already exists at call time; otherwise it silently falls
+# back to the XDG path ~/.local/share/pebble-sdk. Every hardcoded path in
+# this image (ELM_PEBBLE_SDK_INSTALL_ROOT, ELM_PEBBLE_QEMU_BIN,
+# ELM_PEBBLE_QEMU_IMAGE_ROOT) assumes the legacy path, so it must exist
+# before any pebble command runs, or the SDK ends up installed somewhere
+# the app can never find it. Also migrates data that already landed in the
+# XDG path before this fix existed.
+ensure_pebble_sdk_persist_dir() {
+  legacy="${DATA_ROOT}/.pebble-sdk"
+  xdg="${DATA_ROOT}/.local/share/pebble-sdk"
+
+  if [ ! -d "${legacy}" ]; then
+    if [ -d "${xdg}" ]; then
+      echo "[entrypoint] Migrating Pebble SDK data from ${xdg} to ${legacy}..."
+      mv "${xdg}" "${legacy}"
+    else
+      mkdir -p "${legacy}"
+    fi
+  fi
+}
+
 seed_bundled_pebble_sdk() {
   target="${DATA_ROOT}/.pebble-sdk"
 

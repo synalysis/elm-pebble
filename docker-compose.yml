@@ -1,6 +1,7 @@
 services:
   elm-pebble-ide:
     image: ${ELM_PEBBLE_IMAGE:-elm-pebble-ide:local}
+    platform: linux/amd64
     build:
       context: .
       dockerfile: Dockerfile
