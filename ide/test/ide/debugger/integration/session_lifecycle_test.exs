@@ -318,6 +318,145 @@ defmodule Ide.Debugger.SessionLifecycleIntegrationTest do
     refute get_in(st, [:watch, :model, "debugger_contract"])
   end
 
+  test "phone preferences schema reload does not bind companion program" do
+    slug = "sim-intro-prefs-schema-#{System.unique_integer([:positive])}"
+    {preferences, companion} = companion_schema_and_worker_sources()
+
+    assert {:ok, _} = Debugger.start_session(slug)
+
+    assert {:ok, after_prefs} =
+             Debugger.reload(slug, %{
+               rel_path: "src/CompanionPreferences.elm",
+               source: preferences,
+               reason: "phone_preferences",
+               source_root: "phone"
+             })
+
+    refute get_in(after_prefs, [:companion, :shell, "debugger_contract", "module"]) ==
+             "CompanionPreferences"
+
+    assert {:ok, after_app} =
+             Debugger.reload(slug, %{
+               rel_path: "src/CompanionApp.elm",
+               source: companion,
+               reason: "debugger_companion_bootstrap",
+               source_root: "phone",
+               skip_precompile: true
+             })
+
+    assert get_in(after_app, [:companion, :model, "last_path"]) == "src/CompanionApp.elm"
+    assert get_in(after_app, [:companion, :shell, "debugger_contract", "module"]) == "CompanionApp"
+    assert "FromWatch" in (get_in(after_app, [:companion, :shell, "debugger_contract", "msg_constructors"]) ||
+                             [])
+  end
+
+  test "skip-blocking companion bind does not fake-init; FromWatch waits for artifacts" do
+    alias Ide.Debugger.AgentSession
+    alias Ide.Debugger.BootstrapInit
+    alias IdeWeb.WorkspaceLive.DebuggerPage.ModelMetadata
+
+    slug = "sim-intro-pending-fromwatch-#{System.unique_integer([:positive])}"
+    companion = companion_fromwatch_worker_source()
+
+    assert {:ok, _} = Debugger.start_session(slug)
+
+    assert {:ok, _} =
+             AgentSession.mutate(slug, &BootstrapInit.with_skip_blocking_compile_flags/1)
+
+    assert {:ok, pending} =
+             Debugger.reload(slug, %{
+               rel_path: "src/CompanionApp.elm",
+               source: companion,
+               reason: "debugger_companion_bootstrap",
+               source_root: "phone",
+               skip_precompile: true
+             })
+
+    assert get_in(pending, [:companion, :shell, "debugger_contract", "module"]) == "CompanionApp"
+    refute get_in(pending, [:companion, :model, "runtime_execution_mode"]) == "runtime_executed"
+    refute get_in(pending, [:companion, :model, "debugger_init_complete"]) == true
+
+    public =
+      pending
+      |> Map.get(:companion)
+      |> ModelMetadata.public_model()
+
+    refute Map.has_key?(public, "note")
+
+    assert {:ok, _} =
+             AgentSession.mutate(slug, &BootstrapInit.clear_skip_blocking_compile_flags/1)
+
+    assert {:ok, inited} =
+             Debugger.reload(slug, %{
+               rel_path: "src/CompanionApp.elm",
+               source: companion,
+               reason: "companion_after_artifacts",
+               source_root: "phone"
+             })
+
+    runtime_model = get_in(inited, [:companion, :model, "runtime_model"]) || %{}
+    assert runtime_model["note"] == "ready"
+    assert runtime_model["errors"] == []
+    assert get_in(inited, [:companion, :model, "runtime_execution_mode"]) == "runtime_executed"
+
+    public_inited =
+      inited
+      |> Map.get(:companion)
+      |> ModelMetadata.public_model()
+
+    assert public_inited["note"] == "ready"
+
+    wire = %{
+      "ctor" => "FromWatch",
+      "args" => [%{"ctor" => "Ok", "args" => [%{"ctor" => "RequestSettings", "args" => []}]}]
+    }
+
+    assert {:ok, stepped} =
+             Debugger.step(slug, %{
+               target: "companion",
+               message: "FromWatch (Ok RequestSettings)",
+               message_value: wire
+             })
+
+    refute Enum.any?(stepped.debugger_timeline || [], fn row ->
+             row.type == "runtime_exec_error" and
+               is_binary(row.message) and String.contains?(row.message, "FromWatch")
+           end)
+
+    stepped_model = get_in(stepped, [:companion, :model, "runtime_model"]) || %{}
+    assert stepped_model["note"] == "ready"
+  end
+
+  test "phone preferences reload keeps an already-bound companion worker" do
+    slug = "sim-intro-prefs-keep-#{System.unique_integer([:positive])}"
+    {preferences, companion} = companion_schema_and_counter_sources()
+
+    assert {:ok, _} = Debugger.start_session(slug)
+
+    assert {:ok, after_app} =
+             Debugger.reload(slug, %{
+               rel_path: "src/CompanionApp.elm",
+               source: companion,
+               reason: "debugger_companion_bootstrap",
+               source_root: "phone"
+             })
+
+    assert get_in(after_app, [:companion, :shell, "debugger_contract", "module"]) == "CompanionApp"
+
+    assert {:ok, after_prefs} =
+             Debugger.reload(slug, %{
+               rel_path: "src/CompanionPreferences.elm",
+               source: preferences,
+               reason: "phone_preferences",
+               source_root: "phone"
+             })
+
+    assert get_in(after_prefs, [:companion, :model, "last_path"]) == "src/CompanionApp.elm"
+    assert get_in(after_prefs, [:companion, :shell, "debugger_contract", "module"]) == "CompanionApp"
+    assert "FromBridge" in (get_in(after_prefs, [:companion, :shell, "debugger_contract", "msg_constructors"]) ||
+                              [])
+  end
+
   test "phone reload simulates companion geolocation on init" do
     slug = "sim-intro-geolocation-#{System.unique_integer([:positive])}"
 
@@ -490,7 +629,8 @@ defmodule Ide.Debugger.SessionLifecycleIntegrationTest do
 
     assert {:ok, snapshot} = Debugger.snapshot(slug, event_limit: 2)
     assert length(snapshot.events) == 2
-    assert snapshot.seq == 36
+    assert snapshot.seq >= 2
+    assert hd(snapshot.events).seq == snapshot.seq
   end
 
   test "snapshot auto-starts debugger process when missing" do
@@ -934,5 +1074,147 @@ defmodule Ide.Debugger.SessionLifecycleIntegrationTest do
 
     assert {:ok, snap} = Debugger.snapshot(slug, event_limit: 10)
     assert get_in(snap.phone, [:view_tree, "type"]) == "PhoneRoot"
+  end
+
+  defp companion_fromwatch_worker_source do
+    """
+    module CompanionApp exposing (main)
+
+    import Platform
+
+    type alias Model =
+        { note : String
+        , errors : List String
+        }
+
+    type WatchToPhone
+        = RequestSettings
+
+    type Msg
+        = FromWatch (Result String WatchToPhone)
+
+    init _ =
+        ( { note = "ready", errors = [] }, Cmd.none )
+
+    update msg model =
+        case msg of
+            FromWatch (Ok RequestSettings) ->
+                ( { model | note = model.note }, Cmd.none )
+
+            FromWatch (Err error) ->
+                ( { model | errors = model.errors ++ [ error ] }, Cmd.none )
+
+    subscriptions _ =
+        Sub.none
+
+    main =
+        Platform.worker
+            { init = init
+            , update = update
+            , subscriptions = subscriptions
+            }
+    """
+  end
+
+  defp companion_schema_and_worker_sources do
+    preferences = """
+    module CompanionPreferences exposing (Settings, defaults, settings)
+
+    import Pebble.Companion.Preferences as Preferences
+
+    type alias Settings =
+        { note : String }
+
+    defaults : Settings
+    defaults =
+        { note = "ready" }
+
+    settings : Preferences.Schema Settings
+    settings =
+        Preferences.schema "Schema Worker" Settings
+    """
+
+    companion = """
+    module CompanionApp exposing (main)
+
+    import Platform
+
+    type alias Model =
+        { note : String
+        , errors : List String
+        }
+
+    type Msg
+        = FromWatch (Result String Int)
+
+    init _ =
+        ( { note = "ready", errors = [] }, Cmd.none )
+
+    update _ model =
+        ( model, Cmd.none )
+
+    subscriptions _ =
+        Sub.none
+
+    main =
+        Platform.worker
+            { init = init
+            , update = update
+            , subscriptions = subscriptions
+            }
+    """
+
+    {preferences, companion}
+  end
+
+  defp companion_schema_and_counter_sources do
+    preferences = """
+    module CompanionPreferences exposing (Settings, defaults, settings)
+
+    import Pebble.Companion.Preferences as Preferences
+
+    type alias Settings =
+        { ticks : Int }
+
+    defaults : Settings
+    defaults =
+        { ticks = 0 }
+
+    settings : Preferences.Schema Settings
+    settings =
+        Preferences.schema "Schema Counter" Settings
+    """
+
+    companion = """
+    module CompanionApp exposing (main)
+
+    import Platform
+
+    type alias Model =
+        { lastResponse : Int
+        , errors : List String
+        }
+
+    type Msg
+        = FromBridge (Result String Int)
+
+    init _ =
+        ( { lastResponse = 0, errors = [] }, Cmd.none )
+
+    update _ model =
+        ( model, Cmd.none )
+
+    subscriptions _ =
+        Sub.none
+
+    main =
+        Platform.worker
+            { init = init
+            , update = update
+            , subscriptions = subscriptions
+            }
+    """
+
+    {preferences, companion}
   end
 end

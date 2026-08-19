@@ -206,6 +206,28 @@ defmodule Ide.Debugger.CompileContract do
   def entrypoint_path?(_source_root, _rel_path), do: false
 
   @doc """
+  True when a debugger contract describes a TEA program (`main` / `init` / `Msg`),
+  not a schema or helper module analyzed in isolation.
+  """
+  @spec program_contract?(contract() | nil) :: boolean()
+  def program_contract?(%{} = contract) do
+    is_map(Map.get(contract, "main_program") || Map.get(contract, :main_program)) or
+      not is_nil(Map.get(contract, "init_model") || Map.get(contract, :init_model)) or
+      nonempty_list?(contract, "msg_constructors") or
+      nonempty_list?(contract, "update_case_branches")
+  end
+
+  def program_contract?(_), do: false
+
+  @doc "True when compile/runtime artifacts carry a TEA program contract."
+  @spec program_artifacts?(Types.wire_map() | nil) :: boolean()
+  def program_artifacts?(artifacts) when is_map(artifacts) do
+    program_contract?(from_artifacts(artifacts))
+  end
+
+  def program_artifacts?(_), do: false
+
+  @doc """
   Overlays subscription/cmd effect fields extracted from Core IR onto a project-derived contract.
   """
   @spec merge_core_ir_effects(contract(), Types.core_ir()) :: contract()
@@ -268,6 +290,13 @@ defmodule Ide.Debugger.CompileContract do
       Ide.InternalPackages.elm_random_elm_src_abs(),
       Ide.InternalPackages.shared_elm_abs()
     ]
+  end
+
+  defp nonempty_list?(contract, key) when is_map(contract) and is_binary(key) do
+    case Map.get(contract, key) || Map.get(contract, String.to_atom(key)) do
+      list when is_list(list) and list != [] -> true
+      _ -> false
+    end
   end
 
   defp find_entry_source(project_dir) do

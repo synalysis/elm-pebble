@@ -128,21 +128,25 @@ defmodule Ide.Debugger.DebuggerContractSnapshot do
 
       case resolve_contract(state, target, rel_path, source, source_root, ctx) do
         {:ok, ei} when is_map(ei) ->
-          prepared = ctx.apply_simulator_settings.(state)
+          if apply_resolved_contract?(state, target, source_root, rel_path, ei) do
+            prepared = ctx.apply_simulator_settings.(state)
 
-          st =
-            prepared
-            |> apply(ei, target, source, rel_path, ctx.apply_snapshot)
-            |> maybe_after_apply(prepared, target, source_root, ctx)
+            st =
+              prepared
+              |> apply(ei, target, source, rel_path, ctx.apply_snapshot)
+              |> maybe_after_apply(prepared, target, source_root, ctx)
 
-          payload =
-            if event_worth_logging?(ei) do
-              ctx.introspect_event_payload.(ei, rel_path, source_root)
-            else
-              nil
-            end
+            payload =
+              if event_worth_logging?(ei) do
+                ctx.introspect_event_payload.(ei, rel_path, source_root)
+              else
+                nil
+              end
 
-          {st, payload}
+            {st, payload}
+          else
+            {state, nil}
+          end
 
         _ ->
           {state, nil}
@@ -177,17 +181,44 @@ defmodule Ide.Debugger.DebuggerContractSnapshot do
 
       true ->
         # Non-entrypoint reloads must not replace the shell entrypoint contract
-        # (e.g. Resources.elm analyzed alone has empty subscription_calls).
-        surface = Map.get(state, target, %{})
+        # (e.g. Resources.elm / CompanionPreferences.elm analyzed alone).
+        # Only apply an isolated file when it is itself a TEA program and no
+        # program is bound yet (parser-preview fixtures).
+        if existing_program_contract?(state, target) do
+          :error
+        else
+          case analyze_contract_fallback(source, virtual_path) do
+            {:ok, ei} ->
+              if CompileContract.program_contract?(ei), do: {:ok, ei}, else: :error
 
-        case RuntimeArtifacts.introspect(surface) do
-          %{} = existing when map_size(existing) > 0 ->
-            {:ok, existing}
-
-          _ ->
-            analyze_contract_fallback(source, virtual_path)
+            _ ->
+              :error
+          end
         end
     end
+  end
+
+  @spec apply_resolved_contract?(
+          Types.runtime_state(),
+          Types.surface_target(),
+          String.t(),
+          String.t() | nil,
+          Types.elm_introspect()
+        ) :: boolean()
+  defp apply_resolved_contract?(state, target, source_root, rel_path, ei)
+       when is_map(state) and is_map(ei) do
+    CompileContract.entrypoint_path?(source_root, rel_path) or
+      (CompileContract.program_contract?(ei) and not existing_program_contract?(state, target))
+  end
+
+  defp apply_resolved_contract?(_state, _target, _source_root, _rel_path, _ei), do: false
+
+  @spec existing_program_contract?(Types.runtime_state(), Types.surface_target()) :: boolean()
+  defp existing_program_contract?(state, target) when is_map(state) do
+    state
+    |> Map.get(target, %{})
+    |> RuntimeArtifacts.introspect()
+    |> CompileContract.program_contract?()
   end
 
   @spec analyze_contract_fallback(String.t(), String.t()) ::
@@ -215,23 +246,46 @@ defmodule Ide.Debugger.DebuggerContractSnapshot do
     model = Map.get(surface, :model) || %{}
     shell = RuntimeArtifacts.shell_map(surface)
     view_tree = Map.get(surface, :view_tree) || %{}
-    execution_model = RuntimeArtifacts.execution_model(surface)
 
-    request =
-      %{
-        source_root: source_root_for_target(target),
-        rel_path: rel_path || model["last_path"],
-        source: source,
-        introspect: ei,
-        current_model: current_model_for_execution(model),
-        current_view_tree: view_tree
-      }
-      |> Map.merge(RuntimeArtifacts.execution_artifacts(execution_model))
-      |> RuntimeArtifacts.put_vector_resource_indices_on_request(execution_model)
-      |> RuntimeArtifacts.put_bitmap_resource_indices_on_request(execution_model)
+    next_shell =
+      shell
+      |> Map.put("debugger_contract", ei)
+      |> Map.put("debugger_contract_version", Map.get(ei, "contract_version"))
 
-    execution = resolve_init_execution(state, request, ctx)
+    state = put_in(state, [target, :shell], next_shell)
 
+    if not SurfaceCompileArtifacts.surface_has_program_runtime_artifacts?(state, target) do
+      pending_init_state(state, target)
+    else
+      execution_model =
+        state
+        |> Map.get(target, %{})
+        |> RuntimeArtifacts.execution_model()
+
+      request =
+        %{
+          source_root: source_root_for_target(target),
+          rel_path: rel_path || model["last_path"],
+          source: source,
+          introspect: ei,
+          current_model: current_model_for_execution(model),
+          current_view_tree: view_tree
+        }
+        |> Map.merge(RuntimeArtifacts.execution_artifacts(execution_model))
+        |> RuntimeArtifacts.put_vector_resource_indices_on_request(execution_model)
+        |> RuntimeArtifacts.put_bitmap_resource_indices_on_request(execution_model)
+
+      execution = resolve_init_execution(state, request, ctx)
+
+      if init_execution_ok?(execution) do
+        finish_successful_init(state, ei, target, source, rel_path, ctx, execution, model)
+      else
+        record_failed_init(state, target, execution, ctx)
+      end
+    end
+  end
+
+  defp finish_successful_init(state, ei, target, _source, _rel_path, ctx, execution, model) do
     model_patch =
       execution
       |> Map.get(:model_patch, %{})
@@ -249,23 +303,16 @@ defmodule Ide.Debugger.DebuggerContractSnapshot do
 
     model =
       model
+      |> Map.delete("runtime_execution_error")
       |> Map.put("runtime_execution_mode", "runtime_executed")
       |> then(&StepExecutionContract.merge_model_patch(&1, normalized_patch))
       |> RuntimeSurfaces.merge_launch_context_model(launch_context)
       |> StepExecution.put_runtime_view_output(Map.get(execution, :view_output))
       |> refresh_init_runtime_fingerprints(runtime_vt, ei)
 
-    next_shell =
-      shell
-      |> Map.put("debugger_contract", ei)
-      |> Map.put("debugger_contract_version", Map.get(ei, "contract_version"))
-
     output_vt = RuntimeViewOutput.tree(model, target)
 
-    state =
-      state
-      |> put_in([target, :model], model)
-      |> put_in([target, :shell], next_shell)
+    state = put_in(state, [target, :model], model)
 
     parser_view? = DebuggerContract.parser_expression_view?(%{"debugger_contract" => ei})
 
@@ -365,6 +412,83 @@ defmodule Ide.Debugger.DebuggerContractSnapshot do
     |> maybe_drain_app_message_queue(state, target, ctx)
     |> flush_init_protocol_deliveries(ctx)
     |> refresh_view_preview_if_unavailable(target)
+  end
+
+  @spec pending_init_state(Types.runtime_state(), Types.surface_target()) :: Types.runtime_state()
+  defp pending_init_state(state, target) when is_map(state) do
+    model = get_in(state, [target, :model]) || %{}
+
+    put_in(
+      state,
+      [target, :model],
+      model
+      |> Map.delete("debugger_init_complete")
+      |> Map.put("runtime_execution_mode", "pending_artifacts")
+    )
+  end
+
+  @spec record_failed_init(
+          Types.runtime_state(),
+          Types.surface_target(),
+          Types.step_executor_result() | Types.wire_map(),
+          apply_ctx()
+        ) :: Types.runtime_state()
+  defp record_failed_init(state, target, execution, ctx)
+       when is_map(state) and is_map(ctx) do
+    detail =
+      execution
+      |> execution_model_patch()
+      |> Map.get("runtime_execution_error") ||
+        get_in(execution, [:runtime, "error_detail"]) ||
+        get_in(execution, ["runtime", "error_detail"]) ||
+        "companion init failed"
+
+    model = get_in(state, [target, :model]) || %{}
+
+    state =
+      put_in(
+        state,
+        [target, :model],
+        model
+        |> Map.delete("debugger_init_complete")
+        |> Map.put("runtime_execution_mode", "error")
+        |> Map.put("runtime_execution_error", detail)
+      )
+
+    message = "init"
+    reason = {:core_ir_execution_failed, detail}
+
+    state
+    |> ctx.append_event.(
+      "debugger.runtime_exec_error",
+      %{
+        "execution_status" => "error",
+        "error_code" => "runtime_exec_error",
+        "error_detail" => execution_error_detail(reason),
+        "message" => message,
+        "source_root" => source_root_for_target(target)
+      }
+    )
+    |> ctx.append_debugger_event.("runtime_exec_error", target, message, "core_ir", nil)
+  end
+
+  @spec init_execution_ok?(Types.step_executor_result() | Types.wire_map()) :: boolean()
+  defp init_execution_ok?(execution) when is_map(execution) do
+    patch = execution_model_patch(execution)
+    runtime = Map.get(execution, :runtime) || Map.get(execution, "runtime") || %{}
+
+    is_map(Map.get(patch, "runtime_model")) and
+      not Map.has_key?(patch, "runtime_execution_error") and
+      Map.get(runtime, "execution_status") != "error" and
+      Map.get(runtime, "error_code") != "runtime_exec_error"
+  end
+
+  @spec execution_model_patch(Types.step_executor_result() | Types.wire_map()) :: Types.wire_map()
+  defp execution_model_patch(execution) when is_map(execution) do
+    case Map.get(execution, :model_patch) || Map.get(execution, "model_patch") do
+      patch when is_map(patch) -> patch
+      _ -> %{}
+    end
   end
 
   @spec apply_init_protocol_side_effects(

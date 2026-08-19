@@ -39,7 +39,7 @@ defmodule Ide.Debugger.SurfaceCompileArtifacts do
     source_root = ctx.source_root_for_target.(target)
 
     cond do
-      surface_has_versioned_runtime_artifacts?(state, target) ->
+      surface_has_program_runtime_artifacts?(state, target) ->
         attach_missing_debugger_contract(state, target, ctx)
 
       inline_source_present?(state, source_root) ->
@@ -67,6 +67,21 @@ defmodule Ide.Debugger.SurfaceCompileArtifacts do
   def surface_has_versioned_runtime_artifacts?(_state, _target), do: false
 
   @doc false
+  @spec surface_has_program_runtime_artifacts?(Types.runtime_state(), Types.surface_target()) ::
+          boolean()
+  def surface_has_program_runtime_artifacts?(state, target)
+      when is_map(state) and target in [:watch, :companion, :phone] do
+    surface_has_versioned_runtime_artifacts?(state, target) and
+      CompileContract.program_contract?(
+        state
+        |> Map.get(target, %{})
+        |> RuntimeArtifacts.introspect()
+      )
+  end
+
+  def surface_has_program_runtime_artifacts?(_state, _target), do: false
+
+  @doc false
   @spec debugger_contract_for_reload(Types.runtime_state(), Types.surface_target(), attach_ctx()) ::
           Types.elm_introspect() | nil
   def debugger_contract_for_reload(state, target, ctx)
@@ -84,7 +99,8 @@ defmodule Ide.Debugger.SurfaceCompileArtifacts do
         execution_model = RuntimeArtifacts.execution_model(surface)
 
         cond do
-          RuntimeArtifacts.versioned_elmx_artifacts?(execution_model) ->
+          RuntimeArtifacts.versioned_elmx_artifacts?(execution_model) and
+              CompileContract.program_contract?(RuntimeArtifacts.introspect(surface)) ->
             RuntimeArtifacts.introspect(surface) ||
               (state
                |> surface_stored_runtime_artifacts(source_root)
@@ -112,7 +128,8 @@ defmodule Ide.Debugger.SurfaceCompileArtifacts do
         stored_artifacts = surface_stored_runtime_artifacts(state, source_root)
 
         cond do
-          versioned_runtime_artifacts?(stored_artifacts) ->
+          versioned_runtime_artifacts?(stored_artifacts) and
+              CompileContract.program_artifacts?(stored_artifacts) ->
             stored_artifacts
 
           true ->
@@ -331,7 +348,7 @@ defmodule Ide.Debugger.SurfaceCompileArtifacts do
         stored = surface_stored_runtime_artifacts(state, source_root)
 
         cond do
-          versioned_runtime_artifacts?(stored) ->
+          versioned_runtime_artifacts?(stored) and CompileContract.program_artifacts?(stored) ->
             stored
 
           CompanionPhoneCompile.skip_blocking_compile?(state) ->
@@ -355,10 +372,28 @@ defmodule Ide.Debugger.SurfaceCompileArtifacts do
 
     with true <- is_binary(source) and String.trim(source) != "",
          true <- is_binary(rel_path) and String.trim(rel_path) != "",
+         true <- ephemeral_entry_source?(source_root, rel_path, source),
          session_key when is_binary(session_key) <- ctx.session_key_from_state.(state) do
       ephemeral_entrypoint_artifacts(session_key, source, rel_path, source_root)
     else
       _ -> %{}
+    end
+  end
+
+  defp ephemeral_entry_source?(source_root, rel_path, source)
+       when is_binary(source_root) and is_binary(rel_path) and is_binary(source) do
+    CompileContract.entrypoint_path?(source_root, rel_path) or
+      isolated_program_source?(source, rel_path)
+  end
+
+  defp isolated_program_source?(source, rel_path)
+       when is_binary(source) and is_binary(rel_path) do
+    case CompileContract.analyze_source(source, rel_path) do
+      {:ok, %{"debugger_contract" => contract}} ->
+        CompileContract.program_contract?(contract)
+
+      _ ->
+        false
     end
   end
 

@@ -8,8 +8,10 @@ defmodule IdeWeb.WorkspaceLive.DebuggerBootstrapFlow do
   alias Ide.Debugger.AgentStore
   alias Ide.Debugger.BootstrapInit
   alias Ide.Debugger.CompanionBootstrapLock
+  alias Ide.Debugger.CompileContract
   alias Ide.Debugger.CompanionPhoneCompile
   alias Ide.Debugger.PendingProtocolDelivery
+  alias Ide.Debugger.RuntimeArtifacts
   alias Ide.Debugger.ProtocolRx
   alias Ide.Debugger.RuntimeBackgroundDrains
   alias Ide.Debugger.Types, as: DebuggerTypes
@@ -188,7 +190,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerBootstrapFlow do
     state = AgentStore.fetch(scope_key)
 
     reload =
-      if companion_init_on_timeline?(state) do
+      if companion_init_on_timeline?(state) or companion_program_bound?(state) do
         {:ok, :skipped_reload}
       else
         with_skip_blocking_compile(scope_key, fn ->
@@ -259,7 +261,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerBootstrapFlow do
 
   @spec companion_surface_init_started?(debugger_state_map() | nil) :: boolean()
   def companion_surface_init_started?(state) when is_map(state) do
-    companion_init_on_timeline?(state)
+    companion_init_on_timeline?(state) or companion_program_bound?(state)
   end
 
   def companion_surface_init_started?(_state), do: false
@@ -270,6 +272,14 @@ defmodule IdeWeb.WorkspaceLive.DebuggerBootstrapFlow do
   end
 
   def watch_surface_bootstrapped?(_state), do: false
+
+  @spec companion_program_bound?(debugger_state_map()) :: boolean()
+  defp companion_program_bound?(state) when is_map(state) do
+    state
+    |> Map.get(:companion, %{})
+    |> RuntimeArtifacts.introspect()
+    |> CompileContract.program_contract?()
+  end
 
   @spec companion_init_on_timeline?(debugger_state_map()) :: boolean()
   def companion_init_on_timeline?(state) when is_map(state) do

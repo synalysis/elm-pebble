@@ -49,7 +49,7 @@ defmodule Ide.Debugger.SurfaceCompileArtifactsTest do
           "elmx_manifest" => %{"contract" => "elmx.runtime_executor.v1"},
           "elmx_revision" => "rev-1"
         },
-        shell: %{"debugger_contract" => %{"module" => "Main"}}
+        shell: %{"debugger_contract" => %{"module" => "Main", "init_model" => %{"count" => 0}}}
       }
     }
 
@@ -140,5 +140,41 @@ defmodule Ide.Debugger.SurfaceCompileArtifactsTest do
     contract = SurfaceCompileArtifacts.debugger_contract_for_reload(state, :watch, ctx)
     assert contract["module"] == "Main"
     assert contract["subscription_calls"] == [%{"op" => "onFinished"}]
+  end
+
+  test "debugger_contract_for_reload ignores schema-only stored companion contract" do
+    state = %{
+      companion: %{
+        model: %{
+          "last_source" => "module CompanionPreferences exposing (settings)\n",
+          "last_path" => "src/CompanionPreferences.elm",
+          "source_root" => "phone",
+          "elmx_manifest" => %{"contract" => "elmx.runtime_executor.v1"},
+          "elmx_revision" => "prefs-rev"
+        },
+        shell: %{
+          "debugger_contract" => %{
+            "module" => "CompanionPreferences",
+            "init_model" => nil,
+            "msg_constructors" => [],
+            "update_case_branches" => [],
+            "main_program" => nil
+          }
+        }
+      }
+    }
+
+    ctx = %{
+      session_key_from_state: fn _ -> nil end,
+      source_root_for_target: fn
+        :companion -> "phone"
+        :phone -> "phone"
+      end,
+      merge_runtime_artifacts: fn st, _target, _fields -> st end
+    }
+
+    contract = SurfaceCompileArtifacts.debugger_contract_for_reload(state, :companion, ctx)
+    refute match?(%{"module" => "CompanionPreferences"}, contract)
+    refute SurfaceCompileArtifacts.surface_has_program_runtime_artifacts?(state, :companion)
   end
 end

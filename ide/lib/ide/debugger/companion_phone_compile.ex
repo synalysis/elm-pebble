@@ -44,7 +44,7 @@ defmodule Ide.Debugger.CompanionPhoneCompile do
       phone_root(project) == nil ->
         false
 
-      SurfaceCompileArtifacts.surface_has_versioned_runtime_artifacts?(state, :companion) ->
+      SurfaceCompileArtifacts.surface_has_program_runtime_artifacts?(state, :companion) ->
         false
 
       not lazy_elmc?() ->

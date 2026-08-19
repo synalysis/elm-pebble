@@ -1,6 +1,7 @@
 defmodule Ide.Debugger.HotReload do
   @moduledoc false
 
+  alias Ide.Debugger.CompileContract
   alias Ide.Debugger.DebuggerContractSnapshot
   alias Ide.Debugger.Types
 
@@ -74,13 +75,29 @@ defmodule Ide.Debugger.HotReload do
         ) :: Types.runtime_state()
   def put_source_fields(state, target, rel_path, source, source_root)
       when target in [:watch, :companion, :phone] do
+    current_path = get_in(state, [target, :model, "last_path"])
+
+    cond do
+      CompileContract.entrypoint_path?(source_root, rel_path) ->
+        bind_source_fields(state, target, rel_path, source, source_root)
+
+      CompileContract.entrypoint_path?(source_root, current_path) ->
+        # Keep Main / CompanionApp as the surface program of record.
+        state
+
+      true ->
+        bind_source_fields(state, target, rel_path, source, source_root)
+    end
+  end
+
+  def put_source_fields(state, _target, _rel_path, _source, _source_root), do: state
+
+  defp bind_source_fields(state, target, rel_path, source, source_root) do
     state
     |> put_in([target, :model, "last_path"], rel_path)
     |> put_in([target, :model, "last_source"], source)
     |> put_in([target, :model, "source_root"], source_root)
   end
-
-  def put_source_fields(state, _target, _rel_path, _source, _source_root), do: state
 
   @spec reload_pulse(Types.surface_target(), String.t()) :: String.t()
   def reload_pulse(:watch, "phone"), do: "PhoneSync"

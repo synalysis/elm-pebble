@@ -126,7 +126,15 @@ defmodule Ide.Debugger.RuntimeHub do
       update: config.update,
       contexts: fn -> ctx end,
       merge_runtime_artifacts: &RuntimeArtifactMerge.maybe_merge/3,
-      refresh_from_artifacts: &Ide.Debugger.RuntimeExecutorConfig.refresh_from_artifacts/1
+      refresh_from_artifacts: fn state ->
+        [:watch, :companion, :phone]
+        |> Enum.reduce(
+          Ide.Debugger.RuntimeExecutorConfig.refresh_from_artifacts(state),
+          fn target, acc ->
+            ctx.step_apply.ensure_compile_artifacts.(acc, target)
+          end
+        )
+      end
     }
   end
 

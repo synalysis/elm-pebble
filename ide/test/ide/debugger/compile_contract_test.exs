@@ -58,7 +58,31 @@ defmodule Ide.Debugger.CompileContractTest do
     assert CompileContract.entrypoint_path?("watch", "Main.elm")
     refute CompileContract.entrypoint_path?("watch", "src/Render.elm")
     assert CompileContract.entrypoint_path?("phone", "src/CompanionApp.elm")
+    assert CompileContract.entrypoint_path?("phone", "src/Main.elm")
     refute CompileContract.entrypoint_path?("phone", "src/Other.elm")
+    refute CompileContract.entrypoint_path?("phone", "src/CompanionPreferences.elm")
+  end
+
+  test "program_contract? requires TEA init, Msg, or main — not schema helpers" do
+    assert CompileContract.program_contract?(%{
+             "main_program" => %{"kind" => "worker"}
+           })
+
+    assert CompileContract.program_contract?(%{"init_model" => %{"note" => "ready"}})
+    assert CompileContract.program_contract?(%{"msg_constructors" => ["FromWatch"]})
+    assert CompileContract.program_contract?(%{"update_case_branches" => ["FromWatch _"]})
+
+    refute CompileContract.program_contract?(%{
+             "module" => "CompanionPreferences",
+             "functions" => ["defaults", "settings"],
+             "init_model" => nil,
+             "msg_constructors" => [],
+             "update_case_branches" => [],
+             "main_program" => nil
+           })
+
+    refute CompileContract.program_contract?(nil)
+    refute CompileContract.program_artifacts?(%{"debugger_contract" => %{"module" => "Helper"}})
   end
 
   test "RuntimeArtifacts.introspect prefers debugger_contract on shell" do

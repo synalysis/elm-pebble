@@ -951,9 +951,6 @@ defmodule IdeWeb.WorkspaceLive.DebuggerFlow.Core do
       DebuggerBootstrapFlow.companion_bootstrapped?(state) ->
         socket
 
-      DebuggerBootstrapFlow.companion_init_on_timeline?(state) ->
-        socket
-
       DebuggerBootstrapFlow.companion_bootstrap_incomplete?(state) ->
         schedule_companion_debugger_bootstrap(project, socket)
 

@@ -32,7 +32,7 @@ defmodule Ide.Debugger.RuntimeInitApply do
   defp needs_init?(state, target) when is_map(state) and target in [:watch, :companion, :phone] do
     canonical = canonical_init_target(target)
 
-    SurfaceCompileArtifacts.surface_has_versioned_runtime_artifacts?(state, canonical) and
+    SurfaceCompileArtifacts.surface_has_program_runtime_artifacts?(state, canonical) and
       not init_executed?(state, canonical)
   end
 
@@ -42,10 +42,28 @@ defmodule Ide.Debugger.RuntimeInitApply do
   defp init_executed?(state, target) when is_map(state) do
     canonical = canonical_init_target(target)
 
-    state
-    |> Surface.from_state(canonical)
-    |> Surface.app_model()
-    |> Map.get("runtime_execution_mode") == "runtime_executed"
+    model =
+      state
+      |> Surface.from_state(canonical)
+      |> Surface.app_model()
+
+    runtime_model =
+      case Map.get(model, "runtime_model") || Map.get(model, :runtime_model) do
+        inner when is_map(inner) -> inner
+        _ -> %{}
+      end
+
+    Map.get(model, "runtime_execution_mode") == "runtime_executed" and
+      not has_execution_error?(model, runtime_model)
+  end
+
+  @spec has_execution_error?(Types.app_model(), Types.inner_runtime_model()) :: boolean()
+  defp has_execution_error?(model, runtime_model)
+       when is_map(model) and is_map(runtime_model) do
+    Map.has_key?(model, "runtime_execution_error") or
+      Map.has_key?(model, :runtime_execution_error) or
+      Map.has_key?(runtime_model, "runtime_execution_error") or
+      Map.has_key?(runtime_model, :runtime_execution_error)
   end
 
   @spec canonical_init_target(Types.surface_target()) :: Types.surface_target()
