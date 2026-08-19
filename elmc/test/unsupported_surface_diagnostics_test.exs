@@ -63,6 +63,23 @@ defmodule Elmc.UnsupportedSurfaceDiagnosticsTest do
     assert Enum.any?(diags, &(&1["severity"] == "error"))
   end
 
+  test "plan_stream_fallback Host emit is a visible warning, not a silent miss" do
+    Process.put(:elmc_compile_warnings, [
+      %{
+        "severity" => "warning",
+        "source" => "elmc/direct_render",
+        "code" => "plan_stream_fallback",
+        "message" => "Direct-render Main.view fell back to Host emit"
+      }
+    ])
+
+    [diag] = UnsupportedSurface.compile_warnings()
+
+    assert diag["code"] == "plan_stream_fallback"
+    assert diag["source"] == "elmc/direct_render"
+    assert diag["severity"] == "warning"
+  end
+
   test "plan unsupported reason formats with op and target" do
     assert UnsupportedSurface.format_plan_reason(%{op: :case, target: "List.map"}) =~ "op=case"
     assert UnsupportedSurface.format_plan_reason(%{op: :case, target: "List.map"}) =~ "List.map"

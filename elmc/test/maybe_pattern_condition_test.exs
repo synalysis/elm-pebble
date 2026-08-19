@@ -89,6 +89,28 @@ defmodule Elmc.MaybePatternConditionTest do
     refute code =~ "ELMC_TAG_MAYBE"
   end
 
+  test "Just var payload bind peels the Maybe without requiring constructor :bind" do
+    env =
+      Patterns.bind_pattern(
+        %{},
+        %{kind: :constructor, name: "Just", arg_pattern: %{kind: :var, name: "hands"}},
+        "owned[1]"
+      )
+
+    assert env["hands"] == "elmc_maybe_or_tuple_just_payload_borrow(owned[1])"
+  end
+
+  test "Just constructor :bind peels the Maybe" do
+    env =
+      Patterns.bind_pattern(
+        %{},
+        %{kind: :constructor, name: "Just", bind: "hands"},
+        "maybeHands"
+      )
+
+    assert env["hands"] == "elmc_maybe_or_tuple_just_payload_borrow(maybeHands)"
+  end
+
   test "union constructor tag uses elmc_union_tag_matches helper" do
     code =
       Patterns.pattern_condition(

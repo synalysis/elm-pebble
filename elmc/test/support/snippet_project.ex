@@ -5,6 +5,7 @@ defmodule Elmc.TestSupport.SnippetProject do
 
   alias Elmc.TestSupport.CompileCache
   alias Elmc.TestSupport.ElmJson
+  alias Elmc.TestSupport.GeneratedCLint
 
   @doc """
   Compiles a one-module Main.elm pebble app (simple_project-shaped deps).
@@ -58,12 +59,50 @@ defmodule Elmc.TestSupport.SnippetProject do
   @spec compile_main!(String.t(), keyword()) :: String.t()
   def compile_main!(main_source, opts \\ []) do
     case compile_main(main_source, opts) do
-      {:ok, %{out_dir: out_dir}} ->
-        out_dir
+      {:ok, result} ->
+        maybe_check_generated_c!(result, opts)
+        result.out_dir
 
       {:error, reason} ->
         raise "snippet compile failed: #{inspect(reason, limit: 8)}"
     end
+  end
+
+  @doc """
+  Compile a snippet, lint record-get bases, and host-typecheck generated C.
+
+  Returns `{result, generated_c}`. Use this for new direct-render / ABI snippets
+  so undeclared identifiers fail in `elmc` tests instead of Pebble `-Werror`.
+  """
+  @spec compile_checked!(String.t(), keyword()) :: {map(), String.t()}
+  def compile_checked!(main_source, opts \\ []) do
+    opts = Keyword.merge([typecheck: true, lint_c: true], opts)
+
+    case compile_main(main_source, opts) do
+      {:ok, result} ->
+        generated = File.read!(Path.join(result.out_dir, "c/elmc_generated.c"))
+        maybe_check_generated_c!(result, opts, generated)
+        {result, generated}
+
+      {:error, reason} ->
+        raise "snippet compile failed: #{inspect(reason, limit: 8)}"
+    end
+  end
+
+  defp maybe_check_generated_c!(result, opts, generated \\ nil) do
+    generated =
+      generated ||
+        File.read!(Path.join(result.out_dir, "c/elmc_generated.c"))
+
+    if Keyword.get(opts, :lint_c, false) do
+      GeneratedCLint.assert_record_get_bases_bound!(generated)
+    end
+
+    if Keyword.get(opts, :typecheck, false) do
+      Elmc.TestSupport.GeneratedCTypecheck.assert_typechecks!(result.out_dir)
+    end
+
+    :ok
   end
 
   @doc "Compiles and returns `c/elmc_generated.c` contents (no full out materialize on hit)."

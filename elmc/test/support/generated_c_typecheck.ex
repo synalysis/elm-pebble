@@ -15,7 +15,7 @@ defmodule Elmc.TestSupport.GeneratedCTypecheck do
 
   @host_stubs Path.expand("elmc_host_stubs.h", __DIR__)
   # Bump when cc flags / include contract changes.
-  @cc_flags_version 3
+  @cc_flags_version 4
 
   @spec assert_typechecks!(String.t()) :: :ok
   def assert_typechecks!(out_dir) when is_binary(out_dir) do
@@ -46,6 +46,7 @@ defmodule Elmc.TestSupport.GeneratedCTypecheck do
               # some pointer ABI mismatches; keep those as warnings until call/callee
               # native-out vs boxed-out is fully unified (see companion encodeColorCode).
               "-Werror=int-conversion",
+              "-Werror=implicit-function-declaration",
               "-Wno-error=incompatible-pointer-types",
               "-include",
               @host_stubs,

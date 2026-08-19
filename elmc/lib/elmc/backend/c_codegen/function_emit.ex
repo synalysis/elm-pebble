@@ -129,16 +129,18 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
     rc_required? = RcRequired.rc_required?(module_name, decl.name)
     native_ret = NativeReturn.cached_kind({module_name, decl.name})
     value_return? = NativeReturn.value_return?({module_name, decl.name})
+    dual_out? = NativeReturn.dual_out?(native_ret)
+    rc_abi? = rc_required? or dual_out?
 
     signature =
       cond do
-        value_return? and direct_args? ->
+        value_return? and direct_args? and not dual_out? ->
           direct_params(decl, module_name, decl_map)
 
-        rc_required? and native_ret ->
+        rc_abi? and native_ret ->
           native_rc_function_params(direct_args?, decl, module_name, decl_map, native_ret)
 
-        rc_required? ->
+        rc_abi? ->
           rc_function_params(direct_args?, decl, module_name, decl_map)
 
         direct_args? ->
@@ -150,9 +152,14 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
 
     return_type =
       cond do
-        value_return? and native_ret -> NativeReturn.c_value_type(native_ret)
-        rc_required? -> "RC"
-        true -> "ElmcValue *"
+        value_return? and native_ret in [:native_int, :native_bool] ->
+          NativeReturn.c_value_type(native_ret)
+
+        rc_abi? ->
+          "RC"
+
+        true ->
+          "ElmcValue *"
       end
 
     linkage = function_linkage_prefix(module_name, decl.name)
@@ -545,9 +552,11 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
     params = direct_params(decl, module_name, decl_map)
     native_ret = NativeReturn.cached_kind({module_name, decl_name})
     value_return? = NativeReturn.value_return?({module_name, decl_name})
+    dual_out? = NativeReturn.dual_out?(native_ret)
+    rc_abi? = RcRequired.rc_required?(module_name, decl_name) or dual_out?
 
     cond do
-      value_return? and native_ret ->
+      value_return? and native_ret in [:native_int, :native_bool] ->
         value_type = NativeReturn.c_value_type(native_ret)
 
         case params do
@@ -555,7 +564,7 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
           other -> "#{value_type} #{c_name}(#{other});"
         end
 
-      RcRequired.rc_required?(module_name, decl_name) ->
+      rc_abi? ->
         out_param =
           if native_ret, do: NativeReturn.c_out_type(native_ret), else: "ElmcValue **out"
 
@@ -735,7 +744,9 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
         ) :: String.t()
 
   defp emit_boxed_body(decl, module_name, _function_arities, decl_map, direct_args?) do
-    rc_required? = RcRequired.rc_required?(module_name, decl.name)
+    rc_required? =
+      RcRequired.rc_required?(module_name, decl.name) or
+        NativeReturn.dual_out?(NativeFunctionCall.return_kind(decl, module_name, decl_map))
 
     RecordCompile.reset_borrowed_field_refs()
 

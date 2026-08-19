@@ -3,6 +3,9 @@ defmodule Elmc.PlanNativeIntPairReturnTest do
 
   alias Elmc.Backend.C.Lower.Function, as: CLowerFunction
   alias Elmc.Backend.C.Lower.NativeReturn
+  alias Elmc.Backend.CCodegen.FunctionEmit
+  alias Elmc.Backend.CCodegen.RcRequired
+  alias Elmc.Backend.CCodegen.Util
   alias Elmc.Backend.Plan.Lower.Function, as: PlanLower
 
   @moduletag :plan_surface
@@ -185,5 +188,102 @@ defmodule Elmc.PlanNativeIntPairReturnTest do
     c = CLowerFunction.emit(plan)
     refute c =~ "elmc_tuple2("
     refute c =~ "elmc_tuple_second"
+  end
+
+  test "switch arms of (Int, Int) each write dual outs" do
+    decl = %{
+      name: "unit4",
+      args: ["index"],
+      type: "Int -> ( Int, Int )",
+      expr: %{
+        op: :case,
+        subject: %{
+          op: :call,
+          name: "modBy",
+          args: [%{op: :int_literal, value: 4}, %{op: :var, name: "index"}]
+        },
+        branches: [
+          %{
+            pattern: %{kind: :int, value: 0},
+            expr: %{
+              op: :tuple2,
+              left: %{op: :int_literal, value: 0},
+              right: %{op: :int_literal, value: -1000}
+            }
+          },
+          %{
+            pattern: %{kind: :int, value: 1},
+            expr: %{
+              op: :tuple2,
+              left: %{op: :int_literal, value: 1000},
+              right: %{op: :int_literal, value: 0}
+            }
+          },
+          %{
+            pattern: %{kind: :wildcard},
+            expr: %{
+              op: :tuple2,
+              left: %{op: :int_literal, value: 0},
+              right: %{op: :int_literal, value: 1000}
+            }
+          }
+        ]
+      }
+    }
+
+    Process.put(:elmc_program_decls, %{{"Main", "unit4"} => decl})
+    Process.put(:elmc_codegen_opts, %{plan_ir_mode: :primary})
+
+    assert {:ok, plan} =
+             PlanLower.lower(decl, "Main", %{{"Main", "unit4"} => decl}, rc_required: true)
+
+    assert plan.native_scalar_return == :native_int_pair
+    c = CLowerFunction.emit(plan)
+    assert c =~ "*out0 = 0"
+    assert c =~ "*out1 = -1000"
+    assert c =~ "*out0 = 1000"
+    assert c =~ "*out1 = 0"
+    assert c =~ "*out1 = 1000"
+    refute c =~ "elmc_tuple2_ints"
+    refute c =~ "elmc_tuple2("
+  end
+
+  test "pure Int -> (Int, Int) helper is RC-required and uses dual-out public ABI" do
+    decl = %{
+      name: "unitAt",
+      args: ["index"],
+      type: "Int -> ( Int, Int )",
+      ownership: [:borrow_arg, :borrow_result],
+      expr: %{
+        op: :tuple2,
+        left: %{op: :var, name: "index"},
+        right: %{op: :int_literal, value: 9}
+      }
+    }
+
+    decl_map = %{{"Main", "unitAt"} => decl}
+    Process.put(:elmc_program_decls, decl_map)
+    Process.put(:elmc_codegen_opts, %{plan_ir_mode: :primary})
+    RcRequired.run!(decl_map)
+
+    assert RcRequired.rc_required?("Main", "unitAt")
+
+    assert {:ok, plan} = PlanLower.lower(decl, "Main", decl_map, rc_required: true)
+    assert plan.native_scalar_return == :native_int_pair
+
+    c =
+      FunctionEmit.emit_function_def(
+        decl,
+        "Main",
+        Util.module_fn_name("Main", "unitAt"),
+        %{},
+        decl_map,
+        false
+      )
+
+    assert c =~ "RC elmc_fn_Main_unitAt(elmc_int_t *out0, elmc_int_t *out1"
+    refute c =~ ~r/ElmcValue \*\s*elmc_fn_Main_unitAt/
+    assert c =~ "*out0 ="
+    assert c =~ "*out1 = 9"
   end
 end

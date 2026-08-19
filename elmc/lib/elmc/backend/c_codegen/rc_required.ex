@@ -126,7 +126,8 @@ defmodule Elmc.Backend.CCodegen.RcRequired do
     do: Map.get(opts, :direct_command_targets, MapSet.new())
 
   # Int/Bool native helpers still box through elmc_new_int/bool in their argc wrapper;
-  # that allocation can fail and must propagate RC to callers/runtime logging.
+  # dual-out `(Int, Int)` / `(List Int, Int)` helpers always return RC through out-params.
+  # Those allocations/ABI writes can fail and must propagate RC to callers.
   defp expand_scalar_boxing_wrappers(required, decl_map) do
     Enum.reduce(decl_map, required, fn {key = {mod, _name}, decl}, acc ->
       if MapSet.member?(acc, key) or not scalar_boxing_rc_required?(decl, mod, decl_map) do
@@ -139,7 +140,12 @@ defmodule Elmc.Backend.CCodegen.RcRequired do
 
   defp scalar_boxing_rc_required?(decl, module_name, decl_map) do
     NativeFunctionCall.native_scalar_fn?(decl, module_name, decl_map) and
-      NativeFunctionCall.return_kind(decl, module_name, decl_map) in [:native_int, :native_bool]
+      NativeFunctionCall.return_kind(decl, module_name, decl_map) in [
+        :native_int,
+        :native_bool,
+        :native_int_pair,
+        :native_list_int_pair
+      ]
   end
 
   @spec rc_required?(String.t(), String.t()) :: boolean()

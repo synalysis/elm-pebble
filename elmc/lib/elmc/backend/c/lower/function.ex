@@ -1907,9 +1907,16 @@ defmodule Elmc.Backend.C.Lower.Function do
     end
   end
 
+  @spec plan_rc_shell?(FunctionPlan.t()) :: boolean()
+  defp plan_rc_shell?(%FunctionPlan{rc_required: true}), do: true
+
+  defp plan_rc_shell?(%FunctionPlan{native_scalar_return: kind}),
+    do: NativeReturn.dual_out?(kind)
+
   @spec wrap_rc_shell(FunctionPlan.t(), String.t(), Types.slot_map()) :: String.t()
 
-  defp wrap_rc_shell(%FunctionPlan{rc_required: rc?, fallible: fallible?} = plan, core, slots) do
+  defp wrap_rc_shell(%FunctionPlan{fallible: fallible?} = plan, core, slots) do
+    rc? = plan_rc_shell?(plan)
     slot_count = owned_slot_count(slots)
     owned = Frame.owned_declaration(plan, slots)
     slot_indices = if slot_count > 0, do: Enum.to_list(0..(slot_count - 1)), else: []
@@ -2161,16 +2168,11 @@ defmodule Elmc.Backend.C.Lower.Function do
     end
   end
 
-  defp emit_return(%FunctionPlan{} = plan, slots, :native_int_pair, _borrow_nulls, instr_opts) do
-    case NativeReturn.pair_ret_operands(plan) do
-      {a, b} ->
-        # Prefer `int_operand_ref` so native Int params resolve to C arg names
-        # (`x`) rather than an uninitialized `plan_native_int_N` temp.
-        "*out0 = #{Instr.int_operand_ref(a, slots, instr_opts)};\n*out1 = #{Instr.int_operand_ref(b, slots, instr_opts)};"
-
-      _ ->
-        "*out0 = 0;\n*out1 = 0;"
-    end
+  defp emit_return(%FunctionPlan{} = _plan, _slots, :native_int_pair, _borrow_nulls, _instr_opts) do
+    # Each contributing `tuple2` / `tuple2_ints` writes `*out0`/`*out1` in the
+    # body (including switch/case arms). A join-only write would reuse the first
+    # arm's constants for every branch.
+    ""
   end
 
   defp emit_return(%FunctionPlan{} = _plan, _slots, :native_list_int_pair, _borrow_nulls, _instr_opts) do

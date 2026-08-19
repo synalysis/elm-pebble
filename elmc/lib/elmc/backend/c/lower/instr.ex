@@ -1675,12 +1675,11 @@ defmodule Elmc.Backend.C.Lower.Instr do
          opts
        ) do
     cond do
-      # Dual-out `(Int, Int)` returns write *out0/*out1 from the operands; skip the heap pair.
-      Keyword.get(opts, :native_scalar_out) == :native_int_pair and
-          (dest == "*out" or dest_reg in [:fn_out, :branch_out] or
-             dest_reg == Keyword.get(opts, :native_ret_reg)) ->
-        _ = {args, slots, rc?}
-        ""
+      # Dual-out `(Int, Int)` writes *out0/*out1 on each return arm (including
+      # switch/case tables). A single emit_return pair would collapse every arm
+      # to the first tuple's constants.
+      native_int_pair_ret_dest?(dest, dest_reg, opts) ->
+        emit_native_int_pair_outs(args, slots, opts)
 
       # Dual-out `(List Int, Int)` writes *out_list/*out_int at each return arm.
       Keyword.get(opts, :native_scalar_out) == :native_list_int_pair and
@@ -1771,12 +1770,9 @@ defmodule Elmc.Backend.C.Lower.Instr do
          dest,
          opts
        ) do
-    # Dual-out `(Int, Int)` returns write *out0/*out1 from the operands; skip the heap pair.
-    if Keyword.get(opts, :native_scalar_out) == :native_int_pair and
-         (dest == "*out" or dest_reg in [:fn_out, :branch_out] or
-            dest_reg == Keyword.get(opts, :native_ret_reg)) do
-      _ = {args, slots, rc?}
-      ""
+    # Dual-out `(Int, Int)` writes *out0/*out1 on each return arm.
+    if native_int_pair_ret_dest?(dest, dest_reg, opts) do
+      emit_native_int_pair_outs(args, slots, opts)
     else
       left = int_operand_ref(Enum.at(args, 0), slots, opts)
       right = int_operand_ref(Enum.at(args, 1), slots, opts)
@@ -5348,6 +5344,22 @@ defmodule Elmc.Backend.C.Lower.Instr do
                       %{op: :transfer, args: %{source: src}} when is_integer(src) ->
                         slot_ref(src, slots, opts)
 
+                      %{op: :call_runtime, args: %{builtin: :maybe_just_payload, args: [src]}}
+                      when is_integer(src) ->
+                        "elmc_maybe_or_tuple_just_payload_borrow(#{slot_ref(src, slots, opts)})"
+
+                      %{
+                        op: :call_runtime,
+                        args: %{builtin: :retain, view_peel: :maybe_just_payload, view_peel_args: [src]}
+                      }
+                      when is_integer(src) ->
+                        "elmc_maybe_or_tuple_just_payload_borrow(#{slot_ref(src, slots, opts)})"
+
+                      %{op: :record_get, args: %{base: base, field: field} = rec_args}
+                      when is_integer(base) ->
+                        index = record_get_index_ref(field, Map.get(rec_args, :field_index, "0"))
+                        "ELMC_RECORD_GET_INDEX(#{slot_ref(base, slots, opts)}, #{index})"
+
                       _ ->
                         if MapSet.member?(Keyword.get(opts, :native_int_only_regs, MapSet.new()), reg) do
                           "plan_native_int_#{reg}"
@@ -5595,5 +5607,20 @@ defmodule Elmc.Backend.C.Lower.Instr do
         Keyword.get(opts, :native_list_int_pair_pair_regs, MapSet.new()),
         dest_reg
       )
+  end
+
+  @spec native_int_pair_ret_dest?(String.t(), Types.reg() | term(), keyword()) :: boolean()
+  defp native_int_pair_ret_dest?(_dest, _dest_reg, opts) do
+    # Every `tuple2` in a dual-out `(Int, Int)` helper is a return arm (or is
+    # overwritten by a later arm). Matching only `:fn_out` / `native_ret_reg`
+    # misses phi/switch dests and collapses a 60-arm table to one pair.
+    Keyword.get(opts, :native_scalar_out) == :native_int_pair
+  end
+
+  @spec emit_native_int_pair_outs([term()], Types.slot_map(), keyword()) :: String.t()
+  defp emit_native_int_pair_outs(args, slots, opts) do
+    left = int_operand_ref(Enum.at(args, 0), slots, opts)
+    right = int_operand_ref(Enum.at(args, 1), slots, opts)
+    "*out0 = #{left};\n*out1 = #{right};"
   end
 end

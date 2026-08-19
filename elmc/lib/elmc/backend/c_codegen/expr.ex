@@ -721,10 +721,27 @@ defmodule Elmc.Backend.CCodegen.Expr do
   @spec nested_field_int_get_expr(String.t(), [String.t()], Types.compile_env()) :: String.t() | nil
 
   defp nested_field_int_get_expr(source, path, env) do
+    case borrow_record_source_ref(source, env) do
+      source_ref when is_binary(source_ref) ->
+        nested_field_int_get_expr_from_ref(source_ref, source, path, env)
+
+      _ ->
+        nil
+    end
+  end
+
+  @spec nested_field_int_get_expr_from_ref(
+          String.t(),
+          String.t(),
+          [String.t()],
+          Types.compile_env()
+        ) :: String.t() | nil
+
+  defp nested_field_int_get_expr_from_ref(source_ref, source, path, env) do
     {final_field, intermediate_fields} = List.pop_at(path, -1)
 
     getter =
-      Enum.reduce(Enum.with_index(intermediate_fields), source, fn {field, idx}, cur ->
+      Enum.reduce(Enum.with_index(intermediate_fields), source_ref, fn {field, idx}, cur ->
         prior = Enum.take(intermediate_fields, idx)
 
         case record_shape_for_path(env, source, prior) do
@@ -839,7 +856,7 @@ defmodule Elmc.Backend.CCodegen.Expr do
   @spec borrow_record_source_ref(String.t(), Types.compile_env()) :: String.t() | nil
 
   defp borrow_record_source_ref(name, env) do
-    case Map.get(env, name) do
+    case Map.get(env, name) || EnvBindings.lookup_binding(env, name) do
       ref when is_binary(ref) ->
         ref
 
@@ -850,7 +867,18 @@ defmodule Elmc.Backend.CCodegen.Expr do
         nil
 
       _ ->
-        if zero_arg_function_binding?(env, name), do: nil, else: name
+        cond do
+          zero_arg_function_binding?(env, name) ->
+            nil
+
+          EnvBindings.direct_param_ref?(env, name) ->
+            name
+
+          true ->
+            # Unbound Elm names must not become C identifiers (`hands` after
+            # `Just hands` when the payload was never bound in this env).
+            nil
+        end
     end
   end
 

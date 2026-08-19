@@ -237,24 +237,30 @@ defmodule Elmc.Backend.CCodegen.Patterns do
 
   def bind_pattern(
         env,
-        %{kind: :constructor, name: "Just", bind: bind, arg_pattern: arg},
+        %{kind: :constructor, name: name} = pattern,
         subject_ref
-      ) do
+      )
+      when name in ["Just", "Maybe.Just"] do
+    # `Just hands` is often `{name: "Just", arg_pattern: %{kind: :var, name: "hands"}}`
+    # with no constructor `:bind`. Requiring both keys left the payload unbound so
+    # nested field reads emitted the Elm name as a C identifier.
     subject_ref = pattern_subject_ref(subject_ref)
-
     value_ref = just_payload_ref(subject_ref)
+    bind = Map.get(pattern, :bind)
+    arg = Map.get(pattern, :arg_pattern)
 
     env =
       env
-      |> then(fn branch_env ->
-        if is_binary(bind), do: Map.put(branch_env, bind, value_ref), else: branch_env
-      end)
-      |> then(fn branch_env ->
-        if is_binary(bind), do: EnvBindings.put_tuple_projection_ref(branch_env, value_ref), else: branch_env
-      end)
+      |> maybe_bind_just_name(bind, value_ref)
       |> put_just_bind_var_type(subject_ref, bind)
 
-    if arg, do: bind_pattern(env, arg, value_ref), else: env
+    if is_map(arg) do
+      env
+      |> bind_pattern(arg, value_ref)
+      |> put_just_arg_var_type(arg, subject_ref)
+    else
+      env
+    end
   end
 
   def bind_pattern(
@@ -592,6 +598,26 @@ defmodule Elmc.Backend.CCodegen.Patterns do
   end
 
   defp put_maybe_unwrapped_var_type(env, _case_subject, _bind), do: env
+
+  @spec maybe_bind_just_name(Types.compile_env(), String.t() | nil, String.t()) ::
+          Types.compile_env()
+  defp maybe_bind_just_name(env, bind, value_ref)
+       when is_binary(bind) and bind not in ["", "_"] and is_binary(value_ref) do
+    env
+    |> Map.put(bind, value_ref)
+    |> EnvBindings.put_tuple_projection_ref(value_ref)
+  end
+
+  defp maybe_bind_just_name(env, _, _), do: env
+
+  @spec put_just_arg_var_type(Types.compile_env(), Types.pattern(), Types.subject_ref()) ::
+          Types.compile_env()
+  defp put_just_arg_var_type(env, %{kind: :var, name: name}, subject_ref)
+       when is_binary(name) and name not in ["", "_"] do
+    put_just_bind_var_type(env, subject_ref, name)
+  end
+
+  defp put_just_arg_var_type(env, _, _), do: env
 
   @spec put_just_bind_var_type(Types.compile_env(), Types.subject_ref(), String.t() | nil) ::
           Types.compile_env()

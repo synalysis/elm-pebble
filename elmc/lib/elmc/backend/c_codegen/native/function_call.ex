@@ -48,13 +48,11 @@ defmodule Elmc.Backend.CCodegen.Native.FunctionCall do
     decl_map = Map.get(env, :__program_decls__, %{})
     return_kind = return_kind(decl, module_name, decl_map)
 
-    # Dual-out only when plan annotate cached the ABI; otherwise keep boxed calls.
+    # `(Int, Int)` callees always use dual-out (`RC fn(elmc_int_t *out0, elmc_int_t *out1, …)`).
+    # Do not wait for plan annotate cache — Host view emit can run before the
+    # callee is annotated and would otherwise call the boxed ABI (`&tmp, int`).
     return_kind =
       cond do
-        return_kind == :native_int_pair and
-            NativeReturn.cached_kind({module_name, name}) != :native_int_pair ->
-          :boxed
-
         # IR call path always boxes list/int pairs; plan lower emits dual-out.
         return_kind == :native_list_int_pair ->
           :boxed

@@ -426,18 +426,37 @@ defmodule Elmc.Backend.CCodegen.DirectRender.CommandDef do
 
   defp record_plan_stream_fallback(module_name, decl) do
     cache = Process.get(:elmc_plan_unsupported_reasons, %{})
+    op = Map.get(decl.expr || %{}, :op)
+    target = Map.get(decl.expr || %{}, :target) || Map.get(decl.expr || %{}, :name)
 
     reason = %{
       source: "elmc/direct_render",
       code: "plan_stream_fallback",
-      op: Map.get(decl.expr || %{}, :op),
-      target: Map.get(decl.expr || %{}, :target) || Map.get(decl.expr || %{}, :name)
+      op: op,
+      target: target
     }
 
     Process.put(
       :elmc_plan_unsupported_reasons,
       Map.put_new(cache, {module_name, decl.name}, reason)
     )
+
+    # Warning, not a strict error: Host emit is valid when C typechecks.
+    # Silent fallback is what hid Just-payload / nested field bugs.
+    warnings = Process.get(:elmc_compile_warnings, [])
+
+    Process.put(:elmc_compile_warnings, [
+      %{
+        "severity" => "warning",
+        "source" => "elmc/direct_render",
+        "code" => "plan_stream_fallback",
+        "message" =>
+          "Direct-render #{module_name}.#{decl.name} fell back to Host emit " <>
+            "(Plan stream lower failed; op=#{inspect(op)} target=#{inspect(target)}). " <>
+            "Generated C must still typecheck."
+      }
+      | warnings
+    ])
   end
 
   defp scene_append_stub(c_name, mod, decl) do

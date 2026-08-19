@@ -150,6 +150,10 @@ defmodule Elmc.Backend.C.Lower.NativeReturn do
     MapSet.member?(Process.get(:elmc_plan_native_value_returns, MapSet.new()), {module, name})
   end
 
+  @spec dual_out?(scalar_kind() | nil) :: boolean()
+  def dual_out?(kind) when kind in [:native_int_pair, :native_list_int_pair], do: true
+  def dual_out?(_), do: false
+
   @spec c_out_type(scalar_kind()) :: String.t()
   def c_out_type(:native_int), do: "elmc_int_t *out"
   def c_out_type(:native_bool), do: "bool *out"
