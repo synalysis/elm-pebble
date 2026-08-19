@@ -585,8 +585,19 @@ defmodule Ide.CompanionProtocolGenerator do
   end
   @spec schema_fields(schema()) :: [field()]
   defp schema_fields(schema) do
-    (schema.watch_to_phone ++ schema.phone_to_watch)
+    # Inbox decoder / dispatch only materializes phone→watch constructors.
+    # Watch→phone fields belong on the encoder path and must not enlarge the
+    # decoder struct (list/dict unrolls, string buffers, union tags).
+    schema.phone_to_watch
     |> Enum.flat_map(& &1.fields)
+  end
+
+  @spec decoder_wire_slots(schema()) :: [WireSchema.wire_slot()]
+  defp decoder_wire_slots(schema) do
+    names = MapSet.new(Enum.map(schema.phone_to_watch, & &1.name))
+
+    schema.wire_slots
+    |> Enum.filter(&(&1.message in names))
   end
 
   defp optional_c_struct_field(true, field), do: [field]
@@ -595,7 +606,8 @@ defmodule Ide.CompanionProtocolGenerator do
   @spec c_wire_struct_fields(schema()) :: [String.t()]
   defp c_wire_struct_fields(schema) do
     fields =
-      schema.wire_slots
+      schema
+      |> decoder_wire_slots()
       |> Enum.uniq_by(& &1.c_name)
       |> Enum.map(fn
         %{storage_type: :string, c_name: c_name} -> "  char #{c_name}[64];"
@@ -607,7 +619,8 @@ defmodule Ide.CompanionProtocolGenerator do
   end
 
   defp c_wire_seen_fields(schema) do
-    schema.wire_slots
+    schema
+    |> decoder_wire_slots()
     |> Enum.uniq_by(& &1.c_name)
     |> Enum.map(fn %{c_name: c_name} -> "  bool saw_#{c_name};" end)
   end
@@ -2664,7 +2677,8 @@ defmodule Ide.CompanionProtocolGenerator do
   end
 
   defp c_decode_wire_slot_cases(schema) do
-    schema.wire_slots
+    schema
+    |> decoder_wire_slots()
     |> Enum.uniq_by(& &1.key)
     |> Enum.map_join("\n", fn slot ->
       key_macro = "COMPANION_PROTOCOL_KEY_#{macro_name(slot.key)}"

@@ -4,6 +4,7 @@ import Companion.Types as CompanionTypes
 import Companion.Watch as CompanionWatch
 import Json.Decode as Decode
 import Pebble.Accel as PebbleAccel
+import Pebble.Alarm as PebbleAlarm
 import Pebble.AppFocus as PebbleAppFocus
 import Pebble.Button as PebbleButton
 import Pebble.Cmd as PebbleCmd
@@ -20,6 +21,7 @@ import Pebble.Speaker as PebbleSpeaker
 import Pebble.Storage as PebbleStorage
 import Pebble.System as PebbleSystem
 import Pebble.Time as PebbleTime
+import Pebble.Touch as PebbleTouch
 import Pebble.Ui as PebbleUi
 import Pebble.Ui.Color as PebbleColor
 import Pebble.Ui.Resources as UiResources
@@ -74,6 +76,12 @@ type Msg
     | GotHealthSum Int
     | GotHealthAccessible Bool
     | GotHealthSupported Bool
+    | GotHealthHrv Int
+    | GotNextAlarm Int
+    | TouchSupported Bool
+    | TouchTapped PebbleTouch.Point
+    | TouchPanned PebbleTouch.PanEvent
+    | TouchSwiped PebbleTouch.SwipeEvent
     | GotRandom Int
     | HealthEvent PebbleHealth.Event
     | LightChanged PebbleLight.State
@@ -126,8 +134,13 @@ coveredSurfaceFunctions =
     , "Pebble.Events.onAnimationFinished"
     , "Pebble.Frame.atFps"
     , "Pebble.Frame.every"
+    , "Pebble.Alarm.next"
+    , "Pebble.Alarm.toPosix"
     , "Pebble.Health.accessible"
+    , "Pebble.Health.hrvPpiMs"
     , "Pebble.Health.onEvent"
+    , "Pebble.Health.setHeartRateSamplePeriod"
+    , "Pebble.Health.setHrvSamplePeriod"
     , "Pebble.Health.supported"
     , "Pebble.Health.sum"
     , "Pebble.Health.sumToday"
@@ -171,6 +184,11 @@ coveredSurfaceFunctions =
     , "Pebble.Time.currentTimeString"
     , "Pebble.Time.timezone"
     , "Pebble.Time.timezoneIsSet"
+    , "Pebble.Touch.enableNavigation"
+    , "Pebble.Touch.onPan"
+    , "Pebble.Touch.onSwipe"
+    , "Pebble.Touch.onTap"
+    , "Pebble.Touch.supported"
     , "Pebble.UnobstructedArea.currentBounds"
     , "Pebble.UnobstructedArea.onChanging"
     , "Pebble.UnobstructedArea.onDidChange"
@@ -246,6 +264,12 @@ init launchContext =
         , PebbleHealth.sumToday PebbleHealth.StepCount GotHealthSumToday
         , PebbleHealth.sum PebbleHealth.WalkedDistanceMeters 0 3600 GotHealthSum
         , PebbleHealth.accessible PebbleHealth.ActiveSeconds 0 3600 GotHealthAccessible
+        , PebbleHealth.hrvPpiMs GotHealthHrv
+        , PebbleHealth.setHeartRateSamplePeriod 10
+        , PebbleHealth.setHrvSamplePeriod 10
+        , PebbleAlarm.next GotNextAlarm
+        , PebbleTouch.supported TouchSupported
+        , PebbleTouch.enableNavigation
         , Random.generate GotRandom (Random.int 1 100)
         , PebbleLight.interaction
         , PebbleLight.disable
@@ -403,6 +427,36 @@ update msg model =
             in
             ( model, Cmd.none )
 
+        GotHealthHrv value ->
+            ( { model | ticks = value }, Cmd.none )
+
+        GotNextAlarm utcSeconds ->
+            let
+                _ =
+                    PebbleAlarm.toPosix utcSeconds
+            in
+            ( { model | ticks = utcSeconds }, Cmd.none )
+
+        TouchSupported value ->
+            let
+                _ =
+                    value
+            in
+            ( model, Cmd.none )
+
+        TouchTapped point ->
+            ( { model | ticks = point.x + point.y }, Cmd.none )
+
+        TouchPanned event ->
+            ( { model | ticks = event.totalX + event.totalY }, Cmd.none )
+
+        TouchSwiped event ->
+            let
+                _ =
+                    event
+            in
+            ( model, Cmd.none )
+
         GotRandom value ->
             ( { model | ticks = value }, Cmd.none )
 
@@ -549,6 +603,9 @@ subscriptions _ =
         , PebbleDictation.onStatus DictationStatus
         , PebbleDictation.onResult DictationResult
         , PebbleHealth.onEvent HealthEvent
+        , PebbleTouch.onTap TouchTapped
+        , PebbleTouch.onPan PebbleTouch.Vertical TouchPanned
+        , PebbleTouch.onSwipe [ PebbleTouch.Left, PebbleTouch.Right ] TouchSwiped
         , PebbleLight.onChange LightChanged
         , PebbleEvents.onAnimationFinished AnimationFinished
         , PebblePlatform.onScreenChange ScreenChanged

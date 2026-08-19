@@ -17,6 +17,18 @@ defmodule Elmx.Runtime.Pebble.SpecialValues.Watch do
       "Pebble.Health.sumToday" -> kernel_watch("healthSumToday", args)
       "Pebble.Health.sum" -> kernel_watch("healthSum", args)
       "Pebble.Health.accessible" -> kernel_watch("healthAccessible", args)
+      "Pebble.Health.hrvPpiMs" -> kernel_watch("healthHrvPpiMs", args)
+      "Pebble.Health.setHrvSamplePeriod" -> {:ok, %{op: :cmd_none}}
+      "Pebble.Health.setHeartRateSamplePeriod" -> {:ok, %{op: :cmd_none}}
+      "Elm.Kernel.PebbleWatch.healthSetHrvSamplePeriod" -> {:ok, %{op: :cmd_none}}
+      "Elm.Kernel.PebbleWatch.healthSetHeartRateSamplePeriod" -> {:ok, %{op: :cmd_none}}
+      "Pebble.Alarm.next" -> kernel_watch("alarmNext", args)
+      "Pebble.Touch.supported" -> kernel_watch("touchSupported", args)
+      "Pebble.Touch.enableNavigation" -> {:ok, %{op: :cmd_none}}
+      "Elm.Kernel.PebbleWatch.touchEnableNavigation" -> {:ok, %{op: :cmd_none}}
+      "Pebble.Touch.onTap" -> subscription_register_call("Pebble.Touch.onTap", args)
+      "Pebble.Touch.onPan" -> subscription_register_call("Pebble.Touch.onPan", args)
+      "Pebble.Touch.onSwipe" -> subscription_register_call("Pebble.Touch.onSwipe", args)
       "Pebble.Compass.current" -> ui_call("elmx_compass_peek", args)
       "Pebble.Time.Monday" -> {:ok, %{op: :int_literal, value: 0}}
       "Pebble.Time.Tuesday" -> {:ok, %{op: :int_literal, value: 1}}

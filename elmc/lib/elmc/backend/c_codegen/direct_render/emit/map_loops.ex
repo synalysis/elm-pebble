@@ -1691,7 +1691,20 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.MapLoops do
       )
 
     """
-    #{record_seq_prefix} if (#{list_var} && #{list_var}->tag == ELMC_TAG_INT_LIST) {
+    #{record_seq_prefix} if (#{list_var} && #{list_var}->tag == ELMC_TAG_LAZY_MAP) {
+      int direct_llen_#{next} = elmc_lazy_map_length(#{list_var});
+      for (int direct_ii_#{next} = 0; Rc == RC_SUCCESS && direct_ii_#{next} < direct_llen_#{next}; direct_ii_#{next}++) {
+        ElmcValue *direct_item_value_#{next} = NULL;
+        Rc = elmc_lazy_map_nth(&direct_item_value_#{next}, #{list_var}, direct_ii_#{next});
+        CHECK_RC(Rc);
+        ElmcValue *direct_call_args_#{next}[#{max(arg_count, 1)}] = {0};
+    #{prefix_bindings}
+        direct_call_args_#{next}[#{prefix_count}] = direct_item_value_#{next};
+        Rc = #{c_name}_commands_append(direct_call_args_#{next}, #{arg_count}, writer);
+        elmc_release(direct_item_value_#{next});
+        #{Catch.check_rc("#{Release.release_var(list_var, "     ")}\n#{loop_prefix_release_code}")}
+      }
+    } else if (#{list_var} && #{list_var}->tag == ELMC_TAG_INT_LIST) {
       ElmcIntListPayload *direct_ilp_#{next} = (ElmcIntListPayload *)#{list_var}->payload;
       int direct_ilen_#{next} = direct_ilp_#{next} ? direct_ilp_#{next}->length : 0;
       for (int direct_ii_#{next} = 0; Rc == RC_SUCCESS && direct_ii_#{next} < direct_ilen_#{next}; direct_ii_#{next}++) {
@@ -1699,8 +1712,8 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.MapLoops do
         ElmcValue *direct_call_args_#{next}[#{max(arg_count, 1)}] = {0};
     #{prefix_bindings}
         direct_call_args_#{next}[#{prefix_count}] = direct_item_value_#{next};
-        elmc_release(direct_item_value_#{next});
         Rc = #{c_name}_commands_append(direct_call_args_#{next}, #{arg_count}, writer);
+        elmc_release(direct_item_value_#{next});
         #{Catch.check_rc("#{Release.release_var(list_var, "     ")}\n#{loop_prefix_release_code}")}
       }
     } else {

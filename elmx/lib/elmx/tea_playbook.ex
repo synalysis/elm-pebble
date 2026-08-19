@@ -78,6 +78,7 @@ defmodule Elmx.TeaPlaybook do
     watch_demo_storage
     watch_demo_system
     watch_demo_time
+    watch_demo_touch
     watch_demo_unobstructed
     watch_demo_vibes
     watch_demo_wakeup

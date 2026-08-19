@@ -82,6 +82,7 @@ defmodule Elmc.Runtime.RcTrack do
         case ELMC_TAG_STRING: return "String";
         case ELMC_TAG_LIST: return "List";
         case ELMC_TAG_INT_LIST: return "IntList";
+        case ELMC_TAG_LAZY_MAP: return "LazyMap";
         case ELMC_TAG_RESULT: return "Result";
         case ELMC_TAG_MAYBE: return "Maybe";
         case ELMC_TAG_TUPLE2: return "Tuple2";
@@ -177,10 +178,11 @@ defmodule Elmc.Runtime.RcTrack do
         const char *retain_file = entry->last_retain_file ? entry->last_retain_file : "?";
         const char *release_file = entry->last_release_file ? entry->last_release_file : "?";
         fprintf(out,
-                "  #%u %s rc=%u retains=%u releases=%u alloc=%s:%d (%s) last_retain=%s:%d last_release=%s:%d\\n",
+                "  #%u %s rc=%u scalar=%lld retains=%u releases=%u alloc=%s:%d (%s) last_retain=%s:%d last_release=%s:%d\\n",
                 entry->id,
                 elmc_rc_track_tag_name((ElmcTag)entry->tag),
                 entry->rc,
+                (long long)(entry->value ? entry->value->scalar : 0),
                 entry->retains,
                 entry->releases,
                 alloc_file,
@@ -360,6 +362,14 @@ defmodule Elmc.Runtime.RcTrack do
           ELMC_RELEASED += 1;
           return;
         }
+      } else if (value->tag == ELMC_TAG_LAZY_MAP) {
+      #if ELMC_RC_TRACK
+        elmc_rc_track_drop_owned(value);
+      #endif
+        if (elmc_lazy_map_cell_release(value)) {
+          ELMC_RELEASED += 1;
+          return;
+        }
       } else if (value->tag == ELMC_TAG_LIST && value->payload != NULL) {
         elmc_release_list_spine(value);
         return;
@@ -444,6 +454,10 @@ defmodule Elmc.Runtime.RcTrack do
         return;
       }
       if (value->tag == ELMC_TAG_RECORD_SEQ && elmc_record_seq_cell_release(value)) {
+        ELMC_RELEASED += 1;
+        return;
+      }
+      if (value->tag == ELMC_TAG_LAZY_MAP && elmc_lazy_map_cell_release(value)) {
         ELMC_RELEASED += 1;
         return;
       }

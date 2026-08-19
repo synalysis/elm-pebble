@@ -20,7 +20,19 @@ defmodule Elmc.Backend.Pebble.FeatureFlags.EventFlags.Input do
       accel_events: Lookup.has_any_constructor?(msg_constructors, ["Shake", "AccelTap", "Tapped"]),
       accel_data_events:
         TargetSet.member?(targets, "Pebble.Accel.onData") or
-          TargetSet.member?(targets, "Elm.Kernel.PebbleWatch.onAccelData")
+          TargetSet.member?(targets, "Elm.Kernel.PebbleWatch.onAccelData"),
+      touch_tap_events:
+        TargetSet.member?(targets, "Pebble.Touch.onTap") or
+          TargetSet.member?(targets, "Elm.Kernel.PebbleWatch.onTouchTap"),
+      touch_pan_horizontal_events:
+        TargetSet.member?(targets, "Pebble.Touch.onPan") or
+          TargetSet.member?(targets, "Elm.Kernel.PebbleWatch.onTouchPanHorizontal"),
+      touch_pan_vertical_events:
+        TargetSet.member?(targets, "Pebble.Touch.onPan") or
+          TargetSet.member?(targets, "Elm.Kernel.PebbleWatch.onTouchPanVertical"),
+      touch_swipe_events:
+        TargetSet.member?(targets, "Pebble.Touch.onSwipe") or
+          TargetSet.member?(targets, "Elm.Kernel.PebbleWatch.onTouchSwipe")
     }
   end
 end

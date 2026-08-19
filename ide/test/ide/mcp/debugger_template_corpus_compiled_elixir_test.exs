@@ -175,7 +175,6 @@ defmodule Ide.Mcp.DebuggerTemplateCorpusCompiledElixirTest do
   @tag timeout: 180_000
   test "watch-demo-health compiles and executes init when enabled" do
     corpus_init_execute!("watch-demo-health", "corpus-health-init-", fn model ->
-      assert model["events"] == 0
       assert model["refreshes"] == 0
       assert model["lastEvent"] == "Waiting"
     end)

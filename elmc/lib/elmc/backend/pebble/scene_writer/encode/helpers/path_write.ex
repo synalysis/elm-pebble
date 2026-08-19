@@ -8,8 +8,8 @@ defmodule Elmc.Backend.Pebble.SceneWriter.Encode.Helpers.PathWrite do
   @spec body() :: Types.c_source()
   def body do
     """
-        static int elmc_scene_writer_write_path_tail(ElmcSceneWriter *writer, const ElmcPebbleDrawCmd *cmd) {
         #if ELMC_PEBBLE_FEATURE_DRAW_PATH
+        static int elmc_scene_writer_write_path_tail(ElmcSceneWriter *writer, const ElmcPebbleDrawCmd *cmd) {
           int count = cmd->path_point_count;
           if (count < 0) count = 0;
           if (count > 16) count = 16;
@@ -22,12 +22,8 @@ defmodule Elmc.Backend.Pebble.SceneWriter.Encode.Helpers.PathWrite do
             rc = elmc_scene_writer_put_i16(writer, cmd->path_y[i]); if (rc != 0) return rc;
           }
           return 0;
-        #else
-          (void)writer;
-          (void)cmd;
-          return 0;
-        #endif
         }
+        #endif
 """
   end
 end

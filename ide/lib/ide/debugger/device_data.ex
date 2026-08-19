@@ -253,7 +253,10 @@ defmodule Ide.Debugger.DeviceData do
                "health_sum_today",
                "health_sum",
                "health_accessible",
-               "health_supported"
+               "health_supported",
+               "health_hrv_ppi_ms",
+               "alarm_next",
+               "touch_supported"
              ] do
     value =
       case preview do
@@ -377,7 +380,10 @@ defmodule Ide.Debugger.DeviceData do
                "health_sum_today",
                "health_sum",
                "health_accessible",
-               "health_supported"
+               "health_supported",
+               "health_hrv_ppi_ms",
+               "alarm_next",
+               "touch_supported"
              ] do
     value =
       case preview do
@@ -434,7 +440,13 @@ defmodule Ide.Debugger.DeviceData do
   @spec health_metric_request_disabled?(Types.app_model(), Types.device_request()) :: boolean()
   def health_metric_request_disabled?(model, %{kind: kind})
       when is_map(model) and
-             kind in ["health_value", "health_sum_today", "health_sum", "health_accessible"] do
+             kind in [
+               "health_value",
+               "health_sum_today",
+               "health_sum",
+               "health_accessible",
+               "health_hrv_ppi_ms"
+             ] do
     launch_context = Map.get(model, "launch_context") || %{}
 
     health_runtime_disabled?(Map.get(model, "runtime_model") || %{}) or
@@ -579,7 +591,22 @@ defmodule Ide.Debugger.DeviceData do
 
   def finalize_request(%{kind: "health_value"} = req, model, _current_message, _message_value) do
     settings = settings_from_model(model)
-    Map.put(req, :preview, %{"value" => settings["health_steps"]})
+    Map.put(req, :preview, %{"value" => health_value_for_metric(req, settings)})
+  end
+
+  def finalize_request(%{kind: "health_hrv_ppi_ms"} = req, model, _current_message, _message_value) do
+    settings = settings_from_model(model)
+    Map.put(req, :preview, settings["health_hrv_ppi_ms"])
+  end
+
+  def finalize_request(%{kind: "alarm_next"} = req, model, _current_message, _message_value) do
+    settings = settings_from_model(model)
+    Map.put(req, :preview, settings["next_alarm_utc"])
+  end
+
+  def finalize_request(%{kind: "touch_supported"} = req, model, _current_message, _message_value) do
+    launch_context = Map.get(model, "launch_context") || %{}
+    Map.put(req, :preview, Map.get(launch_context, "has_touch") == true)
   end
 
   def finalize_request(%{kind: "health_supported"} = req, model, _current_message, _message_value) do
@@ -603,6 +630,14 @@ defmodule Ide.Debugger.DeviceData do
 
   def finalize_request(req, _model, _current_message, _message_value),
     do: Map.put(req, :preview, nil)
+
+  @spec health_value_for_metric(Types.device_request(), Types.simulator_settings()) :: integer()
+  defp health_value_for_metric(req, settings) when is_map(req) and is_map(settings) do
+    case Map.get(req, :metric) || Map.get(req, "metric") do
+      "HeartRateBPM" -> settings["health_heart_rate_bpm"]
+      _ -> settings["health_steps"]
+    end
+  end
 
   @spec day_of_week_name(NaiveDateTime.t()) :: String.t()
   def day_of_week_name(%NaiveDateTime{} = now) do

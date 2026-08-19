@@ -9,6 +9,8 @@ defmodule Elmc.PebbleSurfaceCoverageTest do
   @api_modules %{
     "Pebble.Accel" =>
       Path.expand("../../packages/elm-pebble/elm-watch/src/Pebble/Accel.elm", __DIR__),
+    "Pebble.Alarm" =>
+      Path.expand("../../packages/elm-pebble/elm-watch/src/Pebble/Alarm.elm", __DIR__),
     "Pebble.Button" =>
       Path.expand("../../packages/elm-pebble/elm-watch/src/Pebble/Button.elm", __DIR__),
     "Pebble.Cmd" =>
@@ -29,6 +31,8 @@ defmodule Elmc.PebbleSurfaceCoverageTest do
       Path.expand("../../packages/elm-pebble/elm-watch/src/Pebble/System.elm", __DIR__),
     "Pebble.Time" =>
       Path.expand("../../packages/elm-pebble/elm-watch/src/Pebble/Time.elm", __DIR__),
+    "Pebble.Touch" =>
+      Path.expand("../../packages/elm-pebble/elm-watch/src/Pebble/Touch.elm", __DIR__),
     "Pebble.Vibes" =>
       Path.expand("../../packages/elm-pebble/elm-watch/src/Pebble/Vibes.elm", __DIR__),
     "Pebble.Wakeup" =>

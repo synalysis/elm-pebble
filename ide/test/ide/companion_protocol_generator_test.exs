@@ -862,6 +862,49 @@ defmodule Ide.CompanionProtocolGeneratorTest do
     end
   end
 
+  test "inbox decoder omits watch-to-phone-only list and string slots" do
+    tmp =
+      Path.join(
+        System.tmp_dir!(),
+        "elm-pebble-protocol-p2w-slots-#{System.unique_integer([:positive])}"
+      )
+
+    types = Path.join(tmp, "Types.elm")
+    header = Path.join(tmp, "generated/companion_protocol.h")
+    source = Path.join(tmp, "generated/companion_protocol.c")
+    js = Path.join(tmp, "pkjs/companion-protocol.js")
+
+    try do
+      File.mkdir_p!(Path.dirname(types))
+
+      File.write!(types, """
+      module Companion.Types exposing (PhoneToWatch(..), WatchToPhone(..))
+
+      type WatchToPhone
+          = SendLabels (List String)
+
+      type PhoneToWatch
+          = SetWatchSeconds Int
+      """)
+
+      assert :ok = CompanionProtocolGenerator.generate(types, header, source, js)
+
+      generated_header = File.read!(header)
+      generated_source = File.read!(source)
+
+      refute generated_header =~ "COMPANION_PROTOCOL_LIST_MAX_ELEMENTS"
+      refute generated_header =~ "list_values["
+      refute generated_header =~ "string_fields["
+      refute generated_header =~ "saw_wire_send_labels"
+      refute generated_source =~ "saw_list_counts"
+
+      assert generated_header =~ "COMPANION_PROTOCOL_KEY_SET_WATCH_SECONDS_FIELD1"
+      assert generated_header =~ "COMPANION_PROTOCOL_TAG_SEND_LABELS"
+    after
+      File.rm_rf(tmp)
+    end
+  end
+
   test "IDE companion harness stub borrows payload (parity with elmc dispatch)" do
     # Must match elmc_pebble_dispatch_tag_payload borrow semantics; taking/releasing
     # here would hide double-frees that emery catches after companion ingest.

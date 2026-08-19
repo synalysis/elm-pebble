@@ -15,7 +15,16 @@ defmodule Elmc.Backend.Pebble.FeatureFlags.CommandFlags.Services.Health do
       cmd_health_accessible: TargetSet.member?(targets, "Elm.Kernel.PebbleWatch.healthAccessible"),
       cmd_health_supported:
         TargetSet.member?(targets, "Pebble.Health.supported") or
-          TargetSet.member?(targets, "Elm.Kernel.PebbleWatch.healthSupported")
+          TargetSet.member?(targets, "Elm.Kernel.PebbleWatch.healthSupported"),
+      cmd_health_hrv_ppi_ms:
+        TargetSet.member?(targets, "Pebble.Health.hrvPpiMs") or
+          TargetSet.member?(targets, "Elm.Kernel.PebbleWatch.healthHrvPpiMs"),
+      cmd_health_set_hrv_sample_period:
+        TargetSet.member?(targets, "Pebble.Health.setHrvSamplePeriod") or
+          TargetSet.member?(targets, "Elm.Kernel.PebbleWatch.healthSetHrvSamplePeriod"),
+      cmd_health_set_heart_rate_sample_period:
+        TargetSet.member?(targets, "Pebble.Health.setHeartRateSamplePeriod") or
+          TargetSet.member?(targets, "Elm.Kernel.PebbleWatch.healthSetHeartRateSamplePeriod")
     }
   end
 end

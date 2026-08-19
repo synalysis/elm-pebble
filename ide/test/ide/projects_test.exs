@@ -462,6 +462,7 @@ defmodule Ide.ProjectsTest do
       {"watch-demo-wakeup", "Pebble.Wakeup", "app"},
       {"watch-demo-frame", "Pebble.Frame", "app"},
       {"watch-demo-time", "Pebble.Time", "app"},
+      {"watch-demo-touch", "Pebble.Touch", "app"},
       {"watch-demo-log", "Pebble.Log", "app"}
     ]
 

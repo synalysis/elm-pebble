@@ -59,7 +59,13 @@ defmodule Elmc.Backend.Pebble.Kinds.Tables.CommandKinds do
     speaker_get_status: 48,
     speaker_stream_open: 49,
     speaker_stream_write: 50,
-    speaker_stream_close: 51
+    speaker_stream_close: 51,
+    health_hrv_ppi_ms: 52,
+    health_set_hrv_sample_period: 53,
+    health_set_heart_rate_sample_period: 54,
+    alarm_next: 55,
+    touch_supported: 56,
+    touch_enable_navigation: 57
   ]
 
   @command_kind_ids Map.new(@command_kinds)

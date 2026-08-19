@@ -130,7 +130,9 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
     native_ret = NativeReturn.cached_kind({module_name, decl.name})
     value_return? = NativeReturn.value_return?({module_name, decl.name})
     dual_out? = NativeReturn.dual_out?(native_ret)
-    rc_abi? = rc_required? or dual_out?
+    rc_abi? =
+      rc_required? or dual_out? or
+        (native_ret in [:native_int, :native_bool] and not value_return?)
 
     signature =
       cond do
@@ -553,7 +555,9 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
     native_ret = NativeReturn.cached_kind({module_name, decl_name})
     value_return? = NativeReturn.value_return?({module_name, decl_name})
     dual_out? = NativeReturn.dual_out?(native_ret)
-    rc_abi? = RcRequired.rc_required?(module_name, decl_name) or dual_out?
+    rc_abi? =
+      RcRequired.rc_required?(module_name, decl_name) or dual_out? or
+        (native_ret in [:native_int, :native_bool] and not value_return?)
 
     cond do
       value_return? and native_ret in [:native_int, :native_bool] ->

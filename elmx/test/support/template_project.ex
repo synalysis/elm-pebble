@@ -43,6 +43,7 @@ defmodule Elmx.TestSupport.TemplateProject do
     "watchface-smoke-screen" => "watchface_smoke_screen",
     "watchface-color-shapes" => "watchface_color_shapes",
     "watch-demo-time" => "watch_demo_time",
+    "watch-demo-touch" => "watch_demo_touch",
     "watch-demo-accel" => "watch_demo_accel",
     "watch-demo-vibes" => "watch_demo_vibes",
     "watch-demo-storage" => "watch_demo_storage",

@@ -169,6 +169,49 @@ defmodule Elmc.Backend.Plan.Lower.SpecialValues.Events do
           to_msg
         ])
 
+  def special_value_from_target("Pebble.Health.hrvPpiMs", [to_msg]),
+    do: Dispatcher.special_value_from_target("Elm.Kernel.PebbleWatch.healthHrvPpiMs", [to_msg])
+
+  def special_value_from_target("Pebble.Health.setHrvSamplePeriod", args),
+    do: Dispatcher.special_value_from_target("Elm.Kernel.PebbleWatch.healthSetHrvSamplePeriod", args)
+
+  def special_value_from_target("Pebble.Health.setHeartRateSamplePeriod", args),
+    do:
+      Dispatcher.special_value_from_target(
+        "Elm.Kernel.PebbleWatch.healthSetHeartRateSamplePeriod",
+        args
+      )
+
+  def special_value_from_target("Pebble.Alarm.next", [to_msg]),
+    do: Dispatcher.special_value_from_target("Elm.Kernel.PebbleWatch.alarmNext", [to_msg])
+
+  def special_value_from_target("Pebble.Touch.supported", [to_msg]),
+    do: Dispatcher.special_value_from_target("Elm.Kernel.PebbleWatch.touchSupported", [to_msg])
+
+  def special_value_from_target("Pebble.Touch.enableNavigation", args),
+    do: Dispatcher.special_value_from_target("Elm.Kernel.PebbleWatch.touchEnableNavigation", args)
+
+  def special_value_from_target("Pebble.Touch.onTap", args),
+    do: Helpers.subscription_special_value("Pebble.Touch.onTap", args)
+
+  def special_value_from_target("Elm.Kernel.PebbleWatch.onTouchTap", args),
+    do: Helpers.subscription_special_value("Elm.Kernel.PebbleWatch.onTouchTap", args)
+
+  def special_value_from_target("Pebble.Touch.onPan", args),
+    do: Helpers.subscription_special_value("Pebble.Touch.onPan", args)
+
+  def special_value_from_target("Elm.Kernel.PebbleWatch.onTouchPanHorizontal", args),
+    do: Helpers.subscription_special_value("Elm.Kernel.PebbleWatch.onTouchPanHorizontal", args)
+
+  def special_value_from_target("Elm.Kernel.PebbleWatch.onTouchPanVertical", args),
+    do: Helpers.subscription_special_value("Elm.Kernel.PebbleWatch.onTouchPanVertical", args)
+
+  def special_value_from_target("Pebble.Touch.onSwipe", args),
+    do: Helpers.subscription_special_value("Pebble.Touch.onSwipe", args)
+
+  def special_value_from_target("Elm.Kernel.PebbleWatch.onTouchSwipe", args),
+    do: Helpers.subscription_special_value("Elm.Kernel.PebbleWatch.onTouchSwipe", args)
+
   def special_value_from_target("Pebble.AppFocus.onChange", args),
     do: Helpers.subscription_special_value("Pebble.AppFocus.onChange", args)
 

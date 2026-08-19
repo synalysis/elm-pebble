@@ -281,6 +281,42 @@ defmodule Elmx.Pebble.Contract.CmdSub do
       51,
       ~w(Pebble.Speaker.streamClose Elm.Kernel.PebbleWatch.speakerStreamClose),
       {:effect, "speaker", "stream_close"}
+    ),
+    Row.cmd(
+      :health_hrv_ppi_ms,
+      52,
+      ~w(Pebble.Health.hrvPpiMs Elm.Kernel.PebbleWatch.healthHrvPpiMs),
+      {:device, "health_hrv_ppi_ms"}
+    ),
+    Row.cmd(
+      :health_set_hrv_sample_period,
+      53,
+      ~w(Pebble.Health.setHrvSamplePeriod Elm.Kernel.PebbleWatch.healthSetHrvSamplePeriod),
+      {:stub_none, :health}
+    ),
+    Row.cmd(
+      :health_set_heart_rate_sample_period,
+      54,
+      ~w(Pebble.Health.setHeartRateSamplePeriod Elm.Kernel.PebbleWatch.healthSetHeartRateSamplePeriod),
+      {:stub_none, :health}
+    ),
+    Row.cmd(
+      :alarm_next,
+      55,
+      ~w(Pebble.Alarm.next Elm.Kernel.PebbleWatch.alarmNext),
+      {:device, "alarm_next"}
+    ),
+    Row.cmd(
+      :touch_supported,
+      56,
+      ~w(Pebble.Touch.supported Elm.Kernel.PebbleWatch.touchSupported),
+      {:device, "touch_supported"}
+    ),
+    Row.cmd(
+      :touch_enable_navigation,
+      57,
+      ~w(Pebble.Touch.enableNavigation Elm.Kernel.PebbleWatch.touchEnableNavigation),
+      {:stub_none, :touch}
     )
   ]
 
@@ -373,6 +409,15 @@ defmodule Elmx.Pebble.Contract.CmdSub do
     )),
     Row.sub(:health, 2147483648, "ELMC_PEBBLE_SUB_HEALTH", "ELMC_SUBSCRIPTION_HEALTH", ~w(
       Pebble.Health.onEvent Elm.Kernel.PebbleWatch.onHealthEvent
+    )),
+    Row.sub(:touch_tap, 134217728, "ELMC_PEBBLE_SUB_TOUCH_TAP", "ELMC_SUBSCRIPTION_TOUCH_TAP", ~w(
+      Pebble.Touch.onTap Elm.Kernel.PebbleWatch.onTouchTap
+    )),
+    Row.sub(:touch_pan, 268435456, "ELMC_PEBBLE_SUB_TOUCH_PAN", "ELMC_SUBSCRIPTION_TOUCH_PAN", ~w(
+      Pebble.Touch.onPan Elm.Kernel.PebbleWatch.onTouchPanHorizontal Elm.Kernel.PebbleWatch.onTouchPanVertical
+    )),
+    Row.sub(:touch_swipe, 536870912, "ELMC_PEBBLE_SUB_TOUCH_SWIPE", "ELMC_SUBSCRIPTION_TOUCH_SWIPE", ~w(
+      Pebble.Touch.onSwipe Elm.Kernel.PebbleWatch.onTouchSwipe
     ))
   ]
 

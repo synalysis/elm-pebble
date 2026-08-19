@@ -1,6 +1,7 @@
 module Main exposing (main)
 
 import Json.Decode as Decode
+import Pebble.Alarm as Alarm
 import Pebble.Cmd as Cmd
 import Pebble.Button as Button
 import Pebble.Events as Events
@@ -16,6 +17,7 @@ type alias Model =
     , clock24h : Maybe Bool
     , timezoneSet : Maybe Bool
     , timezoneName : Maybe String
+    , nextAlarmUtc : Maybe Int
     , refreshes : Int
     }
 
@@ -27,6 +29,7 @@ type Msg
     | GotClock24h Bool
     | GotTimezoneSet Bool
     | GotTimezone String
+    | GotNextAlarm Int
 
 
 init : Platform.LaunchContext -> ( Model, Cmd Msg )
@@ -35,6 +38,7 @@ init _ =
       , clock24h = Nothing
       , timezoneSet = Nothing
       , timezoneName = Nothing
+      , nextAlarmUtc = Nothing
       , refreshes = 0
       }
     , requestTime
@@ -48,6 +52,7 @@ requestTime =
         , Time.clockStyle24h GotClock24h
         , Time.timezoneIsSet GotTimezoneSet
         , Time.timezone GotTimezone
+        , Alarm.next GotNextAlarm
         ]
 
 
@@ -72,6 +77,9 @@ update msg model =
         GotTimezone value ->
             ( { model | timezoneName = Just value }, Cmd.none )
 
+        GotNextAlarm utcSeconds ->
+            ( { model | nextAlarmUtc = Just utcSeconds }, Cmd.none )
+
 
 subscriptions : Model -> Sub Msg
 subscriptions _ =
@@ -89,8 +97,8 @@ view model =
         , Ui.text Resources.DefaultFont textOpts { x = 4, y = 8, w = 136, h = 18 } "Time"
         , Ui.text Resources.DefaultFont textOpts { x = 4, y = 32, w = 136, h = 18 } (timeLabel model.clock)
         , Ui.text Resources.DefaultFont textOpts { x = 4, y = 56, w = 136, h = 18 } (boolLabel "24h" model.clock24h)
-        , Ui.text Resources.DefaultFont textOpts { x = 4, y = 80, w = 136, h = 18 } (boolLabel "TZ" model.timezoneSet)
-        , Ui.text Resources.DefaultFont textOpts { x = 4, y = 104, w = 136, h = 18 } (timezoneLabel model.timezoneName)
+        , Ui.text Resources.DefaultFont textOpts { x = 4, y = 80, w = 136, h = 18 } (timezoneLabel model.timezoneName)
+        , Ui.text Resources.DefaultFont textOpts { x = 4, y = 104, w = 136, h = 18 } (alarmLabel model.nextAlarmUtc)
         , Ui.text Resources.DefaultFont textOpts { x = 4, y = 128, w = 136, h = 18 } "Sel: refresh"
         ]
 
@@ -107,6 +115,26 @@ timeLabel maybeClock =
                 ++ pad clock.minute
                 ++ ":"
                 ++ pad clock.second
+
+
+alarmLabel : Maybe Int -> String
+alarmLabel maybeUtc =
+    case maybeUtc of
+        Nothing ->
+            "Alarm: --"
+
+        Just utcSeconds ->
+            case Alarm.toPosix utcSeconds of
+                Nothing ->
+                    "Alarm: none"
+
+                Just _ ->
+                    "Alarm: " ++ formatUtcHm utcSeconds
+
+
+formatUtcHm : Int -> String
+formatUtcHm utcSeconds =
+    pad (remainderBy 24 (utcSeconds // 3600)) ++ ":" ++ pad (remainderBy 60 (utcSeconds // 60))
 
 
 timezoneLabel : Maybe String -> String

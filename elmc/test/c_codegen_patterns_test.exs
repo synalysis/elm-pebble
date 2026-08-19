@@ -479,7 +479,9 @@ defmodule Elmc.CCodegenPatternsTest do
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
     body = assert_plan_fn!(generated_c, "nonzero")
-    assert body =~ "elmc_list_filter("
+    assert body =~ "list_walk_map_cursor_"
+    refute body =~ "elmc_list_filter("
+    refute body =~ "elmc_list_append("
   end
 
   test "List.filter then List.head uses find-first loop without building filtered list" do
@@ -1115,7 +1117,7 @@ defmodule Elmc.CCodegenPatternsTest do
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
     body = assert_plan_fn!(generated_c, "timeLabel")
-    assert body =~ "elmc_string_from_int("
+    assert body =~ "elmc_string_from_native_int(" or body =~ "elmc_string_from_int("
     assert body =~ "elmc_string_append("
     refute body =~ "snprintf(native_string_buf_"
     refute generated_c =~ "elmc_list_concat_array("
@@ -1179,6 +1181,7 @@ defmodule Elmc.CCodegenPatternsTest do
     # INT_LIST spines (list_from_int_array) must not be skipped by a cons-only walk.
     assert body =~ "ELMC_TAG_INT_LIST"
     refute body =~ "elmc_list_map("
+    refute body =~ "elmc_list_append("
   end
 
   test "List.map over tuple2 offsets uses cursor loop instead of elmc_list_map closure" do
@@ -1218,6 +1221,7 @@ defmodule Elmc.CCodegenPatternsTest do
     body = assert_plan_fn!(generated_c, "slots")
     assert body =~ "list_walk_map_cursor_"
     refute body =~ "elmc_list_map("
+    refute body =~ "elmc_list_append("
   end
 
   test "top-level constant int functions fold to literals without runtime calls" do
@@ -1447,6 +1451,451 @@ defmodule Elmc.CCodegenPatternsTest do
     assert body =~ "list_walk_map_cursor_"
     refute body =~ "elmc_list_map("
     refute body =~ "elmc_list_reverse("
+    refute body =~ "elmc_list_append("
+  end
+
+  test "List.filter of a list uses a C walk loop instead of elmc_list_filter" do
+    source = """
+    module Main exposing (main)
+
+    import Pebble.Platform as Platform
+    import Pebble.Ui as Ui
+    import Pebble.Ui.Color as Color
+
+    odds : List Int -> List Int
+    odds values =
+        List.filter (\\n -> modBy 2 n == 1) values
+
+    init _ = ( { xs = odds [ 1, 2, 3, 4 ] }, Platform.Cmd.none )
+    update _ m = ( m, Platform.Cmd.none )
+    view m = Ui.toUiNode [ Ui.clear Color.white, Ui.text (String.fromInt (List.length m.xs)) ]
+    subscriptions _ = Platform.Sub.none
+    main = Platform.application { init = init, update = update, view = view, subscriptions = subscriptions }
+
+    """
+
+    out_dir = compile_snippet!("list_filter_walk", source)
+    generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+
+    body = assert_plan_fn!(generated_c, "odds")
+    assert body =~ "list_walk_map_cursor_"
+    refute body =~ "elmc_list_filter("
+    refute body =~ "elmc_list_append("
+  end
+
+  test "List.filter of List.range keeps a compact INT_LIST instead of cons cells" do
+    source = """
+    module Main exposing (main)
+
+    import Pebble.Platform as Platform
+    import Pebble.Ui as Ui
+    import Pebble.Ui.Color as Color
+
+    minuteIndexes : List Int
+    minuteIndexes =
+        List.filter (\\index -> modBy 5 index /= 0) (List.range 0 59)
+
+    init _ = ( { xs = minuteIndexes }, Platform.Cmd.none )
+    update _ m = ( m, Platform.Cmd.none )
+    view m = Ui.toUiNode [ Ui.clear Color.white, Ui.text (String.fromInt (List.length m.xs)) ]
+    subscriptions _ = Platform.Sub.none
+    main = Platform.application { init = init, update = update, view = view, subscriptions = subscriptions }
+
+    """
+
+    out_dir = compile_snippet!("list_filter_range_int_list", source)
+    generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+
+    body = assert_plan_fn!(generated_c, "minuteIndexes")
+    assert body =~ "elmc_list_range("
+    refute body =~ ~r/elmc_new_int\(&owned\[\d+\], 0\)/
+    refute body =~ ~r/elmc_new_int\(&owned\[\d+\], 59\)/
+    assert body =~ "elmc_list_from_int_array("
+    assert body =~ "list_walk_kept_"
+    refute body =~ "elmc_list_filter("
+    refute body =~ "elmc_list_append("
+    refute body =~ "elmc_new_int(&__map_head_box__"
+
+    runtime_h = File.read!(Path.join(out_dir, "runtime/elmc_runtime.h"))
+    runtime_c = File.read!(Path.join(out_dir, "runtime/elmc_runtime.c"))
+    assert runtime_h =~ ~r/#define\s+ELMC_INT_LIST_RANGE_MAX\s+512/
+    assert runtime_c =~ "elmc_int_list_from_range("
+    assert runtime_c =~ "ELMC_INT_LIST_RANGE_MAX"
+  end
+
+  test "List.map of List.range stores a lazy map instead of cons records" do
+    source = """
+    module Main exposing (main)
+
+    import Pebble.Platform as Platform
+    import Pebble.Ui as Ui
+    import Pebble.Ui.Color as Color
+
+    type alias Point = { x : Int, y : Int }
+
+    indexes : List Int
+    indexes =
+        List.filter (\\index -> modBy 2 index == 0) (List.range 0 47)
+
+    points : List Point
+    points =
+        List.map (\\index -> { x = index, y = index * 2 }) indexes
+
+    init _ = ( { xs = points }, Platform.Cmd.none )
+    update _ m = ( m, Platform.Cmd.none )
+    view m = Ui.toUiNode [ Ui.clear Color.white, Ui.text (String.fromInt (List.length m.xs)) ]
+    subscriptions _ = Platform.Sub.none
+    main = Platform.application { init = init, update = update, view = view, subscriptions = subscriptions }
+
+    """
+
+    out_dir = compile_snippet!("list_map_range_lazy", source)
+    generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+
+    body = assert_plan_fn!(generated_c, "points")
+    assert body =~ "elmc_lazy_map("
+    assert body =~ "ELMC_TAG_INT_LIST"
+    refute body =~ "elmc_list_map("
+    refute body =~ "elmc_list_append("
+  end
+
+  test "Bool if of int compares stays native without heap bools" do
+    source = """
+    module Main exposing (main)
+
+    import Pebble.Platform as Platform
+    import Pebble.Ui as Ui
+    import Pebble.Ui.Color as Color
+
+    cardinal : Int -> Bool
+    cardinal index =
+        if index == 0 then
+            True
+        else if index == 15 then
+            True
+        else if index == 30 then
+            True
+        else
+            index == 45
+
+    mark : Int -> Int
+    mark index =
+        if cardinal index then
+            3
+        else
+            2
+
+    spoke : Int -> Bool
+    spoke step =
+        if step == 0 then
+            True
+        else if step == 90 then
+            True
+        else
+            step == 180
+
+    init _ = ( { n = mark 0, flag = spoke 90 }, Platform.Cmd.none )
+    update _ m = ( m, Platform.Cmd.none )
+    view m = Ui.toUiNode [ Ui.clear Color.white, Ui.text (String.fromInt m.n) ]
+    subscriptions _ = Platform.Sub.none
+    main = Platform.application { init = init, update = update, view = view, subscriptions = subscriptions }
+
+    """
+
+    out_dir = compile_snippet!("native_bool_if_compares", source)
+    generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+
+    body = assert_plan_fn!(generated_c, "cardinal")
+    refute body =~ "elmc_new_bool("
+    assert body =~ "bool *out" or body =~ "plan_native_bool_"
+
+    spoke_body = assert_plan_fn!(generated_c, "spoke")
+    refute spoke_body =~ "elmc_new_bool("
+    assert spoke_body =~ "bool *out" or spoke_body =~ "plan_native_bool_"
+
+    mark_body = assert_plan_fn!(generated_c, "mark")
+    refute mark_body =~ "elmc_new_bool("
+    refute mark_body =~ "elmc_as_bool("
+  end
+
+  test "if n > hi then hi else n stays native int without boxing the bound" do
+    source = """
+    module Main exposing (main)
+
+    import Pebble.Platform as Platform
+    import Pebble.Ui as Ui
+    import Pebble.Ui.Color as Color
+
+    clampHi : Int -> Int
+    clampHi value =
+        if value > 300 then
+            300
+        else
+            value
+
+    bound : Int -> Int
+    bound n =
+        if n < 1 then
+            1
+        else if n > 240 then
+            240
+        else
+            n
+
+    init _ = ( { a = clampHi 12, b = bound 9 }, Platform.Cmd.none )
+    update _ m = ( m, Platform.Cmd.none )
+    view m = Ui.toUiNode [ Ui.clear Color.white, Ui.text (String.fromInt m.a) ]
+    subscriptions _ = Platform.Sub.none
+    main = Platform.application { init = init, update = update, view = view, subscriptions = subscriptions }
+
+    """
+
+    out_dir = compile_snippet!("native_int_clamp_param", source)
+    generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+
+    clamp_body = assert_plan_fn!(generated_c, "clampHi")
+    refute clamp_body =~ "elmc_new_int("
+    refute clamp_body =~ "elmc_as_int("
+    assert clamp_body =~ "elmc_int_t" or clamp_body =~ "plan_native_int_"
+
+    bound_body = assert_plan_fn!(generated_c, "bound")
+    refute bound_body =~ "elmc_new_int("
+    refute bound_body =~ "elmc_as_int("
+  end
+
+  test "two-param Int clamp peels a boxed fallback instead of using the pointer as i32" do
+    source = """
+    module Main exposing (main)
+
+    import Pebble.Platform as Platform
+    import Pebble.Ui as Ui
+    import Pebble.Ui.Color as Color
+
+    clampBetween : Int -> Int -> Int
+    clampBetween value fallback =
+        if value < 1 then
+            fallback
+        else if value > 300 then
+            300
+        else
+            value
+
+    limitSpan : Int -> Int -> Int
+    limitSpan n backup =
+        if n < 0 then
+            backup
+        else if n > 59 then
+            59
+        else
+            n
+
+    init _ = ( { a = clampBetween 12 4, b = limitSpan 9 2 }, Platform.Cmd.none )
+    update _ m = ( m, Platform.Cmd.none )
+    view m = Ui.toUiNode [ Ui.clear Color.white, Ui.text (String.fromInt m.a) ]
+    subscriptions _ = Platform.Sub.none
+    main = Platform.application { init = init, update = update, view = view, subscriptions = subscriptions }
+
+    """
+
+    out_dir = compile_snippet!("native_int_clamp_boxed_fallback", source)
+    generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+
+    clamp_body = assert_plan_fn!(generated_c, "clampBetween")
+    refute clamp_body =~ ~r/\? fallback :/
+    assert clamp_body =~ "elmc_as_int(fallback)" or clamp_body =~ "elmc_int_t fallback"
+
+    limit_body = assert_plan_fn!(generated_c, "limitSpan")
+    refute limit_body =~ ~r/\? backup :/
+    assert limit_body =~ "elmc_as_int(backup)" or limit_body =~ "elmc_int_t backup"
+  end
+
+  test "union constructor case with Int field arms stays native int" do
+    source = """
+    module Main exposing (main)
+
+    import Pebble.Platform as Platform
+    import Pebble.Ui as Ui
+    import Pebble.Ui.Color as Color
+
+    type Phase
+        = Watch
+        | Quote
+
+    type alias Clock =
+        { phase : Phase
+        , watchSeconds : Int
+        , quoteSeconds : Int
+        }
+
+    type Kind
+        = Fast
+        | Slow
+
+    type alias Tempo =
+        { kind : Kind
+        , fastMs : Int
+        , slowMs : Int
+        }
+
+    phaseSeconds : Clock -> Int
+    phaseSeconds model =
+        case model.phase of
+            Watch ->
+                model.watchSeconds
+
+            Quote ->
+                model.quoteSeconds
+
+    tempoMs : Tempo -> Int
+    tempoMs model =
+        case model.kind of
+            Fast ->
+                model.fastMs
+
+            Slow ->
+                model.slowMs
+
+    init _ =
+        ( { n = phaseSeconds { phase = Watch, watchSeconds = 3, quoteSeconds = 8 }
+          , m = tempoMs { kind = Fast, fastMs = 4, slowMs = 9 }
+          }
+        , Platform.Cmd.none
+        )
+    update _ m = ( m, Platform.Cmd.none )
+    view m = Ui.toUiNode [ Ui.clear Color.white, Ui.text (String.fromInt m.n) ]
+    subscriptions _ = Platform.Sub.none
+    main = Platform.application { init = init, update = update, view = view, subscriptions = subscriptions }
+
+    """
+
+    out_dir = compile_snippet!("native_union_int_fields", source)
+    generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+
+    phase_body = assert_plan_fn!(generated_c, "phaseSeconds")
+    refute phase_body =~ "elmc_new_int("
+    assert phase_body =~ "elmc_int_t" or phase_body =~ "plan_native_int_"
+
+    tempo_body = assert_plan_fn!(generated_c, "tempoMs")
+    refute tempo_body =~ "elmc_new_int("
+    assert tempo_body =~ "elmc_int_t" or tempo_body =~ "plan_native_int_"
+  end
+
+  test "all-int Point from int arith uses record_new_values_ints" do
+    source = """
+    module Main exposing (main)
+
+    import Pebble.Platform as Platform
+    import Pebble.Ui as Ui
+    import Pebble.Ui.Color as Color
+
+    type alias Point = { x : Int, y : Int }
+
+    midpoint : Int -> Int -> Point
+    midpoint width height =
+        { x = width // 2, y = height // 2 }
+
+    init _ = ( { p = midpoint 144 168 }, Platform.Cmd.none )
+    update _ m = ( m, Platform.Cmd.none )
+    view m = Ui.toUiNode [ Ui.clear Color.white, Ui.text (String.fromInt m.p.x) ]
+    subscriptions _ = Platform.Sub.none
+    main = Platform.application { init = init, update = update, view = view, subscriptions = subscriptions }
+
+    """
+
+    out_dir = compile_snippet!("int_point_from_idiv", source)
+    generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+
+    body = assert_plan_fn!(generated_c, "midpoint")
+    assert body =~ "elmc_record_new_values_ints("
+    refute body =~ "elmc_record_new_values_take("
+  end
+
+  test "Basics.max of native int arith does not box through elmc_basics_max" do
+    source = """
+    module Main exposing (main)
+
+    import Pebble.Platform as Platform
+    import Pebble.Ui as Ui
+    import Pebble.Ui.Color as Color
+
+    inner : Int -> Int -> Int
+    inner width margin =
+        Basics.max 48 (width - margin * 2)
+
+    init _ = ( { n = inner 144 10 }, Platform.Cmd.none )
+    update _ m = ( m, Platform.Cmd.none )
+    view m = Ui.toUiNode [ Ui.clear Color.white, Ui.text (String.fromInt m.n) ]
+    subscriptions _ = Platform.Sub.none
+    main = Platform.application { init = init, update = update, view = view, subscriptions = subscriptions }
+
+    """
+
+    out_dir = compile_snippet!("native_basics_max_arith", source)
+    generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+
+    body = assert_plan_fn!(generated_c, "inner")
+    refute body =~ "elmc_basics_max("
+    assert body =~ ">=" or body =~ "elmc_int_" or body =~ "plan_native_int_"
+  end
+
+  test "List.indexedMap uses a C walk loop instead of elmc_list_indexed_map" do
+    source = """
+    module Main exposing (main)
+
+    import Pebble.Platform as Platform
+    import Pebble.Ui as Ui
+    import Pebble.Ui.Color as Color
+
+    tagged : List Int -> List Int
+    tagged values =
+        List.indexedMap (\\i n -> i + n) values
+
+    init _ = ( { xs = tagged [ 10, 20, 30 ] }, Platform.Cmd.none )
+    update _ m = ( m, Platform.Cmd.none )
+    view m = Ui.toUiNode [ Ui.clear Color.white, Ui.text (String.fromInt (List.length m.xs)) ]
+    subscriptions _ = Platform.Sub.none
+    main = Platform.application { init = init, update = update, view = view, subscriptions = subscriptions }
+
+    """
+
+    out_dir = compile_snippet!("list_indexed_map_walk", source)
+    generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+
+    body = assert_plan_fn!(generated_c, "tagged")
+    assert body =~ "list_walk_map_cursor_"
+    refute body =~ "elmc_list_indexed_map("
+    refute body =~ "elmc_list_append("
+  end
+
+  test "list == [] uses list_is_empty instead of elmc_value_equal" do
+    source = """
+    module Main exposing (main)
+
+    import Pebble.Platform as Platform
+    import Pebble.Ui as Ui
+    import Pebble.Ui.Color as Color
+
+    emptyCount : List Int -> Int
+    emptyCount values =
+        if values == [] then
+            1
+        else
+            0
+
+    init _ = ( { n = emptyCount [ 1 ] }, Platform.Cmd.none )
+    update _ m = ( m, Platform.Cmd.none )
+    view m = Ui.toUiNode [ Ui.clear Color.white, Ui.text (String.fromInt m.n) ]
+    subscriptions _ = Platform.Sub.none
+    main = Platform.application { init = init, update = update, view = view, subscriptions = subscriptions }
+
+    """
+
+    out_dir = compile_snippet!("list_empty_eq", source)
+    generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+
+    body = assert_plan_fn!(generated_c, "emptyCount")
+    assert body =~ "elmc_list_is_empty"
+    refute body =~ "elmc_value_equal("
   end
 
   test "List.filterMap identity unwraps Just without closure or runtime filterMap" do
@@ -3396,7 +3845,7 @@ defmodule Elmc.CCodegenPatternsTest do
 
     assert init_body =~ "ELMC_PEBBLE_CMD_STORAGE_WRITE_STRING"
     assert init_body =~ "elmc_cmd2("
-    assert init_body =~ "elmc_string_from_int("
+    assert init_body =~ "elmc_string_from_native_int(" or init_body =~ "elmc_string_from_int("
     assert init_body =~ "CHECK_RC(Rc)"
 
     refute init_body =~ "elmc_new_int(ELMC_PEBBLE_CMD_STORAGE_WRITE_STRING)"

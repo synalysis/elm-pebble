@@ -19,6 +19,9 @@ defmodule Elmc.Backend.Pebble.HeaderWriter.ApiDecls.EventHandlers do
     int elmc_pebble_dispatch_battery(ElmcPebbleApp *app, int level);
     int elmc_pebble_dispatch_connection(ElmcPebbleApp *app, int connected);
     int elmc_pebble_dispatch_health(ElmcPebbleApp *app, int event);
+    int elmc_pebble_dispatch_touch_tap(ElmcPebbleApp *app, int32_t x, int32_t y);
+    int elmc_pebble_dispatch_touch_pan(ElmcPebbleApp *app, int32_t phase, int32_t total_x, int32_t total_y, int32_t since_start_x, int32_t since_start_y, int32_t velocity_x, int32_t velocity_y);
+    int elmc_pebble_dispatch_touch_swipe(ElmcPebbleApp *app, int32_t direction, int32_t velocity_x, int32_t velocity_y);
     int elmc_pebble_dispatch_app_focus(ElmcPebbleApp *app, int in_focus);
     int elmc_pebble_dispatch_backlight(ElmcPebbleApp *app, int is_on);
     int elmc_pebble_dispatch_screen_change(ElmcPebbleApp *app, int width, int height, int shape, int color_mode);

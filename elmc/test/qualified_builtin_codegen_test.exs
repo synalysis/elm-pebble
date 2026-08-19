@@ -371,20 +371,17 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
     native_string_body = lowered_fn_body!(generated_c, "elmc_fn_Main_nativeStringFromInt")
 
     assert_plan_native_body!(native_string_body)
-    assert native_string_body =~ ~r/Rc = elmc_new_int\(&owned\[\d+\], value \+ 1\);/,
-           "expected native value+1 boxed for String.fromInt, got: #{String.slice(native_string_body, 0, 400)}"
-    assert native_string_body =~ ~r/elmc_string_from_int\((?:&owned\[\d+\]|out), owned\[\d+\]\)/,
-           "expected elmc_string_from_int over owned slot, got: #{String.slice(native_string_body, 0, 400)}"
-    refute native_string_body =~ "elmc_string_from_native_int("
+    assert native_string_body =~ "elmc_string_from_native_int(",
+           "expected native fromInt of value+1, got: #{String.slice(native_string_body, 0, 400)}"
+    refute native_string_body =~ ~r/elmc_new_int\(&owned\[\d+\], value \+ 1\)/
 
     native_append_body = lowered_fn_body!(generated_c, "elmc_fn_Main_nativeStringAppend")
 
     assert_plan_native_body!(native_append_body)
     assert native_append_body =~ "plan_str_immortal_"
-    assert native_append_body =~ "elmc_string_from_int("
+    assert native_append_body =~ "elmc_string_from_native_int("
     assert native_append_body =~ "elmc_append("
     refute native_append_body =~ "elmc_string_append_native"
-    refute native_append_body =~ "elmc_string_from_native_int("
   end
 
   test "flattened append chains fuse int literal and boxed segments with snprintf" do
@@ -427,7 +424,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     assert_plan_native_body!(boxed_string_if_body)
     assert boxed_string_if_body =~ "plan_native_bool_"
-    assert boxed_string_if_body =~ "elmc_string_from_int("
+    assert boxed_string_if_body =~ "elmc_string_from_native_int("
     assert boxed_string_if_body =~ "elmc_append("
     refute boxed_string_if_body =~ "elmc_string_append_native"
   end
@@ -613,9 +610,9 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     assert_plan_native_body!(native_div_body)
     assert native_div_body =~ "value * 328 / 100" or native_div_body =~ "elmc_int_idiv((value * 328), 100)"
-    assert native_div_body =~ "elmc_string_from_int("
+    assert native_div_body =~ "elmc_string_from_native_int("
     refute native_div_body =~ "native_den_"
-    refute native_div_body =~ "elmc_string_from_native_int("
+    refute native_div_body =~ "elmc_string_from_int("
   end
 
   test "record fields from helper calls inline helper body once per field" do
@@ -1044,10 +1041,9 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
-    assert generated_c =~ "elmc_string_from_int("
+    assert generated_c =~ "elmc_string_from_native_int("
     assert generated_c =~ "% 2"
     refute generated_c =~ "elmc_new_int(elmc_as_int(list_map_head"
-    refute generated_c =~ "elmc_string_from_native_int("
   end
 
   test "boxed Int record fields compare natively without Basics.compare" do

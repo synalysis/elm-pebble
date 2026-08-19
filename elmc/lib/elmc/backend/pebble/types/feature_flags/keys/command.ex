@@ -79,7 +79,10 @@ defmodule Elmc.Backend.Pebble.Types.FeatureFlags.Keys.Command do
     :cmd_health_sum_today,
     :cmd_health_sum,
     :cmd_health_accessible,
-    :cmd_health_supported
+    :cmd_health_supported,
+    :cmd_health_hrv_ppi_ms,
+    :cmd_health_set_hrv_sample_period,
+    :cmd_health_set_heart_rate_sample_period
   ]
 
   @device_services_keys [
@@ -88,7 +91,10 @@ defmodule Elmc.Backend.Pebble.Types.FeatureFlags.Keys.Command do
     :cmd_compass_peek,
     :cmd_dictation_start,
     :cmd_dictation_stop,
-    :cmd_unobstructed_bounds_peek
+    :cmd_unobstructed_bounds_peek,
+    :cmd_alarm_next,
+    :cmd_touch_supported,
+    :cmd_touch_enable_navigation
   ]
 
   @speaker_keys [

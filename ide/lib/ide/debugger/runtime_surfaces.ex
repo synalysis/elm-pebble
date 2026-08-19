@@ -186,6 +186,7 @@ defmodule Ide.Debugger.RuntimeSurfaces do
       "has_microphone" => Map.get(profile, "has_microphone") == true,
       "has_compass" => Map.get(profile, "has_compass") == true,
       "has_speaker" => Map.get(profile, "has_speaker") == true,
+      "has_touch" => Map.get(profile, "has_touch") == true,
       "supports_health" => Map.get(profile, "supports_health") == true,
       "launch_button" => parse_launch_button(Map.get(settings, "launch_button")),
       "quick_launch_action" =>

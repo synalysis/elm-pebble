@@ -36,7 +36,10 @@ defmodule Elmx.PebbleContractCmdSubElmWireTest do
     :screen_change,
     :speaker_finished,
     :unobstructed_area,
-    :appmessage
+    :appmessage,
+    :touch_tap,
+    :touch_pan,
+    :touch_swipe
   ]
 
   @primary_targets %{

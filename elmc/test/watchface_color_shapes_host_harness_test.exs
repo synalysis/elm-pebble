@@ -67,8 +67,19 @@ defmodule Elmc.WatchfaceColorShapesHostHarnessTest do
     assert out =~ "sun_fill=248"
 
     header = File.read!(Path.join(out_dir, "c/elmc_pebble.h"))
+    pebble_c = File.read!(Path.join(out_dir, "c/elmc_pebble.c"))
     assert header =~ "ELMC_PEBBLE_FEATURE_DRAW_PATH 0"
     assert header =~ "ELMC_PEBBLE_FEATURE_DRAW_FILL_RADIAL 1"
+
+    encode =
+      pebble_c
+      |> String.split("static int elmc_scene_writer_encode_payload", parts: 2)
+      |> Enum.at(1)
+      |> Kernel.||("")
+
+    assert encode =~ "#if ELMC_PEBBLE_FEATURE_DRAW_PATH"
+    assert encode =~ "elmc_scene_writer_write_path_tail"
+    refute encode =~ "if (payload_len >= ELMC_SCENE_PL_FULL &&"
   end
 
   defp harness_c do

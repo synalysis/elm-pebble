@@ -250,6 +250,7 @@ defmodule Ide.ProjectTemplatesTest do
     dictation = ProjectTemplates.target_platforms_for_template("watch-demo-dictation")
     health = ProjectTemplates.target_platforms_for_template("watch-demo-health")
     time = ProjectTemplates.target_platforms_for_template("watch-demo-time")
+    touch = ProjectTemplates.target_platforms_for_template("watch-demo-touch")
 
     refute "aplite" in compass
     assert compass == ["basalt", "chalk", "diorite", "emery", "flint", "gabbro"]
@@ -258,6 +259,7 @@ defmodule Ide.ProjectTemplatesTest do
 
     refute "aplite" in time
     assert time == ["basalt", "chalk", "diorite", "emery", "flint", "gabbro"]
+    assert touch == ["emery", "flint", "gabbro"]
   end
 
   test "starter template excludes aplite" do

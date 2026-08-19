@@ -160,8 +160,52 @@ defmodule Elmc.Backend.Pebble.SourceWriter.EventDispatch.Registry do
         [{"int", "event"}],
         "ELMC_PEBBLE_SUB_HEALTH",
         tag_value: "event",
-        clamp: {0, 2},
+        clamp: {0, 4},
         default_on_clamp: 0
+      ),
+      mask_entry(
+        "elmc_pebble_dispatch_touch_tap",
+        [{"int32_t", "x"}, {"int32_t", "y"}],
+        "ELMC_PEBBLE_SUB_TOUCH_TAP",
+        watchface_guard: true,
+        record_int_fields: [
+          {"x", "x"},
+          {"y", "y"}
+        ]
+      ),
+      mask_entry(
+        "elmc_pebble_dispatch_touch_pan",
+        [
+          {"int32_t", "phase"},
+          {"int32_t", "total_x"},
+          {"int32_t", "total_y"},
+          {"int32_t", "since_start_x"},
+          {"int32_t", "since_start_y"},
+          {"int32_t", "velocity_x"},
+          {"int32_t", "velocity_y"}
+        ],
+        "ELMC_PEBBLE_SUB_TOUCH_PAN",
+        watchface_guard: true,
+        record_int_fields: [
+          {"phase", "phase"},
+          {"totalX", "total_x"},
+          {"totalY", "total_y"},
+          {"sinceStartX", "since_start_x"},
+          {"sinceStartY", "since_start_y"},
+          {"velocityX", "velocity_x"},
+          {"velocityY", "velocity_y"}
+        ]
+      ),
+      mask_entry(
+        "elmc_pebble_dispatch_touch_swipe",
+        [{"int32_t", "direction"}, {"int32_t", "velocity_x"}, {"int32_t", "velocity_y"}],
+        "ELMC_PEBBLE_SUB_TOUCH_SWIPE",
+        watchface_guard: true,
+        record_int_fields: [
+          {"direction", "direction"},
+          {"velocityX", "velocity_x"},
+          {"velocityY", "velocity_y"}
+        ]
       ),
       mask_entry(
         "elmc_pebble_dispatch_app_focus",

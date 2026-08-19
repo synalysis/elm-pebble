@@ -36,6 +36,12 @@ defmodule Elmc.Backend.Plan.TruthyNative do
        when value in [0, 1],
        do: {:const_int, value}
 
+  # Nested `if` / `case` merges: the inner phi dest is a real instruction, so
+  # `arm_shape/2` must not fall through to `:unknown` or the outer merge boxes.
+  defp shape_from_instr(%{op: :phi, dest: dest, args: %{truthy_native: true}})
+       when is_integer(dest),
+       do: {:reg, dest}
+
   defp shape_from_instr(%{op: :compare, args: %{kind: kind, left: left, right: right}}),
     do: {:compare, kind || :eq, left, right}
 

@@ -17,7 +17,11 @@ module Elm.Kernel.PebbleWatch exposing
     , getTimezone
     , getTimezoneIsSet
     , getWatchModel
+    , alarmNext
     , healthAccessible
+    , healthHrvPpiMs
+    , healthSetHeartRateSamplePeriod
+    , healthSetHrvSamplePeriod
     , healthSum
     , healthSumToday
     , healthSupported
@@ -49,6 +53,10 @@ module Elm.Kernel.PebbleWatch exposing
     , onFrame
     , onHealthEvent
     , onHourChange
+    , onTouchPanHorizontal
+    , onTouchPanVertical
+    , onTouchSwipe
+    , onTouchTap
     , onMinuteChange
     , onMonthChange
     , onSecondChange
@@ -73,6 +81,8 @@ module Elm.Kernel.PebbleWatch exposing
     , storageWriteInt
     , storageWriteString
     , timerAfter
+    , touchEnableNavigation
+    , touchSupported
     , unobstructedCurrentBounds
     , vibesCancel
     , vibesCustomPattern
@@ -332,6 +342,56 @@ healthSum metric startSeconds endSeconds toMsg =
 
 healthAccessible : Int -> Int -> Int -> (Bool -> msg) -> Cmd msg
 healthAccessible metric startSeconds endSeconds toMsg =
+    Cmd.none
+
+
+healthHrvPpiMs : (Int -> msg) -> Cmd msg
+healthHrvPpiMs toMsg =
+    let
+        keep =
+            toMsg
+    in
+    Cmd.none
+
+
+healthSetHeartRateSamplePeriod : Int -> Cmd msg
+healthSetHeartRateSamplePeriod seconds =
+    let
+        keep =
+            seconds
+    in
+    Cmd.none
+
+
+healthSetHrvSamplePeriod : Int -> Cmd msg
+healthSetHrvSamplePeriod seconds =
+    let
+        keep =
+            seconds
+    in
+    Cmd.none
+
+
+alarmNext : (Int -> msg) -> Cmd msg
+alarmNext toMsg =
+    let
+        keep =
+            toMsg
+    in
+    Cmd.none
+
+
+touchSupported : (Bool -> msg) -> Cmd msg
+touchSupported toMsg =
+    let
+        keep =
+            toMsg
+    in
+    Cmd.none
+
+
+touchEnableNavigation : Cmd msg
+touchEnableNavigation =
     Cmd.none
 
 
@@ -651,6 +711,26 @@ onConnectionChange _ =
 
 onHealthEvent : (a -> msg) -> Sub msg
 onHealthEvent _ =
+    Sub.none
+
+
+onTouchTap : (a -> msg) -> Sub msg
+onTouchTap _ =
+    Sub.none
+
+
+onTouchPanHorizontal : (a -> msg) -> Sub msg
+onTouchPanHorizontal _ =
+    Sub.none
+
+
+onTouchPanVertical : (a -> msg) -> Sub msg
+onTouchPanVertical _ =
+    Sub.none
+
+
+onTouchSwipe : Int -> (a -> msg) -> Sub msg
+onTouchSwipe _ _ =
     Sub.none
 
 

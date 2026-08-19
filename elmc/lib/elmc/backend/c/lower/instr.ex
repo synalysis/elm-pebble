@@ -3,7 +3,16 @@ defmodule Elmc.Backend.C.Lower.Instr do
   alias Elmc.Types, as: Types
 
 
-  alias Elmc.Backend.C.Lower.{EphemeralBox, Function, Lambda, NativeReturn, NativeIntFold, TagRefs}
+  alias Elmc.Backend.C.Lower.{
+    EphemeralBox,
+    Function,
+    IntListFilterPred,
+    Lambda,
+    ListAccumulate,
+    NativeReturn,
+    NativeIntFold,
+    TagRefs
+  }
   alias Elmc.Backend.CCodegen.{
     FunctionCallAbi,
     FunctionEmit,
@@ -90,8 +99,20 @@ defmodule Elmc.Backend.C.Lower.Instr do
 
           # Bool True/False must box as TAG_BOOL even if a reg was also marked
           # native-int (CommonConstCallArms / phi demotion must not win here).
+          # Native-bool dests stay i32 so nested if/phi does not heap-allocate.
           Map.get(instr.args, :bool_lit) == true ->
-            rc_assign(rc?, dest, "elmc_new_bool", [bool_c_literal(instr.args.value)])
+            lit = bool_c_literal(instr.args.value)
+
+            cond do
+              MapSet.member?(Keyword.get(opts, :native_bool_only_regs, MapSet.new()), instr.dest) ->
+                emit_native_bool_store(instr.dest, dest, lit, opts)
+
+              dest == "*out" and Keyword.get(opts, :native_scalar_out) == :native_bool ->
+                "*out = #{lit};"
+
+              true ->
+                rc_assign(rc?, dest, "elmc_new_bool", [lit])
+            end
 
           native_only? ->
             value =
@@ -616,7 +637,38 @@ defmodule Elmc.Backend.C.Lower.Instr do
   defp native_int_phi_shape_c_expr({:int_arith, args}, slots, opts),
     do: Elmc.Backend.C.Lower.NativeIntFold.int_arith_c_expr(args, slots, opts) || "0"
 
+  defp native_int_phi_shape_c_expr({:load_param, index}, _slots, opts) when is_integer(index),
+    do: load_param_int_c_expr(index, opts)
+
+  defp native_int_phi_shape_c_expr({:reg, reg}, slots, opts) when is_integer(reg) do
+    case defining_plan_instr(Keyword.get(opts, :parent_plan), reg) do
+      %{op: :load_param, args: %{index: index}} when is_integer(index) ->
+        load_param_int_c_expr(index, opts)
+
+      _ ->
+        int_operand_ref(reg, slots, opts)
+    end
+  end
+
+  defp native_int_phi_shape_c_expr({:record_get_int, reg}, slots, opts) when is_integer(reg),
+    do: int_operand_ref(reg, slots, opts)
+
+  defp native_int_phi_shape_c_expr({:native_int_phi, reg}, slots, opts) when is_integer(reg),
+    do: int_operand_ref(reg, slots, opts)
+
   defp native_int_phi_shape_c_expr(_shape, _slots, _opts), do: "0"
+
+  # Native-int ABI params are already i32. Boxed Int params must be peeled —
+  # using the ElmcValue* name in a ternary is a -Wint-conversion error.
+  defp load_param_int_c_expr(index, opts) when is_integer(index) do
+    case Enum.at(Keyword.get(opts, :param_kinds, []), index) do
+      :native_int ->
+        native_int_param_c_arg(index, opts)
+
+      _ ->
+        "elmc_as_int(#{FunctionCallAbi.param_c_arg(index, Keyword.get(opts, :params, []))})"
+    end
+  end
 
   @spec phi_truthy_arm_exprs(map(), Types.reg(), Types.reg(), Types.slot_map(), keyword()) :: {String.t(), String.t()}
 
@@ -1409,6 +1461,8 @@ defmodule Elmc.Backend.C.Lower.Instr do
   defp runtime_builtin_sym(:list_take, _args, _slots, _opts), do: "elmc_list_take_int"
 
   defp runtime_builtin_sym(:list_drop, _args, _slots, _opts), do: "elmc_list_drop_int"
+
+  defp runtime_builtin_sym(:list_range, _args, _slots, _opts), do: "elmc_list_range"
 
   defp runtime_builtin_sym(:list_nth_maybe, _args, _slots, _opts), do: "elmc_list_nth_maybe_int"
 
@@ -2991,14 +3045,14 @@ defmodule Elmc.Backend.C.Lower.Instr do
     end
   end
 
-  defp emit_native_scalar_fn_call(:native_int, rc?, dest, dest_reg, c_name, call_arg_s, opts, {mod, name} = callee) do
+  defp emit_native_scalar_fn_call(:native_int, rc?, dest, dest_reg, c_name, call_arg_s, opts, callee) do
     value_return? = NativeReturn.value_return?(callee)
     native_only = Keyword.get(opts, :native_int_only_regs, MapSet.new())
     # Non-RC definitions with a cached native kind still return ElmcValue* (box via
     # elmc_new_int_take). Only RC callees implement the `RC fn(elmc_int_t *out, …)` ABI.
     # Also treat self-recursion inside an RC plan as out-param (unit tests seed
     # plan.rc_required without always populating `:elmc_rc_required`).
-    rc_callee? = RcRequired.rc_required?(mod, name) or native_scalar_rc_out_callee?(callee, opts)
+    rc_callee? = native_scalar_rc_abi?(callee, opts)
     # NativeReturn may cache :native_int while FunctionEmit still emits
     # `RC fn(ElmcValue **out, …)` (native-boxed RC). Call sites must match the
     # emitted out pointer, not the optimistic NativeReturn cache alone.
@@ -3030,10 +3084,10 @@ defmodule Elmc.Backend.C.Lower.Instr do
     end
   end
 
-  defp emit_native_scalar_fn_call(:native_bool, rc?, dest, dest_reg, c_name, call_arg_s, opts, {mod, name} = callee) do
+  defp emit_native_scalar_fn_call(:native_bool, rc?, dest, dest_reg, c_name, call_arg_s, opts, callee) do
     value_return? = NativeReturn.value_return?(callee)
     native_only = Keyword.get(opts, :native_bool_only_regs, MapSet.new())
-    rc_callee? = RcRequired.rc_required?(mod, name) or native_scalar_rc_out_callee?(callee, opts)
+    rc_callee? = native_scalar_rc_abi?(callee, opts)
     boxed_rc_out? = rc_callee? and not value_return? and callee_boxed_rc_out?(callee)
 
     cond do
@@ -3070,6 +3124,16 @@ defmodule Elmc.Backend.C.Lower.Instr do
 
   defp list_out_assign_null("out"), do: "*out = NULL;"
   defp list_out_assign_null(dest) when is_binary(dest), do: "#{dest} = NULL;"
+
+  # Matches FunctionEmit: cached native Int/Bool that is not a value-return
+  # uses `RC fn(elmc_int_t *out, …)` / `RC fn(bool *out, …)` even when the
+  # callee is not in the RcRequired set (union-int helpers, nested if clamps).
+  defp native_scalar_rc_abi?({mod, name} = callee, opts) do
+    RcRequired.rc_required?(mod, name) or
+      native_scalar_rc_out_callee?(callee, opts) or
+      (NativeReturn.cached_kind(callee) in [:native_int, :native_bool] and
+         not NativeReturn.value_return?(callee))
+  end
 
   defp native_scalar_rc_out_callee?({mod, name}, opts) do
     case Keyword.get(opts, :parent_plan) do
@@ -3426,16 +3490,9 @@ defmodule Elmc.Backend.C.Lower.Instr do
     idx = "list_map_cursor_i_#{loop_id}"
     dest_slot = format_dest(dest_reg, slots, opts)
 
-    # `elmc_list_append(a, b)` concatenates two *lists* — when `a` is not a
-    # proper ELMC_TAG_LIST cons chain (the `elmc_int_zero()` sentinel used to
-    # start the accumulator, or a still-unwrapped scalar from a prior
-    # iteration) it falls back to `*out = elmc_retain(b)`, discarding
-    # everything accumulated so far. Every mapped `item` (int, string,
-    # record, …) must be wrapped as a one-element list (`Cons(item, Nil)`)
-    # before appending, and the accumulator must start as a real empty list,
-    # or `List.map f (List.range lo hi)` silently keeps only the last mapped
-    # element instead of the full list (TcoCaptureClober: `String.join`
-    # over a 6-element mapped list saw only a 1-element "list").
+    # Cons onto a uniquely owned reverse spine, then reverse in place. Do not
+    # call `elmc_list_append` here — that pulls the boxed-append runtime into
+    # every fused `List.range |> map`.
     #
     # Result list is uniquely owned by #{fwd_head} — transfer into dest (no
     # retain). Retaining without releasing the local leaks the spine and every
@@ -3450,20 +3507,9 @@ defmodule Elmc.Backend.C.Lower.Instr do
       Rc = #{closure}(&#{item}, loop_args, 1, NULL, 0);
       CHECK_RC(Rc);
       elmc_release(loop_args[0]);
-      {
-        ElmcValue *singleton = NULL;
-        Rc = elmc_list_cons(&singleton, #{item}, elmc_list_nil());
-        CHECK_RC(Rc);
-        elmc_release(#{item});
-        #{item} = NULL;
-        ElmcValue *next = NULL;
-        Rc = elmc_list_append(&next, #{fwd_head}, singleton);
-        CHECK_RC(Rc);
-        elmc_release(singleton);
-        elmc_release(#{fwd_head});
-        #{fwd_head} = next;
-      }
+      #{ListAccumulate.cons_front(fwd_head, item)}
     }
+    #{ListAccumulate.inplace_reverse(fwd_head)}
     #{owned_slot_take_assign(dest_slot, fwd_head)}
     """
     |> String.trim()
@@ -3481,6 +3527,7 @@ defmodule Elmc.Backend.C.Lower.Instr do
     node = "list_walk_map_node_#{loop_id}"
     item = "list_walk_map_item_#{loop_id}"
     dest_slot = format_dest(dest_reg, slots, opts)
+    kind = Map.get(args, :kind, :map)
     cap_count = length(captures)
 
     {caps_decl, caps_arg, caps_count_arg} =
@@ -3500,64 +3547,234 @@ defmodule Elmc.Backend.C.Lower.Instr do
     # Compact INT_LIST spines (e.g. elmc_list_from_int_array permutation tables)
     # must be walked; a cons-only loop silently maps them to [].
     # Result list is uniquely owned by #{fwd_head} — transfer into dest (no retain).
+    {int_step, cons_step} =
+      list_walk_step_blocks(kind, loop_id, item, node, closure, caps_arg, caps_count_arg)
+
+    idx_init = if kind == :indexed_map, do: "int list_walk_idx_#{loop_id} = 0;\n      ", else: ""
+
+    int_list_branch =
+      cond do
+        kind == :filter ->
+          pred_c =
+            IntListFilterPred.c_expr(
+              Enum.at(parent.lambdas || [], loop_id),
+              "direct_ilp_#{loop_id}->values[direct_ii_#{loop_id}]"
+            )
+
+          compact_int_list_filter_branch(
+            loop_id,
+            list_ref,
+            fwd_head,
+            item,
+            closure,
+            caps_arg,
+            caps_count_arg,
+            pred_c
+          )
+
+        kind == :map ->
+          """
+            Rc = elmc_lazy_map(&#{fwd_head}, #{list_ref}, #{closure}, #{caps_arg}, #{caps_count_arg});
+            CHECK_RC(Rc);
+          """
+
+        true ->
+          """
+            ElmcIntListPayload *direct_ilp_#{loop_id} = (ElmcIntListPayload *)#{list_ref}->payload;
+            int direct_ilen_#{loop_id} = direct_ilp_#{loop_id} ? direct_ilp_#{loop_id}->length : 0;
+            for (int direct_ii_#{loop_id} = 0;
+                 Rc == RC_SUCCESS && direct_ii_#{loop_id} < direct_ilen_#{loop_id};
+                 direct_ii_#{loop_id}++) {
+              ElmcValue *__map_head_box__ = NULL;
+              Rc = elmc_new_int(&__map_head_box__, direct_ilp_#{loop_id}->values[direct_ii_#{loop_id}]);
+              CHECK_RC(Rc);
+              #{int_step}
+              elmc_release(__map_head_box__);
+              __map_head_box__ = NULL;
+            }
+          """
+      end
+
+    reverse_guard =
+      if kind in [:filter, :map] do
+        "if (list_walk_need_reverse_#{loop_id}) "
+      else
+        ""
+      end
+
+    need_reverse_init =
+      if kind in [:filter, :map], do: "int list_walk_need_reverse_#{loop_id} = 1;\n    ", else: ""
+
+    set_no_reverse =
+      if kind in [:filter, :map] do
+        "      list_walk_need_reverse_#{loop_id} = 0;\n"
+      else
+        ""
+      end
+
     body = """
-    #{caps_decl}ElmcValue *#{fwd_head} = elmc_list_nil();
+    #{caps_decl}#{need_reverse_init}ElmcValue *#{fwd_head} = elmc_list_nil();
     if (#{list_ref} && #{list_ref}->tag == ELMC_TAG_INT_LIST) {
-      ElmcIntListPayload *direct_ilp_#{loop_id} = (ElmcIntListPayload *)#{list_ref}->payload;
-      int direct_ilen_#{loop_id} = direct_ilp_#{loop_id} ? direct_ilp_#{loop_id}->length : 0;
-      for (int direct_ii_#{loop_id} = 0;
-           Rc == RC_SUCCESS && direct_ii_#{loop_id} < direct_ilen_#{loop_id};
-           direct_ii_#{loop_id}++) {
-        ElmcValue *__map_head_box__ = NULL;
-        Rc = elmc_new_int(&__map_head_box__, direct_ilp_#{loop_id}->values[direct_ii_#{loop_id}]);
-        CHECK_RC(Rc);
-        ElmcValue *#{item} = NULL;
-        ElmcValue *loop_args[1] = { __map_head_box__ };
-        Rc = #{closure}(&#{item}, loop_args, 1, #{caps_arg}, #{caps_count_arg});
-        elmc_release(__map_head_box__);
-        CHECK_RC(Rc);
-        {
-          ElmcValue *singleton = NULL;
-          Rc = elmc_list_cons(&singleton, #{item}, elmc_list_nil());
-          CHECK_RC(Rc);
-          elmc_release(#{item});
-          #{item} = NULL;
-          ElmcValue *next = NULL;
-          Rc = elmc_list_append(&next, #{fwd_head}, singleton);
-          CHECK_RC(Rc);
-          elmc_release(singleton);
-          elmc_release(#{fwd_head});
-          #{fwd_head} = next;
-        }
-      }
-    } else {
+    #{int_list_branch}#{set_no_reverse}    } else {
       ElmcValue *#{cursor} = #{list_ref};
-      while (#{cursor} && #{cursor}->tag == ELMC_TAG_LIST && #{cursor}->payload != NULL) {
+      #{idx_init}while (#{cursor} && #{cursor}->tag == ELMC_TAG_LIST && #{cursor}->payload != NULL) {
         ElmcCons *#{node} = (ElmcCons *)#{cursor}->payload;
-        ElmcValue *#{item} = NULL;
-        ElmcValue *loop_args[1] = { #{node}->head };
-        Rc = #{closure}(&#{item}, loop_args, 1, #{caps_arg}, #{caps_count_arg});
-        CHECK_RC(Rc);
-        {
-          ElmcValue *singleton = NULL;
-          Rc = elmc_list_cons(&singleton, #{item}, elmc_list_nil());
-          CHECK_RC(Rc);
-          elmc_release(#{item});
-          #{item} = NULL;
-          ElmcValue *next = NULL;
-          Rc = elmc_list_append(&next, #{fwd_head}, singleton);
-          CHECK_RC(Rc);
-          elmc_release(singleton);
-          elmc_release(#{fwd_head});
-          #{fwd_head} = next;
-        }
+        #{cons_step}
         #{cursor} = #{node}->tail;
       }
     }
+    #{reverse_guard}#{ListAccumulate.inplace_reverse(fwd_head)}
     #{owned_slot_take_assign(dest_slot, fwd_head)}
     """
 
     body
+  end
+
+  defp compact_int_list_filter_branch(
+         loop_id,
+         list_ref,
+         fwd_head,
+         item,
+         closure,
+         caps_arg,
+         caps_count_arg,
+         pred_c
+       ) do
+    keep_test =
+      if is_binary(pred_c) do
+        """
+            if (#{pred_c}) {
+              list_walk_kept_#{loop_id}[list_walk_kept_n_#{loop_id}++] = direct_ilp_#{loop_id}->values[direct_ii_#{loop_id}];
+            }
+        """
+      else
+        """
+            ElmcValue *__map_head_box__ = NULL;
+            Rc = elmc_new_int(&__map_head_box__, direct_ilp_#{loop_id}->values[direct_ii_#{loop_id}]);
+            if (Rc != RC_SUCCESS) break;
+            ElmcValue *#{item} = NULL;
+            ElmcValue *loop_args[1] = { __map_head_box__ };
+            Rc = #{closure}(&#{item}, loop_args, 1, #{caps_arg}, #{caps_count_arg});
+            elmc_release(__map_head_box__);
+            __map_head_box__ = NULL;
+            if (Rc != RC_SUCCESS) {
+              elmc_release(#{item});
+              break;
+            }
+            if (elmc_as_int(#{item}) != 0) {
+              list_walk_kept_#{loop_id}[list_walk_kept_n_#{loop_id}++] = direct_ilp_#{loop_id}->values[direct_ii_#{loop_id}];
+            }
+            elmc_release(#{item});
+            #{item} = NULL;
+        """
+      end
+
+    """
+          ElmcIntListPayload *direct_ilp_#{loop_id} = (ElmcIntListPayload *)#{list_ref}->payload;
+          int direct_ilen_#{loop_id} = direct_ilp_#{loop_id} ? direct_ilp_#{loop_id}->length : 0;
+          elmc_int_t *list_walk_kept_#{loop_id} = NULL;
+          int list_walk_kept_n_#{loop_id} = 0;
+          if (direct_ilen_#{loop_id} > 0) {
+            list_walk_kept_#{loop_id} = (elmc_int_t *)elmc_malloc((size_t)direct_ilen_#{loop_id} * sizeof(elmc_int_t), "list_walk_filter");
+            if (!list_walk_kept_#{loop_id}) {
+              Rc = RC_ERR_OUT_OF_MEMORY;
+              CHECK_RC(Rc);
+            }
+          }
+          for (int direct_ii_#{loop_id} = 0;
+               Rc == RC_SUCCESS && direct_ii_#{loop_id} < direct_ilen_#{loop_id};
+               direct_ii_#{loop_id}++) {
+    #{keep_test}          }
+          if (Rc == RC_SUCCESS) {
+            Rc = elmc_list_from_int_array(&#{fwd_head}, list_walk_kept_#{loop_id}, list_walk_kept_n_#{loop_id});
+          }
+          if (list_walk_kept_#{loop_id}) elmc_free(list_walk_kept_#{loop_id});
+          CHECK_RC(Rc);
+    """
+  end
+
+  defp list_walk_step_blocks(:filter, loop_id, item, node, closure, caps_arg, caps_count_arg) do
+    fwd = "list_walk_map_head_#{loop_id}"
+
+    int_step = """
+        ElmcValue *#{item} = NULL;
+        ElmcValue *loop_args[1] = { __map_head_box__ };
+        Rc = #{closure}(&#{item}, loop_args, 1, #{caps_arg}, #{caps_count_arg});
+        CHECK_RC(Rc);
+        if (elmc_as_int(#{item}) != 0) {
+          #{ListAccumulate.cons_front_keep_item(fwd, "__map_head_box__")}
+        }
+        elmc_release(#{item});
+        #{item} = NULL;
+    """
+
+    cons_step = """
+        ElmcValue *#{item} = NULL;
+        ElmcValue *loop_args[1] = { #{node}->head };
+        Rc = #{closure}(&#{item}, loop_args, 1, #{caps_arg}, #{caps_count_arg});
+        CHECK_RC(Rc);
+        if (elmc_as_int(#{item}) != 0) {
+          #{ListAccumulate.cons_front_keep_item(fwd, "#{node}->head")}
+        }
+        elmc_release(#{item});
+        #{item} = NULL;
+    """
+
+    {int_step, cons_step}
+  end
+
+  defp list_walk_step_blocks(:indexed_map, loop_id, item, node, closure, caps_arg, caps_count_arg) do
+    fwd = "list_walk_map_head_#{loop_id}"
+    idx = "list_walk_idx_#{loop_id}"
+
+    int_step = """
+        ElmcValue *#{item} = NULL;
+        ElmcValue *__idx_box__ = NULL;
+        Rc = elmc_new_int(&__idx_box__, direct_ii_#{loop_id});
+        CHECK_RC(Rc);
+        ElmcValue *loop_args[2] = { __idx_box__, __map_head_box__ };
+        Rc = #{closure}(&#{item}, loop_args, 2, #{caps_arg}, #{caps_count_arg});
+        elmc_release(__idx_box__);
+        CHECK_RC(Rc);
+        #{ListAccumulate.cons_front(fwd, item)}
+    """
+
+    cons_step = """
+        ElmcValue *#{item} = NULL;
+        ElmcValue *__idx_box__ = NULL;
+        Rc = elmc_new_int(&__idx_box__, #{idx});
+        CHECK_RC(Rc);
+        ElmcValue *loop_args[2] = { __idx_box__, #{node}->head };
+        Rc = #{closure}(&#{item}, loop_args, 2, #{caps_arg}, #{caps_count_arg});
+        elmc_release(__idx_box__);
+        CHECK_RC(Rc);
+        #{ListAccumulate.cons_front(fwd, item)}
+        #{idx} += 1;
+    """
+
+    {int_step, cons_step}
+  end
+
+  defp list_walk_step_blocks(_kind, loop_id, item, node, closure, caps_arg, caps_count_arg) do
+    fwd = "list_walk_map_head_#{loop_id}"
+
+    int_step = """
+        ElmcValue *#{item} = NULL;
+        ElmcValue *loop_args[1] = { __map_head_box__ };
+        Rc = #{closure}(&#{item}, loop_args, 1, #{caps_arg}, #{caps_count_arg});
+        CHECK_RC(Rc);
+        #{ListAccumulate.cons_front(fwd, item)}
+    """
+
+    cons_step = """
+        ElmcValue *#{item} = NULL;
+        ElmcValue *loop_args[1] = { #{node}->head };
+        Rc = #{closure}(&#{item}, loop_args, 1, #{caps_arg}, #{caps_count_arg});
+        CHECK_RC(Rc);
+        #{ListAccumulate.cons_front(fwd, item)}
+    """
+
+    {int_step, cons_step}
   end
 
   defp emit_pipe_apply_repeat(

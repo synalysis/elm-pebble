@@ -397,6 +397,13 @@ defmodule Elmc.Backend.Plan.Worker.Subscriptions do
       "Companion.Watch.onPhoneToWatch" -> "ELMC_SUBSCRIPTION_APPMESSAGE"
       "Pebble.Events.onAnimationFinished" -> "ELMC_SUBSCRIPTION_ANIMATION_FINISHED"
       "Elm.Kernel.PebbleWatch.onAnimationFinished" -> "ELMC_SUBSCRIPTION_ANIMATION_FINISHED"
+      "Pebble.Touch.onTap" -> "ELMC_SUBSCRIPTION_TOUCH_TAP"
+      "Elm.Kernel.PebbleWatch.onTouchTap" -> "ELMC_SUBSCRIPTION_TOUCH_TAP"
+      "Pebble.Touch.onPan" -> "ELMC_SUBSCRIPTION_TOUCH_PAN"
+      "Elm.Kernel.PebbleWatch.onTouchPanHorizontal" -> "ELMC_SUBSCRIPTION_TOUCH_PAN"
+      "Elm.Kernel.PebbleWatch.onTouchPanVertical" -> "ELMC_SUBSCRIPTION_TOUCH_PAN"
+      "Pebble.Touch.onSwipe" -> "ELMC_SUBSCRIPTION_TOUCH_SWIPE"
+      "Elm.Kernel.PebbleWatch.onTouchSwipe" -> "ELMC_SUBSCRIPTION_TOUCH_SWIPE"
       _ -> nil
     end
   end

@@ -10,8 +10,15 @@ defmodule Ide.Debugger.DeviceRequest do
 
     if is_binary(response_ctor) and response_ctor != "" do
       case device_kind(cmd_call) do
-        nil -> []
-        kind -> [%{kind: kind, response_message: response_ctor}]
+        nil ->
+          []
+
+        kind ->
+          req =
+            %{kind: kind, response_message: response_ctor}
+            |> maybe_put_health_metric(cmd_call)
+
+          [req]
       end
     else
       []
@@ -68,6 +75,15 @@ defmodule Ide.Debugger.DeviceRequest do
       cmd_name_matches?(cmd_call, ["accessible"]) and health_cmd_target?(cmd_call) ->
         "health_accessible"
 
+      cmd_name_matches?(cmd_call, ["hrvPpiMs"]) and health_cmd_target?(cmd_call) ->
+        "health_hrv_ppi_ms"
+
+      cmd_name_matches?(cmd_call, ["next"]) and alarm_cmd_target?(cmd_call) ->
+        "alarm_next"
+
+      cmd_name_matches?(cmd_call, ["supported"]) and touch_cmd_target?(cmd_call) ->
+        "touch_supported"
+
       true ->
         nil
     end
@@ -91,5 +107,57 @@ defmodule Ide.Debugger.DeviceRequest do
       String.contains?(target, "Health.") or
       String.contains?(target, "PebbleWatch.health") or
       String.contains?(target, "Elm.Kernel.PebbleWatch.health")
+  end
+
+  @spec alarm_cmd_target?(Types.cmd_call()) :: boolean()
+  defp alarm_cmd_target?(cmd_call) when is_map(cmd_call) do
+    target = (Map.get(cmd_call, "target") || Map.get(cmd_call, :target) || "") |> to_string()
+
+    String.contains?(target, "Pebble.Alarm") or
+      String.contains?(target, "PebbleWatch.alarm") or
+      String.contains?(target, "Elm.Kernel.PebbleWatch.alarm")
+  end
+
+  @spec touch_cmd_target?(Types.cmd_call()) :: boolean()
+  defp touch_cmd_target?(cmd_call) when is_map(cmd_call) do
+    target = (Map.get(cmd_call, "target") || Map.get(cmd_call, :target) || "") |> to_string()
+
+    String.contains?(target, "Pebble.Touch") or
+      String.contains?(target, "PebbleWatch.touch") or
+      String.contains?(target, "Elm.Kernel.PebbleWatch.touch")
+  end
+
+  @spec maybe_put_health_metric(Types.device_request(), Types.cmd_call()) :: Types.device_request()
+  defp maybe_put_health_metric(%{kind: "health_value"} = req, cmd_call) do
+    case health_metric_from_cmd_call(cmd_call) do
+      nil -> req
+      metric -> Map.put(req, :metric, metric)
+    end
+  end
+
+  defp maybe_put_health_metric(req, _cmd_call), do: req
+
+  @spec health_metric_from_cmd_call(Types.cmd_call()) :: String.t() | nil
+  defp health_metric_from_cmd_call(cmd_call) when is_map(cmd_call) do
+    snippets =
+      (Map.get(cmd_call, "arg_snippets") || Map.get(cmd_call, :arg_snippets) || [])
+      |> List.wrap()
+      |> Enum.map(&to_string/1)
+
+    values = Map.get(cmd_call, "arg_values") || Map.get(cmd_call, :arg_values) || []
+
+    cond do
+      Enum.any?(snippets, &String.contains?(&1, "HeartRateBPM")) ->
+        "HeartRateBPM"
+
+      Enum.any?(snippets, &String.contains?(&1, "StepCount")) ->
+        "StepCount"
+
+      match?([7 | _], values) ->
+        "HeartRateBPM"
+
+      true ->
+        nil
+    end
   end
 end

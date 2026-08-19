@@ -19,7 +19,11 @@ defmodule Elmc.Backend.Pebble.Types.FeatureFlags.Keys.Event do
     :button_events,
     :raw_button_events,
     :accel_events,
-    :accel_data_events
+    :accel_data_events,
+    :touch_tap_events,
+    :touch_pan_horizontal_events,
+    :touch_pan_vertical_events,
+    :touch_swipe_events
   ]
 
   @constructor_platform_keys [:battery_events, :connection_events]

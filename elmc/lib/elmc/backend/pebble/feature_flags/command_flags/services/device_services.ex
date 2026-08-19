@@ -26,7 +26,16 @@ defmodule Elmc.Backend.Pebble.FeatureFlags.CommandFlags.Services.DeviceServices 
           TargetSet.member?(targets, "Elm.Kernel.PebbleWatch.dictationStop"),
       cmd_unobstructed_bounds_peek:
         TargetSet.member?(targets, "Pebble.UnobstructedArea.currentBounds") or
-          TargetSet.member?(targets, "Elm.Kernel.PebbleWatch.unobstructedCurrentBounds")
+          TargetSet.member?(targets, "Elm.Kernel.PebbleWatch.unobstructedCurrentBounds"),
+      cmd_alarm_next:
+        TargetSet.member?(targets, "Pebble.Alarm.next") or
+          TargetSet.member?(targets, "Elm.Kernel.PebbleWatch.alarmNext"),
+      cmd_touch_supported:
+        TargetSet.member?(targets, "Pebble.Touch.supported") or
+          TargetSet.member?(targets, "Elm.Kernel.PebbleWatch.touchSupported"),
+      cmd_touch_enable_navigation:
+        TargetSet.member?(targets, "Pebble.Touch.enableNavigation") or
+          TargetSet.member?(targets, "Elm.Kernel.PebbleWatch.touchEnableNavigation")
     }
   end
 end

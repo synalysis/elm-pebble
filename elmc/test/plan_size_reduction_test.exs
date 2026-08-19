@@ -196,6 +196,7 @@ defmodule Elmc.PlanSizeReductionTest do
     # (retain without releasing the local leaks the spine + mapped values).
     assert c =~ ~r/(?:\*out|owned\[\d+\]) = list_map_cursor_head_\d+;/
     refute c =~ ~r/(?:\*out|owned\[\d+\]) = elmc_retain\(list_map_cursor_head_\d+\);/
+    refute c =~ "elmc_list_append"
   end
 
   test "advanceSeed lowers to native int return without boxing" do
@@ -536,12 +537,13 @@ defmodule Elmc.PlanSizeReductionTest do
     refute spawn_fn =~ "*out_int = elmc_as_int(owned["
     assert spawn_fn =~ "elmc_fn_Main_countEmpty(&plan_native_int_"
     # countEmpty is RC out-param — keep one mutable hoist for the out slot.
-    assert spawn_fn =~ ~r/elmc_int_t plan_native_int_\d+ = 0;/
-    # Single-def value-return / arith SSA temps emit as const at the def site.
-    assert spawn_fn =~ ~r/const elmc_int_t plan_native_int_\d+ = elmc_fn_Main_advanceSeed\(seed\);/
-    assert spawn_fn =~ ~r/const elmc_int_t plan_native_int_\d+ = elmc_fn_Main_advanceSeed\(plan_native_int_\d+\);/
-    assert spawn_fn =~ ~r/const elmc_int_t plan_native_int_\d+ = elmc_fn_Main_randomIndex\(/
-    assert spawn_fn =~ ~r/const bool plan_native_bool_\d+ = \(plan_native_int_\d+ == 0\);/
+    assert spawn_fn =~ ~r/elmc_int_t plan_native_int_\d+(?:\s+__attribute__\(\(unused\)\))? = 0;/
+    # Value-return / arith SSA temps stay native (const at the def site or a
+    # hoisted mutable written later — both avoid heap boxing).
+    assert spawn_fn =~ ~r/elmc_fn_Main_advanceSeed\(seed\)/
+    assert spawn_fn =~ ~r/elmc_fn_Main_advanceSeed\(plan_native_int_\d+\)/
+    assert spawn_fn =~ ~r/elmc_fn_Main_randomIndex\(/
+    assert spawn_fn =~ ~r/plan_native_bool_\d+ = \(plan_native_int_\d+ == 0\)/
     assert spawn_fn =~ ~r/\*out_int = plan_native_int_\d+;/
     refute spawn_fn =~ "elmc_list_repeat("
   end

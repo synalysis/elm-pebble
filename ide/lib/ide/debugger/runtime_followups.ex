@@ -944,6 +944,9 @@ defmodule Ide.Debugger.RuntimeFollowups do
   defp device_command_name_for_kind("health_sum_today"), do: "sumToday"
   defp device_command_name_for_kind("health_sum"), do: "sum"
   defp device_command_name_for_kind("health_accessible"), do: "accessible"
+  defp device_command_name_for_kind("health_hrv_ppi_ms"), do: "hrvPpiMs"
+  defp device_command_name_for_kind("alarm_next"), do: "next"
+  defp device_command_name_for_kind("touch_supported"), do: "supported"
   defp device_command_name_for_kind(_), do: ""
 
   defp device_command_target("cmd.device." <> kind, command),
@@ -958,6 +961,12 @@ defmodule Ide.Debugger.RuntimeFollowups do
       kind in health_device_kinds() ->
         "Pebble.Health"
 
+      kind == "alarm_next" ->
+        "Pebble.Alarm"
+
+      kind == "touch_supported" ->
+        "Pebble.Touch"
+
       kind in pebble_cmd_device_kinds() ->
         "Pebble.Cmd"
 
@@ -967,7 +976,7 @@ defmodule Ide.Debugger.RuntimeFollowups do
   end
 
   defp health_device_kinds do
-    ~w(health_value health_supported health_sum_today health_sum health_accessible)
+    ~w(health_value health_supported health_sum_today health_sum health_accessible health_hrv_ppi_ms)
   end
 
   defp pebble_cmd_device_kinds do

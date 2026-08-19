@@ -240,7 +240,41 @@ defmodule Elmc.Backend.CCodegen.Native.Int do
 
   defp native_case_expr?(subject_expr, branches, env) do
     native_int_literal_case?(subject_expr, branches, env) or
-      native_maybe_int_case?(subject_expr, branches, env)
+      native_maybe_int_case?(subject_expr, branches, env) or
+      native_union_int_case?(subject_expr, branches, env)
+  end
+
+  # `case model.phase of ShowWatch -> model.watchSeconds; ShowQuote -> …`
+  # — constructor subject, Int arms. Not int-literal or Maybe Int.
+  defp native_union_int_case?(_subject_expr, branches, env) when is_list(branches) do
+    has_ctor? =
+      Enum.any?(branches, fn branch ->
+        union_ctor_pattern?(Map.get(branch, :pattern))
+      end)
+
+    has_ctor? and
+      Enum.all?(branches, fn branch ->
+        union_ctor_or_wildcard_pattern?(Map.get(branch, :pattern)) and
+          expr?(Map.get(branch, :expr), env)
+      end)
+  end
+
+  # List/Maybe cases have their own native matchers. Treating `[]`/`::` as a
+  # custom union would advertise `elmc_int_t *out` for boxed list walks.
+  defp union_ctor_pattern?(%{kind: :constructor, name: name}) when is_binary(name),
+    do: not reserved_union_ctor?(name)
+
+  defp union_ctor_pattern?(_), do: false
+
+  defp union_ctor_or_wildcard_pattern?(%{kind: :wildcard}), do: true
+  defp union_ctor_or_wildcard_pattern?(pattern), do: union_ctor_pattern?(pattern)
+
+  defp reserved_union_ctor?(name) when is_binary(name) do
+    name in ["[]", "::", "Nil", "Cons", "Just", "Nothing"] or
+      String.ends_with?(name, ".Nil") or
+      String.ends_with?(name, ".Cons") or
+      String.ends_with?(name, ".Just") or
+      String.ends_with?(name, ".Nothing")
   end
 
   @spec native_int_literal_case?(Types.expr(), list(), Types.compile_env()) :: boolean()

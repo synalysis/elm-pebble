@@ -51,6 +51,9 @@ defmodule Ide.Debugger.SimulatorSettings do
       "app_in_focus" => true,
       "health_steps" => 4200,
       "health_steps_today" => 9100,
+      "health_heart_rate_bpm" => 68,
+      "health_hrv_ppi_ms" => 820,
+      "next_alarm_utc" => -1,
       "dictation_transcript" => "",
       "dictation_error" => "",
       "vibe_pattern_ms" => [],
@@ -211,6 +214,20 @@ defmodule Ide.Debugger.SimulatorSettings do
         |> WireValues.map_value("health_steps_today")
         |> normalize_integer(defaults["health_steps_today"])
         |> max(0),
+      "health_heart_rate_bpm" =>
+        settings
+        |> WireValues.map_value("health_heart_rate_bpm")
+        |> normalize_integer(defaults["health_heart_rate_bpm"])
+        |> max(0),
+      "health_hrv_ppi_ms" =>
+        settings
+        |> WireValues.map_value("health_hrv_ppi_ms")
+        |> normalize_integer(defaults["health_hrv_ppi_ms"])
+        |> max(0),
+      "next_alarm_utc" =>
+        settings
+        |> WireValues.map_value("next_alarm_utc")
+        |> normalize_integer(defaults["next_alarm_utc"]),
       "dictation_transcript" =>
         normalize_string(
           WireValues.map_value(settings, "dictation_transcript"),

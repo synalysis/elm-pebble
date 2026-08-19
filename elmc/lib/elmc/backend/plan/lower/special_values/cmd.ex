@@ -262,6 +262,30 @@ defmodule Elmc.Backend.Plan.Lower.SpecialValues.Cmd do
           4
         )
 
+  def special_value_from_target("Elm.Kernel.PebbleWatch.healthHrvPpiMs", [to_msg]),
+    do: Helpers.encoded_to_msg_cmd(:health_hrv_ppi_ms, to_msg)
+
+  def special_value_from_target("Elm.Kernel.PebbleWatch.healthSetHrvSamplePeriod", [seconds]),
+    do:
+      Helpers.encoded_cmd_expr(Helpers.command_kind(:health_set_hrv_sample_period), [seconds], 1)
+
+  def special_value_from_target("Elm.Kernel.PebbleWatch.healthSetHeartRateSamplePeriod", [seconds]),
+    do:
+      Helpers.encoded_cmd_expr(
+        Helpers.command_kind(:health_set_heart_rate_sample_period),
+        [seconds],
+        1
+      )
+
+  def special_value_from_target("Elm.Kernel.PebbleWatch.alarmNext", [to_msg]),
+    do: Helpers.encoded_to_msg_cmd(:alarm_next, to_msg)
+
+  def special_value_from_target("Elm.Kernel.PebbleWatch.touchSupported", [to_msg]),
+    do: Helpers.encoded_to_msg_cmd(:touch_supported, to_msg)
+
+  def special_value_from_target("Elm.Kernel.PebbleWatch.touchEnableNavigation", _args),
+    do: Helpers.zero_arity_cmd(:touch_enable_navigation)
+
   def special_value_from_target("Pebble.Cmd.getClockStyle24h", [to_msg]),
     do: Helpers.encoded_to_msg_cmd(:get_clock_style_24h, to_msg)
 

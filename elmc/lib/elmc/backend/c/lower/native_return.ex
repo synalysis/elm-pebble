@@ -471,6 +471,9 @@ defmodule Elmc.Backend.C.Lower.NativeReturn do
         [%{op: op} | _] when op in [:const_int, :const_c_expr, :record_get_int, :int_arith] ->
           true
 
+        [%{op: :call_runtime, args: %{builtin: :new_int}} | _] ->
+          true
+
         [%{op: :load_param, args: %{index: idx}} | _] when is_integer(idx) ->
           native_int_param?(plan, idx)
 
@@ -521,6 +524,12 @@ defmodule Elmc.Backend.C.Lower.NativeReturn do
         true
 
       [%{op: :phi, args: %{truthy_native: true}}] ->
+        true
+
+      [%{op: :call_runtime, args: %{builtin: :new_bool}} | _] ->
+        true
+
+      [%{op: :const_int, args: %{bool_lit: true}} | _] ->
         true
 
       [%{op: :phi, args: %{then: then_r, else: else_r}}] ->

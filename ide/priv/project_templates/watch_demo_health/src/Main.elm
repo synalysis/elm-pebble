@@ -14,7 +14,8 @@ type alias Model =
     { supported : Maybe Bool
     , stepsNow : Maybe Int
     , stepsToday : Maybe Int
-    , events : Int
+    , heartRate : Maybe Int
+    , hrvPpiMs : Maybe Int
     , lastEvent : String
     , refreshes : Int
     }
@@ -25,6 +26,8 @@ type Msg
     | GotSupported Bool
     | GotStepsNow Int
     | GotStepsToday Int
+    | GotHeartRate Int
+    | GotHrv Int
     | HealthEvent Health.Event
 
 
@@ -33,7 +36,8 @@ init _ =
     ( { supported = Nothing
       , stepsNow = Nothing
       , stepsToday = Nothing
-      , events = 0
+      , heartRate = Nothing
+      , hrvPpiMs = Nothing
       , lastEvent = "Waiting"
       , refreshes = 0
       }
@@ -44,8 +48,12 @@ init _ =
 requestHealth : Cmd Msg
 requestHealth =
     Cmd.batch
-        [ Health.value Health.StepCount GotStepsNow
+        [ Health.setHeartRateSamplePeriod 10
+        , Health.setHrvSamplePeriod 10
+        , Health.value Health.StepCount GotStepsNow
         , Health.sumToday Health.StepCount GotStepsToday
+        , Health.value Health.HeartRateBPM GotHeartRate
+        , Health.hrvPpiMs GotHrv
         ]
 
 
@@ -72,13 +80,43 @@ update msg model =
         GotStepsToday value ->
             ( { model | stepsToday = Just value }, Cmd.none )
 
+        GotHeartRate value ->
+            ( { model | heartRate = Just value }, Cmd.none )
+
+        GotHrv value ->
+            ( { model | hrvPpiMs = Just value }, Cmd.none )
+
         HealthEvent event ->
-            ( { model
-                | events = model.events + 1
-                , lastEvent = healthEventLabel event
-              }
-            , Cmd.none
+            ( { model | lastEvent = healthEventLabel event }
+            , healthEventCmd event
             )
+
+
+healthEventCmd : Health.Event -> Cmd Msg
+healthEventCmd event =
+    case event of
+        Health.HeartRateUpdate ->
+            Health.value Health.HeartRateBPM GotHeartRate
+
+        Health.HrvUpdate ->
+            Health.hrvPpiMs GotHrv
+
+        Health.MovementUpdate ->
+            requestSteps
+
+        Health.SignificantUpdate ->
+            requestSteps
+
+        Health.SleepUpdate ->
+            Cmd.none
+
+
+requestSteps : Cmd Msg
+requestSteps =
+    Cmd.batch
+        [ Health.value Health.StepCount GotStepsNow
+        , Health.sumToday Health.StepCount GotStepsToday
+        ]
 
 
 healthEventLabel : Health.Event -> String
@@ -92,6 +130,12 @@ healthEventLabel event =
 
         Health.SleepUpdate ->
             "Sleep"
+
+        Health.HeartRateUpdate ->
+            "Heart rate"
+
+        Health.HrvUpdate ->
+            "HRV"
 
 
 subscriptions : Model -> Sub Msg
@@ -125,11 +169,12 @@ bodyLines model =
             ]
 
         _ ->
-            [ Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 32, w = 136, h = 18 } ("Now: " ++ intLabel model.stepsNow)
-            , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 52, w = 136, h = 18 } ("Today: " ++ intLabel model.stepsToday)
-            , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 76, w = 136, h = 18 } model.lastEvent
-            , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 96, w = 136, h = 18 } (String.fromInt model.events)
-            , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 120, w = 136, h = 18 } "Select: refresh"
+            [ Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 28, w = 136, h = 18 } ("Now: " ++ intLabel model.stepsNow)
+            , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 48, w = 136, h = 18 } ("Today: " ++ intLabel model.stepsToday)
+            , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 68, w = 136, h = 18 } ("HR: " ++ intLabel model.heartRate)
+            , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 88, w = 136, h = 18 } ("HRV: " ++ intLabel model.hrvPpiMs)
+            , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 108, w = 136, h = 18 } model.lastEvent
+            , Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 4, y = 128, w = 136, h = 18 } "Select: refresh"
             ]
 
 

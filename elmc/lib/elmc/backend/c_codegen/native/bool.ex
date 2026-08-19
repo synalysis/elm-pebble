@@ -430,6 +430,12 @@ defmodule Elmc.Backend.CCodegen.Native.Bool do
       maybe_field_vs_nothing_compare_safe?(operator, left, right, env) ->
         compile_maybe_field_vs_nothing_compare(left, right, operator, env, counter)
 
+      string_compare_safe?(operator, left, right, env) ->
+        compile_string_compare(left, right, operator, env, counter)
+
+      empty_list_compare_safe?(operator, left, right) ->
+        compile_empty_list_compare(left, right, operator, env, counter)
+
       true ->
         operand_env = RcRuntimeEmit.operand_env(env)
 
@@ -584,6 +590,69 @@ defmodule Elmc.Backend.CCodegen.Native.Bool do
   end
 
   defp list_int_compare_safe?(_operator, _left, _right, _env), do: false
+
+  defp string_compare_safe?(operator, left, right, env)
+       when operator in ["__eq__", "__neq__"] do
+    TypedReturn.string_expr?(left, env) or TypedReturn.string_expr?(right, env) or
+      match?(%{op: :string_literal}, left) or match?(%{op: :string_literal}, right)
+  end
+
+  defp string_compare_safe?(_operator, _left, _right, _env), do: false
+
+  defp compile_string_compare(left, right, operator, env, counter) do
+    operand_env = RcRuntimeEmit.operand_env(env)
+    {left_code, left_var, counter} = compile_compare_operand(left, operand_env, env, counter)
+    {right_code, right_var, counter} = compile_compare_operand(right, operand_env, env, counter)
+    left_ref = RcRuntimeEmit.value_expr(left_var)
+    right_ref = RcRuntimeEmit.value_expr(right_var)
+    next = counter + 1
+    out = "native_cmp_#{next}"
+    negate = if operator == "__neq__", do: "!", else: ""
+
+    code = """
+    #{left_code}
+      #{right_code}
+      const #{@native_bool_c_type} #{out} = #{negate}elmc_string_equals(#{left_ref}, #{right_ref});
+      #{join_compare_releases(env, [left_var, right_var])}
+    """
+
+    {code, out, next}
+  end
+
+  defp empty_list_compare_safe?(operator, left, right)
+       when operator in ["__eq__", "__neq__"] do
+    empty_list_expr?(left) or empty_list_expr?(right)
+  end
+
+  defp empty_list_compare_safe?(_operator, _left, _right), do: false
+
+  defp empty_list_expr?(%{op: :list_literal, items: []}), do: true
+  defp empty_list_expr?(%{op: :list_literal, elements: []}), do: true
+  defp empty_list_expr?(%{op: :static_list, elements: []}), do: true
+  defp empty_list_expr?(%{op: :constructor, name: name}) when name in ["[]", "List.[]"], do: true
+  defp empty_list_expr?(%{op: :runtime_call, function: function})
+       when function in ["elmc_list_nil", "list_nil"],
+       do: true
+
+  defp empty_list_expr?(_), do: false
+
+  defp compile_empty_list_compare(left, right, operator, env, counter) do
+    subject = if empty_list_expr?(right), do: left, else: right
+    operand_env = RcRuntimeEmit.operand_env(env)
+    {subj_code, subj_var, counter} = compile_compare_operand(subject, operand_env, env, counter)
+    subj_ref = RcRuntimeEmit.value_expr(subj_var)
+    next = counter + 1
+    out = "native_cmp_#{next}"
+    negate = if operator == "__neq__", do: "!", else: ""
+
+    code = """
+    #{subj_code}
+      const #{@native_bool_c_type} #{out} = #{negate}elmc_as_bool(elmc_list_is_empty(#{subj_ref}));
+      #{join_compare_releases(env, [subj_var])}
+    """
+
+    {code, out, next}
+  end
 
   defp union_tag_compare_safe?(operator, left, right, env)
        when operator in ["__eq__", "__neq__"] do

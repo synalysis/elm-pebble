@@ -10,6 +10,7 @@ defmodule Elmc.Backend.Plan.RuntimeBuiltins do
   @native_int_arg_indices %{
     list_slice_int: [0, 1],
     list_replace_nth_int: [1, 2],
+    list_range: [0, 1],
     list_take: [0],
     list_drop: [0],
     list_nth_maybe: [1],

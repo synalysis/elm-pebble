@@ -1085,18 +1085,20 @@ defmodule Elmc.Backend.C.Lower.Function do
           case Enum.slice(instrs, i, 3) do
             [
               %{op: :catch_begin},
-              %{op: :call_runtime, dest: map_dest, args: %{builtin: :list_map, args: [c, list]}} = map,
+              %{op: :call_runtime, dest: map_dest, args: %{builtin: builtin, args: [c, list]}} = map,
               %{op: :catch_end}
             ]
-            when c == clos_dest and is_integer(list) ->
+            when c == clos_dest and is_integer(list) and
+                   builtin in [:list_map, :list_filter, :list_indexed_map] ->
               {:ok, %{first: i, last: i + 2}, map_dest, list, map}
 
             _ ->
               nil
           end
 
-        %{op: :call_runtime, dest: map_dest, args: %{builtin: :list_map, args: [c, list]}} = map
-        when c == clos_dest and is_integer(list) ->
+        %{op: :call_runtime, dest: map_dest, args: %{builtin: builtin, args: [c, list]}} = map
+        when c == clos_dest and is_integer(list) and
+               builtin in [:list_map, :list_filter, :list_indexed_map] ->
           {:ok, %{first: i, last: i}, map_dest, list, map}
 
         _ ->
@@ -1116,6 +1118,7 @@ defmodule Elmc.Backend.C.Lower.Function do
 
   defp list_walk_map_instr(map_dest, list_reg, idx, caps, map, _clos_dest) do
     caps = List.wrap(caps)
+    kind = list_walk_kind(map)
 
     effects = %{
       produces: if(is_integer(map_dest), do: {:owned, map_dest}, else: nil),
@@ -1130,7 +1133,8 @@ defmodule Elmc.Backend.C.Lower.Function do
       args: %{
         list: list_reg,
         lambda_idx: idx,
-        captures: caps
+        captures: caps,
+        kind: kind
       },
       effects: effects,
       id: Map.get(map, :id),
@@ -1138,6 +1142,10 @@ defmodule Elmc.Backend.C.Lower.Function do
       span: Map.get(map, :span)
     }
   end
+
+  defp list_walk_kind(%{args: %{builtin: :list_filter}}), do: :filter
+  defp list_walk_kind(%{args: %{builtin: :list_indexed_map}}), do: :indexed_map
+  defp list_walk_kind(_), do: :map
 
   @spec skipped_dest_instr?(map() | term(), keyword()) :: boolean()
 
@@ -3522,6 +3530,14 @@ defmodule Elmc.Backend.C.Lower.Function do
       [%{op: :phi, args: %{truthy_native: true}} | _] ->
         native_bool_uses_only?(plan, reg, decl_map, native_bool_set)
 
+      [%{op: :const_int, args: %{bool_lit: true}} | _] ->
+        native_bool_uses_only?(plan, reg, decl_map, native_bool_set)
+
+      [%{op: :call_fn, args: %{module: mod, name: name}} | _] ->
+        NativeReturn.cached_kind({mod, name}) == :native_bool and
+          not native_boxed_rc_out_callee?(mod, name, decl_map) and
+          native_bool_uses_only?(plan, reg, decl_map, native_bool_set)
+
       [%{op: :phi, args: %{then: then_r, else: else_r}}] ->
         phi_truthy_native?(plan, then_r, else_r) and
           native_bool_uses_only?(plan, reg, decl_map, native_bool_set)
@@ -3571,11 +3587,13 @@ defmodule Elmc.Backend.C.Lower.Function do
 
   @spec instr_bool_use_refs(Types.t() | map(), Types.reg(), Types.decl_map() | term(), MapSet.t(Types.reg()) | term()) :: [{atom(), Types.reg()}]
 
-  defp instr_bool_use_refs(%{op: :phi, args: %{cond: cond, then: then_r, else: else_r}}, reg, _, _) do
+  defp instr_bool_use_refs(%{op: :phi, args: %{cond: cond, then: then_r, else: else_r} = args}, reg, _, _) do
+    arm_kind = if Map.get(args, :truthy_native) == true, do: :native_bool_operand, else: :boxed
+
     []
     |> then(fn refs -> if cond == reg, do: [{:native_bool_operand, reg} | refs], else: refs end)
-    |> then(fn refs -> if then_r == reg, do: [{:boxed, reg} | refs], else: refs end)
-    |> then(fn refs -> if else_r == reg, do: [{:boxed, reg} | refs], else: refs end)
+    |> then(fn refs -> if then_r == reg, do: [{arm_kind, reg} | refs], else: refs end)
+    |> then(fn refs -> if else_r == reg, do: [{arm_kind, reg} | refs], else: refs end)
   end
 
   defp instr_bool_use_refs(%{op: :bool_and, args: %{left: left, right: right}}, reg, _, _) do
@@ -3840,6 +3858,9 @@ defmodule Elmc.Backend.C.Lower.Function do
           %{op: :phi, args: %{native_int_phi: true}} ->
             true
 
+          %{op: :load_param, args: %{index: index}} when is_integer(index) ->
+            Enum.at(param_kinds_for_plan(plan), index) == :native_int
+
           %{op: :phi, args: %{then: then_r, else: else_r}} ->
             native_int_value_reg?(plan, then_r, native_set, decl_map, visited) and
               native_int_value_reg?(plan, else_r, native_set, decl_map, visited)
@@ -3932,6 +3953,9 @@ defmodule Elmc.Backend.C.Lower.Function do
 
   defp instr_reg_refs(%{op: :compare, args: %{left: left, right: right}}, _decl_map),
     do: [{:native_operand, left}, {:native_operand, right}]
+
+  defp instr_reg_refs(%{op: :phi, args: %{native_int_phi: true, then: then_r, else: else_r}}, _decl_map),
+    do: [{:native_operand, then_r}, {:native_operand, else_r}]
 
   defp instr_reg_refs(%{op: :phi, args: %{then: then_r, else: else_r}}, _decl_map),
     do: [{:boxed, then_r}, {:boxed, else_r}]
@@ -4117,6 +4141,8 @@ defmodule Elmc.Backend.C.Lower.Function do
     list_regs = if is_integer(list), do: [list], else: []
     list_regs ++ caps
   end
+
+  defp boxed_operand_regs(%{op: :phi, args: %{native_int_phi: true}}, _decl_map), do: []
 
   defp boxed_operand_regs(%{op: :phi, args: %{then: then_r, else: else_r}}, _decl_map),
     do: [then_r, else_r]

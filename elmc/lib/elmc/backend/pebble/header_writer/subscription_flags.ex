@@ -33,6 +33,9 @@ defmodule Elmc.Backend.Pebble.HeaderWriter.SubscriptionFlags do
     #define ELMC_PEBBLE_SUB_UNOBSTRUCTED_AREA (1 << 22)
     #define ELMC_PEBBLE_SUB_ANIMATION_FINISHED (1 << 23)
     #define ELMC_PEBBLE_SUB_HEALTH (1LL << 31)
+    #define ELMC_PEBBLE_SUB_TOUCH_TAP (1LL << 27)
+    #define ELMC_PEBBLE_SUB_TOUCH_PAN (1LL << 28)
+    #define ELMC_PEBBLE_SUB_TOUCH_SWIPE (1LL << 29)
 """
   end
 end

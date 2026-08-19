@@ -133,6 +133,10 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
 
   def compile(%{op: :dom_sub} = expr, ctx, b), do: PlatformWeb.compile_dom_sub(expr, ctx, b)
 
+  def compile(%{op: :runtime_call, function: "elmc_string_from_int", args: [arg]}, ctx, b) do
+    compile_string_unary("String.fromInt", arg, ctx, b)
+  end
+
   def compile(%{op: :runtime_call} = expr, ctx, b) do
     compile_runtime_call(expr, ctx, b)
   end
@@ -228,6 +232,9 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
           # Prefer typed Set Debug.toString before SpecialValues hardcodes elmc_debug_to_string.
           %{target: "Debug.toString", args: [arg]} ->
             compile_qualified_unary("Debug.toString", arg, ctx, b)
+
+          %{target: "String.fromInt", args: [arg]} ->
+            compile_string_unary("String.fromInt", arg, ctx, b)
 
           %{target: target, args: args} ->
             case compile_special_runtime_call(target, args, ctx, b) do
@@ -1510,7 +1517,15 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
 
   defp compile_literal(%{op: :bool_literal, value: value}, ctx, b) do
     int_val = if value, do: 1, else: 0
-    compile_runtime_builtin(:new_bool, [], ctx, b, %{literal: int_val})
+
+    # Keep True/False as const_int + bool_lit so if-phi can stay truthy_native
+    # (no heap bool). Function-tail publish boxes only when the ABI is boxed.
+    if Context.function_tail?(ctx) and not native_bool_return?(ctx) do
+      compile_runtime_builtin(:new_bool, [], ctx, b, %{literal: int_val})
+    else
+      Builder.emit_const_int(b, int_val, bool_lit: true)
+      |> then(fn {reg, b1} -> {:ok, reg, b1} end)
+    end
   end
 
   defp compile_literal(%{op: :sub_none}, ctx, b) do
@@ -1577,6 +1592,25 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
       end
 
     is_binary(type) and Host.function_return_type(type) == "Float"
+  end
+
+  @spec native_bool_return?(Context.t()) :: boolean()
+
+  defp native_bool_return?(%Context{} = ctx) do
+    name = ctx.function_name
+    mod = ctx.module || "Main"
+
+    case Map.get(ctx.decl_map, {mod, name}) do
+      %{type: type} = decl when is_binary(type) and type != "" ->
+        Host.function_return_type(type) == "Bool" or
+          FunctionCall.return_kind(decl, mod, ctx.decl_map) == :native_bool
+
+      decl when is_map(decl) ->
+        FunctionCall.return_kind(decl, mod, ctx.decl_map) == :native_bool
+
+      _ ->
+        false
+    end
   end
 
   @spec param_index(Context.t(), String.t()) :: non_neg_integer() | nil
@@ -2599,8 +2633,17 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
           Types.compile_result()
 
   defp compile_string_unary("String.fromInt", arg, ctx, b) do
-    with {:ok, arg_reg, b1} <- compile(arg, ctx, b) do
-      compile_runtime_builtin(:string_from_int_value, [arg_reg], ctx, b1)
+    arg_ctx = Context.for_branch_arm(ctx)
+
+    with {:ok, arg_reg, b1} <- compile(arg, arg_ctx, b) do
+      id =
+        if peelable_int_reg?(arg_reg, b1, ctx) do
+          :string_from_int
+        else
+          :string_from_int_value
+        end
+
+      compile_runtime_builtin(id, [arg_reg], ctx, b1)
     else
       _ -> :unsupported
     end
@@ -2837,9 +2880,7 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
     field_names = Enum.map(fields, &literal_field_name/1)
     types_by_name = literal_field_types_by_name(field_names)
 
-    fields != [] and
-      types_by_name != %{} and
-      Enum.all?(field_names, fn name -> Map.get(types_by_name, name) == "Int" end) and
+    exprs_ok? =
       Enum.all?(fields, fn field ->
         expr = Map.get(field, :expr) || Map.get(field, :value)
         # Typed Int fields may be bare vars (params/lets); literals/ops still required
@@ -2848,7 +2889,59 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
         # record being built already checked every field type is Int.
         int_record_expr?(expr) or match?(%{op: :var}, expr) or int_record_field_arith?(expr)
       end)
+
+    typed_int? =
+      types_by_name != %{} and
+        Enum.all?(field_names, fn name -> Map.get(types_by_name, name) == "Int" end)
+
+    # When {x,y} is Int in one alias and Float in another, type intersection is
+    # empty. Int arith (`w // 2`, `cx + dx`) still proves the fields are Int —
+    # unlike bare `0` literals or field reads, which must stay Float in
+    # Direction3d/{x,y,z} and Vec2.
+    proven_int_ops? =
+      Enum.all?(fields, fn field ->
+        expr = Map.get(field, :expr) || Map.get(field, :value)
+        int_record_proven_arith?(expr)
+      end)
+
+    fields != [] and exprs_ok? and (typed_int? or proven_int_ops?)
   end
+
+  # Top-level Int proof for untyped {x,y} literals. Bare field reads are not
+  # enough — they may be Float. Nested field reads inside + / // are fine.
+  @spec int_record_proven_arith?(map() | term()) :: boolean()
+
+  defp int_record_proven_arith?(%{op: :call, name: name, args: args}) when is_list(args) do
+    name in ["max", "min", "modBy", "remainderBy", "__idiv__", "__mul__", "__add__", "__sub__"] and
+      Enum.all?(args, fn arg ->
+        int_record_expr?(arg) or int_record_field_arith?(arg) or match?(%{op: :var}, arg)
+      end)
+  end
+
+  defp int_record_proven_arith?(%{op: :qualified_call, target: target, args: args})
+       when is_list(args) do
+    int_call_target?(target) and
+      Enum.all?(args, fn arg ->
+        int_record_expr?(arg) or int_record_field_arith?(arg) or match?(%{op: :var}, arg)
+      end)
+  end
+
+  defp int_record_proven_arith?(%{op: op})
+       when op in [
+              :add_const,
+              :sub_const,
+              :add_vars,
+              :sub_vars,
+              :mul_vars,
+              :idiv_vars,
+              :min_vars,
+              :max_vars,
+              :mod_vars,
+              :rem_vars
+            ],
+       do: true
+
+  defp int_record_proven_arith?(_), do: false
 
   # Int record literal field values like `labelPoint.x - 9` / `p.y`.
   @spec int_record_field_arith?(map() | term()) :: boolean()
@@ -3541,6 +3634,40 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
     do: native_int_operand_expr?(then_expr, ctx) and native_int_operand_expr?(else_expr, ctx)
 
   defp native_int_operand_expr?(_, _ctx), do: false
+
+  @spec peelable_int_reg?(Types.reg(), Builder.t(), Context.t()) :: boolean()
+
+  def peelable_int_reg?(reg, b, ctx) when is_integer(reg) do
+    instrs =
+      Enum.flat_map(Map.get(b, :blocks, []), & &1.instrs) ++
+        case Map.get(b, :current_block) do
+          %{instrs: cur} when is_list(cur) -> cur
+          _ -> []
+        end
+
+    case Enum.find(instrs, &(&1.dest == reg)) do
+      %{op: op} when op in [:const_int, :int_arith, :record_get_int, :const_c_expr] ->
+        true
+
+      %{op: :phi, args: args} ->
+        Map.get(args, :native_int_phi) == true
+
+      %{op: :call_runtime, args: %{builtin: :new_int}} ->
+        true
+
+      %{op: :load_param, args: %{index: idx}} when is_integer(idx) ->
+        native_int_param_index?(idx, ctx)
+
+      %{op: :call_fn, args: %{module: mod, name: name}}
+      when is_binary(mod) and is_binary(name) ->
+        Elmc.Backend.C.Lower.NativeReturn.cached_kind({mod, name}) == :native_int
+
+      _ ->
+        false
+    end
+  end
+
+  def peelable_int_reg?(_, _, _), do: false
 
   @spec native_int_param_index?(non_neg_integer(), Context.t()) :: boolean()
 

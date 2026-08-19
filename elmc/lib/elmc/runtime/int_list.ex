@@ -16,6 +16,14 @@ defmodule Elmc.Runtime.IntList do
     #define ELMC_RECORD_SEQ_CELL_SCALAR ((elmc_int_t)0x1EC01B)
     #endif
 
+    /* Compact `List.range` for modest spans. Huge ranges fall back to cons
+       so a `List.range 0 100000` cannot claim a multi-megabyte INT_LIST.
+       Keep this in the header: implementation-file `#define`s between
+       extracted functions are dropped by runtime generation. */
+    #ifndef ELMC_INT_LIST_RANGE_MAX
+    #define ELMC_INT_LIST_RANGE_MAX 512
+    #endif
+
     typedef struct ElmcIntListPayload {
       elmc_int_t *values;
       int length;
@@ -96,6 +104,53 @@ defmodule Elmc.Runtime.IntList do
             CHECK_RC(rc);
           }
           memcpy(cell->data.values, items, (size_t)count * sizeof(elmc_int_t));
+          cell->data.length = count;
+          cell->data.owns_buffer = 1;
+          cell->value.rc = 1;
+          cell->value.tag = ELMC_TAG_INT_LIST;
+          cell->value.payload = &cell->data;
+          cell->value.scalar = ELMC_INT_LIST_CELL_SCALAR;
+          ELMC_ALLOCATED += 1;
+          ELMC_RC_TRACK_REGISTER(&cell->value, __func__);
+          *out = &cell->value;
+          cell = NULL;
+        }
+      CATCH_END
+      if (cell) {
+        if (cell->data.values) elmc_free(cell->data.values);
+        elmc_free(cell);
+      }
+      return rc;
+    }
+
+    static RC elmc_int_list_from_range(ElmcValue **out, int64_t low, int64_t high) {
+      RC rc = RC_SUCCESS;
+      ElmcIntListCell *cell = NULL;
+      CATCH_BEGIN
+        if (high < low) {
+          *out = elmc_list_nil();
+        } else {
+          int64_t count64 = high - low + 1;
+          if (count64 <= 0 || count64 > ELMC_INT_LIST_RANGE_MAX) {
+            rc = RC_ERR_UNSUPPORTED;
+            CHECK_RC(rc);
+          }
+          int count = (int)count64;
+          cell = (ElmcIntListCell *)elmc_malloc(sizeof(ElmcIntListCell), __func__);
+          if (!cell) {
+            rc = RC_ERR_OUT_OF_MEMORY;
+            CHECK_RC(rc);
+          }
+          cell->data.values = (elmc_int_t *)elmc_malloc((size_t)count * sizeof(elmc_int_t), __func__);
+          if (!cell->data.values) {
+            elmc_free(cell);
+            cell = NULL;
+            rc = RC_ERR_OUT_OF_MEMORY;
+            CHECK_RC(rc);
+          }
+          for (int i = 0; i < count; i++) {
+            cell->data.values[i] = (elmc_int_t)(low + i);
+          }
           cell->data.length = count;
           cell->data.owns_buffer = 1;
           cell->value.rc = 1;

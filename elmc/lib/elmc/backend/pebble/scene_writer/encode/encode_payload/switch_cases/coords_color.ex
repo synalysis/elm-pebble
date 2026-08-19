@@ -8,6 +8,7 @@ defmodule Elmc.Backend.Pebble.SceneWriter.Encode.EncodePayload.SwitchCases.Coord
   @spec body() :: Types.c_source()
   def body do
     """
+        #if ELMC_PEBBLE_FEATURE_DRAW_LINE || ELMC_PEBBLE_FEATURE_DRAW_RECT || ELMC_PEBBLE_FEATURE_DRAW_FILL_RECT || ELMC_PEBBLE_FEATURE_DRAW_TEXT_INT
           case ELMC_SCENE_PL_COORDS_COLOR_U8:
             rc = elmc_scene_writer_write_coords_i16(writer, cmd); if (rc != 0) return rc;
             return elmc_scene_writer_put_u8(writer, (unsigned char)cmd->p4);
@@ -22,6 +23,7 @@ defmodule Elmc.Backend.Pebble.SceneWriter.Encode.EncodePayload.SwitchCases.Coord
         #endif
             rc = elmc_scene_writer_write_coords_i16(writer, cmd); if (rc != 0) return rc;
             return elmc_scene_writer_put_i32(writer, cmd->p4);
+        #endif
     """
   end
 end

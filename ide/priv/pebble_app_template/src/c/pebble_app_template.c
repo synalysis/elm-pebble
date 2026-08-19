@@ -13,6 +13,10 @@
 #endif
 #include "generated/resource_ids.h"
 
+#ifndef PBL_API_EXISTS
+#define PBL_API_EXISTS(_name) 0
+#endif
+
 #ifndef ELMC_PEBBLE_DEBUG_LOGS
 #define ELMC_PEBBLE_DEBUG_LOGS 0
 #endif
@@ -1381,6 +1385,81 @@ static void apply_pending_cmd(void) {
         apply_pending_cmd();
         render_model();
       }
+      break;
+    }
+#endif
+#if ELMC_PEBBLE_FEATURE_CMD_HEALTH_HRV_PPI_MS
+    case ELMC_PEBBLE_CMD_HEALTH_HRV_PPI_MS: {
+      int64_t value = 0;
+#if defined(PBL_HEALTH) && PBL_API_EXISTS(health_service_peek_hrv_ppi_ms)
+      value = (int64_t)health_service_peek_hrv_ppi_ms();
+#endif
+      int rc = cmd.p0 > 0 ? elmc_pebble_dispatch_tag_value(&s_elm_app, cmd.p0, value) : -6;
+      APP_LOG(APP_LOG_LEVEL_INFO, "cmd health_hrv_ppi_ms value=%ld rc=%d", (long)value, rc);
+      if (rc == 0) {
+        apply_pending_cmd();
+        render_model();
+      }
+      break;
+    }
+#endif
+#if ELMC_PEBBLE_FEATURE_CMD_HEALTH_SET_HRV_SAMPLE_PERIOD
+    case ELMC_PEBBLE_CMD_HEALTH_SET_HRV_SAMPLE_PERIOD: {
+#if defined(PBL_HEALTH) && PBL_API_EXISTS(health_service_set_hrv_sample_period)
+      health_service_set_hrv_sample_period((uint32_t)cmd.p0);
+#endif
+      APP_LOG(APP_LOG_LEVEL_INFO, "cmd health_set_hrv_sample_period=%ld", (long)cmd.p0);
+      break;
+    }
+#endif
+#if ELMC_PEBBLE_FEATURE_CMD_HEALTH_SET_HEART_RATE_SAMPLE_PERIOD
+    case ELMC_PEBBLE_CMD_HEALTH_SET_HEART_RATE_SAMPLE_PERIOD: {
+#if defined(PBL_HEALTH) && PBL_API_EXISTS(health_service_set_heart_rate_sample_period)
+      health_service_set_heart_rate_sample_period((uint32_t)cmd.p0);
+#endif
+      APP_LOG(APP_LOG_LEVEL_INFO, "cmd health_set_heart_rate_sample_period=%ld", (long)cmd.p0);
+      break;
+    }
+#endif
+#if ELMC_PEBBLE_FEATURE_CMD_ALARM_NEXT
+    case ELMC_PEBBLE_CMD_ALARM_NEXT: {
+      int64_t value = -1;
+#if PBL_API_EXISTS(alarm_service_peek_next)
+      time_t next_alarm = 0;
+      if (alarm_service_peek_next(&next_alarm)) {
+        value = (int64_t)next_alarm;
+      }
+#endif
+      int rc = cmd.p0 > 0 ? elmc_pebble_dispatch_tag_value(&s_elm_app, cmd.p0, value) : -6;
+      APP_LOG(APP_LOG_LEVEL_INFO, "cmd alarm_next value=%ld rc=%d", (long)value, rc);
+      if (rc == 0) {
+        apply_pending_cmd();
+        render_model();
+      }
+      break;
+    }
+#endif
+#if ELMC_PEBBLE_FEATURE_CMD_TOUCH_SUPPORTED
+    case ELMC_PEBBLE_CMD_TOUCH_SUPPORTED: {
+      bool supported = false;
+#if defined(PBL_TOUCH) && PBL_API_EXISTS(touch_service_is_enabled)
+      supported = touch_service_is_enabled();
+#endif
+      int rc = cmd.p0 > 0 ? elmc_pebble_dispatch_tag_bool(&s_elm_app, cmd.p0, supported) : -6;
+      APP_LOG(APP_LOG_LEVEL_INFO, "cmd touch_supported=%d rc=%d", supported ? 1 : 0, rc);
+      if (rc == 0) {
+        apply_pending_cmd();
+        render_model();
+      }
+      break;
+    }
+#endif
+#if ELMC_PEBBLE_FEATURE_CMD_TOUCH_ENABLE_NAVIGATION
+    case ELMC_PEBBLE_CMD_TOUCH_ENABLE_NAVIGATION: {
+#if PBL_API_EXISTS(app_touch_navigation_enable)
+      app_touch_navigation_enable(true);
+#endif
+      APP_LOG(APP_LOG_LEVEL_INFO, "cmd touch_enable_navigation");
       break;
     }
 #endif
@@ -4249,6 +4328,12 @@ static int health_event_to_code(HealthEventType event) {
       return 1;
     case HealthEventSleepUpdate:
       return 2;
+    case HealthEventHeartRateUpdate:
+      return 3;
+#if PBL_API_EXISTS(health_service_peek_hrv_ppi_ms)
+    case HealthEventHRVUpdate:
+      return 4;
+#endif
     case HealthEventSignificantUpdate:
     default:
       return 0;
@@ -4504,6 +4589,133 @@ static void dictation_session_callback(DictationSessionStatus status, char *tran
 #endif
 #endif
 
+#if ELMC_PEBBLE_FEATURE_TOUCH_TAP_EVENTS || ELMC_PEBBLE_FEATURE_TOUCH_PAN_HORIZONTAL_EVENTS || ELMC_PEBBLE_FEATURE_TOUCH_PAN_VERTICAL_EVENTS || ELMC_PEBBLE_FEATURE_TOUCH_SWIPE_EVENTS
+#if PBL_API_EXISTS(tap_recognizer_create) || PBL_API_EXISTS(pan_recognizer_create) || PBL_API_EXISTS(swipe_recognizer_create)
+#if (ELMC_PEBBLE_FEATURE_TOUCH_PAN_HORIZONTAL_EVENTS || ELMC_PEBBLE_FEATURE_TOUCH_PAN_VERTICAL_EVENTS) && PBL_API_EXISTS(pan_recognizer_create)
+static int recognizer_event_to_phase(RecognizerEvent event) {
+  switch (event) {
+    case RecognizerEvent_Started:
+      return 0;
+    case RecognizerEvent_Updated:
+      return 1;
+    case RecognizerEvent_Completed:
+      return 2;
+    case RecognizerEvent_Cancelled:
+    default:
+      return 3;
+  }
+}
+#endif
+
+#if ELMC_PEBBLE_FEATURE_TOUCH_TAP_EVENTS && PBL_API_EXISTS(tap_recognizer_create)
+static void touch_tap_handler(const Recognizer *recognizer, RecognizerEvent event) {
+  if (event != RecognizerEvent_Completed) {
+    return;
+  }
+  GPoint point = tap_recognizer_get_tap_point(recognizer);
+  int rc = elmc_pebble_dispatch_touch_tap(&s_elm_app, point.x, point.y);
+  APP_LOG(APP_LOG_LEVEL_INFO, "touch tap x=%d y=%d rc=%d", (int)point.x, (int)point.y, rc);
+  if (rc == 0) {
+    apply_pending_cmd();
+    render_model();
+  }
+}
+#endif
+
+#if (ELMC_PEBBLE_FEATURE_TOUCH_PAN_HORIZONTAL_EVENTS || ELMC_PEBBLE_FEATURE_TOUCH_PAN_VERTICAL_EVENTS) && PBL_API_EXISTS(pan_recognizer_create)
+static void touch_pan_handler(const Recognizer *recognizer, RecognizerEvent event) {
+  GPoint total = pan_recognizer_get_total_delta(recognizer);
+  GPoint since_start = pan_recognizer_get_delta_since_start(recognizer);
+  GPoint velocity = pan_recognizer_get_velocity(recognizer);
+  int rc = elmc_pebble_dispatch_touch_pan(
+      &s_elm_app,
+      recognizer_event_to_phase(event),
+      total.x,
+      total.y,
+      since_start.x,
+      since_start.y,
+      velocity.x,
+      velocity.y);
+  APP_LOG(APP_LOG_LEVEL_INFO, "touch pan phase=%d rc=%d", recognizer_event_to_phase(event), rc);
+  if (rc == 0) {
+    apply_pending_cmd();
+    render_model();
+  }
+}
+#endif
+
+#if ELMC_PEBBLE_FEATURE_TOUCH_SWIPE_EVENTS && PBL_API_EXISTS(swipe_recognizer_create)
+static int swipe_direction_to_elm(SwipeDirection direction) {
+  if (direction == SwipeDirection_Up) {
+    return 0;
+  }
+  if (direction == SwipeDirection_Down) {
+    return 1;
+  }
+  if (direction == SwipeDirection_Left) {
+    return 2;
+  }
+  if (direction == SwipeDirection_Right) {
+    return 3;
+  }
+  if (direction & SwipeDirection_Up) {
+    return 0;
+  }
+  if (direction & SwipeDirection_Down) {
+    return 1;
+  }
+  if (direction & SwipeDirection_Left) {
+    return 2;
+  }
+  if (direction & SwipeDirection_Right) {
+    return 3;
+  }
+  return 0;
+}
+
+static void touch_swipe_handler(const Recognizer *recognizer, RecognizerEvent event) {
+  if (event != RecognizerEvent_Completed) {
+    return;
+  }
+  GPoint velocity = swipe_recognizer_get_velocity(recognizer);
+  int direction = swipe_direction_to_elm(swipe_recognizer_get_direction(recognizer));
+  int rc = elmc_pebble_dispatch_touch_swipe(&s_elm_app, direction, velocity.x, velocity.y);
+  APP_LOG(APP_LOG_LEVEL_INFO, "touch swipe direction=%d rc=%d", direction, rc);
+  if (rc == 0) {
+    apply_pending_cmd();
+    render_model();
+  }
+}
+#endif
+
+static void attach_touch_recognizers(Window *window) {
+  if (!window || s_run_mode != ELMC_PEBBLE_MODE_APP) {
+    return;
+  }
+#if PBL_API_EXISTS(window_set_touch_bridge_disabled)
+  window_set_touch_bridge_disabled(window, true);
+#endif
+#if ELMC_PEBBLE_FEATURE_TOUCH_TAP_EVENTS && PBL_API_EXISTS(tap_recognizer_create)
+  window_attach_recognizer(window, tap_recognizer_create(touch_tap_handler, NULL));
+#endif
+#if ELMC_PEBBLE_FEATURE_TOUCH_PAN_HORIZONTAL_EVENTS && PBL_API_EXISTS(pan_recognizer_create)
+  window_attach_recognizer(window, pan_recognizer_create(touch_pan_handler, NULL, PanAxis_Horizontal));
+#endif
+#if ELMC_PEBBLE_FEATURE_TOUCH_PAN_VERTICAL_EVENTS && PBL_API_EXISTS(pan_recognizer_create)
+  window_attach_recognizer(window, pan_recognizer_create(touch_pan_handler, NULL, PanAxis_Vertical));
+#endif
+#if ELMC_PEBBLE_FEATURE_TOUCH_SWIPE_EVENTS && PBL_API_EXISTS(swipe_recognizer_create)
+  window_attach_recognizer(
+      window,
+      swipe_recognizer_create(
+          touch_swipe_handler,
+          NULL,
+          (uint8_t)(SwipeDirection_Up | SwipeDirection_Down | SwipeDirection_Left | SwipeDirection_Right)));
+#endif
+}
+#endif
+#endif
+
 static void main_window_load(Window *window) {
   ELMC_PEBBLE_TRACE_ENTER("main_window_load");
   ELMC_PEBBLE_DEBUG_LOG(APP_LOG_LEVEL_INFO, "window load");
@@ -4543,6 +4755,11 @@ static void main_window_load(Window *window) {
   if (s_elm_app.initialized) {
     render_model();
   }
+#endif
+#if ELMC_PEBBLE_FEATURE_TOUCH_TAP_EVENTS || ELMC_PEBBLE_FEATURE_TOUCH_PAN_HORIZONTAL_EVENTS || ELMC_PEBBLE_FEATURE_TOUCH_PAN_VERTICAL_EVENTS || ELMC_PEBBLE_FEATURE_TOUCH_SWIPE_EVENTS
+#if PBL_API_EXISTS(tap_recognizer_create) || PBL_API_EXISTS(pan_recognizer_create) || PBL_API_EXISTS(swipe_recognizer_create)
+  attach_touch_recognizers(window);
+#endif
 #endif
   ELMC_PEBBLE_TRACE_EXIT("main_window_load");
 }

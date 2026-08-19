@@ -6,6 +6,7 @@
     "version": "0.1.0",
     "exposed-modules": [
         "Pebble.Accel",
+        "Pebble.Alarm",
         "Pebble.AppFocus",
         "Pebble.Button",
         "Pebble.Cmd",
@@ -26,6 +27,7 @@
         "Pebble.Storage",
         "Pebble.System",
         "Pebble.Time",
+        "Pebble.Touch",
         "Pebble.Ui",
         "Pebble.UnobstructedArea",
         "Pebble.Vibes",

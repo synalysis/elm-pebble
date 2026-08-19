@@ -790,6 +790,12 @@ defmodule Elmc.Backend.CCodegen.BuiltinOperators do
       list_int_compare_safe?(operator, left, right, env) ->
         list_int_compare_operator(left, right, operator, env, counter)
 
+      string_compare_safe?(operator, left, right, env) ->
+        string_compare_operator(left, right, operator, env, counter)
+
+      empty_list_compare_safe?(operator, left, right) ->
+        empty_list_compare_operator(left, right, operator, env, counter)
+
       true ->
         {left_code, left_var, counter, left_borrowed?} =
           compile_compare_operand(left, env, counter)
@@ -856,6 +862,75 @@ defmodule Elmc.Backend.CCodegen.BuiltinOperators do
   end
 
   defp list_int_compare_safe?(_operator, _left, _right, _env), do: false
+
+  defp string_compare_safe?(operator, left, right, env)
+       when operator in ["__eq__", "__neq__"] do
+    TypedReturn.string_expr?(left, env) or TypedReturn.string_expr?(right, env) or
+      match?(%{op: :string_literal}, left) or match?(%{op: :string_literal}, right)
+  end
+
+  defp string_compare_safe?(_operator, _left, _right, _env), do: false
+
+  defp string_compare_operator(left, right, operator, env, counter) do
+    {left_code, left_var, counter, left_borrowed?} = compile_compare_operand(left, env, counter)
+
+    {right_code, right_var, counter, right_borrowed?} =
+      compile_compare_operand(right, env, counter)
+
+    {out, next} = compare_bool_out_slot(env, counter)
+    left_release = compare_operand_release(env, left_var, left_borrowed?)
+    right_release = compare_operand_release(env, right_var, right_borrowed?)
+    negate = if operator == "__neq__", do: "!", else: ""
+
+    code = """
+    #{left_code}
+      #{right_code}
+      #{RcRuntimeEmit.assign_call(env, out, "elmc_new_bool", "#{negate}elmc_string_equals(#{left_var}, #{right_var})")}
+      #{left_release}#{right_release}\
+    """
+
+    {code, out, next}
+  end
+
+  defp empty_list_compare_safe?(operator, left, right)
+       when operator in ["__eq__", "__neq__"] do
+    empty_list_expr?(left) or empty_list_expr?(right)
+  end
+
+  defp empty_list_compare_safe?(_operator, _left, _right), do: false
+
+  defp empty_list_expr?(%{op: :list_literal, items: []}), do: true
+  defp empty_list_expr?(%{op: :list_literal, elements: []}), do: true
+  defp empty_list_expr?(%{op: :static_list, elements: []}), do: true
+  defp empty_list_expr?(%{op: :constructor, name: name}) when name in ["[]", "List.[]"], do: true
+
+  defp empty_list_expr?(%{op: :runtime_call, function: function})
+       when function in ["elmc_list_nil", "list_nil"],
+       do: true
+
+  defp empty_list_expr?(_), do: false
+
+  defp empty_list_compare_operator(left, right, operator, env, counter) do
+    subject = if empty_list_expr?(right), do: left, else: right
+    {subj_code, subj_var, counter, subj_borrowed?} = compile_compare_operand(subject, env, counter)
+    {out, next} = compare_bool_out_slot(env, counter)
+    subj_release = compare_operand_release(env, subj_var, subj_borrowed?)
+
+    test =
+      if operator == "__eq__" do
+        "elmc_as_bool(elmc_list_is_empty(#{subj_var}))"
+      else
+        "!elmc_as_bool(elmc_list_is_empty(#{subj_var}))"
+      end
+
+    code = """
+    #{subj_code}
+      #{RcRuntimeEmit.assign_call(env, out, "elmc_new_bool", "#{test}")}
+      #{subj_release}\
+    """
+
+    {code, out, next}
+  end
 
   @spec list_int_compare_operator(
           Types.ir_expr(),

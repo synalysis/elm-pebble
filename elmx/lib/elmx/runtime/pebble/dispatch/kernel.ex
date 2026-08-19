@@ -85,6 +85,15 @@ defmodule Elmx.Runtime.Pebble.Dispatch.Kernel do
       "elmx_kernel_pebble_watch_health_accessible" ->
         Dispatch.health_device_cmd("health_accessible", args)
 
+      "elmx_kernel_pebble_watch_health_hrv_ppi_ms" ->
+        Dispatch.health_device_cmd("health_hrv_ppi_ms", args)
+
+      "elmx_kernel_pebble_watch_alarm_next" ->
+        Dispatch.device_stub("alarm_next", args)
+
+      "elmx_kernel_pebble_watch_touch_supported" ->
+        Dispatch.device_stub("touch_supported", args)
+
       "elmx_kernel_pebble_watch_compass_current" ->
         Dispatch.compass_peek_cmd(args)
 

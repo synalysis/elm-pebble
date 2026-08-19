@@ -23,7 +23,7 @@ defmodule Ide.ProjectTemplates do
           | File.posix()
           | Jason.EncodeError.t()
 
-  @template_keys ~w(starter app-minimal watchface-minimal watchface-digital watchface-smoke-screen watchface-color-shapes watchface-analog watchface-tutorial-complete watchface-yes watchface-tangram-time watchface-weather-animated watchface-poke-battle companion-demo-phone-status companion-demo-protocol-matrix companion-demo-weather-env companion-demo-calendar companion-demo-geolocation companion-demo-storage companion-demo-settings companion-demo-websocket companion-demo-timeline watch-demo-accel watch-demo-vibes watch-demo-data-log watch-demo-app-focus watch-demo-compass watch-demo-dictation watch-demo-health watch-demo-light watch-demo-watch-info watch-demo-drawing-showcase watch-demo-speaker watch-demo-storage watch-demo-launch watch-demo-screen-change watch-demo-system watch-demo-unobstructed watch-demo-wakeup watch-demo-frame watch-demo-time watch-demo-log game-basic game-tiny-bird game-jump-n-run game-2048 game-elmtris)
+  @template_keys ~w(starter app-minimal watchface-minimal watchface-digital watchface-smoke-screen watchface-color-shapes watchface-analog watchface-tutorial-complete watchface-yes watchface-tangram-time watchface-weather-animated watchface-poke-battle companion-demo-phone-status companion-demo-protocol-matrix companion-demo-weather-env companion-demo-calendar companion-demo-geolocation companion-demo-storage companion-demo-settings companion-demo-websocket companion-demo-timeline watch-demo-accel watch-demo-vibes watch-demo-data-log watch-demo-app-focus watch-demo-compass watch-demo-dictation watch-demo-health watch-demo-light watch-demo-watch-info watch-demo-drawing-showcase watch-demo-speaker watch-demo-storage watch-demo-launch watch-demo-screen-change watch-demo-system watch-demo-unobstructed watch-demo-wakeup watch-demo-frame watch-demo-time watch-demo-touch watch-demo-log game-basic game-tiny-bird game-jump-n-run game-2048 game-elmtris)
 
   @template_dirs %{
     "starter" => "starter_watch",
@@ -66,6 +66,7 @@ defmodule Ide.ProjectTemplates do
     "watch-demo-wakeup" => "watch_demo_wakeup",
     "watch-demo-frame" => "watch_demo_frame",
     "watch-demo-time" => "watch_demo_time",
+    "watch-demo-touch" => "watch_demo_touch",
     "watch-demo-log" => "watch_demo_log",
     "game-basic" => "game_basic",
     "game-tiny-bird" => "game_tiny_bird",
@@ -299,6 +300,7 @@ defmodule Ide.ProjectTemplates do
       {"Watch demo: Wakeup scheduling", "watch-demo-wakeup"},
       {"Watch demo: Frame loop (atFps)", "watch-demo-frame"},
       {"Watch demo: Time & timezone", "watch-demo-time"},
+      {"Watch demo: Touch gestures (app, Time 2 / Core 2)", "watch-demo-touch"},
       {"Watch demo: Log codes (debug builds)", "watch-demo-log"},
       {"Game: Basic", "game-basic"},
       {"Game: Tiny Bird", "game-tiny-bird"},
@@ -445,6 +447,9 @@ defmodule Ide.ProjectTemplates do
 
       "watch-demo-time" ->
         seed_watch_only_workspace(workspace_path, "watch_demo_time")
+
+      "watch-demo-touch" ->
+        seed_watch_only_workspace(workspace_path, "watch_demo_touch")
 
       "watch-demo-log" ->
         seed_watch_only_workspace(workspace_path, "watch_demo_log")

@@ -1791,7 +1791,8 @@ defmodule Elmc.Runtime.Generator do
       ELMC_TAG_INT_LIST = 17,
       ELMC_TAG_INT_SPINE = 18,
       ELMC_TAG_RECORD_SEQ = 19,
-      ELMC_TAG_FLOAT_LIST = 20
+      ELMC_TAG_FLOAT_LIST = 20,
+      ELMC_TAG_LAZY_MAP = 21
     } ElmcTag;
 
     typedef struct ElmcValue {
@@ -1808,6 +1809,7 @@ defmodule Elmc.Runtime.Generator do
 
     #{Elmc.Runtime.IntList.header_types()}
     #{Elmc.Runtime.FloatList.header_types()}
+    #{Elmc.Runtime.LazyMap.header_types()}
 
     #ifndef ELMC_RC_IMMORTAL
     #define ELMC_RC_IMMORTAL UINT16_MAX
@@ -1938,6 +1940,7 @@ defmodule Elmc.Runtime.Generator do
     RC elmc_list_from_float_array(ElmcValue **out, const double *items, int count);
     RC elmc_list_from_record_array(ElmcValue **out, ElmcValue **items, int count);
     RC elmc_record_seq_to_cons(ElmcValue **out, ElmcValue *list);
+    #{Elmc.Runtime.LazyMap.header_decls()}
     RC elmc_list_from_tuple2_int_array(ElmcValue **out, const elmc_int_t items[][2], int count);
     RC elmc_render_cmd6_take(ElmcValue **out, elmc_int_t kind, elmc_int_t p0, elmc_int_t p1, elmc_int_t p2, elmc_int_t p3, elmc_int_t p4, elmc_int_t p5);
     RC elmc_render_text_cmd_take(ElmcValue **out, elmc_int_t kind, elmc_int_t p0, elmc_int_t p1, elmc_int_t p2, elmc_int_t p3, elmc_int_t p4, elmc_int_t p5, ElmcValue *text);
@@ -2101,7 +2104,7 @@ defmodule Elmc.Runtime.Generator do
     RC elmc_list_sort_by(ElmcValue **out, ElmcValue *f, ElmcValue *list);
     RC elmc_list_sort_with(ElmcValue **out, ElmcValue *f, ElmcValue *list);
     RC elmc_list_singleton(ElmcValue **out, ElmcValue *value);
-    RC elmc_list_range(ElmcValue **out, ElmcValue *lo, ElmcValue *hi);
+    RC elmc_list_range(ElmcValue **out, elmc_int_t lo, elmc_int_t hi);
     RC elmc_list_repeat(ElmcValue **out, ElmcValue *n, ElmcValue *value);
     RC elmc_list_repeat_count(ElmcValue **out, elmc_int_t count, ElmcValue *value);
     RC elmc_list_take(ElmcValue **out, ElmcValue *n, ElmcValue *list);
@@ -2525,6 +2528,7 @@ defmodule Elmc.Runtime.Generator do
     static RC elmc_alloc_scalar(ElmcValue **out, ElmcTag tag, elmc_int_t scalar);
     static int elmc_list_cell_release(ElmcValue *value);
     static int elmc_int_list_cell_release(ElmcValue *value);
+    static int elmc_lazy_map_cell_release(ElmcValue *value);
     static int elmc_maybe_cell_release(ElmcValue *value);
     static int elmc_result_cell_release(ElmcValue *value);
     static int elmc_tuple2_cell_release(ElmcValue *value);
@@ -2896,6 +2900,7 @@ defmodule Elmc.Runtime.Generator do
     #{Elmc.Runtime.IntList.implementation()}
     #{Elmc.Runtime.FloatList.implementation()}
     #{Elmc.Runtime.RecordSeq.implementation()}
+    #{Elmc.Runtime.LazyMap.implementation()}
 
     static RC elmc_list_materialize_cons(ElmcValue **out, ElmcValue *list) {
       if (list && list->tag == ELMC_TAG_INT_LIST) {
@@ -2903,6 +2908,9 @@ defmodule Elmc.Runtime.Generator do
       }
       if (list && list->tag == ELMC_TAG_RECORD_SEQ) {
         return elmc_record_seq_to_cons(out, list);
+      }
+      if (list && list->tag == ELMC_TAG_LAZY_MAP) {
+        return elmc_lazy_map_to_cons(out, list);
       }
       *out = elmc_retain(list);
       return RC_SUCCESS;
@@ -6792,6 +6800,9 @@ defmodule Elmc.Runtime.Generator do
       if (list && list->tag == ELMC_TAG_RECORD_SEQ) {
         return (elmc_int_t)elmc_record_seq_length(list);
       }
+      if (list && list->tag == ELMC_TAG_LAZY_MAP) {
+        return (elmc_int_t)elmc_lazy_map_length(list);
+      }
       elmc_int_t count = 0;
       ElmcValue *cursor = list;
       while (cursor && cursor->tag == ELMC_TAG_LIST && cursor->payload != NULL) {
@@ -7746,30 +7757,39 @@ defmodule Elmc.Runtime.Generator do
       return rc;
     }
 
-    RC elmc_list_range(ElmcValue **out, ElmcValue *lo, ElmcValue *hi) {
+    RC elmc_list_range(ElmcValue **out, elmc_int_t lo, elmc_int_t hi) {
       RC rc = RC_SUCCESS;
-      int64_t low = elmc_as_int(lo);
-      int64_t high = elmc_as_int(hi);
+      int64_t low = (int64_t)lo;
+      int64_t high = (int64_t)hi;
       ElmcValue *acc = elmc_list_nil();
       ElmcValue *val = NULL;
       ElmcValue *next = NULL;
       CATCH_BEGIN
-        for (int64_t i = high; i >= low; i--) {
-          val = NULL;
-          rc = elmc_new_int(&val, i);
-          CHECK_RC(rc);
-          next = NULL;
-          rc = elmc_list_cons(&next, val, acc);
-          CHECK_RC(rc);
-          elmc_release(val);
-          val = NULL;
-          elmc_release(acc);
-          acc = next;
-          next = NULL;
-        }
+        rc = elmc_int_list_from_range(out, low, high);
         if (rc == RC_SUCCESS) {
-          *out = acc;
           acc = NULL;
+        } else if (rc == RC_ERR_UNSUPPORTED) {
+          /* Span is too large for a compact INT_LIST — keep the cons fallback. */
+          rc = RC_SUCCESS;
+          for (int64_t i = high; i >= low; i--) {
+            val = NULL;
+            rc = elmc_new_int(&val, i);
+            CHECK_RC(rc);
+            next = NULL;
+            rc = elmc_list_cons(&next, val, acc);
+            CHECK_RC(rc);
+            elmc_release(val);
+            val = NULL;
+            elmc_release(acc);
+            acc = next;
+            next = NULL;
+          }
+          if (rc == RC_SUCCESS) {
+            *out = acc;
+            acc = NULL;
+          }
+        } else {
+          CHECK_RC(rc);
         }
       CATCH_END
       elmc_release(val);

@@ -2,7 +2,10 @@ module Pebble.Health exposing
     ( Event(..)
     , Metric(..)
     , accessible
+    , hrvPpiMs
     , onEvent
+    , setHeartRateSamplePeriod
+    , setHrvSamplePeriod
     , sum
     , sumToday
     , supported
@@ -10,7 +13,7 @@ module Pebble.Health exposing
     )
 
 {-| Access Pebble Health data such as step count, active time, distance, sleep,
-calories, and heart rate.
+calories, heart rate, and heart-rate variability.
 
 Check `supported` first on older watches, then request metrics and subscribe to
 service events for live updates.
@@ -33,13 +36,18 @@ service events for live updates.
     subscriptions _ =
         Health.onEvent HealthEvent
 
+Heart-rate variability is collected only while an app holds an HRV sample
+period. Use `setHrvSamplePeriod` to start sampling and `hrvPpiMs` to read the
+latest peak-to-peak interval. HRV requires firmware 4.32+ on watches whose
+sensor supports it.
+
 For a runnable example, use the **watch-demo-health** project template in the IDE.
 
 # Types
 @docs Metric, Event
 
 # Commands
-@docs supported, value, sumToday, sum, accessible
+@docs supported, value, sumToday, sum, accessible, hrvPpiMs, setHeartRateSamplePeriod, setHrvSamplePeriod
 
 # Subscriptions
 @docs onEvent
@@ -75,6 +83,8 @@ type Event
     = SignificantUpdate
     | MovementUpdate
     | SleepUpdate
+    | HeartRateUpdate
+    | HrvUpdate
 
 
 {-| Request the current value for a metric.
@@ -105,6 +115,35 @@ sum metric startSeconds endSeconds =
 accessible : Metric -> Int -> Int -> (Bool -> msg) -> Cmd msg
 accessible metric startSeconds endSeconds =
     Elm.Kernel.PebbleWatch.healthAccessible (metricToInt metric) startSeconds endSeconds
+
+
+{-| Request the latest heart-rate variability peak-to-peak interval in milliseconds.
+
+Returns `0` when no reading is available yet, or when the watch/firmware does
+not support HRV.
+-}
+hrvPpiMs : (Int -> msg) -> Cmd msg
+hrvPpiMs =
+    Elm.Kernel.PebbleWatch.healthHrvPpiMs
+
+
+{-| Request a heart-rate sample period in seconds.
+
+Pass `0` to release the request. Heart-rate and HRV sample periods are
+independent and share the app's sensor subscription.
+-}
+setHeartRateSamplePeriod : Int -> Cmd msg
+setHeartRateSamplePeriod =
+    Elm.Kernel.PebbleWatch.healthSetHeartRateSamplePeriod
+
+
+{-| Request an HRV sample period in seconds.
+
+Pass `0` to stop HRV collection. HRV is only sampled while a period is held.
+-}
+setHrvSamplePeriod : Int -> Cmd msg
+setHrvSamplePeriod =
+    Elm.Kernel.PebbleWatch.healthSetHrvSamplePeriod
 
 
 {-| Receive health service events.

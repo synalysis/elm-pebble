@@ -55,7 +55,13 @@ defmodule Elmx.Pebble.Contract.SdkCalls do
     speaker_get_status: ["speaker_get_status"],
     speaker_stream_open: ["speaker_stream_open"],
     speaker_stream_write: ["speaker_stream_write"],
-    speaker_stream_close: ["speaker_stream_close"]
+    speaker_stream_close: ["speaker_stream_close"],
+    health_hrv_ppi_ms: ["health_service_peek_hrv_ppi_ms"],
+    health_set_hrv_sample_period: ["health_service_set_hrv_sample_period"],
+    health_set_heart_rate_sample_period: ["health_service_set_heart_rate_sample_period"],
+    alarm_next: ["alarm_service_peek_next"],
+    touch_supported: ["touch_service_is_enabled"],
+    touch_enable_navigation: ["app_touch_navigation_enable"]
   }
 
   @sub %{
@@ -86,7 +92,10 @@ defmodule Elmx.Pebble.Contract.SdkCalls do
     backlight: ["backlight_service_subscribe"],
     screen_change: ["maybe_dispatch_screen_change"],
     speaker_finished: ["speaker_set_finish_callback"],
-    health: ["health_service_events_subscribe"]
+    health: ["health_service_events_subscribe"],
+    touch_tap: ["tap_recognizer_create"],
+    touch_pan: ["pan_recognizer_create"],
+    touch_swipe: ["swipe_recognizer_create"]
   }
 
   @spec cmd(atom()) :: [String.t()]

@@ -40,4 +40,14 @@ defmodule Elmc.Backend.Pebble.DrawKindLutsTest do
     assert lut =~ "#if ELMC_PEBBLE_FEATURE_DRAW_PATH"
     assert lut =~ "[20] = 1"
   end
+
+  test "scene writer encode cases gate unused payload layouts" do
+    body = Elmc.Backend.Pebble.SceneWriter.Encode.EncodePayload.body()
+
+    assert body =~ "#if ELMC_PEBBLE_FEATURE_DRAW_PATH"
+    assert body =~ "elmc_scene_writer_write_path_tail"
+    assert body =~
+             "#if ELMC_PEBBLE_FEATURE_DRAW_LINE || ELMC_PEBBLE_FEATURE_DRAW_RECT || ELMC_PEBBLE_FEATURE_DRAW_FILL_RECT || ELMC_PEBBLE_FEATURE_DRAW_TEXT_INT"
+    refute body =~ "if (payload_len >= ELMC_SCENE_PL_FULL &&"
+  end
 end

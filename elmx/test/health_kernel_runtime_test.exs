@@ -40,4 +40,13 @@ defmodule Elmx.HealthKernelRuntimeTest do
     assert cmd["kind"] == "cmd.device.health_sum_today"
     refute Cmd.none() == cmd
   end
+
+  test "health HRV peek kernel emits cmd.device followup" do
+    callback = %{"ctor" => "GotHrv", "args" => []}
+
+    cmd = Pebble.runtime_dispatch("elmx_kernel_pebble_watch_health_hrv_ppi_ms", [callback])
+
+    assert cmd["kind"] == "cmd.device.health_hrv_ppi_ms"
+    assert cmd["message"] == "GotHrv"
+  end
 end

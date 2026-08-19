@@ -35,6 +35,18 @@ defmodule Elmc.Backend.CCodegen.IRQueries do
     "Pebble.Health.SignificantUpdate" => 0,
     "Pebble.Health.MovementUpdate" => 1,
     "Pebble.Health.SleepUpdate" => 2,
+    "Pebble.Health.HeartRateUpdate" => 3,
+    "Pebble.Health.HrvUpdate" => 4,
+    "Pebble.Touch.Started" => 0,
+    "Pebble.Touch.Updated" => 1,
+    "Pebble.Touch.Completed" => 2,
+    "Pebble.Touch.Cancelled" => 3,
+    "Pebble.Touch.Horizontal" => 0,
+    "Pebble.Touch.Vertical" => 1,
+    "Pebble.Touch.Up" => 0,
+    "Pebble.Touch.Down" => 1,
+    "Pebble.Touch.Left" => 2,
+    "Pebble.Touch.Right" => 3,
     # elm-nonempty-list (dependency unions are not always present in IR metadata)
     "List.Nonempty.Nonempty" => 1,
     # Spaxe/svg-pathd Segment(..) constructors (tag order from Svg.PathD.elm)

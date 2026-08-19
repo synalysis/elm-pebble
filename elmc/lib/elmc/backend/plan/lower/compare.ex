@@ -18,6 +18,18 @@ defmodule Elmc.Backend.Plan.Lower.Compare do
   end
 
   def compile(%{kind: kind, left: left, right: right}, ctx, b) do
+    case empty_list_compare(kind, left, right) do
+      {:ok, list_expr, compare_kind} ->
+        compile_empty_list_compare(list_expr, compare_kind, ctx, b)
+
+      :error ->
+        compile_after_empty_list(kind, left, right, ctx, b)
+    end
+  end
+
+  def compile(_, _, _), do: :unsupported
+
+  defp compile_after_empty_list(kind, left, right, ctx, b) do
     case maybe_vs_nothing_compare(kind, left, right) do
       {:ok, maybe_expr, compare_kind} ->
         compile_maybe_vs_nothing(maybe_expr, compare_kind, ctx, b)
@@ -42,8 +54,6 @@ defmodule Elmc.Backend.Plan.Lower.Compare do
         end
     end
   end
-
-  def compile(_, _, _), do: :unsupported
 
   @spec compile_generic_compare(atom(), Types.expr(), Types.expr(), Context.t(), Builder.t()) ::
           Types.compile_reg_result()
@@ -260,6 +270,77 @@ defmodule Elmc.Backend.Plan.Lower.Compare do
           produces: {:owned, reg},
           consumes: [],
           borrows: [subject_reg],
+          fallible: false
+        }
+      })
+
+    {:ok, reg, b2}
+  end
+
+  @spec empty_list_compare(atom(), Types.expr(), Types.expr()) ::
+          {:ok, Types.expr(), atom()} | :error
+
+  defp empty_list_compare(kind, left, right) when kind in [:eq, :neq] do
+    cond do
+      empty_list_ref?(right) -> {:ok, left, kind}
+      empty_list_ref?(left) -> {:ok, right, kind}
+      true -> :error
+    end
+  end
+
+  defp empty_list_compare(_kind, _left, _right), do: :error
+
+  defp empty_list_ref?(%{op: :list_literal, items: []}), do: true
+  defp empty_list_ref?(%{op: :list_literal, elements: []}), do: true
+  defp empty_list_ref?(%{op: :static_list, elements: []}), do: true
+  defp empty_list_ref?(%{op: :constructor, name: name}) when name in ["[]", "List.[]"], do: true
+
+  defp empty_list_ref?(%{op: :constructor_call, target: target, args: []})
+       when target in ["[]", "List.[]"],
+       do: true
+
+  defp empty_list_ref?(%{op: :runtime_call, function: function})
+       when function in ["elmc_list_nil", "list_nil"],
+       do: true
+
+  defp empty_list_ref?(_), do: false
+
+  defp compile_empty_list_compare(list_expr, kind, ctx, b) do
+    operand_ctx = Context.for_branch_arm(ctx)
+
+    with {:ok, subj_reg, subj_owned?, b1} <- compile_operand(list_expr, operand_ctx, b),
+         {:ok, empty_reg, b2} <- emit_test_list_empty(subj_reg, b1),
+         {reg, b3} = Builder.fresh_reg(b2) do
+      {_, b4} =
+        Builder.emit(b3, :test_bool, %{
+          dest: reg,
+          args: %{subject: empty_reg, want_true: kind == :eq},
+          effects: %{
+            produces: {:owned, reg},
+            consumes: [empty_reg],
+            borrows: [],
+            fallible: false
+          }
+        })
+
+      b5 = maybe_consume_owned(b4, subj_reg, subj_owned?)
+      {:ok, reg, b5}
+    else
+      _ -> :unsupported
+    end
+  end
+
+  defp emit_test_list_empty(subj_reg, b) do
+    {reg, b1} = Builder.fresh_reg(b)
+
+    {_, b2} =
+      Builder.emit(b1, :test_list_empty, %{
+        dest: reg,
+        args: %{reg: subj_reg},
+        effects: %{
+          produces: {:owned, reg},
+          consumes: [],
+          borrows: [subj_reg],
           fallible: false
         }
       })
