@@ -23,6 +23,9 @@
 *.swp
 *.swo
 
+# Cursor MCP config (local IDE endpoint; copy from .cursor/mcp.json.example)
+.cursor/mcp.json
+
 # Logs and crash dumps
 *.log
 erl_crash.dump
