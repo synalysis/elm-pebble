@@ -11,8 +11,10 @@ defmodule Elmc.Backend.Pebble.SourceWriter.Prologue do
     DirectView,
     HeapLog,
     Includes,
+    RuntimeStats,
     SceneLog,
-    TraceMacros
+    TraceMacros,
+    WatchInfoMap
   }
 
   @spec body(Types.c_macro_name(), keyword()) :: Types.c_source()
@@ -24,6 +26,8 @@ defmodule Elmc.Backend.Pebble.SourceWriter.Prologue do
       SceneLog.body(),
       TraceMacros.body(),
       HeapLog.body(),
+      RuntimeStats.body(),
+      WatchInfoMap.body(),
       Defaults.body()
     ]
     |> IO.iodata_to_binary()

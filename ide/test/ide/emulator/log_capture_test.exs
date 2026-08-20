@@ -13,6 +13,7 @@ defmodule Ide.Emulator.LogCaptureTest do
 
     assert snapshot.source == "embedded"
     refute snapshot.fault_detected
+    assert snapshot.runtime_stats == nil
   end
 
   test "LogLines detects app fault strings" do

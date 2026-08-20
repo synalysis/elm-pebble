@@ -2,6 +2,7 @@ module Pebble.WatchInfo exposing
     ( FirmwareVersion
     , WatchColor(..)
     , WatchModel(..)
+    , caseColor
     , getColor
     , getFirmwareVersion
     , getModel
@@ -36,8 +37,12 @@ For a runnable example, use the **watch-demo-watch-info** project template in th
 # Device info
 @docs getModel, getFirmwareVersion, getColor
 
+# Drawing
+@docs caseColor
+
 -}
 import Elm.Kernel.PebbleWatch
+import Pebble.Ui.Color as Color
 
 
 {-| The model of the watch.
@@ -153,5 +158,140 @@ Equivalent to `watch_info_get_color()` in the C API.
 getColor : (WatchColor -> msg) -> Cmd msg
 getColor =
     Elm.Kernel.PebbleWatch.getColor
+
+
+{-| Closest Pebble palette color for the watch case.
+
+Use this for letterbox fills and other chrome that should match the body, not
+the face. Unknown and black cases map to `Color.black`.
+-}
+caseColor : WatchColor -> Color.Color
+caseColor color =
+    case color of
+        UnknownColor ->
+            Color.black
+
+        Black ->
+            Color.black
+
+        White ->
+            Color.white
+
+        Red ->
+            Color.red
+
+        Orange ->
+            Color.orange
+
+        Gray ->
+            Color.lightGray
+
+        StainlessSteel ->
+            Color.lightGray
+
+        MatteBlack ->
+            Color.black
+
+        Blue ->
+            Color.blue
+
+        Green ->
+            Color.green
+
+        Pink ->
+            Color.brilliantRose
+
+        TimeWhite ->
+            Color.white
+
+        TimeBlack ->
+            Color.black
+
+        TimeRed ->
+            Color.red
+
+        TimeSteelSilver ->
+            Color.lightGray
+
+        TimeSteelBlack ->
+            Color.black
+
+        TimeSteelGold ->
+            Color.brass
+
+        TimeRoundSilver14 ->
+            Color.lightGray
+
+        TimeRoundBlack14 ->
+            Color.black
+
+        TimeRoundSilver20 ->
+            Color.lightGray
+
+        TimeRoundBlack20 ->
+            Color.black
+
+        TimeRoundRoseGold14 ->
+            Color.rajah
+
+        Pebble2HrBlack ->
+            Color.black
+
+        Pebble2HrLime ->
+            Color.springBud
+
+        Pebble2HrFlame ->
+            Color.sunsetOrange
+
+        Pebble2HrWhite ->
+            Color.white
+
+        Pebble2HrAqua ->
+            Color.tiffanyBlue
+
+        Pebble2SeBlack ->
+            Color.black
+
+        Pebble2SeWhite ->
+            Color.white
+
+        PebbleTime2Black ->
+            Color.black
+
+        PebbleTime2Silver ->
+            Color.lightGray
+
+        PebbleTime2Gold ->
+            Color.brass
+
+        CoreDevicesP2DBlack ->
+            Color.black
+
+        CoreDevicesP2DWhite ->
+            Color.white
+
+        CoreDevicesPT2BlackGrey ->
+            Color.black
+
+        CoreDevicesPT2BlackRed ->
+            Color.darkCandyAppleRed
+
+        CoreDevicesPT2SilverBlue ->
+            Color.cadetBlue
+
+        CoreDevicesPT2SilverGrey ->
+            Color.lightGray
+
+        CoreDevicesPR2Black20 ->
+            Color.black
+
+        CoreDevicesPR2Silver20 ->
+            Color.lightGray
+
+        CoreDevicesPR2Gold14 ->
+            Color.brass
+
+        CoreDevicesPR2Silver14 ->
+            Color.lightGray
 
 

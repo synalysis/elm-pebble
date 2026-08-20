@@ -9,6 +9,7 @@ var platformHandlers = {};
 var pendingBridgeResponseIds = {};
 var protocol = require("./companion-protocol.js");
 var generatedConfigurationUrl = null;
+var generatedConfigurationHtml = null;
 var companionElmWssEnabled = false;
 var configurationStorageKey = "elm-pebble.configuration.response";
 var appMessageKeyNamesById = {};
@@ -256,6 +257,121 @@ function writeStoredConfigurationResponse(response) {
         localStorage.setItem(configurationStorageKey, response);
     } catch (_error) {
     }
+}
+
+function configurationResponseLooksCancelled(value) {
+    return value == null ||
+        value === "" ||
+        value === "CANCELLED" ||
+        value === "undefined";
+}
+
+function configurationResponseJsonObject(text) {
+    if (typeof text !== "string" || text === "") {
+        return null;
+    }
+
+    try {
+        var value = JSON.parse(text);
+        return value && typeof value === "object" ? value : null;
+    } catch (_error) {
+        return null;
+    }
+}
+
+function decodeConfigurationResponseString(text) {
+    var current = text;
+    var i;
+
+    for (i = 0; i < 3; i++) {
+        if (current.indexOf("%") === -1) {
+            break;
+        }
+
+        try {
+            var next = decodeURIComponent(current);
+            if (next === current) {
+                break;
+            }
+            current = next;
+        } catch (_error) {
+            break;
+        }
+    }
+
+    return current;
+}
+
+function normalizeConfigurationResponseString(text) {
+    if (typeof text !== "string") {
+        return null;
+    }
+
+    if (configurationResponseLooksCancelled(text)) {
+        return null;
+    }
+
+    if (configurationResponseJsonObject(text)) {
+        return text;
+    }
+
+    var decoded = decodeConfigurationResponseString(text);
+    if (decoded !== text && configurationResponseJsonObject(decoded)) {
+        return decoded;
+    }
+
+    return text;
+}
+
+function normalizeConfigurationClosedResponse(event) {
+    if (!event) {
+        return null;
+    }
+
+    var response = event.response;
+    if (configurationResponseLooksCancelled(response)) {
+        return null;
+    }
+
+    if (typeof response === "object") {
+        try {
+            return JSON.stringify(response);
+        } catch (_error) {
+            return null;
+        }
+    }
+
+    return normalizeConfigurationResponseString(response);
+}
+
+function configurationInitialValuesLiteral(stored) {
+    var normalized = normalizeConfigurationResponseString(stored);
+    if (!normalized || !configurationResponseJsonObject(normalized)) {
+        return null;
+    }
+
+    try {
+        return JSON.stringify(JSON.parse(normalized));
+    } catch (_error) {
+        return null;
+    }
+}
+
+function configurationPageUrl(requestedUrl) {
+    var html = generatedConfigurationHtml;
+    if (typeof html === "string" && html !== "") {
+        var valuesLiteral = configurationInitialValuesLiteral(readStoredConfigurationResponse());
+        if (valuesLiteral) {
+            html = html.replace(
+                "var initialValues = null;",
+                "var initialValues = " + valuesLiteral + ";"
+            );
+        }
+
+        return "data:text/html;charset=utf-8," + encodeURIComponent(html);
+    }
+
+    return requestedUrl || generatedConfigurationUrl;
 }
 
 function companionFlags() {
@@ -654,16 +770,29 @@ var DEFAULT_PLATFORM_HANDLER_INTERESTS = {
     }
 };
 
-function registerDefaultPlatformHandler(handlerId) {
-    var interest = DEFAULT_PLATFORM_HANDLER_INTERESTS[handlerId];
+function defaultPlatformHandlerInterest(handlerId) {
+    if (Object.prototype.hasOwnProperty.call(DEFAULT_PLATFORM_HANDLER_INTERESTS, handlerId)) {
+        return DEFAULT_PLATFORM_HANDLER_INTERESTS[handlerId];
+    }
 
-    if (!interest || platformHandlers[handlerId]) {
+    /* An Elm `Sub` on the dedicated port is enough. `Platform.setup` is
+       optional; without this fallback `configuration.closed` stays queued
+       and preference saves never reach GeneratedPreferences.onConfiguration. */
+    return {
+        eventPrefixes: [handlerId + "."],
+        resultIdPrefixes: []
+    };
+}
+
+function registerDefaultPlatformHandler(handlerId) {
+    if (platformHandlers[handlerId]) {
         return;
     }
 
+    var interest = defaultPlatformHandlerInterest(handlerId);
     platformHandlers[handlerId] = {
-        eventPrefixes: interest.eventPrefixes,
-        resultIdPrefixes: interest.resultIdPrefixes
+        eventPrefixes: interest.eventPrefixes.slice(),
+        resultIdPrefixes: interest.resultIdPrefixes.slice()
     };
 }
 
@@ -770,9 +899,14 @@ function deliverGeolocationIncoming(payload) {
 }
 
 function openConfigurationUrl(url) {
-    if (url && typeof Pebble.openURL === "function") {
-        console.log("opening companion configuration", url);
-        Pebble.openURL(url);
+    var resolved = url;
+    if (!url || url === generatedConfigurationUrl) {
+        resolved = configurationPageUrl(url);
+    }
+
+    if (resolved && typeof Pebble.openURL === "function") {
+        console.log("opening companion configuration");
+        Pebble.openURL(resolved);
     }
 }
 
@@ -2088,7 +2222,7 @@ if (generatedConfigurationUrl) {
     });
 
     Pebble.addEventListener("webviewclosed", function (event) {
-        var response = event && typeof event.response === "string" ? event.response : null;
+        var response = normalizeConfigurationClosedResponse(event);
         console.log("Pebble webviewclosed response", response);
         writeStoredConfigurationResponse(response);
 

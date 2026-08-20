@@ -71,6 +71,8 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupport.Types.NormalizedSvg do
           optional(:text_align) => String.t(),
           optional(:text_overflow) => String.t(),
           optional(:font_size) => integer(),
+          optional(:font_id) => integer(),
+          optional(:font_height) => integer(),
           optional(:offset_x) => integer(),
           optional(:offset_y) => integer(),
           optional(:rotation) => integer(),

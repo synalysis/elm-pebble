@@ -1,0 +1,69 @@
+{
+  "schema_version": 2,
+  "sources": [
+    {
+      "id": "defaultfont",
+      "filename": "DefaultFont.ttf",
+      "mime": "font/ttf",
+      "bytes": 76636
+    }
+  ],
+  "entries": [
+    {
+      "id": "font_defaultfont",
+      "source_id": "defaultfont",
+      "ctor": "DefaultFont",
+      "name": "DefaultFont",
+      "filename": "DefaultFont.ttf",
+      "mime": "font/ttf",
+      "bytes": 76636,
+      "height": 14,
+      "characters": "",
+      "tracking_adjust": 0,
+      "compatibility": "2.7",
+      "target_platforms": []
+    },
+    {
+      "id": "font_quote24",
+      "source_id": "defaultfont",
+      "ctor": "Quote24",
+      "name": "Quote24",
+      "filename": "DefaultFont.ttf",
+      "mime": "font/ttf",
+      "bytes": 76636,
+      "height": 24,
+      "characters": "",
+      "tracking_adjust": 0,
+      "compatibility": "2.7",
+      "target_platforms": []
+    },
+    {
+      "id": "font_quote28",
+      "source_id": "defaultfont",
+      "ctor": "Quote28",
+      "name": "Quote28",
+      "filename": "DefaultFont.ttf",
+      "mime": "font/ttf",
+      "bytes": 76636,
+      "height": 28,
+      "characters": "",
+      "tracking_adjust": 0,
+      "compatibility": "2.7",
+      "target_platforms": []
+    },
+    {
+      "id": "font_quote42",
+      "source_id": "defaultfont",
+      "ctor": "Quote42",
+      "name": "Quote42",
+      "filename": "DefaultFont.ttf",
+      "mime": "font/ttf",
+      "bytes": 76636,
+      "height": 42,
+      "characters": "",
+      "tracking_adjust": 0,
+      "compatibility": "2.7",
+      "target_platforms": []
+    }
+  ]
+}

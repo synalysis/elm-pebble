@@ -650,15 +650,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Commands do
 
   defp draw_kind(kind), do: Elmc.Backend.Pebble.draw_kind_id!(kind)
 
-  defp ui_label_literal(ctor) when is_binary(ctor) do
-    case ctor do
-      "Pebble.Ui.WaitingForCompanion" -> "Waiting for companion app"
-      "WaitingForCompanion" -> "Waiting for companion app"
-      _ -> nil
-    end
-  end
-
-  defp ui_label_literal(_), do: nil
+  defp ui_label_literal(ctor), do: Elmc.Backend.Pebble.UiLabel.display_text(ctor)
 
   defp native_int_append_operand(
          %{op: :runtime_call, function: "elmc_string_from_int", args: [value]},

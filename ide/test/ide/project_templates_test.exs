@@ -64,6 +64,7 @@ defmodule Ide.ProjectTemplatesTest do
   test "companion_for_template reflects whether a template seeds phone companion" do
     assert ProjectTemplates.companion_for_template("starter")
     assert ProjectTemplates.companion_for_template("watchface-yes")
+    assert ProjectTemplates.companion_for_template("watchface-classic-motivate")
     assert ProjectTemplates.companion_for_template("companion-demo-storage")
     refute ProjectTemplates.companion_for_template("watchface-digital")
     refute ProjectTemplates.companion_for_template("game-2048")
@@ -208,6 +209,44 @@ defmodule Ide.ProjectTemplatesTest do
     platforms = ProjectTemplates.target_platforms_for_template("watchface-color-shapes")
     refute "aplite" in platforms
     assert "gabbro" in platforms
+  end
+
+  test "watchface-classic-motivate seeds analog quote watchface with companion preferences" do
+    workspace =
+      Path.join(
+        System.tmp_dir!(),
+        "classic-motivate-template-#{System.unique_integer([:positive])}"
+      )
+
+    on_exit(fn -> File.rm_rf(workspace) end)
+
+    assert :ok = ProjectTemplates.apply_template("watchface-classic-motivate", workspace)
+
+    assert File.read!(Path.join(workspace, "watch/src/Main.elm")) =~ "SetMotivationalText"
+    assert File.read!(Path.join(workspace, "watch/src/Main.elm")) =~ "pickQuoteFont"
+    assert File.read!(Path.join(workspace, "watch/src/Main.elm")) =~ "PebblePlatform.watchface"
+    assert File.read!(Path.join(workspace, "protocol/src/Companion/Types.elm")) =~
+             "SetMotivationalText"
+    assert File.read!(Path.join(workspace, "protocol/src/Companion/Types.elm")) =~
+             "WatchBody"
+    assert File.read!(Path.join(workspace, "protocol/src/Companion/Types.elm")) =~
+             "SetWatchBackground"
+    assert File.regular?(Path.join(workspace, "protocol/src/Companion/Internal.elm"))
+    assert File.read!(Path.join(workspace, "phone/src/CompanionPreferences.elm")) =~
+             "Classic Motivate"
+    assert File.read!(Path.join(workspace, "phone/src/CompanionPreferences.elm")) =~
+             "Watch body"
+    assert File.read!(Path.join(workspace, "phone/src/CompanionPreferences.elm")) =~
+             "Magenta"
+    assert File.read!(Path.join(workspace, "phone/src/CompanionApp.elm")) =~
+             "GeneratedPreferences.onConfiguration"
+    assert File.regular?(Path.join(workspace, "watch/resources/fonts/DefaultFont.ttf"))
+
+    platforms = ProjectTemplates.target_platforms_for_template("watchface-classic-motivate")
+    refute "aplite" in platforms
+    assert platforms == ["basalt", "chalk", "diorite", "emery", "flint", "gabbro"]
+
+    assert ProjectTemplates.picker_title("watchface-classic-motivate") == "Classic Motivate"
   end
 
   test "watchface-tangram-time template excludes aplite" do

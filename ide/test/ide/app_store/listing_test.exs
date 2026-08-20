@@ -181,4 +181,94 @@ defmodule Ide.AppStore.ListingTest do
     assert result.project_attrs == %{"store_app_id" => "resolved-id"}
     assert result.output =~ "resolved-id"
   end
+
+  test "uploads locker icons through listing icon replace endpoints" do
+    project = %{
+      name: "Icon Sync",
+      store_app_id: "store-app-1",
+      release_defaults: %{"description" => "Has icons"}
+    }
+
+    root =
+      Path.join(
+        System.tmp_dir!(),
+        "ide_listing_icons_#{System.unique_integer([:positive])}"
+      )
+
+    File.mkdir_p!(Path.join(root, "store_assets"))
+    on_exit(fn -> File.rm_rf(root) end)
+
+    small = Path.join(root, "store_assets/icon_small.png")
+    large = Path.join(root, "store_assets/icon_large.png")
+    File.write!(small, <<0x89, "PNG\r\n", 0x1A, "\n", 0::32, "IHDR", 80::32, 80::32, 0::32>>)
+    File.write!(large, <<0x89, "PNG\r\n", 0x1A, "\n", 0::32, "IHDR", 144::32, 144::32, 0::32>>)
+
+    {:ok, agent} = Agent.start_link(fn -> [] end)
+
+    request_fun = fn method, url, _headers, body, _timeout ->
+      body = if is_nil(body), do: "", else: IO.iodata_to_binary(body)
+      Agent.update(agent, &[{method, url, body} | &1])
+      {:ok, %{status: 200, body: %{"success" => true}}}
+    end
+
+    assert {:ok, result} =
+             Listing.update_metadata(project,
+               workspace_root: root,
+               firebase_id_token: "token",
+               api_base: "https://example.test",
+               request_fun: request_fun
+             )
+
+    assert result.status == :ok
+    assert result.output =~ "Uploaded locker icon (small)"
+    assert result.output =~ "Uploaded locker icon (large)"
+    assert result.project_attrs["store_metadata_cache"]["listing_icons_synced"] == true
+    assert result.project_attrs["store_metadata_cache"]["icon_hashes"]["icon_small"]
+    assert result.project_attrs["store_metadata_cache"]["icon_hashes"]["icon_large"]
+
+    calls = Agent.get(agent, &Enum.reverse/1)
+    assert [{:post, meta_url, _}, {:post, small_url, small_body}, {:post, large_url, large_body}] =
+             calls
+
+    assert meta_url == "https://example.test/api/dp/app/store-app-1"
+    assert small_url == "https://example.test/api/dp/app/store-app-1/icon/small"
+    assert large_url == "https://example.test/api/dp/app/store-app-1/icon/large"
+    assert small_body =~ ~s(name="icon"; filename="icon_small.png")
+    assert large_body =~ ~s(name="icon"; filename="icon_large.png")
+  end
+
+  test "treats locker icon 404 as unsupported instead of failing" do
+    {:ok, agent} = Agent.start_link(fn -> [] end)
+
+    request_fun = fn method, url, _headers, body, _timeout ->
+      body = if is_nil(body), do: "", else: IO.iodata_to_binary(body)
+      Agent.update(agent, &[{method, url, body} | &1])
+      {:ok, %{status: 404, body: "<!DOCTYPE html><html><title>Pebble App Store API</title></html>"}}
+    end
+
+    root =
+      Path.join(
+        System.tmp_dir!(),
+        "ide_listing_icon_404_#{System.unique_integer([:positive])}"
+      )
+
+    File.mkdir_p!(Path.join(root, "store_assets"))
+    on_exit(fn -> File.rm_rf(root) end)
+    small = Path.join(root, "store_assets/icon_small.png")
+    File.write!(small, <<0x89, "PNG\r\n", 0x1A, "\n">>)
+
+    assert {:ok, lines} =
+             Listing.upload_icons(
+               "https://example.test",
+               "token",
+               "store-app-1",
+               %{icon_small: small},
+               request_fun: request_fun
+             )
+
+    assert Enum.any?(lines, &String.contains?(&1, "not available on this App Store"))
+    refute Enum.any?(lines, &String.contains?(&1, "<!DOCTYPE"))
+    assert [{:post, url, _}] = Agent.get(agent, &Enum.reverse/1)
+    assert url == "https://example.test/api/dp/app/store-app-1/icon/small"
+  end
 end

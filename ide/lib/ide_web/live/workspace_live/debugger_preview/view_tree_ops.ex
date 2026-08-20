@@ -913,7 +913,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview.ViewTreeOps do
 
       "text" ->
         case node_children(node) do
-          [_font_node, x_node, y_node, w_node, h_node, value_node | _] ->
+          [font_node, x_node, y_node, w_node, h_node, value_node | _] ->
             with x when is_integer(x) <- node_int_value(x_node, model),
                  y when is_integer(y) <- node_int_value(y_node, model),
                  w when is_integer(w) <- node_int_value(w_node, model),
@@ -930,13 +930,14 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview.ViewTreeOps do
                   text_overflow: "word_wrap",
                   text: RuntimeAccess.text_label_from_node(value_node, model)
                 }
+                |> put_font_fields(font_node, model)
               ]
             else
               _ ->
                 unresolved_node("text", length(ints), 6)
             end
 
-          [_font_node, options_node, bounds_node, value_node | _] ->
+          [font_node, options_node, bounds_node, value_node | _] ->
             with {:ok, [x, y, w, h]} <- rect_node_ints(bounds_node, model) do
               {alignment, overflow} = text_option_names_from_node(options_node, model)
 
@@ -952,13 +953,14 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview.ViewTreeOps do
                   text_overflow: overflow,
                   text: RuntimeAccess.text_label_from_node(value_node, model)
                 }
+                |> put_font_fields(font_node, model)
               ]
             else
               _ ->
                 unresolved_node("text", length(ints), 6)
             end
 
-          [_font_node, bounds_node, value_node | _] ->
+          [font_node, bounds_node, value_node | _] ->
             with {:ok, [x, y, w, h]} <- rect_node_ints(bounds_node, model) do
               [
                 %{
@@ -972,6 +974,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview.ViewTreeOps do
                   text_overflow: "word_wrap",
                   text: RuntimeAccess.text_label_from_node(value_node, model)
                 }
+                |> put_font_fields(font_node, model)
               ]
             else
               _ ->
@@ -1312,6 +1315,44 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview.ViewTreeOps do
   end
 
   @spec bitmap_node_id(view_node(), model_map()) :: integer() | nil
+  defp put_font_fields(op, font_node, model) when is_map(op) do
+    op
+    |> maybe_put_font_id(font_node_id(font_node, model))
+    |> maybe_put_font_height(font_node_height(font_node, model))
+  end
+
+  defp maybe_put_font_id(op, id) when is_integer(id) and id > 0, do: Map.put(op, :font_id, id)
+  defp maybe_put_font_id(op, _id), do: op
+
+  defp maybe_put_font_height(op, height) when is_integer(height) and height > 0,
+    do: Map.put(op, :font_height, height)
+
+  defp maybe_put_font_height(op, _height), do: op
+
+  defp font_node_id(node, model) when is_map(node) do
+    evaluated = evaluated_node_value(node, model)
+
+    cond do
+      is_integer(evaluated) and evaluated > 0 ->
+        evaluated
+
+      is_integer(Map.get(node, "tag") || Map.get(node, :tag)) ->
+        (Map.get(node, "tag") || Map.get(node, :tag)) + 1
+
+      true ->
+        nil
+    end
+  end
+
+  defp font_node_id(_node, _model), do: nil
+
+  defp font_node_height(node, _model) when is_map(node) do
+    height = Map.get(node, "height") || Map.get(node, :height)
+    if is_integer(height) and height > 0, do: height, else: nil
+  end
+
+  defp font_node_height(_node, _model), do: nil
+
   defp bitmap_node_id(node, model) when is_map(node) do
     evaluated = evaluated_node_value(node, model)
 

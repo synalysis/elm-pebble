@@ -5,7 +5,18 @@ defmodule Elmc.Backend.C.Lower.Function do
   alias Elmc.Types, as: Types
 
 
-  alias Elmc.Backend.C.Lower.{EphemeralBox, Frame, Instr, Lambda, NativeIntFold, NativeReturn, StringConcat, TagRefs}
+  alias Elmc.Backend.C.Lower.{
+    DenseConstRecord,
+    DenseIntTable,
+    EphemeralBox,
+    Frame,
+    Instr,
+    Lambda,
+    NativeIntFold,
+    NativeReturn,
+    StringConcat,
+    TagRefs
+  }
   alias Elmc.Backend.CCodegen.{FunctionCallAbi, FunctionEmit, Fusion, RecordCompile, RcRequired, RetainOperandAlias}
   alias Elmc.Backend.CCodegen.DirectRender.CommandDef
   alias Elmc.Backend.CCodegen.Native.FunctionCall, as: NativeFunctionCall
@@ -65,6 +76,19 @@ defmodule Elmc.Backend.C.Lower.Function do
   end
 
   def emit_core_with_slots(%FunctionPlan{} = plan, opts) do
+    case DenseIntTable.emit_body(plan) do
+      {:ok, body} ->
+        {body, %{}}
+
+      :error ->
+        case DenseConstRecord.emit_body(plan) do
+          {:ok, body} -> {body, %{}}
+          :error -> emit_core_with_slots_cfg(plan, opts)
+        end
+    end
+  end
+
+  defp emit_core_with_slots_cfg(%FunctionPlan{} = plan, opts) do
     Process.put(:elmc_plan_rec_values_suffix, 0)
     Process.put(:elmc_rc_call_tmp_counter, 0)
     # Borrow marks are process-local and must not accumulate across functions —
@@ -1029,13 +1053,13 @@ defmodule Elmc.Backend.C.Lower.Function do
       case unwrap_make_closure(instrs, i) do
         {:ok, clos_dest, idx, caps, mc_span} ->
           case find_list_map_after(instrs, mc_span.last + 1, clos_dest) do
-            {:ok, map_span, map_dest, list_reg, map} ->
+            {:ok, map_span, map_dest, list_reg, map, acc} ->
               mid = Enum.slice(instrs, (mc_span.last + 1)..(map_span.first - 1)//1)
 
               if closure_dest_untouched?(mid, clos_dest) do
                 before = Enum.take(instrs, mc_span.first)
                 rest_instrs = Enum.drop(instrs, map_span.last + 1)
-                walk = list_walk_map_instr(map_dest, list_reg, idx, caps, map, clos_dest)
+                walk = list_walk_map_instr(map_dest, list_reg, idx, caps, map, clos_dest, acc)
                 {:ok, before, mid, walk, rest_instrs}
               else
                 nil
@@ -1085,21 +1109,17 @@ defmodule Elmc.Backend.C.Lower.Function do
           case Enum.slice(instrs, i, 3) do
             [
               %{op: :catch_begin},
-              %{op: :call_runtime, dest: map_dest, args: %{builtin: builtin, args: [c, list]}} = map,
+              %{op: :call_runtime, dest: map_dest, args: %{builtin: builtin, args: hof_args}} = map,
               %{op: :catch_end}
-            ]
-            when c == clos_dest and is_integer(list) and
-                   builtin in [:list_map, :list_filter, :list_indexed_map] ->
-              {:ok, %{first: i, last: i + 2}, map_dest, list, map}
+            ] ->
+              list_hof_match(i, i + 2, clos_dest, map_dest, builtin, hof_args, map)
 
             _ ->
               nil
           end
 
-        %{op: :call_runtime, dest: map_dest, args: %{builtin: builtin, args: [c, list]}} = map
-        when c == clos_dest and is_integer(list) and
-               builtin in [:list_map, :list_filter, :list_indexed_map] ->
-          {:ok, %{first: i, last: i}, map_dest, list, map}
+        %{op: :call_runtime, dest: map_dest, args: %{builtin: builtin, args: hof_args}} = map ->
+          list_hof_match(i, i, clos_dest, map_dest, builtin, hof_args, map)
 
         _ ->
           nil
@@ -1116,26 +1136,44 @@ defmodule Elmc.Backend.C.Lower.Function do
     end)
   end
 
-  defp list_walk_map_instr(map_dest, list_reg, idx, caps, map, _clos_dest) do
+  defp list_hof_match(first, last, clos_dest, map_dest, builtin, [c, list], map)
+       when c == clos_dest and is_integer(list) and
+              builtin in [:list_map, :list_filter, :list_indexed_map] do
+    {:ok, %{first: first, last: last}, map_dest, list, map, nil}
+  end
+
+  defp list_hof_match(first, last, clos_dest, map_dest, :list_foldl, [c, acc, list], map)
+       when c == clos_dest and is_integer(list) and is_integer(acc) do
+    {:ok, %{first: first, last: last}, map_dest, list, map, acc}
+  end
+
+  defp list_hof_match(_, _, _, _, _, _, _), do: nil
+
+  defp list_walk_map_instr(map_dest, list_reg, idx, caps, map, _clos_dest, acc) do
     caps = List.wrap(caps)
     kind = list_walk_kind(map)
+    acc_regs = if is_integer(acc), do: [acc], else: []
 
     effects = %{
       produces: if(is_integer(map_dest), do: {:owned, map_dest}, else: nil),
       consumes: [],
-      borrows: Enum.uniq([list_reg | caps]),
+      borrows: Enum.uniq([list_reg | caps] ++ acc_regs),
       fallible: true
     }
+
+    args = %{
+      list: list_reg,
+      lambda_idx: idx,
+      captures: caps,
+      kind: kind
+    }
+
+    args = if is_integer(acc), do: Map.put(args, :acc, acc), else: args
 
     %Types{
       op: :list_walk_map,
       dest: map_dest,
-      args: %{
-        list: list_reg,
-        lambda_idx: idx,
-        captures: caps,
-        kind: kind
-      },
+      args: args,
       effects: effects,
       id: Map.get(map, :id),
       block_id: Map.get(map, :block_id),
@@ -1145,6 +1183,7 @@ defmodule Elmc.Backend.C.Lower.Function do
 
   defp list_walk_kind(%{args: %{builtin: :list_filter}}), do: :filter
   defp list_walk_kind(%{args: %{builtin: :list_indexed_map}}), do: :indexed_map
+  defp list_walk_kind(%{args: %{builtin: :list_foldl}}), do: :foldl
   defp list_walk_kind(_), do: :map
 
   @spec skipped_dest_instr?(map() | term(), keyword()) :: boolean()
@@ -1944,7 +1983,8 @@ defmodule Elmc.Backend.C.Lower.Function do
         true -> letrec_free
       end
 
-    needs_catch? = rc? and fallible?
+    # Dense boxed LUTs emit `CHECK_RC` without going through CFG fallible analysis.
+    needs_catch? = rc? and (fallible? or String.contains?(core, "CHECK_RC("))
 
     (letrec_decls ++ prefix ++ [Frame.wrap_catch(needs_catch?, core)] ++ suffix)
     |> Enum.reject(&(&1 == ""))
@@ -3335,6 +3375,9 @@ defmodule Elmc.Backend.C.Lower.Function do
       [%{op: :call_runtime, args: %{builtin: :maybe_with_default_int}} | _] ->
         native_int_uses_only?(plan, reg, decl_map, native_set)
 
+      [%{op: :call_runtime, args: %{builtin: :string_length_boxed}} | _] ->
+        native_int_uses_only?(plan, reg, decl_map, native_set)
+
       [%{op: :call_fn, args: %{module: mod, name: name}} | _] ->
         NativeReturn.cached_kind({mod, name}) == :native_int and
           not native_boxed_rc_out_callee?(mod, name, decl_map) and
@@ -3393,6 +3436,9 @@ defmodule Elmc.Backend.C.Lower.Function do
           true
 
         %{op: :call_runtime, args: %{builtin: :maybe_with_default_int}} ->
+          true
+
+        %{op: :call_runtime, args: %{builtin: :string_length_boxed}} ->
           true
 
         %{op: :phi, args: %{native_int_phi: true}} ->
@@ -4024,9 +4070,11 @@ defmodule Elmc.Backend.C.Lower.Function do
 
   defp instr_reg_refs(%{op: :list_walk_map, args: args}, _decl_map) do
     list = Map.get(args, :list)
+    acc = Map.get(args, :acc)
     caps = Map.get(args, :captures, [])
     list_refs = if is_integer(list), do: [{:boxed, list}], else: []
-    list_refs ++ Enum.map(caps, &{:boxed, &1})
+    acc_refs = if is_integer(acc), do: [{:boxed, acc}], else: []
+    list_refs ++ acc_refs ++ Enum.map(caps, &{:boxed, &1})
   end
 
   defp instr_reg_refs(%{op: :const_static_list, args: %{regs: regs}}, _decl_map) when is_list(regs),
@@ -4137,9 +4185,11 @@ defmodule Elmc.Backend.C.Lower.Function do
 
   defp boxed_operand_regs(%{op: :list_walk_map, args: args}, _decl_map) do
     list = Map.get(args, :list)
+    acc = Map.get(args, :acc)
     caps = Map.get(args, :captures, [])
     list_regs = if is_integer(list), do: [list], else: []
-    list_regs ++ caps
+    acc_regs = if is_integer(acc), do: [acc], else: []
+    list_regs ++ acc_regs ++ caps
   end
 
   defp boxed_operand_regs(%{op: :phi, args: %{native_int_phi: true}}, _decl_map), do: []

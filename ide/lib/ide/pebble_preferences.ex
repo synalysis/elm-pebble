@@ -113,8 +113,30 @@ defmodule Ide.PebblePreferences do
       <div class="actions"><button id="save" type="button">Save</button></div>
       <script>
         var fields = #{fields_json};
+        var initialValues = null;
         var form = document.getElementById("preferences");
         var sections = {};
+        function fieldValue(field, fallback) {
+          if (initialValues && Object.prototype.hasOwnProperty.call(initialValues, field.id)) {
+            return initialValues[field.id];
+          }
+          return fallback;
+        }
+        function queryParam(name) {
+          var search = window.location.search || "";
+          if (search.charAt(0) === "?") search = search.substring(1);
+          if (!search) return null;
+          var parts = search.split("&");
+          for (var i = 0; i < parts.length; i++) {
+            var pair = parts[i];
+            var eq = pair.indexOf("=");
+            var key = eq >= 0 ? pair.substring(0, eq) : pair;
+            if (decodeURIComponent(key.replace(/\\+/g, " ")) === name) {
+              return eq >= 0 ? decodeURIComponent(pair.substring(eq + 1).replace(/\\+/g, " ")) : "";
+            }
+          }
+          return null;
+        }
         function sectionFor(title) {
           if (sections[title]) return sections[title];
           var node = document.createElement("section");
@@ -136,7 +158,7 @@ defmodule Ide.PebblePreferences do
             var input = document.createElement("input");
             input.type = "checkbox";
             input.id = field.id;
-            input.checked = !!control.default;
+            input.checked = !!fieldValue(field, control.default);
             label.appendChild(span);
             label.appendChild(input);
           } else {
@@ -164,7 +186,8 @@ defmodule Ide.PebblePreferences do
                 input.appendChild(node);
               });
             }
-            if (typeof control.default !== "undefined") input.value = control.default;
+            var value = fieldValue(field, control.default);
+            if (typeof value !== "undefined") input.value = value;
             label.appendChild(span);
             label.appendChild(input);
           }
@@ -172,7 +195,7 @@ defmodule Ide.PebblePreferences do
         }
         fields.forEach(addField);
         function closeWithResponse(response) {
-          var returnTo = new URLSearchParams(window.location.search).get("return_to");
+          var returnTo = queryParam("return_to");
           if (returnTo) {
             var separator = returnTo.indexOf("?") >= 0 && !returnTo.endsWith("?") && !returnTo.endsWith("&") ? "&" : "";
             document.location = returnTo + separator + "response=" + encodeURIComponent(response);

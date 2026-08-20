@@ -3,6 +3,7 @@ defmodule IdeWeb.Router do
 
   pipeline :browser do
     plug :accepts, ["html"]
+    plug IdeWeb.Plugs.CanonicalLoopbackHost
     plug :fetch_session
     plug IdeWeb.Plugs.FetchCurrentUser
     plug :fetch_live_flash
@@ -63,7 +64,6 @@ defmodule IdeWeb.Router do
     post "/auth/logout", AuthController, :logout
   end
 
-
   scope "/", IdeWeb do
     pipe_through [:browser, :authenticated_browser]
 
@@ -78,6 +78,10 @@ defmodule IdeWeb.Router do
     live_session :default, on_mount: [IdeWeb.AuthHooks] do
       live "/projects", ProjectsLive, :index
       live "/settings", SettingsLive, :index
+      live "/settings/publishing", SettingsLive, :publishing
+      live "/settings/github", SettingsLive, :github
+      live "/settings/emulator", SettingsLive, :emulator
+      live "/settings/agents", SettingsLive, :agents
       live "/projects/:slug/editor", WorkspaceLive, :editor
       live "/projects/:slug/resources", WorkspaceLive, :resources
       live "/projects/:slug/resources/:resource_view", WorkspaceLive, :resources

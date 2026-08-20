@@ -13,6 +13,9 @@ defmodule Elmc.Backend.Pebble.SourceWriter.ViewRuntime.SceneBuild.EnsureFinish d
         int mat_rc = elmc_pebble_scene_materialize_chunks(&app->scene);
         if (mat_rc != 0) {
           elmc_pebble_scene_abort_build(app);
+          if (elmc_pebble_scene_should_retry_grow(&elmc_pebble_ensure_attempts)) {
+            goto elmc_pebble_ensure_retry;
+          }
           ELMC_DRAW_PATH_PROBE(ELMC_DRAW_PATH_ENSURE_SCENE_EXIT);
           ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_ensure_scene", mat_rc);
         }
@@ -44,6 +47,7 @@ defmodule Elmc.Backend.Pebble.SourceWriter.ViewRuntime.SceneBuild.EnsureFinish d
         }
       }
     #endif
+      elmc_pebble_scene_clear_grow_hint();
       elmc_pebble_clear_view_cache(app);
       app->scene.dirty = 0;
     #if ELMC_PEBBLE_SCENE_CACHE_ENABLED
@@ -59,6 +63,9 @@ defmodule Elmc.Backend.Pebble.SourceWriter.ViewRuntime.SceneBuild.EnsureFinish d
       }
     #endif
     #if ELMC_PEBBLE_SCENE_POOL_SLOTS > 0
+      /* Tight-RAM: drop a same-size leftover copy after rebuild. Keep a larger
+         unused slot so a later heavier view can reuse it. */
+      elmc_pebble_scene_pool_release_unused(&app->scene);
       elmc_pebble_scene_pool_sync_from_slot(&app->scene);
     #endif
     #if ELMC_PEBBLE_SCENE_TRIM_SLACK > 0
@@ -66,6 +73,7 @@ defmodule Elmc.Backend.Pebble.SourceWriter.ViewRuntime.SceneBuild.EnsureFinish d
     #endif
       ELMC_PEBBLE_SCENE_LOG("elmc-scene ensure ok cmds=%d bytes=%d cap=%d",
               app->scene.command_count, app->scene.byte_count, app->scene.byte_capacity);
+      elmc_pebble_note_runtime_stats(app);
       ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_ensure_scene", 0);
     }
 """

@@ -12,6 +12,7 @@ defmodule IdeWeb.AuthHooks do
           {:cont, Phoenix.LiveView.Socket.t()} | {:halt, Phoenix.LiveView.Socket.t()}
   def on_mount(:default, params, session, socket) do
     user = Auth.get_user(session["user_id"])
+    firebase_account = Auth.get_user(session["firebase_user_id"])
     token = Auth.resolve_firebase_session_token(session)
     token_exp = session["firebase_id_token_exp"]
 
@@ -23,6 +24,7 @@ defmodule IdeWeb.AuthHooks do
       socket
       |> assign(:auth_mode, Auth.mode())
       |> assign(:current_user, user)
+      |> assign(:firebase_account, firebase_account)
       |> assign(:firebase_id_token, token)
       |> assign(:firebase_id_token_exp, token_exp)
       |> assign(:firebase_config, Auth.firebase_config())

@@ -19,7 +19,7 @@ defmodule Elmc.Backend.Plan.Lower.Platform.Pebble do
     arity = length(params)
 
     with {:ok, param_regs, b1} <- compile_params_scratch(params, ctx, b),
-         builtin <- cmd_builtin(arity) do
+         builtin <- cmd_builtin(kind, arity) do
       wrap_catch? = Builder.wrap_fallible_instr_catch?(b1, ctx, true)
 
       b2 = if wrap_catch?, do: Builder.catch_begin(b1), else: b1
@@ -322,12 +322,33 @@ defmodule Elmc.Backend.Plan.Lower.Platform.Pebble do
     end)
   end
 
-  @spec cmd_builtin(non_neg_integer()) :: :cmd0 | :cmd1 | :cmd2 | :cmd3 | :cmd4
+  @spec cmd_builtin(Types.ir_expr() | term(), non_neg_integer()) ::
+          :cmd0 | :cmd1 | :cmd1_string | :cmd2 | :cmd3 | :cmd4
 
-  defp cmd_builtin(0), do: :cmd0
-  defp cmd_builtin(1), do: :cmd1
-  defp cmd_builtin(2), do: :cmd2
-  defp cmd_builtin(3), do: :cmd3
-  defp cmd_builtin(4), do: :cmd4
-  defp cmd_builtin(_), do: :cmd4
+  defp cmd_builtin(kind, 2) do
+    if storage_write_string_kind?(kind) do
+      :cmd1_string
+    else
+      :cmd2
+    end
+  end
+
+  defp cmd_builtin(_kind, arity), do: cmd_builtin_arity(arity)
+
+  @spec cmd_builtin_arity(non_neg_integer()) :: :cmd0 | :cmd1 | :cmd2 | :cmd3 | :cmd4
+
+  defp cmd_builtin_arity(0), do: :cmd0
+  defp cmd_builtin_arity(1), do: :cmd1
+  defp cmd_builtin_arity(2), do: :cmd2
+  defp cmd_builtin_arity(3), do: :cmd3
+  defp cmd_builtin_arity(4), do: :cmd4
+  defp cmd_builtin_arity(_), do: :cmd4
+
+  # Persist string cmds carry a boxed Elm string, not a second native int.
+  # Lowering them as cmd2 + elmc_as_int(text) stores an empty persist value.
+  defp storage_write_string_kind?(%{op: :c_int_expr, value: value}) when is_binary(value) do
+    value == Elmc.Backend.Pebble.command_kind_c_name!(:storage_write_string)
+  end
+
+  defp storage_write_string_kind?(_), do: false
 end

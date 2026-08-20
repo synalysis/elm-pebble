@@ -36,7 +36,11 @@ defmodule Elmc.Backend.Pebble.SourceWriter.ViewRuntime.SceneBuild.DirectBuild do
                   app->scene.byte_capacity,
                   (unsigned long)heap_bytes_free());
     #endif
+          elmc_pebble_note_runtime_stats(app);
           elmc_pebble_scene_abort_build(app);
+          if (elmc_pebble_scene_should_retry_grow(&elmc_pebble_ensure_attempts)) {
+            goto elmc_pebble_ensure_retry;
+          }
           ELMC_DRAW_PATH_PROBE(ELMC_DRAW_PATH_ENSURE_SCENE_EXIT);
           ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_ensure_scene", -1);
         }

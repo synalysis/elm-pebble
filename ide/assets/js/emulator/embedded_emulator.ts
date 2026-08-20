@@ -25,6 +25,13 @@ import type {AppendLogOptions, EmulatorVncHost} from "../types/emulator_host"
 import type {QuietOptions, SimulatorSettingsOptions, WeatherSimulatorSettings} from "../types/emulator_options"
 import type {SimulatorDeliveryHost} from "../types/simulator_host"
 import {errMessage} from "../types/errors"
+import {
+  mergeElmcRuntimeStats,
+  parseElmcRuntimeStats,
+  runtimeStatsFromWire,
+  renderElmcRuntimeStats,
+  type ElmcRuntimeStats
+} from "./elmc_runtime_stats"
 import {classifyWatchFault, type WatchFault} from "./watch_fault"
 import type RFB from "@novnc/novnc"
 const CONFIG_RETURN_PATH = "/api/emulator/config-return"
@@ -86,7 +93,7 @@ const WEATHER_CONDITION_WIRE_CODES = {
   unknownweather: 9
 }
 
-const EMBEDDED_EMULATOR_UI_BUILD = "v25-dedupe-phone-logs"
+const EMBEDDED_EMULATOR_UI_BUILD = "v27-runtime-stats-ping"
 const PHOENIX_SOCKET_OPEN_TIMEOUT_MS = 10_000
 const VNC_CHANNEL_JOIN_TIMEOUT_MS = 10_000
 const APP_RUN_STATE_START_DEBOUNCE_MS = 2_000
@@ -277,6 +284,7 @@ export class EmbeddedEmulatorHost implements SimulatorDeliveryHost, EmulatorVncH
   faultHeadline: HTMLElement | null = null
   faultDetail: HTMLElement | null = null
   watchFault: WatchFault | null = null
+  runtimeStats: ElmcRuntimeStats | null = null
   watchAppLogShippingEnabled = false
   lastAppRunStateStartKey: string | null = null
   lastAppRunStateStartAt = 0
@@ -427,8 +435,10 @@ export class EmbeddedEmulatorHost implements SimulatorDeliveryHost, EmulatorVncH
       this.stopping = false
     }
     void this.initializePersistedSession()
+    this.replayRuntimeStatsFromLogs()
     this.applyCanvasSize()
     this.syncStateToDom()
+    this.renderRuntimeStats()
     if (!window.isSecureContext) {
       this.appendLog("Embedded emulator display requires a secure browser context (https:// or http://localhost)")
     }
@@ -457,6 +467,7 @@ export class EmbeddedEmulatorHost implements SimulatorDeliveryHost, EmulatorVncH
     this.renderLog()
     this.renderStorage()
     this.renderDataLog()
+    this.renderRuntimeStats()
     this.bindControlButtons()
     this.bindEmulatorButtons()
     this.updateControlButtons()
@@ -1888,6 +1899,43 @@ export class EmbeddedEmulatorHost implements SimulatorDeliveryHost, EmulatorVncH
     return appLog?.[1] ?? message
   }
 
+  observeRuntimeStats(message: string): void {
+    const parsed = parseElmcRuntimeStats(message)
+    if (!parsed) return
+    this.runtimeStats = mergeElmcRuntimeStats(this.runtimeStats, parsed)
+    this.renderRuntimeStats()
+  }
+
+  applyRuntimeStatsFromWire(value: unknown): void {
+    const parsed = runtimeStatsFromWire(value)
+    if (!parsed) return
+    this.runtimeStats = mergeElmcRuntimeStats(this.runtimeStats, parsed)
+    this.renderRuntimeStats()
+  }
+
+  replayRuntimeStatsFromLogs(): void {
+    for (const line of [...this.logLines].reverse()) {
+      const parsed = parseElmcRuntimeStats(line)
+      if (parsed) this.runtimeStats = mergeElmcRuntimeStats(this.runtimeStats, parsed)
+    }
+    this.renderRuntimeStats()
+  }
+
+  resetRuntimeStats(): void {
+    this.runtimeStats = null
+    this.renderRuntimeStats()
+  }
+
+  renderRuntimeStats(): void {
+    renderElmcRuntimeStats(this.el, this.runtimeStats, "emulator")
+  }
+
+  formatRuntimeStatsLine(): string {
+    const stats = this.runtimeStats
+    if (!stats) return "(none)"
+    return `scene ${stats.sceneBytes}/${stats.sceneCap} B cmds=${stats.sceneCmds} heap_free=${stats.heapFree} (min ${stats.heapFreeMin})`
+  }
+
   observeStorageLog(message: string): void {
     const body = this.storageLogBody(message)
     const match = body.match(/(?:cmd|debug) storage_(read|write)(?:_string)? key=(\d+)(?: value=(.*?)(?:\s+status=|\s+rc=|$))?/)
@@ -2214,6 +2262,7 @@ export class EmbeddedEmulatorHost implements SimulatorDeliveryHost, EmulatorVncH
       `VNC canvas backing: ${vncBacking ? `${vncBacking.width}x${vncBacking.height}` : "(none)"}`,
       `Storage keys: ${this.storageEntries.size}`,
       `Data log entries: ${this.dataLogEntries?.length ?? 0}`,
+      `Watch runtime: ${this.formatRuntimeStatsLine()}`,
       `Simulator settings source: ${this.simulatorSettingsSource ?? "(none)"}`,
       `Simulator settings applied at: ${this.simulatorSettingsAppliedAt ? new Date(this.simulatorSettingsAppliedAt).toISOString() : "(none)"}`,
       `Last QEMU settings apply: ${this.formatLastQemuSettingsApply()}`
@@ -2400,6 +2449,8 @@ export class EmbeddedEmulatorHost implements SimulatorDeliveryHost, EmulatorVncH
     if (options.flushSystemLogs !== false) this.flushSystemLogSummary()
     this.observeWatchFault(message)
     this.observeStorageLog(message)
+    this.observeRuntimeStats(message)
+    if (message.includes("Launching embedded emulator")) this.resetRuntimeStats()
     const stamp = `${new Date().toLocaleTimeString()} ${this.formatWatchFaultLogLine(message)}`
     const line =
       this.logLines.length === 0 && message.includes("Launching embedded emulator")
@@ -2430,6 +2481,7 @@ export class EmbeddedEmulatorHost implements SimulatorDeliveryHost, EmulatorVncH
     this.logFlushScheduled = false
     if (this.log) this.log.textContent = ""
     this.clearWatchFault()
+    this.resetRuntimeStats()
     this.watchAppLogShippingEnabled = false
     this.notifyStateChanged()
   }

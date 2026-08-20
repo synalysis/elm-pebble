@@ -748,8 +748,20 @@ defmodule IdeWeb.WorkspaceLive.EmulatorFlow do
   def render_capture_all_progress({:target, target, :installing}),
     do: "[#{target}] Installing app..."
 
+  def render_capture_all_progress({:target, target, :waiting_for_app}),
+    do: "[#{target}] Waiting for the watchface/app to leave the install screen..."
+
   def render_capture_all_progress({:target, target, :capturing}),
     do: "[#{target}] Capturing screenshot..."
+
+  def render_capture_all_progress({:target, target, :app_frame_changed}),
+    do: "[#{target}] Display changed; capturing the running app..."
+
+  def render_capture_all_progress({:target, target, :dismiss_overlay}),
+    do: "[#{target}] Dismissing system install overlay..."
+
+  def render_capture_all_progress({:target, target, :open_from_launcher}),
+    do: "[#{target}] Opening the app from the launcher..."
 
   def render_capture_all_progress({:target, target, :capture_attempt, attempt, total}),
     do: "[#{target}] Capture attempt #{attempt}/#{total}..."
@@ -786,8 +798,20 @@ defmodule IdeWeb.WorkspaceLive.EmulatorFlow do
   def update_capture_target_statuses(statuses, {:target, target, :installing}),
     do: Map.put(statuses, target, "installing")
 
+  def update_capture_target_statuses(statuses, {:target, target, :waiting_for_app}),
+    do: Map.put(statuses, target, "waiting for app")
+
   def update_capture_target_statuses(statuses, {:target, target, :capturing}),
     do: Map.put(statuses, target, "capturing")
+
+  def update_capture_target_statuses(statuses, {:target, target, :app_frame_changed}),
+    do: Map.put(statuses, target, "app became visible")
+
+  def update_capture_target_statuses(statuses, {:target, target, :dismiss_overlay}),
+    do: Map.put(statuses, target, "dismissing overlay")
+
+  def update_capture_target_statuses(statuses, {:target, target, :open_from_launcher}),
+    do: Map.put(statuses, target, "opening from launcher")
 
   def update_capture_target_statuses(
         statuses,

@@ -1,6 +1,7 @@
 defmodule IdeWeb.WorkspaceLive.DebuggerPage.SvgRender do
   @moduledoc false
 
+  alias Ide.Pebble.TextLayout
   alias IdeWeb.WorkspaceLive.DebuggerPreview
   alias IdeWeb.WorkspaceLive.DebuggerSupport.Types, as: SupportTypes
 
@@ -40,6 +41,8 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage.SvgRender do
   # sit below the line-box top (internal bearing). Nudge SVG text down so dial
   # labels and corners line up with the emulator — a constant upward error looks
   # larger at the top of a circular scale than at the bottom.
+  # When the project declared a font height, also apply the same tight-box lift
+  # as `center_aligned_text_rect` in pebble_app_template.c.
   @spec text_y(svg_op()) :: number()
   def text_y(%{y: y} = op) when is_number(y) do
     y + text_box_metrics(op).bearing
@@ -54,24 +57,61 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage.SvgRender do
 
   @spec text_box_metrics(svg_op()) :: text_box_metrics()
   defp text_box_metrics(op) do
+    declared = declared_font_height(op)
+
     gothic =
-      op
-      |> box_text_height()
-      |> pebble_system_font_cap_height()
+      if declared > 0 do
+        declared
+      else
+        op
+        |> box_text_height()
+        |> pebble_system_font_cap_height()
+      end
 
     approx = gothic_to_sans_px(gothic)
 
-    case Map.get(op, :h) do
-      h when is_integer(h) and h > 0 and h < gothic ->
-        tight_text_metrics(gothic, h, approx)
+    metrics =
+      case Map.get(op, :h) do
+        h when is_integer(h) and h > 0 and h < gothic ->
+          tight_text_metrics(gothic, h, approx)
 
-      h when is_integer(h) and h > 0 ->
-        font = min(approx, h)
-        bearing = max(0, min(gothic_top_bearing(gothic), h - font))
-        %{font_size: font, bearing: bearing}
+        h when is_integer(h) and h > 0 ->
+          font = min(approx, h)
+          bearing = max(0, min(gothic_top_bearing(gothic), h - font))
+          %{font_size: font, bearing: bearing}
 
-      _ ->
-        %{font_size: approx, bearing: gothic_top_bearing(gothic)}
+        _ ->
+          %{font_size: approx, bearing: gothic_top_bearing(gothic)}
+      end
+
+    lift = center_aligned_lift_px(op, declared)
+    %{metrics | bearing: metrics.bearing - lift}
+  end
+
+  defp declared_font_height(%{font_height: height}) when is_integer(height) and height > 0,
+    do: height
+
+  defp declared_font_height(%{"font_height" => height})
+       when is_integer(height) and height > 0,
+       do: height
+
+  defp declared_font_height(_op), do: 0
+
+  defp center_aligned_lift_px(op, declared) do
+    h = Map.get(op, :h) || Map.get(op, "h")
+
+    if center_aligned?(op) and is_integer(h) do
+      TextLayout.center_aligned_lift(h, declared)
+    else
+      0
+    end
+  end
+
+  defp center_aligned?(op) do
+    case Map.get(op, :text_align) || Map.get(op, "text_align") do
+      "left" -> false
+      "right" -> false
+      _ -> true
     end
   end
 

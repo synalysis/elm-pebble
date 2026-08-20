@@ -19,12 +19,18 @@ defmodule Elmc.Backend.Pebble.SourceWriter.ViewRuntime.SceneBuild.ChunkBuild do
         int count = elmc_pebble_view_commands_raw_impl(app, &cmd, 1, skip, 0, &emitted_end);
         if (count < 0) {
           elmc_pebble_scene_abort_build(app);
+          if (elmc_pebble_scene_should_retry_grow(&elmc_pebble_ensure_attempts)) {
+            goto elmc_pebble_ensure_retry;
+          }
           ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_ensure_scene", count);
         }
         if (count == 0) break;
         RC rc = elmc_scene_writer_push_cmd(&writer, &cmd);
         if (rc != RC_SUCCESS) {
           elmc_pebble_scene_abort_build(app);
+          if (elmc_pebble_scene_should_retry_grow(&elmc_pebble_ensure_attempts)) {
+            goto elmc_pebble_ensure_retry;
+          }
           ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_ensure_scene", -2);
         }
         skip = emitted_end;

@@ -33,6 +33,7 @@ export class EmulatorSessionClient {
       }
 
       this.host.sessionAlive = true
+      this.host.applyRuntimeStatsFromWire(response.runtime_stats)
     } catch (_error) {
       this.host.endSession("Previous emulator session is unreachable")
     }
@@ -183,6 +184,7 @@ export class EmulatorSessionClient {
       if (this.host.session?.id !== session.id || this.host.destroyed) return
       if (response?.alive === true) {
         this.host.sessionAlive = true
+        this.host.applyRuntimeStatsFromWire(response.runtime_stats)
       } else if (!this.host.installing) {
         this.host.sessionAlive = false
         this.host.endSession("Embedded emulator is no longer running")

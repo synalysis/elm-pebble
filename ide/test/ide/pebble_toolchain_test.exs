@@ -136,6 +136,10 @@ defmodule Ide.PebbleToolchainTest do
     assert source =~ "write_emulator_build_flags"
     assert source =~ "elmc_emulator_build_flags.h"
     assert source =~ "ELMC_PEBBLE_EMULATOR_STORAGE_LOGS 1"
+    assert source =~ "emulator_keep_backlight"
+    assert source =~ "ELMC_PEBBLE_EMULATOR_KEEP_BACKLIGHT 1"
+    assert File.read!("lib/ide_web/live/workspace_live/build_flow.ex") =~
+             "emulator_keep_backlight: Keyword.get(opts, :emulator_keep_backlight, true)"
     assert source =~ "emulator_heap_log"
     assert source =~ "ELMC_PEBBLE_HEAP_LOG 1"
     refute source =~ "#define ELMC_PEBBLE_RUNTIME_LOGS 1"
@@ -143,9 +147,24 @@ defmodule Ide.PebbleToolchainTest do
     assert source =~ "#define ELMC_AGENT_PROBES 0"
     assert source =~ "maybe_build_env_agent_probes"
     assert template =~ ~s(#include "elmc_emulator_build_flags.h")
+    assert template =~ "ELMC_PEBBLE_EMULATOR_KEEP_BACKLIGHT"
+    assert template =~ "ELMC_PEBBLE_CATALOG_WATCH_COLOR"
+    assert template =~ "WATCH_INFO_COLOR_UNKNOWN"
+    assert template =~ "keep_emulator_backlight"
+    assert template =~ "light_enable(true)"
     assert template =~ "emulator_storage_snapshot_callback"
     assert template =~ "companion_inbox_log"
     assert template =~ "ELMC_DEBUG_STORAGE_OP_SNAPSHOT"
+  end
+
+  test "emulator catalog WatchInfo defines follow the platform catalog" do
+    defines = Ide.PebbleToolchain.Prepare.catalog_watch_info_c_defines()
+
+    assert defines =~ "#if defined(PBL_PLATFORM_FLINT)"
+    assert defines =~ "WATCH_INFO_COLOR_COREDEVICES_P2D_WHITE"
+    assert defines =~ "WATCH_INFO_MODEL_COREDEVICES_P2D"
+    assert defines =~ "#elif defined(PBL_PLATFORM_BASALT)"
+    assert defines =~ "WATCH_INFO_COLOR_TIME_BLACK"
   end
 
   test "infer_package_target_type follows Pebble.Platform watchface entrypoint" do
@@ -200,7 +219,17 @@ defmodule Ide.PebbleToolchainTest do
     assert source =~ "maybe_put_capabilities"
     assert source =~ ~s(["location", "configurable", "health"])
     assert template =~ "resource_id == ELM_PEBBLE_RESOURCE_ID_MISSING"
-    assert template =~ "font_from_id_for_height"
+    assert template =~ "font_from_id_for_text"
+    refute template =~ "font_from_id_for_height"
+    assert template =~ "font_cache_load"
+    assert template =~ "font_cache_unload_all"
+    assert template =~ "system_font_for_height"
+    assert template =~ "GTextOverflowModeWordWrap"
+    assert template =~ "center_aligned_text_rect"
+    refute template =~ "system_font_for_wrapped_height"
+    refute template =~ "vertically_center_wrapped_text"
+    refute template =~ "graphics_text_layout_get_content_size"
+    assert template =~ "elm_pebble_font_resource_height(font_id)"
     refute template =~ "resource_height > requested_height"
     assert template =~ "s_draw_cmd"
     assert template =~ "s_draw_update_active"
@@ -229,10 +258,13 @@ defmodule Ide.PebbleToolchainTest do
     source = File.read!("priv/pebble_app_template/src/pkjs/index.js")
 
     assert source =~ "generatedConfigurationUrl"
+    assert source =~ "generatedConfigurationHtml"
     assert source =~ "showConfiguration"
     assert source =~ "webviewclosed"
     assert source =~ "configuration.closed"
     assert source =~ "openConfigurationUrl"
+    assert source =~ "normalizeConfigurationClosedResponse"
+    assert source =~ "configurationPageUrl"
     assert source =~ "configurationStorageKey"
     assert source =~ "readStoredConfigurationResponse"
     assert source =~ "writeStoredConfigurationResponse"
@@ -394,13 +426,59 @@ defmodule Ide.PebbleToolchainTest do
     assert source =~ "function handleCalendarCommand(request)"
     assert source =~ "function companionApplySimulatorSettings(settings)"
     assert source =~ "var generatedConfigurationUrl = null;"
+    assert source =~ "var generatedConfigurationHtml = null;"
   end
 
   test "companion index emits JavaScript null for absent preferences URL" do
     source = Ide.PebbleToolchain.companion_index_js_for_preferences(nil)
 
     assert source =~ "var generatedConfigurationUrl = null;"
+    assert source =~ "var generatedConfigurationHtml = null;"
     refute source =~ "generatedConfigurationUrl = undefined"
+    refute source =~ "generatedConfigurationHtml = undefined"
+  end
+
+  test "companion index embeds generated preference HTML for device configuration" do
+    schema = %{
+      title: "Settings",
+      sections: [
+        %{
+          title: "Quote",
+          fields: [
+            %{
+              id: "motivationalText",
+              label: "Quote",
+              control: %{type: "text", default: "Make today count."}
+            }
+          ]
+        }
+      ]
+    }
+
+    source = Ide.PebbleToolchain.companion_index_js_for_preferences(schema)
+
+    refute source =~ "var generatedConfigurationHtml = null;"
+    assert source =~ "motivationalText"
+    assert source =~ "var initialValues = null;"
+    assert source =~ "function normalizeConfigurationClosedResponse"
+  end
+
+  test "companion inbox pending keeps cstring snapshots for string settings" do
+    template = File.read!("priv/pebble_app_template/src/c/pebble_app_template.c")
+
+    assert template =~ "s_companion_pending_cstring"
+    assert template =~ "s_companion_pending_has_cstring"
+    refute template =~
+             "s_companion_pending[s_companion_pending_count].cstring_kind = ELMC_INBOX_CSTRING_NONE;"
+  end
+
+  test "companion inbox can fall back to the firmware maximum if a protocol asks for it" do
+    template = File.read!("priv/pebble_app_template/src/c/pebble_app_template.c")
+
+    assert template =~ "ELMC_PEBBLE_APP_MESSAGE_INBOX_USE_MAXIMUM"
+    assert template =~ "inbox_size = inbox_max;"
+    assert template =~ "app_message_inbox_size_maximum()"
+    assert template =~ "ELMC_INBOX_STRING_MAX = COMPANION_PROTOCOL_STRING_MAX"
   end
 
   test "Platform.setup registers bridge handlers before subscribe commands" do
@@ -431,6 +509,15 @@ defmodule Ide.PebbleToolchainTest do
     assert source =~ "finishCompanionBoot();"
   end
 
+  test "companion pkjs routes configuration.closed from an onClosed subscription alone" do
+    source = File.read!("priv/pebble_app_template/src/pkjs/index.js")
+
+    assert source =~ "function defaultPlatformHandlerInterest(handlerId)"
+    assert source =~ "eventPrefixes: [handlerId + \".\"]"
+    assert source =~ "registerDefaultPlatformHandler(handlerId)"
+    assert source =~ "configuration: \"configurationPlatformIncoming\""
+  end
+
   test "Calendar bridge routes one-shot responses through onCalendar" do
     source =
       File.read!("priv/bundled_elm/pebble-companion-core-src/Pebble/Companion/Calendar.elm")
@@ -456,7 +543,7 @@ defmodule Ide.PebbleToolchainTest do
     template = File.read!("priv/pebble_app_template/src/c/pebble_app_template.c")
 
     assert template =~ "static CompanionProtocolPhoneToWatchDecoder s_companion_inbox_decoder;"
-    assert template =~ "static CompanionProtocolPhoneToWatchMessage s_companion_inbox_message;"
+    refute template =~ "static CompanionProtocolPhoneToWatchMessage s_companion_inbox_message;"
     assert template =~ "companion_decode_and_dispatch_snapshots"
     assert template =~ "companion_try_decode_pending"
 
@@ -478,12 +565,12 @@ defmodule Ide.PebbleToolchainTest do
     refute decode_fn =~ "CompanionProtocolPhoneToWatchDecoder decoder;"
     refute decode_fn =~ "CompanionProtocolPhoneToWatchMessage message = {0};"
     assert decode_fn =~ "&s_companion_inbox_decoder"
-    assert decode_fn =~ "&s_companion_inbox_message"
+    assert decode_fn =~ "&s_companion_inbox_decoder.message"
 
     refute pending_fn =~ "CompanionProtocolPhoneToWatchDecoder decoder;"
     refute pending_fn =~ "CompanionProtocolPhoneToWatchMessage message = {0};"
     assert pending_fn =~ "&s_companion_inbox_decoder"
-    assert pending_fn =~ "&s_companion_inbox_message"
+    assert pending_fn =~ "&s_companion_inbox_decoder.message"
   end
 
   test "pebble app template runs startup cmds after init completes" do

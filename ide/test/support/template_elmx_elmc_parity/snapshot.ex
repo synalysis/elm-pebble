@@ -110,22 +110,11 @@ defmodule Ide.Test.TemplateElmxElmcParity.Snapshot do
       |> Map.put("kind", kind_name)
       |> Map.new(fn {k, v} -> {to_string(k), v} end)
 
-    infer_elmc_text_label_text(row)
+    row
   end
 
   defp normalize_elmc_view_row(row) when is_map(row), do: row
   defp normalize_elmc_view_row(row), do: row
-
-  # Pebble runtime treats empty text + p3=0 on text_label as WaitingForCompanion.
-  defp infer_elmc_text_label_text(%{"kind" => "text_label", "text" => text} = row)
-       when text in ["", nil] do
-    case Map.get(row, "p3") do
-      0 -> Map.put(row, "text", "Waiting for companion app")
-      _ -> row
-    end
-  end
-
-  defp infer_elmc_text_label_text(row), do: row
 
   @spec corpus_normalize(Ide.Test.TemplateElmxElmcParity.Types.wire_json_map()) :: Ide.Test.TemplateElmxElmcParity.Types.wire_json_map()
   def corpus_normalize(snapshot) when is_map(snapshot) do

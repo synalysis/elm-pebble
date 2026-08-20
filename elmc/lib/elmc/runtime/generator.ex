@@ -17,7 +17,12 @@ defmodule Elmc.Runtime.Generator do
   alias Elmc.Runtime.OwnedSlotsPool
   alias Elmc.Runtime.RcTrack
 
-  @type write_opts :: [prune_from_dir: String.t() | nil, pebble_int32: boolean()]
+  @type write_opts :: [
+          prune_from_dir: String.t() | nil,
+          pebble_int32: boolean(),
+          owned_slots_pool_cap: pos_integer(),
+          owned_slots_pool_depth: pos_integer()
+        ]
 
   @spec write_runtime(String.t(), write_opts()) :: :ok | {:error, Types.file_error()}
   def write_runtime(runtime_dir, opts \\ []) do
@@ -1940,6 +1945,7 @@ defmodule Elmc.Runtime.Generator do
     RC elmc_list_from_float_array(ElmcValue **out, const double *items, int count);
     RC elmc_list_from_record_array(ElmcValue **out, ElmcValue **items, int count);
     RC elmc_record_seq_to_cons(ElmcValue **out, ElmcValue *list);
+    RC elmc_list_materialize_cons(ElmcValue **out, ElmcValue *list);
     #{Elmc.Runtime.LazyMap.header_decls()}
     RC elmc_list_from_tuple2_int_array(ElmcValue **out, const elmc_int_t items[][2], int count);
     RC elmc_render_cmd6_take(ElmcValue **out, elmc_int_t kind, elmc_int_t p0, elmc_int_t p1, elmc_int_t p2, elmc_int_t p3, elmc_int_t p4, elmc_int_t p5);
@@ -2347,7 +2353,7 @@ defmodule Elmc.Runtime.Generator do
 
     #{AllocTrack.header_declarations()}
 
-    #{OwnedSlotsPool.header_declarations()}
+    #{OwnedSlotsPool.header_declarations(opts)}
 
     #{AllocProbe.header_declarations()}
 
@@ -2902,7 +2908,7 @@ defmodule Elmc.Runtime.Generator do
     #{Elmc.Runtime.RecordSeq.implementation()}
     #{Elmc.Runtime.LazyMap.implementation()}
 
-    static RC elmc_list_materialize_cons(ElmcValue **out, ElmcValue *list) {
+    RC elmc_list_materialize_cons(ElmcValue **out, ElmcValue *list) {
       if (list && list->tag == ELMC_TAG_INT_LIST) {
         return elmc_int_list_to_cons(out, list);
       }

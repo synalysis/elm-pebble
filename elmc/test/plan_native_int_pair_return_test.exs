@@ -286,4 +286,70 @@ defmodule Elmc.PlanNativeIntPairReturnTest do
     assert c =~ "*out0 ="
     assert c =~ "*out1 = 9"
   end
+
+  test "dense Int -> (Int, Int) case emits a const table for any function name" do
+    for name <- ["ring12", "spoke12"] do
+      decl = dense_pair_case_decl(name, 12)
+
+      Process.put(:elmc_program_decls, %{{"Main", name} => decl})
+      Process.put(:elmc_codegen_opts, %{plan_ir_mode: :primary})
+
+      assert {:ok, plan} =
+               PlanLower.lower(decl, "Main", %{{"Main", name} => decl}, rc_required: true)
+
+      assert plan.native_scalar_return == :native_int_pair
+      c = CLowerFunction.emit(plan)
+
+      assert c =~ "elmc_dense_lut_"
+      assert c =~ "{0, 1000}"
+      assert c =~ "{110, 989}"
+      assert c =~ "elmc_int_mod_by(12, index)"
+      refute c =~ "goto elmc_plan_block_"
+      refute c =~ "elmc_tuple2_ints"
+    end
+  end
+
+  test "small Int -> (Int, Int) case stays a switch, not a table" do
+    decl = dense_pair_case_decl("unit4", 4)
+
+    Process.put(:elmc_program_decls, %{{"Main", "unit4"} => decl})
+    Process.put(:elmc_codegen_opts, %{plan_ir_mode: :primary})
+
+    assert {:ok, plan} =
+             PlanLower.lower(decl, "Main", %{{"Main", "unit4"} => decl}, rc_required: true)
+
+    c = CLowerFunction.emit(plan)
+    refute c =~ "elmc_dense_lut_"
+    assert c =~ "*out0 = 0"
+    assert c =~ "*out1 = 1000"
+  end
+
+  defp dense_pair_case_decl(name, count) when is_binary(name) and is_integer(count) do
+    branches =
+      Enum.map(0..(count - 1), fn i ->
+        %{
+          pattern: %{kind: :int, value: i},
+          expr: %{
+            op: :tuple2,
+            left: %{op: :int_literal, value: i * 10},
+            right: %{op: :int_literal, value: 1000 - i}
+          }
+        }
+      end)
+
+    %{
+      name: name,
+      args: ["index"],
+      type: "Int -> ( Int, Int )",
+      expr: %{
+        op: :case,
+        subject: %{
+          op: :call,
+          name: "modBy",
+          args: [%{op: :int_literal, value: count}, %{op: :var, name: "index"}]
+        },
+        branches: branches
+      }
+    }
+  end
 end

@@ -255,7 +255,7 @@ defmodule Ide.ProjectBundle do
 
   @spec pbw_metadata_entry(list()) :: String.t() | nil
   defp pbw_metadata_entry(files) do
-    names = Enum.map(files, fn {:zip_file, name, _, _, _, _} -> to_string(name) end)
+    names = Ide.ZipArchive.file_names(files)
 
     cond do
       "appinfo.json" in names -> "appinfo.json"

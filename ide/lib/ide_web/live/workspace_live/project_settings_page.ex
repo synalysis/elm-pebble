@@ -54,7 +54,9 @@ defmodule IdeWeb.WorkspaceLive.ProjectSettingsPage do
       >
         <.release_metadata_section
           :if={@pane == :settings}
+          project={@project}
           project_settings_form={@project_settings_form}
+          github_repo_status={@github_repo_status}
           detected_capabilities={@detected_capabilities}
           store_listing_sync_status={@store_listing_sync_status}
           auth_mode={@auth_mode}
@@ -144,12 +146,19 @@ defmodule IdeWeb.WorkspaceLive.ProjectSettingsPage do
     """
   end
 
+  attr :project, Project, required: true
   attr :project_settings_form, :map, required: true
+  attr :github_repo_status, :any, required: true
   attr :detected_capabilities, :list, required: true
   attr :store_listing_sync_status, :atom, required: true
   attr :auth_mode, :atom, required: true
 
   defp release_metadata_section(assigns) do
+    placeholder =
+      Ide.StoreListingUrls.source_url_placeholder(assigns.project, assigns.github_repo_status)
+
+    assigns = assign(assigns, :source_url_placeholder, placeholder)
+
     ~H"""
     <section class="rounded border border-zinc-200 p-3">
       <div class="flex items-start justify-between gap-3">
@@ -220,10 +229,10 @@ defmodule IdeWeb.WorkspaceLive.ProjectSettingsPage do
             name={@project_settings_form["source_url"].name}
             value={@project_settings_form["source_url"].value}
             class="w-full rounded border border-zinc-300 px-2 py-1.5"
-            placeholder={Ide.StoreListingUrls.default_source_repo_url()}
+            placeholder={@source_url_placeholder}
           />
           <span class="mt-1 block text-zinc-500">
-            Sent as the App Store source link on first publish. Defaults to {Ide.StoreListingUrls.default_source_repo_url()}, or your public GitHub repository when configured on the GitHub tab.
+            Sent as the App Store source link on first publish. Defaults to {@source_url_placeholder}.
           </span>
         </label>
         <label class="text-xs md:col-span-2">
@@ -277,7 +286,8 @@ defmodule IdeWeb.WorkspaceLive.ProjectSettingsPage do
             <span>
               <span class="block font-medium text-zinc-800">Optimize for size</span>
               <span class="block text-zinc-500">
-                Enables the <code class="text-[11px]">:size</code> codegen profile: enum tag switches, fusion-first native helpers, and tighter plan lowering for smaller watch binaries.
+                Enables the <code class="text-[11px]">:size</code>
+                codegen profile: enum tag switches, fusion-first native helpers, and tighter plan lowering for smaller watch binaries.
               </span>
             </span>
           </label>
@@ -325,7 +335,7 @@ defmodule IdeWeb.WorkspaceLive.ProjectSettingsPage do
     <section class="rounded border border-zinc-200 p-3">
       <h3 class="text-sm font-semibold">App Store graphics</h3>
       <p class="mt-1 text-xs text-zinc-600">
-        PNG icons are sent on the first App Store listing (watchapps). Watchfaces can omit them.
+        PNG icons are uploaded to the store listing (locker + search tiles) on publish and when you sync listing metadata. Watchfaces can omit them.
         Platform banners ({Ide.StoreAssets.banner_size_label()}) are added per device in the <a
           href="https://developer.repebble.com/dashboard"
           class="font-medium text-blue-700 hover:underline"
@@ -561,10 +571,10 @@ defmodule IdeWeb.WorkspaceLive.ProjectSettingsPage do
   end
 
   defp store_icon_help(:icon_small),
-    do: "App Store field iconSmall — compact listings and search results."
+    do: "Locker icon (listing API icon/small) — phone app locker and compact search tiles."
 
   defp store_icon_help(:icon_large),
-    do: "App Store field iconLarge — app detail page and install prompts."
+    do: "List icon (listing API icon/large) — store search and category tiles (144×144)."
 
   defp preview_class(:icon_small), do: "h-20 w-20"
   defp preview_class(:icon_large), do: "h-28 w-28"

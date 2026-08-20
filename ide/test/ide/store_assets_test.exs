@@ -65,6 +65,18 @@ defmodule Ide.StoreAssetsTest do
     refute StoreAssets.ai_graphics_available?(root)
   end
 
+  test "content hashes detect store icon changes", %{workspace_root: root} do
+    small = Path.join(root, "store_assets/icon_small.png")
+    File.mkdir_p!(Path.dirname(small))
+    File.write!(small, png_header(80, 80))
+
+    hashes = StoreAssets.content_hashes(%{icon_small: small})
+    assert hashes["icon_small"]
+    refute StoreAssets.hashes_changed?(hashes, hashes)
+    assert StoreAssets.hashes_changed?(hashes, %{})
+    assert StoreAssets.hashes_changed?(Map.put(hashes, "icon_small", "other"), hashes)
+  end
+
   defp png_header(width, height) do
     <<0x89, "PNG\r\n", 0x1A, "\n", 0::32, "IHDR", width::32, height::32, 0::32>>
   end

@@ -70,8 +70,9 @@ defmodule Elmc.DirectRenderDeadViewHelpersTest do
     refute pebble_h =~ "#define ELMC_PEBBLE_APLITE_DIRECT_VIEW_ACTIVE 1"
     assert pebble_h =~ "#define ELMC_PEBBLE_SCENE_CACHE_ENABLED 1"
     assert pebble_h =~ "#define ELMC_PEBBLE_SCENE_STATIC_CAPACITY 0"
-    # Aplite shares the malloc pool path; only INITIAL/POOL/GROW are platform-sized.
-    assert pebble_h =~ "#define ELMC_PEBBLE_SCENE_POOL_SLOTS 2"
+    assert pebble_h =~ "#define ELMC_PEBBLE_SCENE_STATIC_CAPACITY 768"
+    # Tight-RAM uses a BSS scene buffer; larger platforms keep a malloc pool.
+    assert pebble_h =~ "#define ELMC_PEBBLE_SCENE_POOL_SLOTS 0"
     assert pebble_h =~ "#define ELMC_PEBBLE_SCENE_POOL_SLOTS 4"
     assert pebble_h =~ "#define ELMC_PEBBLE_SCENE_BUILD_VERIFY 0"
     assert pebble_h =~ "#define ELMC_PEBBLE_FEATURE_COMPACT_DRAW 1"

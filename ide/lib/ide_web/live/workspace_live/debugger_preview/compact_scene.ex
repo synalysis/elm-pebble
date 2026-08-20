@@ -343,6 +343,8 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview.CompactScene do
       "text_align" -> :text_align
       "text_overflow" -> :text_overflow
       "font_size" -> :font_size
+      "font_id" -> :font_id
+      "font_height" -> :font_height
       "source" -> :source
       _ -> nil
     end

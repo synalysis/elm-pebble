@@ -29,6 +29,7 @@ defmodule Ide.Mcp.DebuggerTemplateCorpus do
 
   @phone_first_templates ~w(
     starter
+    watchface-classic-motivate
     watchface-yes
     watchface-tangram-time
     watchface-weather-animated
@@ -284,7 +285,7 @@ defmodule Ide.Mcp.DebuggerTemplateCorpus do
     end
   end
 
-  @phone_first_watch_reload_templates ~w(watchface-tangram-time watchface-yes)
+  @phone_first_watch_reload_templates ~w(watchface-classic-motivate watchface-tangram-time watchface-yes)
 
   @spec reload_surfaces(String.t(), Projects.Project.t(), String.t()) ::
           :ok | {:error, CorpusTypes.corpus_error()}
@@ -414,6 +415,7 @@ defmodule Ide.Mcp.DebuggerTemplateCorpus do
     |> DebuggerPreview.svg_ops(runtime)
     |> DebuggerPreview.hydrate_animation_svg_ops(project)
     |> DebuggerPreview.hydrate_vector_svg_ops(project)
+    |> DebuggerPreview.hydrate_text_svg_ops(project)
     |> Enum.map(&canonical_svg_op/1)
     |> Enum.reject(&is_nil/1)
   end

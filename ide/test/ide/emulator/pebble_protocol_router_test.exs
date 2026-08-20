@@ -119,6 +119,35 @@ defmodule Ide.Emulator.PebbleProtocol.RouterTest do
     end
   end
 
+  test "parses inbound AppLog elmc-stats into runtime_stats" do
+    {:ok, server, qemu_port} = listen()
+    {:ok, proxy_port} = free_port()
+    {:ok, router} = Router.start_link(qemu_port: qemu_port, proxy_port: proxy_port)
+    {:ok, qemu} = :gen_tcp.accept(server, 1_000)
+
+    message =
+      "elmc-stats scene_bytes=256 scene_cmds=12 scene_cap=768 heap_free=5000 heap_free_min=4800"
+
+    :ok = :gen_tcp.send(qemu, qemu_spp_packet(Frame.encode(0x07D6, app_log_payload(message))))
+    Process.sleep(50)
+
+    assert {:ok,
+            %{
+              scene_bytes: 256,
+              scene_cmds: 12,
+              scene_cap: 768,
+              heap_free: 5000,
+              heap_free_min: 4800
+            }} = Router.runtime_stats(router)
+
+    assert :ok = Router.reset_runtime_stats(router)
+    assert {:ok, nil} = Router.runtime_stats(router)
+
+    GenServer.stop(router)
+    :gen_tcp.close(qemu)
+    :gen_tcp.close(server)
+  end
+
   test "queues pypkjs outbound frames while locked" do
     {:ok, server, qemu_port} = listen()
     {:ok, proxy_port} = free_port()
@@ -152,6 +181,16 @@ defmodule Ide.Emulator.PebbleProtocol.RouterTest do
     {:ok, socket, port} = listen()
     :gen_tcp.close(socket)
     {:ok, port}
+  end
+
+  defp app_log_payload(message) when is_binary(message) do
+    uuid = :binary.copy(<<0>>, 16)
+    timestamp = <<0, 0, 0, 0>>
+    level = <<50>>
+    len = <<byte_size(message)>>
+    line = <<0, 42>>
+    filename = binary_part(String.pad_trailing("elmc_pebble.c", 16, <<0>>), 0, 16)
+    uuid <> timestamp <> level <> len <> line <> filename <> message
   end
 
   defp qemu_spp_packet(payload), do: qemu_packet(1, payload)

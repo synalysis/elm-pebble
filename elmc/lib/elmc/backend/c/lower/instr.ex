@@ -17,6 +17,7 @@ defmodule Elmc.Backend.C.Lower.Instr do
     FunctionCallAbi,
     FunctionEmit,
     Fusion,
+    Host,
     ImmortalStringLiteral,
     PlanNativeProjection,
     RecordCompile,
@@ -1170,7 +1171,7 @@ defmodule Elmc.Backend.C.Lower.Instr do
     index = record_get_index_ref(field, Map.get(instr.args, :field_index, "0"))
     value_reg = instr.args.value
 
-    {fn_name, value} =
+    {fn_name_drop, value} =
       case native_int_slot_ref(value_reg, opts) do
         native when is_binary(native) ->
           {"elmc_record_update_index_int_cow_drop", native}
@@ -1179,13 +1180,22 @@ defmodule Elmc.Backend.C.Lower.Instr do
           {"elmc_record_update_index_cow_drop", slot_ref(value_reg, slots, opts)}
       end
 
-    # Borrowed params / non-owned bases must not be passed to *_cow_drop directly:
-    # the copy path releases `record`, which would free the caller's value (YES
-    # scheduleCompanionFetches → second MinuteChanged → heap corruption).
-    borrow_base? = is_integer(base_reg) and not is_integer(Map.get(slots, base_reg))
+    fn_name_cow = String.replace(fn_name_drop, "_cow_drop", "_cow")
 
-    if borrow_base? and rc? and instr.dest not in [:fn_out, :branch_out] do
-      emit_record_update_borrow_base(fn_name, dest, base, index, value)
+    # Borrowed params / non-owned bases must not be passed to *_cow_drop:
+    # the copy path releases `record` and would free the caller's value.
+    # Use cow (no drop) so a uniquely owned borrow (rc==1) mutates in place
+    # instead of retain-then-copy. Owned slots that only hold a borrow (Just
+    # payload peel, field view) are the same — cow_drop would free the owner.
+    borrow_base? =
+      is_integer(base_reg) and
+        (not is_integer(Map.get(slots, base_reg)) or
+           RecordCompile.borrowed_owned_ref?(base))
+
+    fn_name = if borrow_base?, do: fn_name_cow, else: fn_name_drop
+
+    if borrow_base? and rc? do
+      emit_record_update_borrow_base(fn_name_cow, dest, base, index, value)
     else
       assign =
         if rc? do
@@ -1219,25 +1229,23 @@ defmodule Elmc.Backend.C.Lower.Instr do
     end
   end
 
-  # Retain a borrowed record into a local, cow_drop that local, then transfer or
-  # drop the local without a second release (cow_drop already released on copy).
+  # Borrowed base: cow without an extra retain so rc==1 mutates in place.
+  # Never cow_drop a borrow — the copy path would release the caller's record.
   @spec emit_record_update_borrow_base(String.t(), String.t(), String.t(), String.t(), String.t()) ::
           String.t()
 
   defp emit_record_update_borrow_base(fn_name, dest, base, index, value)
        when is_binary(fn_name) and is_binary(dest) and is_binary(base) and is_binary(index) and
               is_binary(value) do
+    dest_ptr = dest_arg(dest, dest)
+
     """
     {
-      ElmcValue *__cow_base = elmc_retain(#{base});
-      Rc = #{fn_name}(&#{dest}, __cow_base, #{index}, #{value});
-      if (Rc == RC_SUCCESS) {
-        /* in-place: transfer retain to dest; copy: cow_drop already released */
-        __cow_base = NULL;
-      } else {
-        elmc_release(__cow_base);
-      }
+      Rc = #{fn_name}(#{dest_ptr}, #{base}, #{index}, #{value});
       CHECK_RC(Rc);
+      if (#{dest} == #{base}) {
+        #{dest} = elmc_retain(#{dest});
+      }
     }
     """
     |> String.trim()
@@ -1599,7 +1607,25 @@ defmodule Elmc.Backend.C.Lower.Instr do
       |> Enum.map(&slot_ref(&1, slots, opts))
 
     peel_expr = "#{peel_sym}(#{Enum.join(peel_args_c, ", ")})"
-    assign_value_return(rc?, dest, "elmc_retain(#{peel_expr})")
+    subject_reg = List.first(peel_args)
+    subject_owned? = is_integer(subject_reg) and is_integer(Map.get(slots, subject_reg))
+    publish? = dest in ["*out", "out"]
+
+    # Peeling a borrowed Maybe (param / alias) must not retain: the extra rc
+    # forces record COW to copy (CurrentDateTime is 104 bytes every tick).
+    # Owned Maybes (List.head, etc.) still retain so the payload outlives release.
+    # Publishing a peel to *out also retains so the caller owns the result.
+    if subject_owned? or publish? do
+      assign_value_return(rc?, dest, "elmc_retain(#{peel_expr})")
+    else
+      assign = assign_value_return(rc?, dest, peel_expr)
+
+      if owned_slot_dest?(dest) do
+        RecordCompile.mark_borrowed_owned_ref(dest)
+      end
+
+      assign
+    end
   end
 
   defp emit_call_runtime(
@@ -1675,10 +1701,23 @@ defmodule Elmc.Backend.C.Lower.Instr do
     rc_assign(rc?, dest, "elmc_new_order", [Integer.to_string(value)])
   end
 
-  defp emit_call_runtime(%{args: %{builtin: :string_length_boxed, args: [arg]}}, slots, rc?, dest, opts)
+  defp emit_call_runtime(
+         %{dest: dest_reg, args: %{builtin: :string_length_boxed, args: [arg]}},
+         slots,
+         rc?,
+         dest,
+         opts
+       )
        when is_integer(arg) do
     src = boxed_value_ref(arg, slots, opts)
-    rc_assign(rc?, dest, "elmc_new_int", ["elmc_string_length(#{src})"])
+    expr = "elmc_string_length(#{src})"
+
+    if is_integer(dest_reg) and
+         MapSet.member?(Keyword.get(opts, :native_int_only_regs, MapSet.new()), dest_reg) do
+      emit_native_store(dest_reg, dest, expr, opts)
+    else
+      rc_assign(rc?, dest, "elmc_new_int", [expr])
+    end
   end
 
   defp emit_call_runtime(%{args: %{builtin: :new_float, literal: value}}, _slots, rc?, dest, _opts)
@@ -3355,7 +3394,22 @@ defmodule Elmc.Backend.C.Lower.Instr do
 
   @spec emit_pebble_cmd(map(), Types.slot_map(), boolean(), String.t(), keyword()) :: String.t()
 
-  defp emit_pebble_cmd(%{args: %{builtin: id, kind: kind, params: params}} = _instr, slots, rc?, dest, opts) do
+  defp emit_pebble_cmd(%{args: %{kind: kind, params: [key, text]}} = instr, slots, rc?, dest, opts)
+       when is_map(kind) do
+    kind_s = Map.get(kind, :c_expr, "0")
+    builtin = Map.get(Map.get(instr, :args, %{}), :builtin)
+
+    if storage_write_string_cmd?(kind_s, builtin) do
+      emit_storage_write_string_cmd(kind_s, key, text, slots, rc?, dest, opts)
+    else
+      emit_pebble_cmd_ints(instr, slots, rc?, dest, opts)
+    end
+  end
+
+  defp emit_pebble_cmd(instr, slots, rc?, dest, opts),
+    do: emit_pebble_cmd_ints(instr, slots, rc?, dest, opts)
+
+  defp emit_pebble_cmd_ints(%{args: %{builtin: id, kind: kind, params: params}} = _instr, slots, rc?, dest, opts) do
     sym = RuntimeBuiltins.c_symbol(id) || "elmc_cmd0"
     kind_s = Map.get(kind, :c_expr, "0")
     params = params || []
@@ -3364,14 +3418,34 @@ defmodule Elmc.Backend.C.Lower.Instr do
       assign_value_return(rc?, dest, "elmc_cmd_none()")
     else
       args = Enum.join([kind_s | native_int_param_refs(params, slots, opts)], ", ")
-
-      if rc? do
-        rc_call(true, if(dest == "*out", do: "out", else: dest), sym, args)
-      else
-        dest_out = if(dest == "*out", do: "*out", else: dest)
-        RcRuntimeEmit.non_rc_allocator_stmt(dest_out, sym, args, return_on_fail?: dest == "*out")
-      end
+      emit_pebble_cmd_call(sym, args, rc?, dest)
     end
+  end
+
+  defp emit_storage_write_string_cmd(kind_s, key, text, slots, rc?, dest, opts) do
+    key_s = int_operand_ref(key, slots, opts)
+    text_s = boxed_string_c_arg(text, slots, opts)
+    args = Enum.join([kind_s, key_s, text_s], ", ")
+    emit_pebble_cmd_call("elmc_cmd1_string", args, rc?, dest)
+  end
+
+  defp emit_pebble_cmd_call(sym, args, rc?, dest) do
+    if rc? do
+      rc_call(true, if(dest == "*out", do: "out", else: dest), sym, args)
+    else
+      dest_out = if(dest == "*out", do: "*out", else: dest)
+      RcRuntimeEmit.non_rc_allocator_stmt(dest_out, sym, args, return_on_fail?: dest == "*out")
+    end
+  end
+
+  defp storage_write_string_cmd?("ELMC_PEBBLE_CMD_STORAGE_WRITE_STRING", _builtin), do: true
+  defp storage_write_string_cmd?(_kind_s, :cmd1_string), do: true
+  defp storage_write_string_cmd?(_kind_s, _builtin), do: false
+
+  defp boxed_string_c_arg(reg, slots, opts) do
+    ref = slot_ref(reg, slots, opts)
+
+    "((#{ref} && #{ref}->tag == ELMC_TAG_STRING && #{ref}->payload) ? (const char *)#{ref}->payload : \"\")"
   end
 
   defp cmd_none_kind?("0"), do: true
@@ -3515,7 +3589,82 @@ defmodule Elmc.Backend.C.Lower.Instr do
     |> String.trim()
   end
 
+  @spec emit_list_walk_foldl(map(), Types.slot_map(), keyword()) :: String.t()
+  defp emit_list_walk_foldl(%{dest: dest_reg, args: args}, slots, opts) do
+    list_ref = slot_ref(args.list, slots, opts)
+    acc_ref = slot_ref(args.acc, slots, opts)
+    loop_id = Map.get(args, :lambda_idx, 0)
+    captures = Map.get(args, :captures, [])
+    parent = Keyword.get(opts, :parent_plan)
+    closure = Elmc.Backend.C.Lower.Lambda.closure_fn_name(parent, loop_id)
+    acc_var = "list_walk_foldl_acc_#{loop_id}"
+    cursor = "list_walk_foldl_cursor_#{loop_id}"
+    node = "list_walk_foldl_node_#{loop_id}"
+    dest_slot = format_dest(dest_reg, slots, opts)
+    cap_count = length(captures)
+
+    {caps_decl, caps_arg, caps_count_arg} =
+      if cap_count == 0 do
+        {"", "NULL", "0"}
+      else
+        cap_refs = Enum.map(captures, &slot_ref(&1, slots, opts))
+        init = Enum.join(cap_refs, ", ")
+
+        {
+          "ElmcValue *list_walk_foldl_caps_#{loop_id}[#{cap_count}] = { #{init} };\n",
+          "list_walk_foldl_caps_#{loop_id}",
+          Integer.to_string(cap_count)
+        }
+      end
+
+    step = fn head_expr ->
+      """
+        {
+          ElmcValue *__fold_next__ = NULL;
+          ElmcValue *loop_args[2] = { #{head_expr}, #{acc_var} };
+          Rc = #{closure}(&__fold_next__, loop_args, 2, #{caps_arg}, #{caps_count_arg});
+          CHECK_RC(Rc);
+          elmc_release(#{acc_var});
+          #{acc_var} = __fold_next__;
+        }
+      """
+    end
+
+    """
+    #{caps_decl}ElmcValue *#{acc_var} = elmc_retain(#{acc_ref});
+    if (#{list_ref} && #{list_ref}->tag == ELMC_TAG_LAZY_MAP) {
+      int list_walk_llen_#{loop_id} = elmc_lazy_map_length(#{list_ref});
+      for (int list_walk_ii_#{loop_id} = 0;
+           Rc == RC_SUCCESS && list_walk_ii_#{loop_id} < list_walk_llen_#{loop_id};
+           list_walk_ii_#{loop_id}++) {
+        ElmcValue *list_walk_nth_#{loop_id} = NULL;
+        Rc = elmc_lazy_map_nth(&list_walk_nth_#{loop_id}, #{list_ref}, list_walk_ii_#{loop_id});
+        CHECK_RC(Rc);
+    #{step.("list_walk_nth_#{loop_id}")}
+        elmc_release(list_walk_nth_#{loop_id});
+        list_walk_nth_#{loop_id} = NULL;
+      }
+    } else {
+      ElmcValue *list_walk_src_#{loop_id} = NULL;
+      Rc = elmc_list_materialize_cons(&list_walk_src_#{loop_id}, #{list_ref});
+      CHECK_RC(Rc);
+      ElmcValue *#{cursor} = list_walk_src_#{loop_id};
+      while (#{cursor} && #{cursor}->tag == ELMC_TAG_LIST && #{cursor}->payload != NULL) {
+        ElmcCons *#{node} = (ElmcCons *)#{cursor}->payload;
+    #{step.("#{node}->head")}
+        #{cursor} = #{node}->tail;
+      }
+      elmc_release(list_walk_src_#{loop_id});
+    }
+    #{owned_slot_take_assign(dest_slot, acc_var)}
+    """
+  end
+
   @spec emit_list_walk_map(map(), Types.slot_map(), boolean(), String.t(), keyword()) :: String.t()
+  defp emit_list_walk_map(%{args: %{kind: :foldl}} = instr, slots, _rc?, _dest, opts) do
+    emit_list_walk_foldl(instr, slots, opts)
+  end
+
   defp emit_list_walk_map(%{dest: dest_reg, args: args}, slots, _rc?, _dest, opts) do
     list_ref = slot_ref(args.list, slots, opts)
     loop_id = Map.get(args, :lambda_idx, 0)
@@ -3546,14 +3695,20 @@ defmodule Elmc.Backend.C.Lower.Instr do
 
     # Compact INT_LIST spines (e.g. elmc_list_from_int_array permutation tables)
     # must be walked; a cons-only loop silently maps them to [].
+    # Stored `List.map` results may be ELMC_TAG_LAZY_MAP — walk with nth so the
+    # second map is not empty (hour ticks) and we do not cons the whole source.
     # Result list is uniquely owned by #{fwd_head} — transfer into dest (no retain).
-    {int_step, cons_step} =
+    {int_step, cons_step, nth_step} =
       list_walk_step_blocks(kind, loop_id, item, node, closure, caps_arg, caps_count_arg)
 
     idx_init = if kind == :indexed_map, do: "int list_walk_idx_#{loop_id} = 0;\n      ", else: ""
+    int_items? = list_walk_int_items?(parent, loop_id, kind)
 
     int_list_branch =
       cond do
+        not int_items? ->
+          nil
+
         kind == :filter ->
           pred_c =
             IntListFilterPred.c_expr(
@@ -3612,16 +3767,41 @@ defmodule Elmc.Backend.C.Lower.Instr do
         ""
       end
 
+    int_list_prefix =
+      if is_binary(int_list_branch) do
+        """
+        if (#{list_ref} && #{list_ref}->tag == ELMC_TAG_INT_LIST) {
+        #{int_list_branch}#{set_no_reverse}    } else \
+        """
+      else
+        ""
+      end
+
     body = """
     #{caps_decl}#{need_reverse_init}ElmcValue *#{fwd_head} = elmc_list_nil();
-    if (#{list_ref} && #{list_ref}->tag == ELMC_TAG_INT_LIST) {
-    #{int_list_branch}#{set_no_reverse}    } else {
-      ElmcValue *#{cursor} = #{list_ref};
+    #{int_list_prefix}if (#{list_ref} && #{list_ref}->tag == ELMC_TAG_LAZY_MAP) {
+      int list_walk_llen_#{loop_id} = elmc_lazy_map_length(#{list_ref});
+      #{idx_init}for (int list_walk_ii_#{loop_id} = 0;
+           Rc == RC_SUCCESS && list_walk_ii_#{loop_id} < list_walk_llen_#{loop_id};
+           list_walk_ii_#{loop_id}++) {
+        ElmcValue *list_walk_nth_#{loop_id} = NULL;
+        Rc = elmc_lazy_map_nth(&list_walk_nth_#{loop_id}, #{list_ref}, list_walk_ii_#{loop_id});
+        CHECK_RC(Rc);
+        #{nth_step}
+        elmc_release(list_walk_nth_#{loop_id});
+        list_walk_nth_#{loop_id} = NULL;
+      }
+    } else {
+      ElmcValue *list_walk_src_#{loop_id} = NULL;
+      Rc = elmc_list_materialize_cons(&list_walk_src_#{loop_id}, #{list_ref});
+      CHECK_RC(Rc);
+      ElmcValue *#{cursor} = list_walk_src_#{loop_id};
       #{idx_init}while (#{cursor} && #{cursor}->tag == ELMC_TAG_LIST && #{cursor}->payload != NULL) {
         ElmcCons *#{node} = (ElmcCons *)#{cursor}->payload;
         #{cons_step}
         #{cursor} = #{node}->tail;
       }
+      elmc_release(list_walk_src_#{loop_id});
     }
     #{reverse_guard}#{ListAccumulate.inplace_reverse(fwd_head)}
     #{owned_slot_take_assign(dest_slot, fwd_head)}
@@ -3629,6 +3809,102 @@ defmodule Elmc.Backend.C.Lower.Instr do
 
     body
   end
+
+  # Compact INT_LIST walks only apply to `List Int` (and Color ints). Mapping
+  # records or strings must not emit that backend — it is dead and large.
+  # Lambda `Param.type` is often nil (`List.map : (a -> b) -> …` erases `a`),
+  # so a non-int use of the item param is also enough to drop the walk.
+  defp list_walk_int_items?(parent, loop_id, kind) do
+    lambda = Enum.at((parent && parent.lambdas) || [], loop_id)
+
+    case item_param_int_kind(lambda, kind) do
+      :native_int -> true
+      :non_int -> false
+      :unknown -> not lambda_item_used_as_non_int?(lambda, kind)
+    end
+  end
+
+  defp item_param_int_kind(lambda, kind) do
+    params = (lambda && lambda.params) || []
+    item = Enum.at(params, item_param_index(kind))
+
+    case item do
+      %{type: ty} when is_binary(ty) ->
+        if Host.color_type?(ty) or Host.signature_param_kind(ty) == :native_int do
+          :native_int
+        else
+          :non_int
+        end
+
+      _ ->
+        :unknown
+    end
+  end
+
+  defp item_param_index(:indexed_map), do: 1
+  defp item_param_index(_), do: 0
+
+  defp lambda_item_used_as_non_int?(nil, _), do: false
+
+  defp lambda_item_used_as_non_int?(lambda, kind) do
+    regs = item_param_alias_regs(lambda, item_param_index(kind))
+
+    regs != [] and
+      Enum.any?(lambda_instrs(lambda), fn instr ->
+        non_int_item_use?(instr, regs)
+      end)
+  end
+
+  defp item_param_alias_regs(lambda, index) do
+    instrs = lambda_instrs(lambda)
+
+    loaded =
+      Enum.flat_map(instrs, fn
+        %{op: :load_param, dest: dest, args: %{index: ^index}} when is_integer(dest) ->
+          [dest]
+
+        _ ->
+          []
+      end)
+
+    Enum.reduce(instrs, MapSet.new(loaded), fn
+      %{op: :call_runtime, dest: dest, args: %{builtin: :retain, args: [src]}}, acc
+      when is_integer(dest) and is_integer(src) ->
+        if MapSet.member?(acc, src), do: MapSet.put(acc, dest), else: acc
+
+      _, acc ->
+        acc
+    end)
+  end
+
+  defp lambda_instrs(%{blocks: blocks}) when is_list(blocks) do
+    Enum.flat_map(blocks, fn
+      %{instrs: instrs} when is_list(instrs) -> instrs
+      _ -> []
+    end)
+  end
+
+  defp lambda_instrs(_), do: []
+
+  defp non_int_item_use?(%{op: :call_runtime, args: %{builtin: builtin, args: args}}, regs)
+       when builtin in [
+              :string_append,
+              :string_concat,
+              :string_length,
+              :string_length_boxed,
+              :record_new,
+              :record_new_take,
+              :record_get
+            ] do
+    Enum.any?(List.wrap(args), &MapSet.member?(regs, &1))
+  end
+
+  defp non_int_item_use?(%{op: op, args: args}, regs)
+       when op in [:record_get, :record_get_int] and is_map(args) do
+    Enum.any?([args[:record], args[:base], args[:subject]], &MapSet.member?(regs, &1))
+  end
+
+  defp non_int_item_use?(_, _), do: false
 
   defp compact_int_list_filter_branch(
          loop_id,
@@ -3720,7 +3996,19 @@ defmodule Elmc.Backend.C.Lower.Instr do
         #{item} = NULL;
     """
 
-    {int_step, cons_step}
+    nth_step = """
+        ElmcValue *#{item} = NULL;
+        ElmcValue *loop_args[1] = { list_walk_nth_#{loop_id} };
+        Rc = #{closure}(&#{item}, loop_args, 1, #{caps_arg}, #{caps_count_arg});
+        CHECK_RC(Rc);
+        if (elmc_as_int(#{item}) != 0) {
+          #{ListAccumulate.cons_front_keep_item(fwd, "list_walk_nth_#{loop_id}")}
+        }
+        elmc_release(#{item});
+        #{item} = NULL;
+    """
+
+    {int_step, cons_step, nth_step}
   end
 
   defp list_walk_step_blocks(:indexed_map, loop_id, item, node, closure, caps_arg, caps_count_arg) do
@@ -3752,7 +4040,20 @@ defmodule Elmc.Backend.C.Lower.Instr do
         #{idx} += 1;
     """
 
-    {int_step, cons_step}
+    nth_step = """
+        ElmcValue *#{item} = NULL;
+        ElmcValue *__idx_box__ = NULL;
+        Rc = elmc_new_int(&__idx_box__, #{idx});
+        CHECK_RC(Rc);
+        ElmcValue *loop_args[2] = { __idx_box__, list_walk_nth_#{loop_id} };
+        Rc = #{closure}(&#{item}, loop_args, 2, #{caps_arg}, #{caps_count_arg});
+        elmc_release(__idx_box__);
+        CHECK_RC(Rc);
+        #{ListAccumulate.cons_front(fwd, item)}
+        #{idx} += 1;
+    """
+
+    {int_step, cons_step, nth_step}
   end
 
   defp list_walk_step_blocks(_kind, loop_id, item, node, closure, caps_arg, caps_count_arg) do
@@ -3774,7 +4075,15 @@ defmodule Elmc.Backend.C.Lower.Instr do
         #{ListAccumulate.cons_front(fwd, item)}
     """
 
-    {int_step, cons_step}
+    nth_step = """
+        ElmcValue *#{item} = NULL;
+        ElmcValue *loop_args[1] = { list_walk_nth_#{loop_id} };
+        Rc = #{closure}(&#{item}, loop_args, 1, #{caps_arg}, #{caps_count_arg});
+        CHECK_RC(Rc);
+        #{ListAccumulate.cons_front(fwd, item)}
+    """
+
+    {int_step, cons_step, nth_step}
   end
 
   defp emit_pipe_apply_repeat(
@@ -4963,11 +5272,15 @@ defmodule Elmc.Backend.C.Lower.Instr do
   @spec non_rc_record_update_cow_drop(map() | term(), Types.slot_map() | term(), keyword() | term(), String.t()) ::
           String.t()
 
-  defp non_rc_record_update_cow_drop(%{op: :record_update, args: %{base: base_reg}}, slots, _opts, ret_var)
+  defp non_rc_record_update_cow_drop(%{op: :record_update, args: %{base: base_reg}}, slots, opts, ret_var)
        when is_integer(base_reg) and is_binary(ret_var) do
     case Map.get(slots, base_reg) do
-      i when is_integer(i) -> "if (#{ret_var} == owned[#{i}]) { owned[#{i}] = NULL; }"
-      _ -> ""
+      i when is_integer(i) ->
+        "if (#{ret_var} == owned[#{i}]) { owned[#{i}] = NULL; }"
+
+      _ ->
+        base = slot_ref(base_reg, slots, opts)
+        "if (#{ret_var} == #{base}) { #{ret_var} = elmc_retain(#{ret_var}); }"
     end
   end
 
@@ -5212,6 +5525,7 @@ defmodule Elmc.Backend.C.Lower.Instr do
   @spec dest_arg(String.t(), term()) :: String.t()
 
   defp dest_arg("out", _), do: "out"
+  defp dest_arg("*out", _), do: "out"
   defp dest_arg(dest_ref, _), do: "&#{dest_ref}"
 
   @spec cow_drop_alias_null(Types.reg() | Types.result_slot() | term(), Types.reg() | term(), boolean() | term(), Types.slot_map() | term(), keyword() | term()) :: String.t()

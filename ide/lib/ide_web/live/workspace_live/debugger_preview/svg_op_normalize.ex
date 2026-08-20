@@ -15,26 +15,9 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview.SvgOpNormalize do
           ""
       )
 
-    case text do
-      "" ->
-        case compact_op_text_label_tag(op) do
-          0 -> "Waiting for companion app"
-          _ -> ""
-        end
-
-      "WaitingForCompanion" ->
-        "Waiting for companion app"
-
-      other ->
-        other
-    end
-  end
-
-  defp compact_op_text_label_tag(op) when is_map(op) do
-    case Map.get(op, "label_tag") || Map.get(op, :label_tag) do
-      n when is_integer(n) -> n
-      n when is_float(n) -> trunc(n)
-      _ -> -1
+    case Elmc.Backend.Pebble.UiLabel.display_text(text) do
+      display when is_binary(display) -> display
+      nil -> text
     end
   end
   @spec normalize(draw_op_map()) :: svg_op() | nil
@@ -355,6 +338,26 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview.SvgOpNormalize do
 
   defp maybe_put_svg_resource(op, _original), do: op
 
+  defp maybe_put_font_fields(op, original) when is_map(op) and is_map(original) do
+    op
+    |> maybe_put_positive_int(:font_id, original, ["font_id", :font_id])
+    |> maybe_put_positive_int(:font_height, original, ["font_height", :font_height])
+  end
+
+  defp maybe_put_font_fields(op, _original), do: op
+
+  defp maybe_put_positive_int(op, key, original, source_keys) do
+    value =
+      Enum.find_value(source_keys, fn source_key ->
+        case Map.get(original, source_key) do
+          n when is_integer(n) and n > 0 -> n
+          _ -> nil
+        end
+      end)
+
+    if is_integer(value), do: Map.put(op, key, value), else: op
+  end
+
   @spec text_box_svg_op(draw_op_map(), integer(), integer(), String.t()) :: svg_op()
   defp text_box_svg_op(op, x, y, text) when is_map(op) and is_integer(x) and is_integer(y) do
     base = %{kind: :text_label, x: x, y: y, text: text}
@@ -374,6 +377,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview.SvgOpNormalize do
             ),
           font_size: h
         })
+        |> maybe_put_font_fields(op)
 
       :error ->
         base

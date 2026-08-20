@@ -263,8 +263,13 @@ function firebaseProvider(firebase: FirebaseNamespace, providerName: string): un
   return new firebase.auth.GoogleAuthProvider()
 }
 
+function loopbackIpHost(): boolean {
+  const host = window.location.hostname
+  return host === "127.0.0.1" || host === "::1" || host === "[::1]"
+}
+
 function usesFirebaseBridgeFallback(providerName: string): boolean {
-  return FIREBASE_BRIDGE_FALLBACK_PROVIDERS.has(providerName)
+  return FIREBASE_BRIDGE_FALLBACK_PROVIDERS.has(providerName) || loopbackIpHost()
 }
 
 function stashFirebaseRedirectState(providerName: string, options: FirebaseLoginOptions): void {
@@ -682,7 +687,8 @@ const FirebaseAuthRefresh: ViewHook = {
         if (!user) return
 
         const idToken = await user.getIdToken(true)
-        // LiveView event verifies the token and updates assigns + ETS (no session renew).
+        // Persist CloudPebble identity on the cookie session (same as /login).
+        await postJson("/auth/firebase", {id_token: idToken})
         sessionStorage.removeItem(FIREBASE_PENDING_ID_TOKEN_KEY)
         this.pushEvent("firebase-auth-refreshed", {id_token: idToken})
         setFirebaseLoginStatus("Logged in.")

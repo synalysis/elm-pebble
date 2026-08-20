@@ -194,6 +194,19 @@ defmodule IdeWeb.WorkspaceLive.ProjectSettingsTest do
     refute html =~ "project_settings[capabilities]"
   end
 
+  test "release source URL placeholder uses the default repo until GitHub exists", %{conn: conn} do
+    assert {:ok, project} =
+             Projects.create_project(%{
+               "name" => "WorkspaceSourcePlaceholder",
+               "slug" => "workspace-source-placeholder",
+               "target_type" => "app"
+             })
+
+    assert {:ok, _view, html} = live(conn, ~p"/projects/#{project.slug}/settings")
+
+    assert html =~ ~s(placeholder="#{Ide.StoreListingUrls.default_source_repo_url()}")
+  end
+
   test "project settings pane saves release metadata and github config", %{conn: conn} do
     assert {:ok, project} =
              Projects.create_project(%{
@@ -331,5 +344,27 @@ defmodule IdeWeb.WorkspaceLive.ProjectSettingsTest do
     assert html =~ "Prepare Release warning"
     assert html =~ "Warning!"
     refute html =~ "Error!"
+  end
+
+  test "prepare release ignores parent-repo dirt when the workspace is not a git root", %{
+    conn: conn
+  } do
+    assert {:ok, project} =
+             Projects.create_project(%{
+               "name" => "WorkspacePrepareParentGit",
+               "slug" => "workspace-prepare-parent-git",
+               "target_type" => "app"
+             })
+
+    workspace_root = Projects.project_workspace_path(project)
+    refute File.exists?(Path.join(workspace_root, ".git"))
+
+    assert {:error, :git_unavailable_or_not_repo} =
+             IdeWeb.WorkspaceLive.PublishPaneFlow.workspace_uncommitted_changes(workspace_root)
+
+    assert {:ok, view, _html} = live(conn, ~p"/projects/#{project.slug}/publish")
+    render_click(view, "prepare-release")
+    html = render(view)
+    refute html =~ "uncommitted change"
   end
 end

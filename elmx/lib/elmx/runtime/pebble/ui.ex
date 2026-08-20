@@ -33,6 +33,13 @@ defmodule Elmx.Runtime.Pebble.Ui do
   @spec named_color(String.t()) :: integer()
   defdelegate named_color(name), to: Primitives
 
+  @spec resource_tag(String.t() | atom()) :: atom()
+  def resource_tag(name) when is_atom(name), do: name
+
+  def resource_tag(name) when is_binary(name) do
+    String.to_atom(name)
+  end
+
   @spec fill_rect(Types.ui_bounds(), Types.ui_color()) :: Types.ui_node()
   defdelegate fill_rect(bounds, color), to: Primitives
 

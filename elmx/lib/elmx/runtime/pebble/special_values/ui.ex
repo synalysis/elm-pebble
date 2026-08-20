@@ -9,6 +9,21 @@ defmodule Elmx.Runtime.Pebble.SpecialValues.Ui do
 
   alias Elmx.Types
 
+  # Generated `Pebble.Ui.Resources` helpers (not constructors). Rewriting these
+  # to string literals made `(fontInfo font).height` mean `"fontInfo".height`.
+  @resource_module_funs MapSet.new(~w(
+    fontInfo
+    staticBitmapInfo
+    animatedBitmapInfo
+    staticVectorInfo
+    animatedVectorInfo
+    allFonts
+    allStaticBitmaps
+    allAnimatedBitmaps
+    allStaticVectors
+    allAnimatedVectors
+  ))
+
   @spec rewrite(String.t(), Types.ir_arg_list()) :: Types.dispatch_result()
   def rewrite(target, args) when is_binary(target) and is_list(args) do
     case target do
@@ -79,7 +94,18 @@ defmodule Elmx.Runtime.Pebble.SpecialValues.Ui do
          }}
 
       "Pebble.Ui.Resources." <> resource_name ->
-        {:ok, %{op: :string_literal, value: resource_name}}
+        cond do
+          resource_name in @resource_module_funs ->
+            :unmatched
+
+          args == [] ->
+            # Nullary resource constructors must be atoms so generated
+            # `fontInfo` / `*Info` case clauses (`:Quote28` -> …) match.
+            ui_call("elmx_ui_resource_tag", [%{op: :string_literal, value: resource_name}])
+
+          true ->
+            :unmatched
+        end
 
       _ ->
         :unmatched

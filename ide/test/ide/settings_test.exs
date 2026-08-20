@@ -182,4 +182,30 @@ defmodule Ide.SettingsTest do
     assert {:error, {:invalid_port, "70000"}} = Settings.set_mcp_http_port("70000")
     assert %{mcp_http_port: 4000} = Settings.current()
   end
+
+  test "defaults and persists company name used for packaged apps" do
+    temp_path =
+      Path.join(System.tmp_dir!(), "ide_settings_test_#{System.unique_integer([:positive])}.json")
+
+    original_config = Application.get_env(:ide, Ide.Settings, [])
+    Application.put_env(:ide, Ide.Settings, settings_path: temp_path)
+
+    on_exit(fn ->
+      Application.put_env(:ide, Ide.Settings, original_config)
+      File.rm(temp_path)
+    end)
+
+    assert %{company_name: "elm-pebble-ide"} = Settings.current()
+    assert Settings.company_name() == "elm-pebble-ide"
+
+    assert :ok = Settings.set_company_name("  Acme Watches  ")
+    assert %{company_name: "Acme Watches"} = Settings.current()
+
+    assert :ok = Settings.set_company_name("")
+    assert %{company_name: "elm-pebble-ide"} = Settings.current()
+
+    assert :ok = Settings.set_company_name(String.duplicate("W", 40))
+    assert %{company_name: "WWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWW"} = Settings.current()
+    assert byte_size(Settings.company_name()) == 32
+  end
 end

@@ -188,16 +188,26 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Support do
 
   defp direct_context_supported?(
          "Pebble.Ui.context",
-         [%{op: :list_literal, items: settings}, %{op: :list_literal, items: commands}],
+         [%{op: :list_literal, items: settings}, commands],
          module_name,
          decl_map,
          seen
        ) do
     Enum.all?(settings, &setting_supported?/1) and
-      Enum.all?(commands, &supported?(&1, module_name, decl_map, seen))
+      context_commands_supported?(commands, module_name, decl_map, seen)
   end
 
   defp direct_context_supported?(_, _, _, _, _), do: false
+
+  # `context settings (List.map f xs)` is a normal Elm shape. Requiring a
+  # command list literal kept those views on the boxed path (Basalt OOM).
+  defp context_commands_supported?(%{op: :list_literal, items: commands}, module_name, decl_map, seen) do
+    Enum.all?(commands, &supported?(&1, module_name, decl_map, seen))
+  end
+
+  defp context_commands_supported?(commands, module_name, decl_map, seen) do
+    supported?(commands, module_name, decl_map, seen)
+  end
 
   defp direct_group_context_supported?(
          %{op: :qualified_call, target: ctx_target, args: ctx_args},

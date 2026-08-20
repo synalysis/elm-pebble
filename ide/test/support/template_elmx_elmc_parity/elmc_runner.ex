@@ -321,12 +321,7 @@ defmodule Ide.Test.TemplateElmxElmcParity.ElmcRunner do
         fputs(",\\"p3\\":", out);
         fprintf(out, "%d", (int)cmds[i].p3);
         fputs(",\\"text\\":", out);
-        if (cmds[i].kind == ELMC_PEBBLE_DRAW_TEXT_LABEL_WITH_FONT &&
-            cmds[i].text[0] == '\\0' && cmds[i].p3 == 0) {
-          json_escape_write(out, "Waiting for companion app");
-        } else {
-          json_escape_write(out, cmds[i].text);
-        }
+        json_escape_write(out, cmds[i].text);
         fputc('}', out);
       }
       fputs("]", out);

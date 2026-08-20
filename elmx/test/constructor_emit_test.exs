@@ -45,7 +45,9 @@ defmodule Elmx.ConstructorEmitTest do
       ])
 
     entry = ConstructorLookup.resolve(lookup, "DefaultFont", "Main")
-    assert {:ok, %{op: :int_literal, value: 3}} = ConstructorEmit.rewrite(entry)
+
+    assert {:ok, %{op: :runtime_call, function: "elmx_ui_resource_tag"}} =
+             ConstructorEmit.rewrite(entry)
   end
 
   test "Label union constructors emit constructor name string" do

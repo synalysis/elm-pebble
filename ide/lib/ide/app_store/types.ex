@@ -42,6 +42,8 @@ defmodule Ide.AppStore.Types do
           | {:all_platforms, boolean()}
           | {:gif_all_platforms, boolean()}
           | {:store_icons, store_icons()}
+          | {:store_icon_hashes, %{optional(String.t()) => String.t()}}
+          | {:listing_icons_synced, boolean()}
           | {:generate_store_graphics, boolean()}
           | {:website, String.t()}
           | {:source, String.t()}

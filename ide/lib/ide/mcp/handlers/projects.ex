@@ -494,6 +494,7 @@ defmodule Ide.Mcp.Handlers.Projects do
   defp safe_release_defaults(map) when is_map(map) do
     %{}
     |> maybe_put_string_setting(map, "version_label")
+    |> maybe_put_string_setting(map, "description")
     |> maybe_put_string_setting(map, "tags")
     |> maybe_put_string_list_setting(map, "target_platforms")
     |> maybe_put_string_list_setting(map, "capabilities")

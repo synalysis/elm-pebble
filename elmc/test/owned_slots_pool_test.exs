@@ -92,4 +92,28 @@ defmodule Elmc.OwnedSlotsPoolTest do
     assert out =~ "owned_slots_heap_allocs=0"
     assert out =~ "rc_ok owned_slots_pool"
   end
+
+  test "pebble compile sizes the BSS pool from generated owned-slot counts" do
+    tmp = Path.join(System.tmp_dir!(), "owned-slots-cap-#{System.unique_integer([:positive])}")
+    File.rm_rf!(tmp)
+    prune_dir = Path.join(tmp, "c")
+    runtime_dir = Path.join(tmp, "runtime")
+    File.mkdir_p!(prune_dir)
+
+    File.write!(Path.join(prune_dir, "elmc_generated.c"), """
+    enum { ELMC_OWNED_SLOT_COUNT = 55 };
+    ElmcValue **owned = elmc_owned_slots_acquire(ELMC_OWNED_SLOT_COUNT);
+    """)
+
+    assert :ok =
+             Generator.write_runtime(runtime_dir,
+               prune_from_dir: prune_dir,
+               pebble_int32: true
+             )
+
+    runtime_h = File.read!(Path.join(runtime_dir, "elmc_runtime.h"))
+    assert runtime_h =~ "#define ELMC_OWNED_SLOTS_POOL_CAP 55"
+    assert runtime_h =~ "#define ELMC_OWNED_SLOTS_POOL_DEPTH 3"
+    refute runtime_h =~ "#define ELMC_OWNED_SLOTS_POOL_CAP 128"
+  end
 end

@@ -124,6 +124,19 @@ static uint32_t agent_probe_count_byte(int value) {
 #define ELMC_PEBBLE_EMULATOR_STORAGE_LOGS 0
 #endif
 
+#ifndef ELMC_PEBBLE_EMULATOR_KEEP_BACKLIGHT
+#define ELMC_PEBBLE_EMULATOR_KEEP_BACKLIGHT 0
+#endif
+
+#if ELMC_PEBBLE_EMULATOR_KEEP_BACKLIGHT
+static void keep_emulator_backlight(void) {
+  /* QEMU dims the framebuffer when firmware backlight times out (~3s). */
+  light_enable(true);
+}
+#else
+static void keep_emulator_backlight(void) {}
+#endif
+
 #if ELMC_PEBBLE_EMULATOR_STORAGE_LOGS
 #define ELMC_PEBBLE_STORAGE_LOG(level, fmt, ...) app_log(level, __FILE_NAME__, __LINE__, fmt, ##__VA_ARGS__)
 #define companion_inbox_log(fmt, ...) app_log(APP_LOG_LEVEL_INFO, "companion", 0, fmt, ##__VA_ARGS__)
@@ -296,6 +309,19 @@ static AppTimer *s_scene_prep_timer = NULL;
 /* Stream one decoded draw command at a time from the scene byte cursor (static, not stack). */
 static ElmcPebbleDrawCmd s_draw_cmd;
 static GFont s_font;
+#if ELMC_PEBBLE_FEATURE_DRAW_TEXT || ELMC_PEBBLE_FEATURE_DRAW_TEXT_INT || ELMC_PEBBLE_FEATURE_DRAW_TEXT_LABEL
+#if defined(ELMC_PEBBLE_APP_TIGHT_RAM)
+#define ELMC_FONT_CACHE_CAP 4
+#else
+#define ELMC_FONT_CACHE_CAP 16
+#endif
+static struct {
+  int64_t font_id;
+  uint32_t resource_id;
+  GFont font;
+} s_font_cache[ELMC_FONT_CACHE_CAP];
+static int s_font_cache_len = 0;
+#endif
 static ElmcPebbleApp s_elm_app;
 static AppTimer *s_timer = NULL;
 #if ELMC_PEBBLE_FEATURE_FRAME_EVENTS
@@ -328,8 +354,18 @@ enum {
 };
 #else
 enum {
+#if defined(COMPANION_PROTOCOL_MAX_FIELDS) && defined(COMPANION_PROTOCOL_LIST_MAX_ELEMENTS)
+  ELMC_INBOX_MAX_TUPLES = (COMPANION_PROTOCOL_MAX_FIELDS) + (COMPANION_PROTOCOL_LIST_MAX_ELEMENTS) + 2,
+#elif defined(COMPANION_PROTOCOL_MAX_FIELDS)
+  ELMC_INBOX_MAX_TUPLES = (COMPANION_PROTOCOL_MAX_FIELDS) + 2,
+#else
   ELMC_INBOX_MAX_TUPLES = 16,
+#endif
+#if defined(COMPANION_PROTOCOL_STRING_MAX)
+  ELMC_INBOX_STRING_MAX = COMPANION_PROTOCOL_STRING_MAX,
+#else
   ELMC_INBOX_STRING_MAX = 128,
+#endif
   ELMC_INBOX_TUPLE_WIRE_BYTES = 12,
   ELMC_INBOX_CSTRING_NONE = 0,
   ELMC_INBOX_CSTRING_INBOX = 1,
@@ -354,11 +390,13 @@ static uint8_t s_inbox_cstring_tuple_wire[ELMC_INBOX_STRING_MAX + 8];
 #if ELMC_PEBBLE_FEATURE_INBOX_EVENTS
 static ElmcInboxTupleSnapshot s_companion_pending[ELMC_INBOX_MAX_TUPLES];
 static uint8_t s_companion_pending_wire[ELMC_INBOX_MAX_TUPLES][ELMC_INBOX_TUPLE_WIRE_BYTES];
+static char s_companion_pending_cstring[ELMC_INBOX_STRING_MAX];
+static bool s_companion_pending_has_cstring = false;
 /* Protocol-matrix-sized PhoneToWatch decoders are ~3KB+. Keep them off the
    AppMessage callback stack (Basalt app stack is tight; stack locals here
-   fault with PC:0 / LR:0 after phone→watch delivery). */
+   fault with PC:0 / LR:0 after phone→watch delivery). The decoder already
+   embeds the message — do not keep a second BSS copy. */
 static CompanionProtocolPhoneToWatchDecoder s_companion_inbox_decoder;
-static CompanionProtocolPhoneToWatchMessage s_companion_inbox_message;
 #endif
 
 enum {
@@ -541,35 +579,77 @@ static GFont system_font_for_height(int64_t requested_height) {
 }
 #endif
 
+#if ELMC_PEBBLE_FEATURE_DRAW_TEXT || ELMC_PEBBLE_FEATURE_DRAW_TEXT_INT || ELMC_PEBBLE_FEATURE_DRAW_TEXT_LABEL
+/* Load each custom font once. Pebble's loader can fail if we load/unload every
+   frame; a fallback then picks a different system face from the box height and
+   the wrap (line count and leading) jumps. */
+static GFont font_cache_load(int64_t font_id, uint32_t resource_id) {
+  int i;
+  GFont font;
+  for (i = 0; i < s_font_cache_len; i++) {
+    if (s_font_cache[i].font_id == font_id && s_font_cache[i].resource_id == resource_id) {
+      return s_font_cache[i].font;
+    }
+  }
+  font = fonts_load_custom_font(resource_get_handle(resource_id));
+  if (!font) {
+    return NULL;
+  }
+  if (s_font_cache_len >= ELMC_FONT_CACHE_CAP) {
+    fonts_unload_custom_font(s_font_cache[0].font);
+    memmove(&s_font_cache[0], &s_font_cache[1],
+            sizeof(s_font_cache[0]) * (ELMC_FONT_CACHE_CAP - 1));
+    s_font_cache_len = ELMC_FONT_CACHE_CAP - 1;
+  }
+  s_font_cache[s_font_cache_len].font_id = font_id;
+  s_font_cache[s_font_cache_len].resource_id = resource_id;
+  s_font_cache[s_font_cache_len].font = font;
+  s_font_cache_len++;
+  return font;
+}
+
+static void font_cache_unload_all(void) {
+  int i;
+  for (i = 0; i < s_font_cache_len; i++) {
+    if (s_font_cache[i].font) {
+      fonts_unload_custom_font(s_font_cache[i].font);
+      s_font_cache[i].font = NULL;
+    }
+  }
+  s_font_cache_len = 0;
+}
+#endif
+
 #if ELMC_PEBBLE_FEATURE_DRAW_TEXT_INT || ELMC_PEBBLE_FEATURE_DRAW_TEXT_LABEL
 static GFont font_from_id(int64_t font_id, bool *should_unload) {
   uint32_t resource_id = elm_pebble_font_resource_id(font_id);
+  if (should_unload) *should_unload = false;
   if (resource_id == ELM_PEBBLE_RESOURCE_ID_MISSING) {
-    if (should_unload) *should_unload = false;
     return s_font;
   }
-  if (should_unload) *should_unload = true;
-  return fonts_load_custom_font(resource_get_handle(resource_id));
+  return font_cache_load(font_id, resource_id);
 }
 #endif
 
 #if ELMC_PEBBLE_FEATURE_DRAW_TEXT
-static GFont font_from_id_for_height(int64_t font_id, int64_t requested_height, bool *should_unload) {
+static GFont font_from_id_for_text(int64_t font_id, int64_t requested_height, bool *should_unload) {
   ELMC_DRAW_PATH_PROBE(ELMC_DRAW_PATH_FONT_FOR_TEXT_ENTER);
   uint32_t resource_id = elm_pebble_font_resource_id(font_id);
+  GFont font;
+  int64_t fallback_height;
+
+  if (should_unload) *should_unload = false;
 
   if (resource_id == ELM_PEBBLE_RESOURCE_ID_MISSING) {
-    if (should_unload) *should_unload = false;
-    GFont font = system_font_for_height(requested_height);
+    font = system_font_for_height(requested_height);
     ELMC_DRAW_PATH_PROBE(ELMC_DRAW_PATH_FONT_FOR_TEXT_EXIT);
     return font;
   }
 
-  if (should_unload) *should_unload = true;
-  GFont font = fonts_load_custom_font(resource_get_handle(resource_id));
+  font = font_cache_load(font_id, resource_id);
   if (!font) {
-    if (should_unload) *should_unload = false;
-    font = system_font_for_height(requested_height);
+    fallback_height = elm_pebble_font_resource_height(font_id);
+    font = system_font_for_height(fallback_height > 0 ? fallback_height : requested_height);
   }
   ELMC_DRAW_PATH_PROBE(ELMC_DRAW_PATH_FONT_FOR_TEXT_EXIT);
   return font;
@@ -584,15 +664,23 @@ static int64_t watch_color_to_elm_tag(WatchInfoColor color);
 
 #if ELMC_PEBBLE_FEATURE_CMD_GET_WATCH_MODEL
 static int64_t watch_model_to_elm_tag(WatchInfoModel model) {
-  (void)model;
-  return 0;
+#if defined(ELMC_PEBBLE_CATALOG_WATCH_MODEL)
+  if (model == WATCH_INFO_MODEL_UNKNOWN) {
+    model = (WatchInfoModel)ELMC_PEBBLE_CATALOG_WATCH_MODEL;
+  }
+#endif
+  return elmc_pebble_watch_model_to_elm_tag((int)model);
 }
 #endif
 
 #if ELMC_PEBBLE_FEATURE_CMD_GET_WATCH_COLOR
 static int64_t watch_color_to_elm_tag(WatchInfoColor color) {
-  (void)color;
-  return 0;
+#if defined(ELMC_PEBBLE_CATALOG_WATCH_COLOR)
+  if (color == WATCH_INFO_COLOR_UNKNOWN) {
+    color = (WatchInfoColor)ELMC_PEBBLE_CATALOG_WATCH_COLOR;
+  }
+#endif
+  return elmc_pebble_watch_color_to_elm_tag((int)color);
 }
 #endif
 
@@ -1943,6 +2031,39 @@ static GRect rect_from_params(int64_t x, int64_t y, int64_t w, int64_t h) {
 }
 #endif
 
+#if ELMC_PEBBLE_FEATURE_DRAW_TEXT
+/*
+ * Pebble GTextAlignmentCenter is horizontal only. Gothic/TTF ink sits on the
+ * baseline, so a date numeral in a tight GRect appears to rest on the bottom
+ * stroke. When the project declared a font height and the box is only a few
+ * pixels taller, lift the layout box so the ink sits in the middle.
+ * Tall time bands (declared + 6 < box.h) stay top-aligned in the band — same
+ * as graphics_draw_text, which does not move the GRect with content height.
+ * Keep in lockstep with Ide.Pebble.TextLayout.center_aligned_lift/2 (debugger).
+ */
+static GRect center_aligned_text_rect(GRect box, GTextAlignment align, int64_t font_id) {
+  int64_t declared;
+  int16_t up;
+  if (align != GTextAlignmentCenter) {
+    return box;
+  }
+  declared = elm_pebble_font_resource_height(font_id);
+  if (declared <= 0 || box.size.h <= 0 || declared + 6 < box.size.h) {
+    return box;
+  }
+  up = (int16_t)(declared / 6);
+  if (box.size.h > declared) {
+    up = (int16_t)(up + (box.size.h - (int16_t)declared) / 2);
+  }
+  if (up < 1) {
+    up = 1;
+  }
+  box.origin.y = (int16_t)(box.origin.y - up);
+  box.size.h = (int16_t)(box.size.h + up);
+  return box;
+}
+#endif
+
 #if ELMC_PEBBLE_FEATURE_DRAW_RECT
 /* Ui.rect (x,y,w,h) is the outer inked bounds; Pebble strokes are centered on edges. */
 static GRect stroke_outline_rect_bounds(int16_t x, int16_t y, int16_t w, int16_t h,
@@ -2348,13 +2469,14 @@ static void draw_update_proc(Layer *layer, GContext *ctx) {
 #if ELMC_PEBBLE_FEATURE_DRAW_TEXT
       case ELMC_PEBBLE_DRAW_TEXT: {
         bool should_unload = false;
-        GFont font = font_from_id_for_height(cmd->p0, cmd->p4, &should_unload);
+        GTextOverflowMode overflow = text_overflow_from_options(cmd->p5);
+        GFont font = font_from_id_for_text(cmd->p0, cmd->p4, &should_unload);
         if (!font || !rect_params_are_valid(cmd->p3, cmd->p4)) {
           break;
         }
-        GTextOverflowMode overflow = text_overflow_from_options(cmd->p5);
         GTextAlignment align = text_alignment_from_options(cmd->p5);
-        GRect text_rect = rect_from_params(cmd->p1, cmd->p2, cmd->p3, cmd->p4);
+        GRect text_rect = center_aligned_text_rect(
+            rect_from_params(cmd->p1, cmd->p2, cmd->p3, cmd->p4), align, cmd->p0);
 #ifndef PBL_COLOR
         graphics_context_set_antialiased(ctx, false);
 #endif
@@ -2890,13 +3012,7 @@ static void draw_update_proc(Layer *layer, GContext *ctx) {
         if (!font) {
           break;
         }
-        const char *label = "Label";
-        if (cmd->text[0] != '\0') {
-          label = cmd->text;
-        } else if (cmd->p3 == 0) {
-          label = "Waiting for companion app";
-        }
-        graphics_draw_text(ctx, label, font,
+        graphics_draw_text(ctx, cmd->text, font,
                            text_point_rect(bounds, cmd->p1, cmd->p2),
                            GTextOverflowModeWordWrap,
                            GTextAlignmentLeft, NULL);
@@ -2908,7 +3024,8 @@ static void draw_update_proc(Layer *layer, GContext *ctx) {
 #if ELMC_PEBBLE_FEATURE_DRAW_TEXT
       case ELMC_PEBBLE_DRAW_TEXT: {
         bool should_unload = false;
-        GFont font = font_from_id_for_height(cmd->p0, cmd->p4, &should_unload);
+        GTextOverflowMode overflow = text_overflow_from_options(cmd->p5);
+        GFont font = font_from_id_for_text(cmd->p0, cmd->p4, &should_unload);
         if (!font) {
 #if ELMC_PEBBLE_DEBUG_LOGS
           APP_LOG(APP_LOG_LEVEL_WARNING,
@@ -2931,9 +3048,9 @@ static void draw_update_proc(Layer *layer, GContext *ctx) {
 #endif
           break;
         }
-        GTextOverflowMode overflow = text_overflow_from_options(cmd->p5);
         GTextAlignment align = text_alignment_from_options(cmd->p5);
-        GRect text_rect = rect_from_params(cmd->p1, cmd->p2, cmd->p3, cmd->p4);
+        GRect text_rect = center_aligned_text_rect(
+            rect_from_params(cmd->p1, cmd->p2, cmd->p3, cmd->p4), align, cmd->p0);
 #if ELMC_PEBBLE_DEBUG_LOGS
         APP_LOG(APP_LOG_LEVEL_INFO,
                 "elmc-draw text pre seq=%d #%d font=%p unload=%d x=%ld y=%ld w=%ld h=%ld ovf=%d align=%d text=%s",
@@ -3124,9 +3241,9 @@ static void scene_prep_timer_callback(void *data) {
             s_elm_app.scene.byte_capacity,
             (unsigned long)heap_bytes_free());
     ELMC_RC_LOG_FAIL(RC_ERR_RENDER_ABORT, "elmc_scene_prep", "scene prep failed");
-#if ELMC_PEBBLE_SCENE_CACHE_ENABLED
-    schedule_scene_prep();
-#endif
+    /* Do not immediately retry: a failed realloc leaves the heap fragmented,
+       and 10Hz retries turn a one-byte grow miss into a log/alloc storm.
+       The next model change (tick, inbox) schedules prep again. */
     if (s_draw_layer) {
       layer_mark_dirty(s_draw_layer);
     }
@@ -3485,6 +3602,7 @@ static bool elmc_inbox_snapshot_from_tuple(ElmcInboxTupleSnapshot *snap, const T
       if (copy_len > ELMC_INBOX_STRING_MAX) {
         copy_len = ELMC_INBOX_STRING_MAX;
       }
+      memset(s_inbox_cstring_snapshot, 0, sizeof(s_inbox_cstring_snapshot));
       memcpy(s_inbox_cstring_snapshot, source->value->cstring, copy_len);
       s_inbox_cstring_snapshot[ELMC_INBOX_STRING_MAX - 1] = '\0';
       snap->length = (uint16_t)(strlen(s_inbox_cstring_snapshot) + 1);
@@ -3686,7 +3804,7 @@ static void companion_pending_clear(void);
 static bool companion_simulator_weather_tuple(const Tuple *tuple) {
 #if ELMC_PEBBLE_FEATURE_INBOX_EVENTS && defined(ELMC_COMPANION_SIMULATOR_WEATHER) && ELMC_COMPANION_SIMULATOR_WEATHER
   int32_t wire_value = 0;
-  CompanionProtocolPhoneToWatchMessage *message = &s_companion_inbox_message;
+  CompanionProtocolPhoneToWatchMessage *message = &s_companion_inbox_decoder.message;
   bool ready_to_dispatch = false;
 
   if (!tuple || !debug_storage_tuple_int((Tuple *)tuple, &wire_value)) {
@@ -3801,7 +3919,7 @@ static bool companion_dispatch_needs_render(const CompanionProtocolPhoneToWatchM
 
 static bool companion_decode_and_dispatch_snapshots(const ElmcInboxTupleSnapshot *snapshots, uint8_t wire[][ELMC_INBOX_TUPLE_WIRE_BYTES], int tuple_count) {
   CompanionProtocolPhoneToWatchDecoder *decoder = &s_companion_inbox_decoder;
-  CompanionProtocolPhoneToWatchMessage *message = &s_companion_inbox_message;
+  CompanionProtocolPhoneToWatchMessage *message = &s_companion_inbox_decoder.message;
   memset(decoder, 0, sizeof(*decoder));
   memset(message, 0, sizeof(*message));
   companion_protocol_phone_to_watch_decoder_init(decoder);
@@ -3874,6 +3992,7 @@ static int32_t companion_pending_message_tag(void);
 static void companion_pending_clear(void) {
   s_companion_pending_count = 0;
   s_companion_pending_first_ms = 0;
+  s_companion_pending_has_cstring = false;
   if (s_companion_pending_timer) {
     app_timer_cancel(s_companion_pending_timer);
     s_companion_pending_timer = NULL;
@@ -3886,10 +4005,13 @@ static bool companion_try_decode_pending(void) {
   }
 
   CompanionProtocolPhoneToWatchDecoder *decoder = &s_companion_inbox_decoder;
-  CompanionProtocolPhoneToWatchMessage *message = &s_companion_inbox_message;
+  CompanionProtocolPhoneToWatchMessage *message = &s_companion_inbox_decoder.message;
   memset(decoder, 0, sizeof(*decoder));
   memset(message, 0, sizeof(*message));
   companion_protocol_phone_to_watch_decoder_init(decoder);
+  if (s_companion_pending_has_cstring) {
+    memcpy(s_inbox_cstring_snapshot, s_companion_pending_cstring, ELMC_INBOX_STRING_MAX);
+  }
 
   for (int i = 0; i < s_companion_pending_count; i++) {
     Tuple *tuple = elmc_inbox_materialize_tuple(&s_companion_pending[i], s_companion_pending_wire[i]);
@@ -3997,7 +4119,10 @@ static void companion_pending_append(void) {
     }
 
     s_companion_pending[s_companion_pending_count] = *snap;
-    s_companion_pending[s_companion_pending_count].cstring_kind = ELMC_INBOX_CSTRING_NONE;
+    if (snap->type == TUPLE_CSTRING && snap->cstring_kind == ELMC_INBOX_CSTRING_INBOX) {
+      memcpy(s_companion_pending_cstring, s_inbox_cstring_snapshot, ELMC_INBOX_STRING_MAX);
+      s_companion_pending_has_cstring = true;
+    }
     memcpy(
         s_companion_pending_wire[s_companion_pending_count],
         s_inbox_tuple_wire[i],
@@ -4903,6 +5028,8 @@ static void ensure_draw_layer_size(void) {
 #endif
 
 static void complete_elm_init(void) {
+  keep_emulator_backlight();
+
   if (s_elm_app.initialized) {
     return;
   }
@@ -4944,13 +5071,31 @@ static void complete_elm_init(void) {
 #endif
       uint32_t inbox_max = app_message_inbox_size_maximum();
       uint32_t outbox_max = app_message_outbox_size_maximum();
-      if (inbox_size > inbox_max) {
-        inbox_size = inbox_max;
-      }
       if (outbox_size > outbox_max) {
         outbox_size = outbox_max;
       }
+#ifdef ELMC_PEBBLE_APP_MESSAGE_INBOX_USE_MAXIMUM
+      inbox_size = inbox_max;
+#else
+      if (inbox_size > inbox_max) {
+        inbox_size = inbox_max;
+      }
+#endif
       AppMessageResult app_message_rc = app_message_open(inbox_size, outbox_size);
+#ifdef ELMC_PEBBLE_APP_MESSAGE_INBOX_USE_MAXIMUM
+      if (app_message_rc != APP_MSG_OK) {
+        inbox_size = ELMC_PEBBLE_APP_MESSAGE_INBOX_SIZE;
+#ifdef APP_MESSAGE_INBOX_SIZE_MINIMUM
+        if (inbox_size < APP_MESSAGE_INBOX_SIZE_MINIMUM) {
+          inbox_size = APP_MESSAGE_INBOX_SIZE_MINIMUM;
+        }
+#endif
+        if (inbox_size > inbox_max) {
+          inbox_size = inbox_max;
+        }
+        app_message_rc = app_message_open(inbox_size, outbox_size);
+      }
+#endif
       APP_LOG(APP_LOG_LEVEL_INFO, "app_message_open inbox=%lu outbox=%lu rc=%d",
               (unsigned long)inbox_size, (unsigned long)outbox_size, (int)app_message_rc);
       (void)app_message_rc;
@@ -5249,6 +5394,7 @@ static void init(void) {
   // #region agent probe
 #if ELMC_AGENT_PROBE_INIT_STAGE == 1
   window_stack_push(s_main_window, true);
+  keep_emulator_backlight();
   ELMC_PEBBLE_DEBUG_LOG(APP_LOG_LEVEL_INFO, "window pushed");
   ELMC_PEBBLE_TRACE_EXIT("init");
   return;
@@ -5256,6 +5402,7 @@ static void init(void) {
   // #endregion
 
   window_stack_push(s_main_window, true);
+  keep_emulator_backlight();
   ELMC_PEBBLE_DEBUG_LOG(APP_LOG_LEVEL_INFO, "window pushed");
 
   // #region agent probe
@@ -5364,6 +5511,9 @@ static void deinit(void) {
 #endif
 #if ELMC_PEBBLE_FEATURE_DRAW_VECTOR_AT
   vector_image_cache_clear();
+#endif
+#if ELMC_PEBBLE_FEATURE_DRAW_TEXT || ELMC_PEBBLE_FEATURE_DRAW_TEXT_INT || ELMC_PEBBLE_FEATURE_DRAW_TEXT_LABEL
+  font_cache_unload_all();
 #endif
 #if ELMC_PEBBLE_FEATURE_DRAW_VECTOR_SEQUENCE_AT
   elmc_vector_sequence_deinit();

@@ -127,6 +127,14 @@ defmodule Ide.Emulator.Types do
   @type screen :: WatchProfile.wire_screen()
   @type watch_profile :: WatchProfile.wire()
 
+  @type runtime_stats :: %{
+          required(:scene_bytes) => non_neg_integer(),
+          required(:scene_cmds) => non_neg_integer(),
+          required(:scene_cap) => non_neg_integer(),
+          required(:heap_free) => non_neg_integer(),
+          required(:heap_free_min) => non_neg_integer()
+        }
+
   @type session_info :: %{
           required(:id) => String.t(),
           required(:token) => String.t(),
@@ -147,7 +155,8 @@ defmodule Ide.Emulator.Types do
           required(:backend_enabled) => boolean(),
           required(:display_ready) => boolean(),
           required(:phone_bridge_ready) => boolean(),
-          required(:installing) => boolean()
+          required(:installing) => boolean(),
+          required(:runtime_stats) => runtime_stats() | nil
         }
 
   @type apply_settings_result :: %{

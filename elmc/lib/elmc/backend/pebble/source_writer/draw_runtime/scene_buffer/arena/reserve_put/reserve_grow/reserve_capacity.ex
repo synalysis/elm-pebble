@@ -34,32 +34,18 @@ defmodule Elmc.Backend.Pebble.SourceWriter.DrawRuntime.SceneBuffer.Arena.Reserve
       }
     #endif
       if (app->scene.byte_capacity >= min_capacity) return 0;
-      int next_capacity = app->scene.byte_capacity > 0 ? app->scene.byte_capacity : 0;
-      while (next_capacity < min_capacity) {
-        if (next_capacity == 0) {
-          next_capacity = ELMC_PEBBLE_SCENE_INITIAL_CAPACITY;
-        } else if (next_capacity < ELMC_PEBBLE_SCENE_INITIAL_CAPACITY) {
-          next_capacity += ELMC_PEBBLE_SCENE_GROW_CHUNK;
-        } else {
-          next_capacity *= 2;
-        }
-      }
-      unsigned char *next = (unsigned char *)malloc((size_t)next_capacity);
+      int next_capacity = elmc_pebble_scene_next_capacity(app->scene.byte_capacity, min_capacity);
+      unsigned char *next = (unsigned char *)realloc(app->scene.bytes, (size_t)next_capacity);
       if (!next) {
-    #if defined(ELMC_PEBBLE_PLATFORM)
-        APP_LOG(APP_LOG_LEVEL_ERROR,
-                "elmc scene buffer alloc failed need=%d have=%d used=%d free=%lu",
-                next_capacity,
-                app->scene.byte_capacity,
-                app->scene.byte_count,
-                (unsigned long)heap_bytes_free());
+        elmc_pebble_scene_note_grow_fail(
+            next_capacity, app->scene.byte_capacity, app->scene.byte_count);
+    #if defined(ELMC_PEBBLE_APP_TIGHT_RAM)
+        free(app->scene.bytes);
+        app->scene.bytes = NULL;
+        app->scene.byte_capacity = 0;
     #endif
         return -2;
       }
-      if (app->scene.bytes && app->scene.byte_count > 0) {
-        memcpy(next, app->scene.bytes, (size_t)app->scene.byte_count);
-      }
-      free(app->scene.bytes);
       app->scene.bytes = next;
       app->scene.byte_capacity = next_capacity;
       return 0;

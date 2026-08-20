@@ -2,6 +2,12 @@ import {encodeBattery, QEMU} from "./qemu_control"
 import {postJSON} from "./emulator_http"
 import type {HookContext} from "../types/liveview_hook"
 import {errMessage} from "../types/errors"
+import {
+  mergeElmcRuntimeStats,
+  parseElmcRuntimeStats,
+  renderElmcRuntimeStats,
+  type ElmcRuntimeStats
+} from "./elmc_runtime_stats"
 
 const MAX_LOG_LINES = 200
 
@@ -136,6 +142,7 @@ export class WasmEmulatorHost {
   currentAssets: string | null
   progressState: ProgressState | null
   storageEntries: Map<string, StorageEntry>
+  runtimeStats: ElmcRuntimeStats | null
   handleMessage: (event: MessageEvent) => void
   handleWindowBlur?: () => void
   buttonState: number
@@ -175,6 +182,7 @@ export class WasmEmulatorHost {
     this.currentAssets = null
     this.progressState = null
     this.storageEntries = new Map()
+    this.runtimeStats = null
     this.handleMessage = (event: MessageEvent) => this.onMessage(event)
     this.buttonState = 0
     this.assetsAvailable = false
@@ -210,6 +218,7 @@ export class WasmEmulatorHost {
     this.progressBar = this.el.querySelector("[data-wasm-progress-bar]")
     this.storageRows = this.el.querySelector("[data-wasm-storage-rows]")
     this.tapButton = this.el.querySelector("[data-wasm-tap]")
+    this.renderRuntimeStats()
 
     this.launchButton?.addEventListener("click", () => this.toggleLaunch())
     this.syncSelectedFirmware()
@@ -698,9 +707,21 @@ export class WasmEmulatorHost {
   appendLog(message: string): void {
     if (!message) return
     this.observeStorageLog(message)
+    this.observeRuntimeStats(message)
     this.logLines.unshift(`${new Date().toLocaleTimeString()} ${message}`)
     this.logLines = this.logLines.slice(0, MAX_LOG_LINES)
     if (this.log) this.log.textContent = this.logLines.join("\n")
+  }
+
+  observeRuntimeStats(message: string): void {
+    const parsed = parseElmcRuntimeStats(message)
+    if (!parsed) return
+    this.runtimeStats = mergeElmcRuntimeStats(this.runtimeStats, parsed)
+    this.renderRuntimeStats()
+  }
+
+  renderRuntimeStats(): void {
+    renderElmcRuntimeStats(this.el, this.runtimeStats, "wasm")
   }
 
   storageLogBody(message: string): string {

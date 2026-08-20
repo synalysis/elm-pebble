@@ -48,6 +48,7 @@ defmodule IdeWeb.WorkspaceLive.SocketAssigns do
           optional(:flash) => LiveViewAssigns.flash(),
           optional(:auth_mode) => Auth.auth_mode(),
           optional(:current_user) => User.t() | nil,
+          optional(:firebase_account) => User.t() | nil,
           optional(:firebase_id_token) => String.t() | nil,
           optional(:firebase_id_token_exp) => integer() | nil,
           optional(:firebase_config) => AuthTypes.firebase_config(),

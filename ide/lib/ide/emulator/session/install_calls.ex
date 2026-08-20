@@ -6,7 +6,10 @@ defmodule Ide.Emulator.Session.InstallCalls do
   require Logger
 
   alias Ide.Emulator.{InstallPrep, Types, Workflow}
+  alias Ide.Emulator.PebbleProtocol.Router
   alias Ide.Emulator.Session.{Config, Lifecycle, ProcessHost, Startup}
+
+  @app_log_endpoint 0x07D6
 
   @spec install_context(Types.session_state()) ::
           {:reply, {:ok, Types.install_context()} | {:error, Types.session_atom_error()},
@@ -99,12 +102,25 @@ defmodule Ide.Emulator.Session.InstallCalls do
 
   @spec install_finished(Types.session_state()) :: {:reply, :ok, Types.session_state()}
   def install_finished(state) do
+    maybe_request_app_logs(state)
+
     if Config.start_processes?() and not ProcessHost.live_pid?(state.pypkjs_pid) do
       send(self(), :restart_pypkjs_after_install)
     end
 
     {:reply, :ok, %{state | installing?: false, last_ping_ms: Lifecycle.now_ms()}}
   end
+
+  defp maybe_request_app_logs(%{protocol_router_pid: pid}) when is_pid(pid) do
+    if ProcessHost.live_pid?(pid) do
+      _ = Router.reset_runtime_stats(pid)
+      _ = Router.send_packet(pid, @app_log_endpoint, <<1>>)
+    end
+
+    :ok
+  end
+
+  defp maybe_request_app_logs(_), do: :ok
 
   @spec restart_pypkjs_after_install(Types.session_state()) :: Types.session_state()
   def restart_pypkjs_after_install(state) do

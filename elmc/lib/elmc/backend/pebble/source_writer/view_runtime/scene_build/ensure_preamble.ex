@@ -25,7 +25,10 @@ defmodule Elmc.Backend.Pebble.SourceWriter.ViewRuntime.SceneBuild.EnsurePreamble
         ELMC_DRAW_PATH_PROBE(ELMC_DRAW_PATH_ENSURE_SCENE_EXIT);
         ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_ensure_scene", 0);
       }
-      ELMC_PEBBLE_SCENE_LOG("elmc-scene ensure rebuild begin");
+      int elmc_pebble_ensure_attempts = 0;
+    elmc_pebble_ensure_retry:
+      ELMC_PEBBLE_SCENE_LOG("elmc-scene ensure rebuild begin attempt=%d",
+              elmc_pebble_ensure_attempts);
       elmc_pebble_prepare_scene_rebuild(app);
       elmc_pebble_scene_reset(app);
 """

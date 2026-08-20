@@ -5,6 +5,7 @@ defmodule Elmc.Backend.Plan.Lower.SpecialValues.Draw do
 
   alias Elmc.Backend.CCodegen.Constants
   alias Elmc.Backend.CCodegen.Emit
+  alias Elmc.Backend.Pebble.UiLabel
   alias Elmc.Backend.Plan.Lower.SpecialValues.{Core, Helpers}
   alias Elmc.Backend.CCodegen.Types
 
@@ -104,7 +105,7 @@ defmodule Elmc.Backend.Plan.Lower.SpecialValues.Draw do
       )
 
   def special_value_from_target("Pebble.Ui.WaitingForCompanion", []),
-    do: %{op: :string_literal, value: "Waiting for companion app"}
+    do: %{op: :string_literal, value: UiLabel.waiting_for_companion_text()}
 
   def special_value_from_target("Pebble.Ui.text", [font_id, options, bounds, value]),
     do:
@@ -438,7 +439,5 @@ defmodule Elmc.Backend.Plan.Lower.SpecialValues.Draw do
 
   defp ui_label_expr(expr), do: expr
 
-  defp ui_label_text("Pebble.Ui.WaitingForCompanion"), do: "Waiting for companion app"
-  defp ui_label_text("WaitingForCompanion"), do: "Waiting for companion app"
-  defp ui_label_text(_), do: nil
+  defp ui_label_text(name), do: UiLabel.display_text(name)
 end

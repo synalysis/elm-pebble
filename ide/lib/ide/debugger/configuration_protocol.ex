@@ -185,6 +185,10 @@ defmodule Ide.Debugger.ConfigurationProtocol do
     {:ok, Integer.to_string(int_value), int_value}
   end
 
+  defp protocol_arg(%{"type" => type}, value) when type in ["text", "color"] and is_binary(value) do
+    {:ok, value, value}
+  end
+
   defp protocol_arg(%{"type" => "choice", "options" => options}, value) when is_list(options) do
     case Enum.find(options, &(Map.get(&1, "value") == value)) do
       %{"constructor" => constructor} when is_binary(constructor) and constructor != "" ->

@@ -14,6 +14,9 @@ defmodule Elmc.Backend.Pebble.HeaderWriter.ApiDecls.RuntimeApi do
     int64_t elmc_pebble_model_as_int(ElmcPebbleApp *app);
     int elmc_pebble_run_mode(ElmcPebbleApp *app);
     void elmc_pebble_deinit(ElmcPebbleApp *app);
+    void elmc_pebble_note_runtime_stats(const ElmcPebbleApp *app);
+    int64_t elmc_pebble_watch_color_to_elm_tag(int color);
+    int64_t elmc_pebble_watch_model_to_elm_tag(int model);
 
     #if defined(ELMC_PEBBLE_PLATFORM) && ELMC_PEBBLE_HEAP_LOG
     void elmc_pebble_heap_log(const char *label);

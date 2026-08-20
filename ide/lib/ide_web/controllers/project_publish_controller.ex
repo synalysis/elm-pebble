@@ -20,9 +20,10 @@ defmodule IdeWeb.ProjectPublishController do
           {:ok, path} ->
             filename = Projects.pbw_download_filename(project)
 
-            conn
-            |> put_resp_header("content-disposition", ~s(attachment; filename="#{filename}"))
-            |> send_download({:file, path}, content_type: "application/octet-stream")
+            send_download(conn, {:file, path},
+              filename: filename,
+              content_type: "application/octet-stream"
+            )
 
           {:error, :pbw_not_found} ->
             conn

@@ -87,7 +87,7 @@ defmodule Ide.PebblePreferences.AstExtract do
   end
 
   @spec build_lookup(Module.t()) :: map()
-  defp build_lookup(%Module{import_entries: entries}) do
+  defp build_lookup(%Module{import_entries: entries, declarations: decls}) do
     alias_name =
       entries
       |> List.wrap()
@@ -102,7 +102,15 @@ defmodule Ide.PebblePreferences.AstExtract do
         end
       end)
 
-    %{preferences_alias: alias_name}
+    bindings =
+      decls
+      |> List.wrap()
+      |> Enum.filter(fn decl ->
+        Map.get(decl, :kind) == :function_definition and Map.get(decl, :args) == []
+      end)
+      |> Map.new(fn decl -> {decl.name, normalize_expr(Map.get(decl, :expr))} end)
+
+    %{preferences_alias: alias_name, bindings: bindings}
   end
 
   @spec import_module_name(map()) :: String.t() | nil
@@ -224,11 +232,12 @@ defmodule Ide.PebblePreferences.AstExtract do
       %{op: :pipe_chain, base: base, steps: steps} when is_list(steps) ->
         with {:ok, state} <- interpret_schema_call(base, lookup) do
           steps
-          |> Enum.reduce({:ok, state}, fn step, {:ok, acc} ->
-            case apply_schema_step(step, acc, lookup) do
-              {:ok, next} -> {:ok, next}
-              :error -> :error
-            end
+          |> Enum.reduce({:ok, state}, fn
+            step, {:ok, acc} ->
+              apply_schema_step(step, acc, lookup)
+
+            _step, :error ->
+              :error
           end)
           |> case do
             {:ok, %{title: title, sections: sections}} ->
@@ -399,18 +408,41 @@ defmodule Ide.PebblePreferences.AstExtract do
     end
   end
 
-  @spec choice_options(map(), map()) :: {:ok, [map()]} | :error
+  @spec choice_options(map() | String.t(), map()) :: {:ok, [map()]} | :error
   defp choice_options(%{op: :list_literal, items: items}, lookup) when is_list(items) do
     items
-    |> Enum.reduce({:ok, []}, fn item, {:ok, acc} ->
-      case choice_option(item, lookup) do
-        {:ok, option} -> {:ok, acc ++ [option]}
-        :error -> :error
-      end
+    |> Enum.reduce({:ok, []}, fn
+      item, {:ok, acc} ->
+        case choice_option(item, lookup) do
+          {:ok, option} -> {:ok, acc ++ [option]}
+          :error -> :error
+        end
+
+      _item, :error ->
+        :error
     end)
   end
 
+  defp choice_options(%{op: :var, name: name}, lookup) when is_binary(name) do
+    choice_options_from_binding(name, lookup)
+  end
+
+  defp choice_options(name, lookup) when is_binary(name) do
+    choice_options_from_binding(name, lookup)
+  end
+
   defp choice_options(_, _), do: :error
+
+  @spec choice_options_from_binding(String.t(), map()) :: {:ok, [map()]} | :error
+  defp choice_options_from_binding(name, lookup) when is_binary(name) do
+    case lookup |> Map.get(:bindings, %{}) |> Map.get(name) do
+      nil ->
+        :error
+
+      expr ->
+        choice_options(normalize_expr(expr), lookup)
+    end
+  end
 
   @spec choice_option(map(), map()) :: {:ok, map()} | :error
   defp choice_option(expr, lookup) do

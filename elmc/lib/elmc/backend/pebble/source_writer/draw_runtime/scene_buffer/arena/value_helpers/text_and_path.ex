@@ -17,9 +17,8 @@ defmodule Elmc.Backend.Pebble.SourceWriter.DrawRuntime.SceneBuffer.Arena.ValueHe
     }
     #endif
 
-    static int elmc_scene_path_extra_size(const ElmcPebbleDrawCmd *cmd) {
-      (void)cmd;
     #if ELMC_PEBBLE_FEATURE_DRAW_PATH
+    static int elmc_scene_path_extra_size(const ElmcPebbleDrawCmd *cmd) {
       if (!cmd) return 0;
       if (cmd->kind == ELMC_PEBBLE_DRAW_PATH_FILLED ||
           cmd->kind == ELMC_PEBBLE_DRAW_PATH_OUTLINE ||
@@ -29,9 +28,9 @@ defmodule Elmc.Backend.Pebble.SourceWriter.DrawRuntime.SceneBuffer.Arena.ValueHe
         if (count > 16) count = 16;
         return 7 + (count * 4);
       }
-    #endif
       return 0;
     }
+    #endif
 
     """
   end

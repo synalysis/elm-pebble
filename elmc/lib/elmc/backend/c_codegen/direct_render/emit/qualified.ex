@@ -184,13 +184,11 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Qualified do
     case context_expr do
       %{op: :qualified_call, target: ctx_target, args: ctx_args} ->
         case {Host.normalize_special_target(ctx_target), ctx_args} do
-          {"Pebble.Ui.context",
-           [%{op: :list_literal, items: settings}, %{op: :list_literal, items: commands}]} ->
+          {"Pebble.Ui.context", [%{op: :list_literal, items: settings}, commands]} ->
             with {:ok, push_code, counter} <-
                    Host.direct_append_command(draw_kind(:push_context), [], env, counter),
                  {:ok, settings_code, counter} <- Host.direct_emit_settings(settings, env, counter),
-                 {:ok, command_code, counter} <-
-                   Host.direct_emit_expr(%{op: :list_literal, items: commands}, env, counter),
+                 {:ok, command_code, counter} <- Host.direct_emit_expr(commands, env, counter),
                  {:ok, pop_code, counter} <-
                    Host.direct_append_command(draw_kind(:pop_context), [], env, counter) do
               {:ok, push_code <> settings_code <> command_code <> pop_code, counter}

@@ -4,7 +4,8 @@ defmodule Ide.Auth do
 
   Modes:
 
-  - `:local` — no login required for the IDE; App Store publish still uses Firebase on the Publish tab
+  - `:local` — no IDE login required; CloudPebble/App Store Firebase login uses the
+    same providers as public_pebble (open the IDE as `localhost`, not `127.0.0.1`)
   - `:public_pebble` — Firebase login (Rebble project) for IDE access and automated App Store publish
   - `:public_custom` — magic-link email login; publish offers PBW download instead of store submit
   """

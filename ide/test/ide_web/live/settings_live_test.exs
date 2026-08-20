@@ -28,10 +28,18 @@ defmodule IdeWeb.SettingsLiveTest do
   end
 
   test "settings page persists editor mode", %{conn: conn} do
-    assert {:ok, view, _html} = live(conn, ~p"/settings")
-    assert render(view) =~ "Editor mode"
-    assert render(view) =~ "Built-in formatter (experimental)"
-    assert render(view) =~ ~r/<option[^>]*value="elm_format"[^>]*selected/
+    assert {:ok, view, html} = live(conn, ~p"/settings")
+    assert html =~ "Editor"
+    assert html =~ "Publishing"
+    assert html =~ "GitHub"
+    assert html =~ "Emulator"
+    assert html =~ "Agents"
+    assert html =~ "Editor mode"
+    assert html =~ "Built-in formatter (experimental)"
+    assert html =~ ~r/<option[^>]*value="elm_format"[^>]*selected/
+    refute html =~ "Company name"
+    refute html =~ "MCP / ACP access"
+    refute html =~ "Embedded Emulator Setup"
 
     view
     |> form("form", %{
@@ -42,12 +50,7 @@ defmodule IdeWeb.SettingsLiveTest do
         "editor_mode" => "vim",
         "editor_theme" => "dark",
         "editor_line_numbers" => "true",
-        "editor_active_line_highlight" => "true",
-        "mcp_http_enabled" => "true",
-        "mcp_http_port" => "4100",
-        "mcp_http_capabilities" => ["read", "edit"],
-        "acp_agent_enabled" => "true",
-        "acp_agent_capabilities" => ["read", "build"]
+        "editor_active_line_highlight" => "true"
       }
     })
     |> render_submit()
@@ -62,17 +65,31 @@ defmodule IdeWeb.SettingsLiveTest do
              editor_theme: :dark,
              editor_line_numbers: true,
              editor_active_line_highlight: true,
-             mcp_http_enabled: true,
-             mcp_http_port: 4100,
-             mcp_http_capabilities: [:read, :edit],
-             acp_agent_enabled: true,
-             acp_agent_capabilities: [:read, :build]
+             company_name: "elm-pebble-ide"
            } = Settings.current()
 
     assert render(view) =~ ~r/<option[^>]*value="vim"[^>]*selected/
     assert render(view) =~ ~r/<option[^>]*value="elm_format"[^>]*selected/
     assert render(view) =~ ~r/<option[^>]*value="dark"[^>]*selected/
-    html = render(view)
+  end
+
+  test "publishing tab persists company name", %{conn: conn} do
+    assert {:ok, view, html} = live(conn, ~p"/settings/publishing")
+    assert html =~ "Company name"
+    assert html =~ "elm-pebble-ide"
+    refute html =~ "Editor mode"
+
+    view
+    |> form("form", %{"settings" => %{"company_name" => "Acme Watches"}})
+    |> render_submit()
+
+    assert render(view) =~ "Settings saved."
+    assert %{company_name: "Acme Watches"} = Settings.current()
+    assert render(view) =~ ~s(value="Acme Watches")
+  end
+
+  test "agents tab persists MCP and ACP settings", %{conn: conn} do
+    assert {:ok, view, html} = live(conn, ~p"/settings/agents")
     assert html =~ "MCP / ACP access"
     assert html =~ "Editor configuration snippets"
     assert html =~ "Client / editor"
@@ -82,6 +99,31 @@ defmodule IdeWeb.SettingsLiveTest do
     assert html =~ "Zed (remote MCP context server)"
     assert html =~ "Zed (local ACP external agent)"
     assert html =~ "Cursor / Claude Desktop style (local MCP stdio)"
+    refute html =~ "Editor mode"
+
+    view
+    |> form("form", %{
+      "settings" => %{
+        "mcp_http_enabled" => "true",
+        "mcp_http_port" => "4100",
+        "mcp_http_capabilities" => ["read", "edit"],
+        "acp_agent_enabled" => "true",
+        "acp_agent_capabilities" => ["read", "build"]
+      }
+    })
+    |> render_submit()
+
+    assert render(view) =~ "Settings saved."
+
+    assert %{
+             mcp_http_enabled: true,
+             mcp_http_port: 4100,
+             mcp_http_capabilities: [:read, :edit],
+             acp_agent_enabled: true,
+             acp_agent_capabilities: [:read, :build]
+           } = Settings.current()
+
+    html = render(view)
     assert html =~ "http://localhost:4100/api/mcp"
     assert html =~ "mcpServers"
     assert html =~ "url"
@@ -140,6 +182,10 @@ defmodule IdeWeb.SettingsLiveTest do
       refute html =~ "MCP / ACP access"
       refute html =~ "Embedded Emulator Setup"
       refute html =~ "Editor configuration snippets"
+      refute html =~ ~s(href="/settings/emulator")
+      refute html =~ ~s(href="/settings/agents")
+      assert html =~ "Publishing"
+      assert html =~ "GitHub"
 
       view
       |> form("form", %{
@@ -195,7 +241,7 @@ defmodule IdeWeb.SettingsLiveTest do
     System.put_env("PATH", path)
 
     try do
-      assert {:ok, view, _html} = live(conn, ~p"/settings")
+      assert {:ok, view, _html} = live(conn, ~p"/settings/emulator")
 
       html = render_click(view, "install-emulator-dependencies")
 

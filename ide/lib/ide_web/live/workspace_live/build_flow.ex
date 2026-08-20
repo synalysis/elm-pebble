@@ -911,6 +911,7 @@ defmodule IdeWeb.WorkspaceLive.BuildFlow do
              source_roots: project.source_roots,
              emulator_storage_logs: Keyword.get(opts, :emulator_storage_logs, false),
              emulator_heap_log: Keyword.get(opts, :emulator_heap_log, false),
+             emulator_keep_backlight: Keyword.get(opts, :emulator_keep_backlight, true),
              prod: production_build?,
              debug_usage_policy: :error
            ) do

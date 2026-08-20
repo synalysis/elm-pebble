@@ -5,6 +5,14 @@ export type EmulatorScreen = {
   height: number
 }
 
+export type ElmcRuntimeStatsWire = {
+  scene_bytes: number
+  scene_cmds: number
+  scene_cap: number
+  heap_free: number
+  heap_free_min: number
+}
+
 export type EmulatorSessionInfo = {
   id: string
   token: string
@@ -26,6 +34,7 @@ export type EmulatorSessionInfo = {
   display_ready: boolean
   phone_bridge_ready: boolean
   installing: boolean
+  runtime_stats?: ElmcRuntimeStatsWire | null
 }
 
 export type PingResponse = EmulatorSessionInfo & {

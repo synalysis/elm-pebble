@@ -246,6 +246,7 @@ defmodule Ide.CompanionProtocolGeneratorTest do
       generated_source = File.read!(source)
 
       assert generated_header =~ "int32_t int_fields[COMPANION_PROTOCOL_MAX_FIELDS]"
+      refute generated_header =~ "#define ELMC_PEBBLE_APP_MESSAGE_INBOX_USE_MAXIMUM"
       refute generated_header =~ "string_fields"
       refute generated_header =~ "bool_fields"
       refute generated_header =~ "union_value_fields"
@@ -357,8 +358,10 @@ defmodule Ide.CompanionProtocolGeneratorTest do
       assert generated_header =~ "list_counts[COMPANION_PROTOCOL_MAX_FIELDS]"
       assert generated_header =~ "COMPANION_PROTOCOL_KEY_PROVIDE_PIECE_FIELD2_COUNT"
       assert generated_header =~ "COMPANION_PROTOCOL_KEY_PROVIDE_PIECE_FIELD2_0"
-      # ProvidePiece: tag + Int + (count + 16 list slots) = 19 keys → 1 + 19*11 + 32 = 242
+      # ProvidePiece: tag + Int + (count + 16 list slots) = 1+11+11+17*11+32 = 242.
+      # Int lists are bounded, so the watch keeps this computed inbox.
       assert generated_header =~ "ELMC_PEBBLE_APP_MESSAGE_INBOX_SIZE_REQUIRED 242"
+      refute generated_header =~ "#define ELMC_PEBBLE_APP_MESSAGE_INBOX_USE_MAXIMUM"
       assert generated_header =~ "ELMC_PEBBLE_APP_MESSAGE_OUTBOX_SIZE_REQUIRED 636"
 
       assert generated_source =~ "companion_protocol_decode_list_wire_int"
@@ -371,6 +374,46 @@ defmodule Ide.CompanionProtocolGeneratorTest do
       assert generated_internal =~ "++ encodeListInt \"provide_piece_field2\" field2"
       assert generated_js =~ "wirePhoneToWatchFromElmPayload"
       assert generated_js =~ "elmPayloadListInt"
+    after
+      File.rm_rf(tmp)
+    end
+  end
+
+  test "sizes the watch inbox for string payloads instead of int-only tuples" do
+    tmp =
+      Path.join(
+        System.tmp_dir!(),
+        "elm-pebble-protocol-string-inbox-#{System.unique_integer([:positive])}"
+      )
+
+    types = Path.join(tmp, "Types.elm")
+    header = Path.join(tmp, "generated/companion_protocol.h")
+    source = Path.join(tmp, "generated/companion_protocol.c")
+    js = Path.join(tmp, "pkjs/companion-protocol.js")
+
+    try do
+      File.mkdir_p!(Path.dirname(types))
+
+      File.write!(types, """
+      module Companion.Types exposing (PhoneToWatch(..), WatchToPhone(..))
+
+      type WatchToPhone
+          = RequestSettings
+
+      type PhoneToWatch
+          = SetLabel String
+      """)
+
+      assert :ok = CompanionProtocolGenerator.generate(types, header, source, js)
+
+      generated_header = File.read!(header)
+      # Tag + 256-byte cstring fallback: 1+11+7+256+32 = 307.
+      # Do not open the firmware-maximum inbox — that permanently reserves ~8KB
+      # on Basalt and starves the Elm heap.
+      assert generated_header =~ "COMPANION_PROTOCOL_STRING_MAX 256"
+      refute generated_header =~ "#define ELMC_PEBBLE_APP_MESSAGE_INBOX_USE_MAXIMUM"
+      assert generated_header =~ "ELMC_PEBBLE_APP_MESSAGE_INBOX_SIZE_REQUIRED 307"
+      assert generated_header =~ "string_fields[COMPANION_PROTOCOL_MAX_FIELDS][COMPANION_PROTOCOL_STRING_MAX]"
     after
       File.rm_rf(tmp)
     end

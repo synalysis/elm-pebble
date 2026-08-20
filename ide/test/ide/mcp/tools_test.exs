@@ -436,6 +436,8 @@ defmodule Ide.Mcp.ToolsTest do
                  "name" => "Mcp Settings Updated",
                  "release_defaults" => %{
                    "version_label" => "1.2.3",
+                   "description" => "A small Pebble watchapp.",
+                   "tags" => "utility,demo",
                    "target_platforms" => ["basalt", "chalk"]
                  },
                  "github" => %{"owner" => "ape", "repo" => "elm-pebble", "token" => "secret"},
@@ -450,6 +452,8 @@ defmodule Ide.Mcp.ToolsTest do
 
     assert updated.name == "Mcp Settings Updated"
     assert updated.release_defaults["version_label"] == "1.2.3"
+    assert updated.release_defaults["description"] == "A small Pebble watchapp."
+    assert updated.release_defaults["tags"] == "utility,demo"
     assert updated.github == %{"owner" => "ape", "repo" => "elm-pebble"}
     assert updated.debugger["emulator_target"] == "chalk"
     refute Map.has_key?(updated.debugger, "unsafe_key")

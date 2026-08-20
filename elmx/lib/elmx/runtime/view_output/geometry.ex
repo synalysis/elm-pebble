@@ -158,10 +158,12 @@ defmodule Elmx.Runtime.ViewOutput.Geometry do
   @spec label_display_text(map()) :: Types.elm_value()
 
   def label_display_text(node) when is_map(node) do
-    text_content(node)
-    |> case do
+    text = text_content(node)
+
+    case text do
+      "Pebble.Ui.WaitingForCompanion" -> "Waiting for companion app"
       "WaitingForCompanion" -> "Waiting for companion app"
-      text -> text
+      other -> other
     end
   end
 

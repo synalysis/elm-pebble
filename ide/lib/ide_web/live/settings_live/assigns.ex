@@ -21,6 +21,7 @@ defmodule IdeWeb.SettingsLive.Assigns do
           optional(:flash) => LiveViewAssigns.flash(),
           optional(:auth_mode) => Auth.auth_mode(),
           optional(:return_to) => String.t(),
+          optional(:settings_tab) => :editor | :publishing | :github | :emulator | :agents,
           optional(:github_status) => github_status(),
           optional(:github_oauth_ready) => boolean(),
           optional(:github_flow) => github_flow_state() | nil,

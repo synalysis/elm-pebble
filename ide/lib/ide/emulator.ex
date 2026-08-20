@@ -133,7 +133,8 @@ defmodule Ide.Emulator do
           lines: [],
           fault_detected: false,
           console: %{output: "", error: :not_found},
-          protocol: %{lines: [], error: :not_found}
+          protocol: %{lines: [], error: :not_found},
+          runtime_stats: nil
         }
     end
   end

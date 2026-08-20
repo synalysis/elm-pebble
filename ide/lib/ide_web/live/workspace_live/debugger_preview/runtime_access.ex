@@ -62,10 +62,10 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview.RuntimeAccess do
           resolve_text_label_value(node, env)
       end
 
-    if is_binary(text) and String.trim(text) != "", do: text, else: "Label"
+    if is_binary(text), do: text, else: ""
   end
 
-  def text_label_from_node(_node, _model), do: "Label"
+  def text_label_from_node(_node, _model), do: ""
 
   @spec field_access_int(view_node(), model_map()) :: integer() | nil
   def field_access_int(node, model) when is_map(node) and is_map(model) do
@@ -121,6 +121,8 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview.RuntimeAccess do
     target =
       to_string(Map.get(node, "qualified_target") || Map.get(node, :qualified_target) || "")
 
+    platform_text = platform_label_text(type, target)
+
     cond do
       label == "__append__" ->
         values = node_children(node) |> Enum.map(&resolve_text_label_value(&1, env))
@@ -138,9 +140,8 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview.RuntimeAccess do
       normalize_text_value(value) != nil ->
         normalize_text_value(value)
 
-      type == "WaitingForCompanion" or
-          String.ends_with?(target, "WaitingForCompanion") ->
-        "Waiting for companion app"
+      is_binary(platform_text) ->
+        platform_text
 
       op == "field_access" ->
         resolve_field_access_text(node, env)
@@ -157,6 +158,12 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview.RuntimeAccess do
   end
 
   defp resolve_text_label_value(_node, _env), do: nil
+
+  @spec platform_label_text(String.t(), String.t()) :: String.t() | nil
+  defp platform_label_text(type, target) do
+    Elmc.Backend.Pebble.UiLabel.display_text(target) ||
+      if target == "", do: Elmc.Backend.Pebble.UiLabel.display_text(type)
+  end
 
   @spec string_from_int_node?(view_node()) :: boolean()
   defp string_from_int_node?(node) when is_map(node) do

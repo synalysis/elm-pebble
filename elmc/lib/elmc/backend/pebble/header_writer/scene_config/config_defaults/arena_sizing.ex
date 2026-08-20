@@ -8,13 +8,24 @@ defmodule Elmc.Backend.Pebble.HeaderWriter.SceneConfig.ConfigDefaults.ArenaSizin
   @spec body() :: Types.c_source()
   def body do
     """
-    /* Platform sizing: INITIAL clears the mid-encode realloc cliff (a ~540B
-       view overflowing a 512B first slot needs ~1.5KiB contiguous on grow and
-       fails on tight heaps as SCENE_BUFFER_OVERFLOW → blank white draw).
-       Pool double-buffering (prepare_rebuild + abort_build) keeps the last good
-       frame when a later rebuild fails, so transient OOM does not gray the face. */
+    /* Tight-RAM APP images (Aplite 24KB / Basalt·Chalk·Diorite·Flint 64KB).
+       After companion AppMessages the heap is fragmented: realloc and even
+       malloc(320) can fail with >1.5KB free. Reserve the scene in BSS at
+       init so a full watch encode never needs a heap grow. Heap-backed
+       first slots (256) only postpone the miss until the face overflows.
+       Emery/Gabbro keep a malloc pool with a 1KB first slot. */
+    #if defined(PBL_PLATFORM_APLITE) || defined(PBL_PLATFORM_BASALT) || defined(PBL_PLATFORM_CHALK) || defined(PBL_PLATFORM_DIORITE) || defined(PBL_PLATFORM_FLINT)
+    #define ELMC_PEBBLE_APP_TIGHT_RAM 1
+    #endif
+
     #ifndef ELMC_PEBBLE_SCENE_INITIAL_CAPACITY
+    #if defined(PBL_PLATFORM_APLITE)
+    #define ELMC_PEBBLE_SCENE_INITIAL_CAPACITY 512
+    #elif defined(ELMC_PEBBLE_APP_TIGHT_RAM)
+    #define ELMC_PEBBLE_SCENE_INITIAL_CAPACITY 768
+    #else
     #define ELMC_PEBBLE_SCENE_INITIAL_CAPACITY 1024
+    #endif
     #endif
 
     #ifndef ELMC_PEBBLE_SCENE_GROW_CHUNK
@@ -29,19 +40,24 @@ defmodule Elmc.Backend.Pebble.HeaderWriter.SceneConfig.ConfigDefaults.ArenaSizin
     #define ELMC_PEBBLE_SCENE_TRIM_SLACK 0
     #endif
 
-    /* Retained scene-byte pools: grow once per slot, never shrink or realloc per frame.
-       Each slot is ~8B BSS on pebble_int32. Watchfaces typically keep 1–2 live scenes;
-       4 leaves headroom under flint's 64KiB APP virtual-size uint16 limit. */
+    /* Tight-RAM: no heap scene pool. One BSS buffer is rebuilt in place.
+       Larger platforms keep a 4-slot malloc pool. */
     #ifndef ELMC_PEBBLE_SCENE_POOL_SLOTS
-    #if defined(PBL_PLATFORM_APLITE)
-    #define ELMC_PEBBLE_SCENE_POOL_SLOTS 2
+    #if defined(ELMC_PEBBLE_APP_TIGHT_RAM)
+    #define ELMC_PEBBLE_SCENE_POOL_SLOTS 0
     #else
     #define ELMC_PEBBLE_SCENE_POOL_SLOTS 4
     #endif
     #endif
 
     #ifndef ELMC_PEBBLE_SCENE_STATIC_CAPACITY
+    #if defined(PBL_PLATFORM_APLITE)
+    #define ELMC_PEBBLE_SCENE_STATIC_CAPACITY 512
+    #elif defined(ELMC_PEBBLE_APP_TIGHT_RAM)
+    #define ELMC_PEBBLE_SCENE_STATIC_CAPACITY 768
+    #else
     #define ELMC_PEBBLE_SCENE_STATIC_CAPACITY 0
+    #endif
     #endif
 
     #ifndef ELMC_PEBBLE_SCENE_CHUNK_SIZE

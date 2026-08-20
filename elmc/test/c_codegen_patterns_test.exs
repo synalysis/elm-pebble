@@ -210,8 +210,8 @@ defmodule Elmc.CCodegenPatternsTest do
     assert drop_body =~
              ~r/ELMC_RECORD_GET_INDEX(?:_INT)?\(owned\[\d+\], ELMC_FIELD_MAIN_ACTIVEPIECE_X\)/
 
-    assert drop_body =~ "elmc_record_update_index_int_cow_drop" or
-             drop_body =~ "elmc_record_update_index_cow_drop"
+    assert drop_body =~ "elmc_record_update_index_int_cow" or
+             drop_body =~ "elmc_record_update_index_cow"
     assert drop_body =~ "ELMC_FIELD_MAIN_ACTIVEPIECE_Y"
     refute drop_body =~ ~r/elmc_record_update_index\(owned\[\d+\], 0 \/\* y \*\)/
 
@@ -409,7 +409,9 @@ defmodule Elmc.CCodegenPatternsTest do
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
     body = assert_plan_fn!(generated_c, "collect")
-    assert body =~ "elmc_list_foldl("
+    assert body =~ "list_walk_foldl_acc_" or body =~ "list_walk_foldl_cursor_"
+    refute body =~ "elmc_list_foldl("
+    refute body =~ "elmc_closure_new_rc"
   end
 
   test "record literal reads score from bound merge var instead of constant zero" do
@@ -895,7 +897,8 @@ defmodule Elmc.CCodegenPatternsTest do
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
     body = assert_plan_fn!(generated_c, "collect")
-    assert body =~ "elmc_list_foldl("
+    assert body =~ "list_walk_foldl_acc_" or body =~ "list_walk_foldl_cursor_"
+    refute body =~ "elmc_list_foldl("
   end
 
   test "homogeneous long pipe_chain lowers to a C loop instead of nested calls" do
@@ -1390,8 +1393,8 @@ defmodule Elmc.CCodegenPatternsTest do
 
     move_body = fn_body!(generated_c, "moveActive")
     assert_plan_lowered!(move_body)
-    assert move_body =~ "elmc_record_update_index_int_cow_drop" or
-             move_body =~ "elmc_record_update_index_cow_drop"
+    assert move_body =~ "elmc_record_update_index_int_cow" or
+             move_body =~ "elmc_record_update_index_cow"
     assert move_body =~ "ELMC_FIELD_MAIN_ACTIVEPIECE_X"
     assert move_body =~ "ELMC_FIELD_MAIN_ACTIVEPIECE_Y"
   end
@@ -1557,6 +1560,430 @@ defmodule Elmc.CCodegenPatternsTest do
     assert body =~ "ELMC_TAG_INT_LIST"
     refute body =~ "elmc_list_map("
     refute body =~ "elmc_list_append("
+  end
+
+  test "List.map over a stored lazy map walks with nth instead of skipping" do
+    source = """
+    module Main exposing (main)
+
+    import Pebble.Platform as Platform
+    import Pebble.Ui as Ui
+    import Pebble.Ui.Color as Color
+
+    type alias Tick =
+        { x : Int
+        , width : Int
+        }
+
+    indexes : List Int
+    indexes =
+        [ 0, 5, 10, 15 ]
+
+    ticks : List Tick
+    ticks =
+        List.map (\\index -> { x = index, width = 2 }) indexes
+
+    tickWidth : Tick -> Int
+    tickWidth tick =
+        tick.width
+
+    widths : List Tick -> List Int
+    widths marks =
+        List.map tickWidth marks
+
+    init _ =
+        ( { n = List.sum (widths ticks) }, Platform.Cmd.none )
+
+    update _ m =
+        ( m, Platform.Cmd.none )
+
+    view m =
+        Ui.toUiNode [ Ui.clear Color.white, Ui.text (String.fromInt m.n) ]
+
+    subscriptions _ =
+        Platform.Sub.none
+
+    main =
+        Platform.application { init = init, update = update, view = view, subscriptions = subscriptions }
+    """
+
+    out_dir = compile_snippet!("list_map_lazy_then_map", source)
+    generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+
+    ticks_body = assert_plan_fn!(generated_c, "ticks")
+    assert ticks_body =~ "elmc_lazy_map("
+
+    widths_body = assert_plan_fn!(generated_c, "widths")
+    assert widths_body =~ "elmc_lazy_map_nth("
+    assert widths_body =~ "ELMC_TAG_LAZY_MAP"
+  end
+
+  test "Ui.context over List.map streams instead of boxing the view" do
+    source = """
+    module Main exposing (main)
+
+    import Pebble.Platform as Platform
+    import Pebble.Ui as Ui
+    import Pebble.Ui.Color as Color
+
+    type alias Line =
+        { x : Int
+        }
+
+    lineOp : Line -> Ui.RenderOp
+    lineOp line =
+        Ui.pixel { x = line.x, y = 0 } Color.black
+
+    quoteOps : List Line -> List Ui.RenderOp
+    quoteOps lines =
+        [ Ui.clear Color.white
+        , Ui.group
+            (Ui.context
+                [ Ui.textColor Color.black ]
+                (List.map lineOp lines)
+            )
+        ]
+
+    init _ =
+        ( { lines = [ { x = 4 }, { x = 8 } ] }, Platform.Cmd.none )
+
+    update _ m =
+        ( m, Platform.Cmd.none )
+
+    view m =
+        quoteOps m.lines
+            |> Ui.toUiNode
+
+    subscriptions _ =
+        Platform.Sub.none
+
+    main =
+        Platform.application { init = init, update = update, view = view, subscriptions = subscriptions }
+    """
+
+    out_dir =
+      compile_snippet!("context_map_stream_view", source, %{
+        direct_render_only: true,
+        codegen_profile: :size
+      })
+    generated_h = File.read!(Path.join(out_dir, "c/elmc_generated.h"))
+    generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+    pebble_c = File.read!(Path.join(out_dir, "c/elmc_pebble.c"))
+
+    assert generated_h =~ "#define ELMC_HAVE_DIRECT_COMMANDS_MAIN_VIEW 1"
+    assert generated_c =~ "elmc_fn_Main_view_commands_append"
+    assert generated_c =~ "ELMC_RENDER_OP_PUSH_CONTEXT"
+    assert pebble_c =~
+             ~r/#elif defined\(ELMC_HAVE_DIRECT_COMMANDS_MAIN_VIEW\) && !defined\(ELMC_PEBBLE_DIRECT_VIEW_SCENE\)/
+
+    refute generated_c =~ ~r/RC elmc_fn_Main_view\(/
+    refute generated_c =~ ~r/static RC elmc_fn_Main_quoteOps\(/
+    refute generated_c =~ ~r/static RC elmc_fn_Main_lineOp\(/
+  end
+
+  test "List.map of stored tick marks streams through a context group" do
+    source = """
+    module Main exposing (main)
+
+    import Pebble.Platform as Platform
+    import Pebble.Ui as Ui
+    import Pebble.Ui.Color as Color
+
+    type alias Point =
+        { x : Int
+        , y : Int
+        }
+
+    type alias Mark =
+        { from : Point
+        , to : Point
+        }
+
+    markOp : Mark -> Ui.RenderOp
+    markOp mark =
+        Ui.group
+            (Ui.context
+                [ Ui.strokeColor Color.black
+                , Ui.strokeWidth 2
+                ]
+                [ Ui.line mark.from mark.to Color.black ]
+            )
+
+    faceOps : List Mark -> List Ui.RenderOp
+    faceOps marks =
+        [ Ui.clear Color.white ]
+            ++ List.map markOp marks
+
+    indexes : List Int
+    indexes =
+        [ 0, 5, 10, 15 ]
+
+    marks : List Mark
+    marks =
+        List.map (\\index -> { from = { x = index, y = 0 }, to = { x = index, y = 4 } }) indexes
+
+    init _ =
+        ( { ticks = marks }, Platform.Cmd.none )
+
+    update _ m =
+        ( m, Platform.Cmd.none )
+
+    view m =
+        faceOps m.ticks
+            |> Ui.toUiNode
+
+    subscriptions _ =
+        Platform.Sub.none
+
+    main =
+        Platform.application { init = init, update = update, view = view, subscriptions = subscriptions }
+    """
+
+    out_dir =
+      compile_snippet!("tick_map_stream_view", source, %{
+        direct_render_only: true,
+        codegen_profile: :size
+      })
+    generated_h = File.read!(Path.join(out_dir, "c/elmc_generated.h"))
+    generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+
+    assert generated_h =~ "#define ELMC_HAVE_DIRECT_COMMANDS_MAIN_VIEW 1"
+    assert generated_c =~ "elmc_fn_Main_view_commands_append"
+    assert generated_c =~ "ELMC_RENDER_OP_PUSH_CONTEXT"
+    assert generated_c =~ "elmc_lazy_map_nth(" or generated_c =~ "ELMC_TAG_LAZY_MAP"
+    refute generated_c =~ ~r/RC elmc_fn_Main_view\(/
+    refute generated_c =~ ~r/static RC elmc_fn_Main_faceOps\(/
+    refute generated_c =~ ~r/static RC elmc_fn_Main_markOp\(/
+  end
+
+  test "dense int pair case lowers to a const table from Elm" do
+    source = """
+    module Main exposing (main)
+
+    import Pebble.Platform as Platform
+    import Pebble.Ui as Ui
+    import Pebble.Ui.Color as Color
+
+    ring12 : Int -> ( Int, Int )
+    ring12 index =
+        case modBy 12 index of
+            0 ->
+                ( 1000, 0 )
+
+            1 ->
+                ( 866, 500 )
+
+            2 ->
+                ( 500, 866 )
+
+            3 ->
+                ( 0, 1000 )
+
+            4 ->
+                ( -500, 866 )
+
+            5 ->
+                ( -866, 500 )
+
+            6 ->
+                ( -1000, 0 )
+
+            7 ->
+                ( -866, -500 )
+
+            8 ->
+                ( -500, -866 )
+
+            9 ->
+                ( 0, -1000 )
+
+            10 ->
+                ( 500, -866 )
+
+            _ ->
+                ( 866, -500 )
+
+    spoke12 : Int -> ( Int, Int )
+    spoke12 index =
+        case remainderBy 12 index of
+            0 ->
+                ( 0, -1000 )
+
+            1 ->
+                ( 500, -866 )
+
+            2 ->
+                ( 866, -500 )
+
+            3 ->
+                ( 1000, 0 )
+
+            4 ->
+                ( 866, 500 )
+
+            5 ->
+                ( 500, 866 )
+
+            6 ->
+                ( 0, 1000 )
+
+            7 ->
+                ( -500, 866 )
+
+            8 ->
+                ( -866, 500 )
+
+            9 ->
+                ( -1000, 0 )
+
+            10 ->
+                ( -866, -500 )
+
+            _ ->
+                ( -500, -866 )
+
+    point : Int -> { x : Int, y : Int }
+    point index =
+        let
+            ( dx, dy ) =
+                ring12 index
+        in
+        { x = dx, y = dy }
+
+    init _ =
+        ( { a = point 3, b = spoke12 1 }, Platform.Cmd.none )
+
+    update _ m =
+        ( m, Platform.Cmd.none )
+
+    view m =
+        [ Ui.clear Color.white
+        , Ui.pixel m.a Color.black
+        ]
+            |> Ui.toUiNode
+
+    subscriptions _ =
+        Platform.Sub.none
+
+    main =
+        Platform.application { init = init, update = update, view = view, subscriptions = subscriptions }
+    """
+
+    generated_c =
+      compile_snippet!("dense_int_pair_table", source, %{
+        direct_render_only: true,
+        codegen_profile: :size
+      })
+      |> then(&File.read!(Path.join(&1, "c/elmc_generated.c")))
+
+    assert generated_c =~ "elmc_dense_lut_"
+    assert generated_c =~ "elmc_fn_Main_ring12"
+    assert generated_c =~ "elmc_fn_Main_spoke12"
+    refute generated_c =~ ~r/elmc_fn_Main_ring12[\s\S]*goto elmc_plan_block_/
+  end
+
+  test "resource Info helpers stay emitted when update reads them under direct_render_only" do
+    source = """
+    module Main exposing (main)
+
+    import Pebble.Platform as Platform
+    import Pebble.Ui as Ui
+    import Pebble.Ui.Color as Color
+    import Pebble.Ui.Resources as Resources
+
+    fontHeight : Resources.Font -> Int
+    fontHeight font =
+        (Resources.fontInfo font).height
+
+    bitmapHeight : Resources.StaticBitmap -> Int
+    bitmapHeight bitmap =
+        (Resources.staticBitmapInfo bitmap).height
+
+    init _ =
+        ( { font = Resources.DefaultFont
+          , bitmap = Resources.NoStaticBitmap
+          , h = 0
+          }
+        , Platform.Cmd.none
+        )
+
+    update _ m =
+        ( { m | h = fontHeight m.font + bitmapHeight m.bitmap }, Platform.Cmd.none )
+
+    view _ =
+        [ Ui.clear Color.white ]
+            |> Ui.toUiNode
+
+    subscriptions _ =
+        Platform.Sub.none
+
+    main =
+        Platform.application { init = init, update = update, view = view, subscriptions = subscriptions }
+    """
+
+    out_dir =
+      compile_snippet!("resource_info_direct_render", source, %{
+        direct_render_only: true,
+        codegen_profile: :size
+      })
+
+    generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+
+    assert generated_c =~ ~r/(?:static )?RC elmc_fn_Pebble_Ui_Resources_fontInfo\(/
+    assert generated_c =~ ~r/(?:static )?RC elmc_fn_Pebble_Ui_Resources_staticBitmapInfo\(/
+  end
+
+  test "String.length used as Int stays unboxed for wrap helpers" do
+    source = """
+    module Main exposing (main)
+
+    import Pebble.Platform as Platform
+    import Pebble.Ui as Ui
+    import Pebble.Ui.Color as Color
+
+    fitsLine : String -> String -> Int -> Bool
+    fitsLine line word maxChars =
+        String.length line + 1 + String.length word < maxChars
+
+    roomLeft : String -> String -> Int -> Bool
+    roomLeft line word maxChars =
+        String.length line + 1 + String.length word <= maxChars
+
+    init _ =
+        ( { ok = fitsLine "hi" "there" 12 && roomLeft "ab" "c" 4 }
+        , Platform.Cmd.none
+        )
+
+    update _ m =
+        ( m, Platform.Cmd.none )
+
+    view _ =
+        [ Ui.clear Color.white ]
+            |> Ui.toUiNode
+
+    subscriptions _ =
+        Platform.Sub.none
+
+    main =
+        Platform.application { init = init, update = update, view = view, subscriptions = subscriptions }
+    """
+
+    generated_c =
+      compile_snippet!("string_length_native_wrap", source, %{
+        direct_render_only: true,
+        codegen_profile: :size
+      })
+      |> then(&File.read!(Path.join(&1, "c/elmc_generated.c")))
+
+    fits = fn_body!(generated_c, "fitsLine")
+    room = fn_body!(generated_c, "roomLeft")
+
+    assert fits =~ "elmc_string_length("
+    assert room =~ "elmc_string_length("
+    refute fits =~ "elmc_new_int"
+    refute room =~ "elmc_new_int"
+    refute fits =~ "elmc_as_int("
+    refute room =~ "elmc_as_int("
   end
 
   test "Bool if of int compares stays native without heap bools" do
@@ -3844,12 +4271,57 @@ defmodule Elmc.CCodegenPatternsTest do
     init_body = fn_body!(generated_c, "init")
 
     assert init_body =~ "ELMC_PEBBLE_CMD_STORAGE_WRITE_STRING"
-    assert init_body =~ "elmc_cmd2("
+    assert init_body =~ "elmc_cmd1_string("
     assert init_body =~ "elmc_string_from_native_int(" or init_body =~ "elmc_string_from_int("
     assert init_body =~ "CHECK_RC(Rc)"
-
+    refute init_body =~ "elmc_cmd2("
+    refute init_body =~ "elmc_as_int(owned["
     refute init_body =~ "elmc_new_int(ELMC_PEBBLE_CMD_STORAGE_WRITE_STRING)"
     refute init_body =~ "elmc_tuple2_ints(0, 0)"
+  end
+
+  test "storage write string of a boxed quote persists the string payload" do
+    source = """
+    module Main exposing (main)
+
+    import Json.Decode as Decode
+    import Pebble.Platform as Platform
+    import Pebble.Storage as Storage
+    import Pebble.Ui as Ui
+
+    type Msg
+        = SaveQuote String
+
+    init _ =
+        ( "Make today count.", Cmd.none )
+
+    update msg model =
+        case msg of
+            SaveQuote text ->
+                ( text, Storage.writeString 3 text )
+
+    subscriptions _ =
+        Sub.none
+
+    view _ =
+        Ui.windowStack []
+
+    main =
+        Platform.application
+            { init = init, update = update, view = view, subscriptions = subscriptions }
+
+    """
+
+    out_dir = compile_snippet!("storage_write_string_quote_cmd_codegen", source)
+    generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
+    update_body = fn_body!(generated_c, "update")
+
+    assert update_body =~ "plan block"
+    assert update_body =~ "elmc_cmd1_string("
+    assert update_body =~ "ELMC_PEBBLE_CMD_STORAGE_WRITE_STRING"
+    assert update_body =~ "ELMC_TAG_STRING"
+    refute update_body =~ "elmc_cmd2("
+    refute update_body =~ ~r/elmc_cmd1_string\([^)]*elmc_as_int\(/
   end
 
   test "direct render text append unrolls literal prefix before dynamic suffix" do
@@ -4984,7 +5456,8 @@ defmodule Elmc.CCodegenPatternsTest do
     assert pebble_h =~ "#define ELMC_PEBBLE_SCENE_CHUNK_SIZE 0"
     assert pebble_h =~ "#define ELMC_PEBBLE_SCENE_CACHE_ENABLED 1"
     assert pebble_h =~ "#define ELMC_PEBBLE_SCENE_INITIAL_CAPACITY 1024"
-    refute pebble_h =~ "#define ELMC_PEBBLE_SCENE_INITIAL_CAPACITY 512"
+    assert pebble_h =~ "#define ELMC_PEBBLE_SCENE_INITIAL_CAPACITY 768"
+    assert pebble_h =~ "#define ELMC_PEBBLE_SCENE_INITIAL_CAPACITY 512"
 
     assert generated_h =~ "elmc_fn_Main_init("
     assert generated_h =~ "elmc_fn_Main_update("

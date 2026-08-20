@@ -46,7 +46,13 @@ defmodule Ide.Mcp.Handlers.Emulator do
   def call("emulator.ping", %{"session_id" => session_id}) do
     case Emulator.ping(session_id) do
       {:ok, info} ->
-        {:ok, %{session_id: session_id, alive: true, session: info}}
+        {:ok,
+         %{
+           session_id: session_id,
+           alive: true,
+           session: info,
+           runtime_stats: Map.get(info, :runtime_stats)
+         }}
 
       {:error, reason} ->
         {:ok, %{session_id: session_id, alive: false, error: inspect(reason)}}
@@ -251,7 +257,8 @@ defmodule Ide.Mcp.Handlers.Emulator do
          lines: [],
          fault_detected: false,
          console: %{output: "", error: :timeout},
-         protocol: %{lines: [], error: :timeout}
+         protocol: %{lines: [], error: :timeout},
+         runtime_stats: nil
        }}
   end
 
@@ -290,7 +297,8 @@ defmodule Ide.Mcp.Handlers.Emulator do
       lines: snapshot.lines,
       fault_detected: snapshot.fault_detected,
       console: snapshot.console,
-      protocol: snapshot.protocol
+      protocol: snapshot.protocol,
+      runtime_stats: Map.get(snapshot, :runtime_stats)
     }
   end
 

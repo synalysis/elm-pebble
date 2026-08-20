@@ -950,6 +950,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPage.Core do
       |> hydrate_bitmap_svg_ops(assigns.project, color_mode)
       |> DebuggerPreview.hydrate_animation_svg_ops(assigns.project)
       |> DebuggerPreview.hydrate_vector_svg_ops(assigns.project)
+      |> DebuggerPreview.hydrate_text_svg_ops(assigns.project)
 
     unresolved_ops = Enum.filter(svg_ops, &(&1.kind == :unresolved))
 

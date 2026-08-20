@@ -73,6 +73,10 @@ defmodule Ide.Mcp.ToolCatalog.Core do
     additionalProperties: JsonSchema.disallow_extra_properties(),
     properties: %{
       version_label: %{type: "string"},
+      description: %{
+        type: "string",
+        description: "App Store listing description required for a new published app."
+      },
       tags: %{type: "string"},
       target_platforms: %{type: "array", items: %{type: "string"}},
       capabilities: %{type: "array", items: %{type: "string"}},
@@ -1407,7 +1411,8 @@ defmodule Ide.Mcp.ToolCatalog.Core do
     },
     %{
       name: "emulator.ping",
-      description: "Ping an embedded emulator session and return public session state.",
+      description:
+        "Ping an embedded emulator session and return public session state, including parsed watch runtime_stats (scene bytes/cmds/cap and heap free) when AppLog has emitted elmc-stats.",
       inputSchema: %{
         type: "object",
         additionalProperties: JsonSchema.disallow_extra_properties(),
@@ -1420,7 +1425,7 @@ defmodule Ide.Mcp.ToolCatalog.Core do
     %{
       name: "emulator.logs",
       description:
-        "Capture embedded emulator diagnostics (QEMU serial console + Pebble protocol AppLog/system frames) from a running session.",
+        "Capture embedded emulator diagnostics (QEMU serial console + Pebble protocol AppLog/system frames) from a running session. Snapshot includes parsed runtime_stats when elmc-stats was seen.",
       inputSchema: %{
         type: "object",
         additionalProperties: JsonSchema.disallow_extra_properties(),

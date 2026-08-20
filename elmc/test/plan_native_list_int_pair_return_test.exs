@@ -279,7 +279,7 @@ defmodule Elmc.PlanNativeListIntPairReturnTest do
     c = CLowerFunction.emit(plan)
 
     assert c =~ "plan_list_int_pair_"
-    assert c =~ "elmc_record_update_index_cow_drop"
+    assert c =~ "elmc_record_update_index_cow(out, model,"
     assert c =~ "elmc_record_update_index_int_cow_drop"
     refute c =~ "elmc_tuple2"
     refute c =~ "elmc_tuple_first"

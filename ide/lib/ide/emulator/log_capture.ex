@@ -2,6 +2,7 @@ defmodule Ide.Emulator.LogCapture do
   @moduledoc false
 
   alias Ide.Emulator.PebbleProtocol.{LogLines, Router}
+  alias Ide.Emulator.RuntimeStats
   alias Ide.Emulator.Session.ProcessHost
   alias Ide.Emulator.Types, as: EmulatorTypes
 
@@ -28,7 +29,8 @@ defmodule Ide.Emulator.LogCapture do
           required(:protocol) => %{
             required(:lines) => [String.t()],
             required(:error) => capture_error() | nil
-          }
+          },
+          required(:runtime_stats) => RuntimeStats.t() | nil
         }
 
   @default_duration_ms 5_000
@@ -70,6 +72,16 @@ defmodule Ide.Emulator.LogCapture do
     fault_detected =
       LogLines.fault_lines?(lines) or String.contains?(console_output, "App fault!")
 
+    from_router =
+      if ProcessHost.live_pid?(router_pid) do
+        case Router.runtime_stats(router_pid) do
+          {:ok, stats} -> stats
+          _ -> nil
+        end
+      else
+        nil
+      end
+
     %{
       source: "embedded",
       duration_ms: duration_ms,
@@ -77,7 +89,8 @@ defmodule Ide.Emulator.LogCapture do
       lines: lines,
       fault_detected: fault_detected,
       console: %{output: console_output, error: console_error},
-      protocol: %{lines: protocol_lines, error: protocol_error}
+      protocol: %{lines: protocol_lines, error: protocol_error},
+      runtime_stats: RuntimeStats.merge(from_router, RuntimeStats.parse_many(lines))
     }
   end
 

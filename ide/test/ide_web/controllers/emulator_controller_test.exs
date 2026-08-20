@@ -29,7 +29,9 @@ defmodule IdeWeb.EmulatorControllerTest do
 
       conn = post(conn, ~p"/api/emulator/#{info.id}/ping")
 
-      assert %{"alive" => true, "id" => id, "vnc_path" => vnc_path} = json_response(conn, 200)
+      assert %{"alive" => true, "id" => id, "vnc_path" => vnc_path, "runtime_stats" => nil} =
+               json_response(conn, 200)
+
       assert id == info.id
       assert vnc_path == "/api/emulator/#{info.id}/ws/vnc"
 

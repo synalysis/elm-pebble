@@ -264,11 +264,20 @@ defmodule Ide.PebbleToolchain.Companion do
               PebblePreferences.data_url(preferences_schema)
             end
 
+          preferences_html =
+            if is_map(preferences_schema) do
+              PebblePreferences.render_html(preferences_schema)
+            end
+
           patched =
             source
             |> String.replace(
               "var generatedConfigurationUrl = null;",
               "var generatedConfigurationUrl = #{Jason.encode!(preferences_url)};"
+            )
+            |> String.replace(
+              "var generatedConfigurationHtml = null;",
+              "var generatedConfigurationHtml = #{Jason.encode!(preferences_html)};"
             )
             |> String.replace(
               "var companionElmWssEnabled = false;",

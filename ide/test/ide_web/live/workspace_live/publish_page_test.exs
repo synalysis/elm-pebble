@@ -47,11 +47,38 @@ defmodule IdeWeb.WorkspaceLive.PublishPageTest do
 
     assert {:ok, view, html} = live(conn, ~p"/projects/#{project.slug}/publish")
 
-    assert html =~ "Download PBW"
+    filename = Projects.pbw_download_filename(project)
+    assert html =~ "Download #{filename}"
     assert has_element?(view, "a[href='/projects/#{project.slug}/publish/pbw']")
+    assert has_element?(view, "a[download='#{filename}']")
     assert html =~ "Install to Watch"
     assert html =~ "Sideload to Watch"
     assert html =~ "Submit to App Store"
+    refute html =~ "App Store listing"
+  end
+
+  test "publish page shows a permanent App Store listing link when store_app_id is set", %{
+    conn: conn
+  } do
+    Application.put_env(:ide, Ide.Auth, mode: :local)
+
+    project =
+      create_project!(%{
+        "name" => "PublishListingLink",
+        "slug" => "publish-listing-link",
+        "target_type" => "watchface",
+        "store_app_id" => "classic-motivate"
+      })
+
+    assert {:ok, view, html} = live(conn, ~p"/projects/#{project.slug}/publish")
+
+    assert html =~ "App Store listing"
+    assert html =~ "https://apps.rePebble.com/classic-motivate"
+
+    assert has_element?(
+             view,
+             "a[href='https://apps.rePebble.com/classic-motivate'][target='_blank']"
+           )
   end
 
   test "publish page shows download PBW and sideload in public_pebble mode", %{conn: conn} do
@@ -70,13 +97,17 @@ defmodule IdeWeb.WorkspaceLive.PublishPageTest do
 
     assert {:ok, view, html} = live(conn, ~p"/projects/#{project.slug}/publish")
 
-    assert html =~ "Download PBW"
+    filename = Projects.pbw_download_filename(project)
+    assert html =~ "Download #{filename}"
     assert has_element?(view, "a[href='/projects/#{project.slug}/publish/pbw']")
+    assert has_element?(view, "a[download='#{filename}']")
     assert html =~ "Sideload to Watch"
     assert html =~ "Submit to App Store"
   end
 
-  test "publish page shows download only without cloud sideload in public_custom mode", %{conn: conn} do
+  test "publish page shows download only without cloud sideload in public_custom mode", %{
+    conn: conn
+  } do
     Application.put_env(:ide, Ide.Auth, mode: :public_custom)
     {conn, user} = authenticated_conn(conn, :public_custom)
 
@@ -92,8 +123,10 @@ defmodule IdeWeb.WorkspaceLive.PublishPageTest do
 
     assert {:ok, view, html} = live(conn, ~p"/projects/#{project.slug}/publish")
 
-    assert html =~ "Download PBW"
+    filename = Projects.pbw_download_filename(project)
+    assert html =~ "Download #{filename}"
     assert has_element?(view, "a[href='/projects/#{project.slug}/publish/pbw']")
+    assert has_element?(view, "a[download='#{filename}']")
     assert html =~ "Automated Rebble App Store submit is not available"
     refute html =~ "Sideload to Watch"
     refute html =~ "Submit to App Store"

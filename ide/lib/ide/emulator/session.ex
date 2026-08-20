@@ -186,7 +186,8 @@ defmodule Ide.Emulator.Session do
         lines: [],
         fault_detected: false,
         console: %{output: "", error: :timeout},
-        protocol: %{lines: [], error: :timeout}
+        protocol: %{lines: [], error: :timeout},
+        runtime_stats: nil
       }
 
     :exit, _ ->
@@ -197,7 +198,8 @@ defmodule Ide.Emulator.Session do
         lines: [],
         fault_detected: false,
         console: %{output: "", error: :emulator_session_unavailable},
-        protocol: %{lines: [], error: :emulator_session_unavailable}
+        protocol: %{lines: [], error: :emulator_session_unavailable},
+        runtime_stats: nil
       }
   end
 

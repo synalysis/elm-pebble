@@ -137,6 +137,42 @@ defmodule Ide.StoreAssets do
     not icons_uploaded?(workspace_root_or_assets)
   end
 
+  @spec content_hashes(%{optional(icon_key()) => String.t()}) :: %{String.t() => String.t()}
+  def content_hashes(paths) when is_map(paths) do
+    paths
+    |> Enum.reduce(%{}, fn {key, path}, acc ->
+      if is_binary(path) and File.regular?(path) do
+        hash =
+          path
+          |> File.read!()
+          |> then(&:crypto.hash(:sha256, &1))
+          |> Base.encode16(case: :lower)
+
+        Map.put(acc, hash_key(key), hash)
+      else
+        acc
+      end
+    end)
+  end
+
+  @spec hashes_changed?(%{optional(String.t()) => String.t()}, term()) :: boolean()
+  def hashes_changed?(current, previous) when is_map(current) do
+    current != %{} and current != normalize_hashes(previous)
+  end
+
+  def hashes_changed?(_, _), do: false
+
+  @spec hash_key(icon_key() | String.t()) :: String.t()
+  defp hash_key(key) when is_atom(key), do: Atom.to_string(key)
+  defp hash_key(key) when is_binary(key), do: key
+
+  @spec normalize_hashes(term()) :: %{String.t() => String.t()}
+  defp normalize_hashes(hashes) when is_map(hashes) do
+    Map.new(hashes, fn {key, value} -> {hash_key(key), to_string(value)} end)
+  end
+
+  defp normalize_hashes(_), do: %{}
+
   @spec publish_icon_paths(String.t()) :: %{optional(icon_key()) => String.t()}
   def publish_icon_paths(workspace_root) when is_binary(workspace_root) do
     @icon_specs

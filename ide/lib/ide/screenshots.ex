@@ -8,6 +8,7 @@ defmodule Ide.Screenshots do
   alias Ide.PebbleToolchain
   alias Ide.Projects
   alias Ide.Projects.Project
+  alias Ide.Screenshots.AppReady
 
   @type project_slug :: String.t()
   @type project_ref :: Project.t() | project_slug()
@@ -46,6 +47,7 @@ defmodule Ide.Screenshots do
           | {:screenshot_file_missing_or_invalid, PebbleToolchain.command_result()}
           | {:screenshot_read_failed, screenshot_io_failure(), PebbleToolchain.command_result()}
           | {:pebble_screenshot_failed, PebbleToolchain.command_result()}
+          | {:pebble_install_failed, PebbleToolchain.command_result()}
           | {:task_exit, atom() | {:shutdown, atom() | String.t()} | reference()}
           | {:unexpected_step_result, capture_result() | PebbleToolchain.command_result()}
 
@@ -210,7 +212,7 @@ defmodule Ide.Screenshots do
   defp capture_all_targets_external(project_slug, opts) do
     capture_opts = Keyword.take(opts, [:project])
     targets = capture_targets(Keyword.get(opts, :targets))
-    boot_wait_ms = max(Keyword.get(opts, :boot_wait_ms, 2_500), 0)
+    boot_wait_ms = max(Keyword.get(opts, :boot_wait_ms, 1_500), 0)
     close_afterwards = Keyword.get(opts, :close_emulator_afterwards, true)
     install_timeout_ms = max(Keyword.get(opts, :install_timeout_ms, 45_000), 1_000)
     screenshot_timeout_ms = max(Keyword.get(opts, :screenshot_timeout_ms, 20_000), 1_000)
@@ -234,7 +236,7 @@ defmodule Ide.Screenshots do
 
         result =
           with {:ok, package_path} <- resolve_capture_package_path(project_slug, target, opts),
-               {:ok, _install_result} <-
+               {:ok, install_result} <-
                  timed_step(
                    fn ->
                      PebbleToolchain.run_emulator(project_slug,
@@ -245,12 +247,14 @@ defmodule Ide.Screenshots do
                    end,
                    install_timeout_ms
                  ),
+               :ok <- ensure_successful_install(install_result),
                :ok <- wait_for_app_load(boot_wait_ms),
-               maybe_progress(progress, {:target, target, :capturing}),
+               :ok <- progress_step(progress, {:target, target, :waiting_for_app}),
                {:ok, shot} <-
-                 capture_with_retries(
+                 await_external_app_screenshot(
                    project_slug,
                    target,
+                   opts,
                    screenshot_timeout_ms,
                    screenshot_retries,
                    retry_delay_ms,
@@ -757,6 +761,264 @@ defmodule Ide.Screenshots do
     end
   end
 
+  @spec ensure_successful_install(PebbleToolchain.command_result()) ::
+          :ok | {:error, screenshot_error()}
+  defp ensure_successful_install(%{status: :ok}), do: :ok
+  defp ensure_successful_install(result), do: {:error, {:pebble_install_failed, result}}
+
+  @spec await_external_app_screenshot(
+          project_slug(),
+          String.t(),
+          opts(),
+          pos_integer(),
+          pos_integer(),
+          non_neg_integer(),
+          (progress_payload() -> :ok) | nil,
+          opts()
+        ) :: {:ok, capture_result()} | {:error, screenshot_error()}
+  defp await_external_app_screenshot(
+         project_slug,
+         target,
+         opts,
+         screenshot_timeout_ms,
+         retries,
+         retry_delay_ms,
+         progress,
+         capture_opts
+       ) do
+    ready_opts =
+      app_ready_opts(opts, target, progress,
+        dismiss_back: fn -> click_external_button(project_slug, target, "back") end,
+        open_app: fn -> click_external_button(project_slug, target, "select") end
+      )
+
+    capture_fun = fn ->
+      case capture_with_retries(
+             project_slug,
+             target,
+             screenshot_timeout_ms,
+             retries,
+             retry_delay_ms,
+             progress,
+             capture_opts
+           ) do
+        {:ok, shot} ->
+          case File.read(shot.screenshot.absolute_path) do
+            {:ok, png} -> {:ok, {shot, AppReady.png_digest(png)}}
+            {:error, reason} -> {:error, {:screenshot_read_failed, reason, %{}}}
+          end
+
+        {:error, reason} ->
+          {:error, reason}
+      end
+    end
+
+    case await_app_frame(ready_opts, monotonic_ms(), nil, nil, false, false, false, capture_fun) do
+      {:ok, {shot, _digest}} -> {:ok, shot}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  @spec await_embedded_app_png(
+          String.t(),
+          String.t(),
+          opts(),
+          pos_integer(),
+          pos_integer(),
+          non_neg_integer(),
+          (progress_payload() -> :ok) | nil
+        ) :: {:ok, binary()} | {:error, screenshot_error()}
+  defp await_embedded_app_png(
+         session_id,
+         target,
+         opts,
+         screenshot_timeout_ms,
+         retries,
+         retry_delay_ms,
+         progress
+       ) do
+    ready_opts =
+      app_ready_opts(opts, target, progress,
+        dismiss_back: fn -> click_embedded_button(session_id, :back) end,
+        open_app: fn -> click_embedded_button(session_id, :select) end
+      )
+
+    capture_fun = fn ->
+      case capture_embedded_png_with_retries(
+             session_id,
+             screenshot_timeout_ms,
+             retries,
+             retry_delay_ms,
+             progress,
+             target
+           ) do
+        {:ok, png} -> {:ok, {png, AppReady.png_digest(png)}}
+        {:error, reason} -> {:error, reason}
+      end
+    end
+
+    case await_app_frame(ready_opts, monotonic_ms(), nil, nil, false, false, false, capture_fun) do
+      {:ok, {png, _digest}} -> {:ok, png}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  @spec await_app_frame(
+          map(),
+          integer(),
+          binary() | nil,
+          term(),
+          boolean(),
+          boolean(),
+          boolean(),
+          (-> {:ok, {term(), binary()}} | {:error, screenshot_error()})
+        ) :: {:ok, {term(), binary()}} | {:error, screenshot_error()}
+  defp await_app_frame(
+         ready_opts,
+         started_ms,
+         prev_digest,
+         prev_value,
+         saw_change?,
+         dismissed_back?,
+         opened_app?,
+         capture_fun
+       ) do
+    case capture_fun.() do
+      {:ok, {value, digest}} ->
+        changed_now? = is_binary(prev_digest) and prev_digest != digest
+        stable? = is_binary(prev_digest) and prev_digest == digest
+        saw_change? = saw_change? or changed_now?
+        elapsed_ms = monotonic_ms() - started_ms
+
+        if changed_now? do
+          maybe_progress(ready_opts.progress, {:target, ready_opts.target, :app_frame_changed})
+        end
+
+        discard_stale_capture(prev_value)
+
+        snapshot = %{
+          elapsed_ms: elapsed_ms,
+          saw_change?: saw_change?,
+          stable?: stable?,
+          dismissed_back?: dismissed_back?,
+          opened_app?: opened_app?,
+          target_type: ready_opts.target_type,
+          min_ms: ready_opts.min_ms,
+          dismiss_ms: ready_opts.dismiss_ms,
+          open_app_ms: ready_opts.open_app_ms,
+          stuck_ms: ready_opts.stuck_ms
+        }
+
+        case AppReady.decision(snapshot) do
+          :ready ->
+            {:ok, {value, digest}}
+
+          :wait ->
+            _ = wait_for_app_load(ready_opts.poll_ms)
+
+            await_app_frame(
+              ready_opts,
+              started_ms,
+              digest,
+              value,
+              saw_change?,
+              dismissed_back?,
+              opened_app?,
+              capture_fun
+            )
+
+          :dismiss_back ->
+            maybe_progress(ready_opts.progress, {:target, ready_opts.target, :dismiss_overlay})
+            _ = ready_opts.dismiss_back.()
+            _ = wait_for_app_load(ready_opts.poll_ms)
+
+            await_app_frame(
+              ready_opts,
+              started_ms,
+              digest,
+              value,
+              saw_change?,
+              true,
+              opened_app?,
+              capture_fun
+            )
+
+          :open_app ->
+            maybe_progress(ready_opts.progress, {:target, ready_opts.target, :open_from_launcher})
+            _ = ready_opts.open_app.()
+            _ = wait_for_app_load(ready_opts.poll_ms)
+
+            await_app_frame(
+              ready_opts,
+              started_ms,
+              digest,
+              value,
+              saw_change?,
+              dismissed_back?,
+              true,
+              capture_fun
+            )
+        end
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  defp discard_stale_capture(%{screenshot: %{absolute_path: path}}) when is_binary(path) do
+    _ = File.rm(path)
+    _ = File.rm(path <> ".json")
+    :ok
+  end
+
+  defp discard_stale_capture(_value), do: :ok
+
+  defp app_ready_opts(opts, target, progress, funs) do
+    target_type = opts |> Keyword.get(:target_type, "watchface") |> to_string()
+
+    %{
+      target: target,
+      target_type: target_type,
+      progress: progress,
+      min_ms: max(Keyword.get(opts, :app_ready_min_ms, 3_000), 0),
+      dismiss_ms: max(Keyword.get(opts, :app_ready_dismiss_ms, 5_000), 0),
+      open_app_ms: max(Keyword.get(opts, :app_ready_open_app_ms, 8_000), 0),
+      stuck_ms: max(Keyword.get(opts, :app_ready_timeout_ms, 16_000), 1_000),
+      poll_ms: max(Keyword.get(opts, :app_ready_poll_ms, 1_500), 250),
+      dismiss_back: Keyword.fetch!(funs, :dismiss_back),
+      open_app: Keyword.fetch!(funs, :open_app)
+    }
+  end
+
+  @button_protocol 8
+  @button_back_mask 1
+  @button_select_mask 4
+
+  defp click_external_button(project_slug, target, button) do
+    PebbleToolchain.run_emulator_control(project_slug, target, %{
+      "control" => "button",
+      "action" => "click",
+      "button" => button
+    })
+  end
+
+  defp click_embedded_button(session_id, :back),
+    do: click_embedded_mask(session_id, @button_back_mask)
+
+  defp click_embedded_button(session_id, :select),
+    do: click_embedded_mask(session_id, @button_select_mask)
+
+  defp click_embedded_mask(session_id, mask) do
+    for state <- [mask, 0] do
+      _ = Emulator.control(session_id, @button_protocol, <<state>>)
+      Process.sleep(150)
+    end
+
+    :ok
+  end
+
+  defp monotonic_ms, do: System.monotonic_time(:millisecond)
+
   @spec capture_with_retries(
           project_slug(),
           String.t(),
@@ -809,7 +1071,7 @@ defmodule Ide.Screenshots do
   defp embedded_capture_backend?, do: Auth.public_mode?()
 
   defp capture_target_embedded(project_slug, target, opts, progress, capture_opts) do
-    boot_wait_ms = max(Keyword.get(opts, :boot_wait_ms, 5_000), 0)
+    boot_wait_ms = max(Keyword.get(opts, :boot_wait_ms, 1_500), 0)
     install_timeout_ms = max(Keyword.get(opts, :install_timeout_ms, 180_000), 1_000)
     screenshot_timeout_ms = max(Keyword.get(opts, :screenshot_timeout_ms, 75_000), 1_000)
     screenshot_retries = max(Keyword.get(opts, :screenshot_retries, 3), 1)
@@ -826,15 +1088,16 @@ defmodule Ide.Screenshots do
                {:ok, _install} <-
                  timed_step(fn -> Emulator.install(session.id) end, install_timeout_ms),
                :ok <- wait_for_app_load(boot_wait_ms),
-               :ok <- progress_step(progress, {:target, target, :capturing}),
+               :ok <- progress_step(progress, {:target, target, :waiting_for_app}),
                {:ok, shot} <-
-                 capture_embedded_png_with_retries(
+                 await_embedded_app_png(
                    session.id,
+                   target,
+                   opts,
                    screenshot_timeout_ms,
                    screenshot_retries,
                    retry_delay_ms,
-                   progress,
-                   target
+                   progress
                  ),
                {:ok, stored} <- store_png(project_slug, target, shot, capture_opts) do
             maybe_progress(progress, {:target, target, :ok})
@@ -915,7 +1178,8 @@ defmodule Ide.Screenshots do
             target_type: target_type,
             project_name: project_name,
             target_platforms: [target],
-            emulator_storage_logs: true
+            emulator_storage_logs: true,
+            emulator_keep_backlight: true
           )
         else
           _ -> {:error, :package_path_required}
@@ -996,7 +1260,8 @@ defmodule Ide.Screenshots do
             [
               workspace_root: workspace,
               target_type: target_type,
-              project_name: project_name
+              project_name: project_name,
+              emulator_keep_backlight: true
             ]
             |> maybe_put_target_platforms(Keyword.get(opts, :target_platforms))
 

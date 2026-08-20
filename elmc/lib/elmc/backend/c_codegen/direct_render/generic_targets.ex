@@ -838,8 +838,16 @@ defmodule Elmc.Backend.CCodegen.DirectRender.GenericTargets do
     MapSet.difference(excluded, view_fallback)
   end
 
+  # Stream/direct-scene emit replaces `Pebble.Ui` draw glue. Resource `*Info`
+  # queries are not render ops — update/init call them and must keep the boxed
+  # (or later native) helper instead of emitting a call to a pruned symbol.
   defp render_helper_target?({module_name, _decl_name}) when is_binary(module_name) do
-    module_name == "Pebble.Ui" or String.starts_with?(module_name, "Pebble.Ui.")
+    cond do
+      module_name == "Pebble.Ui.Resources" -> false
+      module_name == "Pebble.Ui" -> true
+      String.starts_with?(module_name, "Pebble.Ui.") -> true
+      true -> false
+    end
   end
 
   defp render_helper_target?(_target), do: false

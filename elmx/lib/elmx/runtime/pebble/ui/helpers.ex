@@ -33,11 +33,17 @@ defmodule Elmx.Runtime.Pebble.Ui.Helpers do
   @spec label_display_text(String.t()) :: Types.elm_value()
 
   def label_display_text(label) do
-    case label do
-      :WaitingForCompanion -> "Waiting for companion app"
+    name =
+      case label do
+        atom when is_atom(atom) -> Atom.to_string(atom)
+        name when is_binary(name) -> name
+        other -> to_string(other)
+      end
+
+    case name do
+      "Pebble.Ui.WaitingForCompanion" -> "Waiting for companion app"
       "WaitingForCompanion" -> "Waiting for companion app"
-      atom when is_atom(atom) -> Atom.to_string(atom)
-      other -> to_string(other)
+      other -> other
     end
   end
 

@@ -83,6 +83,7 @@ export type EmbeddedEmulatorHostSurface = {
   scheduleVncViewportConfig: (rfb: RFB, label: string, delayMs: number) => void
   ensureVncAttached: () => void
   reapplySimulatorSettingsToQemu: (options?: SimulatorSettingsOptions) => void
+  applyRuntimeStatsFromWire: (value: unknown) => void
 }
 
 export type VncWsDiag = {

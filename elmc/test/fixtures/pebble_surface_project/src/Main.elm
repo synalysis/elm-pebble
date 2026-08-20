@@ -200,6 +200,7 @@ coveredSurfaceFunctions =
     , "Pebble.Vibes.shortPulse"
     , "Pebble.Wakeup.cancel"
     , "Pebble.Wakeup.scheduleAfterSeconds"
+    , "Pebble.WatchInfo.caseColor"
     , "Pebble.WatchInfo.getColor"
     , "Pebble.WatchInfo.getFirmwareVersion"
     , "Pebble.WatchInfo.getModel"
@@ -567,8 +568,8 @@ update msg model =
         GotWatchModel _ ->
             ( model, Cmd.none )
 
-        GotWatchColor _ ->
-            ( model, Cmd.none )
+        GotWatchColor color ->
+            ( { model | ticks = PebbleColor.toInt (PebbleWatchInfo.caseColor color) }, Cmd.none )
 
         GotFirmwareVersion _ ->
             ( model, Cmd.none )

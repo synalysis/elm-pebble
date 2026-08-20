@@ -102,8 +102,8 @@ defmodule Ide.WatchModels do
       "has_touch" => true,
       "supports_health" => true,
       "storage_max_bytes" => 65_536,
-      "watch_info_model" => "Pebble2Hr",
-      "watch_info_color" => "TimeBlack"
+      "watch_info_model" => "CoreDevicesP2D",
+      "watch_info_color" => "CoreDevicesP2DWhite"
     },
     "gabbro" => %{
       "name" => "Gabbro",
@@ -146,22 +146,53 @@ defmodule Ide.WatchModels do
 
   @spec watch_info_model_ctor_from_launch_context(Types.launch_context()) :: String.t()
   def watch_info_model_ctor_from_launch_context(launch_context) when is_map(launch_context) do
-    profile_id =
-      Map.get(launch_context, "watch_profile_id") ||
-        Map.get(launch_context, :watch_profile_id) ||
-        default_id()
+    case explicit_ctor(launch_context, "watch_info_model") do
+      ctor when is_binary(ctor) ->
+        ctor
 
-    watch_info_model_ctor(profile_id)
+      _ ->
+        watch_info_model_ctor(profile_id_from_launch_context(launch_context))
+    end
   end
 
   @spec watch_info_color_ctor_from_launch_context(Types.launch_context()) :: String.t()
   def watch_info_color_ctor_from_launch_context(launch_context) when is_map(launch_context) do
-    profile_id =
-      Map.get(launch_context, "watch_profile_id") ||
-        Map.get(launch_context, :watch_profile_id) ||
-        default_id()
+    case explicit_ctor(launch_context, "watch_info_color") do
+      ctor when is_binary(ctor) ->
+        ctor
 
-    watch_info_color_ctor(profile_id)
+      _ ->
+        watch_info_color_ctor(profile_id_from_launch_context(launch_context))
+    end
+  end
+
+  @doc """
+  Optional WatchInfo constructor override from launch context or simulator settings.
+  """
+  @spec explicit_ctor(map(), String.t()) :: String.t() | nil
+  def explicit_ctor(map, key) when is_map(map) and is_binary(key) do
+    value =
+      Map.get(map, key) ||
+        case key do
+          "watch_info_color" -> Map.get(map, :watch_info_color)
+          "watch_info_model" -> Map.get(map, :watch_info_model)
+          _ -> nil
+        end
+
+    case value do
+      ctor when is_binary(ctor) ->
+        trimmed = String.trim(ctor)
+        if trimmed == "", do: nil, else: trimmed
+
+      _ ->
+        nil
+    end
+  end
+
+  defp profile_id_from_launch_context(launch_context) do
+    Map.get(launch_context, "watch_profile_id") ||
+      Map.get(launch_context, :watch_profile_id) ||
+      default_id()
   end
 
   @spec profile_for(String.t() | nil) :: wire_profile()

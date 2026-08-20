@@ -34,7 +34,11 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Catch do
 
     """
     RC Rc = RC_SUCCESS;
-    #{owned_line}static ElmcPebbleDrawCmd scene_cmd;
+    #{owned_line}#if defined(PBL_PLATFORM_APLITE)
+    static ElmcPebbleDrawCmd scene_cmd;
+    #else
+    ElmcPebbleDrawCmd scene_cmd;
+    #endif
 
     CATCH_BEGIN
     """

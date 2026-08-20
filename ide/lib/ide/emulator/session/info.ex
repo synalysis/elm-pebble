@@ -4,6 +4,7 @@ defmodule Ide.Emulator.Session.Info do
 
 
   alias Ide.Emulator.{QemuControl, Types}
+  alias Ide.Emulator.PebbleProtocol.Router
   alias Ide.Emulator.Session.{Config, ProcessHost}
   alias Ide.WatchModels
 
@@ -32,7 +33,8 @@ defmodule Ide.Emulator.Session.Info do
       backend_enabled: Config.enabled?(),
       display_ready: display_ready?(state),
       phone_bridge_ready: phone_bridge_ready?(state),
-      installing: Map.get(state, :installing?, false)
+      installing: Map.get(state, :installing?, false),
+      runtime_stats: router_runtime_stats(Map.get(state, :protocol_router_pid))
     }
   end
 
@@ -58,4 +60,18 @@ defmodule Ide.Emulator.Session.Info do
   end
 
   defp tcp_port_open?(_), do: false
+
+  @spec router_runtime_stats(pid() | nil) :: Types.runtime_stats() | nil
+  defp router_runtime_stats(pid) when is_pid(pid) do
+    if Process.alive?(pid) do
+      case Router.runtime_stats(pid) do
+        {:ok, stats} -> stats
+        _ -> nil
+      end
+    else
+      nil
+    end
+  end
+
+  defp router_runtime_stats(_), do: nil
 end

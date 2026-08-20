@@ -21,8 +21,25 @@ defmodule IdeWeb.AuthModeTest do
     refute Auth.public_mode?()
 
     conn = get(conn, ~p"/projects")
+    html = html_response(conn, 200)
 
-    assert html_response(conn, 200) =~ "Projects"
+    assert html =~ "Projects"
+    assert html =~ "Local mode"
+    assert html =~ "Log in"
+    assert html =~ ~p"/login"
+  end
+
+  test "local mode login page uses the same Firebase providers as public_pebble", %{conn: conn} do
+    Application.put_env(:ide, Ide.Auth, mode: :local)
+
+    conn = get(conn, ~p"/login")
+    html = html_response(conn, 200)
+
+    assert html =~ "Log in with Google"
+    assert html =~ "Log in with GitHub"
+    assert html =~ "Log in with Apple"
+    assert html =~ "Local projects stay on this machine"
+    refute html =~ ~p"/auth/email/continue"
   end
 
   test "public_pebble mode redirects anonymous project access to login", %{conn: conn} do

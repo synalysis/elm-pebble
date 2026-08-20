@@ -78,8 +78,20 @@ body[data-ide-theme="dark"] .hover\:bg-blue-50:hover {
   background-color: #1e3a8a !important;
 }
 
+body[data-ide-theme="dark"] .bg-amber-50 {
+  background-color: #451a03 !important;
+}
+
+body[data-ide-theme="dark"] .bg-white\/70 {
+  background-color: #27272a !important;
+}
+
 body[data-ide-theme="dark"] :is(.border-zinc-200, .border-zinc-300) {
   border-color: #3f3f46 !important;
+}
+
+body[data-ide-theme="dark"] :is(.border-amber-200, .border-emerald-200, .border-blue-200) {
+  border-color: #52525b !important;
 }
 
 body[data-ide-theme="dark"] :is(.text-zinc-900, .text-zinc-800, .text-zinc-700) {
@@ -104,6 +116,10 @@ body[data-ide-theme="dark"] :is(.text-blue-950, .text-blue-900) {
 
 body[data-ide-theme="dark"] :is(.text-emerald-900, .text-emerald-800, .text-emerald-700) {
   color: #d1fae5 !important;
+}
+
+body[data-ide-theme="dark"] :is(.text-amber-900, .text-amber-800, .text-amber-700) {
+  color: #fde68a !important;
 }
 
 body[data-ide-theme="dark"] .fill-cyan-900 {
@@ -210,8 +226,20 @@ body[data-ide-theme="dark"] a.text-white {
     background-color: #1e3a8a !important;
   }
 
+  body[data-ide-theme="system"] .bg-amber-50 {
+    background-color: #451a03 !important;
+  }
+
+  body[data-ide-theme="system"] .bg-white\/70 {
+    background-color: #27272a !important;
+  }
+
   body[data-ide-theme="system"] :is(.border-zinc-200, .border-zinc-300) {
     border-color: #3f3f46 !important;
+  }
+
+  body[data-ide-theme="system"] :is(.border-amber-200, .border-emerald-200, .border-blue-200) {
+    border-color: #52525b !important;
   }
 
   body[data-ide-theme="system"] :is(.text-zinc-900, .text-zinc-800, .text-zinc-700) {
@@ -236,6 +264,10 @@ body[data-ide-theme="dark"] a.text-white {
 
   body[data-ide-theme="system"] :is(.text-emerald-900, .text-emerald-800, .text-emerald-700) {
     color: #d1fae5 !important;
+  }
+
+  body[data-ide-theme="system"] :is(.text-amber-900, .text-amber-800, .text-amber-700) {
+    color: #fde68a !important;
   }
 
   body[data-ide-theme="system"] .fill-cyan-900 {

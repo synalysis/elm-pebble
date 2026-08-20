@@ -1,0 +1,1826 @@
+{
+  "preview_diagnostics": {
+    "render_source": "runtime_view_output",
+    "root_type": "windowStack",
+    "runtime_view_output_kinds": [
+      "clear",
+      "fill_circle",
+      "circle",
+      "stroke_color",
+      "line",
+      "pixel",
+      "rect",
+      "text_color",
+      "text"
+    ],
+    "status": "ok"
+  },
+  "preview_ops": [
+    {
+      "color": 192,
+      "kind": "clear"
+    },
+    {
+      "antialiased": true,
+      "color": 254,
+      "compositing_mode": 0,
+      "cx": 72,
+      "cy": 84,
+      "fill_color": 254,
+      "kind": "fill_circle",
+      "r": 71,
+      "stroke_color": 254,
+      "stroke_width": 1
+    },
+    {
+      "antialiased": true,
+      "color": 192,
+      "compositing_mode": 0,
+      "cx": 72,
+      "cy": 84,
+      "kind": "circle",
+      "r": 71,
+      "stroke_color": 192,
+      "stroke_width": 1
+    },
+    {
+      "antialiased": true,
+      "color": 192,
+      "compositing_mode": 0,
+      "cx": 72,
+      "cy": 84,
+      "kind": "circle",
+      "r": 68,
+      "stroke_color": 192,
+      "stroke_width": 1
+    },
+    {
+      "antialiased": true,
+      "color": 192,
+      "compositing_mode": 0,
+      "cx": 72,
+      "cy": 84,
+      "kind": "circle",
+      "r": 53,
+      "stroke_color": 192,
+      "stroke_width": 1
+    },
+    {
+      "antialiased": true,
+      "color": 192,
+      "compositing_mode": 0,
+      "kind": "line",
+      "stroke_color": 192,
+      "stroke_width": 1,
+      "x1": 72,
+      "x2": 72,
+      "y1": 29,
+      "y2": 18
+    },
+    {
+      "antialiased": true,
+      "color": 192,
+      "compositing_mode": 0,
+      "kind": "line",
+      "stroke_color": 192,
+      "stroke_width": 1,
+      "x1": 102,
+      "x2": 105,
+      "y1": 32,
+      "y2": 26
+    },
+    {
+      "antialiased": true,
+      "color": 192,
+      "compositing_mode": 0,
+      "kind": "line",
+      "stroke_color": 192,
+      "stroke_width": 1,
+      "x1": 123,
+      "x2": 129,
+      "y1": 54,
+      "y2": 51
+    },
+    {
+      "antialiased": true,
+      "color": 192,
+      "compositing_mode": 0,
+      "kind": "line",
+      "stroke_color": 192,
+      "stroke_width": 1,
+      "x1": 127,
+      "x2": 138,
+      "y1": 84,
+      "y2": 84
+    },
+    {
+      "antialiased": true,
+      "color": 192,
+      "compositing_mode": 0,
+      "kind": "line",
+      "stroke_color": 192,
+      "stroke_width": 1,
+      "x1": 123,
+      "x2": 129,
+      "y1": 114,
+      "y2": 117
+    },
+    {
+      "antialiased": true,
+      "color": 192,
+      "compositing_mode": 0,
+      "kind": "line",
+      "stroke_color": 192,
+      "stroke_width": 1,
+      "x1": 102,
+      "x2": 105,
+      "y1": 135,
+      "y2": 141
+    },
+    {
+      "antialiased": true,
+      "color": 192,
+      "compositing_mode": 0,
+      "kind": "line",
+      "stroke_color": 192,
+      "stroke_width": 1,
+      "x1": 72,
+      "x2": 72,
+      "y1": 139,
+      "y2": 150
+    },
+    {
+      "antialiased": true,
+      "color": 192,
+      "compositing_mode": 0,
+      "kind": "line",
+      "stroke_color": 192,
+      "stroke_width": 1,
+      "x1": 42,
+      "x2": 39,
+      "y1": 135,
+      "y2": 141
+    },
+    {
+      "antialiased": true,
+      "color": 192,
+      "compositing_mode": 0,
+      "kind": "line",
+      "stroke_color": 192,
+      "stroke_width": 1,
+      "x1": 20,
+      "x2": 14,
+      "y1": 114,
+      "y2": 117
+    },
+    {
+      "antialiased": true,
+      "color": 192,
+      "compositing_mode": 0,
+      "kind": "line",
+      "stroke_color": 192,
+      "stroke_width": 1,
+      "x1": 17,
+      "x2": 6,
+      "y1": 84,
+      "y2": 84
+    },
+    {
+      "antialiased": true,
+      "color": 192,
+      "compositing_mode": 0,
+      "kind": "line",
+      "stroke_color": 192,
+      "stroke_width": 1,
+      "x1": 20,
+      "x2": 14,
+      "y1": 54,
+      "y2": 51
+    },
+    {
+      "antialiased": true,
+      "color": 192,
+      "compositing_mode": 0,
+      "kind": "line",
+      "stroke_color": 192,
+      "stroke_width": 1,
+      "x1": 42,
+      "x2": 39,
+      "y1": 32,
+      "y2": 26
+    },
+    {
+      "antialiased": true,
+      "color": 192,
+      "compositing_mode": 0,
+      "kind": "pixel",
+      "stroke_color": 192,
+      "stroke_width": 1,
+      "x": 78,
+      "y": 20
+    },
+    {
+      "antialiased": true,
+      "color": 192,
+      "compositing_mode": 0,
+      "kind": "pixel",
+      "stroke_color": 192,
+      "stroke_width": 1,
+      "x": 85,
+      "y": 21
+    },
+    {
+      "antialiased": true,
+      "color": 192,
+      "compositing_mode": 0,
+      "kind": "pixel",
+      "stroke_color": 192,
+      "stroke_width": 1,
+      "x": 91,
+      "y": 23
+    },
+    {
+      "antialiased": true,
+      "color": 192,
+      "compositing_mode": 0,
+      "kind": "pixel",
+      "stroke_color": 192,
+      "stroke_width": 1,
+      "x": 98,
+      "y": 25
+    },
+    {
+      "antialiased": true,
+      "color": 192,
+      "compositing_mode": 0,
+      "kind": "pixel",
+      "stroke_color": 192,
+      "stroke_width": 1,
+      "x": 109,
+      "y": 32
+    },
+    {
+      "antialiased": true,
+      "color": 192,
+      "compositing_mode": 0,
+      "kind": "pixel",
+      "stroke_color": 192,
+      "stroke_width": 1,
+      "x": 114,
+      "y": 36
+    },
+    {
+      "antialiased": true,
+      "color": 192,
+      "compositing_mode": 0,
+      "kind": "pixel",
+      "stroke_color": 192,
+      "stroke_width": 1,
+      "x": 119,
+      "y": 41
+    },
+    {
+      "antialiased": true,
+      "color": 192,
+      "compositing_mode": 0,
+      "kind": "pixel",
+      "stroke_color": 192,
+      "stroke_width": 1,
+      "x": 123,
+      "y": 46
+    },
+    {
+      "antialiased": true,
+      "color": 192,
+      "compositing_mode": 0,
+      "kind": "pixel",
+      "stroke_color": 192,
+      "stroke_width": 1,
+      "x": 130,
+      "y": 57
+    },
+    {
+      "antialiased": true,
+      "color": 192,
+      "compositing_mode": 0,
+      "kind": "pixel",
+      "stroke_color": 192,
+      "stroke_width": 1,
+      "x": 132,
+      "y": 64
+    },
+    {
+      "antialiased": true,
+      "color": 192,
+      "compositing_mode": 0,
+      "kind": "pixel",
+      "stroke_color": 192,
+      "stroke_width": 1,
+      "x": 134,
+      "y": 70
+    },
+    {
+      "antialiased": true,
+      "color": 192,
+      "compositing_mode": 0,
+      "kind": "pixel",
+      "stroke_color": 192,
+      "stroke_width": 1,
+      "x": 135,
+      "y": 77
+    },
+    {
+      "antialiased": true,
+      "color": 192,
+      "compositing_mode": 0,
+      "kind": "pixel",
+      "stroke_color": 192,
+      "stroke_width": 1,
+      "x": 135,
+      "y": 90
+    },
+    {
+      "antialiased": true,
+      "color": 192,
+      "compositing_mode": 0,
+      "kind": "pixel",
+      "stroke_color": 192,
+      "stroke_width": 1,
+      "x": 134,
+      "y": 97
+    },
+    {
+      "antialiased": true,
+      "color": 192,
+      "compositing_mode": 0,
+      "kind": "pixel",
+      "stroke_color": 192,
+      "stroke_width": 1,
+      "x": 132,
+      "y": 103
+    },
+    {
+      "antialiased": true,
+      "color": 192,
+      "compositing_mode": 0,
+      "kind": "pixel",
+      "stroke_color": 192,
+      "stroke_width": 1,
+      "x": 130,
+      "y": 110
+    },
+    {
+      "antialiased": true,
+      "color": 192,
+      "compositing_mode": 0,
+      "kind": "pixel",
+      "stroke_color": 192,
+      "stroke_width": 1,
+      "x": 123,
+      "y": 121
+    },
+    {
+      "antialiased": true,
+      "color": 192,
+      "compositing_mode": 0,
+      "kind": "pixel",
+      "stroke_color": 192,
+      "stroke_width": 1,
+      "x": 119,
+      "y": 126
+    },
+    {
+      "antialiased": true,
+      "color": 192,
+      "compositing_mode": 0,
+      "kind": "pixel",
+      "stroke_color": 192,
+      "stroke_width": 1,
+      "x": 114,
+      "y": 131
+    },
+    {
+      "antialiased": true,
+      "color": 192,
+      "compositing_mode": 0,
+      "kind": "pixel",
+      "stroke_color": 192,
+      "stroke_width": 1,
+      "x": 109,
+      "y": 135
+    },
+    {
+      "antialiased": true,
+      "color": 192,
+      "compositing_mode": 0,
+      "kind": "pixel",
+      "stroke_color": 192,
+      "stroke_width": 1,
+      "x": 98,
+      "y": 142
+    },
+    {
+      "antialiased": true,
+      "color": 192,
+      "compositing_mode": 0,
+      "kind": "pixel",
+      "stroke_color": 192,
+      "stroke_width": 1,
+      "x": 91,
+      "y": 144
+    },
+    {
+      "antialiased": true,
+      "color": 192,
+      "compositing_mode": 0,
+      "kind": "pixel",
+      "stroke_color": 192,
+      "stroke_width": 1,
+      "x": 85,
+      "y": 146
+    },
+    {
+      "antialiased": true,
+      "color": 192,
+      "compositing_mode": 0,
+      "kind": "pixel",
+      "stroke_color": 192,
+      "stroke_width": 1,
+      "x": 78,
+      "y": 147
+    },
+    {
+      "antialiased": true,
+      "color": 192,
+      "compositing_mode": 0,
+      "kind": "pixel",
+      "stroke_color": 192,
+      "stroke_width": 1,
+      "x": 65,
+      "y": 147
+    },
+    {
+      "antialiased": true,
+      "color": 192,
+      "compositing_mode": 0,
+      "kind": "pixel",
+      "stroke_color": 192,
+      "stroke_width": 1,
+      "x": 58,
+      "y": 146
+    },
+    {
+      "antialiased": true,
+      "color": 192,
+      "compositing_mode": 0,
+      "kind": "pixel",
+      "stroke_color": 192,
+      "stroke_width": 1,
+      "x": 52,
+      "y": 144
+    },
+    {
+      "antialiased": true,
+      "color": 192,
+      "compositing_mode": 0,
+      "kind": "pixel",
+      "stroke_color": 192,
+      "stroke_width": 1,
+      "x": 45,
+      "y": 142
+    },
+    {
+      "antialiased": true,
+      "color": 192,
+      "compositing_mode": 0,
+      "kind": "pixel",
+      "stroke_color": 192,
+      "stroke_width": 1,
+      "x": 34,
+      "y": 135
+    },
+    {
+      "antialiased": true,
+      "color": 192,
+      "compositing_mode": 0,
+      "kind": "pixel",
+      "stroke_color": 192,
+      "stroke_width": 1,
+      "x": 29,
+      "y": 131
+    },
+    {
+      "antialiased": true,
+      "color": 192,
+      "compositing_mode": 0,
+      "kind": "pixel",
+      "stroke_color": 192,
+      "stroke_width": 1,
+      "x": 24,
+      "y": 126
+    },
+    {
+      "antialiased": true,
+      "color": 192,
+      "compositing_mode": 0,
+      "kind": "pixel",
+      "stroke_color": 192,
+      "stroke_width": 1,
+      "x": 20,
+      "y": 121
+    },
+    {
+      "antialiased": true,
+      "color": 192,
+      "compositing_mode": 0,
+      "kind": "pixel",
+      "stroke_color": 192,
+      "stroke_width": 1,
+      "x": 13,
+      "y": 110
+    },
+    {
+      "antialiased": true,
+      "color": 192,
+      "compositing_mode": 0,
+      "kind": "pixel",
+      "stroke_color": 192,
+      "stroke_width": 1,
+      "x": 11,
+      "y": 103
+    },
+    {
+      "antialiased": true,
+      "color": 192,
+      "compositing_mode": 0,
+      "kind": "pixel",
+      "stroke_color": 192,
+      "stroke_width": 1,
+      "x": 9,
+      "y": 97
+    },
+    {
+      "antialiased": true,
+      "color": 192,
+      "compositing_mode": 0,
+      "kind": "pixel",
+      "stroke_color": 192,
+      "stroke_width": 1,
+      "x": 8,
+      "y": 90
+    },
+    {
+      "antialiased": true,
+      "color": 192,
+      "compositing_mode": 0,
+      "kind": "pixel",
+      "stroke_color": 192,
+      "stroke_width": 1,
+      "x": 8,
+      "y": 77
+    },
+    {
+      "antialiased": true,
+      "color": 192,
+      "compositing_mode": 0,
+      "kind": "pixel",
+      "stroke_color": 192,
+      "stroke_width": 1,
+      "x": 9,
+      "y": 70
+    },
+    {
+      "antialiased": true,
+      "color": 192,
+      "compositing_mode": 0,
+      "kind": "pixel",
+      "stroke_color": 192,
+      "stroke_width": 1,
+      "x": 11,
+      "y": 64
+    },
+    {
+      "antialiased": true,
+      "color": 192,
+      "compositing_mode": 0,
+      "kind": "pixel",
+      "stroke_color": 192,
+      "stroke_width": 1,
+      "x": 13,
+      "y": 57
+    },
+    {
+      "antialiased": true,
+      "color": 192,
+      "compositing_mode": 0,
+      "kind": "pixel",
+      "stroke_color": 192,
+      "stroke_width": 1,
+      "x": 20,
+      "y": 46
+    },
+    {
+      "antialiased": true,
+      "color": 192,
+      "compositing_mode": 0,
+      "kind": "pixel",
+      "stroke_color": 192,
+      "stroke_width": 1,
+      "x": 24,
+      "y": 41
+    },
+    {
+      "antialiased": true,
+      "color": 192,
+      "compositing_mode": 0,
+      "kind": "pixel",
+      "stroke_color": 192,
+      "stroke_width": 1,
+      "x": 29,
+      "y": 36
+    },
+    {
+      "antialiased": true,
+      "color": 192,
+      "compositing_mode": 0,
+      "kind": "pixel",
+      "stroke_color": 192,
+      "stroke_width": 1,
+      "x": 34,
+      "y": 32
+    },
+    {
+      "antialiased": true,
+      "color": 192,
+      "compositing_mode": 0,
+      "kind": "pixel",
+      "stroke_color": 192,
+      "stroke_width": 1,
+      "x": 45,
+      "y": 25
+    },
+    {
+      "antialiased": true,
+      "color": 192,
+      "compositing_mode": 0,
+      "kind": "pixel",
+      "stroke_color": 192,
+      "stroke_width": 1,
+      "x": 52,
+      "y": 23
+    },
+    {
+      "antialiased": true,
+      "color": 192,
+      "compositing_mode": 0,
+      "kind": "pixel",
+      "stroke_color": 192,
+      "stroke_width": 1,
+      "x": 58,
+      "y": 21
+    },
+    {
+      "antialiased": true,
+      "color": 192,
+      "compositing_mode": 0,
+      "kind": "pixel",
+      "stroke_color": 192,
+      "stroke_width": 1,
+      "x": 65,
+      "y": 20
+    },
+    {
+      "antialiased": true,
+      "compositing_mode": 0,
+      "fill": 192,
+      "h": 16,
+      "kind": "rect",
+      "stroke_color": 192,
+      "stroke_width": 1,
+      "w": 22,
+      "x": 90,
+      "y": 76
+    },
+    {
+      "antialiased": true,
+      "compositing_mode": 0,
+      "font_size": 16,
+      "h": 16,
+      "kind": "text_label",
+      "text": "27",
+      "text_align": "center",
+      "text_color": 192,
+      "text_overflow": "word_wrap",
+      "w": 22,
+      "x": 90,
+      "y": 76
+    },
+    {
+      "antialiased": true,
+      "color": 192,
+      "compositing_mode": 0,
+      "kind": "line",
+      "stroke_color": 192,
+      "stroke_width": 1,
+      "x1": 72,
+      "x2": 34,
+      "y1": 84,
+      "y2": 87
+    },
+    {
+      "antialiased": true,
+      "color": 192,
+      "compositing_mode": 0,
+      "kind": "line",
+      "stroke_color": 192,
+      "stroke_width": 1,
+      "x1": 72,
+      "x2": 35,
+      "y1": 84,
+      "y2": 43
+    },
+    {
+      "antialiased": true,
+      "color": 241,
+      "compositing_mode": 0,
+      "kind": "line",
+      "stroke_color": 241,
+      "stroke_width": 1,
+      "x1": 72,
+      "x2": 72,
+      "y1": 84,
+      "y2": 25
+    },
+    {
+      "antialiased": true,
+      "color": 241,
+      "compositing_mode": 0,
+      "kind": "line",
+      "stroke_color": 241,
+      "stroke_width": 1,
+      "x1": 72,
+      "x2": 72,
+      "y1": 84,
+      "y2": 96
+    },
+    {
+      "antialiased": true,
+      "color": 192,
+      "compositing_mode": 0,
+      "cx": 72,
+      "cy": 84,
+      "fill_color": 192,
+      "kind": "fill_circle",
+      "r": 5,
+      "stroke_color": 192,
+      "stroke_width": 1
+    },
+    {
+      "antialiased": true,
+      "color": 254,
+      "compositing_mode": 0,
+      "cx": 72,
+      "cy": 84,
+      "fill_color": 254,
+      "kind": "fill_circle",
+      "r": 2,
+      "stroke_color": 254,
+      "stroke_width": 1
+    }
+  ],
+  "preview_ops_sha256": "ba346598c283e809f87da7653fbaf9e76717b98e17c07964c1ba63083aa8a20f",
+  "render_tree": {
+    "node_count": 108,
+    "node_types": [
+      "canvasLayer",
+      "circle",
+      "circle",
+      "circle",
+      "clear",
+      "fillCircle",
+      "fillCircle",
+      "fillCircle",
+      "group",
+      "group",
+      "group",
+      "group",
+      "group",
+      "group",
+      "group",
+      "group",
+      "group",
+      "group",
+      "group",
+      "group",
+      "group",
+      "group",
+      "group",
+      "group",
+      "group",
+      "group",
+      "group",
+      "group",
+      "group",
+      "group",
+      "group",
+      "group",
+      "group",
+      "group",
+      "group",
+      "group",
+      "group",
+      "group",
+      "group",
+      "group",
+      "line",
+      "line",
+      "line",
+      "line",
+      "line",
+      "line",
+      "line",
+      "line",
+      "line",
+      "line",
+      "line",
+      "line",
+      "line",
+      "line",
+      "line",
+      "line",
+      "pixel",
+      "pixel",
+      "pixel",
+      "pixel",
+      "pixel",
+      "pixel",
+      "pixel",
+      "pixel",
+      "pixel",
+      "pixel",
+      "pixel",
+      "pixel",
+      "pixel",
+      "pixel",
+      "pixel",
+      "pixel",
+      "pixel",
+      "pixel",
+      "pixel",
+      "pixel",
+      "pixel",
+      "pixel",
+      "pixel",
+      "pixel",
+      "pixel",
+      "pixel",
+      "pixel",
+      "pixel",
+      "pixel",
+      "pixel",
+      "pixel",
+      "pixel",
+      "pixel",
+      "pixel",
+      "pixel",
+      "pixel",
+      "pixel",
+      "pixel",
+      "pixel",
+      "pixel",
+      "pixel",
+      "pixel",
+      "pixel",
+      "pixel",
+      "pixel",
+      "pixel",
+      "pixel",
+      "pixel",
+      "rect",
+      "text",
+      "window",
+      "windowStack"
+    ],
+    "root_type": "windowStack"
+  },
+  "runtime_model": {
+    "caseColor": 192,
+    "dateLabel": "27",
+    "displayShape": {
+      "args": [],
+      "ctor": "Rectangular"
+    },
+    "hands": {
+      "args": [
+        {
+          "hourTo": {
+            "x": 34,
+            "y": 87
+          },
+          "minuteTo": {
+            "x": 35,
+            "y": 43
+          },
+          "secondTail": {
+            "x": 72,
+            "y": 96
+          },
+          "secondTo": {
+            "x": 72,
+            "y": 25
+          }
+        }
+      ],
+      "ctor": "Just"
+    },
+    "layout": {
+      "bezelInner": 68,
+      "center": {
+        "x": 72,
+        "y": 84
+      },
+      "dateBox": {
+        "h": 16,
+        "w": 22,
+        "x": 90,
+        "y": 76
+      },
+      "hourTicks": [
+        {
+          "from": {
+            "x": 72,
+            "y": 29
+          },
+          "to": {
+            "x": 72,
+            "y": 18
+          },
+          "width": 3
+        },
+        {
+          "from": {
+            "x": 102,
+            "y": 32
+          },
+          "to": {
+            "x": 105,
+            "y": 26
+          },
+          "width": 2
+        },
+        {
+          "from": {
+            "x": 123,
+            "y": 54
+          },
+          "to": {
+            "x": 129,
+            "y": 51
+          },
+          "width": 2
+        },
+        {
+          "from": {
+            "x": 127,
+            "y": 84
+          },
+          "to": {
+            "x": 138,
+            "y": 84
+          },
+          "width": 3
+        },
+        {
+          "from": {
+            "x": 123,
+            "y": 114
+          },
+          "to": {
+            "x": 129,
+            "y": 117
+          },
+          "width": 2
+        },
+        {
+          "from": {
+            "x": 102,
+            "y": 135
+          },
+          "to": {
+            "x": 105,
+            "y": 141
+          },
+          "width": 2
+        },
+        {
+          "from": {
+            "x": 72,
+            "y": 139
+          },
+          "to": {
+            "x": 72,
+            "y": 150
+          },
+          "width": 3
+        },
+        {
+          "from": {
+            "x": 42,
+            "y": 135
+          },
+          "to": {
+            "x": 39,
+            "y": 141
+          },
+          "width": 2
+        },
+        {
+          "from": {
+            "x": 20,
+            "y": 114
+          },
+          "to": {
+            "x": 14,
+            "y": 117
+          },
+          "width": 2
+        },
+        {
+          "from": {
+            "x": 17,
+            "y": 84
+          },
+          "to": {
+            "x": 6,
+            "y": 84
+          },
+          "width": 3
+        },
+        {
+          "from": {
+            "x": 20,
+            "y": 54
+          },
+          "to": {
+            "x": 14,
+            "y": 51
+          },
+          "width": 2
+        },
+        {
+          "from": {
+            "x": 42,
+            "y": 32
+          },
+          "to": {
+            "x": 39,
+            "y": 26
+          },
+          "width": 2
+        }
+      ],
+      "minuteTicks": [
+        {
+          "x": 78,
+          "y": 20
+        },
+        {
+          "x": 85,
+          "y": 21
+        },
+        {
+          "x": 91,
+          "y": 23
+        },
+        {
+          "x": 98,
+          "y": 25
+        },
+        {
+          "x": 109,
+          "y": 32
+        },
+        {
+          "x": 114,
+          "y": 36
+        },
+        {
+          "x": 119,
+          "y": 41
+        },
+        {
+          "x": 123,
+          "y": 46
+        },
+        {
+          "x": 130,
+          "y": 57
+        },
+        {
+          "x": 132,
+          "y": 64
+        },
+        {
+          "x": 134,
+          "y": 70
+        },
+        {
+          "x": 135,
+          "y": 77
+        },
+        {
+          "x": 135,
+          "y": 90
+        },
+        {
+          "x": 134,
+          "y": 97
+        },
+        {
+          "x": 132,
+          "y": 103
+        },
+        {
+          "x": 130,
+          "y": 110
+        },
+        {
+          "x": 123,
+          "y": 121
+        },
+        {
+          "x": 119,
+          "y": 126
+        },
+        {
+          "x": 114,
+          "y": 131
+        },
+        {
+          "x": 109,
+          "y": 135
+        },
+        {
+          "x": 98,
+          "y": 142
+        },
+        {
+          "x": 91,
+          "y": 144
+        },
+        {
+          "x": 85,
+          "y": 146
+        },
+        {
+          "x": 78,
+          "y": 147
+        },
+        {
+          "x": 65,
+          "y": 147
+        },
+        {
+          "x": 58,
+          "y": 146
+        },
+        {
+          "x": 52,
+          "y": 144
+        },
+        {
+          "x": 45,
+          "y": 142
+        },
+        {
+          "x": 34,
+          "y": 135
+        },
+        {
+          "x": 29,
+          "y": 131
+        },
+        {
+          "x": 24,
+          "y": 126
+        },
+        {
+          "x": 20,
+          "y": 121
+        },
+        {
+          "x": 13,
+          "y": 110
+        },
+        {
+          "x": 11,
+          "y": 103
+        },
+        {
+          "x": 9,
+          "y": 97
+        },
+        {
+          "x": 8,
+          "y": 90
+        },
+        {
+          "x": 8,
+          "y": 77
+        },
+        {
+          "x": 9,
+          "y": 70
+        },
+        {
+          "x": 11,
+          "y": 64
+        },
+        {
+          "x": 13,
+          "y": 57
+        },
+        {
+          "x": 20,
+          "y": 46
+        },
+        {
+          "x": 24,
+          "y": 41
+        },
+        {
+          "x": 29,
+          "y": 36
+        },
+        {
+          "x": 34,
+          "y": 32
+        },
+        {
+          "x": 45,
+          "y": 25
+        },
+        {
+          "x": 52,
+          "y": 23
+        },
+        {
+          "x": 58,
+          "y": 21
+        },
+        {
+          "x": 65,
+          "y": 20
+        }
+      ],
+      "radius": 71,
+      "railRadius": 53
+    },
+    "now": {
+      "args": [
+        {
+          "day": 27,
+          "dayOfWeek": {
+            "args": [],
+            "ctor": "Wednesday"
+          },
+          "hour": 8,
+          "minute": 53,
+          "month": 5,
+          "second": 0,
+          "utcOffsetMinutes": 0,
+          "year": 2026
+        }
+      ],
+      "ctor": "Just"
+    },
+    "phase": {
+      "args": [],
+      "ctor": "ShowWatch"
+    },
+    "quote": "Make today count.",
+    "quoteBackground": {
+      "args": [],
+      "ctor": "Cream"
+    },
+    "quoteBox": {
+      "h": 148,
+      "w": 124,
+      "x": 10,
+      "y": 10
+    },
+    "quoteFont": {
+      "args": [],
+      "ctor": "Quote42"
+    },
+    "quoteLines": [
+      {
+        "h": 42,
+        "text": "Make",
+        "y": 10
+      },
+      {
+        "h": 42,
+        "text": "today",
+        "y": 52
+      },
+      {
+        "h": 42,
+        "text": "count.",
+        "y": 94
+      }
+    ],
+    "quoteSeconds": 3,
+    "quoteText": {
+      "args": [],
+      "ctor": "Black"
+    },
+    "remainingSec": 5,
+    "runtime_view_output": [],
+    "screenH": 168,
+    "screenW": 144,
+    "timeString": null,
+    "watchBackground": {
+      "args": [],
+      "ctor": "Cream"
+    },
+    "watchForeground": {
+      "args": [],
+      "ctor": "Black"
+    },
+    "watchSeconds": 5
+  },
+  "template": "watchface-classic-motivate",
+  "timeline_init_messages": [
+    "init:init",
+    "update:CurrentDateTime { day = 27, dayOfWeek = Wednesday, hour = 8, minute = 53, month = 5, second = 0, utcOffsetMinutes = 0, year = 2026 }",
+    "update:FromPhone (SetMotivationalText \"Make today count.\")",
+    "update:FromPhone (SetQuoteBackground Cream)",
+    "update:FromPhone (SetQuoteDisplaySeconds 3)",
+    "update:FromPhone (SetQuoteTextColor Black)",
+    "update:FromPhone (SetWatchBackground Cream)",
+    "update:FromPhone (SetWatchDisplaySeconds 5)",
+    "update:FromPhone (SetWatchForeground Black)",
+    "update:FromWatch (Ok RequestSettings)",
+    "update:LoadedQuoteSeconds 0",
+    "update:LoadedQuoteText \"\"",
+    "update:LoadedWatchBackground 0",
+    "update:LoadedWatchSeconds 0"
+  ],
+  "view_tree_type": "windowStack",
+  "watch_model": {
+    "debugger_init_complete": true,
+    "protocol_last_inbound_from": "companion",
+    "protocol_last_inbound_message": "SetQuoteTextColor Black",
+    "protocol_last_trigger": "protocol_rx",
+    "protocol_last_view_message": "SetQuoteTextColor Black",
+    "runtime_model": {
+      "caseColor": 192,
+      "dateLabel": "27",
+      "displayShape": {
+        "args": [],
+        "ctor": "Rectangular"
+      },
+      "hands": {
+        "args": [
+          {
+            "hourTo": {
+              "x": 34,
+              "y": 87
+            },
+            "minuteTo": {
+              "x": 35,
+              "y": 43
+            },
+            "secondTail": {
+              "x": 72,
+              "y": 96
+            },
+            "secondTo": {
+              "x": 72,
+              "y": 25
+            }
+          }
+        ],
+        "ctor": "Just"
+      },
+      "layout": {
+        "bezelInner": 68,
+        "center": {
+          "x": 72,
+          "y": 84
+        },
+        "dateBox": {
+          "h": 16,
+          "w": 22,
+          "x": 90,
+          "y": 76
+        },
+        "hourTicks": [
+          {
+            "from": {
+              "x": 72,
+              "y": 29
+            },
+            "to": {
+              "x": 72,
+              "y": 18
+            },
+            "width": 3
+          },
+          {
+            "from": {
+              "x": 102,
+              "y": 32
+            },
+            "to": {
+              "x": 105,
+              "y": 26
+            },
+            "width": 2
+          },
+          {
+            "from": {
+              "x": 123,
+              "y": 54
+            },
+            "to": {
+              "x": 129,
+              "y": 51
+            },
+            "width": 2
+          },
+          {
+            "from": {
+              "x": 127,
+              "y": 84
+            },
+            "to": {
+              "x": 138,
+              "y": 84
+            },
+            "width": 3
+          },
+          {
+            "from": {
+              "x": 123,
+              "y": 114
+            },
+            "to": {
+              "x": 129,
+              "y": 117
+            },
+            "width": 2
+          },
+          {
+            "from": {
+              "x": 102,
+              "y": 135
+            },
+            "to": {
+              "x": 105,
+              "y": 141
+            },
+            "width": 2
+          },
+          {
+            "from": {
+              "x": 72,
+              "y": 139
+            },
+            "to": {
+              "x": 72,
+              "y": 150
+            },
+            "width": 3
+          },
+          {
+            "from": {
+              "x": 42,
+              "y": 135
+            },
+            "to": {
+              "x": 39,
+              "y": 141
+            },
+            "width": 2
+          },
+          {
+            "from": {
+              "x": 20,
+              "y": 114
+            },
+            "to": {
+              "x": 14,
+              "y": 117
+            },
+            "width": 2
+          },
+          {
+            "from": {
+              "x": 17,
+              "y": 84
+            },
+            "to": {
+              "x": 6,
+              "y": 84
+            },
+            "width": 3
+          },
+          {
+            "from": {
+              "x": 20,
+              "y": 54
+            },
+            "to": {
+              "x": 14,
+              "y": 51
+            },
+            "width": 2
+          },
+          {
+            "from": {
+              "x": 42,
+              "y": 32
+            },
+            "to": {
+              "x": 39,
+              "y": 26
+            },
+            "width": 2
+          }
+        ],
+        "minuteTicks": [
+          {
+            "x": 78,
+            "y": 20
+          },
+          {
+            "x": 85,
+            "y": 21
+          },
+          {
+            "x": 91,
+            "y": 23
+          },
+          {
+            "x": 98,
+            "y": 25
+          },
+          {
+            "x": 109,
+            "y": 32
+          },
+          {
+            "x": 114,
+            "y": 36
+          },
+          {
+            "x": 119,
+            "y": 41
+          },
+          {
+            "x": 123,
+            "y": 46
+          },
+          {
+            "x": 130,
+            "y": 57
+          },
+          {
+            "x": 132,
+            "y": 64
+          },
+          {
+            "x": 134,
+            "y": 70
+          },
+          {
+            "x": 135,
+            "y": 77
+          },
+          {
+            "x": 135,
+            "y": 90
+          },
+          {
+            "x": 134,
+            "y": 97
+          },
+          {
+            "x": 132,
+            "y": 103
+          },
+          {
+            "x": 130,
+            "y": 110
+          },
+          {
+            "x": 123,
+            "y": 121
+          },
+          {
+            "x": 119,
+            "y": 126
+          },
+          {
+            "x": 114,
+            "y": 131
+          },
+          {
+            "x": 109,
+            "y": 135
+          },
+          {
+            "x": 98,
+            "y": 142
+          },
+          {
+            "x": 91,
+            "y": 144
+          },
+          {
+            "x": 85,
+            "y": 146
+          },
+          {
+            "x": 78,
+            "y": 147
+          },
+          {
+            "x": 65,
+            "y": 147
+          },
+          {
+            "x": 58,
+            "y": 146
+          },
+          {
+            "x": 52,
+            "y": 144
+          },
+          {
+            "x": 45,
+            "y": 142
+          },
+          {
+            "x": 34,
+            "y": 135
+          },
+          {
+            "x": 29,
+            "y": 131
+          },
+          {
+            "x": 24,
+            "y": 126
+          },
+          {
+            "x": 20,
+            "y": 121
+          },
+          {
+            "x": 13,
+            "y": 110
+          },
+          {
+            "x": 11,
+            "y": 103
+          },
+          {
+            "x": 9,
+            "y": 97
+          },
+          {
+            "x": 8,
+            "y": 90
+          },
+          {
+            "x": 8,
+            "y": 77
+          },
+          {
+            "x": 9,
+            "y": 70
+          },
+          {
+            "x": 11,
+            "y": 64
+          },
+          {
+            "x": 13,
+            "y": 57
+          },
+          {
+            "x": 20,
+            "y": 46
+          },
+          {
+            "x": 24,
+            "y": 41
+          },
+          {
+            "x": 29,
+            "y": 36
+          },
+          {
+            "x": 34,
+            "y": 32
+          },
+          {
+            "x": 45,
+            "y": 25
+          },
+          {
+            "x": 52,
+            "y": 23
+          },
+          {
+            "x": 58,
+            "y": 21
+          },
+          {
+            "x": 65,
+            "y": 20
+          }
+        ],
+        "radius": 71,
+        "railRadius": 53
+      },
+      "now": {
+        "args": [
+          {
+            "day": 27,
+            "dayOfWeek": {
+              "args": [],
+              "ctor": "Wednesday"
+            },
+            "hour": 8,
+            "minute": 53,
+            "month": 5,
+            "second": 0,
+            "utcOffsetMinutes": 0,
+            "year": 2026
+          }
+        ],
+        "ctor": "Just"
+      },
+      "phase": {
+        "args": [],
+        "ctor": "ShowWatch"
+      },
+      "quote": "Make today count.",
+      "quoteBackground": {
+        "args": [],
+        "ctor": "Cream"
+      },
+      "quoteBox": {
+        "h": 148,
+        "w": 124,
+        "x": 10,
+        "y": 10
+      },
+      "quoteFont": {
+        "args": [],
+        "ctor": "Quote42"
+      },
+      "quoteLines": [
+        {
+          "h": 42,
+          "text": "Make",
+          "y": 10
+        },
+        {
+          "h": 42,
+          "text": "today",
+          "y": 52
+        },
+        {
+          "h": 42,
+          "text": "count.",
+          "y": 94
+        }
+      ],
+      "quoteSeconds": 3,
+      "quoteText": {
+        "args": [],
+        "ctor": "Black"
+      },
+      "remainingSec": 5,
+      "screenH": 168,
+      "screenW": 144,
+      "watchBackground": {
+        "args": [],
+        "ctor": "Cream"
+      },
+      "watchForeground": {
+        "args": [],
+        "ctor": "Black"
+      },
+      "watchSeconds": 5
+    },
+    "runtime_view_output": [],
+    "timeString": null,
+    "watch_profile_id": "basalt"
+  }
+}

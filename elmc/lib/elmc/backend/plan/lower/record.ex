@@ -161,13 +161,9 @@ defmodule Elmc.Backend.Plan.Lower.Record do
        when is_binary(field_name) do
     {value_reg, b0} = Builder.dup_named_local_if_bound(b, value_reg)
 
-    {update_base_reg, b_base, retain_copy?} =
-      if Builder.borrow_arg?(b0, base_reg) do
-        {dup, b_copy} = Builder.copy_reg_owned(b0, base_reg)
-        {dup, b_copy, true}
-      else
-        {base_reg, b0, false}
-      end
+    # Keep borrowed bases borrowed. Retaining before COW forces rc>=2 and a
+    # full record copy on every tick (CurrentDateTime is 104 bytes).
+    {update_base_reg, b_base, retain_copy?} = {base_reg, b0, false}
 
     {dest, b1} = dest_for_update(ctx, b_base)
 

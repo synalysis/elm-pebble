@@ -111,6 +111,7 @@ defmodule Ide.ProjectTemplatePreviews do
         |> BitmapHydration.hydrate_svg_ops(project, color_mode)
         |> DebuggerPreview.hydrate_animation_svg_ops(project)
         |> DebuggerPreview.hydrate_vector_svg_ops(project)
+        |> DebuggerPreview.hydrate_text_svg_ops(project)
 
       {width, height} = DebuggerPreview.screen_dimensions(runtime, tree)
       screen_round? = DebuggerPreview.screen_round?(runtime, tree)

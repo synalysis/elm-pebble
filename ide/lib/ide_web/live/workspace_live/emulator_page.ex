@@ -237,6 +237,10 @@ defmodule IdeWeb.WorkspaceLive.EmulatorPage do
             >
               Embedded emulator is idle.
             </p>
+            <.runtime_stats_panel
+              prefix="emulator"
+              style={emulator_production_build_form_style(@selected_emulator_target)}
+            />
             <.form
               for={@emulator_form}
               id="emulator-production-build-form"
@@ -380,8 +384,7 @@ defmodule IdeWeb.WorkspaceLive.EmulatorPage do
               data-emulator-config-frame
               class="min-h-0 w-full flex-1 bg-white"
               sandbox="allow-forms allow-scripts allow-same-origin allow-popups allow-top-navigation-by-user-activation"
-            >
-            </iframe>
+            ></iframe>
           </div>
         </div>
       </div>
@@ -570,8 +573,7 @@ defmodule IdeWeb.WorkspaceLive.EmulatorPage do
                   data-wasm-frame
                   title="Pebble WASM Emulator"
                   class="h-[260px] w-[230px] rounded border-0 bg-zinc-950"
-                >
-                </iframe>
+                ></iframe>
                 <.emulator_display_tap_button show?={@show_accel_tap?} data_tap="wasm-tap" />
               </div>
               <div class="flex flex-col gap-2">
@@ -598,6 +600,7 @@ defmodule IdeWeb.WorkspaceLive.EmulatorPage do
                 </button>
               </div>
             </div>
+            <.runtime_stats_panel prefix="wasm" />
           </div>
           <div class="space-y-3">
             <p data-wasm-status class="rounded bg-white px-3 py-2 text-xs text-zinc-700">
@@ -859,6 +862,35 @@ defmodule IdeWeb.WorkspaceLive.EmulatorPage do
 
   defp emulator_screen_size(_), do: {144, 168}
 
+  attr :prefix, :string, required: true
+  attr :style, :string, default: nil
+
+  @spec runtime_stats_panel(map()) :: rendered()
+  defp runtime_stats_panel(assigns) do
+    ~H"""
+    <section
+      id={"runtime-stats-#{@prefix}"}
+      class="mx-auto mt-2 min-w-0 rounded border border-zinc-200 bg-white px-2 py-1.5 text-[11px] leading-snug text-zinc-700"
+      style={@style}
+      phx-update="ignore"
+      data-runtime-stats={@prefix}
+    >
+      <h4 class="text-[10px] font-semibold uppercase tracking-wide text-zinc-500">Watch runtime</h4>
+      <p class="mt-1 text-zinc-500" data-runtime-stats-empty>
+        Waiting for scene encode…
+      </p>
+      <dl class="mt-1 grid grid-cols-[auto_1fr] gap-x-2 gap-y-0.5" hidden data-runtime-stats-values>
+        <dt class="text-zinc-500">Scene</dt>
+        <dd class="font-mono text-zinc-900" data-runtime-stats-scene></dd>
+        <dt class="text-zinc-500">Commands</dt>
+        <dd class="font-mono text-zinc-900" data-runtime-stats-cmds></dd>
+        <dt class="text-zinc-500">Heap free</dt>
+        <dd class="font-mono text-zinc-900" data-runtime-stats-heap></dd>
+      </dl>
+    </section>
+    """
+  end
+
   @spec emulator_canvas_style(String.t()) :: String.t()
   defp emulator_canvas_style(target) do
     {width, height} = emulator_screen_size(target)
@@ -889,17 +921,20 @@ defmodule IdeWeb.WorkspaceLive.EmulatorPage do
 
   @spec emulator_settings_path(Project.t() | nil) :: String.t()
   defp emulator_settings_path(%{slug: slug}) when is_binary(slug) do
-    "/settings?return_to=" <> URI.encode_www_form("/projects/#{slug}/emulator")
+    "/settings/emulator?return_to=" <> URI.encode_www_form("/projects/#{slug}/emulator")
   end
 
-  defp emulator_settings_path(_), do: "/settings"
+  defp emulator_settings_path(_), do: "/settings/emulator"
 
   @emulator_simulator_setting_keys ~w(
     battery_percent charging connected clock_24h timeline_peek
     compass_heading_deg compass_valid use_simulator_weather weather
   )
 
-  @spec emulator_simulator_capabilities_json(Project.t() | nil, DebuggerTypes.runtime_state() | nil) ::
+  @spec emulator_simulator_capabilities_json(
+          Project.t() | nil,
+          DebuggerTypes.runtime_state() | nil
+        ) ::
           String.t()
   defp emulator_simulator_capabilities_json(project, debugger_state) do
     project

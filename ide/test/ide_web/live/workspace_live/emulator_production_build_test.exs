@@ -19,6 +19,11 @@ defmodule IdeWeb.WorkspaceLive.EmulatorProductionBuildTest do
 
     assert has_element?(view, "#emulator-production-build-form")
     assert render(view) =~ "Production build"
+    assert render(view) =~ "data-runtime-stats"
+    assert render(view) =~ "Watch runtime"
+    assert render(view) =~ "Waiting for scene encode"
+    assert has_element?(view, ~s(#runtime-stats-emulator[style="width: 245px;"]))
+    assert has_element?(view, ~s(#emulator-production-build-form[style="width: 245px;"]))
 
     view
     |> form("#emulator-production-build-form[phx-change='set-emulator-target']", %{

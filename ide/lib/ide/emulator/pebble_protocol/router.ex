@@ -7,6 +7,7 @@ defmodule Ide.Emulator.PebbleProtocol.Router do
   require Logger
 
   alias Ide.Emulator.PebbleProtocol.{Frame, LogLines, Trace}
+  alias Ide.Emulator.RuntimeStats
 
   @qemu_header 0xFEED
   @qemu_footer 0xBEEF
@@ -54,6 +55,20 @@ defmodule Ide.Emulator.PebbleProtocol.Router do
     GenServer.call(pid, {:collect_inbound, duration_ms}, duration_ms + 5_000)
   end
 
+  @spec runtime_stats(pid()) :: {:ok, RuntimeStats.t() | nil} | {:error, term()}
+  def runtime_stats(pid) when is_pid(pid) do
+    GenServer.call(pid, :runtime_stats, 2_000)
+  catch
+    :exit, _ -> {:error, :unavailable}
+  end
+
+  @spec reset_runtime_stats(pid()) :: :ok | {:error, term()}
+  def reset_runtime_stats(pid) when is_pid(pid) do
+    GenServer.call(pid, :reset_runtime_stats, 2_000)
+  catch
+    :exit, _ -> {:error, :unavailable}
+  end
+
   @impl true
   def init(opts) do
     qemu_port = Keyword.fetch!(opts, :qemu_port)
@@ -76,7 +91,8 @@ defmodule Ide.Emulator.PebbleProtocol.Router do
          pypkjs_queue: :queue.new(),
          collect_from: nil,
          collect_timer: nil,
-         collect_buffer: []
+         collect_buffer: [],
+         runtime_stats: nil
        }}
     end
   end
@@ -132,6 +148,14 @@ defmodule Ide.Emulator.PebbleProtocol.Router do
 
   def handle_call({:collect_inbound, _duration_ms}, _from, state),
     do: {:reply, {:error, :busy}, state}
+
+  def handle_call(:runtime_stats, _from, state) do
+    {:reply, {:ok, Map.get(state, :runtime_stats)}, state}
+  end
+
+  def handle_call(:reset_runtime_stats, _from, state) do
+    {:reply, :ok, %{state | runtime_stats: nil}}
+  end
 
   @impl true
   def handle_info(:accept_proxy, state) do
@@ -268,6 +292,8 @@ defmodule Ide.Emulator.PebbleProtocol.Router do
         state
       end
 
+    state = note_runtime_stats(frame, state)
+
     {matched, waiters} = Enum.split_with(state.waiters, fn waiter -> waiter.matcher.(frame) end)
     waiters = Enum.map(waiters, &observe_waiter_frame(&1, frame))
 
@@ -285,6 +311,18 @@ defmodule Ide.Emulator.PebbleProtocol.Router do
         end)
 
         %{state | waiters: waiters}
+    end
+  end
+
+  defp note_runtime_stats(frame, state) do
+    stats =
+      frame
+      |> LogLines.format_frame()
+      |> RuntimeStats.parse_many()
+
+    case stats do
+      nil -> state
+      parsed -> %{state | runtime_stats: RuntimeStats.merge(state.runtime_stats, parsed)}
     end
   end
 

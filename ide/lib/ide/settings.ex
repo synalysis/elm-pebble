@@ -7,6 +7,9 @@ defmodule Ide.Settings do
   alias Ide.Auth.User
   alias Ide.Debugger.Types, as: DebuggerTypes
 
+  @default_company_name "elm-pebble-ide"
+  @company_name_max_bytes 32
+
   @defaults %{
     "auto_format_on_save" => false,
     "debug_mode" => false,
@@ -15,6 +18,7 @@ defmodule Ide.Settings do
     "editor_theme" => "system",
     "editor_line_numbers" => true,
     "editor_active_line_highlight" => true,
+    "company_name" => @default_company_name,
     "mcp_http_enabled" => true,
     "mcp_http_port" => 4000,
     "mcp_http_capabilities" => ["read"],
@@ -38,6 +42,7 @@ defmodule Ide.Settings do
           | {:invalid_editor_mode, wire_input()}
           | {:invalid_formatter_backend, wire_input()}
           | {:invalid_editor_theme, wire_input()}
+          | {:invalid_company_name, wire_input()}
   @type settings_set_result :: :ok | {:error, settings_error()}
 
   @type values :: %{
@@ -48,6 +53,7 @@ defmodule Ide.Settings do
           editor_theme: editor_theme(),
           editor_line_numbers: boolean(),
           editor_active_line_highlight: boolean(),
+          company_name: String.t(),
           mcp_http_enabled: boolean(),
           mcp_http_port: pos_integer(),
           mcp_http_capabilities: [capability()],
@@ -72,6 +78,7 @@ defmodule Ide.Settings do
       editor_theme: parse_editor_theme(Map.get(merged, "editor_theme", "system")),
       editor_line_numbers: Map.get(merged, "editor_line_numbers", true) == true,
       editor_active_line_highlight: Map.get(merged, "editor_active_line_highlight", true) == true,
+      company_name: parse_company_name(Map.get(merged, "company_name", @default_company_name)),
       mcp_http_enabled: Auth.mcp_enabled?() and Map.get(merged, "mcp_http_enabled", true) == true,
       mcp_http_port: parse_port(Map.get(merged, "mcp_http_port", 4000)),
       mcp_http_capabilities:
@@ -163,6 +170,24 @@ defmodule Ide.Settings do
 
     write_file_values(values)
   end
+
+  @doc """
+  Developer/company name written into packaged watch apps as `package.json` `author`
+  (Pebble `companyName`). Defaults to `elm-pebble-ide` when blank.
+  """
+  @spec company_name() :: String.t()
+  def company_name, do: current().company_name
+
+  @spec set_company_name(String.t()) :: settings_set_result()
+  def set_company_name(value) when is_binary(value) do
+    values =
+      read_file_values()
+      |> Map.put("company_name", parse_company_name(value))
+
+    write_file_values(values)
+  end
+
+  def set_company_name(value), do: {:error, {:invalid_company_name, value}}
 
   @spec set_mcp_http_enabled(boolean()) :: settings_set_result()
   def set_mcp_http_enabled(value) when is_boolean(value) do
@@ -361,6 +386,31 @@ defmodule Ide.Settings do
   defp parse_editor_theme("dark"), do: :dark
   defp parse_editor_theme("light"), do: :light
   defp parse_editor_theme(_), do: :system
+
+  @spec parse_company_name(wire_input()) :: String.t()
+  defp parse_company_name(value) when is_binary(value) do
+    case String.trim(value) do
+      "" -> @default_company_name
+      name -> truncate_company_name(name)
+    end
+  end
+
+  defp parse_company_name(_), do: @default_company_name
+
+  @spec truncate_company_name(String.t()) :: String.t()
+  defp truncate_company_name(name) do
+    name
+    |> String.graphemes()
+    |> Enum.reduce_while("", fn grapheme, acc ->
+      next = acc <> grapheme
+
+      if byte_size(next) <= @company_name_max_bytes do
+        {:cont, next}
+      else
+        {:halt, acc}
+      end
+    end)
+  end
 
   @spec parse_port(wire_input()) :: pos_integer()
   defp parse_port(value) when is_integer(value) and value >= 1 and value <= 65_535, do: value

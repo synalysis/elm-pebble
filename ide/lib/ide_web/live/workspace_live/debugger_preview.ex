@@ -17,6 +17,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview do
   defdelegate hydrate_vector_svg_ops(rows, project), to: Hydration
   defdelegate resolve_bitmap_svg_ops(rows, runtime_or_project), to: Hydration
   defdelegate hydrate_animation_svg_ops(rows, project), to: Hydration
+  defdelegate hydrate_text_svg_ops(rows, project), to: Hydration
 
   defdelegate svg_path_d(op, close_shape?), to: Geometry
   defdelegate arc_path(op), to: Geometry

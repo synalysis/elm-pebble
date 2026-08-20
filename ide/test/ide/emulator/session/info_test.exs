@@ -42,5 +42,6 @@ defmodule Ide.Emulator.Session.InfoTest do
     assert info.ping_path == "/api/emulator/abc/ping"
     assert is_map(info.screen)
     assert is_list(info.controls)
+    assert info.runtime_stats == nil
   end
 end

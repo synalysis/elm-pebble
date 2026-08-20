@@ -92,6 +92,48 @@ defmodule Ide.PebblePreferencesTest do
     assert Enum.map(units.control.options, & &1.value) == ["c", "f"]
   end
 
+  test "resolves named choice option lists from local bindings", %{root: root} do
+    write_module(root, """
+    module CompanionPreferences exposing (settings)
+
+    import Pebble.Companion.Preferences as Preferences
+
+
+    type ThemeColor
+        = Cream
+        | WatchBody
+
+
+    type alias Settings =
+        { watchBackground : ThemeColor
+        }
+
+
+    settings : Preferences.Schema Settings
+    settings =
+        Preferences.schema "Classic" Settings
+            |> Preferences.section "Watch face"
+                (\\schema ->
+                    schema
+                        |> Preferences.field "watchBackground"
+                            (Preferences.choice "Background" backgroundChoices)
+                )
+
+
+    backgroundChoices : List (Preferences.ChoiceOption ThemeColor)
+    backgroundChoices =
+        [ Preferences.choiceOption Cream "cream" "Cream"
+        , Preferences.choiceOption WatchBody "watch-body" "Watch body"
+        ]
+    """)
+
+    assert {:ok, schema} = PebblePreferences.extract(root)
+    assert [%{fields: [background]}] = schema.sections
+    assert background.control.type == "choice"
+    assert Enum.map(background.control.options, & &1.value) == ["cream", "watch-body"]
+    assert Enum.map(background.control.options, & &1.label) == ["Cream", "Watch body"]
+  end
+
   test "extracts numeric, slider, and text controls from a second schema", %{root: root} do
     write_module(root, """
     module CompanionPreferences exposing (settings)
@@ -170,6 +212,9 @@ defmodule Ide.PebblePreferencesTest do
 
     assert html =~ "pebblejs://close#"
     assert html =~ "return_to"
+    assert html =~ "function queryParam(name)"
+    refute html =~ "URLSearchParams"
+    assert html =~ "var initialValues = null;"
     assert html =~ "Show date"
     assert html =~ "\"showDate\""
     assert html =~ "\"homeLatitude\""

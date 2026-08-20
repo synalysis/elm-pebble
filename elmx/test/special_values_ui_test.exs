@@ -26,6 +26,19 @@ defmodule Elmx.SpecialValuesUiTest do
     assert {:ok, ^color} = SpecialValues.rewrite("Pebble.Ui.Color.toInt", [color])
   end
 
+  test "Pebble.Ui.Resources constructors stay tags; fontInfo is not a string" do
+    assert {:ok, %{op: :runtime_call, function: "elmx_ui_resource_tag"}} =
+             SpecialValues.rewrite("Pebble.Ui.Resources.Quote28", [])
+
+    assert {:ok, %{op: :runtime_call, function: "elmx_ui_resource_tag"}} =
+             SpecialValues.rewrite("Pebble.Ui.Resources.DefaultFont", [])
+
+    font = %{op: :runtime_call, function: "elmx_ui_resource_tag", args: []}
+
+    assert SpecialValues.rewrite("Pebble.Ui.Resources.fontInfo", [font]) == :error
+    assert SpecialValues.rewrite("Pebble.Ui.Resources.allFonts", []) == :error
+  end
+
   test "Pebble.Ui Pascal-case text option helpers match camelCase targets" do
     options = %{op: :list_literal, items: []}
 

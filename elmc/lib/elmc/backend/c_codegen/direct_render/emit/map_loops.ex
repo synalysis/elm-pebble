@@ -211,6 +211,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.MapLoops do
                       prefix_release_code,
                       list_expr,
                       c_name,
+                      mapped_item_int?(decl_map, target, true),
                       next,
                       env,
                       counter
@@ -574,6 +575,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.MapLoops do
                   prefix_release_code,
                   list_expr,
                   c_name,
+                  mapped_item_int?(decl_map, target, false),
                   next,
                   env,
                   counter
@@ -677,6 +679,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.MapLoops do
           String.t(),
           Types.expr(),
           String.t(),
+          boolean(),
           non_neg_integer(),
           Types.compile_env(),
           Types.compile_counter()
@@ -689,6 +692,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.MapLoops do
          prefix_release_code,
          list_expr,
          c_name,
+         _int_items?,
          next,
          env,
          counter
@@ -725,6 +729,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.MapLoops do
          prefix_release_code,
          list_expr,
          c_name,
+         int_items?,
          next,
          env,
          counter
@@ -750,7 +755,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.MapLoops do
      #{list_code}
      #{prefix_code}
      #{prefix_setup_code}
-     #{direct_list_walk_indexed_boxed_head(list_var, next, prefix_count, prefix_arg_bindings, arg_count, c_name, loop_prefix_release_code)}
+     #{direct_list_walk_indexed_boxed_head(list_var, next, prefix_count, prefix_arg_bindings, arg_count, c_name, loop_prefix_release_code, int_items?)}
      #{Release.release_var(list_var, "     ")}
      #{loop_prefix_release_code}
      """, counter}
@@ -1056,6 +1061,24 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.MapLoops do
     end
   end
 
+  # Compact INT_LIST walks only apply to `List Int`. Record/string maps must not
+  # emit that backend — it is dead code and dominates analog `List.map` scenes.
+  defp mapped_item_int?(decl_map, {target_module, target_name, prefix_args}, indexed?) do
+    case Map.get(decl_map, {target_module, target_name}) do
+      %{type: _} = decl ->
+        idx = length(List.wrap(prefix_args)) + if(indexed?, do: 1, else: 0)
+
+        case Enum.at(CommandDef.arg_kinds(decl), idx) do
+          :native_int -> true
+          nil -> true
+          _ -> false
+        end
+
+      _ ->
+        true
+    end
+  end
+
   @spec map_arg_kinds(Types.decl_map(), term()) :: [Types.direct_command_arg_kind()]
 
   defp map_arg_kinds(decl_map, {target_module, target_name, _prefix_args}) do
@@ -1151,6 +1174,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.MapLoops do
           String.t(),
           Types.expr(),
           String.t(),
+          boolean(),
           non_neg_integer(),
           Types.compile_env(),
           Types.compile_counter()
@@ -1163,6 +1187,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.MapLoops do
          prefix_release_code,
          list_expr,
          c_name,
+         _int_items?,
          next,
          env,
          counter
@@ -1195,6 +1220,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.MapLoops do
          prefix_release_code,
          list_expr,
          c_name,
+         int_items?,
          next,
          env,
          counter
@@ -1220,7 +1246,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.MapLoops do
      #{list_code}
      #{prefix_code}
      #{prefix_setup_code}
-     #{direct_list_walk_boxed_head(list_var, next, prefix_count, prefix_arg_bindings, arg_count, c_name, loop_prefix_release_code)}
+     #{direct_list_walk_boxed_head(list_var, next, prefix_count, prefix_arg_bindings, arg_count, c_name, loop_prefix_release_code, int_items?)}
      #{Release.release_var(list_var, "     ")}
      #{loop_prefix_release_code}
      """, counter}
@@ -1539,7 +1565,8 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.MapLoops do
           String.t(),
           non_neg_integer(),
           String.t(),
-          String.t()
+          String.t(),
+          boolean()
         ) :: String.t()
 
   defp direct_list_walk_indexed_boxed_head(
@@ -1549,7 +1576,8 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.MapLoops do
          prefix_bindings,
          arg_count,
          c_name,
-         loop_prefix_release_code
+         loop_prefix_release_code,
+         int_items?
        ) do
     record_seq_prefix =
       direct_record_seq_boxed_head_loop(
@@ -1563,25 +1591,34 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.MapLoops do
         true
       )
 
+    int_list_branch =
+      if int_items? do
+        """
+         if (#{list_var} && #{list_var}->tag == ELMC_TAG_INT_LIST) {
+          ElmcIntListPayload *direct_ilp_#{next} = (ElmcIntListPayload *)#{list_var}->payload;
+          int direct_ilen_#{next} = direct_ilp_#{next} ? direct_ilp_#{next}->length : 0;
+          elmc_int_t direct_index_#{next} = 0;
+          for (int direct_ii_#{next} = 0; Rc == RC_SUCCESS && direct_ii_#{next} < direct_ilen_#{next}; direct_ii_#{next}++) {
+            #{RcRuntimeEmit.check_rc_take("direct_index_value_#{next}", "elmc_new_int", "direct_index_#{next}", RcRuntimeEmit.rc_catch_env(%{}))}
+            #{RcRuntimeEmit.check_rc_take("direct_item_value_#{next}", "elmc_new_int", "direct_ilp_#{next}->values[direct_ii_#{next}]", RcRuntimeEmit.rc_catch_env(%{}))}
+            ElmcValue *direct_call_args_#{next}[#{max(arg_count, 1)}] = {0};
+        #{prefix_bindings}
+            direct_call_args_#{next}[#{prefix_count}] = direct_index_value_#{next};
+            direct_call_args_#{next}[#{prefix_count + 1}] = direct_item_value_#{next};
+            elmc_release(direct_index_value_#{next});
+            elmc_release(direct_item_value_#{next});
+            Rc = #{c_name}_commands_append(direct_call_args_#{next}, #{arg_count}, writer);
+            #{Catch.check_rc("#{Release.release_var(list_var, "     ")}\n#{loop_prefix_release_code}")}
+            direct_index_#{next} += 1;
+          }
+        } else
+        """
+      else
+        ""
+      end
+
     """
-    #{record_seq_prefix} if (#{list_var} && #{list_var}->tag == ELMC_TAG_INT_LIST) {
-      ElmcIntListPayload *direct_ilp_#{next} = (ElmcIntListPayload *)#{list_var}->payload;
-      int direct_ilen_#{next} = direct_ilp_#{next} ? direct_ilp_#{next}->length : 0;
-      elmc_int_t direct_index_#{next} = 0;
-      for (int direct_ii_#{next} = 0; Rc == RC_SUCCESS && direct_ii_#{next} < direct_ilen_#{next}; direct_ii_#{next}++) {
-        #{RcRuntimeEmit.check_rc_take("direct_index_value_#{next}", "elmc_new_int", "direct_index_#{next}", RcRuntimeEmit.rc_catch_env(%{}))}
-        #{RcRuntimeEmit.check_rc_take("direct_item_value_#{next}", "elmc_new_int", "direct_ilp_#{next}->values[direct_ii_#{next}]", RcRuntimeEmit.rc_catch_env(%{}))}
-        ElmcValue *direct_call_args_#{next}[#{max(arg_count, 1)}] = {0};
-    #{prefix_bindings}
-        direct_call_args_#{next}[#{prefix_count}] = direct_index_value_#{next};
-        direct_call_args_#{next}[#{prefix_count + 1}] = direct_item_value_#{next};
-        elmc_release(direct_index_value_#{next});
-        elmc_release(direct_item_value_#{next});
-        Rc = #{c_name}_commands_append(direct_call_args_#{next}, #{arg_count}, writer);
-        #{Catch.check_rc("#{Release.release_var(list_var, "     ")}\n#{loop_prefix_release_code}")}
-        direct_index_#{next} += 1;
-      }
-    } else {
+    #{record_seq_prefix}#{int_list_branch} {
       ElmcValue *direct_cursor_#{next} = #{list_var};
       elmc_int_t direct_index_#{next} = 0;
       while (Rc == RC_SUCCESS && direct_cursor_#{next} && direct_cursor_#{next}->tag == ELMC_TAG_LIST && direct_cursor_#{next}->payload != NULL) {
@@ -1666,7 +1703,8 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.MapLoops do
           String.t(),
           non_neg_integer(),
           String.t(),
-          String.t()
+          String.t(),
+          boolean()
         ) :: String.t()
 
   defp direct_list_walk_boxed_head(
@@ -1676,7 +1714,8 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.MapLoops do
          prefix_bindings,
          arg_count,
          c_name,
-         loop_prefix_release_code
+         loop_prefix_release_code,
+         int_items?
        ) do
     record_seq_prefix =
       direct_record_seq_boxed_head_loop(
@@ -1689,6 +1728,27 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.MapLoops do
         loop_prefix_release_code,
         false
       )
+
+    int_list_branch =
+      if int_items? do
+        """
+         else if (#{list_var} && #{list_var}->tag == ELMC_TAG_INT_LIST) {
+          ElmcIntListPayload *direct_ilp_#{next} = (ElmcIntListPayload *)#{list_var}->payload;
+          int direct_ilen_#{next} = direct_ilp_#{next} ? direct_ilp_#{next}->length : 0;
+          for (int direct_ii_#{next} = 0; Rc == RC_SUCCESS && direct_ii_#{next} < direct_ilen_#{next}; direct_ii_#{next}++) {
+            #{RcRuntimeEmit.check_rc_take("direct_item_value_#{next}", "elmc_new_int", "direct_ilp_#{next}->values[direct_ii_#{next}]", RcRuntimeEmit.rc_catch_env(%{}))}
+            ElmcValue *direct_call_args_#{next}[#{max(arg_count, 1)}] = {0};
+        #{prefix_bindings}
+            direct_call_args_#{next}[#{prefix_count}] = direct_item_value_#{next};
+            Rc = #{c_name}_commands_append(direct_call_args_#{next}, #{arg_count}, writer);
+            elmc_release(direct_item_value_#{next});
+            #{Catch.check_rc("#{Release.release_var(list_var, "     ")}\n#{loop_prefix_release_code}")}
+          }
+        }
+        """
+      else
+        ""
+      end
 
     """
     #{record_seq_prefix} if (#{list_var} && #{list_var}->tag == ELMC_TAG_LAZY_MAP) {
@@ -1704,19 +1764,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.MapLoops do
         elmc_release(direct_item_value_#{next});
         #{Catch.check_rc("#{Release.release_var(list_var, "     ")}\n#{loop_prefix_release_code}")}
       }
-    } else if (#{list_var} && #{list_var}->tag == ELMC_TAG_INT_LIST) {
-      ElmcIntListPayload *direct_ilp_#{next} = (ElmcIntListPayload *)#{list_var}->payload;
-      int direct_ilen_#{next} = direct_ilp_#{next} ? direct_ilp_#{next}->length : 0;
-      for (int direct_ii_#{next} = 0; Rc == RC_SUCCESS && direct_ii_#{next} < direct_ilen_#{next}; direct_ii_#{next}++) {
-        #{RcRuntimeEmit.check_rc_take("direct_item_value_#{next}", "elmc_new_int", "direct_ilp_#{next}->values[direct_ii_#{next}]", RcRuntimeEmit.rc_catch_env(%{}))}
-        ElmcValue *direct_call_args_#{next}[#{max(arg_count, 1)}] = {0};
-    #{prefix_bindings}
-        direct_call_args_#{next}[#{prefix_count}] = direct_item_value_#{next};
-        Rc = #{c_name}_commands_append(direct_call_args_#{next}, #{arg_count}, writer);
-        elmc_release(direct_item_value_#{next});
-        #{Catch.check_rc("#{Release.release_var(list_var, "     ")}\n#{loop_prefix_release_code}")}
-      }
-    } else {
+    }#{int_list_branch} else {
       ElmcValue *direct_cursor_#{next} = #{list_var};
       while (Rc == RC_SUCCESS && direct_cursor_#{next} && direct_cursor_#{next}->tag == ELMC_TAG_LIST && direct_cursor_#{next}->payload != NULL) {
         ElmcCons *direct_node_#{next} = (ElmcCons *)direct_cursor_#{next}->payload;

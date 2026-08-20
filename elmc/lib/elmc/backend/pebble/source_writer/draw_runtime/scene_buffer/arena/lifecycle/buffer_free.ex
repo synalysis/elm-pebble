@@ -13,6 +13,16 @@ defmodule Elmc.Backend.Pebble.SourceWriter.DrawRuntime.SceneBuffer.Arena.Lifecyc
     #if ELMC_PEBBLE_SCENE_CHUNK_SIZE > 0
       elmc_pebble_scene_chunks_free(scene);
     #endif
+    #if ELMC_PEBBLE_SCENE_STATIC_CAPACITY > 0
+      if (elmc_pebble_scene_using_static(scene)) {
+        scene->byte_count = 0;
+        scene->command_count = 0;
+        scene->hash = 0;
+        scene->dirty = 1;
+        scene->byte_capacity = ELMC_PEBBLE_SCENE_STATIC_CAPACITY;
+        return;
+      }
+    #endif
       scene->bytes = NULL;
       scene->byte_count = 0;
       scene->byte_capacity = 0;
@@ -40,6 +50,7 @@ defmodule Elmc.Backend.Pebble.SourceWriter.DrawRuntime.SceneBuffer.Arena.Lifecyc
       }
     #elif ELMC_PEBBLE_SCENE_POOL_SLOTS >= 2 && ELMC_PEBBLE_SCENE_CACHE_ENABLED
       if (app->scene_rebuild_fallback_byte_count > 0) {
+        int failed_slot = app->scene.pool_slot;
         app->scene.pool_slot = app->scene_rebuild_fallback_slot;
         elmc_pebble_scene_pool_sync_from_slot(&app->scene);
         app->scene.byte_count = app->scene_rebuild_fallback_byte_count;
@@ -47,11 +58,28 @@ defmodule Elmc.Backend.Pebble.SourceWriter.DrawRuntime.SceneBuffer.Arena.Lifecyc
         app->scene.dirty = 1;
         app->scene_rebuild_fallback_byte_count = 0;
         app->scene_rebuild_fallback_command_count = 0;
+        if (failed_slot != app->scene.pool_slot) {
+          elmc_pebble_scene_pool_release_slot(failed_slot);
+        }
         return;
       }
     #endif
+      /* No last-good frame: drop the failed slot so a retry can grow it again
+         instead of leaking the partial buffer and allocating the other slot. */
+    #if ELMC_PEBBLE_SCENE_POOL_SLOTS > 0
+      {
+        int failed_slot = app->scene.pool_slot;
+        elmc_pebble_scene_discard_build(app);
+        elmc_pebble_scene_buffer_detach(&app->scene);
+        elmc_pebble_scene_pool_release_slot(failed_slot);
+        app->scene.pool_slot = (failed_slot >= 0) ? failed_slot : 0;
+        elmc_pebble_scene_pool_sync_from_slot(&app->scene);
+        return;
+      }
+    #else
       elmc_pebble_scene_discard_build(app);
       elmc_pebble_scene_buffer_detach(&app->scene);
+    #endif
     }
 
     static void elmc_pebble_scene_free(ElmcPebbleApp *app) {

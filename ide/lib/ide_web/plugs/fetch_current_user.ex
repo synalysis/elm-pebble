@@ -12,6 +12,7 @@ defmodule IdeWeb.Plugs.FetchCurrentUser do
   def call(conn, _opts) do
     session = conn |> get_session() |> stringify_session_keys()
     user = Auth.get_user(get_session(conn, :user_id))
+    firebase_account = Auth.get_user(get_session(conn, :firebase_user_id))
     token = Auth.resolve_firebase_session_token(session)
     token_exp = get_session(conn, :firebase_id_token_exp)
 
@@ -21,6 +22,7 @@ defmodule IdeWeb.Plugs.FetchCurrentUser do
 
     conn
     |> assign(:current_user, user)
+    |> assign(:firebase_account, firebase_account)
     |> assign(:firebase_id_token, token)
     |> assign(:firebase_id_token_exp, token_exp)
     |> assign(:auth_mode, Auth.mode())

@@ -45,6 +45,7 @@ defmodule Elmx.Runtime.Pebble.SpecialValues.Watch do
       "Pebble.WatchInfo.getModel" -> ui_call("elmx_watch_info_get_model", args)
       "Pebble.WatchInfo.getColor" -> ui_call("elmx_watch_info_get_color", args)
       "Pebble.WatchInfo.getFirmwareVersion" -> ui_call("elmx_watch_info_get_firmware_version", args)
+      "Pebble.WatchInfo.caseColor" -> watch_info_case_color(args)
       "Pebble.System.batteryLevel" -> ui_call("elmx_system_battery_level", args)
       "Pebble.System.connectionStatus" -> ui_call("elmx_system_connection_status", args)
       "Pebble.Events.batch" -> subscription_batch(args)
@@ -211,4 +212,20 @@ defmodule Elmx.Runtime.Pebble.SpecialValues.Watch do
       _ -> :unmatched
     end
   end
+
+  defp watch_info_case_color([]) do
+    {:ok,
+     %{
+       op: :lambda,
+       args: ["__color"],
+       body: %{
+         op: :runtime_call,
+         function: "elmx_watch_info_case_color",
+         args: [%{op: :var, name: "__color"}]
+       }
+     }}
+  end
+
+  defp watch_info_case_color([_color] = args), do: ui_call("elmx_watch_info_case_color", args)
+  defp watch_info_case_color(_), do: :error
 end

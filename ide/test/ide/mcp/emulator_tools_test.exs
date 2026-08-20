@@ -31,6 +31,8 @@ defmodule Ide.Mcp.EmulatorToolsTest do
       assert pinged.session_id == info.id
       assert pinged.alive == true
       assert pinged.session.id == info.id
+      assert pinged.runtime_stats == nil
+      assert pinged.session.runtime_stats == nil
 
       assert {:ok, killed} =
                Tools.call("emulator.kill", %{"session_id" => info.id}, [:build])

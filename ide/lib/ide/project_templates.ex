@@ -23,7 +23,7 @@ defmodule Ide.ProjectTemplates do
           | File.posix()
           | Jason.EncodeError.t()
 
-  @template_keys ~w(starter app-minimal watchface-minimal watchface-digital watchface-smoke-screen watchface-color-shapes watchface-analog watchface-tutorial-complete watchface-yes watchface-tangram-time watchface-weather-animated watchface-poke-battle companion-demo-phone-status companion-demo-protocol-matrix companion-demo-weather-env companion-demo-calendar companion-demo-geolocation companion-demo-storage companion-demo-settings companion-demo-websocket companion-demo-timeline watch-demo-accel watch-demo-vibes watch-demo-data-log watch-demo-app-focus watch-demo-compass watch-demo-dictation watch-demo-health watch-demo-light watch-demo-watch-info watch-demo-drawing-showcase watch-demo-speaker watch-demo-storage watch-demo-launch watch-demo-screen-change watch-demo-system watch-demo-unobstructed watch-demo-wakeup watch-demo-frame watch-demo-time watch-demo-touch watch-demo-log game-basic game-tiny-bird game-jump-n-run game-2048 game-elmtris)
+  @template_keys ~w(starter app-minimal watchface-minimal watchface-digital watchface-smoke-screen watchface-color-shapes watchface-analog watchface-classic-motivate watchface-tutorial-complete watchface-yes watchface-tangram-time watchface-weather-animated watchface-poke-battle companion-demo-phone-status companion-demo-protocol-matrix companion-demo-weather-env companion-demo-calendar companion-demo-geolocation companion-demo-storage companion-demo-settings companion-demo-websocket companion-demo-timeline watch-demo-accel watch-demo-vibes watch-demo-data-log watch-demo-app-focus watch-demo-compass watch-demo-dictation watch-demo-health watch-demo-light watch-demo-watch-info watch-demo-drawing-showcase watch-demo-speaker watch-demo-storage watch-demo-launch watch-demo-screen-change watch-demo-system watch-demo-unobstructed watch-demo-wakeup watch-demo-frame watch-demo-time watch-demo-touch watch-demo-log game-basic game-tiny-bird game-jump-n-run game-2048 game-elmtris)
 
   @template_dirs %{
     "starter" => "starter_watch",
@@ -33,6 +33,7 @@ defmodule Ide.ProjectTemplates do
     "watchface-smoke-screen" => "watchface_smoke_screen",
     "watchface-color-shapes" => "watchface_color_shapes",
     "watchface-analog" => "watchface_analog",
+    "watchface-classic-motivate" => "watchface_classic_motivate",
     "watchface-tutorial-complete" => "watchface_tutorial_complete",
     "watchface-yes" => "watchface_yes",
     "watchface-tangram-time" => "watchface_tangram_time",
@@ -107,6 +108,7 @@ defmodule Ide.ProjectTemplates do
              "watchface-smoke-screen",
              "watchface-color-shapes",
              "watchface-analog",
+             "watchface-classic-motivate",
              "watchface-tutorial-complete",
              "watchface-yes",
              "watchface-tangram-time",
@@ -123,6 +125,7 @@ defmodule Ide.ProjectTemplates do
 
   @companion_templates ~w(
     starter
+    watchface-classic-motivate
     watchface-tutorial-complete
     watchface-yes
     watchface-tangram-time
@@ -265,6 +268,7 @@ defmodule Ide.ProjectTemplates do
       {"Watchface: Smoke screen (checkerboard, emulator debug)", "watchface-smoke-screen"},
       {"Watchface: Color shapes (radial fill debug)", "watchface-color-shapes"},
       {"Watchface: Analog (watch-only)", "watchface-analog"},
+      {"Watchface: Classic Motivate (watch, protocol, phone)", "watchface-classic-motivate"},
       {"Watchface tutorial: Complete", "watchface-tutorial-complete"},
       {"Watchface: YES (watch, protocol, phone)", "watchface-yes"},
       {"Watchface: Tangram Time (watch, protocol, phone)", "watchface-tangram-time"},
@@ -348,6 +352,9 @@ defmodule Ide.ProjectTemplates do
 
       "watchface-analog" ->
         seed_watch_only_workspace(workspace_path, "watchface_analog")
+
+      "watchface-classic-motivate" ->
+        seed_protocol_preferences_watchface(workspace_path, "watchface_classic_motivate")
 
       "watchface-tutorial-complete" ->
         seed_watchface_tutorial_workspace(workspace_path)
@@ -714,6 +721,16 @@ defmodule Ide.ProjectTemplates do
     end
   end
 
+  @spec seed_protocol_preferences_watchface(workspace_path(), template_dir_name()) :: seed_result()
+  defp seed_protocol_preferences_watchface(workspace_path, template_dir) do
+    with :ok <- seed_template_protocol(workspace_path, template_dir),
+         :ok <- seed_phone_companion(workspace_path),
+         :ok <- seed_preferences_phone(workspace_path, template_dir),
+         :ok <- seed_watch_only_workspace(workspace_path, template_dir) do
+      :ok
+    end
+  end
+
   @spec seed_watchface_tutorial_workspace(workspace_path()) :: seed_result()
   defp seed_watchface_tutorial_workspace(workspace_path) do
     with :ok <- seed_protocol_shared(workspace_path),
@@ -889,6 +906,23 @@ defmodule Ide.ProjectTemplates do
     end
   end
 
+  @spec seed_preferences_phone(workspace_path(), template_dir_name()) :: seed_result()
+  defp seed_preferences_phone(workspace_path, template_dir) do
+    source = Paths.priv_path("project_templates/#{template_dir}/phone/src")
+    target = Path.join(workspace_path, "phone/src")
+
+    with :ok <-
+           copy_file(Path.join(source, "CompanionApp.elm"), Path.join(target, "CompanionApp.elm")),
+         :ok <-
+           copy_file(
+             Path.join(source, "CompanionPreferences.elm"),
+             Path.join(target, "CompanionPreferences.elm")
+           ),
+         :ok <- Ide.PebblePreferences.ensure_generated_bridge(Path.join(workspace_path, "phone")) do
+      :ok
+    end
+  end
+
   @spec seed_yes_phone(workspace_path()) :: seed_result()
   defp seed_yes_phone(workspace_path) do
     source = Paths.priv_path("project_templates/watchface_yes/phone/src")
@@ -1014,6 +1048,7 @@ defmodule Ide.ProjectTemplates do
   @spec watch_source_directories(template_dir_name()) :: [String.t()]
   defp watch_source_directories(template_dir)
        when template_dir in [
+              "watchface_classic_motivate",
               "watchface_tutorial_complete",
               "watchface_yes",
               "watchface_tangram_time",

@@ -42,4 +42,24 @@ defmodule Ide.WatchModelsTest do
     assert gabbro["shape"] == "round"
     assert WatchModels.profile_screen(gabbro) == %{"width" => 260, "height" => 260}
   end
+
+  test "flint reports Pebble 2 Duo watch info, not Pebble Time" do
+    flint = WatchModels.profile_for("flint")
+
+    assert flint["watch_info_model"] == "CoreDevicesP2D"
+    assert flint["watch_info_color"] == "CoreDevicesP2DWhite"
+    assert WatchModels.watch_info_model_ctor("flint") == "CoreDevicesP2D"
+    assert WatchModels.watch_info_color_ctor("flint") == "CoreDevicesP2DWhite"
+  end
+
+  test "launch context can override catalog watch color" do
+    assert WatchModels.watch_info_color_ctor_from_launch_context(%{
+             "watch_profile_id" => "flint",
+             "watch_info_color" => "CoreDevicesP2DBlack"
+           }) == "CoreDevicesP2DBlack"
+
+    assert WatchModels.watch_info_color_ctor_from_launch_context(%{
+             "watch_profile_id" => "flint"
+           }) == "CoreDevicesP2DWhite"
+  end
 end

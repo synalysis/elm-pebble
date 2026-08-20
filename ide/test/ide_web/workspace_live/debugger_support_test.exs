@@ -1659,6 +1659,27 @@ defmodule IdeWeb.WorkspaceLive.DebuggerSupportTest do
     assert IdeWeb.WorkspaceLive.DebuggerPage.SvgRender.text_font_size(time) == 18
     assert IdeWeb.WorkspaceLive.DebuggerPage.SvgRender.text_y(time) == 64
   end
+
+  test "debugger preview applies the emulator date-window lift when font height is declared" do
+    date = %{
+      kind: :text_label,
+      x: 100,
+      y: 80,
+      w: 22,
+      h: 16,
+      text: "19",
+      text_align: "center",
+      font_height: 14
+    }
+
+    # Same declared face; only center-align applies the emulator lift.
+    unlifted = %{date | text_align: "right"}
+
+    assert IdeWeb.WorkspaceLive.DebuggerPage.SvgRender.text_y(date) ==
+             IdeWeb.WorkspaceLive.DebuggerPage.SvgRender.text_y(unlifted) - 3
+
+    assert Ide.Pebble.TextLayout.center_aligned_origin_y(80, 16, 14) == 77
+  end
   test "drawable-embedded colors win over sticky fill_color and stroke_color style ops" do
     runtime = %{
       model: %{

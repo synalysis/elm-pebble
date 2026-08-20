@@ -128,12 +128,12 @@ defmodule Elmc.PlanCLowerTest do
              Elmc.Backend.Plan.Lower.Function.lower(decl, "Main", %{}, rc_required: true)
 
     c = CLowerFunction.emit(plan)
-    assert c =~ "elmc_retain(model)"
-    assert c =~ "Rc = elmc_record_update_index_int_cow_drop("
+    assert c =~ "Rc = elmc_record_update_index_int_cow(out, model,"
+    refute c =~ "elmc_record_update_index_int_cow_drop"
     refute c =~ "elmc_record_update_index_cow_drop("
-    assert c =~ "owned[1] = NULL;"
+    assert c =~ "*out == model"
+    assert c =~ "*out = elmc_retain(*out)"
     refute c =~ ~r/elmc_release\(owned\[\d+\]\)/
-    refute c =~ ~r/owned\[1\] = NULL;\s*elmc_release\(owned\[1\]\);\s*owned\[1\] = NULL;\s*Rc = elmc_cmd0\(&owned\[1\]/
   end
 
   test "maybe_with_default_int into Int record field stays native" do
@@ -170,7 +170,8 @@ defmodule Elmc.PlanCLowerTest do
 
     c = CLowerFunction.emit(plan)
     assert c =~ "elmc_maybe_with_default_int(0"
-    assert c =~ "elmc_record_update_index_int_cow_drop"
+    assert c =~ "elmc_record_update_index_int_cow(out, model,"
+    refute c =~ "elmc_record_update_index_int_cow_drop"
     refute c =~ ~r/elmc_new_int\(&owned\[\d+\], elmc_maybe_with_default_int/
     refute c =~ "elmc_record_update_index_cow_drop("
   end
@@ -451,10 +452,13 @@ defmodule Elmc.PlanCLowerTest do
 
     c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
-    # Borrow-view peels never allocate; retain cannot OOM.
-    assert c =~ "elmc_retain(elmc_maybe_just_payload("
+    # Borrowed Maybe peels stay borrows (no retain) so later record COW can
+    # mutate in place. Publish retains the result; peels never allocate.
+    assert c =~ "elmc_maybe_just_payload("
+    assert c =~ ~r/\*out = elmc_retain\(owned\[\d+\]\)/
+    refute c =~ "elmc_retain(elmc_maybe_just_payload("
     refute Regex.match?(
-             ~r/elmc_retain\(elmc_maybe_just_payload\([^)]+\)\);\s*if \(!owned\[/,
+             ~r/elmc_maybe_just_payload\([^)]+\);\s*if \(!owned\[/,
              c
            )
 

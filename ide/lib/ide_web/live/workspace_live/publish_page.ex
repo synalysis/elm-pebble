@@ -3,6 +3,8 @@ defmodule IdeWeb.WorkspaceLive.PublishPage do
   use IdeWeb, :html
 
   alias Ide.Auth
+  alias Ide.Projects
+  alias Ide.StoreListingUrls
   alias IdeWeb.WorkspaceLive.PublishPage.Assigns
   alias Phoenix.LiveView.Rendered
 
@@ -29,6 +31,24 @@ defmodule IdeWeb.WorkspaceLive.PublishPage do
         <.button phx-click="prepare-release" disabled={@prepare_release_status == :running}>
           {if @prepare_release_status == :running, do: "Preparing release...", else: "Prepare Release"}
         </.button>
+      </div>
+
+      <div
+        :if={store_listing_url = StoreListingUrls.app_page_url(@project)}
+        class="mt-4 rounded border border-emerald-200 bg-emerald-50 p-3"
+      >
+        <h3 class="text-sm font-semibold text-emerald-950">App Store listing</h3>
+        <p class="mt-1 text-xs text-emerald-900">
+          Open the public listing anytime:
+        </p>
+        <a
+          href={store_listing_url}
+          target="_blank"
+          rel="noopener noreferrer"
+          class="mt-2 inline-block font-mono text-sm text-blue-700 underline"
+        >
+          {store_listing_url}
+        </a>
       </div>
 
       <div class="mt-4 rounded border border-zinc-200 bg-zinc-50 p-3">
@@ -186,9 +206,10 @@ defmodule IdeWeb.WorkspaceLive.PublishPage do
         <div :if={@project} class="mt-4">
           <.link
             href={~p"/projects/#{@project.slug}/publish/pbw"}
+            download={Projects.pbw_download_filename(@project)}
             class="inline-flex rounded-lg bg-zinc-900 px-4 py-2 text-sm font-semibold text-white hover:bg-zinc-800"
           >
-            Download PBW
+            Download {Projects.pbw_download_filename(@project)}
           </.link>
           <p class="mt-2 text-xs text-zinc-600">
             Download the prepared `.pbw` for manual sideloading or distribution.

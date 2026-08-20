@@ -94,7 +94,8 @@ defmodule Ide.Projects.Types do
   @type write_result :: FileTypes.write_result()
 
   @type project_attrs :: %{
-          optional(String.t()) => String.t() | [String.t()] | boolean() | release_defaults() | github_config() | nil
+          optional(String.t()) =>
+            String.t() | [String.t()] | boolean() | release_defaults() | github_config() | store_metadata() | nil
         }
   @type project_error ::
           BootstrapError.bootstrap_reason()

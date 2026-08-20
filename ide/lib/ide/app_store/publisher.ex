@@ -5,6 +5,7 @@ defmodule Ide.AppStore.Publisher do
 
   @dialyzer :no_match
 
+  alias Ide.AppStore.Listing
   alias Ide.AppStore.PublishFlags
   alias Ide.AppStore.Types
   alias Ide.Auth
@@ -17,7 +18,10 @@ defmodule Ide.AppStore.Publisher do
           command: String.t(),
           output: String.t(),
           exit_code: integer(),
-          cwd: String.t()
+          cwd: String.t(),
+          store_app_id: String.t() | nil,
+          store_icon_hashes: %{optional(String.t()) => String.t()},
+          listing_icons_synced: boolean()
         }
 
   @spec publish(Types.publish_project(), Types.publish_opts()) ::
@@ -45,7 +49,7 @@ defmodule Ide.AppStore.Publisher do
                  :ok <- require_file(upload_artifact_path, "PBW"),
                  {:ok, metadata} <- pbw_metadata(upload_artifact_path, app_root),
                  version <- choose_version(version_override, metadata, app_root),
-                 {:ok, output} <-
+                 {:ok, output, store_app_id, listing_icons_synced} <-
                    publish_with_context(project, %{
                      api_base: api_base,
                      token: token,
@@ -59,7 +63,7 @@ defmodule Ide.AppStore.Publisher do
                      metadata: metadata,
                      opts: opts
                    }) do
-              {:ok, output}
+              {:ok, output, store_app_id, listing_icons_synced}
             else
               {:error, reason} -> {:error, reason}
             end
@@ -69,8 +73,16 @@ defmodule Ide.AppStore.Publisher do
       end
 
     case run do
-      {:ok, output} ->
-        {:ok, command_result(:ok, app_root, Enum.join(output, "\n"))}
+      {:ok, output, store_app_id, listing_icons_synced} ->
+        {:ok,
+         command_result(
+           :ok,
+           app_root,
+           Enum.join(output, "\n"),
+           store_app_id,
+           store_icon_hashes(opts),
+           listing_icons_synced
+         )}
 
       {:error, reason} ->
         {:ok, command_result(:error, app_root, error_output(reason))}
@@ -94,7 +106,7 @@ defmodule Ide.AppStore.Publisher do
   def publish(_project, _opts), do: {:error, :invalid_project}
 
   @spec publish_with_context(Project.t(), Types.publish_context()) ::
-          {:ok, [String.t()]} | {:error, Types.publish_flow_error()}
+          {:ok, [String.t()], String.t() | nil, boolean()} | {:error, Types.publish_flow_error()}
   defp publish_with_context(project, ctx) do
     output = [
       "Appstore auth preflight...",
@@ -103,28 +115,36 @@ defmodule Ide.AppStore.Publisher do
 
     with {:ok, me} <- ensure_developer(ctx),
          metadata = ctx.metadata,
-         app_id <- lookup_app_id(me, metadata.app_uuid),
-         {:ok, response, action_output} <- publish_app(project, ctx, metadata, me, app_id) do
-      uploaded_output = upload_summary(response)
+         looked_up_id <- lookup_app_id(me, metadata.app_uuid),
+         {:ok, response, action_output} <- publish_app(project, ctx, metadata, me, looked_up_id) do
+      store_app_id = extract_app_id(response) || looked_up_id
+      uploaded_output = upload_summary(response, store_app_id)
 
-      {:ok,
-       (output ++
-          [
-            "Developer link check successful.",
-            "PBW Metadata",
-            "Using PBW: #{ctx.artifact_path}",
-            "PBW app UUID: #{metadata.app_uuid}",
-            "Name: #{metadata.app_name}",
-            "PBW Version: #{metadata.version}",
-            "Publish Version: #{ctx.version}",
-            publish_version_warning(metadata.version, ctx.version),
-            PublishFlags.visibility_line(ctx.visibility),
-            release_notes_line(ctx.release_notes),
-            store_icons_line(ctx),
-            "Platforms: #{Enum.join(metadata.platforms, ", ")}"
-          ])
-       |> Enum.reject(&is_nil/1)
-       |> Kernel.++(action_output ++ uploaded_output)}
+      case sync_listing_icons(ctx, store_app_id) do
+        {:ok, icon_lines, listing_icons_synced} ->
+          {:ok,
+           (output ++
+              [
+                "Developer link check successful.",
+                "PBW Metadata",
+                "Using PBW: #{ctx.artifact_path}",
+                "PBW app UUID: #{metadata.app_uuid}",
+                "Name: #{metadata.app_name}",
+                "PBW Version: #{metadata.version}",
+                "Publish Version: #{ctx.version}",
+                publish_version_warning(metadata.version, ctx.version),
+                PublishFlags.visibility_line(ctx.visibility),
+                release_notes_line(ctx.release_notes),
+                store_icons_line(ctx),
+                "Platforms: #{Enum.join(metadata.platforms, ", ")}"
+              ])
+           |> Enum.reject(&is_nil/1)
+           |> Kernel.++(action_output ++ uploaded_output ++ icon_lines), store_app_id,
+           listing_icons_synced}
+
+        {:error, reason} ->
+          {:error, reason}
+      end
     end
   end
 
@@ -207,7 +227,10 @@ defmodule Ide.AppStore.Publisher do
       "replaceScreenshots" => replace_screenshots_string(ctx.screenshots)
     }
 
-    files = [{"pbwFile", ctx.artifact_path}] ++ screenshot_files(ctx.screenshots)
+    files =
+      [{"pbwFile", ctx.artifact_path}] ++
+        screenshot_files(ctx.screenshots) ++
+        icon_files_for(ctx, :update)
 
     multipart_request(
       :post,
@@ -238,7 +261,7 @@ defmodule Ide.AppStore.Publisher do
 
     files =
       [{"pbwFile", ctx.artifact_path}]
-      |> Kernel.++(icon_files(ctx))
+      |> Kernel.++(icon_files_for(ctx, :create))
       |> Kernel.++(screenshot_files(ctx.screenshots))
 
     fields = maybe_put_icon_prompt(fields, ctx)
@@ -434,6 +457,12 @@ defmodule Ide.AppStore.Publisher do
     Enum.map(paths, fn path -> {"screenshots_#{platform_from_capture_path(path)}", path} end)
   end
 
+  defp icon_files_for(ctx, :create), do: icon_files(ctx)
+
+  defp icon_files_for(ctx, :update) do
+    if send_store_icons?(ctx), do: icon_files(ctx), else: []
+  end
+
   defp icon_files(ctx) do
     icons = Keyword.get(ctx.opts, :store_icons, %{})
 
@@ -448,6 +477,61 @@ defmodule Ide.AppStore.Publisher do
       _ ->
         []
     end)
+  end
+
+  defp send_store_icons?(ctx) do
+    StoreAssets.hashes_changed?(store_icon_hashes(ctx.opts), previous_store_icon_hashes(ctx.opts))
+  end
+
+  defp send_listing_icons?(ctx) do
+    icons = Keyword.get(ctx.opts, :store_icons, %{})
+    map_size(icons) > 0 and (send_store_icons?(ctx) or not listing_icons_synced?(ctx.opts))
+  end
+
+  defp listing_icons_synced?(opts) do
+    Keyword.get(opts, :listing_icons_synced, false) == true
+  end
+
+  defp sync_listing_icons(ctx, app_id) when is_binary(app_id) and app_id != "" do
+    icons = Keyword.get(ctx.opts, :store_icons, %{})
+
+    cond do
+      map_size(icons) == 0 ->
+        {:ok, [], false}
+
+      ctx.metadata.app_type == "watchface" ->
+        {:ok, ["Store locker icons: skipped (watchfaces do not use locker icons)"], true}
+
+      not send_listing_icons?(ctx) ->
+        {:ok, ["Store locker icons: already synced"], true}
+
+      true ->
+        case Listing.upload_icons(ctx.api_base, ctx.token, app_id, icons, ctx.opts) do
+          {:ok, []} ->
+            {:ok, [], false}
+
+          {:ok, lines} ->
+            {:ok, ["Store locker icons: uploaded via listing API" | lines], true}
+
+          {:error, reason} ->
+            {:error, reason}
+        end
+    end
+  end
+
+  defp sync_listing_icons(_ctx, _app_id), do: {:ok, [], false}
+
+  defp store_icon_hashes(opts) do
+    opts
+    |> Keyword.get(:store_icons, %{})
+    |> StoreAssets.content_hashes()
+  end
+
+  defp previous_store_icon_hashes(opts) do
+    case Keyword.get(opts, :store_icon_hashes, %{}) do
+      hashes when is_map(hashes) -> hashes
+      _ -> %{}
+    end
   end
 
   defp icon_field_name(key), do: StoreAssets.api_field_name(key)
@@ -470,18 +554,20 @@ defmodule Ide.AppStore.Publisher do
 
   defp store_icons_line(ctx) do
     icons = Keyword.get(ctx.opts, :store_icons, %{})
+    previous = previous_store_icon_hashes(ctx.opts)
 
     cond do
-      map_size(icons) == 2 ->
-        "Store icons: uploaded #{StoreAssets.required_sizes_summary()}"
+      map_size(icons) > 0 and send_store_icons?(ctx) and previous != %{} ->
+        "Store icons: uploading #{icon_upload_summary(icons)} (changed since last publish)"
 
-      map_size(icons) == 1 ->
-        parts =
-          Enum.map_join(icons, ", ", fn {key, _} ->
-            "#{StoreAssets.api_field_name(key)} (#{StoreAssets.size_label(key)})"
-          end)
+      map_size(icons) > 0 and send_store_icons?(ctx) ->
+        "Store icons: uploading #{icon_upload_summary(icons)}"
 
-        "Store icons: uploaded #{parts}"
+      map_size(icons) > 0 and send_listing_icons?(ctx) ->
+        "Store locker icons: listing API upload (release icons already on the store)"
+
+      map_size(icons) > 0 ->
+        "Store icons: unchanged since last publish"
 
       ctx.metadata.app_type == "watchapp" and store_graphics_generation_enabled?(ctx.opts) ->
         "Store icons: will request Rebble AI icon generation (iconPrompt) on create"
@@ -492,6 +578,15 @@ defmodule Ide.AppStore.Publisher do
       true ->
         nil
     end
+  end
+
+  defp icon_upload_summary(icons) when map_size(icons) == 2,
+    do: StoreAssets.required_sizes_summary()
+
+  defp icon_upload_summary(icons) do
+    Enum.map_join(icons, ", ", fn {key, _} ->
+      "#{StoreAssets.api_field_name(key)} (#{StoreAssets.size_label(key)})"
+    end)
   end
 
   defp platform_from_capture_path(path) do
@@ -544,15 +639,15 @@ defmodule Ide.AppStore.Publisher do
     |> String.trim()
   end
 
-  defp upload_summary(payload) do
+  defp upload_summary(payload, store_app_id) do
     results = payload["screenshotResults"] || %{}
     uploaded = results["uploaded"] || []
     failed = results["failed"] || []
-    app_id = extract_app_id(payload)
+    app_page = StoreListingUrls.app_page_url(store_app_id || extract_app_id(payload))
 
     [
       payload["message"] || "Publish completed successfully",
-      if(app_id, do: "App page: https://apps.rePebble.com/#{app_id}", else: nil),
+      if(app_page, do: "App page: #{app_page}", else: nil),
       if(uploaded != [], do: "Uploaded screenshots: #{length(uploaded)}", else: nil),
       if(failed != [], do: "Screenshot upload warnings: #{length(failed)}", else: nil)
     ]
@@ -679,7 +774,7 @@ defmodule Ide.AppStore.Publisher do
   end
 
   defp metadata_entry(files) do
-    names = Enum.map(files, fn {:zip_file, name, _, _, _, _} -> to_string(name) end)
+    names = Ide.ZipArchive.file_names(files)
 
     cond do
       "appinfo.json" in names -> "appinfo.json"
@@ -712,9 +807,9 @@ defmodule Ide.AppStore.Publisher do
       )
 
     with {:ok, files} <- Ide.ZipArchive.extract_all(artifact_path),
-         {:ok, zip_binary} <-
+         {:ok, {_name, zip_binary}} <-
            :zip.create(~c"upload.pbw", rewrite_zip_entries(files, lower_uuid), [:memory]) do
-      File.write!(temp_path, :erlang.iolist_to_binary(zip_binary))
+      File.write!(temp_path, zip_binary)
       {:ok, temp_path}
     end
   end
@@ -786,13 +881,23 @@ defmodule Ide.AppStore.Publisher do
   defp error_output(reason) when is_binary(reason), do: reason
   defp error_output(reason), do: inspect(reason)
 
-  defp command_result(status, cwd, output) do
+  defp command_result(
+         status,
+         cwd,
+         output,
+         store_app_id \\ nil,
+         store_icon_hashes \\ %{},
+         listing_icons_synced \\ false
+       ) do
     %{
       status: status,
       command: "native appstore publish",
       output: output,
       exit_code: (status == :ok && 0) || 1,
-      cwd: cwd
+      cwd: cwd,
+      store_app_id: store_app_id,
+      store_icon_hashes: store_icon_hashes || %{},
+      listing_icons_synced: listing_icons_synced == true
     }
   end
 

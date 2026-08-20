@@ -32,6 +32,7 @@ defmodule IdeWeb.SettingsLive do
      socket
      |> assign(:page_title, "IDE Settings")
      |> assign(:return_to, "/projects")
+     |> assign(:settings_tab, :editor)
      |> assign(:github_status, AuthFlow.status())
      |> assign(:github_oauth_ready, AuthFlow.oauth_client_configured?())
      |> assign(:github_flow, nil)
@@ -49,50 +50,54 @@ defmodule IdeWeb.SettingsLive do
   @impl true
   @spec handle_params(Types.wire_params(), String.t(), socket()) :: lv_noreply()
   def handle_params(params, _uri, socket) do
-    {:noreply, assign(socket, :return_to, sanitize_return_to(params["return_to"]))}
+    return_to = sanitize_return_to(params["return_to"] || socket.assigns[:return_to])
+    tab = settings_tab(socket.assigns.live_action, socket.assigns.auth_mode)
+
+    socket =
+      socket
+      |> assign(:return_to, return_to)
+      |> assign(:settings_tab, tab)
+
+    if tab_allowed?(socket.assigns.live_action, socket.assigns.auth_mode) do
+      {:noreply, socket}
+    else
+      {:noreply, push_patch(socket, to: settings_tab_href(:editor, return_to))}
+    end
   end
 
   @impl true
   @spec handle_event(String.t(), Types.event_params(), socket()) :: lv_noreply()
   def handle_event("save", %{"settings" => params}, socket) do
-    auto_format = parse_checkbox(params["auto_format_on_save"])
-    debug_mode = parse_checkbox(params["debug_mode"])
-    formatter_backend = parse_formatter_backend(params["formatter_backend"])
-    editor_mode = parse_editor_mode(params["editor_mode"])
-    editor_theme = parse_editor_theme(params["editor_theme"])
-    editor_line_numbers = parse_checkbox(params["editor_line_numbers"])
-    editor_active_line_highlight = parse_checkbox(params["editor_active_line_highlight"])
+    result =
+      case socket.assigns.settings_tab do
+        :publishing -> persist_publishing_settings(params)
+        :agents -> persist_integration_settings(params, socket.assigns.auth_mode)
+        _ -> persist_editor_settings(params)
+      end
 
-    with :ok <- Settings.set_auto_format_on_save(auto_format),
-         :ok <- Settings.set_debug_mode(debug_mode),
-         :ok <- Settings.set_formatter_backend(Atom.to_string(formatter_backend)),
-         :ok <- Settings.set_editor_mode(Atom.to_string(editor_mode)),
-         :ok <- Settings.set_editor_theme(Atom.to_string(editor_theme)),
-         :ok <- Settings.set_editor_line_numbers(editor_line_numbers),
-         :ok <- Settings.set_editor_active_line_highlight(editor_active_line_highlight),
-         :ok <- persist_integration_settings(params, socket.assigns.auth_mode) do
-      settings =
-        build_saved_settings(
-          auto_format,
-          debug_mode,
-          formatter_backend,
-          editor_mode,
-          editor_theme,
-          editor_line_numbers,
-          editor_active_line_highlight,
-          params,
-          socket.assigns.auth_mode
-        )
+    case result do
+      :ok ->
+        settings = Settings.current()
 
-      {:noreply,
-       socket
-       |> assign(:settings, settings)
-       |> assign_snippet_state(socket.assigns.snippet_target, settings)
-       |> assign(:form, settings_form(settings))
-       |> push_event("ide-theme-changed", %{theme: Atom.to_string(editor_theme)})
-       |> put_flash(:info, "Settings saved.")
-       |> schedule_info_flash_clear()}
-    else
+        socket =
+          socket
+          |> assign(:settings, settings)
+          |> assign_snippet_state(socket.assigns.snippet_target, settings)
+          |> assign(:form, settings_form(settings))
+          |> put_flash(:info, "Settings saved.")
+          |> schedule_info_flash_clear()
+
+        socket =
+          if socket.assigns.settings_tab == :editor do
+            push_event(socket, "ide-theme-changed", %{
+              theme: Atom.to_string(settings.editor_theme)
+            })
+          else
+            socket
+          end
+
+        {:noreply, socket}
+
       {:error, reason} ->
         {:noreply, put_flash(socket, :error, "Could not save settings: #{inspect(reason)}")}
     end
@@ -269,7 +274,8 @@ defmodule IdeWeb.SettingsLive do
   end
 
   @impl true
-  @spec handle_async(settings_emulator_async_name(), Types.async_result(), socket()) :: lv_noreply()
+  @spec handle_async(settings_emulator_async_name(), Types.async_result(), socket()) ::
+          lv_noreply()
   def handle_async(:check_emulator_installation, {:ok, status}, socket) do
     {:noreply, assign(socket, :emulator_installation_status, status)}
   end
@@ -322,440 +328,577 @@ defmodule IdeWeb.SettingsLive do
       <header class="flex items-center justify-between">
         <div>
           <h1 class="text-2xl font-semibold text-zinc-900">IDE Settings</h1>
-          <p class="mt-1 text-sm text-zinc-600">Configure editor behavior and workflow defaults.</p>
+          <p class="mt-1 text-sm text-zinc-600">{settings_tab_intro(@settings_tab)}</p>
         </div>
         <.link navigate={@return_to} class="rounded bg-zinc-100 px-3 py-2 text-sm">
           &lt; Back
         </.link>
       </header>
 
-      <section class="rounded-lg border border-zinc-200 bg-white p-5 shadow-sm">
-        <div class="flex items-start justify-between gap-3">
-          <div>
-            <h2 class="text-base font-semibold">GitHub Integration</h2>
-            <p class="mt-1 text-sm text-zinc-600">
-              Connect once globally, then configure and push individual projects. Access is limited to public repositories.
-            </p>
-            <p class="mt-2 text-xs text-zinc-600">{github_status_line(@github_status)}</p>
-            <p :if={not @github_oauth_ready} class="mt-2 text-xs text-amber-700">
-              GitHub OAuth is not configured. Set `GITHUB_OAUTH_CLIENT_ID` and restart the IDE.
-            </p>
-          </div>
-          <div class="flex items-center gap-2">
-            <button
-              type="button"
-              phx-click="github-connect"
-              disabled={not @github_oauth_ready}
-              class={[
-                "rounded px-3 py-2 text-xs font-medium",
-                @github_oauth_ready && "bg-zinc-900 text-white hover:bg-zinc-800",
-                not @github_oauth_ready && "cursor-not-allowed bg-zinc-200 text-zinc-500"
-              ]}
-            >
-              {if @github_status.connected?, do: "Reconnect", else: "Connect to GitHub"}
-            </button>
-            <button
-              :if={@github_status.connected?}
-              type="button"
-              phx-click="github-disconnect"
-              class="rounded bg-zinc-100 px-3 py-2 text-xs font-medium text-zinc-800 hover:bg-zinc-200"
-            >
-              Disconnect
-            </button>
-          </div>
-        </div>
+      <.settings_nav settings_tab={@settings_tab} auth_mode={@auth_mode} return_to={@return_to} />
 
-        <div :if={@github_flow} class="mt-4 rounded border border-zinc-200 bg-zinc-50 p-3 text-xs">
-          <p class="font-semibold text-zinc-800">Authorize this IDE in GitHub</p>
-          <p class="mt-1 text-zinc-700">
-            GitHub will ask you to grant access to public repositories only.
-          </p>
-          <p class="mt-2 text-zinc-700">
-            Open:
-            <a
-              href={@github_flow["verification_uri"]}
-              target="_blank"
-              rel="noopener noreferrer"
-              class="font-mono text-blue-700 underline"
-            >
-              {@github_flow["verification_uri"]}
-            </a>
-          </p>
-          <p :if={@github_flow["verification_uri_complete"]} class="mt-1 text-zinc-700">
-            Quick link:
-            <a
-              href={@github_flow["verification_uri_complete"]}
-              target="_blank"
-              rel="noopener noreferrer"
-              class="font-mono text-blue-700 underline"
-            >
-              open and approve
-            </a>
-          </p>
-          <p class="mt-2 text-zinc-700">
-            User code:
-            <span class="rounded bg-zinc-200 px-2 py-1 font-mono font-semibold">
-              {@github_flow["user_code"]}
-            </span>
-          </p>
-          <p class="mt-2 text-zinc-600">
-            Status: {github_flow_status_label(@github_flow["status"])}
-          </p>
-          <p
-            :if={is_binary(@github_flow["last_error"]) and @github_flow["last_error"] != ""}
-            class="mt-1 text-rose-700"
-          >
-            Last error: {@github_flow["last_error"]}
-          </p>
-        </div>
-      </section>
+      <.editor_panel :if={@settings_tab == :editor} form={@form} settings={@settings} />
+      <.publishing_panel :if={@settings_tab == :publishing} form={@form} settings={@settings} />
+      <.github_panel
+        :if={@settings_tab == :github}
+        github_status={@github_status}
+        github_oauth_ready={@github_oauth_ready}
+        github_flow={@github_flow}
+      />
+      <.emulator_panel
+        :if={@settings_tab == :emulator}
+        emulator_targets={@emulator_targets}
+        selected_emulator_target={@selected_emulator_target}
+        emulator_installation_status={@emulator_installation_status}
+        emulator_dependency_install_status={@emulator_dependency_install_status}
+        emulator_dependency_install_output={@emulator_dependency_install_output}
+      />
+      <.agents_panel
+        :if={@settings_tab == :agents}
+        form={@form}
+        settings={@settings}
+        snippet_options={@snippet_options}
+        snippet_target={@snippet_target}
+        selected_snippet={@selected_snippet}
+      />
+    </div>
+    """
+  end
 
-      <section
-        :if={@auth_mode == :local}
-        class="rounded-lg border border-zinc-200 bg-white p-5 shadow-sm"
+  attr :settings_tab, :atom, required: true
+  attr :auth_mode, :atom, required: true
+  attr :return_to, :string, required: true
+
+  defp settings_nav(assigns) do
+    ~H"""
+    <nav class="flex flex-wrap gap-2 border-b border-zinc-200 pb-2 text-sm">
+      <.link
+        patch={settings_tab_href(:editor, @return_to)}
+        class={settings_tab_class(@settings_tab, :editor)}
       >
-        <div class="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <h2 class="text-base font-semibold">Embedded Emulator Setup</h2>
-            <p class="mt-1 text-sm text-zinc-600">
-              Configure the shared emulator runtime used by all projects.
-            </p>
-            <p class="mt-2 text-xs text-zinc-600">
-              {emulator_installation_summary(@emulator_installation_status)}
-            </p>
-          </div>
-          <div class="flex flex-wrap gap-2">
-            <.button
-              phx-click="install-emulator-dependencies"
-              phx-disable-with="Installing..."
-              disabled={
-                @emulator_dependency_install_status == :running or
-                  not emulator_installable?(@emulator_installation_status)
-              }
-              class="!bg-blue-700 hover:!bg-blue-600 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {if @emulator_dependency_install_status == :running,
-                do: "Installing...",
-                else: "Install missing dependencies"}
-            </.button>
-            <button
-              type="button"
-              phx-click="refresh-emulator-installation"
-              class="rounded bg-white px-3 py-2 text-xs font-semibold text-zinc-800 ring-1 ring-zinc-200 hover:bg-zinc-50"
-            >
-              Recheck
-            </button>
-          </div>
-        </div>
+        Editor
+      </.link>
+      <.link
+        patch={settings_tab_href(:publishing, @return_to)}
+        class={settings_tab_class(@settings_tab, :publishing)}
+      >
+        Publishing
+      </.link>
+      <.link
+        patch={settings_tab_href(:github, @return_to)}
+        class={settings_tab_class(@settings_tab, :github)}
+      >
+        GitHub
+      </.link>
+      <.link
+        :if={@auth_mode == :local}
+        patch={settings_tab_href(:emulator, @return_to)}
+        class={settings_tab_class(@settings_tab, :emulator)}
+      >
+        Emulator
+      </.link>
+      <.link
+        :if={@auth_mode == :local}
+        patch={settings_tab_href(:agents, @return_to)}
+        class={settings_tab_class(@settings_tab, :agents)}
+      >
+        Agents
+      </.link>
+    </nav>
+    """
+  end
 
-        <label class="mt-4 flex flex-col gap-2">
-          <span class="block text-sm font-semibold leading-6 text-zinc-800">
-            Emulator target to check
+  attr :form, :any, required: true
+  attr :settings, :map, required: true
+
+  defp editor_panel(assigns) do
+    ~H"""
+    <section class="rounded-lg border border-zinc-200 bg-white p-5 shadow-sm">
+      <.form for={@form} phx-submit="save" class="space-y-4">
+        <label class="flex items-start gap-3">
+          <input
+            type="checkbox"
+            name="settings[auto_format_on_save]"
+            value="true"
+            checked={@settings.auto_format_on_save}
+            class="mt-1 h-4 w-4 rounded border-zinc-300"
+          />
+          <span>
+            <span class="block text-sm font-medium text-zinc-900">
+              Auto-format Elm files on save
+            </span>
+            <span class="block text-xs text-zinc-600">
+              If formatting fails to parse, the file is still saved unchanged.
+            </span>
+          </span>
+        </label>
+
+        <label class="flex flex-col gap-2">
+          <span class="block text-sm font-medium text-zinc-900">Elm formatter</span>
+          <span class="block text-xs text-zinc-600">
+            Choose the built-in formatter or the external elm-format command for manual Format
+            and auto-format-on-save.
           </span>
           <select
-            name="emulator_setup[target]"
-            phx-change="set-emulator-setup-target"
-            class="block w-full rounded-md border border-gray-300 bg-white shadow-sm focus:border-zinc-400 focus:ring-0 sm:text-sm"
+            name="settings[formatter_backend]"
+            class="mt-1 w-full max-w-xs rounded border border-zinc-300 bg-white px-3 py-2 text-sm"
           >
-            <option
-              :for={target <- @emulator_targets}
-              value={target}
-              selected={target == @selected_emulator_target}
-            >
-              {target}
+            <option value="built_in" selected={@settings.formatter_backend == :built_in}>
+              Built-in formatter (experimental)
+            </option>
+            <option value="elm_format" selected={@settings.formatter_backend == :elm_format}>
+              elm-format
             </option>
           </select>
         </label>
 
-        <div class={emulator_installation_class(@emulator_installation_status)}>
-          <ul
-            :if={emulator_components(@emulator_installation_status) != []}
-            class="grid gap-1 text-xs md:grid-cols-2"
+        <label class="flex flex-col gap-2">
+          <span class="block text-sm font-medium text-zinc-900">Editor mode</span>
+          <span class="block text-xs text-zinc-600">
+            Regular mode keeps current shortcuts. Vim mode enables modal navigation and editing.
+          </span>
+          <select
+            name="settings[editor_mode]"
+            class="mt-1 w-full max-w-xs rounded border border-zinc-300 bg-white px-3 py-2 text-sm"
           >
-            <li
-              :for={component <- emulator_components(@emulator_installation_status)}
-              class="rounded bg-white/70 px-2 py-1"
-            >
-              <span class="font-semibold">{component.label}</span>
-              <span class={emulator_component_class(component.status)}>
-                {emulator_component_status(component.status)}
-              </span>
-              <span class="ml-1 text-zinc-600">{component.detail}</span>
-            </li>
-          </ul>
-          <p :if={emulator_components(@emulator_installation_status) == []} class="text-xs">
+            <option value="regular" selected={@settings.editor_mode == :regular}>Regular</option>
+            <option value="vim" selected={@settings.editor_mode == :vim}>Vim</option>
+          </select>
+        </label>
+
+        <label class="flex flex-col gap-2">
+          <span class="block text-sm font-medium text-zinc-900">Theme</span>
+          <select
+            name="settings[editor_theme]"
+            class="mt-1 w-full max-w-xs rounded border border-zinc-300 bg-white px-3 py-2 text-sm"
+          >
+            <option value="system" selected={@settings.editor_theme == :system}>System</option>
+            <option value="dark" selected={@settings.editor_theme == :dark}>Dark</option>
+            <option value="light" selected={@settings.editor_theme == :light}>Light</option>
+          </select>
+        </label>
+
+        <label class="flex items-start gap-3">
+          <input
+            type="checkbox"
+            name="settings[editor_line_numbers]"
+            value="true"
+            checked={@settings.editor_line_numbers}
+            class="mt-1 h-4 w-4 rounded border-zinc-300"
+          />
+          <span>
+            <span class="block text-sm font-medium text-zinc-900">
+              Line numbers
+            </span>
+            <span class="block text-xs text-zinc-600">
+              Show line numbers in the editor gutter.
+            </span>
+          </span>
+        </label>
+
+        <label class="flex items-start gap-3">
+          <input
+            type="checkbox"
+            name="settings[editor_active_line_highlight]"
+            value="true"
+            checked={@settings.editor_active_line_highlight}
+            class="mt-1 h-4 w-4 rounded border-zinc-300"
+          />
+          <span>
+            <span class="block text-sm font-medium text-zinc-900">
+              Active line highlight
+            </span>
+            <span class="block text-xs text-zinc-600">
+              Highlight the line containing the cursor.
+            </span>
+          </span>
+        </label>
+
+        <label class="flex items-start gap-3">
+          <input
+            type="checkbox"
+            name="settings[debug_mode]"
+            value="true"
+            checked={@settings.debug_mode}
+            class="mt-1 h-4 w-4 rounded border-zinc-300"
+          />
+          <span>
+            <span class="block text-sm font-medium text-zinc-900">
+              Debug mode
+            </span>
+            <span class="block text-xs text-zinc-600">
+              Show tokenizer stats and extra diagnostic/debug UI details.
+            </span>
+          </span>
+        </label>
+
+        <.button>Save settings</.button>
+      </.form>
+    </section>
+    """
+  end
+
+  attr :form, :any, required: true
+  attr :settings, :map, required: true
+
+  defp publishing_panel(assigns) do
+    ~H"""
+    <section class="rounded-lg border border-zinc-200 bg-white p-5 shadow-sm">
+      <.form for={@form} phx-submit="save" class="space-y-4">
+        <label class="flex flex-col gap-2">
+          <span class="block text-sm font-medium text-zinc-900">Company name</span>
+          <span class="block text-xs text-zinc-600">
+            Written into packaged watch apps as the Pebble company name (`author` / `companyName`).
+            Maximum 32 bytes.
+          </span>
+          <input
+            type="text"
+            name="settings[company_name]"
+            value={@settings.company_name}
+            maxlength="32"
+            autocomplete="organization"
+            class="mt-1 w-full max-w-md rounded border border-zinc-300 bg-white px-3 py-2 text-sm"
+          />
+        </label>
+
+        <.button>Save settings</.button>
+      </.form>
+    </section>
+    """
+  end
+
+  attr :github_status, :map, required: true
+  attr :github_oauth_ready, :boolean, required: true
+  attr :github_flow, :any, default: nil
+
+  defp github_panel(assigns) do
+    ~H"""
+    <section class="rounded-lg border border-zinc-200 bg-white p-5 shadow-sm">
+      <div class="flex items-start justify-between gap-3">
+        <div>
+          <h2 class="text-base font-semibold">GitHub Integration</h2>
+          <p class="mt-1 text-sm text-zinc-600">
+            Connect once globally, then configure and push individual projects. Access is limited to public repositories.
+          </p>
+          <p class="mt-2 text-xs text-zinc-600">{github_status_line(@github_status)}</p>
+          <p :if={not @github_oauth_ready} class="mt-2 text-xs text-amber-700">
+            GitHub OAuth is not configured. Set `GITHUB_OAUTH_CLIENT_ID` and restart the IDE.
+          </p>
+        </div>
+        <div class="flex items-center gap-2">
+          <button
+            type="button"
+            phx-click="github-connect"
+            disabled={not @github_oauth_ready}
+            class={[
+              "rounded px-3 py-2 text-xs font-medium",
+              @github_oauth_ready && "bg-zinc-900 text-white hover:bg-zinc-800",
+              not @github_oauth_ready && "cursor-not-allowed bg-zinc-200 text-zinc-500"
+            ]}
+          >
+            {if @github_status.connected?, do: "Reconnect", else: "Connect to GitHub"}
+          </button>
+          <button
+            :if={@github_status.connected?}
+            type="button"
+            phx-click="github-disconnect"
+            class="rounded bg-zinc-100 px-3 py-2 text-xs font-medium text-zinc-800 hover:bg-zinc-200"
+          >
+            Disconnect
+          </button>
+        </div>
+      </div>
+
+      <div :if={@github_flow} class="mt-4 rounded border border-zinc-200 bg-zinc-50 p-3 text-xs">
+        <p class="font-semibold text-zinc-800">Authorize this IDE in GitHub</p>
+        <p class="mt-1 text-zinc-700">
+          GitHub will ask you to grant access to public repositories only.
+        </p>
+        <p class="mt-2 text-zinc-700">
+          Open:
+          <a
+            href={@github_flow["verification_uri"]}
+            target="_blank"
+            rel="noopener noreferrer"
+            class="font-mono text-blue-700 underline"
+          >
+            {@github_flow["verification_uri"]}
+          </a>
+        </p>
+        <p :if={@github_flow["verification_uri_complete"]} class="mt-1 text-zinc-700">
+          Quick link:
+          <a
+            href={@github_flow["verification_uri_complete"]}
+            target="_blank"
+            rel="noopener noreferrer"
+            class="font-mono text-blue-700 underline"
+          >
+            open and approve
+          </a>
+        </p>
+        <p class="mt-2 text-zinc-700">
+          User code:
+          <span class="rounded bg-zinc-200 px-2 py-1 font-mono font-semibold">
+            {@github_flow["user_code"]}
+          </span>
+        </p>
+        <p class="mt-2 text-zinc-600">
+          Status: {github_flow_status_label(@github_flow["status"])}
+        </p>
+        <p
+          :if={is_binary(@github_flow["last_error"]) and @github_flow["last_error"] != ""}
+          class="mt-1 text-rose-700"
+        >
+          Last error: {@github_flow["last_error"]}
+        </p>
+      </div>
+    </section>
+    """
+  end
+
+  attr :emulator_targets, :list, required: true
+  attr :selected_emulator_target, :string, required: true
+  attr :emulator_installation_status, :any, default: nil
+  attr :emulator_dependency_install_status, :atom, required: true
+  attr :emulator_dependency_install_output, :string, default: nil
+
+  defp emulator_panel(assigns) do
+    ~H"""
+    <section class="rounded-lg border border-zinc-200 bg-white p-5 shadow-sm">
+      <div class="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 class="text-base font-semibold">Embedded Emulator Setup</h2>
+          <p class="mt-1 text-sm text-zinc-600">
+            Configure the shared emulator runtime used by all projects.
+          </p>
+          <p class="mt-2 text-xs text-zinc-600">
             {emulator_installation_summary(@emulator_installation_status)}
           </p>
-          <pre
-            :if={@emulator_dependency_install_output}
-            class="mt-3 max-h-48 overflow-auto rounded bg-zinc-900 p-3 text-xs text-zinc-100"
-          ><%= @emulator_dependency_install_output %></pre>
         </div>
-      </section>
+        <div class="flex flex-wrap gap-2">
+          <.button
+            phx-click="install-emulator-dependencies"
+            phx-disable-with="Installing..."
+            disabled={
+              @emulator_dependency_install_status == :running or
+                not emulator_installable?(@emulator_installation_status)
+            }
+            class="!bg-blue-700 hover:!bg-blue-600 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {if @emulator_dependency_install_status == :running,
+              do: "Installing...",
+              else: "Install missing dependencies"}
+          </.button>
+          <button
+            type="button"
+            phx-click="refresh-emulator-installation"
+            class="rounded bg-white px-3 py-2 text-xs font-semibold text-zinc-800 ring-1 ring-zinc-200 hover:bg-zinc-50"
+          >
+            Recheck
+          </button>
+        </div>
+      </div>
 
-      <section class="rounded-lg border border-zinc-200 bg-white p-5 shadow-sm">
-        <.form for={@form} phx-submit="save" class="space-y-4">
-          <label class="flex items-start gap-3">
-            <input
-              type="checkbox"
-              name="settings[auto_format_on_save]"
-              value="true"
-              checked={@settings.auto_format_on_save}
-              class="mt-1 h-4 w-4 rounded border-zinc-300"
-            />
-            <span>
-              <span class="block text-sm font-medium text-zinc-900">
-                Auto-format Elm files on save
-              </span>
-              <span class="block text-xs text-zinc-600">
-                If formatting fails to parse, the file is still saved unchanged.
-              </span>
+      <label class="mt-4 flex flex-col gap-2">
+        <span class="block text-sm font-semibold leading-6 text-zinc-800">
+          Emulator target to check
+        </span>
+        <select
+          name="emulator_setup[target]"
+          phx-change="set-emulator-setup-target"
+          class="block w-full rounded-md border border-gray-300 bg-white shadow-sm focus:border-zinc-400 focus:ring-0 sm:text-sm"
+        >
+          <option
+            :for={target <- @emulator_targets}
+            value={target}
+            selected={target == @selected_emulator_target}
+          >
+            {target}
+          </option>
+        </select>
+      </label>
+
+      <div class={emulator_installation_class(@emulator_installation_status)}>
+        <ul
+          :if={emulator_components(@emulator_installation_status) != []}
+          class="grid gap-1 text-xs md:grid-cols-2"
+        >
+          <li
+            :for={component <- emulator_components(@emulator_installation_status)}
+            class="rounded bg-zinc-50 px-2 py-1"
+          >
+            <span class="font-semibold">{component.label}</span>
+            <span class={emulator_component_class(component.status)}>
+              {emulator_component_status(component.status)}
             </span>
-          </label>
+            <span class="ml-1 text-zinc-600">{component.detail}</span>
+          </li>
+        </ul>
+        <p :if={emulator_components(@emulator_installation_status) == []} class="text-xs">
+          {emulator_installation_summary(@emulator_installation_status)}
+        </p>
+        <pre
+          :if={@emulator_dependency_install_output}
+          class="mt-3 max-h-48 overflow-auto rounded bg-zinc-900 p-3 text-xs text-zinc-100"
+        ><%= @emulator_dependency_install_output %></pre>
+      </div>
+    </section>
+    """
+  end
 
-          <label class="flex flex-col gap-2">
-            <span class="block text-sm font-medium text-zinc-900">Elm formatter</span>
-            <span class="block text-xs text-zinc-600">
-              Choose the built-in formatter or the external elm-format command for manual Format
-              and auto-format-on-save.
-            </span>
-            <select
-              name="settings[formatter_backend]"
-              class="mt-1 w-full max-w-xs rounded border border-zinc-300 bg-white px-3 py-2 text-sm"
-            >
-              <option value="built_in" selected={@settings.formatter_backend == :built_in}>
-                Built-in formatter (experimental)
-              </option>
-              <option value="elm_format" selected={@settings.formatter_backend == :elm_format}>
-                elm-format
-              </option>
-            </select>
-          </label>
+  attr :form, :any, required: true
+  attr :settings, :map, required: true
+  attr :snippet_options, :list, required: true
+  attr :snippet_target, :string, required: true
+  attr :selected_snippet, :map, required: true
 
-          <label class="flex flex-col gap-2">
-            <span class="block text-sm font-medium text-zinc-900">Editor mode</span>
-            <span class="block text-xs text-zinc-600">
-              Regular mode keeps current shortcuts. Vim mode enables modal navigation and editing.
-            </span>
-            <select
-              name="settings[editor_mode]"
-              class="mt-1 w-full max-w-xs rounded border border-zinc-300 bg-white px-3 py-2 text-sm"
-            >
-              <option value="regular" selected={@settings.editor_mode == :regular}>Regular</option>
-              <option value="vim" selected={@settings.editor_mode == :vim}>Vim</option>
-            </select>
-          </label>
+  defp agents_panel(assigns) do
+    ~H"""
+    <section class="rounded-lg border border-zinc-200 bg-white p-5 shadow-sm">
+      <.form for={@form} phx-submit="save" class="space-y-4">
+        <div class="rounded border border-zinc-200 bg-zinc-50 p-4">
+          <h2 class="text-sm font-semibold text-zinc-900">MCP / ACP access</h2>
+          <p class="mt-1 text-xs text-zinc-600">
+            Configure the IDE integration surfaces used by external agents and MCP clients.
+            Port changes apply after restarting the IDE server.
+          </p>
 
-          <label class="flex flex-col gap-2">
-            <span class="block text-sm font-medium text-zinc-900">Theme</span>
-            <select
-              name="settings[editor_theme]"
-              class="mt-1 w-full max-w-xs rounded border border-zinc-300 bg-white px-3 py-2 text-sm"
-            >
-              <option value="system" selected={@settings.editor_theme == :system}>System</option>
-              <option value="dark" selected={@settings.editor_theme == :dark}>Dark</option>
-              <option value="light" selected={@settings.editor_theme == :light}>Light</option>
-            </select>
-          </label>
-
-          <label class="flex items-start gap-3">
-            <input
-              type="checkbox"
-              name="settings[editor_line_numbers]"
-              value="true"
-              checked={@settings.editor_line_numbers}
-              class="mt-1 h-4 w-4 rounded border-zinc-300"
-            />
-            <span>
-              <span class="block text-sm font-medium text-zinc-900">
-                Line numbers
-              </span>
-              <span class="block text-xs text-zinc-600">
-                Show line numbers in the editor gutter.
-              </span>
-            </span>
-          </label>
-
-          <label class="flex items-start gap-3">
-            <input
-              type="checkbox"
-              name="settings[editor_active_line_highlight]"
-              value="true"
-              checked={@settings.editor_active_line_highlight}
-              class="mt-1 h-4 w-4 rounded border-zinc-300"
-            />
-            <span>
-              <span class="block text-sm font-medium text-zinc-900">
-                Active line highlight
-              </span>
-              <span class="block text-xs text-zinc-600">
-                Highlight the line containing the cursor.
-              </span>
-            </span>
-          </label>
-
-          <label class="flex items-start gap-3">
-            <input
-              type="checkbox"
-              name="settings[debug_mode]"
-              value="true"
-              checked={@settings.debug_mode}
-              class="mt-1 h-4 w-4 rounded border-zinc-300"
-            />
-            <span>
-              <span class="block text-sm font-medium text-zinc-900">
-                Debug mode
-              </span>
-              <span class="block text-xs text-zinc-600">
-                Show tokenizer stats and extra diagnostic/debug UI details.
-              </span>
-            </span>
-          </label>
-
-          <div :if={@auth_mode == :local} class="rounded border border-zinc-200 bg-zinc-50 p-4">
-            <h2 class="text-sm font-semibold text-zinc-900">MCP / ACP access</h2>
-            <p class="mt-1 text-xs text-zinc-600">
-              Configure the IDE integration surfaces used by external agents and MCP clients.
-              Port changes apply after restarting the IDE server.
-            </p>
-
-            <div class="mt-4 grid gap-4 md:grid-cols-2">
-              <div class="space-y-3">
-                <label class="flex items-start gap-3">
-                  <input
-                    type="checkbox"
-                    name="settings[mcp_http_enabled]"
-                    value="true"
-                    checked={@settings.mcp_http_enabled}
-                    class="mt-1 h-4 w-4 rounded border-zinc-300"
-                  />
-                  <span>
-                    <span class="block text-sm font-medium text-zinc-900">
-                      Enable remote MCP HTTP endpoint
-                    </span>
-                    <span class="block text-xs text-zinc-600">
-                      Serves POST /api/mcp for URL-based MCP clients.
-                    </span>
+          <div class="mt-4 grid gap-4 md:grid-cols-2">
+            <div class="space-y-3">
+              <label class="flex items-start gap-3">
+                <input
+                  type="checkbox"
+                  name="settings[mcp_http_enabled]"
+                  value="true"
+                  checked={@settings.mcp_http_enabled}
+                  class="mt-1 h-4 w-4 rounded border-zinc-300"
+                />
+                <span>
+                  <span class="block text-sm font-medium text-zinc-900">
+                    Enable remote MCP HTTP endpoint
                   </span>
-                </label>
-
-                <label class="flex flex-col gap-2">
-                  <span class="block text-sm font-medium text-zinc-900">MCP HTTP port</span>
-                  <input
-                    type="number"
-                    min="1"
-                    max="65535"
-                    name="settings[mcp_http_port]"
-                    value={@settings.mcp_http_port}
-                    class="w-full max-w-xs rounded border border-zinc-300 bg-white px-3 py-2 text-sm"
-                  />
-                </label>
-
-                <fieldset class="space-y-2">
-                  <legend class="text-sm font-medium text-zinc-900">Remote MCP access rights</legend>
-                  <.capability_checkbox
-                    name="settings[mcp_http_capabilities][]"
-                    capability={:read}
-                    selected={@settings.mcp_http_capabilities}
-                    label="Read"
-                  />
-                  <.capability_checkbox
-                    name="settings[mcp_http_capabilities][]"
-                    capability={:edit}
-                    selected={@settings.mcp_http_capabilities}
-                    label="Edit"
-                  />
-                  <.capability_checkbox
-                    name="settings[mcp_http_capabilities][]"
-                    capability={:build}
-                    selected={@settings.mcp_http_capabilities}
-                    label="Build"
-                  />
-                </fieldset>
-              </div>
-
-              <div class="space-y-3">
-                <label class="flex items-start gap-3">
-                  <input
-                    type="checkbox"
-                    name="settings[acp_agent_enabled]"
-                    value="true"
-                    checked={@settings.acp_agent_enabled}
-                    class="mt-1 h-4 w-4 rounded border-zinc-300"
-                  />
-                  <span>
-                    <span class="block text-sm font-medium text-zinc-900">
-                      Enable local ACP agent bridge
-                    </span>
-                    <span class="block text-xs text-zinc-600">
-                      Controls the default scope for mix ide.acp_agent.
-                    </span>
+                  <span class="block text-xs text-zinc-600">
+                    Serves POST /api/mcp for URL-based MCP clients.
                   </span>
-                </label>
-
-                <fieldset class="space-y-2">
-                  <legend class="text-sm font-medium text-zinc-900">ACP agent access rights</legend>
-                  <.capability_checkbox
-                    name="settings[acp_agent_capabilities][]"
-                    capability={:read}
-                    selected={@settings.acp_agent_capabilities}
-                    label="Read"
-                  />
-                  <.capability_checkbox
-                    name="settings[acp_agent_capabilities][]"
-                    capability={:edit}
-                    selected={@settings.acp_agent_capabilities}
-                    label="Edit"
-                  />
-                  <.capability_checkbox
-                    name="settings[acp_agent_capabilities][]"
-                    capability={:build}
-                    selected={@settings.acp_agent_capabilities}
-                    label="Build"
-                  />
-                </fieldset>
-              </div>
-            </div>
-
-            <div class="mt-5 space-y-4 border-t border-zinc-200 pt-4">
-              <div>
-                <h3 class="text-sm font-semibold text-zinc-900">Editor configuration snippets</h3>
-                <p class="mt-1 text-xs text-zinc-600">
-                  Choose your client/editor and copy the matching configuration. The snippet reflects
-                  the access rights and port selected above.
-                </p>
-              </div>
-
-              <label class="flex flex-col gap-2">
-                <span class="text-sm font-medium text-zinc-900">Client / editor</span>
-                <select
-                  name="snippet_target"
-                  phx-change="select-snippet-target"
-                  class="w-full max-w-md rounded border border-zinc-300 bg-white px-3 py-2 text-sm"
-                >
-                  <option
-                    :for={option <- @snippet_options}
-                    value={option.value}
-                    selected={option.value == @snippet_target}
-                  >
-                    {option.label}
-                  </option>
-                </select>
+                </span>
               </label>
 
-              <.snippet_card
-                id="editor-config-snippet"
-                title={@selected_snippet.title}
-                description={@selected_snippet.description}
-                snippet={@selected_snippet.snippet}
-              />
+              <label class="flex flex-col gap-2">
+                <span class="block text-sm font-medium text-zinc-900">MCP HTTP port</span>
+                <input
+                  type="number"
+                  min="1"
+                  max="65535"
+                  name="settings[mcp_http_port]"
+                  value={@settings.mcp_http_port}
+                  class="w-full max-w-xs rounded border border-zinc-300 bg-white px-3 py-2 text-sm"
+                />
+              </label>
+
+              <fieldset class="space-y-2">
+                <legend class="text-sm font-medium text-zinc-900">Remote MCP access rights</legend>
+                <.capability_checkbox
+                  name="settings[mcp_http_capabilities][]"
+                  capability={:read}
+                  selected={@settings.mcp_http_capabilities}
+                  label="Read"
+                />
+                <.capability_checkbox
+                  name="settings[mcp_http_capabilities][]"
+                  capability={:edit}
+                  selected={@settings.mcp_http_capabilities}
+                  label="Edit"
+                />
+                <.capability_checkbox
+                  name="settings[mcp_http_capabilities][]"
+                  capability={:build}
+                  selected={@settings.mcp_http_capabilities}
+                  label="Build"
+                />
+              </fieldset>
+            </div>
+
+            <div class="space-y-3">
+              <label class="flex items-start gap-3">
+                <input
+                  type="checkbox"
+                  name="settings[acp_agent_enabled]"
+                  value="true"
+                  checked={@settings.acp_agent_enabled}
+                  class="mt-1 h-4 w-4 rounded border-zinc-300"
+                />
+                <span>
+                  <span class="block text-sm font-medium text-zinc-900">
+                    Enable local ACP agent bridge
+                  </span>
+                  <span class="block text-xs text-zinc-600">
+                    Controls the default scope for mix ide.acp_agent.
+                  </span>
+                </span>
+              </label>
+
+              <fieldset class="space-y-2">
+                <legend class="text-sm font-medium text-zinc-900">ACP agent access rights</legend>
+                <.capability_checkbox
+                  name="settings[acp_agent_capabilities][]"
+                  capability={:read}
+                  selected={@settings.acp_agent_capabilities}
+                  label="Read"
+                />
+                <.capability_checkbox
+                  name="settings[acp_agent_capabilities][]"
+                  capability={:edit}
+                  selected={@settings.acp_agent_capabilities}
+                  label="Edit"
+                />
+                <.capability_checkbox
+                  name="settings[acp_agent_capabilities][]"
+                  capability={:build}
+                  selected={@settings.acp_agent_capabilities}
+                  label="Build"
+                />
+              </fieldset>
             </div>
           </div>
 
-          <.button>Save settings</.button>
-        </.form>
-      </section>
-    </div>
+          <div class="mt-5 space-y-4 border-t border-zinc-200 pt-4">
+            <div>
+              <h3 class="text-sm font-semibold text-zinc-900">Editor configuration snippets</h3>
+              <p class="mt-1 text-xs text-zinc-600">
+                Choose your client/editor and copy the matching configuration. The snippet reflects
+                the access rights and port selected above.
+              </p>
+            </div>
+
+            <label class="flex flex-col gap-2">
+              <span class="text-sm font-medium text-zinc-900">Client / editor</span>
+              <select
+                name="snippet_target"
+                phx-change="select-snippet-target"
+                class="w-full max-w-md rounded border border-zinc-300 bg-white px-3 py-2 text-sm"
+              >
+                <option
+                  :for={option <- @snippet_options}
+                  value={option.value}
+                  selected={option.value == @snippet_target}
+                >
+                  {option.label}
+                </option>
+              </select>
+            </label>
+
+            <.snippet_card
+              id="editor-config-snippet"
+              title={@selected_snippet.title}
+              description={@selected_snippet.description}
+              snippet={@selected_snippet.snippet}
+            />
+          </div>
+        </div>
+
+        <.button>Save settings</.button>
+      </.form>
+    </section>
     """
   end
 
@@ -817,6 +960,7 @@ defmodule IdeWeb.SettingsLive do
         "editor_theme" => Atom.to_string(settings.editor_theme),
         "editor_line_numbers" => settings.editor_line_numbers,
         "editor_active_line_highlight" => settings.editor_active_line_highlight,
+        "company_name" => settings.company_name,
         "mcp_http_enabled" => settings.mcp_http_enabled,
         "mcp_http_port" => settings.mcp_http_port,
         "mcp_http_capabilities" => Enum.map(settings.mcp_http_capabilities, &Atom.to_string/1),
@@ -853,13 +997,6 @@ defmodule IdeWeb.SettingsLive do
   defp parse_capability("edit"), do: :edit
   defp parse_capability("build"), do: :build
   defp parse_capability(_), do: nil
-
-  defp parse_saved_port(value) do
-    case Integer.parse(to_string(value)) do
-      {port, ""} when port >= 1 and port <= 65_535 -> port
-      _ -> 4000
-    end
-  end
 
   defp assign_snippet_state(socket, target, settings) do
     target = normalize_snippet_target(target)
@@ -1084,6 +1221,33 @@ defmodule IdeWeb.SettingsLive do
 
   defp maybe_check_emulator_installation(socket), do: socket
 
+  @spec persist_editor_settings(integration_settings_form()) :: Ide.Settings.settings_set_result()
+  defp persist_editor_settings(params) do
+    auto_format = parse_checkbox(params["auto_format_on_save"])
+    debug_mode = parse_checkbox(params["debug_mode"])
+    formatter_backend = parse_formatter_backend(params["formatter_backend"])
+    editor_mode = parse_editor_mode(params["editor_mode"])
+    editor_theme = parse_editor_theme(params["editor_theme"])
+    editor_line_numbers = parse_checkbox(params["editor_line_numbers"])
+    editor_active_line_highlight = parse_checkbox(params["editor_active_line_highlight"])
+
+    with :ok <- Settings.set_auto_format_on_save(auto_format),
+         :ok <- Settings.set_debug_mode(debug_mode),
+         :ok <- Settings.set_formatter_backend(Atom.to_string(formatter_backend)),
+         :ok <- Settings.set_editor_mode(Atom.to_string(editor_mode)),
+         :ok <- Settings.set_editor_theme(Atom.to_string(editor_theme)),
+         :ok <- Settings.set_editor_line_numbers(editor_line_numbers),
+         :ok <- Settings.set_editor_active_line_highlight(editor_active_line_highlight) do
+      :ok
+    end
+  end
+
+  @spec persist_publishing_settings(integration_settings_form()) ::
+          Ide.Settings.settings_set_result()
+  defp persist_publishing_settings(params) do
+    Settings.set_company_name(to_string(params["company_name"] || ""))
+  end
+
   @spec persist_integration_settings(integration_settings_form(), atom()) ::
           Ide.Settings.settings_set_result()
   defp persist_integration_settings(_params, mode) when mode != :local, do: :ok
@@ -1102,79 +1266,6 @@ defmodule IdeWeb.SettingsLive do
          :ok <- Settings.set_acp_agent_capabilities(acp_agent_capabilities) do
       :ok
     end
-  end
-
-  @spec build_saved_settings(
-          boolean(),
-          boolean(),
-          atom(),
-          atom(),
-          atom(),
-          boolean(),
-          boolean(),
-          Types.event_params(),
-          atom()
-        ) :: Settings.values()
-  defp build_saved_settings(
-         auto_format,
-         debug_mode,
-         formatter_backend,
-         editor_mode,
-         editor_theme,
-         editor_line_numbers,
-         editor_active_line_highlight,
-         params,
-         :local
-       ) do
-    mcp_http_enabled = parse_checkbox(params["mcp_http_enabled"])
-    mcp_http_port = params["mcp_http_port"]
-    mcp_http_capabilities = parse_capability_params(params["mcp_http_capabilities"])
-    acp_agent_enabled = parse_checkbox(params["acp_agent_enabled"])
-    acp_agent_capabilities = parse_capability_params(params["acp_agent_capabilities"])
-
-    %{
-      auto_format_on_save: auto_format,
-      debug_mode: debug_mode,
-      formatter_backend: formatter_backend,
-      editor_mode: editor_mode,
-      editor_theme: editor_theme,
-      editor_line_numbers: editor_line_numbers,
-      editor_active_line_highlight: editor_active_line_highlight,
-      mcp_http_enabled: mcp_http_enabled,
-      mcp_http_port: parse_saved_port(mcp_http_port),
-      mcp_http_capabilities: mcp_http_capabilities,
-      acp_agent_enabled: acp_agent_enabled,
-      acp_agent_capabilities: acp_agent_capabilities
-    }
-  end
-
-  defp build_saved_settings(
-         auto_format,
-         debug_mode,
-         formatter_backend,
-         editor_mode,
-         editor_theme,
-         editor_line_numbers,
-         editor_active_line_highlight,
-         _params,
-         _mode
-       ) do
-    current = Settings.current()
-
-    %{
-      auto_format_on_save: auto_format,
-      debug_mode: debug_mode,
-      formatter_backend: formatter_backend,
-      editor_mode: editor_mode,
-      editor_theme: editor_theme,
-      editor_line_numbers: editor_line_numbers,
-      editor_active_line_highlight: editor_active_line_highlight,
-      mcp_http_enabled: current.mcp_http_enabled,
-      mcp_http_port: current.mcp_http_port,
-      mcp_http_capabilities: current.mcp_http_capabilities,
-      acp_agent_enabled: current.acp_agent_enabled,
-      acp_agent_capabilities: current.acp_agent_capabilities
-    }
   end
 
   @spec check_emulator_installation(Phoenix.LiveView.Socket.t()) :: Phoenix.LiveView.Socket.t()
@@ -1268,6 +1359,64 @@ defmodule IdeWeb.SettingsLive do
     socket
   end
 
+  @type settings_tab :: :editor | :publishing | :github | :emulator | :agents
+
+  @spec settings_tab(atom(), atom()) :: settings_tab()
+  defp settings_tab(live_action, auth_mode) do
+    tab =
+      case live_action do
+        :publishing -> :publishing
+        :github -> :github
+        :emulator -> :emulator
+        :agents -> :agents
+        _ -> :editor
+      end
+
+    if tab_allowed?(tab, auth_mode), do: tab, else: :editor
+  end
+
+  @spec tab_allowed?(atom(), atom()) :: boolean()
+  defp tab_allowed?(tab, auth_mode) when tab in [:emulator, :agents], do: auth_mode == :local
+  defp tab_allowed?(_tab, _auth_mode), do: true
+
+  @spec settings_tab_href(settings_tab(), String.t()) :: String.t()
+  defp settings_tab_href(tab, return_to) do
+    path =
+      case tab do
+        :publishing -> "/settings/publishing"
+        :github -> "/settings/github"
+        :emulator -> "/settings/emulator"
+        :agents -> "/settings/agents"
+        _ -> "/settings"
+      end
+
+    case String.trim(to_string(return_to)) do
+      "" -> path
+      "/projects" -> path
+      trimmed -> path <> "?return_to=" <> URI.encode_www_form(trimmed)
+    end
+  end
+
+  @spec settings_tab_class(settings_tab(), settings_tab()) :: String.t()
+  defp settings_tab_class(active, tab) when active == tab,
+    do: "rounded bg-blue-100 px-3 py-1.5 text-blue-800"
+
+  defp settings_tab_class(_active, _tab), do: "rounded bg-zinc-100 px-3 py-1.5 text-zinc-700"
+
+  @spec settings_tab_intro(settings_tab()) :: String.t()
+  defp settings_tab_intro(:publishing),
+    do: "Developer identity used when packaging watch apps."
+
+  defp settings_tab_intro(:github), do: "Connect GitHub for project repositories and pushes."
+
+  defp settings_tab_intro(:emulator),
+    do: "Shared embedded emulator runtime used by all projects."
+
+  defp settings_tab_intro(:agents),
+    do: "MCP and ACP access for external agents and editor clients."
+
+  defp settings_tab_intro(_), do: "Configure editor behavior and workflow defaults."
+
   @spec sanitize_return_to(String.t() | nil) :: String.t()
   defp sanitize_return_to(path) when is_binary(path) do
     path = String.trim(path)
@@ -1276,7 +1425,8 @@ defmodule IdeWeb.SettingsLive do
       path == "" ->
         "/projects"
 
-      path == "/settings" or String.starts_with?(path, "/settings?") ->
+      path == "/settings" or String.starts_with?(path, "/settings/") or
+          String.starts_with?(path, "/settings?") ->
         "/projects"
 
       String.starts_with?(path, "/") and not String.starts_with?(path, "//") ->

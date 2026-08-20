@@ -182,6 +182,12 @@ defmodule Ide.Debugger.RuntimeSurfaces do
       "launch_reason" => launch_reason,
       "watch_profile_id" => watch_profile_id,
       "watch_model" => Map.get(profile, "name"),
+      "watch_info_model" =>
+        WatchModels.explicit_ctor(settings, "watch_info_model") ||
+          Map.get(profile, "watch_info_model"),
+      "watch_info_color" =>
+        WatchModels.explicit_ctor(settings, "watch_info_color") ||
+          Map.get(profile, "watch_info_color"),
       "shape" => profile_shape,
       "has_microphone" => Map.get(profile, "has_microphone") == true,
       "has_compass" => Map.get(profile, "has_compass") == true,

@@ -442,6 +442,8 @@ defmodule IdeWeb.WorkspaceLive.PublishPaneFlow do
           all_platforms: options["all_platforms"] == true,
           firebase_id_token: firebase_id_token,
           store_icons: Ide.StoreAssets.publish_icon_paths(workspace_root),
+          store_icon_hashes: stored_store_icon_hashes(project),
+          listing_icons_synced: stored_listing_icons_synced(project),
           generate_store_graphics: PublishFlow.generate_store_graphics?(project, options),
           website: Ide.StoreListingUrls.website_url(project),
           source: Ide.StoreListingUrls.source_url(project)
@@ -590,7 +592,10 @@ defmodule IdeWeb.WorkspaceLive.PublishPaneFlow do
       persist_project_publish_metadata(
         socket.assigns.project,
         submitted_release_summary,
-        next_release_summary
+        next_release_summary,
+        Map.get(result, :store_app_id),
+        if(result.status == :ok, do: Map.get(result, :store_icon_hashes)),
+        if(result.status == :ok, do: Map.get(result, :listing_icons_synced))
       )
 
     project =
@@ -795,12 +800,23 @@ defmodule IdeWeb.WorkspaceLive.PublishPaneFlow do
   @spec to_bool(wire_input()) :: boolean()
   defp to_bool(value) when value in [true, "true", "on", "1", 1], do: true
   defp to_bool(_), do: false
-  @spec persist_project_publish_metadata(Project.t(), release_summary(), release_summary()) ::
+
+  @spec persist_project_publish_metadata(
+          Project.t(),
+          release_summary(),
+          release_summary(),
+          String.t() | nil,
+          map() | nil,
+          boolean() | nil
+        ) ::
           Project.t()
   def persist_project_publish_metadata(
         %Project{} = project,
         submitted_release_summary,
-        next_release_summary
+        next_release_summary,
+        store_app_id \\ nil,
+        store_icon_hashes \\ nil,
+        listing_icons_synced \\ nil
       ) do
     attrs =
       project
@@ -811,10 +827,65 @@ defmodule IdeWeb.WorkspaceLive.PublishPaneFlow do
         |> Map.put("tags", next_release_summary["tags"] || "")
         |> Map.put("changelog", next_release_summary["changelog"] || "")
       end)
+      |> maybe_put_store_app_id(store_app_id)
+      |> maybe_put_store_icon_hashes(project, store_icon_hashes, listing_icons_synced)
 
     case Projects.update_project(project, attrs) do
       {:ok, updated} -> updated
       {:error, _} -> project
+    end
+  end
+
+  defp maybe_put_store_app_id(attrs, store_app_id) when is_binary(store_app_id) do
+    case String.trim(store_app_id) do
+      "" -> attrs
+      id -> Map.put(attrs, "store_app_id", id)
+    end
+  end
+
+  defp maybe_put_store_app_id(attrs, _), do: attrs
+
+  defp maybe_put_store_icon_hashes(attrs, project, hashes, listing_icons_synced)
+       when is_map(hashes) and hashes != %{} do
+    cache =
+      project
+      |> Map.get(:store_metadata_cache, %{})
+      |> case do
+        cache when is_map(cache) -> cache
+        _ -> %{}
+      end
+
+    cache = Map.put(cache, "icon_hashes", hashes)
+
+    cache =
+      if listing_icons_synced == true do
+        Map.put(cache, "listing_icons_synced", true)
+      else
+        cache
+      end
+
+    Map.put(attrs, "store_metadata_cache", cache)
+  end
+
+  defp maybe_put_store_icon_hashes(attrs, _project, _, _), do: attrs
+
+  defp stored_store_icon_hashes(project) when is_map(project) do
+    project
+    |> Map.get(:store_metadata_cache, %{})
+    |> case do
+      %{"icon_hashes" => hashes} when is_map(hashes) -> hashes
+      %{icon_hashes: hashes} when is_map(hashes) -> hashes
+      _ -> %{}
+    end
+  end
+
+  defp stored_listing_icons_synced(project) when is_map(project) do
+    project
+    |> Map.get(:store_metadata_cache, %{})
+    |> case do
+      %{"listing_icons_synced" => true} -> true
+      %{listing_icons_synced: true} -> true
+      _ -> false
     end
   end
 
@@ -836,10 +907,35 @@ defmodule IdeWeb.WorkspaceLive.PublishPaneFlow do
     end
   end
 
+  @doc """
+  Uncommitted file count for a **project-owned** git checkout.
+
+  GitHub snapshot push uses `workspace/.elm-pebble-github`, not this
+  directory. Bare `git status` here would walk up into a parent repo
+  (the IDE monorepo) and report unrelated dirty files.
+  """
   @spec workspace_uncommitted_changes(String.t()) ::
           {:ok, non_neg_integer()} | {:error, :git_unavailable_or_not_repo}
-  defp workspace_uncommitted_changes(workspace_root) when is_binary(workspace_root) do
-    case System.cmd("git", ["status", "--porcelain"], cd: workspace_root, stderr_to_stdout: true) do
+  def workspace_uncommitted_changes(workspace_root) when is_binary(workspace_root) do
+    workspace_root = Path.expand(workspace_root)
+
+    if project_owned_git?(workspace_root) do
+      porcelain_change_count(workspace_root)
+    else
+      {:error, :git_unavailable_or_not_repo}
+    end
+  end
+
+  defp project_owned_git?(workspace_root) do
+    git = Path.join(workspace_root, ".git")
+    File.dir?(git) or File.regular?(git)
+  end
+
+  defp porcelain_change_count(workspace_root) do
+    case System.cmd("git", ["status", "--porcelain"],
+           cd: workspace_root,
+           stderr_to_stdout: true
+         ) do
       {output, 0} ->
         count =
           output

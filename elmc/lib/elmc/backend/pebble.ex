@@ -64,9 +64,11 @@ defmodule Elmc.Backend.Pebble do
       direct_view_commands? and
         (stack_safe? or prune_generic_view_for_direct_scene?(opts))
 
-    append_fallback_enabled? =
-      direct_view_commands? and
-        (prune_generic_view_for_direct_scene?(opts) or aplite_direct_view_scene?)
+    # Boxed `Main.view` / `watchOps` can be stack-:risk while the streamed
+    # `*_commands_append` path is the cheap one. When direct view exists, always
+    # emit the HAVE_DIRECT elif so Basalt still scene-appends instead of boxing
+    # every tick into the app heap.
+    append_fallback_enabled? = direct_view_commands?
 
     view_decl = Map.get(decl_map, {entry_module, "view"})
 

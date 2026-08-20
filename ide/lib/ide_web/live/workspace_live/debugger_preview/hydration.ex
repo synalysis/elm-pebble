@@ -11,6 +11,52 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview.Hydration do
   @type animation_hydration_fields :: PreviewTypes.animation_hydration_fields()
   @type resource_ctor_ref :: PreviewTypes.resource_ctor_ref()
 
+  @text_font_kinds [:text, :text_label, :text_int]
+
+  @spec hydrate_text_svg_ops([svg_op()], Project.t() | nil) :: [svg_op()]
+  def hydrate_text_svg_ops(rows, %Project{} = project) when is_list(rows) do
+    heights = font_heights_by_id(project)
+
+    Enum.map(rows, fn
+      %{kind: kind} = op when kind in @text_font_kinds ->
+        case Map.get(op, :font_height) do
+          height when is_integer(height) and height > 0 ->
+            op
+
+          _ ->
+            case height_for_font_id(heights, Map.get(op, :font_id)) do
+              height when is_integer(height) and height > 0 ->
+                Map.put(op, :font_height, height)
+
+              _ ->
+                op
+            end
+        end
+
+      other ->
+        other
+    end)
+  end
+
+  def hydrate_text_svg_ops(rows, _project) when is_list(rows), do: rows
+
+  defp font_heights_by_id(project) do
+    case ResourceStore.list_fonts(project) do
+      {:ok, entries} ->
+        entries
+        |> Enum.with_index(1)
+        |> Map.new(fn {entry, id} -> {id, Map.get(entry, :height, 0)} end)
+
+      _ ->
+        %{}
+    end
+  end
+
+  defp height_for_font_id(heights, id) when is_map(heights) and is_integer(id) and id > 0,
+    do: Map.get(heights, id)
+
+  defp height_for_font_id(_heights, _id), do: nil
+
   @spec hydrate_vector_svg_ops([svg_op()], Project.t() | nil) :: [svg_op()]
   def hydrate_vector_svg_ops(rows, %Project{} = project) when is_list(rows) do
     indices = RuntimeArtifacts.vector_resource_indices_for_project(project.slug)

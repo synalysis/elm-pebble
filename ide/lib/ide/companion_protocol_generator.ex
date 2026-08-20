@@ -23,6 +23,8 @@ defmodule Ide.CompanionProtocolGenerator do
   @wire_false_code 2
   @list_max_elements 16
   @dict_max_entries 16
+  # persist_write_string limit; decoder, snapshot, and fallback inbox share this cap.
+  @companion_protocol_string_max 256
 
   @spec wire_code_base() :: pos_integer()
   def wire_code_base, do: @wire_code_base
@@ -253,7 +255,7 @@ defmodule Ide.CompanionProtocolGenerator do
         ) ++
         optional_c_struct_field(
           uses_string_payloads?,
-          "  char string_fields[COMPANION_PROTOCOL_MAX_FIELDS][64];"
+          "  char string_fields[COMPANION_PROTOCOL_MAX_FIELDS][COMPANION_PROTOCOL_STRING_MAX];"
         )
 
     decoder_fields =
@@ -290,6 +292,15 @@ defmodule Ide.CompanionProtocolGenerator do
     inbox_required = app_message_inbox_size_required(schema)
     outbox_required = app_message_outbox_size_required(schema)
 
+    string_macros =
+      if uses_string_payloads? do
+        """
+        #define COMPANION_PROTOCOL_STRING_MAX #{@companion_protocol_string_max}
+        """
+      else
+        ""
+      end
+
     """
     #ifndef COMPANION_PROTOCOL_H
     #define COMPANION_PROTOCOL_H
@@ -304,8 +315,9 @@ defmodule Ide.CompanionProtocolGenerator do
     #{tag_lines}
 
     #define COMPANION_PROTOCOL_MAX_FIELDS #{max_fields}
-    #{list_macros}#{companion_simulator_weather_macros(schema, uses_union_payloads?)}
-    /* dict_calc_buffer_size-style estimate: 1 + n * (7 + sizeof(int32_t)). */
+    #{list_macros}#{string_macros}#{companion_simulator_weather_macros(schema, uses_union_payloads?)}
+    /* dict_calc_buffer_size-style estimate. String fields use COMPANION_PROTOCOL_STRING_MAX
+       bytes so quotes fit without reserving the firmware-maximum inbox (that starves Elm heap). */
     #define ELMC_PEBBLE_APP_MESSAGE_INBOX_SIZE_REQUIRED #{inbox_required}
     #define ELMC_PEBBLE_APP_MESSAGE_OUTBOX_SIZE_REQUIRED #{outbox_required}
 
@@ -536,9 +548,10 @@ defmodule Ide.CompanionProtocolGenerator do
     end)
   end
 
-  # Pebble dictionary buffer estimate used by dict_calc_buffer_size for int32 tuples:
-  # 1 byte header + per-tuple (7 byte header + 4 byte value).
+  # Pebble dictionary buffer estimate used by dict_calc_buffer_size:
+  # 1 byte header + per-tuple (7 byte header + value bytes).
   @dict_int32_tuple_bytes 11
+  @dict_tuple_header_bytes 7
   @dict_header_bytes 1
   # Extra headroom for uint/cstring mixes and alignment.
   @dict_size_pad_bytes 32
@@ -546,9 +559,8 @@ defmodule Ide.CompanionProtocolGenerator do
   @spec app_message_inbox_size_required(schema()) :: pos_integer()
   defp app_message_inbox_size_required(schema) do
     schema.phone_to_watch
-    |> Enum.map(&message_dict_key_count/1)
+    |> Enum.map(&message_dict_bytes/1)
     |> Enum.max(fn -> 1 end)
-    |> dict_buffer_size_for_int_keys()
   end
 
   @spec app_message_outbox_size_required(schema()) :: pos_integer()
@@ -556,27 +568,41 @@ defmodule Ide.CompanionProtocolGenerator do
     # Watch→phone messages are small, but the SDK guarantees a large minimum outbox;
     # stay at least at that floor so outbox_begin does not fail on companion apps.
     schema.watch_to_phone
-    |> Enum.map(&message_dict_key_count/1)
+    |> Enum.map(&message_dict_bytes/1)
     |> Enum.max(fn -> 1 end)
-    |> dict_buffer_size_for_int_keys()
     |> max(636)
   end
 
-  @spec message_dict_key_count(message()) :: pos_integer()
-  defp message_dict_key_count(msg) when is_map(msg) do
-    field_keys =
-      Enum.reduce(msg.fields || [], 0, fn
-        %{wire_type: {:list, _elem}}, acc -> acc + 1 + @list_max_elements
-        _field, acc -> acc + 1
-      end)
+  @spec message_dict_bytes(message()) :: pos_integer()
+  defp message_dict_bytes(msg) when is_map(msg) do
+    field_bytes =
+      Enum.reduce(msg.fields || [], 0, fn field, acc -> acc + field_dict_bytes(field) end)
 
-    1 + field_keys
+    @dict_header_bytes + @dict_int32_tuple_bytes + field_bytes + @dict_size_pad_bytes
   end
 
-  @spec dict_buffer_size_for_int_keys(non_neg_integer()) :: pos_integer()
-  defp dict_buffer_size_for_int_keys(key_count) when is_integer(key_count) and key_count >= 0 do
-    @dict_header_bytes + key_count * @dict_int32_tuple_bytes + @dict_size_pad_bytes
+  defp field_dict_bytes(%{wire_type: :string}),
+    do: @dict_tuple_header_bytes + @companion_protocol_string_max
+
+  defp field_dict_bytes(%{wire_type: {:list, :string}}),
+    do:
+      @dict_int32_tuple_bytes +
+        @list_max_elements * (@dict_tuple_header_bytes + @companion_protocol_string_max)
+
+  defp field_dict_bytes(%{wire_type: {:list, _elem}}),
+    do: (1 + @list_max_elements) * @dict_int32_tuple_bytes
+
+  defp field_dict_bytes(%{wire_type: {:record, _name, fields}}) when is_list(fields) do
+    Enum.reduce(fields, 0, fn field, acc -> acc + field_dict_bytes(field) end)
   end
+
+  defp field_dict_bytes(%{wire_type: {:dict, _elem}}),
+    do:
+      @dict_int32_tuple_bytes +
+        @dict_max_entries *
+          (@dict_tuple_header_bytes + @companion_protocol_string_max + @dict_int32_tuple_bytes)
+
+  defp field_dict_bytes(_field), do: @dict_int32_tuple_bytes
 
   @spec companion_protocol_uses_payload_type?(schema(), WireSchema.wire_type()) :: boolean()
   defp companion_protocol_uses_payload_type?(schema, wire_type) do
@@ -610,7 +636,8 @@ defmodule Ide.CompanionProtocolGenerator do
       |> decoder_wire_slots()
       |> Enum.uniq_by(& &1.c_name)
       |> Enum.map(fn
-        %{storage_type: :string, c_name: c_name} -> "  char #{c_name}[64];"
+        %{storage_type: :string, c_name: c_name} ->
+          "  char #{c_name}[COMPANION_PROTOCOL_STRING_MAX];"
         %{storage_type: :bool, c_name: c_name} -> "  bool #{c_name};"
         %{c_name: c_name} -> "  int32_t #{c_name};"
       end)
@@ -2654,8 +2681,8 @@ defmodule Ide.CompanionProtocolGenerator do
   defp c_decode_tuple_field(%{wire_type: :string}, index) do
     """
       if (tuple->type == TUPLE_CSTRING) {
-        strncpy(decoder->message.string_fields[#{index}], tuple->value->cstring, 63);
-        decoder->message.string_fields[#{index}][63] = '\\0';
+        strncpy(decoder->message.string_fields[#{index}], tuple->value->cstring, COMPANION_PROTOCOL_STRING_MAX - 1);
+        decoder->message.string_fields[#{index}][COMPANION_PROTOCOL_STRING_MAX - 1] = '\\0';
       }
     """
   end
@@ -2696,8 +2723,8 @@ defmodule Ide.CompanionProtocolGenerator do
   defp c_decode_wire_slot_value(%{storage_type: :string, c_name: c_name}) do
     """
       if (tuple->type == TUPLE_CSTRING) {
-        strncpy(decoder->message.wire.#{c_name}, tuple->value->cstring, 63);
-        decoder->message.wire.#{c_name}[63] = '\\0';
+        strncpy(decoder->message.wire.#{c_name}, tuple->value->cstring, COMPANION_PROTOCOL_STRING_MAX - 1);
+        decoder->message.wire.#{c_name}[COMPANION_PROTOCOL_STRING_MAX - 1] = '\\0';
       }
     """
   end
