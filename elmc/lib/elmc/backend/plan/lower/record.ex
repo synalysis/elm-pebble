@@ -161,9 +161,22 @@ defmodule Elmc.Backend.Plan.Lower.Record do
        when is_binary(field_name) do
     {value_reg, b0} = Builder.dup_named_local_if_bound(b, value_reg)
 
-    # Keep borrowed bases borrowed. Retaining before COW forces rc>=2 and a
-    # full record copy on every tick (CurrentDateTime is 104 bytes).
-    {update_base_reg, b_base, retain_copy?} = {base_reg, b0, false}
+    # Function params stay borrowed: retaining before COW forces rc>=2 and a
+    # full record copy on every tick (CurrentDateTime is 104 bytes). Named
+    # locals may still be read after the update (later multi-field RHS,
+    # post-update comparisons), so retain-copy those before cow_drop.
+    {update_base_reg, b_base, retain_copy?} =
+      cond do
+        Builder.param_reg?(b0, base_reg) ->
+          {base_reg, b0, false}
+
+        Builder.borrow_arg?(b0, base_reg) ->
+          {dup, b_copy} = Builder.copy_reg_owned(b0, base_reg)
+          {dup, b_copy, true}
+
+        true ->
+          {base_reg, b0, false}
+      end
 
     {dest, b1} = dest_for_update(ctx, b_base)
 

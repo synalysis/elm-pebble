@@ -1,11 +1,11 @@
 defmodule Elmc.PlanCowDropBorrowParamRetainTest do
   @moduledoc """
-  `elmc_record_update_index_cow_drop` on a borrowed function param must not
-  release the caller's model.
+  Record updates on a borrowed function param must not release the caller's model.
 
   Copy-path `*_cow_drop` releases `record`. Passing a borrowed param directly
-  frees the caller's value. Codegen retains into an owned slot first so only
-  that credit is dropped (YES: `updateFromPhone` Provide* branches).
+  frees the caller's value. Emit uses `*_cow` on borrowed params and retains
+  only when the dest aliases the base after an in-place update (YES:
+  `updateFromPhone` Provide* branches).
   """
 
   use ExUnit.Case, async: false
@@ -22,7 +22,7 @@ defmodule Elmc.PlanCowDropBorrowParamRetainTest do
     pebble_int32: true
   ]
 
-  test "watchface_yes updateFromPhone retains borrowed model before cow_drop" do
+  test "watchface_yes updateFromPhone uses cow on borrowed model param" do
     out_dir =
       Path.join(System.tmp_dir!(), "cow-borrow-retain-#{System.unique_integer([:positive])}")
 
@@ -40,8 +40,12 @@ defmodule Elmc.PlanCowDropBorrowParamRetainTest do
     refute body =~ ~r/elmc_record_update_index_cow_drop\([^;]+,\s*model\s*,/
 
     assert body =~ ~r/
-      owned\[\d+\]\s*=\s*elmc_retain\(model\);\s*
-      Rc\s*=\s*elmc_record_update_index_cow_drop\([^;]+,\s*owned\[\d+\]\s*,
+      Rc\s*=\s*elmc_record_update_index_cow\(&owned\[\d+\],\s*model\s*,
+    /x
+
+    assert body =~ ~r/
+      if\s*\(owned\[\d+\]\s*==\s*model\)\s*\{\s*
+        owned\[\d+\]\s*=\s*elmc_retain\(owned\[\d+\]\);
     /x
   end
 end

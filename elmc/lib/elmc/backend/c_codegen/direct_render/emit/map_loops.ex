@@ -1544,6 +1544,17 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.MapLoops do
     #{loop_body}
     #{index_inc}
       }
+    } else if (#{list_var} && #{list_var}->tag == ELMC_TAG_LAZY_MAP) {
+      int direct_llen_#{next} = elmc_lazy_map_length(#{list_var});
+      for (int direct_ii_#{next} = 0; Rc == RC_SUCCESS && direct_ii_#{next} < direct_llen_#{next}; direct_ii_#{next}++) {
+        ElmcValue *direct_nth_#{next} = NULL;
+        Rc = elmc_lazy_map_nth(&direct_nth_#{next}, #{list_var}, direct_ii_#{next});
+        CHECK_RC(Rc);
+        const elmc_int_t #{head} = elmc_as_int(direct_nth_#{next});
+        elmc_release(direct_nth_#{next});
+    #{loop_body}
+    #{index_inc}
+      }
     } else {
       ElmcValue *direct_cursor_#{next} = #{list_var};
     #{if indexed?, do: "  elmc_int_t direct_index_#{next} = 0;\n", else: ""}

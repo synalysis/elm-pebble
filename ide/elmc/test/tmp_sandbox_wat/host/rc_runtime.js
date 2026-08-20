@@ -2591,6 +2591,7 @@ export function createRcRuntime({ immortalStrings = {} } = {}) {
     string_repeat: stringRepeat,
     string_replace: stringReplace,
     string_from_int_value: stringFromIntValue,
+    string_from_int: stringFromIntValue,
     string_to_int: stringToInt,
     string_from_float: stringFromFloat,
     string_to_float: stringToFloat,

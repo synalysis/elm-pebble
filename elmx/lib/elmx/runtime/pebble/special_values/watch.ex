@@ -23,6 +23,7 @@ defmodule Elmx.Runtime.Pebble.SpecialValues.Watch do
       "Elm.Kernel.PebbleWatch.healthSetHrvSamplePeriod" -> {:ok, %{op: :cmd_none}}
       "Elm.Kernel.PebbleWatch.healthSetHeartRateSamplePeriod" -> {:ok, %{op: :cmd_none}}
       "Pebble.Alarm.next" -> kernel_watch("alarmNext", args)
+      "Pebble.Alarm.toPosix" -> alarm_to_posix(args)
       "Pebble.Touch.supported" -> kernel_watch("touchSupported", args)
       "Pebble.Touch.enableNavigation" -> {:ok, %{op: :cmd_none}}
       "Elm.Kernel.PebbleWatch.touchEnableNavigation" -> {:ok, %{op: :cmd_none}}
@@ -212,6 +213,22 @@ defmodule Elmx.Runtime.Pebble.SpecialValues.Watch do
       _ -> :unmatched
     end
   end
+
+  defp alarm_to_posix([]) do
+    {:ok,
+     %{
+       op: :lambda,
+       args: ["__utc"],
+       body: %{
+         op: :runtime_call,
+         function: "elmx_alarm_to_posix",
+         args: [%{op: :var, name: "__utc"}]
+       }
+     }}
+  end
+
+  defp alarm_to_posix([_utc] = args), do: ui_call("elmx_alarm_to_posix", args)
+  defp alarm_to_posix(_), do: :error
 
   defp watch_info_case_color([]) do
     {:ok,

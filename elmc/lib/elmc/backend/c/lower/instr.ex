@@ -407,7 +407,11 @@ defmodule Elmc.Backend.C.Lower.Instr do
         {then_s, else_s} = phi_truthy_arm_exprs(args, then_reg, else_reg, slots, opts)
         emit_native_bool_store(dest_reg, merge, "(#{cond_expr}) ? #{then_s} : #{else_s}", opts)
 
-      native_bool_cond? and not native_bool_dest? and Map.get(args, :truthy_native) == true ->
+      # truthy_native arms may be dropped after shapes are stamped. Always reconstruct
+      # from shapes when publishing to a boxed merge — including when `cond` is still a
+      # boxed Bool (`elmc_as_bool(owned[…])`). Requiring native_bool_cond? left
+      # `elmc_retain(tmp_N)` for dropped const/compare arms (game_jump_n_run Main.step).
+      Map.get(args, :truthy_native) == true ->
         then_s = truthy_shape_boxed_c_expr(Map.fetch!(args, :then_shape), slots, opts)
         else_s = truthy_shape_boxed_c_expr(Map.fetch!(args, :else_shape), slots, opts)
 
@@ -458,11 +462,17 @@ defmodule Elmc.Backend.C.Lower.Instr do
   defp phi_boxed_arm_source(reg, slots, opts) when is_integer(reg) do
     native_int_regs = Keyword.get(opts, :native_int_regs, %{})
     native_int_only = Keyword.get(opts, :native_int_only_regs, MapSet.new())
+    native_bool_only = Keyword.get(opts, :native_bool_only_regs, MapSet.new())
+    native_bool_regs = Keyword.get(opts, :native_bool_regs, %{})
     const_int_regs = Keyword.get(opts, :const_int_regs, %{})
 
     cond do
       is_integer(Map.get(slots, reg)) ->
         slot_ref(reg, slots, opts)
+
+      MapSet.member?(native_bool_only, reg) or Map.has_key?(native_bool_regs, reg) ->
+        # Never `elmc_retain` a C `bool` — box into an ephemeral Bool value.
+        EphemeralBox.bool(phi_truthy_arm_expr(reg, slots, opts))
 
       MapSet.member?(native_int_only, reg) ->
         boxed_value_ref(reg, slots, opts)
@@ -474,7 +484,13 @@ defmodule Elmc.Backend.C.Lower.Instr do
         boxed_value_ref(reg, slots, opts)
 
       true ->
-        slot_ref(reg, slots, opts)
+        case slot_ref(reg, slots, opts) do
+          "plan_native_bool_" <> _ = bool_ref ->
+            EphemeralBox.bool(bool_ref)
+
+          other ->
+            other
+        end
     end
   end
 
@@ -612,7 +628,8 @@ defmodule Elmc.Backend.C.Lower.Instr do
   end
 
   defp truthy_shape_boxed_c_expr({:reg, reg}, slots, opts) when is_integer(reg) do
-    boxed_value_ref(reg, slots, opts)
+    # Native-bool locals must become ephemeral Bool boxes — never retain a C `_Bool`.
+    phi_boxed_arm_source(reg, slots, opts)
   end
 
   defp truthy_shape_boxed_c_expr(_shape, _slots, _opts), do: EphemeralBox.bool("0")
@@ -3146,12 +3163,19 @@ defmodule Elmc.Backend.C.Lower.Instr do
 
       is_integer(dest_reg) and MapSet.member?(native_only, dest_reg) ->
         out = "plan_native_bool_#{dest_reg}"
+        mutable? =
+          MapSet.member?(Keyword.get(opts, :native_bool_mutable_regs, MapSet.new()), dest_reg)
 
-        """
-        bool #{out} = false;
-        #{rc_scalar_assign_call(rc?, c_name, out, call_arg_s, fallback: "false")}
-        """
-        |> String.trim()
+        if mutable? do
+          # Prologue already declared `bool plan_native_bool_N = false;`
+          rc_scalar_assign_call(rc?, c_name, out, call_arg_s, fallback: "false")
+        else
+          """
+          bool #{out} = false;
+          #{rc_scalar_assign_call(rc?, c_name, out, call_arg_s, fallback: "false")}
+          """
+          |> String.trim()
+        end
 
       true ->
         emit_native_bool_fn_call_boxed(rc?, dest, dest_reg, c_name, call_arg_s, callee, opts)
@@ -3777,21 +3801,37 @@ defmodule Elmc.Backend.C.Lower.Instr do
         ""
       end
 
+    # Nested `List.map` over a stored lazy map must compose another lazy map —
+    # walking with nth + cons materializes the whole spine (size regression).
+    lazy_map_branch =
+      if kind == :map do
+        """
+        if (#{list_ref} && #{list_ref}->tag == ELMC_TAG_LAZY_MAP) {
+          Rc = elmc_lazy_map(&#{fwd_head}, #{list_ref}, #{closure}, #{caps_arg}, #{caps_count_arg});
+          CHECK_RC(Rc);
+        #{set_no_reverse}    } else {
+        """
+      else
+        """
+        if (#{list_ref} && #{list_ref}->tag == ELMC_TAG_LAZY_MAP) {
+          int list_walk_llen_#{loop_id} = elmc_lazy_map_length(#{list_ref});
+          #{idx_init}for (int list_walk_ii_#{loop_id} = 0;
+               Rc == RC_SUCCESS && list_walk_ii_#{loop_id} < list_walk_llen_#{loop_id};
+               list_walk_ii_#{loop_id}++) {
+            ElmcValue *list_walk_nth_#{loop_id} = NULL;
+            Rc = elmc_lazy_map_nth(&list_walk_nth_#{loop_id}, #{list_ref}, list_walk_ii_#{loop_id});
+            CHECK_RC(Rc);
+            #{nth_step}
+            elmc_release(list_walk_nth_#{loop_id});
+            list_walk_nth_#{loop_id} = NULL;
+          }
+        } else {
+        """
+      end
+
     body = """
     #{caps_decl}#{need_reverse_init}ElmcValue *#{fwd_head} = elmc_list_nil();
-    #{int_list_prefix}if (#{list_ref} && #{list_ref}->tag == ELMC_TAG_LAZY_MAP) {
-      int list_walk_llen_#{loop_id} = elmc_lazy_map_length(#{list_ref});
-      #{idx_init}for (int list_walk_ii_#{loop_id} = 0;
-           Rc == RC_SUCCESS && list_walk_ii_#{loop_id} < list_walk_llen_#{loop_id};
-           list_walk_ii_#{loop_id}++) {
-        ElmcValue *list_walk_nth_#{loop_id} = NULL;
-        Rc = elmc_lazy_map_nth(&list_walk_nth_#{loop_id}, #{list_ref}, list_walk_ii_#{loop_id});
-        CHECK_RC(Rc);
-        #{nth_step}
-        elmc_release(list_walk_nth_#{loop_id});
-        list_walk_nth_#{loop_id} = NULL;
-      }
-    } else {
+    #{int_list_prefix}#{lazy_map_branch}
       ElmcValue *list_walk_src_#{loop_id} = NULL;
       Rc = elmc_list_materialize_cons(&list_walk_src_#{loop_id}, #{list_ref});
       CHECK_RC(Rc);
@@ -4570,6 +4610,19 @@ defmodule Elmc.Backend.C.Lower.Instr do
   @spec boxed_value_ref_from_native_or_defining(Types.reg(), Types.slot_map(), keyword()) :: String.t()
 
   defp boxed_value_ref_from_native_or_defining(reg, slots, opts) do
+    native_bool_only = Keyword.get(opts, :native_bool_only_regs, MapSet.new())
+    native_bool_regs = Keyword.get(opts, :native_bool_regs, %{})
+
+    cond do
+      MapSet.member?(native_bool_only, reg) or Map.has_key?(native_bool_regs, reg) ->
+        EphemeralBox.bool(phi_truthy_arm_expr(reg, slots, opts))
+
+      true ->
+        boxed_value_ref_from_native_int_or_defining(reg, slots, opts)
+    end
+  end
+
+  defp boxed_value_ref_from_native_int_or_defining(reg, slots, opts) do
     case Map.get(Keyword.get(opts, :native_int_regs, %{}), reg) do
       name when is_binary(name) ->
         if MapSet.member?(Keyword.get(opts, :native_int_only_regs, MapSet.new()), reg) do

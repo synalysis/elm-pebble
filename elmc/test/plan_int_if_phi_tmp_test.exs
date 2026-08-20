@@ -78,4 +78,69 @@ defmodule Elmc.PlanIntIfPhiTmpTest do
            "must not drop {:reg,_} then arm (would emit undeclared tmp_17)"
     assert MapSet.member?(drops, {18, 4})
   end
+
+  test "truthy_native boxed phi with boxed cond reconstructs dropped const arm" do
+    # Cond comes from a call (boxed Bool). Optimize stamps truthy_native and drops
+    # const True/False arms — emit must use shapes, not undeclared tmp_N.
+    decls = %{
+      "flag" => %{
+        name: "flag",
+        args: [],
+        expr: %{op: :bool_literal, value: true}
+      },
+      "pick" => %{
+        name: "pick",
+        args: [],
+        expr: %{
+          op: :if,
+          cond: %{op: :call, target: "flag", args: []},
+          then_expr: %{op: :bool_literal, value: true},
+          else_expr: %{op: :bool_literal, value: false}
+        }
+      }
+    }
+
+    assert {:ok, plan} = PlanLower.lower(decls["pick"], "Main", decls, rc_required: true)
+    phi =
+      plan.blocks
+      |> Enum.flat_map(& &1.instrs)
+      |> Enum.find(&(Map.get(&1, :op) == :phi))
+
+    assert phi
+    assert Map.get(phi.args, :truthy_native) == true
+
+    c = CLower.emit(plan)
+    refute c =~ ~r/\btmp_\d+\b/, "must not reference dropped arm as tmp_:\n#{c}"
+    assert c =~ "elmc_new_bool(", "expected shape-based bool boxing:\n#{c}"
+  end
+
+  test "truthy_native boxed phi boxes native-bool {:reg,_} arms (no elmc_retain on _Bool)" do
+    # Nested `if a then (if b then c else False) else False` lowers to truthy_native
+    # phis whose then_shape is {:reg, native_bool}. Merging into a boxed *out must
+    # ephemeral-box the C bool — never `elmc_retain(plan_native_bool_N)`.
+    decl = %{
+      name: "and3",
+      args: ["a", "b", "c"],
+      expr: %{
+        op: :if,
+        cond: %{op: :var, name: "a"},
+        then_expr: %{
+          op: :if,
+          cond: %{op: :var, name: "b"},
+          then_expr: %{op: :var, name: "c"},
+          else_expr: %{op: :bool_literal, value: false}
+        },
+        else_expr: %{op: :bool_literal, value: false}
+      }
+    }
+
+    assert {:ok, plan} = PlanLower.lower(decl, "Main", %{}, rc_required: true)
+    c = CLower.emit(plan)
+
+    refute c =~ ~r/elmc_retain\(\s*plan_native_bool_\d+\s*\)/,
+           "must not retain a C bool into an owned slot:\n#{c}"
+
+    assert c =~ "elmc_new_bool(",
+           "expected ephemeral bool boxing when publishing native bool to *out:\n#{c}"
+  end
 end

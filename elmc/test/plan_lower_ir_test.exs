@@ -265,7 +265,10 @@ defmodule Elmc.PlanLowerIrTest do
 
     c = CLowerFunction.emit(plan)
     assert c =~ "elmc_as_int"
-    assert c =~ "elmc_record_update_index_cow_drop"
+    # Borrowed `model` param must use cow (not cow_drop) so a copy path does
+    # not release the caller's record; retain only when dest aliases the base.
+    assert c =~ "elmc_record_update_index_cow("
+    refute c =~ "elmc_record_update_index_cow_drop("
     assert c =~ "elmc_retain"
   end
 

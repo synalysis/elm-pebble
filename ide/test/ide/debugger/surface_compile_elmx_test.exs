@@ -68,8 +68,9 @@ defmodule Ide.Debugger.SurfaceCompileElmxTest do
     got = SurfaceCompileArtifacts.artifacts_for_source_root(state, "watch", ctx)
 
     assert RuntimeArtifacts.versioned_elmx_artifacts?(got)
-    assert Map.get(got, :elmx_revision) || Map.get(got, "elmx_revision") ==
-             compile_result.elmx_revision
+
+    got_revision = Map.get(got, :elmx_revision) || Map.get(got, "elmx_revision")
+    assert got_revision == compile_result.elmx_revision
     assert is_map(CompileContract.from_artifacts(got))
   end
 

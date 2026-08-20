@@ -6138,6 +6138,9 @@ export function createRcRuntime({ immortalStrings = {}, constructorTags = {} } =
     string_repeat: stringRepeat,
     string_replace: stringReplace,
     string_from_int_value: stringFromIntValue,
+    // Plan IR `:string_from_int` (native-int String.fromInt) shares the same
+    // host helper — args are still (outPtr, valueHandle) after wasm lowering.
+    string_from_int: stringFromIntValue,
     string_to_int: stringToInt,
     string_from_float: stringFromFloat,
     string_to_float: stringToFloat,

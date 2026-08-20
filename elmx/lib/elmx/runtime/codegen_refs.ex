@@ -48,6 +48,12 @@ defmodule Elmx.Runtime.CodegenRefs do
   @spec pebble_ui() :: String.t()
   def pebble_ui, do: "Elmx.Runtime.Pebble.Ui"
 
+  @spec pebble_watch_info() :: String.t()
+  def pebble_watch_info, do: "Elmx.Runtime.Pebble.WatchInfo"
+
+  @spec pebble_alarm() :: String.t()
+  def pebble_alarm, do: "Elmx.Runtime.Pebble.Alarm"
+
   @spec values() :: String.t()
   def values, do: "Elmx.Runtime.Values"
 
@@ -100,6 +106,8 @@ defmodule Elmx.Runtime.CodegenRefs do
     Elmx.Runtime.Json.Decode => :json_decode,
     Elmx.Runtime.Pebble => :pebble,
     Elmx.Runtime.Pebble.Ui => :pebble_ui,
+    Elmx.Runtime.Pebble.WatchInfo => :pebble_watch_info,
+    Elmx.Runtime.Pebble.Alarm => :pebble_alarm,
     Elmx.Runtime.Pebble.Dispatch => :pebble_dispatch,
     Elmx.Runtime.Http => :http,
     Elmx.Runtime.Values => :values,

@@ -1557,12 +1557,12 @@ defmodule Elmc.CCodegenPatternsTest do
 
     body = assert_plan_fn!(generated_c, "points")
     assert body =~ "elmc_lazy_map("
-    assert body =~ "ELMC_TAG_INT_LIST"
+    assert body =~ "ELMC_TAG_LAZY_MAP"
     refute body =~ "elmc_list_map("
     refute body =~ "elmc_list_append("
   end
 
-  test "List.map over a stored lazy map walks with nth instead of skipping" do
+  test "List.map over a stored lazy map composes another lazy map" do
     source = """
     module Main exposing (main)
 
@@ -1614,8 +1614,9 @@ defmodule Elmc.CCodegenPatternsTest do
     assert ticks_body =~ "elmc_lazy_map("
 
     widths_body = assert_plan_fn!(generated_c, "widths")
-    assert widths_body =~ "elmc_lazy_map_nth("
+    assert widths_body =~ "elmc_lazy_map("
     assert widths_body =~ "ELMC_TAG_LAZY_MAP"
+    refute widths_body =~ "elmc_lazy_map_nth("
   end
 
   test "Ui.context over List.map streams instead of boxing the view" do
@@ -3271,7 +3272,8 @@ defmodule Elmc.CCodegenPatternsTest do
     assert generated_c =~ "elmc_fn_Main_lockedSlotsFromBoard_native"
     assert generated_c =~
              "static RC elmc_fn_Main_lockedSlotsFromBoard_native(ElmcValue **out, ElmcValue *board)"
-    assert generated_c =~ "elmc_fn_Main_offsetFits_native"
+    # Sole native-bool ABI uses the primary name (no dual boxed wrapper / `_native`).
+    assert generated_c =~ "elmc_fn_Main_offsetFits(bool *out"
     assert generated_c =~ "elmc_fn_Main_stampPiece_native"
     assert generated_c =~
              "static RC elmc_fn_Main_stampPiece_native(ElmcValue **out, ElmcValue *piece, ElmcValue *board)"
@@ -4221,10 +4223,10 @@ defmodule Elmc.CCodegenPatternsTest do
     out_dir = compile_snippet!("union_constructor_macro_codegen", source)
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
-    assert generated_c =~ "#define ELMC_UNION_LEFT 1"
+    # Module-qualified macros are the stable names used in switch cases.
     assert generated_c =~ "#define ELMC_UNION_MAIN_LEFT 1"
     assert generated_c =~ "#define ELMC_UNION_MAIN_UP 3"
-    assert generated_c =~ "ELMC_UNION_LEFT"
+    assert generated_c =~ "ELMC_UNION_MAIN_LEFT"
     assert generated_c =~ "ELMC_UNION_MAIN_UP"
 
     move_body = fn_body!(generated_c, "move")
@@ -4585,8 +4587,9 @@ defmodule Elmc.CCodegenPatternsTest do
     update_body = fn_body!(generated_c, "update")
 
     assert update_body =~
-             ~r/Rc = elmc_record_update_index_cow_drop\(&owned\[\d+\], .*, ELMC_FIELD_MAIN_MODEL_TIMESTRING, owned\[\d+\]\)/
-    assert update_body =~ "elmc_retain(model)"
+             ~r/Rc = elmc_record_update_index_cow\(&owned\[\d+\], model, ELMC_FIELD_MAIN_MODEL_TIMESTRING, owned\[\d+\]\)/
+    refute update_body =~ "elmc_record_update_index_cow_drop("
+    assert update_body =~ ~r/if \(owned\[\d+\] == model\) \{\s*\n\s*owned\[\d+\] = elmc_retain\(owned\[\d+\]\);/
     refute update_body =~ ~s/elmc_record_update(tmp_2, "timeString"/
   end
 
@@ -4631,18 +4634,19 @@ defmodule Elmc.CCodegenPatternsTest do
     update_body = fn_body!(generated_c, "update")
 
     assert update_body =~
-             ~r/Rc = elmc_record_update_index_cow_drop\(&owned\[\d+\], .*, ELMC_FIELD_MAIN_MODEL_TIDE, owned\[\d+\]\)/
+             ~r/Rc = elmc_record_update_index_cow\(&owned\[\d+\], model, ELMC_FIELD_MAIN_MODEL_TIDE, owned\[\d+\]\)/
+    refute update_body =~ "elmc_record_update_index_cow_drop("
 
     assert update_body =~ "elmc_maybe_nothing()"
 
     refute update_body =~
-             ~r/elmc_maybe_nothing\(\);\s*\n\s*\*out = elmc_record_update_index_cow_drop/
+             ~r/elmc_maybe_nothing\(\);\s*\n\s*\*out = elmc_record_update_index_cow/
 
     refute update_body =~
-             ~r/elmc_maybe_nothing\(\);\s*\n\s*ElmcValue \*tmp_\d+ = elmc_record_update_index_cow_drop/
+             ~r/elmc_maybe_nothing\(\);\s*\n\s*ElmcValue \*tmp_\d+ = elmc_record_update_index_cow/
   end
 
-  test "tuple2 record update reads pre-update field before cow_drop mutates model" do
+  test "tuple2 record update reads pre-update field before cow mutates model" do
     source = """
     module Main exposing (main)
 
@@ -4691,10 +4695,11 @@ defmodule Elmc.CCodegenPatternsTest do
     field_read = "elmc_record_get_index(model, ELMC_FIELD_MAIN_MODEL_FLAG)"
 
     record_update =
-      ~r/Rc = elmc_record_update_index_cow_drop\(&owned\[\d+\], .*, ELMC_FIELD_MAIN_MODEL_FLAG, owned\[\d+\]\)/
+      ~r/Rc = elmc_record_update_index_cow\(&owned\[\d+\], model, ELMC_FIELD_MAIN_MODEL_FLAG, owned\[\d+\]\)/
 
     assert update_body =~ field_read
     assert update_body =~ record_update
+    refute update_body =~ "elmc_record_update_index_cow_drop("
   end
 
   test "case branch Cmd.none assigns immortal cmd directly to function out" do

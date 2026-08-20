@@ -864,13 +864,13 @@
     "risk": 4
   },
   "code_size_indicators": {
+    "direct_command_defs": 2,
     "boxed_tmp_declarations": 0,
     "closure_allocations": 0,
-    "commands_append_bytes": 5850,
-    "direct_command_defs": 2,
+    "commands_append_bytes": 5927,
     "fusion_native_count": 6,
-    "generated_c_bytes": 57737,
-    "generated_c_lines": 1542,
+    "generated_c_bytes": 57674,
+    "generated_c_lines": 1537,
     "generic_function_defs": 9,
     "linked_binary": {
       "reason": "binary size is available after platform or host linking, not during C source generation",

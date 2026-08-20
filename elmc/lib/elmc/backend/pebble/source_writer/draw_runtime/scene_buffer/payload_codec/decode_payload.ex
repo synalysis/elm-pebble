@@ -20,6 +20,7 @@ defmodule Elmc.Backend.Pebble.SourceWriter.DrawRuntime.SceneBuffer.PayloadCodec.
           int *offset,
           int payload_end,
           ElmcPebbleDrawCmd *out_cmd) {
+        int rc __attribute__((unused)) = 0;
       """,
       SwitchCases.body(),
       Fallbacks.body(),

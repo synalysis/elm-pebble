@@ -8,7 +8,6 @@ defmodule Elmc.Backend.Pebble.SourceWriter.DrawRuntime.SceneBuffer.PayloadCodec.
   @spec body() :: Types.c_source()
   def body do
     """
-      int rc = 0;
       /* Compact text-label payloads (8 + 1 + text_len) overlap fixed enum
          payload sizes such as ELMC_SCENE_PL_ROUND_U8 (11); decode by kind first. */
     #if ELMC_PEBBLE_FEATURE_DRAW_TEXT_LABEL

@@ -8,7 +8,6 @@ defmodule Elmc.Backend.Pebble.SceneWriter.Encode.EncodePayload.SwitchCases.TextL
   @spec body() :: Types.c_source()
   def body do
     """
-          int rc = 0;
         #if ELMC_PEBBLE_FEATURE_DRAW_TEXT_LABEL
           if (payload_len >= ELMC_SCENE_PL_TEXT_LABEL_BASE &&
               cmd->kind == ELMC_PEBBLE_DRAW_TEXT_LABEL_WITH_FONT &&

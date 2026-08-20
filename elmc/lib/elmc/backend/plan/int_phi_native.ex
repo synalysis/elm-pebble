@@ -86,11 +86,28 @@ defmodule Elmc.Backend.Plan.IntPhiNative do
     |> Enum.flat_map(& &1.instrs)
     |> Enum.filter(&match?(%{op: :phi, args: %{native_int_phi: true}}, &1))
     |> Enum.flat_map(fn %{args: args} ->
-      [
-        {args.then, Map.fetch!(args, :then_arm_block)},
-        {args.else, Map.fetch!(args, :else_arm_block)}
-      ]
+      # Only drop arms whose shape is fully reconstructed at the phi.
+      # `{:record_get_int, N}` / `{:reg, N}` still need the defining instruction —
+      # dropping them leaves undeclared `tmp_N` in C (see TruthyNative).
+      []
+      |> maybe_drop_arm(args.then, Map.fetch!(args, :then_arm_block), Map.get(args, :then_shape))
+      |> maybe_drop_arm(args.else, Map.fetch!(args, :else_arm_block), Map.get(args, :else_shape))
     end)
     |> MapSet.new()
   end
+
+  defp maybe_drop_arm(acc, reg, block_id, shape)
+       when is_integer(reg) and is_integer(block_id) and is_list(acc) do
+    if reconstructible_phi_arm_shape?(shape) do
+      [{reg, block_id} | acc]
+    else
+      acc
+    end
+  end
+
+  defp reconstructible_phi_arm_shape?({:const_int, _}), do: true
+  defp reconstructible_phi_arm_shape?({:new_int, _}), do: true
+  defp reconstructible_phi_arm_shape?({:int_arith, _}), do: true
+  defp reconstructible_phi_arm_shape?({:load_param, _}), do: true
+  defp reconstructible_phi_arm_shape?(_), do: false
 end

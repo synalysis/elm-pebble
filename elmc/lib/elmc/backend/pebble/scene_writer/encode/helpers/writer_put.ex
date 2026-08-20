@@ -74,7 +74,8 @@ defmodule Elmc.Backend.Pebble.SceneWriter.Encode.Helpers.WriterPut do
           return elmc_pebble_scene_put_u8(writer->app, value);
         }
 
-        static int elmc_scene_writer_put_i16(ElmcSceneWriter *writer, int32_t value) {
+        /* May be unused when a project enables only draw kinds that encode as u8/i32. */
+        static int __attribute__((unused)) elmc_scene_writer_put_i16(ElmcSceneWriter *writer, int32_t value) {
           if (!writer || !writer->app) return -1;
           return elmc_scene_put_i16(writer->app, value);
         }

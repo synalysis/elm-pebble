@@ -29,7 +29,6 @@
 #define ELMC_PEBBLE_DIRECT_VIEW_SCENE 1
 #endif
 
-#define ELMC_PEBBLE_APPEND_FALLBACK_SCENE 1
 #if defined(ELMC_PEBBLE_PLATFORM) && (ELMC_PEBBLE_DEBUG_LOGS || ELMC_PEBBLE_EMULATOR_STORAGE_LOGS)
 #define ELMC_PEBBLE_SCENE_LOG(...) APP_LOG(APP_LOG_LEVEL_INFO, __VA_ARGS__)
 #else
@@ -545,21 +544,6 @@ int64_t elmc_pebble_watch_model_to_elm_tag(int model) {
     #define ELMC_PEBBLE_DIRTY_REGION_ENABLED 1
     #endif
     #endif
-#ifdef ELMC_PEBBLE_PLATFORM
-extern long time(long *timer);
-
-static int elmc_current_second(void) {
-  long now = time(NULL);
-  if (now == -1L) return 0;
-  return (int)(now % 60);
-}
-#else
-static int elmc_current_second(void) {
-  time_t now = time(NULL);
-  if (now == (time_t)-1) return 0;
-  return (int)(now % 60);
-}
-#endif
         // #region agent log
         #if defined(ELMC_PEBBLE_PLATFORM) && ELMC_AGENT_PROBES && !defined(ELMC_HAVE_DIRECT_COMMANDS_MAIN_VIEW)
         static bool elmc_agent_scene_probe_enabled(uint32_t tag) {
@@ -3813,26 +3797,6 @@ static int elmc_extract_virtual_canvas_ops(
   return 0;
 }
 #endif
-static int elmc_msg_constructor_arity(elmc_int_t tag) {
-  switch (tag) {
-      case ELMC_PEBBLE_MSG_INCREMENT: return 0;
-      case ELMC_PEBBLE_MSG_DECREMENT: return 0;
-      case ELMC_PEBBLE_MSG_TICK: return 1;
-      case ELMC_PEBBLE_MSG_UPPRESSED: return 0;
-      case ELMC_PEBBLE_MSG_SELECTPRESSED: return 0;
-      case ELMC_PEBBLE_MSG_DOWNPRESSED: return 0;
-      case ELMC_PEBBLE_MSG_ACCELTAP: return 0;
-      case ELMC_PEBBLE_MSG_PROVIDETEMPERATURE: return 1;
-      case ELMC_PEBBLE_MSG_CURRENTTIMESTRING: return 1;
-      case ELMC_PEBBLE_MSG_CLOCKSTYLE24H: return 1;
-      case ELMC_PEBBLE_MSG_TIMEZONEISSET: return 1;
-      case ELMC_PEBBLE_MSG_TIMEZONENAME: return 1;
-      case ELMC_PEBBLE_MSG_WATCHMODELNAME: return 1;
-      case ELMC_PEBBLE_MSG_WATCHCOLORNAME: return 1;
-      case ELMC_PEBBLE_MSG_FIRMWAREVERSIONSTRING: return 1;
-    default: return 0;
-  }
-}
     static void elmc_pebble_invalidate_scene_for_dispatch(ElmcPebbleApp *app) {
       if (!app) return;
       elmc_pebble_clear_view_cache(app);
@@ -4209,42 +4173,14 @@ int elmc_pebble_msg_from_appmessage(int32_t key, int32_t value, int64_t *out_tag
 
   if (key == 0) {
     switch (value) {
-      case ELMC_PEBBLE_MSG_INCREMENT: *out_tag = 1; return 0;
-      case ELMC_PEBBLE_MSG_DECREMENT: *out_tag = 2; return 0;
-      case ELMC_PEBBLE_MSG_TICK: *out_tag = 3; return 0;
-      case ELMC_PEBBLE_MSG_UPPRESSED: *out_tag = 4; return 0;
-      case ELMC_PEBBLE_MSG_SELECTPRESSED: *out_tag = 5; return 0;
-      case ELMC_PEBBLE_MSG_DOWNPRESSED: *out_tag = 6; return 0;
-      case ELMC_PEBBLE_MSG_ACCELTAP: *out_tag = 7; return 0;
-      case ELMC_PEBBLE_MSG_PROVIDETEMPERATURE: *out_tag = 8; return 0;
-      case ELMC_PEBBLE_MSG_CURRENTTIMESTRING: *out_tag = 9; return 0;
-      case ELMC_PEBBLE_MSG_CLOCKSTYLE24H: *out_tag = 10; return 0;
-      case ELMC_PEBBLE_MSG_TIMEZONEISSET: *out_tag = 11; return 0;
-      case ELMC_PEBBLE_MSG_TIMEZONENAME: *out_tag = 12; return 0;
-      case ELMC_PEBBLE_MSG_WATCHMODELNAME: *out_tag = 13; return 0;
-      case ELMC_PEBBLE_MSG_WATCHCOLORNAME: *out_tag = 14; return 0;
-      case ELMC_PEBBLE_MSG_FIRMWAREVERSIONSTRING: *out_tag = 15; return 0;
+
       default: return -3;
     }
   }
 
   if (value == 0) return -4;
   switch (key) {
-      case ELMC_PEBBLE_MSG_INCREMENT: *out_tag = 1; return 0;
-      case ELMC_PEBBLE_MSG_DECREMENT: *out_tag = 2; return 0;
-      case ELMC_PEBBLE_MSG_TICK: *out_tag = 3; return 0;
-      case ELMC_PEBBLE_MSG_UPPRESSED: *out_tag = 4; return 0;
-      case ELMC_PEBBLE_MSG_SELECTPRESSED: *out_tag = 5; return 0;
-      case ELMC_PEBBLE_MSG_DOWNPRESSED: *out_tag = 6; return 0;
-      case ELMC_PEBBLE_MSG_ACCELTAP: *out_tag = 7; return 0;
-      case ELMC_PEBBLE_MSG_PROVIDETEMPERATURE: *out_tag = 8; return 0;
-      case ELMC_PEBBLE_MSG_CURRENTTIMESTRING: *out_tag = 9; return 0;
-      case ELMC_PEBBLE_MSG_CLOCKSTYLE24H: *out_tag = 10; return 0;
-      case ELMC_PEBBLE_MSG_TIMEZONEISSET: *out_tag = 11; return 0;
-      case ELMC_PEBBLE_MSG_TIMEZONENAME: *out_tag = 12; return 0;
-      case ELMC_PEBBLE_MSG_WATCHMODELNAME: *out_tag = 13; return 0;
-      case ELMC_PEBBLE_MSG_WATCHCOLORNAME: *out_tag = 14; return 0;
-      case ELMC_PEBBLE_MSG_FIRMWAREVERSIONSTRING: *out_tag = 15; return 0;
+
     default: return -3;
   }
 }
@@ -4599,7 +4535,7 @@ int elmc_pebble_tick(ElmcPebbleApp * app) {
   if (!elmc_pebble_is_subscribed(app, ELMC_PEBBLE_SUB_TICK)) return -8;
 elmc_int_t tag = elmc_pebble_sub_tag(app, ELMC_PEBBLE_SUB_TICK);
 if (tag <= 0) return -6;
-  if (elmc_msg_constructor_arity(tag) > 0) return elmc_pebble_dispatch_tag_value(app, tag, elmc_current_second());
+
 return elmc_pebble_dispatch_int(app, tag);
 }
 
@@ -4806,44 +4742,6 @@ int elmc_pebble_view_commands_from(ElmcPebbleApp *app, ElmcPebbleDrawCmd *out_cm
       ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_ensure_scene", -1);
     }
   }
-#elif defined(ELMC_HAVE_DIRECT_COMMANDS_MAIN_VIEW) && !defined(ELMC_PEBBLE_DIRECT_VIEW_SCENE)
-{
-    ElmcSceneWriter writer;
-    elmc_scene_writer_init_app(&writer, app);
-    ElmcValue *direct_model = elmc_worker_model(&app->worker);
-    if (!direct_model) {
-      elmc_pebble_scene_abort_build(app);
-      ELMC_DRAW_PATH_PROBE(ELMC_DRAW_PATH_ENSURE_SCENE_EXIT);
-      ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_ensure_scene", -2);
-    }
-    ElmcValue *direct_args[] = { direct_model };
-    ELMC_DRAW_PATH_PROBE(ELMC_DRAW_PATH_VIEW_APPEND_ENTER);
-    RC rc = elmc_fn_Main_view_scene_append(direct_args, 1, &writer);
-    ELMC_DRAW_PATH_PROBE(ELMC_DRAW_PATH_VIEW_APPEND_EXIT);
-    elmc_release(direct_model);
-    ELMC_PEBBLE_SCENE_LOG("elmc-scene view append rc=%u writer_cmds=%d",
-            (unsigned)rc, writer.command_count);
-    if (rc != RC_SUCCESS) {
-      ELMC_RC_LOG_FAIL(rc, "elmc_pebble_ensure_scene", "view_scene_append");
-#if defined(ELMC_PEBBLE_PLATFORM)
-      APP_LOG(APP_LOG_LEVEL_ERROR,
-              "elmc scene encode failed rc=%u cmds=%d bytes=%d cap=%d free=%lu",
-              (unsigned)rc,
-              writer.command_count,
-              app->scene.byte_count,
-              app->scene.byte_capacity,
-              (unsigned long)heap_bytes_free());
-#endif
-      elmc_pebble_note_runtime_stats(app);
-      elmc_pebble_scene_abort_build(app);
-      if (elmc_pebble_scene_should_retry_grow(&elmc_pebble_ensure_attempts)) {
-        goto elmc_pebble_ensure_retry;
-      }
-      ELMC_DRAW_PATH_PROBE(ELMC_DRAW_PATH_ENSURE_SCENE_EXIT);
-      ELMC_PEBBLE_GENERATED_TRACE_RETURN_INT("elmc_pebble_ensure_scene", -1);
-    }
-  }
-
     #else
       enum { BUILD_CHUNK_GUARD = 1024 };
       ElmcPebbleDrawCmd cmd;
@@ -5115,74 +5013,15 @@ static int elmc_pebble_view_commands_raw_impl(ElmcPebbleApp *app, ElmcPebbleDraw
     elmc_pebble_clear_view_cache(app);
   }
 #endif
-  #if defined(ELMC_PEBBLE_DIRECT_VIEW_SCENE) || defined(ELMC_PEBBLE_APPEND_FALLBACK_SCENE)
-        int direct_rc = elmc_pebble_ensure_scene(app);
-        if (direct_rc != 0) return direct_rc;
-        if (skip == 0 && dedupe && app->scene.command_count < max_cmds) {
-          if (app->has_prev_ui && app->prev_ops_hash == app->scene.hash) {
-            return elmc_pebble_scene_decode_from(app, out_cmds, max_cmds, skip, out_emitted_end);
+        if (!dedupe && app->stream_view_result) {
+          result = app->stream_view_result;
+        } else {
+          result = elmc_worker_model(&app->worker);
+          if (!result) return -2;
+          if (!dedupe) {
+            app->stream_view_result = result;
           }
-          app->has_prev_ui = 1;
-          app->prev_window_id = 0;
-          app->prev_layer_id = 0;
-          app->prev_ops_hash = app->scene.hash;
         }
-        return elmc_pebble_scene_decode_from(app, out_cmds, max_cmds, skip, out_emitted_end);
-      #else
-            if (!dedupe && app->stream_view_result) {
-              // #region agent log
-              elmc_agent_scene_probe(0xED9961A0);
-              // #endregion
-              result = app->stream_view_result;
-            } else {
-              // #region agent log
-              elmc_agent_scene_probe(0xED996180);
-              // #endregion
-              ElmcValue *model = elmc_worker_model(&app->worker);
-              // #region agent log
-              elmc_agent_scene_probe(model ? 0xED996181 : 0xED99618F);
-              // #endregion
-              if (!model) return -2;
-                            // #region agent log
-              elmc_agent_scene_probe(0xED996190);
-              // #endregion
-              elmc_pebble_heap_log("view:start");
-              RC view_rc = elmc_fn_Main_view(&result, model);
-              elmc_pebble_heap_log("view:end");
-              if (view_rc != RC_SUCCESS) {
-                ELMC_RC_LOG_FAIL(view_rc, "elmc_pebble_view_commands_raw_impl", "view");
-                elmc_release(model);
-                return -2;
-              }
-              if (!result) {
-                ELMC_RC_LOG_FAIL(RC_ERR_OUT_OF_MEMORY, "elmc_pebble_view_commands_raw_impl", "view");
-                elmc_release(model);
-                return -2;
-              }
-              // #region agent log
-              elmc_agent_scene_probe(0xED996191);
-              // #endregion
-              elmc_release(model);
-              // #region agent log
-              elmc_agent_scene_probe(0xED996200);
-              if (!result) {
-                elmc_agent_scene_probe(0xED996213);
-              } else if (result->tag == ELMC_TAG_TUPLE2) {
-                elmc_agent_scene_probe(0xED996211);
-              } else if (result->tag == ELMC_TAG_LIST) {
-                elmc_agent_scene_probe(0xED996212);
-              } else {
-                elmc_agent_scene_probe(0xED996210);
-              }
-              // #endregion
-              if (!dedupe) {
-                if (app->stream_view_result) {
-                  elmc_release(app->stream_view_result);
-                }
-                app->stream_view_result = result;
-              }
-            }
-      #endif
   #if !defined(ELMC_PEBBLE_DIRECT_VIEW_SCENE)
     ElmcValue *ops = result;
     int64_t window_id = 0;

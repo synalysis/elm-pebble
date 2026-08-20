@@ -6,22 +6,22 @@
       "min_large_rc_fns": 10
     },
     "eligible": false,
-    "generated_text_bytes": 57674,
+    "generated_text_bytes": 4,
     "generated_text_share": 0.0,
-    "large_rc_fn_count": 8,
+    "large_rc_fn_count": 0,
     "pebble_app_bin_bytes": 0
   },
   "bytecode_vm": {
     "enabled": false,
     "reason": "bc_vm_enabled is false (deferred until TierGate clears)"
   },
-  "constraint": "heap_bound",
+  "constraint": "balanced",
   "contract": "elmc.flash_vs_heap.v1",
   "flash": {
-    "elmc_app_text": 12240,
-    "generated_text_bytes": 57674,
+    "elmc_app_text": 10386,
+    "generated_text_bytes": 4,
     "generated_text_share": 0.0,
-    "large_rc_fn_count": 8,
+    "large_rc_fn_count": 0,
     "linked_text": null,
     "pebble_app_bin_bytes": 0,
     "runtime_text": null
@@ -31,8 +31,8 @@
     "closure_allocations": 0,
     "elf_bss": null,
     "elf_data": null,
-    "owned_slot_max": 61,
+    "owned_slot_max": 0,
     "worker_last_dispatch_cmd_cap": 0
   },
-  "recommendation": "Prefer shallower owned frames, unboxed locals, BSS caps, and size-profile codegen—not bytecode."
+  "recommendation": "No dominant flash or RAM constraint from static metrics; keep monitoring heap after init/drain/view."
 }

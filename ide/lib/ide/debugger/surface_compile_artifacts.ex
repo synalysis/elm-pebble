@@ -128,8 +128,10 @@ defmodule Ide.Debugger.SurfaceCompileArtifacts do
         stored_artifacts = surface_stored_runtime_artifacts(state, source_root)
 
         cond do
-          versioned_runtime_artifacts?(stored_artifacts) and
-              CompileContract.program_artifacts?(stored_artifacts) ->
+          # Prefer already-ingested elmx (compiled_elixir) over inline elmc compile.
+          # Program-contract presence is not required: debugger_runtime may attach
+          # only versioned elmx artifacts.
+          versioned_runtime_artifacts?(stored_artifacts) ->
             stored_artifacts
 
           true ->
@@ -348,7 +350,7 @@ defmodule Ide.Debugger.SurfaceCompileArtifacts do
         stored = surface_stored_runtime_artifacts(state, source_root)
 
         cond do
-          versioned_runtime_artifacts?(stored) and CompileContract.program_artifacts?(stored) ->
+          versioned_runtime_artifacts?(stored) ->
             stored
 
           CompanionPhoneCompile.skip_blocking_compile?(state) ->

@@ -14,6 +14,7 @@ defmodule Elmc.Backend.Pebble.SceneWriter.Encode.EncodePayload do
               ElmcSceneWriter *writer,
               const ElmcPebbleDrawCmd *cmd,
               int payload_len) {
+            int rc __attribute__((unused)) = 0;
       """,
       SwitchCases.body(),
       Fallbacks.body(),

@@ -8,7 +8,7 @@ defmodule Elmc.Backend.Pebble.SourceWriter.DrawRuntime.SceneBuffer.Arena.Reserve
   @spec body() :: Types.c_source()
   def body do
     """
-    static int elmc_scene_put_i16(ElmcPebbleApp *app, int32_t value) {
+    static int __attribute__((unused)) elmc_scene_put_i16(ElmcPebbleApp *app, int32_t value) {
       if (value < -32768) value = -32768;
       if (value > 32767) value = 32767;
       uint16_t raw = (uint16_t)((int16_t)value);

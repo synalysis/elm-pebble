@@ -25,6 +25,7 @@ defmodule Elmx.Runtime.Pebble.Registry.Device do
     end
     |> Map.merge(%{
       "elmx_watch_info_case_color" => {Elmx.Runtime.Pebble.WatchInfo, :case_color},
+      "elmx_alarm_to_posix" => {Elmx.Runtime.Pebble.Alarm, :to_posix},
       "elmx_platform_launch_reason_to_int" => {Dispatch, :platform_launch_reason},
       "elmx_platform_display_shape_is_round" => {Dispatch, :platform_display_shape_is_round},
       "elmx_platform_color_capability_is_color" => {Dispatch, :platform_color_capability_is_color}

@@ -33,14 +33,17 @@ defmodule Elmc.PlanNativeCrossBlockMutableTest do
         _ -> flunk("elmc_fn_Main_step definition not found in generated C")
       end
 
-    assert step =~ "elmc_int_t plan_native_int_131 __attribute__((unused)) = 0;",
-           "velocity bump temp must be a function-scope mutable local"
+    # Velocity bump: `vy + 1` assigned before a join, then read at the join for clamp.
+    # Reg ids shift with plan lowering; assert the hoist pattern, not a fixed number.
+    assert [_, bump_reg] =
+             Regex.run(~r/plan_native_int_(\d+) = plan_native_int_\d+ \+ 1;/, step),
+           "expected velocity bump `plan_native_int_N = … + 1` before a join:\n#{step}"
 
-    refute step =~ "const elmc_int_t plan_native_int_131",
+    assert step =~ "elmc_int_t plan_native_int_#{bump_reg} __attribute__((unused)) = 0;",
+           "velocity bump temp plan_native_int_#{bump_reg} must be a function-scope mutable local"
+
+    refute step =~ "const elmc_int_t plan_native_int_#{bump_reg}",
            "velocity bump temp must not be a skippable const before the join label"
-
-    assert step =~ "plan_native_int_131 =",
-           "expected an assignment into the hoisted velocity bump temp"
 
     # Truthy phi shape `compare` can name an arm temp at the join the same way.
     assert step =~ "elmc_int_t plan_native_int_32 __attribute__((unused)) = 0;",

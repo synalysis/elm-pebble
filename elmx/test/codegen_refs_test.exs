@@ -87,6 +87,8 @@ defmodule Elmx.CodegenRefsTest do
                Elmx.Runtime.Json.Decode,
                Elmx.Runtime.Pebble,
                Elmx.Runtime.Pebble.Ui,
+               Elmx.Runtime.Pebble.WatchInfo,
+               Elmx.Runtime.Pebble.Alarm,
                Elmx.Runtime.Pebble.Dispatch,
                Elmx.Runtime.Http,
                Elmx.Runtime.Values,

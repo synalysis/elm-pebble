@@ -496,8 +496,9 @@ defmodule Elmc.PlanListSliceLowerTest do
     c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
     view_body = CCodegenExtract.fn_body(c, "elmc_fn_Main_view")
 
-    assert view_body =~ "elmc_string_append"
-    assert view_body =~ ~r/"Best /
+    assert view_body =~ "snprintf"
+    assert view_body =~ ~r/"Best %lld"/
+    refute view_body =~ "elmc_string_append"
     refute view_body =~ ~r/elmc_new_string\(&owned\[\d+\], "Best "\)/
   end
 
