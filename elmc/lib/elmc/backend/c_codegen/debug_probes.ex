@@ -1,7 +1,7 @@
 defmodule Elmc.Backend.CCodegen.DebugProbes do
   @moduledoc false
-  # Agent NDJSON / DataLogging probes were temporary instrumentation. They must
-  # never appear in generated C (debug or prod). Call sites remain as no-ops.
+  # Call-site agent probes stay disabled. Non-prod builds still emit the
+  # `elmc_agent_generated_probe` helper via `Emit.pebble_debug_probe_prelude/1`.
 
   alias Elmc.Backend.CCodegen.Types, as: Types
 

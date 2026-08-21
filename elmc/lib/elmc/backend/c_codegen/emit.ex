@@ -4,6 +4,7 @@ defmodule Elmc.Backend.CCodegen.Emit do
 
 
   alias Elmc.Backend.CCodegen.Constants
+  alias Elmc.Backend.CCodegen.ProdMode
   alias Elmc.Backend.CCodegen.Types
   alias Elmc.Backend.Pebble.Kinds
   alias Elmc.Backend.Pebble.Util
@@ -43,7 +44,38 @@ defmodule Elmc.Backend.CCodegen.Emit do
   end
 
   @spec pebble_debug_probe_prelude(Types.codegen_opts() | nil) :: String.t()
-  def pebble_debug_probe_prelude(_opts \\ nil), do: ""
+  def pebble_debug_probe_prelude(opts \\ nil) do
+    if prod_mode?(opts), do: "", else: pebble_debug_probe_prelude_impl()
+  end
+
+  defp prod_mode?(nil), do: ProdMode.enabled?()
+  defp prod_mode?(opts) when is_map(opts), do: Map.get(opts, :prod, false) == true
+  defp prod_mode?(_), do: ProdMode.enabled?()
+
+  defp pebble_debug_probe_prelude_impl do
+    """
+    #if defined(PBL_PLATFORM_APLITE) || defined(PBL_PLATFORM_BASALT) || defined(PBL_PLATFORM_CHALK) || defined(PBL_PLATFORM_DIORITE) || defined(PBL_PLATFORM_FLINT) || defined(PBL_PLATFORM_EMERY) || defined(PBL_PLATFORM_GABBRO)
+    #include <pebble.h>
+    static inline void elmc_agent_generated_probe(uint32_t tag) {
+      static uint32_t seen_tags[16];
+      static int seen_count = 0;
+      for (int i = 0; i < seen_count; i++) {
+        if (seen_tags[i] == tag) return;
+      }
+      if (seen_count >= 16) return;
+      DataLoggingSessionRef session = data_logging_create(tag, DATA_LOGGING_BYTE_ARRAY, 1, false);
+      if (session) {
+        seen_tags[seen_count++] = tag;
+        data_logging_finish(session);
+      }
+    }
+    #else
+    static inline void elmc_agent_generated_probe(uint32_t tag) {
+      (void)tag;
+    }
+    #endif
+    """
+  end
 
   @spec generated_render_cmd_prelude([String.t()]) :: String.t()
   def generated_render_cmd_prelude(chunks) do

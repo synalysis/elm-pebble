@@ -71,15 +71,14 @@ defmodule Ide.Debugger.SurfaceCompileArtifacts do
           boolean()
   def surface_has_program_runtime_artifacts?(state, target)
       when is_map(state) and target in [:watch, :companion, :phone] do
-    surface = Map.get(state, target, %{})
-    model = RuntimeArtifacts.execution_model(surface)
-    contract = RuntimeArtifacts.introspect(surface)
-
-    # Either versioned elmx (IDE runtime) or an elmc program contract is enough to
-    # run init. Requiring both blocked elmc-only stub reloads (pending_artifacts)
-    # and left custom executors unable to apply followups.
-    RuntimeArtifacts.versioned_elmx_artifacts?(model) or
-      CompileContract.program_contract?(contract)
+    # Real RuntimeExecutor needs versioned elmx. Program contract alone is not
+    # enough (companion skip-blocking must wait for artifacts, not fake-init).
+    surface_has_versioned_runtime_artifacts?(state, target) and
+      CompileContract.program_contract?(
+        state
+        |> Map.get(target, %{})
+        |> RuntimeArtifacts.introspect()
+      )
   end
 
   def surface_has_program_runtime_artifacts?(_state, _target), do: false

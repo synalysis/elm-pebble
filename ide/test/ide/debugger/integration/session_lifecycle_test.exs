@@ -3,6 +3,22 @@ defmodule Ide.Debugger.SessionLifecycleIntegrationTest do
   use Ide.DebuggerIntegrationCase, async: false
 
   test "start, reload, and reset maintain deterministic event sequencing" do
+    previous_debugger_config = Application.get_env(:ide, Debugger, [])
+
+    Application.put_env(
+      :ide,
+      Debugger,
+      Keyword.put(
+        previous_debugger_config,
+        :runtime_executor_module,
+        Ide.DebuggerIntegrationExecutors.InitNoFollowupRuntimeExecutor
+      )
+    )
+
+    on_exit(fn ->
+      Application.put_env(:ide, Debugger, previous_debugger_config)
+    end)
+
     slug = "debugger-test-#{System.unique_integer([:positive])}"
 
     assert {:ok, start_state} = Debugger.start_session(slug)
@@ -35,6 +51,22 @@ defmodule Ide.Debugger.SessionLifecycleIntegrationTest do
   end
 
   test "start_session restarts raw and semantic timelines" do
+    previous_debugger_config = Application.get_env(:ide, Debugger, [])
+
+    Application.put_env(
+      :ide,
+      Debugger,
+      Keyword.put(
+        previous_debugger_config,
+        :runtime_executor_module,
+        Ide.DebuggerIntegrationExecutors.InitNoFollowupRuntimeExecutor
+      )
+    )
+
+    on_exit(fn ->
+      Application.put_env(:ide, Debugger, previous_debugger_config)
+    end)
+
     slug = "debugger-restart-#{System.unique_integer([:positive])}"
 
     assert {:ok, _start_state} = Debugger.start_session(slug)
