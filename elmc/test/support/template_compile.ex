@@ -110,7 +110,17 @@ defmodule Elmc.TestSupport.TemplateCompile do
       pebble_int32: Keyword.get(opts, :pebble_int32, false)
     }
     |> Map.merge(
-      Map.new(Keyword.take(opts, [:plan_ir_strict, :direct_render_only, :prune_runtime, :codegen_profile, :emit_bytecode]))
+      Map.new(
+        Keyword.take(opts, [
+          :plan_ir_strict,
+          :direct_render_only,
+          :prune_runtime,
+          :prune_native_wrappers,
+          :codegen_profile,
+          :emit_bytecode,
+          :prod
+        ])
+      )
     )
   end
 

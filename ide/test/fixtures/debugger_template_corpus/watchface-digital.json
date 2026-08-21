@@ -60,6 +60,12 @@
       "args": [],
       "ctor": "Rectangular"
     },
+    "nextAlarmUtc": {
+      "args": [
+        -1
+      ],
+      "ctor": "Just"
+    },
     "runtime_view_output": [],
     "screenH": 168,
     "screenW": 144,
@@ -68,7 +74,8 @@
   "template": "watchface-digital",
   "timeline_init_messages": [
     "init:init",
-    "update:CurrentTimeString \"08:53\""
+    "update:CurrentTimeString \"08:53\"",
+    "update:GotNextAlarm -1"
   ],
   "view_tree_type": "windowStack",
   "watch_model": {
@@ -77,6 +84,12 @@
       "displayShape": {
         "args": [],
         "ctor": "Rectangular"
+      },
+      "nextAlarmUtc": {
+        "args": [
+          -1
+        ],
+        "ctor": "Just"
       },
       "screenH": 168,
       "screenW": 144,

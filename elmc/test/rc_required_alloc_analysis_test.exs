@@ -250,7 +250,9 @@ defmodule Elmc.RcRequiredAllocAnalysisTest do
 
     assert generated_c =~ "RC elmc_fn_Main_batteryAlert("
     assert body =~ "CHECK_RC(Rc)"
-    assert body =~ "elmc_as_int(owned[2])"
+    # Just payload stays in owned[]; native bool compares use plan_native_bool_*.
+    assert body =~ "elmc_as_int(owned[1])"
+    assert body =~ "plan_native_bool_"
     refute body =~ "Rc = ELMC_RC_INT_BOX("
     refute body =~ "Rc = ELMC_RC_BOOL_BOX("
     refute body =~ "ELMC_RELEASE(owned["

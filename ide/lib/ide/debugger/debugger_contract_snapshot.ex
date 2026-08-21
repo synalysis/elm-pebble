@@ -9,6 +9,7 @@ defmodule Ide.Debugger.DebuggerContractSnapshot do
   alias Ide.Debugger.SurfaceCompileArtifacts
   alias Ide.Debugger.RuntimeArtifacts
   alias Ide.Debugger.RuntimeExecutor
+  alias Ide.Debugger.RuntimeExecutorConfig
   alias Ide.Debugger.RuntimeModelNormalize
   alias Ide.Debugger.RuntimePreview
   alias Ide.Debugger.RuntimeSurfaces
@@ -254,9 +255,7 @@ defmodule Ide.Debugger.DebuggerContractSnapshot do
 
     state = put_in(state, [target, :shell], next_shell)
 
-    if not SurfaceCompileArtifacts.surface_has_program_runtime_artifacts?(state, target) do
-      pending_init_state(state, target)
-    else
+    if can_apply_runtime_init?(state, target) do
       execution_model =
         state
         |> Map.get(target, %{})
@@ -282,7 +281,16 @@ defmodule Ide.Debugger.DebuggerContractSnapshot do
       else
         record_failed_init(state, target, execution, ctx)
       end
+    else
+      pending_init_state(state, target)
     end
+  end
+
+  # Init when elmx/elmc program artifacts exist, or when tests inject a stub executor
+  # that does not need compiled runtime modules.
+  defp can_apply_runtime_init?(state, target) do
+    SurfaceCompileArtifacts.surface_has_program_runtime_artifacts?(state, target) or
+      RuntimeExecutorConfig.module() != Ide.Debugger.RuntimeExecutor
   end
 
   defp finish_successful_init(state, ei, target, _source, _rel_path, ctx, execution, model) do

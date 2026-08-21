@@ -61,7 +61,7 @@
       "font_size": 18,
       "h": 18,
       "kind": "text_label",
-      "text": "TZ: yes",
+      "text": "UTC",
       "text_align": "left",
       "text_color": null,
       "text_overflow": "word_wrap",
@@ -75,7 +75,7 @@
       "font_size": 18,
       "h": 18,
       "kind": "text_label",
-      "text": "UTC",
+      "text": "Alarm: none",
       "text_align": "left",
       "text_color": null,
       "text_overflow": "word_wrap",
@@ -98,7 +98,7 @@
       "y": 128
     }
   ],
-  "preview_ops_sha256": "f2b062dcab6706d0c800a6b82459f6529f64a46d8500046270be227d83eec2e6",
+  "preview_ops_sha256": "3d9952cb145774da0a071b4d214171f9f2a8faab601bb4e2d6641b7e586276a9",
   "render_tree": {
     "node_count": 10,
     "node_types": [
@@ -140,6 +140,12 @@
       ],
       "ctor": "Just"
     },
+    "nextAlarmUtc": {
+      "args": [
+        -1
+      ],
+      "ctor": "Just"
+    },
     "refreshes": 0,
     "runtime_view_output": [],
     "timeString": null,
@@ -161,6 +167,7 @@
     "init:init",
     "update:GotClock24h True",
     "update:GotDateTime { day = 27, dayOfWeek = Wednesday, hour = 8, minute = 53, month = 5, second = 0, utcOffsetMinutes = 0, year = 2026 }",
+    "update:GotNextAlarm -1",
     "update:GotTimezone \"UTC\"",
     "update:GotTimezoneSet True"
   ],
@@ -189,6 +196,12 @@
       "clock24h": {
         "args": [
           true
+        ],
+        "ctor": "Just"
+      },
+      "nextAlarmUtc": {
+        "args": [
+          -1
         ],
         "ctor": "Just"
       },

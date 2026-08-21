@@ -90,4 +90,56 @@ defmodule Elmx.ReachableModulesTest do
     resources = Enum.find(modules, &(&1.name == "Pebble.Speaker.Resources"))
     assert Enum.map(resources.declarations, & &1.name) == ["allSamples"]
   end
+
+  test "modules_for_emit keeps reachable bundled ui resource catalog under user_module_names filter" do
+    ir = %ElmEx.IR{
+      modules: [
+        %{
+          name: "Main",
+          declarations: [
+            %{
+              kind: :function,
+              name: "init",
+              args: [],
+              expr: %{
+                op: :qualified_call,
+                target: "Pebble.Ui.Resources.fontInfo",
+                args: [%{op: :constructor_ref, target: "Pebble.Ui.Resources.DefaultFont"}]
+              }
+            }
+          ]
+        },
+        %{
+          name: "Pebble.Ui.Resources",
+          declarations: [
+            %{
+              kind: :function,
+              name: "fontInfo",
+              args: [%{name: "font"}],
+              expr: %{
+                op: :record_literal,
+                fields: [%{name: "height", value: %{op: :int_literal, value: 18}}]
+              }
+            },
+            %{
+              kind: :function,
+              name: "orphan",
+              args: [],
+              expr: %{op: :int_literal, value: 0}
+            }
+          ]
+        }
+      ]
+    }
+
+    modules =
+      ReachableModules.modules_for_emit(ir, "Main",
+        user_module_names: ["Main"]
+      )
+
+    assert Enum.map(modules, & &1.name) == ["Main", "Pebble.Ui.Resources"]
+
+    resources = Enum.find(modules, &(&1.name == "Pebble.Ui.Resources"))
+    assert Enum.map(resources.declarations, & &1.name) == ["fontInfo"]
+  end
 end

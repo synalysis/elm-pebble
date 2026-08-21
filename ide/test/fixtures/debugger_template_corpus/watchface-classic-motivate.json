@@ -905,6 +905,10 @@
   },
   "runtime_model": {
     "caseColor": 192,
+    "colorMode": {
+      "args": [],
+      "ctor": "Color"
+    },
     "dateLabel": "27",
     "displayShape": {
       "args": [],
@@ -1376,6 +1380,10 @@
     "protocol_last_view_message": "SetQuoteTextColor Black",
     "runtime_model": {
       "caseColor": 192,
+      "colorMode": {
+        "args": [],
+        "ctor": "Color"
+      },
       "dateLabel": "27",
       "displayShape": {
         "args": [],

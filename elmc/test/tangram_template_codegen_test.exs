@@ -155,7 +155,8 @@ defmodule Elmc.TangramTemplateCodegenTest do
     minute_point =
       Elmc.Test.CCodegenExtract.fn_body(generated, "elmc_fn_Main_minutePoint")
 
-    assert minute_point =~ "elmc_record_new_values_take("
+    # Native-int Point records use elmc_record_new_values_ints (not boxed take).
+    assert minute_point =~ "elmc_record_new_values_ints("
     assert minute_point =~ "CATCH_BEGIN"
     assert Regex.scan(~r/return Rc;/, minute_point) |> length() == 1
 

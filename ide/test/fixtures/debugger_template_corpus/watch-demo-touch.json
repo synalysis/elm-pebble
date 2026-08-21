@@ -19,8 +19,8 @@
       "font_size": 18,
       "h": 18,
       "kind": "text_label",
-      "text": "Health demo",
-      "text_align": "center",
+      "text": "Touch",
+      "text_align": "left",
       "text_color": null,
       "text_overflow": "word_wrap",
       "w": 136,
@@ -33,55 +33,13 @@
       "font_size": 18,
       "h": 18,
       "kind": "text_label",
-      "text": "Now: 4200",
-      "text_align": "center",
+      "text": "Touch: yes",
+      "text_align": "left",
       "text_color": null,
       "text_overflow": "word_wrap",
       "w": 136,
       "x": 4,
-      "y": 28
-    },
-    {
-      "antialiased": true,
-      "compositing_mode": 0,
-      "font_size": 18,
-      "h": 18,
-      "kind": "text_label",
-      "text": "Today: 9100",
-      "text_align": "center",
-      "text_color": null,
-      "text_overflow": "word_wrap",
-      "w": 136,
-      "x": 4,
-      "y": 48
-    },
-    {
-      "antialiased": true,
-      "compositing_mode": 0,
-      "font_size": 18,
-      "h": 18,
-      "kind": "text_label",
-      "text": "HR: --",
-      "text_align": "center",
-      "text_color": null,
-      "text_overflow": "word_wrap",
-      "w": 136,
-      "x": 4,
-      "y": 68
-    },
-    {
-      "antialiased": true,
-      "compositing_mode": 0,
-      "font_size": 18,
-      "h": 18,
-      "kind": "text_label",
-      "text": "HRV: --",
-      "text_align": "center",
-      "text_color": null,
-      "text_overflow": "word_wrap",
-      "w": 136,
-      "x": 4,
-      "y": 88
+      "y": 32
     },
     {
       "antialiased": true,
@@ -90,12 +48,12 @@
       "h": 18,
       "kind": "text_label",
       "text": "Waiting",
-      "text_align": "center",
+      "text_align": "left",
       "text_color": null,
       "text_overflow": "word_wrap",
       "w": 136,
       "x": 4,
-      "y": 108
+      "y": 56
     },
     {
       "antialiased": true,
@@ -103,8 +61,22 @@
       "font_size": 18,
       "h": 18,
       "kind": "text_label",
-      "text": "Select: refresh",
-      "text_align": "center",
+      "text": "Tap / pan / swipe",
+      "text_align": "left",
+      "text_color": null,
+      "text_overflow": "word_wrap",
+      "w": 136,
+      "x": 4,
+      "y": 80
+    },
+    {
+      "antialiased": true,
+      "compositing_mode": 0,
+      "font_size": 18,
+      "h": 18,
+      "kind": "text_label",
+      "text": "Sel: recheck",
+      "text_align": "left",
       "text_color": null,
       "text_overflow": "word_wrap",
       "w": 136,
@@ -112,14 +84,12 @@
       "y": 128
     }
   ],
-  "preview_ops_sha256": "c329a45f066eae9192b4dcc2a3852e1cb8490999aabea3e1f5fe056455d2a260",
+  "preview_ops_sha256": "7af08319830d215fbaf35d52e664c899acd6ded1fb56270cc54172ba72148039",
   "render_tree": {
-    "node_count": 11,
+    "node_count": 9,
     "node_types": [
       "canvasLayer",
       "clear",
-      "text",
-      "text",
       "text",
       "text",
       "text",
@@ -131,29 +101,9 @@
     "root_type": "windowStack"
   },
   "runtime_model": {
-    "heartRate": {
-      "args": [],
-      "ctor": "Nothing"
-    },
-    "hrvPpiMs": {
-      "args": [],
-      "ctor": "Nothing"
-    },
-    "lastEvent": "Waiting",
+    "lastGesture": "Waiting",
     "refreshes": 0,
     "runtime_view_output": [],
-    "stepsNow": {
-      "args": [
-        4200
-      ],
-      "ctor": "Just"
-    },
-    "stepsToday": {
-      "args": [
-        9100
-      ],
-      "ctor": "Just"
-    },
     "supported": {
       "args": [
         true
@@ -162,7 +112,7 @@
     },
     "timeString": null
   },
-  "template": "watch-demo-health",
+  "template": "watch-demo-touch",
   "timeline_init_messages": [
     "init:init",
     "update:GotStepsNow 4200",
@@ -173,28 +123,8 @@
   "watch_model": {
     "debugger_init_complete": true,
     "runtime_model": {
-      "heartRate": {
-        "args": [],
-        "ctor": "Nothing"
-      },
-      "hrvPpiMs": {
-        "args": [],
-        "ctor": "Nothing"
-      },
-      "lastEvent": "Waiting",
+      "lastGesture": "Waiting",
       "refreshes": 0,
-      "stepsNow": {
-        "args": [
-          4200
-        ],
-        "ctor": "Just"
-      },
-      "stepsToday": {
-        "args": [
-          9100
-        ],
-        "ctor": "Just"
-      },
       "supported": {
         "args": [
           true
@@ -204,6 +134,6 @@
     },
     "runtime_view_output": [],
     "timeString": null,
-    "watch_profile_id": "basalt"
+    "watch_profile_id": "emery"
   }
 }

@@ -17,7 +17,7 @@ defmodule Elmx.Backend.CompileTimeCall do
     qualified_rewrite?(target) or pebble_rewrite_handled?(target)
   end
 
-  @bundled_emit_modules ~w(Pebble.Ui Pebble.Speaker.Resources)
+  @bundled_emit_modules ~w(Pebble.Ui Pebble.Ui.Resources Pebble.Speaker.Resources)
 
   @doc false
   @spec bundled_emit_module?(String.t()) :: boolean()

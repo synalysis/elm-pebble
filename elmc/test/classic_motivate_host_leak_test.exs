@@ -7,8 +7,7 @@ defmodule Elmc.ClassicMotivateHostLeakTest do
   use Elmc.TestSupport.PrimaryCodegenCase, async: false
 
   alias Elmc.Test.RcTrackHarness
-
-  @watch_dir Path.expand("../../ide/workspace_projects/classic-motivate/watch", __DIR__)
+  alias Elmc.TestSupport.TemplateCompile
 
   @compile_opts [
     codegen_profile: :size,
@@ -34,7 +33,11 @@ defmodule Elmc.ClassicMotivateHostLeakTest do
 
     File.rm_rf!(out_dir)
 
-    RcTrackHarness.compile!(@watch_dir, out_dir, @compile_opts)
+    assert {:ok, _} =
+             TemplateCompile.compile_watch_template(
+               "watchface_classic_motivate",
+               Keyword.merge(@compile_opts, out_dir: out_dir)
+             )
 
     generated = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
     assert generated =~ "elmc_as_int(fallback)"
