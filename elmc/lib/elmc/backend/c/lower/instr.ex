@@ -3736,7 +3736,7 @@ defmodule Elmc.Backend.C.Lower.Instr do
         kind == :filter ->
           pred_c =
             IntListFilterPred.c_expr(
-              Enum.at(parent.lambdas || [], loop_id),
+              Enum.at(parent.lambdas, loop_id),
               "direct_ilp_#{loop_id}->values[direct_ii_#{loop_id}]"
             )
 
@@ -3855,7 +3855,7 @@ defmodule Elmc.Backend.C.Lower.Instr do
   # Lambda `Param.type` is often nil (`List.map : (a -> b) -> …` erases `a`),
   # so a non-int use of the item param is also enough to drop the walk.
   defp list_walk_int_items?(parent, loop_id, kind) do
-    lambda = Enum.at((parent && parent.lambdas) || [], loop_id)
+    lambda = Enum.at(parent.lambdas, loop_id)
 
     case item_param_int_kind(lambda, kind) do
       :native_int -> true

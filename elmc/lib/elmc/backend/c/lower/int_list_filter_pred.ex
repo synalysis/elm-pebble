@@ -28,12 +28,12 @@ defmodule Elmc.Backend.C.Lower.IntListFilterPred do
   def c_expr(_, _), do: nil
 
   defp flat_instrs(%FunctionPlan{blocks: blocks}) do
-    Enum.flat_map(blocks || [], & &1.instrs)
+    Enum.flat_map(blocks, & &1.instrs)
   end
 
   defp published_bool_reg(%FunctionPlan{blocks: blocks}, instrs) do
     published =
-      Enum.find_value(blocks || [], fn block ->
+      Enum.find_value(blocks, fn block ->
         case block.terminator do
           {:ret, :fn_out} ->
             Enum.find_value(block.instrs, fn
@@ -198,7 +198,6 @@ defmodule Elmc.Backend.C.Lower.IntListFilterPred do
       case builtin do
         :basics_mod_by -> "elmc_int_mod_by(#{left_c}, #{right_c})"
         :basics_remainder_by -> "(#{left_c} == 0 ? 0 : #{right_c} % #{left_c})"
-        _ -> nil
       end
     end
   end

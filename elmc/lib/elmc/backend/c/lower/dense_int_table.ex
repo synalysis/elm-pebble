@@ -468,8 +468,6 @@ defmodule Elmc.Backend.C.Lower.DenseIntTable do
     end
   end
 
-  defp cell_from_reg(_plan, _reg), do: :error
-
   defp cell_from_instr(plan, instr) do
     case instr do
       %{op: :const_int} ->
