@@ -17,6 +17,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.GenericTargets do
   alias Elmc.Backend.CCodegen.Native.FunctionCall, as: NativeFunctionCall
   alias Elmc.Backend.CCodegen.Native.Int, as: NativeInt
   alias Elmc.Backend.CCodegen.Types
+  alias Elmc.Backend.Plan.ScalarKind
 
   @type target_set :: Types.function_target_set()
 
@@ -462,7 +463,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.GenericTargets do
 
         NativeFunctionCall.native_scalar_fn?(decl, mod, decl_map) and
           FunctionCallAbi.primary_lowered?(decl, mod, decl_map) and
-          NativeFunctionCall.return_kind(decl, mod, decl_map) in [:native_int, :native_bool] and
+          ScalarKind.native_return?(NativeFunctionCall.return_kind(decl, mod, decl_map)) and
           not NativeInt.inline_function_expr?(
             target_key,
             args,

@@ -7,6 +7,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.CommandDef do
   alias Elmc.Backend.CCodegen.DirectRender.Emit.DuplicateFieldHoists
   alias Elmc.Backend.CCodegen.DirectRender.Emit.RecordGetHoistPass
   alias Elmc.Backend.CCodegen.DirectRender.PlanStreamEmit
+  alias Elmc.Backend.Plan.StrictPolicy
   alias Elmc.Backend.CCodegen.DirectRender.RecordViewPeel
   alias Elmc.Backend.CCodegen.EnvBindings
   alias Elmc.Backend.CCodegen.FunctionEmit
@@ -170,8 +171,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.CommandDef do
           helper_defs <> boxed_body(c_name, arg_bindings, unused_casts, body_code, mod, decl)
 
         :error ->
-          raise ArgumentError,
-                "direct Pebble command generation failed for #{mod.name}.#{decl.name}"
+          raise ArgumentError, host_fallback_error(mod.name, decl.name)
       end
     after
       Process.delete(:elmc_direct_scene_boxed_argv)
@@ -335,8 +335,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.CommandDef do
             )
 
         :error ->
-          raise ArgumentError,
-                "direct Pebble command generation failed for #{mod.name}.#{decl.name}"
+          raise ArgumentError, host_fallback_error(mod.name, decl.name)
       end
     after
       Process.delete(:elmc_direct_scene_boxed_argv)
@@ -416,12 +415,27 @@ defmodule Elmc.Backend.CCodegen.DirectRender.CommandDef do
         case Host.direct_emit_expr(decl.expr, env, start_counter) do
           {:ok, body_code, counter} ->
             record_plan_stream_fallback(module_name, decl)
-            {:legacy, body_code, counter}
+
+            if host_expr_dispatch_allowed?() do
+              {:legacy, body_code, counter}
+            else
+              :error
+            end
 
           :error ->
             :error
         end
     end
+  end
+
+  defp host_expr_dispatch_allowed? do
+    opts = Process.get(:elmc_codegen_opts, %{})
+    not StrictPolicy.strict?(opts)
+  end
+
+  defp host_fallback_error(module_name, name) do
+    "direct Pebble command generation failed for #{module_name}.#{name} " <>
+      "(Plan stream and ListLoop both failed; Host ExprDispatch is not a production fallback)"
   end
 
   defp record_plan_stream_fallback(module_name, decl) do

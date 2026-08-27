@@ -24,6 +24,18 @@ defmodule Elmc.PlanConstructCatalogTest do
     assert result
     AstLint.run_source!(generated)
 
+    refute Enum.any?(
+             stream_fallback_diagnostics(result),
+             &(&1["code"] == "plan_stream_fallback" or &1[:code] == "plan_stream_fallback")
+           )
+
+    # Value-return Float ABI: boxed call sites assign `double tmp = fn(…)`,
+    # never `Rc = fn(&tmp, …)` against a `static double` prototype.
+    refute generated =~ ~r/Rc = elmc_fn_Main_identityFloat\(/
+    assert generated =~ "elmc_as_float(x)"
+    refute generated =~ ~r/elmc_as_int\(a\) \+ elmc_as_int\(b\)/
+    assert generated =~ "elmc_as_float(a)"
+
     decl_map = Elmc.Backend.CCodegen.IRQueries.function_decl_map(result.ir)
 
     for {{mod, name}, decl} <- decl_map,
@@ -55,6 +67,7 @@ defmodule Elmc.PlanConstructCatalogTest do
         { n : Int
         , flag : Bool
         , label : Maybe String
+        , f : Float
         }
 
 
@@ -67,6 +80,21 @@ defmodule Elmc.PlanConstructCatalogTest do
     identityInt : Int -> Int
     identityInt x =
         x
+
+
+    identityBool : Bool -> Bool
+    identityBool x =
+        x
+
+
+    identityFloat : Float -> Float
+    identityFloat x =
+        x
+
+
+    addFloat : Float -> Float -> Float
+    addFloat a b =
+        a + b
 
 
     clampN : Int -> Int
@@ -109,7 +137,7 @@ defmodule Elmc.PlanConstructCatalogTest do
 
 
     init _ =
-        ( { n = 0, flag = False, label = Nothing }
+        ( { n = 0, flag = False, label = Nothing, f = 0.0 }
         , Cmd.none
         )
 
@@ -117,7 +145,13 @@ defmodule Elmc.PlanConstructCatalogTest do
     update msg model =
         case msg of
             Tick ->
-                ( { model | n = identityInt (model.n + 1) }, Cmd.none )
+                ( { model
+                    | n = identityInt (model.n + 1)
+                    , flag = identityBool model.flag
+                    , f = addFloat (identityFloat model.f) 1.0
+                  }
+                , Cmd.none
+                )
 
             Set x ->
                 ( { model | n = clampN x }, Cmd.none )
@@ -129,5 +163,13 @@ defmodule Elmc.PlanConstructCatalogTest do
     subscriptions _ =
         Sub.none
     """
+  end
+
+  defp stream_fallback_diagnostics(result) do
+    Enum.concat([
+      Map.get(result, :layout_coercion_diagnostics, []),
+      Map.get(result, :informational_diagnostics, []),
+      Map.get(result, :blocking_diagnostics, [])
+    ])
   end
 end

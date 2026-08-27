@@ -115,7 +115,7 @@ defmodule Elmc.Backend.Plan.Lower.Function do
   end
 
   defp register_fusion_native_cache(%{fusion_c: c, native_scalar_return: kind} = plan, module_name)
-       when is_binary(c) and kind in [:native_int, :native_bool] do
+       when is_binary(c) and kind in [:native_int, :native_bool, :native_float] do
     NativeReturn.cache_scalar_return(module_name, plan.name, kind)
 
     if Map.get(plan, :native_scalar_value_return) == true do
@@ -171,6 +171,7 @@ defmodule Elmc.Backend.Plan.Lower.Function do
               |> Map.put(:stream_mode, true)
               |> EpilogueRelease.run()
               |> Optimize.run()
+              |> EpilogueRelease.run()
 
             case Verify.run(plan) do
               :ok -> {:ok, plan}
@@ -239,6 +240,7 @@ defmodule Elmc.Backend.Plan.Lower.Function do
               Builder.to_function_plan(b4)
               |> EpilogueRelease.run()
               |> Optimize.run()
+              |> EpilogueRelease.run()
               |> NativeReturn.annotate(decl)
 
             case Verify.run(plan) do

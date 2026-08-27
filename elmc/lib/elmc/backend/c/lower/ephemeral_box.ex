@@ -7,6 +7,7 @@ defmodule Elmc.Backend.C.Lower.EphemeralBox do
 
   @prefix_int "__ELMC_BOX_INT__"
   @prefix_bool "__ELMC_BOX_BOOL__"
+  @prefix_float "__ELMC_BOX_FLOAT__"
   @prefix_tuple2 "__ELMC_BOX_TUPLE2__"
   @prefix_tuple2_ints "__ELMC_BOX_TUPLE2_INTS__"
   @prefix_string "__ELMC_BOX_STRING__"
@@ -17,6 +18,9 @@ defmodule Elmc.Backend.C.Lower.EphemeralBox do
 
   @spec bool(String.t()) :: String.t()
   def bool(expr) when is_binary(expr), do: @prefix_bool <> @sep <> expr
+
+  @spec float(String.t()) :: String.t()
+  def float(expr) when is_binary(expr), do: @prefix_float <> @sep <> expr
 
   @spec tuple2(String.t(), String.t()) :: String.t()
   def tuple2(left, right) when is_binary(left) and is_binary(right),
@@ -37,6 +41,7 @@ defmodule Elmc.Backend.C.Lower.EphemeralBox do
   def ephemeral?(ref) when is_binary(ref) do
     String.starts_with?(ref, @prefix_int) or
       String.starts_with?(ref, @prefix_bool) or
+      String.starts_with?(ref, @prefix_float) or
       String.starts_with?(ref, @prefix_tuple2_ints) or
       String.starts_with?(ref, @prefix_tuple2) or
       String.starts_with?(ref, @prefix_string_len) or
@@ -168,6 +173,10 @@ defmodule Elmc.Backend.C.Lower.EphemeralBox do
       String.starts_with?(ref, @prefix_bool) ->
         [expr] = tail_parts(ref, @prefix_bool)
         {"elmc_new_bool", expr}
+
+      String.starts_with?(ref, @prefix_float) ->
+        [expr] = tail_parts(ref, @prefix_float)
+        {"elmc_new_float", expr}
 
       String.starts_with?(ref, @prefix_tuple2_ints) ->
         [left, right] = tail_parts(ref, @prefix_tuple2_ints)

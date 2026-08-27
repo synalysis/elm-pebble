@@ -146,7 +146,8 @@ defmodule Elmc.Backend.CCodegen.Native.Float do
   def expr?(%{op: :var, name: name}, env) when is_binary(name) or is_atom(name),
     do:
       is_binary(EnvBindings.native_float_binding(env, name)) or
-        is_binary(EnvBindings.native_int_binding(env, name))
+        is_binary(EnvBindings.native_int_binding(env, name)) or
+        EnvBindings.function_float_param?(env, name)
 
   def expr?(%{op: :field_access, arg: arg, field: field}, env),
     do: RecordFields.float_field?(env, arg, field)

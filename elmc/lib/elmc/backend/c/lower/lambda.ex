@@ -94,37 +94,68 @@ defmodule Elmc.Backend.C.Lower.Lambda do
       Frame.wrap_catch(lambda.rc_required and lambda.fallible, core)
       |> String.trim()
 
+    stream? = Map.get(lambda, :stream_mode) == true
+
+    void_params =
+      if stream? do
+        ["args", "argc", "captures", "capture_count", "writer"]
+      else
+        ["args", "argc", "captures", "capture_count"]
+      end
+
     void_casts =
-      ["args", "argc", "captures", "capture_count"]
+      void_params
       |> Enum.reject(&closure_param_used?(&1, body))
       |> Enum.map_join("\n  ", &"(void)#{&1};")
 
-    if lambda.rc_required do
-      """
-      static RC #{closure_name}(ElmcValue **out, ElmcValue **args, int argc, ElmcValue **captures, int capture_count) {
-        #{void_casts}
-        RC Rc = RC_SUCCESS;
-        #{Enum.join(letrec_decls, "\n  ")}
-        #{owned}
-        #{body}
-        #{Enum.join(letrec_free, "\n  ")}
-        #{epilogue}
-        return Rc;
-      }
-      """
-      |> String.trim()
-    else
-      """
-      static ElmcValue *#{closure_name}(ElmcValue **args, int argc, ElmcValue **captures, int capture_count) {
-        #{void_casts}
-        #{Enum.join(letrec_decls, "\n  ")}
-        #{owned}
-        #{body}
-        #{Enum.join(letrec_free, "\n  ")}
-        #{epilogue}
-      }
-      """
-      |> String.trim()
+    cond do
+      stream? ->
+        """
+        static RC #{closure_name}(ElmcValue **args, int argc, ElmcValue **captures, int capture_count, ElmcSceneWriter *writer) {
+          #{void_casts}
+          RC Rc = RC_SUCCESS;
+          #{Enum.join(letrec_decls, "\n  ")}
+          #{owned}
+        #if defined(PBL_PLATFORM_APLITE)
+          static ElmcPebbleDrawCmd scene_cmd;
+        #else
+          ElmcPebbleDrawCmd scene_cmd;
+        #endif
+          #{body}
+          #{Enum.join(letrec_free, "\n  ")}
+          #{epilogue}
+          return Rc;
+        }
+        """
+        |> String.trim()
+
+      lambda.rc_required ->
+        """
+        static RC #{closure_name}(ElmcValue **out, ElmcValue **args, int argc, ElmcValue **captures, int capture_count) {
+          #{void_casts}
+          RC Rc = RC_SUCCESS;
+          #{Enum.join(letrec_decls, "\n  ")}
+          #{owned}
+          #{body}
+          #{Enum.join(letrec_free, "\n  ")}
+          #{epilogue}
+          return Rc;
+        }
+        """
+        |> String.trim()
+
+      true ->
+        """
+        static ElmcValue *#{closure_name}(ElmcValue **args, int argc, ElmcValue **captures, int capture_count) {
+          #{void_casts}
+          #{Enum.join(letrec_decls, "\n  ")}
+          #{owned}
+          #{body}
+          #{Enum.join(letrec_free, "\n  ")}
+          #{epilogue}
+        }
+        """
+        |> String.trim()
     end
   end
 

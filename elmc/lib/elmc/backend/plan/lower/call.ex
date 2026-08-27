@@ -7,6 +7,9 @@ defmodule Elmc.Backend.Plan.Lower.Call do
   alias Elmc.Backend.Plan.Builder
   alias Elmc.Backend.Plan.Context
   alias Elmc.Backend.Plan.Lower.{CallCoerce, Cmd, Expr, Lambda, MaybeMap, Platform.Web, Port, Record, SpecialValues}
+  alias Elmc.Backend.Plan.Lower.Platform.Pebble, as: PebbleLower
+  alias Elmc.Backend.Plan.Lower.SpecialValues.Helpers
+  alias Elmc.Backend.Plan.Stream
   alias Elmc.Backend.Plan.Types
 
   @browser_cmd_kind_names %{
@@ -54,26 +57,219 @@ defmodule Elmc.Backend.Plan.Lower.Call do
         compile_ui_to_ui_node(args, ctx, b)
 
       true ->
-        compile_fn_call_default(expr, target, args, ctx, b)
+        case try_compile_ui_shell(target, args, ctx, b) do
+          {:ok, _, _} = ok ->
+            ok
+
+          :unsupported ->
+            cond do
+              Context.stream_mode?(ctx) and is_map(Stream.scene_tree_child(expr, ctx.module)) ->
+                Expr.compile(Stream.scene_tree_child(expr, ctx.module), ctx, b)
+
+              Context.stream_mode?(ctx) ->
+                case Elmc.Backend.Plan.Lower.Stream.List.try_compile_call(target, args, ctx, b) do
+                  {:ok, _, _} = ok -> ok
+                  :unsupported -> compile_fn_call_default(expr, target, args, ctx, b)
+                end
+
+              true ->
+                compile_fn_call_default(expr, target, args, ctx, b)
+            end
+        end
     end
   end
 
   @spec ui_to_ui_node?(String.t() | term()) :: boolean()
 
   defp ui_to_ui_node?(target) when is_binary(target),
-    do: target in ["Pebble.Ui.toUiNode", "PebbleUi.toUiNode", "Ui.toUiNode"]
+    do: target == "Pebble.Ui.toUiNode"
 
   defp ui_to_ui_node?(_), do: false
 
   @spec compile_ui_to_ui_node([Types.expr()], Context.t(), Builder.t()) :: Types.compile_result()
 
   defp compile_ui_to_ui_node([ops], ctx, b) do
-    with {:ok, [ops_reg], b1} <- Expr.compile_args([ops], ctx, b) do
-      Expr.compile_runtime_builtin(:retain, [ops_reg], ctx, b1)
+    if Context.stream_mode?(ctx) do
+      Expr.compile(ops, ctx, b)
+    else
+      with {:ok, [ops_reg], b1} <- Expr.compile_args([ops], ctx, b) do
+        Expr.compile_runtime_builtin(:retain, [ops_reg], ctx, b1)
+      end
     end
   end
 
   defp compile_ui_to_ui_node(_, _, _), do: :unsupported
+
+  @context_setting_kinds %{
+    "Pebble.Ui.strokeWidth" => :stroke_width,
+    "Pebble.Ui.antialiased" => :antialiased,
+    "Pebble.Ui.strokeColor" => :stroke_color,
+    "Pebble.Ui.fillColor" => :fill_color,
+    "Pebble.Ui.textColor" => :text_color,
+    "Pebble.Ui.compositingMode" => :compositing_mode
+  }
+
+  @spec try_compile_ui_shell(String.t() | term(), [Types.expr()], Context.t(), Builder.t()) ::
+          Types.compile_result()
+  def try_compile_ui_shell(target, args, ctx, b) when is_binary(target) and is_list(args) do
+    if Context.stream_mode?(ctx) do
+      case target do
+        "Pebble.Ui.group" -> compile_ui_group(args, ctx, b)
+        "Pebble.Ui.context" -> compile_ui_context(args, ctx, b)
+        "Pebble.Ui.text" -> compile_stream_ui_text(args, ctx, b)
+        "Pebble.Ui.textLabel" -> compile_stream_ui_text_label(args, ctx, b)
+        "Pebble.Ui.textInt" -> compile_stream_ui_text_int(args, ctx, b)
+        _ -> :unsupported
+      end
+    else
+      :unsupported
+    end
+  end
+
+  def try_compile_ui_shell(_, _, _, _), do: :unsupported
+
+  defp compile_stream_ui_text([font_id, options, bounds, value], ctx, b) do
+    PebbleLower.compile_render_text_cmd(
+      Helpers.forced_render_text_cmd_expr(Helpers.draw_kind(:text), [
+        font_id,
+        Helpers.field_access_expr(bounds, "x"),
+        Helpers.field_access_expr(bounds, "y"),
+        Helpers.field_access_expr(bounds, "w"),
+        Helpers.field_access_expr(bounds, "h"),
+        Helpers.text_options_special_arg(options)
+      ], value),
+      ctx,
+      b
+    )
+  end
+
+  defp compile_stream_ui_text(_, _, _), do: :unsupported
+
+  defp compile_stream_ui_text_label([font_id, pos, label], ctx, b) do
+    PebbleLower.compile_render_text_cmd(
+      Helpers.forced_render_text_cmd_expr(Helpers.draw_kind(:text_label_with_font), [
+        font_id,
+        Helpers.field_access_expr(pos, "x"),
+        Helpers.field_access_expr(pos, "y"),
+        %{op: :int_literal, value: 0},
+        %{op: :int_literal, value: 0},
+        %{op: :int_literal, value: 0}
+      ], label),
+      ctx,
+      b
+    )
+  end
+
+  defp compile_stream_ui_text_label(_, _, _), do: :unsupported
+
+  defp compile_stream_ui_text_int([font_id, pos, value], ctx, b) do
+    PebbleLower.compile_render_cmd(
+      %{
+        op: :render_cmd,
+        kind: Helpers.draw_kind_expr(:text_int_with_font),
+        params: [
+          font_id,
+          Helpers.field_access_expr(pos, "x"),
+          Helpers.field_access_expr(pos, "y"),
+          value
+        ]
+      },
+      ctx,
+      b
+    )
+  end
+
+  defp compile_stream_ui_text_int(_, _, _), do: :unsupported
+
+  defp compile_ui_group([inner], ctx, b) do
+    inner = expand_stream_alias(inner, ctx)
+
+    case peel_ui_context(inner) do
+      {:ok, settings, commands} ->
+        compile_ui_context([settings, commands], ctx, b)
+
+      :error ->
+        Expr.compile(inner, ctx, b)
+    end
+  end
+
+  defp compile_ui_group(_, _, _), do: :unsupported
+
+  defp compile_ui_context([settings, commands], ctx, b) do
+    with {:ok, _, b1} <- emit_stream_render_cmd(:push_context, [], ctx, b),
+         {:ok, _, b2} <- compile_context_settings(settings, ctx, b1),
+         {:ok, _, b3} <- Expr.compile(commands, ctx, b2),
+         {:ok, _, b4} <- emit_stream_render_cmd(:pop_context, [], ctx, b3) do
+      {:ok, :stream_void, b4}
+    else
+      _ -> :unsupported
+    end
+  end
+
+  defp compile_ui_context(_, _, _), do: :unsupported
+
+  defp compile_context_settings(%{op: :list_literal, items: items}, ctx, b) when is_list(items) do
+    Enum.reduce_while(items, {:ok, :stream_void, b}, fn item, {:ok, _, b_acc} ->
+      case compile_context_setting(item, ctx, b_acc) do
+        {:ok, _, b1} -> {:cont, {:ok, :stream_void, b1}}
+        other -> {:halt, other}
+      end
+    end)
+  end
+
+  defp compile_context_settings(_, _, _), do: :unsupported
+
+  defp compile_context_setting(%{op: op} = expr, ctx, b)
+       when op in [:call, :qualified_call] do
+    target = Map.get(expr, :target) || Map.get(expr, :name)
+    args = Map.get(expr, :args, [])
+
+    case {target, args} do
+      {name, [value]} when is_binary(name) ->
+        case Map.get(@context_setting_kinds, name) do
+          nil ->
+            :unsupported
+
+          kind ->
+            emit_stream_render_cmd(kind, [value], ctx, b)
+        end
+
+      _ ->
+        :unsupported
+    end
+  end
+
+  defp compile_context_setting(_, _, _), do: :unsupported
+
+  defp emit_stream_render_cmd(kind, params, ctx, b) when is_atom(kind) and is_list(params) do
+    Expr.compile(
+      %{op: :render_cmd, kind: Helpers.draw_kind_expr(kind), params: params},
+      ctx,
+      b
+    )
+  end
+
+  defp peel_ui_context(%{op: op, args: [settings, commands]} = expr)
+       when op in [:call, :qualified_call] do
+    target = Map.get(expr, :target) || Map.get(expr, :name)
+
+    if target == "Pebble.Ui.context" do
+      {:ok, settings, commands}
+    else
+      :error
+    end
+  end
+
+  defp peel_ui_context(_), do: :error
+
+  defp expand_stream_alias(%{op: :var, name: name} = expr, ctx) when is_binary(name) do
+    case Context.stream_alias(ctx, name) do
+      aliased when is_map(aliased) -> expand_stream_alias(aliased, ctx)
+      _ -> expr
+    end
+  end
+
+  defp expand_stream_alias(expr, _ctx), do: expr
 
   # Generic function application for value-level call targets.
   # Used by lowerer rewrites (compose, partials, etc) when applying a computed function value.
@@ -398,15 +594,18 @@ defmodule Elmc.Backend.Plan.Lower.Call do
       {:ok, decl} ->
         param_names = FunctionEmit.effective_decl_args(decl, module, ctx.decl_map) |> List.wrap()
 
-        if length(param_names) > 0 and length(args) < length(param_names) do
-          compile_curried_lambda(module, name, param_names, args, ctx, b)
-        else
-          with {:ok, arg_regs, b1} <- Expr.compile_args(args, ctx, b) do
-            {dest, b2} = dest_for_call(ctx, b1)
-            compile_fn_call_emit(module, name, arg_regs, dest, ctx, b2, args)
-          else
-            _ -> :unsupported
-          end
+        cond do
+          Context.stream_mode?(ctx) ->
+            case compile_stream_inline(decl, module, name, args, param_names, ctx, b) do
+              {:ok, :stream_void, b1} ->
+                {:ok, :stream_void, b1}
+
+              _ ->
+                compile_fn_call_or_curry(module, name, args, param_names, ctx, b)
+            end
+
+          true ->
+            compile_fn_call_or_curry(module, name, args, param_names, ctx, b)
         end
 
       :error ->
@@ -425,6 +624,74 @@ defmodule Elmc.Backend.Plan.Lower.Call do
               _ -> :unsupported
             end
         end
+    end
+  end
+
+  defp compile_fn_call_or_curry(module, name, args, param_names, ctx, b) do
+    cond do
+      length(param_names) > 0 and length(args) < length(param_names) ->
+        compile_curried_lambda(module, name, param_names, args, ctx, b)
+
+      true ->
+        with {:ok, arg_regs, b1} <- Expr.compile_args(args, ctx, b) do
+          {dest, b2} = dest_for_call(ctx, b1)
+          compile_fn_call_emit(module, name, arg_regs, dest, ctx, b2, args)
+        else
+          _ -> :unsupported
+        end
+    end
+  end
+
+  @spec compile_stream_inline(
+          map(),
+          String.t(),
+          String.t(),
+          [Types.expr()],
+          [String.t()],
+          Context.t(),
+          Builder.t()
+        ) :: Types.compile_result()
+  defp compile_stream_inline(decl, module, name, args, param_names, ctx, b) do
+    stack = Process.get(:elmc_stream_inline_stack, MapSet.new())
+    key = {module, name}
+
+    if MapSet.member?(stack, key) do
+      :unsupported
+    else
+      Process.put(:elmc_stream_inline_stack, MapSet.put(stack, key))
+
+      try do
+        arm_ctx = %{Context.for_branch_arm(ctx) | stream_mode: false}
+
+        with {:ok, arg_regs, b1} <- Expr.compile_args(args, arm_ctx, b) do
+          names = Context.unique_param_names(List.wrap(param_names))
+
+          if length(names) != length(arg_regs) do
+            :unsupported
+          else
+            callee_ctx = %{
+              ctx
+              | module: module,
+                function_name: name,
+                locals: %{},
+                stream_aliases: %{}
+            }
+
+            {ctx1, b2} =
+              names
+              |> Enum.zip(arg_regs)
+              |> Enum.reduce({callee_ctx, b1}, fn {param, reg}, {acc_ctx, acc_b} ->
+                {Context.put_local(acc_ctx, param, reg), Builder.bind_local(acc_b, param, reg)}
+              end)
+
+            Expr.compile(Map.get(decl, :expr), ctx1, b2)
+          end
+        else
+          _ -> :unsupported
+        end
+      after
+        Process.put(:elmc_stream_inline_stack, stack)
+      end
     end
   end
 

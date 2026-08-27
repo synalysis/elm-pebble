@@ -42,7 +42,7 @@ defmodule Elmc.Backend.Wasm.Lower.Instr do
   @spec publish_fn_out(Slots.t(), non_neg_integer(), emit_opts()) :: [binary()]
   def publish_fn_out(slots, reg, opts) when is_integer(reg) do
     rc? = Keyword.get(opts, :rc_required, true)
-    native? = Keyword.get(opts, :native_scalar_out) in [:native_int, :native_bool]
+    native? = Elmc.Backend.Plan.ScalarKind.native_return?(Keyword.get(opts, :native_scalar_out))
     raw? =
       raw_native_int_fn_out_reg?(opts, reg) or
         raw_scalar_int_operand?(opts, reg, MapSet.new())
@@ -55,6 +55,7 @@ defmodule Elmc.Backend.Wasm.Lower.Instr do
         builtin =
           case Keyword.get(opts, :native_scalar_out) do
             :native_bool -> :new_bool
+            :native_float -> :new_float
             _ -> :new_int
           end
 

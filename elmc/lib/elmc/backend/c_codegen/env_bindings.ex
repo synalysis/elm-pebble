@@ -165,6 +165,13 @@ defmodule Elmc.Backend.CCodegen.EnvBindings do
 
   def function_int_param?(_env, _name), do: false
 
+  @spec function_float_param?(Types.compile_env(), Types.binding_name()) :: boolean()
+  def function_float_param?(env, name) when is_binary(name) or is_atom(name) do
+    TypedReturn.expr_type(%{op: :var, name: name}, env) == "Float"
+  end
+
+  def function_float_param?(_env, _name), do: false
+
   @spec non_native_scalar_param?(Types.compile_env(), String.t()) :: boolean()
 
   defp non_native_scalar_param?(env, name) do

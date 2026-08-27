@@ -5,7 +5,7 @@ defmodule Elmc.Backend.Plan.Lower.Lambda do
 
   alias Elmc.Backend.CCodegen.{Host, TypeParsing}
   alias Elmc.Backend.CCodegen.VarAnalysis
-  alias Elmc.Backend.Plan.{Builder, Context, EpilogueRelease, Optimize, ParamFieldInference}
+  alias Elmc.Backend.Plan.{Builder, Context, EpilogueRelease, Optimize, ParamFieldInference, Verify}
   alias Elmc.Backend.Plan.Lower.{Expr, Tuple}
   alias Elmc.Backend.Plan.Types
 
@@ -33,6 +33,21 @@ defmodule Elmc.Backend.Plan.Lower.Lambda do
   end
 
   def compile_for_direct_call(_, _, _), do: :unsupported
+
+  @doc """
+  Lower a stream-mode lambda for `List.map` / `concatMap` / `indexedMap` foreach.
+
+  The nested plan pushes render cmds through `writer` instead of returning a
+  boxed value. Captures are borrowed (not retained) and passed each iteration.
+  """
+  @spec compile_for_stream_each(Types.ir_expr(), Context.t(), Builder.t()) ::
+          {:ok, non_neg_integer(), [Types.reg()], Builder.t()} | :unsupported
+  def compile_for_stream_each(%{op: :lambda, args: lambda_args, body: body}, ctx, b) do
+    {args, flat_body, tuple_prelude} = flatten_curried(lambda_args || [], body, [])
+    compile_lambda_direct(args, flat_body, tuple_prelude, ctx, b, stream?: true)
+  end
+
+  def compile_for_stream_each(_, _, _), do: :unsupported
 
   @partial_ops %{
     "__neq__" => :neq,
@@ -145,8 +160,10 @@ defmodule Elmc.Backend.Plan.Lower.Lambda do
 
   def compile_lambda(_, _, _, _, _), do: :unsupported
 
-  defp compile_lambda_direct(lambda_args, body, tuple_prelude, ctx, b)
+  defp compile_lambda_direct(lambda_args, body, tuple_prelude, ctx, b, opts \\ [])
        when is_list(lambda_args) and is_map(body) and is_list(tuple_prelude) do
+    stream? = Keyword.get(opts, :stream?, false)
+
     free_vars =
       body
       |> VarAnalysis.lambda_capture_free_vars(lambda_args)
@@ -157,35 +174,60 @@ defmodule Elmc.Backend.Plan.Lower.Lambda do
 
     used_letrec_refs = used_letrec_ref_names(body, ctx)
 
-    case compile_captures(free_vars, ctx, b) do
-      {:ok, capture_regs, b1} ->
-        {:ok, capture_regs2, b1a} = prepend_letrec_captures(ctx, b1, capture_regs, used_letrec_refs)
+    cond do
+      stream? and used_letrec_refs != [] ->
+        record_lambda_unsupported(ctx, :stream_letrec)
+        :unsupported
 
-        case lower_lambda_plan(free_vars, lambda_args, body, tuple_prelude, used_letrec_refs, ctx, b1a) do
-          {:ok, child_plan, b2} ->
-            idx = length(b2.lambdas)
-            b3 = %{b2 | lambdas: b2.lambdas ++ [child_plan]}
-            {:ok, idx, capture_regs2, b3}
+      true ->
+        case compile_captures(free_vars, ctx, b, retain?: not stream?) do
+          {:ok, capture_regs, b1} ->
+            {:ok, capture_regs2, b1a} =
+              if stream? do
+                {:ok, capture_regs, b1}
+              else
+                prepend_letrec_captures(ctx, b1, capture_regs, used_letrec_refs)
+              end
+
+            case lower_lambda_plan(
+                   free_vars,
+                   lambda_args,
+                   body,
+                   tuple_prelude,
+                   used_letrec_refs,
+                   ctx,
+                   b1a,
+                   stream?
+                 ) do
+              {:ok, child_plan, b2} ->
+                idx = length(b2.lambdas)
+                b3 = %{b2 | lambdas: b2.lambdas ++ [child_plan]}
+                {:ok, idx, capture_regs2, b3}
+
+              _ ->
+                record_lambda_unsupported(ctx, :lower_lambda_plan)
+                :unsupported
+            end
 
           _ ->
-            record_lambda_unsupported(ctx, :lower_lambda_plan)
+            record_lambda_unsupported(ctx, :compile_captures)
             :unsupported
         end
-
-      _ ->
-        record_lambda_unsupported(ctx, :compile_captures)
-        :unsupported
     end
   end
 
-  defp compile_captures(vars, ctx, b) do
-    capture_ctx = %{ctx | dest_stack: [:scratch], function_tail: false}
+  defp compile_captures(vars, ctx, b, opts) do
+    retain? = Keyword.get(opts, :retain?, true)
+    capture_ctx = %{ctx | dest_stack: [:scratch], function_tail: false, stream_mode: false}
 
     Enum.reduce_while(vars, {:ok, [], b}, fn name, {:ok, acc, b_acc} ->
       case Expr.compile(%{op: :var, name: name}, capture_ctx, b_acc) do
-        {:ok, reg, b1} when is_integer(reg) ->
+        {:ok, reg, b1} when is_integer(reg) and retain? ->
           {:ok, owned, b2} = Expr.compile_runtime_builtin(:retain, [reg], capture_ctx, b1)
           {:cont, {:ok, acc ++ [owned], b2}}
+
+        {:ok, reg, b1} when is_integer(reg) ->
+          {:cont, {:ok, acc ++ [reg], b1}}
 
         _ ->
           {:halt, :unsupported}
@@ -267,7 +309,16 @@ defmodule Elmc.Backend.Plan.Lower.Lambda do
     {:ok, dest, b2}
   end
 
-  defp lower_lambda_plan(free_vars, lambda_args, body, tuple_prelude, used_letrec_refs, parent_ctx, b) do
+  defp lower_lambda_plan(
+         free_vars,
+         lambda_args,
+         body,
+         tuple_prelude,
+         used_letrec_refs,
+         parent_ctx,
+         b,
+         stream?
+       ) do
     letrec_cap_params =
       used_letrec_refs
       |> Enum.with_index()
@@ -340,7 +391,8 @@ defmodule Elmc.Backend.Plan.Lower.Lambda do
         lambda_plan: true,
         local_types: Map.merge(parent_ctx.local_types || %{}, lambda_param_types),
         inferred_param_fields: inferred_param_fields,
-        curried_type_offset: (parent_ctx.curried_type_offset || 0) + length(lambda_args)
+        curried_type_offset: (parent_ctx.curried_type_offset || 0) + length(lambda_args),
+        stream_mode: stream?
       )
 
     child_b =
@@ -357,12 +409,41 @@ defmodule Elmc.Backend.Plan.Lower.Lambda do
         child_b
       end
 
+    {child_ctx, child_b} =
+      if stream? do
+        preload_lambda_params(all_params, child_ctx, child_b)
+      else
+        {child_ctx, child_b}
+      end
+
     with {:ok, child_ctx1, child_b1} <-
            bind_tuple_prelude(tuple_prelude, letrec_cap_params ++ free_vars, lambda_args, child_ctx, child_b),
          {:ok, child_ctx2, child_b2} <-
            bind_letrec_value_captures(used_letrec_refs, capturing_values?, child_ctx1, child_b1) do
-      case Expr.compile(body, child_ctx2, child_b2) do
-        {:ok, result_reg, b1} ->
+      case {stream?, Expr.compile(body, child_ctx2, child_b2)} do
+        {true, {:ok, :stream_void, b1}} ->
+          b2 = if parent_ctx.rc_required, do: Builder.catch_end(b1), else: b1
+          b3 = Builder.emit_ret(b2, :stream_void)
+
+          child_plan =
+            Builder.to_function_plan(b3)
+            |> Map.put(:stream_mode, true)
+            |> EpilogueRelease.run()
+            |> Optimize.run()
+            |> EpilogueRelease.run()
+            |> Map.put(:lambda_arg_count, length(lambda_args))
+            |> Map.put(:letrec_capture_indices, letrec_capture_indices)
+
+          case Verify.run(child_plan) do
+            :ok ->
+              {:ok, child_plan, b}
+
+            _ ->
+              record_lambda_unsupported(parent_ctx, :stream_verify)
+              :unsupported
+          end
+
+        {false, {:ok, result_reg, b1}} ->
           {b2, ret_reg} = finalize_lambda_result(b1, result_reg, parent_ctx.rc_required)
           b3 = if parent_ctx.rc_required, do: Builder.catch_end(b2), else: b2
           b4 = Builder.emit_ret(b3, ret_reg)
@@ -378,6 +459,7 @@ defmodule Elmc.Backend.Plan.Lower.Lambda do
             Builder.to_function_plan(b4)
             |> EpilogueRelease.run()
             |> Optimize.run()
+            |> EpilogueRelease.run()
             |> Map.put(:lambda_arg_count, length(lambda_args))
             |> Map.put(:letrec_capture_indices, letrec_capture_indices)
 
@@ -392,6 +474,15 @@ defmodule Elmc.Backend.Plan.Lower.Lambda do
         record_lambda_body_unsupported(child_ctx, body)
         :unsupported
     end
+  end
+
+  defp preload_lambda_params(params, ctx, b) do
+    params
+    |> Enum.with_index()
+    |> Enum.reduce({ctx, b}, fn {name, idx}, {ctx_acc, b_acc} ->
+      {reg, b1} = Builder.get_or_load_param(b_acc, idx, name)
+      {Context.put_local(ctx_acc, name, reg), Builder.bind_local(b1, name, reg)}
+    end)
   end
 
   defp bind_letrec_value_captures(_names, false, ctx, b), do: {:ok, ctx, b}

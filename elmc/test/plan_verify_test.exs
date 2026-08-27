@@ -272,6 +272,190 @@ defmodule Elmc.PlanVerifyTest do
     assert {:error, :read_after_consume, _} = Verify.run(plan)
   end
 
+  test "phi merge intersects must-own and still catches a one-arm leak" do
+    then_prod =
+      %Types{
+        id: 0,
+        op: :const_int,
+        dest: 1,
+        args: %{value: 1},
+        effects: Types.owned_effects(1),
+        block_id: 1,
+        span: nil
+      }
+
+    else_prod =
+      %Types{
+        id: 1,
+        op: :const_int,
+        dest: 2,
+        args: %{value: 2},
+        effects: Types.owned_effects(2),
+        block_id: 2,
+        span: nil
+      }
+
+    leak_prod =
+      %Types{
+        id: 2,
+        op: :const_int,
+        dest: 4,
+        args: %{value: 9},
+        effects: Types.owned_effects(4),
+        block_id: 2,
+        span: nil
+      }
+
+    phi =
+      %Types{
+        id: 3,
+        op: :phi,
+        dest: 3,
+        args: %{then: 1, else: 2, cond: 0},
+        effects: %{
+          produces: {:owned, 3},
+          consumes: [1, 2],
+          borrows: [],
+          fallible: false
+        },
+        block_id: 3,
+        span: nil
+      }
+
+    balanced = %FunctionPlan{
+      name: "phi_ok",
+      module: "Main",
+      params: [],
+      rc_required: true,
+      reg_count: 4,
+      entry_block: 0,
+      blocks: [
+        %Block{id: 0, instrs: [], terminator: {:br_if, 1, 2, 0}},
+        %Block{id: 1, instrs: [then_prod], terminator: {:br, 3}},
+        %Block{id: 2, instrs: [else_prod], terminator: {:br, 3}},
+        %Block{id: 3, instrs: [phi], terminator: {:ret, 3}}
+      ]
+    }
+
+    assert :ok = Verify.run(balanced)
+
+    leaked = %FunctionPlan{
+      balanced
+      | name: "phi_one_arm_leak",
+        reg_count: 5,
+        blocks: [
+          %Block{id: 0, instrs: [], terminator: {:br_if, 1, 2, 0}},
+          %Block{id: 1, instrs: [then_prod], terminator: {:br, 3}},
+          %Block{id: 2, instrs: [else_prod, leak_prod], terminator: {:br, 3}},
+          %Block{id: 3, instrs: [phi], terminator: {:ret, 3}}
+        ]
+    }
+
+    assert {:error, :leaked_owned_regs, meta} = Verify.run(leaked)
+    assert 4 in meta[:regs]
+
+    released = EpilogueRelease.run(leaked)
+    merge_block = Enum.find(released.blocks, &(&1.id == 3))
+    assert Enum.any?(merge_block.instrs, &(&1.op == :release and &1.args.reg == 4))
+    assert :ok = Verify.run(released)
+  end
+
+  test "EpilogueRelease frees a pre-split owned reg on the arm that does not consume it" do
+    kind =
+      %Types{
+        id: 0,
+        op: :const_int,
+        dest: 1,
+        args: %{value: 1},
+        effects: Types.owned_effects(1),
+        block_id: 0,
+        span: nil
+      }
+
+    consume =
+      %Types{
+        id: 1,
+        op: :call_fn,
+        dest: 2,
+        args: %{args: [1]},
+        effects: %{
+          produces: {:owned, 2},
+          consumes: [1],
+          borrows: [],
+          fallible: false
+        },
+        block_id: 2,
+        span: nil
+      }
+
+    plan = %FunctionPlan{
+      name: "one_arm_consume",
+      module: "Main",
+      params: [],
+      rc_required: true,
+      reg_count: 3,
+      entry_block: 0,
+      blocks: [
+        %Block{id: 0, instrs: [kind], terminator: {:br_if, 1, 2, 0}},
+        %Block{id: 1, instrs: [], terminator: {:br, 3}},
+        %Block{id: 2, instrs: [consume], terminator: {:br, 3}},
+        %Block{id: 3, instrs: [], terminator: {:ret, :stream_void}}
+      ]
+    }
+
+    assert {:error, :leaked_owned_regs, meta} = Verify.run(plan)
+    assert 1 in meta[:regs]
+
+    released = EpilogueRelease.run(plan)
+    then_block = Enum.find(released.blocks, &(&1.id == 1))
+    else_block = Enum.find(released.blocks, &(&1.id == 2))
+
+    assert Enum.any?(then_block.instrs, &(&1.op == :release and &1.args.reg == 1))
+    refute Enum.any?(else_block.instrs, &(&1.op == :release and &1.args.reg == 1))
+    assert :ok = Verify.run(released)
+  end
+
+  test "rejects borrow of a register owned on only one incoming edge" do
+    then_prod =
+      %Types{
+        id: 0,
+        op: :const_int,
+        dest: 1,
+        args: %{value: 1},
+        effects: Types.owned_effects(1),
+        block_id: 1,
+        span: nil
+      }
+
+    borrow =
+      %Types{
+        id: 1,
+        op: :maybe_is_nothing,
+        dest: nil,
+        args: %{reg: 1},
+        effects: %{produces: nil, consumes: [], borrows: [1], fallible: false},
+        block_id: 3,
+        span: nil
+      }
+
+    plan = %FunctionPlan{
+      name: "asymmetric_borrow",
+      module: "Main",
+      params: [],
+      rc_required: true,
+      reg_count: 2,
+      entry_block: 0,
+      blocks: [
+        %Block{id: 0, instrs: [], terminator: {:br_if, 1, 2, 0}},
+        %Block{id: 1, instrs: [then_prod], terminator: {:br, 3}},
+        %Block{id: 2, instrs: [], terminator: {:br, 3}},
+        %Block{id: 3, instrs: [borrow], terminator: {:ret, :fn_out}}
+      ]
+    }
+
+    assert {:error, :asymmetric_owned_borrow, _} = Verify.run(plan)
+  end
+
   test "rejects mid-branch fn_out write then later produce" do
     pub =
       %Types{

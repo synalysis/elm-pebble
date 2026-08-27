@@ -10,6 +10,7 @@ defmodule Elmc.Backend.CCodegen.Native.UsageAnalysis do
   alias Elmc.Backend.CCodegen.Native.Int, as: NativeInt
   alias Elmc.Backend.CCodegen.Native.IntCase, as: NativeIntCase
   alias Elmc.Backend.CCodegen.Types
+  alias Elmc.Backend.Plan.ScalarKind
 
   @list_unary_container_runtime_functions ~w(
     elmc_list_length
@@ -378,7 +379,7 @@ defmodule Elmc.Backend.CCodegen.Native.UsageAnalysis do
       decl ->
         arg_kinds = native_function_arg_kinds_for_analysis(decl, elem(target, 0), decl_map)
 
-        if Enum.any?(arg_kinds, &(&1 in [:native_int, :native_bool])) do
+        if Enum.any?(arg_kinds, &ScalarKind.native_return?/1) do
           {args, arg_kinds}
         else
           nil

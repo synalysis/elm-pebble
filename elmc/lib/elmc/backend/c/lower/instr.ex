@@ -31,6 +31,7 @@ defmodule Elmc.Backend.C.Lower.Instr do
   alias Elmc.Backend.CCodegen.Util
   alias Elmc.Backend.Plan
   alias Elmc.Backend.Plan.RuntimeBuiltins
+  alias Elmc.Backend.Plan.ScalarKind
   alias Elmc.Backend.Plan.Types
   alias Elmc.Backend.SizeProfile
 
@@ -265,6 +266,9 @@ defmodule Elmc.Backend.C.Lower.Instr do
 
       :list_walk_map ->
         emit_list_walk_map(instr, slots, rc?, dest, opts)
+
+      :stream_for_each ->
+        emit_stream_for_each(instr, slots, opts)
 
       :pipe_apply_repeat ->
         emit_pipe_apply_repeat(instr, slots, rc?, dest, opts)
@@ -888,12 +892,40 @@ defmodule Elmc.Backend.C.Lower.Instr do
   @spec emit_native_bool_store(Types.reg(), String.t(), String.t(), keyword()) :: String.t()
 
   defp emit_native_bool_store(dest_reg, _dest, expr, opts) do
-    name = Map.fetch!(Keyword.get(opts, :native_bool_regs, %{}), dest_reg)
+    name =
+      Map.get(Keyword.get(opts, :native_bool_regs, %{}), dest_reg) ||
+        ScalarKind.local_name(:bool, dest_reg)
 
     if MapSet.member?(Keyword.get(opts, :native_bool_mutable_regs, MapSet.new()), dest_reg) do
       "#{name} = #{expr};"
     else
-      "const bool #{name} = #{expr};"
+      "const #{ScalarKind.c_type(:bool)} #{name} = #{expr};"
+    end
+  end
+
+  defp emit_native_float_store(dest_reg, _dest, expr, opts) do
+    name =
+      Map.get(Keyword.get(opts, :native_float_regs, %{}), dest_reg) ||
+        ScalarKind.local_name(:float, dest_reg)
+
+    if MapSet.member?(Keyword.get(opts, :native_float_mutable_regs, MapSet.new()), dest_reg) do
+      "#{name} = #{expr};"
+    else
+      "const #{ScalarKind.c_type(:float)} #{name} = #{expr};"
+    end
+  end
+
+  defp float_operand_ref(reg, slots, opts) when is_integer(reg) do
+    cond do
+      MapSet.member?(Keyword.get(opts, :native_float_only_regs, MapSet.new()), reg) ->
+        Map.get(Keyword.get(opts, :native_float_regs, %{}), reg) ||
+          ScalarKind.local_name(:float, reg)
+
+      MapSet.member?(Keyword.get(opts, :native_int_only_regs, MapSet.new()), reg) ->
+        "(double)(#{int_operand_ref(reg, slots, opts)})"
+
+      true ->
+        "#{ScalarKind.peel(:float)}(#{slot_ref(reg, slots, opts)})"
     end
   end
 
@@ -958,8 +990,8 @@ defmodule Elmc.Backend.C.Lower.Instr do
       compare_mode == :float_boxed ->
         compare_native_c_expr(
           kind,
-          compare_float_boxed_operand(left_reg, slots, opts),
-          compare_float_boxed_operand(right_reg, slots, opts)
+          float_operand_ref(left_reg, slots, opts),
+          float_operand_ref(right_reg, slots, opts)
         )
 
       kind in [:eq, :neq] ->
@@ -974,23 +1006,6 @@ defmodule Elmc.Backend.C.Lower.Instr do
           int_operand_ref(left_reg, slots, opts),
           int_operand_ref(right_reg, slots, opts)
         )
-    end
-  end
-
-  @spec compare_float_boxed_operand(Types.reg(), Types.slot_map(), keyword()) :: String.t()
-
-  defp compare_float_boxed_operand(reg, slots, opts) do
-    native_int_only = Keyword.get(opts, :native_int_only_regs, MapSet.new())
-
-    cond do
-      MapSet.member?(native_int_only, reg) ->
-        "(double)(#{int_operand_ref(reg, slots, opts)})"
-
-      true ->
-        case peel_native_int_operand_ref(reg, slots, opts) do
-          native when is_binary(native) -> "(double)(#{native})"
-          _ -> "elmc_as_float(#{slot_ref(reg, slots, opts)})"
-        end
     end
   end
 
@@ -1293,9 +1308,6 @@ defmodule Elmc.Backend.C.Lower.Instr do
     float_mode? = Map.get(args, :mode) == :float or op == :fdiv
 
     if float_mode? do
-      left = slot_ref(lhs, slots, opts)
-      right = slot_ref(rhs, slots, opts)
-
       op_sym =
         case op do
           :add -> "+"
@@ -1306,8 +1318,14 @@ defmodule Elmc.Backend.C.Lower.Instr do
           other -> raise ArgumentError, "unknown boxed_binop #{inspect(other)}"
         end
 
-      float_expr = "elmc_as_float(#{left}) #{op_sym} elmc_as_float(#{right})"
-      rc_assign(rc?, dest, "elmc_new_float", [float_expr])
+      float_expr = "#{float_operand_ref(lhs, slots, opts)} #{op_sym} #{float_operand_ref(rhs, slots, opts)}"
+
+      if is_integer(dest_reg) and
+           MapSet.member?(Keyword.get(opts, :native_float_only_regs, MapSet.new()), dest_reg) do
+        emit_native_float_store(dest_reg, dest, float_expr, opts)
+      else
+        rc_assign(rc?, dest, ScalarKind.box(:float), [float_expr])
+      end
     else
       if native_int_binop_operands?(lhs, rhs, opts) do
         op_sym =
@@ -1737,9 +1755,20 @@ defmodule Elmc.Backend.C.Lower.Instr do
     end
   end
 
-  defp emit_call_runtime(%{args: %{builtin: :new_float, literal: value}}, _slots, rc?, dest, _opts)
+  defp emit_call_runtime(
+         %{dest: dest_reg, args: %{builtin: :new_float, literal: value}},
+         _slots,
+         rc?,
+         dest,
+         opts
+       )
        when is_number(value) do
-    rc_assign(rc?, dest, "elmc_new_float", [float_literal_c(value)])
+    if is_integer(dest_reg) and
+         MapSet.member?(Keyword.get(opts, :native_float_only_regs, MapSet.new()), dest_reg) do
+      emit_native_float_store(dest_reg, dest, float_literal_c(value), opts)
+    else
+      rc_assign(rc?, dest, ScalarKind.box(:float), [float_literal_c(value)])
+    end
   end
 
   defp emit_call_runtime(%{args: %{builtin: :new_char, literal: value}}, _slots, rc?, dest, _opts)
@@ -2368,7 +2397,7 @@ defmodule Elmc.Backend.C.Lower.Instr do
           {setup, args_var, argc} = FunctionCallAbi.emit_argv_setup("plan", c_args)
           {"", "#{args_var}, #{argc}", prep ++ [setup], cleanup}
 
-        native_ret in [:native_int, :native_bool, :native_int_pair, :native_list_int_pair] and decl ->
+        ScalarKind.native_or_pair?(native_ret) and decl ->
           kinds = NativeFunctionCall.arg_kinds(decl, mod, decl_map)
           c_args = call_arg_refs(args, slots, opts, kinds, borrows)
           finalize_materialized_call_args("", c_args, opts)
@@ -2559,7 +2588,7 @@ defmodule Elmc.Backend.C.Lower.Instr do
     !!(
       is_map(decl) and
         is_nil(fusion_arg_kinds) and
-        native_ret not in [:native_int, :native_bool, :native_int_pair] and
+        not ScalarKind.native_or_pair?(native_ret) and
         (plan_boxed_direct_call_abi?(decl, module, decl_map) or
            RcRequired.rc_required?(module, Map.get(decl, :name)))
     )
@@ -2724,6 +2753,9 @@ defmodule Elmc.Backend.C.Lower.Instr do
   defp plan_rc_call_arg_ref(reg, :native_bool, _boxed_rc?, slots, opts),
     do: bool_operand_ref(reg, slots, opts)
 
+  defp plan_rc_call_arg_ref(reg, :native_float, _boxed_rc?, slots, opts),
+    do: float_operand_ref(reg, slots, opts)
+
   defp plan_rc_call_arg_ref(reg, :boxed, _boxed_rc?, slots, opts),
     do: boxed_value_ref(reg, slots, opts)
 
@@ -2781,7 +2813,7 @@ defmodule Elmc.Backend.C.Lower.Instr do
       fusion_native_rc_callee?(c_name, fusion_arg_kinds) ->
         rc_call(true, if(dest == "*out", do: "out", else: dest), c_name, call_arg_s)
 
-      native_ret in [:native_int, :native_bool, :native_int_pair, :native_list_int_pair] ->
+      ScalarKind.native_or_pair?(native_ret) ->
         emit_native_scalar_fn_call(native_ret, true, dest, dest_reg, c_name, call_arg_s, opts, callee)
 
       NativeReturn.value_return?(callee) ->
@@ -2816,7 +2848,7 @@ defmodule Elmc.Backend.C.Lower.Instr do
       fusion_native_rc_callee?(c_name, fusion_arg_kinds) ->
         rc_callee_from_value_return(dest, dest_ref, c_name, call_arg_s, dest_reg: dest_reg)
 
-      native_ret in [:native_int, :native_bool, :native_int_pair, :native_list_int_pair] ->
+      ScalarKind.native_or_pair?(native_ret) ->
         emit_native_scalar_fn_call(native_ret, false, dest, dest_reg, c_name, call_arg_s, opts, callee)
 
       NativeReturn.value_return?(callee) ->
@@ -2842,7 +2874,7 @@ defmodule Elmc.Backend.C.Lower.Instr do
     decl_map = Process.get(:elmc_program_decls, %{})
 
     is_map(decl) and
-      native_ret not in [:native_int, :native_bool, :native_int_pair, :native_list_int_pair] and
+      not ScalarKind.native_or_pair?(native_ret) and
       FunctionCallAbi.argv_abi?(decl, module, decl_map) and
       not RcRequired.rc_required?(module, Map.get(decl, :name))
   end
@@ -3185,6 +3217,112 @@ defmodule Elmc.Backend.C.Lower.Instr do
     end
   end
 
+  defp emit_native_scalar_fn_call(:native_float, rc?, dest, dest_reg, c_name, call_arg_s, opts, callee) do
+    value_return? = NativeReturn.value_return?(callee)
+    native_only = Keyword.get(opts, :native_float_only_regs, MapSet.new())
+    rc_callee? = native_scalar_rc_abi?(callee, opts)
+    boxed_rc_out? = rc_callee? and not value_return? and callee_boxed_rc_out?(callee)
+
+    cond do
+      value_return? and is_integer(dest_reg) and MapSet.member?(native_only, dest_reg) ->
+        emit_native_float_store(
+          dest_reg,
+          ScalarKind.local_name(:float, dest_reg),
+          "#{c_name}(#{call_arg_s})",
+          opts
+        )
+
+      value_return? and dest == "*out" and not rc? ->
+        "return #{c_name}(#{call_arg_s});"
+
+      not value_return? and not rc_callee? ->
+        emit_boxed_value_callee_as_native_float(rc?, dest, dest_reg, c_name, call_arg_s, opts)
+
+      boxed_rc_out? and is_integer(dest_reg) and MapSet.member?(native_only, dest_reg) ->
+        tmp = "plan_box_out_#{dest_reg}"
+
+        """
+        ElmcValue *#{tmp} = NULL;
+        #{rc_assign_call(rc?, c_name, tmp, call_arg_s)}
+        #{emit_native_float_store(dest_reg, ScalarKind.local_name(:float, dest_reg), "#{ScalarKind.peel(:float)}(#{tmp})", opts)}
+        elmc_release(#{tmp});
+        """
+        |> String.trim()
+
+      is_integer(dest_reg) and MapSet.member?(native_only, dest_reg) ->
+        local = ScalarKind.local_name(:float, dest_reg)
+
+        mutable? =
+          MapSet.member?(Keyword.get(opts, :native_float_mutable_regs, MapSet.new()), dest_reg)
+
+        if mutable? do
+          rc_scalar_assign_call(rc?, c_name, local, call_arg_s, fallback: ScalarKind.zero(:float))
+        else
+          """
+          #{ScalarKind.c_type(:float)} #{local} = #{ScalarKind.zero(:float)};
+          #{rc_scalar_assign_call(rc?, c_name, local, call_arg_s, fallback: ScalarKind.zero(:float))}
+          """
+          |> String.trim()
+        end
+
+      true ->
+        emit_native_float_fn_call_boxed(rc?, dest, dest_reg, c_name, call_arg_s, callee, opts)
+    end
+  end
+
+  defp emit_boxed_value_callee_as_native_float(rc?, dest, dest_reg, c_name, call_arg_s, opts) do
+    native_only = Keyword.get(opts, :native_float_only_regs, MapSet.new())
+
+    cond do
+      is_integer(dest_reg) and MapSet.member?(native_only, dest_reg) ->
+        tmp = "plan_box_float_#{dest_reg}"
+
+        """
+        ElmcValue *#{tmp} = #{c_name}(#{call_arg_s});
+        #{emit_native_float_store(dest_reg, ScalarKind.local_name(:float, dest_reg), "#{ScalarKind.peel(:float)}(#{tmp})", opts)}
+        elmc_release(#{tmp});
+        """
+        |> String.trim()
+
+      true ->
+        assign_value_return(rc?, dest, "#{c_name}(#{call_arg_s})")
+    end
+  end
+
+  defp emit_native_float_fn_call_boxed(rc?, dest, dest_reg, c_name, call_arg_s, {mod, name} = callee, opts) do
+    tmp = "plan_call_float_#{dest_reg}"
+
+    box = fn float_src ->
+      box_native_scalar_into_dest(rc?, dest, ScalarKind.box(:float), float_src, opts)
+    end
+
+    cond do
+      NativeReturn.value_return?(callee) ->
+        """
+        #{ScalarKind.c_type(:float)} #{tmp} = #{c_name}(#{call_arg_s});
+        #{box.(tmp)}
+        """
+        |> String.trim()
+
+      not RcRequired.rc_required?(mod, name) ->
+        """
+        ElmcValue *#{tmp}_box = #{c_name}(#{call_arg_s});
+        #{ScalarKind.c_type(:float)} #{tmp} = #{ScalarKind.peel(:float)}(#{tmp}_box);
+        elmc_release(#{tmp}_box);
+        #{box.(tmp)}
+        """
+        |> String.trim()
+
+      true ->
+        """
+        #{ScalarKind.c_type(:float)} #{tmp} = #{ScalarKind.zero(:float)};
+        #{rc_scalar_assign_call(rc?, c_name, tmp, call_arg_s, fallback: ScalarKind.zero(:float))}
+        #{box.(tmp)}
+        """
+        |> String.trim()
+    end
+  end
+
   defp list_out_ptr("out"), do: "out"
   defp list_out_ptr(dest) when is_binary(dest), do: "&#{dest}"
 
@@ -3197,14 +3335,14 @@ defmodule Elmc.Backend.C.Lower.Instr do
   defp native_scalar_rc_abi?({mod, name} = callee, opts) do
     RcRequired.rc_required?(mod, name) or
       native_scalar_rc_out_callee?(callee, opts) or
-      (NativeReturn.cached_kind(callee) in [:native_int, :native_bool] and
+      (      ScalarKind.native_return?(NativeReturn.cached_kind(callee)) and
          not NativeReturn.value_return?(callee))
   end
 
   defp native_scalar_rc_out_callee?({mod, name}, opts) do
     case Keyword.get(opts, :parent_plan) do
       %{rc_required: true, module: ^mod, name: ^name} ->
-        NativeReturn.cached_kind({mod, name}) in [:native_int, :native_bool] and
+        ScalarKind.native_return?(NativeReturn.cached_kind({mod, name})) and
           not NativeReturn.value_return?({mod, name})
 
       _ ->
@@ -3519,18 +3657,26 @@ defmodule Elmc.Backend.C.Lower.Instr do
 
   defp emit_render_text_cmd_scene_push(kind, params, text, slots, opts) do
     kind_s = platform_kind_c(kind)
-    text_ref = slot_ref(text, slots, opts)
+    text_src = boxed_string_c_arg(text, slots, opts)
     writer = Keyword.get(opts, :scene_writer_var, "writer")
 
     """
-  elmc_draw_cmd_init(&scene_cmd, #{kind_s});
-  scene_cmd.text = #{text_ref};
-  #{emit_text_cmd_int_assignments(params, slots, opts)}
-  if (elmc_scene_writer_push_cmd(#{writer}, &scene_cmd) != 0) {
-    Rc = RC_ERR_OUT_OF_MEMORY;
-    CHECK_RC(Rc);
-  }
-  """
+    elmc_draw_cmd_init(&scene_cmd, #{kind_s});
+    #{emit_text_cmd_int_assignments(params, slots, opts)}
+    {
+      const char *direct_text = #{text_src};
+      int direct_text_i = 0;
+      while (direct_text[direct_text_i] && direct_text_i < 63) {
+        scene_cmd.text[direct_text_i] = direct_text[direct_text_i];
+        direct_text_i++;
+      }
+      scene_cmd.text[direct_text_i] = '\\0';
+    }
+    if (elmc_scene_writer_push_cmd(#{writer}, &scene_cmd) != 0) {
+      Rc = RC_ERR_OUT_OF_MEMORY;
+      CHECK_RC(Rc);
+    }
+    """
     |> String.trim()
   end
 
@@ -3561,6 +3707,124 @@ defmodule Elmc.Backend.C.Lower.Instr do
     if (elmc_scene_writer_push_cmd(#{writer}, &scene_cmd) != 0) {
       Rc = RC_ERR_OUT_OF_MEMORY;
       CHECK_RC(Rc);
+    }
+    """
+    |> String.trim()
+  end
+
+  @spec emit_stream_for_each(map(), Types.slot_map(), keyword()) :: String.t()
+  defp emit_stream_for_each(%{args: args}, slots, opts) do
+    case Map.get(args, :lambda_idx) do
+      idx when is_integer(idx) ->
+        emit_stream_for_each_loop(args, slots, opts, stream_for_each_lambda_call(args, idx, slots, opts))
+
+      _ ->
+        emit_stream_for_each_loop(args, slots, opts, stream_for_each_named_call(args, opts))
+    end
+  end
+
+  defp stream_for_each_named_call(args, _opts) do
+    callee = "#{Util.module_fn_name(args.module, args.name)}_commands_append"
+    prefix = List.wrap(Map.get(args, :prefix, []))
+    indexed? = Map.get(args, :indexed?, false)
+    argc = length(prefix) + if(indexed?, do: 2, else: 1)
+
+    %{
+      argc: argc,
+      prefix_regs: prefix,
+      call: fn argv, writer -> "#{callee}(#{argv}, #{argc}, #{writer})" end,
+      caps_decl: ""
+    }
+  end
+
+  defp stream_for_each_lambda_call(args, idx, slots, opts) do
+    parent = Keyword.get(opts, :parent_plan)
+    closure = Elmc.Backend.C.Lower.Lambda.closure_fn_name(parent, idx)
+    captures = List.wrap(Map.get(args, :captures, Map.get(args, :prefix, [])))
+    indexed? = Map.get(args, :indexed?, false)
+    argc = if indexed?, do: 2, else: 1
+    cap_count = length(captures)
+    id = args.list
+
+    {caps_decl, caps_arg, caps_count_arg} =
+      if cap_count == 0 do
+        {"", "NULL", "0"}
+      else
+        cap_refs = Enum.map(captures, &slot_ref(&1, slots, opts))
+        init = Enum.join(cap_refs, ", ")
+
+        {
+          "ElmcValue *stream_fe_caps_#{id}[#{cap_count}] = { #{init} };\n",
+          "stream_fe_caps_#{id}",
+          Integer.to_string(cap_count)
+        }
+      end
+
+    %{
+      argc: argc,
+      prefix_regs: [],
+      call: fn argv, writer ->
+        "#{closure}(#{argv}, #{argc}, #{caps_arg}, #{caps_count_arg}, #{writer})"
+      end,
+      caps_decl: caps_decl
+    }
+  end
+
+  defp emit_stream_for_each_loop(args, slots, opts, call) do
+    list_ref = slot_ref(args.list, slots, opts)
+    indexed? = Map.get(args, :indexed?, false)
+    writer = Keyword.get(opts, :scene_writer_var, "writer")
+    id = args.list
+    argc = call.argc
+    prefix_refs = Enum.map(call.prefix_regs, &slot_ref(&1, slots, opts))
+    prefix_init = Enum.map_join(prefix_refs, ", ", & &1)
+    prefix_comma = if prefix_refs == [], do: "", else: "#{prefix_init}, "
+
+    idx_decl =
+      if indexed? do
+        """
+        ElmcValue *stream_fe_idx_#{id} = NULL;
+        Rc = elmc_new_int(&stream_fe_idx_#{id}, stream_fe_i_#{id});
+        CHECK_RC(Rc);
+        """
+      else
+        ""
+      end
+
+    idx_arg = if indexed?, do: "stream_fe_idx_#{id}, ", else: ""
+    idx_rel = if indexed?, do: "elmc_release(stream_fe_idx_#{id});\n        stream_fe_idx_#{id} = NULL;", else: ""
+    idx_inc = if indexed?, do: "stream_fe_i_#{id}++;\n        ", else: ""
+    idx_init = if indexed?, do: "int stream_fe_i_#{id} = 0;\n    ", else: ""
+    invoke = call.call.("stream_fe_argv_#{id}", writer)
+
+    """
+    #{call.caps_decl}#{idx_init}if (#{list_ref} && #{list_ref}->tag == ELMC_TAG_INT_LIST) {
+      ElmcIntListPayload *stream_fe_ilp_#{id} = (ElmcIntListPayload *)#{list_ref}->payload;
+      int stream_fe_len_#{id} = stream_fe_ilp_#{id} ? stream_fe_ilp_#{id}->length : 0;
+      for (int stream_fe_ii_#{id} = 0;
+           Rc == RC_SUCCESS && stream_fe_ii_#{id} < stream_fe_len_#{id};
+           stream_fe_ii_#{id}++) {
+        ElmcValue *stream_fe_item_#{id} = NULL;
+        Rc = elmc_new_int(&stream_fe_item_#{id}, stream_fe_ilp_#{id}->values[stream_fe_ii_#{id}]);
+        CHECK_RC(Rc);
+        #{if indexed?, do: "stream_fe_i_#{id} = stream_fe_ii_#{id};\n        ", else: ""}#{idx_decl}
+        ElmcValue *stream_fe_argv_#{id}[#{argc}] = { #{prefix_comma}#{idx_arg}stream_fe_item_#{id} };
+        Rc = #{invoke};
+        CHECK_RC(Rc);
+        #{idx_rel}
+        elmc_release(stream_fe_item_#{id});
+      }
+    } else {
+      ElmcValue *stream_fe_cursor_#{id} = #{list_ref};
+      while (Rc == RC_SUCCESS && stream_fe_cursor_#{id} && stream_fe_cursor_#{id}->tag == ELMC_TAG_LIST && stream_fe_cursor_#{id}->payload != NULL) {
+        ElmcCons *stream_fe_node_#{id} = (ElmcCons *)stream_fe_cursor_#{id}->payload;
+        #{idx_decl}
+        ElmcValue *stream_fe_argv_#{id}[#{argc}] = { #{prefix_comma}#{idx_arg}stream_fe_node_#{id}->head };
+        Rc = #{invoke};
+        CHECK_RC(Rc);
+        #{idx_rel}
+        #{idx_inc}stream_fe_cursor_#{id} = stream_fe_node_#{id}->tail;
+      }
     }
     """
     |> String.trim()
@@ -4556,12 +4820,14 @@ defmodule Elmc.Backend.C.Lower.Instr do
   end
 
   defp native_int_regs_c_operand_ref(_reg, name, opts) when is_binary(name) do
-    if boxed_direct_scene_argv_active?(opts) do
+    if boxed_direct_scene_argv_active?(opts) and not c_int_literal?(name) do
       "elmc_as_int_number(#{name})"
     else
       name
     end
   end
+
+  defp c_int_literal?(name) when is_binary(name), do: String.match?(name, ~r/^-?\d+$/)
 
   @spec native_int_param_c_arg(non_neg_integer(), keyword()) :: String.t()
 
@@ -4616,9 +4882,15 @@ defmodule Elmc.Backend.C.Lower.Instr do
     native_bool_only = Keyword.get(opts, :native_bool_only_regs, MapSet.new())
     native_bool_regs = Keyword.get(opts, :native_bool_regs, %{})
 
+    native_float_only = Keyword.get(opts, :native_float_only_regs, MapSet.new())
+    native_float_regs = Keyword.get(opts, :native_float_regs, %{})
+
     cond do
       MapSet.member?(native_bool_only, reg) or Map.has_key?(native_bool_regs, reg) ->
         EphemeralBox.bool(phi_truthy_arm_expr(reg, slots, opts))
+
+      MapSet.member?(native_float_only, reg) or Map.has_key?(native_float_regs, reg) ->
+        EphemeralBox.float(float_operand_ref(reg, slots, opts))
 
       true ->
         boxed_value_ref_from_native_int_or_defining(reg, slots, opts)
@@ -5695,7 +5967,7 @@ defmodule Elmc.Backend.C.Lower.Instr do
 
   defp emit_op_only(%Types{op: :publish, dest: :fn_out, args: %{source: reg}}, slots, opts)
        when is_integer(reg) do
-    if Keyword.get(opts, :native_scalar_out) in [:native_int, :native_bool, :native_int_pair] do
+    if ScalarKind.native_or_pair?(Keyword.get(opts, :native_scalar_out)) do
       ""
     else
       publish_fn_out(reg, slots, opts)
@@ -5707,7 +5979,12 @@ defmodule Elmc.Backend.C.Lower.Instr do
   defp emit_op_only(%Types{op: :load_param, dest: dest_reg, args: %{index: index}}, slots, opts) do
     borrow_param_regs = Keyword.get(opts, :borrow_param_regs, %{})
 
-    if Map.has_key?(borrow_param_regs, dest_reg) do
+    native_scalar_dest? =
+      MapSet.member?(Keyword.get(opts, :native_int_only_regs, MapSet.new()), dest_reg) or
+        MapSet.member?(Keyword.get(opts, :native_bool_only_regs, MapSet.new()), dest_reg) or
+        MapSet.member?(Keyword.get(opts, :native_float_only_regs, MapSet.new()), dest_reg)
+
+    if Map.has_key?(borrow_param_regs, dest_reg) and not native_scalar_dest? do
       ""
     else
       emit_load_param_copy(%Types{op: :load_param, dest: dest_reg, args: %{index: index}}, slots, opts)
@@ -5732,6 +6009,9 @@ defmodule Elmc.Backend.C.Lower.Instr do
     native_bool_only? =
       MapSet.member?(Keyword.get(opts, :native_bool_only_regs, MapSet.new()), dest_reg)
 
+    native_float_only? =
+      MapSet.member?(Keyword.get(opts, :native_float_only_regs, MapSet.new()), dest_reg)
+
     case Keyword.get(opts, :closure_mode) do
       %{capture_count: cap_n} when is_integer(cap_n) ->
         c_arg =
@@ -5748,6 +6028,14 @@ defmodule Elmc.Backend.C.Lower.Instr do
 
           native_bool_only? ->
             emit_native_bool_store(dest_reg, "plan_native_bool_#{dest_reg}", "elmc_as_bool(#{c_arg})", opts)
+
+          native_float_only? ->
+            emit_native_float_store(
+              dest_reg,
+              ScalarKind.local_name(:float, dest_reg),
+              "#{ScalarKind.peel(:float)}(#{c_arg})",
+              opts
+            )
 
           rc? and index < cap_n ->
             retain_into_owned(dest, c_arg)
@@ -5773,6 +6061,14 @@ defmodule Elmc.Backend.C.Lower.Instr do
               if param_kind == :native_bool, do: c_arg, else: "elmc_as_bool(#{c_arg})"
 
             emit_native_bool_store(dest_reg, "plan_native_bool_#{dest_reg}", peel, opts)
+
+          native_float_only? ->
+            peel =
+              if param_kind == :native_float,
+                do: c_arg,
+                else: "#{ScalarKind.peel(:float)}(#{c_arg})"
+
+            emit_native_float_store(dest_reg, ScalarKind.local_name(:float, dest_reg), peel, opts)
 
           param_kind == :native_int and Map.has_key?(native_int_direct_regs(opts), dest_reg) ->
             ""

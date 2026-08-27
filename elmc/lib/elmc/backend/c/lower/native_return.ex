@@ -7,9 +7,11 @@ defmodule Elmc.Backend.C.Lower.NativeReturn do
   alias Elmc.Backend.CCodegen.Native.FunctionCall, as: NativeFunctionCall
   alias Elmc.Backend.CCodegen.Native.Int, as: NativeInt
   alias Elmc.Backend.CCodegen.Types
+  alias Elmc.Backend.Plan.ScalarKind
   alias Elmc.Backend.Plan.Types.{Block, FunctionPlan}
 
-  @type scalar_kind :: :native_int | :native_bool | :native_int_pair | :native_list_int_pair
+  @type scalar_kind ::
+          :native_int | :native_bool | :native_float | :native_int_pair | :native_list_int_pair
 
   @value_return_forbidden_ops MapSet.new([
                                 :call_runtime,
@@ -129,7 +131,7 @@ defmodule Elmc.Backend.C.Lower.NativeReturn do
     end
   end
 
-  defp annotate_kind(plan, kind) when kind in [:native_int, :native_bool] do
+  defp annotate_kind(plan, kind) when kind in [:native_int, :native_bool, :native_float] do
     ret_reg = ret_source_reg(plan)
 
     if is_integer(ret_reg) and native_return_reg?(plan, ret_reg, kind) do
@@ -155,20 +157,22 @@ defmodule Elmc.Backend.C.Lower.NativeReturn do
   def dual_out?(_), do: false
 
   @spec c_out_type(scalar_kind()) :: String.t()
-  def c_out_type(:native_int), do: "elmc_int_t *out"
-  def c_out_type(:native_bool), do: "bool *out"
+  def c_out_type(kind) when kind in [:native_int, :native_bool, :native_float],
+    do: ScalarKind.c_out_type(kind)
+
   def c_out_type(:native_int_pair), do: "elmc_int_t *out0, elmc_int_t *out1"
   def c_out_type(:native_list_int_pair), do: "ElmcValue **out_list, elmc_int_t *out_int"
 
   @spec c_value_type(scalar_kind()) :: String.t()
-  def c_value_type(:native_int), do: "elmc_int_t"
-  def c_value_type(:native_bool), do: "bool"
+  def c_value_type(kind) when kind in [:native_int, :native_bool, :native_float],
+    do: ScalarKind.c_type(ScalarKind.from_native_return(kind))
+
   def c_value_type(:native_int_pair), do: "elmc_int_t"
   def c_value_type(:native_list_int_pair), do: "ElmcValue *"
 
   @spec ret_reg_allows_native?(FunctionPlan.t(), non_neg_integer(), scalar_kind()) :: boolean()
   def ret_reg_allows_native?(%FunctionPlan{} = plan, reg, kind)
-      when is_integer(reg) and kind in [:native_int, :native_bool] do
+      when is_integer(reg) and kind in [:native_int, :native_bool, :native_float] do
     native_return_reg?(plan, reg, kind)
   end
 
@@ -230,7 +234,7 @@ defmodule Elmc.Backend.C.Lower.NativeReturn do
 
   @spec native_scalar_value_return?(FunctionPlan.t()) :: boolean()
   def native_scalar_value_return?(%FunctionPlan{native_scalar_return: kind} = plan)
-      when kind in [:native_int, :native_bool] do
+      when kind in [:native_int, :native_bool, :native_float] do
     CLowerFunction.plan_emit_owned_slot_count(plan) == 0 and plan_instrs_value_pure?(plan)
   end
 
@@ -252,7 +256,13 @@ defmodule Elmc.Backend.C.Lower.NativeReturn do
 
   @spec cache_scalar_return(String.t(), String.t(), scalar_kind()) :: :ok
   def cache_scalar_return(module, name, kind)
-      when kind in [:native_int, :native_bool, :native_int_pair, :native_list_int_pair] do
+      when kind in [
+             :native_int,
+             :native_bool,
+             :native_float,
+             :native_int_pair,
+             :native_list_int_pair
+           ] do
     cache_kind(nil, module, name, kind)
     :ok
   end
@@ -306,6 +316,9 @@ defmodule Elmc.Backend.C.Lower.NativeReturn do
 
       "Bool" ->
         :native_bool
+
+      "Float" ->
+        :native_float
 
       ret ->
         cond do
@@ -456,6 +469,10 @@ defmodule Elmc.Backend.C.Lower.NativeReturn do
     native_bool_value_reg?(plan, reg) and native_bool_return_uses_only?(plan, reg)
   end
 
+  defp native_return_reg?(plan, reg, :native_float) do
+    native_float_value_reg?(plan, reg) and native_float_return_uses_only?(plan, reg)
+  end
+
   defp native_int_value_reg?(plan, reg), do: native_int_value_reg?(plan, reg, MapSet.new())
 
   defp native_int_value_reg?(plan, reg, visited) when is_integer(reg) do
@@ -532,8 +549,65 @@ defmodule Elmc.Backend.C.Lower.NativeReturn do
       [%{op: :const_int, args: %{bool_lit: true}} | _] ->
         true
 
+      [%{op: :load_param, args: %{index: idx}} | _] when is_integer(idx) ->
+        native_scalar_param?(plan, idx, :bool)
+
       [%{op: :phi, args: %{then: then_r, else: else_r}}] ->
         native_bool_value_reg?(plan, then_r) and native_bool_value_reg?(plan, else_r)
+
+      _ ->
+        false
+    end
+  end
+
+  defp native_float_value_reg?(plan, reg), do: native_float_value_reg?(plan, reg, MapSet.new())
+
+  defp native_float_value_reg?(plan, reg, visited) when is_integer(reg) do
+    if MapSet.member?(visited, reg) do
+      false
+    else
+      visited = MapSet.put(visited, reg)
+
+      case CLowerFunction.all_defining_instrs(plan, reg) do
+        [%{op: :call_runtime, args: %{builtin: :new_float}} | _] ->
+          true
+
+        [%{op: :boxed_binop, args: args} | _] ->
+          Map.get(args, :mode) == :float or Map.get(args, :op) == :fdiv
+
+        [%{op: :load_param, args: %{index: idx}} | _] when is_integer(idx) ->
+          native_scalar_param?(plan, idx, :float)
+
+        [%{op: :call_fn, args: %{module: mod, name: name}} | _] ->
+          value_return?({mod, name}) or cached_kind({mod, name}) == :native_float
+
+        [%{op: :call_runtime, args: %{builtin: :retain, args: [src]}} | _] when is_integer(src) ->
+          native_float_value_reg?(plan, src, visited)
+
+        [%{op: :transfer, args: %{source: src}} | _] when is_integer(src) ->
+          native_float_value_reg?(plan, src, visited)
+
+        [%{op: :phi, args: %{then: then_r, else: else_r}}] ->
+          native_float_value_reg?(plan, then_r, visited) and
+            native_float_value_reg?(plan, else_r, visited)
+
+        _ ->
+          false
+      end
+    end
+  end
+
+  defp native_float_value_reg?(_, _, _), do: false
+
+  defp native_scalar_param?(%FunctionPlan{module: module, name: name}, idx, kind)
+       when is_integer(idx) and kind in [:int, :bool, :float] do
+    decl_map = Process.get(:elmc_program_decls, %{})
+
+    case Map.get(decl_map, {module, name}) do
+      %{type: type} when is_binary(type) ->
+        ScalarKind.from_elm_type(
+          Enum.at(Host.function_arg_types(type), idx) |> Host.normalize_type_name()
+        ) == kind
 
       _ ->
         false
@@ -549,6 +623,14 @@ defmodule Elmc.Backend.C.Lower.NativeReturn do
   end
 
   defp native_bool_return_uses_only?(plan, reg) do
+    plan
+    |> CLowerFunction.plan_use_refs(reg, Process.get(:elmc_program_decls, %{}), MapSet.new())
+    |> Enum.map(fn {kind, _} -> kind end)
+    |> Enum.uniq()
+    |> Enum.all?(&(&1 in [:native_operand, :publish_fn_out]))
+  end
+
+  defp native_float_return_uses_only?(plan, reg) do
     plan
     |> CLowerFunction.plan_use_refs(reg, Process.get(:elmc_program_decls, %{}), MapSet.new())
     |> Enum.map(fn {kind, _} -> kind end)

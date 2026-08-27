@@ -93,7 +93,7 @@ defmodule Elmc.Backend.Plan.Lower.If do
 
   defp compile_stream_branches_cfg(cond, then_expr, else_expr, ctx, b) do
     saved_pending = Map.get(b, :pending_merge_block)
-    cond_ctx = Context.for_branch_arm(ctx)
+    cond_ctx = %{Context.for_branch_arm(ctx) | stream_mode: false}
 
     with {:ok, cond_reg, b1} <- Expr.compile(cond, cond_ctx, b),
          then_id = b1.next_block,
@@ -107,9 +107,8 @@ defmodule Elmc.Backend.Plan.Lower.If do
          {:ok, :stream_void, else_exit, b_else} <-
            compile_stream_branch(else_expr, ctx, b_then_done, else_id),
          b_else_done = Builder.patch_terminator(b_else, else_exit, {:br, merge_id}),
-         b_merge = Builder.begin_block(b_else_done, merge_id),
-         b_out = Builder.emit_ret(b_merge, :stream_void) do
-      {:ok, :stream_void, %{b_out | pending_merge_block: saved_pending}}
+         b_merge = Builder.begin_block(b_else_done, merge_id) do
+      {:ok, :stream_void, %{b_merge | pending_merge_block: saved_pending}}
     else
       _ -> :unsupported
     end

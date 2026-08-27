@@ -26,16 +26,18 @@ defmodule Elmc.Backend.Plan.Lower.Arith do
 
   def compile(%{op: :add_vars, left: left, right: right}, ctx, b)
       when is_binary(left) and is_binary(right) do
-    # Zero-arg CAF names (e.g. `x + g0`) lower through `:var` → call_fn. Operands
-    # must not target fn_out/branch_out or the CAF clobbers the function result slot
-    # (ManyGlobals addN: `return g0(); return x + *out`).
-    operand_ctx = Context.for_branch_arm(ctx)
+    # Same as `:sub_vars`: IntCall keeps CAF operands off fn_out, and routes
+    # typed Float params through float boxed_binop instead of i32 add.
+    left_e = %{op: :var, name: left}
+    right_e = %{op: :var, name: right}
 
-    with {:ok, l, b1} <- Expr.compile(%{op: :var, name: left}, operand_ctx, b),
-         {:ok, r, b2} <- Expr.compile(%{op: :var, name: right}, operand_ctx, b1) do
-      emit_int_arith(:add_vars, l, r, ctx, b2)
-    else
-      _ -> :unsupported
+    case Elmc.Backend.Plan.Lower.IntCall.compile(
+           %{op: :call, name: "__add__", args: [left_e, right_e]},
+           ctx,
+           b
+         ) do
+      {:ok, _, _} = ok -> ok
+      :unsupported -> :unsupported
     end
   end
 

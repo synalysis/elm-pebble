@@ -299,7 +299,7 @@ defmodule Elmc.Backend.Plan.Lower.Platform.Pebble do
           Types.compile_reg_result()
 
   defp compile_text_param(text, ctx, b) do
-    scratch_ctx = %{ctx | dest_stack: [:scratch], function_tail: false}
+    scratch_ctx = %{ctx | dest_stack: [:scratch], function_tail: false, stream_mode: false}
 
     case Expr.compile(text, scratch_ctx, b) do
       {:ok, reg, b1} when is_integer(reg) -> {:ok, reg, b1}
@@ -312,7 +312,7 @@ defmodule Elmc.Backend.Plan.Lower.Platform.Pebble do
           {:ok, [Types.reg()], Builder.t()} | :unsupported
 
   defp compile_params_scratch(params, ctx, b) when is_list(params) do
-    scratch_ctx = %{ctx | dest_stack: [:scratch], function_tail: false}
+    scratch_ctx = %{ctx | dest_stack: [:scratch], function_tail: false, stream_mode: false}
 
     Enum.reduce_while(params, {:ok, [], b}, fn param, {:ok, acc, b_acc} ->
       case Expr.compile(param, scratch_ctx, b_acc) do

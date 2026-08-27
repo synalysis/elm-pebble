@@ -27,6 +27,7 @@ defmodule Elmc.Backend.C.Lower.Function do
   alias Elmc.Backend.Plan
   alias Elmc.Backend.Plan.Optimize
   alias Elmc.Backend.Plan.RuntimeBuiltins
+  alias Elmc.Backend.Plan.ScalarKind
   alias Elmc.Backend.Plan.Types
   alias Elmc.Backend.Plan.Types.{Block, FunctionPlan}
   alias Elmc.Backend.SizeProfile
@@ -146,7 +147,7 @@ defmodule Elmc.Backend.C.Lower.Function do
       )
 
     native_int_only_regs =
-      maybe_add_native_ret_reg(native_int_only_regs, plan, ret_reg, native_scalar_out)
+      maybe_add_native_ret_reg(native_int_only_regs, plan, ret_reg, native_int_ret_kind(native_scalar_out))
 
     # Native-int regs used as boxed operands (phi arms, tuples, …) must stay boxed ElmcValue*
     # (owned slots + `elmc_new_int`), not native `elmc_int_t` temps with skipped const_int emit.
@@ -234,7 +235,24 @@ defmodule Elmc.Backend.C.Lower.Function do
       native_bool_only_regs
       |> MapSet.to_list()
       |> Enum.sort()
-      |> Map.new(fn reg -> {reg, "plan_native_bool_#{reg}"} end)
+      |> Map.new(fn reg -> {reg, ScalarKind.local_name(:bool, reg)} end)
+
+    native_float_only_regs =
+      build_native_float_only_regs(plan, decl_map)
+      |> MapSet.difference(native_int_only_regs)
+      |> MapSet.difference(native_bool_only_regs)
+      |> maybe_add_native_ret_reg(plan, ret_reg, native_float_ret_kind(native_scalar_out))
+
+    native_float_mutable_regs =
+      native_float_only_regs
+      |> Enum.filter(&native_float_needs_mutable_local?(plan, &1, decl_map))
+      |> MapSet.new()
+
+    native_float_locals =
+      native_float_only_regs
+      |> MapSet.to_list()
+      |> Enum.sort()
+      |> Map.new(fn reg -> {reg, ScalarKind.local_name(:float, reg)} end)
 
     native_int_operand_regs =
       native_int_regs
@@ -250,12 +268,14 @@ defmodule Elmc.Backend.C.Lower.Function do
         slots,
         MapSet.difference(native_int_only_regs, native_int_owned_regs),
         native_bool_only_regs,
+        native_float_only_regs,
         fusion_native_literal_regs
       )
 
     skip_fill =
       MapSet.difference(native_int_only_regs, native_int_owned_regs)
       |> MapSet.union(native_bool_only_regs)
+      |> MapSet.union(native_float_only_regs)
       |> MapSet.union(fusion_native_literal_regs)
       |> MapSet.union(tail_inline_skip_regs)
       |> MapSet.union(MapSet.new(Map.keys(native_int_regs)))
@@ -321,6 +341,9 @@ defmodule Elmc.Backend.C.Lower.Function do
       native_bool_only_regs: native_bool_only_regs,
       native_bool_regs: native_bool_locals,
       native_bool_mutable_regs: native_bool_mutable_regs,
+      native_float_only_regs: native_float_only_regs,
+      native_float_regs: native_float_locals,
+      native_float_mutable_regs: native_float_mutable_regs,
       native_int_inline: native_int_inline,
       native_ret_deferred_regs: native_ret_deferred_regs,
       native_scalar_out: native_scalar_out,
@@ -344,7 +367,8 @@ defmodule Elmc.Backend.C.Lower.Function do
 
     mutable_decls =
       native_int_decl_lines(native_int_locals, native_int_mutable_regs) ++
-        native_bool_mutable_decl_lines(native_bool_locals, native_bool_mutable_regs)
+        native_bool_mutable_decl_lines(native_bool_locals, native_bool_mutable_regs) ++
+        native_float_mutable_decl_lines(native_float_locals, native_float_mutable_regs)
 
     Process.put(:elmc_plan_owned_live, MapSet.new())
 
@@ -375,7 +399,8 @@ defmodule Elmc.Backend.C.Lower.Function do
       |> Enum.flat_map(&String.split(&1, "\n"))
       |> cleanup_cfg_lines(explicit_targets)
       |> then(fn lines ->
-        missing_native_int_decl_lines(lines, native_int_locals) ++ lines
+        missing_native_int_decl_lines(lines, native_int_locals) ++
+          missing_native_float_decl_lines(lines) ++ lines
       end)
       |> Enum.join("\n")
       |> cleanup_cfg_text()
@@ -448,7 +473,7 @@ defmodule Elmc.Backend.C.Lower.Function do
 
     SizeProfile.plan_emit_mode(codegen_opts) == :state_switch and
       not is_binary(Map.get(plan, :fusion_c)) and
-      Map.get(plan, :native_scalar_return) not in [:native_int, :native_bool] and
+      not ScalarKind.native_return?(Map.get(plan, :native_scalar_return)) and
       length(plan.blocks) >= thresholds.min_blocks and
       plan_emit_owned_slot_count(plan) <= thresholds.max_owned_slots
   end
@@ -1261,6 +1286,7 @@ defmodule Elmc.Backend.C.Lower.Function do
     |> Enum.filter(&is_integer/1)
     |> Enum.reject(&MapSet.member?(Keyword.get(instr_opts, :native_int_only_regs, MapSet.new()), &1))
     |> Enum.reject(&MapSet.member?(Keyword.get(instr_opts, :native_bool_only_regs, MapSet.new()), &1))
+    |> Enum.reject(&MapSet.member?(Keyword.get(instr_opts, :native_float_only_regs, MapSet.new()), &1))
     |> Enum.reject(&MapSet.member?(Keyword.get(instr_opts, :tail_inline_skip_regs, MapSet.new()), &1))
     |> Enum.reject(&MapSet.member?(deferred, &1))
     |> Enum.reject(&MapSet.member?(closure_borrows, &1))
@@ -1278,6 +1304,7 @@ defmodule Elmc.Backend.C.Lower.Function do
   defp boxed_owned_index(reg, slots, instr_opts) when is_integer(reg) do
     if MapSet.member?(Keyword.get(instr_opts, :native_int_only_regs, MapSet.new()), reg) or
          MapSet.member?(Keyword.get(instr_opts, :native_bool_only_regs, MapSet.new()), reg) or
+         MapSet.member?(Keyword.get(instr_opts, :native_float_only_regs, MapSet.new()), reg) or
          MapSet.member?(Keyword.get(instr_opts, :tail_inline_skip_regs, MapSet.new()), reg) do
       nil
     else
@@ -1382,6 +1409,7 @@ defmodule Elmc.Backend.C.Lower.Function do
     |> Enum.reject(&retain_owned_transfer_null?(instr, &1))
     |> Enum.reject(&MapSet.member?(Keyword.get(instr_opts, :native_int_only_regs, MapSet.new()), &1))
     |> Enum.reject(&MapSet.member?(Keyword.get(instr_opts, :native_bool_only_regs, MapSet.new()), &1))
+    |> Enum.reject(&MapSet.member?(Keyword.get(instr_opts, :native_float_only_regs, MapSet.new()), &1))
     |> Enum.reject(&MapSet.member?(Keyword.get(instr_opts, :tail_inline_skip_regs, MapSet.new()), &1))
     |> Enum.reject(&MapSet.member?(deferred, &1))
     |> Enum.uniq()
@@ -1498,7 +1526,7 @@ defmodule Elmc.Backend.C.Lower.Function do
          native_int_inline,
          native_int_only_regs
        ) do
-    if Map.get(plan, :native_scalar_return) in [:native_int, :native_bool] do
+    if ScalarKind.native_return?(Map.get(plan, :native_scalar_return)) do
       case ret_source_reg(plan) do
         ret when is_integer(ret) ->
           if Map.has_key?(native_int_inline, ret) do
@@ -2094,7 +2122,7 @@ defmodule Elmc.Backend.C.Lower.Function do
 
     native_int_only_regs = build_native_int_only_regs(plan, decl_map)
     native_int_only_regs =
-      maybe_add_native_ret_reg(native_int_only_regs, plan, ret_reg, native_scalar_out)
+      maybe_add_native_ret_reg(native_int_only_regs, plan, ret_reg, native_int_ret_kind(native_scalar_out))
 
     {native_int_regs, slots} =
       allocate_native_int_param_slots(
@@ -2143,18 +2171,26 @@ defmodule Elmc.Backend.C.Lower.Function do
       |> MapSet.difference(native_int_only_regs)
       |> maybe_add_native_scalar_ret_bool_reg(ret_reg, native_scalar_out)
 
+    native_float_only_regs =
+      build_native_float_only_regs(plan, decl_map)
+      |> MapSet.difference(native_int_only_regs)
+      |> MapSet.difference(native_bool_only_regs)
+      |> maybe_add_native_ret_reg(plan, ret_reg, native_float_ret_kind(native_scalar_out))
+
     slots =
       finalize_owned_slots_map(
         plan,
         slots,
         MapSet.difference(native_int_only_regs, native_int_owned_regs),
         native_bool_only_regs,
+        native_float_only_regs,
         fusion_native_literal_regs
       )
 
     skip_fill =
       MapSet.difference(native_int_only_regs, native_int_owned_regs)
       |> MapSet.union(native_bool_only_regs)
+      |> MapSet.union(native_float_only_regs)
       |> MapSet.union(fusion_native_literal_regs)
       |> MapSet.union(tail_inline_skip_regs)
       |> MapSet.union(MapSet.new(Map.keys(native_int_regs)))
@@ -2168,21 +2204,15 @@ defmodule Elmc.Backend.C.Lower.Function do
   @spec emit_return(FunctionPlan.t(), Types.slot_map(), atom() | term(), [String.t()], keyword()) :: String.t()
 
   defp emit_return(%FunctionPlan{native_scalar_value_return: true, blocks: blocks} = plan, slots, kind, _borrow_nulls, instr_opts)
-       when kind in [:native_int, :native_bool] do
+       when kind in [:native_int, :native_bool, :native_float] do
     reg = native_ret_reg(plan, blocks)
 
     case reg do
       r when is_integer(r) ->
-        case kind do
-          :native_int -> "return #{native_int_result_ref(r, slots, instr_opts)};"
-          :native_bool -> "return #{native_bool_result_ref(r, instr_opts)};"
-        end
+        "return #{native_scalar_result_ref(kind, r, slots, instr_opts)};"
 
       _ ->
-        case kind do
-          :native_int -> "return 0;"
-          :native_bool -> "return false;"
-        end
+        "return #{ScalarKind.zero(ScalarKind.from_native_return(kind))};"
     end
   end
 
@@ -2210,6 +2240,19 @@ defmodule Elmc.Backend.C.Lower.Function do
       end
 
     EphemeralBox.non_rc_scalar_return("elmc_new_bool", src, slot_count)
+  end
+
+  defp emit_return(%FunctionPlan{rc_required: false, blocks: blocks} = plan, slots, :native_float, _borrow_nulls, instr_opts) do
+    reg = native_ret_reg(plan, blocks)
+    slot_count = owned_slot_count(slots)
+
+    src =
+      case reg do
+        r when is_integer(r) -> native_float_result_ref(r, instr_opts)
+        _ -> "0.0"
+      end
+
+    EphemeralBox.non_rc_scalar_return(ScalarKind.box(:float), src, slot_count)
   end
 
   defp emit_return(%FunctionPlan{blocks: blocks} = plan, slots, :native_int, _borrow_nulls, instr_opts) do
@@ -2249,6 +2292,18 @@ defmodule Elmc.Backend.C.Lower.Function do
     end
   end
 
+  defp emit_return(%FunctionPlan{blocks: blocks} = plan, _slots, :native_float, _borrow_nulls, instr_opts) do
+    reg = native_ret_reg(plan, blocks)
+
+    case reg do
+      r when is_integer(r) ->
+        "*out = #{native_float_result_ref(r, instr_opts)};"
+
+      _ ->
+        "*out = 0.0;"
+    end
+  end
+
   defp emit_return(%FunctionPlan{rc_required: false, blocks: blocks}, slots, _, borrow_nulls, instr_opts) do
     slot_count = owned_slot_count(slots)
     borrow_cleanup = borrow_null_cleanup_lines(borrow_nulls)
@@ -2264,6 +2319,9 @@ defmodule Elmc.Backend.C.Lower.Function do
         native_bool? =
           MapSet.member?(Keyword.get(instr_opts, :native_bool_only_regs, MapSet.new()), reg)
 
+        native_float? =
+          MapSet.member?(Keyword.get(instr_opts, :native_float_only_regs, MapSet.new()), reg)
+
         cond do
           native_int? ->
             src = native_int_result_ref(reg, slots, instr_opts)
@@ -2272,6 +2330,10 @@ defmodule Elmc.Backend.C.Lower.Function do
           native_bool? ->
             src = native_bool_result_ref(reg, instr_opts)
             EphemeralBox.non_rc_scalar_return("elmc_new_bool", src, slot_count)
+
+          native_float? ->
+            src = native_float_result_ref(reg, instr_opts)
+            EphemeralBox.non_rc_scalar_return(ScalarKind.box(:float), src, slot_count)
 
           true ->
             ref = slot_ref(reg, slots, instr_opts)
@@ -2400,13 +2462,28 @@ defmodule Elmc.Backend.C.Lower.Function do
     end
   end
 
-  @spec finalize_owned_slots_map(FunctionPlan.t(), Types.slot_map(), MapSet.t(Types.reg()), MapSet.t(Types.reg()), MapSet.t(Types.reg())) :: Types.slot_map()
+  @spec finalize_owned_slots_map(
+          FunctionPlan.t(),
+          Types.slot_map(),
+          MapSet.t(Types.reg()),
+          MapSet.t(Types.reg()),
+          MapSet.t(Types.reg()),
+          MapSet.t(Types.reg())
+        ) :: Types.slot_map()
 
-  defp finalize_owned_slots_map(%FunctionPlan{} = plan, slots, native_int_only_regs, native_bool_only_regs, fusion_native_literal_regs) do
+  defp finalize_owned_slots_map(
+         %FunctionPlan{} = plan,
+         slots,
+         native_int_only_regs,
+         native_bool_only_regs,
+         native_float_only_regs,
+         fusion_native_literal_regs
+       ) do
     slots
     |> then(&drop_undef_slot_regs(plan, &1))
     |> Map.drop(MapSet.to_list(native_int_only_regs))
     |> Map.drop(MapSet.to_list(native_bool_only_regs))
+    |> Map.drop(MapSet.to_list(native_float_only_regs))
     |> Map.drop(MapSet.to_list(fusion_native_literal_regs))
     |> compact_slots()
   end
@@ -3433,6 +3510,29 @@ defmodule Elmc.Backend.C.Lower.Function do
     end
   end
 
+  defp load_param_native_bool_candidate?(plan, reg, index, decl_map, native_set) do
+    case Enum.at(param_kinds_for_plan(plan), index) do
+      :native_bool ->
+        native_bool_uses_only?(plan, reg, decl_map, native_set)
+
+      _ ->
+        Map.get(plan, :native_scalar_return) == :native_bool and
+          native_bool_uses_only?(plan, reg, decl_map, native_set)
+    end
+  end
+
+  defp load_param_native_float_candidate?(plan, reg, index, decl_map, native_set) do
+    case Enum.at(param_kinds_for_plan(plan), index) do
+      :native_float ->
+        native_float_uses_only?(plan, reg, decl_map, native_set)
+
+      _ ->
+        Map.get(plan, :native_scalar_return) == :native_float and
+          native_float_has_use?(plan, reg, decl_map, native_set) and
+          native_float_uses_only?(plan, reg, decl_map, native_set)
+    end
+  end
+
   @spec native_int_has_use?(FunctionPlan.t(), Types.reg(), Types.decl_map(), MapSet.t(Types.reg())) ::
           boolean()
 
@@ -3549,7 +3649,7 @@ defmodule Elmc.Backend.C.Lower.Function do
     allowed = [:native_int_call, :native_operand]
 
     allowed =
-      if Map.get(plan, :native_scalar_return) in [:native_int, :native_bool] do
+      if ScalarKind.native_return?(Map.get(plan, :native_scalar_return)) do
         allowed ++ [:publish_fn_out]
       else
         allowed
@@ -3566,8 +3666,158 @@ defmodule Elmc.Backend.C.Lower.Function do
     |> Enum.sort()
     |> Enum.map(fn reg ->
       name = Map.fetch!(native_bool_locals, reg)
-      "bool #{name} = false;"
+      "#{ScalarKind.c_type(:bool)} #{name} = #{ScalarKind.zero(:bool)};"
     end)
+  end
+
+  defp native_float_mutable_decl_lines(native_float_locals, native_float_mutable_regs) do
+    native_float_mutable_regs
+    |> MapSet.to_list()
+    |> Enum.sort()
+    |> Enum.map(fn reg ->
+      name = Map.fetch!(native_float_locals, reg)
+      "#{ScalarKind.c_type(:float)} #{name} __attribute__((unused)) = #{ScalarKind.zero(:float)};"
+    end)
+  end
+
+  defp missing_native_float_decl_lines(lines) do
+    body = Enum.join(lines, "\n")
+
+    ~r/\bplan_native_float_(\d+)\b/
+    |> Regex.scan(body)
+    |> Enum.map(fn [_, reg] -> String.to_integer(reg) end)
+    |> Enum.uniq()
+    |> Enum.reject(fn reg ->
+      name = ScalarKind.local_name(:float, reg)
+
+      Enum.any?(lines, fn line ->
+        String.contains?(line, "#{ScalarKind.c_type(:float)} #{name}") or
+          String.contains?(line, "const #{ScalarKind.c_type(:float)} #{name}")
+      end)
+    end)
+    |> Enum.sort()
+    |> Enum.map(fn reg ->
+      "#{ScalarKind.c_type(:float)} #{ScalarKind.local_name(:float, reg)} = #{ScalarKind.zero(:float)};"
+    end)
+  end
+
+  @spec build_native_float_only_regs(FunctionPlan.t(), Types.decl_map()) :: MapSet.t(Types.reg())
+
+  defp build_native_float_only_regs(%FunctionPlan{} = plan, decl_map) do
+    expand_native_float_regs(plan, decl_map, MapSet.new(), 0)
+  end
+
+  defp expand_native_float_regs(_plan, _decl_map, regs, n) when n >= 32, do: regs
+
+  defp expand_native_float_regs(%FunctionPlan{} = plan, decl_map, prev, n) do
+    next =
+      plan
+      |> all_def_regs()
+      |> Enum.filter(&native_float_candidate?(plan, &1, decl_map, prev))
+      |> MapSet.new()
+
+    if MapSet.equal?(next, prev) do
+      next
+    else
+      expand_native_float_regs(plan, decl_map, next, n + 1)
+    end
+  end
+
+  defp native_float_candidate?(plan, reg, decl_map, native_set) do
+    case all_defining_instrs(plan, reg) do
+      [%{op: :call_runtime, args: %{builtin: :new_float}} | _] ->
+        native_float_uses_only?(plan, reg, decl_map, native_set)
+
+      [%{op: :boxed_binop, args: args} | _] ->
+        (Map.get(args, :mode) == :float or Map.get(args, :op) == :fdiv) and
+          native_float_uses_only?(plan, reg, decl_map, native_set)
+
+      [%{op: :call_fn, args: %{module: mod, name: name}} | _] ->
+        NativeReturn.cached_kind({mod, name}) == :native_float and
+          not native_boxed_rc_out_callee?(mod, name, decl_map) and
+          native_float_uses_only?(plan, reg, decl_map, native_set)
+
+      [%{op: :load_param, args: %{index: index}} | _] ->
+        load_param_native_float_candidate?(plan, reg, index, decl_map, native_set)
+
+      [%{op: :phi, args: %{then: then_r, else: else_r}}] ->
+        native_float_source?(plan, then_r, native_set) and
+          native_float_source?(plan, else_r, native_set) and
+          native_float_uses_only?(plan, reg, decl_map, native_set)
+
+      retains ->
+        retain_defs?(retains) and
+          Enum.all?(retains, fn %{args: %{args: [src]}} ->
+            native_float_source?(plan, src, native_set)
+          end) and native_float_uses_only?(plan, reg, decl_map, native_set)
+    end
+  end
+
+  defp native_float_source?(plan, reg, native_set) when is_integer(reg) do
+    MapSet.member?(native_set, reg) or
+      case defining_instr(plan, reg) do
+        %{op: :load_param, args: %{index: index}} ->
+          Enum.at(param_kinds_for_plan(plan), index) == :native_float or
+            Map.get(plan, :native_scalar_return) == :native_float
+
+        %{op: :call_runtime, args: %{builtin: :new_float}} ->
+          true
+
+        %{op: :boxed_binop, args: args} ->
+          Map.get(args, :mode) == :float or Map.get(args, :op) == :fdiv
+
+        _ ->
+          false
+      end
+  end
+
+  defp native_float_source?(_, _, _), do: false
+
+  defp native_float_uses_only?(plan, reg, decl_map, native_set) do
+    use_kinds =
+      plan_use_refs(plan, reg, decl_map, native_set)
+      |> Enum.map(fn {kind, _} -> kind end)
+      |> Enum.uniq()
+
+    allowed = [:native_operand]
+
+    allowed =
+      if Map.get(plan, :native_scalar_return) == :native_float do
+        allowed ++ [:publish_fn_out]
+      else
+        allowed
+      end
+
+    use_kinds == [] or Enum.all?(use_kinds, &(&1 in allowed))
+  end
+
+  defp native_float_has_use?(plan, reg, decl_map, native_set) do
+    plan_use_refs(plan, reg, decl_map, native_set) != []
+  end
+
+  defp native_float_needs_mutable_local?(plan, reg, decl_map) do
+    defs = all_defining_instrs(plan, reg)
+
+    length(defs) > 1 or Enum.any?(defs, &native_float_rc_out_param_def?(&1, decl_map)) or
+      state_switch_emit?(plan) or native_float_cross_block_use?(plan, reg)
+  end
+
+  defp native_float_rc_out_param_def?(%{op: :call_fn, args: %{module: mod, name: name}}, decl_map) do
+    NativeReturn.cached_kind({mod, name}) == :native_float and
+      not NativeReturn.value_return?({mod, name}) and
+      not native_boxed_rc_out_callee?(mod, name, decl_map)
+  end
+
+  defp native_float_rc_out_param_def?(_, _), do: false
+
+  defp native_float_cross_block_use?(%FunctionPlan{} = plan, reg) do
+    case defining_block_id(plan, reg) do
+      nil ->
+        false
+
+      def_id ->
+        Enum.any?(native_scalar_use_block_ids(plan, reg), &(&1 != def_id))
+    end
   end
 
   @spec build_native_bool_only_regs(FunctionPlan.t(), Types.decl_map()) :: MapSet.t(Types.reg())
@@ -3622,6 +3872,9 @@ defmodule Elmc.Backend.C.Lower.Function do
           not native_boxed_rc_out_callee?(mod, name, decl_map) and
           native_bool_uses_only?(plan, reg, decl_map, native_bool_set)
 
+      [%{op: :load_param, args: %{index: index}} | _] ->
+        load_param_native_bool_candidate?(plan, reg, index, decl_map, native_bool_set)
+
       [%{op: :phi, args: %{then: then_r, else: else_r}}] ->
         phi_truthy_native?(plan, then_r, else_r) and
           native_bool_uses_only?(plan, reg, decl_map, native_bool_set)
@@ -3646,7 +3899,16 @@ defmodule Elmc.Backend.C.Lower.Function do
       |> Enum.map(fn {kind, _} -> kind end)
       |> Enum.uniq()
 
-    use_kinds == [] or Enum.all?(use_kinds, &(&1 == :native_bool_operand))
+    allowed = [:native_bool_operand]
+
+    allowed =
+      if Map.get(plan, :native_scalar_return) == :native_bool do
+        allowed ++ [:publish_fn_out]
+      else
+        allowed
+      end
+
+    use_kinds == [] or Enum.all?(use_kinds, &(&1 in allowed))
   end
 
   @spec plan_bool_use_refs(FunctionPlan.t(), Types.reg(), Types.decl_map(), MapSet.t(Types.reg())) :: [{atom(), Types.reg()}]
@@ -3692,6 +3954,7 @@ defmodule Elmc.Backend.C.Lower.Function do
     |> Enum.filter(fn {_, ref} -> ref == reg end)
     |> Enum.map(fn
       {:native_operand, ref} -> {:native_bool_operand, ref}
+      {:publish_fn_out, ref} -> {:publish_fn_out, ref}
       {_, ref} -> {:boxed, ref}
     end)
   end
@@ -4053,8 +4316,16 @@ defmodule Elmc.Backend.C.Lower.Function do
   defp instr_reg_refs(%{op: :publish, args: %{source: source}}, _decl_map),
     do: [{:boxed, source}]
 
-  defp instr_reg_refs(%{op: :boxed_binop, args: %{lhs: lhs, rhs: rhs}}, _decl_map),
-    do: [{:boxed, lhs}, {:boxed, rhs}]
+  defp instr_reg_refs(%{op: :boxed_binop, args: %{lhs: lhs, rhs: rhs} = args}, _decl_map) do
+    kind =
+      if Map.get(args, :mode) == :float or Map.get(args, :op) == :fdiv do
+        :native_operand
+      else
+        :boxed
+      end
+
+    [{kind, lhs}, {kind, rhs}]
+  end
 
   defp instr_reg_refs(%{op: :bool_and, args: %{left: left, right: right}}, _decl_map),
     do: [{:native_operand, left}, {:native_operand, right}]
@@ -4085,6 +4356,14 @@ defmodule Elmc.Backend.C.Lower.Function do
     Enum.map(params, &{:native_int_call, &1})
   end
 
+  defp instr_reg_refs(%{op: :render_text_cmd, args: args}, _decl_map) do
+    params = Map.get(args, :params, [])
+    text = Map.get(args, :text)
+    param_refs = Enum.map(List.wrap(params), &{:native_int_call, &1})
+    text_refs = if is_integer(text), do: [{:boxed, text}], else: []
+    param_refs ++ text_refs
+  end
+
   defp instr_reg_refs(%{op: :record_get_int, args: %{base: base}}, _decl_map),
     do: [{:boxed, base}]
 
@@ -4113,6 +4392,14 @@ defmodule Elmc.Backend.C.Lower.Function do
     list_refs = if is_integer(list), do: [{:boxed, list}], else: []
     acc_refs = if is_integer(acc), do: [{:boxed, acc}], else: []
     list_refs ++ acc_refs ++ Enum.map(caps, &{:boxed, &1})
+  end
+
+  defp instr_reg_refs(%{op: :stream_for_each, args: args}, _decl_map) do
+    list = Map.get(args, :list)
+    prefix = Map.get(args, :prefix, [])
+    caps = Map.get(args, :captures, [])
+    list_refs = if is_integer(list), do: [{:boxed, list}], else: []
+    list_refs ++ Enum.map(Enum.uniq(prefix ++ caps), &{:boxed, &1})
   end
 
   defp instr_reg_refs(%{op: :const_static_list, args: %{regs: regs}}, _decl_map) when is_list(regs),
@@ -4176,13 +4463,7 @@ defmodule Elmc.Backend.C.Lower.Function do
   @spec boxed_use_regs(FunctionPlan.t(), Types.decl_map()) :: MapSet.t(Types.reg())
 
   defp boxed_use_regs(%FunctionPlan{} = plan, decl_map) do
-    skip_publish_fn_out? =
-      Map.get(plan, :native_scalar_return) in [
-        :native_int,
-        :native_bool,
-        :native_int_pair,
-        :native_list_int_pair
-      ]
+    skip_publish_fn_out? = ScalarKind.native_or_pair?(Map.get(plan, :native_scalar_return))
 
     plan.blocks
     |> Enum.flat_map(fn %Block{instrs: instrs} ->
@@ -4228,6 +4509,21 @@ defmodule Elmc.Backend.C.Lower.Function do
     list_regs = if is_integer(list), do: [list], else: []
     acc_regs = if is_integer(acc), do: [acc], else: []
     list_regs ++ acc_regs ++ caps
+  end
+
+  defp boxed_operand_regs(%{op: :render_text_cmd, args: args}, _decl_map) do
+    case Map.get(args, :text) do
+      text when is_integer(text) -> [text]
+      _ -> []
+    end
+  end
+
+  defp boxed_operand_regs(%{op: :stream_for_each, args: args}, _decl_map) do
+    list = Map.get(args, :list)
+    prefix = Map.get(args, :prefix, [])
+    caps = Map.get(args, :captures, [])
+    list_regs = if is_integer(list), do: [list], else: []
+    list_regs ++ Enum.uniq(prefix ++ caps)
   end
 
   defp boxed_operand_regs(%{op: :phi, args: %{native_int_phi: true}}, _decl_map), do: []
@@ -4295,7 +4591,9 @@ defmodule Elmc.Backend.C.Lower.Function do
       is_list(kinds) ->
         args
         |> Enum.zip(kinds)
-        |> Enum.reject(fn {_, kind} -> kind in [:native_int, :native_bool, :boxed_int_tag] end)
+        |> Enum.reject(fn {_, kind} ->
+          ScalarKind.native_return?(kind) or kind == :boxed_int_tag
+        end)
         |> Enum.map(fn {reg, _} -> reg end)
 
       true ->
@@ -4322,8 +4620,13 @@ defmodule Elmc.Backend.C.Lower.Function do
     end
   end
 
-  defp boxed_operand_regs(%{op: :boxed_binop, args: %{lhs: lhs, rhs: rhs}}, _decl_map),
-    do: [lhs, rhs]
+  defp boxed_operand_regs(%{op: :boxed_binop, args: %{lhs: lhs, rhs: rhs} = args}, _decl_map) do
+    if Map.get(args, :mode) == :float or Map.get(args, :op) == :fdiv do
+      []
+    else
+      [lhs, rhs]
+    end
+  end
 
   defp boxed_operand_regs(%{op: :test_maybe_nothing, args: %{reg: reg}}, _decl_map), do: [reg]
 
@@ -4404,8 +4707,22 @@ defmodule Elmc.Backend.C.Lower.Function do
   @spec native_bool_result_ref(Types.reg(), keyword()) :: String.t()
 
   defp native_bool_result_ref(reg, _instr_opts) do
-    "plan_native_bool_#{reg}"
+    ScalarKind.local_name(:bool, reg)
   end
+
+  defp native_float_result_ref(reg, instr_opts) do
+    Map.get(Keyword.get(instr_opts, :native_float_regs, %{}), reg) ||
+      ScalarKind.local_name(:float, reg)
+  end
+
+  defp native_scalar_result_ref(:native_int, reg, slots, instr_opts),
+    do: native_int_result_ref(reg, slots, instr_opts)
+
+  defp native_scalar_result_ref(:native_bool, reg, _slots, instr_opts),
+    do: native_bool_result_ref(reg, instr_opts)
+
+  defp native_scalar_result_ref(:native_float, reg, _slots, instr_opts),
+    do: native_float_result_ref(reg, instr_opts)
 
   @spec ret_source_reg(FunctionPlan.t()) :: Types.reg() | nil
 
@@ -4429,8 +4746,23 @@ defmodule Elmc.Backend.C.Lower.Function do
 
   @spec maybe_add_native_ret_reg(MapSet.t(Types.reg()), FunctionPlan.t(), Types.reg() | nil, atom() | term()) :: MapSet.t(Types.reg())
 
+  defp native_int_ret_kind(:native_int), do: :native_int
+  defp native_int_ret_kind(:native_int_pair), do: :native_int_pair
+  defp native_int_ret_kind(_), do: nil
+
+  defp native_float_ret_kind(:native_float), do: :native_float
+  defp native_float_ret_kind(_), do: nil
+
   defp maybe_add_native_ret_reg(regs, plan, reg, :native_int) do
     if NativeReturn.ret_reg_allows_native?(plan, reg, :native_int) do
+      MapSet.put(regs, reg)
+    else
+      regs
+    end
+  end
+
+  defp maybe_add_native_ret_reg(regs, plan, reg, :native_float) do
+    if NativeReturn.ret_reg_allows_native?(plan, reg, :native_float) do
       MapSet.put(regs, reg)
     else
       regs

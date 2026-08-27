@@ -178,6 +178,14 @@ defmodule Elmc.Backend.Plan.Lower.Case do
         ) :: Types.compile_result()
 
   defp compile_maybe_nothing_case(subject, arm_a, arm_b, ctx, b) do
+    if Context.stream_mode?(ctx) do
+      compile_stream_maybe_nothing_case(subject, arm_a, arm_b, ctx, b)
+    else
+      compile_value_maybe_nothing_case(subject, arm_a, arm_b, ctx, b)
+    end
+  end
+
+  defp compile_value_maybe_nothing_case(subject, arm_a, arm_b, ctx, b) do
     {nothing_br, other_br} = normalize_maybe_nothing_arms(arm_a, arm_b)
     saved_pending = Map.get(b, :pending_merge_block)
     subject_ctx = Context.for_branch_arm(ctx)
@@ -212,6 +220,39 @@ defmodule Elmc.Backend.Plan.Lower.Case do
     end
   end
 
+  defp compile_stream_maybe_nothing_case(subject, arm_a, arm_b, ctx, b) do
+    {nothing_br, other_br} = normalize_maybe_nothing_arms(arm_a, arm_b)
+    saved_pending = Map.get(b, :pending_merge_block)
+    subject_ctx = Context.for_branch_arm(ctx)
+
+    with {:ok, subj_reg, b_subj} <- Expr.compile(subject, subject_ctx, b),
+         {:ok, cond_reg, b2} <- emit_test_maybe_nothing(subj_reg, b_subj),
+         then_id = b2.next_block,
+         else_id = then_id + 1,
+         merge_id = skip_reserved(else_id + 1, saved_pending),
+         b_entry = Builder.finish_block(b2, {:br_if, then_id, else_id, cond_reg}),
+         b_reserved = %{b_entry | next_block: max(b_entry.next_block, merge_id + 1)},
+         {:ok, :stream_void, then_exit, b_then} <-
+           compile_maybe_branch(Map.get(nothing_br, :expr), ctx, b_reserved, then_id),
+         b_then_done = Builder.patch_terminator(b_then, then_exit, {:br, merge_id}),
+         {:ok, :stream_void, else_exit, b_else} <-
+           compile_maybe_else_branch(
+             Map.get(other_br, :pattern),
+             Map.get(other_br, :expr),
+             subj_reg,
+             subject,
+             ctx,
+             b_then_done,
+             else_id
+           ),
+         b_else_done = Builder.patch_terminator(b_else, else_exit, {:br, merge_id}),
+         b_merge = Builder.begin_block(b_else_done, merge_id) do
+      {:ok, :stream_void, %{b_merge | pending_merge_block: saved_pending}}
+    else
+      _ -> :unsupported
+    end
+  end
+
   @spec compile_maybe_just_just_tuple_case(
           map(),
           map(),
@@ -221,7 +262,15 @@ defmodule Elmc.Backend.Plan.Lower.Case do
         ) :: Types.compile_result()
 
   # `case (maybeA, maybeB) of (Just a, Just b) -> …; _ -> …` without heap tuple2.
-  defp compile_maybe_just_just_tuple_case(
+  defp compile_maybe_just_just_tuple_case(subj, just_br, wild_br, ctx, b) do
+    if Context.stream_mode?(ctx) do
+      compile_stream_maybe_just_just_tuple_case(subj, just_br, wild_br, ctx, b)
+    else
+      compile_value_maybe_just_just_tuple_case(subj, just_br, wild_br, ctx, b)
+    end
+  end
+
+  defp compile_value_maybe_just_just_tuple_case(
          %{op: :tuple2, left: left, right: right},
          just_br,
          wild_br,
@@ -262,6 +311,45 @@ defmodule Elmc.Backend.Plan.Lower.Case do
     end
   end
 
+  defp compile_stream_maybe_just_just_tuple_case(
+         %{op: :tuple2, left: left, right: right},
+         just_br,
+         wild_br,
+         ctx,
+         b
+       ) do
+    [left_pat, right_pat] = get_in(just_br, [:pattern, :elements])
+    saved_pending = Map.get(b, :pending_merge_block)
+    subject_ctx = Context.for_branch_arm(ctx)
+
+    with {:ok, left_reg, b1} <- Expr.compile(left, subject_ctx, b),
+         {:ok, right_reg, b2} <- Expr.compile(right, subject_ctx, b1),
+         {:ok, left_just, b3} <- emit_test_maybe_just(left_reg, b2),
+         {:ok, right_just, b4} <- emit_test_maybe_just(right_reg, b3),
+         {:ok, both_just, b5} <- emit_bool_and(left_just, right_just, b4),
+         then_id = b5.next_block,
+         else_id = then_id + 1,
+         merge_id = skip_reserved(else_id + 1, saved_pending),
+         b_entry = Builder.finish_block(b5, {:br_if, then_id, else_id, both_just}),
+         b_reserved = %{b_entry | next_block: max(b_entry.next_block, merge_id + 1)},
+         b_then_start = Builder.begin_cfg_arm_block(b_reserved, then_id),
+         {:ok, _lp, b_left_bound, just_ctx1} <-
+           bind_maybe_payload(ctx, left_pat, left_reg, left, b_then_start),
+         {:ok, _rp, b_right_bound, just_ctx2} <-
+           bind_maybe_payload(just_ctx1, right_pat, right_reg, right, b_left_bound),
+         {:ok, :stream_void, then_exit, b_then} <-
+           compile_maybe_branch_in_current(Map.get(just_br, :expr), just_ctx2, b_right_bound),
+         b_then_done = Builder.patch_terminator(b_then, then_exit, {:br, merge_id}),
+         {:ok, :stream_void, else_exit, b_else} <-
+           compile_maybe_branch(Map.get(wild_br, :expr), ctx, b_then_done, else_id),
+         b_else_done = Builder.patch_terminator(b_else, else_exit, {:br, merge_id}),
+         b_merge = Builder.begin_block(b_else_done, merge_id) do
+      {:ok, :stream_void, %{b_merge | pending_merge_block: saved_pending}}
+    else
+      _ -> :unsupported
+    end
+  end
+
   @spec compile_maybe_branch_in_current(Types.expr(), Context.t(), Builder.t()) ::
           {:ok, Types.reg() | Types.result_slot(), non_neg_integer(), Builder.t()} | :unsupported
 
@@ -287,7 +375,15 @@ defmodule Elmc.Backend.Plan.Lower.Case do
         ) :: Types.compile_result()
 
   # `case (maybeA, maybeB) of (Nothing, Nothing) -> …; _ -> …` without heap tuple2.
-  defp compile_maybe_nothing_nothing_tuple_case(
+  defp compile_maybe_nothing_nothing_tuple_case(subj, nothing_br, wild_br, ctx, b) do
+    if Context.stream_mode?(ctx) do
+      compile_stream_maybe_nothing_nothing_tuple_case(subj, nothing_br, wild_br, ctx, b)
+    else
+      compile_value_maybe_nothing_nothing_tuple_case(subj, nothing_br, wild_br, ctx, b)
+    end
+  end
+
+  defp compile_value_maybe_nothing_nothing_tuple_case(
          %{op: :tuple2, left: left, right: right},
          nothing_br,
          wild_br,
@@ -317,6 +413,39 @@ defmodule Elmc.Backend.Plan.Lower.Case do
          {:ok, merge, b_out} <-
            emit_merge(both_nothing, then_reg, else_reg, then_id, else_id, b_merge) do
       {:ok, merge, %{b_out | pending_merge_block: saved_pending}}
+    else
+      _ -> :unsupported
+    end
+  end
+
+  defp compile_stream_maybe_nothing_nothing_tuple_case(
+         %{op: :tuple2, left: left, right: right},
+         nothing_br,
+         wild_br,
+         ctx,
+         b
+       ) do
+    saved_pending = Map.get(b, :pending_merge_block)
+    subject_ctx = Context.for_branch_arm(ctx)
+
+    with {:ok, left_reg, b1} <- Expr.compile(left, subject_ctx, b),
+         {:ok, right_reg, b2} <- Expr.compile(right, subject_ctx, b1),
+         {:ok, left_nothing, b3} <- emit_test_maybe_nothing(left_reg, b2),
+         {:ok, right_nothing, b4} <- emit_test_maybe_nothing(right_reg, b3),
+         {:ok, both_nothing, b5} <- emit_bool_and(left_nothing, right_nothing, b4),
+         then_id = b5.next_block,
+         else_id = then_id + 1,
+         merge_id = skip_reserved(else_id + 1, saved_pending),
+         b_entry = Builder.finish_block(b5, {:br_if, then_id, else_id, both_nothing}),
+         b_reserved = %{b_entry | next_block: max(b_entry.next_block, merge_id + 1)},
+         {:ok, :stream_void, then_exit, b_then} <-
+           compile_maybe_branch(Map.get(nothing_br, :expr), ctx, b_reserved, then_id),
+         b_then_done = Builder.patch_terminator(b_then, then_exit, {:br, merge_id}),
+         {:ok, :stream_void, else_exit, b_else} <-
+           compile_maybe_branch(Map.get(wild_br, :expr), ctx, b_then_done, else_id),
+         b_else_done = Builder.patch_terminator(b_else, else_exit, {:br, merge_id}),
+         b_merge = Builder.begin_block(b_else_done, merge_id) do
+      {:ok, :stream_void, %{b_merge | pending_merge_block: saved_pending}}
     else
       _ -> :unsupported
     end

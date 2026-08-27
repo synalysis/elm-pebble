@@ -6,7 +6,10 @@ defmodule Elmc.Backend.Plan.Verify do
   result inspection bugs before any backend emits target code.
 
   Inter-block dataflow: owned/consumed/`fn_out` publish state is joined at
-  successors. `fusion_c`-only plans (no SSA blocks) are rejected.
+  successors. Must-own is the **intersection** of incoming owned sets; may-own
+  is the union. A register owned on only some predecessors is not must-live
+  after the merge (phi/release must account for it). `fusion_c`-only plans
+  (no SSA blocks) are rejected.
   """
 
   alias Elmc.Backend.Plan.Cfg
@@ -17,6 +20,7 @@ defmodule Elmc.Backend.Plan.Verify do
 
   @type state :: %{
           owned: MapSet.t(Types.reg()),
+          maybe_owned: MapSet.t(Types.reg()),
           consumed: MapSet.t(Types.reg()),
           fn_out_writes: non_neg_integer(),
           branch_out_writes: non_neg_integer(),
@@ -94,6 +98,7 @@ defmodule Elmc.Backend.Plan.Verify do
   defp initial_state(plan) do
     %{
       owned: MapSet.new(),
+      maybe_owned: MapSet.new(),
       consumed: MapSet.new(),
       fn_out_writes: 0,
       branch_out_writes: 0,
@@ -159,7 +164,8 @@ defmodule Elmc.Backend.Plan.Verify do
 
   defp join_state(existing, incoming) do
     %{
-      owned: MapSet.union(existing.owned, incoming.owned),
+      owned: MapSet.intersection(existing.owned, incoming.owned),
+      maybe_owned: MapSet.union(existing.maybe_owned, incoming.maybe_owned),
       consumed: MapSet.union(existing.consumed, incoming.consumed),
       fn_out_writes: max(existing.fn_out_writes, incoming.fn_out_writes),
       branch_out_writes: max(existing.branch_out_writes, incoming.branch_out_writes),
@@ -304,6 +310,7 @@ defmodule Elmc.Backend.Plan.Verify do
   defp verify_produces_kind({:immortal, _}), do: :ok
   defp verify_produces_kind({:native_int, _}), do: :ok
   defp verify_produces_kind({:native_bool, _}), do: :ok
+  defp verify_produces_kind({:native_float, _}), do: :ok
   defp verify_produces_kind(other), do: {:error, :unknown_produce_kind, [produces: other]}
 
   defp verify_result_aliases(%{result_aliases: aliases, consumes: consumes}, dest)
@@ -325,18 +332,23 @@ defmodule Elmc.Backend.Plan.Verify do
   defp check_borrows_not_consumed(st, borrows) do
     Enum.each(borrows, fn reg ->
       if MapSet.member?(st.consumed, reg), do: verify_fail!(:read_after_consume, reg: reg)
+
+      if MapSet.member?(st.maybe_owned, reg) and not MapSet.member?(st.owned, reg) do
+        verify_fail!(:asymmetric_owned_borrow, reg: reg)
+      end
     end)
 
     st
   end
 
   defp track_produces(st, {:owned, reg}, _dest) when is_integer(reg) do
-    %{st | owned: MapSet.put(st.owned, reg)}
+    %{st | owned: MapSet.put(st.owned, reg), maybe_owned: MapSet.put(st.maybe_owned, reg)}
   end
 
   defp track_produces(st, {:immortal, _reg}, _dest), do: st
   defp track_produces(st, {:native_int, _reg}, _dest), do: st
   defp track_produces(st, {:native_bool, _reg}, _dest), do: st
+  defp track_produces(st, {:native_float, _reg}, _dest), do: st
   defp track_produces(st, _, _dest), do: st
 
   defp mark_consumed(st, consumes) do
@@ -344,19 +356,20 @@ defmodule Elmc.Backend.Plan.Verify do
       %{
         acc
         | consumed: MapSet.put(acc.consumed, reg),
-          owned: MapSet.delete(acc.owned, reg)
+          owned: MapSet.delete(acc.owned, reg),
+          maybe_owned: MapSet.delete(acc.maybe_owned, reg)
       }
     end)
   end
 
   defp apply_terminator({:ret, reg}, st) when reg in [:fn_out, :branch_out, :stream_void] do
-    %{st | owned: MapSet.delete(st.owned, reg)}
+    drop_owned(st, reg)
   end
 
   defp apply_terminator({:ret, reg}, st) when is_integer(reg) do
     if MapSet.member?(st.consumed, reg), do: verify_fail!(:ret_after_consume, reg: reg)
 
-    %{st | owned: MapSet.delete(st.owned, reg)}
+    drop_owned(st, reg)
   end
 
   defp apply_terminator({:br, _target}, st), do: st
@@ -373,13 +386,22 @@ defmodule Elmc.Backend.Plan.Verify do
 
   defp apply_terminator(_, st), do: st
 
+  defp drop_owned(st, reg) do
+    %{st | owned: MapSet.delete(st.owned, reg), maybe_owned: MapSet.delete(st.maybe_owned, reg)}
+  end
+
   defp verify_no_leaked_owned(st, plan_name) do
-    case MapSet.to_list(st.owned) do
+    leaked =
+      st.owned
+      |> MapSet.union(st.maybe_owned)
+      |> MapSet.to_list()
+
+    case leaked do
       [] ->
         :ok
 
-      leaked ->
-        {:error, :leaked_owned_regs, [regs: leaked, plan: plan_name]}
+      regs ->
+        {:error, :leaked_owned_regs, [regs: regs, plan: plan_name]}
     end
   end
 

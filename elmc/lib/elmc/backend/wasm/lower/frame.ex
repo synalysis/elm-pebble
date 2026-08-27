@@ -107,6 +107,10 @@ defmodule Elmc.Backend.Wasm.Lower.Frame do
     maybe_box_fn_out_tail(plan, slots, :native_bool)
   end
 
+  def box_native_scalar_return(%{native_scalar_return: :native_float} = plan, slots) do
+    maybe_box_fn_out_tail(plan, slots, :native_float)
+  end
+
   def box_native_scalar_return(_plan, _slots), do: []
 
   defp maybe_box_fn_out_tail(plan, slots, kind) do
@@ -118,14 +122,14 @@ defmodule Elmc.Backend.Wasm.Lower.Frame do
   end
 
   defp plan_tail_boxes_fn_out?(%FunctionPlan{} = plan) do
-    native? = Map.get(plan, :native_scalar_return) in [:native_int, :native_bool]
+    native? = Elmc.Backend.Plan.ScalarKind.native_return?(Map.get(plan, :native_scalar_return))
 
     # Skip epilogue boxing only when the body already placed a boxed handle in
     # $fn_out. `Instr.publish_fn_out/3` boxes on `{:ret, reg}` / `:publish` when
     # native_scalar_return is set. `{:ret, :fn_out}` means a prior instr wrote
     # $fn_out and may still hold a raw i32 (constant-folded probeNot).
     case last_fn_out_write(plan.blocks) do
-      {:call_runtime, builtin} when builtin in [:new_int, :new_bool] -> true
+      {:call_runtime, builtin} when builtin in [:new_int, :new_bool, :new_float] -> true
       {:call_runtime, _} -> true
       {:publish, _} -> native?
       {:ret, reg} when is_integer(reg) -> native?
@@ -167,7 +171,7 @@ defmodule Elmc.Backend.Wasm.Lower.Frame do
     |> Enum.flat_map(& &1.instrs)
     |> Enum.any?(fn
       %{op: :call_runtime, dest: dest, args: %{builtin: builtin}}
-      when dest in [:fn_out, :branch_out] and builtin in [:new_int, :new_bool] ->
+      when dest in [:fn_out, :branch_out] and builtin in [:new_int, :new_bool, :new_float] ->
         true
 
       _ ->
@@ -180,6 +184,7 @@ defmodule Elmc.Backend.Wasm.Lower.Frame do
       (case kind do
          :native_int -> Elmc.Backend.Wasm.RuntimeImports.import_name(:new_int)
          :native_bool -> Elmc.Backend.Wasm.RuntimeImports.import_name(:new_bool)
+         :native_float -> Elmc.Backend.Wasm.RuntimeImports.import_name(:new_float)
        end)
       |> WasmTypes.import_ident()
 

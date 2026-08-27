@@ -29,7 +29,8 @@ defmodule Elmc.Backend.Plan.Context do
     :lambda_plan,
     :curried_type_offset,
     :expected_fn_type,
-    :stream_mode
+    :stream_mode,
+    :stream_aliases
   ]
 
   @type t :: %__MODULE__{
@@ -51,7 +52,8 @@ defmodule Elmc.Backend.Plan.Context do
           lambda_plan: boolean(),
           curried_type_offset: non_neg_integer(),
           expected_fn_type: String.t() | nil,
-          stream_mode: boolean()
+          stream_mode: boolean(),
+          stream_aliases: %{optional(String.t()) => Types.expr()}
         }
 
   @type dest :: :scratch | :fn_out | :branch_out
@@ -79,7 +81,8 @@ defmodule Elmc.Backend.Plan.Context do
       lambda_plan: Keyword.get(opts, :lambda_plan, false),
       curried_type_offset: Keyword.get(opts, :curried_type_offset, 0),
       expected_fn_type: Keyword.get(opts, :expected_fn_type),
-      stream_mode: Keyword.get(opts, :stream_mode, false)
+      stream_mode: Keyword.get(opts, :stream_mode, false),
+      stream_aliases: Keyword.get(opts, :stream_aliases, %{})
     }
   end
 
@@ -177,6 +180,20 @@ defmodule Elmc.Backend.Plan.Context do
 
   @spec stream_mode?(t()) :: boolean()
   def stream_mode?(ctx), do: Map.get(ctx, :stream_mode, false) == true
+
+  @spec put_stream_alias(t(), String.t(), Types.expr()) :: t()
+  def put_stream_alias(ctx, name, expr) when is_binary(name) and is_map(expr) do
+    aliases = Map.get(ctx, :stream_aliases) || %{}
+    %{ctx | stream_aliases: Map.put(aliases, name, expr)}
+  end
+
+  @spec stream_alias(t(), String.t()) :: Types.expr() | nil
+  def stream_alias(ctx, name) when is_binary(name) do
+    ctx
+    |> Map.get(:stream_aliases)
+    |> Kernel.||(%{})
+    |> Map.get(name)
+  end
 
   @spec put_local(t(), String.t(), Types.reg()) :: t()
   def put_local(ctx, name, reg) when is_binary(name) do

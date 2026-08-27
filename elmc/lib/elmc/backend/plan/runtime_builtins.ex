@@ -438,14 +438,22 @@ defmodule Elmc.Backend.Plan.RuntimeBuiltins do
   @spec call_contract(atom()) :: %{
           c_symbol: String.t() | nil,
           retains_operand: boolean(),
-          dest_may_be_fn_out: boolean()
+          dest_may_be_fn_out: boolean(),
+          native_arg_kinds: %{non_neg_integer() => :native_int | :native_bool | :native_float}
         }
   def call_contract(id) when is_atom(id) do
     %{
       c_symbol: Map.get(@builtins, id),
       retains_operand: retains_operand_result?(id),
-      dest_may_be_fn_out: true
+      dest_may_be_fn_out: true,
+      native_arg_kinds: native_arg_kinds(id)
     }
+  end
+
+  defp native_arg_kinds(id) do
+    for idx <- Map.get(@native_int_arg_indices, id, []), into: %{} do
+      {idx, :native_int}
+    end
   end
 
   @spec retains_operand_result?(atom()) :: boolean()

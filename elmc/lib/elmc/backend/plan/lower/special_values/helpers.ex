@@ -225,12 +225,7 @@ defmodule Elmc.Backend.Plan.Lower.SpecialValues.Helpers do
     {value, payload} = List.pop_at(args, -1)
 
     if render_text_cmd_eligible?(payload, value) do
-      %{
-        op: :render_text_cmd,
-        kind: draw_kind_expr(kind),
-        int_params: payload,
-        text: value
-      }
+      forced_render_text_cmd_expr(kind, payload, value)
     else
       %{op: :tuple2, left: draw_kind_expr(kind), right: tuple_chain(payload ++ [value])}
     end
@@ -238,6 +233,17 @@ defmodule Elmc.Backend.Plan.Lower.SpecialValues.Helpers do
 
   def encoded_text_cmd_expr(_kind, _args),
     do: unsupported_draw_expr("encoded_text_cmd", 2, "text cmd requires at least two args")
+
+  @spec forced_render_text_cmd_expr(atom() | non_neg_integer(), [Types.ir_expr()], Types.ir_expr()) ::
+          Types.ir_expr()
+  def forced_render_text_cmd_expr(kind, payload, text) when is_list(payload) do
+    %{
+      op: :render_text_cmd,
+      kind: draw_kind_expr(kind),
+      int_params: payload,
+      text: text
+    }
+  end
 
   @spec render_text_cmd_eligible?([Types.ir_expr()], Types.ir_expr()) :: boolean()
 

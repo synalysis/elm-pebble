@@ -6,6 +6,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.UseSites do
   alias Elmc.Backend.CCodegen.DirectRender.ListLoopPlans
   alias Elmc.Backend.CCodegen.Host
   alias Elmc.Backend.CCodegen.Types
+  alias Elmc.Backend.Plan.Lower.Stream.List, as: StreamList
 
   @type use_sites :: Types.direct_function_use_sites()
 
@@ -25,7 +26,8 @@ defmodule Elmc.Backend.CCodegen.DirectRender.UseSites do
           pruned_acc
 
         map_callback_only_target?(target, use_sites) and
-            map_callback_affine_inlined_everywhere?(target, use_sites, decl_map) ->
+            map_callback_affine_inlined_everywhere?(target, use_sites, decl_map) and
+            map_callback_expandable_everywhere?(target, use_sites) ->
           MapSet.put(pruned_acc, target)
 
         true ->
@@ -142,6 +144,16 @@ defmodule Elmc.Backend.CCodegen.DirectRender.UseSites do
           :other -> false
         end)
     end
+  end
+
+  defp map_callback_expandable_everywhere?(target, use_sites) do
+    use_sites
+    |> Map.get(target, [])
+    |> Enum.all?(fn
+      {:map, _, _, list_expr, _} -> StreamList.expandable_source?(list_expr)
+      {:map, _, _, list_expr} -> StreamList.expandable_source?(list_expr)
+      _ -> false
+    end)
   end
 
   defp map_callback_affine_inlined_everywhere?(target, use_sites, decl_map) do

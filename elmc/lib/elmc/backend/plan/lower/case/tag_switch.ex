@@ -129,10 +129,17 @@ defmodule Elmc.Backend.Plan.Lower.Case.TagSwitch do
 
   defp compile_cfg(subj_reg, branches, ctx, b) do
     saved_pending = Map.get(b, :pending_merge_block)
+    stream? = Context.stream_mode?(ctx)
     {tagged, default_br} = split_branches(branches)
     entry_id = b.current_block.id
     b_sealed = Builder.finish_block(b, :none)
-    {merge_reg, b_sealed} = Builder.fresh_reg(b_sealed)
+
+    {merge_reg, b_sealed} =
+      if stream? do
+        {:stream, b_sealed}
+      else
+        Builder.fresh_reg(b_sealed)
+      end
 
     with {:ok, tagged_results, _default_reg, default_arm_id, arm_exits, b_arms} <-
            compile_arm_blocks(tagged, default_br, subj_reg, ctx, b_sealed, merge_reg),
@@ -147,9 +154,13 @@ defmodule Elmc.Backend.Plan.Lower.Case.TagSwitch do
              entry_id,
              {:switch_tag, subj_reg, switch_arms, default_block_id}
            ),
-         b_merge_start = Builder.begin_block(b_entry, merge_id),
-         {:ok, merge, b_merge} <- ArmMerge.finish_merge(b_merge_start, merge_reg, merge_id) do
-      {:ok, merge, %{b_merge | pending_merge_block: saved_pending}}
+         b_merge_start = Builder.begin_block(b_entry, merge_id) do
+      if stream? do
+        {:ok, :stream_void, %{b_merge_start | pending_merge_block: saved_pending}}
+      else
+        {:ok, merge, b_merge} = ArmMerge.finish_merge(b_merge_start, merge_reg, merge_id)
+        {:ok, merge, %{b_merge | pending_merge_block: saved_pending}}
+      end
     else
       _ -> :unsupported
     end
@@ -169,9 +180,12 @@ defmodule Elmc.Backend.Plan.Lower.Case.TagSwitch do
           Types.reg(),
           Context.t(),
           Builder.t(),
-          Types.reg()
+          Types.reg() | :stream
         ) ::
           {:ok, list(), nil, non_neg_integer() | nil, list(), Builder.t()} | :unsupported
+
+  defp publish_arm(b, _reg, :stream), do: {:ok, b}
+  defp publish_arm(b, reg, merge_reg), do: ArmMerge.publish_arm_to_merge(b, reg, merge_reg)
 
   defp compile_arm_blocks(tagged, default_br, subj_reg, ctx, b, merge_reg) do
     with {:ok, tagged_results, arm_exits, b1} <-
@@ -225,7 +239,7 @@ defmodule Elmc.Backend.Plan.Lower.Case.TagSwitch do
     b_arm = Builder.begin_cfg_arm_block(b, arm_id)
 
     with {:ok, reg, ^tag, b1} <- compile_one_arm(branch, subj_reg, ctx, b_arm),
-         {:ok, b_pub} <- ArmMerge.publish_arm_to_merge(b1, reg, merge_reg),
+         {:ok, b_pub} <- publish_arm(b1, reg, merge_reg),
          exit_id = b_pub.current_block.id,
          b2 = Builder.finish_block(b_pub, :none),
          {:ok, more, exits, b3} <-
@@ -242,7 +256,7 @@ defmodule Elmc.Backend.Plan.Lower.Case.TagSwitch do
     b_arm = Builder.begin_cfg_arm_block(b, arm_id)
 
     with {:ok, reg, ^tag, b1} <- compile_nested_duplicate_tag_arm(branches, subj_reg, ctx, b_arm),
-         {:ok, b_pub} <- ArmMerge.publish_arm_to_merge(b1, reg, merge_reg),
+         {:ok, b_pub} <- publish_arm(b1, reg, merge_reg),
          exit_id = b_pub.current_block.id,
          b2 = Builder.finish_block(b_pub, :none),
          {:ok, more, exits, b3} <-
@@ -295,7 +309,7 @@ defmodule Elmc.Backend.Plan.Lower.Case.TagSwitch do
     b_arm = Builder.begin_cfg_arm_block(b, arm_id)
 
     with {:ok, reg, _tag, b1} <- compile_one_arm(branch, subj_reg, ctx, b_arm),
-         {:ok, b_pub} <- ArmMerge.publish_arm_to_merge(b1, reg, merge_reg),
+         {:ok, b_pub} <- publish_arm(b1, reg, merge_reg),
          exit_id = b_pub.current_block.id,
          b2 = Builder.finish_block(b_pub, :none) do
       {:ok, arm_id, exit_id, b2}

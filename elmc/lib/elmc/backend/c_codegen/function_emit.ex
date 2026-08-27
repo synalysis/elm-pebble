@@ -37,6 +37,7 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
   alias Elmc.Backend.CCodegen.DirectRender.Emit.RecordGetHoistPass
   alias Elmc.Backend.SizeProfile
   alias Elmc.Backend.Plan
+  alias Elmc.Backend.Plan.ScalarKind
 
   @c_reserved_binding_names ~w(
     args argc out_cmds max_cmds skip count emitted
@@ -132,7 +133,7 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
     dual_out? = NativeReturn.dual_out?(native_ret)
     rc_abi? =
       rc_required? or dual_out? or
-        (native_ret in [:native_int, :native_bool] and not value_return?)
+        (ScalarKind.native_return?(native_ret) and not value_return?)
 
     signature =
       cond do
@@ -154,7 +155,7 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
 
     return_type =
       cond do
-        value_return? and native_ret in [:native_int, :native_bool] ->
+        value_return? and ScalarKind.native_return?(native_ret) ->
           NativeReturn.c_value_type(native_ret)
 
         rc_abi? ->
@@ -215,7 +216,7 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
       not NativeFunctionCall.native_args?(decl, module_name, decl_map) and
       not ListIntSearch.recognized?(decl, module_name, decl_map) and
       not match?({:ok, _}, ListIntReduce.recognize(decl, module_name, decl_map)) and
-      NativeFunctionCall.return_kind(decl, module_name, decl_map) in [:native_int, :native_bool] and
+      ScalarKind.native_return?(NativeFunctionCall.return_kind(decl, module_name, decl_map)) and
       native_zero_arg_literal_body?(decl, module_name, decl_map)
   end
 
@@ -223,7 +224,7 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
 
   defp native_zero_arg_literal_body?(decl, module_name, decl_map) do
     case decl do
-      %{expr: %{op: op, value: _}} when op in [:int_literal, :char_literal, :bool_literal, :c_int_expr] ->
+      %{expr: %{op: op, value: _}} when op in [:int_literal, :char_literal, :bool_literal, :float_literal, :c_int_expr] ->
         true
 
       %{expr: expr} when is_map(expr) ->
@@ -330,7 +331,7 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
   def mixed_direct_abi?(decl, module_name, decl_map) do
     decl
     |> NativeFunctionCall.arg_kinds(module_name, decl_map)
-    |> Enum.any?(&(&1 in [:native_int, :native_bool]))
+    |> Enum.any?(&ScalarKind.native_return?/1)
   end
 
   @spec direct_params(Types.function_declaration(), String.t(), Types.function_decl_map()) ::
@@ -363,6 +364,7 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
           case kind do
             :native_int -> "elmc_int_t #{c_arg}"
             :native_bool -> "bool #{c_arg}"
+            :native_float -> "double #{c_arg}"
             _ -> "ElmcValue *#{c_arg}"
           end
         end)
@@ -557,10 +559,10 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
     dual_out? = NativeReturn.dual_out?(native_ret)
     rc_abi? =
       RcRequired.rc_required?(module_name, decl_name) or dual_out? or
-        (native_ret in [:native_int, :native_bool] and not value_return?)
+        (ScalarKind.native_return?(native_ret) and not value_return?)
 
     cond do
-      value_return? and native_ret in [:native_int, :native_bool] ->
+      value_return? and ScalarKind.native_return?(native_ret) ->
         value_type = NativeReturn.c_value_type(native_ret)
 
         case params do
@@ -601,7 +603,7 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
       FunctionCallAbi.direct_entry_abi?(decl, module_name, decl_map) ->
         boxed_direct_prototype(decl, c_name, module_name, decl.name, decl_map)
 
-      native_ret in [:native_int, :native_bool, :native_int_pair, :native_list_int_pair] ->
+      ScalarKind.native_or_pair?(native_ret) ->
         "RC #{c_name}(#{NativeReturn.c_out_type(native_ret)}, #{argv_tail});"
 
       worker_abi? and not NativeFunctionCall.native_scalar_fn?(decl, module_name, decl_map) ->
@@ -814,7 +816,7 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
         rc_required? ->
           "Rc = RC_ERR_UNSUPPORTED;"
 
-        value_return? and native_ret in [:native_int, :native_bool] ->
+        value_return? and ScalarKind.native_return?(native_ret) ->
           "return 0;"
 
         true ->
@@ -1258,7 +1260,10 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
           ""
 
         is_list(fusion_kinds) and
-            Enum.all?(fusion_kinds, &(&1 in [:native_int, :native_bool, :boxed_int_tag, :boxed])) ->
+            Enum.all?(
+              fusion_kinds,
+              &(&1 in [:boxed_int_tag, :boxed] or ScalarKind.native_return?(&1))
+            ) ->
           native_wrapper_bindings(arg_bindings, fusion_kinds)
 
         true ->
@@ -1345,7 +1350,7 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
 
           _ ->
             unboxed_in_wrapper? or
-              (direct_entry? and Enum.at(direct_kinds, index) in [:native_int, :native_bool])
+              (direct_entry? and ScalarKind.native_return?(Enum.at(direct_kinds, index)))
         end
 
       fusion_native_call_arg(c_arg, kind, direct_native?)
@@ -1368,6 +1373,8 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
       :native_int -> "elmc_as_int(#{c_arg})"
       :native_bool when direct_native? -> c_arg
       :native_bool -> "elmc_as_bool(#{c_arg})"
+      :native_float when direct_native? -> c_arg
+      :native_float -> "#{ScalarKind.peel(:float)}(#{c_arg})"
       _ -> c_arg
     end
   end
@@ -1375,7 +1382,7 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
   @spec fusion_wrapper_native_args?([atom()]) :: boolean()
 
   defp fusion_wrapper_native_args?(kinds) when is_list(kinds) do
-    Enum.all?(kinds, &(&1 in [:native_int, :native_bool, :boxed_int_tag]))
+    Enum.all?(kinds, &(&1 in [:native_int, :native_bool, :native_float, :boxed_int_tag]))
   end
 
   @spec fusion_wrapper_unboxed_in_wrapper?(Types.decl(), String.t(), Types.decl_map(), [atom()]) ::
@@ -1398,6 +1405,7 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
         case Host.normalize_type_name(arg_type) do
           "Int" -> :native_int
           "Bool" -> :native_bool
+          "Float" -> :native_float
           _ -> :boxed
         end
 
@@ -1413,10 +1421,13 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
 
   @spec native_scalar_call_arg(String.t(), atom(), boolean()) :: String.t()
 
-  defp native_scalar_call_arg(c_arg, :native_int, true), do: c_arg
-  defp native_scalar_call_arg(c_arg, :native_bool, true), do: c_arg
-  defp native_scalar_call_arg(c_arg, :native_int, false), do: "elmc_as_int(#{c_arg})"
-  defp native_scalar_call_arg(c_arg, :native_bool, false), do: "elmc_as_bool(#{c_arg})"
+  defp native_scalar_call_arg(c_arg, kind, true) when kind in [:native_int, :native_bool, :native_float],
+    do: c_arg
+
+  defp native_scalar_call_arg(c_arg, kind, false) when kind in [:native_int, :native_bool, :native_float] do
+    "#{ScalarKind.peel(ScalarKind.from_native_return(kind))}(#{c_arg})"
+  end
+
   defp native_scalar_call_arg(c_arg, _kind, _direct_args?), do: c_arg
 
   @spec generic_native_function_prototypes(
@@ -1513,6 +1524,8 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
       |> Enum.map(fn
         {{_arg, c_arg, _index}, :native_int} -> "elmc_int_t #{c_arg}"
         {{_arg, c_arg, _index}, :boxed_int_tag} -> "elmc_int_t #{c_arg}"
+        {{_arg, c_arg, _index}, :native_bool} -> "bool #{c_arg}"
+        {{_arg, c_arg, _index}, :native_float} -> "double #{c_arg}"
         {{_arg, c_arg, _index}, _} -> "ElmcValue *#{c_arg}"
       end)
 
@@ -1897,6 +1910,12 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
               return Rc;
               """
 
+            rc_required? and return_kind == :native_float ->
+              """
+              RC Rc = #{ScalarKind.box(:float)}(#{RcRuntimeEmit.function_out_param()}, #{c_name}_native(#{native_args}));
+              return Rc;
+              """
+
             rc_required? and return_kind == :native_bool ->
               if NativeFunctionCall.native_bool_rc_abi?(decl, module_name, decl_map) do
                 rc_native_bool_delegate(c_name, native_args)
@@ -1966,6 +1985,9 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
 
         :native_bool ->
           "elmc_int_t #{c_arg} = (argc > #{index} && args[#{index}]) ? elmc_as_bool(args[#{index}]) : 0;"
+
+        :native_float ->
+          "double #{c_arg} = (argc > #{index} && args[#{index}]) ? #{ScalarKind.peel(:float)}(args[#{index}]) : 0.0;"
 
         :boxed_int_tag ->
           "elmc_int_t #{c_arg} = (argc > #{index} && args[#{index}]) ? #{RowMajorLayout.union_tag_expr("args[#{index}]")} : 0;"
@@ -2483,6 +2505,7 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
       case kind do
         :native_int -> EnvBindings.put_native_int_binding(acc, source_arg, c_arg)
         :native_bool -> EnvBindings.put_native_bool_binding(acc, source_arg, c_arg)
+        :native_float -> EnvBindings.put_native_float_binding(acc, source_arg, c_arg)
         :boxed -> Map.put(acc, source_arg, c_arg)
       end
     end)
@@ -2531,7 +2554,7 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
         ) :: Types.compile_result()
 
   defp compile_native_body(decl, module_name, decl_map, env, return_kind, arg_kinds)
-       when return_kind in [:native_int, :native_bool] do
+       when return_kind in [:native_int, :native_bool, :native_float] do
     expr = decl.expr || %{op: :int_literal, value: 0}
 
     case compile_list_int_search_native(decl, module_name, decl_map, env, return_kind) do
@@ -2650,6 +2673,9 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
 
   defp compile_scalar_native_expr(expr, env, :native_bool, counter),
     do: NativeBool.compile_expr(expr, env, counter)
+
+  defp compile_scalar_native_expr(expr, env, :native_float, counter),
+    do: Host.compile_native_float_expr(expr, env, counter)
 
   @spec register_native_boxed_rc_abi!(String.t(), String.t(), boolean()) :: :ok
 
@@ -2790,17 +2816,12 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
           Elmc.Backend.CCodegen.Native.FunctionCall.native_return_kind()
         ) :: String.t()
 
-  defp wrapper_return_scalar(c_name, native_args, :native_int) do
-    """
-    RC Rc = elmc_new_int(#{RcRuntimeEmit.function_out_param()}, #{c_name}_native(#{native_args}));
-    return Rc;
-    """
-    |> String.trim()
-  end
+  defp wrapper_return_scalar(c_name, native_args, kind)
+       when kind in [:native_int, :native_bool, :native_float] do
+    box = ScalarKind.box(ScalarKind.from_native_return(kind))
 
-  defp wrapper_return_scalar(c_name, native_args, :native_bool) do
     """
-    RC Rc = elmc_new_bool(#{RcRuntimeEmit.function_out_param()}, #{c_name}_native(#{native_args}));
+    RC Rc = #{box}(#{RcRuntimeEmit.function_out_param()}, #{c_name}_native(#{native_args}));
     return Rc;
     """
     |> String.trim()

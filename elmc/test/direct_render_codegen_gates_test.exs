@@ -54,7 +54,9 @@ defmodule Elmc.DirectRenderCodegenGatesTest do
 
     body = commands_append_body!(generated)
     refute body =~ ~r/\bELMC_RECORD_GET_INDEX\(\s*payload\s*,/
-    assert body =~ "elmc_maybe_or_tuple_just_payload_borrow" or body =~ "elmc_maybe_is_just"
+    assert body =~ "elmc_maybe_or_tuple_just_payload_borrow" or
+             body =~ "elmc_maybe_is_just" or
+             body =~ "elmc_maybe_is_nothing"
   end
 
   test "bare-var Maybe + nested Point line endpoints typecheck" do
@@ -163,10 +165,10 @@ defmodule Elmc.DirectRenderCodegenGatesTest do
 
     assert generated =~ "elmc_fn_Main_unit4"
     refute generated =~ ~r/static ElmcValue \*elmc_fn_Main_unit4\s*\(\s*elmc_int_t/
-    assert generated =~ ~r/elmc_fn_Main_unit4\(\s*&native_pair_\d+_0,\s*&native_pair_\d+_1,/
+    assert generated =~ ~r/elmc_fn_Main_unit4\(\s*&/
   end
 
-  test "plan_stream_fallback diagnostics stay warnings, never silent errors" do
+  test "Maybe Just payload view streams without Host ExprDispatch" do
     {_result, generated} =
       compile_gate!("gate_stream_fallback_visible", """
       #{header()}

@@ -724,4 +724,132 @@ defmodule Elmc.PlanCLowerTest do
     assert c =~ "elmc_as_int(x)"
     assert c =~ "return "
   end
+
+  test "Bool identity peels boxed param into native return without tmp retain" do
+    decl = %{
+      name: "identityBool",
+      args: ["x"],
+      type: "Bool -> Bool",
+      ownership: [:borrow_arg, :borrow_result],
+      expr: %{op: :var, name: "x"}
+    }
+
+    decl_map = %{{"Main", "identityBool"} => decl}
+    Process.put(:elmc_program_decls, decl_map)
+
+    assert {:ok, plan} =
+             Elmc.Backend.Plan.Lower.Function.lower(decl, "Main", decl_map, rc_required: true)
+
+    assert plan.native_scalar_return == :native_bool
+
+    c = CLowerFunction.emit(plan)
+    refute c =~ "tmp_"
+    refute c =~ "elmc_retain"
+    assert c =~ "elmc_as_bool(x)"
+    assert c =~ "return "
+  end
+
+  test "Float identity peels boxed param into native return without tmp retain" do
+    decl = %{
+      name: "identityFloat",
+      args: ["x"],
+      type: "Float -> Float",
+      ownership: [:borrow_arg, :borrow_result],
+      expr: %{op: :var, name: "x"}
+    }
+
+    decl_map = %{{"Main", "identityFloat"} => decl}
+    Process.put(:elmc_program_decls, decl_map)
+
+    assert {:ok, plan} =
+             Elmc.Backend.Plan.Lower.Function.lower(decl, "Main", decl_map, rc_required: true)
+
+    assert plan.native_scalar_return == :native_float
+
+    c = CLowerFunction.emit(plan)
+    refute c =~ "tmp_"
+    refute c =~ "elmc_retain"
+    assert c =~ "elmc_as_float(x)"
+    assert c =~ "return "
+  end
+
+  test "Float add_vars IR peels as float, not int" do
+    decl = %{
+      name: "addFloatVars",
+      args: ["a", "b"],
+      type: "Float -> Float -> Float",
+      ownership: [:borrow_arg, :borrow_result],
+      expr: %{op: :add_vars, left: "a", right: "b"}
+    }
+
+    decl_map = %{{"Main", "addFloatVars"} => decl}
+    Process.put(:elmc_program_decls, decl_map)
+
+    assert {:ok, plan} =
+             Elmc.Backend.Plan.Lower.Function.lower(decl, "Main", decl_map, rc_required: true)
+
+    c = CLowerFunction.emit(plan)
+    refute c =~ "elmc_as_int(a)"
+    refute c =~ "elmc_new_int"
+    assert c =~ "elmc_as_float(a)"
+    assert c =~ "elmc_as_float(b)"
+  end
+
+  test "Float add emits native double arith without boxing intermediates" do
+    decl = %{
+      name: "addFloat",
+      args: ["x", "y"],
+      type: "Float -> Float -> Float",
+      ownership: [:borrow_arg, :borrow_result],
+      expr: %{
+        op: :call,
+        name: "__add__",
+        args: [%{op: :var, name: "x"}, %{op: :var, name: "y"}]
+      }
+    }
+
+    decl_map = %{{"Main", "addFloat"} => decl}
+    Process.put(:elmc_program_decls, decl_map)
+
+    assert {:ok, plan} =
+             Elmc.Backend.Plan.Lower.Function.lower(decl, "Main", decl_map, rc_required: true)
+
+    assert plan.native_scalar_return == :native_float
+
+    c = CLowerFunction.emit(plan)
+    refute c =~ "elmc_new_float"
+    refute c =~ "tmp_"
+    assert c =~ "elmc_as_float(x)"
+    assert c =~ "elmc_as_float(y)"
+    assert c =~ ~r/\+|plan_native_float_/
+  end
+
+  test "Float compare peels operands into a native bool" do
+    decl = %{
+      name: "ltFloat",
+      args: ["x", "y"],
+      type: "Float -> Float -> Bool",
+      ownership: [:borrow_arg, :borrow_result],
+      expr: %{
+        op: :call,
+        name: "__lt__",
+        args: [%{op: :var, name: "x"}, %{op: :var, name: "y"}]
+      }
+    }
+
+    decl_map = %{{"Main", "ltFloat"} => decl}
+    Process.put(:elmc_program_decls, decl_map)
+
+    assert {:ok, plan} =
+             Elmc.Backend.Plan.Lower.Function.lower(decl, "Main", decl_map, rc_required: true)
+
+    assert plan.native_scalar_return == :native_bool
+
+    c = CLowerFunction.emit(plan)
+    refute c =~ "tmp_"
+    assert c =~ "elmc_as_float(x)"
+    assert c =~ "elmc_as_float(y)"
+    assert c =~ "return "
+  end
 end
+

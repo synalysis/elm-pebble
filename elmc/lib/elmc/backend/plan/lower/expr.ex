@@ -14,6 +14,7 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
   alias Elmc.Backend.Plan.Lower.Platform.Web, as: PlatformWeb
   alias Elmc.Backend.Plan.ParamFieldInference
   alias Elmc.Backend.Plan.RuntimeBuiltins
+  alias Elmc.Backend.Plan.Stream
   alias Elmc.Backend.Plan.Types
   alias Elmc.Backend.Pebble.Util, as: PebbleUtil
 
@@ -237,12 +238,24 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
             compile_string_unary("String.fromInt", arg, ctx, b)
 
           %{target: target, args: args} ->
-            case compile_special_runtime_call(target, args, ctx, b) do
+            case compile_stream_list_call(target, args, ctx, b) do
               {:ok, _, _} = ok ->
                 ok
 
               :unsupported ->
-                compile_qualified_call_dispatch(expr, target, ctx, b)
+                case compile_stream_ui_shell(target, args, ctx, b) do
+                  {:ok, _, _} = ok ->
+                    ok
+
+                  :unsupported ->
+                    case compile_special_runtime_call(target, args, ctx, b) do
+                      {:ok, _, _} = ok ->
+                        ok
+
+                      :unsupported ->
+                        compile_qualified_call_dispatch(expr, target, ctx, b)
+                    end
+                end
             end
         end
     end
@@ -304,6 +317,16 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
     end
   end
   def compile(%{op: :compare} = expr, ctx, b), do: Compare.compile(expr, ctx, b)
+  def compile(%{op: :constructor_call, target: target, args: [head, tail]} = expr, ctx, b)
+      when is_binary(target) do
+    if Context.stream_mode?(ctx) and
+         Elmc.Backend.Plan.Lower.Stream.List.cons_target?(target) do
+      Elmc.Backend.Plan.Lower.Stream.List.compile_cons(head, tail, ctx, b)
+    else
+      Constructor.compile(expr, ctx, b)
+    end
+  end
+
   def compile(%{op: :constructor_call} = expr, ctx, b),
     do: Constructor.compile(expr, ctx, b)
 
@@ -477,6 +500,10 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
     else
       List.compile_literal(items, ctx, b)
     end
+  end
+
+  def compile(%{op: :list_literal, elements: items}, ctx, b) when is_list(items) do
+    compile(%{op: :list_literal, items: items}, ctx, b)
   end
 
   def compile(%{op: :field_access, arg: %{op: :record_literal, fields: fields}, field: field}, ctx, b)
@@ -952,6 +979,18 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
           Builder.t()
         ) :: Types.compile_result()
 
+  defp compile_stream_list_call(target, args, ctx, b) do
+    if Context.stream_mode?(ctx) do
+      Elmc.Backend.Plan.Lower.Stream.List.try_compile_call(target, args, ctx, b)
+    else
+      :unsupported
+    end
+  end
+
+  defp compile_stream_ui_shell(target, args, ctx, b) do
+    Call.try_compile_ui_shell(target, args, ctx, b)
+  end
+
   defp compile_special_runtime_call(target, args, ctx, b) when is_binary(target) and is_list(args) do
     case SpecialValues.special_value_from_target(target, args) do
       %{op: :runtime_call, function: fun, args: call_args} = rewritten
@@ -996,6 +1035,26 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
     # IR-shaped specializers (field-accessor Maybe.andThen/map, list fusions, …) must
     # run before args are compiled to regs. The typed-args path below is for HOF
     # lambdas that need callee param types (e.g. BackendTask.Http.withMetadata).
+    case try_stream_list_runtime_call(rewritten, ctx, b) do
+      {:ok, _, _} = ok ->
+        ok
+
+      :unsupported ->
+        compile_ir_or_typed_runtime_call(rewritten, elm_target, args, fun, ctx, b)
+    end
+  end
+
+  defp compile_runtime_call_with_callee_arg_types(_, _, _, _), do: :unsupported
+
+  defp try_stream_list_runtime_call(expr, ctx, b) do
+    if Context.stream_mode?(ctx) do
+      Elmc.Backend.Plan.Lower.Stream.List.try_compile_runtime(expr, ctx, b)
+    else
+      :unsupported
+    end
+  end
+
+  defp compile_ir_or_typed_runtime_call(rewritten, elm_target, args, fun, ctx, b) do
     case try_ir_specialized_runtime_call(rewritten, ctx, b) do
       {:ok, _, _} = ok ->
         ok
@@ -1014,8 +1073,6 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
         end
     end
   end
-
-  defp compile_runtime_call_with_callee_arg_types(_, _, _, _), do: :unsupported
 
   # Specialize polymorphic HOF param types from known list/array element types so
   # lambdas like `List.map (\p -> p.x) points` with `points : List Point` get
@@ -1375,6 +1432,16 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
   @spec compile_root_var_binding(String.t(), Context.t(), Builder.t()) :: Types.compile_result()
 
   defp compile_root_var_binding(name, ctx, b) when is_binary(name) do
+    case Context.stream_alias(ctx, name) do
+      expr when is_map(expr) ->
+        compile(expr, ctx, b)
+
+      _ ->
+        compile_root_var_local_or_param(name, ctx, b)
+    end
+  end
+
+  defp compile_root_var_local_or_param(name, ctx, b) when is_binary(name) do
     case Context.local_reg(ctx, name) do
       reg when is_integer(reg) ->
         {:ok, reg, b}
@@ -2342,21 +2409,27 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
 
     Enum.reduce_while(bindings, {:ok, ctx, b}, fn {name, value_expr}, {:ok, ctx_acc, b_acc} ->
       value_expr = maybe_packed_text_options_expr(value_expr)
-      value_ctx = Context.for_branch_arm(ctx_acc)
 
-      case compile(value_expr, value_ctx, b_acc) do
-        {:ok, reg, b1} when is_integer(reg) ->
-          ctx1 =
-            ctx_acc
-            |> Context.put_local(name, reg)
-            |> maybe_put_local_type(name, value_expr, ctx_acc)
+      if Context.stream_mode?(ctx_acc) and
+           Stream.eligible_expr?(value_expr, ctx_acc.decl_map, ctx_acc.module) do
+        {:cont, {:ok, Context.put_stream_alias(ctx_acc, name, value_expr), b_acc}}
+      else
+        value_ctx = %{Context.for_branch_arm(ctx_acc) | stream_mode: false}
 
-          b2 = Builder.bind_local(b1, name, reg)
-          b3 = sync_letrec_forward_ref(name, ctx1, reg, b2)
-          {:cont, {:ok, ctx1, b3}}
+        case compile(value_expr, value_ctx, b_acc) do
+          {:ok, reg, b1} when is_integer(reg) ->
+            ctx1 =
+              ctx_acc
+              |> Context.put_local(name, reg)
+              |> maybe_put_local_type(name, value_expr, ctx_acc)
 
-        _ ->
-          {:halt, :unsupported}
+            b2 = Builder.bind_local(b1, name, reg)
+            b3 = sync_letrec_forward_ref(name, ctx1, reg, b2)
+            {:cont, {:ok, ctx1, b3}}
+
+          _ ->
+            {:halt, :unsupported}
+        end
       end
     end)
     |> then(fn
@@ -3064,14 +3137,26 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
     end
   end
 
-  defp compile_runtime_call(%{function: "elmc_list_map"} = expr, ctx, b) do
-    case Elmc.Backend.Plan.Lower.ListCursor.try_compile_map(expr, ctx, b) do
-      {:ok, reg, b1} -> {:ok, reg, b1}
-      :unsupported ->
-        case Elmc.Backend.Plan.Lower.ListRecord.try_compile_map(expr, ctx, b) do
-          {:ok, reg, b1} -> {:ok, reg, b1}
-          :unsupported -> compile_runtime_call_default(expr, ctx, b)
-        end
+  defp compile_runtime_call(%{function: "elmc_list_concat"} = expr, ctx, b) do
+    if Context.stream_mode?(ctx) do
+      case Elmc.Backend.Plan.Lower.Stream.List.try_compile_runtime(expr, ctx, b) do
+        {:ok, _, _} = ok -> ok
+        :unsupported -> compile_runtime_call_default(expr, ctx, b)
+      end
+    else
+      compile_runtime_call_default(expr, ctx, b)
+    end
+  end
+
+  defp compile_runtime_call(%{function: function} = expr, ctx, b)
+       when function in ["elmc_list_map", "elmc_list_concat_map", "elmc_list_indexed_map"] do
+    if Context.stream_mode?(ctx) do
+      case Elmc.Backend.Plan.Lower.Stream.List.try_compile_runtime(expr, ctx, b) do
+        {:ok, _, _} = ok -> ok
+        :unsupported -> compile_runtime_call_default(expr, ctx, b)
+      end
+    else
+      compile_value_list_map(function, expr, ctx, b)
     end
   end
 
@@ -3135,6 +3220,21 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
       :unsupported -> compile_runtime_call_default(expr, ctx, b)
     end
   end
+
+  defp compile_value_list_map("elmc_list_map", expr, ctx, b) do
+    case Elmc.Backend.Plan.Lower.ListCursor.try_compile_map(expr, ctx, b) do
+      {:ok, reg, b1} ->
+        {:ok, reg, b1}
+
+      :unsupported ->
+        case Elmc.Backend.Plan.Lower.ListRecord.try_compile_map(expr, ctx, b) do
+          {:ok, reg, b1} -> {:ok, reg, b1}
+          :unsupported -> compile_runtime_call_default(expr, ctx, b)
+        end
+    end
+  end
+
+  defp compile_value_list_map(_function, expr, ctx, b), do: compile_runtime_call_default(expr, ctx, b)
 
   @spec compile_runtime_call_default(map() | term(), Context.t(), Builder.t()) ::
           Types.compile_result()

@@ -6,8 +6,9 @@ defmodule Elmc.Backend.CCodegen.PlanNativeProjection do
   alias Elmc.Backend.C.Lower.NativeReturn
   alias Elmc.Backend.CCodegen.{Fusion, FunctionEmit, Host, Native.AngleMinute, Native.FunctionCall, RcRequired, Types, Util}
   alias Elmc.Backend.Plan
+  alias Elmc.Backend.Plan.ScalarKind
 
-  @type projection_kind :: :native_int | :native_bool
+  @type projection_kind :: :native_int | :native_bool | :native_float
 
   @spec eligible?(Types.function_decl(), String.t(), Types.function_decl_map()) :: boolean()
   def eligible?(decl, module_name, decl_map) do
@@ -15,7 +16,7 @@ defmodule Elmc.Backend.CCodegen.PlanNativeProjection do
       is_nil(NativeReturn.cached_kind({module_name, decl.name})) and
       RcRequired.rc_required?(module_name, decl.name) and
       not Fusion.rc_native_fusion?(module_name, decl.name, Map.get(decl, :expr), decl_map) and
-      projection_kind(decl) in [:native_int, :native_bool] and
+      ScalarKind.native_return?(projection_kind(decl)) and
       not NativeReturn.value_return?({module_name, decl.name})
   end
 
@@ -27,15 +28,15 @@ defmodule Elmc.Backend.CCodegen.PlanNativeProjection do
   @spec native_callee_only?(Types.function_decl(), String.t(), Types.function_decl_map()) :: boolean()
   def native_callee_only?(decl, module_name, decl_map) do
     supersedes_boxed_emit?(decl, module_name, decl_map) or
-      (projection_kind(decl) in [:native_int, :native_bool] and
+      (ScalarKind.native_return?(projection_kind(decl)) and
          match?({:ok, _}, direct_native_body(decl, module_name, decl_map)))
   end
 
   @spec native_call_return_kind(Types.function_decl(), String.t(), Types.function_decl_map()) ::
-          :native_int | :native_bool | :boxed
+          :native_int | :native_bool | :native_float | :boxed
   def native_call_return_kind(decl, module_name, decl_map) do
     case projection_kind(decl) do
-      kind when kind in [:native_int, :native_bool] ->
+      kind when kind in [:native_int, :native_bool, :native_float] ->
         kind
 
       _ ->
@@ -49,10 +50,9 @@ defmodule Elmc.Backend.CCodegen.PlanNativeProjection do
 
   @spec projection_kind(Types.function_decl()) :: projection_kind | :boxed
   def projection_kind(%{type: type}) when is_binary(type) do
-    case Host.function_return_type(type) do
-      "Int" -> :native_int
-      "Bool" -> :native_bool
-      _ -> :boxed
+    case ScalarKind.from_elm_type(Host.function_return_type(type)) do
+      nil -> :boxed
+      kind -> ScalarKind.native_return(kind)
     end
   end
 
@@ -75,7 +75,7 @@ defmodule Elmc.Backend.CCodegen.PlanNativeProjection do
           |> String.trim()
 
         :error ->
-          extract = if kind == :native_int, do: "elmc_as_int", else: "elmc_as_bool"
+          extract = ScalarKind.peel(ScalarKind.from_native_return(kind))
           call_args = boxed_call_args(decl, module_name, decl_map, params)
 
           """

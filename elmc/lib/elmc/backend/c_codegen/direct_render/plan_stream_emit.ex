@@ -20,7 +20,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.PlanStreamEmit do
 
     try do
       cond do
-        Stream.eligible_expr?(Map.get(decl, :expr)) ->
+        Stream.eligible_expr?(Map.get(decl, :expr), decl_map, module_name) ->
           with {:ok, plan} <- Stream.lower_function(decl, module_name, decl_map),
                :ok <- Verify.run(plan) do
             emit_plan_core(plan)

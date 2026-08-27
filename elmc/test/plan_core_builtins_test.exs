@@ -29,6 +29,17 @@ defmodule Elmc.PlanCoreBuiltinsTest do
 
     assert RuntimeBuiltins.call_contract(:maybe_with_default).retains_operand
     refute RuntimeBuiltins.call_contract(:list_append).retains_operand
+
+    assert RuntimeBuiltins.call_contract(:tuple2_ints).native_arg_kinds == %{
+             0 => :native_int,
+             1 => :native_int
+           }
+
+    assert RuntimeBuiltins.call_contract(:native_int_to_float).native_arg_kinds == %{
+             0 => :native_int
+           }
+
+    assert RuntimeBuiltins.call_contract(:list_append).native_arg_kinds == %{}
   end
 
   test "RuntimeBuiltins maps elm/core truncate and bitwise symbols" do

@@ -20,6 +20,7 @@ defmodule Elmc.Backend.CCodegen.Native.FunctionCall do
   alias Elmc.Backend.CCodegen.RcRequired
   alias Elmc.Backend.CCodegen.Types
   alias Elmc.Backend.CCodegen.Util
+  alias Elmc.Backend.Plan.ScalarKind
 
   @type native_return_kind ::
           :native_int | :native_bool | :native_float | :native_int_pair | :native_list_int_pair | :boxed
@@ -133,7 +134,7 @@ defmodule Elmc.Backend.CCodegen.Native.FunctionCall do
           [Types.ir_expr()],
           Types.compile_env(),
           Types.compile_counter(),
-          :native_int | :native_bool
+          :native_int | :native_bool | :native_float
         ) :: Types.native_scalar_compile_result() | :error
   def compile_scalar(module_name, name, args, env, counter, expected_kind)
       when expected_kind in [:native_int, :native_bool, :native_float] do
@@ -339,14 +340,14 @@ defmodule Elmc.Backend.CCodegen.Native.FunctionCall do
 
         true ->
           cond do
-            return_kind in [:native_int, :native_bool] and
+            ScalarKind.native_return?(return_kind) and
                 not RcRequired.rc_required?(module_name, decl.name) and
-                Host.function_return_type(decl.type) in ["Int", "Bool"] ->
+                Host.function_return_type(decl.type) in ["Int", "Bool", "Float"] ->
               "#{native_call_decl(return_kind)}#{out} = #{c_name}(#{arg_list});"
 
-            return_kind in [:native_int, :native_bool] and
+            ScalarKind.native_return?(return_kind) and
                 not RcRequired.rc_required?(module_name, decl.name) and
-                NativeReturn.cached_kind({module_name, decl.name}) in [:native_int, :native_bool] ->
+                ScalarKind.native_return?(NativeReturn.cached_kind({module_name, decl.name})) ->
               "#{native_call_decl(return_kind)}#{out} = #{c_name}(#{arg_list});"
 
             true ->
@@ -368,7 +369,7 @@ defmodule Elmc.Backend.CCodegen.Native.FunctionCall do
   def native_args?(decl, module_name, decl_map) do
     decl
     |> arg_kinds(module_name, decl_map)
-    |> Enum.any?(&(&1 in [:native_int, :native_bool]))
+    |> Enum.any?(&(&1 in [:native_int, :native_bool, :native_float]))
   end
 
   @spec native_scalar_fn?(Types.function_declaration(), String.t(), Types.function_decl_map()) ::
@@ -397,6 +398,9 @@ defmodule Elmc.Backend.CCodegen.Native.FunctionCall do
 
       "Int" ->
         Host.native_int_expr?(expr || %{op: :int_literal, value: 0}, env)
+
+      "Float" ->
+        Host.native_float_expr?(expr || %{op: :float_literal, value: 0.0}, env)
 
       ret ->
         # Plan annotate verifies the lowered body matches the dual-out shape.
@@ -484,6 +488,7 @@ defmodule Elmc.Backend.CCodegen.Native.FunctionCall do
       case kind do
         :native_int -> "const elmc_int_t #{c_arg}"
         :native_bool -> "const bool #{c_arg}"
+        :native_float -> "const double #{c_arg}"
         :boxed -> "ElmcValue * const #{c_arg}"
       end
     end)
@@ -645,7 +650,7 @@ defmodule Elmc.Backend.CCodegen.Native.FunctionCall do
   @spec signature_has_native_args?(Types.function_declaration()) :: boolean()
   def signature_has_native_args?(decl) do
     signature_only_arg_kinds(decl)
-    |> Enum.any?(&(&1 in [:native_int, :native_bool]))
+    |> Enum.any?(&ScalarKind.native_return?/1)
   end
 
   @spec signature_arg_kinds(Types.function_declaration(), String.t(), Types.function_decl_map()) ::
@@ -834,8 +839,9 @@ defmodule Elmc.Backend.CCodegen.Native.FunctionCall do
     {ref, max(next, index + 1)}
   end
 
-  defp native_call_decl(:native_int), do: "const elmc_int_t "
-  defp native_call_decl(:native_bool), do: "const bool "
+  defp native_call_decl(kind) when kind in [:native_int, :native_bool, :native_float],
+    do: "const #{ScalarKind.c_type(ScalarKind.from_native_return(kind))} "
+
   defp native_call_decl(:boxed), do: "ElmcValue *"
 
   defp native_boxed_rc_call_expr(c_name, arg_list, out, env) do
@@ -1123,6 +1129,7 @@ defmodule Elmc.Backend.CCodegen.Native.FunctionCall do
           case kind do
             :native_int -> EnvBindings.put_native_int_binding(acc, source_arg, c_arg)
             :native_bool -> EnvBindings.put_native_bool_binding(acc, source_arg, c_arg)
+            :native_float -> EnvBindings.put_native_float_binding(acc, source_arg, c_arg)
             :boxed -> Map.put(acc, source_arg, c_arg)
           end
 
