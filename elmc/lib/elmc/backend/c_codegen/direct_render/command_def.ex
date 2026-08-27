@@ -7,7 +7,6 @@ defmodule Elmc.Backend.CCodegen.DirectRender.CommandDef do
   alias Elmc.Backend.CCodegen.DirectRender.Emit.DuplicateFieldHoists
   alias Elmc.Backend.CCodegen.DirectRender.Emit.RecordGetHoistPass
   alias Elmc.Backend.CCodegen.DirectRender.PlanStreamEmit
-  alias Elmc.Backend.Plan.StrictPolicy
   alias Elmc.Backend.CCodegen.DirectRender.RecordViewPeel
   alias Elmc.Backend.CCodegen.EnvBindings
   alias Elmc.Backend.CCodegen.FunctionEmit
@@ -411,26 +410,19 @@ defmodule Elmc.Backend.CCodegen.DirectRender.CommandDef do
       {:ok, body_code} ->
         {:plan_stream, body_code}
 
-      :error ->
+      {:error, reason} ->
         case Host.direct_emit_expr(decl.expr, env, start_counter) do
           {:ok, body_code, counter} ->
-            record_plan_stream_fallback(module_name, decl)
-
-            if host_expr_dispatch_allowed?() do
-              {:legacy, body_code, counter}
-            else
-              :error
+            if reason == :stream_failed do
+              record_plan_stream_fallback(module_name, decl)
             end
+
+            {:legacy, body_code, counter}
 
           :error ->
             :error
         end
     end
-  end
-
-  defp host_expr_dispatch_allowed? do
-    opts = Process.get(:elmc_codegen_opts, %{})
-    not StrictPolicy.strict?(opts)
   end
 
   defp host_fallback_error(module_name, name) do

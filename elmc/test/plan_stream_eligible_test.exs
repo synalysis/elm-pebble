@@ -335,6 +335,47 @@ defmodule Elmc.PlanStreamEligibleTest do
            })
   end
 
+  test "List.filter of a literal range is expandable for stream concatMap" do
+    filtered = %{
+      op: :qualified_call,
+      target: "List.filter",
+      args: [
+        %{
+          op: :lambda,
+          args: ["h"],
+          body: %{
+            op: :call,
+            name: "==",
+            args: [
+              %{op: :call, name: "modBy", args: [%{op: :int_literal, value: 2}, %{op: :var, name: "h"}]},
+              %{op: :int_literal, value: 1}
+            ]
+          }
+        },
+        %{
+          op: :qualified_call,
+          target: "List.range",
+          args: [%{op: :int_literal, value: 1}, %{op: :int_literal, value: 5}]
+        }
+      ]
+    }
+
+    mapped = %{
+      op: :qualified_call,
+      target: "List.map",
+      args: [
+        %{op: :lambda, args: ["h"], body: %{op: :record_literal, fields: []}},
+        filtered
+      ]
+    }
+
+    assert Stream.eligible_expr?(%{
+             op: :qualified_call,
+             target: "List.concatMap",
+             args: [%{op: :call, name: "drawTick", args: [%{op: :var, name: "layout"}]}, mapped]
+           })
+  end
+
   test "List.concatMap of a named helper over appended maps is stream-eligible" do
     ticks = %{
       op: :call,
@@ -383,5 +424,26 @@ defmodule Elmc.PlanStreamEligibleTest do
              decl_map,
              "Main"
            )
+  end
+
+  test "static command lists are eligible but not pipelines" do
+    static = %{op: :list_literal, items: [%{op: :render_cmd}, %{op: :render_text_cmd}]}
+    assert Stream.eligible_expr?(static)
+    refute Stream.pipeline_expr?(static)
+  end
+
+  test "List.indexedMap of draw cells is a stream pipeline" do
+    rect = %{op: :render_cmd}
+
+    expr = %{
+      op: :qualified_call,
+      target: "List.indexedMap",
+      args: [
+        %{op: :lambda, args: ["i", "v"], body: %{op: :list_literal, items: [rect]}},
+        %{op: :var, name: "cells"}
+      ]
+    }
+
+    assert Stream.pipeline_expr?(expr)
   end
 end

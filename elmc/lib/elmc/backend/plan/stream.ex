@@ -165,6 +165,107 @@ defmodule Elmc.Backend.Plan.Stream do
 
   def eligible_expr?(_, _, _, _, _), do: false
 
+  @doc """
+  True when the command expr is a list pipeline (map/concat/cons/++), not a
+  static `[clear, text, …]` list. Static lists stay on Host so literal text
+  unroll and known-branch folds still run.
+  """
+  @spec pipeline_expr?(map() | term()) :: boolean()
+  def pipeline_expr?(expr), do: pipeline_expr?(expr, %{}, nil)
+
+  @spec pipeline_expr?(map() | term(), map(), String.t() | nil) :: boolean()
+  def pipeline_expr?(expr, decl_map, module) when is_map(decl_map),
+    do: pipeline_expr?(expr, decl_map, module, MapSet.new())
+
+  @spec pipeline_expr?(map() | term(), map(), String.t() | nil, MapSet.t()) :: boolean()
+  defp pipeline_expr?(
+         %{op: :constructor_call, target: target, args: [head, tail]},
+         decl_map,
+         module,
+         seen
+       )
+       when is_binary(target) do
+    StreamList.cons_target?(target) and
+      (pipeline_expr?(head, decl_map, module, seen) or
+         pipeline_expr?(tail, decl_map, module, seen))
+  end
+
+  defp pipeline_expr?(%{op: :runtime_call, function: "elmc_list_cons", args: [head, tail]}, decl_map, module, seen),
+    do: pipeline_expr?(head, decl_map, module, seen) or pipeline_expr?(tail, decl_map, module, seen)
+
+  defp pipeline_expr?(%{op: :call, name: "__append__", args: [left, right]}, decl_map, module, seen),
+    do: pipeline_expr?(left, decl_map, module, seen) or pipeline_expr?(right, decl_map, module, seen)
+
+  defp pipeline_expr?(%{op: :list_literal, items: items}, decl_map, module, seen) when is_list(items),
+    do: Enum.any?(items, &pipeline_expr?(&1, decl_map, module, seen))
+
+  defp pipeline_expr?(%{op: :if, then_expr: then_expr, else_expr: else_expr}, decl_map, module, seen),
+    do:
+      pipeline_expr?(then_expr, decl_map, module, seen) or
+        pipeline_expr?(else_expr, decl_map, module, seen)
+
+  defp pipeline_expr?(%{op: :if, then: then_expr, else: else_expr}, decl_map, module, seen),
+    do:
+      pipeline_expr?(then_expr, decl_map, module, seen) or
+        pipeline_expr?(else_expr, decl_map, module, seen)
+
+  defp pipeline_expr?(%{op: :let_in, value_expr: value_expr, in_expr: in_expr}, decl_map, module, seen),
+    do:
+      pipeline_expr?(value_expr, decl_map, module, seen) or
+        pipeline_expr?(in_expr, decl_map, module, seen)
+
+  defp pipeline_expr?(%{op: :case, branches: branches}, decl_map, module, seen) when is_list(branches),
+    do: Enum.any?(branches, &pipeline_expr?(Map.get(&1, :expr), decl_map, module, seen))
+
+  defp pipeline_expr?(%{op: op} = expr, decl_map, module, seen) when op in [:call, :qualified_call] do
+    cond do
+      StreamList.map_call?(expr, module) ->
+        true
+
+      StreamList.concat_call?(expr, module) ->
+        true
+
+      StreamList.cons_call?(expr, module) ->
+        true
+
+      StreamList.append_call?(expr, module) ->
+        true
+
+      pebble_ui_context?(expr) ->
+        expr |> Map.get(:args, []) |> Enum.at(1) |> pipeline_expr?(decl_map, module, seen)
+
+      pebble_ui_group?(expr) ->
+        expr |> Map.get(:args, []) |> Enum.at(0) |> pipeline_expr?(decl_map, module, seen)
+
+      match?(%{}, scene_tree_child(expr, module)) ->
+        pipeline_expr?(scene_tree_child(expr, module), decl_map, module, seen)
+
+      true ->
+        follow_pipeline_callee(expr, decl_map, module, seen)
+    end
+  end
+
+  defp pipeline_expr?(_, _, _, _), do: false
+
+  defp follow_pipeline_callee(expr, decl_map, module, seen) do
+    case callee_key(expr, module) do
+      {mod, _name} = key ->
+        cond do
+          MapSet.member?(seen, key) ->
+            false
+
+          match?(%{expr: body} when is_map(body), Map.get(decl_map, key)) ->
+            pipeline_expr?(Map.get(decl_map, key).expr, decl_map, mod, MapSet.put(seen, key))
+
+          true ->
+            false
+        end
+
+      _ ->
+        false
+    end
+  end
+
   @spec lower_function(map(), String.t(), map(), keyword()) ::
           {:ok, map()} | :unsupported | {:error, term()}
   def lower_function(decl, module_name, decl_map, opts \\ []) do

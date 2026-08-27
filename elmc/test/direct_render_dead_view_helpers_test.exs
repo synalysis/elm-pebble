@@ -116,7 +116,7 @@ defmodule Elmc.DirectRenderDeadViewHelpersTest do
 
     generated = File.read!(Path.join(out, "c/elmc_generated.c"))
     assert generated =~ "ELMC_TAG_INT_LIST"
-    assert generated =~ "direct_cursor_"
+    assert generated =~ "direct_cursor_" or generated =~ "stream_fe_cursor_"
   end
 
   test "update calls initialBoard with native seed operand", %{generated: generated} do

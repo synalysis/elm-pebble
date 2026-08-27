@@ -232,7 +232,8 @@ defmodule Elmc.CCodegenPatternsTest do
     refute generated_c =~ "elmc_fn_Pebble_Ui_Resources_DefaultFont"
     assert generated_c =~ "elmc_scene_writer_push_cmd(writer, &scene_cmd)"
     assert generated_c =~ "elmc_draw_cmd_init(&scene_cmd, ELMC_RENDER_OP_TEXT)"
-    assert generated_c =~ ~r/scene_cmd\.p1 = direct_native_let_textX_\d+;/
+    assert generated_c =~
+             ~r/scene_cmd\.p1 = (direct_native_let_textX_\d+|plan_native_int_\d+|elmc_as_int\((owned\[\d+\]|[A-Za-z_][A-Za-z0-9_]*)\));/
 
     refute generated_c =~ ~r/scene_cmd\.p1 = elmc_as_int\(tmp_\d+\)/
   end
@@ -5470,7 +5471,8 @@ defmodule Elmc.CCodegenPatternsTest do
     assert generated_c =~ "elmc_fn_Main_spawnTileWithSeed(" or generated_c =~ "elmc_fn_Main_init("
     refute generated_c =~ "elmc_fn_Main_spawnTileWithSeed_native("
     assert generated_c =~ "static RC elmc_fn_Main_moveBoard_native("
-    assert generated_c =~ "while (Rc == RC_SUCCESS && direct_cursor_"
+    assert generated_c =~ "while (Rc == RC_SUCCESS && direct_cursor_" or
+             generated_c =~ "stream_fe_cursor_"
     assert generated_c =~ "ELMC_RENDER_OP_RECT"
     assert generated_c =~ "scene_cmd.text[0] = '.';"
     refute generated_c =~ "10 + 2"

@@ -48,7 +48,7 @@ defmodule Elmc.Backend.C.Lower.Function do
     fusion_c = Map.get(plan, :fusion_c)
 
     cond do
-      is_binary(fusion_c) and fusion_c != "" and plan.blocks == [] ->
+      is_binary(fusion_c) and fusion_c != "" ->
         cleanup_cfg_text(fusion_c)
 
       Keyword.get(opts, :shell, true) ->
@@ -63,7 +63,7 @@ defmodule Elmc.Backend.C.Lower.Function do
   @spec emit_core(FunctionPlan.t(), keyword()) :: String.t()
   def emit_core(plan, opts \\ [])
 
-  def emit_core(%FunctionPlan{fusion_c: c, blocks: []} = _plan, _opts)
+  def emit_core(%FunctionPlan{fusion_c: c} = _plan, _opts)
       when is_binary(c) and c != "" do
     cleanup_cfg_text(c)
   end
@@ -76,7 +76,7 @@ defmodule Elmc.Backend.C.Lower.Function do
   @spec emit_core_with_slots(FunctionPlan.t(), keyword()) :: {String.t(), map()}
   def emit_core_with_slots(plan, opts \\ [])
 
-  def emit_core_with_slots(%FunctionPlan{fusion_c: c, blocks: []}, _opts)
+  def emit_core_with_slots(%FunctionPlan{fusion_c: c}, _opts)
       when is_binary(c) and c != "" do
     {cleanup_cfg_text(c), %{}}
   end
@@ -418,15 +418,18 @@ defmodule Elmc.Backend.C.Lower.Function do
     |> Enum.map(fn [_, reg] -> String.to_integer(reg) end)
     |> Enum.uniq()
     |> Enum.reject(fn reg ->
-      name = "plan_native_int_#{reg}"
-
-      Enum.any?(lines, fn line ->
-        String.contains?(line, "elmc_int_t #{name}") or
-          String.contains?(line, "const elmc_int_t #{name}")
-      end)
+      Enum.any?(lines, &native_local_declared?(&1, "elmc_int_t", "plan_native_int_#{reg}"))
     end)
     |> Enum.sort()
-    |> Enum.map(fn reg -> "elmc_int_t plan_native_int_#{reg} = 0;" end)
+    |> Enum.map(fn reg ->
+      "elmc_int_t plan_native_int_#{reg} __attribute__((unused)) = 0;"
+    end)
+  end
+
+  # Substring `contains?` matches `plan_native_int_1` inside `plan_native_int_16`.
+  defp native_local_declared?(line, type, name)
+       when is_binary(line) and is_binary(type) and is_binary(name) do
+    Regex.match?(~r/(?:const\s+)?#{Regex.escape(type)}\s+#{Regex.escape(name)}\b/, line)
   end
 
   @spec emit_goto_body(FunctionPlan.t(), Types.slot_map(), keyword(), [String.t()], MapSet.t(non_neg_integer())) :: [String.t()]
@@ -1990,6 +1993,13 @@ defmodule Elmc.Backend.C.Lower.Function do
   @spec plan_rc_shell?(FunctionPlan.t()) :: boolean()
   defp plan_rc_shell?(%FunctionPlan{rc_required: true}), do: true
 
+  # FunctionEmit uses RC + scalar `*out` whenever `native_scalar_return` is set
+  # and the plan is not a value-return. `rc_required: false` must not wrap as
+  # `ElmcValue *` — that yields `return NULL` / `return __ret` from `RC` fns.
+  defp plan_rc_shell?(%FunctionPlan{native_scalar_return: kind})
+       when kind in [:native_int, :native_bool, :native_float],
+       do: true
+
   defp plan_rc_shell?(%FunctionPlan{native_scalar_return: kind}),
     do: NativeReturn.dual_out?(kind)
 
@@ -2214,45 +2224,6 @@ defmodule Elmc.Backend.C.Lower.Function do
       _ ->
         "return #{ScalarKind.zero(ScalarKind.from_native_return(kind))};"
     end
-  end
-
-  defp emit_return(%FunctionPlan{rc_required: false, blocks: blocks} = plan, slots, :native_int, _borrow_nulls, instr_opts) do
-    reg = native_ret_reg(plan, blocks)
-    slot_count = owned_slot_count(slots)
-
-    src =
-      case reg do
-        r when is_integer(r) -> native_int_result_ref(r, slots, instr_opts)
-        _ -> "0"
-      end
-
-    EphemeralBox.non_rc_scalar_return("elmc_new_int", src, slot_count)
-  end
-
-  defp emit_return(%FunctionPlan{rc_required: false, blocks: blocks} = plan, slots, :native_bool, _borrow_nulls, instr_opts) do
-    reg = native_ret_reg(plan, blocks)
-    slot_count = owned_slot_count(slots)
-
-    src =
-      case reg do
-        r when is_integer(r) -> native_bool_result_ref(r, instr_opts)
-        _ -> "false"
-      end
-
-    EphemeralBox.non_rc_scalar_return("elmc_new_bool", src, slot_count)
-  end
-
-  defp emit_return(%FunctionPlan{rc_required: false, blocks: blocks} = plan, slots, :native_float, _borrow_nulls, instr_opts) do
-    reg = native_ret_reg(plan, blocks)
-    slot_count = owned_slot_count(slots)
-
-    src =
-      case reg do
-        r when is_integer(r) -> native_float_result_ref(r, instr_opts)
-        _ -> "0.0"
-      end
-
-    EphemeralBox.non_rc_scalar_return(ScalarKind.box(:float), src, slot_count)
   end
 
   defp emit_return(%FunctionPlan{blocks: blocks} = plan, slots, :native_int, _borrow_nulls, instr_opts) do
@@ -3689,11 +3660,8 @@ defmodule Elmc.Backend.C.Lower.Function do
     |> Enum.uniq()
     |> Enum.reject(fn reg ->
       name = ScalarKind.local_name(:float, reg)
-
-      Enum.any?(lines, fn line ->
-        String.contains?(line, "#{ScalarKind.c_type(:float)} #{name}") or
-          String.contains?(line, "const #{ScalarKind.c_type(:float)} #{name}")
-      end)
+      type = ScalarKind.c_type(:float)
+      Enum.any?(lines, &native_local_declared?(&1, type, name))
     end)
     |> Enum.sort()
     |> Enum.map(fn reg ->

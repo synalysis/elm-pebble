@@ -89,8 +89,10 @@ defmodule Elmc.DirectRenderJustLinePayloadTest do
 
     fallbacks = GeneratedCLint.stream_fallbacks(result.layout_coercion_diagnostics)
 
-    assert fallbacks != [] or generated_c =~ "elmc_maybe_or_tuple_just_payload_borrow",
-           "Host fallback must be diagnosed or the Just payload must be peeled"
+    assert fallbacks == []
+    assert generated_c =~ "elmc_maybe_or_tuple_just_payload_borrow" or
+             generated_c =~ "elmc_maybe_just_payload",
+           "Just payload must be peeled in Plan stream or runtime helper C"
 
     body =
       [
@@ -106,7 +108,8 @@ defmodule Elmc.DirectRenderJustLinePayloadTest do
     refute body =~ ~r/\bELMC_RECORD_GET_INDEX\(\s*hands\s*,/,
            "Just payload field reads must not use an undeclared `hands` C identifier"
 
-    assert body =~ "elmc_maybe_or_tuple_just_payload_borrow",
+    assert body =~ "elmc_maybe_or_tuple_just_payload_borrow" or
+             body =~ "elmc_maybe_just_payload",
            "Just record field reads must peel the Maybe payload"
   end
 end

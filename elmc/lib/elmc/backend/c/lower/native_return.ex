@@ -13,12 +13,23 @@ defmodule Elmc.Backend.C.Lower.NativeReturn do
   @type scalar_kind ::
           :native_int | :native_bool | :native_float | :native_int_pair | :native_list_int_pair
 
+  @value_return_pure_runtime MapSet.new([
+                               :basics_mod_by,
+                               :basics_remainder_by,
+                               :basics_min,
+                               :basics_max,
+                               :basics_clamp,
+                               :basics_not,
+                               :new_float,
+                               :basics_to_float,
+                               :native_int_to_float
+                             ])
+
   @value_return_forbidden_ops MapSet.new([
                                 :call_runtime,
                                 :call_closure,
                                 :make_closure,
                                 :retain,
-                                :release,
                                 :transfer,
                                 :record_get,
                                 :record_update,
@@ -246,8 +257,18 @@ defmodule Elmc.Backend.C.Lower.NativeReturn do
     |> Enum.all?(&value_pure_instr?/1)
   end
 
+  defp value_pure_instr?(%{op: :call_runtime, args: %{builtin: builtin}}) do
+    MapSet.member?(@value_return_pure_runtime, builtin)
+  end
+
   defp value_pure_instr?(%{op: :call_fn, args: %{module: mod, name: name}}) do
     value_return?({mod, name})
+  end
+
+  # Native float arith is `double` `+`/`/` in C — not a heap box — so it is
+  # value-return-pure. Int boxed_binop may still allocate and stays forbidden.
+  defp value_pure_instr?(%{op: :boxed_binop, args: args}) do
+    Map.get(args, :mode) == :float or Map.get(args, :op) == :fdiv
   end
 
   defp value_pure_instr?(%{op: op}) do

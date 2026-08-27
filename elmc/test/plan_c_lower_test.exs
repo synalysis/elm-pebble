@@ -819,9 +819,45 @@ defmodule Elmc.PlanCLowerTest do
     c = CLowerFunction.emit(plan)
     refute c =~ "elmc_new_float"
     refute c =~ "tmp_"
+    refute c =~ "return NULL"
     assert c =~ "elmc_as_float(x)"
     assert c =~ "elmc_as_float(y)"
     assert c =~ ~r/\+|plan_native_float_/
+  end
+
+  test "Float fdiv RC ABI never boxes a double into ElmcValue* return" do
+    decl = %{
+      name: "fdiv",
+      args: ["x", "y"],
+      type: "Float -> Float -> Float",
+      ownership: [:borrow_arg, :borrow_result],
+      expr: %{
+        op: :call,
+        name: "__fdiv__",
+        args: [%{op: :var, name: "x"}, %{op: :var, name: "y"}]
+      }
+    }
+
+    decl_map = %{{"Basics", "fdiv"} => decl}
+    Process.put(:elmc_program_decls, decl_map)
+
+    assert {:ok, plan} =
+             Elmc.Backend.Plan.Lower.Function.lower(decl, "Basics", decl_map, rc_required: false)
+
+    assert plan.native_scalar_return == :native_float
+
+    c = CLowerFunction.emit(plan)
+    refute c =~ "return NULL"
+    refute c =~ "elmc_new_float"
+    refute c =~ "ElmcValue *__ret"
+
+    if Map.get(plan, :native_scalar_value_return) do
+      assert c =~ ~r/return /
+      refute c =~ "*out ="
+    else
+      assert c =~ "*out ="
+      assert c =~ "return Rc"
+    end
   end
 
   test "Float compare peels operands into a native bool" do

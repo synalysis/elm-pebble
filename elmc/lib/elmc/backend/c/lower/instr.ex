@@ -3657,27 +3657,145 @@ defmodule Elmc.Backend.C.Lower.Instr do
 
   defp emit_render_text_cmd_scene_push(kind, params, text, slots, opts) do
     kind_s = platform_kind_c(kind)
-    text_src = boxed_string_c_arg(text, slots, opts)
     writer = Keyword.get(opts, :scene_writer_var, "writer")
 
     """
     elmc_draw_cmd_init(&scene_cmd, #{kind_s});
     #{emit_text_cmd_int_assignments(params, slots, opts)}
-    {
-      const char *direct_text = #{text_src};
-      int direct_text_i = 0;
-      while (direct_text[direct_text_i] && direct_text_i < 63) {
-        scene_cmd.text[direct_text_i] = direct_text[direct_text_i];
-        direct_text_i++;
-      }
-      scene_cmd.text[direct_text_i] = '\\0';
-    }
+    #{emit_scene_text_copy(text, slots, opts)}
     if (elmc_scene_writer_push_cmd(#{writer}, &scene_cmd) != 0) {
       Rc = RC_ERR_OUT_OF_MEMORY;
       CHECK_RC(Rc);
     }
     """
     |> String.trim()
+  end
+
+  @scene_text_unroll_max 16
+
+  defp emit_scene_text_copy(text, slots, opts) do
+    case scene_text_shape(text, opts) do
+      {:literal, literal} when is_binary(literal) ->
+        emit_scene_text_literal_unroll(literal)
+
+      {:prefix_append, literal, right} when is_binary(literal) ->
+        emit_scene_text_prefix_append(literal, boxed_string_c_arg(right, slots, opts))
+
+      :copy ->
+        text_src = boxed_string_c_arg(text, slots, opts)
+
+        """
+        {
+          const char *direct_text = #{text_src};
+          int direct_text_i = 0;
+          while (direct_text[direct_text_i] && direct_text_i < 63) {
+            scene_cmd.text[direct_text_i] = direct_text[direct_text_i];
+            direct_text_i++;
+          }
+          scene_cmd.text[direct_text_i] = '\\0';
+        }
+        """
+        |> String.trim()
+    end
+  end
+
+  defp scene_text_shape(reg, opts) when is_integer(reg) do
+    plan = Keyword.get(opts, :parent_plan)
+
+    case plan && Function.all_defining_instrs(plan, reg) do
+      [%{op: :const_immortal_string, args: %{value: value}}] when is_binary(value) ->
+        {:literal, value}
+
+      [%{op: :call_runtime, args: %{builtin: builtin, args: [left, right]}}]
+      when builtin in [:string_append, :string_concat] ->
+        case scene_text_shape(left, opts) do
+          {:literal, literal} -> {:prefix_append, literal, right}
+          _ -> :copy
+        end
+
+      _ ->
+        :copy
+    end
+  end
+
+  defp scene_text_shape(_, _), do: :copy
+
+  defp emit_scene_text_literal_unroll(literal) when is_binary(literal) do
+    bytes = :binary.bin_to_list(literal)
+
+    if length(bytes) <= @scene_text_unroll_max do
+      emit_scene_text_byte_assigns(bytes)
+    else
+      escaped = Util.escape_c_string(literal)
+
+      """
+      {
+        const char *direct_text = "#{escaped}";
+        int direct_text_i = 0;
+        while (direct_text[direct_text_i] && direct_text_i < 63) {
+          scene_cmd.text[direct_text_i] = direct_text[direct_text_i];
+          direct_text_i++;
+        }
+        scene_cmd.text[direct_text_i] = '\\0';
+      }
+      """
+      |> String.trim()
+    end
+  end
+
+  defp emit_scene_text_prefix_append(literal, right_ref)
+       when is_binary(literal) and is_binary(right_ref) do
+    bytes = literal |> :binary.bin_to_list() |> Enum.take(63)
+
+    prefix = emit_scene_text_byte_assigns(bytes) |> String.trim()
+    start_index = length(bytes)
+
+    """
+    #{prefix}
+    {
+      int direct_text_i = #{start_index};
+      const char *direct_text_right = #{right_ref};
+      int direct_text_right_i = 0;
+      while (direct_text_right && direct_text_right[direct_text_right_i] && direct_text_i < 63) {
+        scene_cmd.text[direct_text_i] = direct_text_right[direct_text_right_i];
+        direct_text_i++;
+        direct_text_right_i++;
+      }
+      scene_cmd.text[direct_text_i] = '\\0';
+    }
+    """
+    |> String.trim()
+  end
+
+  defp emit_scene_text_byte_assigns(bytes) when is_list(bytes) do
+    bytes = Enum.take(bytes, 63)
+
+    assignments =
+      bytes
+      |> Enum.with_index()
+      |> Enum.map_join("\n", fn {byte, index} ->
+        "scene_cmd.text[#{index}] = #{scene_text_char_literal(byte)};"
+      end)
+
+    """
+    {
+      #{assignments}
+      scene_cmd.text[#{length(bytes)}] = '\\0';
+    }
+    """
+  end
+
+  defp scene_text_char_literal(?\\), do: "'\\\\'"
+  defp scene_text_char_literal(?'), do: "'\\''"
+  defp scene_text_char_literal(?\n), do: "'\\n'"
+  defp scene_text_char_literal(?\r), do: "'\\r'"
+  defp scene_text_char_literal(?\t), do: "'\\t'"
+
+  defp scene_text_char_literal(byte) when byte >= 32 and byte <= 126, do: "'#{<<byte>>}'"
+
+  defp scene_text_char_literal(byte) do
+    hex = byte |> Integer.to_string(16) |> String.pad_leading(2, "0")
+    "'\\x#{hex}'"
   end
 
   defp emit_text_cmd_int_assignments(params, slots, opts) do

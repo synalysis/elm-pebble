@@ -88,8 +88,6 @@ defmodule Elmc.Backend.Plan.Lower.Function do
         {:ok, register_fusion_native_cache(plan, module_name)}
 
       {:error, :unverified_fusion_c, _} ->
-        Elmc.Backend.Plan.Fusion.Registry.clear_rc_native_arg_kinds(module_name, Map.get(decl, :name, ""))
-
         case Intrinsics.try_lower(decl, module_name, decl_map, opts) do
           {:ok, ssa} ->
             {:ok, attach_fusion_sidecar(ssa, plan)}
@@ -107,11 +105,25 @@ defmodule Elmc.Backend.Plan.Lower.Function do
   end
 
   defp attach_fusion_sidecar(ssa, fusion_plan) do
+    # Verify rejects fusion_c-only as a standalone plan. Keep the C helper as an
+    # emit sidecar so ListIndexedReplace / permute-merge / list-search still
+    # produce `_native` bodies after the verified SSA fallback exists.
     ssa
     |> Map.put(:fusion_kind, Map.get(fusion_plan, :fusion_kind))
     |> Map.put(:fusion_data, Map.get(fusion_plan, :fusion_data))
-    |> Map.put(:fusion_c, nil)
-    |> Map.put(:fusion_emit, nil)
+    |> Map.put(:fusion_c, Map.get(fusion_plan, :fusion_c))
+    |> Map.put(:fusion_emit, Map.get(fusion_plan, :fusion_emit))
+    |> Map.put(:fusion_arg_kinds, Map.get(fusion_plan, :fusion_arg_kinds))
+    |> Map.put(
+      :native_scalar_return,
+      Map.get(fusion_plan, :native_scalar_return) || Map.get(ssa, :native_scalar_return)
+    )
+    |> Map.put(
+      :native_scalar_value_return,
+      Map.get(ssa, :native_scalar_value_return) == true or
+        Map.get(fusion_plan, :native_scalar_value_return) == true
+    )
+    |> then(&register_fusion_native_cache(&1, Map.get(&1, :module)))
   end
 
   defp register_fusion_native_cache(%{fusion_c: c, native_scalar_return: kind} = plan, module_name)

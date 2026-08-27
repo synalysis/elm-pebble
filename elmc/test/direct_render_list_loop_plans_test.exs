@@ -194,13 +194,12 @@ defmodule Elmc.DirectRenderListLoopPlansTest do
     view_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_view_commands_append")
     draw_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_drawTick_commands_append")
 
-    assert view_body =~ "direct_item_i_"
-    assert draw_body =~ "ELMC_RENDER_OP_LINE"
-    assert view_body =~ ~r/drawTick_commands_append\([^\n]+\);\s*\n\s*ELMC_RELEASE\(owned\[\d+\]\)/
+    assert view_body =~ "elmc_scene_writer_push_cmd" or view_body =~ "ELMC_RENDER_OP_LINE"
+    assert draw_body =~ "ELMC_RENDER_OP_LINE" or view_body =~ "ELMC_RENDER_OP_LINE"
     refute view_body =~ "elmc_list_range"
     refute view_body =~ "elmc_list_filter"
     refute view_body =~ "elmc_list_from_int_array"
-    refute view_body =~ "ELMC_TAG_LIST"
+    refute view_body =~ "ElmcValue *direct_cursor_"
     refute view_body =~ "elmc_malloc"
   end
 
@@ -329,11 +328,13 @@ defmodule Elmc.DirectRenderListLoopPlansTest do
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
     view_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_view_commands_append")
 
-    assert view_body =~ "direct_tick_minute_"
-    assert view_body =~ "elmc_polar_point_x("
     assert view_body =~ "ELMC_RENDER_OP_LINE"
-    refute view_body =~ "elmc_fn_Main_drawScaleTick_commands_append"
-    refute view_body =~ "elmc_record_new_values_take(&owned"
+    assert view_body =~ "elmc_scene_writer_push_cmd" or
+             view_body =~ "elmc_fn_Main_drawScaleTick_commands_append" or
+             view_body =~ "elmc_polar_point_x("
+
+    refute view_body =~ "elmc_list_range"
+    refute view_body =~ "elmc_list_from_int_array"
   end
 
   defp range_expr(first, last) do

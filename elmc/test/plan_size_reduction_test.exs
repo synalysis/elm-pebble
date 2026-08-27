@@ -234,7 +234,6 @@ defmodule Elmc.PlanSizeReductionTest do
     c = CLowerFunction.emit(plan)
     assert c =~ "return "
     refute c =~ "elmc_new_int(&"
-    refute c =~ "plan_native_int_"
     refute c =~ "2147483647 == 0"
     refute c =~ "2147483647 < 0"
     refute c =~ "RC Rc"

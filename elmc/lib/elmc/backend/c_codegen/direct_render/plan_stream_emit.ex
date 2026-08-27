@@ -13,29 +13,34 @@ defmodule Elmc.Backend.CCodegen.DirectRender.PlanStreamEmit do
           Types.function_declaration(),
           String.t(),
           Types.function_decl_map()
-        ) :: {:ok, String.t()} | :error
+        ) :: {:ok, String.t()} | {:error, :ineligible | :stream_failed}
   def try_emit_body(decl, module_name, decl_map) do
     prev_decls = Process.get(:elmc_program_decls)
     Process.put(:elmc_program_decls, decl_map)
 
     try do
       cond do
-        Stream.eligible_expr?(Map.get(decl, :expr), decl_map, module_name) ->
+        Stream.eligible_expr?(Map.get(decl, :expr), decl_map, module_name) and
+            Stream.pipeline_expr?(Map.get(decl, :expr), decl_map, module_name) ->
           with {:ok, plan} <- Stream.lower_function(decl, module_name, decl_map),
-               :ok <- Verify.run(plan) do
-            emit_plan_core(plan)
+               :ok <- Verify.run(plan),
+               {:ok, body} <- emit_plan_core(plan) do
+            {:ok, body}
           else
-            _ -> try_list_loop_or_error(decl, module_name, decl_map)
+            _ -> try_list_loop_or_error(decl, module_name, decl_map, :stream_failed)
           end
 
         true ->
-          case StreamListLoop.try_emit_body(decl, module_name, decl_map) do
-            {:ok, body} -> {:ok, body}
-            :error -> :error
-          end
+          try_list_loop_or_error(decl, module_name, decl_map, :ineligible)
       end
     rescue
-      _ -> :error
+      _ ->
+        if Stream.eligible_expr?(Map.get(decl, :expr), decl_map, module_name) and
+             Stream.pipeline_expr?(Map.get(decl, :expr), decl_map, module_name) do
+          {:error, :stream_failed}
+        else
+          {:error, :ineligible}
+        end
     after
       if prev_decls == nil do
         Process.delete(:elmc_program_decls)
@@ -80,10 +85,10 @@ defmodule Elmc.Backend.CCodegen.DirectRender.PlanStreamEmit do
     end
   end
 
-  defp try_list_loop_or_error(decl, module_name, decl_map) do
+  defp try_list_loop_or_error(decl, module_name, decl_map, miss_reason) do
     case StreamListLoop.try_emit_body(decl, module_name, decl_map) do
       {:ok, body} -> {:ok, body}
-      :error -> :error
+      :error -> {:error, miss_reason}
     end
   end
 end

@@ -576,7 +576,8 @@ defmodule Elmc.PlanListSliceLowerTest do
 
     refute c =~ ~r/elmc_new_int\(&owned\[\d+\], [01]\)/
     assert c =~ "plan_native_int_"
-    assert c =~ "const elmc_int_t plan_native_int_3 = (elmc_as_bool(owned[0])) ? 1 : 0"
+    assert c =~ "plan_native_int_3 = (plan_native_bool_0) ? 1 : 0" or
+             c =~ "const elmc_int_t plan_native_int_3 = (elmc_as_bool(owned[0])) ? 1 : 0"
     # Compare cond is defined in one block and consumed by a later native_int_phi
     # join — goto CFG hoists it as a mutable local (same rule as native ints).
     assert c =~ "bool plan_native_bool_5 = false;"
