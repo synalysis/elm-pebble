@@ -435,6 +435,19 @@ defmodule Elmc.Backend.Plan.RuntimeBuiltins do
     :basics_clamp
   ])
 
+  @spec call_contract(atom()) :: %{
+          c_symbol: String.t() | nil,
+          retains_operand: boolean(),
+          dest_may_be_fn_out: boolean()
+        }
+  def call_contract(id) when is_atom(id) do
+    %{
+      c_symbol: Map.get(@builtins, id),
+      retains_operand: retains_operand_result?(id),
+      dest_may_be_fn_out: true
+    }
+  end
+
   @spec retains_operand_result?(atom()) :: boolean()
   def retains_operand_result?(id) when is_atom(id),
     do: MapSet.member?(@retains_operand_result, id)

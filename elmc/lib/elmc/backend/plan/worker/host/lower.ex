@@ -82,61 +82,19 @@ defmodule Elmc.Backend.Plan.Worker.Host.Lower do
     rc_var = Map.get(@worker_entry_rc_vars, fun_name, "#{fun_name}_rc")
     decl = Map.get(decl_map, {entry_module, fun_name})
 
-    on_fail_c =
+    fail_kind =
       case fun_name do
-        "init" ->
-          """
-          if (init_rc != RC_SUCCESS) {
-            ELMC_WORKER_LOG_RC_FAIL("worker init", init_rc);
-            elmc_release(result);
-            return -2;
-          }
-          """
-
-        "update" ->
-          """
-          if (update_rc != RC_SUCCESS) {
-            ELMC_WORKER_LOG_RC_FAIL("worker update", update_rc);
-            elmc_release(result);
-            return -2;
-          }
-          """
-
-        "subscriptions" ->
-          """
-          if (sub_rc != RC_SUCCESS) {
-            ELMC_WORKER_LOG_RC_FAIL("worker subscriptions", sub_rc);
-            elmc_release(result);
-            return 0;
-          }
-          """
-
-        _ ->
-          """
-          if (#{rc_var} != RC_SUCCESS) {
-            ELMC_WORKER_LOG_RC_FAIL("worker #{fun_name}", #{rc_var});
-            elmc_release(result);
-            return -2;
-          }
-          """
+        "init" -> :init_fail
+        "update" -> :update_fail
+        "subscriptions" -> :sub_fail
+        _ -> :generic_fail
       end
 
-    {abi, call_c} =
+    abi =
       if is_map(decl) and FunctionCallAbi.direct_entry_abi?(decl, entry_module, decl_map, opts) do
-        args = Enum.join(arg_exprs, ", ")
-        {:direct, "RC #{rc_var} = elmc_fn_#{safe_module}_#{fun_name}(&result, #{args});"}
+        :direct
       else
-        argc = length(arg_exprs)
-        args_init = Enum.join(arg_exprs, ", ")
-
-        call =
-          """
-          ElmcValue *args[] = { #{args_init} };
-            RC #{rc_var} = elmc_fn_#{safe_module}_#{fun_name}(&result, args, #{argc});
-          """
-          |> String.trim()
-
-        {:argc, call}
+        :argc
       end
 
     %{
@@ -145,8 +103,7 @@ defmodule Elmc.Backend.Plan.Worker.Host.Lower do
       abi: abi,
       arg_exprs: arg_exprs,
       rc_var: rc_var,
-      on_fail_c: on_fail_c,
-      call_c: call_c
+      fail_kind: fail_kind
     }
   end
 

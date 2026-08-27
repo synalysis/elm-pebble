@@ -74,10 +74,12 @@ names for bare `constructor_ref` tags during compact analysis.
 
   `Elmc.Backend.Plan.Verify` runs before any backend. Invariants:
 
-  - No read after `consumes`
-  - Single `fn_out` publish per success path
+  - Inter-block owned/consumed/`fn_out` dataflow (join at successors)
+  - No read after `consumes` (including across `br`)
+  - Single `fn_out` publish per success path; no mid-branch produce after publish
   - Fallible ops inside catch regions when not `rc_required` (per-instr catch) or covered by frame catch when `rc_required`
-  - No leaked owned registers at block `ret` (`EpilogueRelease` inserts plan `:release` ops; C/bytecode backends defer to epilogue LIFO)
+  - No leaked owned registers at block `ret` (`EpilogueRelease` inserts plan `:release` ops for function-level leftovers; C/bytecode backends defer to epilogue LIFO)
+  - `fusion_c`-only plans (empty SSA) are rejected (`:unverified_fusion_c`); C emit uses verified SSA
   - **Stream mode:** `:render_cmd` / `:render_text_cmd` may use `dest: :stream_void` (effect-only scene push); `{:ret, :stream_void}` is a valid terminator
   - **CFG:** no permanent `:none` terminators; all branch/switch targets exist; every block reachable from `entry_block` (`Plan.Cfg` + `Verify.verify_cfg/1`)
 

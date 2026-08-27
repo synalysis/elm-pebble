@@ -96,7 +96,8 @@ defmodule Elmc.Backend.Plan.Lower.MaybeMap do
           end
         end,
         ctx,
-        b2
+        b2,
+        release_on_nothing: bound_regs
       )
     else
       _ -> :unsupported
@@ -114,11 +115,12 @@ defmodule Elmc.Backend.Plan.Lower.MaybeMap do
   defp core_partial_runtime_builtin("Tuple", "mapSecond", 2), do: {:ok, :tuple_map_second}
   defp core_partial_runtime_builtin(_, _, _), do: :error
 
-  @spec compile_maybe_branch_map(Types.reg(), just_mapper(), Context.t(), Builder.t()) ::
+  @spec compile_maybe_branch_map(Types.reg(), just_mapper(), Context.t(), Builder.t(), keyword()) ::
           {:ok, Types.reg(), Builder.t()} | :unsupported
 
-  defp compile_maybe_branch_map(maybe_reg, just_mapper, ctx, b) do
+  defp compile_maybe_branch_map(maybe_reg, just_mapper, ctx, b, opts \\ []) do
     saved_pending = Map.get(b, :pending_merge_block)
+    release_on_nothing = Keyword.get(opts, :release_on_nothing, [])
 
     with {:ok, cond_reg, b2} <- emit_test_maybe_nothing(maybe_reg, b),
          then_id = b2.next_block,
@@ -127,7 +129,7 @@ defmodule Elmc.Backend.Plan.Lower.MaybeMap do
          b_entry = Builder.finish_block(b2, {:br_if, then_id, else_id, cond_reg}),
          b_reserved = %{b_entry | next_block: max(b_entry.next_block, merge_id + 1)},
          {:ok, then_reg, then_exit, b_then} <-
-           compile_nothing_result(ctx, b_reserved, then_id),
+           compile_nothing_result(ctx, b_reserved, then_id, release_on_nothing),
          b_then_done = Builder.patch_terminator(b_then, then_exit, {:br, merge_id}),
          b_else_start = Builder.begin_cfg_arm_block(b_then_done, else_id),
          b_else_pending = %{b_else_start | pending_merge_block: merge_id},
@@ -196,9 +198,10 @@ defmodule Elmc.Backend.Plan.Lower.MaybeMap do
     {:ok, dest, exit_id, Builder.finish_block(b4, :none)}
   end
 
-  @spec compile_nothing_result(Context.t(), Builder.t(), non_neg_integer()) :: cfg_arm_result()
+  @spec compile_nothing_result(Context.t(), Builder.t(), non_neg_integer(), [Types.reg()]) ::
+          cfg_arm_result()
 
-  defp compile_nothing_result(ctx, b, block_id) do
+  defp compile_nothing_result(ctx, b, block_id, release_regs) do
     b_arm = Builder.begin_cfg_arm_block(b, block_id)
     arm_ctx = Context.for_branch_arm(ctx)
 
@@ -209,8 +212,14 @@ defmodule Elmc.Backend.Plan.Lower.MaybeMap do
              args: %{builtin: :maybe_nothing, args: []},
              effects: Types.owned_effects(dest)
            }) do
-      exit_id = b2.current_block.id
-      {:ok, dest, exit_id, Builder.finish_block(b2, :none)}
+      b3 =
+        Enum.reduce(List.wrap(release_regs), b2, fn
+          reg, acc when is_integer(reg) -> Builder.emit_release(acc, reg)
+          _, acc -> acc
+        end)
+
+      exit_id = b3.current_block.id
+      {:ok, dest, exit_id, Builder.finish_block(b3, :none)}
     else
       _ -> :unsupported
     end

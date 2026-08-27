@@ -702,4 +702,26 @@ defmodule Elmc.PlanCLowerTest do
     assert c =~ "owned[1] = NULL;"
     refute c =~ ~r/elmc_result_and_then\([^)]+\);\s*CHECK_RC\(Rc\);\s*elmc_release\(owned\[1\]\)/
   end
+
+  test "Int identity peels boxed param into native return without tmp retain" do
+    decl = %{
+      name: "identityInt",
+      args: ["x"],
+      type: "Int -> Int",
+      ownership: [:borrow_arg, :borrow_result],
+      expr: %{op: :var, name: "x"}
+    }
+
+    decl_map = %{{"Main", "identityInt"} => decl}
+    Process.put(:elmc_program_decls, decl_map)
+
+    assert {:ok, plan} =
+             Elmc.Backend.Plan.Lower.Function.lower(decl, "Main", decl_map, rc_required: true)
+
+    c = CLowerFunction.emit(plan)
+    refute c =~ "tmp_"
+    refute c =~ "elmc_retain"
+    assert c =~ "elmc_as_int(x)"
+    assert c =~ "return "
+  end
 end

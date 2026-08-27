@@ -123,7 +123,7 @@ defmodule Elmc.PlanVerifyTest do
       })
 
     b7 = Builder.emit_release(b6, merge_reg)
-    plan = b7 |> Builder.emit_ret(retained) |> Builder.to_function_plan()
+    plan = b7 |> Builder.emit_ret(retained) |> Builder.to_function_plan() |> EpilogueRelease.run()
 
     assert :ok = Verify.run(plan)
   end
@@ -177,5 +177,136 @@ defmodule Elmc.PlanVerifyTest do
     }
 
     assert {:error, :unreachable_block, [block: 1, entry: 0]} = Verify.run(plan)
+  end
+
+  test "rejects fusion_c-only plans" do
+    plan = %FunctionPlan{
+      name: "fused",
+      module: "Main",
+      params: [],
+      rc_required: true,
+      blocks: [],
+      entry_block: 0,
+      fusion_c: "RC Rc = RC_SUCCESS;\nreturn Rc;"
+    }
+
+    assert {:error, :unverified_fusion_c, _} = Verify.run(plan)
+  end
+
+  test "rejects leaked owned that flows across br to ret" do
+    produce =
+      %Types{
+        id: 0,
+        op: :const_int,
+        dest: 0,
+        args: %{value: 1},
+        effects: Types.owned_effects(0),
+        block_id: 0,
+        span: nil
+      }
+
+    plan = %FunctionPlan{
+      name: "cross_block_leak",
+      module: "Main",
+      params: [],
+      rc_required: true,
+      reg_count: 1,
+      entry_block: 0,
+      blocks: [
+        %Block{id: 0, instrs: [produce], terminator: {:br, 1}},
+        %Block{id: 1, instrs: [], terminator: {:ret, :fn_out}}
+      ]
+    }
+
+    assert {:error, :leaked_owned_regs, meta} = Verify.run(plan)
+    assert 0 in meta[:regs]
+  end
+
+  test "rejects read-after-consume across blocks" do
+    produce =
+      %Types{
+        id: 0,
+        op: :const_int,
+        dest: 0,
+        args: %{value: 1},
+        effects: Types.owned_effects(0),
+        block_id: 0,
+        span: nil
+      }
+
+    release =
+      %Types{
+        id: 1,
+        op: :release,
+        dest: nil,
+        args: %{reg: 0},
+        effects: %{produces: nil, consumes: [0], borrows: [], fallible: false},
+        block_id: 0,
+        span: nil
+      }
+
+    borrow =
+      %Types{
+        id: 2,
+        op: :maybe_is_nothing,
+        dest: nil,
+        args: %{reg: 0},
+        effects: %{produces: nil, consumes: [], borrows: [0], fallible: false},
+        block_id: 1,
+        span: nil
+      }
+
+    plan = %FunctionPlan{
+      name: "uaf",
+      module: "Main",
+      params: [],
+      rc_required: true,
+      reg_count: 1,
+      entry_block: 0,
+      blocks: [
+        %Block{id: 0, instrs: [produce, release], terminator: {:br, 1}},
+        %Block{id: 1, instrs: [borrow], terminator: {:ret, :fn_out}}
+      ]
+    }
+
+    assert {:error, :read_after_consume, _} = Verify.run(plan)
+  end
+
+  test "rejects mid-branch fn_out write then later produce" do
+    pub =
+      %Types{
+        id: 0,
+        op: :publish,
+        dest: :fn_out,
+        args: %{},
+        effects: Types.empty_effects(),
+        block_id: 0,
+        span: nil
+      }
+
+    later =
+      %Types{
+        id: 1,
+        op: :const_int,
+        dest: 1,
+        args: %{value: 2},
+        effects: Types.owned_effects(1),
+        block_id: 0,
+        span: nil
+      }
+
+    plan = %FunctionPlan{
+      name: "mid_out",
+      module: "Main",
+      params: [],
+      rc_required: true,
+      reg_count: 2,
+      entry_block: 0,
+      blocks: [
+        %Block{id: 0, instrs: [pub, later], terminator: {:ret, :fn_out}}
+      ]
+    }
+
+    assert {:error, :mid_branch_fn_out, _} = Verify.run(plan)
   end
 end

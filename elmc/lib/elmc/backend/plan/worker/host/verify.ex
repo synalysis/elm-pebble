@@ -21,7 +21,7 @@ defmodule Elmc.Backend.Plan.Worker.Host.Verify do
   end
 
   defp verify_entry(role, %{present?: true, call: call}) when is_map(call) do
-    required = [:safe_module, :fun, :abi, :arg_exprs, :rc_var, :on_fail_c, :call_c]
+    required = [:safe_module, :fun, :abi, :arg_exprs, :rc_var, :fail_kind]
 
     missing =
       Enum.reject(required, fn key ->
@@ -34,6 +34,9 @@ defmodule Elmc.Backend.Plan.Worker.Host.Verify do
 
       call.abi not in [:direct, :argc] ->
         {:error, {:host_plan, :bad_entry_abi, {role, call.abi}}}
+
+      call.fail_kind not in [:init_fail, :update_fail, :sub_fail, :generic_fail] ->
+        {:error, {:host_plan, :bad_fail_kind, {role, call.fail_kind}}}
 
       not is_list(call.arg_exprs) ->
         {:error, {:host_plan, :bad_arg_exprs, role}}

@@ -2359,6 +2359,15 @@ defmodule Elmc.Backend.C.Lower.Instr do
           c_args = rc_native_fusion_call_args(args, fusion_arg_kinds, slots, opts, borrows)
           finalize_materialized_call_args("", c_args, opts)
 
+        # Gap / argv-wrapper callees are `(out?, ElmcValue **args, int argc)`.
+        # Must win over native-ret / native-arg shortcuts so we do not emit
+        # `fn(elmc_as_int(x), …)` or unboxed ints in an argv array.
+        decl && FunctionCallAbi.argv_abi?(decl, mod, decl_map) ->
+          c_args = Enum.map(args, &boxed_value_ref(&1, slots, opts))
+          {c_args, prep, cleanup} = materialize_plan_call_args(c_args, opts)
+          {setup, args_var, argc} = FunctionCallAbi.emit_argv_setup("plan", c_args)
+          {"", "#{args_var}, #{argc}", prep ++ [setup], cleanup}
+
         native_ret in [:native_int, :native_bool, :native_int_pair, :native_list_int_pair] and decl ->
           kinds = NativeFunctionCall.arg_kinds(decl, mod, decl_map)
           c_args = call_arg_refs(args, slots, opts, kinds, borrows)
@@ -2411,12 +2420,6 @@ defmodule Elmc.Backend.C.Lower.Instr do
           kinds = NativeFunctionCall.arg_kinds(decl, mod, decl_map)
           c_args = call_arg_refs(args, slots, opts, kinds, borrows)
           finalize_materialized_call_args("", c_args, opts)
-
-        decl && FunctionCallAbi.argv_abi?(decl, mod, decl_map) ->
-          c_args = Enum.map(args, &call_site_slot_ref(&1, slots, opts, borrows))
-          {c_args, prep, cleanup} = materialize_plan_call_args(c_args, opts)
-          {setup, args_var, argc} = FunctionCallAbi.emit_argv_setup("plan", c_args)
-          {setup <> "\n", "#{args_var}, #{argc}", prep, cleanup}
 
         true ->
           box_native_int? =
@@ -5723,6 +5726,11 @@ defmodule Elmc.Backend.C.Lower.Instr do
     dest = slot_var(dest_reg, slots)
     rc? = Keyword.get(opts, :rc_required, false)
     param_kind = Enum.at(param_kinds, index, :boxed)
+    native_int_only? =
+      MapSet.member?(Keyword.get(opts, :native_int_only_regs, MapSet.new()), dest_reg)
+
+    native_bool_only? =
+      MapSet.member?(Keyword.get(opts, :native_bool_only_regs, MapSet.new()), dest_reg)
 
     case Keyword.get(opts, :closure_mode) do
       %{capture_count: cap_n} when is_integer(cap_n) ->
@@ -5735,6 +5743,12 @@ defmodule Elmc.Backend.C.Lower.Instr do
           end
 
         cond do
+          native_int_only? ->
+            emit_native_store(dest_reg, "plan_native_int_#{dest_reg}", "elmc_as_int(#{c_arg})", opts)
+
+          native_bool_only? ->
+            emit_native_bool_store(dest_reg, "plan_native_bool_#{dest_reg}", "elmc_as_bool(#{c_arg})", opts)
+
           rc? and index < cap_n ->
             retain_into_owned(dest, c_arg)
 
@@ -5746,6 +5760,20 @@ defmodule Elmc.Backend.C.Lower.Instr do
         c_arg = FunctionCallAbi.param_c_arg(index, params)
 
         cond do
+          native_int_only? ->
+            emit_native_store(
+              dest_reg,
+              "plan_native_int_#{dest_reg}",
+              load_param_int_c_expr(index, opts),
+              opts
+            )
+
+          native_bool_only? ->
+            peel =
+              if param_kind == :native_bool, do: c_arg, else: "elmc_as_bool(#{c_arg})"
+
+            emit_native_bool_store(dest_reg, "plan_native_bool_#{dest_reg}", peel, opts)
+
           param_kind == :native_int and Map.has_key?(native_int_direct_regs(opts), dest_reg) ->
             ""
 

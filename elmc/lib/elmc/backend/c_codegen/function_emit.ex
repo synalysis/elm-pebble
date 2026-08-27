@@ -594,27 +594,32 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
         ) :: String.t()
   def boxed_function_prototype(decl, module_name, c_name, emit_wrapper?, decl_map) do
     worker_abi? = worker_rc_abi?(emit_wrapper?, module_name, decl.name, decl_map)
+    native_ret = NativeReturn.cached_kind({module_name, decl.name})
+    argv_tail = "ElmcValue ** const args, const int argc"
 
     cond do
       FunctionCallAbi.direct_entry_abi?(decl, module_name, decl_map) ->
         boxed_direct_prototype(decl, c_name, module_name, decl.name, decl_map)
 
+      native_ret in [:native_int, :native_bool, :native_int_pair, :native_list_int_pair] ->
+        "RC #{c_name}(#{NativeReturn.c_out_type(native_ret)}, #{argv_tail});"
+
       worker_abi? and not NativeFunctionCall.native_scalar_fn?(decl, module_name, decl_map) ->
         if RcRequired.rc_required?(module_name, decl.name) do
-          "RC #{c_name}(ElmcValue **out, ElmcValue ** const args, const int argc);"
+          "RC #{c_name}(ElmcValue **out, #{argv_tail});"
         else
-          "ElmcValue *#{c_name}(ElmcValue ** const args, const int argc);"
+          "ElmcValue *#{c_name}(#{argv_tail});"
         end
 
       RcRequired.rc_required?(module_name, decl.name) ->
         if worker_abi? or NativeFunctionCall.native_scalar_fn?(decl, module_name, decl_map) do
-          "RC #{c_name}(ElmcValue **out, ElmcValue ** const args, const int argc);"
+          "RC #{c_name}(ElmcValue **out, #{argv_tail});"
         else
           boxed_direct_prototype(decl, c_name, module_name, decl.name, decl_map)
         end
 
       worker_abi? or NativeFunctionCall.native_scalar_fn?(decl, module_name, decl_map) ->
-        "ElmcValue *#{c_name}(ElmcValue ** const args, const int argc);"
+        "ElmcValue *#{c_name}(#{argv_tail});"
 
       true ->
         boxed_direct_prototype(decl, c_name, module_name, decl.name, decl_map)

@@ -163,12 +163,64 @@ defmodule Elmc.Backend.Plan.Worker.Host.Emit do
   defp entry_call_body(%{present?: true, call: call}) do
     """
     ElmcValue *result = NULL;
-      #{call.call_c}
-      #{String.trim(call.on_fail_c)}
+      #{render_call_c(call)}
+      #{String.trim(render_on_fail_c(call))}
     """
   end
 
   defp entry_call_body(%{present?: false, stub_c: stub}) when is_binary(stub) do
     stub
+  end
+
+  defp render_call_c(%{abi: :direct, safe_module: safe, fun: fun, rc_var: rc_var, arg_exprs: args}) do
+    "RC #{rc_var} = elmc_fn_#{safe}_#{fun}(&result, #{Enum.join(args, ", ")});"
+  end
+
+  defp render_call_c(%{abi: :argc, safe_module: safe, fun: fun, rc_var: rc_var, arg_exprs: args}) do
+    """
+    ElmcValue *args[] = { #{Enum.join(args, ", ")} };
+      RC #{rc_var} = elmc_fn_#{safe}_#{fun}(&result, args, #{length(args)});
+    """
+    |> String.trim()
+  end
+
+  defp render_on_fail_c(%{fail_kind: :init_fail, rc_var: rc_var}) do
+    """
+    if (#{rc_var} != RC_SUCCESS) {
+      ELMC_WORKER_LOG_RC_FAIL("worker init", #{rc_var});
+      elmc_release(result);
+      return -2;
+    }
+    """
+  end
+
+  defp render_on_fail_c(%{fail_kind: :update_fail, rc_var: rc_var}) do
+    """
+    if (#{rc_var} != RC_SUCCESS) {
+      ELMC_WORKER_LOG_RC_FAIL("worker update", #{rc_var});
+      elmc_release(result);
+      return -2;
+    }
+    """
+  end
+
+  defp render_on_fail_c(%{fail_kind: :sub_fail, rc_var: rc_var}) do
+    """
+    if (#{rc_var} != RC_SUCCESS) {
+      ELMC_WORKER_LOG_RC_FAIL("worker subscriptions", #{rc_var});
+      elmc_release(result);
+      return 0;
+    }
+    """
+  end
+
+  defp render_on_fail_c(%{rc_var: rc_var, fun: fun}) do
+    """
+    if (#{rc_var} != RC_SUCCESS) {
+      ELMC_WORKER_LOG_RC_FAIL("worker #{fun}", #{rc_var});
+      elmc_release(result);
+      return -2;
+    }
+    """
   end
 end

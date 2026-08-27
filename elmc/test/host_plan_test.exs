@@ -33,8 +33,9 @@ defmodule Elmc.HostPlanTest do
     assert plan.init.call.arg_exprs == ["flags"]
     assert plan.update.call.arg_exprs == ["msg", "state->model"]
     assert plan.subscriptions.call.arg_exprs == ["state->model"]
-    assert plan.init.call.call_c =~ "elmc_fn_Main_init"
-    assert plan.update.call.on_fail_c =~ "worker update"
+    assert plan.init.call.fail_kind == :init_fail
+    assert plan.update.call.fail_kind == :update_fail
+    assert plan.init.call.abi in [:direct, :argc]
   end
 
   test "prod pebble_int32 build caps last_dispatch_cmd at zero" do
@@ -72,9 +73,10 @@ defmodule Elmc.HostPlanTest do
     assert source =~ "static int64_t compute_subscriptions"
     assert source =~ "int elmc_worker_init(ElmcWorkerState *state, ElmcValue *flags)"
     assert source =~ "int elmc_worker_dispatch(ElmcWorkerState *state, ElmcValue *msg)"
-    assert source =~ "elmc_fn_Main_init(&result, flags)"
-    assert source =~ "elmc_fn_Main_update(&result, msg, state->model)"
-    assert source =~ "elmc_fn_Main_subscriptions(&result, state->model)"
+    assert source =~ "elmc_fn_Main_init(&result,"
+    assert source =~ "elmc_fn_Main_update(&result,"
+    assert source =~ "elmc_fn_Main_subscriptions(&result,"
+    assert source =~ "ELMC_WORKER_LOG_RC_FAIL(\"worker update\""
     refute source =~ "static RC elmc_cmd_queue_normalize"
     refute source =~ "static int elmc_cmd_is_none"
 

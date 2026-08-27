@@ -4,6 +4,9 @@ defmodule Elmc.Backend.Plan.Verify do
 
   Rejects plans that would cause RC leaks, double-free, or mid-branch
   result inspection bugs before any backend emits target code.
+
+  Inter-block dataflow: owned/consumed/`fn_out` publish state is joined at
+  successors. `fusion_c`-only plans (no SSA blocks) are rejected.
   """
 
   alias Elmc.Backend.Plan.Cfg
@@ -27,7 +30,7 @@ defmodule Elmc.Backend.Plan.Verify do
     with :ok <- verify_blocks_present(plan),
          :ok <- verify_entry_block(plan),
          :ok <- verify_cfg(plan),
-         :ok <- walk_blocks(plan) do
+         :ok <- walk_cfg(plan) do
       :ok
     else
       {:error, _reason, _meta} = err ->
@@ -39,21 +42,16 @@ defmodule Elmc.Backend.Plan.Verify do
     end
   end
 
-  defp verify_blocks_present(%{blocks: [], fusion_c: fusion}) when is_binary(fusion) and fusion != "",
-    do: :ok
+  defp verify_blocks_present(%{blocks: [], fusion_c: fusion})
+       when is_binary(fusion) and fusion != "",
+       do: {:error, :unverified_fusion_c, [plan: :fusion_c]}
 
   defp verify_blocks_present(%{blocks: []}), do: {:error, :empty_plan, []}
   defp verify_blocks_present(_), do: :ok
 
-  defp verify_entry_block(%{blocks: [], fusion_c: fusion}) when is_binary(fusion) and fusion != "",
-    do: :ok
-
   defp verify_entry_block(%{entry_block: entry, blocks: blocks}) do
     if Enum.any?(blocks, &(&1.id == entry)), do: :ok, else: {:error, :missing_entry_block, []}
   end
-
-  defp verify_cfg(%{blocks: [], fusion_c: fusion}) when is_binary(fusion) and fusion != "",
-    do: :ok
 
   defp verify_cfg(%{blocks: blocks, entry_block: entry}) do
     with :ok <- verify_no_permanent_none(blocks),
@@ -93,8 +91,8 @@ defmodule Elmc.Backend.Plan.Verify do
     end
   end
 
-  defp walk_blocks(plan) do
-    initial = %{
+  defp initial_state(plan) do
+    %{
       owned: MapSet.new(),
       consumed: MapSet.new(),
       fn_out_writes: 0,
@@ -103,19 +101,72 @@ defmodule Elmc.Backend.Plan.Verify do
       published_fn_out: false,
       rc_required: plan.rc_required
     }
+  end
 
-    plan.blocks
-    |> Enum.sort_by(& &1.id)
-    |> Enum.reduce_while(:ok, fn block, :ok ->
-      case walk_block(block, initial, plan.name) do
-        {:ok, _st} -> {:cont, :ok}
-        {:error, reason, meta} -> {:halt, {:error, reason, meta}}
-      end
-    end)
-    |> case do
-      :ok -> :ok
-      {:error, _, _} = err -> err
+  defp walk_cfg(plan) do
+    by_id = Cfg.block_map(plan.blocks)
+    init = initial_state(plan)
+
+    do_worklist(
+      by_id,
+      :queue.in(plan.entry_block, :queue.new()),
+      %{plan.entry_block => init},
+      %{},
+      plan.name
+    )
+  end
+
+  defp do_worklist(by_id, queue, in_states, out_states, plan_name) do
+    case :queue.out(queue) do
+      {:empty, _} ->
+        :ok
+
+      {{:value, block_id}, rest} ->
+        block = Map.fetch!(by_id, block_id)
+        in_st = Map.fetch!(in_states, block_id)
+
+        case walk_block(block, in_st, plan_name) do
+          {:error, _, _} = err ->
+            err
+
+          {:ok, out_st} ->
+            prev = Map.get(out_states, block_id)
+
+            if prev == out_st do
+              do_worklist(by_id, rest, in_states, out_states, plan_name)
+            else
+              out_states = Map.put(out_states, block_id, out_st)
+              succs = Cfg.successors(block.terminator)
+
+              {queue, in_states} =
+                Enum.reduce(succs, {rest, in_states}, fn succ_id, {q, ins} ->
+                  joined = join_state(Map.get(ins, succ_id), out_st)
+
+                  if Map.get(ins, succ_id) == joined do
+                    {q, ins}
+                  else
+                    {:queue.in(succ_id, q), Map.put(ins, succ_id, joined)}
+                  end
+                end)
+
+              do_worklist(by_id, queue, in_states, out_states, plan_name)
+            end
+        end
     end
+  end
+
+  defp join_state(nil, incoming), do: incoming
+
+  defp join_state(existing, incoming) do
+    %{
+      owned: MapSet.union(existing.owned, incoming.owned),
+      consumed: MapSet.union(existing.consumed, incoming.consumed),
+      fn_out_writes: max(existing.fn_out_writes, incoming.fn_out_writes),
+      branch_out_writes: max(existing.branch_out_writes, incoming.branch_out_writes),
+      in_catch: max(existing.in_catch, incoming.in_catch),
+      published_fn_out: existing.published_fn_out or incoming.published_fn_out,
+      rc_required: existing.rc_required
+    }
   end
 
   defp walk_block(%Block{instrs: instrs, terminator: term}, state, plan_name) do
@@ -130,8 +181,20 @@ defmodule Elmc.Backend.Plan.Verify do
             {:error, reason, meta} -> {:error, reason, meta}
           end
 
-        _ ->
+        {:br, _} ->
           {:ok, st2}
+
+        {:br_if, _, _, _} ->
+          {:ok, st2}
+
+        {:switch_tag, _, _, _} ->
+          {:ok, st2}
+
+        :none ->
+          {:error, :permanent_none_terminator, [plan: plan_name]}
+
+        other ->
+          {:error, :unknown_terminator, [term: other, plan: plan_name]}
       end
     catch
       {:verify_fail, reason, meta} -> {:error, reason, meta}
@@ -144,33 +207,18 @@ defmodule Elmc.Backend.Plan.Verify do
         List.wrap(Map.get(args, :default))
 
     st
-    |> Map.put(:consumed, MapSet.new())
+    |> check_not_after_fn_out_publish(:switch_ctor_tag)
     |> check_borrows_not_consumed(effects.borrows || [])
     |> mark_consumed(branch_regs)
     |> track_produces(effects.produces, dest)
-    |> then(fn st1 ->
-      merge_owned =
-        case dest do
-          reg when is_integer(reg) -> MapSet.new([reg])
-          _ -> MapSet.new()
-        end
-
-      %{st1 | owned: merge_owned}
-    end)
   end
 
   defp apply_instr(%Types{op: :phi, args: %{then: _, else: _, cond: _}, effects: effects, dest: dest}, st) do
-    merge_owned =
-      case dest do
-        reg when is_integer(reg) -> MapSet.new([reg])
-        _ -> MapSet.new()
-      end
-
     st
-    |> Map.put(:consumed, MapSet.new())
+    |> check_not_after_fn_out_publish(:phi)
     |> check_borrows_not_consumed(effects.borrows || [])
     |> mark_consumed(effects.consumes || [])
-    |> then(&%{&1 | owned: merge_owned})
+    |> track_produces(effects.produces, dest)
   end
 
   defp apply_instr(%Types{op: :release, args: %{reg: reg}}, st) when is_integer(reg) do
@@ -217,11 +265,21 @@ defmodule Elmc.Backend.Plan.Verify do
     %{st | branch_out_writes: st.branch_out_writes + 1}
   end
 
-  defp apply_instr(%Types{effects: effects, dest: dest}, st) do
-    apply_value_effects(%Types{effects: effects, dest: dest}, st)
+  defp apply_instr(%Types{dest: dest} = instr, st) do
+    apply_value_effects(instr, st)
+    |> then(fn st1 ->
+      if dest == :fn_out and instr.op != :publish do
+        if st.published_fn_out, do: verify_fail!(:double_fn_out_publish, [])
+        %{st1 | fn_out_writes: st1.fn_out_writes + 1, published_fn_out: true}
+      else
+        st1
+      end
+    end)
   end
 
-  defp apply_value_effects(%Types{effects: effects, dest: dest}, st) do
+  defp apply_value_effects(%Types{effects: effects, dest: dest, op: op}, st) do
+    st = check_not_after_fn_out_publish(st, op)
+
     with :ok <- verify_produces_kind(effects.produces),
          :ok <- verify_result_aliases(effects, dest) do
       st
@@ -232,6 +290,14 @@ defmodule Elmc.Backend.Plan.Verify do
       {:error, reason, meta} -> verify_fail!(reason, meta)
     end
   end
+
+  defp check_not_after_fn_out_publish(%{published_fn_out: true} = st, op)
+       when op not in [:publish, :release, :catch_begin, :catch_end] do
+    verify_fail!(:mid_branch_fn_out, [op: op])
+    st
+  end
+
+  defp check_not_after_fn_out_publish(st, _op), do: st
 
   defp verify_produces_kind(nil), do: :ok
   defp verify_produces_kind({:owned, _}), do: :ok
@@ -293,19 +359,16 @@ defmodule Elmc.Backend.Plan.Verify do
     %{st | owned: MapSet.delete(st.owned, reg)}
   end
 
-  defp apply_terminator({:br, _target}, st) do
-    %{st | owned: MapSet.new()}
-  end
+  defp apply_terminator({:br, _target}, st), do: st
 
   defp apply_terminator({:br_if, _, _, reg}, st) do
     if MapSet.member?(st.consumed, reg), do: verify_fail!(:branch_on_consumed, reg: reg)
-    %{st | owned: MapSet.new()}
+    st
   end
 
   defp apply_terminator({:switch_tag, reg, _, _}, st) do
     if MapSet.member?(st.consumed, reg), do: verify_fail!(:switch_on_consumed, reg: reg)
-
-    %{st | owned: MapSet.new()}
+    st
   end
 
   defp apply_terminator(_, st), do: st

@@ -6,7 +6,7 @@ defmodule Elmc.BytecodeOpcodeAuditTest do
   use ExUnit.Case, async: false
 
   alias Elmc.Backend.Bytecode.{Loader, Lower, Opcodes}
-  alias Elmc.TestSupport.{HostSmoke, PlanStrictTemplates, TemplateCompile}
+  alias Elmc.TestSupport.{HostSmoke, PlanStrictTemplates}
 
   @moduletag :plan_surface
 
@@ -35,15 +35,10 @@ defmodule Elmc.BytecodeOpcodeAuditTest do
   end
 
   defp check_opcode_coverage(template) do
-      out_dir = Path.expand("tmp/bytecode_opcode_audit/#{template}", __DIR__)
-      File.rm_rf!(out_dir)
+      out_dir = Elmc.TestSupport.StrictCompileAssertions.artifact_dir(template)
 
-      assert {:ok, _} =
-               TemplateCompile.compile_watch_template(template,
-                 plan_ir_mode: :primary,
-                 plan_ir_strict: true,
-                 out_dir: out_dir
-               )
+      _ =
+        Elmc.TestSupport.StrictCompileAssertions.compile_template!(template)
 
       {:ok, manifest} =
         Loader.load_manifest(Path.join(out_dir, "bytecode/elmc_bytecode.manifest.json"))

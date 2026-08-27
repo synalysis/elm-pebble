@@ -19,6 +19,18 @@ defmodule Elmc.PlanCoreBuiltinsTest do
     plan
   end
 
+  test "call_contract exposes ABI fields for every builtin id" do
+    for id <- [:list_append, :maybe_with_default, :basics_min, :basics_clamp] do
+      contract = RuntimeBuiltins.call_contract(id)
+      assert is_binary(contract.c_symbol)
+      assert is_boolean(contract.retains_operand)
+      assert contract.dest_may_be_fn_out == true
+    end
+
+    assert RuntimeBuiltins.call_contract(:maybe_with_default).retains_operand
+    refute RuntimeBuiltins.call_contract(:list_append).retains_operand
+  end
+
   test "RuntimeBuiltins maps elm/core truncate and bitwise symbols" do
     assert RuntimeBuiltins.from_c_symbol("elmc_basics_truncate") == :basics_truncate
     assert RuntimeBuiltins.from_c_symbol("elmc_bitwise_and") == :bitwise_and

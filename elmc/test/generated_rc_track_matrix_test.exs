@@ -1,4 +1,9 @@
-defmodule Elmc.GeneratedRcTrackCoreGateTest do
+defmodule Elmc.GeneratedRcTrackMatrixTest do
+  @moduledoc """
+  Single RC_TRACK matrix: every elm/core registry module runs its probe suite.
+  Prefer this over per-module `generated_rc_track_*_test.exs` wrappers.
+  """
+
   use ExUnit.Case, async: true
 
   alias Elmc.Test.RcTrackCoreTest
@@ -22,47 +27,25 @@ defmodule Elmc.GeneratedRcTrackCoreGateTest do
 
     missing_registry = matrix_modules -- registry_modules
     assert missing_registry == [], "missing rc probe registry for: #{inspect(missing_registry)}"
-
   end
 
-  for module_name <- [
-        "Basics",
-        "Bitwise",
-        "List",
-        "Maybe",
-        "Result",
-        "String",
-        "Char",
-        "Tuple",
-        "Dict",
-        "Set",
-        "Array",
-        "Debug",
-        "Task"
-      ] do
+  for {module_name, _entry} <- RcTrackMatrix.registry() do
     @tag :rc_track
+    @tag :rc_track_core
     @tag :rc_track_gate
-    test "every codegen matrix #{module_name} function has an rc probe" do
+    test "elm/core #{module_name} probes balance rc registry and cover the matrix" do
       module_name = unquote(module_name)
+      RcTrackCoreTest.run_core_module_suite!(module_name, test_dir: __DIR__)
+
       %{probes: probes} = RcTrackMatrix.registry_entry(module_name)
-      matrix = RcTrackMatrix.functions_for(module_name)
       prefix = if module_name == "Task", do: "Task", else: module_name
 
       RcTrackCoreTest.assert_matrix_coverage!(
         probes,
-        matrix,
+        RcTrackMatrix.functions_for(module_name),
         prefix,
         RcTrackMatrix.matrix_probe_exceptions(module_name)
       )
-    end
-  end
-
-  @tag :rc_track
-  @tag :rc_track_gate
-  test "every registered rc probe fixture directory exists" do
-    for {_module, %{fixture: fixture}} <- RcTrackMatrix.registry() do
-      path = Path.expand(fixture, __DIR__)
-      assert File.dir?(path), "missing rc track fixture: #{fixture}"
     end
   end
 end

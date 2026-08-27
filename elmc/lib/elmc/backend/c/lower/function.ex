@@ -5,6 +5,9 @@ defmodule Elmc.Backend.C.Lower.Function do
   alias Elmc.Types, as: Types
 
 
+  alias Elmc.Backend.C.Ast
+  alias Elmc.Backend.C.Ast.{Emit, Lint}
+
   alias Elmc.Backend.C.Lower.{
     DenseConstRecord,
     DenseIntTable,
@@ -44,7 +47,7 @@ defmodule Elmc.Backend.C.Lower.Function do
     fusion_c = Map.get(plan, :fusion_c)
 
     cond do
-      is_binary(fusion_c) and fusion_c != "" ->
+      is_binary(fusion_c) and fusion_c != "" and plan.blocks == [] ->
         cleanup_cfg_text(fusion_c)
 
       Keyword.get(opts, :shell, true) ->
@@ -59,7 +62,8 @@ defmodule Elmc.Backend.C.Lower.Function do
   @spec emit_core(FunctionPlan.t(), keyword()) :: String.t()
   def emit_core(plan, opts \\ [])
 
-  def emit_core(%FunctionPlan{fusion_c: c}, _opts) when is_binary(c) and c != "" do
+  def emit_core(%FunctionPlan{fusion_c: c, blocks: []} = _plan, _opts)
+      when is_binary(c) and c != "" do
     cleanup_cfg_text(c)
   end
 
@@ -71,7 +75,8 @@ defmodule Elmc.Backend.C.Lower.Function do
   @spec emit_core_with_slots(FunctionPlan.t(), keyword()) :: {String.t(), map()}
   def emit_core_with_slots(plan, opts \\ [])
 
-  def emit_core_with_slots(%FunctionPlan{fusion_c: c}, _opts) when is_binary(c) and c != "" do
+  def emit_core_with_slots(%FunctionPlan{fusion_c: c, blocks: []}, _opts)
+      when is_binary(c) and c != "" do
     {cleanup_cfg_text(c), %{}}
   end
 
@@ -1972,23 +1977,26 @@ defmodule Elmc.Backend.C.Lower.Function do
       [RecordCompile.borrowed_owned_refs_null_stmt(), Frame.epilogue_release(slot_indices, slot_count)]
       |> Enum.reject(&(&1 == ""))
       |> Enum.join("\n")
-    prefix = if rc?, do: ["RC Rc = RC_SUCCESS;", owned], else: List.wrap(owned)
     letrec_decls = letrec_decl_lines(plan.letrec_refs || [])
     letrec_free = letrec_free_lines(plan.letrec_refs || [])
-
-    suffix =
-      cond do
-        rc? -> letrec_free ++ [epilogue, "return Rc;"]
-        slot_count > 0 -> letrec_free
-        true -> letrec_free
-      end
 
     # Dense boxed LUTs emit `CHECK_RC` without going through CFG fallible analysis.
     needs_catch? = rc? and (fallible? or String.contains?(core, "CHECK_RC("))
 
-    (letrec_decls ++ prefix ++ [Frame.wrap_catch(needs_catch?, core)] ++ suffix)
-    |> Enum.reject(&(&1 == ""))
-    |> Enum.join("\n")
+    ast =
+      Ast.rc_fn(
+        rc?: rc?,
+        owned_decl: owned,
+        owned_count: slot_count,
+        needs_catch: needs_catch?,
+        body: core,
+        letrec_decls: letrec_decls,
+        letrec_free: letrec_free,
+        epilogue: epilogue
+      )
+
+    :ok = Lint.run!(ast)
+    Emit.to_c(ast)
   end
 
   @spec borrow_null_cleanup_lines([String.t()]) :: String.t()
@@ -3391,8 +3399,7 @@ defmodule Elmc.Backend.C.Lower.Function do
           native_int_uses_only?(plan, reg, decl_map, native_set)
 
       [%{op: :load_param, args: %{index: index}} | _] ->
-        Enum.at(param_kinds_for_plan(plan), index) == :native_int and
-          native_int_uses_only?(plan, reg, decl_map, native_set)
+        load_param_native_int_candidate?(plan, reg, index, decl_map, native_set)
 
       retains ->
         retain_defs?(retains) and
@@ -3400,6 +3407,37 @@ defmodule Elmc.Backend.C.Lower.Function do
             native_source?(plan, src, native_set)
           end) and native_int_uses_only?(plan, reg, decl_map, native_set)
     end
+  end
+
+  # Boxed Int params (`ElmcValue *`) may still be native-int dests when every
+  # use is a peel (`publish` to `elmc_int_t` return, arith, …). Treating them
+  # as boxed owned writes `tmp_N = elmc_retain(x)` and never assigns
+  # `plan_native_int_N` (identity `Int -> Int`).
+  @spec load_param_native_int_candidate?(
+          FunctionPlan.t(),
+          Types.reg(),
+          non_neg_integer(),
+          Types.decl_map(),
+          MapSet.t(Types.reg())
+        ) :: boolean()
+
+  defp load_param_native_int_candidate?(plan, reg, index, decl_map, native_set) do
+    case Enum.at(param_kinds_for_plan(plan), index) do
+      :native_int ->
+        native_int_uses_only?(plan, reg, decl_map, native_set)
+
+      _ ->
+        Map.get(plan, :native_scalar_return) == :native_int and
+          native_int_has_use?(plan, reg, decl_map, native_set) and
+          native_int_uses_only?(plan, reg, decl_map, native_set)
+    end
+  end
+
+  @spec native_int_has_use?(FunctionPlan.t(), Types.reg(), Types.decl_map(), MapSet.t(Types.reg())) ::
+          boolean()
+
+  defp native_int_has_use?(plan, reg, decl_map, native_set) do
+    plan_use_refs(plan, reg, decl_map, native_set) != []
   end
 
   @spec retain_defs?([Types.t() | map()]) :: boolean()

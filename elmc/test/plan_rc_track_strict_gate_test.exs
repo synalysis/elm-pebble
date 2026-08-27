@@ -5,7 +5,8 @@ defmodule Elmc.PlanRcTrackStrictGateTest do
 
   use ExUnit.Case, async: false
 
-  alias Elmc.TestSupport.CachedCompile
+  alias Elmc.Backend.C.Ast.Lint, as: AstLint
+  alias Elmc.TestSupport.{CachedCompile, GeneratedCTypecheck}
   alias Elmc.Test.RcTrackMatrix
 
   @moduletag :plan_surface
@@ -47,6 +48,9 @@ defmodule Elmc.PlanRcTrackStrictGateTest do
 
         assert unknown_count == 0,
                "expected zero elmc_unknown in #{fixture_rel}, got #{unknown_count}"
+
+        AstLint.run_source!(File.read!(c_path))
+        GeneratedCTypecheck.assert_typechecks!(out_dir)
       end
     end
   end

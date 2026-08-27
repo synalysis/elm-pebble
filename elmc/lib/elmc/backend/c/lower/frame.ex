@@ -6,7 +6,8 @@ defmodule Elmc.Backend.C.Lower.Frame do
   alias Elmc.Backend.Plan.Types
   alias Elmc.Backend.Plan.Types.FunctionPlan
 
-  @heap_owned_slot_threshold 23
+  # Keep in lockstep with `ValueSlots` (`@heap_owned_slot_threshold 24`).
+  @heap_owned_slot_threshold 24
 
   @spec owned_declaration(FunctionPlan.t(), Types.slot_map()) :: String.t()
   def owned_declaration(%FunctionPlan{} = plan, slots) do

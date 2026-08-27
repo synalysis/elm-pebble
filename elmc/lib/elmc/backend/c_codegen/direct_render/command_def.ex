@@ -441,19 +441,24 @@ defmodule Elmc.Backend.CCodegen.DirectRender.CommandDef do
       Map.put_new(cache, {module_name, decl.name}, reason)
     )
 
-    # Warning, not a strict error: Host emit is valid when C typechecks.
-    # Silent fallback is what hid Just-payload / nested field bugs.
+    opts = Process.get(:elmc_codegen_opts, %{})
+    strict? = Map.get(opts, :plan_ir_strict, false)
+    severity = if strict?, do: "error", else: "warning"
+
     warnings = Process.get(:elmc_compile_warnings, [])
 
     Process.put(:elmc_compile_warnings, [
       %{
-        "severity" => "warning",
+        "severity" => severity,
         "source" => "elmc/direct_render",
         "code" => "plan_stream_fallback",
         "message" =>
           "Direct-render #{module_name}.#{decl.name} fell back to Host emit " <>
             "(Plan stream lower failed; op=#{inspect(op)} target=#{inspect(target)}). " <>
-            "Generated C must still typecheck."
+            if(strict?,
+              do: "plan_ir_strict forbids ExprDispatch production fallback.",
+              else: "Generated C must still typecheck."
+            )
       }
       | warnings
     ])

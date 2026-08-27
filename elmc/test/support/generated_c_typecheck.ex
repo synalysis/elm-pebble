@@ -15,7 +15,7 @@ defmodule Elmc.TestSupport.GeneratedCTypecheck do
 
   @host_stubs Path.expand("elmc_host_stubs.h", __DIR__)
   # Bump when cc flags / include contract changes.
-  @cc_flags_version 4
+  @cc_flags_version 5
 
   @spec assert_typechecks!(String.t()) :: :ok
   def assert_typechecks!(out_dir) when is_binary(out_dir) do
@@ -42,12 +42,12 @@ defmodule Elmc.TestSupport.GeneratedCTypecheck do
               "-std=c11",
               "-fsyntax-only",
               "-Wall",
-              # Tangram-class bug: elmc_as_int(elmc_int_t). GCC 16 also hard-errors
-              # some pointer ABI mismatches; keep those as warnings until call/callee
-              # native-out vs boxed-out is fully unified (see companion encodeColorCode).
+              # Tangram-class bug: elmc_as_int(elmc_int_t). Pointer ABI mismatches
+              # (native-out vs boxed-out) are errors; C.Ast + plan Verify must
+              # keep call/callee kinds aligned.
               "-Werror=int-conversion",
               "-Werror=implicit-function-declaration",
-              "-Wno-error=incompatible-pointer-types",
+              "-Werror=incompatible-pointer-types",
               "-include",
               @host_stubs,
               "-I#{runtime_h_dir}",

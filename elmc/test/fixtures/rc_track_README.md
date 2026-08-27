@@ -7,7 +7,7 @@ Host-side refcount probes for `elm/core` stdlib functions compiled through **elm
 - One fixture project per module: `rc_track_<module>_project/`
 - Probe module: `RcTrack<Module>Probe.elm` with nullary `probe*` functions
 - Matrix registry: [`../support/rc_track_matrix.ex`](../support/rc_track_matrix.ex)
-- Gate test: [`../generated_rc_track_core_gate_test.exs`](../generated_rc_track_core_gate_test.exs)
+- Gate test: [`../generated_rc_track_matrix_test.exs`](../generated_rc_track_matrix_test.exs)
 
 ## Authoring probes
 

@@ -453,7 +453,7 @@ Functions marked with (λ) also have zero-arg partial-application wrappers.
 | `lowering_coverage_test.exs` | Gate | No `:unsupported` nodes survive lowering |
 | `core_compliance_test.exs` | Behavioral | Generated C runs and produces correct values for 62+ functions |
 | `conformance_scorecard_test.exs` | Regression | Minimum counts for functions, runtime symbols, assertions |
-| `generated_rc_track_core_gate_test.exs` | RC gate | Every `Real` elm/core matrix function has a balancing probe; matrix aligns with `core.ex` |
+| `generated_rc_track_matrix_test.exs` | RC gate | Every `Real` elm/core matrix function has a balancing probe; matrix aligns with `core.ex` |
 | `generated_rc_track_*_test.exs` | RC balance | Per-module `ELMC_RC_TRACK` probes for Basics, List, String, Dict, etc. |
 | `generated_rc_track_stress_test.exs` | RC stress | 100-iteration loops on alloc-heavy probes (`@tag :rc_track_stress`) |
 | `generated_rc_track_codegen_optimizations_test.exs` | RC balance | Record-update COW, compare fusion, grid access |

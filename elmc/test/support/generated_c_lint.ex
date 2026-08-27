@@ -7,6 +7,7 @@ defmodule Elmc.TestSupport.GeneratedCLint do
   in `ELMC_RECORD_GET_INDEX*` (the Just-payload / nested Point bug) before `cc`.
   """
 
+  alias Elmc.Backend.C.Ast.Lint, as: AstLint
   alias Elmc.Test.CCodegenExtract
   alias Elmc.TestSupport.GeneratedCTypecheck
 
@@ -19,6 +20,7 @@ defmodule Elmc.TestSupport.GeneratedCLint do
     generated = Path.join(out_dir, "c/elmc_generated.c")
     source = File.read!(generated)
     assert_record_get_bases_bound!(source)
+    AstLint.run_source!(source)
     GeneratedCTypecheck.assert_typechecks!(out_dir)
     _ = result
     :ok

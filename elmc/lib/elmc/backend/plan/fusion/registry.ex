@@ -98,6 +98,16 @@ defmodule Elmc.Backend.Plan.Fusion.Registry do
     :ok
   end
 
+  @spec clear_rc_native_arg_kinds(String.t(), String.t()) :: :ok
+  def clear_rc_native_arg_kinds(module, name) when is_binary(module) and is_binary(name) do
+    cache = Process.get(:elmc_rc_native_fusion_arg_kinds, %{})
+    Process.put(:elmc_rc_native_fusion_arg_kinds, Map.delete(cache, {module, name}))
+
+    set = Process.get(:elmc_fusion_rc_native_only, MapSet.new())
+    Process.put(:elmc_fusion_rc_native_only, MapSet.delete(set, {module, name}))
+    :ok
+  end
+
   @spec register_rc_native_only(String.t(), String.t()) :: :ok
   def register_rc_native_only(module, name) when is_binary(module) and is_binary(name) do
     set = Process.get(:elmc_fusion_rc_native_only, MapSet.new())

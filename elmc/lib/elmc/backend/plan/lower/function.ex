@@ -66,7 +66,7 @@ defmodule Elmc.Backend.Plan.Lower.Function do
 
     case Fusion.try_plan(module_name, decl, decl_map, opts) do
       {:ok, plan} ->
-        {:ok, register_fusion_native_cache(plan, module_name)}
+        accept_or_fallback_fusion(plan, decl, module_name, decl_map, opts)
 
       :error ->
         case Intrinsics.try_lower(decl, module_name, decl_map, opts) do
@@ -81,6 +81,38 @@ defmodule Elmc.Backend.Plan.Lower.Function do
 
   @spec register_fusion_native_cache(Types.function_plan() | map(), String.t()) ::
           Types.function_plan() | map()
+
+  defp accept_or_fallback_fusion(plan, decl, module_name, decl_map, opts) do
+    case Verify.run(plan) do
+      :ok ->
+        {:ok, register_fusion_native_cache(plan, module_name)}
+
+      {:error, :unverified_fusion_c, _} ->
+        Elmc.Backend.Plan.Fusion.Registry.clear_rc_native_arg_kinds(module_name, Map.get(decl, :name, ""))
+
+        case Intrinsics.try_lower(decl, module_name, decl_map, opts) do
+          {:ok, ssa} ->
+            {:ok, attach_fusion_sidecar(ssa, plan)}
+
+          :not_intrinsic ->
+            case lower_expr_body(decl, module_name, decl_map, opts) do
+              {:ok, ssa} -> {:ok, attach_fusion_sidecar(ssa, plan)}
+              other -> other
+            end
+        end
+
+      {:error, reason, meta} ->
+        {:error, {:verify, reason, meta}}
+    end
+  end
+
+  defp attach_fusion_sidecar(ssa, fusion_plan) do
+    ssa
+    |> Map.put(:fusion_kind, Map.get(fusion_plan, :fusion_kind))
+    |> Map.put(:fusion_data, Map.get(fusion_plan, :fusion_data))
+    |> Map.put(:fusion_c, nil)
+    |> Map.put(:fusion_emit, nil)
+  end
 
   defp register_fusion_native_cache(%{fusion_c: c, native_scalar_return: kind} = plan, module_name)
        when is_binary(c) and kind in [:native_int, :native_bool] do

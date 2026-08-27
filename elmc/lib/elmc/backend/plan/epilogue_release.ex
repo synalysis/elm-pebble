@@ -10,16 +10,53 @@ defmodule Elmc.Backend.Plan.EpilogueRelease do
   def run(%FunctionPlan{blocks: []} = plan), do: plan
 
   def run(%FunctionPlan{blocks: blocks} = plan) do
-    %{plan | blocks: Enum.map(blocks, &maybe_insert_releases/1)}
+    leftover = function_leftover_owned(plan)
+    %{plan | blocks: Enum.map(blocks, &maybe_insert_releases(&1, leftover))}
   end
 
-  @spec maybe_insert_releases(Block.t()) :: Block.t()
-  defp maybe_insert_releases(%Block{terminator: {:ret, _}} = block), do: insert_releases(block)
-  defp maybe_insert_releases(block), do: block
+  @spec function_leftover_owned(FunctionPlan.t()) :: MapSet.t(Types.reg())
+  defp function_leftover_owned(%FunctionPlan{blocks: blocks}) do
+    {produced, consumed} =
+      Enum.reduce(blocks, {MapSet.new(), MapSet.new()}, fn block, acc ->
+        acc = Enum.reduce(block.instrs, acc, &track_function_instr/2)
 
-  @spec insert_releases(Block.t()) :: Block.t()
-  defp insert_releases(%Block{instrs: instrs, terminator: term} = block) do
-    live = live_owned(instrs)
+        case block.terminator do
+          {:ret, reg} when is_integer(reg) ->
+            {elem(acc, 0), MapSet.put(elem(acc, 1), reg)}
+
+          _ ->
+            acc
+        end
+      end)
+
+    MapSet.difference(produced, consumed)
+  end
+
+  defp track_function_instr(%Types{op: :release, args: %{reg: reg}}, {produced, consumed})
+       when is_integer(reg) do
+    {produced, MapSet.put(consumed, reg)}
+  end
+
+  defp track_function_instr(%Types{effects: effects}, {produced, consumed}) do
+    produced =
+      case effects do
+        %{produces: {:owned, reg}} when is_integer(reg) -> MapSet.put(produced, reg)
+        _ -> produced
+      end
+
+    consumed = Enum.reduce(effects.consumes || [], consumed, &MapSet.put(&2, &1))
+    {produced, consumed}
+  end
+
+  @spec maybe_insert_releases(Block.t(), MapSet.t(Types.reg())) :: Block.t()
+  defp maybe_insert_releases(%Block{terminator: {:ret, _}} = block, leftover),
+    do: insert_releases(block, leftover)
+
+  defp maybe_insert_releases(block, _leftover), do: block
+
+  @spec insert_releases(Block.t(), MapSet.t(Types.reg())) :: Block.t()
+  defp insert_releases(%Block{instrs: instrs, terminator: term} = block, leftover) do
+    live = MapSet.union(live_owned(instrs), leftover)
     ret_reg = ret_reg(term)
 
     leaked =
