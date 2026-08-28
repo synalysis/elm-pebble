@@ -155,8 +155,10 @@ defmodule Elmc.Backend.CCodegen.RcRequired do
 
   @spec rc_required?(Types.function_decl_key()) :: boolean()
   def rc_required?({module_name, name}) do
+    # Worker entries always use the RC ABI. Coverage / bytecode re-lower can
+    # run after C emit clears `:elmc_rc_required`; still treat these as RC.
     Process.get(:elmc_rc_required, MapSet.new())
-    |> MapSet.member?({module_name, name})
+    |> MapSet.member?({module_name, name}) or worker_entry_point?(name)
   end
 
   @spec worker_entry_point?(String.t()) :: boolean()

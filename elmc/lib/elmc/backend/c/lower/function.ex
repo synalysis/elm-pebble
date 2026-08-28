@@ -296,7 +296,7 @@ defmodule Elmc.Backend.C.Lower.Function do
         borrow_param_regs: borrow_param_regs,
         closure_mode: closure_mode,
         param_kinds: param_kinds,
-        params: param_names(plan.params),
+        params: emit_c_param_names(plan, decl_map),
         parent_plan: plan,
         boxed_direct_scene_argv?: boxed_direct_scene_argv?(plan, decl_map)
       )
@@ -329,7 +329,7 @@ defmodule Elmc.Backend.C.Lower.Function do
       owned_slot_count: slot_count,
       rc_required: rc?,
       epilogue_lifo: slot_count > 0,
-      params: param_names(plan.params),
+      params: emit_c_param_names(plan, decl_map),
       param_kinds: param_kinds,
       native_int_regs: native_int_operand_regs,
       borrow_param_regs: borrow_param_regs,
@@ -457,7 +457,7 @@ defmodule Elmc.Backend.C.Lower.Function do
 
            block_instrs
            |> fuse_open_list_map_loops()
-           |> Enum.flat_map(&emit_instr_lines(&1, slots, instr_opts))
+           |> emit_block_instr_lines(term, slots, instr_opts)
          end).()
 
       (if labeled_block?(id, explicit_targets), do: [block_label(id)], else: []) ++
@@ -501,7 +501,7 @@ defmodule Elmc.Backend.C.Lower.Function do
 
              instrs
              |> fuse_open_list_map_loops()
-             |> Enum.flat_map(&emit_instr_lines(&1, slots, instr_opts))
+             |> emit_block_instr_lines(term, slots, instr_opts)
              |> Enum.reject(&(&1 == ""))
              |> Enum.map(&("    " <> &1))
              |> Enum.join("\n")
@@ -1025,6 +1025,50 @@ defmodule Elmc.Backend.C.Lower.Function do
   end
 
   defp explicit_targets_from_terminator(_, _), do: []
+
+  @spec emit_block_instr_lines([map()], term(), Types.slot_map(), keyword()) :: [String.t()]
+
+  defp emit_block_instr_lines(instrs, term, slots, instr_opts) when is_list(instrs) do
+    instrs
+    |> Enum.with_index()
+    |> Enum.flat_map(fn {instr, i} ->
+      later = Enum.drop(instrs, i + 1)
+
+      opts =
+        instr_opts
+        |> Keyword.put(:later_instrs, later)
+        |> Keyword.put(:later_terminator, term)
+        |> Keyword.put(
+          :record_update_base_live_after?,
+          record_update_base_live_after?(instr, later, term)
+        )
+
+      emit_instr_lines(instr, slots, opts)
+    end)
+  end
+
+  defp record_update_base_live_after?(%{op: :record_update, args: %{base: base}}, later, term)
+       when is_integer(base) do
+    Enum.any?(later, &instr_uses_reg?(&1, base)) or terminator_uses_reg?(term, base)
+  end
+
+  defp record_update_base_live_after?(_, _, _), do: false
+
+  defp instr_uses_reg?(%{args: args}, reg) when is_map(args) do
+    args
+    |> Map.values()
+    |> List.flatten()
+    |> Enum.any?(&(&1 == reg))
+  end
+
+  defp instr_uses_reg?(_, _), do: false
+
+  defp terminator_uses_reg?({:ret, src}, reg), do: src == reg
+  defp terminator_uses_reg?({:br_if, _, _, cond}, reg), do: cond == reg
+  defp terminator_uses_reg?({:switch_tag, subject, _, _}, reg), do: subject == reg
+  defp terminator_uses_reg?({:switch_int, subject, _, _}, reg), do: subject == reg
+  defp terminator_uses_reg?({:switch_ctor_tag, subject, _, _}, reg), do: subject == reg
+  defp terminator_uses_reg?(_, _), do: false
 
   @spec emit_instr_lines(Types.t() | map(), Types.slot_map(), keyword()) :: [String.t()]
 
@@ -3105,20 +3149,32 @@ defmodule Elmc.Backend.C.Lower.Function do
 
   @spec plan_decl_param_c_arg(FunctionPlan.t(), non_neg_integer(), Types.decl_map()) :: String.t()
 
-  defp plan_decl_param_c_arg(plan, index, _decl_map) do
-    names = param_names(plan.params)
+  defp plan_decl_param_c_arg(plan, index, decl_map) do
+    FunctionCallAbi.param_c_arg(index, emit_c_param_names(plan, decl_map))
+  end
 
-    names =
-      if names != [] do
-        names
-      else
-        case lookup_decl(plan.module, plan.name) do
-          %{args: args} when is_list(args) -> decl_arg_names(args)
-          _ -> []
+  # C signatures use FunctionEmit.effective_decl_args (kernel `metric`, …).
+  # Plan IR may invent `__eff_arg_N__` from the type; load_param must match the
+  # emitted parameter names or C fails with undeclared identifiers.
+  @spec emit_c_param_names(FunctionPlan.t(), Types.decl_map()) :: [String.t()]
+
+  defp emit_c_param_names(plan, decl_map) do
+    case lookup_decl(plan.module, plan.name) do
+      decl when is_map(decl) ->
+        case FunctionEmit.effective_decl_args(decl, plan.module, decl_map) do
+          names when is_list(names) and names != [] ->
+            names
+
+          _ ->
+            case Map.get(decl, :args) do
+              args when is_list(args) and args != [] -> decl_arg_names(args)
+              _ -> param_names(plan.params)
+            end
         end
-      end
 
-    FunctionCallAbi.param_c_arg(index, names)
+      _ ->
+        param_names(plan.params)
+    end
   end
 
   @spec closure_param_c_ref(non_neg_integer(), non_neg_integer()) :: String.t()
@@ -3473,6 +3529,12 @@ defmodule Elmc.Backend.C.Lower.Function do
     case Enum.at(param_kinds_for_plan(plan), index) do
       :native_int ->
         native_int_uses_only?(plan, reg, decl_map, native_set)
+
+      # A native Bool/Float param is already a C scalar. Treating it as a boxed
+      # Int dest emits `elmc_as_int(cond)` / `elmc_as_bool(plan_native_int_N)`
+      # (-Wint-conversion) when the function itself returns Int.
+      kind when kind in [:native_bool, :native_float] ->
+        false
 
       _ ->
         Map.get(plan, :native_scalar_return) == :native_int and

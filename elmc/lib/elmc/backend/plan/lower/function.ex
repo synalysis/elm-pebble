@@ -348,7 +348,7 @@ defmodule Elmc.Backend.Plan.Lower.Function do
 
   defp verify_lambda_plans(lambdas) when is_list(lambdas) do
     Enum.reduce_while(lambdas, :ok, fn lam, :ok ->
-      case Verify.run(EpilogueRelease.run(lam) |> Optimize.run()) do
+      case Verify.run(lam |> EpilogueRelease.run() |> Optimize.run() |> EpilogueRelease.run()) do
         :ok -> {:cont, :ok}
         {:error, reason, meta} -> {:halt, {:error, reason, meta}}
       end

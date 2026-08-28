@@ -1,9 +1,9 @@
 defmodule Elmc.Runtime.LazyMap do
   @moduledoc false
 
-  # Deferred `List.map` over a compact source (INT_LIST). The mapper runs when
-  # a consumer walks the list, so storing `List.map f xs` on the model does not
-  # allocate one record per element at init.
+  # Deferred `List.map` over a list source (INT_LIST, cons, or nested lazy map).
+  # The mapper runs when a consumer walks the list, so storing `List.map f xs`
+  # on the model does not allocate one record per element at init.
 
   @spec header_types() :: String.t()
   def header_types do
@@ -127,14 +127,34 @@ defmodule Elmc.Runtime.LazyMap do
           rc = RC_ERR_INVALID_ARG;
           CHECK_RC(rc);
         }
-        if (payload->source && payload->source->tag == ELMC_TAG_INT_LIST) {
-          ElmcIntListPayload *src = (ElmcIntListPayload *)payload->source->payload;
-          if (!src || index >= src->length) {
+        ElmcValue *src = payload->source;
+        if (src && src->tag == ELMC_TAG_INT_LIST) {
+          ElmcIntListPayload *ints = (ElmcIntListPayload *)src->payload;
+          if (!ints || index >= ints->length) {
             rc = RC_ERR_INVALID_ARG;
             CHECK_RC(rc);
           }
-          rc = elmc_new_int(&arg, src->values[index]);
+          rc = elmc_new_int(&arg, ints->values[index]);
           CHECK_RC(rc);
+        } else if (src && src->tag == ELMC_TAG_LAZY_MAP) {
+          rc = elmc_lazy_map_nth(&arg, src, index);
+          CHECK_RC(rc);
+        } else if (src && src->tag == ELMC_TAG_LIST) {
+          ElmcValue *cursor = src;
+          int i = index;
+          while (i > 0) {
+            if (!cursor || cursor->tag != ELMC_TAG_LIST || cursor->payload == NULL) {
+              rc = RC_ERR_INVALID_ARG;
+              CHECK_RC(rc);
+            }
+            cursor = ((ElmcCons *)cursor->payload)->tail;
+            i--;
+          }
+          if (!cursor || cursor->tag != ELMC_TAG_LIST || cursor->payload == NULL) {
+            rc = RC_ERR_INVALID_ARG;
+            CHECK_RC(rc);
+          }
+          arg = elmc_retain(((ElmcCons *)cursor->payload)->head);
         } else {
           rc = RC_ERR_UNSUPPORTED;
           CHECK_RC(rc);

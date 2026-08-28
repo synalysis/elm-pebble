@@ -46,14 +46,15 @@ defmodule Elmc.PlanYesTmpRegsTest do
       )
 
     stop =
-      case :binary.match(generated, "\n}\n\nstatic ", start) do
+      case :binary.match(generated, "\n}\n\nstatic ", scope: {start, byte_size(generated) - start}) do
         {idx, _} -> idx
         :nomatch -> start + 2000
       end
 
     from_screen = binary_part(generated, start, stop - start)
     refute from_screen =~ "(void)screenH"
-    refute from_screen =~ ~r/\bplan_native_int_0\b/
+    # Param copies are initialized (`= screenW`), not a bare uninitialized decl.
+    refute from_screen =~ ~r/elmc_int_t plan_native_int_0;/
     assert from_screen =~ "screenW"
     assert from_screen =~ "screenH"
   end

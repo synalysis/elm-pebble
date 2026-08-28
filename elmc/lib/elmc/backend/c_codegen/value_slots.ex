@@ -585,7 +585,9 @@ defmodule Elmc.Backend.CCodegen.ValueSlots do
     """
     enum { ELMC_OWNED_SLOT_COUNT = #{slot_count} };
     ElmcValue **owned = elmc_owned_slots_acquire(ELMC_OWNED_SLOT_COUNT);
-    if (!owned) return RC_ERR_OUT_OF_MEMORY;
+    if (!owned) {
+      Rc = RC_ERR_OUT_OF_MEMORY;
+    } else {
     """
     |> String.trim()
   end
@@ -626,6 +628,7 @@ defmodule Elmc.Backend.CCodegen.ValueSlots do
           """
           elmc_release_array_lifo(owned, ELMC_OWNED_SLOT_COUNT);
           elmc_owned_slots_release(owned, ELMC_OWNED_SLOT_COUNT);
+          }
           """
           |> String.trim()
 

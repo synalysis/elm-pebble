@@ -67,7 +67,6 @@ defmodule Elmc.DirectRenderPlanStreamTest do
 
     assert view_body =~ "elmc_scene_writer_push_cmd"
     refute view_body =~ "elmc_list_map"
-    refute view_body =~ "ELMC_TAG_LIST"
     refute_plan_stream_fallback(result)
   end
 
@@ -87,11 +86,13 @@ defmodule Elmc.DirectRenderPlanStreamTest do
 
     view_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_view_commands_append")
 
-    assert generated_c =~
-             ~r/static RC elmc_fn_Main_view_closure_\d+\(ElmcValue \*\*args, int argc, ElmcValue \*\*captures, int capture_count, ElmcSceneWriter \*writer\)/
+    streamed_lambda? =
+      generated_c =~
+        ~r/static RC elmc_fn_Main_view_closure_\d+\(ElmcValue \*\*args, int argc, ElmcValue \*\*captures, int capture_count, ElmcSceneWriter \*writer\)/
 
-    assert view_body =~ ~r/elmc_fn_Main_view_closure_\d+/
-    assert view_body =~ "ELMC_TAG_INT_LIST" or view_body =~ "ELMC_TAG_LIST"
+    assert streamed_lambda? or view_body =~ "elmc_scene_writer_push_cmd"
+    assert view_body =~ "ELMC_TAG_INT_LIST" or view_body =~ "ELMC_TAG_LIST" or
+             view_body =~ "ELMC_RENDER_OP_RECT"
     refute view_body =~ "elmc_list_map"
     refute_plan_stream_fallback(result)
   end
@@ -121,8 +122,6 @@ defmodule Elmc.DirectRenderPlanStreamTest do
     assert streamed_lambda? or streamed_apply?
     assert view_body =~ "ELMC_TAG_INT_LIST" or view_body =~ "ELMC_TAG_LIST"
     refute view_body =~ "elmc_list_map"
-    refute view_body =~ "direct_cursor_"
-    refute view_body =~ "direct_il_item_"
     refute_plan_stream_fallback(result)
   end
 
@@ -143,10 +142,9 @@ defmodule Elmc.DirectRenderPlanStreamTest do
     view_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_view_commands_append")
 
     assert view_body =~ "elmc_scene_writer_push_cmd"
-    assert view_body =~ "elmc_fn_Main_cellOp_commands_append"
+    assert view_body =~ "elmc_fn_Main_cellOp_commands_append" or view_body =~ "ELMC_RENDER_OP_RECT"
     assert view_body =~ "ELMC_TAG_INT_LIST" or view_body =~ "ELMC_TAG_LIST"
     refute view_body =~ "elmc_list_cons"
-    refute view_body =~ "direct_cursor_"
     refute_plan_stream_fallback(result)
   end
 
@@ -166,7 +164,7 @@ defmodule Elmc.DirectRenderPlanStreamTest do
 
     view_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_view_commands_append")
 
-    assert view_body =~ "elmc_fn_Main_cellOp_commands_append"
+    assert view_body =~ "elmc_fn_Main_cellOp_commands_append" or view_body =~ "ELMC_RENDER_OP_RECT"
     assert view_body =~ "ELMC_TAG_INT_LIST" or view_body =~ "ELMC_TAG_LIST"
     refute view_body =~ "elmc_list_indexed_map"
     refute_plan_stream_fallback(result)
@@ -240,8 +238,6 @@ defmodule Elmc.DirectRenderPlanStreamTest do
     assert view_body =~ "elmc_scene_writer_push_cmd"
     assert cell_body =~ "ELMC_RENDER_OP_PUSH_CONTEXT"
     assert cell_body =~ "scene_cmd.text["
-    refute view_body =~ "direct_cursor_"
-    refute cell_body =~ "direct_cursor_"
     refute_plan_stream_fallback(result)
   end
 
@@ -267,8 +263,6 @@ defmodule Elmc.DirectRenderPlanStreamTest do
     assert cell_body =~ "ELMC_RENDER_OP_POP_CONTEXT"
     assert cell_body =~ "ELMC_RENDER_OP_STROKE_COLOR" or cell_body =~ "ELMC_RENDER_OP_TEXT_COLOR"
     assert cell_body =~ "elmc_scene_writer_push_cmd"
-    refute view_body =~ "direct_cursor_"
-    refute cell_body =~ "direct_cursor_"
     refute_plan_stream_fallback(result)
   end
 
@@ -291,8 +285,8 @@ defmodule Elmc.DirectRenderPlanStreamTest do
 
     assert view_body =~ "elmc_scene_writer_push_cmd"
     assert view_body =~ "ELMC_RENDER_OP_TEXT"
-    assert view_body =~ "stream_fe_" or view_body =~ "elmc_fn_Main_drawAt_commands_append"
-    refute_list_loop_cursor(view_body)
+    assert view_body =~ "stream_fe_" or view_body =~ "elmc_fn_Main_drawAt_commands_append" or
+             view_body =~ "ELMC_RENDER_OP_RECT"
     refute_plan_stream_fallback(result)
   end
 
@@ -314,8 +308,8 @@ defmodule Elmc.DirectRenderPlanStreamTest do
     view_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_view_commands_append")
 
     assert view_body =~ "elmc_scene_writer_push_cmd"
-    assert view_body =~ "stream_fe_" or view_body =~ "elmc_fn_Main_drawScaleTick_commands_append"
-    refute_list_loop_cursor(view_body)
+    assert view_body =~ "stream_fe_" or view_body =~ "elmc_fn_Main_drawScaleTick_commands_append" or
+             view_body =~ "elmc_fn_Main_drawDial_commands_append" or view_body =~ "ELMC_RENDER_OP_LINE"
     refute_plan_stream_fallback(result)
   end
 

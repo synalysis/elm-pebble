@@ -71,6 +71,9 @@ defmodule Elmc.Backend.Plan.PrimaryCoverage do
 
   defp report_keys(decl_map, keys, opts) when is_map(decl_map) and is_list(keys) do
     with_constructor_tags!(opts)
+    # Bytecode coverage runs after C emit tears down `:elmc_rc_required`.
+    # Re-seed so worker entries and allocating callees keep the RC ABI.
+    _ = RcRequired.run!(decl_map, rc_analyze_opts(opts))
 
     keys
     |> Enum.sort()
@@ -123,6 +126,9 @@ defmodule Elmc.Backend.Plan.PrimaryCoverage do
   defp opt(opts, key), do: opt(opts, key, nil)
   defp opt(opts, key, default) when is_list(opts), do: Keyword.get(opts, key, default)
   defp opt(opts, key, default) when is_map(opts), do: Map.get(opts, key, default)
+
+  defp rc_analyze_opts(opts) when is_list(opts), do: Map.new(opts)
+  defp rc_analyze_opts(opts) when is_map(opts), do: opts
 
   defp with_constructor_tags!(opts) do
     case opt(opts, :ir) do

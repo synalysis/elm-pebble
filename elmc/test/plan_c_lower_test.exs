@@ -749,6 +749,31 @@ defmodule Elmc.PlanCLowerTest do
     assert c =~ "return "
   end
 
+  test "native Bool param used as if-cond in an Int function is not peeled as boxed Int" do
+    decl = %{
+      name: "choose",
+      args: ["cond", "a", "b"],
+      type: "Bool -> Int -> Int -> Int",
+      ownership: [:borrow_arg, :borrow_result],
+      expr: %{
+        op: :if,
+        cond: %{op: :var, name: "cond"},
+        then_expr: %{op: :var, name: "a"},
+        else_expr: %{op: :var, name: "b"}
+      }
+    }
+
+    decl_map = %{{"Main", "choose"} => decl}
+    Process.put(:elmc_program_decls, decl_map)
+
+    assert {:ok, plan} =
+             Elmc.Backend.Plan.Lower.Function.lower(decl, "Main", decl_map, rc_required: true)
+
+    c = CLowerFunction.emit(plan)
+    refute c =~ "elmc_as_int(cond)"
+    refute c =~ ~r/elmc_as_bool\(plan_native_int_\d+\)/
+  end
+
   test "Float identity peels boxed param into native return without tmp retain" do
     decl = %{
       name: "identityFloat",

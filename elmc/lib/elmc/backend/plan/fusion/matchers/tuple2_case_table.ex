@@ -274,17 +274,17 @@ defmodule Elmc.Backend.Plan.Fusion.Matchers.Tuple2CaseTable do
     };
 
     static RC #{c_prefix}_native(ElmcValue **out, const elmc_int_t kind, const elmc_int_t rot) {
-      RC rc = RC_SUCCESS;
+      RC Rc = RC_SUCCESS;
       CATCH_BEGIN
         elmc_int_t k = kind % #{outer_mod};
         if (k < 0) k += #{outer_mod};
         elmc_int_t r = rot % 4;
         if (r < 0) r += 4;
         const #{table_type} *entry = &#{safe}_table[k][r];
-        rc = elmc_list_from_tuple2_int_array(out, entry->cells, entry->count);
-        CHECK_RC(rc);
+        Rc = elmc_list_from_tuple2_int_array(out, entry->cells, entry->count);
+        CHECK_RC(Rc);
       CATCH_END
-      return rc;
+      return Rc;
     }
     """
   end

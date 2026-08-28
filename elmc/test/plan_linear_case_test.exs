@@ -519,6 +519,134 @@ defmodule Elmc.PlanLinearCaseTest do
     assert text =~ "call_closure"
   end
 
+  test "exhaustive constructor case result is owned on every merge predecessor" do
+    Process.put(:elmc_constructor_tags, %{"Main.Left" => 1, "Main.Right" => 2})
+    Process.put(:elmc_record_alias_shapes, %{
+      {"Main", "Model"} => ["best", "score"]
+    })
+
+    on_exit(fn ->
+      Process.delete(:elmc_constructor_tags)
+      Process.delete(:elmc_record_alias_shapes)
+    end)
+
+    decl = %{
+      name: "pick",
+      args: ["msg", "model"],
+      expr: %{
+        op: :let_in,
+        name: "next",
+        value_expr: %{
+          op: :case,
+          subject: %{op: :var, name: "msg"},
+          branches: [
+            %{
+              pattern: %{kind: :constructor, name: "Left", resolved_name: "Main.Left", tag: 1},
+              expr: %{op: :var, name: "model"}
+            },
+            %{
+              pattern: %{kind: :constructor, name: "Right", resolved_name: "Main.Right", tag: 2},
+              expr: %{op: :var, name: "model"}
+            }
+          ]
+        },
+        in_expr: %{
+          op: :field_access,
+          arg: %{op: :var, name: "next"},
+          field: "best"
+        }
+      }
+    }
+
+    decl_map = %{{"Main", "pick"} => decl}
+
+    assert {:ok, plan} = Function.lower(decl, "Main", decl_map, rc_required: true)
+
+    switch =
+      Enum.find(plan.blocks, fn
+        %{terminator: {:switch_tag, _, _, _}} -> true
+        _ -> false
+      end)
+
+    assert match?(%{terminator: {:switch_tag, _, _, default}} when is_integer(default), switch)
+    {:switch_tag, _subj, arms, default_id} = switch.terminator
+    arm_ids = Enum.map(arms, fn
+      {_, id} -> id
+      {_, id, _} -> id
+    end)
+
+    merge_id =
+      plan.blocks
+      |> Enum.find_value(fn
+        %{id: id, instrs: instrs} ->
+          if Enum.any?(instrs, &(&1.op == :record_get)), do: id
+
+        _ ->
+          nil
+      end)
+
+    refute default_id in arm_ids
+    refute default_id == merge_id
+
+    default_block = Enum.find(plan.blocks, &(&1.id == default_id))
+    assert default_block.terminator == {:ret, :fn_out}
+  end
+
+  test "exhaustive constructor sink verifies when owned values are live" do
+    Process.put(:elmc_constructor_tags, %{"Main.Left" => 1, "Main.Right" => 2})
+
+    on_exit(fn -> Process.delete(:elmc_constructor_tags) end)
+
+    decl = %{
+      name: "label",
+      args: ["msg"],
+      expr: %{
+        op: :let_in,
+        name: "s",
+        value_expr: %{
+          op: :call,
+          name: "__append__",
+          args: [
+            %{op: :string_literal, value: "a"},
+            %{op: :string_literal, value: "b"}
+          ]
+        },
+        in_expr: %{
+          op: :case,
+          subject: %{op: :var, name: "msg"},
+          branches: [
+            %{
+              pattern: %{kind: :constructor, name: "Left", resolved_name: "Main.Left", tag: 1},
+              expr: %{op: :var, name: "s"}
+            },
+            %{
+              pattern: %{kind: :constructor, name: "Right", resolved_name: "Main.Right", tag: 2},
+              expr: %{op: :var, name: "s"}
+            }
+          ]
+        }
+      }
+    }
+
+    decl_map = %{{"Main", "label"} => decl}
+
+    assert {:ok, plan} = Function.lower(decl, "Main", decl_map, rc_required: true)
+    assert Enum.any?(plan.blocks, fn
+             %{terminator: {:ret, :fn_out}, instrs: instrs} ->
+               Enum.any?(instrs, fn
+                 %{op: :call_runtime, args: %{builtin: builtin}}
+                 when builtin in [:unreachable, :unsupported] ->
+                   true
+
+                 _ ->
+                   false
+               end)
+
+             _ ->
+               false
+           end)
+  end
+
   test "VirtualDom.on/2 lowers to html_cmd event" do
     Process.put(:elmc_codegen_opts, %{web: true, targets: [:wasm]})
     on_exit(fn -> Process.delete(:elmc_codegen_opts) end)
@@ -538,5 +666,184 @@ defmodule Elmc.PlanLinearCaseTest do
     assert {:ok, plan} = Function.lower(decl, "Probe", decl_map, rc_required: true)
     text = inspect(plan.blocks)
     assert text =~ "html_cmd"
+  end
+
+  test "nested 3-tuple of Justs lowers without heap tuple or stub" do
+    Process.put(:elmc_constructor_tags, %{"Just" => 1, "Nothing" => 0})
+    on_exit(fn -> Process.delete(:elmc_constructor_tags) end)
+
+    just = fn name ->
+      %{kind: :constructor, name: "Just", arg_pattern: %{kind: :var, name: name}}
+    end
+
+    decl = %{
+      name: "versionTriple",
+      args: ["ma", "mb", "mc"],
+      expr: %{
+        op: :case,
+        subject: %{
+          op: :tuple2,
+          left: %{op: :var, name: "ma"},
+          right: %{
+            op: :tuple2,
+            left: %{op: :var, name: "mb"},
+            right: %{op: :var, name: "mc"}
+          }
+        },
+        branches: [
+          %{
+            pattern: %{
+              kind: :tuple,
+              elements: [
+                just.("x"),
+                %{kind: :tuple, elements: [just.("y"), just.("z")]}
+              ]
+            },
+            expr: %{op: :var, name: "x"}
+          },
+          %{pattern: %{kind: :wildcard}, expr: %{op: :int_literal, value: 0}}
+        ]
+      }
+    }
+
+    assert {:ok, plan} = Function.lower(decl, "Main", %{}, rc_required: true)
+    text = inspect(plan.blocks)
+    assert text =~ "bool_and"
+    refute text =~ "unsupported"
+
+    c = Elmc.Backend.C.Lower.Function.emit(plan)
+    refute c =~ "RC_ERR_UNSUPPORTED"
+    assert c =~ "elmc_maybe_is_nothing"
+  end
+
+  test "let-bound 3-tuple of Justs peels to tuple2 subject" do
+    Process.put(:elmc_constructor_tags, %{"Just" => 1, "Nothing" => 0})
+    on_exit(fn -> Process.delete(:elmc_constructor_tags) end)
+
+    just = fn name ->
+      %{kind: :constructor, name: "Just", arg_pattern: %{kind: :var, name: name}}
+    end
+
+    triple = %{
+      op: :tuple2,
+      left: %{op: :var, name: "ma"},
+      right: %{
+        op: :tuple2,
+        left: %{op: :var, name: "mb"},
+        right: %{op: :var, name: "mc"}
+      }
+    }
+
+    decl = %{
+      name: "versionTripleLet",
+      args: ["ma", "mb", "mc"],
+      expr: %{
+        op: :let_in,
+        name: "caseSubject",
+        value_expr: triple,
+        in_expr: %{
+          op: :case,
+          subject: %{op: :var, name: "caseSubject"},
+          branches: [
+            %{
+              pattern: %{
+                kind: :tuple,
+                elements: [
+                  just.("x"),
+                  %{kind: :tuple, elements: [just.("y"), just.("z")]}
+                ]
+              },
+              expr: %{op: :var, name: "y"}
+            },
+            %{pattern: %{kind: :wildcard}, expr: %{op: :int_literal, value: -1}}
+          ]
+        }
+      }
+    }
+
+    assert {:ok, plan} = Function.lower(decl, "Main", %{}, rc_required: true)
+    text = inspect(plan.blocks)
+    assert text =~ "bool_and"
+    refute text =~ "unsupported"
+  end
+
+  test "3-tuple Just case with duplicated wildcard default lowers" do
+    Process.put(:elmc_constructor_tags, %{"Just" => 1, "Nothing" => 0, "Maybe.Just" => 1})
+    on_exit(fn -> Process.delete(:elmc_constructor_tags) end)
+
+    just_bind = fn name ->
+      %{
+        kind: :constructor,
+        name: "Just",
+        tag: 1,
+        bind: name,
+        arg_pattern: nil,
+        resolved_name: "Maybe.Just"
+      }
+    end
+
+    fail = %{
+      op: :qualified_call,
+      target: "Json.Decode.fail",
+      args: [%{op: :string_literal, value: "bad version"}]
+    }
+
+    decl = %{
+      name: "versionDecoderLam",
+      args: ["ma", "mb", "mc"],
+      expr: %{
+        op: :let_in,
+        name: "caseSubject",
+        value_expr: %{
+          op: :tuple2,
+          left: %{op: :var, name: "ma"},
+          right: %{
+            op: :tuple2,
+            left: %{op: :var, name: "mb"},
+            right: %{op: :var, name: "mc"}
+          }
+        },
+        in_expr: %{
+          op: :case,
+          subject: "caseSubject",
+          branches: [
+            %{
+              pattern: %{
+                kind: :tuple,
+                elements: [
+                  just_bind.("x"),
+                  %{kind: :tuple, elements: [just_bind.("y"), just_bind.("z")]}
+                ]
+              },
+              expr: %{
+                op: :qualified_call,
+                target: "Json.Decode.succeed",
+                args: [
+                  %{
+                    op: :tuple2,
+                    left: %{op: :var, name: "x"},
+                    right: %{
+                      op: :tuple2,
+                      left: %{op: :var, name: "y"},
+                      right: %{op: :var, name: "z"}
+                    }
+                  }
+                ]
+              }
+            },
+            %{pattern: %{kind: :wildcard}, expr: fail},
+            %{pattern: %{kind: :wildcard}, expr: fail}
+          ]
+        }
+      }
+    }
+
+    assert {:ok, plan} = Function.lower(decl, "Main", %{}, rc_required: true)
+    text = inspect(plan.blocks)
+    assert text =~ "bool_and"
+    refute text =~ "unsupported"
+
+    c = Elmc.Backend.C.Lower.Function.emit(plan)
+    refute c =~ "RC_ERR_UNSUPPORTED"
   end
 end

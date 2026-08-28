@@ -1293,7 +1293,7 @@ defmodule Elmc.Backend.CCodegen.Native.Bool do
 
   defp native_int_temp_ref?(ref) when is_binary(ref) do
     Regex.match?(
-      ~r/^(?:native_(?:max|min|abs|i|if)|direct_(?:native_let|i|hoisted_int)|tmp_)\w*$/,
+      ~r/^(?:native_(?:max|min|abs|i|if|mod)|direct_(?:native_let|i|hoisted_int)|plan_native_int_|tmp_)\w*$/,
       ref
     ) or Regex.match?(~r/^-?\d+$/, ref)
   end

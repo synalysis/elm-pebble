@@ -38,7 +38,9 @@ defmodule Elmc.BytecodeOpcodeAuditTest do
       out_dir = Elmc.TestSupport.StrictCompileAssertions.artifact_dir(template)
 
       _ =
-        Elmc.TestSupport.StrictCompileAssertions.compile_template!(template)
+        Elmc.TestSupport.StrictCompileAssertions.compile_template!(template,
+          emit_bytecode: true
+        )
 
       {:ok, manifest} =
         Loader.load_manifest(Path.join(out_dir, "bytecode/elmc_bytecode.manifest.json"))

@@ -28,6 +28,7 @@ defmodule Elmc.Backend.C.Lower.Frame do
       """
       elmc_release_array_lifo(owned, ELMC_OWNED_SLOT_COUNT);
       elmc_owned_slots_release(owned, ELMC_OWNED_SLOT_COUNT);
+      }
       """
       |> String.trim()
     else
@@ -72,9 +73,9 @@ defmodule Elmc.Backend.C.Lower.Frame do
   @spec heap_owned_declaration(non_neg_integer(), boolean()) :: String.t()
 
   defp heap_owned_declaration(slot_count, rc?) do
-    ret =
+    fail =
       if rc? do
-        "return RC_ERR_OUT_OF_MEMORY;"
+        "Rc = RC_ERR_OUT_OF_MEMORY;"
       else
         "return elmc_int_zero();"
       end
@@ -82,7 +83,9 @@ defmodule Elmc.Backend.C.Lower.Frame do
     """
     enum { ELMC_OWNED_SLOT_COUNT = #{slot_count} };
     ElmcValue **owned = elmc_owned_slots_acquire(ELMC_OWNED_SLOT_COUNT);
-    if (!owned) #{ret}
+    if (!owned) {
+      #{fail}
+    } else {
     """
     |> String.trim()
   end

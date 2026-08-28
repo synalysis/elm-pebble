@@ -123,7 +123,10 @@ defmodule Elmc.Backend.Plan.Lower.Case.CharSwitch do
 
   @spec compile_default_arm(map() | nil, Context.t(), Builder.t(), Types.reg()) ::
           {:ok, non_neg_integer() | nil, non_neg_integer() | nil, Builder.t()} | :unsupported
-  defp compile_default_arm(nil, _ctx, b, _merge_reg), do: {:ok, nil, nil, b}
+  defp compile_default_arm(nil, _ctx, b, _merge_reg) do
+    {arm_id, b2} = ArmMerge.emit_unmatched_case_sink(b)
+    {:ok, arm_id, nil, b2}
+  end
 
   defp compile_default_arm(branch, ctx, b, merge_reg) do
     arm_id = b.next_block

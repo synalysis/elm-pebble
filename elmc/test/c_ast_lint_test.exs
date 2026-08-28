@@ -48,4 +48,32 @@ defmodule Elmc.CAstLintTest do
     assert {:error, issues} = Lint.run_source(source)
     assert Enum.any?(issues, &match?({:error, :early_rc_err_return, _}, &1))
   end
+
+  test "run_source accepts RC tail-call wrappers and heap-owned acquire failure" do
+    source = """
+    static RC elmc_fn_Main_label(ElmcValue **out, ElmcValue *phase) {
+      RC Rc = RC_SUCCESS;
+      Rc = elmc_fn_Main_label_native(out, phase);
+      return Rc;
+    }
+
+    static RC elmc_fn_Main_update(ElmcValue **out, ElmcValue *msg, ElmcValue *model) {
+      RC Rc = RC_SUCCESS;
+      enum { ELMC_OWNED_SLOT_COUNT = 30 };
+      ElmcValue **owned = elmc_owned_slots_acquire(ELMC_OWNED_SLOT_COUNT);
+      if (!owned) {
+        Rc = RC_ERR_OUT_OF_MEMORY;
+      } else {
+        CATCH_BEGIN
+        *out = model;
+        CATCH_END
+        elmc_release_array_lifo(owned, ELMC_OWNED_SLOT_COUNT);
+        elmc_owned_slots_release(owned, ELMC_OWNED_SLOT_COUNT);
+      }
+      return Rc;
+    }
+    """
+
+    assert :ok = Lint.run_source(source)
+  end
 end

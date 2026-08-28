@@ -120,6 +120,9 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Values do
                 boxed_scene_argv_param_ref?(source) ->
                   "elmc_as_int_number(#{source})"
 
+                boxed_direct_param_ref?(source) ->
+                  "elmc_as_int(#{source})"
+
                 Util.direct_render_native_int_operand?(source) ->
                   source
 
@@ -721,5 +724,14 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Values do
   defp boxed_scene_argv_param_ref?(ref) when is_binary(ref) do
     Process.get(:elmc_direct_scene_boxed_argv) == true and
       MapSet.member?(Process.get(:elmc_direct_borrow_refs, MapSet.new()), ref)
+  end
+
+  # Native helpers keep boxed params as `ElmcValue * const name`. Identifiers
+  # match `native_scalar_c_ref?` and would otherwise assign the pointer to
+  # `scene_cmd.pN` (bitmap resource ids).
+  @spec boxed_direct_param_ref?(String.t()) :: boolean()
+
+  defp boxed_direct_param_ref?(ref) when is_binary(ref) do
+    MapSet.member?(Process.get(:elmc_direct_boxed_param_refs, MapSet.new()), ref)
   end
 end

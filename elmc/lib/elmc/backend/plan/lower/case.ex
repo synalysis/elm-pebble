@@ -15,44 +15,37 @@ defmodule Elmc.Backend.Plan.Lower.Case do
     PlatformStatic.compile_case(expr, macro, ctx, b)
   end
 
-  def compile(%{subject: subject, branches: [br1, br2]}, ctx, b)
-      when is_map(br1) and is_map(br2) do
-    subj = subject_expr(subject)
-
-    cond do
-      match?(%{op: :tuple2}, subj) and just_just_tuple_pair_branches?([br1, br2]) ->
-        {just_br, wild_br} = split_just_just_tuple_arms(br1, br2)
-        compile_maybe_just_just_tuple_case(subj, just_br, wild_br, ctx, b)
-
-      match?(%{op: :tuple2}, subj) and nothing_nothing_tuple_pair_branches?([br1, br2]) ->
-        {nothing_br, wild_br} = split_nothing_nothing_tuple_arms(br1, br2)
-        compile_maybe_nothing_nothing_tuple_case(subj, nothing_br, wild_br, ctx, b)
-
-      nothing_arm?(br1) and catch_all_arm?(br2) ->
-        compile_maybe_nothing_case(subj, br1, br2, ctx, b)
-
-      nothing_arm?(br2) and catch_all_arm?(br1) ->
-        compile_maybe_nothing_case(subj, br2, br1, ctx, b)
-
-      maybe_just_pair?(br1, br2) ->
-        {nothing_br, just_br} = if nothing_arm?(br1), do: {br1, br2}, else: {br2, br1}
-        compile_maybe_nothing_case(subj, nothing_br, just_br, ctx, b)
-
-      true ->
-        compile_dispatch(
-          %{subject: subj, branches: [br1, br2]},
-          subj,
-          [br1, br2],
-          ctx,
-          b
-        )
-    end
-  end
-
   def compile(%{subject: subject, branches: branches} = expr, ctx, b) when is_list(branches) do
     subj = subject_expr(subject)
 
     cond do
+      length(branches) >= 2 and just_just_tuple_case?(subj, branches) ->
+        {just_br, wild_br} = split_just_just_tuple_from_branches(branches)
+        compile_maybe_just_just_tuple_case(subj, just_br, wild_br, ctx, b)
+
+      length(branches) >= 2 and match?(%{op: :tuple2}, subj) and
+          nothing_nothing_tuple_pair_branches?(branches) ->
+        {nothing_br, wild_br} = split_nothing_nothing_tuple_from_branches(branches)
+        compile_maybe_nothing_nothing_tuple_case(subj, nothing_br, wild_br, ctx, b)
+
+      match?([_, _], branches) ->
+        [br1, br2] = branches
+
+        cond do
+          nothing_arm?(br1) and catch_all_arm?(br2) ->
+            compile_maybe_nothing_case(subj, br1, br2, ctx, b)
+
+          nothing_arm?(br2) and catch_all_arm?(br1) ->
+            compile_maybe_nothing_case(subj, br2, br1, ctx, b)
+
+          maybe_just_pair?(br1, br2) ->
+            {nothing_br, just_br} = if nothing_arm?(br1), do: {br1, br2}, else: {br2, br1}
+            compile_maybe_nothing_case(subj, nothing_br, just_br, ctx, b)
+
+          true ->
+            compile_dispatch(expr, subj, branches, ctx, b)
+        end
+
       nested_maybe_ctor_branches?(branches) ->
         compile_nested_maybe_ctor_case(subj, branches, ctx, b)
 
@@ -64,15 +57,18 @@ defmodule Elmc.Backend.Plan.Lower.Case do
   def compile(_, _, _), do: :unsupported
 
   @doc """
-  True when branches are `(Just _, Just _)` / `_` or `(Nothing, Nothing)` / `_`.
+  True when branches are all-Just tuple / `_` or `(Nothing, Nothing)` / `_`.
 
-  Used by Expr to peel `let caseSubject = (a, b) in case caseSubject of …` so the
-  case subject is the `tuple2` expr (no heap tuple2 + GuardedSwitch).
+  Covers `(Just, Just)` pairs and nested 3-tuples `(Just, Just, Just)` (IR
+  encodes `(a, b, c)` as `tuple2(a, tuple2(b, c))` with a nested tuple pattern).
+
+  Used by Expr to peel `let caseSubject = (a, b[, c]) in case caseSubject of …`
+  so the case subject is the `tuple2` expr (no heap tuple + GuardedSwitch).
   """
   @spec tuple2_maybe_pair_branches?([map()]) :: boolean()
-  def tuple2_maybe_pair_branches?([br1, br2]) when is_map(br1) and is_map(br2) do
-    just_just_tuple_pair_branches?([br1, br2]) or
-      nothing_nothing_tuple_pair_branches?([br1, br2])
+  def tuple2_maybe_pair_branches?(branches) when is_list(branches) do
+    just_just_tuple_pair_branches?(branches) or
+      nothing_nothing_tuple_pair_branches?(branches)
   end
 
   def tuple2_maybe_pair_branches?(_), do: false
@@ -261,7 +257,8 @@ defmodule Elmc.Backend.Plan.Lower.Case do
           Builder.t()
         ) :: Types.compile_result()
 
-  # `case (maybeA, maybeB) of (Just a, Just b) -> …; _ -> …` without heap tuple2.
+  # `case (ma, mb[, mc]) of (Just …, Just …[, Just …]) -> …; _ -> …`
+  # without allocating the heap tuple. Elm 3-tuples are nested `tuple2`.
   defp compile_maybe_just_just_tuple_case(subj, just_br, wild_br, ctx, b) do
     if Context.stream_mode?(ctx) do
       compile_stream_maybe_just_just_tuple_case(subj, just_br, wild_br, ctx, b)
@@ -270,75 +267,47 @@ defmodule Elmc.Backend.Plan.Lower.Case do
     end
   end
 
-  defp compile_value_maybe_just_just_tuple_case(
-         %{op: :tuple2, left: left, right: right},
-         just_br,
-         wild_br,
-         ctx,
-         b
-       ) do
-    [left_pat, right_pat] = get_in(just_br, [:pattern, :elements])
+  defp compile_value_maybe_just_just_tuple_case(subj, just_br, wild_br, ctx, b) do
     saved_pending = Map.get(b, :pending_merge_block)
     subject_ctx = Context.for_branch_arm(ctx)
 
-    with {:ok, left_reg, b1} <- Expr.compile(left, subject_ctx, b),
-         {:ok, right_reg, b2} <- Expr.compile(right, subject_ctx, b1),
-         {:ok, left_just, b3} <- emit_test_maybe_just(left_reg, b2),
-         {:ok, right_just, b4} <- emit_test_maybe_just(right_reg, b3),
-         {:ok, both_just, b5} <- emit_bool_and(left_just, right_just, b4),
+    with {:ok, compiled, all_just, b5} <- compile_just_tuple_pred(subj, just_br, subject_ctx, b),
          then_id = b5.next_block,
          else_id = then_id + 1,
          merge_id = skip_reserved(else_id + 1, saved_pending),
-         b_entry = Builder.finish_block(b5, {:br_if, then_id, else_id, both_just}),
+         b_entry = Builder.finish_block(b5, {:br_if, then_id, else_id, all_just}),
          b_reserved = %{b_entry | next_block: max(b_entry.next_block, merge_id + 1)},
          b_then_start = Builder.begin_cfg_arm_block(b_reserved, then_id),
-         {:ok, _lp, b_left_bound, just_ctx1} <-
-           bind_maybe_payload(ctx, left_pat, left_reg, left, b_then_start),
-         {:ok, _rp, b_right_bound, just_ctx2} <-
-           bind_maybe_payload(just_ctx1, right_pat, right_reg, right, b_left_bound),
+         {:ok, just_ctx, b_bound} <- bind_just_tuple_payloads(compiled, ctx, b_then_start),
          {:ok, then_reg, then_exit, b_then} <-
-           compile_maybe_branch_in_current(Map.get(just_br, :expr), just_ctx2, b_right_bound),
+           compile_maybe_branch_in_current(Map.get(just_br, :expr), just_ctx, b_bound),
          b_then_done = Builder.patch_terminator(b_then, then_exit, {:br, merge_id}),
          {:ok, else_reg, else_exit, b_else} <-
            compile_maybe_branch(Map.get(wild_br, :expr), ctx, b_then_done, else_id),
          b_else_done = Builder.patch_terminator(b_else, else_exit, {:br, merge_id}),
          b_merge = Builder.begin_block(b_else_done, merge_id),
          {:ok, merge, b_out} <-
-           emit_merge(both_just, then_reg, else_reg, then_id, else_id, b_merge) do
+           emit_merge(all_just, then_reg, else_reg, then_id, else_id, b_merge) do
       {:ok, merge, %{b_out | pending_merge_block: saved_pending}}
     else
       _ -> :unsupported
     end
   end
 
-  defp compile_stream_maybe_just_just_tuple_case(
-         %{op: :tuple2, left: left, right: right},
-         just_br,
-         wild_br,
-         ctx,
-         b
-       ) do
-    [left_pat, right_pat] = get_in(just_br, [:pattern, :elements])
+  defp compile_stream_maybe_just_just_tuple_case(subj, just_br, wild_br, ctx, b) do
     saved_pending = Map.get(b, :pending_merge_block)
     subject_ctx = Context.for_branch_arm(ctx)
 
-    with {:ok, left_reg, b1} <- Expr.compile(left, subject_ctx, b),
-         {:ok, right_reg, b2} <- Expr.compile(right, subject_ctx, b1),
-         {:ok, left_just, b3} <- emit_test_maybe_just(left_reg, b2),
-         {:ok, right_just, b4} <- emit_test_maybe_just(right_reg, b3),
-         {:ok, both_just, b5} <- emit_bool_and(left_just, right_just, b4),
+    with {:ok, compiled, all_just, b5} <- compile_just_tuple_pred(subj, just_br, subject_ctx, b),
          then_id = b5.next_block,
          else_id = then_id + 1,
          merge_id = skip_reserved(else_id + 1, saved_pending),
-         b_entry = Builder.finish_block(b5, {:br_if, then_id, else_id, both_just}),
+         b_entry = Builder.finish_block(b5, {:br_if, then_id, else_id, all_just}),
          b_reserved = %{b_entry | next_block: max(b_entry.next_block, merge_id + 1)},
          b_then_start = Builder.begin_cfg_arm_block(b_reserved, then_id),
-         {:ok, _lp, b_left_bound, just_ctx1} <-
-           bind_maybe_payload(ctx, left_pat, left_reg, left, b_then_start),
-         {:ok, _rp, b_right_bound, just_ctx2} <-
-           bind_maybe_payload(just_ctx1, right_pat, right_reg, right, b_left_bound),
+         {:ok, just_ctx, b_bound} <- bind_just_tuple_payloads(compiled, ctx, b_then_start),
          {:ok, :stream_void, then_exit, b_then} <-
-           compile_maybe_branch_in_current(Map.get(just_br, :expr), just_ctx2, b_right_bound),
+           compile_maybe_branch_in_current(Map.get(just_br, :expr), just_ctx, b_bound),
          b_then_done = Builder.patch_terminator(b_then, then_exit, {:br, merge_id}),
          {:ok, :stream_void, else_exit, b_else} <-
            compile_maybe_branch(Map.get(wild_br, :expr), ctx, b_then_done, else_id),
@@ -494,39 +463,140 @@ defmodule Elmc.Backend.Plan.Lower.Case do
     end
   end
 
+  @spec just_just_tuple_case?(map(), [map()]) :: boolean()
+
+  defp just_just_tuple_case?(subj, branches) do
+    match?(%{op: :tuple2}, subj) and just_just_tuple_pair_branches?(branches) and
+      match?(
+        {:ok, _},
+        just_tuple_leaf_pairs(subj, elem(split_just_just_tuple_from_branches(branches), 0))
+      )
+  end
+
+  # One all-Just tuple arm plus one or more catch-alls. The frontend sometimes
+  # duplicates the `_` default (`(Just, Just, Just) / _ / _`).
   @spec just_just_tuple_pair_branches?([map()]) :: boolean()
 
-  defp just_just_tuple_pair_branches?([br1, br2]) do
-    (just_just_tuple_arm?(br1) and catch_all_arm?(br2)) or
-      (just_just_tuple_arm?(br2) and catch_all_arm?(br1))
+  defp just_just_tuple_pair_branches?(branches) when is_list(branches) do
+    justs = Enum.filter(branches, &just_just_tuple_arm?/1)
+    wilds = Enum.filter(branches, &catch_all_arm?/1)
+    length(justs) == 1 and length(wilds) >= 1 and length(justs) + length(wilds) == length(branches)
   end
 
   @spec nothing_nothing_tuple_pair_branches?([map()]) :: boolean()
 
-  defp nothing_nothing_tuple_pair_branches?([br1, br2]) do
-    (nothing_nothing_tuple_arm?(br1) and catch_all_arm?(br2)) or
-      (nothing_nothing_tuple_arm?(br2) and catch_all_arm?(br1))
+  defp nothing_nothing_tuple_pair_branches?(branches) when is_list(branches) do
+    nothings = Enum.filter(branches, &nothing_nothing_tuple_arm?/1)
+    wilds = Enum.filter(branches, &catch_all_arm?/1)
+
+    length(nothings) == 1 and length(wilds) >= 1 and
+      length(nothings) + length(wilds) == length(branches)
   end
 
-  @spec split_just_just_tuple_arms(map(), map()) :: {map(), map()}
+  @spec split_just_just_tuple_from_branches([map()]) :: {map(), map()}
 
-  defp split_just_just_tuple_arms(br1, br2) do
-    if just_just_tuple_arm?(br1), do: {br1, br2}, else: {br2, br1}
+  defp split_just_just_tuple_from_branches(branches) do
+    {Enum.find(branches, &just_just_tuple_arm?/1), Enum.find(branches, &catch_all_arm?/1)}
   end
 
-  @spec split_nothing_nothing_tuple_arms(map(), map()) :: {map(), map()}
+  @spec split_nothing_nothing_tuple_from_branches([map()]) :: {map(), map()}
 
-  defp split_nothing_nothing_tuple_arms(br1, br2) do
-    if nothing_nothing_tuple_arm?(br1), do: {br1, br2}, else: {br2, br1}
+  defp split_nothing_nothing_tuple_from_branches(branches) do
+    {Enum.find(branches, &nothing_nothing_tuple_arm?/1), Enum.find(branches, &catch_all_arm?/1)}
   end
 
   @spec just_just_tuple_arm?(map() | term()) :: boolean()
 
-  defp just_just_tuple_arm?(%{pattern: %{kind: :tuple, elements: [a, b]}}) do
-    just_arm_pattern?(a) and just_arm_pattern?(b)
+  defp just_just_tuple_arm?(%{pattern: pattern}) do
+    leaves = flatten_tuple_pattern_leaves(pattern)
+    length(leaves) >= 2 and Enum.all?(leaves, &just_arm_pattern?/1)
   end
 
   defp just_just_tuple_arm?(_), do: false
+
+  # Nested `tuple2(a, tuple2(b, c))` and nested `{a, {b, c}}` patterns flatten
+  # to the same leaf list as a 3-tuple of Maybes.
+  @spec flatten_tuple2_expr(map() | term()) :: [map()]
+
+  defp flatten_tuple2_expr(%{op: :tuple2, left: left, right: right}) do
+    flatten_tuple2_expr(left) ++ flatten_tuple2_expr(right)
+  end
+
+  defp flatten_tuple2_expr(expr), do: [expr]
+
+  @spec flatten_tuple_pattern_leaves(map() | term()) :: [map()]
+
+  defp flatten_tuple_pattern_leaves(%{kind: :tuple, elements: elems}) when is_list(elems) do
+    Enum.flat_map(elems, &flatten_tuple_pattern_leaves/1)
+  end
+
+  defp flatten_tuple_pattern_leaves(pattern), do: [pattern]
+
+  @spec just_tuple_leaf_pairs(map(), map()) :: {:ok, [{map(), map()}]} | :error
+
+  defp just_tuple_leaf_pairs(subj, just_br) do
+    exprs = flatten_tuple2_expr(subj)
+    pats = flatten_tuple_pattern_leaves(Map.get(just_br, :pattern))
+
+    if length(exprs) >= 2 and length(exprs) == length(pats) do
+      {:ok, Enum.zip(exprs, pats)}
+    else
+      :error
+    end
+  end
+
+  @spec compile_just_tuple_pred(map(), map(), Context.t(), Builder.t()) ::
+          {:ok, [{map(), map(), Types.reg()}], Types.reg(), Builder.t()} | :unsupported
+
+  defp compile_just_tuple_pred(subj, just_br, ctx, b) do
+    with {:ok, pairs} <- just_tuple_leaf_pairs(subj, just_br),
+         {:ok, compiled, b1} <- compile_just_tuple_elems(pairs, ctx, b, []),
+         {:ok, all_just, b2} <- emit_all_just_and(compiled, b1) do
+      {:ok, compiled, all_just, b2}
+    else
+      _ -> :unsupported
+    end
+  end
+
+  @spec compile_just_tuple_elems([{map(), map()}], Context.t(), Builder.t(), [
+          {map(), map(), Types.reg()}
+        ]) :: {:ok, [{map(), map(), Types.reg()}], Builder.t()} | :unsupported
+
+  defp compile_just_tuple_elems([], _ctx, b, acc), do: {:ok, Enum.reverse(acc), b}
+
+  defp compile_just_tuple_elems([{expr, pat} | rest], ctx, b, acc) do
+    case Expr.compile(expr, ctx, b) do
+      {:ok, reg, b1} -> compile_just_tuple_elems(rest, ctx, b1, [{expr, pat, reg} | acc])
+      :unsupported -> :unsupported
+    end
+  end
+
+  @spec emit_all_just_and([{map(), map(), Types.reg()}], Builder.t()) ::
+          {:ok, Types.reg(), Builder.t()} | :unsupported
+
+  defp emit_all_just_and([{_expr, _pat, reg} | rest], b) do
+    {:ok, first, b1} = emit_test_maybe_just(reg, b)
+
+    {:ok, all, b_out} =
+      Enum.reduce(rest, {:ok, first, b1}, fn {_e, _p, r}, {:ok, acc, bb} ->
+        {:ok, t, bb1} = emit_test_maybe_just(r, bb)
+        emit_bool_and(acc, t, bb1)
+      end)
+
+    {:ok, all, b_out}
+  end
+
+  defp emit_all_just_and([], _b), do: :unsupported
+
+  @spec bind_just_tuple_payloads([{map(), map(), Types.reg()}], Context.t(), Builder.t()) ::
+          {:ok, Context.t(), Builder.t()}
+
+  defp bind_just_tuple_payloads([], ctx, b), do: {:ok, ctx, b}
+
+  defp bind_just_tuple_payloads([{expr, pat, reg} | rest], ctx, b) do
+    {:ok, _payload, b1, ctx1} = bind_maybe_payload(ctx, pat, reg, expr, b)
+    bind_just_tuple_payloads(rest, ctx1, b1)
+  end
 
   @spec nothing_nothing_tuple_arm?(map() | term()) :: boolean()
 

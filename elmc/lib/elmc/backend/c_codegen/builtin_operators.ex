@@ -522,6 +522,9 @@ defmodule Elmc.Backend.CCodegen.BuiltinOperators do
 
         {code, out, next}
 
+      native_int_operand_available?(left, env) or native_int_operand_available?(right, env) ->
+        compile_mixed_native_int_binop(left, right, operator, env, counter)
+
       Host.native_float_expr?(left, env) and Host.native_float_expr?(right, env) ->
         NativeFloat.compile_boxed(
           %{op: :call, name: float_operator_name(operator), args: [left, right]},
@@ -554,32 +557,49 @@ defmodule Elmc.Backend.CCodegen.BuiltinOperators do
             {"ElmcValue *#{out} = NULL;\n      ", env}
           end
 
-        float_stmt =
-          RcRuntimeEmit.mutually_exclusive_allocator_assign(
-            env,
-            out,
-            "elmc_new_float",
-            "elmc_as_float(#{left_ref}) #{operator} elmc_as_float(#{right_ref})"
-          )
+        left_native_c? = native_int_c_ref?(left_var)
+        right_native_c? = native_int_c_ref?(right_var)
 
-        int_stmt =
-          RcRuntimeEmit.mutually_exclusive_allocator_assign(
-            env,
-            out,
-            "elmc_new_int",
-            "elmc_as_int(#{left_ref}) #{operator} elmc_as_int(#{right_ref})"
-          )
+        op_stmt =
+          if left_native_c? or right_native_c? do
+            left_e = int_c_operand_expr(left_var, left_ref)
+            right_e = int_c_operand_expr(right_var, right_ref)
+
+            RcRuntimeEmit.assign_call(env, out, "elmc_new_int", "#{left_e} #{operator} #{right_e}")
+          else
+            float_stmt =
+              RcRuntimeEmit.mutually_exclusive_allocator_assign(
+                env,
+                out,
+                "elmc_new_float",
+                "elmc_as_float(#{left_ref}) #{operator} elmc_as_float(#{right_ref})"
+              )
+
+            int_stmt =
+              RcRuntimeEmit.mutually_exclusive_allocator_assign(
+                env,
+                out,
+                "elmc_new_int",
+                "elmc_as_int(#{left_ref}) #{operator} elmc_as_int(#{right_ref})"
+              )
+
+            """
+            #{assign_prefix}if ((#{left_ref} && #{left_ref}->tag == ELMC_TAG_FLOAT) || (#{right_ref} && #{right_ref}->tag == ELMC_TAG_FLOAT)) {
+                #{float_stmt}
+              } else {
+                #{int_stmt}
+              }
+            """
+          end
 
         converge = ValueSlots.normalize_branch_result_slot(out)
+
+        prefix = if left_native_c? or right_native_c?, do: assign_prefix, else: ""
 
         code = """
         #{left_code}
           #{right_code}
-          #{assign_prefix}if ((#{left_ref} && #{left_ref}->tag == ELMC_TAG_FLOAT) || (#{right_ref} && #{right_ref}->tag == ELMC_TAG_FLOAT)) {
-            #{float_stmt}
-          } else {
-            #{int_stmt}
-          }
+          #{prefix}#{op_stmt}
           #{converge}
           #{binop_operand_release(left_var, out)}
           #{binop_operand_release(right_var, out)}
@@ -649,16 +669,87 @@ defmodule Elmc.Backend.CCodegen.BuiltinOperators do
     left_ref = RcRuntimeEmit.value_expr(left_var)
     right_ref = RcRuntimeEmit.value_expr(right_var)
     {out, next} = CaseCompile.fresh_var(counter, env)
+    left_e = int_c_operand_expr(left_var, left_ref)
+    right_e = int_c_operand_expr(right_var, right_ref)
 
     code = """
     #{left_code}
       #{right_code}
-      #{RcRuntimeEmit.assign_call(env, out, "elmc_new_int", "elmc_as_int(#{left_ref}) #{operator} elmc_as_int(#{right_ref})")}
+      #{RcRuntimeEmit.assign_call(env, out, "elmc_new_int", "#{left_e} #{operator} #{right_e}")}
       #{binop_operand_release(left_var, out)}
       #{binop_operand_release(right_var, out)}
     """
 
     {code, out, next}
+  end
+
+  defp compile_mixed_native_int_binop(left, right, operator, env, counter) do
+    operand_env = RcRuntimeEmit.operand_env(env)
+
+    {left_code, left_var, counter} =
+      if native_int_operand_available?(left, env) do
+        compile_native_int_operand(left, env, counter)
+      else
+        Host.compile_expr(left, operand_env, counter)
+      end
+
+    {right_code, right_var, counter} =
+      if native_int_operand_available?(right, env) do
+        compile_native_int_operand(right, env, counter)
+      else
+        Host.compile_expr(right, operand_env, counter)
+      end
+
+    {out, next} = CaseCompile.fresh_var(counter, env)
+    left_e = int_c_operand_expr(left_var, RcRuntimeEmit.value_expr(left_var))
+    right_e = int_c_operand_expr(right_var, RcRuntimeEmit.value_expr(right_var))
+
+    code = """
+    #{left_code}
+      #{right_code}
+      #{RcRuntimeEmit.assign_call(env, out, "elmc_new_int", "#{left_e} #{operator} #{right_e}")}
+      #{binop_operand_release(left_var, out)}
+      #{binop_operand_release(right_var, out)}
+    """
+
+    {code, out, next}
+  end
+
+  defp native_int_c_ref?(ref) when is_binary(ref) do
+    cond do
+      ValueSlots.owned_ref?(ref) ->
+        false
+
+      Regex.match?(~r/^-?\d+$/, ref) ->
+        true
+
+      String.contains?(ref, "elmc_int_") ->
+        true
+
+      String.starts_with?(ref, "native_") ->
+        true
+
+      String.starts_with?(ref, "plan_native_int_") ->
+        true
+
+      String.starts_with?(ref, "direct_native_let_") ->
+        true
+
+      String.starts_with?(ref, "direct_hoisted_int_") ->
+        true
+
+      String.match?(ref, ~r/^direct_i_\d+$/) ->
+        true
+
+      true ->
+        false
+    end
+  end
+
+  defp native_int_c_ref?(_), do: false
+
+  defp int_c_operand_expr(var, ref) do
+    if native_int_c_ref?(var), do: var, else: "elmc_as_int(#{ref})"
   end
 
   @spec compile_native_int_operand(
@@ -1067,7 +1158,7 @@ defmodule Elmc.Backend.CCodegen.BuiltinOperators do
   defp binop_operand_release(var, out) when var == out, do: ""
 
   defp binop_operand_release(var, _out) do
-    ValueSlots.release_consumed(var)
+    if native_int_c_ref?(var), do: "", else: ValueSlots.release_consumed(var)
   end
 
   @spec retain_declared_out_operand(

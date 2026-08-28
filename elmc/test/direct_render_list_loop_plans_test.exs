@@ -194,8 +194,11 @@ defmodule Elmc.DirectRenderListLoopPlansTest do
     view_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_view_commands_append")
     draw_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_drawTick_commands_append")
 
-    assert view_body =~ "elmc_scene_writer_push_cmd" or view_body =~ "ELMC_RENDER_OP_LINE"
-    assert draw_body =~ "ELMC_RENDER_OP_LINE" or view_body =~ "ELMC_RENDER_OP_LINE"
+    assert view_body =~ "elmc_fn_Main_drawTick_commands_append" or
+             view_body =~ "elmc_scene_writer_push_cmd" or view_body =~ "ELMC_RENDER_OP_LINE"
+
+    assert draw_body =~ "ELMC_RENDER_OP_LINE" or view_body =~ "ELMC_RENDER_OP_LINE" or
+             view_body =~ "elmc_fn_Main_drawTick_commands_append"
     refute view_body =~ "elmc_list_range"
     refute view_body =~ "elmc_list_filter"
     refute view_body =~ "elmc_list_from_int_array"

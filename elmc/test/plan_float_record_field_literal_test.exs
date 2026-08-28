@@ -92,4 +92,58 @@ defmodule Elmc.PlanFloatRecordFieldLiteralTest do
              end)
            end)
   end
+
+  test "Float Vec2 field add does not lower as record_new_values_ints" do
+    Process.put(:elmc_record_field_types, %{
+      {"Pebble.Game.Math", "Vec2"} => %{"x" => "Float", "y" => "Float"}
+    })
+
+    decl = %{
+      name: "add",
+      args: ["a", "b"],
+      type: "Pebble.Game.Math.Vec2 -> Pebble.Game.Math.Vec2 -> Pebble.Game.Math.Vec2",
+      expr: %{
+        op: :record_literal,
+        fields: [
+          %{
+            name: "x",
+            expr: %{
+              op: :call,
+              name: "__add__",
+              args: [
+                %{op: :field_access, field: "x", arg: %{op: :var, name: "a"}},
+                %{op: :field_access, field: "x", arg: %{op: :var, name: "b"}}
+              ]
+            }
+          },
+          %{
+            name: "y",
+            expr: %{
+              op: :call,
+              name: "__add__",
+              args: [
+                %{op: :field_access, field: "y", arg: %{op: :var, name: "a"}},
+                %{op: :field_access, field: "y", arg: %{op: :var, name: "b"}}
+              ]
+            }
+          }
+        ]
+      }
+    }
+
+    assert {:ok, plan} =
+             Function.lower(
+               decl,
+               "Pebble.Game.Math",
+               %{{"Pebble.Game.Math", "add"} => decl},
+               rc_required: true
+             )
+
+    refute Enum.any?(plan.blocks, fn block ->
+             Enum.any?(block.instrs, fn
+               %{op: :call_runtime, args: %{builtin: :record_new_values_ints}} -> true
+               _ -> false
+             end)
+           end)
+  end
 end

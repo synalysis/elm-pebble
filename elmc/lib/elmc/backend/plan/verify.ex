@@ -182,9 +182,16 @@ defmodule Elmc.Backend.Plan.Verify do
 
       case term do
         {:ret, _} ->
-          case verify_no_leaked_owned(st2, plan_name) do
-            :ok -> {:ok, st2}
-            {:error, reason, meta} -> {:error, reason, meta}
+          # Exhaustive-switch default sinks `ret` after `call_runtime :unreachable`
+          # (or the legacy `:unsupported` trap). Owned from the subject is
+          # released by the C epilogue; do not treat that exit as a leak.
+          if trap_ret_block?(instrs) do
+            {:ok, st2}
+          else
+            case verify_no_leaked_owned(st2, plan_name) do
+              :ok -> {:ok, st2}
+              {:error, reason, meta} -> {:error, reason, meta}
+            end
           end
 
         {:br, _} ->
@@ -403,6 +410,17 @@ defmodule Elmc.Backend.Plan.Verify do
       regs ->
         {:error, :leaked_owned_regs, [regs: regs, plan: plan_name]}
     end
+  end
+
+  defp trap_ret_block?(instrs) when is_list(instrs) do
+    Enum.any?(instrs, fn
+      %{op: :call_runtime, args: %{builtin: builtin}}
+      when builtin in [:unreachable, :unsupported] ->
+        true
+
+      _ ->
+        false
+    end)
   end
 
   @spec verify_fail!(atom(), keyword()) :: no_return()

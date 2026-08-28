@@ -138,7 +138,9 @@ defmodule Elmc.Backend.Bytecode.ProjectWriter do
     case Plan.lower_function(decl, module, decl_map, rc_required: rc_required?) do
       {:ok, plan} ->
         cond do
-          plan.blocks == [] and FusionRunner.runnable?(plan) ->
+          # Verify requires SSA blocks; C keeps `fusion_c` as a sidecar. Bytecode
+          # still interprets `fusion_kind` / `fusion_data` when the runner can.
+          FusionRunner.runnable?(plan) ->
             {:fusion, plan}
 
           plan.blocks == [] ->

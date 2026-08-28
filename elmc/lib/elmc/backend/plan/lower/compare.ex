@@ -542,14 +542,23 @@ defmodule Elmc.Backend.Plan.Lower.Compare do
     Enum.any?(List.wrap(args), &float_equality_operand?(&1, env))
   end
 
+  defp float_equality_operand?(%{op: :call, name: name}, _env)
+       when name in ["cos", "sin", "tan", "turns", "toFloat"],
+       do: true
+
   defp float_equality_operand?(%{op: :qualified_call, target: target, args: args}, env)
        when is_binary(target) do
     short = target |> String.split(".") |> List.last()
 
-    if short in ["add", "sub", "mul", "fdiv"] do
-      Enum.any?(List.wrap(args), &float_equality_operand?(&1, env))
-    else
-      TypedReturn.expr_type(%{op: :qualified_call, target: target, args: args}, env) == "Float"
+    cond do
+      short in ["cos", "sin", "tan", "turns", "toFloat"] ->
+        true
+
+      short in ["add", "sub", "mul", "fdiv"] ->
+        Enum.any?(List.wrap(args), &float_equality_operand?(&1, env))
+
+      true ->
+        TypedReturn.expr_type(%{op: :qualified_call, target: target, args: args}, env) == "Float"
     end
   end
 

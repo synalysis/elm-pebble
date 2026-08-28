@@ -1447,22 +1447,27 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.MapLoops do
 
       :error ->
         {list_code, list_var, counter} = Elmc.Backend.CCodegen.DirectRender.Emit.Operand.compile(list_expr, env, counter)
-        item_var = "direct_node_#{next}->head"
-        body_env = Map.put(env, arg, item_var)
+        cons_native = "elmc_as_int(direct_node_#{next}->head)"
+        int_native = "direct_ilp_#{next}->values[direct_ii_#{next}]"
 
-        emit_loop_body(body, body_env, counter, fn body_code, counter ->
-          item_boxed = "direct_il_item_#{next}"
+        body_env_cons =
+          env
+          |> Map.delete(arg)
+          |> EnvBindings.put_native_int_binding(arg, cons_native)
+          |> EnvBindings.put_boxed_int_binding(arg, false)
 
-          body_env_int =
-            env
-            |> Map.delete(arg)
-            |> Map.put(arg, item_boxed)
+        body_env_int =
+          env
+          |> Map.delete(arg)
+          |> EnvBindings.put_native_int_binding(arg, int_native)
+          |> EnvBindings.put_boxed_int_binding(arg, false)
 
+        emit_loop_body(body, body_env_cons, counter, fn body_code, counter ->
           emit_loop_body(body, body_env_int, counter, fn body_code_int, counter ->
             {:ok,
              """
              #{list_code}
-             #{direct_list_walk_lambda_body(list_var, next, item_boxed, body_code, body_code_int)}
+             #{direct_list_walk_lambda_body(list_var, next, body_code, body_code_int)}
              #{Release.release_var(list_var, "             ")}
              """, counter}
           end)
@@ -1794,29 +1799,16 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.MapLoops do
           String.t(),
           non_neg_integer(),
           String.t(),
-          String.t(),
           String.t()
         ) :: String.t()
 
-  defp direct_list_walk_lambda_body(list_var, next, item_boxed, cons_body, int_body) do
-    int_item_decl =
-      RcRuntimeEmit.check_rc_take(
-        item_boxed,
-        "elmc_new_int",
-        "direct_ilp_#{next}->values[direct_ii_#{next}]",
-        RcRuntimeEmit.rc_catch_env(%{})
-      )
-
-    int_item_release = Release.release_var(item_boxed, "        ")
-
+  defp direct_list_walk_lambda_body(list_var, next, cons_body, int_body) do
     """
     if (#{list_var} && #{list_var}->tag == ELMC_TAG_INT_LIST) {
       ElmcIntListPayload *direct_ilp_#{next} = (ElmcIntListPayload *)#{list_var}->payload;
       int direct_ilen_#{next} = direct_ilp_#{next} ? direct_ilp_#{next}->length : 0;
       for (int direct_ii_#{next} = 0; Rc == RC_SUCCESS && direct_ii_#{next} < direct_ilen_#{next}; direct_ii_#{next}++) {
-        #{int_item_decl}
     #{CSource.indent(int_body, 4)}
-        #{int_item_release}
       }
     } else {
       ElmcValue *direct_cursor_#{next} = #{list_var};

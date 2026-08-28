@@ -56,6 +56,42 @@ defmodule Elmc.WasmCfgLowerTest do
     assert body =~ ~r/\(drop\s+\(call \$runtime_release_unless_reachable_from_roots \(local\.get \$owned/
   end
 
+  test "CFG case merge does not mid-body release the published result" do
+    Process.put(:elmc_constructor_tags, %{"Maybe.Nothing" => 0, "Maybe.Just" => 1})
+    on_exit(fn -> Process.delete(:elmc_constructor_tags) end)
+
+    decl = %{
+      name: "fromMaybe",
+      args: ["m"],
+      expr: %{
+        op: :case,
+        subject: %{op: :var, name: "m"},
+        branches: [
+          %{
+            pattern: %{kind: :qualified_constructor, name: "Maybe.Nothing"},
+            expr: %{op: :int_literal, value: -1}
+          },
+          %{
+            pattern: %{kind: :var, name: "x"},
+            expr: %{op: :var, name: "x"}
+          }
+        ]
+      }
+    }
+
+    assert {:ok, plan} = PlanFn.lower(decl, "Main", %{{"Main", "fromMaybe"} => decl}, rc_required: true)
+    body = WasmFn.lower(plan).body
+
+    # Plan `:release` is epilogue bookkeeping. Do not `runtime_release` the
+    # register published to `$fn_out` (List.tail |> length was a UAF).
+    for [reg] <- Regex.scan(~r/local\.set \$fn_out \(local\.get \$(reg\d+)\)/, body, capture: :all_but_first) do
+      refute body =~ ~r/call \$runtime_release \(local\.get \$#{Regex.escape(reg)}\)/,
+             "must not release $#{reg} after publishing it to $fn_out"
+    end
+
+    assert body =~ "runtime_release_unless_reachable_from_roots"
+  end
+
   test "self-tail call on list helper restarts plan_loop instead of recursing" do
     alias Elmc.Backend.Plan.Types
     alias Elmc.Backend.Plan.Types.{Block, FunctionPlan, Param}

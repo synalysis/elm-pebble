@@ -39,6 +39,43 @@ defmodule Elmc.WasmLowerTest do
     assert wat =~ "runtime_new_int"
   end
 
+  test "C fusion_c sidecar is ignored; wasm lowers verified SSA" do
+    plan =
+      Builder.new("Test", "shadeToString", args: ["n"], rc_required: true)
+      |> Builder.catch_begin()
+      |> then(fn b ->
+        {reg, b1} = Builder.fresh_reg(b)
+
+        {_, b2} =
+          Builder.emit(b1, :call_runtime, %{
+            dest: reg,
+            args: %{builtin: :new_int, args: [], literal: 7},
+            effects: Elmc.Backend.Plan.Types.fallible_effects(reg)
+          })
+
+        b2
+      end)
+      |> Builder.catch_end()
+      |> then(fn b ->
+        Builder.to_function_plan(Builder.emit_ret(b, 0))
+      end)
+      |> Map.put(:fusion_c, """
+      static RC elmc_fn_Test_shadeToString_native(ElmcValue **out, ElmcValue *n) {
+        *out = n;
+        return RC_SUCCESS;
+      }
+      """)
+
+    assert {:ok, module_map} = Lower.lower(plan)
+    wat = Lower.render_wat(module_map)
+
+    refute wat =~ "fusion_c bypass"
+    refute wat =~ "static RC"
+    refute wat =~ "elmc_fn_Test_shadeToString_native"
+    assert wat =~ "(module"
+    assert wat =~ "runtime_new_int"
+  end
+
   test "RC ret clears owned after moving boxed result into fn_out" do
     plan =
       Builder.new("Test", "owned_publish", args: [], rc_required: true)

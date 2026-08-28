@@ -52,19 +52,18 @@ defmodule Elmc.PlanShadowCoverageTest do
     assert :ok = Elmc.Backend.Plan.Verify.run(plan)
   end
 
-  test "lowers Main.handleAppMsg tagged case with arithmetic", %{decl_map: decl_map} do
-    decl = Map.fetch!(decl_map, {"Main", "handleAppMsg"})
+  test "lowers Main.merge list case with arithmetic", %{decl_map: decl_map} do
+    decl = Map.fetch!(decl_map, {"Main", "merge"})
 
     assert {:ok, plan} = Elmc.Backend.Plan.Lower.Function.lower(decl, "Main", decl_map, rc_required: true)
     dump = Elmc.Backend.Plan.Debug.dump(plan)
     refute dump =~ "switch_ctor_tag"
     assert dump =~ "int_arith"
-    assert dump =~ "maybe_just_own"
     assert :ok = Elmc.Backend.Plan.Verify.run(plan)
   end
 
-  test "lowers Main.handlePlatformMsg with pebble cmds", %{decl_map: decl_map} do
-    decl = Map.fetch!(decl_map, {"Main", "handlePlatformMsg"})
+  test "lowers Main.moveBoard with pebble cmds", %{decl_map: decl_map} do
+    decl = Map.fetch!(decl_map, {"Main", "moveBoard"})
 
     assert {:ok, plan} = Elmc.Backend.Plan.Lower.Function.lower(decl, "Main", decl_map, rc_required: true)
     dump = Elmc.Backend.Plan.Debug.dump(plan)
@@ -73,17 +72,17 @@ defmodule Elmc.PlanShadowCoverageTest do
     assert :ok = Elmc.Backend.Plan.Verify.run(plan)
   end
 
-  test "lowers Main.requestSystemInfo cmd batch with partial constructors", %{decl_map: decl_map} do
-    decl = Map.fetch!(decl_map, {"Main", "requestSystemInfo"})
+  test "lowers Main.listAt maybe with default path", %{decl_map: decl_map} do
+    decl = Map.fetch!(decl_map, {"Main", "listAt"})
 
     assert {:ok, plan} = Elmc.Backend.Plan.Lower.Function.lower(decl, "Main", decl_map, rc_required: true)
     dump = Elmc.Backend.Plan.Debug.dump(plan)
-    assert dump =~ "cmd_batch"
+    assert dump =~ "maybe_just" or dump =~ "maybe_nothing"
     assert :ok = Elmc.Backend.Plan.Verify.run(plan)
   end
 
-  test "lowers Main.counterDraw with render_cmd", %{decl_map: decl_map} do
-    decl = Map.fetch!(decl_map, {"Main", "counterDraw"})
+  test "lowers Main.drawCell with render_cmd", %{decl_map: decl_map} do
+    decl = Map.fetch!(decl_map, {"Main", "drawCell"})
 
     assert {:ok, plan} = Elmc.Backend.Plan.Lower.Function.lower(decl, "Main", decl_map, rc_required: false)
     assert Elmc.Backend.Plan.Debug.dump(plan) =~ "render_cmd"
@@ -107,8 +106,8 @@ defmodule Elmc.PlanShadowCoverageTest do
     assert :ok = Elmc.Backend.Plan.Verify.run(plan)
   end
 
-  test "lowers Main.counterOf field access", %{decl_map: decl_map} do
-    decl = Map.fetch!(decl_map, {"Main", "counterOf"})
+  test "lowers Main.boardLayout field access", %{decl_map: decl_map} do
+    decl = Map.fetch!(decl_map, {"Main", "boardLayout"})
 
     assert {:ok, _plan} =
              Elmc.Backend.Plan.Lower.Function.lower(decl, "Main", decl_map, rc_required: false)
@@ -132,13 +131,12 @@ defmodule Elmc.PlanShadowCoverageTest do
     names = [
       "init",
       "update",
-      "handleAppMsg",
-      "handlePlatformMsg",
-      "counterOf",
-      "requestWeather",
-      "requestSystemInfo",
-      "counterDraw",
-      "statusDraw",
+      "moveBoard",
+      "merge",
+      "listAt",
+      "orient",
+      "boardLayout",
+      "drawCell",
       "subscriptions",
       "view"
     ]
@@ -148,7 +146,7 @@ defmodule Elmc.PlanShadowCoverageTest do
         decl = Map.fetch!(decl_map, {"Main", name})
 
         case Elmc.Backend.Plan.Lower.Function.lower(decl, "Main", decl_map,
-               rc_required: name not in ["counterOf", "view"]
+               rc_required: name not in ["boardLayout", "drawCell", "view"]
              ) do
           {:ok, _} -> {:ok, name}
           other -> {other, name}

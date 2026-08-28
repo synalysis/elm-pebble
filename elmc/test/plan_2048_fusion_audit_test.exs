@@ -89,7 +89,7 @@ defmodule Elmc.Plan2048FusionAuditTest do
 
     assert c =~ "elmc_fn_Main_setCell_native(ElmcValue **out, const elmc_int_t index"
     assert c =~ "ElmcValue *index"
-    assert c =~ "return elmc_fn_Main_setCell_native(out, elmc_as_int(index), elmc_as_int(newValue), cells);"
+    assert c =~ "Rc = elmc_fn_Main_setCell_native(out, elmc_as_int(index), elmc_as_int(newValue), cells);"
   end
 
   test "ListIndexedReplace recognizes curried indexedMap lambda" do

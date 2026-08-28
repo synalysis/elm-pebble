@@ -119,6 +119,10 @@ defmodule Elmc.Backend.C.Lower.DenseIntTable do
        when op in [:const_int, :const_c_expr, :load_param, :int_arith, :boxed_tag_peel],
        do: true
 
+  defp prelude_instr?(%{op: :call_runtime, args: %{builtin: builtin}})
+       when builtin in [:basics_mod_by, :basics_remainder_by],
+       do: true
+
   defp prelude_instr?(_), do: false
 
   defp table_blocks_only?(plan, switch_id, arms, default_id) do
@@ -135,22 +139,26 @@ defmodule Elmc.Backend.C.Lower.DenseIntTable do
   end
 
   defp empty_exit_block?(%Block{instrs: instrs, terminator: term}) do
-    publish_only?(instrs) and (match?({:ret, _}, term) or match?({:br, _}, term))
+    epilogue_only?(instrs) and (match?({:ret, _}, term) or match?({:br, _}, term))
   end
 
   # Wildcard defaults keep a separate merge that only retains the arm result.
+  # EpilogueRelease also parks `release` of arm temps here; those do not
+  # change the table values.
   defp merge_passthrough_block?(%Block{instrs: instrs, terminator: term}) do
     exit_term?(term) and
       Enum.all?(instrs, fn
         %{op: :publish} -> true
+        %{op: :release} -> true
         %{op: :call_runtime, args: %{builtin: :retain}} -> true
         _ -> false
       end)
   end
 
-  defp publish_only?(instrs) do
+  defp epilogue_only?(instrs) do
     Enum.all?(instrs, fn
       %{op: :publish} -> true
+      %{op: :release} -> true
       _ -> false
     end)
   end
@@ -158,13 +166,23 @@ defmodule Elmc.Backend.C.Lower.DenseIntTable do
   defp modulus(plan, reg) do
     case defining_instr(plan, reg) do
       %{op: :int_arith, args: %{kind: :mod_vars, lhs: base}} ->
-        case const_int_value(plan, base) do
-          {:ok, mod} when is_integer(mod) and mod > 0 and mod <= @max_span -> mod
-          _ -> nil
-        end
+        modulus_const(plan, base)
+
+      %{op: :call_runtime, args: %{builtin: :basics_mod_by, args: [base, _value]}} ->
+        modulus_const(plan, base)
+
+      %{op: :call_runtime, args: %{builtin: :basics_remainder_by, args: [base, _value]}} ->
+        modulus_const(plan, base)
 
       _ ->
         nil
+    end
+  end
+
+  defp modulus_const(plan, base) do
+    case const_int_value(plan, base) do
+      {:ok, mod} when is_integer(mod) and mod > 0 and mod <= @max_span -> mod
+      _ -> nil
     end
   end
 
@@ -579,6 +597,18 @@ defmodule Elmc.Backend.C.Lower.DenseIntTable do
         with {:ok, left_c} <- native_int_c(plan, lhs),
              {:ok, right_c} <- native_int_c(plan, rhs) do
           {:ok, "(#{left_c} == 0 ? 0 : #{right_c} % #{left_c})"}
+        end
+
+      %{op: :call_runtime, args: %{builtin: :basics_mod_by, args: [base, value]}} ->
+        with {:ok, base_c} <- native_int_c(plan, base),
+             {:ok, value_c} <- native_int_c(plan, value) do
+          {:ok, Instr.elm_mod_by_c_expr(base_c, value_c)}
+        end
+
+      %{op: :call_runtime, args: %{builtin: :basics_remainder_by, args: [base, value]}} ->
+        with {:ok, base_c} <- native_int_c(plan, base),
+             {:ok, value_c} <- native_int_c(plan, value) do
+          {:ok, "(#{base_c} == 0 ? 0 : #{value_c} % #{base_c})"}
         end
 
       _ ->

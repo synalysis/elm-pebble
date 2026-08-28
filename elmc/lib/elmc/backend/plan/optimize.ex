@@ -84,7 +84,7 @@ defmodule Elmc.Backend.Plan.Optimize do
        ]}
       when is_integer(arm_reg) and is_integer(merge_reg) and is_integer(src_reg) and
              arm_reg == src_reg and arm_reg != merge_reg and consumes == [arm_reg] ->
-        prefix ++ [%{call | dest: merge_reg}]
+        prefix ++ [rewrite_producer_dest(call, arm_reg, merge_reg)]
 
       {prefix,
        [
@@ -99,7 +99,7 @@ defmodule Elmc.Backend.Plan.Optimize do
       when builtin in [:record_new, :record_new_take] and is_integer(arm_reg) and
              is_integer(merge_reg) and is_integer(src_reg) and arm_reg == src_reg and
              arm_reg != merge_reg and consumes == [arm_reg] ->
-        prefix ++ [%{record | dest: merge_reg}]
+        prefix ++ [rewrite_producer_dest(record, arm_reg, merge_reg)]
 
       _ ->
         instrs

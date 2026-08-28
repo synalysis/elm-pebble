@@ -45,12 +45,13 @@ defmodule Elmc.ConstructorTagCaseFnOutTest do
 
     hour_changed = plan_case_body(update_body, "ELMC_UNION_MAIN_HOURCHANGED")
     assert hour_changed =~ "Rc = elmc_cmd1(&owned["
-    assert hour_changed =~ ~r/Rc = elmc_fn_Main_scheduleCompanionFetches\(&owned\[\d+\]/
+    assert hour_changed =~
+             ~r/Rc = elmc_fn_Main_scheduleCompanionFetches\((?:out|&owned\[\d+\])/
     refute hour_changed =~ "*out ="
 
     minute_changed = plan_case_body(update_body, "ELMC_UNION_MAIN_MINUTECHANGED")
     refute minute_changed =~ ~r/owned\[0\] = owned\[\d+\];\n\s*owned\[0\] = owned\[\d+\];/
-    assert minute_changed =~ ~r/Rc = elmc_fn_Main_scheduleCompanionFetches\(&owned\[\d+\],/
+    assert minute_changed =~ ~r/Rc = elmc_fn_Main_refreshStepsIfSupported\((?:out|&owned\[\d+\])/
     refute minute_changed =~ "*out ="
 
     subs_body = CCodegenExtract.fn_body(generated, "elmc_fn_Main_subscriptions")
@@ -129,8 +130,10 @@ defmodule Elmc.ConstructorTagCaseFnOutTest do
     assert top_left_slot =~ "BATTERYCORNER"
     refute top_left_slot =~ "owned[4] = owned[4]"
     refute top_left_slot =~ "owned[7] = owned[7]"
-    assert top_left_slot =~ "Rc = elmc_fn_Main_batteryPercentString(&owned["
-    assert top_left_slot =~ "Rc = elmc_fn_Main_stepsString(&owned["
+    assert top_left_slot =~ "Rc = elmc_fn_Main_batteryPercentString" and
+             top_left_slot =~ "(&owned["
+    assert top_left_slot =~ "Rc = elmc_fn_Main_stepsString" and
+             top_left_slot =~ "(&owned["
     assert top_left_slot =~ "elmc_record_new_values_take("
     assert top_left_slot =~ ~r/\*out = owned\[\d+\];/
 

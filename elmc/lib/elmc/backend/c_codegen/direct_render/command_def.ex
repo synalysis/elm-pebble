@@ -127,6 +127,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.CommandDef do
     Process.delete(:elmc_hoisted_native_int_inits)
     Process.put(:elmc_hoisted_native_ints_scope, true)
     Process.put(:elmc_direct_borrow_refs, borrow_refs)
+    Process.put(:elmc_direct_boxed_param_refs, borrow_refs)
     Process.put(:elmc_direct_helper_defs, [])
     ValueSlots.reset(epilogue_lifo: true)
     Process.put(:elmc_direct_scene_boxed_argv, true)
@@ -175,6 +176,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.CommandDef do
     after
       Process.delete(:elmc_direct_scene_boxed_argv)
       Process.delete(:elmc_direct_borrow_refs)
+      Process.delete(:elmc_direct_boxed_param_refs)
       Process.delete(:elmc_hoisted_native_ints_scope)
       Process.delete(:elmc_hoisted_native_ints)
       Process.delete(:elmc_hoisted_native_int_inits)
@@ -198,9 +200,11 @@ defmodule Elmc.Backend.CCodegen.DirectRender.CommandDef do
     static RC #{c_name}_commands_append(ElmcValue ** const args, const int argc, ElmcSceneWriter * const writer) {
       #{arg_bindings}
       #{unused_casts}
-      if (!writer)
-        return RC_ERR_INVALID_ARG;
-      #{Catch.function_body_prefix(catch_opts)}#{body_code}#{Catch.function_body_suffix(catch_opts)}
+      #{Catch.function_body_prefix(catch_opts)}if (!writer) {
+        Rc = RC_ERR_INVALID_ARG;
+      } else {
+      #{body_code}      }
+      #{Catch.function_body_suffix(catch_opts)}
     }
     #{scene_append_stub(c_name, mod, decl)}
     """
@@ -273,10 +277,18 @@ defmodule Elmc.Backend.CCodegen.DirectRender.CommandDef do
       |> Enum.map(fn {_arg, c_arg, _index} -> c_arg end)
       |> MapSet.new()
 
+    boxed_param_refs =
+      c_arg_bindings
+      |> Enum.zip(arg_kinds)
+      |> Enum.filter(fn {_binding, kind} -> kind == :boxed end)
+      |> Enum.map(fn {{_arg, c_arg, _index}, _} -> c_arg end)
+      |> MapSet.new()
+
     Process.delete(:elmc_hoisted_native_ints)
     Process.delete(:elmc_hoisted_native_int_inits)
     Process.put(:elmc_hoisted_native_ints_scope, true)
     Process.put(:elmc_direct_borrow_refs, borrow_refs)
+    Process.put(:elmc_direct_boxed_param_refs, boxed_param_refs)
     Process.put(:elmc_direct_helper_defs, [])
     ValueSlots.reset(epilogue_lifo: true)
     Process.put(:elmc_direct_scene_boxed_argv, false)
@@ -339,6 +351,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.CommandDef do
     after
       Process.delete(:elmc_direct_scene_boxed_argv)
       Process.delete(:elmc_direct_borrow_refs)
+      Process.delete(:elmc_direct_boxed_param_refs)
       Process.delete(:elmc_hoisted_native_ints_scope)
       Process.delete(:elmc_hoisted_native_ints)
       Process.delete(:elmc_hoisted_native_int_inits)
@@ -383,16 +396,20 @@ defmodule Elmc.Backend.CCodegen.DirectRender.CommandDef do
 
     """
     static RC #{c_name}_commands_append(ElmcValue ** const args, const int argc, ElmcSceneWriter * const writer) {
+      RC Rc = RC_SUCCESS;
       #{wrapper_bindings}
       #{wrapper_unused_casts}
-      return #{c_name}_commands_append_native(#{native_args}, writer);
+      Rc = #{c_name}_commands_append_native(#{native_args}, writer);
+      return Rc;
     }
 
     static RC #{c_name}_commands_append_native(#{native_params(decl)}, ElmcSceneWriter * const writer) {
       #{native_unused_casts}
-      if (!writer)
-        return RC_ERR_INVALID_ARG;
-      #{Catch.function_body_prefix(catch_opts)}#{body_code}#{Catch.function_body_suffix(catch_opts)}
+      #{Catch.function_body_prefix(catch_opts)}if (!writer) {
+        Rc = RC_ERR_INVALID_ARG;
+      } else {
+      #{body_code}      }
+      #{Catch.function_body_suffix(catch_opts)}
     }
     #{scene_append_stub(c_name, mod, decl)}
     """
@@ -475,7 +492,9 @@ defmodule Elmc.Backend.CCodegen.DirectRender.CommandDef do
       """
 
       RC #{c_name}_scene_append(ElmcValue ** const args, const int argc, ElmcSceneWriter * const writer) {
-        return #{c_name}_commands_append(args, argc, writer);
+        RC Rc = RC_SUCCESS;
+        Rc = #{c_name}_commands_append(args, argc, writer);
+        return Rc;
       }
       """
     else

@@ -850,6 +850,10 @@ defmodule Elmc.Backend.Wasm.Lower.Instr do
     prep ++ emit_runtime_call(:maybe_just_payload, reg_exprs, dest_reg, slots, rc?, opts)
   end
 
+  defp emit_call_runtime(%{args: %{builtin: :unreachable}}, _slots, _rc?, _opts) do
+    [WasmTypes.line("unreachable")]
+  end
+
   defp emit_call_runtime(%{dest: dest_reg, args: %{builtin: id} = args_map}, slots, rc?, opts) do
     call_args = Map.get(args_map, :args) || []
     {reg_exprs, prep} = build_runtime_call_args(id, call_args, slots, opts)
@@ -1060,23 +1064,12 @@ defmodule Elmc.Backend.Wasm.Lower.Instr do
 
   defp cow_drop_alias_null(_dest_reg, _base_reg, _slots), do: []
 
-  defp emit_release(%{args: %{reg: reg}}, slots, opts) when is_integer(reg) do
-    if raw_scalar_int_operand?(opts, reg, MapSet.new()) do
-      [
-        WasmTypes.line(
-          WasmTypes.sexpr("local.set", [
-            Slots.reg_name(slots, reg),
-            " ",
-            WasmTypes.sexpr("i32.const", [0])
-          ])
-        )
-      ] ++ Slots.clear_owned_slot(slots, reg)
-    else
-      Slots.release_owned_slot(slots, reg)
-    end
-  end
-
-  defp emit_release(_, _, _), do: []
+  # Plan `:release` is Verify / EpilogueRelease bookkeeping — same as C
+  # `emit_release`. Owned slots are cleaned by frame
+  # `runtime_release_unless_reachable_from_roots`. Emitting mid-body
+  # `runtime_release` here frees a handle that a later phi / `fn_out` still
+  # holds (probeTail: length 3 → unbox of the freed id).
+  defp emit_release(_instr, _slots, _opts), do: []
 
   defp emit_tuple_proj(%{dest: dest_reg, args: %{base: base, which: which}}, slots, rc?) do
     idx = if which == :second, do: 1, else: 0
@@ -1159,10 +1152,10 @@ defmodule Elmc.Backend.Wasm.Lower.Instr do
     ] ++ Slots.sync_owned_slot(slots, dest_reg, dest)
   end
 
-  defp phi_arm_exprs(%{native_int_phi: true} = args, _slots, _opts) do
+  defp phi_arm_exprs(%{native_int_phi: true} = args, slots, opts) do
     {
-      phi_shape_wat(Map.get(args, :then_shape)),
-      phi_shape_wat(Map.get(args, :else_shape))
+      phi_shape_wat(Map.get(args, :then_shape), slots, opts),
+      phi_shape_wat(Map.get(args, :else_shape), slots, opts)
     }
   end
 
@@ -1197,9 +1190,73 @@ defmodule Elmc.Backend.Wasm.Lower.Instr do
     {then_expr, else_expr}
   end
 
-  defp phi_shape_wat({:const_int, value}), do: int_const(value)
-  defp phi_shape_wat({:new_int, value}) when is_integer(value), do: int_const(value)
-  defp phi_shape_wat(_), do: WasmTypes.sexpr("i32.const", [0])
+  # Match C native_int_phi_shape_c_expr. Reconstructing only const/new_int
+  # dropped `{:record_get_int, _}` / `{:reg, _}` to i32.const 0 (probeAliasedBase
+  # then-arm `updated.total` became 0).
+  defp phi_shape_wat({:const_int, value}, _slots, _opts), do: int_const(value)
+  defp phi_shape_wat({:new_int, value}, _slots, _opts) when is_integer(value), do: int_const(value)
+
+  defp phi_shape_wat({:reg, reg}, slots, opts) when is_integer(reg),
+    do: int_operand_wat(reg, slots, opts)
+
+  defp phi_shape_wat({:record_get_int, reg}, slots, opts) when is_integer(reg),
+    do: int_operand_wat(reg, slots, opts)
+
+  defp phi_shape_wat({:native_int_phi, reg}, slots, opts) when is_integer(reg),
+    do: int_operand_wat(reg, slots, opts)
+
+  defp phi_shape_wat({:load_param, index}, _slots, opts) when is_integer(index) do
+    param = WasmTypes.sexpr("local.get", [WasmTypes.ident("param#{index}")])
+
+    case Enum.at(Keyword.get(opts, :param_kinds, []), index) do
+      :native_int ->
+        param
+
+      _ ->
+        WasmTypes.sexpr("call", [WasmTypes.import_ident("runtime.as_int"), " ", param])
+    end
+  end
+
+  defp phi_shape_wat({:int_arith, args}, slots, opts) when is_map(args) do
+    int_arith_shape_wat(args, slots, opts)
+  end
+
+  defp phi_shape_wat(_shape, _slots, _opts), do: WasmTypes.sexpr("i32.const", [0])
+
+  defp int_arith_shape_wat(args, slots, opts) do
+    kind = Map.get(args, :kind)
+    lhs = Map.get(args, :lhs)
+    rhs = Map.get(args, :rhs)
+
+    case kind do
+      :add_const ->
+        binop("i32.add", int_operand_wat(lhs, slots, opts), int_const(Map.fetch!(args, :value)))
+
+      :sub_const ->
+        binop("i32.sub", int_operand_wat(lhs, slots, opts), int_const(Map.fetch!(args, :value)))
+
+      :add_vars ->
+        binop("i32.add", int_operand_wat(lhs, slots, opts), int_operand_wat(rhs, slots, opts))
+
+      :sub_vars ->
+        binop("i32.sub", int_operand_wat(lhs, slots, opts), int_operand_wat(rhs, slots, opts))
+
+      :mul_vars ->
+        binop("i32.mul", int_operand_wat(lhs, slots, opts), int_operand_wat(rhs, slots, opts))
+
+      :idiv_vars ->
+        binop("i32.div_s", int_operand_wat(lhs, slots, opts), int_operand_wat(rhs, slots, opts))
+
+      :mod_vars ->
+        binop("i32.rem_s", int_operand_wat(rhs, slots, opts), int_operand_wat(lhs, slots, opts))
+
+      :rem_vars ->
+        binop("i32.rem_s", int_operand_wat(rhs, slots, opts), int_operand_wat(lhs, slots, opts))
+
+      _ ->
+        int_const(0)
+    end
+  end
 
   defp truthy_shape_wat({:const_int, value}, _reg, _slots, _opts) when value in [0, 1],
     do: int_const(value)
@@ -1566,7 +1623,9 @@ defmodule Elmc.Backend.Wasm.Lower.Instr do
       if rc? and RuntimeBuiltins.fallible?(id) do
         check_rc(call)
       else
-        [WasmTypes.line(call)]
+        # Imports return i32 (ignored RC). Out-pointer dest is loaded from memory.
+        # Leaving the i32 on the stack breaks `block` (expected []).
+        [WasmTypes.line(WasmTypes.sexpr("drop", [" ", call]))]
       end
 
     if load_result, do: call_lines ++ load_result, else: call_lines

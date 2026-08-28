@@ -8,7 +8,7 @@ defmodule Elmc.Backend.Bytecode.FusionRunner do
   alias Elmc.Backend.Plan.Types.FunctionPlan
 
   @spec runnable?(FunctionPlan.t()) :: boolean()
-  def runnable?(%FunctionPlan{blocks: [], fusion_kind: kind}) when not is_nil(kind), do: true
+  def runnable?(%FunctionPlan{fusion_kind: kind}) when not is_nil(kind), do: true
   def runnable?(_), do: false
 
   alias Elmc.Backend.Bytecode.Runtime

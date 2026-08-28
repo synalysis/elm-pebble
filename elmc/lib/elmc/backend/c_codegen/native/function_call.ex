@@ -812,6 +812,7 @@ defmodule Elmc.Backend.CCodegen.Native.FunctionCall do
 
   defp native_call_out(:native_int, next), do: "native_call_#{next}"
   defp native_call_out(:native_bool, next), do: "native_bool_call_#{next}"
+  defp native_call_out(:native_float, next), do: "native_float_call_#{next}"
   defp native_call_out(:boxed, next), do: "tmp_#{next}"
 
   defp native_rc_out_slot(env, next) do

@@ -32,4 +32,27 @@ defmodule Elmc.Backend.Plan.Lower.Case.ArmMerge do
     return_id = Builder.reserved_next_block_id(b_tagged)
     {:ok, merge_reg, Builder.finish_block(b_tagged, {:br, return_id})}
   end
+
+  # Exhaustive switches have no wildcard. Routing `default` at the merge makes
+  # the case dest maybe-owned (asymmetric borrow on the continuation). Land
+  # unmatched tags in a sink that does not join the merge.
+  @spec emit_unmatched_case_sink(Builder.t()) :: {non_neg_integer(), Builder.t()}
+  def emit_unmatched_case_sink(b) do
+    arm_id = b.next_block
+    b_arm = Builder.begin_cfg_arm_block(b, arm_id)
+
+    {_, b1} =
+      Builder.emit(b_arm, :call_runtime, %{
+        dest: nil,
+        args: %{builtin: :unreachable, args: []},
+        effects: %{
+          fallible: false,
+          produces: nil,
+          consumes: [],
+          borrows: []
+        }
+      })
+
+    {arm_id, Builder.finish_block(b1, {:ret, :fn_out})}
+  end
 end

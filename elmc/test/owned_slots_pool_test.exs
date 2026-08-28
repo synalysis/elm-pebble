@@ -20,6 +20,8 @@ defmodule Elmc.OwnedSlotsPoolTest do
 
     decl = Frame.owned_declaration(plan, slots)
     assert decl =~ "elmc_owned_slots_acquire(ELMC_OWNED_SLOT_COUNT)"
+    assert decl =~ "Rc = RC_ERR_OUT_OF_MEMORY;"
+    refute decl =~ "return RC_ERR_OUT_OF_MEMORY"
     refute decl =~ "elmc_calloc"
 
     epilogue = Frame.epilogue_release(Map.keys(slots), 24)

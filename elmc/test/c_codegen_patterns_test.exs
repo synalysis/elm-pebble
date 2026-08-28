@@ -3253,7 +3253,7 @@ defmodule Elmc.CCodegenPatternsTest do
     pebble_generated_c = File.read!(Path.join(pebble_out_dir, "c/elmc_generated.c"))
 
     assert pebble_generated_c =~
-             "return elmc_fn_Main_pieceOffsets_native(out, kind, rot);"
+             "Rc = elmc_fn_Main_pieceOffsets_native(out, kind, rot);"
 
     makefile = File.read!(Path.join(out_dir, "Makefile"))
     assert makefile =~ "-ffunction-sections"
@@ -3278,7 +3278,7 @@ defmodule Elmc.CCodegenPatternsTest do
     assert generated_c =~ "elmc_fn_Main_stampPiece_native"
     assert generated_c =~
              "static RC elmc_fn_Main_stampPiece_native(ElmcValue **out, ElmcValue *piece, ElmcValue *board)"
-    assert generated_c =~ "return elmc_fn_Main_stampPiece_native(out, piece, board);"
+    assert generated_c =~ "Rc = elmc_fn_Main_stampPiece_native(out, piece, board);"
 
     assert [stamp_piece_native] =
              Regex.run(

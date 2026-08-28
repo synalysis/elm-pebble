@@ -4861,6 +4861,25 @@ defmodule Elmc.Runtime.Generator do
             break;
           }
 
+          case ELMC_TAG_LAZY_MAP: {
+            ElmcValue *forced = NULL;
+            rc = elmc_lazy_map_to_cons(&forced, value);
+            CHECK_RC(rc);
+            part = NULL;
+            rc = elmc_debug_format_into(&part, forced);
+            elmc_release(forced);
+            CHECK_RC(rc);
+            {
+              const char *piece =
+                (part && part->tag == ELMC_TAG_STRING && part->payload) ? (const char *)part->payload : "[]";
+              rc = elmc_debug_append_cstr(out, piece);
+              CHECK_RC(rc);
+            }
+            elmc_release(part);
+            part = NULL;
+            break;
+          }
+
           case ELMC_TAG_LIST: {
             if (value->scalar == ELMC_DICT_SCALAR) {
               rc = elmc_debug_append_cstr(out, "HashMap.fromList ");
@@ -5222,8 +5241,11 @@ defmodule Elmc.Runtime.Generator do
       RC rc = RC_SUCCESS;
       ElmcValue *acc = elmc_list_nil();
       ElmcValue *next = NULL;
+      ElmcValue *flat = NULL;
       CATCH_BEGIN
-        ElmcValue *cursor = items;
+        rc = elmc_list_materialize_cons(&flat, items);
+        CHECK_RC(rc);
+        ElmcValue *cursor = flat;
         while (cursor && cursor->tag == ELMC_TAG_LIST && cursor->payload != NULL) {
           ElmcCons *node = (ElmcCons *)cursor->payload;
           ElmcValue *entry = node->head;
@@ -5241,6 +5263,7 @@ defmodule Elmc.Runtime.Generator do
         *out = acc;
         acc = NULL;
       CATCH_END
+      elmc_release(flat);
       elmc_release(next);
       elmc_release(acc);
       return rc;

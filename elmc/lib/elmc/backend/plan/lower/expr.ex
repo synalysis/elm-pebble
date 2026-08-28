@@ -1851,8 +1851,8 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
     end
   end
 
-  # `let caseSubject = (a, b) in case caseSubject of (Just …, Just …) / _`
-  # → case (a, b) of … so Case can avoid heap tuple2 + GuardedSwitch.
+  # `let caseSubject = (a, b[, c]) in case caseSubject of (Just …, Just …) / _`
+  # → case (a, b[, c]) of … so Case can avoid heap tuple2 + GuardedSwitch.
   @spec peel_tuple2_maybe_pair_case(list(), Types.expr()) :: {:ok, map()} | :error
 
   defp peel_tuple2_maybe_pair_case([{bind_name, %{op: :tuple2} = tup}], %{op: :case} = case_expr)
@@ -2985,18 +2985,12 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
   @spec int_record_proven_arith?(map() | term()) :: boolean()
 
   defp int_record_proven_arith?(%{op: :call, name: name, args: args}) when is_list(args) do
-    name in ["max", "min", "modBy", "remainderBy", "__idiv__", "__mul__", "__add__", "__sub__"] and
-      Enum.all?(args, fn arg ->
-        int_record_expr?(arg) or int_record_field_arith?(arg) or match?(%{op: :var}, arg)
-      end)
+    int_record_proven_call_args?(name, args)
   end
 
   defp int_record_proven_arith?(%{op: :qualified_call, target: target, args: args})
        when is_list(args) do
-    int_call_target?(target) and
-      Enum.all?(args, fn arg ->
-        int_record_expr?(arg) or int_record_field_arith?(arg) or match?(%{op: :var}, arg)
-      end)
+    int_call_target?(target) and int_record_proven_call_args?(call_target_short_name(target), args)
   end
 
   defp int_record_proven_arith?(%{op: op})
@@ -3015,6 +3009,65 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
        do: true
 
   defp int_record_proven_arith?(_), do: false
+
+  # `+`/`*`/`-`/`max`/`min` are Float as well as Int. Only idiv/mod/rem prove
+  # Int when operands are field reads (Vec2 `{x = a.x + b.x}` must stay boxed).
+  @spec int_record_proven_call_args?(String.t(), list()) :: boolean()
+
+  defp int_record_proven_call_args?(name, args) when is_binary(name) and is_list(args) do
+    operands_ok? = fn arg ->
+      int_record_expr?(arg) or int_record_field_arith?(arg) or match?(%{op: :var}, arg)
+    end
+
+    cond do
+      name in ["modBy", "remainderBy", "__idiv__"] ->
+        Enum.all?(args, operands_ok?)
+
+      # `+`/`*`/`-`/`max`/`min` are Float as well as Int. `a.x + b.x` (Vec2)
+      # must stay boxed; `p0.x + ((p1.x - p0.x) * r) // 5` is Int because of `//`.
+      name in ["max", "min", "__mul__", "__add__", "__sub__"] ->
+        Enum.all?(args, operands_ok?) and Enum.any?(args, &int_record_int_only_operand?/1)
+
+      true ->
+        false
+    end
+  end
+
+  defp int_record_proven_call_args?(_, _), do: false
+
+  @spec int_record_int_only_operand?(map() | term()) :: boolean()
+
+  defp int_record_int_only_operand?(expr),
+    do: int_record_expr?(expr) or int_record_contains_idiv_or_mod?(expr)
+
+  @spec int_record_contains_idiv_or_mod?(map() | term()) :: boolean()
+
+  defp int_record_contains_idiv_or_mod?(%{op: :call, name: name, args: args}) when is_list(args) do
+    name in ["modBy", "remainderBy", "__idiv__"] or
+      Enum.any?(args, &int_record_contains_idiv_or_mod?/1)
+  end
+
+  defp int_record_contains_idiv_or_mod?(%{op: :qualified_call, target: target, args: args})
+       when is_binary(target) and is_list(args) do
+    String.contains?(target, "modBy") or String.contains?(target, "remainderBy") or
+      String.contains?(target, "__idiv__") or
+      Enum.any?(args, &int_record_contains_idiv_or_mod?/1)
+  end
+
+  defp int_record_contains_idiv_or_mod?(%{op: op})
+       when op in [:idiv_vars, :mod_vars, :rem_vars],
+       do: true
+
+  defp int_record_contains_idiv_or_mod?(_), do: false
+
+  @spec call_target_short_name(String.t()) :: String.t()
+
+  defp call_target_short_name(target) when is_binary(target) do
+    case String.split(target, ".") do
+      [] -> target
+      parts -> Enum.at(parts, -1)
+    end
+  end
 
   # Int record literal field values like `labelPoint.x - 9` / `p.y`.
   @spec int_record_field_arith?(map() | term()) :: boolean()

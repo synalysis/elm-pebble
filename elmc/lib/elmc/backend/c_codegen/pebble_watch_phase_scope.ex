@@ -2,7 +2,6 @@ defmodule Elmc.Backend.CCodegen.PebbleWatchPhaseScope do
   @moduledoc false
 
   alias Elmc.Backend.CCodegen.ProdMode
-  alias Elmc.Backend.CCodegen.RcRuntimeEmit
 
   @phase_key :elmc_pebble_watch_phase_slot
 
@@ -44,13 +43,12 @@ defmodule Elmc.Backend.CCodegen.PebbleWatchPhaseScope do
         out = "native_watch_phase_trig_#{next}"
         angle = angle_c_expr(slot)
 
-        code =
-          RcRuntimeEmit.assign_call(
-            env,
-            out,
-            "elmc_new_int",
-            "#{lookup}(#{angle})"
-          ) <> "\n"
+        _ = env
+
+        # cos_lookup/sin_lookup return trig units as i32. Keep the C temp an
+        # `elmc_int_t` — boxing through elmc_new_int made `native_*` look like a
+        # scalar while remaining `ElmcValue *` (`1 - native_watch_phase_trig_N`).
+        code = "const elmc_int_t #{out} = #{lookup}(#{angle});\n"
 
         {:ok, code, out, next}
 

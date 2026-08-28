@@ -4,6 +4,31 @@ defmodule Elmc.BytecodeFusionRunnerTest do
   alias Elmc.Backend.Bytecode.FusionRunner
   alias Elmc.Backend.Plan.Types.FunctionPlan
 
+  test "sidecar fusion with verified SSA blocks is still bytecode-runnable" do
+    plan = %FunctionPlan{
+      module: "Main",
+      name: "collapseRows",
+      params: [],
+      return_type: nil,
+      fallible: true,
+      rc_required: true,
+      blocks: [%{id: 0, instrs: [], terminator: :ret}],
+      entry_block: 0,
+      locals: %{},
+      reg_count: 0,
+      catch_depth: 0,
+      lambdas: [],
+      lambda_arg_count: nil,
+      letrec_refs: [],
+      fusion_c: "/* sidecar */",
+      fusion_kind: :row_slice_adjacent_merge,
+      fusion_data: %{"width" => 4, "rows" => 4}
+    }
+
+    assert FusionRunner.runnable?(plan)
+    assert {:ok, _} = FusionRunner.run(plan, params: [List.duplicate(0, 16)])
+  end
+
   test "tuple2 case table fusion returns static offset pairs" do
     plan = %FunctionPlan{
       module: "Main",

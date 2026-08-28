@@ -1300,8 +1300,10 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
 
           [
             entry_probe,
-            "return #{native}(#{native_args});",
-            exit_probe
+            "RC Rc = RC_SUCCESS;",
+            "Rc = #{native}(#{native_args});",
+            exit_probe,
+            "return Rc;"
           ]
 
         true ->
@@ -1877,7 +1879,11 @@ defmodule Elmc.Backend.CCodegen.FunctionEmit do
                   decl_map
                 )
 
-              "return #{c_name}_native(out, #{fusion_wrapper_args});"
+              """
+              RC Rc = RC_SUCCESS;
+              Rc = #{c_name}_native(out, #{fusion_wrapper_args});
+              return Rc;
+              """
 
             fusion_native? and return_kind == :boxed ->
               fusion_wrapper_args =

@@ -440,6 +440,54 @@ defmodule Elmc.PlanRetainDedupTest do
     assert Enum.any?(block.instrs, &match?(%{op: :release, args: %{reg: 1}}, &1))
   end
 
+  test "arm-publish coalesce keeps call_fn produces dest in sync" do
+    plan = %FunctionPlan{
+      module: "Main",
+      name: "coalesce_call_fn",
+      params: [],
+      return_type: nil,
+      fallible: true,
+      rc_required: true,
+      reg_count: 11,
+      entry_block: 0,
+      blocks: [
+        %Block{
+          id: 0,
+          instrs: [
+            %{
+              id: 0,
+              op: :call_fn,
+              dest: 10,
+              args: %{module: "Pebble.Health", name: "onEvent", args: [9]},
+              effects: %{produces: {:owned, 10}, consumes: [9], borrows: [], fallible: true},
+              block_id: 0,
+              span: nil
+            },
+            %{
+              id: 1,
+              op: :call_runtime,
+              dest: 2,
+              args: %{builtin: :retain, args: [10]},
+              effects: %{produces: {:owned, 2}, consumes: [10], borrows: [], fallible: false},
+              block_id: 0,
+              span: nil
+            }
+          ],
+          terminator: {:ret, 2}
+        }
+      ],
+      lambdas: [],
+      lambda_arg_count: nil
+    }
+
+    optimized = Optimize.run(plan)
+    [block] = optimized.blocks
+    call = Enum.find(block.instrs, &(&1.op == :call_fn))
+    assert call.dest == 2
+    assert call.effects.produces == {:owned, 2}
+    refute Enum.any?(block.instrs, &match?(%{op: :call_runtime, args: %{builtin: :retain}}, &1))
+  end
+
   defp retain_instrs(b) do
     b.current_block.instrs
     |> Enum.filter(&match?(%{op: :call_runtime, args: %{builtin: :retain}}, &1))

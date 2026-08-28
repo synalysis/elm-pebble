@@ -389,7 +389,8 @@ defmodule Elmc.Backend.C.StubFunctions do
 
     """
     #{storage}RC #{name}(#{params}) {
-    #{voids}  return RC_ERR_UNSUPPORTED;
+    #{voids}  RC Rc = RC_ERR_UNSUPPORTED;
+      return Rc;
     }
     """
     |> String.trim()

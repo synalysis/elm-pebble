@@ -61,25 +61,9 @@ defmodule Elmc.Backend.Wasm.Lower.Function do
     if FusionFunction.emittable?(plan) do
       FusionFunction.lower(plan)
     else
-      lower_fusion_c_or_plan(plan)
-    end
-  end
-
-  defp lower_fusion_c_or_plan(%FunctionPlan{} = plan) do
-    fusion_c = Map.get(plan, :fusion_c)
-
-    if is_binary(fusion_c) and fusion_c != "" do
-      %{
-        export_name: export_name(plan),
-        module: plan.module,
-        name: plan.name,
-        params: param_names(plan),
-        rc_required: plan.rc_required,
-        body: [";; fusion_c bypass\n", fusion_c],
-        imports: MapSet.new(),
-        import_arities: %{}
-      }
-    else
+      # `fusion_c` is a C sidecar (tuple2-case tables, shade LUTs, …). Emitting
+      # it as WAT yields `static RC …` inside `(func …)` and wat2wasm fails.
+      # Keep the sidecar on the plan for C; wasm always lowers verified SSA.
       lower_plan(plan)
     end
   end

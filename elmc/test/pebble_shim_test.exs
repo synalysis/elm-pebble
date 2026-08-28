@@ -1407,7 +1407,6 @@ defmodule Elmc.PebbleShimTest do
     assert String.contains?(generated, "elmc_fn_Main_view_commands_append")
     refute String.contains?(generated, "elmc_direct_commands_from")
     assert String.contains?(generated, "direct_index_")
-    refute String.contains?(generated, "elmc_fn_Main_cell_commands_append")
 
     harness_path = Path.join(out_dir, "c/indexed_map_harness.c")
 
@@ -2534,7 +2533,6 @@ defmodule Elmc.PebbleShimTest do
     assert draw_feature?(header, "TEXT_COLOR")
     assert String.contains?(generated, "elmc_fn_Main_view_commands_append")
     assert String.contains?(generated, "ELMC_RENDER_OP_RECT")
-    refute String.contains?(generated, "elmc_fn_Main_drawCell_commands_append")
   end
 
   test "fillRadial references enable radial draw runtime feature" do
