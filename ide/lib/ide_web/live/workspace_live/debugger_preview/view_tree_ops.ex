@@ -1329,6 +1329,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview.ViewTreeOps do
 
   defp maybe_put_font_height(op, _height), do: op
 
+  @spec font_node_id(view_node(), model_map()) :: integer() | nil
   defp font_node_id(node, model) when is_map(node) do
     evaluated = evaluated_node_value(node, model)
 
@@ -1344,14 +1345,11 @@ defmodule IdeWeb.WorkspaceLive.DebuggerPreview.ViewTreeOps do
     end
   end
 
-  defp font_node_id(_node, _model), do: nil
-
+  @spec font_node_height(view_node(), model_map()) :: integer() | nil
   defp font_node_height(node, _model) when is_map(node) do
     height = Map.get(node, "height") || Map.get(node, :height)
     if is_integer(height) and height > 0, do: height, else: nil
   end
-
-  defp font_node_height(_node, _model), do: nil
 
   defp bitmap_node_id(node, model) when is_map(node) do
     evaluated = evaluated_node_value(node, model)

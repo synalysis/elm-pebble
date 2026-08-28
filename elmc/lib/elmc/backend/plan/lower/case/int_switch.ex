@@ -52,7 +52,7 @@ defmodule Elmc.Backend.Plan.Lower.Case.IntSwitch do
          merge_id = skip_reserved(b_arms.next_block, saved_pending),
          b_br = patch_arm_exits(b_arms, arm_exits, merge_id),
          switch_arms = Enum.map(tagged_results, fn {tag, _reg, arm_id} -> {tag, arm_id} end),
-         default_block_id = default_arm_id || merge_id,
+         default_block_id = default_arm_id,
          b_entry =
            Builder.patch_terminator(
              b_br,
@@ -81,7 +81,7 @@ defmodule Elmc.Backend.Plan.Lower.Case.IntSwitch do
           Builder.t(),
           Types.reg()
         ) ::
-          {:ok, [tagged_arm()], nil, non_neg_integer() | nil, [non_neg_integer()], Builder.t()}
+          {:ok, [tagged_arm()], nil, non_neg_integer(), [non_neg_integer()], Builder.t()}
           | :unsupported
   defp compile_arm_blocks(tagged, default_br, ctx, b, merge_reg) do
     with {:ok, tagged_results, arm_exits, b1} <-
@@ -121,7 +121,7 @@ defmodule Elmc.Backend.Plan.Lower.Case.IntSwitch do
   end
 
   @spec compile_default_arm(map() | nil, Context.t(), Builder.t(), Types.reg()) ::
-          {:ok, non_neg_integer() | nil, non_neg_integer() | nil, Builder.t()} | :unsupported
+          {:ok, non_neg_integer(), non_neg_integer() | nil, Builder.t()} | :unsupported
   defp compile_default_arm(nil, _ctx, b, _merge_reg) do
     {arm_id, b2} = ArmMerge.emit_unmatched_case_sink(b)
     {:ok, arm_id, nil, b2}

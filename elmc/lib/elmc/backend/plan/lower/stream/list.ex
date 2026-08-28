@@ -49,7 +49,7 @@ defmodule Elmc.Backend.Plan.Lower.Stream.List do
     case Stream.callee_key(%{op: :qualified_call, target: target}, nil) do
       {mod, name} ->
         MapSet.member?(@cons_names, name) and
-          (is_nil(mod) or MapSet.member?(@list_modules, mod) or name == "::")
+          (MapSet.member?(@list_modules, mod) or name == "::")
 
       _ ->
         target in ["::", "List.::"]

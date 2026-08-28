@@ -567,7 +567,7 @@ defmodule ElmEx.Frontend.GeneratedExpressionParser do
   end
 
   @spec tokenize_prepared(source(), keyword()) ::
-          {:ok, [term()], pos_integer()} | {:error, term()}
+          {:ok, [term()], pos_integer()} | {:error, term()} | {:error, term(), term()}
   defp tokenize_prepared(prepared, opts) when is_list(opts) do
     cond do
       Keyword.get(opts, :force_layout_lexer, false) ->
@@ -583,7 +583,8 @@ defmodule ElmEx.Frontend.GeneratedExpressionParser do
 
   # Multiline sources without legacy `;;` arm separators use the layout lexer.
   # Normalized `;;` fragments and single-line sources keep the whitespace-skipping Leex path.
-  @spec tokenize_for_parser(source()) :: {:ok, [term()], pos_integer()} | {:error, term()}
+  @spec tokenize_for_parser(source()) ::
+          {:ok, [term()], pos_integer()} | {:error, term()} | {:error, term(), term()}
   defp tokenize_for_parser(prepared) do
     if layout_lexer_enabled?() and layout_lexer_eligible?(prepared) do
       ExprLayoutLexer.tokenize(prepared)

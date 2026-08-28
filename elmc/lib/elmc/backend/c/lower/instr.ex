@@ -4833,8 +4833,6 @@ defmodule Elmc.Backend.C.Lower.Instr do
     end
   end
 
-  defp peel_boxed_borrow_param_int(expr, _opts), do: expr
-
   @spec int_operand_ref_impl(Types.reg(), Types.slot_map(), keyword()) :: String.t()
 
   defp int_operand_ref_impl(reg, slots, opts) when is_integer(reg) do

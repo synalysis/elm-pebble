@@ -147,7 +147,7 @@ defmodule Elmc.Backend.Plan.Lower.Case.TagSwitch do
          b_br = patch_arm_exits(b_arms, arm_exits, merge_id),
          switch_arms =
            Enum.map(tagged_results, fn {tag, _reg, arm_id, ctor} -> {tag, arm_id, ctor} end),
-         default_block_id = default_arm_id || merge_id,
+         default_block_id = default_arm_id,
          b_entry =
            Builder.patch_terminator(
              b_br,
@@ -182,7 +182,7 @@ defmodule Elmc.Backend.Plan.Lower.Case.TagSwitch do
           Builder.t(),
           Types.reg() | :stream
         ) ::
-          {:ok, list(), nil, non_neg_integer() | nil, list(), Builder.t()} | :unsupported
+          {:ok, list(), nil, non_neg_integer(), list(), Builder.t()} | :unsupported
 
   defp publish_arm(b, _reg, :stream), do: {:ok, b}
   defp publish_arm(b, reg, merge_reg), do: ArmMerge.publish_arm_to_merge(b, reg, merge_reg)
@@ -300,7 +300,7 @@ defmodule Elmc.Backend.Plan.Lower.Case.TagSwitch do
           Context.t(),
           Builder.t(),
           Types.reg()
-        ) :: {:ok, non_neg_integer() | nil, non_neg_integer() | nil, Builder.t()} | :unsupported
+        ) :: {:ok, non_neg_integer(), non_neg_integer() | nil, Builder.t()} | :unsupported
 
   defp compile_default_arm(nil, _subj, _ctx, b, _merge_reg) do
     {arm_id, b2} = ArmMerge.emit_unmatched_case_sink(b)

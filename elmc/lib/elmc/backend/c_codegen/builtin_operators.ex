@@ -715,6 +715,7 @@ defmodule Elmc.Backend.CCodegen.BuiltinOperators do
     {code, out, next}
   end
 
+  @spec native_int_c_ref?(String.t()) :: boolean()
   defp native_int_c_ref?(ref) when is_binary(ref) do
     cond do
       ValueSlots.owned_ref?(ref) ->
@@ -745,8 +746,6 @@ defmodule Elmc.Backend.CCodegen.BuiltinOperators do
         false
     end
   end
-
-  defp native_int_c_ref?(_), do: false
 
   defp int_c_operand_expr(var, ref) do
     if native_int_c_ref?(var), do: var, else: "elmc_as_int(#{ref})"
