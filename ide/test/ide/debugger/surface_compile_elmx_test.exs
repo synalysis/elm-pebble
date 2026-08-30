@@ -15,13 +15,6 @@ defmodule Ide.Debugger.SurfaceCompileElmxTest do
   alias Ide.Debugger.Types.ElmcSurfaceFields
 
   setup do
-    old = Application.get_env(:ide, Ide.Debugger.RuntimeExecutor, [])
-
-    on_exit(fn ->
-      Application.put_env(:ide, Ide.Debugger.RuntimeExecutor, old)
-    end)
-
-    Application.put_env(:ide, Ide.Debugger.RuntimeExecutor, execution_backend: :compiled_elixir)
     _ = Application.ensure_all_started(:elmx)
     :ok
   end

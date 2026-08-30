@@ -327,6 +327,11 @@ defmodule ElmEx.DebuggerContract.EffectAnalysis.CmdCalls do
   def extract_cmd_calls(%{op: :tuple2, right: right}, bindings) when is_map(bindings),
     do: extract_cmd_calls(right, bindings)
 
+  def extract_cmd_calls(%{op: :tuple3, a: a, b: b, c: c}, bindings) when is_map(bindings),
+    do:
+      extract_cmd_calls(a, bindings) ++
+        extract_cmd_calls(b, bindings) ++ extract_cmd_calls(c, bindings)
+
   def extract_cmd_calls(%{op: :case, branches: branches}, bindings)
       when is_list(branches) and is_map(bindings) do
     Enum.flat_map(branches, fn
@@ -420,6 +425,9 @@ defmodule ElmEx.DebuggerContract.EffectAnalysis.CmdCalls do
 
   def qualified_call_targets(%{op: :tuple2, left: left, right: right}),
     do: qualified_call_targets(left) ++ qualified_call_targets(right)
+
+  def qualified_call_targets(%{op: :tuple3, a: a, b: b, c: c}),
+    do: qualified_call_targets(a) ++ qualified_call_targets(b) ++ qualified_call_targets(c)
 
   def qualified_call_targets(%{op: :list_literal, items: items}) when is_list(items),
     do: Enum.flat_map(items, &qualified_call_targets/1)

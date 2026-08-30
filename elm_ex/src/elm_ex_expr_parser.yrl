@@ -785,7 +785,7 @@ starts_upper(_) -> false.
 build_tuple([A, B]) ->
   #{op => tuple2, left => A, right => B};
 build_tuple([A, B, C]) ->
-  #{op => tuple2, left => A, right => #{op => tuple2, left => B, right => C}}.
+  #{op => tuple3, a => A, b => B, c => C}.
 
 build_operator_section(plus) ->
   #{op => var, name => <<"__add__">>};

@@ -20,8 +20,13 @@ update msg model =
         Got _ ->
             ( model, Cmd.none )
 
-        Progress _ ->
-            ( { model | progressCount = model.progressCount + 1 }, Cmd.none )
+        Progress progress ->
+            case progress of
+                Http.Sending _ ->
+                    ( { model | progressCount = model.progressCount + 1 }, Cmd.none )
+
+                Http.Receiving _ ->
+                    ( { model | progressCount = model.progressCount + 1 }, Cmd.none )
 
 
 view : Model -> Html Msg

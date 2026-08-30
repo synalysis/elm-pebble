@@ -6,6 +6,8 @@ defmodule Elmc.WasmWebHtmlTest do
   alias Elmc.Test.WasmRcTrackHarness
 
   @html_runner Path.expand("support/wasm_html_probe_runner.mjs", __DIR__)
+  @style_runner Path.expand("support/wasm_html_style_probe_runner.mjs", __DIR__)
+  @handler_runner Path.expand("support/wasm_html_handler_probe_runner.mjs", __DIR__)
 
   @tag :wasm_execute
   test "web wasm layout fixture renders header main footer with class and href attrs" do
@@ -50,6 +52,187 @@ defmodule Elmc.WasmWebHtmlTest do
       end,
       fn output ->
         assert output =~ ~s/attrs=[{"name":"class","value":"page"}]/
+      end
+    )
+  end
+
+  @tag :wasm_execute
+  test "web wasm Html.Attributes.style merges CSS properties onto the node" do
+    cond do
+      not execution_tools_available?() ->
+        :ok
+
+      true ->
+        root = Path.expand("fixtures/wasm_web_html_style_project", __DIR__)
+        out_dir = Path.expand("tmp/wasm_web_html/style", __DIR__)
+        File.rm_rf!(out_dir)
+
+        assert {:ok, _} =
+                 CachedCompile.compile(root, %{
+                   out_dir: out_dir,
+                   targets: [:wasm],
+                   web: true,
+                   entry_module: "Main",
+                   strip_dead_code: true,
+                   wasm_strict: true
+                 })
+
+        wat = File.read!(ProjectWriter.wat_path(out_dir))
+        assert wat =~ "html_cmd"
+
+        WasmRcTrackHarness.run_wat2wasm!(
+          ProjectWriter.wat_path(out_dir),
+          Path.join(out_dir, "wasm/app.wasm")
+        )
+
+        case WasmRcTrackHarness.run_node_script(@style_runner, [out_dir]) do
+          {:ok, output} ->
+            assert output =~ "rc_ok"
+            assert output =~ "html_style_ok"
+
+          {:error, output} ->
+            if WasmRcTrackHarness.probe_skipped_under_ulimit?(output) or
+                 WasmRcTrackHarness.wasm_instantiate_oom?(output) do
+              :ok
+            else
+              flunk("wasm Html.Attributes.style probe failed:\n#{output}")
+            end
+        end
+    end
+  end
+
+  @tag :wasm_execute
+  test "web wasm Html.Attributes.classList joins enabled class names" do
+    cond do
+      not execution_tools_available?() ->
+        :ok
+
+      true ->
+        root = Path.expand("fixtures/wasm_web_html_class_list_project", __DIR__)
+        out_dir = Path.expand("tmp/wasm_web_html/class_list", __DIR__)
+        File.rm_rf!(out_dir)
+
+        assert {:ok, _} =
+                 CachedCompile.compile(root, %{
+                   out_dir: out_dir,
+                   targets: [:wasm],
+                   web: true,
+                   entry_module: "Main",
+                   strip_dead_code: true,
+                   wasm_strict: true
+                 })
+
+        wat = File.read!(ProjectWriter.wat_path(out_dir))
+        assert wat =~ "html_cmd"
+
+        WasmRcTrackHarness.run_wat2wasm!(
+          ProjectWriter.wat_path(out_dir),
+          Path.join(out_dir, "wasm/app.wasm")
+        )
+
+        case run_html_probe(out_dir, "elmc_fn_Main_main", "ok") do
+          {:ok, output} ->
+            assert output =~ "rc_ok"
+            assert output =~ ~s/"name":"class"/
+            assert output =~ ~s/"name":"id"/
+            assert output =~ ~s/"name":"title"/
+            assert output =~ ~s/"name":"href"/
+            assert output =~ ~s/"name":"name"/
+            assert output =~ ~s/"name":"placeholder"/
+            assert output =~ ~s/"name":"type"/
+            assert output =~ ~s/"name":"target"/
+            assert output =~ ~s/"name":"rel"/
+            assert output =~ ~s/"name":"alt"/
+            assert output =~ ~s/"name":"src"/
+            assert output =~ ~s/"name":"download"/
+            assert output =~ ~s/"name":"action"/
+            assert output =~ ~s/"name":"method"/
+            assert output =~ ~s/"name":"for"/
+            assert output =~ "root"
+            assert output =~ "home"
+            assert output =~ "https://elm-lang.org"
+            assert output =~ "search"
+            assert output =~ "_blank"
+            assert output =~ "noreferrer"
+            assert output =~ "logo"
+            assert output =~ "/logo.png"
+            assert output =~ "notes.txt"
+            assert output =~ "/submit"
+            assert output =~ "post"
+            assert output =~ "wrap"
+            assert output =~ "on also"
+
+          {:error, output} ->
+            if WasmRcTrackHarness.wasm_instantiate_oom?(output) do
+              :ok
+            else
+              flunk("wasm Html.Attributes.classList probe failed:\n#{output}")
+            end
+        end
+    end
+  end
+
+  @tag :wasm_execute
+  test "web wasm Html.Events preventDefaultOn stopPropagationOn and custom apply Handler flags" do
+    cond do
+      not execution_tools_available?() ->
+        :ok
+
+      true ->
+        root = Path.expand("fixtures/wasm_web_html_handler_project", __DIR__)
+        out_dir = Path.expand("tmp/wasm_web_html/handler", __DIR__)
+        File.rm_rf!(out_dir)
+
+        assert {:ok, _} =
+                 CachedCompile.compile(root, %{
+                   out_dir: out_dir,
+                   targets: [:wasm],
+                   web: true,
+                   entry_module: "Main",
+                   strip_dead_code: true,
+                   wasm_strict: true
+                 })
+
+        wat = File.read!(ProjectWriter.wat_path(out_dir))
+        assert wat =~ "html_cmd"
+        assert wat =~ "(i32.const 8)"
+
+        WasmRcTrackHarness.run_wat2wasm!(
+          ProjectWriter.wat_path(out_dir),
+          Path.join(out_dir, "wasm/app.wasm")
+        )
+
+        case WasmRcTrackHarness.run_node_script(@handler_runner, [out_dir]) do
+          {:ok, output} ->
+            assert output =~ "rc_ok"
+            assert output =~ "html_handler_ok"
+
+          {:error, output} ->
+            if WasmRcTrackHarness.probe_skipped_under_ulimit?(output) or
+                 WasmRcTrackHarness.wasm_instantiate_oom?(output) do
+              :ok
+            else
+              flunk("wasm Html.Events Handler probe failed:\n#{output}")
+            end
+        end
+    end
+  end
+
+  @tag :wasm_execute
+  test "web wasm Html.Attributes bool/string properties keep JS values" do
+    run_html_fixture_probe(
+      "wasm_web_html_property_project",
+      "elmc_fn_Main_main",
+      "",
+      fn wat ->
+        assert wat =~ "html_cmd"
+        assert wat =~ "json_encode_bool" or wat =~ "runtime_json_encode_bool"
+      end,
+      fn output ->
+        assert output =~ ~s/"name":"checked","value":true/
+        assert output =~ ~s/"name":"disabled","value":false/
+        assert output =~ ~s/"name":"hidden","value":true/
+        assert output =~ ~s/"name":"value","value":"hi"/
       end
     )
   end

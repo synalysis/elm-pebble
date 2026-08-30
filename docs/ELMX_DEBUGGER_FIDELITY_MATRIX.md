@@ -1,6 +1,8 @@
 # Elmx Debugger Fidelity Matrix
 
-Tracks debugger execution fidelity for the `:compiled_elixir` backend (`elmx` → in-memory BEAM).
+Tracks debugger execution fidelity. TEA init/update/view runs only through
+`elmx` (`CompiledElixirAdapter` → in-memory BEAM). Bytecode is optional plan
+smoke (`BytecodeApi` / MCP), not a debugger stepper.
 
 ## Zero-gap policy
 
@@ -15,19 +17,19 @@ Debugger “complete” means **no tolerated compile/codegen gaps** on shipped t
 | Area | Status | Notes |
 | --- | --- | --- |
 | In-memory compile + hot reload | good | `Elmx.compile_in_memory/2` → `Loader` → `ModuleRegistry`; no `.ex` read on hot path |
-| Execution backend switch | good | `execution_backend: :core_ir \| :compiled_elixir` in IDE config |
+| TEA execute path | good | elmx only; `execution_backend: :compiled_elixir` is a fingerprint label, not a switch |
 | Debugger request contract | good | `CompiledElixirAdapter` uses `elmx_manifest` + `elmx_revision` |
 | Elm source overlay | good | `Bridge.load_project_from_sources/2` for editor overlays |
 | Pure Elm expressions (M1) | good | `simple_project`, `game-jump-n-run` compile; IR constructor lookup |
 | Stdlib / RC runtime | good | `Elmx.Runtime.Stdlib` + `Values`; Basics trig + `Char` case via compile-time emit |
 | Pebble surface (draw/view/cmd) | good | `SpecialValues` + `runtime_dispatch`; structural `Pebble.Ui` via emit + `ViewShape` |
-| Full template corpus on `:compiled_elixir` | good | `ELMX_TEMPLATE_CORPUS=1` — 161 corpus + 66 parity tests green in CI (`elmx-compiled-elixir`) |
+| Full template corpus on elmx | good | `ELMX_TEMPLATE_CORPUS=1` — 161 corpus + 66 parity tests green in CI (`elmx-compiled-elixir`) |
 | Pebble.Cmd device/time commands | good | `Pebble.Cmd.getCurrentTimeString` aliases → device stubs |
 | elm/core (`Maybe`, `Result`, `Random`, `List`) | good | `QualifiedRewrite` + compile-time `qualified.ex` emit; corpus parity on init/step |
 | Pebble time/button subscriptions | good | Compile-time `SubscriptionMasks`; runtime `cmd.subscription.register` for debugger stepping |
-| Init + step execution | good | `Executor`, `RuntimeExecutor` + `Request` path tested |
-| Dual-run parity vs Core IR | good | `compiled_elixir_template_parity_test` + `compiled_elixir_core_ir_parity_test` on init/step fields |
+| Init + step execution | good | `Elmx.Runtime.Executor`, `RuntimeExecutor` + `Request` path tested |
 | Launch context / Platform glue | good | `Elmx.Runtime.LaunchContext` normalize + `launchReasonToInt` |
+| Bytecode | smoke | `BytecodeApi` / MCP plan smoke only — not a TEA backend |
 
 ## Parity Gate Expectations
 
@@ -40,5 +42,5 @@ Debugger “complete” means **no tolerated compile/codegen gaps** on shipped t
 
 ## Default policy
 
-- `execution_backend` defaults to `:compiled_elixir` in `ide/config/config.exs`.
-- Set `ELMX_EXECUTION_BACKEND=core_ir` to opt out (IDE `config/test.exs` pins `:core_ir` for most unit tests).
+- Debugger TEA is elmx-only. `execution_backend` on runtime fingerprints is the constant `"compiled_elixir"`.
+- There is no `ELMX_EXECUTION_BACKEND` / Core IR execute switch.

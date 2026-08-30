@@ -51,6 +51,10 @@ defmodule Elmc.PlanCoreBuiltinsTest do
     assert RuntimeBuiltins.from_c_symbol("elmc_list_map4") == :list_map4
     assert RuntimeBuiltins.from_c_symbol("elmc_json_decode_map") == :json_decode_map
     assert RuntimeBuiltins.from_c_symbol("elmc_time_now_millis") == :time_now_millis
+    assert RuntimeBuiltins.from_c_symbol("elmc_time_utc") == :time_utc
+    assert RuntimeBuiltins.from_c_symbol("elmc_url_to_string") == :url_to_string
+    assert RuntimeBuiltins.from_c_symbol("elmc_url_builder_absolute") == :url_builder_absolute
+    assert RuntimeBuiltins.from_c_symbol("elmc_time_to_hour") == :time_to_hour
     assert RuntimeBuiltins.from_c_symbol("elmc_append") == :append
   end
 
@@ -105,6 +109,20 @@ defmodule Elmc.PlanCoreBuiltinsTest do
     blocks = inspect(plan.blocks)
     refute blocks =~ "tuple_map_first"
     assert blocks =~ "tuple2_ints"
+  end
+
+  test "official 3-tuple IR lowers to tuple3 not nested tuple2" do
+    plan =
+      lower_expr(%{
+        op: :tuple3,
+        a: %{op: :int_literal, value: 1},
+        b: %{op: :int_literal, value: 2},
+        c: %{op: :int_literal, value: 3}
+      })
+
+    blocks = inspect(plan.blocks)
+    assert blocks =~ "tuple3"
+    refute blocks =~ "unsupported"
   end
 
   test "Tuple.mapFirst elm/core decl lowers via runtime intrinsic rewrite" do

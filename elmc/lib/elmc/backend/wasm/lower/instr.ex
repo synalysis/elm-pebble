@@ -15,6 +15,7 @@ defmodule Elmc.Backend.Wasm.Lower.Instr do
   alias Elmc.Backend.Wasm.RuntimeImports
   alias Elmc.Backend.Wasm.Slots
   alias Elmc.Backend.Wasm.Types, as: WasmTypes
+  alias Elmc.Backend.Wasm.WebKernelDiagnostics
 
   @rc_success 0
 
@@ -238,6 +239,18 @@ defmodule Elmc.Backend.Wasm.Lower.Instr do
         emit_unsupported_platform(instr, slots)
 
       :render_text_cmd ->
+        emit_unsupported_platform(instr, slots)
+
+      :stream_static_draw_table ->
+        emit_unsupported_platform(instr, slots)
+
+      :stream_affine_text ->
+        emit_unsupported_platform(instr, slots)
+
+      :stream_push_cmd ->
+        emit_unsupported_platform(instr, slots)
+
+      :stream_for_each ->
         emit_unsupported_platform(instr, slots)
 
       :pebble_sub ->
@@ -520,10 +533,12 @@ defmodule Elmc.Backend.Wasm.Lower.Instr do
             :idiv_vars ->
               binop("i32.div_s", int_operand_wat(lhs, slots, opts), int_operand_wat(rhs, slots, opts))
 
-            # Plan stores lhs = modulus (modBy/remainderBy first arg), rhs = value.
-            # Match C elm_mod_by_c_expr / rem: value % base (not base % value).
+            # Plan stores lhs = modulus (modBy first arg), rhs = value.
             :mod_vars ->
-              binop("i32.rem_s", int_operand_wat(rhs, slots, opts), int_operand_wat(lhs, slots, opts))
+              wasm_elm_mod_by_wat(
+                int_operand_wat(lhs, slots, opts),
+                int_operand_wat(rhs, slots, opts)
+              )
 
             :rem_vars ->
               binop("i32.rem_s", int_operand_wat(rhs, slots, opts), int_operand_wat(lhs, slots, opts))
@@ -628,14 +643,18 @@ defmodule Elmc.Backend.Wasm.Lower.Instr do
         right_wat = int_operand_wat(right_reg, slots, opts)
         [set_reg(dest_reg, binop(pred, left_wat, right_wat), slots)]
 
-      # Structural equality for Maybe/Result/… — host has no value_equal import yet,
-      # so compare handles. Immortal Nothing vs distinct Just boxes still works;
-      # same-day Just/Just refetch is a known wasm gap until value_equal lands.
       {:value, :eq} ->
-        [set_reg(dest_reg, binop("i32.eq", left, right), slots)]
+        emit_runtime_call(:value_equal, [left, right], dest_reg, slots, false)
 
       {:value, :neq} ->
-        [set_reg(dest_reg, binop("i32.ne", left, right), slots)]
+        emit_runtime_call(:value_equal, [left, right], dest_reg, slots, false) ++
+          emit_runtime_call(
+            :basics_not,
+            [Slots.reg_name(slots, dest_reg)],
+            dest_reg,
+            slots,
+            false
+          )
 
       {:bool_scalar, _} ->
         pred =
@@ -854,6 +873,34 @@ defmodule Elmc.Backend.Wasm.Lower.Instr do
     [WasmTypes.line("unreachable")]
   end
 
+  defp emit_call_runtime(
+         %{dest: dest_reg, args: %{builtin: id, field_names: names} = args_map},
+         slots,
+         rc?,
+         opts
+       )
+       when id in [:record_new, :record_new_take, :record_new_values_ints] and
+              is_list(names) and names != [] do
+    call_args = Map.get(args_map, :args) || []
+    {reg_exprs, prep} = build_runtime_call_args(id, call_args, slots, opts)
+    packed = Enum.map_join(names, "\0", &to_string/1)
+
+    named_id =
+      if id == :record_new_values_ints,
+        do: :record_new_values_ints_named,
+        else: :record_new_named
+
+    prep ++
+      emit_runtime_call(
+        named_id,
+        [literal_string_arg(packed) | reg_exprs],
+        dest_reg,
+        slots,
+        rc?,
+        opts
+      )
+  end
+
   defp emit_call_runtime(%{dest: dest_reg, args: %{builtin: id} = args_map}, slots, rc?, opts) do
     call_args = Map.get(args_map, :args) || []
     {reg_exprs, prep} = build_runtime_call_args(id, call_args, slots, opts)
@@ -1065,10 +1112,9 @@ defmodule Elmc.Backend.Wasm.Lower.Instr do
   defp cow_drop_alias_null(_dest_reg, _base_reg, _slots), do: []
 
   # Plan `:release` is Verify / EpilogueRelease bookkeeping — same as C
-  # `emit_release`. Owned slots are cleaned by frame
-  # `runtime_release_unless_reachable_from_roots`. Emitting mid-body
-  # `runtime_release` here frees a handle that a later phi / `fn_out` still
-  # holds (probeTail: length 3 → unbox of the freed id).
+  # `emit_release`. Owned slots are cleaned by the LIFO frame epilogue.
+  # Emitting mid-body `runtime_release` here frees a handle that a later
+  # phi / `fn_out` still holds (probeTail: length 3 → unbox of the freed id).
   defp emit_release(_instr, _slots, _opts), do: []
 
   defp emit_tuple_proj(%{dest: dest_reg, args: %{base: base, which: which}}, slots, rc?) do
@@ -1248,7 +1294,10 @@ defmodule Elmc.Backend.Wasm.Lower.Instr do
         binop("i32.div_s", int_operand_wat(lhs, slots, opts), int_operand_wat(rhs, slots, opts))
 
       :mod_vars ->
-        binop("i32.rem_s", int_operand_wat(rhs, slots, opts), int_operand_wat(lhs, slots, opts))
+        wasm_elm_mod_by_wat(
+          int_operand_wat(lhs, slots, opts),
+          int_operand_wat(rhs, slots, opts)
+        )
 
       :rem_vars ->
         binop("i32.rem_s", int_operand_wat(rhs, slots, opts), int_operand_wat(lhs, slots, opts))
@@ -1256,6 +1305,49 @@ defmodule Elmc.Backend.Wasm.Lower.Instr do
       _ ->
         int_const(0)
     end
+  end
+
+  # Official elm/core `_Basics_modBy`: rem(value, modulus), then add modulus
+  # when the signs differ. i32.rem_s alone is remainderBy. modulus == 0 → 0.
+  defp wasm_elm_mod_by_wat(base, value) do
+    rem = binop("i32.rem_s", value, base)
+
+    flip =
+      WasmTypes.sexpr("i32.or", [
+        " ",
+        WasmTypes.sexpr("i32.and", [
+          " ",
+          binop("i32.gt_s", rem, int_const(0)),
+          " ",
+          binop("i32.lt_s", base, int_const(0))
+        ]),
+        " ",
+        WasmTypes.sexpr("i32.and", [
+          " ",
+          binop("i32.lt_s", rem, int_const(0)),
+          " ",
+          binop("i32.gt_s", base, int_const(0))
+        ])
+      ])
+
+    signed =
+      WasmTypes.sexpr("select", [
+        " ",
+        binop("i32.add", rem, base),
+        " ",
+        rem,
+        " ",
+        flip
+      ])
+
+    WasmTypes.sexpr("select", [
+      " ",
+      int_const(0),
+      " ",
+      signed,
+      " ",
+      WasmTypes.sexpr("i32.eqz", [" ", base])
+    ])
   end
 
   defp truthy_shape_wat({:const_int, value}, _reg, _slots, _opts) when value in [0, 1],
@@ -1436,8 +1528,24 @@ defmodule Elmc.Backend.Wasm.Lower.Instr do
   end
 
   defp emit_unsupported_platform(%{dest: dest_reg, op: op}, slots) do
-    emit_comment("unsupported platform op #{op}", %{dest: dest_reg}, slots)
+    WebKernelDiagnostics.append_diagnostic(%{
+      source: "elmc/web",
+      code: "unsupported_platform_op",
+      message:
+        "WASM web lowering cannot implement #{op}; this path traps instead of returning a silent zero."
+    })
+
+    [
+      WasmTypes.line(";; unsupported platform op #{op}"),
+      emit_comment_dest(dest_reg, slots),
+      WasmTypes.line("unreachable")
+    ]
   end
+
+  defp emit_comment_dest(dest_reg, slots) when is_integer(dest_reg),
+    do: set_reg(dest_reg, int_const(0), slots)
+
+  defp emit_comment_dest(_, _), do: []
 
   defp emit_ret(reg, slots, rc?, opts) do
     cond do
@@ -1516,8 +1624,20 @@ defmodule Elmc.Backend.Wasm.Lower.Instr do
   defp emit_null_consumed_slots_from_effects(_, _slots, _opts), do: []
 
   defp tail_fn_out_owned_cleanup_instr?(%{op: op, dest: dest})
-       when op in [:call_runtime, :call_fn, :call_closure, :record_update, :make_closure, :pebble_cmd] and
-              dest in [:fn_out, :branch_out],
+       when op in [
+              :call_runtime,
+              :call_fn,
+              :call_closure,
+              :record_update,
+              :make_closure,
+              :pebble_cmd,
+              :html_cmd,
+              :dom_sub,
+              :browser_cmd,
+              :json_cmd,
+              :bytes_cmd,
+              :parser_cmd
+            ] and dest in [:fn_out, :branch_out],
        do: true
 
   defp tail_fn_out_owned_cleanup_instr?(_), do: false
@@ -1548,6 +1668,9 @@ defmodule Elmc.Backend.Wasm.Lower.Instr do
       :record_new_take,
       :tuple2,
       :tuple2_take,
+      :tuple3,
+      :list_cons,
+      :list_append,
       :make_closure,
       :sub_batch,
       :cmd_batch,
@@ -1556,7 +1679,18 @@ defmodule Elmc.Backend.Wasm.Lower.Instr do
     ] or RuntimeBuiltins.ownership_transfer?(id)
   end
 
-  defp transferring_consume_instr?(%{op: op}) when op in [:make_closure, :record_update], do: true
+  defp transferring_consume_instr?(%{op: op})
+       when op in [
+              :make_closure,
+              :record_update,
+              :html_cmd,
+              :dom_sub,
+              :browser_cmd,
+              :json_cmd,
+              :bytes_cmd,
+              :parser_cmd
+            ],
+       do: true
 
   defp transferring_consume_instr?(_), do: false
 
@@ -1666,16 +1800,21 @@ defmodule Elmc.Backend.Wasm.Lower.Instr do
   end
 
   defp emit_comment(msg, %{dest: dest_reg}, slots) when is_integer(dest_reg) do
-    set_reg(dest_reg, int_const(0), slots)
-    |> then(fn _ -> [WasmTypes.line(";; #{msg}")] end)
+    [WasmTypes.line(";; #{msg}"), set_reg(dest_reg, int_const(0), slots)]
   end
 
   defp emit_comment(msg, _, _), do: [WasmTypes.line(";; #{msg}")]
+
+  @html_cmd_kinds MapSet.new(0..21)
+  @browser_cmd_kinds MapSet.new(1..16)
+  @parser_cmd_kinds MapSet.new(1..7)
+  @bytes_cmd_kinds MapSet.new(1..27)
 
   defp emit_web_platform_op(%{op: op, dest: dest_reg, args: args}, slots, rc?)
        when op in [:html_cmd, :dom_sub, :browser_cmd, :json_cmd, :bytes_cmd, :parser_cmd] do
     kind = Map.get(args, :kind)
     params = Map.get(args, :params, []) |> List.wrap()
+    maybe_diag_unknown_platform_kind(op, kind)
 
     kind_int =
       case kind do
@@ -1703,6 +1842,34 @@ defmodule Elmc.Backend.Wasm.Lower.Instr do
       end
 
     emit_import_call(import_name, [kind_int | Enum.map(params, &Slots.reg_name(slots, &1))], dest_reg, slots, rc?)
+  end
+
+  defp maybe_diag_unknown_platform_kind(op, kind) do
+    kind_n =
+      case kind do
+        %{op: :int_literal, value: value} when is_integer(value) -> value
+        n when is_integer(n) -> n
+        _ -> nil
+      end
+
+    known? =
+      case {op, kind_n} do
+        {_, nil} -> true
+        {:html_cmd, n} -> MapSet.member?(@html_cmd_kinds, n)
+        {:browser_cmd, n} -> MapSet.member?(@browser_cmd_kinds, n)
+        {:parser_cmd, n} -> MapSet.member?(@parser_cmd_kinds, n)
+        {:bytes_cmd, n} -> MapSet.member?(@bytes_cmd_kinds, n)
+        _ -> true
+      end
+
+    unless known? do
+      WebKernelDiagnostics.append_diagnostic(%{
+        source: "elmc/web",
+        code: "unimplemented_#{op}_kind",
+        message:
+          "WASM web #{op} kind #{kind_n} has no host implementation; the call returns unimplemented instead of a silent no-op."
+      })
+    end
   end
 
   defp emit_import_call(import_name, arg_exprs, dest_reg, slots, rc?) when is_binary(import_name) do
@@ -1822,7 +1989,16 @@ defmodule Elmc.Backend.Wasm.Lower.Instr do
         true
 
       %{op: :call_runtime, args: %{builtin: builtin}}
-      when builtin in [:list_is_empty, :maybe_is_nothing, :string_length_boxed] ->
+      when builtin in [
+             :list_is_empty,
+             :maybe_is_nothing,
+             :string_length_boxed,
+             :basics_not,
+             :basics_xor,
+             :basics_is_nan,
+             :basics_is_infinite,
+             :new_bool
+           ] ->
         true
 
       _ ->
@@ -1990,8 +2166,8 @@ defmodule Elmc.Backend.Wasm.Lower.Instr do
     # boxed handles. Always box before tuple2/union use — even when the reg
     # already has a slot (previously we passed the raw tag i32 as a handle id).
     case defining_plan_instr(Keyword.get(opts, :parent_plan), reg) do
-      %{op: :const_int, args: %{value: value}} when is_integer(value) ->
-        box_const_int_arg(value, reg, slots)
+      %{op: :const_int, args: %{value: value} = cargs} when is_integer(value) ->
+        box_const_int_arg(value, reg, slots, Map.get(cargs, :union_ctor))
 
       %{op: :call_runtime, args: %{builtin: :new_int, literal: value}} when is_integer(value) ->
         box_const_int_arg(value, reg, slots)
@@ -2015,9 +2191,9 @@ defmodule Elmc.Backend.Wasm.Lower.Instr do
     end
   end
 
-  defp box_const_int_arg(value, reg, slots) do
+  defp box_const_int_arg(value, reg, slots, union_ctor \\ nil) do
     offset = Map.fetch!(slots.reg_mem, reg)
-    prep = box_const_int_prep(value, offset)
+    prep = box_const_int_prep(value, offset, union_ctor)
     {boxed_handle_at_offset(offset), prep}
   end
 
@@ -2027,13 +2203,15 @@ defmodule Elmc.Backend.Wasm.Lower.Instr do
     {boxed_handle_at_offset(offset), prep}
   end
 
-  defp box_const_int_prep(value, offset) do
+  defp box_const_int_prep(value, offset, union_ctor) do
+    import_name = if is_binary(union_ctor), do: "runtime.new_ctor_int", else: "runtime.new_int"
+
     [
       WasmTypes.line(
         WasmTypes.sexpr("drop", [
           " ",
           WasmTypes.sexpr("call", [
-            WasmTypes.import_ident("runtime.new_int"),
+            WasmTypes.import_ident(import_name),
             " ",
             int_const(offset),
             " ",

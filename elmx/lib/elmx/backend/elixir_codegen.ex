@@ -24,7 +24,8 @@ defmodule Elmx.Backend.ElixirCodegen do
       constructor_lookup = Elmx.Backend.ConstructorLookup.from_ir(ir)
 
       emit_modules = modules_for_emit(ir, opts)
-      cross_module_arities = cross_module_arities_from_modules(emit_modules)
+      all_explicit_arities = all_explicit_arities_from_modules(emit_modules)
+      cross_module_arities = cross_module_arities_from_modules(emit_modules, all_explicit_arities)
       port_signatures = port_signatures_from_modules(emit_modules)
       emit_module_names = Enum.map(emit_modules, & &1.name)
 
@@ -33,7 +34,8 @@ defmodule Elmx.Backend.ElixirCodegen do
         |> Enum.flat_map(fn mod ->
           record_field_types = record_field_types_from_declarations(mod.declarations)
           zero_arity_fns = zero_arity_fns_from_declarations(mod.declarations)
-          function_arities = function_arities_from_declarations(mod.declarations)
+          function_arities =
+            function_arities_from_declarations(mod.declarations, all_explicit_arities)
 
           mod.declarations
           |> Enum.filter(&(&1.kind == :function and is_map(&1.expr)))
@@ -46,6 +48,7 @@ defmodule Elmx.Backend.ElixirCodegen do
               function_arities.callable,
               function_arities.explicit,
               constructor_lookup,
+              all_explicit_arities,
               cross_module_arities,
               emit_module_names,
               port_signatures,
@@ -139,10 +142,19 @@ defmodule Elmx.Backend.ElixirCodegen do
     end
   end
 
-  defp cross_module_arities_from_modules(modules) when is_list(modules) do
+  defp all_explicit_arities_from_modules(modules) when is_list(modules) do
+    for mod <- modules,
+        %{kind: :function, name: name} = decl <- mod.declarations,
+        is_binary(name),
+        into: %{} do
+      {{mod.name, name}, length(decl.args || [])}
+    end
+  end
+
+  defp cross_module_arities_from_modules(modules, all_explicit) when is_list(modules) do
     modules
     |> Enum.map(fn mod ->
-      arities = function_arities_from_declarations(mod.declarations)
+      arities = function_arities_from_declarations(mod.declarations, all_explicit)
 
       mod.declarations
       |> Enum.filter(&(&1.kind == :function and is_binary(&1.name)))
@@ -195,7 +207,8 @@ defmodule Elmx.Backend.ElixirCodegen do
     |> MapSet.new()
   end
 
-  defp function_arities_from_declarations(declarations) when is_list(declarations) do
+  defp function_arities_from_declarations(declarations, all_explicit)
+       when is_list(declarations) do
     explicit =
       declarations
       |> Enum.filter(fn decl ->
@@ -209,18 +222,19 @@ defmodule Elmx.Backend.ElixirCodegen do
         decl.kind == :function and is_binary(decl.name) and is_map(decl.expr)
       end)
       |> Map.new(fn decl ->
-        {decl.name, effective_function_arity(decl, explicit)}
+        {decl.name, effective_function_arity(decl, explicit, all_explicit)}
       end)
 
-  %{callable: callable, explicit: explicit}
+    %{callable: callable, explicit: explicit}
   end
 
-  defp effective_function_arity(%{args: args} = decl, _explicit) when is_list(args) and args != [] do
+  defp effective_function_arity(%{args: args} = decl, _explicit, _all_explicit)
+       when is_list(args) and args != [] do
     length(args) + infer_nested_lambda_arity(decl.expr)
   end
 
-  defp effective_function_arity(%{expr: expr}, arities) do
-    infer_callable_arity(expr, arities)
+  defp effective_function_arity(%{expr: expr}, arities, all_explicit) do
+    infer_callable_arity(expr, arities, all_explicit)
   end
 
   defp infer_nested_lambda_arity(%{op: :lambda, args: lambda_args, body: body}) when is_list(lambda_args) do
@@ -229,29 +243,34 @@ defmodule Elmx.Backend.ElixirCodegen do
 
   defp infer_nested_lambda_arity(_), do: 0
 
-  defp infer_callable_arity(%{op: :lambda, args: args, body: body}, arities) when is_list(args) do
-    length(args) + infer_callable_arity(body, arities)
+  defp infer_callable_arity(expr, arities, all_explicit)
+
+  defp infer_callable_arity(%{op: :lambda, args: args, body: body}, arities, all_explicit)
+       when is_list(args) do
+    length(args) + infer_callable_arity(body, arities, all_explicit)
   end
 
-  defp infer_callable_arity(%{op: :lambda, args: args}, _arities) when is_list(args), do: length(args)
+  defp infer_callable_arity(%{op: :lambda, args: args}, _arities, _all_explicit) when is_list(args),
+    do: length(args)
 
-  defp infer_callable_arity(%{op: :call, name: name, args: args}, _arities)
-       when name in ["__add__", "__sub__", "__mul__", "__fdiv__", "__idiv__", "__append__"] and is_list(args) do
+  defp infer_callable_arity(%{op: :call, name: name, args: args}, _arities, _all_explicit)
+       when name in ["__add__", "__sub__", "__mul__", "__fdiv__", "__idiv__", "__append__"] and
+              is_list(args) do
     max(2 - length(args), 0)
   end
 
-  defp infer_callable_arity(%{op: :call, name: name, args: args}, _arities)
+  defp infer_callable_arity(%{op: :call, name: name, args: args}, _arities, _all_explicit)
        when name in ["__eq__", "__neq__", "__lt__", "__lte__", "__gt__", "__gte__"] and is_list(args) do
     max(2 - length(args), 0)
   end
 
-  defp infer_callable_arity(%{op: :call, name: name, args: args}, arities)
+  defp infer_callable_arity(%{op: :call, name: name, args: args}, arities, _all_explicit)
        when is_binary(name) and is_list(args) do
     target_arity = Map.get(arities, name, 0)
     max(target_arity - length(args), 0)
   end
 
-  defp infer_callable_arity(%{op: op, target: target, args: args}, arities)
+  defp infer_callable_arity(%{op: op, target: target, args: args}, arities, all_explicit)
        when op in [:qualified_call, :call] and is_binary(target) and is_list(args) do
     case Elmx.Runtime.Stdlib.qualified_full_arity(target) do
       {:ok, full_arity} ->
@@ -263,26 +282,34 @@ defmodule Elmx.Backend.ElixirCodegen do
             length(lambda_args)
 
           _ ->
-            infer_user_callable_arity(target, args, arities)
+            infer_user_callable_arity(target, args, arities, all_explicit)
         end
     end
   end
 
-  defp infer_callable_arity(%{op: :partial_constructor, arity: full_arity, args: bound_args}, _arities)
+  defp infer_callable_arity(
+         %{op: :partial_constructor, arity: full_arity, args: bound_args},
+         _arities,
+         _all_explicit
+       )
        when is_integer(full_arity) and is_list(bound_args) do
     max(full_arity - length(bound_args), 0)
   end
 
-  defp infer_callable_arity(%{op: :var, name: name}, arities) when is_binary(name) do
+  defp infer_callable_arity(%{op: :var, name: name}, arities, _all_explicit) when is_binary(name) do
     Map.get(arities, name, 0)
   end
 
-  defp infer_callable_arity(_expr, _arities), do: 0
+  defp infer_callable_arity(_expr, _arities, _all_explicit), do: 0
 
-  defp infer_user_callable_arity(target, args, arities) do
+  defp infer_user_callable_arity(target, args, arities, all_explicit) do
     case Elmx.Backend.CrossModuleCall.split_target(target) do
       {module, name} ->
-        target_arity = Map.get(arities, name, Map.get(arities, "#{module}.#{name}", 0))
+        target_arity =
+          Map.get(all_explicit, {module, name}) ||
+            Map.get(arities, name) ||
+            Map.get(arities, "#{module}.#{name}", 0)
+
         max(target_arity - length(args), 0)
 
       nil ->
@@ -382,6 +409,7 @@ defmodule Elmx.Backend.ElixirCodegen do
          function_arities,
          explicit_function_arities,
          constructor_lookup,
+         all_explicit_arities,
          cross_module_arities,
          emit_module_names,
          port_signatures,
@@ -410,7 +438,7 @@ defmodule Elmx.Backend.ElixirCodegen do
 
     saturated_arity =
       if (decl.args || []) == [] and synthetic_params == [] do
-        effective_function_arity(decl, function_arities)
+        effective_function_arity(decl, function_arities, all_explicit_arities)
       else
         0
       end

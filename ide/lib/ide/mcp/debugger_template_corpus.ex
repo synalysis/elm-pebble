@@ -915,8 +915,8 @@ defmodule Ide.Mcp.DebuggerTemplateCorpus do
   @runtime_step_success_sources ~w(
     runtime_update_eval
     runtime_update_noop
-    core_ir_update_eval
-    core_ir_update_noop
+    elmx_update_eval
+    elmx_update_noop
     step_message
   )
 

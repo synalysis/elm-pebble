@@ -15,7 +15,7 @@ probeDecode : Bytes.Bytes -> Html String
 probeDecode bytes =
     case Decode.decode Decode.unsignedInt8 bytes of
         Just n ->
-            text ("byte:" ++ String.fromInt n)
+            text ("byte:" ++ String.fromInt n ++ " w:" ++ String.fromInt (Bytes.width bytes))
 
         Nothing ->
             text "decode failed"

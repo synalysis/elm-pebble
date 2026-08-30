@@ -123,6 +123,7 @@ defmodule Elmc.RuntimeOomAbiTest do
     elmc_json_decode_map5
     elmc_json_decode_map6
     elmc_json_decode_map7
+    elmc_json_decode_map8
     elmc_json_decode_succeed
     elmc_json_decode_fail
     elmc_json_decode_and_then

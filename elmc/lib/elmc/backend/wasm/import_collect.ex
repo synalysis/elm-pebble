@@ -18,7 +18,7 @@ defmodule Elmc.Backend.Wasm.ImportCollect do
   end
 
   defp collect_native_scalar_return({imports, arities}, %{native_scalar_return: :native_int}) do
-    put_import(imports, arities, RuntimeImports.import_name(:new_int), 2)
+    put_new_int_imports({imports, arities})
   end
 
   defp collect_native_scalar_return({imports, arities}, %{native_scalar_return: :native_bool}) do
@@ -48,6 +48,25 @@ defmodule Elmc.Backend.Wasm.ImportCollect do
     put_import(imports, arities, peel_name, peel_arity)
   end
 
+  defp collect_instr(
+         %{op: :call_runtime, args: %{builtin: builtin, field_names: names} = args_map},
+         {imports, arities}
+       )
+       when builtin in [:record_new, :record_new_take, :record_new_values_ints] and
+              is_list(names) and names != [] do
+    named =
+      if builtin == :record_new_values_ints,
+        do: :record_new_values_ints_named,
+        else: :record_new_named
+
+    named_name = RuntimeImports.import_name(named)
+    named_arity = 2 + (Map.get(args_map, :args, []) |> List.wrap() |> length())
+
+    {imports, arities}
+    |> put_import_elem(named_name, named_arity)
+    |> put_new_int_imports()
+  end
+
   defp collect_instr(%{op: :call_runtime, args: %{builtin: builtin} = args_map}, {imports, arities}) do
     name = RuntimeImports.import_name(builtin)
     arity = ImportSignatures.call_runtime_param_count(builtin, args_map)
@@ -56,12 +75,12 @@ defmodule Elmc.Backend.Wasm.ImportCollect do
     # plan itself has no :new_int instruction.
     {imports, arities}
     |> put_import_elem(name, arity)
-    |> put_import_elem(RuntimeImports.import_name(:new_int), 2)
+    |> put_new_int_imports()
   end
 
   defp collect_instr(%{op: :call_fn}, acc) do
     # call_fn boxes True/False const_int args (Scene3d.cylinder) before the callee.
-    put_import_elem(acc, RuntimeImports.import_name(:new_int), 2)
+    put_new_int_imports(acc)
   end
 
   defp collect_instr(%{op: :const_static_list, args: args}, acc) do
@@ -124,6 +143,16 @@ defmodule Elmc.Backend.Wasm.ImportCollect do
 
   defp collect_instr(%{op: :compare, args: %{mode: :list_int} = args}, acc) do
     acc = put_import_elem(acc, RuntimeImports.import_name(:list_equal_int), 3)
+
+    if Map.get(args, :kind) == :neq do
+      put_import_elem(acc, RuntimeImports.import_name(:basics_not), 2)
+    else
+      acc
+    end
+  end
+
+  defp collect_instr(%{op: :compare, args: %{mode: :value} = args}, acc) do
+    acc = put_import_elem(acc, RuntimeImports.import_name(:value_equal), 3)
 
     if Map.get(args, :kind) == :neq do
       put_import_elem(acc, RuntimeImports.import_name(:basics_not), 2)
@@ -214,12 +243,23 @@ defmodule Elmc.Backend.Wasm.ImportCollect do
       acc
       |> put_import_elem("runtime.as_float", 1)
       |> put_import_elem(RuntimeImports.import_name(:new_float), 2)
-      |> put_import_elem(RuntimeImports.import_name(:new_int), 2)
+      |> put_new_int_imports()
     end
   end
 
   defp collect_instr(%{op: :load_local, dest: dest}, acc) when dest in [:fn_out, :branch_out],
-    do: put_import_elem(acc, RuntimeImports.import_name(:new_int), 2)
+    do: put_new_int_imports(acc)
+
+  defp collect_instr(%{op: :int_arith, args: %{kind: kind}}, acc)
+       when kind in [:min_vars, :max_vars] do
+    # WASM lower emits runtime.basics_min/max when operands are boxed handles.
+    builtin = if kind == :min_vars, do: :basics_min, else: :basics_max
+
+    acc
+    |> put_import_elem(RuntimeImports.import_name(builtin), 3)
+    |> put_import_elem("runtime.as_int", 1)
+    |> put_new_int_imports()
+  end
 
   defp collect_instr(%{op: :int_arith, args: %{kind: kind}}, acc)
        when kind in [:add_vars, :sub_vars, :mul_vars] do
@@ -228,7 +268,7 @@ defmodule Elmc.Backend.Wasm.ImportCollect do
     # op is still :int_arith.
     acc
     |> put_import_elem("runtime.as_int", 1)
-    |> put_import_elem(RuntimeImports.import_name(:new_int), 2)
+    |> put_new_int_imports()
     |> put_import_elem("runtime.as_float", 1)
     |> put_import_elem(RuntimeImports.import_name(:new_float), 2)
   end
@@ -236,11 +276,11 @@ defmodule Elmc.Backend.Wasm.ImportCollect do
   defp collect_instr(%{op: :int_arith}, acc) do
     acc
     |> put_import_elem("runtime.as_int", 1)
-    |> put_import_elem(RuntimeImports.import_name(:new_int), 2)
+    |> put_new_int_imports()
   end
 
   defp collect_instr(%{op: :publish, dest: :fn_out}, acc),
-    do: put_import_elem(acc, RuntimeImports.import_name(:new_int), 2)
+    do: put_new_int_imports(acc)
 
   defp collect_instr(_, acc), do: acc
 
@@ -249,6 +289,12 @@ defmodule Elmc.Backend.Wasm.ImportCollect do
 
   defp collect_const_static_list_count(acc, _count, _builtin),
     do: put_import_elem(acc, RuntimeImports.import_name(:list_nil), 1)
+
+  defp put_new_int_imports(acc) do
+    acc
+    |> put_import_elem(RuntimeImports.import_name(:new_int), 2)
+    |> put_import_elem(RuntimeImports.import_name(:new_ctor_int), 2)
+  end
 
   defp put_import_elem({imports, arities}, name, arity), do: put_import(imports, arities, name, arity)
 

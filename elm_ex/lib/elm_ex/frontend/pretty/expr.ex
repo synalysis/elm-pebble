@@ -67,7 +67,11 @@ defmodule ElmEx.Frontend.Pretty.Expr do
   end
 
   def format(%{op: :tuple2, left: left, right: right}, opts) do
-    format_tuple_elements(flatten_tuple2(left, right), opts)
+    format_tuple_elements([left, right], opts)
+  end
+
+  def format(%{op: :tuple3, a: a, b: b, c: c}, opts) do
+    format_tuple_elements([a, b, c], opts)
   end
 
   def format(%{op: :list_literal, items: []}, _opts), do: Doc.text("[]")
@@ -1213,14 +1217,6 @@ defmodule ElmEx.Frontend.Pretty.Expr do
   end
 
   defp resugar_inclusive_compare_or(_, _), do: :error
-
-  @spec flatten_tuple2(map(), map()) :: [map()]
-  defp flatten_tuple2(left, right) do
-    [left | tuple2_tail(right)]
-  end
-
-  defp tuple2_tail(%{op: :tuple2, left: left, right: right}), do: [left | tuple2_tail(right)]
-  defp tuple2_tail(other), do: [other]
 
   @spec format_tuple_elements([map(), ...], opts()) :: Doc.t()
   defp format_tuple_elements([single], opts) do

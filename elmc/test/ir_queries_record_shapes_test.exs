@@ -1129,4 +1129,34 @@ defmodule Elmc.IRQueriesRecordShapesTest do
     canonical = Record.canonicalize_literal_fields(fields, %Context{module: "Scene3d.Primitives"})
     assert Enum.map(canonical, & &1.name) == ["normal", "position"]
   end
+
+  test "constructor arity map records nullary unary and n-ary payloads" do
+    ir = %IR{
+      modules: [
+        %{
+          name: "Main",
+          declarations: [],
+          unions: %{
+            "Status" => %{
+              tags: %{"Idle" => 1, "Ready" => 2},
+              payload_specs: %{"Idle" => nil, "Ready" => "Int"}
+            },
+            "Pair" => %{
+              tags: %{"Pair" => 1},
+              payload_specs: %{"Pair" => "Int Int"}
+            }
+          }
+        }
+      ]
+    }
+
+    arities = IRQueries.constructor_arity_map(ir)
+    assert arities["Main.Idle"] == 0
+    assert arities["Idle"] == 0
+    assert arities["Main.Ready"] == 1
+    assert arities["Main.Pair"] == 2
+    assert arities["Pair"] == 2
+    assert arities["Maybe.Just"] == 1
+    assert arities["Result.Err"] == 1
+  end
 end

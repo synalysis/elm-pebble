@@ -831,6 +831,119 @@ defmodule Elmc.PlanLowerIrTest do
     assert c =~ "elmc_maybe_is_nothing"
   end
 
+  test "mixed Just/Nothing 2-tuple case peels without heap tuple2" do
+    decl = %{
+      name: "justNothing",
+      args: ["maybeRise", "maybeSet"],
+      expr: %{
+        op: :let_in,
+        name: "caseSubject",
+        value_expr: %{
+          op: :tuple2,
+          left: %{op: :var, name: "maybeRise"},
+          right: %{op: :var, name: "maybeSet"}
+        },
+        in_expr: %{
+          op: :case,
+          subject: "caseSubject",
+          branches: [
+            %{
+              pattern: %{
+                kind: :tuple,
+                elements: [
+                  %{kind: :constructor, name: "Just", bind: "rise", arg_pattern: nil},
+                  %{kind: :constructor, name: "Nothing"}
+                ]
+              },
+              expr: %{op: :var, name: "rise"}
+            },
+            %{pattern: %{kind: :wildcard}, expr: %{op: :int_literal, value: 0}}
+          ]
+        }
+      }
+    }
+
+    Process.put(:elmc_constructor_tags, %{"Just" => 1, "Nothing" => 0})
+    on_exit(fn -> Process.delete(:elmc_constructor_tags) end)
+
+    assert {:ok, plan} = Function.lower(decl, "Main", %{}, rc_required: true)
+    c = CLowerFunction.emit(plan)
+    refute c =~ "elmc_tuple2("
+    refute c =~ "__plan_state"
+    assert c =~ "elmc_maybe_is_nothing"
+  end
+
+  test "mixed Just/Nothing 3-tuple case peels without heap tuple2" do
+    decl = %{
+      name: "justNothingJust",
+      args: ["maybeA", "maybeB", "maybeC"],
+      expr: %{
+        op: :let_in,
+        name: "caseSubject",
+        value_expr: %{
+          op: :tuple2,
+          left: %{op: :var, name: "maybeA"},
+          right: %{
+            op: :tuple2,
+            left: %{op: :var, name: "maybeB"},
+            right: %{op: :var, name: "maybeC"}
+          }
+        },
+        in_expr: %{
+          op: :case,
+          subject: "caseSubject",
+          branches: [
+            %{
+              pattern: %{
+                kind: :tuple,
+                elements: [
+                  %{kind: :constructor, name: "Just", bind: "a", arg_pattern: nil},
+                  %{kind: :constructor, name: "Nothing"},
+                  %{kind: :constructor, name: "Just", bind: "c", arg_pattern: nil}
+                ]
+              },
+              expr: %{op: :var, name: "a"}
+            },
+            %{pattern: %{kind: :wildcard}, expr: %{op: :int_literal, value: 0}}
+          ]
+        }
+      }
+    }
+
+    Process.put(:elmc_constructor_tags, %{"Just" => 1, "Nothing" => 0})
+    on_exit(fn -> Process.delete(:elmc_constructor_tags) end)
+
+    assert {:ok, plan} = Function.lower(decl, "Main", %{}, rc_required: true)
+    c = CLowerFunction.emit(plan)
+    refute c =~ "elmc_tuple2("
+    refute c =~ "__plan_state"
+    assert c =~ "elmc_maybe_is_nothing"
+  end
+
+  test "record pattern plus wildcard lowers through GuardedSwitch" do
+    decl = %{
+      name: "showRec",
+      args: ["rec"],
+      expr: %{
+        op: :case,
+        subject: %{op: :var, name: "rec"},
+        branches: [
+          %{
+            pattern: %{kind: :record, fields: ["n", "label"]},
+            expr: %{op: :var, name: "n"}
+          },
+          %{pattern: %{kind: :wildcard}, expr: %{op: :int_literal, value: 0}}
+        ]
+      }
+    }
+
+    assert {:ok, plan} = Function.lower(decl, "Main", %{}, rc_required: true)
+    assert :ok = Verify.run(plan)
+    c = CLowerFunction.emit(plan)
+    assert c =~ "elmc_record_get"
+    refute c =~ "__plan_state = -1"
+  end
+
   test "multi-ctor case with var and tuple payloads lowers to switch_tag" do
     # Companion-style arms bind payloads via arg_pattern vars/tuples. TagSwitch
     # must accept those or GuardedSwitch emits huge sequential plan-state chains.

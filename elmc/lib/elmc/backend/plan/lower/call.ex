@@ -24,7 +24,10 @@ defmodule Elmc.Backend.Plan.Lower.Call do
     9 => "focus",
     10 => "back",
     11 => "forward",
-    12 => "setTitle"
+    12 => "setTitle",
+    14 => "reload",
+    15 => "reloadAndSkipCache",
+    16 => "go"
   }
 
   @spec compile_call(Types.ir_expr(), Context.t(), Builder.t()) ::
@@ -1305,7 +1308,7 @@ defmodule Elmc.Backend.Plan.Lower.Call do
             full_module = parts |> Enum.drop(-1) |> Enum.join(".")
 
             cond do
-              kernel_qualified_target?(full_module) ->
+              kernel_qualified_target?(full_module) or web_platform_module?(full_module) ->
                 {full_module, name}
 
               true ->
@@ -1323,6 +1326,28 @@ defmodule Elmc.Backend.Plan.Lower.Call do
   defp kernel_qualified_target?(module_name) when is_binary(module_name) do
     module_name == "Elm.Kernel" or String.starts_with?(module_name, "Elm.Kernel.")
   end
+
+  # Official elm/* modules (not app aliases). Needed when the package body is
+  # rewritten away so decl_map has no Html.Events / File.Select / …
+  @web_platform_modules MapSet.new([
+    "Html.Events",
+    "Html.Attributes",
+    "Html.Lazy",
+    "Html.Keyed",
+    "Browser.Navigation",
+    "Browser.Events",
+    "Browser.Dom",
+    "File.Select",
+    "File.Download",
+    "VirtualDom",
+    "Svg.Attributes",
+    "Svg.Keyed",
+    "Json.Decode",
+    "Json.Encode"
+  ])
+
+  defp web_platform_module?(module_name) when is_binary(module_name),
+    do: MapSet.member?(@web_platform_modules, module_name)
 
   @spec zero_arg_fn_ref?(String.t()) :: boolean()
 

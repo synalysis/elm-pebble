@@ -11,6 +11,9 @@ defmodule Elmc.Backend.Plan.Lower.Compare do
   alias Elmc.Backend.Plan.Types
 
   @nothing_names ~w(Nothing Maybe.Nothing)
+  # Official True/False are native 1/0 and Order is TAG_ORDER −1/0/1.
+  # Constructor-table ids (1/2/3) must not be used for `==`, same as TagSwitch.
+  @runtime_scalar_ctors MapSet.new(["True", "False", "LT", "EQ", "GT"])
 
   @spec compile(Types.compare_input(), Context.t(), Builder.t()) :: Types.compile_reg_result()
   def compile(%{op: :compare, kind: kind, left: left, right: right}, ctx, b) do
@@ -59,6 +62,7 @@ defmodule Elmc.Backend.Plan.Lower.Compare do
           Types.compile_reg_result()
 
   defp compile_generic_compare(kind, left, right, ctx, b) do
+    {left, right} = promote_list_number_for_float_compare(left, right)
     operand_ctx = Context.for_branch_arm(ctx)
 
     with {:ok, left_reg, left_owned?, b1} <- compile_operand(left, operand_ctx, b),
@@ -187,16 +191,20 @@ defmodule Elmc.Backend.Plan.Lower.Compare do
 
   defp union_ctor_equality_compare(kind, left, right) when kind in [:eq, :neq] do
     cond do
-      union_ctor_ref?(right) and not maybe_ctor_ref?(right) ->
+      union_ctor_ref?(right) and not maybe_ctor_ref?(right) and
+          not runtime_scalar_ctor_name?(ctor_ref_name(right)) ->
         {:ok, left, ctor_ref_name(right), kind}
 
-      union_ctor_ref?(left) and not maybe_ctor_ref?(left) ->
+      union_ctor_ref?(left) and not maybe_ctor_ref?(left) and
+          not runtime_scalar_ctor_name?(ctor_ref_name(left)) ->
         {:ok, right, ctor_ref_name(left), kind}
 
-      union_ctor_literal?(right) and not maybe_ctor_literal?(right) ->
+      union_ctor_literal?(right) and not maybe_ctor_literal?(right) and
+          not runtime_scalar_ctor_name?(union_ctor_literal_name(right)) ->
         {:ok, left, union_ctor_literal_name(right), kind}
 
-      union_ctor_literal?(left) and not maybe_ctor_literal?(left) ->
+      union_ctor_literal?(left) and not maybe_ctor_literal?(left) and
+          not runtime_scalar_ctor_name?(union_ctor_literal_name(left)) ->
         {:ok, right, union_ctor_literal_name(left), kind}
 
       true ->
@@ -429,6 +437,10 @@ defmodule Elmc.Backend.Plan.Lower.Compare do
     name |> String.split(".") |> List.last()
   end
 
+  defp runtime_scalar_ctor_name?(name) when is_binary(name) do
+    MapSet.member?(@runtime_scalar_ctors, short_ctor_name(name))
+  end
+
   @spec compare_mode(atom(), Types.expr(), Types.expr(), Context.t()) :: atom()
 
   defp compare_mode(kind, left, right, ctx) do
@@ -487,6 +499,16 @@ defmodule Elmc.Backend.Plan.Lower.Compare do
       string_compare_pair?(left, right, env) ->
         :string
 
+      # Char == must not use pointer i32.eq or raw native-int handles.
+      # String.map callbacks pass TAG_CHAR; `c == '/'` is official elm/core.
+      char_compare_pair?(left, right, env) ->
+        :value
+
+      # Official Order is TAG_ORDER −1/0/1. `compare 1 3 == LT` must not use
+      # pointer i32.eq or constructor-table ids (1/2/3).
+      order_compare_pair?(left, right, env) ->
+        :value
+
       # Float == 0 / Float < 1 must unbox — pointer i32.eq on handles never
       # terminates Scene3d-style countdown loops (`stripIndex == 0`).
       float_compare_pair?(left, right, env) ->
@@ -516,6 +538,10 @@ defmodule Elmc.Backend.Plan.Lower.Compare do
 
   defp float_equality_operand?(%{op: :float_literal}, _env), do: true
 
+  defp float_equality_operand?(%{op: :runtime_call, function: fun}, _env)
+       when fun in ["elmc_list_sum_float", "elmc_list_product_float"],
+       do: true
+
   # Matrix4/VectorN.toRecord fields are always Floats; without a type env entry,
   # `projectionType == 0` was lowered as pointer i32.eq and never matched.
   # Prefer TypedReturn (which already applies the MJS toRecord Float heuristic).
@@ -543,7 +569,33 @@ defmodule Elmc.Backend.Plan.Lower.Compare do
   end
 
   defp float_equality_operand?(%{op: :call, name: name}, _env)
-       when name in ["cos", "sin", "tan", "turns", "toFloat"],
+       when name in [
+              "abs",
+              "negate",
+              "sqrt",
+              "cos",
+              "sin",
+              "tan",
+              "turns",
+              "toFloat",
+              "degrees",
+              "radians"
+            ],
+       do: true
+
+  defp float_equality_operand?(%{op: :runtime_call, function: function}, _env)
+       when function in [
+              "elmc_basics_degrees",
+              "elmc_basics_radians",
+              "elmc_basics_turns",
+              "elmc_basics_sin",
+              "elmc_basics_cos",
+              "elmc_basics_tan",
+              "elmc_basics_sqrt",
+              "elmc_basics_to_float",
+              "elmc_basics_abs",
+              "elmc_basics_negate"
+            ],
        do: true
 
   defp float_equality_operand?(%{op: :qualified_call, target: target, args: args}, env)
@@ -551,7 +603,18 @@ defmodule Elmc.Backend.Plan.Lower.Compare do
     short = target |> String.split(".") |> List.last()
 
     cond do
-      short in ["cos", "sin", "tan", "turns", "toFloat"] ->
+      short in [
+        "cos",
+        "sin",
+        "tan",
+        "turns",
+        "toFloat",
+        "degrees",
+        "radians",
+        "abs",
+        "negate",
+        "sqrt"
+      ] ->
         true
 
       short in ["add", "sub", "mul", "fdiv"] ->
@@ -574,26 +637,78 @@ defmodule Elmc.Backend.Plan.Lower.Compare do
 
   @spec boxed_bool_test_expr?(map() | Types.expr()) :: boolean()
 
+  defp boxed_bool_test_expr?(%{op: :bool_literal}), do: true
+
   defp boxed_bool_test_expr?(%{op: :runtime_call, function: function}) when is_binary(function) do
     function in [
       "elmc_maybe_is_nothing",
       "elmc_list_is_empty",
+      "elmc_basics_not",
+      "elmc_basics_xor",
+      "elmc_basics_is_nan",
+      "elmc_basics_is_infinite",
       "maybe_is_nothing",
-      "list_is_empty"
+      "list_is_empty",
+      "basics_not",
+      "basics_xor",
+      "basics_is_nan",
+      "basics_is_infinite"
     ]
   end
 
   defp boxed_bool_test_expr?(%{op: :qualified_call, target: target}) when is_binary(target) do
-    target in ["List.isEmpty", "Maybe.isNothing"]
+    target in [
+      "List.isEmpty",
+      "Maybe.isNothing",
+      "Basics.not",
+      "Basics.xor",
+      "Basics.isNaN",
+      "Basics.isInfinite"
+    ]
   end
 
   defp boxed_bool_test_expr?(%{op: :call, name: name}) when is_binary(name) do
-    name in ["isEmpty", "isNothing"]
+    name in ["isEmpty", "isNothing", "not", "xor", "isNaN", "isInfinite"]
   end
 
   defp boxed_bool_test_expr?(_expr), do: false
 
   @spec string_compare_pair?(Types.expr(), Types.expr(), Types.compile_env()) :: boolean()
+
+  defp char_compare_pair?(left, right, env) do
+    char_equality_operand?(left, env) or char_equality_operand?(right, env)
+  end
+
+  defp char_equality_operand?(%{op: :char_literal}, _env), do: true
+
+  defp char_equality_operand?(expr, env) do
+    TypedReturn.expr_type(expr, env) == "Char"
+  end
+
+  defp order_compare_pair?(left, right, env) do
+    order_equality_operand?(left, env) or order_equality_operand?(right, env)
+  end
+
+  defp order_equality_operand?(%{op: :order_literal}, _env), do: true
+
+  defp order_equality_operand?(%{op: :runtime_call, function: function}, _env)
+       when function in ["elmc_basics_compare", "basics_compare"],
+       do: true
+
+  defp order_equality_operand?(%{op: :qualified_call, target: target}, _env)
+       when target in ["Basics.compare", "compare"],
+       do: true
+
+  defp order_equality_operand?(%{op: :call, name: "compare"}, _env), do: true
+
+  defp order_equality_operand?(%{op: op, target: target}, _env)
+       when op in [:constructor_call, :constructor_ref] and is_binary(target) do
+    short_ctor_name(target) in ["LT", "EQ", "GT"]
+  end
+
+  defp order_equality_operand?(expr, env) do
+    TypedReturn.expr_type(expr, env) == "Order"
+  end
 
   defp string_compare_pair?(left, right, env) do
     left_kind = string_operand_kind(left, env)
@@ -609,11 +724,25 @@ defmodule Elmc.Backend.Plan.Lower.Compare do
   defp string_operand_kind(%{op: :string_literal}, _env), do: :string
 
   defp string_operand_kind(%{op: :runtime_call, function: function}, _env)
-       when function in ["new_immortal_string", "elmc_new_immortal_string"],
+       when function in [
+              "new_immortal_string",
+              "elmc_new_immortal_string",
+              "elmc_string_from_int",
+              "elmc_string_from_native_int",
+              "elmc_string_from_int_value",
+              "elmc_string_from_float",
+              "string_from_int",
+              "string_from_int_value",
+              "string_from_float"
+            ],
+       do: :string
+
+  defp string_operand_kind(%{op: :qualified_call, target: target}, _env)
+       when target in ["String.fromInt", "String.fromFloat", "String.fromChar"],
        do: :string
 
   defp string_operand_kind(%{op: :call, name: name}, _env)
-       when name in ["toString", "String.fromInt"],
+       when name in ["toString", "fromInt", "fromFloat", "fromChar", "String.fromInt"],
        do: :string
 
   defp string_operand_kind(expr, env) do
@@ -670,6 +799,8 @@ defmodule Elmc.Backend.Plan.Lower.Compare do
 
   defp int_equality_operand?(%{op: :int_literal}, _env), do: true
 
+  defp int_equality_operand?(%{op: :char_literal}, _env), do: true
+
   defp int_equality_operand?(%{op: :string_length_expr}, _env), do: true
 
   defp int_equality_operand?(%{op: :runtime_call, function: function}, _env)
@@ -688,6 +819,7 @@ defmodule Elmc.Backend.Plan.Lower.Compare do
   defp int_equality_operand?(expr, env) do
     case TypedReturn.expr_type(expr, env) do
       "Int" -> true
+      "Char" -> true
       _ -> false
     end
   end
@@ -730,4 +862,48 @@ defmodule Elmc.Backend.Plan.Lower.Compare do
   end
 
   defp param_var_types(_), do: %{}
+
+  # Official `List.sum [] == 0.0` types the empty fold as Float. Rewrite before
+  # compiling so the host writes TAG_FLOAT instead of Int 0.
+  defp promote_list_number_for_float_compare(left, right) do
+    cond do
+      list_number_runtime_call?(left) and float_literal_operand?(right) ->
+        {as_float_list_number_call(left), right}
+
+      list_number_runtime_call?(right) and float_literal_operand?(left) ->
+        {left, as_float_list_number_call(right)}
+
+      true ->
+        {left, right}
+    end
+  end
+
+  defp list_number_runtime_call?(%{op: :runtime_call, function: fun})
+       when fun in ["elmc_list_sum", "elmc_list_product"],
+       do: true
+
+  defp list_number_runtime_call?(%{op: op, target: target})
+       when op in [:qualified_call, :call] and target in ["List.sum", "List.product"],
+       do: true
+
+  defp list_number_runtime_call?(_), do: false
+
+  defp float_literal_operand?(%{op: :float_literal}), do: true
+  defp float_literal_operand?(_), do: false
+
+  defp as_float_list_number_call(%{op: :runtime_call, function: "elmc_list_sum"} = expr),
+    do: %{expr | function: "elmc_list_sum_float"}
+
+  defp as_float_list_number_call(%{op: :runtime_call, function: "elmc_list_product"} = expr),
+    do: %{expr | function: "elmc_list_product_float"}
+
+  defp as_float_list_number_call(%{op: op, target: "List.sum", args: args})
+       when op in [:qualified_call, :call],
+       do: %{op: :runtime_call, function: "elmc_list_sum_float", args: args}
+
+  defp as_float_list_number_call(%{op: op, target: "List.product", args: args})
+       when op in [:qualified_call, :call],
+       do: %{op: :runtime_call, function: "elmc_list_product_float", args: args}
+
+  defp as_float_list_number_call(expr), do: expr
 end

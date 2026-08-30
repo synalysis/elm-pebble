@@ -29,6 +29,7 @@ defmodule ElmEx.IR.Types.Expr do
           | :record_alias
           | :list_literal
           | :tuple2
+          | :tuple3
           | :tuple
           | :tuple_first_expr
           | :tuple_second_expr

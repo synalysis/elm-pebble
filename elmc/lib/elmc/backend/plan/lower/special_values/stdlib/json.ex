@@ -139,6 +139,27 @@ defmodule Elmc.Backend.Plan.Lower.SpecialValues.Stdlib.Json do
         "__d7"
       ])
 
+  def special_value_from_target("Json.Decode.map8", [f, d1, d2, d3, d4, d5, d6, d7, d8]),
+    do: %{
+      op: :runtime_call,
+      function: "elmc_json_decode_map8",
+      args: [f, d1, d2, d3, d4, d5, d6, d7, d8]
+    }
+
+  def special_value_from_target("Json.Decode.map8", []),
+    do:
+      Helpers.runtime_fn_lambda("elmc_json_decode_map8", [
+        "__f",
+        "__d1",
+        "__d2",
+        "__d3",
+        "__d4",
+        "__d5",
+        "__d6",
+        "__d7",
+        "__d8"
+      ])
+
   def special_value_from_target("Json.Decode.succeed", [value]),
     do: %{op: :runtime_call, function: "elmc_json_decode_succeed", args: [value]}
 
@@ -327,6 +348,51 @@ defmodule Elmc.Backend.Plan.Lower.SpecialValues.Stdlib.Json do
         }
       }
     }
+
+  def special_value_from_target("Html.Events.targetValue", _args) do
+    %{
+      op: :runtime_call,
+      function: "elmc_json_decode_at",
+      args: [
+        %{
+          op: :list_literal,
+          items: [
+            %{op: :string_literal, value: "target"},
+            %{op: :string_literal, value: "value"}
+          ]
+        },
+        %{op: :runtime_call, function: "elmc_json_decode_string_decoder", args: []}
+      ]
+    }
+  end
+
+  def special_value_from_target("Html.Events.targetChecked", _args) do
+    %{
+      op: :runtime_call,
+      function: "elmc_json_decode_at",
+      args: [
+        %{
+          op: :list_literal,
+          items: [
+            %{op: :string_literal, value: "target"},
+            %{op: :string_literal, value: "checked"}
+          ]
+        },
+        %{op: :runtime_call, function: "elmc_json_decode_bool_decoder", args: []}
+      ]
+    }
+  end
+
+  def special_value_from_target("Html.Events.keyCode", _args) do
+    %{
+      op: :runtime_call,
+      function: "elmc_json_decode_field",
+      args: [
+        %{op: :string_literal, value: "keyCode"},
+        %{op: :runtime_call, function: "elmc_json_decode_int_decoder", args: []}
+      ]
+    }
+  end
 
   def special_value_from_target(_target, _args), do: nil
 end

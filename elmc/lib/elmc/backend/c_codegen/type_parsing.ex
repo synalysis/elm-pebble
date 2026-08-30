@@ -78,6 +78,52 @@ defmodule Elmc.Backend.CCodegen.TypeParsing do
 
   def set_type?(_type), do: false
 
+  @spec dict_type?(String.t()) :: boolean()
+  def dict_type?(type) when is_binary(type) do
+    type = normalize_type_name(type)
+
+    String.starts_with?(type, "Dict ") or
+      String.starts_with?(type, "Dict.") or
+      type == "Dict"
+  end
+
+  def dict_type?(_type), do: false
+
+  @spec array_type?(String.t()) :: boolean()
+  def array_type?(type) when is_binary(type) do
+    type = normalize_type_name(type)
+
+    String.starts_with?(type, "Array ") or
+      String.starts_with?(type, "Array.") or
+      type == "Array"
+  end
+
+  def array_type?(_type), do: false
+
+  @spec debug_from_list_kind(String.t() | term()) :: :set | :dict | :array | nil
+  def debug_from_list_kind(type) when is_binary(type) do
+    cond do
+      set_type?(type) -> :set
+      dict_type?(type) -> :dict
+      array_type?(type) -> :array
+      true -> nil
+    end
+  end
+
+  def debug_from_list_kind(_type), do: nil
+
+  @spec debug_from_list_c_symbol(:set | :dict | :array | nil) :: String.t()
+  def debug_from_list_c_symbol(:set), do: "elmc_debug_set_to_string"
+  def debug_from_list_c_symbol(:dict), do: "elmc_debug_dict_to_string"
+  def debug_from_list_c_symbol(:array), do: "elmc_debug_array_to_string"
+  def debug_from_list_c_symbol(_), do: "elmc_debug_to_string"
+
+  @spec debug_from_list_builtin(:set | :dict | :array | nil) :: atom()
+  def debug_from_list_builtin(:set), do: :debug_set_to_string
+  def debug_from_list_builtin(:dict), do: :debug_dict_to_string
+  def debug_from_list_builtin(:array), do: :debug_array_to_string
+  def debug_from_list_builtin(_), do: :debug_to_string
+
   @spec enum_type?(String.t()) :: boolean()
   def enum_type?(type) when is_binary(type) do
     Process.get(:elmc_enum_types, MapSet.new())

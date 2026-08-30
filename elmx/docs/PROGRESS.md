@@ -6,7 +6,7 @@ Track parity with `elmc` C codegen. Update matrix rows as backend support lands.
 
 | Milestone | Status | Notes |
 |-----------|--------|-------|
-| M0 Scaffold + switch | done | `elmx` package, IDE `execution_backend`, `CompiledElixirAdapter` |
+| M0 Scaffold + switch | done | `elmx` package, IDE `CompiledElixirAdapter` (elmx-only TEA) |
 | M1 Pure Elm codegen | done | `Elmx.Backend.ElixirCodegen` + Emit; includes `watchface-poke-battle` full compile |
 | M2 Runtime library | done | `Stdlib`, `Values`, `Executor`, `Cmd`, `Followups` |
 | M3 Pebble surface | done | `SpecialValues` + structured cmds (`cmd.subscription.*`, `cmd.effect.*`, device peeks); structural `Pebble.Ui` via `ViewShape` / `ViewOutput` |
@@ -16,9 +16,9 @@ Track parity with `elmc` C codegen. Update matrix rows as backend support lands.
 
 ## IDE integration
 
-- Default backend is `:compiled_elixir` (set `ELMX_EXECUTION_BACKEND=core_ir` to opt out). Test suite pins `:core_ir` in `ide/config/test.exs`.
-- Watch compile attaches `elmx_manifest` / `elmx_revision` when compiled backend is active, or when `:attach_elmx_on_compile` is true (enabled in `ide/config/test.exs`).
-- `RuntimeExecutor.Request` validates elmx artifacts when backend is `:compiled_elixir`.
+- Debugger TEA is elmx-only (`CompiledElixirAdapter`). `execution_backend: :compiled_elixir` is a fingerprint label, not a live switch.
+- Watch compile attaches `elmx_manifest` / `elmx_revision`. `:attach_elmx_on_compile` is enabled in `ide/config/test.exs`.
+- `RuntimeExecutor.Request` always validates elmx artifacts.
 
 ## Tests
 
@@ -34,10 +34,9 @@ Track parity with `elmc` C codegen. Update matrix rows as backend support lands.
 | `elmx/test/constructor_lookup_test.exs` | IR-derived union constructor lookup |
 | `elmx/test/constructor_emit_test.exs` | constructor emit via SpecialValues + union shape |
 | `elmx/test/main_program_test.exs` | worker fields + dead-code roots from `main` IR |
-| `ide/test/ide/debugger/compiled_elixir_execute_test.exs` | adapter execute |
+| `ide/test/ide/debugger/compiled_elixir_execute_test.exs` | adapter execute (elmx-only) |
 | `ide/test/ide/debugger/runtime_executor_compiled_elixir_test.exs` | full `RuntimeExecutor` + `Request` |
 | `ide/test/ide/debugger/surface_compile_elmx_test.exs` | surface compile → cache → step with elmx artifacts |
-| `ide/test/ide/debugger/compiled_elixir_core_ir_parity_test.exs` | dual-run init `value` parity vs Core IR |
 | `elmx/test/launch_context_test.exs` | `LaunchContext` normalize + `launchReasonToInt` |
 | `ide/test/ide/mcp/game_jump_elmx_compile_test.exs` | game jump (corpus env) |
 | `ide/test/ide/mcp/debugger_template_corpus_compiled_elixir_test.exs` | multi-template corpus |
@@ -97,6 +96,7 @@ Run corpus: `ELMX_TEMPLATE_CORPUS=1 mix test --only compiled_elixir_corpus` (fro
 - ~~Partial qualified stdlib~~ — `List.*` HOFs (incl. `foldl`/`foldr`/`member`/`indexedMap`), `Dict.*`, `Json.Decode`; `partial_qualified_emit_test.exs`
 - ~~Partial user functions~~ — `function_arities` + `Helpers.partial_application_fun/4` (`&fn/arity` or nested `fn`); `user_partial_emit_test.exs`
 - ~~Cross-module partial~~ — `CrossModuleCall.partial_application/3`; `cross_module_emit_test.exs`
+- ~~Cross-module 0-arg value saturation~~ — `all_explicit_arities` so `addOne = Helper.add 1` is a 1-arg fn, not a cached thunk
 - ~~`String.replace` direct emit~~ — `Core.Strings.replace/3` + 2-arg partial; `string_replace_emit_test.exs`
 - ~~`String.split` direct emit~~ — `Core.Strings.split/2` + 1-arg partial; `string_replace_emit_test.exs`
 - ~~`ConstructorLookup.resolve` empty map~~ — no crash on `%{}` lookup; `constructor_lookup_test.exs`
@@ -112,7 +112,7 @@ Run corpus: `ELMX_TEMPLATE_CORPUS=1 mix test --only compiled_elixir_corpus` (fro
 - More `qualified_call` targets — narrowed: Dict/Set/Array accessors + common String ops use direct IR emit; rare ops still via `Stdlib.qualified_call` / `runtime_call`
 - ~~`ELMX_TEMPLATE_COMPILE_GATE=1`~~ green (watch + phone `CompanionApp` when present)
 - ~~Dual-run parity tests vs Core IR on more templates~~ green via `compiled_elixir_template_parity_test.exs` (68+ field/step/init-followup parity tests with `ELMX_TEMPLATE_CORPUS=1`)
-- ~~Flip default `execution_backend` to `:compiled_elixir`~~ done (opt-out via `ELMX_EXECUTION_BACKEND=core_ir`)
+- ~~Flip default `execution_backend` to `:compiled_elixir`~~ done; Core IR execute path removed (elmx-only TEA)
 
 ## Coverage rollup
 

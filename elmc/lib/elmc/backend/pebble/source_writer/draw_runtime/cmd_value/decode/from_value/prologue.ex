@@ -8,7 +8,7 @@ defmodule Elmc.Backend.Pebble.SourceWriter.DrawRuntime.CmdValue.Decode.FromValue
   @spec body() :: Types.c_source()
   def body do
     """
-    static int elmc_draw_cmd_from_value(ElmcValue *value, ElmcPebbleDrawCmd *out_cmd) {
+    int elmc_draw_cmd_from_value(ElmcValue *value, ElmcPebbleDrawCmd *out_cmd) {
           if (!out_cmd) return -1;
           out_cmd->kind = ELMC_PEBBLE_DRAW_NONE;
           out_cmd->p0 = 0;

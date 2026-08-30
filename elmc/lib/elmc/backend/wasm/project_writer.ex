@@ -47,6 +47,14 @@ defmodule Elmc.Backend.Wasm.ProjectWriter do
         MapSet.new(Map.keys(Process.get(:elmc_svg_attribute_dom_names, %{})))
       )
     )
+    Process.put(
+      :elmc_virtual_dom_attribute_ns,
+      Map.get(opts, :virtual_dom_attribute_ns, IRQueries.virtual_dom_attribute_ns(ir))
+    )
+    Process.put(
+      :elmc_virtual_dom_keyed_node_ns,
+      Map.get(opts, :virtual_dom_keyed_node_ns, IRQueries.virtual_dom_keyed_node_ns(ir))
+    )
     Process.put(:elmc_constructor_tags, IRQueries.constructor_tag_map(ir))
     Process.put(:elmc_record_alias_shapes, IRQueries.record_alias_shape_map(ir))
     Process.put(:elmc_inline_record_literal_shapes, IRQueries.inline_record_literal_shape_map(ir))
@@ -87,13 +95,14 @@ defmodule Elmc.Backend.Wasm.ProjectWriter do
                 "rc_required" => plan.rc_required
               }
 
+              fusion_acc =
+                if FusionFunction.emittable?(plan) do
+                  [fusion_manifest_entry(module, name, decl, plan) | fusion_acc]
+                else
+                  fusion_acc
+                end
+
               {[plan | plans_acc], [entry | functions_acc], fusion_acc, skipped_acc, imports_acc, stubs_acc}
-
-            {:fusion, plan} ->
-              fusion_entry = fusion_manifest_entry(module, name, decl, plan)
-
-              {plans_acc, functions_acc, [fusion_entry | fusion_acc],
-               [{module, name, :fusion_only} | skipped_acc], imports_acc, stubs_acc}
 
             {:skip, reason} ->
               {plans_acc, functions_acc, fusion_acc, [{module, name, reason} | skipped_acc], imports_acc,
@@ -192,6 +201,7 @@ defmodule Elmc.Backend.Wasm.ProjectWriter do
           "export_signature" => %{"results" => 2},
           "immortal_strings" => immortal_strings,
           "constructor_tags" => IRQueries.constructor_tag_map(ir),
+          "constructor_arities" => IRQueries.constructor_arity_map(ir),
           "plan_coverage" => plan_coverage_manifest(decl_map, coverage_opts, opts),
           "minified" => minify?
         }
@@ -290,12 +300,13 @@ defmodule Elmc.Backend.Wasm.ProjectWriter do
       "closure_count" => length(closures),
       "immortal_strings" => full["immortal_strings"],
       "constructor_tags" => Map.get(full, "constructor_tags", %{}),
+      "constructor_arities" => Map.get(full, "constructor_arities", %{}),
       "minified" => true
     }
   end
 
   @spec lower_plan(Types.decl(), String.t(), String.t(), Types.decl_map()) ::
-          {:ok, Elmc.Backend.Plan.Types.function_plan()} | {:fusion, Elmc.Backend.Plan.Types.function_plan()} | {:skip, term()}
+          {:ok, Elmc.Backend.Plan.Types.function_plan()} | {:skip, term()}
 
   defp lower_plan(decl, module, name, decl_map) do
     rc_required? = RcRequired.rc_required?(module, name)
@@ -303,9 +314,6 @@ defmodule Elmc.Backend.Wasm.ProjectWriter do
     case lower_function_plan(decl, module, decl_map, rc_required?) do
       {:ok, plan} ->
         {:ok, plan}
-
-      {:fusion, plan} ->
-        {:fusion, plan}
 
       {:skip, reason} ->
         {:skip, reason}
@@ -332,7 +340,6 @@ defmodule Elmc.Backend.Wasm.ProjectWriter do
 
   @spec lower_function_plan(Types.decl(), String.t(), Types.decl_map(), boolean()) ::
           {:ok, Elmc.Backend.Plan.Types.function_plan()}
-          | {:fusion, Elmc.Backend.Plan.Types.function_plan()}
           | {:skip, term()}
           | :unsupported
           | {:error, Elmc.Backend.Plan.Types.lower_error()}
@@ -355,7 +362,7 @@ defmodule Elmc.Backend.Wasm.ProjectWriter do
           String.t(),
           Types.decl_map(),
           boolean()
-        ) :: {:ok, Elmc.Backend.Plan.Types.function_plan()} | {:fusion, Elmc.Backend.Plan.Types.function_plan()} | {:skip, term()}
+        ) :: {:ok, Elmc.Backend.Plan.Types.function_plan()} | {:skip, term()}
 
   defp classify_lowered_plan(plan, decl, module, decl_map, rc_required?) do
     cond do
@@ -379,15 +386,18 @@ defmodule Elmc.Backend.Wasm.ProjectWriter do
           Types.decl_map(),
           boolean(),
           Elmc.Backend.Plan.Types.function_plan()
-        ) :: {:ok, Elmc.Backend.Plan.Types.function_plan()} | {:fusion, Elmc.Backend.Plan.Types.function_plan()}
+        ) :: {:ok, Elmc.Backend.Plan.Types.function_plan()} | {:skip, term()}
 
   defp retry_without_c_fusion(decl, module, decl_map, rc_required?, fusion_plan) do
     case Plan.lower_function(decl, module, decl_map, rc_required: rc_required?, skip_c_fusion: true) do
       {:ok, %{} = plan} when plan.blocks != [] ->
         {:ok, plan}
 
+      {:ok, %{} = plan} ->
+        if FusionFunction.emittable?(plan), do: {:ok, plan}, else: {:skip, :unsupported}
+
       _ ->
-        {:fusion, fusion_plan}
+        if FusionFunction.emittable?(fusion_plan), do: {:ok, fusion_plan}, else: {:skip, :unsupported}
     end
   end
 
@@ -405,8 +415,7 @@ defmodule Elmc.Backend.Wasm.ProjectWriter do
         plan.blocks
         |> Enum.flat_map(& &1.instrs)
       end)
-      |> Enum.filter(&match?(%{op: :const_immortal_string}, &1))
-      |> Enum.map(fn %{args: %{value: value}} -> value end)
+      |> Enum.flat_map(&immortal_string_values_from_instr/1)
       |> Enum.uniq()
 
     if minify? do
@@ -421,6 +430,20 @@ defmodule Elmc.Backend.Wasm.ProjectWriter do
       {table, nil}
     end
   end
+
+  defp immortal_string_values_from_instr(%{op: :const_immortal_string, args: %{value: value}})
+       when is_binary(value),
+       do: [value]
+
+  defp immortal_string_values_from_instr(
+         %{op: :call_runtime, args: %{builtin: builtin, field_names: names}}
+       )
+       when builtin in [:record_new, :record_new_take, :record_new_values_ints] and
+              is_list(names) and names != [] do
+    [Enum.map_join(names, "\0", &to_string/1)]
+  end
+
+  defp immortal_string_values_from_instr(_), do: []
 
   @spec flatten_plans_with_lambdas([Elmc.Backend.Plan.Types.function_plan()]) :: [Elmc.Backend.Plan.Types.function_plan()]
 

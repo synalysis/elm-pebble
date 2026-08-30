@@ -5,6 +5,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Filter do
 
   alias Elmc.Backend.CCodegen.Host
   alias Elmc.Backend.CCodegen.Types
+  alias Elmc.Backend.Plan.Stream
 
   @spec filter(
           MapSet.t(Types.function_decl_key()),
@@ -37,8 +38,16 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Filter do
         env = Host.direct_emit_check_env(decl, module_name, targets, decl_map)
 
         case Host.direct_emit_expr(decl.expr, env, 0) do
-          {:ok, _code, _counter} -> MapSet.put(acc, target)
-          :error -> acc
+          {:ok, _code, _counter} ->
+            MapSet.put(acc, target)
+
+          :error ->
+            if Stream.eligible_expr?(decl.expr, decl_map, module_name) and
+                 Stream.pipeline_expr?(decl.expr, decl_map, module_name) do
+              MapSet.put(acc, target)
+            else
+              acc
+            end
         end
       else
         acc

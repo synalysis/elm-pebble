@@ -80,6 +80,31 @@ defmodule Elmc.UnsupportedSurfaceDiagnosticsTest do
     assert diag["severity"] == "warning"
   end
 
+  test "plan stream emit failure is tagged so fallback warnings can include detail" do
+    alias Elmc.Backend.CCodegen.DirectRender.PlanStreamEmit
+
+    decl = %{
+      name: "view",
+      args: [],
+      expr: %{
+        op: :list_literal,
+        items: [
+          %{
+            op: :qualified_call,
+            target: "List.map",
+            args: [
+              %{op: :var, name: "draw"},
+              %{op: :list_literal, items: []}
+            ]
+          }
+        ]
+      }
+    }
+
+    assert {:error, {:stream_failed, reason}} = PlanStreamEmit.try_emit_body(decl, "Main", %{})
+    assert reason != nil
+  end
+
   test "plan unsupported reason formats with op and target" do
     assert UnsupportedSurface.format_plan_reason(%{op: :case, target: "List.map"}) =~ "op=case"
     assert UnsupportedSurface.format_plan_reason(%{op: :case, target: "List.map"}) =~ "List.map"

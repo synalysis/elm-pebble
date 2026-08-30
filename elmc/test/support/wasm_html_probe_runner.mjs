@@ -26,6 +26,7 @@ const { helpers, callExport } = await loadElmcWasm({
   closureCount: manifest.closure_count ?? null,
   immortalStrings: manifest.immortal_strings || {},
   constructorTags: manifest.constructor_tags || {},
+  constructorArities: manifest.constructor_arities || {},
 });
 
 const { rc, value: resultHandle } = callExport(exportName, []);

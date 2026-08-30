@@ -8,6 +8,7 @@ defmodule Elmc.Backend.Plan.Stream do
   alias Elmc.Backend.Plan.Lower.Function
   alias Elmc.Backend.Plan.Lower.SpecialValues
   alias Elmc.Backend.Plan.Lower.Stream.List, as: StreamList
+  alias Elmc.Backend.Plan.Stream.StaticDrawTable
 
   # Kernel scene constructors (FQ after import resolution). Direct render
   # streams their child lists; ids are layout, not draw ops.
@@ -59,6 +60,38 @@ defmodule Elmc.Backend.Plan.Stream do
       do:
         eligible_expr?(head, decl_map, module, seen, locals) and
           eligible_expr?(tail, decl_map, module, seen, locals)
+
+  def eligible_expr?(
+        %{op: :runtime_call, function: "elmc_list_filter", args: [pred, list]},
+        decl_map,
+        module,
+        seen,
+        locals
+      ),
+      do:
+        StreamList.eligible_filter_call?(
+          %{op: :qualified_call, target: "List.filter", args: [pred, list]},
+          decl_map,
+          module,
+          seen,
+          locals
+        )
+
+  def eligible_expr?(
+        %{op: :runtime_call, function: "elmc_list_filter_map", args: [fun, list]},
+        decl_map,
+        module,
+        seen,
+        locals
+      ),
+      do:
+        StreamList.eligible_filter_map_call?(
+          %{op: :qualified_call, target: "List.filterMap", args: [fun, list]},
+          decl_map,
+          module,
+          seen,
+          locals
+        )
 
   def eligible_expr?(
         %{op: :constructor_call, target: target, args: [head, tail]},
@@ -158,6 +191,12 @@ defmodule Elmc.Backend.Plan.Stream do
       StreamList.append_call?(expr, module) ->
         StreamList.eligible_append_call?(expr, decl_map, module, seen, locals)
 
+      StreamList.filter_call?(expr, module) ->
+        StreamList.eligible_filter_call?(expr, decl_map, module, seen, locals)
+
+      StreamList.filter_map_call?(expr, module) ->
+        StreamList.eligible_filter_map_call?(expr, decl_map, module, seen, locals)
+
       true ->
         follow_callee_body(expr, decl_map, module, seen, callee_key(expr, module))
     end
@@ -166,9 +205,9 @@ defmodule Elmc.Backend.Plan.Stream do
   def eligible_expr?(_, _, _, _, _), do: false
 
   @doc """
-  True when the command expr is a list pipeline (map/concat/cons/++), not a
-  static `[clear, text, …]` list. Static lists stay on Host so literal text
-  unroll and known-branch folds still run.
+  True when the command expr is a list pipeline (map/concat/cons/++), or a
+  homogeneous static draw table. Mixed static `[clear, text, …]` lists stay
+  on Host so literal text unroll and known-branch folds still run.
   """
   @spec pipeline_expr?(map() | term()) :: boolean()
   def pipeline_expr?(expr), do: pipeline_expr?(expr, %{}, nil)
@@ -193,11 +232,20 @@ defmodule Elmc.Backend.Plan.Stream do
   defp pipeline_expr?(%{op: :runtime_call, function: "elmc_list_cons", args: [head, tail]}, decl_map, module, seen),
     do: pipeline_expr?(head, decl_map, module, seen) or pipeline_expr?(tail, decl_map, module, seen)
 
+  defp pipeline_expr?(%{op: :runtime_call, function: "elmc_list_filter"}, _decl_map, _module, _seen),
+    do: true
+
+  defp pipeline_expr?(%{op: :runtime_call, function: "elmc_list_filter_map"}, _decl_map, _module, _seen),
+    do: true
+
   defp pipeline_expr?(%{op: :call, name: "__append__", args: [left, right]}, decl_map, module, seen),
     do: pipeline_expr?(left, decl_map, module, seen) or pipeline_expr?(right, decl_map, module, seen)
 
-  defp pipeline_expr?(%{op: :list_literal, items: items}, decl_map, module, seen) when is_list(items),
-    do: Enum.any?(items, &pipeline_expr?(&1, decl_map, module, seen))
+  defp pipeline_expr?(%{op: :list_literal, items: items}, decl_map, module, seen)
+       when is_list(items) do
+    StaticDrawTable.table_shape?(items) or
+      Enum.any?(items, &pipeline_expr?(&1, decl_map, module, seen))
+  end
 
   defp pipeline_expr?(%{op: :if, then_expr: then_expr, else_expr: else_expr}, decl_map, module, seen),
     do:
@@ -230,6 +278,15 @@ defmodule Elmc.Backend.Plan.Stream do
 
       StreamList.append_call?(expr, module) ->
         true
+
+      StreamList.filter_call?(expr, module) ->
+        true
+
+      StreamList.filter_map_call?(expr, module) ->
+        true
+
+      pebble_ui_to_ui_node?(expr) ->
+        expr |> Map.get(:args, []) |> List.first() |> pipeline_expr?(decl_map, module, seen)
 
       pebble_ui_context?(expr) ->
         expr |> Map.get(:args, []) |> Enum.at(1) |> pipeline_expr?(decl_map, module, seen)
@@ -310,6 +367,7 @@ defmodule Elmc.Backend.Plan.Stream do
 
   defp pebble_ui_context?(expr), do: pebble_ui_name?(expr, "context")
   defp pebble_ui_group?(expr), do: pebble_ui_name?(expr, "group")
+  defp pebble_ui_to_ui_node?(expr), do: pebble_ui_name?(expr, "toUiNode")
 
   defp pebble_ui_name?(expr, name) when is_binary(name) do
     case callee_key(expr, nil) do

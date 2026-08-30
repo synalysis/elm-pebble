@@ -79,6 +79,20 @@ defmodule ElmEx.DebuggerContract.ViewTree.Operators do
     }
   end
 
+  def expr_to_view_tree(%{op: :tuple3, a: a, b: b, c: c}, d, max, api_metadata)
+      when d < max do
+    %{
+      "type" => "expr",
+      "label" => "tuple3",
+      "children" => [
+        expr_to_view_tree(a, d + 1, max, api_metadata),
+        expr_to_view_tree(b, d + 1, max, api_metadata),
+        expr_to_view_tree(c, d + 1, max, api_metadata)
+      ],
+      "op" => "tuple3"
+    }
+  end
+
   def expr_to_view_tree(%{op: :qualified_call, target: t, args: args}, d, max, api_metadata)
       when d < max do
     arity = length(args)

@@ -95,6 +95,8 @@ defmodule Elmc.Backend.Wasm.Module do
       (stub_entries ++ extra_stubs)
       |> Enum.uniq_by(fn entry -> {entry.module, entry.name} end)
 
+    StubFunctions.record_diagnostics(all_stub_entries)
+
     stub_functions = Enum.map(all_stub_entries, &StubFunctions.lower_stub/1)
     functions = functions ++ stub_functions
 
@@ -136,8 +138,6 @@ defmodule Elmc.Backend.Wasm.Module do
     imports
     |> MapSet.put("runtime.retain")
     |> MapSet.put("runtime.release")
-    |> MapSet.put("runtime.release_unless_reachable")
-    |> MapSet.put("runtime.release_unless_reachable_from_roots")
     |> MapSet.put("runtime.release_array_lifo")
     |> MapSet.put("runtime.value_cache_get")
     |> MapSet.put("runtime.value_cache_put")
@@ -150,8 +150,6 @@ defmodule Elmc.Backend.Wasm.Module do
     arities
     |> Map.put_new("runtime.retain", ImportSignatures.param_count("runtime.retain"))
     |> Map.put_new("runtime.release", ImportSignatures.param_count("runtime.release"))
-    |> Map.put_new("runtime.release_unless_reachable", 2)
-    |> Map.put_new("runtime.release_unless_reachable_from_roots", 3)
     |> Map.put_new("runtime.release_array_lifo", ImportSignatures.param_count("runtime.release_array_lifo"))
     |> Map.put_new("runtime.value_cache_get", 2)
     |> Map.put_new("runtime.value_cache_put", 2)

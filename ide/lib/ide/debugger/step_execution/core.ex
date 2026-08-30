@@ -195,14 +195,14 @@ defmodule Ide.Debugger.StepExecution.Core do
            )
            |> StepExecutionContract.step_result_from_executor()}
         else
-          {:error, {:core_ir_execution_failed, :missing_runtime_model}}
+          {:error, {:elmx_execution_failed, :missing_runtime_model}}
         end
 
       {:error, _} = err ->
         err
 
       _ ->
-        {:error, {:core_ir_execution_failed, :invalid_executor_result}}
+        {:error, {:elmx_execution_failed, :invalid_executor_result}}
     end
   end
 

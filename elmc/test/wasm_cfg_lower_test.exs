@@ -53,7 +53,7 @@ defmodule Elmc.WasmCfgLowerTest do
     assert body =~ "$plan_loop"
     assert body =~ ~r/local\.set \$fn_out \(local\.get \$reg\d+\)/
     assert body =~ ~r/local\.set \$owned\d+ \(i32\.const 0\)/
-    assert body =~ ~r/\(drop\s+\(call \$runtime_release_unless_reachable_from_roots \(local\.get \$owned/
+    assert body =~ ~r/\(drop\s+\(call \$runtime_release \(local\.get \$owned/
   end
 
   test "CFG case merge does not mid-body release the published result" do
@@ -89,7 +89,7 @@ defmodule Elmc.WasmCfgLowerTest do
              "must not release $#{reg} after publishing it to $fn_out"
     end
 
-    assert body =~ "runtime_release_unless_reachable_from_roots"
+    assert body =~ "runtime_release"
   end
 
   test "self-tail call on list helper restarts plan_loop instead of recursing" do
@@ -161,10 +161,10 @@ defmodule Elmc.WasmCfgLowerTest do
     assert body =~ ~r/local\.set \$param0 \(local\.get \$reg0\)/
     assert body =~ ~r/local\.set \$param1 \(local\.get \$reg2\)/
     assert body =~ "(local.set $plan_state (i32.const 0))"
-    # TCO must not plain-release temps that may be reachable from restarted
-    # params (list_cons'd heads in an accumulating spine).
-    assert body =~ "runtime_release_unless_reachable_from_roots"
-    refute body =~ ~r/call \$runtime_release \(local\.get \$/
+    # TCO LIFO-releases leftover owned slots; skips pointers equal to new params
+    # (list_cons'd heads already transfer-nulled in the cons consume).
+    assert body =~ "runtime_release"
+    refute body =~ "runtime_release_unless_reachable_from_roots"
   end
 
   test "self-call without list_tail arg is not rewritten as TCO" do

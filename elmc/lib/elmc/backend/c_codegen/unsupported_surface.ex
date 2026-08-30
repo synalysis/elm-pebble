@@ -110,7 +110,13 @@ defmodule Elmc.Backend.CCodegen.UnsupportedSurface do
     Process.get(:elmc_compile_warnings, [])
     |> Enum.filter(fn
       %{"source" => source}
-      when source in ["elmc/cmd", "elmc/subscriptions", "elmc/unsupported", "elmc/direct_render"] ->
+      when source in [
+             "elmc/cmd",
+             "elmc/subscriptions",
+             "elmc/unsupported",
+             "elmc/direct_render",
+             "elmc/wasm"
+           ] ->
         true
 
       %{source: source}
@@ -122,7 +128,9 @@ defmodule Elmc.Backend.CCodegen.UnsupportedSurface do
              :elmc_unsupported,
              "elmc/unsupported",
              :elmc_direct_render,
-             "elmc/direct_render"
+             "elmc/direct_render",
+             :elmc_wasm,
+             "elmc/wasm"
            ] ->
         true
 

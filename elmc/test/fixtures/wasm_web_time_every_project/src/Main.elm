@@ -15,12 +15,12 @@ init _ =
 
 
 type Msg
-    = Tick Int
+    = Tick Time.Posix
 
 
 update : Msg -> Model -> ( Model, Cmd msg )
-update (Tick n) _ =
-    ( n, Cmd.none )
+update _ model =
+    ( model + 1, Cmd.none )
 
 
 view : Model -> Html Msg

@@ -371,7 +371,7 @@ pipeline =
             , bullet "Strict web apps"
                 "Browser.* / elm/*-only apps keep wasm_strict: true so Pebble specials never enter the web dispatcher."
             , bullet "This elm-pages site"
-                "Builds with wasm_strict: false because the combined graph still carries some Pebble-only plan ops; browser-relevant stubs stay gated empty."
+                "Builds with wasm_strict: true. Missing-callee stubs and unsupported skips fail the compile; leftover Pebble ops trap instead of no-op."
             ]
         ]
 

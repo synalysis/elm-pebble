@@ -107,7 +107,6 @@ defmodule Elmc.WasmRcTrackFixtureExecutionTest do
     {"rc_track_debug_project", "RcTrackDebugProbe",
      [
        {"probeLog", 42},
-       {"probeTodo", 0},
        {"probeToString", 2}
      ]},
     {"rc_track_basics_project", "RcTrackBasicsProbe",

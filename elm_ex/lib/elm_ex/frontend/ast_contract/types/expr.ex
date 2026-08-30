@@ -46,6 +46,12 @@ defmodule ElmEx.Frontend.AstContract.Types.Expr do
           required(:left) => t(),
           required(:right) => t()
         }
+  @type tuple3 :: %{
+          required(:op) => :tuple3,
+          required(:a) => t(),
+          required(:b) => t(),
+          required(:c) => t()
+        }
   @type list_literal :: %{required(:op) => :list_literal, required(:items) => [t()]}
   @type call :: %{required(:op) => :call, required(:name) => String.t(), required(:args) => [t()]}
   @type qualified_call :: %{

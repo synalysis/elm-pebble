@@ -165,6 +165,9 @@ defmodule Elmc.Backend.Plan.Lower.CallCoerce do
   defp maybe_coerce_arg(_reg, _arg_expr, _param_type, _kind, _ctx, _b), do: :skip
 
   @spec bool_const_value(term()) :: {:ok, 0 | 1} | :error
+  defp bool_const_value(%{op: :bool_literal, value: true}), do: {:ok, 1}
+  defp bool_const_value(%{op: :bool_literal, value: false}), do: {:ok, 0}
+
   defp bool_const_value(%{op: :constructor_call, target: target, args: args})
        when args in [nil, []] and is_binary(target) do
     cond do

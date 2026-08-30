@@ -28,6 +28,75 @@ defmodule Elmc.DirectRenderPlanStreamTest do
     refute_plan_stream_fallback(result)
   end
 
+  test "homogeneous static draw list emits a Plan table walk" do
+    {result, generated_c} =
+      SnippetProject.compile_checked!(static_draw_table_view_source(),
+        name: "direct_plan_stream_static_draw_table",
+        compile: %{
+          direct_render_only: true,
+          prune_runtime: true,
+          prune_native_wrappers: true,
+          plan_ir_mode: :primary,
+          plan_ir_strict: true
+        },
+        out_dir: Path.expand("tmp/direct_plan_stream_static_draw_table_codegen", __DIR__)
+      )
+
+    view_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_view_commands_append")
+
+    assert view_body =~ "direct_static_draw_table_"
+    assert view_body =~ "elmc_scene_writer_push_cmd"
+    refute view_body =~ "ELMC_TAG_LIST"
+    refute view_body =~ "elmc_render_cmd6_take"
+    refute_plan_stream_fallback(result)
+  end
+
+  test "indexedMap affine textInt helper streams as a Plan affine loop" do
+    {result, generated_c} =
+      SnippetProject.compile_checked!(affine_text_int_view_source(),
+        name: "direct_plan_stream_affine_text_int",
+        compile: %{
+          direct_render_only: true,
+          prune_runtime: true,
+          prune_native_wrappers: true,
+          plan_ir_mode: :primary,
+          plan_ir_strict: true
+        },
+        out_dir: Path.expand("tmp/direct_plan_stream_affine_text_int_codegen", __DIR__)
+      )
+
+    view_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_view_commands_append")
+
+    assert view_body =~ "direct_index_"
+    assert view_body =~ "direct_item_i_"
+    assert view_body =~ "elmc_scene_writer_push_cmd"
+    refute view_body =~ "elmc_fn_Main_row_commands_append_native"
+    refute_plan_stream_fallback(result)
+  end
+
+  test "indexedMap affine text fromInt with different names streams as Plan fusion" do
+    {result, generated_c} =
+      SnippetProject.compile_checked!(affine_text_label_view_source(),
+        name: "direct_plan_stream_affine_text_label",
+        compile: %{
+          direct_render_only: true,
+          prune_runtime: true,
+          prune_native_wrappers: true,
+          plan_ir_mode: :primary,
+          plan_ir_strict: true
+        },
+        out_dir: Path.expand("tmp/direct_plan_stream_affine_text_label_codegen", __DIR__)
+      )
+
+    view_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_view_commands_append")
+
+    assert view_body =~ "ELMC_RENDER_OP_TEXT"
+    assert view_body =~ "elmc_scene_text_from_nonzero_int"
+    assert view_body =~ "scene_cmd.text[0] = '.'"
+    refute view_body =~ "elmc_fn_Main_paintMark_commands_append_native"
+    refute_plan_stream_fallback(result)
+  end
+
   test "Maybe case view list lowers through plan stream SSA" do
     {result, generated_c} =
       SnippetProject.compile_checked!(maybe_case_view_source(),
@@ -117,11 +186,157 @@ defmodule Elmc.DirectRenderPlanStreamTest do
       generated_c =~
         ~r/static RC elmc_fn_Main_view_closure_\d+\(ElmcValue \*\*args, int argc, ElmcValue \*\*captures, int capture_count, ElmcSceneWriter \*writer\)/
 
-    streamed_apply? = view_body =~ "elmc_fn_Main_drawAt_commands_append"
+    streamed_apply? =
+      view_body =~ "elmc_fn_Main_drawAt_commands_append_native" or
+        view_body =~ "elmc_fn_Main_drawAt_commands_append("
 
     assert streamed_lambda? or streamed_apply?
     assert view_body =~ "ELMC_TAG_INT_LIST" or view_body =~ "ELMC_TAG_LIST"
     refute view_body =~ "elmc_list_map"
+    refute_plan_stream_fallback(result)
+  end
+
+  test "List.map of a named draw helper uses native commands_append ABI" do
+    {result, generated_c} =
+      SnippetProject.compile_checked!(lambda_draw_at_view_source(),
+        name: "direct_plan_stream_nested_native_append",
+        compile: %{
+          direct_render_only: true,
+          prune_runtime: true,
+          prune_native_wrappers: true,
+          plan_ir_mode: :primary,
+          plan_ir_strict: true
+        },
+        out_dir: Path.expand("tmp/direct_plan_stream_nested_native_append_codegen", __DIR__)
+      )
+
+    view_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_view_commands_append")
+
+    assert view_body =~ "elmc_fn_Main_drawAt_commands_append_native"
+    assert view_body =~ "stream_fe_"
+    refute view_body =~ ~r/elmc_fn_Main_drawAt_commands_append\(stream_fe_argv_/
+    refute view_body =~ "elmc_list_map"
+    refute_plan_stream_fallback(result)
+  end
+
+  test "List.filter of static render commands walks through plan stream SSA" do
+    {result, generated_c} =
+      SnippetProject.compile_checked!(filter_static_cmds_view_source(),
+        name: "direct_plan_stream_filter_static_cmds",
+        compile: %{
+          direct_render_only: true,
+          prune_runtime: true,
+          prune_native_wrappers: true,
+          plan_ir_mode: :primary,
+          plan_ir_strict: true
+        },
+        out_dir: Path.expand("tmp/direct_plan_stream_filter_static_cmds_codegen", __DIR__)
+      )
+
+    view_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_view_commands_append")
+
+    assert view_body =~ "elmc_scene_writer_push_cmd"
+    refute view_body =~ "elmc_list_filter"
+    refute_plan_stream_fallback(result)
+  end
+
+  test "List.filter of a model command list walks through plan stream SSA" do
+    {result, generated_c} =
+      SnippetProject.compile_checked!(filter_model_cmds_view_source(),
+        name: "direct_plan_stream_filter_model_cmds",
+        compile: %{
+          direct_render_only: true,
+          prune_runtime: true,
+          prune_native_wrappers: true,
+          plan_ir_mode: :primary,
+          plan_ir_strict: true
+        },
+        out_dir: Path.expand("tmp/direct_plan_stream_filter_model_cmds_codegen", __DIR__)
+      )
+
+    view_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_view_commands_append")
+
+    streamed_lambda? =
+      generated_c =~
+        ~r/static RC elmc_fn_Main_view_closure_\d+\(ElmcValue \*\*args, int argc, ElmcValue \*\*captures, int capture_count, ElmcSceneWriter \*writer\)/
+
+    assert streamed_lambda? or view_body =~ "elmc_draw_cmd_from_value"
+    assert view_body =~ "elmc_scene_writer_push_cmd" or generated_c =~ "elmc_draw_cmd_from_value"
+    refute view_body =~ "elmc_list_filter"
+    refute_plan_stream_fallback(result)
+  end
+
+  test "List.map over List.filter of a model list walks through plan stream SSA" do
+    {result, generated_c} =
+      SnippetProject.compile_checked!(filter_map_view_source(),
+        name: "direct_plan_stream_filter_map",
+        compile: %{
+          direct_render_only: true,
+          prune_runtime: true,
+          prune_native_wrappers: true,
+          plan_ir_mode: :primary,
+          plan_ir_strict: true
+        },
+        out_dir: Path.expand("tmp/direct_plan_stream_filter_map_codegen", __DIR__)
+      )
+
+    view_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_view_commands_append")
+
+    streamed_lambda? =
+      generated_c =~
+        ~r/static RC elmc_fn_Main_view_closure_\d+\(ElmcValue \*\*args, int argc, ElmcValue \*\*captures, int capture_count, ElmcSceneWriter \*writer\)/
+
+    assert streamed_lambda? or view_body =~ "elmc_scene_writer_push_cmd"
+    assert view_body =~ "ELMC_TAG_INT_LIST" or view_body =~ "ELMC_TAG_LIST" or
+             view_body =~ "ELMC_RENDER_OP_RECT"
+    refute view_body =~ "elmc_list_map"
+    refute_plan_stream_fallback(result)
+  end
+
+  test "List.filterMap of static Maybe render commands walks through plan stream SSA" do
+    {result, generated_c} =
+      SnippetProject.compile_checked!(filter_map_static_maybe_cmds_view_source(),
+        name: "direct_plan_stream_filter_map_static_maybe",
+        compile: %{
+          direct_render_only: true,
+          prune_runtime: true,
+          prune_native_wrappers: true,
+          plan_ir_mode: :primary,
+          plan_ir_strict: true
+        },
+        out_dir: Path.expand("tmp/direct_plan_stream_filter_map_static_maybe_codegen", __DIR__)
+      )
+
+    view_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_view_commands_append")
+
+    assert view_body =~ "elmc_scene_writer_push_cmd"
+    refute view_body =~ "elmc_list_filter_map"
+    refute_plan_stream_fallback(result)
+  end
+
+  test "List.filterMap that draws from a model int list walks through plan stream SSA" do
+    {result, generated_c} =
+      SnippetProject.compile_checked!(filter_map_draw_cells_view_source(),
+        name: "direct_plan_stream_filter_map_draw_cells",
+        compile: %{
+          direct_render_only: true,
+          prune_runtime: true,
+          prune_native_wrappers: true,
+          plan_ir_mode: :primary,
+          plan_ir_strict: true
+        },
+        out_dir: Path.expand("tmp/direct_plan_stream_filter_map_draw_cells_codegen", __DIR__)
+      )
+
+    view_body = CCodegenExtract.fn_impl_body(generated_c, "elmc_fn_Main_view_commands_append")
+
+    streamed_lambda? =
+      generated_c =~
+        ~r/static RC elmc_fn_Main_view_closure_\d+\(ElmcValue \*\*args, int argc, ElmcValue \*\*captures, int capture_count, ElmcSceneWriter \*writer\)/
+
+    assert streamed_lambda? or view_body =~ "elmc_scene_writer_push_cmd"
+    assert generated_c =~ "elmc_scene_writer_push_cmd"
+    refute view_body =~ "elmc_list_filter_map"
     refute_plan_stream_fallback(result)
   end
 
@@ -1087,6 +1302,164 @@ defmodule Elmc.DirectRenderPlanStreamTest do
     """
   end
 
+  defp static_draw_table_view_source do
+    """
+    module Main exposing (main)
+
+    import Pebble.Platform as Platform
+    import Pebble.Ui as Ui
+    import Pebble.Ui.Color as Color
+
+
+    type alias Model =
+        {}
+
+
+    type Msg
+        = NoOp
+
+
+    main =
+        Platform.application
+            { init = init
+            , update = update
+            , subscriptions = subscriptions
+            , view = view
+            }
+
+
+    init _ =
+        ( {}, Cmd.none )
+
+
+    update _ model =
+        ( model, Cmd.none )
+
+
+    subscriptions _ =
+        Sub.none
+
+
+    view _ =
+        Ui.toUiNode
+            [ Ui.fillRect { x = 0, y = 0, w = 20, h = 10 } Color.black
+            , Ui.fillRect { x = 8, y = 4, w = 16, h = 8 } Color.white
+            , Ui.fillRect { x = 24, y = 12, w = 6, h = 6 } Color.red
+            ]
+    """
+  end
+
+  defp affine_text_int_view_source do
+    """
+    module Main exposing (main)
+
+    import Pebble.Platform as Platform
+    import Pebble.Ui as Ui
+    import Pebble.Ui.Resources as Resources
+
+
+    type alias Model =
+        {}
+
+
+    type Msg
+        = NoOp
+
+
+    main =
+        Platform.application
+            { init = init
+            , update = update
+            , subscriptions = subscriptions
+            , view = view
+            }
+
+
+    init _ =
+        ( {}, Cmd.none )
+
+
+    update _ model =
+        ( model, Cmd.none )
+
+
+    subscriptions _ =
+        Sub.none
+
+
+    view _ =
+        Ui.toUiNode (List.indexedMap row (List.range 0 3))
+
+
+    row : Int -> Int -> Ui.RenderOp
+    row i n =
+        Ui.textInt Resources.DefaultFont { x = i * 10, y = n } n
+    """
+  end
+
+  defp affine_text_label_view_source do
+    """
+    module Main exposing (main)
+
+    import Pebble.Platform as Platform
+    import Pebble.Ui as Ui
+    import Pebble.Ui.Resources as Resources
+
+
+    type alias Model =
+        { slots : List Int }
+
+
+    type Msg
+        = NoOp
+
+
+    main =
+        Platform.application
+            { init = init
+            , update = update
+            , subscriptions = subscriptions
+            , view = view
+            }
+
+
+    init _ =
+        ( { slots = [ 0, 2, 4 ] }, Cmd.none )
+
+
+    update _ model =
+        ( model, Cmd.none )
+
+
+    subscriptions _ =
+        Sub.none
+
+
+    view model =
+        model.slots
+            |> List.indexedMap paintMark
+            |> Ui.toUiNode
+
+
+    paintMark : Int -> Int -> Ui.RenderOp
+    paintMark origin slot =
+        let
+            x =
+                origin * 8
+
+            caption =
+                if slot == 0 then
+                    "."
+                else
+                    String.fromInt slot
+        in
+        Ui.text Resources.DefaultFont
+            Ui.defaultTextOptions
+            { x = x, y = 0, w = 10, h = 10 }
+            caption
+    """
+  end
+
   defp list_map_view_source do
     """
     module Main exposing (main)
@@ -1184,6 +1557,263 @@ defmodule Elmc.DirectRenderPlanStreamTest do
         Ui.toUiNode
             (List.map
                 (\\n -> Ui.rect { x = n, y = 0, w = model.size, h = model.size } Color.black)
+                model.cells
+            )
+    """
+  end
+
+  defp filter_static_cmds_view_source do
+    """
+    module Main exposing (main)
+
+    import Pebble.Platform as Platform
+    import Pebble.Ui as Ui
+    import Pebble.Ui.Color as Color
+
+
+    type alias Model =
+        { showSecond : Bool }
+
+
+    type Msg
+        = NoOp
+
+
+    main =
+        Platform.application
+            { init = init
+            , update = update
+            , subscriptions = subscriptions
+            , view = view
+            }
+
+
+    init _ =
+        ( { showSecond = True }, Cmd.none )
+
+
+    update _ model =
+        ( model, Cmd.none )
+
+
+    subscriptions _ =
+        Sub.none
+
+
+    view model =
+        Ui.toUiNode
+            (List.filter
+                (\\_ -> model.showSecond)
+                [ Ui.rect { x = 0, y = 0, w = 4, h = 4 } Color.black
+                , Ui.fillRect { x = 8, y = 0, w = 4, h = 4 } Color.white
+                ]
+            )
+    """
+  end
+
+  defp filter_model_cmds_view_source do
+    """
+    module Main exposing (main)
+
+    import Pebble.Platform as Platform
+    import Pebble.Ui as Ui
+    import Pebble.Ui.Color as Color
+
+
+    type alias Model =
+        { ops : List Ui.RenderOp
+        , showSecond : Bool
+        }
+
+
+    type Msg
+        = NoOp
+
+
+    main =
+        Platform.application
+            { init = init
+            , update = update
+            , subscriptions = subscriptions
+            , view = view
+            }
+
+
+    init _ =
+        ( { ops =
+                [ Ui.rect { x = 0, y = 0, w = 4, h = 4 } Color.black
+                , Ui.fillRect { x = 8, y = 0, w = 4, h = 4 } Color.white
+                ]
+          , showSecond = True
+          }
+        , Cmd.none
+        )
+
+
+    update _ model =
+        ( model, Cmd.none )
+
+
+    subscriptions _ =
+        Sub.none
+
+
+    view model =
+        Ui.toUiNode (List.filter (\\_ -> model.showSecond) model.ops)
+    """
+  end
+
+  defp filter_map_view_source do
+    """
+    module Main exposing (main)
+
+    import Pebble.Platform as Platform
+    import Pebble.Ui as Ui
+    import Pebble.Ui.Color as Color
+
+
+    type alias Model =
+        { cells : List Int
+        , size : Int
+        }
+
+
+    type Msg
+        = NoOp
+
+
+    main =
+        Platform.application
+            { init = init
+            , update = update
+            , subscriptions = subscriptions
+            , view = view
+            }
+
+
+    init _ =
+        ( { cells = [ 0, 1, 2 ], size = 4 }, Cmd.none )
+
+
+    update _ model =
+        ( model, Cmd.none )
+
+
+    subscriptions _ =
+        Sub.none
+
+
+    view model =
+        Ui.toUiNode
+            (List.map
+                (\\n -> Ui.rect { x = n, y = 0, w = model.size, h = model.size } Color.black)
+                (List.filter (\\n -> n > 0) model.cells)
+            )
+    """
+  end
+
+  defp filter_map_static_maybe_cmds_view_source do
+    """
+    module Main exposing (main)
+
+    import Pebble.Platform as Platform
+    import Pebble.Ui as Ui
+    import Pebble.Ui.Color as Color
+
+
+    type alias Model =
+        { showSecond : Bool }
+
+
+    type Msg
+        = NoOp
+
+
+    main =
+        Platform.application
+            { init = init
+            , update = update
+            , subscriptions = subscriptions
+            , view = view
+            }
+
+
+    init _ =
+        ( { showSecond = True }, Cmd.none )
+
+
+    update _ model =
+        ( model, Cmd.none )
+
+
+    subscriptions _ =
+        Sub.none
+
+
+    view model =
+        Ui.toUiNode
+            (List.filterMap identity
+                [ Just (Ui.rect { x = 0, y = 0, w = 4, h = 4 } Color.black)
+                , if model.showSecond then
+                    Just (Ui.fillRect { x = 8, y = 0, w = 4, h = 4 } Color.white)
+
+                  else
+                    Nothing
+                ]
+            )
+    """
+  end
+
+  defp filter_map_draw_cells_view_source do
+    """
+    module Main exposing (main)
+
+    import Pebble.Platform as Platform
+    import Pebble.Ui as Ui
+    import Pebble.Ui.Color as Color
+
+
+    type alias Model =
+        { cells : List Int
+        , size : Int
+        }
+
+
+    type Msg
+        = NoOp
+
+
+    main =
+        Platform.application
+            { init = init
+            , update = update
+            , subscriptions = subscriptions
+            , view = view
+            }
+
+
+    init _ =
+        ( { cells = [ 0, 1, 2 ], size = 4 }, Cmd.none )
+
+
+    update _ model =
+        ( model, Cmd.none )
+
+
+    subscriptions _ =
+        Sub.none
+
+
+    view model =
+        Ui.toUiNode
+            (List.filterMap
+                (\\n ->
+                    if n > 0 then
+                        Just (Ui.rect { x = n, y = 0, w = model.size, h = model.size } Color.black)
+
+                    else
+                        Nothing
+                )
                 model.cells
             )
     """

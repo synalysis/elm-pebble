@@ -430,8 +430,8 @@ defmodule Elmc.Backend.CCodegen.DirectRender.CommandDef do
       {:error, reason} ->
         case Host.direct_emit_expr(decl.expr, env, start_counter) do
           {:ok, body_code, counter} ->
-            if reason == :stream_failed do
-              record_plan_stream_fallback(module_name, decl)
+            if stream_failed_reason?(reason) do
+              record_plan_stream_fallback(module_name, decl, reason)
             end
 
             {:legacy, body_code, counter}
@@ -444,24 +444,29 @@ defmodule Elmc.Backend.CCodegen.DirectRender.CommandDef do
 
   defp host_fallback_error(module_name, name) do
     "direct Pebble command generation failed for #{module_name}.#{name} " <>
-      "(Plan stream and ListLoop both failed; Host ExprDispatch is not a production fallback)"
+      "(Plan stream failed; Host ExprDispatch is not a production fallback)"
   end
 
-  defp record_plan_stream_fallback(module_name, decl) do
+  defp stream_failed_reason?({:stream_failed, _}), do: true
+  defp stream_failed_reason?(_), do: false
+
+  defp record_plan_stream_fallback(module_name, decl, reason) do
     cache = Process.get(:elmc_plan_unsupported_reasons, %{})
     op = Map.get(decl.expr || %{}, :op)
     target = Map.get(decl.expr || %{}, :target) || Map.get(decl.expr || %{}, :name)
+    detail = stream_failed_detail(reason)
 
-    reason = %{
+    stored = %{
       source: "elmc/direct_render",
       code: "plan_stream_fallback",
       op: op,
-      target: target
+      target: target,
+      detail: detail
     }
 
     Process.put(
       :elmc_plan_unsupported_reasons,
-      Map.put_new(cache, {module_name, decl.name}, reason)
+      Map.put_new(cache, {module_name, decl.name}, stored)
     )
 
     opts = Process.get(:elmc_codegen_opts, %{})
@@ -477,7 +482,9 @@ defmodule Elmc.Backend.CCodegen.DirectRender.CommandDef do
         "code" => "plan_stream_fallback",
         "message" =>
           "Direct-render #{module_name}.#{decl.name} fell back to Host emit " <>
-            "(Plan stream lower failed; op=#{inspect(op)} target=#{inspect(target)}). " <>
+            "(Plan stream lower failed; op=#{inspect(op)} target=#{inspect(target)}" <>
+            if(detail, do: " detail=#{detail}", else: "") <>
+            "). " <>
             if(strict?,
               do: "plan_ir_strict forbids ExprDispatch production fallback.",
               else: "Generated C must still typecheck."
@@ -486,6 +493,9 @@ defmodule Elmc.Backend.CCodegen.DirectRender.CommandDef do
       | warnings
     ])
   end
+
+  defp stream_failed_detail({:stream_failed, reason}), do: inspect(reason)
+  defp stream_failed_detail(_), do: nil
 
   defp scene_append_stub(c_name, mod, decl) do
     if entry_view_scene_append?(mod, decl) do

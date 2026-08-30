@@ -60,6 +60,7 @@ defmodule Elmc.DebugUsageTest do
     generated = File.read!(Path.join(opts.out_dir, "c/elmc_generated.c"))
 
     assert generated =~ "elmc_debug_union_ctor_name"
+    assert generated =~ "elmc_debug_union_ctor_info"
     assert generated =~ "switch (tag)"
     assert generated =~ "elmc_agent_generated_probe"
   end

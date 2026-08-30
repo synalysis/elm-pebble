@@ -2767,7 +2767,7 @@ defmodule Elmc.Backend.C.Lower.Function do
   @spec boxed_record_tuple_builtin_instr?(map() | term()) :: boolean()
 
   defp boxed_record_tuple_builtin_instr?(%{op: :call_runtime, args: %{builtin: builtin}})
-       when builtin in [:record_new, :record_new_take, :tuple2, :tuple2_take],
+       when builtin in [:record_new, :record_new_take, :tuple2, :tuple2_take, :tuple3],
        do: true
 
   defp boxed_record_tuple_builtin_instr?(_), do: false
@@ -4432,6 +4432,19 @@ defmodule Elmc.Backend.C.Lower.Function do
     list_refs ++ Enum.map(Enum.uniq(prefix ++ caps), &{:boxed, &1})
   end
 
+  defp instr_reg_refs(%{op: :stream_static_draw_table}, _decl_map), do: []
+
+  defp instr_reg_refs(%{op: :stream_affine_text, args: args}, _decl_map) do
+    case Map.get(args, :list) do
+      reg when is_integer(reg) -> [{:boxed, reg}]
+      _ -> []
+    end
+  end
+
+  defp instr_reg_refs(%{op: :stream_push_cmd, args: %{value: value}}, _decl_map)
+       when is_integer(value),
+       do: [{:boxed, value}]
+
   defp instr_reg_refs(%{op: :const_static_list, args: %{regs: regs}}, _decl_map) when is_list(regs),
        do: Enum.map(regs, &{:boxed, &1})
 
@@ -4547,6 +4560,19 @@ defmodule Elmc.Backend.C.Lower.Function do
       _ -> []
     end
   end
+
+  defp boxed_operand_regs(%{op: :stream_static_draw_table}, _decl_map), do: []
+
+  defp boxed_operand_regs(%{op: :stream_affine_text, args: args}, _decl_map) do
+    case Map.get(args, :list) do
+      reg when is_integer(reg) -> [reg]
+      _ -> []
+    end
+  end
+
+  defp boxed_operand_regs(%{op: :stream_push_cmd, args: %{value: value}}, _decl_map)
+       when is_integer(value),
+       do: [value]
 
   defp boxed_operand_regs(%{op: :stream_for_each, args: args}, _decl_map) do
     list = Map.get(args, :list)

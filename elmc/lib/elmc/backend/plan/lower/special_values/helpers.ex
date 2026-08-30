@@ -374,15 +374,41 @@ defmodule Elmc.Backend.Plan.Lower.SpecialValues.Helpers do
   @spec runtime_fn_lambda(String.t(), [String.t()]) :: Types.ir_expr()
 
   def runtime_fn_lambda(function, arg_names) when is_binary(function) and is_list(arg_names) do
+    runtime_fn_lambda(function, [], arg_names)
+  end
+
+  @spec runtime_fn_lambda(String.t(), [Types.ir_expr()], [String.t()]) :: Types.ir_expr()
+  def runtime_fn_lambda(function, prefix_args, remaining_names)
+      when is_binary(function) and is_list(prefix_args) and is_list(remaining_names) do
     %{
       op: :lambda,
-      args: arg_names,
+      args: remaining_names,
       body: %{
         op: :runtime_call,
         function: function,
-        args: Enum.map(arg_names, &%{op: :var, name: &1})
+        args: prefix_args ++ Enum.map(remaining_names, &%{op: :var, name: &1})
       }
     }
+  end
+
+  @spec web_only_runtime(String.t(), [String.t()], [Types.ir_expr()]) :: Types.ir_expr() | nil
+  def web_only_runtime(function, names, args)
+      when is_binary(function) and is_list(names) and is_list(args) do
+    if Elmc.Backend.Plan.Lower.Platform.Web.web_target?(Process.get(:elmc_codegen_opts, %{})) do
+      n = length(names)
+      taken = Enum.take(args, n)
+
+      cond do
+        length(taken) == n ->
+          %{op: :runtime_call, function: function, args: taken}
+
+        length(taken) < n ->
+          runtime_fn_lambda(function, taken, Enum.drop(names, length(taken)))
+
+        true ->
+          nil
+      end
+    end
   end
 
   @spec http_request_constructor_expr(String.t(), Types.ir_expr(), Types.ir_expr()) ::

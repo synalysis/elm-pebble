@@ -174,33 +174,27 @@ defmodule Elmc.Backend.CCodegen.CallCompile do
           Types.ir_expr()
 
   defp typed_debug_to_string_expr("Debug.toString", [value], _expr, env) do
-    function =
-      if set_debug_value?(value, env) do
-        "elmc_debug_set_to_string"
-      else
-        "elmc_debug_to_string"
-      end
-
+    function = TypeParsing.debug_from_list_c_symbol(debug_collection_kind(value, env))
     %{op: :runtime_call, function: function, args: [value]}
   end
 
   defp typed_debug_to_string_expr(_target, _args, expr, _env), do: expr
 
-  @spec set_debug_value?(Types.ir_expr(), Types.compile_env()) :: boolean()
+  @spec debug_collection_kind(Types.ir_expr(), Types.compile_env()) :: :set | :dict | :array | nil
 
-  defp set_debug_value?(value, env) do
+  defp debug_collection_kind(value, env) do
     case TypedReturn.expr_type(value, env) do
       type when is_binary(type) ->
-        TypeParsing.set_type?(type) or function_param_set_type?(value, env)
+        TypeParsing.debug_from_list_kind(type) || function_param_collection_kind(value, env)
 
       _ ->
-        function_param_set_type?(value, env)
+        function_param_collection_kind(value, env)
     end
   end
 
-  @spec function_param_set_type?(Types.ir_expr(), Types.compile_env()) :: boolean()
+  @spec function_param_collection_kind(Types.ir_expr(), Types.compile_env()) :: :set | :dict | :array | nil
 
-  defp function_param_set_type?(%{op: :var, name: name}, env) when is_binary(name) do
+  defp function_param_collection_kind(%{op: :var, name: name}, env) when is_binary(name) do
     module = Map.get(env, :__module__, "Main")
     fn_name = Map.get(env, :__function_name__)
 
@@ -208,23 +202,23 @@ defmodule Elmc.Backend.CCodegen.CallCompile do
       %{type: type, args: args} when is_binary(type) and is_list(args) ->
         with idx when is_integer(idx) <- Enum.find_index(args, &(&1 == name)),
              param_type when is_binary(param_type) <- Enum.at(TypeParsing.function_arg_types(type), idx) do
-          TypeParsing.set_type?(param_type)
+          TypeParsing.debug_from_list_kind(param_type)
         else
-          _ -> false
+          _ -> nil
         end
 
       %{type: type} when is_binary(type) ->
         case TypeParsing.function_arg_types(type) do
-          [param_type] -> TypeParsing.set_type?(param_type)
-          _ -> false
+          [param_type] -> TypeParsing.debug_from_list_kind(param_type)
+          _ -> nil
         end
 
       _ ->
-        false
+        nil
     end
   end
 
-  defp function_param_set_type?(_value, _env), do: false
+  defp function_param_collection_kind(_value, _env), do: nil
 
   @spec let_bound_closure_call(String.t(), [String.t()], Types.compile_env(), Types.compile_counter()) ::
           {:ok, Types.compile_result()} | :error

@@ -22,7 +22,6 @@ defmodule Ide.Debugger.CompiledElixirCorpusHelpers do
 
   @spec ensure_compiled_elixir_backend!() :: :ok
   def ensure_compiled_elixir_backend! do
-    Application.put_env(:ide, Ide.Debugger.RuntimeExecutor, execution_backend: :compiled_elixir)
     _ = Application.ensure_all_started(:elmx)
     :ok
   end

@@ -11,7 +11,8 @@ defmodule Elmc.WasmMjsHostTest do
       assert stub.name == "v3"
       assert stub.params == ["param0", "param1", "param2"]
       assert stub.imports == MapSet.new(["runtime.mjs_v3"])
-      assert stub.import_arities == %{"runtime.mjs_v3" => 3}
+      assert stub.import_arities == %{"runtime.mjs_v3" => 4}
+      assert stub.body =~ "i32.const 1024"
       assert stub.body =~ "call $runtime_mjs_v3\n"
       assert stub.body =~ "local.get $param0"
       assert stub.body =~ "local.get $param2"
@@ -23,7 +24,7 @@ defmodule Elmc.WasmMjsHostTest do
 
       assert stub.params == ["param0"]
       assert stub.imports == MapSet.new(["runtime.mjs_v3getX"])
-      assert stub.import_arities == %{"runtime.mjs_v3getX" => 1}
+      assert stub.import_arities == %{"runtime.mjs_v3getX" => 2}
       assert stub.body =~ "call $runtime_mjs_v3getX\n"
     end
 
@@ -42,7 +43,7 @@ defmodule Elmc.WasmMjsHostTest do
         StubFunctions.lower_stub(%{module: "Elm.Kernel.MJS", name: "m4x4makeFrustum", arity: 6})
 
       assert stub.params == Enum.map(0..5, &"param#{&1}")
-      assert stub.import_arities == %{"runtime.mjs_m4x4makeFrustum" => 6}
+      assert stub.import_arities == %{"runtime.mjs_m4x4makeFrustum" => 7}
 
       for i <- 0..5 do
         assert stub.body =~ "local.get $param#{i}"
@@ -54,7 +55,7 @@ defmodule Elmc.WasmMjsHostTest do
 
       assert stub.params == []
       assert stub.imports == MapSet.new(["runtime.mjs_m4x4identity"])
-      assert stub.import_arities == %{"runtime.mjs_m4x4identity" => 0}
+      assert stub.import_arities == %{"runtime.mjs_m4x4identity" => 1}
       assert stub.body =~ "call $runtime_mjs_m4x4identity\n"
     end
 
@@ -95,15 +96,15 @@ defmodule Elmc.WasmMjsHostTest do
 
   describe "ImportSignatures canonical MJS arities" do
     test "vector and matrix constructors keep their fixed upstream arity" do
-      assert ImportSignatures.param_count("runtime.mjs_v2") == 2
-      assert ImportSignatures.param_count("runtime.mjs_v3") == 3
-      assert ImportSignatures.param_count("runtime.mjs_v4") == 4
-      assert ImportSignatures.param_count("runtime.mjs_m4x4makeFrustum") == 6
-      assert ImportSignatures.param_count("runtime.mjs_m4x4identity") == 0
+      assert ImportSignatures.param_count("runtime.mjs_v2") == 3
+      assert ImportSignatures.param_count("runtime.mjs_v3") == 4
+      assert ImportSignatures.param_count("runtime.mjs_v4") == 5
+      assert ImportSignatures.param_count("runtime.mjs_m4x4makeFrustum") == 7
+      assert ImportSignatures.param_count("runtime.mjs_m4x4identity") == 1
     end
 
     test "observed arity never drops below the canonical minimum" do
-      assert ImportSignatures.param_count("runtime.mjs_v3add", 0) == 2
+      assert ImportSignatures.param_count("runtime.mjs_v3add", 0) == 3
       assert ImportSignatures.param_count("runtime.mjs_v3add", 5) == 5
     end
   end

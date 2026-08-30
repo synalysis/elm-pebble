@@ -119,9 +119,8 @@ It runs under plan-primary (`direct_render_only`, `prune_direct_generic`,
 
 **Body emit (2026-07):** `CommandDef` tries `DirectRender.PlanStreamEmit` first:
 
-1. Verified Plan stream SSA (`Plan.Stream.lower_function` + `elmc_direct_scene_writer` scene push)
-2. List-loop peels via `Plan.Stream.ListLoop` → `ListLoopPlans` (tracked gaps: static draw tables, affine templates)
-3. Legacy `Emit.Expr` / `ExprDispatch` fallback with `plan_stream_fallback` diagnostic
+1. Verified Plan stream SSA (`Plan.Stream.lower_function` + `elmc_direct_scene_writer` scene push), including `:stream_for_each`, `:stream_static_draw_table`, and `:stream_affine_text`
+2. Legacy `Emit.Expr` / `ExprDispatch` fallback with `plan_stream_fallback` diagnostic
 
 Not a replacement for Plan IR on `update`/`init`; it supersede-emits view helpers while
 keeping compact scene-writer push (no boxed `List RenderOp` tails).

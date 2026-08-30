@@ -171,6 +171,9 @@ defmodule Elmc.Backend.Plan.Types do
           | :list_cursor_map
           | :list_walk_map
           | :stream_for_each
+          | :stream_static_draw_table
+          | :stream_affine_text
+          | :stream_push_cmd
           | :pipe_apply_repeat
           | :pebble_sub
           | :forward_ref_set

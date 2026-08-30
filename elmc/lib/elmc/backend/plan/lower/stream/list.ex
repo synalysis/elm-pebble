@@ -1,11 +1,16 @@
 defmodule Elmc.Backend.Plan.Lower.Stream.List do
   @moduledoc false
   alias Elmc.Backend.Plan.Types, as: Types
+  alias Elmc.Backend.CCodegen.BuiltinUnion
+  alias Elmc.Backend.CCodegen.ListHofResolve
+  alias Elmc.Backend.CCodegen.TypeParsing
 
   alias Elmc.Backend.Plan.Builder
   alias Elmc.Backend.Plan.Context
   alias Elmc.Backend.Plan.Lower.{Expr, Lambda}
   alias Elmc.Backend.Plan.Stream
+  alias Elmc.Backend.Plan.Stream.AffineText
+  alias Elmc.Backend.Plan.Stream.StaticDrawTable
 
   @max_unroll 64
 
@@ -14,6 +19,8 @@ defmodule Elmc.Backend.Plan.Lower.Stream.List do
   @cons_names MapSet.new(["cons", "::"])
   @append_names MapSet.new(["append", "++", "__append__"])
   @filter_names MapSet.new(["filter"])
+  @filter_map_names MapSet.new(["filterMap"])
+  @just_names ~w(Just Maybe.Just)
   @list_modules MapSet.new(["List", "Elm.Kernel.List"])
   @append_modules MapSet.new(["List", "Elm.Kernel.List", "Basics"])
   @range_names MapSet.new(["range"])
@@ -80,6 +87,70 @@ defmodule Elmc.Backend.Plan.Lower.Stream.List do
   end
 
   def append_call?(_, _), do: false
+
+  @spec filter_call?(map(), String.t() | nil) :: boolean()
+  def filter_call?(expr, module) when is_map(expr) do
+    case Stream.callee_key(expr, module) do
+      {mod, name} -> MapSet.member?(@list_modules, mod) and MapSet.member?(@filter_names, name)
+      _ -> false
+    end
+  end
+
+  def filter_call?(_, _), do: false
+
+  @spec filter_map_call?(map(), String.t() | nil) :: boolean()
+  def filter_map_call?(expr, module) when is_map(expr) do
+    case Stream.callee_key(expr, module) do
+      {mod, name} ->
+        MapSet.member?(@list_modules, mod) and MapSet.member?(@filter_map_names, name)
+
+      _ ->
+        false
+    end
+  end
+
+  def filter_map_call?(_, _), do: false
+
+  @spec eligible_filter_call?(map(), map(), String.t() | nil, MapSet.t(), MapSet.t()) :: boolean()
+  def eligible_filter_call?(expr, decl_map, module, seen, locals \\ MapSet.new())
+
+  def eligible_filter_call?(expr, decl_map, module, seen, locals) when is_map(expr) do
+    case Map.get(expr, :args, []) do
+      [pred, list] ->
+        mapper_eligible?(pred, decl_map, module, seen) and
+          filter_source_eligible?(list, decl_map, module, seen, locals)
+
+      _ ->
+        false
+    end
+  end
+
+  def eligible_filter_call?(_, _, _, _, _), do: false
+
+  @spec eligible_filter_map_call?(map(), map(), String.t() | nil, MapSet.t(), MapSet.t()) ::
+          boolean()
+  def eligible_filter_map_call?(expr, decl_map, module, seen, locals \\ MapSet.new())
+
+  def eligible_filter_map_call?(expr, decl_map, module, seen, locals) when is_map(expr) do
+    case Map.get(expr, :args, []) do
+      [fun, list] ->
+        cond do
+          ListHofResolve.filter_map_identity?(fun) ->
+            filter_map_identity_source_eligible?(list, decl_map, module, seen, locals)
+
+          filter_map_mapper_eligible?(fun, decl_map, module, seen) ->
+            source_eligible?(fun, list)
+
+          true ->
+            false
+        end
+
+      _ ->
+        false
+    end
+  end
+
+  def eligible_filter_map_call?(_, _, _, _, _), do: false
 
   @spec eligible_append_call?(map(), map(), String.t() | nil, MapSet.t(), MapSet.t()) :: boolean()
   def eligible_append_call?(expr, decl_map, module, seen, locals \\ MapSet.new())
@@ -166,6 +237,14 @@ defmodule Elmc.Backend.Plan.Lower.Stream.List do
     compile_cons(head, tail, ctx, b)
   end
 
+  def try_compile_runtime(%{function: "elmc_list_filter", args: [pred, list]}, ctx, b) do
+    compile_filter(pred, list, ctx, b)
+  end
+
+  def try_compile_runtime(%{function: "elmc_list_filter_map", args: [fun, list]}, ctx, b) do
+    compile_filter_map(fun, list, ctx, b)
+  end
+
   def try_compile_runtime(%{function: function, args: [fun, list]}, ctx, b)
       when is_binary(function) do
     case Map.get(@runtime_kind, function) do
@@ -181,14 +260,20 @@ defmodule Elmc.Backend.Plan.Lower.Stream.List do
   def compile([], _ctx, b), do: {:ok, :stream_void, b}
 
   def compile(items, ctx, b) when is_list(items) do
-    arm_ctx = Context.for_branch_arm(ctx)
+    case StaticDrawTable.match_items(items) do
+      {:ok, table} ->
+        StaticDrawTable.emit(table, ctx, b)
 
-    Enum.reduce_while(items, {:ok, :stream_void, b}, fn item, {:ok, :stream_void, b_acc} ->
-      case Expr.compile(item, arm_ctx, b_acc) do
-        {:ok, :stream_void, b1} -> {:cont, {:ok, :stream_void, b1}}
-        _ -> {:halt, :unsupported}
-      end
-    end)
+      :error ->
+        arm_ctx = Context.for_branch_arm(ctx)
+
+        Enum.reduce_while(items, {:ok, :stream_void, b}, fn item, {:ok, :stream_void, b_acc} ->
+          case Expr.compile(item, arm_ctx, b_acc) do
+            {:ok, :stream_void, b1} -> {:cont, {:ok, :stream_void, b1}}
+            _ -> {:halt, :unsupported}
+          end
+        end)
+    end
   end
 
   @spec compile_append(Types.ir_expr(), Types.ir_expr(), Context.t(), Builder.t()) ::
@@ -246,7 +331,330 @@ defmodule Elmc.Backend.Plan.Lower.Stream.List do
     compile_append(left, right, ctx, b)
   end
 
+  defp compile_key({mod, "filter"}, [pred, list], ctx, b)
+       when mod in ["List", "Elm.Kernel.List"] do
+    compile_filter(pred, list, ctx, b)
+  end
+
+  defp compile_key({mod, "filterMap"}, [fun, list], ctx, b)
+       when mod in ["List", "Elm.Kernel.List"] do
+    compile_filter_map(fun, list, ctx, b)
+  end
+
   defp compile_key(_, _, _, _), do: :unsupported
+
+  @spec compile_push_cmd(Types.reg(), Context.t(), Builder.t()) ::
+          {:ok, :stream_void, Builder.t()} | :unsupported
+  def compile_push_cmd(reg, ctx, b) when is_integer(reg) do
+    wrap_catch? = Builder.wrap_fallible_instr_catch?(b, ctx, true)
+    b1 = if wrap_catch?, do: Builder.catch_begin(b), else: b
+    effects = %{produces: nil, consumes: [], borrows: [reg], fallible: true}
+
+    {_, b2} =
+      Builder.emit(b1, :stream_push_cmd, %{
+        dest: :stream_void,
+        args: %{value: reg},
+        effects: effects
+      })
+
+    b3 = if wrap_catch?, do: Builder.catch_end(b2), else: b2
+    {:ok, :stream_void, b3}
+  end
+
+  def compile_push_cmd(_, _, _), do: :unsupported
+
+  defp compile_filter(pred, list, ctx, b) do
+    list = resolve_stream_expr(list, ctx)
+
+    case expand_source(list) do
+      {:ok, items} ->
+        case filter_expand_items(pred, items) do
+          {:ok, kept} -> compile(kept, ctx, b)
+          :error -> unroll_filter(pred, items, ctx, b)
+        end
+
+      :error ->
+        compile_filter_foreach(pred, list, ctx, b)
+    end
+  end
+
+  defp unroll_filter(pred, items, ctx, b) do
+    arm_ctx = Context.for_branch_arm(ctx)
+
+    Enum.reduce_while(items, {:ok, :stream_void, b}, fn item, {:ok, :stream_void, b_acc} ->
+      case pred_apply(pred, item) do
+        :error ->
+          {:halt, :unsupported}
+
+        cond_expr ->
+          if_expr = %{
+            op: :if,
+            cond: cond_expr,
+            then_expr: item,
+            else_expr: %{op: :list_literal, items: []}
+          }
+
+          case Expr.compile(if_expr, arm_ctx, b_acc) do
+            {:ok, :stream_void, b1} -> {:cont, {:ok, :stream_void, b1}}
+            _ -> {:halt, :unsupported}
+          end
+      end
+    end)
+  end
+
+  defp compile_filter_foreach(pred, list, ctx, b) do
+    case filter_wrapper_lambda(pred) do
+      :error -> :unsupported
+      fun -> compile_foreach(:map, fun, list, ctx, b)
+    end
+  end
+
+  defp filter_wrapper_lambda(pred) do
+    param = "__stream_filter"
+
+    case pred_apply(pred, %{op: :var, name: param}) do
+      :error ->
+        :error
+
+      cond_expr ->
+        %{
+          op: :lambda,
+          args: [param],
+          body: %{
+            op: :if,
+            cond: cond_expr,
+            then_expr: %{op: :var, name: param},
+            else_expr: %{op: :list_literal, items: []}
+          }
+        }
+    end
+  end
+
+  defp compile_filter_map(fun, list, ctx, b) do
+    list = resolve_stream_expr(list, ctx)
+
+    case expand_source(list) do
+      {:ok, items} ->
+        case filter_map_expand_items(fun, items) do
+          {:ok, kept} -> compile(kept, ctx, b)
+          :error -> unroll_filter_map(fun, items, ctx, b)
+        end
+
+      :error ->
+        compile_filter_map_foreach(fun, list, ctx, b)
+    end
+  end
+
+  defp unroll_filter_map(fun, items, ctx, b) do
+    arm_ctx = Context.for_branch_arm(ctx)
+
+    Enum.reduce_while(items, {:ok, :stream_void, b}, fn item, {:ok, :stream_void, b_acc} ->
+      case mapper_apply_expr(fun, item) do
+        :error ->
+          {:halt, :unsupported}
+
+        maybe_expr ->
+          case compile_maybe_stream(maybe_expr, arm_ctx, b_acc) do
+            {:ok, :stream_void, b1} -> {:cont, {:ok, :stream_void, b1}}
+            _ -> {:halt, :unsupported}
+          end
+      end
+    end)
+  end
+
+  defp compile_filter_map_foreach(fun, list, ctx, b) do
+    case filter_map_wrapper_lambda(fun) do
+      :error -> :unsupported
+      wrapper -> compile_foreach(:map, wrapper, list, ctx, b)
+    end
+  end
+
+  defp filter_map_wrapper_lambda(fun) do
+    param = "__stream_filter_map"
+
+    case mapper_apply_expr(fun, %{op: :var, name: param}) do
+      :error ->
+        :error
+
+      maybe_expr ->
+        body =
+          case peel_maybe_if(maybe_expr) do
+            {:ok, cond_expr, then_expr, else_expr} ->
+              %{op: :if, cond: cond_expr, then_expr: then_expr, else_expr: else_expr}
+
+            :error ->
+              cond do
+                maybe_nothing?(maybe_expr) ->
+                  %{op: :list_literal, items: []}
+
+                match?({:ok, _}, maybe_just_inner(maybe_expr)) ->
+                  {:ok, inner} = maybe_just_inner(maybe_expr)
+                  inner
+
+                true ->
+                  maybe_unwrap_stream_expr(maybe_expr)
+              end
+          end
+
+        %{op: :lambda, args: [param], body: body}
+    end
+  end
+
+  defp mapper_apply_expr(%{op: :lambda, args: [p], body: body}, item) when is_binary(p),
+    do: subst_var(body, p, item)
+
+  defp mapper_apply_expr(%{op: :var, name: name}, item) when is_binary(name) do
+    if ListHofResolve.filter_map_identity?(%{op: :var, name: name}) do
+      item
+    else
+      %{op: :call, name: name, args: [item]}
+    end
+  end
+
+  defp mapper_apply_expr(%{op: op} = fun, item) when op in [:call, :qualified_call, :qualified_ref] do
+    if ListHofResolve.filter_map_identity?(fun) do
+      item
+    else
+      append_call_args(fun, [item])
+    end
+  end
+
+  defp mapper_apply_expr(_, _), do: :error
+
+  defp compile_maybe_stream(expr, ctx, b) do
+    cond do
+      maybe_nothing?(expr) ->
+        {:ok, :stream_void, b}
+
+      match?({:ok, _}, maybe_just_inner(expr)) ->
+        {:ok, inner} = maybe_just_inner(expr)
+        Expr.compile(inner, ctx, b)
+
+      match?({:ok, _, _, _}, peel_maybe_if(expr)) ->
+        {:ok, cond_expr, then_expr, else_expr} = peel_maybe_if(expr)
+
+        Expr.compile(
+          %{op: :if, cond: cond_expr, then_expr: then_expr, else_expr: else_expr},
+          ctx,
+          b
+        )
+
+      true ->
+        Expr.compile(maybe_unwrap_stream_expr(expr), ctx, b)
+    end
+  end
+
+  defp maybe_unwrap_stream_expr(maybe_expr) do
+    payload = "__stream_filter_map_just"
+
+    %{
+      op: :case,
+      subject: maybe_expr,
+      branches: [
+        %{
+          pattern: %{kind: :constructor, name: "Nothing"},
+          expr: %{op: :list_literal, items: []}
+        },
+        %{
+          pattern: %{kind: :constructor, name: "Just", bind: payload},
+          expr: %{op: :var, name: payload}
+        }
+      ]
+    }
+  end
+
+  defp peel_maybe_if(%{op: :if} = expr) do
+    then_expr = Map.get(expr, :then_expr) || Map.get(expr, :then)
+    else_expr = Map.get(expr, :else_expr) || Map.get(expr, :else)
+    cond_expr = Map.get(expr, :cond)
+
+    cond do
+      not is_map(cond_expr) or not is_map(then_expr) or not is_map(else_expr) ->
+        :error
+
+      maybe_nothing?(then_expr) and match?({:ok, _}, maybe_just_inner(else_expr)) ->
+        {:ok, inner} = maybe_just_inner(else_expr)
+        {:ok, cond_expr, %{op: :list_literal, items: []}, inner}
+
+      maybe_nothing?(else_expr) and match?({:ok, _}, maybe_just_inner(then_expr)) ->
+        {:ok, inner} = maybe_just_inner(then_expr)
+        {:ok, cond_expr, inner, %{op: :list_literal, items: []}}
+
+      true ->
+        :error
+    end
+  end
+
+  defp peel_maybe_if(_), do: :error
+
+  defp maybe_nothing?(expr), do: BuiltinUnion.maybe_nothing_literal?(expr)
+
+  defp maybe_just_inner(%{op: :constructor_call, target: target, args: [inner]})
+       when is_binary(target) do
+    if just_name?(target), do: {:ok, inner}, else: :error
+  end
+
+  defp maybe_just_inner(%{op: :call, name: name, args: [inner]}) when is_binary(name) do
+    if just_name?(name), do: {:ok, inner}, else: :error
+  end
+
+  defp maybe_just_inner(%{op: :qualified_call, target: target, args: [inner]})
+       when is_binary(target) do
+    if just_name?(target), do: {:ok, inner}, else: :error
+  end
+
+  defp maybe_just_inner(%{op: :runtime_call, function: function, args: [inner]})
+       when function in ["elmc_maybe_just", "elmc_maybe_just_own"],
+       do: {:ok, inner}
+
+  defp maybe_just_inner(%{
+         op: :tuple2,
+         left: %{op: :int_literal, union_ctor: ctor},
+         right: inner
+       })
+       when is_binary(ctor) do
+    if just_name?(ctor), do: {:ok, inner}, else: :error
+  end
+
+  defp maybe_just_inner(%{op: :tuple2, left: %{op: :int_literal, value: 1}, right: inner}),
+    do: {:ok, inner}
+
+  defp maybe_just_inner(_), do: :error
+
+  defp just_name?(target) when is_binary(target) do
+    short = target |> String.split(".") |> List.last()
+    short in @just_names
+  end
+
+  defp pred_apply(%{op: :lambda, args: [p], body: body}, item) when is_binary(p),
+    do: subst_var(body, p, item)
+
+  defp pred_apply(%{op: :var, name: name}, item) when is_binary(name),
+    do: %{op: :call, name: name, args: [item]}
+
+  defp pred_apply(%{op: op} = fun, item) when op in [:call, :qualified_call, :qualified_ref],
+    do: append_call_args(fun, [item])
+
+  defp pred_apply(_, _), do: :error
+
+  defp filter_source_eligible?(list, decl_map, module, seen, locals) do
+    cond do
+      match?(%{op: :list_literal, items: items} when is_list(items), list) ->
+        Enum.all?(list.items, &Stream.eligible_expr?(&1, decl_map, module, seen, locals))
+
+      match?(%{op: :list_literal, elements: items} when is_list(items), list) ->
+        Enum.all?(list.elements, &Stream.eligible_expr?(&1, decl_map, module, seen, locals))
+
+      Stream.eligible_expr?(list, decl_map, module, seen, locals) ->
+        true
+
+      value_list_source?(list) and not expandable_source?(list) ->
+        true
+
+      true ->
+        false
+    end
+  end
 
   defp compile_concat(lists, ctx, b) do
     case compile_expr(lists, ctx, b) do
@@ -258,15 +666,43 @@ defmodule Elmc.Backend.Plan.Lower.Stream.List do
   defp compile_kind(kind, fun, list, ctx, b) do
     list = resolve_stream_expr(list, ctx)
 
-    case expand_source(list) do
-      {:ok, items} ->
-        case mapper_spec(fun, kind == :indexed_map) do
-          {:ok, mapper} -> unroll(mapper, items, kind == :indexed_map, ctx, b)
-          :error -> :unsupported
-        end
+    case AffineText.try_compile(kind, fun, list, ctx, b) do
+      {:ok, :stream_void, b1} ->
+        {:ok, :stream_void, b1}
 
       :error ->
-        compile_foreach(kind, fun, list, ctx, b)
+        case expand_source(list) do
+          {:ok, items} ->
+            case mapper_spec(fun, kind == :indexed_map) do
+              {:ok, {:lambda, _, _} = mapper} ->
+                unroll(mapper, items, kind == :indexed_map, ctx, b)
+
+              {:ok, {:apply, apply_fun}} ->
+                # Prefer foreach only for list-producing helpers (`*_commands_append`).
+                # Kernel draws (`Ui.rect`) return a single RenderOp — unroll those.
+                if named_list_stream_helper?(apply_fun, ctx) do
+                  case compile_foreach(kind, fun, list, ctx, b) do
+                    {:ok, _, _} = ok -> ok
+                    _ -> unroll_apply_or_unsupported(fun, items, kind == :indexed_map, ctx, b)
+                  end
+                else
+                  unroll_apply_or_unsupported(fun, items, kind == :indexed_map, ctx, b)
+                end
+
+              :error ->
+                :unsupported
+            end
+
+          :error ->
+            compile_foreach(kind, fun, list, ctx, b)
+        end
+    end
+  end
+
+  defp unroll_apply_or_unsupported(fun, items, indexed?, ctx, b) do
+    case mapper_spec(fun, indexed?) do
+      {:ok, mapper} -> unroll(mapper, items, indexed?, ctx, b)
+      :error -> :unsupported
     end
   end
 
@@ -367,6 +803,24 @@ defmodule Elmc.Backend.Plan.Lower.Stream.List do
 
   defp apply_callee(_, _), do: :error
 
+  defp named_list_stream_helper?(fun, ctx) do
+    case apply_callee(fun, ctx) do
+      {:ok, mod, name, _} ->
+        case Map.get(ctx.decl_map || %{}, {mod, name}) do
+          %{type: type} when is_binary(type) -> list_result_type?(type)
+          _ -> false
+        end
+
+      _ ->
+        false
+    end
+  end
+
+  defp list_result_type?(type) when is_binary(type) do
+    ret = TypeParsing.function_return_type(type)
+    ret == "List" or String.starts_with?(ret, "List ")
+  end
+
   defp expand_source(expr) do
     cond do
       match?(%{op: :list_literal, items: items} when is_list(items), expr) ->
@@ -404,6 +858,16 @@ defmodule Elmc.Backend.Plan.Lower.Stream.List do
 
         with {:ok, items} <- expand_source(src),
              {:ok, kept} <- filter_expand_items(pred, items) do
+          take_unroll(kept)
+        else
+          _ -> :error
+        end
+
+      filter_map_parts(expr) != :error ->
+        {:ok, fun, src} = filter_map_parts(expr)
+
+        with {:ok, items} <- expand_source(src),
+             {:ok, kept} <- filter_map_expand_items(fun, items) do
           take_unroll(kept)
         else
           _ -> :error
@@ -471,6 +935,25 @@ defmodule Elmc.Backend.Plan.Lower.Stream.List do
 
   defp filter_parts(_), do: :error
 
+  defp filter_map_parts(expr) when is_map(expr) do
+    case Stream.callee_key(expr, nil) do
+      {mod, name} ->
+        if MapSet.member?(@list_modules, mod) and MapSet.member?(@filter_map_names, name) do
+          case Map.get(expr, :args) do
+            [fun, list] -> {:ok, fun, list}
+            _ -> :error
+          end
+        else
+          :error
+        end
+
+      _ ->
+        :error
+    end
+  end
+
+  defp filter_map_parts(_), do: :error
+
   defp map_expand_items(%{op: :lambda, args: [param], body: body}, items) when is_binary(param) do
     {:ok, Enum.map(items, &subst_var(body, param, &1))}
   end
@@ -490,6 +973,31 @@ defmodule Elmc.Backend.Plan.Lower.Stream.List do
   end
 
   defp filter_expand_items(_, _), do: :error
+
+  defp filter_map_expand_items(fun, items) when is_list(items) do
+    items
+    |> Enum.reduce_while({:ok, []}, fn item, {:ok, acc} ->
+      case mapper_apply_expr(fun, item) do
+        :error ->
+          {:halt, :error}
+
+        maybe_expr ->
+          cond do
+            maybe_nothing?(maybe_expr) ->
+              {:cont, {:ok, acc}}
+
+            match?({:ok, _}, maybe_just_inner(maybe_expr)) ->
+              {:ok, inner} = maybe_just_inner(maybe_expr)
+              {:cont, {:ok, acc ++ [inner]}}
+
+            true ->
+              {:halt, :error}
+          end
+      end
+    end)
+  end
+
+  defp filter_map_expand_items(_, _), do: :error
 
   defp eval_int_pred(body, param, %{op: :int_literal, value: n}) when is_integer(n) do
     case mod_by_eq_pred(body, param) do
@@ -583,6 +1091,11 @@ defmodule Elmc.Backend.Plan.Lower.Stream.List do
       {:items, items}, acc when is_list(items) ->
         Map.put(acc, :items, Enum.map(items, &subst_var(&1, name, replacement)))
 
+      {key, value}, acc
+      when key in [:cond, :then, :else, :then_expr, :else_expr, :left, :right, :subject] and
+             is_map(value) ->
+        Map.put(acc, key, subst_var(value, name, replacement))
+
       {key, value}, acc ->
         Map.put(acc, key, value)
     end)
@@ -643,18 +1156,55 @@ defmodule Elmc.Backend.Plan.Lower.Stream.List do
   defp literal_int(%{op: :int_literal, value: v}) when is_integer(v), do: {:ok, v}
   defp literal_int(_), do: :error
 
-  defp mapper_spec(%{op: :lambda, args: [param], body: body}, false) when is_binary(param),
-    do: {:ok, {:lambda, [param], body}}
+  defp mapper_spec(%{op: :lambda, args: [param], body: body}, false) when is_binary(param) do
+    case eta_apply_body(body, [param]) do
+      {:ok, fun} -> {:ok, {:apply, fun}}
+      :error -> {:ok, {:lambda, [param], body}}
+    end
+  end
 
   defp mapper_spec(%{op: :lambda, args: [i, item], body: body}, true)
-       when is_binary(i) and is_binary(item),
-       do: {:ok, {:lambda, [i, item], body}}
+       when is_binary(i) and is_binary(item) do
+    case eta_apply_body(body, [i, item]) do
+      {:ok, fun} -> {:ok, {:apply, fun}}
+      :error -> {:ok, {:lambda, [i, item], body}}
+    end
+  end
 
   defp mapper_spec(%{op: op} = fun, _indexed?)
        when op in [:call, :qualified_call, :var, :qualified_ref],
        do: {:ok, {:apply, fun}}
 
   defp mapper_spec(_, _), do: :error
+
+  # `\x -> helper prefix x` and `\i x -> helper prefix i x` are named applies.
+  defp eta_apply_body(%{op: op, args: args} = call, params)
+       when op in [:call, :qualified_call] and is_list(args) and is_list(params) do
+    n = length(params)
+
+    if n > 0 and length(args) >= n do
+      {prefix, suffix} = Enum.split(args, length(args) - n)
+
+      if eta_suffix_params?(suffix, params) do
+        {:ok, %{call | args: prefix}}
+      else
+        :error
+      end
+    else
+      :error
+    end
+  end
+
+  defp eta_apply_body(_, _), do: :error
+
+  defp eta_suffix_params?(suffix, params) do
+    suffix
+    |> Enum.zip(params)
+    |> Enum.all?(fn
+      {%{op: :var, name: name}, param} -> name == param
+      _ -> false
+    end)
+  end
 
   defp unroll(mapper, items, indexed?, ctx, b) do
     items
@@ -718,6 +1268,79 @@ defmodule Elmc.Backend.Plan.Lower.Stream.List do
        do: true
 
   defp mapper_eligible?(_, _, _, _), do: false
+
+  defp filter_map_mapper_eligible?(%{op: :lambda, body: body}, decl_map, module, seen) do
+    maybe_result_eligible?(body, decl_map, module, seen)
+  end
+
+  defp filter_map_mapper_eligible?(%{op: op}, _decl_map, _module, _seen)
+       when op in [:call, :qualified_call, :var, :qualified_ref],
+       do: true
+
+  defp filter_map_mapper_eligible?(_, _, _, _), do: false
+
+  defp maybe_result_eligible?(expr, decl_map, module, seen) do
+    cond do
+      maybe_nothing?(expr) ->
+        true
+
+      match?({:ok, _}, maybe_just_inner(expr)) ->
+        {:ok, inner} = maybe_just_inner(expr)
+        Stream.eligible_expr?(inner, decl_map, module, seen)
+
+      match?(%{op: :if}, expr) ->
+        then_expr = Map.get(expr, :then_expr) || Map.get(expr, :then)
+        else_expr = Map.get(expr, :else_expr) || Map.get(expr, :else)
+
+        is_map(then_expr) and is_map(else_expr) and
+          maybe_result_eligible?(then_expr, decl_map, module, seen) and
+          maybe_result_eligible?(else_expr, decl_map, module, seen)
+
+      match?(%{op: :case, branches: branches} when is_list(branches), expr) ->
+        Enum.all?(expr.branches, fn branch ->
+          maybe_result_eligible?(Map.get(branch, :expr), decl_map, module, seen)
+        end)
+
+      true ->
+        Stream.eligible_expr?(expr, decl_map, module, seen)
+    end
+  end
+
+  defp filter_map_identity_source_eligible?(list, decl_map, module, seen, locals) do
+    cond do
+      match?(%{op: :list_literal, items: items} when is_list(items), list) ->
+        Enum.all?(list.items, &maybe_cmd_item_eligible?(&1, decl_map, module, seen, locals))
+
+      match?(%{op: :list_literal, elements: items} when is_list(items), list) ->
+        Enum.all?(list.elements, &maybe_cmd_item_eligible?(&1, decl_map, module, seen, locals))
+
+      value_list_source?(list) and not expandable_source?(list) ->
+        true
+
+      Stream.eligible_expr?(list, decl_map, module, seen, locals) ->
+        true
+
+      true ->
+        false
+    end
+  end
+
+  defp maybe_cmd_item_eligible?(expr, decl_map, module, seen, locals) do
+    cond do
+      maybe_nothing?(expr) ->
+        true
+
+      match?({:ok, _}, maybe_just_inner(expr)) ->
+        {:ok, inner} = maybe_just_inner(expr)
+        Stream.eligible_expr?(inner, decl_map, module, seen, locals)
+
+      value_list_source?(expr) ->
+        true
+
+      true ->
+        false
+    end
+  end
 
   defp source_eligible?(fun, list) do
     expand_source(list) != :error or

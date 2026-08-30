@@ -86,6 +86,7 @@ defmodule Elmc.Runtime.RcTrack do
         case ELMC_TAG_RESULT: return "Result";
         case ELMC_TAG_MAYBE: return "Maybe";
         case ELMC_TAG_TUPLE2: return "Tuple2";
+        case ELMC_TAG_TUPLE3: return "Tuple3";
         case ELMC_TAG_RECORD: return "Record";
         case ELMC_TAG_CLOSURE: return "Closure";
         case ELMC_TAG_CMD: return "Cmd";
@@ -393,7 +394,8 @@ defmodule Elmc.Runtime.RcTrack do
           ELMC_RELEASED += 1;
           return;
         }
-      } else if (value->tag == ELMC_TAG_TUPLE2 && value->payload != NULL) {
+      } else if ((value->tag == ELMC_TAG_TUPLE2 || value->tag == ELMC_TAG_TUPLE3) &&
+                 value->payload != NULL) {
         ElmcTuple2 *tuple = (ElmcTuple2 *)value->payload;
         if (tuple->first) elmc_release(tuple->first);
         if (tuple->second) elmc_release(tuple->second);

@@ -39,6 +39,7 @@ defmodule Elmc.Backend.CCodegen.RcRequired do
     "elmc_record_set_index",
     "elmc_tuple2",
     "elmc_tuple2_take",
+    "elmc_tuple3",
     "elmc_maybe",
     "elmc_result",
     "elmc_closure_new",

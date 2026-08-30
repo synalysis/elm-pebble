@@ -93,6 +93,12 @@ defmodule Elmc.Backend.Plan.ParamFieldInference do
         |> then(&collect_field_accesses(left, params, &1))
         |> then(&collect_field_accesses(right, params, &1))
 
+      %{op: :tuple3, a: a, b: b, c: c} ->
+        acc
+        |> then(&collect_field_accesses(a, params, &1))
+        |> then(&collect_field_accesses(b, params, &1))
+        |> then(&collect_field_accesses(c, params, &1))
+
       %{op: :call, args: args} when is_list(args) ->
         Enum.reduce(args, acc, &collect_field_accesses(&1, params, &2))
 

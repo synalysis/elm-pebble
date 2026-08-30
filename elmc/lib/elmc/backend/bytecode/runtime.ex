@@ -23,6 +23,7 @@ defmodule Elmc.Backend.Bytecode.Runtime do
           | value_map()
           | nil
           | {:tuple2, value(), value()}
+          | {:tuple3, value(), value(), value()}
           | {:closure, non_neg_integer(), [value()], {String.t(), String.t()}}
           | {:forward_ref, String.t()}
           | {:render_cmd, non_neg_integer(), [value()]}
@@ -261,6 +262,7 @@ defmodule Elmc.Backend.Bytecode.Runtime do
         value =
           case tuple do
             {:tuple2, a, b} -> if which == 1, do: b, else: a
+            {:tuple3, a, b, c} -> if which == 1, do: {:tuple2, b, c}, else: a
             {a, b} when is_integer(a) and is_integer(b) -> if which == 1, do: b, else: a
             _ -> 0
           end
@@ -447,10 +449,11 @@ defmodule Elmc.Backend.Bytecode.Runtime do
   defp elm_mod_by(base, _value) when base == 0, do: 0
 
   defp elm_mod_by(base, value) do
+    # Official elm/core `_Basics_modBy`: rem then add modulus when signs differ.
     rem_n = rem(value, base)
 
-    if rem_n < 0 do
-      rem_n + if(base < 0, do: -base, else: base)
+    if (rem_n > 0 and base < 0) or (rem_n < 0 and base > 0) do
+      rem_n + base
     else
       rem_n
     end
@@ -705,6 +708,9 @@ defmodule Elmc.Backend.Bytecode.Runtime do
   end
 
   defp apply_builtin(:tuple2, [a, b | _], locals, _), do: {:tuple2, get_local(locals, a), get_local(locals, b)}
+
+  defp apply_builtin(:tuple3, [a, b, c | _], locals, _),
+    do: {:tuple3, get_local(locals, a), get_local(locals, b), get_local(locals, c)}
 
   defp apply_builtin(:tuple2_ints, [a, b | _], locals, _),
     do: {:tuple2, local_int(locals, a), local_int(locals, b)}
@@ -1149,6 +1155,7 @@ defmodule Elmc.Backend.Bytecode.Runtime do
   defp apply_builtin(:tuple_first, [base | _], locals, _) do
     case get_local(locals, base) do
       {:tuple2, a, _b} -> a
+      {:tuple3, a, _b, _c} -> a
       other -> other
     end
   end
@@ -1156,6 +1163,7 @@ defmodule Elmc.Backend.Bytecode.Runtime do
   defp apply_builtin(:tuple_second, [base | _], locals, _) do
     case get_local(locals, base) do
       {:tuple2, _a, b} -> b
+      {:tuple3, _a, b, c} -> {:tuple2, b, c}
       other -> other
     end
   end

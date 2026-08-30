@@ -55,6 +55,11 @@ defmodule Elmc.JsonRuntimeTest do
       return elmc_json_decode_int_decoder(&out) == RC_SUCCESS ? out : NULL;
     }
 
+    static ElmcValue *json_take_decode_bool_decoder(void) {
+      ElmcValue *out = NULL;
+      return elmc_json_decode_bool_decoder(&out) == RC_SUCCESS ? out : NULL;
+    }
+
     static ElmcValue *json_take_decode_string_decoder(void) {
       ElmcValue *out = NULL;
       return elmc_json_decode_string_decoder(&out) == RC_SUCCESS ? out : NULL;
@@ -83,6 +88,11 @@ defmodule Elmc.JsonRuntimeTest do
     static ElmcValue *json_take_decode_maybe(ElmcValue *decoder) {
       ElmcValue *out = NULL;
       return elmc_json_decode_maybe(&out, decoder) == RC_SUCCESS ? out : NULL;
+    }
+
+    static ElmcValue *json_take_decode_nullable(ElmcValue *decoder) {
+      ElmcValue *out = NULL;
+      return elmc_json_decode_nullable(&out, decoder) == RC_SUCCESS ? out : NULL;
     }
 
     static ElmcValue *json_take_decode_one_of(ElmcValue *decoders) {
@@ -125,6 +135,11 @@ defmodule Elmc.JsonRuntimeTest do
       return elmc_json_decode_key_value_pairs(&out, decoder) == RC_SUCCESS ? out : NULL;
     }
 
+    static ElmcValue *json_take_decode_dict(ElmcValue *decoder) {
+      ElmcValue *out = NULL;
+      return elmc_json_decode_dict(&out, decoder) == RC_SUCCESS ? out : NULL;
+    }
+
     static ElmcValue *json_take_encode_int(ElmcValue *n) {
       ElmcValue *out = NULL;
       return elmc_json_encode_int(&out, n) == RC_SUCCESS ? out : NULL;
@@ -138,6 +153,11 @@ defmodule Elmc.JsonRuntimeTest do
     static ElmcValue *json_take_encode_object(ElmcValue *pairs) {
       ElmcValue *out = NULL;
       return elmc_json_encode_object(&out, pairs) == RC_SUCCESS ? out : NULL;
+    }
+
+    static ElmcValue *json_take_encode_encode(ElmcValue *indent, ElmcValue *value) {
+      ElmcValue *out = NULL;
+      return elmc_json_encode_encode(&out, indent, value) == RC_SUCCESS ? out : NULL;
     }
 
     static ElmcValue *json_take_encode_dict(ElmcValue *key_fn, ElmcValue *val_fn, ElmcValue *dict) {
@@ -228,6 +248,21 @@ defmodule Elmc.JsonRuntimeTest do
              !((ElmcResult *)result->payload)->is_ok;
     }
 
+    static ElmcValue *result_err_value(ElmcValue *result) {
+      if (!result_is_err(result)) return NULL;
+      return ((ElmcResult *)result->payload)->value;
+    }
+
+    static int err_text_has(ElmcValue *result, const char *needle) {
+      ElmcValue *err = result_err_value(result);
+      ElmcValue *text = NULL;
+      if (!err || elmc_json_decode_error_to_string(&text, err) != RC_SUCCESS) return 0;
+      int ok = text && text->tag == ELMC_TAG_STRING && text->payload &&
+               strstr((const char *)text->payload, needle) != NULL;
+      elmc_release(text);
+      return ok;
+    }
+
     static int result_is_nothing(ElmcValue *result) {
       if (!result || result->tag != ELMC_TAG_RESULT || !result->payload) return 0;
       ElmcResult *res = (ElmcResult *)result->payload;
@@ -292,6 +327,17 @@ defmodule Elmc.JsonRuntimeTest do
       elmc_release(missing_decoder);
       elmc_release(int_decoder);
       elmc_release(missing);
+
+      int_decoder = json_take_decode_int_decoder();
+      ElmcValue *nullable_decoder = json_take_decode_nullable(int_decoder);
+      ElmcValue *r4n = decode(nullable_decoder, "true");
+      if (!result_is_err(r4n)) return 19;
+      elmc_release(r4n);
+      ElmcValue *r4null = decode(nullable_decoder, "null");
+      if (!result_is_nothing(r4null)) return 20;
+      elmc_release(r4null);
+      elmc_release(nullable_decoder);
+      elmc_release(int_decoder);
 
       int_decoder = json_take_decode_int_decoder();
       ElmcValue *string_decoder = json_take_decode_string_decoder();
@@ -507,6 +553,167 @@ defmodule Elmc.JsonRuntimeTest do
       elmc_release(encode_int_closure);
       elmc_release(id_closure);
       elmc_release(dict_list);
+
+      int_decoder = json_take_decode_int_decoder();
+      ElmcValue *dict_decoder = json_take_decode_dict(int_decoder);
+      ElmcValue *r_dict = decode(dict_decoder, "{\\"a\\":1,\\"b\\":2}");
+      if (!r_dict || r_dict->tag != ELMC_TAG_RESULT || !r_dict->payload || !((ElmcResult *)r_dict->payload)->is_ok) return 20;
+      ElmcValue *decoded_dict = ((ElmcResult *)r_dict->payload)->value;
+      ElmcValue *expected_a = elmc_harness_new_string("a");
+      ElmcValue *expected_va = elmc_harness_new_int(1);
+      ElmcValue *expected_b = elmc_harness_new_string("b");
+      ElmcValue *expected_vb = elmc_harness_new_int(2);
+      ElmcValue *pair_a = elmc_harness_tuple2_take(expected_a, expected_va);
+      ElmcValue *pair_b = elmc_harness_tuple2_take(expected_b, expected_vb);
+      ElmcValue *expected_pairs = elmc_harness_list_cons(pair_b, elmc_list_nil());
+      expected_pairs = elmc_harness_list_cons(pair_a, expected_pairs);
+      ElmcValue *expected_dict = NULL;
+      if (elmc_dict_from_list(&expected_dict, expected_pairs) != RC_SUCCESS) return 20;
+      if (!elmc_value_equal(decoded_dict, expected_dict)) return 20;
+      elmc_release(r_dict);
+      elmc_release(dict_decoder);
+      elmc_release(int_decoder);
+      elmc_release(expected_dict);
+      elmc_release(expected_pairs);
+
+      {
+        ElmcValue *int_dec = json_take_decode_int_decoder();
+        ElmcValue *r_int = decode(int_dec, "true");
+        if (!err_text_has(r_int, "Expecting an INT")) return 25;
+        if (!err_text_has(r_int, "Problem with the given value:")) return 25;
+        if (!err_text_has(r_int, "true")) return 25;
+        elmc_release(r_int);
+        elmc_release(int_dec);
+
+        ElmcValue *fname = elmc_harness_new_string("missing");
+        int_dec = json_take_decode_int_decoder();
+        ElmcValue *field_dec = json_take_decode_field(fname, int_dec);
+        ElmcValue *r_miss = decode(field_dec, "{}");
+        if (!err_text_has(r_miss, "Expecting an OBJECT with a field named `missing`")) return 26;
+        elmc_release(r_miss);
+        elmc_release(field_dec);
+        elmc_release(int_dec);
+        elmc_release(fname);
+
+        fname = elmc_harness_new_string("x");
+        int_dec = json_take_decode_int_decoder();
+        field_dec = json_take_decode_field(fname, int_dec);
+        ElmcValue *r_xf = decode(field_dec, "{\\"x\\":true}");
+        if (!err_text_has(r_xf, "Problem with the value at json.x:")) return 27;
+        if (!err_text_has(r_xf, "Expecting an INT")) return 27;
+        elmc_release(r_xf);
+        elmc_release(field_dec);
+        elmc_release(int_dec);
+        elmc_release(fname);
+
+        int_dec = json_take_decode_int_decoder();
+        ElmcValue *bool_dec = json_take_decode_bool_decoder();
+        ElmcValue *dlist = elmc_harness_list_cons(bool_dec, elmc_list_nil());
+        dlist = elmc_harness_list_cons(int_dec, dlist);
+        ElmcValue *one_dec = json_take_decode_one_of(dlist);
+        ElmcValue *r_oo = decode(one_dec, "\\"z\\"");
+        if (!err_text_has(r_oo, "Json.Decode.oneOf failed in the following 2 ways:")) return 28;
+        elmc_release(r_oo);
+        elmc_release(one_dec);
+        elmc_release(dlist);
+        elmc_release(int_dec);
+
+        ElmcValue *empty_dec = json_take_decode_one_of(elmc_list_nil());
+        ElmcValue *r_oe = decode(empty_dec, "1");
+        if (!err_text_has(r_oe, "Ran into a Json.Decode.oneOf with no possibilities!")) return 29;
+        elmc_release(r_oe);
+        elmc_release(empty_dec);
+
+        int_dec = json_take_decode_int_decoder();
+        ElmcValue *r_pj = decode(int_dec, "not-json");
+        if (!err_text_has(r_pj, "This is not valid JSON!")) return 30;
+        elmc_release(r_pj);
+        elmc_release(int_dec);
+
+        ElmcValue *one = elmc_harness_new_int(1);
+        ElmcValue *enc_int = json_take_encode_int(one);
+        ElmcValue *pkey = elmc_harness_new_string("x");
+        ElmcValue *ppair = elmc_harness_tuple2_take(pkey, enc_int);
+        ElmcValue *ppairs = elmc_harness_list_cons(ppair, elmc_list_nil());
+        ElmcValue *pobj = json_take_encode_object(ppairs);
+        ElmcValue *pindent = elmc_harness_new_int(4);
+        ElmcValue *pretty = json_take_encode_encode(pindent, pobj);
+        if (!pretty || pretty->tag != ELMC_TAG_STRING || !pretty->payload ||
+            strcmp((const char *)pretty->payload, "{\\n    \\"x\\": 1\\n}") != 0) return 31;
+        elmc_release(pretty);
+        elmc_release(pindent);
+        elmc_release(pobj);
+        elmc_release(ppairs);
+        elmc_release(one);
+
+        int_dec = json_take_decode_int_decoder();
+        ElmcValue *r_pp = decode(int_dec, "{\\"x\\":1}");
+        if (!err_text_has(r_pp, "{\\n        \\"x\\": 1\\n    }")) return 32;
+        if (!err_text_has(r_pp, "Expecting an INT")) return 32;
+        elmc_release(r_pp);
+        elmc_release(int_dec);
+      }
+
+      {
+        ElmcValue *empty_err = elmc_harness_tuple2_take(elmc_harness_new_int(3), elmc_list_nil());
+        ElmcValue *empty_text = NULL;
+        if (elmc_json_decode_error_to_string(&empty_text, empty_err) != RC_SUCCESS) return 21;
+        if (!empty_text || empty_text->tag != ELMC_TAG_STRING || !empty_text->payload ||
+            strcmp((const char *)empty_text->payload,
+                   "Ran into a Json.Decode.oneOf with no possibilities!") != 0) {
+          return 21;
+        }
+        elmc_release(empty_text);
+        elmc_release(empty_err);
+
+        ElmcValue *fail_pair = elmc_harness_tuple2_take(
+          elmc_harness_new_string("Expecting an INT"),
+          elmc_harness_new_string("true"));
+        ElmcValue *fail_err = elmc_harness_tuple2_take(elmc_harness_new_int(4), fail_pair);
+        ElmcValue *single_list = elmc_harness_list_cons(fail_err, elmc_list_nil());
+        ElmcValue *single_err = elmc_harness_tuple2_take(elmc_harness_new_int(3), single_list);
+        ElmcValue *single_text = NULL;
+        if (elmc_json_decode_error_to_string(&single_text, single_err) != RC_SUCCESS) return 22;
+        if (!single_text || single_text->tag != ELMC_TAG_STRING || !single_text->payload) return 22;
+        if (!strstr((const char *)single_text->payload, "Problem with the given value:")) return 22;
+        if (!strstr((const char *)single_text->payload, "Expecting an INT")) return 22;
+        if (strstr((const char *)single_text->payload, "failed in the following")) return 22;
+        elmc_release(single_text);
+        elmc_release(single_err);
+
+        ElmcValue *e1 = elmc_harness_tuple2_take(
+          elmc_harness_new_int(4),
+          elmc_harness_tuple2_take(elmc_harness_new_string("Expecting an INT"), elmc_harness_new_string("\\"z\\"")));
+        ElmcValue *e2 = elmc_harness_tuple2_take(
+          elmc_harness_new_int(4),
+          elmc_harness_tuple2_take(elmc_harness_new_string("nb"), elmc_harness_new_string("\\"z\\"")));
+        ElmcValue *many_list = elmc_harness_list_cons(e2, elmc_list_nil());
+        many_list = elmc_harness_list_cons(e1, many_list);
+        ElmcValue *many_err = elmc_harness_tuple2_take(elmc_harness_new_int(3), many_list);
+        ElmcValue *many_text = NULL;
+        if (elmc_json_decode_error_to_string(&many_text, many_err) != RC_SUCCESS) return 23;
+        if (!many_text || many_text->tag != ELMC_TAG_STRING || !many_text->payload) return 23;
+        if (!strstr((const char *)many_text->payload, "Json.Decode.oneOf failed in the following 2 ways:")) return 23;
+        if (!strstr((const char *)many_text->payload, "(1)")) return 23;
+        if (!strstr((const char *)many_text->payload, "(2)")) return 23;
+        if (!strstr((const char *)many_text->payload, "Expecting an INT")) return 23;
+        if (!strstr((const char *)many_text->payload, "nb")) return 23;
+        elmc_release(many_text);
+        elmc_release(many_err);
+
+        ElmcValue *wrap_empty = elmc_harness_tuple2_take(elmc_harness_new_int(3), elmc_list_nil());
+        ElmcValue *field_pair = elmc_harness_tuple2_take(elmc_harness_new_string("x"), wrap_empty);
+        ElmcValue *field_err = elmc_harness_tuple2_take(elmc_harness_new_int(1), field_pair);
+        ElmcValue *field_text = NULL;
+        if (elmc_json_decode_error_to_string(&field_text, field_err) != RC_SUCCESS) return 24;
+        if (!field_text || field_text->tag != ELMC_TAG_STRING || !field_text->payload ||
+            strcmp((const char *)field_text->payload,
+                   "Ran into a Json.Decode.oneOf with no possibilities at json.x") != 0) {
+          return 24;
+        }
+        elmc_release(field_text);
+        elmc_release(field_err);
+      }
 
       printf("json-runtime-ok\\n");
       return 0;

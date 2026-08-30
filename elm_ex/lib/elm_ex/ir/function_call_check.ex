@@ -967,6 +967,25 @@ defmodule ElmEx.IR.FunctionCallCheck do
     end
   end
 
+  defp infer_expr_type(
+         %{op: :tuple3, a: a, b: b, c: c},
+         import_lookup,
+         signature_lookup,
+         type_alias_lookup,
+         binding_types
+       ) do
+    types =
+      Enum.map([a, b, c], fn part ->
+        infer_expr_type(part, import_lookup, signature_lookup, type_alias_lookup, binding_types)
+      end)
+
+    if Enum.all?(types, &is_binary/1) do
+      "( #{Enum.join(types, ", ")} )"
+    else
+      nil
+    end
+  end
+
   defp infer_expr_type(%{op: :record_literal, fields: fields}, import_lookup, signature_lookup, type_alias_lookup, binding_types)
        when is_list(fields) do
     inferred_field_types =

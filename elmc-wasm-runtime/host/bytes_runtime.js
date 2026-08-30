@@ -16,6 +16,23 @@ const BYTES_CMD_FROM_LIST = 7;
 const BYTES_CMD_ENCODE = 8;
 const BYTES_CMD_READ_F64 = 9;
 const BYTES_CMD_READ_STRING = 10;
+const BYTES_CMD_READ_I8 = 11;
+const BYTES_CMD_READ_I16 = 12;
+const BYTES_CMD_READ_I32 = 13;
+const BYTES_CMD_READ_U16 = 14;
+const BYTES_CMD_READ_F32 = 15;
+const BYTES_CMD_GET_HOST_ENDIANNESS = 16;
+const BYTES_CMD_GET_STRING_WIDTH = 17;
+const BYTES_CMD_WRITE_I8 = 18;
+const BYTES_CMD_WRITE_I16 = 19;
+const BYTES_CMD_WRITE_I32 = 20;
+const BYTES_CMD_WRITE_U8 = 21;
+const BYTES_CMD_WRITE_U16 = 22;
+const BYTES_CMD_WRITE_U32 = 23;
+const BYTES_CMD_WRITE_F32 = 24;
+const BYTES_CMD_WRITE_F64 = 25;
+const BYTES_CMD_WRITE_BYTES = 26;
+const BYTES_CMD_WRITE_STRING = 27;
 
 const ENC_I8 = 1;
 const ENC_I16 = 2;
@@ -53,7 +70,10 @@ export function createBytesRuntime(deps) {
     TAG_STRING,
     TAG_CLOSURE,
     stringValue,
+    taskSucceed: taskSucceedDep = null,
   } = deps;
+
+  let succeedTask = typeof taskSucceedDep === "function" ? taskSucceedDep : null;
 
   const newStringHandle = (text) => allocHandle({ tag: TAG_STRING, value: String(text) });
 
@@ -371,6 +391,101 @@ export function createBytesRuntime(deps) {
     return writeTuple2Ints(outPtr, offset + 1, view.getUint8(offset));
   };
 
+  const peelEndianPrefix = (params) => {
+    let isLE = true;
+    let rest = params;
+    if (params.length >= 1) {
+      const head = params[0] | 0;
+      const headPayload = readHandle(head);
+      if (headPayload?.tag === TAG_INT) {
+        isLE = intValue(head) !== 0;
+        rest = params.slice(1);
+      }
+    }
+    return { isLE, rest };
+  };
+
+  const bytesReadIntWidth = (outPtr, params, byteLen, getter) => {
+    const { isLE, rest } = byteLen === 1 ? { isLE: true, rest: params } : peelEndianPrefix(params);
+    const resolved = resolveBytesAndOffset(rest);
+    if (!resolved) {
+      writeReadFailure(outPtr);
+      return RC_SUCCESS;
+    }
+
+    const view = bytesView(resolved.bytesPtr);
+    const offset = resolved.offset;
+    if (!view || offset < 0 || offset + byteLen > view.byteLength) {
+      writeReadFailure(outPtr);
+      return RC_SUCCESS;
+    }
+
+    return writeTuple2Ints(outPtr, offset + byteLen, getter(view, offset, isLE));
+  };
+
+  const bytesReadFloatWidth = (outPtr, params, byteLen, getter) => {
+    const { isLE, rest } = peelEndianPrefix(params);
+    const resolved = resolveBytesAndOffset(rest);
+    if (!resolved) {
+      writeReadFailure(outPtr);
+      return RC_SUCCESS;
+    }
+
+    const view = bytesView(resolved.bytesPtr);
+    const offset = resolved.offset;
+    if (!view || offset < 0 || offset + byteLen > view.byteLength) {
+      writeReadFailure(outPtr);
+      return RC_SUCCESS;
+    }
+
+    return tuple2(outPtr, newIntHandle(offset + byteLen), newFloatHandle(getter(view, offset, isLE)));
+  };
+
+  const bytesReadI8 = (outPtr, ...params) =>
+    bytesReadIntWidth(outPtr, params, 1, (view, offset) => view.getInt8(offset));
+
+  const bytesReadI16 = (outPtr, ...params) =>
+    bytesReadIntWidth(outPtr, params, 2, (view, offset, isLE) => view.getInt16(offset, isLE));
+
+  const bytesReadI32 = (outPtr, ...params) =>
+    bytesReadIntWidth(outPtr, params, 4, (view, offset, isLE) => view.getInt32(offset, isLE));
+
+  const bytesReadU16 = (outPtr, ...params) =>
+    bytesReadIntWidth(outPtr, params, 2, (view, offset, isLE) => view.getUint16(offset, isLE));
+
+  const bytesReadF32 = (outPtr, ...params) =>
+    bytesReadFloatWidth(outPtr, params, 4, (view, offset, isLE) => view.getFloat32(offset, isLE));
+
+  const bytesGetStringWidth = (outPtr, stringPtr) => {
+    const string = stringValue(stringPtr | 0) ?? "";
+    let width = 0;
+    for (let i = 0; i < string.length; i++) {
+      const code = string.charCodeAt(i);
+      if (code < 0x80) {
+        width += 1;
+      } else if (code < 0x800) {
+        width += 2;
+      } else if (code < 0xd800 || 0xdbff < code) {
+        width += 3;
+      } else {
+        i += 1;
+        width += 4;
+      }
+    }
+    writeOut(outPtr, newIntHandle(width));
+    return RC_SUCCESS;
+  };
+
+  const bytesGetHostEndianness = (outPtr, lePtr, bePtr) => {
+    const hostLE = new Uint8Array(new Uint32Array([1]))[0] === 1;
+    const chosen = hostLE ? lePtr | 0 : bePtr | 0;
+    if (typeof succeedTask === "function") {
+      return succeedTask(outPtr, chosen);
+    }
+    writeOut(outPtr, chosen);
+    return RC_SUCCESS;
+  };
+
   const bytesReadU32 = (outPtr, ...params) => {
     if (typeof process !== "undefined" && process.env && process.env.ELMC_DEBUG_BYTES_READ) {
       console.error("[bytesReadU32] " + JSON.stringify({params: params.map(p => { const h=readHandle(p|0); return h?{tag:h.tag,v:h.value,isJust:h.isJust}:p; })}));
@@ -515,16 +630,16 @@ export function createBytesRuntime(deps) {
     return invokeClosure(decoderPtr, callArgs);
   };
 
-  const bytesDecode = (outPtr, decoderPtr, bytesPtr) => {
+  const bytesDecodeValue = (decoderPtr, bytesPtr) => {
     const resolvedBytes = coerceBytesHandle(bytesPtr);
     const debug = typeof process !== "undefined" && process.env && process.env.ELMC_DEBUG_BYTES_DECODE;
     if (!bytesView(resolvedBytes)) {
       if (debug) console.error("[bytesDecode] no view", bytesPtr, resolvedBytes);
-      maybeNothing(outPtr);
-      return RC_SUCCESS;
+      return { ok: false };
     }
 
-    return withDecodeBytes(resolvedBytes, () => {
+    let step = { ok: false };
+    withDecodeBytes(resolvedBytes, () => {
       retain(null, resolvedBytes);
       const offsetHandle = newIntHandle(0);
       const startOffset = intValue(offsetHandle) | 0;
@@ -535,16 +650,14 @@ export function createBytesRuntime(deps) {
 
         if (rc !== RC_SUCCESS) {
           if (debug) console.error("[bytesDecode] decoder rc", rc, "len", view?.byteLength);
-          maybeNothing(outPtr);
-          return RC_SUCCESS;
+          return;
         }
 
         const payload = readHandle(value);
         if (payload?.tag !== TAG_TUPLE2) {
           if (debug) console.error("[bytesDecode] not tuple", payload?.tag, value);
           release(value);
-          maybeNothing(outPtr);
-          return RC_SUCCESS;
+          return;
         }
 
         const newOffset = intValue(payload.first);
@@ -552,8 +665,7 @@ export function createBytesRuntime(deps) {
         if (newOffset < 0 || !decoded || newOffset <= startOffset) {
           if (debug) console.error("[bytesDecode] bad offset/progress", {newOffset, startOffset, decoded: !!decoded, len: view?.byteLength, secondTag: readHandle(decoded)?.tag});
           release(value);
-          maybeNothing(outPtr);
-          return RC_SUCCESS;
+          return;
         }
 
         if (debug) {
@@ -572,19 +684,142 @@ export function createBytesRuntime(deps) {
           console.error("[bytesDecode] ok " + JSON.stringify(detail));
         }
         release(value);
-        const justRc = maybeJustOwn(outPtr, decoded);
-        return justRc;
+        step = { ok: true, value: decoded };
       } finally {
         release(offsetHandle);
         release(resolvedBytes);
       }
     });
+    return step;
+  };
+
+  const bytesDecode = (outPtr, decoderPtr, bytesPtr) => {
+    const step = bytesDecodeValue(decoderPtr, bytesPtr);
+    if (step.ok) return maybeJustOwn(outPtr, step.value);
+    maybeNothing(outPtr);
+    return RC_SUCCESS;
   };
 
   const bytesFromList = (outPtr, listPtr) => {
     const bytes = new Uint8Array(listItems(listPtr).map((n) => intValue(n) & 0xff));
     writeOut(outPtr, newBytesHandle(new DataView(bytes.buffer)));
     return RC_SUCCESS;
+  };
+
+  const writeBoolLE = (ptr) => {
+    const payload = readHandle(ptr);
+    if (payload?.tag === TAG_INT) return (payload.value | 0) !== 0;
+    return (intValue(ptr) | 0) !== 0;
+  };
+
+  const writeFloatValue = (ptr) => {
+    const payload = readHandle(ptr);
+    if (payload?.tag === TAG_FLOAT) return Number(payload.value);
+    return intValue(ptr);
+  };
+
+  const bytesWriteOffset = (outPtr, next) => {
+    writeOut(outPtr, newIntHandle(next | 0));
+    return RC_SUCCESS;
+  };
+
+  const bytesWriteNeed = (view, offset, width) =>
+    view && offset >= 0 && offset + width <= view.byteLength;
+
+  const bytesWriteI8 = (outPtr, mbPtr, offsetPtr, nPtr) => {
+    const view = bytesView(mbPtr);
+    const offset = intValue(offsetPtr);
+    if (!bytesWriteNeed(view, offset, 1)) {
+      writeOut(outPtr, 0);
+      return RC_ERR_UNIMPLEMENTED;
+    }
+    view.setInt8(offset, intValue(nPtr));
+    return bytesWriteOffset(outPtr, offset + 1);
+  };
+
+  const bytesWriteU8 = (outPtr, mbPtr, offsetPtr, nPtr) => {
+    const view = bytesView(mbPtr);
+    const offset = intValue(offsetPtr);
+    if (!bytesWriteNeed(view, offset, 1)) {
+      writeOut(outPtr, 0);
+      return RC_ERR_UNIMPLEMENTED;
+    }
+    view.setUint8(offset, intValue(nPtr) & 0xff);
+    return bytesWriteOffset(outPtr, offset + 1);
+  };
+
+  const bytesWriteWidth = (outPtr, mbPtr, offsetPtr, nPtr, isLePtr, width, setter) => {
+    const view = bytesView(mbPtr);
+    const offset = intValue(offsetPtr);
+    if (!bytesWriteNeed(view, offset, width)) {
+      writeOut(outPtr, 0);
+      return RC_ERR_UNIMPLEMENTED;
+    }
+    setter(view, offset, nPtr, writeBoolLE(isLePtr));
+    return bytesWriteOffset(outPtr, offset + width);
+  };
+
+  const bytesWriteI16 = (outPtr, mbPtr, offsetPtr, nPtr, isLePtr) =>
+    bytesWriteWidth(outPtr, mbPtr, offsetPtr, nPtr, isLePtr, 2, (view, offset, n, le) =>
+      view.setInt16(offset, intValue(n), le)
+    );
+
+  const bytesWriteI32 = (outPtr, mbPtr, offsetPtr, nPtr, isLePtr) =>
+    bytesWriteWidth(outPtr, mbPtr, offsetPtr, nPtr, isLePtr, 4, (view, offset, n, le) =>
+      view.setInt32(offset, intValue(n), le)
+    );
+
+  const bytesWriteU16 = (outPtr, mbPtr, offsetPtr, nPtr, isLePtr) =>
+    bytesWriteWidth(outPtr, mbPtr, offsetPtr, nPtr, isLePtr, 2, (view, offset, n, le) =>
+      view.setUint16(offset, intValue(n), le)
+    );
+
+  const bytesWriteU32 = (outPtr, mbPtr, offsetPtr, nPtr, isLePtr) =>
+    bytesWriteWidth(outPtr, mbPtr, offsetPtr, nPtr, isLePtr, 4, (view, offset, n, le) =>
+      view.setUint32(offset, intValue(n) >>> 0, le)
+    );
+
+  const bytesWriteF32 = (outPtr, mbPtr, offsetPtr, nPtr, isLePtr) =>
+    bytesWriteWidth(outPtr, mbPtr, offsetPtr, nPtr, isLePtr, 4, (view, offset, n, le) =>
+      view.setFloat32(offset, writeFloatValue(n), le)
+    );
+
+  const bytesWriteF64 = (outPtr, mbPtr, offsetPtr, nPtr, isLePtr) =>
+    bytesWriteWidth(outPtr, mbPtr, offsetPtr, nPtr, isLePtr, 8, (view, offset, n, le) =>
+      view.setFloat64(offset, writeFloatValue(n), le)
+    );
+
+  const bytesWriteBytes = (outPtr, mbPtr, offsetPtr, srcPtr) => {
+    const view = bytesView(mbPtr);
+    const src = bytesView(srcPtr);
+    const offset = intValue(offsetPtr);
+    if (!view || !src || !bytesWriteNeed(view, offset, src.byteLength)) {
+      writeOut(outPtr, 0);
+      return RC_ERR_UNIMPLEMENTED;
+    }
+    for (let i = 0, len = src.byteLength, limit = len - 4; i <= limit; i += 4) {
+      view.setUint32(offset + i, src.getUint32(i));
+    }
+    let i = src.byteLength - (src.byteLength % 4);
+    for (; i < src.byteLength; i++) {
+      view.setUint8(offset + i, src.getUint8(i));
+    }
+    return bytesWriteOffset(outPtr, offset + src.byteLength);
+  };
+
+  const bytesWriteString = (outPtr, mbPtr, offsetPtr, stringPtr) => {
+    const view = bytesView(mbPtr);
+    const offset = intValue(offsetPtr);
+    const text = stringValue(stringPtr) ?? "";
+    const encoded = new TextEncoder().encode(text);
+    if (!bytesWriteNeed(view, offset, encoded.length)) {
+      writeOut(outPtr, 0);
+      return RC_ERR_UNIMPLEMENTED;
+    }
+    for (let i = 0; i < encoded.length; i++) {
+      view.setUint8(offset + i, encoded[i]);
+    }
+    return bytesWriteOffset(outPtr, offset + encoded.length);
   };
 
   const bytesCmd = (outPtr, kind, ...params) => {
@@ -619,6 +854,57 @@ export function createBytesRuntime(deps) {
       case BYTES_CMD_READ_STRING:
         return bytesReadString(outPtr, ...params);
 
+      case BYTES_CMD_READ_I8:
+        return bytesReadI8(outPtr, ...params);
+
+      case BYTES_CMD_READ_I16:
+        return bytesReadI16(outPtr, ...params);
+
+      case BYTES_CMD_READ_I32:
+        return bytesReadI32(outPtr, ...params);
+
+      case BYTES_CMD_READ_U16:
+        return bytesReadU16(outPtr, ...params);
+
+      case BYTES_CMD_READ_F32:
+        return bytesReadF32(outPtr, ...params);
+
+      case BYTES_CMD_GET_HOST_ENDIANNESS:
+        return bytesGetHostEndianness(outPtr, params[0] | 0, params[1] | 0);
+
+      case BYTES_CMD_GET_STRING_WIDTH:
+        return bytesGetStringWidth(outPtr, params[0] | 0);
+
+      case BYTES_CMD_WRITE_I8:
+        return bytesWriteI8(outPtr, params[0] | 0, params[1] | 0, params[2] | 0);
+
+      case BYTES_CMD_WRITE_I16:
+        return bytesWriteI16(outPtr, params[0] | 0, params[1] | 0, params[2] | 0, params[3] | 0);
+
+      case BYTES_CMD_WRITE_I32:
+        return bytesWriteI32(outPtr, params[0] | 0, params[1] | 0, params[2] | 0, params[3] | 0);
+
+      case BYTES_CMD_WRITE_U8:
+        return bytesWriteU8(outPtr, params[0] | 0, params[1] | 0, params[2] | 0);
+
+      case BYTES_CMD_WRITE_U16:
+        return bytesWriteU16(outPtr, params[0] | 0, params[1] | 0, params[2] | 0, params[3] | 0);
+
+      case BYTES_CMD_WRITE_U32:
+        return bytesWriteU32(outPtr, params[0] | 0, params[1] | 0, params[2] | 0, params[3] | 0);
+
+      case BYTES_CMD_WRITE_F32:
+        return bytesWriteF32(outPtr, params[0] | 0, params[1] | 0, params[2] | 0, params[3] | 0);
+
+      case BYTES_CMD_WRITE_F64:
+        return bytesWriteF64(outPtr, params[0] | 0, params[1] | 0, params[2] | 0, params[3] | 0);
+
+      case BYTES_CMD_WRITE_BYTES:
+        return bytesWriteBytes(outPtr, params[0] | 0, params[1] | 0, params[2] | 0);
+
+      case BYTES_CMD_WRITE_STRING:
+        return bytesWriteString(outPtr, params[0] | 0, params[1] | 0, params[2] | 0);
+
       default:
         console.warn("[elmc-wasm-runtime] bytes_cmd unimplemented kind", kind, { params });
         writeOut(outPtr, 0);
@@ -630,9 +916,13 @@ export function createBytesRuntime(deps) {
     bytesCmd,
     bytesFromList,
     bytesDecode,
+    bytesDecodeValue,
     bytesEncodeSequence,
     newBytesHandle,
     bytesView,
     TAG_BYTES,
+    setTaskSucceed: (fn) => {
+      succeedTask = typeof fn === "function" ? fn : null;
+    },
   };
 }

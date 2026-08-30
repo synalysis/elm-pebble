@@ -32,7 +32,12 @@ defmodule Elmc.Backend.Wasm.Artifacts do
       case File.read(path) do
         {:ok, json} ->
           case Jason.decode(json) do
-            {:ok, manifest} -> summary_from_manifest(manifest, build_dir, path)
+            {:ok, manifest} ->
+              summary_from_manifest(
+                maybe_merge_debug_manifest(manifest, build_dir),
+                build_dir,
+                path
+              )
             {:error, reason} -> %{available: false, reason: inspect(reason)}
           end
 
@@ -43,6 +48,38 @@ defmodule Elmc.Backend.Wasm.Artifacts do
       %{available: false}
     end
   end
+
+  # Minified web runtime manifests drop functions/skipped/plan_coverage.
+  # Diagnostics and wasm_strict must read those fields from the debug sidecar.
+  @debug_summary_keys [
+    "functions",
+    "skipped",
+    "plan_coverage",
+    "plan_toolchain",
+    "imports",
+    "stub_functions",
+    "pruned_count",
+    "wat_file",
+    "fusion_functions"
+  ]
+
+  @spec maybe_merge_debug_manifest(map(), String.t()) :: map()
+  defp maybe_merge_debug_manifest(%{"minified" => true} = runtime, build_dir) do
+    debug_path = ProjectWriter.debug_manifest_path(build_dir)
+
+    case File.read(debug_path) do
+      {:ok, json} ->
+        case Jason.decode(json) do
+          {:ok, debug} when is_map(debug) -> Map.merge(runtime, Map.take(debug, @debug_summary_keys))
+          _ -> runtime
+        end
+
+      _ ->
+        runtime
+    end
+  end
+
+  defp maybe_merge_debug_manifest(manifest, _build_dir) when is_map(manifest), do: manifest
 
   @spec summary_from_manifest(map(), String.t(), String.t()) :: summary()
   def summary_from_manifest(manifest, build_dir, path) when is_map(manifest) do

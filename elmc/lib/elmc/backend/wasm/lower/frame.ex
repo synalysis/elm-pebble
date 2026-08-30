@@ -19,81 +19,62 @@ defmodule Elmc.Backend.Wasm.Lower.Frame do
   end
 
   @spec epilogue_release(Slots.t()) :: iodata()
-  def epilogue_release(%{owned_count: 0}), do: []
+  def epilogue_release(slots), do: lifo_owned_release(slots)
 
-  def epilogue_release(slots) do
-    import_name =
-      "runtime.release_unless_reachable_from_roots"
-      |> WasmTypes.import_ident()
+  # C-shaped LIFO: newest owned slot first. Consumed transfers already
+  # nulled their shadows, so `$fn_out` is not in `owned[]`.
+  @spec lifo_owned_release(Slots.t()) :: iodata()
+  def lifo_owned_release(%{owned_count: n}) when not is_integer(n) or n <= 0, do: []
 
-    roots_scratch = Slots.int_array_scratch_offset()
-    root_count = 1 + slots.params
+  def lifo_owned_release(slots) do
+    release = WasmTypes.import_ident("runtime.release")
     fn_out = slots.fn_out_local
 
-    store_roots = emit_epilogue_roots(slots, roots_scratch, fn_out)
+    Enum.flat_map((slots.owned_count - 1)..0//-1, fn idx ->
+      owned = Slots.owned_local(slots, idx)
 
-    releases =
-      Enum.flat_map(0..(slots.owned_count - 1)//1, fn idx ->
-        owned = Slots.owned_local(slots, idx)
-
-        [
-          WasmTypes.line(
-            WasmTypes.sexpr("if", [
-              WasmTypes.sexpr("i32.ne", [
-                " ",
-                WasmTypes.sexpr("local.get", [owned]),
-                " ",
-                WasmTypes.sexpr("i32.const", [0])
-              ]),
-              " (then ",
-              WasmTypes.sexpr("drop", [
-                " ",
-                WasmTypes.sexpr("call", [
-                  import_name,
-                  " ",
-                  WasmTypes.sexpr("local.get", [owned]),
-                  " ",
-                  WasmTypes.sexpr("i32.const", [roots_scratch]),
-                  " ",
-                  WasmTypes.sexpr("i32.const", [root_count])
-                ])
-              ]),
-              ")"
-            ])
-          )
-        ]
-      end)
-      |> Enum.reverse()
-
-    store_roots ++ releases
-  end
-
-  defp emit_epilogue_roots(slots, scratch, fn_out) do
-    fn_out_store =
-      WasmTypes.line(
-        WasmTypes.sexpr("i32.store", [
-          " offset=#{scratch} ",
-          WasmTypes.sexpr("i32.const", [0]),
+      cond_wat =
+        WasmTypes.sexpr("i32.and", [
           " ",
-          WasmTypes.sexpr("local.get", [fn_out])
-        ])
-      )
-
-    param_stores =
-      Enum.map(0..(slots.params - 1)//1, fn index ->
-        offset = scratch + 4 * (index + 1)
-
-        WasmTypes.line(
-          WasmTypes.sexpr("i32.store", [
-            " offset=#{offset} ",
-            WasmTypes.sexpr("i32.const", [0]),
+          WasmTypes.sexpr("i32.ne", [
             " ",
-            WasmTypes.sexpr("local.get", ["$param#{index}"])
+            WasmTypes.sexpr("local.get", [owned]),
+            " ",
+            WasmTypes.sexpr("i32.const", [0])
+          ]),
+          " ",
+          WasmTypes.sexpr("i32.ne", [
+            " ",
+            WasmTypes.sexpr("local.get", [owned]),
+            " ",
+            WasmTypes.sexpr("local.get", [fn_out])
+          ])
+        ])
+
+      [
+        WasmTypes.line(
+          WasmTypes.sexpr("if", [
+            cond_wat,
+            " (then ",
+            WasmTypes.sexpr("drop", [
+              " ",
+              WasmTypes.sexpr("call", [
+                release,
+                " ",
+                WasmTypes.sexpr("local.get", [owned])
+              ])
+            ]),
+            " ",
+            WasmTypes.sexpr("local.set", [
+              owned,
+              " ",
+              WasmTypes.sexpr("i32.const", [0])
+            ]),
+            ")"
           ])
         )
-      end)
-
-    [fn_out_store | param_stores]
+      ]
+    end)
   end
 
   @spec box_native_scalar_return(Elmc.Backend.Plan.Types.FunctionPlan.t(), Slots.t()) :: iodata()

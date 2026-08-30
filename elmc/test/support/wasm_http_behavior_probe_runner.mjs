@@ -13,8 +13,10 @@ const manifest = JSON.parse(
 const wasmBytes = readFileSync(`${buildDir}/wasm/app.wasm`);
 
 let fetchCalls = 0;
+let lastInit = null;
 globalThis.fetch = async (url, init) => {
   fetchCalls += 1;
+  lastInit = init;
   if (url.includes("timeout.example")) {
     await new Promise((r) => setTimeout(r, 50));
     const err = new Error("aborted");
@@ -45,6 +47,7 @@ const { helpers, callExport } = await loadElmcWasm({
   manifestClosures: manifest.closures || [],
   closureCount: manifest.closure_count ?? null,
   immortalStrings: manifest.immortal_strings || {},
+  constructorTags: manifest.constructor_tags || {},
 });
 
 const { rc, value: programHandle } = callExport("elmc_fn_Main_main", []);
@@ -63,6 +66,11 @@ await new Promise((r) => setTimeout(r, 100));
 
 if (fetchCalls < 1) {
   console.error("expected at least one fetch from Http.post init");
+  process.exit(1);
+}
+
+if (lastInit?.body != null && lastInit.body !== "") {
+  console.error("emptyBody post should not send a request body", lastInit.body);
   process.exit(1);
 }
 

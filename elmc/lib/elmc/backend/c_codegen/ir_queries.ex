@@ -69,7 +69,24 @@ defmodule Elmc.Backend.CCodegen.IRQueries do
     "Svg.PathD.Sd" => 17,
     "Svg.PathD.Qd" => 18,
     "Svg.PathD.Td" => 19,
-    "Svg.PathD.Ad" => 20
+    "Svg.PathD.Ad" => 20,
+    # VirtualDom.Handler (declaration order; used when elm/virtual-dom is DCE'd)
+    "VirtualDom.Normal" => 1,
+    "VirtualDom.MayStopPropagation" => 2,
+    "VirtualDom.MayPreventDefault" => 3,
+    "VirtualDom.Custom" => 4,
+    # Official elm/http Response constructors (underscore so they do not collide
+    # with Http.Error). Seeded when the union is stripped from IR metadata.
+    "Http.BadUrl_" => 1,
+    "Http.Timeout_" => 2,
+    "Http.NetworkError_" => 3,
+    "Http.BadStatus_" => 4,
+    "Http.GoodStatus_" => 5,
+    # Official elm/json Error declaration order.
+    "Json.Decode.Field" => 1,
+    "Json.Decode.Index" => 2,
+    "Json.Decode.OneOf" => 3,
+    "Json.Decode.Failure" => 4
   }
 
   @bundled_health_metric_kernel_values %{
@@ -81,6 +98,17 @@ defmodule Elmc.Backend.CCodegen.IRQueries do
     "Pebble.Health.RestingKCalories" => 5,
     "Pebble.Health.ActiveKCalories" => 6,
     "Pebble.Health.HeartRateBPM" => 7
+  }
+
+  @bundled_union_constructor_arities %{
+    "Maybe.Just" => 1,
+    "Maybe.Nothing" => 0,
+    "Result.Ok" => 1,
+    "Result.Err" => 1,
+    "Json.Decode.Field" => 2,
+    "Json.Decode.Index" => 2,
+    "Json.Decode.OneOf" => 1,
+    "Json.Decode.Failure" => 2
   }
 
   @spec bundled_union_constructor_tags() :: %{String.t() => non_neg_integer()}
@@ -163,7 +191,8 @@ defmodule Elmc.Backend.CCodegen.IRQueries do
        when is_binary(key),
        do: {:ok, key}
 
-  # attributeNS "ns" "local" — use the local name for setAttribute (host may NS later).
+  # attributeNS "ns" "local" — local name for the DOM key map; NS lives in
+  # `virtual_dom_attribute_ns/1` so emit can use html_cmd kind 20.
   defp virtual_dom_attribute_key_from_expr(%{
          op: :qualified_call,
          target: target,
@@ -175,7 +204,90 @@ defmodule Elmc.Backend.CCodegen.IRQueries do
             ] and is_binary(local),
        do: {:ok, local}
 
+  defp virtual_dom_attribute_key_from_expr(%{op: :lambda, body: body}),
+    do: virtual_dom_attribute_key_from_expr(body)
+
   defp virtual_dom_attribute_key_from_expr(_), do: :error
+
+  @doc """
+  Helper name → `{namespace, local}` for decls that are official
+  `VirtualDom.attributeNS ns local` (including 2-arg partials and 1-arg lambdas).
+  """
+  @spec virtual_dom_attribute_ns(IR.t()) :: %{optional(String.t()) => {String.t(), String.t()}}
+  def virtual_dom_attribute_ns(%IR{} = ir) do
+    ir
+    |> function_decl_map()
+    |> Enum.reduce(%{}, fn
+      {{_module, name}, decl}, acc when is_binary(name) ->
+        case virtual_dom_attribute_ns_from_decl(decl) do
+          {:ok, pair} -> Map.put(acc, name, pair)
+          :error -> acc
+        end
+
+      _, acc ->
+        acc
+    end)
+  end
+
+  defp virtual_dom_attribute_ns_from_decl(%{expr: expr}),
+    do: virtual_dom_attribute_ns_from_expr(expr)
+
+  defp virtual_dom_attribute_ns_from_decl(_), do: :error
+
+  defp virtual_dom_attribute_ns_from_expr(%{op: :lambda, body: body}),
+    do: virtual_dom_attribute_ns_from_expr(body)
+
+  defp virtual_dom_attribute_ns_from_expr(%{
+         op: :qualified_call,
+         target: target,
+         args: [%{op: :string_literal, value: ns}, %{op: :string_literal, value: local} | _]
+       })
+       when target in [
+              "Elm.Kernel.VirtualDom.attributeNS",
+              "VirtualDom.attributeNS"
+            ] and is_binary(ns) and is_binary(local),
+       do: {:ok, {ns, local}}
+
+  defp virtual_dom_attribute_ns_from_expr(_), do: :error
+
+  @doc """
+  `{module, helper}` → namespace for decls that are official
+  `VirtualDom.keyedNodeNS ns` (including 1-arg partials / lambdas).
+  """
+  @spec virtual_dom_keyed_node_ns(IR.t()) :: %{optional({String.t(), String.t()}) => String.t()}
+  def virtual_dom_keyed_node_ns(%IR{} = ir) do
+    ir
+    |> function_decl_map()
+    |> Enum.reduce(%{}, fn
+      {{module, name}, decl}, acc when is_binary(module) and is_binary(name) ->
+        case keyed_node_ns_from_decl(decl) do
+          {:ok, ns} -> Map.put(acc, {module, name}, ns)
+          :error -> acc
+        end
+
+      _, acc ->
+        acc
+    end)
+  end
+
+  defp keyed_node_ns_from_decl(%{expr: expr}), do: keyed_node_ns_from_expr(expr)
+  defp keyed_node_ns_from_decl(_), do: :error
+
+  defp keyed_node_ns_from_expr(%{op: :lambda, body: body}),
+    do: keyed_node_ns_from_expr(body)
+
+  defp keyed_node_ns_from_expr(%{
+         op: :qualified_call,
+         target: target,
+         args: [%{op: :string_literal, value: ns} | _]
+       })
+       when target in [
+              "Elm.Kernel.VirtualDom.keyedNodeNS",
+              "VirtualDom.keyedNodeNS"
+            ] and is_binary(ns),
+       do: {:ok, ns}
+
+  defp keyed_node_ns_from_expr(_), do: :error
 
   @spec record_alias_shape_map(IR.t()) :: %{optional({String.t(), String.t()}) => [String.t()]}
   def record_alias_shape_map(%IR{} = ir) do
@@ -569,6 +681,40 @@ defmodule Elmc.Backend.CCodegen.IRQueries do
       end)
 
     Map.merge(@bundled_union_constructor_tags, Map.new(qualified ++ unqualified))
+  end
+
+  @doc """
+  Constructor payload arity (`Idle` → 0, `Just a` → 1, `Pair Int Int` → 2).
+
+  Official `Debug.toString` prints n-ary ctors as `Pair 1 2`, not `Pair (1,2)`.
+  """
+  @spec constructor_arity_map(IR.t()) :: %{String.t() => non_neg_integer()}
+  def constructor_arity_map(%IR{} = ir) do
+    qualified =
+      Enum.flat_map(ir.modules, fn mod ->
+        mod.unions
+        |> Map.values()
+        |> Enum.flat_map(fn union ->
+          specs = Map.get(union, :payload_specs, %{})
+
+          Enum.map(Map.get(union, :tags, %{}), fn {name, _tag} ->
+            spec = Map.get(specs, name) || Map.get(specs, to_string(name))
+            {"#{mod.name}.#{name}", Elmc.Backend.Pebble.Util.payload_arity_for_spec(spec)}
+          end)
+        end)
+      end)
+
+    unqualified =
+      qualified
+      |> Enum.group_by(fn {qualified_name, _arity} ->
+        qualified_name |> String.split(".") |> List.last()
+      end)
+      |> Enum.flat_map(fn
+        {name, [{_qualified_name, arity}]} -> [{name, arity}]
+        {_name, _duplicates} -> []
+      end)
+
+    Map.merge(@bundled_union_constructor_arities, Map.new(qualified ++ unqualified))
   end
 
   @doc """

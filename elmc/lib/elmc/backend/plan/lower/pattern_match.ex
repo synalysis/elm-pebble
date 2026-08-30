@@ -317,7 +317,10 @@ defmodule Elmc.Backend.Plan.Lower.PatternMatch do
     {_, b2} =
       Builder.emit(b1, :compare, %{
         dest: dest,
-        args: %{kind: :eq, left: left, right: right},
+        # Official Int / Char-code patterns compare values, not heap handles.
+        # WASM `:pointer` (the emit default) is `i32.eq` of a tuple_proj box
+        # against `const_int 1` — handle 1 is UNIT, so `(1, 2, 3)` never matches.
+        args: %{kind: :eq, left: left, right: right, mode: :int_boxed},
         effects: %{
           produces: {:owned, dest},
           consumes: [],

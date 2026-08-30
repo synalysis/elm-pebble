@@ -196,6 +196,49 @@ defmodule Elmc.PlanGuardedTupleCaseTest do
            end)
   end
 
+  test "int literals in a 3-tuple pattern compare as int_boxed not pointer handles" do
+    decl = %{
+      name: "match123",
+      args: ["triple"],
+      expr: %{
+        op: :case,
+        subject: %{op: :var, name: "triple"},
+        branches: [
+          %{
+            pattern: %{
+              kind: :tuple,
+              elements: [
+                %{kind: :int, value: 1},
+                %{
+                  kind: :tuple,
+                  elements: [
+                    %{kind: :int, value: 2},
+                    %{kind: :int, value: 3}
+                  ]
+                }
+              ]
+            },
+            expr: %{op: :bool_literal, value: true}
+          },
+          %{pattern: %{kind: :wildcard}, expr: %{op: :bool_literal, value: false}}
+        ]
+      }
+    }
+
+    assert {:ok, plan} = Function.lower(decl, "Main", %{}, rc_required: true)
+
+    compares =
+      plan.blocks
+      |> Enum.flat_map(& &1.instrs)
+      |> Enum.filter(&match?(%{op: :compare, args: %{kind: :eq}}, &1))
+
+    assert compares != []
+
+    assert Enum.all?(compares, fn %{args: args} ->
+             Map.get(args, :mode) == :int_boxed
+           end)
+  end
+
   defp find_const_in_block(plan, reg) do
     Enum.find_value(plan.blocks, fn block ->
       Enum.find_value(block.instrs, fn

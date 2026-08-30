@@ -6,6 +6,7 @@ module Random exposing
     , constant
     , float
     , generate
+    , independentSeed
     , initialSeed
     , int
     , list
@@ -64,6 +65,11 @@ step (Generator run) seed =
 generate : (a -> msg) -> Generator a -> Cmd msg
 generate =
     Elm.Kernel.Random.generate
+
+
+independentSeed : Generator Seed
+independentSeed =
+    map (\value -> Seed value) (int 0 2147483647)
 
 
 int : Int -> Int -> Generator Int

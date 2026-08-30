@@ -100,8 +100,8 @@ defmodule Elmc.WasmLowerTest do
     assert {:ok, module_map} = Lower.lower(plan)
     wat = Lower.render_wat(module_map)
 
-    # RC epilogue releases surviving owned slots via reachability-aware helper.
-    assert wat =~ ~r/call \$runtime_release_unless_reachable/
+    # RC epilogue releases surviving owned slots LIFO (C-shaped).
+    assert wat =~ ~r/call \$runtime_release \(local\.get \$owned/
     # Owned slot nulled after move into $fn_out.
     assert wat =~ ~r/local\.set \$owned\d+ \(i32\.const 0\)/
   end
@@ -727,5 +727,233 @@ defmodule Elmc.WasmLowerTest do
     assert wat =~ ~s|(import "runtime" "new_int" (func $runtime_new_int|
     assert wat =~ ~s|(import "runtime" "tuple2"|
     assert wat =~ ~r/call \$runtime_new_int[\s\S]*?call \$runtime_tuple2/
+  end
+
+  test "tuple2 of union_ctor const_int boxes via runtime.new_ctor_int" do
+    plan =
+      Builder.new("Test", "just", args: ["payload"], rc_required: true)
+      |> Builder.catch_begin()
+      |> then(fn b ->
+        {tag, b1} = Builder.emit_const_int(b, 1, union_ctor: "Maybe.Just")
+        {payload, b2} = Builder.get_or_load_param(b1, 0, "payload")
+        {dest, b3} = Builder.fresh_reg(b2)
+
+        {_, b4} =
+          Builder.emit(b3, :call_runtime, %{
+            dest: dest,
+            args: %{builtin: :tuple2, args: [tag, payload]},
+            effects: Elmc.Backend.Plan.Types.fallible_effects(dest, [tag, payload])
+          })
+
+        b4
+      end)
+      |> Builder.catch_end()
+      |> then(fn b ->
+        Builder.to_function_plan(Builder.emit_ret(b, 0))
+      end)
+
+    assert {:ok, module_map} = Lower.lower(plan)
+    wat = Lower.render_wat(module_map)
+
+    assert wat =~ ~s|(import "runtime" "new_ctor_int" (func $runtime_new_ctor_int|
+    assert wat =~ ~r/call \$runtime_new_ctor_int[\s\S]*?call \$runtime_tuple2/
+  end
+
+  test "pebble_cmd on WASM traps instead of silently writing dest 0" do
+    Process.delete(:elmc_web_kernel_diagnostics)
+
+    plan =
+      Builder.new("Test", "pebbleOnWeb", args: ["msg"], rc_required: true)
+      |> Builder.catch_begin()
+      |> then(fn b ->
+        {msg, b1} = Builder.emit_load_param(b, 0)
+
+        {_, b2} =
+          Builder.emit(b1, :pebble_cmd, %{
+            dest: :fn_out,
+            args: %{builtin: :cmd1, kind: %{op: :int_literal, value: 1}, params: [msg]},
+            effects: Elmc.Backend.Plan.Types.fallible_effects(:fn_out, [msg])
+          })
+
+        b2
+      end)
+      |> Builder.catch_end()
+      |> then(fn b ->
+        Builder.to_function_plan(Builder.emit_ret(b, :fn_out))
+      end)
+
+    assert {:ok, module_map} = Lower.lower(plan)
+    wat = Lower.render_wat(module_map)
+
+    assert wat =~ "unsupported platform op pebble_cmd"
+    assert wat =~ "unreachable"
+    refute wat =~ "pebble_cmd silent"
+
+    assert Enum.any?(
+             Elmc.Backend.Wasm.WebKernelDiagnostics.compile_diagnostics(),
+             &(&1["code"] == "unsupported_platform_op")
+           )
+  after
+    Process.delete(:elmc_web_kernel_diagnostics)
+  end
+
+  test "float_interpolate_from lowers to the RC host import" do
+    plan =
+      Builder.new("Test", "lerp", args: ["a", "b", "t"], rc_required: true)
+      |> Builder.catch_begin()
+      |> then(fn b ->
+        {a, b1} = Builder.emit_load_param(b, 0)
+        {c, b2} = Builder.emit_load_param(b1, 1)
+        {t, b3} = Builder.emit_load_param(b2, 2)
+        {dest, b4} = Builder.fresh_reg(b3)
+
+        {_, b5} =
+          Builder.emit(b4, :call_runtime, %{
+            dest: dest,
+            args: %{builtin: :float_interpolate_from, args: [a, c, t]},
+            effects: Elmc.Backend.Plan.Types.fallible_effects(dest, [a, c, t])
+          })
+
+        b5
+      end)
+      |> Builder.catch_end()
+      |> then(fn b ->
+        Builder.to_function_plan(Builder.emit_ret(b, 0))
+      end)
+
+    assert {:ok, module_map} = Lower.lower(plan)
+    wat = Lower.render_wat(module_map)
+
+    assert wat =~ ~s|(import "runtime" "float_interpolate_from"|
+    assert wat =~ "call $runtime_float_interpolate_from"
+  end
+
+  test "webgl_entity lowers to the RC host import" do
+    plan =
+      Builder.new("Test", "entity", args: ["s", "v", "f", "m", "u"], rc_required: true)
+      |> Builder.catch_begin()
+      |> then(fn b ->
+        {s, b1} = Builder.emit_load_param(b, 0)
+        {v, b2} = Builder.emit_load_param(b1, 1)
+        {f, b3} = Builder.emit_load_param(b2, 2)
+        {m, b4} = Builder.emit_load_param(b3, 3)
+        {u, b5} = Builder.emit_load_param(b4, 4)
+        {dest, b6} = Builder.fresh_reg(b5)
+
+        {_, b7} =
+          Builder.emit(b6, :call_runtime, %{
+            dest: dest,
+            args: %{builtin: :webgl_entity, args: [s, v, f, m, u]},
+            effects: Elmc.Backend.Plan.Types.fallible_effects(dest, [s, v, f, m, u])
+          })
+
+        b7
+      end)
+      |> Builder.catch_end()
+      |> then(fn b ->
+        Builder.to_function_plan(Builder.emit_ret(b, 0))
+      end)
+
+    assert {:ok, module_map} = Lower.lower(plan)
+    wat = Lower.render_wat(module_map)
+
+    assert wat =~ ~s|(import "runtime" "webgl_entity"|
+    assert wat =~ "call $runtime_webgl_entity"
+  end
+
+  test "mjs_v3add lowers to the RC host import" do
+    plan =
+      Builder.new("Test", "add", args: ["a", "b"], rc_required: true)
+      |> Builder.catch_begin()
+      |> then(fn b ->
+        {a, b1} = Builder.emit_load_param(b, 0)
+        {c, b2} = Builder.emit_load_param(b1, 1)
+        {dest, b3} = Builder.fresh_reg(b2)
+
+        {_, b4} =
+          Builder.emit(b3, :call_runtime, %{
+            dest: dest,
+            args: %{builtin: :mjs_v3add, args: [a, c]},
+            effects: Elmc.Backend.Plan.Types.fallible_effects(dest, [a, c])
+          })
+
+        b4
+      end)
+      |> Builder.catch_end()
+      |> then(fn b ->
+        Builder.to_function_plan(Builder.emit_ret(b, 0))
+      end)
+
+    assert {:ok, module_map} = Lower.lower(plan)
+    wat = Lower.render_wat(module_map)
+
+    assert wat =~ ~s|(import "runtime" "mjs_v3add"|
+    assert wat =~ "call $runtime_mjs_v3add"
+  end
+
+  test "browser_dom_focus lowers to the RC host import" do
+    plan =
+      Builder.new("Test", "focus", args: ["id"], rc_required: true)
+      |> Builder.catch_begin()
+      |> then(fn b ->
+        {id, b1} = Builder.emit_load_param(b, 0)
+        {dest, b2} = Builder.fresh_reg(b1)
+
+        {_, b3} =
+          Builder.emit(b2, :call_runtime, %{
+            dest: dest,
+            args: %{builtin: :browser_dom_focus, args: [id]},
+            effects: Elmc.Backend.Plan.Types.fallible_effects(dest, [id])
+          })
+
+        b3
+      end)
+      |> Builder.catch_end()
+      |> then(fn b ->
+        Builder.to_function_plan(Builder.emit_ret(b, 0))
+      end)
+
+    assert {:ok, module_map} = Lower.lower(plan)
+    wat = Lower.render_wat(module_map)
+
+    assert wat =~ ~s|(import "runtime" "browser_dom_focus"|
+    assert wat =~ "call $runtime_browser_dom_focus"
+  end
+
+  test "int_arith min_vars/max_vars declare basics_min/max imports" do
+    plan =
+      Builder.new("Test", "minmax", args: ["a", "b"], rc_required: true)
+      |> Builder.catch_begin()
+      |> then(fn b ->
+        {dest, b1} = Builder.fresh_reg(b)
+
+        {_, b2} =
+          Builder.emit(b1, :int_arith, %{
+            dest: dest,
+            args: %{kind: :min_vars, lhs: 0, rhs: 1}
+          })
+
+        {dest2, b3} = Builder.fresh_reg(b2)
+
+        {_, b4} =
+          Builder.emit(b3, :int_arith, %{
+            dest: dest2,
+            args: %{kind: :max_vars, lhs: 0, rhs: 1}
+          })
+
+        b4
+      end)
+      |> Builder.catch_end()
+      |> then(fn b ->
+        Builder.to_function_plan(Builder.emit_ret(b, 0))
+      end)
+
+    assert {:ok, module_map} = Lower.lower(plan)
+    wat = Lower.render_wat(module_map)
+
+    assert wat =~ ~s|(import "runtime" "basics_min"|
+    assert wat =~ ~s|(import "runtime" "basics_max"|
+    assert wat =~ "call $runtime_basics_min"
+    assert wat =~ "call $runtime_basics_max"
   end
 end

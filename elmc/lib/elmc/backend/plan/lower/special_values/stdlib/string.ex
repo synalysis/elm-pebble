@@ -114,6 +114,28 @@ defmodule Elmc.Backend.Plan.Lower.SpecialValues.Stdlib.String do
       }
     }
 
+  def special_value_from_target("String.toLocaleUpper", []),
+    do: %{
+      op: :lambda,
+      args: ["__s"],
+      body: %{
+        op: :runtime_call,
+        function: "elmc_string_to_locale_upper",
+        args: [%{op: :var, name: "__s"}]
+      }
+    }
+
+  def special_value_from_target("String.toLocaleLower", []),
+    do: %{
+      op: :lambda,
+      args: ["__s"],
+      body: %{
+        op: :runtime_call,
+        function: "elmc_string_to_locale_lower",
+        args: [%{op: :var, name: "__s"}]
+      }
+    }
+
   def special_value_from_target("String.trim", []),
     do: %{
       op: :lambda,
@@ -178,6 +200,12 @@ defmodule Elmc.Backend.Plan.Lower.SpecialValues.Stdlib.String do
 
   def special_value_from_target("String.toLower", [s]),
     do: %{op: :runtime_call, function: "elmc_string_to_lower", args: [s]}
+
+  def special_value_from_target("String.toLocaleUpper", [s]),
+    do: %{op: :runtime_call, function: "elmc_string_to_locale_upper", args: [s]}
+
+  def special_value_from_target("String.toLocaleLower", [s]),
+    do: %{op: :runtime_call, function: "elmc_string_to_locale_lower", args: [s]}
 
   def special_value_from_target("String.trim", [s]),
     do: %{op: :runtime_call, function: "elmc_string_trim", args: [s]}
@@ -304,10 +332,10 @@ defmodule Elmc.Backend.Plan.Lower.SpecialValues.Stdlib.String do
     do: %{op: :runtime_call, function: "elmc_char_to_lower", args: [ch]}
 
   def special_value_from_target("Char.toLocaleUpper", [ch]),
-    do: %{op: :runtime_call, function: "elmc_char_to_upper", args: [ch]}
+    do: %{op: :runtime_call, function: "elmc_char_to_locale_upper", args: [ch]}
 
   def special_value_from_target("Char.toLocaleLower", [ch]),
-    do: %{op: :runtime_call, function: "elmc_char_to_lower", args: [ch]}
+    do: %{op: :runtime_call, function: "elmc_char_to_locale_lower", args: [ch]}
 
   # --- elm/core: Dict (extended) ---
 

@@ -65,9 +65,9 @@ Watch bootstrap may still defer `InitSurfaceEffects` and protocol queue drain (`
 3. `debugger.reload` for phone (when the template ships a companion app) then watch `Main.elm`
 4. Snapshot via `debugger.models`, `debugger.render_tree`, `debugger.preview_diagnostics`, and canonical preview SVG ops (`DebuggerPreview.svg_ops/2`)
 
-`DebuggerTemplateCorpus` also asserts versioned Core IR on each surface, non-empty companion `runtime_model` for phone templates, and that neither watch nor companion left `operation_source` as `update_evaluation_failed` after bootstrap.
+`DebuggerTemplateCorpus` also asserts versioned elmx artifacts on each surface, non-empty companion `runtime_model` for phone templates, and that neither watch nor companion left `operation_source` as `update_evaluation_failed` after bootstrap.
 
-A second gate (`--only template_corpus_step`) injects contract-discovered subscription triggers and requires `operation_source` in `core_ir_update_eval` or `core_ir_update_noop`.
+A second gate (`--only template_corpus_step`) injects contract-discovered subscription triggers and requires `operation_source` in `elmx_update_eval`, `elmx_update_noop`, or `step_message`.
 
 Golden fixtures live under `ide/test/fixtures/debugger_template_corpus/<template>.json`. Refresh them after intentional preview changes:
 
@@ -83,7 +83,7 @@ The debugger watch SVG preview is **view-only**: it does not re-run `init` or `u
 2. **Missing runtime view** — Preview is empty or `previewUnavailable`; the IDE does not infer draw ops from parser trees.
 3. **Runtime view eval fails** — Preview is `previewUnavailable`; diagnostics include the runtime error. Fix the contract or generated runtime; the IDE does not infer draw ops from parser trees.
 
-If the watch **runtime model** shows parser artifacts (`$var`, `call`, `$opaque`) on fields like `layout` or `player`, `Main.init` did not evaluate through Core IR (missing compile artifacts or init eval failure). The Models panel and agent export hide those fields; `debugger.preview_diagnostics` reports `runtime_model_has_parser_artifacts` and the agent export adds a **Runtime model warnings** section when any remain on the raw model.
+If the watch **runtime model** shows parser artifacts (`$var`, `call`, `$opaque`) on fields like `layout` or `player`, `Main.init` did not evaluate through elmx (missing compile artifacts or init eval failure). The Models panel and agent export hide those fields; `debugger.preview_diagnostics` reports `runtime_model_has_parser_artifacts` and the agent export adds a **Runtime model warnings** section when any remain on the raw model.
 
 Preview output is not patched after the fact. `RuntimePreview` only keeps **concrete** runtime view trees (not parser expression nodes such as `toUiNode`). When evaluation does not produce a drawable tree, the surface gets `previewUnavailable` (never a stale parser outline left on `:view_tree`). Subscription triggers prefer declared `callback_constructor` values from introspected `subscription_calls`; fuzzy token matching for messages was removed.
 

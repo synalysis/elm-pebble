@@ -6,13 +6,6 @@ defmodule Ide.Debugger.RuntimeExecutorCompiledElixirTest do
   alias Ide.Debugger.RuntimeSurfaces
 
   setup do
-    old = Application.get_env(:ide, RuntimeExecutor, [])
-
-    on_exit(fn ->
-      Application.put_env(:ide, RuntimeExecutor, old)
-    end)
-
-    Application.put_env(:ide, RuntimeExecutor, execution_backend: :compiled_elixir)
     _ = Application.ensure_all_started(:elmx)
     :ok
   end
@@ -98,7 +91,7 @@ defmodule Ide.Debugger.RuntimeExecutorCompiledElixirTest do
   test "missing elmx manifest surfaces compile error detail when present" do
     launch_context = RuntimeSurfaces.launch_context_for("basalt", "LaunchUser")
 
-    assert {:error, {:core_ir_execution_failed, {:missing_elmx_manifest, detail}}} =
+    assert {:error, {:elmx_execution_failed, {:missing_elmx_manifest, detail}}} =
              RuntimeExecutor.execute(%{
                source_root: "watch",
                rel_path: "src/Main.elm",

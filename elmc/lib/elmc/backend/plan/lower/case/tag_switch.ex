@@ -14,7 +14,9 @@ defmodule Elmc.Backend.Plan.Lower.Case.TagSwitch do
   # compile_maybe_nothing_case; list ctors stay excluded here.
   # True/False must not tag-switch: native-bool ABI is 0/1 while union tags are
   # ELMC_UNION_BASICS_TRUE/FALSE (1/2). Bool cases go through test_bool instead.
-  @excluded_names MapSet.new(["Just", "Nothing", "::", "[]", "True", "False"])
+  # LT/EQ/GT must not tag-switch: runtime Order is TAG_ORDER -1/0/1, not the
+  # Basics.Order constructor-table ids (typically 1/2/3).
+  @excluded_names MapSet.new(["Just", "Nothing", "::", "[]", "True", "False", "LT", "EQ", "GT"])
 
   @spec branches?(Types.case_branches()) :: boolean()
   def branches?(branches) when is_list(branches) do

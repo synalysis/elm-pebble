@@ -26,6 +26,7 @@ defmodule Elmc.Backend.C.Lower.Instr do
     RetainOperandAlias,
     RowMajorLayout
   }
+  alias Elmc.Backend.CCodegen.DirectRender.CommandDef
   alias Elmc.Backend.CCodegen.Native.FunctionCall, as: NativeFunctionCall
   alias Elmc.Backend.Plan.Lower.SpecialValues.ElmCore
   alias Elmc.Backend.CCodegen.Util
@@ -269,6 +270,15 @@ defmodule Elmc.Backend.C.Lower.Instr do
 
       :stream_for_each ->
         emit_stream_for_each(instr, slots, opts)
+
+      :stream_static_draw_table ->
+        emit_stream_static_draw_table(instr, opts)
+
+      :stream_affine_text ->
+        emit_stream_affine_text(instr, slots, opts)
+
+      :stream_push_cmd ->
+        emit_stream_push_cmd(instr, slots, opts)
 
       :pipe_apply_repeat ->
         emit_pipe_apply_repeat(instr, slots, rc?, dest, opts)
@@ -3899,6 +3909,234 @@ defmodule Elmc.Backend.C.Lower.Instr do
     |> String.trim()
   end
 
+  @spec emit_stream_static_draw_table(map(), keyword()) :: String.t()
+  defp emit_stream_static_draw_table(%{id: id, args: %{kind: kind, rows: rows}}, opts)
+       when is_list(rows) and rows != [] do
+    kind_s = platform_kind_c(kind)
+    table_name = "direct_static_draw_table_#{id}"
+    idx = "plan_sdt_i_#{id}"
+    writer = Keyword.get(opts, :scene_writer_var, "writer")
+    count = length(rows)
+
+    entries =
+      rows
+      |> Enum.map_join(",\n", fn row ->
+        [p0, p1, p2, p3, p4] = (List.wrap(row) ++ ["0", "0", "0", "0", "0"]) |> Enum.take(5)
+        "{ #{kind_s}, #{p0}, #{p1}, #{p2}, #{p3}, #{p4} }"
+      end)
+
+    # Array-of-arrays (no interior `;` in the type) so CSource statement
+    # splitting cannot rewrite the initializer as `{;`.
+    """
+    static const elmc_int_t #{table_name}[][6] = {
+    #{entries}
+    };
+    {
+      int #{idx} = 0;
+      for (; #{idx} < #{count}; #{idx}++) {
+        elmc_draw_cmd_init(&scene_cmd, (int32_t)#{table_name}[#{idx}][0]);
+        scene_cmd.p0 = #{table_name}[#{idx}][1];
+        scene_cmd.p1 = #{table_name}[#{idx}][2];
+        scene_cmd.p2 = #{table_name}[#{idx}][3];
+        scene_cmd.p3 = #{table_name}[#{idx}][4];
+        scene_cmd.p4 = #{table_name}[#{idx}][5];
+        if (elmc_scene_writer_push_cmd(#{writer}, &scene_cmd) != 0) {
+          Rc = RC_ERR_OUT_OF_MEMORY;
+          CHECK_RC(Rc);
+        }
+      }
+    }
+    """
+    |> String.trim()
+  end
+
+  defp emit_stream_static_draw_table(_, _), do: ""
+
+  @spec emit_stream_affine_text(map(), Types.slot_map(), keyword()) :: String.t()
+  defp emit_stream_affine_text(%{id: id, args: args}, slots, opts) do
+    spec = Map.get(args, :spec) || %{}
+    writer = Keyword.get(opts, :scene_writer_var, "writer")
+    index_var = "direct_index_#{id}"
+    item_var = "direct_item_i_#{id}"
+    push = emit_affine_text_push(spec, index_var, item_var, writer)
+
+    case Map.get(args, :source) do
+      :range ->
+        lo = Map.get(args, :lo, 0)
+        hi = Map.get(args, :hi, 0)
+
+        """
+        elmc_int_t #{index_var} = 0;
+        elmc_int_t direct_step_#{id} = (#{lo} <= #{hi}) ? 1 : -1;
+        for (elmc_int_t #{item_var} = #{lo}; Rc == RC_SUCCESS; #{item_var} += direct_step_#{id}) {
+          #{push}
+          if (#{item_var} == #{hi}) break;
+          #{index_var} += 1;
+        }
+        """
+        |> String.trim()
+
+      :list ->
+        list_ref = slot_ref(Map.get(args, :list), slots, opts)
+
+        """
+        elmc_int_t #{index_var} = 0;
+        if (#{list_ref} && #{list_ref}->tag == ELMC_TAG_INT_LIST) {
+          ElmcIntListPayload *plan_at_ilp_#{id} = (ElmcIntListPayload *)#{list_ref}->payload;
+          int plan_at_len_#{id} = plan_at_ilp_#{id} ? plan_at_ilp_#{id}->length : 0;
+          int plan_at_k_#{id} = 0;
+          for (; plan_at_k_#{id} < plan_at_len_#{id}; plan_at_k_#{id}++) {
+            elmc_int_t #{item_var} = plan_at_ilp_#{id}->values[plan_at_k_#{id}];
+            #{push}
+            #{index_var} += 1;
+          }
+        } else if (#{list_ref} && #{list_ref}->tag == ELMC_TAG_LIST) {
+          ElmcValue *plan_at_cur_#{id} = #{list_ref};
+          while (plan_at_cur_#{id} && plan_at_cur_#{id}->tag == ELMC_TAG_LIST && plan_at_cur_#{id}->payload != NULL) {
+            ElmcCons *plan_at_node_#{id} = (ElmcCons *)plan_at_cur_#{id}->payload;
+            elmc_int_t #{item_var} = plan_at_node_#{id}->head ? elmc_as_int(plan_at_node_#{id}->head) : 0;
+            #{push}
+            #{index_var} += 1;
+            plan_at_cur_#{id} = plan_at_node_#{id}->tail;
+          }
+        }
+        """
+        |> String.trim()
+
+      _ ->
+        ""
+    end
+  end
+
+  defp emit_affine_text_push(spec, index_var, item_var, writer) do
+    kind = Map.get(spec, :kind_macro) || platform_kind_c(Map.get(spec, :kind))
+    x = affine_c(Map.get(spec, :x), index_var, item_var)
+    y = affine_c(Map.get(spec, :y), index_var, item_var)
+
+    case Map.get(spec, :kind) do
+      :text_int ->
+        value = affine_c(Map.get(spec, :value), index_var, item_var)
+        font = Map.get(spec, :font, "0")
+
+        """
+        elmc_draw_cmd_init(&scene_cmd, #{kind});
+        scene_cmd.p0 = #{font};
+        scene_cmd.p1 = #{x};
+        scene_cmd.p2 = #{y};
+        scene_cmd.p3 = #{value};
+        if (elmc_scene_writer_push_cmd(#{writer}, &scene_cmd) != 0) {
+          Rc = RC_ERR_OUT_OF_MEMORY;
+          CHECK_RC(Rc);
+        }
+        """
+
+      :text ->
+        font = Map.get(spec, :font, "0")
+        opts = Map.get(spec, :options, "0")
+        w = affine_c(Map.get(spec, :w), index_var, item_var)
+        h = affine_c(Map.get(spec, :h), index_var, item_var)
+        label = emit_affine_label(Map.get(spec, :label), item_var)
+
+        """
+        elmc_draw_cmd_init(&scene_cmd, #{kind});
+        scene_cmd.p0 = #{font};
+        scene_cmd.p1 = #{x};
+        scene_cmd.p2 = #{y};
+        scene_cmd.p3 = #{w};
+        scene_cmd.p4 = #{h};
+        scene_cmd.p5 = #{opts};
+        #{label}
+        if (elmc_scene_writer_push_cmd(#{writer}, &scene_cmd) != 0) {
+          Rc = RC_ERR_OUT_OF_MEMORY;
+          CHECK_RC(Rc);
+        }
+        """
+
+      _ ->
+        ""
+    end
+  end
+
+  defp emit_affine_label({:literal, text}, _item_var) when is_binary(text) do
+    escaped = Util.escape_c_string(text)
+
+    """
+    {
+      const char *direct_text = "#{escaped}";
+      int direct_text_i = 0;
+      while (direct_text[direct_text_i] && direct_text_i < 63) {
+        scene_cmd.text[direct_text_i] = direct_text[direct_text_i];
+        direct_text_i++;
+      }
+      scene_cmd.text[direct_text_i] = '\\0';
+    }
+    """
+  end
+
+  defp emit_affine_label({:from_int, :item, zero_lit}, item_var) when is_binary(zero_lit) do
+    zero_assign =
+      case :binary.bin_to_list(zero_lit) do
+        [byte] ->
+          "scene_cmd.text[0] = #{scene_text_char_literal(byte)};\n      scene_cmd.text[1] = '\\0';"
+
+        bytes ->
+          assigns =
+            bytes
+            |> Enum.take(63)
+            |> Enum.with_index()
+            |> Enum.map_join("\n      ", fn {byte, i} ->
+              "scene_cmd.text[#{i}] = #{scene_text_char_literal(byte)};"
+            end)
+
+          "#{assigns}\n      scene_cmd.text[#{min(length(bytes), 63)}] = '\\0';"
+      end
+
+    """
+    if (#{item_var} == 0) {
+      #{zero_assign}
+    } else {
+      elmc_scene_text_from_nonzero_int(scene_cmd.text, #{item_var});
+    }
+    """
+  end
+
+  defp emit_affine_label(_, _), do: "scene_cmd.text[0] = '\\0';"
+
+  defp affine_c({:lit, n}, _, _) when is_binary(n), do: n
+  defp affine_c({:lit, n}, _, _) when is_integer(n), do: Integer.to_string(n)
+  defp affine_c({:index}, index_var, _), do: index_var
+  defp affine_c({:item}, _, item_var), do: item_var
+  defp affine_c({:mul, :index, scale}, index_var, _), do: "(#{index_var} * #{scale})"
+  defp affine_c({:mul, :item, scale}, _, item_var), do: "(#{item_var} * #{scale})"
+
+  defp affine_c({:offset, base, n}, index_var, item_var),
+    do: "(#{affine_c(base, index_var, item_var)} + #{n})"
+
+  defp affine_c({:add, a, b}, index_var, item_var),
+    do: "(#{affine_c(a, index_var, item_var)} + #{affine_c(b, index_var, item_var)})"
+
+  defp affine_c(_, _, _), do: "0"
+
+  @spec emit_stream_push_cmd(map(), Types.slot_map(), keyword()) :: String.t()
+  defp emit_stream_push_cmd(%{args: %{value: value}}, slots, opts) do
+    value_ref = slot_ref(value, slots, opts)
+    writer = Keyword.get(opts, :scene_writer_var, "writer")
+
+    """
+    if (elmc_draw_cmd_from_value(#{value_ref}, &scene_cmd) != 0) {
+      Rc = RC_ERR_INVALID_ARG;
+      CHECK_RC(Rc);
+    }
+    if (elmc_scene_writer_push_cmd(#{writer}, &scene_cmd) != 0) {
+      Rc = RC_ERR_OUT_OF_MEMORY;
+      CHECK_RC(Rc);
+    }
+    """
+    |> String.trim()
+  end
+
+  defp emit_stream_push_cmd(_, _, _), do: ""
+
   @spec emit_stream_for_each(map(), Types.slot_map(), keyword()) :: String.t()
   defp emit_stream_for_each(%{args: args}, slots, opts) do
     case Map.get(args, :lambda_idx) do
@@ -3915,14 +4153,51 @@ defmodule Elmc.Backend.C.Lower.Instr do
     prefix = List.wrap(Map.get(args, :prefix, []))
     indexed? = Map.get(args, :indexed?, false)
     argc = length(prefix) + if(indexed?, do: 2, else: 1)
+    kinds = stream_for_each_arg_kinds(args.module, args.name, argc)
 
-    %{
-      argc: argc,
-      prefix_regs: prefix,
-      call: fn argv, writer -> "#{callee}(#{argv}, #{argc}, #{writer})" end,
-      caps_decl: ""
-    }
+    if stream_for_each_native_kinds?(kinds, argc) do
+      %{
+        mode: :native,
+        arg_kinds: kinds,
+        argc: argc,
+        prefix_regs: prefix,
+        indexed?: indexed?,
+        call: fn peeled, writer ->
+          "#{callee}_native(#{Enum.join(peeled, ", ")}, #{writer})"
+        end,
+        caps_decl: ""
+      }
+    else
+      %{
+        mode: :boxed,
+        argc: argc,
+        prefix_regs: prefix,
+        call: fn argv, writer -> "#{callee}(#{argv}, #{argc}, #{writer})" end,
+        caps_decl: ""
+      }
+    end
   end
+
+  defp stream_for_each_arg_kinds(mod, name, argc)
+       when is_binary(mod) and is_binary(name) and is_integer(argc) do
+    decl_map = Process.get(:elmc_program_decls, %{})
+
+    case Map.get(decl_map, {mod, name}) do
+      decl when is_map(decl) ->
+        kinds = CommandDef.arg_kinds(decl)
+        if length(kinds) == argc, do: kinds, else: []
+
+      _ ->
+        []
+    end
+  end
+
+  defp stream_for_each_native_kinds?(kinds, argc)
+       when is_list(kinds) and is_integer(argc) do
+    length(kinds) == argc and Enum.any?(kinds, &(&1 != :boxed))
+  end
+
+  defp stream_for_each_native_kinds?(_, _), do: false
 
   defp stream_for_each_lambda_call(args, idx, slots, opts) do
     parent = Keyword.get(opts, :parent_plan)
@@ -3948,6 +4223,7 @@ defmodule Elmc.Backend.C.Lower.Instr do
       end
 
     %{
+      mode: :boxed,
       argc: argc,
       prefix_regs: [],
       call: fn argv, writer ->
@@ -3955,6 +4231,10 @@ defmodule Elmc.Backend.C.Lower.Instr do
       end,
       caps_decl: caps_decl
     }
+  end
+
+  defp emit_stream_for_each_loop(args, slots, opts, %{mode: :native} = call) do
+    emit_stream_for_each_native_loop(args, slots, opts, call)
   end
 
   defp emit_stream_for_each_loop(args, slots, opts, call) do
@@ -4015,6 +4295,127 @@ defmodule Elmc.Backend.C.Lower.Instr do
     }
     """
     |> String.trim()
+  end
+
+  defp emit_stream_for_each_native_loop(args, slots, opts, call) do
+    list_ref = slot_ref(args.list, slots, opts)
+    indexed? = Map.get(args, :indexed?, false)
+    writer = Keyword.get(opts, :scene_writer_var, "writer")
+    id = args.list
+    kinds = call.arg_kinds
+    prefix_kinds = Enum.take(kinds, length(call.prefix_regs))
+    rest_kinds = Enum.drop(kinds, length(call.prefix_regs))
+    {index_kind, item_kind} =
+      if indexed? do
+        {Enum.at(rest_kinds, 0, :boxed), Enum.at(rest_kinds, 1, :boxed)}
+      else
+        {nil, Enum.at(rest_kinds, 0, :boxed)}
+      end
+
+    prefix_peeled =
+      call.prefix_regs
+      |> Enum.zip(prefix_kinds)
+      |> Enum.map(fn {reg, kind} ->
+        stream_fe_peel_kind(kind, slot_ref(reg, slots, opts))
+      end)
+
+    idx_init = if indexed?, do: "int stream_fe_i_#{id} = 0;\n    ", else: ""
+    idx_inc = if indexed?, do: "stream_fe_i_#{id}++;\n        ", else: ""
+
+    int_list_item = stream_fe_int_list_item_expr(item_kind, id)
+    int_list_idx = stream_fe_int_list_index_expr(indexed?, index_kind, id)
+    cons_item = stream_fe_cons_item_expr(item_kind, id)
+    cons_idx = stream_fe_cons_index_expr(indexed?, index_kind, id)
+
+    int_list_args = prefix_peeled ++ int_list_idx ++ [int_list_item]
+    cons_args = prefix_peeled ++ cons_idx ++ [cons_item]
+    int_list_invoke = call.call.(int_list_args, writer)
+    cons_invoke = call.call.(cons_args, writer)
+
+    {int_list_box, int_list_rel} = stream_fe_int_list_box_item(item_kind, id)
+    {int_list_idx_box, int_list_idx_rel} = stream_fe_cons_box_index(indexed?, index_kind, id)
+    {cons_idx_box, cons_idx_rel} = stream_fe_cons_box_index(indexed?, index_kind, id)
+
+    """
+    #{call.caps_decl}#{idx_init}if (#{list_ref} && #{list_ref}->tag == ELMC_TAG_INT_LIST) {
+      ElmcIntListPayload *stream_fe_ilp_#{id} = (ElmcIntListPayload *)#{list_ref}->payload;
+      int stream_fe_len_#{id} = stream_fe_ilp_#{id} ? stream_fe_ilp_#{id}->length : 0;
+      for (int stream_fe_ii_#{id} = 0;
+           Rc == RC_SUCCESS && stream_fe_ii_#{id} < stream_fe_len_#{id};
+           stream_fe_ii_#{id}++) {
+        #{if indexed?, do: "stream_fe_i_#{id} = stream_fe_ii_#{id};\n        ", else: ""}#{int_list_idx_box}#{int_list_box}
+        Rc = #{int_list_invoke};
+        CHECK_RC(Rc);
+        #{int_list_idx_rel}
+        #{int_list_rel}
+      }
+    } else {
+      ElmcValue *stream_fe_cursor_#{id} = #{list_ref};
+      while (Rc == RC_SUCCESS && stream_fe_cursor_#{id} && stream_fe_cursor_#{id}->tag == ELMC_TAG_LIST && stream_fe_cursor_#{id}->payload != NULL) {
+        ElmcCons *stream_fe_node_#{id} = (ElmcCons *)stream_fe_cursor_#{id}->payload;
+        #{cons_idx_box}
+        Rc = #{cons_invoke};
+        CHECK_RC(Rc);
+        #{cons_idx_rel}
+        #{idx_inc}stream_fe_cursor_#{id} = stream_fe_node_#{id}->tail;
+      }
+    }
+    """
+    |> String.trim()
+  end
+
+  defp stream_fe_peel_kind(:native_int, ref), do: "elmc_as_int(#{ref})"
+
+  defp stream_fe_peel_kind(:native_string, ref),
+    do: "((#{ref} && #{ref}->payload) ? (const char *)#{ref}->payload : \"\")"
+
+  defp stream_fe_peel_kind(_, ref), do: ref
+
+  defp stream_fe_int_list_item_expr(:native_int, id),
+    do: "stream_fe_ilp_#{id}->values[stream_fe_ii_#{id}]"
+
+  defp stream_fe_int_list_item_expr(_kind, id), do: "stream_fe_item_#{id}"
+
+  defp stream_fe_int_list_index_expr(false, _kind, _id), do: []
+  defp stream_fe_int_list_index_expr(true, :native_int, id), do: ["stream_fe_ii_#{id}"]
+  defp stream_fe_int_list_index_expr(true, _kind, id), do: ["stream_fe_idx_#{id}"]
+
+  defp stream_fe_cons_item_expr(:native_int, id),
+    do: "elmc_as_int(stream_fe_node_#{id}->head)"
+
+  defp stream_fe_cons_item_expr(:native_string, id),
+    do:
+      "((stream_fe_node_#{id}->head && stream_fe_node_#{id}->head->payload) ? (const char *)stream_fe_node_#{id}->head->payload : \"\")"
+
+  defp stream_fe_cons_item_expr(_kind, id), do: "stream_fe_node_#{id}->head"
+
+  defp stream_fe_cons_index_expr(false, _kind, _id), do: []
+  defp stream_fe_cons_index_expr(true, :native_int, id), do: ["stream_fe_i_#{id}"]
+  defp stream_fe_cons_index_expr(true, _kind, id), do: ["stream_fe_idx_#{id}"]
+
+  defp stream_fe_int_list_box_item(:native_int, _id), do: {"", ""}
+
+  defp stream_fe_int_list_box_item(_kind, id) do
+    box = """
+        ElmcValue *stream_fe_item_#{id} = NULL;
+        Rc = elmc_new_int(&stream_fe_item_#{id}, stream_fe_ilp_#{id}->values[stream_fe_ii_#{id}]);
+        CHECK_RC(Rc);
+    """
+
+    {box, "elmc_release(stream_fe_item_#{id});"}
+  end
+
+  defp stream_fe_cons_box_index(false, _kind, _id), do: {"", ""}
+  defp stream_fe_cons_box_index(true, :native_int, _id), do: {"", ""}
+
+  defp stream_fe_cons_box_index(true, _kind, id) do
+    box = """
+        ElmcValue *stream_fe_idx_#{id} = NULL;
+        Rc = elmc_new_int(&stream_fe_idx_#{id}, stream_fe_i_#{id});
+        CHECK_RC(Rc);
+    """
+
+    {box, "elmc_release(stream_fe_idx_#{id});\n        stream_fe_idx_#{id} = NULL;"}
   end
 
   @spec emit_list_cursor_map(map(), Types.slot_map(), boolean(), String.t(), keyword()) :: String.t()

@@ -89,7 +89,7 @@ surface supported/blocked status. The current companion package shape is
 
 ### 2. Debugger Runtime Fidelity
 
-- **Shipped baseline:** `:compiled_elixir` (`elmx`) is the default debugger backend.
+- **Shipped baseline:** debugger TEA is elmx-only (`CompiledElixirAdapter`). Bytecode is plan smoke, not a stepper.
 - **Zero-gap compile policy:** `ELMX_TEMPLATE_COMPILE_GATE=1` requires every shipped template
   watch + phone root to elmx-compile with no smoke exceptions; see
   `docs/ELMX_DEBUGGER_FIDELITY_MATRIX.md`.

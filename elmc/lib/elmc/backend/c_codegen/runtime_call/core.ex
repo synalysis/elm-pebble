@@ -683,13 +683,7 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
   end
 
   def compile(%{op: :runtime_call, function: "elmc_debug_to_string", args: [value]}, env, counter) do
-    function =
-      if debug_set_value?(value, env) do
-        "elmc_debug_set_to_string"
-      else
-        "elmc_debug_to_string"
-      end
-
+    function = TypeParsing.debug_from_list_c_symbol(debug_collection_kind(value, env))
     compile_generic(%{op: :runtime_call, function: function, args: [value]}, env, counter)
   end
 
@@ -1247,6 +1241,8 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
     String.reverse
     String.toUpper
     String.toLower
+    String.toLocaleUpper
+    String.toLocaleLower
     String.trim
     String.trimLeft
     String.trimRight
@@ -4364,19 +4360,19 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
   defp maybe_copy_list_cons_suffix_tail(_env, _function, arg_vars, arg_code, counter),
     do: {arg_code, arg_vars, counter, false}
 
-  @spec debug_set_value?(Types.ir_expr(), Types.compile_env()) :: boolean()
-  defp debug_set_value?(value, env) do
+  @spec debug_collection_kind(Types.ir_expr(), Types.compile_env()) :: :set | :dict | :array | nil
+  defp debug_collection_kind(value, env) do
     case NativeTypedReturn.expr_type(value, env) do
       type when is_binary(type) ->
-        TypeParsing.set_type?(type) or debug_set_function_param?(value, env)
+        TypeParsing.debug_from_list_kind(type) || debug_collection_function_param(value, env)
 
       _ ->
-        debug_set_function_param?(value, env)
+        debug_collection_function_param(value, env)
     end
   end
 
-  @spec debug_set_function_param?(Types.ir_expr(), Types.compile_env()) :: boolean()
-  defp debug_set_function_param?(%{op: :var, name: name}, env) when is_binary(name) do
+  @spec debug_collection_function_param(Types.ir_expr(), Types.compile_env()) :: :set | :dict | :array | nil
+  defp debug_collection_function_param(%{op: :var, name: name}, env) when is_binary(name) do
     module = Map.get(env, :__module__, "Main")
     fn_name = Map.get(env, :__function_name__)
 
@@ -4384,23 +4380,23 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
       %{type: type, args: args} when is_binary(type) and is_list(args) ->
         with idx when is_integer(idx) <- Enum.find_index(args, &(&1 == name)),
              param_type when is_binary(param_type) <- Enum.at(TypeParsing.function_arg_types(type), idx) do
-          TypeParsing.set_type?(param_type)
+          TypeParsing.debug_from_list_kind(param_type)
         else
-          _ -> false
+          _ -> nil
         end
 
       %{type: type} when is_binary(type) ->
         case TypeParsing.function_arg_types(type) do
-          [param_type] -> TypeParsing.set_type?(param_type)
-          _ -> false
+          [param_type] -> TypeParsing.debug_from_list_kind(param_type)
+          _ -> nil
         end
 
       _ ->
-        false
+        nil
     end
   end
 
-  defp debug_set_function_param?(_value, _env), do: false
+  defp debug_collection_function_param(_value, _env), do: nil
 
   defp release_list_map_body_var(body_var) when is_binary(body_var) do
     if ValueSlots.owned_ref?(body_var) do

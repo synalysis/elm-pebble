@@ -741,6 +741,8 @@ defmodule Elmc.Backend.Plan.Lower.IntCall do
     elmc_string_reverse
     elmc_string_to_upper
     elmc_string_to_lower
+    elmc_string_to_locale_upper
+    elmc_string_to_locale_lower
     elmc_string_trim
     elmc_string_trim_left
     elmc_string_trim_right

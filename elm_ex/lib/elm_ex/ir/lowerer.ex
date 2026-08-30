@@ -1112,6 +1112,15 @@ defmodule ElmEx.IR.Lowerer do
     %{expr | left: rewrite_expr(left, lookup), right: rewrite_expr(right, lookup)}
   end
 
+  defp rewrite_expr(%{op: :tuple3, a: a, b: b, c: c} = expr, lookup) do
+    %{
+      expr
+      | a: rewrite_expr(a, lookup),
+        b: rewrite_expr(b, lookup),
+        c: rewrite_expr(c, lookup)
+    }
+  end
+
   defp rewrite_expr(%{op: :tuple_first_expr, arg: arg} = expr, lookup) do
     %{expr | arg: rewrite_expr(arg, lookup)}
   end

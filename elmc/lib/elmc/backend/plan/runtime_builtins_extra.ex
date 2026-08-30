@@ -1,8 +1,15 @@
 defmodule Elmc.Backend.Plan.RuntimeBuiltins.Extra do
   @moduledoc false
 
+  alias Elmc.Backend.Wasm.ImportSignatures
 
-  @extra_builtins %{
+  @mjs_builtins (
+    for {name, _} <- ImportSignatures.mjs_kernel_value_arities(), into: %{} do
+      {String.to_atom("mjs_#{name}"), "elmc_mjs_#{name}"}
+    end
+  )
+
+  @extra_builtins Map.merge(%{
     port_outgoing: "elmc_port_outgoing",
     port_incoming_sub: "elmc_port_incoming_sub",
     array_append: "elmc_array_append",
@@ -60,6 +67,8 @@ defmodule Elmc.Backend.Plan.RuntimeBuiltins.Extra do
     char_is_oct_digit: "elmc_char_is_oct_digit",
     char_is_upper: "elmc_char_is_upper",
     char_to_code: "elmc_char_to_code",
+    char_to_locale_lower: "elmc_char_to_locale_lower",
+    char_to_locale_upper: "elmc_char_to_locale_upper",
     char_to_lower: "elmc_char_to_lower",
     char_to_upper: "elmc_char_to_upper",
     debug_log: "elmc_debug_log",
@@ -106,6 +115,7 @@ defmodule Elmc.Backend.Plan.RuntimeBuiltins.Extra do
     json_decode_map5: "elmc_json_decode_map5",
     json_decode_map6: "elmc_json_decode_map6",
     json_decode_map7: "elmc_json_decode_map7",
+    json_decode_map8: "elmc_json_decode_map8",
     json_decode_maybe: "elmc_json_decode_maybe",
     json_decode_null: "elmc_json_decode_null",
     json_decode_nullable: "elmc_json_decode_nullable",
@@ -145,6 +155,8 @@ defmodule Elmc.Backend.Plan.RuntimeBuiltins.Extra do
     list_singleton: "elmc_list_singleton",
     list_sort: "elmc_list_sort",
     list_sum: "elmc_list_sum",
+    list_sum_float: "elmc_list_sum_float",
+    list_product_float: "elmc_list_product_float",
     list_unzip: "elmc_list_unzip",
     maybe_map2: "elmc_maybe_map2",
     new_char: "elmc_new_char",
@@ -199,7 +211,10 @@ defmodule Elmc.Backend.Plan.RuntimeBuiltins.Extra do
     string_equals: "elmc_string_equals",
     string_equals_literal: "elmc_string_equals_cstr",
     list_equal_int: "elmc_list_equal_int",
+    value_equal: "elmc_value_equal",
     string_to_list: "elmc_string_to_list",
+    string_to_locale_lower: "elmc_string_to_locale_lower",
+    string_to_locale_upper: "elmc_string_to_locale_upper",
     string_to_lower: "elmc_string_to_lower",
     string_to_upper: "elmc_string_to_upper",
     string_trim: "elmc_string_trim",
@@ -213,12 +228,39 @@ defmodule Elmc.Backend.Plan.RuntimeBuiltins.Extra do
     url_percent_encode: "elmc_url_percent_encode",
     url_percent_decode: "elmc_url_percent_decode",
     url_from_string: "elmc_url_from_string",
+    url_to_string: "elmc_url_to_string",
+    url_builder_absolute: "elmc_url_builder_absolute",
+    url_builder_relative: "elmc_url_builder_relative",
+    url_builder_cross_origin: "elmc_url_builder_cross_origin",
+    url_builder_custom: "elmc_url_builder_custom",
+    url_builder_query_string: "elmc_url_builder_query_string",
+    url_builder_query_int: "elmc_url_builder_query_int",
+    url_builder_to_query: "elmc_url_builder_to_query",
     http_empty_body: "elmc_http_empty_body",
     http_pair: "elmc_http_pair",
+    http_file_body: "elmc_http_file_body",
+    http_multipart_body: "elmc_http_multipart_body",
+    http_bytes_part: "elmc_http_bytes_part",
+    http_to_form_data: "elmc_http_to_form_data",
+    http_bytes_to_blob: "elmc_http_bytes_to_blob",
     http_to_data_view: "elmc_http_to_data_view",
     http_expect: "elmc_http_expect",
+    http_map_expect: "elmc_http_map_expect",
+    http_expect_string: "elmc_http_expect_string",
+    http_expect_json: "elmc_http_expect_json",
+    http_expect_bytes: "elmc_http_expect_bytes",
+    http_expect_whatever: "elmc_http_expect_whatever",
+    http_expect_string_response: "elmc_http_expect_string_response",
+    http_expect_bytes_response: "elmc_http_expect_bytes_response",
     http_command: "elmc_http_command",
+    http_risky_command: "elmc_http_risky_command",
+    http_task: "elmc_http_task",
+    http_risky_task: "elmc_http_risky_task",
+    http_string_resolver: "elmc_http_string_resolver",
+    http_bytes_resolver: "elmc_http_bytes_resolver",
     http_cancel: "elmc_http_cancel",
+    http_fraction_sent: "elmc_http_fraction_sent",
+    http_fraction_received: "elmc_http_fraction_received",
     backend_task_http_get_json: "elmc_backend_task_http_get_json",
     backend_task_http_get: "elmc_backend_task_http_get",
     backend_task_http_get_with_options: "elmc_backend_task_http_get_with_options",
@@ -236,11 +278,22 @@ defmodule Elmc.Backend.Plan.RuntimeBuiltins.Extra do
     backend_task_http_post: "elmc_backend_task_http_post",
     file_download_task: "elmc_file_download_task",
     file_select: "elmc_file_select",
+    file_select_files: "elmc_file_select_files",
     file_download: "elmc_file_download",
+    file_download_url: "elmc_file_download_url",
+    file_name: "elmc_file_name",
+    file_mime: "elmc_file_mime",
+    file_size: "elmc_file_size",
+    file_last_modified: "elmc_file_last_modified",
+    file_to_string: "elmc_file_to_string",
+    file_to_bytes: "elmc_file_to_bytes",
+    file_to_url: "elmc_file_to_url",
+    file_decoder: "elmc_file_decoder",
     task_fail: "elmc_task_fail",
     task_succeed: "elmc_task_succeed",
     task_map: "elmc_task_map",
     task_map2: "elmc_task_map2",
+    task_sequence: "elmc_task_sequence",
     task_and_then: "elmc_task_and_then",
     task_on_error: "elmc_task_on_error",
     task_perform: "elmc_task_perform",
@@ -253,20 +306,46 @@ defmodule Elmc.Backend.Plan.RuntimeBuiltins.Extra do
     time_now_millis: "elmc_time_now_millis",
     time_zone_offset_minutes: "elmc_time_zone_offset_minutes",
     time_here: "elmc_time_here",
+    time_get_zone_name: "elmc_time_get_zone_name",
+    time_utc: "elmc_time_utc",
+    time_custom_zone: "elmc_time_custom_zone",
+    time_to_hour: "elmc_time_to_hour",
+    time_to_minute: "elmc_time_to_minute",
+    time_to_second: "elmc_time_to_second",
+    time_to_millis: "elmc_time_to_millis",
+    time_to_year: "elmc_time_to_year",
+    time_to_day: "elmc_time_to_day",
+    time_to_month: "elmc_time_to_month",
+    time_to_weekday: "elmc_time_to_weekday",
     browser_get_viewport: "elmc_browser_get_viewport",
+    browser_get_viewport_of: "elmc_browser_get_viewport_of",
+    browser_set_viewport: "elmc_browser_set_viewport",
+    browser_set_viewport_of: "elmc_browser_set_viewport_of",
+    browser_get_element: "elmc_browser_get_element",
+    browser_dom_focus: "elmc_browser_dom_focus",
+    browser_dom_blur: "elmc_browser_dom_blur",
     random_generate: "elmc_random_generate",
     regex_from_string: "elmc_regex_from_string",
+    regex_from_string_with: "elmc_regex_from_string_with",
     regex_find: "elmc_regex_find",
+    regex_find_at_most: "elmc_regex_find_at_most",
     regex_contains: "elmc_regex_contains",
-    regex_replace: "elmc_regex_replace"
-  }
+    regex_never: "elmc_regex_never",
+    regex_replace: "elmc_regex_replace",
+    regex_replace_at_most: "elmc_regex_replace_at_most",
+    regex_split: "elmc_regex_split",
+    regex_split_at_most: "elmc_regex_split_at_most",
+    float_interpolate_from: "elmc_float_interpolate_from",
+    webgl_entity: "elmc_webgl_entity",
+    webgl_to_html: "elmc_webgl_to_html"
+  }, @mjs_builtins)
 
   @symbol_aliases %{
     "elmc_string_from_int" => :string_from_int_value
   }
 
   @extra_fallible ~w(
-    basics_compare dict_get list_maximum list_minimum list_product list_sum
+    basics_compare dict_get list_maximum list_minimum list_product list_product_float list_sum list_sum_float
     dict_diff dict_filter dict_foldl dict_foldr dict_from_list dict_insert
     dict_intersect dict_keys dict_map dict_merge dict_partition dict_remove dict_union
     dict_update dict_values
@@ -276,7 +355,8 @@ defmodule Elmc.Backend.Plan.RuntimeBuiltins.Extra do
     set_partition set_remove set_union
     string_all string_any string_filter string_foldl string_foldr string_from_char string_from_float
     string_from_list string_indexes string_map string_pad_left string_pad_right string_repeat
-    string_replace string_reverse string_slice string_split string_to_list string_to_lower
+    string_replace string_reverse string_slice string_split string_to_list string_to_locale_lower
+    string_to_locale_upper string_to_lower
     string_to_upper string_trim string_trim_left string_trim_right string_uncons
     tuple_map_both tuple_map_first tuple_map_second
     array_length array_push array_set
@@ -285,7 +365,7 @@ defmodule Elmc.Backend.Plan.RuntimeBuiltins.Extra do
     basics_radians basics_sqrt basics_tan basics_to_polar basics_truncate basics_turns
     bitwise_and bitwise_complement bitwise_or
     bitwise_shift_left_by bitwise_shift_right_by bitwise_shift_right_zf_by bitwise_xor
-    char_to_code char_to_lower char_to_upper debug_todo dict_size new_char
+    char_to_code char_to_locale_lower char_to_locale_upper char_to_lower char_to_upper debug_todo dict_size new_char
     result_from_maybe result_inc_or_zero result_to_maybe set_size
     string_cons string_drop_left string_drop_right string_from_int_value string_length_val
     string_lines string_pad string_right string_words
@@ -300,14 +380,14 @@ defmodule Elmc.Backend.Plan.RuntimeBuiltins.Extra do
     json_encode_bool json_encode_dict
     json_encode_encode json_encode_float json_encode_int json_encode_list json_encode_null
     json_encode_object json_encode_set json_encode_string
-    task_and_then task_command task_fail task_map task_map2 task_succeed
+    task_and_then task_command task_fail task_map task_map2 task_sequence task_succeed
     process_kill process_sleep process_spawn
     json_decode_and_then json_decode_array json_decode_at json_decode_bool_decoder
     json_decode_dict json_decode_error_to_string json_decode_fail json_decode_field
     json_decode_float_decoder json_decode_index json_decode_int_decoder
     json_decode_key_value_pairs json_decode_lazy json_decode_list json_decode_map
     json_decode_map2 json_decode_map3 json_decode_map4 json_decode_map5 json_decode_map6
-    json_decode_map7 json_decode_maybe json_decode_null json_decode_nullable json_decode_one_of
+    json_decode_map7 json_decode_map8 json_decode_maybe json_decode_null json_decode_nullable json_decode_one_of
     json_decode_string json_decode_string_decoder json_decode_succeed json_decode_value
     json_decode_value_decoder
     task_force
@@ -315,18 +395,32 @@ defmodule Elmc.Backend.Plan.RuntimeBuiltins.Extra do
     port_outgoing port_incoming_sub
     record_update_cow_drop
     string_chop_end string_chop_start string_chop_forward_slashes
-    url_percent_encode url_percent_decode url_from_string
-    http_command http_cancel http_empty_body http_expect http_pair http_to_data_view
+    url_percent_encode url_percent_decode url_from_string url_to_string
+    url_builder_absolute url_builder_relative url_builder_cross_origin url_builder_custom
+    url_builder_query_string url_builder_query_int url_builder_to_query
+    http_command http_risky_command http_task http_risky_task http_cancel
+    http_fraction_sent http_fraction_received http_empty_body http_expect http_map_expect
+    http_string_resolver http_bytes_resolver
+    http_expect_string http_expect_json http_expect_bytes http_expect_whatever
+    http_expect_string_response http_expect_bytes_response http_pair http_file_body
+    http_multipart_body http_bytes_part http_to_form_data http_bytes_to_blob http_to_data_view
     backend_task_http_get_json backend_task_http_get backend_task_http_get_with_options
     backend_task_http_expect_json backend_task_http_expect_string backend_task_http_expect_whatever
     backend_task_http_expect_bytes backend_task_http_with_metadata
     backend_task_http_empty_body backend_task_http_string_body backend_task_http_json_body
     backend_task_http_bytes_body bytes_encode_sequence
     backend_task_http_request backend_task_http_post
-    file_download file_download_task file_select
-    random_generate regex_contains regex_find regex_from_string regex_replace
-    time_here browser_get_viewport
-  )a
+    file_download file_download_task file_download_url file_select file_select_files
+    file_name file_mime file_size file_last_modified file_to_string file_to_bytes file_to_url
+    file_decoder
+    random_generate regex_contains regex_never regex_find regex_find_at_most regex_from_string
+    regex_from_string_with regex_replace regex_replace_at_most regex_split regex_split_at_most
+    time_here time_get_zone_name time_utc time_custom_zone time_to_hour time_to_minute time_to_second
+    time_to_millis time_to_year time_to_day time_to_month time_to_weekday
+    browser_get_viewport browser_get_viewport_of browser_set_viewport
+    browser_set_viewport_of browser_get_element browser_dom_focus browser_dom_blur
+    float_interpolate_from webgl_entity webgl_to_html
+  )a ++ Map.keys(@mjs_builtins)
 
   # Empty: allocating helpers must be RC + fallible, never value-return OOM ABI.
   @extra_c_value_return ~w()a
@@ -334,7 +428,7 @@ defmodule Elmc.Backend.Plan.RuntimeBuiltins.Extra do
   @extra_value_return ~w(
     array_empty array_from_list array_is_empty char_is_alpha char_is_alpha_num
     char_is_digit char_is_hex_digit char_is_lower char_is_oct_digit char_is_upper
-    dict_is_empty dict_member list_member list_equal_int set_is_empty set_member
+    dict_is_empty dict_member list_member list_equal_int value_equal set_is_empty set_member
     basics_is_infinite basics_is_nan basics_xor string_contains
     task_on_error task_perform
   )a

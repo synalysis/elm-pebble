@@ -19,6 +19,11 @@ const DEC_KEY_VALUE = 9;
 const DEC_MAP = 10;
 const DEC_AND_THEN = 11;
 const DEC_ONE_OF = 12;
+const DEC_DICT = 13;
+const DEC_FILE = 14;
+const DEC_MAYBE = 15;
+const DEC_NULLABLE = 16;
+const DEC_LAZY = 17;
 
 const JSON_CMD_WRAP = 1;
 const JSON_CMD_ENCODE = 2;
@@ -79,8 +84,13 @@ export function createJsonRuntime(deps) {
     TAG_STRING,
     TAG_LIST,
     TAG_TUPLE2,
+    TAG_MAYBE = 3,
     constructorTags = {},
+    dictFromListHandle = null,
+    wrapNativeFile = null,
   } = deps;
+
+  let wrapFile = typeof wrapNativeFile === "function" ? wrapNativeFile : null;
 
   const decodeErrorTag = (name) => {
     const qualified = `Json.Decode.${name}`;
@@ -99,11 +109,62 @@ export function createJsonRuntime(deps) {
     });
   };
 
-  const decodeErrorToString = (errPtr) => {
+  // Official constructors are tuple2(tag, payload). n-ary payloads nest as
+  // tuple2(a, b) — same as plan `compile_union_payload`.
+  const pairHandles = (firstPtr, secondPtr) => {
+    const handle = allocHandle({
+      tag: TAG_TUPLE2,
+      first: firstPtr | 0,
+      second: secondPtr | 0,
+    });
+    if (typeof addOwner === "function") {
+      if (firstPtr) addOwner(firstPtr | 0, handle);
+      if (secondPtr) addOwner(secondPtr | 0, handle);
+    }
+    return handle;
+  };
+
+  // Official elm/json `_Json_encode`: JSON.stringify(unwrap, null, indent) + ''.
+  const encodeJsonValue = (value, indentLevel) => {
+    try {
+      return `${JSON.stringify(value, null, indentLevel)}`;
+    } catch (_err) {
+      return "null";
+    }
+  };
+
+  const indentErrorText = (str) => String(str ?? "").split("\n").join("\n    ");
+
+  const isSimpleFieldName = (name) => {
+    if (!name) return false;
+    const first = name.charCodeAt(0);
+    const isAlpha = (code) =>
+      (code >= 65 && code <= 90) || (code >= 97 && code <= 122);
+    const isAlphaNum = (code) =>
+      isAlpha(code) || (code >= 48 && code <= 57);
+    if (!isAlpha(first)) return false;
+    for (let i = 1; i < name.length; i++) {
+      if (!isAlphaNum(name.charCodeAt(i))) return false;
+    }
+    return true;
+  };
+
+  const failureParts = (secondPtr) => {
+    const second = readHandle(secondPtr);
+    if (second?.tag === TAG_TUPLE2) {
+      return {
+        msg: stringValue(second.first | 0),
+        json: unwrapJsonValue(second.second | 0),
+      };
+    }
+    return { msg: stringValue(secondPtr), json: null };
+  };
+
+  // Official elm/json `errorToStringHelp` / `errorOneOf` / `indent`.
+  const decodeErrorToStringHelp = (errPtr, context) => {
     const payload = readHandle(errPtr);
     if (!payload) return "Json.Decode.Error";
     if (payload.tag === TAG_STRING) return payload.value;
-
     if (payload.tag !== TAG_TUPLE2) {
       return stringValue(errPtr) || "Json.Decode.Error";
     }
@@ -115,48 +176,80 @@ export function createJsonRuntime(deps) {
     const indexTag = decodeErrorTag("Index");
     const oneOfTag = decodeErrorTag("OneOf");
 
-    if (failureTag != null && tag === failureTag) {
-      return stringValue(secondPtr);
-    }
-
     if (fieldTag != null && tag === fieldTag) {
-      const pair = readHandle(secondPtr);
-      if (pair?.tag === TAG_TUPLE2) {
-        const name = stringValue(pair.first | 0);
-        return `Expecting something at field \`${name}\` but instead got:\n    ${decodeErrorToString(pair.second | 0)}`;
+      const fieldPair = readHandle(secondPtr);
+      if (fieldPair?.tag === TAG_TUPLE2) {
+        const name = stringValue(fieldPair.first | 0);
+        const fieldName = isSimpleFieldName(name) ? `.${name}` : `['${name}']`;
+        return decodeErrorToStringHelp(fieldPair.second | 0, [fieldName, ...context]);
       }
     }
 
     if (indexTag != null && tag === indexTag) {
-      const pair = readHandle(secondPtr);
-      if (pair?.tag === TAG_TUPLE2) {
-        const index = intValue(pair.first | 0);
-        return `Expecting something at index ${index} but instead got:\n    ${decodeErrorToString(pair.second | 0)}`;
+      const indexPair = readHandle(secondPtr);
+      if (indexPair?.tag === TAG_TUPLE2) {
+        const indexName = `[${intValue(indexPair.first | 0)}]`;
+        return decodeErrorToStringHelp(indexPair.second | 0, [indexName, ...context]);
       }
     }
 
     if (oneOfTag != null && tag === oneOfTag) {
-      const list = readHandle(secondPtr);
-      const items = list?.tag === TAG_LIST ? list.items ?? [] : [];
-      const body = items.map((item) => decodeErrorToString(item | 0)).join("\n\n");
-      return body ? `One of:\n\n    ${body.replace(/\n/g, "\n    ")}` : "One of:\n\n    unknown decode error";
+      const items = listItems(secondPtr);
+      if (items.length === 0) {
+        return (
+          "Ran into a Json.Decode.oneOf with no possibilities" +
+          (context.length === 0 ? "!" : ` at json${context.slice().reverse().join("")}`)
+        );
+      }
+      if (items.length === 1) {
+        return decodeErrorToStringHelp(items[0] | 0, context);
+      }
+      const starter =
+        context.length === 0
+          ? "Json.Decode.oneOf"
+          : `The Json.Decode.oneOf at json${context.slice().reverse().join("")}`;
+      const introduction = `${starter} failed in the following ${items.length} ways:`;
+      const ways = items.map(
+        (item, i) => `\n\n(${i + 1}) ${indentErrorText(decodeErrorToStringHelp(item | 0, []))}`
+      );
+      return [introduction, ...ways].join("\n\n");
+    }
+
+    if (failureTag != null && tag === failureTag) {
+      const { msg, json } = failureParts(secondPtr);
+      const introduction =
+        context.length === 0
+          ? "Problem with the given value:\n\n"
+          : `Problem with the value at json${context.slice().reverse().join("")}:\n\n    `;
+      return `${introduction}${indentErrorText(encodeJsonValue(json, 4))}\n\n${msg}`;
     }
 
     return stringValue(errPtr) || "Json.Decode.Error";
   };
 
-  const makeFailure = (message) => {
-    const union = makeDecodeUnion("Failure", newStringHandle(message));
-    return union ?? newStringHandle(message);
+  const decodeErrorToString = (errPtr) => decodeErrorToStringHelp(errPtr, []);
+
+  // Official `Failure String Value` is tuple2(tag, tuple2(msg, json)).
+  const makeFailure = (message, jsonValue) => {
+    const msgPtr = newStringHandle(String(message ?? ""));
+    const jsonPtr = newJsonValue(jsonValue);
+    const union = makeDecodeUnion("Failure", pairHandles(msgPtr, jsonPtr));
+    return union ?? msgPtr;
   };
 
   const wrapFieldError = (field, nestedPtr) => {
-    const union = makeDecodeUnion("Field", tuple2(0, newStringHandle(field), nestedPtr | 0));
+    const union = makeDecodeUnion(
+      "Field",
+      pairHandles(newStringHandle(field), nestedPtr | 0)
+    );
     return union ?? newStringHandle(`Field ${field}: ${decodeErrorToString(nestedPtr)}`);
   };
 
   const wrapIndexError = (index, nestedPtr) => {
-    const union = makeDecodeUnion("Index", tuple2(0, newIntHandle(index | 0), nestedPtr | 0));
+    const union = makeDecodeUnion(
+      "Index",
+      pairHandles(newIntHandle(index | 0), nestedPtr | 0)
+    );
     return union ?? newStringHandle(`Index ${index}: ${decodeErrorToString(nestedPtr)}`);
   };
 
@@ -189,6 +282,7 @@ export function createJsonRuntime(deps) {
       case DEC_FIELD:
       case DEC_INDEX:
       case DEC_KEY_VALUE:
+      case DEC_DICT:
         ownDecoderChild(handle, payload.decoder);
         break;
       case DEC_MAP:
@@ -205,6 +299,17 @@ export function createJsonRuntime(deps) {
         for (const decoder of payload.decoders ?? []) {
           ownDecoderChild(handle, decoder);
         }
+        break;
+      case DEC_MAYBE:
+      case DEC_NULLABLE:
+        ownDecoderChild(handle, payload.decoder);
+        break;
+      case DEC_LAZY:
+        ownDecoderChild(handle, payload.thunk);
+        break;
+      case DEC_SUCCEED:
+      case DEC_FAIL:
+        ownDecoderChild(handle, payload.msg);
         break;
       case DEC_NULL:
         ownDecoderChild(handle, payload.defaultHandle);
@@ -264,18 +369,21 @@ export function createJsonRuntime(deps) {
     return newJsonValue(value);
   };
 
-  const isArray = (value) => Array.isArray(value);
+  const isArray = (value) =>
+    Array.isArray(value) ||
+    (typeof FileList !== "undefined" && value instanceof FileList);
 
+  // Official `_Json_expecting`: Failure ("Expecting " ++ type) (wrap value).
   const expecting = (type, value) => ({
     ok: false,
-    error: makeFailure(`Expecting ${type}` + (value === undefined ? "" : ` (${typeof value})`)),
+    error: makeFailure(`Expecting ${type}`, value),
   });
 
   const primDecoders = {
     string(value) {
       if (typeof value === "string") return { ok: true, handle: newStringHandle(value) };
       if (value instanceof String) return { ok: true, handle: newStringHandle(String(value)) };
-      return expecting("an STRING", value);
+      return expecting("a STRING", value);
     },
     bool(value) {
       if (typeof value === "boolean") return { ok: true, handle: newIntHandle(value ? 1 : 0) };
@@ -302,9 +410,23 @@ export function createJsonRuntime(deps) {
     },
   };
 
+  const wrapNothing = () => allocHandle({ tag: TAG_MAYBE, value: null });
+
+  const wrapJust = (payloadPtr) => {
+    const owned = asHandle(payloadPtr);
+    const handle = allocHandle({
+      tag: TAG_MAYBE,
+      value: owned,
+      isJust: true,
+      ctorTag: 1,
+    });
+    if (typeof addOwner === "function" && owned) addOwner(owned, handle);
+    return handle;
+  };
+
   const runDecoderHelp = (decoderPtr, value) => {
     const decoder = decoderPayload(decoderPtr);
-    if (!decoder) return { ok: false, error: makeFailure("bad decoder") };
+    if (!decoder) return { ok: false, error: makeFailure("bad decoder", value) };
 
     switch (decoder.kind) {
       case DEC_PRIM: {
@@ -316,7 +438,7 @@ export function createJsonRuntime(deps) {
         return { ok: true, handle: asHandle(decoder.msg) };
 
       case DEC_FAIL:
-        return { ok: false, error: makeFailure(stringValue(decoder.msg)) };
+        return { ok: false, error: makeFailure(stringValue(decoder.msg), value) };
 
       case DEC_NULL:
         return value === null
@@ -349,7 +471,10 @@ export function createJsonRuntime(deps) {
         if (typeof value !== "object" || value === null || !(decoder.field in value)) {
           return {
             ok: false,
-            error: makeFailure(`Expecting an OBJECT with a field named \`${decoder.field}\``),
+            error: makeFailure(
+              `Expecting an OBJECT with a field named \`${decoder.field}\``,
+              value
+            ),
           };
         }
         const step = runDecoderHelp(decoder.decoder, value[decoder.field]);
@@ -363,7 +488,8 @@ export function createJsonRuntime(deps) {
           return {
             ok: false,
             error: makeFailure(
-              `Expecting a LONGER array. Need index ${decoder.index} but only see ${value.length} entries`
+              `Expecting a LONGER array. Need index ${decoder.index} but only see ${value.length} entries`,
+              value
             ),
           };
         }
@@ -382,27 +508,71 @@ export function createJsonRuntime(deps) {
           const step = runDecoderHelp(decoder.decoder, value[key]);
           if (!step.ok) return { ok: false, error: wrapFieldError(key, step.error) };
           const keyHandle = newStringHandle(key);
+          const valHandle = asHandle(step.handle);
           const pairHandle = allocHandle({
             tag: TAG_TUPLE2,
             first: keyHandle,
-            second: asHandle(step.handle),
+            second: valHandle,
           });
-          pairs.unshift(pairHandle);
+          if (addOwner) {
+            if (keyHandle) addOwner(keyHandle, pairHandle);
+            if (valHandle) addOwner(valHandle, pairHandle);
+          }
+          // Official elm/json conses then List.reverse — object key order.
+          pairs.push(pairHandle);
         }
         return { ok: true, handle: newList(pairs) };
       }
 
+      case DEC_DICT: {
+        const step = runDecoderHelp(
+          { kind: DEC_KEY_VALUE, decoder: decoder.decoder },
+          value
+        );
+        if (!step.ok) return step;
+        if (typeof dictFromListHandle === "function") {
+          const dict = dictFromListHandle(step.handle);
+          release(step.handle);
+          return { ok: true, handle: dict };
+        }
+        return step;
+      }
+
+      case DEC_FILE: {
+        const native =
+          typeof File !== "undefined" && value instanceof File
+            ? value
+            : value?.elmFile && value?.nativeFile
+              ? value.nativeFile
+              : null;
+        if (native && typeof wrapFile === "function") {
+          const handle = wrapFile(native);
+          if (handle) return { ok: true, handle };
+        }
+        return expecting("a FILE", value);
+      }
+
       case DEC_MAP: {
+        // Each apply owns its result. Release only intermediate partials —
+        // the final mapped value is the decoder result (caller-owned).
         let callee = decoder.func;
+        let ownedPartial = 0;
         for (const subDecoder of decoder.decoders) {
           const step = runDecoderHelp(subDecoder, value);
-          if (!step.ok) return step;
+          if (!step.ok) {
+            if (ownedPartial) release(ownedPartial);
+            return step;
+          }
           const invoked = invokeClosure(callee, [asHandle(step.handle)]);
+          if (ownedPartial) {
+            release(ownedPartial);
+            ownedPartial = 0;
+          }
           if (invoked.rc !== RC_SUCCESS) {
-            return { ok: false, error: makeFailure("map callback failed") };
+            return { ok: false, error: makeFailure("map callback failed", value) };
           }
           callee = asHandle(invoked.value);
-          release(invoked.value);
+          ownedPartial = callee;
         }
         return { ok: true, handle: callee };
       }
@@ -412,7 +582,7 @@ export function createJsonRuntime(deps) {
         if (!step.ok) return step;
         const next = invokeClosure(decoder.callback, [asHandle(step.handle)]);
         if (next.rc !== RC_SUCCESS) {
-          return { ok: false, error: makeFailure("andThen callback failed") };
+          return { ok: false, error: makeFailure("andThen callback failed", value) };
         }
         const result = runDecoderHelp(asHandle(next.value), value);
         release(next.value);
@@ -424,13 +594,39 @@ export function createJsonRuntime(deps) {
         for (const subDecoder of decoder.decoders) {
           const step = runDecoderHelp(subDecoder, value);
           if (step.ok) return step;
-          errors.unshift(step.error);
+          errors.push(step.error);
         }
         return { ok: false, error: makeOneOfError(errors) };
       }
 
+      case DEC_MAYBE: {
+        // Official: oneOf [map Just decoder, succeed Nothing]
+        const step = runDecoderHelp(decoder.decoder, value);
+        if (step.ok) return { ok: true, handle: wrapJust(step.handle) };
+        return { ok: true, handle: wrapNothing() };
+      }
+
+      case DEC_NULLABLE: {
+        // Official: oneOf [null Nothing, map Just decoder]
+        if (value === null) return { ok: true, handle: wrapNothing() };
+        const step = runDecoderHelp(decoder.decoder, value);
+        if (!step.ok) return step;
+        return { ok: true, handle: wrapJust(step.handle) };
+      }
+
+      case DEC_LAZY: {
+        // Official forces the thunk at run time (recursive decoders).
+        const forced = invokeClosure(decoder.thunk, []);
+        if (forced.rc !== RC_SUCCESS) {
+          return { ok: false, error: makeFailure("lazy thunk failed", value) };
+        }
+        const result = runDecoderHelp(asHandle(forced.value), value);
+        release(forced.value);
+        return result;
+      }
+
       default:
-        return { ok: false, error: makeFailure("unknown decoder") };
+        return { ok: false, error: makeFailure("unknown decoder", value) };
     }
   };
 
@@ -517,13 +713,14 @@ export function createJsonRuntime(deps) {
       case JSON_CMD_RUN_ON_STRING: {
         const decoderPtr = params[0] | 0;
         const stringPtr = params[1] | 0;
+        const raw = stringValue(stringPtr);
         try {
-          const parsed = JSON.parse(stringValue(stringPtr));
+          const parsed = JSON.parse(raw);
           return runDecoderToResult(outPtr, decoderPtr, parsed);
         } catch (err) {
           return resultErrOwn(
             outPtr,
-            asHandle(makeFailure(`This is not valid JSON! ${err?.message ?? err}`))
+            asHandle(makeFailure(`This is not valid JSON! ${err?.message ?? err}`, raw))
           );
         }
       }
@@ -679,13 +876,14 @@ export function createJsonRuntime(deps) {
     runDecoderToResult(outPtr, decoderPtr, unwrapJsonValue(valuePtr));
 
   const jsonDecodeRunString = (outPtr, decoderPtr, stringPtr) => {
+    const raw = stringValue(stringPtr);
     try {
-      const parsed = JSON.parse(stringValue(stringPtr));
+      const parsed = JSON.parse(raw);
       return runDecoderToResult(outPtr, decoderPtr, parsed);
     } catch (err) {
       return resultErrOwn(
         outPtr,
-        asHandle(makeFailure(`This is not valid JSON! ${err?.message ?? err}`))
+        asHandle(makeFailure(`This is not valid JSON! ${err?.message ?? err}`, raw))
       );
     }
   };
@@ -701,6 +899,41 @@ export function createJsonRuntime(deps) {
     }
     writeOut(outPtr, newJsonValue(object));
     return RC_SUCCESS;
+  };
+
+  // Official Encode.dict toKey toValue dict = object (map (\(k,v) -> (toKey k, toValue v)) (toList dict))
+  const jsonEncodeDict = (outPtr, keyFnPtr, valFnPtr, dictPtr) => {
+    const pairs = [];
+    for (const entryPtr of listItems(dictPtr)) {
+      const entry = readHandle(entryPtr);
+      if (entry?.tag !== TAG_TUPLE2) continue;
+      const keyOut = invokeClosure(keyFnPtr, [asHandle(entry.first)]);
+      if (keyOut.rc !== RC_SUCCESS) {
+        writeOut(outPtr, 0);
+        return keyOut.rc;
+      }
+      const valOut = invokeClosure(valFnPtr, [asHandle(entry.second)]);
+      if (valOut.rc !== RC_SUCCESS) {
+        release(keyOut.value);
+        writeOut(outPtr, 0);
+        return valOut.rc;
+      }
+      const keyPtr = asHandle(keyOut.value);
+      const valPtr = asHandle(valOut.value);
+      if (retainHandle) {
+        if (keyPtr) retainHandle(keyPtr);
+        if (valPtr) retainHandle(valPtr);
+      }
+      const pair = allocHandle({ tag: TAG_TUPLE2, first: keyPtr, second: valPtr });
+      if (addOwner) {
+        addOwner(keyPtr, pair);
+        addOwner(valPtr, pair);
+      }
+      pairs.push(pair);
+      release(keyOut.value);
+      release(valOut.value);
+    }
+    return jsonEncodeFromPairs(outPtr, newList(pairs));
   };
 
   const jsonEncodeListLike = (outPtr, funcPtr, itemsPtr) => {
@@ -723,6 +956,7 @@ export function createJsonRuntime(deps) {
     jsonDecodeRun,
     jsonDecodeRunString,
     jsonEncodeFromPairs,
+    jsonEncodeDict,
     jsonEncodeListLike,
     writeDecoderOut,
     newDecoder,
@@ -737,11 +971,19 @@ export function createJsonRuntime(deps) {
     DEC_FIELD,
     DEC_INDEX,
     DEC_KEY_VALUE,
+    DEC_DICT,
+    DEC_FILE,
     DEC_MAP,
     DEC_AND_THEN,
     DEC_ONE_OF,
+    DEC_MAYBE,
+    DEC_NULLABLE,
+    DEC_LAZY,
     DEC_NULL,
     DEC_SUCCEED,
     DEC_FAIL,
+    setWrapNativeFile: (fn) => {
+      wrapFile = typeof fn === "function" ? fn : null;
+    },
   };
 }

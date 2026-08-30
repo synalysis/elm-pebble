@@ -16,6 +16,7 @@ export function createVdomPatchRuntime(deps) {
     TAG_INT,
     attachDomEvent,
     forceLazyHtml,
+    applyLazyHtml,
     // VirtualDom "custom" node handlers, keyed by renderKey (e.g. "webgl").
     // Each entry is `{ render(model, facts) -> Node, diff(oldModel, newModel,
     // domNode) -> Node }`. `model` is a host-only JS object (not a handle
@@ -130,7 +131,17 @@ export function createVdomPatchRuntime(deps) {
       if (!attr) continue;
       const name = attr.name ?? attr.key;
       const value = attr.value ?? "";
-      if (name === "style" && typeof value === "string") {
+      if (attr.kind === "style") {
+        const key = String(name || "");
+        const val = String(value ?? "");
+        if (key && el.style) {
+          if (typeof el.style.setProperty === "function") {
+            el.style.setProperty(key, val);
+          } else {
+            el.style[key] = val;
+          }
+        }
+      } else if (name === "style" && typeof value === "string") {
         el.setAttribute("style", value);
       } else if (attr.kind === "property") {
         // A "property" fact is always a direct JS-property assignment (e.g.
@@ -143,7 +154,11 @@ export function createVdomPatchRuntime(deps) {
         state.listeners.push({ el, type: attr.event, fn });
         domState.set(el, state);
       } else if (name) {
-        el.setAttribute(name, value);
+        if (attr.ns && typeof el.setAttributeNS === "function") {
+          el.setAttributeNS(attr.ns, name, value);
+        } else {
+          el.setAttribute(name, value);
+        }
       }
     }
   };
@@ -200,6 +215,10 @@ export function createVdomPatchRuntime(deps) {
     const el = createElementDom(tag, ns);
     if (!el) return null;
 
+    // Record listeners in domState *during* applyAttrs. Overwriting
+    // `{ listeners: [] }` after apply left the click handler untracked, so
+    // the next patch stacked a second listener.
+    domState.set(el, { vdomPtr: resolved | 0, listeners: [] });
     applyAttrs(el, vdomAttrs(resolved), mapperChain);
 
     const keyed = vdomKeyedChildren(resolved);
@@ -215,7 +234,8 @@ export function createVdomPatchRuntime(deps) {
     }
 
     if (parent) parent.appendChild(el);
-    domState.set(el, { vdomPtr: resolved | 0, listeners: [] });
+    const mounted = domState.get(el) ?? { listeners: [] };
+    domState.set(el, { vdomPtr: resolved | 0, listeners: mounted.listeners ?? [] });
     return el;
   };
 
@@ -259,6 +279,14 @@ export function createVdomPatchRuntime(deps) {
     }
 
     if (newKind === "lazy") {
+      if (typeof applyLazyHtml === "function") {
+        const step = applyLazyHtml(oldPtr, newPtr);
+        if (step.reused) return domNode;
+        if (step.newForced) {
+          return patch(step.oldForced || 0, step.newForced, domNode, mapperChain);
+        }
+        return domNode;
+      }
       const forced = forceLazyHtml(newResolved);
       if (forced.rc === 0 && forced.value) {
         return patch(oldPtr, forced.value, domNode, mapperChain);
@@ -300,7 +328,8 @@ export function createVdomPatchRuntime(deps) {
       if (!fresh) return domNode;
       applyAttrs(fresh, newCustom.facts, mapperChain);
       domNode.replaceWith(fresh);
-      domState.set(fresh, { vdomPtr: newResolved | 0, listeners: [] });
+      const customState = domState.get(fresh) ?? { listeners: [] };
+      domState.set(fresh, { vdomPtr: newResolved | 0, listeners: customState.listeners ?? [] });
       return fresh;
     }
 
@@ -371,7 +400,8 @@ export function createVdomPatchRuntime(deps) {
       }
       patch(oldChild, newChild, domChild, mapperChain);
     }
-    domState.set(el, { vdomPtr: newResolved | 0, listeners: [] });
+    const patched = domState.get(el) ?? { listeners: [] };
+    domState.set(el, { vdomPtr: newResolved | 0, listeners: patched.listeners ?? [] });
     return el;
   };
 

@@ -2,7 +2,7 @@ defmodule Ide.Debugger.Types.ExecutionRuntimeSnapshot do
   @moduledoc """
   Runtime telemetry map on step results (`runtime` / `runtime_execution` on `model_patch`).
 
-  Populated by semantic executor, elmc adapter, and `RuntimeExecutor.annotate_execution_backend/3`.
+  Populated by the elmx executor and `RuntimeExecutor.annotate_execution_backend/3`.
   """
 
   alias Ide.Debugger.Types

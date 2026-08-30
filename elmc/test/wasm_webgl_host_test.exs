@@ -9,7 +9,8 @@ defmodule Elmc.WasmWebglHostTest do
 
       assert stub.params == ["param0", "param1", "param2", "param3", "param4"]
       assert stub.imports == MapSet.new(["runtime.webgl_entity"])
-      assert stub.import_arities == %{"runtime.webgl_entity" => 5}
+      assert stub.import_arities == %{"runtime.webgl_entity" => 6}
+      assert stub.body =~ "i32.const 1024"
       assert stub.body =~ "call $runtime_webgl_entity\n"
       refute stub.body =~ "i32.const 100"
     end
@@ -19,7 +20,8 @@ defmodule Elmc.WasmWebglHostTest do
 
       assert stub.params == ["param0", "param1", "param2"]
       assert stub.imports == MapSet.new(["runtime.webgl_to_html"])
-      assert stub.import_arities == %{"runtime.webgl_to_html" => 3}
+      assert stub.import_arities == %{"runtime.webgl_to_html" => 4}
+      assert stub.body =~ "i32.const 1024"
       assert stub.body =~ "call $runtime_webgl_to_html\n"
     end
 
@@ -34,8 +36,8 @@ defmodule Elmc.WasmWebglHostTest do
 
   describe "ImportSignatures" do
     test "webgl_entity and webgl_to_html have canonical arities" do
-      assert ImportSignatures.param_count("runtime.webgl_entity") == 5
-      assert ImportSignatures.param_count("runtime.webgl_to_html") == 3
+      assert ImportSignatures.param_count("runtime.webgl_entity") == 6
+      assert ImportSignatures.param_count("runtime.webgl_to_html") == 4
     end
   end
 end

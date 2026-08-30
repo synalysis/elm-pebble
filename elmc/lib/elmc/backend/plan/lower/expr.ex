@@ -39,6 +39,8 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
     "String.trim" => :string_trim,
     "String.toUpper" => :string_to_upper,
     "String.toLower" => :string_to_lower,
+    "String.toLocaleUpper" => :string_to_locale_upper,
+    "String.toLocaleLower" => :string_to_locale_lower,
     "String.length" => :string_length_val,
     "String.words" => :string_words,
     "String.lines" => :string_lines,
@@ -100,7 +102,7 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
     list_map2 list_map3 list_map4 list_map5 list_find_first dict_map set_map string_map array_map
     tuple_map_first tuple_map_second tuple_map_both
     json_decode_map json_decode_map2 json_decode_map3 json_decode_map4 json_decode_map5
-    json_decode_map6 json_decode_map7 json_decode_and_then json_decode_lazy
+    json_decode_map6 json_decode_map7 json_decode_map8 json_decode_and_then json_decode_lazy
     json_encode_list json_encode_array json_encode_set json_encode_dict
   )a
 
@@ -461,6 +463,18 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
     end
   end
 
+  def compile(%{op: :tuple3, a: a_expr, b: b_expr, c: c_expr}, ctx, b) do
+    operand_ctx = %{ctx | dest_stack: [:scratch], function_tail: false}
+
+    with {:ok, a_reg, b1} <- compile(a_expr, operand_ctx, b),
+         {:ok, b_reg, b2} <- compile(b_expr, operand_ctx, b1),
+         {:ok, c_reg, b3} <- compile(c_expr, operand_ctx, b2) do
+      compile_runtime_builtin(:tuple3, [a_reg, b_reg, c_reg], ctx, b3)
+    else
+      _ -> :unsupported
+    end
+  end
+
   def compile(%{op: :tuple2} = expr, ctx, b) do
     operand_ctx = %{ctx | dest_stack: [:scratch], function_tail: false}
 
@@ -582,6 +596,9 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
 
       %{target: "Json.Decode.map7", args: args} ->
         compile_json_decode_partial(:json_decode_map7, "Json.Decode.map7", 8, args || [], ctx, b)
+
+      %{target: "Json.Decode.map8", args: args} ->
+        compile_json_decode_partial(:json_decode_map8, "Json.Decode.map8", 9, args || [], ctx, b)
 
       %{target: "Basics.never", args: []} ->
         # `never : Never -> a` (used for Cmd.map/Sub.map when msg is Never).
@@ -995,6 +1012,8 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
     case SpecialValues.special_value_from_target(target, args) do
       %{op: :runtime_call, function: fun, args: call_args} = rewritten
       when is_binary(fun) and is_list(call_args) ->
+        rewritten = promote_list_number_runtime_call(rewritten, ctx)
+
         case compile_runtime_call_with_callee_arg_types(rewritten, target, ctx, b) do
           {:ok, _, _} = ok -> ok
           :unsupported -> compile(rewritten, ctx, b)
@@ -1067,7 +1086,13 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
 
         with id when not is_nil(id) <- RuntimeBuiltins.from_c_symbol(fun),
              {:ok, arg_regs, b1} <- compile_args_with_expected_types(args, arg_types, ctx, b) do
-          compile_runtime_builtin(id, arg_regs, ctx, b1)
+          list_arg =
+            case args do
+              [first | _] -> first
+              _ -> nil
+            end
+
+          compile_runtime_builtin(list_number_float_builtin(id, list_arg, ctx), arg_regs, ctx, b1)
         else
           _ -> :unsupported
         end
@@ -1194,7 +1219,11 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
   end
 
   defp try_ir_specialized_runtime_call(%{function: "elmc_list_filter_map"} = expr, ctx, b) do
-    Elmc.Backend.Plan.Lower.FilterMapIdentity.try_compile(expr, ctx, b)
+    if Context.stream_mode?(ctx) do
+      :unsupported
+    else
+      Elmc.Backend.Plan.Lower.FilterMapIdentity.try_compile(expr, ctx, b)
+    end
   end
 
   defp try_ir_specialized_runtime_call(%{function: "elmc_list_filter"} = expr, ctx, b) do
@@ -1444,7 +1473,7 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
   defp compile_root_var_local_or_param(name, ctx, b) when is_binary(name) do
     case Context.local_reg(ctx, name) do
       reg when is_integer(reg) ->
-        {:ok, reg, b}
+        maybe_stream_push_cmd(reg, ctx, b)
 
       _ ->
         case Context.letrec_ref(ctx, name) do
@@ -1454,7 +1483,8 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
           _ ->
             case param_index(ctx, name) do
               idx when is_integer(idx) ->
-                Builder.get_or_load_param(b, idx, name) |> then(fn {reg, b1} -> {:ok, reg, b1} end)
+                Builder.get_or_load_param(b, idx, name)
+                |> then(fn {reg, b1} -> maybe_stream_push_cmd(reg, ctx, b1) end)
 
               _ ->
                 case Builder.emit_load_local(b, name) do
@@ -1500,10 +1530,18 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
                     end
 
                   {reg, b1} ->
-                    {:ok, reg, b1}
+                    maybe_stream_push_cmd(reg, ctx, b1)
                 end
             end
         end
+    end
+  end
+
+  defp maybe_stream_push_cmd(reg, ctx, b) when is_integer(reg) do
+    if Context.stream_mode?(ctx) do
+      Elmc.Backend.Plan.Lower.Stream.List.compile_push_cmd(reg, ctx, b)
+    else
+      {:ok, reg, b}
     end
   end
 
@@ -1659,6 +1697,41 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
       end
 
     is_binary(type) and Host.function_return_type(type) == "Float"
+  end
+
+  defp list_number_float_builtin(:list_sum, arg, ctx),
+    do: if(float_list_number?(arg, ctx), do: :list_sum_float, else: :list_sum)
+
+  defp list_number_float_builtin(:list_product, arg, ctx),
+    do: if(float_list_number?(arg, ctx), do: :list_product_float, else: :list_product)
+
+  defp list_number_float_builtin(id, _arg, _ctx), do: id
+
+  defp promote_list_number_runtime_call(%{function: fun, args: args} = expr, ctx)
+       when fun in ["elmc_list_sum", "elmc_list_product"] do
+    list_arg =
+      case args do
+        [list | _] -> list
+        _ -> nil
+      end
+
+    if float_list_number?(list_arg, ctx) do
+      float_fn =
+        if fun == "elmc_list_sum", do: "elmc_list_sum_float", else: "elmc_list_product_float"
+
+      %{expr | function: float_fn}
+    else
+      expr
+    end
+  end
+
+  defp promote_list_number_runtime_call(expr, _ctx), do: expr
+
+  # Official empty `List Float` has no item tags. Use the Float fold when the
+  # call is a Float function tail or the operand is typed / literal `List Float`.
+  defp float_list_number?(arg, ctx) do
+    (Context.function_tail?(ctx) and float_return?(ctx)) or
+      TypedReturn.expr_type(arg, let_type_env(ctx)) == "List Float"
   end
 
   @spec native_bool_return?(Context.t()) :: boolean()
@@ -1851,7 +1924,7 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
     end
   end
 
-  # `let caseSubject = (a, b[, c]) in case caseSubject of (Just …, Just …) / _`
+  # `let caseSubject = (a, b[, c]) in case caseSubject of (Just/Nothing …) / _`
   # → case (a, b[, c]) of … so Case can avoid heap tuple2 + GuardedSwitch.
   @spec peel_tuple2_maybe_pair_case(list(), Types.expr()) :: {:ok, map()} | :error
 
@@ -2733,13 +2806,7 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
         arg_ctx = Context.for_branch_arm(ctx)
 
         with {:ok, arg_reg, b1} <- compile(arg, arg_ctx, b) do
-          id =
-            if debug_set_arg?(arg, ctx) do
-              :debug_set_to_string
-            else
-              :debug_to_string
-            end
-
+          id = TypeParsing.debug_from_list_builtin(debug_collection_kind(arg, ctx))
           compile_runtime_builtin(id, [arg_reg], ctx, b1)
         else
           _ -> :unsupported
@@ -2749,7 +2816,7 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
         arg_ctx = Context.for_branch_arm(ctx)
 
         with {:ok, arg_reg, b1} <- compile(arg, arg_ctx, b) do
-          compile_runtime_builtin(id, [arg_reg], ctx, b1)
+          compile_runtime_builtin(list_number_float_builtin(id, arg, ctx), [arg_reg], ctx, b1)
         else
           _ -> :unsupported
         end
@@ -2759,9 +2826,9 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
     end
   end
 
-  @spec debug_set_arg?(Types.expr() | term(), Context.t()) :: boolean()
+  @spec debug_collection_kind(Types.expr() | term(), Context.t()) :: :set | :dict | :array | nil
 
-  defp debug_set_arg?(arg, ctx) do
+  defp debug_collection_kind(arg, ctx) do
     env = %{
       __module__: ctx.module || "Main",
       __function_name__: ctx.function_name,
@@ -2769,31 +2836,34 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
       __program_decls__: ctx.decl_map
     }
 
-    case Elmc.Backend.CCodegen.Native.TypedReturn.expr_type(arg, env) do
-      type when is_binary(type) ->
-        Elmc.Backend.CCodegen.TypeParsing.set_type?(type)
+    type =
+      case TypedReturn.expr_type(arg, env) do
+        found when is_binary(found) ->
+          found
 
-      _ ->
-        case arg do
-          %{op: :var, name: name} when is_binary(name) ->
-            case Map.get(ctx.decl_map, {ctx.module, ctx.function_name}) do
-              %{type: type, args: args} when is_binary(type) and is_list(args) ->
-                with idx when is_integer(idx) <- Enum.find_index(args, &(&1 == name)),
-                     param_type when is_binary(param_type) <-
-                       Enum.at(Elmc.Backend.CCodegen.TypeParsing.function_arg_types(type), idx) do
-                  Elmc.Backend.CCodegen.TypeParsing.set_type?(param_type)
-                else
-                  _ -> false
-                end
+        _ ->
+          case arg do
+            %{op: :var, name: name} when is_binary(name) ->
+              case Map.get(ctx.decl_map, {ctx.module, ctx.function_name}) do
+                %{type: fn_type, args: args} when is_binary(fn_type) and is_list(args) ->
+                  with idx when is_integer(idx) <- Enum.find_index(args, &(&1 == name)),
+                       param_type when is_binary(param_type) <-
+                         Enum.at(TypeParsing.function_arg_types(fn_type), idx) do
+                    param_type
+                  else
+                    _ -> nil
+                  end
 
-              _ ->
-                false
-            end
+                _ ->
+                  nil
+              end
 
-          _ ->
-            false
-        end
-    end
+            _ ->
+              nil
+          end
+      end
+
+    TypeParsing.debug_from_list_kind(type)
   end
 
   @spec compile_qualified_binary(atom(), Types.expr(), Types.expr(), Context.t(), Builder.t()) ::
@@ -3214,16 +3284,51 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
   end
 
   defp compile_runtime_call(%{function: "elmc_list_filter_map"} = expr, ctx, b) do
-    case Elmc.Backend.Plan.Lower.FilterMapIdentity.try_compile(expr, ctx, b) do
-      {:ok, reg, b1} -> {:ok, reg, b1}
-      :unsupported -> compile_runtime_call_default(expr, ctx, b)
+    if Context.stream_mode?(ctx) do
+      case Elmc.Backend.Plan.Lower.Stream.List.try_compile_runtime(expr, ctx, b) do
+        {:ok, _, _} = ok -> ok
+        :unsupported -> compile_runtime_call_default(expr, ctx, b)
+      end
+    else
+      case Elmc.Backend.Plan.Lower.FilterMapIdentity.try_compile(expr, ctx, b) do
+        {:ok, reg, b1} -> {:ok, reg, b1}
+        :unsupported -> compile_runtime_call_default(expr, ctx, b)
+      end
     end
   end
 
   defp compile_runtime_call(%{function: "elmc_list_filter"} = expr, ctx, b) do
-    case Elmc.Backend.Plan.Lower.ListRecord.try_compile_filter(expr, ctx, b) do
-      {:ok, reg, b1} -> {:ok, reg, b1}
-      :unsupported -> compile_runtime_call_default(expr, ctx, b)
+    if Context.stream_mode?(ctx) do
+      case Elmc.Backend.Plan.Lower.Stream.List.try_compile_runtime(expr, ctx, b) do
+        {:ok, _, _} = ok -> ok
+        :unsupported -> compile_runtime_call_default(expr, ctx, b)
+      end
+    else
+      case Elmc.Backend.Plan.Lower.ListRecord.try_compile_filter(expr, ctx, b) do
+        {:ok, reg, b1} -> {:ok, reg, b1}
+        :unsupported -> compile_runtime_call_default(expr, ctx, b)
+      end
+    end
+  end
+
+  defp compile_runtime_call(%{function: function, args: args} = expr, ctx, b)
+       when function in ["elmc_list_sum", "elmc_list_product"] do
+    # Official `sum` / `product` are `foldl (+) 0` / `foldl (*) 1` on `number`.
+    # An empty `List Float` has no runtime Float tags; keep Float when the
+    # enclosing function returns Float or the list operand is typed `List Float`.
+    list_arg =
+      case args do
+        [list | _] -> list
+        _ -> nil
+      end
+
+    if float_list_number?(list_arg, ctx) do
+      float_fn =
+        if function == "elmc_list_sum", do: "elmc_list_sum_float", else: "elmc_list_product_float"
+
+      compile_runtime_call_default(%{expr | function: float_fn}, ctx, b)
+    else
+      compile_runtime_call_default(expr, ctx, b)
     end
   end
 
@@ -3515,7 +3620,17 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
         id in [:record_new, :record_new_take, :record_new_values_ints] ->
           Builder.dup_all_regs_for_record_new_consume(b2, arg_regs)
 
-        id in [:tuple2, :tuple2_take, :list_cons, :list_append, :cmd_batch, :sub_batch] ->
+        id in [
+          :tuple2,
+          :tuple2_take,
+          :tuple3,
+          :list_cons,
+          :list_append,
+          :cmd_batch,
+          :sub_batch,
+          :cmd_map,
+          :sub_map
+        ] ->
           # Named locals from pattern_bind (record_get / tuple_proj) would otherwise
           # stay as borrows — EpilogueRelease then frees them while they are nested
           # under the published result. Retain-dup named locals, then consume all args.
@@ -3540,10 +3655,11 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
           {arg_regs, []}
 
         id in [:record_new, :record_new_take, :record_new_values_ints] -> {[], arg_regs}
-        id in [:tuple2, :tuple2_take] -> {[], arg_regs}
+        id in [:tuple2, :tuple2_take, :tuple3] -> {[], arg_regs}
         id in [:list_cons, :list_append] -> {[], arg_regs}
-        id in [:cmd_batch, :sub_batch] -> {[], arg_regs}
-        id in [:debug_to_string, :debug_set_to_string] -> {[], arg_regs}
+        id in [:cmd_batch, :sub_batch, :cmd_map, :sub_map] -> {[], arg_regs}
+        id in [:debug_to_string, :debug_set_to_string, :debug_dict_to_string, :debug_array_to_string] ->
+          {[], arg_regs}
         id in [:char_from_code] -> {[], arg_regs}
         id in [:string_length_boxed] -> {arg_regs, []}
         id == :tuple2_ints -> {arg_regs, []}

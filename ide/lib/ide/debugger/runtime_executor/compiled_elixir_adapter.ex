@@ -29,12 +29,11 @@ defmodule Ide.Debugger.RuntimeExecutor.CompiledElixirAdapter do
          :ok <- validate_runtime_model(payload) do
       {:ok, ResultNormalizer.normalize(payload)}
     else
-      {:error, {:core_ir_execution_failed, _} = err} -> {:error, err}
-      {:error, {:elmx_execution_failed, _} = err} -> {:error, {:core_ir_execution_failed, err}}
+      {:error, {:elmx_execution_failed, _} = err} -> {:error, err}
     end
   end
 
-  def execute(_), do: {:error, {:core_ir_execution_failed, :invalid_execution_input}}
+  def execute(_), do: {:error, {:elmx_execution_failed, :invalid_execution_input}}
 
   @spec require_elmx_manifest(execution_input()) :: :ok | {:error, Types.execution_error()}
   defp require_elmx_manifest(input) do
@@ -54,9 +53,9 @@ defmodule Ide.Debugger.RuntimeExecutor.CompiledElixirAdapter do
         Map.get(input, "elmx_compile_error_message")
 
     if is_binary(detail) and detail != "" do
-      {:core_ir_execution_failed, {:missing_elmx_manifest, detail}}
+      {:elmx_execution_failed, {:missing_elmx_manifest, detail}}
     else
-      {:core_ir_execution_failed, :missing_elmx_manifest}
+      {:elmx_execution_failed, :missing_elmx_manifest}
     end
   end
 
@@ -69,11 +68,11 @@ defmodule Ide.Debugger.RuntimeExecutor.CompiledElixirAdapter do
       is_binary(revision) and revision != "" ->
         case Elmx.module_for_revision(revision) do
           mod when is_atom(mod) and not is_nil(mod) -> {:ok, mod}
-          _ -> {:error, {:core_ir_execution_failed, {:elmx_module_not_registered, revision}}}
+          _ -> {:error, {:elmx_execution_failed, {:elmx_module_not_registered, revision}}}
         end
 
       true ->
-        {:error, {:core_ir_execution_failed, :missing_elmx_revision}}
+        {:error, {:elmx_execution_failed, :missing_elmx_revision}}
     end
   end
 
@@ -85,7 +84,7 @@ defmodule Ide.Debugger.RuntimeExecutor.CompiledElixirAdapter do
     if is_map(Map.get(patch, "runtime_model") || Map.get(patch, :runtime_model)) do
       :ok
     else
-      {:error, {:core_ir_execution_failed, :missing_runtime_model}}
+      {:error, {:elmx_execution_failed, :missing_runtime_model}}
     end
   end
 end

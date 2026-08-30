@@ -1122,6 +1122,15 @@ defmodule ElmEx.Frontend.GeneratedContractBuilder do
     %{op: :tuple2, left: normalize_generated_expr(left), right: normalize_generated_expr(right)}
   end
 
+  defp normalize_generated_expr(%{op: :tuple3, a: a, b: b, c: c}) do
+    %{
+      op: :tuple3,
+      a: normalize_generated_expr(a),
+      b: normalize_generated_expr(b),
+      c: normalize_generated_expr(c)
+    }
+  end
+
   defp normalize_generated_expr(%{op: :list_literal, items: items}) when is_list(items) do
     %{op: :list_literal, items: Enum.map(items, &normalize_generated_expr/1)}
   end
@@ -1278,6 +1287,10 @@ defmodule ElmEx.Frontend.GeneratedContractBuilder do
 
   defp allow_generated_expr?(%{op: :tuple2, left: left, right: right}) do
     allow_generated_expr?(left) and allow_generated_expr?(right)
+  end
+
+  defp allow_generated_expr?(%{op: :tuple3, a: a, b: b, c: c}) do
+    allow_generated_expr?(a) and allow_generated_expr?(b) and allow_generated_expr?(c)
   end
 
   defp allow_generated_expr?(%{op: :field_call, args: args}) do

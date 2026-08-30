@@ -9,12 +9,6 @@ defmodule Ide.Debugger.CompiledElixirDeviceFollowupsTest do
   alias IdeWeb.WorkspaceLive.DebuggerSupport
 
   setup do
-    old = Application.get_env(:ide, Ide.Debugger.RuntimeExecutor, [])
-
-    on_exit(fn ->
-      Application.put_env(:ide, Ide.Debugger.RuntimeExecutor, old)
-    end)
-
     Corpus.ensure_compiled_elixir_backend!()
     :ok
   end

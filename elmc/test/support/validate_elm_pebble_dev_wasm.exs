@@ -47,6 +47,11 @@ if unexpected_skipped != [] do
   System.halt(1)
 end
 
+if Enum.any?(debug_skipped, fn entry -> entry["reason"] == "fusion_only" end) do
+  IO.inspect(debug_skipped, label: "fusion_only skips (forbidden on web-reachable fns)")
+  System.halt(1)
+end
+
 constructor_tags = manifest["constructor_tags"] || %{}
 
 if constructor_tags == %{} do
@@ -62,6 +67,6 @@ end
 webgl_stubs = Enum.filter(stub_functions, &ElmPebbleDevWasmCompile.allowed_host_bridge_stub?/1)
 
 IO.puts("wasm validate OK: #{out}")
-IO.puts("  stub_functions: #{length(stub_functions)} (webgl/mjs host bridges + remaining scene gaps: #{length(webgl_stubs)})")
+IO.puts("  stub_functions: #{length(stub_functions)} (leftover host bridges: #{length(webgl_stubs)})")
 IO.puts("  skipped: #{length(debug_skipped)}")
 IO.puts("  constructor_tags: #{map_size(constructor_tags)}")

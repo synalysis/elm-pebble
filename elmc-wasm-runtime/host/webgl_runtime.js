@@ -20,6 +20,7 @@ export function createWebglRuntime(deps) {
     TAG_VDOM,
     TAG_RECORD,
     TAG_TUPLE2,
+    TAG_TUPLE3,
     TAG_LIST,
     TAG_INT,
     TAG_FLOAT,
@@ -316,7 +317,7 @@ export function createWebglRuntime(deps) {
         out.push(numberValue(p));
         return;
       }
-      if (payload.tag === TAG_TUPLE2) {
+      if (payload.tag === TAG_TUPLE2 || payload.tag === TAG_TUPLE3) {
         walk(payload.first);
         walk(payload.second);
       }
@@ -458,7 +459,7 @@ export function createWebglRuntime(deps) {
     for (let i = 0; i < count; i++) {
       const payload = readHandle(cur);
       if (!payload) break;
-      if (payload.tag === TAG_TUPLE2 && i < count - 1) {
+      if ((payload.tag === TAG_TUPLE2 || payload.tag === TAG_TUPLE3) && i < count - 1) {
         out.push(payload.first | 0);
         cur = payload.second | 0;
       } else {

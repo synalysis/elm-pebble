@@ -190,6 +190,9 @@ defmodule ElmEx.Frontend.AstContract do
       :tuple2 ->
         validate_tuple2(expr)
 
+      :tuple3 ->
+        validate_tuple3(expr)
+
       :list_literal ->
         validate_list_literal(expr)
 
@@ -328,6 +331,17 @@ defmodule ElmEx.Frontend.AstContract do
   end
 
   defp validate_tuple2(_), do: {:error, :invalid_tuple_expr}
+
+  @spec validate_tuple3(Types.expr() | Types.invalid_input()) :: :ok | {:error, atom()}
+  defp validate_tuple3(%{a: a, b: b, c: c}) do
+    with :ok <- validate_expr(a),
+         :ok <- validate_expr(b),
+         :ok <- validate_expr(c) do
+      :ok
+    end
+  end
+
+  defp validate_tuple3(_), do: {:error, :invalid_tuple_expr}
 
   @spec validate_list_literal(Types.expr() | Types.invalid_input()) :: :ok | {:error, atom()}
   defp validate_list_literal(%{items: items}) when is_list(items) do

@@ -376,6 +376,171 @@ defmodule Elmc.PlanStreamEligibleTest do
            })
   end
 
+  test "List.filter of render commands is stream-eligible" do
+    cmds = %{
+      op: :list_literal,
+      items: [%{op: :render_cmd}, %{op: :render_cmd}]
+    }
+
+    filtered = %{
+      op: :qualified_call,
+      target: "List.filter",
+      args: [
+        %{op: :lambda, args: ["_"], body: %{op: :bool_literal, value: true}},
+        cmds
+      ]
+    }
+
+    assert Stream.eligible_expr?(filtered)
+    assert Stream.pipeline_expr?(filtered)
+  end
+
+  test "List.filter of a model command list is stream-eligible" do
+    filtered = %{
+      op: :qualified_call,
+      target: "List.filter",
+      args: [
+        %{op: :lambda, args: ["_"], body: %{op: :var, name: "show"}},
+        %{op: :field_access, arg: %{op: :var, name: "model"}, field: "ops"}
+      ]
+    }
+
+    assert Stream.eligible_expr?(filtered)
+    assert Stream.pipeline_expr?(filtered)
+  end
+
+  test "List.filter of an int list is not a stream view" do
+    filtered = %{
+      op: :qualified_call,
+      target: "List.filter",
+      args: [
+        %{op: :lambda, args: ["n"], body: %{op: :bool_literal, value: true}},
+        %{
+          op: :list_literal,
+          items: [%{op: :int_literal, value: 1}, %{op: :int_literal, value: 2}]
+        }
+      ]
+    }
+
+    refute Stream.eligible_expr?(filtered)
+  end
+
+  test "List.filterMap of Maybe render commands is stream-eligible" do
+    cmds = %{
+      op: :list_literal,
+      items: [
+        %{op: :constructor_call, target: "Just", args: [%{op: :render_cmd}]},
+        %{op: :constructor_call, target: "Nothing", args: []}
+      ]
+    }
+
+    mapped = %{
+      op: :qualified_call,
+      target: "List.filterMap",
+      args: [
+        %{op: :lambda, args: ["x"], body: %{op: :var, name: "x"}},
+        cmds
+      ]
+    }
+
+    assert Stream.eligible_expr?(mapped)
+    assert Stream.pipeline_expr?(mapped)
+  end
+
+  test "List.filterMap that draws from a model int list is stream-eligible" do
+    mapped = %{
+      op: :qualified_call,
+      target: "List.filterMap",
+      args: [
+        %{
+          op: :lambda,
+          args: ["n"],
+          body: %{
+            op: :if,
+            cond: %{
+              op: :compare,
+              kind: :gt,
+              left: %{op: :var, name: "n"},
+              right: %{op: :int_literal, value: 0}
+            },
+            then_expr: %{
+              op: :constructor_call,
+              target: "Just",
+              args: [%{op: :render_cmd}]
+            },
+            else_expr: %{op: :constructor_call, target: "Nothing", args: []}
+          }
+        },
+        %{op: :field_access, arg: %{op: :var, name: "model"}, field: "cells"}
+      ]
+    }
+
+    assert Stream.eligible_expr?(mapped)
+    assert Stream.pipeline_expr?(mapped)
+  end
+
+  test "List.filterMap of ints to Just int is not a stream view" do
+    mapped = %{
+      op: :qualified_call,
+      target: "List.filterMap",
+      args: [
+        %{
+          op: :lambda,
+          args: ["n"],
+          body: %{
+            op: :constructor_call,
+            target: "Just",
+            args: [%{op: :var, name: "n"}]
+          }
+        },
+        %{
+          op: :list_literal,
+          items: [%{op: :int_literal, value: 1}, %{op: :int_literal, value: 2}]
+        }
+      ]
+    }
+
+    refute Stream.eligible_expr?(mapped)
+  end
+
+  test "List.map over List.filter of a model field is stream-eligible" do
+    filtered = %{
+      op: :qualified_call,
+      target: "List.filter",
+      args: [
+        %{
+          op: :lambda,
+          args: ["n"],
+          body: %{
+            op: :compare,
+            kind: :gt,
+            left: %{op: :var, name: "n"},
+            right: %{op: :int_literal, value: 0}
+          }
+        },
+        %{op: :field_access, arg: %{op: :var, name: "model"}, field: "cells"}
+      ]
+    }
+
+    assert Stream.eligible_expr?(%{
+             op: :qualified_call,
+             target: "List.map",
+             args: [
+               %{op: :lambda, args: ["n"], body: %{op: :render_cmd}},
+               filtered
+             ]
+           })
+
+    assert Stream.pipeline_expr?(%{
+             op: :qualified_call,
+             target: "List.map",
+             args: [
+               %{op: :lambda, args: ["n"], body: %{op: :render_cmd}},
+               filtered
+             ]
+           })
+  end
+
   test "List.concatMap of a named helper over appended maps is stream-eligible" do
     ticks = %{
       op: :call,
@@ -432,6 +597,29 @@ defmodule Elmc.PlanStreamEligibleTest do
     refute Stream.pipeline_expr?(static)
   end
 
+  test "homogeneous static draw list is a stream pipeline" do
+    rect = %{
+      op: :qualified_call,
+      target: "Pebble.Ui.rect",
+      args: [
+        %{
+          op: :record_literal,
+          fields: [
+            %{name: "x", expr: %{op: :int_literal, value: 0}},
+            %{name: "y", expr: %{op: :int_literal, value: 0}},
+            %{name: "w", expr: %{op: :int_literal, value: 10}},
+            %{name: "h", expr: %{op: :int_literal, value: 10}}
+          ]
+        },
+        %{op: :int_literal, value: 1}
+      ]
+    }
+
+    expr = %{op: :list_literal, items: [rect, rect]}
+    assert Stream.eligible_expr?(expr)
+    assert Stream.pipeline_expr?(expr)
+  end
+
   test "List.indexedMap of draw cells is a stream pipeline" do
     rect = %{op: :render_cmd}
 
@@ -441,6 +629,25 @@ defmodule Elmc.PlanStreamEligibleTest do
       args: [
         %{op: :lambda, args: ["i", "v"], body: %{op: :list_literal, items: [rect]}},
         %{op: :var, name: "cells"}
+      ]
+    }
+
+    assert Stream.pipeline_expr?(expr)
+  end
+
+  test "toUiNode wrapping List.map is a stream pipeline" do
+    expr = %{
+      op: :qualified_call,
+      target: "Pebble.Ui.toUiNode",
+      args: [
+        %{
+          op: :qualified_call,
+          target: "List.map",
+          args: [
+            %{op: :lambda, args: ["n"], body: %{op: :render_cmd}},
+            %{op: :field_access, arg: %{op: :var, name: "model"}, field: "slots"}
+          ]
+        }
       ]
     }
 

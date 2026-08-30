@@ -5,25 +5,17 @@ defmodule Elmc.WasmWebSvgTest do
   alias Elmc.Backend.Wasm.ProjectWriter
   alias Elmc.Test.WasmRcTrackHarness
 
-  @tag :wasm_execute
-  test "web wasm lowers Svg via nodeNS html_cmd kind 7" do
-    run_fixture(
-      "wasm_web_svg_project",
-      fn wat ->
-        assert wat =~ "html_cmd"
-        assert wat =~ "(i32.const 7)"
-      end
-    )
-  end
+  @attr_ns_runner Path.expand("support/wasm_svg_attr_ns_probe_runner.mjs", __DIR__)
 
-  defp run_fixture(fixture, wat_assert) do
+  @tag :wasm_execute
+  test "web wasm lowers Svg via nodeNS and Svg.Attributes xlinkHref/xmlSpace via attributeNS" do
     cond do
       not execution_tools_available?() ->
         :ok
 
       true ->
-        root = Path.expand("fixtures/#{fixture}", __DIR__)
-        out_dir = Path.expand("tmp/#{fixture}", __DIR__)
+        root = Path.expand("fixtures/wasm_web_svg_project", __DIR__)
+        out_dir = Path.expand("tmp/wasm_web_svg_project", __DIR__)
         File.rm_rf!(out_dir)
 
         assert {:ok, _} =
@@ -37,12 +29,29 @@ defmodule Elmc.WasmWebSvgTest do
                  })
 
         wat = File.read!(ProjectWriter.wat_path(out_dir))
-        wat_assert.(wat)
+        assert wat =~ "html_cmd"
+        assert wat =~ "(i32.const 7)"
+        assert wat =~ "(i32.const 10)"
+        assert wat =~ "(i32.const 20)"
 
         WasmRcTrackHarness.run_wat2wasm!(
           ProjectWriter.wat_path(out_dir),
           Path.join(out_dir, "wasm/app.wasm")
         )
+
+        case WasmRcTrackHarness.run_node_script(@attr_ns_runner, [out_dir]) do
+          {:ok, output} ->
+            assert output =~ "rc_ok"
+            assert output =~ "svg_attr_ns_ok"
+
+          {:error, output} ->
+            if WasmRcTrackHarness.probe_skipped_under_ulimit?(output) or
+                 WasmRcTrackHarness.wasm_instantiate_oom?(output) do
+              :ok
+            else
+              flunk("wasm Svg.Attributes.xlinkHref probe failed:\n#{output}")
+            end
+        end
     end
   end
 

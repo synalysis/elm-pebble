@@ -203,4 +203,45 @@ defmodule Elmc.PlanFloatCompareModeTest do
     assert compare
     assert compare.args.mode == :float_boxed
   end
+
+  test "abs of a Float difference < literal selects float_boxed" do
+    b = Builder.new("Test", "near", args: ["got", "want"], rc_required: false)
+    {got_reg, b} = Builder.fresh_reg(b)
+    {want_reg, b} = Builder.fresh_reg(b)
+
+    ctx =
+      Context.new(
+        module: "Test",
+        function_name: "near",
+        params: ["got", "want"],
+        locals: %{"got" => got_reg, "want" => want_reg}
+      )
+
+    left = %{
+      op: :call,
+      name: "abs",
+      args: [
+        %{
+          op: :call,
+          name: "__sub__",
+          args: [%{op: :var, name: "got"}, %{op: :var, name: "want"}]
+        }
+      ]
+    }
+
+    assert {:ok, _reg, b2} =
+             Compare.compile(
+               %{kind: :lt, left: left, right: %{op: :float_literal, value: 0.001}},
+               ctx,
+               b
+             )
+
+    instrs =
+      (b2.blocks ++ [b2.current_block])
+      |> Enum.flat_map(& &1.instrs)
+
+    compare = Enum.find(instrs, &match?(%{op: :compare}, &1))
+    assert compare
+    assert compare.args.mode == :float_boxed
+  end
 end

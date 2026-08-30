@@ -211,6 +211,26 @@ defmodule Elmc.PlanWebLoweringGapsTest do
     assert IRQueries.svg_attribute_dom_names(ir0)["viewBox"] == "viewBox"
   end
 
+  test "Svg.Attributes.xlinkHref ns comes from VirtualDom.attributeNS in IR" do
+    alias Elmc.Backend.CCodegen.IRQueries
+
+    root = Path.expand("fixtures/wasm_web_svg_project", __DIR__)
+    {:ok, project} = ElmEx.Frontend.Bridge.load_project(root)
+    {:ok, ir} = ElmEx.IR.Lowerer.lower_project(project)
+
+    assert IRQueries.virtual_dom_attribute_ns(ir)["xlinkHref"] ==
+             {"http://www.w3.org/1999/xlink", "xlink:href"}
+
+    assert IRQueries.virtual_dom_attribute_ns(ir)["xmlSpace"] ==
+             {"http://www.w3.org/XML/1998/namespace", "xml:space"}
+
+    assert IRQueries.svg_attribute_dom_names(ir)["xlinkHref"] == "xlink:href"
+    assert IRQueries.svg_attribute_dom_names(ir)["xmlSpace"] == "xml:space"
+
+    assert IRQueries.virtual_dom_keyed_node_ns(ir)[{"Svg.Keyed", "node"}] ==
+             "http://www.w3.org/2000/svg"
+  end
+
   test "Internal.Svg.box call keeps svgConfig and boxy args" do
     alias Elmc.Backend.CCodegen.IRQueries
 

@@ -78,11 +78,18 @@ defmodule Elmx.CrossModuleEmitTest do
             %{
               kind: :function,
               name: "init",
-              args: [],
+              args: ["xs"],
               expr: %{
                 op: :qualified_call,
-                target: "Helper.add",
-                args: [%{op: :int_literal, value: 1}]
+                target: "List.map",
+                args: [
+                  %{
+                    op: :qualified_call,
+                    target: "Helper.add",
+                    args: [%{op: :int_literal, value: 1}]
+                  },
+                  %{op: :var, name: "xs"}
+                ]
               }
             }
           ]
@@ -112,5 +119,52 @@ defmodule Elmx.CrossModuleEmitTest do
              })
 
     assert source =~ "fn elmx_p1 -> elmx_fn_Helper_add(1, elmx_p1) end"
+  end
+
+  test "zero-arg value that is a cross-module partial saturates remaining arity" do
+    ir = %ElmEx.IR{
+      modules: [
+        %{
+          name: "Main",
+          declarations: [
+            %{
+              kind: :function,
+              name: "addOne",
+              args: [],
+              expr: %{
+                op: :qualified_call,
+                target: "Helper.add",
+                args: [%{op: :int_literal, value: 1}]
+              }
+            }
+          ]
+        },
+        %{
+          name: "Helper",
+          declarations: [
+            %{
+              kind: :function,
+              name: "add",
+              args: ["a", "b"],
+              expr: %{op: :add_vars, left: "a", right: "b"}
+            }
+          ]
+        }
+      ]
+    }
+
+    revision = "cross-sat-" <> Integer.to_string(:erlang.unique_integer([:positive]))
+
+    assert {:ok, [%{source: source}]} =
+             Elmx.Backend.ElixirCodegen.emit_project(ir, %{
+               entry_module: "Main",
+               mode: :library,
+               ir_sha256: revision,
+               user_module_names: ["Main", "Helper"]
+             })
+
+    assert source =~ "def elmx_fn_Main_addOne("
+    refute source =~ "def elmx_fn_Main_addOne() do"
+    assert source =~ "elmx_fn_Helper_add(1,"
   end
 end

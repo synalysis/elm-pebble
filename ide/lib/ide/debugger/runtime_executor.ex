@@ -31,7 +31,7 @@ defmodule Ide.Debugger.RuntimeExecutor do
     execute_compiled_elmx(input)
   end
 
-  def execute(_), do: {:error, {:core_ir_execution_failed, :invalid_execution_input}}
+  def execute(_), do: {:error, {:elmx_execution_failed, :invalid_execution_input}}
 
   @doc """
   Re-evaluates Elm `view/1` for the current model without stepping `init/1` or `update/2`.
@@ -48,12 +48,11 @@ defmodule Ide.Debugger.RuntimeExecutor do
          view_output: map_or_nil_field(payload, :view_output) || []
        }}
     else
-      {:error, {:core_ir_execution_failed, _} = err} -> {:error, err}
-      {:error, {:elmx_execution_failed, _} = err} -> {:error, {:core_ir_execution_failed, err}}
+      {:error, {:elmx_execution_failed, _} = err} -> {:error, err}
     end
   end
 
-  def view(_), do: {:error, {:core_ir_execution_failed, :invalid_execution_input}}
+  def view(_), do: {:error, {:elmx_execution_failed, :invalid_execution_input}}
 
   @spec execute_compiled_elmx(execution_input()) ::
           {:ok, execution_result()} | {:error, Types.execution_error()}
@@ -72,7 +71,7 @@ defmodule Ide.Debugger.RuntimeExecutor do
 
     cond do
       not module_supports_execute?(module) ->
-        {:error, {:core_ir_execution_failed, {:external_executor_not_loaded, module}}}
+        {:error, {:elmx_execution_failed, {:external_executor_not_loaded, module}}}
 
       true ->
         case module.execute(input) do
@@ -86,10 +85,10 @@ defmodule Ide.Debugger.RuntimeExecutor do
                  )}
 
               {:error, reason} ->
-                {:error, {:core_ir_execution_failed, reason}}
+                {:error, {:elmx_execution_failed, reason}}
             end
 
-          {:error, {:core_ir_execution_failed, _} = reason} ->
+          {:error, {:elmx_execution_failed, _} = reason} ->
             {:error, reason}
         end
     end
@@ -146,9 +145,9 @@ defmodule Ide.Debugger.RuntimeExecutor do
         Map.get(input, "elmx_compile_error_message")
 
     if is_binary(detail) and detail != "" do
-      {:core_ir_execution_failed, {:missing_elmx_manifest, detail}}
+      {:elmx_execution_failed, {:missing_elmx_manifest, detail}}
     else
-      {:core_ir_execution_failed, :missing_elmx_manifest}
+      {:elmx_execution_failed, :missing_elmx_manifest}
     end
   end
 
@@ -161,11 +160,11 @@ defmodule Ide.Debugger.RuntimeExecutor do
       is_binary(revision) and revision != "" ->
         case Elmx.module_for_revision(revision) do
           mod when is_atom(mod) and not is_nil(mod) -> {:ok, mod}
-          _ -> {:error, {:core_ir_execution_failed, {:elmx_module_not_registered, revision}}}
+          _ -> {:error, {:elmx_execution_failed, {:elmx_module_not_registered, revision}}}
         end
 
       true ->
-        {:error, {:core_ir_execution_failed, :missing_elmx_revision}}
+        {:error, {:elmx_execution_failed, :missing_elmx_revision}}
     end
   end
 

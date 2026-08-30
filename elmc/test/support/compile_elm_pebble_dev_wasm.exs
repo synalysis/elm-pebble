@@ -22,7 +22,7 @@ compile_opts =
     web: true,
     entry_module: "Main",
     strip_dead_code: true,
-    wasm_strict: false
+    wasm_strict: true
   }
   |> then(fn opts ->
     if export_all?, do: Map.put(opts, :wasm_export_all, true), else: opts

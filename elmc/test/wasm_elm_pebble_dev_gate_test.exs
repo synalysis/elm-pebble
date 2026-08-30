@@ -37,6 +37,7 @@ defmodule Elmc.WasmElmPebbleDevGateTest do
           Enum.reject(debug_skipped, &ElmPebbleDevWasmCompile.allowed_host_bridge_stub?/1)
 
         assert unexpected_skipped == []
+        refute Enum.any?(debug_skipped, fn entry -> entry["reason"] == "fusion_only" end)
 
         if System.find_executable("wat2wasm") do
           wat_path = ProjectWriter.wat_path(out_dir)

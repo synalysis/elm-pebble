@@ -422,5 +422,5 @@ Functions marked with (λ) also have zero-arg partial-application wrappers.
 ## Remaining Gaps / Next Steps
 
 1. **Record update syntax** — `emit` lowers `:record_update` to `Map.put` chains; Elm bridge output supplies the IR (see `dotted_var_emit_test.exs`).
-2. **Partial application** — stdlib partials via `Stdlib.Qualified` + `compile_list_hof_partial` / `compile_list_fold_partial`. User functions use `function_arities` from IR declarations + `Helpers.partial_application_fun/4`. Cross-module partial calls still rely on `cross_module_arities` (same-module only in `function_arities`).
+2. **Partial application** — stdlib partials via `Stdlib.Qualified` + `compile_list_hof_partial` / `compile_list_fold_partial`. User functions use `function_arities` from IR declarations + `Helpers.partial_application_fun/4`. Callable arity for a 0-arg value that is a cross-module partial uses the callee's explicit arity from every emit module (`all_explicit_arities`).
 3. **Recursive let bindings** — Lambda lifting handles top-level recursion; mutual recursion within `let` blocks needs additional lowering.

@@ -30,6 +30,7 @@ It focuses on whether an op can be compiled to non-fallback C code.
 | `sub_const` | passthrough | direct | Direct | |
 | `compare` | recursive rewrite | direct | Direct | |
 | `tuple2` | recursive rewrite | direct | Direct | |
+| `tuple3` | official `#3` (not nested `#2`); `compare` / `List.sort` / let / `case` walk `a` then `#2(b,c)` | direct | Direct | `elmc_tuple3` / host `TAG_TUPLE3` |
 | `list_literal` | recursive rewrite | direct | Direct | |
 | `call` | recursive rewrite | direct | Direct | Module-namespaced C symbol |
 | `qualified_call` | recursive rewrite + alias resolution | direct or cross-module call | Direct | Maps to `special_value_from_target` or `elmc_fn_Module_func` |
@@ -365,6 +366,7 @@ Functions marked with (λ) also have zero-arg partial-application wrappers.
 | `Json.Decode.map5` | `elmc_json_decode_map5` | Real |
 | `Json.Decode.map6` | `elmc_json_decode_map6` | Real |
 | `Json.Decode.map7` | `elmc_json_decode_map7` | Real |
+| `Json.Decode.map8` | `elmc_json_decode_map8` | Real |
 | `Json.Decode.succeed` | `elmc_json_decode_succeed` | Real |
 | `Json.Decode.fail` | `elmc_json_decode_fail` | Real |
 | `Json.Decode.andThen` | `elmc_json_decode_and_then` | Real |
@@ -465,4 +467,4 @@ Quick commands: `mix test.rc`, `mix test.rc_gate`, `mix test.rc_stress`.
 
 ## Remaining Gaps / Next Steps
 
-No known codegen/stdlib gaps remain for the current Pebble target. Desktop `elm/json` may still differ in exotic error-message wording for malformed input.
+No known codegen/stdlib gaps remain for the current Pebble target. Official `Encode.encode n` / `errorToString` pretty-print (`JSON.stringify` `": "` after keys) is covered on C and web WASM.

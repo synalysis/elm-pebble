@@ -24,7 +24,8 @@ defmodule Elmc.WasmWebJsonDecodeErrorTest do
                    targets: [:wasm],
                    web: true,
                    entry_module: "Main",
-                   strip_dead_code: true
+                   strip_dead_code: true,
+                   wasm_strict: true
                  })
 
         manifest =
@@ -34,16 +35,22 @@ defmodule Elmc.WasmWebJsonDecodeErrorTest do
           |> Jason.decode!()
 
         assert manifest["constructor_tags"]["Json.Decode.Field"] != nil
+        assert manifest["constructor_tags"]["Json.Decode.Failure"] != nil
+
+        wat = File.read!(ProjectWriter.wat_path(out_dir))
+        assert wat =~ "json_decode_error_to_string"
 
         WasmRcTrackHarness.run_wat2wasm!(
           ProjectWriter.wat_path(out_dir),
           Path.join(out_dir, "wasm/app.wasm")
         )
 
-        case run_html_probe(out_dir) do
+        expected = "mf:1|xf:1|pj:1|oo:1|oe:1|os:1|pp:1"
+
+        case run_html_probe(out_dir, expected) do
           {:ok, output} ->
             assert output =~ "rc_ok"
-            assert output =~ "field named `missing`" || output =~ "field `missing`"
+            assert output =~ expected
 
           {:error, output} ->
             if probe_skipped_under_ulimit?(output) do
@@ -55,8 +62,8 @@ defmodule Elmc.WasmWebJsonDecodeErrorTest do
     end
   end
 
-  defp run_html_probe(out_dir) do
-    WasmRcTrackHarness.run_node_script(@html_runner, [out_dir, "elmc_fn_Main_main"])
+  defp run_html_probe(out_dir, expected_text) do
+    WasmRcTrackHarness.run_node_script(@html_runner, [out_dir, "elmc_fn_Main_main", expected_text])
   end
 
   defp probe_skipped_under_ulimit?(output),

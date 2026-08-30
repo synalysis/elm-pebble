@@ -7,7 +7,6 @@ defmodule Ide.Mcp.GameJumpElmxCompileTest do
   @tag timeout: 180_000
   test "game-jump-n-run compiles and executes init when corpus enabled" do
     if @enabled? do
-      Application.put_env(:ide, Ide.Debugger.RuntimeExecutor, execution_backend: :compiled_elixir)
       _ = Application.ensure_all_started(:elmx)
 
       assert {:ok, %{project: project}} =

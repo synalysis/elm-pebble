@@ -397,17 +397,10 @@ defmodule Elmc.Backend.Wasm.Lower.Function do
   defp emit_self_tail_restart(args, entry_id, slots) do
     plan_state = slots.plan_state_local
     roots_scratch = Slots.int_array_scratch_offset()
-    import_release_unless =
-      "runtime.release_unless_reachable_from_roots" |> WasmTypes.import_ident()
 
-    # Spill previous params, assign new ones, then release temps that are not
-    # reachable from the restarted params.
-    #
-    # Owned/reg temps often alias values just list_cons'd into a new param
-    # (e.g. Entity.collectNodes). Plain release frees those nodes while the
-    # accumulating cons spine still points at them → Group kids become null and
-    # Scene3d getViewBounds sees only EmptyNode. Use reachability from the new
-    # params (host marks the gen once per roots fingerprint).
+    # Spill previous params, assign new ones, then LIFO-release temps that are
+    # not pointer-equal to a restarted param. list_cons into a param must
+    # transfer-null the cons operands first (Phase 3a) so owned shadows are 0.
     spill_olds_aside =
       Enum.map(0..(slots.params - 1)//1, fn index ->
         # Keep [0, params) free for new-param roots; spill olds just after.
@@ -438,48 +431,9 @@ defmodule Elmc.Backend.Wasm.Lower.Function do
         ]
       end)
 
-    store_new_roots = emit_tco_store_param_roots(slots, roots_scratch)
-
-    release_olds =
-      Enum.flat_map(0..(slots.params - 1)//1, fn index ->
-        old_offset = roots_scratch + 4 * (slots.params + index)
-
-        old_load =
-          WasmTypes.sexpr("i32.load", [
-            " offset=#{old_offset} ",
-            WasmTypes.sexpr("i32.const", [0])
-          ])
-
-        [
-          WasmTypes.line(
-            WasmTypes.sexpr("if", [
-              WasmTypes.sexpr("i32.ne", [
-                " ",
-                old_load,
-                " ",
-                WasmTypes.sexpr("i32.const", [0])
-              ]),
-              " (then ",
-              WasmTypes.sexpr("drop", [
-                " ",
-                WasmTypes.sexpr("call", [
-                  import_release_unless,
-                  " ",
-                  old_load,
-                  " ",
-                  WasmTypes.sexpr("i32.const", [roots_scratch]),
-                  " ",
-                  WasmTypes.sexpr("i32.const", [slots.params])
-                ])
-              ]),
-              ")"
-            ])
-          )
-        ]
-      end)
-
-    release_owned = emit_tco_release_owned(slots, roots_scratch)
-    release_regs = emit_tco_release_regs(slots, roots_scratch)
+    release_olds = emit_tco_release_old_params(slots, roots_scratch)
+    release_owned = Frame.lifo_owned_release(slots)
+    release_regs = emit_tco_release_regs(slots)
 
     clear_owned =
       case slots.owned_count do
@@ -500,7 +454,6 @@ defmodule Elmc.Backend.Wasm.Lower.Function do
 
     spill_olds_aside ++
       assigns ++
-      store_new_roots ++
       release_olds ++
       release_owned ++
       release_regs ++
@@ -517,103 +470,82 @@ defmodule Elmc.Backend.Wasm.Lower.Function do
       ]
   end
 
-  defp emit_tco_store_param_roots(slots, roots_scratch) do
-    Enum.map(0..(slots.params - 1)//1, fn index ->
-      offset = roots_scratch + 4 * index
+  defp emit_tco_release_old_params(slots, roots_scratch) do
+    Enum.flat_map(0..(slots.params - 1)//1, fn index ->
+      old_offset = roots_scratch + 4 * (slots.params + index)
 
-      WasmTypes.line(
-        WasmTypes.sexpr("i32.store", [
-          " offset=#{offset} ",
-          WasmTypes.sexpr("i32.const", [0]),
-          " ",
-          WasmTypes.sexpr("local.get", ["$param#{index}"])
+      old_load =
+        WasmTypes.sexpr("i32.load", [
+          " offset=#{old_offset} ",
+          WasmTypes.sexpr("i32.const", [0])
         ])
-      )
+
+      [WasmTypes.line(emit_release_unless_param_alias(old_load, slots.params))]
     end)
   end
 
-  defp emit_tco_release_owned(%{owned_count: n}, _roots_scratch)
-       when not is_integer(n) or n <= 0,
-       do: []
-
-  defp emit_tco_release_owned(slots, roots_scratch) do
-    import_name =
-      "runtime.release_unless_reachable_from_roots" |> WasmTypes.import_ident()
-
-    Enum.flat_map(0..(slots.owned_count - 1)//1, fn idx ->
-      owned = Slots.owned_local(slots, idx)
-
-      [
-        WasmTypes.line(
-          WasmTypes.sexpr("if", [
-            WasmTypes.sexpr("i32.ne", [
-              " ",
-              WasmTypes.sexpr("local.get", [owned]),
-              " ",
-              WasmTypes.sexpr("i32.const", [0])
-            ]),
-            " (then ",
-            WasmTypes.sexpr("drop", [
-              " ",
-              WasmTypes.sexpr("call", [
-                import_name,
-                " ",
-                WasmTypes.sexpr("local.get", [owned]),
-                " ",
-                WasmTypes.sexpr("i32.const", [roots_scratch]),
-                " ",
-                WasmTypes.sexpr("i32.const", [slots.params])
-              ])
-            ]),
-            ")"
-          ])
-        )
-      ]
-    end)
-    |> Enum.reverse()
-  end
-
-  defp emit_tco_release_regs(%{reg_locals: regs} = slots, roots_scratch)
-       when map_size(regs) > 0 do
-    import_name =
-      "runtime.release_unless_reachable_from_roots" |> WasmTypes.import_ident()
-
+  defp emit_tco_release_regs(%{reg_locals: regs} = slots) when map_size(regs) > 0 do
     regs
     |> Map.keys()
-    |> Enum.sort()
+    |> Enum.sort(:desc)
     |> Enum.flat_map(fn reg ->
       local = Slots.reg_name(slots, reg)
-
-      [
-        WasmTypes.line(
-          WasmTypes.sexpr("if", [
-            WasmTypes.sexpr("i32.ne", [
-              " ",
-              WasmTypes.sexpr("local.get", [local]),
-              " ",
-              WasmTypes.sexpr("i32.const", [0])
-            ]),
-            " (then ",
-            WasmTypes.sexpr("drop", [
-              " ",
-              WasmTypes.sexpr("call", [
-                import_name,
-                " ",
-                WasmTypes.sexpr("local.get", [local]),
-                " ",
-                WasmTypes.sexpr("i32.const", [roots_scratch]),
-                " ",
-                WasmTypes.sexpr("i32.const", [slots.params])
-              ])
-            ]),
-            ")"
-          ])
-        )
-      ]
+      [WasmTypes.line(emit_release_unless_param_alias(WasmTypes.sexpr("local.get", [local]), slots.params))]
     end)
   end
 
-  defp emit_tco_release_regs(_slots, _roots_scratch), do: []
+  defp emit_tco_release_regs(_slots), do: []
+
+  defp emit_release_unless_param_alias(ptr_wat, param_count) when param_count > 0 do
+    release = WasmTypes.import_ident("runtime.release")
+
+    not_aliased =
+      Enum.reduce(0..(param_count - 1)//1, "(i32.const 1)", fn index, acc ->
+        WasmTypes.sexpr("i32.and", [
+          " ",
+          acc,
+          " ",
+          WasmTypes.sexpr("i32.ne", [
+            " ",
+            ptr_wat,
+            " ",
+            WasmTypes.sexpr("local.get", ["$param#{index}"])
+          ])
+        ])
+      end)
+
+    cond_wat =
+      WasmTypes.sexpr("i32.and", [
+        " ",
+        WasmTypes.sexpr("i32.ne", [" ", ptr_wat, " ", WasmTypes.sexpr("i32.const", [0])]),
+        " ",
+        not_aliased
+      ])
+
+    WasmTypes.sexpr("if", [
+      cond_wat,
+      " (then ",
+      WasmTypes.sexpr("drop", [
+        " ",
+        WasmTypes.sexpr("call", [release, " ", ptr_wat])
+      ]),
+      ")"
+    ])
+  end
+
+  defp emit_release_unless_param_alias(ptr_wat, _param_count) do
+    release = WasmTypes.import_ident("runtime.release")
+
+    WasmTypes.sexpr("if", [
+      WasmTypes.sexpr("i32.ne", [" ", ptr_wat, " ", WasmTypes.sexpr("i32.const", [0])]),
+      " (then ",
+      WasmTypes.sexpr("drop", [
+        " ",
+        WasmTypes.sexpr("call", [release, " ", ptr_wat])
+      ]),
+      ")"
+    ])
+  end
 
   defp format_restart_arg(reg, slots) when is_integer(reg) do
     WasmTypes.sexpr("local.get", [Slots.reg_name(slots, reg)])

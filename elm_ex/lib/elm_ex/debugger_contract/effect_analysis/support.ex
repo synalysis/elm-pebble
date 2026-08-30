@@ -144,6 +144,15 @@ defmodule ElmEx.DebuggerContract.EffectAnalysis.Support do
     }
   end
 
+  def inline_let_bindings(%{op: :tuple3, a: a, b: b, c: c}, bindings, seen, depth) do
+    %{
+      op: :tuple3,
+      a: inline_let_bindings(a, bindings, seen, depth + 1),
+      b: inline_let_bindings(b, bindings, seen, depth + 1),
+      c: inline_let_bindings(c, bindings, seen, depth + 1)
+    }
+  end
+
   def inline_let_bindings(expr, _bindings, _seen, _depth), do: expr
 
   @spec expr_to_json_value(
@@ -215,6 +224,14 @@ defmodule ElmEx.DebuggerContract.EffectAnalysis.Support do
 
   def expr_to_json_value(%{op: :tuple2, left: l, right: r}, depth, max, mod) when depth < max do
     [expr_to_json_value(l, depth + 1, max, mod), expr_to_json_value(r, depth + 1, max, mod)]
+  end
+
+  def expr_to_json_value(%{op: :tuple3, a: a, b: b, c: c}, depth, max, mod) when depth < max do
+    [
+      expr_to_json_value(a, depth + 1, max, mod),
+      expr_to_json_value(b, depth + 1, max, mod),
+      expr_to_json_value(c, depth + 1, max, mod)
+    ]
   end
 
   def expr_to_json_value(%{op: :unsupported, source: s}, _, _, _) when is_binary(s) do

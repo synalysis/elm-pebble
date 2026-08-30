@@ -128,6 +128,7 @@ export async function bootFromUrls({
     closureCount: manifest.closure_count ?? null,
     immortalStrings: manifest.immortal_strings || {},
     constructorTags: manifest.constructor_tags || {},
+    constructorArities: manifest.constructor_arities || {},
   });
   // Prefer explicit deploy root so deep-link boots do not pin content.dat under
   // the first route (e.g. /getting-started/f-a-q/content.dat).

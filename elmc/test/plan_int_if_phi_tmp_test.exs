@@ -5,6 +5,46 @@ defmodule Elmc.PlanIntIfPhiTmpTest do
   alias Elmc.Backend.Plan.Lower.Function, as: PlanLower
   alias Elmc.Backend.Plan.TruthyNative
 
+  test "TruthyNative keeps string/value/float compares as {:reg,_} arms" do
+    string_cmp = %{
+      op: :compare,
+      dest: 7,
+      args: %{kind: :eq, left: 5, right: 6, mode: :string}
+    }
+
+    value_cmp = %{
+      op: :compare,
+      dest: 8,
+      args: %{kind: :eq, left: 5, right: 6, mode: :value}
+    }
+
+    float_cmp = %{
+      op: :compare,
+      dest: 9,
+      args: %{kind: :eq, left: 5, right: 6, mode: :float_boxed}
+    }
+
+    int_cmp = %{
+      op: :compare,
+      dest: 10,
+      args: %{kind: :eq, left: 5, right: 6, mode: :int_boxed}
+    }
+
+    false_lit = %{op: :const_int, dest: 11, args: %{value: 0, bool_lit: true}}
+
+    assert {true, {:reg, 7}, {:const_int, 0}} =
+             TruthyNative.phi_shapes?([string_cmp, false_lit], 7, 11)
+
+    assert {true, {:reg, 8}, {:const_int, 0}} =
+             TruthyNative.phi_shapes?([value_cmp, false_lit], 8, 11)
+
+    assert {true, {:reg, 9}, {:const_int, 0}} =
+             TruthyNative.phi_shapes?([float_cmp, false_lit], 9, 11)
+
+    assert {true, {:compare, :eq, 5, 6}, {:const_int, 0}} =
+             TruthyNative.phi_shapes?([int_cmp, false_lit], 10, 11)
+  end
+
   test "TruthyNative requires bool_lit for const_int 0/1 shapes" do
     bool_instrs = [
       %{op: :const_int, dest: 1, args: %{value: 1, bool_lit: true}},

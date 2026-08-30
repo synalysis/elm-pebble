@@ -108,6 +108,18 @@ defmodule Elmc.Backend.CCodegen.UnionMacros do
     "ELMC_UNION_#{suffix}"
   end
 
+  # Core packages reuse small tag integers for unrelated single-ctor wrappers
+  # (Cmd/Sub/Value/…). Prefer constructors from non-stdlib modules so app types
+  # like ActionConfig win Debug.toString over those opaque wrappers.
+  @stdlib_modules MapSet.new(~w(
+    Array Basics Bitwise Bytes Char Dict Debug Elm.JsArray Elm.Kernel.Basics
+    Elm.Kernel.Bitwise Elm.Kernel.Char Elm.Kernel.Debug Elm.Kernel.Json
+    Elm.Kernel.List Elm.Kernel.Parser Elm.Kernel.Platform Elm.Kernel.Process
+    Elm.Kernel.Scheduler Elm.Kernel.String Elm.Kernel.Utils Json.Decode
+    Json.Encode List Maybe Platform Platform.Cmd Platform.Sub Process Result
+    Set String Task Time Tuple VirtualDom
+  ))
+
   @spec debug_ctor_name_fn(IR.t(), keyword()) :: String.t()
   def debug_ctor_name_fn(%IR{} = ir, opts \\ []) do
     if ProdMode.enabled?() or prod_from_opts?(opts) do
@@ -123,6 +135,18 @@ defmodule Elmc.Backend.CCodegen.UnionMacros do
       (void)tag;
       return NULL;
     }
+
+    int elmc_debug_union_ctor_arity(elmc_int_t tag) {
+      (void)tag;
+      return -1;
+    }
+
+    int elmc_debug_union_ctor_info(elmc_int_t tag, int hint, const char **name_out) {
+      (void)tag;
+      (void)hint;
+      if (name_out) *name_out = NULL;
+      return -1;
+    }
     """
   end
 
@@ -137,12 +161,16 @@ defmodule Elmc.Backend.CCodegen.UnionMacros do
         |> Map.values()
         |> Enum.flat_map(fn union ->
           tags = union.tags || %{}
+          specs = Map.get(union, :payload_specs, %{})
           single_ctor? = map_size(tags) == 1
 
           Enum.map(tags, fn {name, tag} ->
+            spec = Map.get(specs, name) || Map.get(specs, to_string(name))
+
             %{
               name: short_union_ctor_name(name),
               tag: tag,
+              arity: Elmc.Backend.Pebble.Util.payload_arity_for_spec(spec),
               module: mod.name,
               single_ctor?: single_ctor?
             }
@@ -156,39 +184,107 @@ defmodule Elmc.Backend.CCodegen.UnionMacros do
       |> Enum.group_by(& &1.tag)
       |> Enum.flat_map(fn {tag, group} ->
         case pick_debug_ctor_name(group, entry_module) do
-          name when is_binary(name) -> [{tag, name}]
-          _ -> []
+          name when is_binary(name) ->
+            entry = Enum.find(group, &(&1.name == name)) || hd(group)
+            [{tag, name, entry.arity}]
+
+          _ ->
+            []
         end
       end)
-      |> Enum.sort_by(fn {tag, _name} -> tag end)
+      |> Enum.sort_by(fn {tag, _name, _arity} -> tag end)
 
-    cases =
-      unique_by_tag
-      |> Enum.map_join("\n", fn {tag, name} ->
+    name_cases =
+      Enum.map_join(unique_by_tag, "\n", fn {tag, name, _arity} ->
         "    case #{tag}: return \"#{escape_c_string(name)}\";"
       end)
+
+    arity_cases =
+      Enum.map_join(unique_by_tag, "\n", fn {tag, _name, arity} ->
+        "    case #{tag}: return #{arity};"
+      end)
+
+    info_fn = debug_ctor_info_fn(entries)
 
     """
     const char *elmc_debug_union_ctor_name(elmc_int_t tag) {
       switch (tag) {
-    #{cases}
+    #{name_cases}
         default: return NULL;
       }
+    }
+
+    int elmc_debug_union_ctor_arity(elmc_int_t tag) {
+      switch (tag) {
+    #{arity_cases}
+        default: return -1;
+      }
+    }
+
+    #{info_fn}
+    """
+  end
+
+  defp debug_ctor_info_fn([]) do
+    """
+    int elmc_debug_union_ctor_info(elmc_int_t tag, int hint, const char **name_out) {
+      (void)tag;
+      (void)hint;
+      if (name_out) *name_out = NULL;
+      return -1;
     }
     """
   end
 
-  # Core packages reuse small tag integers for unrelated single-ctor wrappers
-  # (Cmd/Sub/Value/…). Prefer constructors from non-stdlib modules so app types
-  # like ActionConfig win Debug.toString over those opaque wrappers.
-  @stdlib_modules MapSet.new(~w(
-    Array Basics Bitwise Bytes Char Dict Debug Elm.JsArray Elm.Kernel.Basics
-    Elm.Kernel.Bitwise Elm.Kernel.Char Elm.Kernel.Debug Elm.Kernel.Json
-    Elm.Kernel.List Elm.Kernel.Parser Elm.Kernel.Platform Elm.Kernel.Process
-    Elm.Kernel.Scheduler Elm.Kernel.String Elm.Kernel.Utils Json.Decode
-    Json.Encode List Maybe Platform Platform.Cmd Platform.Sub Process Result
-    Set String Task Time Tuple VirtualDom
-  ))
+  defp debug_ctor_info_fn(entries) when is_list(entries) do
+    rows =
+      entries
+      |> Enum.sort_by(fn entry ->
+        stdlib? = MapSet.member?(@stdlib_modules, entry.module)
+        {if(stdlib?, do: 0, else: 1), entry.tag, entry.arity, entry.name}
+      end)
+      |> Enum.map_join(",\n", fn entry ->
+        "  {#{entry.tag}, #{entry.arity}, \"#{escape_c_string(entry.name)}\"}"
+      end)
+
+    """
+    typedef struct ElmcDebugCtorRow {
+      elmc_int_t tag;
+      int arity;
+      const char *name;
+    } ElmcDebugCtorRow;
+
+    static const ElmcDebugCtorRow elmc_debug_ctor_rows[] = {
+    #{rows}
+    };
+
+    int elmc_debug_union_ctor_info(elmc_int_t tag, int hint, const char **name_out) {
+      const char *exact = NULL;
+      int exact_ar = -1;
+      const char *fb = NULL;
+      int fb_ar = -1;
+      size_t n = sizeof(elmc_debug_ctor_rows) / sizeof(elmc_debug_ctor_rows[0]);
+      size_t i;
+      for (i = 0; i < n; i++) {
+        const ElmcDebugCtorRow *e = &elmc_debug_ctor_rows[i];
+        if (e->tag != tag) continue;
+        if (e->arity == hint) {
+          exact = e->name;
+          exact_ar = e->arity;
+        } else if (!fb) {
+          fb = e->name;
+          fb_ar = e->arity;
+        }
+      }
+      if (exact) {
+        if (name_out) *name_out = exact;
+        return exact_ar;
+      }
+      if (name_out) *name_out = fb;
+      return fb_ar;
+    }
+    """
+  end
 
   defp pick_debug_ctor_name([%{name: name}], _entry_module), do: name
 

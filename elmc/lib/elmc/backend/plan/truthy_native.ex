@@ -42,8 +42,21 @@ defmodule Elmc.Backend.Plan.TruthyNative do
        when is_integer(dest),
        do: {:reg, dest}
 
-  defp shape_from_instr(%{op: :compare, args: %{kind: kind, left: left, right: right}}),
-    do: {:compare, kind || :eq, left, right}
+  # Reconstruct only peel-to-i32 compares. String / value / float / bool
+  # equality must keep the real `:compare` instruction — reconstructing as
+  # `as_int` makes `a && (fromInt n == "…")` compare handle ids.
+  defp shape_from_instr(%{op: :compare, dest: dest, args: args}) when is_integer(dest) do
+    kind = Map.get(args, :kind) || :eq
+    left = Map.get(args, :left)
+    right = Map.get(args, :right)
+
+    if integer_peel_compare_mode?(Map.get(args, :mode)) and is_integer(left) and
+         is_integer(right) do
+      {:compare, kind, left, right}
+    else
+      {:reg, dest}
+    end
+  end
 
   defp shape_from_instr(%{op: :bool_and, dest: dest}) when is_integer(dest),
     do: {:reg, dest}
@@ -142,6 +155,9 @@ defmodule Elmc.Backend.Plan.TruthyNative do
   defp reconstructible_phi_arm_shape?({:const_int, value}) when value in [0, 1], do: true
   defp reconstructible_phi_arm_shape?({:compare, _, _, _}), do: true
   defp reconstructible_phi_arm_shape?(_), do: false
+
+  defp integer_peel_compare_mode?(mode) when mode in [nil, :int_boxed, :pointer], do: true
+  defp integer_peel_compare_mode?(_), do: false
 
   @doc false
   @spec phi_arm_drop_regs(Types.block_list()) :: MapSet.t(non_neg_integer())

@@ -1,6 +1,7 @@
 module Main exposing (main)
 
 import Browser
+import Bytes.Encode as Encode
 import File.Download as Download
 import Html exposing (Html, text)
 
@@ -21,7 +22,12 @@ view _ =
 
 init : () -> ( (), Cmd Msg )
 init _ =
-    ( (), Download.string "draft.md" "text/plain" "hello" )
+    ( ()
+    , Cmd.batch
+        [ Download.string "draft.md" "text/plain" "hello"
+        , Download.bytes "blob.bin" "application/octet-stream" (Encode.encode (Encode.unsignedInt8 42))
+        ]
+    )
 
 
 main : Program () () Msg

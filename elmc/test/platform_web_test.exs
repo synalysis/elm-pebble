@@ -81,6 +81,48 @@ defmodule Elmc.PlatformWebTest do
     assert %{op: :html_cmd, kind: %{value: 2}} = rewritten.expr
   end
 
+  test "rewrite_html_lazy_function_decl expands Html.Lazy.lazy2 and lazy5" do
+    lazy2 =
+      Web.rewrite_html_lazy_function_decl(
+        "Html.Lazy",
+        %{name: "lazy2", expr: %{op: :int_literal, value: 0}},
+        %{targets: [:wasm], web: true}
+      )
+
+    assert lazy2.args == ["fn", "a", "b"]
+    assert %{op: :html_cmd, kind: %{value: 11}, params: params2} = lazy2.expr
+    assert length(params2) == 3
+
+    lazy5 =
+      Web.rewrite_html_lazy_function_decl(
+        "Html.Lazy",
+        %{name: "lazy5", expr: %{op: :int_literal, value: 0}},
+        %{targets: [:wasm], web: true}
+      )
+
+    assert lazy5.args == ["fn", "a", "b", "c", "d", "e"]
+    assert %{op: :html_cmd, kind: %{value: 16}} = lazy5.expr
+  end
+
+  test "rewrite_html_map_function_decl expands Html.Attributes.map to html_cmd kind 21" do
+    decl = %{
+      name: "map",
+      expr: %{
+        op: :qualified_call,
+        target: "VirtualDom.mapAttribute",
+        args: []
+      }
+    }
+
+    rewritten =
+      Web.rewrite_html_map_function_decl("Html.Attributes", decl, %{targets: [:wasm], web: true})
+
+    assert rewritten.args == ["func", "attr"]
+    assert %{op: :html_cmd, kind: %{value: 21}, params: [func, attr]} = rewritten.expr
+    assert func == %{op: :var, name: "func"}
+    assert attr == %{op: :var, name: "attr"}
+  end
+
   test "rewrite_html_lazy_function_decl expands Html.Lazy.lazy to html_cmd kind 6" do
     decl = %{
       name: "lazy",
@@ -139,5 +181,30 @@ defmodule Elmc.PlatformWebTest do
     assert view_gets != []
   # Sandbox impl `{init, view, update}` is stored alphabetically: init, update, view.
     assert Enum.all?(view_gets, fn instr -> String.starts_with?(instr.args[:field_index], "2") end)
+  end
+
+  test "Html.Events.onMouseEnter lowers to html_cmd event" do
+    decl = %{
+      name: "hover",
+      args: ["msg"],
+      expr: %{
+        op: :qualified_call,
+        target: "Html.Events.onMouseEnter",
+        args: [%{op: :var, name: "msg"}]
+      }
+    }
+
+    assert {:ok, plan} = Function.lower(decl, "Main", %{}, targets: [:wasm], web: true)
+
+    events =
+      plan.blocks
+      |> Enum.flat_map(& &1.instrs)
+      |> Enum.filter(&(&1.op == :html_cmd))
+
+    assert events != []
+    assert Enum.any?(events, fn instr ->
+             kind = instr.args[:kind]
+             kind == 8 or match?(%{op: :int_literal, value: 8}, kind)
+           end)
   end
 end

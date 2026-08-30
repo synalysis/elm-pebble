@@ -56,6 +56,20 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Support do
       %{op: :var} ->
         true
 
+      %{op: :render_cmd} ->
+        true
+
+      %{op: :render_text_cmd} ->
+        true
+
+      %{op: :runtime_call, function: "elmc_list_filter", args: [pred_expr, list_expr]} ->
+        filter_pred_supported?(pred_expr, module_name, decl_map, seen) and
+          filter_list_supported?(list_expr, module_name, decl_map, seen)
+
+      %{op: :runtime_call, function: "elmc_list_filter_map", args: [fun_expr, list_expr]} ->
+        filter_map_fun_supported?(fun_expr, module_name, decl_map, seen) and
+          filter_map_list_supported?(list_expr, module_name, decl_map, seen)
+
       %{op: :qualified_call, target: target, args: args} ->
         direct_qualified_supported?(
           Host.normalize_special_target(target),
@@ -121,7 +135,13 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Support do
         direct_map_fun_supported?(fun_expr, list_expr, module_name, decl_map, seen)
 
       {"List.filter", [pred_expr, list_expr]} ->
-        direct_map_fun_supported?(pred_expr, list_expr, module_name, decl_map, seen)
+        filter_pred_supported?(pred_expr, module_name, decl_map, seen) and
+          filter_list_supported?(list_expr, module_name, decl_map, seen)
+
+      {target, [fun_expr, list_expr]}
+      when target in ["List.filterMap", "Elm.Kernel.List.filterMap"] ->
+        filter_map_fun_supported?(fun_expr, module_name, decl_map, seen) and
+          filter_map_list_supported?(list_expr, module_name, decl_map, seen)
 
       {"List.concatMap", [fun_expr, list_expr]} ->
         direct_map_fun_supported?(fun_expr, list_expr, module_name, decl_map, seen)
@@ -474,6 +494,54 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Support do
         end
     end
   end
+
+  defp filter_pred_supported?(%{op: :lambda, body: body}, module_name, decl_map, seen),
+    do: filter_pred_supported?(body, module_name, decl_map, seen)
+
+  defp filter_pred_supported?(%{op: op}, _module_name, _decl_map, _seen)
+       when op in [:var, :bool_literal, :field_access, :int_literal],
+       do: true
+
+  defp filter_pred_supported?(%{op: :if} = expr, module_name, decl_map, seen) do
+    then_expr = Map.get(expr, :then_expr) || Map.get(expr, :then)
+    else_expr = Map.get(expr, :else_expr) || Map.get(expr, :else)
+
+    filter_pred_supported?(then_expr, module_name, decl_map, seen) and
+      filter_pred_supported?(else_expr, module_name, decl_map, seen)
+  end
+
+  defp filter_pred_supported?(%{op: :compare, left: left, right: right}, module_name, decl_map, seen) do
+    filter_pred_supported?(left, module_name, decl_map, seen) and
+      filter_pred_supported?(right, module_name, decl_map, seen)
+  end
+
+  defp filter_pred_supported?(expr, module_name, decl_map, seen),
+    do: supported?(expr, module_name, decl_map, seen)
+
+  defp filter_list_supported?(%{op: op}, _module_name, _decl_map, _seen)
+       when op in [:var, :field_access],
+       do: true
+
+  defp filter_list_supported?(expr, module_name, decl_map, seen),
+    do: supported?(expr, module_name, decl_map, seen)
+
+  # Mapper bodies are `Maybe RenderOp` (Just/Nothing/if). Host emit cannot
+  # walk those as draw leaves; Stream SSA can. Keep the callable shape so
+  # Filter still considers the view, then Plan stream decides.
+  defp filter_map_fun_supported?(%{op: :lambda}, _module_name, _decl_map, _seen), do: true
+
+  defp filter_map_fun_supported?(%{op: op}, _module_name, _decl_map, _seen)
+       when op in [:var, :qualified_ref, :call, :qualified_call],
+       do: true
+
+  defp filter_map_fun_supported?(_, _, _, _), do: false
+
+  defp filter_map_list_supported?(%{op: op}, _module_name, _decl_map, _seen)
+       when op in [:var, :field_access, :list_literal],
+       do: true
+
+  defp filter_map_list_supported?(expr, module_name, decl_map, seen),
+    do: filter_list_supported?(expr, module_name, decl_map, seen)
 
   defp direct_lambda_supported?(
          %{op: :lambda, args: args, body: body},

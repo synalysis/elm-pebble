@@ -2,7 +2,7 @@ defmodule Elmc.WasmMinifyManifestTest do
   use ExUnit.Case, async: false
 
   alias Elmc.TestSupport.CachedCompile
-  alias Elmc.Backend.Wasm.ProjectWriter
+  alias Elmc.Backend.Wasm.{Artifacts, ProjectWriter}
 
   @fixture Path.expand("fixtures/wasm_web_div_project", __DIR__)
 
@@ -28,6 +28,7 @@ defmodule Elmc.WasmMinifyManifestTest do
     assert runtime["entry_export"] == "elmc_fn_Main_main"
     assert is_integer(runtime["closure_count"])
     assert is_map(runtime["constructor_tags"])
+    assert is_map(runtime["constructor_arities"])
     assert is_list(runtime["immortal_strings"])
     refute Map.has_key?(runtime, "closures")
     refute Map.has_key?(runtime, "imports")
@@ -57,6 +58,83 @@ defmodule Elmc.WasmMinifyManifestTest do
       assert name == "elmc_fn_Main_main" or Regex.match?(~r/^c\d+$/, name),
              "unexpected export when minified: #{name}"
     end)
+
+    summary = Artifacts.read_summary(out_dir)
+    assert summary.available == true
+    assert summary.function_count > 0
+    assert is_map(summary.plan_coverage)
+  end
+
+  test "read_summary recovers skipped functions from the minified debug sidecar" do
+    out_dir = Path.expand("tmp/wasm_minify_debug_summary", __DIR__)
+    File.rm_rf!(out_dir)
+    File.mkdir_p!(Path.join(out_dir, "wasm"))
+
+    File.write!(
+      ProjectWriter.manifest_path(out_dir),
+      Jason.encode!(%{
+        "contract" => "elmc.wasm_manifest.v1",
+        "version" => 1,
+        "minified" => true,
+        "entry_export" => "elmc_fn_Main_main"
+      })
+    )
+
+    File.write!(
+      ProjectWriter.debug_manifest_path(out_dir),
+      Jason.encode!(%{
+        "functions" => [],
+        "skipped" => [
+          %{
+            "module" => "Main",
+            "name" => "main",
+            "reason" => "{:unsupported, %{op: :unsupported, target: nil, kind: nil}}"
+          }
+        ],
+        "plan_coverage" => %{
+          "reachable" => %{"failed_count" => 1, "lowered" => 0, "total" => 1}
+        }
+      })
+    )
+
+    summary = Artifacts.read_summary(out_dir)
+    assert summary.available == true
+    assert summary.function_count == 0
+    assert summary.skipped_count == 1
+    assert hd(summary.skipped).module == "Main"
+    assert hd(summary.skipped).name == "main"
+    assert summary.plan_coverage["reachable"]["failed_count"] == 1
+  end
+
+  test "wasm_strict fails when Main.main cannot be lowered" do
+    root = Path.expand("fixtures/wasm_web_four_tuple_project", __DIR__)
+    out_dir = Path.expand("tmp/wasm_web_four_tuple", __DIR__)
+    File.rm_rf!(out_dir)
+
+    case CachedCompile.compile(root, %{
+           out_dir: out_dir,
+           targets: [:wasm],
+           web: true,
+           entry_module: "Main",
+           strip_dead_code: true,
+           wasm_strict: true
+         }) do
+      {:error, {:compile_diagnostics, diags}} when is_list(diags) ->
+        assert Enum.any?(diags, fn diag ->
+                 diag["code"] in [
+                   "wasm_unsupported_function",
+                   "wasm_web_kernel_unimplemented",
+                   "wasm_empty_exports",
+                   "plan_primary_gap"
+                 ]
+               end)
+
+      {:error, _other} ->
+        :ok
+
+      {:ok, _result} ->
+        flunk("unsupported Main.main must not compile to an empty WASM module")
+    end
   end
 
   test "wasm_export_all disables minify for probes" do

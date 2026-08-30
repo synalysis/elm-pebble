@@ -18,6 +18,7 @@ export function loadWasmFromBuildDir(buildDir, extra = {}) {
     closureCount: manifest.closure_count ?? null,
     immortalStrings: manifest.immortal_strings || {},
     constructorTags: manifest.constructor_tags || {},
+    constructorArities: manifest.constructor_arities || {},
     ...extra,
   });
 }

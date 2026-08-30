@@ -86,7 +86,7 @@ case Elmc.compile(\"$APP\", %{
   web: true,
   entry_module: \"Main\",
   strip_dead_code: true,
-  wasm_strict: false,
+  wasm_strict: true,
   fast: fast?
 }) do
   {:ok, _} ->

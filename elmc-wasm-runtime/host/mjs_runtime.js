@@ -5,7 +5,7 @@
  *
  * Every export here is a *value-returning* import (no out-pointer): it reads
  * its argument handles, computes a result, and returns a freshly allocated
- * handle (rc = 1) exactly like `runtime.float_interpolate_from`. Vectors and
+ * handle (rc = 1). Vectors and
  * matrices are boxed as `{ tag: TAG_MJS, kind, data: Float64Array }`; scalar
  * results are boxed as plain `TAG_FLOAT` handles.
  *

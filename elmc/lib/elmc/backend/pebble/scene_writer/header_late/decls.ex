@@ -10,6 +10,7 @@ defmodule Elmc.Backend.Pebble.SceneWriter.HeaderLate.Decls do
     """
     RC elmc_scene_writer_push_cmd(ElmcSceneWriter *writer, const ElmcPebbleDrawCmd *cmd);
     void elmc_draw_cmd_init(ElmcPebbleDrawCmd *cmd, int32_t kind);
+    int elmc_draw_cmd_from_value(ElmcValue *value, ElmcPebbleDrawCmd *out_cmd);
 
     """
   end

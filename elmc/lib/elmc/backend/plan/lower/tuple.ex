@@ -30,6 +30,15 @@ defmodule Elmc.Backend.Plan.Lower.Tuple do
     Expr.compile(side, ctx, b)
   end
 
+  defp compile_proj(:first, %{op: :tuple3, a: a}, ctx, b) do
+    Expr.compile(a, ctx, b)
+  end
+
+  defp compile_proj(:second, %{op: :tuple3, b: b, c: c}, ctx, bldr) do
+    # Official 3-tuple desugar: Tuple.second (a, b, c) is the inner pair (b, c).
+    Expr.compile(%{op: :tuple2, left: b, right: c}, ctx, bldr)
+  end
+
   defp compile_proj(which, arg, ctx, b) do
     with {:ok, base, b1} <- resolve_arg(arg, ctx, b) do
       {dest, b2} = dest_for(ctx, b1)

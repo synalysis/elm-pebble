@@ -31,8 +31,16 @@ for `Html` / `Browser` cmds — not in core plan opcodes.
 `DirectRender.PlanStreamEmit` wraps `C.Lower.Function.emit_core/1` inside the
 existing `CommandDef` + `Emit.Catch` writer shell.
 
-List/map loop peels use `Plan.Stream.ListLoop` until full stream fusions exist;
-static draw tables remain on legacy DR emit (see `Plan.Stream.ListLoop.tracked_gaps/0`).
+Homogeneous static draw-command lists lower as verified `:stream_static_draw_table`
+SSA (C table walk matching Host `Emit.StaticDrawTable`). Affine map/indexedMap
+text templates (`index * k + b` coords plus text/textInt) lower as
+`:stream_affine_text`. Nested list-producing draw helpers use
+`:stream_for_each` with `*_commands_append_native`. `List.filter` of render
+commands uses `:stream_push_cmd` (decode a boxed `RenderOp` and push).
+`List.filterMap` of `Maybe RenderOp` peels `Just`/`Nothing` (or `if` to a
+draw vs skip) and streams the payload. There is no ListLoop
+Verify-bypass bridge; ineligible bodies fall to Host emit with
+`plan_stream_fallback`.
 
 ## Worker subscription layout
 

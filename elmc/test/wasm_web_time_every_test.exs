@@ -5,6 +5,8 @@ defmodule Elmc.WasmWebTimeEveryTest do
   alias Elmc.Backend.Wasm.ProjectWriter
   alias Elmc.Test.WasmRcTrackHarness
 
+  @every_runner Path.expand("support/wasm_time_every_probe_runner.mjs", __DIR__)
+
   @tag :wasm_execute
   test "Time.every lowers to dom_sub under wasm_strict" do
     cond do
@@ -34,6 +36,20 @@ defmodule Elmc.WasmWebTimeEveryTest do
           ProjectWriter.wat_path(out_dir),
           Path.join(out_dir, "wasm/app.wasm")
         )
+
+        case WasmRcTrackHarness.run_node_script(@every_runner, [out_dir]) do
+          {:ok, output} ->
+            assert output =~ "rc_ok"
+            assert output =~ "time_every_ok"
+
+          {:error, output} ->
+            if WasmRcTrackHarness.probe_skipped_under_ulimit?(output) or
+                 WasmRcTrackHarness.wasm_instantiate_oom?(output) do
+              :ok
+            else
+              flunk("wasm Time.every probe failed:\n#{output}")
+            end
+        end
     end
   end
 

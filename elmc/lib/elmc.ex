@@ -70,10 +70,14 @@ defmodule Elmc do
          :ok <- compile_log("dead-code strip complete; planning/emitting…"),
          {:ok, ir, debug_usage_diagnostics} <- check_debug_usage(ir, opts),
          svg_dom = IRQueries.svg_attribute_dom_names(ir0),
+         attr_ns = IRQueries.virtual_dom_attribute_ns(ir0),
+         keyed_ns = IRQueries.virtual_dom_keyed_node_ns(ir0),
          opts =
            opts
            |> Map.put(:svg_attribute_dom_names, svg_dom)
-           |> Map.put(:svg_attribute_names, MapSet.new(Map.keys(svg_dom))),
+           |> Map.put(:svg_attribute_names, MapSet.new(Map.keys(svg_dom)))
+           |> Map.put(:virtual_dom_attribute_ns, attr_ns)
+           |> Map.put(:virtual_dom_keyed_node_ns, keyed_ns),
          out_dir = opts[:out_dir] || "build",
          :ok <- seed_codegen_process_state(ir, opts),
          :ok <- maybe_write_c_artifacts(ir, out_dir, entry_module, opts, wasm_only?) do
@@ -111,8 +115,13 @@ defmodule Elmc do
       wasm_summary = Elmc.Backend.Wasm.Artifacts.read_summary(out_dir)
 
       plan_coverage_diagnostics =
-        Elmc.Backend.Plan.PrimaryCoverage.compile_diagnostics(bytecode_summary, opts) ++
-          wasm_plan_coverage_diagnostics(wasm_summary, opts)
+        case bytecode_summary do
+          %{available: true, plan_coverage: coverage} when is_map(coverage) ->
+            Elmc.Backend.Plan.PrimaryCoverage.compile_diagnostics(bytecode_summary, opts)
+
+          _ ->
+            Elmc.Backend.Plan.PrimaryCoverage.compile_diagnostics(wasm_summary, opts)
+        end
 
       web_kernel_diagnostics = WebKernelDiagnostics.compile_diagnostics()
 
@@ -294,6 +303,14 @@ defmodule Elmc do
       :elmc_svg_attribute_dom_names,
       Map.get(opts, :svg_attribute_dom_names, %{})
     )
+    Process.put(
+      :elmc_virtual_dom_attribute_ns,
+      Map.get(opts, :virtual_dom_attribute_ns, %{})
+    )
+    Process.put(
+      :elmc_virtual_dom_keyed_node_ns,
+      Map.get(opts, :virtual_dom_keyed_node_ns, %{})
+    )
     Process.put(:elmc_constructor_tags, IRQueries.constructor_tag_map(ir))
     Process.put(:elmc_module_ports, IRQueries.module_ports_map(ir))
     Process.put(:elmc_record_alias_shapes, IRQueries.record_alias_shape_map(ir))
@@ -407,7 +424,16 @@ defmodule Elmc do
 
         unsupported_errors = if strict?, do: unsupported, else: []
 
-        if unsupported_errors == [] and missing_generated == [] do
+        generic_stubs =
+          if strict? do
+            out_dir
+            |> Elmc.Backend.Wasm.ProjectWriter.stub_functions()
+            |> Enum.reject(&Elmc.Backend.Wasm.StubFunctions.host_bridge?/1)
+          else
+            []
+          end
+
+        if unsupported_errors == [] and missing_generated == [] and generic_stubs == [] do
           :ok
         else
           detail_diagnostics =
@@ -423,6 +449,24 @@ defmodule Elmc do
                 "function" => name,
                 "message" =>
                   "WASM codegen does not yet support lowering #{mod}.#{name} (function skipped as unsupported)."
+              }
+            end)
+
+          stub_diagnostics =
+            Enum.map(generic_stubs, fn entry ->
+              mod = Map.get(entry, :module) || Map.get(entry, "module")
+              name = Map.get(entry, :name) || Map.get(entry, "name")
+              arity = Map.get(entry, :arity) || Map.get(entry, "arity") || 0
+
+              %{
+                "source" => "elmc/wasm",
+                "code" => "missing_callee_stub",
+                "severity" => "error",
+                "module" => mod,
+                "function" => name,
+                "message" =>
+                  "WASM emit stubbed #{mod}.#{name}/#{arity} with RC 100 (unimplemented). " <>
+                    "wasm_strict forbids missing-callee stubs; lower the callee or drop the call."
               }
             end)
 
@@ -453,10 +497,10 @@ defmodule Elmc do
                   "message" =>
                     "Compiling a general Elm web app to WASM requires implementations of Elm's JS kernel/runtime surface (elm/core, elm/browser, elm/html, elm/virtual-dom, elm/file, elm/http, ...). This build skipped unsupported functions; implement the missing kernel/platform lowering instead of adding app-specific shims."
                 }
-                | (detail_diagnostics ++ missing_generated_diagnostics)
+                | (detail_diagnostics ++ missing_generated_diagnostics ++ stub_diagnostics)
               ]
             else
-              detail_diagnostics ++ missing_generated_diagnostics
+              detail_diagnostics ++ missing_generated_diagnostics ++ stub_diagnostics
             end
 
           {:error, {:compile_diagnostics, diagnostics}}
@@ -498,16 +542,6 @@ defmodule Elmc do
     end
   end
 
-  defp wasm_plan_coverage_diagnostics(%{available: true}, opts) when is_map(opts) do
-    if Targets.emit_wasm?(opts) do
-      []
-    else
-      []
-    end
-  end
-
-  defp wasm_plan_coverage_diagnostics(_summary, _opts), do: []
-
   defp wasm_empty_export_diagnostics(%{available: true} = wasm_summary, opts) when is_map(opts) do
     if Targets.emit_wasm?(opts) and Map.get(opts, :strip_dead_code, true) == true do
       count =
@@ -515,12 +549,7 @@ defmodule Elmc do
           Map.get(wasm_summary, "function_count") ||
           0
 
-      skipped =
-        Map.get(wasm_summary, :skipped_count) ||
-          Map.get(wasm_summary, "skipped_count") ||
-          0
-
-      if is_integer(count) and is_integer(skipped) and count == 0 and skipped == 0 do
+      if is_integer(count) and count == 0 do
         entry = Map.get(opts, :entry_module, "Main")
 
         [

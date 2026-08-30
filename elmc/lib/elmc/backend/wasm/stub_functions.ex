@@ -50,14 +50,13 @@ defmodule Elmc.Backend.Wasm.StubFunctions do
       rc_required: true,
       body: interpolate_from_body(),
       imports: MapSet.new(["runtime.float_interpolate_from"]),
-      import_arities: %{"runtime.float_interpolate_from" => 3}
+      import_arities: %{"runtime.float_interpolate_from" => 4}
     }
   end
 
-  # elm-explorations/linear-algebra Vector2/Vector3/Vector4/Matrix4 kernels.
-  # These are pure numeric ops (no Elm plan body), so every call site becomes
-  # a missing_callee stub; route them all through one host implementation per
-  # kernel name (runtime.mjs_<name>) instead of RC_ERR_UNIMPLEMENTED.
+  # Leftover Elm.Kernel.MJS missing-callees (special values normally rewrite
+  # these to plan builtins). Still implement via the RC host import so a
+  # missed rewrite does not trap with RC 100; wasm_strict still fails.
   def lower_stub(%{module: "Elm.Kernel.MJS", name: name, arity: arity} = entry) do
     params =
       if arity == 0 do
@@ -74,9 +73,9 @@ defmodule Elmc.Backend.Wasm.StubFunctions do
       name: entry.name,
       params: params,
       rc_required: true,
-      body: host_value_stub_body(params, import_name),
+      body: rc_out_stub_body(params, import_name),
       imports: MapSet.new([import_name]),
-      import_arities: %{import_name => arity}
+      import_arities: %{import_name => arity + 1}
     }
   end
 
@@ -93,9 +92,9 @@ defmodule Elmc.Backend.Wasm.StubFunctions do
       name: entry.name,
       params: params,
       rc_required: true,
-      body: host_value_stub_body(Enum.take(params, 5), import_name),
+      body: rc_out_stub_body(Enum.take(params, 5), import_name),
       imports: MapSet.new([import_name]),
-      import_arities: %{import_name => 5}
+      import_arities: %{import_name => 6}
     }
   end
 
@@ -110,9 +109,9 @@ defmodule Elmc.Backend.Wasm.StubFunctions do
       name: entry.name,
       params: params,
       rc_required: true,
-      body: host_value_stub_body(Enum.take(params, 3), import_name),
+      body: rc_out_stub_body(Enum.take(params, 3), import_name),
       imports: MapSet.new([import_name]),
-      import_arities: %{import_name => 3}
+      import_arities: %{import_name => 4}
     }
   end
 
@@ -137,14 +136,22 @@ defmodule Elmc.Backend.Wasm.StubFunctions do
   end
 
   defp interpolate_from_body do
+    rc_out_stub_body(["param0", "param1", "param2"], "runtime.float_interpolate_from")
+  end
+
+  defp rc_out_stub_body(params, import_name) when is_list(params) and is_binary(import_name) do
+    loads = Enum.map_join(params, "\n", &"local.get $#{&1}")
+
     """
+    (local $rc i32)
     (local $out i32)
-    local.get $param0
-    local.get $param1
-    local.get $param2
-    call $runtime_float_interpolate_from
+    i32.const 1024
+    #{loads}
+    call #{WasmTypes.import_ident(import_name)}
+    local.set $rc
+    i32.load offset=1024
     local.set $out
-    i32.const 0
+    local.get $rc
     local.get $out
     """
   end
@@ -153,19 +160,6 @@ defmodule Elmc.Backend.Wasm.StubFunctions do
     """
     i32.const #{@rc_err_unimplemented}
     i32.const 0
-    """
-  end
-
-  defp host_value_stub_body(params, import_name) do
-    loads = Enum.map_join(params, "\n", &"local.get $#{&1}")
-
-    """
-    (local $out i32)
-    #{loads}
-    call #{WasmTypes.import_ident(import_name)}
-    local.set $out
-    i32.const 0
-    local.get $out
     """
   end
 
@@ -198,6 +192,34 @@ defmodule Elmc.Backend.Wasm.StubFunctions do
   def stub_kind("Elm.Kernel." <> _), do: :kernel_stub
   def stub_kind("Elm.Kernel"), do: :kernel_stub
   def stub_kind(_), do: :missing_callee_stub
+
+  @spec host_bridge?(map()) :: boolean()
+  def host_bridge?(_), do: false
+
+  @spec record_diagnostics([stub_entry() | map()]) :: :ok
+  def record_diagnostics(entries) when is_list(entries) do
+    Enum.each(entries, fn entry ->
+      mod = entry[:module] || entry["module"] || "?"
+      name = entry[:name] || entry["name"] || "?"
+      arity = entry[:arity] || entry["arity"] || 0
+
+      warnings = Process.get(:elmc_compile_warnings, [])
+
+      Process.put(:elmc_compile_warnings, [
+        %{
+          "severity" => "warning",
+          "source" => "elmc/wasm",
+          "code" => "missing_callee_stub",
+          "message" =>
+            "WASM emit stubbed #{mod}.#{name}/#{arity} with RC 100 (unimplemented). " <>
+              "Call sites trap or return an empty value if this function is reached."
+        }
+        | warnings
+      ])
+    end)
+
+    :ok
+  end
 
   defp stub_kind_internal(module), do: stub_kind(module)
 

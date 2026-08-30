@@ -273,6 +273,7 @@ defmodule Elmc.Backend.Plan.Lower.Case.GuardedSwitch do
               :tuple,
               :constructor,
               :qualified_constructor,
+              :record,
               :wildcard,
               :var,
               :int,

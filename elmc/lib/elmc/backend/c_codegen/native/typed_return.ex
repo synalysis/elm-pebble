@@ -119,6 +119,21 @@ defmodule Elmc.Backend.CCodegen.Native.TypedReturn do
 
   def expr_type(%{op: :bool_literal}, _env), do: "Bool"
 
+  def expr_type(%{op: :list_literal, items: items}, env) when is_list(items),
+    do: list_literal_type(items, env)
+
+  def expr_type(%{op: :list_literal, elements: items}, env) when is_list(items),
+    do: list_literal_type(items, env)
+
+  def expr_type(%{op: :static_list, elements: items}, env) when is_list(items),
+    do: list_literal_type(items, env)
+
+  def expr_type(%{op: :runtime_call, function: "elmc_string_indexes"}, _env), do: "List Int"
+
+  def expr_type(%{op: :runtime_call, function: "elmc_string_to_int"}, _env), do: "Maybe Int"
+
+  def expr_type(%{op: :runtime_call, function: "elmc_string_to_float"}, _env), do: "Maybe Float"
+
   def expr_type(%{op: :string_literal}, _env), do: "String"
 
   def expr_type(%{op: :char_literal}, _env), do: "Char"
@@ -229,5 +244,14 @@ defmodule Elmc.Backend.CCodegen.Native.TypedReturn do
     short in ["toRecord", "m4x4toRecord", "v4toRecord", "v3toRecord", "v2toRecord"] and
       (String.contains?(target, "Matrix") or String.contains?(target, "Vector") or
          short in ["m4x4toRecord", "v4toRecord", "v3toRecord", "v2toRecord"])
+  end
+
+  defp list_literal_type(items, env) do
+    case items |> Enum.map(&expr_type(&1, env)) |> Enum.uniq() do
+      ["Int"] -> "List Int"
+      ["String"] -> "List String"
+      ["Float"] -> "List Float"
+      _ -> nil
+    end
   end
 end

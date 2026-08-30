@@ -61,6 +61,10 @@ defmodule Elmc.Types do
           optional(:generated_c) => String.t(),
           optional(:svg_attribute_dom_names) => %{optional(String.t()) => String.t()},
           optional(:svg_attribute_names) => MapSet.t(String.t()),
+          optional(:virtual_dom_attribute_ns) => %{optional(String.t()) => {String.t(), String.t()}},
+          optional(:virtual_dom_keyed_node_ns) => %{
+            optional({String.t(), String.t()}) => String.t()
+          },
           optional(:fast) => boolean(),
           optional(:ir_parallel) => pos_integer(),
           optional(:ir_cache) => boolean(),

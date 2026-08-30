@@ -12,6 +12,10 @@ const TASK_ON_ERROR = 0x1ec021;
 const TASK_HTTP_GET_JSON = 0x1ec022;
 const TASK_HTTP_GET_WITH_OPTIONS = 0x1ec023;
 const TASK_HTTP_REQUEST = 0x1ec024;
+const TASK_FILE_READ = 0x1ec025;
+const TASK_MAP2 = 0x1ec026;
+const TASK_SEQUENCE = 0x1ec027;
+export const TASK_HTTP_ELM = 0x1ec028;
 
 const BACKEND_TASK_EXPECT_JSON = 1;
 const BACKEND_TASK_EXPECT_STRING = 2;
@@ -44,9 +48,11 @@ export function createTaskRuntime(deps) {
     newIntHandle,
     newStringHandle,
     newList,
+    listItems = null,
     cmdNoneHandle,
     TAG_TUPLE2,
     TAG_INT,
+    TAG_FLOAT = 4,
     TAG_RESULT,
     TAG_CMD,
     TAG_RECORD,
@@ -64,9 +70,36 @@ export function createTaskRuntime(deps) {
     constructorTags = {},
     unitHandle = 0,
     jsonDecodeErrorToString = null,
+    runElmHttpTask = null,
   } = deps;
 
+  let readNativeFile = deps.readNativeFile || null;
+  const setReadNativeFile = (fn) => {
+    readNativeFile = typeof fn === "function" ? fn : null;
+  };
+
+  let runElmHttpTaskImpl = typeof runElmHttpTask === "function" ? runElmHttpTask : null;
+  const setRunElmHttpTask = (fn) => {
+    runElmHttpTaskImpl = typeof fn === "function" ? fn : null;
+  };
+
   let browserCacheWarned = false;
+
+  // Official `Process.sleep : Float -> Task x ()`. Prefer a boxed float;
+  // `intValue` on TAG_FLOAT returns the handle id, not milliseconds.
+  const sleepMs = (ptr) => {
+    const p = ptr | 0;
+    if (!p) return 0;
+    const payload = readHandle(p);
+    if (payload?.tag === TAG_FLOAT) {
+      const ms = Number(payload.value);
+      return Number.isFinite(ms) ? Math.max(0, ms) : 0;
+    }
+    if (payload?.tag === TAG_INT) {
+      return Math.max(0, payload.value | 0);
+    }
+    return Math.max(0, p);
+  };
 
   const constructorTag = (qualifiedName) => {
     if (constructorTags[qualifiedName] != null) {
@@ -97,8 +130,57 @@ export function createTaskRuntime(deps) {
     return taskToResult(false, newStringHandle(fallbackMessage));
   };
 
-  /** @type {Set<number>} */
+  /** @type {Set<ReturnType<typeof setTimeout>>} */
   const pendingTimers = new Set();
+  /** @type {Map<number, { timers: Set<ReturnType<typeof setTimeout>>, aborts: Set<AbortController>, killed: boolean }>} */
+  const processes = new Map();
+  let nextPid = 1;
+
+  const MAIN_PID = 0;
+
+  const ensureProcess = (pid) => {
+    const id = pid | 0;
+    if (id === MAIN_PID) return null;
+    let proc = processes.get(id);
+    if (!proc) {
+      proc = { timers: new Set(), aborts: new Set(), killed: false };
+      processes.set(id, proc);
+    }
+    return proc;
+  };
+
+  const isKilled = (pid) => {
+    const id = pid | 0;
+    if (id === MAIN_PID) return false;
+    return processes.get(id)?.killed === true;
+  };
+
+  const registerTimer = (pid, timer) => {
+    pendingTimers.add(timer);
+    const proc = ensureProcess(pid);
+    if (proc) proc.timers.add(timer);
+  };
+
+  const unregisterTimer = (pid, timer) => {
+    pendingTimers.delete(timer);
+    processes.get(pid | 0)?.timers.delete(timer);
+  };
+
+  const registerAbort = (pid, controller) => {
+    const proc = ensureProcess(pid);
+    if (proc && controller) proc.aborts.add(controller);
+  };
+
+  const unregisterAbort = (pid, controller) => {
+    processes.get(pid | 0)?.aborts.delete(controller);
+  };
+
+  const processAbortController = (pid) => {
+    if (typeof AbortController === "undefined") return null;
+    const controller = new AbortController();
+    registerAbort(pid, controller);
+    return controller;
+  };
 
   const isTaskHandle = (ptr) => {
     const payload = readHandle(ptr);
@@ -148,6 +230,8 @@ export function createTaskRuntime(deps) {
         (forced.httpGetJson ||
           forced.httpGetWithOptions ||
           forced.httpRequest ||
+          forced.httpElmTask ||
+          forced.fileRead ||
           (forced.async && forced.rc === RC_ERR_UNIMPLEMENTED))
     );
 
@@ -155,6 +239,23 @@ export function createTaskRuntime(deps) {
     ...forced,
     cont: [...(forced.cont || []), step],
   });
+
+  const forceSequence = (items, acc) => {
+    const remaining = Array.isArray(items) ? items : [];
+    if (!remaining.length) {
+      return { rc: RC_SUCCESS, value: taskToResult(true, newList(acc)) };
+    }
+    const head = remaining[0] | 0;
+    const rest = remaining.slice(1);
+    const forced = forceTask(head);
+    if (isAsyncForce(forced)) {
+      return withCont(forced, { kind: "sequence", rest, acc });
+    }
+    if (forced.rc !== RC_SUCCESS) return forced;
+    const resultPayload = readHandle(forced.value);
+    if (!resultPayload?.isOk) return { rc: RC_SUCCESS, value: forced.value };
+    return forceSequence(rest, [...acc, resultPayload.value | 0]);
+  };
 
   const forceTask = (taskPtr) => {
     const payload = readHandle(taskPtr);
@@ -168,7 +269,17 @@ export function createTaskRuntime(deps) {
       case TASK_FAIL:
         return { rc: RC_SUCCESS, value: taskToResult(false, payload.value | 0) };
       case TASK_SLEEP:
-        return { rc: RC_ERR_UNIMPLEMENTED, value: 0, async: true, ms: intValue(payload.value | 0) };
+        return { rc: RC_ERR_UNIMPLEMENTED, value: 0, async: true, ms: sleepMs(payload.value | 0) };
+      case TASK_FILE_READ:
+        return {
+          rc: RC_ERR_UNIMPLEMENTED,
+          value: 0,
+          async: true,
+          fileRead: {
+            filePtr: payload.value | 0,
+            kind: payload.fileReadKind || "string",
+          },
+        };
       case TASK_ON_ERROR: {
         const pair = readHandle(payload.value);
         if (pair?.tag !== TAG_TUPLE2) return { rc: RC_ERR_UNIMPLEMENTED, value: 0 };
@@ -182,6 +293,34 @@ export function createTaskRuntime(deps) {
         const recovered = invokeClosure(pair.first | 0, [resultPayload.value | 0]);
         if (recovered.rc !== RC_SUCCESS) return recovered;
         return forceTask(recovered.value | 0);
+      }
+      case TASK_MAP2: {
+        const pair = readHandle(payload.value);
+        if (pair?.tag !== TAG_TUPLE2) return { rc: RC_ERR_UNIMPLEMENTED, value: 0 };
+        const tasks = readHandle(pair.second | 0);
+        if (tasks?.tag !== TAG_TUPLE2) return { rc: RC_ERR_UNIMPLEMENTED, value: 0 };
+        const fn = pair.first | 0;
+        const fa = forceTask(tasks.first | 0);
+        if (isAsyncForce(fa)) {
+          return withCont(fa, { kind: "map2_b", fn, b: tasks.second | 0 });
+        }
+        if (fa.rc !== RC_SUCCESS) return fa;
+        const ra = readHandle(fa.value);
+        if (!ra?.isOk) return { rc: RC_SUCCESS, value: fa.value };
+        const fb = forceTask(tasks.second | 0);
+        if (isAsyncForce(fb)) {
+          return withCont(fb, { kind: "map2_apply", fn, aVal: ra.value | 0 });
+        }
+        if (fb.rc !== RC_SUCCESS) return fb;
+        const rb = readHandle(fb.value);
+        if (!rb?.isOk) return { rc: RC_SUCCESS, value: fb.value };
+        const mapped = invokeClosure(fn, [ra.value | 0, rb.value | 0]);
+        if (mapped.rc !== RC_SUCCESS) return mapped;
+        return { rc: RC_SUCCESS, value: taskToResult(true, mapped.value | 0) };
+      }
+      case TASK_SEQUENCE: {
+        const items = listItems ? listItems(payload.value | 0) : [];
+        return forceSequence(items, []);
       }
       case TASK_MAP: {
         const pair = readHandle(payload.value);
@@ -231,6 +370,13 @@ export function createTaskRuntime(deps) {
           value: 0,
           async: true,
           httpRequest: { taskPtr: taskPtr | 0 },
+        };
+      case TASK_HTTP_ELM:
+        return {
+          rc: RC_ERR_UNIMPLEMENTED,
+          value: 0,
+          async: true,
+          httpElmTask: { taskPtr: taskPtr | 0 },
         };
       default:
         return { rc: RC_ERR_UNIMPLEMENTED, value: 0 };
@@ -614,6 +760,8 @@ export function createTaskRuntime(deps) {
     timeoutMs = 0,
     headerPairs = [],
     retries = 0,
+    pid = MAIN_PID,
+    processController = null,
   }) => {
     if (!fetchFn) {
       return {
@@ -630,7 +778,12 @@ export function createTaskRuntime(deps) {
     let lastFailure = makeHttpTaskFailure("NetworkError", unitHandle, "Network error");
 
     for (let attempt = 0; attempt <= retries; attempt++) {
-      const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
+      if (isKilled(pid) || processController?.signal?.aborted) {
+        return { rc: RC_SUCCESS, value: 0, killed: true };
+      }
+      const controller =
+        processController ||
+        (typeof AbortController !== "undefined" ? new AbortController() : null);
       let timeoutId = null;
       if (controller && timeoutMs > 0) {
         timeoutId = setTimeout(() => controller.abort(), timeoutMs);
@@ -663,6 +816,9 @@ export function createTaskRuntime(deps) {
         };
       } catch (err) {
         if (timeoutId) clearTimeout(timeoutId);
+        if (isKilled(pid) || processController?.signal?.aborted) {
+          return { rc: RC_SUCCESS, value: 0, killed: true };
+        }
         const message = err?.message ? String(err.message) : "Network error";
         const isTimeout = err?.name === "AbortError";
         lastFailure = isTimeout
@@ -676,7 +832,7 @@ export function createTaskRuntime(deps) {
     return { rc: RC_SUCCESS, value: lastFailure };
   };
 
-  const fetchJsonTask = async (url, decoderPtr, timeoutMs = 0, headerPairs = []) => {
+  const fetchJsonTask = async (url, decoderPtr, timeoutMs = 0, headerPairs = [], extra = {}) => {
     const expectPtr = allocHandle({
       tag: TAG_RECORD,
       fields: [decoderPtr | 0],
@@ -687,10 +843,11 @@ export function createTaskRuntime(deps) {
       expectPtr,
       timeoutMs,
       headerPairs,
+      ...extra,
     });
   };
 
-  const runHttpGetJsonTask = async (taskPtr) => {
+  const runHttpGetJsonTask = async (taskPtr, extra = {}) => {
     const payload = readHandle(taskPtr);
     const pair = payload?.value != null ? readHandle(payload.value | 0) : null;
     if (pair?.tag !== TAG_TUPLE2) {
@@ -699,10 +856,10 @@ export function createTaskRuntime(deps) {
 
     const url = stringValue(pair.first | 0);
     const decoderPtr = pair.second | 0;
-    return fetchJsonTask(url, decoderPtr);
+    return fetchJsonTask(url, decoderPtr, 0, [], extra);
   };
 
-  const runHttpGetWithOptionsTask = async (taskPtr) => {
+  const runHttpGetWithOptionsTask = async (taskPtr, extra = {}) => {
     const payload = readHandle(taskPtr);
     const optionsPtr = payload?.value | 0;
     const options = readHandle(optionsPtr);
@@ -727,10 +884,11 @@ export function createTaskRuntime(deps) {
       timeoutMs: parsed.timeoutMs,
       headerPairs: parsed.headerPairs,
       retries: parsed.retries,
+      ...extra,
     });
   };
 
-  const runHttpRequestTask = async (taskPtr) => {
+  const runHttpRequestTask = async (taskPtr, extra = {}) => {
     const payload = readHandle(taskPtr);
     const pair = payload?.value != null ? readHandle(payload.value | 0) : null;
     if (pair?.tag !== TAG_TUPLE2) {
@@ -761,12 +919,17 @@ export function createTaskRuntime(deps) {
       timeoutMs: parsed.timeoutMs,
       headerPairs,
       retries: parsed.retries,
+      ...extra,
     });
   };
 
-  const applyTaskCont = async (result, cont) => {
+  const applyTaskCont = async (result, cont, pid = MAIN_PID) => {
+    if (result?.killed || isKilled(pid)) {
+      return result?.killed ? result : { rc: RC_SUCCESS, value: 0, killed: true };
+    }
     let current = result;
     for (const step of cont || []) {
+      if (isKilled(pid)) return { rc: RC_SUCCESS, value: 0, killed: true };
       if (!current || current.rc !== RC_SUCCESS || !current.value) return current;
       const resultPayload = readHandle(current.value);
       if (!resultPayload) return current;
@@ -776,7 +939,7 @@ export function createTaskRuntime(deps) {
         if (!resultPayload.isOk) continue;
         const next = invokeClosure(step.fn | 0, [resultPayload.value | 0]);
         if (next.rc !== RC_SUCCESS) return next;
-        current = await runTaskAsync(next.value | 0);
+        current = await runTaskAsync(next.value | 0, pid);
         continue;
       }
 
@@ -784,7 +947,7 @@ export function createTaskRuntime(deps) {
         if (resultPayload.isOk) continue;
         const recovered = invokeClosure(step.fn | 0, [resultPayload.value | 0]);
         if (recovered.rc !== RC_SUCCESS) return recovered;
-        current = await runTaskAsync(recovered.value | 0);
+        current = await runTaskAsync(recovered.value | 0, pid);
         continue;
       }
 
@@ -793,14 +956,54 @@ export function createTaskRuntime(deps) {
         const mapped = invokeClosure(step.fn | 0, [resultPayload.value | 0]);
         if (mapped.rc !== RC_SUCCESS) return mapped;
         current = { rc: RC_SUCCESS, value: taskToResult(true, mapped.value | 0) };
+        continue;
+      }
+
+      if (step.kind === "map2_b") {
+        if (!resultPayload.isOk) continue;
+        const aVal = resultPayload.value | 0;
+        current = await runTaskAsync(step.b | 0, pid);
+        if (!current || current.rc !== RC_SUCCESS || !current.value) return current;
+        const bPayload = readHandle(current.value);
+        if (!bPayload?.isOk) continue;
+        const mapped = invokeClosure(step.fn | 0, [aVal, bPayload.value | 0]);
+        if (mapped.rc !== RC_SUCCESS) return mapped;
+        current = { rc: RC_SUCCESS, value: taskToResult(true, mapped.value | 0) };
+        continue;
+      }
+
+      if (step.kind === "map2_apply") {
+        if (!resultPayload.isOk) continue;
+        const mapped = invokeClosure(step.fn | 0, [step.aVal | 0, resultPayload.value | 0]);
+        if (mapped.rc !== RC_SUCCESS) return mapped;
+        current = { rc: RC_SUCCESS, value: taskToResult(true, mapped.value | 0) };
+        continue;
+      }
+
+      if (step.kind === "sequence") {
+        if (!resultPayload.isOk) continue;
+        const acc = [...(step.acc || []), resultPayload.value | 0];
+        let rest = step.rest || [];
+        for (const taskPtr of rest) {
+          current = await runTaskAsync(taskPtr | 0, pid);
+          if (!current || current.rc !== RC_SUCCESS || !current.value) return current;
+          const item = readHandle(current.value);
+          if (!item?.isOk) return current;
+          acc.push(item.value | 0);
+        }
+        current = { rc: RC_SUCCESS, value: taskToResult(true, newList(acc)) };
       }
     }
     return current;
   };
 
-  const runTaskAsync = (taskPtr) =>
+  const runTaskAsync = (taskPtr, pid = MAIN_PID) =>
     new Promise((resolve) => {
       const run = () => {
+        if (isKilled(pid)) {
+          resolve({ rc: RC_SUCCESS, value: 0, killed: true });
+          return;
+        }
         const forced = forceTask(taskPtr);
         const {
           rc,
@@ -810,29 +1013,110 @@ export function createTaskRuntime(deps) {
           httpGetJson,
           httpGetWithOptions,
           httpRequest,
+          httpElmTask,
+          fileRead,
           cont,
         } = forced;
 
-        const finish = (result) => applyTaskCont(result, cont).then(resolve);
+        const finish = (result) => {
+          if (isKilled(pid)) {
+            resolve({ rc: RC_SUCCESS, value: 0, killed: true });
+            return;
+          }
+          applyTaskCont(result, cont, pid).then(resolve);
+        };
 
         if (httpGetJson) {
-          runHttpGetJsonTask(httpGetJson.taskPtr).then(finish);
+          const controller = processAbortController(pid);
+          runHttpGetJsonTask(httpGetJson.taskPtr, { pid, processController: controller }).then(
+            (result) => {
+              unregisterAbort(pid, controller);
+              finish(result);
+            }
+          );
           return;
         }
         if (httpGetWithOptions) {
-          runHttpGetWithOptionsTask(httpGetWithOptions.taskPtr).then(finish);
+          const controller = processAbortController(pid);
+          runHttpGetWithOptionsTask(httpGetWithOptions.taskPtr, {
+            pid,
+            processController: controller,
+          }).then((result) => {
+            unregisterAbort(pid, controller);
+            finish(result);
+          });
           return;
         }
         if (httpRequest) {
-          runHttpRequestTask(httpRequest.taskPtr).then(finish);
+          const controller = processAbortController(pid);
+          runHttpRequestTask(httpRequest.taskPtr, { pid, processController: controller }).then(
+            (result) => {
+              unregisterAbort(pid, controller);
+              finish(result);
+            }
+          );
+          return;
+        }
+        if (httpElmTask) {
+          const runner = runElmHttpTaskImpl;
+          if (!runner) {
+            finish({
+              rc: RC_SUCCESS,
+              value: taskToResult(false, newStringHandle("Http.task unavailable")),
+            });
+            return;
+          }
+          const controller = processAbortController(pid);
+          runner(httpElmTask.taskPtr, controller).then((result) => {
+            unregisterAbort(pid, controller);
+            finish(result);
+          });
+          return;
+        }
+        if (fileRead) {
+          const reader = readNativeFile;
+          if (!reader) {
+            finish({
+              rc: RC_SUCCESS,
+              value: taskToResult(false, newStringHandle("File")),
+            });
+            return;
+          }
+          reader(fileRead.kind, fileRead.filePtr).then((result) => {
+            if (!result?.ok) {
+              finish({
+                rc: RC_SUCCESS,
+                value: taskToResult(false, newStringHandle(result?.error || "File")),
+              });
+              return;
+            }
+            if (fileRead.kind === "bytes") {
+              const view = result.value
+                ? new DataView(result.value)
+                : new DataView(new ArrayBuffer(0));
+              const bytesPtr = newBytesFromView
+                ? newBytesFromView(view)
+                : newIntHandle(0);
+              finish({ rc: RC_SUCCESS, value: taskToResult(true, bytesPtr) });
+              return;
+            }
+            finish({
+              rc: RC_SUCCESS,
+              value: taskToResult(true, newStringHandle(String(result.value ?? ""))),
+            });
+          });
           return;
         }
         if (isAsync && rc === RC_ERR_UNIMPLEMENTED) {
           const timer = setTimeout(() => {
-            pendingTimers.delete(timer);
-            finish({ rc: RC_SUCCESS, value: taskToResult(true, newIntHandle(0)) });
+            unregisterTimer(pid, timer);
+            if (isKilled(pid)) {
+              finish({ rc: RC_SUCCESS, value: 0, killed: true });
+              return;
+            }
+            finish({ rc: RC_SUCCESS, value: taskToResult(true, unitHandle | 0) });
           }, Math.max(0, ms | 0));
-          pendingTimers.add(timer);
+          registerTimer(pid, timer);
           return;
         }
         finish({ rc, value });
@@ -867,7 +1151,12 @@ export function createTaskRuntime(deps) {
 
   const taskMap2 = (outPtr, fnPtr, aPtr, bPtr) => {
     const pair = makeTuple2(aPtr | 0, bPtr | 0);
-    writeOut(outPtr, taskWrapPair(TASK_MAP, fnPtr | 0, pair));
+    writeOut(outPtr, taskWrapPair(TASK_MAP2, fnPtr | 0, pair));
+    return RC_SUCCESS;
+  };
+
+  const taskSequence = (outPtr, listPtr) => {
+    writeOut(outPtr, taskWrap(TASK_SEQUENCE, listPtr | 0));
     return RC_SUCCESS;
   };
 
@@ -1027,20 +1316,27 @@ export function createTaskRuntime(deps) {
     return cmdDescPtr | 0;
   };
 
-  const dispatchTaskMsg = (taskPtr) => {
+  const dispatchTaskMsg = (taskPtr, taggers = []) => {
     const ptr = taskPtr | 0;
     // Survive Task.attempt / init owned-slot epilogues that release the Perform
     // wrapper and the task between scheduling and the microtask.
     if (ptr && retainHandle) retainHandle(ptr);
-    runTaskAsync(ptr)
+    return runTaskAsync(ptr)
       .then(({ rc, value }) => {
         try {
           if (rc !== RC_SUCCESS || !value) return;
           const result = readHandle(value);
           // Task.attempt/perform map failures into Ok(msg); only Ok payloads are msgs.
           if (!result?.isOk) return;
-          if (dispatchPlatformMsg && result.value) {
-            dispatchPlatformMsg(result.value);
+          let msg = result.value | 0;
+          for (const taggerPtr of taggers ?? []) {
+            if (!taggerPtr) continue;
+            const next = invokeClosure(taggerPtr | 0, [msg]);
+            if (next.rc !== RC_SUCCESS) return;
+            msg = next.value | 0;
+          }
+          if (dispatchPlatformMsg && msg) {
+            dispatchPlatformMsg(msg);
           }
         } finally {
           if (value && releaseHandle) releaseHandle(value);
@@ -1052,18 +1348,26 @@ export function createTaskRuntime(deps) {
       });
   };
 
-  const taskPerform = (outPtr, cmdDescPtr) => {
-    dispatchTaskMsg(unwrapPerformTask(cmdDescPtr));
-    writeOut(outPtr, cmdNoneHandle());
+  // Official Task.perform returns a Cmd the platform drains (so Cmd.map taggers
+  // compose after toMsg). Do not dispatch during the perform call.
+  const writeTaskCmd = (outPtr, cmdDescPtr) => {
+    const taskPtr = unwrapPerformTask(cmdDescPtr);
+    if (taskPtr && retainHandle) retainHandle(taskPtr);
+    writeOut(
+      outPtr,
+      allocHandle({
+        tag: TAG_CMD,
+        kind: "task",
+        task: taskPtr | 0,
+      })
+    );
     return RC_SUCCESS;
   };
 
+  const taskPerform = writeTaskCmd;
+
   // Effect-module `command (Perform task)` — same descriptor shape as task_perform.
-  const taskCommand = (outPtr, cmdDescPtr) => {
-    dispatchTaskMsg(unwrapPerformTask(cmdDescPtr));
-    writeOut(outPtr, cmdNoneHandle());
-    return RC_SUCCESS;
-  };
+  const taskCommand = writeTaskCmd;
 
   const timeNowMillis = (outPtr) => {
     const now = Date.now();
@@ -1071,20 +1375,65 @@ export function createTaskRuntime(deps) {
     return RC_SUCCESS;
   };
 
+  const wrapFileRead = (outPtr, kind, filePtr) => {
+    const ptr = filePtr | 0;
+    const handle = allocHandle({
+      tag: TAG_RESULT,
+      isOk: true,
+      taskKind: TASK_FILE_READ,
+      value: ptr,
+      fileReadKind: kind,
+    });
+    // Same retain as file_select toMsg: the caller releases the File after
+    // File.toString / toBytes / toUrl return, before runTaskAsync reads it.
+    if (ptr && retainHandle) retainHandle(ptr);
+    if (ptr && addOwner) addOwner(ptr, handle);
+    writeOut(outPtr, handle);
+    return RC_SUCCESS;
+  };
+
+  const taskFileToString = (outPtr, filePtr) => wrapFileRead(outPtr, "string", filePtr);
+  const taskFileToBytes = (outPtr, filePtr) => wrapFileRead(outPtr, "bytes", filePtr);
+  const taskFileToUrl = (outPtr, filePtr) => wrapFileRead(outPtr, "url", filePtr);
+
   const processSpawn = (outPtr, taskPtr) => {
-    runTaskAsync(taskPtr | 0);
-    writeOut(outPtr, taskToResult(true, newIntHandle(1)));
+    const pid = nextPid++;
+    ensureProcess(pid);
+    const ptr = taskPtr | 0;
+    // Same retain as Task.perform: the caller releases the task slot after
+    // spawn returns, before the queued runTaskAsync microtask.
+    if (ptr && retainHandle) retainHandle(ptr);
+    runTaskAsync(ptr, pid).finally(() => {
+      if (ptr && releaseHandle) releaseHandle(ptr);
+    });
+    writeOut(outPtr, taskToResult(true, newIntHandle(pid)));
     return RC_SUCCESS;
   };
 
-  const processSleep = (outPtr, _msPtr) => {
-    writeOut(outPtr, taskToResult(true, unitHandle | 0));
+  const processSleep = (outPtr, msPtr) => {
+    writeOut(outPtr, taskWrap(TASK_SLEEP, msPtr | 0));
     return RC_SUCCESS;
   };
 
-  const processKill = (outPtr, _pidPtr) => {
-    for (const timer of pendingTimers) clearTimeout(timer);
-    pendingTimers.clear();
+  const processKill = (outPtr, pidPtr) => {
+    const pid = intValue(pidPtr);
+    const proc = processes.get(pid);
+    if (proc) {
+      proc.killed = true;
+      for (const timer of proc.timers) {
+        clearTimeout(timer);
+        pendingTimers.delete(timer);
+      }
+      proc.timers.clear();
+      for (const controller of proc.aborts) {
+        try {
+          controller.abort();
+        } catch (_err) {
+          /* ignore */
+        }
+      }
+      proc.aborts.clear();
+    }
     writeOut(outPtr, taskToResult(true, unitHandle | 0));
     return RC_SUCCESS;
   };
@@ -1094,6 +1443,7 @@ export function createTaskRuntime(deps) {
     taskFail,
     taskMap,
     taskMap2,
+    taskSequence,
     taskAndThen,
     taskOnError,
     taskPerform,
@@ -1113,14 +1463,19 @@ export function createTaskRuntime(deps) {
     backendTaskHttpPost,
     backendTaskHttpGetWithOptions,
     timeNowMillis,
+    taskFileToString,
+    taskFileToBytes,
+    taskFileToUrl,
+    setReadNativeFile,
+    setRunElmHttpTask,
     processSpawn,
     processSleep,
     processKill,
-    drainTaskCmd: async (cmdPtr) => {
+    drainTaskCmd: async (cmdPtr, taggers = []) => {
       const payload = readHandle(cmdPtr);
       if (!payload) return;
       if (payload.tag === TAG_CMD && payload.kind === "task") {
-        await runTaskAsync(payload.task | 0);
+        await dispatchTaskMsg(payload.task | 0, taggers);
       }
     },
   };

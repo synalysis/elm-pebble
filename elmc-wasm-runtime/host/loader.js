@@ -4,8 +4,13 @@
 
 import { RC_SUCCESS, createRcRuntime } from "./rc_runtime.js";
 
-export function buildRuntimeImports({ manifestImports = [], immortalStrings = {}, constructorTags = {} }) {
-  const runtimeApi = createRcRuntime({ immortalStrings, constructorTags });
+export function buildRuntimeImports({
+  manifestImports = [],
+  immortalStrings = {},
+  constructorTags = {},
+  constructorArities = {},
+}) {
+  const runtimeApi = createRcRuntime({ immortalStrings, constructorTags, constructorArities });
 
   const imports = {
     retain: runtimeApi.buildImport("retain"),
@@ -116,6 +121,7 @@ export async function loadElmcWasm({
   closureCount = null,
   immortalStrings = {},
   constructorTags = {},
+  constructorArities = {},
 }) {
   const t0 = performance.now();
   const { module, compile_mode } = await compileWasmModule({ wasmBytes, wasmResponse });
@@ -139,6 +145,7 @@ export async function loadElmcWasm({
     manifestImports: importsList,
     immortalStrings,
     constructorTags,
+    constructorArities,
   });
 
   const tInst = performance.now();

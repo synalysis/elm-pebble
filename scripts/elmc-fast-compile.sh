@@ -44,7 +44,7 @@ opts = %{
   web: targets == [:wasm],
   entry_module: \"Main\",
   strip_dead_code: true,
-  wasm_strict: false,
+  wasm_strict: true,
   fast: true,
   ir_progress: true
 }

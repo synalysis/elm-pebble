@@ -410,17 +410,17 @@ defmodule Ide.Debugger.StepApply do
       "runtime_exec_error",
       target,
       message,
-      "core_ir",
+      "elmx",
       nil
     )
     |> Map.put(:last_execution_error, payload)
   end
 
   @spec execution_error_code(Types.execution_error()) :: String.t()
-  defp execution_error_code({:core_ir_execution_failed, reason}) when is_atom(reason),
+  defp execution_error_code({:elmx_execution_failed, reason}) when is_atom(reason),
     do: Atom.to_string(reason)
 
-  defp execution_error_code({:core_ir_execution_failed, reason}), do: inspect(reason, limit: 50)
+  defp execution_error_code({:elmx_execution_failed, reason}), do: inspect(reason, limit: 50)
 
   defp execution_error_code(reason), do: inspect(reason, limit: 50)
 end

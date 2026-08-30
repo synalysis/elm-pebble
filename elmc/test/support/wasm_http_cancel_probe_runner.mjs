@@ -65,6 +65,7 @@ const { helpers, callExport } = await loadElmcWasm({
   manifestClosures: manifest.closures || [],
   closureCount: manifest.closure_count ?? null,
   immortalStrings: manifest.immortal_strings || {},
+  constructorTags: manifest.constructor_tags || {},
 });
 
 const { rc, value: programHandle } = callExport("elmc_fn_Main_main", []);

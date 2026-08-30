@@ -52,21 +52,28 @@ defmodule Elmc.Backend.Plan.Lower.Platform.Web do
     "keyedNodeNS" => 10,
     "lazy2" => 11,
     "lazy3" => 12,
-    "lazy4" => 13
+    "lazy4" => 13,
+    "lazy5" => 16,
+    "lazy6" => 17,
+    "lazy7" => 18,
+    "lazy8" => 19,
+    "attributeNS" => 20,
+    "mapAttribute" => 21
   }
 
   @html_special_fns ~w(text map node)
 
   @html_event_targets %{
     {"Html.Events", "onClick"} => "click",
-    {"Html.Events", "onInput"} => "input",
-    {"Html.Events", "onSubmit"} => "submit",
-    {"Html.Events", "onCheck"} => "change",
     {"Html.Events", "onFocus"} => "focus",
     {"Html.Events", "onBlur"} => "blur",
     {"Html.Events", "onMouseDown"} => "mousedown",
     {"Html.Events", "onMouseUp"} => "mouseup",
     {"Html.Events", "onMouseMove"} => "mousemove",
+    {"Html.Events", "onMouseOver"} => "mouseover",
+    {"Html.Events", "onMouseEnter"} => "mouseenter",
+    {"Html.Events", "onMouseLeave"} => "mouseleave",
+    {"Html.Events", "onMouseOut"} => "mouseout",
     {"Html.Events", "onKeyDown"} => "keydown",
     {"Html.Events", "onKeyUp"} => "keyup",
     {"Html.Events", "onDoubleClick"} => "dblclick",
@@ -91,9 +98,20 @@ defmodule Elmc.Backend.Plan.Lower.Platform.Web do
     {"VirtualDom", "lazy3"} => 12,
     {"Html.Lazy", "lazy4"} => 13,
     {"VirtualDom", "lazy4"} => 13,
+    {"Html.Lazy", "lazy5"} => 16,
+    {"VirtualDom", "lazy5"} => 16,
+    {"Html.Lazy", "lazy6"} => 17,
+    {"VirtualDom", "lazy6"} => 17,
+    {"Html.Lazy", "lazy7"} => 18,
+    {"VirtualDom", "lazy7"} => 18,
+    {"Html.Lazy", "lazy8"} => 19,
+    {"VirtualDom", "lazy8"} => 19,
+    {"VirtualDom", "attributeNS"} => 20,
+    {"Elm.Kernel.VirtualDom", "attributeNS"} => 20,
     {"Html.Keyed", "node"} => 9,
     {"VirtualDom", "keyedNode"} => 9,
     {"Elm.Kernel.VirtualDom", "keyedNode"} => 9,
+    {"VirtualDom", "keyedNodeNS"} => 10,
     {"Elm.Kernel.VirtualDom", "keyedNodeNS"} => 10
   }
 
@@ -111,7 +129,10 @@ defmodule Elmc.Backend.Plan.Lower.Platform.Web do
     "focus" => 9,
     "back" => 10,
     "forward" => 11,
-    "setTitle" => 12
+    "setTitle" => 12,
+    "reload" => 14,
+    "reloadAndSkipCache" => 15,
+    "go" => 16
   }
 
   @bytes_kernel_kinds %{
@@ -123,13 +144,30 @@ defmodule Elmc.Backend.Plan.Lower.Platform.Web do
     "decodeFailure" => 6,
     "encode" => 8,
     "read_f64" => 9,
-    "read_string" => 10
+    "read_string" => 10,
+    "read_i8" => 11,
+    "read_i16" => 12,
+    "read_i32" => 13,
+    "read_u16" => 14,
+    "read_f32" => 15,
+    "getHostEndianness" => 16,
+    "getStringWidth" => 17,
+    "write_i8" => 18,
+    "write_i16" => 19,
+    "write_i32" => 20,
+    "write_u8" => 21,
+    "write_u16" => 22,
+    "write_u32" => 23,
+    "write_f32" => 24,
+    "write_f64" => 25,
+    "write_bytes" => 26,
+    "write_string" => 27
   }
 
   # Elm.Kernel.Bytes read_* and decodeFailure are decoder step functions:
   # `Bytes -> Int -> (Int, a)`. They must not run `bytes_cmd` when the decoder
   # is constructed — only when invoked during `Bytes.Decode.decode`.
-  @bytes_read_step_kinds MapSet.new([2, 3, 4, 6, 9, 10])
+  @bytes_read_step_kinds MapSet.new([2, 3, 4, 6, 9, 10, 11, 12, 13, 14, 15])
 
   @json_kernel_kinds %{
     "wrap" => 1,
@@ -175,7 +213,13 @@ defmodule Elmc.Backend.Plan.Lower.Platform.Web do
     {"Html.Attributes", "rel"} => "rel",
     {"Html.Attributes", "alt"} => "alt",
     {"Html.Attributes", "src"} => "src",
-    {"Html.Attributes", "type_"} => "type"
+    {"Html.Attributes", "type_"} => "type",
+    {"Html.Attributes", "name"} => "name",
+    {"Html.Attributes", "placeholder"} => "placeholder",
+    {"Html.Attributes", "download"} => "download",
+    {"Html.Attributes", "action"} => "action",
+    {"Html.Attributes", "method"} => "method",
+    {"Html.Attributes", "for"} => "for"
   }
 
   @spec rewrite_html_tag_function_decl(String.t(), map(), keyword() | map()) :: map()
@@ -203,18 +247,62 @@ defmodule Elmc.Backend.Plan.Lower.Platform.Web do
 
   def rewrite_html_tag_function_decl(_module, decl, _opts), do: decl
 
+  # Official elm/bytes: `width` / `getStringWidth` are kernel aliases. A 0-arg
+  # `qualified_ref` to `Elm.Kernel.Bytes.*` has no Elm decl, so plan lower
+  # would stub the Bytes wrapper under wasm_strict. Eta-expand to the kernel.
+  @bytes_public_unary ["width", "getStringWidth"]
+
+  @spec rewrite_bytes_value_function_decl(String.t(), map(), keyword() | map()) :: map()
+  defp rewrite_bytes_value_function_decl("Bytes", %{name: name} = decl, opts)
+       when name in @bytes_public_unary do
+    if web_target?(opts) do
+      case List.wrap(Map.get(decl, :args, [])) do
+        [] ->
+          Map.put(decl, :expr, %{
+            op: :lambda,
+            args: ["value"],
+            body: bytes_kernel_unary_call(name, "value")
+          })
+
+        [param] when is_binary(param) ->
+          Map.put(decl, :expr, bytes_kernel_unary_call(name, param))
+
+        _ ->
+          decl
+      end
+    else
+      decl
+    end
+  end
+
+  defp rewrite_bytes_value_function_decl(_module, decl, _opts), do: decl
+
+  @spec bytes_kernel_unary_call(String.t(), String.t()) :: map()
+  defp bytes_kernel_unary_call(name, param) when is_binary(name) and is_binary(param) do
+    %{
+      op: :qualified_call,
+      target: "Elm.Kernel.Bytes.#{name}",
+      args: [%{op: :var, name: param}]
+    }
+  end
+
   @html_map_modules MapSet.new(["Html", "VirtualDom", "Elm.Kernel.VirtualDom"])
   @html_map_param_names ["func", "node"]
 
   @spec rewrite_html_map_function_decl(String.t(), map(), keyword() | map()) :: map()
   def rewrite_html_map_function_decl(module, decl, opts \\ [])
 
-  def rewrite_html_map_function_decl(module, %{name: "map"} = decl, opts) do
+  def rewrite_html_map_function_decl(module, %{name: name} = decl, opts)
+      when name in ["map", "mapAttribute"] do
     cond do
-      web_target?(opts) and MapSet.member?(@html_map_modules, module) and html_map_alias_decl?(decl) ->
+      web_target?(opts) and map_attribute_decl?(module, name) ->
+        rewrite_html_map_attribute_decl(decl)
+
+      web_target?(opts) and name == "map" and MapSet.member?(@html_map_modules, module) and
+          html_map_alias_decl?(decl) ->
         rewrite_html_map_two_arg_decl(decl)
 
-      web_target?(opts) and match?([_, _], Map.get(decl, :args, [])) and
+      web_target?(opts) and name == "map" and match?([_, _], Map.get(decl, :args, [])) and
           MapSet.member?(@html_map_modules, module) ->
         rewrite_html_map_two_arg_decl(decl)
 
@@ -237,6 +325,33 @@ defmodule Elmc.Backend.Plan.Lower.Platform.Web do
     else
       _ -> decl
     end
+  end
+
+  defp map_attribute_decl?(module, "mapAttribute")
+       when module in ["VirtualDom", "Elm.Kernel.VirtualDom"],
+       do: true
+
+  defp map_attribute_decl?("Html.Attributes", "map"), do: true
+  defp map_attribute_decl?(_, _), do: false
+
+  @html_map_attribute_param_names ["func", "attr"]
+
+  defp rewrite_html_map_attribute_decl(decl) do
+    param_names =
+      case Map.get(decl, :args, []) do
+        [fn_name, attr_name] -> [fn_name, attr_name]
+        _ -> @html_map_attribute_param_names
+      end
+
+    [fn_name, attr_name] = param_names
+
+    decl
+    |> Map.put(:args, param_names)
+    |> Map.put(:expr, %{
+      op: :html_cmd,
+      kind: %{op: :int_literal, value: 21},
+      params: [%{op: :var, name: fn_name}, %{op: :var, name: attr_name}]
+    })
   end
 
   @spec rewrite_html_map_two_arg_decl(Types.decl()) :: Types.decl()
@@ -276,19 +391,36 @@ defmodule Elmc.Backend.Plan.Lower.Platform.Web do
   @spec rewrite_html_lazy_function_decl(String.t(), map(), keyword() | map()) :: map()
   def rewrite_html_lazy_function_decl(module, decl, opts \\ [])
 
-  def rewrite_html_lazy_function_decl(module, %{name: "lazy"} = decl, opts)
+  @lazy_decl_kinds %{
+    "lazy" => {6, ["fn", "arg"]},
+    "lazy2" => {11, ["fn", "a", "b"]},
+    "lazy3" => {12, ["fn", "a", "b", "c"]},
+    "lazy4" => {13, ["fn", "a", "b", "c", "d"]},
+    "lazy5" => {16, ["fn", "a", "b", "c", "d", "e"]},
+    "lazy6" => {17, ["fn", "a", "b", "c", "d", "e", "f"]},
+    "lazy7" => {18, ["fn", "a", "b", "c", "d", "e", "f", "g"]},
+    "lazy8" => {19, ["fn", "a", "b", "c", "d", "e", "f", "g", "h"]}
+  }
+
+  def rewrite_html_lazy_function_decl(module, %{name: name} = decl, opts)
       when module in ["Html.Lazy", "VirtualDom"] do
-    if web_target?(opts) do
-      Map.merge(decl, %{
-        args: ["fn", "arg"],
-        expr: %{
-          op: :html_cmd,
-          kind: %{op: :int_literal, value: 6},
-          params: [%{op: :var, name: "fn"}, %{op: :var, name: "arg"}]
-        }
-      })
-    else
-      decl
+    case Map.get(@lazy_decl_kinds, name) do
+      {kind, param_names} ->
+        if web_target?(opts) do
+          Map.merge(decl, %{
+            args: param_names,
+            expr: %{
+              op: :html_cmd,
+              kind: %{op: :int_literal, value: kind},
+              params: Enum.map(param_names, &%{op: :var, name: &1})
+            }
+          })
+        else
+          decl
+        end
+
+      nil ->
+        decl
     end
   end
 
@@ -296,7 +428,8 @@ defmodule Elmc.Backend.Plan.Lower.Platform.Web do
 
   @doc """
   Apply all web function-decl rewrites (tag helpers, Html.map, partial Html.map,
-  Html.lazy). Idempotent. Used when lowering a function *body*.
+  Html.lazy, official `Bytes.width` / `Bytes.getStringWidth` kernel aliases).
+  Idempotent. Used when lowering a function *body*.
   """
   @spec rewrite_function_decl(String.t(), map(), keyword() | map()) :: map()
   def rewrite_function_decl(module, decl, opts \\ []) when is_binary(module) and is_map(decl) do
@@ -305,6 +438,7 @@ defmodule Elmc.Backend.Plan.Lower.Platform.Web do
     |> then(&rewrite_html_map_function_decl(module, &1, opts))
     |> then(&rewrite_partial_html_map_function_decl(module, &1, opts))
     |> then(&rewrite_html_lazy_function_decl(module, &1, opts))
+    |> then(&rewrite_bytes_value_function_decl(module, &1, opts))
   end
 
   @doc """
@@ -400,7 +534,18 @@ defmodule Elmc.Backend.Plan.Lower.Platform.Web do
         key = Map.fetch!(@html_attr_aliases, {module, name})
         compile_html_attr([%{op: :string_literal, value: key}, value], ctx, b)
 
-      web_target?(opts) and module == "Html.Attributes" and name == "stringProperty" and
+      web_target?(opts) and map_attribute_decl?(module, name) and match?([_, _], args) ->
+        compile_html_cmd(
+          %{
+            op: :html_cmd,
+            kind: %{op: :int_literal, value: 21},
+            params: args
+          },
+          ctx,
+          b
+        )
+
+      web_target?(opts) and module == "Html.Attributes" and name in ["stringProperty", "property"] and
           match?([_, _], args) ->
         compile_html_property(args, ctx, b)
 
@@ -430,15 +575,31 @@ defmodule Elmc.Backend.Plan.Lower.Platform.Web do
 
       web_target?(opts) and module == "Svg.Attributes" and match?([_], args) ->
         [value] = args
-        key = virtual_dom_attribute_key(name)
-        compile_html_attr([%{op: :string_literal, value: key}, value], ctx, b)
+        compile_virtual_dom_attribute(name, value, ctx, b)
 
       # Unqualified attribute helpers (e.g. after incomplete import resolution):
       # if the callee name was defined as VirtualDom.attribute "…", use that key.
       web_target?(opts) and match?([_], args) and virtual_dom_attribute_call?(module, name, ctx) ->
         [value] = args
-        key = virtual_dom_attribute_key(name)
-        compile_html_attr([%{op: :string_literal, value: key}, value], ctx, b)
+        compile_virtual_dom_attribute(name, value, ctx, b)
+
+      web_target?(opts) and match?([_, _, _], args) and keyed_node_ns?(module, name) ->
+        [tag, attrs, children] = args
+
+        compile_html_cmd(
+          %{
+            op: :html_cmd,
+            kind: %{op: :int_literal, value: 10},
+            params: [
+              %{op: :string_literal, value: keyed_node_ns(module, name)},
+              tag,
+              attrs,
+              children
+            ]
+          },
+          ctx,
+          b
+        )
 
       web_target?(opts) and module == "Svg" and svg_element_tag?(name) and match?([_, _], args) ->
         [attrs, children] = args
@@ -533,17 +694,45 @@ defmodule Elmc.Backend.Plan.Lower.Platform.Web do
 
       web_target?(opts) and module == "Elm.Kernel.VirtualDom" and name == "property" and
           match?([_, _], args) ->
-        compile_html_attr(args, ctx, b)
+        compile_html_property(args, ctx, b)
 
       web_target?(opts) and module == "Elm.Kernel.VirtualDom" and name == "style" and
           match?([_, _], args) ->
         compile_html_style(args, ctx, b)
+
+      web_target?(opts) and module in ["VirtualDom", "Elm.Kernel.VirtualDom"] and
+          name == "attributeNS" and match?([_, _, _], args) ->
+        compile_html_cmd(
+          %{
+            op: :html_cmd,
+            kind: %{op: :int_literal, value: 20},
+            params: args
+          },
+          ctx,
+          b
+        )
+
+      web_target?(opts) and module in ["VirtualDom", "Elm.Kernel.VirtualDom"] and
+          name == "keyedNodeNS" and match?([_, _, _, _], args) ->
+        compile_html_cmd(
+          %{
+            op: :html_cmd,
+            kind: %{op: :int_literal, value: 10},
+            params: args
+          },
+          ctx,
+          b
+        )
 
       web_target?(opts) and module == "Elm.Kernel.Browser" and is_list(args) ->
         compile_browser_cmd(name, args, ctx, b)
 
       web_target?(opts) and module == "Elm.Kernel.Json" and is_list(args) ->
         compile_json_kernel_call(name, args, ctx, b)
+
+      web_target?(opts) and module == "Bytes" and name in ["width", "getStringWidth"] and
+          match?([_], args) ->
+        compile_bytes_kernel_call(name, args, ctx, b)
 
       web_target?(opts) and module == "Elm.Kernel.Bytes" and is_list(args) ->
         compile_bytes_kernel_call(name, args, ctx, b)
@@ -617,6 +806,46 @@ defmodule Elmc.Backend.Plan.Lower.Platform.Web do
     case Process.get(:elmc_svg_attribute_dom_names, %{}) do
       %{^name => key} when is_binary(key) -> key
       _ -> name
+    end
+  end
+
+  defp keyed_node_ns?(module, name), do: is_binary(keyed_node_ns(module, name))
+
+  defp keyed_node_ns(module, name) when is_binary(module) and is_binary(name) do
+    case Process.get(:elmc_virtual_dom_keyed_node_ns, %{}) do
+      %{ {^module, ^name} => ns} when is_binary(ns) ->
+        ns
+
+      _ when module == "Svg.Keyed" and name == "node" ->
+        # Official elm/svg: `node = VirtualDom.keyedNodeNS svgNs`
+        "http://www.w3.org/2000/svg"
+
+      _ ->
+        nil
+    end
+  end
+
+  defp compile_virtual_dom_attribute(name, value, ctx, b)
+       when is_binary(name) and is_map(value) do
+    case Process.get(:elmc_virtual_dom_attribute_ns, %{}) do
+      %{^name => {ns, local}} when is_binary(ns) and is_binary(local) ->
+        compile_html_cmd(
+          %{
+            op: :html_cmd,
+            kind: %{op: :int_literal, value: 20},
+            params: [
+              %{op: :string_literal, value: ns},
+              %{op: :string_literal, value: local},
+              value
+            ]
+          },
+          ctx,
+          b
+        )
+
+      _ ->
+        key = virtual_dom_attribute_key(name)
+        compile_html_attr([%{op: :string_literal, value: key}, value], ctx, b)
     end
   end
 
@@ -747,7 +976,12 @@ defmodule Elmc.Backend.Plan.Lower.Platform.Web do
 
   @parser_kernel_kinds %{
     "isSubString" => 1,
-    "isSubChar" => 2
+    "isSubChar" => 2,
+    "isAsciiCode" => 3,
+    "chompBase10" => 4,
+    "consumeBase" => 5,
+    "consumeBase16" => 6,
+    "findSubString" => 7
   }
 
   @spec compile_parser_cmd(Types.ir_expr(), Context.t(), Builder.t()) ::
@@ -894,7 +1128,8 @@ defmodule Elmc.Backend.Plan.Lower.Platform.Web do
         Builder.fresh_reg(b1)
       end
 
-    effects = borrow_only_platform_effects(dest, param_regs)
+    {param_regs, b_dest} = Builder.dup_named_locals_for_consume(b_dest, param_regs)
+    effects = consume_platform_effects(dest, param_regs)
 
     {_, b2} =
       Builder.emit(b_dest, op, %{
@@ -919,13 +1154,13 @@ defmodule Elmc.Backend.Plan.Lower.Platform.Web do
     end
   end
 
-  @spec borrow_only_platform_effects(Types.reg() | :fn_out, [Types.reg()]) :: map()
+  @spec consume_platform_effects(Types.reg() | :fn_out, [Types.reg()]) :: map()
 
-  defp borrow_only_platform_effects(dest, param_regs) do
+  defp consume_platform_effects(dest, param_regs) do
     if is_integer(dest) do
-      Types.fallible_effects(dest, param_regs, [])
+      Types.fallible_effects(dest, [], param_regs)
     else
-      %{produces: nil, consumes: [], borrows: param_regs, fallible: true}
+      %{produces: nil, consumes: param_regs, borrows: [], fallible: true}
     end
   end
 

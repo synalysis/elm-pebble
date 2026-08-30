@@ -4,10 +4,9 @@ defmodule Elmc.Backend.Wasm.ImportSignatures do
   alias Elmc.Backend.Wasm.Types, as: WasmTypes
 
   # elm-explorations/linear-algebra Elm.Kernel.MJS kernels (Vector2/Vector3/
-  # Vector4/Matrix4). Arities are fixed by the upstream MJS.js source, not by
-  # observed call sites, so every runtime.mjs_<name> import gets a canonical
-  # minimum here — see Elmc.Backend.Wasm.StubFunctions.lower_stub/1.
-  @mjs_arities %{
+  # Vector4/Matrix4). Values are *value-argument* counts from upstream MJS.js
+  # (no outPtr). Import arity is value + 1 (RC out-pointer ABI).
+  @mjs_value_arities %{
     "runtime.mjs_v2" => 2,
     "runtime.mjs_v2getX" => 1,
     "runtime.mjs_v2getY" => 1,
@@ -96,6 +95,13 @@ defmodule Elmc.Backend.Wasm.ImportSignatures do
     "runtime.mjs_m4x4makeBasis" => 3
   }
 
+  @mjs_arities Map.new(@mjs_value_arities, fn {name, n} -> {name, n + 1} end)
+
+  @spec mjs_kernel_value_arities() :: %{String.t() => non_neg_integer()}
+  def mjs_kernel_value_arities do
+    Map.new(@mjs_value_arities, fn {"runtime.mjs_" <> name, n} -> {name, n} end)
+  end
+
   @core_arities Map.merge(
                   %{
                     # outPtr + handle (matches host retain(outPtr, handlePtr)).
@@ -109,10 +115,10 @@ defmodule Elmc.Backend.Wasm.ImportSignatures do
                     "runtime.as_int" => 1,
                     "runtime.as_bool" => 1,
                     "runtime.union_tag_as_int" => 1,
-                    "runtime.float_interpolate_from" => 3,
+                    "runtime.float_interpolate_from" => 4,
                     "runtime.triangular_mesh_grid_face_indices" => 6,
-                    "runtime.webgl_entity" => 5,
-                    "runtime.webgl_to_html" => 3
+                    "runtime.webgl_entity" => 6,
+                    "runtime.webgl_to_html" => 4
                   },
                   @mjs_arities
                 )
@@ -123,9 +129,12 @@ defmodule Elmc.Backend.Wasm.ImportSignatures do
     make_closure: 4,
     call_closure: 4,
     new_int: 2,
+    new_ctor_int: 2,
     new_bool: 2,
     new_float: 2,
     new_string: 2,
+    record_new_named: 2,
+    record_new_values_ints_named: 2,
     list_nil: 1,
     maybe_nothing: 1,
     array_empty: 1,

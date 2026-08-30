@@ -464,7 +464,7 @@ defmodule Ide.Debugger.DebuggerContractSnapshot do
       )
 
     message = "init"
-    reason = {:core_ir_execution_failed, detail}
+    reason = {:elmx_execution_failed, detail}
 
     state
     |> ctx.append_event.(
@@ -477,7 +477,7 @@ defmodule Ide.Debugger.DebuggerContractSnapshot do
         "source_root" => source_root_for_target(target)
       }
     )
-    |> ctx.append_debugger_event.("runtime_exec_error", target, message, "core_ir", nil)
+    |> ctx.append_debugger_event.("runtime_exec_error", target, message, "elmx", nil)
   end
 
   @spec init_execution_ok?(Types.step_executor_result() | Types.wire_map()) :: boolean()
@@ -636,14 +636,14 @@ defmodule Ide.Debugger.DebuggerContractSnapshot do
   end
 
   @spec execution_error_detail(Types.execution_error()) :: String.t()
-  defp execution_error_detail({:core_ir_execution_failed, {:missing_elmx_manifest, detail}})
+  defp execution_error_detail({:elmx_execution_failed, {:missing_elmx_manifest, detail}})
        when is_binary(detail),
        do: detail
 
-  defp execution_error_detail({:core_ir_execution_failed, :missing_elmx_manifest}),
+  defp execution_error_detail({:elmx_execution_failed, :missing_elmx_manifest}),
     do: "missing elmx manifest — recompile watch/phone and reload the debugger"
 
-  defp execution_error_detail({:core_ir_execution_failed, reason}),
+  defp execution_error_detail({:elmx_execution_failed, reason}),
     do: execution_error_detail(reason)
 
   defp execution_error_detail(reason), do: inspect(reason, limit: 200)
