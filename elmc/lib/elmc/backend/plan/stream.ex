@@ -46,6 +46,12 @@ defmodule Elmc.Backend.Plan.Stream do
       when is_list(items),
       do: true
 
+  def eligible_expr?(%{op: :tuple3, a: a, b: b, c: c}, decl_map, module, seen, locals),
+    do:
+      eligible_expr?(a, decl_map, module, seen, locals) and
+        eligible_expr?(b, decl_map, module, seen, locals) and
+        eligible_expr?(c, decl_map, module, seen, locals)
+
   def eligible_expr?(%{op: :var, name: name}, _decl_map, _module, _seen, locals)
       when is_binary(name),
       do: MapSet.member?(locals, name)
@@ -246,6 +252,12 @@ defmodule Elmc.Backend.Plan.Stream do
     StaticDrawTable.table_shape?(items) or
       Enum.any?(items, &pipeline_expr?(&1, decl_map, module, seen))
   end
+
+  defp pipeline_expr?(%{op: :tuple3, a: a, b: b, c: c}, decl_map, module, seen),
+    do:
+      pipeline_expr?(a, decl_map, module, seen) or
+        pipeline_expr?(b, decl_map, module, seen) or
+        pipeline_expr?(c, decl_map, module, seen)
 
   defp pipeline_expr?(%{op: :if, then_expr: then_expr, else_expr: else_expr}, decl_map, module, seen),
     do:

@@ -46,35 +46,28 @@ defmodule Elmx.TeaPlaybook.Samples do
   end
 
   @doc """
-  Wire sample for a `PhoneToWatch` constructor, or `nil` when unsupported.
+  Wire sample for a `PhoneToWatch` constructor.
 
   `type_args` are the declared Elm type tokens (used for arity / type-token fallback).
+  Every declared PhoneToWatch ctor in shipped templates has a sample.
   """
-  # Empty: every declared PhoneToWatch ctor in shipped templates has a sample.
-  # Add a name here (and skip known_phone_args) when a ctor must stay uninjected.
-  @unsupported_phone_ctors MapSet.new([])
-
-  @spec phone_sample(String.t(), [String.t()]) :: map() | nil
+  @spec phone_sample(String.t(), [String.t()]) :: map()
   def phone_sample(name, type_args \\ []) when is_binary(name) and is_list(type_args) do
-    if MapSet.member?(@unsupported_phone_ctors, name) do
-      nil
-    else
-      arity = length(type_args)
+    arity = length(type_args)
 
-      case known_phone_args(name, arity) do
-        wire_args when is_list(wire_args) ->
-          from_phone(name, wire_args)
+    case known_phone_args(name, arity) do
+      wire_args when is_list(wire_args) ->
+        from_phone(name, wire_args)
 
-        :from_types ->
-          from_phone(name, Enum.map(type_args, &sample_type_arg/1))
-      end
+      :from_types ->
+        from_phone(name, Enum.map(type_args, &sample_type_arg/1))
     end
   end
 
   @spec phone_sample_supported?(String.t(), [String.t()]) :: boolean()
   def phone_sample_supported?(name, type_args \\ [])
       when is_binary(name) and is_list(type_args) do
-    not MapSet.member?(@unsupported_phone_ctors, name)
+    true
   end
 
   @spec provide_sun() :: map()
@@ -98,12 +91,7 @@ defmodule Elmx.TeaPlaybook.Samples do
   @spec provide_tide() :: map()
   def provide_tide, do: phone_sample!("ProvideTide")
 
-  defp phone_sample!(name) do
-    case phone_sample(name) do
-      nil -> raise "missing TEA phone sample for #{name}"
-      sample -> sample
-    end
-  end
+  defp phone_sample!(name), do: phone_sample(name)
 
   # Explicit contract samples (constructor name from Types.elm). Prefer these over
   # type-token guesses when payloads must match app `case` expectations.

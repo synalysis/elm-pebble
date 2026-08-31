@@ -20,6 +20,7 @@ defmodule Elmc.Backend.CCodegen.Types do
 
   @type ir_collection_op ::
           :tuple2
+          | :tuple3
           | :list_literal
           | :tuple_second
           | :tuple_second_expr

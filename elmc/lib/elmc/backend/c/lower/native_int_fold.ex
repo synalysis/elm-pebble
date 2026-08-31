@@ -231,19 +231,31 @@ defmodule Elmc.Backend.C.Lower.NativeIntFold do
       trimmed == "" ->
         trimmed
 
-      # `(a >= b) ? a : b` starts with `(` but `?:` still needs an outer wrap for
-      # use under `-`/`+` (ternary binds looser than arithmetic).
-      String.contains?(trimmed, "?") ->
-        if outer_parens_cover_all?(trimmed), do: trimmed, else: "(#{trimmed})"
-
-      String.starts_with?(trimmed, "(") or String.starts_with?(trimmed, "elmc_int_idiv(") or
-          String.starts_with?(trimmed, "elmc_basics_") or String.match?(trimmed, ~r/^-?\d+$/) or
-          String.match?(trimmed, ~r/^plan_native_int_\d+$/) or
-          String.match?(trimmed, ~r/^[a-zA-Z_][\w]*$/) ->
+      atomic_c_int_expr?(trimmed) ->
         trimmed
 
       true ->
         "(#{trimmed})"
+    end
+  end
+
+  # `elmc_int_idiv(n, 4) * 4 + 9` starts with a call but is not atomic: as the
+  # RHS of `-` it must be wrapped or C parses `a - idiv * 4 + 9`.
+  defp atomic_c_int_expr?(expr) do
+    String.match?(expr, ~r/^-?\d+$/) or
+      String.match?(expr, ~r/^[A-Za-z_][A-Za-z0-9_]*$/) or
+      outer_parens_cover_all?(expr) or
+      outer_call_covers_all?(expr)
+  end
+
+  defp outer_call_covers_all?(expr) do
+    case Regex.run(~r/\A[A-Za-z_][A-Za-z0-9_]*\(/, expr) do
+      [prefix] ->
+        from_paren = byte_size(prefix) - 1
+        outer_parens_cover_all?(binary_part(expr, from_paren, byte_size(expr) - from_paren))
+
+      _ ->
+        false
     end
   end
 

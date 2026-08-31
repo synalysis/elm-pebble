@@ -30,6 +30,7 @@ defmodule ElmEx.CoreIR.Types.Expr do
           | record_update()
           | list_literal()
           | tuple2()
+          | tuple3()
           | tuple_expr()
           | tuple_first_expr()
           | tuple_second_expr()
@@ -144,6 +145,14 @@ defmodule ElmEx.CoreIR.Types.Expr do
           required(:left) => expr_child(),
           required(:right) => expr_child()
         }
+
+  @type tuple3 :: %{
+          required(:op) => op_name(),
+          required(:a) => expr_child(),
+          required(:b) => expr_child(),
+          required(:c) => expr_child()
+        }
+
   @type tuple_expr :: %{required(:op) => op_name(), optional(:elements) => arg_list()}
 
   @type tuple_first_expr :: %{required(:op) => op_name(), required(:arg) => expr_child()}
@@ -246,6 +255,7 @@ defmodule ElmEx.CoreIR.Types.Expr do
       "record_update" => ["base", "fields"],
       "list_literal" => [],
       "tuple2" => ["left", "right"],
+      "tuple3" => ["a", "b", "c"],
       "tuple" => [],
       "tuple_first_expr" => ["arg"],
       "tuple_second_expr" => ["arg"],

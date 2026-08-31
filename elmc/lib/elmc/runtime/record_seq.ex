@@ -1,8 +1,8 @@
 defmodule Elmc.Runtime.RecordSeq do
   @moduledoc false
 
-  @spec implementation() :: String.t()
-  def implementation do
+  @spec walk_implementation() :: String.t()
+  def walk_implementation do
     """
     static ElmcRecordSeqPayload *elmc_record_seq_payload(ElmcValue *list) {
       if (!list || list->tag != ELMC_TAG_RECORD_SEQ || !list->payload) return NULL;
@@ -23,11 +23,6 @@ defmodule Elmc.Runtime.RecordSeq do
       return 1;
     }
 
-    int elmc_record_seq_is_empty(ElmcValue *list) {
-      ElmcRecordSeqPayload *payload = elmc_record_seq_payload(list);
-      return !payload || payload->length <= 0;
-    }
-
     int elmc_record_seq_length(ElmcValue *list) {
       ElmcRecordSeqPayload *payload = elmc_record_seq_payload(list);
       return payload ? payload->length : 0;
@@ -37,6 +32,18 @@ defmodule Elmc.Runtime.RecordSeq do
       ElmcRecordSeqPayload *payload = elmc_record_seq_payload(list);
       if (!payload || index < 0 || index >= payload->length) return elmc_int_zero();
       return elmc_retain(payload->items[index]);
+    }
+    """
+  end
+
+  @spec implementation() :: String.t()
+  def implementation do
+    walk_implementation() <>
+      """
+
+    int elmc_record_seq_is_empty(ElmcValue *list) {
+      ElmcRecordSeqPayload *payload = elmc_record_seq_payload(list);
+      return !payload || payload->length <= 0;
     }
 
     static RC elmc_record_seq_alloc_copy(ElmcValue **out, ElmcValue **items, int count) {

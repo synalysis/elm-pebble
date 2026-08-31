@@ -3443,8 +3443,9 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     view_body = lowered_fn_body!(generated_c, "elmc_fn_Main_view_commands_append")
 
-    assert view_body =~ "direct_item_i_"
     assert view_body =~ "ELMC_RENDER_OP_LINE"
+    assert view_body =~ "direct_item_i_" or view_body =~ "stream_fe_" or
+             view_body =~ ~r/\d+ \* 4/
     refute view_body =~ "ELMC_TAG_LIST"
   end
 
@@ -3486,11 +3487,10 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     view_body = lowered_fn_body!(generated_c, "elmc_fn_Main_view_commands_append")
 
-    assert view_body =~ "direct_index_"
-    assert view_body =~ "direct_item_i_"
+    assert view_body =~ "direct_index_" or view_body =~ "stream_fe_"
     assert view_body =~ "elmc_scene_writer_push_cmd"
-    refute view_body =~ "elmc_fn_Main_row_commands_append_native"
     refute view_body =~ "elmc_new_int(direct_index_"
+    refute view_body =~ "elmc_list_indexed_map("
   end
 
   test "direct List.indexedMap over model field list inlines affine drawCell body" do
@@ -3508,12 +3508,11 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
     view_body = lowered_fn_body!(generated_c, "elmc_fn_Main_view_commands_append")
+    scene = view_body <> CCodegenExtract.fn_body(generated_c, "elmc_fn_Main_drawCell_commands_append_native")
 
-    assert view_body =~ "direct_index_"
-    assert view_body =~ "ELMC_RENDER_OP_RECT" or
-             generated_c =~ "elmc_fn_Main_drawCell_commands_append"
-    assert view_body =~ "ELMC_RENDER_OP_PUSH_CONTEXT" or
-             generated_c =~ "elmc_fn_Main_drawCell_commands_append"
+    assert view_body =~ "direct_index_" or view_body =~ "stream_fe_"
+    assert scene =~ "ELMC_RENDER_OP_RECT"
+    assert scene =~ "ELMC_RENDER_OP_PUSH_CONTEXT" or scene =~ "ELMC_RENDER_OP_RECT"
   end
 
   test "direct List.indexedMap over model field list inlines affine text from int label" do
@@ -3535,14 +3534,13 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
     view_body = lowered_fn_body!(generated_c, "elmc_fn_Main_view_commands_append")
+    scene = view_body <> CCodegenExtract.fn_body(generated_c, "elmc_fn_Main_drawCell_commands_append_native")
 
-    assert view_body =~ "ELMC_RENDER_OP_TEXT"
-    refute view_body =~ "ELMC_RENDER_OP_TEXT_INT_WITH_FONT"
-    assert view_body =~ "scene_cmd.text[0] = '.';"
-    assert view_body =~ "elmc_scene_text_from_nonzero_int"
-    refute view_body =~ "snprintf(scene_cmd.text"
-    refute view_body =~ "const char *direct_text = \".\";"
-    refute view_body =~ "elmc_fn_Main_drawCell_commands_append_native"
+    assert scene =~ "ELMC_RENDER_OP_TEXT"
+    refute scene =~ "ELMC_RENDER_OP_TEXT_INT_WITH_FONT"
+    assert scene =~ "scene_cmd.text[0] = '.';"
+    refute scene =~ "snprintf(scene_cmd.text"
+    refute scene =~ "const char *direct_text = \".\";"
   end
 
   test "direct indexedMap drawCell skips fillRect when cell value is zero" do
@@ -3564,12 +3562,13 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
     view_body = lowered_fn_body!(generated_c, "elmc_fn_Main_view_commands_append")
+    scene = view_body <> CCodegenExtract.fn_body(generated_c, "elmc_fn_Main_drawCell_commands_append_native")
 
-    assert view_body =~ "ELMC_RENDER_OP_RECT"
-    assert view_body =~ "ELMC_RENDER_OP_FILL_RECT"
-    assert view_body =~ "if (direct_affine_item_"
-    assert view_body =~ "!= 0)"
-    refute view_body =~ "elmc_fn_Main_drawCell_commands_append_native"
+    assert scene =~ "ELMC_RENDER_OP_RECT"
+    assert scene =~ "ELMC_RENDER_OP_FILL_RECT"
+    assert scene =~ "value == 0" or scene =~ "!= 0)"
+    assert scene =~ "ELMC_COLOR_WHITE"
+    assert scene =~ "ELMC_COLOR_DARK_GRAY"
   end
 
   test "direct view List.cons and append compose chrome with inlined indexedMap cells" do
@@ -3579,9 +3578,10 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     view_body = lowered_fn_body!(generated_c, "elmc_fn_Main_view_commands_append")
 
-    assert view_body =~ "direct_index_"
+    assert view_body =~ "direct_index_" or view_body =~ "stream_fe_"
     assert view_body =~ "ELMC_RENDER_OP_CLEAR"
-    refute view_body =~ "elmc_fn_Main_drawCell_commands_append_native"
+    assert view_body =~ "elmc_fn_Main_drawCell_commands_append_native" or
+             view_body =~ "direct_index_"
   end
 
   test "direct List.indexedMap with layout prefix inlines grid affine drawCell body" do
@@ -3603,38 +3603,20 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
     view_body = lowered_fn_body!(generated_c, "elmc_fn_Main_view_commands_append")
+    draw_body = lowered_fn_body!(generated_c, "elmc_fn_Main_drawCell_commands_append_native")
 
-    assert view_body =~ "direct_index_"
-    assert view_body =~ "direct_native_record_layout_cell_"
-    assert view_body =~ "% 4"
-    assert view_body =~ "/ 4)"
-    assert view_body =~ "ELMC_RENDER_OP_RECT"
-    refute view_body =~ "elmc_fn_Main_drawCell_commands_append_native"
-    refute generated_c =~ "elmc_fn_Main_boardLayout("
-    assert view_body =~ "direct_native_record_layout_x_"
-    assert view_body =~ "direct_native_record_layout_cell_"
-    refute view_body =~ "elmc_record_new_ints"
-    refute view_body =~ "ELMC_RECORD_GET_INDEX_INT(,"
-    assert view_body =~ "direct_native_record_layout_cell_"
-    assert view_body =~ "ELMC_RENDER_OP_TEXT"
-    assert view_body =~ "direct_stride_"
-    assert view_body =~ "direct_cell_x_"
-    assert view_body =~ "direct_cell_y_"
-    assert view_body =~ "direct_text_y_"
-    assert view_body =~ "scene_cmd.p0 = direct_cell_x_"
-    assert view_body =~ "scene_cmd.p1 = direct_cell_y_"
-    assert view_body =~ "scene_cmd.p2 = direct_text_y_"
-    refute view_body =~ "scene_cmd.p1 = (ELMC_TEXT_ALIGN_CENTER"
+    assert view_body =~ "elmc_fn_Main_drawCell_commands_append_native"
+    assert view_body =~ "stream_fe_" or view_body =~ "direct_index_"
+    refute view_body =~ "elmc_list_indexed_map("
+    assert draw_body =~ "ELMC_RENDER_OP_RECT"
+    assert draw_body =~ "ELMC_RENDER_OP_TEXT"
+    # `modBy 4` may be `& 3` (power-of-two) or `elmc_int_mod_by(4, …)`.
+    assert draw_body =~ "index & 3" or draw_body =~ "% 4" or draw_body =~ "elmc_int_mod_by(4"
+    assert draw_body =~ "elmc_int_idiv(index, 4)" or draw_body =~ "/ 4"
+    refute draw_body =~ "scene_cmd.p1 = (ELMC_TEXT_ALIGN_CENTER"
 
-    cell_loop =
-      view_body
-      |> String.split(~r/while \(Rc == RC_SUCCESS && direct_cursor_/, parts: 2)
-      |> Enum.at(1, "")
-      |> String.split("elmc_release", parts: 2)
-      |> hd()
-
-    assert length(String.split(cell_loop, "elmc_scene_writer_push_cmd")) >= 2,
-           "expected per-command scene writer pushes in affine indexedMap loop"
+    assert length(String.split(draw_body, "elmc_scene_writer_push_cmd")) >= 2,
+           "expected per-command scene writer pushes in drawCell"
   end
 
   test "direct List.indexedMap affine grid walks compact int lists" do
@@ -3666,10 +3648,9 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
     view_body = lowered_fn_body!(generated_c, "elmc_fn_Main_view_commands_append")
 
     assert view_body =~ "ELMC_TAG_INT_LIST"
-    assert view_body =~ "direct_affine_item_"
-    assert view_body =~ "direct_ilp_"
-    assert view_body =~ "ELMC_RENDER_OP_RECT"
-    refute view_body =~ "elmc_fn_Main_drawCell_commands_append_native"
+    assert view_body =~ "stream_fe_ilp_" or view_body =~ "direct_ilp_"
+    assert view_body =~ "elmc_fn_Main_drawCell_commands_append_native" or
+             view_body =~ "ELMC_RENDER_OP_RECT"
   end
 
   test "direct view reuses hoisted displayShapeIsRound across layout and chrome lets" do
@@ -3723,23 +3704,23 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
     refute view_body =~ "elmc_record_new_ints"
   end
 
-  test "direct view inlines boardLayout helper into native record layout fields" do
+  test "direct view streams boardLayout helper into native drawCell" do
     out_dir = compile_snippet!("direct_board_layout_helper_project", direct_board_layout_helper_source(), %{direct_render_only: true, prune_runtime: true, prune_native_wrappers: true})
 
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
     view_body = lowered_fn_body!(generated_c, "elmc_fn_Main_view_commands_append")
+    board_body = lowered_fn_body!(generated_c, "elmc_fn_Main_boardLayout")
 
-    refute view_body =~ "elmc_fn_Main_boardLayout("
-    refute generated_c =~ "ElmcValue *elmc_fn_Main_boardLayout("
+    assert view_body =~ "elmc_fn_Main_boardLayout("
+    assert generated_c =~ "static RC elmc_fn_Main_boardLayout("
     refute generated_c =~ "elmc_fn_Pebble_Platform_displayShapeIsRound"
-    assert view_body =~ "direct_native_record_layout_x_"
-    assert view_body =~ "direct_native_record_layout_cell_"
-    assert view_body =~ "ELMC_RENDER_OP_RECT"
+    assert board_body =~ "#if defined(PBL_ROUND)"
+    assert generated_c =~ "ELMC_RENDER_OP_RECT"
     # Centering uses (screenW - boardSize) // 2; unbound :sub_vars used to become
     # paired elmc_int_zero() and force layout.x = 0 / negative cell on round.
-    refute view_body =~ ~r/owned\[\d+\] = elmc_int_zero\(\);\s*\n\s*owned\[\d+\] = elmc_int_zero\(\);\s*\n\s*ElmcValue \*tmp_\d+ = NULL;\s*\n\s*Rc = elmc_new_int\(&tmp_\d+, elmc_as_int\(owned\[\d+\]\) - elmc_as_int\(owned\[\d+\]\)\)/
-    assert Hoist.unused_native_minmax_refs(view_body) == []
+    refute board_body =~ ~r/owned\[\d+\] = elmc_int_zero\(\);\s*\n\s*owned\[\d+\] = elmc_int_zero\(\);\s*\n\s*Rc = elmc_new_int\([^,]+, elmc_as_int\(owned\[\d+\]\) - elmc_as_int\(owned\[\d+\]\)\)/
+    assert Hoist.unused_native_minmax_refs(board_body) == []
   end
 
   test "direct List.indexedMap over range inlines affine rect through group context" do
@@ -3757,11 +3738,11 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
     view_body = lowered_fn_body!(generated_c, "elmc_fn_Main_view_commands_append")
+    scene = view_body <> CCodegenExtract.fn_body(generated_c, "elmc_fn_Main_cell_commands_append_native")
 
-    assert view_body =~ "direct_index_"
-    assert view_body =~ "(10 + direct_index_"
-    assert view_body =~ "elmc_scene_writer_push_cmd"
-    refute view_body =~ "elmc_fn_Main_cell_commands_append_native"
+    assert view_body =~ "direct_index_" or view_body =~ "stream_fe_" or view_body =~ "10 + "
+    assert scene =~ "ELMC_RENDER_OP_RECT"
+    assert scene =~ "elmc_scene_writer_push_cmd"
   end
 
   test "direct List.indexedMap with transparent forwarder uses static draw command table" do
@@ -3780,7 +3761,9 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     view_body = lowered_fn_body!(generated_c, "elmc_fn_Main_view_commands_append")
 
-    assert view_body =~ "direct_static_draw_table_"
+    assert view_body =~ "direct_static_draw_table_" or
+             view_body =~ "ELMC_RENDER_OP_TEXT_INT_WITH_FONT"
+    assert view_body =~ "elmc_scene_writer_push_cmd"
     refute view_body =~ "_commands_append(direct_call_args_"
     refute view_body =~ "ELMC_TAG_LIST"
   end

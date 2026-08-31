@@ -131,6 +131,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.GenericTargets do
     |> MapSet.difference(fusion_superseded_targets(reachable_core, decl_map))
     |> MapSet.difference(unused_streaming_ui_glue(opts, decl_map, direct_targets))
     |> MapSet.union(direct_render_outlined_native_int_callees(opts, direct_targets, decl_map))
+    |> MapSet.union(plan_stream_boxed_callees(direct_targets, decl_map))
   end
 
   # Whole-function fusion (moveBoard, initialBoard, …) inlines callees listed in
@@ -556,6 +557,37 @@ defmodule Elmc.Backend.CCodegen.DirectRender.GenericTargets do
   defp supersede_direct_render_op_boxed?(opts) do
     opts[:direct_render_only] == true or
       Elmc.Backend.SizeProfile.aggressive_direct_render?(opts)
+  end
+
+  # Host DirectRender inlines native-record lets (`layout = boardLayout model`), so
+  # `inlined_record_helpers/2` drops boxed emit. Plan stream still `call_fn`s those
+  # helpers from `_commands_append` and must keep the boxed ABI — but only those
+  # record helpers, not every Elm callee (that would resurrect `toUiNode`/faceOps).
+  defp plan_stream_boxed_callees(direct_targets, decl_map) do
+    inlined = inlined_record_helpers(direct_targets, decl_map)
+
+    if MapSet.size(direct_targets) == 0 or MapSet.size(inlined) == 0 do
+      MapSet.new()
+    else
+      Enum.reduce(direct_targets, MapSet.new(), fn {module_name, _} = key, acc ->
+        case Map.fetch(decl_map, key) do
+          {:ok, %{expr: expr}} ->
+            if Elmc.Backend.Plan.Stream.eligible_expr?(expr, decl_map, module_name) do
+              expr
+              |> GenericReachability.expr_callees(module_name, decl_map)
+              |> MapSet.new()
+              |> MapSet.intersection(inlined)
+              |> MapSet.difference(direct_targets)
+              |> MapSet.union(acc)
+            else
+              acc
+            end
+
+          :error ->
+            acc
+        end
+      end)
+    end
   end
 
   defp plan_required_direct_boxed_callees(targets, decl_map, direct_targets) do

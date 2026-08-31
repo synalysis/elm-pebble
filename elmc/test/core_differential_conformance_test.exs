@@ -120,8 +120,12 @@ defmodule Elmc.CoreDifferentialConformanceTest do
       assert String.contains?(generated_c, call), "missing generated call: #{call}"
     end)
 
-    assert generated_c =~ ~r/native_max_\d+/
-    assert generated_c =~ ~r/native_min_\d+/
+    # Host DirectRender hoists `max`/`min` to `native_max_*`; Plan-primary inlines
+    # them as native-int ternaries or `elmc_basics_max`/`min`.
+    assert generated_c =~ ~r/native_max_\d+/ or generated_c =~ "elmc_basics_max" or
+             generated_c =~ ~r/\(\([^)]+ >= [^)]+\) \? /
+    assert generated_c =~ ~r/native_min_\d+/ or generated_c =~ "elmc_basics_min" or
+             generated_c =~ ~r/\(\([^)]+ <= [^)]+\) \? /
   end
 
   test "process runtime uses Pebble timer hooks under platform guard" do

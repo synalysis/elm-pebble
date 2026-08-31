@@ -15,8 +15,7 @@ defmodule Elmc.RecordAliasConstructorLowerTest do
                out_dir: out_dir,
                targets: [:wasm],
                web: true,
-               entry_module: "Main",
-               strip_dead_code: false
+               entry_module: "Main"
              })
 
     reasons = Process.get(:elmc_plan_unsupported_reasons, %{})

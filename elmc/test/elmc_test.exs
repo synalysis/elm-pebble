@@ -446,7 +446,7 @@ defmodule ElmcTest do
     assert runtime =~ "rc = elmc_record_cell_alloc(out, field_count, field_names, field_values, 1)"
     assert runtime =~ "if (value->tag == ELMC_TAG_LIST)"
     assert runtime =~ "if (elmc_list_cell_release(value))"
-    assert runtime =~ "} else if (value->tag == ELMC_TAG_TUPLE2 && value->payload != NULL)"
+    assert runtime =~ "ELMC_TAG_TUPLE2" and runtime =~ "elmc_tuple2_cell_release"
     assert runtime =~ "if (elmc_tuple2_cell_release(value))"
     assert runtime =~ "if (elmc_record_cell_release(value))"
     assert runtime =~ "if (elmc_closure_cell_release(value))"

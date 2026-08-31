@@ -1038,15 +1038,8 @@ defmodule Elmc.Backend.C.Lower.Instr do
 
   @spec compare_int_boxed_operand(Types.reg(), boolean(), Types.slot_map(), keyword()) :: String.t()
 
-  defp compare_int_boxed_operand(reg, true, slots, opts),
+  defp compare_int_boxed_operand(reg, _native?, slots, opts),
     do: int_operand_ref(reg, slots, opts)
-
-  defp compare_int_boxed_operand(reg, false, slots, opts) do
-    case peel_native_int_operand_ref(reg, slots, opts) do
-      native when is_binary(native) -> native
-      _ -> "elmc_as_int(#{slot_ref(reg, slots, opts)})"
-    end
-  end
 
   @spec emit_switch_ctor_tag(map(), Types.slot_map(), boolean(), String.t(), keyword()) :: String.t()
 
@@ -3753,51 +3746,184 @@ defmodule Elmc.Backend.C.Lower.Instr do
   @scene_text_unroll_max 16
 
   defp emit_scene_text_copy(text, slots, opts) do
-    case scene_text_shape(text, opts) do
-      {:literal, literal} when is_binary(literal) ->
-        emit_scene_text_literal_unroll(literal)
+    emit_scene_text_from_shape(scene_text_shape(text, opts), text, slots, opts)
+  end
 
-      {:prefix_append, literal, right} when is_binary(literal) ->
-        emit_scene_text_prefix_append(literal, boxed_string_c_arg(right, slots, opts))
+  defp emit_scene_text_from_shape({:literal, literal}, _text, _slots, _opts)
+       when is_binary(literal) do
+    emit_scene_text_literal_unroll(literal)
+  end
 
-      :copy ->
-        text_src = boxed_string_c_arg(text, slots, opts)
+  defp emit_scene_text_from_shape({:prefix_append, literal, right}, _text, slots, opts)
+       when is_binary(literal) do
+    emit_scene_text_prefix_append(literal, boxed_string_c_arg(right, slots, opts))
+  end
 
-        """
-        {
-          const char *direct_text = #{text_src};
-          int direct_text_i = 0;
-          while (direct_text[direct_text_i] && direct_text_i < 63) {
-            scene_cmd.text[direct_text_i] = direct_text[direct_text_i];
-            direct_text_i++;
-          }
-          scene_cmd.text[direct_text_i] = '\\0';
-        }
-        """
-        |> String.trim()
+  defp emit_scene_text_from_shape({:from_int, int_reg}, _text, slots, opts) do
+    "elmc_scene_text_from_nonzero_int(scene_cmd.text, #{int_operand_ref(int_reg, slots, opts)});"
+  end
+
+  defp emit_scene_text_from_shape({:phi, cond_reg, then_shape, else_shape}, text, slots, opts) do
+    cond_expr = ternary_cond_expr(cond_reg, slots, opts)
+    then_c = emit_scene_text_from_shape(then_shape, text, slots, opts)
+    else_c = emit_scene_text_from_shape(else_shape, text, slots, opts)
+
+    """
+    if (#{cond_expr}) {
+    #{indent_scene_text_c(then_c, 2)}
+    } else {
+    #{indent_scene_text_c(else_c, 2)}
+    }
+    """
+    |> String.trim()
+  end
+
+  defp emit_scene_text_from_shape(:copy, text, slots, opts) do
+    text_src = boxed_string_c_arg(text, slots, opts)
+
+    """
+    {
+      const char *direct_text = #{text_src};
+      int direct_text_i = 0;
+      while (direct_text[direct_text_i] && direct_text_i < 63) {
+        scene_cmd.text[direct_text_i] = direct_text[direct_text_i];
+        direct_text_i++;
+      }
+      scene_cmd.text[direct_text_i] = '\\0';
+    }
+    """
+    |> String.trim()
+  end
+
+  defp emit_scene_text_from_shape(_shape, text, slots, opts),
+    do: emit_scene_text_from_shape(:copy, text, slots, opts)
+
+  defp indent_scene_text_c(code, n) when is_binary(code) and is_integer(n) do
+    pad = String.duplicate(" ", n)
+
+    code
+    |> String.trim_trailing()
+    |> String.split("\n")
+    |> Enum.map_join("\n", &(pad <> &1))
+  end
+
+  defp scene_text_shape(reg, opts), do: scene_text_shape(reg, opts, MapSet.new())
+
+  defp scene_text_shape(reg, opts, seen) when is_integer(reg) do
+    if MapSet.member?(seen, reg) do
+      :copy
+    else
+      seen = MapSet.put(seen, reg)
+      plan = Keyword.get(opts, :parent_plan)
+      defs = (plan && Function.all_defining_instrs(plan, reg)) || []
+
+      case Enum.find(defs, &match?(%{op: :phi, args: %{then: _, else: _, cond: _}}, &1)) do
+        %{args: args} = phi ->
+          then_s = scene_text_phi_arm(plan, args.then, reg, phi, :then, opts, seen)
+          else_s = scene_text_phi_arm(plan, args.else, reg, phi, :else, opts, seen)
+
+          if then_s == :copy or else_s == :copy do
+            :copy
+          else
+            {:phi, args.cond, then_s, else_s}
+          end
+
+        nil ->
+          case defs do
+            [%{op: :call_runtime, args: %{builtin: builtin, args: [left, right]}}]
+            when builtin in [:string_append, :string_concat] ->
+              case scene_text_shape(left, opts, seen) do
+                {:literal, literal} -> {:prefix_append, literal, right}
+                _ -> :copy
+              end
+
+            _ ->
+              classify_string_defs(defs)
+          end
+      end
     end
   end
 
-  defp scene_text_shape(reg, opts) when is_integer(reg) do
-    plan = Keyword.get(opts, :parent_plan)
+  defp scene_text_shape(_, _, _), do: :copy
 
-    case plan && Function.all_defining_instrs(plan, reg) do
-      [%{op: :const_immortal_string, args: %{value: value}}] when is_binary(value) ->
-        {:literal, value}
+  defp scene_text_phi_arm(plan, arm_reg, phi_dest, phi, side, opts, seen)
+       when is_integer(arm_reg) and is_integer(phi_dest) do
+    if arm_reg != phi_dest do
+      scene_text_shape(arm_reg, opts, seen)
+    else
+      case phi_arm_block_id(plan, phi, side) do
+        id when is_integer(id) ->
+          classify_string_defs(defining_in_block(plan, phi_dest, id))
 
-      [%{op: :call_runtime, args: %{builtin: builtin, args: [left, right]}}]
-      when builtin in [:string_append, :string_concat] ->
-        case scene_text_shape(left, opts) do
-          {:literal, literal} -> {:prefix_append, literal, right}
-          _ -> :copy
-        end
+        _ ->
+          :copy
+      end
+    end
+  end
+
+  defp scene_text_phi_arm(_, _, _, _, _, _, _), do: :copy
+
+  defp phi_arm_block_id(_plan, %{args: %{then_arm_block: id}}, :then) when is_integer(id),
+    do: id
+
+  defp phi_arm_block_id(_plan, %{args: %{else_arm_block: id}}, :else) when is_integer(id),
+    do: id
+
+  defp phi_arm_block_id(%{blocks: blocks}, %{args: %{cond: cond_reg}}, side)
+       when is_list(blocks) and is_integer(cond_reg) do
+    Enum.find_value(blocks, fn
+      %{terminator: {:br_if, then_id, else_id, ^cond_reg}} ->
+        if side == :then, do: then_id, else: else_id
 
       _ ->
+        nil
+    end)
+  end
+
+  defp phi_arm_block_id(_, _, _), do: nil
+
+  defp defining_in_block(%{blocks: blocks}, dest, block_id)
+       when is_list(blocks) and is_integer(dest) and is_integer(block_id) do
+    case Enum.find(blocks, &(Map.get(&1, :id) == block_id)) do
+      %{instrs: instrs} when is_list(instrs) ->
+        Enum.filter(instrs, fn
+          %{dest: ^dest, op: op} when op != :phi -> true
+          _ -> false
+        end)
+
+      _ ->
+        []
+    end
+  end
+
+  defp defining_in_block(_, _, _), do: []
+
+  defp classify_string_defs(defs) when is_list(defs) do
+    cond do
+      const =
+          Enum.find(
+            defs,
+            &match?(%{op: :const_immortal_string, args: %{value: v}} when is_binary(v), &1)
+          ) ->
+        {:literal, const.args.value}
+
+      from_int =
+          Enum.find(
+            defs,
+            &match?(
+              %{op: :call_runtime, args: %{builtin: builtin, args: [_]}}
+              when builtin in [:string_from_int, :string_from_int_value],
+              &1
+            )
+          ) ->
+        {:from_int, hd(from_int.args.args)}
+
+      true ->
         :copy
     end
   end
 
-  defp scene_text_shape(_, _), do: :copy
+  defp classify_string_defs(_), do: :copy
 
   defp emit_scene_text_literal_unroll(literal) when is_binary(literal) do
     bytes = :binary.bin_to_list(literal)
@@ -4264,6 +4390,8 @@ defmodule Elmc.Backend.C.Lower.Instr do
     idx_init = if indexed?, do: "int stream_fe_i_#{id} = 0;\n    ", else: ""
     invoke = call.call.("stream_fe_argv_#{id}", writer)
 
+    # Boxed lambdas still walk compact INT_LIST (List Int). RECORD_SEQ is for
+    # record lists; LAZY_MAP is stored List.map; cons LIST is the mixed/legacy fallback.
     """
     #{call.caps_decl}#{idx_init}if (#{list_ref} && #{list_ref}->tag == ELMC_TAG_INT_LIST) {
       ElmcIntListPayload *stream_fe_ilp_#{id} = (ElmcIntListPayload *)#{list_ref}->payload;
@@ -4271,10 +4399,38 @@ defmodule Elmc.Backend.C.Lower.Instr do
       for (int stream_fe_ii_#{id} = 0;
            Rc == RC_SUCCESS && stream_fe_ii_#{id} < stream_fe_len_#{id};
            stream_fe_ii_#{id}++) {
+        #{if indexed?, do: "stream_fe_i_#{id} = stream_fe_ii_#{id};\n        ", else: ""}#{idx_decl}
         ElmcValue *stream_fe_item_#{id} = NULL;
         Rc = elmc_new_int(&stream_fe_item_#{id}, stream_fe_ilp_#{id}->values[stream_fe_ii_#{id}]);
         CHECK_RC(Rc);
+        ElmcValue *stream_fe_argv_#{id}[#{argc}] = { #{prefix_comma}#{idx_arg}stream_fe_item_#{id} };
+        Rc = #{invoke};
+        CHECK_RC(Rc);
+        #{idx_rel}
+        elmc_release(stream_fe_item_#{id});
+      }
+    } else if (#{list_ref} && #{list_ref}->tag == ELMC_TAG_RECORD_SEQ) {
+      int stream_fe_rlen_#{id} = elmc_record_seq_length(#{list_ref});
+      for (int stream_fe_ii_#{id} = 0;
+           Rc == RC_SUCCESS && stream_fe_ii_#{id} < stream_fe_rlen_#{id};
+           stream_fe_ii_#{id}++) {
+        ElmcValue *stream_fe_item_#{id} = elmc_record_seq_get(#{list_ref}, stream_fe_ii_#{id});
         #{if indexed?, do: "stream_fe_i_#{id} = stream_fe_ii_#{id};\n        ", else: ""}#{idx_decl}
+        ElmcValue *stream_fe_argv_#{id}[#{argc}] = { #{prefix_comma}#{idx_arg}stream_fe_item_#{id} };
+        Rc = #{invoke};
+        CHECK_RC(Rc);
+        #{idx_rel}
+        elmc_release(stream_fe_item_#{id});
+      }
+    } else if (#{list_ref} && #{list_ref}->tag == ELMC_TAG_LAZY_MAP) {
+      int stream_fe_llen_#{id} = elmc_lazy_map_length(#{list_ref});
+      for (int stream_fe_ii_#{id} = 0;
+           Rc == RC_SUCCESS && stream_fe_ii_#{id} < stream_fe_llen_#{id};
+           stream_fe_ii_#{id}++) {
+        #{if indexed?, do: "stream_fe_i_#{id} = stream_fe_ii_#{id};\n        ", else: ""}#{idx_decl}
+        ElmcValue *stream_fe_item_#{id} = NULL;
+        Rc = elmc_lazy_map_nth(&stream_fe_item_#{id}, #{list_ref}, stream_fe_ii_#{id});
+        CHECK_RC(Rc);
         ElmcValue *stream_fe_argv_#{id}[#{argc}] = { #{prefix_comma}#{idx_arg}stream_fe_item_#{id} };
         Rc = #{invoke};
         CHECK_RC(Rc);
@@ -4329,27 +4485,17 @@ defmodule Elmc.Backend.C.Lower.Instr do
 
     int_list_args = prefix_peeled ++ int_list_idx ++ [int_list_item]
     cons_args = prefix_peeled ++ cons_idx ++ [cons_item]
+    lazy_item = stream_fe_lazy_item_expr(item_kind, id)
+    lazy_args = prefix_peeled ++ int_list_idx ++ [lazy_item]
     int_list_invoke = call.call.(int_list_args, writer)
     cons_invoke = call.call.(cons_args, writer)
+    lazy_invoke = call.call.(lazy_args, writer)
 
     {int_list_box, int_list_rel} = stream_fe_int_list_box_item(item_kind, id)
     {int_list_idx_box, int_list_idx_rel} = stream_fe_cons_box_index(indexed?, index_kind, id)
     {cons_idx_box, cons_idx_rel} = stream_fe_cons_box_index(indexed?, index_kind, id)
 
-    """
-    #{call.caps_decl}#{idx_init}if (#{list_ref} && #{list_ref}->tag == ELMC_TAG_INT_LIST) {
-      ElmcIntListPayload *stream_fe_ilp_#{id} = (ElmcIntListPayload *)#{list_ref}->payload;
-      int stream_fe_len_#{id} = stream_fe_ilp_#{id} ? stream_fe_ilp_#{id}->length : 0;
-      for (int stream_fe_ii_#{id} = 0;
-           Rc == RC_SUCCESS && stream_fe_ii_#{id} < stream_fe_len_#{id};
-           stream_fe_ii_#{id}++) {
-        #{if indexed?, do: "stream_fe_i_#{id} = stream_fe_ii_#{id};\n        ", else: ""}#{int_list_idx_box}#{int_list_box}
-        Rc = #{int_list_invoke};
-        CHECK_RC(Rc);
-        #{int_list_idx_rel}
-        #{int_list_rel}
-      }
-    } else {
+    cons_loop = """
       ElmcValue *stream_fe_cursor_#{id} = #{list_ref};
       while (Rc == RC_SUCCESS && stream_fe_cursor_#{id} && stream_fe_cursor_#{id}->tag == ELMC_TAG_LIST && stream_fe_cursor_#{id}->payload != NULL) {
         ElmcCons *stream_fe_node_#{id} = (ElmcCons *)stream_fe_cursor_#{id}->payload;
@@ -4359,9 +4505,69 @@ defmodule Elmc.Backend.C.Lower.Instr do
         #{cons_idx_rel}
         #{idx_inc}stream_fe_cursor_#{id} = stream_fe_node_#{id}->tail;
       }
-    }
     """
-    |> String.trim()
+
+    record_seq_loop = """
+      int stream_fe_rlen_#{id} = elmc_record_seq_length(#{list_ref});
+      for (int stream_fe_ii_#{id} = 0;
+           Rc == RC_SUCCESS && stream_fe_ii_#{id} < stream_fe_rlen_#{id};
+           stream_fe_ii_#{id}++) {
+        #{if indexed?, do: "stream_fe_i_#{id} = stream_fe_ii_#{id};\n        ", else: ""}#{cons_idx_box}
+        ElmcValue *stream_fe_item_#{id} = elmc_record_seq_get(#{list_ref}, stream_fe_ii_#{id});
+        Rc = #{call.call.(prefix_peeled ++ stream_fe_cons_index_expr(indexed?, index_kind, id) ++ ["stream_fe_item_#{id}"], writer)};
+        CHECK_RC(Rc);
+        #{cons_idx_rel}
+        elmc_release(stream_fe_item_#{id});
+      }
+    """
+
+    lazy_map_loop = """
+      int stream_fe_llen_#{id} = elmc_lazy_map_length(#{list_ref});
+      for (int stream_fe_ii_#{id} = 0;
+           Rc == RC_SUCCESS && stream_fe_ii_#{id} < stream_fe_llen_#{id};
+           stream_fe_ii_#{id}++) {
+        #{if indexed?, do: "stream_fe_i_#{id} = stream_fe_ii_#{id};\n        ", else: ""}#{int_list_idx_box}
+        ElmcValue *stream_fe_nth_#{id} = NULL;
+        Rc = elmc_lazy_map_nth(&stream_fe_nth_#{id}, #{list_ref}, stream_fe_ii_#{id});
+        CHECK_RC(Rc);
+        Rc = #{lazy_invoke};
+        CHECK_RC(Rc);
+        #{int_list_idx_rel}
+        elmc_release(stream_fe_nth_#{id});
+      }
+    """
+
+    # Compact INT_LIST is only List Int. Record lists use RECORD_SEQ.
+    # Stored List.map results are LAZY_MAP (same as Host DirectRender walks).
+    body =
+      if item_kind == :native_int do
+        """
+        #{call.caps_decl}#{idx_init}if (#{list_ref} && #{list_ref}->tag == ELMC_TAG_INT_LIST) {
+          ElmcIntListPayload *stream_fe_ilp_#{id} = (ElmcIntListPayload *)#{list_ref}->payload;
+          int stream_fe_len_#{id} = stream_fe_ilp_#{id} ? stream_fe_ilp_#{id}->length : 0;
+          for (int stream_fe_ii_#{id} = 0;
+               Rc == RC_SUCCESS && stream_fe_ii_#{id} < stream_fe_len_#{id};
+               stream_fe_ii_#{id}++) {
+            #{if indexed?, do: "stream_fe_i_#{id} = stream_fe_ii_#{id};\n        ", else: ""}#{int_list_idx_box}#{int_list_box}
+            Rc = #{int_list_invoke};
+            CHECK_RC(Rc);
+            #{int_list_idx_rel}
+            #{int_list_rel}
+          }
+        } else if (#{list_ref} && #{list_ref}->tag == ELMC_TAG_LAZY_MAP) {
+        #{lazy_map_loop}    } else {
+        #{cons_loop}    }
+        """
+      else
+        """
+        #{call.caps_decl}#{idx_init}if (#{list_ref} && #{list_ref}->tag == ELMC_TAG_RECORD_SEQ) {
+        #{record_seq_loop}    } else if (#{list_ref} && #{list_ref}->tag == ELMC_TAG_LAZY_MAP) {
+        #{lazy_map_loop}    } else {
+        #{cons_loop}    }
+        """
+      end
+
+    String.trim(body)
   end
 
   defp stream_fe_peel_kind(:native_int, ref), do: "elmc_as_int(#{ref})"
@@ -4379,6 +4585,15 @@ defmodule Elmc.Backend.C.Lower.Instr do
   defp stream_fe_int_list_index_expr(false, _kind, _id), do: []
   defp stream_fe_int_list_index_expr(true, :native_int, id), do: ["stream_fe_ii_#{id}"]
   defp stream_fe_int_list_index_expr(true, _kind, id), do: ["stream_fe_idx_#{id}"]
+
+  defp stream_fe_lazy_item_expr(:native_int, id),
+    do: "elmc_as_int(stream_fe_nth_#{id})"
+
+  defp stream_fe_lazy_item_expr(:native_string, id),
+    do:
+      "((stream_fe_nth_#{id} && stream_fe_nth_#{id}->payload) ? (const char *)stream_fe_nth_#{id}->payload : \"\")"
+
+  defp stream_fe_lazy_item_expr(_kind, id), do: "stream_fe_nth_#{id}"
 
   defp stream_fe_cons_item_expr(:native_int, id),
     do: "elmc_as_int(stream_fe_node_#{id}->head)"

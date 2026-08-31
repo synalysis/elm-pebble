@@ -268,6 +268,7 @@ defmodule Elmc.Runtime.Generator do
         ""
       )
       |> strip_basics_compare_float_branch()
+      |> strip_elmc_cmp_float_branch()
     else
       source
     end
@@ -304,6 +305,15 @@ defmodule Elmc.Runtime.Generator do
       ""
     )
     |> strip_basics_compare_float_branch()
+    |> strip_elmc_cmp_float_branch()
+  end
+
+  defp strip_elmc_cmp_float_branch(source) do
+    Regex.replace(
+      ~r/[ \t]*if \(\(a->tag == ELMC_TAG_FLOAT \|\| b->tag == ELMC_TAG_FLOAT\) &&\n[ \t]*\(a->tag == ELMC_TAG_INT \|\| a->tag == ELMC_TAG_FLOAT\) &&\n[ \t]*\(b->tag == ELMC_TAG_INT \|\| b->tag == ELMC_TAG_FLOAT\)\) \{\n[ \t]*double fa = elmc_as_float\(a\);\n[ \t]*double fb = elmc_as_float\(b\);\n[ \t]*return \(fa < fb\) \? -1 : \(fa > fb\) \? 1 : 0;\n[ \t]*\}\n/,
+      source,
+      ""
+    )
   end
 
   defp strip_basics_compare_float_branch(source) do
@@ -774,13 +784,23 @@ defmodule Elmc.Runtime.Generator do
   end
 
   defp maybe_drop_record_seq_runtime(source, joined) do
-    if compact_record_seq_used?(joined) do
-      source
-    else
-      source
-      |> String.replace(Elmc.Runtime.RecordSeq.implementation(), record_seq_release_stub())
-      |> strip_record_seq_release_branches()
-      |> strip_record_seq_list_branches()
+    cond do
+      record_seq_alloc_used?(joined) ->
+        source
+
+      compact_record_seq_used?(joined) ->
+        source
+        |> String.replace(
+          Elmc.Runtime.RecordSeq.implementation(),
+          Elmc.Runtime.RecordSeq.walk_implementation()
+        )
+        |> strip_record_seq_list_branches()
+
+      true ->
+        source
+        |> String.replace(Elmc.Runtime.RecordSeq.implementation(), record_seq_release_stub())
+        |> strip_record_seq_release_branches()
+        |> strip_record_seq_list_branches()
     end
   end
 
@@ -819,6 +839,15 @@ defmodule Elmc.Runtime.Generator do
     String.contains?(joined, "ELMC_TAG_RECORD_SEQ") or
       String.contains?(joined, "elmc_list_from_record_array") or
       String.contains?(joined, "elmc_record_seq_")
+  end
+
+  defp record_seq_alloc_used?(joined) do
+    String.contains?(joined, "elmc_list_from_record_array") or
+      String.contains?(joined, "elmc_record_seq_alloc_copy") or
+      String.contains?(joined, "elmc_record_seq_to_cons") or
+      String.contains?(joined, "elmc_record_seq_tail") or
+      String.contains?(joined, "elmc_record_seq_head_boxed") or
+      String.contains?(joined, "elmc_record_seq_is_empty")
   end
 
   defp strip_float_list_release_branches(source) when is_binary(source) do

@@ -308,7 +308,8 @@ defmodule Elmc.DenseBoxedConstTableTest do
       end
 
     assert body != ""
-    refute body =~ "ELMC_TAG_INT_LIST"
+    # Boxed foreach may probe compact INT_LIST (List Int) then RECORD_SEQ.
+    # Record items must still walk RECORD_SEQ or cons LIST — never INT_LIST alone.
     assert body =~ "ELMC_TAG_RECORD_SEQ" or body =~ "ELMC_TAG_LIST" or body =~ "ELMC_TAG_LAZY_MAP"
   end
 

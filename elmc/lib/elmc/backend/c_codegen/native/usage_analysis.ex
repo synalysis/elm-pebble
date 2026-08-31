@@ -1415,6 +1415,11 @@ defmodule Elmc.Backend.CCodegen.Native.UsageAnalysis do
     collect_var_contexts(name, left, :boxed) ++ collect_var_contexts(name, right, :boxed)
   end
 
+  defp collect_var_contexts(name, %{op: :tuple3, a: a, b: b, c: c}, _context) do
+    collect_var_contexts(name, a, :boxed) ++
+      collect_var_contexts(name, b, :boxed) ++ collect_var_contexts(name, c, :boxed)
+  end
+
   defp collect_var_contexts(name, %{op: :record_literal, fields: fields}, _context)
        when is_list(fields) do
     Enum.flat_map(fields, fn field ->

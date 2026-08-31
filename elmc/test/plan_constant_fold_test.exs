@@ -88,6 +88,27 @@ defmodule Elmc.PlanConstantFoldTest do
     assert length(plan.blocks) == 1
   end
 
+  test "under_assumption folds inverse nested compares" do
+    ctx = Context.new(module: "Main")
+    value = %{op: :field_access, field: "value", arg: %{op: :var, name: "model"}}
+
+    outer_neq = %{op: :compare, kind: :neq, left: value, right: %{op: :int_literal, value: 0}}
+    inner_eq = %{op: :compare, kind: :eq, left: value, right: %{op: :int_literal, value: 0}}
+
+    inner_if = %{
+      op: :if,
+      cond: inner_eq,
+      then_expr: %{op: :string_literal, value: "."},
+      else_expr: %{op: :string_literal, value: "n"}
+    }
+
+    assert ConstantFold.under_assumption(inner_if, outer_neq, true, ctx) ==
+             %{op: :string_literal, value: "n"}
+
+    assert ConstantFold.under_assumption(inner_if, outer_neq, false, ctx) ==
+             %{op: :string_literal, value: "."}
+  end
+
   test "legacy List.repeat with constant count does not emit dead non-positive branch" do
     source = """
     module Main exposing (board, len)

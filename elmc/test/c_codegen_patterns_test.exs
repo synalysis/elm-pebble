@@ -3327,8 +3327,23 @@ defmodule Elmc.CCodegenPatternsTest do
     refute clear_lines_body =~ "elmc_fn_Main_clearLines_native("
     refute generated_c =~ "elmc_let_body_helper_Main_clearLines"
 
-    assert generated_c =~
-             ~r/elmc_int_t rec_values_\d+\[4\] = \{ direct_native_record_layout_x_\d+, direct_native_record_layout_y_\d+, direct_native_record_layout_cell_\d+, direct_native_record_layout_gap_\d+ \}/
+    assert generated_c =~ "ELMC_FIELD_MAIN_BOARDLAYOUT_X = 0"
+    assert generated_c =~ "ELMC_FIELD_MAIN_BOARDLAYOUT_Y = 1"
+    assert generated_c =~ "ELMC_FIELD_MAIN_BOARDLAYOUT_CELL = 2"
+    assert generated_c =~ "ELMC_FIELD_MAIN_BOARDLAYOUT_GAP = 3"
+
+    Enum.each(
+      Regex.scan(
+        ~r/elmc_int_t rec_values_\d+\[4\] = \{ ([^}]+) \}/,
+        generated_c
+      ),
+      fn [_, inner] ->
+        if inner =~ "direct_native_record_layout_" do
+          assert inner =~
+                   ~r/direct_native_record_layout_x_\d+, direct_native_record_layout_y_\d+, direct_native_record_layout_cell_\d+, direct_native_record_layout_gap_\d+/
+        end
+      end
+    )
 
     refute generated_c =~
              ~r/elmc_int_t rec_values_\d+\[4\] = \{ direct_native_record_layout_cell_\d+, direct_native_record_layout_gap_\d+, direct_native_record_layout_x_\d+, direct_native_record_layout_y_\d+ \}/

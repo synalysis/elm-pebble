@@ -30,7 +30,8 @@ defmodule Elmc.Backend.Plan.Context do
     :curried_type_offset,
     :expected_fn_type,
     :stream_mode,
-    :stream_aliases
+    :stream_aliases,
+    :let_exprs
   ]
 
   @type t :: %__MODULE__{
@@ -53,7 +54,8 @@ defmodule Elmc.Backend.Plan.Context do
           curried_type_offset: non_neg_integer(),
           expected_fn_type: String.t() | nil,
           stream_mode: boolean(),
-          stream_aliases: %{optional(String.t()) => Types.expr()}
+          stream_aliases: %{optional(String.t()) => Types.expr()},
+          let_exprs: %{optional(String.t()) => Types.expr()}
         }
 
   @type dest :: :scratch | :fn_out | :branch_out
@@ -82,7 +84,8 @@ defmodule Elmc.Backend.Plan.Context do
       curried_type_offset: Keyword.get(opts, :curried_type_offset, 0),
       expected_fn_type: Keyword.get(opts, :expected_fn_type),
       stream_mode: Keyword.get(opts, :stream_mode, false),
-      stream_aliases: Keyword.get(opts, :stream_aliases, %{})
+      stream_aliases: Keyword.get(opts, :stream_aliases, %{}),
+      let_exprs: Keyword.get(opts, :let_exprs, %{})
     }
   end
 
@@ -191,6 +194,20 @@ defmodule Elmc.Backend.Plan.Context do
   def stream_alias(ctx, name) when is_binary(name) do
     ctx
     |> Map.get(:stream_aliases)
+    |> Kernel.||(%{})
+    |> Map.get(name)
+  end
+
+  @spec put_let_expr(t(), String.t(), Types.expr()) :: t()
+  def put_let_expr(ctx, name, expr) when is_binary(name) and is_map(expr) do
+    exprs = Map.get(ctx, :let_exprs) || %{}
+    %{ctx | let_exprs: Map.put(exprs, name, expr)}
+  end
+
+  @spec let_expr(t(), String.t()) :: Types.expr() | nil
+  def let_expr(ctx, name) when is_binary(name) do
+    ctx
+    |> Map.get(:let_exprs)
     |> Kernel.||(%{})
     |> Map.get(name)
   end

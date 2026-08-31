@@ -38,6 +38,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.ExprDispatch do
   @var_arith_ops [:add_const, :add_vars, :sub_const, :sub_vars, :mul_vars]
   @collection_ops [
     :tuple2,
+    :tuple3,
     :list_literal,
     :tuple_second,
     :tuple_second_expr,

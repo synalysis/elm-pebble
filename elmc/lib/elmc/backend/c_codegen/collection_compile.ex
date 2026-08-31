@@ -29,6 +29,10 @@ defmodule Elmc.Backend.CCodegen.CollectionCompile do
     end
   end
 
+  def compile(%{op: :tuple3, a: a_expr, b: b_expr, c: c_expr}, env, counter) do
+    compile_generic_tuple3(a_expr, b_expr, c_expr, env, counter)
+  end
+
   def compile(%{op: :list_literal, items: items}, env, counter) do
     case static_list_literal(items, env, counter) do
       {:ok, result} -> result
@@ -223,6 +227,58 @@ defmodule Elmc.Backend.CCodegen.CollectionCompile do
 
       {code, out, next}
     end
+  end
+
+  @spec compile_generic_tuple3(
+          Types.expr(),
+          Types.expr(),
+          Types.expr(),
+          Types.compile_env(),
+          Types.compile_counter()
+        ) :: Types.compile_result()
+
+  defp compile_generic_tuple3(a_expr, b_expr, c_expr, env, counter) do
+    child_env = RcRuntimeEmit.strip_function_tail_scope(env)
+    a_env = Map.put(child_env, :__transfer_operand__, true)
+    b_env = Map.put(child_env, :__transfer_operand__, true)
+    c_env = Map.put(child_env, :__transfer_operand__, true)
+
+    {a_code, a_var, c1} = Host.compile_expr(a_expr, a_env, counter)
+    {b_code, b_var, c2} = Host.compile_expr(b_expr, b_env, c1)
+    {c_code, c_var, counter} = Host.compile_expr(c_expr, c_env, c2)
+
+    {out, next, _declare_out?} =
+      if RcRuntimeEmit.rc_allocator_emit_mode?(env) do
+        {slot, c} = RcRuntimeEmit.compile_result_slot(env, counter)
+        {slot, c, false}
+      else
+        CaseCompile.result_out_binding(env, counter)
+      end
+
+    out_ref = ValueSlots.resolve_result_slot(out)
+
+    null_refs =
+      [a_var, b_var, c_var]
+      |> Enum.uniq()
+      |> Enum.reject(fn var -> ValueSlots.resolve_result_slot(var) == out_ref end)
+
+    nulls = ValueSlots.transfer_and_null_refs(null_refs)
+
+    tuple3_assign =
+      RcRuntimeEmit.assign_call(
+        env,
+        out,
+        "elmc_tuple3",
+        "#{RcRuntimeEmit.value_expr(a_var)}, #{RcRuntimeEmit.value_expr(b_var)}, #{RcRuntimeEmit.value_expr(c_var)}"
+      )
+
+    code = """
+    #{CSource.join_fragments([a_code, b_code, c_code])}
+    #{tuple3_assign}
+    #{nulls}
+    """
+
+    {code, out, next}
   end
 
   @spec tuple2_native_int_operands?(Types.expr(), Types.expr(), Types.compile_env()) :: boolean()

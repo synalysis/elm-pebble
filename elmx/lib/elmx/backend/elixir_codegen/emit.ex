@@ -77,6 +77,9 @@ defmodule Elmx.Backend.ElixirCodegen.Emit do
       :tuple2 ->
         Expr.compile_tuple2(expr, env, counter)
 
+      :tuple3 ->
+        Expr.compile_tuple3(expr, env, counter)
+
       :list_literal ->
         Expr.compile_list(expr, env, counter)
 

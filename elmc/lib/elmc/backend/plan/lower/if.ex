@@ -22,6 +22,9 @@ defmodule Elmc.Backend.Plan.Lower.If do
           Types.compile_result()
 
   defp compile_branches(cond, then_expr, else_expr, ctx, b) do
+    then_expr = ConstantFold.under_assumption(then_expr, cond, true, ctx)
+    else_expr = ConstantFold.under_assumption(else_expr, cond, false, ctx)
+
     case ConstantFold.bool_value(cond, ctx) do
       :unknown ->
         compile_branches_cfg(cond, then_expr, else_expr, ctx, b)

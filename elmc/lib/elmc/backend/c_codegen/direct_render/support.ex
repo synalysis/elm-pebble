@@ -349,9 +349,92 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Support do
     direct_function_target(fun_expr, module_name, decl_map, seen) != nil or
       direct_lambda_supported?(fun_expr, module_name, decl_map, seen) or
       direct_map_fun_static_transparent?(fun_expr, list_expr, module_name, decl_map, seen) or
-      direct_dynamic_list_expr?(list_expr) or
-      direct_list_pipeline_expr?(list_expr, module_name, decl_map)
+      (command_producing_mapper?(fun_expr, module_name, decl_map, seen) and
+         (direct_dynamic_list_expr?(list_expr) or
+            direct_list_pipeline_expr?(list_expr, module_name, decl_map)))
   end
+
+  # `List.indexedMap f cells` is not a scene pipeline just because `cells` is a
+  # var — that would pull Int-grid helpers (setCell, transpose) into DirectRender.
+  defp command_producing_mapper?(%{op: :lambda, body: body}, module_name, decl_map, seen) do
+    command_producing_expr?(body, module_name, decl_map, seen)
+  end
+
+  defp command_producing_mapper?(fun_expr, module_name, decl_map, seen) do
+    direct_function_target(fun_expr, module_name, decl_map, seen) != nil
+  end
+
+  defp command_producing_expr?(%{op: op}, _module_name, _decl_map, _seen)
+       when op in [:render_cmd, :render_text_cmd],
+       do: true
+
+  defp command_producing_expr?(%{op: :list_literal, items: items}, module_name, decl_map, seen)
+       when is_list(items) do
+    items != [] and Enum.all?(items, &command_producing_expr?(&1, module_name, decl_map, seen))
+  end
+
+  defp command_producing_expr?(%{op: :let_in, in_expr: in_expr}, module_name, decl_map, seen),
+    do: command_producing_expr?(in_expr, module_name, decl_map, seen)
+
+  defp command_producing_expr?(%{op: :if, then_expr: then_expr, else_expr: else_expr}, module_name, decl_map, seen) do
+    command_producing_expr?(then_expr, module_name, decl_map, seen) and
+      command_producing_expr?(else_expr, module_name, decl_map, seen)
+  end
+
+  defp command_producing_expr?(%{op: :case, branches: branches}, module_name, decl_map, seen)
+       when is_list(branches) do
+    branches != [] and
+      Enum.all?(branches, &command_producing_expr?(Map.get(&1, :expr), module_name, decl_map, seen))
+  end
+
+  defp command_producing_expr?(%{op: :qualified_call, target: target, args: args}, module_name, decl_map, seen) do
+    case Host.normalize_special_target(target) do
+      "List.map" ->
+        case args do
+          [fun, list] ->
+            command_producing_mapper?(fun, module_name, decl_map, seen) and
+              command_producing_expr?(list, module_name, decl_map, seen)
+
+          _ ->
+            false
+        end
+
+      "List.indexedMap" ->
+        case args do
+          [fun, list] ->
+            command_producing_mapper?(fun, module_name, decl_map, seen) and
+              command_producing_expr?(list, module_name, decl_map, seen)
+
+          _ ->
+            false
+        end
+
+      "List.concat" ->
+        Enum.any?(args, &command_producing_expr?(&1, module_name, decl_map, seen))
+
+      "List.concatMap" ->
+        case args do
+          [fun, _list] -> command_producing_mapper?(fun, module_name, decl_map, seen)
+          _ -> false
+        end
+
+      "Pebble.Ui.toUiNode" ->
+        case args do
+          [inner] -> command_producing_expr?(inner, module_name, decl_map, seen)
+          _ -> false
+        end
+
+      pebble_ui ->
+        String.starts_with?(pebble_ui, "Pebble.Ui.")
+    end
+  end
+
+  defp command_producing_expr?(%{op: :call, name: "__append__", args: [left, right]}, module_name, decl_map, seen) do
+    command_producing_expr?(left, module_name, decl_map, seen) or
+      command_producing_expr?(right, module_name, decl_map, seen)
+  end
+
+  defp command_producing_expr?(_, _, _, _), do: false
 
   defp direct_list_pipeline_expr?(list_expr, module_name, decl_map) do
     ListLoopPlans.pipeline_fragment?(

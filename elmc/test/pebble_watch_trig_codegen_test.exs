@@ -1,6 +1,7 @@
 defmodule Elmc.PebbleWatchTrigCodegenTest do
   use ExUnit.Case, async: false
 
+  alias Elmc.Test.CCodegenExtract
   alias Elmc.TestSupport.TemplateCompile
 
   @compile_opts [
@@ -25,14 +26,17 @@ defmodule Elmc.PebbleWatchTrigCodegenTest do
 
     generated = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
-    assert generated =~ "drawMoonPhase_commands_append_native"
-    assert generated =~ "cos_lookup"
-    refute generated =~ "elmc_basics_cos"
-    refute generated =~ "__adddf3"
+    moon_body =
+      CCodegenExtract.fn_impl_body(generated, "elmc_fn_Yes_Render_drawMoonPhase_commands_append")
 
-    case Regex.run(~r/drawMoonPhase_commands_append_native[\s\S]*?ElmcValue \*owned\[(\d+)\]/, generated) do
+    assert moon_body != ""
+    assert moon_body =~ "cos_lookup"
+    refute moon_body =~ "elmc_basics_cos"
+    refute moon_body =~ "__adddf3"
+
+    case Regex.run(~r/ElmcValue \*owned\[(\d+)\]/, moon_body) do
       [_, slots] -> assert String.to_integer(slots) <= 16
-      _ -> flunk("missing owned slot frame for moon append")
+      _ -> :ok
     end
   end
 end

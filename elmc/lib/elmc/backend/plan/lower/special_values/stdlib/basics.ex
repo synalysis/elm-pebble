@@ -318,6 +318,70 @@ defmodule Elmc.Backend.Plan.Lower.SpecialValues.Stdlib.Basics do
   def special_value_from_target("Basics.not", [x]),
     do: %{op: :runtime_call, function: "elmc_basics_not", args: [x]}
 
+  def special_value_from_target("Basics.and", [a, b]),
+    do: %{
+      op: :if,
+      cond: a,
+      then_expr: b,
+      else_expr: %{op: :bool_literal, value: false}
+    }
+
+  def special_value_from_target("Basics.and", [a]),
+    do: %{
+      op: :lambda,
+      args: ["__b"],
+      body: %{
+        op: :if,
+        cond: a,
+        then_expr: %{op: :var, name: "__b"},
+        else_expr: %{op: :bool_literal, value: false}
+      }
+    }
+
+  def special_value_from_target("Basics.and", []),
+    do: %{
+      op: :lambda,
+      args: ["__a", "__b"],
+      body: %{
+        op: :if,
+        cond: %{op: :var, name: "__a"},
+        then_expr: %{op: :var, name: "__b"},
+        else_expr: %{op: :bool_literal, value: false}
+      }
+    }
+
+  def special_value_from_target("Basics.or", [a, b]),
+    do: %{
+      op: :if,
+      cond: a,
+      then_expr: %{op: :bool_literal, value: true},
+      else_expr: b
+    }
+
+  def special_value_from_target("Basics.or", [a]),
+    do: %{
+      op: :lambda,
+      args: ["__b"],
+      body: %{
+        op: :if,
+        cond: a,
+        then_expr: %{op: :bool_literal, value: true},
+        else_expr: %{op: :var, name: "__b"}
+      }
+    }
+
+  def special_value_from_target("Basics.or", []),
+    do: %{
+      op: :lambda,
+      args: ["__a", "__b"],
+      body: %{
+        op: :if,
+        cond: %{op: :var, name: "__a"},
+        then_expr: %{op: :bool_literal, value: true},
+        else_expr: %{op: :var, name: "__b"}
+      }
+    }
+
   def special_value_from_target("Basics.negate", [x]),
     do: %{op: :runtime_call, function: "elmc_basics_negate", args: [x]}
 

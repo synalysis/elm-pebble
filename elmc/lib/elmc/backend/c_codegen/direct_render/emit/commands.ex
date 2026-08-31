@@ -342,19 +342,25 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Commands do
   defp text_copy_code(%{op: :var, name: name}, env, counter) do
     expr = %{op: :var, name: name}
 
-    case EnvBindings.native_string_binding(env, name) do
-      native_ref when is_binary(native_ref) ->
-        {"", text_copy_from(native_ref), "", counter}
+    case EnvBindings.let_value_expr(env, name) do
+      %{op: op} = let_expr when op in [:if, :string_literal] ->
+        text_copy_code(let_expr, env, counter)
 
-      nil ->
-        if Host.typed_string_expr?(expr, env) do
-          {text_code, text_ref, cleanup, counter} =
-            Host.compile_native_string_expr(expr, env, counter)
+      _ ->
+        case EnvBindings.native_string_binding(env, name) do
+          native_ref when is_binary(native_ref) ->
+            {"", text_copy_from(native_ref), "", counter}
 
-          cleanup_code = Release.release_vars(cleanup, "")
-          {text_code, text_copy_from(text_ref), cleanup_code, counter}
-        else
-          text_copy_boxed_code(expr, env, counter)
+          nil ->
+            if Host.typed_string_expr?(expr, env) do
+              {text_code, text_ref, cleanup, counter} =
+                Host.compile_native_string_expr(expr, env, counter)
+
+              cleanup_code = Release.release_vars(cleanup, "")
+              {text_code, text_copy_from(text_ref), cleanup_code, counter}
+            else
+              text_copy_boxed_code(expr, env, counter)
+            end
         end
     end
   end

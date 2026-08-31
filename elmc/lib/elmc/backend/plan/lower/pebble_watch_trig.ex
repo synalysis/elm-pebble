@@ -3,6 +3,7 @@ defmodule Elmc.Backend.Plan.Lower.PebbleWatchTrig do
 
   alias Elmc.Backend.CCodegen.ProdMode
   alias Elmc.Backend.Plan.Builder
+  alias Elmc.Backend.Plan.Context
   alias Elmc.Backend.Plan.Lower.Expr
   alias Elmc.Backend.Plan.Types
 
@@ -110,6 +111,8 @@ defmodule Elmc.Backend.Plan.Lower.PebbleWatchTrig do
   defp phase_angle_from_turns(_, _, _), do: :error
 
   defp phase_fraction_units(expr, ctx, b) do
+    expr = resolve_let_expr(expr, ctx)
+
     case fdiv_operands(expr) do
       {:ok, numerator, denominator} ->
         with {:ok, phase_reg, b1} <- compile_to_float_numerator(numerator, ctx, b),
@@ -123,6 +126,15 @@ defmodule Elmc.Backend.Plan.Lower.PebbleWatchTrig do
         :error
     end
   end
+
+  defp resolve_let_expr(%{op: :var, name: name} = expr, ctx) when is_binary(name) do
+    case Context.let_expr(ctx, name) || Context.stream_alias(ctx, name) do
+      aliased when is_map(aliased) -> resolve_let_expr(aliased, ctx)
+      _ -> expr
+    end
+  end
+
+  defp resolve_let_expr(expr, _ctx), do: expr
 
   defp fdiv_operands(%{op: :call, name: "__fdiv__", args: [left, right]}),
     do: {:ok, left, right}

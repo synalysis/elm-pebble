@@ -98,6 +98,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Expr do
           env
           |> Map.delete(name)
           |> EnvBindings.put_native_string_binding(name, value_ref)
+          |> EnvBindings.put_let_value_expr(name, value_expr)
 
         cleanup_code =
           cleanup_refs
@@ -244,6 +245,8 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Expr do
 
                 {value_code, _value_var, body_env, release_code, counter} =
                   direct_render_native_int_let_operand(name, value_expr, value_code, value_var, env, counter)
+
+                body_env = EnvBindings.put_let_value_expr(body_env, name, value_expr)
 
                 case emit_expr(in_expr, body_env, counter) do
                   {:ok, body_code, counter} ->
@@ -405,6 +408,16 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Expr do
 
   def emit_expr(%{op: :qualified_call, target: target, args: args}, env, counter) do
     Host.direct_emit_qualified(Host.normalize_special_target(target), args, env, counter)
+  end
+
+  def emit_expr(%{op: :tuple3, a: a, b: b, c: c}, env, counter) do
+    with {:ok, a_code, c1} <- emit_expr(a, env, counter),
+         {:ok, b_code, c2} <- emit_expr(b, env, c1),
+         {:ok, c_code, c3} <- emit_expr(c, env, c2) do
+      {:ok, a_code <> b_code <> c_code, c3}
+    else
+      _ -> :error
+    end
   end
 
   def emit_expr(_expr, _env, _counter), do: :error
@@ -851,6 +864,12 @@ defmodule Elmc.Backend.CCodegen.DirectRender.Emit.Expr do
 
     collect_direct_var_contexts(name, left, left_context, env) ++
       collect_direct_var_contexts(name, right, right_context, env)
+  end
+
+  defp collect_direct_var_contexts(name, %{op: :tuple3, a: a, b: b, c: c}, _context, env) do
+    collect_direct_var_contexts(name, a, :boxed, env) ++
+      collect_direct_var_contexts(name, b, :boxed, env) ++
+      collect_direct_var_contexts(name, c, :boxed, env)
   end
 
   defp collect_direct_var_contexts(name, %{op: :record_literal, fields: fields}, _context, env)

@@ -434,16 +434,42 @@ export function createTaskRuntime(deps) {
     return headers;
   };
 
+  const asMaybeInt = (ptr) => {
+    const payload = readHandle(ptr | 0);
+    if (!payload) return 0;
+    if (payload.tag === TAG_INT) return payload.value | 0;
+    if (payload.tag === TAG_FLOAT) {
+      const n = Number(payload.value);
+      return Number.isFinite(n) ? n | 0 : 0;
+    }
+    return 0;
+  };
+
+  // Official Elm Maybe is tuple2(ctor, payload) / INT 0 (Nothing). Host TAG_MAYBE
+  // is the JS-native wrapper used by some runtime constructors.
   const readMaybeInt = (maybePtr) => {
     const maybe = readHandle(maybePtr);
-    if (maybe?.tag !== TAG_MAYBE || maybe.value == null) return 0;
-    const payload = readHandle(maybe.value);
-    return payload?.tag === TAG_INT ? payload.value | 0 : 0;
+    if (!maybe) return 0;
+    if (maybe.tag === TAG_MAYBE) {
+      if (maybe.value == null || maybe.isJust === false) return 0;
+      return asMaybeInt(maybe.value);
+    }
+    if (maybe.tag === TAG_TUPLE2) {
+      const ctor = intValue(maybe.first | 0);
+      if (ctor === 0) return 0;
+      return asMaybeInt(maybe.second | 0);
+    }
+    if (maybe.tag === TAG_INT) return maybe.value | 0;
+    return 0;
   };
 
   const maybeIsJust = (maybePtr) => {
     const maybe = readHandle(maybePtr);
-    return maybe?.tag === TAG_MAYBE && maybe.value != null;
+    if (!maybe) return false;
+    if (maybe.tag === TAG_MAYBE) return maybe.value != null && maybe.isJust !== false;
+    if (maybe.tag === TAG_TUPLE2) return intValue(maybe.first | 0) !== 0;
+    if (maybe.tag === TAG_INT) return (maybe.value | 0) !== 0;
+    return false;
   };
 
   // Elm stores record fields alphabetically. `buildGetOptionsRecord` uses source
@@ -781,9 +807,18 @@ export function createTaskRuntime(deps) {
       if (isKilled(pid) || processController?.signal?.aborted) {
         return { rc: RC_SUCCESS, value: 0, killed: true };
       }
+      // Dedicated fetch controller: timeoutInMs must not abort processController,
+      // or the catch path treats Timeout as a killed Process and never dispatches.
       const controller =
-        processController ||
-        (typeof AbortController !== "undefined" ? new AbortController() : null);
+        typeof AbortController !== "undefined" ? new AbortController() : processController;
+      const unlinkKill =
+        controller && processController?.signal && controller !== processController
+          ? (() => {
+              const onKill = () => controller.abort();
+              processController.signal.addEventListener("abort", onKill);
+              return () => processController.signal.removeEventListener("abort", onKill);
+            })()
+          : () => {};
       let timeoutId = null;
       if (controller && timeoutMs > 0) {
         timeoutId = setTimeout(() => controller.abort(), timeoutMs);
@@ -797,6 +832,7 @@ export function createTaskRuntime(deps) {
           signal: controller?.signal,
         });
         if (timeoutId) clearTimeout(timeoutId);
+        unlinkKill();
 
         if (!response.ok) {
           const errText = await response.text();
@@ -816,6 +852,7 @@ export function createTaskRuntime(deps) {
         };
       } catch (err) {
         if (timeoutId) clearTimeout(timeoutId);
+        unlinkKill();
         if (isKilled(pid) || processController?.signal?.aborted) {
           return { rc: RC_SUCCESS, value: 0, killed: true };
         }

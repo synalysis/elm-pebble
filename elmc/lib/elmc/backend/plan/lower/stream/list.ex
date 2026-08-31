@@ -806,7 +806,7 @@ defmodule Elmc.Backend.Plan.Lower.Stream.List do
   defp named_list_stream_helper?(fun, ctx) do
     case apply_callee(fun, ctx) do
       {:ok, mod, name, _} ->
-        case Map.get(ctx.decl_map || %{}, {mod, name}) do
+        case Map.get(ctx.decl_map, {mod, name}) do
           %{type: type} when is_binary(type) -> list_result_type?(type)
           _ -> false
         end
@@ -996,8 +996,6 @@ defmodule Elmc.Backend.Plan.Lower.Stream.List do
       end
     end)
   end
-
-  defp filter_map_expand_items(_, _), do: :error
 
   defp eval_int_pred(body, param, %{op: :int_literal, value: n}) when is_integer(n) do
     case mod_by_eq_pred(body, param) do

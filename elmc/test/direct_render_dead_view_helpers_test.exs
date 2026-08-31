@@ -33,7 +33,8 @@ defmodule Elmc.DirectRenderDeadViewHelpersTest do
     assert generated =~ "elmc_fn_Main_view_commands_append"
     refute generated =~ "static RC elmc_fn_Main_view("
     refute generated =~ "static RC elmc_fn_Main_drawCell("
-    refute generated =~ "static RC elmc_fn_Main_boardLayout("
+    # Plan stream of view call_fn's boardLayout (Host used to inline native fields).
+    assert generated =~ "static RC elmc_fn_Main_boardLayout("
     refute generated =~ "elmc_fn_Main_view_closure_0"
   end
 
@@ -62,7 +63,7 @@ defmodule Elmc.DirectRenderDeadViewHelpersTest do
     assert generated =~ "elmc_fn_Main_view_commands_append"
     refute generated =~ "static RC elmc_fn_Main_view("
     refute generated =~ "static RC elmc_fn_Main_drawCell("
-    refute generated =~ "static RC elmc_fn_Main_boardLayout("
+    assert generated =~ "static RC elmc_fn_Main_boardLayout("
     refute generated =~ "elmc_fn_Main_view_closure_0"
     assert pebble_c =~ "#define ELMC_PEBBLE_APPEND_FALLBACK_SCENE 1"
     assert pebble_h =~ "#define ELMC_PEBBLE_APLITE_DIRECT_VIEW_SCENE 1"

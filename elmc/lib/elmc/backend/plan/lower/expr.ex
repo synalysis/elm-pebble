@@ -2482,6 +2482,7 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
 
     Enum.reduce_while(bindings, {:ok, ctx, b}, fn {name, value_expr}, {:ok, ctx_acc, b_acc} ->
       value_expr = maybe_packed_text_options_expr(value_expr)
+      ctx_acc = Context.put_let_expr(ctx_acc, name, value_expr)
 
       if Context.stream_mode?(ctx_acc) and
            Stream.eligible_expr?(value_expr, ctx_acc.decl_map, ctx_acc.module) do

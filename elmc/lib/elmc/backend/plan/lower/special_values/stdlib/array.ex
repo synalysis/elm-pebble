@@ -61,6 +61,10 @@ defmodule Elmc.Backend.Plan.Lower.SpecialValues.Stdlib.Array do
   def special_value_from_target("Array.append", [a, b]),
     do: %{op: :runtime_call, function: "elmc_array_append", args: [a, b]}
 
+  # Elm.Kernel.JsArray.appendN dest source maxIndex — copy source into dest.
+  def special_value_from_target("Array.appendN", [dest, source, _max_index]),
+    do: %{op: :runtime_call, function: "elmc_array_append", args: [dest, source]}
+
   def special_value_from_target("Array.slice", [start, end_idx, array]),
     do: %{op: :runtime_call, function: "elmc_array_slice", args: [start, end_idx, array]}
 

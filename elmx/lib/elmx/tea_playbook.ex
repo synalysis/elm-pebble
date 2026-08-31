@@ -232,13 +232,9 @@ defmodule Elmx.TeaPlaybook do
 
   defp wire_for_action(_action, _step), do: {nil, nil}
 
-  defp from_phone_value(ctor) when is_binary(ctor) do
-    Samples.phone_sample(ctor) || Samples.from_phone(ctor, [])
-  end
+  defp from_phone_value(ctor) when is_binary(ctor), do: Samples.phone_sample(ctor)
 
-  defp from_phone_value(%{name: name, args: args}) do
-    Samples.phone_sample(name, args) || Samples.from_phone(name, [])
-  end
+  defp from_phone_value(%{name: name, args: args}), do: Samples.phone_sample(name, args)
 
   defp button_message(:up), do: "UpPressed"
   defp button_message(:down), do: "DownPressed"
@@ -419,13 +415,7 @@ defmodule Elmx.TeaPlaybook do
 
   defp phone_steps(template) do
     Protocol.phone_to_watch_constructors(template)
-    |> Enum.flat_map(fn %{name: name, args: args} = ctor ->
-      if Samples.phone_sample_supported?(name, args) do
-        [from_phone_step(ctor)]
-      else
-        []
-      end
-    end)
+    |> Enum.map(&from_phone_step/1)
   end
 
   defp infer_mode(template) do

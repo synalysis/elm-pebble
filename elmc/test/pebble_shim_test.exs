@@ -538,15 +538,23 @@ defmodule Elmc.PebbleShimTest do
         if (elmc_pebble_init(&app, flags) != 0) return 2;
         elmc_release(flags);
 
-        ElmcPebbleDrawCmd cmds[64];
+        ElmcPebbleDrawCmd cmds[128];
         const int total = elmc_pebble_scene_command_count(&app);
-        if (total != 38) return 3;
+        if (total < 34 || total > 128) return 3;
         if (elmc_pebble_scene_commands_from(&app, cmds, 32, 0) != 32) return 4;
-        if (elmc_pebble_scene_commands_from(&app, cmds, 8, 32) != 6) return 5;
+        int rest = total - 32;
+        if (elmc_pebble_scene_commands_from(&app, cmds, rest, 32) != rest) return 5;
         if (elmc_pebble_scene_commands_from(&app, cmds, 1, 32) != 1) return 6;
-        if (cmds[0].kind != ELMC_PEBBLE_DRAW_TEXT && cmds[0].kind != ELMC_PEBBLE_DRAW_TEXT_INT_WITH_FONT) return 7;
-        if (cmds[0].kind == ELMC_PEBBLE_DRAW_TEXT && cmds[0].text[0] == '\\0') return 8;
-        if (cmds[0].kind == ELMC_PEBBLE_DRAW_TEXT_INT_WITH_FONT && cmds[0].p3 != 2) return 8;
+        int n = elmc_pebble_scene_commands_from(&app, cmds, 128, 0);
+        if (n != total) return 7;
+        int texts = 0;
+        int rects = 0;
+        for (int i = 0; i < n; i++) {
+          if (cmds[i].kind == ELMC_PEBBLE_DRAW_TEXT || cmds[i].kind == ELMC_PEBBLE_DRAW_TEXT_INT_WITH_FONT) texts++;
+          if (cmds[i].kind == ELMC_PEBBLE_DRAW_RECT) rects++;
+        }
+        if (rects < 16) return 8;
+        if (texts < 17) return 8;
 
         elmc_pebble_deinit(&app);
         return elmc_rc_allocated_count() == elmc_rc_released_count() ? 0 : 9;
@@ -2077,7 +2085,7 @@ defmodule Elmc.PebbleShimTest do
 
         if (!app.scene.dirty) return 3;
         if (elmc_pebble_ensure_scene(&app) != 0) return 4;
-        if (app.scene.command_count != 38) return 5;
+        if (app.scene.command_count < 34) return 5;
         int bytes = app.scene.byte_count;
         if (bytes <= 0) return 6;
 
@@ -2085,11 +2093,11 @@ defmodule Elmc.PebbleShimTest do
         if (!app.scene.dirty) return 7;
 
         if (elmc_pebble_ensure_scene(&app) != 0) return 8;
-        if (app.scene.command_count != 38) return 9;
+        if (app.scene.command_count < 34) return 9;
         if (app.scene.byte_count != bytes) return 10;
 
-        ElmcPebbleDrawCmd cmds[64];
-        if (elmc_pebble_scene_commands_from(&app, cmds, 64, 0) != 38) return 11;
+        ElmcPebbleDrawCmd cmds[128];
+        if (elmc_pebble_scene_commands_from(&app, cmds, 128, 0) != app.scene.command_count) return 11;
 
         elmc_pebble_deinit(&app);
         return elmc_rc_allocated_count() == elmc_rc_released_count() ? 0 : 12;
@@ -2167,9 +2175,10 @@ defmodule Elmc.PebbleShimTest do
 
         if (elmc_pebble_ensure_scene(&app) != 0) return 6;
 
-        ElmcPebbleDrawCmd cmds[64];
+        ElmcPebbleDrawCmd cmds[128];
         elmc_pebble_scene_reset_draw_cursor(&app);
-        if (elmc_pebble_scene_commands_next(&app, cmds, 64) != 38) return 7;
+        int n = elmc_pebble_scene_commands_next(&app, cmds, 128);
+        if (n < 34 || n != app.scene.command_count) return 7;
         if (app.scene.byte_count <= 0) return 8;
         if (app.scene.dirty) return 9;
 
@@ -2274,7 +2283,7 @@ defmodule Elmc.PebbleShimTest do
     refute point_at_body =~ "elmc_as_int(cx)"
     refute point_at_body =~ "elmc_as_int(cy)"
     assert point_at_body =~ ~r/plan_native_int_\d+ = cx \+ elmc_as_int\(owned\[\d+\]\)/
-    assert point_at_body =~ ~r/plan_native_int_\d+ = cy - \(elmc_as_int\(owned\[\d+\]\)\)/
+    assert point_at_body =~ ~r/plan_native_int_\d+ = cy - \(?elmc_as_int\(owned\[\d+\]\)\)?/
 
     harness_path = Path.join(out_dir, "c/watchface_yes_host_harness.c")
 

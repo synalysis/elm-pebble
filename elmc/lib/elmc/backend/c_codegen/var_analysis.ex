@@ -114,6 +114,12 @@ defmodule Elmc.Backend.CCodegen.VarAnalysis do
     MapSet.union(used_vars(left), used_vars(right))
   end
 
+  def used_vars(%{op: :tuple3, a: a, b: b, c: c}) do
+    used_vars(a)
+    |> MapSet.union(used_vars(b))
+    |> MapSet.union(used_vars(c))
+  end
+
   def used_vars(%{op: :case, subject: subject, branches: branches}) do
     branch_vars =
       branches
@@ -287,6 +293,12 @@ defmodule Elmc.Backend.CCodegen.VarAnalysis do
 
   defp free_vars(%{op: :tuple2, left: left, right: right}, bound, stop_at_nested?) do
     MapSet.union(free_vars(left, bound, stop_at_nested?), free_vars(right, bound, stop_at_nested?))
+  end
+
+  defp free_vars(%{op: :tuple3, a: a, b: b, c: c}, bound, stop_at_nested?) do
+    free_vars(a, bound, stop_at_nested?)
+    |> MapSet.union(free_vars(b, bound, stop_at_nested?))
+    |> MapSet.union(free_vars(c, bound, stop_at_nested?))
   end
 
   defp free_vars(%{op: op, params: params}, bound, stop_at_nested?)

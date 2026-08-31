@@ -79,7 +79,7 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Expr do
       ctor in ["Ok", "Err", "Just"] ->
         compile_flat_tagged_ctor(ctor, right, env, counter, qualified)
 
-      match?(%{op: :tuple2}, right) and union_ctor_payload_atoms_only?(right) ->
+      match?(%{op: op} when op in [:tuple2, :tuple3], right) and union_ctor_payload_atoms_only?(right) ->
         {l, env, c1} = Emit.compile_expr(left, env, counter)
         {r, env, c2} = Emit.compile_expr(right, env, c1)
         {["{", l, ", ", r, "}"], env, c2}
@@ -93,6 +93,17 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Expr do
     {l, env, c1} = Emit.compile_expr(left, env, counter)
     {r, env, c2} = Emit.compile_expr(right, env, c1)
     {["{", l, ", ", r, "}"], env, c2}
+  end
+
+  @spec compile_tuple3(map(), Types.compile_env(), Types.elm_value()) :: Types.elm_value()
+
+  def compile_tuple3(%{a: a_expr, b: b_expr, c: c_expr}, env, counter) do
+    {a_code, env, c1} = Emit.compile_expr(a_expr, env, counter)
+    {b_code, env, c2} = Emit.compile_expr(b_expr, env, c1)
+    {c_code, env, c3} = Emit.compile_expr(c_expr, env, c2)
+    # Official `#3` payload is a + `#2(b, c)` so Tuple.first/second and
+    # let `(x, y, z)` (first, first-of-second, second-of-second) stay correct.
+    {["{", a_code, ", {", b_code, ", ", c_code, "}}"], env, c3}
   end
 
   @spec compile_flat_tagged_ctor(Types.elm_value(), Types.expr() | Types.elm_value(), Types.compile_env(), Types.elm_value(), Types.elm_value()) :: Types.elm_value()
@@ -141,6 +152,10 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Expr do
 
   def flatten_ctor_payload_exprs(%{op: :tuple2, left: left, right: right}) do
     flatten_ctor_payload_exprs(left) ++ flatten_ctor_payload_exprs(right)
+  end
+
+  def flatten_ctor_payload_exprs(%{op: :tuple3, a: a, b: b, c: c}) do
+    flatten_ctor_payload_exprs(a) ++ flatten_ctor_payload_exprs(b) ++ flatten_ctor_payload_exprs(c)
   end
 
   def flatten_ctor_payload_exprs(other), do: [other]
