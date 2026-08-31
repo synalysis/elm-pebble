@@ -451,6 +451,7 @@ defmodule Elmx.TeaPlaybook do
           from_phone_step("ProvideSun"),
           from_phone_step("ProvideWeather"),
           from_phone_step("ProvideMoonPhase"),
+          from_phone_step("ProvideTide"),
           step_view()
         ],
         expects: %{

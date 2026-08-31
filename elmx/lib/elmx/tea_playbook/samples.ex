@@ -50,26 +50,31 @@ defmodule Elmx.TeaPlaybook.Samples do
 
   `type_args` are the declared Elm type tokens (used for arity / type-token fallback).
   """
+  # Empty: every declared PhoneToWatch ctor in shipped templates has a sample.
+  # Add a name here (and skip known_phone_args) when a ctor must stay uninjected.
+  @unsupported_phone_ctors MapSet.new([])
+
   @spec phone_sample(String.t(), [String.t()]) :: map() | nil
   def phone_sample(name, type_args \\ []) when is_binary(name) and is_list(type_args) do
-    arity = length(type_args)
+    if MapSet.member?(@unsupported_phone_ctors, name) do
+      nil
+    else
+      arity = length(type_args)
 
-    case known_phone_args(name, arity) do
-      :unsupported ->
-        nil
+      case known_phone_args(name, arity) do
+        wire_args when is_list(wire_args) ->
+          from_phone(name, wire_args)
 
-      wire_args when is_list(wire_args) ->
-        from_phone(name, wire_args)
-
-      :from_types ->
-        from_phone(name, Enum.map(type_args, &sample_type_arg/1))
+        :from_types ->
+          from_phone(name, Enum.map(type_args, &sample_type_arg/1))
+      end
     end
   end
 
   @spec phone_sample_supported?(String.t(), [String.t()]) :: boolean()
   def phone_sample_supported?(name, type_args \\ [])
       when is_binary(name) and is_list(type_args) do
-    known_phone_args(name, length(type_args)) != :unsupported
+    not MapSet.member?(@unsupported_phone_ctors, name)
   end
 
   @spec provide_sun() :: map()
@@ -89,6 +94,9 @@ defmodule Elmx.TeaPlaybook.Samples do
 
   @spec provide_moon() :: map()
   def provide_moon, do: phone_sample!("ProvideMoon")
+
+  @spec provide_tide() :: map()
+  def provide_tide, do: phone_sample!("ProvideTide")
 
   defp phone_sample!(name) do
     case phone_sample(name) do
@@ -166,7 +174,8 @@ defmodule Elmx.TeaPlaybook.Samples do
   defp known_phone_args("ProvidePiece", _), do: [0, [0, 3, -3, -5]]
   defp known_phone_args("EndFigure", _), do: [1]
 
-  defp known_phone_args("ProvideTide", _), do: :unsupported
+  defp known_phone_args("ProvideTide", _),
+    do: [720, 150, 50, %{"ctor" => "HighTide", "args" => []}]
 
   defp known_phone_args(_name, _arity), do: :from_types
 

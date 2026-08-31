@@ -6,14 +6,14 @@ defmodule ElmEx.DebuggerContract.ExprCoerce do
   @known_ops ~w(
     call qualified_call qualified_call1 constructor_call list_literal
     let_in case if var expr int_literal string_literal float_literal bool_literal char_literal
-    lambda tuple2 tuple_expr field_access record_literal record_update
+    lambda tuple2 tuple3 tuple_expr field_access record_literal record_update
     add_const sub_const add_vars compare unsupported
     tuple_first_expr tuple_second_expr if_expr
   )a
 
   @field_keys ~w(
     name target args items subject branches pattern expr cond then_expr else_expr
-    in_expr value_expr left right kind fields bind arg_pattern constructors type elements
+    in_expr value_expr left right a b c kind fields bind arg_pattern constructors type elements
     module as exposing
   )
 

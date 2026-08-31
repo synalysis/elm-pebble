@@ -557,6 +557,19 @@ defmodule ElmEx.DebuggerContract.EffectAnalysis.CmdCalls do
     end
   end
 
+  def callback_constructor_from_expr(
+        %{op: :tuple3, a: a, b: b, c: c},
+        bindings,
+        seen,
+        depth
+      ) do
+    ctors =
+      Enum.map([a, b, c], &callback_constructor_from_expr(&1, bindings, seen, depth + 1))
+
+    Enum.find(ctors, &callback_preferred_over_result_mapper?/1) ||
+      Enum.find(ctors, &is_binary/1)
+  end
+
   def callback_constructor_from_expr(%{op: :list_literal, items: items}, bindings, seen, depth)
       when is_list(items) do
     Enum.find_value(items, &callback_constructor_from_expr(&1, bindings, seen, depth + 1))
