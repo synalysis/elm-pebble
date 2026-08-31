@@ -5,6 +5,7 @@ defmodule IdeWeb.WorkspaceLive.BuildFlow do
   import Phoenix.LiveView, only: [start_async: 3]
 
   alias Ide.Compiler
+  alias Ide.Auth
   alias Ide.PebbleToolchain
   alias Ide.Projects
   alias Ide.Projects.Project
@@ -112,9 +113,9 @@ defmodule IdeWeb.WorkspaceLive.BuildFlow do
      |> assign(:check_status, :running)
      |> assign(:compile_status, :running)
      |> assign(:manifest_status, :running)
-     |> start_async(:run_build, fn ->
+     |> start_async(:run_build, Auth.carry_current_user(fn ->
        run_build_pipeline(project, workspace_root, strict?, progress: progress)
-     end)}
+     end))}
   end
 
   def handle_event("run-compile", _params, socket) do
@@ -124,12 +125,12 @@ defmodule IdeWeb.WorkspaceLive.BuildFlow do
     {:noreply,
      socket
      |> assign(:compile_status, :running)
-     |> start_async(:run_compile, fn ->
+     |> start_async(:run_compile, Auth.carry_current_user(fn ->
        Compiler.compile(
          Projects.scope_key(project),
          Compiler.build_page_compile_opts(workspace_root: workspace_root)
        )
-     end)}
+     end))}
   end
 
   def handle_event("run-manifest", _params, socket) do
@@ -452,12 +453,12 @@ defmodule IdeWeb.WorkspaceLive.BuildFlow do
 
         socket
         |> assign(:check_status, :running)
-        |> start_async(:run_check, fn ->
+        |> start_async(:run_check, Auth.carry_current_user(fn ->
           Compiler.check(Projects.scope_key(project),
             workspace_root: compiler_root,
             source_roots: project.source_roots
           )
-        end)
+        end))
     end
   end
 

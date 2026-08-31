@@ -135,7 +135,7 @@ defmodule Ide.ProjectsTest do
     end
   end
 
-  test "owned project adopts legacy unscoped workspace files" do
+  test "owned project does not adopt legacy unscoped workspace files" do
     {:ok, user} =
       %User{}
       |> User.changeset(%{firebase_uid: "legacy-owner"})
@@ -160,8 +160,8 @@ defmodule Ide.ProjectsTest do
     File.write!(Path.join(legacy, "watch/src/Main.elm"), "module Main exposing (main)")
 
     assert Projects.project_workspace_path(project) == scoped
-    assert File.exists?(Path.join(scoped, "watch/elm.json"))
-    assert File.exists?(Path.join(scoped, "watch/src/Main.elm"))
+    refute File.exists?(Path.join(scoped, "watch/elm.json"))
+    assert File.exists?(Path.join(legacy, "watch/elm.json"))
   end
 
   test "ensure_compiler_workspace recreates missing watch elm.json" do

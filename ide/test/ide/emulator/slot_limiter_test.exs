@@ -68,4 +68,29 @@ defmodule Ide.Emulator.SlotLimiterTest do
     assert %{used_slots: 1} = SlotLimiter.status()
     SlotLimiter.release("session-a")
   end
+
+  test "public mode caps slots per tenant without blocking other tenants" do
+    original = Application.get_env(:ide, Ide.Auth, [])
+    Application.put_env(:ide, Ide.Auth, Keyword.put(original, :mode, :public_pebble))
+
+    on_exit(fn ->
+      Application.put_env(:ide, Ide.Auth, original)
+    end)
+
+    assert {:ok, "alice-a"} =
+             SlotLimiter.acquire("alice-a", kind: :embedded, tenant_id: 11, timeout: 50)
+
+    assert {:ok, "alice-b"} =
+             SlotLimiter.acquire("alice-b", kind: :embedded, tenant_id: 11, timeout: 50)
+
+    assert {:error, :timeout} =
+             SlotLimiter.acquire("alice-c", kind: :embedded, tenant_id: 11, timeout: 50)
+
+    assert {:ok, "bob-a"} =
+             SlotLimiter.acquire("bob-a", kind: :embedded, tenant_id: 12, timeout: 50)
+
+    SlotLimiter.release("alice-a")
+    SlotLimiter.release("alice-b")
+    SlotLimiter.release("bob-a")
+  end
 end

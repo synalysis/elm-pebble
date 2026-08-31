@@ -1,7 +1,5 @@
 defmodule Ide.Emulator.Session.Startup do
   @moduledoc false
-  alias Ide.Emulator.Types, as: Types
-
 
   require Logger
 
@@ -28,6 +26,7 @@ defmodule Ide.Emulator.Session.Startup do
          id: Keyword.fetch!(opts, :id),
          token: Lifecycle.random_token(),
          project_slug: project_slug,
+         owner_id: Keyword.get(opts, :owner_id),
          platform: platform,
          artifact_path: artifact_path,
          app_uuid: app_uuid(artifact_path, platform),

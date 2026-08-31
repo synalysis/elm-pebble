@@ -2,9 +2,6 @@ defmodule Ide.Emulator do
   @moduledoc """
   Runtime boundary for embedded Pebble emulator sessions.
   """
-  alias Ide.Emulator.Types, as: Types
-
-
   alias Ide.Emulator.{LogCapture, Screenshot, Session, Session.RuntimeSetup, SlotLimiter, Types}
 
   @type launch_opts :: Types.launch_opts()
@@ -19,6 +16,7 @@ defmodule Ide.Emulator do
            SlotLimiter.acquire(id,
              kind: :embedded,
              platform: platform,
+             tenant_id: Keyword.get(opts, :owner_id),
              timeout: launch_acquire_timeout(opts)
            ) do
       launch_with_slot(id, opts)
@@ -68,6 +66,42 @@ defmodule Ide.Emulator do
       [{pid, _}] -> {:ok, pid}
       [] -> {:error, :not_found}
     end
+  end
+
+  @spec authorize(String.t(), Ide.Auth.User.t() | nil) :: {:ok, pid()} | {:error, :not_found}
+  def authorize(id, user) when is_binary(id) do
+    with {:ok, pid} <- lookup(id) do
+      if session_owner_allowed?(id, pid, user) do
+        {:ok, pid}
+      else
+        {:error, :not_found}
+      end
+    end
+  end
+
+  @spec session_owner_allowed?(String.t(), pid(), Ide.Auth.User.t() | nil) :: boolean()
+  defp session_owner_allowed?(id, pid, user) do
+    if Ide.Auth.public_mode?() do
+      owner_id = registry_owner_id(id) || session_owner_id(pid)
+      match?(%{id: uid} when is_integer(uid), user) and owner_id == user.id
+    else
+      true
+    end
+  end
+
+  @spec registry_owner_id(String.t()) :: integer() | nil
+  defp registry_owner_id(id) do
+    case Registry.lookup(Ide.Emulator.Registry, id) do
+      [{_pid, %{owner_id: owner_id}}] -> owner_id
+      _ -> nil
+    end
+  end
+
+  @spec session_owner_id(pid()) :: integer() | nil
+  defp session_owner_id(pid) do
+    Session.owner_id(pid)
+  catch
+    :exit, _ -> nil
   end
 
   @spec info(String.t()) :: {:ok, Types.session_info()} | {:error, Types.session_atom_error()}

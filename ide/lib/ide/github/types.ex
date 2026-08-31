@@ -45,7 +45,7 @@ defmodule Ide.GitHub.Types do
           | connection_error()
           | File.posix()
 
-  @type credentials_error :: File.posix() | Jason.EncodeError.t()
+  @type credentials_error :: File.posix() | Jason.EncodeError.t() | :no_credentials_scope
 
   @type credentials_file_values :: %{
           optional(String.t()) => String.t() | integer() | nil

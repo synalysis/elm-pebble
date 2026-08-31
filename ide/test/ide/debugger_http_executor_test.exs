@@ -82,6 +82,32 @@ defmodule Ide.Debugger.HttpExecutorTest do
     assert error["ctor"] == "BadBody"
   end
 
+  test "blocks loopback URLs on the default request path" do
+    Application.delete_env(:ide, HttpExecutor)
+
+    command = json_command() |> Map.put("url", "http://127.0.0.1/")
+
+    assert {:ok, result} = HttpExecutor.execute(command)
+
+    assert %{"ctor" => "WeatherReceived", "args" => [%{"ctor" => "Err", "args" => [error]}]} =
+             result["message_value"]
+
+    assert error["ctor"] == "BadUrl"
+  end
+
+  test "blocks link-local metadata URLs on the default request path" do
+    Application.delete_env(:ide, HttpExecutor)
+
+    command = json_command() |> Map.put("url", "http://169.254.169.254/latest/meta-data/")
+
+    assert {:ok, result} = HttpExecutor.execute(command)
+
+    assert %{"ctor" => "WeatherReceived", "args" => [%{"ctor" => "Err", "args" => [error]}]} =
+             result["message_value"]
+
+    assert error["ctor"] == "BadUrl"
+  end
+
   test "maps normalized network errors to Elm Http.NetworkError" do
     command = json_command()
 

@@ -1,13 +1,33 @@
 defmodule IdeWeb.LspChannel do
   use IdeWeb, :channel
 
+  alias Ide.Auth
   alias Ide.Lsp.Server
+  alias Ide.Projects
 
   @impl true
   @spec join(term(), term(), term()) :: term()
 
   def join("lsp:" <> project_slug, _payload, socket) do
-    {:ok, assign(socket, :lsp_state, Server.new(project_slug))}
+    user = socket.assigns[:current_user]
+
+    if user do
+      Process.put(:ide_current_user, user)
+    end
+
+    cond do
+      not Auth.public_mode?() ->
+        {:ok, assign(socket, :lsp_state, Server.new(project_slug))}
+
+      is_nil(user) ->
+        {:error, %{reason: "unauthorized"}}
+
+      is_nil(Projects.get_project_by_slug(project_slug, user)) ->
+        {:error, %{reason: "unauthorized"}}
+
+      true ->
+        {:ok, assign(socket, :lsp_state, Server.new(project_slug))}
+    end
   end
 
   @impl true

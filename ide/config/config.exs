@@ -54,7 +54,14 @@ config :ide, Ide.PebbleToolchain,
 
 config :ide, Ide.Emulator.SlotLimiter,
   max_slots: 8,
+  max_slots_per_owner: 2,
   acquire_timeout_ms: 600_000
+
+config :ide, Ide.Compiler.Quota, max_concurrent: 2
+
+config :ide, IdeWeb.Session, secure: false
+
+config :ide, IdeWeb.Plugs.RemoteIp, trust: false
 
 config :ide, Ide.Emulator.Session,
   enabled: System.get_env("ELM_PEBBLE_EMBEDDED_EMULATOR", "true") not in ~w(0 false no off),

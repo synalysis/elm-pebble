@@ -46,7 +46,7 @@ defmodule IdeWeb.EmulatorVncChannel do
   def join("emulator_vnc:" <> session_id, _payload, socket) do
     Logger.info("emulator vnc channel join session_id=#{session_id}")
 
-    with {:ok, pid} <- Emulator.lookup(session_id),
+    with {:ok, pid} <- Emulator.authorize(session_id, socket.assigns[:current_user]),
          {:ok, banner} <- Session.vnc_rfb_banner(pid),
          port when is_integer(port) and port > 0 <- Session.local_port(pid, :vnc),
          :ok <- Session.discard_vnc_tcp(pid),

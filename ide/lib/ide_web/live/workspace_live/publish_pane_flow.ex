@@ -127,9 +127,9 @@ defmodule IdeWeb.WorkspaceLive.PublishPaneFlow do
      |> assign(:publish_status, :running)
      |> assign(:manifest_export_status, :running)
      |> assign(:release_notes_status, :running)
-     |> start_async(:prepare_release, fn ->
+     |> start_async(:prepare_release, Auth.carry_current_user(fn ->
        PublishFlow.run_prepare_release(project, workspace_root, release_summary)
-     end)}
+     end))}
   end
 
   def handle_event("push-project-snapshot", _params, socket) do
@@ -140,9 +140,9 @@ defmodule IdeWeb.WorkspaceLive.PublishPaneFlow do
      socket
      |> assign(:github_push_status, :running)
      |> assign(:github_push_output, nil)
-     |> start_async(:push_project_snapshot, fn ->
+     |> start_async(:push_project_snapshot, Auth.carry_current_user(fn ->
        GitHubPush.push_project_snapshot(project, repo_config)
-     end)}
+     end))}
   end
 
   def handle_event("submit-publish-release", params, socket) do

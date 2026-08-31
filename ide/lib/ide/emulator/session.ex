@@ -33,7 +33,8 @@ defmodule Ide.Emulator.Session do
   @spec start_link(Types.session_launch_opts()) :: GenServer.on_start()
   def start_link(opts) do
     id = Keyword.get(opts, :id) || Lifecycle.random_id()
-    GenServer.start_link(__MODULE__, Keyword.put(opts, :id, id), name: via(id))
+    owner_id = Keyword.get(opts, :owner_id)
+    GenServer.start_link(__MODULE__, Keyword.put(opts, :id, id), name: via(id, owner_id))
   end
 
   @spec child_spec(Types.session_launch_opts()) :: Supervisor.child_spec()
@@ -44,6 +45,9 @@ defmodule Ide.Emulator.Session do
       restart: :temporary
     }
   end
+
+  @spec owner_id(pid()) :: integer() | nil
+  def owner_id(pid), do: GenServer.call(pid, :owner_id, 5_000)
 
   @spec info(pid()) :: Types.session_info()
   def info(pid), do: GenServer.call(pid, :info, 30_000)
@@ -245,6 +249,8 @@ defmodule Ide.Emulator.Session do
   @impl true
   def handle_call(:info, _from, state), do: {:reply, Info.public_info(state), state}
 
+  def handle_call(:owner_id, _from, state), do: {:reply, Map.get(state, :owner_id), state}
+
   def handle_call(:artifact_file_path, _from, state), do: {:reply, state.artifact_path, state}
 
   def handle_call(:install_context, _from, state), do: InstallCalls.install_context(state)
@@ -423,7 +429,7 @@ defmodule Ide.Emulator.Session do
 
   defp local_port_call_timeout(kind), do: Pypkjs.local_port_call_timeout(kind)
 
-  defp via(id), do: {:via, Registry, {Ide.Emulator.Registry, id}}
+  defp via(id, owner_id), do: {:via, Registry, {Ide.Emulator.Registry, id, %{owner_id: owner_id}}}
 
   defp config(key, default), do: Config.config(key, default)
 

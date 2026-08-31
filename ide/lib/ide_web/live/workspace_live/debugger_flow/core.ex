@@ -6,6 +6,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerFlow.Core do
 
   alias Ide.Debugger.BytecodeApi
   alias Ide.Emulator.QemuControl
+  alias Ide.Auth
   alias Ide.EmulatorSupport
   alias Ide.PebbleToolchain
   alias Ide.Projects
@@ -813,9 +814,9 @@ defmodule IdeWeb.WorkspaceLive.DebuggerFlow.Core do
           socket |> clear_debugger_bootstrap_busy() |> put_flash(:error, message)
       end
     else
-      start_async(socket, :debugger_bootstrap, fn ->
+      start_async(socket, :debugger_bootstrap, Auth.carry_current_user(fn ->
         DebuggerBootstrapFlow.run(project, run_opts)
-      end)
+      end))
     end
   end
 
@@ -900,7 +901,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerFlow.Core do
       scope_key = Projects.scope_key(project)
       parent = self()
 
-      Task.start(fn ->
+      Task.start(Auth.carry_current_user(fn ->
         result =
           try do
             DebuggerBootstrapFlow.run_companion_bootstrap(project,
@@ -915,7 +916,7 @@ defmodule IdeWeb.WorkspaceLive.DebuggerFlow.Core do
 
         send(parent, :debugger_runtime_updated)
         send(parent, {:companion_debugger_bootstrapped, scope_key, result})
-      end)
+      end))
 
       :ok
     else

@@ -39,6 +39,7 @@ defmodule Ide.Emulator.Types do
           required(:id) => String.t(),
           required(:token) => String.t(),
           required(:project_slug) => String.t(),
+          required(:owner_id) => integer() | nil,
           required(:platform) => String.t(),
           required(:artifact_path) => String.t() | nil,
           required(:app_uuid) => String.t() | nil,
@@ -116,6 +117,7 @@ defmodule Ide.Emulator.Types do
           | {:artifact_path, String.t() | nil}
           | {:has_phone_companion, boolean()}
           | {:has_companion_preferences, boolean()}
+          | {:owner_id, integer() | nil}
           | {:id, String.t()}
           | {:slot_acquire_timeout_ms, pos_integer()}
         ]

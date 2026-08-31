@@ -39,6 +39,7 @@ defmodule Ide.Emulator.Workflow do
          {:ok, session} <-
            Emulator.launch(
              project_slug: Projects.scope_key(project),
+             owner_id: project.owner_id,
              platform: launch_platform,
              artifact_path: package_result.artifact_path,
              has_phone_companion: Map.get(package_result, :has_phone_companion, false),

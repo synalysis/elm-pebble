@@ -2,6 +2,7 @@ defmodule Ide.Compiler do
   alias Ide.Compiler.Cache
   alias Ide.Compiler.DebuggerRuntimeCache
   alias Ide.Compiler.Diagnostics
+  alias Ide.Compiler.Quota
   alias Ide.CompanionProtocolGenerator
   alias Ide.Debugger.Types.ElmcCliIngestBridge
   alias Ide.PebbleToolchain.Elmc, as: PebbleToolchainElmc
@@ -149,7 +150,11 @@ defmodule Ide.Compiler do
   Runs `elmc check` for a workspace and returns parsed diagnostics.
   """
   @spec check(project_slug(), opts()) :: {:ok, check_result()} | {:error, compiler_error()}
-  def check(_project_slug, opts) do
+  def check(project_slug, opts) do
+    gate_quota(opts, fn -> check_unlocked(project_slug, opts) end)
+  end
+
+  defp check_unlocked(_project_slug, opts) do
     workspace_root = Keyword.fetch!(opts, :workspace_root)
     source_roots = Keyword.get(opts, :source_roots)
     check_path = detect_check_path(workspace_root, source_roots)
@@ -332,6 +337,10 @@ defmodule Ide.Compiler do
   """
   @spec compile(project_slug(), opts()) :: {:ok, compile_result()} | {:error, compiler_error()}
   def compile(project_slug, opts) do
+    gate_quota(opts, fn -> compile_unlocked(project_slug, opts) end)
+  end
+
+  defp compile_unlocked(project_slug, opts) do
     workspace_root = Keyword.fetch!(opts, :workspace_root)
     source_roots = Keyword.get(opts, :source_roots)
     compile_path = detect_check_path(workspace_root, source_roots)
@@ -393,6 +402,10 @@ defmodule Ide.Compiler do
   @spec compile_debugger_runtime(project_slug(), opts()) ::
           {:ok, compile_result()} | {:error, compiler_error()}
   def compile_debugger_runtime(project_slug, opts) do
+    gate_quota(opts, fn -> compile_debugger_runtime_unlocked(project_slug, opts) end)
+  end
+
+  defp compile_debugger_runtime_unlocked(project_slug, opts) do
     workspace_root = Keyword.fetch!(opts, :workspace_root)
     source_roots = Keyword.get(opts, :source_roots)
     compile_path = detect_check_path(workspace_root, source_roots)
@@ -1418,4 +1431,44 @@ defmodule Ide.Compiler do
   @spec empty_fallback(String.t(), String.t()) :: String.t()
   defp empty_fallback("", fallback), do: fallback
   defp empty_fallback(value, _fallback), do: value
+
+  @spec gate_quota(opts(), (-> {:ok, map()} | {:error, compiler_error()})) ::
+          {:ok, map()} | {:error, compiler_error()}
+  defp gate_quota(opts, fun) when is_function(fun, 0) do
+    case Quota.with_quota(fun) do
+      {:error, :busy} ->
+        workspace_root = Keyword.get(opts, :workspace_root, "")
+        message = "Compile limit reached for this account. Wait for the current job to finish."
+
+        diagnostics =
+          Diagnostics.normalize_list([
+            %{
+              severity: "error",
+              source: "elmc",
+              message: message,
+              file: nil,
+              line: nil,
+              column: nil
+            }
+          ])
+
+        counts = Diagnostics.summary(diagnostics)
+
+        {:ok,
+         %{
+           status: :error,
+           compiled_path: workspace_root,
+           checked_path: workspace_root,
+           revision: "none",
+           cached?: false,
+           output: message,
+           diagnostics: diagnostics,
+           error_count: counts.error_count,
+           warning_count: counts.warning_count
+         }}
+
+      other ->
+        other
+    end
+  end
 end

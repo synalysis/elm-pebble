@@ -1,9 +1,14 @@
 defmodule Ide.GitHub.Credentials do
   @moduledoc """
   Lightweight persisted storage for GitHub OAuth credentials.
+
+  Local mode uses a single instance file. Public modes store credentials under
+  `users/{id}/github_credentials.json` so tenants cannot share a token.
   """
 
+  alias Ide.Auth
   alias Ide.GitHub.Types
+  alias Ide.Settings
 
   @type wire_value :: String.t() | integer() | atom() | nil
   @type file_values :: Types.credentials_file_values()
@@ -60,6 +65,19 @@ defmodule Ide.GitHub.Credentials do
     write_file_values(%{})
   end
 
+  @spec delete_for_user(integer() | %{id: integer()}) :: :ok
+  def delete_for_user(%{id: id}) when is_integer(id), do: delete_for_user(id)
+
+  def delete_for_user(owner_id) when is_integer(owner_id) do
+    path = user_credentials_path(owner_id)
+
+    if File.exists?(path) do
+      File.rm(path)
+    end
+
+    :ok
+  end
+
   @spec connected?() :: boolean()
   def connected? do
     current().connected?
@@ -72,34 +90,56 @@ defmodule Ide.GitHub.Credentials do
 
   @spec read_file_values() :: file_values()
   defp read_file_values do
-    path = credentials_path()
+    case credentials_path() do
+      {:ok, path} ->
+        case File.read(path) do
+          {:ok, content} ->
+            case Jason.decode(content) do
+              {:ok, values} when is_map(values) -> values
+              _ -> %{}
+            end
 
-    case File.read(path) do
-      {:ok, content} ->
-        case Jason.decode(content) do
-          {:ok, values} when is_map(values) -> values
-          _ -> %{}
+          {:error, _reason} ->
+            %{}
         end
 
-      {:error, _reason} ->
+      :error ->
         %{}
     end
   end
 
   @spec write_file_values(file_values()) :: :ok | {:error, Types.credentials_error()}
   defp write_file_values(values) do
-    path = credentials_path()
-    parent = Path.dirname(path)
-
-    with :ok <- File.mkdir_p(parent),
+    with {:ok, path} <- credentials_path(),
+         :ok <- File.mkdir_p(Path.dirname(path)),
          {:ok, encoded} <- Jason.encode(values, pretty: true),
          :ok <- File.write(path, encoded <> "\n") do
       :ok
+    else
+      :error -> {:error, :no_credentials_scope}
+      {:error, reason} -> {:error, reason}
     end
   end
 
-  @spec credentials_path() :: String.t()
+  @spec credentials_path() :: {:ok, String.t()} | :error
   defp credentials_path do
+    if Auth.public_mode?() do
+      case Process.get(:ide_current_user) do
+        %{id: id} when is_integer(id) -> {:ok, user_credentials_path(id)}
+        _ -> :error
+      end
+    else
+      {:ok, global_credentials_path()}
+    end
+  end
+
+  @spec user_credentials_path(integer()) :: String.t()
+  defp user_credentials_path(owner_id) when is_integer(owner_id) do
+    Path.join([Settings.data_root(), "users", Integer.to_string(owner_id), "github_credentials.json"])
+  end
+
+  @spec global_credentials_path() :: String.t()
+  defp global_credentials_path do
     Application.get_env(:ide, Ide.GitHub, [])
     |> Keyword.fetch!(:credentials_path)
   end

@@ -6,9 +6,13 @@ defmodule Ide.Emulator.SlotLimiter do
   emulator) and release it when the emulator stops. When all slots are in use,
   additional acquire requests wait in a FIFO queue until a slot is released or
   the caller's timeout expires.
+
+  In public modes, each tenant is also capped by `max_slots_per_owner`.
   """
 
   use GenServer
+
+  alias Ide.Auth
 
   @name __MODULE__
 
@@ -16,6 +20,7 @@ defmodule Ide.Emulator.SlotLimiter do
   @type slot_meta :: %{
           kind: kind(),
           platform: String.t() | nil,
+          tenant_id: integer() | nil,
           acquired_at: integer()
         }
 
@@ -90,7 +95,7 @@ defmodule Ide.Emulator.SlotLimiter do
         send(pid, {:emulator_slot_granted, ref})
         {:noreply, state}
 
-      map_size(state.slots) < state.max_slots ->
+      map_size(state.slots) < state.max_slots and not tenant_at_cap?(state, meta.tenant_id) ->
         state = put_slot(state, owner_id, meta)
         send(pid, {:emulator_slot_granted, ref})
         {:noreply, grant_queued(state)}
@@ -154,10 +159,32 @@ defmodule Ide.Emulator.SlotLimiter do
     if map_size(state.slots) >= state.max_slots or :queue.is_empty(state.queue) do
       state
     else
-      {{:value, waiter}, queue} = :queue.out(state.queue)
-      state = %{state | queue: queue, slots: Map.put(state.slots, waiter.owner_id, waiter.meta)}
-      send(waiter.pid, {:emulator_slot_granted, waiter.ref})
-      grant_queued_loop(state)
+      case take_eligible_waiter(state) do
+        {nil, _queue} ->
+          state
+
+        {waiter, queue} ->
+          state = %{
+            state
+            | queue: queue,
+              slots: Map.put(state.slots, waiter.owner_id, waiter.meta)
+          }
+
+          send(waiter.pid, {:emulator_slot_granted, waiter.ref})
+          grant_queued_loop(state)
+      end
+    end
+  end
+
+  defp take_eligible_waiter(state) do
+    list = :queue.to_list(state.queue)
+
+    case Enum.split_while(list, fn waiter -> tenant_at_cap?(state, waiter.meta.tenant_id) end) do
+      {blocked, [waiter | rest]} ->
+        {waiter, :queue.from_list(blocked ++ rest)}
+
+      {_blocked, []} ->
+        {nil, state.queue}
     end
   end
 
@@ -176,8 +203,30 @@ defmodule Ide.Emulator.SlotLimiter do
     %{
       kind: Keyword.get(opts, :kind, :embedded),
       platform: Keyword.get(opts, :platform),
+      tenant_id: Keyword.get(opts, :tenant_id),
       acquired_at: System.monotonic_time(:millisecond)
     }
+  end
+
+  defp tenant_at_cap?(_state, nil), do: false
+
+  defp tenant_at_cap?(state, tenant_id) do
+    cap = max_slots_per_owner(state)
+
+    used =
+      Enum.count(state.slots, fn {_owner, meta} ->
+        Map.get(meta, :tenant_id) == tenant_id
+      end)
+
+    used >= cap
+  end
+
+  defp max_slots_per_owner(state) do
+    if Auth.public_mode?() do
+      config(:max_slots_per_owner, 2) |> max(1)
+    else
+      state.max_slots
+    end
   end
 
   defp config(key, default) do

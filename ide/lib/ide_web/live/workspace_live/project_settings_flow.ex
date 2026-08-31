@@ -526,9 +526,9 @@ defmodule IdeWeb.WorkspaceLive.ProjectSettingsFlow do
           _ ->
             socket
             |> assign(:github_repo_status, :checking)
-            |> start_async(:github_repo_status_check, fn ->
+            |> start_async(:github_repo_status_check, Auth.carry_current_user(fn ->
               GitHubRepositories.lookup_status(config)
-            end)
+            end))
         end
     end
   end
@@ -588,7 +588,7 @@ defmodule IdeWeb.WorkspaceLive.ProjectSettingsFlow do
          |> assign(:github_create_status, :running)
          |> assign(:github_push_status, if(mode == :create_and_push, do: :running, else: :idle))
          |> assign(:github_push_output, nil)
-         |> start_async(async_name, task_fn)}
+         |> start_async(async_name, Auth.carry_current_user(task_fn))}
     end
   end
 

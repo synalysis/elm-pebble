@@ -51,6 +51,37 @@ defmodule Ide.Auth do
   def public_custom_mode?, do: mode() == :public_custom
 
   @doc """
+  Copies this process's current user into a zero-arity function.
+
+  LiveView `start_async` and `Task` bodies do not inherit the process dictionary,
+  so GitHub credentials and compile quotas would otherwise see no tenant.
+  """
+  @spec carry_current_user((-> result)) :: (-> result) when result: term()
+  def carry_current_user(fun) when is_function(fun, 0) do
+    user = Process.get(:ide_current_user)
+
+    fn ->
+      previous = Process.get(:ide_current_user)
+
+      if match?(%{id: id} when is_integer(id), user) do
+        Process.put(:ide_current_user, user)
+      else
+        Process.delete(:ide_current_user)
+      end
+
+      try do
+        fun.()
+      after
+        if is_nil(previous) do
+          Process.delete(:ide_current_user)
+        else
+          Process.put(:ide_current_user, previous)
+        end
+      end
+    end
+  end
+
+  @doc """
   True when remote MCP/ACP integration is available (local IDE deployments only).
   """
   @spec mcp_enabled?() :: boolean()
@@ -167,7 +198,7 @@ defmodule Ide.Auth do
   @spec login_link_ttl_days() :: pos_integer()
   def login_link_ttl_days do
     Application.get_env(:ide, __MODULE__, [])
-    |> Keyword.get(:login_link_ttl_days, 30)
+    |> Keyword.get(:login_link_ttl_days, 1)
   end
 
   @spec mail_from() :: {String.t(), String.t()}
@@ -301,6 +332,7 @@ defmodule Ide.Auth do
     case result do
       {:ok, :ok} ->
         :ok = Settings.delete_user_settings(user)
+        :ok = Ide.GitHub.Credentials.delete_for_user(user)
         :ok
 
       {:error, changeset} ->

@@ -7,6 +7,7 @@ defmodule IdeWeb.EmulatorControllerTest do
 
   setup do
     previous = Application.get_env(:ide, Ide.Projects)
+    original_auth = Application.get_env(:ide, Ide.Auth, [])
 
     root =
       Path.join(
@@ -15,11 +16,15 @@ defmodule IdeWeb.EmulatorControllerTest do
       )
 
     Application.put_env(:ide, Ide.Projects, projects_root: root)
+    Application.put_env(:ide, Ide.Auth, Keyword.put(original_auth, :mode, :local))
 
     on_exit(fn ->
       Application.put_env(:ide, Ide.Projects, previous)
+      Application.put_env(:ide, Ide.Auth, original_auth)
       File.rm_rf(root)
     end)
+
+    :ok
   end
 
   test "ping returns alive for an existing session", %{conn: conn} do
@@ -58,6 +63,52 @@ defmodule IdeWeb.EmulatorControllerTest do
              |> json_response(200)
 
     Process.exit(pid, :kill)
+  end
+
+  test "kill hides another tenant's session in public mode", %{conn: conn} do
+    original = Application.get_env(:ide, Ide.Auth, [])
+    Application.put_env(:ide, Ide.Auth, Keyword.put(original, :mode, :public_pebble))
+
+    on_exit(fn -> Application.put_env(:ide, Ide.Auth, original) end)
+
+    owner =
+      %Ide.Auth.User{}
+      |> Ide.Auth.User.changeset(%{
+        firebase_uid: "emu-owner-#{System.unique_integer([:positive])}"
+      })
+      |> Ide.Repo.insert!()
+
+    other =
+      %Ide.Auth.User{}
+      |> Ide.Auth.User.changeset(%{
+        firebase_uid: "emu-other-#{System.unique_integer([:positive])}"
+      })
+      |> Ide.Repo.insert!()
+
+    id = "public-kill-#{System.unique_integer([:positive])}"
+    parent = self()
+
+    pid =
+      spawn(fn ->
+        {:ok, _} = Registry.register(Ide.Emulator.Registry, id, %{owner_id: owner.id})
+        send(parent, :registered)
+        Process.sleep(:infinity)
+      end)
+
+    assert_receive :registered
+
+    try do
+      assert %{"status" => "ok"} =
+               conn
+               |> Plug.Test.init_test_session(%{user_id: other.id})
+               |> post(~p"/api/emulator/#{id}/kill")
+               |> json_response(200)
+
+      assert [{^pid, %{owner_id: owner_id}}] = Registry.lookup(Ide.Emulator.Registry, id)
+      assert owner_id == owner.id
+    after
+      Process.exit(pid, :kill)
+    end
   end
 
   test "GET ws/phone without upgrade headers returns 426", %{conn: conn} do

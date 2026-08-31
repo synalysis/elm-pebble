@@ -5,7 +5,6 @@ defmodule Ide.Projects.FileStore do
 
   alias Ide.Projects.FileTypes
   alias Ide.Projects.Project
-  alias Ide.Projects.WorkspaceMerge
 
   @protected_delete_paths ~w(
     src/Main.elm
@@ -184,11 +183,7 @@ defmodule Ide.Projects.FileStore do
   @spec project_root(Project.t(), FileTypes.projects_root()) :: FileTypes.workspace_path()
   def project_root(%Project{owner_id: owner_id, slug: slug}, projects_root)
       when is_integer(owner_id) do
-    scoped = Path.join([projects_root, "users", Integer.to_string(owner_id), slug])
-    legacy = Path.join(projects_root, slug)
-
-    _ = maybe_adopt_legacy_workspace(scoped, legacy)
-    scoped
+    Path.join([projects_root, "users", Integer.to_string(owner_id), slug])
   end
 
   def project_root(%Project{slug: slug}, projects_root), do: Path.join(projects_root, slug)
@@ -215,34 +210,6 @@ defmodule Ide.Projects.FileStore do
   def elm_project_dir?(path) when is_binary(path),
     do: File.exists?(Path.join(path, "elm.json"))
 
-  @spec maybe_adopt_legacy_workspace(FileTypes.workspace_path(), FileTypes.workspace_path()) ::
-          :ok
-  defp maybe_adopt_legacy_workspace(scoped, legacy) do
-    cond do
-      workspace_has_elm_roots?(scoped) ->
-        :ok
-
-      not workspace_has_elm_roots?(legacy) ->
-        :ok
-
-      workspace_has_user_artifacts?(scoped) ->
-        # Do not merge a legacy tree over a scoped workspace that already has
-        # project metadata or uploaded resources but lost Elm sources.
-        :ok
-
-      not File.dir?(legacy) ->
-        :ok
-
-      true ->
-        File.mkdir_p(Path.dirname(scoped))
-
-        case WorkspaceMerge.merge_tree(legacy, scoped) do
-          :ok -> :ok
-          {:error, _reason} -> :ok
-        end
-    end
-  end
-
   @spec validate_deletable(String.t()) :: :ok | {:error, :protected_path}
   defp validate_deletable(rel_path) when is_binary(rel_path) do
     normalized =
@@ -261,14 +228,6 @@ defmodule Ide.Projects.FileStore do
       true ->
         :ok
     end
-  end
-
-  @spec workspace_has_user_artifacts?(FileTypes.workspace_path()) :: boolean()
-  defp workspace_has_user_artifacts?(workspace_path) when is_binary(workspace_path) do
-    File.exists?(Path.join(workspace_path, "elm-pebble.project.json")) or
-      File.exists?(Path.join(workspace_path, "watch/resources/bitmaps.json")) or
-      File.exists?(Path.join(workspace_path, "watch/resources/vectors.json")) or
-      File.exists?(Path.join(workspace_path, "watch/resources/fonts.json"))
   end
 
   @spec safe_path(Project.t(), FileTypes.projects_root(), String.t(), String.t()) ::

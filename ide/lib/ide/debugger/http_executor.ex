@@ -4,6 +4,7 @@ defmodule Ide.Debugger.HttpExecutor do
   """
 
   alias Elmx.Runtime.Json.Decode, as: JsonDecode
+  alias Ide.Net.PublicHttp
   alias Ide.Debugger.HttpSimulator
   alias Ide.Debugger.ProtocolEvents
   alias Ide.Debugger.Types
@@ -63,43 +64,50 @@ defmodule Ide.Debugger.HttpExecutor do
 
   @spec run_default_request(command()) :: {:ok, http_response()}
   defp run_default_request(command) do
-    options = req_options(command)
+    url = map_value(command, "url") || ""
 
-    case Req.request(options) do
-      {:ok, %Req.Response{} = response} ->
-        {:ok,
-         %{
-           "status" => response.status,
-           "body" => response_body(response.body),
-           "headers" => response.headers
-         }}
+    with {:ok, method} <- PublicHttp.allowed_method(map_value(command, "method")),
+         :ok <- PublicHttp.validate_url(to_string(url)) do
+      options = req_options(command, method)
 
-      {:error, %Mint.TransportError{reason: :timeout}} ->
-        {:ok, %{"error" => %{"ctor" => "Timeout", "args" => []}}}
+      case Req.request(options) do
+        {:ok, %Req.Response{} = response} ->
+          {:ok,
+           %{
+             "status" => response.status,
+             "body" => response_body(response.body),
+             "headers" => response.headers
+           }}
 
-      {:error, %Mint.TransportError{reason: :nxdomain}} ->
-        {:ok, %{"error" => %{"ctor" => "BadUrl", "args" => [map_value(command, "url") || ""]}}}
+        {:error, %Mint.TransportError{reason: :timeout}} ->
+          {:ok, %{"error" => %{"ctor" => "Timeout", "args" => []}}}
 
-      {:error, %Req.TransportError{reason: :timeout}} ->
-        {:ok, %{"error" => %{"ctor" => "Timeout", "args" => []}}}
+        {:error, %Mint.TransportError{reason: :nxdomain}} ->
+          {:ok, %{"error" => %{"ctor" => "BadUrl", "args" => [url]}}}
 
-      {:error, %Req.TransportError{reason: :nxdomain}} ->
-        {:ok, %{"error" => %{"ctor" => "BadUrl", "args" => [map_value(command, "url") || ""]}}}
+        {:error, %Req.TransportError{reason: :timeout}} ->
+          {:ok, %{"error" => %{"ctor" => "Timeout", "args" => []}}}
 
-      {:error, reason} ->
-        {:ok, %{"error" => %{"ctor" => "NetworkError", "args" => [inspect(reason)]}}}
+        {:error, %Req.TransportError{reason: :nxdomain}} ->
+          {:ok, %{"error" => %{"ctor" => "BadUrl", "args" => [url]}}}
+
+        {:error, reason} ->
+          {:ok, %{"error" => %{"ctor" => "NetworkError", "args" => [inspect(reason)]}}}
+      end
+    else
+      {:error, :invalid_method} ->
+        {:ok, %{"error" => %{"ctor" => "BadUrl", "args" => [url]}}}
+
+      {:error, :invalid_url} ->
+        {:ok, %{"error" => %{"ctor" => "BadUrl", "args" => [url]}}}
+
+      {:error, :blocked_url} ->
+        {:ok, %{"error" => %{"ctor" => "BadUrl", "args" => [url]}}}
     end
   end
 
-  @spec req_options(command()) :: keyword()
-  defp req_options(command) do
-    method =
-      command
-      |> map_value("method")
-      |> to_string()
-      |> String.downcase()
-      |> String.to_atom()
-
+  @spec req_options(command(), atom()) :: keyword()
+  defp req_options(command, method) do
     body = map_value(command, "body")
 
     [
@@ -108,7 +116,8 @@ defmodule Ide.Debugger.HttpExecutor do
       headers: request_headers(command),
       body: request_body(body),
       receive_timeout: request_timeout(command),
-      retry: false
+      retry: false,
+      redirect: false
     ]
     |> Enum.reject(fn {_key, value} -> is_nil(value) end)
   end

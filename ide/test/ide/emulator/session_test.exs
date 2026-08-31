@@ -193,7 +193,8 @@ defmodule Ide.Emulator.SessionTest do
     assert "-pflash" in args or "-kernel" in args
     assert "-L" in args
     assert "-vnc" in args
-    assert ":7" in args
+    assert "127.0.0.1:7" in args
+    refute ":7" in args
     refute ":7,websocket=12002" in args
     assert "tcp:127.0.0.1:12000,server=on,wait=off" in args
     assert "/tmp/spi.bin" in args
@@ -212,7 +213,8 @@ defmodule Ide.Emulator.SessionTest do
     args = Qemu.args(state)
 
     assert "tcp:127.0.0.1:12000,server=on,wait=off" in args
-    assert ":7" in args
+    assert "127.0.0.1:7" in args
+    refute ":7" in args
     refute ":7,websocket=12002" in args
   end
 

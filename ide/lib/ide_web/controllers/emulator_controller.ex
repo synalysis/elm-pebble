@@ -87,56 +87,81 @@ defmodule IdeWeb.EmulatorController do
 
   @spec ping(Plug.Conn.t(), Types.wire_params()) :: Plug.Conn.t()
   def ping(conn, %{"id" => id}) do
-    case Emulator.ping(id) do
-      {:ok, info} -> json(conn, Map.put(info, :alive, true))
-      {:error, _reason} -> json(conn, %{alive: false})
+    case authorize_emulator(conn, id) do
+      {:ok, _} ->
+        case Emulator.ping(id) do
+          {:ok, info} -> json(conn, Map.put(info, :alive, true))
+          {:error, _reason} -> json(conn, %{alive: false})
+        end
+
+      {:error, _} ->
+        json(conn, %{alive: false})
     end
   end
 
   @spec kill(Plug.Conn.t(), Types.wire_params()) :: Plug.Conn.t()
   def kill(conn, %{"id" => id}) do
-    _ = Emulator.kill(id)
-    json(conn, %{status: "ok"})
+    case authorize_emulator(conn, id) do
+      {:ok, _} ->
+        _ = Emulator.kill(id)
+        json(conn, %{status: "ok"})
+
+      {:error, _} ->
+        json(conn, %{status: "ok"})
+    end
   end
 
   @spec install(Plug.Conn.t(), Types.wire_params()) :: Plug.Conn.t()
   def install(conn, %{"id" => id}) do
-    case Emulator.install(id) do
-      {:ok, result} ->
-        json(conn, %{status: "ok", result: result})
+    case authorize_emulator(conn, id) do
+      {:ok, _} ->
+        case Emulator.install(id) do
+          {:ok, result} ->
+            json(conn, %{status: "ok", result: result})
 
-      {:error, :not_found} ->
+          {:error, :not_found} ->
+            conn |> put_status(:not_found) |> json(%{error: "Emulator not found"})
+
+          {:error, reason} ->
+            conn
+            |> put_status(:unprocessable_entity)
+            |> json(%{error: Workflow.install_error_message(reason)})
+        end
+
+      {:error, _} ->
         conn |> put_status(:not_found) |> json(%{error: "Emulator not found"})
-
-      {:error, reason} ->
-        conn
-        |> put_status(:unprocessable_entity)
-        |> json(%{error: Workflow.install_error_message(reason)})
     end
   end
 
   @spec request_app_logs(Plug.Conn.t(), Types.wire_params()) :: Plug.Conn.t()
   def request_app_logs(conn, %{"id" => id}) do
-    case Emulator.request_app_logs(id) do
-      :ok ->
-        json(conn, %{status: "ok"})
+    case authorize_emulator(conn, id) do
+      {:ok, _} ->
+        case Emulator.request_app_logs(id) do
+          :ok ->
+            json(conn, %{status: "ok"})
 
-      {:error, :not_found} ->
+          {:error, :not_found} ->
+            conn |> put_status(:not_found) |> json(%{error: "Emulator not found"})
+
+          {:error, :embedded_protocol_router_not_started} ->
+            conn
+            |> put_status(:unprocessable_entity)
+            |> json(%{error: "Embedded emulator protocol router is not running."})
+
+          {:error, reason} ->
+            conn |> put_status(:unprocessable_entity) |> json(%{error: inspect(reason)})
+        end
+
+      {:error, _} ->
         conn |> put_status(:not_found) |> json(%{error: "Emulator not found"})
-
-      {:error, :embedded_protocol_router_not_started} ->
-        conn
-        |> put_status(:unprocessable_entity)
-        |> json(%{error: "Embedded emulator protocol router is not running."})
-
-      {:error, reason} ->
-        conn |> put_status(:unprocessable_entity) |> json(%{error: inspect(reason)})
     end
   end
 
   @spec control(Plug.Conn.t(), Types.wire_params()) :: Plug.Conn.t()
   def control(conn, %{"id" => id} = params) do
-    with {:ok, protocol} <- qemu_protocol(Map.get(params, "protocol")),
+    with {:ok, _} <- authorize_emulator(conn, id),
+         {:ok, protocol} <- qemu_protocol(Map.get(params, "protocol")),
          {:ok, payload} <- qemu_payload(Map.get(params, "payload", [])),
          :ok <- Emulator.control(id, protocol, payload) do
       json(conn, %{status: "ok"})
@@ -158,15 +183,21 @@ defmodule IdeWeb.EmulatorController do
   def simulator_settings(conn, %{"id" => id, "settings" => settings}) when is_map(settings) do
     normalized = SimulatorSettings.normalize(settings)
 
-    case Emulator.apply_simulator_settings(id, normalized) do
-      {:ok, result} ->
-        json(conn, %{status: "ok", result: result})
+    case authorize_emulator(conn, id) do
+      {:ok, _} ->
+        case Emulator.apply_simulator_settings(id, normalized) do
+          {:ok, result} ->
+            json(conn, %{status: "ok", result: result})
 
-      {:error, :not_found} ->
+          {:error, :not_found} ->
+            conn |> put_status(:not_found) |> json(%{error: "Emulator not found"})
+
+          {:error, reason} ->
+            conn |> put_status(:unprocessable_entity) |> json(%{error: inspect(reason)})
+        end
+
+      {:error, _} ->
         conn |> put_status(:not_found) |> json(%{error: "Emulator not found"})
-
-      {:error, reason} ->
-        conn |> put_status(:unprocessable_entity) |> json(%{error: inspect(reason)})
     end
   end
 
@@ -215,7 +246,7 @@ defmodule IdeWeb.EmulatorController do
 
   @spec artifact(Plug.Conn.t(), Types.wire_params()) :: Plug.Conn.t()
   def artifact(conn, %{"id" => id}) do
-    with {:ok, pid} <- Emulator.lookup(id),
+    with {:ok, pid} <- authorize_emulator(conn, id),
          path when is_binary(path) <- Ide.Emulator.Session.artifact_file_path(pid),
          true <- File.exists?(path) do
       send_download(conn, {:file, path},
@@ -249,7 +280,8 @@ defmodule IdeWeb.EmulatorController do
   @spec do_proxy(Plug.Conn.t(), term(), atom()) :: Plug.Conn.t()
 
   defp do_proxy(conn, id, kind) do
-    with {:ok, info} <- Emulator.info(id),
+    with {:ok, _pid} <- authorize_emulator(conn, id),
+         {:ok, info} <- Emulator.info(id),
          {:ok, target} <- proxy_target(info, kind) do
       conn
       |> WebSockAdapter.upgrade(IdeWeb.EmulatorProxySocket, %{target: target},
@@ -328,4 +360,11 @@ defmodule IdeWeb.EmulatorController do
     do: "Screenshot image is not a valid PNG."
 
   defp screenshot_error_message(reason), do: inspect(reason)
+
+  @spec authorize_emulator(Plug.Conn.t(), String.t()) :: {:ok, pid()} | {:error, :not_found}
+  defp authorize_emulator(conn, id) when is_binary(id) do
+    Emulator.authorize(id, conn.assigns[:current_user])
+  end
+
+  defp authorize_emulator(_conn, _id), do: {:error, :not_found}
 end

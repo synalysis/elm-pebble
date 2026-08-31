@@ -47,7 +47,7 @@ config :ide, Ide.Auth,
   appstore_api_base:
     System.get_env("IDE_APPSTORE_API_BASE") || "https://appstore-api.repebble.com",
   login_link_ttl_days:
-    (System.get_env("IDE_LOGIN_LINK_TTL_DAYS") || "30")
+    (System.get_env("IDE_LOGIN_LINK_TTL_DAYS") || "1")
     |> String.to_integer(),
   email_hash_pepper: System.get_env("IDE_EMAIL_HASH_PEPPER"),
   turnstile_site_key: System.get_env("IDE_TURNSTILE_SITE_KEY"),
@@ -58,10 +58,20 @@ config :ide, Ide.Emulator.SlotLimiter,
     (System.get_env("ELM_PEBBLE_EMULATOR_MAX_SLOTS") || "8")
     |> String.to_integer()
     |> max(1),
+  max_slots_per_owner:
+    (System.get_env("ELM_PEBBLE_EMULATOR_MAX_SLOTS_PER_OWNER") || "2")
+    |> String.to_integer()
+    |> max(1),
   acquire_timeout_ms:
     (System.get_env("ELM_PEBBLE_EMULATOR_ACQUIRE_TIMEOUT_MS") || "600000")
     |> String.to_integer()
     |> max(1_000)
+
+config :ide, Ide.Compiler.Quota,
+  max_concurrent:
+    (System.get_env("ELM_PEBBLE_COMPILE_MAX_CONCURRENT") || "2")
+    |> String.to_integer()
+    |> max(1)
 
 config :ide, Ide.Emulator.Session,
   enabled: System.get_env("ELM_PEBBLE_EMBEDDED_EMULATOR", "true") not in ~w(0 false no off),
@@ -268,6 +278,11 @@ if config_env() == :prod do
     ],
     secret_key_base: secret_key_base
 
+  config :ide, IdeWeb.Session, secure: true
+
+  config :ide, IdeWeb.Plugs.RemoteIp,
+    trust: System.get_env("IDE_TRUST_X_FORWARDED_FOR", "true") not in ~w(0 false no off)
+
   # ## SSL Support
   #
   # To get SSL working, you will need to add the `https` key
@@ -326,7 +341,7 @@ if config_env() == :prod do
 
   config :ide, Ide.Auth,
     login_link_ttl_days:
-      (System.get_env("IDE_LOGIN_LINK_TTL_DAYS") || "30")
+      (System.get_env("IDE_LOGIN_LINK_TTL_DAYS") || "1")
       |> String.to_integer(),
     mail_from: mail_from,
     email_hash_pepper: System.get_env("IDE_EMAIL_HASH_PEPPER")
@@ -346,6 +361,22 @@ if config_env() == :prod do
         PHX_HOST=your-domain
 
     For port 465, set SMTP_PORT=465 (implicit TLS is selected automatically).
+    """
+  end
+
+  turnstile_site = System.get_env("IDE_TURNSTILE_SITE_KEY")
+  turnstile_secret = System.get_env("IDE_TURNSTILE_SECRET_KEY")
+
+  if auth_mode == "public_custom" and
+       (is_nil(turnstile_site) or String.trim(turnstile_site) == "" or
+          is_nil(turnstile_secret) or String.trim(turnstile_secret) == "") do
+    raise """
+    Cloudflare Turnstile keys are required when IDE_AUTH_MODE=public_custom in production.
+
+    Set:
+
+        IDE_TURNSTILE_SITE_KEY=...
+        IDE_TURNSTILE_SECRET_KEY=...
     """
   end
 end

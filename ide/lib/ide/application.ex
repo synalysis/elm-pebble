@@ -27,6 +27,7 @@ defmodule Ide.Application do
       Ide.Compiler.Cache,
       Ide.Compiler.DebuggerRuntimeCache,
       Ide.Compiler.ManifestCache,
+      Ide.Compiler.Quota,
       Ide.Mcp.CheckCache,
       Ide.Mcp.HttpSessions,
       Ide.Acp.AgentSupervisor,

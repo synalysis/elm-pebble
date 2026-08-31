@@ -58,7 +58,7 @@ defmodule Ide.Emulator.Session.Qemu do
         pc_bios_args ++
         [
           "-vnc",
-          ":#{state.vnc_display}"
+          "127.0.0.1:#{state.vnc_display}"
         ]
 
     base ++ machine_args(state.platform, state.spi_image_path, qemu_features)

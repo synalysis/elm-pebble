@@ -6,6 +6,7 @@ defmodule IdeWeb.WorkspaceLive.EditorSupport do
 
   alias Ide.Projects.Project
   alias Ide.Compiler
+  alias Ide.Auth
   alias Ide.ElmFormat
   alias Ide.EditorDocLinks
   alias Ide.Formatter
@@ -1365,7 +1366,7 @@ defmodule IdeWeb.WorkspaceLive.EditorSupport do
         |> assign(:editor_check_rel_path, rel_path)
         |> assign(:editor_check_diagnostics, [])
         |> assign(:editor_check_output, nil)
-        |> start_async(:editor_check, fn ->
+        |> start_async(:editor_check, Auth.carry_current_user(fn ->
           result =
             Compiler.check_source_root("#{project.slug}:editor:#{source_root}",
               workspace_root: workspace_root,
@@ -1373,7 +1374,7 @@ defmodule IdeWeb.WorkspaceLive.EditorSupport do
             )
 
           {result, token, source_root, rel_path}
-        end)
+        end))
     end
   end
 
