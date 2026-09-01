@@ -28,6 +28,8 @@ defmodule Ide.Auth.EmailTest do
     assert_email_sent(fn email ->
       assert email.to == [{"", "dev@example.test"}]
       assert email.subject =~ "Log in"
+      assert email.text_body =~ "expires in 30 days"
+      assert email.html_body =~ "expires in 30 days"
     end)
   end
 
@@ -85,5 +87,18 @@ defmodule Ide.Auth.EmailTest do
     assert Auth.public_custom_mode?()
     refute Auth.app_store_publish_enabled?()
     refute Auth.cloudpebble_sideload_enabled?()
+  end
+
+  test "login link TTL phrase is singular for one day" do
+    Application.put_env(:ide, Ide.Auth, mode: :public_custom, login_link_ttl_days: 1)
+    assert Auth.login_link_ttl_phrase() == "1 day"
+
+    assert :ok = Email.send_login_link("ttl-one@example.test")
+
+    assert_email_sent(fn email ->
+      assert email.text_body =~ ~r/expires in 1 day\b/
+      assert email.html_body =~ ~r/expires in 1 day\b/
+      true
+    end)
   end
 end

@@ -201,6 +201,16 @@ defmodule Ide.Auth do
     |> Keyword.get(:login_link_ttl_days, 1)
   end
 
+  @spec login_link_ttl_phrase() :: String.t()
+  def login_link_ttl_phrase do
+    days = login_link_ttl_days()
+
+    case days do
+      1 -> "1 day"
+      _ -> "#{days} days"
+    end
+  end
+
   @spec mail_from() :: {String.t(), String.t()}
   def mail_from do
     Application.get_env(:ide, __MODULE__, [])

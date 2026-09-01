@@ -24,14 +24,14 @@ defmodule Ide.Auth.LoginLinkEmail do
 
       #{url}
 
-      The link expires in #{Auth.login_link_ttl_days()} days and can only be used once.
+      The link expires in #{Auth.login_link_ttl_phrase()} and can only be used once.
       If you did not request this email, you can ignore it.
       """)
       |> html_body("""
       <p>Use the button below to log in to the elm-pebble IDE.</p>
       <p><a href="#{url}" style="display:inline-block;padding:12px 20px;background:#18181b;color:#fff;text-decoration:none;border-radius:8px;font-weight:600;">Log in</a></p>
       <p style="font-size:14px;color:#52525b;">Or copy this link into your browser:<br><a href="#{url}">#{url}</a></p>
-      <p style="font-size:14px;color:#52525b;">This link expires in #{Auth.login_link_ttl_days()} days and works once. If you did not request it, you can ignore this email.</p>
+      <p style="font-size:14px;color:#52525b;">This link expires in #{Auth.login_link_ttl_phrase()} and works once. If you did not request it, you can ignore this email.</p>
       """)
 
     try do

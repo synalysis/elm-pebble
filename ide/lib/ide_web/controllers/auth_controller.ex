@@ -30,7 +30,7 @@ defmodule IdeWeb.AuthController do
         step: custom_login_step(params),
         email: custom_login_email(params),
         return_to: return_to,
-        login_link_ttl_days: Auth.login_link_ttl_days(),
+        login_link_ttl_phrase: Auth.login_link_ttl_phrase(),
         turnstile_site_key: Auth.turnstile_site_key(),
         login_honeypot_field: LoginBotDefense.honeypot_field()
       )
@@ -295,7 +295,7 @@ defmodule IdeWeb.AuthController do
       step: :sent,
       email: email,
       return_to: return_to,
-      login_link_ttl_days: Auth.login_link_ttl_days(),
+      login_link_ttl_phrase: Auth.login_link_ttl_phrase(),
       turnstile_site_key: Auth.turnstile_site_key(),
       login_honeypot_field: LoginBotDefense.honeypot_field()
     )
