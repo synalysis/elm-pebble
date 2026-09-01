@@ -363,22 +363,6 @@ if config_env() == :prod do
     For port 465, set SMTP_PORT=465 (implicit TLS is selected automatically).
     """
   end
-
-  turnstile_site = System.get_env("IDE_TURNSTILE_SITE_KEY")
-  turnstile_secret = System.get_env("IDE_TURNSTILE_SECRET_KEY")
-
-  if auth_mode == "public_custom" and
-       (is_nil(turnstile_site) or String.trim(turnstile_site) == "" or
-          is_nil(turnstile_secret) or String.trim(turnstile_secret) == "") do
-    raise """
-    Cloudflare Turnstile keys are required when IDE_AUTH_MODE=public_custom in production.
-
-    Set:
-
-        IDE_TURNSTILE_SITE_KEY=...
-        IDE_TURNSTILE_SECRET_KEY=...
-    """
-  end
 end
 
 if config_env() == :test do
