@@ -11,6 +11,7 @@ defmodule Elmc.NativePolarPointTest do
 
     import Pebble.Platform as Platform
     import Pebble.Ui as Ui
+    import Pebble.Ui.Color as Color
 
     type alias Model = ()
 
@@ -21,7 +22,7 @@ defmodule Elmc.NativePolarPointTest do
     subscriptions _ = Platform.Sub.none
 
     drawFill cx cy =
-        [ Ui.fillCircle { x = cx, y = cy } 3 1 ]
+        [ Ui.fillCircle { x = cx, y = cy } 3 Color.black ]
 
     view _ = Ui.toUiNode (drawFill 10 20)
 
@@ -43,6 +44,7 @@ defmodule Elmc.NativePolarPointTest do
     import Basics
     import Pebble.Platform as Platform
     import Pebble.Ui as Ui
+    import Pebble.Ui.Color as Color
 
     type alias Model = ()
 
@@ -61,7 +63,7 @@ defmodule Elmc.NativePolarPointTest do
         }
 
     drawLine cx cy =
-        [ Ui.line (pointAt cx cy 60 0) (pointAt cx cy 50 0) 1 ]
+        [ Ui.line (pointAt cx cy 60 0) (pointAt cx cy 50 0) Color.black ]
 
     view _ = Ui.toUiNode (drawLine 72 84)
 
@@ -112,6 +114,7 @@ defmodule Elmc.NativePolarPointTest do
     import Basics
     import Pebble.Platform as Platform
     import Pebble.Ui as Ui
+    import Pebble.Ui.Color as Color
 
     type alias Model = ()
 
@@ -141,12 +144,12 @@ defmodule Elmc.NativePolarPointTest do
             hubEdge = pointAt cx cy hubR handAngle
             moonCenter = { x = cx, y = moonCy }
         in
-        [ Ui.fillCircle moonCenter moonRingR 1
-        , Ui.circle moonCenter moonRingR 1
-        , Ui.line hubEdge moonJunction 1
-        , Ui.line moonJunction tip 1
-        , Ui.fillCircle { x = cx, y = cy } hubR 1
-        , Ui.circle { x = cx, y = cy } hubR 1
+        [ Ui.fillCircle moonCenter moonRingR Color.black
+        , Ui.circle moonCenter moonRingR Color.black
+        , Ui.line hubEdge moonJunction Color.black
+        , Ui.line moonJunction tip Color.black
+        , Ui.fillCircle { x = cx, y = cy } hubR Color.black
+        , Ui.circle { x = cx, y = cy } hubR Color.black
         ]
 
     view _ = Ui.toUiNode (drawHand 72 84 80 0 40)
@@ -168,6 +171,7 @@ defmodule Elmc.NativePolarPointTest do
 
     import Pebble.Platform as Platform
     import Pebble.Ui as Ui exposing (Point)
+    import Pebble.Ui.Color as Color
 
     type alias Model = { cx : Int, cy : Int }
 
@@ -186,7 +190,7 @@ defmodule Elmc.NativePolarPointTest do
         p cx cy 0 -20
 
     view model =
-        Ui.toUiNode [ Ui.pixel (formOrigin model.cx model.cy) 1 ]
+        Ui.toUiNode [ Ui.pixel (formOrigin model.cx model.cy) Color.black ]
 
     main =
         Platform.application { init = init, update = update, view = view, subscriptions = subscriptions }

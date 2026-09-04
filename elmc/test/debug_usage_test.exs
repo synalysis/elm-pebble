@@ -63,6 +63,11 @@ defmodule Elmc.DebugUsageTest do
     assert generated =~ "elmc_debug_union_ctor_info"
     assert generated =~ "switch (tag)"
     assert generated =~ "elmc_agent_generated_probe"
+
+    runtime = File.read!(Path.join(opts.out_dir, "runtime/elmc_runtime.c"))
+
+    assert runtime =~ "const char *unique = elmc_debug_union_ctor_name(tag);",
+           "tuple Debug.toString must require an unambiguous ctor tag before ctor_info"
   end
 
   test "prod mode omits debug ctor table cases and agent probes from generated C" do

@@ -1,6 +1,8 @@
 defmodule Elmc.CoreComplianceTest do
   use Elmc.TestSupport.PrimaryCodegenCase
 
+  @moduletag timeout: 180_000
+
   alias Elmc.TestSupport.CachedCompile
 
   @required_functions [

@@ -20,13 +20,13 @@ init : () -> ( Model, Cmd Msg )
 init _ =
     ( "wait"
     , Cmd.batch
-        [ Process.sleep 40
+        [ Process.sleep 40.0
             |> Task.perform (\_ -> Tick)
         , Process.spawn
             (BackendTask.Http.get "https://hang.example/slow" BackendTask.Http.expectString)
             |> Task.andThen
                 (\id ->
-                    Process.sleep 5
+                    Process.sleep 5.0
                         |> Task.andThen (\_ -> Process.kill id)
                 )
             |> Task.perform (\_ -> Killed)

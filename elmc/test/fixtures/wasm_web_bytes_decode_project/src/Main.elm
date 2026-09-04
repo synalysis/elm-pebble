@@ -42,7 +42,7 @@ main =
                     False
 
         utf8w =
-            Bytes.getStringWidth "é" == 2 && Bytes.getStringWidth "a" == 1
+            Bytes.getStringWidth "é" == Just 2 && Bytes.getStringWidth "a" == Just 1
     in
     if i8 && u16 && i16le && f32 && utf8 && u32 && i32le && f64 && blob && utf8w then
         text "ok"

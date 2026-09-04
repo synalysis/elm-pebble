@@ -36,22 +36,28 @@ defmodule Elmc.TestSupport.SnippetProject do
 
     materialize = Keyword.get(opts, :materialize, :auto)
 
+    keep_ir = Keyword.get(opts, :keep_ir, false)
+
     cache_key =
       CompileCache.key({
         :snippet_project_v2,
         CompileCache.content_hash(main_source),
         Map.drop(compile_opts, [:out_dir, :ir_cache_dir]),
+        keep_ir,
         platform_stamp(),
         CompileCache.compiler_identity()
       })
 
     case CompileCache.fetch(cache_key) do
+      {:hit, result, _out_cache} when keep_ir and not is_map_key(result, :ir) ->
+        do_compile(main_source, name, compile_opts, cache_key, keep_ir)
+
       {:hit, result, out_cache} ->
         CompileCache.materialize_out(out_cache, out_dir, materialize)
         {:ok, enrich_result(result, out_dir)}
 
       :miss ->
-        do_compile(main_source, name, compile_opts, cache_key)
+        do_compile(main_source, name, compile_opts, cache_key, keep_ir)
     end
   end
 
@@ -142,7 +148,7 @@ defmodule Elmc.TestSupport.SnippetProject do
   defp normalize_compile_opts(%{} = map), do: map
   defp normalize_compile_opts(list) when is_list(list), do: Map.new(list)
 
-  defp do_compile(main_source, name, compile_opts, cache_key) do
+  defp do_compile(main_source, name, compile_opts, cache_key, keep_ir) do
     tmp =
       Path.join(
         System.tmp_dir!(),
@@ -172,7 +178,7 @@ defmodule Elmc.TestSupport.SnippetProject do
         {:ok, result} ->
           # Snippet tests almost never need the full IR in the ETF; drop it to
           # shrink cache entries (generated C + runtime still stored under out/).
-          CompileCache.store(cache_key, result, compile_opts.out_dir, drop_ir: true)
+          CompileCache.store(cache_key, result, compile_opts.out_dir, drop_ir: not keep_ir)
           {:ok, enrich_result(result, compile_opts.out_dir)}
 
         other ->

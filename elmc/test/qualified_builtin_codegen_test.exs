@@ -691,7 +691,11 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
       lowered_fn_body!(generated_c, "elmc_fn_Main_nativeTextAliasIf_commands_append")
 
     assert native_alias_if_body =~ "ELMC_RENDER_OP_TEXT"
-    assert native_alias_if_body =~ "scene_cmd.p0 = elmc_as_int(owned[0])"
+
+    assert native_alias_if_body =~ "scene_cmd.p0 = (owned[0] ? elmc_as_int(owned[0]) : 0)" or
+             native_alias_if_body =~ "scene_cmd.p0 = elmc_as_int(owned[0])" or
+             native_alias_if_body =~ "scene_cmd.p0 = direct_native_let_color_"
+
     refute native_alias_if_body =~ "elmc_fn_PebbleColor_black("
 
     native_explicit_alias_if_body =
@@ -1860,7 +1864,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     trigRoundScore : Int -> Int
     trigRoundScore degrees =
-        Basics.round (Basics.sin degrees * Basics.toFloat 100)
+        Basics.round (Basics.sin (Basics.toFloat degrees) * Basics.toFloat 100)
     
     """
   end
@@ -2422,38 +2426,42 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     nativeTextAt : Pebble.Ui.Color.Color -> String -> List PebbleUi.RenderOp
     nativeTextAt color value =
-        PebbleUi.group
+        [ PebbleUi.group
             (PebbleUi.context
                 [ PebbleUi.textColor color ]
                 [ PebbleUi.text UiResources.DefaultFont PebbleUi.defaultTextOptions { x = 1, y = 2, w = 30, h = 12 } value ]
             )
+        ]
 
 
     nativeTextAtAlias : PebbleColor.Color -> String -> List PebbleUi.RenderOp
     nativeTextAtAlias color value =
-        PebbleUi.group
+        [ PebbleUi.group
             (PebbleUi.context
                 [ PebbleUi.textColor color ]
                 [ PebbleUi.text UiResources.DefaultFont PebbleUi.defaultTextOptions { x = 1, y = 2, w = 30, h = 12 } value ]
             )
+        ]
 
 
     nativeTextAtExplicitAlias : Color.Color -> String -> List PebbleUi.RenderOp
     nativeTextAtExplicitAlias color value =
-        PebbleUi.group
+        [ PebbleUi.group
             (PebbleUi.context
                 [ PebbleUi.textColor color ]
                 [ PebbleUi.text UiResources.DefaultFont PebbleUi.defaultTextOptions { x = 1, y = 2, w = 30, h = 12 } value ]
             )
+        ]
 
 
     nativeTextAtExposedType : Color -> String -> List PebbleUi.RenderOp
     nativeTextAtExposedType color value =
-        PebbleUi.group
+        [ PebbleUi.group
             (PebbleUi.context
                 [ PebbleUi.textColor color ]
                 [ PebbleUi.text UiResources.DefaultFont PebbleUi.defaultTextOptions { x = 1, y = 2, w = 30, h = 12 } value ]
             )
+        ]
 
 
     nativeTextLiteral : List PebbleUi.RenderOp
@@ -2515,7 +2523,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     nativeTextBounds : PebbleUi.Rect -> String -> List PebbleUi.RenderOp
     nativeTextBounds bounds value =
-        PebbleUi.text UiResources.DefaultFont PebbleUi.defaultTextOptions bounds value
+        [ PebbleUi.text UiResources.DefaultFont PebbleUi.defaultTextOptions bounds value ]
 
 
     nativeTextHelper : Int -> String
@@ -2525,7 +2533,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     nativeTextFromHelper : Int -> List PebbleUi.RenderOp
     nativeTextFromHelper value =
-        PebbleUi.text UiResources.DefaultFont PebbleUi.defaultTextOptions { x = 1, y = 2, w = 30, h = 12 } (nativeTextHelper value)
+        [ PebbleUi.text UiResources.DefaultFont PebbleUi.defaultTextOptions { x = 1, y = 2, w = 30, h = 12 } (nativeTextHelper value) ]
     
     """
   end
@@ -2870,7 +2878,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
                 opaqueStringLength label
         in
         if enabled then
-            [ PebbleUi.textInt UiResources.DefaultFont { x = 0, y = 0, w = 30, h = 12 } minutes ]
+            [ PebbleUi.textInt UiResources.DefaultFont { x = 0, y = 0 } minutes ]
 
         else
             [ PebbleUi.clear PebbleColor.white ]
@@ -3172,6 +3180,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
     import Json.Decode as Decode
     import Pebble.Platform as Platform
     import Pebble.Ui as Ui
+    import Pebble.Ui.Resources as Resources
 
 
     type alias Model =
@@ -3209,11 +3218,12 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
 
     view model =
-        Ui.root [ Ui.text 0 { x = 0, y = 0 } (weatherString model) ]
+        Ui.toUiNode
+            [ Ui.text Resources.DefaultFont Ui.defaultTextOptions { x = 0, y = 0, w = 144, h = 20 } (weatherString model) ]
 
 
     main =
-        Platform.watchProgram
+        Platform.watchface
             { init = init
             , update = update
             , view = view
@@ -4295,7 +4305,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
 
     init _ =
-        ( { displayShape = Platform.DisplayShapeRound }, Cmd.none )
+        ( { displayShape = Platform.Round }, Cmd.none )
 
 
     update _ model =
@@ -4361,7 +4371,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
 
     init _ =
-        ( { screenW = 144, screenH = 168, displayShape = Platform.DisplayShapeRound, cells = [ 0, 2 ] }, Cmd.none )
+        ( { screenW = 144, screenH = 168, displayShape = Platform.Round, cells = [ 0, 2 ] }, Cmd.none )
 
 
     update _ model =
@@ -4457,7 +4467,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
 
     init _ =
-        ( { screenW = 144, screenH = 168, displayShape = Platform.DisplayShapeRound }, Cmd.none )
+        ( { screenW = 144, screenH = 168, displayShape = Platform.Round }, Cmd.none )
 
 
     update _ model =
@@ -4541,7 +4551,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
 
     init _ =
-        ( { screenW = 144, screenH = 168, displayShape = Platform.DisplayShapeRound }, Cmd.none )
+        ( { screenW = 144, screenH = 168, displayShape = Platform.Round }, Cmd.none )
 
 
     update _ model =
@@ -5089,11 +5099,11 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
 
     view _ =
-        Ui.toUiNode (drawWeatherIcon 8 8 Resources.VectorStaticWeatherClear)
+        Ui.toUiNode (drawWeatherIcon 8 8 Resources.NoStaticVector)
 
 
     drawWeatherIcon x y _condition =
-        [ Ui.drawVectorAt Resources.VectorStaticWeatherClear { x = x, y = y } ]
+        [ Ui.drawVectorAt Resources.NoStaticVector { x = x, y = y } ]
     """
   end
 
@@ -5434,7 +5444,7 @@ defmodule Elmc.QualifiedBuiltinCodegenTest do
 
     view : Model -> Ui.UiNode
     view _ =
-        Ui.empty
+        Ui.toUiNode []
 
     seed : Random.Generator Bool
     seed =

@@ -50,7 +50,7 @@ defmodule Elmc.Backend.CCodegen.MacroReachability do
   end
 
   defp union_ctors_in_expr(expr) when is_map(expr) do
-    expr |> Map.values() |> Enum.flat_map(&union_ctors_in_expr/1)
+    expr |> Map.drop([:elm_type]) |> Map.values() |> Enum.flat_map(&union_ctors_in_expr/1)
   end
 
   defp union_ctors_in_expr(expr) when is_list(expr), do: Enum.flat_map(expr, &union_ctors_in_expr/1)

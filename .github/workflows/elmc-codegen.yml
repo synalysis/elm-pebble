@@ -201,6 +201,15 @@ jobs:
       - name: Run elm_pebble_dev wasm compile gate (ulimit)
         run: ./scripts/mix-test-limited.sh elmc test/wasm_elm_pebble_dev_gate_test.exs --include slow
 
+      - name: Run elm_ex typesys unit tests
+        run: ./scripts/mix-test-limited.sh elm_ex test/typesys/parser_test.exs test/typesys/solve_test.exs test/typesys/check_test.exs
+
+      - name: Install elm for typesys oracle
+        run: npm install -g elm@0.19.1-6
+
+      - name: Run elm_ex typesys oracle
+        run: ./scripts/mix-test-limited.sh elm_ex --only typesys_oracle
+
       - name: Run elm_ex let layout tests
         run: ./scripts/mix-test-limited.sh elm_ex test/frontend/let_layout_test.exs
 

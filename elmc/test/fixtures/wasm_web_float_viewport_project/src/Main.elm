@@ -6,25 +6,21 @@ import Svg exposing (svg)
 import Svg.Attributes exposing (height, viewBox, width)
 
 
-type alias Model =
-    ()
-
-
 type alias Vec2 =
     { x : Float, y : Float }
 
 
-init : Model
+init : ()
 init =
     ()
 
 
-update : () -> Model -> Model
+update : () -> () -> ()
 update _ model =
     model
 
 
-view : Model -> Html ()
+view : () -> Html ()
 view _ =
     let
         lo =
@@ -47,7 +43,7 @@ view _ =
         []
 
 
-main : Program () Model ()
+main : Program () () ()
 main =
     Browser.sandbox
         { init = init

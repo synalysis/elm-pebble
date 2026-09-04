@@ -26,4 +26,19 @@ defmodule ElmEx.Frontend.UpperQidFieldAccessTest do
     assert {:ok, %{op: :qualified_ref, target: "Foo.bar"}} =
              GeneratedExpressionParser.parse("Foo.bar")
   end
+
+  test "record update base can be a field access chain" do
+    assert {:ok,
+            %{
+              op: :record_update,
+              base: %{
+                op: :field_access,
+                field: "extras",
+                arg: arg
+              },
+              fields: [%{name: "flag"}]
+            }} = GeneratedExpressionParser.parse("{ model.extras | flag = True }")
+
+    assert arg == "model" or match?(%{op: :var, name: "model"}, arg)
+  end
 end

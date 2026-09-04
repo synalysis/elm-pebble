@@ -183,12 +183,20 @@ defmodule Elmc.Backend.CCodegen.CallCompile do
   @spec debug_collection_kind(Types.ir_expr(), Types.compile_env()) :: :set | :dict | :array | nil
 
   defp debug_collection_kind(value, env) do
-    case TypedReturn.expr_type(value, env) do
-      type when is_binary(type) ->
-        TypeParsing.debug_from_list_kind(type) || function_param_collection_kind(value, env)
+    case value do
+      %{op: :var} ->
+        function_param_collection_kind(value, env)
 
       _ ->
-        function_param_collection_kind(value, env)
+        call_env = Map.put(env, :__var_types__, %{})
+
+        case TypedReturn.expr_type(value, call_env) do
+          type when is_binary(type) ->
+            TypeParsing.debug_from_list_kind(type) || function_param_collection_kind(value, env)
+
+          _ ->
+            function_param_collection_kind(value, env)
+        end
     end
   end
 

@@ -133,6 +133,7 @@ defmodule Elmc.Backend.Plan.Lower.Case.TagSwitch do
     saved_pending = Map.get(b, :pending_merge_block)
     stream? = Context.stream_mode?(ctx)
     {tagged, default_br} = split_branches(branches)
+    exhaustive? = Enum.any?(branches, &(Map.get(&1, :elm_exhaustive?) == true))
     entry_id = b.current_block.id
     b_sealed = Builder.finish_block(b, :none)
 
@@ -144,7 +145,7 @@ defmodule Elmc.Backend.Plan.Lower.Case.TagSwitch do
       end
 
     with {:ok, tagged_results, _default_reg, default_arm_id, arm_exits, b_arms} <-
-           compile_arm_blocks(tagged, default_br, subj_reg, ctx, b_sealed, merge_reg),
+           compile_arm_blocks(tagged, default_br, subj_reg, ctx, b_sealed, merge_reg, exhaustive?),
          merge_id = skip_reserved(b_arms.next_block, saved_pending),
          b_br = patch_arm_exits(b_arms, arm_exits, merge_id),
          switch_arms =
@@ -182,23 +183,33 @@ defmodule Elmc.Backend.Plan.Lower.Case.TagSwitch do
           Types.reg(),
           Context.t(),
           Builder.t(),
-          Types.reg() | :stream
+          Types.reg() | :stream,
+          boolean()
         ) ::
           {:ok, list(), nil, non_neg_integer(), list(), Builder.t()} | :unsupported
 
   defp publish_arm(b, _reg, :stream), do: {:ok, b}
   defp publish_arm(b, reg, merge_reg), do: ArmMerge.publish_arm_to_merge(b, reg, merge_reg)
 
-  defp compile_arm_blocks(tagged, default_br, subj_reg, ctx, b, merge_reg) do
+  defp compile_arm_blocks(tagged, default_br, subj_reg, ctx, b, merge_reg, exhaustive?) do
     with {:ok, tagged_results, arm_exits, b1} <-
            compile_tagged_arms(tagged, subj_reg, ctx, b, merge_reg, []),
          {:ok, default_arm_id, default_exit, b2} <-
-           compile_default_arm(default_br, subj_reg, ctx, b1, merge_reg) do
+           compile_default_arm(
+             default_or_exhaustive(default_br, tagged_results, exhaustive?),
+             subj_reg,
+             ctx,
+             b1,
+             merge_reg
+           ) do
       {:ok, tagged_results, nil, default_arm_id, arm_exits ++ List.wrap(default_exit), b2}
     else
       _ -> :unsupported
     end
   end
+
+  defp default_or_exhaustive(nil, [{_tag, _reg, arm_id, _ctor} | _], true), do: {:reuse, arm_id}
+  defp default_or_exhaustive(default_br, _tagged, _exhaustive?), do: default_br
 
   @spec compile_tagged_arms(
           Types.case_branches(),
@@ -303,6 +314,11 @@ defmodule Elmc.Backend.Plan.Lower.Case.TagSwitch do
           Builder.t(),
           Types.reg()
         ) :: {:ok, non_neg_integer(), non_neg_integer() | nil, Builder.t()} | :unsupported
+
+  defp compile_default_arm({:reuse, arm_id}, _subj, _ctx, b, _merge_reg)
+       when is_integer(arm_id) do
+    {:ok, arm_id, nil, b}
+  end
 
   defp compile_default_arm(nil, _subj, _ctx, b, _merge_reg) do
     {arm_id, b2} = ArmMerge.emit_unmatched_case_sink(b)

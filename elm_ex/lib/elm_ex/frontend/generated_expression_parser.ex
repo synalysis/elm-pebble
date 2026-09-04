@@ -280,8 +280,103 @@ defmodule ElmEx.Frontend.GeneratedExpressionParser do
 
   @spec strip_block_comments(source()) :: source()
   defp strip_block_comments(source) when is_binary(source) do
-    Regex.replace(~r/\{-[\s\S]*?-\}/u, source, "")
+    # Walk the source so apostrophes inside `{- … -}` are not treated as char
+    # literals (masking those first would carve up the comment and leave prose
+    # like `we're` for the expression lexer).
+    source
+    |> String.graphemes()
+    |> strip_block_comments_graphemes(:code, false, 0, [])
+    |> Enum.reverse()
+    |> IO.iodata_to_binary()
   end
+
+  defp strip_block_comments_graphemes([], _mode, _escaped, _depth, acc), do: acc
+
+  defp strip_block_comments_graphemes(["{", "-" | rest], :code, false, 0, acc) do
+    strip_block_comments_graphemes(rest, :block_comment, false, 1, acc)
+  end
+
+  defp strip_block_comments_graphemes(["{", "-" | rest], :block_comment, false, depth, acc)
+       when depth > 0 do
+    strip_block_comments_graphemes(rest, :block_comment, false, depth + 1, acc)
+  end
+
+  defp strip_block_comments_graphemes(["-", "}" | rest], :block_comment, false, 1, acc) do
+    strip_block_comments_graphemes(rest, :code, false, 0, acc)
+  end
+
+  defp strip_block_comments_graphemes(["-", "}" | rest], :block_comment, false, depth, acc)
+       when depth > 1 do
+    strip_block_comments_graphemes(rest, :block_comment, false, depth - 1, acc)
+  end
+
+  defp strip_block_comments_graphemes(["\n" | rest], :block_comment, false, depth, acc)
+       when depth > 0 do
+    strip_block_comments_graphemes(rest, :block_comment, false, depth, ["\n" | acc])
+  end
+
+  defp strip_block_comments_graphemes([_ch | rest], :block_comment, false, depth, acc)
+       when depth > 0 do
+    # Drop comment body (newlines kept above so layout line numbers stay stable).
+    strip_block_comments_graphemes(rest, :block_comment, false, depth, acc)
+  end
+
+  defp strip_block_comments_graphemes(["'" | rest], :code, false, 0, acc) do
+    strip_block_comments_graphemes(rest, :char, false, 0, ["'" | acc])
+  end
+
+  # Line comments can contain apostrophes (`that's`); skip them here so they do
+  # not open a char-literal mode before a later `{- … -}` is recognized.
+  defp strip_block_comments_graphemes(["-", "-" | rest], :code, false, 0, acc) do
+    {after_comment, kept} = drop_through_newline(rest, [])
+    strip_block_comments_graphemes(after_comment, :code, false, 0, kept ++ acc)
+  end
+
+  defp strip_block_comments_graphemes(["\"" | rest], :code, false, 0, acc) do
+    strip_block_comments_graphemes(rest, :string, false, 0, ["\"" | acc])
+  end
+
+  defp strip_block_comments_graphemes(["\\" | rest], :string, false, 0, acc) do
+    strip_block_comments_graphemes(rest, :string, true, 0, ["\\" | acc])
+  end
+
+  defp strip_block_comments_graphemes(["\"" | rest], :string, false, 0, acc) do
+    strip_block_comments_graphemes(rest, :code, false, 0, ["\"" | acc])
+  end
+
+  defp strip_block_comments_graphemes([ch | rest], :string, true, 0, acc) do
+    strip_block_comments_graphemes(rest, :string, false, 0, [ch | acc])
+  end
+
+  defp strip_block_comments_graphemes([ch | rest], :string, false, 0, acc) do
+    strip_block_comments_graphemes(rest, :string, false, 0, [ch | acc])
+  end
+
+  defp strip_block_comments_graphemes(["\\" | rest], :char, false, 0, acc) do
+    strip_block_comments_graphemes(rest, :char, true, 0, ["\\" | acc])
+  end
+
+  defp strip_block_comments_graphemes(["'" | rest], :char, false, 0, acc) do
+    strip_block_comments_graphemes(rest, :code, false, 0, ["'" | acc])
+  end
+
+  defp strip_block_comments_graphemes([ch | rest], :char, true, 0, acc) do
+    strip_block_comments_graphemes(rest, :char, false, 0, [ch | acc])
+  end
+
+  defp strip_block_comments_graphemes([ch | rest], :char, false, 0, acc) do
+    strip_block_comments_graphemes(rest, :char, false, 0, [ch | acc])
+  end
+
+  defp strip_block_comments_graphemes([ch | rest], :code, false, 0, acc) do
+    strip_block_comments_graphemes(rest, :code, false, 0, [ch | acc])
+  end
+
+  defp drop_through_newline([], acc), do: {[], acc}
+
+  defp drop_through_newline(["\n" | rest], acc), do: {rest, ["\n" | acc]}
+
+  defp drop_through_newline([_ch | rest], acc), do: drop_through_newline(rest, acc)
 
   @spec strip_trailing_semicolons(source()) :: source()
   defp strip_trailing_semicolons(source) when is_binary(source) do

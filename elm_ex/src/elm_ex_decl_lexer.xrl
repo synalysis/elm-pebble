@@ -1,6 +1,6 @@
 Definitions.
 WS = [\s\t\r\n]+
-LOWER_ID = [a-z][A-Za-z0-9_']*
+LOWER_ID = [a-z_][A-Za-z0-9_']*
 UPPER_ID = [A-Z][A-Za-z0-9_]*(\.[A-Za-z][A-Za-z0-9_]*)*
 WILDCARD = _
 

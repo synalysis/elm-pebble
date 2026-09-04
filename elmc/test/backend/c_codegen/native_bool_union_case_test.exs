@@ -23,6 +23,7 @@ defmodule Elmc.Backend.CCodegen.NativeBoolUnionCaseTest do
 
       import Pebble.Platform as Platform
       import Pebble.Ui as Ui
+      import Pebble.Ui.Color as Color
 
       type alias Model =
           { displayShape : Platform.DisplayShape
@@ -36,7 +37,6 @@ defmodule Elmc.Backend.CCodegen.NativeBoolUnionCaseTest do
       type Msg
           = Noop
 
-      main : Platform.Program Msg Model ()
       main =
           Platform.worker
               { init = init
@@ -130,6 +130,7 @@ defmodule Elmc.Backend.CCodegen.NativeBoolUnionCaseTest do
       import Json.Decode as Decode
       import Pebble.Platform as Platform
       import Pebble.Ui as Ui
+      import Pebble.Ui.Color as Color
 
       type alias Model = { n : Int }
       type Msg = Noop

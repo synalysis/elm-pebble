@@ -7,7 +7,7 @@ import Time
 
 
 type Inner
-    = Tick Int
+    = Tick Time.Posix
 
 
 type Msg

@@ -421,7 +421,8 @@ defmodule Elmc.FrontendGeneratedArtifactsTest do
 
     assert expr17d[:op] == :lambda
     assert expr17d[:args] == ["patternArg"]
-    assert expr17d[:body][:op] == :let_in
+    assert expr17d[:body][:op] == :case
+    assert match?(%{kind: :tuple, elements: [_, _, _]}, hd(expr17d[:body][:branches])[:pattern])
 
     assert {:ok, expr17e} =
              ElmEx.Frontend.GeneratedExpressionParser.parse("\\{ visited, value } -> value")
@@ -779,8 +780,9 @@ defmodule Elmc.FrontendGeneratedArtifactsTest do
 
     assert expr45[:op] == :case
     assert Enum.at(expr45[:branches], 0)[:pattern][:kind] == :tuple
-    assert Enum.at(expr45[:branches], 0)[:pattern][:elements] |> length() == 2
-    assert Enum.at(Enum.at(expr45[:branches], 0)[:pattern][:elements], 1)[:kind] == :tuple
+    assert Enum.at(expr45[:branches], 0)[:pattern][:elements] |> length() == 3
+    assert Enum.map(Enum.at(expr45[:branches], 0)[:pattern][:elements], & &1[:kind]) ==
+             [:var, :var, :var]
 
     assert {:ok, expr46} =
              ElmEx.Frontend.GeneratedExpressionParser.parse("case values of\n[x, y] -> x\n_ -> 0")

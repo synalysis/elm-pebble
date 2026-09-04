@@ -1270,7 +1270,7 @@ defmodule Elmc.IRLowererTest do
     assert helper_decl
     assert helper_decl.type == nil
     assert helper_decl.args == ["x"]
-    assert helper_decl.expr == %{op: :var, name: "x"}
+    assert %{op: :var, name: "x"} = helper_decl.expr
   end
 
   test "lowerer preserves function declaration order by first appearance" do
@@ -1440,8 +1440,8 @@ defmodule Elmc.IRLowererTest do
       |> Map.fetch!(:declarations)
       |> Enum.find(&(&1.kind == :function and &1.name == "main"))
 
-    assert find_from_int_arg(main_decl.expr, "e") == %{op: :var, name: "e"}
-    assert find_from_int_arg(main_decl.expr, "pi") == %{op: :var, name: "pi"}
+    assert %{op: :var, name: "e"} = find_from_int_arg(main_decl.expr, "e")
+    assert %{op: :var, name: "pi"} = find_from_int_arg(main_decl.expr, "pi")
 
     on_exit(fn -> File.rm_rf!(tmp) end)
   end
@@ -1484,7 +1484,7 @@ defmodule Elmc.IRLowererTest do
       |> Enum.find(&(&1.kind == :function and &1.name == "add5"))
 
     refute find_qualified_target(add5_decl.expr, "Basics.e")
-    assert find_var_name(add5_decl.expr, "e") == %{op: :var, name: "e"}
+    assert %{op: :var, name: "e"} = find_var_name(add5_decl.expr, "e")
 
     on_exit(fn -> File.rm_rf!(tmp) end)
   end

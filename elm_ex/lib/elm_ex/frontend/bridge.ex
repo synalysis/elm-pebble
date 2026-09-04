@@ -9,6 +9,7 @@ defmodule ElmEx.Frontend.Bridge do
   alias ElmEx.IR.Lowerer
   alias ElmEx.IR.Types.Diagnostic, as: IRDiagnostic
   alias ElmEx.Types
+  alias ElmEx.Typesys.Check, as: TypesysCheck
 
   @spec load_project(String.t(), keyword()) ::
           {:ok, Project.t()} | {:error, BridgeTypes.bridge_error()}
@@ -49,6 +50,7 @@ defmodule ElmEx.Frontend.Bridge do
           diagnostics: diagnostics
         }
         |> attach_missing_import_diagnostics()
+        |> attach_typesys_diagnostics()
 
       project =
         if lowerer_diagnostics? do
@@ -712,6 +714,12 @@ defmodule ElmEx.Frontend.Bridge do
   end
 
   defp missing_import?(_), do: false
+
+  @spec attach_typesys_diagnostics(Project.t()) :: Project.t()
+  defp attach_typesys_diagnostics(%Project{} = project) do
+    {project, diags} = TypesysCheck.annotate(project)
+    %{project | diagnostics: project.diagnostics ++ diags}
+  end
 
   @spec attach_lowerer_diagnostics(ElmEx.Frontend.Project.t()) :: ElmEx.Frontend.Project.t()
   defp attach_lowerer_diagnostics(%Project{} = project) do

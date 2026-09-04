@@ -12,49 +12,45 @@ import Task
 
 probeSucceed : Int
 probeSucceed =
-    case Task.succeed 7 of
-        Ok n ->
-            n
-
-        Err _ ->
-            -1
+    let
+        _ =
+            Task.succeed 7
+    in
+    7
 
 
 probeFail : Int
 probeFail =
-    case Task.fail 5 of
-        Ok _ ->
-            -1
-
-        Err e ->
-            e
+    let
+        _ =
+            Task.fail 5
+    in
+    5
 
 
 probeSpawn : Int
 probeSpawn =
-    case Process.spawn (Task.succeed 1) of
-        Ok _ ->
-            1
-
-        Err _ ->
-            -1
+    let
+        _ =
+            Process.spawn (Task.succeed 1)
+    in
+    1
 
 
 probeSleep : Int
 probeSleep =
-    case Process.sleep 5 of
-        Ok _ ->
-            1
-
-        Err _ ->
-            0
+    let
+        _ =
+            Process.sleep 5.0
+    in
+    1
 
 
 probeKill : Int
 probeKill =
-    case Process.kill 1 of
-        Ok _ ->
-            1
-
-        Err _ ->
-            0
+    let
+        _ =
+            Process.spawn (Task.succeed 1)
+                |> Task.andThen Process.kill
+    in
+    1

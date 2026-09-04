@@ -20,14 +20,14 @@ init : () -> ( Model, Cmd Msg )
 init _ =
     ( "wait"
     , Cmd.batch
-        [ Process.sleep 40
+        [ Process.sleep 40.0
             |> Task.andThen (\_ -> Time.now)
             |> Task.map Time.posixToMillis
             |> Task.perform Tick
-        , Process.spawn (Process.sleep 5000)
+        , Process.spawn (Process.sleep 5000.0)
             |> Task.andThen
                 (\id ->
-                    Process.sleep 5
+                    Process.sleep 5.0
                         |> Task.andThen (\_ -> Process.kill id)
                 )
             |> Task.perform (\_ -> Killed)

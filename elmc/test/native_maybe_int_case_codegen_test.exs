@@ -78,12 +78,12 @@ defmodule Elmc.NativeMaybeIntCaseCodegenTest do
         }
 
 
-    type alias Model =
+    type alias ClockModel =
         { now : Maybe Clock
         }
 
 
-    currentHour : Model -> Int
+    currentHour : ClockModel -> Int
     currentHour model =
         case model.now of
             Just value ->
@@ -93,7 +93,7 @@ defmodule Elmc.NativeMaybeIntCaseCodegenTest do
                 0
 
 
-    hourHandOffset : Model -> Int
+    hourHandOffset : ClockModel -> Int
     hourHandOffset model =
         currentHour model * 30
     """

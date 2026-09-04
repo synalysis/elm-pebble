@@ -611,7 +611,12 @@ hasWind model =
             False
 
         Just wind ->
-            wind.speed /= 0
+            case wind.speed of
+                MetersPerSecond value ->
+                    value /= 0
+
+                MilesPerHour value ->
+                    value /= 0
 
 
 pickBottomRight model =

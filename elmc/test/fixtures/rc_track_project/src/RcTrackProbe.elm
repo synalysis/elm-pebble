@@ -23,6 +23,9 @@ branchTupleOut pair =
         ( Ok value, maybeNumber ) ->
             ( value, Maybe.withDefault 0 maybeNumber )
 
+        ( Err _, maybeNumber ) ->
+            ( 0, Maybe.withDefault 0 maybeNumber )
+
 
 stringAppendLength : String -> String -> Int
 stringAppendLength left right =

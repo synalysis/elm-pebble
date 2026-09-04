@@ -50,4 +50,16 @@ defmodule Elmc.SchemaRegistryTest do
     assert SchemaRegistry.list_elem_schema(registry, "List Float") == {:primitive, :float}
     assert SchemaRegistry.list_elem_schema(registry, "List Bool") == {:primitive, :bool}
   end
+
+  test "list_elem_schema_from_elm_type uses Type.t() not alias-string heuristics" do
+    registry = SchemaRegistry.build_from_field_types(%{})
+    list_int = ElmEx.Typesys.Type.list(ElmEx.Typesys.Type.int())
+    list_float = ElmEx.Typesys.Type.list(ElmEx.Typesys.Type.float())
+
+    assert SchemaRegistry.list_elem_schema_from_elm_type(registry, list_int) == {:primitive, :int}
+    assert SchemaRegistry.list_elem_schema_from_elm_type(registry, list_float) ==
+             {:primitive, :float}
+
+    assert SchemaRegistry.list_elem_schema_from_elm_type(registry, ElmEx.Typesys.Type.int()) == nil
+  end
 end

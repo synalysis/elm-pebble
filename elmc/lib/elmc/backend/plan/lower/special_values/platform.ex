@@ -38,6 +38,18 @@ defmodule Elmc.Backend.Plan.Lower.SpecialValues.Platform do
     if pebble_platform_allowed?(), do: %{op: :int_literal, value: 0}, else: nil
   end
 
+  def special_value_from_target("Pebble.Platform.worker", [impl]) do
+    if pebble_platform_allowed?() do
+      %{op: :int_literal, value: 0, keep_alive: [impl]}
+    else
+      nil
+    end
+  end
+
+  def special_value_from_target("Pebble.Platform.worker", _args) do
+    if pebble_platform_allowed?(), do: %{op: :int_literal, value: 0}, else: nil
+  end
+
   def special_value_from_target("Pebble.Platform.displayShapeIsRound", [shape]) do
     if pebble_platform_allowed?() do
       Helpers.platform_union_is_constructor(shape, "Round", 2, "PBL_ROUND")

@@ -132,6 +132,26 @@ defmodule Elmc.Backend.CCodegen.LayoutSolver do
 
   @spec expr_plan(Types.ir_expr(), Types.function_decl_map(), keyword()) :: StoragePlan.t()
   def expr_plan(expr, decl_map, opts \\ []) when is_map(decl_map) do
+    case elm_type_plan(expr) do
+      %StoragePlan{} = plan ->
+        plan
+
+      _ ->
+        expr_plan_legacy(expr, decl_map, opts)
+    end
+  end
+
+  defp elm_type_plan(%{elm_type: type}) do
+    cond do
+      ElmEx.Typesys.Type.list_int?(type) -> StoragePlan.int_compact()
+      ElmEx.Typesys.Type.list_float?(type) -> StoragePlan.float_compact()
+      true -> nil
+    end
+  end
+
+  defp elm_type_plan(_), do: nil
+
+  defp expr_plan_legacy(expr, decl_map, opts) do
     storage = Process.get(:elmc_storage_plans, %{param_plans: %{}, field_plans: %{}})
 
     param_repr =

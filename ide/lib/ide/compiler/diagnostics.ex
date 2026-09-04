@@ -74,10 +74,20 @@ defmodule Ide.Compiler.Diagnostics do
       |> to_string()
       |> String.downcase()
 
+    source = diagnostic |> value(:source, "elmc") |> to_string()
+    message = diagnostic |> value(:message, "") |> to_string()
+
+    message =
+      if source == "elm_ex/typesys" do
+        Ide.Diagnostics.ElmTypeCatalog.decorate_message(diagnostic)
+      else
+        message
+      end
+
     %{
       severity: severity,
-      message: diagnostic |> value(:message, "") |> to_string(),
-      source: diagnostic |> value(:source, "elmc") |> to_string(),
+      message: message,
+      source: source,
       file: value(diagnostic, :file),
       line: normalize_integer(value(diagnostic, :line)),
       column: normalize_integer(value(diagnostic, :column)),

@@ -183,6 +183,52 @@ defmodule Elmc.RuntimeStdlibGapsTest do
   end
 
   @tag :runtime_c
+  test "debug dict toString does not double-prefix a HashMap spine" do
+    run_harness(
+      """
+      int main(void) {
+        ElmcValue *list = elmc_list_nil();
+        ElmcValue *two = elmc_harness_new_int(2);
+        list = elmc_harness_list_cons(two, list);
+        ElmcValue *one = elmc_harness_new_int(1);
+        list = elmc_harness_list_cons(one, list);
+        ElmcValue *cursor = list;
+        while (cursor && cursor->tag == ELMC_TAG_LIST && cursor->payload != NULL) {
+          cursor->scalar = ELMC_DICT_SCALAR;
+          cursor = ((ElmcCons *)cursor->payload)->tail;
+        }
+        ElmcValue *dict_text = NULL;
+        if (elmc_debug_dict_to_string(&dict_text, list) != RC_SUCCESS) return 1;
+        printf("%s\\n", (const char *)dict_text->payload);
+        elmc_release(dict_text);
+        elmc_release(list);
+        return 0;
+      }
+      """,
+      "Dict.fromList [1,2]"
+    )
+  end
+
+  @tag :runtime_c
+  test "string length counts embedded NUL bytes" do
+    run_harness(
+      """
+      int main(void) {
+        ElmcValue *nul = NULL;
+        ElmcValue *hay = NULL;
+        if (elmc_new_string_len(&nul, "\\0", 1) != RC_SUCCESS) return 1;
+        if (elmc_new_string_len(&hay, "ab\\0cd", 5) != RC_SUCCESS) return 2;
+        printf("%d %d\\n", elmc_string_length(nul), elmc_string_length(hay));
+        elmc_release(hay);
+        elmc_release(nul);
+        return 0;
+      }
+      """,
+      "1 5"
+    )
+  end
+
+  @tag :runtime_c
   test "debug toString distinguishes official #3 from a nested pair" do
     run_harness(
       """

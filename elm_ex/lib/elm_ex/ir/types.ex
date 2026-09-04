@@ -7,7 +7,6 @@ defmodule ElmEx.IR.Types do
     Declaration,
     Diagnostic,
     Expr,
-    FunctionCallCheck,
     IR,
     Lookup,
     Module,
@@ -26,9 +25,6 @@ defmodule ElmEx.IR.Types do
   @type dead_code_function_key :: DeadCode.function_key()
   @type dead_code_function_map :: DeadCode.function_map()
   @type expr :: Expr.t()
-  @type function_call_check_import_lookup :: FunctionCallCheck.import_lookup()
-  @type function_call_check_signature_lookup :: FunctionCallCheck.signature_lookup()
-  @type function_call_check_call_context :: FunctionCallCheck.call_context()
   @type import_resolution :: Lookup.import_resolution_t()
   @type lookup :: Lookup.t()
   @type module_exports :: ModuleExports.module_export()

@@ -122,7 +122,7 @@ defmodule Elmc.UnsupportedSurfaceDiagnosticsTest do
         import Time
 
         type Msg
-            = Tick
+            = Tick Time.Posix
 
         init _ =
             ( 0, Platform.Cmd.none )

@@ -16,12 +16,12 @@ init _ =
 
 
 type Msg
-    = Tick Int
+    = Tick Time.Posix
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
-update (Tick millis) _ =
-    ( millis, Cmd.none )
+update (Tick posix) _ =
+    ( Time.posixToMillis posix, Cmd.none )
 
 
 view : Model -> Html Msg

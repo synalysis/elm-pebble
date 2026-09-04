@@ -122,6 +122,7 @@ defmodule Elmc.WasmMinifyManifestTest do
       {:error, {:compile_diagnostics, diags}} when is_list(diags) ->
         assert Enum.any?(diags, fn diag ->
                  diag["code"] in [
+                   "bad_tuple",
                    "wasm_unsupported_function",
                    "wasm_web_kernel_unimplemented",
                    "wasm_empty_exports",

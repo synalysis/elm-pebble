@@ -55,6 +55,7 @@ type Msg
     | MonthChanged Int
     | YearChanged Int
     | GotCurrentDateTime PebbleTime.CurrentDateTime
+    | GotCmdDateTime PebbleCmd.CurrentDateTime
     | GotTime String
     | GotClockStyle24h Bool
     | GotTimezoneIsSet Bool
@@ -243,7 +244,7 @@ init launchContext =
     , Cmd.batch
         [ PebbleCmd.none
         , PebbleCmd.timerAfter 1000
-        , PebbleCmd.getCurrentDateTime GotCurrentDateTime
+        , PebbleCmd.getCurrentDateTime GotCmdDateTime
         , PebbleTime.currentDateTime GotCurrentDateTime
         , PebbleTime.currentTimeString GotTime
         , PebbleTime.clockStyle24h GotClockStyle24h
@@ -363,6 +364,9 @@ update msg model =
 
         YearChanged value ->
             ( { model | ticks = value }, Cmd.none )
+
+        GotCmdDateTime _ ->
+            ( model, Cmd.none )
 
         GotCurrentDateTime value ->
             ( { model | ticks = value.hour }, Cmd.none )
@@ -517,7 +521,7 @@ update msg model =
             ( { model | ticks = rect.x + rect.y }, Cmd.none )
 
         WillChangeBounds rect ->
-            ( { model | ticks = rect.width + rect.height }, Cmd.none )
+            ( { model | ticks = rect.w + rect.h }, Cmd.none )
 
         ChangingBounds progress ->
             ( { model | ticks = progress }, Cmd.none )

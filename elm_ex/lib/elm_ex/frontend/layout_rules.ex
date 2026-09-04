@@ -84,8 +84,8 @@ defmodule ElmEx.Frontend.LayoutRules do
       not Regex.match?(~r/^(else|if|case|let)\b/u, trimmed) and
       not Regex.match?(~r/^\(\s*\\/u, trimmed) and
       Regex.match?(~r/->/u, trimmed) and
-      (Regex.match?(~r/^_\s*->/u, trimmed) or Regex.match?(~r/^\[/u, trimmed) or
-         Regex.match?(~r/^[A-Za-z_(]/u, trimmed))
+      (Regex.match?(~r/^_\s*->/u, trimmed) or
+         Regex.match?(~r/^["'0-9[{A-Za-z_(]/u, trimmed))
   end
 
   @spec keyword_line?(String.t()) :: boolean()
@@ -106,6 +106,13 @@ defmodule ElmEx.Frontend.LayoutRules do
   def in_line_start?(text) when is_binary(text) do
     trimmed = String.trim(text)
     trimmed == "in" or String.starts_with?(trimmed, "in ")
+  end
+
+  @doc "True when a physical line starts with the `of` keyword."
+  @spec of_line_start?(String.t()) :: boolean()
+  def of_line_start?(text) when is_binary(text) do
+    trimmed = String.trim(text)
+    trimmed == "of" or String.starts_with?(trimmed, "of ")
   end
 
   @doc "True when a physical line continues a pipe chain (`|> …`)."

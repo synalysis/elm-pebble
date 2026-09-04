@@ -64,6 +64,141 @@ defmodule ElmEx.Frontend.ExprLayoutLexerTest do
     assert length(branches) == 2
   end
 
+  test "parse_with_layout_lexer parses case with multiline subject" do
+    source = """
+    case
+        x
+    of
+        A ->
+            1
+
+        _ ->
+            2
+    """
+
+    assert {:ok, %{op: :case, subject: "x", branches: branches}} =
+             GeneratedExpressionParser.parse_with_layout_lexer(source)
+
+    assert length(branches) == 2
+  end
+
+  test "parse_with_layout_lexer parses nested case under multiline subject" do
+    source = """
+    let
+        ( templateModel, templateCmd ) =
+            case
+                subject
+            of
+                Nothing ->
+                    0
+
+                Just justRouteAndPath ->
+                    case x of
+                        A ->
+                            1
+
+                        _ ->
+                            2
+    in
+        0
+    """
+
+    assert {:ok, %{op: :let_bindings}} =
+             GeneratedExpressionParser.parse_with_layout_lexer(source)
+  end
+
+  test "parse_with_layout_lexer keeps multiline tuple after nested cases in let" do
+    source = """
+    let
+        ( templateModel, templateCmd ) =
+            case
+                subject
+            of
+                Nothing ->
+                    0
+
+                Just x ->
+                    case y of
+                        A ->
+                            1
+
+                        _ ->
+                            2
+    in
+        ( { global = sharedModel, page = templateModel }
+        , Effect.batch [ templateCmd, other ]
+        )
+    """
+
+    assert {:ok, %{op: :let_bindings, in_expr: %{op: :tuple2}}} =
+             GeneratedExpressionParser.parse_with_layout_lexer(source)
+  end
+
+  test "parse_with_layout_lexer keeps case siblings after let-in inside an arm" do
+    source = """
+    case msg of
+        MsgErrorPage msg_ ->
+            let
+                ( updatedPageModel, pageCmd ) =
+                    case model.page of
+                        ModelErrorPage pageModel ->
+                            1
+
+                        _ ->
+                            2
+            in
+            ( { model | page = updatedPageModel }, pageCmd )
+
+        MsgGlobal msg_ ->
+            ( model, Cmd.none )
+    """
+
+    assert {:ok, %{op: :case, branches: branches}} =
+             GeneratedExpressionParser.parse_with_layout_lexer(source)
+
+    assert length(branches) == 2
+  end
+
+  test "parse strips block comments that contain apostrophes" do
+    source = """
+    case result of
+        Err _ ->
+            -- I think that's the right logic
+            {-
+               we're navigating to. This could be done more cleanly, but it's simplest.
+            -}
+            ( model, Cmd.none )
+
+        Ok value ->
+            ( value, Cmd.none )
+    """
+
+    assert {:ok, %{op: :case, branches: branches}} =
+             GeneratedExpressionParser.parse(source)
+
+    assert length(branches) == 2
+  end
+
+  test "parse_with_layout_lexer parses case inside list without trailing dedent" do
+    source = """
+    { title = "Greetings"
+    , body =
+        [ Html.div []
+            [ case app.data.name of
+                Just name ->
+                    Html.text ("Hello " ++ name)
+
+                Nothing ->
+                    Html.text "hi"
+            ]
+        ]
+    }
+    """
+
+    assert {:ok, %{op: :record_literal}} =
+             GeneratedExpressionParser.parse_with_layout_lexer(source)
+  end
+
   test "parse_with_layout_lexer parses multiline let with split binding rhs" do
     source = """
     let
@@ -173,6 +308,47 @@ defmodule ElmEx.Frontend.ExprLayoutLexerTest do
     """
 
     assert {:ok, %{op: :if}} = GeneratedExpressionParser.parse_with_layout_lexer(source)
+  end
+
+  test "nested case inside a parenthesized lambda keeps the outer wildcard" do
+    source = """
+    D.string
+        |> D.andThen
+            (\\s ->
+                case String.split "." s of
+                    [ a, b, c ] ->
+                        case ( String.toInt a, String.toInt b, String.toInt c ) of
+                            ( Just x, Just y, Just z ) ->
+                                D.succeed ( x, y, z )
+
+                            _ ->
+                                D.fail "bad version"
+
+                    _ ->
+                        D.fail "bad version"
+            )
+    """
+
+    assert {:ok, expr} = GeneratedExpressionParser.parse_with_layout_lexer(source)
+
+    count_cases = fn count_cases, node, acc ->
+      case node do
+        %{op: :case, branches: branches} ->
+          acc = [length(branches) | acc]
+          Enum.reduce(branches, acc, fn br, acc -> count_cases.(count_cases, br.expr, acc) end)
+
+        map when is_map(map) ->
+          Enum.reduce(map, acc, fn {_k, v}, acc -> count_cases.(count_cases, v, acc) end)
+
+        list when is_list(list) ->
+          Enum.reduce(list, acc, fn v, acc -> count_cases.(count_cases, v, acc) end)
+
+        _ ->
+          acc
+      end
+    end
+
+    assert Enum.sort(count_cases.(count_cases, expr, [])) == [2, 2]
   end
 
   test "inline-first let tolerates deeper indented in keyword" do

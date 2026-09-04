@@ -20,7 +20,6 @@ defmodule Elmc.BuiltinUnionCodegenTest do
     import Pebble.Light as Light
     import Pebble.Platform as Platform
 
-    main : Platform.Program () () ()
     main =
         Platform.worker
             { init = \\flags -> ( (), Cmd.batch [ Light.interaction, Light.disable, Light.enable ] )
@@ -62,16 +61,15 @@ defmodule Elmc.BuiltinUnionCodegenTest do
 
     import Pebble.Platform as Platform
 
-    main : Platform.Program () () ()
     main =
         Platform.worker
             { init = \\flags -> ( sample, Platform.Cmd.none )
-            , update = \\_ _ -> ( (), Platform.Cmd.none )
+            , update = \\_ model -> ( model, Platform.Cmd.none )
             , subscriptions = \\_ -> Platform.Sub.none
             , view = \\_ -> Platform.Cmd.none
             }
 
-    sample : ( Maybe Int, Result Int String )
+    sample : ( Maybe Int, Result String Int )
     sample =
         ( Just 1, Ok 2 )
     """
@@ -104,11 +102,10 @@ defmodule Elmc.BuiltinUnionCodegenTest do
 
     import Pebble.Platform as Platform
 
-    main : Platform.Program () () ()
     main =
         Platform.worker
             { init = \\flags -> ( maybePiece True, Platform.Cmd.none )
-            , update = \\_ _ -> ( (), Platform.Cmd.none )
+            , update = \\_ model -> ( model, Platform.Cmd.none )
             , subscriptions = \\_ -> Platform.Sub.none
             , view = \\_ -> Platform.Cmd.none
             }

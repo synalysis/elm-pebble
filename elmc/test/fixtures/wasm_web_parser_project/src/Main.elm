@@ -2,7 +2,7 @@ module Main exposing (main)
 
 import Char
 import Html exposing (Html, text)
-import Parser exposing ((|.), (|=))
+import Parser exposing ((|.), (|=), Nestable(..))
 import Set
 
 
@@ -72,14 +72,14 @@ commentThenInt =
 nestedComment : Parser.Parser Int
 nestedComment =
     Parser.succeed identity
-        |. Parser.multiComment "{-" "-}" Parser.Nestable
+        |. Parser.multiComment "{-" "-}" Nestable
         |= Parser.int
 
 
 jsComment : Parser.Parser Int
 jsComment =
     Parser.succeed identity
-        |. Parser.multiComment "/*" "*/" Parser.NotNestable
+        |. Parser.multiComment "/*" "*/" NotNestable
         |= Parser.int
 
 

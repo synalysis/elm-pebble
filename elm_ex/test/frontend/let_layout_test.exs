@@ -575,6 +575,77 @@ defmodule ElmEx.Frontend.LetLayoutTest do
     assert match?(%{pattern: %{name: "MinuteChanged"}}, hd(branches))
   end
 
+  test "three-level nested case keeps Err on the Result subject" do
+    source = """
+    case selector of
+        "heap" ->
+            case lowerValue tag cfg fieldName extra of
+                Ok withBase ->
+                    case fieldOffset cfg fieldName of
+                        Just off ->
+                            applyOffset cfg fieldName off withBase
+
+                        Nothing ->
+                            cfg.field01
+
+                Err _ ->
+                    cfg.field01
+    """
+
+    assert {:ok, %{op: :case, branches: [heap]}} = GeneratedExpressionParser.parse(source)
+    assert match?(%{pattern: %{kind: :string, value: "heap"}}, heap)
+    result_case = unwrap_case_subject_let(heap.expr)
+    assert %{op: :case, branches: result_branches} = result_case
+    names = Enum.map(result_branches, & &1.pattern[:name])
+    assert names == ["Ok", "Err"]
+
+    ok = hd(result_branches)
+    maybe_case = unwrap_case_subject_let(ok.expr)
+    assert %{op: :case, branches: maybe_branches} = maybe_case
+    maybe_names = Enum.map(maybe_branches, & &1.pattern[:name])
+    assert maybe_names == ["Just", "Nothing"]
+  end
+
+  test "parses sibling string case arms when let binding has a parenthesized case lambda" do
+    source = """
+    case action of
+        "fold" ->
+            let
+                reduced =
+                    List.foldl
+                        (\\ix state ->
+                            case state of
+                                Ok acc ->
+                                    Ok (acc + ix)
+
+                                Err _ ->
+                                    Ok -1
+                        )
+                        (Ok 1)
+                        [ 0, 1, 2 ]
+            in
+            case reduced of
+                Ok base ->
+                    base
+
+                Err _ ->
+                    -1
+
+        "map" ->
+            2
+
+        _ ->
+            0
+    """
+
+    assert {:ok, %{op: :case, branches: branches}} = GeneratedExpressionParser.parse(source)
+
+    assert Enum.map(branches, fn
+             %{pattern: %{kind: :string, value: value}} -> value
+             %{pattern: %{kind: :wildcard}} -> :wildcard
+           end) == ["fold", "map", :wildcard]
+  end
+
   test "parses sibling union case arms when branch body is let with nested case" do
     source = """
     case c of
@@ -1111,4 +1182,9 @@ defmodule ElmEx.Frontend.LetLayoutTest do
       assert true
     end
   end
+
+  defp unwrap_case_subject_let(%{op: :let_in, name: "caseSubject", in_expr: expr}),
+    do: unwrap_case_subject_let(expr)
+
+  defp unwrap_case_subject_let(expr), do: expr
 end

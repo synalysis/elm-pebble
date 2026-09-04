@@ -39,6 +39,7 @@ defmodule Elmc.WatchfaceDirectBisectTest do
     type alias Model =
         { screenW : Int
         , screenH : Int
+        , moonPhaseE6 : Maybe Int
         }
 
 
@@ -56,7 +57,7 @@ defmodule Elmc.WatchfaceDirectBisectTest do
 
 
     init _ =
-        ( { screenW = 144, screenH = 168 }, Cmd.none )
+        ( { screenW = 144, screenH = 168, moonPhaseE6 = Just 0 }, Cmd.none )
 
 
     update _ model =
@@ -196,7 +197,7 @@ defmodule Elmc.WatchfaceDirectBisectTest do
         header() <>
           """
           view model =
-              Ui.toUiNode (mountLines model)
+              Ui.toUiNode [ mountLines model ]
 
 
           mountLines model =
@@ -225,14 +226,14 @@ defmodule Elmc.WatchfaceDirectBisectTest do
 
           drawBadge model =
               case model.moonPhaseE6 of
-                  Just phase ->
-                      badge 10 10 8 phase
+                  Just _phase ->
+                      badge 10 10 8
 
                   Nothing ->
                       []
 
 
-          badge cx cy radius _ _unusedPhase =
+          badge cx cy radius =
               [ Ui.fillCircle { x = cx, y = cy } radius Color.lightGray ]
           """
       )

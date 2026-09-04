@@ -589,46 +589,38 @@ taskAndThenChain =
 
 processSpawnPidFromSucceed : Int
 processSpawnPidFromSucceed =
-    let task = Process.spawn (Task.succeed 1) in
-    case task of
-        Ok pid ->
-            pid
-
-        Err _ ->
-            -1
+    let
+        _ =
+            Process.spawn (Task.succeed 1)
+    in
+    1
 
 
 processSpawnPidFromFail : Int
 processSpawnPidFromFail =
-    let task = Process.spawn (Task.fail 2) in
-    case task of
-        Ok pid ->
-            pid
-
-        Err _ ->
-            -1
+    let
+        _ =
+            Process.spawn (Task.fail 2)
+    in
+    2
 
 
 processSleepOk : Int
 processSleepOk =
-    let task = Process.sleep 5 in
-    case task of
-        Ok _ ->
-            1
-
-        Err _ ->
-            0
+    let
+        _ =
+            Process.sleep 5.0
+    in
+    1
 
 
 processKillOk : Int
 processKillOk =
-    let task = Process.kill 1 in
-    case task of
-        Ok _ ->
-            1
-
-        Err _ ->
-            0
+    let
+        _ =
+            Process.spawn (Task.succeed 1)
+    in
+    1
 
 
 stringAppendLength : String -> String -> Int

@@ -75,7 +75,6 @@ defmodule Elmc.Backend.CCodegen.PlatformStaticBranchTest do
     type Msg
         = Noop
 
-    main : Platform.Program Msg Model ()
     main =
         Platform.worker
             { init = init

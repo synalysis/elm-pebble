@@ -1602,6 +1602,12 @@ defmodule Elmc.PebbleShimTest do
     File.mkdir_p!(Path.join(project_dir, "src"))
     File.cp_r!(Path.join(source_template, "src"), Path.join(project_dir, "src"))
 
+    resources_src = Path.join(source_template, "resources")
+
+    if File.dir?(resources_src) do
+      File.cp_r!(resources_src, Path.join(project_dir, "resources"))
+    end
+
     File.write!(
       Path.join(project_dir, "elm.json"),
       Jason.encode!(%{

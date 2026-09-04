@@ -320,6 +320,19 @@ defmodule Elmc.Backend.Plan.Types do
   def owned_effects(_),
     do: %{produces: nil, consumes: [], borrows: [], result_aliases: [], fallible: false}
 
+  @doc """
+  Derive a `produces` tag from an elaborated Elm type when the lowering path
+  already treats the result as a scalar or boxed value.
+  """
+  @spec produces_from_elm_type(term(), reg()) :: produce()
+  def produces_from_elm_type(type, reg) when is_integer(reg) do
+    case ElmEx.Typesys.Layout.produce_kind(type) do
+      :native_int -> {:native_int, reg}
+      :native_bool -> {:native_bool, reg}
+      :owned -> {:owned, reg}
+    end
+  end
+
   @spec retains_operand_effects(reg(), [reg()], [reg()], [reg()], boolean()) :: effects()
   def retains_operand_effects(dest, borrows, alias_regs, consumes \\ [], fallible? \\ false)
 

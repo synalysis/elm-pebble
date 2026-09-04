@@ -479,6 +479,12 @@ defmodule Elmc.Backend.Plan.Lower.PatternBind do
     env = field_type_env(ctx)
 
     case subject_expr do
+      %{elm_type: elm_type} when not is_nil(elm_type) ->
+        case ElmEx.Typesys.Type.maybe_payload(elm_type) do
+          nil -> unwrap_maybe_type(ElmEx.Typesys.Type.to_string(elm_type))
+          payload -> ElmEx.Typesys.Type.to_string(payload)
+        end
+
       %{op: :var, name: name} when is_binary(name) ->
         unwrap_maybe_type(Context.local_type(ctx, name) || Map.get(env.__var_types__, name))
 

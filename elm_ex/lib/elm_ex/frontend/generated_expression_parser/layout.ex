@@ -658,6 +658,7 @@ defmodule ElmEx.Frontend.GeneratedExpressionParser.Layout do
   @spec split_line_inline_let_in(line()) :: lines()
   defp split_line_inline_let_in(line) when is_binary(line) do
     trimmed = String.trim(line)
+    pad = leading_line_indent(line)
 
     if Regex.match?(@inline_let_in_line, trimmed) do
       # Case flattening can put `pat -> let … in body` on one line. Splitting `in`
@@ -668,7 +669,16 @@ defmodule ElmEx.Frontend.GeneratedExpressionParser.Layout do
       else
         case split_rightmost_inline_let_in(trimmed) do
           {:ok, before, in_expr} ->
-            split_line_inline_let_in(before) ++ ["in" | split_line_inline_let_in(in_expr)]
+            padded_before = split_line_inline_let_in(pad <> before)
+            padded_in = [pad <> "in"]
+            padded_body =
+              if String.trim(in_expr) == "" do
+                []
+              else
+                split_line_inline_let_in(pad <> in_expr)
+              end
+
+            padded_before ++ padded_in ++ padded_body
 
           :error ->
             [line]
@@ -677,6 +687,10 @@ defmodule ElmEx.Frontend.GeneratedExpressionParser.Layout do
     else
       [line]
     end
+  end
+
+  defp leading_line_indent(line) when is_binary(line) do
+    String.replace(line, ~r/^(\s*).*/u, "\\1")
   end
 
   defp case_branch_inline_let?(line) when is_binary(line) do
@@ -1153,7 +1167,7 @@ defmodule ElmEx.Frontend.GeneratedExpressionParser.Layout do
   defp normalize_case_branches(lines) when is_list(lines) do
     if leading_case_branch_lines?(lines) do
       {items, current, _branch_indent, _let_depth, rest} =
-        consume_case_branches(lines, [], nil, nil, 0)
+        consume_case_branches(lines, [], nil, nil, 0, nil)
 
       normalized_items =
         if is_binary(current), do: items ++ [String.trim(current)], else: items
@@ -1394,28 +1408,29 @@ defmodule ElmEx.Frontend.GeneratedExpressionParser.Layout do
           [source()],
           source() | nil,
           non_neg_integer() | nil,
-          non_neg_integer()
+          non_neg_integer(),
+          non_neg_integer() | nil
         ) ::
           {[source()], source() | nil, non_neg_integer() | nil, non_neg_integer(), lines()}
-  defp consume_case_branches([], acc, current, branch_indent, let_depth),
+  defp consume_case_branches([], acc, current, branch_indent, let_depth, _nested_indent),
     do: {acc, current, branch_indent, let_depth, []}
 
-  defp consume_case_branches([line | rest], acc, current, branch_indent, let_depth) do
+  defp consume_case_branches([line | rest], acc, current, branch_indent, let_depth, nested_indent) do
     trimmed = String.trim(line)
 
     cond do
       trimmed == "" ->
-        consume_case_branches(rest, acc, current, branch_indent, let_depth)
+        consume_case_branches(rest, acc, current, branch_indent, let_depth, nested_indent)
 
       trimmed == ";;" ->
-        consume_case_branches(rest, acc, current, branch_indent, let_depth)
+        consume_case_branches(rest, acc, current, branch_indent, let_depth, nested_indent)
 
       true ->
-        consume_case_branches_line(line, rest, acc, current, branch_indent, let_depth)
+        consume_case_branches_line(line, rest, acc, current, branch_indent, let_depth, nested_indent)
     end
   end
 
-  defp consume_case_branches_line(line, rest, acc, current, branch_indent, let_depth) do
+  defp consume_case_branches_line(line, rest, acc, current, branch_indent, let_depth, nested_indent) do
     indent = leading_indent_count(line)
 
     starts_branch =
@@ -1440,6 +1455,14 @@ defmodule ElmEx.Frontend.GeneratedExpressionParser.Layout do
 
       is_binary(current) and is_integer(branch_indent) and case_branch_start_line?(line) and
           indent > branch_indent ->
+        current =
+          if is_integer(nested_indent) and indent < nested_indent and
+               nested_case_count(current) >= 2 do
+            close_trailing_nested_case(current)
+          else
+            current
+          end
+
         separator =
           if String.ends_with?(String.trim(current), " of") do
             " "
@@ -1449,7 +1472,7 @@ defmodule ElmEx.Frontend.GeneratedExpressionParser.Layout do
 
         updated = current <> separator <> String.trim(line)
         next_depth = next_let_depth(let_depth, line)
-        consume_case_branches(rest, acc, updated, branch_indent, next_depth)
+        consume_case_branches(rest, acc, updated, branch_indent, next_depth, indent)
 
       starts_branch ->
         flushed = if is_binary(current), do: acc ++ [String.trim(current)], else: acc
@@ -1460,7 +1483,8 @@ defmodule ElmEx.Frontend.GeneratedExpressionParser.Layout do
           flushed,
           line |> String.trim() |> strip_leading_case_arm_separator(),
           branch_indent || indent,
-          next_depth
+          next_depth,
+          nil
         )
 
       is_binary(current) and let_depth == 0 and case_branch_terminator_line?(line, current) and
@@ -1472,11 +1496,55 @@ defmodule ElmEx.Frontend.GeneratedExpressionParser.Layout do
         line_body = line |> String.trim() |> strip_leading_case_arm_separator()
         updated = current <> " " <> line_body
         next_depth = next_let_depth(let_depth, line)
-        consume_case_branches(rest, acc, updated, branch_indent, next_depth)
+        consume_case_branches(rest, acc, updated, branch_indent, next_depth, nested_indent)
 
       true ->
         next_depth = next_let_depth(let_depth, line)
-        consume_case_branches(rest, acc, String.trim(line), branch_indent, next_depth)
+        consume_case_branches(rest, acc, String.trim(line), branch_indent, next_depth, nested_indent)
+    end
+  end
+
+  # Parenthesize the innermost `case ... of` so a shallower sibling arm is not
+  # eaten as another `;;` branch of that inner case. Stop before a following
+  # ` in ` that closes an outer let.
+  defp close_trailing_nested_case(current) when is_binary(current) do
+    matches = :binary.matches(current, "case ")
+
+    case matches do
+      [] ->
+        current
+
+      _ ->
+        {pos, _} = List.last(matches)
+        prefix = String.slice(current, 0, pos)
+        rest = String.slice(current, pos, String.length(current))
+        {case_expr, after_case} = split_trailing_case_before_outer_in(rest)
+        trimmed = String.trim(case_expr)
+
+        wrapped =
+          if String.starts_with?(trimmed, "(") and
+               paren_balance_outside_string_literals(trimmed) == 0 do
+            trimmed
+          else
+            "(" <> trimmed <> ")"
+          end
+
+        prefix <> wrapped <> after_case
+    end
+  end
+
+  defp nested_case_count(current) when is_binary(current) do
+    length(:binary.matches(current, "case "))
+  end
+
+  defp split_trailing_case_before_outer_in(rest) when is_binary(rest) do
+    if String.contains?(rest, " let ") or String.match?(rest, ~r/^case\b.*\blet\b/u) do
+      {rest, ""}
+    else
+      case Regex.split(~r/\s+in\s+/u, rest, parts: 2) do
+        [case_expr, suffix] -> {case_expr, " in " <> suffix}
+        [case_expr] -> {case_expr, ""}
+      end
     end
   end
 

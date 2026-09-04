@@ -2,12 +2,11 @@ module Main exposing (main)
 
 import List
 import Pebble.Cmd
-import Pebble.Platform exposing (LaunchContext)
+import Pebble.Platform exposing (LaunchContext, worker)
 import Pebble.Storage as Storage
 import Pebble.Ui
 import Pebble.Ui.Color as Color
 import Pebble.Ui.Resources as Resources
-import Platform
 import Platform.Sub as Sub
 import RcTrack2048Probe as Board
 
@@ -23,12 +22,12 @@ type Msg
     | DownPressed
 
 
-init : LaunchContext -> ( Model, Pebble.Cmd.Cmd Msg )
+init : LaunchContext -> ( Model, Cmd Msg )
 init _ =
     ( Board.initialModel 99, Pebble.Cmd.none )
 
 
-update : Msg -> Model -> ( Model, Pebble.Cmd.Cmd Msg )
+update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     let
         next =
@@ -83,9 +82,8 @@ drawCell index value =
     Pebble.Ui.textInt Resources.DefaultFont { x = x, y = y } value
 
 
-main : Platform.Program LaunchContext Msg Model
 main =
-    Platform.worker
+    worker
         { init = init
         , update = update
         , subscriptions = subscriptions

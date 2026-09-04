@@ -105,6 +105,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.UseSites do
 
   defp walk_children(expr, module_name, ctx, acc, caller_key, decl_map) when is_map(expr) do
     expr
+    |> Map.drop([:elm_type])
     |> Map.values()
     |> Enum.reduce(acc, &walk(&1, module_name, ctx, &2, caller_key, decl_map))
   end
@@ -117,7 +118,7 @@ defmodule Elmc.Backend.CCodegen.DirectRender.UseSites do
       %{op: :call, name: name, args: args} ->
         {module_name, name, args || []}
 
-      %{op: :qualified_call, target: target, args: args} ->
+      %{op: :qualified_call, target: target, args: args} when is_binary(target) ->
         case Host.split_qualified_function_target(Host.normalize_special_target(target)) do
           {target_module, target_name} -> {target_module, target_name, args || []}
           nil -> nil

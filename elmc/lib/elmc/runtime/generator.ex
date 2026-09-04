@@ -4267,10 +4267,11 @@ defmodule Elmc.Runtime.Generator do
     }
 
     static size_t elmc_utf8_codepoint_count(const char *src);
+    static size_t elmc_utf8_codepoint_count_n(const char *src, size_t byte_len);
 
     int elmc_string_length(ElmcValue *value) {
       if (!value || value->tag != ELMC_TAG_STRING || !value->payload) return 0;
-      return (int)elmc_utf8_codepoint_count((const char *)value->payload);
+      return (int)elmc_utf8_codepoint_count_n((const char *)value->payload, elmc_string_byte_len(value));
     }
 
     RC elmc_list_head(ElmcValue **out, ElmcValue *list) {
@@ -4576,6 +4577,7 @@ defmodule Elmc.Runtime.Generator do
     static int elmc_utf8_encode_codepoint(uint32_t cp, char *out, size_t cap);
     static int elmc_utf8_decode_codepoint(const unsigned char **p, const unsigned char *end, uint32_t *cp_out);
     static size_t elmc_utf8_codepoint_count(const char *src);
+    static size_t elmc_utf8_codepoint_count_n(const char *src, size_t byte_len);
     static const char *elmc_utf8_byte_offset_at_codepoint(const char *src, int64_t index);
     static RC elmc_rc_assign_new_char(ElmcValue **out, elmc_int_t code);
     static RC elmc_debug_append_char(ElmcValue **out, elmc_int_t code);
@@ -4609,7 +4611,16 @@ defmodule Elmc.Runtime.Generator do
 
     static RC elmc_debug_append_float(ElmcValue **out, double value) {
       char buffer[64];
-      elmc_js_number_to_cstr(buffer, sizeof(buffer), value);
+      if (value != value) {
+        return elmc_debug_append_cstr(out, "nan");
+      }
+      if (value > 1e308 || value < -1e308) {
+        return elmc_debug_append_cstr(out, value < 0.0 ? "-Infinity" : "Infinity");
+      }
+      if (value == 0.0) {
+        return elmc_debug_append_cstr(out, "0");
+      }
+      snprintf(buffer, sizeof(buffer), "%g", value);
       return elmc_debug_append_cstr(out, buffer);
     }
 
@@ -4699,10 +4710,10 @@ defmodule Elmc.Runtime.Generator do
       return 1;
     }
 
-    static size_t elmc_utf8_codepoint_count(const char *src) {
+    static size_t elmc_utf8_codepoint_count_n(const char *src, size_t byte_len) {
       if (!src) return 0;
       const unsigned char *p = (const unsigned char *)src;
-      const unsigned char *end = p + strlen(src);
+      const unsigned char *end = p + byte_len;
       size_t count = 0;
       while (p < end) {
         uint32_t cp;
@@ -4710,6 +4721,11 @@ defmodule Elmc.Runtime.Generator do
         count++;
       }
       return count;
+    }
+
+    static size_t elmc_utf8_codepoint_count(const char *src) {
+      if (!src) return 0;
+      return elmc_utf8_codepoint_count_n(src, strlen(src));
     }
 
     static const char *elmc_utf8_byte_offset_at_codepoint(const char *src, int64_t index) {
@@ -5217,13 +5233,18 @@ defmodule Elmc.Runtime.Generator do
               break;
             }
             ElmcTuple2 *tuple = (ElmcTuple2 *)value->payload;
+            /* Only decode `(tag, payload)` as a constructor when the tag has a
+               unique debug name. `ctor_info` matches any stdlib row (OneOf,
+               Leaf, Just, …) and would reprint `(3, xs)` as `OneOf xs`. */
             if (tuple->first && tuple->first->tag == ELMC_TAG_INT) {
-              int hint = elmc_debug_payload_arity_hint(tuple->second);
-              const char *ctor_name = NULL;
-              int arity = elmc_debug_union_ctor_info(elmc_as_int(tuple->first), hint, &ctor_name);
-              if (!ctor_name) ctor_name = elmc_debug_union_ctor_name(elmc_as_int(tuple->first));
-              if (ctor_name) {
-                if (arity < 0) arity = elmc_debug_union_ctor_arity(elmc_as_int(tuple->first));
+              elmc_int_t tag = elmc_as_int(tuple->first);
+              const char *unique = elmc_debug_union_ctor_name(tag);
+              if (unique) {
+                int hint = elmc_debug_payload_arity_hint(tuple->second);
+                const char *ctor_name = NULL;
+                int arity = elmc_debug_union_ctor_info(tag, hint, &ctor_name);
+                if (!ctor_name) ctor_name = unique;
+                if (arity < 0) arity = elmc_debug_union_ctor_arity(tag);
                 rc = elmc_debug_append_cstr(out, ctor_name);
                 CHECK_RC(rc);
                 rc = elmc_debug_format_union_payload(out, ctor_name, arity, tuple->second);
@@ -5283,6 +5304,22 @@ defmodule Elmc.Runtime.Generator do
       return rc;
     }
 
+    static const char *elmc_debug_skip_collection_prefix(const char *piece) {
+      static const char *prefixes[] = {
+        "HashMap.fromList ",
+        "Dict.fromList ",
+        "Set.fromList ",
+        "Array.fromList ",
+        NULL
+      };
+      if (!piece) return "[]";
+      for (int i = 0; prefixes[i]; i++) {
+        size_t n = strlen(prefixes[i]);
+        if (strncmp(piece, prefixes[i], n) == 0) return piece + n;
+      }
+      return piece;
+    }
+
     static RC elmc_debug_from_list_prefix(ElmcValue **out, const char *prefix, ElmcValue *value) {
       *out = NULL;
       ElmcValue *list_part = NULL;
@@ -5299,8 +5336,9 @@ defmodule Elmc.Runtime.Generator do
         *out = NULL;
         return rc;
       }
-      const char *piece =
+      const char *raw =
         (list_part && list_part->tag == ELMC_TAG_STRING && list_part->payload) ? (const char *)list_part->payload : "[]";
+      const char *piece = elmc_debug_skip_collection_prefix(raw);
       rc = elmc_debug_append_cstr(out, piece);
       elmc_release(list_part);
       if (rc != RC_SUCCESS) {
@@ -8893,7 +8931,8 @@ defmodule Elmc.Runtime.Generator do
         *out = elmc_int_zero();
         return RC_SUCCESS;
       }
-      return elmc_new_int(out, (int64_t)elmc_utf8_codepoint_count((const char *)s->payload));
+      return elmc_new_int(out, (int64_t)elmc_utf8_codepoint_count_n(
+        (const char *)s->payload, elmc_string_byte_len(s)));
     }
 
     RC elmc_string_reverse(ElmcValue **out, ElmcValue *s) {

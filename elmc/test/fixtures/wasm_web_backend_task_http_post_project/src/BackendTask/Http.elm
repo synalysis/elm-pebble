@@ -31,4 +31,4 @@ expectWhatever value =
 
 post : String -> Body -> Expect error a -> Task error a
 post _ _ _ =
-    Task.fail "stub"
+    Debug.todo "stub"

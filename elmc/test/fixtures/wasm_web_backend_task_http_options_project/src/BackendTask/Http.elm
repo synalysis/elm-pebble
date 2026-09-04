@@ -1,4 +1,4 @@
-module BackendTask.Http exposing (getJson, getWithOptions, expectJson, withMetadata, IgnoreCache)
+module BackendTask.Http exposing (getJson, getWithOptions, expectJson, withMetadata, CacheStrategy(..))
 
 import Json.Decode exposing (Decoder)
 import Task exposing (Task)
@@ -36,16 +36,16 @@ expectJson decoder =
     ExpectJson decoder
 
 
-withMetadata : (Metadata -> a -> b) -> Expect error a -> Expect error b
+withMetadata : (Metadata -> a -> a) -> Expect error a -> Expect error a
 withMetadata _ expect =
     expect
 
 
 getWithOptions : RequestOptions error a -> Task error a
 getWithOptions _ =
-    Task.fail "stub"
+    Debug.todo "stub"
 
 
 getJson : String -> Decoder a -> Task String a
 getJson _ _ =
-    Task.fail "stub"
+    Debug.todo "stub"

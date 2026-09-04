@@ -1,7 +1,7 @@
 module Main exposing (main)
 
-import Browser
-import Browser.Navigation as Nav exposing (UrlRequest(..))
+import Browser exposing (UrlRequest(..))
+import Browser.Navigation as Nav
 import Html exposing (Html, a, div, text)
 import Html.Attributes as Attr
 import Url
@@ -25,7 +25,7 @@ type Msg
 
 parseRoute : Url.Url -> Route
 parseRoute url =
-    if url.path == [ "about" ] then
+    if url.path == "/about" then
         About
     else
         Home

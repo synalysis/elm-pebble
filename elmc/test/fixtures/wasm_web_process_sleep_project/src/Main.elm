@@ -18,7 +18,7 @@ type Msg
 init : () -> ( Model, Cmd Msg )
 init _ =
     ( "wait"
-    , Process.sleep 5
+    , Process.sleep 5.0
         |> Task.andThen (\_ -> Time.now)
         |> Task.perform Got
     )

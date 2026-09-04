@@ -15,9 +15,6 @@ show rec =
         { n, label } ->
             String.fromInt n ++ ":" ++ label
 
-        _ ->
-            "miss"
-
 
 main : Html String
 main =

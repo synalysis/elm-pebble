@@ -4362,12 +4362,20 @@ defmodule Elmc.Backend.CCodegen.RuntimeCall.Core do
 
   @spec debug_collection_kind(Types.ir_expr(), Types.compile_env()) :: :set | :dict | :array | nil
   defp debug_collection_kind(value, env) do
-    case NativeTypedReturn.expr_type(value, env) do
-      type when is_binary(type) ->
-        TypeParsing.debug_from_list_kind(type) || debug_collection_function_param(value, env)
+    case value do
+      %{op: :var} ->
+        debug_collection_function_param(value, env)
 
       _ ->
-        debug_collection_function_param(value, env)
+        call_env = Map.put(env, :__var_types__, %{})
+
+        case NativeTypedReturn.expr_type(value, call_env) do
+          type when is_binary(type) ->
+            TypeParsing.debug_from_list_kind(type) || debug_collection_function_param(value, env)
+
+          _ ->
+            debug_collection_function_param(value, env)
+        end
     end
   end
 

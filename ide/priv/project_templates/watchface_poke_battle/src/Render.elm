@@ -133,6 +133,7 @@ drawInfoBox layout =
             , Ui.line
                 { x = layout.boxX + 12, y = layout.boxY + 6 + 1 }
                 { x = layout.screenW - layout.boxX - 12, y = layout.boxY + 6 + 1 }
+                Color.white
             ]
         )
     , Ui.group
@@ -148,6 +149,7 @@ drawInfoBox layout =
             , Ui.line
                 { x = layout.boxX + 12 - 1, y = layout.boxY + 6 - 2 }
                 { x = layout.screenW - layout.boxX - 12 + 1, y = layout.boxY + 6 - 2 }
+                Color.white
             ]
         )
     , Ui.drawBitmapInRect Resources.BitmapStaticBoxBall { x = layout.boxX, y = layout.boxY, w = 12, h = 12 }

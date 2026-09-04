@@ -489,7 +489,7 @@ drawTile offset tile =
     Ui.fillRect (toUiRect (platformRect offset tile)) (tileColor tile)
 
 
-tileColor : PlatformTile -> Color
+tileColor : PlatformTile -> Color.Color
 tileColor tile =
     if tile.moving then
         Color.darkGray

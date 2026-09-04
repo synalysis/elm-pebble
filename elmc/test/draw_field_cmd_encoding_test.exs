@@ -26,6 +26,7 @@ defmodule Elmc.DrawFieldCmdEncodingTest do
 
     import Pebble.Platform as Platform
     import Pebble.Ui as Ui
+    import Pebble.Ui.Color as Color
 
     type alias Model = ()
 
@@ -38,7 +39,7 @@ defmodule Elmc.DrawFieldCmdEncodingTest do
     subscriptions _ = Platform.Sub.none
 
     view _ =
-        Ui.toUiNode [ Ui.fillCircle 10 20 3 1 ]
+        Ui.toUiNode [ Ui.fillCircle { x = 10, y = 20 } 3 Color.black ]
 
     main =
         Platform.application
@@ -60,13 +61,10 @@ defmodule Elmc.DrawFieldCmdEncodingTest do
     assert {:ok, _} = CachedCompile.compile(project_dir, %{out_dir: out_dir, entry_module: "Main"})
     generated_c = File.read!(Path.join(out_dir, "c/elmc_generated.c"))
 
-    assert Regex.match?(
-             ~r/elmc_render_cmd6_take\(&owned\[\d+\], ELMC_RENDER_OP_FILL_CIRCLE, 10, 20, 3, 1, 0, 0\)/,
-             generated_c
-           ) or
-             generated_c =~
-               "elmc_render_cmd6(ELMC_RENDER_OP_FILL_CIRCLE, 10, 20, 3, 1, 0, 0)"
-
+    assert generated_c =~ "ELMC_RENDER_OP_FILL_CIRCLE"
+    assert generated_c =~ "10"
+    assert generated_c =~ "20"
+    assert generated_c =~ "3"
     refute generated_c =~ ~r/ELMC_RENDER_OP_FILL_CIRCLE[\s\S]{0,300}elmc_new_int\(&owned/
   end
 

@@ -1,6 +1,6 @@
-Nonterminals let_expr let_bindings let_binding if_expr case_expr case_after_of case_after_branches case_branches case_branch pattern pattern_arg ctor_pattern_args
+Nonterminals let_expr let_bindings let_binding if_expr case_expr case_after_of case_after_branches case_branches case_branch as_pattern pattern pattern_arg ctor_pattern_args
              lambda_expr lambda_args lambda_arg pipe_right_expr plain_pipe_expr apply_left_expr bool_or_expr bool_and_expr compare_expr compare_op cons_expr append_expr add_expr mul_expr pow_expr app_expr primary opt_field_accessor list_expr
-             list_items tuple_items record_expr record_fields record_field pattern_record_fields pattern_list_items.
+             list_items tuple_items tuple_tail record_expr record_fields record_field pattern_record_fields pattern_list_items.
 Terminals lparen rparen lbracket rbracket lbrace rbrace comma semicolon cons append plus minus shl shr pipe_right pipe apply_left eq eqeq gt lt gte lte neq bslash arrow
          times pow int_div divide pipe_dot pipe_eq
           andand oror let_kw in_kw if_kw then_kw else_kw case_kw of_kw as_kw wildcard
@@ -125,11 +125,17 @@ let_binding -> lparen pattern comma pattern rparen eq newline pipe_right_expr :
 let_binding -> lparen pattern comma pattern rparen eq newline indent pipe_right_expr dedent :
   {pattern_bind, build_pattern_tuple('$2', '$4'), '$9'}.
 let_binding -> lparen pattern comma pattern comma pattern rparen eq pipe_right_expr :
-  {pattern_bind, build_pattern_tuple('$2', build_pattern_tuple('$4', '$6')), '$9'}.
+  {pattern_bind, build_pattern_tuple3('$2', '$4', '$6'), '$9'}.
 let_binding -> lparen pattern comma pattern comma pattern rparen eq newline pipe_right_expr :
-  {pattern_bind, build_pattern_tuple('$2', build_pattern_tuple('$4', '$6')), '$10'}.
+  {pattern_bind, build_pattern_tuple3('$2', '$4', '$6'), '$10'}.
 let_binding -> lparen pattern comma pattern comma pattern rparen eq newline indent pipe_right_expr dedent :
-  {pattern_bind, build_pattern_tuple('$2', build_pattern_tuple('$4', '$6')), '$11'}.
+  {pattern_bind, build_pattern_tuple3('$2', '$4', '$6'), '$11'}.
+let_binding -> lparen pattern comma pattern comma pattern comma pattern rparen eq pipe_right_expr :
+  {pattern_bind, #{kind => bad_tuple, arity => 4}, '$11'}.
+let_binding -> lparen pattern comma pattern comma pattern comma pattern rparen eq newline pipe_right_expr :
+  {pattern_bind, #{kind => bad_tuple, arity => 4}, '$12'}.
+let_binding -> lparen pattern comma pattern comma pattern comma pattern rparen eq newline indent pipe_right_expr dedent :
+  {pattern_bind, #{kind => bad_tuple, arity => 4}, '$13'}.
 let_binding -> lparen pattern rparen eq newline indent pipe_right_expr dedent : {pattern_bind, '$2', '$7'}.
 let_binding -> lparen pattern rparen eq newline pipe_right_expr : {pattern_bind, '$2', '$6'}.
 
@@ -164,9 +170,12 @@ case_branches -> case_branch : ['$1'].
 case_branches -> newline indent case_branches : '$3'.
 case_branches -> indent case_branches : '$2'.
 
-case_branch -> pattern arrow pipe_right_expr : #{pattern => '$1', expr => '$3'}.
-case_branch -> pattern arrow newline pipe_right_expr : #{pattern => '$1', expr => '$4'}.
-case_branch -> pattern arrow newline indent pipe_right_expr dedent : #{pattern => '$1', expr => '$5'}.
+case_branch -> as_pattern arrow pipe_right_expr : #{pattern => '$1', expr => '$3'}.
+case_branch -> as_pattern arrow newline pipe_right_expr : #{pattern => '$1', expr => '$4'}.
+case_branch -> as_pattern arrow newline indent pipe_right_expr dedent : #{pattern => '$1', expr => '$5'}.
+
+as_pattern -> pattern as_kw lower_qid : build_pattern_alias('$1', token_value('$3')).
+as_pattern -> pattern : '$1'.
 
 pattern -> wildcard : #{kind => wildcard}.
 pattern -> lower_qid : build_pattern_var(token_value('$1')).
@@ -196,7 +205,7 @@ pattern -> char_lit cons pattern :
 pattern -> lparen pattern comma pattern rparen cons pattern :
   build_pattern_cons(build_pattern_tuple('$2', '$4'), '$7').
 pattern -> lparen pattern comma pattern comma pattern rparen cons pattern :
-  build_pattern_cons(build_pattern_tuple('$2', build_pattern_tuple('$4', '$6')), '$9').
+  build_pattern_cons(build_pattern_tuple3('$2', '$4', '$6'), '$9').
 pattern -> lparen pattern comma pattern rparen as_kw lower_qid :
   build_pattern_alias(build_pattern_tuple('$2', '$4'), token_value('$7')).
 pattern -> lparen pattern comma pattern rparen as_kw lower_qid cons pattern :
@@ -205,7 +214,7 @@ pattern -> lparen pattern comma pattern rparen as_kw lower_qid cons pattern :
     '$9'
   ).
 pattern -> lparen pattern comma pattern comma pattern rparen as_kw lower_qid :
-  build_pattern_alias(build_pattern_tuple('$2', build_pattern_tuple('$4', '$6')), token_value('$9')).
+  build_pattern_alias(build_pattern_tuple3('$2', '$4', '$6'), token_value('$9')).
 pattern -> lbrace pattern_record_fields rbrace cons pattern :
   build_pattern_cons(build_pattern_record('$2'), '$5').
 pattern -> lower_qid cons pattern : build_pattern_cons(build_pattern_var(token_value('$1')), '$3').
@@ -214,7 +223,9 @@ pattern -> lparen pattern rparen as_kw lower_qid : build_pattern_alias('$2', tok
 pattern -> lparen pattern rparen cons pattern : build_pattern_cons('$2', '$5').
 pattern -> lparen pattern rparen : '$2'.
 pattern -> lparen pattern comma pattern comma pattern rparen :
-  build_pattern_tuple('$2', build_pattern_tuple('$4', '$6')).
+  build_pattern_tuple3('$2', '$4', '$6').
+pattern -> lparen pattern comma pattern comma pattern comma pattern rparen :
+  #{kind => bad_tuple, arity => 4}.
 pattern -> lparen pattern comma pattern rparen : build_pattern_tuple('$2', '$4').
 
 ctor_pattern_args -> pattern_arg ctor_pattern_args : ['$1' | '$2'].
@@ -232,8 +243,12 @@ pattern_arg -> lbracket rbracket : build_pattern_ctor(<<"[]">>, none).
 pattern_arg -> lbracket pattern_list_items rbracket : build_pattern_list('$2').
 pattern_arg -> lparen pattern rparen : '$2'.
 pattern_arg -> lparen pattern comma pattern comma pattern rparen :
-  build_pattern_tuple('$2', build_pattern_tuple('$4', '$6')).
+  build_pattern_tuple3('$2', '$4', '$6').
 pattern_arg -> lparen pattern comma pattern rparen : build_pattern_tuple('$2', '$4').
+pattern_arg -> lparen pattern rparen as_kw lower_qid :
+  build_pattern_alias('$2', token_value('$5')).
+pattern_arg -> lparen pattern as_kw lower_qid rparen :
+  build_pattern_alias('$2', token_value('$4')).
 
 lambda_expr -> bslash lambda_args arrow pipe_right_expr : build_lambda_args('$2', '$4').
 lambda_expr -> bslash lambda_args arrow newline pipe_right_expr : build_lambda_args('$2', '$5').
@@ -251,7 +266,7 @@ lambda_arg -> lbrace pattern_record_fields rbrace : {record, '$2'}.
 lambda_arg -> lparen pattern comma pattern rparen :
   {pattern, build_pattern_tuple('$2', '$4')}.
 lambda_arg -> lparen pattern comma pattern comma pattern rparen :
-  {pattern, build_pattern_tuple('$2', build_pattern_tuple('$4', '$6'))}.
+  {pattern, build_pattern_tuple3('$2', '$4', '$6')}.
 lambda_arg -> lparen pattern rparen : {pattern, '$2'}.
 
 compare_expr -> cons_expr compare_op cons_expr : build_compare('$1', '$2', '$3').
@@ -344,6 +359,10 @@ primary -> record_expr : '$1'.
 
 tuple_items -> pipe_right_expr comma pipe_right_expr comma pipe_right_expr : ['$1', '$3', '$5'].
 tuple_items -> pipe_right_expr comma pipe_right_expr : ['$1', '$3'].
+tuple_items -> pipe_right_expr comma pipe_right_expr comma pipe_right_expr comma tuple_tail :
+  ['$1', '$3', '$5' | '$7'].
+tuple_tail -> pipe_right_expr : ['$1'].
+tuple_tail -> pipe_right_expr comma tuple_tail : ['$1' | '$3'].
 
 list_expr -> lbracket list_items rbracket : #{op => list_literal, items => '$2'}.
 list_expr -> lbracket rbracket : #{op => list_literal, items => []}.
@@ -363,7 +382,7 @@ pattern_record_fields -> pattern_record_fields comma lower_qid : '$1' ++ [token_
 record_expr -> lbrace rbrace : #{op => record_literal, fields => []}.
 record_expr -> lbrace record_fields rbrace : #{op => record_literal, fields => '$2'}.
 record_expr -> lbrace lower_qid pipe record_fields rbrace :
-  #{op => record_update, base => #{op => var, name => token_value('$2')}, fields => '$4'}.
+  #{op => record_update, base => build_lower_qid(token_value('$2')), fields => '$4'}.
 
 record_field -> lower_qid eq pipe_right_expr : build_record_field(token_value('$1'), '$3').
 
@@ -493,8 +512,13 @@ let_binding_entry({pattern_bind, Pattern, ValueExpr}) ->
       #{kind => pattern, pattern => Pattern, value => ValueExpr}
   end.
 
-%% Recover `(a, b)` / `(a, b, c)` name tuples from pattern binds so expansion
-%% can keep using Tuple.first/second projections.
+%% Recover `(a, b)` name tuples from pattern binds so expansion can use
+%% Tuple.first/second. Three-element tuples stay patterns — they are not nested pairs.
+simple_tuple_var_names(#{kind := tuple, elements := [Left, Middle, Right]}) ->
+  case {simple_pattern_var_name(Left), simple_pattern_var_name(Middle), simple_pattern_var_name(Right)} of
+    {{ok, L}, {ok, M}, {ok, R}} -> {ok, [L, M, R]};
+    _ -> error
+  end;
 simple_tuple_var_names(#{kind := tuple, elements := [Left, Right]}) ->
   case {simple_pattern_var_name(Left), simple_pattern_var_name(Right)} of
     {{ok, L}, {ok, R}} -> {ok, [L, R]};
@@ -582,6 +606,9 @@ build_pattern_ctor_args(Name, Args) ->
 build_pattern_tuple(Left, Right) ->
   #{kind => tuple, elements => [Left, Right]}.
 
+build_pattern_tuple3(A, B, C) ->
+  #{kind => tuple, elements => [A, B, C]}.
+
 build_pattern_arg_tuple([Left, Right]) ->
   build_pattern_tuple(Left, Right);
 build_pattern_arg_tuple([Head | Tail]) ->
@@ -655,8 +682,6 @@ normalize_lambda_args([{pattern, Pattern} | Rest], Counter, Acc) ->
     case simple_tuple_var_names(Pattern) of
       {ok, [Left, Right]} ->
         {tuple2, Placeholder, Left, Right};
-      {ok, [Left, Middle, Right]} ->
-        {tuple3, Placeholder, Left, Middle, Right};
       _ ->
         {pattern, Placeholder, Pattern}
     end,
@@ -682,19 +707,6 @@ build_lambda_spec({tuple2, Placeholder, Left, Right}, Body) ->
   FirstExpr = #{op => qualified_call, target => <<"Tuple.first">>, args => [PlaceholderVar]},
   SecondExpr = #{op => qualified_call, target => <<"Tuple.second">>, args => [PlaceholderVar]},
   ExpandedBody = build_let(Left, FirstExpr, build_let(Right, SecondExpr, Body)),
-  build_lambda(Placeholder, ExpandedBody);
-build_lambda_spec({tuple3, Placeholder, Left, Middle, Right}, Body) ->
-  PlaceholderVar = #{op => var, name => Placeholder},
-  FirstExpr = #{op => qualified_call, target => <<"Tuple.first">>, args => [PlaceholderVar]},
-  TailExpr = #{op => qualified_call, target => <<"Tuple.second">>, args => [PlaceholderVar]},
-  MiddleExpr = #{op => qualified_call, target => <<"Tuple.first">>, args => [TailExpr]},
-  RightExpr = #{op => qualified_call, target => <<"Tuple.second">>, args => [TailExpr]},
-  ExpandedBody =
-    build_let(
-      Left,
-      FirstExpr,
-      build_let(Middle, MiddleExpr, build_let(Right, RightExpr, Body))
-    ),
   build_lambda(Placeholder, ExpandedBody).
 
 build_record_pattern_lets([], _Placeholder, Body) ->
@@ -704,7 +716,12 @@ build_record_pattern_lets([Field | Rest], Placeholder, Body) ->
   build_let(Field, FieldExpr, build_record_pattern_lets(Rest, Placeholder, Body)).
 
 build_pattern_bind_body(Pattern, Placeholder, Body) ->
-  #{op => 'case', subject => #{op => var, name => Placeholder}, branches => [#{pattern => Pattern, expr => Body}]}.
+  #{
+    op => 'case',
+    elm_synthetic => true,
+    subject => #{op => var, name => Placeholder},
+    branches => [#{pattern => Pattern, expr => Body}]
+  }.
 
 build_lower_qid(Text) ->
   case binary:split(Text, <<".">>, [global]) of
@@ -785,7 +802,9 @@ starts_upper(_) -> false.
 build_tuple([A, B]) ->
   #{op => tuple2, left => A, right => B};
 build_tuple([A, B, C]) ->
-  #{op => tuple3, a => A, b => B, c => C}.
+  #{op => tuple3, a => A, b => B, c => C};
+build_tuple(Items) when is_list(Items) ->
+  #{op => bad_tuple, arity => length(Items), items => Items}.
 
 build_operator_section(plus) ->
   #{op => var, name => <<"__add__">>};

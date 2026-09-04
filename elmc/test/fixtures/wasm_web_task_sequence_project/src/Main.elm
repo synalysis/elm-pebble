@@ -19,7 +19,7 @@ init _ =
     ( "wait"
     , Task.sequence
         [ Task.succeed 1
-        , Process.sleep 8 |> Task.map (\_ -> 2)
+        , Process.sleep 8.0 |> Task.map (\_ -> 2)
         , Task.succeed 3
         ]
         |> Task.map (\xs -> String.join "," (List.map String.fromInt xs))
@@ -30,6 +30,7 @@ init _ =
                     , Task.fail 9
                     , Task.succeed 3
                     ]
+                    |> Task.map (\_ -> ok)
                     |> Task.onError (\n -> Task.succeed (ok ++ ";err=" ++ String.fromInt n))
             )
         |> Task.perform Got

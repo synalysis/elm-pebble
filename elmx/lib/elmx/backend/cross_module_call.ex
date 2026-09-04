@@ -61,21 +61,30 @@ defmodule Elmx.Backend.CrossModuleCall do
               "&#{fn_sym}/#{max(callable, 1)}"
 
             given > explicit ->
-              if explicit == 0 and given == callable do
-                [fn_sym, "(", Enum.intersperse(arg_parts, ", "), ")"]
-              else
-                {fixed, extra} = Enum.split(arg_parts, explicit)
+              cond do
+                explicit == 0 and given == callable ->
+                  [fn_sym, "(", Enum.intersperse(arg_parts, ", "), ")"]
 
-                base =
-                  if fixed == [] do
-                    "&#{fn_sym}/#{max(callable, 1)}"
-                  else
-                    [fn_sym, "(", Enum.intersperse(fixed, ", "), ")"]
-                  end
+                # 0-arg value that returns a function (`addFive = makeAdder 5`).
+                # Typesys qualifies the local name; apply extra args to `fn_sym()`.
+                explicit == 0 and callable == 0 ->
+                  Enum.reduce(arg_parts, "#{fn_sym}()", fn arg, acc ->
+                    ["Elmx.Runtime.Core.Apply.call1(", acc, ", ", arg, ")"]
+                  end)
 
-                Enum.reduce(extra, base, fn arg, acc ->
-                  ["Elmx.Runtime.Core.Apply.call1(", acc, ", ", arg, ")"]
-                end)
+                true ->
+                  {fixed, extra} = Enum.split(arg_parts, explicit)
+
+                  base =
+                    if fixed == [] do
+                      "&#{fn_sym}/#{max(callable, 1)}"
+                    else
+                      [fn_sym, "(", Enum.intersperse(fixed, ", "), ")"]
+                    end
+
+                  Enum.reduce(extra, base, fn arg, acc ->
+                    ["Elmx.Runtime.Core.Apply.call1(", acc, ", ", arg, ")"]
+                  end)
               end
 
             given == explicit ->

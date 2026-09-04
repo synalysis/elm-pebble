@@ -1025,6 +1025,12 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
       %{op: :pebble_cmd} = rewritten ->
         Cmd.compile(rewritten, ctx, b)
 
+      %{op: op, keep_alive: keep} = rewritten when is_atom(op) and op != :unsupported and is_list(keep) ->
+        case compile_keep_alive(keep, ctx, b) do
+          {:ok, b} -> compile(Map.delete(rewritten, :keep_alive), ctx, b)
+          :unsupported -> :unsupported
+        end
+
       %{op: op} = rewritten when is_atom(op) and op != :unsupported ->
         compile(rewritten, ctx, b)
 
@@ -1034,6 +1040,55 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
   end
 
   defp compile_special_runtime_call(_, _, _, _), do: :unsupported
+
+  # Compile nested lambdas in a program-record impl (inline `init`) so folding
+  # `Pebble.Platform.worker` to `0` does not drop their cmds. Do not compile the
+  # record as a value — that emits boxed wrappers for `view = view` that call
+  # `elmc_fn_*_view` after generic view has been pruned.
+  defp compile_keep_alive(exprs, ctx, b) do
+    Enum.reduce_while(exprs, {:ok, b}, fn expr, {:ok, b} ->
+      case compile_keep_alive_expr(expr, ctx, b) do
+        {:ok, b} -> {:cont, {:ok, b}}
+        :unsupported -> {:halt, :unsupported}
+      end
+    end)
+  end
+
+  defp compile_keep_alive_expr(%{op: :lambda} = expr, ctx, b) do
+    case compile(expr, ctx, b) do
+      {:ok, _reg, b} -> {:ok, b}
+      :unsupported -> :unsupported
+    end
+  end
+
+  defp compile_keep_alive_expr(%{op: :record_literal, fields: fields}, ctx, b)
+       when is_list(fields) do
+    compile_keep_alive(Enum.map(fields, &keep_alive_field_expr/1), ctx, b)
+  end
+
+  defp compile_keep_alive_expr(%{op: :let_in, value_expr: value, in_expr: inner}, ctx, b) do
+    compile_keep_alive([value, inner], ctx, b)
+  end
+
+  defp compile_keep_alive_expr(expr, ctx, b) when is_map(expr) do
+    children =
+      expr
+      |> Map.drop([:elm_type, :op])
+      |> Map.values()
+
+    compile_keep_alive(children, ctx, b)
+  end
+
+  defp compile_keep_alive_expr(exprs, ctx, b) when is_list(exprs) do
+    compile_keep_alive(exprs, ctx, b)
+  end
+
+  defp compile_keep_alive_expr(_expr, _ctx, b), do: {:ok, b}
+
+  defp keep_alive_field_expr(%{expr: expr}), do: expr
+  defp keep_alive_field_expr(%{value: expr}), do: expr
+  defp keep_alive_field_expr({_name, expr}), do: expr
+  defp keep_alive_field_expr(expr), do: expr
 
   # Thread Elm callee arg types into lambda operands (e.g. BackendTask.Http.withMetadata
   # `(Metadata -> a -> b) -> …` so combine closures resolve Metadata.statusCode@1).
@@ -2833,34 +2888,34 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
     env = %{
       __module__: ctx.module || "Main",
       __function_name__: ctx.function_name,
-      __var_types__: ctx.local_types,
+      # Ignore let-inferred locals: official Elm prints `Dict.fromList` while
+      # elm-run gold is `HashMap.fromList`. Only call return types / explicit
+      # annotations should select the typed printer.
+      __var_types__: %{},
       __program_decls__: ctx.decl_map
     }
 
     type =
-      case TypedReturn.expr_type(arg, env) do
-        found when is_binary(found) ->
-          found
-
-        _ ->
-          case arg do
-            %{op: :var, name: name} when is_binary(name) ->
-              case Map.get(ctx.decl_map, {ctx.module, ctx.function_name}) do
-                %{type: fn_type, args: args} when is_binary(fn_type) and is_list(args) ->
-                  with idx when is_integer(idx) <- Enum.find_index(args, &(&1 == name)),
-                       param_type when is_binary(param_type) <-
-                         Enum.at(TypeParsing.function_arg_types(fn_type), idx) do
-                    param_type
-                  else
-                    _ -> nil
-                  end
-
-                _ ->
-                  nil
+      case arg do
+        %{op: :var, name: name} when is_binary(name) ->
+          case Map.get(ctx.decl_map, {ctx.module, ctx.function_name}) do
+            %{type: fn_type, args: args} when is_binary(fn_type) and is_list(args) ->
+              with idx when is_integer(idx) <- Enum.find_index(args, &(&1 == name)),
+                   param_type when is_binary(param_type) <-
+                     Enum.at(TypeParsing.function_arg_types(fn_type), idx) do
+                param_type
+              else
+                _ -> nil
               end
 
             _ ->
               nil
+          end
+
+        _ ->
+          case TypedReturn.expr_type(arg, env) do
+            found when is_binary(found) -> found
+            _ -> nil
           end
       end
 

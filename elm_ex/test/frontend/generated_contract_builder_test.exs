@@ -140,6 +140,59 @@ defmodule ElmEx.Frontend.GeneratedContractBuilderTest do
     assert length(tuple_case.branches) == 3
   end
 
+  test "nested case in a list-pattern arm keeps the outer wildcard" do
+    source = """
+    module Main exposing (versionDecoder)
+
+    versionDecoder =
+        D.string
+            |> D.andThen
+                (\\s ->
+                    case String.split "." s of
+                        [ a, b, c ] ->
+                            case ( String.toInt a, String.toInt b, String.toInt c ) of
+                                ( Just x, Just y, Just z ) ->
+                                    D.succeed ( x, y, z )
+
+                                _ ->
+                                    D.fail "bad version"
+
+                        _ ->
+                            D.fail "bad version"
+                )
+    """
+
+    decl =
+      "Main.elm"
+      |> GeneratedContractBuilder.build(source, "Main", [])
+      |> Map.get(:declarations)
+      |> Enum.find(&(&1.kind == :function_definition and &1.name == "versionDecoder"))
+
+    count_cases = fn count_cases, node, acc ->
+      case node do
+        %{op: :case, branches: branches} ->
+          acc = [%{n: length(branches)} | acc]
+          Enum.reduce(branches, acc, fn br, acc -> count_cases.(count_cases, br.expr, acc) end)
+
+        %{in_expr: in_expr} = map ->
+          acc = count_cases.(count_cases, in_expr, acc)
+          count_cases.(count_cases, Map.get(map, :value_expr), acc)
+
+        map when is_map(map) ->
+          Enum.reduce(map, acc, fn {_k, v}, acc -> count_cases.(count_cases, v, acc) end)
+
+        list when is_list(list) ->
+          Enum.reduce(list, acc, fn v, acc -> count_cases.(count_cases, v, acc) end)
+
+        _ ->
+          acc
+      end
+    end
+
+    counts = count_cases.(count_cases, decl.expr, [])
+    assert Enum.sort(Enum.map(counts, & &1.n)) == [2, 2]
+  end
+
   test "triple case separates trailing wildcard arm after nested Err branch" do
     source = """
     module Main exposing (probe)

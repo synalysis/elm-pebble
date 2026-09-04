@@ -62,6 +62,7 @@ defmodule Elmc do
 
     with {:ok, project} <- project_for_compile(project_dir, opts),
          :ok <- check_missing_imports(project, opts),
+         :ok <- check_typesys_errors(project, opts),
          :ok <- compile_log(lowering_ir_log_message(opts)),
          {:ok, ir0} <- Lowerer.lower_project(project, lower_project_opts(project, opts)),
          :ok <- compile_log("IR lower complete (#{length(ir0.modules)} modules); emitting artifacts…"),
@@ -191,6 +192,21 @@ defmodule Elmc do
          elmc_bytecode_summary: bytecode_summary,
          elmc_wasm_summary: wasm_summary
        }}
+    end
+  end
+
+  defp check_typesys_errors(%ElmEx.Frontend.Project{} = project, _opts) do
+    errors =
+      (Map.get(project, :diagnostics) || [])
+      |> Enum.filter(fn d ->
+        is_map(d) and Map.get(d, "source") == "elm_ex/typesys" and
+          Map.get(d, "severity") == "error"
+      end)
+
+    if errors == [] do
+      :ok
+    else
+      {:error, {:compile_diagnostics, errors}}
     end
   end
 

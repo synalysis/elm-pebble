@@ -33,4 +33,19 @@ defmodule ElmEx.Frontend.GeneratedParserMetadataTest do
     assert mod.port_module
     assert mod.module_exposing == ["Model", "Msg(..)", "init"]
   end
+
+  test "underscore-prefixed names stay a single function argument" do
+    source = """
+    module Main exposing (cellOp)
+
+    cellOp : Int -> Int -> Int
+    cellOp i _n =
+        i
+    """
+
+    assert {:ok, mod} = GeneratedParser.parse_source("Main.elm", source)
+
+    decl = Enum.find(mod.declarations, &(&1.kind == :function_definition and &1.name == "cellOp"))
+    assert decl.args == ["i", "_n"]
+  end
 end

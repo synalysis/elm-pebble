@@ -15,12 +15,17 @@ defmodule ElmEx.IR.ImportResolution do
   """
   @spec resolve(String.t(), lookup()) :: String.t()
   def resolve(target, lookup) when is_binary(target) do
-    # Infix operators like `|.` contain a dot but are not module paths.
-    if String.starts_with?(target, "|") do
+    # Infix operators (`|>`, `<|`, `|.`) are not module paths.
+    if operator_target?(target) do
       target
     else
       resolve_module_path(target, lookup)
     end
+  end
+
+  defp operator_target?(target) when is_binary(target) do
+    String.starts_with?(target, "|") or String.starts_with?(target, "<") or
+      String.starts_with?(target, ">") or String.starts_with?(target, "(")
   end
 
   defp resolve_module_path(target, lookup) when is_binary(target) do

@@ -1,6 +1,6 @@
 module Main exposing (main)
 
-import BackendTask.Http
+import BackendTask.Http exposing (CacheStrategy(..))
 import Browser
 import Html exposing (Html, text)
 import Json.Decode as Decode

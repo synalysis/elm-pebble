@@ -38,7 +38,7 @@ defmodule Elmc.LaunchContextInitCodegenTest do
 
     type Msg = Noop
     update _ m = ( m, Platform.Cmd.none )
-    view _ = Ui.clear Color.white |> Ui.toUiNode
+    view _ = Ui.toUiNode [ Ui.clear Color.white ]
     subscriptions _ = Platform.Sub.none
     main = Platform.application { init = init, update = update, view = view, subscriptions = subscriptions }
     """

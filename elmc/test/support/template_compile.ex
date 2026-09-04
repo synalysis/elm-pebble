@@ -53,6 +53,12 @@ defmodule Elmc.TestSupport.TemplateCompile do
       File.mkdir_p!(Path.join(tmp, "src"))
       File.cp_r!(Path.join(template_src, "src"), Path.join(tmp, "src"))
 
+      resources_src = Path.join(template_src, "resources")
+
+      if File.dir?(resources_src) do
+        File.cp_r!(resources_src, Path.join(tmp, "resources"))
+      end
+
       deps = %{
         "elm/core" => "1.0.5",
         "elm/json" => "1.1.3",
@@ -132,6 +138,7 @@ defmodule Elmc.TestSupport.TemplateCompile do
       template_name,
       opts_fingerprint,
       CompileCache.dir_stamp(Path.join(template_src, "src")),
+      CompileCache.dir_stamp(Path.join(template_src, "resources")),
       CompileCache.file_hash(Path.join(template_src, "protocol/src/Companion/Types.elm")),
       CompileCache.dir_stamp(Path.join(@repo_root, "ide/priv/bundled_elm/pebble-watch-src")),
       CompileCache.dir_stamp(shared_elm_sources()),

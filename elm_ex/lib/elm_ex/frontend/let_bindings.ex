@@ -53,7 +53,12 @@ defmodule ElmEx.Frontend.LetBindings do
   end
 
   defp expand_simple_binding(%{kind: :tuple3, names: names, value: value}, in_expr) do
-    expand_tuple_bind(names, expand(value), in_expr)
+    elements = Enum.map(names, fn name -> %{kind: :var, name: name} end)
+
+    expand_pattern_binding(
+      %{pattern: %{kind: :tuple, elements: elements}, value: value},
+      in_expr
+    )
   end
 
 
@@ -91,16 +96,6 @@ defmodule ElmEx.Frontend.LetBindings do
 
   defp tuple_projections(tmp_var, [_left, _right]) do
     [tuple_call("Tuple.first", tmp_var), tuple_call("Tuple.second", tmp_var)]
-  end
-
-  defp tuple_projections(tmp_var, [_left, _middle, _right]) do
-    tail = tuple_call("Tuple.second", tmp_var)
-
-    [
-      tuple_call("Tuple.first", tmp_var),
-      tuple_call("Tuple.first", tail),
-      tuple_call("Tuple.second", tail)
-    ]
   end
 
   @spec tuple_call(String.t(), Types.expr()) :: Types.expr()

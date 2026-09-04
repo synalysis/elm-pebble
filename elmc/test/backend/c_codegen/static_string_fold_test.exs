@@ -88,7 +88,6 @@ defmodule Elmc.Backend.CCodegen.StaticStringFoldTest do
     type Msg
         = Noop
 
-    main : Platform.Program Msg Model ()
     main =
         Platform.worker
             { init = init

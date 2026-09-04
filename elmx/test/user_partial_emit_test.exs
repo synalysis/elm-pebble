@@ -34,4 +34,26 @@ defmodule Elmx.UserPartialEmitTest do
 
     assert source == "fn elmx_p1 -> elmx_fn_Main_triple(1, 2, elmx_p1) end"
   end
+
+  test "qualified call to a 0-arity function value applies the returned closure" do
+    env =
+      env()
+      |> Map.put(:module, "TestNested")
+      |> Map.put(:emit_module_names, ["TestNested"])
+      |> Map.put(:cross_module_arities, %{
+        {"TestNested", "addFive"} => %{explicit: 0, callable: 0}
+      })
+
+    expr = %{
+      op: :qualified_call,
+      target: "TestNested.addFive",
+      args: [%{op: :int_literal, value: 37}]
+    }
+
+    {code, _, _} = Emit.compile_expr(expr, env, 0)
+    source = IO.iodata_to_binary(code)
+
+    assert source == "Elmx.Runtime.Core.Apply.call1(elmx_fn_TestNested_addFive(), 37)"
+    refute source =~ "&elmx_fn_TestNested_addFive/1"
+  end
 end

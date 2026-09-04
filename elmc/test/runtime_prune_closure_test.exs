@@ -32,8 +32,7 @@ defmodule Elmc.RuntimePruneClosureTest do
       ( model, Platform.Cmd.none )
 
   view model =
-      Ui.clear Color.white
-          |> Ui.toUiNode
+      Ui.toUiNode [ Ui.clear Color.white ]
 
   subscriptions _ =
       Platform.Sub.none

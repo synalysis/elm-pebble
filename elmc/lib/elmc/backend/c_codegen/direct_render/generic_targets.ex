@@ -108,7 +108,15 @@ defmodule Elmc.Backend.CCodegen.DirectRender.GenericTargets do
       |> MapSet.difference(droppable_view_peeled_helpers(opts, decl_map, direct_targets, entry_module))
 
     plan_direct_boxed_callees =
-      plan_required_direct_boxed_callees(reachable_core, decl_map, direct_targets)
+      reachable_core
+      |> plan_required_direct_boxed_callees(decl_map, direct_targets)
+      |> then(fn set ->
+        # Keep boxed helpers referenced from a direct-render view (drawCell), but
+        # never re-add the view function itself to the generic emit set.
+        if MapSet.member?(direct_targets, view_target),
+          do: MapSet.delete(set, view_target),
+          else: set
+      end)
 
     superseded_boxed =
       direct_command_superseded_boxed_targets(opts, decl_map, reachable_core, direct_targets)
@@ -594,15 +602,15 @@ defmodule Elmc.Backend.CCodegen.DirectRender.GenericTargets do
     if MapSet.size(direct_targets) == 0 do
       MapSet.new()
     else
+      # Only generic (non-direct) callers can require a boxed ABI. Walking
+      # direct-render bodies would re-add inlined helpers (`drawCell`) and
+      # list-of-ops glue (`watchOps`) that `_commands_append` already emits.
       targets
       |> Enum.reject(&MapSet.member?(direct_targets, &1))
       |> Enum.flat_map(fn {module_name, _name} = key ->
         case Map.fetch(decl_map, key) do
-          {:ok, decl} ->
-            GenericReachability.expr_callees(decl.expr, module_name, decl_map)
-
-          :error ->
-            []
+          {:ok, decl} -> GenericReachability.expr_callees(decl.expr, module_name, decl_map)
+          :error -> []
         end
       end)
       |> MapSet.new()

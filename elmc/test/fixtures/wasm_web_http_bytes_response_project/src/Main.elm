@@ -49,7 +49,7 @@ fromResponse response =
                 Nothing ->
                     Err "decode"
 
-        Http.BadStatus_ metadata ->
+        Http.BadStatus_ metadata _ ->
             Err ("bad:" ++ String.fromInt metadata.statusCode)
 
         Http.BadUrl_ url ->

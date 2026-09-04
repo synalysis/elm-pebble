@@ -10,7 +10,7 @@ import Diagram.Svg.Config as WiringSvgConfig
 import Html exposing (Html, div)
 import Internal.Bound as WiringBound
 import Internal.Extent as WiringExtent
-import Internal.Vec2 as WiringVec2
+import Diagram.Vec2 as WiringVec2
 import Svg exposing (Svg)
 import Svg.Attributes as SvgAttr
 
@@ -19,14 +19,14 @@ type alias Model =
     ()
 
 
-init : () -> ( Model, Cmd () )
-init _ =
-    ( (), Cmd.none )
+init : Model
+init =
+    ()
 
 
-update : () -> Model -> ( Model, Cmd () )
+update : () -> Model -> Model
 update _ model =
-    ( model, Cmd.none )
+    model
 
 
 main : Program () Model ()

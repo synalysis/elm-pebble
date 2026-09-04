@@ -12,7 +12,6 @@ defmodule ElmEx.IR.Lowerer do
   alias ElmEx.IR.DeadCode
   alias ElmEx.IR.Declaration
   alias ElmEx.IR.FrontendReachability
-  alias ElmEx.IR.FunctionCallCheck
   alias ElmEx.IR.ImportResolution
   alias ElmEx.IR.LowererCache
   alias ElmEx.IR.Module
@@ -130,12 +129,6 @@ defmodule ElmEx.IR.Lowerer do
           project.modules,
           globals.payload_arity_unqualified,
           globals.payload_arity_qualified
-        ) ++
-        FunctionCallCheck.collect_project_diagnostics(
-          project.modules,
-          project_module_exports,
-          project.project_dir,
-          Map.get(project.elm_json, "source-directories", ["src"])
         ) ++
         collect_preferences_schema_field_order_diagnostics(project.modules)
 
@@ -927,7 +920,15 @@ defmodule ElmEx.IR.Lowerer do
   @spec rewrite_expr(Expr.t(), Lookup.t()) :: Expr.t()
   defp rewrite_expr(nil, _lookup), do: nil
 
-  defp rewrite_expr(%{op: :constructor_call, target: target, args: args} = expr, lookup) do
+  defp rewrite_expr(%{} = expr, lookup) do
+    expr
+    |> rewrite_expr_body(lookup)
+    |> ElmEx.Typesys.Elaborate.merge_meta(expr)
+  end
+
+  defp rewrite_expr(other, _lookup), do: other
+
+  defp rewrite_expr_body(%{op: :constructor_call, target: target, args: args} = expr, lookup) do
     rewritten_args = Enum.map(args || [], &rewrite_expr(&1, lookup))
     resolved_target = resolve_alias(target, lookup)
 
@@ -940,7 +941,7 @@ defmodule ElmEx.IR.Lowerer do
     end
   end
 
-  defp rewrite_expr(%{op: :qualified_call, target: target, args: args} = expr, lookup) do
+  defp rewrite_expr_body(%{op: :qualified_call, target: target, args: args} = expr, lookup) do
     cond do
       target == "|." ->
         rewrite_expr(
@@ -971,12 +972,12 @@ defmodule ElmEx.IR.Lowerer do
     end
   end
 
-  defp rewrite_expr(%{op: :qualified_call1, target: target} = expr, lookup) do
+  defp rewrite_expr_body(%{op: :qualified_call1, target: target} = expr, lookup) do
     resolved_target = resolve_alias(target, lookup)
     %{expr | target: resolved_target}
   end
 
-  defp rewrite_expr(%{op: :qualified_ref, target: target} = expr, lookup) when is_binary(target) do
+  defp rewrite_expr_body(%{op: :qualified_ref, target: target} = expr, lookup) when is_binary(target) do
     resolved_target = resolve_alias(target, lookup)
 
     case resolved_target do
@@ -993,7 +994,7 @@ defmodule ElmEx.IR.Lowerer do
     end
   end
 
-  defp rewrite_expr(%{op: :pipe_chain, steps: steps, base: base} = expr, lookup) do
+  defp rewrite_expr_body(%{op: :pipe_chain, steps: steps, base: base} = expr, lookup) do
     %{
       expr
       | steps: Enum.map(steps || [], &rewrite_expr(&1, lookup)),
@@ -1001,19 +1002,19 @@ defmodule ElmEx.IR.Lowerer do
     }
   end
 
-  defp rewrite_expr(%{op: :apply_left} = expr, lookup) do
+  defp rewrite_expr_body(%{op: :apply_left} = expr, lookup) do
     expr
     |> ElmEx.Frontend.ApplyLeft.expand()
     |> rewrite_expr(lookup)
   end
 
-  defp rewrite_expr(%{op: op} = expr, lookup) when op in [:bool_and, :bool_or] do
+  defp rewrite_expr_body(%{op: op} = expr, lookup) when op in [:bool_and, :bool_or] do
     expr
     |> ElmEx.Frontend.BoolOps.expand()
     |> rewrite_expr(lookup)
   end
 
-  defp rewrite_expr(%{op: :call, name: name, args: args}, lookup) when is_binary(name) do
+  defp rewrite_expr_body(%{op: :call, name: name, args: args}, lookup) when is_binary(name) do
     rewritten_args = Enum.map(args || [], &rewrite_expr(&1, lookup))
     let_bound = Map.get(lookup, :let_bound_names, MapSet.new())
 
@@ -1058,19 +1059,19 @@ defmodule ElmEx.IR.Lowerer do
     end
   end
 
-  defp rewrite_expr(%{op: :call, args: args} = expr, lookup) do
+  defp rewrite_expr_body(%{op: :call, args: args} = expr, lookup) do
     %{expr | args: Enum.map(args || [], &rewrite_expr(&1, lookup))}
   end
 
   alias ElmEx.Frontend.LetBindings
 
-  defp rewrite_expr(%{op: :let_bindings} = expr, lookup) do
+  defp rewrite_expr_body(%{op: :let_bindings} = expr, lookup) do
     expr
     |> LetBindings.expand()
     |> rewrite_expr(lookup)
   end
 
-  defp rewrite_expr(%{op: :let_in, name: name, value_expr: value_expr, in_expr: in_expr} = expr, lookup) do
+  defp rewrite_expr_body(%{op: :let_in, name: name, value_expr: value_expr, in_expr: in_expr} = expr, lookup) do
     # Let-bound names (including local functions) must stay as unqualified :call ops so
     # codegen can resolve them from the compile env. Adding them to local_call_names would
     # rewrite `label x y z` into `Main.label`, which is wrong for let-bound lambdas.
@@ -1084,7 +1085,7 @@ defmodule ElmEx.IR.Lowerer do
     }
   end
 
-  defp rewrite_expr(%{op: :let_in, value_expr: value_expr, in_expr: in_expr} = expr, lookup) do
+  defp rewrite_expr_body(%{op: :let_in, value_expr: value_expr, in_expr: in_expr} = expr, lookup) do
     %{
       expr
       | value_expr: rewrite_expr(value_expr, lookup),
@@ -1092,7 +1093,7 @@ defmodule ElmEx.IR.Lowerer do
     }
   end
 
-  defp rewrite_expr(
+  defp rewrite_expr_body(
          %{op: :if, cond: cond_expr, then_expr: then_expr, else_expr: else_expr} = expr,
          lookup
        ) do
@@ -1104,15 +1105,15 @@ defmodule ElmEx.IR.Lowerer do
     }
   end
 
-  defp rewrite_expr(%{op: :compare, left: left, right: right} = expr, lookup) do
+  defp rewrite_expr_body(%{op: :compare, left: left, right: right} = expr, lookup) do
     %{expr | left: rewrite_expr(left, lookup), right: rewrite_expr(right, lookup)}
   end
 
-  defp rewrite_expr(%{op: :tuple2, left: left, right: right} = expr, lookup) do
+  defp rewrite_expr_body(%{op: :tuple2, left: left, right: right} = expr, lookup) do
     %{expr | left: rewrite_expr(left, lookup), right: rewrite_expr(right, lookup)}
   end
 
-  defp rewrite_expr(%{op: :tuple3, a: a, b: b, c: c} = expr, lookup) do
+  defp rewrite_expr_body(%{op: :tuple3, a: a, b: b, c: c} = expr, lookup) do
     %{
       expr
       | a: rewrite_expr(a, lookup),
@@ -1121,23 +1122,23 @@ defmodule ElmEx.IR.Lowerer do
     }
   end
 
-  defp rewrite_expr(%{op: :tuple_first_expr, arg: arg} = expr, lookup) do
+  defp rewrite_expr_body(%{op: :tuple_first_expr, arg: arg} = expr, lookup) do
     %{expr | arg: rewrite_expr(arg, lookup)}
   end
 
-  defp rewrite_expr(%{op: :tuple_second_expr, arg: arg} = expr, lookup) do
+  defp rewrite_expr_body(%{op: :tuple_second_expr, arg: arg} = expr, lookup) do
     %{expr | arg: rewrite_expr(arg, lookup)}
   end
 
-  defp rewrite_expr(%{op: :string_length_expr, arg: arg} = expr, lookup) do
+  defp rewrite_expr_body(%{op: :string_length_expr, arg: arg} = expr, lookup) do
     %{expr | arg: rewrite_expr(arg, lookup)}
   end
 
-  defp rewrite_expr(%{op: :char_from_code_expr, arg: arg} = expr, lookup) do
+  defp rewrite_expr_body(%{op: :char_from_code_expr, arg: arg} = expr, lookup) do
     %{expr | arg: rewrite_expr(arg, lookup)}
   end
 
-  defp rewrite_expr(%{op: :record_literal, fields: fields}, lookup) do
+  defp rewrite_expr_body(%{op: :record_literal, fields: fields}, lookup) do
     rewritten_fields =
       fields
       |> Enum.map(fn field -> %{field | expr: rewrite_expr(field.expr, lookup)} end)
@@ -1145,7 +1146,7 @@ defmodule ElmEx.IR.Lowerer do
     %{op: :record_literal, fields: rewritten_fields}
   end
 
-  defp rewrite_expr(%{op: :record_update, base: base, fields: fields}, lookup) do
+  defp rewrite_expr_body(%{op: :record_update, base: base, fields: fields}, lookup) do
     rewritten_fields =
       fields
       |> Enum.map(fn field -> %{field | expr: rewrite_expr(field.expr, lookup)} end)
@@ -1153,7 +1154,7 @@ defmodule ElmEx.IR.Lowerer do
     %{op: :record_update, base: rewrite_expr(base, lookup), fields: rewritten_fields}
   end
 
-  defp rewrite_expr(%{op: :field_access, arg: arg, field: field}, lookup) do
+  defp rewrite_expr_body(%{op: :field_access, arg: arg, field: field}, lookup) do
     rewritten_arg = rewrite_expr(arg, lookup)
 
     case ImportResolution.resolve_imported_member(rewritten_arg, field, lookup) do
@@ -1168,11 +1169,11 @@ defmodule ElmEx.IR.Lowerer do
     end
   end
 
-  defp rewrite_expr(%{op: :list_literal, items: items} = expr, lookup) do
+  defp rewrite_expr_body(%{op: :list_literal, items: items} = expr, lookup) do
     %{expr | items: Enum.map(items || [], &rewrite_expr(&1, lookup))}
   end
 
-  defp rewrite_expr(%{op: :case, branches: branches} = expr, lookup) do
+  defp rewrite_expr_body(%{op: :case, branches: branches} = expr, lookup) do
     rewritten =
       Enum.map(branches, fn branch ->
         branch_lookup = extend_lookup_with_pattern(branch.pattern, lookup)
@@ -1187,7 +1188,7 @@ defmodule ElmEx.IR.Lowerer do
     %{expr | subject: rewrite_case_subject(expr.subject, lookup), branches: rewritten}
   end
 
-  defp rewrite_expr(%{op: :field_call, arg: arg, args: args} = expr, lookup) do
+  defp rewrite_expr_body(%{op: :field_call, arg: arg, args: args} = expr, lookup) do
     %{
       expr
       | arg: rewrite_expr(arg, lookup),
@@ -1195,18 +1196,18 @@ defmodule ElmEx.IR.Lowerer do
     }
   end
 
-  defp rewrite_expr(%{op: :lambda, args: args, body: body} = expr, lookup) do
+  defp rewrite_expr_body(%{op: :lambda, args: args, body: body} = expr, lookup) do
     inner_lookup =
       Enum.reduce(args || [], lookup, fn arg, acc -> put_let_bound_name(acc, arg) end)
 
     %{expr | body: rewrite_expr(body, inner_lookup)}
   end
 
-  defp rewrite_expr(%{op: :lambda, body: body} = expr, lookup) do
+  defp rewrite_expr_body(%{op: :lambda, body: body} = expr, lookup) do
     %{expr | body: rewrite_expr(body, lookup)}
   end
 
-  defp rewrite_expr(%{op: :compose_left, f: f, g: g}, lookup) when is_binary(f) and is_binary(g) do
+  defp rewrite_expr_body(%{op: :compose_left, f: f, g: g}, lookup) when is_binary(f) and is_binary(g) do
     # (f << g) = \x -> f(g(x))
     arg_name = "__compose_arg__"
     inner_call = %{op: :call, name: g, args: [%{op: :var, name: arg_name}]}
@@ -1214,14 +1215,14 @@ defmodule ElmEx.IR.Lowerer do
     rewrite_expr(%{op: :lambda, args: [arg_name], body: outer_call}, lookup)
   end
 
-  defp rewrite_expr(%{op: :compose_left, f: f, g: g}, lookup) do
+  defp rewrite_expr_body(%{op: :compose_left, f: f, g: g}, lookup) do
     arg_name = "__compose_arg__"
     inner = apply_expr_to_arg(rewrite_expr(g, lookup), arg_name)
     body = apply_expr_to_operand(rewrite_expr(f, lookup), inner)
     rewrite_expr(%{op: :lambda, args: [arg_name], body: body}, lookup)
   end
 
-  defp rewrite_expr(%{op: :compose_right, f: f, g: g}, lookup) when is_binary(f) and is_binary(g) do
+  defp rewrite_expr_body(%{op: :compose_right, f: f, g: g}, lookup) when is_binary(f) and is_binary(g) do
     # (f >> g) = \x -> g(f(x))
     arg_name = "__compose_arg__"
     inner_call = %{op: :call, name: f, args: [%{op: :var, name: arg_name}]}
@@ -1229,14 +1230,14 @@ defmodule ElmEx.IR.Lowerer do
     rewrite_expr(%{op: :lambda, args: [arg_name], body: outer_call}, lookup)
   end
 
-  defp rewrite_expr(%{op: :compose_right, f: f, g: g}, lookup) do
+  defp rewrite_expr_body(%{op: :compose_right, f: f, g: g}, lookup) do
     arg_name = "__compose_arg__"
     inner = apply_expr_to_arg(rewrite_expr(f, lookup), arg_name)
     body = apply_expr_to_operand(rewrite_expr(g, lookup), inner)
     rewrite_expr(%{op: :lambda, args: [arg_name], body: body}, lookup)
   end
 
-  defp rewrite_expr(%{op: :var, name: name} = expr, lookup) when is_binary(name) do
+  defp rewrite_expr_body(%{op: :var, name: name} = expr, lookup) when is_binary(name) do
     local_call_names = Map.get(lookup, :local_call_names, MapSet.new())
     let_bound = Map.get(lookup, :let_bound_names, MapSet.new())
 
@@ -1290,11 +1291,11 @@ defmodule ElmEx.IR.Lowerer do
     end
   end
 
-  defp rewrite_expr(%{op: :var, target: target}, lookup) when is_binary(target) do
+  defp rewrite_expr_body(%{op: :var, target: target}, lookup) when is_binary(target) do
     rewrite_expr(%{op: :var, name: target}, lookup)
   end
 
-  defp rewrite_expr(expr, _lookup), do: expr
+  defp rewrite_expr_body(expr, _lookup), do: expr
 
   @spec imported_value_reference?(String.t(), Lookup.t()) :: boolean()
 

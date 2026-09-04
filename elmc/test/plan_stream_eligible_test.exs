@@ -503,6 +503,86 @@ defmodule Elmc.PlanStreamEligibleTest do
     refute Stream.eligible_expr?(mapped)
   end
 
+  test "List.concat of int lists is not a stream view when typesys says List Int" do
+    nested = %{
+      op: :list_literal,
+      items: [
+        %{op: :list_literal, items: [%{op: :int_literal, value: 1}, %{op: :int_literal, value: 2}]},
+        %{op: :list_literal, items: [%{op: :int_literal, value: 3}]}
+      ]
+    }
+
+    refute Stream.eligible_expr?(%{
+             elm_type: {:named, "List", [{:named, "Int", []}]},
+             op: :let_in,
+             name: "result",
+             value_expr: %{op: :qualified_call, target: "List.concat", args: [nested]},
+             in_expr: %{op: :var, name: "result"}
+           })
+
+    refute Stream.eligible_expr?(%{
+             elm_type: {:named, "List", [{:constrained, :number, 1}]},
+             op: :let_in,
+             name: "result",
+             value_expr: %{op: :qualified_call, target: "List.concat", args: [nested]},
+             in_expr: %{op: :var, name: "result"}
+           })
+
+    refute Stream.eligible_expr?(%{
+             elm_type:
+               {:named, "List", [{:tuple, [{:named, "Int", []}, {:named, "String", []}]}]},
+             op: :qualified_call,
+             target: "List.indexedMap",
+             args: [
+               %{op: :var, name: "Tuple.pair"},
+               %{op: :list_literal, items: [%{op: :string_literal, value: "a"}]}
+             ]
+           })
+
+    refute Stream.eligible_expr?(%{
+             elm_type:
+               {:named, "List",
+                [{:record, %{"body" => {:var, 21}, "name" => {:var, 20}}, nil}]},
+             op: :let_in,
+             name: "result",
+             value_expr: %{
+               op: :qualified_call,
+               target: "List.map",
+               args: [
+                 %{op: :var, name: "processItem"},
+                 %{op: :var, name: "grammar"}
+               ]
+             },
+             in_expr: %{op: :var, name: "result"}
+           })
+  end
+
+  test "List.filterMap of a named Int -> Maybe Int helper is not a stream view" do
+    to_positive = %{
+      op: :if,
+      then_expr: %{op: :constructor_call, target: "Just", args: [%{op: :var, name: "x"}]},
+      else_expr: %{op: :constructor_call, target: "Nothing", args: []}
+    }
+
+    decl_map = %{
+      {"ListFilterMap", "toPositive"} => %{name: "toPositive", expr: to_positive}
+    }
+
+    mapped = %{
+      op: :qualified_call,
+      target: "List.filterMap",
+      args: [
+        %{op: :var, name: "toPositive"},
+        %{
+          op: :list_literal,
+          items: [%{op: :int_literal, value: -1}, %{op: :int_literal, value: 2}]
+        }
+      ]
+    }
+
+    refute Stream.eligible_expr?(mapped, decl_map, "ListFilterMap")
+  end
+
   test "List.map over List.filter of a model field is stream-eligible" do
     filtered = %{
       op: :qualified_call,

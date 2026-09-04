@@ -21,7 +21,8 @@ defmodule ElmEx.Frontend.ExprLayoutLexer do
           paren_at_start: non_neg_integer()
         }
   @type block_kind() :: :let | :case
-  @type cont_kind() :: nil | :after_eq | :after_arrow | :after_value | :after_infix_rhs
+  @type cont_kind() ::
+          nil | :after_eq | :after_arrow | :after_value | :after_infix_rhs | :after_case
   @type layout_mode() :: :default | :let_inline
 
   @doc """
@@ -45,7 +46,7 @@ defmodule ElmEx.Frontend.ExprLayoutLexer do
   defp tokenize_multiline(source) do
     case logical_lines(source) do
       {:ok, lines} ->
-        emit_layout_tokens(lines, [0], [], 0, [], nil, :default, nil)
+        emit_layout_tokens(lines, [0], [], 0, [], nil, :default, nil, [])
     end
   end
 
@@ -68,7 +69,8 @@ defmodule ElmEx.Frontend.ExprLayoutLexer do
   end
 
   defp finalize_eof(lines, line_no, paren, buf, line_indent, paren_at_line_start) do
-    text = buf |> Enum.reverse() |> IO.iodata_to_binary() |> String.trim()
+    raw = buf |> Enum.reverse() |> IO.iodata_to_binary()
+    {indent, text} = line_indent_and_text(raw, line_indent, paren_at_line_start)
 
     lines =
       if text == "" do
@@ -77,7 +79,7 @@ defmodule ElmEx.Frontend.ExprLayoutLexer do
         [
           %{
             line_no: line_no,
-            indent: line_indent,
+            indent: indent,
             text: text,
             paren_depth: paren,
             paren_at_start: paren_at_line_start
@@ -211,7 +213,8 @@ defmodule ElmEx.Frontend.ExprLayoutLexer do
   end
 
   defp finalize_line(lines, line_no, paren, buf, line_indent, paren_at_line_start, _col) do
-    text = buf |> Enum.reverse() |> IO.iodata_to_binary() |> String.trim()
+    raw = buf |> Enum.reverse() |> IO.iodata_to_binary()
+    {indent, text} = line_indent_and_text(raw, line_indent, paren_at_line_start)
 
     lines =
       if text == "" do
@@ -220,7 +223,7 @@ defmodule ElmEx.Frontend.ExprLayoutLexer do
         [
           %{
             line_no: line_no,
-            indent: line_indent,
+            indent: indent,
             text: text,
             paren_depth: paren,
             paren_at_start: paren_at_line_start
@@ -230,6 +233,27 @@ defmodule ElmEx.Frontend.ExprLayoutLexer do
       end
 
     {lines, line_no + 1, true, 0, :code, false, paren, [], 0, paren}
+  end
+
+  # Outside brackets, leading whitespace is consumed as `line_indent` and omitted
+  # from `buf`. Inside brackets those spaces stay in `buf` and `line_indent` is
+  # left at 0 — recover the physical column so nested `case` arms can be compared.
+  defp line_indent_and_text(raw, line_indent, 0) do
+    {line_indent, String.trim(raw)}
+  end
+
+  defp line_indent_and_text(raw, _line_indent, _paren_at_start) do
+    {physical_leading_indent(raw), String.trim(raw)}
+  end
+
+  defp physical_leading_indent(raw) do
+    raw
+    |> String.graphemes()
+    |> Enum.reduce_while(0, fn
+      " ", acc -> {:cont, acc + Layout.tab_width(" ")}
+      "\t", acc -> {:cont, acc + Layout.tab_width("\t")}
+      _ch, acc -> {:halt, acc}
+    end)
   end
 
   defp tab_width("\t"), do: Layout.tab_width("\t")
@@ -243,38 +267,74 @@ defmodule ElmEx.Frontend.ExprLayoutLexer do
           [block_kind()],
           cont_kind(),
           layout_mode(),
-          non_neg_integer() | nil
+          non_neg_integer() | nil,
+          [non_neg_integer()]
         ) :: {:ok, [token()], pos_integer()} | {:error, term()}
-  defp emit_layout_tokens([], stack, tokens, last_line, _blocks, _cont, _mode, _expr_indent) do
+  defp emit_layout_tokens([], stack, tokens, last_line, _blocks, _cont, _mode, _expr_indent, _case_of_indents) do
     {_stack, dedent_tokens} = finalize_dedents(stack, last_line, [])
     {:ok, tokens ++ dedent_tokens, max(last_line, 1)}
   end
 
-  defp emit_layout_tokens([line | rest], stack, tokens, last_line, blocks, cont, mode, expr_indent) do
-    {stack, layout_tokens, blocks, cont, mode, expr_indent} =
-      layout_tokens_for_line(line, stack, last_line, blocks, cont, mode, expr_indent)
+  defp emit_layout_tokens(
+         [line | rest],
+         stack,
+         tokens,
+         last_line,
+         blocks,
+         cont,
+         mode,
+         expr_indent,
+         case_of_indents
+       ) do
+    {stack, layout_tokens, blocks, cont, mode, expr_indent, case_of_indents} =
+      layout_tokens_for_line(line, stack, last_line, blocks, cont, mode, expr_indent, case_of_indents)
 
     case :elm_ex_expr_lexer.string(String.to_charlist(line.text)) do
       {:ok, line_tokens, _} ->
         merged = tokens ++ layout_tokens ++ line_tokens
-        {blocks, cont, mode} = next_layout_state(blocks, cont, mode, line_tokens)
-        emit_layout_tokens(rest, stack, merged, line.line_no, blocks, cont, mode, expr_indent)
+
+        {blocks, cont, mode, case_of_indents} =
+          next_layout_state(blocks, cont, mode, line_tokens, line.indent, case_of_indents)
+
+        emit_layout_tokens(
+          rest,
+          stack,
+          merged,
+          line.line_no,
+          blocks,
+          cont,
+          mode,
+          expr_indent,
+          case_of_indents
+        )
 
       {:error, reason, _} ->
         {:error, reason}
     end
   end
 
-  @spec next_layout_state([block_kind()], cont_kind(), layout_mode(), [token()]) ::
-          {[block_kind()], cont_kind(), layout_mode()}
-  defp next_layout_state(blocks, _cont, mode, line_tokens) do
+  @spec next_layout_state(
+          [block_kind()],
+          cont_kind(),
+          layout_mode(),
+          [token()],
+          non_neg_integer(),
+          [non_neg_integer()]
+        ) :: {[block_kind()], cont_kind(), layout_mode(), [non_neg_integer()]}
+  defp next_layout_state(blocks, prev_cont, mode, line_tokens, indent, case_of_indents) do
     kinds = token_kinds(line_tokens)
+
+    {blocks, case_of_indents} =
+      if :of_kw in kinds do
+        {[:case | blocks], [indent | case_of_indents]}
+      else
+        {blocks, case_of_indents}
+      end
 
     blocks =
       blocks
       |> push_block_if(:let_kw in kinds, :let)
       |> pop_block_if(:in_kw in kinds, :let)
-      |> push_block_if(:of_kw in kinds, :case)
 
     mode =
       cond do
@@ -287,14 +347,18 @@ defmodule ElmEx.Frontend.ExprLayoutLexer do
     cont =
       cond do
         :in_kw in kinds -> nil
+        :of_kw in kinds -> nil
         last_token_kind(line_tokens) == :eq -> :after_eq
         last_token_kind(line_tokens) == :arrow -> :after_arrow
+        last_token_kind(line_tokens) == :case_kw -> :after_case
+        # Keep flattening a multiline `case` subject until `of`.
+        prev_cont == :after_case -> :after_case
         last_token_kind(line_tokens) in [:apply_left, :shl, :shr] -> :after_infix_rhs
         value_line_end?(line_tokens) -> :after_value
         true -> nil
       end
 
-    {blocks, cont, mode}
+    {blocks, cont, mode, case_of_indents}
   end
 
   defp push_block_if(blocks, false, _kind), do: blocks
@@ -339,8 +403,19 @@ defmodule ElmEx.Frontend.ExprLayoutLexer do
          blocks,
          cont,
          mode,
-         expr_indent
+         expr_indent,
+         case_of_indents
        ) do
+    # Sibling case arms (including same-indent) must drop nested `of` frames from
+    # completed parenthesized cases (`|> (case … of …)`); otherwise a later
+    # bracketed `}` can emit a stale dedent via close_nested_cases_for_arm/5.
+    {blocks, case_of_indents} =
+      if :case in blocks and LayoutRules.case_arm_start?(text) do
+        pop_case_frames_above(blocks, case_of_indents, indent)
+      else
+        {blocks, case_of_indents}
+      end
+
     indent_rel = indent_relation(indent, stack)
 
     {expr_close_tokens, expr_indent} =
@@ -356,74 +431,127 @@ defmodule ElmEx.Frontend.ExprLayoutLexer do
 
     cond do
       let_inline_sibling?(mode, blocks, text) ->
-        {stack, tokens ++ [{LayoutRules.let_binding_sep(), line_no}], blocks, nil, mode, nil}
+        {stack, tokens ++ [{LayoutRules.let_binding_sep(), line_no}], blocks, nil, mode, nil, case_of_indents}
+
+      # Multiline `case` subject (`case` / subject / `of`): keep subject tokens
+      # flat so yecc's `case_kw pipe_right_expr of_kw` production matches.
+      case_subject_continuation?(cont, text) ->
+        {stack, [], blocks, :after_case, mode, expr_indent, case_of_indents}
+
+      case_of_after_subject?(cont, text) ->
+        {stack, [], blocks, nil, mode, nil, case_of_indents}
 
       application_arg_continuation?(cont, text) ->
-        {stack, tokens, blocks, nil, mode, expr_indent}
+        {stack, tokens, blocks, nil, mode, expr_indent, case_of_indents}
 
       pipe_value_continuation?(cont, text) ->
-        {stack, tokens, blocks, nil, mode, expr_indent}
+        {stack, tokens, blocks, nil, mode, expr_indent, case_of_indents}
 
       infix_rhs_continuation?(cont, text) ->
-        {stack, tokens, blocks, nil, mode, expr_indent}
-
-      expression_continuation?(cont, text) and indent > hd(stack) ->
-        {stack, tokens ++ [{:indent, line_no}], blocks, nil, mode, indent}
-
-      indent > hd(stack) ->
-        {[indent | stack], tokens ++ [{:indent, line_no}], blocks, nil, mode, nil}
-
-      indent < hd(stack) ->
-        cond do
-          LayoutRules.in_line_start?(text) ->
-            {new_stack, dedent_count} = dedents_before_in(stack, indent, expr_indent)
-            dedent_tokens = List.duplicate({:dedent, line_no}, dedent_count)
-            {new_stack, tokens ++ dedent_tokens, blocks, nil, mode, nil}
-
-          LayoutRules.else_line_start?(text) ->
-            {new_stack, dedent_count} = dedents_before_block_end(stack, indent)
-            dedent_tokens = List.duplicate({:dedent, line_no}, dedent_count)
-            {new_stack, tokens ++ dedent_tokens, blocks, nil, mode, nil}
-
-          sibling_line?(blocks, indent, text) ->
-            {new_stack, dedent_tokens} = pop_to_indent(stack, indent, line_no, [])
-
-            {new_stack, tokens ++ dedent_tokens ++ sibling_sep_token(blocks, line_no), blocks, nil, mode,
-             nil}
-
-          true ->
-            {new_stack, dedent_tokens} = pop_to_indent(stack, indent, line_no, [])
-            {new_stack, tokens ++ dedent_tokens, block_stack_after_dedent(new_stack, blocks), nil, mode, nil}
-        end
+        {stack, tokens, blocks, nil, mode, expr_indent, case_of_indents}
 
       LayoutRules.in_line_start?(text) ->
         {new_stack, dedent_count} = dedents_before_in(stack, indent, expr_indent)
         dedent_tokens = List.duplicate({:dedent, line_no}, dedent_count)
-        {new_stack, tokens ++ dedent_tokens, blocks, nil, mode, nil}
+        # Finish let-binding cases whose `of` sits deeper than `in`, but keep
+        # an enclosing `case` arm's frame so later sibling arms still get
+        # `case_sep` (e.g. `case msg of … let … in … ; MsgGlobal ->`).
+        {blocks, case_of_indents} = pop_case_frames_above(blocks, case_of_indents, indent)
+        {new_stack, tokens ++ dedent_tokens, blocks, nil, mode, nil, case_of_indents}
+
+      expression_continuation?(cont, text) and indent > hd(stack) ->
+        {stack, tokens ++ [{:indent, line_no}], blocks, nil, mode, indent, case_of_indents}
+
+      indent > hd(stack) ->
+        {[indent | stack], tokens ++ [{:indent, line_no}], blocks, nil, mode, nil, case_of_indents}
+
+      indent < hd(stack) ->
+        cond do
+          LayoutRules.else_line_start?(text) ->
+            {new_stack, dedent_count} = dedents_before_block_end(stack, indent)
+            dedent_tokens = List.duplicate({:dedent, line_no}, dedent_count)
+            {blocks, case_of_indents} = pop_case_frames_above(blocks, case_of_indents, indent)
+            {new_stack, tokens ++ dedent_tokens, blocks, nil, mode, nil, case_of_indents}
+
+          sibling_line?(blocks, indent, text) ->
+            {new_stack, dedent_tokens} = pop_to_indent(stack, indent, line_no, [])
+            {blocks, case_of_indents} = pop_case_frames_above(blocks, case_of_indents, indent)
+
+            {new_stack, tokens ++ dedent_tokens ++ sibling_sep_token(blocks, line_no), blocks, nil, mode,
+             nil, case_of_indents}
+
+          true ->
+            {new_stack, dedent_tokens} = pop_to_indent(stack, indent, line_no, [])
+            {blocks, case_of_indents} = pop_case_frames_above(blocks, case_of_indents, indent)
+
+            {new_stack, tokens ++ dedent_tokens, block_stack_after_dedent(new_stack, blocks), nil, mode, nil,
+             case_of_indents}
+        end
 
       LayoutRules.else_line_start?(text) ->
         {new_stack, dedent_count} = dedents_before_block_end(stack, indent)
         dedent_tokens = List.duplicate({:dedent, line_no}, dedent_count)
-        {new_stack, tokens ++ dedent_tokens, blocks, nil, mode, nil}
+        {blocks, case_of_indents} = pop_case_frames_above(blocks, case_of_indents, indent)
+        {new_stack, tokens ++ dedent_tokens, blocks, nil, mode, nil, case_of_indents}
 
       true ->
-        {stack, tokens, blocks, cont, mode, expr_indent}
+        {stack, tokens, blocks, cont, mode, expr_indent, case_of_indents}
     end
   end
 
   defp layout_tokens_for_line(
-         %{line_no: line_no, paren_at_start: depth, text: text},
+         %{line_no: line_no, indent: indent, paren_at_start: depth, text: text},
          stack,
          last_line,
          blocks,
          cont,
          mode,
-         expr_indent
+         expr_indent,
+         case_of_indents
        )
        when depth > 0 do
-    {stack, bracket_layout_tokens(line_no, last_line, blocks, cont, text), blocks, cont, mode,
-     expr_indent}
+    {blocks, case_of_indents, close_tokens} =
+      close_nested_cases_for_arm(blocks, case_of_indents, indent, line_no, text, [])
+
+    {stack, close_tokens ++ bracket_layout_tokens(line_no, last_line, blocks, cont, text), blocks, cont,
+     mode, expr_indent, case_of_indents}
   end
+
+  # Inside brackets the indent stack is ignored, so any line that is less
+  # indented than a nested `of` must pop that frame. Emit `dedent` only when
+  # the line is a sibling arm / `in` (yecc needs it for `case_after_branches`);
+  # bare closers (`]`, `)`, `}`) only clear the frame — the case is already
+  # complete and a stray dedent becomes `syntax error before: dedent`.
+  defp close_nested_cases_for_arm(blocks, [of_indent | rest], indent, line_no, text, close_tokens)
+       when of_indent > indent do
+    close_tokens =
+      if LayoutRules.case_arm_start?(text) or LayoutRules.in_line_start?(text) do
+        close_tokens ++ [{:dedent, line_no}]
+      else
+        close_tokens
+      end
+
+    close_nested_cases_for_arm(
+      List.delete(blocks, :case),
+      rest,
+      indent,
+      line_no,
+      text,
+      close_tokens
+    )
+  end
+
+  defp close_nested_cases_for_arm(blocks, case_of_indents, _indent, _line_no, _text, close_tokens),
+    do: {blocks, case_of_indents, close_tokens}
+
+  # Drop `of`-indent frames (and matching `:case` block markers) once the
+  # current line is at or above that frame — outside brackets this keeps the
+  # stack in sync so later parenthesized regions do not emit stale dedents.
+  defp pop_case_frames_above(blocks, [of_indent | rest], indent) when of_indent > indent do
+    pop_case_frames_above(List.delete(blocks, :case), rest, indent)
+  end
+
+  defp pop_case_frames_above(blocks, case_of_indents, _indent), do: {blocks, case_of_indents}
 
   defp dedents_before_in(stack, indent, expr_indent) do
     {stack, count} = dedents_before_block_end(stack, indent)
@@ -455,6 +583,15 @@ defmodule ElmEx.Frontend.ExprLayoutLexer do
   defp application_arg_continuation?(cont, text) do
     cont == :after_value and LayoutRules.application_continuation?(text)
   end
+
+  defp case_subject_continuation?(:after_case, text) do
+    not LayoutRules.of_line_start?(text)
+  end
+
+  defp case_subject_continuation?(_cont, _text), do: false
+
+  defp case_of_after_subject?(:after_case, text), do: LayoutRules.of_line_start?(text)
+  defp case_of_after_subject?(_cont, _text), do: false
 
   defp pipe_value_continuation?(cont, text) do
     cont == :after_value and LayoutRules.value_line_continuation?(text)
@@ -593,6 +730,10 @@ defmodule ElmEx.Frontend.ExprLayoutLexer do
     else
       sibling_or_newline_tokens_rel(line_no, indent, stack, blocks, nil, text, rel)
     end
+  end
+
+  defp sibling_or_newline_tokens_rel(_line_no, _indent, _stack, _blocks, :after_case, _text, _rel) do
+    []
   end
 
   defp sibling_or_newline_tokens_rel(line_no, _indent, _stack, _blocks, cont, _text, _rel)

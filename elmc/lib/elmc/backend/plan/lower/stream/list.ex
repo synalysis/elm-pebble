@@ -1271,11 +1271,40 @@ defmodule Elmc.Backend.Plan.Lower.Stream.List do
     maybe_result_eligible?(body, decl_map, module, seen)
   end
 
+  defp filter_map_mapper_eligible?(%{op: :var, name: name}, decl_map, module, seen)
+       when is_binary(name) do
+    filter_map_named_mapper_eligible?(module, name, decl_map, seen)
+  end
+
+  defp filter_map_mapper_eligible?(%{op: :call, name: name}, decl_map, module, seen)
+       when is_binary(name) do
+    filter_map_named_mapper_eligible?(module, name, decl_map, seen)
+  end
+
+  defp filter_map_mapper_eligible?(%{op: :qualified_call, target: target}, decl_map, module, seen)
+       when is_binary(target) do
+    case Stream.callee_key(%{op: :qualified_call, target: target}, module) do
+      {mod, name} -> filter_map_named_mapper_eligible?(mod, name, decl_map, seen)
+      _ -> true
+    end
+  end
+
   defp filter_map_mapper_eligible?(%{op: op}, _decl_map, _module, _seen)
-       when op in [:call, :qualified_call, :var, :qualified_ref],
+       when op in [:qualified_ref],
        do: true
 
   defp filter_map_mapper_eligible?(_, _, _, _), do: false
+
+  defp filter_map_named_mapper_eligible?(module, name, decl_map, seen)
+       when is_binary(module) and is_binary(name) do
+    case Map.get(decl_map, {module, name}) do
+      %{expr: body} when is_map(body) ->
+        maybe_result_eligible?(body, decl_map, module, seen)
+
+      _ ->
+        true
+    end
+  end
 
   defp maybe_result_eligible?(expr, decl_map, module, seen) do
     cond do

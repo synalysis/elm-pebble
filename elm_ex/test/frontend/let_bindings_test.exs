@@ -33,7 +33,8 @@ defmodule ElmEx.Frontend.LetBindingsTest do
     assert {:ok, ast} = GeneratedExpressionParser.parse(source)
     expanded = LetBindings.expand(ast)
     assert expanded.op == :let_in
-    assert expanded.name == "__tupleBind_contents_fullExtent_wrappingExtent"
+    # 3-tuples stay pattern binds (not nested-pair __tupleBind_* placeholders).
+    assert String.starts_with?(expanded.name, "__patternBind_")
   end
 
   test "expand recurses into case branch maps without :op" do

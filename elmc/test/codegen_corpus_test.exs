@@ -14,6 +14,10 @@ defmodule Elmc.CodegenCorpusTest do
   @fixtures_dir Path.expand("fixtures", __DIR__)
   @scorecard_dir Path.expand("tmp/codegen_corpus", __DIR__)
 
+  # Elm 0.19 allows only 2- and 3-tuples. This fixture exists so wasm_strict
+  # can prove a 4-tuple Main.main does not emit an empty module.
+  @not_elm_019_language ~w(wasm_web_four_tuple_project)
+
   test "codegen corpus scorecard across all fixture projects" do
     File.mkdir_p!(@scorecard_dir)
 
@@ -22,7 +26,8 @@ defmodule Elmc.CodegenCorpusTest do
       |> File.ls!()
       |> Enum.filter(fn name ->
         File.dir?(Path.join(@fixtures_dir, name)) and
-          File.exists?(Path.join([@fixtures_dir, name, "elm.json"]))
+          File.exists?(Path.join([@fixtures_dir, name, "elm.json"])) and
+          name not in @not_elm_019_language
       end)
       |> Enum.sort()
 

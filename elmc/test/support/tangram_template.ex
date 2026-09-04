@@ -19,6 +19,12 @@ defmodule Elmc.TestSupport.TangramTemplate do
     File.cp_r!(Path.join(template_src, "src"), Path.join(tmp, "src"))
     File.cp_r!(Path.join(template_src, "protocol/src"), Path.join(tmp, "protocol/src"))
 
+    resources_src = Path.join(template_src, "resources")
+
+    if File.dir?(resources_src) do
+      File.cp_r!(resources_src, Path.join(tmp, "resources"))
+    end
+
     sources = [
       "src",
       "protocol/src",

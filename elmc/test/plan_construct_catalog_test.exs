@@ -17,6 +17,7 @@ defmodule Elmc.PlanConstructCatalogTest do
     {result, generated} =
       SnippetProject.compile_checked!(catalog_source(),
         name: "construct_catalog",
+        keep_ir: true,
         compile: %{plan_ir_mode: :primary, plan_ir_strict: true},
         out_dir: Path.expand("tmp/construct_catalog", __DIR__)
       )
@@ -61,6 +62,8 @@ defmodule Elmc.PlanConstructCatalogTest do
     import Pebble.Platform as Platform
     import Pebble.Ui as Ui
     import Pebble.Ui.Color as Color
+    import Platform.Cmd
+    import Platform.Sub
 
 
     type alias Model =
@@ -120,10 +123,10 @@ defmodule Elmc.PlanConstructCatalogTest do
             b
 
 
-    view : Model -> Ui.Node Msg
+    view : Model -> Ui.UiNode
     view model =
         Ui.toUiNode
-            [ Ui.rect Color.black 0 0 10 10
+            [ Ui.rect { x = 0, y = 0, w = 10, h = 10 } Color.black
             ]
 
 

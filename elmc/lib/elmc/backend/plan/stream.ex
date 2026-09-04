@@ -39,6 +39,14 @@ defmodule Elmc.Backend.Plan.Stream do
           boolean()
   def eligible_expr?(expr, decl_map, module, seen, locals \\ MapSet.new())
 
+  # Typesys `:elm_type` is a concrete non-scene result (e.g. `List Int`). Do not
+  # treat `List.concat` / `List.filterMap` of ints as a `*_commands_append` view.
+  def eligible_expr?(%{elm_type: type} = expr, decl_map, module, seen, locals)
+      when not is_nil(type) do
+    not typed_non_stream_result?(expr) and
+      eligible_expr?(Map.delete(expr, :elm_type), decl_map, module, seen, locals)
+  end
+
   def eligible_expr?(%{op: :render_cmd}, _decl_map, _module, _seen, _locals), do: true
   def eligible_expr?(%{op: :render_text_cmd}, _decl_map, _module, _seen, _locals), do: true
 
@@ -209,6 +217,44 @@ defmodule Elmc.Backend.Plan.Stream do
   end
 
   def eligible_expr?(_, _, _, _, _), do: false
+
+  @doc """
+  True when typesys annotated a result that cannot be a scene stream
+  (`List Int`, `String`, …). Untyped / type-variable nodes stay eligible for
+  the existing render-op heuristics.
+  """
+  @spec typed_non_stream_result?(map() | term()) :: boolean()
+  def typed_non_stream_result?(%{elm_type: {:named, "List", [inner]}}),
+    do: concrete_non_stream_elem?(inner)
+
+  def typed_non_stream_result?(%{elm_type: {:named, name, []}})
+      when name in ["Int", "Float", "Bool", "String", "Char"],
+      do: true
+
+  def typed_non_stream_result?(_), do: false
+
+  defp concrete_non_stream_elem?({:named, name, []})
+       when name in ["Int", "Float", "Bool", "String", "Char"],
+       do: true
+
+  defp concrete_non_stream_elem?({:constrained, kind, _id})
+       when kind in [:number, :comparable, :appendable, :compappend],
+       do: true
+
+  defp concrete_non_stream_elem?({:named, "List", [inner]}),
+    do: concrete_non_stream_elem?(inner)
+
+  # Scene streams are lists of render ops, not tuples or records. Field types
+  # may still be unsolved vars (`{ name : t20, body : t21 }`); those are still
+  # not `RenderOp`.
+  defp concrete_non_stream_elem?({:tuple, elems}) when is_list(elems) and elems != [],
+    do: true
+
+  defp concrete_non_stream_elem?({:record, fields, _ext})
+       when is_map(fields),
+       do: true
+
+  defp concrete_non_stream_elem?(_), do: false
 
   @doc """
   True when the command expr is a list pipeline (map/concat/cons/++), or a

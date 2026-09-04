@@ -178,7 +178,14 @@ defmodule Elmc.Backend.CCodegen.GenericReachability do
         qualified_wrapper_callees(target, args || [], module_name, decl_map)
 
       rewritten ->
-        expr_wrapper_callees_list(rewritten, module_name, decl_map)
+        rewritten_special_callees(
+          target,
+          args,
+          rewritten,
+          module_name,
+          decl_map,
+          &expr_wrapper_callees_list/3
+        )
     end
   end
 
@@ -247,7 +254,14 @@ defmodule Elmc.Backend.CCodegen.GenericReachability do
         own ++ child_callees
 
       rewritten ->
-        expr_callees_list(rewritten, module_name, decl_map)
+        rewritten_special_callees(
+          target,
+          args,
+          rewritten,
+          module_name,
+          decl_map,
+          &expr_callees_list/3
+        )
     end
   end
 
@@ -276,7 +290,7 @@ defmodule Elmc.Backend.CCodegen.GenericReachability do
 
     child_callees =
       expr
-      |> Map.values()
+      |> ir_child_values()
       |> Enum.flat_map(&expr_callees_list(&1, module_name, decl_map))
 
     own ++ child_callees
@@ -304,7 +318,35 @@ defmodule Elmc.Backend.CCodegen.GenericReachability do
               is_list(args),
        do: args
 
-  defp wrapper_callee_child_values(expr), do: Map.values(expr)
+  defp wrapper_callee_child_values(expr), do: ir_child_values(expr)
+
+  defp ir_child_values(expr) when is_map(expr) do
+    expr
+    |> Map.drop([:elm_type])
+    |> Map.values()
+  end
+
+  # `Random.generate` and similar specials intentionally drop generator helpers.
+  # Program constructors still evaluate their impl record (init/update/view).
+  @program_record_specials MapSet.new([
+                             "Pebble.Platform.worker",
+                             "Pebble.Platform.application",
+                             "Pebble.Platform.watchface"
+                           ])
+
+  defp rewritten_special_callees(target, args, rewritten, module_name, decl_map, walk_fun) do
+    kept = walk_fun.(rewritten, module_name, decl_map)
+
+    if program_record_special?(target) do
+      kept ++ Enum.flat_map(args || [], &walk_fun.(&1, module_name, decl_map))
+    else
+      kept
+    end
+  end
+
+  defp program_record_special?(target) when is_binary(target) do
+    MapSet.member?(@program_record_specials, Host.normalize_special_target(target))
+  end
 
   @spec qualified_wrapper_callees(String.t(), [Types.ir_expr()], String.t(), Types.decl_map()) :: [
           Types.function_decl_key()
@@ -326,7 +368,7 @@ defmodule Elmc.Backend.CCodegen.GenericReachability do
 
   @spec qualified_callees(String.t(), Types.decl_map()) :: [Types.function_decl_key()]
 
-  defp qualified_callees(target, decl_map) do
+  defp qualified_callees(target, decl_map) when is_binary(target) do
     parts = String.split(target, ".")
 
     prefix_keys =
@@ -348,6 +390,8 @@ defmodule Elmc.Backend.CCodegen.GenericReachability do
 
     Enum.uniq(prefix_keys ++ own)
   end
+
+  defp qualified_callees(_, _), do: []
 
   @spec wrapper_callee_target(Types.function_decl_key(), [Types.ir_expr()], Types.decl_map()) :: [
           Types.function_decl_key()

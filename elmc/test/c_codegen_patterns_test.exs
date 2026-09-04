@@ -802,7 +802,7 @@ defmodule Elmc.CCodegenPatternsTest do
     width =
         4
 
-    padRows : List Int -> List Int
+    padRows : List Int -> List (List Int)
     padRows kept =
         let
             cleared =
@@ -1110,7 +1110,7 @@ defmodule Elmc.CCodegenPatternsTest do
 
     init _ = ( { label = timeLabel 9 5 }, Platform.Cmd.none )
     update _ m = ( m, Platform.Cmd.none )
-    view m = Ui.toUiNode [ Ui.clear Color.white, Ui.textLabel Ui.defaultFont { x = 0, y = 0 } m.label ]
+    view m = Ui.toUiNode [ Ui.clear Color.white, Ui.text m.label ]
     subscriptions _ = Platform.Sub.none
     main = Platform.application { init = init, update = update, view = view, subscriptions = subscriptions }
 
@@ -2880,7 +2880,7 @@ defmodule Elmc.CCodegenPatternsTest do
         , score = row0.score + row1.score + row2.score
         }
 
-    init _ = ( { size = List.length (collapseGrid (List.range 0 8)) }, Platform.Cmd.none )
+    init _ = ( { size = List.length (collapseGrid (List.range 0 8)).cells }, Platform.Cmd.none )
     update _ m = ( m, Platform.Cmd.none )
     view m = Ui.toUiNode [ Ui.clear Color.white, Ui.text (String.fromInt m.size) ]
     subscriptions _ = Platform.Sub.none
@@ -3528,6 +3528,7 @@ defmodule Elmc.CCodegenPatternsTest do
 
     import Json.Decode as Decode
     import Pebble.Platform as PebblePlatform
+    import Platform.Sub
     import Pebble.Ui as PebbleUi
     import Pebble.Ui.Color as PebbleColor
     import Pebble.Cmd as PebbleCmd
@@ -3617,6 +3618,7 @@ defmodule Elmc.CCodegenPatternsTest do
 
     import Json.Decode as Decode
     import Pebble.Platform as PebblePlatform
+    import Platform.Sub
     import Pebble.Ui as PebbleUi
     import Pebble.Cmd as PebbleCmd
 
@@ -3753,7 +3755,7 @@ defmodule Elmc.CCodegenPatternsTest do
     import Pebble.Ui as Ui
 
     type alias Model =
-        { displayShape : Int
+        { displayShape : Platform.DisplayShape
         , screenH : Int
         , screenW : Int
         }
@@ -3767,14 +3769,14 @@ defmodule Elmc.CCodegenPatternsTest do
           , screenH = context.screen.height
           , screenW = context.screen.width
           }
-        , Cmd.none
+        , Platform.Cmd.none
         )
 
     update _ model =
-        ( model, Cmd.none )
+        ( model, Platform.Cmd.none )
 
     subscriptions _ =
-        Sub.none
+        Platform.Sub.none
 
     view _ =
         Ui.windowStack []
@@ -3843,7 +3845,7 @@ defmodule Elmc.CCodegenPatternsTest do
         Sub.none
 
     view model =
-        Ui.windowStack
+        Ui.toUiNode
             [ Ui.text
                 UiResources.DefaultFont
                 Ui.defaultTextOptions
@@ -3899,13 +3901,13 @@ defmodule Elmc.CCodegenPatternsTest do
         callee seed seed
 
     init _ =
-        ( { seed = 0 }, Cmd.none )
+        ( { seed = 0 }, Platform.Cmd.none )
 
     update _ model =
-        ( Tuple.first (forward model.seed), Cmd.none )
+        ( { seed = Tuple.first (forward model.seed) }, Platform.Cmd.none )
 
     subscriptions _ =
-        Sub.none
+        Platform.Sub.none
 
     view _ =
         Ui.windowStack []
@@ -4140,6 +4142,7 @@ defmodule Elmc.CCodegenPatternsTest do
 
     import Json.Decode as Decode
     import Pebble.Platform as PebblePlatform
+    import Platform.Sub
     import Pebble.Ui as PebbleUi
     import Pebble.Cmd as PebbleCmd
 
@@ -4349,6 +4352,8 @@ defmodule Elmc.CCodegenPatternsTest do
     import Json.Decode as Decode
     import Pebble.Platform as Platform
     import Pebble.Ui as Ui
+    import Pebble.Ui.Color as Color
+    import Pebble.Ui.Resources as Resources
 
     type alias Model =
         { best : Int }
@@ -4516,6 +4521,8 @@ defmodule Elmc.CCodegenPatternsTest do
 
     import Json.Decode as Decode
     import Pebble.Platform as PebblePlatform
+    import Platform.Sub
+    import Platform.Cmd
     import Pebble.Ui as PebbleUi
 
     type alias Piece =
@@ -4546,7 +4553,7 @@ defmodule Elmc.CCodegenPatternsTest do
         PebbleUi.windowStack []
 
     main =
-        PebblePlatform.watchApp
+        PebblePlatform.application
             { init = init, update = update, view = view, subscriptions = subscriptions }
 
     """
@@ -4568,6 +4575,7 @@ defmodule Elmc.CCodegenPatternsTest do
 
     import Json.Decode as Decode
     import Pebble.Platform as PebblePlatform
+    import Platform.Sub
     import Pebble.Ui as PebbleUi
 
     type alias Model =
@@ -4614,6 +4622,7 @@ defmodule Elmc.CCodegenPatternsTest do
     module Main exposing (main)
 
     import Pebble.Platform as PebblePlatform
+    import Platform.Sub
     import Pebble.Ui as PebbleUi
     import Pebble.Cmd as Cmd
 
@@ -4667,6 +4676,7 @@ defmodule Elmc.CCodegenPatternsTest do
     module Main exposing (main)
 
     import Pebble.Platform as PebblePlatform
+    import Platform.Sub
     import Pebble.Ui as PebbleUi
     import Pebble.Cmd as Cmd
 
@@ -4723,17 +4733,21 @@ defmodule Elmc.CCodegenPatternsTest do
     module Main exposing (main, refreshStepsIfSupported)
 
     import Pebble.Platform as PebblePlatform
+    import Platform.Sub
     import Pebble.Cmd as Cmd
     import Pebble.Health as Health
 
     type alias Model =
         { healthSupported : Maybe Bool }
 
-    refreshStepsIfSupported : Model -> Cmd msg
+    type Msg
+        = GotSteps Int
+
+    refreshStepsIfSupported : Model -> Cmd Msg
     refreshStepsIfSupported model =
         case model.healthSupported of
             Just True ->
-                Health.sumToday Health.StepCount Cmd.none
+                Health.sumToday Health.StepCount GotSteps
 
             _ ->
                 Cmd.none
@@ -4742,8 +4756,8 @@ defmodule Elmc.CCodegenPatternsTest do
         PebblePlatform.worker
             { init = \\_ -> ( { healthSupported = Nothing }, Cmd.none )
             , update = \\_ model -> ( model, refreshStepsIfSupported model )
-            , subscriptions = \\_ -> PebblePlatform.Sub.none
-            , view = \\_ -> PebblePlatform.Cmd.none
+            , subscriptions = \\_ -> Sub.none
+            , view = \\_ -> Cmd.none
             }
 
     """
@@ -4764,6 +4778,7 @@ defmodule Elmc.CCodegenPatternsTest do
     module Main exposing (main, updateFromPhone)
 
     import Pebble.Platform as PebblePlatform
+    import Platform.Sub
     import Pebble.Cmd as Cmd
 
     type PhoneToWatch
@@ -4782,15 +4797,12 @@ defmodule Elmc.CCodegenPatternsTest do
                     , moonPhaseE6 = Just phase
                 }
 
-            _ ->
-                model
-
     main =
         PebblePlatform.worker
             { init = \\_ -> ( { moonriseMin = 0, moonsetMin = 0, moonPhaseE6 = Nothing }, Cmd.none )
             , update = \\_ model -> ( updateFromPhone (ProvideMoon 0 0 0) model, Cmd.none )
-            , subscriptions = \\_ -> PebblePlatform.Sub.none
-            , view = \\_ -> PebblePlatform.Cmd.none
+            , subscriptions = \\_ -> Sub.none
+            , view = \\_ -> Cmd.none
             }
 
     """
@@ -4811,6 +4823,7 @@ defmodule Elmc.CCodegenPatternsTest do
     module Main exposing (main, updateFromPhone)
 
     import Pebble.Platform as PebblePlatform
+    import Platform.Sub
     import Pebble.Cmd as Cmd
 
     type PhoneToWatch
@@ -4843,9 +4856,6 @@ defmodule Elmc.CCodegenPatternsTest do
                             Just _ ->
                                 ( model, Cmd.none )
 
-            _ ->
-                ( model, Cmd.none )
-
     type Msg
         = NoOp
 
@@ -4853,8 +4863,8 @@ defmodule Elmc.CCodegenPatternsTest do
         PebblePlatform.worker
             { init = \\_ -> ( { displayed = Nothing }, Cmd.none )
             , update = \\_ model -> updateFromPhone (ProvideCondition 0) model
-            , subscriptions = \\_ -> PebblePlatform.Sub.none
-            , view = \\_ -> PebblePlatform.Cmd.none
+            , subscriptions = \\_ -> Sub.none
+            , view = \\_ -> Cmd.none
             }
     """
 
@@ -4881,6 +4891,7 @@ defmodule Elmc.CCodegenPatternsTest do
     module Main exposing (main, updateFromPhone)
 
     import Pebble.Platform as PebblePlatform
+    import Platform.Sub
     import Pebble.Cmd as Cmd
 
     type Temperature
@@ -4893,6 +4904,7 @@ defmodule Elmc.CCodegenPatternsTest do
 
     type PhoneToWatch
         = ProvideWeather Temperature WeatherCondition Int Int Int
+        | NoWeather
 
     type alias Model =
         { weather : Maybe { temperature : Temperature, condition : WeatherCondition, precipMm10 : Int, uv10 : Int, pressureHpa : Int } }
@@ -4912,15 +4924,15 @@ defmodule Elmc.CCodegenPatternsTest do
                             }
                 }
 
-            _ ->
+            NoWeather ->
                 model
 
     main =
         PebblePlatform.worker
             { init = \\_ -> ( { weather = Nothing }, Cmd.none )
             , update = \\_ model -> ( model, Cmd.none )
-            , subscriptions = \\_ -> PebblePlatform.Sub.none
-            , view = \\_ -> PebblePlatform.Cmd.none
+            , subscriptions = \\_ -> Sub.none
+            , view = \\_ -> Cmd.none
             }
     """
 
@@ -4948,6 +4960,7 @@ defmodule Elmc.CCodegenPatternsTest do
     module Main exposing (main, justWind)
 
     import Pebble.Platform as PebblePlatform
+    import Platform.Sub
     import Pebble.Cmd as Cmd
 
     type Corner
@@ -4962,7 +4975,7 @@ defmodule Elmc.CCodegenPatternsTest do
         PebblePlatform.worker
             { init = \\_ -> ( {}, Cmd.none )
             , update = \\_ model -> ( model, Cmd.none )
-            , subscriptions = \\_ -> PebblePlatform.Sub.none
+            , subscriptions = \\_ -> Sub.none
             , view = \\_ -> Cmd.none
             }
     """
@@ -4983,6 +4996,7 @@ defmodule Elmc.CCodegenPatternsTest do
     module Main exposing (main, temperatureString)
 
     import Pebble.Platform as PebblePlatform
+    import Platform.Sub
     import Pebble.Cmd as Cmd
 
     type Temperature
@@ -5008,7 +5022,7 @@ defmodule Elmc.CCodegenPatternsTest do
         PebblePlatform.worker
             { init = \\_ -> ( { weather = Nothing }, Cmd.none )
             , update = \\_ model -> ( model, Cmd.none )
-            , subscriptions = \\_ -> PebblePlatform.Sub.none
+            , subscriptions = \\_ -> Sub.none
             , view = \\_ -> Cmd.none
             }
     """
@@ -5027,6 +5041,7 @@ defmodule Elmc.CCodegenPatternsTest do
     module Main exposing (main, readingString)
 
     import Pebble.Platform as PebblePlatform
+    import Platform.Sub
     import Pebble.Cmd as Cmd
 
     type Scale
@@ -5052,7 +5067,7 @@ defmodule Elmc.CCodegenPatternsTest do
         PebblePlatform.worker
             { init = \\_ -> ( { reading = Nothing }, Cmd.none )
             , update = \\_ model -> ( model, Cmd.none )
-            , subscriptions = \\_ -> PebblePlatform.Sub.none
+            , subscriptions = \\_ -> Sub.none
             , view = \\_ -> Cmd.none
             }
     """
@@ -5061,6 +5076,7 @@ defmodule Elmc.CCodegenPatternsTest do
     module Main exposing (main, levelLabel)
 
     import Pebble.Platform as PebblePlatform
+    import Platform.Sub
     import Pebble.Cmd as Cmd
 
     type Units
@@ -5086,7 +5102,7 @@ defmodule Elmc.CCodegenPatternsTest do
         PebblePlatform.worker
             { init = \\_ -> ( { level = Nothing }, Cmd.none )
             , update = \\_ model -> ( model, Cmd.none )
-            , subscriptions = \\_ -> PebblePlatform.Sub.none
+            , subscriptions = \\_ -> Sub.none
             , view = \\_ -> Cmd.none
             }
     """
@@ -5118,6 +5134,7 @@ defmodule Elmc.CCodegenPatternsTest do
 
     import Json.Decode as Decode
     import Pebble.Platform as PebblePlatform
+    import Platform.Sub
     import Pebble.Ui as PebbleUi
     import Pebble.Cmd as PebbleCmd
 
@@ -5172,6 +5189,7 @@ defmodule Elmc.CCodegenPatternsTest do
 
     import Pebble.Events as PebbleEvents
     import Pebble.Platform as PebblePlatform
+    import Platform.Sub
     import Pebble.Ui as PebbleUi
 
     type alias Model =
@@ -5879,6 +5897,8 @@ defmodule Elmc.CCodegenPatternsTest do
 
     import Json.Decode as Decode
     import Pebble.Platform as PebblePlatform
+    import Platform.Sub
+    import Platform.Cmd
     import Pebble.Time as PebbleTime
     import Pebble.Ui as PebbleUi
 
@@ -5908,7 +5928,7 @@ defmodule Elmc.CCodegenPatternsTest do
     init _ = ( { currentDateTime = Nothing }, Cmd.none )
     update _ model = ( model, Cmd.none )
     subscriptions _ = Sub.none
-    view model = PebbleUi.toUiNode [ PebbleUi.textLabel 0 { x = 0, y = 0 } (timeString model) ]
+    view model = PebbleUi.toUiNode [ PebbleUi.text (timeString model) ]
 
     main : Program Decode.Value Model Msg
     main =

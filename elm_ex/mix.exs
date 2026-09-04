@@ -22,7 +22,8 @@ defmodule ElmEx.MixProject do
   defp aliases do
     [
       "test.ts_corpus": ["test --only ts_corpus"],
-      "test.ts_corpus_smoke": ["test --only ts_corpus_smoke"]
+      "test.ts_corpus_smoke": ["test --only ts_corpus_smoke"],
+      "test.typesys_oracle": ["test --only typesys_oracle"]
     ]
   end
 
@@ -30,7 +31,8 @@ defmodule ElmEx.MixProject do
     [
       preferred_envs: [
         "test.ts_corpus": :test,
-        "test.ts_corpus_smoke": :test
+        "test.ts_corpus_smoke": :test,
+        "test.typesys_oracle": :test
       ]
     ]
   end

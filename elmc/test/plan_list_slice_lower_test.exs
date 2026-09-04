@@ -115,7 +115,7 @@ defmodule Elmc.PlanListSliceLowerTest do
     source = """
     module Main exposing (reverseRows)
 
-    reverseRows : List Int -> List Int
+    reverseRows : List Int -> List (List Int)
     reverseRows cells =
         [ List.reverse (rowAt 0 cells)
         , List.reverse (rowAt 1 cells)

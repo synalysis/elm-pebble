@@ -48,7 +48,8 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Patterns.Match.Pattern do
   end
 
   def branch_pattern(%{pattern: %{kind: :tuple, elements: elements}}, env) when is_list(elements) do
-    "{" <> Enum.map_join(elements, ", ", &tuple_case_elem(&1, env)) <> "}"
+    # Official #3+ is first + nested pair (`{a, {b, c}}`), matching compile_tuple3.
+    nested_pair_tuple_code(elements, env, &tuple_case_elem/2)
   end
 
   def branch_pattern(%{pattern: %{kind: :constructor, name: "[]"}}, _env), do: "[]"
@@ -281,7 +282,7 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Patterns.Match.Pattern do
     do: "[#{pattern_arg(head, env)} | #{list_tail_pattern(tail, env)}]"
 
   def pattern_arg(%{kind: :tuple, elements: elements}, env) when is_list(elements) do
-    "{" <> Enum.map_join(elements, ", ", &pattern_arg(&1, env)) <> "}"
+    nested_pair_tuple_code(elements, env, &pattern_arg/2)
   end
 
   def pattern_arg(%{kind: :constructor, name: "()", arg_pattern: nil}, _env), do: "nil"
@@ -359,10 +360,10 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Patterns.Match.Pattern do
           pattern_arg(hd(elements), env)
 
         single_tuple_payload_ctor?(ctor) ->
-          "{" <> Enum.map_join(elements, ", ", &pattern_arg(&1, env)) <> "}"
+          nested_pair_tuple_code(elements, env, &pattern_arg/2)
 
         plain_product_tuple_elements?(elements) ->
-          "{" <> Enum.map_join(elements, ", ", &pattern_arg(&1, env)) <> "}"
+          nested_pair_tuple_code(elements, env, &pattern_arg/2)
 
         true ->
           elements
@@ -374,6 +375,16 @@ defmodule Elmx.Backend.ElixirCodegen.Emit.Patterns.Match.Pattern do
   end
 
   def constructor_case_pattern(ctor, other, env), do: "{:#{ctor}, #{pattern_arg(other, env)}}"
+
+  # Official n-tuples nest from the right: `{a, {b, c}}` for #3, matching
+  # `compile_tuple3`. Two-element products stay `{a, b}`.
+  defp nested_pair_tuple_code([one], env, mapper), do: mapper.(one, env)
+
+  defp nested_pair_tuple_code([first | rest], env, mapper) do
+    "{#{mapper.(first, env)}, #{nested_pair_tuple_code(rest, env, mapper)}}"
+  end
+
+  defp nested_pair_tuple_code([], _env, _mapper), do: "{}"
 
   defp single_tuple_payload_ctor?(ctor) when ctor in ["Ok", "Err", "Just"], do: true
   defp single_tuple_payload_ctor?(_), do: false

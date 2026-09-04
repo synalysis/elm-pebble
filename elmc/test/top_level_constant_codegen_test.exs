@@ -13,10 +13,14 @@ defmodule Elmc.TopLevelConstantCodegenTest do
     File.rm_rf!(out_dir)
     File.mkdir_p!(Path.join(project_dir, "src"))
 
+    template_dir = Path.join(@repo_root, "ide/priv/project_templates/watch_demo_drawing_showcase")
+
     File.cp!(
-      Path.join(@repo_root, "ide/priv/project_templates/watch_demo_drawing_showcase/src/Main.elm"),
+      Path.join(template_dir, "src/Main.elm"),
       Path.join(project_dir, "src/Main.elm")
     )
+
+    File.cp_r!(Path.join(template_dir, "resources"), Path.join(project_dir, "resources"))
 
     File.write!(Path.join(project_dir, "elm.json"), Jason.encode!(%{
       "type" => "application",

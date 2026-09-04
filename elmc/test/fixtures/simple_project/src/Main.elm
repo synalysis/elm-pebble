@@ -7,8 +7,11 @@ import Pebble.Light as Light
 import Pebble.Platform as Platform
 import Pebble.Storage as Storage
 import Pebble.Ui as Ui
+import Pebble.Ui as PebbleUi
 import Pebble.Ui.Color as Color
+import Pebble.Ui.Color as PebbleColor
 import Pebble.Ui.Resources as Resources
+import Pebble.Ui.Resources as UiResources
 import Random
 
 

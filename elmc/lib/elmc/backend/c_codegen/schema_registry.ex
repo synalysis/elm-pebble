@@ -8,6 +8,7 @@ defmodule Elmc.Backend.CCodegen.SchemaRegistry do
   alias Elmc.Backend.CCodegen.StoragePlan
   alias Elmc.Backend.CCodegen.Types
   alias ElmEx.IR
+  alias ElmEx.Typesys.Type
 
   @type field_type :: String.t()
   @type record_schema :: %{
@@ -125,6 +126,28 @@ defmodule Elmc.Backend.CCodegen.SchemaRegistry do
     case record(registry, mod, name) do
       %{all_native?: true} -> true
       _ -> false
+    end
+  end
+
+  @spec list_elem_schema_from_elm_type(t(), Type.t() | nil) :: StoragePlan.elem_schema() | nil
+  def list_elem_schema_from_elm_type(registry, type) do
+    case type do
+      {:named, "List", [elem]} ->
+        cond do
+          Type.primitive_kind(elem) == :int -> {:primitive, :int}
+          Type.primitive_kind(elem) == :float -> {:primitive, :float}
+          Type.primitive_kind(elem) == :char -> {:primitive, :char}
+          Type.primitive_kind(elem) == :bool -> {:primitive, :bool}
+          match?({:named, _, []}, elem) ->
+            {:named, name, []} = elem
+            list_elem_schema(registry, "List " <> name)
+
+          true ->
+            {:boxed, :value}
+        end
+
+      _ ->
+        nil
     end
   end
 

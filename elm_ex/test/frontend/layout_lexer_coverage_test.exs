@@ -590,8 +590,11 @@ defmodule ElmEx.Frontend.LayoutLexerCoverageTest do
     try do
       Application.put_env(:elm_ex, :expr_layout_lexer, true)
 
-      assert {:error, {1, :elm_ex_expr_parser, _}} =
+      # Layout lexer now accepts integer case arms directly (no ;; normalize).
+      assert {:ok, %{op: :case, branches: layout_branches}} =
                GeneratedExpressionParser.parse_with_layout_lexer(source)
+
+      assert length(layout_branches) == 2
 
       assert {:ok, %{op: :case, branches: branches}} = GeneratedExpressionParser.parse(source)
       assert length(branches) == 2

@@ -1,9 +1,7 @@
 {
   "elm_make_enabled": false,
   "elm_make_excluded_modules": [],
-  "expected_expression_parse_failures": [
-    "fixtures/wasm_web_four_tuple_project/src/Main.elm#main"
-  ],
+  "expected_expression_parse_failures": [],
   "expected_unsupported_expr_roots": [
     "fixtures/wasm_web_four_tuple_project/src/Main.elm#main"
   ]

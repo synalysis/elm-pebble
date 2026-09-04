@@ -8,8 +8,7 @@ defmodule Elmc.BundledPebbleSurfaceCodegenTest do
   module Main exposing (main)
 
   import Pebble.Health as Health
-  import Pebble.Platform as Platform
-  import Platform
+  import Pebble.Platform as Platform exposing (LaunchContext, LaunchReason(..))
 
   type alias Model =
       { reasonOk : Bool
@@ -23,7 +22,7 @@ defmodule Elmc.BundledPebbleSurfaceCodegenTest do
 
   init : LaunchContext -> ( Model, Cmd Msg )
   init context =
-      ( { reasonOk = context.reason == Platform.LaunchWakeup
+      ( { reasonOk = context.reason == LaunchWakeup
         , stepsCmd = False
         }
       , Cmd.batch
@@ -45,7 +44,18 @@ defmodule Elmc.BundledPebbleSurfaceCodegenTest do
               ( model, Cmd.none )
 
   view _ =
-      Platform.worker { init = init, update = update, view = \\_ -> [] }
+      []
+
+  subscriptions _ =
+      Sub.none
+
+  main =
+      Platform.worker
+          { init = init
+          , update = update
+          , view = view
+          , subscriptions = subscriptions
+          }
   """
 
   test "bundled Pebble Platform and Health surface lower without missing C symbols" do
@@ -54,36 +64,26 @@ defmodule Elmc.BundledPebbleSurfaceCodegenTest do
     File.rm_rf!(project_dir)
     File.rm_rf!(out_dir)
     File.mkdir_p!(Path.join(project_dir, "src"))
-    File.mkdir_p!(Path.join(project_dir, "vendor"))
 
     bundled_src =
       Path.expand("../../ide/priv/bundled_elm/pebble-watch-src", __DIR__)
 
-    File.cp_r!(bundled_src, Path.join(project_dir, "vendor/pebble-watch-src"))
-
     File.write!(
       Path.join(project_dir, "elm.json"),
-      """
-      {
-        "type": "application",
-        "source-directories": [
-          "src",
-          "vendor/pebble-watch-src"
-        ],
-        "elm-version": "0.19.1",
-        "dependencies": {
-          "direct": {
-            "elm/json": "1.1.3",
-            "elm/time": "1.0.0"
+      Jason.encode!(%{
+        "type" => "application",
+        "source-directories" => ["src", bundled_src],
+        "elm-version" => "0.19.1",
+        "dependencies" => %{
+          "direct" => %{
+            "elm/core" => "1.0.5",
+            "elm/json" => "1.1.3",
+            "elm/time" => "1.0.0"
           },
-          "indirect": {}
+          "indirect" => %{}
         },
-        "test-dependencies": {
-          "direct": {},
-          "indirect": {}
-        }
-      }
-      """
+        "test-dependencies" => %{"direct" => %{}, "indirect" => %{}}
+      })
     )
 
     File.write!(Path.join(project_dir, "src/Main.elm"), @source)

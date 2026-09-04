@@ -1,7 +1,7 @@
 port module Main exposing (main)
 
-import Browser
-import Browser.Navigation as Nav exposing (UrlRequest(..))
+import Browser exposing (UrlRequest(..))
+import Browser.Navigation as Nav
 import Bytes exposing (Bytes)
 import Bytes.Decode as Decode
 import Html exposing (Html, a, div, text)
