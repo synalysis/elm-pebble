@@ -171,6 +171,8 @@ defmodule Ide.ProjectTemplatesTest do
     resources_elm = File.read!(Path.join(base, "watch/src/Pebble/Speaker/Resources.elm"))
     assert resources_elm =~ "SampleChime"
     assert resources_elm =~ "allSamples =\n    [ SampleChime ]"
+    assert resources_elm =~ "loop = False"
+    refute resources_elm =~ ~r/loop = false\b/
 
     assert {:ok, main_elm} = Projects.read_source_file(project, "watch", "src/Main.elm")
     assert main_elm =~ "Speaker.playTracks"

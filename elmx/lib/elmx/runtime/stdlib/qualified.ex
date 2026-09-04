@@ -130,7 +130,15 @@ defmodule Elmx.Runtime.Stdlib.Qualified do
   def call("String.foldr", arg_code), do: Helpers.strings_container(arg_code, "foldr", 3)
   def call("String.indexes", arg_code), do: Helpers.strings_container(arg_code, "indexes", 2)
   def call("String.indices", arg_code), do: Helpers.strings_container(arg_code, "indexes", 2)
-  def call("Basics.not", arg_code), do: Helpers.unary("not", arg_code)
+  def call("Basics.not", arg_code) do
+    # Fold boolean literals so generated Elixir is not `not false` / `not true`
+    # (compiler warns those conditionals are always true/false).
+    case Helpers.pick(arg_code, 0) do
+      "true" -> {:ok, "false"}
+      "false" -> {:ok, "true"}
+      _ -> Helpers.unary("not", arg_code)
+    end
+  end
   def call("Basics.abs", arg_code), do: Helpers.unary("abs", arg_code)
   def call("Basics.min", arg_code), do: Helpers.binary_fn("min", arg_code)
   def call("Basics.max", arg_code), do: Helpers.binary_fn("max", arg_code)

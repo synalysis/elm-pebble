@@ -88,7 +88,7 @@ defmodule Ide.Resources.ResourceStore.SpeakerGeneratedModule do
                         , name = #{inspect(row.name)}
                         , format = #{row.format}
                         , baseMidiNote = #{row.base_midi_note}
-                        , loop = #{row.loop}
+                        , loop = #{elm_bool(row.loop)}
                         , numBytes = #{row.num_bytes}
                         }
             """
@@ -157,4 +157,7 @@ defmodule Ide.Resources.ResourceStore.SpeakerGeneratedModule do
   end
 
   defp coerce_int(_, default), do: default
+
+  defp elm_bool(true), do: "True"
+  defp elm_bool(_), do: "False"
 end

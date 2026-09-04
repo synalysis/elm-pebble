@@ -126,10 +126,10 @@
     },
     {
       "antialiased": true,
-      "color": 192,
+      "color": 255,
       "compositing_mode": 0,
       "kind": "line",
-      "stroke_color": 192,
+      "stroke_color": 255,
       "stroke_width": 1,
       "x1": 30,
       "x2": 114,
@@ -151,10 +151,10 @@
     },
     {
       "antialiased": true,
-      "color": 192,
+      "color": 255,
       "compositing_mode": 0,
       "kind": "line",
-      "stroke_color": 192,
+      "stroke_color": 255,
       "stroke_width": 1,
       "x1": 29,
       "x2": 115,
@@ -195,7 +195,7 @@
       "y": 87
     }
   ],
-  "preview_ops_sha256": "907d34b348155dd2365c1fcf08718cefb02e60ecec38a93dfc907256c457a12a",
+  "preview_ops_sha256": "c11ea9879a11bfaa03bd5e71e41259b915119925abe705e0debf45b2edcfaac7",
   "render_tree": {
     "node_count": 32,
     "node_types": [

@@ -3,6 +3,32 @@ defmodule Ide.Resources.ResourceStoreTest do
 
   alias Ide.Projects
   alias Ide.Resources.ResourceStore
+  alias Ide.Resources.ResourceStore.SpeakerGeneratedModule
+
+  test "speaker Resources.elm emits Elm True/False for loop, not Elixir booleans" do
+    source =
+      SpeakerGeneratedModule.source([
+        %{
+          "ctor" => "SampleChime",
+          "format" => 2,
+          "base_midi_note" => 81,
+          "loop" => false,
+          "bytes" => 4800
+        },
+        %{
+          "ctor" => "SampleLoop",
+          "format" => 1,
+          "base_midi_note" => 60,
+          "loop" => true,
+          "bytes" => 100
+        }
+      ])
+
+    assert source =~ "loop = False"
+    assert source =~ "loop = True"
+    refute source =~ ~r/loop = false\b/
+    refute source =~ ~r/loop = true\b/
+  end
 
   test "generated modules are read-only across editor path variants" do
     assert ResourceStore.read_only_generated_module?("watch", "src/Pebble/Ui/Resources.elm")

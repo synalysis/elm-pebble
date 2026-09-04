@@ -81,15 +81,32 @@ defmodule ElmEx.Typesys.Type do
 
   def subst_apply(subst, {:var, id}) do
     case Map.get(subst, id) do
-      nil -> {:var, id}
-      other -> subst_apply(subst, other)
+      nil ->
+        {:var, id}
+
+      {:var, ^id} ->
+        {:var, id}
+
+      other ->
+        # Drop `id` while chasing so `{a | …}` / identity bindings cannot loop
+        # when `other` still mentions `id` (extensible-record ports/aliases).
+        subst_apply(Map.delete(subst, id), other)
     end
   end
 
   def subst_apply(subst, {:constrained, kind, id}) do
     case Map.get(subst, id) do
-      nil -> {:constrained, kind, id}
-      other -> subst_apply(subst, other)
+      nil ->
+        {:constrained, kind, id}
+
+      {:var, ^id} ->
+        {:constrained, kind, id}
+
+      {:constrained, _k, ^id} = same ->
+        same
+
+      other ->
+        subst_apply(Map.delete(subst, id), other)
     end
   end
 

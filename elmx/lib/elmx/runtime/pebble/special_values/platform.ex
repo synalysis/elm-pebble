@@ -33,6 +33,8 @@ defmodule Elmx.Runtime.Pebble.SpecialValues.Platform do
       "Pebble.Sub.map" -> sub_map(args)
       "Sub.map" -> sub_map(args)
       "Platform.worker" -> {:ok, %{op: :int_literal, value: 0}}
+      # Match elmc: keep the worker config/impl arg reachable (cmds must not be DCE'd).
+      "Pebble.Platform.worker" -> {:ok, %{op: :int_literal, value: 0, keep_alive: args}}
       "Platform.application" -> ui_call("elmx_platform_application", args)
       "Platform.Sub.batch" -> subscription_batch(args)
       "Pebble.Platform.launchReasonToInt" -> ui_call("elmx_platform_launch_reason_to_int", args)

@@ -24,6 +24,16 @@ defmodule ElmEx.Typesys.ParserTest do
              Parser.parse("{ a | x : Int } -> a")
   end
 
+  test "subst_apply does not diverge on extensible-record identity bindings" do
+    assert {:ok, {:fun, rec, rec}} = Parser.parse("{ a | x : Int } -> a")
+    {:record, _fields, {:var, id}} = rec
+    # Same shape as expanding an alias/port type where the arg still mentions `a`.
+    subst = %{id => rec}
+    assert Type.subst_apply(subst, Type.var(id)) == rec
+    # Applying the circular subst to the record itself must terminate (finite nesting).
+    assert match?({:record, %{}, {:record, %{}, {:var, ^id}}}, Type.subst_apply(subst, rec))
+  end
+
   test "parses constructor payloads as juxtaposed atomic types" do
     assert {:ok, [string, int1, int2]} = Parser.parse_ctor_args("String Int Int")
     assert string == Type.string()
