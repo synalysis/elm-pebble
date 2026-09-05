@@ -1168,6 +1168,10 @@ defmodule ElmEx.Typesys.Infer do
       String.starts_with?(name, "(") and String.ends_with?(name, ")") ->
         Env.lookup_value(env, name)
 
+      # Parser lowers `::` to `List.cons` / `Elm.Kernel.List.cons`.
+      name in ["List.cons", "Elm.Kernel.List.cons"] ->
+        Env.lookup_value(env, name) || Env.lookup_value(env, "(::)")
+
       name in [
         "+",
         "-",

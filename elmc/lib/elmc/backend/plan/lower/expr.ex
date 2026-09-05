@@ -2575,7 +2575,7 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
   defp list_loop_pipeline_fragment?(value_expr, ctx) when is_map(value_expr) do
     ListLoopPlans.pipeline_fragment?(value_expr, %{
       __module__: ctx.module,
-      __program_decls__: ctx.decl_map || %{}
+      __program_decls__: ctx.decl_map
     })
   end
 

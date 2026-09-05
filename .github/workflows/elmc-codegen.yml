@@ -215,7 +215,11 @@ jobs:
 
       - name: Run elmc Dialyzer
         working-directory: elmc
-        run: mix dialyzer
+        run: |
+          # Path-dep PLTs restored via mix-cache restore-keys can predate new
+          # ElmEx.Typesys.* exports while Dialyzer still reports "PLT is up to date".
+          mix dialyzer.clean
+          mix dialyzer
 
       - name: Run conformance guardrails
         run: bash elmc/scripts/run_conformance_guardrails.sh
