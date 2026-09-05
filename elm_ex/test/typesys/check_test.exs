@@ -1249,6 +1249,22 @@ defmodule ElmEx.Typesys.CheckTest do
     refute Enum.any?(diags, &(&1.code == "function_call_arity")), inspect(diags)
   end
 
+  test "List.cons (IR form of ::) is a known kernel value" do
+    # Parser lowers `x :: xs` to qualified_call List.cons — typesys must resolve it.
+    project =
+      project([
+        function("Main", "prepend", "Int -> List Int -> List Int", ["x", "xs"], %{
+          op: :qualified_call,
+          target: "List.cons",
+          args: [%{op: :var, name: "x"}, %{op: :var, name: "xs"}]
+        })
+      ])
+
+    {_project, diags} = Check.run(project)
+    refute Enum.any?(diags, &(&1.code == "unbound_value")), inspect(diags)
+    refute Enum.any?(diags, &(&1.code == "type_mismatch")), inspect(diags)
+  end
+
   defp project(decls, opts \\ []) do
     %Project{
       project_dir: "/tmp/typesys-check",

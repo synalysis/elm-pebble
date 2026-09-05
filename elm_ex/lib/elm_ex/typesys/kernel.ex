@@ -76,6 +76,7 @@ defmodule ElmEx.Typesys.Kernel do
     "List.take" => "Int -> List a -> List a",
     "List.drop" => "Int -> List a -> List a",
     "List.singleton" => "a -> List a",
+    "List.cons" => "a -> List a -> List a",
     "List.repeat" => "Int -> a -> List a",
     "List.range" => "Int -> Int -> List Int",
     "List.append" => "List a -> List a -> List a",
