@@ -29,7 +29,8 @@ defmodule Ide.DebuggerIntegrationHelpers do
                workspace_root: workspace_root
              )
 
-    assert compile_result.status == :ok
+    assert compile_result.status == :ok,
+           "health preview compile status=#{inspect(compile_result.status)} result=#{inspect(Map.take(compile_result, [:status, :error, :reason, :message, :diagnostics, :compile_diagnostics, :errors]), pretty: true, limit: 40)}"
 
     Ide.Debugger.ingest_elmc_compile(slug, %{
       status: :ok,

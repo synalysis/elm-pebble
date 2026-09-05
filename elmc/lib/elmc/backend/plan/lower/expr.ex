@@ -7,6 +7,7 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
 
   alias Elmc.Backend.CCodegen.{ConstantInt, VarAnalysis}
   alias Elmc.Backend.CCodegen.{FunctionEmit, Host, TypeParsing}
+  alias Elmc.Backend.CCodegen.DirectRender.ListLoopPlans
   alias Elmc.Backend.CCodegen.Native.{FunctionCall, TypedReturn}
   alias Elmc.Backend.Plan.Builder
   alias Elmc.Backend.Plan.Context
@@ -2540,7 +2541,8 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
       ctx_acc = Context.put_let_expr(ctx_acc, name, value_expr)
 
       if Context.stream_mode?(ctx_acc) and
-           Stream.eligible_expr?(value_expr, ctx_acc.decl_map, ctx_acc.module) do
+           (Stream.eligible_expr?(value_expr, ctx_acc.decl_map, ctx_acc.module) or
+              list_loop_pipeline_fragment?(value_expr, ctx_acc)) do
         {:cont, {:ok, Context.put_stream_alias(ctx_acc, name, value_expr), b_acc}}
       else
         value_ctx = %{Context.for_branch_arm(ctx_acc) | stream_mode: false}
@@ -2565,6 +2567,16 @@ defmodule Elmc.Backend.Plan.Lower.Expr do
       {:ok, ctx2, b2} -> compile(tail_expr, ctx2, b2)
       _ -> :unsupported
     end)
+  end
+
+  # Mirror classic DirectRender fragment lets: typed `List Record` range/filter/map
+  # pipelines are not scene-stream eligible, but still must stay symbolic so concatMap
+  # can expand/fuse them instead of materializing `elmc_list_range`.
+  defp list_loop_pipeline_fragment?(value_expr, ctx) when is_map(value_expr) do
+    ListLoopPlans.pipeline_fragment?(value_expr, %{
+      __module__: ctx.module,
+      __program_decls__: ctx.decl_map || %{}
+    })
   end
 
   # Let-bound records (especially HOF results like `List.foldl` accumulators) are

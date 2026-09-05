@@ -113,7 +113,9 @@ defmodule Ide.SizeReportMapPathTest do
 
     json = extract_json!(output)
     report = Enum.find(json["templates"], &(&1["template"] == "game-2048"))
-    assert report["status"] == "ok"
+
+    assert report["status"] == "ok",
+           "size report status=#{inspect(report["status"])} reason=#{inspect(report["reason"])} report=#{inspect(Map.take(report || %{}, ["status", "reason", "template", "error"]))}"
 
     assert get_in(report, ["baseline", "generated_c", "current"]) ==
              get_in(report, ["compiler", "generated_c", "bytes"])

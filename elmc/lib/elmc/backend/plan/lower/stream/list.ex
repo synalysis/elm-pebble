@@ -3,7 +3,6 @@ defmodule Elmc.Backend.Plan.Lower.Stream.List do
   alias Elmc.Backend.Plan.Types, as: Types
   alias Elmc.Backend.CCodegen.BuiltinUnion
   alias Elmc.Backend.CCodegen.ListHofResolve
-  alias Elmc.Backend.CCodegen.TypeParsing
 
   alias Elmc.Backend.Plan.Builder
   alias Elmc.Backend.Plan.Context
@@ -677,17 +676,12 @@ defmodule Elmc.Backend.Plan.Lower.Stream.List do
               {:ok, {:lambda, _, _} = mapper} ->
                 unroll(mapper, items, kind == :indexed_map, ctx, b)
 
-              {:ok, {:apply, apply_fun}} ->
-                # Prefer foreach only for list-producing helpers (`*_commands_append`).
-                # Kernel draws (`Ui.rect`) return a single RenderOp — unroll those.
-                if named_list_stream_helper?(apply_fun, ctx) do
-                  case compile_foreach(kind, fun, list, ctx, b) do
-                    {:ok, _, _} = ok -> ok
-                    _ -> unroll_apply_or_unsupported(fun, items, kind == :indexed_map, ctx, b)
-                  end
-                else
-                  unroll_apply_or_unsupported(fun, items, kind == :indexed_map, ctx, b)
-                end
+              {:ok, {:apply, _apply_fun}} ->
+                # Static expandable sources: unroll. Named list helpers used to prefer
+                # foreach here, but that value-compiles `List.range`/`filter` into
+                # `elmc_list_range` + list walks. Dynamic lists still use foreach when
+                # expand_source fails (branch below).
+                unroll_apply_or_unsupported(fun, items, kind == :indexed_map, ctx, b)
 
               :error ->
                 :unsupported
@@ -802,24 +796,6 @@ defmodule Elmc.Backend.Plan.Lower.Stream.List do
   end
 
   defp apply_callee(_, _), do: :error
-
-  defp named_list_stream_helper?(fun, ctx) do
-    case apply_callee(fun, ctx) do
-      {:ok, mod, name, _} ->
-        case Map.get(ctx.decl_map, {mod, name}) do
-          %{type: type} when is_binary(type) -> list_result_type?(type)
-          _ -> false
-        end
-
-      _ ->
-        false
-    end
-  end
-
-  defp list_result_type?(type) when is_binary(type) do
-    ret = TypeParsing.function_return_type(type)
-    ret == "List" or String.starts_with?(ret, "List ")
-  end
 
   defp expand_source(expr) do
     cond do
